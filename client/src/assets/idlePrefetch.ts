@@ -61,11 +61,17 @@ const WAVES: ReadonlyArray<{ id: string; run: () => Promise<unknown> }> = [
   // The boot manifest's background tier. Normally already resolved by the time we get
   // here (preloadBoot kicks it off); listed so a boot-time failure gets one more try.
   { id: 'boot:background', run: () => preloadBootBackground() },
+  // Tab-icon PNGs + coin/material atlases: ~430 KB, and as of the scene-title icon pass every
+  // menu screen needs them the moment it opens — the title bar, the tab strip that navigates to
+  // it, and every reward row all draw from this set. Ahead of the battle wave despite the header
+  // comment's "cheapest first" ordering rule, which this obeys anyway (it IS the cheapest): the
+  // battle set only gates the first *battle*, while a player who taps any menu button in the first
+  // seconds hits a scene that renders once and has no reason to redraw, so a late icon decode is
+  // a permanently blank glyph there rather than a one-frame flash.
+  { id: 'icons:reward',    run: () => preloadRewardIconArt() },
   // Everything enterBattle's gate awaits: all 12 unit rigs + hero/spell card art.
   // Default skins only — an equipped skin is still resolved by the gate itself.
   { id: 'battle',          run: () => ensureBattleAssets({}) },
-  // Tab-icon PNGs + coin/material atlases: every reward row in every meta scene.
-  { id: 'icons:reward',    run: () => preloadRewardIconArt() },
   // SLG world map, one 1.2 MB sheet — WorldMapScene shows a cover until it decodes.
   { id: 'slg:world',       run: () => worldAtlas.load() },
   // 3.3 MB of card backs/frames/banners. Biggest and least urgent, so: last.

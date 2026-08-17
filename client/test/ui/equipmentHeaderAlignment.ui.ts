@@ -52,6 +52,35 @@ function findLabelPositions(container: PIXI.Container, label: string): Array<{ x
   return out;
 }
 
+/**
+ * The header title node plus the sibling drawn immediately before it — since the scene-title icon
+ * pass that sibling is the title's leading glyph (`drawSceneHeader` adds `[icon][gap][title]` in
+ * that order), and the two together are what gets centred. Returns the group's outer span so the
+ * assertion below can stay about "centred on the design width" instead of hardcoding the icon size.
+ */
+function headerTitleGroupSpan(container: PIXI.Container, label: string): { left: number; right: number } {
+  // Returns from the recursion rather than filling a captured `let`: TS's control-flow analysis
+  // doesn't see assignments made inside a callback, so the captured-variable version narrowed to
+  // `never` after the null check and failed `npm run typecheck` (which `npm test` doesn't run).
+  const find = (node: PIXI.Container): { parent: PIXI.Container; index: number; node: PIXI.Text } | null => {
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i] as PIXI.Container;
+      if (child instanceof PIXI.Text && child.text === label) return { parent: node, index: i, node: child };
+      const deeper = find(child);
+      if (deeper) return deeper;
+    }
+    return null;
+  };
+  const found = find(container);
+  if (!found) throw new Error(`no text node "${label}" found`);
+  const { parent, index, node } = found;
+  const lead = index > 0 ? (parent.children[index - 1] as PIXI.Container) : null;
+  // The icon container is the immediately-preceding sibling; anything else (no icon wired) leaves
+  // the title alone as the whole group.
+  const left = lead && !(lead instanceof PIXI.Text) ? lead.x : node.x;
+  return { left, right: node.x + node.width };
+}
+
 function buildSave(): SaveData {
   const save = makeNewSave('acc_test');
   save.wallet.coins = 100000;
@@ -87,8 +116,11 @@ describe('EquipmentScene — header title centered', () => {
       const layout = createLayout(w, h);
       const positions = findLabelPositions(scene.container, t('equip.title'));
       expect(positions.length).toBe(1);
-      expect(positions[0].anchorX).toBe(0.5);
-      expect(positions[0].x).toBe(layout.designWidth / 2);
+      // Centred as a group, not as bare text: the title carries a leading `equipIcon` glyph since
+      // the scene-title icon pass, so asserting the TEXT node alone lands at w/2 would now be
+      // asserting the group is off-centre by half an icon. ±1 for the group's rounded left edge.
+      const { left, right } = headerTitleGroupSpan(scene.container, t('equip.title'));
+      expect(Math.abs((left + right) / 2 - layout.designWidth / 2)).toBeLessThanOrEqual(1);
       scene.destroy();
     });
   }

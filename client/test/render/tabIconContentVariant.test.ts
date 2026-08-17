@@ -20,6 +20,8 @@ import { TAB_ICON_RASTER, type RasterIconVariant } from '../../src/render/icons'
 
 const VARIANTS: RasterIconVariant[] = ['active', 'inactive', 'content'];
 const ASSET_DIR = path.resolve(__dirname, '../../src/assets/tabicons');
+/** The AI source images + the packing script, one dir up out of the client. */
+const SOURCE_DIR = path.resolve(__dirname, '../../../art/ui/tabicons');
 
 describe('tab-icon PNGs on disk (pack_tab_icons.cjs output)', () => {
   const files = fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'));
@@ -27,6 +29,18 @@ describe('tab-icon PNGs on disk (pack_tab_icons.cjs output)', () => {
 
   it('has at least one icon set to check (guards against an empty/moved asset dir)', () => {
     expect(bases.length).toBeGreaterThan(0);
+  });
+
+  // Sources and packed output must line up 1:1. A leftover source (a v1 that lost to a redraw, a
+  // reject) is the realistic drift: it reads as shipped art in the art dir but nothing packs it —
+  // the convention is that those move to `art/ui/tabicons/_rejected/`, and this enforces it. The
+  // other direction (packed PNG with no source) means someone hand-edited src/assets.
+  it('has one packed icon per source image (rejects belong in _rejected/)', () => {
+    const sources = fs.readdirSync(SOURCE_DIR)
+      .filter((f) => /^tabicon_.*\.(webp|png)$/.test(f))
+      .map((f) => f.replace(/^tabicon_/, '').replace(/\.(webp|png)$/, ''))
+      .sort();
+    expect(sources).toEqual(bases);
   });
 
   it('emits exactly the three variants per icon, and nothing else', () => {
@@ -57,6 +71,19 @@ describe('TAB_ICON_RASTER — the code side of the same contract', () => {
     expect(kinds.length).toBeGreaterThan(0);
     for (const kind of kinds) {
       expect(Object.keys(TAB_ICON_RASTER[kind]).sort(), kind).toEqual([...VARIANTS].sort());
+    }
+  });
+
+  // Batch 5 added 24 icons across two hand-maintained lists (pack_tab_icons.cjs's JOBS and this
+  // table). A JOBS row with no table entry packs three PNGs nobody can draw; the reverse fails the
+  // webpack build, so only this direction needs a test. Kind name is the asset base plus the
+  // `Icon`/`TabIcon` suffix — the pilot trio uses the short form, everything since uses the long one.
+  it('has exactly one TAB_ICON_RASTER kind per packed icon (no orphan art)', () => {
+    const packed = [...new Set(fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'))
+      .map((f) => f.replace(/_(active|inactive|content)\.png$/, '')))].sort();
+    expect(kinds.length).toBe(packed.length);
+    for (const base of packed) {
+      expect(kinds.filter((k) => k === `${base}Icon` || k === `${base}TabIcon`), base).toHaveLength(1);
     }
   });
 

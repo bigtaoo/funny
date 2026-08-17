@@ -177,7 +177,9 @@ export class CardCodexScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const hdr = drawSceneHeader(this.container, w, h, t('collection.title'));
+    // Same `rosterIcon` the Career strip's Codex tab uses (CareerTabs.ts) — the codex is a card
+    // compendium, so the page title and the tab that opens it show the same picture.
+    const hdr = drawSceneHeader(this.container, w, h, t('collection.title'), { icon: 'rosterIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 

@@ -329,7 +329,7 @@ export class CardSceneCore {
     this.container.addChild(this.loadingLayer);
 
     const hdr = drawSceneHeader(this.container, w, h, t('roster.title'), {
-      variant: 'paper', accent: HEADER_ACCENT.spend,
+      variant: 'paper', accent: HEADER_ACCENT.spend, icon: 'rosterIcon',
     });
     this.backRect = hdr.backRect;
     this.headerH = hdr.headerH;

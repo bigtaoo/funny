@@ -16,6 +16,7 @@ import { nextCheckinDay, dailyRewardClaimable, weeklyClaimableTiers } from '../g
 import type { DailyCallbacks } from './DailyScene/types';
 import { renderCheckin, renderDailyTasks, renderWeekly, renderAds, type DailyPanelCtx, type Hit } from './DailyScene/panels';
 import { preloadRewardIconArt } from '../render/rewardIcon';
+import type { IconKind } from '../render/icons';
 
 export type { DailyCallbacks } from './DailyScene/types';
 
@@ -40,6 +41,16 @@ const TAB_TITLE_KEY: Record<DailyTab, TranslationKey> = {
   tasks: 'daily.tasks.title',
   weekly: 'daily.weekly.title',
   ads: 'daily.ads.title',
+};
+
+/** Per-tab glyph, used for BOTH the header title and the tab cell (batch 5, see icons.ts) — the four
+ *  tabs sit next to each other, so the concepts are deliberately far apart: calendar-with-a-tick vs
+ *  clipboard-with-lines vs ribboned gift box vs play-screen. */
+const TAB_ICON: Record<DailyTab, IconKind> = {
+  checkin: 'checkinTabIcon',
+  tasks: 'tasksTabIcon',
+  weekly: 'weeklyTabIcon',
+  ads: 'adsTabIcon',
 };
 
 export class DailyScene implements Scene {
@@ -168,7 +179,7 @@ export class DailyScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN §3.1/§2.1).
-    const hdr = drawSceneHeader(this.container, w, h, t(TAB_TITLE_KEY[this.activeTab]));
+    const hdr = drawSceneHeader(this.container, w, h, t(TAB_TITLE_KEY[this.activeTab]), { icon: TAB_ICON[this.activeTab] });
     this.hits.push({ x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() });
 
     const save = this.cb.getSave?.();
@@ -217,15 +228,15 @@ export class DailyScene implements Scene {
     const weeklyBadge = weeklyClaimableTiers(save, nowMs).length > 0;
     const adsBadge = !!this.retention && this.retention.ads.watchedToday < this.retention.ads.cap && this.retention.ads.nextAvailableAt <= nowMs;
     const tabs: HubTab[] = [
-      { label: t('daily.checkin.title'), active: this.activeTab === 'checkin', badge: checkinBadge },
-      { label: t('daily.tasks.title'), active: this.activeTab === 'tasks', badge: tasksBadge },
-      { label: t('daily.weekly.title'), active: this.activeTab === 'weekly', badge: weeklyBadge },
+      { label: t('daily.checkin.title'), active: this.activeTab === 'checkin', badge: checkinBadge, icon: TAB_ICON.checkin },
+      { label: t('daily.tasks.title'), active: this.activeTab === 'tasks', badge: tasksBadge, icon: TAB_ICON.tasks },
+      { label: t('daily.weekly.title'), active: this.activeTab === 'weekly', badge: weeklyBadge, icon: TAB_ICON.weekly },
     ];
     const keys: DailyTab[] = ['checkin', 'tasks', 'weekly'];
     // Hidden entirely (not just disabled) on platforms without a real ad integration — no
     // mock/placeholder ad is ever shown to a real player (see IPlatform.hasRewardedAd).
     if (this.cb.onWatchAd) {
-      tabs.push({ label: t('daily.ads.title'), active: this.activeTab === 'ads', badge: adsBadge });
+      tabs.push({ label: t('daily.ads.title'), active: this.activeTab === 'ads', badge: adsBadge, icon: TAB_ICON.ads });
       keys.push('ads');
     }
     const onSelect = (i: number): void => {

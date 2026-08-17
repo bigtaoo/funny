@@ -48,6 +48,7 @@ import { bake } from '../../render/bake';
 import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { loadCoinIconAtlas } from '../../render/atlas/coinIconAtlas';
+import { preloadTabIconTextures } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
 import { tearDownChildren } from '../../render/sketchUi';
 
@@ -380,6 +381,16 @@ export class LobbySceneCore {
     // decoded so the lobby doesn't stay stuck on the procedural fallback glyph.
     loadCoinIconAtlas()
       .catch((err) => console.warn('[LobbyScene] coin icon atlas load failed:', err))
+      .then(() => { if (!this.destroyed) this.rebuild(); });
+
+    // Same deal for the bottom nav's five AI tab glyphs — `buildIcon` draws nothing for a raster
+    // kind whose texture hasn't decoded (icons.ts), so on a cold first load the nav rendered
+    // label-only until some unrelated event happened to rebuild. Warming here also covers every
+    // scene entered FROM the lobby: `Texture.from` is url-keyed, so their title-bar and tab-strip
+    // glyphs (scene-title icon pass) are already decoded by the time they draw, which matters most
+    // for the ones that render exactly once and never redraw (settings / level prep / room).
+    preloadTabIconTextures()
+      .catch((err) => console.warn('[LobbyScene] tab icon preload failed:', err))
       .then(() => { if (!this.destroyed) this.rebuild(); });
   }
 

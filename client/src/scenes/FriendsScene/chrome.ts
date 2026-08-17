@@ -11,7 +11,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSocialTabRail, type SocialTab } from '../../ui/widgets/socialTabRail';
+import { drawSocialTabRail, SOCIAL_TAB_ICON, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
@@ -85,7 +85,11 @@ export function drawTabBar(core: FriendsSceneCore): void {
 export function drawHeader(core: FriendsSceneCore): void {
   const { w, h } = core;
   const titleKey = `friends.tab.${core.tab}` as TranslationKey;
-  const hdr = drawSceneHeader(core.container, w, h, t(titleKey), { variant: 'paper' });
+  // Title glyph comes from the same table as the tab rail's (socialTabRail.ts) — one concept per
+  // social tab, whether it's drawn in the cell or above the page.
+  const hdr = drawSceneHeader(core.container, w, h, t(titleKey), {
+    variant: 'paper', icon: SOCIAL_TAB_ICON[core.tab],
+  });
   core.hits.push({ rect: hdr.backRect, fn: () => core.onBack() });
   // World channel posts cost coins — show the current balance top-right while on that tab.
   if (core.tab === 'world' && core.cb.getCoins) drawHeaderCurrency(core.container, w, hdr.headerH, core.cb.getCoins());

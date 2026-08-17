@@ -24,19 +24,19 @@
 | 文档 | 范围 |
 |---|---|
 | [README.md](README.md) | 本文：索引 / 权威登记 / 文档规约 |
-| [DECISIONS.md](DECISIONS.md) | ADR 决策日志（造成漂移的关键拍板） |
+| [DECISIONS.md](DECISIONS.md) | ADR 决策日志（造成漂移的关键拍板）——**索引表**，正文见 [ADR-001~040](DECISIONS_ADR-001-040.md) / [ADR-041~066](DECISIONS_ADR-041-onward.md)（新拍板写后者） |
 
 ### 1.2 游戏与服务端（`design/game/`）
 | 文档 | 范围 | 状态 |
 |---|---|---|
-| [DESIGN.md](game/DESIGN.md) | 引擎 / 系统设计基准（机制，非数值权威） | 实现中 |
+| [DESIGN.md](game/DESIGN.md) | 引擎 / 系统设计基准（机制，非数值权威） | 实现中 **（拆分：§8 起 → `DESIGN_SUBSYSTEMS.md`）** |
 | [BALANCE.md](game/BALANCE.md) | **战斗数值快照（镜像 config.ts）— 文档侧唯一数值参考** | 实现中 |
 | [ECONOMY_BALANCE.md](game/ECONOMY_BALANCE.md) | 经济**哲学/政策**（faucet/sink、鲸鱼天花板、反通胀） | 实现中 |
 | [ECONOMY_BALANCE_CN.md](game/ECONOMY_BALANCE_CN.md) | 中国区专属 IAP 定价档（CNY 档位；版号申请中暂不实施，ECONOMY_BALANCE §2.2 链入） | 待落地 |
-| [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 |
-| [ECONOMY_VERIFICATION_LOG.md](game/ECONOMY_VERIFICATION_LOG.md) | econ-sim 各轨（NATION/CITY/C/D/E/F/STRONGHOLD）核验过程与结论（已 CLOSED，非数值权威） | 已完成 |
-| [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | **角色卡实例系统（Hero Roster/喂卡升级/兵力/受伤/布阵对接；数字→ECONOMY_NUMBERS §6）** | 设计中 |
-| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e）；⚠️洗练当前不扣金币 |
+| [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 **（拆分：§12 起 → `ECONOMY_NUMBERS_LIVEOPS.md`）** |
+| [ECONOMY_VERIFICATION_LOG.md](game/ECONOMY_VERIFICATION_LOG.md) | econ-sim 各轨（NATION/CITY/C/D/E/F/STRONGHOLD）核验过程与结论（已 CLOSED，非数值权威） | 已完成 **（拆分：F 轨起 → `ECONOMY_VERIFICATION_LOG_CAPACITY.md`）** |
+| [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | **角色卡实例系统（Hero Roster/喂卡升级/兵力/受伤/布阵对接；数字→ECONOMY_NUMBERS §6）** | 设计中 **（拆分：§9 起 → `CHARACTER_CARDS_DESIGN_IMPL.md`）** |
+| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e）；⚠️洗练当前不扣金币 **（2026-08-17 拆分：§3–8 → `_MODEL`，§9–14 → `_IMPL`，§15–20 → `_REF`）** |
 | [ITEM_IDENTITY_DESIGN.md](game/ITEM_IDENTITY_DESIGN.md) | **物品身份基准（唯一id/状态/溯源，跨材料/装备/角色卡/皮肤/称号；装备/角色卡溯源字段已实现，材料/皮肤/称号实例化为后续待办清单）** | 设计中（ADR-059） |
 | [EQUIPMENT_ICON_PROMPTS.md](game/EQUIPMENT_ICON_PROMPTS.md) | 装备图标 AI 生成 prompt 清单（美术素材，非机制基准） | 参考 |
 | [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 已实现（`shared/achievements.ts` StatKey/分阶/反作弊L1+测试） |
@@ -44,15 +44,15 @@
 | [EVENTS_DESIGN.md](game/EVENTS_DESIGN.md) | **活动/Live-ops 编排（配置/生命周期/限定直购/双倍期；发奖走邮件、计数复用 statKey；不新增金币龙头 ADR-014）** | 设计中 |
 | [TITLE_DESIGN.md](game/TITLE_DESIGN.md) | **称号系统机制基准（公开身份名片；统一 titleId 容器/赛季快照/四处展示；段位金币→ECONOMY_BALANCE §2.3）** | 设计中 |
 | [SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | **两套赛季（天梯6周/SLG大区2月）的独立性契约·边界·对照（不重述机制，只锁边界）** | 设计中 |
-| [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | **天梯赛季/战令/排行榜机制基准（6周赛季·软重置·峰值奖励·Top100·Battle Pass；数字→ECONOMY_NUMBERS §13）** | 已实现（S11 天梯+`shared/battlepass.ts` 30级双轨+测试） |
-| [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | **角色卡机制/流派基准（6张＝涛3现有兵转具名·锚点 + Anna3新画变体；数值锚点占位→config.ts/BALANCE）** | 设计中 |
+| [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | **天梯赛季/战令/排行榜机制基准（6周赛季·软重置·峰值奖励·Top100·Battle Pass；数字→ECONOMY_NUMBERS §13）** | 已实现（S11 天梯+`shared/battlepass.ts` 30级双轨+测试） **（拆分：§13A 起 → `SEASON_DESIGN_IMPL_SPEC.md`）** |
+| [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | **角色卡机制/流派基准（6张＝涛3现有兵转具名·锚点 + Anna3新画变体；数值锚点占位→config.ts/BALANCE）** | 设计中 **（拆分：§7.6 英雄 → `_HEROES_IRONCLAD_RUNNER` / `_HEROES_MEDIC`）** |
 | [PVP_LOADOUT_DESIGN.md](game/PVP_LOADOUT_DESIGN.md) | **PvP 构筑卡组 + 按段位解锁单位机制基准（复用 6 PvE 单位入 PvP·全池随机→构筑·diamond/king 解锁；数值→config.ts/BALANCE，段位→ladder.ts）** | 设计中 |
-| [ANNA_CHARACTERS.md](game/ANNA_CHARACTERS.md) | Anna 方三角色（Max/Lena/…）立绘与设定细化（引擎定义见 CHARACTER_DESIGN，叙事见 product/characters） | 设计中 |
-| [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 |
+| [ANNA_CHARACTERS.md](game/ANNA_CHARACTERS.md) | Anna 方三角色（Max/Lena/…）立绘与设定细化（引擎定义见 CHARACTER_DESIGN，叙事见 product/characters） | 设计中 **（拆分：怪物 → `ANNA_CHARACTERS_MONSTERS.md`）** |
+| [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | 战役 PvE 设计基准（数据权威见 PVE_INTEGRITY_PLAN） | 实现中 **（拆分：§4.9 起 → `CAMPAIGN_DESIGN_KNOBS.md`）** |
 | [CAMPAIGN_P0_PLAN.md](game/archive/CAMPAIGN_P0_PLAN.md) | 战役 P0 试玩切片计划（试玩切片已完成） | 已归档 |
 | [CAMPAIGN_STORY.md](game/CAMPAIGN_STORY.md) | 战役剧情文案（叙事铁律见 world.md / ADR） | 设计中 |
 | [PVE_INTEGRITY_PLAN.md](game/PVE_INTEGRITY_PLAN.md) | **PvE 反作弊 + 服务器权威方案（PvE 数据权威真源）** | 实现中 |
-| [DIFFICULTY_SIM.md](game/DIFFICULTY_SIM.md) | 关卡难度模拟器（真实引擎+基线 AI 量化战役难度；代码 `client/test/difficultySim.ts`） | 工具/实现中 |
+| [DIFFICULTY_SIM.md](game/DIFFICULTY_SIM.md) | 关卡难度模拟器（真实引擎+基线 AI 量化战役难度；代码 `client/test/difficultySim.ts`） | 工具/实现中 **（拆分：调参记录 → `_TUNING_CH2-CH6` / `_TUNING_CH1_STARS`）** |
 | [STAR_SCORING.md](game/STAR_SCORING.md) | PvE 关卡三星评分机制（评分维度/阈值；client-modules 引用） | 实现中 |
 | [REPLAY_SHARE_DESIGN.md](game/REPLAY_SHARE_DESIGN.md) | **录像游戏外分享（状态流·客户端自产·无登录直达哑播放器·公开 /r/{code}·微信 shareAppMessage；与输入流录像分工）** | 待实现 |
 | [MYTHOLOGY_DESIGN.md](game/MYTHOLOGY_DESIGN.md) | 神话「神力赋予」叠加层 | 设计中 |
@@ -60,32 +60,32 @@
 | [DEPLOY_TOPOLOGY.md](game/DEPLOY_TOPOLOGY.md) | **多区域部署拓扑（Meta 共享 + 对战层按区隔离 + 中国独立；同区匹配/好友房跨区）** | 设计中 |
 | [ASSET_PACKAGING.md](game/ASSET_PACKAGING.md) | **资源分包/加载策略（L0启动闸门/L1按需/L2不进包；Web加载界面·微信CDN方案A·手机全量；AssetIO 抽象）** | 实现中 |
 | [META_TASKS.md](game/META_TASKS.md) | **实现任务清单 / 进度（实现状态真源）** | 实现中 |
-| [SERVER_API.md](game/SERVER_API.md) | **接口契约单一来源（REST/WS/proto/DB）** | 实现中 |
+| [SERVER_API.md](game/SERVER_API.md) | **接口契约单一来源（REST/WS/proto/DB）** | 实现中 **（拆分：§7 起 → `SERVER_API_INTERNAL.md`）** |
 | [ACCOUNT_DESIGN.md](game/ACCOUNT_DESIGN.md) | 账号系统（设备/密码/OAuth） | 实现中 |
 | [GATEWAY_DESIGN.md](game/GATEWAY_DESIGN.md) | gateway 控制面 | 已实现 |
 | [MATCHSVC_DESIGN.md](game/MATCHSVC_DESIGN.md) | matchsvc 匹配大脑 | 已实现 |
-| [COMMERCIAL_DESIGN.md](game/COMMERCIAL_DESIGN.md) | 钱包 / 交易 / 充值 | 已实现 |
+| [COMMERCIAL_DESIGN.md](game/COMMERCIAL_DESIGN.md) | 钱包 / 交易 / 充值 | 已实现 **（拆分：§10 起 → `COMMERCIAL_DESIGN_IAP.md`）** |
 | [GACHA_DESIGN.md](game/GACHA_DESIGN.md) | **盲盒系统完整设计（限定池/软保底/月卡/新手包/命运点/美术资源清单；数字→ECONOMY_BALANCE §3–4）** | 已实现（`commercial/src/gacha.ts` 软保底70/硬保底90/十连保底+测试） |
 | [SOCIAL_DESIGN.md](game/SOCIAL_DESIGN.md) | 好友 / 私聊 / 邮件（原社交数据模型；**已被 SOCIAL_SVC_DESIGN 取代**，仅留数据模型作迁移参考） | 已归档 |
 | [SOCIAL_SVC_DESIGN.md](game/SOCIAL_SVC_DESIGN.md) | **socialsvc 独立社交服务（家族/好友/邮件/频道/push 路由；推翻 SOC1，新增第五公网面）** | 设计中 |
 | [OPS_DESIGN.md](game/OPS_DESIGN.md) | 运维后台（监控/匹配池/补偿工单） | 已实现 |
 | [BOTSVC_DESIGN.md](game/BOTSVC_DESIGN.md) | **botsvc 机器人玩家服务（冷启动填充人气；1000池/稳态100在线；容量分层降级/充值分层模拟/家族任务映射表）** | 设计中 |
 | [FEATURE_FLAGS_DESIGN.md](game/FEATURE_FLAGS_DESIGN.md) | **功能开关（全局+定向灰度/区域/平台/白名单；统一服务端求值；公开 /bootstrap 下发+各进程缓存轮询；与 SaveData.flags 解耦）** | 设计中 |
-| [ANALYTICS_DESIGN.md](game/ANALYTICS_DESIGN.md) | 埋点分析（analyticsvc:18085） | 已实现 |
+| [ANALYTICS_DESIGN.md](game/ANALYTICS_DESIGN.md) | 埋点分析（analyticsvc:18085） | 已实现 **（拆分：§6 起 → `ANALYTICS_DESIGN_BACKEND.md`）** |
 | [COMPLIANCE_GLOBAL.md](game/COMPLIANCE_GLOBAL.md) | **海外合规（Web/iOS/Android：隐私/分级/抽卡概率公示/平台支付/删账号/UGC）** | 设计中 |
 | [COMPLIANCE_CN.md](game/COMPLIANCE_CN.md) | **中国大陆合规（版号/实名/未成年人防沉迷限时/分龄充值限额/PIPL；跟版号走，海外测试不阻断）** | 设计中 |
 | [CONTENT_MODERATION_DESIGN.md](game/CONTENT_MODERATION_DESIGN.md) | **内容治理（用户名/家族名/宗门名/聊天敏感词归一化+词库外部化/举报处理闭环/信誉分分级处罚/审核+申诉后台）；取代 SOC10 与 COMPLIANCE_GLOBAL §7** | 实现中（P1-P3 已完成） |
 | [AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **音频系统（资产/触发表/播放层/混音/设置/平台约束；美学仍归 art-direction）** | 设计中 |
 | [ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | **新手引导/FTUE 编排（首会话动线/专属教学关 ch0_tutorial 三阶段编排/首次功能引导/功能开放策略；合规已移出归 COMPLIANCE，不重述故事/关卡）** | 设计中 |
-| [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界核心设计（§0–14：世界结构/地图/战斗接入/契约） | 实现中 |
-| [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | SLG 大世界实现记录（§15 起：收尾清单/功能落地/bug 修复，worldsvc:18084；§21 剩余工作总览） | 实现中 |
+| [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界核心设计（§0–14：世界结构/地图/战斗接入/契约） | 实现中 **（拆分：§10 起 → `SLG_DESIGN_CONTRACTS.md`）** |
+| [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | SLG 大世界实现记录（§15 起：收尾清单/功能落地/bug 修复，worldsvc:18084；§21 剩余工作总览） | 实现中 **（2026-08-17 拆分：本文仅索引 + §15；正文见 `SLG_LOG_*.md`）** |
 | [SGZ_LAND_REFERENCE.md](game/SGZ_LAND_REFERENCE.md) | **参考资料**：三国志战略版地块/资源/建筑/版图机制调研（非本项目设计基准，供 SLG 地块系统设计对照） | 参考 |
 | [SLG_CITY_DESIGN.md](game/SLG_CITY_DESIGN.md) | **SLG 主城内政/建筑系统机制基准（仿三战书桌内政：资源建筑/练兵/城防/科技；激活 graphite/sticker faucet+sink；数字→ECONOMY_VERIFICATION_LOG §13-SLG-CITY，红线不喂天梯）** | P1+P2 已实现（e2e 8/8 实测）·数值 DRAFT |
 | [SLG_ECONOMY_CHECK.md](game/SLG_ECONOMY_CHECK.md) | **SLG DRAFT 数值的经济性核验方法（6 条轨道分流：持久经济聚合/赛季资源/围攻/分区公平/节奏/运维；判据+流程+登记口径；数字仍→ECONOMY_NUMBERS §13-SLG）** | 设计中 |
 | [WORLD_MAP_ART_SPEC.md](game/WORLD_MAP_ART_SPEC.md) | 大世界地图美术资产规格书（待替换的程序占位色块清单；权威=WorldMapScene.ts/SLG_DESIGN） | 实现中 |
-| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 |
-| [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 |
-| [LOBBY_IA_REDESIGN.md](game/LOBBY_IA_REDESIGN.md) | 大厅信息架构重规划（一级入口/底部 tab 重分组；装备并入养成、战绩升级为生涯、克制付费曝光） | 设计中 |
+| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 **（§9 拆分任务清单 → `AUCTION_DESIGN_SPLIT_TASKS.md`）** |
+| [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 **（2026-08-17 拆分：场景规格 → `UI_DESIGN_SCENES.md`，变更记录 → `UI_DESIGN_LOG_*.md`）** |
+| [LOBBY_IA_REDESIGN.md](game/LOBBY_IA_REDESIGN.md) | 大厅信息架构重规划（一级入口/底部 tab 重分组；装备并入养成、战绩升级为生涯、克制付费曝光） | 设计中 **（拆分：变更记录 → `LOBBY_IA_REDESIGN_LOG.md`）** |
 | [PARALLEL_DEV_PLAN.md](game/archive/PARALLEL_DEV_PLAN.md) | **并行开发计划（按依赖耦合分三条轨道 A/B/C，各自 worktree）** | 已归档 |
 | [LAUNCH_TRACK_1_CLIENT.md](game/archive/LAUNCH_TRACK_1_CLIENT.md) | 上线收口 Track 1 — 客户端合规 UI + 孤儿场景接线（已完成） | 已归档 |
 | [LAUNCH_TRACK_2_SERVER.md](game/archive/LAUNCH_TRACK_2_SERVER.md) | 上线收口 Track 2 — 服务端闭环补全（已完成） | 已归档 |
@@ -104,14 +104,14 @@
 | 文档 | 范围 | 状态 |
 |---|---|---|
 | [core-gameplay-loop.md](product/core-gameplay-loop.md) | 核心玩法循环（**设计意图，数值非权威 → BALANCE.md**） | 实现中 |
-| [logic-architecture.md](product/logic-architecture.md) | 逻辑层架构（坐标系/系统/录像） | 实现中 |
-| [art-direction.md](product/art-direction.md) | **美术方向（配色/渲染/资产分工的权威）** | 实现中 |
+| [logic-architecture.md](product/logic-architecture.md) | 逻辑层架构（坐标系/系统/录像） | 实现中 **（拆分：七 起 → `logic-architecture-events.md`）** |
+| [art-direction.md](product/art-direction.md) | **美术方向（配色/渲染/资产分工的权威）** | 实现中 **（拆分：六 起 → `art-direction-map-ui.md`）** |
 | [ui-design.md](product/ui-design.md) | **战斗内 UI 规格**（HUD/手牌/棋盘布局，见 §3） | 实现中 |
 | [characters.md](product/characters.md) | 角色设定 | 设计中 |
 | [world.md](product/world.md) | 世界观 / 叙事 | 设计中 |
 | [market-analysis.md](product/market-analysis.md) | 市场分析 | 参考 |
 | [mvp-gaps.md](product/mvp-gaps.md) | MVP 缺口盘点（v0.2 早期，游戏已远超此范畴） | 已归档 |
-| [deploy-cloudflare.md](product/deploy-cloudflare.md) | **线上部署拓扑权威**（Cloudflare 前端 + VPS 后端 + Atlas Mongo + 平台隔离边界，见 ADR-020） | 实现中 |
+| [deploy-cloudflare.md](product/deploy-cloudflare.md) | **线上部署拓扑权威**（Cloudflare 前端 + VPS 后端 + Atlas Mongo + 平台隔离边界，见 ADR-020） | 实现中 **（拆分：6b 起 → `deploy-cloudflare-staging.md`）** |
 | [client-rendering-cache.md](product/client-rendering-cache.md) | 渲染缓存 / 对象池 | 实现中 |
 | [v1-balance.md](product/v1-balance.md) | 早期数值提案（**未落地，已被 config.ts 取代**） | 已归档 |
 | [v1-simulation.md](product/v1-simulation.md) | 基于 v1-balance 的推演（同上归档） | 已归档 |

@@ -368,10 +368,10 @@
 
 ## 参考文档
 
-- 任务进度详情：[`META_TASKS.md`](META_TASKS.md)
-- 经济/养成数值：[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)
-- 装备机制：[`EQUIPMENT_DESIGN.md`](EQUIPMENT_DESIGN.md)
+- 任务进度详情：[`META_TASKS.md`](../META_TASKS.md)
+- 经济/养成数值：[`ECONOMY_NUMBERS.md`](../ECONOMY_NUMBERS.md)
+- 装备机制：[`EQUIPMENT_DESIGN.md`](../EQUIPMENT_DESIGN.md)
 - 单位养成：S12 节（`META_TASKS.md`）+ ADR-009（`DECISIONS.md`）
-- 赛季设计：[`SEASON_DESIGN.md`](SEASON_DESIGN.md)
-- 合规：[`COMPLIANCE_GLOBAL.md`](COMPLIANCE_GLOBAL.md) / [`COMPLIANCE_CN.md`](COMPLIANCE_CN.md)
-- worktree 约定：[`claudedocs/worktrees.md`](../../claudedocs/worktrees.md)
+- 赛季设计：[`SEASON_DESIGN.md`](../SEASON_DESIGN.md)
+- 合规：[`COMPLIANCE_GLOBAL.md`](../COMPLIANCE_GLOBAL.md) / [`COMPLIANCE_CN.md`](../COMPLIANCE_CN.md)
+- worktree 约定：[`claudedocs/worktrees.md`](../../../claudedocs/worktrees.md)

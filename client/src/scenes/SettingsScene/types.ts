@@ -4,6 +4,7 @@
 import { Rect } from '../../layout/ILayout';
 import { TranslationKey } from '../../i18n';
 import type { AvatarCategory } from '../../render/avatar';
+import type { IconKind } from '../../render/icons';
 
 /** Outcome of a rename attempt — ok with the accepted name, or a message key to toast. */
 export type RenameOutcome =
@@ -71,6 +72,19 @@ export interface AvatarPickerItem {
 }
 
 export const AVATAR_TABS: AvatarCategory[] = ['preset', 'hero', 'skin'];
+/**
+ * AI tab art per avatar source (render/icons.ts). Hero/skin are literally "a character card" and
+ * "a costume", the exact concepts `rosterIcon`/`skinIcon` were drawn for, so they reuse them
+ * instead of asking for new art (same reuse judgement as batches 2/3). `preset` (the built-in
+ * doodle avatars) got its own glyph in batch 5: a head-and-shoulders silhouette inside a CIRCLE —
+ * the profile-picture symbol. Deliberately not framed in a rectangle, which reads as an ID badge
+ * (the pilot batch's "cards v2" mistake).
+ */
+export const AVATAR_TAB_ICON: Partial<Record<AvatarCategory, IconKind>> = {
+  preset: 'avatarTabIcon',
+  hero: 'rosterIcon',
+  skin: 'skinIcon',
+};
 export const AVATAR_TAB_LABEL_KEY: Record<AvatarCategory, TranslationKey> = {
   preset: 'settings.avatarTab.preset',
   title: 'settings.avatarTab.title',

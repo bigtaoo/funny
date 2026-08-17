@@ -114,6 +114,85 @@ import pveTabIconActiveUrl from '../assets/tabicons/pve_active.png';
 import pveTabIconInactiveUrl from '../assets/tabicons/pve_inactive.png';
 import pveTabIconContentUrl from '../assets/tabicons/pve_content.png';
 
+// Tab-icon AI art batch 5 (design/product/tab-icon-art-prompts-batch5.md, 2026-08-17): the first batch
+// aimed at PAGE TITLES rather than tab strips — batches 1–4 scoped themselves to tab cells, so all 31
+// title states had no glyph at all (see `drawSceneHeader`'s `opts.icon`). 16 of these are title
+// concepts, 8 are the last tab/filter cells still on bare text (equipment's Inventory/Craft rail +
+// slot filter, the avatar picker's preset tab, family/sect channel). The `*TabIcon` suffix is kept for
+// the whole raster family regardless of the site — it marks "PNG from art/ui/tabicons", not "a tab".
+import auctionTabIconActiveUrl from '../assets/tabicons/auction_active.png';
+import auctionTabIconInactiveUrl from '../assets/tabicons/auction_inactive.png';
+import auctionTabIconContentUrl from '../assets/tabicons/auction_content.png';
+import cityTabIconActiveUrl from '../assets/tabicons/city_active.png';
+import cityTabIconInactiveUrl from '../assets/tabicons/city_inactive.png';
+import cityTabIconContentUrl from '../assets/tabicons/city_content.png';
+import leaderboardTabIconActiveUrl from '../assets/tabicons/leaderboard_active.png';
+import leaderboardTabIconInactiveUrl from '../assets/tabicons/leaderboard_inactive.png';
+import leaderboardTabIconContentUrl from '../assets/tabicons/leaderboard_content.png';
+import settingsTabIconActiveUrl from '../assets/tabicons/settings_active.png';
+import settingsTabIconInactiveUrl from '../assets/tabicons/settings_inactive.png';
+import settingsTabIconContentUrl from '../assets/tabicons/settings_content.png';
+import eventTabIconActiveUrl from '../assets/tabicons/event_active.png';
+import eventTabIconInactiveUrl from '../assets/tabicons/event_inactive.png';
+import eventTabIconContentUrl from '../assets/tabicons/event_content.png';
+import deckTabIconActiveUrl from '../assets/tabicons/deck_active.png';
+import deckTabIconInactiveUrl from '../assets/tabicons/deck_inactive.png';
+import deckTabIconContentUrl from '../assets/tabicons/deck_content.png';
+import roomTabIconActiveUrl from '../assets/tabicons/room_active.png';
+import roomTabIconInactiveUrl from '../assets/tabicons/room_inactive.png';
+import roomTabIconContentUrl from '../assets/tabicons/room_content.png';
+import defenseTabIconActiveUrl from '../assets/tabicons/defense_active.png';
+import defenseTabIconInactiveUrl from '../assets/tabicons/defense_inactive.png';
+import defenseTabIconContentUrl from '../assets/tabicons/defense_content.png';
+import checkinTabIconActiveUrl from '../assets/tabicons/checkin_active.png';
+import checkinTabIconInactiveUrl from '../assets/tabicons/checkin_inactive.png';
+import checkinTabIconContentUrl from '../assets/tabicons/checkin_content.png';
+import tasksTabIconActiveUrl from '../assets/tabicons/tasks_active.png';
+import tasksTabIconInactiveUrl from '../assets/tabicons/tasks_inactive.png';
+import tasksTabIconContentUrl from '../assets/tabicons/tasks_content.png';
+import weeklyTabIconActiveUrl from '../assets/tabicons/weekly_active.png';
+import weeklyTabIconInactiveUrl from '../assets/tabicons/weekly_inactive.png';
+import weeklyTabIconContentUrl from '../assets/tabicons/weekly_content.png';
+import adsTabIconActiveUrl from '../assets/tabicons/ads_active.png';
+import adsTabIconInactiveUrl from '../assets/tabicons/ads_inactive.png';
+import adsTabIconContentUrl from '../assets/tabicons/ads_content.png';
+import friendsTabIconActiveUrl from '../assets/tabicons/friends_active.png';
+import friendsTabIconInactiveUrl from '../assets/tabicons/friends_inactive.png';
+import friendsTabIconContentUrl from '../assets/tabicons/friends_content.png';
+import familyTabIconActiveUrl from '../assets/tabicons/family_active.png';
+import familyTabIconInactiveUrl from '../assets/tabicons/family_inactive.png';
+import familyTabIconContentUrl from '../assets/tabicons/family_content.png';
+import sectTabIconActiveUrl from '../assets/tabicons/sect_active.png';
+import sectTabIconInactiveUrl from '../assets/tabicons/sect_inactive.png';
+import sectTabIconContentUrl from '../assets/tabicons/sect_content.png';
+import mailTabIconActiveUrl from '../assets/tabicons/mail_active.png';
+import mailTabIconInactiveUrl from '../assets/tabicons/mail_inactive.png';
+import mailTabIconContentUrl from '../assets/tabicons/mail_content.png';
+import bagTabIconActiveUrl from '../assets/tabicons/bag_active.png';
+import bagTabIconInactiveUrl from '../assets/tabicons/bag_inactive.png';
+import bagTabIconContentUrl from '../assets/tabicons/bag_content.png';
+import craftTabIconActiveUrl from '../assets/tabicons/craft_active.png';
+import craftTabIconInactiveUrl from '../assets/tabicons/craft_inactive.png';
+import craftTabIconContentUrl from '../assets/tabicons/craft_content.png';
+import allTabIconActiveUrl from '../assets/tabicons/all_active.png';
+import allTabIconInactiveUrl from '../assets/tabicons/all_inactive.png';
+import allTabIconContentUrl from '../assets/tabicons/all_content.png';
+import weaponTabIconActiveUrl from '../assets/tabicons/weapon_active.png';
+import weaponTabIconInactiveUrl from '../assets/tabicons/weapon_inactive.png';
+import weaponTabIconContentUrl from '../assets/tabicons/weapon_content.png';
+import armorslotTabIconActiveUrl from '../assets/tabicons/armorslot_active.png';
+import armorslotTabIconInactiveUrl from '../assets/tabicons/armorslot_inactive.png';
+import armorslotTabIconContentUrl from '../assets/tabicons/armorslot_content.png';
+import trinketTabIconActiveUrl from '../assets/tabicons/trinket_active.png';
+import trinketTabIconInactiveUrl from '../assets/tabicons/trinket_inactive.png';
+import trinketTabIconContentUrl from '../assets/tabicons/trinket_content.png';
+import avatarTabIconActiveUrl from '../assets/tabicons/avatar_active.png';
+import avatarTabIconInactiveUrl from '../assets/tabicons/avatar_inactive.png';
+import avatarTabIconContentUrl from '../assets/tabicons/avatar_content.png';
+import channelTabIconActiveUrl from '../assets/tabicons/channel_active.png';
+import channelTabIconInactiveUrl from '../assets/tabicons/channel_inactive.png';
+import channelTabIconContentUrl from '../assets/tabicons/channel_content.png';
+
 export type IconKind =
   | 'book' | 'globe' | 'coin' | 'trophy' | 'castle' | 'pencils'
   // Recharge tiers (ShopScene): escalating treasure to make bigger tiers read richer.
@@ -180,14 +259,33 @@ export type IconKind =
   // achievement "pve" category, book's missed 3rd usage) plus reusing `statsTabIcon` for CareerTabs
   // "stats" (see CareerTabs.ts) splits the book conflict.
   | 'shopTabIcon' | 'coinTabIcon' | 'gachaTabIcon' | 'rechargeTabIcon' | 'homeTabIcon' | 'socialTabIcon'
-  | 'pvpTabIcon' | 'bidTabIcon' | 'materialTabIcon' | 'achievementTabIcon' | 'battlepassTabIcon' | 'pveTabIcon';
+  | 'pvpTabIcon' | 'bidTabIcon' | 'materialTabIcon' | 'achievementTabIcon' | 'battlepassTabIcon' | 'pveTabIcon'
+  // Tab-icon AI art batch 5 (see the import block above) — 16 page-title concepts plus 8 leftover tab
+  // cells. Each one deliberately avoids an existing icon it would otherwise be confused with, and the
+  // three riskiest pairs were checked side by side at 28px before wiring: `leaderboardTabIcon` is a
+  // symmetrical podium, NOT `statsTabIcon`'s ascending bars; `weeklyTabIcon` is a ribboned gift box,
+  // NOT `rechargeTabIcon`'s arched-lid chest; `craftTabIcon` is a bare anvil, since the hammer/mallet
+  // shape is already `bidTabIcon`'s auction gavel. Likewise `cityTabIcon` (gatehouse) vs `homeTabIcon`
+  // (pitched-roof house) vs `sectTabIcon` (pagoda), `armorslotTabIcon` (breastplate) vs `equipIcon`
+  // (kite shield), `weaponTabIcon` (one upright sword) vs `pvpTabIcon` (crossed swords), and
+  // `friendsTabIcon` (two heads) vs `familyTabIcon` (three, centre one larger).
+  | 'auctionTabIcon' | 'cityTabIcon' | 'leaderboardTabIcon' | 'settingsTabIcon' | 'eventTabIcon'
+  | 'deckTabIcon' | 'roomTabIcon' | 'defenseTabIcon' | 'checkinTabIcon' | 'tasksTabIcon'
+  | 'weeklyTabIcon' | 'adsTabIcon' | 'friendsTabIcon' | 'familyTabIcon' | 'sectTabIcon' | 'mailTabIcon'
+  | 'bagTabIcon' | 'craftTabIcon' | 'allTabIcon' | 'weaponTabIcon' | 'armorslotTabIcon'
+  | 'trinketTabIcon' | 'avatarTabIcon' | 'channelTabIcon';
 
 /** Raster tab-icon `IconKind`s that skip `DRAW`/`SketchPen` entirely — dispatched via `TAB_ICON_RASTER` instead. */
 export type RasterIconKind =
   | 'rosterIcon' | 'equipIcon' | 'skinIcon'
   | 'statsTabIcon' | 'progressTabIcon' | 'honorTabIcon' | 'collectionTabIcon'
   | 'shopTabIcon' | 'coinTabIcon' | 'gachaTabIcon' | 'rechargeTabIcon' | 'homeTabIcon' | 'socialTabIcon'
-  | 'pvpTabIcon' | 'bidTabIcon' | 'materialTabIcon' | 'achievementTabIcon' | 'battlepassTabIcon' | 'pveTabIcon';
+  | 'pvpTabIcon' | 'bidTabIcon' | 'materialTabIcon' | 'achievementTabIcon' | 'battlepassTabIcon' | 'pveTabIcon'
+  | 'auctionTabIcon' | 'cityTabIcon' | 'leaderboardTabIcon' | 'settingsTabIcon' | 'eventTabIcon'
+  | 'deckTabIcon' | 'roomTabIcon' | 'defenseTabIcon' | 'checkinTabIcon' | 'tasksTabIcon'
+  | 'weeklyTabIcon' | 'adsTabIcon' | 'friendsTabIcon' | 'familyTabIcon' | 'sectTabIcon' | 'mailTabIcon'
+  | 'bagTabIcon' | 'craftTabIcon' | 'allTabIcon' | 'weaponTabIcon' | 'armorslotTabIcon'
+  | 'trinketTabIcon' | 'avatarTabIcon' | 'channelTabIcon';
 
 /**
  * Which pre-baked ink a raster icon is drawn in. All three come from the same source art, recoloured
@@ -227,10 +325,35 @@ export const TAB_ICON_RASTER: Record<RasterIconKind, Record<RasterIconVariant, s
   achievementTabIcon: { active: achievementTabIconActiveUrl as string, inactive: achievementTabIconInactiveUrl as string, content: achievementTabIconContentUrl as string },
   battlepassTabIcon:  { active: battlepassTabIconActiveUrl as string, inactive: battlepassTabIconInactiveUrl as string, content: battlepassTabIconContentUrl as string },
   pveTabIcon:         { active: pveTabIconActiveUrl as string, inactive: pveTabIconInactiveUrl as string, content: pveTabIconContentUrl as string },
+  auctionTabIcon:     { active: auctionTabIconActiveUrl as string, inactive: auctionTabIconInactiveUrl as string, content: auctionTabIconContentUrl as string },
+  cityTabIcon:        { active: cityTabIconActiveUrl as string, inactive: cityTabIconInactiveUrl as string, content: cityTabIconContentUrl as string },
+  leaderboardTabIcon: { active: leaderboardTabIconActiveUrl as string, inactive: leaderboardTabIconInactiveUrl as string, content: leaderboardTabIconContentUrl as string },
+  settingsTabIcon:    { active: settingsTabIconActiveUrl as string, inactive: settingsTabIconInactiveUrl as string, content: settingsTabIconContentUrl as string },
+  eventTabIcon:       { active: eventTabIconActiveUrl as string, inactive: eventTabIconInactiveUrl as string, content: eventTabIconContentUrl as string },
+  deckTabIcon:        { active: deckTabIconActiveUrl as string, inactive: deckTabIconInactiveUrl as string, content: deckTabIconContentUrl as string },
+  roomTabIcon:        { active: roomTabIconActiveUrl as string, inactive: roomTabIconInactiveUrl as string, content: roomTabIconContentUrl as string },
+  defenseTabIcon:     { active: defenseTabIconActiveUrl as string, inactive: defenseTabIconInactiveUrl as string, content: defenseTabIconContentUrl as string },
+  checkinTabIcon:     { active: checkinTabIconActiveUrl as string, inactive: checkinTabIconInactiveUrl as string, content: checkinTabIconContentUrl as string },
+  tasksTabIcon:       { active: tasksTabIconActiveUrl as string, inactive: tasksTabIconInactiveUrl as string, content: tasksTabIconContentUrl as string },
+  weeklyTabIcon:      { active: weeklyTabIconActiveUrl as string, inactive: weeklyTabIconInactiveUrl as string, content: weeklyTabIconContentUrl as string },
+  adsTabIcon:         { active: adsTabIconActiveUrl as string, inactive: adsTabIconInactiveUrl as string, content: adsTabIconContentUrl as string },
+  friendsTabIcon:     { active: friendsTabIconActiveUrl as string, inactive: friendsTabIconInactiveUrl as string, content: friendsTabIconContentUrl as string },
+  familyTabIcon:      { active: familyTabIconActiveUrl as string, inactive: familyTabIconInactiveUrl as string, content: familyTabIconContentUrl as string },
+  sectTabIcon:        { active: sectTabIconActiveUrl as string, inactive: sectTabIconInactiveUrl as string, content: sectTabIconContentUrl as string },
+  mailTabIcon:        { active: mailTabIconActiveUrl as string, inactive: mailTabIconInactiveUrl as string, content: mailTabIconContentUrl as string },
+  bagTabIcon:         { active: bagTabIconActiveUrl as string, inactive: bagTabIconInactiveUrl as string, content: bagTabIconContentUrl as string },
+  craftTabIcon:       { active: craftTabIconActiveUrl as string, inactive: craftTabIconInactiveUrl as string, content: craftTabIconContentUrl as string },
+  allTabIcon:         { active: allTabIconActiveUrl as string, inactive: allTabIconInactiveUrl as string, content: allTabIconContentUrl as string },
+  weaponTabIcon:      { active: weaponTabIconActiveUrl as string, inactive: weaponTabIconInactiveUrl as string, content: weaponTabIconContentUrl as string },
+  armorslotTabIcon:   { active: armorslotTabIconActiveUrl as string, inactive: armorslotTabIconInactiveUrl as string, content: armorslotTabIconContentUrl as string },
+  trinketTabIcon:     { active: trinketTabIconActiveUrl as string, inactive: trinketTabIconInactiveUrl as string, content: trinketTabIconContentUrl as string },
+  avatarTabIcon:      { active: avatarTabIconActiveUrl as string, inactive: avatarTabIconInactiveUrl as string, content: avatarTabIconContentUrl as string },
+  channelTabIcon:     { active: channelTabIconActiveUrl as string, inactive: channelTabIconInactiveUrl as string, content: channelTabIconContentUrl as string },
 };
 
-/** Warm the 57 tab-icon PNGs (19 kinds × 3 inks) into the PIXI texture cache — call once from a
- *  scene that uses them (CardScene, EquipmentScene, or any reward row via `preloadRewardIconArt`)
+/** Warm the 129 tab-icon PNGs (43 kinds × 3 inks) into the PIXI texture cache — call once from a
+ *  scene that uses them (`LobbyScene` does it for every second-level page, since they all enter from
+ *  the lobby; CardScene/EquipmentScene and any reward row via `preloadRewardIconArt` also do)
  *  so the first render doesn't show a blank icon while it decodes. */
 export function preloadTabIconTextures(): Promise<void> {
   return preloadTextureList(Object.values(TAB_ICON_RASTER).flatMap((v) => Object.values(v)));

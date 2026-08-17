@@ -10,7 +10,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor,
 import { FS, snapFont } from '../render/fontScale';
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, buildTitleIcon } from '../ui/widgets/SceneHeader';
 import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp } from './CampaignMapScene/drawing';
 
 // ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the "campaign notebook" ──────
@@ -224,9 +224,19 @@ export class CampaignMapScene implements Scene {
 
     // With a subtitle (chapter pages: notebook owner), the title rides slightly
     // above center so the dim owner line tucks beneath it; without one it centers.
+    // The `pveTabIcon` treasure map is the same glyph LevelPrepScene and the achievement wall's
+    // PvE category use — the campaign IS the PvE track, so all three show one picture. Laid out
+    // as the [icon][gap][title] group drawSceneHeader would draw, just centred by hand because
+    // this scene owns the title (it may sit above a subtitle line).
     const title = txt(titleStr, FS.title, C.dark, true);
-    title.anchor.set(0.5, 0.5); title.x = w / 2;
-    title.y = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
+    const titleY = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
+    const icon = buildTitleIcon('pveTabIcon', FS.title, C.dark);
+    const groupX = Math.round((w - (icon.size + icon.gap + title.width)) / 2);
+    icon.node.x = groupX;
+    icon.node.y = Math.round(titleY - icon.size / 2);
+    root.addChild(icon.node);
+    title.anchor.set(0, 0.5); title.x = groupX + icon.size + icon.gap;
+    title.y = titleY;
     root.addChild(title);
 
     if (subtitleStr) {

@@ -237,7 +237,7 @@ export class RechargeScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const hdr = drawSceneHeader(this.container, w, h, t('recharge.title'), { accent: HEADER_ACCENT.spend });
+    const hdr = drawSceneHeader(this.container, w, h, t('recharge.title'), { accent: HEADER_ACCENT.spend, icon: 'rechargeTabIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
     drawHeaderCurrency(this.container, w, tbH, this.cb.getCoins());

@@ -106,6 +106,7 @@ export class DefenseEditorScene implements Scene {
     const hdr = drawSceneHeader(core.bodyLayer, w, core.h, core.titleText(), {
       variant: 'paper',
       accent: HEADER_ACCENT.slg,
+      icon: 'defenseTabIcon',
     });
     core.hits.push({ rect: hdr.backRect, action: () => core.cb.onBack() });
 

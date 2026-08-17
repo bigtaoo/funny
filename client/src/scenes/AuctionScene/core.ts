@@ -218,7 +218,7 @@ export class AuctionSceneCore {
     // Static header — shared standard height/title size (matches every other secondary scene); only the
     // SLG-red accent rule distinguishes it. headerH drives the body layout below.
     const hdr = drawSceneHeader(this.container, w, this.h, t('auction.title'), {
-      variant: 'paper', accent: HEADER_ACCENT.slg,
+      variant: 'paper', accent: HEADER_ACCENT.slg, icon: 'auctionTabIcon',
     });
     this.headerH = hdr.headerH;
     this.backRect = hdr.backRect;

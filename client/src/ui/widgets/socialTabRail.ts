@@ -15,8 +15,25 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n/index';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from './HubTabs';
+import type { IconKind } from '../../render/icons';
 
 export type SocialTab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
+
+/**
+ * The AI tab art per social tab (see render/icons.ts). Exported because these five cells and the
+ * five page TITLES they lead to are the same five concepts — FriendsScene's header reads this same
+ * table (chrome.ts) so a tab and its title can never drift apart. World reuses the globe the lobby's
+ * Social button already has; the other four came with batch 5, and are drawn far enough apart to
+ * survive being stacked in one rail: two heads (friends) vs a three-person cluster with a larger
+ * centre figure (family) vs a pagoda (sect) vs an envelope (mail).
+ */
+export const SOCIAL_TAB_ICON: Record<SocialTab, IconKind> = {
+  friends: 'friendsTabIcon',
+  family: 'familyTabIcon',
+  sect: 'sectTabIcon',
+  world: 'socialTabIcon',
+  mail: 'mailTabIcon',
+};
 
 const TAB_DEFS: { id: SocialTab; key: TranslationKey }[] = [
   { id: 'friends', key: 'friends.tab.friends' },
@@ -51,6 +68,7 @@ export function drawSocialTabRail(
   const tabs: HubTab[] = defs.map((tabDef) => ({
     label: t(tabDef.key),
     active: active === tabDef.id,
+    icon: SOCIAL_TAB_ICON[tabDef.id],
     badge: (badges[tabDef.id] ?? 0) > 0,
   }));
 

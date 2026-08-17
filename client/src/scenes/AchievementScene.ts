@@ -180,7 +180,7 @@ export class AchievementScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN §3.1/§2.1).
-    const hdr = drawSceneHeader(this.container, w, h, t('achievement.title'));
+    const hdr = drawSceneHeader(this.container, w, h, t('achievement.title'), { icon: 'achievementTabIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
