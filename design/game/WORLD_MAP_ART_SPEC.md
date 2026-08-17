@@ -79,8 +79,11 @@
 | `building_keep` | 战略要点/咽喉点建筑（城楼门楼） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `building_stronghold` | 险地 NPC 据点（暗色石垒） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 改版完成——3/4 俯视宽脚架构图，详见 [`slg-building-art.md`](../product/slg-building-art.md) |
-| `icon_blocker` | 己方/家族路障（`tile.structure`） | ✅ 已接入 `building_atlas`（2026-08-09），详见 [`slg-building-art.md`](../product/slg-building-art.md) |
+| `icon_blocker` | 己方/家族路障（`tile.structure`，非 arrowTower） | ✅ 已接入 `building_atlas`（2026-08-09），详见 [`slg-building-art.md`](../product/slg-building-art.md) |
+| — | 箭塔（`tile.structure.kind === 'arrowTower'`） | ⚠️ **从未出图**：v1 起就是纯 `PIXI.Graphics` 几何画法（米白塔身 + 三角屋顶，屋顶按格子归属染色），不查 `building_atlas`——地图上那个"尖尖的绿色树状"图标就是它（绿色 = 盟友领地染色），详见 [`tileGraphics/tiles.ts`](../../client/src/scenes/worldmap/tileGraphics/tiles.ts) 的 `arrowTower` 分支 |
 
+> **资源母题 vs 建筑压制（2026-08-17）**：一块被占领的资源格，`resType` 会一直留在 tile 文档上（见下方 `motifResType` 说明），哪怕后来在上面造了瞭望塔/箭塔/路障——旧逻辑不管这些，资源图标和建筑精灵会叠在同一格里，读起来乱（用户截图反馈）。`drawTileL1` 现在在画资源母题前先判是否已有 `featBuilding`（keep/stronghold/bridge/plankway）或 `tile.watchtower` / `tile.structure`，命中则跳过该格的资源图标——建筑本身仍照常画。地形建筑（keep/stronghold/…）在地图生成阶段本就不携带 `resType`，这条判断主要生效在玩家建造的动态层。map-editor 的 `drawEditorTile` 不涉及玩家建筑（只编辑静态模板），资源母题本就按 `tile.type === 'resource'` 互斥门控，无需同步改动。
+>
 > **接入落地（2026-07-03，2026-08-09 追加 icon_blocker + icon_watchtower 改版）**：`building_keep` / `building_stronghold` / `icon_watchtower` 三张手绘钢笔线稿
 > 经 `art/ui/slg-map/pack_buildings.cjs`（近白→透明+裁边+长边 256，同 `res` 管线）打包为
 > `client/src/assets/slg/building_atlas.{png,json}`，`buildingAtlasLoader.ts` 懒加载 + 并入进场
