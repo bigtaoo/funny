@@ -20,6 +20,8 @@ import { TAB_ICON_RASTER, type RasterIconVariant } from '../../src/render/icons'
 
 const VARIANTS: RasterIconVariant[] = ['active', 'inactive', 'content'];
 const ASSET_DIR = path.resolve(__dirname, '../../src/assets/tabicons');
+/** The AI source images + the packing script, one dir up out of the client. */
+const SOURCE_DIR = path.resolve(__dirname, '../../../art/ui/tabicons');
 
 describe('tab-icon PNGs on disk (pack_tab_icons.cjs output)', () => {
   const files = fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'));
@@ -27,6 +29,18 @@ describe('tab-icon PNGs on disk (pack_tab_icons.cjs output)', () => {
 
   it('has at least one icon set to check (guards against an empty/moved asset dir)', () => {
     expect(bases.length).toBeGreaterThan(0);
+  });
+
+  // Sources and packed output must line up 1:1. A leftover source (a v1 that lost to a redraw, a
+  // reject) is the realistic drift: it reads as shipped art in the art dir but nothing packs it —
+  // the convention is that those move to `art/ui/tabicons/_rejected/`, and this enforces it. The
+  // other direction (packed PNG with no source) means someone hand-edited src/assets.
+  it('has one packed icon per source image (rejects belong in _rejected/)', () => {
+    const sources = fs.readdirSync(SOURCE_DIR)
+      .filter((f) => /^tabicon_.*\.(webp|png)$/.test(f))
+      .map((f) => f.replace(/^tabicon_/, '').replace(/\.(webp|png)$/, ''))
+      .sort();
+    expect(sources).toEqual(bases);
   });
 
   it('emits exactly the three variants per icon, and nothing else', () => {
