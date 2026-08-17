@@ -267,6 +267,159 @@ plain sky-blue collared top.
 | `avatar_skin_e2` | Mara 皮肤 | ✅ 立绘已定稿，可直接裁 |
 | `avatar_skin_l1` | Max 皮肤 | ✅ 立绘已定稿，可直接裁 |
 
+### 备选路径 B：直接生成胸像（不等裁切，2026-08-17）
+
+owner 反馈"皮肤选项下面是空的"，想先拿到一批**可以直接生成**的胸像图，不想等 §上方"裁切"路径（卡在 6 款全身立绘全部定稿——苏远头部几何、陈守肤色/发色两项当前仍 pending）。胸像是完全不同的构图（肩以上、正面/小三分侧），本来就不继承全身立绘的姿态/脖子问题，所以**不必等裁切路径解锁**，可以现在就用下面 6 条 prompt 直接出图，跟 §一 hero_* 走同一套"胸像通用规范"（见文档开头），只是把 hero_* 的"便装素色"换成**该皮肤自己的配色/道具**，让"皮肤"分类真正区别于"hero"分类（不是同一张图换个 tab）。橙色调三条用的是全局 legendary 橙 `#e08a2c`（`ECONOMY_NUMBERS.md` 已定）附近的色号，不是 `skin-art-prompts.md` 里那些改色前的旧紫金色号。
+
+#### `avatar_skin_shop_c1` — 李川皮肤（common，灰白调）
+
+```
+Head-and-shoulders bust portrait, facing forward or a gentle three-quarter
+turn, on a plain pure-white background, vertical framing with the head
+filling about two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight (not
+sketchy-wobbly), flat color fills with cross-hatch pencil shading for
+volume, matte paper look — no gradient, no glossy highlights, no glow, no
+cel-shading, no airbrush, no photorealism.
+Face: large round head, warm tan skin with light cross-hatching under the
+jaw, two small solid-black dot eyes, no nose, small visible ear.
+Messy spiky brown hair rendered with short scratchy ink strokes, sticking
+out in several directions. Mouth drawn as a wide open-corner grin, one
+simple upward-curved line — restless, pleased with himself.
+Shoulders show a plain slate-gray crew-neck top with hand-stitched dashed
+seam lines at the collar, a hint of dark charcoal-gray at the collarbone
+edge — the grey-and-white palette of his common paid skin.
+Soft flat white background, no scenery, no text, no watermark.
+```
+
+#### `avatar_skin_shop_r1` — 苏远皮肤（rare，蓝色调）
+
+```
+Head-and-shoulders bust portrait, facing forward or a gentle three-quarter
+turn, on a plain pure-white background, vertical framing with the head
+filling about two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight (not
+sketchy-wobbly), flat color fills with cross-hatch pencil shading for
+volume, matte paper look — no gradient, no glossy highlights, no glow, no
+cel-shading, no airbrush, no photorealism.
+Face: large round head, warm tan skin with light cross-hatching under the
+jaw, two small solid-black dot eyes, no nose, small visible ear. This is a
+young boy, clearly male, not a girl.
+Short, neat hair smoothed down and combed to one side with a clean, even
+side part, lying flat and hugging the round head evenly all the way
+around, staying above the eyebrows — no spiky tufts, no stray cowlick.
+Mouth drawn as a short flat closed line, composed and unreadable.
+Shoulders show a royal-blue sleeveless athletic top with hand-stitched
+dashed seams at the collar, and a plain brown leather bracer strap visible
+at the edge of one shoulder — the identifying accessory of his rare paid
+skin.
+Soft flat white background, no scenery, no text, no watermark.
+```
+
+#### `avatar_skin_shop_e1` — 陈守皮肤（epic，紫色调）
+
+```
+Head-and-shoulders bust portrait, facing forward or a gentle three-quarter
+turn, on a plain pure-white background, vertical framing with the head
+filling about two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight (not
+sketchy-wobbly), flat color fills with cross-hatch pencil shading for
+volume, matte paper look — no gradient, no glossy highlights, no glow, no
+cel-shading, no airbrush, no photorealism.
+Face: large round head, light warm tan skin matching his two friends (not
+a darker skin tone), light cross-hatching under the jaw, two small
+solid-black dot eyes, no nose, small visible ear.
+Hair cropped very short and neat, almost buzzed close to the scalp — a
+disciplined, compact rounded silhouette, plain brown hair (not black, not
+curly). A calm, grounded expression, mouth drawn as a short straight line
+held level and firm.
+Shoulders show a deep-purple padded vest collar over a plain gray
+undershirt, with hand-stitched dashed seam lines along the vest edge — the
+deep-purple tone of his epic paid skin.
+Soft flat white background, no scenery, no text, no watermark.
+```
+
+> 陈守这条顺手把 `skin-art-prompts.md` §3 记录的 pending 项（肤色偏深+黑卷发，跟另两人不一致）直接写进了 prompt，不必等那条修完才能出这张胸像。
+
+#### `avatar_skin_e1` — Anna·Lena皮肤（epic，橙色调，原紫色调）
+
+```
+Head-and-shoulders bust portrait, a calm three-quarter turn, on a plain
+pure-white background, vertical framing with the head filling about
+two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight, flat color
+fills with cross-hatch pencil shading for volume, matte picture-book look
+— no gradient, no glossy highlights, no glow, no cel-shading, no airbrush.
+Face: a realistic young European woman's face with a soft steady eye,
+light eyebrow, a small straight nose, a calm closed mouth — ordinary
+grounded proportions, not stylized/cartoon. An expression of quiet
+confidence, not smiling, not fierce.
+Hair pulled back into a tight, neat war braid at the nape of the neck, no
+loose strands, no helmet.
+Shoulders show a fitted mail-and-leather collar in flat burnt-orange
+(around hex #c96a20), with a thin gilt-gold trim line at the collar edge,
+and a small flat cool steel-blue gem set at the collarbone as her only
+cold-toned detail tying her back to the blue faction. No armor plates
+below the collar, no weapon, no scenery.
+Plain white background, no text, no watermark.
+```
+
+#### `avatar_skin_e2` — Anna·Mara皮肤（epic，橙色调，原紫色调）
+
+```
+Head-and-shoulders bust portrait, a calm three-quarter turn, on a plain
+pure-white background, vertical framing with the head filling about
+two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight, flat color
+fills with cross-hatch pencil shading for volume, matte picture-book look
+— no gradient, no glossy highlights, no glow, no cel-shading, no airbrush.
+Face: a realistic young European woman's face with a soft natural eye,
+light eyebrow, a small straight nose, a gently closed mouth. Her gaze is
+lifted slightly, looking off into the distance past the viewer — watchful,
+a little wistful.
+Hair loose and wavy, half pulled back with a small visible hair-tie
+clearly separating the gathered part from the loose falling strands, a
+few flowing ink strokes, no shine.
+Shoulders show a flat burnt-orange leather collar buttoned up to the neck
+(around hex #c96a20, no exposed chest/neckline), with a thin gilt-gold
+trim line along the collar edge. No armor, no weapon, no scenery.
+Plain white background, no text, no watermark.
+```
+
+> Mara 全身立绘的蓝绳配饰在手腕上，胸像构图天然框不到，这条不强求塞进画面——冷色锚点这版就让给 Lena/Max 的胸口位置扛，跟"裁切"路径的实际效果（手腕本来也会被裁掉）一致。
+
+#### `avatar_skin_l1` — Anna·Max皮肤（legendary，橙色调，原金米调）
+
+```
+Head-and-shoulders bust portrait, a calm three-quarter turn, on a plain
+pure-white background, vertical framing with the head filling about
+two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight, flat color
+fills with cross-hatch pencil shading for volume, matte picture-book look
+— no gradient, no glossy highlights, no glow, no cel-shading, no airbrush.
+Face: a calm, serious, realistic European teenage boy face with a soft
+natural eye, light eyebrow, a small straight nose, a tight closed mouth —
+ordinary grounded proportions, not stylized/cartoon.
+Short neat hair, groomed and controlled, no helmet, whole face plainly
+visible from forehead to chin.
+Shoulders show flat warm marker-orange armor plates (around hex #e08a2c)
+at the collar with sharp clean edges and no gloss, a short cream-and-gold
+trimmed cape edge visible at one shoulder, and one small flat cool
+steel-blue diamond gem set at the center of his collar as his only
+cold-toned detail.
+Plain white background, no text, no watermark.
+```
+
+**共用负向提示（六条都用）**：
+```
+gradient, glossy highlights, shiny, glow, painterly, soft airbrush shading,
+watercolor, 3d render, full body, cropped at chest only showing collarbone,
+weapon in frame, background scenery, multiple people, text, watermark,
+sexualized, revealing clothing
+```
+
+**出图后接线**：跟裁切路径落地方式一致——PNG 存 `art/ui/head/avatar_skin_<key>.png` → 512px 压缩进 `client/src/assets/avatars/skin/` → 新增 `skinAvatarArt.ts`（仿 `heroAvatarArt.ts`）导出 url 表 → `avatar.ts` 的 `categoryIcon('skin', ...)` 改查这张新表（顺手修掉"现在查的是 hero 的 `UNIT_ART_URLS`"那个 bug，见上方"接线时要修的 bug"）→ 跑 `measureAvatarHeadBox.mjs` 补 `portraitHeadBox.ts` 头部框。6 张还没出图，此路径尚未开始。
+
 ---
 
 ## 四、功能实现待办（本文档只覆盖美术+渲染契约，以下留给功能实现阶段）
