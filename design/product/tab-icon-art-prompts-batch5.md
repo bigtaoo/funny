@@ -226,7 +226,13 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 1. **装备「背包/锻造」是两条各写一份 tab 数组的分支**：横屏走侧栏 `drawSidebarTabs`，竖屏走顶部 `drawHubTabs`（§18 的竖屏改造），第 5 条只写了 `EquipmentScene/inventory.ts`——照着改完竖屏静默保持无图标，**实拍才发现**。已收敛成 `EquipmentScene/types.ts` 的 `EQUIP_SUBTABS` 单表，两条分支都读它。以后给这类"一个控件两处画"的 tab 加东西，先 grep 一遍 label 的 i18n key 有几个调用点。
 2. **家族/宗门场景在真机上够不到**：`openFamilyHub`/`openSectHub` 要求账号已加入 SLG 世界且真的有家族，为了截一张图去 prod 建家族会给真实玩家的家族列表留垃圾数据。改为用新增的 `client/test/ui/orgHeaderTitleIcon.ui.ts` 覆盖：断言标题图标出现在 `[图标][间距][标题]` 的首位（位置按 `buildTitleIcon` 的两个 ratio 反算，不靠"前一个兄弟节点"——headless 下光栅图标的纹理永不解码，返回的是空 Container，和 header chrome 无法按类型区分），且让它在把 `add(titleIcon.node)` 注掉时确实失败过。
 
-**验收**：`tsc --noEmit` + `npm run typecheck` + 1439 + 1728 全绿；Playwright 实拍 20 张（竖屏 430×932 / 横屏 1280×800 各一轮，覆盖每日/装备/社交/排行榜/拍卖/主城/防守/设置/活动/好友对战/卡牌/世界地图）。看广告 tab 在 web 平台整条隐藏（无激励视频集成），其标题图标只有 contact-sheet 验证。
+**收尾加的三道防漂移测试**（都先看着它失败过再留下）：
+
+- `client/test/sceneTitleIconCoverage.test.ts`：**静态扫描**所有 `drawSceneHeader` 调用点，传了真标题的必须同时传 `icon:`。这正是本批的起因——四批过去了都没人发现 31 个标题一个图标都没有，因为"新场景照抄老的 header 那行"在 review 里看不出来、也不会让任何运行时测试变红。传 `title: null` 的场景进白名单（要**手动编辑**才能变长，加进去是个决定，忘了传图标不是），其中三个自绘标题的还必须走 `buildTitleIcon`（自己调 `buildIcon` 会静默拿到页签非激活态那份灰）。
+- `client/test/ui/tabIconOrientationParity.ui.ts`：装备/每日两个场景在 430×932 和 1280×800 各渲染一遍，用 `buildIcon` 的 spy 断言该出现的图标都被请求过——竖屏/横屏走不同分支就是上面那处「两份数组」漏改的成因。把那份数组改回去验证过：竖屏红、横屏绿。
+- `tabIconContentVariant.test.ts` 新增一条：`art/ui/tabicons/` 的源图必须和打包产物 1:1，落选/被取代的图留在源目录会失败（约定是移进 `_rejected/`）。
+
+**验收**：`tsc --noEmit` + `npm run typecheck` + 1444 + 1732 全绿；Playwright 实拍 20 张（竖屏 430×932 / 横屏 1280×800 各一轮，覆盖每日/装备/社交/排行榜/拍卖/主城/防守/设置/活动/好友对战/卡牌/世界地图）。看广告 tab 在 web 平台整条隐藏（无激励视频集成），其标题图标只有 contact-sheet 验证。
 
 ## 出图后的流程（沿用前四批）
 
