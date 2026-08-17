@@ -36,6 +36,19 @@ const BLOCKER_H = 0.22;
 // checked against a real screenshot (same caveat the other two constants had before the 2026-08-15
 // correction) — revisit if a player-built row of arrow towers reads oddly.
 const ARROWTOWER_H = 0.50;
+// Where a structure sprite's BASE sits, as a fraction of the diamond's half-height `hh` below the
+// tile center (see placeBuildingSprite). 0.72 is the default for anything TALL (watchtower, arrow
+// tower): the sprite rises from near the lower vertex, so its mass ends up above the tile center
+// and it reads as standing on the ground.
+//
+// The blocker is the exception (2026-08-17, "拒马稍微往上放点，使其看起来在格子中间"). It's a WIDE,
+// FLAT prop — sprite height is only tp*0.22 against hh = tp*0.5/2 = tp*0.25 — so with the default
+// base its whole silhouette lived in the diamond's lower half and looked like it had slid off the
+// cell toward the front vertex. Centering rule for a flat prop: put the base at spriteH/2 below the
+// center, i.e. f = (tp*BLOCKER_H/2) / hh = BLOCKER_H / ISO_RATIO = 0.44 — that lands the sprite's
+// visual center exactly on the tile center. 0.50 keeps a sliver of the "sits slightly forward"
+// grounding cue while still reading as centered in the cell.
+const BLOCKER_BASE_F = 0.50;
 
 export function drawTileL1(
   g: PIXI.Graphics, tile: WorldTileView | null,
@@ -268,20 +281,23 @@ export function drawTileL1(
         g.drawRect(-1, baseY - towerH * 0.62, 2, towerH * 0.3);
         g.endFill();
       }
-    } else if (!placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * BLOCKER_H, false)) {
+    } else if (!placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * BLOCKER_H, false, BLOCKER_BASE_F)) {
       // Geometric fallback for whenever the `icon_blocker` atlas frame isn't ready/decoded yet
       // (see icon_watchtower just above for the same pattern). Art landed 2026-08-09 — a wide
       // row of crossed sharpened stakes (design/product/slg-building-art.md); packed frame is
       // 256×88 (~2.9:1).
       const w = Math.max(6, tp * 0.5);
       const h = Math.max(5, tp * 0.22);
+      // Same raised base as the sprite path (BLOCKER_BASE_F) so a mid-load atlas swap doesn't
+      // make the barricade visibly hop down the tile.
+      const blockerBaseY = hh * BLOCKER_BASE_F;
       g.lineStyle(2, col, 0.95);
       g.beginFill(0xe8dcc0, 0.9);
-      g.drawRect(-w / 2, baseY - h, w, h);
+      g.drawRect(-w / 2, blockerBaseY - h, w, h);
       g.endFill();
       g.lineStyle(1.5, col, 0.9); // X-brace
-      g.moveTo(-w / 2, baseY - h); g.lineTo(w / 2, baseY);
-      g.moveTo(w / 2, baseY - h); g.lineTo(-w / 2, baseY);
+      g.moveTo(-w / 2, blockerBaseY - h); g.lineTo(w / 2, blockerBaseY);
+      g.moveTo(w / 2, blockerBaseY - h); g.lineTo(-w / 2, blockerBaseY);
       g.lineStyle(0);
     }
   }
@@ -293,10 +309,14 @@ export function drawTileL1(
  * `targetH` is the on-screen pixel height. Returns false (drawing nothing) if the atlas
  * isn't ready or the frame is missing, so callers can fall back. Sprite children are cleaned
  * each redraw by drawTileSlot.
+ *
+ * `baseF` places the sprite's base that fraction of the diamond's half-height below the tile
+ * center; see BLOCKER_BASE_F above for why flat props need a smaller value than tall ones.
  */
 
 export function placeBuildingSprite(
   g: PIXI.Graphics, name: string, tp: number, hh: number, targetH: number, fogged: boolean,
+  baseF = 0.72,
 ): boolean {
   if (!isBuildingAtlasReady()) return false;
   const tex = getBuildingTexture(name);
@@ -305,7 +325,7 @@ export function placeBuildingSprite(
   sp.anchor.set(0.5, 1);
   sp.scale.set(targetH / tex.height);
   sp.x = 0;
-  sp.y = hh * 0.72;   // base sits near the lower part of the diamond, below center
+  sp.y = hh * baseF;   // base sits below the tile center, toward the diamond's lower vertex
   sp.alpha = fogged ? 0.5 : 1;
   g.addChild(sp);
   return true;

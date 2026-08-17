@@ -90,6 +90,31 @@ export function drawDashedPolygon(g: PIXI.Graphics, pts: number[], dashLen: numb
 }
 
 /**
+ * Corner-bracket stroke: instead of tracing a polygon's whole perimeter, draw only a short stub
+ * out of each vertex along both adjacent edges (`tickFrac` of that edge's length, capped at half
+ * so opposite ticks never meet). Caller sets `g.lineStyle` beforehand.
+ *
+ * This is the quietest way to mark "this cell is a candidate" (2026-08-17, "可以攻打的地块的突出
+ * 显示方式换个形式，目前太显眼了"): the eye reads a repeated bracket motif as one band at a glance,
+ * but there's no continuous rope of dashes competing with the map's own ink for focus. Adjacent
+ * candidate cells share vertices, so their ticks coalesce into small crosses along the band —
+ * intentional, it makes the band's extent readable without any long stroke.
+ */
+export function drawPolygonCornerTicks(g: PIXI.Graphics, pts: number[], tickFrac: number): void {
+  const n = pts.length / 2;
+  if (n < 3) return;
+  const f = Math.min(0.5, tickFrac);
+  for (let i = 0; i < n; i++) {
+    const x = pts[i * 2]!, y = pts[i * 2 + 1]!;
+    for (const j of [(i + 1) % n, (i + n - 1) % n]) {
+      const dx = pts[j * 2]! - x, dy = pts[j * 2 + 1]! - y;
+      g.moveTo(x, y);
+      g.lineTo(x + dx * f, y + dy * f);
+    }
+  }
+}
+
+/**
  * A straight line whose width/alpha ramp from `startWidth/startAlpha` at (x0,y0) to
  * `endWidth/endAlpha` at (x1,y1), holding the end value for the final `holdFrac` of the
  * route so a destination marker (e.g. a march's arrowhead) never looks like it's still

@@ -6,7 +6,7 @@
 // WorldMapContext/scene needed (unlike worldMapOwnerBorder.ui.ts).
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
-import { drawDashedPolygon, drawFadedLine } from '../../src/scenes/worldmap/tileGraphics';
+import { drawDashedPolygon, drawFadedLine, drawPolygonCornerTicks } from '../../src/scenes/worldmap/tileGraphics';
 
 function spyMoveLine(g: PIXI.Graphics): { moves: [number, number][]; lines: [number, number][] } {
   const moves: [number, number][] = [];
@@ -53,6 +53,40 @@ describe('drawDashedPolygon (2026-08-01 declutter pass)', () => {
     const g = new PIXI.Graphics();
     const { moves } = spyMoveLine(g);
     drawDashedPolygon(g, [0, 0, 10, 0, 10, 10, 0, 10], 0, 0);
+    expect(moves).toHaveLength(0);
+  });
+});
+
+describe('drawPolygonCornerTicks (2026-08-17 occupy-frontier de-emphasis)', () => {
+  it('draws two stubs per vertex, each running toward a neighbour vertex', () => {
+    const g = new PIXI.Graphics();
+    const { moves, lines } = spyMoveLine(g);
+    // Unit square, 20% ticks. 4 vertices × 2 stubs = 8 segments, every one starting ON a vertex.
+    drawPolygonCornerTicks(g, [0, 0, 10, 0, 10, 10, 0, 10], 0.2);
+    expect(moves).toHaveLength(8);
+    expect(lines).toHaveLength(8);
+    const verts = new Set(['0,0', '10,0', '10,10', '0,10']);
+    expect(moves.every(([x, y]) => verts.has(`${x},${y}`))).toBe(true);
+    // Vertex (0,0)'s two stubs reach 20% of the way to (10,0) and to (0,10).
+    expect(lines).toContainEqual([2, 0]);
+    expect(lines).toContainEqual([0, 2]);
+  });
+
+  it('caps tickFrac at 0.5 so the two stubs meeting on one edge never overlap into a solid line', () => {
+    const g = new PIXI.Graphics();
+    const { lines } = spyMoveLine(g);
+    // Ask for 90%: without the cap, (0,0)'s stub would run to x=9 and (10,0)'s back to x=1,
+    // covering the whole edge — i.e. silently degrading back into the full outline this
+    // primitive exists to avoid.
+    drawPolygonCornerTicks(g, [0, 0, 10, 0, 10, 10, 0, 10], 0.9);
+    // Both stubs on the y=0 edge stop dead on its midpoint — they meet, never overlap.
+    expect(lines.filter(([x, y]) => y === 0 && x !== 0 && x !== 10)).toEqual([[5, 0], [5, 0]]);
+  });
+
+  it('draws nothing for a degenerate polygon (fewer than 3 vertices)', () => {
+    const g = new PIXI.Graphics();
+    const { moves } = spyMoveLine(g);
+    drawPolygonCornerTicks(g, [0, 0, 10, 0], 0.2);
     expect(moves).toHaveLength(0);
   });
 });

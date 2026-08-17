@@ -13,7 +13,7 @@ import { occupyFrontierCells } from '../occupyFrontier';
 import { HUD_H } from '../constants';
 import { ENEMY_BASE_TINT, MINE_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../tileStyle';
 import { baseFootprintCells } from '@nw/shared';
-import { drawStar, drawDashedPolygon, drawFadedLine } from '../tileGraphics';
+import { drawStar, drawDashedPolygon, drawPolygonCornerTicks, drawFadedLine } from '../tileGraphics';
 import type { WorldMapRendererCore } from './core';
 import { STICKMAN_TOKEN_BUDGET, syncMarchTokens, syncOccupyTokens, syncStationedTokens, type StickmanBudget } from './tokens';
 
@@ -155,11 +155,11 @@ export class WorldMapRendererFog implements FogHandlers {
     if (cells.length === 0) return;
 
     const diamond = diamondPath(tp);
-    // Fill pass: soft tint only, no solid stroke — the border below is dashed instead, so
-    // this reads as a "guidance" outline distinct from territory's solid border and the
-    // garrison zone's shorter dashes (2026-08-01 declutter pass, see tileGraphics.ts).
+    // Fill pass: soft tint only, no solid stroke — this reads as a "guidance" hint distinct from
+    // territory's solid border and the garrison zone's dashes (2026-08-01 declutter pass, see
+    // tileGraphics.ts).
     g.lineStyle(0);
-    g.beginFill(0x37d67a, 0.10);
+    g.beginFill(0x37d67a, 0.13);
     for (const { x, y } of cells) {
       const s = tileToScreen(x, y, tp);
       const cx = panX + s.x, cy = panY + s.y;
@@ -168,13 +168,19 @@ export class WorldMapRendererFog implements FogHandlers {
       g.drawPolygon(pts);
     }
     g.endFill();
-    g.lineStyle(Math.max(2, tp * 0.08), 0x37d67a, 0.9);
+    // 2026-08-17 ("目前太显眼了…要能让玩家一眼看到，但不能太抢夺焦点"): the previous full dashed
+    // perimeter (tp*0.08 wide @ alpha 0.9, dash tp*0.16) drew a continuous fat green rope through
+    // every frontier cell and dominated the whole screen. Corner brackets instead — a third of the
+    // stroke weight, half the alpha, and only ~4×2 short stubs per cell, so the band still pops out
+    // of the pale paper at a glance without out-shouting the buildings and marches on top of it.
+    // The slightly stronger fill above carries the "which exact cells" read the outline used to.
+    g.lineStyle(Math.max(1, tp * 0.022), 0x37d67a, 0.45);
     for (const { x, y } of cells) {
       const s = tileToScreen(x, y, tp);
       const cx = panX + s.x, cy = panY + s.y;
       const pts: number[] = new Array(diamond.length);
       for (let k = 0; k < diamond.length; k += 2) { pts[k] = diamond[k]! + cx; pts[k + 1] = diamond[k + 1]! + cy; }
-      drawDashedPolygon(g, pts, tp * 0.16, tp * 0.09);
+      drawPolygonCornerTicks(g, pts, 0.13);
     }
     g.lineStyle(0);
   }
