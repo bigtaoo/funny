@@ -3,17 +3,20 @@
 // cut from "notebook page" straight to the fully-rendered map, and because the camera opens
 // centred on the player's own (giant, already-built) base, the cut read as "a huge city just
 // popped into existence" rather than a reveal. This instead hands the sheet off to its own layer
-// and rubs it away with a hand-drawn eraser stroke: a jagged boundary sweeping left→right across
-// the sheet (per-row jitter so it reads as an uneven hand pass, not a mechanical wipe), trailing a
-// few grey "eraser crumb" flecks that fall and fade. Wired from WorldMapRendererBuild.hideLoading()
-// (kicks the wipe off — see its call to beginLoadingErase) and WorldMapRendererLifecycle.update()
-// (advances it every frame via updateLoadingErase) — see WorldMapContext's loadingErase* fields for
-// the animation state this module owns.
+// and rubs it away with a hand-drawn eraser stroke: two jagged boundaries starting at the sheet's
+// vertical centerline and sweeping outward toward the left/right edges in lockstep (per-row jitter
+// so it reads as an uneven hand pass, not a mechanical wipe), trailing a few grey "eraser crumb"
+// flecks that fall and fade. Wired from WorldMapRendererBuild.hideLoading() (kicks the wipe off —
+// see its call to beginLoadingErase) and WorldMapRendererLifecycle.update() (advances it every
+// frame via updateLoadingErase) — see WorldMapContext's loadingErase* fields for the animation
+// state this module owns.
 import * as PIXI from 'pixi.js-legacy';
 import type { WorldMapContext } from '../WorldMapContext';
 
-/** Seconds for the eraser stroke to sweep the whole sheet. */
-const ERASE_DURATION = 0.65;
+/** Seconds for the eraser stroke to sweep the whole sheet (2026-08-17: doubled from 0.65s
+ *  alongside the left→right → center-out direction change, so the slower reveal still reads
+ *  as deliberate rather than sluggish). */
+const ERASE_DURATION = 1.3;
 /** Rows the wipe boundary is jittered across — enough to read as an uneven hand stroke without
  *  costing more than a few extra drawRect calls per frame. */
 const ERASE_ROWS = 16;
@@ -109,11 +112,17 @@ function drawEraseFrame(ctx: WorldMapContext, dt: number): void {
   mask.clear();
   mask.beginFill(0xffffff);
   const rowH = h / ERASE_ROWS;
+  const halfW = w / 2;
   for (let i = 0; i < ERASE_ROWS; i++) {
     const wobble = Math.sin(t * 9 + i * 1.7) * w * 0.02 * staggerEnvelope;
-    const edge = Math.min(w, Math.max(0, w * eased + rowJitter(i, w) * staggerEnvelope + wobble));
-    // Visible (still-covered) strip runs from the row's erase front to the sheet's right edge.
-    if (edge < w) mask.drawRect(edge, i * rowH, w - edge, rowH);
+    // Half-width of the already-erased band growing outward from the centerline — 0 at t=0
+    // (nothing erased yet) up to halfW at t=1 (the whole row erased).
+    const half = Math.min(halfW, Math.max(0, halfW * eased + rowJitter(i, w) * staggerEnvelope + wobble));
+    const leftEdge = halfW - half; // shrinks from halfW to 0
+    const rightEdge = halfW + half; // grows from halfW to w
+    // Visible (still-covered) strips are whatever's left on either side of the erased center band.
+    if (leftEdge > 0) mask.drawRect(0, i * rowH, leftEdge, rowH);
+    if (rightEdge < w) mask.drawRect(rightEdge, i * rowH, w - rightEdge, rowH);
   }
   mask.endFill();
 
@@ -122,16 +131,21 @@ function drawEraseFrame(ctx: WorldMapContext, dt: number): void {
   redrawCrumbs(crumbs, ctx.loadingEraseCrumbData);
 }
 
-/** Spawns a few grey rubber flecks near the current wipe front while the stroke is actively
- *  rubbing (skipped right at the start/end, where there's no visible front yet/anymore). */
+/** Spawns a few grey rubber flecks near the two current wipe fronts (one sweeping toward the
+ *  left edge, one toward the right) while the stroke is actively rubbing (skipped right at the
+ *  start/end, where there's no visible front yet/anymore). */
 function spawnCrumbs(ctx: WorldMapContext, w: number, h: number, eased: number, dt: number): void {
   if (eased <= 0.02 || eased >= 0.98) return;
   const list = ctx.loadingEraseCrumbData;
+  const halfW = w / 2;
+  const leftFrontX = halfW * (1 - eased);
+  const rightFrontX = halfW * (1 + eased);
   ctx.loadingEraseCrumbSpawnAcc += dt * CRUMB_SPAWN_RATE;
   while (ctx.loadingEraseCrumbSpawnAcc >= 1 && list.length < MAX_CRUMBS) {
     ctx.loadingEraseCrumbSpawnAcc -= 1;
+    const frontX = Math.random() < 0.5 ? leftFrontX : rightFrontX;
     list.push({
-      x: w * eased + (Math.random() - 0.5) * w * 0.05,
+      x: frontX + (Math.random() - 0.5) * w * 0.05,
       y: Math.random() * h,
       vx: (Math.random() - 0.5) * 40,
       vy: 30 + Math.random() * 60,
