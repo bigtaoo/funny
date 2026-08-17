@@ -1,7 +1,7 @@
 // Cover for render/avatar.ts's portrait framing. Runs under the headless PIXI adapter
 // (vitest.ui.config.ts setupFiles) because buildAvatar builds real display objects.
 //
-// Two things are pinned here, both from the 2026-08-15 avatar pass:
+// Two things are pinned here, both from the 2026-08-15 avatar pass (plus skin busts added 2026-08-17):
 //  1. The fit re-runs when the art finishes loading. Avatar art loads async and nothing re-renders
 //     an avatar (it's a leaf builder, not a scene), so a build-time-only fit left every avatar
 //     scaled off the placeholder texture on a cold load and the circle cropped into the hair.
@@ -15,7 +15,8 @@ import { buildAvatar, makeAvatarId } from '../../src/render/avatar';
 import { getArtTexture } from '../../src/render/cardArt';
 import { PRESET_AVATAR_KEYS, PRESET_AVATAR_ART_URLS } from '../../src/render/presetAvatarArt';
 import { HERO_AVATAR_KEYS } from '../../src/render/heroAvatarArt';
-import { PRESET_HEAD_BOX, HERO_HEAD_BOX, type HeadBox } from '../../src/render/portraitHeadBox';
+import { SKIN_AVATAR_KEYS } from '../../src/render/skinAvatarArt';
+import { PRESET_HEAD_BOX, HERO_HEAD_BOX, SKIN_HEAD_BOX, type HeadBox } from '../../src/render/portraitHeadBox';
 
 /** Every bust portrait is 512×768; the harness stubs all *.png imports to one 1×1 data URI. */
 const SRC_W = 512, SRC_H = 768;
@@ -45,21 +46,28 @@ function completeLoad(): PIXI.Texture {
 
 describe('buildAvatar — portrait fit', () => {
   it('re-fits the portrait once its texture reports its real size', () => {
-    // Driven through the skin category on purpose: it draws full-body battle art, whose real
-    // dimensions vary per file, so the pre-load fit has to guess and the re-fit is observable.
-    // (Busts can't show it — all 26 are 512×768, which is exactly what the pre-load fit assumes.)
+    // Driven through the skin category on purpose: avatar_skin_shop_e1.png's master art came out a
+    // slightly different aspect ratio than the other 31 bust portraits (512×683, not 512×768), so
+    // the pre-load guess (avatar.ts's BUST_W/BUST_H, assumed for every category now that skin busts
+    // also carry a head box) disagrees with the real size enough to observe the re-fit. The other 31
+    // busts are exactly 512×768 — identical to the guess — so they can't show this on their own; the
+    // exhaustive framing test below covers their geometry instead.
     const tex = getArtTexture(PRESET_AVATAR_ART_URLS.gogetter); // same stub texture for every png here
     tex.baseTexture.valid = false; // cold-load state, whatever earlier tests left behind
 
-    const sprite = portraitSprite(buildAvatar(100, '', 7, makeAvatarId('skin', 'skin_shop_c1')));
+    const sprite = portraitSprite(buildAvatar(100, '', 7, makeAvatarId('skin', 'skin_shop_e1')));
     const beforeLoad = sprite.scale.x;
 
-    tex.baseTexture.setRealSize(571, 695); // units/infantry.png, the real art behind this skin
+    tex.baseTexture.setRealSize(512, 683); // avatar_skin_shop_e1.png's real dimensions
     tex.baseTexture.valid = true;
     tex.baseTexture.emit('loaded', tex.baseTexture);
 
-    // Disc diameter 96 (size - 4) × 0.92 portrait fill = an 88px circle, fitted by width.
-    expect(sprite.scale.x).toBeCloseTo(88 / 571, 4);
+    // Disc diameter 96 (size - 4) × 0.92 = an 88px circle; head span/width-cap fractions of 0.90/0.88
+    // mirror avatar.ts's HEAD_SPAN/HEAD_MAX_W.
+    const head = SKIN_HEAD_BOX.skin_shop_e1;
+    const byHeight = (0.9 * 88) / ((head.bottom - head.top) * 683);
+    const byWidth = (0.88 * 88) / (head.width * 512);
+    expect(sprite.scale.x).toBeCloseTo(Math.min(byHeight, byWidth), 4);
     expect(sprite.scale.x).not.toBeCloseTo(beforeLoad, 4);
   });
 
@@ -74,6 +82,7 @@ describe('buildAvatar — portrait fit', () => {
     const cases: Array<[string, string, HeadBox]> = [
       ...PRESET_AVATAR_KEYS.map((k) => ['preset', k, PRESET_HEAD_BOX[k]] as [string, string, HeadBox]),
       ...HERO_AVATAR_KEYS.map((k) => ['hero', k, HERO_HEAD_BOX[k]] as [string, string, HeadBox]),
+      ...SKIN_AVATAR_KEYS.map((k) => ['skin', k, SKIN_HEAD_BOX[k]] as [string, string, HeadBox]),
     ];
     completeLoad();
 
