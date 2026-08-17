@@ -15,7 +15,7 @@
 | `preset`（免费池） | 8 张线稿物件，4 个错位 | **全部替换**：20 张全新原创角色胸像（不是物件），notebook 涂鸦画风 |
 | `hero`（抽到角色解锁） | 直接裁战斗/卡面立绘，三套画风打架 | **6 张全新专属胸像**，"日常/便装"版本（非战斗立绘、非付费皮肤），画风延续该角色已定的人设规范 |
 | `skin`（拥有皮肤解锁） | 复用 `hero` 的图（bug：从未读 `SKIN_PORTRAIT_ART`） | **从已定稿的皮肤全身立绘裁一张专属胸像**（沿用皮肤配色，不重新出图），接线读 `SKIN_PORTRAIT_ART` |
-| `title`（称号解锁） | 独立勋章画风，语义自洽 | **不动** |
+| `title`（称号解锁） | 独立勋章画风，语义自洽 | ~~不动~~ → **2026-08-17 改拍板：整个分类从头像选择器删除**（见下方待办 §10）——称号本身仍可在 `TitlesScene` 装备/展示，只是不再作为头像候选 |
 | `equip`（装备解锁） | 装备图标当头像，语义弱 | **整个分类删除**——装备随平衡性调整持续增删，头像跟着补图是填不完的坑 |
 | `material`（材料解锁） | 3 种材料图标当头像，语义弱 | **整个分类删除**，理由同上 |
 
@@ -283,4 +283,5 @@ plain sky-blue collared top.
    - **`buildPortraitIcon` 分 `'bust'`/`'full'` 两种取景**：胸像 zoom 1.10、上移 4%（26 张实测，再多就会切到 `hype` 马尾/`tsundere` 双马尾）；全身立绘保持原来的顶部对齐。
    - **纹理异步加载后不重新适配的 bug**：贴图未加载完时 `tex.width` 还是占位尺寸，算出的缩放比真实值大一倍，而头像是叶子构建函数、没有任何东西会重画它——冷启动第一次进设置页看到的就是"糊在头发上的特写"。改为 `baseTexture.once('loaded')` 里原地重算（带 `destroyed` 守卫）。回归用例：`client/test/ui/avatarPortraitFit.ui.ts`（撤掉修复即失败，已验证非空跑）。
    - 遗留：`skin` 分类仍在用全身立绘（§三的皮肤胸像表还没做），放大后脸依旧很小——等 skin 立绘定稿后一并解决。
+10. **删除 `title` 分类**：✅ 2026-08-17——`client/src/scenes/SettingsScene/types.ts` 的 `AVATAR_TABS` 摘除 `'title'`（选择器只剩 preset/hero/skin 三个 tab）。**保留** `AvatarCategory` 类型本身的 `'title'` 分支、`avatar.ts` 的 `categoryIcon('title', ...)`、`avatarPicker.ts` 的 `pickerItems()` 的 `'title'` case——存量玩家若之前已把某个称号勋章设成头像（`avatarId` 形如 `title:xxx`），退役的只是"新选"入口，已选中的旧头像仍按原样正常渲染，不做迁移垫片（跟 §四-1 equip/material 那种"整类拒绝+服务端 403"不同，这里没有服务端语义变化，纯 UI 层收窄）。i18n key `avatarTab.title`/`avatarLocked.title` 暂未删（`AVATAR_TAB_LABEL_KEY`/`AVATAR_LOCKED_KEY` 仍是 `Record<AvatarCategory, ...>` 全量类型，删 key 需要连带改类型，收益不大，先留着）。
 9. **头部框归一化（取景二轮）**：✅ 2026-08-15——用户反馈"边框好多了，但头像依然偏小，截取到脖子/肩部更好"。量了 26 张的实际几何后确认单一全局常数走到头了（见上方 §渲染契约的"不要退回单一全局 zoom 常数"），改为按图归一化：新增 `art/scripts/measureAvatarHeadBox.mjs`（sharp 逐行扫墨迹：发顶=首个有实质内容的行，颈线=头最宽行与肩部张开之间的最窄行，头宽=头部最宽行）+ `client/src/render/portraitHeadBox.ts`（26 项测量表）。`buildPortraitIcon` 改吃 `HeadBox | null`，null 即全身立绘的老取景。四档参数（头占圆 0.86/0.90/0.95 × 头宽上限）在 Canvas2D 对照页上比过，取 top 0.05 / span 0.90 / maxW 0.88。回归用例 `client/test/ui/avatarPortraitFit.ui.ts` 扩到 3 条，其中一条遍历全部 26 张断言"发顶在圈内、裁切落到颈线、画面铺满圆宽"——新增胸像忘了测头部框会被它抓住。真实渲染路径复核：Playwright + `__nwE2E.views.showSettings`，preset（含滚动后半屏）/hero/skin 三个页签均已截图确认。

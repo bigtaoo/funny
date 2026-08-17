@@ -70,7 +70,7 @@ export interface AvatarPickerItem {
   locked: boolean;
 }
 
-export const AVATAR_TABS: AvatarCategory[] = ['preset', 'title', 'hero', 'skin'];
+export const AVATAR_TABS: AvatarCategory[] = ['preset', 'hero', 'skin'];
 export const AVATAR_TAB_LABEL_KEY: Record<AvatarCategory, TranslationKey> = {
   preset: 'settings.avatarTab.preset',
   title: 'settings.avatarTab.title',
