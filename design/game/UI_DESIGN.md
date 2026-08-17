@@ -1070,3 +1070,21 @@ const rowY  = isPortrait
 顺带记一个**跨文件的巧合不变量**：`card.<id>.desc` 只有 `CardScene/detail.ts` 的技能行会读，条件是 `faction === 'anna' && skillGrowth 有非零值`。三个涛方角色是 `NO_SKILL`，所以它们没有 `.desc` 不是遗漏——但这条"够用"是 `cardDefs.ts` 和 `zh.ts` 两个文件各存一半凑出来的，给涛方角色配上技能曲线的那天就会碎。该族的 key 集合现在按渲染器的原条件生成，那天会直接报错要 desc。`card.<id>.lore` 反过来是**必需**的：`detail.ts` 把它直接喂给卡背翻面，没有兜底（`CardCodexScene` 的 `storyText()` 有兜底，容易看岔）。
 
 **验证**：两个新断言都用真删除验过——摘掉 `card.max.desc` 和 `slg.city.durabilityBreached.body` 后如期报错，且消息带上了发信文件路径（`(sent by worldsvc/src/combatSiege/helpers.ts)`）。`tsc --noEmit` 双 config + `vitest run`（163 文件 / 1363 例）+ `test:ui`（188 文件 / 1665 例）全绿。另外量过但**今天没抓到东西**、故未加的：en/de 混入 CJK（0 处）、空字符串值（0 处）。
+
+## 34. LeaderboardScene 竖屏行改两行 + 列宽钳制（2026-08-16）
+
+**问题（i18n 审计顺带发现，非用户报障）**：榜单行竖屏下**必然**把称号标签压进段位列。默认名 `Player1234` + 任意称号即可复现，**与语言无关**——zh `「天梯」` 压过 58px，de `「Rangliste」` 压过 182px；修长机型（1080×2160）为 76px / 200px。横屏完全正常（富余 500+px），所以一直没被发现。
+
+**根因：一行里混用了两套标尺。** 字号从 `rowH` 推（`rowH = h*0.065`，跟屏幕**高**走），列位置从 `listW` 推（`0.18w` / `0.68w`，跟屏幕**宽**走）。横屏 16:9 两者比例接近，看不出问题；竖屏 ≈1:2，高度驱动的字号相对宽度驱动的列格严重超宽。`designWidth` 竖屏恒为 1080 而 `designHeight ≥1920` 且随机型变高，所以**屏幕越修长越糟**。称号长度只是放大系数，不是原因（name 余量 zh 8 字符 / de 4 字符，而默认名就 10 字符）。
+
+**修复**（用户在两行 / 字号改跟宽度 / 只记录 三个方案里拍板选两行）：
+
+- 竖屏行改**两行**：第一行 name（独占整行宽度），第二行 称号 / 段位 / ELO。`rowH` 竖屏 `h*0.065 → h*0.095`；滚动、命中矩形、`scrollMax` 全部由 `this.rowH` 推导，自动跟随，无需另改。横屏保持单行不变。
+- 行几何抽成纯函数 `leaderboardRowGeom(w, rowH, twoLine)` + `fitNameAndTitle(nameW, titleW, avail, gap)`，导出供测试（同 `badgeYBelowContent` 的做法）。两条路径都给 name+称号块一个硬右边界 `contentRight` 并钳进去——**超长玩家名再也压不进段位列**。这层防御值得有：服务端没找到 `displayName` 的长度校验。常见情形（放得下时）`scale` 恒为 1，像素级不变。
+- 称号短标签 en/de 改短到 ≤4 字符（见 `TITLE_DESIGN.md` §6：`Conqueror→Conq`、`Rangliste→Rang`、`Champ/Top 3→Top1/Top3` 等），从源头符合预算。选**改文案**而非运行时 `slice(0,4)`，因为 `Rangliste→Rang` 是人挑的，硬切出来的观感差。
+
+**修复后余量**（listW=972）：竖屏 name 到边界富余 169px（17 字符才开始钳制，原先 8）、称号富余 268–288px、段位（`Grandmaster` 最宽 ±97）右边缘 700 < ELO 左边缘 851。横屏 name 富余 660px。
+
+**验证**：`npx tsc --noEmit` 双 config 全绿；`npx vitest run`（164 文件 / 1398 例）+ `npm run test:ui`（188 文件 / 1665 例，含既有 `leaderboardScroll.ui.ts`）全绿；`build:web` 通过。新增 [`client/test/leaderboardRowGeometry.test.ts`](../../client/test/leaderboardRowGeometry.test.ts)（35 例），含一条**旧几何见证测试**——用修复前的公式重算并断言它确实会撞，保证这条 spec 不是空断言。
+
+> ⚠️ **未做像素级截图核对**：Browser pane 在本环境仍不合成帧（同 §23/§26–§32 的环境限制）。替代做法是把两个字体假设换成**真实测量值**——起 dev server 后在真 Chromium 里用 canvas `measureText` 量 `monospace`（ASCII advance **0.5498em**，`「」`/CJK 各 **1.0em**；PIXI 的 TextMetrics 底层就是这个 API），代回从源码读到的精确布局常数，同 §32 用真实缩放公式替代截图的处理。**两行版式的观感（行高、两行的疏密、榜单一屏行数由 11 降到约 8）需要你在真机竖屏上看一眼再定档**——算术只能保证不重叠，保证不了好看。
