@@ -10,7 +10,7 @@
  * unit's real attack interval, however long or short the authored clip is.
  * Other clips (walk/idle/death) are left at their natural pace.
  *
- * Run with: npm run test:render
+ * Run with: npm test — the default suite's include covers every *.test.ts under test/.
  */
 
 import { describe, it, expect, vi } from 'vitest';

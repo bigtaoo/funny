@@ -1,6 +1,6 @@
 // Unit-style coverage backfill for src/skin.ts (2026-08-14 test-coverage task). escrowSkin/grantSkin's
-// happy paths are already exercised end-to-end by test/skin.e2e.test.ts, and sellSkinToSystem's by the
-// same file's second describe block — but that file imports `buildApp` from '../dist/app.js': vitest's
+// happy paths are already exercised end-to-end by test/skin.e2e.test.ts — but that file imports
+// `buildApp` from '../dist/app.js': vitest's
 // v8 coverage provider only source-map-attributes execution of modules it itself loaded via its Vite
 // transform, so running the *compiled* dist/*.js through Node's own ESM loader records zero coverage
 // against src/*.ts even though the same logic ran. This file imports directly from '../src/...' so the
@@ -8,9 +8,9 @@
 // none of that attributes to src either from the other file), and adds the branches skin.e2e.test.ts's
 // scenarios don't reach: assembleSkinCounts's legacy self-heal + best-effort-catch, the "concurrently
 // escrowed" inner-replay race, grantSkin's already-instance / already-in-inventory no-write branches,
-// and every rev-conflict/exhausted-retry / duplicate-key race across all three functions.
+// and every rev-conflict/exhausted-retry / duplicate-key race across both functions.
 //
-// Real Mongo (rs0): this module's escrow/grant/sell flows all use plain findOne/updateOne/
+// Real Mongo (rs0): this module's escrow/grant flows all use plain findOne/updateOne/
 // findOneAndUpdate/insertOne/deleteOne — FakeCollection could handle the happy paths, but several rare
 // races below are exercised by deterministically wrapping one real collection method (same trick as
 // cards-fuse-unit.test.ts / economy-service-unit.test.ts), which reads more naturally against the same
@@ -21,7 +21,7 @@ import { createMongo, type JwtConfig, type MongoHandle, type Collections, type S
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import {
-  toInstanceDoc, countSkinInstances, assembleSkinCounts, escrowSkin, grantSkin, sellSkinToSystem,
+  toInstanceDoc, countSkinInstances, assembleSkinCounts, escrowSkin, grantSkin,
 } from '../src/skin.js';
 import type { CommercialClient } from '../src/commercialClient.js';
 
@@ -85,8 +85,6 @@ describe.skipIf(!mongo)('skin.ts (src import, coverage backfill)', () => {
     app.inject({ method: 'POST', url: '/internal/skins/escrow', headers: { 'x-internal-key': IK }, payload: { accountId: account, skinId, orderId } });
   const grantHttp = (skinId: string, orderId: string, account = accountId) =>
     app.inject({ method: 'POST', url: '/internal/skins/grant', headers: { 'x-internal-key': IK }, payload: { accountId: account, skinId, orderId } });
-  const sellHttp = (skinId: string, idempotencyKey: string) =>
-    app.inject({ method: 'POST', url: '/skins/sell', headers: auth(), payload: { skinId, idempotencyKey } });
 
   beforeEach(async () => {
     await m.db.dropDatabase();
@@ -353,144 +351,18 @@ describe.skipIf(!mongo)('skin.ts (src import, coverage backfill)', () => {
     });
   });
 
-  // ── sellSkinToSystem ───────────────────────────────────────────────────────────────────────────
-  describe('sellSkinToSystem', () => {
-    it('missing skinId -> BAD_REQUEST', async () => {
-      const res = await sellSkinToSystem(m.collections, comm, now, accountId, '', 'k1');
-      expect(res).toMatchObject({ code: 'BAD_REQUEST' });
-    });
-
-    it('missing idempotencyKey -> BAD_REQUEST', async () => {
-      const res = await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_l1', '');
-      expect(res).toMatchObject({ code: 'BAD_REQUEST' });
-    });
-
-    it('commercial unavailable -> NOT_IMPLEMENTED', async () => {
-      const unavailable = makeFakeCommercialWithWallet(false);
-      const res = await sellSkinToSystem(m.collections, unavailable, now, accountId, 'skin_l1', 'k-unavail');
-      expect(res).toMatchObject({ code: 'NOT_IMPLEMENTED' });
-    });
-
-    it('commercial unavailable, reachable via HTTP (mapped to 501, not the 503 ensureCommercial gate)', async () => {
-      const app2 = await buildApp({ cols: m.collections, jwt, internalKey: IK, commercial: makeFakeCommercialWithWallet(false) });
-      const r = await app2.inject({ method: 'POST', url: '/skins/sell', headers: auth(), payload: { skinId: 'skin_l1', idempotencyKey: 'k-http-unavail' } });
-      expect(r.statusCode).toBe(501);
-      await app2.close();
-    });
-
-    it('save not found -> NOT_FOUND', async () => {
-      const res = await sellSkinToSystem(m.collections, comm, now, 'ghost-account-sell', 'skin_l1', 'k-ghost-acct');
-      expect(res).toMatchObject({ code: 'NOT_FOUND' });
-    });
-
-    it('not owned -> SKIN_NOT_FOUND', async () => {
-      await seedSkins([]);
-      const res = await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_ghost', 'k-notowned');
-      expect(res).toMatchObject({ code: 'SKIN_NOT_FOUND' });
-    });
-
-    it('equipped, only copy -> SKIN_IN_USE, no coins credited', async () => {
-      await seedSkins(['skin_l1']);
-      await seedSkinInstances('skin_l1', 1);
-      await seedEquipped({ notebook: 'skin_l1' });
-      const res = await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_l1', 'k-worn');
-      expect(res).toMatchObject({ code: 'SKIN_IN_USE' });
-      expect(comm.coins.get(accountId) ?? 0).toBe(0);
-    });
-
-    it('happy path: sells a surplus legendary instance for DUPE_REFUND_COINS.legendary (1500)', async () => {
+  // ── POST /skins/sell is gone (2026-08-15) ──────────────────────────────────────────────────────
+  // The "sell one surplus skin to the system for DUPE_REFUND_COINS" shortcut was removed end-to-end
+  // (client button + route + sellSkinToSystem): the duplicate-refund table it reused pays far below a
+  // skin's market value, so it only ever destroyed value by accident. A surplus skin's one outlet is
+  // the auction house (escrowSkin, above). Guards against the route quietly coming back.
+  describe('removed sell-to-system route', () => {
+    it('POST /skins/sell is no longer registered -> 404', async () => {
       await seedSkins(['skin_l1']);
       await seedSkinInstances('skin_l1', 2);
-      const res = await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_l1', 'k-sell-1');
-      expect('error' in res).toBe(false);
-      expect((res as { credited: number }).credited).toBe(1500);
-      expect(await countSkinInstances(m.collections, accountId, 'skin_l1')).toBe(1);
-      expect((await readSave()).inventory.skins).toContain('skin_l1');
-    });
-
-    it('selling the only copy removes it from inventory.skins entirely', async () => {
-      await seedSkins(['skin_l1']);
-      await seedSkinInstances('skin_l1', 1);
-      await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_l1', 'k-sell-solo');
-      expect((await readSave()).inventory.skins).not.toContain('skin_l1');
-    });
-
-    it('rarity-scaled payout: unknown/common-rarity item -> DUPE_REFUND_COINS.common (10)', async () => {
-      await seedSkins(['skin_totally_unknown_rarity']);
-      await seedSkinInstances('skin_totally_unknown_rarity', 2);
-      const res = await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_totally_unknown_rarity', 'k-sell-common');
-      expect((res as { credited: number }).credited).toBe(10);
-    });
-
-    it('idempotent: replaying the same key (already committed) re-credits nothing extra', async () => {
-      await seedSkins(['skin_l1']);
-      await seedSkinInstances('skin_l1', 2);
-      const r1 = await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_l1', 'k-sell-dup');
-      const r2 = await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_l1', 'k-sell-dup');
-      expect((r2 as { credited: number }).credited).toBe((r1 as { credited: number }).credited);
-      expect(comm.coins.get(accountId)).toBe(1500); // credited exactly once
-      expect(await countSkinInstances(m.collections, accountId, 'skin_l1')).toBe(1); // removed exactly once
-    });
-
-    it('replay while a sell is still mid-flight (committed:false) -> REV_CONFLICT, distinct from the committed-replay path', async () => {
-      await m.collections.equipmentIdem.insertOne({
-        _id: 'k-inflight', accountId, op: 'skin_sell', result: { skinId: 'skin_l1', credited: 1500 }, committed: false,
-        expireAt: new Date(Date.now() + 1_000_000),
-      });
-      const res = await sellSkinToSystem(m.collections, comm, now, accountId, 'skin_l1', 'k-inflight');
-      expect(res).toMatchObject({ code: 'REV_CONFLICT' });
-      expect(comm.coins.get(accountId) ?? 0).toBe(0);
-    });
-
-    it('genuine insertOne duplicate-key race on the idem claim -> REV_CONFLICT (deterministic via a hidden pre-existing doc)', async () => {
-      await seedSkins(['skin_l1']);
-      await seedSkinInstances('skin_l1', 2);
-      const key = 'k-race-insert';
-      // Pre-insert the claim doc directly (bypassing the top replay check) so the function's own
-      // `insertOne` call — reached only because its *own* top-of-function findOne is hidden below —
-      // hits a genuine duplicate-key error, exercising the "claim raced with a concurrent sell" branch.
-      await m.collections.equipmentIdem.insertOne({
-        _id: key, accountId, op: 'skin_sell', result: { skinId: 'skin_l1', credited: 1500 }, committed: false,
-        expireAt: new Date(Date.now() + 1_000_000),
-      });
-      const real = m.collections.equipmentIdem;
-      const wrapped = {
-        findOne: async () => null, // hides the pre-existing doc from both of sellSkinToSystem's own replay checks
-        insertOne: real.insertOne.bind(real),
-        updateOne: real.updateOne.bind(real),
-      } as typeof real;
-      const wrappedCols: Collections = { ...m.collections, equipmentIdem: wrapped };
-      const res = await sellSkinToSystem(wrappedCols, comm, now, accountId, 'skin_l1', key);
-      expect(res).toMatchObject({ code: 'REV_CONFLICT' });
-      expect((res as { error: string }).error).toMatch(/already in progress/);
-    });
-
-    it('save disappears mid rev-retry-loop -> still commits removal + credits coins (self-healing mirror)', async () => {
-      await seedSkins(['skin_l1']);
-      await seedSkinInstances('skin_l1', 1);
-      const real = m.collections.saves;
-      let calls = 0;
-      const wrapped = {
-        findOne: async (q: Record<string, unknown>) => {
-          calls++;
-          return calls <= 2 ? real.findOne(q) : null; // doc0 check + getOrCreateSave-inside-final-return both need a hit; 3rd (loop) misses
-        },
-        findOneAndUpdate: real.findOneAndUpdate.bind(real),
-        updateOne: real.updateOne.bind(real),
-      } as typeof real;
-      const wrappedCols: Collections = { ...m.collections, saves: wrapped };
-      const res = await sellSkinToSystem(wrappedCols, comm, now, accountId, 'skin_l1', 'k-save-gone');
-      expect('error' in res).toBe(false);
-      expect((res as { credited: number }).credited).toBe(1500);
-      expect(comm.coins.get(accountId)).toBe(1500);
-    });
-
-    it('reachable via HTTP too (happy path)', async () => {
-      await seedSkins(['skin_l1']);
-      await seedSkinInstances('skin_l1', 2);
-      const r = body(await sellHttp('skin_l1', 'k-http-sell'));
-      expect(r.ok).toBe(true);
-      expect(r.data.credited).toBe(1500);
+      const r = await app.inject({ method: 'POST', url: '/skins/sell', headers: auth(), payload: { skinId: 'skin_l1', idempotencyKey: 'k-gone' } });
+      expect(r.statusCode).toBe(404);
+      expect(await countSkinInstances(m.collections, accountId, 'skin_l1')).toBe(2);
     });
   });
 });

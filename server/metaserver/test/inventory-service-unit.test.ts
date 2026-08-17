@@ -28,7 +28,7 @@ import { buildApp } from '../src/app.js';
 import { seedEquipment } from './helpers/equipment.js';
 import { seedCard, readCardInv } from './helpers/cards.js';
 
-/** Minimal fake commercial client: getWallet/spend/grant are real (enhance/reforge/sellSkin touch coins). */
+/** Minimal fake commercial client: getWallet/spend/grant are real (enhance/reforge touch coins). */
 function makeFakeCommercial(): CommercialClient & { setCoins(id: string, n: number): void; bal(id: string): number } {
   const coins = new Map<string, number>();
   const spent = new Set<string>();
@@ -99,8 +99,6 @@ describe.skipIf(!mongo)('InventoryService handlers (src import, coverage backfil
     app.inject({ method: 'POST', url: '/cards/lock', headers: auth(), payload: { cardInstanceId } });
   const unlock = (cardInstanceId: string) =>
     app.inject({ method: 'POST', url: '/cards/unlock', headers: auth(), payload: { cardInstanceId } });
-  const sellSkin = (skinId: string, idempotencyKey: string) =>
-    app.inject({ method: 'POST', url: '/skins/sell', headers: auth(), payload: { skinId, idempotencyKey } });
 
   const seedMaterials = (mats: Record<string, number>) =>
     m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.materials': mats } });
@@ -277,28 +275,6 @@ describe.skipIf(!mongo)('InventoryService handlers (src import, coverage backfil
       const res = await unlock('ghost-card');
       expect(res.statusCode).toBe(404);
       expect(body(res).error.code).toBe('CARD_NOT_FOUND');
-    });
-  });
-
-  // ── POST /skins/sell (sellSkinToSystem) ───────────────────────────────────────────────────
-  describe('POST /skins/sell', () => {
-    it('happy path: sells a surplus skin instance for coins', async () => {
-      await m.collections.saves.updateOne({ _id: accountId }, { $set: { 'save.inventory.skins': ['skin_l1'] } });
-      await m.collections.skinInstances.insertMany([
-        { _id: 'sk_1', accountId, skinId: 'skin_l1', sourceType: 'test' },
-        { _id: 'sk_2', accountId, skinId: 'skin_l1', sourceType: 'test' },
-      ]);
-      const before = comm.bal(accountId);
-      const r = body(await sellSkin('skin_l1', 'ik-sell-1'));
-      expect(r.ok).toBe(true);
-      expect(r.data.credited).toBeGreaterThan(0);
-      expect(comm.bal(accountId)).toBe(before + r.data.credited);
-    });
-
-    it('skin not owned -> 404 SKIN_NOT_FOUND', async () => {
-      const res = await sellSkin('skin_never_owned', 'ik-sell-bad');
-      expect(res.statusCode).toBe(404);
-      expect(body(res).error.code).toBe('SKIN_NOT_FOUND');
     });
   });
 });

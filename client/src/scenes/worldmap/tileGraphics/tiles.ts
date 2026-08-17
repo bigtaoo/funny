@@ -13,6 +13,22 @@ import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared';
 import { drawResMotif } from './resources';
 import { drawHpBar } from './primitives';
 
+// Player-built structure sprite heights, as a fraction of the tile pitch `tp` (2026-08-15,
+// "瞭望塔和拒马的表现太奇怪了，看起来乱糟糟的").
+//
+// Sizing rule for anything a player can build on MANY ADJACENT tiles: the sprite's on-screen
+// WIDTH (targetH × the packed frame's aspect) must stay near the x-distance between two
+// neighbouring tiles' anchors, which under the 2:1 iso projection is only tp/2 — not the
+// diamond's full tp width. Landmark terrain (building_keep/_stronghold at tp*1.3) may exceed
+// that because it's one-per-region; a watchtower/blocker band cannot.
+//   watchtower 256×198 (1.29:1) → 0.40 × 1.29 ≈ 0.52 tp wide
+//   blocker    256×88  (2.91:1) → 0.22 × 2.91 ≈ 0.64 tp wide
+// The old values (0.95 / 0.50 → 1.23 tp / 1.45 tp wide, i.e. 2.5–2.9× the neighbour spacing)
+// made every tower/barricade cover ~3 tiles' worth of its neighbours, so a defensive line
+// smeared into one unreadable hatch blob instead of N countable buildings.
+const WATCHTOWER_H = 0.40;
+const BLOCKER_H = 0.22;
+
 export function drawTileL1(
   g: PIXI.Graphics, tile: WorldTileView | null,
   fill: number, owner: number | null, fogged: boolean, tp: number, isAnchor: boolean,
@@ -183,9 +199,8 @@ export function drawTileL1(
     // standing on the tile rather than poking past its edge.
     // 2026-08-09: re-shot from a front-elevation drawing to a wide-legged 3/4-iso one
     // (design/product/slg-building-art.md) so it reads as filling the tile instead of a
-    // thin spindly spike — packed frame is 256×198 (~1.29:1), targetH unchanged from the
-    // old narrower art since the new aspect alone now gives it a building_keep-like width.
-    if (!placeBuildingSprite(g, 'icon_watchtower', tp, hh, tp * 0.95, false)) {
+    // thin spindly spike — packed frame is 256×198 (~1.29:1).
+    if (!placeBuildingSprite(g, 'icon_watchtower', tp, hh, tp * WATCHTOWER_H, false)) {
       const tcx = 0;
       const baseY = hh - 4;
       const towerW = Math.max(4, tp * 0.18);
@@ -231,12 +246,11 @@ export function drawTileL1(
       g.beginFill(0x3a2a18, 0.9); // arrow slit
       g.drawRect(-1, baseY - towerH * 0.62, 2, towerH * 0.3);
       g.endFill();
-    } else if (!placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * 0.5, false)) {
+    } else if (!placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * BLOCKER_H, false)) {
       // Geometric fallback for whenever the `icon_blocker` atlas frame isn't ready/decoded yet
       // (see icon_watchtower just above for the same pattern). Art landed 2026-08-09 — a wide
       // row of crossed sharpened stakes (design/product/slg-building-art.md); packed frame is
-      // 256×88 (~2.9:1), so at targetH tp*0.5 it spans ~1.45×tp on screen, ~73% of the diamond's
-      // full width — reads as a barricade stretching across the tile, not a small centered icon.
+      // 256×88 (~2.9:1).
       const w = Math.max(6, tp * 0.5);
       const h = Math.max(5, tp * 0.22);
       g.lineStyle(2, col, 0.95);

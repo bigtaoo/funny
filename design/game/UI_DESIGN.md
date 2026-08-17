@@ -143,7 +143,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > **返回按钮放大 1.5x + 标题字号统一（2026-07-12）**：
 > - **返回按钮放大**：`backSize(h)` 从 `h*0.026` 改为 `h*0.039`（1.5×），驱动 `drawSceneHeader`/`drawFloatingBackButton` 两条路径，全场景（含悬浮版）一次性放大，无需逐场景改。
 > - **标题字号统一**：此前 5 个场景显式传 `titleSize` 覆盖默认值——`Settings`/`Titles` 0.042、`Room`/`Friends` 0.04、`LevelPrep` 0.032——跨页字号不一致。本次删掉这 5 处覆盖，全部回落默认 `h*0.034`，与 Shop/Gacha/Equipment 等场景完全一致。
-> - **EventScene 补迁**：`EventScene` 此前完全绕开 `SceneHeader`，自绘标题（`h*0.045`）与返回文字（`h*0.032`，位置 `x=w*0.05,y=h*0.04`，私有 i18n key `event.back`），是唯一未接入共享组件的二级场景。本次改用 `drawSceneHeader(this.container, w, h, t('event.title'))`，回退按钮/标题/栏高与其余场景完全一致；`event.back` i18n key 不再使用（未删，供未来复用）。
+> - **EventScene 补迁**：`EventScene` 此前完全绕开 `SceneHeader`，自绘标题（`h*0.045`）与返回文字（`h*0.032`，位置 `x=w*0.05,y=h*0.04`，私有 i18n key `event.back`），是唯一未接入共享组件的二级场景。本次改用 `drawSceneHeader(this.container, w, h, t('event.title'))`，回退按钮/标题/栏高与其余场景完全一致；`event.back` i18n key 不再使用（**2026-08-16 审计已删**，见 §33——"供未来复用"三周内没人复用，返回文案统一走 `common.back`）。
 > - **未动**：Card/Equipment 的 `drawHeaderCurrency` 紧凑 scale（`100/headerH`，见上「栏高统一」条目）——两场景互为对开页且有明确的溢出规避理由，不属于本次"跨页不一致"的范畴，维持现状。
 
 ---
@@ -1036,3 +1036,55 @@ const rowY  = isPortrait
 | 竖屏 iPad 类 834×1194 | ≈143px | 14.6px | ≈42.9px |
 
 **验证**：`npx tsc --noEmit` 全绿；`npm run test:ui`（156 文件/1422 例）+ `npx vitest run`（主单测 160 文件/1275 例）全绿，无回归；`npm run build:web` 生产构建通过。新增 `client/test/ui/sceneHeaderPortraitContentScale.ui.ts`（5 例）：横屏/紧凑栏字号不变、竖屏高栏字号按 `Math.round(headerH*0.30)` 精确放大、`titleSize` 覆写仍优先、返回按钮字号同步放大（不只是标题）、`drawFloatingBackButton` 与 `drawSceneHeader` 在同一屏幕高度下返回按钮大小一致——`git stash` 临时回退 `SceneHeader.ts` 复跑，5 例里 2 例如预期报错（`expected 42 to be greater than 42`），确认不是空断言。真实浏览器截图：本次会话 Browser 面板同样报"pane 未显示、无法合成帧"（同 §23/§26/§27/§28/§29/§30/§31 的环境限制，非本次改动引入），改用上表的真实缩放公式算值替代像素级截图核对。金币簇（右上角）的"钉死绝对大小"例外本次未动，如需一并放大需先确认竖屏下跟标题是否会挤在一起。
+
+## 33. i18n 死 key 审计：删掉 139 个（1595 → 1456），补一条防回归的 spec（2026-08-16）
+
+**背景**：2026-08-15 删皮肤"卖给系统"功能（`f258e27b`）时顺手扫了一遍 `zh.ts`，发现 1595 个 key 里有一大批全仓库搜不到引用。当时的扫描很粗（只匹配字面量、靠前缀排除模板拼接），~295 个候选里混了大量误报，没有当场删。本次做完整审计。
+
+**为什么这类垃圾会攒下来**：三个 locale 的 **key 集合**是编译期强制的（`en.ts`/`de.ts` 是 `Record<TranslationKey, string>`），15.08 又补了 `i18n-placeholder-parity.test.ts` 锁住字符串**里面**的 `{param}`；但"这个 key 还有没有人用"没有任何机制管——没人引用的 key 照样 `tsc` 全绿、照样三语齐全，可以活到天荒地老。删掉的多半是**场景重做后留下的整块**：`prep.*`（12 个）和 `progression.*`（10 个）是 `LevelPrepScene` 早已不再绘制的单位升级/合成面板；~28 个 `world.*` 是世界地图重做前的行军/占领弹窗文案；十几个各场景私有的 `*.back`，是返回按钮统一到 `SceneHeader`（§7 / 上文 2026-07-05 那条）共用 `common.back` 之后剩下的。
+
+**审计方法（两轮，第二轮才是关键）**：
+
+1. **第一轮·扫字面量**：把 `client/` + `server/` + `tools/` 全部 `.ts/.js/.json` 里的引号字符串抽成一个集合，逐 key 查在不在。两个坑：① 模板串内部的 `${t('roster.capacity')}` 必须算引用（按整串 backtick 取会把里面的 `'...'` 吞掉，导致 `roster.*` 等一批被误判成死 key）；② 反过来，`t(\`card.${defId}.name\`)` 这类动态拼 key 的调用点，必须把能拼出来的 key 也算活的。得到 125 个候选。
+2. **第二轮·给每个"洞"定值域**：第一轮对动态模板的处理是"前缀放行"，而这正是漏网的原因——`client/test/ui/auctionMaterialNames.ui.ts` 里有个 `t(\`auction.${mat}\`)`（而且它是条**反向断言**，专门断言这些 key 不存在），按前缀放行就等于替 `auction.back`/`auction.seller`/`auction.tax` 全体作保，而 `mat` 只可能是 `scrap|lead|binding`。把每个动态调用点的洞对上真实值域（card/equip defId、`BUILDING_KEYS`、`ACHIEVEMENTS` 的 id、成员角色枚举…）逐个核，又多挖出 14 个：`achievement.back`/`reward`、`family.back`/`myFamily`/`sendMsg`/`changeEmblem`/`err.leaderCannotLeave`、`auction.back`/`seller`/`expires`/`tax`/`auctionTag`/`noBid`/`err.selfBuy`。
+
+**留下没删的**（116 个只靠动态拼接引用，扫描器看不见）：`card.<defId>.{name,desc,lore}`、`equip.<defId>.name`、`affix.<id>`、`rank.*`、`rarity.*`、`city.bld.*`、`achievement.ach.*`、`tutorial.o<n>/beat<i>.*`、`title.slg.*` 等。两个特例值得单记：
+- **`achievement.category.collection`**：`AchievementScene.CATEGORY_ORDER` 里有 `'collection'`，但服务端 `ACHIEVEMENTS` 目前没有一条属于该分类，而空分类会被自动隐藏——**今天确实到不了**。仍然保留：分类是 `AchCategory` 类型的正式成员，链路整条通着，服务端加一条成就页签当场就出来。
+- **`slg.settle.body` / `family.mail.rejected.body`**：服务端发系统邮件时写成 `key|rank=1|nations=2` 这种带参形式（`FriendsScene/mail.ts` 的 `mailText()` 先按 `|` 切开再 `t()`），所以两边都搜不到裸字面量。
+
+**防回归 spec**：新增 [`client/test/i18n-no-dead-keys.test.ts`](../../client/test/i18n-no-dead-keys.test.ts)——扫 `client/src` + `client/test` + `server`，断言 `zh.ts` 每个 key 要么有字面量引用，要么被 `DYNAMIC_FAMILIES` 表里某一条**声明过的动态族**生成。刻意**不做**成"允许的前缀列表"：上面第二轮挖出来的那 14 个就是被前缀放行盖住的，前缀白名单等于把这次审计的主要发现重新埋回去。每条族记的是**形状 + 值域**，值域能从真常量拿的就直接 import（`CARD_DEFS`/`EQUIPMENT_DEFS`/`ACHIEVEMENTS`/`BUILDING_KEYS`/`AFFIX_FIELD_MAP`/`RANK_TIERS`——加张卡、加栋建筑不用动这个文件），只有槽位/稀有度/成员角色这类闭合小枚举是手写的，而且新增成员时这条 spec 报错正是想要的效果：说明少了一份翻译。扫描刻意宽松（注释里提到 key 也算引用），偏向"少删"而不是"敢删"。
+
+**验证**：`npx tsc --noEmit` + `tsc --noEmit -p tsconfig.test.json` 全绿；`npx vitest run`（160 文件 / 1339 例）+ `npm run test:ui`（186 文件 / 1651 例）全绿；`npm run build:web` 生产构建通过。新 spec 有效性用真失败验证过：往三个 locale 塞一个 `zzz.unused.probe` 后如期报 `expected [ 'zzz.unused.probe' ] to deeply equal []`，删掉后恢复绿。无可见改动（纯删无引用文案），未起 dev server 截图。
+
+### 33.1 反向补漏：服务端选 key、客户端没翻译（2026-08-16 同日追加）
+
+§33 那条 spec 管的是"key 没人用"，反过来"有人用、字典里没有"当时没管。补了两条，各抓到一处真问题。
+
+**① 系统邮件的 key 是服务端选的，两边没人对账**——`sendSystemMail(..., { subject: 'card.mail.rosterFull.subject' })`。服务端编译过、e2e 过（断言的就是 key 字符串本身）、客户端也编译过，错配只在玩家收件箱里显形：`mailText()` 发现 `t()` 原样吐回 key 就退回显示原串，所以不崩，只是**标题直接写着 `slg.city.durabilityBreached.subject`**。新 spec [`client/test/i18n-server-mail-keys.test.ts`](../../client/test/i18n-server-mail-keys.test.ts) 扫 `server/**/src` 里 `subject:`/`body:` 的字面量（单引号和反引号两种写法都收，`|param=` 先切掉），断言三语都有。当场抓到两对从没翻译过的：
+
+- `slg.city.durabilityBreached.{subject,body}`（`worldsvc/src/combatSiege/helpers.ts` 两处，配套 e2e 两条）——就是 §D-CITY-8 里那封"此前玩家对该结果**没有任何通知**"专门补的信，结果通知本身发出去是生 key。两个分支（找得到落点强制迁城 / 找不到连主城一起没）共用同一对 key，所以正文不写死迁去哪了。
+- `mail.season.settle.{subject,body}`（`metaserver/src/ladderSeason.ts`，PvP 天梯赛季结算，金币走附件）——写成**反引号**无洞模板串，只匹配单引号的临时 grep 会漏，spec 的正则两种都收才抓到。注意跟大区 SLG 赛季的 `slg.settle.*` 是两套。
+
+**② 动态族的正向覆盖**——§33 的 `DYNAMIC_FAMILIES` 原本只用来解释"这个 key 谁在拼"，现在同一张表加一维 `coverage` 跑第二个方向：`'complete'` 的族，其值域能拼出的每个 key 都必须有翻译（加卡/加建筑/加成就忘了写文案 → 当场红，即 `s_siege` 那个 bug 的反向）。18 个族标 complete，2 个标 partial 且都写了理由：`affix.*`（`AFFIX_FIELD_MAP` 里 6 个前向兼容 id 没有 roll 表能产出，可产出的子集由 `i18n.test.ts` 按 `MAIN_AFFIX_BY_SLOT`+`SUB_AFFIX_POOL` 单独钉死）、`tutorial.*`（`.landscape`/`.done` 变体由字典决定走多远，TutorialDirector 探测不到就回退）。
+
+顺带记一个**跨文件的巧合不变量**：`card.<id>.desc` 只有 `CardScene/detail.ts` 的技能行会读，条件是 `faction === 'anna' && skillGrowth 有非零值`。三个涛方角色是 `NO_SKILL`，所以它们没有 `.desc` 不是遗漏——但这条"够用"是 `cardDefs.ts` 和 `zh.ts` 两个文件各存一半凑出来的，给涛方角色配上技能曲线的那天就会碎。该族的 key 集合现在按渲染器的原条件生成，那天会直接报错要 desc。`card.<id>.lore` 反过来是**必需**的：`detail.ts` 把它直接喂给卡背翻面，没有兜底（`CardCodexScene` 的 `storyText()` 有兜底，容易看岔）。
+
+**验证**：两个新断言都用真删除验过——摘掉 `card.max.desc` 和 `slg.city.durabilityBreached.body` 后如期报错，且消息带上了发信文件路径（`(sent by worldsvc/src/combatSiege/helpers.ts)`）。`tsc --noEmit` 双 config + `vitest run`（163 文件 / 1363 例）+ `test:ui`（188 文件 / 1665 例）全绿。另外量过但**今天没抓到东西**、故未加的：en/de 混入 CJK（0 处）、空字符串值（0 处）。
+
+## 34. LeaderboardScene 竖屏行改两行 + 列宽钳制（2026-08-16）
+
+**问题（i18n 审计顺带发现，非用户报障）**：榜单行竖屏下**必然**把称号标签压进段位列。默认名 `Player1234` + 任意称号即可复现，**与语言无关**——zh `「天梯」` 压过 58px，de `「Rangliste」` 压过 182px；修长机型（1080×2160）为 76px / 200px。横屏完全正常（富余 500+px），所以一直没被发现。
+
+**根因：一行里混用了两套标尺。** 字号从 `rowH` 推（`rowH = h*0.065`，跟屏幕**高**走），列位置从 `listW` 推（`0.18w` / `0.68w`，跟屏幕**宽**走）。横屏 16:9 两者比例接近，看不出问题；竖屏 ≈1:2，高度驱动的字号相对宽度驱动的列格严重超宽。`designWidth` 竖屏恒为 1080 而 `designHeight ≥1920` 且随机型变高，所以**屏幕越修长越糟**。称号长度只是放大系数，不是原因（name 余量 zh 8 字符 / de 4 字符，而默认名就 10 字符）。
+
+**修复**（用户在两行 / 字号改跟宽度 / 只记录 三个方案里拍板选两行）：
+
+- 竖屏行改**两行**：第一行 name（独占整行宽度），第二行 称号 / 段位 / ELO。`rowH` 竖屏 `h*0.065 → h*0.095`；滚动、命中矩形、`scrollMax` 全部由 `this.rowH` 推导，自动跟随，无需另改。横屏保持单行不变。
+- 行几何抽成纯函数 `leaderboardRowGeom(w, rowH, twoLine)` + `fitNameAndTitle(nameW, titleW, avail, gap)`，导出供测试（同 `badgeYBelowContent` 的做法）。两条路径都给 name+称号块一个硬右边界 `contentRight` 并钳进去——**超长玩家名再也压不进段位列**。这层防御值得有：服务端没找到 `displayName` 的长度校验。常见情形（放得下时）`scale` 恒为 1，像素级不变。
+- 称号短标签 en/de 改短到 ≤4 字符（见 `TITLE_DESIGN.md` §6：`Conqueror→Conq`、`Rangliste→Rang`、`Champ/Top 3→Top1/Top3` 等），从源头符合预算。选**改文案**而非运行时 `slice(0,4)`，因为 `Rangliste→Rang` 是人挑的，硬切出来的观感差。
+
+**修复后余量**（listW=972）：竖屏 name 到边界富余 169px（17 字符才开始钳制，原先 8）、称号富余 268–288px、段位（`Grandmaster` 最宽 ±97）右边缘 700 < ELO 左边缘 851。横屏 name 富余 660px。
+
+**验证**：`npx tsc --noEmit` 双 config 全绿；`npx vitest run`（164 文件 / 1398 例）+ `npm run test:ui`（188 文件 / 1665 例，含既有 `leaderboardScroll.ui.ts`）全绿；`build:web` 通过。新增 [`client/test/leaderboardRowGeometry.test.ts`](../../client/test/leaderboardRowGeometry.test.ts)（35 例），含一条**旧几何见证测试**——用修复前的公式重算并断言它确实会撞，保证这条 spec 不是空断言。
+
+> ⚠️ **未做像素级截图核对**：Browser pane 在本环境仍不合成帧（同 §23/§26–§32 的环境限制）。替代做法是把两个字体假设换成**真实测量值**——起 dev server 后在真 Chromium 里用 canvas `measureText` 量 `monospace`（ASCII advance **0.5498em**，`「」`/CJK 各 **1.0em**；PIXI 的 TextMetrics 底层就是这个 API），代回从源码读到的精确布局常数，同 §32 用真实缩放公式替代截图的处理。**两行版式的观感（行高、两行的疏密、榜单一屏行数由 11 降到约 8）需要你在真机竖屏上看一眼再定档**——算术只能保证不重叠，保证不了好看。

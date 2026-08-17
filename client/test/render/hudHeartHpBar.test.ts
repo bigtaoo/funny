@@ -14,7 +14,7 @@
  *      empty hearts and that the partial heart's colored polygon is clipped
  *      narrower than the full heart's.
  *
- * Run with: npm run test:render
+ * Run with: npm test — the default suite's include covers every *.test.ts under test/.
  */
 
 import { describe, it, expect, vi } from 'vitest';

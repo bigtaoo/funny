@@ -6,13 +6,18 @@
 
 | 套件 | 命令 | include | 环境 | 测什么 | 真 PIXI？ |
 |---|---|---|---|---|---|
-| 单元 | `npm test` | `test/**/*.test.ts` | node | 纯游戏逻辑（无 PIXI 依赖） | 否 |
+| 单元 | `npm test` | `test/**/*.test.ts`（**含 `test/render/**`**） | node | 纯游戏逻辑；外加 `test/render/**` 那批渲染层窄回归（BaseTexture 监听器 / blob URL 泄漏、HUD 几何、图标 dispatch 表…） | 多数文件 `vi.mock` 掉 PIXI；`icons`/`rewardIcon` 真 import `pixi.js-legacy` |
 | UI 冒烟 | `npm run test:ui` | `test/ui/**/*.ui.ts` | node + `pixiHeadless` | **真实场景构造 / update / destroy + 命中矩形回归** | 真对象树，**无渲染器** |
-| 渲染泄漏 | `npm run test:render` | `test/render/**/*.test.ts` | node（每文件 `vi.mock` PIXI） | BaseTexture 监听器 / blob URL 泄漏回归 | mock |
 | 全链路 E2E | `npm run test:e2e`（opt-in） | `test/e2e/**/*.e2e.ts` | node | `createAppCore` 全链路对接活服务器（meta+gateway+matchsvc+game+commercial+mongo） | headless orchestration |
 | 手动调参脚本 | `npm run test:manual`（opt-in，非回归） | `test/**/*.manual.ts` | node | console.log 输出的难度曲线/A-B 对比表，**零 `expect()`**，人工读表用 | 否 |
 
 `npm test` 只跑 `*.test.ts`；`*.ui.ts` / `*.e2e.ts` / `*.manual.ts` 用各自命名后缀隔离，默认套件不会误收。
+
+**⚠️ 2026-08-15：`test:render` / `vitest.render.config.ts` 已删除**。`test/render/**` 曾经额外挂着一份独立配置（`npm run test:render`），但它的存在理由——"把主套件跟 PIXI 依赖隔开"——从来就没成立过：`vitest.config.ts` 的 include 是 `test/**/*.test.ts`，本来就把 `test/render/**` 全收了，两边跑的是同一批文件。真正的问题是**没有任何东西引用 `test:render`**（CI 没有这一步，`test`/`test:coverage` 的链里也没有），于是它的 `resolve.alias` 悄悄落后于 `vitest.config.ts`：后者陆续补上了 `@nw/shared/cards` 和 `@nw/shared`，前者始终只有 `@nw/engine`。到删除前实测，11 个文件里有 4 个在这份配置下**加载即失败**（`Failed to load url @nw/shared/cards … in src/game/meta/cardDefs.ts`），而同样这 11 个文件在 `npm test` 里一直全绿——腐烂了多久没人知道，因为没人跑过。
+
+修法选了"删"而不是"补齐 alias + 接进 CI"：后者要补的不只是两条 alias，还得反过来在 `vitest.config.ts` 的 `exclude` 里排掉 `test/render/**` 才能兑现它自称的隔离，再加一条 CI 步骤——**配置面更大，覆盖面一模一样**。删掉之后 `test/render/**` 只有一个运行入口，alias 只有一份，没有第二处可腐烂。各文件头部的 `Run with: npm run test:render` 注释同步改成 `npm test`；`icons.test.ts`/`rewardIcon.test.ts` 里那两条"NOT `npm run test:render`"的警告（发现问题时手写的）也一并删掉。
+
+> 顺带纠正两条当时被这份配置带偏的注释：①它的头部注释称二进制资产"由各测试文件的 `vi.mock()` 打桩"，对 `icons.test.ts` 并不成立——那个文件靠的是 Vite 内置的 `.png` → URL 字符串处理，从没 mock 过资产（真正做资产打桩的是 `vitest.ui.config.ts` 的 `stubBinaryAssets` 插件）。②`icons.test.ts` 里"调色板值内联而非 import，因为本配置没有 `@nw/shared/cards` / `.tao` 的 loader/alias"——这描述的是那份已删配置；在默认配置下 `render/sketchUi` 和 `scenes/LobbyScene/core` 都能正常 import（2026-08-15 实测），内联现在纯粹是"不让这条 dispatch 表回归拖进更重的场景/调色板模块图"的主动取舍。
 
 **手动调参脚本层（2026-08-05 新增分层）**：`test/diag.manual.ts`（单关卡逐秒时间线 + 出牌统计）和 `test/experiment.manual.ts`（ch1_lv1 难度削减方案 A/B 对比）本质是拿 vitest 当脚本 runner 用来打印表格，从来没有 `expect()` 断言——之前挂着 `.test.ts` 后缀混进 `npm test`，会让"141 passed"的通过数里悄悄含着两条什么都没验证的"测试"。改用独立后缀 + `vitest.manual.config.ts`（同 `vitest.config.ts` 的 `@nw/engine` alias）+ `npm run test:manual`，与 `test:ui`/`test:e2e` 同一模式：需要调参时显式跑，不再计入默认套件的通过率。
 
@@ -33,6 +38,14 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 的 `include` 只有 `src/**`——**`test/**` 从不被类型检查**。历史上这让 test 里对 `GameConfig` / DTO / proto 形状的引用可以运行期侥幸通过（esbuild 擦掉类型），却是潜伏 bug（典型：CC-1 把 `GameConfig.unitLevels` 换成 `cardInstances`、`JudgeRequest` 新增必填 `unitLevels` 后，多个 test 仍用旧形状）。
 
 `client/tsconfig.test.json`（extends 主 tsconfig，`include` 追加 `test/**`）把 `src` + `test` 拉进同一个 program 做 `tsc --noEmit`。`npm run typecheck` 跑它，CI `build-test` job 在单测前执行——**test 层的蓝图/DTO 漂移现在会让 CI 红**。改了引擎/网络层的类型后，本地先 `npm run typecheck` 再提交。
+
+### ⚠️ 坑：零参 `vi.fn(() => …)` 会把 `mock.calls` 类型推成空元组 `[]`（2026-08-15 实测踩过）
+
+`test/render/rewardIcon.test.ts` 用 `const buildIcon = vi.fn(() => ({ kind: 'drawn' }))` 声明替身，**没写参数**。vitest 从这个签名推断"这个函数被调用时收到的实参元组"，零参就推成 `[]`；于是文件里每一处 `buildIcon.mock.calls[0][0]`（读回"它被传了哪个 IconKind"，正是这批断言的全部意义）都成了 `error TS2493: Tuple type '[]' of length '0' has no element at index '0'`。
+
+**为什么危险**：esbuild 擦类型，所以 `npm test` 一路全绿（该文件 11 个渲染测试文件里跑得好好的），**只有 `npm run typecheck` 看得见**——而它在 CI `build-test` 里跑在单测之前。结果就是"测试全过、CI 却红在一个测试全过的文件上"，且症状容易被误判成当次 PR 引入的回归。这份文件从 2026-08-15 加进来那天起就是红的，一天后才被发现（当时在做另一件事：删除失效的 `vitest.render.config.ts`）。
+
+**写法**：替身要照抄被替代函数的参数表，`vi.fn((_kind: string, _size: number, _color: number) => …)`。顺带好处是 `vi.mock` 工厂里那些 `(...a: unknown[]) => fn(...(a as []))` 的强转也可以一并删掉，直接按真实签名转发。**加新替身时记得本地先跑一次 `npm run typecheck`**——单测绿不代表这层绿。
 
 ## UI 冒烟层（test:ui）—— 价值与边界
 
@@ -220,3 +233,24 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - **`test/familySendButton.test.ts` 新增 "the merged text-entry + send unit" describe（3 条）** —— FamilyScene 的双向依赖是用**合并类**（不是 hook）解的：`doSendMsg`/`submitMessage` 从 actions.ts 搬到了 `InputPanel`，和 `openSendInput`/`openInputFor` 同居。原有测试两半各测一边，而且"还没有草稿 → 打开输入框"那条**把 `openSendInput` mock 掉了**，所以两半从来没在真实类上互相驱动过一次。新用例跑完整往返（第一次点 Send 打开真实隐藏 input → 输入 → blur（真实点击时 blur 先把 `core.sendInput` 置空）→ 第二次点 Send 提交刚输入的内容），外加 Enter 键这另一张脸。合并**新引入**的风险就是两条路径共享 Core 上的 `sendText`/`sendInput` 且**动作顺序是有意义的**：`doSendMsg()` 必须在移交给 `openSendInput()` **之前**清 `sendText`（后者用它给新 DOM input 播种），把这两句换个顺序，重开的输入框就会带着刚发出去的旧草稿——用例特意用"纯空格草稿"入场把这个顺序变得可观测（实测：不用空格草稿的话换顺序不变红）。
 
 **每一条新用例都做了 red-then-green 实测**（逐个临时破坏对应接线/断言目标，确认变红，再还原）——具体破坏点见各文件头部注释。收尾验证：`tsc --noEmit` 干净，`npm run test:ui` 163 文件 / 1491 条绿，`npm test` 161 文件 / 1283 条绿，`npm run build:web` OK。
+
+## `rewardIcon.test.ts` 补测（2026-08-16）
+
+修上面那条 TS2493 时顺手审了一遍 `render/rewardIcon.ts` 的覆盖面（9 → 21 条）。原有用例只断言"每种 reward 走到哪个 IconKind"，剩下的契约全是空白：
+
+- **`preloadRewardIconArt()` 此前零覆盖**，而它的全部价值就在失败路径：六个场景都是 `void preloadRewardIconArt().then(() => this.render())` 这样 fire-and-forget 调的，一旦它往外抛，单个 atlas 404 就会变成六块不相干屏幕上的 unhandled rejection——而这个失败本来只该表现为"程序化 glyph 多画一两帧"。撑住这件事的是 `Promise.allSettled`，改成 `Promise.all` 是一个词的编辑，此前没有任何测试会发现。新增 5 条：三个 loader 各失败一次 + 三个全失败，都断言仍然 resolve，且**其余 loader 照样被调用**（不因一个坏源短路）。
+- **`size` / `color` 透传此前零覆盖**——只断言过实参 0（kind），所以任何一条路线把尺寸/墨色丢掉或调换顺序都没人管。新用例给四条路线（tab-icon / coin / material / 裸材质 kind）各喂一组不同的 size+color，串线也能抓。
+- **`materialFallback` 不得盖过已识别的 id**：源码是 `materialKind(id) ?? fallback`，两者顺序调换会让 EventScene 的 `materialFallback: null` 把**所有**材质行都清空（而不只是不认识的那些）。
+- 另补 `count` 缺失时的 `?? 0` 分支、`material` 无 id 时回落 scrap、以及 `coinIconTier` 各档**阈值下方一格**（原有用例正好压在阈值上，只钉住 `>=`→`>`，钉不住"阈值被悄悄调低"）。
+- **一条"测试自己的测试"**：原有断言把期望值写成字面量 `'rosterIcon'`，而 `buildIcon` 在本文件里是被 mock 掉的——也就是说把源码和期望表**一起**改回程序化的 `'cards'`/`'armor'`/`'brush'`（这正是 2026-08-15 那个 bug 的原貌），整份文件照样全绿。新用例用 `vi.importActual` 读真实 `icons.ts`，断言这三个 IconKind **不在导出的 `DRAW` 表里**——`DrawableIconKind = Exclude<IconKind, RasterIconKind>`，所以"是 DRAW 的 key"等价于"是程序化 glyph"。实测：把 card 改回 `'cards'` 并同步改期望表，只有这一条变红。
+
+六条新断言全部做了 red-then-green 实测（逐个破坏源码确认变红再还原，破坏点见上）。收尾验证：`npm run typecheck` 干净，`npm test` 158 文件 / 1335 条绿。
+
+**第二轮（同日，21 → 25 条）**，补的是"mock 看不见的那一半"——上面那批断言全都盯着实参字符串，而三个 builder 在本文件里是假的，所以**字符串本身是否对应真实素材**、以及**服务端会不会送来没人处理的 kind**，两处都没人看：
+
+- **coin / material 两条路线的"素材表交叉校验"**（对应上一轮给三种道具做的 `DRAW` 校验）：`coinIconTier` 能返回的 5 个 tier 必须在 `assets/shop/coins.json` 的 frame 名里，`materialKind` 认的 3 个 id 必须在 `assets/icons/icons_atlas.json` 里（材质走共享 L0 icons atlas）。改名一档或加第六档而没配图，此前整份文件照样全绿，运行时静默退回程序化 glyph——正是 08-15 那个 bug 的形态，只是换到 mock 遮住的那条路线上。实测把 `coinChest` 改成 `coinChestX`：该条变红。
+- **`opts.coinKind` 不得泄漏到非 coin 路线**：RechargeScene 是对一档里的**每个** reward 都传 `{ coinKind }`（不只 coins），所以把这个 lookup 提到 kind dispatch 之上会把它的卡牌/材质行画成钱堆。实测把 card 路线改成 `buildIcon(opts?.coinKind ?? 'rosterIcon', …)`：只有这条变红。
+- **服务端 kind 全集的编译期穷举**：`RewardLike.kind` 是裸 `string`，类型上跟喂它的五个服务端联合类型（`CheckinRewardKind` / `WeeklyChestRewardKind` / `BpRewardKind` / `RechargeRewardKind` / `MailAttachmentKind`）没有任何连接——服务端加一种 kind，客户端编译照过，六块屏幕上静默渲染成无图行。新用例用 `Record<五个联合, 'picture' | 'text'>` 把这条线接上：少一个成员就 `npm run typecheck` 报 TS2741（实测删掉 `skin:` 一行确实报），逼人显式给新 kind 做决定；运行时再断言这个决定跟 resolver 的实际行为一致（实测删掉 skin 路线：该条 + 对应 each 用例变红）。表里 `stamina`/`item` 标 `'text'` 是**有意无图**（调用方画 capsule 或裸 "+N"），不是待办。
+  - 这四个联合是 `import type` 直接从 `../../../server/shared/src/*` 拿的，不走 `@nw/shared`——那个 alias 在 `vitest.config.ts` 里只指向浏览器安全的 SLG 切片。type-only 导入运行时被擦除，不会把服务端模块拉进测试进程。
+
+四条新断言同样逐条 red-then-green 实测。收尾验证：`npm run typecheck` 干净，`npm test` 159 文件 / 1341 条绿（本机另有一个别的会话未提交的 `test/textureLoadedGuardCallSites.test.ts` 在红，与本次无关，已排除计数）。

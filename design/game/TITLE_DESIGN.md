@@ -178,5 +178,9 @@ grant(t):
   - `@nw/shared/src/titles.ts`：新增 `slgTitleId()` + `SLG_TITLE_WEIGHTS`（champion 5500 > top3 4500，T5+/T4，占位待 launch 校准）；`titleWeight`/`titleShortKey` 按 `slg.s{N}.{key}` 的 key 段解析（未知 key 回落 T3 3500）；`parseTitleId` 原已识别 slg。客户端 `client/src/game/meta/titles.ts` 镜像同步 + 新增 `formatSlgTitle`（`getTitleKeys` 返回 per-key `title.slg.{key}.{full,short}`，4 处显示点无需改）。
   - i18n zh/en/de：`title.slg.champion.*`/`title.slg.top3.*` + 结算邮件 `slg.settle.*`（正文 `|rank=|nations=` 参数插值——顺带让 `FriendsScene/mail.ts` 的 `mailText` 支持 `key|k=v` 拆参传 `t(key, params)`，此前整串当 key 查找 → 结算邮件正文显示原始 token）。
   - 测试：`server/shared/test/titles.test.ts`（champion>top3、slgTitleId 往返）、`client/test/titles.test.ts`（镜像）。「十冠王」/连冠等更高阶 SLG 称号仍为设计意图，未落地。
-- [ ] `equipped.title` 短标签限长 UI 截断（建议 ≤ 4 字，前端展示截断即可）
+- [x] **`equipped.title` 短标签限长（2026-08-16 完成）**：起因是 i18n 审计时注意到 `shared/src/titles.ts` 的 `shortKey` JSDoc 写着 `≤4 chars`，怀疑是过期注释——核完不是，是这条 TODO 一直没做，文案自然长出去了。
+  - 实测（按**字符数**，不是字节；`${#v}` 那种量法对中文会翻倍误导）：zh 全部 2–3 字符在预算内；en 5–9（`Conqueror` 9、`Founder`/`Veteran` 7）；de 7–9（`Rangliste` 9、`Eroberer` 8）。字体是 **monospace**（`sketchUi.txt`），宽度严格正比字符数，所以「字符预算」就是「宽度预算」。
+  - **改文案而非运行时截断**（用户拍板）：en `Newbie→New`/`Founder→Fndr`/`Conqueror→Conq`/`Veteran→Vet`/`Ladder→Rank`、de `Neuling→Neu`/`Gründer→Gr.`/`Eroberer→Erob`/`Veteran→Vet`/`Rangliste→Rang`，SLG 两个 en/de 为 `Champ→Chmp`/`Top 3→Top3`（先试过 `Top1`/`Top3`，用户否掉——两者只差一个字符，且一个是缩写、一个是原样短语，名牌上并排出现容易看串）。硬 `slice(0,4)` 切出来的 `Rangliste→Rang` 虽然结果相同，但换个词就不一定，观感不可控。
+  - 由 [`client/test/titleShortLabels.test.ts`](../../client/test/titleShortLabels.test.ts) 钉死四条性质：≤4 字符、非空、**同一语言内不重名**（短标签是名牌上区分两个称号的唯一依据，重名等于两个成就在聊天/榜单上无法分辨——`Top1`/`Top3` 就是差点踩中这条才被换掉）、`.full`/`.short` 必须成对（只有一半的话另一面渲染生 key）。四条都用注入违规验过真失败。**刻意不钉死具体字符串**：文案本来就该允许译者修订，钉住性质而不是钉住 `Chmp` 这几个字。
+  - ⚠️ 顺带发现并已修复一个**更严重、与语言无关**的问题：`LeaderboardScene` 竖屏行必压段位列（zh 58px / de 182px），根因是行内字号跟屏幕高、列位置跟屏幕宽。称号长度只是放大系数。详见 `UI_DESIGN.md` §34。
 - [ ] 成就→称号具体条目清单（§7，与 ACHIEVEMENT_DESIGN 对齐）

@@ -363,7 +363,7 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 | 软保底起始 | 70 抽（本文 §3 新增） | 本文 |
 | 十连保底 | epic+ | §4.2 |
 | legendary 基础概率 | 标准池 ≈3.22%（固定概率表 §2.1b）；限定池/扁平权重 1% | §2.1b / §4.1 |
-| 皮肤主动出售 legendary | 1,500 coins（`DUPE_REFUND_COINS.legendary`，`/skins/sell`，玩家主动发起） | [ITEM_IDENTITY_DESIGN.md](ITEM_IDENTITY_DESIGN.md) 任务1 |
+| 皮肤主动出售 | ~~1,500 coins（`DUPE_REFUND_COINS.legendary`）~~ 入口已于 2026-08-15 删除，多余皮肤只能挂拍卖行，售价由市场决定 | [ITEM_IDENTITY_DESIGN.md](ITEM_IDENTITY_DESIGN.md) 任务1 |
 | 月卡每日 | 120 coins × 30 天 | 本文 §5 |
 | 月卡价格 | $4.99（2026-08-11 起 USD；中国区/CNY 待后续单独一轮再定） | 本文 §5 |
 | 年卡价格 | $49.99（12 月卡 $59.99 约 83 折取整）× 365 天 | 本文 §5.1b |

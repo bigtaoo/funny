@@ -70,7 +70,11 @@ export function drawBottomNav(core: LobbySceneCore, badges: BadgesPanel): void {
     const slotX = i * slotW + slotW / 2;
     const active = !!slot.active;
     const disabled = !!slot.disabled;
-    const iconColor = disabled ? C.mid : (active ? 0xffffff : C.light);
+    // Light ink for every slot, disabled included: this bar is filled with C.cover (near-black), so
+    // the raster tab icons must resolve to their white-ink variant (buildIcon picks it off the ink's
+    // lightness) — the paper-grey variant used to disappear into the bar, worst on the thin-lined
+    // 养成/商城 glyphs. State is carried by alpha below, not by the ink colour.
+    const iconColor = active ? 0xffffff : C.light;
 
     // Active tab: a short accent bar at the top edge of the slot.
     if (active) {
@@ -83,7 +87,7 @@ export function drawBottomNav(core: LobbySceneCore, badges: BadgesPanel): void {
     }
 
     const icon = buildIcon(slot.icon, iconS, iconColor);
-    icon.alpha = disabled ? 0.35 : (active ? 1.0 : 0.72);
+    icon.alpha = disabled ? 0.35 : (active ? 1.0 : 0.85);
     icon.x = Math.round(slotX - iconS / 2);
     icon.y = iconTopY;
     navBg.addChild(icon);

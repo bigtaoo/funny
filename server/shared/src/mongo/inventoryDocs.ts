@@ -28,7 +28,7 @@ export interface CardIdemDoc {
 export interface EquipmentIdemDoc {
   _id: string; // idempotencyKey / orderId
   accountId: string;
-  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge' | 'skin_escrow' | 'skin_sell' | 'checkin_reward' | 'weekly_chest';
+  op: 'craft' | 'escrow' | 'enhance' | 'salvage' | 'reforge' | 'skin_escrow' | 'checkin_reward' | 'weekly_chest';
   /**
    * Snapshot of the first execution result, replayed verbatim on retry:
    *   craft          → produced instance (EquipmentInstance)
@@ -36,7 +36,6 @@ export interface EquipmentIdemDoc {
    *   enhance        → { success, instance } (dice roll result + enhanced instance, E3)
    *   salvage        → { refunded } (total materials returned, E3)
    *   skin_escrow    → { skinId } (auction task2, AUCTION_DESIGN §2.1/§9)
-   *   skin_sell      → { skinId, credited } (player-initiated system sale, ITEM_IDENTITY_DESIGN.md task1)
    *   checkin_reward / weekly_chest → the picked concrete item (RetentionItemPick, liveops.ts) for a
    *     checkin card/equipment milestone or a weekly-chest equipment/skin tier
    */

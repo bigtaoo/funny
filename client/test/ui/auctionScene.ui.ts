@@ -245,7 +245,7 @@ describe('AuctionScene — auctionLabel()', () => {
   it('titles material/equipment/card listings consistently with their own class', () => {
     const scene = buildScene();
     expect(auctionLabel(makeAuction({ itemType: 'material', item: { material: 'lead' }, qty: 3 })))
-      .toBe(`${t('auction.lead')} ×3`);
+      .toBe(`${t('material.lead')} ×3`);
     expect(auctionLabel(makeAuction({ itemType: 'equipment', item: {} }))).toBe(t('auction.filterEquipment'));
     expect(auctionLabel(makeAuction({ itemType: 'card', item: {} }))).toBe(t('auction.filterCard'));
     scene.destroy();
@@ -685,7 +685,7 @@ describe('AuctionScene — create form item field (doubled height + emphasis)', 
     scene.core.createClass = 'material'; // selectedItemLabel() → "Scrap"
     scene.createListing.openCreateForm();
 
-    const label = findTextNode(scene.container, t('auction.scrap'));
+    const label = findTextNode(scene.container, t('material.scrap'));
     expect(label).not.toBeNull();
     // fontSize goes through snapFont() (snaps to a fixed size grid), so compare against that,
     // not the raw 17*SCALE multiplication.

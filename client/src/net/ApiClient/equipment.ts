@@ -38,10 +38,6 @@ export interface EquipmentApi {
     materialId: string,
     idempotencyKey: string
   ): Promise<{ instance: EquipmentInstance; save: LeanSaveResponse }>;
-  sellSkin(
-    skinId: string,
-    idempotencyKey: string
-  ): Promise<{ credited: number; coinsAfter: number; save: SaveData }>;
 }
 
 /** Equipment/card-fuse/card-lock domain (see ../ApiClient.ts assembly + ./core.ts for the shared transport). */
@@ -160,20 +156,5 @@ export class EquipmentService implements EquipmentApi {
         idempotencyKey,
       }
     );
-  }
-
-  /**
-   * Sell one surplus skin instance to the system for coins (ITEM_IDENTITY_DESIGN.md task1,
-   * 2026-08-08) — player-initiated only, never automatic on a gacha duplicate. Refuses to sell the
-   * last remaining instance of a currently-equipped skin → 409 SKIN_IN_USE; not owned → 404 SKIN_NOT_FOUND.
-   */
-  async sellSkin(
-    skinId: string,
-    idempotencyKey: string
-  ): Promise<{ credited: number; coinsAfter: number; save: SaveData }> {
-    return this.core.post<{ credited: number; coinsAfter: number; save: SaveData }>('/skins/sell', {
-      skinId,
-      idempotencyKey,
-    });
   }
 }

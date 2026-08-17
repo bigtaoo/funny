@@ -78,7 +78,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 ## 代码接线（已完成）
 
-1. `icons.ts`：`IconKind` 新增 `'rosterIcon' | 'equipIcon' | 'skinIcon'`；`DRAW` 表类型收窄为 `Record<Exclude<IconKind, 这三个>, ...>`（这三个不走程序绘制，不需要 DRAW 条目）；`buildIcon()` 在分发给 `DRAW` 之前先查一张 `TAB_ICON_RASTER` 表，命中则返回一个按 `containScale` 居中缩放的 `PIXI.Sprite`（`color===0xffffff` 取 active 贴图，否则 inactive）；新增 `preloadTabIconTextures()`（复用 `assets/preloadTextures.ts` 的 `preloadTextureList`）供场景预热。
+1. `icons.ts`：`IconKind` 新增 `'rosterIcon' | 'equipIcon' | 'skinIcon'`；`DRAW` 表类型收窄为 `Record<Exclude<IconKind, 这三个>, ...>`（这三个不走程序绘制，不需要 DRAW 条目）；`buildIcon()` 在分发给 `DRAW` 之前先查一张 `TAB_ICON_RASTER` 表，命中则返回一个按 `containScale` 居中缩放的 `PIXI.Sprite`（调用方传的 `color` 只当作"底色深浅"的提示：浅色墨水取 active 白线图，否则取 inactive 灰线图；2026-08-15 起是亮度阈值判断，不再是 `color===0xffffff` 严格相等，原因见文末"批次 3 收尾修复"）；新增 `preloadTabIconTextures()`（复用 `assets/preloadTextures.ts` 的 `preloadTextureList`）供场景预热。
 2. `CardScene.ts` / `EquipmentScene.ts` 构造函数：`this.render()` 之后 `void preloadTabIconTextures().then(() => this.render())`——纹理是 AI PNG（异步解码），首帧可能画不出来，预热完成后补一次 render 兜底（同 `ShopScene/card.ts` `artUrl` 贴图的 `baseTexture.valid` 处理思路，只是搬到了预热层而不是逐图标挂 `once('loaded')`，因为 `buildIcon()` 是给 30+ 调用点用的同步 API，不适合为这一个用例改成异步）。
 3. `CardScene/list.ts` 三个 tab 的 `icon` 字段：`'cards'/'armor'/'brush'` → `'rosterIcon'/'equipIcon'/'skinIcon'`。
 4. `EquipmentScene/inventory.ts` 两处（竖屏底栏 + 横屏侧栏）硬编码的 `icon: 'armor'`（"Equipment" 自己那个 tab）→ `'equipIcon'`。
@@ -329,3 +329,105 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ### 状态：批次 3 全部完成 ✅
 
 12 个页签图标（10 个纯辨识度升级 + 2 个了结 trophy/book 遗留冲突）全部出图、验证、接线完毕，另有 2 处（`armor`→`equipIcon`、`book`→`statsTabIcon`）确认为纯复用无需新图。
+
+---
+
+## 批次 3 收尾修复：深色底选错贴图（2026-08-15）
+
+**现象**：用户反馈主页底部导航"养成/商城"两个新图标几乎看不清（"生涯"的实心柱状图、"社交"的粗线地球勉强能看，线条最细的 roster 卡牌 / gacha 扭蛋球彻底糊进底色）。
+
+**根因**：`buildRasterTabIcon()` 原本用 `color === 0xffffff` 严格相等来选贴图变体，但只有 HubTabs 的 active 格子恰好传 `0xffffff`。`LobbyScene/bottomNav.ts` 的非激活槽位传的是 `C.light`（0xdddddd），落进 else 分支拿到**纸底用的 `#686868` 灰线图**，而这条底栏填的是 `C.cover`（0x3a352f，近黑）——灰线画在近黑底上，再叠 0.72 alpha，等于隐形。这不是资源问题（图本身没错），也不是"AI 图太细"，是变体选择的判定条件太窄。批次 3 那次"游戏内截图验证跳过"（见上一节第 5 条）正好漏掉的就是这一类问题：contact-sheet 只验证了"图在正确的底色上糊不糊"，验证不了"代码有没有挑到正确的那张图"。
+
+**修复**：
+1. `icons.ts`：新增 `isLightInk(color)`（Rec.601 亮度，阈值 0.70），`buildRasterTabIcon()` 改为按它选变体——调用方传的 ink 颜色被解读为"我这块底是深是浅"的提示。`C.light`(0xdddddd)/`0xffffff` 过阈值取白线图；HubTabs 非激活格的 `C.mid`(0x888888, 亮度 ≈0.53) 不过阈值，仍取纸底灰线图，行为不变。
+2. `LobbyScene/bottomNav.ts`：五个槽位（含 disabled）统一用浅色 ink，状态差异只由 alpha 表达（active 1.0 / 普通 0.85 / disabled 0.35）——原来 disabled 传 `C.mid` 同样会在深色底上消失。非激活 alpha 从 0.72 提到 0.85。
+3. 顺带修好同一个 bug 的第二处：`AuctionScene/list.ts` 的分类 chip，激活态是 `C.dark` 填充 + `C.light` 墨水，此前同样拿到灰线图画在深底上。
+
+
+**验证**：`tsc --noEmit` 通过；Playwright（`start:e2e` 9096 + `window.__nwE2E.views.showLobby()`）实拍底栏截图确认五个图标全部清晰可辨——这次没有再跳过截图。
+
+**回归测试**（两层，都确认过把 `tabIconVariant` 改回旧的严格相等判断就会红）：
+- `test/render/icons.test.ts` → `describe('tabIconVariant …')`：把阈值从两侧钉死。列出每个真实调用点传的墨水色（HubTabs 激活 `0xffffff` / 底栏 `C.light` / 拍卖 chip 的 `C.light`+`C.dark` / HubTabs 非激活 `ui.mid` 0x686868）各自该取哪张图，再加一条"≤0x888888 的灰一律取纸底图"的单调性检查——阈值放宽会让纸面页签白线画白底，收紧就是这次的深底 bug 复发。
+- `test/ui/lobbyBottomNavIconInk.ui.ts`：补另一半——**调用点实际传了什么**，这是任何针对 helper 的单元测试都看不见的部分。`vi.mock` 包一层 `buildIcon`（保留真实实现，只记录入参），构造真实 `LobbyScene`，断言五个槽位（在线 + 离线两种模式）传的墨水都解析到白线图。断言的是"解析出的变体"而不是具体色值，这样它是一条可读性契约：任何仍然读作"深底白线"的颜色都放行，而把槽位悄悄调暗的调色改动会红。
+- UI 全量套件 185 文件 1649 用例通过。
+
+
+
+---
+
+## 批次 4：奖励图标统一出处（2026-08-15，无新出图）
+
+> ⚠️ 本节 2026-08-15 写过一次，但在合并进当日分支时被自己的冲突解决脚本整段吞掉了——脚本里用 `indexOf('\n---\n\n## 批次 4')` 定位要保留的片段，而这个文件是 **CRLF** 行尾，`\n---\n` 永远匹配不上，`indexOf` 返回 -1，`slice(-1)` 只留下最后一个字符，无声地丢了整节。2026-08-16 补回。教训：在这个仓库里对文件内容做 `indexOf`/正则切片，一律用 `\r?\n`，别假设 `\n`。
+
+**起因**：用户截图圈出"周常宝箱"tab 的第 2/3 档奖励图标——"这里的图标还是用的旧的程序绘制的，我反复强调所有的图标走统一出处"。截图里同一个 tab 上，第 1 档的材料（铅笔芯）是 AI 位图，第 2/3 档的装备/卡牌却是细线程序 glyph（`armor`/`cards`），并排放着一眼看得出两套画法。
+
+**为什么前三批漏了它**：批次 3 的梳理范围写死在"页签级图标"，开头就明确排除了"结算页动作按钮、装备强化/分解按钮、头像背景 glyph、属性徽章"——奖励行也在这条排除线的另一侧，从来没被点名过。
+
+**根因不是"少接一处线"，是没有出口**。奖励行出现在 6 个互不相干的屏幕上，每个屏幕自己手写一张 `kind → IconKind` 表：
+
+| 屏幕 | coins | material | card | equipment | skin |
+|---|---|---|---|---|---|
+| `DailyScene/panels.ts`（签到日历 + 周常宝箱） | ✗ `buildIcon('coin')` | ✓ `buildMaterialIcon` | ✗ `cards` | ✗ `armor` | ✗ `brush` |
+| `BattlePassScene/cell.ts` | ✓ `buildCoinIcon` | ✓ | — | — | ✗ `brush` |
+| `EventScene.ts` | ✗ `buildIcon('coin')` | ✓ | — | — | ✗ `brush` |
+| `RechargeScene.ts` | ✓ | ✓ | — | — | — |
+| `FriendsScene/mail.ts`（附件缩略图） | ✗ `buildIcon('coins')` | ✓ | ✓ 真卡图 | ✓ `buildEquipIcon` | ✗ `brush` |
+| `AchievementScene.ts`（成就奖励币） | ✗ `buildIcon('coin')` | — | — | — | — |
+
+`coins`/`material` 各自早就有统一出口，但**没人负责 `card`/`equipment`/`skin`**，于是它们一直躺在程序 glyph 上——即便批次 1 出的 `rosterIcon`/`equipIcon`/`skinIcon` 正是这三个概念的 AI 图。另外 `buildCoinIcon` 明明存在，还是有 4 处直接调了 `buildIcon('coin')`，这也说明"靠每个调用点自己记得挑对函数"这条路本身就不成立。
+
+**修法：新增第四个统一出口，而不是逐屏替换。** `client/src/render/rewardIcon.ts`：
+
+```ts
+buildRewardIcon(reward: {kind, id?, count?}, size, color, opts?) : DisplayObject | null
+  coins     → buildCoinIcon(opts.coinKind ?? coinIconTier(count))   // AI 金币图集
+  material  → buildMaterialIcon(materialKind(id) ?? 'scrap')        // AI 材料图集
+  card      → buildIcon('rosterIcon', …, { variant })  ┐
+  equipment → buildIcon('equipIcon',  …, { variant })  ├ 批次 1 的 AI 页签图，纯复用（同批次 2/3
+  skin      → buildIcon('skinIcon',   …, { variant })  ┘ 的复用判据：同一个概念就不再出新图）
+  stamina / 未知 kind → null（调用方画纯 "+N" 文本，不画错图）
+```
+
+两个 `opts` 旋钮对应两处真实的既有差异，不是预留的抽象：`coinKind` 让 `RechargeScene` 保留自己那套更粗的金币档位阈值（它的面额到五位数，用通用阈值会全部触顶变宝箱）；`materialFallback: null` 让 `EventScene`/邮件在材料 id 不认识时退化成纯文字行，而不是错标成碎屑。
+
+**顺带修掉的两类问题**：
+1. **光栅图第一帧空白**：`buildRasterTabIcon` 走的是 `Texture.from` 懒加载，纹理没解码时画空。此前只有 `CardScene`/`EquipmentScene` 调了 `preloadTabIconTextures()`，其余用 AI 页签图的场景（含成就墙分类条）第一帧其实是空的，靠后续重绘自愈。新增 `preloadRewardIconArt()`（`allSettled` 并发预热页签 PNG + 金币图集 + 材料图集，永不 reject），6 个奖励屏幕在构造器里调一次并在 resolve 后重绘。
+2. **邮件的 `MAT_ITEM_ICON` 表删除**，材料解析统一走 `materialKind()`（同样只认 `scrap`/`lead`/`binding` 短 id，`mat_` 前缀是 gacha 的另一套命名空间——那条注释保留在 `mail.ts` 类上方）。
+
+**验证**：`tsc --noEmit` 通过；`vitest` + `vitest --config vitest.ui.config.ts` 全绿；新增 `test/render/rewardIcon.test.ts` 钉死"三种物品奖励必须落到 AI 图、不许回落程序 glyph"这条路由。**实拍验证**：Playwright（worktree 里 `TARGET=web-e2e` + `NW_API_BASE` 指向 public API，注册一次性账号 → `lobbyCb.onOpenDaily()` → 点 sidebar 各 tab）截了签到日历/周常宝箱两屏，确认第 2/3 档已是 AI 盾牌/卡牌图，日历里 14 日（卡牌）/30 日（装备）/里程碑金币角标同样全部转 AI。脚本踩到的坑记在 `playwright-screenshot-recipe` 那条记忆里（新账号被 FTUE 反复弹回；IntroScene 的纹理回调打死 ticker——后者已在下一节修掉）。
+
+### 状态：批次 4 完成 ✅
+
+---
+
+## 批次 4 追加：第三种 content 墨色（2026-08-16）
+
+批次 4 收尾时留了一条待美术拍板的项：AI 页签图只烘了 active(白) / inactive(`#686868` 灰) 两种墨色，奖励行拿到的是灰色那份——那是**页签非激活态**刻意压暗的墨，放到纸面内容里，比旁边全彩的材料/金币位图淡一档。用户当天拍板要加。
+
+**做法**：`pack_tab_icons.cjs` 增加第三种 ink `INK_CONTENT = #2c2c2a`（= `sketchUi.ts` 的 `C.dark`，也就是同一行主文案的墨色），每张源图现在吐 3 份，19 个图标共 57 张 PNG。选 `C.dark` 而不是另调一个新灰：奖励图标要跟它旁边那行标签一样"实"，直接复用主文案墨色就没有第二个需要维护的色值。
+
+**代码侧**：
+- `icons.ts` 新增 `RasterIconVariant = 'active' | 'inactive' | 'content'`，`TAB_ICON_RASTER` 每行三个 url，`buildIcon(kind, size, color, opts?: { variant })` 多一个可选旋钮（只对光栅 kind 生效，程序 glyph 照旧按 `color` 直接画）。
+- **`tabIconVariant()` 故意不会自动返回 `content`**：content 和 inactive 都是"纸底上的深墨"，任何基于颜色的判据都分不开这两者，只能由调用点显式声明。
+- `buildRewardIcon` 用 `tabIconVariant(color) === 'active' ? 'active' : 'content'`——纸底走 content，而**万一**哪天有奖励行画在深色底上（调用方传浅墨），仍然拿白线图。那不是防御性代码：底栏那次"灰线画在近黑底上等于隐形"就是漏了这一支。
+- `preloadTabIconTextures()` 现在预热 57 张。
+
+**回归测试**（两条，覆盖两个互相看不见的失败面）：
+- `test/render/tabIconContentVariant.test.ts`：①**资源侧**（纯 fs，不过打包器）——目录里每个图标必须齐三个变体、总数 = 3×套数、且三份 PNG 两两字节不同（打包脚本跑了一半、或两个 suffix 指向同一种 ink，代码照样能画出东西，只有比像素才抓得到）；②**代码侧**——`TAB_ICON_RASTER` 每个 kind 必须齐三个 key。两半不能合并：vitest 下所有 `.png` import 都被 stub 成同一个 data URI，所以 url 的"互不相同"只在磁盘上有意义，而 key 的"齐不齐"只在模块里有意义。
+- `test/render/rewardIcon.test.ts` 增补：三种物品奖励在纸面墨色（`0x336644`/`C.dark`/`C.mid`）下都必须请求 `{ variant: 'content' }`；传 `C.light` 时必须回到 `'active'`。
+
+**同批修掉的一个 canvas 冻结 bug**（批次 4 实拍时踩到的）：见下一节。
+
+---
+
+## 附：实拍时踩出的 canvas 冻结 bug
+
+跟图标无关，但正是批次 4 用 Playwright 实拍时撞上的——它解释了那次“截图全是同一张过期帧”的现象：脚本明明已经走到 Daily 页（`__nwE2E.state.screen === 'daily'`），截出来的却一直是几秒前的教程画面。根因是 `IntroScene`/`IllustratedInterludeScene` 的插图 `once('loaded')` 回调在场景销毁后读**已销毁 Sprite** 的 `.scale`，从 `Ticker._tick` 里的 PIXI Runner 抛出，整个 update 循环中止、画面永久定格，只能刷新页面。
+
+**修复由另一条并行会话落地**（`d15f9087` + `41cd834b`）：两个场景加 `destroyed` 判断并在 `destroy()` 注销监听，另外扫出 `CardScene/feed.ts` 与 `FriendsScene.render()` 两处同类；回归测试 `test/ui/storySceneLateTextureLoad.ui.ts` + 一条静态契约检查。契约写在 `claudedocs/client-modules.md` 的菜单场景生命周期契约一节。
+
+**本会话独立做了一遍同一个修复，合并时整半丢弃**（保留对方已合入的版本，不叠两套写法）。留下的两条经验值得记：
+
+- **已销毁 Container 和已销毁 Sprite 不是一回事**（实测，不是推断）：PIXI 对已销毁 Container 的 `add/removeChild/removeChildren` 完全容忍、不抛；只有已销毁 **Sprite** 的 `transform` 访问才炸。所以“回调只是重绘”的调用点最坏是白干一遍活，“回调直接摸 Sprite”的才是冻屏级——扫这类问题时先按这条分级，别把二十多处全当同等严重。
+- **没亲眼看它红过的回归测试等于没有**：本会话第一版 `FriendsScene` 用例断言的是“destroy 后 render 不抛”，把修复撤掉照样绿（因为它本来就不抛）。改成断言“destroy 后 render 不会把子节点重新塞回容器”才咬合。撤掉改动看它变红——这一步必须做。
+- **撤改动看红时，`perl -0pi -e 's/…\n//'` 会静默失效**：这个仓库的文件是 CRLF，`\n` 匹配不上，脚本什么都没删、测试当然照样绿，很容易误判成“测试没咬合”。用 `\r?\n`。同一个假设还在更早一次合并冲突里吞掉过本文档“批次 4”整节（`indexOf('\n---\n\n## 批次 4')` 返回 -1 → `slice(-1)`）。

@@ -48,6 +48,10 @@ export class WorldMapRendererPool implements PoolHandlers {
     }
     ctx.poolContainer.visible = true;
     ctx.mapGfxL3.visible = false;
+    // Depth-sort slots by their tile's screen row (see refreshPool's zIndex assignment). PIXI only
+    // re-sorts when a zIndex actually changes, i.e. once per pan step, over ~600 slots at L1 — not
+    // per frame.
+    ctx.poolContainer.sortableChildren = true;
     const { poolW, poolH } = ctx.zc;
     for (let i = 0; i < poolW * poolH; i++) {
       const g = new PIXI.Graphics();
@@ -90,6 +94,14 @@ export class WorldMapRendererPool implements PoolHandlers {
         const s = tileToScreen(tx, ty, tp);
         slot.g.x = ctx.panX + s.x;
         slot.g.y = ctx.panY + s.y;
+        // Isometric painter's order. The pool is a modulo-wrap torus, so a slot's index in
+        // poolContainer.children has nothing to do with its screen depth — which tile drew on
+        // top of which was effectively arbitrary AND flipped as you panned. Harmless while every
+        // tile's art stayed inside its own diamond, but structure sprites (watchtower/blocker)
+        // and landmark buildings rise well above it: a back-row tower could paint over the row
+        // in front of it. zIndex = tx+ty is the tile's screen-Y rank (screen y ∝ (tx+ty)), so
+        // sorting on it makes nearer rows paint last (2026-08-15, "瞭望塔和拒马乱糟糟" pass).
+        slot.g.zIndex = tx + ty;
         if (slot.tx === tx && slot.ty === ty) continue;
         slot.tx = tx; slot.ty = ty;
         this.drawTileSlot(slot, tx, ty);

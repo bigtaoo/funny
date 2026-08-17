@@ -6,7 +6,7 @@
  *   2. URL.createObjectURL() in StickmanRuntime never revoked — each .tao load
  *      retained several MB of blob memory for the lifetime of the session.
  *
- * Run with: npm run test:render
+ * Run with: npm test — the default suite's include covers every *.test.ts under test/.
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';

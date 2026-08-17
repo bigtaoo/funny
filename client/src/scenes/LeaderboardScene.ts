@@ -19,6 +19,94 @@ import { wheelScrollY } from '../ui/wheelScroll';
 // caller's own rank pinned under the season label (even when outside the Top-100).
 // Data: GET /leaderboard (JWT, driven by the loadLeaderboard callback).
 
+/**
+ * Row column geometry, split out as a pure function so it can be tested without a renderer.
+ *
+ * Why this exists (2026-08-16, TITLE_DESIGN §6 note): the row used to derive its **font sizes**
+ * from `rowH` (which tracks screen *height*) while placing its **columns** at fractions of `w`
+ * (screen *width*). Landscape is ~16:9 so nothing showed; portrait is ~1:2, so the height-driven
+ * type ran far wider than the width-driven grid — measured against real `monospace` metrics, a row
+ * with the default `Player1234` name and any equipped title pushed the title label 58px (zh) to
+ * 182px (de `Rangliste`) into the rank-tier column, in every locale, on every portrait phone, and
+ * worse on taller ones.
+ *
+ * Portrait now gives each row two lines (name on top; title / tier / ELO beneath), which is what
+ * actually buys the space back. The single-line landscape form is unchanged. Both paths hand the
+ * name+title block a hard right boundary and clamp into it via {@link fitNameAndTitle}, so an
+ * unusually long display name cannot reintroduce the collision — worth having, since no
+ * server-side length cap on `displayName` was found.
+ */
+export interface RowGeom {
+  twoLine: boolean;
+  rankX: number; rankCY: number; rankFs: number; medalSize: number;
+  nameX: number; nameCY: number; nameFs: number;
+  titleCY: number; titleFs: number;
+  /** Right boundary the name+title block must not cross (the tier column's left edge). */
+  contentRight: number;
+  tierCX: number; tierCY: number; tierFs: number;
+  eloRightX: number; eloCY: number; eloFs: number;
+}
+
+export function leaderboardRowGeom(w: number, rowH: number, twoLine: boolean): RowGeom {
+  const rankX = Math.round(w * 0.03);
+  const nameX = Math.round(w * 0.18);
+  const eloRightX = w - Math.round(w * 0.03);
+
+  if (!twoLine) {
+    const tierFs = snapFont(Math.round(rowH * 0.38));
+    const tierCX = w * 0.68;
+    return {
+      twoLine: false,
+      rankX, rankCY: rowH / 2, rankFs: snapFont(Math.round(rowH * 0.5)), medalSize: Math.round(rowH * 0.62),
+      nameX, nameCY: rowH / 2, nameFs: snapFont(Math.round(rowH * 0.48)),
+      titleCY: rowH / 2, titleFs: snapFont(Math.round(rowH * 0.3)),
+      // Half a tier label of clearance: the tier text is centre-anchored on tierCX.
+      contentRight: tierCX - tierFs,
+      tierCX, tierCY: rowH / 2, tierFs,
+      eloRightX, eloCY: rowH / 2, eloFs: snapFont(Math.round(rowH * 0.5)),
+    };
+  }
+
+  // Portrait: line 1 carries the name, line 2 the title / tier / ELO. Type is sized off rowH as
+  // before, but from the *line* share of it rather than the whole row, so the fonts stay in the
+  // same visual ballpark as the old single-line row instead of doubling with the height.
+  const line1CY = rowH * 0.34;
+  const line2CY = rowH * 0.74;
+  const tierFs = snapFont(Math.round(rowH * 0.16));
+  const tierCX = w * 0.62;
+  return {
+    twoLine: true,
+    rankX, rankCY: rowH / 2, rankFs: snapFont(Math.round(rowH * 0.26)), medalSize: Math.round(rowH * 0.42),
+    nameX, nameCY: line1CY, nameFs: snapFont(Math.round(rowH * 0.23)),
+    titleCY: line2CY, titleFs: snapFont(Math.round(rowH * 0.16)),
+    contentRight: tierCX - tierFs,
+    tierCX, tierCY: line2CY, tierFs,
+    eloRightX, eloCY: line2CY, eloFs: snapFont(Math.round(rowH * 0.22)),
+  };
+}
+
+/**
+ * Fit a measured name and title into `avail` px, returning the scale to apply to each and where
+ * the title starts. Takes measured widths rather than strings so it stays renderer-free.
+ *
+ * When both fit, nothing is scaled — the common case must be pixel-identical to no clamping at
+ * all. When they do not, the title is capped at a minority share of the space (the name is the
+ * identifying field and gets the remainder) and each is scaled down to its budget, the same
+ * shrink-to-fit TitlesScene already uses for its own overlong labels.
+ */
+export function fitNameAndTitle(
+  nameW: number, titleW: number, avail: number, gap: number,
+): { nameScale: number; titleScale: number; titleX: number } {
+  if (nameW + gap + titleW <= avail) {
+    return { nameScale: 1, titleScale: 1, titleX: nameW + gap };
+  }
+  const titleBudget = Math.max(0, Math.min(titleW, avail * 0.45));
+  const nameBudget = Math.max(0, avail - gap - titleBudget);
+  const nameScale = nameW > 0 ? Math.min(1, nameBudget / nameW) : 1;
+  const titleScale = titleW > 0 ? Math.min(1, titleBudget / titleW) : 1;
+  return { nameScale, titleScale, titleX: nameW * nameScale + gap };
+}
+
 export interface LeaderboardEntry {
   rank: number;
   displayName: string;
@@ -92,11 +180,13 @@ export class LeaderboardScene implements Scene {
   private rowGap = 0;
   private listW = 0;
   private builtRows: Map<number, PIXI.Container> = new Map();
+  private landscape = true;
 
   constructor(layout: ILayout, input: InputManager, cb: LeaderboardCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.landscape = layout.orientation === 'landscape';
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
@@ -263,7 +353,9 @@ export class LeaderboardScene implements Scene {
     }
 
     const entries = this.data.entries;
-    const rowH = Math.round(h * 0.065);
+    // Portrait rows carry two lines (see leaderboardRowGeom), so they need the extra height. The
+    // scroll plumbing is all derived from this.rowH, so it follows automatically.
+    const rowH = Math.round(h * (this.landscape ? 0.065 : 0.095));
     const rowGap = Math.round(h * 0.008);
     const listW = w - pad * 2;
     this.entries = entries;
@@ -333,39 +425,62 @@ export class LeaderboardScene implements Scene {
     if (isTop3) sketchAccentBar(box, rowH, C.gold, seedFor(index, rowH, 4));
     parent.addChild(box);
 
+    const g = leaderboardRowGeom(w, rowH, !this.landscape);
+
     // Top-3: a rank medal tinted gold / silver / bronze; below that, plain "#N" text.
     if (isTop3) {
       const medalColor = e.rank === 1 ? 0xf0c040 : e.rank === 2 ? 0xc2c6cc : 0xcd8a4b;
-      const medalSz = Math.round(rowH * 0.62);
-      const medal = buildIcon('medal', medalSz, medalColor);
-      medal.x = x + Math.round(w * 0.03); medal.y = y + rowH / 2 - medalSz / 2;
+      const medal = buildIcon('medal', g.medalSize, medalColor);
+      medal.x = x + g.rankX; medal.y = y + g.rankCY - g.medalSize / 2;
       parent.addChild(medal);
     } else {
-      const rankLbl = txt(`#${e.rank}`, snapFont(Math.round(rowH * 0.5)), C.mid);
-      rankLbl.anchor.set(0, 0.5); rankLbl.x = x + Math.round(w * 0.03); rankLbl.y = y + rowH / 2;
+      const rankLbl = txt(`#${e.rank}`, g.rankFs, C.mid);
+      rankLbl.anchor.set(0, 0.5); rankLbl.x = x + g.rankX; rankLbl.y = y + g.rankCY;
       parent.addChild(rankLbl);
     }
 
-    const nameLbl = txt(e.displayName || `#${e.publicId}`, snapFont(Math.round(rowH * 0.48)), C.dark);
-    nameLbl.anchor.set(0, 0.5); nameLbl.x = x + Math.round(w * 0.18); nameLbl.y = y + rowH / 2;
+    const nameLbl = txt(e.displayName || `#${e.publicId}`, g.nameFs, C.dark);
+    nameLbl.anchor.set(0, 0.5); nameLbl.x = x + g.nameX; nameLbl.y = y + g.nameCY;
     parent.addChild(nameLbl);
 
+    let titleLbl: PIXI.Text | null = null;
     if (e.equippedTitle) {
       const keys = getTitleKeys(e.equippedTitle);
       const tLabel = keys
         ? (t(keys.shortKey as import('../i18n').TranslationKey) || formatLadderTitle(e.equippedTitle))
         : formatLadderTitle(e.equippedTitle);
-      const titleLbl = txt(`「${tLabel}」`, snapFont(Math.round(rowH * 0.3)), C.mid);
-      titleLbl.anchor.set(0, 0.5); titleLbl.x = nameLbl.x + nameLbl.width + 4; titleLbl.y = y + rowH / 2;
+      titleLbl = txt(`「${tLabel}」`, g.titleFs, C.mid);
+      titleLbl.anchor.set(0, 0.5); titleLbl.y = y + g.titleCY;
       parent.addChild(titleLbl);
     }
 
-    const pvpRankLbl = txt(t(('rank.' + e.pvpRank) as import('../i18n').TranslationKey), snapFont(Math.round(rowH * 0.38)), C.mid);
-    pvpRankLbl.anchor.set(0.5, 0.5); pvpRankLbl.x = x + Math.round(w * 0.68); pvpRankLbl.y = y + rowH / 2;
+    // Two-line rows give the name the whole of line 1 and the title the start of line 2, so the two
+    // never compete; single-line rows share one span. Either way the block is clamped to
+    // `contentRight` so a long name can never push the title into the tier column.
+    const gap = 4;
+    if (g.twoLine) {
+      const nameAvail = g.contentRight - g.nameX;
+      if (nameLbl.width > nameAvail) nameLbl.scale.set(nameAvail / nameLbl.width);
+      if (titleLbl) {
+        titleLbl.x = x + g.nameX;
+        const titleAvail = g.contentRight - g.nameX;
+        if (titleLbl.width > titleAvail) titleLbl.scale.set(titleAvail / titleLbl.width);
+      }
+    } else {
+      const fit = fitNameAndTitle(nameLbl.width, titleLbl?.width ?? 0, g.contentRight - g.nameX, gap);
+      if (fit.nameScale < 1) nameLbl.scale.set(fit.nameScale);
+      if (titleLbl) {
+        if (fit.titleScale < 1) titleLbl.scale.set(fit.titleScale);
+        titleLbl.x = x + g.nameX + fit.titleX;
+      }
+    }
+
+    const pvpRankLbl = txt(t(('rank.' + e.pvpRank) as import('../i18n').TranslationKey), g.tierFs, C.mid);
+    pvpRankLbl.anchor.set(0.5, 0.5); pvpRankLbl.x = x + g.tierCX; pvpRankLbl.y = y + g.tierCY;
     parent.addChild(pvpRankLbl);
 
-    const eloLbl = txt(String(e.elo), snapFont(Math.round(rowH * 0.5)), isTop3 ? C.gold : C.dark, isTop3);
-    eloLbl.anchor.set(1, 0.5); eloLbl.x = x + w - Math.round(w * 0.03); eloLbl.y = y + rowH / 2;
+    const eloLbl = txt(String(e.elo), g.eloFs, isTop3 ? C.gold : C.dark, isTop3);
+    eloLbl.anchor.set(1, 0.5); eloLbl.x = x + g.eloRightX; eloLbl.y = y + g.eloCY;
     parent.addChild(eloLbl);
   }
 }

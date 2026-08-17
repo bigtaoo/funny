@@ -93,6 +93,10 @@ export class DefenseEditorScene implements Scene {
 
   private render(): void {
     const core = this.core;
+    // The one throttle point every redraw entry funnels through — data.ts's save/fill error paths
+    // call render() straight after an await, so the player can have left the panel by then. See
+    // 菜单场景生命周期契约 in claudedocs/client-modules.md.
+    if (core.destroyed) return;
     tearDownChildren(core.bodyLayer);
     core.hits = [];
     core.rosterCardHits = [];

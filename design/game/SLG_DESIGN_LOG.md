@@ -1062,7 +1062,7 @@ audit-followup-fixes-0730 复查时重新核实了 §18.8.1 的"根因未定位"
 - `client/src/scenes/worldmap/WorldMapContext.ts`：`onOpenFamily` → `onOpenChat`；删 `famBtnRect`/`trainBtnRect`，加 `marchBadgeRect`/`chatBarRect`/`marchesExpanded`。
 - `client/src/app/nav/world.ts`：`onOpenChat()` 调 `nav.goFriends({ defaultTab: 'world', onBack: () => goWorldMap(...) })`——返回时回到世界地图而非大厅。
 - `client/src/app/nav/social.ts` + `client/src/app/appCtx.ts` + `client/src/scenes/FriendsScene/base.ts`：`goFriends`/`FriendsSceneCallbacks.defaultTab` 从 `'friends' | 'mail'` 放宽到完整 `Tab`（`'friends' | 'family' | 'sect' | 'world' | 'mail'`）+ `goFriends` 新增可选 `onBack` 覆盖（默认仍是 `nav.goLobby()`），使世界地图能指定"返回世界地图"而非硬编码回大厅。
-- i18n 新增 `world.chat`（zh/en/de 三语）；`world.family` key 保留未删（其他场景仍可能引用，只是世界地图不再用它做按钮文案）。
+- i18n 新增 `world.chat`（zh/en/de 三语）；`world.family` key 保留未删（其他场景仍可能引用，只是世界地图不再用它做按钮文案）。**2026-08-16 更正**：审计逐一核过，其他场景并没有引用它，已连同另外 138 个死 key 一并删除（见 `UI_DESIGN.md` §33）。
 - **跟 §3.1 撞车**：本节开发期间，另一次改动（commit `f3e237ce`）恰好也在同步把 WorldMapScene 的返回按钮从底栏自绘迁移到 `SceneHeader.drawFloatingBackButton`（统一 22 个场景的返回按钮规格），两者改的是同一批文件（`WorldMapContext.ts`/`WorldMapPanels.ts`）。两次改动语义不冲突（各改各的字段），已核对合并后 `tsc --noEmit` + `webpack --mode production` 全绿，未丢内容。
 - **两个已知缺口已收尾（2026-07-05）**：
   - 聊天条接数据：`WorldMapNet.refreshWorldChat()`（新增，随 5s march 轮询一并调用，`worldApi.getWorldChannel(worldId, {limit: 20})`）把最新一条消息存到 `ctx.worldChatLatest`；未读数用客户端本地"已读水位"计算——`WorldMapContext.markWorldChatSeen()` 把 `worldChatLatest.ts` 写入 `localStorage`（key 按 `worldId+accountId` 隔离，避免多号共享已读位），点击聊天条（`WorldMapInput.ts`）时调用；`renderHud()` 显示 `发送者: 正文前28字` + 超过已读水位的条数角标（封顶 `9+`）。未走服务端已读接口，因为 worldsvc 目前没有为世界频道维护已读状态（对比 `mail.unread` 是服务端字段）——纯本地近似,足够 HUD 预览用途。

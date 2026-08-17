@@ -24,7 +24,6 @@
     "test": "vitest run && npm run test:sim",
     "test:coverage": "vitest run --coverage && npm run test:sim",
     "test:sim": "vitest run --config vitest.sim.config.ts",
-    "test:render": "vitest run --config vitest.render.config.ts",
     "test:watch": "vitest",
     "test:ui": "vitest run --config vitest.ui.config.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",

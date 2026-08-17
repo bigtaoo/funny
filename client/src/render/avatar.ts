@@ -32,6 +32,7 @@ import { titleIconUrl } from './titleArt';
 import { UNIT_ART_URLS, getArtTexture } from './cardArt';
 import { PRESET_AVATAR_KEYS, PRESET_AVATAR_ART_URLS, type PresetAvatarKey } from './presetAvatarArt';
 import { HERO_AVATAR_ART_URLS, type HeroAvatarKey } from './heroAvatarArt';
+import { PRESET_HEAD_BOX, HERO_HEAD_BOX, type HeadBox } from './portraitHeadBox';
 import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
 import { snapFont } from './fontScale';
 
@@ -62,7 +63,20 @@ export function parseAvatarId(id: string): { category: AvatarCategory; key: stri
   return null;
 }
 
-/** Neutral disc background shared by every avatar category (portraits/icons sit on top, at ~62% width). */
+/**
+ * How much of the tile the art covers.
+ *
+ * Portraits (preset/hero/skin) run nearly edge-to-edge so the coloured disc reads as a thin
+ * category rim rather than a background — at the old shared 0.62 the ring ate ~19% of the tile on
+ * every side, leaving a fat donut around a head barely half the tile wide. They're measured off the
+ * DISC's diameter (`size - 4`), not the tile's, so the rim survives at the map tokens' 16px floor;
+ * a flat fraction of the tile would overflow the sketched rim outright down there.
+ * Flat medal art (title) still wants the disc as breathing room and keeps the old tile fraction.
+ */
+const PORTRAIT_FILL_OF_DISC = 0.92;
+const ICON_FILL = 0.62;
+
+/** Neutral disc background shared by every avatar category (portraits/icons sit on top). */
 const CATEGORY_BG: Record<AvatarCategory, number> = {
   preset: palette.inkBlue,
   title: 0xd4a030,
@@ -71,18 +85,16 @@ const CATEGORY_BG: Record<AvatarCategory, number> = {
 };
 
 /**
- * Resolve a preset avatar key to its portrait URL. Accepts the current 20 string keys, and
+ * Resolve a stored preset avatar key to one of the current 20. Accepts the string keys as-is, and
  * migrates the old pre-2026-08 numeric format (bare "0".."7" indices, from the 8-icon set this
  * replaced) by mapping the index positionally onto the new key list — old accounts land on *a*
  * valid portrait rather than the letter-initial glyph.
  */
-function resolvePresetArtUrl(key: string): string | undefined {
-  if (Object.prototype.hasOwnProperty.call(PRESET_AVATAR_ART_URLS, key)) {
-    return PRESET_AVATAR_ART_URLS[key as PresetAvatarKey];
-  }
+function resolvePresetKey(key: string): PresetAvatarKey | undefined {
+  if (Object.prototype.hasOwnProperty.call(PRESET_AVATAR_ART_URLS, key)) return key as PresetAvatarKey;
   if (/^\d+$/.test(key)) {
     const idx = parseInt(key, 10) % PRESET_AVATAR_KEYS.length;
-    return PRESET_AVATAR_ART_URLS[PRESET_AVATAR_KEYS[idx]!];
+    return PRESET_AVATAR_KEYS[idx]!;
   }
   return undefined;
 }
@@ -98,14 +110,48 @@ function spriteIcon(url: string | null, size: number): PIXI.DisplayObject | null
 }
 
 /**
- * A character portrait cropped to a circle of diameter `size`.
- * All six unit illustrations (cardArt.ts UNIT_ART_URLS) are full-body renders with the head flush
- * against the top edge and no meaningful aspect variance in width — so fitting by WIDTH alone and
- * anchoring to the top keeps the head in frame regardless of how tall/narrow the body is (a fixed
- * "cover then zoom in" fit was cropping straight through the torso on the tallest portraits, cutting
- * the head off entirely). Cropping the lower body is fine; that's the point of an avatar bust crop.
+ * Bust framing, as fractions of the circle's diameter: the head (hair top → neck, per
+ * portraitHeadBox.ts) starts `HEAD_TOP` down and fills `HEAD_SPAN` of the circle, so the crop lands
+ * at the neck and the shoulders stay out of frame. Wide heads (tsundere's pigtails, fanboy,
+ * hero_infantry) hit `HEAD_MAX_W` first and are sized by width instead, or they'd burst the sides.
+ * Picked from a Canvas2D side-by-side of all 26 real portraits at these three values ±0.04.
  */
-function buildPortraitIcon(url: string, size: number): PIXI.Container {
+const HEAD_TOP = 0.05;
+const HEAD_SPAN = 0.90;
+const HEAD_MAX_W = 0.88;
+
+/** Nominal bust-portrait pixel size — every one of the 26 is 512×768; used only before the real texture loads. */
+const BUST_W = 512, BUST_H = 768;
+
+/**
+ * Fit a portrait into the circle. With a head box (presets/heroes — the bust portraits) each
+ * portrait is normalised against its OWN head geometry, which varies far more than the composition
+ * brief suggests (hair top 0.03-0.13 of the image, neck 0.52-0.69, head width 0.58-0.94); one
+ * global crop constant has to clear the loosest of them and leaves all the others looking small.
+ *
+ * Without one (`head: null`) — cardArt.ts's full-body battle renders, which the skin category still
+ * borrows — fit by WIDTH and anchor to the TOP. Their heads sit flush against the top edge, so any
+ * "cover then zoom" fit crops straight through the torso and loses the head entirely; a bit of
+ * headroom keeps the art's top edge off the rim.
+ */
+function fitPortrait(sprite: PIXI.Sprite, tex: PIXI.Texture, size: number, head: HeadBox | null): void {
+  const valid = tex.baseTexture.valid && tex.width > 1;
+  if (!head) {
+    sprite.scale.set(valid ? size / tex.width : size / 256);
+    sprite.y = size * 0.03;
+    return;
+  }
+  const texW = valid ? tex.width : BUST_W, texH = valid ? tex.height : BUST_H;
+  const byHeight = (HEAD_SPAN * size) / ((head.bottom - head.top) * texH);
+  const byWidth = (HEAD_MAX_W * size) / (head.width * texW);
+  // Never below a plain width fit, or the circle's flanks would show the disc through the art.
+  const scale = Math.max(size / texW, Math.min(byHeight, byWidth));
+  sprite.scale.set(scale);
+  sprite.y = HEAD_TOP * size - head.top * texH * scale;
+}
+
+/** A character portrait cropped to a circle of diameter `size`, framed per {@link fitPortrait}. */
+function buildPortraitIcon(url: string, size: number, head: HeadBox | null): PIXI.Container {
   const c = new PIXI.Container();
   // getArtTexture (not bare Texture.from) so bust crops share the mipmap opt-in — avatar
   // circles shrink hero art hard, and a no-mipmap version winning the shared cache here
@@ -113,9 +159,17 @@ function buildPortraitIcon(url: string, size: number): PIXI.Container {
   const tex = getArtTexture(url);
   const sprite = new PIXI.Sprite(tex);
   sprite.anchor.set(0.5, 0);
-  sprite.scale.set(tex.valid && tex.width > 0 ? size / tex.width : size / 256);
   sprite.x = size / 2;
-  sprite.y = size * 0.03; // slight headroom so the art's top edge isn't flush with the circle's rim
+  const fit = () => fitPortrait(sprite, tex, size, head);
+  fit();
+  if (!tex.baseTexture.valid) {
+    // The art loads async and the placeholder texture is 1×1, so the first fit runs on assumed
+    // dimensions — exact for the busts (all 512×768), a guess for the full-body art. Nothing
+    // re-renders an avatar (it's a leaf builder, not a scene), so re-fit in place once the real
+    // size is known; `once` + the destroyed guard keeps this from outliving the sprite when the
+    // screen is torn down mid-load.
+    tex.baseTexture.once('loaded', () => { if (!sprite.destroyed) fit(); });
+  }
   const mask = new PIXI.Graphics();
   mask.beginFill(0xffffff);
   mask.drawCircle(size / 2, size / 2, size / 2);
@@ -126,23 +180,31 @@ function buildPortraitIcon(url: string, size: number): PIXI.Container {
   return c;
 }
 
+/** Art side length for a category, given the tile side and the disc's radius. */
+function categoryIconSize(category: AvatarCategory, size: number, r: number): number {
+  return Math.round(category === 'title' ? size * ICON_FILL : r * 2 * PORTRAIT_FILL_OF_DISC);
+}
+
 /** Resolve the centred icon/portrait for any avatar category, or null if the key has no art (→ letter fallback). */
 function categoryIcon(category: AvatarCategory, key: string, size: number): PIXI.DisplayObject | null {
   switch (category) {
     case 'preset': {
-      const url = resolvePresetArtUrl(key);
-      return url ? buildPortraitIcon(url, size) : null;
+      const resolved = resolvePresetKey(key);
+      return resolved
+        ? buildPortraitIcon(PRESET_AVATAR_ART_URLS[resolved], size, PRESET_HEAD_BOX[resolved])
+        : null;
     }
     case 'title':
       return spriteIcon(titleIconUrl(key), size) ?? buildIcon('trophy', size, palette.paper);
     case 'hero': {
       const url = HERO_AVATAR_ART_URLS[key as HeroAvatarKey];
-      return url ? buildPortraitIcon(url, size) : null;
+      return url ? buildPortraitIcon(url, size, HERO_HEAD_BOX[key as HeroAvatarKey] ?? null) : null;
     }
     case 'skin': {
+      // Full-body battle art, not a bust — no head box, so it falls back to the width fit.
       const unit = SKIN_TARGET_UNIT[key];
       const url = unit !== undefined ? UNIT_ART_URLS[unit] : undefined;
-      return url ? buildPortraitIcon(url, size) : null;
+      return url ? buildPortraitIcon(url, size, null) : null;
     }
   }
 }
@@ -161,10 +223,11 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
 
   const parsed = avatarId ? parseAvatarId(avatarId) : null;
 
-  const iconS = Math.round(size * 0.62);
+  let iconS = Math.round(size * ICON_FILL);
   let icon: PIXI.DisplayObject | null = null;
   let bg: number = palette.inkBlue;
   if (parsed) {
+    iconS = categoryIconSize(parsed.category, size, r);
     icon = categoryIcon(parsed.category, parsed.key, iconS);
     if (icon) bg = CATEGORY_BG[parsed.category];
   }
@@ -173,9 +236,6 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
   disc.beginFill(bg);
   disc.drawCircle(cx, cy, r);
   disc.endFill();
-  new SketchPen(disc, seed).circle(cx, cy, r, {
-    color: palette.pencil, width: 2.2, jitter: 1.2,
-  });
   c.addChild(disc);
 
   if (icon) {
@@ -193,6 +253,15 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
     letter.x = cx; letter.y = cy + 1;
     c.addChild(letter);
   }
+
+  // Pencil rim drawn LAST: a portrait now reaches within a few px of the disc's edge, and at small
+  // tile sizes (list rows, map tokens) it would otherwise cover the inner half of the stroke and
+  // leave the hand-drawn line looking thin and broken.
+  const rim = new PIXI.Graphics();
+  new SketchPen(rim, seed).circle(cx, cy, r, {
+    color: palette.pencil, width: 2.2, jitter: 1.2,
+  });
+  c.addChild(rim);
 
   return c;
 }

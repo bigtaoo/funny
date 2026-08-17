@@ -171,6 +171,10 @@ export class TitlesScene implements Scene {
   }
 
   private render(): void {
+    // The single throttle point for every redraw entry (菜单场景生命周期契约) — the card-art
+    // 'loaded' hook below already guards itself, but the guard belongs here so any future deferred
+    // redraw is covered without having to remember.
+    if (this.destroyed) return;
     tearDownChildren(this.container);
     this.hits = [];
 

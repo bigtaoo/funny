@@ -170,6 +170,10 @@ export class FeedPanel {
     };
 
     const drawFusePanel = (): void => {
+      // Reachable after teardown: it is both `core.feedRedraw` and the 'loaded' callback for the
+      // ring/list card art below, so a late texture decode would otherwise tear down an already-
+      // destroyed modalLayer from inside a PIXI Runner and kill Ticker.shared.
+      if (core.destroyed) return;
       tearDownChildren(ml);
       core.modalHits = [];
 

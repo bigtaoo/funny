@@ -468,7 +468,7 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - i18n 三语言文件补 `auction.filterSkin`/`auction.err.skinInUse`。
 - **未改动（截至本任务11当时）**：皮肤本身没有实例id（`inventory.skins: string[]` 去重集合，"拥有一份"="拥有全部"），拍卖只按 `skinId` 字符串托管/归还，与装备/角色卡的 instanceId 模型不同，这是既有设计（`skin.ts` 头部注释），不在本任务范围内调整（相关的"是否要给皮肤也上实例id"的讨论见 [[item-identity-audit]] / `ITEM_IDENTITY_DESIGN.md`）。**2026-08-08 更新**：`ITEM_IDENTITY_DESIGN.md` 任务1已给皮肤加上服务端实例（`skinInstances` 集合），但拍卖挂单的**外部契约**仍是 `{skinId}` 不变——`escrowSkin`/`grantSkin` 对 auctionsvc 而言接口没变，只是内部实现换成了"挑一份实例操作"，本段描述的"拍卖只按 skinId 字符串托管"在挂单接口这一层依然成立。
 - **已知限制（未修复，属于更深的经济系统缺口，不在本任务范围）**：gacha 抽到"重复"皮肤（账号已拥有过）目前是纯 no-op（`markDuplicates`，`economy.ts`），不会产生任何新库存或补偿——即使补上本任务的 picker UI，一个**真正重复**的皮肤仍然不会出现在拍卖列表里，只有"未装备但从未拍卖过的唯一一份"才会。设计文档里"重复转化待S5"的待办（本节 §9 任务2 引用）尚未排期。
-  > **2026-08-08 更新：以上限制已解决**，见 `ITEM_IDENTITY_DESIGN.md` 任务1——皮肤实例化落地，gacha 重复皮肤现在会生成真实第二份实例（不再是 no-op），"装备中不可挂拍"也从"完全禁止"放宽为"只保护最后一份"，多余的那份现在能正常出现在拍卖 picker 里；同时新增玩家主动发起的"出售给系统换金币"入口（`/skins/sell`），与自动转币的原设想不同。挂单契约本身（`{skinId}`）刻意保持不变，见任务1的说明。
+  > **2026-08-08 更新：以上限制已解决**，见 `ITEM_IDENTITY_DESIGN.md` 任务1——皮肤实例化落地，gacha 重复皮肤现在会生成真实第二份实例（不再是 no-op），"装备中不可挂拍"也从"完全禁止"放宽为"只保护最后一份"，多余的那份现在能正常出现在拍卖 picker 里。挂单契约本身（`{skinId}`）刻意保持不变，见任务1的说明。（当时同批新增的"出售给系统换金币"入口 `/skins/sell` 已于 **2026-08-15 删除**——售价复用重复退币表，比市场价低一到两个数量级，只会让玩家误操作烧掉价值；多余皮肤现在只有拍卖行一个出口。）
 - **验收**：`server/metaserver`（67 文件 804 例）、`server/shared`（35 文件 678 例）、`server/auctionsvc`（9 文件 91 例）全绿；client `tsc --noEmit` 绿；`npm run build:web` 绿（仅预期内 asset-size 警告）；client `vitest run` + `vitest run --config vitest.ui.config.ts`（合计 259 文件 2077 例）全绿。测试覆盖分两批：首批 5 条 `auctionPickerDedupe.ui.ts` 皮肤专项用例（未装备过滤、entry 生成、pick 后 `doCreate` 请求体、分类 tab 渲染）；用户要求"全部加测试"后追加：`auctionScene.ui.ts` 补齐此前完全无覆盖的 `itemKind()`/`auctionLabel()`（含 skin 分支）+ `SKIN_IN_USE`/`SKIN_NOT_FOUND` 错误映射，`equipment.test.ts`（shared）补 `makeGachaEquipInstance`/`makeDropInstance` 的溯源字段透传单测（详见 `ITEM_IDENTITY_DESIGN.md` §2 的溯源字段验收清单）。
 - **未验证**：本次会话 Browser 预览面板未能渲染帧（环境限制），且触达真实 AuctionScene 需要登录态 + 跑起来的 metaserver/auctionsvc 后端，故**没有做浏览器截图验证**，只有 headless PIXI 单测覆盖（真实 PIXI 场景树、无渲染器）+ 生产构建通过。下次有可用预览环境时应补一次真实截图核对。
 
@@ -598,6 +598,15 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
   - 新增测试辅助函数 `findTextNode()`（`findLabelPos()` 的姊妹函数，返回节点本身而非仅返回坐标，用于断言 `.style` 而非仅位置）。
   - **踩坑记录**：字号断言最初直接写死 `17 * SCALE`/`13 * SCALE`（25.5/19.5），实际渲染值是 24/20——`txt()` 的字号要过 `snapFont()` 吸附到一套固定字号档位，不是原始像素值；改为用 `snapFont()` 本身计算期望值后通过。
 - **验收**：`tsc --noEmit`（含 `tsconfig.test.json`）全绿；`npm run build:web` 通过；`vitest run --config vitest.ui.config.ts` 对 `auctionScene.ui.ts`（80 例，新增 5 例）单独绿，再跑 `auctionScene.ui.ts`/`auctionActionBusyLock.ui.ts`/`auctionPickerDedupe.ui.ts`/`auctionBackButtonHitWidth.ui.ts`/`caretRegression.ui.ts`/`scenes.ui.ts` 六个拍卖/UI 相关文件合计 254 例全绿。纯测试新增，未改变任何渲染行为，不涉及浏览器截图。
+
+### 修复：拍卖行材料名自成一套，与背包/商店对不上（2026-08-15）
+
+- **问题**：用户对着「出售物品选择页」的材料一行截图画圈——"拍卖行里物品的名字是另外一套吗？为何和背包里的名字不一致"。核查确认属实：拍卖行三种材料读的是自己的一组 i18n key `auction.scrap|lead|binding`（中文"废料/铅块/绑线"），而背包（`EquipmentScene`）、商店（`ShopScene`）、抽卡（`GachaScene`）、统计（`StatsScene`）全都读共享的 `material.*`（中文"旧纸片/铅笔芯/装订线"，见 `EQUIPMENT_DESIGN.md` §材料命名定稿）。同一堆材料在两个界面叫两个名字。英文侧 `Scrap` vs `Tatter`、德文侧 `Schrott` vs `Fetzen` 同样对不上；`lead`/`binding` 的英德文恰好撞车，所以只有中文和英文 scrap 一栏能被肉眼看出来。这是拍卖行落地时另起一套 key、没有复用既有材料命名留下的分叉，不是后来改名漏改。
+- **改动**：
+  - `client/src/scenes/AuctionScene/itemLabels.ts`（`auctionLabel()` 材料分支）、`itemPickerRender.ts`（`selectedItemLabel()` + `buildPickEntries()`）三处改读 `material.${mat}`。
+  - `client/src/i18n/locales/{zh,en,de}.ts`：删掉 `auction.scrap`/`auction.lead`/`auction.binding` 三条同义 key（已无任何引用），避免以后又被人捡回去用。
+  - `client/test/ui/auctionScene.ui.ts` 两处断言里的 `t('auction.lead')`/`t('auction.scrap')` 同步换成 `material.*`。
+- **验收**：`tsc --noEmit` 全绿；新增 `client/test/ui/auctionMaterialNames.ui.ts`（4 例：选择页条目标签、创建表单已选标签、市场列表行 `"<名字> ×qty"`、以及三种语言下 `auction.*` 同义 key 确实已消失——`t()` 对缺失 key 会原样回显，正好用作断言），连同 `auctionScene.ui.ts`/`auctionPickerDedupe.ui.ts` 共 105 例全绿。未做浏览器截图：本次会话没有跑起后端（9090/18086/18080 均无监听），拍卖行需登录态 + 完整后端才能进入；headless UI 测试跑的是真实 PIXI 场景树 + 真实 i18n，已直接断言渲染出的文本。
 
 ---
 
