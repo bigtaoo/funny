@@ -78,7 +78,7 @@
 ## 交接点
 
 - **🔔 [Track 1 交接 · 已就位 2026-06-23]** L3-1/L3-2 三语文本已落地，可替换 `consent.*` 占位链接（非阻塞）：
-  - 隐私政策：[`design/product/legal/privacy-policy.{zh,en,de}.md`](../product/legal/)；用户协议：[`design/product/legal/terms-of-service.{zh,en,de}.md`](../product/legal/)。
+  - 隐私政策：[`design/product/legal/privacy-policy.{zh,en,de}.md`](../../product/legal/)；用户协议：[`design/product/legal/terms-of-service.{zh,en,de}.md`](../../product/legal/)。
   - `consent.*` i18n 的政策/协议链接指向托管 URL 占位 `{{PRIVACY_POLICY_URL}}` / `{{TERMS_URL}}`（文本内已统一用这两个 token；上线前由发布同学托管 HTML 后回填真实 URL）。
   - 文本含「7 天宽限期」「13+ 定级」「应用内删除账号」等口径，与 Track 1 L1-1（同意弹层）/L1-2（删除账号）/L1-3（抽卡概率）一致，措辞可直接引用。
 - L3-4/L3-5/L3-6 需可运行的服务端 + 客户端构建；可在 Track 1/2 合入后或用当前 main 构建执行。

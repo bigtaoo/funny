@@ -104,7 +104,7 @@ const rowY  = isPortrait
 
 **问题**：竖屏 2 列商品网格（`gridMetrics()` 800×1280 下 `cols=2`，比 §"横屏商品卡由 4 列改 3 列"（2026-07-17）修的横屏 4 列更窄）下，`starter_draw` 卡片标题「Starter First-Draw Pack」在 `drawCard()` 默认标题字号下换成 3 行，价格行（当时是「¥6」，同日晚些时候的 CNY→USD 改价后是「$0.99」）被顶到了下方 Buy 按钮上，字压字。真实 Playwright 截图确认。
 
-**根因**：`drawCard()`（[base.ts:559](../../client/src/scenes/ShopScene/base.ts:559)）里价格行（`coinAmount`/`usdCents` 两个分支）的起始 `ty` 只取决于标题实际换行后的高度，**没有像紧接其后的状态/加成行（`lines`）那样做 `bandBottom` 钳制**（那段有 `if (lines.length > 0 && ty < bandBottom)` + 逐行 `ty + l.height > bandBottom` 检查）。§"横屏商品卡由 4 列改 3 列"当时是靠"横屏也统一改宽到 3 列，标题基本不再换行"侧面绕开了这个缺口，没有真正给价格行补上跟状态行一致的钳制——列更窄、标题更长时（本例的竖屏 2 列 + 起始包名）缺口就重新暴露。
+**根因**：`drawCard()`（[card.ts](../../client/src/scenes/ShopScene/card.ts:21)（当时叫 `base.ts:559`，ShopScene 改组合式后 `drawCard()` 迁至此））里价格行（`coinAmount`/`usdCents` 两个分支）的起始 `ty` 只取决于标题实际换行后的高度，**没有像紧接其后的状态/加成行（`lines`）那样做 `bandBottom` 钳制**（那段有 `if (lines.length > 0 && ty < bandBottom)` + 逐行 `ty + l.height > bandBottom` 检查）。§"横屏商品卡由 4 列改 3 列"当时是靠"横屏也统一改宽到 3 列，标题基本不再换行"侧面绕开了这个缺口，没有真正给价格行补上跟状态行一致的钳制——列更窄、标题更长时（本例的竖屏 2 列 + 起始包名）缺口就重新暴露。
 
 **修复**：`drawCard()` 双管齐下——① 标题在绘制前先量好后面价格行的真实高度（`coinAmount`/`usdCents` 的图形/文字对象先建出来但先不定位），如果"标题高度 + 价格行高度"会超出 `bandBottom` 就一步步调小标题字号重新换行（下限 `ch*0.05`），跟"有状态行时缩小图标 `imgSize`"是同一套"预留空间不够就主动让步"的思路；② 价格行自己的起始 y 额外做 `Math.min(ty, bandBottom - 行高)` 钳制，即使标题缩到下限仍不够，价格也不会被推过 `bandBottom`——跟状态行的钳制补齐成同一套保障，价格再也不会被推到按钮上。
 
