@@ -32,7 +32,7 @@ import type { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
-import { buildIcon, type IconKind } from '../../render/icons';
+import { buildIcon, tabIconVariant, type IconKind } from '../../render/icons';
 import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { FS, snapFont } from '../../render/fontScale';
 
@@ -98,6 +98,54 @@ export interface SceneHeaderResult {
 const HEADER_CONTENT_RATIO = 0.30;
 function backSize(headerH: number): number {
   return Math.max(FS.headline, Math.round(headerH * HEADER_CONTENT_RATIO)); // 1.5x the original 0.026 — approved 12.07.2026 back-button enlargement.
+}
+
+/**
+ * Title-icon box size and its gap to the title, both as a multiple of the title font size —
+ * so the glyph tracks `backSize`'s portrait scale-up along with the text instead of needing a
+ * second height-derived formula. 1.25 puts the box a bit above cap height (a 32px title gets a
+ * 40px box), which is what makes a line-art glyph read as the same visual weight as bold text
+ * rather than as a subscript next to it.
+ */
+const TITLE_ICON_RATIO = 1.25;
+const TITLE_ICON_GAP_RATIO = 0.34;
+
+/**
+ * Share of the bar width held back on the right for the currency cluster scenes draw on top of the
+ * header (see {@link drawHeaderCurrency}): a coin glyph plus a 3–7 digit amount. Deliberately a
+ * fixed reserve rather than plumbing the real cluster width through every caller — the cluster is
+ * drawn after this returns, by the scene, and a title that stops a little early costs nothing while
+ * one that runs under the coin readout is unreadable.
+ */
+const TITLE_RIGHT_RESERVE_RATIO = 0.2;
+
+/**
+ * The scene-title glyph — the missing counterpart to `HubTab.icon` (see `HubTabs.ts`). Before
+ * this, tab strips could carry an icon but the title bar every secondary scene draws could not,
+ * so a page's own name was the one nav-level label in the app with no picture attached.
+ *
+ * Ink: raster tab icons are baked per-ink at pack time and can't be tinted live (`icons.ts`), and
+ * `tabIconVariant` can only tell "light ink" from "dark ink" — it never returns `'content'` on its
+ * own. A paper bar's dark title wants exactly that third ink (`C.dark`, the same as the title text)
+ * rather than the deliberately de-emphasised grey baked for *inactive tabs*, so this asks for it
+ * explicitly, the same way `buildRewardIcon` does for reward rows. The legacy `'dark'` bar variant
+ * (white title) still resolves to the white `active` art.
+ *
+ * Exported because three scenes pass `title: null` and draw their own title inside the bar
+ * (CampaignMapScene's chapter title + owner subtitle, FamilyScene/SectScene's org identity) —
+ * they lay the group out themselves but must not re-derive the ink rule: `size`/`gap` are
+ * returned so a caller can centre `[icon][gap][title]` exactly like {@link drawSceneHeader} does.
+ */
+export function buildTitleIcon(
+  kind: IconKind, titleSize: number, titleColor: number,
+): { node: PIXI.DisplayObject; size: number; gap: number } {
+  const size = Math.round(titleSize * TITLE_ICON_RATIO);
+  const variant = tabIconVariant(titleColor) === 'active' ? 'active' : 'content';
+  return {
+    node: buildIcon(kind, size, titleColor, { variant }),
+    size,
+    gap: Math.round(titleSize * TITLE_ICON_GAP_RATIO),
+  };
 }
 
 /** Chip fill for the back-button pill, keyed by where it sits. */
@@ -241,10 +289,17 @@ function buildChrome(
  *   right of the back pill — use it on scenes that also draw a wide right-side
  *   currency cluster (equipment/roster), where a centred title would collide with
  *   it on the narrow portrait bar.
+ * @param opts.icon Glyph drawn left of the title as one centred/left-aligned group —
+ *   see {@link buildTitleIcon}. Scenes whose concept already has an AI tab icon should
+ *   pass that same kind, so the page's title and the tab that navigates to it read as
+ *   the same thing.
  */
 export function drawSceneHeader(
   container: PIXI.Container, w: number, h: number, title: string | null,
-  opts?: { headerH?: number; titleSize?: number; variant?: SceneHeaderVariant; accent?: number; titleAlign?: 'center' | 'left' },
+  opts?: {
+    headerH?: number; titleSize?: number; variant?: SceneHeaderVariant; accent?: number;
+    titleAlign?: 'center' | 'left'; icon?: IconKind;
+  },
 ): SceneHeaderResult {
   const headerH = opts?.headerH ?? sceneHeaderHeight(h);
   const variant = opts?.variant ?? 'paper';
@@ -261,15 +316,39 @@ export function drawSceneHeader(
 
   if (title !== null) {
     const titleColor = variant === 'paper' ? C.dark : 0xffffff;
-    const titleNode = txt(title, opts?.titleSize ?? size, titleColor, true);
-    if (opts?.titleAlign === 'left') {
+    const titleSize = opts?.titleSize ?? size;
+    const titleNode = txt(title, titleSize, titleColor, true);
+    const icon = opts?.icon ? buildTitleIcon(opts.icon, titleSize, titleColor) : null;
+    // Both alignments position the [icon][gap][title] group by its LEFT edge, so the icon pushes
+    // the title right instead of overlapping it. With no icon and room to spare, the centred case
+    // is pixel-identical to the old `anchor 0.5 at w/2` (leadW = 0, fit = 1).
+    //
+    // The band the group may occupy: right of the back pill, and short of the right edge by enough
+    // for the currency readout scenes draw over the bar (drawHeaderCurrency). Both ends bite on a
+    // narrow portrait bar, where the back pill alone eats a third of the width — the first in-game
+    // capture of this pass had the icon painted across the back label, and clamping it right then
+    // pushed "Hero Roster" off the right edge.
+    const afterBackPill = BACK_X + backChipSize(label, size).w + Math.round(size * 0.6);
+    const bandW = w - afterBackPill - Math.round(w * TITLE_RIGHT_RESERVE_RATIO);
+    // Shrink icon and text together rather than dropping the icon or letting either clip — the
+    // same "scale a label down to fit its cell" rule the tab strips already use (HubTabs.ts).
+    // Only long labels on a narrow bar ever scale; CJK titles are 3–4 glyphs and fit outright.
+    const fullW = (icon ? icon.size + icon.gap : 0) + titleNode.width;
+    const fit = bandW > 0 && fullW > bandW ? bandW / fullW : 1;
+    if (fit < 1) titleNode.scale.set(fit);
+    const leadW = icon ? Math.round((icon.size + icon.gap) * fit) : 0;
+    const groupX = opts?.titleAlign === 'left'
       // Sit just right of the back pill so a right-aligned currency cluster has room.
-      titleNode.anchor.set(0, 0.5);
-      titleNode.x = BACK_X + backChipSize(label, size).w + Math.round(size * 0.6);
-    } else {
-      titleNode.anchor.set(0.5, 0.5);
-      titleNode.x = w / 2;
+      ? afterBackPill
+      : Math.max(afterBackPill, Math.round((w - (leadW + titleNode.width)) / 2));
+    if (icon) {
+      icon.node.scale.set(fit);
+      icon.node.x = groupX;
+      icon.node.y = Math.round(headerH / 2 - (icon.size * fit) / 2);
+      container.addChild(icon.node);
     }
+    titleNode.anchor.set(0, 0.5);
+    titleNode.x = groupX + leadW;
     titleNode.y = headerH / 2;
     container.addChild(titleNode);
   }

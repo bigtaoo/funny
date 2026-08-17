@@ -25,7 +25,7 @@ export class PagePanel implements PageHandlers {
 
   drawHeader(): number {
     const { w, h } = this.core;
-    const hdr = drawSceneHeader(this.core.container, w, h, t('gacha.title'), { accent: HEADER_ACCENT.spend });
+    const hdr = drawSceneHeader(this.core.container, w, h, t('gacha.title'), { accent: HEADER_ACCENT.spend, icon: 'gachaTabIcon' });
     const tbH = hdr.headerH;
     this.core.hits.push({ rect: hdr.backRect, fn: () => this.core.cb.onBack() });
 

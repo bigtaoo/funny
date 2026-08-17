@@ -85,7 +85,12 @@ export function drawTabBar(core: FriendsSceneCore): void {
 export function drawHeader(core: FriendsSceneCore): void {
   const { w, h } = core;
   const titleKey = `friends.tab.${core.tab}` as TranslationKey;
-  const hdr = drawSceneHeader(core.container, w, h, t(titleKey), { variant: 'paper' });
+  // Only the World channel has an AI icon today (the globe the lobby's Social button uses); the
+  // other four social tabs (friends/family/sect/mail) are on the batch-5 list — see
+  // design/product/tab-icon-art-prompts-batch5.md. Same table drives the rail in socialTabRail.ts.
+  const hdr = drawSceneHeader(core.container, w, h, t(titleKey), {
+    variant: 'paper', icon: core.tab === 'world' ? 'socialTabIcon' : undefined,
+  });
   core.hits.push({ rect: hdr.backRect, fn: () => core.onBack() });
   // World channel posts cost coins — show the current balance top-right while on that tab.
   if (core.tab === 'world' && core.cb.getCoins) drawHeaderCurrency(core.container, w, hdr.headerH, core.cb.getCoins());

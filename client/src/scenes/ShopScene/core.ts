@@ -317,7 +317,7 @@ export class ShopSceneCore {
   /** Header bar with title, back, and coin balance. Returns its height. */
   drawHeader(): number {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, t('shop.title'), { accent: HEADER_ACCENT.spend });
+    const hdr = drawSceneHeader(this.container, w, h, t('shop.title'), { accent: HEADER_ACCENT.spend, icon: 'shopTabIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 

@@ -18,7 +18,7 @@ import { CARD_DEFS } from '../../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
 import { allTitleIds } from '../../game/meta/titles';
 import type { SettingsSceneCallbacks, Hit, AvatarPickerItem } from './types';
-import { AVATAR_TABS, AVATAR_TAB_LABEL_KEY, AVATAR_LOCKED_KEY } from './types';
+import { AVATAR_TABS, AVATAR_TAB_LABEL_KEY, AVATAR_TAB_ICON, AVATAR_LOCKED_KEY } from './types';
 
 function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
   return makeText(label, {
@@ -104,7 +104,9 @@ export function drawAvatarPickerOverlay(host: PickerHost): void {
   const tabStripH = hubTabsHeight(h);
   const tabLayer = new PIXI.Container();
   container.addChild(tabLayer);
-  const tabs: HubTab[] = AVATAR_TABS.map((cat) => ({ label: t(AVATAR_TAB_LABEL_KEY[cat]), active: cat === host.pickerTab }));
+  const tabs: HubTab[] = AVATAR_TABS.map((cat) => ({
+    label: t(AVATAR_TAB_LABEL_KEY[cat]), active: cat === host.pickerTab, icon: AVATAR_TAB_ICON[cat],
+  }));
   const tabHits = drawHubTabs(tabLayer, pw, 0, tabStripH, tabs, (i) => {
     host.pickerTab = AVATAR_TABS[i]!;
     host.pickerScrollY = 0;

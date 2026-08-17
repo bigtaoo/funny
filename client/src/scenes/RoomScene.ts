@@ -300,8 +300,11 @@ export class RoomScene implements Scene {
 
   private drawHeader(): void {
     const { w, h } = this;
-    const titleKey = this.view === 'searching' ? 'room.rankedTitle' : 'room.title';
-    const hdr = drawSceneHeader(this.container, w, h, t(titleKey));
+    // Ranked matchmaking reuses the achievement wall's PvP glyph (crossed swords). The friend-room
+    // view has no matching AI icon yet — it's on the batch-5 list, so it stays icon-less for now
+    // rather than borrowing a picture that means something else.
+    const ranked = this.view === 'searching';
+    const hdr = drawSceneHeader(this.container, w, h, t(ranked ? 'room.rankedTitle' : 'room.title'), ranked ? { icon: 'pvpTabIcon' } : undefined);
     this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
   }
 }

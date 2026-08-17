@@ -134,7 +134,9 @@ export class LevelPrepScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // Header
-    const hdr = drawSceneHeader(this.container, w, h, t('campaign.levelLabel', { n: this.cb.levelNumber }));
+    // `pveTabIcon` (treasure-map scroll) is the achievement wall's "pve" glyph — same "campaign
+    // level" concept, so a level's prep page shows the picture that already means PvE elsewhere.
+    const hdr = drawSceneHeader(this.container, w, h, t('campaign.levelLabel', { n: this.cb.levelNumber }), { icon: 'pveTabIcon' });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 

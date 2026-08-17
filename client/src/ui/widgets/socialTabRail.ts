@@ -15,14 +15,19 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n/index';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from './HubTabs';
+import type { IconKind } from '../../render/icons';
 
 export type SocialTab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
 
-const TAB_DEFS: { id: SocialTab; key: TranslationKey }[] = [
+// `icon` is the AI tab art (see render/icons.ts). Only World has one today — the globe the
+// lobby's Social button already uses, and the same glyph FriendsScene puts on the World tab's
+// page title. Friends/family/sect/mail are awaiting art (design/product/tab-icon-art-prompts-batch5.md);
+// they render label-only until then rather than borrowing a glyph that means something else.
+const TAB_DEFS: { id: SocialTab; key: TranslationKey; icon?: IconKind }[] = [
   { id: 'friends', key: 'friends.tab.friends' },
   { id: 'family',  key: 'friends.tab.family' },
   { id: 'sect',    key: 'friends.tab.sect' },
-  { id: 'world',   key: 'friends.tab.world' },
+  { id: 'world',   key: 'friends.tab.world', icon: 'socialTabIcon' },
   { id: 'mail',    key: 'friends.tab.mail' },
 ];
 
@@ -51,6 +56,7 @@ export function drawSocialTabRail(
   const tabs: HubTab[] = defs.map((tabDef) => ({
     label: t(tabDef.key),
     active: active === tabDef.id,
+    icon: tabDef.icon,
     badge: (badges[tabDef.id] ?? 0) > 0,
   }));
 
