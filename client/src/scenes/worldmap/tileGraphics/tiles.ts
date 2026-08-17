@@ -110,20 +110,27 @@ export function drawTileL1(
   // always: resType is terrain, and §18.6 keeps the full resource art (incl. level detail) visible
   // even under fog (the "hide level outside vision" narrowing was abolished). The motif is an
   // addChild sprite, so it renders above the fog wash drawn on this Graphics' own polygon.
-  // Must stay in lockstep with the map-editor's drawEditorTile (SLG map render parity).
-  if (motifResType) {
-    drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false, tx, ty);
-  }
-
-  // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
-  // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
-  // before the fog return, dimmed when fogged. Neutral ink — ownership is the wash below.
+  // Skipped when the tile already carries a building — a captured resource tile keeps its resType
+  // forever (see the motifResType comment above), but once a landmark/watchtower/player structure
+  // stands on it the heap art has nothing left to say and only clutters the read (2026-08-17,
+  // 用户截图：箭塔/拒马格子上还叠着资源图标，看着乱). Must stay in lockstep with the map-editor's
+  // drawEditorTile (SLG map render parity) — the editor never has this overlap since it only draws
+  // familyKeep/stronghold/bridge/plankway on non-resource tile types and knows nothing of live
+  // player structures.
   const featType = tile?.type ?? proc?.type;
   const featBuilding = featType === 'familyKeep' ? 'building_keep'
     : featType === 'stronghold' ? 'building_stronghold'
     : featType === 'bridge' ? 'building_bridge'
     : featType === 'plankway' ? 'building_plankway'
     : null;
+  const hasBuilding = !!featBuilding || !!tile?.watchtower || !!tile?.structure;
+  if (motifResType && !hasBuilding) {
+    drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false, tx, ty);
+  }
+
+  // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
+  // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
+  // before the fog return, dimmed when fogged. Neutral ink — ownership is the wash below.
   if (featBuilding) {
     placeBuildingSprite(g, featBuilding, tp, hh, tp * 1.3, fogged);
   }

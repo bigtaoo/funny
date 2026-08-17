@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-08（§10 新增 PvP/PvE 进场资源闸门）
+> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-17（§11 首屏加载策略优化：preload 提示 + L0 双层 + L1 空闲预取）
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -204,3 +204,62 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
   - `client/test/ui/battleGate.ui.ts`（mock `ensureBattleAssets` 手动控制 resolve 时机）：`enterBattle` 在资源就绪前不 `build()`/不 `goto()` 但立即 `suppress(true)`；overlay 在 `goto` 前已 `destroy()`（断言 `goto` 触发时 `app.stage.children.length===0`）；resolve 后返回造好的场景。`DeferredSceneCalls`：`resolve()` 前的 `call()` 排队且按序 flush，`resolve()` 后的 `call()` 立即执行，回调都拿到同一个已 resolve 的场景对象。
 
 **未覆盖范围**（有意不做，避免蔓延）：`CityScene`（SLG 内政面板）的 `resAtlas`/`cityBldAtlas` 加载依旧是文档已注明的"有意 fire-and-forget，先用文字/emoji 占位再补图标"渐进增强模式，不属于本次"进大场景"闸门的范围；社交类子面板（Family/Sect/Auction/DefenseEditor）同理未动。
+
+> §11 起 `ensureBattleAssets` 多了一步 `decorMergedAtlas.load()`——该 atlas 从 L0 阻塞层降级成背景层后，本闸门就是"战斗首帧前它一定解码好"的唯一保证（原先靠 L0 闸门顺带保证）。
+
+---
+
+## 11. 首屏加载策略优化（2026-08-17）
+
+**动机**：用户问"要不要加个 splash 多争取点下载时间"。结论是不加——现有遮挡已经无缝（`#boot` CSS 占位 → `LoadingOverlay` 进度条 → 首屏），splash 只是换个底图，**不会凭空多出带宽**，只有主动拖时长才"争取"得到，那等于让玩家多等。真正能省时间的是三件跟遮挡无关的事，本节全部落地。平台相关的 splash（发行商 logo / 微信 / CrazyGames 硬性 splash 期）留到上线时按平台再定，与本节无关。
+
+### 11.1 `<link rel="preload">`：让资源和 bundle 并行下载
+
+**问题**：L0 资源的第一个请求要等到 bundle **下载完 + 解析完 + 执行到** `startApp` 里的 `preloadBoot()` 才发得出去。手机上 ~2 MB bundle 的解析执行本身就是几百 ms，加上一个 RTT，全是白等。
+
+**做法**：新增 webpack 插件 `client/build/preloadBootAssets.js`，构建期把 L0 资源写成 `<link rel="preload">` 塞进 HTML `<head>`（放在 bundle 的 `<script>` **之前**，让预扫描器先看到）。资源名是 contenthash，静态 HTML 里写不了，插件从 webpack 的产物表里按 `assetInfo.sourceFilename`（`asset/resource` 模块会记录源文件相对路径）查出真实文件名。微信没有 HTML 宿主、URL 构建期已烘焙成 CDN 绝对地址，故只对 HTML target 生效。
+
+- `fetchpriority` 区分两层（见 §11.2）：阻塞层 `high`、背景层 `low`，避免背景层抢走玩家真正在等的带宽。不支持该属性的浏览器只是退化成两条普通 preload，仍然优于没有。
+- **`mobile` target 要跟着 §9 的 `.hires` 约定走**：该 target 会把有 `<name>.hires.<ext>` 兄弟文件的资源在 resolve 阶段换掉，产物表里记的是兄弟文件的路径，按基础文件名查会扑空（`logo.png` 正是这种情况，第一版实测漏了一条 preload + 一条构建 warning）。插件查不到时按同一约定回退查 `.hires` 兄弟，而不是给每个 target 各维护一份清单。
+- 清单里某项查不到产物时**只 warn 不 throw**：清单过期不应该有能力弄挂发布构建。这条 warning 也确实是上面 `.hires` 问题的发现方式。
+- **⚠ `crossorigin="anonymous"` 是必需的，漏了整个优化会反向生效**：不带 `crossorigin` 的 preload，credentials mode 是 `include`；而两个消费方要的都是 `same-origin`（PIXI `ImageResource` 会给 `<img>` 赋 `crossOrigin`（空串 ≡ anonymous）；`StickmanRuntime` 用默认 `fetch()`）。两边对不上，浏览器会**丢弃预载结果、把文件重新下一遍**——比不做 preload 更慢。实测第一版就踩了这个坑，Chrome 控制台明确报 `A preload for '...' is found, but is not used because the request credentials mode does not match`，加上 `crossorigin="anonymous"` 后两边都落到 `same-origin`，`performance.getEntriesByType('resource')` 里每个 URL 只剩一条记录（改前是每个都两条）。**验收方法就用这条**：数 resource timing 条目，有重复就是没生效。
+
+### 11.2 L0 拆成"阻塞层 + 背景层"
+
+**问题**：`preloadBoot` 的各 step 是 `Promise.all` 并行的，所以在带宽受限的链路上闸门时长 ≈ **该层总字节数 / 带宽**。于是每一项都该问的不是"它是不是 L0"，而是"**玩家必须等它吗**"。原 L0 共 ~1.65 MB，其中开局三兵的 `.tao`（~0.41 MB）+ decor 合并 atlas（~0.10 MB）**大厅一个像素都不画**——它们进 L0 的理由是 §2 的"第一局不许出现占位圆圈"，而这条早已被 2026-08-08 才加的 §10 进场闸门**重复保证**了一遍。
+
+**做法**：`bootManifest.ts` 拆成两个清单：
+
+| 层 | 内容 | 体量 | 谁在等 |
+|---|---|---|---|
+| `STEPS`（阻塞） | 三兵卡图 + 3 张建筑卡图 + logo + `icons_atlas` | ~1.14 MB | 加载进度条 |
+| `BACKGROUND_STEPS`（非阻塞） | 三兵 `.tao` + `decor_merged_atlas` | ~0.51 MB | 无——`enterBattle` 闸门（§10）再等一次 |
+
+背景层由 `preloadBoot` 在**闸门 resolve 之后**才 `void` 掉（不是同时开跑：同时开跑等于继续跟玩家在等的那批抢带宽，白拆）。配合 §11.1 的 `fetchpriority=low` preload，这一步通常直接命中 HTTP 缓存。
+
+**为什么不会退化**：`StickmanRuntime.loadAsset` / `preloadTexture` / atlas loader 全部按 URL 幂等缓存，`ensureBattleAssets` 会把这两项原样再 await 一遍（`decorMergedAtlas.load()` 是本次为此**新加**的一步）。所以"第一局绝不出现占位圆圈"的保证一点没变，只是改由**真正挨着战斗的那道闸门**兑现，而不是由挨着大厅的那道顺手兑现。**净效果：阻塞闸门 −31% 字节，零可见回归。**
+
+### 11.3 L1 空闲预取
+
+**问题**：L0 之外的资源都是进场景才拉，所以第一次进战斗 / 第一次开世界地图 / 第一次抽卡，各自都要现场等一道闸门——哪怕网速很好，因为**下载是等玩家开口之后才开始的**。而首屏出来之后那几秒几乎纯空闲：玩家在看一个静态界面，socket 也没事干。
+
+**做法**：新增 `client/src/assets/idlePrefetch.ts`，`startIdlePrefetch()` 在 `core.start()` 之后 fire-and-forget。刻意保守——抢了正经请求的预取比不预取更糟：
+
+1. **严格串行**：一波 await 完才起下一波。并行预取会跟玩家接下来真正的操作抢连接。
+2. **空闲调度**：每波从 `requestIdleCallback` 起（没有该 API 的环境如微信退化成 timer），主线程忙就自动往后推。首波额外留 3s，避开首屏场景自己的构造和开屏 API 调用。
+3. **先便宜后贵**：`boot 背景层` → `battle`（12 兵 `.tao` + 英雄/法术卡图，即 `enterBattle` 要等的全集）→ `icons:reward`（tab 图标 + 金币/材料 atlas）→ `slg:world`（1.2 MB 世界地图 atlas）→ `gacha`（3.3 MB，最大且最不常用，放最后）。
+4. **计费链路直接跳过**：`navigator.connection` 的 `saveData` 或 `effectiveType` 为 `2g`/`slow-2g` 时整体不跑（该 API 在 Safari/Firefox/微信不存在，视为普通链路照常预取）。
+5. **永不 reject**：单波失败只打 warn，链路继续（同 `preloadBoot` 的容错写法）。
+
+因为所有 loader 都是 URL 幂等的，玩家"抢先"进了某个场景也不亏：场景自己的闸门会 join 到同一个 in-flight promise，不会重复请求。
+
+### 11.4 回归测试
+
+- `client/test/bootPreloadManifest.test.ts`（node 主套件）：插件的 preload 清单是 `bootManifest.ts` 的**副本**（插件是 JS，不能 import TS + PIXI 资源图），副本悄悄烂掉比不做 preload 更糟——资源改名后 preload 静默失效，什么都不会报错。该测试从 `bootManifest.ts` 源码文本反推两层清单（含每项属于哪一层，因为层决定 `fetchpriority`），与插件源码里的两个数组逐一比对；另外校验清单里的文件都真实存在、两层不重叠。正则本身也有兜底断言（推导结果为空即失败），避免"两个空集合相等"式的假绿。
+- `client/test/ui/idlePrefetch.ui.ts`：5 波全 mock，只测调度契约——串行顺序、失败不断链、metered 跳过、无 `requestIdleCallback` 时的 timer 回退、重复调用只跑一次。
+- `client/test/ui/battleAssets.ui.ts`：补 `decorMergedAtlas.load()` 这一步的断言 + 进度总数 +1。
+
+### 11.5 遗留
+
+- `client/public/index.html` 不是任何 target 的 HtmlWebpackPlugin 模板（模板是 `public/<target>/index.html`），疑似历史残留；`public/crazygames/index.html` 也缺 `#boot` 预占位（web/mobile 两个有），但 CrazyGames 有 SDK 自己的 splash 兜底，暂不动。
+- §7 的"L0 瘦身复核"由本节 §11.2 执行了一轮；下次复核时同样按"玩家必须等它吗"而不是"它是不是 L0"来判。

@@ -15,7 +15,7 @@
 | `preset`（免费池） | 8 张线稿物件，4 个错位 | **全部替换**：20 张全新原创角色胸像（不是物件），notebook 涂鸦画风 |
 | `hero`（抽到角色解锁） | 直接裁战斗/卡面立绘，三套画风打架 | **6 张全新专属胸像**，"日常/便装"版本（非战斗立绘、非付费皮肤），画风延续该角色已定的人设规范 |
 | `skin`（拥有皮肤解锁） | 复用 `hero` 的图（bug：从未读 `SKIN_PORTRAIT_ART`） | **从已定稿的皮肤全身立绘裁一张专属胸像**（沿用皮肤配色，不重新出图），接线读 `SKIN_PORTRAIT_ART` |
-| `title`（称号解锁） | 独立勋章画风，语义自洽 | **不动** |
+| `title`（称号解锁） | 独立勋章画风，语义自洽 | ~~不动~~ → **2026-08-17 改拍板：整个分类从头像选择器删除**（见下方待办 §10）——称号本身仍可在 `TitlesScene` 装备/展示，只是不再作为头像候选 |
 | `equip`（装备解锁） | 装备图标当头像，语义弱 | **整个分类删除**——装备随平衡性调整持续增删，头像跟着补图是填不完的坑 |
 | `material`（材料解锁） | 3 种材料图标当头像，语义弱 | **整个分类删除**，理由同上 |
 
@@ -267,6 +267,159 @@ plain sky-blue collared top.
 | `avatar_skin_e2` | Mara 皮肤 | ✅ 立绘已定稿，可直接裁 |
 | `avatar_skin_l1` | Max 皮肤 | ✅ 立绘已定稿，可直接裁 |
 
+### 备选路径 B：直接生成胸像（不等裁切，2026-08-17）
+
+owner 反馈"皮肤选项下面是空的"，想先拿到一批**可以直接生成**的胸像图，不想等 §上方"裁切"路径（卡在 6 款全身立绘全部定稿——苏远头部几何、陈守肤色/发色两项当前仍 pending）。胸像是完全不同的构图（肩以上、正面/小三分侧），本来就不继承全身立绘的姿态/脖子问题，所以**不必等裁切路径解锁**，可以现在就用下面 6 条 prompt 直接出图，跟 §一 hero_* 走同一套"胸像通用规范"（见文档开头），只是把 hero_* 的"便装素色"换成**该皮肤自己的配色/道具**，让"皮肤"分类真正区别于"hero"分类（不是同一张图换个 tab）。橙色调三条用的是全局 legendary 橙 `#e08a2c`（`ECONOMY_NUMBERS.md` 已定）附近的色号，不是 `skin-art-prompts.md` 里那些改色前的旧紫金色号。
+
+#### `avatar_skin_shop_c1` — 李川皮肤（common，灰白调）
+
+```
+Head-and-shoulders bust portrait, facing forward or a gentle three-quarter
+turn, on a plain pure-white background, vertical framing with the head
+filling about two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight (not
+sketchy-wobbly), flat color fills with cross-hatch pencil shading for
+volume, matte paper look — no gradient, no glossy highlights, no glow, no
+cel-shading, no airbrush, no photorealism.
+Face: large round head, warm tan skin with light cross-hatching under the
+jaw, two small solid-black dot eyes, no nose, small visible ear.
+Messy spiky brown hair rendered with short scratchy ink strokes, sticking
+out in several directions. Mouth drawn as a wide open-corner grin, one
+simple upward-curved line — restless, pleased with himself.
+Shoulders show a plain slate-gray crew-neck top with hand-stitched dashed
+seam lines at the collar, a hint of dark charcoal-gray at the collarbone
+edge — the grey-and-white palette of his common paid skin.
+Soft flat white background, no scenery, no text, no watermark.
+```
+
+#### `avatar_skin_shop_r1` — 苏远皮肤（rare，蓝色调）
+
+```
+Head-and-shoulders bust portrait, facing forward or a gentle three-quarter
+turn, on a plain pure-white background, vertical framing with the head
+filling about two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight (not
+sketchy-wobbly), flat color fills with cross-hatch pencil shading for
+volume, matte paper look — no gradient, no glossy highlights, no glow, no
+cel-shading, no airbrush, no photorealism.
+Face: large round head, warm tan skin with light cross-hatching under the
+jaw, two small solid-black dot eyes, no nose, small visible ear. This is a
+young boy, clearly male, not a girl.
+Short, neat hair smoothed down and combed to one side with a clean, even
+side part, lying flat and hugging the round head evenly all the way
+around, staying above the eyebrows — no spiky tufts, no stray cowlick.
+Mouth drawn as a short flat closed line, composed and unreadable.
+Shoulders show a royal-blue sleeveless athletic top with hand-stitched
+dashed seams at the collar, and a plain brown leather bracer strap visible
+at the edge of one shoulder — the identifying accessory of his rare paid
+skin.
+Soft flat white background, no scenery, no text, no watermark.
+```
+
+#### `avatar_skin_shop_e1` — 陈守皮肤（epic，紫色调）
+
+```
+Head-and-shoulders bust portrait, facing forward or a gentle three-quarter
+turn, on a plain pure-white background, vertical framing with the head
+filling about two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight (not
+sketchy-wobbly), flat color fills with cross-hatch pencil shading for
+volume, matte paper look — no gradient, no glossy highlights, no glow, no
+cel-shading, no airbrush, no photorealism.
+Face: large round head, light warm tan skin matching his two friends (not
+a darker skin tone), light cross-hatching under the jaw, two small
+solid-black dot eyes, no nose, small visible ear.
+Hair cropped very short and neat, almost buzzed close to the scalp — a
+disciplined, compact rounded silhouette, plain brown hair (not black, not
+curly). A calm, grounded expression, mouth drawn as a short straight line
+held level and firm.
+Shoulders show a deep-purple padded vest collar over a plain gray
+undershirt, with hand-stitched dashed seam lines along the vest edge — the
+deep-purple tone of his epic paid skin.
+Soft flat white background, no scenery, no text, no watermark.
+```
+
+> 陈守这条顺手把 `skin-art-prompts.md` §3 记录的 pending 项（肤色偏深+黑卷发，跟另两人不一致）直接写进了 prompt，不必等那条修完才能出这张胸像。
+
+#### `avatar_skin_e1` — Anna·Lena皮肤（epic，橙色调，原紫色调）
+
+```
+Head-and-shoulders bust portrait, a calm three-quarter turn, on a plain
+pure-white background, vertical framing with the head filling about
+two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight, flat color
+fills with cross-hatch pencil shading for volume, matte picture-book look
+— no gradient, no glossy highlights, no glow, no cel-shading, no airbrush.
+Face: a realistic young European woman's face with a soft steady eye,
+light eyebrow, a small straight nose, a calm closed mouth — ordinary
+grounded proportions, not stylized/cartoon. An expression of quiet
+confidence, not smiling, not fierce.
+Hair pulled back into a tight, neat war braid at the nape of the neck, no
+loose strands, no helmet.
+Shoulders show a fitted mail-and-leather collar in flat burnt-orange
+(around hex #c96a20), with a thin gilt-gold trim line at the collar edge,
+and a small flat cool steel-blue gem set at the collarbone as her only
+cold-toned detail tying her back to the blue faction. No armor plates
+below the collar, no weapon, no scenery.
+Plain white background, no text, no watermark.
+```
+
+#### `avatar_skin_e2` — Anna·Mara皮肤（epic，橙色调，原紫色调）
+
+```
+Head-and-shoulders bust portrait, a calm three-quarter turn, on a plain
+pure-white background, vertical framing with the head filling about
+two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight, flat color
+fills with cross-hatch pencil shading for volume, matte picture-book look
+— no gradient, no glossy highlights, no glow, no cel-shading, no airbrush.
+Face: a realistic young European woman's face with a soft natural eye,
+light eyebrow, a small straight nose, a gently closed mouth. Her gaze is
+lifted slightly, looking off into the distance past the viewer — watchful,
+a little wistful.
+Hair loose and wavy, half pulled back with a small visible hair-tie
+clearly separating the gathered part from the loose falling strands, a
+few flowing ink strokes, no shine.
+Shoulders show a flat burnt-orange leather collar buttoned up to the neck
+(around hex #c96a20, no exposed chest/neckline), with a thin gilt-gold
+trim line along the collar edge. No armor, no weapon, no scenery.
+Plain white background, no text, no watermark.
+```
+
+> Mara 全身立绘的蓝绳配饰在手腕上，胸像构图天然框不到，这条不强求塞进画面——冷色锚点这版就让给 Lena/Max 的胸口位置扛，跟"裁切"路径的实际效果（手腕本来也会被裁掉）一致。
+
+#### `avatar_skin_l1` — Anna·Max皮肤（legendary，橙色调，原金米调）
+
+```
+Head-and-shoulders bust portrait, a calm three-quarter turn, on a plain
+pure-white background, vertical framing with the head filling about
+two-thirds of the frame and a little headroom above.
+Rendering: clean confident dark-ink outlines of medium weight, flat color
+fills with cross-hatch pencil shading for volume, matte picture-book look
+— no gradient, no glossy highlights, no glow, no cel-shading, no airbrush.
+Face: a calm, serious, realistic European teenage boy face with a soft
+natural eye, light eyebrow, a small straight nose, a tight closed mouth —
+ordinary grounded proportions, not stylized/cartoon.
+Short neat hair, groomed and controlled, no helmet, whole face plainly
+visible from forehead to chin.
+Shoulders show flat warm marker-orange armor plates (around hex #e08a2c)
+at the collar with sharp clean edges and no gloss, a short cream-and-gold
+trimmed cape edge visible at one shoulder, and one small flat cool
+steel-blue diamond gem set at the center of his collar as his only
+cold-toned detail.
+Plain white background, no text, no watermark.
+```
+
+**共用负向提示（六条都用）**：
+```
+gradient, glossy highlights, shiny, glow, painterly, soft airbrush shading,
+watercolor, 3d render, full body, cropped at chest only showing collarbone,
+weapon in frame, background scenery, multiple people, text, watermark,
+sexualized, revealing clothing
+```
+
+**出图后接线**：跟裁切路径落地方式一致——PNG 存 `art/ui/head/avatar_skin_<key>.png` → 512px 压缩进 `client/src/assets/avatars/skin/` → 新增 `skinAvatarArt.ts`（仿 `heroAvatarArt.ts`）导出 url 表 → `avatar.ts` 的 `categoryIcon('skin', ...)` 改查这张新表（顺手修掉"现在查的是 hero 的 `UNIT_ART_URLS`"那个 bug，见上方"接线时要修的 bug"）→ 跑 `measureAvatarHeadBox.mjs` 补 `portraitHeadBox.ts` 头部框。6 张还没出图，此路径尚未开始。
+
 ---
 
 ## 四、功能实现待办（本文档只覆盖美术+渲染契约，以下留给功能实现阶段）
@@ -283,4 +436,5 @@ plain sky-blue collared top.
    - **`buildPortraitIcon` 分 `'bust'`/`'full'` 两种取景**：胸像 zoom 1.10、上移 4%（26 张实测，再多就会切到 `hype` 马尾/`tsundere` 双马尾）；全身立绘保持原来的顶部对齐。
    - **纹理异步加载后不重新适配的 bug**：贴图未加载完时 `tex.width` 还是占位尺寸，算出的缩放比真实值大一倍，而头像是叶子构建函数、没有任何东西会重画它——冷启动第一次进设置页看到的就是"糊在头发上的特写"。改为 `baseTexture.once('loaded')` 里原地重算（带 `destroyed` 守卫）。回归用例：`client/test/ui/avatarPortraitFit.ui.ts`（撤掉修复即失败，已验证非空跑）。
    - 遗留：`skin` 分类仍在用全身立绘（§三的皮肤胸像表还没做），放大后脸依旧很小——等 skin 立绘定稿后一并解决。
+10. **删除 `title` 分类**：✅ 2026-08-17——`client/src/scenes/SettingsScene/types.ts` 的 `AVATAR_TABS` 摘除 `'title'`（选择器只剩 preset/hero/skin 三个 tab）。**保留** `AvatarCategory` 类型本身的 `'title'` 分支、`avatar.ts` 的 `categoryIcon('title', ...)`、`avatarPicker.ts` 的 `pickerItems()` 的 `'title'` case——存量玩家若之前已把某个称号勋章设成头像（`avatarId` 形如 `title:xxx`），退役的只是"新选"入口，已选中的旧头像仍按原样正常渲染，不做迁移垫片（跟 §四-1 equip/material 那种"整类拒绝+服务端 403"不同，这里没有服务端语义变化，纯 UI 层收窄）。i18n key `avatarTab.title`/`avatarLocked.title` 暂未删（`AVATAR_TAB_LABEL_KEY`/`AVATAR_LOCKED_KEY` 仍是 `Record<AvatarCategory, ...>` 全量类型，删 key 需要连带改类型，收益不大，先留着）。
 9. **头部框归一化（取景二轮）**：✅ 2026-08-15——用户反馈"边框好多了，但头像依然偏小，截取到脖子/肩部更好"。量了 26 张的实际几何后确认单一全局常数走到头了（见上方 §渲染契约的"不要退回单一全局 zoom 常数"），改为按图归一化：新增 `art/scripts/measureAvatarHeadBox.mjs`（sharp 逐行扫墨迹：发顶=首个有实质内容的行，颈线=头最宽行与肩部张开之间的最窄行，头宽=头部最宽行）+ `client/src/render/portraitHeadBox.ts`（26 项测量表）。`buildPortraitIcon` 改吃 `HeadBox | null`，null 即全身立绘的老取景。四档参数（头占圆 0.86/0.90/0.95 × 头宽上限）在 Canvas2D 对照页上比过，取 top 0.05 / span 0.90 / maxW 0.88。回归用例 `client/test/ui/avatarPortraitFit.ui.ts` 扩到 3 条，其中一条遍历全部 26 张断言"发顶在圈内、裁切落到颈线、画面铺满圆宽"——新增胸像忘了测头部框会被它抓住。真实渲染路径复核：Playwright + `__nwE2E.views.showSettings`，preset（含滚动后半屏）/hero/skin 三个页签均已截图确认。
