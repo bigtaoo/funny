@@ -1,8 +1,13 @@
-// Unit tests for localReminders.ts (GACHA_DESIGN §5.2/§9.3, G10): the subscription-expiry in-app
-// toast fallback (Web/CrazyGames/WeChat) and the recurring daily-claimables local notification's
-// reason-bundling logic. Both native-notification paths need the real Capacitor runtime to fully
-// exercise `LocalNotifications.schedule`, so that call is mocked here — these tests cover the
-// window/throttle math and what gets passed to it, not the native plugin itself.
+// Unit tests for localReminders.ts (GACHA_DESIGN §5.2/§9.3, G10): the one-shot subscription-expiry
+// notifications, their in-app toast fallback (Web/CrazyGames/WeChat), and the recurring
+// daily-claimables notification's reason-bundling logic. Both native-notification paths need the
+// real Capacitor runtime to fully exercise `LocalNotifications.schedule`, so that call is mocked
+// here — these tests cover the window/throttle math and what gets passed to it, not the native
+// plugin itself.
+//
+// The two native paths are also the ones webpack replaces with no-op stubs on every non-mobile
+// target (ASSET_PACKAGING §4.0) — which is exactly why they are worth asserting here: after that
+// swap the only place their scheduling math runs outside an iOS device is this file.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IStorage } from '../src/platform/IPlatform';
 
@@ -36,7 +41,98 @@ vi.mock('@capacitor/local-notifications', () => ({
   },
 }));
 
-const { checkInAppSubscriptionReminder, scheduleDailyReminder } = await import('../src/platform/localReminders');
+const {
+  checkInAppSubscriptionReminder, scheduleDailyReminder, scheduleSubscriptionReminder,
+} = await import('../src/platform/localReminders');
+
+const NOTIF_ID_SOON = 9001;
+const NOTIF_ID_EXPIRED = 9002;
+
+/** ids passed to the last `schedule()` call, in order. */
+function scheduledIds(): number[] {
+  return (schedule.mock.calls[0][0] as { notifications: { id: number }[] }).notifications.map((n) => n.id);
+}
+
+describe('scheduleSubscriptionReminder', () => {
+  beforeEach(() => {
+    isNativePlatform.mockReturnValue(true);
+    cancel.mockClear();
+    checkPermissions.mockClear().mockResolvedValue({ display: 'granted' });
+    requestPermissions.mockClear().mockResolvedValue({ display: 'granted' });
+    schedule.mockClear();
+  });
+
+  it('no-ops entirely on a non-native platform (the in-app toast covers it there)', async () => {
+    isNativePlatform.mockReturnValue(false);
+    await scheduleSubscriptionReminder(Date.now() + 10 * DAY);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it('cancels both prior reminders before every reschedule, so a renewal cannot double-fire', async () => {
+    await scheduleSubscriptionReminder(Date.now() + 10 * DAY);
+    await scheduleSubscriptionReminder(Date.now() + 40 * DAY);
+    expect(cancel).toHaveBeenCalledTimes(2);
+    for (const call of cancel.mock.calls) {
+      expect(call[0]).toEqual({ notifications: [{ id: NOTIF_ID_SOON }, { id: NOTIF_ID_EXPIRED }] });
+    }
+    expect(schedule).toHaveBeenCalledTimes(2);
+  });
+
+  it('no subscription (expiry 0) → clears any leftover reminder and schedules nothing', async () => {
+    await scheduleSubscriptionReminder(0);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it('expiry well in the future → both the T-3d "soon" and the T-0 "expired" notification', async () => {
+    const expiry = Date.now() + 10 * DAY;
+    await scheduleSubscriptionReminder(expiry);
+    expect(scheduledIds()).toEqual([NOTIF_ID_SOON, NOTIF_ID_EXPIRED]);
+    const [soon, expired] = (schedule.mock.calls[0][0] as {
+      notifications: { schedule: { at: Date } }[];
+    }).notifications;
+    // The lead notification lands exactly 3 days before expiry, not 3 days from now.
+    expect(soon.schedule.at.getTime()).toBe(expiry - 3 * DAY);
+    expect(expired.schedule.at.getTime()).toBe(expiry);
+  });
+
+  it('already inside the 3-day window → only the expiry notification (the lead time is gone)', async () => {
+    // Buying/claiming a card that expires in 1 day must not arm a notification for yesterday.
+    await scheduleSubscriptionReminder(Date.now() + 1 * DAY);
+    expect(scheduledIds()).toEqual([NOTIF_ID_EXPIRED]);
+  });
+
+  it('expiry already past → cancel only, and no permission prompt for an empty schedule', async () => {
+    await scheduleSubscriptionReminder(Date.now() - 1 * DAY);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(schedule).not.toHaveBeenCalled();
+    // Bailing before the permission check matters: a lapsed card must not pop an OS prompt.
+    expect(checkPermissions).not.toHaveBeenCalled();
+  });
+
+  it('declined permission → does not schedule', async () => {
+    checkPermissions.mockResolvedValue({ display: 'denied' });
+    requestPermissions.mockResolvedValue({ display: 'denied' });
+    await scheduleSubscriptionReminder(Date.now() + 10 * DAY);
+    expect(requestPermissions).toHaveBeenCalledTimes(1);
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it('permission not yet asked but then granted → schedules', async () => {
+    checkPermissions.mockResolvedValue({ display: 'prompt' });
+    await scheduleSubscriptionReminder(Date.now() + 10 * DAY);
+    expect(requestPermissions).toHaveBeenCalledTimes(1);
+    expect(schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('a throwing plugin (the non-mobile stub, or a real native failure) never propagates', async () => {
+    // localReminders wraps its plugin calls precisely so a rejection degrades to a no-op; the stubs
+    // shipped on non-mobile targets throw by design, so this is their contract too.
+    schedule.mockRejectedValueOnce(new Error('stubbed out on non-mobile builds'));
+    await expect(scheduleSubscriptionReminder(Date.now() + 10 * DAY)).resolves.toBeUndefined();
+  });
+});
 
 describe('checkInAppSubscriptionReminder', () => {
   beforeEach(() => {
