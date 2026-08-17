@@ -1,12 +1,12 @@
 // Measure the head box of every avatar bust portrait and print the table that
 // client/src/render/portraitHeadBox.ts holds.
 //
-// Why a table at all: the 26 bust portraits are drawn to one composition brief but the actual head
-// geometry varies a lot (hair top 0.03-0.13 of the image height, chin/neck 0.52-0.69, head width
+// Why a table at all: the 32 bust portraits are drawn to one composition brief but the actual head
+// geometry varies a lot (hair top 0.03-0.13 of the image height, chin/neck 0.51-0.69, head width
 // 0.58-0.94 of the image width). A single global crop constant therefore has to leave enough
 // headroom for the loosest portrait, which makes every other one look small — the "头像偏小" the
 // avatar picker showed. buildPortraitIcon normalises each portrait against its own head box
-// instead, so all 26 frame identically.
+// instead, so all 32 frame identically.
 //
 // Run (needs the client's sharp):  cd client && node ../art/scripts/measureAvatarHeadBox.mjs
 // Re-run and paste the output whenever a portrait is added or repainted.
@@ -18,6 +18,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../c
 const PRESETS = ['gogetter', 'sunny', 'hype', 'fanboy', 'chuuni', 'observer', 'emo', 'dreamer', 'shy', 'lazy',
   'aloof', 'hothead', 'perfectionist', 'snark', 'sly', 'tsundere', 'peacemaker', 'nerdcrush', 'softie', 'curious'];
 const HEROES = ['infantry', 'archer', 'shieldbearer', 'max', 'lena', 'mara'];
+const SKINS = ['skin_shop_c1', 'skin_shop_r1', 'skin_shop_e1', 'skin_e1', 'skin_e2', 'skin_l1'];
 
 /** Ink = meaningfully darker or more saturated than the portrait's paper background. */
 function isInk(r, g, b, a) {
@@ -52,7 +53,7 @@ async function headBox(file) {
 
 const f = (v) => Number(v.toFixed(4));
 const lines = [];
-for (const [group, keys, dir, prefix] of [['PRESET', PRESETS, 'preset', 'preset_'], ['HERO', HEROES, 'hero', 'hero_']]) {
+for (const [group, keys, dir, prefix] of [['PRESET', PRESETS, 'preset', 'preset_'], ['HERO', HEROES, 'hero', 'hero_'], ['SKIN', SKINS, 'skin', 'avatar_']]) {
   lines.push(`${group}:`);
   for (const key of keys) {
     const b = await headBox(path.join(ROOT, dir, `${prefix}${key}.png`));

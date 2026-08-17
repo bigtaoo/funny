@@ -31,7 +31,7 @@
 
 - 三类头像（preset/hero/skin）均为**独立 PNG**（不再打包进图集——数量小、且圆形裁切要求原图干净无相邻帧串色），仿照 `cardArt.ts` 的 `UNIT_ART_URLS` 单图 import 写法。
 - **构图**：肩以上胸像，头部占画面上 2/3、留一点顶部余白，左右居中，纯白底方便 `buildPortraitIcon` 直接按宽度铺满做圆形裁切——不需要额外裁剪脚本。
-- **裁切参数**（2026-08-15 视觉核对后定档，见 §四-8/9）：胸像**按每张图自己的头部框归一化**（`client/src/render/portraitHeadBox.ts`，由 `art/scripts/measureAvatarHeadBox.mjs` 量出发顶/颈线/头宽）——发顶落在圆的 5% 处、头（发顶→颈线）占满圆的 90%，宽头的按头宽上限 88% 收，最低不低于「铺满圆宽」。效果是 26 张统一取景、裁到脖子，肩部基本不入镜。**不要退回单一全局 zoom 常数**：这批图的头部几何差异很大（发顶 0.03–0.13H、颈线 0.52–0.69H、头宽 0.58–0.94W），全局常数必须迁就最松的一张，其余就都显小。全身立绘（`skin` 分类）没有头部框，回落到**按宽度铺满 + 顶部对齐 +3% headroom**（头贴着画面顶边，缩放会切进躯干）。胸像盘面填充 = 圆盘直径的 92%，即分类色只剩一圈细边，不再是厚圆环。
+- **裁切参数**（2026-08-15 视觉核对后定档，见 §四-8/9）：胸像**按每张图自己的头部框归一化**（`client/src/render/portraitHeadBox.ts`，由 `art/scripts/measureAvatarHeadBox.mjs` 量出发顶/颈线/头宽）——发顶落在圆的 5% 处、头（发顶→颈线）占满圆的 90%，宽头的按头宽上限 88% 收，最低不低于「铺满圆宽」。效果是统一取景、裁到脖子，肩部基本不入镜。**不要退回单一全局 zoom 常数**：这批图的头部几何差异很大（发顶 0.03–0.13H、颈线 0.51–0.69H、头宽 0.58–0.94W），全局常数必须迁就最松的一张，其余就都显小。`skin` 分类 2026-08-17 起也已经是胸像（`skinAvatarArt.ts` + `SKIN_HEAD_BOX`），不再是全身立绘裁切，同样走头部框归一化；缺表项的兜底路径仍是**按宽度铺满 + 顶部对齐 +3% headroom**。胸像盘面填充 = 圆盘直径的 92%，即分类色只剩一圈细边，不再是厚圆环。
 - **新增/重绘胸像时**：跑一次 `cd client && node ../art/scripts/measureAvatarHeadBox.mjs`，把输出贴进 `portraitHeadBox.ts`。漏了不会崩（缺表项回落到按宽度铺满），但那张会明显比同排的松。
 - **不需要透明底/去白底处理**：`buildPortraitIcon` 本身用 `PIXI.Graphics` 遮罩裁圆，白色背景会被圆形遮罩天然裁掉，不必像图腾那样单独抠透明。
 - 退回逻辑不变：`buildAvatarIcon`/`categoryIcon` 找不到贴图时仍降级到字母头像（`buildAvatar` 已有兜底），三类头像各自独立失败不互相影响。
@@ -252,20 +252,22 @@ plain sky-blue collared top.
 
 ## 三、skin 类目 — 6 张胸像（从已定稿皮肤立绘裁切，非重新出图）
 
-`skin-art-prompts.md` 的 6 款付费皮肤全身立绘里，4 款（`skin_shop_c1`/`skin_e1`/`skin_e2`/`skin_l1`）已出图定稿，2 款（`skin_shop_r1`/`skin_shop_e1`）仍在打磨头部问题（该文档 pending 事项）。本类目**不重新出图**，等 6 款全部定稿后，从每张成品立绘上**裁一版专属胸像**：
+`skin-art-prompts.md` 的 6 款付费皮肤全身立绘里，4 款（`skin_shop_c1`/`skin_e1`/`skin_e2`/`skin_l1`）已出图定稿，2 款（`skin_shop_r1`/`skin_shop_e1`）仍在打磨头部问题（该文档 pending 事项）。~~本类目不重新出图，等 6 款全部定稿后裁切~~ → **2026-08-17 改走"备选路径 B"（下方）直接生成胸像，已全部完成**，下面这条裁切路径保留作记录，未来若想换一批更贴合全身立绘细节的胸像，仍可按此执行：
 
 - 裁切区域：肩线以上（头部 + 一点点肩甲/领口），构图与本文档 §渲染契约的"胸像居中、顶部留白"一致。
 - 若直接裁切后构图/留白不理想（例如头盔占比过大、肩部道具伸进画面），可对该角色**单独补一次小范围重绘**（只改裁切区域附近，不是重新出整张立绘），不算重新走一遍出图流程。
 - 输出仍是独立 PNG（`avatar_skin_shop_c1.png` 等），供 `avatar.ts` 的 `categoryIcon('skin', ...)` 直接引用——**接线时要修的 bug**：现在 `categoryIcon` 的 `skin` 分支查的是 `UNIT_ART_URLS[SKIN_TARGET_UNIT[key]]`（即 hero 的图，跟皮肤本身完全无关），改完后应直接查新建的皮肤专属胸像表（类似 `cardArt.ts` 已有的 `SKIN_PORTRAIT_ART`，只是那张表现在存的是全身立绘 url，需要新增一张"裁好的胸像 url"表，或者复用同一 url 靠 `buildPortraitIcon` 的裁切逻辑二次裁剪）。
 
-| 帧名建议 | 皮肤 | 依赖状态 |
+| 帧名建议 | 皮肤 | 裁切路径依赖状态（未执行，仅存档） |
 |---|---|---|
-| `avatar_skin_shop_c1` | 李川皮肤 | ✅ 立绘已定稿，可直接裁 |
-| `avatar_skin_shop_r1` | 苏远皮肤 | 🟡 待 `skin-art-prompts.md` §2 pending 事项定稿 |
-| `avatar_skin_shop_e1` | 陈守皮肤 | 🟡 待该文档"肤色/发色统一"的重出定稿 |
-| `avatar_skin_e1` | Lena 皮肤 | ✅ 立绘已定稿，可直接裁 |
-| `avatar_skin_e2` | Mara 皮肤 | ✅ 立绘已定稿，可直接裁 |
-| `avatar_skin_l1` | Max 皮肤 | ✅ 立绘已定稿，可直接裁 |
+| `avatar_skin_shop_c1` | 李川皮肤 | 立绘已定稿，可直接裁 |
+| `avatar_skin_shop_r1` | 苏远皮肤 | 待 `skin-art-prompts.md` §2 pending 事项定稿 |
+| `avatar_skin_shop_e1` | 陈守皮肤 | 待该文档"肤色/发色统一"的重出定稿 |
+| `avatar_skin_e1` | Lena 皮肤 | 立绘已定稿，可直接裁 |
+| `avatar_skin_e2` | Mara 皮肤 | 立绘已定稿，可直接裁 |
+| `avatar_skin_l1` | Max 皮肤 | 立绘已定稿，可直接裁 |
+
+> 六个 `avatar_skin_*` 帧名实际已经通过下方"备选路径 B"全部产出并接线上线，跟这张表列的"裁切路径依赖状态"无关——这张表只是保留给"以后想换裁切版胸像"时参考。
 
 ### 备选路径 B：直接生成胸像（不等裁切，2026-08-17）
 
@@ -418,7 +420,9 @@ weapon in frame, background scenery, multiple people, text, watermark,
 sexualized, revealing clothing
 ```
 
-**出图后接线**：跟裁切路径落地方式一致——PNG 存 `art/ui/head/avatar_skin_<key>.png` → 512px 压缩进 `client/src/assets/avatars/skin/` → 新增 `skinAvatarArt.ts`（仿 `heroAvatarArt.ts`）导出 url 表 → `avatar.ts` 的 `categoryIcon('skin', ...)` 改查这张新表（顺手修掉"现在查的是 hero 的 `UNIT_ART_URLS`"那个 bug，见上方"接线时要修的 bug"）→ 跑 `measureAvatarHeadBox.mjs` 补 `portraitHeadBox.ts` 头部框。6 张还没出图，此路径尚未开始。
+**出图记录 + 接线状态（2026-08-17）**：✅ 六张一版全过，owner 直接用上面 6 条 prompt 出图，无需二版迭代——**陈守那条顺手命中了 pending 的肤色/发色修正**（浅暖褐肤+棕发，跟另两位读起来是一家人了）。母版原图存 `art/ui/head/avatar_skin_<key>.webp`（`shop_c1`/`shop_r1`/`shop_e1`/`e1`/`e2`/`l1`）；Lena 出图时的第一版草稿（发辫垂在肩前而非收到后颈）归档 `art/leftover/avatar_skin_e1_draft1.png`。资产处理同 hero 批次口径：512px 宽等比缩放 + `sharp` `{ palette: true, quality: 90, effort: 10, compressionLevel: 9 }`，产出 `client/src/assets/avatars/skin/avatar_skin_<key>.png`（单张 156~235KB）。
+
+新增 `client/src/render/skinAvatarArt.ts`（仿 `heroAvatarArt.ts`，导出 `SKIN_AVATAR_KEYS`/`SKIN_AVATAR_ART_URLS`，key 用皮肤 id 本身，跟 `SKIN_TARGET_UNIT` 的 key 对齐）；`portraitHeadBox.ts` 新增 `SKIN_HEAD_BOX`（`measureAvatarHeadBox.mjs` 加了一个 `SKINS` 分组，跟 `PRESET`/`HERO` 并列）；`avatar.ts` 的 `categoryIcon('skin', ...)` 改成直接查 `SKIN_AVATAR_ART_URLS[key]` + `SKIN_HEAD_BOX[key] ?? null`，**修掉了"接线时要修的 bug"**（旧代码经 `SKIN_TARGET_UNIT` 转到 unitType 再查 `UNIT_ART_URLS`，读的是英雄战斗立绘，跟皮肤配色无关）——`UNIT_ART_URLS`/`SKIN_TARGET_UNIT` 两个 import 从 `avatar.ts` 里一并删除（后者仍在 `avatarPicker.ts`/`skinDefs.ts` 里为战斗渲染服务，只是不再被头像模块引用）。`tsc --noEmit` + `webpack build:web` 生产构建均过，新 PNG 资产已正确进包。**截图核对未完成**——本次会话 Browser pane 同样未能 compositing（环境限制，与 2026-08-15 §四-7 那次同一个问题），改为读 6 张母版源图逐张核对内容（配色/道具/发型是否对上对应皮肤）+ 编译/构建验证；实机点开选择器"皮肤"tab 的视觉核对留给下次有可用 Browser pane 的会话补做。
 
 ---
 

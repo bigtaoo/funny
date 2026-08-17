@@ -6,9 +6,10 @@
  *   title:<id>   — an owned title's medal art (titleArt.ts) on a neutral disc.
  *   hero:<unit>  — a hero's dedicated "everyday clothes" bust portrait (heroAvatarArt.ts),
  *                  cropped to a circle — NOT the battle/card illustration (cardArt.ts UNIT_ART_URLS).
- *   skin:<id>    — the re-skinned character's portrait (skins have no separate 2D art; still
- *                  reads the hero's battle art via SKIN_TARGET_UNIT — a known bug, see
- *                  design/product/avatar-art-prompts.md §三, pending the 2 unfinished skin repaints).
+ *   skin:<id>    — a paid skin's dedicated bust portrait (skinAvatarArt.ts), themed with that
+ *                  skin's own color/prop identity — NOT the hero's battle art (used to fall back to
+ *                  UNIT_ART_URLS via SKIN_TARGET_UNIT, see design/product/avatar-art-prompts.md §三
+ *                  "接线时要修的 bug"; fixed 2026-08-17).
  * Bare digit strings ('0'-'7', the pre-2026-08 localStorage format) are treated as "preset:<n>"
  * and positionally migrated onto the new 20-key list (see resolvePresetArtUrl) so old accounts
  * still land on a real portrait instead of the letter-initial fallback.
@@ -29,11 +30,11 @@ import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { buildIcon } from './icons';
 import { titleIconUrl } from './titleArt';
-import { UNIT_ART_URLS, getArtTexture } from './cardArt';
+import { getArtTexture } from './cardArt';
 import { PRESET_AVATAR_KEYS, PRESET_AVATAR_ART_URLS, type PresetAvatarKey } from './presetAvatarArt';
 import { HERO_AVATAR_ART_URLS, type HeroAvatarKey } from './heroAvatarArt';
-import { PRESET_HEAD_BOX, HERO_HEAD_BOX, type HeadBox } from './portraitHeadBox';
-import { SKIN_TARGET_UNIT } from '../game/meta/skinDefs';
+import { SKIN_AVATAR_ART_URLS, type SkinAvatarKey } from './skinAvatarArt';
+import { PRESET_HEAD_BOX, HERO_HEAD_BOX, SKIN_HEAD_BOX, type HeadBox } from './portraitHeadBox';
 import { snapFont } from './fontScale';
 
 /** First visible glyph of a name, uppercased (handles CJK + latin). */
@@ -201,10 +202,8 @@ function categoryIcon(category: AvatarCategory, key: string, size: number): PIXI
       return url ? buildPortraitIcon(url, size, HERO_HEAD_BOX[key as HeroAvatarKey] ?? null) : null;
     }
     case 'skin': {
-      // Full-body battle art, not a bust — no head box, so it falls back to the width fit.
-      const unit = SKIN_TARGET_UNIT[key];
-      const url = unit !== undefined ? UNIT_ART_URLS[unit] : undefined;
-      return url ? buildPortraitIcon(url, size, null) : null;
+      const url = SKIN_AVATAR_ART_URLS[key as SkinAvatarKey];
+      return url ? buildPortraitIcon(url, size, SKIN_HEAD_BOX[key as SkinAvatarKey] ?? null) : null;
     }
   }
 }
