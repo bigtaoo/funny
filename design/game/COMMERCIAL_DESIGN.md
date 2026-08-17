@@ -487,7 +487,7 @@ ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription
 
 ## 11. 钱包按支付渠道隔离（ADR-020，2026-07-27）
 
-> 状态：✅ 已实现（西方大区共享部署内）。解决 [`DECISIONS.md` ADR-020](../DECISIONS.md#adr-020-跨平台账号钱包隔离边界--accepted--2026-06-23)
+> 状态：✅ 已实现（西方大区共享部署内）。解决 [`DECISIONS.md` ADR-020](../DECISIONS_ADR-001-040.md#adr-020-跨平台账号钱包隔离边界--accepted--2026-06-23)
 > 遗留的"钱包/充值币按支付渠道隔离"缺口：站外渠道购买的虚拟货币不得在 Apple/Google 内消费（反之亦然），否则违反
 > 各平台的 IAP 反绕过条款。触发原因：iOS/Android 原生 IAP 一旦上线（`IOS_RELEASE.md` 记录 7 个 IAP 商品尚未在
 > App Store Connect 建好，原生购买尚未真正上线），会与 web(Paddle) 共享**同一套全局部署 + 同一个 `wallets` 集合**

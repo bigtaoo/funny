@@ -24,7 +24,7 @@
 | 文档 | 范围 |
 |---|---|
 | [README.md](README.md) | 本文：索引 / 权威登记 / 文档规约 |
-| [DECISIONS.md](DECISIONS.md) | ADR 决策日志（造成漂移的关键拍板） |
+| [DECISIONS.md](DECISIONS.md) | ADR 决策日志（造成漂移的关键拍板）——**索引表**，正文见 [ADR-001~040](DECISIONS_ADR-001-040.md) / [ADR-041~066](DECISIONS_ADR-041-onward.md)（新拍板写后者） |
 
 ### 1.2 游戏与服务端（`design/game/`）
 | 文档 | 范围 | 状态 |
@@ -36,7 +36,7 @@
 | [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 |
 | [ECONOMY_VERIFICATION_LOG.md](game/ECONOMY_VERIFICATION_LOG.md) | econ-sim 各轨（NATION/CITY/C/D/E/F/STRONGHOLD）核验过程与结论（已 CLOSED，非数值权威） | 已完成 |
 | [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | **角色卡实例系统（Hero Roster/喂卡升级/兵力/受伤/布阵对接；数字→ECONOMY_NUMBERS §6）** | 设计中 |
-| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e）；⚠️洗练当前不扣金币 |
+| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e）；⚠️洗练当前不扣金币 **（2026-08-17 拆分：§3–8 → `_MODEL`，§9–14 → `_IMPL`，§15–20 → `_REF`）** |
 | [ITEM_IDENTITY_DESIGN.md](game/ITEM_IDENTITY_DESIGN.md) | **物品身份基准（唯一id/状态/溯源，跨材料/装备/角色卡/皮肤/称号；装备/角色卡溯源字段已实现，材料/皮肤/称号实例化为后续待办清单）** | 设计中（ADR-059） |
 | [EQUIPMENT_ICON_PROMPTS.md](game/EQUIPMENT_ICON_PROMPTS.md) | 装备图标 AI 生成 prompt 清单（美术素材，非机制基准） | 参考 |
 | [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 已实现（`shared/achievements.ts` StatKey/分阶/反作弊L1+测试） |
@@ -78,13 +78,13 @@
 | [AUDIO_DESIGN.md](game/AUDIO_DESIGN.md) | **音频系统（资产/触发表/播放层/混音/设置/平台约束；美学仍归 art-direction）** | 设计中 |
 | [ONBOARDING_DESIGN.md](game/ONBOARDING_DESIGN.md) | **新手引导/FTUE 编排（首会话动线/专属教学关 ch0_tutorial 三阶段编排/首次功能引导/功能开放策略；合规已移出归 COMPLIANCE，不重述故事/关卡）** | 设计中 |
 | [SLG_DESIGN.md](game/SLG_DESIGN.md) | SLG 大世界核心设计（§0–14：世界结构/地图/战斗接入/契约） | 实现中 |
-| [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | SLG 大世界实现记录（§15 起：收尾清单/功能落地/bug 修复，worldsvc:18084；§21 剩余工作总览） | 实现中 |
+| [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | SLG 大世界实现记录（§15 起：收尾清单/功能落地/bug 修复，worldsvc:18084；§21 剩余工作总览） | 实现中 **（2026-08-17 拆分：本文仅索引 + §15；正文见 `SLG_LOG_*.md`）** |
 | [SGZ_LAND_REFERENCE.md](game/SGZ_LAND_REFERENCE.md) | **参考资料**：三国志战略版地块/资源/建筑/版图机制调研（非本项目设计基准，供 SLG 地块系统设计对照） | 参考 |
 | [SLG_CITY_DESIGN.md](game/SLG_CITY_DESIGN.md) | **SLG 主城内政/建筑系统机制基准（仿三战书桌内政：资源建筑/练兵/城防/科技；激活 graphite/sticker faucet+sink；数字→ECONOMY_VERIFICATION_LOG §13-SLG-CITY，红线不喂天梯）** | P1+P2 已实现（e2e 8/8 实测）·数值 DRAFT |
 | [SLG_ECONOMY_CHECK.md](game/SLG_ECONOMY_CHECK.md) | **SLG DRAFT 数值的经济性核验方法（6 条轨道分流：持久经济聚合/赛季资源/围攻/分区公平/节奏/运维；判据+流程+登记口径；数字仍→ECONOMY_NUMBERS §13-SLG）** | 设计中 |
 | [WORLD_MAP_ART_SPEC.md](game/WORLD_MAP_ART_SPEC.md) | 大世界地图美术资产规格书（待替换的程序占位色块清单；权威=WorldMapScene.ts/SLG_DESIGN） | 实现中 |
-| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 |
-| [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 |
+| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 **（§9 拆分任务清单 → `AUCTION_DESIGN_SPLIT_TASKS.md`）** |
+| [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 **（2026-08-17 拆分：场景规格 → `UI_DESIGN_SCENES.md`，变更记录 → `UI_DESIGN_LOG_*.md`）** |
 | [LOBBY_IA_REDESIGN.md](game/LOBBY_IA_REDESIGN.md) | 大厅信息架构重规划（一级入口/底部 tab 重分组；装备并入养成、战绩升级为生涯、克制付费曝光） | 设计中 |
 | [PARALLEL_DEV_PLAN.md](game/archive/PARALLEL_DEV_PLAN.md) | **并行开发计划（按依赖耦合分三条轨道 A/B/C，各自 worktree）** | 已归档 |
 | [LAUNCH_TRACK_1_CLIENT.md](game/archive/LAUNCH_TRACK_1_CLIENT.md) | 上线收口 Track 1 — 客户端合规 UI + 孤儿场景接线（已完成） | 已归档 |

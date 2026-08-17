@@ -6,798 +6,89 @@
 每条 ADR 注明：日期、决策、影响的文档、为什么。新拍板追加在末尾，不改旧条目（要改就加一条新的 *Supersedes*）。
 
 格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`（`Proposed` = 已登记、未拍板的候选提案，不代表当前实现，实施前需另开确认）
+> **2026-08-17 拆分**：原文件 803 行，ADR 正文按编号搬进两个分册，本文保留索引。编号/标题/锚点全部未变。
+> **新拍板追加到 [`DECISIONS_ADR-041-onward.md`](DECISIONS_ADR-041-onward.md) 末尾**，并在下表补一行。
 
 ---
 
-## ADR-001 战斗数值单一可信源 = `config.ts` — Accepted — 2026-06-21
-
-- **决策**：战斗运行数值（HP/攻/速/费/上限/计时/卡池）以 `config.ts` 为唯一可信源。文档侧只在 [`game/BALANCE.md`](game/BALANCE.md) 做带日期的快照。（G3-2b-0 后 config.ts 真身在 `server/engine/src/`＝`@nw/engine`，client 经 alias 引用。）
-- **背景**：审计发现 `core-gameplay-loop.md`、`v1-balance.md`、`DESIGN.md`、`config.ts` 四处数值互不一致（墨上限 30/300/300、普通兵卡费 4/16/4、移速 1.0/0.5/1.4 等）。根因是数值散落在多份散文文档里各自演化。
-- **影响**：新增 BALANCE.md；core-gameplay-loop 数值降级为"设计意图"并加指针；v1-balance/v1-simulation 标记归档。
-
-## ADR-002 局内货币重命名 `coins → ink` — Accepted — 2026-06-13
-
-- **决策**：局内资源叫 `ink`（墨滴，单局清零）；跨局持久元货币叫 `coins`（金币，服务器权威）。代码重命名已完成（纯重构不改数值）。
-- **影响**：[`game/ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) 为权威。`core-gameplay-loop.md` 等旧文仍把局内资源叫"金币"，属待清理的旧词（数值非权威，低优先）。
-
-## ADR-003 阵营色 = 我蓝敌红（v0.3） — Accepted — 2026-06-14
-
-- **决策**：我方 = 蓝钢笔，敌方 = 红钢笔。覆盖 v0.2「同色不换色」。
-- **为什么**：红=老师批改=权威，是叛逆少年的对立面（diegetic）；红=敌全人类通识，乱战可读性最强；且为"红军即自己"的镜像 twist 在视觉上埋线。
-- **影响**：[`product/art-direction.md`](product/art-direction.md) §3.2 为权威 + `theme.ts` `factionInk`。UI 文档不另定义阵营色。皮肤铁律：绝不动敌我蓝红。
-
-## ADR-004 服务端进程拆分（gateway / matchsvc 独立） — Accepted — 2026-06-14（S1-M5）
-
-- **决策**：gateway（控制面 WS）与 matchsvc（匹配大脑）拆为独立进程，经内部 HTTP 互通；commercial 独立进程 + 独立库。
-- **影响**：[`GATEWAY_DESIGN.md`](game/GATEWAY_DESIGN.md) / [`MATCHSVC_DESIGN.md`](game/MATCHSVC_DESIGN.md) / [`claudedocs/server.md`](../claudedocs/server.md) 为现行实现。[`META_DESIGN.md`](game/META_DESIGN.md) §6.1 写于过渡期，其"6 组件"是 meta 范畴口径。
-
-## ADR-005 应用进程口径 = 8 个 — Accepted — 2026-06-21
-
-- **决策**：应用进程 8 个：metaserver / gateway / matchsvc / gameserver / commercial / admin / worldsvc / analyticsvc。`shared` 是 npm 包不计入；mongo/redis 是基础设施。
-- **背景**：CLAUDE.md 旧称"九进程"且列表漏了 matchsvc、混入了 shared 包。
-- **影响**：CLAUDE.md 已改；[`claudedocs/server.md`](../claudedocs/server.md) 为权威清单。
-
-## ADR-006 PvE 数据走服务器权威（方案 B） — Accepted — 2026-06 PVE_INTEGRITY_PLAN §8
-
-- **决策**：PvE 升级 / 通关 / 材料从"客户端同步段"迁为**服务器权威**——`pveUpgrades`/`progress`/`materials` 客户端只读镜像，变更走 `POST /pve/clear`、`POST /pve/upgrade`；奖励服务器按 `shared/pveRewards.ts` 重算，不信客户端自报。
-- **影响**：[`PVE_INTEGRITY_PLAN.md`](game/PVE_INTEGRITY_PLAN.md) 为 PvE 数据权威真源。[`CAMPAIGN_DESIGN.md`](game/CAMPAIGN_DESIGN.md) §3 的"campaignProgress 客户端权威"措辞已加指针修正。`/pve/*` 端点契约待补进 [`SERVER_API.md`](game/SERVER_API.md)（缺口）。
-
-## ADR-007 SLG 围攻 = 双方预布兵确定性自动战斗 — Accepted — 2026-06-20（G3）
-
-- **决策**：放弃手操；关键围攻 = 双方预布兵的确定性自动战斗，**服务器跑引擎算权威结果即时落地**，客户端凭 `seed + 双方布阵`本地重播观战。
-- **作废**：上一版「廉价线性结算为权威 + judge 复算反作弊对账 + 手操复盘」（S8-3/S8-3b）。`judgeRunner` siege 路径、录像上传、peer 复算、`siegeLandingFromVerdict` 全删。
-- **影响**：[`SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §16 为现行基准；§8-3/§8-3b/§11 的旧描述已加"已被 §16 取代"指针。
-
-## ADR-009 经济/养成体系：体力 + 合成树 + 等值广告金币 — Accepted — 2026-06-21
-
-- **决策**（用户拍板）：
-  - **体力**：引入体力概念作为关卡刷材料的总闸门；不同关卡耗不同体力、产出不同。
-  - **单位养成**：每单位 9 级；**5 张 N 级卡 → 合成 1 张 (N+1) 级，100% 成功**（指数 sink，T9 = 5⁸ ≈ 39 万张 T1 卡，长期 aspirational）。
-  - **养成轴**：HP / 攻击力 / 攻速 / 移速 + **新增护甲 armor**（flat 减伤，填补当前无护甲的空缺）+ 每单位若干**单位养成特性**（trait，离散质变；原称"里程碑特性"，已改名脱钩成就系统）。
-  - **装备养成**：独立系统，**可失败**（区别于单位合成 100%），结构 [DRAFT]。
-  - **金币来源**：看广告 **固定 10 coins/条、≤5 条/天（≤50/天）、每条间隔 ≥30 min**（2026-06-27 拍板 10——先定 50 觉偏高，同日下调至 10，**上线后看效果再议**；与代码 `ADS_REWARD_COINS` 一致；弃早期「50 / 3 coins / 等值挂钩」提案）。10×5≈1,500/月，仍略高于早期「~300/月、广告小头」目标但已温和，如需再收敛优先调 `ADS_DAILY_CAP` 或定价。大头在战斗/活动/称号/任务；称号/成就一次性龙头保留。
-  - **皮肤**：common/rare/epic 金币直购（epic 1,800）；legendary 仅抽卡；活动限定直购。稀有度色 = 灰/蓝/紫/**橙**（legendary=橙 `#e08a2c`，2026-06-21 定）。
-  - **T9 可达性**：后期关卡直产 T3 卡 + 抽卡/直购/拍卖行；付费无压力，F2P 主力 T5–T6；不想氪可只玩公平 PvP。
-  - **单位养成特性（俗套基线）**：T3 暴击 / T6 吸血 / T9 +1出兵，通用三档；后期再差异化。仅 PvE/SLG 注入，PvP 硬墙恒不读。**"里程碑/milestone" 一词此后专留给成就系统**。
-  - **装备（俗套基线，最深氪点）**：每单位 3 槽（武器/护具/饰品），+1→9 强化，成功率每级 −10%（80%…+8→9 仅 10%），**失败只损材料、不掉级不碎**；**无销毁渠道**（满级只增不减）；整套 +9 鲸鱼级稀有。
-- **影响**：新增 [`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) 为经济/养成数值权威；取代 ECONOMY_BALANCE §2.1 旧"50 coins/广告"。**护甲为新引擎机制**，落地时配套**重新演算全部战斗数值**（更新 BALANCE.md）。
-
-## ADR-010 装备升级 = 概率强化（取代"5 件确定性合成升级"） — Accepted — 2026-06-21
-
-- **决策**：装备「9 级」一律走 **概率强化 +1→9**（每级 −10% 成功率，失败只损材料/金币、不掉级不碎；ADR-009 口径）。合成（锻造）**降级为"获得渠道"**：文具材料 → 一件 0 级基础装备，不再承担升级。三动作分工 = **合成（获得）/ 强化（升级，概率）/ 洗练（重洗词条，吞低级同类）**。
-- **作废**：旧稿「9 级合成升级 = 每升 1 级吃 5 个同种装备（Lv N = 5×Lv N-1）」——该确定性升级机制被概率强化取代（与单位卡 100% 合成保持区别，正是 ADR-009「装备可失败」的体现）。
-- **影响**：新增 [`game/EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) 为装备系统**机制**单一权威（数字仍归 ECONOMY_NUMBERS §5）；[`game/ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) §5.5 与 [`game/META_DESIGN.md`](game/META_DESIGN.md) §11.4 的旧"5 件合成升级"描述已加指针指向本 ADR / EQUIPMENT_DESIGN。
-
-## ADR-008 叙事铁律：两本笔记本，东西不混搭 — Accepted
-
-- **决策**：涛（中国/来德 2 年/家庭有爱/只画东方）与 Anna（德国/富裕/只画西方）各一本笔记本贯穿剧情；东西碰撞 = 两本相遇，**不是**一人混搭。对外名 **Nivara**（亦大陆名），内部仍 Notebook Wars。
-- **影响**：[`product/world.md`](product/world.md) / [`game/CAMPAIGN_STORY.md`](game/CAMPAIGN_STORY.md)。神话层（[`MYTHOLOGY_DESIGN.md`](game/MYTHOLOGY_DESIGN.md)）是"作者赋予神力"的叠加，不另起神话章节、不破坏两本结构。
-
-## ADR-011 留存系统 = 不新增金币龙头 — Accepted — 2026-06-21
-
-- **决策**：每日签到/每日任务/周常**复用既有「日常任务 ~60/月」金币预算，不另立金币龙头**。签到本体几乎不发金币、主发**软通货**（体力/材料/卡/抽卡碎片，受体力闸门+养成树自然约束，不进金币通胀推演）；金币只从**每日任务满点**一次性出且有日上限（初定 2 coins/天 ≈ 60/月）。机制服务器权威 + `dayKey`（复用广告金币既有计数），领取/红点/SaveData 扩展与成就系统同构。断签**温和档**：月历式累计、漏签不清零不惩罚。
-- **为什么**：留存是经济里唯一的「持续金币 faucet」，最易冲垮 F2P ~300/月预算（ECONOMY_BALANCE §1 反通胀）；锁死为软通货钩子 + 受控小额金币，留存收益拉满而通胀压力≈0。温和断签避免逼走休闲玩家（与装备失败不碎、ADR-009 全经济温和基调一致）。
-- **影响**：新增 [`game/RETENTION_DESIGN.md`](game/RETENTION_DESIGN.md) 为留存系统**机制**单一权威；数字落 [`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §12，§6.1「日常任务」行已改为「日常任务/签到」并加指针。奖励仅注入 PvE/SLG/账号资源，PvP 硬墙恒不读（ADR-009）。任务计数复用成就 statKey 累加链，不开客户端写口（ACHIEVEMENT A2）。
-
-## ADR-012 装备生命周期：有限回收 + 库存上限 + 3 槽确认 — Accepted — 2026-06-21
-
-- **决策**（用户拍板，*Supersedes* ADR-009「装备无销毁渠道」一条）：
-  - **分解回收（取代"无销毁"）**：装备可分解，返还 **70% 打造材料**（**强化投入不返还**——强化失败损耗仍是核心 sink，不让分解漏回）；**+5 及以上不可分解**（已具价值，作为保护），高级件出口转为**拍卖 / 穿戴**。30% 损耗本身是温和 sink，分解主职是清库存。
-  - **库存硬上限 = 300 独立实例**（堆叠的 0 级无词条件不计）；满仓禁获得新实例，直掉成品转**等值材料补偿**。
-  - **穿戴单独计、不占 300**；穿戴数**结构性自限 = 3 槽 × loadout 套数**，不另设大上限，且因此当不成"穿戴囤货"后门。
-  - **获取口径**：**材料为主、合成为成品骨干 + Boss/精英/后期关低概率直掉成品当彩头**；弃"满地掉装备"（与库存上限 + 仓鼠苦役冲突）。
-  - **同时挂拍上限 = 5 件**（可付费扩为软变现杠杆，仅 SLG）；挂单 24–48h 时效，**流拍退回库存**，满仓则进溢出暂存区，不丢不超限。
-  - **槽位维持 3 槽**（武器/护具/饰品）：否决"头盔/衣/裤/双手/双脚/腰带 8 件解剖槽"提案。理由：战力上限固定（35%/1.5×），加槽=稀释非增强；单位是出兵的小兵群非换装英雄；解剖槽无独立机制轴；破坏文具叙事皮；小涂鸦兵美术 + 存档双爆。深度走 `byUnit` 每兵种 loadout，不靠加槽。
-- **为什么**：旧"无销毁"导致实例只增不减、存档膨胀无阀；有限回收 + 硬上限既治膨胀又添温和 sink，且 +5 保护 + 拍卖出口保住高投入件价值。数值全部缩小（库存 300 而非 500/1000、挂拍 5）符合"攒一套满级装备本就极难"的稀缺基调。
-- **影响**：[`game/EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) L4 改写 + §3.3 / §6.3（新增分解）/ §4 / §13 / §14 / §16 更新为权威；[`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §5.1 / §5.3 / §6.3 / §10 同步去"无销毁"口径并补参数。`/equipment/salvage` 端点待进 SERVER_API.md。
-
-## ADR-013 合规拆分为 Global / CN 两份，海外先行 — Accepted — 2026-06-21
-
-- **决策**（用户拍板）：合规义务按地区拆两份文档，**互相解耦**：
-  - **海外（先做）= [`game/COMPLIANCE_GLOBAL.md`](game/COMPLIANCE_GLOBAL.md)**：Web + iOS + Google Play 三渠道。硬门 = 隐私政策 / 年龄分级（IARC·ESRB·PEGI·Apple）/ **抽卡概率公示**（Apple 3.1.1 + Google Play，中外通吃）/ 平台 IAP 强制 / 应用内删账号（Apple 5.1.1(v)）/ GDPR·COPPA / UGC 治理。
-  - **中国（跟版号走，可推迟）= `COMPLIANCE_CN.md`**（占位，未建）：版号(ISBN) / 实名认证 / 防沉迷（未成年限时限额）/ PIPL / 分龄充值限额。
-- **为什么**：实名 + 防沉迷 + 版号是**中国区特有**，海外测试期不触发；但海外有自己（更轻）的一套，且**抽卡概率公示**和**平台支付强制**最易在审核卡审。先海外测试、同时申国内版号，两条线并行不阻断。
-- **影响**：新增 COMPLIANCE_GLOBAL.md 为海外合规权威；README §1.2 / §2 登记。挂钩既有系统：analyticsvc §10（同意/删除）、commercial GachaPool weight（概率公示数据源）、account（删账号端点待补 SERVER_API）、social 敏感词（UGC）。`iapVerify` dev 桩上线前换平台 SDK。
-
-## ADR-014 活动/Live-ops = 叠加既有系统的受控容器，不新增金币龙头 — Accepted — 2026-06-21
-
-- **决策**（用户拍板）：运营活动作为**有时效的内容容器**引入（回答 ECONOMY_BALANCE §299「是否引入限时活动池/双倍掉落」=引入但严格受控），且**不另造平行子系统**——发奖走 OPS 邮件路径、任务计数复用 RETENTION/ACHIEVEMENT 的 statKey 累加链、限定直购复用 commercial 商店、时钟服务器权威（同 dayKey 思路）。经济红线：①**不新增金币龙头**（活动金币计入月度 ~300 预算，主发软通货/限定皮肤碎片/活动积分，同 ADR-011）；②双倍/加成期有**硬封顶**且只作用于受体力闸门约束的 PvE 产出（ADR-009 体力总闸）；③限定直购**不破皮肤稀有度铁律**（不把高级 epic/legendary 降为金币直购）；④活动积分活动期清零、不沉淀；⑤**PvP 硬墙恒不读活动加成**（ADR-009）。
-- **为什么**：活动是最容易冲垮 F2P 经济预算与公平性的运营口子；锁死「叠加正向收益、从不削弱常态、可错过不可剥夺」+ 复用既有发奖/计数/售卖路径，避免造第二条发奖通道与数值漂移。活动有**自己的第三条时钟**，与天梯6周/SLG大区2月赛季时钟解耦（SEASON_OVERVIEW），纯由 window 决定。
-- **影响**：新增 [`game/EVENTS_DESIGN.md`](game/EVENTS_DESIGN.md) 为活动系统编排权威；数字落 [`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §14（待建）；ECONOMY_BALANCE §299 待决项关闭。`/events` 端点待补 SERVER_API.md。README §1.2 / §2 登记。
-
-## ADR-015 文档缺口补全（实现前收口） — Accepted — 2026-06-21
-
-- **决策**：实现功能前先补齐设计文档自登记的缺口，使 design/ 无悬空引用。本轮补齐 7 项：
-  - **新建 [`game/COMPLIANCE_CN.md`](game/COMPLIANCE_CN.md)**（兑现 ADR-013 占位）：版号/实名/未成年人防沉迷限时/分龄充值限额/PIPL，跟版号走、海外测试不阻断。
-  - **[`game/ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §13**（赛季/战令数值，SEASON_DESIGN 引用）+ **§14**（活动加成封顶/积分/月度归口，EVENTS_DESIGN / ADR-014 引用）补齐；SEASON/EVENTS 里「待铺/待建」指针改为「已铺」。
-  - **[`game/SERVER_API.md`](game/SERVER_API.md)** 补四组端点契约（兑现 ADR-006 / ADR-012 / ADR-013 / ADR-014 的「待补 SERVER_API」）：§2.7 `/pve/clear|verify|upgrade`、§2.8 `/equipment/craft|enhance|salvage|reforge|equip`、§2.9 `/events|claim|redeem`、§2.10 `/account/delete`；顺带 §2.11 赛季/排行榜/战令端点（SEASON §10 指向）+ §5 DB 集合扩 `pveDaily`/`pveVerifications`/`ladderSeasons`。
-- **为什么**：用户拍板「先把文档补全再实现」。这些缺口此前散记在各 ADR 的「待补」字样里，集中收口避免实现时无契约可依。
-- **影响**：上述文档 + README §1.2/§2 登记 COMPLIANCE_CN。**注**：契约最终落地仍以 `server/contracts/openapi.yml` codegen 为准（SERVER_API §1.2），本轮只补人类可读契约摘要。各「机制设计中、数值 [可调]/[DRAFT]」项不属文档缺口，留实现期配合代码定参。
-
-## ADR-016 角色卡 = 6 张（涛3＝现有兵转具名·锚点 + Anna3＝新画变体） — Accepted — 2026-06-21
-
-- **决策**（用户拍板）：每定位（剑士/盾卫/弓手）做**东西双版本，共 6 张卡**：
-  - **涛 / 方家三人 = 现有三张通用兵直接转为具名，数值原样不动**：李川＝普通兵、陈守＝盾兵、苏远＝弓箭兵。三者是**全套战斗数值的锚点/地基**，**首版零机制**（纯保平衡，二期再议 signature）。
-  - **Anna / Hartmann 三人 = 重新绘制 + 重新设计**，以涛对位兵为数值参照做差异化变体（同定位、不同打法）：**Max** 出1强单体·强击啃肉（vs 李川出2脆快铺场，刻意拉大对比度）；**Lena** 纪律固定减伤·站定加成（vs 陈守高裸血肉墙）；**Mara** 标记敌人团队增伤（vs 苏远高单发独狼）。每张须「一句话验收」与对位涛卡的差异。
-  - **获取**：**PvP 六张全部直送**（竞技不拼卡池、防 P2W）；**PvE/SLG 通关对应章节各送一张**（Ch2→Max / Ch4→Lena / Ch6→Mara）；**抽卡/活动获更多**（重复获取转养成材料/碎片/皮肤）。
-  - **同定位允许超过 2 张**（未来第三家族/神话层/联动），新卡须与已有两张都拉足差异。
-  - **东西羁绊 = 未来大系统，本期只记录、不做、不留接口**。
-- **为什么**：3 张会浪费一半美术且抹掉东西碰撞；6 张「同定位异打法」既全用美术又加构筑深度。涛侧锁为锚点 = 不动现有战斗平衡地基（数值参考系稳定）；Anna 侧承载新机制与收集。PvP 全送 / PvE 解锁分层 = 竞技公平与养成收集两不误（同 ADR-009 经济基调）。
-- **影响**：新增 [`game/CHARACTER_DESIGN.md`](game/CHARACTER_DESIGN.md) 为角色卡**机制/流派**权威（数值锚点占位，落地进 `config.ts` + 同步 [BALANCE.md](game/BALANCE.md)）。落地需在 `server/engine/src/config.ts` 加 Anna 三单位 + 三卡定义、机制走单位特性字段（参考 PvE `aura_heal` 等范式）；PvE 解锁写 `server/shared/pveRewards.ts`；新美术绑骨走 animator。叙事遵 ADR-008（涛东/Anna西）。README §1.2/§2 登记。
-
-## ADR-017 装备洗练 = 技能槽 0–2 + 2 条可锁定重洗；抽卡与皮肤共池 — Accepted — 2026-06-21
-
-- **决策**（用户拍板）：
-  - **技能槽数**：每件装备最多 **2 个技能词条**——**多数 0 条、部分 1 条、极少 2 条**（稀有度越高越可能有，2 条为顶级稀有）。槽数随实例生成定，洗练不改槽数。
-  - **洗练模式**：0/1 个技能 → 全部随机重洗；**2 个技能 → 玩家二选一**：①花金币**锁定其中 1 条**、只重洗另一条（更贵、更可控）；②全部随机（更便宜）。锁定费是又一温和 coin sink。落地洗练接口加 `lockAffixIndex?`（仅 2 技能实例可传），服务器校验槽数 + 收锁定费。
-  - **装备抽卡池**：**与皮肤共池**，且**主产出是材料**，装备成品仅低概率彩头（呼应 ADR-012「材料为主、成品骨干靠合成」，不让抽卡变装备直购后门）。
-- **影响**：[`game/EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) §7.8 改写 + §6 抽卡行 + §15 开放问题两条关闭（洗练模式、抽卡池）；数字仍归 ECONOMY_NUMBERS §5。`/equipment/reforge` 契约（SERVER_API §2.8）落地时补 `lockAffixIndex?`。
-- **附带（同日复核）**：[`game/PVE_INTEGRITY_PLAN.md`](game/PVE_INTEGRITY_PLAN.md) §5/§8.4 离线合并定为**弱网补偿三档**（先发后查、异常追回）；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) R4 分服归属链定为**宗门 > 家族 > 单随**；[`game/AUCTION_DESIGN.md`](game/AUCTION_DESIGN.md) §8 确认无剩余机制级开放问题（全降实现期调参）。
-
-## ADR-018 海外分级自定为 13+（不面向儿童） — Accepted — 2026-06-21
-
-- **决策**（用户拍板，落实 ADR-013 / COMPLIANCE_GLOBAL §3.4 原建议）：海外自我定级为 **「13+ / 不面向儿童」**，规避 COPPA / GDPR-K 家长同意重负担。
-- **为什么不定 6+**：曾考虑更低龄友好的 6+，但与现有设计两处硬冲突——①**真钱抽卡**面向儿童在欧盟是监管雷区（比利时禁付费开箱、USK 因内购+随机机制抬级）；②**开放陌生人聊天**对儿童是安全风险。要做 6+ 需大改（抽卡改软通货抽、聊天收预设短语）或单做儿童分版屏蔽抽卡，后者工程量大且效果存疑（孩子可用家长账号）。**改造代价 > 收益 → 定 13+**。
-- **影响**：13+ 下**抽卡与社交聊天保持原设计、无需儿童分版逻辑**；付费控制仍靠平台家长控制 + 鲸鱼天花板 + 广告每日上限（锦上添花非硬门）。[`game/COMPLIANCE_GLOBAL.md`](game/COMPLIANCE_GLOBAL.md) §2 COPPA 行 + §3.4 更新；分级问卷按 13+ 如实勾选，**铁律：不得勾成全年龄/含儿童**。COMPLIANCE_CN 防沉迷仍按中国法另算（与海外分级解耦，ADR-013）。
-
-## ADR-019 多区域部署 = Meta 共享 + 对战层按区隔离 + 中国独立 — Accepted — 2026-06-23
-
-- **决策**（用户拍板）：全球部署切三个 Realm——**西方大区（欧洲+美洲单一 realm，账号/天梯/经济/SLG 共享）** 与 **中国区（完全独立整套栈，与西方不互通）**。西方大区内部再分层：**Meta 层（metaserver/MongoDB/worldsvc/commercial/social）单实例托管欧洲共享；匹配+对战层（gateway/matchsvc/gameserver）按地理区各一套**，两区都指向同一共享 metaserver。
-- **匹配规则**：天梯/随机匹配**同区优先**（每区独立 matchsvc 池天然隔离，杜绝跨洋锁步）；ELO 存共享 Meta → **全大区统一天梯**（区域匹配 + 全局天梯）；**好友房允许跨区**（邀请制非天梯，延迟玩家自担，不影响公平）。
-- **为什么这么切**：① `gameserver`/`matchsvc` 均不连库、`gameserver` 永不触库且 ticket 动态携带 `gameUrl` → 对战层可自由就近部署、加机器即插即用；② 现状 `matchsvc.pick()` 只看负载、**无区域感知**，故**绝不能把欧美 gameserver 注册到同一 matchsvc**（会跨洋乱发）→ 用「每区一套独立 matchsvc」让区域隔离来自部署结构，**匹配核心零改动**；③ MongoDB 单主欧洲、**禁跨大西洋副本集写**（跨洋写拖垮 meta），游戏帧不触库故不受影响；④ 中国跨 GFW 实时竞技不可行 + 监管/数据出境/支付渠道全不同 → 必须独立。
-- **未采用**：单一 matchsvc 服务两区（需给注册加 region 标签 + QueueEntry 加 region + 改 pick/配对分桶）——动匹配核心代码、要自防跨区兜底，收益不及成本。
-- **影响**：新增 [`game/DEPLOY_TOPOLOGY.md`](game/DEPLOY_TOPOLOGY.md) 为多区域部署权威；实现期需参数化 gateway/match-report→metaserver 地址、每台 gameserver 设区域 `NW_GAME_PUBLIC_WS_URL`、客户端加选区/测速逻辑（清单见该文 §4.1）。进程拓扑/端口仍归 [claudedocs/server.md](../claudedocs/server.md)。README §1.2/§2 登记。
-
-## ADR-020 跨平台账号/钱包隔离边界 — Accepted — 2026-06-23
-
-- **背景**：上线规划时确认「某些平台是否不允许共享用户、需把用户隔离」。审 [`accounts.ts`](../server/metaserver/src/accounts.ts) 后澄清：**身份层默认就隔离**——device(web/CrazyGames)/openid(微信)/oauth/password 各映射独立 `accountId`，跨端合并是用户主动 `bind*`，不存在"被迫隔离身份"的问题。真正逼迫隔离的是**数据合规**与**支付渠道**，与身份无关。
-- **决策**（用户拍板）：
-  - **身份/存档/天梯**：web + CrazyGames **共享同一套全球部署**（Cloudflare 前端 + 欧洲 VPS + Atlas）。两端用户可共存、可绑定合并。
-  - **中国（微信）= 物理独立部署**：中国大陆玩家个人信息按 PIPL/网络安全法须**境内存储** → 微信线跑完全独立的境内栈（境内云 + 境内 Mongo），账号/存档/钱包均不与全球区互通。承接 ADR-019「中国独立」与 ADR-013「Global/CN 合规拆分」，此处补「数据驻留」为隔离的法律根因。**延后实现**，先做全球区。
-  - **钱包/充值币按支付渠道隔离**：`SaveData.wallet.coins` 当前为全局单一钱包。上线微信/苹果/谷歌前必须改造——**站外渠道（如 Stripe）购买的虚拟货币不得在微信/苹果内消费**（违反各平台"不得消费站外购买虚拟货币"条款）。落地方式：充值币标记来源渠道，或钱包按平台隔离。**现在就要记入数据结构设计**，避免后期迁移。
-    > **2026-07-27 落地**：选了"充值币标记来源渠道"这条（否决"钱包按平台隔离"=iOS/Android 各自独立部署——会牺牲本条已支持的跨端同账号游玩能力，且 `IOS_RELEASE.md §4.2` 既定计划本就是原生 IAP 复用同一套西方大区部署）。`wallets.coins` 保留为免费池（广告/胜场/兑换码等非充值来源，处处可花），新增 `wallets.recharged:{web?,apple?,google?}` 按渠道标记的充值池，花费时以请求平台（客户端新增 `X-NW-Platform` 头）门控只可花「免费池 + 匹配渠道桶」。详细机制见 [`game/COMMERCIAL_DESIGN.md §11`](game/COMMERCIAL_DESIGN.md#11-钱包按支付渠道隔离adr-020-2026-07-27)。微信仍是完全独立部署/独立库，天然合规、不受影响。
-  - **CrazyGames**：门户限制主要在前端行为（禁站外支付/外链跳转），账号层可与 web 共享，无需隔离。
-- **未决/待查**：微信小游戏、CrazyGames、苹果/谷歌的开发者协议中"虚拟货币跨渠道流通"的具体条款原文（上线对应平台前逐条核实）。
-- **影响**：[`product/deploy-cloudflare.md`](product/deploy-cloudflare.md) 新增「平台隔离边界」节为现行口径；钱包渠道隔离机制见 [`game/COMMERCIAL_DESIGN.md §11`](game/COMMERCIAL_DESIGN.md#11-钱包按支付渠道隔离adr-020-2026-07-27)（已实现，不再是缺口）。
-
-## ADR-021 独立 socialsvc = 第五公网面，推翻 SOC1 — Accepted — 2026-06-28
-
-- **决策**（用户拍板）：*Supersedes SOC1*（"持久数据扩展 meta，不新建 social 进程"）。新建独立进程 `socialsvc`（第五公网面，`/social/*`），承接：
-  - **家族（全局持久，去掉 worldId）**：从 worldsvc 迁出，跨赛季长存；TAG 全局唯一；worldsvc 存 `familyId` 只读镜像供地图渲染用。
-  - **好友关系 / 私聊 / 邮件（P2 期）**：从 metaserver 迁出，集合搬入独立 `nw_social` 库。
-  - **所有频道 Redis pub/sub 宿主**：家族/宗门/世界公频统一由 socialsvc 管理；worldsvc 通过 `POST /internal/push` 委托推送。
-  - **push 路由中枢**：所有推送经 socialsvc → gateway `/gw/push`，gateway 不直接被多方调用。
-  - **Redis 随 socialsvc P1 引入**（取代原计划"随 worldsvc SLG 一起引入"，提前到位）。
-- **为什么**：家族被迫绑 worldId 导致每赛季重置（违背"公会是社交资产"直觉）；metaserver 持续臃肿；频道 Redis 无单一宿主；独立 socialsvc 关注点清晰且延时可接受（push 是最终一致、非关键路径）。
-- **影响**：新增 [`game/SOCIAL_SVC_DESIGN.md`](game/SOCIAL_SVC_DESIGN.md) 为 socialsvc 架构权威；[`game/SOCIAL_DESIGN.md`](game/SOCIAL_DESIGN.md) 数据模型细节仍有效（P2 迁移参考）；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §8.1 家族章节加"家族已迁 socialsvc"指针；CLAUDE.md 进程数由 8 → 9；[`claudedocs/server.md`](../claudedocs/server.md) 加 socialsvc 条目。README §1.2 登记。
-
-## ADR-022 SLG 主城建筑系统 = 仿三战书桌内政；资源 = 4 地块 + 1 铜币；建筑赛季清空 — Accepted — 2026-06-30
-
-- **决策**（用户拍板）：新增 SLG 主城内政/建筑系统（仿三国志战略版「点进主城 → 君王殿等级门控 + 资源建筑/练兵/城防/科技」），落 [`game/SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md)。三条关键拍板：
-  - **资源结构对齐三战「4 地块 + 1 铜币」**（消解 graphite/sticker 空转，SLG §3.4 遗留）：`ink/paper/graphite/metal`（粮木石铁）= **地块资源**，地图 `biomeAt` 产——**`graphite`（石料）此前被 `biomeAt` 漏产（三分），须补成四分**（地图 faucet 根因修复）；`sticker`（铜币位/通用）= 主城 `stickerShop`（民居模型）**自产**，非地块。两者 sink = 主城高级建筑升级消耗。资源建筑只给**全局产率乘数**，不取代地图主产。
-  - **D-CITY-1 建筑赛季清空**：建筑/资源/兵力/地图态等 SLG 赛季内战略态**全部赛季重置清空**（对齐 SLG4），是变现发动机「重肝」。**跨季只留 meta 系统资产**——主要是**材料**（材料合成装备；meta 直接发装备的地方很少，呼应 ADR-012/ADR-017「材料为主、成品骨干靠合成」）。
-  - **红线/边界**：建筑只动经济/兵力上限/主城城防，**不提单位战力**（战力归跨季统一养成树的装备/科技）；建筑**永不喂 `buildPvpBlueprints`**（天梯红线，SLG7）；升级吃赛季资源+时间，**coin 只买加速不买上限**（反 P2W，ADR-009 经济基调）。
-- **为什么**：graphite/sticker 两种赛季资源此前无 faucet/sink 空转；`troopCap` 是死值无成长；「点进主城内政」是 SLG 核心体验缺口。仿三战结构最省且玩家认知成熟。赛季清空保战略起跑公平 + 变现重肝，与跨季养成（meta 材料/装备）分层互不污染。
-- **影响**：新增 [`game/SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md) 为建筑系统机制权威；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.4 遗留指针改指本方案、[`game/SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §21 R-1 更新、新增 §21 剩余工作总览；数字落 [`game/ECONOMY_VERIFICATION_LOG.md`](game/ECONOMY_VERIFICATION_LOG.md) §13-SLG-CITY，核验经 [`game/SLG_ECONOMY_CHECK.md`](game/SLG_ECONOMY_CHECK.md)。实现 P1 含 `biomeAt` 四分改造（client 经 alias 共用，须确认确定性地图不破老种子——或仅新赛季生效）。README §1.2 已登记。
-
-## ADR-023 服务端契约从「运行时解析」改为「构建期代码生成」 — Accepted — 2026-06-30
-
-- **背景（触发事件）**：2026-06-30 一次 i18n 英文化重构（commit `51445c5c`）把 `openapi.yml` 三处行内 flow 映射的 description 译成带逗号的英文且未加引号（`replayRef`/`defId`/`materialId`），YAML flow 上下文里逗号是映射分隔符 → 尾部括注（如 `deprecated)`）被解析成多余裸 key。文件仍是合法 YAML，但 metaserver 启动时 `fastify-openapi-glue` 的 OpenAPI 结构校验拒绝多余属性 → glue 注册抛错 → 进程崩溃反复重启 → CI `docker compose up --wait` 报 `server-metaserver-1` unhealthy 退出 1。已先行修复（commit `130a329b` 加引号）。根因不在那三行，而在**契约正确性只在启动期/运行期才被校验**。
-- **现状盘点**（修复时确认，服务端侧零代码生成）：
-  - `metaserver` = `openapi.yml` 经 `fastify-openapi-glue` **运行时**解析装配路由 + 校验（唯一用 glue 的进程）。
-  - `gateway` / `gameserver` = `transport.proto` / `game.proto` 经 `protobufjs` **运行时** `loadSync`，字段名 snake_case 映射**手写**（靠 `transport.test.ts` 兜，写错静默丢字段）。
-  - `worldsvc` = `openapi-world.yml` **根本未被代码加载**，路由全手写，yml 仅被一个 metaserver 测试引用 → spec 与实现完全无绑定，漂移风险最高。
-  - `commercial` / `admin` / `matchsvc` / `socialsvc` / `analyticsvc` = 无机器契约，手写路由。
-  - **客户端**早已双端 codegen：`client/scripts/gen-openapi.mjs`（`rest:gen`）→ 入库 `client/src/net/openapi.ts` + `openapi-world.ts`；`gen-proto.mjs`（`proto:gen`）→ proto TS。
-- **决策**（用户拍板）：服务端也改走**构建期代码生成 + 生成产物入库**，推翻「运行时解析单一真源」的旧取向。`contracts/*` 仍是唯一真源，但服务端不再在运行时读取，而是由 codegen 在构建期把它编译成入库的 TS（路由表 + ajv 校验 schema + operationId→handler 的类型约束）。
-- **为什么**（两点收益，恰是本次事故暴露的缺口）：
-  1. **契约错误在构建期就炸**：坏 spec 进不了 CI 的 docker 阶段，`tsc` / codegen 直接失败（本次逗号 bug 会被前置拦截）。
-  2. **契约变更物化为入库 diff，CD 可卡版本**：一次协议改动同时产出**服务端 stub diff + 客户端类型 diff**，CD 能强制「服务端契约变 → 客户端类型必须同改 → 两端同批次发版」。运行时 glue 下契约变更只体现为 yml 单文件改动，客户端是否同步全靠人自觉——**动态加载才是真正的漂移温床**。
-  - 澄清：「强制客户端跟版本」主要靠客户端 codegen + CD 卡，本就与服务端用不用 glue 无关；服务端转 codegen 真正多买到的是上面两点，非「逼客户端更新」本身。
-- **范围 / 分期**（实现拆 P1→P3，详见实现提示）：
-  - **P1（REST，承重）**：`metaserver` 去 glue，新增 `server/contracts/scripts/gen-openapi-server.mjs` 生成入库的路由/schema 产物，`app.ts` 注册生成产物;handler 仍手写、由生成的 operationId 类型约束（缺/错名变 TS 编译错，强于 glue 运行时 501）。CI 加 `gen --check`（生成物与入库不一致即失败）。✅ 已完成（2026-06-30，commit `5bb86afe`）。
-  - **P2（worldsvc 收口）**：新增 `server/contracts/scripts/gen-openapi-world.mjs` 生成入库的 `WorldOperationId` + `WORLD_ROUTES` + schema 产物（worldsvc 用 node:http，不用 fastify，故不生成 registerRoutes；仅生成路由表和类型约束）；CI 加 `gen:api:world:check`。`openapi-world.yml` 新增 `/world/active-season` 公开端点（§20.8 实时赛季号）。✅ 已完成（2026-06-30）。
-  - **P3（proto，可选/后置）**：`gateway`/`gameserver` 的 protobufjs 运行时解析 + 手写字段映射存在同类问题;评估是否一并 codegen（ts-proto 等）。**默认后置**，先做 REST。✅ 已完成（2026-06-30）：gateway + gameserver 各新增 `buf.gen.yaml` + `scripts/gen-proto.mjs`，生成产物入库 `src/generated/transport.ts`；`proto.ts` / `proto/transport.ts` 去 protobufjs，改从入库产物 import；`protobufjs` 运行时依赖已移除；CI 加 proto staleness check（`npm run proto:gen` + `git diff --exit-code`）。
-- **实时赛季号下行（§20.8）**：`createAppCore.ts` 的 `CURRENT_SEASON = 1` 硬编码已替换为动态调用 `worldApi.getActiveSeason()`（失败则 fallback 到 `FALLBACK_SEASON = 1`）；新增 worldsvc `GET /world/active-season` 公开端点 + worldsvc `getActiveSeasonNo()`。✅ 已完成（2026-06-30）。
-- **影响**：[`game/SERVER_API.md`](game/SERVER_API.md) §1.2「契约单一来源 + 双端 codegen」一节须更新（现描述把 glue 等同于 codegen，实现后改为「服务端构建期生成入库」）；新增 `server/contracts/scripts/gen-openapi-server.mjs` + `gen-openapi-world.mjs`；gateway/gameserver 新增 `buf.gen.yaml` + `scripts/gen-proto.mjs`；CI 加三组 staleness check；[`claudedocs/server.md`](../claudedocs/server.md) 服务端构建链补一笔。
-- **补丁（2026-08-08，codegen 自动前置）**：CI 的 `:check` 是「commit 后才发现漂移」，同一天两次因为改 `openapi-world.yml`/`openapi-social.yml` 忘记手动重生成而在 PR CI 上炸（worldsvc 的 sect-mate 字段、socialsvc 的 accountId 字段）。给 metaserver/worldsvc/socialsvc/auctionsvc（openapi）+ gateway/gameserver（proto）六个包的 `build`/`typecheck`/`dev`/`test` 挂上 `pre<script>` npm 生命周期钩子，本地跑这四类命令时自动先重新生成一遍——把「忘记生成」的窗口从「commit 前」提前到「敲命令那一刻」。`dev-up.ps1`（`npm run dev:all`）直连 `node --watch`、绕过 npm 脚本，单独在其中插入一次统一 regen 步骤。**CI 的 `:check` 步骤保留**，作为「手改生成文件」「跳过 npm 脚本改 spec」等场景的最后防线，不是被取代关系。
-
-## ADR-024 SLG 世界地图配色 = 纸底地形 + motif 载类型；归属只用彩色描边/wash — Accepted — 2026-07-01
-
-- **决策**（用户拍板）：世界地图渲染把两个正交信号彻底分层，止住「彩色方块拼贴」的粗糙观感。
-  1. **地形/资源 = 安静的近纸底填充**。资源「类型」由手绘 motif（`drawResMotif`，L1）承载，**不再靠饱和背景色**。`RES_COLORS` 重度去饱和为纸邻近的暖/中性色，只在 L2/L3 概览时轻声提示 biome 分区，且刻意避开红/蓝/绿以免冒充归属色。
-  2. **归属 = 唯一的强色**，以半透明 wash + 彩色描边/角标叠加（`ownerTint` + `drawTileL1/L2`），沿用「我蓝敌红、盟友绿」（ADR-003）。L3 概览仍让归属色主导整格（态势可读性）。
-- **为什么**：旧实现里颜色同时表达「地形类型」和「归属」，且 `RES_COLORS` 的绿/蓝直接撞 ally 绿 / enemy 红 —— 一块资源地看起来像别人的地盘；每格 0.85 实心填充 + 硬边框 = 全图花花绿绿，与手绘笔记本纸感相反。
-- **不动的铁律**：ADR-003 我蓝敌红 / [`product/art-direction.md`](product/art-direction.md) §3.2 归属色未改；本条只改地形/资源底色与「归属改画描边而非整格填充」的呈现方式。
-- **订正（2026-08-08，用户截图报告世界地图归属色发现问题）**：本条第 2 点原文一度笔误成「我红敌蓝、盟友绿」，且与紧接着「不动的铁律：ADR-003 我蓝敌红未改」自相矛盾——`tileStyle.ts`/`tileGraphics.ts`/`WorldMapRenderer/{city,fog}.ts` 及 `WORLD_MAP_ART_SPEC.md`/`META_TASKS.md`/`SLG_DESIGN_LOG.md`/`SLG_FIELD_BATTLE_DESIGN.md`/`city-image-prompts.md` 均照着错误文本把 SLG 世界地图（领地 wash、主城标签/等级点、行军箭头敌方色、驻扎光圈、箭塔/阻挡建筑 tint）实现成了自己=红、敌方=蓝，与 ADR-003 铁律相悖且沿用了一年有余。现已改回自己=蓝、敌方=红，与全局阵营色唯一约定对齐；上方原文按订正后的版本直接改写（不留错误版本，避免继续被抄），历史脉络见此条。
-- **影响**：仅客户端 `client/src/scenes/WorldMapScene.ts`（`TERRAIN_COLORS`/`RES_COLORS`/新增 `ownerTint`+`terrainFill`/`drawTileL1`/`drawTileL2`）。无服务端/契约改动。
-
-## ADR-026 SLG 建筑攻防 = 血量 + 逐队守军波次 + 攻城值延迟结算 — Accepted — 2026-07-02
-
-- **决策**（用户拍板）：把主城围攻从「单场合并确定性战斗」重构为**通用建筑攻防系统**，适用于主城 / 关卡 / 城池 / 据点等**所有可攻建筑**。**Supersedes ADR-025 细则 3**「本条不新建多队波次系统」——现在明确要建多队波次。
-
-- **核心规则（用户已定）**：
-  1. **建筑血量**：每个可攻建筑有血量。主城 `maxHp = mainBaseLevel × SLG_BASE_HP_PER_LEVEL`；关卡/城池/据点由 `tile.level` 派生同式。血量存 `TileDoc.hp`（锚点格承载整座主城血量）。
-  2. **逐队守军**：每城最多 5 队（复用 `PlayerWorldDoc.teams[] t1..t5`，攻守两用）。**在城 + 未受伤**的队伍自动为守军；**在外行军**（有活跃 march 占用该队）的跳过。判据：`MarchDoc.teamId`。
-  3. **波次战**：攻方一队到城，守军按 `t1→t5` **逐队上阵**，攻方**存活兵力跨波延续**（上一波存活 HP 作下一波初始）。攻方中途**被全灭 = 攻城失败**（不扣血）。每波 `seed = waveSeed(marchId, waveIndex)`，逐波确定性、可回放。
-  4. **攻城值延迟结算**：攻方**清光全部守军（或本就无守军）→ 胜后挂 5 分钟（`SLG_SIEGE_DAMAGE_DELAY_MS`）→ 按该攻方队伍「攻城值」扣建筑血量**。延迟由新集合 `SiegeDamageDoc`（`dueAt` 到点由 scheduler 结算）承载。**窗口内伤害必落**（守方即便补队/补血也不撤销这次伤害），保持确定性与简单性。
-  5. **守军受伤**：每支**战败**守军 → **进入受伤状态 10 分钟**（`SLG_TEAM_INJURY_MS`），受伤期永不参战。存 `PlayerWorldDoc.teamState[tid].injuredUntil`（队伍粒度，区别于 CC-3 的卡粒度 `cardState[].injuredUntil`）。未交手的守军队不受伤。
-  6. **攻占**：建筑**血量归零 → 被攻占**。玩家主城 → 复用 `passiveRelocate`（掠夺 + 失地 + 随机迁城 + 保护罩 + 宗主惩罚）。关卡/城池/据点 → 易主 / 发奖（沿用现有 territory 结算）。
-
-- **占位数值（DRAFT，攻城值细节另于新会话专议，经济核验前均为占位）**：
-  - `SLG_BASE_HP_PER_LEVEL = 100`（主城每级 100 血 ⇒ 30/次约 3~4 次攻破 lv1）。
-  - 「攻城值」是**每张卡的新属性**（与攻击/移速同级，用户 2026-07-02 拍板）；队伍攻城值 = **队内各卡攻城值之和**。**队伍必有卡 → 攻城值恒 > 0**；唯一「不扣血」情形 = 攻方被全灭（本就判守方胜、不排结算）。
-  - `SLG_SIEGE_DAMAGE_DELAY_MS = 5 min`、`SLG_TEAM_INJURY_MS = 10 min`。
-
-- **实现更新（2026-07-02，任务 #8）**：攻城值已从「每卡统一 10」升级为**逐卡真实属性**。
-  - `CardDef.siegeValueBase` 逐卡定 DRAFT 值（按定位差异化：盾兵/坦克破墙 14 > 步兵 11/Max 12 > 弓手/Mara 8），目录均值 ≈ `SLG_SIEGE_VALUE_PER_CARD` 以保 ADR-026 血量节奏不变；`cardSiegeValue(card) = round(base × (1 + 0.1×(lv-1)))` 逐级放大。`teamSiegeValue(army, cardInv)` 逐卡求和，缺卡（合成/旧测试）回退统一值。**数值仍为 DRAFT，待经济核验调优**（README §0 铁律：只调常数不改公式）。
-  - 契约 + 客户端 UI 已实现（不再后置）：`WorldTileView.hp/maxHp`、`PlayerWorldView.teamState/cardState/baseTroopStock` 下行；`getMe` 补齐序列化；地图建筑血条（受损才显示）+ 攻击弹窗 `world.buildingHp` 数值 + 队伍菜单受伤倒计时。下行沿用 `getMe/getMap` 主动查询（无实时推送）。
-
-- **5 分钟语义澄清**：即「攻方胜利 → 结算伤害」之间的延迟，**不是**再攻免疫窗；同一建筑可叠加多次各自的 5min 计时。
-
-- **细化（2026-07-17，NPC 单场围攻基地血量随等级缩放，用户拍板方案 2）**：上面 ①/④ 描述的是**玩家主城/领地**的分波 + `TileDoc.hp` 延迟结算路径。但 **NPC 地块**（占地 `applyOccupy`/驱逐 `applyOccupationExpulsion`、领地 `buildDefenderConfig`、据点、关口）走的是**单场** `runSiegeBattle`（objective=`destroy_base`），其"基地"是引擎内的象征基地——此前恒为 `BASE_HP=100`，**不随地块等级变化**。后果：一级地驻军仅 `npcGarrison(1)=120`(=2 步兵)，基地却要 100 血,合成步兵每个到城仅造成 siege 值 11 ⇒ 需 ~10 个幸存者才推得平，`OCCUPY_MIN_TROOPS=500` 的最小占地兵力清完守军也打不掉基地 → 超时判守方胜（用户实测踩到）。修复：新增 `npcBaseHp(level) = SLG_NPC_BASE_HP_PER_LEVEL × level`（**缓坡 40/级**：L1=40、L10=400），由上述 NPC 单场路径**显式**经 `defenderConfig.defenderBaseHp` 传入（引擎新增 `LevelDefinition.defenderBaseHp` → `Player.maxBaseHp`；`base_hp_changed.maxHp` 改发各玩家 `maxBaseHp`）。分波路径**不传**该字段（`defenderBaseLevel:0` 的象征基地保持最小终结器，真实血量仍是 `TileDoc.hp = baseDurabilityMax(墙等级)`），与玩家城侧"基地血量随墙等级缩放"形成对称。econ-sim 复核（`tools/econ-sim/src/occupyBaseHpRun.ts`，真实引擎）：L1 最小取胜兵力 660→**300**(5 步兵，最小占地 500 现稳赢)，L2/L3 基本不变，L10 1560→**2940**(高级地成真墙)。数值仍 DRAFT。
-
-- **PvE**：关卡里与 PvP 里的基地**都吃攻城值**（同一套血量+扣血）。PvE 据点守军仍为系统 NPC 阵（沿用 `applyStrongholdSiege` 的合成守军），不套 5 队玩家波次。
-
-- **实现更新（2026-07-02，PvP/引擎接线）**：攻城值落地为**引擎蓝图级一级属性**，接入 PvP/战役实时基地扣血。
-  - **动机**：此前引擎里单位到达敌方基地扣血用的是 `unit.attack`（战斗攻击力），导致「打兵」与「拆家」被焊死成一个数字——便宜兵/贵兵的攻城性价比无法独立调。攻城值把这根杠杆解出来。
-  - `UnitBlueprint.siegeValue`（`server/engine/src/config.ts`）：**全 12 个兵种**都排了基础值,与 `attack`/`speed` 同级。六个英雄卡的值与 `@nw/shared` `CardDef.siegeValueBase` **保持一致**（步兵 11 / 盾兵 14 / 弓手 8 / Max 12 / Lena 14 / Mara 8）；六个复用入 PvP 的兵种（Ironclad 15 / Berserker 13 / Splitter 8 / Runner 6 / Harpy 7 / Medic 4）只存在于引擎蓝图（无 CARD_DEFS 卡）。按定位排：破墙坦克 > 拆楼手 > dps/玻璃炮/飞兵/支援;siege/ink 刻意不平（步兵 2.75 最划算 → 医疗 0.67 最差）。
-  - **扣血口径**：`MovementSystem` 到达基地时 `damage = unit.siegeValue`（原 `unit.attack`）。所有引擎模式（pvp/campaign/siege）统一。SLG 的 `teamSiegeValue()` 延迟结算在引擎**外**独立进行,不双算。
-  - **养成对称（PvE/SLG 吃全渠道）**：`applyUnitLevels` 新增 `siege: 0.1`（+10%/级,与 `cardSiegeValue` 同式）。**PvP 硬墙**：`buildPvpBlueprints()` 永不调养成,只读蓝图基础常量,和 attack 的处理完全同构。
-  - **实现更新（2026-07-02，三渠道补齐）**：攻城值的**装备 + 学院**两条渠道已接,与 attack 完全同构,养成三渠道对齐(等级/装备/学院)。
-    - **装备 gear**：`@nw/engine` `AFFIX_FIELD_MAP` 新增 `mult_siege` 系(主词条 `m_siege` / 副词条 `s_siege`)→ `applyEquipment` 里 `u.siegeValue *= (1+Σsiege%)`,含 `EFFECT_CAPS.siegePct=0.6`(镜像 atkPct)。`@nw/shared` `SUB_AFFIX_POOL` 加 `s_siege 3..6%`(rare/epic 可滚);`m_siege` 仅登记入词表,暂无主槽产出(前向兼容,不扰动 weapon 单候选确定性)。
-    - **学院 academy**：`academyBuff()` 返回值从 `{hp,damage}` 扩为 `{hp,damage,siege}`,新增常量 `ACADEMY_SIEGE_STEP=0.015`(镜像 damage step);`buildSiegeBlueprints` 第 4 参 `siegeAcademy.siege` 在 `clampEffectCaps` 后叠乘 `u.siegeValue`(post-cap 层,仅 siege 路径)。类型链透传:`engine/types.ts` `GameConfig.siegeAcademy` → `worldsvc/siegeEngine.ts` `SiegeBattleInput` → `service.ts` `academyBuff`。
-    - **PvP 仍硬墙**:`buildPvpBlueprints()` 无卡/装备/学院任何形参,编译期漏不进;单测 22 例(client `equipment.test.ts`)含 siege 词条正交 attack、siege 封顶、academy siege 应用 + 叠加。全部数值 DRAFT。
-  - **`BASE_HP` 保持 100**（用户拍板,数值影响留实机体验再调）；全部 siege 值为 DRAFT。
-  - **影响**：`@nw/engine`（`types.ts`/`config.ts`/`Unit.ts`/`MovementSystem.ts`/`balance/progression.ts`）**属公共依赖,最先合 main**。文档：[`game/PVP_LOADOUT_DESIGN.md`](game/PVP_LOADOUT_DESIGN.md) 攻城值章。
-
-- **影响**：
-  - `@nw/shared`（`slg.ts`：新增 `SLG_BASE_HP_PER_LEVEL`/`SLG_SIEGE_VALUE_PER_CARD`/`SLG_SIEGE_DAMAGE_DELAY_MS`/`SLG_TEAM_INJURY_MS` + `teamSiegeValue()`/`waveSeed()`/`buildingMaxHp()`）**属公共依赖，最先合 main**。
-  - `worldsvc`：`db.ts` 新增 `TileDoc.hp`、`PlayerWorldDoc.teamState`、`MarchDoc.teamId`、`SiegeDamageDoc` 集合；`service.ts` 重写 `applySiege` 为波次战 + 建筑血量 + 延迟结算调度 + 队伍受伤 + 攻占；`joinWorld`/`relocateBase`/`passiveRelocate` 初始化主城血量；scheduler 加 `processDueSiegeDamage`。
-  - 契约（`openapi-world.yml`）：`getMe`/tile view 下行建筑血量 + 队伍受伤态。**（任务 #8 已实现）**
-  - `client`：血条 + 受伤态 UI。**（任务 #8 已实现：`WorldMapScene.drawHpBar` + `TeamsScene` 队伍受伤徽标）**
-  - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §5 围攻章须更新为本模型。
-
-## ADR-025 SLG 主城 = 真占 3×3=9 格实体（封路 + 一体防守 + 计 9 格） — Accepted — 2026-07-02
-
-- **决策**（用户拍板）：玩家主城从「单格 `type:'base'`」改为**真实占据 3×3=9 个地格的实体建筑**。锚点仍是 `PlayerWorldDoc.mainBaseTile`（中心格），围绕它的 8 格同写 `type:'base'` 且同 `ownerId`，**九格一体、不可分割**（敌人不能单独占/弃其中一角）。
-- **四条细则**：
-  1. **落城/迁城占位校验**：join（自动落城 + 手动）/relocateBase 都要求 3×3 九格全空（无 obstacle/gate/center/stronghold/他人领地），且中心格离地图边 ≥1 格。`pickSpawnTile` 自动选址扫描「3×3 可落」的锚点。
-  2. **封路**：主城九格对**非城主行军不可穿过**（等同障碍），敌军寻路必须绕行——玩家可用主城**封路**。城主自己的行军可进出自己的主城（`findMarchPath` 新增 `blockedBaseKeys` 参数，语义同 `passableGateKeys`：命中即阻挡，但 `isDest` 放行以便围攻敌方主城）。
-  3. **一体防守**：主城为一体，**攻击九格中任意一格 = 围攻整座主城**，到达后一律以锚点的驻军/防守 config 结算同一场围攻；「在主城的队伍依次作为守军出战」沿用既有防守 config 机制（§3.3），本条不新建多队波次系统。
-  4. **繁荣/领地计数**：九格**全部计入** `territoryCount` 与家族繁荣（`countDocuments{ownerId}` 无需特判）。
-- **不迁移 → 强制自愈（2026-07-03 修订）**：SLG 未上线，无正式存量数据，但 **dev/test 世界里可能残留 ADR-025 之前建的单格主城**。原以为「下次 join/relocate 时自然重建」——**错**：旧 `joinWorld` 对已存在玩家是幂等早返回，根本不会重建，遗留单格主城会一直渲染不出城市 sprite（客户端严格要求完整 3×3 锚点）。**改为强制数据正确**：worldsvc 新增 `isBaseIntact()`（校验 `mainBaseTile` 锚点九格全在、全 `type:'base'`、同主）+ `purgePlayerWorld()`（删该玩家该世界全部 tiles + playerWorld）；`joinWorld` 对已存在玩家改为「基座完整→幂等；损坏/遗留→purge 全部旧数据 + 落全新 3×3」，即以全新用户重入。**`getMe` 保持只读、不做门控**（避免波及被围攻方读态等所有调用方、并规避与 `passiveRelocate` 的并发写竞争），自愈只放在唯一入口 `joinWorld`。客户端 `WorldMapScene.loadData` 进图时**总是**调 `joinWorld`（健康号幂等空转，损坏号触发重建）。
-- **影响**：`@nw/shared`（`slg.ts`：新增 3×3 footprint 工具函数 + `findMarchPath` 增 `blockedBaseKeys`）**属公共依赖，最先合 main**；`worldsvc`（`service.ts` joinWorld/relocateBase/passiveRelocate 写 9 格、placement 校验 9 格、`computeMarchPath` 构建 `blockedBaseKeys`、`applySiege` 任一 base 格→锚点、abandon/occupy 拒绝 base 格、`pickSpawnTile` 3×3 扫描；**+ `isBaseIntact`/`purgePlayerWorld` 完整性自愈**，e2e `base-integrity.e2e.test.ts` 4 例）；`client`（`WorldMapScene` 城市 sprite 对齐真实九格严格锚点 + 修贴图留白 + 点击任一格开主城菜单 + 进图总是 joinWorld 触发自愈）。[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1 主城行 + §3 footprint 说明须更新。
-
-## ADR-026b 拍卖物品交割/退回 = escrow-out + 系统邮件（废弃"溢出暂存区"） — Accepted — 2026-07-02
-
-> 📌 编号订正（2026-07-03）：本条原误编为第二个「ADR-026」，与上方「SLG 建筑攻防」撞号。因 SLG 建筑攻防那条被代码/文档大量按 `ADR-026` 引用（siege 相关），保留其为 026，本条改为 **026b**。无 inbound `ADR-026` 引用指向本条，改号不破坏交叉引用。
-
-- **决策**（用户拍板）：拍卖走 **escrow-out** 模型——玩家挂单即把物品**从背包移出寄存**（拍卖期间背包不可见、不可用）；**所有离开拍卖系统的物品一律通过系统邮件附件下发，玩家领取附件后才回背包**。范围含**成交发给买家 + 流拍/取消/季末清算退回卖家**，物料/装备/角色卡三类皆然。**推翻** EQUIPMENT_DESIGN §13 早先的「满仓溢出暂存区领取 UI」提案——邮件本身即持有缓冲，天然规避满仓资损、不突破 300 硬上限（ADR-012），语义也更清晰（寄存物取回）。
-- **为什么**：旧路径成交/退回直接 `grantEquipment/grantCard/grantMaterial` 写回背包，撞满仓时要么资损要么需另建暂存区；且"退回即刻入库"与"寄存出去"的心智不符。改经邮件后，出账与领取解耦，一套机制覆盖买卖两侧。
-- **不动**：金币侧（卖方收款、竞拍退款）仍直接走 commercial（钱包权威，无背包/实例问题）；`createAuction` 内 escrow 后的**同步失败回滚**仍直接 grant（挂单未成立的即时回退，非出账语义）。
-- **影响**：`@nw/shared`（`MailAttachmentDoc`/`social.ts MailAttachmentView` 增 `kind:'equipment'|'card'` + `instance`）**属公共依赖，最先合 main**；`server/contracts/openapi.yml`（`MailAttachmentView` 同步）；`metaserver`（`mail.ts splitAttachments` + `service.ts claimMail` 写回实例，`cards.ts` 抽 `grantCard`）；`worldsvc`（`auctionService.ts deliverItem` 改发系统邮件、注入 `mail`；`mailClient.ts` 附件类型扩展）；`client`（`FriendsScene` 邮件渲染装备/卡附件 + i18n 三语）。文档同步：EQUIPMENT_DESIGN §13、AUCTION_DESIGN §1/§2/§A。
-
-## ADR-027 品牌 Logo = 盾徽 + 文具三笔（蓝主导 / 无字）；大小双版本 — Accepted — 2026-07-02
-
-- **决策**（用户拍板）：确立游戏 logo/图标为**奶油横格纸盾牌 + 钢笔（蓝）/铅笔（琥珀）/马克笔（红）交叉 X 徽记**。**蓝主导**——中央钢笔最大最显眼，宣示「我方蓝」（ADR-003 / art-direction §3.2 阵营色），红仅点缀。mark 内**不嵌文字**；字标 "Nivara"（对外名）用真实字体单独排，待字体打包后落地。
-- **大 / 小双版本**（按尺寸分工，避免小尺寸糊）：
-  - **master**（`art/logo/logo.png` 2048² 透明）：全细节手绘（纸纹/笔尖/排线/胶带），用于 **≥128px**。
-  - **simple**（`art/logo/logo-simple.png` 1024² 透明）：扁平实色粗描边、无纹理无胶带，用于 **≤64px**（favicon/小图标）。实测 master 到 32px 三笔糊成团，simple 仍可读。
-- **生成流程**（AI 图管线，同 art-direction §〇 分工）：AI 出图（盾徽三笔交叉、蓝主导、明显纸纹、**无字、无胶带**——交叉不带遮挡 AI 才画得对笔身连续性；master 胶带用户 GIMP 后期补）→ GIMP 抠透明底 → `System.Drawing` HighQualityBicubic 保 alpha 批量降采样入 `art/logo/derived/`。
-  - 出图 prompt（记录备后续补图）：`rounded shield crest with soft U-shaped bottom, hand-drawn notebook doodle style, bold navy ink outlines, cream ruled notebook paper (blue lines + red margin, prominent paper texture); three pens cross in a clear X: dominant blue fountain pen center + amber pencil + small red marker; each pen ONE continuous piece, blue dominant red accent; no text, no tape.` 简版加 `flat solid colors, no texture, no ruled lines, readable at 32px`。
-- **落地**（web/CrazyGames）：`client/public/` 出货 `favicon-16/32/48.png`（simple 派生）+ `apple-touch-icon.png`(180)/`icon-192/512.png`（master）+ `site.webmanifest`（name/short_name=Nivara，theme `#1b3a6b`/bg `#F5F0E8`）；`webpack.config.js` CopyPlugin（`!isWechat`）拷到 dist 根；`public/{web,crazygames}/index.html` `<head>` 加 `<link icon/apple-touch/manifest>` + `theme-color`。生产 web 构建已验证图标入 dist + head 注入正确。
-- **对外名落地**（2026-07-02 补）：主名 **Nivara** + 副标题 **Notebook Wars**。① HTML `<title>` = `Nivara — Notebook Wars`，四份入口 `client/public/{index,web/index,crazygames/index,wechat/index}.html` 同步。② 局内已抽单一 i18n key `game.title`（zh/en/de 同值 = proper noun），`auth.title` 改插值 `{game}`，`LoginScene` 传参；改名只改 `game.title` 一处（记忆 game-name）。
-- **运维手动步骤（无代码接入点）**：**微信小游戏图标**须在**微信公众平台后台**手动上传，用 `art/logo/derived/logo-512.png`。列入上线前 checklist。
-- **待办 / 不在本次**：字标字体待打包（同 art-direction §7.4）。
-- **影响**：新增 `art/logo/**`；`client/public/{favicon-*,apple-touch-icon,icon-*}.png` + `site.webmanifest`；改 `client/webpack.config.js`（CopyPlugin）+ `client/public/{web,crazygames}/index.html`。[`product/art-direction.md`](product/art-direction.md) §13 记录全貌。
-- **大厅内落地**（2026-07-05 补）：大厅头部之前独立硬编码 `lobby.title`="NOTEBOOK WARS"（三语言未翻译），未跟上①的改名，且徽记只用于 favicon/manifest、局内头部纯文字无图标。改为：头部改用 `game.title`（= Nivara）+ `logo-simple-128.png` 图标并排居中，副标题维持现有 tagline（`lobby.subtitle`，玩法说明，不改成 "Notebook Wars"）。删除 `lobby.title` key。header 高度 `0.14h → 0.16h` 让出图标空间。logo 走 L0 启动清单（`bootManifest.ts`，与开局三兵同批预加载，避免首屏闪烁）。影响：`client/src/scenes/LobbyScene/build.ts`、`client/src/assets/{logo.png,bootManifest.ts}`、`client/src/i18n/locales/{zh,en,de}.ts`。
+## ADR 索引（共 68 条）
+
+| 编号 | 决策 | 状态 | 日期 |
+|---|---|---|---|
+| [ADR-001](DECISIONS_ADR-001-040.md#adr-001-战斗数值单一可信源--configts--accepted--2026-06-21) | 战斗数值单一可信源 = `config.ts` | Accepted | 2026-06-21 |
+| [ADR-002](DECISIONS_ADR-001-040.md#adr-002-局内货币重命名-coins--ink--accepted--2026-06-13) | 局内货币重命名 `coins → ink` | Accepted | 2026-06-13 |
+| [ADR-003](DECISIONS_ADR-001-040.md#adr-003-阵营色--我蓝敌红v03--accepted--2026-06-14) | 阵营色 = 我蓝敌红（v0.3） | Accepted | 2026-06-14 |
+| [ADR-004](DECISIONS_ADR-001-040.md#adr-004-服务端进程拆分gateway--matchsvc-独立--accepted--2026-06-14s1-m5) | 服务端进程拆分（gateway / matchsvc 独立） | Accepted | 2026-06-14 |
+| [ADR-005](DECISIONS_ADR-001-040.md#adr-005-应用进程口径--8-个--accepted--2026-06-21) | 应用进程口径 = 8 个 | Accepted | 2026-06-21 |
+| [ADR-006](DECISIONS_ADR-001-040.md#adr-006-pve-数据走服务器权威方案-b--accepted--2026-06-pve_integrity_plan-8) | PvE 数据走服务器权威（方案 B） | Accepted | 2026-06 |
+| [ADR-007](DECISIONS_ADR-001-040.md#adr-007-slg-围攻--双方预布兵确定性自动战斗--accepted--2026-06-20g3) | SLG 围攻 = 双方预布兵确定性自动战斗 | Accepted | 2026-06-20 |
+| [ADR-008](DECISIONS_ADR-001-040.md#adr-008-叙事铁律两本笔记本东西不混搭--accepted) | 叙事铁律：两本笔记本，东西不混搭 | Accepted | — |
+| [ADR-009](DECISIONS_ADR-001-040.md#adr-009-经济养成体系体力--合成树--等值广告金币--accepted--2026-06-21) | 经济/养成体系：体力 + 合成树 + 等值广告金币 | Accepted | 2026-06-21 |
+| [ADR-010](DECISIONS_ADR-001-040.md#adr-010-装备升级--概率强化取代5-件确定性合成升级--accepted--2026-06-21) | 装备升级 = 概率强化（取代"5 件确定性合成升级"） | Accepted | 2026-06-21 |
+| [ADR-011](DECISIONS_ADR-001-040.md#adr-011-留存系统--不新增金币龙头--accepted--2026-06-21) | 留存系统 = 不新增金币龙头 | Accepted | 2026-06-21 |
+| [ADR-012](DECISIONS_ADR-001-040.md#adr-012-装备生命周期有限回收--库存上限--3-槽确认--accepted--2026-06-21) | 装备生命周期：有限回收 + 库存上限 + 3 槽确认 | Accepted | 2026-06-21 |
+| [ADR-013](DECISIONS_ADR-001-040.md#adr-013-合规拆分为-global--cn-两份海外先行--accepted--2026-06-21) | 合规拆分为 Global / CN 两份，海外先行 | Accepted | 2026-06-21 |
+| [ADR-014](DECISIONS_ADR-001-040.md#adr-014-活动live-ops--叠加既有系统的受控容器不新增金币龙头--accepted--2026-06-21) | 活动/Live-ops = 叠加既有系统的受控容器，不新增金币龙头 | Accepted | 2026-06-21 |
+| [ADR-015](DECISIONS_ADR-001-040.md#adr-015-文档缺口补全实现前收口--accepted--2026-06-21) | 文档缺口补全（实现前收口） | Accepted | 2026-06-21 |
+| [ADR-016](DECISIONS_ADR-001-040.md#adr-016-角色卡--6-张涛3现有兵转具名锚点--anna3新画变体--accepted--2026-06-21) | 角色卡 = 6 张（涛3＝现有兵转具名·锚点 + Anna3＝新画变体） | Accepted | 2026-06-21 |
+| [ADR-017](DECISIONS_ADR-001-040.md#adr-017-装备洗练--技能槽-02--2-条可锁定重洗抽卡与皮肤共池--accepted--2026-06-21) | 装备洗练 = 技能槽 0–2 + 2 条可锁定重洗；抽卡与皮肤共池 | Accepted | 2026-06-21 |
+| [ADR-018](DECISIONS_ADR-001-040.md#adr-018-海外分级自定为-13不面向儿童--accepted--2026-06-21) | 海外分级自定为 13+（不面向儿童） | Accepted | 2026-06-21 |
+| [ADR-019](DECISIONS_ADR-001-040.md#adr-019-多区域部署--meta-共享--对战层按区隔离--中国独立--accepted--2026-06-23) | 多区域部署 = Meta 共享 + 对战层按区隔离 + 中国独立 | Accepted | 2026-06-23 |
+| [ADR-020](DECISIONS_ADR-001-040.md#adr-020-跨平台账号钱包隔离边界--accepted--2026-06-23) | 跨平台账号/钱包隔离边界 | Accepted | 2026-06-23 |
+| [ADR-021](DECISIONS_ADR-001-040.md#adr-021-独立-socialsvc--第五公网面推翻-soc1--accepted--2026-06-28) | 独立 socialsvc = 第五公网面，推翻 SOC1 | Accepted | 2026-06-28 |
+| [ADR-022](DECISIONS_ADR-001-040.md#adr-022-slg-主城建筑系统--仿三战书桌内政资源--4-地块--1-铜币建筑赛季清空--accepted--2026-06-30) | SLG 主城建筑系统 = 仿三战书桌内政；资源 = 4 地块 + 1 铜币；建筑赛季清空 | Accepted | 2026-06-30 |
+| [ADR-023](DECISIONS_ADR-001-040.md#adr-023-服务端契约从运行时解析改为构建期代码生成--accepted--2026-06-30) | 服务端契约从「运行时解析」改为「构建期代码生成」 | Accepted | 2026-06-30 |
+| [ADR-024](DECISIONS_ADR-001-040.md#adr-024-slg-世界地图配色--纸底地形--motif-载类型归属只用彩色描边wash--accepted--2026-07-01) | SLG 世界地图配色 = 纸底地形 + motif 载类型；归属只用彩色描边/wash | Accepted | 2026-07-01 |
+| [ADR-025](DECISIONS_ADR-001-040.md#adr-025-slg-主城--真占-339-格实体封路--一体防守--计-9-格--accepted--2026-07-02) | SLG 主城 = 真占 3×3=9 格实体（封路 + 一体防守 + 计 9 格） | Accepted | 2026-07-02 |
+| [ADR-026](DECISIONS_ADR-001-040.md#adr-026-slg-建筑攻防--血量--逐队守军波次--攻城值延迟结算--accepted--2026-07-02) | SLG 建筑攻防 = 血量 + 逐队守军波次 + 攻城值延迟结算 | Accepted | 2026-07-02 |
+| [ADR-026b](DECISIONS_ADR-001-040.md#adr-026b-拍卖物品交割退回--escrow-out--系统邮件废弃溢出暂存区--accepted--2026-07-02) | 拍卖物品交割/退回 = escrow-out + 系统邮件（废弃"溢出暂存区"） | Accepted | 2026-07-02 |
+| [ADR-027](DECISIONS_ADR-001-040.md#adr-027-品牌-logo--盾徽--文具三笔蓝主导--无字大小双版本--accepted--2026-07-02) | 品牌 Logo = 盾徽 + 文具三笔（蓝主导 / 无字）；大小双版本 | Accepted | 2026-07-02 |
+| [ADR-028](DECISIONS_ADR-001-040.md#adr-028-盲盒进阶变现--软保底--限定池-5050-歪命运点--月卡新手包--accepted--2026-07-02) | 盲盒进阶变现 = 软保底 + 限定池 50/50 歪+命运点 + 月卡/新手包 | Accepted | 2026-07-02 |
+| [ADR-029](DECISIONS_ADR-001-040.md#adr-029-slg-世界地图渲染从正交方格改为等距菱形投影--accepted--2026-07-02) | SLG 世界地图渲染从正交方格改为等距菱形投影 | Accepted | 2026-07-02 |
+| [ADR-030](DECISIONS_ADR-001-040.md#adr-030-深化金币-sink洗练金币化--slg-便利--外观广度-pve-多人副本--slg-新手区毕业软过渡--accepted--2026-07-03) | 深化金币 sink（洗练金币化 / SLG 便利 / 外观广度）+ PvE 多人副本 + SLG 新手区毕业软过渡 | Accepted | 2026-07-03 |
+| [ADR-031](DECISIONS_ADR-001-040.md#adr-031-订阅卡全局单卡门控--年卡九折-商店图标卡网格--accepted--2026-07-03) | 订阅卡全局单卡门控 + 年卡（九折）+ 商店图标卡网格 | Accepted | 2026-07-03 |
+| [ADR-032](DECISIONS_ADR-001-040.md#adr-032-slg-大地图尺寸-500500--地块等级-1-10--取消无产出中立地--accepted--2026-07-04) | SLG 大地图尺寸 500×500 + 地块等级 1-10 + 取消无产出中立地 | Accepted | 2026-07-04 |
+| [ADR-033](DECISIONS_ADR-001-040.md#adr-033-slg-国家版图三战式环带布局--等级险地与国家身份绑定--superseded-by-adr-034--2026-07-05) | SLG 国家版图三战式环带布局 + 等级/险地与「国家身份」绑定 | Superseded by ADR-034 | 2026-07-05 |
+| [ADR-034](DECISIONS_ADR-001-040.md#adr-034-slg-国家版图改为环形分层结构6-出生州3-资源州1-核心州-地形隔离城池体系拍板--accepted--2026-07-05) | SLG 国家版图改为环形分层结构（6 出生州+3 资源州+1 核心州）+ 地形隔离/城池体系拍板 | Accepted | 2026-07-05 |
+| [ADR-035](DECISIONS_ADR-001-040.md#adr-035-地图编辑器游戏渲染对齐河山可分--城池按级出图与占地--accepted--2026-07-06) | 地图编辑器/游戏渲染对齐：河/山可分 + 城池按级出图与占地 | Accepted | 2026-07-06 |
+| [ADR-036](DECISIONS_ADR-001-040.md#adr-036-场景切换动画收窄到进出对局进出-slg四处--遮罩改纸色调--accepted--2026-07-12) | 场景切换动画收窄到「进出对局/进出 SLG」四处 + 遮罩改纸色调 | Accepted | 2026-07-12 |
+| [ADR-037](DECISIONS_ADR-001-040.md#adr-037-占领行军接入-pve-战斗--占领倒计时延迟落地镜像-adr-026--accepted--2026-07-13) | 占领行军接入 PvE 战斗 + 占领倒计时（延迟落地，镜像 ADR-026） | Accepted | 2026-07-13 |
+| [ADR-038](DECISIONS_ADR-001-040.md#adr-038-废弃-collectionscene皮肤装备关系从全局单槏位改为逐卡独立--accepted--2026-07-13) | 废弃 `CollectionScene`，皮肤装备关系从全局单槏位改为逐卡独立 | Accepted | 2026-07-13 |
+| [ADR-039](DECISIONS_ADR-001-040.md#adr-039-slg-连地占领硬性规则宗门级判定含首府桥栈道-accepted--2026-07-14) | SLG 连地占领硬性规则（宗门级判定，含首府/桥栈道） | Accepted | 2026-07-14 |
+| [ADR-040](DECISIONS_ADR-001-040.md#adr-040-metaserver-openapiyml-按域拆分为-fragment合并生成服务不拆-accepted--2026-07-14) | metaserver `openapi.yml` 按域拆分为 fragment，合并生成（服务不拆） | Accepted | 2026-07-14 |
+| [ADR-041](DECISIONS_ADR-041-onward.md#adr-041-主城点击直达-desk去掉城池菜单弹窗-清理主城手动防守配置残留--accepted--2026-07-18) | 主城点击直达 Desk（去掉城池菜单弹窗）+ 清理主城「手动防守配置」残留 | Accepted | 2026-07-18 |
+| [ADR-042](DECISIONS_ADR-041-onward.md#adr-042-家族加入改为需-leaderelder-审批解决-social_svc_design-8-o1-accepted--2026-07-18) | 家族加入改为需 leader/elder 审批（解决 SOCIAL_SVC_DESIGN §8 O1） | Accepted | 2026-07-18 |
+| [ADR-043](DECISIONS_ADR-041-onward.md#adr-043-角色卡升级从连续-xp-曲线改为离散五合一融合--背包-150500-扩容--accepted--2026-07-19) | 角色卡升级从连续 XP 曲线改为离散五合一融合 + 背包 150→500 扩容 | Accepted | 2026-07-19 |
+| [ADR-044](DECISIONS_ADR-041-onward.md#adr-044-cityscenehome-desk开关改为-scenemanager-覆盖层不再重建-worldmapscene--accepted--2026-07-20) | CityScene（Home Desk）开关改为 SceneManager 覆盖层，不再重建 WorldMapScene | Accepted | 2026-07-20 |
+| [ADR-045](DECISIONS_ADR-041-onward.md#adr-045-累计充值商城可见自主领取非静默邮件-退款扣计数器--不回填历史--accepted--2026-07-21) | 累计充值：商城可见自主领取（非静默邮件）+ 退款扣计数器 + 不回填历史 | Accepted | 2026-07-21 |
+| [ADR-046](DECISIONS_ADR-041-onward.md#adr-046-slg-覆盖层扩展到全部子界面从世界地图打开的任何界面返回时都不重建地图--accepted--2026-07-21) | SLG 覆盖层扩展到全部子界面：从世界地图打开的任何界面返回时都不重建地图 | Accepted | 2026-07-21 |
+| [ADR-047](DECISIONS_ADR-041-onward.md#adr-047-行军疲劳绑定行军实例非队伍-只做距离消耗不做静止回复--accepted--2026-07-21) | 行军疲劳：绑定行军实例（非队伍）+ 只做距离消耗，不做静止回复 | Accepted | 2026-07-21 |
+| [ADR-048](DECISIONS_ADR-041-onward.md#adr-048-slg-兵力池统一basetroopstock-并入-playerworldtroops补记-adr--accepted--2026-07-22) | SLG 兵力池统一：`baseTroopStock` 并入 `playerWorld.troops`（补记 ADR） | Accepted | 2026-07-22 |
+| [ADR-049](DECISIONS_ADR-041-onward.md#adr-049-slg-地图尺寸-500500--15001500对齐主流-slg-accepted--2026-07-22) | SLG 地图尺寸 500×500 → 1500×1500（对齐主流 SLG） | Accepted | 2026-07-22 |
+| [ADR-050](DECISIONS_ADR-041-onward.md#adr-050-装备分解新增稀有度门槛史诗-epic-永不可分解不论等级--accepted--2026-07-22) | 装备分解新增稀有度门槛：史诗 Epic 永不可分解，不论等级 | Accepted | 2026-07-22 |
+| [ADR-051](DECISIONS_ADR-041-onward.md#adr-051-slg-实时野战遭遇系统停留驻扎拆分--redis-逐格行军--玩家建筑层--accepted--2026-07-24) | SLG 实时野战遭遇系统：停留/驻扎拆分 + Redis 逐格行军 + 玩家建筑层 | Accepted | 2026-07-24 |
+| [ADR-052](DECISIONS_ADR-041-onward.md#adr-052-f2p-月度金币产出基线从-300-重定为-29008700补跑总产出核算--accepted--2026-07-27) | F2P 月度金币产出基线从 "~300" 重定为 "~2,900–8,700"（补跑总产出核算） | Accepted | 2026-07-27 |
+| [ADR-053](DECISIONS_ADR-041-onward.md#adr-053-行军疲劳预算改为地图比率制修复-adr-047-vs-adr-049-的漂移--accepted--2026-07-27) | 行军疲劳预算改为地图比率制，修复 ADR-047 vs ADR-049 的漂移 | Accepted | 2026-07-27 |
+| [ADR-054](DECISIONS_ADR-041-onward.md#adr-054-slg-险地持久材料掉率下调408级修复-adr-049-引入的经济稀释破线--accepted--2026-07-27) | SLG 险地持久材料掉率下调（4→0.8/级）修复 ADR-049 引入的经济稀释破线 | Accepted | 2026-07-27 |
+| [ADR-055](DECISIONS_ADR-041-onward.md#adr-055-工具协作方向改为-electron-桌面壳--本地-git取代-animator-云工作区同步桥--accepted--2026-07-28) | 工具协作方向改为 Electron 桌面壳 + 本地 git，取代 animator 云工作区同步桥 | Accepted | 2026-07-28 |
+| [ADR-056](DECISIONS_ADR-041-onward.md#adr-056-equippedflags-改全服务器权威put-save-整个下线--accepted--2026-07-28) | `equipped`/`flags` 改全服务器权威，`PUT /save` 整个下线 | Accepted | 2026-07-28 |
+| [ADR-057](DECISIONS_ADR-041-onward.md#adr-057-内容治理体系敏感词归一化--词库外部化--举报处理闭环--信誉分分级处罚--审核申诉后台--accepted--2026-07-29) | 内容治理体系（敏感词归一化 + 词库外部化 + 举报处理闭环 + 信誉分分级处罚 + 审核/申诉后台） | Accepted | 2026-07-29 |
+| [ADR-058](DECISIONS_ADR-041-onward.md#adr-058-客户端出站请求全局限速-5秒--补齐-metaserver-超时--三个-slg-社群场景补齐-busy-锁按钮置灰--accepted--2026-08-01) | 客户端出站请求全局限速 5/秒 + 补齐 metaserver 超时 + 三个 SLG 社群场景补齐 busy 锁/按钮置灰 | Accepted | 2026-08-01 |
+| [ADR-059](DECISIONS_ADR-041-onward.md#adr-059-物品唯一id溯源范围--装备角色卡补溯源字段材料皮肤称号维持数量计数去重集合--accepted--2026-08-04) | 物品唯一id/溯源范围 — 装备/角色卡补溯源字段，材料/皮肤/称号维持数量计数/去重集合 | Accepted | 2026-08-04 |
+| [ADR-060](DECISIONS_ADR-041-onward.md#adr-060-slg-世界地图新增两档归属色宗门成员紫-盟友宗门琥珀--accepted--2026-08-08) | SLG 世界地图新增两档归属色：宗门成员（紫）/ 盟友宗门（琥珀） | Accepted | 2026-08-08 |
+| [ADR-061](DECISIONS_ADR-041-onward.md#adr-061-皮肤实例化落地item_identity_designmd-任务1真实例--玩家主动出售拍卖挂单契约不变--accepted--2026-08-08) | 皮肤实例化落地（ITEM_IDENTITY_DESIGN.md 任务1）：真实例 + 玩家主动出售，拍卖挂单契约不变 | Accepted | 2026-08-08 |
+| [ADR-062](DECISIONS_ADR-041-onward.md#adr-062-pvp-攻打真人领地复用占领倒计时不再即时易主-修复已占领地块的资源类型不显示--accepted--2026-08-09) | PvP 攻打真人领地复用占领倒计时（不再即时易主）+ 修复已占领地块的资源类型不显示 | Accepted | 2026-08-09 |
+| [ADR-063](DECISIONS_ADR-041-onward.md#adr-063-装备强化主词条倍率改非线性递增表--78-引入掉级风险--accepted--2026-08-10) | 装备强化：主词条倍率改非线性递增表 + +7/+8 引入掉级风险 | Accepted | 2026-08-10 |
+| [ADR-064](DECISIONS_ADR-041-onward.md#adr-064-装备背包库存硬上限由-300-提升至-1000--accepted--2026-08-10) | 装备背包库存硬上限由 300 提升至 1000 | Accepted | 2026-08-10 |
+| [ADR-065](DECISIONS_ADR-041-onward.md#adr-065-引擎战斗数值全面定点化所有连续型战斗数值-fp_scale1000统一复用现有定点域--accepted--2026-08-12) | 引擎战斗数值全面定点化（所有连续型战斗数值 ×FP_SCALE=1000，统一复用现有定点域） | Accepted | 2026-08-12 |
+| [ADR-066](DECISIONS_ADR-041-onward.md#adr-066-8-个-cd-workflow-改为依赖-ciworkflow_run不再与-ciyml-并行竞速--accepted--2026-08-12) | 8 个 CD workflow 改为依赖 CI（`workflow_run`），不再与 `ci.yml` 并行竞速 | Accepted | 2026-08-12 |
+| [ADR-067](DECISIONS_ADR-041-onward.md#adr-067-设计文档单文件-500-行上限--hub-索引--分册结构--accepted--2026-08-17) | 设计文档单文件 500 行上限 + 「hub 索引 / 分册」结构 | Accepted | 2026-08-17 |
 
 ---
 
-## ADR-028 盲盒进阶变现 = 软保底 + 限定池 50/50 歪+命运点 + 月卡/新手包 — Accepted — 2026-07-02
-
-- **背景**：盲盒基础抽卡+硬保底(S2-3)已上线，但 GACHA_DESIGN §2/§5/§6/§7 的变现深度（限定池/月卡/新手包/命运点）服务端全缺。本 ADR 记录落地时的两处口径拍板；机制/落地全貌见 [`GACHA_DESIGN.md §11.1`](game/GACHA_DESIGN.md)。
-- **决策 1 — 软保底取代硬崖**：`rollGacha` 从「90 抽硬崖」改为「70 抽起每抽 +5% legendary 概率、90 兜底」（`SOFT_PITY_START=70/STEP=0.05`）。起点以下走原扁平权重表（旧行为逐字不变，回归单测锁定），概率提升实现用 1000-slot 重整（`P(leg)=legW/1000`，起点以上其余稀有度按基础比例分摊 `1-P(leg)`）。
-- **决策 2 — 限定池 = 50/50 off-banner + 命运点，调和 §2.2**：GACHA_DESIGN §2.2 原述「池内 legendary 只有 1 个 → 大保底必出本体」（则无从「歪」）；但 §7 命运点机制**要求**能歪。因用户明确要命运点，采用经典 **50/50**：限定 legendary 层 = 主打 banner（约 50%，靠 slot 重复加权）+ 常驻**非角色卡** legendary 垫底（`DEFAULT_LIMITED_FILLER_LEGENDARIES`，避免限定池稀释养成）；抽到非 banner legendary = 歪 → +1 命运点；30 点兑换任一历史 featured。**未做** §2.2「下次必得」的 per-pool 保底翻转（需额外 `guaranteedFeatured` 状态），留后续。
-- **权威归属**：限定池 config 存 commercial `gachaPools`（admin 建/关，永久保留供兑换）；池内容由 `@nw/shared buildLimitedPool()` 从常驻池**纯派生**（无漂移）。`wallet.fatePoints/subscription/starterUsed` 均 commercial 权威 → 镜像 `SaveData.monetization`（客户端只读，不入 SyncPatch）。
-- **范围外**：真实 IAP 验单（月卡/新手包当作已授权购买，接 SDK 时 meta 前置验签）；G7–G10 美术展示层（程序占位可跑）。
-- **影响**：`@nw/shared`（economy/api/types）；`commercial`（db/gacha/service/internalHttp）；`metaserver`（commercialClient/economy/service/internal + routes.gen）；`openapi.yml`（4 端点 + GachaPool 限定字段 + SaveData.monetization）；客户端 GachaScene/ShopScene/ApiClient/SaveData/i18n。
-
-## ADR-029 SLG 世界地图渲染从正交方格改为等距菱形投影 — Accepted — 2026-07-02
-
-- **背景**：用户反馈世界地图画质偏低（对照三国志战略版等同类 SLG）。排查确认两层问题：① 地形/据点大量用 `PIXI.Graphics` 纯色矩形拼接、缺手绘贴图（单独跟进，见下方 Out of scope）；② 更根本的是地图渲染用**正交俯视方格**，同类 SLG 普遍用**等距菱形**网格，视觉「俯视 3D 感」差距的大头来自网格投影方式本身。用户明确表态：项目尚在早期，只要最终效果最好，不用考虑重构成本。
-- **决策**（用户拍板）：`client/src/scenes/WorldMapScene.ts` 的地图渲染改为经典 2:1 等距菱形投影（`screenX=(tx-ty)*tileW/2, screenY=(tx+ty)*tileH/2`，`tileH=tileW*0.5`）。**纯客户端渲染层改动**——服务端契约（`openapi-world.yml` 的 `WorldTileView.{x,y}`）、寻路（`server/shared/src/slg.ts`）、tile 缓存 key 等逻辑数据模型全部保持正交整数 `(x,y)` 不变；ADR-024/025/026 的地形色块/归属水洗描边/3×3 据点占地/HP 血条等玩法与配色拍板同样不受影响，只是改了画法。
-- **实现**：新增 `client/src/render/isoGrid.ts`（`tileToScreen`/`screenToTile`/`screenToTileF`/`diamondPath`/`diamondVertices`/`visibleTileBounds`），`WorldMapScene.ts` 内所有 `tx*tp`/`ty*tp` 式定位、`drawRect(0,0,tp-1,tp-1)` 式绘制、`screenToTile` 命中测试，以及 `centerAt`/`clampPan`/`viewportCenter`/`makeZoomCfgs`（池大小需按等距可视区域的外接矩形算，比正交估算更大）全部换成基于 `isoGrid` 的等距公式；瓦片池每格的本地绘图原点从"正方形左上角"改为"菱形中心"，`drawCityIcon`/`drawResMotif`/`drawResMotifFallback`/`drawTileL1`/`drawTileL2`/`drawHpBar` 内的图标、边框、defense frame、tick mark、danger corner 相应重新锚定到菱形几何（角标→菱形顶点/边中点、方形描边→`diamondPath` 内缩、HP 血条→贴菱形下顶点）；`refreshCityLayer` 新增按 `(tx+ty)` 的 `zIndex` 深度排序（`cityLayer.sortableChildren=true`），避免等距下据点建筑贴图互相穿插覆盖错误。
-- **已知遗留（不阻塞，v1 可接受）**：`city_atlas.png` 素材是画在方形画布上的建筑图，v1 仍按 `BASE_SPRITE_TILES` 原尺寸贴到菱形 footprint，四角可能有留白/比例不完全贴合菱形俯视角，是否需要重新出图待视觉验收后再定。
-- **为什么**：等距菱形是移动 SLG 的行业惯例观感，且经确认是纯投影变换、不涉及契约/寻路/数据模型改动，改动面收敛在单一文件，值得直接做到位而非留妥协方案。
-- **影响**：新增 [`client/src/render/isoGrid.ts`](../client/src/render/isoGrid.ts)；[`client/src/scenes/WorldMapScene.ts`](../client/src/scenes/WorldMapScene.ts) 渲染层大改（详见文件内注释）；[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.2 补一句视觉呈现说明，避免与"正交网格"表述产生歧义；无服务端/契约改动。
-- **Out of scope（本次不做，已记录跟进）**：地形/据点手绘贴图接入（`terrainAtlasLoader.ts` 及配套图集，出图 prompt 清单见 [`product/slg-terrain-art.md`](product/slg-terrain-art.md)，待产出素材）；据点建筑贴图针对菱形 footprint 的重新出图。
-
-## ADR-030 深化金币 sink（洗练金币化 / SLG 便利 / 外观广度）+ PvE 多人副本 + SLG 新手区毕业软过渡 — Accepted — 2026-07-03
-
-- **背景**：本会话核查确认经济收支两端已**全实装**（盲盒/装备/成就/留存/战令，均有代码+测试；README 状态标签本轮已从「设计中」修正为「已实现」）。但金币深水 sink 集中在**盲盒 + 装备强化**两处，暴露两个偏浅：①长尾鲸鱼「买空盲盒后金币无处去」；②变现重心压在 **SLG 参与率**（纯 PvP/收集玩家付费弱）。用户全数采纳补深方案。
-- **先厘清既有、只记增量**（不重复既有拍板）：SLG 建筑/练兵「coin 只买加速不买上限」= ADR-022；洗练 2 技能「金币锁 1 条」= ADR-017；SLG 外环新手区 + 宗门>家族>单随路由 + 跨区隔离 = **G6 已实现（2026-06-21，[`SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §20 / R4）**。
-- **决策（5 项增量，用户 2026-07-03 拍板全采纳）**：
-  1. **洗练基础金币化**：洗练**每次**收基础金币（不止 2 技能锁定费）——把「重洗词条」整体做成可无限重复的深水 coin sink（付的是**尝试次数**、买不到确定结果，不破公平红线）。落 [`EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) §7.8，数字 ECONOMY_NUMBERS §5.3。⚠️ 代码缺口：`metaserver/src/equipment.ts reforgeEquipment()` 现仅扣材料未扣基础金币（2026-07-03 核查），落地补。
-  2. **SLG 便利 sink 扩展**（在 ADR-022 加速之外新增）：迁城令 / 开新地块 / 宗门科技捐献等「买方便不买战力」的 coin sink。红线同 ADR-022（coin 不买上限、永不喂天梯）。落 SLG_CITY_DESIGN / SLG_DESIGN。
-  3. **外观广度 sink**：角色皮肤之外扩程序绘制外观——主城/城池皮肤、宗门旗帜徽章、头像框、称号装饰、战斗特效皮肤、录像分享装饰。走文具 bone-slot 程序叠加**近零美术成本**；是「买空图鉴后仍可花钱」的长尾鲸鱼去处，纯外观不触公平。落 ECONOMY_BALANCE §3.4 + art-direction。
-  4. **PvE 后期多人副本（co-op）**：战役后期加多人合作副本，给**不玩 SLG 的鲸鱼**一个装备/角色卡战力的消耗与展示出口（摊薄「变现全压 SLG」的偏科）。PvE 性质 → 装备战力生效、**天梯硬墙不受影响**；产出复用 PvE 材料/装备 faucet（受体力闸门 + 反通胀预算，**不新增金币龙头**，ADR-011/014）。落 [`CAMPAIGN_DESIGN.md`](game/CAMPAIGN_DESIGN.md)。
-  5. **SLG 新手区毕业软过渡**：新手在外环新手区（G6 已实现）养成，赛季末/达阈值迁入正式区时，**整个新手区打包迁入同一新开正式区**（一起毕业、起跑线齐），而非散插成熟老区——补掉「保护期一过即被老玩家碾压」的断崖。是 R4 分服规则的增量。落 SLG_DESIGN §R4/§20。
-- **为什么**：盲盒管「抽到」，洗练/便利/外观管「抽空之后」——补长尾鲸鱼深水区；多人副本给非 SLG 付费人群一个装备出口，摊薄营收单点；毕业软过渡补新手 onramp 最后一跳。全部**不新增金币龙头、不卖直接战力**（洗练卖尝试、SLG 卖便利、外观卖体面、副本卖内容），守 ADR-009/011/014 经济基调与公平红线（ADR-009 硬墙）。
-- **影响**：[`EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) §7.8、[`ECONOMY_BALANCE.md`](game/ECONOMY_BALANCE.md) §3.4、[`SLG_DESIGN.md`](game/SLG_DESIGN.md) §R4、[`SLG_CITY_DESIGN.md`](game/SLG_CITY_DESIGN.md)、[`CAMPAIGN_DESIGN.md`](game/CAMPAIGN_DESIGN.md) 均加本 ADR 指针；数字落 ECONOMY_NUMBERS（§5.3 洗练 / §13-SLG 便利 / 外观定价 / 副本产出）待铺。均为**方向拍板 + DRAFT**，实现期配合代码定参。
-
-## ADR-031 订阅卡全局单卡门控 + 年卡（九折）+ 商店图标卡网格 — Accepted — 2026-07-03
-
-- **背景**：月卡原实现可无限叠购（每次 `max(now,expiry)+30d` 续期），玩家可一次性堆很多个月；且商店商品用横向 list row 展示。用户拍板两点：①月卡改为「买了必须用完才能再买」，并新增年卡；②商店改图标卡网格（与卡背包/装备背包 790d3cff、战令 a383728b 一致的视觉语言）。
-- **决策（用户 2026-07-03 拍板）**：
-  1. **全局单卡门控**：只要有任意订阅卡生效（`subscription.expiry > now`），月卡与年卡的购买都锁定，服务端返回 `ALREADY_ACTIVE`；到期后才可再买（不叠购、不续期）。新手成长包的 7 天卡不受此门控约束（一次性新手包）。
-  2. **年卡**：365 天，奖励结构与月卡一致（每日 120 + 即赠 600），仅时长 ×12。定价 **¥298**（= 12 张月卡 ¥360 的九折取整），UI 原价 ¥360 划线 + 「省 ¥62」角标。真实 IAP 扣款仍为「视为已授权」占位，年卡价格仅前端展示。
-  3. **商店图标卡网格**：`ShopScene` 从 list row 改为响应式图标卡网格（名字上·图标左·价格/状态右·底部动作按钮），拖动滚动 + 遮罩裁剪固定表头/tab；充值 tab 同改网格；兑换码保留为网格下方整行。
-
-## ADR-032 SLG 大地图尺寸 500×500 + 地块等级 1-10 + 取消无产出中立地 — Accepted — 2026-07-04
-
-- **背景**：用户怀疑 SLG 文档与实现脱节，逐项核查后确认属实，且比预想的更严重：
-  1. `SLG_DESIGN.md` 曾在 2026-06-18 拍板"U2 地图尺寸 ✅ 1500×1500替代300×300"和"U4 大区容量 ✅ 1万玩家替代300-500"，但代码里 `SLG_MAP_W/H`（`server/shared/src/slg.ts:108-109`）从未改过，一直是 300；`SLG_WORLD_CAPACITY_MIN/TARGET/MAX` 也一直是 300/400/500。这次"✅"标记的升级从未真正实现。
-  2. 更严重的是，2026-06-30 的经济核验（`ECONOMY_VERIFICATION_LOG.md` §13-SLG-NATION、§13-SLG-STRONGHOLD）是在这次"从未实现的升级"之后做的，却仍然是在未升级的 300×300 上跑蒙特卡洛，并被打上「已过核验」标签——即错误的地图尺寸假设已经污染了一份"已核验"的经济结论。
-  3. 地块等级上限代码实际是 `SLG_MAP_MAX_LEVEL=5`（`slg.ts:110`），用户回忆中的"9 级"实际是装备强化/武将卡的 `MAX_LEVEL=9`（`equipment.ts:64`/`unitCards.ts:12`）——两套毫不相关的系统被记混。经网络调研核实，用户参照的三国志战略版真实地块等级上限是 **10 级**，不是 9 级也不是 5 级（详见 [`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md)）。
-  4. 现有等级生成公式 `level = round((1-dr)×(MAX-1)+1+noise)` 配合 `resourceDensity=0.34`（34% 概率地块保留计算出的等级，66% 被降级为"中立地"、等级强制封顶 2 级且不产任何资源）——这与用户在本轮讨论最初提出的设计前提"地图上没有真正空地，低级地也是某种资源，只是没人要"直接矛盾。
-- **决策（用户 2026-07-04 拍板，逐步收敛到最终数字）**：
-  1. **地图尺寸 = 500×500（25 万格）**。推导：用户要求"5 级以上地块占总地块约一半，500 玩家人均最多占 200 块 5 级+地"→ 500×200=10 万块 5 级+地块 ÷ 50% 占比 = 20 万总格子 → 边长 √200,000≈447，实测 447×447/450×450 更精确贴合目标（人均 202-208），但用户最终选择好记的整数 **500×500**（实测人均 5 级+地块约 254，略超目标但用户认可，理由：容量有余量，早期够用，未来扩容不用换图）。
-  2. **地块等级上限 = 10**（不是 5，不是 9），对齐调研到的三战真实上限。
-  3. **取消无产出中立地**：`resourceDensity` 从 0.34 改为 **1.0**——除阻挡地形/关隘/据点/首府外，所有格子都是某等级的资源地，不再有"中立地=不产任何东西"的类别。
-  4. **等级分布曲线指数从 1 调到 1.1**：`level = round((1-dr)^1.1 × (MAX-1) + 1 + noise)`。配合 3.，实测（Monte Carlo，`hash2`/`rand2`/`valueNoise` 原样复刻自 `slg.ts`）在 300×300 上得到约 49.8-51.3% 的格子达到 5 级以上，验证曲线形状本身正确，再按 §1 反推地图尺寸。
-  5. **正式废止 2026-06-18 的"1500×1500/1万玩家"版本**：不是"改成更小的数字"，是承认那次升级从未真正发生过，`WORLD_CAPACITY` 维持代码现状 300-500。
-  6. **国家版图布局（6 外围国+2 资源国+1 霸业的三战式环带结构）本次不拍板**：现有 10 首府对称布局、等级公式与"国家身份"完全脱钩的结构性问题已确认（详见 `SLG_DESIGN.md` §3.2 待定项），但改国家数量/布局是更大的结构改动，留待下一轮设计。
-- **为什么**：用户对三战玩法节奏非常熟悉，希望 Notebook Wars 的 SLG 数值手感向其看齐；核查发现两轮此前的"文档拍板"都从未真正实现，且已经污染了下游的经济核验结论，必须先把地图尺寸/等级上限这个地基钉死，才能继续设计地块建筑、国家版图等上层玩法。
-- **影响**：
-  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.2、§14.2（P3）、§14.10（U2/U4/U11/U12/U14）已按本决议改写。
-  - [`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) 的 `WORLD_CAPACITY` 行、[`ECONOMY_VERIFICATION_LOG.md`](game/ECONOMY_VERIFICATION_LOG.md) 的 §13-SLG-NATION、§13-SLG-STRONGHOLD 已标记「待重跑」，尚未重新跑 econ-sim（下一步工作）。
-  - 新增 [`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md)：三战地块/建筑/版图机制调研笔记，供后续设计参考，非本项目设计基准。
-  - **代码尚未改动**：`server/shared/src/slg.ts` 的 `SLG_MAP_W/H`、`SLG_MAP_MAX_LEVEL`、`SLG_GEN.resourceDensity`、等级曲线指数均待实现（本次只是拍板+文档，依本会话"先文档后代码"的既定流程，实现是下一步任务，会牵动十余个 e2e 测试的坐标假设）。
-  - 地块建筑系统（三战式"6-10级解锁造币厂/工坊/虎帐/仓库/乐府"）与国家版图重构均为后续独立任务，不在本 ADR 范围内。
-- **实现**：`@nw/shared`（economy 加 YEAR_CARD_DAYS/IMMEDIATE_COINS/价格常量 + PRODUCT_YEAR_CARD；api 加 `ALREADY_ACTIVE`）；`commercial`（`monthlyCardBuy`/`yearCardBuy` 收敛到私有 `subscriptionCardBuy`：先占 orderId 槽→门控回滚→applySubscription，门控置于占槽之后以不误伤同 orderId 幂等重放；internalHttp 加 `/internal/year-card/buy`）；`metaserver`（commercialClient 加 `yearCardBuy`；service 加 `yearCardBuy` handler + `subscriptionErrCode` 把 `ALREADY_ACTIVE` 透传给客户端）；`openapi.yml` 加 `/year-card/buy`（重生 routes.gen + 客户端 openapi.ts）；客户端 ApiClient/createAppCore(`buyYearCard` + `ALREADY_ACTIVE`→`shop.cardActive`)/ShopScene 大改 + i18n 三语（`shop.yearCard`/`shop.cardActive`/`shop.save`）。
-- **为什么**：门控把月卡从「可囤积」改为「用完再买」，强化每日留存锚（月卡定位本就是留存而非性价比）；年卡九折给长线玩家一个更划算的锚，同时单卡门控避免年卡+月卡叠加把订阅收益一次性透支；图标卡网格提升付费诱惑并与全局 UI 统一。
-- **影响**：[`GACHA_DESIGN.md`](game/GACHA_DESIGN.md) §5/§5.1b + 实现小结；`@nw/shared` economy/api；`commercial` service/internalHttp（+e2e：门控 + 年卡用例，91 全绿）；`metaserver` commercialClient/service（+ routes.gen，293 全绿）；`openapi.yml`；客户端 ShopScene/ApiClient/createAppCore/i18n。真实 IAP 验单仍范围外。
-
-## ADR-033 SLG 国家版图三战式环带布局 + 等级/险地与「国家身份」绑定 — Superseded by ADR-034 — 2026-07-05
-
-> **⚠️ 已作废（2026-07-05，同日撤销）**：本 ADR 与另一条并行会话讨论出的 [ADR-034](#adr-034-slg-国家版图改为环形分层结构6-出生州3-资源州1-核心州--地形隔离城池体系拍板--accepted--2026-07-05) 撞了同一个编号且方向不同——本条是"10 首府改三层同心环几何位置 + 等级按最近首府距离衰减"（点+距离模型），ADR-034 是"6 出生州+3 资源州+1 核心州角度扇区 + 折痕岭/墨河/城池完整体系"（扇区+地形模型）。用户拍板**以 ADR-034 为准，本条（含已落地的代码 `CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.obstacleMinDistRatio`/10 个 e2e 测试文件）全部作废，需按 ADR-034 重写**。以下原文保留作历史记录，不代表当前状态。
-- **背景**：ADR-032 落地地图尺寸/等级上限/资源密度/等级曲线后，遗留一条「⚠️ 待定」：现有 10 首府对称布局（8 外围+1 内环+1 中心）与地块等级公式（`level = round((1-dr)^1.1×(MAX-1)+1+noise)`，`dr`=离地图**几何中心**的距离比例）完全脱钩于「国家身份」——不管站在哪个首府的地盘里，地块等级只看离地图正中心多远，10 个首府本身除了 idx9（地图中心，`CENTER_CAPITAL_IDX`）外，对地块生成毫无影响，与用户设想的「三战式一国一版图，各有肥沃/贫瘠」不符。用户拍板：保留 10 国（不是三战式常见的 9 国），布局改为 **6 外围国 + 3 资源国 + 1 霸业国**，且等级要按「离自己国家首府的距离」算，不能只看离地图中心的距离。
-- **决策**：
-  1. **10 首府布局改为三层同心环**（`CAPITAL_FRACTIONS`，`server/shared/src/slg.ts`）：外环 6 外围国（正六边形，半径 0.40，idx 0-5）+ 中环 3 资源国（正三角形，半径 0.20，与外环错开 30° 交错，idx 6-8）+ 中心 1 霸业国（地图正中心，idx 9，即原 `CENTER_CAPITAL_IDX`，行为不变）。新增 `NATION_KIND_BY_IDX` 常量标注每个 idx 的国家类型（供后续 UI/econ-sim 使用）。
-  2. **地块等级/据点/中立地生成全部改为「离自己最近首府的距离」**：`proceduralTile` 里的 `dr` 从"离地图几何中心距离/半对角线"改为"离最近首府距离/`GEN_MAX_CAP_DIST`"（`GEN_MAX_CAP_DIST` = 采样整张地图算出的"离最近首府最远的一点"到其首府的距离，模块加载时算一次）。地图中心格仍特判为唯一的 `type:'center'` 格（霸业国首府所在格）。
-  3. **等级曲线指数从 1.1 重新调到 1.9**：10 个首府比 1 个几何中心覆盖面积更大，同样的 1.1 指数会把 5 级以上占比从 ADR-032 的目标 ~50% 推到实测 ~81%；重新蒙特卡洛校准后 1.9 把该占比拉回 ~51%（详见 `SLG_DESIGN.md` §3.2）。
-  4. **阻挡地形改为「离最近首府越远越密」**：`obstacleMaxDr`（旧：只排除地图最外角，`dr≤0.87` 才生成）废止，改为 `obstacleMinDistRatio=0.15`（新：`dr≥0.15` 才生成）——天然把山脉/河流集中在每个国家的边境，而不是围绕地图单一几何中心，呼应"资源国出关可达"的读法（资源国夹在霸业国和外环国之间，边境天然险要）。keep/stronghold 的 `keepMinDistRatio`/`strongholdMinDistRatio` 语义同步从"离地图中心"变成"离最近首府"，数值不变。
-  5. **⚠️ 顺带发现并修正一处校准错误**：`obstacleThreshold=0.88` 的注释一直声称"约 12% 的格子变阻挡"，实测（新旧公式都测过）实际只有 ~2.7-2.9%——`valueNoise` 的双线性插值+平滑步进会把噪声值压缩，远小于"均匀分布、12% 超过 0.88"的朴素假设。这个校准错误在 ADR-032 之前就存在，本次未重新调阻挡密度本身（那是独立的数值平衡任务），只是把注释改成实测数字，`obstacleMinDistRatio` 按实测密度校准。
-- **为什么**：用户对三战版图节奏的核心诉求是"各国有各国的地盘和肥沃程度"，而不是"整张地图只有一个山巅"；10 国（不是 9 国）是因为用户更看重"外围 6+资源 3+霸业 1"这个数字对称性，胜过严格照搬三战的 9 国。
-- **影响**：
-  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4/§3.2 已按本决议改写（新增环带布局说明 + 等级/阻挡与首府绑定的机制描述 + 实测数字）。
-  - **本 ADR 是"拍板即实现"**：与 ADR-032（先拍板后实现，隔一轮）不同，这次设计讨论中直接把 `CAPITAL_FRACTIONS`/`proceduralTile`/`SLG_GEN` 一并改完，同批验证。
-  - 过程中发现并修复了一个**与本次改动无关、此前从未被真正跑过的回归**：`server/worldsvc` 的 e2e 测试此前一直通过本地 worktree 的 `node_modules/@nw/*` 符号链接指向主仓库的**未重建**产物在跑（worktree 约定的已知坑，见 [`claudedocs/worktrees.md`](../claudedocs/worktrees.md) 补充说明），导致 ADR-032 合并后测试从未真正验证过新地图常量；本次修好链接后跑出 27 个真实失败（`resourceDensity=1.0` 后 `'neutral'` 地块已绝迹、`(250,250)` 在 500×500 地图下变成地图正中心、以及若干测试用坐标恰好落入新地形分布的阻挡带），已在本 ADR 一并修复（10 个测试文件），修复后 worldsvc 210 例 + shared 463 例全绿。
-- **实现**：`server/shared/src/slg.ts`（`CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.levelFalloffExp`+`obstacleMinDistRatio`）；`server/worldsvc/test/*.e2e.test.ts`（10 个文件的坐标假设修复）。**⚠️ 该实现已被 ADR-034 判定作废，需重写，见下条。**
-
-## ADR-034 SLG 国家版图改为环形分层结构（6 出生州+3 资源州+1 核心州）+ 地形隔离/城池体系拍板 — Accepted — 2026-07-05
-
-- **背景**：与另一条并行会话独立进行的 ADR-033（10 首府三层同心环+距离衰减）撞了同一天、同一个"国家版图重构"题目，但走向了不同方案。本 ADR 是这条会话的产物：用户指出现有 10 首府点 Voronoi 分区有两个无法用调参解决的问题：① 随机生成的地形（`proceduralTile()`）不知道国界在哪，② 国家之间的隔离效果差（边界随机穿山、切资源带）。经讨论确认根因：地形生成与国家分区是两条互不感知的纯函数管线，纯参数化生成到此已到天花板，需要引入编辑器承载的人工修正手段（新工具见 [`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md)）。讨论中调研了三战（三国志战略版）的版图/城池机制作参考（[`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md) §5 环形结构、§8 城池系统），并借助一次性 HTML/JS 原型反复验证骨架后收敛。**发现与 ADR-033 冲突后，用户拍板以本 ADR 为准，ADR-033（含其已落地的代码）全部作废。**
-- **决策**：
-  1. **国家分区从"10 首府点 Voronoi"改为"角度扇区 + 半径分层"**：6 个出生州（外圈，各占 60°）+ 3 个资源州（中环，各占 120°，与出生州 2:1 对齐）+ 1 个核心州（中心圆域）。半径边界初始参考值：核心州半径比例 0.11、资源州外边界比例 0.39（相对地图半对角线），非最终锁死数字。
-  2. **新增两类天然隔离地形**：折痕岭（3 条山脉，= 出生州↔资源州环形边界本身，6 段两两分组）+ 墨河（2 条河流，全新横穿全图的独立层，噪声扰动弦线）；均完全不可通行，厚度 5–11 格随机。
-  3. **出生州之间新增支脉/支流隔离**：折痕岭/墨河从环形边界向地图边缘延伸出 6 条支脉（单双号交替山脉/河流类型），把 6 个出生州两两隔开；每条支脉按实际长度分配 1-2 座**关隘城池**（长的一半配 2 座，短的一半配 1 座），必须攻城才能通过——不设免费关隘。
-  4. **明确区分"关隘/桥"与"城池"两套机制**（三战调研的关键结论：城池是跟地块并列的独立节点，多驻军+城墙耐久一层，不能等价成关隘）：关隘/桥只出现在两条大环边界（出生州↔资源州、资源州↔核心州），免费通行，宽度 3–8 格随机；城池须攻城，出现在支脉/州府/世界中心。
-  5. **拍板城池体系的种类与数量**：州府（出生州 6 座 + 资源州 3 座）+ 关隘城池（支脉 6-9 座）+ 世界中心巨城（1 座，9×9 格实体，核心州争夺目标，本质也是城池只是更大）+ **出生州分级城池**（每出生州新增 9 座：2×3 级 + 2×4 级 + 2×5 级 + 1×6 级 + 1×7 级 + 1×8 级，全图共 54 座，呼应三战"州内多级城池梯度"但改为固定配额）。城池驻军/城墙耐久数值本次不拍板，留后续。
-  6. **拍板三层环各自的等级分布权重表**：出生州封顶 8 级且占比极低（~1%）；资源州 5 级+占比 ≥60%（含 ~5% 的 10 级）；核心州 10 级占比明显高于资源州（18% vs 5%）。完整权重表见 map-editor DESIGN.md §4。
-- **为什么**：用户对三战版图结构（环带分层+关隘严格对应层级）非常熟悉，希望复刻其"层级递进"的攻略节奏，同时解决现有 Voronoi 方案地形/国界两不相干的结构性缺陷；城池/关隘分离是三战调研澄清的关键差异，直接照抄"关隘=城池"会做错机制；本 ADR 优先于 ADR-033，是因为角度扇区+完整地形城池体系比"点+距离衰减"更彻底地解决了"地形不知道国界"的根因（扇区边界本身就是地形，不是事后套一层距离公式）。
-- **影响**：
-  - 新增/改写 [`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md)（§2-§4 地形骨架定稿，§6 编辑器需求，§7 原型迭代记录）。
-  - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4（国家系统）、§3.2（地图尺寸与地形布局）已改写，指向本 ADR；[`SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §24 记录代码重写完成状态。
-  - **ADR-033 判定作废**：其已落地的代码已按本 ADR 整体重写完成（2026-07-05）——`server/shared/src/slg.ts` 新增 `provinceIdxAt()`（角度扇区+半径环归属，替代 `nearestCapitalIdx()` Voronoi）、`provinceCapitalPositions()`（州府位置按扇区+种子派生，替代固定表 `CAPITAL_FRACTIONS`）、环形地形带/墨河弦/支脉/城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环等级分布表；`NATION_KIND_BY_IDX` 的 `hegemony` 改名 `core`。城池落地为现有 `familyKeep`/`center` 类型而非独立 collection（驻军/耐久数值本条未拍板，故不新增 schema）。`server/worldsvc` 消费方（`core/kernel`/`core/nation`/`core/yield`/`combatSiege`）与受影响 e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
-  - `tools/map-editor` 工具仍未搭骨架，讨论期验证骨架用的 HTML/JS 原型未提交仓库——留后续任务。
-  - 城池驻军/耐久数值、资源州/核心州是否也要分级城池梯度、国民加成如何随分层结构调整，均留待后续 ADR。
-- **教训**：两条并行会话在同一天独立展开"国家版图重构"这个大改动，导致 ADR 编号撞车、代码方向冲突——已落地代码被判定作废意味着那批 e2e 测试修复工作也随之作废。后续如有多会话并行处理同一模块的结构性改动，应在开工前先检查是否有其他会话正在动同一处（如 `git log` 看最近的 daily 分支提交），或至少在长任务过程中定期 `git fetch`/查 worktree 列表交叉核对。
-
-## ADR-035 地图编辑器/游戏渲染对齐：河/山可分 + 城池按级出图与占地 — Accepted — 2026-07-06
-
-- **决策**（用户拍板，两问两答）：
-  1. **河流 vs 山脉端到端区分**：给瓦片加可选 `obstacleKind: 'river'|'mountain'`（`@nw/shared` `core.ts`），**类型仍是单一 `obstacle`**（寻路/占领/不可通行逻辑一字不改，纯美术标签）。`proceduralTile` 给自己生成的阻挡带打标（折痕岭=山、墨河=河、6 支脉按奇偶交替）；编辑器画笔的河/山经 `rasterizeMapEdits` 带进 `MapTemplateTile.obstacleKind`。渲染端 `terrainTextureName(…, obstacleKind?)` 有 kind 用对应贴图，否则回退旧位置哈希。这修正了旧行为——画一条河会被 `(tx*31+ty*17)%2` 哈希成半河半山。
-  2. **城池每级一张图 + 占地随级递增**：`cityFootprint(level)`=3/5/7/9（Lv1-2/3-5/6-8/9-10；世界中心 9×9=顶档），`allCityNodes` footprint 由它派生；`getCityTextureForLevel` 先取 `city_l{level}`（10 张一套）、回退旧 4 档 `city_lv{tier}`。游戏 `WorldMapRenderer.refreshCityLayer` 与编辑器 `refreshCitySprites` 用同函数同缩放，除玩家主城外也为 NPC 城池节点（州府/关隘城/分级城/世界中心）画按 footprint 缩放的城池精灵。
-- **范围（用户拍板"先做渲染对齐"）**：本轮只做**共享数据模型 + 两端渲染器**，不动世界 API/持久化。因此对齐的是**"生成地图"**（编辑器与游戏都从同一份 `proceduralTile`/`allCityNodes` 本地派生，天然一致）。
-- **影响文档**：[`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md) §0（2026-07-06 条）；[`SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1（山/河渲染区分）、§3.4（每级出图+占地+NPC 城精灵）；[`design/product/city-image-prompts.md`](product/city-image-prompts.md)（改为每级 10 张 + 6 张新图 prompt）。
-- **美术缺口**：需新出 6 张城池图 `city_l2/l4/l5/l7/l8/l10`（未就位时按档自动回退，视觉不劣化）。
-- **已知遗留（另起任务）**：编辑器"发布"仍到不了运行中的世界——`worldsvc` `getMap/getTile` 只读 `proceduralTile`，从不读世界创建时克隆进 `mapBaselines` 的模板 tile。让发布真正生效需把 `mapBaselines` 接进热读路径（含 `obstacleKind` 带进 `MapBaselineTileDoc`），是 ADR-034/§24 遗留的独立改动。
-- **为什么是 `obstacleKind` 而非新 `TileType`**：全仓大量 `type === 'obstacle'` 判定（寻路、落城校验、占领）依赖单一类型；加子字段零风险，加新类型要改所有判定点。
-
-## ADR-036 场景切换动画收窄到「进出对局/进出 SLG」四处 + 遮罩改纸色调 — Accepted — 2026-07-12
-
-- **背景**：2026-07-11 为修「大厅 Store→Career 误跳」引入了 `SceneManager.goto()` 全屏黑幕 cross-fade，但**默认对每一次 `goto()` 都生效**——包括大厅各 tab、二级页面、返回按钮之类的普通导航。用户实测体验后反馈：①原黑幕 fade 效果本身不够好看；②不该所有界面切换都有动画，子标签之间也套了一层淡入淡出，观感怪异。参考同类项目 `D:\number`（另一相邻游戏，PixiJS 技术栈一致）的 `sceneCoordinator.ts`：用**暖色纸色调**遮罩（非黑幕）+ 快进慢出（80ms/150ms，线性）实现「闪一下」质感，而非逐场景都套的重手法。
-- **决策**：
-  1. **`SceneManager.goto(scene, opts?)` 默认改为同帧 instant 切换**（不传 `opts` 或 `opts.fade` 为空/false）；仅显式 `{fade:true}` 才走 cross-fade。原来的语义反过来了（原来默认 fade、`{instant:true}` 才跳过）。
-  2. **收窄到 4 个调用点**：`app.ts` 的 `showGame`/`showGameNet`（进入对局）、`showWorldMap`（进入 SLG）永远传 `{fade:true}`；`nav.goLobby({fade:true})` 仅在「离开对局」（对局放弃 `onExitToLobby`、教程完成/跳过、净斗放弃、结算页返回/默认再来一局落地大厅）与「离开 SLG」（`WorldMapScene.onBack`）这些调用点传。其余数十个 `nav.goLobby()` / `manager.goto()` 调用点（商店、装备、成就、排行榜等二级页面的进入/返回）保持不传 `fade`，即默认 instant。
-  3. **遮罩换色 + 缩短时长**：全屏遮罩色从纯黑 `0x000000` 改为纸色 `0xfaf6ee`（与 `sketchUi.ts` 的 `C.paper` 一致，呼应笔记本纸张基调），峰值不透明度从 1.0 降到 0.92（半透明感更轻）；耗时从 120ms/160ms 改为 90ms/180ms（fade-out 更快，fade-in 略慢让「定住」的感觉更足），easing 不变（`easeInOutQuad`）。
-  4. **输入冻结门控范围同步收窄**：`InputGate.suppress` 只在显式 `{fade:true}` 的转场里才启用；instant 切换完全不冻结输入（这是「默认改 instant」的自然推论，不是新增逻辑）。
-- **为什么这样收/为什么这个颜色**：只在「世界感」真的变了的四个转场（对局⇄大厅、SLG⇄大厅）保留过渡感，能让玩家感知"进入了不同的场域"；其余都是同一个大厅/同一套导航层级内的平移，不该有转场仪式感。纸色遮罩是因为游戏全局是手绘笔记本风格（`sketchUi.ts` 的 `C.paper` 背景色），黑幕在这种基调下显得突兀；参考项目证明"半透明色闪一下"比"纯黑全遮罩"更轻量、更贴风格。
-- **影响**：`client/src/scenes/SceneManager.ts`（`GotoOptions.instant`→`GotoOptions.fade`，默认反转，遮罩颜色/时长常量）、`client/src/app.ts`（4 处 `manager.goto(..., {fade:true})`；`showLobby` 新增 `opts?: FadeOpts` 透传）、`client/src/app/AppViews.ts`（新增 `FadeOpts`）、`client/src/app/appCtx.ts` + `client/src/app/nav/{lobby,game,result,world}.ts`（`goLobby` 的 `fade` 选项按上述 4 类调用点显式传 `true`）、`client/test/ui/sceneManager.ui.ts`（按新默认语义重写全部用例）。详见 [`claudedocs/client-modules.md`](../claudedocs/client-modules.md) 场景淡入淡出条目。
-
-## ADR-037 占领行军接入 PvE 战斗 + 占领倒计时（延迟落地，镜像 ADR-026） — Accepted — 2026-07-13
-
-- **决策**（本次任务拍板，`feat/occupy-march`）：`MarchKind='occupy'`（S8-2 起已存在，不是新增行军类型）到达时的结算，从「瞬间落地、不打仗」升级为「先打一场 PvE 战斗，胜后再挂一段占领倒计时，倒计时到点才正式写入 `TileDoc.ownerId`」。
-- **为什么现在做**：ADR-032 把 `resourceDensity` 提到 1.0 之后，地图上不再有真正的空地——§3.1 表格里每个中立/资源格都按等级有系统默认驻军（`npcGarrison(level)`），但 `combatMarch.ts` 的占领到达分支从未打过这份驻军，等价于让"占领"绕开了设计文档自己定义的攻防模型。本次改动把占领和扫荡/围攻统一到同一份"系统驻军按等级走"的权威来源上。
-- **核心规则**：
-  1. **驻军判定复用扫荡同源**：`npcGarrison(proc.level)`（`@nw/shared/slg/siege.ts`，扫荡 `applySweep` 已在用）——不新造第二套"中立格防御强度"函数。
-  2. **战斗复用围攻同一引擎**：`runSiegeBattle`/`synthesizeArmy`（`server/worldsvc/src/siegeEngine.ts`），`seed = siegeSeedFromId(marchId)`，与围攻同源、同样可回放；胜负记录复用既有 `recordSiege`/`pushSiege` 战报管线，不新增推送类型。
-  3. **占领倒计时（镜像 ADR-026 延迟结算范式）**：胜利不等于落地。新增集合 `occupations`（`OccupationDoc`，`_id`=目标 tileId，一格至多一份待结算记录），`dueAt = 胜利时刻 + OCCUPY_HOLD_SEC*1000`；`OCCUPY_HOLD_SEC = 5*60`（新增于 `shared/src/slg/core.ts`，**DRAFT** 占位值，与 ADR-026 `SLG_SIEGE_DAMAGE_DELAY_MS` 同为 5 分钟但语义不同——那是"扣血"，这是"落地"）。倒计时期间该格 `TileDoc` 写入 `contestedBy`/`contestedUntil`/`contestedGarrison`/`contestedFamilyId`（仍不写 `ownerId`），供客户端渲染倒计时；调度沿用 `WorldCorePush` 既有 Redis ZSET + Mongo `dueAt` 索引扫描双保险模式（新增 `scheduleOccupation`/`unscheduleOccupation`，接入 `scheduler.ts` 同一 2s tick 的 `processDueOccupations`）。
-  4. **倒计时期间可被驱逐**：另一支 `occupy` 行军，或一支 `attack` 行军（本次放宽：目标格处于占领倒计时中即使无主也允许发起攻击，`defenderId`=`contestedBy`）到达时，打的是 `TileDoc.contestedGarrison`（原占领方的真实存活部队，不是重新查 NPC 驻军）。驱逐成功 → 取消原倒计时（删旧 `OccupationDoc`+反调度），驱逐方立即开始自己的新占领倒计时；驱逐失败 → 原倒计时不受影响，驱逐方生还部队退回兵力池。v1 不处理链式驱逐的公平性，只保证原子认领（`findOneAndDelete`）下不重复结算/不崩溃。
-  5. **零驻军兜底**：`npcGarrison(level)>0` 恒成立（`Math.max(1,level)`），故"瞬间落地不打仗"的旧路径理论上是死代码，仅作防御性兜底保留（真出现 garrison≤0 才会命中）。
-  6. **旧端点 `TerritoryService.occupyTile()`（S8-1 瞬占，`territory.ts`）**：保留，但降级为内部/测试专用（客户端已改走 `startMarch(kind:'occupy')`，产品流程不再调用它）；不做移除/404，契约文档补充说明。
-- **影响**：
-  - `@nw/shared`（`slg/core.ts` 新增 `OCCUPY_HOLD_SEC`）。
-  - `worldsvc`：`db.ts` 新增 `OccupationDoc` 集合 + `TileDoc.contestedBy/contestedUntil/contestedGarrison/contestedFamilyId`；`core/push.ts` 新增 `scheduleOccupation`/`unscheduleOccupation`；`combatSiege/occupation.ts`（新文件，`applyOccupy`/`applyOccupationExpulsion`/`processDueOccupations`，接入 `combatSiege.ts` 装配链）；`combatMarch.ts` 的 `occupy` 到达分支改为委托 `this.siege.applyOccupy`；`combatSiege/arrival.ts` 的 `applySiege` 放宽"目标无主但处于占领倒计时中"分支；`combat.ts`/`service.ts`/`scheduler.ts` 新增 `processDueOccupations` 透传。
-  - 契约（`openapi-world.yml`）：`WorldTileView` 新增 `contestedUntil`/`contestedByMe`。
-
-## ADR-039 SLG 连地占领硬性规则（宗门级判定，含首府/桥栈道）— Accepted — 2026-07-14
-
-- **决策**（用户拍板）：三战「连地」升级为硬性规则——占领（`occupy`）/围攻（`attack`）目标格必须与本宗门已占领地 4 方向相邻，否则拒绝发起。此前 §4 的"连地才高效"只是软性效率加成（短行军距离 + 快速增援），本次改为强制前置校验。**普通领地/资源点/险地/州府/桥栈道一视同仁**，均须连地——首府/桥栈道不豁免，否则规则本身可被绕过。扫荡（`sweep`）与侦查（`scout`）不占地，不受限。
-- **为什么**：用户认为连地是三战的核心规则之一，能强制形成清晰前线、把"抱团"从口号变成机制，并解释"为什么必须一格格打过去才能抢到关键城池"。与既有环形版图结构（ADR-034：出生州→资源州→核心州）天然契合——加上连地后，宗门必须逐层推进才能摸到中心州首府，正好兑现该结构想要的"层层推进"叙事。
-- **核心规则**：
-  1. **判定范围 = 宗门级（不是家族级）**：宗门内所有成员家族的领地并集共同构成连地前沿，任一成员家族挨着目标格即可，不要求发起人自己家族恰好相邻。未加入家族 → 只认自己的领地；已加入家族但宗门未成立 → 判定范围=家族全体领地并集。
-  2. **盟友宗门领地不计入判定**——结盟（§8.2，`sect.allySectIds`）只是互不攻伐 + 桥栈道通行，不合并版图，否则"结盟"会变相等价于"合并宗门"。
-  3. **服务端两处强制**：`startMarch`（`combatMarch.ts`）的 `occupy`/`attack` 分支在发起时校验；到达时 `applySiege`（`combatSiege/arrival.ts`）与 `applyOccupy`（`combatSiege/occupation.ts`）再校验一次（行军途中宗门领地可能因丢地而断连），断连按"扑空"处理——退还部队 + 推送 `recalled`，与既有的"目标已非敌方所有"重校验同一套模式。不满足 → 新错误码 `TERRITORY_NOT_CONNECTED`（400）。
-  4. **判定函数**：`WorldCoreVision.isConnectedToSectTerritory(worldId, accountId, x, y)`（`core/vision.ts`）——4 方向邻接查询 `TileDoc.ownerId ∈ 宗门成员家族的 accountId 并集`；私有辅助 `ownSectFamilyIds` 与既有 `friendlyAccountIds` 同构但**不含盟友宗门**（这是两者唯一的差异点，友军攻击豁免要盟友、连地判定不要）。
-  5. **主城落地即初始领地（不依赖 ring 格 ownerId）** — 修订 2026-07-14：连地判定与行军寻路都额外把**每个宗门成员的主城 3×3 footprint**（由 `playerWorld.mainBaseTile` 推出）当作己方领地，而不是纯靠 8 个 ring `TileDoc` 是否带 `ownerId`。原因：早期版本 `baseTileDocs` 未给 ring 格写 `ownerId` 的**历史存档基地**（ring 格 `type:'base'` 但无 `ownerId`）会出现"连自己基地旁边的空地都占不了"——`isConnectedToSectTerritory` 数不到相邻己方格（只有 anchor 带 ownerId，而 anchor 的邻居正是自己的 ring 格，占领目标在 footprint 外一格，其邻居 ring 格无 ownerId → 判定失败）；且 `combatMarch.ts` 的寻路 `blockedBaseKeys` 会把无主 `type:'base'` 格当成敌方建筑（missing ownerId 命中 `$nin`）把守军堵死在城里。改为从 `mainBaseTile` 推 footprint 后，健康基地行为不变（ring 本来就带 ownerId，新旧路径一致），历史存档基地则**原地自愈**（无需触发 ADR-025 的 purge+随机重新落地那条破坏性路径）。
-- **已知取舍（接受）**：先手/占据资源密集区的宗门会滚雪球更快，弱势宗门可能被堵死在外圈无法扩张——但一个大区真正对抗的宗门通常只有两三个，规则逼着弱势方要么被兼并要么结盟，符合"明确前线"的设计目的，不视为需要修正的缺陷。
-- **影响**：
-  - `@nw/shared`（`api.ts` 新增 `ErrorCode.TERRITORY_NOT_CONNECTED` + `ERROR_HTTP_STATUS` 映射）。
-  - `worldsvc`：`core/vision.ts` 新增 `ownSectFamilyIds`/`isConnectedToSectTerritory`；`combatMarch.ts` 的 `startMarch` occupy/attack 分支新增校验；`combatSiege/arrival.ts` 的 `applySiege`、`combatSiege/occupation.ts` 的 `applyOccupy` 到达时新增重校验。2026-07-14 修订：`isConnectedToSectTerritory` 与 `computeMarchPath` 均改为从 `mainBaseTile` 推主城 footprint 作为己方领地（见核心规则 5），修历史存档基地无法从主城旁扩张的问题。
-  - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.1（表格标注）+ §4.1（新增，规则细节）。
-  - 测试：既有大量 e2e（`march`/`siege`/`occupy-march`/`alliance-attack`/`passage`/`base-siege` 等）的攻击目标此前多为"跨图直接打远处敌方基地"，在硬性连地规则下会被拒绝——受影响用例需改用既有的内部/测试专用 `TerritoryService.occupyTile()`（瞬占，见 ADR-037 段）预先铺垫"发起方宗门已占领相邻格"的前置状态，而不是重写测试所验证的核心断言。新增 `territory-connectivity.e2e.test.ts` 覆盖判定本身。
-
-## ADR-038 废弃 `CollectionScene`，皮肤装备关系从全局单槏位改为逐卡独立 — Accepted — 2026-07-13
-
-- **决策**（用户拍板）：`CollectionScene`（纯图鉴+皮肤衣柜页）整页删除，功能拆解并入养成组：图鉴全集→生涯组（`CareerTabs`）新增页签、皮肤衣柜→养成组（`CardScene`）新增页签、背景故事 lore→角色卡详情弹窗翻转展示。**皮肤的装备关系**从 `SaveData.equipped: Record<slot, skinId>`（账号级单一全局槏位）改为**逐角色卡独立槏位**——每张卡各自可换皮肤，换后该卡卡图用皮肤形象展示；皮肤的**拥有关系**（库存/购买/抽卡渠道）不变。
-- **为什么**：用户质疑 `CollectionScene` 与养成/生涯页功能重复、UI 风格自成一套不统一；调研确认不是功能重复（`CollectionScene` 纯只读展示，真正升级/合成在 `CardScene`），但确实是布局孤岛。原全局单槏位皮肤模型无法支撑"点这张卡换这张卡的皮肤"的直觉交互，需要连带改数据模型。
-- **影响**：[`LOBBY_IA_REDESIGN.md`](game/LOBBY_IA_REDESIGN.md) §15 为方案细节；[`CHARACTER_CARDS_DESIGN.md`](game/CHARACTER_CARDS_DESIGN.md) 需补一节角色卡皮肤/lore 字段（现状空缺）；存档结构变更需要写老档迁移逻辑（默认规则未在本次拍板范围，实现时另拍）；`ECONOMY_NUMBERS.md` §7 皮肤获取矩阵数字不变。
-  - `client`：`WorldMapInput.ts` 占领按钮改走 `startMarch(kind:'occupy')`；地图渲染/HUD 消费新增的 `contestedUntil` 字段渲染倒计时。
-  - 文档：[`game/SLG_DESIGN.md`](game/SLG_DESIGN.md) §5.4（新增）。
-  - 测试：`server/worldsvc/test/occupy-march.e2e.test.ts`（新增）。
-
-## ADR-040 metaserver `openapi.yml` 按域拆分为 fragment，合并生成（服务不拆）— Accepted — 2026-07-14
-
-- **决策**：`server/contracts/openapi.yml`（此前单文件 3241 行，metaserver 全部 77 个 REST 操作）改为手写 `server/contracts/openapi/{_root.yml,schemas.yml,paths/<domain>.yml}` 9 个按域 fragment，一一对应 `MetaService` 现有的 mixin 划分（`server/metaserver/src/service/{auth,save,pve,economy,inventory,progression,liveops,social,telemetry}.ts`）；新增 `server/contracts/scripts/bundle-openapi.mjs` 把 fragment 合并回 `openapi.yml`（沿用 ADR-023 的"生成文件提交入库 + CI `--check` 防 stale"模式）。服务本身**不拆**——metaserver 代码是整合/路由为主，拆多个微服务的运维成本不划算；已有 mixin 划分已经是合理的域边界。
-- **为什么**：几乎所有玩家交互都经过 metaserver，单文件契约导致跨域改动时 diff/review 范围大、merge 冲突集中。openapi 自带的 `tags` 字段粒度不准（如 `tags:[save]` 混了 pve/inventory/progression 等多个 mixin 的操作），不能直接拿来分域；改为按"哪个 mixin 实现这个 operationId"分组，逐个核对全部 77 个 operationId 后确认可行（无遗漏、无跨 mixin 的同路径冲突）。
-- **影响**：
-  - `server/contracts/openapi.yml` 本身变成生成产物（文件头注明 `AUTO-GENERATED ... DO NOT EDIT`），后续改契约改 `openapi/paths/<domain>.yml` 或 `openapi/schemas.yml`，跑 `npm run gen:api:contracts`（在 `server/metaserver/`）重新生成。
-  - 下游消费者（`gen-openapi-server.mjs`→`routes.gen.ts`、`client/scripts/gen-openapi.mjs`→`client/src/net/openapi.ts`、`openapi-request-schema.test.ts`/`openapi-response-schema.test.ts`）均只读 `openapi.yml` 文件路径，**未改动**，已验证 tsc/vitest/client typecheck 全绿。
-  - CI：`.github/workflows/ci.yml` 新增 "server codegen check (metaserver openapi bundle)" 步骤（`npm run gen:api:contracts:check`），跑在既有 routes.gen.ts staleness check 之前。
-  - 范围明确不含 `openapi-world.yml`（worldsvc）/`openapi-auction.yml`（auctionsvc）——规模本身不是痛点，未来若需要可复用同一套 `bundle-openapi.mjs` 模式。
-
-## ADR-041 主城点击直达 Desk（去掉城池菜单弹窗）+ 清理主城「手动防守配置」残留 — Accepted — 2026-07-18
-
-- **决策**（用户拍板）：世界地图上点击自己的主城 3×3 九格，**不再弹出菜单**（原「Enter Desk / Train / Defense / Manage team / ✕」五按钮弹窗），直接调用 `onOpenCity()` 进入 Desk（CityScene）。Train 与队伍管理本就已在 CityScene 内有完整入口（drillYard 训练详情弹窗、D-CITY-10 队伍卡片网格 → `onEditTeam`），不再需要地图层的重复菜单。
-- **主城没有「防守配置」概念**：ADR-026（2026-07-02）早已把主城攻防重构为「逐队守军波次」——**在城内、未受伤的队伍自动为守军；出征在外的队伍不参与防守**（`applyBaseSiege` 判据：`MarchDoc.teamId` 是否有活跃行军）。本条只是**移除与该已实现机制矛盾的遗留 UI/API**：地图菜单里指向主城的「Defense」按钮 → `DefenseEditorScene`（`mode:'defense', tileKey:'base'`）→ `setDefense/getDefense` 写读 `PlayerWorldDoc.defense`，这条路径是 ADR-026 之前（S8-4）的手动编队防守遗留，`buildDefenderConfig` 从未对 `target.type==='base'` 调用过（`applySiege` 在 `target.type==='base'` 分支直接转 `applyBaseSiege`，绕开了 `buildDefenderConfig`/`tile.defense`），即 `PlayerWorldDoc.defense` 字段自 ADR-026 起就是纯死数据，从未被任何攻城结算读取。
-- **领地/据点的手动防守配置不受影响**：非主城的己方领地格（`tileKey='{x}:{y}'`）仍走 `TileDoc.defense` → `buildDefenderConfig` 的既有编队路径（S8-4/G3-2c），本条不改动。
-- **影响**：
-  - 客户端 `WorldMapInput.ts`：主城分支从五按钮 `showModal` 改为直接 `onOpenCity()`；连带移除只被这个弹窗使用的 i18n key（`world.actEnterCity`/`world.train`/`world.team.manage`，3 语言）与回归测试 `worldMapBaseClick.ui.ts` 的断言更新。
-  - `onOpenDefense('base')`/`onOpenTeams()`（地图层「打开队伍列表 TeamsScene」入口）、`WorldMapPanels.openTrainPanel()`（地图层训练面板）自此弹窗移除后**已无任何调用方**——确认为死代码，但体量较大（TeamsScene 整个场景 + 训练面板渲染 ~150 行 + 多处 `trainPanelOpen` 状态联动），本次不一并删除，留作后续单独清理（已用 spawn_task 标记）。
-  - `server/worldsvc` 的 `PlayerWorldDoc.defense`（`tileKey='base'` 的 `setDefense`/`getDefense` 分支）**保留未删**——虽已确认是死代码，但涉及改 `openapi-world.yml` 契约（`tileKey` 参数默认值/说明）+ 两端 codegen 重新生成，风险/收益比不划算，本次不动；后续若清理前端 TeamsScene/训练面板时可一并处理。
-  - **2026-07-18 后续清理（已完成）**：上面标记的死代码已按后续任务清理完毕——删除 `TeamsScene.ts` 整个场景及其接线（`goTeams`/`onOpenTeams`/`showTeams`/`goTeamEditor`，后者随 `goTeams` 一起变为死代码故一并删除；`WorldMapContext.onOpenTeams`）；删除 `WorldMapPanels.openTrainPanel`/`renderTrainPanel`/`ctx.trainPanelOpen`/`ctx.panelRepaint`，以及仅服务于训练面板、随之变为死代码的 `WorldMapNet.doTrain`/`doSpeedup`；`teamSlotId`/`teamSlotName`/`TEAM_CAP`（CityScene 仍需要）迁到 `game/meta/teamTroops.ts`。相应清理了仅被这些死代码引用的 i18n key（`world.teams`/`world.team.title`/`.edit`/`.tapToBuild`/`.emptyArmy`/`.fillTroops*`/`.legacyRebuild`/`.cancelOccupy*`/`.recallErr`、`world.train*`/`.speedup`/`.trained`/`.spedup`/`.err.queueFull`，3 语言）与对应测试（删除 `teamsScene.ui.ts`，其余文件去掉对已删符号的引用）。`tsc --noEmit` + `test`/`test:ui` 全绿（104+68 files / 727+635 tests）。`server/worldsvc` 的 `PlayerWorldDoc.defense` 死字段本次仍未动，维持上面的评估。
-
-## ADR-042 家族加入改为需 leader/elder 审批（解决 SOCIAL_SVC_DESIGN §8 O1）— Accepted — 2026-07-18
-
-- **决策**（用户拍板）：`POST /social/family/:id/join` 不再直接入队，改为插入一条 `FamilyJoinRequestDoc`（`pending`）；leader/elder 通过新增的 `GET /social/family/requests` 查看、`POST /social/family/requests/:id/respond` 同意（复用原直接入队逻辑）或拒绝（拒绝会给申请人发一封系统邮件，`family.mail.rejected.*` i18n key）。解决 `SOCIAL_SVC_DESIGN.md` §8 遗留的 O1 开放问题（此前文档已预留 `joinPolicy` 字段但从未实现，实际代码是直接入队）。
-- **为什么**：直接入队让族长对新成员毫无筛选权，用户希望能审核申请人。
-- **影响**：
-  - `server/socialsvc`：`db.ts` 新增 `familyJoinRequests` 集合（`{familyId,status}`/`{accountId,status}` 索引）；`familyService.ts` 新增 `requestJoin`/`listJoinRequests`/`respondJoinRequest`（`joinFamily` 保留但只在 accept 路径内部调用）；`httpApi.ts` 新增两条路由（**踩坑**：`GET /social/family/requests` 必须排在通用 `GET /social/family/:id` 之前，否则 `requests` 会被当成 familyId 捕获——已加 HTTP 层 e2e 测试锁定顺序）；`FamilyService` 新增可选 `mail?: MailService` 依赖，`index.ts` 调整实例化顺序（mailSvc 先于 familySvc）。
-  - `@nw/shared`：`ErrorCode.ALREADY_REQUESTED`（409）。
-  - `client`：`WorldApiClient.joinFamily` 改名 `requestJoinFamily` + 新增 `listJoinRequests`/`respondJoinRequest`；`FamilyScene`（`base/data/actions/render.ts`）新增 `isFamilyApprover` 判定、Members 面板顶部"待审批 (N)"按钮（仅 leader/elder 且有申请时显示）、审批弹窗；`FriendsScene` 的家族加入入口（`app/nav/social.ts`/`FriendsScene/service.ts`）同步改为提交申请语义，不再假定"点击即入队"。
-  - 文档：[`SOCIAL_SVC_DESIGN.md`](game/SOCIAL_SVC_DESIGN.md) §3.1（新增 `FamilyJoinRequestDoc`）+ §4.1（路由表）+ §8 O1 拍板。
-  - 测试：`server/socialsvc/test/family.e2e.test.ts`（新增 8 个用例）+ `familyHttp.e2e.test.ts`（新增 8 个用例，含 wire-level 路由顺序回归、权限拒绝、拒绝邮件断言）；`client/test/ui/familyJoinApproval.ui.ts`（新增，8 个用例，覆盖审批方 + 申请方双视角，headless PIXI 渲染断言）。
-
-## ADR-043 角色卡升级从连续 XP 曲线改为离散五合一融合 + 背包 150→500 扩容 — Accepted — 2026-07-19
-
-- **决策**（用户拍板）：角色卡升级不再是"喂经验条"（同阵营任意卡喂 XP、1 级卡固定 1 点/2 级+ 打 8 折、`5^level` 指数曲线），改为**离散融合**：选目标卡 + 从背包选 **5 张同阵营、同等级**的卡作为材料，一次性消耗后目标卡升 1 级；UI 从原来的"输入数量喂经验"面板改为**环形布局**（中心卡+5 材料槽环绕），融合时播放动画（当前程序内占位，后续换专门 VFX）。同时把卡背包容量 `CARD_INV_CAP` 从 150 扩到 500。
-- **为什么**：旧曲线下喂到 6 级理论上要 3,000+ 张 1 级卡（用户原话："目前玩家看到 6 级要几千张卡，直接吓傻了"）。讨论中明确了这不是纯粹的数值问题——用户认为终局定位是"大多数玩家停在 5-6 级，9 级留给氪佛自娱自乐"，数值本身能接受，真正想改的是**交互体验**：把抽象的经验数字换成看得见摸得着的"凑 5 张卡"。因此本次重设计**刻意不改分支系数**——材料仍须严格等于目标当前等级（不允许混级/打折顶替），总卡量需求量级与旧 `5^level` 曲线一致，只是包装成融合动画而不是输入框。
-- **影响**：
-  - `server/shared/src/cards.ts`：删 `feedXp()`/`LEVEL_CUMULATIVE_XP`/`CardInstance.xp` 字段；新增 `applyFusion()`/`FUSION_MATERIAL_COUNT`(=5)；新增命名常量 `MAX_CARD_LEVEL`(=9，此前是散落 server/client 四处以上的字面量 `9`)；`CARD_INV_CAP` 150→500；`CARD_INV_WARN`(client-only 140)与 `INV_FULL_MAIL_COUNT`(10)合并为一个复用常量 `CARD_INV_OVERFLOW_BUFFER`(=10)，同时驱动 UI 预警阈值和满仓溢出邮寄上限两处逻辑。
-  - `server/metaserver/src/cards.ts`：`feedCards()`→`fuseCards()`，校验材料数量严格等于 5、同阵营、同等级、未锁定、目标未满级。
-  - 契约：`POST /cards/feed`→`POST /cards/fuse`（`server/contracts/openapi/paths/inventory.yml`，`materialIds` 加 `minItems`/`maxItems: 5`），`CardInstance` schema 删 `xp` 字段（`schemas.yml`）；重新生成 `openapi.yml`/`routes.gen.ts`/client `net/openapi.ts`。
-  - `client/src/game/meta/cardDefs.ts`：**打破本仓库一贯的"client 镜像 @nw/shared 常量"纪律**（equipmentDefs.ts 同款做法），改为新增 webpack/vitest/tsconfig 的 `@nw/shared/cards` 别名直接指向 `server/shared/src/cards.ts` 源文件导入 `CARD_INV_CAP`/`MAX_CARD_LEVEL`/`FUSION_MATERIAL_COUNT`/`CARD_INV_OVERFLOW_BUFFER`——之所以能这样做且不破坏浏览器构建，是因为 `cards.ts` 本身零运行时依赖（仅 `import type`），与 `@nw/shared` 包根 `index.ts` 的完整 barrel（会拉入 mongodb/jsonwebtoken）不同；`CardDef` 卡牌定义本身仍按旧纪律镜像（含 client 独有的省略字段）。
-  - `client/src/scenes/CardScene/feed.ts`：整体重写为环形融合槽位 UI；`detail.ts` 的进度条语义从"XP 进度"改为"已拥有同级材料 n/5"。
-  - i18n：`roster.feedBtn/feedTitle/feedHint/feedEmpty/feedConfirm/feedOk/feedErr/xpProgress` 全部替换为 `roster.fuseBtn/fuseTitle/fuseHint/fuseEmpty/fuseOk/fuseErr/fuseMaterials`（3 语言）。
-  - 文档：[`CHARACTER_CARDS_DESIGN.md`](game/CHARACTER_CARDS_DESIGN.md) §0/§1/§2.2/§3/§4.1/§10.1/§10.2/§11/§13/§14/§17（CC-13）+ [`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §15.2/§15.3。
-  - 测试：`server/shared/test/cards.test.ts`（`feedXp`→`applyFusion` 系列）、`server/metaserver/test/cards.e2e.test.ts`（`/cards/feed`→`/cards/fuse` 全部用例改写，含材料数量/等级不匹配/满级等新增边界）、`economy.e2e.test.ts`（硬编码 150 改用 `CARD_INV_CAP` 常量）、`openapi-request-schema.test.ts` 的通用最小 payload 构造器补上对 `minItems` 的支持（此前只生成 1 元素数组）；client `test/cardDefs.test.ts`/`cardRoster-offline.test.ts`/`api-client.test.ts` 同步改写；`test/ui/cardFeedPaging.ui.ts`→`cardFusePanel.ui.ts`（候选分组/过滤/填槽/撤槽/Confirm 门控/滚动，8 用例）、`feedBtnWidth.ui.ts`→`fuseBtnWidth.ui.ts`（三语言按钮宽度自适应）；其余十余个 `.ui.ts`/`.test.ts` 里构造 `CardInstance` 字面量的地方去掉已删除的 `xp: 0` 字段、`CardCallbacks` stub 的 `feedCards`→`fuseCards`；`vitest.ui.config.ts` 补 `@nw/shared/cards` 别名。全量：server `shared`(30/595)+`metaserver`(47/632) 全绿；client `tsc --noEmit`+`typecheck`(test 层)+`vitest run`(105/737)+`test:ui`(72/658) 全绿；webpack 生产构建成功。
-
-## ADR-044 CityScene（Home Desk）开关改为 SceneManager 覆盖层，不再重建 WorldMapScene — Accepted — 2026-07-20
-
-- **决策**（用户拍板）：世界地图上打开/关闭 Home Desk（`onOpenCity()` 直达入口，见 ADR-041）不再走 `SceneManager.goto()`（销毁旧场景+构造新场景），改为新增的 `pushOverlay()`/`popOverlay()`：`CityScene` 挂载在仍然存活的 `WorldMapScene` 之上，关闭时只销毁 `CityScene`，`WorldMapScene` 全程不销毁、不重建、不重新拉取世界状态——"这个页面，不要走场景重绘…slg 场景一直都在，无缝切换，也不重绘"。
-- **为什么**：`SceneManager.goto()` 的既有契约是"绝不同时挂载两个场景"，每次进出 City 都会把 `WorldMapScene` 整个销毁再用 `new WorldMapScene(...)` 重建（重新 `loadData()`、重置相机居中），这是 Home Desk 这种高频进出的面板级页面，用户观感上是"卡一下"，不是真正意义上离开了 SLG 世界。
-- **范围**：只覆盖"WorldMap ↔ City"这一条最常用边（直接进入/直接返回）。City 内部「Edit Team → DefenseEditorScene」这条更少走、更深的分支维持原有全量 `goto()` 行为不变（进入前先 `hideCityOverlay()` 弹出覆盖层，此时 `WorldMapScene` 已经在弹出时恢复为 `current`，紧接着的 `goto(DefenseEditorScene)` 仍会把它销毁；`DefenseEditorScene.onBack` 回到的是普通全量 `goCity()`，不是覆盖层版本）——没有必要为这条冷门路径再多套一层覆盖栈。
-- **影响**：
-  - `client/src/scenes/SceneManager.ts`：`Scene` 接口新增可选 `pause?()/resume?()` 钩子；新增 `overlayScene` 单槽位字段（与既有的淡入淡出遮罩 `overlay: PIXI.Graphics` 同名冲突，改名为 `overlayScene` 避免撞车）+ `pushOverlay(scene)`/`popOverlay()`；`onTick` 拆出 `tickScene()` 私有方法，`current` 与 `overlayScene`（若存在）每帧都 tick（地图在覆盖层下仍继续模拟，比如行军动画）；`goto()` 开头防御性地先销毁任何残留的 `overlayScene`，避免硬切换时孤儿挂载在新场景之上。
-  - `client/src/scenes/WorldMapScene.ts`：新增 `pause()/resume()`——只解绑/重新订阅它自己在 `InputManager` 上的 4 个指针回调（`ctx.unsubs`），不碰渲染/网络/ticker。这是必须的：`InputManager.dispatch()` 广播给所有订阅者、不区分 z 序，覆盖层挂载但不 `pause()` 底层场景的话，点 City 面板的同时也会命中被完全遮挡的地图 hit-rect。
-  - `client/src/app.ts` / `client/src/app/AppViews.ts`：新增 `showCityOverlay(cb)`/`hideCityOverlay()`（对应 `manager.pushOverlay`/`popOverlay`），`showCity(cb)` 原有全量语义不变；`client/test/harness/HeadlessAppViews.ts` 同步补最小实现。
-  - `client/src/app/nav/world.ts`：新增 `goCityOverlay()`（`onOpenCity()` 改指向它），沿用原 `goCity()` 作为 edit-team 回程的全量兜底，两者 onEditTeam 回调各自独立，不互相递归。
-  - 验证：`tsc --noEmit` + webpack dev build 全绿；用真实 `SceneManager` + 假 `Scene`（模拟 `WorldMapScene` 的 `pause/resume/destroy`）在浏览器里直接跑 `pushOverlay`→tick→`popOverlay` 全流程，断言 `current` 实例在覆盖层开关前后是同一个引用、未被销毁、`pause/resume` 各调用一次、两个场景都在 tick；另跑了 `goto()` 在覆盖层挂载期间被硬切换时的防御路径（覆盖层与旧 `current` 都应销毁，不留孤儿）。
-
-## ADR-045 累计充值：商城可见自主领取（非静默邮件）+ 退款扣计数器 + 不回填历史 — Accepted — 2026-07-21
-
-- **决策**（用户拍板）：新增终身累计充值奖励系统（[GACHA_DESIGN.md §13](game/GACHA_DESIGN.md)），三项关键取舍：
-  1. 商城常驻可见的阶梯进度条 + 玩家自主领取，**不做成静默达标发邮件**——这类系统的核心商业价值就是可视化进度驱动付费（"还差¥X解锁Y"），静默发放等于把促充值工具做成用户感知不到的隐藏彩蛋。
-  2. Paddle 退款（`adjustment.created` action=refund）按笔精确扣减 `totalRechargeCents`（下限0），但**已领取的奖励不追回**——只影响后续新档位解锁资格，防"充值→领奖→退款"薅羊毛，同时不做已交付内容的回滚。
-  3. 上线**不回填**老玩家历史充值金额——`recharges` 表历史记录只有折算币数没有真实金额，回填需要反推价位档且有 first-purchase 2× 加成误差，成本大于收益；所有账号从 0 开始累计。
-- **为什么**：三项都是"多花一点实现成本 vs 简单但有隐患/体验打折"的取舍，且都会影响后续人读文档/查代码时的预期（不回填 ≠ bug；退款不追回奖励 ≠ 漏洞），故各自记一条方向。
-- **影响**：`server/shared/src/rechargeMilestone.ts`（新增，档位表+纯领取逻辑，同构 `battlepass.ts`）；`commercial` `WalletDoc.totalRechargeCents`/`RechargeDoc.usdCents`+`refundedAt`；`SaveData.rechargeMilestone?: { claimed: number[] }`；`server/metaserver/src/paddle.ts` 退款事件处理；客户端 `goRecharge` 商城平级入口。
-
-## ADR-046 SLG 覆盖层扩展到全部子界面：从世界地图打开的任何界面返回时都不重建地图 — Accepted — 2026-07-21
-
-- **决策**（用户拍板）：把 ADR-044 的覆盖层机制从"只有 City ↔ WorldMap 一条边"扩展到**所有从世界地图打开的界面**——编辑队伍（City → 阵型编辑器）、防守编辑器、拍卖行、社交中枢（好友/家族/宗门/私聊）。原话："编辑队伍的页面，在切换回 slg 的时候也不要重绘…slg 里打开的界面，在回到 slg 世界地图的时候，都不触发重绘。地图重绘体验非常不好。界面自身如果太耗费资源，可以销毁。但尽量复用。"
-- **为什么**：ADR-044 只解决了 City 这一条，其余子界面仍走 `goto()` 全量切换——返回时 `goWorldMap()` 会销毁并重建 `WorldMapScene`（重新 `loadData()`、重置相机），用户观感"卡一下"。用户要的是：地图作为 SLG 会话的常驻根，全程不销毁；子界面允许销毁重建（"太耗费资源可销毁"），只要地图不动。
-- **明确不覆盖的一条**：观战/攻城战回放（`onReplaySiege`）仍走全量 `goto()`（`goWorldMap` 重建返回）——回放会跑一整套战斗引擎，属于"进入一场战斗"式的模式切换（等同进对战），地图在其下常驻+每帧 tick 只会白白双引擎耗性能，收益为负。用户认同此例外。
-- **机制**：`SceneManager` 本身**零改动**——`pushOverlay()` 既有语义已支持"替换当前覆盖层"（先销毁旧覆盖层、`current`（地图）只 `pause()` 保持存活、挂新覆盖层）；覆盖层链（地图→City→编辑队伍→回 City→回地图）全程 `current` 引用不变，`pause()` 幂等（重复解绑空 `unsubs` 无副作用），最终 `popOverlay()` 只 `resume()` 一次，地图输入订阅恰好一次。子界面之间"返回上一层"用重新 `pushOverlay(新实例)` 实现（销毁重建子界面，地图不动）。
-- **影响**：
-  - `client/src/app/AppViews.ts`：新增统一的 `MountOpts { overlay?: boolean }`；`showCity/showDefenseEditor/showAuction/showFamily/showSect/showFriends/showChat` 各加可选 `opts?: MountOpts`；**删除**专用的 `showCityOverlay/hideCityOverlay`，统一为 `showCity(cb, { overlay:true })` + 通用 `hideOverlay()`（无遗留兼容，符合项目一贯清理约定）。
-  - `client/src/app.ts`：新增私有 `mountSlg(name, build, opts)`——`opts.overlay` 走 `pushOverlay`，否则 `leaveLobby()`+`goto()`；上述 show 方法全部改走它；`hideOverlay()` = `popOverlay()`。
-  - `client/src/app/nav/world.ts`：`goWorldMap` 内闭包化 `bindMapNet()`（重绑地图推送 handler）+ `returnToMap()`（`hideOverlay()`+重绑）+ `openCity()`（City 覆盖层，其 onEditTeam 以兄弟覆盖层挂阵型编辑器、回程重开 City 覆盖层）；`onOpenDefense/onOpenAuction/onOpenChat` 全部改传 `{ overlay:true, onBack: returnToMap }`；**删除** `goCity`（全量版）与 `goCityOverlay`（并入 `openCity`）；`goDefenseEditor/goAuctionHouse` 加 `opts{overlay,onBack}`，`goFamilyHub/goSectHub` 加第 4 参 `overlay`。
-  - `client/src/app/nav/social.ts`：`goFriends` opts 加 `overlay`，透传给 `showFriends` + `openFamilyHub/openSectHub` + `openChat`；`goChat` 加 `opts{overlay,onBack}`，从 SLG 覆盖层打开的私聊也是覆盖层，返回重开同一社交中枢（顺带修掉原先私聊返回丢失来源上下文、只回好友列表的小问题）。
-  - `client/src/app/appCtx.ts` `Nav` 接口同步；`client/test/harness/HeadlessAppViews.ts` 同步（`hideOverlay` 置 `screen='worldMap'`）。
-  - **已知取舍**：社交/宗门覆盖层打开期间会把 `session.handlers` 改绑到自己的推送集，此时地图暂收不到 march/tile 增量（地图被完全遮挡、不可见）；`returnToMap` 弹出时 `bindMapNet` 恢复地图 handler、继续实时推送。不做返回时强制刷新（那本身就是一次可见重绘，与需求相悖）——仅接受弹窗打开期间的短暂陈旧。City/防守/拍卖覆盖层不改 handler，故连这点陈旧都没有。
-  - 验证：`tsc --noEmit` + webpack 生产构建全绿；client `vitest run` 758/758 全绿（含 `world-family-sect-nav-tabs`/`social-family-hub-return`/`world-hub-account-id` 等 nav 边界回归）。覆盖层底层机制（`pushOverlay/popOverlay`）自 ADR-044 起已在生产验证，本次仅把更多入口接到同一已验证机制上，未改 `SceneManager`。
-
-> **勘误（2026-07-22）**：本条"机制"一段断言"`SceneManager` 本身零改动——`pushOverlay()` 既有语义已支持'替换当前覆盖层'"是错的。`pushOverlay()` 在覆盖层已存在时只 `destroy()` 旧覆盖层，没有先 `removeChild` 把它的 `container` 从 `targetStage` 上摘掉——`goto()`/`popOverlay()` 都遵守"先摘再毁"，唯独这条替换分支漏了。后果：编辑队伍 Save 后 `onBack` 重建 City 覆盖层（正是本条落地的"兄弟覆盖层替换"用例）时，已销毁的阵型编辑器 container 仍挂在显示树上，下一帧渲染走到它抛错，画面卡死在抛错前的最后一帧——表现为"点保存后停在编辑队伍界面不返回"。已在 `client/src/scenes/SceneManager.ts` 的 `pushOverlay()` 补上 `removeChild`，回归测试见 `client/test/ui/sceneManager.ui.ts`「SceneManager overlays」。
-
-## ADR-047 行军疲劳：绑定行军实例（非队伍）+ 只做距离消耗，不做静止回复 — Accepted — 2026-07-21
-
-> **命名说明（2026-07-22 审计）**：本条原文用"士气"，与 `CHARACTER_CARDS_DESIGN.md` §6.4 的卡牌"士气加成"（满编 ATK 加成，另一套机制）撞名，已在文档中改称"行军疲劳"消除歧义；代码字段/函数名（`morale`/`MARCH_MORALE_MAX`/`moraleCombatMultiplier`）未改动，仅中文叙述改名。
-
-- **决策**（用户拍板）：新增行军疲劳机制（[SLG_DESIGN.md §4.4](game/SLG_DESIGN.md)）解决"远征讨伐天然不利"的数值诉求，用户在澄清中拍板两处关键取舍：
-  1. **疲劳值绑定行军实例（`MarchDoc`），不绑定队伍（`TeamTemplate`）**——每次出征都从满额 `MARCH_MORALE_MAX=100` 重新开始，不与该队伍上一次出征的结果延续，行军结束后不再追踪。
-  2. **本期只做「移动一格 -1」的距离消耗，不做「原地不动每 30 秒回复 1」的回复机制**——回复机制在当前架构下没有天然的触发点（见下），强行实现只会是永远不触发的死代码。
-- **为什么放弃回复机制**：`combatMarch.ts` 的行军模型不是逐格 tick 的实时模拟——`startMarch` 出征时一次性算好完整 A\* 路径（`findMarchPath`），只调度**一个**到达事件（`arriveAt`），中途没有"停留"状态；到达后 `MarchDoc` 被整条删除（`findOneAndDelete`）。既然疲劳值本就每次出征重置为满额，"静止回复"这个动作永远等不到会触发它的对象（一支行军要么在赶路，要么已经不存在）。如果未来改成多段行军/驻留可以续航，需要先把疲劳值改绑到 Team 并持久化，那是另一次设计决策，不在本次范围内。
-- **战力惩罚公式**：抵达时战力 = 剩余疲劳值线性缩放到 `[MARCH_MORALE_COMBAT_FLOOR=0.7, 1.0]`（`moraleCombatMultiplier`）——满血 100% 战力，走满 100 格耗尽疲劳值后仍保底 70% 战力，不会因为路途遥远而被削到形同虚设。
-- **影响**：`server/shared/src/slg/core.ts`（`MARCH_MORALE_MAX`/`MARCH_MORALE_COMBAT_FLOOR`）、`march.ts`（`marchMoraleFromPath`/`moraleCombatMultiplier`）；`worldsvc/src/db.ts`（`MarchDoc.morale?`）、`combatMarch.ts`（出征时算好存入）、`combatSiege/arrival.ts` + `combatSiege/occupation.ts`（到达结算时用 `scaleArmyByRatio` 缩放攻方军队 HP + 缩放廉价公式的有效兵力，覆盖 attack/occupy/sweep/驱逐四类需要战斗的到达路径）。未改 `MarchView`/openapi 契约（客户端本期不展示疲劳值，纯服务端战力机制）。`server/shared`+`worldsvc` 全量测试验证（621+282 全绿，一处既有 e2e 因引入距离惩罚而调整预期值）。
-
-## ADR-048 SLG 兵力池统一：`baseTroopStock` 并入 `playerWorld.troops`（补记 ADR） — Accepted — 2026-07-22
-
-> **补记说明**：本条决策实际发生于 2026-07-22（worktree `unify-troops`），当时未按惯例写入本文件，2026-07-22 审计发现后补记。补记不改变决策已生效的事实，仅补齐记录。
-
-- **问题**：CC-4（2026-07-01）为卡牌兵力单独建了 `baseTroopStock` 字段，与地图兵力池 `playerWorld.troops` 并存但从不互通——`trainTroops` 写 `troops`，`distributeTroops` 读 `baseTroopStock`，训练出来的兵永远到不了队伍卡上，`CHARACTER_CARDS_DESIGN.md §6.3` 设想的"训练→分兵"闭环从未真正跑通。
-- **决策**（用户拍板"彻底统一"）：废弃 `baseTroopStock`，全部改用单一字段 `playerWorld.troops`；`TROOP_CAP_BASE` 从 2000 提到 10000（新号一次性坐拥满额基地兵力池）；`db.ts runMigrations()` 加一次性 boot 迁移，把存量文档的 `baseTroopStock` 折算进 `troops`（含 `troopCap` 一并刷新）后 `$unset`。
-- **客户端联动**：训练入口从练兵场（drillYard）详情弹窗改为主城桌面独立格子（`renderTrainModal`）；`DefenseEditorScene` 新增按卡 stepper 分兵（`+100/+500/补满此卡`），分兵前统一调用 `persistTeam()` 落库再 `distributeTroops`。
-- **影响**：`server/shared/src/slg/core.ts`（`TROOP_CAP_BASE`/`SATCHEL_CARRY_BASE` 联动）、`worldsvc/src/city.ts`（`trainTroops`/`distributeTroops`）、`worldsvc/src/db.ts`（迁移）；客户端 `CityScene.ts`/`DefenseEditorScene.ts`。详见 memory `slg-troop-pool-unified-2026-07-22`、`CHARACTER_CARDS_DESIGN.md §6.3`。`server/shared`+`worldsvc` 全量测试验证（含迁移测试）、client tsc/webpack + 20 项 UI 测试全绿。
-
-## ADR-049 SLG 地图尺寸 500×500 → 1500×1500（对齐主流 SLG）— Accepted — 2026-07-22
-
-- **问题**：用户体验反馈——最远缩放档（L3）下整张 500×500 地图约只有三屏大小，10 个州（6 外围+3 资源+1 霸业，ADR-034 环形布局）+ 险地/州府/城池等 PvE 关卡内容"展示不开"，视觉上过于局促。用户拍板对齐主流 SLG 的常见量级 **1500×1500**（此前 ADR-032 曾定 500×500，并记载"1500×1500 于 2026-06-18 拍板但从未落地"；本 ADR 是**真正落地** 1500，非恢复旧口径）。
-- **决策**：`SLG_MAP_W/H` 500 → **1500**（`server/shared/src/slg/core.ts`）。这是本次唯一的"内容"改动——全部下游几何均为比率制（州环半径 `PROVINCE_*_RADIUS_RATIO`、州府位置 `provinceCapitalPositions` 用 `halfDiag`、`_normRadius`、险地/资源密度走逐格 Bernoulli），随尺寸等比缩放，**密度不变、画布变大**；险地数（p≈0.003）从 ~750 增至 ~6750，州府/城池节点仍固定 10/54 个（角度环形）。
-- **为什么安全（无性能回归）**：地块**稀疏落库**（只存被占/改动格），`proceduralTile` 按视口即时算；视野/渲染均为**视口 bbox 限定的 Mongo 查询 + clamp 循环**，无 O(mapW·mapH) 全图遍历（`core/vision.computeVisionSources`、客户端 `occupyFrontier`/`fog` 均如此）。A\* 行军寻路 `findMarchPath` 有 `MAX_NODES=500_000` 安全帽（1500² 下=全图 22%，合法长途行军绰绰有余；触顶 → 返回 `null` → `combatMarch` 干净抛 `PATH_BLOCKED`，不挂起）。U14 的 A\* 性能关注点在更大图上略升但仍受帽约束，登记为监控项。
-- **运维生效路径（关键）**：`mapW/mapH` 在 `openSeason` 时经 `$setOnInsert` **写死进 world 文档**，`getSeason` 返回存库值。故常量改动**不会自动改变现有世界**——旧世界的 `w.mapW` 仍冻结在 500，而生成/出生点/边界用常量 1500，会不一致。本 ADR 顺带让 `resetSeason` 的 `$set` **re-stamp `mapW/mapH`**（与它早已 re-pin 的 `engineVersion` 同理：reset 清空全部 tiles/nations 并按 `deps` 重建州府，回收世界必须采用当前尺寸）→ 现有大区经正常"结算→重置"即可采用新尺寸；全新 worldId 天然拿到 1500；dev 直接 `-Fresh` 起新库。
-- **影响**：`server/shared/src/slg/core.ts`（常量）、`worldsvc/src/season.ts`（reset re-stamp）；客户端零改动（`WorldMapScene` 全程用 `getSeason` 返回值、渲染视口化，`DEFAULT_MAP_SIZE` 早已是 1500 且仅为加载前占位）。worldsvc 285 e2e（新尺寸下真实生成地图）+ season-ops 新增 1 例（reset re-stamp）全绿；shared/worldsvc `tsc --noEmit` 全绿。
-- **未处理/留待**：① 更大图放大了"孤立据点四周空白"观感（SLG_DESIGN_LOG §1008 既知），如需改善要从中立地装饰密度/初始镶机位入手；② 横断行军实时时长约 ×3，属 SLG 类型常态，用户已认可；③ "一屏俯瞰全图的最远战略档（L4）"本轮**不做**（用户拍板暂缓），但地图越大越需要，登记为后续候选。
-
-## ADR-050 装备分解新增稀有度门槛：史诗 Epic 永不可分解，不论等级 — Accepted — 2026-07-22
-
-- **问题**：用户发现背包界面里 Highlighter / Foil Cover / Wax Seal（均为史诗 Epic 品质）在 +0~+4 时显示 Salvage / Salvage All 按钮，认为"紫色物品属于高级装备，不能销毁"。核查后确认这是 **ADR-012 既定行为**而非 bug——原规则纯按**强化等级**门控（+5 及以上不可分解），与稀有度无关。用户拍板：新增一条规则，史诗品质**不论等级**一律不可分解。
-- **决策**：分解可行性判定从单一等级门槛改为**等级门槛 OR 稀有度门槛**：`isSalvageable(rarity, level) = rarity !== 'epic' && level <= SALVAGE_MAX_LEVEL`。普通/精良/稀有三档行为不变（+0~+4 可分解，+5 起不可分解）；史诗档从"+0~+4 可分解"改为**永不可分解**。高稀有度件的销毁出口收窄为**拍卖 / 穿戴**（§13），与+5 以上高强化件的既有出口一致。
-- **实现**：新增单一判定函数 `isSalvageable`，服务器权威侧 `server/shared/src/equipment.ts`（`salvageEquipment` 校验 + rev-guard 复查两处引用），客户端 UI 侧镜像同名函数于 `client/src/game/meta/equipmentDefs.ts`（`instanceActions` 用于隐藏按钮，纯预览，不代替服务器校验）。`NOT_SALVAGEABLE` 错误文案三语同步更新为"+5 及以上或史诗品质不可分解"。
-- **影响**：`server/shared/src/equipment.ts`、`server/metaserver/src/equipment.ts`、`client/src/game/meta/equipmentDefs.ts`、`client/src/scenes/EquipmentScene/detail.ts`、三语 i18n（`equip.err.notSalvageable`）；[`game/EQUIPMENT_DESIGN.md`](game/EQUIPMENT_DESIGN.md) L4 + §6.3 + §17 数值表 + SERVER_API 端点说明同步。`server/shared` 单测新增 `isSalvageable` 用例，`metaserver` e2e 新增史诗 +0 分解拒绝用例，client UI 测试新增史诗件按钮隐藏用例。
-
-## ADR-051 SLG 实时野战遭遇系统：停留/驻扎拆分 + Redis 逐格行军 + 玩家建筑层 — Accepted — 2026-07-24
-
-- **问题**：野外驻扎 v1（2026-07-23）只有单一 `stationed` 态，是个「四不像」——忙碌得像驻扎（锁队伍槽、不能接新指令），却连本格都不防守（march/siege 结算链路从不读 `stationed` 集合）。直接后果：玩家用队伍走到中立格「停留」后想「就地占领」，占领选择器却把它当忙碌排除（[`WorldMapNet.ts:163`](../client/src/scenes/worldmap/WorldMapNet.ts)）。且行军模型非实时（一次性算好路径、丢弃、只调度一个到点事件），无法实现「路过拦截」。
-- **决策**（用户拍板，全设计见 [`game/SLG_FIELD_BATTLE_DESIGN.md`](game/SLG_FIELD_BATTLE_DESIGN.md)）：
-  1. **状态拆分**：`stationed` 分 **停留 idle**（空闲、可接指令、仅本格被动应战）与 **驻扎 garrison**（忙碌、守本格+周围8格=9格、主动拦截路过敌军）；**发兵时选定意图**，抵达即进对应态；停留放出忙碌门禁 → 修复就地占领。
-  2. **实时野战引擎**：位置权威搬进 Redis（`occ` 占格索引 + `cover` 9格反向索引）；行军改**逐格步进**、路径持久化到 MarchDoc、每步只调度下一步；三种遭遇场景（撞停留 / 两行军同格 / 驻扎拦截）合并为**一次 O(1)「踏格检查」**，不扫 Mongo；全部战斗走现成 `runSiegeBattle`（可回放、士气规则复用）；**遭遇结果=胜方带残兵继续原行动**。
-  3. **建筑层**（玩家建造）：`TileDoc` 新增通用 `structure` 叠加位（泛化 `watchtower`）；**箭塔**=敌军踏入9格射程即掉血、不拦停、可攻毁；**必拆除阻挡**=接入寻路的硬阻挡（参照敌方主城 `blockedBaseKeys`），对建造者+家族放行。
-- **待审点拍板（提议默认全采纳）**：O1 路过敌方领地 garrison **不**触发 pass-through 战斗（拦截靠驻扎/箭塔，否则领地不可穿行）；O2 建筑只能建**己方/家族领地**格；O3 箭塔数值/驻扎维护/步进疲劳进 `config.ts` 标 DRAFT；O4 逐格步进事件量登记监控 + 粗粒度降级预案；O5 相邻格对穿不触发遭遇，接受为常态。
-- **分阶段**：P1 实时行军基础（路径持久化+步进+`occ`，行为对齐现状）→ P2 遭遇引擎（场景1/2+`runSiegeBattle`）→ P3 停留/驻扎拆分+`cover`+驻扎拦截+就地占领 → P4 客户端实时野战视图 → P5 建筑层。每阶段独立可验证、独立合入当日分支。
-- **影响**（预估，详见设计文档 §6）：`worldsvc`（`db.ts`/`combatMarch.ts`/新 `combatSiege/encounter.ts`/`core/push.ts`/`territory.ts`/建筑 API/`httpApi.ts`）、`@nw/shared`（`walkable` 接入建筑、`config.ts` 数值）、`openapi-world.yml`；客户端 `WorldMap*` + `WorldMapRenderer` + 三语 i18n。
-
-## ADR-052 F2P 月度金币产出基线从 "~300" 重定为 "~2,900–8,700"（补跑总产出核算） — Accepted — 2026-07-27
-
-- **问题**：2026-07-27 文档全量审计发现，ADR-011/ADR-014 与 [`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §13.2/§13.3 反复写"须并入 §9 总产出模拟"/"计入 §6.1 月度 ~300 预算"，但该"总产出模拟"从未真正被创建或跑过——ECONOMY_NUMBERS 的 §9 实际是「与其他系统的硬墙」，不是任何产出表；§6.1/§8 的月度估算也从未把已实装的 `VICTORY_COINS_BY_RANK`（分段胜利金币，2026-07 前后落地）、`SEASON_PEAK_COINS`（赛季峰值金币）、战令免费轨里程碑金币三项并进来算。三项分别独立核算时看起来都"温和"（各自都过了自己的经济红线检查），但从未被人一起加总过。
-- **决策**：新增 [`ECONOMY_NUMBERS.md` §6.4](game/ECONOMY_NUMBERS.md#64-月度总产出核算2026-07-27审计补齐取代此前从未真正跑过的并入-9承诺) 作为真正的月度总产出核算表，取代"~300/月"这条早期目标基线：保守档（金段位/日均 3 胜）≈ **2,927/月**，高段档（王者/日均 10 胜封顶）≈ **8,663/月**。`ADS_DAILY_CAP`/`AD_COIN`（2026-06-27 已收敛到 10×5）不是问题所在——胜利金币（王者上限 5,400/月）和赛季峰值（王者 857/月）才是两个此前完全没被计入过的变量，且胜利金币的日历上限（`VICTORY_DAILY_WIN_CAP=10`）对高活跃玩家形同虚设，是结构杠杆最大的调参入口。
-- **为什么不算"经济崩了"**：三项各自的拍板（ADR-009 广告金币、§2.3b 胜利金币、§13.2 赛季峰值、§13.3 战令）在各自的经济红线检查里都是合理的——问题纯粹是"没人把三者放一起重算总量、重定基线"，属于治理缺口而非设计缺陷。本 ADR 不改任何数值，只补齐核算并更新基线认知。
-- **影响**：[`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) §6.1/§6.4/§13.2/§13.3 已更新指针；[`EVENTS_DESIGN.md`](game/EVENTS_DESIGN.md) §6"活动是最容易冲垮 F2P ~300 金币/月预算"这条红线措辞已改指向 §6.4，原则（不新增金币龙头）不变。上线前若认为总产出仍偏高，建议优先动 `VICTORY_DAILY_WIN_CAP` 或 `SEASON_PEAK_COINS` 高段值，而非再压广告——本 ADR 只是补账，具体调参留待上线后数据验证。
-
-## ADR-053 行军疲劳预算改为地图比率制，修复 ADR-047 vs ADR-049 的漂移 — Accepted — 2026-07-27
-
-- **问题**：design-doc-audit-2026-07 用真实 A*+真实省份几何跨 10 个世界种子核验行军疲劳梯度（[`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH](game/ECONOMY_VERIFICATION_LOG.md)），发现 ADR-047 拍定的 `MARCH_MORALE_MAX=100`（绝对格数）是针对旧 500×500 地图（半对角线≈354 格）算的数，ADR-049（2026-07-22）把地图放大到 1500×1500（半对角线≈1061 格）后从未联动重算——同省内最远单腿距离中位数已达 534 格，是 100 格预算的 5 倍多，同省常规行动触底比例 100%，"越远越亏"的设计意图对除"家门口"外的几乎所有场景已名存实亡（判据见 [`SLG_ECONOMY_CHECK.md` §5.5](game/SLG_ECONOMY_CHECK.md)）。
-- **决策**：疲劳耗尽预算从绝对格数改为**地图几何比率制**（与 `province.ts` 的 `PROVINCE_*_RADIUS_RATIO` 同一套约定）——新增 `MARCH_MORALE_FLOOR_RADIUS_RATIO=0.35`（`server/shared/src/slg/core.ts`），`MARCH_MORALE_FLOOR_TILES = MARCH_MORALE_FLOOR_RADIUS_RATIO × 地图半对角线`（`server/shared/src/slg/march.ts`），当前 1500×1500 地图下约 371 格。`MARCH_MORALE_MAX=100` 保留，语义从"100 格"改为"归一化上限 100 点"，每格消耗 = `MARCH_MORALE_MAX / MARCH_MORALE_FLOOR_TILES`；`moraleCombatMultiplier`/`MarchDoc.morale` 的取值范围（0..100）与结算逻辑不变，无需数据迁移。
-- **为什么选比率制而非直接把常量从 100 改成 300**：两者在当前地图尺寸下数值效果接近（0.35 比率折算约 371 格，与"3 倍→300"的量级一致），但比率制额外解决了**复发问题**——ADR-032→ADR-049 地图尺寸已经变过一次且很可能还会再变，绝对常量制要求每次地图改动都有人记得同步重算（本次审计前从未有人做过这一步）；比率制让 `SLG_MAP_W/H` 未来任何变化都自动重新缩放疲劳梯度，与地图上其它所有几何相关常量（`PROVINCE_CORE_RADIUS_RATIO` 等）的既有约定一致。
-- **数值选取**：0.35 并非直接复用 ADR-047 原始比率（100/354≈0.28）——0.28 折算到新地图约 297 格，实测同省最远单腿距离触底比例仍达 90%（因样本呈明显阶梯分布：252/344/392/528/534...格几个集中档位），未达 §5.5 判据"≤80%"；0.35（约 371 格）跑赢 344 格这一档，触底比例回落到 70%，满足判据，同时"家门口"短途仍 0% 触底（判据 ≤20%）。
-- **验证**：`server/shared`（含 `march.test.ts` 改为从 `MARCH_MORALE_FLOOR_TILES` 派生期望值而非硬编码）633 单测全绿，`tsc --noEmit` 全绿；`worldsvc` 44 个测试文件 339 例全绿（含 `siege.e2e.test.ts` 一处硬编码旧公式的断言改为复算真实公式）；`server/tools/econ-sim/src/marchFatigueRun.ts` 重跑：家门口触底 0%（≤20% 判据 PASS），省内最远单腿触底 70%（≤80% 判据 PASS）。结论登记见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH.5、`SLG_ECONOMY_CHECK.md` §5.5/§9。
-- **影响**：`server/shared/src/slg/core.ts`（新增 `MARCH_MORALE_FLOOR_RADIUS_RATIO`）、`march.ts`（`MARCH_MORALE_FLOOR_TILES` + `marchMoraleFromPath` 改写，导入 `province.ts` 的 `_MAP_HALF_DIAGONAL`）；`server/tools/econ-sim/src/marchFatigue.ts`/`marchFatigueRun.ts`（改用真实共享常量，不再自行假设 1 点/格）；[`SLG_DESIGN.md` §4.4](game/SLG_DESIGN.md) 同步。未暴露到客户端/openapi（沿用 ADR-047 既有的"疲劳值不展示"决定），因此本次改动零客户端改动。
-
-## ADR-054 SLG 险地持久材料掉率下调（4→0.8/级）修复 ADR-049 引入的经济稀释破线 — Accepted — 2026-07-27
-
-- **问题**：ADR-049（2026-07-22）把 `SLG_MAP_W/H` 从 500 扩到 1500，明确"密度不变、画布变大"——但险地是逐格 Bernoulli 抽样，密度不变意味着险地**绝对数量**随地图**面积**线性增长（`server/tools/econ-sim/src/strongholdRun.ts` 在 1500×1500 上重跑 100 种子实测：中位 2,817、max 3,286，约为 500×500 时代中位 567/max 636 的 5 倍）。险地占领发放的持久材料 `binding`（`strongholdMaterialLoot`，进 `SaveData.materials`，A 轨 §2.3 15% 人均稀释红线覆盖的一条持久龙头）没有跟着调整，而摊薄分母 `SLG_WORLD_CAPACITY_TARGET=400`（服务器人口设计常量，ADR-032/U4，与地图尺寸无关）也没有变——两个此前独立拍板、互不相关的常量，因为 ADR-049 只改了地图尺寸这一个变量，被动地把稀释度从旧版安全的 12.6%（500×500+等级10，max 世界×100%占领）推到 **65.2%**（1500×1500，同一场景），9 个「世界档位×占领率」验证格里 8 个突破 15% 红线（详见 `ECONOMY_VERIFICATION_LOG.md` §13-SLG-STRONGHOLD.2b）。
-- **决策**：`STRONGHOLD_LOOT_MATERIAL_PER_LEVEL`（`server/shared/src/slg/siege.ts`）从 `4` 下调到 **`0.8`**——险地固定生成于地图等级上限（现 10 级），单次掠夺从 40 binding 降到 **8 binding**。三个候选修复方向的取舍：① 调低险地生成密度让绝对数量不随地图放大——否决，直接违背 ADR-049"密度不变、画布变大"的既定决策，且会把大地图的险地密度压到比原始"~0.3%极稀疏"意图更稀疏，本末倒置；② 上调 `SLG_WORLD_CAPACITY_TARGET` 匹配大地图——否决，要压回 15% 内需要把人口容量目标从 400 上调到 ~1,740，远超 ADR-032/U4 拍板的 300–500 区间，牵连匹配/分片/社交等一整套下游系统；③ 下调持久材料掉率——**采纳**，不触碰另外两条已拍板的决策，只收紧真正因地图放大而失控的那个量。
-- **数值校准**：目标是让 max 世界×100%占领（历史上最严苛的验证格）的稀释度回落到与 500×500+等级10 时代（12.6%）同量级的安全余量，而非勉强压线；`0.8` 使该格稀释度为 **13.0%**（vs 15% 红线，2 个百分点余量），全部 9 个验证格 PASS。
-- **实现**：`server/shared/src/slg/siege.ts`（常量 + 注释校准依据）；`server/shared/test/siege.test.ts`（`strongholdMaterialLoot` 期望值同步更新，改用真实生效等级 10 而非任意等级 2，避免非整数掉落量断言）；`server/tools/econ-sim/src/stronghold.ts`（头部注释里的旧倍率说明同步）。`server/worldsvc/test/stronghold.e2e.test.ts` 断言走 `strongholdMaterialLoot()` 动态求值，无需改动，复跑 6/6 全绿；`server/shared` 单测 39/39 全绿；`tsc --noEmit` 全绿。
-- **影响**：纯服务器经济常量调整，客户端无引用需要同步改动（未见任何硬编码旧掉率的 UI 文案）。险地占领给玩家的持久 `binding` 收益从 40/次降到 8/次——这是一次实质性削弱，属于本次修复的直接代价，非附带影响。
-
-## ADR-055 工具协作方向改为 Electron 桌面壳 + 本地 git，取代 animator 云工作区同步桥 — Accepted — 2026-07-28
-
-- **决策**：编辑器工具（animator，未来纳入 vfx-editor/level-editor/map-editor）的协作/分发方向改为**一个 Electron 桌面壳**——本地文件读写 + 未来的 git 提交/PR 全部走本地，不再往 `WORKSPACE_SYNC.md` 的 Supabase 云工作区 + GitHub Action 同步桥方向投入。
-- **背景**：`WORKSPACE_SYNC.md`（P1/P2 代码已完成并合并 main）本意是解决"协作者免本地部署"，但用户明确不喜欢"云盘中转"模式，偏好本地文件 + git 记录历史；同时计划未来引入**外包美术**（非技术人员），既要求零 git 知识门槛，又要求跨平台（Win/macOS）渲染表现一致（排除 Tauri，其各平台用系统原生 WebView，渲染引擎不统一）。Electron 自带固定 Chromium，全平台一致，且 Node 主进程可用 `isomorphic-git` 隐藏 git 复杂度，两个约束一并满足。
-- **影响**：新增 [`tools/desktop-shell/DESIGN.md`](tools/desktop-shell/DESIGN.md) 为桌面壳权威文档；`animator/WORKSPACE_SYNC.md` 标记为方向已被取代。**2026-08-02 更新**：已合并的 Supabase 云工作区代码（`WorkspaceStore`/`WorkspacePanel`/`workspaceConfig`、`@supabase/supabase-js` 依赖、`btn-workspace` 按钮、webpack `NW_SUPABASE_*` 注入）及每日同步 CI（`.github/workflows/anim-sync.yml`、`tools/animator/scripts/anim-sync.mjs`、`art/units/manifest.json`）已从编辑器和仓库中移除；`animator-deploy.yml` 同步去掉了不再需要的 Supabase 构建期注入。`IOController.buildTaoBlob()` 保留（`exportTao()` 仍在用）。桌面壳当前只预留 `GitSyncController` 接口（全部方法 `not_implemented`）+ 壳/内容双层自动更新设计，尚未开始实现；真正接入外包前才做 git 提交的真实实现。
-
-## ADR-056 `equipped`/`flags` 改全服务器权威，`PUT /save` 整个下线 — Accepted — 2026-07-28
-
-- **问题**：用户反馈"本地缓存一旦错了，刷新页面治不好，会一直错下去"。排查发现存档同步体系里 `equipped`（头像/头衔/皮肤）和 `flags`（新手引导/GDPR 同意/教程完成等布尔值）是最后两块仍走"客户端同步段"套路的字段——`SaveManager.reconcile()` 对这两段永远 `{...cloud, ...local}`（本地无条件覆盖云端），本是为了保护离线编辑不被冲掉，但代价是：本地这两段一旦被任何客户端 bug/竟态写脏一次，往后**任何刷新都拉不回来**，因为这套合并逻辑在数据层面根本分不清"合法离线编辑"和"脏数据"。这是整条存档同步链路里唯一一处"刷新治不好"的地方——`equipmentInv`/`cardInv`/`wallet`/`progress` 等其它字段早在 PVE_INTEGRITY_PLAN §8 / EQUIPMENT_DESIGN §3.3 就已改server 权威，每次 `bootstrap()/refresh()` 都会整段拉云端覆盖。
-- **决策**：把 `equipped`/`flags` 也补齐成跟其它字段一样的服务器权威模式——每次写都走**专属、带校验的服务器接口**，不再有"客户端先写、攒着防抖批量传"的中间态：
-  - `equipped.title`/`equipped.avatar` 复用已存在但此前客户端从未调用过的 `PUT /title/equip`/`PUT /avatar/equip`（各自有所有权校验）；新增 `PUT /skin/equip`（`equipped["skin:<unitType>"]`，复用既有 `isSkinOwned`）。
-  - `flags.*`（含动态 `featSeen.<id>` 命名空间）新增通用 `PUT /flags`（`{key,value}`，无所有权语义，走整段 `flags` 对象替换避免 key 里天然带的字面点号被 Mongo 点号路径语法误解析成嵌套字段）。
-  - `SaveManager` 新增 `equipTitle/equipAvatar/equipSkin/setFlag` 四个方法：先写本地镜像（即时 UI 反馈）→ 后台发请求 → 成功走 `reconcile()` 确认、失败触发一次 `refresh()` 自我纠正——不同于旧模型的"本地写了就算数"，这里任何被拒绝/丢失的写入最迟下一次同步就会被服务器真值覆盖回来。
-  - `reconcile()` 删除 `equipped`/`flags` 的本地优先合并分支，改成跟其它字段一样整段取云端——这是让"刷新治百病"成立的关键：以后无论本地怎么写脏，下一次成功同步必定纠正。
-- **追记（audit-followup-fixes-0730，2026-07-30）**：`reconcile()` 另有一处"过期响应"防护——`cloud.rev < local.rev` 时整段丢弃（防止 gacha 连点等并发请求乱序到达时用旧响应回滚 cardInv/wallet）——但 `rev` 是**按账号**单调递增的计数器，不是全局的。设备在匿名/访客账号上玩一阵积累出较高的 `rev` 后，若不经登出直接登录/注册一个新账号（`doAuth()` 的 `adoptSession()→refresh()→reconcile()` 之间没有任何 rev 重置），新账号自己天然较低的 `rev` 会被误判成"过期响应"整体丢弃——UI 上 `accountId` 已经切换成新账号，但钱包/进度等权威字段仍停留在旧账号的值上。根因是该守卫拿 `local.accountId`（`this.save.accountId`）当"是否同一账号"的判据，而 `bootstrap()`/`adoptSession()` 都会在真正拉取云端数据**之前**就抢先把 `this.save.accountId` 写成登录目标账号，导致判据本身先被污染。修复：新增 `SaveManager.reconciledAccountId`（只在 `reconcile()` 内部更新，构造函数/`resetForLogout()` 用当前 `this.save.accountId` 初始化），守卫改为 `cloud.accountId === this.reconciledAccountId && cloud.rev < local.rev`——账号一旦切换，`reconciledAccountId` 仍如实指向旧账号，新账号的首次 reconcile 因此被正确识别为"不是同账号的过期响应"，整体照单全收云端数据。回归测试：`client/test/save-manager.test.ts` 新增"adoptSession into a different, newer account is not dropped by the old account's higher accumulated rev"（对回退代码验证过确实会失败：新账号的 `rev`/`wallet.coins` 会被冻结在旧账号的高 rev 值上）。
-
-## ADR-057 内容治理体系（敏感词归一化 + 词库外部化 + 举报处理闭环 + 信誉分分级处罚 + 审核/申诉后台） — Accepted — 2026-07-29
-
-- **决策**（用户拍板，"全部加，先文档后编码"）：新增 [`game/CONTENT_MODERATION_DESIGN.md`](game/CONTENT_MODERATION_DESIGN.md) 为用户名/家族名/宗门名/聊天治理的单一权威，取代 `SOCIAL_DESIGN.md` SOC10 与 `COMPLIANCE_GLOBAL.md` §7 的临时描述。四层：①`chatFilter.ts` 前置归一化预处理 + 词库外部化（admin 可管理、DB 覆盖代码默认值、消费方轮询缓存）；②补齐五个此前完全未过滤的缺口（注册首次昵称、家族名、宗门名、家族频道聊天、世界/国家频道聊天）；③新增信誉分（`AccountDoc.flags.reputationScore`）+ 分级处罚（警告/禁言/限时封禁/永久封禁），处罚执行收敛到 metaserver 新端点 `POST /internal/accounts/:id/penalty`（唯一处罚执行路径，扩展既有唯一封号路径原则）；④`ReportDoc` 补 resolve API + admin/`tools/ops` 新增举报审核与申诉面板。
-- **明确排除**：第一期不接第三方语义审核 API（隐私/GDPR 处理者协议顾虑）；gateway/WS 层实时强制断开已封禁连接是独立于本决策的既有缺口，不在本次范围内一并修（见文档 §8 O-CM4）。
-- **影响**：新增 [`game/CONTENT_MODERATION_DESIGN.md`](game/CONTENT_MODERATION_DESIGN.md)；`SOCIAL_DESIGN.md` SOC10、`COMPLIANCE_GLOBAL.md` §7 改为指针；`OPS_DESIGN.md` §2.2 能力矩阵新增 `reports.*`/`appeals.*`/`moderation.wordlist.manage`；README §1.2 登记新文档。
-  - 因为 `equipped`/`flags` 是 `SyncPatch`（`PUT /save`）唯一还在用的两个字段，两者都迁走后 `PUT /save` 变成空壳，**整个端点删除**（连同 `SyncPatch` 类型、`applySyncPatch`/`sanitizeEquipped`/`putSave`、`SaveManager` 里整套防抖/`dirty`/`pushTimer`/`flush()`/`bindLifecycle()` 机制），而不是留一个不再被调用的死端点。
-- **权衡取舍**：新方案下，若设备在"本地写入已发生、服务器请求还没成功"的极短窗口内离线/关闭页面，这次编辑不会补发（旧模型靠 `beforeunload`/`visibilitychange` 强制 flush 兜底这个窗口，现在没有对应机制，因为压根没有攒批的东西要 flush）——评估为可接受：等价的"极小概率丢一次头衔/皮肤选择，下次操作再选一次就好"，远好于"数据一旦写脏永久回不来"。GDPR 同意这类需要强保证的场景已有独立的账户级 `POST /account/gdpr-consent`（`accounts.flags.gdprConsent`）兜底，save 级 `flags.gdprConsent` 只是展示用途的镜像，未在本次改动中特别处理。
-- **实现**：`server/contracts/openapi/paths/{save,liveops}.yml` + `schemas.yml`（新增 `equipSkin`/`setFlag`、删除 `putSave`/`SyncPatch`）→ `gen:api:contracts`/`gen:api:server`/client `rest:gen` 三级重新生成；`server/metaserver/src/service/{save,liveops}.ts`、`server/metaserver/src/save.ts`（只留 `getOrCreateSave`/`isAvatarOwned`/`isSkinOwned`/`writeMigratedSave`）；`server/shared/src/types.ts` 删 `SyncPatch`；`client/src/game/meta/{SaveData,SaveManager}.ts`、`client/src/net/ApiClient/auth.ts`；调用点 `app/nav/{auth,game}.ts`、`app/createAppCore.ts`（去掉 `onSyncError`）。测试：新增 `server/metaserver/test/liveops-equip.test.ts`（无 Mongo，覆盖 `equipAvatar`/`equipSkin`/`setFlag` 的所有权校验+边界），删除已失效的 `save-patch.test.ts`，`save.e2e.test.ts` 的 `PUT /save` 用例改写为 `PUT /flags` 并发场景；client `save-manager.test.ts` 补齐 `setFlag`/`equipTitle`/`equipAvatar`/`equipSkin` 的乐观写入+自纠正回归。验证：server `vitest run` 724/724（含真实 Mongo e2e）；client `tsc --noEmit -p tsconfig.test.json` + `vitest run` 808/808 + `webpack --mode production` 全绿。
-- **合并后 CI 回归修复（2026-07-29，PR #75）**：`reconcile()` 改整段取云端后，暴露了两处此前被"本地优先合并"掩盖的问题，均在 `full-link E2E (live stack)` 里炸出来：
-  1. **测试 harness**：`client/test/harness/HeadlessPlatform.ts` 靠预置本地 `flags.tutorial_done=true` 跳过新手引导——旧合并逻辑下这个本地值永远存活，现在账号一登录/一同步就被云端的 `{}` 覆盖，导致每个 headless 账号首次进大厅都改跳教程关（`screen` 变 `'game'` 而非 `'lobby'`），5/5 测试超时。修复：`HeadlessAppViews.showGame()` 比照已有的 `showDeckBuilder`/`showFeatureGuide` 自动确认惯例，`opts.tutorial` 时直接调用 `cb.onExitToLobby()`——不再依赖旧的"本地永远赢"技巧。
-  2. **网关地址从未持久化**（连带修复，非本次超时的直接病因）：`createAppCore.ts` 的 `applyGatewayUrl()` 只更新内存 `state.gatewayUrl`，从未写回 `nw_gateway_ws`——本地/CI 环境 meta 和 gateway 不同源（`:18080` vs `:8086/gw`）时，任何跳过服务器往返、直接用 `getGatewayWsUrl(storage)` 兜底推导的静默重启都会先打错端口/路径一次。顺手用 `net/config.ts` 新增的 `persistGatewayWsUrl()` 修了：`applyGatewayUrl()` 每次拿到服务器真值就写回 `nw_gateway_ws`。
-  3. **登录前设置的 flags 在首次 reconcile 时被清空（真正病因）**：`SEEN_INTRO_FLAG`（看完 intro）、`GDPR_CONSENT_FLAG`（同意 GDPR）都在**账号尚不存在时**通过 `setFlag()` 写入——此时 `online()`（`!!api?.hasToken()`）为假，`setFlag()` 只写本地镜像、不推送服务器（102 行 `if (!this.online()) return;`）。账号随后注册/登录时，`doAuth()` 里第一次 `adoptSession()` 触发的 `reconcile()` 把 `flags` 整段替换成云端全新存档的 `{}`（ADR-056 的核心改动），**把刚刚本地写入、从未上过云的这两个 flag 一并清空**——线上表现为：新账号首次登录当次会话不受影响（`goIntro`/`gateConsent` 的判断已经过了），但该账号**任何后续的"静默重启"**（持有 token 直接进大厅，不走 intro/login 界面）都会因为 `getFlag(SEEN_INTRO_FLAG)` 变假而被 `start()` 错误地重新导向 `goIntro()`——`full-link.e2e.ts` 的 3 客户端 restart 场景（A 快照重启）第一个踩中，`screen` 卡死在 `'intro'`（测试从不调用 `intro.onFinish()`），`waitFor('restart online lobby via persisted token')` 15s 超时。这不是测试专属问题，真实玩家的老账号重启 app 也会复现"意外又看到一次新手引导/GDPR 弹窗"。权衡取舍段落原本讨论的是"本地写入后极短窗口内掉线"这种小概率场景，没覆盖到"账号还不存在时写的 flag 必然被首次同步吃掉"这个必现路径。修复：`auth.ts` 的 `doAuth()` 在 `adoptSession()` 之前快照本地 `flags`，之后对比：凡是之前为真、reconcile 后被清空的 key，用 `setFlag()` 补写一次（这次 `online()` 已为真，正常走服务器往返 + reconcile 确认）——通用地覆盖 `SEEN_INTRO_FLAG`/`GDPR_CONSENT_FLAG` 及未来任何"登录前设置"的 flag，不是只补丁这两个具体 key。
-
-## ADR-058 客户端出站请求全局限速 5/秒 + 补齐 metaserver 超时 + 三个 SLG 社群场景补齐 busy 锁/按钮置灰 — Accepted — 2026-08-01
-
-- **问题**：客户端向服务器发请求时，若服务器没有及时返回，此前只有 18 个 meta 经济类场景（Shop/Card/Equipment/Gacha/...）通过 `ui/busyTracker.ts` 的 `BusyTracker`+`withTimeout` 范式挡住重复点击；SLG 社群类场景（`SectScene`/`FamilyScene` 的创建/加入/退出/解散/投票/结盟/踢人/职位任免/审批入群等）和 `AuctionScene` 的 Buy/Cancel 完全没有这层保护——弱网下可被连点刷出重复请求。更深一层，客户端从未有过"整体请求节流"：三套独立 transport（metaserver REST `ApiClient`、worldsvc/social/auction REST `WorldApiClient`、WS 业务消息 `NetClient`）各自为战，其中 metaserver 的 `ApiClientBase.fetchRaw` 甚至完全没有超时（裸 `fetch`，无 `AbortController`），挂起会无限等待。
-- **决策**：
-  1. 新增 `client/src/net/rateGate.ts`：令牌桶，容量 5、每 200ms 补 1 个（稳态 5 次/秒），`globalRequestGate.acquire()` 排队 FIFO，接入 `ApiClientBase.fetchRaw`、`WorldApiClient.req`、`NetClient.sendClient`（业务消息发送的公共出口）三处。WS 侧 `submitCmd`（对战中打牌/升级/刷新手牌，延迟敏感）和 `ping`（心跳，误判掉线风险）经调研确认调用频率低且不能延迟，显式豁免（`sendClient(client, {rateLimited:false})`），其余 WS 消息（房间/切磋/对局结果/仲裁等大厅级事件）纳入限速。
-  2. `ApiClientBase.fetchRaw` 补上 `AbortController` + 10s 超时（对齐 `WorldApiClient.req` 已有实现），修复此前完全无超时的缺口。
-  3. `SectScene`/`FamilyScene`/`AuctionScene` 三个场景补齐 `BusyTracker` 范式：加 `protected readonly bt`字段 + `update()` 里 `bt.tick(dt)`；每个 mutating action（创建/加入/退出/解散/投票/结盟/踢人/设职位/审批/发消息/买卖/取消挂单）套 `if (bt.busy) return` → `bt.start()` → `withTimeout(请求)` → `finally bt.stop()`；持续可见的按钮（非"点了立刻关闭弹窗"那种）在渲染处按 `enabled: !bt.busy` 置灰且不注册热区（复用 `ShopScene`/`SectScene.addCenterButton` 已有的三元写法：`enabled ? 常规色 : C.mid/C.btnOff`）；三个场景各自的 `errorMsg(e)` 补一个 `TimeoutError → common.networkTimeout` 分支（`net/apiErrorMessage.ts` 早有这个分类逻辑，但各场景自己的 `errorMsg` 之前没接上，`TimeoutError` 会掉到 `String(e)` 兜底显示成裸对象字符串）。
-  4. 范围收窄：弹窗内选中即关闭的行为（pick-modal 行、confirm 弹窗 OK 按钮）不做视觉置灰——`closeModal()` 已在 `do*` 方法开头同步执行，加上 `bt.busy` 守卫足以防止重复触发，不必改造共享的 `confirmDialog.ts`/pick-modal 组件；仅当审批弹窗（`FamilyScene` 的加入申请 approve/reject）本身要在原地停留多轮时才额外处理（`doRespondJoinRequest` 在 `bt.start()` 后立即重绘 `showJoinRequestsModal()` 展示灰态）。
-- **验证**：`client && npx tsc --noEmit` 全绿；`npm run build:web` 全绿（仅预存的资源体积告警，与本次改动无关）。本机未起 metaserver/worldsvc 后端（无 docker-compose 栈），无法走真实登录点击 Sect/Family/Auction 全流程；改用临时 `__NW_DEBUG` 调试钩子（`app.ts` 里 `new PIXI.Application` 之后一次性挂载 `SectScene`/`FamilyScene`/`AuctionScene`/`globalRequestGate`/`BusyTracker`/`PIXI`，验证完立即移除，`git diff` 确认 net-zero）在真实运行的 webpack dev bundle 里直接跑：① `globalRequestGate.acquire()` 连打 12 次，前 5 次立即 resolve（令牌桶突发容量 5），之后转入排队节流（浏览器后台标签页 `setInterval` 被 Chrome 限速到 ~1/秒，节流*节奏*失真但突发+排队行为符合设计）；② `Object.create(SectScene.prototype)` 直调 `addBarButton(...,enabled=false)` vs `enabled=true`：前者 `hitRects.length===0`（不可点）、后者 `===1`，按钮本身仍绘制（灰态可见）；③ `BusyTracker` 的 `start/tick/stop` 时序（1s 后 `loadingVisible` 才置真）按预期。三个场景 render.ts 里新增的置灰分支是同一个"`enabled` 三元 + 条件推入 `hitRects`"写法的逐点位复用（已在 `addBarButton`/`addCenterButton` 两处验证过的同一模式），风险可控。**待补充**：下次有本地全栈环境（或用 memory `standalone-mongod-manual-devserver` 记录的免 Docker 单机 mongod + metaserver + socialsvc 组合）时，应走一遍真实登录点击流程做视觉核对。
-- **影响**：`client/src/net/{rateGate.ts(新增),ApiClient/base.ts,WorldApiClient.ts,NetClient.ts}`；`client/src/scenes/{SectScene,FamilyScene,AuctionScene}/{base.ts,actions.ts或tradeActions.ts,render.ts或list.ts}`；[`claudedocs/client-modules.md`](../claudedocs/client-modules.md) 网络层表格同步新增 `net/rateGate.ts`/`ui/busyTracker.ts` 条目。不涉及协议/契约改动，纯客户端行为调整。
-
-## ADR-059 物品唯一id/溯源范围 — 装备/角色卡补溯源字段，材料/皮肤/称号维持数量计数/去重集合 — Accepted — 2026-08-04
-
-- **背景**：拍卖行"选择物品"picker 从未接入皮肤类型（见 AUCTION_DESIGN.md §9 任务11），排查时用户提出更大的问题——是否所有物品类型（材料/装备/角色卡/皮肤/称号）都应该有各自的唯一实例id、可追溯来源和当前状态。逐类型审计（详见 [`ITEM_IDENTITY_DESIGN.md`](game/ITEM_IDENTITY_DESIGN.md)）后的结论与用户的初始判断不完全一致。
-- **决策**：
-  1. **装备（`EquipmentInstance`）/ 角色卡（`CardInstance`）**：已有服务端生成、Mongo `_id` 约束背书的唯一实例id + 完整状态字段（等级/词条/装备槽/锁定），全生命周期稳定，拍卖/邮件转移全程按 instanceId 操作不丢身份——**这部分本就完整**。唯一缺口是"来源溯源"（哪次抽卡/合成/掉落获得、何时获得），本次补上可选字段 `sourceType`/`obtainedAt`（`server/shared/src/types.ts`、`server/contracts/openapi/schemas.yml`，向后兼容、无需 `SAVE_VERSION` 迁移），在 4 个装备产出点 + `grantCards` 的 5 个调用方分别打上具体标签（`craft`/`gacha:<orderId>`/`checkin:<monthKey>`/`pve_drop:<levelId>`/`pve_anchor:<levelId>`/`starter`）。**当前无任何功能消费这两个字段**——纯预留，为未来客服溯源/反作弊审计打基础。
-  2. **材料（scrap/lead/binding + `inventory.items`）/ 皮肤（`inventory.skins`）/ 称号（`titles`）**：审计判断这三类维持现有"数量计数"/"去重集合"模型是合理设计而非缺陷——它们本质上是同质化可替换资源（材料无词条/品质随机性，皮肤/称号无等级，跟金币一样"这一份"和"那一份"无游戏机制差异），给它们逐一分配实例id属于过度设计（保守估计 20-30+ 文件改动，等价于重写一套核心状态机：库存操作从 Mongo `$inc` 原子加减换成"选择N份实例并原子移除"、所有奖励发放入口要生成带来源标签的实例而非匿名计数增量、存档体积从"3个数字"暴涨到"上千个实例对象"重演 `deliveredOrders` 曾踩过的性能坑）。**用户不同意这个判断，明确要求全部物品类型最终都要有唯一id**——本次先落地上面第1点（装备/角色卡溯源字段 + 皮肤拍卖UI），材料/皮肤/称号的完整实例化改造记入 `ITEM_IDENTITY_DESIGN.md` 的分阶段待办清单，作为独立后续立项，不在本次实现范围。
-- **影响**：`server/shared/src/{types.ts,mongo.ts,equipment.ts}`、`server/metaserver/src/{cards.ts,equipment.ts,economy.ts,service/{auth,liveops,pve}.ts}`、`server/contracts/openapi/schemas.yml`（+ 级联 codegen：`openapi.yml`/`routes.gen.ts`/client `net/openapi.ts`）、`client/src/game/meta/SaveData.ts`；新增 [`ITEM_IDENTITY_DESIGN.md`](game/ITEM_IDENTITY_DESIGN.md) 承载材料/皮肤/称号实例化的后续任务清单草案。`EQUIPMENT_DESIGN.md`/`CHARACTER_CARDS_DESIGN.md` 补充 `sourceType`/`obtainedAt` 字段说明。
-- **补测试（同日追加）**：补测试时跑全量既有 vitest 套件（此前只跑过 `tsc`+`build`，没跑测试），揪出一个真实回归——`NetClient.sendClient` 把限速消息的发送从"同步"变成了"至少一个 microtask 之后"（`globalRequestGate.acquire().then(...)`，即使令牌充足 `Promise.resolve().then()` 仍要走一次微任务），导致 `test/net-client.test.ts` 的 `drops sends while not open` 断言失败（`client.joinRoom(...)` 后立即读 `sent` 数组不再同步命中）。修复：给 `RateGate` 加 `tryAcquire(): boolean` 同步快速路径（`acquire()` 内部也改为先走 `tryAcquire()`），`NetClient.sendClient` 优先用它——预算充足时发送依旧同 tick 同步落地，只有真正耗尽预算才落到 `acquire()` 排队等待。顺带修了 `client/test/familySendButton.test.ts` 里的 `FakeFamilySceneBase`（缺 `bt` 字段，`submitMessage()` 读 `this.bt.busy` 直接 throw）。新增测试：`client/test/rate-gate.test.ts`（`RateGate` 令牌桶单测，真类 + `vi.useFakeTimers()`，不碰共享单例避免跨用例状态泄漏）、`client/test/net-client-rate-limit.test.ts`（`vi.mock('../src/net/rateGate')` 断言 `ping`/`submitCmd` 完全不摸网关、其余消息走 `tryAcquire` 同步快路径或 `acquire()` 排队+晚到丢弃）、`client/test/api-client-timeout.test.ts` + `world-api-health.test.ts` 新增小节（`ApiClientBase.fetchRaw`/`WorldApiClient.req` 的 10s 超时 + 限速接入）、`client/test/ui/{sectActionBusyLock,familyActionBusyLock,auctionActionBusyLock}.ui.ts`（真场景构造，busy 期间二次调用不重发、按钮无热区、`errorMsg(TimeoutError)` 分支、超时后自动解锁）。验证：`npx tsc -p tsconfig.test.json` 全绿；`npm run test`（122 文件/932 例）+ `test:ui`（109 文件/917 例）+ `test:render`（8 文件/33 例）全绿。**worktree 环境注**：新建 worktree 首次跑 `test:ui` 报一批 `Failed to load url jsonwebtoken`——`server/` 含 `@nw/*` workspace 包不能整体 junction node_modules（见 `claudedocs/worktrees.md` 陷阱记录），必须在 worktree 里对 `server/` 单独 `npm install`，装完即全绿，并非本次改动引入的问题。
-
-## ADR-060 SLG 世界地图新增两档归属色：宗门成员（紫）/ 盟友宗门（琥珀） — Accepted — 2026-08-08
-
-- **背景**：用户截图报告世界地图配色反了（见本文件 ADR-024 订正记录），顺带发现更早就存在的一个空档——G5（ADR-024/§18.7）落地时只区分了三档：自己（`mine`，蓝）/ 家族成员（`ally`，绿，共享视野）/ 结盟宗门成员（`allySect`，黄描边，不共享视野）。**同宗门但不同家族**的成员——即宗门内除自己家族外的其他家族成员——两个标记都不命中，落进默认分支被当成纯敌方渲染成红色，跟真正的敌人肉眼无法区分。这与 `SLG_DESIGN.md §8.2`"宗门内视野共享"的原始表述、以及 `friendlyAccountIds`/`ownSectFamilyIds`（连地判定、驻扎目标、攻击豁免早就把整个宗门当友方处理）不一致——只有**地图上色**这一块从未跟上。
-- **决策**：新增服务端字段 `WorldTileView.sectmate?: boolean` / `WorldTileSparseView.sectmate?: boolean`（`sectMateMemberIds`：本宗门除自身家族外的其他家族成员集合，与 `allySectMemberIds`/`familyMemberIds` 同构，同样不参与视野照亮——只有家族共享视野，§18.6 未改）；客户端新增两档纯色：
-  - **宗门成员（`sectmate`，紫墨）**：`SECT_TINT=#c9a8e0` / `SECT_BASE_TINT=#8e44ad`。
-  - **盟友宗门（`allySect`，琥珀墨，此前只有黄描边、底色仍是敌方红——本次给它一块真正的专属 wash）**：`ALLY_SECT_TINT=#f0c987` / `ALLY_SECT_BASE_TINT=#d68910`，黄描边（`ALLY_SECT_BORDER`）保留叠加在上面。
-  - 归属优先级（互斥）：自己 > 家族成员 > 宗门成员 > 盟友宗门 > 敌方——与服务端 `getMap` 打标签的互斥顺序一一对应。
-- **连带修复的两处客户端逻辑缺口**（既有代码只认 `mine`/`ally`/`allySect`，从未预留过"宗门非同家族"这一档，加了 `sectmate` 后顺手补齐，否则新字段引入了但没被两处已有的"友方判定"消费，等于没修完）：
-  1. `WorldMapInput.ts` 地块点击菜单：`tile.ally || tile.allySect` 判定"友方地块（可驻扎、不可攻打）"漏了 `sectmate`——宗门内非同家族成员的地块之前会被误判进敌方分支，客户端弹出"进攻"按钮，点了会被服务端 `friendlyAccountIds` 拒绝（`ALLY_TILE`）。
-  2. `occupyFrontier.ts` 连地前沿高亮（`ownsCell`）只认 `mine`/`ally`，漏了 `sectmate`——服务端连地判定（`isConnectedToSectTerritory`/`ownSectFamilyIds`）范围是整个宗门，客户端预览却只认自己+家族，会让"贴着宗门内其他家族的地"这种合法扩张目标不显示为可占领前沿。
-  3. `WorldMapRenderer/pool.ts` 的 `ownerKeyOf`（基地锚点识别的兜底键）、`tileGraphics.ts` 的等级点/主城占位图标/箭塔阻挡建筑 tint、`WorldMapRenderer/city.ts` 的主城标签色——四处硬编码的"己方/家族/敌方"三态色也一并加上宗门成员/盟友宗门两档，否则颜色只在领地大色块上对了，图标/标签/建筑还是老三色。
-- **影响**：`server/contracts/openapi-world.yml`（`WorldTileView.sectmate`/`WorldTileSparseView.sectmate`）+ `rest:gen` 重生 `client/src/net/openapi-world.ts`；`server/worldsvc/src/{worldTypes.ts, core/vision.ts, core/map.ts}`；`client/src/net/WorldApiClient.ts`（手维护的 `WorldTileSparseView` 接口同步补字段）；`client/src/scenes/worldmap/{tileStyle.ts, tileGraphics.ts, occupyFrontier.ts, WorldMapInput.ts, WorldMapNet.ts, WorldMapRenderer/{city.ts,pool.ts}}`；新增 e2e `server/worldsvc/test/alliance-mark.e2e.test.ts`（sibling-family-in-own-sect 标记用例）+ 更新 `client/test/ui/worldMapCityLabel.ui.ts` 颜色断言。
-- **验证**：server `tsc -b shared engine worldsvc gateway` 全绿；worldsvc 全量 vitest **53 文件 / 443 例**全绿（含新增用例）；client `tsc --noEmit` 全绿；`worldMap*` vitest UI 套件 **22 文件 / 207 例**全绿；`webpack build:web` 全绿。
-
-## ADR-061 皮肤实例化落地（ITEM_IDENTITY_DESIGN.md 任务1）：真实例 + 玩家主动出售，拍卖挂单契约不变 — Accepted — 2026-08-08
-
-- **背景**：账号 tao 抽到一个重复皮肤，背包不显示、也拿不去拍卖。排查发现 `markDuplicates`（`server/metaserver/src/economy.ts`）对重复皮肤是纯 no-op——不生成新实例、不补偿——GACHA_DESIGN §4.3 描述的"重复退币"从未真正接入发货流程（`DUPE_REFUND_COINS` 此前只在离线 `econ-sim` 工具里用到）。用户确认这正是 ADR-059 / `ITEM_IDENTITY_DESIGN.md` 记录的任务1（"皮肤实例化"），要求现在实现，并明确设计方向：皮肤应像角色卡一样有独立物品id，玩家可以选择拿去拍卖，也可以选择直接出售给系统换金币——但出售必须是玩家主动发起，系统不能自动处理。
-- **决策**：
-  1. **数据模型**：新增 `SkinInstance{id, skinId, sourceType?, obtainedAt?}` + `skinInstances` 集合（`_id`=instanceId，索引 `{accountId,skinId}`），仿 `EquipmentInstance`/`equipmentInstances` 的既有模式。`SaveData.inventory.skins: string[]` **语义完全不变**——仍是"当前是否拥有至少一份"的去重视图，`skin.ts` 负责在实例增减时同步它，代码库里约 20 处既有读取点（装备槽校验、`everOwned`、客户端 UI 等）零改动。
-  2. **gacha 重复皮肤从"丢弃"改成"真实例"**：`deliverLootBox`/`deliverGrant`/`deliverMailGrant`/`deliverOrder`（fate 兑换、商店直购、系统邮件附件）现在对每一次皮肤结果都铸造一个 `SkinInstance`（确定性 id，幂等），无论是不是重复——`markDuplicates`/`newSkins` 只决定 NEW 徽章和 `everOwned` 记账，不再决定"要不要真的发东西"。
-  3. **"已装备"限制从"完全禁止"放宽为"只保护最后一份"**：`escrowSkin`（拍卖挂单）与新增的 `sellSkinToSystem`（出售给系统）现在允许挂拍/出售一件装备中皮肤的**多余**副本，只在会导致装备中的皮肤归零时才拒绝（`SKIN_IN_USE`）。
-  4. **新增玩家主动发起的"出售给系统"入口**（⚠️ 已于 2026-08-15 撤销，见本条末尾"修订"）：`POST /skins/sell`（`idempotencyKey` 幂等），售价复用已有的 `DUPE_REFUND_COINS[目录稀有度]`（legendary 1500 / epic 400 / rare 50 / common 10，与 GACHA_DESIGN §4.3 早先写的数字一致，不另编新值），走 `commercial.grant` 入账。**明确不做**"抽到重复自动转币"——那是旧设计里从未真正实现的路径，现在的方向是"先给你一个真实道具，卖不卖你自己决定"。
-  5. **拍卖挂单契约刻意维持 `{skinId}` 不变，不按 ADR-059/`ITEM_IDENTITY_DESIGN.md` 原计划改成 `{instanceId}`**：皮肤同质（无等级/词条），instanceId 对 auctionsvc/客户端毫无额外信息量，暴露它只会平白牵动 `auctionsvc/auctionService.ts`、`openapi-auction` schema、`AuctionScene` picker 三处——而这次要修的 bug（重复皮肤消失）跟"挂单体长什么样"无关。`escrowSkin(accountId, skinId, orderId)` 对外接口不变，内部实现从"字符串增删"换成"挑一份实例操作"是纯内部换血；`auctionsvc` 全量测试原样通过验证了这一点。
-  6. **老账号自愈，不做 SAVE_VERSION 迁移**：`assembleSkinCounts`（GET /save 的 `skinCounts` join，仿 `assembleEquipmentInv`）遇到"`inventory.skins` 有、`skinInstances` 一份都没有"的账号，`$setOnInsert` 补一条 `sourceType:'legacy'` 实例，幂等自愈；`escrowSkin`/`sellSkinToSystem` 同样有 `Math.max(count,1)` 兜底。
-  7. **客户端**：`SaveData.skinCounts?: Record<string,number>`（GET /save 自动 join；additive-only 字段，`migrate.ts` 的 `fillDefaults` 自动补 `{}`，未升 `SAVE_VERSION`）；`AuctionScene` picker 的 `listableSkins()` 从"未装备"放宽为"未装备，或有多余份数"，卡片新增出售分区（底部热区拆成"拍卖 ›"/"出售 ›"各一半，走 `client.sellSkin()` → `/skins/sell`，`sellBusy` 防双击——⚠️ 出售分区已于 2026-08-15 撤销，见本条末尾"修订"）。
-- **影响**：`server/shared/src/{types.ts,mongo.ts}`（`SkinInstance`/`SkinInstanceDoc`/`skinInstances` 集合+索引/`EquipmentIdemDoc.op` 加 `skin_sell`）；`server/metaserver/src/{skin.ts,economy.ts,app.ts,internal/economyRoutes.ts,service/{inventory.ts,social.ts}}`；`server/contracts/openapi/{paths/inventory.yml,schemas.yml}` +级联 codegen（`openapi.yml`/`routes.gen.ts`/client `net/openapi.ts`）；`client/src/{game/meta/SaveData.ts,net/ApiClient/equipment.ts,scenes/AuctionScene/{base.ts,picker.ts},app/nav/world.ts,i18n/locales/{zh,en,de}.ts}`；`design/game/{ITEM_IDENTITY_DESIGN.md,GACHA_DESIGN.md,AUCTION_DESIGN.md}` 同步更新。
-- **验证**：`server/metaserver/test/skin.e2e.test.ts`（15 例，新增"装备中的多余份可挂拍/可出售，最后一份仍被拒绝"+`sellSkinToSystem` 全套：售价按稀有度、幂等、未拥有 404、装备保护 409、`grantSkin` 落地真实例、两笔交易叠出 2 份）+ `economy.e2e.test.ts` 新增断言（重复皮肤真的铸造第二个实例、`skinCounts` 正确、商店/命运点重复兑换同一皮肤同样铸造第二实例而非静默丢弃、老账号自愈幂等不重复补实例）+ `mail-claim.e2e.test.ts` 新增断言（邮件附件重复皮肤同样铸造第二实例——同一类 bug 在这条路径上也修了）；metaserver 全量 **67 文件 / 845 例**全绿、shared **36 文件 / 713 例**全绿、auctionsvc **9 文件 / 97 例**全绿（挂单契约不变，零改动即通过）；client `tsc --noEmit` 全绿；`npm run build:web` 全绿；client `vitest run`（**151 文件 / 1224 例**）+ `vitest run --config vitest.ui.config.ts`（**133 文件 / 1241 例**，含 `auctionPickerDedupe.ui.ts` 新增 6 例：放宽后的 `listableSkins`、"×N"标签、`onSell` 接线、双击防抖、真实渲染不崩溃；`api-client.test.ts`/`migrate.test.ts` 各新增 1/2 例覆盖 `sellSkin` 请求体与 `skinCounts` 向后兼容补全）全绿。
-- **未验证**：本次会话未起真实的登录态 + metaserver/commercial/auctionsvc 全套后端联调浏览器截图（成本与已有的 e2e/headless-PIXI 覆盖不成比例——两者已分别验证了服务端真实 HTTP+Mongo 行为、和客户端真实 PIXI 场景树渲染），只有自动化测试覆盖，没有人工截图核对。
-- **修订（2026-08-15）：撤销决策点 4（"出售给系统"入口）及其客户端部分（决策点 7 的出售分区），整条链路端到端删除。** 用户实测：两个价值一万金币左右的皮肤卖给系统只到手 400 金币。根因是决策点 4 里"复用 `DUPE_REFUND_COINS` 当售价、不另编新值"这个当时看起来很省事的选择——那张表的量级是"抽到重复时的兜底补偿"，跟皮肤在拍卖行的真实成交价差一到两个数量级，所以这个入口实际上只起到了一个作用：让玩家误操作烧掉价值。**修正方向不是调价而是删入口**——多余皮肤跟装备/角色卡/材料一样只有拍卖行一个出口，价格交给市场，不再由系统给一个权威但错误的报价。决策点 1/2/3/5/6（实例化、重复不再丢弃、只保护最后一份、挂单契约不变、老账号自愈）全部保持不变；`DUPE_REFUND_COINS` 常量保留（离线 econ-sim 仍在用）。删除面：client `AuctionScene`（出售分区/`onSell`/`sellBusy`/`cb.sellSkin`/`errorMsg` 的 `ApiError` 分支）+ `app/nav/world.ts` 接线 + `ApiClient.sellSkin` + `auction.sellHint`·`sellSuccess` 三语文案；server `skin.ts sellSkinToSystem` + `service/inventory.ts` 路由 + `service.ts` 转发 + `contracts/openapi/paths/inventory.yml` 的 `/skins/sell`（级联 codegen 重生）+ `EquipmentIdemDoc.op` 的 `'skin_sell'`。回归测试钉住"入口不能悄悄回来"：`skin-unit.test.ts` 断言 `POST /skins/sell` → 404 且皮肤实例数不变，`auctionPickerDedupe.ui.ts` 断言"即使仍然传入 `sellSkin` 回调"皮肤卡也只推一个整卡热区（先临时加回一条半行热区确认该用例真的会红，再改回来）。验证：client `tsc --noEmit` + server `tsc -b` 全绿；metaserver **103 文件 / 1639 例**、shared **51 文件 / 957 例**、auctionsvc **15 文件 / 181 例**、client 常规 **157 文件 / 1314 例** + UI **185 文件 / 1649 例** + sim **8 文件 / 13 例**全绿。**未做**：没起全套后端 + 登录态做浏览器截图核对（本次是纯删除，且 UI 断言直接跑在真实 PIXI 场景树的热区上）。
-
-## ADR-062 PvP 攻打真人领地复用占领倒计时（不再即时易主）+ 修复已占领地块的资源类型不显示 — Accepted — 2026-08-09
-
-- **背景**：用户报告两处体验问题：①攻打其他玩家的领地，胜利后走的是 §5.1/§16 旧模型的"即时易主"，弹一个独立的"Siege won!"弹窗；而占中立地（ADR-037 §5.4）胜利后是 5 分钟占领倒计时 + 轻量 toast，两者体验不一致，用户要求统一成占中立地那一套。②已占领的地块在地图上和信息面板里都看不到资源类型，调研发现是客户端渲染/面板逻辑把"显示 resType"错误绑定在 `tile.type==='resource'` 或"落进中立分支"上，而服务器一直是"只要 `resType` 存在就下发"。
-- **决策**：
-  1. **普通领地格（非主城、非 bridge/plankway 关口）的 PvP 攻打胜利，从即时易主改成走 ADR-037 §5.4 同一套占领倒计时**：`combatSiege/arrival.ts` `landSiege` 的"领地易手"分支不再直接 `$set ownerId`，改成 `$set contestedBy/contestedUntil(+OCCUPY_HOLD_SEC)/contestedGarrison` + `$unset ownerId/garrison`，并 upsert 一份 `OccupationDoc`——`occupation.ts` 的 `settleOccupation`/`processDueOccupations` 完全复用、零改动（它本就不区分"这格以前是中立还是玩家领地"）。防守方的 `yieldRate` 立即重算（立刻失去这块地），攻击方的 `yieldRate`/`applyNationChange` 推迟到 5 分钟后结算时才生效；掠夺/战报仍在战斗判定的那一刻立即结算（不变）。倒计时期间，原防守方（或任何人）对这个"无主但 contestedBy 有人"的格子发起新的 `attack`，天然落进已有的驱逐分支（`applySiege` 顶部 `!target?.ownerId && contestedBy` 判断 → `applyOccupationExpulsion`）——等价于"PvP 占地也有一个 5 分钟反打窗口"，无需新代码。
-  2. ~~明确排除 bridge/plankway（玩家已拥有的关口），保持即时易手不变~~ **（已被本 ADR 下方"2026-08-09 订正"条目推翻，见下）**。
-  3. **客户端弹窗改为服务器权威判断**：`WorldMapNet.applySiegeResult` 原先只要 `marchKind==='attack'` 就弹"Siege won!"+回放校验 modal；现在攻方胜利时先 `await` 地图刷新，再看目标格的 `contestedByMe`（既有字段，`core/map.ts` `o.contestedBy===accountId` 计算，本次未新增契约字段）——为真（本次胜利只是开了个倒计时，涵盖新的 PvP 占地与既有的驱逐胜利两种场景）则改成跟占中立地一样的轻量 toast（新增 `world.siegeWinHold`）；为假（主城/结构磨血未破防）维持原 modal。回放入口不受影响，仍可从"Battle replays"列表打开。
-  4. **修复已占领地块的资源类型不显示**：`tileGraphics.ts` 的 `motifResType`（地图图标）和 `WorldMapInput.ts`（点格信息面板，之前只有中立分支的 fallthrough 显示资源行）都改成"只要 `tile.resType` 存在就显示"，不再要求 `tile.type==='resource'` 或落在中立分支——服务器（`core/map.ts` `tileDocView`）一直是"只要 `resType` 存在就下发，不管 `type`"，占领/攻占结算也一直保留 `resType` 字段，纯粹是客户端这两处此前没吃到这份数据。
-  5. **2026-08-09 同日订正（用户当场纠正范围）**：用户看完上面第 2 点的初版落地后指出——"所有的地或者建筑、城池，战斗胜利之后都需要 5 分钟的占领时间，游戏里没有可以立即占领或易主的东西"。逐项核实后：
-     - **关口（bridge/plankway）不再排除**：`landSiege` 里 PvP 攻打已拥有关口的分支，并入普通领地那套通用占领倒计时写入。
-     - **PvE 攻打无主关口（`applyCrossingSiege`）、PvE 攻打据点（`applyStrongholdSiege`）**：这两处此前也是秒占（战斗判定的瞬间直接 `$set ownerId`），一并改走占领倒计时；据点的一次性资源/材料奖励仍立即结算（掠夺惯例不变），只有 `ownerId`/`yieldRate`/`applyNationChange` 推迟到落地。
-     - **主城核实为无需改动**：ADR-026 的攻城值延迟结算（`SLG_SIEGE_DAMAGE_DELAY_MS=5*60*1000`）本来就是同一时长的延迟落地机制，语义早已符合"胜利后 5 分钟才生效"，只是走另一套既有管线（延迟扣血→归零才 `passiveRelocate`），不需要接入占领倒计时框架。
-     - **生产代码重构**：`occupation.ts` 原私有的 `startOccupationHold`（仅服务占中立地+驱逐两个调用点）拆成 `writeContestedHold`（纯数据写入：contested 字段 + `OccupationDoc` upsert + 可选立即结算防守方 yieldRate，不含推送/战报）+ `startOccupationHold`（写入后再补上"无防守方"场景共享的推送+战报）。两者改为 public + 入参从 `ProceduralTile` 放宽为通用 `HoldTileDesc{type,level,resType?}`（PvP 场景的真实 tile 状态来自 `TileDoc`，不能像纯 PvE 那样直接现算 `proceduralTile()`）。`landSiege`（`arrival.ts`，自带统一推送尾巴）调 `writeContestedHold`；`applyStrongholdSiege`/`applyCrossingSiege`（无防守方）调 `startOccupationHold`。
-     - **关口类型落地不丢失**：`OccupationDoc` 新增可选 `type?: TileType`（缺省=`'territory'`，此前唯一行为；仅关口场景显式带 `'bridge'/'plankway'`，由 `writeContestedHold` 按 `desc.type` 自动判断），`settleOccupation` 落地时改用 `d.type ?? 'territory'`。
-     - **客户端连带修复**：`WorldMapInput.ts` `onTileClick` 的 `contestedUntil` 判断原排在 `type==='stronghold'` 之后——倒计时期间格子 `type` 仍是捕获前的样子（如 `'stronghold'`），旧顺序会让一个正被占领的据点继续弹"攻打 NPC 驻军"菜单而不是"占领中/可驱逐"菜单，遂将 `contestedUntil` 分支上提到 `type==='center'`/`'stronghold'` 之前。
-     - **已知遗留问题（未修，仅记录）**：`applyOccupationExpulsion` 驱逐一个真实玩家的占领倒计时时，统一走 `startOccupationHold` 内部硬编码的 `recordSiege(m, undefined, 'attacker_win', ...)`——被驱逐者的 accountId 不进这场战报的 `defenderId`，战报显示成"无防守方"，跟驱逐一个 PvE 占领没区别。这是改动前就有的既有行为（`applyOccupationExpulsion` 结构本身这次没变，只是 `startOccupationHold` 被公开化），不是本次改动引入的回归；`siege-hold-expulsion.e2e.test.ts` 已用 `expect(expulsionSiege?.defenderId).toBeUndefined()` 记录现状。若产品上需要战报里能看出"打退了谁的占领"，需另外拍板再改。
-- **影响**：`server/worldsvc/src/db.ts`（`OccupationDoc.type`）；`server/worldsvc/src/combatSiege/{occupation.ts,base.ts,arrival.ts}`（`landSiege`/`applyStrongholdSiege`/`applyCrossingSiege` 三处改走占领倒计时）；`client/src/scenes/worldmap/{WorldMapNet.ts,tileGraphics.ts,WorldMapInput.ts}`；`client/src/scenes/WorldMapScene.ts`（`applySiegeResult` 改为 `void` 调用异步方法）；`client/src/i18n/locales/{zh,en,de}.ts`（新增 `world.siegeWinHold`）；`client/test/ui/{worldMapSiegeResultToast.ui.ts,worldMapTileResourceInfo.ui.ts}`；`server/worldsvc/test/{siege,teams,nation-bonus,field-structure-attack,stronghold,passage,card-slg}.e2e.test.ts`（受影响/改写）+ 新建 `server/worldsvc/test/siege-hold-expulsion.e2e.test.ts`；`design/game/SLG_DESIGN.md` §5.1/§5.3/§5.4.4/§5.4.5。
-- **补充（同一会话内测试联调发现，用户已确认接受）**：`landSiege` 的占领倒计时分支给 `OccupationDoc` 写入了出征队伍的 `teamId`（沿用 `applyOccupy`/`startOccupationHold` 同一套字段），带来一个连带效应——带队出征攻打玩家领地的那支队伍，在 5 分钟倒计时期间会被 `combatMarch/command.ts` 的 TEAM_BUSY 门禁（`cols.occupations.findOne({...,teamId})`）判定为忙碌、无法重新派遣；倒计时结算后默认原地驻留（`mode:'idle'`）而非立刻恢复自由，除非该队伍开了 `autoReturn`。这与改动前"赢了攻城队伍立刻恢复自由"的旧行为不同，但与"和占领中立地完全一致"的决策方向吻合，用户确认接受、不做特殊区分。
-- **验证**：`server/worldsvc` 全量 vitest **54 文件 / 456 例**全绿（含 `siege`/`teams`/`nation-bonus`/`field-structure-attack`/`stronghold`/`passage`/`card-slg` 各 e2e 文件里改写的占领倒计时断言 + 新建 `siege-hold-expulsion.e2e.test.ts` 的反打回收覆盖）+ `tsc --noEmit` 全绿；client `tsc --noEmit` 全绿、`npm run build:web` 全绿、`vitest --config vitest.ui.config.ts` 的 `worldMap*` 套件 **27 文件 / 254 例**全绿（含 `worldMapSiegeResultToast.ui.ts` 的占领倒计时 toast 覆盖 + 新建 `worldMapTileResourceInfo.ui.ts` 的 mine/ally/enemy 资源行 + 据点占领中优先级覆盖）。未起真实登录态 + 完整后端栈做浏览器截图（需要双账号真实攻城场景，与自动化 e2e/UI 覆盖的成本不成比例）。
-
-## ADR-063 装备强化：主词条倍率改非线性递增表 + +7/+8 引入掉级风险 — Accepted — 2026-08-10
-
-- **背景**：用户提出，装备强化"每级 +1%"式的**线性**加成——不管是字面的固定百分比，还是旧版 `ENHANCE_COEFF_PER_LEVEL=0.10` 线性系数（`base × (1 + 0.10 × 等级)`，+9 仅 ×1.9）——本质上问题一样：**每一步的边际提升恒定**，+8→+9 和 +0→+1 带来的绝对收益完全相同，只是后面成功率更低、材料/金币消耗更高（`enhanceCost` 材料换算成金币后已是指数级跳升，+8→9 单次期望损耗 2120 coin-eq）。三条曲线里只有"惩罚"在变重，"回报"没跟着变重——理性玩家没有理由冲到 +9，纯粹是沉没成本游戏而非战力游戏。
-- **决策**：
-  1. **主词条放大公式改用非线性倍率表**（`ENHANCE_LEVEL_MULTIPLIER`，`server/engine/src/balance/equipment.ts`，取代 `ENHANCE_COEFF_PER_LEVEL`）：`effective = base × ENHANCE_LEVEL_MULTIPLIER[level]`。+0~+5 缓慢爬升（用户明确要求"前面 0 到 5 也给一个缓慢的增长"，不是旧版的完全线性平坦），+6 是"觉醒"分水岭，+7~+9 陡峭加速（用户明确要求"7、8、9 的属性加成可以更陡峭些"，末两级系数直接定为 0.5 / 1.0，"代价很高，所以收益也要足够高"）：
-
-     | 等级 | +0 | +1 | +2 | +3 | +4 | +5 | +6 | +7 | +8 | +9 |
-     |---|---|---|---|---|---|---|---|---|---|---|
-     | 倍率 | 1.00 | 1.08 | 1.17 | 1.28 | 1.41 | 1.56 | 1.76 | 2.11 | 2.76 | **5.00** |
-
-     满级 5.00 倍基础值（旧版 1.9 倍；本表 +9 档 2026-08-10 当天由 4.06 再拔到 5.00，用户直接指定整数 5.0，单步贡献 +2.24），且单步贡献仍比 +0→+8 全部涨幅加起来还多（+1.76）。用户明确表态"不要在意不平衡"——不为了迁就 `EFFECT_CAPS`（跨系统攻击/生命 ≤60% 等）而收窄这张表，后续如实测撞顶再回来调。
-  2. **+7/+8 引入掉级风险**（`enhanceDemoteChance`/`rollEnhanceDemote`，`server/shared/src/equipment.ts`）：+0~+6 维持原"温和档"（失败不掉级，只损耗材料/金币）；+7→8 失败 **20%** 概率掉 1 级，+8→9 失败 **25%** 概率掉 1 级（用户明确"6级及以下不掉级"，掉级概率数值沿用讨论中间版本的 20%/25%，原分给 +6→7 的 15% 档位随之取消）。刻意**不做保底**（用户明确"不要保底"）——连续失败无上限，纯 RNG。
-  3. **保护道具（`protect_enhance`）语义扩展**：+7/+8 使用时，同一次失败**既不扣材料、也不触发掉级**（`server/metaserver/src/equipment/enhance.ts`：`demoted = !success && !hasProtect && rollEnhanceDemote(...)`）——同一次失败事件的两种后果由同一个保护动作一起挡掉，而不是分别消耗。
-  4. **掉级与分解门槛天然不冲突**：`SALVAGE_MAX_LEVEL=4`（+5 起不可分解），而掉级只发生在 +7/+8 失败时且每次只退 1 级，最低只会退到 +6/+7，不会意外把一件不可分解的高级装备"退"回可分解区间，因此本次不改 `isSalvageable`。
-- **实现要点**：
-  - `server/engine/src/balance/equipment.ts`：新增 `ENHANCE_LEVEL_MULTIPLIER` 数组 + `enhanceMultiplier(level)`，替换旧 `ENHANCE_COEFF_PER_LEVEL` 常量（`accumInstance` 主词条放大改调用它）。
-  - `server/shared/src/equipment.ts`：新增 `enhanceDemoteChance(fromLevel)` + `rollEnhanceDemote(seedKey, fromLevel)`（独立种子命名空间 `enhance-demote:`，与 `rollEnhanceSuccess` 的 `enhance:` 流互不干扰，保持确定性重放）。
-  - `server/metaserver/src/equipment/enhance.ts`：失败分支新增掉级判定，`instanceAfter.level` 按 success/demoted 三态计算；保护道具同时挡材料损耗与掉级。
-  - 客户端镜像同步：`client/src/game/meta/equipmentDefs.ts`（新增 `enhanceDemoteChance` UI 预览镜像）、`client/src/scenes/EquipmentScene/{base.ts,detail.ts}`（属性预览公式改用 `enhanceMultiplier`；详情弹窗 +7/+8 新增红色掉级风险提示行）、`client/src/app/nav/game.ts`（顺手修了一个既有的 analytics 计算 bug：`from_level` 原来靠 `instance.level - (success?1:0)` 反推，掉级引入后这个反推会错，改成调用前直接读当前 level）。
-  - i18n 新增 `equip.enhanceDemoteWarn`/`equip.enhanceFailDemoted`（zh/en/de），`shop.item.protect_enhance.desc` 补充掉级保护说明。
-- **已知遗留（未修，仅记录）**：`server/tools/econ-sim` 的保护道具定价模拟（`enhanceProtect.ts`）目前只按材料损耗计算保护道具的期望价值，未纳入 +7/+8 新增的掉级规避价值——现实中保护道具在这两级应该更划算，但用户已表态"不要在意不平衡"，暂不动模拟器，后续如需重新核价再回来补。
-- **影响**：`server/engine/src/balance/equipment.ts`；`server/shared/src/equipment.ts`；`server/metaserver/src/{equipment/enhance.ts,service/inventory.ts}`；`client/src/game/meta/equipmentDefs.ts`；`client/src/scenes/EquipmentScene/{base.ts,detail.ts}`；`client/src/app/nav/game.ts`；`client/src/i18n/locales/{zh,en,de}.ts`；`design/game/{EQUIPMENT_DESIGN.md §6.1/§6.2/§7.3, ECONOMY_NUMBERS.md §5.1/§5.2, DIFFICULTY_SIM.md}`。
-
-## ADR-064 装备背包库存硬上限由 300 提升至 1000 — Accepted — 2026-08-10
-
-- **决策**：`EQUIPMENT_INV_CAP`（ADR-012 §3.3 拍板的 DRAFT [可调] 数值）由 300 提升至 **1000**。玩法/机制不变——堆叠件仍不计入、满仓仍拒绝新实例（craft 侧）/走邮件+材料补偿（抽卡溢出、faucet 静默跳过），只是硬上限数字本身放大，缓解重度玩家（合成+关卡掉落+拍卖持续产出）更容易撞仓的问题。
-- **实现**：
-  - 权威常量两处同改：`server/shared/src/equipment.ts`（服务器权威）+ `client/src/game/meta/equipmentDefs.ts`（UI 镜像，仅预览/按钮置灰用，不代替服务器校验）。
-  - 存量注释/文案随值更新（避免留下过期数字）：`server/metaserver/src/{equipment.ts,equipment/{craft.ts,trade.ts},economy/{orders.ts,delivery.ts},service/inventory.ts}` 的说明性注释；`server/shared/src/api.ts` 的 `INVENTORY_FULL` 错误码注释；`server/contracts/openapi/paths/inventory.yml`（craft 端点 summary，重新跑 `gen:api:contracts` 生成 `openapi.yml` + 客户端 `npm run rest:gen` 重新生成 `client/src/net/openapi.ts`）；三语 i18n `equip.err.full`（'背包已满（300）'→'（1000）' 等）+ 相邻注释。
-  - 测试固化新容量（防止未来误改回旧值时无声漂移）：`server/metaserver/test/equipment.e2e.test.ts` 新增两例——`EQUIPMENT_INV_CAP - 1` 边界仍可合成、以及合成在旧 300 上限之外（500 件）仍成功的回归断言；`server/metaserver/test/economy.e2e.test.ts` 的 `fillEquipInv(300)` 四处调用改为 `fillEquipInv(EQUIPMENT_INV_CAP)`（原先硬编码字面量 300，现在跟随常量走，不会在下次调参时悄悄测错）；`client/test/ui/scenes.ui.ts` 的"背包满仓灰化 Craft 按钮"用例同样从硬编码 `< 300` 改为 `< EQUIPMENT_INV_CAP`。
-  - 文档数字同步：`design/game/{EQUIPMENT_DESIGN.md,SERVER_API.md}`、`design/game/ECONOMY_NUMBERS.md`、`design/game/CHARACTER_CARDS_DESIGN.md` 里描述装备库存上限的各处 300 改为 1000（并标注本 ADR 出处），存储体量估算随之从 ~45KB 更新为 ~150KB（1000 实例 × ~150B）。
-- **为什么**：用户直接拍板扩容数字，不改变治理机制本身——与 ADR-043（角色卡背包 150→500）同类操作，先加测试锁住新值再改常量，避免"改了数字但测试还断言旧值"的静默漂移。
-- **验证**：`server/shared` 装备单测 62 例全绿；`server/metaserver` 装备 e2e **49 例**（含新增 2 例）+ economy e2e **70 例**（含 4 处改写的 equipment-overflow 用例）全绿；`client` UI 套件 `scenes.ui.ts`（120 例，含改写的满仓灰化用例）+ `gachaInvFullToast.ui.ts`（7 例）全绿；`server`（全 11 服务 + engine/shared workspaces）`typecheck` 与 `client` `tsc --noEmit` + `npm run build:web` 均无错误。纯数值调参 + 文案数字变化，未起 dev server 截图（三语 toast/头部计数器的排版逻辑不变，只是数字本身变长，走既有自适应文本渡染，无需人工核对布局）。
-
-## ADR-066 8 个 CD workflow 改为依赖 CI（`workflow_run`），不再与 `ci.yml` 并行竞速 — Accepted — 2026-08-12
-
-- **背景**：`ci.yml`（build-test + e2e，e2e 最长 25 分钟）与 8 个 `*-deploy.yml`（server/client/animator/level-editor/map-editor/ops/vfx/grafana）此前都是独立的 `on: push: branches:[main]` + `paths:` 触发，彼此没有 `needs`/`workflow_run` 关联——只是共享了同一个 push 事件。deploy job 通常几分钟内跑完，e2e 却要 25 分钟，实际构成竞态：**deploy 大概率先于 e2e 出结果就已把代码送上 VPS/Cloudflare**；就算 build-test 很快挂了，deploy 也完全不会被拦，唯一共同前提只是"这个 commit 在 main 上"。用户原话"现在的 pipeline 里 CI 和 CD 掺和在一起了"，问题不在某文件内部把步骤写混，而在编排层面 CD 没有真正依赖 CI 产出。
-- **决策**：8 个 deploy workflow 的触发方式统一由 `push: branches:[main]` 改为：
-  ```yaml
-  on:
-    workflow_run:
-      workflows: ["CI"]
-      types: [completed]
-      branches: [main]
-    workflow_dispatch: {}
-  ```
-  `workflow_run` 是 GitHub 原生的跨 workflow 依赖机制，不引入第三方 action（与仓库一贯"不用第三方 ssh-action/wrangler-action，怕吞掉真实报错"的原则一致）。每个 deploy workflow 内部拆成两个 job：
-  - `check`：`if: vars.XXX_DEPLOY_ENABLED == 'true' && (workflow_dispatch || github.event.workflow_run.conclusion == 'success')`——CI 整体结论（build-test **与** e2e 都算在内，只要其中一个失败，`ci.yml` 这次 run 的 `conclusion` 就不是 `success`）先过一遍，再用新增的 composite action `.github/actions/paths-changed-since` 对 `github.event.workflow_run.head_sha` 相对其 parent 跑 `git diff --name-only`，替代原来的 `push.paths`（`workflow_run` 事件不支持原生 `paths:` 过滤，只能挪进 job 里手写）。
-  - `deploy`：`needs: check`，`if: needs.check.outputs.changed == 'true' || workflow_dispatch`，其余步骤不变；但 `actions/checkout` 的 `ref` 必须显式指定 `github.event.workflow_run.head_sha`——`workflow_run` 事件下 `github.sha` 指向触发时 default branch 的 HEAD，不是被检查的那个 commit，沿用旧代码隐式 checkout 会部署错 commit。
-  - 保留 `workflow_dispatch` 手动触发，跳过 CI 门禁（紧急场景兜底）。
-  - `server-deploy`/`grafana-deploy` 两个纯 SSH 部署（VPS 上 `git fetch + reset --hard origin/main`，不依赖本地 checkout 构建产物）在这次改动前就不含 `actions/checkout`；`check` job 里新增的 checkout 只是为了本地跑 `git diff` 判断路径，不影响它们原有的部署语义（VPS 上永远拉 origin/main 最新 tip，不是特意对齐 head_sha——这是既有行为，本次未改）。
-- **为什么不是其他方案**：
-  - 轮询式（`gh api .../check-runs` 等 CI 完成再继续）改动更集中在单个 step，但需要在每个 deploy job 顶部起一个等待循环，语义上不如 `workflow_run` 直接；且轮询期间仍占用一个 runner，`workflow_run` 是事件驱动、无需占用等待时间。
-  - 把 8 个 deploy 合并进 `ci.yml` 同一个 workflow 用 job-level `needs` 能达到同样的门禁效果，但会破坏"每个产物独立 workflow、可单独看日志/单独重跑"的现状结构，改动/维护成本远大于收益，未采用。
-  - GitHub Environments 的 required reviewers 是人工审批阀门，能作为额外安全网但解决的是"是否有人愿意让红码上线"，不是"CD 是否等 CI 出结果"，两者不是同一个问题，未采用（但建议后续视需要叠加）。
-- **已知取舍（未处理，仅记录）**：
-  1. `workflow_run` 只认 **default branch（main）上已合并的 workflow 定义**——这批文件改完必须先合并进 `main` 才会生效，无法在 PR 分支上直接验证触发是否生效（诊断逻辑本身已用真实 commit 离线验证过，见下）。
-  2. 本次让 deploy 等 CI **全部**（build-test + e2e）通过再放行，日常小改动也要等 e2e 跑完（最长 25 分钟）——用户已确认接受这个延迟换正确性的取舍（可选替代：只等 build-test，未采用）。
-  3. `server-deploy`/`grafana-deploy` 部署时永远拉 VPS 上 origin/main 的最新 tip，而非严格对齐触发这次 run 的 `head_sha`——若两次 push 紧挨着落地，理论上会把"更新的一次 commit"也一并带上（该次 commit 自己的 CI/CD run 会再单独把它重新过一遍，不会有代码丢失，只是先后顺序上略有重叠），这是改动前就有的既有行为，本次未改。
-  4. main 分支是否已开 branch protection + required status checks（PR 合并前强制 CI 绿）超出本次改动范围，建议用户自行核实 GitHub 仓库设置——那是挡在"合并前"的第一道门，`workflow_run` 门禁是挡在"部署前"的第二道，两者互补、缺一不完整。
-- **实现**：新增 `.github/actions/paths-changed-since/action.yml`（`git diff --name-only sha^ sha` + `grep -E` include/exclude，替代 `push.paths`）；改写 `.github/workflows/{server,client,animator,level-editor,map-editor,ops,vfx,grafana}-deploy.yml`（触发方式 + `check`/`deploy` 两 job 拆分 + `checkout ref` 显式指定 `head_sha`）；`ci.yml` 本身未改（原本就没有部署步骤，只是编排层缺了依赖关系）。
-- **验证**：8 个改写后的 workflow + 新增 composite action 用 PyYAML `yaml.safe_load` 全部解析通过（纯语法校验，GitHub 未提供本地跑 `workflow_run` 事件的方式）；`paths-changed-since` 的 include/exclude/无匹配三种分支用 bash 脚本沙盒模拟数据跑过一遍，行为符合预期；额外用本仓库真实提交 `2a1f20bb`（只改了 `client/test/**`）验证了两个方向——套 server-deploy 的 include/exclude 规则判定为 `changed=false`（应跳过）、套 client-deploy 的规则判定为 `changed=true`（应触发），均与预期一致。未做端到端 GitHub Actions 真实触发验证（需要合并进 `main` 才能生效，见上「已知取舍」第 1 条）。
-- **影响**：`.github/actions/paths-changed-since/action.yml`（新增）；`.github/workflows/{server,client,animator,level-editor,map-editor,ops,vfx,grafana}-deploy.yml`；`design/product/deploy-cloudflare.md`（client-deploy/ops-deploy/server-deploy 触发方式描述同步）。
-- **验证**：`server/shared` 装备单测 62 例全绿（新增 `enhanceDemoteChance`/`rollEnhanceDemote` 覆盖，含"两个骰子流互相独立"回归）；`server/metaserver` 装备 e2e 47 例全绿（新增 +7 掉级/不掉级/保护道具挡掉级三例）；`server/auctionsvc` e2e 65 例全绿（`equipEnhanceExpectedCost` 依赖的 `enhanceCost`/`enhanceSuccessRate` 未改，价格逻辑不受影响）；`server/tools/econ-sim` 18 例全绿；`client` 装备相关 vitest（`test/equipment.test.ts` 22 例 + UI 套件 `equipmentDetailProtectLabel`/`shopScene`/`shopActions` 共 68 例）全绿；`server`（engine/shared/metaserver/auctionsvc）`tsc -b` 与 `client` `tsc --noEmit` 均无错误。未起 dev server 截图（纯数值/规则改动，无新增可视化布局需要人工核对，掉级警示文案的排版走既有弹窗高度自适应逻辑）。
-
-## ADR-065 引擎战斗数值全面定点化（所有连续型战斗数值 ×FP_SCALE=1000，统一复用现有定点域） — Accepted — 2026-08-12
-
-- **背景**：`server/engine` 原先只有"需要逐 tick 累积小数进度"的量走 `FP_SCALE`（=1000）定点整数——位置 `y_fp`/`col_fp`、速度 `speed_fp`、回血累加器、墨水 `_ink_fp`；HP/攻击力/护甲/暴击/强化倍率等"一次性 bake 进 blueprint"的量是普通浮点/整数，只在写回字段前 `Math.round()` 一次。修 `equip_crit.test.ts` 陈旧断言（ADR-063 强化倍率表改非线性后测试期望值未同步）时，用户提出应统一到同一套定点体系（理由：内部一致性，不是部分字段定点、部分不定点）。三轮讨论拍板了完整设计并明确"现在就实施"。
-- **已核实、推翻早期顾虑的事实**：`server/contracts/*.proto`（game/replay/transport）完全不携带 hp/attack 等战斗数值——线上协议只传不透明的输入指令字节流 + JSON 元数据，**不用改协议、不用重新 codegen**；客户端从不从网络反序列化这些数值，本地跑确定性引擎，画面数字全部来自本地 `Unit`/`GameState`/`GameEvent`。
-- **拍板的设计原则**：
-  1. `config.ts` 保持人类可读真实单位（`hp: 60`），DB/SaveData 装备卡牌数据保持真实单位不变；转换只发生在 blueprint bake 阶段（`balance/pveUpgrades.ts` 的 `buildPvpBlueprints`/`buildCampaignBlueprints`/`buildSiegeBlueprints`）。
-  2. 统一复用现有 `FP_SCALE`/`math/fixed.ts` 定点域（不给比率类数值另开一套），新增 `divFpByInt`/`growFp`/`maxFp`/`minFp`/`clampFp` 五个小工具补齐现有 `toFp/fp/addFp/subFp/mulFp/scaleFp/negFp` 家族。
-  3. 不追旧回放兼容——线上已存历史回放 hash 失效是预期代价。
-  4. 客户端视觉表现维持现状——不新增"更精细数字"展示功能，展示层统一在读取点 `fromFp()` 换算。
-  5. 进定点字段：`hp/maxHp`、`attack`、`siegeValue`、`armor`、`armorEnrageBonus`、`critPct`、`critMult`、`lifestealPct`、`reflectPct`、`burstOnSingleMult`、`berserkerThreshold`、`armorEnrageThreshold`、`slowOnHit.mult`（`Unit`/`Building`/`EscortUnit`/`Player.baseHp`/`maxBaseHp` 同步）；`ENHANCE_LEVEL_MULTIPLIER`、`EFFECT_CAPS`、`STAT_GROWTH_PER_LEVEL`（除 `atkspd`/`spd`，见下）、`TRAIT_BREAKPOINTS.{crit,lifesteal}`、`PveUpgradeDef.effectPerLevel` 等比率常量。不进定点（维持现状）：离散整格量 `range`/`splashRadius`/`spawnCount`；已走"一次性换算成 tick/fp"既有模式的 `attackInterval`/`speed`/`radius_fp`/`slowOnHit.durationSec`/`summonOnTimer.intervalSec`；纯整数全局系数 `ATTACK_MULT_LATE_GAME`。`PlayerStats.damageDealtToBase/damageTakenByBase`（match-summary 报表统计，client ResultScene 徽章直接显示）也保持真实单位，在 `MovementSystem.ts` 记账处 `fromFp()` 换算，不往下游（client/judgeRunner/campaignRewards）传播。
-  6. 副产品修正：`HazardSystem.ts`/`hitResolution.ts` 两处既有"`Fp` × 普通小数比率"手写 `Math.round`+类型断言 hack，借这次统一改用 `mulFp`。
-  7. 暴击等"百分点"字段与 PRNG 交互：`combatPrng.nextInt(100) * 1000 < critPct_fp`（放大骰子侧而非截断 stat 侧），精度不丢失、PRNG 抽取节奏不变。
-  8. 回血机制简化：`hp_fp` 本身已有千分之一 HP 粒度，`TraitSystem.ts` 去掉了原来的 `healAccFp` 累积器，`regenFpPerTick` 每 tick 直接加进 `hp_fp`（clamp 到 `maxHp_fp`）。
-- **实现（5 个检查点顺序落地，每步验证后再进入下一步）**：
-  - **检查点 A（引擎核心）**：`math/fixed.ts` 新增 5 个 helper；`types/blueprints.ts`/`config.ts`（拆分 `RAW_UNIT_BLUEPRINTS` 人类可读表 + `bakeUnitBlueprint()` 转换函数，导出已 baked 的 `UNIT_BLUEPRINTS`）/`balance/{progression,pveUpgrades,equipment}.ts`/`engine/setup/blueprints.ts`/`Unit.ts`/`Building.ts`/`EscortUnit.ts`/`Player.ts`/`systems/combat/{hitResolution,tick}.ts`/`systems/{TraitSystem,HazardSystem,SpellSystem,AISystem,ai/cardSelection}.ts`/`types/events.ts`/`Projectile.ts`/`engine/sim/step.ts`/`GameState.ts`（`snapshotSummary` 比例计算）全部改定点。`server/engine` `tsc -b` 干净。
-  - **检查点 B（下游服务端包）**：`server/worldsvc/src/siegeEngine.ts`（新增 `blueprintFullHp()` 换算函数，§16.5 存活血量→存活兵力换算处 `fromFp()`）、`server/tools/econ-sim/src/{occupyBaseHpRun,strongholdCombat}.ts` 同样换算；`server/botsvc` 不涉及数值读取，无需改动；`server/shared` 的 `siegeValueBase` 卡牌元数据镜像确认是独立真实单位，未受影响。全 11 服务 + engine/shared workspaces `typecheck` 全绿。
-  - **检查点 C（黄金回放 + 引擎单测）**：`goldenReplay/snapshot.ts` 字段改名；新增一次性验证脚本 `goldenReplay/verifyFpMigration.ts`（保留在仓库，非测试套件的一部分）——换算新引擎输出回真实单位后逐字段 diff 旧 fixture：11 个场景里 8 个逐字节完全一致，3 个 PvP/netplay 场景仅 Max 单位在 burstOnSingleMult×markEnemies 连续加成链上出现 <1 点的小数级 HP 偏移（不再在中间步骤取整，正是本次改动的设计目标，不是 bug）——胜负/tick 数/死亡/击杀数全部零偏差，确认后才用 `generateFixtures.ts` 正式重新生成全部 11 个 fixture。改写 7 个引擎测试文件（`equip_crit`/`trait-system`/`armor`/`pvp_hardwall`/`gameEngine`/`unit_t9_traits`/`escort-system`）+ 3 个未预期的（`ghost_untargetable`/`projectile-escort-id-per-instance`/`escort-system`）。`npm test`（server/engine）123/123 全绿。
-  - **检查点 D（客户端展示层 + 客户端测试）**：`client/src/game/meta/cardDefs.ts`（`cardHp/cardAttack/cardSiegeValue` 加 `fromFp()`，唯一收口点）、`EquipmentScene/helpers.ts` 的 `affixDesc()`（`enhanceMultiplier()` 现在返回 `Fp`，之前的写法编译能过但数值会错 1000 倍——`Fp` 结构上是 `number` 的子类型，TS 不会报错，靠 UI 测试跑出来才发现）、`StateRecorder.ts`（回放录制侧 `quantizeHp(fromFp(...))`）、`HUDView.ts`/`TutorialDirector.ts`/`GameRenderer/{core,events}.ts`/`BuildingView.ts`/`UnitView.ts`/`CardCodexScene.ts`/`DefenseEditorScene/{data,input}.ts` 等展示/HP 条/阈值判断处按"比例计算不用换算、绝对数字展示要 `fromFp()`"原则逐一处理。客户端 21 个测试文件的字段改名/字面量换算（4 个并行 agent 分批完成，人工复核+修正 3 处 agent 引入的公式错误：`hardwall.test.ts` 的 `growFp` 用法、`stateRecorder.test.ts`/`hudHeartHpBar.test.ts`/`gameRendererSurrenderRace.ui.ts` 里因 `any` 类型转换绕过 tsc 检查而遗漏的 mock 数据字段改名——这几处只有跑测试才能发现，tsc 编译干净不代表数值正确）。`client` `tsc --noEmit`/`typecheck` 全绿，`npm test` 1293/1293、`npm run test:ui` 1502/1502 全绿，`npm run build:web` 生产构建成功。
-  - **检查点 E（文档）**：本条 ADR 由 Proposed 转 Accepted；`BALANCE.md`/`ECONOMY_NUMBERS.md`/`EQUIPMENT_DESIGN.md` 补充指向本 ADR 的说明（数字口径本身不用改，仍是真实单位）。
-- **风险与教训**：TypeScript 的结构化类型对 `Fp`（`number & {brand}`）品牌类型在**普通算术运算**里形同虚设——`plainNumber * fpValue` 照样编译通过，只是数值错 1000 倍，这类"类型正确但数值错误"的 bug 只能靠跑测试（尤其是断言具体数值、而非仅断言类型的测试）才能发现，`tsc --noEmit` 干净不是数值正确的充分证明。本次修改过程中在客户端出现过 4 处这类问题（`EquipmentScene/helpers.ts` 生产代码 1 处 + 3 处测试 mock 数据），全部靠运行完整测试套件定位。
-- **影响**：`server/engine/src/{math/fixed.ts,types/{blueprints,events}.ts,config.ts,Unit.ts,Building.ts,EscortUnit.ts,Player.ts,Projectile.ts,GameState.ts,balance/{equipment,pveUpgrades,progression}.ts,engine/{setup/{blueprints,preplaced},sim/step}.ts,systems/{combat/{hitResolution,tick},TraitSystem,HazardSystem,SpellSystem,AISystem,ai/cardSelection,MovementSystem,EscortSystem}.ts}`；`server/worldsvc/src/siegeEngine.ts`；`server/tools/econ-sim/src/{occupyBaseHpRun,strongholdCombat}.ts`；`client/src/{game/meta/cardDefs.ts,game/replay/StateRecorder.ts,scenes/EquipmentScene/helpers.ts,scenes/CardCodexScene.ts,scenes/DefenseEditorScene/{data,input}.ts,render/{HUDView,TutorialDirector,UnitView,BuildingView,GameRenderer/{core,events}}.ts}`；`server/engine/src/__tests__/`（10 个文件改写 + 新增 `goldenReplay/verifyFpMigration.ts` + 11 个 fixture 重新生成）；`client/test/`（21 个文件改名/换算 + 3 处运行时发现的 mock 数据修正）；`design/game/{BALANCE.md,ECONOMY_NUMBERS.md,EQUIPMENT_DESIGN.md}`。
-- **后续补充（同日）**：「风险与教训」提到的这类 bug 此前只能靠跑*间接*测试（断言游戏结果，不断言 helper 本身）撞见，两个最相关的文件此前都没有直接单测：`math/fixed.ts`（本次改动新增的 5 个 helper 之前只被其他测试当作构造期望值的工具函数间接调用）、`EquipmentScene/helpers.ts`（production bug 实际发生的文件）。补了两个直接单测文件：`server/engine/src/__tests__/fixed.test.ts`（12 例，逐个 helper 钉截断方向/负数/边界值，已加入 `server/engine/package.json` 的 `test` 脚本）、`client/test/equipmentSceneHelpers.test.ts`（17 例，`affixDesc` 专门钉了 level 9/×5.00 档"应为 +50% 不是 +50000%"这个具体数字，正是本次 bug 的复现场景）。engine 139/139、client 1293+17 全绿。
+## 分册
+
+| 范围 | 文件 |
+|---|---|
+| ADR-001 ~ ADR-040 | [`DECISIONS_ADR-001-040.md`](DECISIONS_ADR-001-040.md) |
+| ADR-041 起（**新增写这里**） | [`DECISIONS_ADR-041-onward.md`](DECISIONS_ADR-041-onward.md) |
