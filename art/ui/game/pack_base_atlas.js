@@ -3,7 +3,7 @@
 // spritesheet atlas. Base tier 0 (no upgrade) keeps using the existing
 // `client/src/assets/game_base.png` import — unchanged, still L0-preloaded.
 // This atlas only covers the 2 upgrade tiers (lv1 "castle-town", lv2 "palace"),
-// lazy-loaded like `art/ui/slg-building/pack_city_atlas.js`'s city atlas.
+// lazy-loaded like `art/slg/slg-building/pack_city_atlas.js`'s city atlas.
 // Run: NODE_PATH="$(pwd)/client/node_modules" node art/ui/game/pack_base_atlas.js
 const sharp = require('sharp');
 const fs = require('fs');

@@ -5,7 +5,7 @@
 // Why this exists: the 2026-07-27 asset reorganisation (commit 072131d8) merged the per-theme
 // atlases into shared pages (`slg/world_atlas`, `decor/decor_merged_atlas`, `icons/icons_atlas`)
 // and DELETED the individual source atlases from the repo — so mergeAssetAtlases.js can no longer
-// run: its inputs are gone. Repacking a single set (e.g. `node art/ui/slg-playerbase/pack_playerbase_atlas.js`)
+// run: its inputs are gone. Repacking a single set (e.g. `node art/slg/slg-playerbase/pack_playerbase_atlas.js`)
 // therefore had no way to reach the merged page the client actually loads.
 //
 // This script closes that gap for the common case: the repack produced frames of the SAME pixel

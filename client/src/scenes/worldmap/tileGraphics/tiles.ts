@@ -28,6 +28,14 @@ import { drawHpBar } from './primitives';
 // smeared into one unreadable hatch blob instead of N countable buildings.
 const WATCHTOWER_H = 0.40;
 const BLOCKER_H = 0.22;
+// icon_arrowTower 129×256 (1:1.98) — added 2026-08-17, see design/product/slg-building-art.md.
+// Deliberately narrower than watchtower/blocker: arrowTower's own geometric fallback (below) was
+// already a slim ~0.16 tp-wide spike and nobody complained, so the new sprite targets a similarly
+// narrow screen width instead of reusing the wider watchtower/blocker budget — 0.50 × 1.98 ≈
+// 0.25 tp wide, well clear of the tp/2 neighbour-spacing ceiling. First-pass estimate, not yet
+// checked against a real screenshot (same caveat the other two constants had before the 2026-08-15
+// correction) — revisit if a player-built row of arrow towers reads oddly.
+const ARROWTOWER_H = 0.50;
 
 export function drawTileL1(
   g: PIXI.Graphics, tile: WorldTileView | null,
@@ -240,19 +248,26 @@ export function drawTileL1(
       : 0xcc3333;
     const baseY = hh - 4;
     if (tile.structure.kind === 'arrowTower') {
-      const towerW = Math.max(4, tp * 0.16);
-      const towerH = Math.max(8, tp * 0.42);
-      g.lineStyle(1, 0x3a2a18, 0.9);
-      g.beginFill(0xe8dcc0, 0.95);
-      g.drawRect(-towerW / 2, baseY - towerH, towerW, towerH);
-      g.endFill();
-      g.lineStyle(0);
-      g.beginFill(col, 0.95); // ownership-tinted pointed roof
-      g.drawPolygon([-towerW / 2 - 1, baseY - towerH, towerW / 2 + 1, baseY - towerH, 0, baseY - towerH - towerW]);
-      g.endFill();
-      g.beginFill(0x3a2a18, 0.9); // arrow slit
-      g.drawRect(-1, baseY - towerH * 0.62, 2, towerH * 0.3);
-      g.endFill();
+      // Hand-drawn icon_arrowTower sprite once the atlas is ready (added 2026-08-17, see
+      // design/product/slg-building-art.md) — neutral ink like the rest of building_atlas,
+      // ownership no longer painted onto the roof; the tile wash underneath carries that now.
+      // Falls back to the original geometric tower (ownership-tinted roof, since there's no
+      // tile-wash substitute for it in that path) whenever the atlas/frame isn't ready.
+      if (!placeBuildingSprite(g, 'icon_arrowTower', tp, hh, tp * ARROWTOWER_H, false)) {
+        const towerW = Math.max(4, tp * 0.16);
+        const towerH = Math.max(8, tp * 0.42);
+        g.lineStyle(1, 0x3a2a18, 0.9);
+        g.beginFill(0xe8dcc0, 0.95);
+        g.drawRect(-towerW / 2, baseY - towerH, towerW, towerH);
+        g.endFill();
+        g.lineStyle(0);
+        g.beginFill(col, 0.95); // ownership-tinted pointed roof
+        g.drawPolygon([-towerW / 2 - 1, baseY - towerH, towerW / 2 + 1, baseY - towerH, 0, baseY - towerH - towerW]);
+        g.endFill();
+        g.beginFill(0x3a2a18, 0.9); // arrow slit
+        g.drawRect(-1, baseY - towerH * 0.62, 2, towerH * 0.3);
+        g.endFill();
+      }
     } else if (!placeBuildingSprite(g, 'icon_blocker', tp, hh, tp * BLOCKER_H, false)) {
       // Geometric fallback for whenever the `icon_blocker` atlas frame isn't ready/decoded yet
       // (see icon_watchtower just above for the same pattern). Art landed 2026-08-09 — a wide

@@ -9,7 +9,7 @@
 - **图集帧命名**：`city_l1 … city_l10`（每级一帧）。`getCityTextureForLevel(level)` 先找 `city_l{level}`，找不到再回退到旧的 4 档帧 `city_lv{tier}`——所以 6 张新图**就位后零改代码**，未就位时该级临时用所属档的旧图。
 - **已有 4 张**（`city_atlas` 现有 `city_lv1..4`）继续作为各档回退，并对应各档**最低级**：`city_lv1`=Lv1(营地) / `city_lv2`=Lv3(木寨) / `city_lv3`=Lv6(石堡) / `city_lv4`=Lv9(大城)。
 - **需新出 6 张**：`city_l2 / city_l4 / city_l5 / city_l7 / city_l8 / city_l10`（下方"新增分级 Prompt"给出）。
-- 出图后重新打包成图集（帧名 `city_l{n}`，参照 `art/ui/slg-building/pack_city_atlas.js`），`png+json` 放 `client/src/assets/slg/city_atlas.{png,json}`，并同步拷贝到 `tools/map-editor/src/assets/slg/`（编辑器用同一份）。若也想给 Lv1/3/6/9 出全新图，把它们一并命名 `city_l1/l3/l6/l9` 打进图集即可（否则自动回退到现有 `city_lv1..4`）。
+- 出图后重新打包成图集（帧名 `city_l{n}`，参照 `art/slg/slg-building/pack_city_atlas.js`），`png+json` 放 `client/src/assets/slg/city_atlas.{png,json}`，并同步拷贝到 `tools/map-editor/src/assets/slg/`（编辑器用同一份）。若也想给 Lv1/3/6/9 出全新图，把它们一并命名 `city_l1/l3/l6/l9` 打进图集即可（否则自动回退到现有 `city_lv1..4`）。
 
 ---
 
@@ -138,7 +138,7 @@ detail layers, prominent gold accents on the tallest spires.
 
 ## 打包现状（2026-07-06）
 
-6 张新图已就位并打包进图集，帧齐全：`city_atlas` 现含 `city_lv1..4`（档回退）+ `city_l2/l4/l5/l7/l8/l10`（每级图），共 10 帧，1024×768，调色板量化 ~287 KB。`png+json` 已写入 `client/src/assets/slg/` 与 `tools/map-editor/src/assets/slg/`（两份字节一致）。打包脚本 `art/ui/slg-building/pack_city_atlas.js` 已重写：区域生长 flood-fill 去背（兼容浅色方格纸 / 深色晕影 / 纯色 / 已抠图 4 类背景），10 帧网格，sharp 调色板压缩。源图已按帧名重命名（`city_l{n}.png` / `city_lv{n}.png` / `city_l10.webp`）。
+6 张新图已就位并打包进图集，帧齐全：`city_atlas` 现含 `city_lv1..4`（档回退）+ `city_l2/l4/l5/l7/l8/l10`（每级图），共 10 帧，1024×768，调色板量化 ~287 KB。`png+json` 已写入 `client/src/assets/slg/` 与 `tools/map-editor/src/assets/slg/`（两份字节一致）。打包脚本 `art/slg/slg-building/pack_city_atlas.js` 已重写：区域生长 flood-fill 去背（兼容浅色方格纸 / 深色晕影 / 纯色 / 已抠图 4 类背景），10 帧网格，sharp 调色板压缩。源图已按帧名重命名（`city_l{n}.png` / `city_lv{n}.png` / `city_l10.webp`）。
 
 - **仍待补**：Lv1/3/6/9 无专属图，运行时回退到所属档的 `city_lv{tier}`（去背干净，可正常用）。
 - **`city_lv4` 已修**（2026-07-06）：原 0fe2fbb5 源图自带的不透明方格纸底板已用 flood-fill（从透明边缘向内、按底板色扩散、遇城堡深墨轮廓停）抠除，再删除小的离散残块（陷阱像素/网格碎片），仅保留城堡本体+其贴地投影。已覆盖回 `city_lv4.png` 源并重新打包，全 10 帧现均无背景。
@@ -180,7 +180,7 @@ playerbase_atlas 折腾 8 个子回合（[[slg-playerbase-oversized-fix-2026-07-
 
 **结论**：`city_atlas` 设计初衷（"图自带地台，地台=地块，整体矮宽"）成立，未发现 playerbase 那类"建筑铺不满地块"的缺陷，任务到此收尾，不需要改 `pack_city_atlas.js`、不需要重出图。审计脚本为抛弃式临时文件，未入库。
 
-**顺带清理**：`art/ui/slg-building/` 目录里另有 2 个 UUID 命名的 `.webp`（悬崖栈道 / 石拱桥，黑白铅笔素描），既不在 `pack_city_atlas.js` 的 `FILES` 列表里、画风也跟 `city_atlas` 蓝墨线等轴测涂鸦完全不符——不是这次审计的产物，大概率是"桥/栈道"（`building_bridge`/`building_plankway`，真正管线在 `art/ui/slg-map/pack_buildings.cjs`）早期探索时误放在这个目录、画风不对被搁置的草稿。已按约定移入 `art/leftover/`（保留原文件名，未删）。
+**顺带清理**：`art/slg/slg-building/` 目录里另有 2 个 UUID 命名的 `.webp`（悬崖栈道 / 石拱桥，黑白铅笔素描），既不在 `pack_city_atlas.js` 的 `FILES` 列表里、画风也跟 `city_atlas` 蓝墨线等轴测涂鸦完全不符——不是这次审计的产物，大概率是"桥/栈道"（`building_bridge`/`building_plankway`，真正管线在 `art/slg/slg-map/pack_buildings.cjs`）早期探索时误放在这个目录、画风不对被搁置的草稿。已按约定移入 `art/leftover/`（保留原文件名，未删）。
 
 ## 递进审计（2026-08-14）——Lv6 比 Lv5 简化，违反"越级越宏伟"，需重出图
 
@@ -219,7 +219,7 @@ fill for stone, warm brown accent only on the wooden gate/drawbridge beams.
 
 要点沿用 playerbase 那次摸出来的"数字自检 > 形容词"经验：明确写"至少 5 个独立建筑"这种可数的硬指标，并直接点名"参照 `city_l5.png` 的密度，不能比它更空"，比抽象描述"宏伟"更容易在生图时命中。
 
-**待办**：用户出图后按同样方法核对（跟 `city_l5`/`city_l7` 放一起肉眼比对饱满度，另外过一遍铺格审计的 bbox 宽高比 ≥0.9375 判据），落地后 `node art/ui/slg-building/pack_city_atlas.js` 重新打包 + `patchMergedAtlas.js` 补丁进 `world_atlas`，旧 `city_lv3.png` 移入 `art/leftover/`。
+**待办**：用户出图后按同样方法核对（跟 `city_l5`/`city_l7` 放一起肉眼比对饱满度，另外过一遍铺格审计的 bbox 宽高比 ≥0.9375 判据），落地后 `node art/slg/slg-building/pack_city_atlas.js` 重新打包 + `patchMergedAtlas.js` 补丁进 `world_atlas`，旧 `city_lv3.png` 移入 `art/leftover/`。
 
 **第一版候选（2026-08-14）——画风不对，不采用**：用户按上面的 prompt 出了一版，内容/密度达标（多建筑、井、市集摊位、锻造炉，明显比旧图丰富），但**整体画风是精细写实上色插画**（石材渐变光影、仿真质感、专业原画级别层次），跟 `city_atlas` 全系列"钢笔蓝墨线速写 + 单色/双色水彩淡填充、无光影渐变"的扁平涂鸦风格完全不是一种媒介，放进图集会非常突兀。
 
@@ -274,7 +274,7 @@ v2 把风格约束（"是涂鸦速写不是精细插画"）挪到全文最前面
 
 ## 命名统一（2026-08-14）——源图 + 帧名 + 运行时全部改成 `city_l1..city_l10`，档位回退彻底退休
 
-前面的排查过程中，用户发现 `art/ui/slg-building/` 目录下的 10 个源文件一直分两套命名——`city_lv1/2/3/4`（4 张 2026-07-06 之前的老"档位回退"图，对应 Lv1/3/6/9）+ `city_l2/4/5/7/8/10`（6 张 2026-07-06 起的专属图）——这正是最早"2 级和 4 级有两张、6 级却没有"那次困惑的根源。既然 10 级现在都有各自专属的正确美术（含刚修完的 Lv6），双命名体系已经没有存在理由，借这次机会彻底拉平。
+前面的排查过程中，用户发现 `art/slg/slg-building/` 目录下的 10 个源文件一直分两套命名——`city_lv1/2/3/4`（4 张 2026-07-06 之前的老"档位回退"图，对应 Lv1/3/6/9）+ `city_l2/4/5/7/8/10`（6 张 2026-07-06 起的专属图）——这正是最早"2 级和 4 级有两张、6 级却没有"那次困惑的根源。既然 10 级现在都有各自专属的正确美术（含刚修完的 Lv6），双命名体系已经没有存在理由，借这次机会彻底拉平。
 
 **改动范围（源文件 → 帧名 → 运行时，三层一起改，不是只挪文件名）**：
 

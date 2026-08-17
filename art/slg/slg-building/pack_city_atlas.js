@@ -14,8 +14,8 @@
 // smooth backgrounds / vignette gradients and stops at the building's strong ink silhouette. Images that
 // already ship meaningful transparency (the webp) skip colour-keying and keep their alpha.
 //
-// Run: node art/ui/slg-building/pack_city_atlas.js
-//   optional: node art/ui/slg-building/pack_city_atlas.js --debug   (also writes _debug_preview.png)
+// Run: node art/slg/slg-building/pack_city_atlas.js
+//   optional: node art/slg/slg-building/pack_city_atlas.js --debug   (also writes _debug_preview.png)
 const fs = require('fs');
 const path = require('path');
 let sharp;

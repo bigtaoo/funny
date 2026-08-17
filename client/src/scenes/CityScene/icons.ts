@@ -60,7 +60,7 @@ const BLD_GLYPH: Partial<Record<BuildingKey, IconKind>> = {
   academy: 'book',
 };
 
-// Hand-drawn atlas art (art/ui/slg-desk → city_bld_atlas) supersedes the BLD_GLYPH
+// Hand-drawn atlas art (art/slg/slg-desk → city_bld_atlas) supersedes the BLD_GLYPH
 // programmatic line-art / emoji fallback for these five once the atlas has decoded.
 const BLD_ATLAS: Partial<Record<BuildingKey, string>> = {
   desk: 'bld_desk',

@@ -17,8 +17,8 @@
 // This set's backgrounds are flat white (no graph-paper grid to bridge), so TSTEP's gradient-following
 // alone cuts every frame cleanly without needing the absolute check.
 //
-// Run: node art/ui/slg-playerbase/pack_playerbase_atlas.js
-//   optional: node art/ui/slg-playerbase/pack_playerbase_atlas.js --debug   (also writes _debug_preview.png)
+// Run: node art/slg/slg-playerbase/pack_playerbase_atlas.js
+//   optional: node art/slg/slg-playerbase/pack_playerbase_atlas.js --debug   (also writes _debug_preview.png)
 const fs = require('fs');
 const path = require('path');
 let sharp;

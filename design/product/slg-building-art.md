@@ -1,6 +1,6 @@
-# SLG 地图覆盖建筑 — icon_watchtower 改版 / icon_blocker 新增 prompt
+# SLG 地图覆盖建筑 — icon_watchtower 改版 / icon_blocker 新增 prompt / icon_arrowTower 新增
 
-状态：**已出图、已接入（2026-08-09）**——两张新源图已落地 `art/ui/slg-map/`（`icon_watchtower.png` 覆盖旧版，`icon_blocker.png` 新增），`pack_buildings.cjs` 重新打包 `building_atlas` 后，用一次性脚本 [`appendAtlasFrames.js`](../../art/scripts/appendAtlasFrames.js)（§3 有写为什么不能直接跑 `mergeAssetAtlases.js`/`patchMergedAtlas.js`）把这两帧并入了 `world_atlas.{png,json}`（其余 85 个既有帧逐帧比对未变）。§2 的 prompt 仍保留作为出图依据/未来再改版的参照，§4 补了验收记录。旧版 `icon_watchtower.png`（正视立面版）移到了 `art/leftover/icon_watchtower_v1_frontal_2026-08-09.png`。
+状态：**已出图、已接入（2026-08-09 起，2026-08-17 追加 icon_arrowTower）**——三张源图已落地 `art/slg/slg-map/`（`icon_watchtower.png` 覆盖旧版，`icon_blocker.png` / `icon_arrowTower.png` 新增），`pack_buildings.cjs` 重新打包 `building_atlas` 后，用一次性脚本 [`appendAtlasFrames.js`](../../art/scripts/appendAtlasFrames.js)（§3 有写为什么不能直接跑 `mergeAssetAtlases.js`/`patchMergedAtlas.js`）把新帧并入了 `world_atlas.{png,json}`（其余既有帧逐帧比对未变）。§2 的 prompt 仍保留作为出图依据/未来再改版的参照，§4 补了验收记录，§6 是 `icon_arrowTower` 单独一批的记录。旧版 `icon_watchtower.png`（正视立面版）移到了 `art/leftover/icon_watchtower_v1_frontal_2026-08-09.png`。
 关联：现有三张覆盖建筑规格见 [`design/game/WORLD_MAP_ART_SPEC.md`](../game/WORLD_MAP_ART_SPEC.md) §三/§四；出图/改色铁律见 [`art-direction.md`](art-direction.md) §〇；地形层出图先例见 [`slg-terrain-art.md`](slg-terrain-art.md)；资源母题出图先例见 [`slg-resource-art.md`](slg-resource-art.md)；渲染实现见 [`tileGraphics.ts`](../../client/src/scenes/worldmap/tileGraphics.ts) `placeBuildingSprite`。
 
 ---
@@ -10,7 +10,7 @@
 反馈（2026-08-09，用户截图标注）：地图上瞭望塔（`tile.watchtower`）和路障（`tile.structure`，非 `arrowTower` 的一种）的展示图标不对，看着不像"立在格子上的建筑"，读起来偏怪——需要重新出图，且新图要「刚好铺满一格」。
 
 排查根因：
-- **`icon_watchtower`**（`art/ui/slg-map/icon_watchtower.png`）是一张**正视/立面图**（像建筑立面图纸那样从正前方画的塔），长宽比 ~2:3（竖条状）。而同一批的 `building_keep`/`building_stronghold` 都是**3/4 俯视透视**、长宽比接近 1:1～1.2:1 的横向构图（见二者源图，塔身/寨墙左右撑开，画面撑满）。`placeBuildingSprite()`（[`tileGraphics.ts:259`](../../client/src/scenes/worldmap/tileGraphics.ts:259)）按高度等比缩放（`scale = targetH / tex.height`），一张竖条图缩到跟 keep/stronghold 同等目标高度后，宽度只有它们的一半左右——立在菱形格中央显得又细又空，跟"铺满一格"的诉求正好相反。
+- **`icon_watchtower`**（`art/slg/slg-map/icon_watchtower.png`）是一张**正视/立面图**（像建筑立面图纸那样从正前方画的塔），长宽比 ~2:3（竖条状）。而同一批的 `building_keep`/`building_stronghold` 都是**3/4 俯视透视**、长宽比接近 1:1～1.2:1 的横向构图（见二者源图，塔身/寨墙左右撑开，画面撑满）。`placeBuildingSprite()`（[`tileGraphics.ts:259`](../../client/src/scenes/worldmap/tileGraphics.ts:259)）按高度等比缩放（`scale = targetH / tex.height`），一张竖条图缩到跟 keep/stronghold 同等目标高度后，宽度只有它们的一半左右——立在菱形格中央显得又细又空，跟"铺满一格"的诉求正好相反。
 - **路障（`tile.structure.kind !== 'arrowTower'`）**：v1 起就没有专属美术，纯 `PIXI.Graphics` 画一个米白矩形 + X 形撑木（[`tileGraphics.ts:236-247`](../../client/src/scenes/worldmap/tileGraphics.ts) 改动前），按 TILE 归属描边变色，是几何占位不是图，观感和其余已出图的建筑不统一（用户截图里那个"信封"形状就是这个几何占位在小尺寸下的样子）。
 
 处理方式：
@@ -23,7 +23,7 @@
 
 跟 `building_keep`/`building_stronghold` 保持同一视觉语言（不是母题层"单个物体居中留白"的规则，是覆盖建筑层"立在格上、撑满构图"的规则）：
 
-1. **3/4 俯视透视，不是正视立面、也不是纯顶视平面**——参考 `art/ui/slg-map/building_keep.png` / `building_stronghold.png` 的视角：能同时看到建筑顶部和一到两个侧面，像站在稍高处斜看过去。
+1. **3/4 俯视透视，不是正视立面、也不是纯顶视平面**——参考 `art/slg/slg-map/building_keep.png` / `building_stronghold.png` 的视角：能同时看到建筑顶部和一到两个侧面，像站在稍高处斜看过去。
 2. **横向/方形构图，画面边到边撑满，别留大片空白**——建筑本体（含底部支撑/栅栏/尖桩等延展物）要占满画幅宽度，不要画成细高的独立剪影再留一堆白边。`building_stronghold` 底部的尖桩栅栏左右撑开到画面边缘就是这个效果，抄它的构图逻辑。
 3. **纯单色深墨线 + 排线阴影**（钢笔素描风，同 `building_keep`/`building_stronghold`），不上色、不用阴影渐变色块，只用排线表达明暗。
 4. **纯白背景**，出图管线（`pack_buildings.cjs`）靠亮度算 alpha 抠白底，深色线条留下、白背景变透明——背景不能有灰底/网格/纹理，否则会被误当成内容裁进去。
@@ -79,8 +79,8 @@ notebook grid lines, ruled lines
 
 沿用 `building_keep`/`building_stronghold` 现有管线（`pack_buildings.cjs`），实际跑法：
 
-1. 源图（白底 png）落到 `art/ui/slg-map/`，语义名 `icon_watchtower.png`（覆盖旧图，旧图移至 `art/leftover/icon_watchtower_v1_frontal_2026-08-09.png`）/ `icon_blocker.png`（新文件）。
-2. `node art/ui/slg-map/pack_buildings.cjs`（复用 `client/node_modules/sharp`）——近白→透明 + 内容裁边 + 长边缩放到 256，重新生成 `client/src/assets/slg/building_atlas.{png,json}`（6 帧：4 张未变 + 这次的 2 张）。脚本文件匹配正则已包含 `icon_blocker`。
+1. 源图（白底 png）落到 `art/slg/slg-map/`，语义名 `icon_watchtower.png`（覆盖旧图，旧图移至 `art/leftover/icon_watchtower_v1_frontal_2026-08-09.png`）/ `icon_blocker.png`（新文件）。
+2. `node art/slg/slg-map/pack_buildings.cjs`（复用 `client/node_modules/sharp`）——近白→透明 + 内容裁边 + 长边缩放到 256，重新生成 `client/src/assets/slg/building_atlas.{png,json}`（6 帧：4 张未变 + 这次的 2 张）。脚本文件匹配正则已包含 `icon_blocker`。
 3. **合并进 `world_atlas` 这一步没法直接用现成脚本**——客户端实际加载的是合并图集 `client/src/assets/slg/world_atlas.{png,json}`（2026-07-27 起 `building_atlas`/`terrain_atlas`/`res_atlas` 等已被 `art/scripts/mergeAssetAtlases.js` 合并进这一张共享页，且合并前的分源图集**已从仓库删除**，见 [`patchMergedAtlas.js`](../../art/scripts/patchMergedAtlas.js) 头部说明）：
    - `icon_blocker` 是全新帧——`patchMergedAtlas.js` 遇到目标缺帧只会跳过（`missing.push(name)`），不会新增。
    - `icon_watchtower` 换了构图比例，裁边+长边缩放后的新帧尺寸（256×198）跟 `world_atlas.json` 里原来的尺寸（86×256）不一致——`patchMergedAtlas.js` 遇到尺寸变化直接 `process.exit(1)`，且是在写盘之前就退出，不会留下半吊子状态。
@@ -119,7 +119,28 @@ notebook grid lines, ruled lines
 
 **回归护栏**（两个文件，共 +11 例；改动回退时分别有 2 例 / 5 例转红）：
 
-- `client/test/ui/worldMapStructureIcons.ui.ts` 新增一组 mock 掉 `buildingAtlasLoader`（伪装图集就绪）的用例——这条精灵分支此前**完全没有覆盖**（测试环境从不加载图集，老用例只走得到几何回退）。断言：两个精灵屏宽 ≤ `tp*0.7`（邻格间距 `tp/2` + 30% 溢出容差）、尺寸纯按 `tp` 等比缩放（防止有人拿像素常量"修"尺寸问题）、bottom-center 锚在菱形内、fog 下两者都不画（动态层，跟地形不同）、`arrowTower` 即使图集对任何名字都有响应也不取精灵、图集就绪但缺帧仍回退几何占位。
+- `client/test/ui/worldMapStructureIcons.ui.ts` 新增一组 mock 掉 `buildingAtlasLoader`（伪装图集就绪）的用例——这条精灵分支此前**完全没有覆盖**（测试环境从不加载图集，老用例只走得到几何回退）。断言：两个精灵屏宽 ≤ `tp*0.7`（邻格间距 `tp/2` + 30% 溢出容差）、尺寸纯按 `tp` 等比缩放（防止有人拿像素常量"修"尺寸问题）、bottom-center 锚在菱形内、fog 下两者都不画（动态层，跟地形不同）、图集就绪但缺帧仍回退几何占位。（2026-08-17 更新：`arrowTower` 有了 `icon_arrowTower` 真图后，这条"不取精灵"的断言已改成反过来验证"确实取了精灵、且不再画 ownership-tinted 屋顶"，见 §6。）
 - `client/test/ui/worldMapPoolDepthOrder.ui.ts`（新增）驱动真实 `WorldMapRenderer`，断的是用户可见性质而非实现：排序后瓦片池**严格由远及近**绘制。**在 5 个不同平移量下各验一次**——取模环绕的映射在可视窗口起点恰好是池尺寸整数倍时本来就是 y 有序的，单个偏移量能蒙混过关，这正是这个 bug 一直没被发现的原因。另覆盖每槽 `zIndex = tx+ty`、最前排最后画、`setZoom()` 重建池后依然成立、以及 zoom 3 走批量 L3 不建池的旧路径。
 
 **核对方式**：`npm run start:e2e` + Playwright 驱动 `window.__nwE2E.views.showWorldMap()`（reject-fast 的 `worldApi` stub，无后端），种一块 7×7 己方领地、内 5×5 全建同类结构，逐个系数截图对比——详见会话记忆 `worldmap-standalone-debug-render`。
+
+---
+
+## 6. `icon_arrowTower` 出图 + 接入（2026-08-17）
+
+**起因**：用户问"地图上那个尖尖的树状图标是什么建筑，没有专属图片吗"——答案是箭塔（`tile.structure.kind === 'arrowTower'`），v1 起就一直是纯几何画法（矩形塔身 + 三角屋顶，屋顶按格子归属染色），从未出图，是本文档三个覆盖建筑里唯一的缺口。
+
+**Prompt**：跟 §2 共用前缀/负向一致（3/4 俯视、纯墨线排线、白底），但主体 prompt **明确豁免了"横向撑满画幅"这条硬约束**——箭塔本来就该窄，参照现有几何占位含屋顶总高宽比 ~1:3.6，不该套 watchtower/blocker 那条"沿边界连片建造，宽脚架/长栅栏该横向铺开"的理由。用户拿到的一版（`art/slg/slg-map/icon_arrowTower.png`）是一座立在四足高台上的宽脚架箭楼，带梯子和十字撑架，裁边后 129×256（~1:1.98）——比 prompt 要求的 1:3.6 更壮实一些，但不算违规：**决定宽高比的是渲染时的目标高度常数，不是原图本身的比例**，练出来的成品到底占屏幕多宽，靠下面这步核算。
+
+**验收核算（没有真机截图，靠像素级模拟核对，方法见下）**：
+1. 用 `pack_buildings.cjs` 同款裁边+等比缩放逻辑跑一遍源图，确认裁边后帧尺寸（129×256）和长边缩放到 256 后的效果符合预期。
+2. 把已验收的 `icon_watchtower`（0.40 高、渲染约 30px）/ `icon_blocker`（0.22 高、渲染约 17px）也跑同一套模拟，在**它们各自真实的渲染高度**下用 6x 最近邻放大对比——结论：**两张已验收的图在这个尺寸下本来就是一团模糊的排线纹理，不是清晰线稿**，这是当前手绘钢笔素描风格在小尺寸下的固有观感，不是箭塔这张图独有的问题。`icon_arrowTower` 在同等对待下（新常量见下）观感与已验收的两张同一水平，判定**可用**，不要求重出。
+3. 结论：**采用**，不因"细节多、怕糊"打回重画——已验收的同类图在真实渲染尺寸下细节一样会糊，糊成排线纹理正是这套风格在小图标上的效果，不是箭塔这张的独有缺陷。
+
+**接入**：
+- `pack_buildings.cjs` 的文件匹配正则加入 `icon_arrowTower`。
+- `node art/slg/slg-map/pack_buildings.cjs` 重新打包 `building_atlas`（7 帧：4 张 building_* 未变 + `icon_watchtower`/`icon_blocker` 未变 + 新增 `icon_arrowTower`）。
+- `NODE_PATH="$(pwd)/client/node_modules" node art/scripts/appendAtlasFrames.js client/src/assets/slg/building_atlas.json client/src/assets/slg/world_atlas.json icon_arrowTower`——`icon_arrowTower` 是全新帧，走的是"追加到页面底部的新条带"分支（页面 2048×4038 → 2048×4294），其余 87 个既有帧字节不变。临时的 `building_atlas.{png,json}` 用完即删（同 §3 的老规矩，这两个文件本不进仓库）。
+- `tileGraphics/tiles.ts` 的 `arrowTower` 分支改成先试 `placeBuildingSprite(g, 'icon_arrowTower', tp, hh, tp * ARROWTOWER_H, false)`，失败（图集未就绪/帧缺失）才回落原几何画法。**新增 `ARROWTOWER_H = 0.50`**——刻意比 watchtower（0.52 tp 屏宽）/blocker（0.64 tp 屏宽）窄得多：`0.50 × 1.98 ≈ 0.25 tp`，呼应箭塔"单格细尖桩"的既有定位（旧几何占位屏宽仅 `0.16 tp`，从没人抱怨过），同时远低于 `tp/2` 邻格间距上限。跟 watchtower/blocker 当年一样是**纸面首次估算，未经真机截图核对**，如果之后玩家沿边界连片造箭塔时看着不对，回来照 §5 的方法重新量。
+- 真图上线后，箭塔精灵**不再 tint 屋顶**——归属交回格下水洗表达，和另外两张已出图的覆盖建筑同一套规则；只有图集未就绪时的几何回退还保留 ownership-tinted 屋顶（那条路径没有格下水洗可以替代它，见 `tileGraphics/tiles.ts` 里的注释）。
+- `client/test/ui/worldMapStructureIcons.ui.ts` 更新：原先断言"arrowTower 不取精灵"的用例改写成断言"取了 129×256 的精灵、屏宽 ≤ `tp*0.7`、bottom-center 锚在菱形内、fog 下不画、且不再画 ownership-tinted 屋顶 fill"。`npx vitest run --config vitest.ui.config.ts worldMapStructureIcons` 全绿（14/14）。

@@ -8,7 +8,7 @@
  * The bundled atlas ships one dedicated frame per level (`city_l1..city_l10`). Until 2026-08-14
  * levels 1/3/6/9 had no dedicated art and fell back to 4 pre-redesign "tier" frames
  * (`city_lv1..lv4`); once the last of those was redrawn, all 10 levels were unified onto this flat
- * naming and the tier fallback was dropped. Repacked by art/ui/slg-building/pack_city_atlas.js.
+ * naming and the tier fallback was dropped. Repacked by art/slg/slg-building/pack_city_atlas.js.
  */
 import * as PIXI from 'pixi.js-legacy';
 import atlasUrl from '../assets/slg/city_atlas.png';

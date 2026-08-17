@@ -298,7 +298,7 @@ tips of the tallest spires are the only exception to the two-tone palette.
 
 新图外接框宽高比 1.19~1.89（旧图约 1.0，目标 1.43），10 张里 7 张宽于目标 → 由**宽度**预算触底、高度自动落在预算内；只有 Lv.8/Lv.10 略高于目标，被高度预算轻微缩了一点。`contentTop` 0.44~0.57（低级别更矮，符合预期）。真机 10 级逐个截图核对：全部落在 3×3 地块上，不再压后排格子。
 
-等级 ↔ 源图对应（AI 出图是 UUID 命名，按"能对上哪条 prompt 的特征物"判定，源文件仍留在 `art/ui/slg-playerbase/`）：
+等级 ↔ 源图对应（AI 出图是 UUID 命名，按"能对上哪条 prompt 的特征物"判定，源文件仍留在 `art/slg/slg-playerbase/`）：
 
 | 等级 | 源图前缀 | 判定依据（prompt 特征物） |
 |---|---|---|
@@ -351,13 +351,13 @@ tips of the tallest spires are the only exception to the two-tone palette.
 补法：`art/scripts/patchMergedAtlas.js`，把某个子图集的帧**原位重新盖印**进已合并页（帧尺寸不变 → 坐标不变，只换像素和 `contentTop` 之类的自定义字段；尺寸变了会直接报错要求整页重打）。
 
 ```bash
-node art/ui/slg-playerbase/pack_playerbase_atlas.js
+node art/slg/slg-playerbase/pack_playerbase_atlas.js
 node art/scripts/patchMergedAtlas.js client/src/assets/slg/playerbase_atlas.json client/src/assets/slg/world_atlas.json
 ```
 
 第一步产出的 `playerbase_atlas.{png,json}` 只是中间产物，不入库（和其余 13 个源 atlas 一样，2026-07-27 起仓库里只留合并页）——盖印完可以删掉，需要时重跑第一步即可。
 
-10 张图已由用户按 prompt 生成、放入 `art/ui/slg-playerbase/`（`playerbase_l1.png` … `playerbase_l10.png`，混合 png/webp），并跑 `node art/ui/slg-playerbase/pack_playerbase_atlas.js` 打包成 `client/src/assets/slg/playerbase_atlas.{png,json}`，覆盖了此前的空占位图。
+10 张图已由用户按 prompt 生成、放入 `art/slg/slg-playerbase/`（`playerbase_l1.png` … `playerbase_l10.png`，混合 png/webp），并跑 `node art/slg/slg-playerbase/pack_playerbase_atlas.js` 打包成 `client/src/assets/slg/playerbase_atlas.{png,json}`，覆盖了此前的空占位图。
 
 **打包脚本一处偏差（相对 `pack_city_atlas.js`）**：这批源图的背景是纯白、无方格纸网格，而建筑主体的浅黄绿色水彩填充与白色背景的色距（约44）小于 `pack_city_atlas.js` 原有的 `TSEED=72` 绝对阈值，会导致区域生长去背算法从边缘一路吃穿建筑内部填充（`playerbase_l7` 曾被吃成碎片）。`pack_playerbase_atlas.js` 因此把 `TSEED` 改成 `0`（只保留 `TSTEP=33` 的渐变跟随去背），10 帧全部干净切割，无需网格桥接。
 
@@ -368,7 +368,7 @@ node art/scripts/patchMergedAtlas.js client/src/assets/slg/playerbase_atlas.json
 
 ## 2026-08-08（同日第二轮）：重出图，Lv.4/5/6/10 落地，Lv.7/8 仍不够宽
 
-上一节末尾留的坑（Lv.4-8/10 高度预算先触底，宽度填不满）用户直接重出了 7 张新图丢进 `art/ui/slg-playerbase/`。逐张核对（离线复现 `citySpriteTiles`/`cityPlotMaskPoints`/`tileToScreen` 几何 + 叠加真实打包后的图集像素，方法同上一节"验证技术"）：
+上一节末尾留的坑（Lv.4-8/10 高度预算先触底，宽度填不满）用户直接重出了 7 张新图丢进 `art/slg/slg-playerbase/`。逐张核对（离线复现 `citySpriteTiles`/`cityPlotMaskPoints`/`tileToScreen` 几何 + 叠加真实打包后的图集像素，方法同上一节"验证技术"）：
 
 | 候选 | 目标等级 | contentWidthFrac（满宽=0.9375） | 对比旧图 | 结论 |
 |---|---|---|---|---|
@@ -528,7 +528,7 @@ tips are the only exception to the two-tone palette.
 
 ### 2026-08-13（同日第二轮）：v2 prompt 出的图机位整体错了，未采用
 
-用户按上面 5 条 v2 prompt 出图放进 `art/ui/slg-playerbase/`（`1790904c`→Lv.2、`fadb8a8c`→Lv.3、`8bca89bc`→Lv.6、`ac069d0a`→Lv.9、`a3e07823`→Lv.10）。目测核对，5 张全部**机位不对，未采用**，问题比"宽度不够"更根本：
+用户按上面 5 条 v2 prompt 出图放进 `art/slg/slg-playerbase/`（`1790904c`→Lv.2、`fadb8a8c`→Lv.3、`8bca89bc`→Lv.6、`ac069d0a`→Lv.9、`a3e07823`→Lv.10）。目测核对，5 张全部**机位不对，未采用**，问题比"宽度不够"更根本：
 
 - **画布不是正方形**：现有全套（`playerbase_l1` 等）都是 1254×1254；这 5 张是 1672×941 / 1536×1024 / 1704×923 等**横版长方形**。
 - **构图不是旋转菱形地台**：现有正确图的地台画的是旋转45°的菱形（四角指向画布上/下/左/右，像扑克牌"♦"），这 5 张画的是"正面/略俯视看一张平铺长方形垫子"——有地平线、往远处延伸的透视，不是俯视机位。拼进等轴测地图后 `cityPlotMaskPoints` 拿菱形去裁一张长方形画面，形状对不上。
@@ -881,7 +881,7 @@ and spire tips, notebook doodle aesthetic, no text.
 | `citadel_diamond_doodle.png` | Lv.9 | 1.53 | 0.86 | 比现有 0.83 有改善，但未到满宽，**待用户拍板**是否接受或再出一版 |
 | `citadel_diamond_doodle_1024.png` | Lv.10 | 3.08 | 0.94（满宽） | 宽度达标，但外接框比 Lv.9 平了一倍多——画面主体比 Lv.9 矮很多，跟"Lv.10 不该比 Lv.9 矮"的硬规有点冲突，构图内容也换成了链环+台阶（不是原 prompt 的钢笔造型）。**待用户确认**是否满意这个方向 |
 
-数字自检（"整体外接框宽高比≥1.7，不够就把塔尖压更矮"）这次效果明显比上一轮的"squat"形容词好——Lv.6 一次命中。Lv.9/Lv.10 两张候选先留在 `art/ui/slg-playerbase/`（未改名，不是 playerbase_lN 也不是 leftover），等用户决定采用/重出再处理。
+数字自检（"整体外接框宽高比≥1.7，不够就把塔尖压更矮"）这次效果明显比上一轮的"squat"形容词好——Lv.6 一次命中。Lv.9/Lv.10 两张候选先留在 `art/slg/slg-playerbase/`（未改名，不是 playerbase_lN 也不是 leftover），等用户决定采用/重出再处理。
 
 ### 2026-08-13（同日第六轮）：新出的 Lv.10 候选比例精准命中，采用；Lv.9 仍待定
 
@@ -895,7 +895,7 @@ and spire tips, notebook doodle aesthetic, no text.
 
 打包脚本原生支持 `.webp` 源文件（见脚本头注释"mixed png/webp AI-generation batch"），直接改名 `playerbase_l10.webp` 覆盖旧的 `playerbase_l10.png`（无需转格式），重跑 `pack_playerbase_atlas.js` + `patchMergedAtlas.js` 入库，并从合并后的 `world_atlas.png` 截出实际 cell 像素核对（菱形贴边，跟 `l1`/`l4`/`l6` 同一水准）。被替换的旧图从 git 历史取出存进 `art/leftover/playerbase_l10_pre20260813.png`；上一版走偏的 `citadel_diamond_doodle_1024.png` 候选也移入 `art/leftover/`。
 
-**Lv.9 仍待定**：`citadel_diamond_doodle.png` 候选（0.86，比现有 0.83 好但未到满宽）还留在 `art/ui/slg-playerbase/`，等用户决定接受还是再出一版冲满宽。**至此 10 张里已有 9 张（Lv.1/2/3/4/5/6/7/8/10）达到或接近满宽，只剩 Lv.9 待收尾。**
+**Lv.9 仍待定**：`citadel_diamond_doodle.png` 候选（0.86，比现有 0.83 好但未到满宽）还留在 `art/slg/slg-playerbase/`，等用户决定接受还是再出一版冲满宽。**至此 10 张里已有 9 张（Lv.1/2/3/4/5/6/7/8/10）达到或接近满宽，只剩 Lv.9 待收尾。**
 
 ### 2026-08-13（同日第七轮）：Lv.9 v6 prompt 命中，10 张全部达标收口
 

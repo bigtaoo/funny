@@ -90,8 +90,8 @@ lines
 
 ## 4. 出图后的管线（沿用 decor / resource 口径，已执行）
 
-1. 源图（白底 webp）已归档 `art/ui/slg-map/`，语义名 `terrain_grass.webp` / `terrain_mountain.webp` / `terrain_river.webp` / `terrain_gate.webp` / `terrain_keep.webp` / `terrain_center.webp` / `terrain_stronghold.webp`。
-2. 打包脚本 `art/ui/slg-map/pack_terrain.cjs`：不同于 `pack_resources.cjs`（母题图标需要裁透明边），地形是满铺方形地面纹理，**不裁边、不抠透明**，只做等比缩放到 256×256 + 定长网格打包，保留原始不透明纸面背景（渲染期整方形贴图会被 `drawPolygon` 裁进菱形，裁掉的边角本来就该丢弃）。
+1. 源图（白底 webp）已归档 `art/slg/slg-map/`，语义名 `terrain_grass.webp` / `terrain_mountain.webp` / `terrain_river.webp` / `terrain_gate.webp` / `terrain_keep.webp` / `terrain_center.webp` / `terrain_stronghold.webp`。
+2. 打包脚本 `art/slg/slg-map/pack_terrain.cjs`：不同于 `pack_resources.cjs`（母题图标需要裁透明边），地形是满铺方形地面纹理，**不裁边、不抠透明**，只做等比缩放到 256×256 + 定长网格打包，保留原始不透明纸面背景（渲染期整方形贴图会被 `drawPolygon` 裁进菱形，裁掉的边角本来就该丢弃）。
 3. 产物输出到 `client/src/assets/slg/terrain_atlas.png`（1024×1024）+ `terrain_atlas.json`（TexturePacker JSON-Hash，帧名同资产名，如 `terrain_grass`）。
 4. 线条为原墨色、不 tint；归属色/等级色仍由渲染期叠加（同 res 母题口径）。
 5. 接入渲染：新增 `terrainAtlasLoader.ts`（懒加载，色块兜底，接口对齐 `resAtlasLoader.ts`）；`WorldMapScene.drawTileL1` 改用 `g.beginTextureFill({texture, matrix})` 铺底替代原 `beginFill(fill, 0.7)`，`obstacle` 按 `(tx*31+ty*17)%2` 坐标 hash 选 `terrain_mountain`/`terrain_river`；`resource` 类型底纹复用 `terrain_grass`（母题贴图仍叠加在上层，逻辑不变）。
@@ -118,7 +118,7 @@ lines
 - **`terrain_stronghold` v1（2026-07-02，未通过）**：尖桩铁丝网画成立体/侧视透视（同 `terrain_keep` v1 的问题），另外混入骷髅骨头具象图标，跟其余六张纯抽象地形纹理的视觉语言不一致，且整体密度过满、糊成一片难以分辨个体岩石。
 - **`terrain_stronghold` v2（2026-07-02，定稿）**：改为纯顶视的岩石团块（同 `terrain_mountain` 画法但密度更高更暗，几乎不留纸面空隙），穿插扁平 X 形路障标记，去掉立体桩子和骷髅骨头。已定稿为 `terrain_stronghold`。
 
-**7 张地形贴图全部定稿完成（2026-07-02）**：grass / mountain / river / gate / keep / center / stronghold。下一步进入 §4 出图后的管线（源图归档 `art/ui/slg-map/` → 打包图集 → 接入 `terrainAtlasLoader.ts`），尚未执行。
+**7 张地形贴图全部定稿完成（2026-07-02）**：grass / mountain / river / gate / keep / center / stronghold。下一步进入 §4 出图后的管线（源图归档 `art/slg/slg-map/` → 打包图集 → 接入 `terrainAtlasLoader.ts`），尚未执行。
 
 ---
 
