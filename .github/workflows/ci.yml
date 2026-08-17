@@ -17,6 +17,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Cheapest job in the workflow (no install, no build — just node + git ls-files), so it goes
+  # first and gives the fastest possible signal on a doc-only PR. Gates markdown link rot only:
+  # ADR-067 deliberately does NOT gate the 500-line doc convention, because docs have to be cut
+  # along semantic seams and a hard line limit pushes toward mechanical cuts that read worse —
+  # the script prints oversized files as a non-blocking notice instead. Link/anchor breakage has
+  # no such judgment call: it either resolves or it doesn't. Introduced after a repo-wide sweep
+  # found 21 dead links and 7 dead anchors that had accumulated unnoticed (all now fixed).
+  docs-check:
+    name: docs link check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # No `cache: npm` — this script has zero dependencies and the repo root has no lockfile.
+      - name: markdown link/anchor check
+        run: node scripts/checkDocLinks.mjs
+
   # Fast checks only: codegen staleness + file-length + tsc -b across all 13 workspaces. No
   # tests, no Docker, done in well under a minute — kept separate from server-test (below) so a
   # typecheck failure surfaces immediately without waiting on the slowest test shard, and so it
