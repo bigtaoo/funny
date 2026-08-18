@@ -56,6 +56,7 @@ export class CardScene implements Scene {
     // after feed.ts (feed has no CardScene-internal deps, actions needs feed) — wire the lazy hook
     // now, immediately after the real ActionsPanel exists, before any real render/interaction.
     this.core.doFuse = (targetId, materialIds, onSettled) => this.actions.doFuse(targetId, materialIds, onSettled);
+    this.core.doPrepBatch = (nextRound, onSettled) => this.actions.doPrepBatch(nextRound, onSettled);
     this.detail = new DetailPanel(this.core, this.actions, this.feed);
     this.skins = new SkinsPanel(this.core);
     this.list = new ListPanel(this.core, this.detail);

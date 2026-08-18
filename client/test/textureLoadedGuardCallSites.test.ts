@@ -58,8 +58,10 @@ const REVIEWED_NAMED_CALLBACKS: Record<string, string> = {
     'fitIllustration() opens with `if (this.destroyed) return`, and destroy() also base.off()s it via unsubs.',
   'scenes/CardScene/feedList.ts':
     'onArtLoaded is `() => core.feedRedraw?.()`, i.e. drawFusePanel, which opens with `if (core.destroyed) return`.',
-  'scenes/CardScene/feed.ts':
-    'drawFusePanel() opens with `if (core.destroyed) return` — needed separately from CardScene.render() because it is also stored as core.feedRedraw, which destroy() never nulls.',
+  'scenes/CardScene/feedRing.ts':
+    'onArtLoaded is `() => core.feedRedraw?.()` from feed.ts, i.e. drawFusePanel, which opens with `if (core.destroyed) return` — needed separately from CardScene.render() because it is also stored as core.feedRedraw, which destroy() never nulls.',
+  'scenes/CardScene/feedGap.ts':
+    'Same as feedRing.ts: the recommendation strip is drawn with the same `() => core.feedRedraw?.()` from feed.ts.',
   'scenes/CardCodexScene/tile.ts':
     'onArtLoaded is `() => this.render()` from CardCodexScene.ts, whose render() opens with `if (this.destroyed) return`.',
   'render/stickman/assetLoader.ts':
