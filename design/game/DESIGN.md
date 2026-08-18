@@ -311,7 +311,7 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 | 盾兵（ShieldBearer） | `shieldbearer.png` |
 | 兵营（Barracks） | `game_infantry_barracks.png`（与场上建筑同图） |
 | 箭塔（ArrowTower） | `game_archer_barracks.png`（与场上建筑同图） |
-| 法术（Haste / Meteor） | 无图，仅文字 |
+| 法术（Haste / Meteor / Rockslide / BridgeCollapse） | `spell_haste.png` / `spell_meteor.png` / `spell_rockslide.png` / `spell_bridge_collapse.png`（2026-08 起真图，见 `render/cardArt.ts` `CARD_ART_URLS`；后两张为 PvE 关卡专属法术） |
 
 - 插画等比缩放居中于类型行与名称行之间，不被费用圆遮挡
 - 纹理按 key 懒加载缓存在 `Map`；异步加载完成时清空 `lastSyncKey` 触发重 sync

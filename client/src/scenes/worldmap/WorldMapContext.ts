@@ -183,8 +183,12 @@ export class WorldMapContext {
   topLayer!: PIXI.Container;
   /** Resource-production readout + auction button drawn on top of the header bar; torn down/rebuilt alongside hudLayer so production rates stay live. Sits above topLayer (added after it) so it isn't hidden by the header chrome. */
   headerHudLayer!: PIXI.Container;
-  /** Header bar height (SceneHeader, unified with every other scene) — the map viewport and top-anchored HUD reserve this much space. Set once in build(). */
+  /** Total space reserved at the top — header bar + (portrait only) the resource strip below it. The map viewport and top-anchored HUD start here. Set once in build(). */
   topInset = 0;
+  /** Header bar height alone (SceneHeader, unified with every other scene). Set once in build(). */
+  headerBarH = 0;
+  /** Height of the resource-readout strip drawn directly under the header bar; 0 in landscape, where the readout fits inside the bar itself. Set once in build(). */
+  resStripH = 0;
   modalLayer!: PIXI.Container;
   toastLayer!: PIXI.Container;
   loadingLayer: PIXI.Container | null = null;

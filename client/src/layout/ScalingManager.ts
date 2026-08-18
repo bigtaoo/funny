@@ -77,7 +77,34 @@ export function resettledLayout(
  *
  * Call resize() whenever the canvas size changes (browser resize event).
  */
+/**
+ * Desk surround (2026-08-18) — what fills the letterbox bands.
+ *
+ * Portrait design height tracks the screen aspect but is floored at 1920 (`PortraitLayout`'s
+ * REFERENCE_H, a hard floor: 70 top HUD + 18×84 board + 70 bottom HUD + 268 hand = exactly 1920),
+ * so screens *squatter* than 9:16 — every iPad — contain to width and leave side bands: 256px each
+ * side on a 12.9" (25% of the panel), 107px on a mini. Phones are unaffected (0 on all of them).
+ *
+ * Rather than leave those bands as flat dead paper, they get painted as the desk the notebook page
+ * is lying on: a kraft-toned surface, a faint grain, and a soft shadow + ink edge along the page
+ * boundary. That is the game's own diegetic frame (art-direction.md §〇 — the whole game happens on
+ * this notebook), so a centred page on a desk reads as intended instead of as an unfinished port.
+ * Nothing inside the design rect moves, so this carries no layout risk; a real iPad layout (letting
+ * portrait's design width stretch the way LandscapeLayout's does) is the separate, much riskier
+ * option — see design/product/release/store-assets-checklist.md §0.6.
+ */
+const DESK_FILL  = 0xded3bd; // kraft/manila, a step warmer and darker than ui.paper (0xfaf6ee)
+const DESK_GRAIN = 0xc9bda4;
+const PAGE_EDGE  = 0x2c2c2a; // ui.dark
+
 export class ScalingManager {
+  /**
+   * Desk surround behind the page, in SCREEN space (scale 1, origin 0,0) — it has to be screen
+   * space because it frames `gameLayer`'s post-scale rect, which no design-space layer can align to
+   * (bgLayer is Cover-scaled, gameLayer Contain-scaled — different factors whenever bands exist).
+   * Empty and hidden when the game fills the screen, i.e. on every phone.
+   */
+  readonly deskLayer: PIXI.Graphics;
   /** Background layer (Cover scale — fills screen, may clip). */
   readonly bgLayer:   PIXI.Container;
   /** Game content layer (Contain scale — fully visible, may letterbox). */
@@ -93,9 +120,13 @@ export class ScalingManager {
   ) {
     this.layout    = layout;
     this.insets    = insets;
+    this.deskLayer = new PIXI.Graphics();
     this.bgLayer   = new PIXI.Container();
     this.gameLayer = new PIXI.Container();
 
+    // Bottom-most: the page's own paper background covers the design rect anyway, so the desk only
+    // ever shows through the bands.
+    app.stage.addChild(this.deskLayer);
     app.stage.addChild(this.bgLayer);
     app.stage.addChild(this.gameLayer);
 
@@ -145,5 +176,55 @@ export class ScalingManager {
     this.bgLayer.scale.set(bgScale);
     this.bgLayer.x = Math.round((screenW - dw * bgScale) / 2);
     this.bgLayer.y = Math.round((screenH - dh * bgScale) / 2);
+
+    drawDeskSurround(
+      this.deskLayer, screenW, screenH,
+      this.gameLayer.x, this.gameLayer.y, dw * gameScale, dh * gameScale,
+    );
   }
+}
+
+/**
+ * Paint the desk surround into the letterbox bands and shade the page's edge, in screen space.
+ * `pageX/Y/W/H` is the game layer's on-screen rect. Returns whether anything was drawn — a band
+ * under 2px is a rounding artefact rather than a visible margin, so phones (which have none at all)
+ * draw and composite nothing. Exported for the regression test; ScalingManager is the only caller.
+ */
+export function drawDeskSurround(
+  g: PIXI.Graphics,
+  screenW: number, screenH: number,
+  pageX: number, pageY: number, pageW: number, pageH: number,
+): boolean {
+  g.clear();
+  const bandX = Math.max(0, pageX);
+  const bandY = Math.max(0, pageY);
+  g.visible = bandX >= 2 || bandY >= 2;
+  if (!g.visible) return false;
+
+  g.beginFill(DESK_FILL).drawRect(0, 0, screenW, screenH).endFill();
+
+  // Faint grain over the bands (the page covers the middle): long strokes at a shallow angle,
+  // spaced by band width so the density reads the same on a mini as on a 12.9".
+  const step = Math.max(18, Math.round(Math.max(bandX, bandY) / 6));
+  g.lineStyle(1, DESK_GRAIN, 0.5);
+  for (let y = -screenW; y < screenH + screenW; y += step) {
+    g.moveTo(0, y);
+    g.lineTo(screenW, y + Math.round(screenW * 0.12));
+  }
+  g.lineStyle(0);
+
+  // Page shadow: nested rects stepping outward at falling alpha — a soft edge without a blur
+  // filter, since this redraws on every resize and must stay trivial.
+  const spreadStep = Math.max(2, Math.round(Math.min(bandX || 24, 24) / 3));
+  for (let i = 7; i >= 1; i--) {
+    const spread = i * spreadStep;
+    g.beginFill(PAGE_EDGE, 0.035);
+    g.drawRect(pageX - spread, pageY - spread + spread * 0.35, pageW + spread * 2, pageH + spread * 2);
+    g.endFill();
+  }
+  // Ink edge, so the page reads as a sheet with a boundary rather than a lighting gradient.
+  g.lineStyle(2, PAGE_EDGE, 0.35);
+  g.drawRect(pageX, pageY, pageW, pageH);
+  g.lineStyle(0);
+  return true;
 }

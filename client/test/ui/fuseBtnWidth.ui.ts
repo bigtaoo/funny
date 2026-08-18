@@ -65,13 +65,8 @@ describe('fuse modal Confirm/Cancel buttons auto-fit label width per locale', ()
       // scene.container for the bare row label (no more "Lv.N" suffix, 2026-07-25) would collide with
       // those background cells instead of the fuse row.
       const modalLayer = (scene as unknown as { core: { modalLayer: PIXI.Container } }).core.modalLayer;
-      // Fill all 5 slots so Confirm renders "(5/5)" and registers a tappable hit.
-      const rowLabel = t('card.max.name' as never);
-      for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-        const rowText = collectTexts(modalLayer).find((tt) => tt.text === rowLabel);
-        expect(rowText, `${loc}: candidate row missing before assigning material ${i}`).toBeDefined();
-        hitsOf().find((h) => rowText!.x >= h.rect.x && rowText!.x <= h.rect.x + h.rect.w && rowText!.y >= h.rect.y && rowText!.y <= h.rect.y + h.rect.h)!.action();
-      }
+      // All 5 slots are pre-filled on open (2026-08-18 auto-fill, feedPlan.autoFillMaterials), so
+      // Confirm already renders "(5/5)" and registers a tappable hit — no tapping needed here.
 
       const confirmLabel = `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`;
       const cancelLabel = t('equip.cancel');
