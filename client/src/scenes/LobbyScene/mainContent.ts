@@ -8,7 +8,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { SketchPen } from '../../render/sketch';
-import { buildIcon, IconKind } from '../../render/icons';
+import { buildIcon, IconKind, RasterIconVariant } from '../../render/icons';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { randomHeroAssetUrl } from '../../render/heroSilhouette';
 import { fitContentToBox } from '../../render/fitToBox';
@@ -64,8 +64,11 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
 
   // Crossed-pencils motif stamped on the right of the hero (faint accent ink on
   // the dark fill) — adds content without a photo, off-centre to clear the label.
+  // `variant: 'active'` (white ink) is passed explicitly rather than left to `tabIconVariant`'s colour
+  // test: this motif sits on the hero button's near-black fill, and any accent colour we'd pass as a
+  // hint reads "dark" by luma and would select the paper-grey art, which vanishes there.
   const heroMotifS = Math.round(heroH * 1.05);
-  const heroMotif = buildIcon('pencils', heroMotifS, C.accent);
+  const heroMotif = buildIcon('duelTabIcon', heroMotifS, C.light, { variant: 'active' });
   heroMotif.alpha = 0.22;
   heroMotif.x = Math.round(contentX + contentW - heroMotifS * 1.15);
   heroMotif.y = Math.round(heroY + heroH / 2 - heroMotifS / 2);
@@ -148,7 +151,7 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
   }
 
   core.campaignBtnRect = { x: contentX, y: pillarsY, w: pw, h: pillarH };
-  drawPillar(core, contentX, pillarsY, pw, pillarH, C.gold, 'book',
+  drawPillar(core, contentX, pillarsY, pw, pillarH, C.gold, 'campaignTabIcon',
     t('lobby.campaign'), t('lobby.campaign.sub'), 51);
 
   if (showWorld) {
@@ -156,8 +159,9 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
     core.worldPillarRect = { x: worldX, y: pillarsY, w: pw, h: pillarH };
     // Soft gate (§4): chapter one not cleared → greyed accent + subtitle changed to "clear chapter one to unlock".
     const locked = !!core.cb.worldLocked;
-    drawPillar(core, worldX, pillarsY, pw, pillarH, locked ? C.light : C.accent, 'castle',
-      t('lobby.world'), locked ? t('lobby.world.locked') : t('lobby.world.sub'), 53);
+    drawPillar(core, worldX, pillarsY, pw, pillarH, locked ? C.light : C.accent, 'worldTabIcon',
+      t('lobby.world'), locked ? t('lobby.world.locked') : t('lobby.world.sub'), 53,
+      locked ? 'inactive' : 'content');
   } else {
     core.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
   }
@@ -224,14 +228,20 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
 
 /**
  * A pillar card for the main lobby grid (Campaign / World map): hand-drawn panel +
- * coloured left-edge ink stroke + a SketchPen line-art icon, title and
- * subtitle. Shares the notebook-doodle language with the feature panels and
- * VS cards (icons replace the old emoji placeholders).
+ * coloured left-edge ink stroke + a line-art icon, title and subtitle. Shares the
+ * notebook-doodle language with the feature panels and VS cards.
+ *
+ * The motif is AI raster art since batch 6, so it no longer takes `accent`'s colour — the card's
+ * left-edge stroke, border and (for the world card) subtitle already carry gold-vs-blue, so the
+ * watermark drops to plain ink rather than earning the pack script two more baked colours.
+ * `iconVariant` is therefore explicit: `'content'` (full-strength ink) for a live card, `'inactive'`
+ * (the de-emphasised grey) for the soft-gated world card, matching its greyed border.
  */
 function drawPillar(
   core: LobbySceneCore,
   x: number, y: number, w: number, h: number,
   accent: number, icon: IconKind, title: string, sub: string, seed: number,
+  iconVariant: RasterIconVariant = 'content',
 ): void {
   const bg = sketchPanel(w, h, { fill: C.paper, border: accent, width: 2.6, seed });
   bg.x = x; bg.y = y;
@@ -242,7 +252,7 @@ function drawPillar(
   // Large hand-drawn motif filling the card's upper half (replaces the old small icon):
   // accent-ink colour at low alpha as a "card doodle"; the title text drawn over it remains legible.
   const iconSize = Math.round(h * 0.6);
-  const glyph = buildIcon(icon, iconSize, accent);
+  const glyph = buildIcon(icon, iconSize, accent, { variant: iconVariant });
   glyph.alpha = 0.6;
   glyph.x = Math.round(x + w / 2 - iconSize / 2);
   glyph.y = Math.round(y + h * 0.40 - iconSize / 2);

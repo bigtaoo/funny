@@ -89,6 +89,13 @@ const JOBS = [
   { src: 'tabicon_trinket.webp',     name: 'trinket' },
   { src: 'tabicon_avatar.webp',      name: 'avatar' },
   { src: 'tabicon_channel.webp',     name: 'channel' },
+  // Batch 6 — lobby home-screen motifs (design/product/tab-icon-art-prompts-batch6.md). Unlike every
+  // batch before it these are LARGE motifs (hero button watermark + pillar-card art, rendered at
+  // hundreds of px), not 28px tab cells — the ink variants and the pipeline are unchanged, but the
+  // source art is allowed a little more line detail (the map's dotted route, the notebook's spiral).
+  { src: 'tabicon_duel.webp',        name: 'duel' },
+  { src: 'tabicon_campaign.png',     name: 'campaign' },
+  { src: 'tabicon_world.png',        name: 'world' },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');
