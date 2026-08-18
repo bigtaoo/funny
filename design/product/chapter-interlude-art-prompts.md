@@ -3,7 +3,7 @@
 > 更新：2026-08-04
 > 叙事出处：[`world.md`](world.md)「章末真实层：涛与 Anna」
 > 同类文档：[`intro-story-art-prompts.md`](intro-story-art-prompts.md)（开场插画，本档的构图/风格惯例来源）· [`../game/CAMPAIGN_STORY.md`](../game/CAMPAIGN_STORY.md)
-> 状态：草稿，尚未出图、未接代码——本文档只是 prompt 稿，落地方式（是否复用 IntroScene 的插画层机制、还是新建过场场景）待定
+> 状态：**✅ 6/6 已出图 + 已接线（2026-08-05）**——落地方式拍板为新建可复用插画过场组件 `IllustratedInterludeScene`（抽取 `IntroScene` 的插画淡入 + 逐行文字 + 点按推进），资产在 `client/src/assets/story/interlude_*.png`，明细见文末「落地状态」。本文档头部原写「草稿，尚未出图、未接代码」，与文末记录矛盾，2026-08-18 订正。
 
 ---
 

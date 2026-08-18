@@ -124,7 +124,7 @@
 
 ### 客户端
 - [x] **S2-5 EconomyClient**：封装 shop/gacha/ads/iap 调用；UI 余额只读自 SaveData（服务器回推）。**依赖**：S0-5、C-2。✅ 经济方法并入 `client/src/net/ApiClient.ts`（`getShopItems`/`shopBuy`/`getGachaPools`/`gachaDraw`/`adsReward`/`iapVerify` + `ShopItem`/`GachaPool`/`GachaResultEntry` DTO，回推权威 SaveData）；`SaveManager.adoptServer(save)` 吃回执（权威段服务器为准，复用 reconcile）。花币动作后余额以服务器回推刷新。
-- [x] **S2-6 ShopScene + GachaScene**：商品格/购买确认/盲盒开箱/保底进度。**依赖**：S2-5。✅ `client/src/scenes/{ShopScene,GachaScene}.ts`（canvas render+hit-list）：商店已拥有标记/余额校验/购买 toast + 底部盲盒/充值入口；盲盒单抽/十连/保底进度条/稀有度图例 + 结果揭示层（稀有度卡 + NEW/重复徽章）。大厅底栏「商店」格接入（离线路由登录）。**虚拟充值**：`taowang`(/`-s`/`-l`) → `iapVerify('dev-<ts>','tier:xxx')` 命中 dev 桩，零服务端改动，上线换平台 SDK。i18n `shop.*`/`gacha.*`/`rarity.*` 全翻。tsc + web 构建 + 128 测试绿。**注**：占位皮肤暂用 itemId 展示，真实皮肤名/图待美术。
+- [x] **S2-6 ShopScene + GachaScene**：商品格/购买确认/盲盒开箱/保底进度。**依赖**：S2-5。✅ `client/src/scenes/{ShopScene,GachaScene}.ts`（canvas render+hit-list）：商店已拥有标记/余额校验/购买 toast + 底部盲盒/充值入口；盲盒单抽/十连/保底进度条/稀有度图例 + 结果揭示层（稀有度卡 + NEW/重复徽章）。大厅底栏「商店」格接入（离线路由登录）。**虚拟充值**：`taowang`(/`-s`/`-l`) → `iapVerify('dev-<ts>','tier:xxx')` 命中 dev 桩，零服务端改动，上线换平台 SDK。i18n `shop.*`/`gacha.*`/`rarity.*` 全翻。tsc + web 构建 + 128 测试绿。**注**：~~占位皮肤暂用 itemId 展示，真实皮肤名/图待美术~~ → 已完成（皮肤名走 `skinDisplayName()`，卡面图走 `shop.ts` 的 `SKIN_PLACEHOLDER_ART` → 真皮肤图 `assets/units/skins/skin_*.png`；6 款 `.tao` 2026-07-30 全部绑骨上线，见 `GACHA_DESIGN §9.5`）。
 - [x] **S2-7 防刷验收**（✅ 由 PARALLEL_DEV_PLAN C6-c 完成：本地改 coins 被 commercial `$gte` 守卫拒）：本地改 `wallet.coins` 后任何花币动作被服务器拒（以服务器值为准）。**依赖**：S2-1~5。**注**：客户端 `wallet.coins` 本就只读镜像、花币全走服务器扣币（commercial $gte 守卫），机制就位；待双进程实跑端到端验收。
 
 > ⚠️ **S2 与 S5 的关系**：原 S2 把钱包/商店/盲盒放在 meta 内。2026-06-14 决策把这些迁到独立 **commercial 服务**（见 S5 + `COMMERCIAL_DESIGN.md`）。落地顺序上 **S5 取代 S2-1~4 的服务端钱包实现**（meta 改为编排者调 commercial），S2-5~7 客户端/防刷验收仍有效（客户端只认 meta，不感知 commercial）。若先做 S5 则 S2 服务端任务并入 S5。
@@ -366,7 +366,7 @@
 
 ## S_GACHA — 盲盒进阶变现（GACHA_DESIGN.md §11）
 
-> 拍板 2026-07-02：补齐盲盒变现深度（软保底 / 限定池 / 命运点 / 月卡 / 新手包）。服务端全量 + 客户端最小占位；G7–G10 美术展示层待美术。机制/落地说明权威见 `GACHA_DESIGN.md §11.1`；数值锚点见 `ECONOMY_BALANCE §3–4` / `economy.ts`。
+> 拍板 2026-07-02：补齐盲盒变现深度（软保底 / 限定池 / 命运点 / 月卡 / 新手包）。服务端全量 + 客户端最小占位；G7–G10 美术展示层**已于 2026-08-02 全部落地**（原「待美术」已消解，见下方 G7–G10 条目）。机制/落地说明权威见 `GACHA_DESIGN.md §11.1`；数值锚点见 `ECONOMY_BALANCE §3–4` / `economy.ts`。
 
 - [x] **G1 软保底** ✅（2026-07-02）：`commercial/gacha.ts` softPity（70 起 +5%/抽，硬崖 90 兜底）；标准/限定/单位卡池启用；纯单测 + 旧扁平表回归绿。
 - [x] **G2 限定池** ✅（2026-07-02）：commercial `gachaPools` 集合 + `resolvePool`（窗口守卫→`POOL_UNAVAILABLE`）；`@nw/shared buildLimitedPool` 纯派生；admin `/admin/gacha/pools`(GET/POST) + `/close`；meta `getGachaPools` 追加活跃限定池 + banner 元数据。

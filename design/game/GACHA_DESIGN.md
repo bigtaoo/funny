@@ -1,6 +1,6 @@
 # Notebook Wars — 盲盒系统完整设计
 
-> 状态：实现中（G1/G2/G4/G5/G6 + 固定概率抽取(§2.1b，取代两阶段权重算法)已落地 2026-07-15；累计充值(§13)落地 2026-07-21；G7–G10 美术展示层待美术） · 权威：本文 · 更新：2026-07-21
+> 状态：实现中（G1/G2/G4/G5/G6 + 固定概率抽取(§2.1b，取代两阶段权重算法)已落地 2026-07-15；累计充值(§13)落地 2026-07-21；**G7–G10 美术展示层已全部落地 2026-08-02**，不再有美术阻塞项） · 权威：本文 · 更新：2026-08-18
 >
 > **定位**：盲盒是游戏主要直接变现入口（另见月卡 §5、新手礼包 §6）。
 > 经济数值权威 → [`ECONOMY_BALANCE.md §3–4`](ECONOMY_BALANCE.md)（价格/概率/保底数字）；
@@ -339,7 +339,9 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 
 > 客户端接线映射见 `client/src/render/UnitView.ts` `SKIN_ASSETS`（每款皮肤只重塑对应那一个兵种）；`.tao` 到位后填表即生效。皮肤图标可先用低分辨率概念稿占位。
 >
-> **2026-07-16 补充**：商店 Shop tab（`ShopScene/shop.ts`）的皮肤卡片此前完全无图（纯文字+画笔矢量图标）。已加 `CardSpec.artUrl` 机制（`ShopScene/base.ts` `drawCard()`，存在则画贴图，否则退回矢量图标），`skin_shop_c1/r1/e1` 临时借用对应兵种的通用卡面 PNG（`infantry.png`/`archer.png`/`shieldbearer.png`）占位——是"兵种通用图"，不是本表要求的专属配色皮肤图。`skin_infantry.tao`/`skin_archer.tao`/`skin_shield.tao` 到位后，把 `shop.ts` 里的 `SKIN_PLACEHOLDER_ART` 换成真实皮肤贴图 URL 即可，机制不用改。`Enhance Protection Stone`(`protect_enhance`) 目前仍无任何图标/美术。
+> **2026-07-16 补充**：商店 Shop tab（`ShopScene/shop.ts`）的皮肤卡片此前完全无图（纯文字+画笔矢量图标）。已加 `CardSpec.artUrl` 机制（`ShopScene/base.ts` `drawCard()`，存在则画贴图，否则退回矢量图标），`skin_shop_c1/r1/e1` 临时借用对应兵种的通用卡面 PNG（`infantry.png`/`archer.png`/`shieldbearer.png`）占位——是"兵种通用图"，不是本表要求的专属配色皮肤图。`skin_infantry.tao`/`skin_archer.tao`/`skin_shield.tao` 到位后，把 `shop.ts` 里的 `SKIN_PLACEHOLDER_ART` 换成真实皮肤贴图 URL 即可，机制不用改。
+>
+> **✅ 已完成（2026-08-18 复核）**：上面这两个占位都已换成真图——`SKIN_PLACEHOLDER_ART`（常量名未改，内容已是真皮肤图）现指向 `client/src/assets/units/skins/skin_{infantry,archer,shieldbearer}.png`，不再是兵种通用卡面；`Enhance Protection Stone`(`protect_enhance`) 也已有专属图标 `client/src/assets/shop/protect_stone.png`（`shop.ts` 的 `protectStoneArtUrl`）。
 >
 > **✅ 2026-07-30 完成**：6 款皮肤已在 `tools/animator` 里全部摆骨绑定完成（每款克隆对应角色的基础骨架 `.tao.editor`，把 `art/skins/<角色>/` 下 GIMP 切好的部件重新绑到各骨骼，保留原骨架的 idle/walk/attack/hurt/death/spawn 全套动作 clip，逐一校准 anchor/rotation/scale 后导出），产物为 `client/src/assets/units/skins/skin_{infantry,archer,shieldbearer,lena,mara,max}.tao` + 对应 `.tao.editor` 源存档在 `art/skins/<角色>/skin_<角色>.tao.editor`。已接入 `UnitView.ts SKIN_ASSETS` 与 `shop.ts SKIN_PLACEHOLDER_ART`（3 款商店皮肤缩略图改用 `art/skins/<角色>/<角色>.png` 缩放版，见 `client/src/assets/units/skins/skin_{infantry,archer,shieldbearer}.png`），`tsc --noEmit` + webpack build 通过，并在真实 `StickmanRuntime` 运行时加载渲染验证过（非仅动画编辑器内预览）。**已知限制**：`infantry`/`shieldbearer`/`lena` 3 款皮肤的 GIMP 切图比基础骨架少几片（`infantry` 双臂各只有 1 片、双腿各只有 1 片；`shieldbearer` 左臂只有 1 片；`lena` 双臂各只有 1 片），经用户拍板采用"刚性绑定"处理——单张图整体绑到上半截骨骼（如 `l_upper_arm`），下半截骨骼（如 `l_lower_arm`）不挂图，动画播放时该肢体不会有肘/膝弯曲，只做整肢刚性摆动。若后续要补上关节弯曲效果，需要先在 GIMP 里把这些部件重新按"左右各一片 + 上下各一片"切开，再回 `tools/animator` 里重新绑定这几根骨头。
 
@@ -386,8 +388,8 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
 | G6 | 首抽包 / 新手包：`starterUsed` 字段，单独发货逻辑 | 无 | ✅ 2026-07-02 |
 | G6b | 两阶段掉率（§2.1a）：常驻池基础抽先类别后物品；皮肤分四档；保底保留 legendary 稀有度轴 | 无 | ✅ 2026-07-03 |
 | G7 | 概率详情弹层（单网格逐物品展示，概率逐物品配置）| 美术 §9.2 / §9.5 | ✅ 两 tab 拆分需求已撤销（2026-07-21，见 §8.2：池内物品有限、概率本就逐物品配置，无需分组均分）；物品图标程序复用方案已上（2026-07-05） |
-| G8 | 限定池 Banner + 倒计时 UI | 美术 §9.4 | ⏳ 美术阻塞（当前占位程序 banner + 池切换 tab 已有） |
-| G9 | 结果卡翻牌演出升级（legendary 粒子特效）| 美术 §9.1 | ⏳ 美术阻塞 |
+| G8 | 限定池 Banner + 倒计时 UI | 美术 §9.4 | ✅ 2026-08-02——限定 banner 真图 + 倒计时已上线（`client/src/assets/gacha/banner_limited_01.png`/`banner_standard.png`，接线见 `client/src/render/gachaArt.ts`），程序占位 banner 已退役 |
+| G9 | 结果卡翻牌演出升级（legendary 粒子特效）| 美术 §9.1 | ✅ 2026-08-01/02——`GachaScene.addLegendaryTrail()` 沿卡框走边的彗星拖尾 + 全息渐变色（场景内 pooled-sprite，未走通用 `render/vfx` `emitter` 图元，该图元本身仍 reserved），稀有度卡面/边框真图见 `client/src/assets/gacha/` |
 | G10 | 月卡商城入口 + 到期提醒 | 美术 §9.3 | ✅ 商城入口已有；到期提醒已实现（2026-07-21，见 §9.3 明细）——iOS 真机需走一次二进制发布（`ios-v*`）才能生效，OTA 热更新不含新原生插件 |
 | G11 | 自定义池（§12）：ops 自由配置 类别→物品 权重 + 币价 + 时间窗；服务端自动加载活跃池，客户端展示 | 无 | ✅ 2026-07-03 |
 
@@ -405,7 +407,7 @@ GachaScene 顶部区域只有 4 个彩色圆点（common/rare/epic/legendary）�
   - **⚠️ 生产事故（发现于 2026-08-11）**：月卡/年卡/两款新手包在生产环境自 2026-07-25/27 上线起就**从未真正打通过**——VPS 上 `server/.env` 的 `NW_PADDLE_PRICE_IDS` 只配了金币充值档位（`t499..t9999`），从没加过 `monthly_card`/`year_card`/`starter_draw`/`starter_growth` 这四个保留键，Paddle 后台大概率也从没为这四个商品建过 Product/Price。玩家点 Buy 直接在客户端 `NW_PADDLE_PRICE_IDS` 解析前就因 `INVALID_TIER` 失败，连 Paddle 结账浮层都打不开，统一提示「购买失败，请重试」（`shop.error`）。**这也是本次顺带把这四个商品从 CNY 切到 USD 的直接触发原因**：既然要重新建 Paddle Price 才能修好，索性一并把定价单位改对（见下条）。修复需要：① 在 Paddle 后台为这四个商品建 USD Price（$4.99/$49.99/$0.99/$4.99）；② 把对应 `pri_xxx` 追加进 VPS `server/.env` 的 `NW_PADDLE_PRICE_IDS`；③ 重启 `server-metaserver-1`；④ 真实/沙盒交易验证一遍结账+webhook 发货。代码本身在这之前就是对的（`paddle.ts` 的 `subscriptionForPriceId`/`starterProductForPriceId` 逻辑没问题），纯粹是环境配置从未补全。
   - **CNY → USD 定价切换（2026-08-11）**：月卡/年卡/两款新手包原本用 ¥（economy.ts 的 `*_PRICE_YUAN` 常量 + client `shop.ts` 的 `*_YUAN` 常量、`CardSpec.yuanPrice`/`yuanStrike` 字段）展示价格，与金币充值档位（`ShopScene.WEB_COIN_TIERS`，一直是 USD `$X.XX`）不一致。改为 USD：economy.ts 新增 `MONTHLY_CARD_PRICE_USD_CENTS=499`/`YEAR_CARD_PRICE_USD_CENTS=4999`/`YEAR_CARD_LIST_PRICE_USD_CENTS=5999`（取代三个 `*_YUAN` 常量）；client `shop.ts` 同步换成 `*_USD_CENTS`；`CardSpec` 的 `yuanPrice`/`yuanStrike` 重命名为 `usdCents`/`usdStrikeCents`，`base.ts` `drawCard()` 渲染改 `$${(cents/100).toFixed(2)}`。价位换算沿用金币档位的 `$X.99` 心理定价习惯：¥30→$4.99，¥298/¥360→$49.99/$59.99（省 $10，约 17% off，取代原「省 ¥62」角标），¥6→$0.99。**顺带修的一个副作用 bug**：年卡省钱角标原按 `toFixed(2)` 显示成「Save $10.00」，比旧版「省 ¥62」长出几个字符，在窄卡布局下压穿了年卡卡面的「365」票据图标（`drawCard()` 的角标是固定右上角贴图叠加，不做宽度自适应）——改成整数美元不带小数（`fmtUsdSavings()`，`cents % 100 === 0` 时输出 `$N`）后恢复不重叠，已用 Playwright 对 `start:e2e`（port 9096）截图验证。**中国区 / CNY 定价明确推迟**，待中国区上架单独核定（同 §5.3/§6.2 已有的措辞）。
 
-**客户端（最小可用占位）：** GachaScene 加池切换 tab（常驻/限定）+ 命运点数与「兑换限定」按钮；ShopScene 顶部「交易」块加月卡（购买/每日领取）与两款新手包按钮。真实 banner/卡面/翻牌特效（G7–G10）待美术，程序占位可跑。`SaveData.monetization` 镜像段客户端只读。
+**客户端（最小可用占位）：** GachaScene 加池切换 tab（常驻/限定）+ 命运点数与「兑换限定」按钮；ShopScene 顶部「交易」块加月卡（购买/每日领取）与两款新手包按钮。真实 banner/卡面/翻牌特效（G7–G10）~~待美术，程序占位可跑~~ → **2026-08-02 起全部为真实美术**（见上方 G7–G10 表）。`SaveData.monetization` 镜像段客户端只读。
 
 **契约/生成物：** `openapi.yml` 加 4 端点（redeemFate/monthlyCardBuy/monthlyCardClaim/starterBuy）+ `GachaPool` 限定字段 + `SaveData.monetization`；`routes.gen.ts`（74 ops）与客户端 `openapi.ts` 均已重生。
 
