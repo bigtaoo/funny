@@ -126,13 +126,18 @@ export class FeedPanel {
       const faction = factionOf(currentTarget);
       if (!faction || prepStack.length >= MAX_PREP_DEPTH) return;
       const inv = invOf();
-      // Prefer a feeder that can be fused immediately; if every copy at that level is itself short
-      // on materials, fall back to any eligible one so its own gap state can offer the next level
-      // down (this is how a 2-deep stack forms).
-      const feeder = pickFeeder(faction, feederLevel, inv, candidateOf)
-        ?? Object.values(inv).find((c) => !c.locked && c.level === feederLevel
-          && CARD_DEFS[c.defId]?.faction === faction && candidateOf(c.id)
-          && !Object.values(c.gear ?? {}).some((g) => !!g));
+      // No fallback needed: the button that reaches here only renders when planPrep reports both
+      // `affordable` (>= shortfall x PREP_COST_PER_CARD cards at feederLevel) and `hasFeeder` (at
+      // least one of them gear-free), and those two together already imply pickFeeder succeeds —
+      // any gear-free card out of six-or-more same-level, same-faction, unlocked, undeployed copies
+      // has the other five as its own materials, so it is fusable by construction.
+      //
+      // The same implication is why prepStack in practice never grows past ONE frame today, even
+      // though MAX_PREP_DEPTH allows two: a level whose own cards are too few to fund a round is
+      // also too few to be offered as prep in the first place. Deeper nesting would need planPrep
+      // to look two levels down and price the whole chain (e.g. "18 Lv.3 needed, you have 4, but
+      // 108 Lv.2 would make them") — a deliberate feature, not something this fallback ever did.
+      const feeder = pickFeeder(faction, feederLevel, inv, candidateOf);
       if (!feeder) return;
       prepStack.push({
         targetId: currentTarget.id, targetLevel: currentTarget.level, needed: shortfall, produced: 0,
@@ -474,9 +479,9 @@ export class FeedPanel {
       // Breadcrumb last so it paints over the panel body, and only while a prep run is open.
       if (prepStack.length) {
         drawPrepCrumb(
-          ml, prepStack, inv, mx, my + 3 * S, mw, S,
+          ml, prepStack, inv, mx, my + 3 * S, mw, S, core.bt.busy,
           (rect, action) => core.modalHits.push({ rect, action }),
-          () => { if (!core.bt.busy) cancelPrep(); },
+          cancelPrep,
         );
       }
 

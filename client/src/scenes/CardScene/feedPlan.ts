@@ -83,8 +83,16 @@ export interface PrepPlan {
   cost: number;
   /** Eligible, undeployed, unlocked cards at feederLevel the player owns right now. */
   avail: number;
-  /** avail >= cost — whether the player can actually see this prep through. */
+  /** avail >= cost — whether the player owns enough raw material to see this prep through. */
   affordable: boolean;
+  /**
+   * Whether any card at feederLevel could actually serve as the feeder — i.e. is also gear-free
+   * (see pickFeeder). Separate from `affordable` because gear disqualifies a card from being the
+   * FEEDER while leaving it perfectly usable as one of that feeder's five MATERIALS, so a player
+   * can own more than enough cards and still have nobody to fuse them into. Offering prep on
+   * `affordable` alone produced a live button that did nothing when tapped.
+   */
+  hasFeeder: boolean;
 }
 
 /**
@@ -108,7 +116,11 @@ export function planPrep(
     (c) => !c.locked && c.level === feederLevel && CARD_DEFS[c.defId]?.faction === def.faction && candidateOf(c.id),
   ).length;
   const cost = shortfall * PREP_COST_PER_CARD;
-  return { shortfall, feederLevel, cost, avail, affordable: avail >= cost };
+  const hasFeeder = Object.values(inv).some(
+    (c) => !c.locked && c.level === feederLevel && CARD_DEFS[c.defId]?.faction === def.faction
+      && candidateOf(c.id) && !Object.values(c.gear ?? {}).some((g) => !!g),
+  );
+  return { shortfall, feederLevel, cost, avail, affordable: avail >= cost, hasFeeder };
 }
 
 /**

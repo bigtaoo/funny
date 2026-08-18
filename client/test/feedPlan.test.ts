@@ -147,6 +147,24 @@ describe('planPrep — the "go make what you are missing" path', () => {
     expect(plan.affordable).toBe(false);
   });
 
+  it('reports hasFeeder=false when every copy one level down is geared', () => {
+    // Gear disqualifies a card from being the FEEDER (pickFeeder would silently dismantle its
+    // loadout) but not from being one of that feeder's five MATERIALS — so the player can own more
+    // than enough cards and still have nobody to fuse them into. Kept separate from `affordable`
+    // because the UI must withhold the prep button on either one being false; conflating them
+    // produced a live button that did nothing when tapped.
+    const geared = Array.from({ length: PREP_COST_PER_CARD }, (_, i) =>
+      ({ ...card(`g${i}`, 'lichuang', 2), gear: { weapon: 'eq1' } } as CardInstance));
+    // 4 of the 5 Lv.3 materials on hand ⇒ shortfall 1 ⇒ cost is exactly PREP_COST_PER_CARD.
+    const inv = invOf([card('t', 'lichuang', 3)], fillers('hi', 'lichuang', 3, FUSION_MATERIAL_COUNT - 1), geared);
+    const plan = planPrep(inv.t, inv, free)!;
+    expect(plan.affordable, 'the raw material is all there').toBe(true);
+    expect(plan.hasFeeder).toBe(false);
+
+    inv.clean = card('clean', 'chenshou', 2); // one ungeared copy is enough
+    expect(planPrep(inv.t, inv, free)!.hasFeeder).toBe(true);
+  });
+
   it('does not count deployed or locked cards toward what prep has to work with', () => {
     const inv = invOf(
       [card('t', 'lichuang', 3)],

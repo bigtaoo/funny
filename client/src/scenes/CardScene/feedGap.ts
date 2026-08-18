@@ -49,6 +49,7 @@ export function drawPrepCrumb(
   y: number,
   w: number,
   S: number,
+  busy: boolean,
   pushHit: (rect: Rect, action: () => void) => void,
   onCancel: () => void,
 ): void {
@@ -82,10 +83,14 @@ export function drawPrepCrumb(
   cancelLbl.x = x + w - 10 * S;
   cancelLbl.y = y + (CRUMB_U * S) / 2;
   ml.addChild(cancelLbl);
-  pushHit(
-    { x: cancelLbl.x - cancelLbl.width - 6 * S, y, w: cancelLbl.width + 12 * S, h: CRUMB_U * S },
-    onCancel,
-  );
+  // Registered only while idle, same rule as the Fuse/Cancel footer: an in-flight fuse is not
+  // cancellable server-side, and leaving a live-but-inert rect here would be an invisible dead zone.
+  if (!busy) {
+    pushHit(
+      { x: cancelLbl.x - cancelLbl.width - 6 * S, y, w: cancelLbl.width + 12 * S, h: CRUMB_U * S },
+      onCancel,
+    );
+  }
 }
 
 /**
@@ -115,7 +120,7 @@ export function drawGapNotice(
   ml.addChild(need);
 
   const subY = y + 14 * S;
-  if (plan?.affordable) {
+  if (plan?.affordable && plan.hasFeeder) {
     const btnH = 15 * S;
     const cost = txt(
       t('roster.fusePrepCost', { avail: plan.avail, lv: plan.feederLevel, cost: plan.cost }),
@@ -146,7 +151,10 @@ export function drawGapNotice(
     return;
   }
 
-  const hint = plan
+  // A plan the player can't fund states the concrete gap; one he could fund but has no eligible
+  // feeder for (every copy at that level is geared) falls back to the acquisition channels, since
+  // "you need 6 and have 6" would read as a contradiction.
+  const hint = plan && !plan.affordable
     ? t('roster.fusePrepShort', { cost: plan.cost, lv: plan.feederLevel, avail: plan.avail })
     : t('roster.fuseNoSource');
   const hintLbl = txt(hint, snapFont(8 * S), C.mid);

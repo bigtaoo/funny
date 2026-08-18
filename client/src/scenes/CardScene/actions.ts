@@ -85,7 +85,14 @@ export class ActionsPanel {
     core.feedRedraw?.();
     let completed = 0;
     try {
-      for (let round = nextRound(); round; round = nextRound()) {
+      // The destroyed check gates the whole iteration, not just onSettled: if the player backs out
+      // of the roster mid-batch there is no reason to keep spending cards on a panel nobody is
+      // looking at. Rounds already in flight still settle server-side; we just stop issuing — and
+      // stop even asking nextRound for one, since planning a round is itself a read of state the
+      // torn-down panel no longer owns.
+      while (!core.destroyed) {
+        const round = nextRound();
+        if (!round) break;
         const res = await withTimeout(core.cb.fuseCards(round.targetId, round.materialIds));
         if (!res.ok) { core.showToast(t(res.key), C.red); break; }
         completed++;
