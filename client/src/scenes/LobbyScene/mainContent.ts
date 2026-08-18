@@ -132,6 +132,12 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
   heroSub.anchor.set(0.5, 0.5);
   heroSub.x = contentX + contentW / 2;
   heroSub.y = heroY + heroH * 0.70;
+  // Fit inside the button: the font is a fraction of `heroH`, which grows with portrait's stretchy
+  // height axis, while the string's length is fixed — on a tall phone "Ranked · 5-10 min per game"
+  // (longer still in German) grew past `contentW` and bled out both sides of the card, centred
+  // anchor and all (2026-08-18 store-screenshot pass).
+  const heroSubMaxW = contentW * 0.92;
+  if (heroSub.width > heroSubMaxW) heroSub.scale.set(heroSubMaxW / heroSub.width);
   core.container.addChild(heroSub);
 
   // 2. Pillars: Campaign (gold, PvE) | World map (accent, SLG). The world map needs an account,

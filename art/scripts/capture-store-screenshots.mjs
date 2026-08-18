@@ -67,13 +67,24 @@ for (const dev of DEVICES) {
   const shot = async (name) => { await page.screenshot({ path: `${OUT}/${name}__${dev.name}.png` }); console.log(`  shot ${name} (${await screen()})`); };
 
   console.log(`== ${dev.name} ${dev.width}x${dev.height}`);
-  await page.goto('http://localhost:9096/', { waitUntil: 'load' });
-  await waitScreen('intro');
-  await page.evaluate(() => window.__nwE2E.state.introCb.onFinish(true));
-  await waitScreen('consent');
-  await page.evaluate(() => window.__nwE2E.state.consentCb.onAccept());
-  await waitScreen('login');
-  await page.evaluate(([id]) => window.__nwE2E.state.loginCb.onLogin(id, 'password123'), [LOGIN]);
+  // intro → consent → login → lobby. The boot sequence can navigate under us (a reload between
+  // gates tears down the execution context mid-evaluate), which is transient — just start over.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.goto('http://localhost:9096/', { waitUntil: 'load' });
+      await waitScreen('intro');
+      await page.evaluate(() => window.__nwE2E.state.introCb.onFinish(true));
+      await waitScreen('consent');
+      await page.evaluate(() => window.__nwE2E.state.consentCb.onAccept());
+      await waitScreen('login');
+      await page.evaluate(([id]) => window.__nwE2E.state.loginCb.onLogin(id, 'password123'), [LOGIN]);
+      break;
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      console.log(`  boot attempt ${attempt} failed (${String(e.message).slice(0, 60)}), retrying`);
+      await wait(2000);
+    }
+  }
   await wait(4000);
   // goLobby() re-routes into the FTUE tutorial once more after boot assets finish, so escaping it
   // is a loop, not a single call.
@@ -95,7 +106,26 @@ for (const dev of DEVICES) {
   // level select → loadout prep → the battle itself; the wait lets both sides get units on the field
   await call('onSelectLevel', 'ch2_lv5'); await wait(2500);
   if (await screen() === 'levelPrep') { await shot('prep'); await call('onStart'); await wait(3000); }
-  if (await screen() === 'game') { await wait(14000); await shot('battle'); await page.evaluate(() => window.__nwE2E.state.gameCb.onExitToLobby()); await wait(3000); }
+  if (await screen() === 'game') {
+    // Let the AI build up, then actually play a few cards so the shot shows a contested board
+    // rather than two idle castles. Cards are dragged on the canvas — there is no play callback on
+    // GameSceneCallbacks — so this is a real pointer drag from a hand slot to a friendly-half cell.
+    // Positions are viewport fractions: the hand row sits at the bottom, six evenly spaced slots.
+    await wait(18000);
+    const drops = [[0.34, 0.70], [0.62, 0.73], [0.48, 0.66]];
+    for (let i = 0; i < drops.length; i++) {
+      const cardX = ((i + 4.5) / 6) * dev.width;   // slots 5/6 are the unit cards (spells sit left)
+      const cardY = 0.945 * dev.height;
+      await page.mouse.move(cardX, cardY);
+      await page.mouse.down();
+      await page.mouse.move(drops[i][0] * dev.width, drops[i][1] * dev.height, { steps: 12 });
+      await page.mouse.up();
+      await wait(2500);
+    }
+    await wait(6000);
+    await shot('battle');
+    await page.evaluate(() => window.__nwE2E.state.gameCb.onExitToLobby()); await wait(3000);
+  }
   else console.log('  battle skipped, screen =', await screen());
   await backToLobby();
 
@@ -106,7 +136,11 @@ for (const dev of DEVICES) {
   await shot('shop');
   await backToLobby();
 
-  await page.evaluate(() => window.__nwE2E.state.lobbyCb.onOpenWorld()); await wait(4000); await guide(); await wait(6000);
+  // The world map opens behind a loading cover that is erased away by an animated eraser wipe
+  // (WorldMapRenderer/loadingReveal.ts). Shooting before `loadingEraseT` reaches 1 catches a
+  // half-erased sheet — it reads as "the map only rendered a narrow strip", which is what the
+  // 2026-08-18 first pass mistook for a layout bug. 18s clears it even on the tallest viewport.
+  await page.evaluate(() => window.__nwE2E.state.lobbyCb.onOpenWorld()); await wait(4000); await guide(); await wait(18000);
   await shot('world');
 
   await ctx.close();

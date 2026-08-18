@@ -80,7 +80,10 @@ export class HudPanel implements HudHandlers {
       colH = 68,
       colGap = 6; // 2x the original 88x34 footprint
     const colX = this.core.ctx.backRect.x || 8;
-    const ly = this.core.ctx.backRect.y + this.core.ctx.backRect.h + colGap || 8;
+    // Below everything the top reserves, not just the bar: in portrait `topInset` also covers the
+    // resource strip under it (WorldMapRenderer/build.ts), and anchoring off the back chip alone put
+    // the zoom chip on top of that strip. Landscape has no strip, so this is the old value there.
+    const ly = Math.max(this.core.ctx.topInset, this.core.ctx.backRect.y + this.core.ctx.backRect.h) + colGap || 8;
 
     const zoomLabels: Record<number, string> = { 1: '×1', 2: '×2', 3: '×3' };
     const zoomBtn = sketchButton(colW, colH, seedFor(4, 2, colW));
@@ -146,16 +149,25 @@ export class HudPanel implements HudHandlers {
         valLbl.anchor.set(0, 0.5);
         valLbl.x = colX + 14 + statIconSize + 8;
         valLbl.y = ry + 14 + statIconSize / 2;
+        // Shrink-to-fit inside the column: at a full troop cap the value is "10000/10000", which at
+        // FS.heading is wider than the 160px half-card and used to run straight over the Territory
+        // column beside it (2026-08-18 portrait screenshot pass). Scale rather than truncate — the
+        // number is the point of the chip.
+        const valMaxW = colX + halfW - 10 - valLbl.x;
+        if (valMaxW > 0 && valLbl.width > valMaxW) valLbl.scale.set(valMaxW / valLbl.width);
         hud.addChild(valLbl);
         const capLbl = txt(s.label, FS.tiny, C.mid);
         capLbl.x = colX + 14;
         capLbl.y = ry + 14 + statIconSize + 8;
         hud.addChild(capLbl);
         if (i === 0) {
+          // Column divider — y is card-relative, so it has to be offset by `ry` like everything
+          // else in here; without that it drew up at the top of the screen behind the header
+          // (same 2026-08-18 pass) and the card looked like it had no divider at all.
           const div = new PIXI.Graphics();
           div.lineStyle(1, C.mid, 0.5);
-          div.moveTo(colX + halfW, 10);
-          div.lineTo(colX + halfW, cardH - 10);
+          div.moveTo(colX + halfW, ry + 10);
+          div.lineTo(colX + halfW, ry + cardH - 10);
           hud.addChild(div);
         }
       });

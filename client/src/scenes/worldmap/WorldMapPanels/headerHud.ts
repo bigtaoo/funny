@@ -22,89 +22,78 @@ export function renderHeaderHud(ctx: WorldMapContext): void {
   const layer = ctx.headerHudLayer;
   tearDownChildren(layer);
   const { w } = ctx;
-  const headerH = ctx.topInset;
+  // Bar height alone; `topInset` also covers the portrait resource strip (see build()). The
+  // fallback keeps harnesses that only set `topInset` working.
+  const headerH = ctx.headerBarH || ctx.topInset;
+  // Portrait: the readout lives on its own strip below the bar, and the entry buttons drop their
+  // labels so three of them fit next to the back button on a 1080-wide design (see build()).
+  const stripH = ctx.resStripH;
+  const iconOnly = stripH > 0;
 
-  // Auction button — far right of the header bar. Width auto-fits the icon+label so the
-  // text never clips, and the larger right margin (56) pulls it clear of the screen edge.
-  const aucH = Math.round(headerH * 0.7);
-  const aIconSize = Math.round(aucH * 0.4);
-  const aIcon = buildIcon('tag', aIconSize, C.light);
-  const aTxt = txt(t('world.auction'), snapFont(Math.round(aucH * 0.34)), C.light);
-  aTxt.anchor.set(0, 0.5);
-  const aGrpW = aIconSize + 4 + aTxt.width;
-  const aucW = Math.ceil(aGrpW) + 24; // horizontal padding around the content group
-  const aucBtn = sketchButton(aucW, aucH, seedFor(1, 0, aucW));
-  aucBtn.x = w - aucW - 56;
-  aucBtn.y = (headerH - aucH) / 2;
-  layer.addChild(aucBtn);
-  const aGx = aucBtn.x + (aucW - aGrpW) / 2;
-  aIcon.x = aGx;
-  aIcon.y = aucBtn.y + (aucH - aIconSize) / 2;
-  aTxt.x = aGx + aIconSize + 4;
-  aTxt.y = aucBtn.y + aucH / 2;
-  layer.addChild(aIcon);
-  layer.addChild(aTxt);
-  ctx.aucBtnRect = { x: aucBtn.x, y: aucBtn.y, w: aucW, h: aucH };
+  // Icon-only buttons are square, so their height is also their width budget: three of them plus
+  // two 8px gaps have to fit between the back button and the 56px right margin. Without the clamp a
+  // taller bar (or a wider back button, whose size also tracks the bar) walks them back over it.
+  const btnRowW = w - 56 - (ctx.backRect.x + ctx.backRect.w + 8);
+  const btnH = iconOnly
+    ? Math.min(Math.round(headerH * 0.7), Math.floor((btnRowW - 16) / 3))
+    : Math.round(headerH * 0.7);
+  const btnIconSize = Math.round(btnH * 0.4);
+  const btnY = (headerH - btnH) / 2;
 
-  // Shop button — immediately left of the auction button, same sizing/style so the pair
-  // reads as one entry-point group (2026-08-02: shop pulled out of the Territory Overview
-  // panel into its own item-card catalog — see openShopPanel/renderShopPanel).
-  const sIconSize = aIconSize;
-  const sIcon = buildIcon('coinSack', sIconSize, C.light);
-  const sTxt = txt(t('world.tabShop'), snapFont(Math.round(aucH * 0.34)), C.light);
-  sTxt.anchor.set(0, 0.5);
-  const sGrpW = sIconSize + 4 + sTxt.width;
-  const shopW = Math.ceil(sGrpW) + 24;
-  const shopBtn = sketchButton(shopW, aucH, seedFor(1, 1, shopW));
-  shopBtn.x = aucBtn.x - shopW - 8;
-  shopBtn.y = aucBtn.y;
-  layer.addChild(shopBtn);
-  const sGx = shopBtn.x + (shopW - sGrpW) / 2;
-  sIcon.x = sGx;
-  sIcon.y = shopBtn.y + (aucH - sIconSize) / 2;
-  sTxt.x = sGx + sIconSize + 4;
-  sTxt.y = shopBtn.y + aucH / 2;
-  layer.addChild(sIcon);
-  layer.addChild(sTxt);
-  ctx.shopBtnRect = { x: shopBtn.x, y: shopBtn.y, w: shopW, h: aucH };
+  /**
+   * One header entry button (icon + label, or icon alone in portrait), right-anchored: pass the x
+   * its right edge should end at. Returns the rect so the next button can chain off its left edge.
+   */
+  const entryBtn = (icon: 'tag' | 'coinSack' | 'home', label: string, seedIdx: number, rightEdge: number) => {
+    const glyph = buildIcon(icon, btnIconSize, C.light);
+    const lbl = iconOnly ? null : txt(label, snapFont(Math.round(btnH * 0.34)), C.light);
+    lbl?.anchor.set(0, 0.5);
+    const grpW = btnIconSize + (lbl ? 4 + lbl.width : 0);
+    const btnW = iconOnly ? btnH : Math.ceil(grpW) + 24; // square when icon-only, else padded group
+    const btn = sketchButton(btnW, btnH, seedFor(1, seedIdx, btnW));
+    btn.x = rightEdge - btnW;
+    btn.y = btnY;
+    layer.addChild(btn);
+    const gx = btn.x + (btnW - grpW) / 2;
+    glyph.x = gx;
+    glyph.y = btn.y + (btnH - btnIconSize) / 2;
+    layer.addChild(glyph);
+    if (lbl) {
+      lbl.x = gx + btnIconSize + 4;
+      lbl.y = btn.y + btnH / 2;
+      layer.addChild(lbl);
+    }
+    return { x: btn.x, y: btn.y, w: btnW, h: btnH };
+  };
 
-  // Home button — immediately left of the shop button, same group. Recenters the camera on the
-  // player's own base (mainBaseTile) without leaving the world map, for whenever panning/zooming
-  // has drifted the view away from it. Omitted before the player has actually joined/placed a base.
-  if (ctx.me?.mainBaseTile) {
-    const hIconSize = aIconSize;
-    const hIcon = buildIcon('home', hIconSize, C.light);
-    const hTxt = txt(t('world.home'), snapFont(Math.round(aucH * 0.34)), C.light);
-    hTxt.anchor.set(0, 0.5);
-    const hGrpW = hIconSize + 4 + hTxt.width;
-    const homeW = Math.ceil(hGrpW) + 24;
-    const homeBtn = sketchButton(homeW, aucH, seedFor(1, 2, homeW));
-    homeBtn.x = shopBtn.x - homeW - 8;
-    homeBtn.y = aucBtn.y;
-    layer.addChild(homeBtn);
-    const hGx = homeBtn.x + (homeW - hGrpW) / 2;
-    hIcon.x = hGx;
-    hIcon.y = homeBtn.y + (aucH - hIconSize) / 2;
-    hTxt.x = hGx + hIconSize + 4;
-    hTxt.y = homeBtn.y + aucH / 2;
-    layer.addChild(hIcon);
-    layer.addChild(hTxt);
-    ctx.homeBtnRect = { x: homeBtn.x, y: homeBtn.y, w: homeW, h: aucH };
-  } else {
-    ctx.homeBtnRect = { x: 0, y: 0, w: 0, h: 0 };
-  }
+  // Auction — far right of the header bar; the 56px margin pulls it clear of notched screen edges.
+  ctx.aucBtnRect = entryBtn('tag', t('world.auction'), 0, w - 56);
+  // Shop — immediately left of it, same sizing/style so the pair reads as one entry-point group
+  // (2026-08-02: shop pulled out of the Territory Overview panel into its own item-card catalog —
+  // see openShopPanel/renderShopPanel).
+  ctx.shopBtnRect = entryBtn('coinSack', t('world.tabShop'), 1, ctx.aucBtnRect.x - 8);
+  // Home — recenters the camera on the player's own base (mainBaseTile) without leaving the world
+  // map, for whenever panning/zooming has drifted the view away from it. Omitted before the player
+  // has actually joined/placed a base.
+  ctx.homeBtnRect = ctx.me?.mainBaseTile
+    ? entryBtn('home', t('world.home'), 2, ctx.shopBtnRect.x - 8)
+    : { x: 0, y: 0, w: 0, h: 0 };
 
-  // Per-resource readout — centered between the back button and the shop button,
-  // replacing the old "World" title text. Two stacked lines per resource: production
-  // rate on top, current stockpile total underneath (2026-08-09: the total used to live
-  // only in the right-side troops/territory card — moved up here, alongside the rate it
-  // feeds, so both numbers for a resource read together instead of in two separate panels).
+  // Per-resource readout — in landscape centered between the back button and the shop button
+  // (replacing the old "World" title text); in portrait on its own strip under the bar. Two
+  // stacked lines per resource: production rate on top, current stockpile total underneath
+  // (2026-08-09: the total used to live only in the right-side troops/territory card — moved up
+  // here, alongside the rate it feeds, so both numbers for a resource read together instead of in
+  // two separate panels).
   const yieldRate = ctx.me?.yieldRate ?? {};
   const resTotals = ctx.me?.resources ?? {};
-  const iconSize = Math.round(headerH * 0.42);
-  const fontSize = snapFont(Math.round(headerH * 0.2));
+  // Sized against whichever band the readout actually sits in — the portrait strip is shorter than
+  // the bar, so bar-derived sizes would overflow it vertically.
+  const bandRef = ctx.resStripH > 0 ? ctx.resStripH : headerH;
+  const iconSize = Math.round(bandRef * (ctx.resStripH > 0 ? 0.62 : 0.42));
+  const fontSize = snapFont(Math.round(bandRef * (ctx.resStripH > 0 ? 0.28 : 0.2)));
   const lineGap = 2;
-  const gap = Math.round(headerH * 0.3);
+  const gap = Math.round(bandRef * 0.3);
   const cluster = new PIXI.Container();
   let cx = 0;
   for (const rt of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
@@ -130,8 +119,14 @@ export function renderHeaderHud(ctx: WorldMapContext): void {
     cx += Math.max(rateLbl.width, totalLbl.width) + gap;
   }
   cx -= gap;
-  const leftBound = ctx.backRect.x + ctx.backRect.w + 8;
-  const rightBound = (ctx.homeBtnRect.w > 0 ? ctx.homeBtnRect.x : shopBtn.x) - 8;
+  // Portrait puts the readout on its own full-width strip under the bar; landscape keeps it inside
+  // the bar, between the back button and the leftmost entry button.
+  const leftBound = iconOnly ? 16 : ctx.backRect.x + ctx.backRect.w + 8;
+  const rightBound = iconOnly
+    ? w - 16
+    : (ctx.homeBtnRect.w > 0 ? ctx.homeBtnRect.x : ctx.shopBtnRect.x) - 8;
+  const bandTop = iconOnly ? headerH : 0;
+  const bandH = iconOnly ? stripH : headerH;
 
   // Shrink-to-fit (2026-08-11 portrait clipping fix): at nominal sizes, 5 resources'
   // rate+total labels can badly overflow the narrow portrait design width (1080) once
@@ -140,27 +135,30 @@ export function renderHeaderHud(ctx: WorldMapContext): void {
   // this, so the tail resources (and their totals) rendered past the visible canvas
   // edge and were cut off mid-digit. Scale the whole cluster down uniformly rather than
   // wrapping/reflowing — keeps every resource visible and legible instead of some being
-  // silently unreadable off-screen. Floor of 0.55 keeps the smallest case still legible;
-  // below that we accept a slight overflow rather than shrinking to illegible text.
+  // silently unreadable off-screen. The scale is now a hard fit with no floor: portrait's own
+  // strip is nearly the full design width, so the shrink it needs is mild (~0.8), and the old
+  // 0.55 floor — which deliberately accepted overflow — was what let the readout run over the
+  // entry buttons and past the right edge on tall phones.
   const availW = Math.max(0, rightBound - leftBound);
-  const fitScale = cx > availW ? Math.max(0.55, availW / cx) : 1;
+  const fitScale = cx > availW && cx > 0 ? availW / cx : 1;
   if (fitScale < 1) cluster.scale.set(fitScale);
   const drawnW = cx * fitScale;
 
   cluster.x = leftBound + Math.max(0, (rightBound - leftBound - drawnW) / 2);
-  cluster.y = headerH / 2;
+  cluster.y = bandTop + bandH / 2;
 
   // Independent background panel behind the resource cluster, distinguishing it from the
   // shared header-bar chrome instead of floating directly on it.
   const padX = 10,
-    padY = Math.round(headerH * 0.14);
-  const bgPanel = sketchPanel(drawnW + padX * 2, headerH - padY * 2, {
+    padY = Math.round(bandH * 0.14);
+  const panelH = bandH - padY * 2;
+  const bgPanel = sketchPanel(drawnW + padX * 2, panelH, {
     fill: C.paper,
     border: C.mid,
     seed: seedFor(2, 0, cx),
   });
   bgPanel.x = cluster.x - padX;
-  bgPanel.y = padY;
+  bgPanel.y = bandTop + padY;
   layer.addChild(bgPanel);
   layer.addChild(cluster);
   // Tappable: opens the Territory Overview panel (SLG_DESIGN_LOG.md §26).
@@ -168,6 +166,6 @@ export function renderHeaderHud(ctx: WorldMapContext): void {
     x: bgPanel.x,
     y: bgPanel.y,
     w: drawnW + padX * 2,
-    h: headerH - padY * 2,
+    h: panelH,
   };
 }

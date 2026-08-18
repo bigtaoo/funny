@@ -44,16 +44,19 @@
 - 脚本：[`art/scripts/capture-store-screenshots.mjs`](../../../art/scripts/capture-store-screenshots.mjs)（Playwright 驱动 `TARGET=web-e2e` 的 `window.__nwE2E`，脚本头部写了完整前置条件）+ [`art/scripts/seed-screenshot-account.cjs`](../../../art/scripts/seed-screenshot-account.cjs)（给账号灌进度/皮肤/段位，让画面不是空存档）。
 - 后端：本地一套即可，**不需要 Docker**——`mongod --replSet rs0`（worldsvc 要事务，单节点副本集就够）+ metaserver + commercial + worldsvc，Redis 可缺省。
 - 金币走 dev IAP 桩（`shopCb.recharge()`）真实发放，不手改存档（metaserver 会按 commercial 账本对账，手改的余额下次登录即被清零）。
-- 首批产物（英文一套，2026-08-18）：`art/store/en/<场景>__<设备>.png`，7 个场景 × 4 尺寸 = 28 张 —— lobby / campaign（关卡选择）/ prep（出战准备）/ battle / gacha / shop / world。**是草稿不是终稿**，已知待返工项见 §0.5。
+- 首批产物（英文一套，2026-08-18）：`art/store/en/<场景>__<设备>.png`，7 个场景 × 4 尺寸 = 28 张 —— lobby / campaign（关卡选择）/ prep（出战准备）/ battle / gacha / shop / world。首轮拍完发现的三处真 UI bug 已修（§0.5），当前 28 张是修复后重拍的版本。
 
-### 0.5 首批截图的已知问题（待处理，2026-08-18）
+### 0.5 首批截图暴露的问题（已全部处理，2026-08-18）
 
-| 问题 | 影响 | 处置 |
+| 现象 | 结论 | 处置 |
 |---|---|---|
-| **大世界地图在 19.5:9（1290×2796 / 1242×2688）下渲染成窄十字**：地图只铺出屏幕中央一条竖带，四周留白纸底；同尺寸的 lobby/gacha/shop/battle 都正常，1080×1920 的地图也正常 | SLG 截图在两个 iPhone 尺寸下不可用 | 需查 `WorldMapScene` 在极端高宽比下的可视区/取瓦片范围（疑与 [[ilayout-landscape-design-width-stretches]] 同源）——**这不只是截图问题，1290×2796 就是 iPhone 15 Pro Max 的原生分辨率** |
-| **大世界 HUD 竖屏重叠**：顶部「Back / 标题」被资源条压住，右上「10000/10000 Troops」与「Territory」叠字 | 同上 | 同一处布局问题一并看 |
-| 大厅「START MATCH」卡片副标题 `Ranked · 5-10 min per game` 左右出血被裁 | 大厅截图观感 | 卡片文字未按卡宽自适应 |
-| 战斗截图场上单位偏少（脚本只等了 14s，玩家一张牌都没出） | 战斗截图不够"热闹" | 加长等待 + 脚本里主动出几张牌再截 |
+| 大世界地图在 1290×2796 下只铺出屏幕中央一条窄竖带，四周留白 | **不是布局 bug，是采集脚本抢拍**：世界地图进场有一层"橡皮擦擦除"揭示动画（`WorldMapRenderer/loadingReveal.ts`），首轮只等了 6s，`loadingEraseT` 才 0.62——拍到的是半擦开的纸。等到 `=1`（t+26s）地图完整铺满视口 | 脚本 world 场景等待 6s → **18s**，并在注释里写明这个坑；无代码改动 |
+| 大世界头部：返回键被 Home/Shop/Auction 压住，资源读数横跨按钮并冲出右边界 | **真 bug**（竖屏 `designWidth` 钉 1080、按钮尺寸却跟拉长的高度轴走） | 已修，见 [`UI_DESIGN_LOG_2026-08.md` §35①](../../game/UI_DESIGN_LOG_2026-08.md)：竖屏资源读数移到头部下方独立带子、三按钮改正方形图标键 |
+| 兵力卡 `10000/10000` 压在右栏 Territory 上；栏间分隔线根本没画在卡里 | **真 bug**（两处，同一段代码） | 已修，§35② |
+| 大厅 START MATCH 副标题 `Ranked · 5-10 min per game` 左右出血被裁 | **真 bug**（字号跟高度轴长、字符串定长） | 已修，§35③ |
+| 战斗截图场上只有 4–6 个单位，读起来像空棋盘 | 采集问题 | 脚本改为等 AI 起势后**用真实指针拖拽出牌**（`GameSceneCallbacks` 没有出牌回调，只能拖 canvas），现在一屏约 20 个单位 + 己方英雄 |
+
+三处代码修复由 `client/test/ui/worldMapPortraitHeaderFit.ui.ts`（9 例）护住；`art/store/en/` 的 28 张是修复后重拍的版本。
 
 ---
 
@@ -63,8 +66,8 @@
 | 素材 | 规格 | 状态 |
 |---|---|---|
 | App 图标 | 1024×1024 PNG（无圆角、无 alpha） | 待美术 |
-| iPhone 6.7" 截图 | 1290×2796（或 1284×2778），最少 3 张、最多 10 张 | 🟡 初版已出（`art/store/en/*__iphone_6.7.png`，7 场景），world 一张需返工，见 §0.5 |
-| iPhone 6.5" 截图 | 1242×2688 | 🟡 初版已出（`art/store/en/*__iphone_6.5.png`），同 §0.5 |
+| iPhone 6.7" 截图 | 1290×2796（或 1284×2778），最少 3 张、最多 10 张 | 🟡 初版已出（`art/store/en/*__iphone_6.7.png`，7 场景），见 §0.5 |
+| iPhone 6.5" 截图 | 1242×2688 | 🟡 初版已出（`art/store/en/*__iphone_6.5.png`），见 §0.5 |
 | iPad 12.9"（如支持） | 2048×2732 | 🟡 初版已出（`art/store/en/*__ipad_12.9.png`）/ 视是否支持 iPad |
 | App 预览视频（可选） | 各设备分辨率，15–30s | 待美术（可选） |
 

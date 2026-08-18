@@ -44,7 +44,15 @@ export class WorldMapRendererBuild implements BuildHandlers {
     ctx.topLayer = new PIXI.Container();
     const hdr = drawSceneHeader(ctx.topLayer, w, h, null, { accent: HEADER_ACCENT.slg });
     ctx.backRect = hdr.backRect;
-    ctx.topInset = hdr.headerH;
+    ctx.headerBarH = hdr.headerH;
+    // Portrait can't fit back button + three entry buttons + a five-resource readout on one row:
+    // design width is pinned at 1080 while `sceneHeaderHeight` (and every size derived from it)
+    // grows with the stretchy height axis, so on a tall phone the row overflowed itself — the
+    // buttons landed on top of the back button and the readout ran past the right edge. Portrait
+    // gets the readout on its own strip under the bar instead (renderHeaderHud draws it there and
+    // switches the entry buttons to icon-only); landscape is unchanged, strip height 0.
+    ctx.resStripH = h > w ? Math.round(hdr.headerH * 0.46) : 0;
+    ctx.topInset = ctx.headerBarH + ctx.resStripH;
 
     // Map area (clip to the band between the header and the bottom chat HUD)
     const mapClip = new PIXI.Container();

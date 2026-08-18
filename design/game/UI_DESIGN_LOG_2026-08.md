@@ -182,3 +182,23 @@ const rowY  = isPortrait
 **验证**：`npx tsc --noEmit` 双 config 全绿；`npx vitest run`（164 文件 / 1398 例）+ `npm run test:ui`（188 文件 / 1665 例，含既有 `leaderboardScroll.ui.ts`）全绿；`build:web` 通过。新增 [`client/test/leaderboardRowGeometry.test.ts`](../../client/test/leaderboardRowGeometry.test.ts)（35 例），含一条**旧几何见证测试**——用修复前的公式重算并断言它确实会撞，保证这条 spec 不是空断言。
 
 > ⚠️ **未做像素级截图核对**：Browser pane 在本环境仍不合成帧（同 §23/§26–§32 的环境限制）。替代做法是把两个字体假设换成**真实测量值**——起 dev server 后在真 Chromium 里用 canvas `measureText` 量 `monospace`（ASCII advance **0.5498em**，`「」`/CJK 各 **1.0em**；PIXI 的 TextMetrics 底层就是这个 API），代回从源码读到的精确布局常数，同 §32 用真实缩放公式替代截图的处理。**两行版式的观感（行高、两行的疏密、榜单一屏行数由 11 降到约 8）需要你在真机竖屏上看一眼再定档**——算术只能保证不重叠，保证不了好看。
+
+## 35. 竖屏三处溢出（大世界头部行 / 兵力卡 / 大厅副标题）（2026-08-18）
+
+**发现方式**：不是用户报障，是跑商店截图管线（[`store-assets-checklist.md` §0.4](../product/release/store-assets-checklist.md)）时，第一次在 **1290×2796（iPhone 15 Pro Max 原生分辨率）** 这类极修长竖屏上逐屏看画面，三处溢出一起现形。全部是同一个病根，跟 §34 榜单行、[[ilayout-landscape-design-width-stretches]] 记的两次是**同一族**：竖屏 `designWidth` 恒为 1080（钉住），`designHeight` 随机型变长，于是任何从**高**推出来的尺寸（字号、按钮高、`sceneHeaderHeight`）在竖屏会越长越大，而它要塞进去的宽度一直是 1080。
+
+**① 大世界头部一行塞不下四组东西**（`WorldMapPanels/headerHud.ts` + `WorldMapRenderer/build.ts`）
+
+实测 1080×2341：`sceneHeaderHeight = 281`，按钮高 `281*0.7 = 197`、标签字号 `197*0.34 = 67`，于是 Home/Shop/Auction 三个「图标+文字」按钮各约 240–338px 宽；返回键命中区本身 396px 宽。三按钮从右往左排，`Home.x = 192 < 396` —— **压在返回键上**；资源读数（5 种资源 × 产量/存量两行）的可用宽被算成负数，而它的 shrink-to-fit 有个 **0.55 下限、注释里明写"下限以下宁可溢出"**，于是读数横跨按钮、右端还冲出屏幕（`resClusterRect` 右边缘 1149 > 1080）。
+
+修法（竖屏专用，横屏逐像素不变）：
+- `build.ts` 新算 `ctx.resStripH = h > w ? round(headerH*0.46) : 0`，`ctx.topInset = headerBarH + resStripH`。因为全场（地图裁剪 mask、`viewport.ts` 的可视区/居中、输入命中、右列 HUD 起点）都只读 `topInset` 这一个值，加一条带子不需要改其它任何地方。
+- 竖屏三按钮**去掉文字、改正方形图标键**，并把边长钳到 `(可用宽-16)/3` —— 保证永远排在返回键右侧、不出右边界。
+- 资源读数移到带子里，占近满宽（左右各 16 边距），图标/字号改按**带子高**推（原来按 bar 高推会竖向撑爆带子），shrink-to-fit 的 0.55 下限**取消**（带子够宽，实测只需缩到 ~0.8）。
+- 左上角缩放键原本挂在"返回键正下方"，正好是新带子的位置 → 改挂 `max(topInset, backRect 底边)`。
+
+**② 兵力/领地卡的数字串出半栏**（`WorldMapPanels/hud.ts`）：卡宽 320、两栏各 160，兵力值满兵时是 `10000/10000`，`FS.heading` 下宽度超过半栏，直接压在右栏「Territory」上。改为按栏宽 shrink-to-fit（数字本身是重点，缩放而不截断）。同一处顺带修一个存在已久的低级错误：栏间竖分隔线的 y 用的是卡内相对值（`10 → cardH-10`）却没加卡片自身的 `ry`，所以它一直画在**屏幕最上方、被头部盖住**——卡里看起来"从来没有分隔线"。
+
+**③ 大厅 START MATCH 副标题左右出血**（`LobbyScene/mainContent.ts`）：字号 `heroH*0.15` 跟着竖屏拉长的高度轴变大，字符串长度却是固定的，`Ranked · 5-10 min per game`（德语更长）超出卡宽、两侧被裁。加一条 `contentW*0.92` 的 fit 钳制。
+
+**验证**：`tsc --noEmit` 双 config 绿；新增 [`client/test/ui/worldMapPortraitHeaderFit.ui.ts`](../../client/test/ui/worldMapPortraitHeaderFit.ui.ts)（9 例：三按钮不压返回键/互不重叠/不出右界、读数在带子内且完全在屏内、缩放键让开带子、横屏读数仍在 bar 内且保留文字标签、满兵值不出半栏、短值不被缩放）——用的是上面实测的真几何（1080×2341/281/129），不是编的数字；`test/ui/worldMap*` + `lobby*`（39 文件 / 358 例）全绿。**这次有像素核对**：三处都在 1290×2796 真实渲染上截图前后对比过（截图管线本身就是 §0.4 那套），头部行不再重叠、资源带完整、副标题落回卡内。
