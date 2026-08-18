@@ -42,6 +42,9 @@ const DEVICES = [
   { name: 'iphone_6.5', width: 1242, height: 2688 },
   { name: 'ipad_12.9',  width: 2048, height: 2732 },
   { name: 'android_9x16', width: 1080, height: 1920 },
+  // CrazyGames wants a landscape 16:9 thumbnail, and web players are on landscape anyway — this
+  // also exercises the landscape layout branch, which is a different code path from portrait.
+  { name: 'landscape_16x9', width: 1280, height: 720 },
 ].filter((d) => !ONLY || d.name === ONLY);
 
 mkdirSync(OUT, { recursive: true });
