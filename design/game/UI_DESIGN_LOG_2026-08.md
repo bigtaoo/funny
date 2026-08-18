@@ -202,3 +202,15 @@ const rowY  = isPortrait
 **③ 大厅 START MATCH 副标题左右出血**（`LobbyScene/mainContent.ts`）：字号 `heroH*0.15` 跟着竖屏拉长的高度轴变大，字符串长度却是固定的，`Ranked · 5-10 min per game`（德语更长）超出卡宽、两侧被裁。加一条 `contentW*0.92` 的 fit 钳制。
 
 **验证**：`tsc --noEmit` 双 config 绿；新增 [`client/test/ui/worldMapPortraitHeaderFit.ui.ts`](../../client/test/ui/worldMapPortraitHeaderFit.ui.ts)（9 例：三按钮不压返回键/互不重叠/不出右界、读数在带子内且完全在屏内、缩放键让开带子、横屏读数仍在 bar 内且保留文字标签、满兵值不出半栏、短值不被缩放）——用的是上面实测的真几何（1080×2341/281/129），不是编的数字；`test/ui/worldMap*` + `lobby*`（39 文件 / 358 例）全绿。**这次有像素核对**：三处都在 1290×2796 真实渲染上截图前后对比过（截图管线本身就是 §0.4 那套），头部行不再重叠、资源带完整、副标题落回卡内。
+
+## 36. iPad 留白改成"纸页摊在桌面上"（2026-08-18）
+
+**起因**：商店截图跑到 iPad 12.9"（2048×2732）时看清的——竖屏设计高有 1920 下限（硬下限，见下），比 9:16 更**方**的屏幕按 Contain 缩放后左右各留 256px 空白，占面板 25%。上下恒为 0。iPhone 全部 0（2026-07-21 动态设计高修掉的是"更修长"那一侧，没管"更方"这一侧）。
+
+**为什么不能直接降下限**：`70`(顶 HUD) + `18×84 = 1512`(棋盘) + `70`(底 HUD) + `268`(手牌) = **正好 1920**。再低一点棋盘就压进手牌，必须把 `CELL` 变成动态值，那会动到 `gridToScreen`/`screenToGrid` 输入映射和一大批战斗测试。留白量、四个备选方案的代价对比、以及为什么没选"竖屏设计宽跟着拉伸"（281 处 `w * 0.x` 全变疑点，正是 §35/§34 那个 bug 类）都记在 [`store-assets-checklist.md` §0.6](../product/release/store-assets-checklist.md)。
+
+**采用的做法（设计矩形内零改动）**：`ScalingManager` 新增最底层 `deskLayer`，把留白带画成书页下面的桌面——kraft 底 + 极淡斜纹 + 页边软阴影（7 层递减 alpha 的嵌套矩形，不用 blur filter，因为这层每次 resize 都重画）+ 一道墨线页缘。抽成导出的纯函数 `drawDeskSurround(g, screenW, screenH, pageX, pageY, pageW, pageH)` 便于测试。
+
+**必须是屏幕空间**（这是唯一有点绕的地方）：它要框住 `gameLayer` **缩放后**的矩形；`bgLayer` 是 Cover、`gameLayer` 是 Contain，有留白时两者缩放比例天然不同，所以任何设计空间图层都对不齐那个边框。手机路径（`pageX < 2`）一个图元都不画且 `visible=false`，零开销。
+
+**验证**：`tsc --noEmit` 双 config 绿；新增 [`client/test/ui/deskSurround.ui.ts`](../../client/test/ui/deskSurround.ui.ts) 5 例；`test:ui` 200 文件 / 1768 例全绿。**像素核对**：iPad 12.9" 重拍大厅/大世界两屏确认——带内取样 `rgb(222,211,189)`（桌面 kraft）、页内 `rgb(245,240,232)`（纸白），页缘阴影与墨线可见，`art/store/en/*__ipad_12.9.png` 已更新。
