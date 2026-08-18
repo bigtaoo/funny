@@ -2,7 +2,7 @@
 
 > 创建：2026-08-17 · 判断+prompt 定稿：2026-08-17 · 出图+接线完成：2026-08-17
 > 前五批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（试点/批次 2/3/4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题+剩余页签，24 张）
-> 配套代码：[`client/src/render/icons.ts`](../../client/src/render/icons.ts) · [`client/src/scenes/LobbyScene/mainContent.ts`](../../client/src/scenes/LobbyScene/mainContent.ts) · [`client/src/scenes/LobbyScene/header.ts`](../../client/src/scenes/LobbyScene/header.ts) · [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
+> 配套代码：[`client/src/render/icons.ts`](../../client/src/render/icons.ts) · [`client/src/render/icons/tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts)（本批把 `icons.ts` 顶过 500 行收敛线，光栅那半随即拆到这里；调用点不变，仍由 `icons.ts` 再导出） · [`client/src/scenes/LobbyScene/mainContent.ts`](../../client/src/scenes/LobbyScene/mainContent.ts) · [`client/src/scenes/LobbyScene/header.ts`](../../client/src/scenes/LobbyScene/header.ts) · [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6
 > 状态：**全部完成**（3 张新图 + 1 处纯复用，46 个光栅图标 / 138 张 PNG，接线+实拍已验收）
 
