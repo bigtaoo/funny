@@ -120,24 +120,25 @@ export class FeedPanel {
     const factionOf = (card: CardInstance | undefined): Faction | undefined =>
       card ? CARD_DEFS[card.defId]?.faction : undefined;
 
+    /**
+     * The card a prep frame centres on while it runs — the one being fused UP into the material the
+     * frame owes its parent. Normally a feeder that can be fused on the spot; when the whole level
+     * is too thin for that (the chain-funded case, where planPrep reached one level further down to
+     * pay for the run) it falls back to any eligible copy, whose own gap state then offers the next
+     * level down. That fallback is what lets the stack reach its second frame.
+     */
+    const chooseWorking = (faction: Faction, level: number): CardInstance | undefined =>
+      pickFeeder(faction, level, invOf(), candidateOf)
+      ?? Object.values(invOf()).find((c) => !c.locked && c.level === level
+        && CARD_DEFS[c.defId]?.faction === faction && candidateOf(c.id)
+        && !Object.values(c.gear ?? {}).some((g) => !!g));
+
     // ── Prep: produce the missing materials as an explicit sub-task ────────────────────────────
     /** Start a prep run for the current target. Only reachable from the gap notice's button. */
     const enterPrep = (shortfall: number, feederLevel: number): void => {
       const faction = factionOf(currentTarget);
       if (!faction || prepStack.length >= MAX_PREP_DEPTH) return;
-      const inv = invOf();
-      // No fallback needed: the button that reaches here only renders when planPrep reports both
-      // `affordable` (>= shortfall x PREP_COST_PER_CARD cards at feederLevel) and `hasFeeder` (at
-      // least one of them gear-free), and those two together already imply pickFeeder succeeds —
-      // any gear-free card out of six-or-more same-level, same-faction, unlocked, undeployed copies
-      // has the other five as its own materials, so it is fusable by construction.
-      //
-      // The same implication is why prepStack in practice never grows past ONE frame today, even
-      // though MAX_PREP_DEPTH allows two: a level whose own cards are too few to fund a round is
-      // also too few to be offered as prep in the first place. Deeper nesting would need planPrep
-      // to look two levels down and price the whole chain (e.g. "18 Lv.3 needed, you have 4, but
-      // 108 Lv.2 would make them") — a deliberate feature, not something this fallback ever did.
-      const feeder = pickFeeder(faction, feederLevel, inv, candidateOf);
+      const feeder = chooseWorking(faction, feederLevel);
       if (!feeder) return;
       prepStack.push({
         targetId: currentTarget.id, targetLevel: currentTarget.level, needed: shortfall, produced: 0,
@@ -198,9 +199,8 @@ export class FeedPanel {
           if (still) {
             // Frame still open (the run stopped early): park on the next feeder if there is one,
             // otherwise unwind one level so the player isn't left staring at a consumable.
-            const inv = invOf();
-            const faction = factionOf(inv[still.targetId]);
-            const next = faction ? pickFeeder(faction, still.targetLevel - 1, inv, candidateOf) : null;
+            const faction = factionOf(invOf()[still.targetId]);
+            const next = faction ? chooseWorking(faction, still.targetLevel - 1) : undefined;
             if (next) { retarget(next); return; }
             prepStack.pop();
             const parent = invOf()[still.targetId];
@@ -238,7 +238,7 @@ export class FeedPanel {
         const still = prepStack[prepStack.length - 1];
         if (still) {
           const faction = factionOf(invOf()[still.targetId]);
-          const next = faction ? pickFeeder(faction, still.targetLevel - 1, invOf(), candidateOf) : null;
+          const next = faction ? chooseWorking(faction, still.targetLevel - 1) : undefined;
           if (next) { retarget(next); return; }
           prepStack.pop();
           const parent = invOf()[still.targetId];
@@ -397,7 +397,7 @@ export class FeedPanel {
         if (showGap) {
           drawGapNotice(
             ml, FUSION_MATERIAL_COUNT - poolSize, currentTarget.level, prep,
-            colX, actionY, colW, S, core.bt.busy, pushPlainHit,
+            colX, actionY, colW, S, core.bt.busy, prepStack.length < MAX_PREP_DEPTH, pushPlainHit,
             () => { if (prep) enterPrep(prep.shortfall, prep.feederLevel); },
           );
         } else if (showBatch) {

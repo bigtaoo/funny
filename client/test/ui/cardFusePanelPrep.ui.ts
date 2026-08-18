@@ -11,6 +11,7 @@
 //     against a state the client can no longer trust.
 //  4. The usual busy/destroyed guards every network action in this codebase carries.
 //  5. Prep is not offered when there is no card that could serve as the feeder.
+//  6. The chain-funded two-level run end to end, plus the depth bound that stops a third.
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
@@ -357,5 +358,109 @@ describe('CardScene fuse panel — a completed prep hands the goal back ready to
     expect(calls).toHaveLength(3);
     expect(calls[2].targetId).toBe('target');
     expect(ringStarCount(modalLayerOf(scene))).toBe(3);
+  });
+});
+
+describe('CardScene fuse panel — two-level prep (chain-funded)', () => {
+  /**
+   * The ordinary mid-game shape, and the one that used to dead-end: a Lv.3 goal one Lv.3 material
+   * short, only 4 Lv.2 on the bench (a round needs 6), but a pile of Lv.1 behind them. planPrep
+   * prices the chain, so prep is offered; the first frame then centres on a Lv.2 that is itself not
+   * fusable, whose own gap state opens the second frame.
+   */
+  function chainInv(): { target: CardInstance; cardInv: Record<string, CardInstance> } {
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT - 1; i++) cardInv[`hi${i}`] = makeCard(`hi${i}`, 'max', { level: 3 });
+    for (let i = 0; i < 4; i++) cardInv[`mid${i}`] = makeCard(`mid${i}`, 'max', { level: 2 });
+    for (let i = 0; i < 2 * PREP_COST_PER_CARD; i++) cardInv[`lo${i}`] = makeCard(`lo${i}`, 'max', { level: 1 });
+    return { target, cardInv };
+  }
+
+  const goalCrumb = (scene: CardScene, done: number, need: number): { x: number; y: number } | null =>
+    findLabelPos(modalLayerOf(scene), t('roster.fusePrepCrumb', {
+      name: t('card.lena.name' as never), lv: 3, done, need,
+    }));
+
+  it('offers prep on the chain and states where the shortfall gets covered from', () => {
+    const { target, cardInv } = chainInv();
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn')), 'chain-funded runs are offered').not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepChain', {
+      lv: 2, avail: 4, cost: PREP_COST_PER_CARD, chainHave: 2 * PREP_COST_PER_CARD, chainLv: 1,
+    })), 'the cost line names the level the rest comes from').not.toBeNull();
+    // The single-level wording must NOT be used here — it would claim Lv.2 covers it on its own.
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCost', {
+      avail: 4, lv: 2, cost: PREP_COST_PER_CARD,
+    }))).toBeNull();
+  });
+
+  it('the first frame centres on a Lv.2 that is not yet fusable, and offers the level below', () => {
+    const { target, cardInv } = chainInv();
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+    startPrep(scene);
+
+    expect(goalCrumb(scene, 0, 1), 'the goal is pinned to the crumb').not.toBeNull();
+    expect(ringStarCount(modalLayerOf(scene)), 'working card is a Lv.2').toBe(2);
+    expect(confirmPos(scene), 'it cannot be fused yet — that is the whole point').toBeNull();
+    // 3 other Lv.2 on hand ⇒ 2 short ⇒ 12 Lv.1, which the player has exactly.
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseNeedMore', { n: 2, lv: 2 }))).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn')), 'second level offered').not.toBeNull();
+  });
+
+  it('bottoms out at Lv.1 rather than offering a level that cannot exist', () => {
+    // Two bounds meet here and neither may produce a live-but-inert button: planPrep prices exactly
+    // ONE level below the feeder, so a run can open at most two frames (MAX_PREP_DEPTH states that
+    // same bound, and drawGapNotice is gated on it), and the second frame's working card is at Lv.1,
+    // below which planPrep returns null outright. Whichever bound bites first, the notice must fall
+    // through to the acquisition channels.
+    const { target, cardInv } = chainInv();
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+    startPrep(scene); // frame 1 — working card at Lv.2
+    startPrep(scene); // frame 2 — working card at Lv.1, the floor
+
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel')), 'still inside a run').not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn')), 'no third level on offer').toBeNull();
+  });
+
+  it('runs the whole chain through and hands the goal back ready to fuse', async () => {
+    const { target, cardInv } = chainInv();
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+    startPrep(scene); // frame 1: produce 1 Lv.3 for the goal, centred on a Lv.2
+    startPrep(scene); // frame 2: produce 2 Lv.2 for that card, centred on a Lv.1
+
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+    // 12 Lv.1 ⇒ exactly 2 rounds, which is what frame 2 owes.
+    const batchPos = findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }));
+    expect(batchPos).not.toBeNull();
+    hitUnder(modalHitsOf(scene), batchPos!)!.action();
+    await flushAsync();
+
+    // Frame 2 done ⇒ popped back to the Lv.2 working card, now with its five Lv.2 materials.
+    expect(calls).toHaveLength(2);
+    expect(ringStarCount(modalLayerOf(scene))).toBe(2);
+    expect(goalCrumb(scene, 0, 1), 'frame 1 still open, goal still pinned').not.toBeNull();
+    expect(confirmPos(scene), 'the Lv.2 is fusable now').not.toBeNull();
+
+    // Fusing it produces the Lv.3 frame 1 owed ⇒ frame 1 completes ⇒ back on the goal, 5/5.
+    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.action();
+    await flushAsync();
+
+    expect(calls).toHaveLength(3);
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel')), 'no run left open').toBeNull();
+    expect(ringStarCount(modalLayerOf(scene)), 'back on the Lv.3 goal').toBe(3);
+    expect(confirmPos(scene)).not.toBeNull();
+
+    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.action();
+    await flushAsync();
+    expect(calls[3].targetId, 'and that last fuse is the goal itself').toBe('target');
+    expect(ringStarCount(modalLayerOf(scene))).toBe(4);
   });
 });

@@ -19,7 +19,12 @@ import type { CardInstance } from '../../game/meta/SaveData';
  */
 export const PREP_COST_PER_CARD = FUSION_MATERIAL_COUNT + 1;
 
-/** Max nesting of prep frames (Lv.4 ← prep Lv.3 ← prep Lv.2). Deeper reads as a bottomless pit. */
+/**
+ * Max nesting of prep frames (Lv.4 ← prep Lv.3 ← prep Lv.2). Deeper reads as a bottomless pit: each
+ * extra level multiplies the card cost by PREP_COST_PER_CARD, so a third would routinely price a
+ * single fusion in the thousands of cards — a number the 2026-07-19 fusion redesign deliberately
+ * stopped showing players.
+ */
 export const MAX_PREP_DEPTH = 2;
 
 /** Eligible materials for `card` that are also free to consume right now (not deployed to a team). */
@@ -83,8 +88,16 @@ export interface PrepPlan {
   cost: number;
   /** Eligible, undeployed, unlocked cards at feederLevel the player owns right now. */
   avail: number;
-  /** avail >= cost — whether the player owns enough raw material to see this prep through. */
+  /** avail >= cost — whether feederLevel ALONE covers the run. */
   affordable: boolean;
+  /**
+   * When feederLevel alone falls short, what the level below would have to supply to make up the
+   * difference — the "I have 4 Lv.3 and 108 Lv.2" case, which is the ordinary mid-game shape once
+   * a target passes Lv.3. Null when feederLevel already covers it, or when there is no level below.
+   */
+  chain: { level: number; need: number; have: number } | null;
+  /** affordable, or coverable through `chain` — the real "can this run happen" answer. */
+  fundable: boolean;
   /**
    * Whether any card at feederLevel could actually serve as the feeder — i.e. is also gear-free
    * (see pickFeeder). Separate from `affordable` because gear disqualifies a card from being the
@@ -95,10 +108,22 @@ export interface PrepPlan {
   hasFeeder: boolean;
 }
 
+/** Unlocked, undeployed cards of one faction at one level — the pool a prep round draws from. */
+function countEligible(
+  level: number,
+  faction: string,
+  inv: Record<string, CardInstance>,
+  candidateOf: (id: string) => boolean,
+): number {
+  return Object.values(inv).filter(
+    (c) => !c.locked && c.level === level && CARD_DEFS[c.defId]?.faction === faction && candidateOf(c.id),
+  ).length;
+}
+
 /**
  * Plan the "go make the materials you are missing" path for `target`, or null when there is no such
  * path: the target is already fusable, is at max level, or sits at Lv.1 (nothing below to fuse up).
- * An unaffordable plan is still returned rather than suppressed — the gap state turns it into a
+ * An unfundable plan is still returned rather than suppressed — the gap state turns it into a
  * concrete number ("18 Lv.2 cards needed, you have 8") instead of a dead end with no explanation.
  */
 export function planPrep(
@@ -112,15 +137,29 @@ export function planPrep(
   if (shortfall <= 0) return null;
   const feederLevel = target.level - 1;
   if (feederLevel < 1) return null;
-  const avail = Object.values(inv).filter(
-    (c) => !c.locked && c.level === feederLevel && CARD_DEFS[c.defId]?.faction === def.faction && candidateOf(c.id),
-  ).length;
+  const avail = countEligible(feederLevel, def.faction, inv, candidateOf);
   const cost = shortfall * PREP_COST_PER_CARD;
+  const affordable = avail >= cost;
+  // One level further down, priced as a chain: every card still missing at feederLevel costs another
+  // PREP_COST_PER_CARD below it. Only computed when needed, and only one level deep — see
+  // MAX_PREP_DEPTH.
+  const chainLevel = feederLevel - 1;
+  const chain = affordable || chainLevel < 1 ? null : {
+    level: chainLevel,
+    need: (cost - avail) * PREP_COST_PER_CARD,
+    have: countEligible(chainLevel, def.faction, inv, candidateOf),
+  };
+  // A card carrying gear can be a MATERIAL but never the feeder (pickFeeder skips it), so a player
+  // can own more than enough cards at feederLevel and still have nobody to fuse them into. Without
+  // this the panel offered a button that hit enterPrep's `if (!feeder) return` and did nothing.
   const hasFeeder = Object.values(inv).some(
     (c) => !c.locked && c.level === feederLevel && CARD_DEFS[c.defId]?.faction === def.faction
       && candidateOf(c.id) && !Object.values(c.gear ?? {}).some((g) => !!g),
   );
-  return { shortfall, feederLevel, cost, avail, affordable: avail >= cost, hasFeeder };
+  return {
+    shortfall, feederLevel, cost, avail, affordable, chain, hasFeeder,
+    fundable: affordable || (!!chain && chain.have >= chain.need),
+  };
 }
 
 /**

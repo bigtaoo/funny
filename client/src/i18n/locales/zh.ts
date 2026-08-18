@@ -1597,6 +1597,7 @@ export const zh = {
   'roster.fuseNeedMore': '还缺 {n} 张 Lv.{lv} 同阵营卡',
   'roster.fusePrepBtn': '合成所需材料',
   'roster.fusePrepCost': '你有 {avail} 张 Lv.{lv}，消耗 {cost} 张',
+  'roster.fusePrepChain': 'Lv.{lv} 只有 {avail}/{cost} 张，{chainHave} 张 Lv.{chainLv} 可补足',
   'roster.fusePrepShort': '需要 {cost} 张 Lv.{lv}，你只有 {avail} 张',
   'roster.fuseNoSource': '通过关卡掉落 / 抽卡 / 拍卖行获取同级卡',
   'roster.fusePrepCrumb': '备料：{name} Lv.{lv} · {done}/{need}',

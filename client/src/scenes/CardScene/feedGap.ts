@@ -61,8 +61,9 @@ export function drawPrepCrumb(
   ml.addChild(bar);
 
   // Deeper frames collapse into a trailing "← Lv.N (a/b)" so a 2-level stack still fits one line.
+  // The arrow, not "<": rendered next to "0/1" an ASCII less-than reads as a comparison.
   const tail = stack.slice(1)
-    .map((f) => ` < Lv.${f.targetLevel} (${f.produced}/${f.needed})`)
+    .map((f) => ` ← Lv.${f.targetLevel} (${f.produced}/${f.needed})`)
     .join('');
   const label = t('roster.fusePrepCrumb', {
     name: rootName,
@@ -109,6 +110,14 @@ export function drawGapNotice(
   w: number,
   S: number,
   busy: boolean,
+  /**
+   * False once the prep stack is at MAX_PREP_DEPTH. Kept in lockstep with enterPrep's own depth
+   * guard on purpose: a bound enforced only at the action site is exactly the shape of the
+   * dead-button bug this notice already had once (a lit button whose handler returns early).
+   * With today's one-level-down pricing the two bounds coincide with the Lv.1 floor, so neither
+   * is observable on its own — they must still agree if the pricing depth ever changes.
+   */
+  canNest: boolean,
   pushHit: (rect: Rect, action: () => void) => void,
   onPrep: () => void,
 ): void {
@@ -120,10 +129,17 @@ export function drawGapNotice(
   ml.addChild(need);
 
   const subY = y + 14 * S;
-  if (plan?.affordable && plan.hasFeeder) {
+  if (plan?.fundable && plan.hasFeeder && canNest) {
     const btnH = 15 * S;
+    // Two shapes of cost line: feederLevel covers it on its own, or it needs the level below —
+    // the ordinary mid-game case once a target passes Lv.3 ("only 4 of the 18 Lv.3, but 108 Lv.2").
     const cost = txt(
-      t('roster.fusePrepCost', { avail: plan.avail, lv: plan.feederLevel, cost: plan.cost }),
+      plan.chain
+        ? t('roster.fusePrepChain', {
+          lv: plan.feederLevel, avail: plan.avail, cost: plan.cost,
+          chainHave: plan.chain.have, chainLv: plan.chain.level,
+        })
+        : t('roster.fusePrepCost', { avail: plan.avail, lv: plan.feederLevel, cost: plan.cost }),
       snapFont(8 * S), C.mid,
     );
     cost.anchor.set(0, 0.5);
@@ -152,9 +168,9 @@ export function drawGapNotice(
   }
 
   // A plan the player can't fund states the concrete gap; one he could fund but has no eligible
-  // feeder for (every copy at that level is geared) falls back to the acquisition channels, since
-  // "you need 6 and have 6" would read as a contradiction.
-  const hint = plan && !plan.affordable
+  // feeder for (every copy at that level is geared), or that would need a third nesting level,
+  // falls back to the acquisition channels — "you need 6 and have 6" would read as a contradiction.
+  const hint = plan && !plan.fundable
     ? t('roster.fusePrepShort', { cost: plan.cost, lv: plan.feederLevel, avail: plan.avail })
     : t('roster.fuseNoSource');
   const hintLbl = txt(hint, snapFont(8 * S), C.mid);

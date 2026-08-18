@@ -147,6 +147,42 @@ describe('planPrep — the "go make what you are missing" path', () => {
     expect(plan.affordable).toBe(false);
   });
 
+  it('prices the level below when feederLevel alone falls short (the ordinary mid-game shape)', () => {
+    // Lv.3 target 1 material short ⇒ 6 Lv.2 needed, only 4 owned ⇒ the 2 missing Lv.2 each cost
+    // another PREP_COST_PER_CARD in Lv.1 cards ⇒ 12 Lv.1. This is the case that used to dead-end:
+    // affordable=false with no explanation, even though the player could plainly get there.
+    const inv = invOf(
+      [card('t', 'lichuang', 3)],
+      fillers('hi', 'lichuang', 3, FUSION_MATERIAL_COUNT - 1),
+      fillers('mid', 'lichuang', 2, 4),
+      fillers('lo', 'lichuang', 1, 12),
+    );
+    const plan = planPrep(inv.t, inv, free)!;
+    expect(plan.affordable, 'Lv.2 alone does not cover it').toBe(false);
+    expect(plan.chain).toEqual({ level: 1, need: 2 * PREP_COST_PER_CARD, have: 12 });
+    expect(plan.fundable, 'but the chain does').toBe(true);
+  });
+
+  it('is not fundable when the level below is short too', () => {
+    const inv = invOf(
+      [card('t', 'lichuang', 3)],
+      fillers('hi', 'lichuang', 3, FUSION_MATERIAL_COUNT - 1),
+      fillers('mid', 'lichuang', 2, 4),
+      fillers('lo', 'lichuang', 1, 11), // one short of the 12 the chain needs
+    );
+    const plan = planPrep(inv.t, inv, free)!;
+    expect(plan.chain!.have).toBe(11);
+    expect(plan.fundable).toBe(false);
+  });
+
+  it('has no chain to price when the feeder level is already Lv.1', () => {
+    const inv = invOf([card('t', 'lichuang', 2)], fillers('lo', 'lichuang', 1, 2));
+    const plan = planPrep(inv.t, inv, free)!;
+    expect(plan.feederLevel).toBe(1);
+    expect(plan.chain, 'nothing below Lv.1 to reach for').toBeNull();
+    expect(plan.fundable).toBe(false);
+  });
+
   it('reports hasFeeder=false when every copy one level down is geared', () => {
     // Gear disqualifies a card from being the FEEDER (pickFeeder would silently dismantle its
     // loadout) but not from being one of that feeder's five MATERIALS — so the player can own more

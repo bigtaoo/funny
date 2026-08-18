@@ -1576,6 +1576,7 @@ export const de: Record<TranslationKey, string> = {
   'roster.fuseNeedMore': 'Noch {n} Karte(n) Lv.{lv} derselben Fraktion nötig',
   'roster.fusePrepBtn': 'Material herstellen',
   'roster.fusePrepCost': 'Du hast {avail} Lv.{lv}; kostet {cost}',
+  'roster.fusePrepChain': 'Nur {avail}/{cost} Lv.{lv}; {chainHave} Lv.{chainLv} decken den Rest',
   'roster.fusePrepShort': 'Braucht {cost} Lv.{lv}, du hast {avail}',
   'roster.fuseNoSource': 'Gleichstufige Karten aus Stages / Gacha / Auktionshaus',
   'roster.fusePrepCrumb': 'Material für {name} Lv.{lv} · {done}/{need}',
