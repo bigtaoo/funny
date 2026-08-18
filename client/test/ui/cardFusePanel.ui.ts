@@ -19,6 +19,8 @@ import { initI18n, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 import { FUSION_MATERIAL_COUNT } from '../../src/game/meta/cardDefs';
+import { CRUMB_U, GAP_U, STRIP_U } from '../../src/scenes/CardScene/feedGap';
+import { PREP_COST_PER_CARD } from '../../src/scenes/CardScene/feedPlan';
 import * as log from '../../src/net/log';
 import { SaveManager } from '../../src/game/meta/SaveManager';
 import { LocalSaveStore } from '../../src/game/meta/SaveStore';
@@ -139,20 +141,30 @@ async function flushAsync(): Promise<void> {
  *
  * W×H here is 1920×1080 → landscape (see detectOrientation), so this mirrors feed.ts's landscape
  * branch: S is chosen so the taller of the two columns fills 80% of the height, and the ring sits in
- * the left column, not centered on the whole panel width.
+ * the left column, not centered on the whole panel width. `blocks` names the optional rows the panel
+ * reserves height for on that frame (gap notice / batch button, recommendation strip, prep crumb) —
+ * they change S and the ring's Y, so a caller must pass whichever ones its fixture triggers.
  */
-function slotZeroPos(scene: CardScene, groupsCount: number): { x: number; y: number } {
+function slotZeroPos(
+  scene: CardScene,
+  groupsCount: number,
+  blocks: { action?: boolean; strip?: boolean; crumb?: boolean } = {},
+): { x: number; y: number } {
   const headerH = (scene as unknown as { core: { headerH: number } }).core.headerH;
   const topLimit = headerH + 4;
   const availH = Math.max(0, (H - 8) - topLimit);
   const listRows = Math.min(Math.max(groupsCount, 1), 4);
   const headerBlockU = 52; // landscape header block (see feed.ts drawFusePanel)
   const ringU = 130, rowU = 40, footerBlockU = 52;
-  const S = Math.min(H * 0.8, availH) / Math.max(headerBlockU + ringU + 8, listRows * rowU + footerBlockU + 8);
+  const crumbU = blocks.crumb ? CRUMB_U : 0;
+  const actionU = blocks.action ? GAP_U : 0;
+  const stripU = blocks.strip ? STRIP_U : 0;
+  const leftU = headerBlockU + ringU + 8;
+  const rightU = listRows * rowU + actionU + stripU + footerBlockU + 8;
+  const S = Math.min(H * 0.8, availH) / (crumbU + Math.max(leftU, rightU));
   const headerBlockH = headerBlockU * S;
   const ringH = ringU * S;
-  const rowH = rowU * S;
-  const footerBlockH = footerBlockU * S;
+  const crumbH = crumbU * S;
 
   const gap = 12 * S;
   let leftW = 180 * S;
@@ -163,16 +175,77 @@ function slotZeroPos(scene: CardScene, groupsCount: number): { x: number; y: num
     leftW *= k; rightW *= k;
   }
   const mw = leftW + gap + rightW;
-  const leftContentH = headerBlockH + ringH + 8 * S;
-  const rightContentH = listRows * rowH + footerBlockH + 8 * S;
-  const mh = Math.min(Math.max(leftContentH, rightContentH), availH);
+  const mh = Math.min(crumbH + Math.max(leftU, rightU) * S, availH);
   const mx = (W - mw) / 2;
   const my = topLimit + (availH - mh) / 2;
 
   const ringCx = mx + leftW / 2;
-  const ringCy = my + headerBlockH + ringH / 2;
+  const ringCy = my + crumbH + headerBlockH + ringH / 2;
   const orbit = 46 * S;
   return { x: ringCx, y: ringCy - orbit };
+}
+
+/**
+ * Center of recommendation-strip chip `index`, mirroring feedGap.drawRecommendStrip's own layout
+ * inside feed.ts's landscape right column. The chips carry no text (portrait + stars only), so a
+ * label search cannot find them — same reason slotZeroPos exists for the ring.
+ */
+function stripChipPos(
+  scene: CardScene,
+  groupsCount: number,
+  blocks: { action?: boolean; strip?: boolean; crumb?: boolean },
+  index: number,
+): { x: number; y: number } {
+  const headerH = (scene as unknown as { core: { headerH: number } }).core.headerH;
+  const topLimit = headerH + 4;
+  const availH = Math.max(0, (H - 8) - topLimit);
+  const listRows = Math.min(Math.max(groupsCount, 1), 4);
+  const headerBlockU = 52;
+  const ringU = 130, rowU = 40, footerBlockU = 52;
+  const crumbU = blocks.crumb ? CRUMB_U : 0;
+  const actionU = blocks.action ? GAP_U : 0;
+  const stripU = blocks.strip ? STRIP_U : 0;
+  const leftU = headerBlockU + ringU + 8;
+  const rightU = listRows * rowU + actionU + stripU + footerBlockU + 8;
+  const S = Math.min(H * 0.8, availH) / (crumbU + Math.max(leftU, rightU));
+
+  const gap = 12 * S;
+  let leftW = 180 * S;
+  let rightW = 220 * S;
+  const maxTotal = W - 24;
+  if (leftW + gap + rightW > maxTotal) {
+    const k = Math.max(0, maxTotal - gap) / (leftW + rightW);
+    leftW *= k; rightW *= k;
+  }
+  const mw = leftW + gap + rightW;
+  const mh = Math.min(crumbU * S + Math.max(leftU, rightU) * S, availH);
+  const mx = (W - mw) / 2;
+  const my = topLimit + (availH - mh) / 2;
+
+  const colX = mx + leftW + gap;
+  const stripY = (my + mh) - footerBlockU * S - stripU * S;
+  const chipW = 34 * S, chipGap = 4 * S, chipH = 22 * S;
+  return { x: colX + 6 * S + index * (chipW + chipGap) + chipW / 2, y: stripY + 11 * S + chipH / 2 };
+}
+
+/** A fuseCards stub mirroring the real server: consumes the materials and levels the target up, so
+ *  the panel re-evaluates against post-fuse state exactly like production would. */
+function mutatingFuseCards(
+  cardInv: Record<string, CardInstance>,
+  calls: { targetId: string; ids: string[] }[],
+): CardCallbacks['fuseCards'] {
+  return async (targetId: string, ids: string[]) => {
+    calls.push({ targetId, ids });
+    for (const id of ids) delete cardInv[id];
+    cardInv[targetId].level += 1;
+    return { ok: true };
+  };
+}
+
+/** Tap a full ring's Confirm and let the doFuse chain settle. */
+async function confirmFuse(scene: CardScene): Promise<void> {
+  hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+  await flushAsync();
 }
 
 function buildScene(cb: CardCallbacks): CardScene {
@@ -221,7 +294,9 @@ describe('CardScene fuse panel — candidate grouping + filtering', () => {
   it('collapses N identical-defId materials into ONE row showing "xN"', () => {
     const target = makeCard('target', 'lena');
     const cardInv: Record<string, CardInstance> = { target };
-    for (let i = 0; i < 3; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max'); // all max Lv.1
+    // 8 identical materials: 5 are pre-loaded into the ring on open (autoFillMaterials), so the
+    // single collapsed row reports the 3 still sitting in the pool.
+    for (let i = 0; i < 8; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max'); // all max Lv.1
 
     const scene = buildScene(baseCb(cardInv));
     openFuse(scene, target);
@@ -235,6 +310,11 @@ describe('CardScene fuse panel — candidate grouping + filtering', () => {
     const cardInv: Record<string, CardInstance> = {
       target,
       ok0: makeCard('ok0', 'max', { level: 2 }),                          // eligible
+      ok1: makeCard('ok1', 'max', { level: 2 }),                          // eligible
+      ok2: makeCard('ok2', 'max', { level: 2 }),                          // eligible
+      ok3: makeCard('ok3', 'max', { level: 2 }),                          // eligible
+      ok4: makeCard('ok4', 'max', { level: 2 }),                          // eligible
+      ok5: makeCard('ok5', 'max', { level: 2 }),                          // eligible
       lockedCard: makeCard('lockedCard', 'max', { level: 2, locked: true }), // excluded: locked
       taoCard: makeCard('taoCard', 'lichuang', { level: 2 }),            // excluded: faction tao ≠ anna
       wrongLevel: makeCard('wrongLevel', 'mara', { level: 1 }),          // excluded: level 1 ≠ target's 2
@@ -246,7 +326,7 @@ describe('CardScene fuse panel — candidate grouping + filtering', () => {
     } as unknown as Partial<CardCallbacks>));
     openFuse(scene, target);
 
-    // Only the one eligible 'max' remains ⇒ exactly one candidate row.
+    // Only 'max' is eligible ⇒ exactly one candidate row; 5 of the 6 went into the ring, so it reads x1.
     expect(findLabelPos(modalLayerOf(scene), MAX_NAME)).not.toBeNull();
     expect(findLabelPos(modalLayerOf(scene), 'x1')).not.toBeNull();
     expect(findLabelPos(modalLayerOf(scene), t('card.lichuang.name' as never))).toBeNull();
@@ -273,40 +353,41 @@ describe('CardScene fuse panel — candidate grouping + filtering', () => {
 });
 
 describe('CardScene fuse panel — filling the ring', () => {
-  it('tapping a candidate row fills the next empty slot, and Confirm tracks the count', () => {
+  it('opens with the ring pre-filled, and a returned card can be re-picked from the row', () => {
     const target = makeCard('target', 'lena');
     const cardInv: Record<string, CardInstance> = { target };
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max');
 
     const scene = buildScene(baseCb(cardInv));
     openFuse(scene, target);
-    const rowLabel = MAX_NAME;
 
-    for (let want = 1; want <= FUSION_MATERIAL_COUNT; want++) {
-      const pos = findLabelPos(modalLayerOf(scene), rowLabel);
-      expect(pos, `row missing before tap ${want}`).not.toBeNull();
-      hitUnder(modalHitsOf(scene), pos!)!.action();
-      expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${want}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
-    }
+    // Exactly 5 eligible materials ⇒ all of them are pre-loaded, so Confirm is live immediately and
+    // the candidate row is empty. This is the 2026-08-18 auto-fill: the ring always shows the true
+    // readiness of whichever card is centered, rather than starting blank.
+    expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), MAX_NAME)).toBeNull();
 
-    // All 5 materials consumed into slots ⇒ the candidate row itself is gone.
-    expect(findLabelPos(modalLayerOf(scene), rowLabel)).toBeNull();
+    // Put slot 0's card back: Confirm drops to 4/5 and the row reappears with that one card.
+    hitUnder(modalHitsOf(scene), slotZeroPos(scene, 1, { action: false }))!.action();
+    expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT - 1}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
+    const rowPos = findLabelPos(modalLayerOf(scene), MAX_NAME);
+    expect(rowPos, 'returned card must show up as a candidate row again').not.toBeNull();
+
+    // Picking it puts it straight back into the free slot.
+    hitUnder(modalHitsOf(scene), rowPos!)!.action();
+    expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
   });
 
   it('Confirm is not tappable (no-op) until all 5 slots are filled', () => {
     const target = makeCard('target', 'lena');
     const cardInv: Record<string, CardInstance> = { target };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max');
+    // One short of a fusion: auto-fill loads all 4 it can find and the ring sits at 4/5.
+    for (let i = 0; i < FUSION_MATERIAL_COUNT - 1; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max');
 
     let fused = false;
     const scene = buildScene(baseCb(cardInv, { fuseCards: async () => { fused = true; return { ok: true }; } }));
     openFuse(scene, target);
-    const rowLabel = MAX_NAME;
 
-    // Fill only 4 of 5.
-    for (let i = 0; i < FUSION_MATERIAL_COUNT - 1; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
     const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT - 1}/${FUSION_MATERIAL_COUNT})`);
     expect(confirmPos).not.toBeNull();
     // At this position there's only the panel's whole-area no-op backdrop hit (Confirm itself
@@ -326,11 +407,7 @@ describe('CardScene fuse panel — filling the ring', () => {
       fuseCards: async (targetId: string, ids: string[]) => { fusedTarget = targetId; fusedIds = ids; return { ok: true }; },
     }));
     openFuse(scene, target);
-    const rowLabel = MAX_NAME;
 
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
     const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
     expect(confirmPos).not.toBeNull();
     hitUnder(modalHitsOf(scene), confirmPos!)!.action();
@@ -350,19 +427,18 @@ describe('CardScene fuse panel — filling the ring', () => {
 
     const scene = buildScene(baseCb(cardInv));
     openFuse(scene, target);
-    const rowLabel = MAX_NAME;
 
-    // Assign one of the two — the candidate row now reads "x1".
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    expect(findLabelPos(modalLayerOf(scene), 'x1')).not.toBeNull();
+    // Both cards were pre-loaded into slots on open, so the candidate list starts empty.
+    expect(findLabelPos(modalLayerOf(scene), MAX_NAME)).toBeNull();
 
-    // Tap the ring slot it landed in (always slot 0, the first assigned) to return it.
-    const slotPos = slotZeroPos(scene, 1);
+    // Tap slot 0 to return its card — the gap notice is on screen (2 of 5 materials), so the panel
+    // reserves the action row and the ring sits lower than it would without it.
+    const slotPos = slotZeroPos(scene, 1, { action: true });
     const slotHit = hitUnder(modalHitsOf(scene), slotPos);
     expect(slotHit, 'no hit rect at the filled ring slot').toBeDefined();
     slotHit!.action();
 
-    expect(findLabelPos(modalLayerOf(scene), 'x2')).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), 'x1')).not.toBeNull();
   });
 });
 
@@ -374,7 +450,9 @@ describe('CardScene fuse panel — candidate list scroll state', () => {
   // panel) stays inert rather than pretending to exercise a drag-scroll that can't occur.
   it('feedScrollMax is 0 (no overflow) with the current 3-defId-per-faction catalog', () => {
     const target = makeCard('target', 'lena');
-    const cardInv: Record<string, CardInstance> = { target, m0: makeCard('m0', 'max'), r0: makeCard('r0', 'mara') };
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < 6; i++) cardInv[`m${i}`] = makeCard(`m${i}`, 'max');
+    for (let i = 0; i < 6; i++) cardInv[`r${i}`] = makeCard(`r${i}`, 'mara');
 
     const { scene, input } = buildSceneWithInput(baseCb(cardInv));
     openFuse(scene, target);
@@ -390,221 +468,104 @@ describe('CardScene fuse panel — candidate list scroll state', () => {
   });
 });
 
-describe('CardScene fuse panel — auto-retarget when the tapped card has too few materials', () => {
-  it('swaps in the highest-level fusable card and toasts, when the tapped target has 0 materials', () => {
-    const target = makeCard('target', 'lena', { level: 1 }); // faction anna, no materials at all
-    const altLow = makeCard('altLow', 'lichuang', { level: 1 });   // faction tao, level 1
-    const altHigh = makeCard('altHigh', 'chenshou', { level: 2 }); // faction tao, level 2 — should win (higher level)
-    const cardInv: Record<string, CardInstance> = { target, altLow, altHigh };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`loMat${i}`] = makeCard(`loMat${i}`, 'suyuan', { level: 1 });
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`hiMat${i}`] = makeCard(`hiMat${i}`, 'suyuan', { level: 2 });
+// ── Target intent (2026-08-18 redesign) ───────────────────────────────────────────────────────
+// These replace the former "auto-retarget" and "auto-continue" suites, which pinned down the exact
+// opposite behaviour: the panel used to silently swap in a different card when the tapped one had
+// no materials, and to hop onward after every low-level fuse. Both were dropped — a target the
+// player did not choose is the confusion the whole redesign exists to remove
+// (CHARACTER_CARDS_DESIGN §3.2). The ranking those patches used survives as the recommendation
+// strip's sort order (feedPlan.listFusableTargets, unit-tested in test/feedPlan.test.ts).
+describe('CardScene fuse panel — the target only changes when the player taps', () => {
+  /** A starved Lv.1 lena, alongside a Lv.3 mara that IS fusable — the exact shape that used to
+   *  trigger an automatic swap. Stars on the ring disambiguate which card is centered. */
+  function starvedTargetInv(): { target: CardInstance; cardInv: Record<string, CardInstance> } {
+    const target = makeCard('target', 'lena', { level: 1 }); // faction anna, zero Lv.1 materials
+    const cardInv: Record<string, CardInstance> = { target, alt: makeCard('alt', 'mara', { level: 3 }) };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`hi${i}`] = makeCard(`hi${i}`, 'max', { level: 3 });
+    return { target, cardInv };
+  }
 
-    const spy = vi.spyOn(log, 'showToastMessage');
+  it('keeps the tapped card centered and states the shortfall, instead of swapping to a fusable one', () => {
+    const { target, cardInv } = starvedTargetInv();
+    const toastSpy = vi.spyOn(log, 'showToastMessage');
     const scene = buildScene(baseCb(cardInv));
-    (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
+    openFuse(scene, target);
 
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toBe(t('roster.fuseAutoRetarget'));
-    // The ring now centers on altHigh (Lv.2), not the tapped target or altLow (both Lv.1) — level is
-    // shown as a star row (2026-07-25), so assert the star count instead of "Lv.N" text.
-    expect(ringStarCount(modalLayerOf(scene))).toBe(2);
-    spy.mockRestore();
+    expect(ringStarCount(modalLayerOf(scene)), 'ring must still show the Lv.1 card the player tapped').toBe(1);
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseNeedMore', { n: FUSION_MATERIAL_COUNT, lv: 1 }))).not.toBeNull();
+    expect(toastSpy, 'no toast: nothing was decided on the player behalf').not.toHaveBeenCalled();
+    toastSpy.mockRestore();
   });
 
-  it('does not retarget or toast when the tapped target already has 5 materials', () => {
+  it('surfaces the fusable cards in the recommendation strip and retargets only on a tap', () => {
+    const { target, cardInv } = starvedTargetInv();
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseReadyList'))).not.toBeNull();
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+
+    // The Lv.3 mara leads the strip (highest level among the fusable cards), so chip 0 is it.
+    const chipHit = hitUnder(modalHitsOf(scene), stripChipPos(scene, 1, { action: true, strip: true }, 0));
+    expect(chipHit, 'no hit rect on the first recommendation chip').toBeDefined();
+    chipHit!.action();
+
+    expect(ringStarCount(modalLayerOf(scene)), 'tapping a chip is the ONLY way the target moves').toBe(3);
+  });
+
+  it('hides the strip while a prep run is open, so the crumb is the only offer on screen', () => {
+    const target = makeCard('target', 'lena', { level: 2 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT - 1; i++) cardInv[`hi${i}`] = makeCard(`hi${i}`, 'max', { level: 2 });
+    for (let i = 0; i < PREP_COST_PER_CARD; i++) cardInv[`lo${i}`] = makeCard(`lo${i}`, 'max', { level: 1 });
+
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseReadyList')), 'strip is on before prep').not.toBeNull();
+
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))!)!.action();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseReadyList'))).toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))).not.toBeNull();
+  });
+});
+
+describe('CardScene fuse panel — a successful fuse stays on the same card', () => {
+  it('leaves the panel open on the SAME card, now one level higher', async () => {
     const target = makeCard('target', 'lena', { level: 1 });
     const cardInv: Record<string, CardInstance> = { target };
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max');
 
-    const spy = vi.spyOn(log, 'showToastMessage');
-    const scene = buildScene(baseCb(cardInv));
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
     openFuse(scene, target);
+    await confirmFuse(scene);
 
-    expect(spy).not.toHaveBeenCalled();
-    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
-    spy.mockRestore();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].targetId).toBe('target');
+    expect(modalOpenOf(scene), 'panel stays open so the player can see the result').toBe(true);
+    expect(ringStarCount(modalLayerOf(scene)), 'still the same card, now Lv.2').toBe(2);
   });
 
-  // 2026-08-02: same-faction is ranked above raw level so auto-retarget never jumps the player to an
-  // unrelated faction just because some other card happens to be higher level (feedback: "fusing a
-  // shield trooper shouldn't suddenly switch to Mara"). Target sits at level 3 (a level nothing else
-  // in this inventory holds) purely so its own material count stays at 0 and the swap fires at all —
-  // the assertion itself is about which alternative wins, not about triggering the swap.
-  it('prefers a same-faction card over a higher-level cross-faction one', () => {
-    const target = makeCard('target', 'lena', { level: 3 }); // faction anna, no materials at all
-    const sameFactionLow = makeCard('sameFactionLow', 'max', { level: 1 });  // faction anna, level 1
-    const crossFactionHigh = makeCard('crossFactionHigh', 'chenshou', { level: 2 }); // faction tao, level 2
-    const cardInv: Record<string, CardInstance> = { target, sameFactionLow, crossFactionHigh };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`annaMat${i}`] = makeCard(`annaMat${i}`, 'mara', { level: 1 });
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`taoMat${i}`] = makeCard(`taoMat${i}`, 'suyuan', { level: 2 });
-
-    const spy = vi.spyOn(log, 'showToastMessage');
-    const scene = buildScene(baseCb(cardInv));
-    (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    // Ring centers on sameFactionLow (Lv.1, faction anna), not crossFactionHigh despite its higher level.
-    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
-    spy.mockRestore();
-  });
-
-  // 2026-08-02: a deployed card is now eligible to be auto-selected as the fusion TARGET (only
-  // materials must be free) and is preferred over a same-tier bench copy, so auto-continue helps
-  // strengthen the player's active SLG roster first. Target sits at level 5 (again unused elsewhere)
-  // so its own material count stays at 0 and the swap fires. deployedCard is deliberately given a
-  // LOWER level than benchCard — if deployed status were ignored and this fell through to the plain
-  // "highest level wins" tiebreak, benchCard (the higher level) would win instead, so this isolates
-  // the deployed-tier check from the level tiebreak rather than letting them coincide.
-  it('prefers a deployed card over a higher-level bench card of the same faction', () => {
-    const target = makeCard('target', 'lena', { level: 5 }); // faction anna, no materials at all
-    const benchCard = makeCard('benchCard', 'max', { level: 2 });       // faction anna, not deployed, HIGHER level
-    const deployedCard = makeCard('deployedCard', 'mara', { level: 1 }); // faction anna, deployed, LOWER level
-    const cardInv: Record<string, CardInstance> = { target, benchCard, deployedCard };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`benchMat${i}`] = makeCard(`benchMat${i}`, 'max', { level: 2 });
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`deployedMat${i}`] = makeCard(`deployedMat${i}`, 'mara', { level: 1 });
-
-    const spy = vi.spyOn(log, 'showToastMessage');
-    const scene = buildScene(baseCb(cardInv, {
-      getCardState: () => ({ deployedCard: { teamId: 'team-1' } }),
-    } as unknown as Partial<CardCallbacks>));
-    (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    // Ring centers on deployedCard (Lv.1), not benchCard (Lv.2) — deployed outranks the higher level.
-    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
-    spy.mockRestore();
-  });
-
-  // 2026-08-10: "deployed" was moved to the TOP of the ranking (previously it sat below "same
-  // character line" — see CHARACTER_CARDS_DESIGN §3.2). Regression: since materials are shared by
-  // faction (not by defId), a deep bench of the character the player was already fusing could
-  // perpetually win the same-defId tier and starve a deployed card of any OTHER character of a turn —
-  // player-reported symptom was "fed 50+ Lv.1 cards, the deployed cards are still Lv.1". This isolates
-  // that exact conflict: sameDefIdBench matches the target's defId (would win under the old order) but
-  // deployedOther, a DIFFERENT character, is on an SLG team — it must win now.
-  it('prefers a deployed card of a different character over a same-defId bench card', () => {
-    const target = makeCard('target', 'lena', { level: 5 }); // faction anna, no materials at all
-    const sameDefIdBench = makeCard('sameDefIdBench', 'lena', { level: 2 }); // same defId as target, NOT deployed
-    const deployedOther = makeCard('deployedOther', 'mara', { level: 1 });  // different defId, faction anna, deployed
-    const cardInv: Record<string, CardInstance> = { target, sameDefIdBench, deployedOther };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`benchMat${i}`] = makeCard(`benchMat${i}`, 'max', { level: 2 });
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`deployedMat${i}`] = makeCard(`deployedMat${i}`, 'max', { level: 1 });
-
-    const spy = vi.spyOn(log, 'showToastMessage');
-    const scene = buildScene(baseCb(cardInv, {
-      getCardState: () => ({ deployedOther: { teamId: 'team-1' } }),
-    } as unknown as Partial<CardCallbacks>));
-    (scene as unknown as { feed: { openFuseSelect: (c: CardInstance) => void } }).feed.openFuseSelect(target);
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    // Ring centers on deployedOther (Lv.1), not sameDefIdBench (Lv.2) — deployed now outranks matching
-    // the character line being fused.
-    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
-    spy.mockRestore();
-  });
-});
-
-describe('CardScene fuse panel — auto-continue after a successful fuse', () => {
-  /** A fuseCards stub that mirrors the real server: removes the consumed materials and levels up
-   * the target, so findAutoTarget sees post-fuse state exactly like production would. */
-  function mutatingFuseCards(cardInv: Record<string, CardInstance>, calls: { targetId: string; ids: string[] }[]): CardCallbacks['fuseCards'] {
-    return async (targetId: string, ids: string[]) => {
-      calls.push({ targetId, ids });
-      for (const id of ids) delete cardInv[id];
-      cardInv[targetId].level += 1;
-      return { ok: true };
-    };
-  }
-
-  it('level-1 target: after Confirm succeeds, auto-loads another level-1 card and keeps the panel open', async () => {
-    const target = makeCard('target', 'lena', { level: 1 });        // faction anna
-    const target2 = makeCard('target2', 'lichuang', { level: 1 });  // faction tao — never a valid material for `target`
-    const cardInv: Record<string, CardInstance> = { target, target2 };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });      // anna — target's materials
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // tao — target2's materials
+  it('does not hop to another fusable card once the upgraded one runs dry', async () => {
+    const target = makeCard('target', 'lena', { level: 1 });
+    const cardInv: Record<string, CardInstance> = { target, other: makeCard('other', 'mara', { level: 1 }) };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max');
+    // 'other' keeps its own 5 materials, so it stays fusable after the target's fuse consumes theirs.
+    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`spare${i}`] = makeCard(`spare${i}`, 'max');
 
     const calls: { targetId: string; ids: string[] }[] = [];
     const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
     openFuse(scene, target);
-
-    const rowLabel = MAX_NAME;
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
-    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
-    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
-    await flushAsync();
+    await confirmFuse(scene);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].targetId).toBe('target');
-    expect(target.level).toBe(2); // the original target really did level up
-    expect(modalOpenOf(scene)).toBe(true); // stayed open instead of closing
-    // The ring/list now reflect target2 (still Lv.1) and its own material pool.
-    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).not.toBeNull();
-    expect(findLabelPos(modalLayerOf(scene), rowLabel)).toBeNull(); // old target's material group is gone (consumed)
-  });
-
-  it('keeps the just-upgraded card as the target when it can still be fused (Lv.1 → Lv.2 → onward)', async () => {
-    const target = makeCard('target', 'lena', { level: 1 });   // faction anna
-    const cardInv: Record<string, CardInstance> = { target };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matL1${i}`] = makeCard(`matL1${i}`, 'max', { level: 1 }); // target's Lv.1 pool
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matL2${i}`] = makeCard(`matL2${i}`, 'max', { level: 2 }); // the upgraded Lv.2's pool
-
-    const calls: { targetId: string; ids: string[] }[] = [];
-    const spy = vi.spyOn(log, 'showToastMessage');
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
-    openFuse(scene, target);
-
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
-    }
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
-    await flushAsync();
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].targetId).toBe('target');
-    expect(target.level).toBe(2);          // the same card leveled up
-    expect(modalOpenOf(scene)).toBe(true); // stayed open, still targeting the upgraded card
-    // The ring now shows 2 stars (the upgraded card's own Lv.2 material pool), and the row is still
-    // present because 5 Lv.2 materials exist — if it had wrongly kept querying the consumed Lv.1 pool,
-    // the row would be gone instead.
+    // Lv.2 ⇒ still the original target. A hop to the Lv.1 'other' would read as 1 star.
     expect(ringStarCount(modalLayerOf(scene))).toBe(2);
-    expect(findLabelPos(modalLayerOf(scene), MAX_NAME)).not.toBeNull();
-    // Only the ordinary "fusion complete" toast fires — no separate "switched target" toast
-    // (auto-continue never toasts on its own, 2026-07-25).
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toBe(t('roster.fuseOk'));
-    spy.mockRestore();
+    // ...but the strip now offers it, one tap away.
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseReadyList'))).not.toBeNull();
   });
 
-  it('when the upgraded card can not continue, silently drops back to a lower-level card (no toast — 2026-07-25, was too frequent/long)', async () => {
-    const target = makeCard('target', 'lena', { level: 1 });        // faction anna
-    const target2 = makeCard('target2', 'lichuang', { level: 1 });  // faction tao — a lower fusable card to fall back to
-    const cardInv: Record<string, CardInstance> = { target, target2 };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });      // target's materials
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // target2's materials
-
-    const calls: { targetId: string; ids: string[] }[] = [];
-    const spy = vi.spyOn(log, 'showToastMessage');
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
-    openFuse(scene, target);
-
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
-    }
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
-    await flushAsync();
-
-    expect(modalOpenOf(scene)).toBe(true); // fell back to target2 instead of closing
-    // Only the ordinary "fusion complete" toast fires — no separate "switched target" toast (removed
-    // 2026-07-25); the ring's portrait swap is visible on its own without one.
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toBe(t('roster.fuseOk'));
-    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).not.toBeNull();
-    spy.mockRestore();
-  });
-
-  it('level-3+ target: after Confirm succeeds, closes the panel like before the auto-continue feature', async () => {
+  it('a Lv.3 target also stays open (the old level-3+ auto-close is gone)', async () => {
     const target = makeCard('target', 'lena', { level: 3 });
     const cardInv: Record<string, CardInstance> = { target };
     for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 3 });
@@ -612,112 +573,113 @@ describe('CardScene fuse panel — auto-continue after a successful fuse', () =>
     const calls: { targetId: string; ids: string[] }[] = [];
     const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
     openFuse(scene, target);
-
-    const rowLabel = MAX_NAME;
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
-    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
-    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
-    await flushAsync();
+    await confirmFuse(scene);
 
     expect(calls).toHaveLength(1);
-    expect(modalOpenOf(scene)).toBe(false);
-    expect(detailIdOf(scene)).toBeNull();
-  });
-
-  it('level-1 target with no other fusable card: falls back to closing instead of continuing forever', async () => {
-    const target = makeCard('target', 'lena', { level: 1 }); // the only level-1 card in the roster
-    const cardInv: Record<string, CardInstance> = { target };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`mat${i}`] = makeCard(`mat${i}`, 'max', { level: 1 });
-
-    const calls: { targetId: string; ids: string[] }[] = [];
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
-    openFuse(scene, target);
-
-    const rowLabel = MAX_NAME;
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
-    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
-    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
-    await flushAsync();
-
-    expect(calls).toHaveLength(1);
-    expect(target.level).toBe(2); // leveled up once, then had nothing left to continue onto
-    expect(modalOpenOf(scene)).toBe(false);
-  });
-
-  it('prefers continuing with another card of the same defId over an unrelated one inserted earlier', async () => {
-    const target = makeCard('target', 'lena', { level: 1 });              // faction anna
-    // Inserted before `lena2` so the old first-found-wins tie-break would have picked it instead.
-    const otherLine = makeCard('otherLine', 'lichuang', { level: 1 });    // faction tao — unrelated card line
-    const lena2 = makeCard('lena2', 'lena', { level: 1 });                // same defId as `target` — the expected pick
-    const cardInv: Record<string, CardInstance> = { target, otherLine, lena2 };
-    // Enough anna-faction materials to cover both the initial fuse and lena2's own pool afterwards.
-    for (let i = 0; i < FUSION_MATERIAL_COUNT * 2; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // tao — otherLine's materials
-
-    const calls: { targetId: string; ids: string[] }[] = [];
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
-    openFuse(scene, target);
-
-    const rowLabel = MAX_NAME;
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
-    const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
-    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
-    await flushAsync();
-
-    expect(calls).toHaveLength(1);
-    expect(modalOpenOf(scene)).toBe(true); // stayed open, continuing
-    // Continued onto lena2 (still anna-faction 'max' materials), not otherLine (tao-faction 'chenshou').
-    expect(findLabelPos(modalLayerOf(scene), rowLabel)).not.toBeNull();
-    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).toBeNull();
-  });
-
-  // 2026-08-02: the Priority-2 fallback (`findAutoTarget(2, defId) ?? findAutoTarget(1, defId)` in
-  // onFuseSettled) goes through the same ranked findAutoTarget as the initial-open auto-retarget
-  // tested above — this exercises that call site specifically (post-fuse, not panel-open) so a future
-  // change to onFuseSettled alone can't silently regress the faction tiebreak.
-  it('post-fuse fallback prefers a same-faction card over an unrelated one, even at a lower level', async () => {
-    const target = makeCard('target', 'lena', { level: 1 });                 // faction anna
-    const otherLine = makeCard('otherLine', 'lichuang', { level: 1 });       // faction tao — unrelated line
-    const sameFactionAlt = makeCard('sameFactionAlt', 'max', { level: 1 });  // faction anna — expected pick
-    const cardInv: Record<string, CardInstance> = { target, otherLine, sameFactionAlt };
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matA${i}`] = makeCard(`matA${i}`, 'max', { level: 1 });  // anna — target's initial materials (consumed by the fuse)
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matB${i}`] = makeCard(`matB${i}`, 'chenshou', { level: 1 }); // tao — otherLine's materials
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) cardInv[`matC${i}`] = makeCard(`matC${i}`, 'mara', { level: 1 });     // anna — sameFactionAlt's own materials
-
-    const calls: { targetId: string; ids: string[] }[] = [];
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
-    openFuse(scene, target);
-
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
-    }
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
-    await flushAsync();
-
-    expect(calls).toHaveLength(1);
-    expect(target.level).toBe(2); // leveled up, then couldn't continue (no Lv.2 materials anywhere)
-    expect(modalOpenOf(scene)).toBe(true); // fell back instead of closing
-    // Ring now centers on sameFactionAlt: its own material group ('mara') shows, otherLine's ('chenshou') doesn't.
-    expect(findLabelPos(modalLayerOf(scene), t('card.mara.name' as never))).not.toBeNull();
-    expect(findLabelPos(modalLayerOf(scene), t('card.chenshou.name' as never))).toBeNull();
+    expect(modalOpenOf(scene)).toBe(true);
+    expect(ringStarCount(modalLayerOf(scene))).toBe(4);
   });
 });
 
-// Regression: the fusion animation (playFusionAnim) draws flash/burst PIXI.Graphics onto modalLayer
-// and animates them over ~1s of requestAnimationFrame ticks. The busy-dots re-render in update()
-// (bt.tick → render()) used to fire every 0.4s during that window, and render() rebuilds the modal
-// (openDetail → tearDownChildren(modalLayer)) since detailId stays set through the whole fuse. That
-// destroyed the live burst graphics; the next rAF tick called burst.clear() on a destroyed Graphics
-// → "Cannot read properties of null (reading 'clear')", which also left the fuse promise unresolved
-// and bt.busy stuck on forever (permanent "Processing." lock). Root-cause fix: fuseInProgress
-// suppresses the busy re-render for the whole fuse. Defensive fix: the animation ticks bail cleanly
-// if their graphics were destroyed out from under them.
+describe('CardScene fuse panel — prep: making the missing materials as an explicit sub-task', () => {
+  /** Lv.2 lena missing `shortfall` of its 5 Lv.2 materials, with `lowN` Lv.1 anna cards to prep from. */
+  function prepInv(shortfall: number, lowN: number): { target: CardInstance; cardInv: Record<string, CardInstance> } {
+    const target = makeCard('target', 'lena', { level: 2 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < FUSION_MATERIAL_COUNT - shortfall; i++) cardInv[`hi${i}`] = makeCard(`hi${i}`, 'max', { level: 2 });
+    for (let i = 0; i < lowN; i++) cardInv[`lo${i}`] = makeCard(`lo${i}`, 'max', { level: 1 });
+    return { target, cardInv };
+  }
+
+  const startPrep = (scene: CardScene): void => {
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))!)!.action();
+  };
+
+  it('offers prep, with its cost stated, when the cards one level down cover it', () => {
+    // 3 short ⇒ 3 x (5 materials + 1 feeder) = 18 Lv.1 cards; the player has exactly that.
+    const { target, cardInv } = prepInv(3, 18);
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fuseNeedMore', { n: 3, lv: 2 }))).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCost', { avail: 18, lv: 1, cost: 18 }))).not.toBeNull();
+  });
+
+  it('states the concrete gap instead of a dead end when prep is unaffordable', () => {
+    const { target, cardInv } = prepInv(3, 5); // 5 owned vs 18 needed
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))).toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepShort', { cost: 18, lv: 1, avail: 5 }))).not.toBeNull();
+  });
+
+  it('starting prep pins the original goal to a breadcrumb and moves the ring to a feeder', () => {
+    const { target, cardInv } = prepInv(1, 6);
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+    startPrep(scene);
+
+    expect(ringStarCount(modalLayerOf(scene)), 'ring moved to a Lv.1 feeder').toBe(1);
+    expect(
+      findLabelPos(modalLayerOf(scene), t('roster.fusePrepCrumb', { name: t('card.lena.name' as never), lv: 2, done: 0, need: 1 })),
+      'the card the player actually wants must stay on screen',
+    ).not.toBeNull();
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))).not.toBeNull();
+  });
+
+  it('completing the run pops back to the original target with its ring full', async () => {
+    const { target, cardInv } = prepInv(1, 6);
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+    startPrep(scene);
+    await confirmFuse(scene); // one feeder fuse produces the single missing Lv.2 material
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].targetId, 'the feeder was fused, not the goal').not.toBe('target');
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel')), 'crumb gone once the run completes').toBeNull();
+    expect(ringStarCount(modalLayerOf(scene)), 'back on the Lv.2 goal').toBe(2);
+    expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
+  });
+
+  it('Stop prep abandons the run and returns to the original target', () => {
+    const { target, cardInv } = prepInv(1, 6);
+    const scene = buildScene(baseCb(cardInv));
+    openFuse(scene, target);
+    startPrep(scene);
+    expect(ringStarCount(modalLayerOf(scene))).toBe(1);
+
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))!)!.action();
+    expect(ringStarCount(modalLayerOf(scene))).toBe(2);
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))).toBeNull();
+  });
+
+  it('batches the remaining rounds behind one authorized tap', async () => {
+    // 2 short at Lv.3 ⇒ 2 rounds x 6 Lv.2 cards = 12.
+    const target = makeCard('target', 'lena', { level: 3 });
+    const cardInv: Record<string, CardInstance> = { target };
+    for (let i = 0; i < 3; i++) cardInv[`hi${i}`] = makeCard(`hi${i}`, 'max', { level: 3 });
+    for (let i = 0; i < 12; i++) cardInv[`mid${i}`] = makeCard(`mid${i}`, 'max', { level: 2 });
+
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    openFuse(scene, target);
+    startPrep(scene);
+
+    const batchPos = findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }));
+    expect(batchPos, 'batch button must state how many rounds are left').not.toBeNull();
+    hitUnder(modalHitsOf(scene), batchPos!)!.action();
+    await flushAsync();
+
+    expect(calls, 'both rounds ran from the single tap').toHaveLength(2);
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))).toBeNull();
+    expect(ringStarCount(modalLayerOf(scene))).toBe(3);
+    expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
+  });
+});
+
 describe('CardScene fuse panel — animation is not torn down by the busy re-render', () => {
   it('mid-fuse update() ticks do not rebuild the modal (which would destroy the live VFX)', async () => {
     const target = makeCard('target', 'lena', { level: 3 }); // level 3 ⇒ no auto-continue, closes on settle
@@ -731,10 +693,6 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     let releaseAnim: () => void = () => {};
     priv(scene).feed.playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
 
-    const rowLabel = MAX_NAME;
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync(); // doFuse → fuseCards resolves → parks on the awaited playFusionAnim
 
@@ -784,10 +742,6 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     let releaseAnim: () => void = () => {};
     priv(scene).feed.playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
 
-    const rowLabel = MAX_NAME;
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync(); // doFuse → fuseCards fires the listener and resolves → parks on playFusionAnim
 
@@ -844,10 +798,6 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       priv(scene).feed.openFuseSelect(target); // REAL playFusionAnim, driven by the controllable rAF + clock
       priv(scene).core.detailId = target.id;
 
-      const rowLabel = MAX_NAME;
-      for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-        hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-      }
       hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
       await flushAsync(); // fuseCards resolves; playFusionAnim registers its first (converge) frame
       expect(rafQueue.length).toBeGreaterThan(0);
@@ -871,8 +821,8 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       expect(threw).toBeNull();                 // no "reading 'clear'" crash
       expect(priv(scene).core.bt.busy).toBe(false);  // fuse settled — didn't hang on an unresolved promise
       expect(priv(scene).core.fuseInProgress).toBe(false);
-      expect(modalOpenOf(scene)).toBe(false);   // level-3 target closes the panel after a successful fuse
-      expect(detailIdOf(scene)).toBeNull();
+      expect(modalOpenOf(scene)).toBe(true);    // 2026-08-18: settling never closes the panel any more
+      expect(detailIdOf(scene)).toBe(target.id); // ...and the detail id it was opened from survives
     } finally {
       g.requestAnimationFrame = origRaf;
       nowSpy.mockRestore();
@@ -889,10 +839,6 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     openFuse(scene, target);
     priv(scene).core.detailId = target.id;
 
-    const rowLabel = MAX_NAME;
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync();
 
@@ -968,15 +914,11 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     priv(scene).core.detailId = target.id;
     priv(scene).feed.playFusionAnim = async () => {}; // no rAF driving in this test
 
-    const rowLabel = MAX_NAME;
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     await flushAsync();
 
     expect(priv(scene).core.fuseInProgress).toBe(false); // fuse settled, guard released
-    expect(modalOpenOf(scene)).toBe(false);          // level-3 target closed the panel on settle
+    expect(modalOpenOf(scene)).toBe(true);           // 2026-08-18: settling leaves the panel open
     expect(findLabelPos(headerOverlayLayerOf(scene), (500).toLocaleString())).not.toBeNull(); // picked up the fuse's own coin change on settle
 
     // A later, unrelated save mutation (nobody calls render() manually) must still refresh the header —
@@ -1125,9 +1067,6 @@ describe('CardScene fuse panel — fills 80% of the primary viewport axis (2026-
 // Both hits are now gated on `!this.bt.busy`, mirroring Confirm's own existing gate.
 describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fuse (2026-08-03 fix)', () => {
   function fillRing(scene: CardScene, rowLabel: string): void {
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), rowLabel)!)!.action();
-    }
   }
 
   it('Cancel cannot close the panel while a fuse is in flight, but settling still resolves normally', async () => {
@@ -1140,7 +1079,6 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
       fuseCards: () => new Promise((r) => { releaseFuse = r; }),
     }));
     openFuse(scene, target);
-    fillRing(scene, MAX_NAME);
 
     const cancelPos = findLabelPos(modalLayerOf(scene), t('equip.cancel'));
     expect(cancelPos, 'Cancel label must still render (just not be tappable) while busy').not.toBeNull();
@@ -1174,7 +1112,6 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
       fuseCards: () => new Promise((r) => { releaseFuse = r; }),
     }));
     openFuse(scene, target);
-    fillRing(scene, MAX_NAME);
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
 
     expect(priv(scene).core.bt.busy).toBe(true);
@@ -1204,9 +1141,6 @@ describe('CardScene fuse panel — onFuseSettled destroyed-guard (2026-08-03 fix
       fuseCards: () => new Promise((r) => { releaseFuse = r; }),
     }));
     openFuse(scene, target);
-    for (let i = 0; i < FUSION_MATERIAL_COUNT; i++) {
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), MAX_NAME)!)!.action();
-    }
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
     expect(priv(scene).core.bt.busy).toBe(true);
 

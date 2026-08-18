@@ -115,44 +115,25 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 
 export interface Hit { rect: Rect; action: () => void; owner?: string; }
 
-const DEF_ORDER = Object.keys(CARD_DEFS);
-
-/**
- * Sort cards for the roster grid: cards deployed to an SLG team come first, the rest after (2026-08-01
- * — deployed cards used to scatter across the level-grouped grid instead of reading as "my current
- * squad" at a glance). Within each group, highest combat power first (the stat that matters when
- * picking who to send out); ties fall back to level desc, then hero (CARD_DEFS declaration order,
- * keeps duplicate instances of one hero together), then id for stability.
- *
- * `cardState` is the SLG per-card state (teamId) — omit it, or pass one where a card has no entry, to
- * treat that card as not deployed (e.g. outside SLG, or before the async SLG fetch resolves).
- */
-export function sortCards(
-  cards: CardInstance[],
-  equipInv: SaveData['equipmentInv'],
-  cardState?: Record<string, CardSLGState>,
-): CardInstance[] {
-  return [...cards].sort((a, b) => {
-    const ad = !!cardState?.[a.id]?.teamId;
-    const bd = !!cardState?.[b.id]?.teamId;
-    if (ad !== bd) return ad ? -1 : 1;
-    const pd = cardPower(b, equipInv) - cardPower(a, equipInv);
-    if (pd !== 0) return pd;
-    if (b.level !== a.level) return b.level - a.level;
-    const gd = DEF_ORDER.indexOf(a.defId) - DEF_ORDER.indexOf(b.defId);
-    if (gd !== 0) return gd;
-    return a.id < b.id ? -1 : 1;
-  });
-}
-
-/** Human-readable countdown string for injuredUntil timestamp. */
-export function injuryCountdown(injuredUntil: number, now: number): string {
-  const secsLeft = Math.max(0, Math.ceil((injuredUntil - now) / 1000));
-  return secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
-}
+// Roster ordering + injury countdown moved to ./cardSort.ts (2026-08-18) — pure functions with
+// no dependency on this class's state; re-exported so importers keep the same module path.
+export { sortCards, injuryCountdown } from './cardSort';
 
 /** feed.ts's fuse-confirm button call signature — see the file-header comment on {@link CardSceneCore.doFuse}. */
 export type DoFuseFn = (targetId: string, materialIds: string[], onSettled?: (success: boolean) => void) => Promise<void>;
+
+/** One fuse a prep batch is about to run, or null when the run should stop. See {@link DoPrepBatchFn}. */
+export type PrepRound = { targetId: string; materialIds: string[] } | null;
+
+/**
+ * feed.ts's batch-prep button call signature (2026-08-18). `nextRound` is re-evaluated against the
+ * freshly adopted save between fuses rather than planned up front, so the batch can never spend
+ * cards a mid-run failure already consumed; `onSettled` receives how many rounds actually landed.
+ */
+export type DoPrepBatchFn = (
+  nextRound: () => PrepRound,
+  onSettled: (completed: number) => void,
+) => Promise<void>;
 
 export class CardSceneCore {
   readonly container: PIXI.Container;
@@ -275,6 +256,9 @@ export class CardSceneCore {
    */
   doFuse: DoFuseFn = async () => {};
 
+  /** Batch-prep network action — same lazy-hook arrangement as {@link doFuse}. */
+  doPrepBatch: DoPrepBatchFn = async () => {};
+
   /** @param render Injected by the outer CardScene assembly (which owns the actual render
    *  dispatcher, since it's the only thing that knows about every domain class) — Core and the
    *  domain classes call `this.render()`/`this.core.render()` wherever the old flattened class
@@ -304,12 +288,19 @@ export class CardSceneCore {
       const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.maxScroll);
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
-    // Guarded on fuseRingOpen (broader than just fuseInProgress, see its doc comment): fuseCards()
-    // resolves the save change synchronously via adoptServer, firing this listener mid-fuse before
-    // playFusionAnim runs — an unguarded render() here would tear down the fusion ring/animation out
-    // from under itself; and even pre-confirm (ring open, no request in flight yet) an unrelated save
-    // change must not silently reopen the plain detail popup over the ring.
-    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.fuseRingOpen) this.render(); }));
+    // Guarded on fuseInProgress: fuseCards() resolves the save change synchronously via adoptServer,
+    // firing this listener mid-fuse before playFusionAnim runs — an unguarded render() there would
+    // tear the fusion ring/animation down out from under itself.
+    //
+    // Narrowed from fuseRingOpen to fuseInProgress (2026-08-18): the ring now stays open across a
+    // settled fuse instead of closing, so the old, broader guard would have suppressed every save-
+    // driven refresh for as long as the panel was up — leaving the header's coin/capacity readout and
+    // the roster grid behind the panel stale after each fusion. The "don't reopen the plain detail
+    // popup over the ring" half of the old rationale is already covered where it belongs: the
+    // assembly's render() dispatch and applyCardState() both skip the detailId branch while
+    // fuseRingOpen is set, so a render() during that span refreshes the background and leaves the
+    // modal layer untouched.
+    if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.fuseInProgress) this.render(); }));
   }
 
   private build(): void {
