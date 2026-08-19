@@ -101,6 +101,15 @@ jobs:
       - name: server typecheck (tsc -b, solution file — all 13 workspaces)
         working-directory: server
         run: npm run typecheck
+      # 2026-08-19: the step above only covers src/** — every workspace's tsconfig.json is src-only
+      # and vitest runs through esbuild (types erased), so ~380 server test files were never
+      # type-checked at all (first run surfaced 758 errors). Each workspace now has a
+      # tsconfig.test.json pulling test/** into the program; this fans out to all of them. Must run
+      # AFTER the tsc -b above: these configs are plain (non-build) programs, so they resolve
+      # @nw/* through the referenced projects' dist/*.d.ts that step produces.
+      - name: server typecheck (test programs — test/** in every workspace)
+        working-directory: server
+        run: npm run typecheck:test
 
   # 2026-08-14: split out of the old single "build + unit tests" job (see claudedocs/server.md) —
   # `npm run test:coverage --workspaces` used to run all 13 server workspaces back-to-back on one

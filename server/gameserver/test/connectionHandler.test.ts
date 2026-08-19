@@ -22,8 +22,21 @@ function encodeClient(body: Record<string, unknown>): Buffer {
   return Buffer.from(Envelope.encode(Envelope.fromObject({ client: body })).finish());
 }
 
-function fakeWs(): WebSocket & { closedWith: { code: number; reason: string } | null; terminated: boolean; pinged: boolean } {
-  return {
+/** The bits of the fake this test asserts on, split out so the literal below can be annotated —
+ *  without an annotation `this` inside its methods widens to `{}` and every `this.x` write fails. */
+interface FakeWsProbes {
+  closedWith: { code: number; reason: string } | null;
+  terminated: boolean;
+  pinged: boolean;
+}
+
+function fakeWs(): WebSocket & FakeWsProbes {
+  const ws: FakeWsProbes & Pick<WebSocket, 'readyState' | 'OPEN'> & {
+    close(code?: number, reason?: string): void;
+    terminate(): void;
+    ping(): void;
+    send(): void;
+  } = {
     closedWith: null,
     terminated: false,
     pinged: false,
@@ -41,7 +54,8 @@ function fakeWs(): WebSocket & { closedWith: { code: number; reason: string } | 
     send() {
       /* noop */
     },
-  } as unknown as WebSocket & { closedWith: { code: number; reason: string } | null; terminated: boolean; pinged: boolean };
+  };
+  return ws as unknown as WebSocket & FakeWsProbes;
 }
 
 function newManager(): RoomManager {

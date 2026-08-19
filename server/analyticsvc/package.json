@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",

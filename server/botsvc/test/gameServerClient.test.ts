@@ -62,6 +62,7 @@ describe('GameServerClient', () => {
       onMatchStart,
       onFrameBatch,
       onDisconnect: () => undefined,
+      onMatchOver: () => undefined,
     });
     expect(onMatchStart).toHaveBeenCalledWith(matchStartMsg);
 
@@ -95,6 +96,7 @@ describe('GameServerClient', () => {
       onMatchStart: () => undefined,
       onFrameBatch: () => undefined,
       onDisconnect,
+      onMatchOver: () => undefined,
     });
     await new Promise((r) => setTimeout(r, 50));
     expect(onDisconnect).toHaveBeenCalledWith(4000);
@@ -109,7 +111,7 @@ describe('GameServerClient', () => {
 
     const onDisconnect = vi.fn();
     const client = new GameServerClient();
-    await client.connect(listening.url, 'tkt-1', { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect });
+    await client.connect(listening.url, 'tkt-1', { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect, onMatchOver: () => undefined });
     client.close();
     await new Promise((r) => setTimeout(r, 50));
     expect(onDisconnect).not.toHaveBeenCalled();
@@ -125,7 +127,7 @@ describe('GameServerClient', () => {
 
     const client = new GameServerClient();
     await expect(
-      client.connect(listening.url, 'tkt-1', { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect: () => undefined }, 30),
+      client.connect(listening.url, 'tkt-1', { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect: () => undefined, onMatchOver: () => undefined }, 30),
     ).rejects.toThrow(/timed out/);
     await new Promise((r) => setTimeout(r, 20));
     expect(serverSideClosed).toBe(true);
@@ -139,7 +141,7 @@ describe('GameServerClient', () => {
     const onDisconnect = vi.fn();
     const client = new GameServerClient();
     await expect(
-      client.connect(listening.url, 'tkt-1', { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect }),
+      client.connect(listening.url, 'tkt-1', { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect, onMatchOver: () => undefined }),
     ).rejects.toThrow(/before match_start/);
     expect(onDisconnect).toHaveBeenCalledWith(4001);
   });
@@ -147,7 +149,7 @@ describe('GameServerClient', () => {
   it('rejects immediately if the underlying connect itself fails (nothing listening)', async () => {
     const client = new GameServerClient();
     await expect(
-      client.connect('ws://127.0.0.1:1', 'tkt-1', { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect: () => undefined }),
+      client.connect('ws://127.0.0.1:1', 'tkt-1', { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect: () => undefined, onMatchOver: () => undefined }),
     ).rejects.toThrow();
   });
 });

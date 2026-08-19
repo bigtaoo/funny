@@ -113,7 +113,7 @@ describe('Matchmaking', () => {
         autoTick: false,
         now: () => t,
         botFallbackMs: 30_000,
-        onTimeout: (e) => timeouts.push(e.accountId),
+        onTimeout: (e) => { timeouts.push(e.accountId); },
       });
       await mm.enqueue('a', 'a', '', 1000, '', '', 'web');
       await mm.tick();
@@ -137,7 +137,7 @@ describe('Matchmaking', () => {
       const mm = new Matchmaking(() => {}, {
         autoTick: false,
         now: () => t,
-        onTimeout: (e) => timeouts.push(e.accountId),
+        onTimeout: (e) => { timeouts.push(e.accountId); },
       });
       await mm.enqueue('a', 'a', '', 1000);
       t = 10 * 60_000;
@@ -152,7 +152,7 @@ describe('Matchmaking', () => {
         autoTick: false,
         now: () => t,
         botFallbackMs: 1000,
-        onTimeout: (e) => seen.push(e.platform),
+        onTimeout: (e) => { seen.push(e.platform); },
       });
       await mm.enqueue('a', 'a', '', 1000, '', '', 'wechat');
       t = 1000;

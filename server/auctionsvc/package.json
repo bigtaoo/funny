@@ -9,6 +9,8 @@
     "build": "tsc -b",
     "pretypecheck": "npm run gen:api:auction",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "pretypecheck:test": "npm run gen:api:auction",
     "predev": "npm run gen:api:auction",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",
