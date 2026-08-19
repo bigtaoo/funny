@@ -4,22 +4,15 @@
   "//rootDir": "Widened from src to the package root because test/ sits outside src/; composite/declaration off + noEmit because this program only reports diagnostics, it never emits.",
   "//references": "`references` MUST be repeated here — `extends` does NOT inherit it. Without it @nw/shared resolves through node_modules to shared/dist/*.d.ts instead of being redirected to shared/src, which showed up as 240 bogus TS2307s in metaserver alone. It still needs those dist/*.d.ts to exist, hence the CI ordering.",
   "//module": "ES2022 rather than the inherited CommonJS: vitest transpiles test files as ESM, and several e2e tests use top-level await, which is legal there but TS1378 under CommonJS.",
+  "//exclude": "auction-fulllink.e2e.test.ts is deliberately left out: it imports the real client WorldApiClient from client/src (the exact code the browser build ships), which drags client sources — DOM globals, pixi.js-legacy, @bufbuild/protobuf — into the program. Type-checking it here would mean installing client/node_modules in the server-checks CI job and adding lib:DOM to a Node-only config, i.e. bending this config into a second client config. It is the ONE knowingly unchecked server test file (~380 total); the honest fix is a client-side program that owns it. Its type errors are otherwise invisible, so keep it small and keep the runtime assertions carrying the weight.",
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": "../..",
+    "rootDir": ".",
     "composite": false,
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
-    "module": "ES2022",
-    "paths": {
-      "@nw/engine": [
-        "../engine/src/index.ts"
-      ],
-      "@nw/engine/*": [
-        "../engine/src/*"
-      ]
-    }
+    "module": "ES2022"
   },
   "references": [
     {
@@ -30,5 +23,7 @@
     "src/**/*",
     "test/**/*"
   ],
-  "//auctionsvc": "test/auction-fulllink.e2e.test.ts imports the real client WorldApiClient from client/src (deliberately — it is the exact code the browser build ships), which drags client sources into this program: hence a repo-root rootDir and the client tsconfig's @nw/engine path mappings."
+  "exclude": [
+    "test/auction-fulllink.e2e.test.ts"
+  ]
 }

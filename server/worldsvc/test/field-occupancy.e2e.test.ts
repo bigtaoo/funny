@@ -26,7 +26,7 @@ import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
 // Reuse the card-slg fake-meta pattern: any cardInstanceId resolves to an owned infantry card so setTeams/move
 // can build a real card team without a live hero roster.
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMeta: WorldMetaClient = {
   available: true,

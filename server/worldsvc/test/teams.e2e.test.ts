@@ -91,7 +91,7 @@ async function connect(svc: WorldService, accountId: string, target: { x: number
 const CARD_DEF_ID = 'lichuang';
 const CARD_IDS = Array.from({ length: 100 }, (_, i) => `card${i}`);
 const CARD_INV_A: Record<string, CardInstance> = Object.fromEntries(
-  CARD_IDS.map((id) => [id, { id, defId: CARD_DEF_ID, level: 1, xp: 0, gear: {}, locked: false }]),
+  CARD_IDS.map((id) => [id, { id, defId: CARD_DEF_ID, level: 1, gear: {}, locked: false }]),
 );
 const fakeMeta: WorldMetaClient = {
   available: true,

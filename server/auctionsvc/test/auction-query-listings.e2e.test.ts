@@ -40,7 +40,7 @@ const stubMeta: AuctionMetaClient = {
 const stubMail: AuctionMailClient = { available: true, async sendSystemMail() {} };
 
 const EQUIP: EquipmentInstance = { id: 'e1', defId: 'wp_marker', rarity: 'rare', level: 3, affixes: [] };
-const CARD: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+const CARD: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false };
 
 function baseDoc(over: Partial<AuctionDoc>): AuctionDoc {
   return {

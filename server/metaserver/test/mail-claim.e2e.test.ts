@@ -133,7 +133,7 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
   afterAll(async () => { if (app) await app.close(); if (socialServer) socialServer.close(); });
 
   it('production-length auction-returned card mail (dispatchKey embeds a full auctionId) → claim succeeds, not a route 404', async () => {
-    const cardInstance: CardInstance = { id: 'cd_cross1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+    const cardInstance: CardInstance = { id: 'cd_cross1', defId: 'lichuang', level: 1, gear: {}, locked: false };
     // Real shape from auctionService.ts: auctionId = `a:{sellerId-uuid}:{timestamp}:{counter}`,
     // dispatchKey = `auction_cancel:${auctionId}` / `auction_expire:${auctionId}`.
     const auctionId = `a:${accountId}:${1783867933347}:1`;

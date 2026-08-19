@@ -46,7 +46,7 @@ if (!mongo) console.warn(`[worldsvc.review-fixes.e2e] Mongo unreachable (${URI})
 
 /** Any card id resolves to a minimal valid card (mirrors field-encounter.e2e.test.ts's CARD_INV_ANY). */
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMetaResolvesCards: WorldMetaClient = {
   available: true,

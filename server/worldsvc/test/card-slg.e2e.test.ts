@@ -27,7 +27,7 @@ import type { WorldMetaClient } from '../src/metaClient';
 // setTeams resolves cardInstanceId → unitType via cardInv (CC-3; sanitizeCardArmy drops anything that doesn't
 // resolve), so a Proxy stands in for a real hero-roster lookup rather than enumerating every id used below.
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMeta: WorldMetaClient = {
   available: true,

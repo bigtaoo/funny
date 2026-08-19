@@ -42,7 +42,7 @@ const TILE = `${W}:5:5`;
 const CARD_DEF_ID = 'lichuang'; // a real @nw/shared CARD_DEFS entry (unitType: infantry)
 
 function cardInv(id: string) {
-  return { [id]: { id, defId: CARD_DEF_ID, level: 1, xp: 0, gear: {}, locked: false } };
+  return { [id]: { id, defId: CARD_DEF_ID, level: 1, gear: {}, locked: false } };
 }
 function saveFieldsWithCard(id: string) {
   return { cardInv: cardInv(id), equipmentInv: {} };

@@ -280,7 +280,7 @@ describe('HttpWorldSocialsvcClient.bumpActivity', () => {
     const c = new HttpWorldSocialsvcClient(base, KEY);
     await expect(c.bumpActivity('fam1', 5)).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    expect(errSpy.mock.calls[0][0]).toBe('[worldsvc] socialsvc.bumpActivity failed');
+    expect(errSpy.mock.calls[0]![0]).toBe('[worldsvc] socialsvc.bumpActivity failed');
   });
 
   it('baseUrl null → no-op, no request', async () => {
@@ -341,7 +341,7 @@ describe('HttpWorldSocialsvcClient.bumpActivityAndProsperity', () => {
     const c = new HttpWorldSocialsvcClient(base, KEY);
     await expect(c.bumpActivityAndProsperity('fam1', 3, 9)).resolves.toBe(0);
     expect(errSpy).toHaveBeenCalledTimes(1);
-    expect(errSpy.mock.calls[0][0]).toBe('[worldsvc] socialsvc.bumpActivityAndProsperity failed');
+    expect(errSpy.mock.calls[0]![0]).toBe('[worldsvc] socialsvc.bumpActivityAndProsperity failed');
   });
 
   it('baseUrl null → resolves 0 without a request', async () => {
@@ -367,7 +367,7 @@ describe('HttpWorldSocialsvcClient.resetSlgState', () => {
     const c = new HttpWorldSocialsvcClient(base, KEY);
     await expect(c.resetSlgState('fam1')).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    expect(errSpy.mock.calls[0][0]).toBe('[worldsvc] socialsvc.resetSlgState failed');
+    expect(errSpy.mock.calls[0]![0]).toBe('[worldsvc] socialsvc.resetSlgState failed');
   });
 
   it('baseUrl null → no-op, no request', async () => {

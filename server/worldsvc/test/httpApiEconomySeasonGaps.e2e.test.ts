@@ -43,7 +43,7 @@ if (!mongo) console.warn(`[worldsvc.httpApiEconomySeasonGaps.e2e] Mongo unreacha
 // CARD_INV_ANY fixture. Only needed so PUT /world/teams (even with an empty array) doesn't fail on the
 // unconditional cardInv lookup inside setTeams.
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMeta: WorldMetaClient = {
   available: true,

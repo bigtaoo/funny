@@ -393,7 +393,7 @@ describe.skipIf(!mongo)('social service handlers (src import, coverage backfill)
     });
 
     it('happy path: card attachment delivers an instance snapshot into cardInv', async () => {
-      const inst: CardInstance = { id: 'cd_test1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+      const inst: CardInstance = { id: 'cd_test1', defId: 'lichuang', level: 1, gear: {}, locked: false };
       social.seedMail('m1', { to: accountId, attachments: [{ kind: 'card', instance: inst }] });
       const r = body(await app.inject({ method: 'POST', url: '/mail/m1/claim', headers: auth(), payload: {} }));
       expect(r.data.save.cardInv[inst.id]).toBeTruthy();
@@ -439,7 +439,7 @@ describe.skipIf(!mongo)('social service handlers (src import, coverage backfill)
     });
 
     it('grantCard fails (malformed instance, no id) → delivery throws, claim rolled back, 503', async () => {
-      social.seedMail('m1', { to: accountId, attachments: [{ kind: 'card', instance: { id: '', defId: 'x', level: 1, xp: 0, gear: {}, locked: false } as CardInstance }] });
+      social.seedMail('m1', { to: accountId, attachments: [{ kind: 'card', instance: { id: '', defId: 'x', level: 1, gear: {}, locked: false } as CardInstance }] });
       const r = await app.inject({ method: 'POST', url: '/mail/m1/claim', headers: auth(), payload: {} });
       expect(r.statusCode).toBe(503);
       expect(social.unclaimCalls.length).toBe(1);

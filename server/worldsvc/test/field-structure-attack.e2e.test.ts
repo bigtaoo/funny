@@ -27,7 +27,7 @@ import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
 import type { WorldMailClient, WorldMailContent } from '../src/mailClient';
 
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMeta: WorldMetaClient = {
   available: true,
@@ -261,7 +261,7 @@ describe.skipIf(!mongo)('worldsvc structure-durability e2e (ADR-051 §5.2)', () 
     const state: Record<string, CardSLGState> = {};
     for (let i = 0; i < n; i++) {
       const id = `${prefix}${i}`;
-      inv[id] = { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+      inv[id] = { id, defId: 'lichuang', level: 1, gear: {}, locked: false };
       army.push({ cardInstanceId: id, col: i, row: 1 });
       state[id] = { currentTroops: 60 };
     }

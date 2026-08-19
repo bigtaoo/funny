@@ -87,7 +87,7 @@ describe('AuctionService composition wiring (2026-08-11 chain→composition re-a
       item: { material: 'scrap' },
       qty: 5,
       price: 10,
-      durationSec: AUCTION_DURATIONS_SEC[0],
+      durationSec: AUCTION_DURATIONS_SEC[0]!,
     });
 
     expect(bumpDailySpy).toHaveBeenCalledWith('seller-1', 'lists', expect.any(Number));

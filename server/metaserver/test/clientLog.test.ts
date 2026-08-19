@@ -156,7 +156,7 @@ describe('MetaService.clientLog (§9.4 targeting guard + forwarding)', () => {
     )) as { data: { accepted: number } };
     expect(out.data.accepted).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('http://loki/push');
+    expect(fetchMock.mock.calls[0]![0]).toBe('http://loki/push');
   });
 
   it('missing publicId / logs → 400', async () => {
@@ -187,7 +187,7 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
     )) as { data: { accepted: number } };
     expect(out.data.accepted).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('http://loki/push');
+    expect(fetchMock.mock.calls[0]![0]).toBe('http://loki/push');
   });
 
   it('missing publicId → still accepted (recorded as anon)', async () => {
@@ -197,7 +197,7 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
       reply(),
     )) as { data: { accepted: number } };
     expect(out.data.accepted).toBe(1);
-    expect(fetchMock.mock.calls[0][1]).toBeDefined();
+    expect(fetchMock.mock.calls[0]![1]).toBeDefined();
   });
 
   it('dev-build crash (buildVersion 0.0.0) is dropped; a mem event in the same batch still passes (defense-in-depth dev gate)', async () => {
@@ -218,7 +218,7 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
     // The crash event is filtered (dev hot-reload noise); only the mem event survives.
     expect(out.data.accepted).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const payload = fetchMock.mock.calls[0][1] as { body: string };
+    const payload = fetchMock.mock.calls[0]![1] as { body: string };
     const line = JSON.parse(payload.body).streams[0].values[0][1] as string;
     expect(line).toContain('type=mem');
   });
@@ -264,7 +264,7 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
     )) as { data: { accepted: number } };
     expect(out.data.accepted).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const payload = fetchMock.mock.calls[0][1] as { body: string };
+    const payload = fetchMock.mock.calls[0]![1] as { body: string };
     const line = JSON.parse(payload.body).streams[0].values[0][1] as string;
     const publicIdMatch = /publicId=(\S+)/.exec(line);
     const platformMatch = /platform=(\S+)/.exec(line);

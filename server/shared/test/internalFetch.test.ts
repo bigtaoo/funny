@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fetchInternalJson, postInternal } from '../src/internalFetch';
 
 const KEY = 'test-internal-key';
-const OPTS = { caller: 'metaserver' as const, key: KEY };
+const OPTS = { caller: 'meta' as const, key: KEY };
 
 let server: Server;
 let base = '';
@@ -61,7 +61,7 @@ describe('fetchInternalJson', () => {
   it('sends x-internal-caller for audit attribution', async () => {
     hits = [];
     await fetchInternalJson(`${base}/ok`, OPTS);
-    expect(hits[0]?.caller).toBe('metaserver');
+    expect(hits[0]?.caller).toBe('meta');
   });
 
   it('parses and returns the JSON body of a 4xx (business error) with ok=false', async () => {
@@ -128,7 +128,7 @@ describe('postInternal', () => {
   it('sends x-internal-caller for audit attribution', async () => {
     hits = [];
     await postInternal(`${base}/ok`, {}, OPTS);
-    expect(hits[0]?.caller).toBe('metaserver');
+    expect(hits[0]?.caller).toBe('meta');
   });
 
   it('returns false on a 4xx business error and never retries', async () => {

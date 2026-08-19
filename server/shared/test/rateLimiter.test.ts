@@ -73,7 +73,7 @@ describe('createRateLimiter', () => {
 // skipped in environments (like this one) where Redis isn't reachable.
 describe('RedisSlidingRateLimiter (fake redis client)', () => {
   it('calls eval with the namespaced key, args in order, and interprets 1/0 as allow/deny', async () => {
-    const evalFn = vi.fn(async () => 1);
+    const evalFn = vi.fn(async (..._args: unknown[]) => 1);
     const fakeRedis = { eval: evalFn };
     const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 60_000);
     expect(await rl.allow('user-1', 1000)).toBe(true);
@@ -89,13 +89,13 @@ describe('RedisSlidingRateLimiter (fake redis client)', () => {
   });
 
   it('res !== 1 (e.g. 0) denies', async () => {
-    const fakeRedis = { eval: vi.fn(async () => 0) };
+    const fakeRedis = { eval: vi.fn(async (..._args: unknown[]) => 0) };
     const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 1000);
     expect(await rl.allow('user-1', 1000)).toBe(false);
   });
 
   it('the member argument is unique per call (avoids same-millisecond ZADD collisions)', async () => {
-    const evalFn = vi.fn(async () => 1);
+    const evalFn = vi.fn(async (..._args: unknown[]) => 1);
     const fakeRedis = { eval: evalFn };
     const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 1000);
     await rl.allow('user-1', 1000);

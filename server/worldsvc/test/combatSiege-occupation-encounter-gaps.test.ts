@@ -208,7 +208,7 @@ describe('OccupationService.applyOccupy — real battle outcome (forced cheap vi
 
   it('a card-army attacker winning also persists cardState via writeOccupyCardState before the hold starts', async () => {
     const garrison = npcGarrison(2);
-    const getSaveFields = vi.fn(async () => ({ cardInv: { c1: { id: 'c1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } } }));
+    const getSaveFields = vi.fn(async () => ({ cardInv: { c1: { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false } } }));
     const { core, pwUpdateOne } = makeCore({ tilesFindOne: () => null });
     (core as unknown as { meta: { getSaveFields: unknown } }).meta.getSaveFields = getSaveFields;
     const svc = new OccupationService(core, fakeHelpers());

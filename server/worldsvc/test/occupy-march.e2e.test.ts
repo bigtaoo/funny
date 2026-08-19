@@ -326,7 +326,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     // (60), so committed strength ≈ 12×60 = 720, the same magnitude as the flat-troop win above (npc+600) — a
     // real card team, not a synthesized force.
     const cardIds = Array.from({ length: 12 }, (_, i) => `card-occ-${i}`);
-    for (const id of cardIds) cardInv[id] = { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+    for (const id of cardIds) cardInv[id] = { id, defId: 'lichuang', level: 1, gear: {}, locked: false };
     const cardStateSet: Record<string, CardSLGState> = {};
     for (const id of cardIds) cardStateSet[id] = { currentTroops: 200, teamId: 't1' };
     await m.collections.playerWorld.updateOne(
