@@ -9,7 +9,7 @@ import { isCityAtlasReady } from '../../../render/atlas/cityAtlasLoader';
 import { FOG_COLOR, ALLY_SECT_BORDER, SECT_BASE_TINT, ALLY_SECT_BASE_TINT, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from '../tileStyle';
 import type { TerrainTextureName } from '../../../render/atlas/terrainAtlasLoader';
 import type { WorldTileView } from '../../../net/WorldApiClient';
-import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared';
+import { worldSeed, obstacleShoreAt, isCityGroundTile, tileFeatureBuilding, type ProceduralTile } from '@nw/shared';
 import { drawResMotif } from './resources';
 import { drawHpBar } from './primitives';
 
@@ -138,23 +138,13 @@ export function drawTileL1(
   // drawEditorTile (SLG map render parity) — the editor never has the watchtower/structure half of
   // this (it knows nothing of live player state), but the terrain half must match exactly.
   const featType = tile?.type ?? proc?.type;
-  // CITY GROUND (`familyKeep` = capital/graded city, `center` = world center): no per-tile art at all.
-  // The city's own art is ONE sprite on the city layer (WorldMapRenderer/city.ts), sized to the whole
-  // 3/5/7/9-tile footprint and masked to its plot — so a footprint tile that also stamped something of
-  // its own would be stamping underneath that sprite. `familyKeep` used to stamp `building_keep` here:
-  // harmless-looking on a procedural city (proceduralTile marks only the single anchor tile, so the one
-  // gatehouse sat hidden under the sprite) but ruinous on a PUBLISHED one, where rasterizeMapEdits paints
-  // the full N×N footprint as familyKeep and every cell stamped its own gatehouse at 1.3× tile size —
-  // the same wall of overlapping masonry the deleted scattered-familyKeep tile class produced
-  // (2026-08-19, see server/shared/src/slg/mapgen/tileGen.ts). Dropped 2026-08-19: `center` never had
-  // the stamp, and city ground now behaves uniformly. The resource-motif suppression stays — city ground
-  // keeps its biome `resType` (mapEdit.ts/tileGen.ts), and a resource heap has nothing to say under a
-  // castle either.
-  const isCityGround = featType === 'familyKeep' || featType === 'center';
-  const featBuilding = featType === 'stronghold' ? 'building_stronghold'
-    : featType === 'bridge' ? 'building_bridge'
-    : featType === 'plankway' ? 'building_plankway'
-    : null;
+  // Both of these come from @nw/shared rather than a local ternary, so the editor's drawEditorTile
+  // cannot drift out of lockstep with this (see isCityGroundTile's own doc comment for the 2026-08-19
+  // `building_keep` drift that motivated moving them there). City ground (familyKeep/center) stamps
+  // nothing of its own — the city's art is the one footprint-sized sprite on the city layer — but it
+  // DOES suppress the resource heap, since city ground still carries a biome resType.
+  const isCityGround = isCityGroundTile(featType);
+  const featBuilding = tileFeatureBuilding(featType);
   const hasBuilding = !!featBuilding || isCityGround || !!tile?.watchtower || !!tile?.structure;
   if (motifResType && !hasBuilding) {
     drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false, tx, ty);

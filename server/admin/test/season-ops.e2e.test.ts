@@ -77,6 +77,8 @@ class FakeWorld implements WorldClient {
   async generateMapTemplate() { return { templateId: '', width: 0, height: 0, version: 1, tileCount: 0, active: false, createdAt: 0, updatedAt: 0 }; }
   async getMapTemplateTiles() { return []; }
   async saveMapTemplateTiles() { return { updated: 0 }; }
+  async getMapTemplateCities() { return []; }
+  async saveMapTemplateCities() { return { updated: 0 }; }
   async activateMapTemplate() {}
   async deleteMapTemplate() {}
 }
