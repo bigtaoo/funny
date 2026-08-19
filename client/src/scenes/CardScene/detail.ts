@@ -13,7 +13,7 @@ import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
 import { RARITY_COLOR } from '../EquipmentScene/layout';
 import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
-import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower, cardHp, cardSiegeValue } from '../../game/meta/cardDefs';
+import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower, cardHp, cardSiegeValue, cardSiegeValueEffective } from '../../game/meta/cardDefs';
 import { skinsForUnitType, skinDisplayName } from '../../game/meta/skinDefs';
 import type { UnitType } from '@nw/engine/types';
 import { CardSceneCore, MODAL_DIM, injuryCountdown } from './core';
@@ -194,7 +194,13 @@ export class DetailPanel {
     panelRoot.addChild(hpLine);
     statY += 18;
 
-    const siegeLine = core.stxt(`${t('roster.siege')}: ${cardSiegeValue(card)}`, FS.micro, C.dark);
+    // ADR-069: base damage = rating × troops / 60, so the rating alone tells the player nothing about
+    // what this card will actually do to a base (0 troops → 0 damage). Show both: the effective number
+    // for the troops currently assigned, with the per-60-troop rating in parentheses.
+    const siegeEff = cardSiegeValueEffective(card, state?.currentTroops ?? 0);
+    const siegeText = `${t('roster.siege')}: ${siegeEff}`
+      + t('roster.siegePer60').replace('{base}', String(cardSiegeValue(card)));
+    const siegeLine = core.stxt(siegeText, FS.micro, C.dark);
     siegeLine.x = statX; siegeLine.y = statY;
     panelRoot.addChild(siegeLine);
     statY += 18;

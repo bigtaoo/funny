@@ -124,7 +124,12 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
       x,
       y,
       type: 'territory',
-      level: proc.level,
+      // level: 1 pins the in-engine defender base HP at npcBaseHp(1)=60. ADR-069 (2026-08-19) made siege
+      // damage scale with carried troops, which turned that base into a real gate — so leaving the level to
+      // whatever the terrain generator rolled here (1..10 → base 60..600) would silently make the fixed
+      // 815-troop force in the defense cases below decide the test, instead of the nationality bonus this
+      // file exists to isolate. The production-bonus cases above don't go through this helper.
+      level: 1,
       ...(proc.resType ? { resType: proc.resType } : {}),
       ownerId: accountId,
       garrison,
@@ -213,10 +218,13 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await ownNation(provinceIdxAt(tgt.x, tgt.y), 'b');
     await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
-    // Authoritative engine (G3-2b, §16 / ADR-026 siege-value tuning): 815 troops can defeat 500 defenders
+    // Authoritative engine (G3-2b, §16 / ADR-026 siege-value tuning): 660 troops can defeat 500 defenders
     // (see control case below), but cannot defeat the nation-bonus-boosted floor(500*1.15)=575 effective
     // defenders → defender wins (same march seed; the only variable is the +75 effective garrison from nationality).
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 815);
+    // The force was 815 until ADR-069 (2026-08-19): once siege damage scales with carried troops, 815 beat
+    // BOTH garrisons and the pair stopped discriminating. Re-measured flip window at base HP 60: 640-680
+    // beats 500 but not 575 on all 5 seeds, so 660 sits in the middle of it.
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 660);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 
@@ -231,8 +239,8 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await setupDefender('b', tgt.x, tgt.y, 500); // b is given no capital
     await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
-    // Same 815 troops, same march seed, but defender has no nationality bonus (500) → tile conquered, disproving hypothesis that the prior defender win was unrelated to nationality.
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 815);
+    // Same 660 troops, same march seed, but defender has no nationality bonus (500) → tile conquered, disproving hypothesis that the prior defender win was unrelated to nationality.
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 660);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 

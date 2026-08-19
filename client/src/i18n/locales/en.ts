@@ -1562,6 +1562,7 @@ export const en: Record<TranslationKey, string> = {
   'roster.atk': 'Attack',
   'roster.hp': 'HP',
   'roster.siege': 'Siege',
+  'roster.siegePer60': ' ({base} per 60 troops)',
   'roster.injured': 'Injured {time}',
   'roster.inTeam': 'Deployed',
   'roster.inTeamNamed': 'Deployed: {team}',

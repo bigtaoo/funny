@@ -136,6 +136,22 @@ export function divFpByInt(a: Fp, n: number): Fp {
 }
 
 /**
+ * Fixed-point divide: `Math.trunc(a × FP_SCALE / b)` — the inverse of {@link mulFp},
+ * for the rare case where BOTH operands are fp and the result is a ratio rather than a
+ * scaled quantity (ADR-065 keeps every fp op behind a helper; `divFpByInt` above only
+ * covers the far more common "fp ÷ plain integer" shape). Introduced for the siege-value
+ * troop scaling in `Unit`'s constructor (ADR-069: `siegeValue × troops / fullCapacity`),
+ * where the numerator and denominator are both HP amounts in fp.
+ *
+ * `b` must be a positive fp value; a zero/negative divisor returns 0 rather than
+ * Infinity/NaN so a dirty blueprint can never poison the deterministic simulation.
+ */
+export function divFp(a: Fp, b: Fp): Fp {
+  if (b <= 0) return 0 as Fp;
+  return Math.trunc((a * FP_SCALE) / b) as Fp;
+}
+
+/**
  * Deterministic integer square root: floor(√n) for n ≥ 0, using only integer
  * arithmetic (no Math.sqrt → no platform float divergence). Used by the
  * projectile system to measure fp distance to a homing target.

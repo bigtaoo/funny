@@ -1,5 +1,5 @@
-import { fp, FP_SCALE, fromFp, toFp, addFp, subFp, mulFp, maxFp, minFp, TICK_RATE, type Fp } from './math/fixed';
-import { UNIT_BLUEPRINTS } from './config';
+import { fp, FP_SCALE, fromFp, toFp, addFp, subFp, mulFp, divFp, maxFp, minFp, TICK_RATE, type Fp } from './math/fixed';
+import { SIEGE_TROOPS_PER_UNIT, UNIT_BLUEPRINTS } from './config';
 import { Side, UnitState, UnitType, type TraitSpec, type UnitBlueprint } from './types';
 
 // Real match spawns get their id from the owning GameState's per-instance counter
@@ -172,6 +172,8 @@ export class Unit {
    * @param initialHp SLG siege battle (G3, §16.1, "troops = HP"): override the unit's
    *   starting HP with the allotted troops. Clamped to the blueprint's full HP
    *   capacity. Omitted → full blueprint HP. maxHp always stays the blueprint cap.
+   *   Also scales `siegeValue` by `initialHp / SIEGE_TROOPS_PER_UNIT` (ADR-069) — unclamped, so
+   *   troops beyond the HP cap still buy base damage; see the constructor body.
    */
   constructor(
     unitType: UnitType,
@@ -199,7 +201,30 @@ export class Unit {
     this.hp_fp    = initialHp !== undefined ? minFp(toFp(initialHp), bp.hp_fp) : bp.hp_fp;
     this.maxHp_fp = bp.hp_fp;
     this.attack_fp = bp.attack_fp;
-    this.siegeValue_fp = bp.siegeValue_fp;
+    // Siege value scales with the troops this unit actually carries (ADR-069), measured against
+    // the global SIEGE_TROOPS_PER_UNIT quantum (config.ts) rather than against the clamped
+    // `hp_fp` above or this type's own HP cap: `siegeValue × initialHp / 60`, unclamped in both
+    // directions. Rationale — base damage on arrival is a one-shot `siegeValue` hit that despawns
+    // the unit (MovementSystem), so before ADR-069 a whole team's base damage was Σ siegeValue
+    // over at most CARD_TEAM_MAX_SIZE=12 units: a hard ceiling (~150-190) entirely independent of
+    // troops. Every troop above a card's HP capacity was dead weight (invisible to the player),
+    // NPC tiles whose `npcBaseHp = 40×level` exceeded that ceiling (level ≥ 5) were unbreakable by
+    // ANY card team no matter how much it trained, and the SIEGE_CHEAP_RATIO=10 shortcut auto-won
+    // those very same tiles — so the difficulty curve ran backwards. Scaling here makes trained
+    // troops buy base damage continuously and, in the other direction, stops a nearly-empty card
+    // from delivering a full-strength hit.
+    // Only the pre-placed SLG paths pass `initialHp` (worldsvc siege armies / the defense-formation
+    // editor), so PvP and the wave-driven campaign are bit-for-bit untouched.
+    // Attacking side ONLY (`Side.Bottom`). The Top side's base-arrival damage is deliberately left at
+    // the flat blueprint value: in an SLG siege the DEFENDER's base is the objective (`destroy_base`),
+    // while the attacker's own base is just a battle terminator — the wave path even pins it to
+    // `defenderBaseLevel: 0` and says so. Scaling leak damage as well would turn a stationed team's
+    // troop stock into a hidden instant-win lever (a 300-troop defender card would deal 70 of the
+    // attacker's 100 terminator HP in one leak, so two leaks would end an assault regardless of how
+    // the actual fight went), which is a balance change nobody asked for and not what ADR-069 is about.
+    this.siegeValue_fp = initialHp !== undefined && side === Side.Bottom
+      ? mulFp(bp.siegeValue_fp, divFp(toFp(initialHp), toFp(SIEGE_TROOPS_PER_UNIT)))
+      : bp.siegeValue_fp;
     this.range    = bp.range;
 
     // Convert seconds → ticks (integer, no float retained)

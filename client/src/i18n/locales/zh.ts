@@ -1583,6 +1583,7 @@ export const zh = {
   'roster.atk': '攻击',
   'roster.hp': '血量',
   'roster.siege': '攻城值',
+  'roster.siegePer60': '（每 60 兵 {base}）',
   'roster.injured': '受伤 {time}',
   'roster.inTeam': '出战中',
   'roster.inTeamNamed': '出战中：{team}',

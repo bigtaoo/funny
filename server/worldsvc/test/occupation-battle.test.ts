@@ -8,7 +8,7 @@
 // cheap-path formula, morale scaling, defenderBaseHp wiring, seed) with fast, no-Mongo unit tests, the
 // same style as get-teams-card-lookup.test.ts / siege-cheap-fallback.test.ts.
 import { describe, expect, it, vi } from 'vitest';
-import { resolveSiege, npcBaseHp, siegeSeedFromId, moraleCombatMultiplier, MARCH_MORALE_MAX, SIEGE_CHEAP_RATIO } from '@nw/shared';
+import { resolveSiege, npcBaseHp, siegeSeedFromId, moraleCombatMultiplier, MARCH_MORALE_MAX, SIEGE_CHEAP_RATIO, CARD_BASE_SURVIVAL, CARD_INJURY_DURATION_MS } from '@nw/shared';
 import { synthesizeArmy, sumArmyHp, computeCardStateUpdates } from '../src/siegeEngine';
 import { resolveOccupationBattle, writeOccupyCardState } from '../src/combatSiege/occupationBattle';
 import type { WorldCore } from '../src/core';
@@ -149,5 +149,49 @@ describe('writeOccupyCardState', () => {
     const pw = playerWorld({ cardState: { c1: { currentTroops: 0 }, c2: { currentTroops: 0 } } as never });
     await writeOccupyCardState(core, m, pw, 50, Date.now());
     expect(updateOne).not.toHaveBeenCalled();
+  });
+
+  it('ADR-069: passes the deployed denominator through, so engine survivors are not measured against nominal troops', async () => {
+    const updateOne = vi.fn(async () => ({}));
+    const core = fakeCore(undefined, updateOne);
+    const m = march({ army: cardArmy });
+    // 500 nominal troops across two cards, but the engine only ever fielded 200 of them (per-unit HP
+    // capacity clamp) and brought 150 of those home: the team kept 75% of its strength, not 30%.
+    const pw = playerWorld({ cardState: { c1: { currentTroops: 200 }, c2: { currentTroops: 300 } } as never });
+    await writeOccupyCardState(core, m, pw, /* survivors */ 150, 1_700_000_000_000, /* deployed */ 200);
+    const set = (updateOne.mock.calls[0]![1] as { $set: Record<string, number> }).$set;
+    expect(set['cardState.c1.currentTroops']).toBe(150); // 200 × 0.75
+    expect(set['cardState.c2.currentTroops']).toBe(225); // 300 × 0.75
+  });
+});
+
+describe('computeCardStateUpdates — survival denominator (ADR-069)', () => {
+  const cardArmy = [{ cardInstanceId: 'c1', col: 0, row: 0 }] as never;
+  const cardState = { c1: { currentTroops: 1000 } } as never;
+  const NOW = 1_700_000_000_000;
+
+  it('dividing engine survivors by the NOMINAL troop total is what used to shred a winning team', () => {
+    // The pre-ADR-069 call shape: survivors (clamped HP, max ~400 for this card) over 1000 nominal.
+    const before = computeCardStateUpdates(cardArmy, cardState, 400, NOW);
+    expect(before.c1!.currentTroops).toBe(400); // "lost 60%" — despite every unit walking home alive
+    const after = computeCardStateUpdates(cardArmy, cardState, 400, NOW, 400);
+    expect(after.c1!.currentTroops).toBe(1000); // full survival, correctly reported
+  });
+
+  it('a partial loss is scaled by the real deployment, and the ratio never exceeds 1', () => {
+    expect(computeCardStateUpdates(cardArmy, cardState, 200, NOW, 400).c1!.currentTroops).toBe(500);
+    expect(computeCardStateUpdates(cardArmy, cardState, 800, NOW, 400).c1!.currentTroops).toBe(1000);
+  });
+
+  it('the CARD_BASE_SURVIVAL floor and the injury flag still apply on a total wipe', () => {
+    const wiped = computeCardStateUpdates(cardArmy, cardState, 0, NOW, 400);
+    expect(wiped.c1!.currentTroops).toBe(Math.round(1000 * CARD_BASE_SURVIVAL));
+    expect(wiped.c1!.injuredUntil).toBe(NOW + CARD_INJURY_DURATION_MS);
+  });
+
+  it('a non-positive / omitted denominator falls back to the nominal total (cheap path, arrow towers)', () => {
+    const fallback = computeCardStateUpdates(cardArmy, cardState, 700, NOW, 0);
+    expect(fallback.c1!.currentTroops).toBe(computeCardStateUpdates(cardArmy, cardState, 700, NOW).c1!.currentTroops);
+    expect(fallback.c1!.currentTroops).toBe(700);
   });
 });

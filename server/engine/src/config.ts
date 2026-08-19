@@ -117,6 +117,21 @@ export const CARD_REFRESH_INITIAL_OFFSET_MAX = 15 * TICK_RATE; // 450
 
 export const BASE_HP = 100;
 
+// ─── SLG siege: troops → soldier-unit quantum (ADR-069) ───────────────────────
+//
+//  The SLG layer models "troops = HP" (SLG_DESIGN §16.1) and converts a flat troop
+//  count into board units in 60-troop chunks (worldsvc's `synthesizeArmy`, whose
+//  HP_PER_UNIT is exactly the baseline Infantry blueprint HP). That same 60 troops is
+//  therefore the game's canonical "one soldier unit", and ADR-069 uses it as the
+//  reference load at which a pre-placed unit delivers its NOMINAL `siegeValue` on
+//  reaching the enemy base: a unit carrying `troops` deals `siegeValue × troops / 60`.
+//  Normalizing on this GLOBAL quantum (rather than on each unit type's own HP cap)
+//  keeps per-troop siege efficiency proportional to `siegeValue`, so the blueprint
+//  table's wall-breaker ordering (shieldbearer 14 > infantry 11 > archer 8 per equal
+//  troops) survives the scaling instead of being inverted by HP-tank capacity.
+/** Troops that constitute one soldier unit for SLG siege math (ADR-069) — baseline Infantry HP. */
+export const SIEGE_TROOPS_PER_UNIT = 60;
+
 // ─── Building tick intervals ──────────────────────────────────────────────────
 //
 //  Barracks spawn interval : 6 s   → 6 * 30 = 180 ticks
