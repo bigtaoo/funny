@@ -519,3 +519,11 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 1. **禁止实心填充**：`no area is ever filled solid black; the darkest tone is parallel pen hatching with white paper visible between the strokes`。
 2. **锁定排线占空比**：`the gaps between hatching strokes are as wide as the strokes themselves` —— 排线区恒定约 50% 覆盖率，这是唯一能让色调可预测的说法。
 3. **锁定排线面积占比**：`hatch only <具体部位>，其余表面保持纯白` —— 用部位而不是程度来控制总量。
+
+### 6.8 第三批（3 张）· 几何指令写法验证成功，但要给"墨液"开个口子
+
+**paper l6 / l8 一次命中**：`density 0.160 / 0.138`，落在目标带 0.12–0.17 内，门禁直接通过。paper 全族现在 l4–l10 = `0.126 / 0.159 / 0.160 / 0.157 / 0.138 / 0.172 / 0.171`——齐整到这个程度，说明 §6.7 那三条几何指令（禁实心、排线间距=线宽、按部位而非程度控制排线面积）是可复现的写法，形容词不是。
+
+**ink l7 再次落空，是我的 prompt 有缺陷**：目标 0.28–0.36，实际 **0.153**（比批 1 的 0.246 还低，已存 `art/leftover/res_ink_l7.candidate-b3-0.153.webp`，未采用）。病因是负向里的 `solid black fill / blacked-in shape / ink wash` ——**对墨水瓶来说瓶里的墨本来就是一块实心黑**，ink 全族 l4–l10 都是这么画的（density 0.344–0.514）。禁令一刀切下去，墨液变成了稀疏排线，密度直接砍半。
+
+> **规则修正**：§6.7 第 1 条「禁止实心填充」的适用范围是**物体的材质表面**（玻璃、石棱、金属、纸），**不含被容纳的液体**。墨水瓶里的墨、溢出的墨渍照旧画实心黑——那是 ink 这一族的家族特征，也是它区别于其它四族的剪影依据之一。写 ink 的 prompt 时必须从负向里删掉这几个词。

@@ -57,7 +57,7 @@
     "res_graphite_l10": {
       "frame": {
         "x": 132,
-        "y": 1538,
+        "y": 1535,
         "w": 128,
         "h": 111
       },
@@ -78,13 +78,13 @@
         "density": 0.20648,
         "equivEdge": 119.2,
         "sizeMul": 0.010906,
-        "alphaMul": 0.917
+        "alphaMul": 0.85
       }
     },
     "res_graphite_l2": {
       "frame": {
         "x": 262,
-        "y": 1538,
+        "y": 1535,
         "w": 128,
         "h": 111
       },
@@ -132,7 +132,7 @@
         "density": 0.10519,
         "equivEdge": 126.49,
         "sizeMul": 0.007203,
-        "alphaMul": 1
+        "alphaMul": 0.85
       }
     },
     "res_graphite_l4": {
@@ -164,7 +164,7 @@
     },
     "res_graphite_l5": {
       "frame": {
-        "x": 132,
+        "x": 2,
         "y": 1292,
         "w": 128,
         "h": 121
@@ -186,7 +186,7 @@
         "density": 0.11462,
         "equivEdge": 124.45,
         "sizeMul": 0.008214,
-        "alphaMul": 1
+        "alphaMul": 0.899
       }
     },
     "res_graphite_l6": {
@@ -219,7 +219,7 @@
     "res_graphite_l7": {
       "frame": {
         "x": 262,
-        "y": 1416,
+        "y": 1415,
         "w": 128,
         "h": 114
       },
@@ -408,7 +408,7 @@
     "res_ink_l3": {
       "frame": {
         "x": 2,
-        "y": 1653,
+        "y": 1650,
         "w": 128,
         "h": 111
       },
@@ -462,7 +462,7 @@
     "res_ink_l5": {
       "frame": {
         "x": 2,
-        "y": 1766,
+        "y": 1763,
         "w": 128,
         "h": 106
       },
@@ -483,13 +483,13 @@
         "density": 0.34357,
         "equivEdge": 116.48,
         "sizeMul": 0.008776,
-        "alphaMul": 0.924
+        "alphaMul": 0.85
       }
     },
     "res_ink_l6": {
       "frame": {
         "x": 132,
-        "y": 1653,
+        "y": 1650,
         "w": 128,
         "h": 109
       },
@@ -650,8 +650,8 @@
     },
     "res_metal_l10": {
       "frame": {
-        "x": 2,
-        "y": 1416,
+        "x": 262,
+        "y": 1292,
         "w": 128,
         "h": 120
       },
@@ -758,7 +758,7 @@
     },
     "res_metal_l5": {
       "frame": {
-        "x": 262,
+        "x": 132,
         "y": 1292,
         "w": 128,
         "h": 121
@@ -812,7 +812,7 @@
     },
     "res_metal_l7": {
       "frame": {
-        "x": 262,
+        "x": 132,
         "y": 1166,
         "w": 128,
         "h": 123
@@ -861,7 +861,7 @@
         "density": 0.14103,
         "equivEdge": 128,
         "sizeMul": 0.009288,
-        "alphaMul": 0.922
+        "alphaMul": 0.879
       }
     },
     "res_metal_l9": {
@@ -1084,7 +1084,7 @@
       "frame": {
         "x": 227,
         "y": 652,
-        "w": 120,
+        "w": 110,
         "h": 128
       },
       "rotated": false,
@@ -1092,19 +1092,19 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 120,
+        "w": 110,
         "h": 128
       },
       "sourceSize": {
-        "w": 120,
+        "w": 110,
         "h": 128
       },
       "nw": {
-        "inkMass": 1191,
-        "density": 0.07755,
-        "equivEdge": 123.94,
-        "sizeMul": 0.008696,
-        "alphaMul": 1
+        "inkMass": 2250,
+        "density": 0.15982,
+        "equivEdge": 118.66,
+        "sizeMul": 0.009083,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l7": {
@@ -1136,10 +1136,10 @@
     },
     "res_paper_l8": {
       "frame": {
-        "x": 132,
-        "y": 1166,
+        "x": 2,
+        "y": 1415,
         "w": 128,
-        "h": 124
+        "h": 118
       },
       "rotated": false,
       "trimmed": false,
@@ -1147,24 +1147,24 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 124
+        "h": 118
       },
       "sourceSize": {
         "w": 128,
-        "h": 124
+        "h": 118
       },
       "nw": {
-        "inkMass": 1318,
-        "density": 0.08304,
-        "equivEdge": 125.98,
-        "sizeMul": 0.009437,
-        "alphaMul": 1
+        "inkMass": 2088,
+        "density": 0.13824,
+        "equivEdge": 122.9,
+        "sizeMul": 0.009674,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l9": {
       "frame": {
         "x": 132,
-        "y": 1766,
+        "y": 1763,
         "w": 128,
         "h": 96
       },
@@ -1190,7 +1190,7 @@
     },
     "res_sticker": {
       "frame": {
-        "x": 349,
+        "x": 339,
         "y": 652,
         "w": 125,
         "h": 128
@@ -1245,7 +1245,7 @@
     "res_sticker_l6": {
       "frame": {
         "x": 262,
-        "y": 1653,
+        "y": 1650,
         "w": 128,
         "h": 108
       },
@@ -1272,7 +1272,7 @@
     "res_sticker_l7": {
       "frame": {
         "x": 132,
-        "y": 1416,
+        "y": 1415,
         "w": 128,
         "h": 117
       },
@@ -1299,7 +1299,7 @@
     "res_sticker_l8": {
       "frame": {
         "x": 2,
-        "y": 1538,
+        "y": 1535,
         "w": 128,
         "h": 113
       },
@@ -1325,8 +1325,8 @@
     },
     "res_sticker_l9": {
       "frame": {
-        "x": 2,
-        "y": 1292,
+        "x": 262,
+        "y": 1166,
         "w": 128,
         "h": 122
       },
@@ -1347,7 +1347,7 @@
         "density": 0.10321,
         "equivEdge": 124.96,
         "sizeMul": 0.009958,
-        "alphaMul": 0.89
+        "alphaMul": 0.85
       }
     }
   },
