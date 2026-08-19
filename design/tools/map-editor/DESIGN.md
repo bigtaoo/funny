@@ -199,7 +199,7 @@
 ### 6.2 数据形态（工程现状，2026-07-06 起改为直接格子笔刷，见 §8"矢量路径笔刷改为直接格子笔刷"）
 
 - **地形（河流/山脉）**：逐格覆盖表 `{ x, y, type: 'river'|'mountain' }[]`——笔刷点/拖到哪个格子，哪个格子就直接进这张表，格子本身即最终态，不经过矢量中间层。旧版矢量路径 `{ type, points: [{x,y}], width }` 格式仍可导入，导入时自动按原分段圆形算法栅格化迁移成格子。
-- **城池**：点节点列表 `{ id, kind: 'capital'|'gateCity'|'worldCenter'|'garrison', ownerHint: nationIdx|provinceIdx, x, y, level, footprint }`（未变）。
+- **城池**：点节点列表 `{ id, kind: 'capital'|'gateCity'|'worldCenter'|'garrison', ownerHint: nationIdx|provinceIdx, x, y, level, footprint }`（未变）。**2026-08-19：这份点节点表现在会原样发布上去**（`PUT /admin/slg/map-templates/{id}/cities` → `MapTemplateDoc.cities` → 开服克隆进 `WorldDoc.cities` → 随 `POST /world/enter` 下发），跟栅格化出来的 tile diff 并列上传。此前只发 tile，游戏里的城池精灵层本地重算 `allCityNodes(worldId)`——拖过的城**地面挪了、城堡没挪**，新占地那 N×N 格反而各自盖了一座 `building_keep` 门楼连成砖墙。所以这条**不是**§6.2 那个「单向烘焙」原则的例外：tile 仍是单向烘焙（模板不反推回图层），节点表是**另一层独立数据**，本来就该整存整取。同时 `rasterizeMapEdits` 加了 `citiesAreComplete` 选项把腾空的程序化城池锚点还给地形。详见 [`SLG_LOG_2026-08.md` 2026-08-19 城池节点条](../../game/SLG_LOG_2026-08.md)。
 - 两者都是**覆盖在 `proceduralTile()` 之上的编辑层**，不是替代它——`proceduralTile()` 继续负责等级/资源类型的噪声分布，编辑层只决定"这里是不是河/山/城"。
 
 ### 6.3 渲染

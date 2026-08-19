@@ -1110,6 +1110,21 @@ export interface components {
             nationName?: string;
             foundedAt?: number;
         };
+        /** @description One NPC city siege-point node (ADR-034 §3) — the point-node form the map editor edits and publishes (shared MapEditorCityNode). `x`/`y` is the plot's CENTER; the city covers a `footprint`x`footprint` square of familyKeep (or `center`, for the world center) ground around it. */
+        WorldCityNodeView: {
+            /** @description Stable node id (worldCenter | capital-{provinceIdx} | garrison-{n}) — the render layer's sprite key. */
+            id: string;
+            /** @enum {string} */
+            kind: "capital" | "worldCenter" | "garrison";
+            /** @description Owning province (0~9). Present for capital/garrison; absent for worldCenter (the core province by definition). */
+            provinceIdx?: number;
+            x: number;
+            y: number;
+            /** @description City tier 1~10 — picks the city_atlas art frame and the plot size via cityFootprint(). */
+            level: number;
+            /** @description Square plot side length in tiles (3/5/7/9 by tier; 9 for the world center). Always odd — the plot is centered on x/y. */
+            footprint: number;
+        };
         SeasonView: {
             worldId: string;
             season: number;
@@ -1508,6 +1523,8 @@ export interface operations {
                             /** @description Null if this worldId has no provisioned world doc yet (should not happen for a real client-resolved shard; kept nullable to match getSeason's own return type). */
                             season: components["schemas"]["SeasonView"] | null;
                             nations: components["schemas"]["NationView"][];
+                            /** @description The world's city siege-point nodes (ADR-034 §3, ~64), cloned from its map template at world-open. The client's city sprite layer must render THIS list, not a locally recomputed allCityNodes(worldId) — a designer can drag cities in tools/map-editor, and a template's terrain is generated on the templateId's seed rather than the world's own. */
+                            cities: components["schemas"]["WorldCityNodeView"][];
                             me: components["schemas"]["PlayerWorldView"] & {
                                 serverNow?: number;
                                 /** @description True only the first time this account is placed in this world (server-resolved, replaces the client's own wasJoined-diff logic). */

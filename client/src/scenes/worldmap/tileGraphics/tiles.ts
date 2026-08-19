@@ -19,7 +19,7 @@ import { drawHpBar } from './primitives';
 // Sizing rule for anything a player can build on MANY ADJACENT tiles: the sprite's on-screen
 // WIDTH (targetH × the packed frame's aspect) must stay near the x-distance between two
 // neighbouring tiles' anchors, which under the 2:1 iso projection is only tp/2 — not the
-// diamond's full tp width. Landmark terrain (building_keep/_stronghold at tp*1.3) may exceed
+// diamond's full tp width. Landmark terrain (building_stronghold/_bridge/_plankway at tp*1.3) may exceed
 // that because it's one-per-region; a watchtower/blocker band cannot.
 //   watchtower 256×198 (1.29:1) → 0.40 × 1.29 ≈ 0.52 tp wide
 //   blocker    256×88  (2.91:1) → 0.22 × 2.91 ≈ 0.64 tp wide
@@ -135,23 +135,34 @@ export function drawTileL1(
   // forever (see the motifResType comment above), but once a landmark/watchtower/player structure
   // stands on it the heap art has nothing left to say and only clutters the read (2026-08-17,
   // 用户截图：箭塔/拒马格子上还叠着资源图标，看着乱). Must stay in lockstep with the map-editor's
-  // drawEditorTile (SLG map render parity) — the editor never has this overlap since it only draws
-  // familyKeep/stronghold/bridge/plankway on non-resource tile types and knows nothing of live
-  // player structures.
+  // drawEditorTile (SLG map render parity) — the editor never has the watchtower/structure half of
+  // this (it knows nothing of live player state), but the terrain half must match exactly.
   const featType = tile?.type ?? proc?.type;
-  const featBuilding = featType === 'familyKeep' ? 'building_keep'
-    : featType === 'stronghold' ? 'building_stronghold'
+  // CITY GROUND (`familyKeep` = capital/graded city, `center` = world center): no per-tile art at all.
+  // The city's own art is ONE sprite on the city layer (WorldMapRenderer/city.ts), sized to the whole
+  // 3/5/7/9-tile footprint and masked to its plot — so a footprint tile that also stamped something of
+  // its own would be stamping underneath that sprite. `familyKeep` used to stamp `building_keep` here:
+  // harmless-looking on a procedural city (proceduralTile marks only the single anchor tile, so the one
+  // gatehouse sat hidden under the sprite) but ruinous on a PUBLISHED one, where rasterizeMapEdits paints
+  // the full N×N footprint as familyKeep and every cell stamped its own gatehouse at 1.3× tile size —
+  // the same wall of overlapping masonry the deleted scattered-familyKeep tile class produced
+  // (2026-08-19, see server/shared/src/slg/mapgen/tileGen.ts). Dropped 2026-08-19: `center` never had
+  // the stamp, and city ground now behaves uniformly. The resource-motif suppression stays — city ground
+  // keeps its biome `resType` (mapEdit.ts/tileGen.ts), and a resource heap has nothing to say under a
+  // castle either.
+  const isCityGround = featType === 'familyKeep' || featType === 'center';
+  const featBuilding = featType === 'stronghold' ? 'building_stronghold'
     : featType === 'bridge' ? 'building_bridge'
     : featType === 'plankway' ? 'building_plankway'
     : null;
-  const hasBuilding = !!featBuilding || !!tile?.watchtower || !!tile?.structure;
+  const hasBuilding = !!featBuilding || isCityGround || !!tile?.watchtower || !!tile?.structure;
   if (motifResType && !hasBuilding) {
     drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false, tx, ty);
   }
 
-  // Overlay landmark buildings for chokepoints / NPC strongholds. Like the ground texture,
-  // these are TERRAIN features (their type is procedural, visible map-wide), so they draw
-  // before the fog return, dimmed when fogged. Neutral ink — ownership is the wash below.
+  // Overlay landmark buildings for NPC strongholds / crossings. Like the ground texture, these are
+  // TERRAIN features (their type is procedural, visible map-wide), so they draw before the fog return,
+  // dimmed when fogged. Neutral ink — ownership is the wash below.
   if (featBuilding) {
     placeBuildingSprite(g, featBuilding, tp, hh, tp * 1.3, fogged);
   }

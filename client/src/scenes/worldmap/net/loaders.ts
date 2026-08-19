@@ -30,6 +30,10 @@ export async function loadData(ctx: WorldMapContext): Promise<void> {
       if (entry.season.mapH > 0) ctx.mapH = entry.season.mapH;
     }
     ctx.nations = entry.nations;
+    // City siege-point nodes for the sprite layer. Server-authoritative on purpose: a designer can drag
+    // cities in tools/map-editor and publish, so the seed-derived allCityNodes() the renderer falls back
+    // to is only correct for a world with no edited map template behind it.
+    ctx.cityNodes = entry.cities;
 
     // Ensure a valid 3×3 capital exists on entry (ADR-025) — resolved server-side now (see handler
     // comment above); `justJoined` replaces the old local wasJoined-diff to gate the welcome toast.

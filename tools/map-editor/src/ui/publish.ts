@@ -159,18 +159,18 @@ export function wirePublishPanel(): void {
     setStatus(() => t('status.rasterizing'));
     try {
       // Same rasterizeMapEdits() the live preview runs, so what was on screen is what uploads.
-      const diffs: MapTemplateTile[] = rasterizeMapEdits(worldId(), terrainStore.toTileInputs(), cityStore.nodes);
-      if (diffs.length === 0) {
-        setStatus(() => t('status.nothingToPublish'));
-        return;
-      }
-      setStatus(() => t('status.publishing', { n: diffs.length, id: templateId }));
+      const diffs: MapTemplateTile[] = rasterizeMapEdits(worldId(), terrainStore.toTileInputs(), cityStore.nodes, { citiesAreComplete: true });
+      setStatus(() => t('status.publishing', { n: diffs.length, cities: cityStore.nodes.length, id: templateId }));
       let updated = 0;
       for (let i = 0; i < diffs.length; i += MAP_TEMPLATE_SAVE_MAX_TILES) {
         const r = await api.saveMapTemplateTiles(templateId, diffs.slice(i, i + MAP_TEMPLATE_SAVE_MAX_TILES));
         updated += r.updated;
       }
-      setStatus(() => t('status.published', { n: updated, id: templateId }));
+      // The CITY NODE LIST always goes up, even when the tile diff is empty (2026-08-19): the tiles are only
+      // the ground under a city, the list is what the game draws sprites from. It is a whole-list replace,
+      // not a diff — the editor holds all ~64 nodes and can only drag them, so there is nothing to diff.
+      const cities = await api.saveMapTemplateCities(templateId, cityStore.nodes);
+      setStatus(() => t('status.published', { n: updated, cities: cities.updated, id: templateId }));
       await refreshTemplates();
     } catch (err) {
       setStatus(() => t('status.publishFailed', { msg: errMsg(err) }));

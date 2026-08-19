@@ -76,27 +76,27 @@
 | 资产名 | 描述 | 状态 |
 |---|---|---|
 | `city_l1..l10` | 我/敌/盟主城 + NPC 可攻占城池（每级一张，10 级，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层；2026-08-14 起统一命名，无档位回退） |
-| `building_keep` | 战略要点/咽喉点建筑（城楼门楼） | ✅ 已接入 `building_atlas`（2026-07-03） |
+| ~~`building_keep`~~ | ~~战略要点/咽喉点建筑（城楼门楼）~~ **当前无人读取（2026-08-19）**：该 stamp 是 `familyKeep` 格的逐格建筑，而 `familyKeep` 现在只剩「城池地面」语义——城池的美术是城池层那一个按 footprint 缩放的精灵，占地格再各画一座门楼只会连成砖墙（发布过的城是整块 N×N）。图集帧保留备用（日后真做咽喉点玩法可复用），见 [`SLG_LOG_2026-08.md` 2026-08-19 城池节点条](SLG_LOG_2026-08.md) |
 | `building_stronghold` | 险地 NPC 据点（暗色石垒） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 改版完成——3/4 俯视宽脚架构图，详见 [`slg-building-art.md`](../product/slg-building-art.md) |
 | `icon_blocker` | 己方/家族路障（`tile.structure`，非 arrowTower） | ✅ 已接入 `building_atlas`（2026-08-09），详见 [`slg-building-art.md`](../product/slg-building-art.md) |
 | `icon_arrowTower` | 箭塔（`tile.structure.kind === 'arrowTower'`） | ✅ **已出图、已接入**（2026-08-17）：v1 起一直是纯 `PIXI.Graphics` 几何画法（米白塔身 + 三角屋顶，屋顶按格子归属染色）——地图上那个"尖尖的绿色树状"图标就是它（绿色 = 盟友领地染色）；现已出图并接入 `building_atlas`，详见 [`slg-building-art.md` §6](../product/slg-building-art.md)；atlas 未就绪/帧缺失时仍回落原几何塔身（屋顶保留 ownership tint，真图不 tint） |
 
-> **资源母题 vs 建筑压制（2026-08-17）**：一块被占领的资源格，`resType` 会一直留在 tile 文档上（见下方 `motifResType` 说明），哪怕后来在上面造了瞭望塔/箭塔/路障——旧逻辑不管这些，资源图标和建筑精灵会叠在同一格里，读起来乱（用户截图反馈）。`drawTileL1` 现在在画资源母题前先判是否已有 `featBuilding`（keep/stronghold/bridge/plankway）或 `tile.watchtower` / `tile.structure`，命中则跳过该格的资源图标——建筑本身仍照常画。地形建筑（keep/stronghold/…）在地图生成阶段本就不携带 `resType`，这条判断主要生效在玩家建造的动态层。map-editor 的 `drawEditorTile` 不涉及玩家建筑（只编辑静态模板），资源母题本就按 `tile.type === 'resource'` 互斥门控，无需同步改动。
+> **资源母题 vs 建筑压制（2026-08-17）**：一块被占领的资源格，`resType` 会一直留在 tile 文档上（见下方 `motifResType` 说明），哪怕后来在上面造了瞭望塔/箭塔/路障——旧逻辑不管这些，资源图标和建筑精灵会叠在同一格里，读起来乱（用户截图反馈）。`drawTileL1` 现在在画资源母题前先判是否已有 `featBuilding`（stronghold/bridge/plankway）、**城池地面**（`familyKeep`/`center`，2026-08-19 起单独一条 `isCityGround`）或 `tile.watchtower` / `tile.structure`，命中则跳过该格的资源图标——建筑本身仍照常画。城池地面**照旧带 biome `resType`**（`mapEdit.ts`/`tileGen.ts` 都写），所以这条抑制对它是真在生效：城堡精灵底下摆一堆资源图标同样没意义。map-editor 的 `drawEditorTile` 不涉及玩家建筑（只编辑静态模板），资源母题本就按 `tile.type === 'resource'` 互斥门控，无需同步改动。
 >
 > **接入落地（2026-07-03，2026-08-09 追加 icon_blocker + icon_watchtower 改版，2026-08-17 追加 icon_arrowTower）**：
-> `building_keep` / `building_stronghold` / `icon_watchtower` / `icon_blocker` / `icon_arrowTower` 五张手绘钢笔线稿
+> `building_keep`（现已无人读取，见上表）/ `building_stronghold` / `icon_watchtower` / `icon_blocker` / `icon_arrowTower` 五张手绘钢笔线稿
 > 经 `art/slg/slg-map/pack_buildings.cjs`（近白→透明+裁边+长边 256，同 `res` 管线）打包为
 > `client/src/assets/slg/building_atlas.{png,json}`，`buildingAtlasLoader.ts` 懒加载 + 并入进场
 > loading 门控。渲染在 `WorldMapScene.drawTileL1` → `placeBuildingSprite()`：
-> - keep/stronghold 属**地形层**（type 由 `proceduralTile` 决定、全图可见），随格底纹一起画、fog 下压淡；
+> - stronghold/bridge/plankway 属**地形层**（type 由 `proceduralTile` 决定、全图可见），随格底纹一起画、fog 下压淡（keep 曾在此列，2026-08-19 删除）；
 > - watchtower/blocker/arrowTower 属**动态层**（`tile.watchtower` / `tile.structure`），fog 下隐藏，atlas 未就绪回落原几何占位；
 > - 五张均为中性墨线**不 tint**，归属由格下水洗表达；bottom-center 锚在菱形下部使建筑「立」在格上（arrowTower 的几何回退例外——那条路径没有格下水洗替代，仍保留 ownership-tinted 屋顶）。
 >
 > **目标高度的定尺规则（2026-08-15 修正，2026-08-17 补 arrowTower）**：玩家能在**相邻格连片建造**的东西
 > （`icon_watchtower` / `icon_blocker` / `icon_arrowTower`），精灵屏幕宽度（`targetH × 帧宽高比`）要贴着
 > **邻格锚点间距 `tp/2`** 来定，而不是菱形格全宽 `tp`——等距 2:1 下这两个数差一倍。地标地形
-> （`building_keep`/`building_stronghold`，`tp*1.3`）每片区域只有一个，可以放宽。原先按地标的
+> （`building_stronghold`/`building_bridge`/`building_plankway`，`tp*1.3`）每片区域只有一个，可以放宽。原先按地标的
 > 尺度给了 `tp*0.95` / `tp*0.5`（屏宽 1.23 tp / 1.45 tp），一排瞭望塔/拒马糊成一团排线，现为
 > `WATCHTOWER_H = 0.40` / `BLOCKER_H = 0.22` / **`ARROWTOWER_H = 0.50`**（`tileGraphics/tiles.ts`）——箭塔刻意
 > 比前两者窄（屏宽约 `0.25 tp`），呼应它"单格细尖桩"而非"沿边界连片铺开"的定位。推导与截图见

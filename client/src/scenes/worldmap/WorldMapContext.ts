@@ -6,7 +6,7 @@ import { makeZoomCfgs } from './zoom';
 import { DEFAULT_MAP_SIZE } from './constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg, PoolSlot } from './zoom';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView } from '../../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView, WorldCityNodeView } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
@@ -122,6 +122,13 @@ export class WorldMapContext {
   stationed: StationedView[] = [];
   nations: NationView[] = [];
   season: SeasonView | null = null;
+  /**
+   * The world's NPC city siege-point nodes as the SERVER reports them (`POST /world/enter`'s `cities`),
+   * driving the city sprite layer (WorldMapRenderer/city.ts). Null until the entry fetch lands (or if it
+   * failed / this is a test fixture), in which case the renderer falls back to the seed-derived
+   * `allCityNodes(worldId)` — see WorldMapRenderer/core.ts's cityNodes().
+   */
+  cityNodes: WorldCityNodeView[] | null = null;
   shopItems: SlgShopItemView[] = [];
   /** Territory Overview panel (SLG_DESIGN_LOG.md §26): opened by tapping the header resource cluster. */
   territoryPanelOpen = false;

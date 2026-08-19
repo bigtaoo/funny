@@ -1,4 +1,4 @@
-import { fetchInternalJson, type MapTemplateSummary, type MapTemplateTile } from '@nw/shared';
+import { fetchInternalJson, type MapEditorCityNode, type MapTemplateSummary, type MapTemplateTile } from '@nw/shared';
 
 // ── SLG season operations (worldsvc /admin/world/*, G7/§17.7) ────────
 /** Operational summary for one world region (used in list views). */
@@ -43,6 +43,8 @@ export interface WorldClient {
   generateMapTemplate(templateId: string, width: number, height: number): Promise<MapTemplateSummary>;
   getMapTemplateTiles(templateId: string, x: number, y: number, w: number, h: number): Promise<MapTemplateTile[]>;
   saveMapTemplateTiles(templateId: string, tiles: MapTemplateTile[]): Promise<{ updated: number }>;
+  getMapTemplateCities(templateId: string): Promise<MapEditorCityNode[]>;
+  saveMapTemplateCities(templateId: string, cities: MapEditorCityNode[]): Promise<{ updated: number }>;
   activateMapTemplate(templateId: string): Promise<void>;
   deleteMapTemplate(templateId: string): Promise<void>;
 }
@@ -151,6 +153,13 @@ export class HttpWorldClient implements WorldClient {
   }
   async saveMapTemplateTiles(templateId: string, tiles: MapTemplateTile[]): Promise<{ updated: number }> {
     return (await this.putOrDelete('PUT', `/admin/world/map-templates/${encodeURIComponent(templateId)}/tiles`, { tiles })) as { updated: number };
+  }
+  async getMapTemplateCities(templateId: string): Promise<MapEditorCityNode[]> {
+    if (!this.baseUrl) return [];
+    return (await this.get(`/admin/world/map-templates/${encodeURIComponent(templateId)}/cities`)) as MapEditorCityNode[];
+  }
+  async saveMapTemplateCities(templateId: string, cities: MapEditorCityNode[]): Promise<{ updated: number }> {
+    return (await this.putOrDelete('PUT', `/admin/world/map-templates/${encodeURIComponent(templateId)}/cities`, { cities })) as { updated: number };
   }
   async activateMapTemplate(templateId: string): Promise<void> {
     await this.post(`/admin/world/map-templates/${encodeURIComponent(templateId)}/activate`, {});

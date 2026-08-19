@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { proceduralTile, rasterizeMapEdits } from '../src/slg';
+import { allCityNodes, proceduralCityGroundTiles, proceduralTile, rasterizeMapEdits } from '../src/slg';
 
 describe('rasterizeMapEdits', () => {
   const worldId = 'rasterize-test';
@@ -96,6 +96,76 @@ describe('rasterizeMapEdits', () => {
     }
     // Only the in-bounds quadrant of the 3×3 footprint (a 2×2 block: (0,0),(1,0),(0,1),(1,1)) can appear.
     expect(diffs.length).toBeLessThanOrEqual(4);
+  });
+
+  // ── citiesAreComplete: reverting the ground a dragged city vacated (2026-08-19) ──────────────
+  describe('citiesAreComplete', () => {
+    const worldId = 'vacate-test';
+
+    it('is off by default — a partial city list never touches the cities it omits', () => {
+      const diffs = rasterizeMapEdits(worldId, [], [{ x: 600, y: 600, level: 5, footprint: 3, kind: 'garrison' }]);
+      expect(diffs.every((d) => Math.abs(d.x - 600) <= 1 && Math.abs(d.y - 600) <= 1)).toBe(true);
+    });
+
+    it('publishing the unchanged node list is a no-op — every anchor is re-painted as it was', () => {
+      const diffs = rasterizeMapEdits(worldId, [], allCityNodes(worldId), { citiesAreComplete: true });
+      // Each city's own anchor is reverted by pass 1 then re-claimed by pass 3 at the same type/level, so
+      // it drops out of the diff. Footprint tiles AROUND a capital/garrison do change (proceduralTile only
+      // marks the anchor) — the assertion is that nothing lands on a VACATED anchor.
+      const ground = new Set(proceduralCityGroundTiles(worldId).map((t) => `${t.x}:${t.y}`));
+      for (const d of diffs) {
+        if (!ground.has(`${d.x}:${d.y}`)) continue;
+        expect(d.type).toMatch(/^(familyKeep|center)$/);
+      }
+    });
+
+    it('hands the old anchor of a dragged city back to the terrain', () => {
+      const nodes = allCityNodes(worldId);
+      const moved = nodes.find((n) => n.kind === 'garrison')!;
+      const from = { x: moved.x, y: moved.y };
+      // Drag it far enough that neither its new footprint nor any other city covers the old anchor.
+      const dragged = nodes.map((n) => (n.id === moved.id ? { ...n, x: n.x - 40, y: n.y - 40 } : n));
+      expect(proceduralTile(worldId, from.x, from.y).type).toBe('familyKeep');
+
+      const diffs = rasterizeMapEdits(worldId, [], dragged, { citiesAreComplete: true });
+      const vacated = diffs.find((d) => d.x === from.x && d.y === from.y);
+      expect(vacated).toBeDefined();
+      expect(vacated!.type).not.toBe('familyKeep');
+      expect(vacated!.type).not.toBe('center');
+      // ...and the new position is city ground now.
+      const landed = diffs.find((d) => d.x === from.x - 40 && d.y === from.y - 40);
+      expect(landed?.type).toBe('familyKeep');
+    });
+
+    it('hands the whole 9x9 block back when the world center is dragged', () => {
+      const nodes = allCityNodes(worldId);
+      const center = nodes.find((n) => n.kind === 'worldCenter')!;
+      const dragged = nodes.map((n) => (n.id === center.id ? { ...n, x: n.x + 200, y: n.y + 200 } : n));
+      const diffs = rasterizeMapEdits(worldId, [], dragged, { citiesAreComplete: true });
+      const byKey = new Map(diffs.map((d) => [`${d.x}:${d.y}`, d]));
+      const r = 4; // (WORLD_CENTER_FOOTPRINT - 1) / 2
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          expect(byKey.get(`${center.x + dx}:${center.y + dy}`)?.type).not.toBe('center');
+        }
+      }
+      expect(byKey.get(`${center.x + 200}:${center.y + 200}`)?.type).toBe('center');
+    });
+
+    it('a painted terrain cell still beats the revert, and a city footprint still beats both', () => {
+      const nodes = allCityNodes(worldId);
+      const moved = nodes.find((n) => n.kind === 'garrison')!;
+      const dragged = nodes.map((n) => (n.id === moved.id ? { ...n, x: n.x - 40, y: n.y - 40 } : n));
+      const diffs = rasterizeMapEdits(
+        worldId,
+        [{ x: moved.x, y: moved.y, type: 'river' }],
+        dragged,
+        { citiesAreComplete: true },
+      );
+      const painted = diffs.find((d) => d.x === moved.x && d.y === moved.y);
+      expect(painted?.type).toBe('obstacle');
+      expect(painted?.obstacleKind).toBe('river');
+    });
   });
 
   it('omits tiles where the rasterized result matches the procedural baseline', () => {
