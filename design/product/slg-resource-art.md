@@ -1,7 +1,14 @@
 # SLG 地图资源 — AI 出图 prompt 表
 
 状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~395 KB**，client + map-editor 两份字节一致。
+**⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6（含 20 张重画清单 + prompt）。**
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
+
+> **⚠️ 决策变更 III（2026-08-19，用户拍板）**：分级读数整套重构，见 **§6**（权威，覆盖 §5.3 #2 与 §5.4 的形态跃迁条款）。起因是「按宽归一」这条旧契约会**惩罚横向生长**——高等级的丰度是横着铺开画的，归一化反而把它压小，实测四类资源全部在 l5→l6 墨量回落，ink l4 成了全十级里视觉最重的一帧。
+> - **剪影铁律（§5.3 #3）优先，§5.4「l6–10 形态逐级跃迁」作废**：同一 resType 的 l1–l10 必须是同一主体，等级只靠个数/堆量增长；容器、载具、器皿、卷状物一律不许（现有 20 张违规帧清单见 §6.4）。
+> - **归一化按等效面积 `√(w·h)`，尺寸交给显式 `LEVEL_SCALE 0.80→1.30`**，alpha 改感知墨量补偿，抖动只留 rot/offset。画稿从此不必为了"更高"扭曲构图。
+> - **构建期门禁**：`pack_resources.cjs` 计算 `density × LEVEL_SCALE²` 并强制单调，不达标 pack 直接失败（§6.3）。原因：alpha 补偿只能压淡画满的，救不了画空的。
+> - **精确等级通道补回**（决策变更 II 曾放弃）：仅 l6+ 且近 zoom 画文字 `Lv.{n}`，沿用主城标签先例，不用符号编码（§6.2 #7）。
 
 > **⚠️ 决策变更 II（2026-07-17，用户拍板）**：推翻 l1–l5「母题 token + 骰子槽计数拼接」。理由：地图上绝大多数格子是低级地（`tileGraphics.ts` 注释 "most tiles sit at low levels"），而拼接图恰是玩家 90% 时间盯着看的主视觉，读作机械印章、表现比 l6–10 专属图差一大截；省的图（4×5 专属 − 4×2 托盘背景 ≈ 12 张）本就是 AI 出图、成本很低。→ **l1–l5 也改每级一张专属手绘**，与 l6–l10 口径统一。
 > - **放弃「数个数读精确等级」**（原 §5.4 的核心诉求）：高档本就已脱离计数，低档统一改为靠**体量/繁简/高度递进**一眼分辨即可。
@@ -337,3 +344,117 @@ shadow, ground line, baseline
 - **可选后续**：若实测低档在整图缩放下仍难辨（silhouette 不够），再单独给这四类补一档极淡的按级 wash（勿回退计数拼接）。
 - ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。粮/木/石/铁全部复用同一 `bakeCountFrames`。
 - **铜钱/铜矿(sticker)** ✅ 已全链路上线（2026-07-07）：美术 l6–10 五张专属进 atlas + worldsvc 生成门槛（`resTypeFor`：resource 格 lvl≥6 按 `copperShare` 覆盖为 sticker，`SLG_GEN.copperMinLevel/copperShare`）。全图扫描验证 level<6 无 sticker、铜矿占资源格 3.4%。见 §5.7-sticker。**经济侧 TBD**：家城 `stickerShop` 是否与地图铜矿并存产铜钱、copperShare 数值调参。
+
+---
+
+## 6. 分级读数重构（2026-08-19 定 · 权威 · 覆盖 §5.3 #2 / §5.4 的形态跃迁条款）
+
+> 触发：用户截图圈出三块 4 级墨水地，反馈「图片大小和第一眼印象明显不是一种地」。查证后发现问题不在这三格，而在**分级读数的整套契约自我否定**。
+
+### 6.1 病根：按宽归一惩罚横向生长
+
+旧契约（`pack_resources.cjs` 注释 + §5.4-lo 末句）：「渲染按宽归一 → 画得越高越满 = 屏上等级越高」。渲染层 `drawResMotif` 的 `denom = tex.width` 忠实实现了它。
+
+但高等级的丰度在画稿里是**横着铺开**（多瓶并排、一簇、一堆）表达的，内容 bbox 变宽，按宽归一立刻把整幅压小——**画得越多，屏上越小**。任何用横向表达"更多"的画法都满足不了这个契约。
+
+实测（把每帧墨量 Σα 按游戏真实缩放折算成"落在一格上的墨量"，相对 ink l1 = 1.00）：
+
+| | l1 | l2 | l3 | l4 | l5 | l6 | l7 | l8 | l9 | l10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ink | 1.00 | 4.35 | 2.59 | **6.44** | 3.80 | 3.52↓ | 3.50 | 2.14 | 2.11 | 3.72 |
+| paper | 0.25 | 0.59 | 0.68 | 1.97 | 2.28 | 0.67↓ | 0.83 | 1.26 | 1.79 | 2.97 |
+| graphite | 0.86 | 1.20 | 1.17 | 2.50 | 1.45 | 0.99↓ | 1.41 | 2.43 | 2.17 | 3.23 |
+| metal | 1.05 | 1.19 | 1.58 | 1.75 | 1.85 | 1.40↓ | 2.02 | 2.62 | 1.79 | 3.52 |
+
+**四类全部在 l5→l6 回落**——正是画法从「单母题长高」（§5.4-lo）跳到「容器/多体大簇」（§5.4 l6–10）的接缝。且 ink l4（6.44）是全十级里视觉最重的一帧，比 l10 重 1.7 倍——这就是用户圈出 4 级地的直接原因。
+
+同级之间的大小差另有来源：`motifJitter` 的 `scale ∈ [0.85,1.15]`，相邻格实测能到 1.15 vs 0.88 = 1.31×。
+
+### 6.2 裁决
+
+1. **剪影铁律（§5.3 #3）优先，§5.4 的「l6–10 形态逐级跃迁，追求最佳表现」作废。** 同一 resType 的 l1–l10 必须是**同一个主体物件**；等级只通过「个数 + 堆量 + 溢出/碎屑」增长。不得引入容器、载具、器皿、卷状物（现有违规见 §6.5）。
+2. **5→6 的画风跳变作废。** l1–l10 是一条连续的量级线，不再分低档段/高档段。
+3. **归一化从「按宽」改为「按等效面积」** `√(w·h)`。横排与竖立占同样视觉面积，横向生长不再被惩罚——**画稿从此不必为了"更高"而扭曲构图**。
+4. **尺寸改由显式曲线承载**：`LEVEL_SCALE = 0.80 → 1.30`（线性，l10 占地 0.30×1.30 = 0.39 tp，仍在 2026-07-17 判定过大的 0.40 以内，且只有稀有的高级格吃到）。等级→尺寸从"画稿隐式"变成"代码显式"。
+5. **alpha 改为感知墨量补偿**：`alpha = clamp(targetInk(lv) / measuredInk(frame))`，替换裸线性 `0.55+0.45*(lv-1)/9`。某帧画得偏黑偏淡不再打乱等级读数。
+6. **抖动只保留 rot/offset**，`scale` 收窄到 `[0.96,1.04]`。同级不再有可察觉的大小差。
+7. **精确等级恢复为显式通道**（§5.4 的原始诉求「格面上能读出精确等级，否则玩家误伤」在决策变更 II 里被放弃，现在补回，但不用符号编码）：沿用 2026-08-01 主城标签的先例（[`WORLD_MAP_ART_SPEC.md`](../game/WORLD_MAP_ART_SPEC.md) 四节末：符号点阵"让人迷惑"→ 换纯文字 `Lv.{n}`），资源格同样画文字，但**仅 l6+ 且仅近 zoom 显示**——会误伤的是强守军区，低档靠体量读三档足够；`resourceDensity=1.0` 下全等级都标就是满屏噪音。**用位图数字图集或 BitmapText，不要每格 `new PIXI.Text`**（Text 纹理销毁泄漏）。
+
+### 6.3 构建期强制（新增，`pack_resources.cjs`）
+
+画稿层的单调性不再靠画师自觉，改为门禁：
+
+- 每帧计算 `inkMass = Σα`、内容 bbox、`equivEdge = √(w·h)`、`density = inkMass/(w·h)`，写入 atlas JSON 的 `meta.resMetrics`（TexturePacker JSON-Hash 容得下自定义字段，PIXI 忽略）。
+- 校验 `density(lv) × LEVEL_SCALE(lv)²` 随 lv 单调不降（ε 容差 2%）。**不达标则 pack 失败**并打印违规表。接进 CI（沿用 `scripts/check*.mjs` 口径）。
+- 为什么这条是硬约束：alpha 补偿只能把画得太满的**压淡**，`alpha ≤ 1` 意味着**没法把画得太空的补浓**。所以"某级画得比低级还空"是画稿层的硬伤，代码救不了。
+
+### 6.4 重画清单（20 张 / 46）
+
+用「最长不降子序列的补集」求最小重画集（曲线 0.80→1.30），再并上剪影铁律违规：
+
+| 资源 | 重画 | 原因 |
+|---|---|---|
+| ink | l4 | **减密度**：density 0.397 冲顶，压制 l5–l9 全段 |
+| | l5 | 密度回落；圆肚壶偏离 l1–l4 的圆肩直筒瓶族 |
+| | l6 | 换成方肩瓶（轻度换族）+ 密度回落 |
+| | l7 | 密度回落 |
+| | l8 | **试管架**＝实验室器材/容器，破铁律 + 横向长条偏空 |
+| | l9 | **一个大而空的单体瓶**，读作"空"而非"高"，density 0.115 全段最低 |
+| paper | l6 | **糊成方块/箱**，直接违反 §5.3 #3「轮廓要一眼读成一摞纸」；density 0.055 全表最低 |
+| | l7 | 换成**卷轴+绑带** |
+| | l8 | 密度回落 |
+| | l9 | **大圆筒/卷纸**，读作卫生纸卷 |
+| graphite | l3 | 与 l2 几乎同图，density 反降 20% |
+| | l4 | **减密度**：0.148 冲顶 |
+| | l6 | 换成**瘦长晶柱**，偏离尖锐棱块族 + 偏空 |
+| | l8 | **矿车**＝载具，破铁律 |
+| | l9 | 单个大晶体独大 + 偏空 |
+| metal | l5 | 主体夹被碎屑堆**淹没**，剪影读不出（破 §5.3 #3） |
+| | l6 | 密度回落 |
+| | l8 | **铁盒/罐**＝容器，破铁律 |
+| | l9 | 比 l8 更少，量级回退 |
+| sticker | l8 | **贴纸卷**＝卷状条带，破铁律 + 偏空 |
+
+> 系统性规律：**l8 普遍冒出容器/载具**（试管架、矿车、铁盒、贴纸卷），**l9 普遍是"一个大而空的单体"**。成因就是 §5.4 那句"形态逐级跃迁，追求最佳表现"——它和 §5.3 #3 的剪影铁律在文档内部就是矛盾的，本次由 §6.2 #1 裁决。
+
+### 6.5 出图 prompt（接 §5.5 共用前缀 + §5.6 共用负向，另加下面两段增补）
+
+**共用前缀增补**（面积归一后留白直接浪费密度；横向不再被罚）：
+
+```
+The subject fills the frame edge to edge with only a thin even margin — no large
+empty areas anywhere in the frame. The composition may spread horizontally or
+vertically, whichever reads better; wide compositions are not penalised.
+```
+
+**共用负向增补**：
+
+```
+rack, tray, shelf, crate, box, tin, jar lid, container, cart, wagon, wheels,
+scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
+```
+
+**主体句**（帧名 → prompt）：
+
+- `res_ink_l4`：`A single round-shouldered glass inkwell bottle filled with ink up to just below its shoulder, the ink rendered with open pen hatching rather than solid black fill, one small blot at its base`
+- `res_ink_l5`：`A single round-shouldered glass inkwell bottle brimming with ink, its cork lying beside it, a second empty bottle tipped over behind it, ink drops and a spreading blot pooled around both`
+- `res_ink_l6`：`Two round-shouldered glass inkwell bottles standing close together, both filled with ink, a cork and a few ink drops at their base`
+- `res_ink_l7`：`Three round-shouldered glass inkwell bottles clustered close together, all filled with ink, one slightly taller, corks and ink drops scattered at their bases`
+- `res_ink_l8`：`Five round-shouldered glass inkwell bottles packed tightly together in a loose freestanding cluster, all filled with ink, corks and ink drops crowded around their bases`
+- `res_ink_l9`：`Seven round-shouldered glass inkwell bottles crowded together in a dense freestanding heap at slightly varied heights, all filled with ink, several corks and a spreading ink blot pooled underneath`
+- `res_paper_l6`：`A tall loose stack of blank sheets with a second shorter stack leaning against it, edges fanned and uneven, a few loose sheets sliding off the top`
+- `res_paper_l7`：`Two tall loose stacks of blank sheets standing side by side, edges fanned and uneven, several loose sheets slipping out between them`
+- `res_paper_l8`：`Three loose stacks of blank sheets of differing heights packed close together, edges fanned, loose sheets spilling from their tops and sides`
+- `res_paper_l9`：`Five loose stacks of blank sheets crowded together at differing heights, edges fanned and uneven, loose sheets spilling all around their bases`
+- `res_graphite_l3`：`A single angular faceted graphite ore chunk, noticeably larger than a fist, with five small ore shards scattered close around its base, light hatching on two facets`
+- `res_graphite_l4`：`A single taller angular faceted graphite ore chunk standing upright, hatching only on its shadowed facets leaving the lit facets open, three ore shards at its base`
+- `res_graphite_l6`：`Two angular faceted graphite ore chunks of different sizes resting against each other, a scatter of small ore shards heaped around their bases`
+- `res_graphite_l8`：`A dense freestanding pile of six angular faceted graphite ore chunks heaped up, smaller shards filling the gaps between them`
+- `res_graphite_l9`：`A dense freestanding heap of eight angular faceted graphite ore chunks piled together, many small shards filling every gap, no single chunk dominating`
+- `res_metal_l5`：`A single metal binder clip standing clearly in front of a loose heap of small metal hardware, the clip's triangular body and two looped wire handles fully readable against the heap`
+- `res_metal_l6`：`Two metal binder clips standing side by side, one slightly turned, with a scatter of small metal bits and fasteners heaped around their bases`
+- `res_metal_l8`：`Five metal binder clips packed tightly together at different angles in a freestanding cluster, small metal bits filling the gaps between them`
+- `res_metal_l9`：`Seven metal binder clips crowded into a dense freestanding heap at varied angles, looped wire handles overlapping, small metal hardware filling every gap`
+- `res_sticker_l8`：`A thick stack of star-shaped stickers with more loose stars fanned out around it, several stars overlapping the stack`
+
+> 出图后丢进 `art/slg/slg-map/` 重跑 `node art/slg/slg-map/pack_resources.cjs`——§6.3 的校验器会直接判定通过/不通过，不达标的帧会打印在违规表里，按表迭代即可。**不需要人肉目测单调性。**
