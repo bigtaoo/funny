@@ -557,6 +557,8 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 **剩余工作（未开始）**：
 
 1. **整页重排（阻塞项，必须先做）**：客户端读的是合并页 `client/src/assets/slg/world_atlas.{png,json}`，而本次 17 张新帧的**尺寸全变了**，`patchMergedAtlas.js` 只支持同尺寸就地回贴、会直接拒绝。必须从 git 历史恢复被 2026-07-27 资产整理删掉的源图集（`terrain_atlas` / `city_atlas` / `playerbase_atlas` / `building_atlas` / `city_bld_atlas`）后重跑 `mergeAssetAtlases.js`，或给 patch 脚本加整页重排能力。**在这一步完成前，新美术在游戏里看不到。**
+> **顺带的一个变化，别当成误提交**：`client/src/assets/slg/res_atlas.{png,json}` 重新进了版本库——它本是 2026-07-27 整理（`072131d8`）删掉的，但 `pack_resources.cjs` 的 `OUT_DIRS` 无条件写这个路径，而上面那步整页重排**恰恰需要它当输入**。留着比每次重新生成再删掉更省事。
+
 2. **渲染层接线**：`drawResMotif` 改为消费 `nw.sizeMul` / `nw.alphaMul`（等级→尺寸/透明度逻辑全部删掉，图集已是唯一权威）；抖动 `scale` 从 `[0.85,1.15]` 收窄到 `[0.96,1.04]`（`rot`/`dx`/`dy` 保留）。
 3. **两份渲染器合并**：`client/src/scenes/worldmap/tileGraphics/resources.ts` 与 `tools/map-editor/src/render/tileGraphics.ts` 目前是复制粘贴、靠注释里的「must stay in lockstep」人肉保证。纯计算下沉到 `@nw/shared/slg`（两边都已 import 它），各留一个贴图适配器。
 4. **`Lv.N` 文字标签**（§6.2 #7）：仅 l6+ 且近 zoom 显示；用位图数字图集或 `BitmapText`，**不要每格 `new PIXI.Text`**（Text 纹理销毁泄漏）。
