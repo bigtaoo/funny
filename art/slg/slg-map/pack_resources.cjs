@@ -50,7 +50,16 @@ const ALPHA_TRIM = 16;  // alpha threshold for considering a pixel "has content"
 // build failure instead of a silently unreadable map.
 const LEVEL_SCALE_LO = 0.80;   // footprint multiplier at l1
 const LEVEL_SCALE_HI = 1.30;   // ...and at l10 (0.30 tile-pitch * 1.30 = 0.39 tp, inside the 0.40 that read as a carpet)
-const INK_GROWTH = 1.06;       // minimum rendered-ink ratio between adjacent levels
+// The rule is NO INVERSION, not a per-step margin. Requiring rendered ink to climb every level is
+// unsatisfiable, and the measurement says so plainly: ink l4 is ONE bottle of ink at density 0.390,
+// ink l9 is SEVEN bottles at 0.376. Under equal-area normalisation a single large solid object
+// out-inks a crowd of small ones with white glass between them, so "more objects" and "more ink" pull
+// against each other — no drawing can satisfy both, and two rounds of prompting proved it by
+// overshooting 3-4x sparse then 3-4x dense. What the player actually needs is narrower: a higher tier
+// must never read as LESS than a lower one. Separation between adjacent tiers is carried by the
+// footprint curve (monotone by construction, art cannot break it), by object count, and by the Lv.N
+// label from l6 up — not by ink mass. So the gate guards against reading backwards, and nothing more.
+const INK_TOLERANCE = 0.10;    // how far below the heaviest lower tier a frame may sit before it reads backwards
 // alpha is a TRIM, not a channel. Everything on this map is drawn with one pen, and a frame rendered
 // at 0.4 next to a frame rendered at 1.0 reads as a different pen, not as less resource — so alpha may
 // only shave the small mismatches (a 15% dim on a black line at tile size is below notice). Letting it
@@ -125,34 +134,35 @@ async function tintLevelFrame(sprite) {
 }
 
 /**
- * Solve the level read for one resource type and name whichever frames make it unreadable.
+ * Solve the level read for one resource type and name whichever frames read backwards.
  *
- * `reach` is the rendered ink mass a frame lands at full pen: density * LEVEL_SCALE(lv)^2. The curve
- * has to climb by INK_GROWTH every level while each frame stays inside [ALPHA_MIN, 1] of its own
- * reach, so it is walked FORWARD from the cheapest possible start — that yields the lowest feasible
- * curve, and a level whose reach still cannot meet it is genuinely drawn too sparse for the tier
- * below it. No amount of tuning fixes that: alpha cannot darken a drawing that has no ink in it.
+ * `reach` is the rendered ink a frame lands at full pen: density * LEVEL_SCALE(lv)^2. Walking up from
+ * l1, each level must stay within INK_TOLERANCE of the heaviest tier BELOW it — never climb past it,
+ * just never fall visibly under it. Each frame is held as light as that rule allows (alpha may shave
+ * up to 1-ALPHA_MIN) so one over-inked drawing does not raise the bar for everything above it.
  *
- * Blame lands on the sparse frame, with the alternative spelled out — drawing the level below lighter
- * works too, and the silhouette audit (§6.4) is what decides which of the two is the real defect.
+ * Blame is reported against the specific lower frame doing the blocking, because that frame is as
+ * often the real defect as the one that trips the check — a near-black mid tier is exactly how batch
+ * two failed.
  */
 function solveLevelRead(levels) {
   const reach = new Map(levels.map((f) => [f.lv, f.density * levelScale(f.lv) ** 2]));
   const R = new Map();
   const offenders = [];
-  let prev = null;
+  let peak = 0, peakLv = null;
   for (const f of levels) {
-    const floor = ALPHA_MIN * reach.get(f.lv);
-    let want = prev === null ? floor : Math.max(floor, INK_GROWTH * R.get(prev));
+    const bound = peak * (1 - INK_TOLERANCE);
+    const want = Math.max(ALPHA_MIN * reach.get(f.lv), bound);
     if (want > reach.get(f.lv) * GATE_EPS) {
       offenders.push({
-        lv: f.lv, below: prev, density: f.density,
-        need: want, can: reach.get(f.lv), shortfall: want / reach.get(f.lv),
+        lv: f.lv, blocker: peakLv, density: f.density,
+        can: reach.get(f.lv), need: bound, drop: 1 - reach.get(f.lv) / peak,
+        target: bound / levelScale(f.lv) ** 2,
       });
-      want = reach.get(f.lv);  // best effort, so the rest of the table still prints something usable
     }
-    R.set(f.lv, want);
-    prev = f.lv;
+    const got = Math.min(reach.get(f.lv), want);
+    R.set(f.lv, got);
+    if (got > peak) { peak = got; peakLv = f.lv; }
   }
   const solved = new Map();
   for (const f of levels) {
@@ -167,14 +177,14 @@ function solveLevelRead(levels) {
  *
  * A frame around the drawing is fatal in a way that is easy to miss: the crop below takes the content
  * bounding box, so the border BECOMES the bounding box — the tile then shows a rectangle with the
- * subject shrunk inside it, and the measured density counts the frame's ink as if it were resource.
- * Caught on res_paper_l6 in the 2026-08-19 batch, where an edge-band check missed it entirely because
- * the ring sat 12px in from the edge, not on it.
+ * subject shrunk inside it, and the frame's own ink is counted as resource. Caught on res_paper_l6 in
+ * the 2026-08-19 batch, where an edge-band check missed it entirely because the ring sat 13px in from
+ * the edge rather than on it.
  *
- * Detection is a ring scan: a real border is a 1-2px line that darkens ALL FOUR sides at the same
- * inset, which none of the five stationery subjects ever does. Everything from the image edge through
- * the ring is cleared, and the strip is logged — silent cropping of someone's artwork is not something
- * to do quietly, but neither is eyeballing every generation by hand forever.
+ * Detection is a ring scan: a real border darkens ALL FOUR sides at the SAME inset, which none of the
+ * five stationery subjects ever does. Everything from the image edge through the ring is cleared, and
+ * the strip is logged — quietly cropping someone's artwork is not something to do silently, but
+ * neither is eyeballing every generation by hand forever.
  */
 function stripBorderRing(data, W, H, ch, name) {
   const dark = (x, y) => {
@@ -312,10 +322,10 @@ async function main() {
       reach: reach.get(f.lv).toFixed(3),
       sizeMul: solved.get(f.lv).sizeMul.toFixed(4),
       alpha: solved.get(f.lv).alphaMul.toFixed(2),
-      verdict: offenders.some((o) => o.lv === f.lv) ? 'TOO SPARSE FOR ITS TIER' : '',
+      verdict: offenders.some((o) => o.lv === f.lv) ? 'READS BACKWARDS' : '',
     })));
     for (const o of offenders) {
-      failures.push(`res_${type}_l${o.lv}: drawn too sparse for its tier (density ${o.density.toFixed(3)}) — needs ${o.need.toFixed(3)} rendered ink to clear l${o.below}, reaches only ${o.can.toFixed(3)} at full pen, ${((o.shortfall - 1) * 100).toFixed(0)}% short → draw l${o.lv} fuller, or l${o.below} lighter`);
+      failures.push(`res_${type}_l${o.lv} reads BACKWARDS: ${(o.drop * 100).toFixed(0)}% lighter than l${o.blocker} below it (${o.can.toFixed(3)} vs ${(o.need / (1 - INK_TOLERANCE)).toFixed(3)} rendered ink) → redraw l${o.lv} at density ≈${o.target.toFixed(2)} (now ${o.density.toFixed(3)}), or lighten l${o.blocker}`);
     }
   }
   if (failures.length) {
@@ -332,7 +342,7 @@ async function main() {
    --report-only given: packing anyway. The map will read wrong until these land.`);
   } else {
     console.log(`
-✅ level read clears the §6 contract (every tier ${INK_GROWTH}x apart, pen held within ${ALPHA_MIN}–1.00).`);
+✅ level read clears the §6 contract (no tier reads lighter than one below it, pen held within ${ALPHA_MIN}–1.00).`);
   }
 
   // Shelf packing: sort by height descending, fill row by row
