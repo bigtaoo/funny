@@ -1,7 +1,7 @@
 # SLG 地图资源 — AI 出图 prompt 表
 
 状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~395 KB**，client + map-editor 两份字节一致。
-**⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6（含 20 张重画清单 + prompt）。**
+**⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6。当前状态：46 帧全部通过构建期门禁（`node art/slg/slg-map/pack_resources.cjs` 不带 `--report-only` 跑通）；渲染层接线未完成，见 §6.10。**
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
 
 > **⚠️ 决策变更 III（2026-08-19，用户拍板）**：分级读数整套重构，见 **§6**（权威，覆盖 §5.3 #2 与 §5.4 的形态跃迁条款）。起因是「按宽归一」这条旧契约会**惩罚横向生长**——高等级的丰度是横着铺开画的，归一化反而把它压小，实测四类资源全部在 l5→l6 墨量回落，ink l4 成了全十级里视觉最重的一帧。
@@ -540,3 +540,24 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 > - ✅ **密排交叉线，笔画几乎相接、区域远看近黑，近看仍是笔画，缝隙间留少量白点** ← ink 族专用档，就是 l6/l8/l9 的实际画法
 >
 > 一并写进 ink 的 prompt：`thin sketchy varied-width pen strokes throughout, bottle outlines thin and slightly broken, never a thick uniform contour`；负向补 `flat fill, solid flat black area, vector, sticker art, thick uniform outline, crisp clean edges`。
+
+### 6.10 收尾状态与剩余工作（2026-08-19）
+
+**美术侧已完成**：五轮出图共 30 张，落地 17 张，46 个分级帧全部通过 §6.7 门禁。被换下的旧帧与落选候选全在 `art/leftover/`（`pre-*` = 被替换的旧帧，`rejected-*` = 判定不合格，`candidate-*` = 同一槽位的落选版本），未删除。
+
+**构建期长出的四道自动防线**（都是被真实事故打出来的，不是预设计）：
+
+| 防线 | 触发事故 |
+|---|---|
+| 墨量倒挂门禁（§6.7） | 用户圈出 4 级墨水地"明显不是一种地" |
+| 强制灰度化（§6.6） | 新图带蓝调 `b-r +6~+52`，老帧全中性黑 |
+| 画框环扫描（§6.7 末） | `res_paper_l6` 带内缩 13px 的画框，边缘检测抓不到 |
+| 实心平涂占比（§6.9） | ink l7 密度达标但变成粗描边+平涂，破坏"一支笔" |
+
+**剩余工作（未开始）**：
+
+1. **整页重排（阻塞项，必须先做）**：客户端读的是合并页 `client/src/assets/slg/world_atlas.{png,json}`，而本次 17 张新帧的**尺寸全变了**，`patchMergedAtlas.js` 只支持同尺寸就地回贴、会直接拒绝。必须从 git 历史恢复被 2026-07-27 资产整理删掉的源图集（`terrain_atlas` / `city_atlas` / `playerbase_atlas` / `building_atlas` / `city_bld_atlas`）后重跑 `mergeAssetAtlases.js`，或给 patch 脚本加整页重排能力。**在这一步完成前，新美术在游戏里看不到。**
+2. **渲染层接线**：`drawResMotif` 改为消费 `nw.sizeMul` / `nw.alphaMul`（等级→尺寸/透明度逻辑全部删掉，图集已是唯一权威）；抖动 `scale` 从 `[0.85,1.15]` 收窄到 `[0.96,1.04]`（`rot`/`dx`/`dy` 保留）。
+3. **两份渲染器合并**：`client/src/scenes/worldmap/tileGraphics/resources.ts` 与 `tools/map-editor/src/render/tileGraphics.ts` 目前是复制粘贴、靠注释里的「must stay in lockstep」人肉保证。纯计算下沉到 `@nw/shared/slg`（两边都已 import 它），各留一个贴图适配器。
+4. **`Lv.N` 文字标签**（§6.2 #7）：仅 l6+ 且近 zoom 显示；用位图数字图集或 `BitmapText`，**不要每格 `new PIXI.Text`**（Text 纹理销毁泄漏）。
+5. **验收**：contact-sheet 生成器进 `art/scripts/`；同 resType 同 level 随机 200 组 `(tx,ty)` 渲染包围盒极差 < 5% 的单测；起客户端在混合等级区截图对比。
