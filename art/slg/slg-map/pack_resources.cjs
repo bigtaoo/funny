@@ -162,10 +162,57 @@ function solveLevelRead(levels) {
   return { solved, offenders, reach };
 }
 
+/**
+ * Blank out a drawn rectangular border, if the generation put one in.
+ *
+ * A frame around the drawing is fatal in a way that is easy to miss: the crop below takes the content
+ * bounding box, so the border BECOMES the bounding box — the tile then shows a rectangle with the
+ * subject shrunk inside it, and the measured density counts the frame's ink as if it were resource.
+ * Caught on res_paper_l6 in the 2026-08-19 batch, where an edge-band check missed it entirely because
+ * the ring sat 12px in from the edge, not on it.
+ *
+ * Detection is a ring scan: a real border is a 1-2px line that darkens ALL FOUR sides at the same
+ * inset, which none of the five stationery subjects ever does. Everything from the image edge through
+ * the ring is cleared, and the strip is logged — silent cropping of someone's artwork is not something
+ * to do quietly, but neither is eyeballing every generation by hand forever.
+ */
+function stripBorderRing(data, W, H, ch, name) {
+  const dark = (x, y) => {
+    const i = (y * W + x) * ch;
+    return 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2] < 200;
+  };
+  const sides = (ins) => {
+    let t = 0, b = 0, l = 0, r = 0;
+    for (let x = ins; x < W - ins; x++) { if (dark(x, ins)) t++; if (dark(x, H - 1 - ins)) b++; }
+    for (let y = ins; y < H - ins; y++) { if (dark(ins, y)) l++; if (dark(W - 1 - ins, y)) r++; }
+    const nx = W - 2 * ins, ny = H - 2 * ins;
+    return Math.min(t / nx, b / nx, l / ny, r / ny);
+  };
+  const limit = Math.floor(Math.min(W, H) * 0.05);
+  let hit = -1;
+  for (let ins = 0; ins < limit; ins++) if (sides(ins) > 0.75) { hit = ins; break; }
+  if (hit < 0) return 0;
+  let outer = hit;
+  while (outer + 1 < limit && sides(outer + 1) > 0.25) outer++;
+  const cut = outer + 2;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (Math.min(x, y, W - 1 - x, H - 1 - y) > cut) continue;
+      const i = (y * W + x) * ch;
+      data[i] = 255; data[i + 1] = 255; data[i + 2] = 255;
+      if (ch === 4) data[i + 3] = 0;
+    }
+  }
+  console.log(`  ⚠ ${name}: stripped a drawn border ring (inset ${hit}–${outer}px) before cropping`);
+  return cut;
+}
+
 async function processImage(file, longEdge) {
   const name = path.basename(file).replace(/\.(webp|png)$/i, '');
   const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H, channels: ch } = info;
+
+  stripBorderRing(data, W, H, ch, name);
 
   // Remove white background + compute content bounding box
   let minX = W, minY = H, maxX = -1, maxY = -1;
