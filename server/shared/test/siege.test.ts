@@ -28,20 +28,46 @@ import {
 import type { CardInstance } from '../src/types';
 
 describe('resolveSiege', () => {
+  // The cheap linear path deals in raw troops on both sides, so the ADR-069 `*Deployed` denominators
+  // are just the clamped inputs — survivors/deployed is a true survival ratio here.
   it('attacker wins when troops exceed defense; survivors = difference', () => {
-    expect(resolveSiege(100, 60)).toEqual({ outcome: 'attacker_win', attackerSurvivors: 40, defenderSurvivors: 0 });
+    expect(resolveSiege(100, 60)).toEqual({
+      outcome: 'attacker_win',
+      attackerSurvivors: 40,
+      defenderSurvivors: 0,
+      attackerDeployed: 100,
+      defenderDeployed: 60,
+    });
   });
 
   it('defender wins ties (defender advantage)', () => {
-    expect(resolveSiege(100, 100)).toEqual({ outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 0 });
+    expect(resolveSiege(100, 100)).toEqual({
+      outcome: 'defender_win',
+      attackerSurvivors: 0,
+      defenderSurvivors: 0,
+      attackerDeployed: 100,
+      defenderDeployed: 100,
+    });
   });
 
   it('defender wins when defense exceeds attacker troops; survivors = difference', () => {
-    expect(resolveSiege(60, 100)).toEqual({ outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 40 });
+    expect(resolveSiege(60, 100)).toEqual({
+      outcome: 'defender_win',
+      attackerSurvivors: 0,
+      defenderSurvivors: 40,
+      attackerDeployed: 60,
+      defenderDeployed: 100,
+    });
   });
 
-  it('clamps negative inputs to 0', () => {
-    expect(resolveSiege(-5, -5)).toEqual({ outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 0 });
+  it('clamps negative inputs to 0 — including the ADR-069 denominators', () => {
+    expect(resolveSiege(-5, -5)).toEqual({
+      outcome: 'defender_win',
+      attackerSurvivors: 0,
+      defenderSurvivors: 0,
+      attackerDeployed: 0,
+      defenderDeployed: 0,
+    });
   });
 });
 
@@ -185,7 +211,7 @@ describe('teamSiegeValue', () => {
 describe('npcBaseHp (SLG option 2 — base HP scales with tile level)', () => {
   it('scales linearly at SLG_NPC_BASE_HP_PER_LEVEL per level', () => {
     expect(npcBaseHp(1)).toBe(SLG_NPC_BASE_HP_PER_LEVEL);
-    expect(npcBaseHp(1)).toBe(40); // locked value (2026-07-17): L1 is genuinely soft
+    expect(npcBaseHp(1)).toBe(60); // locked value (ADR-069, re-calibrated 40 -> 60 on 2026-08-19): L1 is genuinely soft
     expect(npcBaseHp(10)).toBe(10 * SLG_NPC_BASE_HP_PER_LEVEL);
   });
 
@@ -230,9 +256,9 @@ describe('buildSiegeLevel / buildSiegeBattle', () => {
 
   it('carries through an explicit defenderBaseHp (NPC single-battle base-HP scaling)', () => {
     const level = buildSiegeLevel({ garrison: [{ x: 1 }], defenderBaseHp: npcBaseHp(1) }, 1, 7);
-    expect(level.defenderBaseHp).toBe(40);
+    expect(level.defenderBaseHp).toBe(60);
     const battle = buildSiegeBattle({ army: [{ initialHp: 300 }] }, { garrison: [{ x: 1 }], defenderBaseHp: npcBaseHp(5) }, 5, 7);
-    expect(battle.defenderBaseHp).toBe(200);
+    expect(battle.defenderBaseHp).toBe(300);
   });
 
   it('does NOT derive defenderBaseHp implicitly — the wave path (no defenderBaseHp) keeps the default base', () => {
