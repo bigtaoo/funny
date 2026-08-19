@@ -152,7 +152,7 @@ describe('writeOccupyCardState', () => {
   });
 
   it('ADR-069: passes the deployed denominator through, so engine survivors are not measured against nominal troops', async () => {
-    const updateOne = vi.fn(async () => ({}));
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({}));
     const core = fakeCore(undefined, updateOne);
     const m = march({ army: cardArmy });
     // 500 nominal troops across two cards, but the engine only ever fielded 200 of them (per-unit HP

@@ -325,7 +325,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
     // Level 1 lichuang → cap 200. Ask for one troop more than that.
-    cardInvOverride = { 'card-cap': { id: 'card-cap', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } };
+    cardInvOverride = { 'card-cap': { id: 'card-cap', defId: 'lichuang', level: 1, gear: {}, locked: false } };
     await m.collections.playerWorld.updateOne(
       { _id: pwId },
       { $set: { 'cardState.card-cap': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
@@ -340,7 +340,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
   it('distributeTroops allows filling a card to exactly its cap, then rejects one more troop', async () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
-    cardInvOverride = { 'card-exact': { id: 'card-exact', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } };
+    cardInvOverride = { 'card-exact': { id: 'card-exact', defId: 'lichuang', level: 1, gear: {}, locked: false } };
     await m.collections.playerWorld.updateOne(
       { _id: pwId },
       { $set: { 'cardState.card-exact': { currentTroops: 150, teamId: 't1' } as CardSLGState } },
@@ -359,8 +359,8 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
     cardInvOverride = {
-      'card-lv1': { id: 'card-lv1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false },
-      'card-lv9': { id: 'card-lv9', defId: 'lichuang', level: 9, xp: 0, gear: {}, locked: false },
+      'card-lv1': { id: 'card-lv1', defId: 'lichuang', level: 1, gear: {}, locked: false },
+      'card-lv9': { id: 'card-lv9', defId: 'lichuang', level: 9, gear: {}, locked: false },
     };
     await m.collections.playerWorld.updateOne(
       { _id: pwId },
@@ -386,7 +386,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     // Cap 200, plenty of pool: only the per-card guard can stop this, and it has to hold ATOMICALLY —
     // the JS-side check reads one snapshot, so without the `$lte` filter restating it in the update all
     // three 100-troop calls would pass and park 300 on a 200-cap card.
-    cardInvOverride = { 'card-cap-race': { id: 'card-cap-race', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } };
+    cardInvOverride = { 'card-cap-race': { id: 'card-cap-race', defId: 'lichuang', level: 1, gear: {}, locked: false } };
     await m.collections.playerWorld.updateOne(
       { _id: pwId },
       { $set: { troops: 5000, 'cardState.card-cap-race': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
@@ -408,7 +408,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     // stock" while the pool is full — an error message pointing at entirely the wrong thing.
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
-    cardInvOverride = { 'card-fresh': { id: 'card-fresh', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } };
+    cardInvOverride = { 'card-fresh': { id: 'card-fresh', defId: 'lichuang', level: 1, gear: {}, locked: false } };
     await m.collections.playerWorld.updateOne(
       { _id: pwId },
       { $set: { 'cardState.card-fresh': { teamId: 't1' } as CardSLGState } }, // no currentTroops key at all
