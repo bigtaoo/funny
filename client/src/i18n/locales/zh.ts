@@ -959,6 +959,7 @@ export const zh = {
   'world.territoryJump': '跳转',
   'world.weakGarrisonHint': '红色坐标：驻军低于列表中位数一半，建议增兵',
   'world.err.troopCap': '兵力已满',
+  'world.err.cardTroopCap': '这张卡的带兵上限已满',
   'world.err.noInk': '墨水不足',
   // ── Nations / season / shop panel (C5) ───────────────────────────────────
   'world.info': '世界',
@@ -1584,6 +1585,7 @@ export const zh = {
   'roster.hp': '血量',
   'roster.siege': '攻城值',
   'roster.siegePer60': '（每 60 兵 {base}）',
+  'roster.hpOverflow': '其中 {n} 兵超出血量上限，只算攻城值',
   'roster.injured': '受伤 {time}',
   'roster.inTeam': '出战中',
   'roster.inTeamNamed': '出战中：{team}',

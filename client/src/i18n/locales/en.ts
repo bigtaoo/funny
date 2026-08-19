@@ -944,6 +944,7 @@ export const en: Record<TranslationKey, string> = {
   'world.territoryJump': 'Jump',
   'world.weakGarrisonHint': 'Red = garrison below half the list median — reinforce',
   'world.err.troopCap': 'Troop cap reached',
+  'world.err.cardTroopCap': "This card's troop capacity is full",
   'world.err.noInk': 'Not enough ink',
   // Nations / season / shop panel (C5)
   'world.info': 'World',
@@ -1563,6 +1564,7 @@ export const en: Record<TranslationKey, string> = {
   'roster.hp': 'HP',
   'roster.siege': 'Siege',
   'roster.siegePer60': ' ({base} per 60 troops)',
+  'roster.hpOverflow': '{n} of these troops exceed the HP cap — siege damage only',
   'roster.injured': 'Injured {time}',
   'roster.inTeam': 'Deployed',
   'roster.inTeamNamed': 'Deployed: {team}',

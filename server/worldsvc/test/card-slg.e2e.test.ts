@@ -14,6 +14,7 @@ import {
   OCCUPY_HOLD_SEC,
   baseFootprintCells,
   baseFootprintInBounds,
+  cardTroopCap,
 } from '@nw/shared';
 import type { CardInstance } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -26,13 +27,19 @@ import type { WorldMetaClient } from '../src/metaClient';
 // Every card id this suite uses (e.g. 'card-1', 'card-x') is treated as an owned 'lichuang' (infantry) card —
 // setTeams resolves cardInstanceId → unitType via cardInv (CC-3; sanitizeCardArmy drops anything that doesn't
 // resolve), so a Proxy stands in for a real hero-roster lookup rather than enumerating every id used below.
-const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+// Level 9 (`cardTroopCap` = 200 + 50×8 = 600) since 2026-08-19: distributeTroops now enforces the per-card
+// cap, and the troop-pool bookkeeping cases below deliberately move 300-500 troops onto a single card. A
+// level-1 stub (cap 200) would make every one of them fail on the cap instead of on the thing it tests.
+// The cap boundary itself is pinned separately, with explicit levels, in its own describe block.
+const CARD_INV_LV9: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 9, xp: 0, gear: {}, locked: false }),
 });
+/** Per-test override: when set, `fakeMeta.getSaveFields` serves this cardInv instead of the level-9 proxy. */
+let cardInvOverride: Record<string, CardInstance> | null = null;
 const fakeMeta: WorldMetaClient = {
   available: true,
   async getSaveFields() {
-    return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv: CARD_INV_ANY };
+    return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv: cardInvOverride ?? CARD_INV_LV9 };
   },
   async getProfile() { return null; },
   async grantMaterial() {},
@@ -55,7 +62,7 @@ async function tryConnect(): Promise<WorldMongo | null> {
 const mongo = await tryConnect();
 if (!mongo) console.warn(`[worldsvc.card-slg.e2e] Mongo unreachable (${URI}) — skipping. Run docker compose up -d first.`);
 
-// Minimal card-based army entry. CC-3: setTeams resolves cardInstanceId → unitType via cardInv (CARD_INV_ANY
+// Minimal card-based army entry. CC-3: setTeams resolves cardInstanceId → unitType via cardInv (CARD_INV_LV9
 // above always resolves to 'lichuang'/infantry); col must be a valid attack lane, row within the combat zone.
 function cardEntry(cardInstanceId: string, col = 0, row = 1): TeamTemplate['army'][number] {
   return { cardInstanceId, col, row };
@@ -143,6 +150,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     nowMs = 1_000_000;
     pushes = [];
     spentCoins = 0;
+    cardInvOverride = null;
     spentOrderIds = [];
     svc = new WorldService({
       cols: m.collections,
@@ -303,6 +311,126 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     const pw = await m.collections.playerWorld.findOne({ _id: pwId });
     expect(pw?.troops).toBe(200);
     expect(pw?.cardState?.['card-race']?.currentTroops).toBe(300);
+  });
+
+  // ── Per-card troop cap (2026-08-19) ─────────────────────────────────────────────────────────
+  // Until this landed, `distributeTroops`'s own doc comment claimed the cap was "enforced on every way
+  // IN" while nothing on the server checked it — the only thing holding the line was the client's
+  // stepper/fill button, so a hand-rolled request could park the entire pool on one card. Harmless while
+  // troops above a unit's HP cap were inert; ADR-069 made siege damage scale linearly with carried
+  // troops, so an uncapped card became "flatten any base in one hit".
+
+  it('distributeTroops rejects an allocation that would exceed a card troopCap, and leaves the pool untouched', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    // Level 1 lichuang → cap 200. Ask for one troop more than that.
+    cardInvOverride = { 'card-cap': { id: 'card-cap', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } };
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-cap': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
+    );
+    expect(cardTroopCap({ defId: 'lichuang', level: 1 })).toBe(200);
+    await expect(svc.distributeTroops(W, 'a', { 'card-cap': 201 })).rejects.toThrow(/can hold 200/);
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.troops).toBe(TROOP_CAP_BASE);                              // nothing debited
+    expect(pw?.cardState?.['card-cap']?.currentTroops).toBe(0);
+  });
+
+  it('distributeTroops allows filling a card to exactly its cap, then rejects one more troop', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    cardInvOverride = { 'card-exact': { id: 'card-exact', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } };
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-exact': { currentTroops: 150, teamId: 't1' } as CardSLGState } },
+    );
+    await svc.distributeTroops(W, 'a', { 'card-exact': 50 }); // 150 + 50 = 200 = cap
+    let pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.cardState?.['card-exact']?.currentTroops).toBe(200);
+    // Pin the wire CODE, not the message: the client maps `CARD_TROOP_CAP_EXCEEDED` to its own copy
+    // (scenes/worldmap/net/errors.ts), so the code is the contract and the message is just detail.
+    await expect(svc.distributeTroops(W, 'a', { 'card-exact': 1 })).rejects.toMatchObject({ code: 'CARD_TROOP_CAP_EXCEEDED' });
+    pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.cardState?.['card-exact']?.currentTroops).toBe(200); // unchanged by the rejected call
+  });
+
+  it('distributeTroops: the cap is per card, so a level-9 card accepts what a level-1 card cannot', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    cardInvOverride = {
+      'card-lv1': { id: 'card-lv1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false },
+      'card-lv9': { id: 'card-lv9', defId: 'lichuang', level: 9, xp: 0, gear: {}, locked: false },
+    };
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: {
+        'cardState.card-lv1': { currentTroops: 0, teamId: 't1' } as CardSLGState,
+        'cardState.card-lv9': { currentTroops: 0, teamId: 't1' } as CardSLGState,
+      } },
+    );
+    await svc.distributeTroops(W, 'a', { 'card-lv9': 500 });
+    await expect(svc.distributeTroops(W, 'a', { 'card-lv1': 500 })).rejects.toThrow(/can hold 200/);
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.cardState?.['card-lv9']?.currentTroops).toBe(500);
+    expect(pw?.cardState?.['card-lv1']?.currentTroops).toBe(0);
+    // A multi-card allocation is all-or-nothing: the legal half must not land when the other half is over cap.
+    await expect(svc.distributeTroops(W, 'a', { 'card-lv9': 50, 'card-lv1': 500 })).rejects.toThrow();
+    const after = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(after?.cardState?.['card-lv9']?.currentTroops).toBe(500);
+  });
+
+  it('distributeTroops: concurrent allocations cannot jointly exceed one card cap', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    // Cap 200, plenty of pool: only the per-card guard can stop this, and it has to hold ATOMICALLY —
+    // the JS-side check reads one snapshot, so without the `$lte` filter restating it in the update all
+    // three 100-troop calls would pass and park 300 on a 200-cap card.
+    cardInvOverride = { 'card-cap-race': { id: 'card-cap-race', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } };
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { troops: 5000, 'cardState.card-cap-race': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
+    );
+    const res = await Promise.allSettled(
+      Array.from({ length: 3 }, () => svc.distributeTroops(W, 'a', { 'card-cap-race': 100 })),
+    );
+    expect(res.filter((r) => r.status === 'fulfilled').length).toBe(2);
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.cardState?.['card-cap-race']?.currentTroops).toBe(200);
+    expect(pw?.troops).toBe(5000 - 200); // the rejected call debited nothing
+  });
+
+  it('distributeTroops works on a card whose cardState has teamId but no currentTroops field yet', async () => {
+    // setTeams only writes `cardState.<id>.teamId` when it assigns a card — `currentTroops` stays ABSENT
+    // until the first allocation lands. The per-card cap guard therefore has to be written so a missing
+    // field still matches (`$not: {$gt: …}`, not `$lte`, which never matches a missing field in MongoDB):
+    // with the naive form, a player's very first 分兵 onto a fresh team card fails with "not enough troop
+    // stock" while the pool is full — an error message pointing at entirely the wrong thing.
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    cardInvOverride = { 'card-fresh': { id: 'card-fresh', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } };
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-fresh': { teamId: 't1' } as CardSLGState } }, // no currentTroops key at all
+    );
+    const before = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(before?.cardState?.['card-fresh']?.currentTroops).toBeUndefined(); // fixture sanity
+    await svc.distributeTroops(W, 'a', { 'card-fresh': 120 });
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.cardState?.['card-fresh']?.currentTroops).toBe(120);
+    expect(pw?.troops).toBe(TROOP_CAP_BASE - 120);
+  });
+
+  it('distributeTroops rejects a card the inventory does not know (stale id would burn troops into an unfieldable slot)', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    cardInvOverride = {}; // empty roster: the id resolves to nothing
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'cardState.card-ghost': { currentTroops: 0, teamId: 't1' } as CardSLGState } },
+    );
+    await expect(svc.distributeTroops(W, 'a', { 'card-ghost': 10 })).rejects.toThrow(/not in the inventory/);
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.troops).toBe(TROOP_CAP_BASE);
   });
 
   it('distributeTroops: a no-op allocation (empty, or all zero amounts) short-circuits without touching the pool', async () => {

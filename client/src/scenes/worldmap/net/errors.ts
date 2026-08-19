@@ -20,6 +20,8 @@ export function errorMsg(e: unknown): string {
       NOT_OWNER:     t('world.err.notOwner'),
       NOT_IMPLEMENTED: t('world.err.notImpl'),
       TROOP_CAP_REACHED:      t('world.err.troopCap'),
+      // Per-card cap (2026-08-19): distinct from TROOP_CAP_REACHED, which is the BASE pool's cap.
+      CARD_TROOP_CAP_EXCEEDED: t('world.err.cardTroopCap'),
       INSUFFICIENT_RESOURCES: t('world.err.noInk'),
       PATH_BLOCKED:  t('world.err.pathBlocked'),
       TERRITORY_NOT_CONNECTED: t('world.err.notConnected'),

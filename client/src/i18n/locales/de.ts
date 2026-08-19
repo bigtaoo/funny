@@ -944,6 +944,7 @@ export const de: Record<TranslationKey, string> = {
   'world.territoryJump': 'Springen',
   'world.weakGarrisonHint': 'Rot = Garnison unter der Hälfte des Listen-Medians – verstärken',
   'world.err.troopCap': 'Truppenlimit erreicht',
+  'world.err.cardTroopCap': 'Die Truppenkapazität dieser Karte ist voll',
   'world.err.noInk': 'Nicht genug Tinte',
   // Nationen / Saison / Shop (C5)
   'world.info': 'Welt',
@@ -1563,6 +1564,7 @@ export const de: Record<TranslationKey, string> = {
   'roster.hp': 'HP',
   'roster.siege': 'Belagerung',
   'roster.siegePer60': ' ({base} pro 60 Truppen)',
+  'roster.hpOverflow': '{n} Truppen über dem HP-Limit — nur Belagerungsschaden',
   'roster.injured': 'Verletzt {time}',
   'roster.inTeam': 'Eingesetzt',
   'roster.inTeamNamed': 'Eingesetzt: {team}',

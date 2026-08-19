@@ -13,7 +13,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, setLocale, t } from '../../src/i18n';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
-import { cardSiegeValue, cardSiegeValueEffective } from '../../src/game/meta/cardDefs';
+import { cardHp, cardSiegeValue, cardSiegeValueEffective } from '../../src/game/meta/cardDefs';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 
 const memStore = (() => {
@@ -148,6 +148,24 @@ describe('CardScene detail modal — siege value reflects assigned troops (ADR-0
     const panelRight = panel.getBounds().x + panel.getBounds().width;
     const lineRight = siege!.getBounds().x + siege!.getBounds().width;
     expect(lineRight).toBeLessThanOrEqual(panelRight);
+  });
+
+  it('an over-filled card says how many of its troops are siege-only (ADR-069 follow-up)', () => {
+    // Lena's blueprint HP cap is 150; 300 troops means half of them never become HP at all. Before this
+    // line existed the panel showed "troops 300" and "HP 150" as two unrelated numbers with nothing
+    // connecting them, so the player had no way to learn where the other 150 soldiers went.
+    const scene = openLenaDetail(300);
+    const expected = t('roster.hpOverflow' as never).replace('{n}', String(300 - cardHp(LENA)));
+    expect(texts(scene.container)).toContain(expected);
+  });
+
+  it('a card at or under its HP cap shows no overflow line at all (no copy for the normal case)', () => {
+    for (const troops of [0, cardHp(LENA)]) {
+      const scene = openLenaDetail(troops);
+      const overflowPrefix = t('roster.hpOverflow' as never).replace('{n}', '');
+      const stem = overflowPrefix.split('{')[0]!.slice(0, 6);
+      expect(texts(scene.container).some((s) => s.includes(stem) && s !== ''), `troops=${troops}`).toBe(false);
+    }
   });
 
   it('cardSiegeValueEffective scales linearly and is unclamped past the per-unit HP capacity', () => {

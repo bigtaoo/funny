@@ -238,6 +238,12 @@ troopCap(card) = CardDef.troopCapBase + CardDef.troopCapGrowth × card.level
 ```
 
 > 各兵种基础值和成长率见 `ECONOMY_NUMBERS §15`。
+>
+> **注意公式的实际实现是 `troopCapBase + troopCapGrowth × (level − 1)`**（1 级时等于 base），上面这行按原文保留。
+>
+> **服务端强制（2026-08-19）**：此前这条上限**只有客户端在守**（分兵 stepper / 一键分兵按各卡 `troopCap` 算好再发），`distributeTroops` 自己不校验——它的注释还写着「enforced on every way IN」，与代码不符。手搓一个请求就能把整池兵力堆到一张卡上。在 ADR-069 之前这没什么后果（超过单兵血量上限的兵力是惰性的），ADR-069 让攻城值随携带兵力线性且无上限地缩放之后，这条漏洞等价于「一张卡一击拆掉任何基地」。现在服务端用 `@nw/shared` 的 `cardTroopCap(card)` 真实校验，超限报 `CARD_TROOP_CAP_EXCEEDED`；同一条界限还写进了更新语句的过滤器（`cardState.<id>.currentTroops: {$lte: cap - amount}`），否则两个并发请求各自通过 JS 侧检查后仍能一起越界。战后结算写回（存活比例）只会降低 `currentTroops`，所以「入口」只有这一个。
+>
+> 客户端仍保留自己的 `CardDef` 镜像表（见 `client/src/game/meta/cardDefs.ts` 头部说明），所以两张表的 `troopCapBase`/`troopCapGrowth` 由 `client/test/cardDefsSharedParity.test.ts` 逐卡逐级钉死——一旦漂移，玩家会遇到「按钮给你 350 兵、服务端拒收」这种无法自查的死路。
 
 ### 6.3 训练场与基地兵力池
 
