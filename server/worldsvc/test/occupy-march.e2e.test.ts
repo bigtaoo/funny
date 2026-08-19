@@ -112,6 +112,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     async push(accountId, msg) {
       pushes.push({ accountId, msg });
     },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   // CC-3 card resolution (resolveCardArmy/toEngineCardInstances) needs a real cardInv from meta — worldsvc has
@@ -128,6 +129,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
         return accountId === 'a' ? { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv } : null;
       },
       async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
     };
     return new WorldService({ cols: m.collections, redis: null, gateway: fakeGateway, meta: fakeMeta, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
   }
@@ -329,7 +331,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     // (60), so committed strength ≈ 12×60 = 720, the same magnitude as the flat-troop win above (npc+600) — a
     // real card team, not a synthesized force.
     const cardIds = Array.from({ length: 12 }, (_, i) => `card-occ-${i}`);
-    for (const id of cardIds) cardInv[id] = { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+    for (const id of cardIds) cardInv[id] = { id, defId: 'lichuang', level: 1, gear: {}, locked: false };
     const cardStateSet: Record<string, CardSLGState> = {};
     for (const id of cardIds) cardStateSet[id] = { currentTroops: 200, teamId: 't1' };
     await m.collections.playerWorld.updateOne(

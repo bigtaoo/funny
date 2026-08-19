@@ -39,7 +39,7 @@ describe('enhanceEquipment', () => {
     const ok = r as { success: boolean; instance: EquipmentInstance; save: SaveData };
     expect(ok.success).toBe(true);
     expect(ok.instance.level).toBe(1);
-    expect(ok.save.materials.scrap).toBe(100 - cost.materials.scrap);
+    expect(ok.save.materials.scrap).toBe(100 - cost.materials.scrap!);
     expect(ok.save.wallet.coins).toBe(1000 - cost.coins);
     expect(ok.save.equipmentInv).toBeNull();
   });
@@ -56,7 +56,7 @@ describe('enhanceEquipment', () => {
     const ok = r as { success: boolean; instance: EquipmentInstance; save: SaveData };
     expect(ok.success).toBe(false);
     expect(ok.instance.level).toBe(0);
-    expect(ok.save.materials.scrap).toBe(100 - cost.materials.scrap);
+    expect(ok.save.materials.scrap).toBe(100 - cost.materials.scrap!);
   });
 
   it('failure at +7 with a demoting roll -> level drops to +6 (ADR-063)', async () => {

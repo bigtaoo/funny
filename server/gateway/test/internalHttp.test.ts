@@ -213,8 +213,8 @@ describe('gateway internalHttp — real HTTP transport', () => {
       });
       expect(res.status).toBe(200);
       expect(gw.pushCalls).toHaveLength(2);
-      expect(gw.pushCalls[0]).toEqual({ accountId: 'a', msg: targets[0].msg, roomId: undefined });
-      expect(gw.pushCalls[1]).toEqual({ accountId: 'b', msg: targets[1].msg, roomId: 'r1' });
+      expect(gw.pushCalls[0]).toEqual({ accountId: 'a', msg: targets[0]!.msg, roomId: undefined });
+      expect(gw.pushCalls[1]).toEqual({ accountId: 'b', msg: targets[1]!.msg, roomId: 'r1' });
     });
 
     it('empty targets array → 400', async () => {
@@ -248,7 +248,7 @@ describe('gateway internalHttp — real HTTP transport', () => {
       });
       expect(res.status).toBe(200);
       expect(gw.pushCalls).toHaveLength(1);
-      expect(gw.pushCalls[0].accountId).toBe('ok');
+      expect(gw.pushCalls[0]!.accountId).toBe('ok');
     });
   });
 
@@ -330,7 +330,7 @@ describe('gateway internalHttp — real HTTP transport', () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual(gw.judgeResult);
       expect(gw.judgeCalls).toHaveLength(1);
-      const args = gw.judgeCalls[0];
+      const args = gw.judgeCalls[0]!;
       expect(args.seed).toBe(7);
       expect(args.mode).toBe(1);
       expect(args.endFrame).toBe(99);
@@ -341,9 +341,9 @@ describe('gateway internalHttp — real HTTP transport', () => {
       expect(args.defenseJson).toBe('{"hp":100}');
       expect(args.decks).toEqual({ top: ['t1'], bottom: ['b1'] });
       expect(args.frames).toHaveLength(1);
-      expect(args.frames[0].frame).toBe(0);
-      expect(args.frames[0].cmds[0].side).toBe(0);
-      expect(Buffer.from(args.frames[0].cmds[0].commands).toString()).toBe('abc');
+      expect(args.frames[0]!.frame).toBe(0);
+      expect(args.frames[0]!.cmds[0]!.side).toBe(0);
+      expect(Buffer.from(args.frames[0]!.cmds[0]!.commands).toString()).toBe('abc');
     });
 
     it('minimal body (no optional fields) → defaults applied, no optional keys leak through as present-but-undefined', async () => {
@@ -356,7 +356,7 @@ describe('gateway internalHttp — real HTTP transport', () => {
       });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: false });
-      const args = gw.judgeCalls[0];
+      const args = gw.judgeCalls[0]!;
       expect(args).toEqual({ seed: 0, mode: 0, endFrame: 0, frames: [], exclude: [] });
     });
   });

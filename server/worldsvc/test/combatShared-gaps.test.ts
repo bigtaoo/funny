@@ -20,12 +20,12 @@ function pw(overrides: Partial<PlayerWorldDoc> = {}): PlayerWorldDoc {
 describe('refundTroops — rev-conflict retry exhaustion', () => {
   it('gives up (logs, returns) after MAX_ATTEMPTS(5) consecutive rev-conflicts, without throwing', async () => {
     const doc = pw();
-    const updateOne = vi.fn(async () => ({ matchedCount: 0 }));
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({ matchedCount: 0 }));
     // Every refetch just returns the same doc (rev never actually advances in this adversarial fake) —
     // forces every one of the 5 attempts to lose the race.
-    const findOne = vi.fn(async () => doc);
+    const findOne = vi.fn(async (..._args: unknown[]) => doc);
     const core = {
-      settle: vi.fn(() => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 })),
+      settle: vi.fn((..._args: unknown[]) => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 })),
       deps: { cols: { playerWorld: { updateOne, findOne } } },
     } as unknown as WorldCore;
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -43,10 +43,10 @@ describe('refundTroops — rev-conflict retry exhaustion', () => {
 
   it('bails out early when the doc vanishes mid-retry (refetch returns null)', async () => {
     const doc = pw();
-    const updateOne = vi.fn(async () => ({ matchedCount: 0 }));
-    const findOne = vi.fn(async () => null);
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({ matchedCount: 0 }));
+    const findOne = vi.fn(async (..._args: unknown[]) => null);
     const core = {
-      settle: vi.fn(() => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 })),
+      settle: vi.fn((..._args: unknown[]) => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 })),
       deps: { cols: { playerWorld: { updateOne, findOne } } },
     } as unknown as WorldCore;
     await refundTroops(core, doc, 10, 1000);
@@ -57,10 +57,10 @@ describe('refundTroops — rev-conflict retry exhaustion', () => {
 
   it('succeeds on the first attempt when the write lands (no retries needed)', async () => {
     const doc = pw();
-    const updateOne = vi.fn(async () => ({ matchedCount: 1 }));
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 }));
     const findOne = vi.fn();
     const core = {
-      settle: vi.fn(() => ({ ink: 5, paper: 0, graphite: 0, metal: 0, sticker: 0 })),
+      settle: vi.fn((..._args: unknown[]) => ({ ink: 5, paper: 0, graphite: 0, metal: 0, sticker: 0 })),
       deps: { cols: { playerWorld: { updateOne, findOne } } },
     } as unknown as WorldCore;
     await refundTroops(core, doc, 10, 1000, { ink: 3, paper: 0, graphite: 0, metal: 0, sticker: 0 } as never);
@@ -75,11 +75,11 @@ describe('refundTroops — rev-conflict retry exhaustion', () => {
 describe('startReturnMarch — no mainBaseTile fallback', () => {
   it('falls back to an instant refundTroops when the player has no mainBaseTile (never happens in practice, but defensive)', async () => {
     const doc = pw({ mainBaseTile: undefined });
-    const updateOne = vi.fn(async () => ({ matchedCount: 1 }));
-    const findOnePw = vi.fn(async () => doc);
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 }));
+    const findOnePw = vi.fn(async (..._args: unknown[]) => doc);
     const insertOne = vi.fn();
     const core = {
-      settle: vi.fn(() => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 })),
+      settle: vi.fn((..._args: unknown[]) => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 })),
       deps: { cols: { playerWorld: { findOne: findOnePw, updateOne }, marches: { insertOne } } },
       coordX: vi.fn(),
       coordY: vi.fn(),
@@ -94,7 +94,7 @@ describe('startReturnMarch — no mainBaseTile fallback', () => {
   });
 
   it('returns immediately (no-op) when the playerWorld doc cannot be found at all', async () => {
-    const findOnePw = vi.fn(async () => null);
+    const findOnePw = vi.fn(async (..._args: unknown[]) => null);
     const updateOne = vi.fn();
     const core = {
       deps: { cols: { playerWorld: { findOne: findOnePw, updateOne } } },

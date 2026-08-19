@@ -44,6 +44,11 @@ class FakeMail implements MailDispatcher {
 const stubPlayer: PlayerClient = {
   available: true,
   lookupByPublicId: async (): Promise<PlayerProfile | null> => null,
+  // Not exercised by this suite — throw rather than answer, so a route that starts calling them
+  // fails loudly instead of quietly seeing `undefined`.
+  lookupByAccountId: () => { throw new Error('stubPlayer.lookupByAccountId is not stubbed'); },
+  search: () => { throw new Error('stubPlayer.search is not stubbed'); },
+  resetPassword: () => { throw new Error('stubPlayer.resetPassword is not stubbed'); },
 };
 
 class FakeFeedback implements FeedbackClient {

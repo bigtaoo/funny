@@ -188,7 +188,7 @@ describe('regenDurability (D-CITY-8)', () => {
 });
 
 describe('teamSiegeValue', () => {
-  const card: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+  const card: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false };
 
   it('falls back to SLG_SIEGE_VALUE_PER_CARD when no cardInv is given', () => {
     const army = [{ cardInstanceId: 'inst1' }, { cardInstanceId: 'inst2' }];

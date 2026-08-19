@@ -420,7 +420,7 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect(winners).toHaveLength(1);
     expect(losers).toHaveLength(1);
     expect(losers[0]).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
-    expect(winners[0].ok && winners[0].coinsAfter).toBe(600); // not 1200 — credited once
+    expect(winners[0]!.ok && winners[0]!.coinsAfter).toBe(600); // not 1200 — credited once
     const wallet = await svc.getWallet('mc-race');
     expect(wallet.coins).toBe(600);
     expect(wallet.subscriptionExpiry).toBeLessThan(now() + 31 * 86400000); // ~30 days, not doubled to ~60

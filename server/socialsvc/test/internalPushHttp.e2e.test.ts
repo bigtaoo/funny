@@ -20,6 +20,7 @@ import { FriendService } from '../src/friendService';
 import { MailService } from '../src/mailService';
 import { startHttpApi } from '../src/httpApi';
 import { FakeMeta, FakeGateway } from './harness';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017';
 const DB = 'nw_social_internal_push_http_test';
@@ -217,7 +218,7 @@ describe.skipIf(!mongo)('socialsvc /internal/push + /internal/presence + /intern
 
       const listRes = await fetch(`${base}/internal/reports`, { headers: internalAuth });
       expect(listRes.status).toBe(200);
-      const listed = (await listRes.json()).data.reports as Array<{ _id: string; reporterId: string }>;
+      const listed = (await jsonBody(listRes)).data.reports as Array<{ _id: string; reporterId: string }>;
       expect(listed.map((r) => r.reporterId)).toEqual(['acc-a', 'acc-b']);
 
       const resolveRes = await fetch(`${base}/internal/reports/${listed[0]!._id}/resolve`, {
@@ -228,13 +229,13 @@ describe.skipIf(!mongo)('socialsvc /internal/push + /internal/presence + /intern
       expect(resolveRes.status).toBe(200);
 
       const afterRes = await fetch(`${base}/internal/reports`, { headers: internalAuth });
-      const afterListed = (await afterRes.json()).data.reports as Array<{ _id: string }>;
+      const afterListed = (await jsonBody(afterRes)).data.reports as Array<{ _id: string }>;
       expect(afterListed.map((r) => r._id)).toEqual([listed[1]!._id]);
     });
 
     it('resolve with an invalid resolution value → 400', async () => {
       await friendSvc.reportUser('acc-a', 'P-C', 'r');
-      const listed = (await (await fetch(`${base}/internal/reports`, { headers: internalAuth })).json()).data.reports as Array<{ _id: string }>;
+      const listed = (await jsonBody(await fetch(`${base}/internal/reports`, { headers: internalAuth }))).data.reports as Array<{ _id: string }>;
       const res = await fetch(`${base}/internal/reports/${listed[0]!._id}/resolve`, {
         method: 'POST',
         headers: { ...internalAuth, 'content-type': 'application/json' },

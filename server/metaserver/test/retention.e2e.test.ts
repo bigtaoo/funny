@@ -5,6 +5,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, makeDayKey, makeMonthKey, makeWeekKey, DAILY_COINS_REWARD, CARD_DEFS, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
+import type { FindOneAndUpdateOptions } from 'mongodb';
 import { buildApp } from '../dist/app.js';
 import type { CommercialClient, UndeliveredOrder } from '../dist/commercialClient.js';
 
@@ -33,9 +34,9 @@ class FakeCommercial implements CommercialClient {
     return this.coins.get(id) ?? 0;
   }
   async getWallet(id: string) {
-    return { coins: this.bal(id), pity: {} };
+    return { coins: this.bal(id), pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 };
   }
-  async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+  async grant(a: { accountId: string; amount: number; reason: string; orderId: string }): ReturnType<CommercialClient['grant']> {
     if (this.granted.has(a.orderId)) return { ok: true as const, coinsAfter: this.bal(a.accountId) };
     this.coins.set(a.accountId, this.bal(a.accountId) + a.amount);
     this.granted.add(a.orderId);
@@ -65,11 +66,35 @@ class FakeCommercial implements CommercialClient {
   async spend(a: { accountId: string; amount: number }) {
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async createCustomPool(): Promise<never> { throw new Error('FakeCommercial.createCustomPool is not stubbed in this test'); }
+  async closeLimitedPool(): Promise<never> { throw new Error('FakeCommercial.closeLimitedPool is not stubbed in this test'); }
+  async listLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listLimitedPools is not stubbed in this test'); }
+  async listActiveLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listActiveLimitedPools is not stubbed in this test'); }
+  async redeemFate(): Promise<never> { throw new Error('FakeCommercial.redeemFate is not stubbed in this test'); }
+  async monthlyCardBuy(): Promise<never> { throw new Error('FakeCommercial.monthlyCardBuy is not stubbed in this test'); }
+  async yearCardBuy(): Promise<never> { throw new Error('FakeCommercial.yearCardBuy is not stubbed in this test'); }
+  async monthlyCardClaim(): Promise<never> { throw new Error('FakeCommercial.monthlyCardClaim is not stubbed in this test'); }
+  async starterBuy(): Promise<never> { throw new Error('FakeCommercial.starterBuy is not stubbed in this test'); }
+  async verifyNonCoinReceipt(): Promise<never> { throw new Error('FakeCommercial.verifyNonCoinReceipt is not stubbed in this test'); }
+  async promoRedeem(): Promise<never> { throw new Error('FakeCommercial.promoRedeem is not stubbed in this test'); }
+  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
+  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
+  async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed in this test'); }
+  async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed in this test'); }
+  async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed in this test'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
+  async auditCoinGains(): Promise<never> { throw new Error('FakeCommercial.auditCoinGains is not stubbed in this test'); }
 }
 
 describe.skipIf(!mongo)('meta retention e2e', () => {
   const m = mongo!;
   let app: FastifyInstance;
+  /** The wallet ledger `app` runs on. Shared with any second app in a test that then reads the wallet
+   *  back through `app` — see the day-30 case below, whose own comment already required this. */
+  let comm: FakeCommercial;
   let token: string;
   let accountId: string;
   // Fixed to a 31-day month so 30 sequential daily claims never roll into the next monthKey.
@@ -83,7 +108,8 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
     await m.ensureIndexes();
     if (app) await app.close();
     fakeNow = new Date('2026-01-01T12:00:00Z').getTime();
-    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: new FakeCommercial(), now: () => fakeNow });
+    comm = new FakeCommercial();
+    app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: comm, now: () => fakeNow });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'dev-ret-1' } }));
     token = r.data.token;
     accountId = r.data.accountId;
@@ -366,12 +392,12 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
         findOneAndUpdate: async (
           filter: Parameters<typeof realSaves.findOneAndUpdate>[0],
           update: Parameters<typeof realSaves.findOneAndUpdate>[1],
-          opts?: Parameters<typeof realSaves.findOneAndUpdate>[2],
+          opts?: FindOneAndUpdateOptions,
         ) => {
           const current = await realSaves.findOne(filter as Record<string, unknown>);
           const incoming = (update as { $set?: { save?: Record<string, unknown> } }).$set?.save;
           if (current && incoming && isTargetWrite(current as unknown as { save: Record<string, unknown> }, incoming)) return null;
-          return realSaves.findOneAndUpdate(filter, update, opts);
+          return opts ? realSaves.findOneAndUpdate(filter, update, opts) : realSaves.findOneAndUpdate(filter, update);
         },
       } as typeof realSaves;
     }
@@ -412,7 +438,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
       expect(typeof retried.data.reward.id).toBe('string');
       const equips = Object.values(retried.data.save.equipmentInv ?? {}) as Array<{ defId: string }>;
       expect(equips.length).toBe(1); // exactly one, not a second re-rolled item from the retry
-      expect(equips[0].defId).toBe(retried.data.reward.id);
+      expect(equips[0]!.defId).toBe(retried.data.reward.id);
 
       // A third call replays the same already-delivered item (idem ledger `committed: true`) rather
       // than granting a second one or erroring.
@@ -457,7 +483,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
         .filter(([id]) => !baselineIds.has(id))
         .map(([, c]) => c as { defId: string });
       expect(newCards.length).toBe(1); // exactly one new card, not a second re-rolled one from the retry
-      expect(newCards[0].defId).toBe(retried.data.reward.id);
+      expect(newCards[0]!.defId).toBe(retried.data.reward.id);
 
       // A third call replays the same already-delivered card (idem ledger `committed: true`) rather
       // than granting a second one or erroring.
@@ -476,7 +502,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
       // The equipment-write wrap itself stays perfectly safe to keep using: day 30's retry resolves
       // via grantEquipment's own idempotent-by-id shortcut (the instance already exists from the
       // failed attempt), which returns before ever touching the wrapped equipmentInvCount write.
-      const failingApp = await buildApp({ cols: { ...m.collections, saves: failsOnEquipmentGrant() }, jwt, internalKey: 'k', commercial: new FakeCommercial(), now: () => fakeNow });
+      const failingApp = await buildApp({ cols: { ...m.collections, saves: failsOnEquipmentGrant() }, jwt, internalKey: 'k', commercial: comm, now: () => fakeNow });
       let coinsBeforeDay30 = 0;
       try {
         for (let day = 1; day < 30; day++) {
@@ -507,7 +533,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
         expect(retried.data.reward.bonusCoins).toBeGreaterThan(0);
         const equips = Object.values(retried.data.save.equipmentInv ?? {}) as Array<{ defId: string }>;
         expect(equips.length).toBe(1);
-        expect(equips[0].defId).toBe(retried.data.reward.id);
+        expect(equips[0]!.defId).toBe(retried.data.reward.id);
         const expectedCoins = coinsBeforeDay30 + retried.data.reward.bonusCoins;
         expect(retried.data.save.wallet.coins).toBe(expectedCoins); // bonus delivered exactly once, not doubled by the retry
 
@@ -534,7 +560,7 @@ describe.skipIf(!mongo)('meta retention e2e', () => {
 
       class FlakyCommercial extends FakeCommercial {
         fail = true;
-        async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
+        override async grant(a: { accountId: string; amount: number; reason: string; orderId: string }): ReturnType<CommercialClient['grant']> {
           if (this.fail) return { ok: false as const, error: 'injected failure' };
           return super.grant(a);
         }

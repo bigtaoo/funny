@@ -15,6 +15,7 @@ import { createInternalAuth } from '@nw/shared';
 import { createCommercialMongo, type CommercialMongo } from '../src/db';
 import { CommercialService } from '../src/service';
 import { startInternalHttp } from '../src/internalHttp';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_commercial_http_gaps_test';
@@ -62,29 +63,29 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
   it('GET /health: no auth required', async () => {
     const r = await fetch(`${base}/health`);
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ ok: true, service: 'commercial' });
+    expect(await jsonBody(r)).toEqual({ ok: true, service: 'commercial' });
   });
 
   it('POST /internal/spend: debits coins', async () => {
     await recharge('spend-a', 'rx-spend-1');
-    const before = await (await get('/internal/wallet?accountId=spend-a')).json();
+    const before = await jsonBody(await get('/internal/wallet?accountId=spend-a'));
     const r = await post('/internal/spend', { accountId: 'spend-a', amount: 200, reason: 'test', orderId: 'sp1' });
     expect(r.status).toBe(200);
-    const b = await r.json();
+    const b = await jsonBody(r);
     expect(b).toMatchObject({ ok: true, coinsAfter: before.coins - 200 });
   });
 
   it('POST /internal/grant: credits coins', async () => {
     const r = await post('/internal/grant', { accountId: 'grant-a', amount: 300, reason: 'gift', orderId: 'gr1' });
     expect(r.status).toBe(200);
-    expect(await r.json()).toMatchObject({ ok: true, coinsAfter: 300 });
+    expect(await jsonBody(r)).toMatchObject({ ok: true, coinsAfter: 300 });
   });
 
   it('POST /internal/gacha/draw: debits + returns results', async () => {
     await recharge('gacha-a', 'rx-gacha-1');
     const r = await post('/internal/gacha/draw', { accountId: 'gacha-a', poolId: 'standard', count: 1, orderId: 'gd1' });
     expect(r.status).toBe(200);
-    const b = await r.json();
+    const b = await jsonBody(r);
     expect(b.ok).toBe(true);
     expect(b.results).toHaveLength(1);
   });
@@ -92,11 +93,11 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
   it('POST /internal/order/delivered: marks an order delivered', async () => {
     await recharge('order-a', 'rx-order-1');
     const charge = await post('/internal/shop/charge', { accountId: 'order-a', itemId: 'protect_enhance', cost: 500, orderId: 'od-gap-1' });
-    expect((await charge.json()).ok).toBe(true);
+    expect((await jsonBody(charge)).ok).toBe(true);
     const r = await post('/internal/order/delivered', { orderId: 'od-gap-1' });
     expect(r.status).toBe(200);
-    expect(await r.json()).toMatchObject({ ok: true });
-    const undelivered = await (await get('/internal/orders/undelivered?accountId=order-a')).json();
+    expect(await jsonBody(r)).toMatchObject({ ok: true });
+    const undelivered = await jsonBody(await get('/internal/orders/undelivered?accountId=order-a'));
     expect(undelivered.orders).toHaveLength(0);
   });
 
@@ -112,45 +113,45 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
         accountId: 'nc-gap-b', platform: 'web', receipt: 'product:monthly_card', receiptId: 'ncgap2', expectedProduct: 'monthly_card',
       });
       expect(r.status).toBe(200);
-      expect(await r.json()).toEqual({ ok: true, product: 'monthly_card' });
+      expect(await jsonBody(r)).toEqual({ ok: true, product: 'monthly_card' });
     });
   });
 
   it('POST /internal/ads/credit', async () => {
     const r = await post('/internal/ads/credit', { accountId: 'ads-a', amount: 50, dayKey: '2026-08-14' });
     expect(r.status).toBe(200);
-    expect(await r.json()).toMatchObject({ ok: true });
+    expect(await jsonBody(r)).toMatchObject({ ok: true });
   });
 
   it('POST /internal/victory/credit', async () => {
     const r = await post('/internal/victory/credit', { accountId: 'victory-a', amount: 5, dayKey: '2026-08-14' });
     expect(r.status).toBe(200);
-    expect(await r.json()).toMatchObject({ ok: true });
+    expect(await jsonBody(r)).toMatchObject({ ok: true });
   });
 
   describe('promo codes + redeem', () => {
     it('GET /internal/promo/codes: empty initially', async () => {
       const r = await get('/internal/promo/codes');
       expect(r.status).toBe(200);
-      expect((await r.json()).codes).toEqual([]);
+      expect((await jsonBody(r)).codes).toEqual([]);
     });
 
     it('POST /internal/promo/codes: creates a code, then GET lists it', async () => {
       const r = await post('/internal/promo/codes', { code: 'GAPCODE', coins: 150, createdBy: 'admin-gap' });
       expect(r.status).toBe(200);
-      expect(await r.json()).toMatchObject({ ok: true, code: 'GAPCODE' });
-      const list = await (await get('/internal/promo/codes')).json();
+      expect(await jsonBody(r)).toMatchObject({ ok: true, code: 'GAPCODE' });
+      const list = await jsonBody(await get('/internal/promo/codes'));
       expect(list.codes.some((c: { _id: string }) => c._id === 'GAPCODE')).toBe(true);
     });
 
     it('POST /internal/promo/redeem: credits the account, rejects unknown codes', async () => {
       const r = await post('/internal/promo/redeem', { accountId: 'promo-gap-a', code: 'gapcode' }); // lowercase — case-insensitive
       expect(r.status).toBe(200);
-      expect(await r.json()).toMatchObject({ ok: true, coinsGranted: 150 });
+      expect(await jsonBody(r)).toMatchObject({ ok: true, coinsGranted: 150 });
 
       const bad = await post('/internal/promo/redeem', { accountId: 'promo-gap-a', code: 'NO-SUCH-CODE' });
       expect(bad.status).toBe(200);
-      expect(await bad.json()).toMatchObject({ ok: false });
+      expect(await jsonBody(bad)).toMatchObject({ ok: false });
     });
   });
 
@@ -158,7 +159,7 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
     it('POST /internal/paddle/complete: credits with first-purchase bonus', async () => {
       const r = await post('/internal/paddle/complete', { accountId: 'paddle-gap-a', transactionId: 'txn-gap-1', coins: 500, usdCents: 999 });
       expect(r.status).toBe(200);
-      expect((await r.json()).ok).toBe(true);
+      expect((await jsonBody(r)).ok).toBe(true);
     });
 
     it('POST /internal/paddle/event: records an event; GET /internal/paddle/events lists it filtered by accountId/transactionId', async () => {
@@ -166,35 +167,35 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
         transactionId: 'txn-gap-1', eventType: 'transaction.completed', status: 'completed', accountId: 'paddle-gap-a', rawEvent: '{"raw":true}',
       });
       expect(r.status).toBe(200);
-      expect(await r.json()).toEqual({ ok: true });
+      expect(await jsonBody(r)).toEqual({ ok: true });
 
-      const byAccount = await (await get('/internal/paddle/events?accountId=paddle-gap-a')).json();
+      const byAccount = await jsonBody(await get('/internal/paddle/events?accountId=paddle-gap-a'));
       expect(byAccount.events).toHaveLength(1);
-      const byTxn = await (await get('/internal/paddle/events?transactionId=txn-gap-1&limit=5')).json();
+      const byTxn = await jsonBody(await get('/internal/paddle/events?transactionId=txn-gap-1&limit=5'));
       expect(byTxn.events).toHaveLength(1);
-      const byNeither = await (await get('/internal/paddle/events?accountId=nobody')).json();
+      const byNeither = await jsonBody(await get('/internal/paddle/events?accountId=nobody'));
       expect(byNeither.events).toHaveLength(0);
     });
 
     it('POST /internal/paddle/refund: decrements totalRechargeCents for the completed transaction', async () => {
-      const before = await (await get('/internal/wallet?accountId=paddle-gap-a')).json();
+      const before = await jsonBody(await get('/internal/wallet?accountId=paddle-gap-a'));
       expect(before.totalRechargeCents).toBeGreaterThan(0);
       const r = await post('/internal/paddle/refund', { transactionId: 'txn-gap-1' });
       expect(r.status).toBe(200);
-      const b = await r.json();
+      const b = await jsonBody(r);
       expect(b).toMatchObject({ ok: true });
       expect(b.decrementedCents).toBeGreaterThan(0);
-      const after = await (await get('/internal/wallet?accountId=paddle-gap-a')).json();
+      const after = await jsonBody(await get('/internal/wallet?accountId=paddle-gap-a'));
       expect(after.totalRechargeCents).toBe(before.totalRechargeCents - b.decrementedCents);
     });
   });
 
   describe('gacha pools', () => {
     it('GET /internal/gacha/pools: lists static pools; ?active=1 filters to currently-open ones', async () => {
-      const all = await (await get('/internal/gacha/pools')).json();
+      const all = await jsonBody(await get('/internal/gacha/pools'));
       expect(all.ok).toBe(true);
       expect(Array.isArray(all.pools)).toBe(true);
-      const active = await (await get(`/internal/gacha/pools?active=1&now=${Date.now()}`)).json();
+      const active = await jsonBody(await get(`/internal/gacha/pools?active=1&now=${Date.now()}`));
       expect(active.ok).toBe(true);
     });
 
@@ -204,34 +205,34 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
         createdBy: 'admin-gap',
       });
       expect(shadow.status).toBe(200);
-      expect(await shadow.json()).toMatchObject({ ok: false, error: 'BAD_REQUEST' });
+      expect(await jsonBody(shadow)).toMatchObject({ ok: false, error: 'BAD_REQUEST' });
 
       const created = await post('/internal/gacha/pool/custom', {
         config: { id: 'gapfest', name: 'Gap Fest', costSingle: 150, startAt: 0, endAt: 9_999_999_999_999, categories: [{ category: 'skin', weight: 100, items: [{ itemId: 'skin_l1', weight: 1 }] }] },
         createdBy: 'admin-gap',
       });
       expect(created.status).toBe(200);
-      expect(await created.json()).toEqual({ ok: true, id: 'gapfest' });
+      expect(await jsonBody(created)).toEqual({ ok: true, id: 'gapfest' });
     });
 
     it('the custom pool is drawable, then POST /internal/gacha/pool/close makes it unavailable', async () => {
       await recharge('gapfest-buyer', 'rx-gapfest-1');
       const draw = await post('/internal/gacha/draw', { accountId: 'gapfest-buyer', poolId: 'gapfest', count: 1, orderId: 'gf1' });
-      expect((await draw.json()).ok).toBe(true);
+      expect((await jsonBody(draw)).ok).toBe(true);
 
       const close = await post('/internal/gacha/pool/close', { id: 'gapfest' });
       expect(close.status).toBe(200);
-      expect(await close.json()).toMatchObject({ ok: true });
+      expect(await jsonBody(close)).toMatchObject({ ok: true });
 
       const afterClose = await post('/internal/gacha/draw', { accountId: 'gapfest-buyer', poolId: 'gapfest', count: 1, orderId: 'gf2' });
-      expect(await afterClose.json()).toEqual({ ok: false, error: 'POOL_UNAVAILABLE' });
+      expect(await jsonBody(afterClose)).toEqual({ ok: false, error: 'POOL_UNAVAILABLE' });
     });
   });
 
   it('POST /internal/fate/redeem: a fresh account with no fate points is rejected (route reachable; deep fate-accrual logic covered elsewhere)', async () => {
     const r = await post('/internal/fate/redeem', { accountId: 'fate-gap-a', itemId: 'skin_lim2', orderId: 'fr-gap-1' });
     expect(r.status).toBe(200);
-    expect((await r.json()).ok).toBe(false);
+    expect((await jsonBody(r)).ok).toBe(false);
   });
 
   describe('monthly / year card + starter pack', () => {
@@ -239,16 +240,16 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
       await recharge('mc-gap-a', 'rx-mc-1');
       const buy = await post('/internal/monthly-card/buy', { accountId: 'mc-gap-a', orderId: 'mcb-gap-1' });
       expect(buy.status).toBe(200);
-      expect((await buy.json()).ok).toBe(true);
+      expect((await jsonBody(buy)).ok).toBe(true);
 
       const claim = await post('/internal/monthly-card/claim', { accountId: 'mc-gap-a', dayKey: '2026-08-14' });
       expect(claim.status).toBe(200);
-      const claimBody = await claim.json();
+      const claimBody = await jsonBody(claim);
       expect(claimBody.ok).toBe(true);
       expect(claimBody.claimed).toBeGreaterThan(0);
       // Same day again -> ok:true but claimed:0 (no double-drip; ok stays true, this is not an error).
       const claim2 = await post('/internal/monthly-card/claim', { accountId: 'mc-gap-a', dayKey: '2026-08-14' });
-      const claim2Body = await claim2.json();
+      const claim2Body = await jsonBody(claim2);
       expect(claim2Body.ok).toBe(true);
       expect(claim2Body.claimed).toBe(0);
     });
@@ -257,18 +258,18 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
       await recharge('yc-gap-a', 'rx-yc-1');
       const buy = await post('/internal/year-card/buy', { accountId: 'yc-gap-a', orderId: 'ycb-gap-1' });
       expect(buy.status).toBe(200);
-      expect((await buy.json()).ok).toBe(true);
+      expect((await jsonBody(buy)).ok).toBe(true);
     });
 
     it('POST /internal/starter/buy: starter_draw then starter_growth', async () => {
       await recharge('starter-gap-a', 'rx-starter-1');
       const draw = await post('/internal/starter/buy', { accountId: 'starter-gap-a', productId: 'starter_draw', orderId: 'sdo-gap-1' });
       expect(draw.status).toBe(200);
-      expect((await draw.json()).ok).toBe(true);
+      expect((await jsonBody(draw)).ok).toBe(true);
 
       const growth = await post('/internal/starter/buy', { accountId: 'starter-gap-a', productId: 'starter_growth', orderId: 'sgo-gap-1' });
       expect(growth.status).toBe(200);
-      expect((await growth.json()).ok).toBe(true);
+      expect((await jsonBody(growth)).ok).toBe(true);
     });
   });
 
@@ -278,6 +279,6 @@ describe.skipIf(!mongo)('commercial internalHttp routes gap-fill e2e', () => {
 
     const ok = await get('/internal/audit/coin-gains?dayKey=2026-08-14&minGain=1');
     expect(ok.status).toBe(200);
-    expect((await ok.json()).ok).toBe(true);
+    expect((await jsonBody(ok)).ok).toBe(true);
   });
 });

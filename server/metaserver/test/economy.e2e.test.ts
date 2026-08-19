@@ -99,7 +99,7 @@ class FakeCommercial implements CommercialClient {
     const ex = this.orders.get(a.orderId);
     if (ex) {
       const p = this.pity.get(a.accountId)?.[a.poolId] ?? 0;
-      return { ok: true as const, orderId: a.orderId, coinsAfter: this.bal(a.accountId), pityAfter: p, results: ex.result.results ?? [] };
+      return { ok: true as const, orderId: a.orderId, coinsAfter: this.bal(a.accountId), pityAfter: p, results: ex.result.results ?? [], fateGained: 0, fatePointsAfter: 0 };
     }
     const cost = a.count === 10 ? 1350 : 150 * a.count;
     if (this.bal(a.accountId) < cost) return { ok: false as const, error: 'INSUFFICIENT_FUNDS' };
@@ -108,7 +108,7 @@ class FakeCommercial implements CommercialClient {
     const p = (this.pity.get(a.accountId)?.[a.poolId] ?? 0) + a.count;
     this.pity.set(a.accountId, { ...(this.pity.get(a.accountId) ?? {}), [a.poolId]: p });
     this.orders.set(a.orderId, { accountId: a.accountId, kind: 'gacha', status: 'charged', result: { results, poolId: a.poolId } });
-    return { ok: true as const, orderId: a.orderId, coinsAfter: this.bal(a.accountId), pityAfter: p, results };
+    return { ok: true as const, orderId: a.orderId, coinsAfter: this.bal(a.accountId), pityAfter: p, results, fateGained: 0, fatePointsAfter: 0 };
   }
   /** Simulates a network/commercial-side failure on the fire-and-forget orderDelivered call (2026-07-15 latency fix). */
   failDelivered = false;
@@ -205,6 +205,19 @@ class FakeCommercial implements CommercialClient {
     this.coins.set(a.accountId, this.bal(a.accountId) + entry.coins);
     return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: entry.coins };
   }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async createCustomPool(): Promise<never> { throw new Error('FakeCommercial.createCustomPool is not stubbed in this test'); }
+  async closeLimitedPool(): Promise<never> { throw new Error('FakeCommercial.closeLimitedPool is not stubbed in this test'); }
+  async listLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listLimitedPools is not stubbed in this test'); }
+  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
+  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
+  async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed in this test'); }
+  async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed in this test'); }
+  async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed in this test'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
+  async auditCoinGains(): Promise<never> { throw new Error('FakeCommercial.auditCoinGains is not stubbed in this test'); }
 }
 
 describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
@@ -1032,6 +1045,8 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     sent: Array<{ dispatchKey: string; to: string; content: SystemMailContent }> = [];
     async proxy(): Promise<{ status: number; data: unknown }> { return { status: 503, data: {} }; }
     async claimMail(): Promise<{ error: 'NOT_FOUND' }> { return { error: 'NOT_FOUND' }; }
+    // Added to MetaSocialsvcClient later; this suite never unclaims, so throw rather than pretend.
+    async unclaimMail(): Promise<never> { throw new Error('FakeSocialsvc.unclaimMail is not stubbed in this test'); }
     async insertSystemMail(dispatchKey: string, to: string, content: SystemMailContent) {
       this.sent.push({ dispatchKey, to, content });
       return { mailId: `${dispatchKey}:${to}`, inserted: true, hasAttachment: !!content.attachments?.length };

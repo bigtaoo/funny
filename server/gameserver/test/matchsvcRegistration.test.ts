@@ -5,6 +5,9 @@ import type { GameEnv } from '../src/config';
 import { registerWithMatchsvc, reportLoadHeartbeat } from '../src/matchsvcRegistration';
 
 const BASE_ENV: GameEnv = {
+  jwtSecret: 's',
+  mongoUri: 'mongodb://localhost:27017',
+  mongoDb: 'nw_test',
   internalKey: 'k',
   port: 8081,
   host: '0.0.0.0',

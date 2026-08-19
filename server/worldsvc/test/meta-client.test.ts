@@ -85,7 +85,7 @@ describe('HttpWorldMetaClient.grantMaterial', () => {
     const c = new HttpWorldMetaClient(base, KEY);
     await expect(c.grantMaterial('acc1', 'wood', 10, 'order-1')).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    const [logMsg, ctx] = errSpy.mock.calls[0];
+    const [logMsg, ctx] = errSpy.mock.calls[0]!;
     expect(logMsg).toBe('[worldsvc] meta.grantMaterial failed');
     expect(ctx).toMatchObject({ accountId: 'acc1', material: 'wood', qty: 10, orderId: 'order-1', status: 500 });
   });
@@ -204,7 +204,7 @@ describe('HttpWorldMetaClient.grantTitle', () => {
     const c = new HttpWorldMetaClient(base, KEY);
     await expect(c.grantTitle('acc1', 'title-champion')).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    const [logMsg, ctx] = errSpy.mock.calls[0];
+    const [logMsg, ctx] = errSpy.mock.calls[0]!;
     expect(logMsg).toBe('[worldsvc] meta.grantTitle failed');
     expect(ctx).toMatchObject({ accountId: 'acc1', titleId: 'title-champion', status: 500 });
   });

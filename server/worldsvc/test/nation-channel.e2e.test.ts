@@ -6,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWorldMongo, type WorldMongo, type NationMessageDoc } from '../src/db';
 import { NationChannelService } from '../src/nationChannelService';
 import { nullWorldCommercialClient, type WorldCommercialClient } from '../src/commercialClient';
-import type { HttpWorldGatewayClient } from '../src/gatewayClient';
+import type { WorldGatewayClient } from '../src/gatewayClient';
 import type { WorldMetaClient } from '../src/metaClient';
 import type { WorldSocialsvcClient, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
 
@@ -30,7 +30,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
   const broadcasts: Array<Record<string, unknown>> = [];
   const spends: Array<{ accountId: string; amount: number }> = [];
 
-  const fakeGateway: HttpWorldGatewayClient = {
+  const fakeGateway: WorldGatewayClient = {
     available: true,
     async push() { /* targeted push unused by nation channel */ },
     async broadcast(recipients, msg) {
@@ -87,7 +87,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
 
     const history = await svc.getChannel(W, 'alice');
     expect(history).toHaveLength(1);
-    expect(history[0].body).toBe('hello world');
+    expect(history[0]!.body).toBe('hello world');
   });
 
   it('sendMessage: masks a sensitive word instead of rejecting delivery (CONTENT_MODERATION_DESIGN.md CM5, mask-not-reject like DM/family chat)', async () => {
@@ -212,7 +212,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       await svc.sendMessage(W, 'alice', 'Alice', 'settled sender posts');
       const history = await svc.getChannel(W, 'bob');
       expect(history).toHaveLength(1);
-      expect(history[0].body).toBe('settled sender posts');
+      expect(history[0]!.body).toBe('settled sender posts');
     });
   });
 
@@ -220,12 +220,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
     const fakeMeta: WorldMetaClient = {
       available: true,
       async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice' } : null; },
-      async deductMaterial() { throw new Error('unused'); },
       async grantMaterial() { /* no-op */ },
       async getSaveFields() { return null; },
-      async escrowEquipment() { throw new Error('unused'); },
-      async grantEquipment() { /* no-op */ },
       async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
     };
     const svc = new NationChannelService({
       cols: mongo!.collections,
@@ -235,7 +233,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       now: () => 2000,
     });
     await svc.sendMessage(W, 'alice', 'Alice', 'hi');
-    expect(broadcasts[0]['fromPublicId']).toBe('alice#0042');
+    expect(broadcasts[0]!['fromPublicId']).toBe('alice#0042');
   });
 
   it('fromPublicId is empty string when meta not configured', async () => {
@@ -246,9 +244,9 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       now: () => 3000,
     });
     await svc.sendMessage(W, 'alice', 'Alice', 'hi');
-    expect(broadcasts[0]['fromPublicId']).toBe('');
+    expect(broadcasts[0]!['fromPublicId']).toBe('');
     // Must not expose the raw accountId as publicId.
-    expect(broadcasts[0]['fromPublicId']).not.toBe('alice');
+    expect(broadcasts[0]!['fromPublicId']).not.toBe('alice');
   });
 
   // Regression: the profile popup (client) needs a real public id to open + let the user
@@ -259,12 +257,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice' } : null; },
-        async deductMaterial() { throw new Error('unused'); },
         async grantMaterial() { /* no-op */ },
         async getSaveFields() { return null; },
-        async escrowEquipment() { throw new Error('unused'); },
-        async grantEquipment() { /* no-op */ },
         async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
       };
       const svc = new NationChannelService({
         cols: mongo!.collections,
@@ -281,12 +277,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice' } : null; },
-        async deductMaterial() { throw new Error('unused'); },
         async grantMaterial() { /* no-op */ },
         async getSaveFields() { return null; },
-        async escrowEquipment() { throw new Error('unused'); },
-        async grantEquipment() { /* no-op */ },
         async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
       };
       const svc = new NationChannelService({
         cols: mongo!.collections,
@@ -299,7 +293,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
 
       const history = await svc.getChannel(W, 'alice');
       expect(history).toHaveLength(1);
-      expect(history[0].senderPublicId).toBe('alice#0042');
+      expect(history[0]!.senderPublicId).toBe('alice#0042');
     });
 
     it('getChannel() falls back to empty string for legacy docs written before this field existed', async () => {
@@ -323,7 +317,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       });
       const history = await svc.getChannel(W, 'alice');
       expect(history).toHaveLength(1);
-      expect(history[0].senderPublicId).toBe('');
+      expect(history[0]!.senderPublicId).toBe('');
     });
   });
 
@@ -334,12 +328,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'RealNickname' } : null; },
-        async deductMaterial() { throw new Error('unused'); },
         async grantMaterial() { /* no-op */ },
         async getSaveFields() { return null; },
-        async escrowEquipment() { throw new Error('unused'); },
-        async grantEquipment() { /* no-op */ },
         async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
       };
       const svc = new NationChannelService({
         cols: mongo!.collections,
@@ -351,22 +343,20 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       // Client sends a stale cached name (e.g. the raw loginId) — meta's real nickname must win.
       const result = await svc.sendMessage(W, 'alice', '233784986', 'hi');
       expect(result.senderName).toBe('RealNickname');
-      expect(broadcasts[0]['fromName']).toBe('RealNickname');
+      expect(broadcasts[0]!['fromName']).toBe('RealNickname');
 
       const history = await svc.getChannel(W, 'alice');
-      expect(history[0].senderName).toBe('RealNickname');
+      expect(history[0]!.senderName).toBe('RealNickname');
     });
 
     it('sendMessage() falls back to the client-supplied senderName when meta has no profile for the account', async () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile() { return null; },
-        async deductMaterial() { throw new Error('unused'); },
         async grantMaterial() { /* no-op */ },
         async getSaveFields() { return null; },
-        async escrowEquipment() { throw new Error('unused'); },
-        async grantEquipment() { /* no-op */ },
         async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
       };
       const svc = new NationChannelService({
         cols: mongo!.collections,
@@ -398,7 +388,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
   describe('title / sectName / familyName resolution', () => {
     const fakeMetaWithTitle: WorldMetaClient = {
       available: true,
-      async getProfile(id) {
+      async getProfile(id: string) {
         return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice', equippedTitle: 'Grandmaster' } : null;
       },
       async deductMaterial() { throw new Error('unused'); },
@@ -421,6 +411,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
         async refreshProsperity() { return 0; },
         async resetSlgState() { /* no-op */ },
         async push() { /* no-op */ },
+  bumpActivityAndProsperity: () => { throw new Error('fake WorldSocialsvcClient.bumpActivityAndProsperity() is not stubbed in this test'); },
       };
     }
 

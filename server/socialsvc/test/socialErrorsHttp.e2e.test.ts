@@ -14,6 +14,7 @@ import { FriendService } from '../src/friendService';
 import { MailService } from '../src/mailService';
 import { startHttpApi } from '../src/httpApi';
 import { FakeMeta, FakeGateway } from './harness';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017';
 const DB = 'nw_social_errors_http_test';
@@ -95,7 +96,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
   it('GET /social/family/search: no ?tag → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/family/search`, { headers: auth('leader') });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/requests/:id/respond: unknown requestId → 404 NOT_FOUND', async () => {
@@ -103,25 +104,25 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('leader'), ...json }, body: JSON.stringify({ accept: true }),
     });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('POST /social/family/leave: non-member → 403 NOT_IN_FAMILY', async () => {
     const r = await fetch(`${base}/social/family/leave`, { method: 'POST', headers: auth('outsider') });
     expect(r.status).toBe(403);
-    expect((await r.json()).error.code).toBe('NOT_IN_FAMILY');
+    expect((await jsonBody(r)).error.code).toBe('NOT_IN_FAMILY');
   });
 
   it('POST /social/family/leave: leader cannot leave → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/family/leave`, { method: 'POST', headers: auth('leader') });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/kick: missing targetId → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/family/kick`, { method: 'POST', headers: { ...auth('leader'), ...json }, body: '{}' });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/kick: self-kick → 400 BAD_REQUEST', async () => {
@@ -129,7 +130,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('leader'), ...json }, body: JSON.stringify({ targetId: 'leader' }),
     });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/kick: unknown target → 404 NOT_FOUND', async () => {
@@ -137,7 +138,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('leader'), ...json }, body: JSON.stringify({ targetId: 'no-such-account' }),
     });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('POST /social/family/kick: plain member cannot kick → 403 NO_PERMISSION', async () => {
@@ -146,13 +147,13 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('member'), ...json }, body: JSON.stringify({ targetId: 'elder' }),
     });
     expect(r.status).toBe(403);
-    expect((await r.json()).error.code).toBe('NO_PERMISSION');
+    expect((await jsonBody(r)).error.code).toBe('NO_PERMISSION');
   });
 
   it('POST /social/family/role: missing fields → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/family/role`, { method: 'POST', headers: { ...auth('leader'), ...json }, body: '{}' });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/role: cannot promote to leader → 400 BAD_REQUEST', async () => {
@@ -160,7 +161,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('leader'), ...json }, body: JSON.stringify({ targetId: 'member', role: 'leader' }),
     });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/role: non-leader caller → 403 NO_PERMISSION', async () => {
@@ -168,7 +169,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('elder'), ...json }, body: JSON.stringify({ targetId: 'member', role: 'elder' }),
     });
     expect(r.status).toBe(403);
-    expect((await r.json()).error.code).toBe('NO_PERMISSION');
+    expect((await jsonBody(r)).error.code).toBe('NO_PERMISSION');
   });
 
   it('POST /social/family/role: unknown target → 404 NOT_FOUND', async () => {
@@ -176,19 +177,19 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('leader'), ...json }, body: JSON.stringify({ targetId: 'no-such-account', role: 'elder' }),
     });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('POST /social/family/disband: non-leader → 403 NO_PERMISSION', async () => {
     const r = await fetch(`${base}/social/family/disband`, { method: 'POST', headers: auth('elder') });
     expect(r.status).toBe(403);
-    expect((await r.json()).error.code).toBe('NO_PERMISSION');
+    expect((await jsonBody(r)).error.code).toBe('NO_PERMISSION');
   });
 
   it('POST /social/family/announcement: missing field → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/family/announcement`, { method: 'POST', headers: { ...auth('leader'), ...json }, body: '{}' });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/announcement: over 200 chars → 400 BAD_REQUEST', async () => {
@@ -196,7 +197,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('leader'), ...json }, body: JSON.stringify({ announcement: 'x'.repeat(201) }),
     });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/announcement: plain member → 403 NO_PERMISSION', async () => {
@@ -204,13 +205,13 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('member'), ...json }, body: JSON.stringify({ announcement: 'hi' }),
     });
     expect(r.status).toBe(403);
-    expect((await r.json()).error.code).toBe('NO_PERMISSION');
+    expect((await jsonBody(r)).error.code).toBe('NO_PERMISSION');
   });
 
   it('GET /social/family/:id/messages: non-member → 403 NOT_IN_FAMILY', async () => {
     const r = await fetch(`${base}/social/family/fam:ERRT/messages`, { headers: auth('outsider') });
     expect(r.status).toBe(403);
-    expect((await r.json()).error.code).toBe('NOT_IN_FAMILY');
+    expect((await jsonBody(r)).error.code).toBe('NOT_IN_FAMILY');
   });
 
   // ── Friends ─────────────────────────────────────────────────────────────────
@@ -218,7 +219,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
   it('POST /social/friends/search: missing publicId → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/friends/search`, { method: 'POST', headers: { ...auth('friend-a'), ...json }, body: '{}' });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/friends/search: unknown publicId → 404 NOT_FOUND', async () => {
@@ -226,13 +227,13 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('friend-a'), ...json }, body: JSON.stringify({ publicId: 'no-such-public-id' }),
     });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('POST /social/friends/block: missing publicId → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/friends/block`, { method: 'POST', headers: { ...auth('friend-a'), ...json }, body: '{}' });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/friends/block: unknown publicId → 404 NOT_FOUND', async () => {
@@ -240,7 +241,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('friend-a'), ...json }, body: JSON.stringify({ publicId: 'no-such-public-id' }),
     });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   // reportFriend: newly added to openapi-social.yml this pass (existed in httpApi.ts since 2026-07-27
@@ -248,7 +249,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
   it('POST /social/friends/report: missing publicId → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/friends/report`, { method: 'POST', headers: { ...auth('friend-a'), ...json }, body: '{}' });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/friends/report: unknown publicId → 404 NOT_FOUND', async () => {
@@ -256,7 +257,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('friend-a'), ...json }, body: JSON.stringify({ publicId: 'no-such-public-id', reason: 'spam' }),
     });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('POST /social/friends/report: reporting yourself → 404 NOT_FOUND (reportUser treats self-target as unresolved)', async () => {
@@ -264,7 +265,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('friend-a'), ...json }, body: JSON.stringify({ publicId: 'P-FRIEND-A', reason: 'spam' }),
     });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('POST /social/friends/report: valid report → 200, persisted with status "open"', async () => {
@@ -272,7 +273,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       method: 'POST', headers: { ...auth('friend-a'), ...json }, body: JSON.stringify({ publicId: 'P-FRIEND-B', reason: 'spamming world chat' }),
     });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(r)).data).toEqual({ ok: true });
     const report = await m.collections.reports.findOne({ reporterId: 'friend-a', targetId: 'friend-b' });
     expect(report).toMatchObject({ status: 'open', reason: 'spamming world chat' });
   });
@@ -282,7 +283,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
   it('GET /social/chat/:convId/messages: unknown conversation → 404 NOT_FOUND', async () => {
     const r = await fetch(`${base}/social/chat/no-such-conv/messages`, { headers: auth('friend-a') });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('GET /social/chat/:convId/messages: real conversation but caller not a member → 404 NOT_FOUND', async () => {
@@ -291,13 +292,13 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
     expect(conv).toBeTruthy();
     const r = await fetch(`${base}/social/chat/${conv!._id}/messages`, { headers: auth('outsider') });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('POST /social/chat/send: missing fields → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/chat/send`, { method: 'POST', headers: { ...auth('friend-a'), ...json }, body: '{}' });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/chat/send: over the per-minute rate limit → 429 RATE_LIMITED', async () => {
@@ -312,7 +313,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
       lastStatus = r.status;
       if (i === 30) {
         expect(r.status).toBe(429);
-        expect((await r.json()).error.code).toBe('RATE_LIMITED');
+        expect((await jsonBody(r)).error.code).toBe('RATE_LIMITED');
       }
     }
     expect(lastStatus).toBe(429);
@@ -321,7 +322,7 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
   it('POST /social/chat/read: missing convId → 400 BAD_REQUEST', async () => {
     const r = await fetch(`${base}/social/chat/read`, { method: 'POST', headers: { ...auth('friend-a'), ...json }, body: '{}' });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   // ── Mail ────────────────────────────────────────────────────────────────────
@@ -329,6 +330,6 @@ describe.skipIf(!mongo)('socialsvc ErrorResp wire-level coverage (2026-08-03 pas
   it('POST /social/mail/:id/read: unknown mailId → 404 NOT_FOUND', async () => {
     const r = await fetch(`${base}/social/mail/no-such-mail/read`, { method: 'POST', headers: auth('friend-a') });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 });

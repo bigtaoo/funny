@@ -142,11 +142,11 @@ describe('console line formatting', () => {
     log.warn('careful');
     log.error('boom');
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('INFO'));
-    expect(logSpy.mock.calls[0][0]).toEqual(expect.stringContaining('[gateway] hello'));
-    expect(warnSpy.mock.calls[0][0]).toEqual(expect.stringContaining('WARN'));
-    expect(warnSpy.mock.calls[0][0]).toEqual(expect.stringContaining('[gateway] careful'));
-    expect(errorSpy.mock.calls[0][0]).toEqual(expect.stringContaining('ERROR'));
-    expect(errorSpy.mock.calls[0][0]).toEqual(expect.stringContaining('[gateway] boom'));
+    expect(logSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('[gateway] hello'));
+    expect(warnSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('WARN'));
+    expect(warnSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('[gateway] careful'));
+    expect(errorSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('ERROR'));
+    expect(errorSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('[gateway] boom'));
   });
 
   it('appends formatted data fields to the console line', async () => {
@@ -154,7 +154,7 @@ describe('console line formatting', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const log = createLogger('svc');
     log.info('msg', { a: 1, b: 'x' });
-    expect(logSpy.mock.calls[0][0]).toEqual(expect.stringContaining('a=1 b=x'));
+    expect(logSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('a=1 b=x'));
   });
 
   it('omits data suffix entirely when data is undefined', async () => {
@@ -162,7 +162,7 @@ describe('console line formatting', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const log = createLogger('svc');
     log.info('plain');
-    const line = logSpy.mock.calls[0][0] as string;
+    const line = logSpy.mock.calls[0]![0] as string;
     expect(line.endsWith('plain')).toBe(true);
   });
 
@@ -171,7 +171,7 @@ describe('console line formatting', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const log = createLogger('svc');
     log.info('failed', { err: new Error('kaboom') });
-    expect(logSpy.mock.calls[0][0]).toEqual(expect.stringContaining('err=kaboom'));
+    expect(logSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('err=kaboom'));
   });
 
   it('JSON.stringifies a plain object value', async () => {
@@ -179,7 +179,7 @@ describe('console line formatting', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const log = createLogger('svc');
     log.info('withObj', { payload: { x: 1, y: 2 } });
-    expect(logSpy.mock.calls[0][0]).toEqual(expect.stringContaining('payload={"x":1,"y":2}'));
+    expect(logSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('payload={"x":1,"y":2}'));
   });
 
   it('falls back to String(v) when JSON.stringify throws on a circular object', async () => {
@@ -189,7 +189,7 @@ describe('console line formatting', () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
     log.info('circ', { o: circular });
-    const line = logSpy.mock.calls[0][0] as string;
+    const line = logSpy.mock.calls[0]![0] as string;
     expect(line).toEqual(expect.stringContaining('o=[object Object]'));
   });
 
@@ -198,7 +198,7 @@ describe('console line formatting', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const log = createLogger('svc');
     log.info('multi', { text: 'line1\nline2\tline3' });
-    const line = logSpy.mock.calls[0][0] as string;
+    const line = logSpy.mock.calls[0]![0] as string;
     expect(line).toEqual(expect.stringContaining('text=line1 line2 line3'));
     expect(line).not.toContain('\n');
   });
@@ -208,7 +208,7 @@ describe('console line formatting', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const log = createLogger('svc');
     log.info('partial', { a: undefined, b: 2 });
-    const line = logSpy.mock.calls[0][0] as string;
+    const line = logSpy.mock.calls[0]![0] as string;
     expect(line).toEqual(expect.stringContaining('b=2'));
     expect(line).not.toContain('a=');
   });
@@ -231,7 +231,7 @@ describe('file sink', () => {
     log.info('hello file', { k: 'v', err: new Error('bad'), skip: undefined });
     expect(existsSync(dir)).toBe(true);
     const [line] = await waitForLines(join(dir, 'svcname.log'), 1);
-    const rec = JSON.parse(line);
+    const rec = JSON.parse(line!);
     expect(rec).toMatchObject({ level: 'info', svc: 'svcname', msg: 'hello file', k: 'v', err: 'bad' });
     expect(rec.skip).toBeUndefined();
     expect(typeof rec.t).toBe('string');
@@ -269,10 +269,10 @@ describe('file sink', () => {
     const parent = createLogger('gateway');
     const child = parent.child('judge');
     child.info('child msg');
-    expect(logSpy.mock.calls[0][0]).toEqual(expect.stringContaining('[gateway:judge] child msg'));
+    expect(logSpy.mock.calls[0]![0]).toEqual(expect.stringContaining('[gateway:judge] child msg'));
     const lines = await waitForLines(join(dir, 'gateway.log'), 1);
     expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0])).toMatchObject({ svc: 'gateway:judge', msg: 'child msg' });
+    expect(JSON.parse(lines[0]!)).toMatchObject({ svc: 'gateway:judge', msg: 'child msg' });
   });
 
   it('ensureDir() failure (mkdirSync throws) is swallowed: fileStream returns null, console still logs', async () => {

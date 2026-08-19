@@ -1,0 +1,28 @@
+{
+  "//": "Type-check config: the same compiler options as tsconfig.json, but with test/** in the program.",
+  "//why": "tsconfig.json is src-only and vitest runs through esbuild (types erased, never checked), so without this second program this package's whole test/ tree gets ZERO type-checking — a fixture that drifted behind its interface stays latent until someone reads it. Added 2026-08-19; mirrors client/tsconfig.test.json. Run via `npm run typecheck:test` (CI: server-checks job, right after the `tsc -b` step).",
+  "//rootDir": "Widened from src to the package root because test/ sits outside src/; composite/declaration off + noEmit because this program only reports diagnostics, it never emits.",
+  "//references": "`references` MUST be repeated here — `extends` does NOT inherit it. Without it @nw/shared resolves through node_modules to shared/dist/*.d.ts instead of being redirected to shared/src, which showed up as 240 bogus TS2307s in metaserver alone. It still needs those dist/*.d.ts to exist, hence the CI ordering.",
+  "//module": "ES2022 rather than the inherited CommonJS: vitest transpiles test files as ESM, and several e2e tests use top-level await, which is legal there but TS1378 under CommonJS.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "module": "ES2022"
+  },
+  "references": [
+    {
+      "path": "../shared"
+    },
+    {
+      "path": "../engine"
+    }
+  ],
+  "include": [
+    "src/**/*",
+    "test/**/*"
+  ]
+}

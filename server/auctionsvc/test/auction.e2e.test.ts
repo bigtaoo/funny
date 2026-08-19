@@ -916,7 +916,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
 
   // ── CC-5 Character-card trading (CHARACTER_CARDS_DESIGN §11, no price guardrail — cold-start pass-through) ────
   const mkCard = (id: string, defId = 'lichuang', extra: Partial<CardInstance> = {}): CardInstance => ({
-    id, defId, level: 1, xp: 0, gear: {}, locked: false, ...extra,
+    id, defId, level: 1, gear: {}, locked: false, ...extra,
   });
 
   it('CC-5 card listing → escrow removes from cardInv + stores instance snapshot + qty always 1', async () => {
@@ -934,7 +934,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
   });
 
   it('CC-5 card buy → instance mailed to buyer (full level/xp snapshot) + seller paid after tax', async () => {
-    seedCard('alice', mkCard('cd1', 'lichuang', { level: 5, xp: 42 }));
+    seedCard('alice', mkCard('cd1', 'lichuang', { level: 5 }));
     const view = await svc.createAuction({
       sellerId: 'alice', itemType: 'card',
       item: { instanceId: 'cd1' }, qty: 1, price: 500, durationSec: DUR,
@@ -945,7 +945,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     // escrow-out: buyer receives the card instance via mail attachment (level/xp snapshot carried as-is)
     const att = mailAtt('bob', 'auction_buy:');
     expect(att?.kind).toBe('card');
-    expect(att?.instance as CardInstance | undefined).toMatchObject({ id: 'cd1', defId: 'lichuang', level: 5, xp: 42 });
+    expect(att?.instance as CardInstance | undefined).toMatchObject({ id: 'cd1', defId: 'lichuang', level: 5 });
     const tax = Math.floor(500 * AUCTION_TAX_RATE);
     expect(mailAtt('alice', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 500 - tax });
   });

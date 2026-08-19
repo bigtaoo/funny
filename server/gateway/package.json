@@ -8,6 +8,8 @@
     "build": "tsc -b",
     "pretypecheck": "npm run proto:gen",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "pretypecheck:test": "npm run proto:gen",
     "predev": "npm run proto:gen",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",

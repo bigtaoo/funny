@@ -46,18 +46,18 @@ describe('recordAdToken', () => {
   }
 
   it('first call returns true', async () => {
-    const cols = { adsTokens: makeCol() } as Parameters<typeof recordAdToken>[0];
+    const cols = { adsTokens: makeCol() } as unknown as Parameters<typeof recordAdToken>[0];
     expect(await recordAdToken(cols, 'hash1', 'acc1', 1000)).toBe(true);
   });
 
   it('duplicate hash returns false (replay)', async () => {
-    const cols = { adsTokens: makeCol() } as Parameters<typeof recordAdToken>[0];
+    const cols = { adsTokens: makeCol() } as unknown as Parameters<typeof recordAdToken>[0];
     await recordAdToken(cols, 'hash1', 'acc1', 1000);
     expect(await recordAdToken(cols, 'hash1', 'acc2', 2000)).toBe(false);
   });
 
   it('different hashes both succeed', async () => {
-    const cols = { adsTokens: makeCol() } as Parameters<typeof recordAdToken>[0];
+    const cols = { adsTokens: makeCol() } as unknown as Parameters<typeof recordAdToken>[0];
     expect(await recordAdToken(cols, 'hashA', 'acc1', 1000)).toBe(true);
     expect(await recordAdToken(cols, 'hashB', 'acc1', 2000)).toBe(true);
   });

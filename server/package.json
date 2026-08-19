@@ -21,6 +21,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "typecheck": "tsc -b tsconfig.build.json",
+    "typecheck:test": "npm run typecheck:test --workspaces --if-present",
     "check:filelength": "node scripts/checkFileLength.mjs",
     "check:workspacecoverage": "node scripts/checkWorkspaceCoverage.mjs",
     "dev:meta": "npm run dev --workspace @nw/metaserver",

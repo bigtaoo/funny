@@ -72,11 +72,11 @@ function makeCore(opts: {
 } = {}) {
   const pwById = opts.pwById ?? {};
   const tilesFindOneImpl = opts.tilesFindOne ?? (() => null);
-  const tilesUpdateOne = opts.tilesUpdateOne ?? vi.fn(async () => ({ matchedCount: 1 }));
-  const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async () => ({ matchedCount: 1 }));
-  const pushTile = vi.fn(async () => {});
-  const recomputeYield = vi.fn(async () => emptyResources());
-  const applyNationChange = vi.fn(async () => true);
+  const tilesUpdateOne = opts.tilesUpdateOne ?? vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 }));
+  const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 }));
+  const pushTile = vi.fn(async (..._args: unknown[]) => {});
+  const recomputeYield = vi.fn(async (..._args: unknown[]) => emptyResources());
+  const applyNationChange = vi.fn(async (..._args: unknown[]) => true);
   const settle = vi.fn((doc: PlayerWorldDoc) => ({ ...doc.resources }));
   let tileCallCount = 0;
 
@@ -95,7 +95,7 @@ function makeCore(opts: {
           findOne: async ({ _id }: { _id: string }) => pwById[_id] ?? null,
           updateOne: pwUpdateOne,
         },
-        marches: { insertOne: vi.fn(async () => ({})) },
+        marches: { insertOne: vi.fn(async (..._args: unknown[]) => ({})) },
       },
     },
     coordX: (tid: string) => Number(tid.split(':')[1]),
@@ -105,7 +105,7 @@ function makeCore(opts: {
     applyNationChange,
     settle,
     marchSeq: 0,
-    pushMarch: vi.fn(async () => {}),
+    pushMarch: vi.fn(async (..._args: unknown[]) => {}),
     marchView: (m: MarchDoc) => m as unknown as never,
   } as unknown as WorldCore;
 
@@ -114,9 +114,9 @@ function makeCore(opts: {
 
 function fakeHelpers() {
   return {
-    transferLoot: vi.fn(async () => emptyResources()),
-    applySectLeaderPenalty: vi.fn(async () => {}),
-    passiveRelocate: vi.fn(async () => {}),
+    transferLoot: vi.fn(async (..._args: unknown[]) => emptyResources()),
+    applySectLeaderPenalty: vi.fn(async (..._args: unknown[]) => {}),
+    passiveRelocate: vi.fn(async (..._args: unknown[]) => {}),
   } as unknown as SHS;
 }
 
@@ -125,7 +125,7 @@ describe('SiegeDamageService.processDueSiegeDamage', () => {
     const { core } = makeCore();
     (core as unknown as { deps: { cols: { siegeDamage: unknown } } }).deps.cols.siegeDamage = {
       find: () => ({ limit: () => ({ toArray: async () => [] }) }),
-      findOneAndDelete: vi.fn(async () => null),
+      findOneAndDelete: vi.fn(async (..._args: unknown[]) => null),
     };
     const svc = new SiegeDamageService(core, fakeHelpers());
     const n = await svc.processDueSiegeDamage(1_000);
@@ -150,7 +150,7 @@ describe('SiegeDamageService.processDueSiegeDamage', () => {
     const { core } = makeCore();
     (core as unknown as { deps: { cols: { siegeDamage: unknown } } }).deps.cols.siegeDamage = {
       find: () => ({ limit: () => ({ toArray: async () => [] }) }),
-      findOneAndDelete: vi.fn(async () => null),
+      findOneAndDelete: vi.fn(async (..._args: unknown[]) => null),
     };
     const svc = new SiegeDamageService(core, fakeHelpers());
     const n = await svc.processDueSiegeDamage(); // no nowMs argument
@@ -166,7 +166,7 @@ describe('SiegeDamageService.processDueSiegeDamage', () => {
     const d1 = dmgDoc({ _id: 'd1' });
     (core as unknown as { deps: { cols: { siegeDamage: unknown } } }).deps.cols.siegeDamage = {
       find: () => ({ limit: () => ({ toArray: async () => [d1] }) }),
-      findOneAndDelete: vi.fn(async () => d1),
+      findOneAndDelete: vi.fn(async (..._args: unknown[]) => d1),
     };
     const svc = new SiegeDamageService(core, fakeHelpers());
     const n = await svc.processDueSiegeDamage(1_000);
@@ -184,7 +184,7 @@ async function settle(
   t: number,
   siegeDamageFindOneAndDelete?: ReturnType<typeof vi.fn>,
 ) {
-  const findOneAndDelete = siegeDamageFindOneAndDelete ?? vi.fn(async () => doc);
+  const findOneAndDelete = siegeDamageFindOneAndDelete ?? vi.fn(async (..._args: unknown[]) => doc);
   (core as unknown as { deps: { cols: { siegeDamage: unknown } } }).deps.cols.siegeDamage = {
     find: () => ({ limit: () => ({ toArray: async () => [doc] }) }),
     findOneAndDelete,
@@ -538,7 +538,7 @@ describe('SiegeHelpersService.buildDefenderConfig', () => {
 
 describe('SiegeHelpersService.recordSiege', () => {
   function makeSvc() {
-    const insertOne = vi.fn(async () => ({}));
+    const insertOne = vi.fn(async (..._args: unknown[]) => ({}));
     const core = {
       deps: { cols: { sieges: { insertOne } } },
       siegeSeq: 0,
@@ -604,9 +604,9 @@ describe('SiegeHelpersService.transferLoot', () => {
     let atkCall = 0;
     const defResults = opts.defenderUpdateResults ?? [{ matchedCount: 1 }];
     const atkResults = opts.attackerUpdateResults ?? [{ matchedCount: 1 }];
-    const defenderUpdateOne = vi.fn(async () => defResults[Math.min(defCall++, defResults.length - 1)]!);
-    const attackerFindOne = vi.fn(async () => opts.attackerRefetch ?? null);
-    const defenderFindOne = vi.fn(async () => opts.defenderRefetch ?? null);
+    const defenderUpdateOne = vi.fn(async (..._args: unknown[]) => defResults[Math.min(defCall++, defResults.length - 1)]!);
+    const attackerFindOne = vi.fn(async (..._args: unknown[]) => opts.attackerRefetch ?? null);
+    const defenderFindOne = vi.fn(async (..._args: unknown[]) => opts.defenderRefetch ?? null);
     const updateOne = vi.fn(async (query: { _id: string }) => {
       // Distinguish attacker vs defender writes by which doc's rev matches (both share one mock,
       // mirroring how `cols.playerWorld` is a single collection for both docs).
@@ -737,8 +737,8 @@ describe('SiegeHelpersService.applySectLeaderPenalty', () => {
     families?: { familyId: string }[];
     members?: PlayerWorldDoc[];
   }) {
-    const updateOne = vi.fn(async () => ({}));
-    const getFamiliesBySect = vi.fn(async () => opts.families ?? []);
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({}));
+    const getFamiliesBySect = vi.fn(async (..._args: unknown[]) => opts.families ?? []);
     const core = {
       deps: {
         cols: {
@@ -825,15 +825,15 @@ describe('SiegeHelpersService.passiveRelocate', () => {
     spot?: { x: number; y: number; level: number; resType?: string } | null;
     afterTile?: TileDoc | null;
   }) {
-    const removeCover = vi.fn(async () => {});
-    const deleteMany = vi.fn(async () => ({}));
-    const tilesUpdateOne = vi.fn(async () => ({}));
-    const pwUpdateOne = vi.fn(async () => ({}));
-    const pushTile = vi.fn(async () => {});
-    const pushTileToObservers = vi.fn(async () => {});
+    const removeCover = vi.fn(async (..._args: unknown[]) => {});
+    const deleteMany = vi.fn(async (..._args: unknown[]) => ({}));
+    const tilesUpdateOne = vi.fn(async (..._args: unknown[]) => ({}));
+    const pwUpdateOne = vi.fn(async (..._args: unknown[]) => ({}));
+    const pushTile = vi.fn(async (..._args: unknown[]) => {});
+    const pushTileToObservers = vi.fn(async (..._args: unknown[]) => {});
     const sendSystemMail = vi.fn();
     let tilesFindOneCall = 0;
-    const baseTileDocs = vi.fn(() => [{ _id: 'newtile1' } as unknown as TileDoc]);
+    const baseTileDocs = vi.fn((..._args: unknown[]) => [{ _id: 'newtile1' } as unknown as TileDoc]);
     const core = {
       deps: {
         cols: {
@@ -850,9 +850,9 @@ describe('SiegeHelpersService.passiveRelocate', () => {
         },
       },
       removeCover,
-      pickRandomEmptyTile: vi.fn(async () => opts.spot ?? null),
+      pickRandomEmptyTile: vi.fn(async (..._args: unknown[]) => opts.spot ?? null),
       baseTileDocs,
-      recomputeYield: vi.fn(async () => emptyResources()),
+      recomputeYield: vi.fn(async (..._args: unknown[]) => emptyResources()),
       pushTile,
       pushTileToObservers,
       mail: { sendSystemMail },

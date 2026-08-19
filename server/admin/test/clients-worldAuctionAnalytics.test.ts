@@ -128,12 +128,12 @@ describe('HttpAuctionClient', () => {
     const rows = await new HttpAuctionClient('http://auction', 'k').queryListings({
       sellerId: 's1',
       itemType: 'card',
-      status: 'active',
+      status: 'open',
       itemName: 'dragon',
       limit: 20,
     });
     expect(rows).toEqual([{ id: 'l1' }]);
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://auction/internal/audit/listings?sellerId=s1&itemType=card&status=active&itemName=dragon&limit=20');
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://auction/internal/audit/listings?sellerId=s1&itemType=card&status=open&itemName=dragon&limit=20');
   });
 });
 

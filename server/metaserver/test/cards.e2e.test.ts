@@ -24,7 +24,7 @@ function makeFakeCommercial(): CommercialClient {
   const bal = (id: string) => coins.get(id) ?? 0;
   return {
     available: true,
-    async getWallet(id: string) { return { coins: bal(id), pity: {} }; },
+    async getWallet(id: string) { return { coins: bal(id), pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 }; },
     async spend() { return { ok: true as const, coinsAfter: 0 }; },
   } as unknown as CommercialClient;
 }
@@ -234,7 +234,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       const wrappedSaves = {
         findOne: realSaves.findOne.bind(realSaves),
         findOneAndUpdate: async () => null,
-      } as typeof realSaves;
+      } as unknown as typeof realSaves;
       const wrappedCols = { ...m.collections, saves: wrappedSaves };
 
       const result = await fuseCards(wrappedCols, () => Date.now(), accountId, targetId, materialIds, 'ik-fuse-exhaust');

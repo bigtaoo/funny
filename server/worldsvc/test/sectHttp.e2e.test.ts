@@ -28,6 +28,7 @@ import { startHttpApi } from '../src/httpApi';
 import type { WorldCommercialClient } from '../src/commercialClient';
 import type { WorldGatewayClient } from '../src/gatewayClient';
 import type { WorldSocialsvcClient, SocialsvcChannel, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_secthttp_test';
@@ -187,7 +188,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, name: 'Nope Sect', tag: 'NOP' }),
     });
     expect(r.status).toBe(403);
-    const body = await r.json();
+    const body = await jsonBody(r);
     expect(body.error.code).toBe('NOT_IN_FAMILY');
   });
 
@@ -199,19 +200,19 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, name: 'Sky Sect', tag: 'SKY' }),
     });
     expect(r.status).toBe(200);
-    const created = (await r.json()).data;
+    const created = (await jsonBody(r)).data;
     expect(created.sectId).toBe(sectId(W, 'SKY'));
     expect(created.leaderId).toBe('alice');
     expect(spends).toEqual([{ accountId: 'alice', amount: SECT_CREATE_COST }]);
 
     const listR = await fetch(`${base}/sect/list?worldId=${W}`, { headers: authFor('alice') });
     expect(listR.status).toBe(200);
-    const list = (await listR.json()).data as Array<{ sectId: string }>;
+    const list = (await jsonBody(listR)).data as Array<{ sectId: string }>;
     expect(list.some((s) => s.sectId === created.sectId)).toBe(true);
 
     const getR = await fetch(`${base}/sect/${encodeURIComponent(created.sectId)}`, { headers: authFor('alice') });
     expect(getR.status).toBe(200);
-    expect((await getR.json()).data.name).toBe('Sky Sect');
+    expect((await jsonBody(getR)).data.name).toBe('Sky Sect');
   });
 
   it('POST /sect/join happy path: a second family leader joins the sect founded above; GET /sect/:id reflects memberFamilyCount', async () => {
@@ -223,7 +224,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
     });
     expect(joinR.status).toBe(200);
     const getR = await fetch(`${base}/sect/${encodeURIComponent(sectId(W, 'SKY'))}`, { headers: authFor('bob') });
-    expect((await getR.json()).data.memberFamilyCount).toBe(2);
+    expect((await jsonBody(getR)).data.memberFamilyCount).toBe(2);
   });
 
   it('POST /sect/join missing fields → 400', async () => {
@@ -249,7 +250,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, targetSectId: sectId(W, 'STM') }),
     });
     expect(allyR.status).toBe(200);
-    const afterAlly = (await (await fetch(`${base}/sect/${encodeURIComponent(sectId(W, 'SKY'))}`, { headers: authFor('alice') })).json()).data;
+    const afterAlly = (await jsonBody(await fetch(`${base}/sect/${encodeURIComponent(sectId(W, 'SKY'))}`, { headers: authFor('alice') }))).data;
     expect(afterAlly.allySectIds).toContain(sectId(W, 'STM'));
 
     const unallyR = await fetch(`${base}/sect/unally`, {
@@ -258,7 +259,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, targetSectId: sectId(W, 'STM') }),
     });
     expect(unallyR.status).toBe(200);
-    const afterUnally = (await (await fetch(`${base}/sect/${encodeURIComponent(sectId(W, 'SKY'))}`, { headers: authFor('alice') })).json()).data;
+    const afterUnally = (await jsonBody(await fetch(`${base}/sect/${encodeURIComponent(sectId(W, 'SKY'))}`, { headers: authFor('alice') }))).data;
     expect(afterUnally.allySectIds).not.toContain(sectId(W, 'STM'));
   });
 
@@ -269,12 +270,12 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, body: 'hello sect' }),
     });
     expect(sendR.status).toBe(200);
-    expect((await sendR.json()).data.body).toBe('hello sect');
+    expect((await jsonBody(sendR)).data.body).toBe('hello sect');
     expect(pushes.some((p) => p.event === 'sect_msg')).toBe(true);
 
     const chanR = await fetch(`${base}/sect/channel?worldId=${W}`, { headers: authFor('bob') });
     expect(chanR.status).toBe(200);
-    const msgs = (await chanR.json()).data as Array<{ body: string }>;
+    const msgs = (await jsonBody(chanR)).data as Array<{ body: string }>;
     expect(msgs.some((mm) => mm.body === 'hello sect')).toBe(true);
   });
 
@@ -285,7 +286,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, body: 'hi' }),
     });
     expect(r.status).toBe(403);
-    expect((await r.json()).error.code).toBe('NOT_IN_SECT');
+    expect((await jsonBody(r)).error.code).toBe('NOT_IN_SECT');
   });
 
   it('POST /sect/vote-remove-leader happy path: a member nominates a replacement, vote is recorded (not yet enough to pass with only 1/2 families)', async () => {
@@ -295,7 +296,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, nomineeFamilyId: 'fam:BW' }),
     });
     expect(r.status).toBe(200);
-    const result = (await r.json()).data;
+    const result = (await jsonBody(r)).data;
     expect(result.passed).toBe(false);
     expect(result.voteCount).toBe(1);
   });
@@ -316,7 +317,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
       body: JSON.stringify({ worldId: W, emblemKey: EMBLEM_KEYS[4], emblemColor: EMBLEM_COLORS[3] }),
     });
     expect(asBob.status).toBe(403);
-    expect((await asBob.json()).error.code).toBe('NO_PERMISSION');
+    expect((await jsonBody(asBob)).error.code).toBe('NO_PERMISSION');
 
     const asAlice = await fetch(`${base}/sect/emblem`, {
       method: 'POST',
@@ -326,7 +327,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
     expect(asAlice.status).toBe(200);
 
     const getR = await fetch(`${base}/sect/${encodeURIComponent(sectId(W, 'SKY'))}`, { headers: authFor('alice') });
-    const sect = (await getR.json()).data as { emblemKey?: string; emblemColor?: number };
+    const sect = (await jsonBody(getR)).data as { emblemKey?: string; emblemColor?: number };
     expect(sect.emblemKey).toBe(EMBLEM_KEYS[4]);
     expect(sect.emblemColor).toBe(EMBLEM_COLORS[3]);
   });
@@ -371,7 +372,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
     });
     expect(leaveR.status).toBe(200);
     const getR = await fetch(`${base}/sect/${encodeURIComponent(sectId(W, 'SKY'))}`, { headers: authFor('alice') });
-    expect((await getR.json()).data.memberFamilyCount).toBe(1);
+    expect((await jsonBody(getR)).data.memberFamilyCount).toBe(1);
   });
 
   it('POST /sect/dissolve happy path: the sect leader dissolves the sect; it disappears from GET /sect/list', async () => {
@@ -382,7 +383,7 @@ describe.skipIf(!mongo)('worldsvc /sect/* httpApi e2e', () => {
     });
     expect(dissolveR.status).toBe(200);
     const listR = await fetch(`${base}/sect/list?worldId=${W}`, { headers: authFor('alice') });
-    const list = (await listR.json()).data as Array<{ sectId: string }>;
+    const list = (await jsonBody(listR)).data as Array<{ sectId: string }>;
     expect(list.some((s) => s.sectId === sectId(W, 'SKY'))).toBe(false);
   });
 });

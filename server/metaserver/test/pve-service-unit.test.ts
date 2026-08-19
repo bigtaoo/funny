@@ -15,8 +15,10 @@
 // double implements, so a real Mongo instance is the pragmatic choice here (not a from-scratch
 // reimplementation of those operators).
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CommercialClient } from '../src/commercialClient';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
+import type { FindOneAndUpdateOptions } from 'mongodb';
 import { buildApp } from '../src/app.js';
 import type { GatewayClient, JudgeReq, JudgeRes } from '../src/gatewayClient.js';
 import { FakeSocialsvc, ThrowingSocialsvc } from './helpers/fakeClients.js';
@@ -135,7 +137,7 @@ describe.skipIf(!mongo)('pve service handlers (src import, coverage backfill)', 
       // rejectIfBanned is cached (AccountCache, 60s TTL) and was already primed to "not banned" by the
       // /auth/device call inside buildAndAuth (auth/credential.ts also calls rejectIfBanned) — rebuild the
       // app (fresh AccountCache) so this account's next ban check is a genuine cache-miss read of Mongo.
-      const rebuiltApp = await buildApp({ cols: m.collections, jwt, internalKey: 'k', gateway, commercial: comm });
+      const rebuiltApp = await buildApp({ cols: m.collections, jwt, internalKey: 'k', gateway, commercial: comm as unknown as CommercialClient });
       try {
         const r = await rebuiltApp.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId: 'ch1_lv1', stars: 3 } });
         expect(r.statusCode).toBe(403);
@@ -311,13 +313,13 @@ describe.skipIf(!mongo)('pve service handlers (src import, coverage backfill)', 
         findOneAndUpdate: async (
           filter: Parameters<typeof realSaves.findOneAndUpdate>[0],
           update: Parameters<typeof realSaves.findOneAndUpdate>[1],
-          opts?: Parameters<typeof realSaves.findOneAndUpdate>[2],
+          opts?: FindOneAndUpdateOptions,
         ) => {
           const current = await realSaves.findOne(filter as Record<string, unknown>);
           const incomingCardInvCount = (update as { $set?: { save?: { cardInvCount?: number } } }).$set?.save?.cardInvCount;
           const isCardGrantWrite = !!current && incomingCardInvCount !== undefined && incomingCardInvCount !== current.save.cardInvCount;
           if (isCardGrantWrite) return null;
-          return realSaves.findOneAndUpdate(filter, update, opts);
+          return opts ? realSaves.findOneAndUpdate(filter, update, opts) : realSaves.findOneAndUpdate(filter, update);
         },
       } as typeof realSaves;
       const failingApp = await buildApp({ cols: { ...m.collections, saves: wrappedSaves }, jwt, internalKey: 'k' });
@@ -504,13 +506,13 @@ describe.skipIf(!mongo)('pve service handlers (src import, coverage backfill)', 
         findOneAndUpdate: async (
           filter: Parameters<typeof realSaves.findOneAndUpdate>[0],
           update: Parameters<typeof realSaves.findOneAndUpdate>[1],
-          opts?: Parameters<typeof realSaves.findOneAndUpdate>[2],
+          opts?: FindOneAndUpdateOptions,
         ) => {
           const current = await realSaves.findOne(filter as Record<string, unknown>);
           const incomingCardInvCount = (update as { $set?: { save?: { cardInvCount?: number } } }).$set?.save?.cardInvCount;
           const isCardGrantWrite = !!current && incomingCardInvCount !== undefined && incomingCardInvCount !== current.save.cardInvCount;
           if (isCardGrantWrite) return null;
-          return realSaves.findOneAndUpdate(filter, update, opts);
+          return opts ? realSaves.findOneAndUpdate(filter, update, opts) : realSaves.findOneAndUpdate(filter, update);
         },
       } as typeof realSaves;
       const failingApp = await buildApp({ cols: { ...m.collections, saves: wrappedSaves }, jwt, internalKey: 'k', gateway });
@@ -544,7 +546,7 @@ describe.skipIf(!mongo)('pve service handlers (src import, coverage backfill)', 
       await m.collections.accounts.updateOne({ _id: accountId }, { $set: { 'flags.banned': true } });
       // Same AccountCache-staleness reasoning as the /pve/clear ban test above: rebuild the app so the
       // ban check is a genuine cache-miss read.
-      const rebuiltApp = await buildApp({ cols: m.collections, jwt, internalKey: 'k', gateway, commercial: comm });
+      const rebuiltApp = await buildApp({ cols: m.collections, jwt, internalKey: 'k', gateway, commercial: comm as unknown as CommercialClient });
       try {
         const r = await rebuiltApp.inject({ method: 'POST', url: '/pve/enter', headers: auth(), payload: { levelId: 'ch1_lv1' } });
         expect(r.statusCode).toBe(403);

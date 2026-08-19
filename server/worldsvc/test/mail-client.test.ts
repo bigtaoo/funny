@@ -116,7 +116,7 @@ describe('HttpWorldMailClient.sendSystemMail', () => {
     const c = new HttpWorldMailClient(base, KEY);
     await expect(c.sendSystemMail('acc1', 'dk-1', content)).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    const [logMsg, ctx] = errSpy.mock.calls[0];
+    const [logMsg, ctx] = errSpy.mock.calls[0]!;
     expect(logMsg).toBe('[worldsvc] mail.sendSystemMail failed');
     expect(ctx).toMatchObject({ accountId: 'acc1', dispatchKey: 'dk-1', status: 500 });
   });
@@ -127,7 +127,7 @@ describe('HttpWorldMailClient.sendSystemMail', () => {
     const c = new HttpWorldMailClient(base, KEY);
     await expect(c.sendSystemMail('acc1', 'dk-1', content)).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    const [logMsg, ctx] = errSpy.mock.calls[0];
+    const [logMsg, ctx] = errSpy.mock.calls[0]!;
     expect(logMsg).toBe('[worldsvc] mail.sendSystemMail rejected');
     expect(ctx).toMatchObject({ accountId: 'acc1', dispatchKey: 'dk-1', err: 'UNKNOWN_RECIPIENT' });
   });

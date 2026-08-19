@@ -7,6 +7,7 @@ import { registerEventAdminRoutes } from '../src/internal/eventAdminRoutes.js';
 import type { InternalCtx } from '../src/internal/context.js';
 import { FakeCollection } from './helpers/fakeCollection.js';
 import { fakeGateway, fakeCommercial, ThrowingSocialsvc } from './helpers/fakeClients.js';
+import { AccountCache } from '../src/accountCache';
 
 const KEY = 'test-internal-key';
 const authHeaders = { 'x-internal-key': KEY };
@@ -32,6 +33,8 @@ function build(seedEvents: EventDoc[] = []) {
     commercial: fakeCommercial(),
     socialsvc: new ThrowingSocialsvc(),
     authed: (headers) => headers['x-internal-key'] === KEY,
+    redis: () => { throw new Error('fake InternalCtx.redis() is not stubbed in this test'); },
+    accountCache: new AccountCache(),
   };
   const app = Fastify();
   registerEventAdminRoutes(app, ctx);

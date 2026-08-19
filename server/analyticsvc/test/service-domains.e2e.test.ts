@@ -226,7 +226,7 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       // The whole result stays non-decreasing under the same `?? 1` substitution the comparator uses.
       const effRate = (r: (typeof rows)[number]) => r.completion_rate ?? 1;
       for (let i = 1; i < rows.length; i++) {
-        expect(effRate(rows[i])).toBeGreaterThanOrEqual(effRate(rows[i - 1]));
+        expect(effRate(rows[i]!)).toBeGreaterThanOrEqual(effRate(rows[i - 1]!));
       }
     });
   });
@@ -325,7 +325,7 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
       expect(geoDist.find((r) => r.country === 'US')?.devices).toBe(2);
       expect(geoDist.find((r) => r.country === 'DE')?.devices).toBe(1);
       // sorted descending by device count
-      expect(geoDist[0].devices).toBeGreaterThanOrEqual(geoDist[geoDist.length - 1].devices);
+      expect(geoDist[0]!.devices).toBeGreaterThanOrEqual(geoDist[geoDist.length - 1]!.devices);
     });
 
     it('a device without a session_start event (or without a ua) is not double counted / falls into the unknown bucket', async () => {

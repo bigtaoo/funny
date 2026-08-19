@@ -79,7 +79,7 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     id, defId, rarity: 'rare', level: 0, affixes: [{ id: 'm_atk', value: 8 }], ...extra,
   });
   const mkCard = (id: string, defId = 'lichuang', extra: Partial<CardInstance> = {}): CardInstance => ({
-    id, defId, level: 1, xp: 0, gear: {}, locked: false, ...extra,
+    id, defId, level: 1, gear: {}, locked: false, ...extra,
   });
 
   const commercial: AuctionCommercialClient = {
@@ -257,7 +257,7 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
   it('character-card listing round-trips create → buy across the wire (level/xp snapshot survives); seller cancel mails it back', async () => {
     const seller = clientFor('seller1');
     const buyer = clientFor('buyer1');
-    seedCard('seller1', mkCard('cd1', 'lichuang', { level: 5, xp: 42 }));
+    seedCard('seller1', mkCard('cd1', 'lichuang', { level: 5 }));
 
     // create (cards have no price guardrail — cold-start pass-through; qty always 1)
     const view = await seller.createAuction('card', { instanceId: 'cd1' }, 1, DUR, { price: 500 });
@@ -273,7 +273,7 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     expect(mailAtt('seller1', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 500 - tax });
     const att = mailAtt('buyer1', 'auction_buy:');
     expect(att?.kind).toBe('card');
-    expect(att?.instance as CardInstance | undefined).toMatchObject({ id: 'cd1', defId: 'lichuang', level: 5, xp: 42 });
+    expect(att?.instance as CardInstance | undefined).toMatchObject({ id: 'cd1', defId: 'lichuang', level: 5 });
 
     // cancel path (fresh listing): seller gets the card back via mail.
     seedCard('seller1', mkCard('cd2'));

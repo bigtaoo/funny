@@ -37,7 +37,7 @@ function playerWorld(overrides: Partial<PlayerWorldDoc> = {}): PlayerWorldDoc {
   return { _id: `${W}:${ACC}`, worldId: W, accountId: ACC, cardState: {}, ...overrides } as unknown as PlayerWorldDoc;
 }
 
-function fakeCore(getSaveFields = vi.fn(async () => null), updateOne = vi.fn(async () => ({}))): WorldCore {
+function fakeCore(getSaveFields = vi.fn(async (..._args: unknown[]): Promise<unknown> => null), updateOne = vi.fn(async (..._args: unknown[]) => ({}))): WorldCore {
   return {
     meta: { getSaveFields },
     deps: { cols: { playerWorld: { updateOne } } },
@@ -89,7 +89,7 @@ describe('resolveOccupationBattle', () => {
   });
 
   it('a card army resolves via meta.getSaveFields(ownerId) exactly once, not the flat-troop synthesized path', async () => {
-    const getSaveFields = vi.fn(async () => ({ cardInv: {}, equipmentInv: {} }));
+    const getSaveFields = vi.fn(async (..._args: unknown[]) => ({ cardInv: {}, equipmentInv: {} }));
     const core = fakeCore(getSaveFields);
     const m = march({ army: [{ cardInstanceId: 'card-1', col: 0, row: 0 }] as never });
     const pw = playerWorld({ cardState: { 'card-1': { currentTroops: 50 } } as never });
@@ -99,7 +99,7 @@ describe('resolveOccupationBattle', () => {
   });
 
   it('no card army → meta.getSaveFields is never called (flat/legacy path skips the round-trip)', async () => {
-    const getSaveFields = vi.fn(async () => null);
+    const getSaveFields = vi.fn(async (..._args: unknown[]) => null);
     const core = fakeCore(getSaveFields);
     const m = march();
     const pw = playerWorld();
@@ -112,7 +112,7 @@ describe('writeOccupyCardState', () => {
   const cardArmy = [{ cardInstanceId: 'c1', col: 0, row: 0 }, { cardInstanceId: 'c2', col: 1, row: 0 }] as never;
 
   it('writes exactly the $set computeCardStateUpdates produces for a card army with deployed troops', async () => {
-    const updateOne = vi.fn(async () => ({}));
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({}));
     const core = fakeCore(undefined, updateOne);
     const m = march({ army: cardArmy });
     const pw = playerWorld({ cardState: { c1: { currentTroops: 40 }, c2: { currentTroops: 60 } } as never });
@@ -134,7 +134,7 @@ describe('writeOccupyCardState', () => {
   });
 
   it('a flat (non-card) army never writes cardState — computeCardStateUpdates returns empty, no-op', async () => {
-    const updateOne = vi.fn(async () => ({}));
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({}));
     const core = fakeCore(undefined, updateOne);
     const m = march(); // no army entries at all
     const pw = playerWorld();
@@ -143,7 +143,7 @@ describe('writeOccupyCardState', () => {
   });
 
   it('a card army with zero deployed troops on every card is also a no-op (nothing to update)', async () => {
-    const updateOne = vi.fn(async () => ({}));
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({}));
     const core = fakeCore(undefined, updateOne);
     const m = march({ army: cardArmy });
     const pw = playerWorld({ cardState: { c1: { currentTroops: 0 }, c2: { currentTroops: 0 } } as never });
@@ -152,7 +152,7 @@ describe('writeOccupyCardState', () => {
   });
 
   it('ADR-069: passes the deployed denominator through, so engine survivors are not measured against nominal troops', async () => {
-    const updateOne = vi.fn(async () => ({}));
+    const updateOne = vi.fn(async (..._args: unknown[]) => ({}));
     const core = fakeCore(undefined, updateOne);
     const m = march({ army: cardArmy });
     // 500 nominal troops across two cards, but the engine only ever fielded 200 of them (per-unit HP

@@ -16,6 +16,7 @@ import { MapTemplateService } from '../src/mapTemplateService';
 import { nullWorldGatewayClient } from '../src/gatewayClient';
 import { nullWorldSocialsvcClient } from '../src/socialsvcClient';
 import { startHttpApi } from '../src/httpApi';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_http_test';
@@ -123,13 +124,13 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
   it('GET /health requires no authentication', async () => {
     const r = await fetch(`${base}/health`);
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ ok: true, service: 'worldsvc' });
+    expect(await jsonBody(r)).toEqual({ ok: true, service: 'worldsvc' });
   });
 
   it('no token → 401', async () => {
     const r = await fetch(`${base}/world/map?worldId=${W}&cx=10&cy=10&r=2`);
     expect(r.status).toBe(401);
-    const body = await r.json();
+    const body = await jsonBody(r);
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe('UNAUTHENTICATED');
   });
@@ -140,7 +141,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
       headers: auth,
     });
     expect(r.status).toBe(200);
-    const body = await r.json();
+    const body = await jsonBody(r);
     expect(body.ok).toBe(true);
     expect(body.data.tiles).toHaveLength(25);
     expect(body.data.tiles.filter((tl: { type: string }) => tl.type === 'center')).toHaveLength(25);
@@ -153,7 +154,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
       body: JSON.stringify({ worldId: W }), // no coordinates provided — server picks the landing spot automatically
     });
     expect(jr.status).toBe(200);
-    const data = (await jr.json()).data as { joined: boolean; mainBaseTile: string };
+    const data = (await jsonBody(jr)).data as { joined: boolean; mainBaseTile: string };
     expect(data.joined).toBe(true);
     // Landing spot is server-determined: captured and asserted to be a valid base tile (not center, not obstacle, etc.).
     expect(data.mainBaseTile).toMatch(new RegExp(`^${W}:\\d+:\\d+$`));
@@ -163,12 +164,12 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     expect(baseX === CENTER_X && baseY === CENTER_Y).toBe(false);
 
     const me = await fetch(`${base}/world/me?worldId=${W}`, { headers: auth });
-    expect((await me.json()).data.joined).toBe(true);
+    expect((await jsonBody(me)).data.joined).toBe(true);
 
     const tile = await fetch(`${base}/world/tile/${encodeURIComponent(data.mainBaseTile)}`, {
       headers: auth,
     });
-    expect((await tile.json()).data).toMatchObject({ type: 'base', mine: true });
+    expect((await jsonBody(tile)).data).toMatchObject({ type: 'base', mine: true });
   });
 
   it('occupyTile (internal/test-only, ADR-037 — not a public HTTP route) → territory mine', async () => {
@@ -227,7 +228,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
       }),
     });
     expect(r.status).toBe(200);
-    const body = await r.json();
+    const body = await jsonBody(r);
     expect(body.ok).toBe(true);
     expect(body.data).toMatchObject({ kind: 'occupy', status: 'marching' });
     expect(typeof body.data.marchId).toBe('string');
@@ -262,7 +263,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
 
     const get = await fetch(`${base}/world/defense?worldId=${W}&tileKey=base`, { headers: auth });
     expect(get.status).toBe(200);
-    const body = await get.json() as { ok: boolean; data: typeof config };
+    const body = await jsonBody(get) as { ok: boolean; data: typeof config };
     expect(body.ok).toBe(true);
     expect(body.data).toEqual(config);
 
@@ -299,7 +300,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
         body: JSON.stringify({ worldId: W, key }),
       });
       expect(r.status).toBe(200);
-      const body = await r.json();
+      const body = await jsonBody(r);
       expect(body.ok).toBe(true);
       expect(body.data.buildQueue.some((q: { key: string }) => q.key === key)).toBe(true);
     }
@@ -334,7 +335,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
     it('GET /nation/channel: 200 (not 403) for an account with no playerWorld record', async () => {
       const r = await fetch(`${base}/nation/channel?worldId=${W}`, { headers: freshAuth });
       expect(r.status).toBe(200);
-      const body = await r.json();
+      const body = await jsonBody(r);
       expect(body.ok).toBe(true);
       expect(Array.isArray(body.data)).toBe(true);
     });
@@ -346,12 +347,12 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
         body: JSON.stringify({ worldId: W, body: 'hi, never joined the SLG map' }),
       });
       expect(r.status).toBe(200);
-      const body = await r.json();
+      const body = await jsonBody(r);
       expect(body.ok).toBe(true);
       expect(body.data.body).toBe('hi, never joined the SLG map');
 
       const history = await fetch(`${base}/nation/channel?worldId=${W}`, { headers: freshAuth });
-      const historyBody = await history.json();
+      const historyBody = await jsonBody(history);
       expect(historyBody.data.some((msg: { body: string }) => msg.body === 'hi, never joined the SLG map')).toBe(true);
     });
 
@@ -371,7 +372,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
       try {
         const r = await fetch(`${base}/world/active-season`);
         expect(r.status).toBe(500);
-        const bodyJson = await r.json();
+        const bodyJson = await jsonBody(r);
         expect(bodyJson.ok).toBe(false);
       } finally {
         svcRef.getActiveSeasonNo = original;
@@ -417,7 +418,7 @@ describe.skipIf(!mongo)('worldsvc httpApi e2e', () => {
         body: JSON.stringify({ worldId: W, body: 'sanitize-check', senderName: maliciousName }),
       });
       expect(r.status).toBe(200);
-      const body = await r.json();
+      const body = await jsonBody(r);
       const sanitized = body.data.senderName as string;
       expect(sanitized).not.toContain('\x00');
       expect(sanitized).not.toContain('\x1b');

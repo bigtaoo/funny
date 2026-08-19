@@ -407,7 +407,7 @@ describe('weeklyPoints / weeklyClaimableTiers', () => {
     expect(weeklyClaimableTiers(r, T_JUN22)).toEqual([9]);
     const claimed = claimWeeklyTier(r, 9, T_JUN22);
     expect(claimed.ok).toBe(true);
-    const r2 = { ...r, weekly: (claimed as { newWeekly: typeof r.weekly }).newWeekly };
+    const r2 = { ...r, weekly: (claimed as { newWeekly: NonNullable<typeof r>['weekly'] }).newWeekly };
     expect(weeklyClaimableTiers(r2, T_JUN22)).toEqual([]);
   });
 });

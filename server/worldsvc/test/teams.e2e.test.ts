@@ -91,7 +91,7 @@ async function connect(svc: WorldService, accountId: string, target: { x: number
 const CARD_DEF_ID = 'lichuang';
 const CARD_IDS = Array.from({ length: 100 }, (_, i) => `card${i}`);
 const CARD_INV_A: Record<string, CardInstance> = Object.fromEntries(
-  CARD_IDS.map((id) => [id, { id, defId: CARD_DEF_ID, level: 1, xp: 0, gear: {}, locked: false }]),
+  CARD_IDS.map((id) => [id, { id, defId: CARD_DEF_ID, level: 1, gear: {}, locked: false }]),
 );
 const fakeMeta: WorldMetaClient = {
   available: true,
@@ -102,6 +102,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
@@ -510,7 +511,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(String(rejected[0].reason)).toMatch(/marching, occupying, or stationed|TEAM_BUSY/i);
+    expect(String(rejected[0]!.reason)).toMatch(/marching, occupying, or stationed|TEAM_BUSY/i);
 
     // And the DB agrees: exactly one active march carries this teamId, never two.
     const mine = await svc.getMarches(W, 'a');
@@ -729,7 +730,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
 
     const held = await svc.getTile(W, 'a', target.x, target.y);
     expect(held.contestedByMe).toBe(true);
-    const poolBefore = (await svc.getMe(W, 'a')).troops;
+    const poolBefore = (await svc.getMe(W, 'a')).troops!;
 
     // player cancels from Team Management, mid-hold (no need to wait out OCCUPY_HOLD_SEC).
     await svc.cancelOccupation(W, 'a', 't1');
@@ -868,7 +869,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
       { _id: pwId },
       { $set: { teams: [{ id: 't1', name: 'Flat', army: [{ unitType: 'infantry', col: 0, row: 1, initialHp: 600 }] }] } },
     );
-    const poolBefore = (await svc.getMe(W, 'a')).troops;
+    const poolBefore = (await svc.getMe(W, 'a')).troops!;
     const target = findCoord(14, 14, (t) => (t.type === 'resource' || t.type === 'neutral'));
     const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1');
     expect(mv.troops).toBe(600);

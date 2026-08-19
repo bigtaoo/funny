@@ -62,7 +62,7 @@ function mkCards(prefix: string, n: number, troops = 60, defId = 'lichuang'): {
   const state: Record<string, CardSLGState> = {};
   for (let i = 0; i < n; i++) {
     const id = `${prefix}${i}`;
-    inv[id] = { id, defId, level: 1, xp: 0, gear: {}, locked: false };
+    inv[id] = { id, defId, level: 1, gear: {}, locked: false };
     army.push({ cardInstanceId: id, col: LANES[i % LANES.length]!, row: 1 + Math.floor(i / LANES.length) });
     state[id] = { currentTroops: troops };
   }
@@ -94,17 +94,13 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
 
   const fakeMeta: WorldMetaClient = {
     available: true,
-    async deductMaterial() { /* n/a */ },
     async grantMaterial() { /* n/a */ },
     async getProfile(): Promise<PlayerProfile | null> { return null; },
     async getSaveFields(accountId): Promise<SaveFields | null> {
-      return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv: cardInvByAccount[accountId] ?? {} };
+      return { equipmentInv: {}, cardInv: cardInvByAccount[accountId] ?? {} };
     },
-    async escrowEquipment() { throw new Error('n/a'); },
-    async grantEquipment() { /* n/a */ },
-    async escrowCard() { throw new Error('n/a'); },
-    async grantCard() { /* n/a */ },
     async grantTitle() { /* n/a */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
   };
 
   /** Find a non-blocking tile near (sx,sy). */
@@ -273,8 +269,8 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     const archerArmy = mkCards('cx', 3, 60, 'suyuan').army;
     expect(expected).toBeGreaterThan(teamSiegeValue(archerArmy, archerInv));
     // And the per-card helper scales with level.
-    expect(cardSiegeValue({ id: 'z', defId: 'chenshou', level: 5, xp: 0, gear: {}, locked: false }))
-      .toBeGreaterThan(cardSiegeValue({ id: 'z', defId: 'chenshou', level: 1, xp: 0, gear: {}, locked: false }));
+    expect(cardSiegeValue({ id: 'z', defId: 'chenshou', level: 5, gear: {}, locked: false }))
+      .toBeGreaterThan(cardSiegeValue({ id: 'z', defId: 'chenshou', level: 1, gear: {}, locked: false }));
   });
 
   it('durability depleted → forced relocation (old base gone, territory lost, new base + protection shield + mail)', async () => {

@@ -75,9 +75,9 @@ describe('HttpWorldGatewayClient.push', () => {
     const c = new HttpWorldGatewayClient(base, KEY);
     await expect(c.push('acc1', msg)).resolves.toBeUndefined();
     expect(requests).toHaveLength(1);
-    expect(requests[0].method).toBe('POST');
-    expect(requests[0].url).toBe('/gw/push');
-    expect(requests[0].body).toEqual({ accountId: 'acc1', msg });
+    expect(requests[0]!.method).toBe('POST');
+    expect(requests[0]!.url).toBe('/gw/push');
+    expect(requests[0]!.body).toEqual({ accountId: 'acc1', msg });
   });
 
   it('non-2xx → does not throw (best-effort)', async () => {
@@ -107,7 +107,7 @@ describe('HttpWorldGatewayClient.broadcast', () => {
     const c = new HttpWorldGatewayClient(base, KEY, redis);
     await c.broadcast(['acc1', 'acc2'], msg);
     expect(redis.publish).toHaveBeenCalledTimes(1);
-    const [channel, payload] = (redis.publish as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [channel, payload] = (redis.publish as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(channel).toBe('nw:gw:push');
     expect(JSON.parse(payload as string)).toEqual({ recipients: ['acc1', 'acc2'], msg });
     expect(requests).toHaveLength(0);

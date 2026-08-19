@@ -32,7 +32,7 @@ import type { WorldMetaClient } from '../src/metaClient';
 // Same fixture shape as card-slg.e2e.test.ts: every card id resolves to an owned 'lichuang'
 // (infantry) card via a Proxy, since setTeams only needs cardInstanceId → unitType resolution.
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMeta: WorldMetaClient = {
   available: true,
@@ -42,6 +42,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -105,6 +106,7 @@ describe.skipIf(!mongo)('siege replay cardInstances/equipmentInv fidelity (2026-
   const fakeGateway: WorldGatewayClient = {
     available: true,
     async push(accountId, msg) { pushes.push({ accountId, msg }); },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   async function setupDefender(accountId: string, x: number, y: number, garrison: number): Promise<void> {

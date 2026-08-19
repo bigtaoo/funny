@@ -107,6 +107,7 @@ describe.skipIf(!mongo)('worldsvc siege engine-crash → replay still persisted 
     async push(accountId, msg) {
       pushes.push({ accountId, msg });
     },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   /** Directly inserts a defender (playerWorld + one owned tile) so 'a' has a real PvP target to attack — mirrors siege.e2e.test.ts. */

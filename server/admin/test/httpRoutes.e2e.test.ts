@@ -45,6 +45,7 @@ import type {
   WorldClient, SlgWorldSummary, SlgAllocateResult,
 } from '../src/clients';
 import type { MapEditorCityNode, EventDoc, EventInput, CustomPoolConfig, MapTemplateSummary, MapTemplateTile } from '@nw/shared';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_admin_http_routes_test';
@@ -256,7 +257,7 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const json = (await jsonBody(res).catch(() => ({}))) as Record<string, unknown>;
     return { status: res.status, json };
   }
   async function loginAs(username: string, password: string): Promise<string> {

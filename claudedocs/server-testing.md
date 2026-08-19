@@ -410,3 +410,44 @@ analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverag
 1. **不许依赖没注入的随机源**。业务代码里的 `Math.random()` 要么走注入（如本轮的 `WorldServiceDeps.rng`），要么测试绕开它（显式坐标/显式 id）。
 2. **不许"写完立刻读" fire-and-forget**。正确姿势是 `vi.waitFor` 轮询（先例：`metaserver/test/pvp-card-stats.e2e.test.ts`、`gameserver/test/lifecycle.test.ts`）。
 3. **并发用例不许断言具体的交错**。断言要对所有合法交错都成立（先例：`worldsvc/test/review-fixes-2026-08-03.e2e.test.ts` 的 coin conservation 写法）；确实要覆盖某条竞态分支时，注入钩子把那个交错**制造出来**（同文件的 `onSpend`），别指望调度器碰巧给你。
+
+## `test/**` 首次接入类型检查：13 个包各补 `tsconfig.test.json`（2026-08-19，worktree `feat/server-test-typecheck`）
+
+**背景**：每个 workspace 的 `tsconfig.json` 只 include `src/**`，而 vitest 走 esbuild（只擦类型、从不检查），所以 **13 个包、约 380 个测试文件从来没有被类型检查过**。客户端早就用 `client/tsconfig.test.json` + `npm run typecheck` 关掉了这个口子（CI 在跑测试前先跑它），服务端一直没有。首次接上后一次性暴露 **758 个错误 / 140 个文件**。
+
+**做法**
+
+- 每个包新增 `tsconfig.test.json`：`extends ./tsconfig.json` + `include: ["src/**/*", "test/**/*"]` + `rootDir: "."` + `composite/declaration:false` + `noEmit`。engine 早就有一份（它的 `test` 脚本本来就 `tsc -p tsconfig.test.json` 编译后再跑），只补脚本。
+- 每包 `typecheck:test` 脚本；根 `npm run typecheck:test` 用 `--workspaces --if-present` 扇出；CI `server-checks` job 在现有 `tsc -b` **之后**加一步跑它。
+- `scripts/checkWorkspaceCoverage.mjs` 加两条断言：每个 workspace 必须有 `tsconfig.test.json` 和 `typecheck:test` 脚本（根扇出用的是 `--if-present`，少了脚本会被**静默跳过**，正是这个脚本存在的意义）。
+
+**三个必须知道的配置坑**
+
+1. **`references` 不会被 `extends` 继承**，必须在 `tsconfig.test.json` 里原样重复一遍。否则 `@nw/shared` 会退回 node_modules → `shared/dist/*.d.ts`，在没 build 过的检出里直接 240 个假 TS2307（光 metaserver 就这么多）。即便重复了，这些程序仍是**非 build 模式**，依赖 `tsc -b` 产出的 `dist/*.d.ts` 存在——所以 CI 里这一步必须排在 `tsc -b` 之后。
+2. **`module` 要跟着 vitest 的现实走**：继承下来的 CommonJS 会让若干 e2e 里的顶层 `await` 报 TS1378（vitest 按 ESM 转译，运行时完全合法），所以除 metaserver 外都覆盖成 `ES2022`。metaserver 自己是 `NodeNext`，强行改成 ES2022 会 TS5110；但它在 NodeNext 下又会要求 `../src/x` 写成 `../src/x.js`（TS2835），所以单独覆盖成 `ESNext` + `moduleResolution: Bundler`——这才是 vitest 实际的解析方式。
+3. **auctionsvc 排除了 `test/auction-fulllink.e2e.test.ts`**（配置里有注释）：它故意 import 真实的 client `WorldApiClient`，会把 DOM 全局 / pixi / @bufbuild 拖进一个 Node-only 程序，要检查它就得在 server-checks job 里装 client 依赖并加 `lib:DOM`。全仓库唯一一个已知不检查的测试文件。
+
+**758 个错误的分布与修法**（多数是机械的，但每一类都藏着"测试其实没在验证它自称验证的东西"）
+
+| 类别 | 量级 | 修法 |
+|---|---|---|
+| `Response.json()` 返回 `unknown` | ~230 | 每包一个 `test/jsonBody.ts`（带注释的单点 cast，支持传具体类型），不是满地 `as any` |
+| 假实现落后于接口（少方法/少字段） | ~120 | 补上的成员一律 **throw `not stubbed`**，不返回假成功——这些成员本来就不存在，任何调到的路径早就崩了，抛错只是把崩溃变得有名字 |
+| 假实现留着接口已删的成员 | ~30 | 直接删（类型上读不到，删了不改变行为） |
+| `noUncheckedIndexedAccess` 下的下标/属性链 | ~150 | 加 `!`（纯类型层，运行时零影响） |
+| `vi.fn(async () => x)` 声明了零参数，测试却断言 `mock.calls[0][1]` | ~80 | 给 mock 声明 `...unknown[]` 参数 |
+| 测试双写的 Mongo/响应体 cast 不重叠 | ~45 | `as unknown as T` |
+
+**顺带挖出来的真问题**（都不是格式问题）
+
+- `metaserver/test/internal.test.ts` 40 处 `makeNewSave('a')` 少传 `now`——所有种子存档的时间戳是 `undefined`。
+- `shared/test/internalFetch.test.ts` 用 `caller: 'metaserver'` 并断言出站 `x-internal-caller` 等于它，但合法值是 `'meta'`（`InternalCaller` 里没有 `metaserver`）——线上永远不会发出那个值。
+- `admin/test/comp-mail.e2e.test.ts` 调 socialsvc `startHttpApi` 只给了 6 个参数中的 5 个（`meta` client 整个缺失），且 `FamilyService` 没给 `now`。
+- `admin/test/clients-worldAuctionAnalytics.test.ts` 用 `status: 'active'` 查拍卖，而 `AuctionStatus` 是 open/sold/cancelled/expired。
+- `worldsvc/test/sect-query-gaps.test.ts` 断言 `emblemKey: 'lion'`，而 `EMBLEM_KEYS` 全是 `emblem_*`。
+- `CardInstance.xp` 在换成融合升级时就删了（`2d6b08a3`），31 处夹具还在写。
+- **`metaserver` 的钱包镜像路径其实一直没被测到**：`FakeCommercial.getWallet` 只返回 `{coins, pity}`，而 `mirrorWalletFrom` 第一件事就是 `wallet.starterUsed.includes(...)` → 每次 `GET /save` 的镜像都在 `try/catch` 里静默 TypeError。补全 `WalletView` 后 `retention.e2e` 的 day-30 用例立刻挂了——因为它读的是"镜像失败才保住"的旧值；那个用例自己的注释早就写明"failingApp 必须复用同一个钱包账本"，但代码给的是 `new FakeCommercial()`。改成共用同一个实例后通过。
+- 两处**生产类型**确实写错，测试是对的：`worldsvc/src/nationChannelService.ts` 的 Deps 要具体类 `HttpWorldGatewayClient` 却只用 `broadcast`（收窄成接口）；`PlayerWorldView` 从未声明 `hasBattlePass`，可 `getMe()` 一直在返回、openapi 里也有（补上）。
+- 两个一次性迁移脚本（`metaserver/scripts/migrateCardInv.ts`、`samplePvpReplays.ts`）用 `Collection<Document>` 表示 string-keyed 集合，`{_id: accountId}` 过滤全是类型漏洞——它们被测试 import，这次一并类型化。
+
+**验证**：13 个包 `typecheck:test` 全 0 错、根 `tsc -b` 全绿；各包测试套件全跑一遍确认没有行为回归（metaserver 1639 / worldsvc 917 / shared 956 / socialsvc 216 / commercial 213 / gateway 181 / botsvc 119 / gameserver 127 …）。

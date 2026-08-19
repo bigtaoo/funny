@@ -86,7 +86,7 @@ describe.skipIf(!mongo)('match replay fetch e2e', () => {
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: reportPayload('RR1', idA, idB, oneFrame) });
     const res = await app.inject({ method: 'GET', url: '/match/RR1/replay', headers: { authorization: `Bearer ${tokenA}` } });
     expect(res.statusCode).toBe(200);
-    const replay = decodeReplayGzResponse(body(res).data);
+    const replay = decodeReplayGzResponse((body(res) as { data: { replayGz: string } }).data);
     expect(replay.endFrame).toBe(3);
     expect(replay.frames[0]!.cmds[0]!.commands).toBe('AAA=');
   });
@@ -101,7 +101,7 @@ describe.skipIf(!mongo)('match replay fetch e2e', () => {
     await app.inject({ method: 'POST', url: '/internal/match/report', headers: { 'x-internal-key': KEY }, payload: reportPayload('RR4', idA, idB, oneFrame, decks) });
     const res = await app.inject({ method: 'GET', url: '/match/RR4/replay', headers: { authorization: `Bearer ${tokenA}` } });
     expect(res.statusCode).toBe(200);
-    expect(decodeReplayGzResponse(body(res).data).decks).toEqual(decks);
+    expect(decodeReplayGzResponse((body(res) as { data: { replayGz: string } }).data).decks).toEqual(decks);
   });
 
   it('non-participant gets 404', async () => {
@@ -129,8 +129,9 @@ describe.skipIf(!mongo)('match replay fetch e2e', () => {
     expect(doc!.replayGz).toBeUndefined();
     const res = await app.inject({ method: 'GET', url: '/match/RR3/replay', headers: { authorization: `Bearer ${tokenA}` } });
     expect(res.statusCode).toBe(200);
-    const replay = decodeReplayGzResponse(body(res).data);
-    expect(replay.frames[0]!.cmds[0]!.commands.length).toBe(big.length);
+    const replay = decodeReplayGzResponse((body(res) as { data: { replayGz: string } }).data);
+    // MatchReplayDoc types `commands` as unknown (the doc is engine-opaque); on the wire it is base64.
+    expect((replay.frames[0]!.cmds[0]!.commands as string).length).toBe(big.length);
   });
 
   /**
@@ -146,7 +147,7 @@ describe.skipIf(!mongo)('match replay fetch e2e', () => {
     await m.collections.matches.deleteOne({ roomId: 'RR5' });
     const res = await app.inject({ method: 'GET', url: '/match/RR5/replay', headers: { authorization: `Bearer ${tokenA}` } });
     expect(res.statusCode).toBe(200);
-    const replay = decodeReplayGzResponse(body(res).data);
+    const replay = decodeReplayGzResponse((body(res) as { data: { replayGz: string } }).data);
     expect(replay.frames[0]!.cmds[0]!.commands).toBe('AAA=');
   });
 

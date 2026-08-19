@@ -3,7 +3,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { registerInternalRoutes } from '../src/internal.js';
-import type { Collections, SaveData, SaveDoc } from '@nw/shared';
+import { makeNewSave, type Collections, type SaveData, type SaveDoc } from '@nw/shared';
 import type { GatewayClient } from '../src/gatewayClient.js';
 import type { CommercialClient } from '../src/commercialClient.js';
 
@@ -14,8 +14,6 @@ function fakeGateway(): GatewayClient {
     available: false,
     judge: async () => ({ ok: false }),
     push: async () => {},
-    presence: async () => ({}),
-    invalidateFriends: async () => {},
   };
 }
 
@@ -27,17 +25,9 @@ function fakeCommercial(): CommercialClient {
 }
 
 function makeSave(accountId: string, extra?: Partial<SaveData>): SaveDoc {
-  const base: SaveData = {
-    rev: 1,
-    coins: 0,
-    ink: 0,
-    progress: { cleared: [], stars: {} },
-    ownedUnits: [],
-    equippedUnits: [],
-    lastOnline: 0,
-    createdAt: 0,
-  };
-  return { _id: accountId, save: { ...base, ...extra }, rev: 1 };
+  // makeNewSave is the single source of a valid SaveData. The literal that used to sit here still
+  // carried pre-wallet fields (coins / ink / ownedUnits / equippedUnits) that SaveData dropped long ago.
+  return { _id: accountId, save: { ...makeNewSave(accountId, 0), ...extra }, rev: 1 };
 }
 
 // In-memory fake collections (only the fields required by the suspicious-pve endpoint).

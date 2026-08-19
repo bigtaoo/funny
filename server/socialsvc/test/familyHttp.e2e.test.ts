@@ -11,6 +11,7 @@ import { FriendService } from '../src/friendService';
 import { MailService } from '../src/mailService';
 import { startHttpApi } from '../src/httpApi';
 import { FakeMeta, FakeGateway } from './harness';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017';
 const DB = 'nw_social_family_http_test';
@@ -71,7 +72,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
   it('no token → 401', async () => {
     const r = await fetch(`${base}/social/family/browse`);
     expect(r.status).toBe(401);
-    expect((await r.json()).error.code).toBe('UNAUTHENTICATED');
+    expect((await jsonBody(r)).error.code).toBe('UNAUTHENTICATED');
   });
 
   // Unified profile-popup extras (rank/ELO + family/sect by publicId) — the single fetch every
@@ -79,14 +80,14 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
   it('GET /social/profile/:publicId/extra: rank + family (leader-a is in AlphaKnight, no sect yet)', async () => {
     const r = await fetch(`${base}/social/profile/P-A/extra`, { headers: auth });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({ rank: 'gold', familyName: 'AlphaKnight' });
+    expect((await jsonBody(r)).data).toEqual({ rank: 'gold', familyName: 'AlphaKnight' });
   });
 
   it('GET /social/profile/:publicId/extra: family in a sect → sectName included', async () => {
     await familySvc.setSect('fam:ALFA', 'sect:DRAGON', 'DragonSect');
     const r = await fetch(`${base}/social/profile/P-A/extra`, { headers: auth });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({ rank: 'gold', familyName: 'AlphaKnight', sectName: 'DragonSect' });
+    expect((await jsonBody(r)).data).toEqual({ rank: 'gold', familyName: 'AlphaKnight', sectName: 'DragonSect' });
     await familySvc.setSect('fam:ALFA', null); // reset for subsequent tests
   });
 
@@ -94,33 +95,33 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     // leader-b (Bob) leads BetaRaiders but has no rank registered in FakeMeta.
     const r = await fetch(`${base}/social/profile/P-B/extra`, { headers: auth });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({ familyName: 'BetaRaiders' });
+    expect((await jsonBody(r)).data).toEqual({ familyName: 'BetaRaiders' });
   });
 
   it('GET /social/profile/:publicId/extra: unresolvable publicId → empty object, not an error', async () => {
     const r = await fetch(`${base}/social/profile/no-such-public-id/extra`, { headers: auth });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({});
+    expect((await jsonBody(r)).data).toEqual({});
   });
 
   it('GET /social/family/browse: no query → top families by prosperity desc', async () => {
     const r = await fetch(`${base}/social/family/browse`, { headers: auth });
     expect(r.status).toBe(200);
-    const families = (await r.json()).data as Array<{ familyId: string }>;
+    const families = (await jsonBody(r)).data as Array<{ familyId: string }>;
     expect(families.map((f) => f.familyId)).toEqual(['fam:BETA', 'fam:ALFA']);
   });
 
   it('GET /social/family/browse?q=: fuzzy-matches by name, case-insensitive', async () => {
     const r = await fetch(`${base}/social/family/browse?q=alpha`, { headers: auth });
     expect(r.status).toBe(200);
-    const families = (await r.json()).data as Array<{ familyId: string }>;
+    const families = (await jsonBody(r)).data as Array<{ familyId: string }>;
     expect(families.map((f) => f.familyId)).toEqual(['fam:ALFA']);
   });
 
   it('GET /social/family/browse?limit=1: caps the result count', async () => {
     const r = await fetch(`${base}/social/family/browse?limit=1`, { headers: auth });
     expect(r.status).toBe(200);
-    const families = (await r.json()).data as Array<{ familyId: string }>;
+    const families = (await jsonBody(r)).data as Array<{ familyId: string }>;
     expect(families).toHaveLength(1);
     expect(families[0]!.familyId).toBe('fam:BETA');
   });
@@ -129,7 +130,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     const outsiderToken = signToken('outsider-a', { secret: SECRET });
     const r = await fetch(`${base}/social/family/requests`, { headers: { authorization: `Bearer ${outsiderToken}` } });
     expect(r.status).toBe(403);
-    expect((await r.json()).error.code).toBe('NOT_IN_FAMILY');
+    expect((await jsonBody(r)).error.code).toBe('NOT_IN_FAMILY');
   });
 
   it('POST /respond: 403 when the caller is a plain member (leader/elder only)', async () => {
@@ -143,7 +144,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
 
     const listAsMember = await fetch(`${base}/social/family/requests`, { headers: memberAuth });
     expect(listAsMember.status).toBe(403);
-    expect((await listAsMember.json()).error.code).toBe('NO_PERMISSION');
+    expect((await jsonBody(listAsMember)).error.code).toBe('NO_PERMISSION');
 
     const respondAsMember = await fetch(`${base}/social/family/requests/${requestId}/respond`, {
       method: 'POST',
@@ -151,7 +152,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       body: JSON.stringify({ accept: true }),
     });
     expect(respondAsMember.status).toBe(403);
-    expect((await respondAsMember.json()).error.code).toBe('NO_PERMISSION');
+    expect((await jsonBody(respondAsMember)).error.code).toBe('NO_PERMISSION');
 
     // Sanity: the leader (who does have permission) can still resolve it — the request wasn't
     // consumed by the rejected attempts above.
@@ -181,7 +182,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
 
     // Rejected applicant is not a member.
     const famRes = await fetch(`${base}/social/family/fam:BETA`, { headers: leaderBAuth });
-    const fam = (await famRes.json()).data as { members: Array<{ accountId: string }> };
+    const fam = (await jsonBody(famRes)).data as { members: Array<{ accountId: string }> };
     expect(fam.members.map((mem) => mem.accountId)).not.toContain('applicant-c');
   });
 
@@ -191,14 +192,14 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
 
     const joinRes = await fetch(`${base}/social/family/fam:ALFA/join`, { method: 'POST', headers: applicantAuth });
     expect(joinRes.status).toBe(200);
-    const { requestId } = (await joinRes.json()).data as { requestId: string };
+    const { requestId } = (await jsonBody(joinRes)).data as { requestId: string };
     expect(requestId).toBeTruthy();
 
     // GET /social/family/requests must resolve to the requests-list route, not the generic
     // GET /social/family/:id route (which would 500 trying to look up a family named "requests").
     const listRes = await fetch(`${base}/social/family/requests`, { headers: auth });
     expect(listRes.status).toBe(200);
-    const { requests } = (await listRes.json()).data as { requests: Array<{ requestId: string; accountId: string }> };
+    const { requests } = (await jsonBody(listRes)).data as { requests: Array<{ requestId: string; accountId: string }> };
     expect(requests).toEqual([expect.objectContaining({ requestId, accountId: 'applicant-a' })]);
 
     const respondRes = await fetch(`${base}/social/family/requests/${requestId}/respond`, {
@@ -209,7 +210,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     expect(respondRes.status).toBe(200);
 
     const famRes = await fetch(`${base}/social/family/fam:ALFA`, { headers: auth });
-    const fam = (await famRes.json()).data as { members: Array<{ accountId: string }> };
+    const fam = (await jsonBody(famRes)).data as { members: Array<{ accountId: string }> };
     expect(fam.members.map((mem) => mem.accountId)).toContain('applicant-a');
   });
 
@@ -226,7 +227,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       body: JSON.stringify({ emblemKey: EMBLEM_KEYS[2], emblemColor: EMBLEM_COLORS[1] }),
     });
     expect(asMember.status).toBe(403);
-    expect((await asMember.json()).error.code).toBe('NO_PERMISSION');
+    expect((await jsonBody(asMember)).error.code).toBe('NO_PERMISSION');
 
     const asLeader = await fetch(`${base}/social/family/emblem`, {
       method: 'POST',
@@ -236,7 +237,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     expect(asLeader.status).toBe(200);
 
     const famRes = await fetch(`${base}/social/family/fam:BETA`, { headers: auth });
-    const fam = (await famRes.json()).data as { emblemKey?: string; emblemColor?: number };
+    const fam = (await jsonBody(famRes)).data as { emblemKey?: string; emblemColor?: number };
     expect(fam.emblemKey).toBe(EMBLEM_KEYS[2]);
     expect(fam.emblemColor).toBe(EMBLEM_COLORS[1]);
   });
@@ -251,7 +252,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       body: JSON.stringify({ emblemKey: EMBLEM_KEYS[0] }), // no emblemColor
     });
     expect(missing.status).toBe(400);
-    expect((await missing.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(missing)).error.code).toBe('BAD_REQUEST');
 
     const badKey = await fetch(`${base}/social/family/emblem`, {
       method: 'POST',
@@ -259,7 +260,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       body: JSON.stringify({ emblemKey: 'not_a_real_key', emblemColor: EMBLEM_COLORS[0] }),
     });
     expect(badKey.status).toBe(400);
-    expect((await badKey.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(badKey)).error.code).toBe('BAD_REQUEST');
 
     const badColor = await fetch(`${base}/social/family/emblem`, {
       method: 'POST',
@@ -267,7 +268,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       body: JSON.stringify({ emblemKey: EMBLEM_KEYS[0], emblemColor: 0x123456 }),
     });
     expect(badColor.status).toBe(400);
-    expect((await badColor.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(badColor)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/emblem: no token → 401', async () => {
@@ -283,7 +284,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     const leaderBToken = signToken('leader-b', { secret: SECRET });
     const r = await fetch(`${base}/social/profile/P-B/extra`, { headers: { authorization: `Bearer ${leaderBToken}` } });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({
+    expect((await jsonBody(r)).data).toEqual({
       familyName: 'BetaRaiders', familyEmblemKey: EMBLEM_KEYS[2], familyEmblemColor: EMBLEM_COLORS[1],
     });
   });
@@ -299,7 +300,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     expect(setRes.status).toBe(200);
 
     const afterSet = await fetch(`${base}/social/family/fam:ALFA`, { headers: auth });
-    const famAfterSet = (await afterSet.json()).data as { sectId?: string; sectName?: string };
+    const famAfterSet = (await jsonBody(afterSet)).data as { sectId?: string; sectName?: string };
     expect(famAfterSet.sectId).toBe('sect:1');
     expect(famAfterSet.sectName).toBe('Iron Fist');
 
@@ -311,7 +312,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
     expect(clearRes.status).toBe(200);
 
     const afterClear = await fetch(`${base}/social/family/fam:ALFA`, { headers: auth });
-    const famAfterClear = (await afterClear.json()).data as { sectId?: string; sectName?: string };
+    const famAfterClear = (await jsonBody(afterClear)).data as { sectId?: string; sectName?: string };
     expect(famAfterClear.sectId).toBeUndefined();
     expect(famAfterClear.sectName).toBeUndefined();
   });
@@ -345,11 +346,11 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
       const memberRes = await fetch(`${base}/internal/family/by-account/leader-c`, { headers: internalAuth });
       expect(memberRes.status).toBe(200);
-      expect((await memberRes.json()).data).toEqual({ familyId: 'fam:GAMA' });
+      expect((await jsonBody(memberRes)).data).toEqual({ familyId: 'fam:GAMA' });
 
       const nonMemberRes = await fetch(`${base}/internal/family/by-account/nobody-xyz`, { headers: internalAuth });
       expect(nonMemberRes.status).toBe(200);
-      expect((await nonMemberRes.json()).data).toEqual({ familyId: null });
+      expect((await jsonBody(nonMemberRes)).data).toEqual({ familyId: null });
     });
 
     it('GET /internal/family/by-account/:accountId: without X-Internal-Key → 401', async () => {
@@ -361,13 +362,13 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       const internalAuth = internalHeaders('worldsvc', INTERNAL_KEY);
       const r = await fetch(`${base}/internal/family/member/leader-c`, { headers: internalAuth });
       expect(r.status).toBe(200);
-      expect((await r.json()).data).toEqual({
+      expect((await jsonBody(r)).data).toEqual({
         member: expect.objectContaining({ familyId: 'fam:GAMA', role: 'leader', name: 'GammaSquad', tag: 'GAMA' }),
       });
 
       const unknownRes = await fetch(`${base}/internal/family/member/nobody-xyz`, { headers: internalAuth });
       expect(unknownRes.status).toBe(200);
-      expect((await unknownRes.json()).data).toEqual({ member: null });
+      expect((await jsonBody(unknownRes)).data).toEqual({ member: null });
     });
 
     it('POST /internal/family/batch: batch-fetches by id, silently skipping unknown ids (wire-level)', async () => {
@@ -378,7 +379,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
         body: JSON.stringify({ familyIds: ['fam:GAMA', 'fam:MISSING'] }),
       });
       expect(r.status).toBe(200);
-      const { families } = (await r.json()).data as { families: Array<{ familyId: string }> };
+      const { families } = (await jsonBody(r)).data as { families: Array<{ familyId: string }> };
       expect(families.map((f) => f.familyId)).toEqual(['fam:GAMA']);
     });
 
@@ -390,7 +391,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
         body: JSON.stringify({ familyIds: ['fam:BETA'] }), // emblem set by the /social/family/emblem test above
       });
       expect(r.status).toBe(200);
-      const { families } = (await r.json()).data as { families: Array<{ familyId: string; emblemKey?: string; emblemColor?: number }> };
+      const { families } = (await jsonBody(r)).data as { families: Array<{ familyId: string; emblemKey?: string; emblemColor?: number }> };
       expect(families).toEqual([expect.objectContaining({ familyId: 'fam:BETA', emblemKey: EMBLEM_KEYS[2], emblemColor: EMBLEM_COLORS[1] })]);
     });
 
@@ -399,7 +400,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       await familySvc.setSect('fam:GAMA', 'sect:iron', 'Iron Fist');
       const r = await fetch(`${base}/internal/family/by-sect/sect:iron`, { headers: internalAuth });
       expect(r.status).toBe(200);
-      const { families } = (await r.json()).data as { families: Array<{ familyId: string }> };
+      const { families } = (await jsonBody(r)).data as { families: Array<{ familyId: string }> };
       expect(families.map((f) => f.familyId)).toEqual(['fam:GAMA']);
       await familySvc.setSect('fam:GAMA', null); // reset for the slg-reset test further down
     });
@@ -412,11 +413,11 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
         body: JSON.stringify({ territoryCount: 3 }),
       });
       expect(r.status).toBe(200);
-      const { prosperity } = (await r.json()).data as { prosperity: number };
+      const { prosperity } = (await jsonBody(r)).data as { prosperity: number };
       expect(prosperity).toBe(familyProsperity(3, 1, 0)); // 1 member (leader-c only), activity still 0
 
       const famRes = await fetch(`${base}/social/family/fam:GAMA`, { headers: leaderCAuth });
-      const fam = (await famRes.json()).data as { prosperity: number; territoryCount?: number };
+      const fam = (await jsonBody(famRes)).data as { prosperity: number; territoryCount?: number };
       expect(fam.prosperity).toBe(prosperity);
       expect(fam.territoryCount).toBe(3);
     });
@@ -435,7 +436,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
         headers: { ...internalAuth, 'content-type': 'application/json' },
         body: JSON.stringify({ territoryCount: 3 }),
       });
-      const { prosperity } = (await refreshRes.json()).data as { prosperity: number };
+      const { prosperity } = (await jsonBody(refreshRes)).data as { prosperity: number };
       expect(prosperity).toBe(familyProsperity(3, 1, 5)); // activity bumped by the previous request to 5
     });
 
@@ -457,7 +458,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
         body: JSON.stringify({ delta: 2, territoryCount: 4 }),
       });
       expect(r.status).toBe(200);
-      const { prosperity } = (await r.json()).data as { prosperity: number };
+      const { prosperity } = (await jsonBody(r)).data as { prosperity: number };
       expect(prosperity).toBe(familyProsperity(4, 1, 7)); // activity 5 (prior test) + 2 = 7
     });
 
@@ -468,7 +469,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes e2e', () => {
       expect(r.status).toBe(200);
 
       const famRes = await fetch(`${base}/social/family/fam:GAMA`, { headers: leaderCAuth });
-      const fam = (await famRes.json()).data as { prosperity: number; territoryCount?: number; sectId?: string; name: string };
+      const fam = (await jsonBody(famRes)).data as { prosperity: number; territoryCount?: number; sectId?: string; name: string };
       expect(fam.prosperity).toBe(0);
       expect(fam.territoryCount).toBe(0);
       expect(fam.sectId).toBeUndefined();

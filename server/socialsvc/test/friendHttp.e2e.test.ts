@@ -15,6 +15,7 @@ import { FriendService } from '../src/friendService';
 import { MailService } from '../src/mailService';
 import { startHttpApi } from '../src/httpApi';
 import { FakeMeta, FakeGateway } from './harness';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017';
 const DB = 'nw_social_friend_http_test';
@@ -77,7 +78,7 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       body: JSON.stringify({ publicId: 'P-FB' }),
     });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({ profile: expect.objectContaining({ publicId: 'P-FB', displayName: 'Bob' }) });
+    expect((await jsonBody(r)).data).toEqual({ profile: expect.objectContaining({ publicId: 'P-FB', displayName: 'Bob' }) });
   });
 
   it('POST /social/friends/request → GET /social/friends/requests → POST /social/friends/respond: full wire round trip', async () => {
@@ -87,20 +88,20 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       body: JSON.stringify({ publicId: 'P-FB', message: 'hi!' }),
     });
     expect(reqRes.status).toBe(200);
-    const { requestId } = (await reqRes.json()).data as { requestId: string };
+    const { requestId } = (await jsonBody(reqRes)).data as { requestId: string };
     expect(requestId).toBeTruthy();
 
     const incomingRes = await fetch(`${base}/social/friends/requests`, { headers: auth('fb') });
     expect(incomingRes.status).toBe(200);
-    const { incoming } = (await incomingRes.json()).data as { incoming: Array<{ requestId: string; fromPublicId: string; message?: string }> };
+    const { incoming } = (await jsonBody(incomingRes)).data as { incoming: Array<{ requestId: string; fromPublicId: string; message?: string }> };
     expect(incoming).toEqual([expect.objectContaining({ requestId, fromPublicId: 'P-FA', message: 'hi!' })]);
 
     const outgoingRes = await fetch(`${base}/social/friends/requests`, { headers: auth('fa') });
-    const { outgoing } = (await outgoingRes.json()).data as { outgoing: Array<{ requestId: string; toPublicId: string }> };
+    const { outgoing } = (await jsonBody(outgoingRes)).data as { outgoing: Array<{ requestId: string; toPublicId: string }> };
     expect(outgoing).toEqual([expect.objectContaining({ requestId, toPublicId: 'P-FB' })]);
 
     const badgesRes = await fetch(`${base}/social/badges`, { headers: auth('fb') });
-    expect((await badgesRes.json()).data).toMatchObject({ friendRequests: 1 });
+    expect((await jsonBody(badgesRes)).data).toMatchObject({ friendRequests: 1 });
 
     const respondRes = await fetch(`${base}/social/friends/respond`, {
       method: 'POST',
@@ -108,16 +109,16 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       body: JSON.stringify({ requestId, accept: true }),
     });
     expect(respondRes.status).toBe(200);
-    expect((await respondRes.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(respondRes)).data).toEqual({ ok: true });
 
     const friendsA = await fetch(`${base}/social/friends`, { headers: auth('fa') });
-    expect((await friendsA.json()).data).toEqual({ friends: [expect.objectContaining({ publicId: 'P-FB' })] });
+    expect((await jsonBody(friendsA)).data).toEqual({ friends: [expect.objectContaining({ publicId: 'P-FB' })] });
     const friendsB = await fetch(`${base}/social/friends`, { headers: auth('fb') });
-    expect((await friendsB.json()).data).toEqual({ friends: [expect.objectContaining({ publicId: 'P-FA' })] });
+    expect((await jsonBody(friendsB)).data).toEqual({ friends: [expect.objectContaining({ publicId: 'P-FA' })] });
 
     // Resolved request no longer shows up as pending on either side.
     const badgesAfter = await fetch(`${base}/social/badges`, { headers: auth('fb') });
-    expect((await badgesAfter.json()).data).toMatchObject({ friendRequests: 0 });
+    expect((await jsonBody(badgesAfter)).data).toMatchObject({ friendRequests: 0 });
   });
 
   it('POST /social/friends/respond {accept:false}: rejects without creating a friend edge (wire-level)', async () => {
@@ -126,7 +127,7 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       headers: { ...auth('fc'), ...json },
       body: JSON.stringify({ publicId: 'P-FD' }),
     });
-    const { requestId } = (await reqRes.json()).data as { requestId: string };
+    const { requestId } = (await jsonBody(reqRes)).data as { requestId: string };
 
     const respondRes = await fetch(`${base}/social/friends/respond`, {
       method: 'POST',
@@ -137,10 +138,10 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
     // `accepted` flag isn't surfaced over the wire) — the actual outcome is verified below via the
     // friends list staying empty.
     expect(respondRes.status).toBe(200);
-    expect((await respondRes.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(respondRes)).data).toEqual({ ok: true });
 
     const friendsC = await fetch(`${base}/social/friends`, { headers: auth('fc') });
-    expect((await friendsC.json()).data).toEqual({ friends: [] });
+    expect((await jsonBody(friendsC)).data).toEqual({ friends: [] });
   });
 
   it('DELETE /social/friends/:publicId: removes the mutual edge on both sides (wire-level)', async () => {
@@ -149,7 +150,7 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       headers: { ...auth('fc'), ...json },
       body: JSON.stringify({ publicId: 'P-FD' }),
     });
-    const { requestId } = (await reqRes.json()).data as { requestId: string };
+    const { requestId } = (await jsonBody(reqRes)).data as { requestId: string };
     await fetch(`${base}/social/friends/respond`, {
       method: 'POST',
       headers: { ...auth('fd'), ...json },
@@ -158,12 +159,12 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
 
     const delRes = await fetch(`${base}/social/friends/P-FD`, { method: 'DELETE', headers: auth('fc') });
     expect(delRes.status).toBe(200);
-    expect((await delRes.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(delRes)).data).toEqual({ ok: true });
 
     const friendsC = await fetch(`${base}/social/friends`, { headers: auth('fc') });
-    expect((await friendsC.json()).data).toEqual({ friends: [] });
+    expect((await jsonBody(friendsC)).data).toEqual({ friends: [] });
     const friendsD = await fetch(`${base}/social/friends`, { headers: auth('fd') });
-    expect((await friendsD.json()).data).toEqual({ friends: [] });
+    expect((await jsonBody(friendsD)).data).toEqual({ friends: [] });
   });
 
   it('POST /social/friends/block → DELETE /social/friends/block/:publicId: blocking then unblocking (wire-level)', async () => {
@@ -173,7 +174,7 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       body: JSON.stringify({ publicId: 'P-FF' }),
     });
     expect(blockRes.status).toBe(200);
-    expect((await blockRes.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(blockRes)).data).toEqual({ ok: true });
 
     // Blocked: a friend request from the blocked side is rejected.
     const blockedReqRes = await fetch(`${base}/social/friends/request`, {
@@ -182,11 +183,11 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       body: JSON.stringify({ publicId: 'P-FE' }),
     });
     expect(blockedReqRes.status).toBe(403);
-    expect((await blockedReqRes.json()).error.code).toBe('BLOCKED');
+    expect((await jsonBody(blockedReqRes)).error.code).toBe('BLOCKED');
 
     const unblockRes = await fetch(`${base}/social/friends/block/P-FF`, { method: 'DELETE', headers: auth('fe') });
     expect(unblockRes.status).toBe(200);
-    expect((await unblockRes.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(unblockRes)).data).toEqual({ ok: true });
 
     // Unblocked: the same request now goes through.
     const reqRes = await fetch(`${base}/social/friends/request`, {
@@ -204,7 +205,7 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       headers: { ...auth('fg'), ...json },
       body: JSON.stringify({ publicId: 'P-FH' }),
     });
-    const { requestId } = (await reqRes.json()).data as { requestId: string };
+    const { requestId } = (await jsonBody(reqRes)).data as { requestId: string };
     await fetch(`${base}/social/friends/respond`, {
       method: 'POST',
       headers: { ...auth('fh'), ...json },
@@ -220,7 +221,7 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
 
     const convRes = await fetch(`${base}/social/chat/conversations`, { headers: auth('fh') });
     expect(convRes.status).toBe(200);
-    const { conversations } = (await convRes.json()).data as { conversations: Array<{ convId: string; peer: { publicId: string }; lastBody?: string; unread: number }> };
+    const { conversations } = (await jsonBody(convRes)).data as { conversations: Array<{ convId: string; peer: { publicId: string }; lastBody?: string; unread: number }> };
     expect(conversations).toEqual([expect.objectContaining({ peer: expect.objectContaining({ publicId: 'P-FG' }), lastBody: 'yo', unread: 1 })]);
     const convId = conversations[0]!.convId;
 
@@ -230,10 +231,10 @@ describe.skipIf(!mongo)('socialsvc friend + chat HTTP routes e2e', () => {
       body: JSON.stringify({ convId }),
     });
     expect(readRes.status).toBe(200);
-    expect((await readRes.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(readRes)).data).toEqual({ ok: true });
 
     const convAfter = await fetch(`${base}/social/chat/conversations`, { headers: auth('fh') });
-    const { conversations: after } = (await convAfter.json()).data as { conversations: Array<{ unread: number }> };
+    const { conversations: after } = (await jsonBody(convAfter)).data as { conversations: Array<{ unread: number }> };
     expect(after[0]!.unread).toBe(0);
   });
 });

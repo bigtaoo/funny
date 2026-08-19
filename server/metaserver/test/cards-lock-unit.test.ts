@@ -22,7 +22,7 @@ import { readCardInv } from './helpers/cards.js';
 function makeFakeCommercial(): CommercialClient {
   return {
     available: true,
-    async getWallet() { return { coins: 0, pity: {} }; },
+    async getWallet() { return { coins: 0, pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 }; },
     async spend() { return { ok: true as const, coinsAfter: 0 }; },
   } as unknown as CommercialClient;
 }
@@ -112,7 +112,7 @@ describe.skipIf(!mongo)('setCardLock (src import, coverage backfill)', () => {
       findOne: real.findOne.bind(real),
       findOneAndUpdate: async () => null,
       updateOne: real.updateOne.bind(real),
-    } as typeof real;
+    } as unknown as typeof real;
     const wrappedCols: Collections = { ...m.collections, saves: wrapped };
     const res = await setCardLock(wrappedCols, () => Date.now(), accountId, cardId, true);
     expect(res).toMatchObject({ code: 'REV_CONFLICT' });

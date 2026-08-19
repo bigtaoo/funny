@@ -38,7 +38,7 @@ import type { WorldMetaClient } from '../src/metaClient';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
 
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMeta: WorldMetaClient = {
   available: true,
@@ -46,6 +46,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -112,7 +113,7 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e — card-army zero-strengt
   let svc: WorldService;
   let redis: FakeRedis;
   let pushes: { accountId: string; msg: SlgPushMsg }[];
-  const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); } };
+  const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); }, broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
 
   beforeEach(async () => {
     await m.db.dropDatabase();

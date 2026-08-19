@@ -29,10 +29,10 @@ const BASE_SECT: SectDoc = {
 describe('SectQueryService.getSect — member family emblem spread', () => {
   it('includes emblemKey/emblemColor when the family has both set', async () => {
     const svc = build(BASE_SECT, [
-      { familyId: 'fam1', name: 'Fam', tag: 'FA', leaderId: 'alice', memberCount: 1, prosperity: 0, emblemKey: 'lion', emblemColor: 5 } as FamilySummary,
+      { familyId: 'fam1', name: 'Fam', tag: 'FA', leaderId: 'alice', memberCount: 1, prosperity: 0, emblemKey: 'emblem_bear', emblemColor: 5 } as FamilySummary,
     ]);
     const detail = await svc.getSect(BASE_SECT._id);
-    expect(detail!.memberFamilies[0]).toMatchObject({ emblemKey: 'lion', emblemColor: 5 });
+    expect(detail!.memberFamilies[0]).toMatchObject({ emblemKey: 'emblem_bear', emblemColor: 5 });
   });
 
   it('omits emblemKey/emblemColor entirely when the family has neither (not just undefined)', async () => {
