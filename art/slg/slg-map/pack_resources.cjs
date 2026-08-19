@@ -193,8 +193,16 @@ async function processImage(file, longEdge) {
     for (let x = 0; x < cropW; x++) {
       const si = ((y + minY) * W + (x + minX)) * ch;
       const di = (y * cropW + x) * 4;
-      cropBuf[di] = data[si]; cropBuf[di + 1] = data[si + 1];
-      cropBuf[di + 2] = data[si + 2]; cropBuf[di + 3] = data[si + 3];
+      // Neutralise the pen. §5.3 #1 asks for single-colour ink, and the map mixes frames drawn months
+      // apart — whatever hue a generation run happened to favour has to be normalised away here or the
+      // tiles read as different pens. Measured on the 2026-08-19 batch: the new drawings carried a blue
+      // cast of b-r +6..+51 while every frame they sit beside was neutral (+0..+7), plainly visible as
+      // navy tiles among black ones. Collapsing RGB to luma keeps stroke darkness (and therefore the
+      // measured density the level read depends on) while making hue drift structurally impossible.
+      // Sticker's tier band is applied afterwards, so it still gets its copper->gold ramp on top.
+      const lum = Math.round(0.299 * data[si] + 0.587 * data[si + 1] + 0.114 * data[si + 2]);
+      cropBuf[di] = lum; cropBuf[di + 1] = lum; cropBuf[di + 2] = lum;
+      cropBuf[di + 3] = data[si + 3];
     }
   }
 

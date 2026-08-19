@@ -426,8 +426,12 @@ shadow, ground line, baseline
 ```
 The subject fills the frame edge to edge with only a thin even margin — no large
 empty areas anywhere in the frame. The composition may spread horizontally or
-vertically, whichever reads better; wide compositions are not penalised.
+vertically, whichever reads better; wide compositions are not penalised. Draw it
+with dense pen hatching so the whole subject reads dark and solid at a glance —
+not as thin hollow outlines with white interiors.
 ```
+
+> 末句是 2026-08-19 第一批出图后补的（§6.6）：8 张不达标的帧里有一半是生成器把主体画成了**空心白轮廓**——瓶子没灌墨、石块不打阴影线、纸叠只有边线。密度是等级读数的载体，必须在 prompt 里明说，不能指望"filling the frame"顺带带出来。
 
 **共用负向增补**：
 
@@ -461,3 +465,28 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 > **20 → 17 张的调整**：`res_ink_l4` / `res_graphite_l4` / `res_graphite_l3` / `res_paper_l8` 的 prompt 已撤（理由见 §6.4 末），新增 `res_graphite_l5`。
 >
 > 出图后丢进 `art/slg/slg-map/` 重跑 `node art/slg/slg-map/pack_resources.cjs`——§6.3 的校验器会直接判定通过/不通过，不达标的帧会打印在违规表里，按表迭代即可。**不需要人肉目测单调性。**
+
+### 6.6 第一批出图落地（2026-08-19）
+
+17 张出图，**13 张落地，1 张退回，4 张需重出**；同时新图把 4 张留用的老帧比了下去，也进入重画队列。
+
+**落地 13 张**（`art/leftover/res_*.pre-2026-08-19.*` 保留了被替换的旧帧）：ink l5/l6/l8/l9、paper l7/l9、graphite l6/l9、metal l5/l6/l8/l9、sticker l8。剪影违规全部修掉——l8 那批容器/载具（试管架、矿车、铁盒、贴纸卷）没了，metal l5 的夹子从碎屑堆里露出来了，paper l6 不再是方块。
+
+**退回 1 张**：`graphite_l5` 新图密度 0.087 反而低于旧帧 0.115，且画成细长晶柱（往 l6 那个已判违规的毛病上飘）→ 旧帧恢复，新图存 `art/leftover/res_graphite_l5.rejected-2026-08-19-too-sparse.webp`。
+
+**新增管线修正：强制灰度化**。新图带蓝调（`b-r` +6~+51），而它们要并排的老帧全是中性黑（+0~+7），在地图上读作"换了支笔"。`pack_resources.cjs` 现在把所有帧的 RGB 折成 luma 再打包（sticker 的色带在这之后施加，铜→金不受影响）——不靠出图纪律，hue 漂移结构上不可能再发生。
+
+**待重出 8 张**：
+
+| 帧 | 现状 | 判定 | 病因 |
+|---|---|---|---|
+| `res_ink_l7` | 新图 0.246 | 差 22% | 三只瓶子画成了**空玻璃瓶**，没灌墨（prompt 写了 all filled，生成器没照做） |
+| `res_ink_l10` | 旧帧 0.210 | 差 49% | 新 l9 密度 0.379 已经反超顶级，l10 必须是全系最满的一张 |
+| `res_graphite_l5` | 旧帧 0.115 | 差 6% | 旧帧本身偏空（新图更差已退回） |
+| `res_graphite_l7` | 旧帧 0.105 | 差 18% | 被新 l6（0.152）反超 |
+| `res_graphite_l8` | 新图 0.095 | 差 7% | 石块画成**圆钝白多面体**、无阴影线、缝隙没碎屑填充 |
+| `res_metal_l7` | 旧帧 0.135 | 差 19% | 被新 l6（0.197）反超 |
+| `res_paper_l6` | 新图 0.078 | 差 66% | 纸叠只有**空心边线**，侧面没有密集叠层线与排线 |
+| `res_paper_l8` | 旧帧 0.083 | 差 55% | 被新 l7（0.157）反超 |
+
+> **规律**：新画稿普遍比同族老帧密得多，于是"偏空"的判定自动传导到了相邻的老帧上。这正是门禁该有的行为——它不认"这张是新出的"，只认整条曲线。第二批要盯的是**密度**，剪影这一关已经过了。
