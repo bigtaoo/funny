@@ -32,7 +32,7 @@ import type { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
-import { buildIcon, tabIconVariant, type IconKind } from '../../render/icons';
+import { buildIcon, buildRasterTabIcon, tabIconVariant, BACK_ARROW_ART, BACK_ARROW_ASPECT, type IconKind } from '../../render/icons';
 import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { FS, snapFont } from '../../render/fontScale';
 import { drawGuilloche } from './SceneHeader/guilloche';
@@ -164,21 +164,51 @@ function measureBackLabel(label: string, size: number): { w: number; h: number }
 }
 
 /**
- * Back-arrow glyph box and its gap to the label, as a multiple of the label size — the same
- * [icon][gap][text] shape {@link buildTitleIcon} gives the title, one notch smaller (1.0 vs 1.25)
- * because the arrow is a lead-in, not the subject of the chip.
+ * Back-arrow height as a multiple of the label size, and its gap to the label — the same
+ * [glyph][gap][text] shape {@link buildTitleIcon} gives the title. Height rather than a square box
+ * because the art is a 2:1 arrow (see {@link BACK_ARROW_ASPECT}); 0.62 puts it a little under cap
+ * height, which is what makes a horizontal arrow read as a lead-in rather than as a second line of
+ * text.
  */
-const BACK_ARROW_RATIO = 1.0;
-const BACK_ARROW_GAP_RATIO = 0.22;
+const BACK_ARROW_H_RATIO = 0.62;
+/** `DisplayObject.name` on the arrow node, so callers/tests can find it without counting children. */
+export const BACK_ARROW_NODE = 'backArrow';
+const BACK_ARROW_GAP_RATIO = 0.28;
 
-/** Chip padding + overall (w,h) around the back arrow + label — shared by the builder and callers that need the size before a cache-miss draw runs. */
-function backChipSize(label: string, size: number): { padX: number; padY: number; arrow: number; gap: number; w: number; h: number } {
+/**
+ * Chip padding + overall (w,h) around the back arrow + label — shared by the builder and callers
+ * that need the size before a cache-miss draw runs.
+ *
+ * The arrow's box comes from the constant aspect, NOT from the decoded texture: the pill behind it
+ * is baked into `uiCache` on first draw, so a width that depended on whether the PNG had decoded
+ * yet would bake a pill that no longer fits its own contents.
+ */
+function backChipSize(label: string, size: number): { padX: number; padY: number; arrowW: number; arrowH: number; gap: number; w: number; h: number } {
   const { w: labelW, h: labelH } = measureBackLabel(label, size);
   const padX = Math.round(size * 0.7);
   const padY = Math.round(size * 0.5);
-  const arrow = Math.round(size * BACK_ARROW_RATIO);
+  const arrowH = Math.round(size * BACK_ARROW_H_RATIO);
+  const arrowW = Math.round(arrowH * BACK_ARROW_ASPECT);
   const gap = Math.round(size * BACK_ARROW_GAP_RATIO);
-  return { padX, padY, arrow, gap, w: arrow + gap + labelW + padX * 2, h: labelH + padY * 2 };
+  return { padX, padY, arrowW, arrowH, gap, w: arrowW + gap + labelW + padX * 2, h: labelH + padY * 2 };
+}
+
+/**
+ * The back arrow itself, positioned at the chip's local origin. Drawn by the CALLER on top of the
+ * cached chrome rather than inside {@link buildBackChip} — the art is an AI raster (`BACK_ARROW_ART`)
+ * that decodes asynchronously, and `buildRasterTabIcon` deliberately draws nothing until it is
+ * ready. Baked into the cached chrome, a first draw that lost the race would leave a permanently
+ * arrow-less pill for that cache key; drawn live, the next render after `preloadTabIconTextures`
+ * simply has it. `onDark` picks the white ink for LoginScene's dark title bar over the blue accent
+ * the paper bar wants.
+ */
+function addBackArrow(container: PIXI.Container, x: number, y: number, size: number, onDark = false): void {
+  const { padX, arrowW, arrowH, h } = backChipSize(t('common.back'), size);
+  const arrow = buildRasterTabIcon(onDark ? BACK_ARROW_ART.active : BACK_ARROW_ART.accent, arrowW, arrowH);
+  arrow.name = BACK_ARROW_NODE;
+  arrow.x = x + padX;
+  arrow.y = y + Math.round(h / 2 - arrowH / 2);
+  container.addChild(arrow);
 }
 
 /**
@@ -200,7 +230,7 @@ export function backPillRightEdge(h: number): number {
  * (§7.5) — this is a subtle underlay, not a primary action button.
  */
 function buildBackChip(label: string, size: number, ctx: BackChipContext): { chip: PIXI.Container; w: number; h: number } {
-  const { padX, arrow, gap, w, h } = backChipSize(label, size);
+  const { padX, arrowW, gap, w, h } = backChipSize(label, size);
 
   const chip = new PIXI.Container();
   const bg = new PIXI.Graphics();
@@ -210,16 +240,11 @@ function buildBackChip(label: string, size: number, ctx: BackChipContext): { chi
   bg.endFill();
   chip.addChild(bg);
 
-  // Hand-drawn arrow in the same accent ink as the label (see `backArrow` in render/icons) — the
-  // literal "←" it replaces was the one glyph in the bar the sketch pen never touched.
-  const ar = buildIcon('backArrow', arrow, C.accent);
-  ar.x = padX;
-  ar.y = Math.round(h / 2 - arrow / 2);
-  chip.addChild(ar);
-
+  // The arrow's slot is reserved here but painted by {@link addBackArrow} after this container is
+  // cached — see that function for why the raster can't be baked in.
   const lbl = txt(label, size, C.accent);
   lbl.anchor.set(0, 0.5);
-  lbl.x = padX + arrow + gap;
+  lbl.x = padX + arrowW + gap;
   lbl.y = h / 2;
   chip.addChild(lbl);
 
@@ -301,7 +326,7 @@ export function drawSceneHeader(
   const variant = opts?.variant ?? 'paper';
   const accent = opts?.accent ?? HEADER_ACCENT.lobby;
   const size = backSize(headerH);
-  const label = t('common.back'); // the arrow is a drawn glyph now, see buildBackChip
+  const label = t('common.back'); // the arrow is a glyph now, drawn on top — see addBackArrow
 
   const chrome = getCachedDisplay(
     `hdr:${variant}:${accent}:${Math.round(w)}x${headerH}:${size}:${label}`,
@@ -356,7 +381,13 @@ export function drawSceneHeader(
   // button ends" to avoid drawing over it; a too-small reported width let the resource
   // cluster's opaque background paint over the tail of the back label ("← Bac[k]" bug,
   // same-day regression from the backSize portrait scale-up).
-  const chipW = backChipSize(label, size).w;
+  // Added LAST on purpose: several callers and tests read the header's children positionally
+  // ([chrome, (title icon), title]), and the arrow is the one node whose existence depends on an
+  // async texture — appending it keeps that prefix stable. Origin matches the chip buildChrome
+  // drew (BACK_X, vertically centred in the bar).
+  const { w: chipW, h: chipH } = backChipSize(label, size);
+  addBackArrow(container, BACK_X, Math.round((headerH - chipH) / 2), size, variant === 'dark');
+
   return { headerH, backRect: { x: 0, y: 0, w: Math.max(BACK_HIT_W, chipW), h: headerH } };
 }
 
@@ -392,81 +423,10 @@ export function drawFloatingBackButton(container: PIXI.Container, h: number): Fl
   display.x = FLOAT_MARGIN;
   display.y = FLOAT_MARGIN;
   container.addChild(display);
+  addBackArrow(container, FLOAT_MARGIN, FLOAT_MARGIN, size);
 
   return { backRect: { x: FLOAT_MARGIN, y: FLOAT_MARGIN, w: chipW, h: chipH } };
 }
 
-export interface HeaderCurrencyChip {
-  icon: IconKind;
-  color: number;
-  amount: number;
-  /** Short name drawn between the icon and the amount (e.g. "crumbs") — without it, an icon + bare
-   * number is unreadable to a player who hasn't memorized the material set. */
-  label?: string;
-}
-
-/**
- * Right-aligned coin (+ optional material chips, + optional capacity readout) drawn
- * on top of an already-baked header bar so it reads as part of the title row instead
- * of a separate band underneath it (the two used to visually float apart — see the
- * "equipment/card inventory" header-alignment fix). Draw into a per-render overlay layer added
- * *after* the cached header chrome, so the coin icon isn't hidden behind the bar.
- */
-export function drawHeaderCurrency(
-  container: PIXI.Container,
-  w: number, headerH: number,
-  coins: number,
-  chips: readonly HeaderCurrencyChip[] = [],
-  capacity?: { text: string; color: number },
-  scale = 1,
-): void {
-  const midY = headerH / 2;
-  const iconSize = Math.round(headerH * 0.32 * scale);
-  const fontSize = snapFont(Math.round(headerH * 0.26 * scale));
-  const labelSize = snapFont(Math.round(fontSize * 0.8));
-  const capSize = snapFont(Math.round(headerH * 0.2 * scale));
-  const gap = Math.round(headerH * 0.28 * scale);
-
-  const cluster = new PIXI.Container();
-  let cx = 0;
-
-  const addChip = (
-    icon: IconKind, color: number, amount: number, label?: string,
-    amountColor: number = C.dark, bold = false,
-  ): void => {
-    // 'coin' goes through the shared atlas-backed glyph so this reads identically to the shop's
-    // balance icon; other currency chips (materials, etc.) keep the procedural buildIcon draw.
-    const ic = icon === 'coin' ? buildCoinIcon(icon, iconSize, color) : buildIcon(icon, iconSize, color);
-    ic.x = cx; ic.y = -iconSize / 2;
-    cluster.addChild(ic);
-    cx += iconSize + 4;
-    if (label) {
-      const lb = txt(label, labelSize, C.mid);
-      lb.anchor.set(0, 0.5); lb.x = cx; lb.y = 0;
-      cluster.addChild(lb);
-      cx += lb.width + 4;
-    }
-    const lbl = txt(amount.toLocaleString(), fontSize, amountColor, bold);
-    lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = 0;
-    cluster.addChild(lbl);
-    cx += lbl.width + gap;
-  };
-
-  // Coin balance: gold bold number, no text label — the glyph is the unit. This is the single
-  // coin readout shared by every scene (shop / gacha / battle pass / equipment / roster / …).
-  addChip('coin', C.gold, coins, undefined, C.gold, true);
-  for (const chip of chips) addChip(chip.icon, chip.color, chip.amount, chip.label);
-
-  if (capacity) {
-    const capLbl = txt(capacity.text, capSize, capacity.color);
-    capLbl.anchor.set(0, 0.5); capLbl.x = cx; capLbl.y = 0;
-    cluster.addChild(capLbl);
-    cx += capLbl.width;
-  } else {
-    cx -= gap; // trim the trailing gap after the last chip
-  }
-
-  cluster.x = w - 10 - cx;
-  cluster.y = midY;
-  container.addChild(cluster);
-}
+export type { HeaderCurrencyChip } from './SceneHeader/currency';
+export { drawHeaderCurrency } from './SceneHeader/currency';

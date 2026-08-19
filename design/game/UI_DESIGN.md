@@ -125,7 +125,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 | 项 | 规格（竖屏 1080×1920 设计空间；横屏等比） |
 |---|---|
 | 位置 | 标题栏左端，`x = 10`、垂直居中于标题栏 |
-| 文案 | 手绘左箭头 glyph（`backArrow`）+ `t('common.back')`（统一 key，两者同色 `C.accent`） |
+| 文案 | 手绘左箭头 AI 图（`BACK_ARROW_ART`）+ `t('common.back')`（统一 key，箭头烤 `accent` 蓝墨，与文案同色） |
 | 命中区 | 左上角 `{ x: 0, y: 0, w: 160, h: HEADER_H }`，比可见文字大以保证触屏好点 |
 | 行为 | 调用 `cb.onBack()`；返回上一场景由 `SceneManager` 处理 |
 | 标题 | 返回按钮右侧，居中或左对齐于标题栏 |
@@ -161,6 +161,8 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > - **未动**：Card/Equipment 的 `drawHeaderCurrency` 紧凑 scale（`100/headerH`，见上「栏高统一」条目）——两场景互为对开页且有明确的溢出规避理由，不属于本次"跨页不一致"的范畴，维持现状。
 
 > **返回箭头改为手绘 glyph（2026-08-19）**：返回文案里的 `←` 是这一栏里唯一**不是**用 sketch 笔触画出来的图形——它由文字渲染器按 CJK 回退字体绘制，笔画细、字形随平台变，跟旁边的手绘标题图标不是一套语言。现在 `backArrow`（`render/icons/ui.ts`，笔宽 `0.09·s`，比其余 glyph 重一档）作为独立 glyph 画在标签左侧，i18n 值退回纯 `返回`/`Back`/`Zurück`（`common.back` 与 LoginScene 的 `auth.back` 都去掉了字面箭头）。chip 宽度由 `backChipSize` 统一计入 glyph + gap；`backPillRightEdge(h)` 新导出给 FamilyScene/SectScene 用（这两处原本各抄了一份 chip 宽度公式，chip 一长它们就算窄）。回归测试 `client/test/ui/backButtonArrowGlyph.ui.ts`。同一次改动把 `drawGuilloche` 拆到 `SceneHeader/guilloche.ts`（500 行约定）。
+
+> **同日改为 AI 图（2026-08-19 下午）**：上面那枚矢量箭头当天就被真手绘 AI 图替换（`art/ui/tabicons/tabicon_back.png` → `back_accent.png`/`back_active.png`），矢量版 `drawBackArrow` 一并删除，不留两套。整套判断、prompt、量化（2.06:1 的扁形状为什么需要 3 道膨胀）和三个接线陷阱（**箭头不能烘进 `uiCache` 的 chrome**、宽度必须用常量比例而非纹理、`LoginScene` 要自己预热）记在 [`design/product/back-arrow-art.md`](../product/back-arrow-art.md)。
 
 ---
 
