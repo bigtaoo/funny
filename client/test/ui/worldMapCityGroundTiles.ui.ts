@@ -47,6 +47,7 @@ async function drawn(tile: WorldTileView): Promise<{ sprites: PIXI.Sprite[]; fra
     isResAtlasReady: () => true,
     getResTexture: () => fakeTex(128, 128),
     getResLevelTexture: () => fakeTex(128, 128),
+    getResFrameRead: () => ({ sizeMul: 1 / 128, alphaMul: 1 }),
   }));
   const { drawTileL1 } = await import('../../src/scenes/worldmap/tileGraphics');
   const g = new PIXI.Graphics();

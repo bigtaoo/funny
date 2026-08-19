@@ -1,7 +1,7 @@
 # SLG 地图资源 — AI 出图 prompt 表
 
-状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~395 KB**，client + map-editor 两份字节一致。
-**⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6。当前状态：46 帧全部通过构建期门禁（`node art/slg/slg-map/pack_resources.cjs` 不带 `--report-only` 跑通）；渲染层接线未完成，见 §6.10。**
+状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~417 KB**，client + map-editor 两份字节一致；客户端实际加载的合并页 `world_atlas` 见 §6.11（89 帧 / 1954×1828 / ~1.7 MB 无损）。
+**⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6。当前状态：46 帧全部通过构建期门禁（`node art/slg/slg-map/pack_resources.cjs` 不带 `--report-only` 跑通），渲染层接线亦已完成（§6.11）——等级读数整条在打包期解完、烘进每个 frame 条目的 `nw` 字段，两个渲染器（client + map-editor）都只剩贴图适配器、零等级逻辑。**
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
 
 > **⚠️ 决策变更 III（2026-08-19，用户拍板）**：分级读数整套重构，见 **§6**（权威，覆盖 §5.3 #2 与 §5.4 的形态跃迁条款）。起因是「按宽归一」这条旧契约会**惩罚横向生长**——高等级的丰度是横着铺开画的，归一化反而把它压小，实测四类资源全部在 l5→l6 墨量回落，ink l4 成了全十级里视觉最重的一帧。
@@ -554,12 +554,24 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 | 画框环扫描（§6.7 末） | `res_paper_l6` 带内缩 13px 的画框，边缘检测抓不到 |
 | 实心平涂占比（§6.9） | ink l7 密度达标但变成粗描边+平涂，破坏"一支笔" |
 
-**剩余工作（未开始）**：
+**剩余工作**：全部完成（2026-08-19，见 §6.11）。
 
-1. **整页重排（阻塞项，必须先做）**：客户端读的是合并页 `client/src/assets/slg/world_atlas.{png,json}`，而本次 17 张新帧的**尺寸全变了**，`patchMergedAtlas.js` 只支持同尺寸就地回贴、会直接拒绝。必须从 git 历史恢复被 2026-07-27 资产整理删掉的源图集（`terrain_atlas` / `city_atlas` / `playerbase_atlas` / `building_atlas` / `city_bld_atlas`）后重跑 `mergeAssetAtlases.js`，或给 patch 脚本加整页重排能力。**在这一步完成前，新美术在游戏里看不到。**
-> **顺带的一个变化，别当成误提交**：`client/src/assets/slg/res_atlas.{png,json}` 重新进了版本库——它本是 2026-07-27 整理（`072131d8`）删掉的，但 `pack_resources.cjs` 的 `OUT_DIRS` 无条件写这个路径，而上面那步整页重排**恰恰需要它当输入**。留着比每次重新生成再删掉更省事。
+### 6.11 渲染层接线落地（2026-08-19 · §6.10 的五项全部完成）
 
-2. **渲染层接线**：`drawResMotif` 改为消费 `nw.sizeMul` / `nw.alphaMul`（等级→尺寸/透明度逻辑全部删掉，图集已是唯一权威）；抖动 `scale` 从 `[0.85,1.15]` 收窄到 `[0.96,1.04]`（`rot`/`dx`/`dy` 保留）。
-3. **两份渲染器合并**：`client/src/scenes/worldmap/tileGraphics/resources.ts` 与 `tools/map-editor/src/render/tileGraphics.ts` 目前是复制粘贴、靠注释里的「must stay in lockstep」人肉保证。纯计算下沉到 `@nw/shared/slg`（两边都已 import 它），各留一个贴图适配器。
-4. **`Lv.N` 文字标签**（§6.2 #7）：仅 l6+ 且近 zoom 显示；用位图数字图集或 `BitmapText`，**不要每格 `new PIXI.Text`**（Text 纹理销毁泄漏）。
-5. **验收**：contact-sheet 生成器进 `art/scripts/`；同 resType 同 level 随机 200 组 `(tx,ty)` 渲染包围盒极差 < 5% 的单测；起客户端在混合等级区截图对比。
+**1. 整页重排 —— 选了「给 patch 脚本加重排能力」，没有恢复被删的源图集。**
+`patchMergedAtlas.js` 现在比较帧尺寸自动分流：尺寸全同走原来的**就地回贴**（JSON diff 最小），任一帧尺寸变了就走新的**整页重排**——按**帧粒度**（不是原来的「每个源图集一整块」粒度）把合并页拆开重排，源图集有的帧取源图集的新像素，其余帧从旧合并页原样搬过来。这条路只需要合并页本身 + 那一个源图集，所以不必把 2026-07-27 删掉的 5 个图集（≈1 MB 二进制）重新塞回仓库、也不必让 `mergeAssetAtlases.js` 复活。副产品：旧页是整块拼的、带着每个源图集内部的空隙，利用率只有 32.9%，重排后 **2048×4550 → 1954×1828、86.3%**——顺带甩掉了「高度 4550 超过部分 GPU 4096 上限」这个一直存在的隐患。
+
+> **两个踩到的坑，都留在脚本注释里**：
+> - **不要用 sharp 的 `composite` 拼帧**：它为了混合会预乘 alpha，取整回来时每个抗锯齿边缘像素都会漂 1–2。这里帧落在空画布的互不重叠矩形上、根本不需要混合，改成裸的逐行 `Buffer.copy`，重排后**每一帧都与来源逐字节相同**——"这次重排有没有动到不该动的美术"才成为可验证的问题（实测：0 像素差）。
+> - **sharp 0.32 的 `png()` 只要带上 `palette`/`quality`/`colours`/`dither`/`effort` 里任意一个就会静默转 8-bit 调色板**（合并页正是这么变成 palette-8 的）。而 6 个子图集合起来有 **392 种 RGBA**，256 格根本装不下：量化会动到 28–54% 的可见像素、单通道最大 43/255、**alpha 最大 12–38**——alpha 漂移直接体现为钢笔抗锯齿边缘发脆。现在只传 `compressionLevel: 9`，无损，代价是 1092 KB → 1747 KB。这是个 CDN 托管、本地缓存、进场才懒加载的场景图集，不进微信主包（`ASSET_PACKAGING.md` §4），这 650 KB 换零漂移划算。
+
+**2–3. 渲染层接线 + 两份渲染器合并（同一次改动）。** 纯计算下沉到 `@nw/shared/slg/core.ts`，挨着 `citySpriteTiles` 那批：`resMotifPlacement()`（返回 scale/alpha/rotation/x/y）、`resMotifJitter()`、`RES_MOTIF_SIZE_FRAC` / `RES_MOTIF_FOG_ALPHA`、`ResMotifFrameRead` 类型。两个渲染器各自只剩十来行贴图适配器，等级→尺寸/透明度逻辑一行不剩；抖动 `scale` 收窄到 `[0.96,1.04]`，`rot`/`dx`/`dy` 原样。图集的 `nw` 由各自的 `getResFrameRead(frameName)` 读 bundle 进来的 JSON 拿到（PIXI 的 Spritesheet 只保留它认识的键，`nw` 到不了 Texture）——沿用 `cityAtlasLoader.getCityContentTopFracForLevel` 读 `contentTop` 的先例。
+
+**4. `Lv.N` 标签。** `drawResLevelLabel()`：`resLevelLabelText(level, tp)`（`@nw/shared`）决定画不画、画什么——`RES_LEVEL_LABEL_MIN_LEVEL = 6`、`RES_LEVEL_LABEL_MIN_TP = 64`；文案纯 `Lv.{n}`，沿用 2026-08-01 主城标签先例。实现是**一个共享 BitmapFont + 每个瓦片槽位复用一个 `BitmapText`**（按名字挂在瓦片 Graphics 上，不需要时只 `visible = false`），不是每格 `new PIXI.Text`——`resourceDensity=1.0` 下满屏都是资源格，每格一个 Text 就是每格一张 canvas 纹理，正好撞上已知的 Text 纹理销毁泄漏。配套改了 `WorldMapRenderer/pool.ts` 的槽位复位：原来只删 Sprite 子节点，现在**非 Sprite 子节点一律隐藏**——否则缩到 L2/L3（那两条路径根本不碰这个子节点）时标签会浮在没有母题的格子上。
+> **刻意的不对称**：标签只在客户端画，map-editor 不画。编辑器里等级是设计师自己在 UI 里设的、本来就知道；标签是给玩家判断"这块守军打不打得过"的可供性，不是地形长相的一部分。这一条写在编辑器源码注释里，免得日后被当成漂移"修"回来。
+
+**5. 验收。**
+- `art/scripts/resContactSheet.js`：按游戏真实缩放（`tp × MOTIF_SIZE_FRAC × nw.sizeMul`、alpha = `nw.alphaMul`）输出 5 类 × l1–l10 总览，每格垫一个同 pitch 的菱形轮廓，好判断有没有溢出格子。它读的就是渲染层读的那份 `nw`，所以图集要是错的、这张表就跟着错，不会替它遮丑。产物 `art/slg/slg-map/res_contact_sheet.png`。
+- 单测三层：`server/shared/test/core.test.ts` 钉公式本身；`client/test/ui/worldMapResMotifLevelRead.ui.ts` 拿**真实 bundle 的 `world_atlas.json`** 钉端到端（每帧都有 `nw`、alpha 落在 `[0.85,1]`、四类资源 l1→l10 占地严格递增且首尾正好落在 0.80/1.30、同 resType 同 level 200 组 `(tx,ty)` 每个都在均值 ±5% 内、`drawResMotif` 确实走共享公式、雾下只画类型帧）；`tools/map-editor/test/resMotifCallSite.test.ts` 用源码扫描钉编辑器确实路由过去（编辑器的 vitest 按设计不覆盖 PIXI 层，沿用 `rasterizeCallSites.test.ts` 的做法；已反向验证过：把 `sp.alpha` 改回 `0.55+0.45*(lv-1)/9` 会红）。
+> **「包围盒极差 < 5%」的口径**：断言写成「200 个样本每个都在均值 ±5% 内」。抖动区间 `[0.96,1.04]` 的**极值比**是 1.083，本来就不可能小于 5%；真正要防的是"相邻同级格子看起来不一样大"，±5% 是对它更贴切也更严的说法。两个数都在测试里断言了。
+

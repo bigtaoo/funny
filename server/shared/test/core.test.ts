@@ -25,6 +25,10 @@ import {
   cityPlotMaskPoints,
   isCityGroundTile,
   tileFeatureBuilding,
+  resMotifJitter,
+  resMotifPlacement,
+  RES_MOTIF_SIZE_FRAC,
+  RES_MOTIF_FOG_ALPHA,
   type TileType,
   EMBLEM_KEYS,
   isEmblemKey,
@@ -232,6 +236,95 @@ describe('tileFeatureBuilding', () => {
   it('never claims a city-ground tile has feature art (the two functions cannot both be true)', () => {
     for (const t of ALL_TILE_TYPES) {
       if (isCityGroundTile(t)) expect(tileFeatureBuilding(t)).toBeNull();
+    }
+  });
+});
+
+// ── Resource-motif placement (slg-resource-art.md §6) ─────────────────────────────────────────────
+// Pinned here because the game client and the map editor now BOTH call these instead of each keeping
+// a hand-written copy; two copies had nowhere their agreement could be asserted. The routing half
+// ("the renderer actually calls this") is pinned per package:
+// client/test/ui/worldMapResMotifLevelRead.ui.ts and tools/map-editor/test/resMotifCallSite.test.ts.
+
+describe('resMotifJitter', () => {
+  it('is deterministic: the same (tx, ty) always produces the same jitter (no shimmer on redraw/pan)', () => {
+    expect(resMotifJitter(37, -12)).toEqual(resMotifJitter(37, -12));
+  });
+
+  it('different tiles get different jitter (not a constant fallback)', () => {
+    expect(resMotifJitter(1, 0)).not.toEqual(resMotifJitter(0, 0));
+  });
+
+  it('scale variance is imperceptible — size belongs to the level curve, not to the jitter', () => {
+    // The 2026-08-19 rebuild narrowed this from [0.85, 1.15]. At the old range two NEIGHBOURING tiles
+    // of the same level could differ by 1.15/0.88 = 1.31x, which is what the player was looking at
+    // when they reported three level-4 ink tiles as "obviously not the same kind of tile" (§6.1).
+    let lo = Infinity, hi = -Infinity;
+    for (let tx = -20; tx <= 20; tx++) {
+      for (let ty = -20; ty <= 20; ty++) {
+        const s = resMotifJitter(tx, ty).scale;
+        lo = Math.min(lo, s); hi = Math.max(hi, s);
+      }
+    }
+    expect(lo).toBeGreaterThanOrEqual(0.96);
+    expect(hi).toBeLessThanOrEqual(1.04);
+    expect(hi / lo).toBeLessThan(1.09);
+  });
+
+  it('offset and rotation stay within their documented bounds', () => {
+    for (let tx = -20; tx <= 20; tx++) {
+      for (let ty = -20; ty <= 20; ty++) {
+        const j = resMotifJitter(tx, ty);
+        expect(Math.abs(j.dx)).toBeLessThanOrEqual(0.13);
+        expect(Math.abs(j.dy)).toBeLessThanOrEqual(0.09);
+        expect(Math.abs(j.rot)).toBeLessThanOrEqual(0.35);
+      }
+    }
+  });
+});
+
+describe('resMotifPlacement', () => {
+  const TP = 76; // L1 tile pitch
+  const read = { sizeMul: 0.0089, alphaMul: 0.9 };
+
+  it("takes size from the frame's baked sizeMul, NOT from the texture's own dimensions", () => {
+    // This is the whole point of the rebuild: the retired contract divided by tex.width, so a wide
+    // "more of it" drawing rendered SMALLER. sizeMul already folds the frame's equivalent edge in.
+    const wide = resMotifPlacement({ tp: TP, tx: 3, ty: 4, read, texW: 200, texH: 60 });
+    const tall = resMotifPlacement({ tp: TP, tx: 3, ty: 4, read, texW: 60, texH: 200 });
+    expect(wide.scale).toBe(tall.scale);
+    expect(wide.scale).toBeCloseTo(TP * RES_MOTIF_SIZE_FRAC * read.sizeMul * resMotifJitter(3, 4).scale, 12);
+  });
+
+  it("takes alpha from the frame's baked alphaMul, with no level term of its own", () => {
+    expect(resMotifPlacement({ tp: TP, tx: 0, ty: 0, read, texW: 128, texH: 128 }).alpha).toBe(0.9);
+  });
+
+  it('fog overrides alpha to the type-only dim, whatever the frame says', () => {
+    const p = resMotifPlacement({ tp: TP, tx: 0, ty: 0, read, texW: 128, texH: 128, fogged: true });
+    expect(p.alpha).toBe(RES_MOTIF_FOG_ALPHA);
+  });
+
+  it('a frame with no baked read stays bounded by max(w, h) at full alpha — visible, but claiming no level', () => {
+    const p = resMotifPlacement({ tp: TP, tx: 0, ty: 0, read: null, texW: 200, texH: 60 });
+    expect(p.scale).toBeCloseTo(TP * RES_MOTIF_SIZE_FRAC / 200 * resMotifJitter(0, 0).scale, 12);
+    expect(p.alpha).toBe(1);
+  });
+
+  it('scales linearly with tile pitch, so zooming never changes the relative read', () => {
+    const a = resMotifPlacement({ tp: 40, tx: 7, ty: 9, read, texW: 128, texH: 128 });
+    const b = resMotifPlacement({ tp: 80, tx: 7, ty: 9, read, texW: 128, texH: 128 });
+    expect(b.scale / a.scale).toBeCloseTo(2, 12);
+    expect(b.x / a.x).toBeCloseTo(2, 12);
+  });
+
+  it('offsets stay inside the tile: never more than a fifth of the pitch from its centre', () => {
+    for (let tx = -20; tx <= 20; tx++) {
+      for (let ty = -20; ty <= 20; ty++) {
+        const p = resMotifPlacement({ tp: TP, tx, ty, read, texW: 128, texH: 128 });
+        expect(Math.abs(p.x)).toBeLessThan(TP * 0.2);
+        expect(Math.abs(p.y)).toBeLessThan(TP * 0.2);
+      }
     }
   });
 });

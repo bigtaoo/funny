@@ -10,7 +10,7 @@ import { FOG_COLOR, ALLY_SECT_BORDER, SECT_BASE_TINT, ALLY_SECT_BASE_TINT, TERRA
 import type { TerrainTextureName } from '../../../render/atlas/terrainAtlasLoader';
 import type { WorldTileView } from '../../../net/WorldApiClient';
 import { worldSeed, obstacleShoreAt, isCityGroundTile, tileFeatureBuilding, type ProceduralTile } from '@nw/shared';
-import { drawResMotif } from './resources';
+import { drawResLevelLabel, drawResMotif } from './resources';
 import { drawHpBar } from './primitives';
 
 // Player-built structure sprite heights, as a fraction of the tile pitch `tp` (2026-08-15,
@@ -146,9 +146,16 @@ export function drawTileL1(
   const isCityGround = isCityGroundTile(featType);
   const featBuilding = tileFeatureBuilding(featType);
   const hasBuilding = !!featBuilding || isCityGround || !!tile?.watchtower || !!tile?.structure;
-  if (motifResType && !hasBuilding) {
-    drawResMotif(g, motifResType, tile?.level ?? proc?.level ?? 1, tp, false, tx, ty);
+  const motifLevel = tile?.level ?? proc?.level ?? 1;
+  const showMotif = !!motifResType && !hasBuilding;
+  if (showMotif) {
+    drawResMotif(g, motifResType, motifLevel, tp, false, tx, ty);
   }
+  // Exact level as text from l6 up, close zoom only (slg-resource-art.md §6.2 #7): the artwork carries
+  // "roughly how rich", but measurement showed it cannot carry "exactly which tier" (§6.7), and the tier
+  // is what decides whether a march into that garrison is survivable. Level 0 hides it, so a tile whose
+  // motif is suppressed by a building never keeps a label the heap no longer explains.
+  drawResLevelLabel(g, showMotif ? motifLevel : 0, tp);
 
   // Overlay landmark buildings for NPC strongholds / crossings. Like the ground texture, these are
   // TERRAIN features (their type is procedural, visible map-wide), so they draw before the fog return,
