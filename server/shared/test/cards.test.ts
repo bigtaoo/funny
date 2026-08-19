@@ -6,6 +6,7 @@ import {
   FUSION_MATERIAL_COUNT,
   applyFusion,
   cardPower,
+  cardTroopCap,
   selectBestCard,
   cardInvCount,
 } from '../src/cards';
@@ -69,6 +70,38 @@ describe('CARD_DEFS', () => {
 });
 
 // ── applyFusion ──────────────────────────────────────────────────────────────────
+
+describe('cardTroopCap', () => {
+  // Server-side authority for the per-card troop cap since 2026-08-19 — `distributeTroops` rejects
+  // anything past it (CARD_TROOP_CAP_EXCEEDED). Until then the cap lived only in the client mirror, so
+  // these cases pin the arithmetic the server now enforces; `client/test/cardDefsSharedParity.test.ts`
+  // pins that the client's own `troopCap()` still agrees with it card by card, level by level.
+  it('is troopCapBase at level 1 and grows flat per level after that', () => {
+    const def = CARD_DEFS['lichuang']!;
+    expect(cardTroopCap({ defId: 'lichuang', level: 1 })).toBe(def.troopCapBase);
+    expect(cardTroopCap({ defId: 'lichuang', level: 2 })).toBe(def.troopCapBase + def.troopCapGrowth);
+    expect(cardTroopCap({ defId: 'lichuang', level: MAX_CARD_LEVEL }))
+      .toBe(def.troopCapBase + def.troopCapGrowth * (MAX_CARD_LEVEL - 1));
+  });
+
+  it('differs per card definition, not just per level', () => {
+    // lichuang (infantry) is the numerous-cheap-body card and carries twice what the others do.
+    expect(cardTroopCap({ defId: 'lichuang', level: 1 })).toBeGreaterThan(cardTroopCap({ defId: 'chenshou', level: 1 }));
+  });
+
+  it('clamps a level outside 1..MAX_CARD_LEVEL instead of extrapolating', () => {
+    const atOne = cardTroopCap({ defId: 'lichuang', level: 1 });
+    const atMax = cardTroopCap({ defId: 'lichuang', level: MAX_CARD_LEVEL });
+    expect(cardTroopCap({ defId: 'lichuang', level: 0 })).toBe(atOne);
+    expect(cardTroopCap({ defId: 'lichuang', level: -4 })).toBe(atOne);
+    expect(cardTroopCap({ defId: 'lichuang', level: MAX_CARD_LEVEL + 10 })).toBe(atMax);
+    expect(cardTroopCap({ defId: 'lichuang', level: 3.9 })).toBe(cardTroopCap({ defId: 'lichuang', level: 3 }));
+  });
+
+  it('returns 0 for an unknown defId — a stale card must never read as "unlimited capacity"', () => {
+    expect(cardTroopCap({ defId: 'no_such_card', level: 5 })).toBe(0);
+  });
+});
 
 describe('applyFusion', () => {
   it('raises the card exactly one level', () => {
