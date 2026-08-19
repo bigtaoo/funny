@@ -23,6 +23,9 @@ import {
   citySpriteTiles,
   cityGroundFwdPx,
   cityPlotMaskPoints,
+  isCityGroundTile,
+  tileFeatureBuilding,
+  type TileType,
   EMBLEM_KEYS,
   isEmblemKey,
   EMBLEM_COLORS,
@@ -177,5 +180,58 @@ describe('isEmblemColor', () => {
 
   it('rejects a color not in the preset palette', () => {
     expect(isEmblemColor(0x123456)).toBe(false);
+  });
+});
+
+// ── Per-tile feature art (2026-08-19) ────────────────────────────────────────────────────────
+// These two exist ONLY so the game client's drawTileL1 and the map editor's drawEditorTile cannot
+// disagree (design/tools/map-editor/DESIGN.md §6.3 render parity). Both renderers draw through PIXI,
+// so neither package can cheaply test the mapping itself — the editor's vitest deliberately excludes
+// every PIXI-touching module. Pinning it here is what makes the parity rule enforceable at all.
+const ALL_TILE_TYPES: readonly TileType[] = [
+  'neutral', 'resource', 'territory', 'familyKeep', 'center', 'base', 'obstacle', 'bridge', 'plankway', 'stronghold',
+];
+
+describe('isCityGroundTile', () => {
+  it('is true for exactly the two city-ground types', () => {
+    expect(ALL_TILE_TYPES.filter(isCityGroundTile)).toEqual(['familyKeep', 'center']);
+  });
+
+  it('is false for undefined (a viewport cell with no tile and no procedural guess yet)', () => {
+    expect(isCityGroundTile(undefined)).toBe(false);
+  });
+});
+
+describe('tileFeatureBuilding', () => {
+  it('maps exactly the three one-per-region landmarks, and nothing else', () => {
+    const mapped = ALL_TILE_TYPES
+      .map((t) => [t, tileFeatureBuilding(t)] as const)
+      .filter(([, b]) => b !== null);
+    expect(Object.fromEntries(mapped)).toEqual({
+      stronghold: 'building_stronghold',
+      bridge: 'building_bridge',
+      plankway: 'building_plankway',
+    });
+  });
+
+  it('returns null for CITY GROUND — the 2026-08-19 regression this function exists to prevent', () => {
+    // `familyKeep` used to stamp `building_keep` on every tile of its type. That is invisible on a
+    // procedural city (proceduralTile classifies only the single anchor tile) but paints a wall of
+    // overlapping gatehouses across a PUBLISHED city's whole N×N footprint, under its own sprite.
+    expect(tileFeatureBuilding('familyKeep')).toBeNull();
+    expect(tileFeatureBuilding('center')).toBeNull();
+  });
+
+  it('returns null for undefined and for every ordinary tile type', () => {
+    expect(tileFeatureBuilding(undefined)).toBeNull();
+    for (const t of ['neutral', 'resource', 'territory', 'base', 'obstacle'] as const) {
+      expect(tileFeatureBuilding(t)).toBeNull();
+    }
+  });
+
+  it('never claims a city-ground tile has feature art (the two functions cannot both be true)', () => {
+    for (const t of ALL_TILE_TYPES) {
+      if (isCityGroundTile(t)) expect(tileFeatureBuilding(t)).toBeNull();
+    }
   });
 });

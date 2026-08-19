@@ -90,6 +90,15 @@ describe('HttpWorldClient', () => {
     expect(await new HttpWorldClient('http://world', 'k').saveMapTemplateTiles('t1', [])).toEqual({ updated: 5 });
     expect(fetchMock.mock.calls.at(-1)).toEqual(['http://world/admin/world/map-templates/t1/tiles', expect.objectContaining({ method: 'PUT' })]);
 
+    // City siege-point nodes (2026-08-19): a separate endpoint pair from /tiles, whole-list replace.
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true, data: [{ id: 'garrison-0' }] } });
+    await new HttpWorldClient('http://world', 'k').getMapTemplateCities('t1');
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://world/admin/world/map-templates/t1/cities');
+
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true, data: { updated: 64 } } });
+    expect(await new HttpWorldClient('http://world', 'k').saveMapTemplateCities('t1', [])).toEqual({ updated: 64 });
+    expect(fetchMock.mock.calls.at(-1)).toEqual(['http://world/admin/world/map-templates/t1/cities', expect.objectContaining({ method: 'PUT', body: { cities: [] } })]);
+
     fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true } });
     await new HttpWorldClient('http://world', 'k').activateMapTemplate('t1');
     expect(fetchMock.mock.calls.at(-1)).toEqual(['http://world/admin/world/map-templates/t1/activate', expect.objectContaining({ method: 'POST', body: {} })]);

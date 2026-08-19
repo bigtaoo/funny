@@ -8,7 +8,7 @@
 //     ④ season is null when this worldId has no provisioned world doc (contract's nullable case).
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { tileId } from '@nw/shared';
+import { allCityNodes, tileId } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
@@ -112,5 +112,43 @@ describe.skipIf(!mongo)('worldsvc enterWorld e2e (P1-5, comm-audit-2026-07-27)',
   it('season is null when this worldId has no provisioned world doc (contract nullable case)', async () => {
     const entry = await svc.enterWorld(W, 'a', 10, 1);
     expect(entry.season).toBeNull();
+  });
+
+  // ── cities (2026-08-19) ─────────────────────────────────────────────────────────────────────
+  // The city sprite layer's whole point is that the client stops recomputing allCityNodes() locally,
+  // so the field actually reaching this payload IS the feature. Everything else can be right and the
+  // map still renders published cities in the wrong place if `cities` gets dropped here.
+  it('the entry payload carries the world city nodes', async () => {
+    const entry = await svc.enterWorld(W, 'a', 10, 1);
+    expect(Array.isArray(entry.cities)).toBe(true);
+    expect(entry.cities.length).toBeGreaterThan(0);
+    // Shape the client's sprite layer depends on (id keys the sprite, footprint sizes it).
+    for (const n of entry.cities) {
+      expect(typeof n.id).toBe('string');
+      expect(['capital', 'worldCenter', 'garrison']).toContain(n.kind);
+      expect(Number.isInteger(n.footprint)).toBe(true);
+    }
+  });
+
+  it('falls back to the seed-derived list for a world with no stored node list', async () => {
+    // This suite's world has no WorldDoc at all (see the season-is-null case above), which is also the
+    // pre-2026-08-19 / no-active-template case: the terrain really is proceduralTile(worldId, …), so
+    // allCityNodes(worldId) is the correct answer rather than a guess.
+    const entry = await svc.enterWorld(W, 'a', 10, 1);
+    expect(entry.cities).toEqual(allCityNodes(W));
+  });
+
+  it('serves the world stored list instead, once one exists (a published/edited template)', async () => {
+    const moved = allCityNodes(W).map((n) => (n.kind === 'garrison' ? { ...n, x: n.x - 7, y: n.y - 3 } : n));
+    await m.collections.worlds.updateOne(
+      { _id: W },
+      {
+        $set: { cities: moved, season: 1, shard: 0, status: 'open', mapW: MAP_W, mapH: MAP_H, openAt: now(), capacity: 10, population: 0, rev: 1 },
+      },
+      { upsert: true },
+    );
+    const entry = await svc.enterWorld(W, 'a', 10, 1);
+    expect(entry.cities).toEqual(moved);
+    expect(entry.cities).not.toEqual(allCityNodes(W));
   });
 });

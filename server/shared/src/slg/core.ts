@@ -221,6 +221,49 @@ export function cityPlotMaskPoints(footprint: number, tp: number, isoRatio: numb
   return [0, 0, half, -gf, half, -tallPx, -half, -tallPx, -half, -gf];
 }
 
+// ── Per-tile feature art: which building a tile type stamps, and which types are city ground ──
+// Single source of truth for client + map-editor, for the same reason the sprite geometry above is:
+// design/tools/map-editor/DESIGN.md §6.3 makes SLG map render parity a hard requirement, and this
+// mapping is exactly what drifted on 2026-08-19 — `familyKeep` kept stamping a gatehouse per tile long
+// after it stopped meaning anything but "city ground". Two hand-copied ternaries in two packages cannot
+// be tested for agreement; these two functions can (server/shared/test/core.test.ts).
+
+/** Building-atlas frame names a TILE TYPE can stamp (see client render/atlas/buildingAtlasLoader.ts). */
+export type TileFeatureBuilding = 'building_stronghold' | 'building_bridge' | 'building_plankway';
+
+/**
+ * True for the tile types that are a CITY's ground: `familyKeep` (province capital / graded city) and
+ * `center` (world center). Such a tile draws no per-tile feature art of its own — the city's art is one
+ * footprint-sized sprite on the city layer (client WorldMapRenderer/city.ts, editor render/citySprites.ts),
+ * masked to the plot — and it suppresses the resource-motif heap, which city ground would otherwise show
+ * (it keeps a biome `resType`; see mapgen/tileGen.ts + mapEdit.ts).
+ *
+ * Why this is a named predicate rather than an inline `=== 'familyKeep'`: before 2026-08-19 `familyKeep`
+ * stamped `building_keep` per tile, which was invisible on a procedural city (only the single anchor tile
+ * is classified) but drew a wall of overlapping gatehouses across a PUBLISHED city's whole N×N footprint.
+ * `center` never had the stamp; the two now behave identically by construction.
+ */
+export function isCityGroundTile(type: TileType | undefined): boolean {
+  return type === 'familyKeep' || type === 'center';
+}
+
+/**
+ * The building-atlas frame a tile of this type stamps on itself, or null for none. Only the three
+ * one-per-region landmarks qualify: an NPC stronghold and the two capturable crossings. City ground
+ * returns null on purpose (see {@link isCityGroundTile}); so does every ordinary resource/neutral/
+ * obstacle/territory/base tile. Player-built structures (`tile.watchtower` / `tile.structure`) are a
+ * separate, live-state layer and are NOT covered here — this function is about tile TYPE alone, which is
+ * why the map editor (which knows nothing of live player state) can share it.
+ */
+export function tileFeatureBuilding(type: TileType | undefined): TileFeatureBuilding | null {
+  switch (type) {
+    case 'stronghold': return 'building_stronghold';
+    case 'bridge':     return 'building_bridge';
+    case 'plankway':   return 'building_plankway';
+    default:           return null;
+  }
+}
+
 // ── Procedural distribution knobs (U6 initial DRAFT; centralized here for easy tuning) ────────
 export const SLG_GEN = {
   /** Resource tile density: fraction of non-neutral tiles classified as resource tiles (ADR-032: raised to 1.0 — no pure no-yield neutral land; every non-blocking/keep/stronghold/center tile is some level of resource land). */

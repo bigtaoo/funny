@@ -58,6 +58,7 @@ function makeEnterWorld(overrides: Partial<EnterWorldView> = {}): EnterWorldView
     season: null,
     nations: [],
     me: { ...makeMe(), justJoined: false } as EnterWorldView['me'],
+    cities: [],
     marches: [],
     occupations: [],
     stationed: [],
@@ -97,6 +98,7 @@ function buildHarness(opts: { zoom?: 1 | 2 | 3 } = {}) {
     mapH: 100,
     worldChatLatest: null,
     worldChatUnread: 0,
+    cityNodes: null,
     getWorldChatSeenTs: () => 0,
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');
@@ -184,6 +186,31 @@ describe('WorldMapNet.loadData()', () => {
     await net.loadData();
 
     expect(ctx.tileCache.get('3:4')).toEqual({ x: 3, y: 4, type: 'city', level: 1, occupied: true, mine: true });
+  });
+
+  // ── cities (2026-08-19) ─────────────────────────────────────────────────────────────────────
+  // The client half of the wire that replaced the sprite layer's local allCityNodes() recomputation.
+  // WorldMapRenderer/core.ts falls back to the seed list whenever ctx.cityNodes is null, so a dropped
+  // assignment here fails silently: the map still draws cities, just at their procedural positions.
+  it('stores the served city nodes on the context for the sprite layer', async () => {
+    const { ctx, net, enterWorld } = buildHarness();
+    const cities = [
+      { id: 'garrison-0', kind: 'garrison', provinceIdx: 1, x: 41, y: 62, level: 6, footprint: 7 },
+    ] as unknown as EnterWorldView['cities'];
+    enterWorld.mockResolvedValueOnce(makeEnterWorld({ cities }));
+
+    await net.loadData();
+
+    expect(ctx.cityNodes).toEqual(cities);
+  });
+
+  it('leaves cityNodes null when the entry fetch fails, so the renderer keeps its seed fallback', async () => {
+    const { ctx, net, enterWorld } = buildHarness();
+    enterWorld.mockRejectedValueOnce(new Error('offline'));
+
+    await net.loadData(); // loadData swallows entry failures (offline OK)
+
+    expect(ctx.cityNodes).toBeNull();
   });
 
   it('computes worldChatUnread from messages newer than the last-seen timestamp', async () => {
