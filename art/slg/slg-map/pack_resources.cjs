@@ -27,12 +27,51 @@ const LONG_EDGE = 128;  // map-resource motif target long edge (closely viewed +
 const PAD = 2;          // per-frame spacing inside the atlas
 const ATLAS_W = 512;    // atlas width (fixed)
 const ALPHA_TRIM = 16;  // alpha threshold for considering a pixel "has content" during crop
+
+// ── Level-read contract (design/product/slg-resource-art.md §6, 2026-08-19) ────────────────────
+// The level read is SOLVED HERE and baked into the atlas as per-frame `nw.sizeMul` / `nw.alphaMul`,
+// so both renderers (client drawResMotif + map-editor's copy) carry zero level->size/alpha logic.
+// Why it moved here: the packer is the only place that can measure how much ink a frame actually
+// contains, and the read depends on that measurement — see the failure it replaces below.
+//
+// Old contract (retired): "render width-normalised, so taller-drawn art reads as a higher tier."
+// It punished sideways growth. High tiers express abundance by spreading sideways, width
+// normalisation then shrank the whole drawing, so the more the artist drew the smaller it landed —
+// measured ink mass per tile dropped at l5->l6 for all four base resources, and ink l4 rendered as
+// the heaviest frame of all ten levels (the tile the player circled on the map).
+//
+// New contract:
+//   footprint = BASE * LEVEL_SCALE(lv), normalised on the frame's EQUIVALENT EDGE sqrt(w*h) — a wide
+//              cluster and a tall bottle occupy the same visual area, so composition is free again.
+//   rendered ink mass R(lv) = density * LEVEL_SCALE(lv)^2 * alpha  must rise monotonically with a
+//              real per-step margin (INK_GROWTH), because that margin IS the level read.
+// alpha can only DIM an over-full frame (alpha <= 1), never darken an under-drawn one, so a frame
+// drawn sparser than its tier is an art-side defect no code can fix. ALPHA_FLOOR turns that into a
+// build failure instead of a silently unreadable map.
+const LEVEL_SCALE_LO = 0.80;   // footprint multiplier at l1
+const LEVEL_SCALE_HI = 1.30;   // ...and at l10 (0.30 tile-pitch * 1.30 = 0.39 tp, inside the 0.40 that read as a carpet)
+const INK_GROWTH = 1.06;       // minimum rendered-ink ratio between adjacent levels
+// alpha is a TRIM, not a channel. Everything on this map is drawn with one pen, and a frame rendered
+// at 0.4 next to a frame rendered at 1.0 reads as a different pen, not as less resource — so alpha may
+// only shave the small mismatches (a 15% dim on a black line at tile size is below notice). Letting it
+// range freely "solves" any curve on paper while wrecking the drawing: the first version of this gate
+// passed the current art by dimming ink l4 to 0.37 while ink l9 sat at 1.00, which is exactly the
+// washed-out-next-to-solid look the contract exists to prevent. The level read therefore rides on
+// footprint (LEVEL_SCALE) plus how full the artwork itself is drawn — and that makes an under-drawn
+// high tier an art defect the build must reject rather than silently absorb.
+const ALPHA_MIN = 0.85;
+const GATE_EPS = 1.02;         // a frame landing within 2% of the required ink is at the band's edge, not a defect
+const levelScale = (lv) => LEVEL_SCALE_LO + (LEVEL_SCALE_HI - LEVEL_SCALE_LO) * (lv - 1) / 9;
 const OUT_DIRS = [
   path.resolve(__dirname, '../../../client/src/assets/slg'),
   path.resolve(__dirname, '../../../tools/map-editor/src/assets/slg'),  // §5.8: keep both byte-identical
 ];
 
 const nextPow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };
+
+// Escape hatch for the transition only: report the §6 violations but still emit the atlas, so the
+// renderer work is not blocked on all 20 replacement drawings landing first. CI runs without it.
+const REPORT_ONLY = process.argv.includes('--report-only');
 
 // ── Per-level tier colour band (sticker only) ──────────────────────────────────
 // Level legibility (l1→l10, taller/fuller/more-scatter) is now carried entirely by the bespoke art's
@@ -85,6 +124,44 @@ async function tintLevelFrame(sprite) {
   return { ...sprite, buf };
 }
 
+/**
+ * Solve the level read for one resource type and name whichever frames make it unreadable.
+ *
+ * `reach` is the rendered ink mass a frame lands at full pen: density * LEVEL_SCALE(lv)^2. The curve
+ * has to climb by INK_GROWTH every level while each frame stays inside [ALPHA_MIN, 1] of its own
+ * reach, so it is walked FORWARD from the cheapest possible start — that yields the lowest feasible
+ * curve, and a level whose reach still cannot meet it is genuinely drawn too sparse for the tier
+ * below it. No amount of tuning fixes that: alpha cannot darken a drawing that has no ink in it.
+ *
+ * Blame lands on the sparse frame, with the alternative spelled out — drawing the level below lighter
+ * works too, and the silhouette audit (§6.4) is what decides which of the two is the real defect.
+ */
+function solveLevelRead(levels) {
+  const reach = new Map(levels.map((f) => [f.lv, f.density * levelScale(f.lv) ** 2]));
+  const R = new Map();
+  const offenders = [];
+  let prev = null;
+  for (const f of levels) {
+    const floor = ALPHA_MIN * reach.get(f.lv);
+    let want = prev === null ? floor : Math.max(floor, INK_GROWTH * R.get(prev));
+    if (want > reach.get(f.lv) * GATE_EPS) {
+      offenders.push({
+        lv: f.lv, below: prev, density: f.density,
+        need: want, can: reach.get(f.lv), shortfall: want / reach.get(f.lv),
+      });
+      want = reach.get(f.lv);  // best effort, so the rest of the table still prints something usable
+    }
+    R.set(f.lv, want);
+    prev = f.lv;
+  }
+  const solved = new Map();
+  for (const f of levels) {
+    const alpha = Math.min(1, Math.max(ALPHA_MIN, R.get(f.lv) / reach.get(f.lv)));
+    solved.set(f.lv, { sizeMul: levelScale(f.lv) / f.equivEdge, alphaMul: alpha });
+  }
+  return { solved, offenders, reach };
+}
+
 async function processImage(file, longEdge) {
   const name = path.basename(file).replace(/\.(webp|png)$/i, '');
   const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -121,14 +198,25 @@ async function processImage(file, longEdge) {
     }
   }
 
-  // Proportional scale: long edge = longEdge
+  // Proportional scale: long edge = longEdge. This is a STORAGE resolution only — it no longer
+  // carries any tier meaning (see the level-read contract above); the renderer normalises on
+  // sqrt(w*h) instead, so which edge we pin here is irrelevant to how the frame reads on a tile.
   const scale = longEdge / Math.max(cropW, cropH);
   const newW = Math.max(1, Math.round(cropW * scale));
   const newH = Math.max(1, Math.round(cropH * scale));
-  const buf = await sharp(cropBuf, { raw: { width: cropW, height: cropH, channels: 4 } })
-    .resize(newW, newH, { fit: 'fill' }).png().toBuffer();
+  const resized = await sharp(cropBuf, { raw: { width: cropW, height: cropH, channels: 4 } })
+    .resize(newW, newH, { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true });
 
-  return { name, buf, w: newW, h: newH };
+  // Ink mass = integral of alpha over the frame, measured on the STORED pixels (what actually gets
+  // scaled onto a tile). `density` divides it out by frame area, so it is independent of how big the
+  // frame happens to be drawn — it is purely "how full / how black is this drawing", which is the
+  // only property of the artwork the level read still depends on.
+  let mass = 0;
+  for (let i = 3; i < resized.data.length; i += 4) mass += resized.data[i];
+  mass /= 255;
+
+  const buf = await sharp(resized.data, { raw: { width: newW, height: newH, channels: 4 } }).png().toBuffer();
+  return { name, buf, w: newW, h: newH, inkMass: mass, density: mass / (newW * newH) };
 }
 
 const loadSprite = (file) => processImage(file, LONG_EDGE);
@@ -143,7 +231,54 @@ async function main() {
   for (const f of files) sprites.push(await loadSprite(path.join(__dirname, f)));
 
   // Tier colour band — sticker only (paper/ink/graphite/metal are exempt at every level, see tintLevelFrame).
+  // Runs before the level-read solve: the band multiplies RGB only, never alpha, so measured density
+  // (and therefore the solved curve) is unaffected by it.
   for (let i = 0; i < sprites.length; i++) sprites[i] = await tintLevelFrame(sprites[i]);
+
+  // ── Solve + gate the level read, per resource type (§6.3) ───────────────────────────────────
+  const byType = new Map();
+  for (const s of sprites) {
+    const m = /^res_([a-z]+)_l(\d+)$/.exec(s.name);
+    if (!m) continue;  // the 5 generic motif frames carry no tier
+    if (!byType.has(m[1])) byType.set(m[1], []);
+    byType.get(m[1]).push({ lv: Number(m[2]), density: s.density, equivEdge: Math.sqrt(s.w * s.h), name: s.name });
+  }
+  const solvedByName = new Map();
+  const failures = [];
+  for (const [type, levels] of [...byType].sort()) {
+    levels.sort((a, b) => a.lv - b.lv);
+    const { solved, offenders, reach } = solveLevelRead(levels);
+    for (const f of levels) solvedByName.set(f.name, solved.get(f.lv));
+    console.log(`
+  ${type}:`);
+    console.table(levels.map((f) => ({
+      level: `l${f.lv}`,
+      density: f.density.toFixed(3),
+      reach: reach.get(f.lv).toFixed(3),
+      sizeMul: solved.get(f.lv).sizeMul.toFixed(4),
+      alpha: solved.get(f.lv).alphaMul.toFixed(2),
+      verdict: offenders.some((o) => o.lv === f.lv) ? 'TOO SPARSE FOR ITS TIER' : '',
+    })));
+    for (const o of offenders) {
+      failures.push(`res_${type}_l${o.lv}: drawn too sparse for its tier (density ${o.density.toFixed(3)}) — needs ${o.need.toFixed(3)} rendered ink to clear l${o.below}, reaches only ${o.can.toFixed(3)} at full pen, ${((o.shortfall - 1) * 100).toFixed(0)}% short → draw l${o.lv} fuller, or l${o.below} lighter`);
+    }
+  }
+  if (failures.length) {
+    console.error(`
+❌ level read unreadable — ${failures.length} frame(s) violate the §6 contract:`);
+    for (const f of failures) console.error(`   ${f}`);
+    if (!REPORT_ONLY) {
+      console.error(`
+   Redraw them (prompts: design/product/slg-resource-art.md §6.5), or re-run with`);
+      console.error(`   --report-only to pack anyway while the new art is still being produced.`);
+      process.exit(1);
+    }
+    console.error(`
+   --report-only given: packing anyway. The map will read wrong until these land.`);
+  } else {
+    console.log(`
+✅ level read clears the §6 contract (every tier ${INK_GROWTH}x apart, pen held within ${ALPHA_MIN}–1.00).`);
+  }
 
   // Shelf packing: sort by height descending, fill row by row
   sprites.sort((a, b) => b.h - a.h);
@@ -165,11 +300,26 @@ async function main() {
   // Export JSON (TexturePacker JSON-Hash) — frame names have no extension, for use as textures['res_ink']
   const frames = {};
   for (const s of [...sprites].sort((a, b) => a.name.localeCompare(b.name))) {
+    // `nw` is our own extension: the solved level read, per frame. PIXI's Spritesheet parser reads
+    // only the known keys and ignores this one, and mergeAtlasPages.js copies frame entries with
+    // `{...f}`, so it survives the merge into world_atlas.json — which is the atlas the client
+    // actually loads. (Putting it under `meta` instead would be silently dropped: the merger keeps
+    // only `data.frames` and writes its own `meta`.)
+    const solved = solvedByName.get(s.name);
     frames[s.name] = {
       frame: { x: s.x, y: s.y, w: s.w, h: s.h },
       rotated: false, trimmed: false,
       spriteSourceSize: { x: 0, y: 0, w: s.w, h: s.h },
       sourceSize: { w: s.w, h: s.h },
+      nw: {
+        inkMass: Math.round(s.inkMass),
+        density: Number(s.density.toFixed(5)),
+        equivEdge: Number(Math.sqrt(s.w * s.h).toFixed(2)),
+        // Renderer contract: on-screen scale = tilePitch * MOTIF_SIZE_FRAC * sizeMul, alpha = alphaMul.
+        // Generic motif frames have no tier, so they sit at the curve's midpoint (levelScale = 1.0).
+        sizeMul: Number((solved ? solved.sizeMul : 1 / Math.sqrt(s.w * s.h)).toFixed(6)),
+        alphaMul: Number((solved ? solved.alphaMul : 1).toFixed(3)),
+      },
     };
   }
   const json = {

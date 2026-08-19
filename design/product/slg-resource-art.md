@@ -376,46 +376,48 @@ shadow, ground line, baseline
 2. **5→6 的画风跳变作废。** l1–l10 是一条连续的量级线，不再分低档段/高档段。
 3. **归一化从「按宽」改为「按等效面积」** `√(w·h)`。横排与竖立占同样视觉面积，横向生长不再被惩罚——**画稿从此不必为了"更高"而扭曲构图**。
 4. **尺寸改由显式曲线承载**：`LEVEL_SCALE = 0.80 → 1.30`（线性，l10 占地 0.30×1.30 = 0.39 tp，仍在 2026-07-17 判定过大的 0.40 以内，且只有稀有的高级格吃到）。等级→尺寸从"画稿隐式"变成"代码显式"。
-5. **alpha 改为感知墨量补偿**：`alpha = clamp(targetInk(lv) / measuredInk(frame))`，替换裸线性 `0.55+0.45*(lv-1)/9`。某帧画得偏黑偏淡不再打乱等级读数。
+5. **alpha 只做小幅修正，不当通道**：`alpha ∈ [0.85, 1.00]`，仅用来削平画稿之间的小落差，替换裸线性 `0.55+0.45*(lv-1)/9`。全图是一支笔画的，某格 0.4、邻格 1.0 读作「换了笔」，不是「资源更少」。
+   > **这一条是被实测打回来改的**：第一版门禁允许 alpha 自由补偿总墨量 Σα，结果它给当前这批画稿判了**通过**——它的"解"是把 ink l4 压到 alpha 0.37、l9 留在 1.00，总墨量确实单调了，但浓淡在格间乱跳，正是本契约要防的观感。**Σα 不是正确的感知模型**：一个大而淡的形状和一个小而黑的形状墨量可以相等，眼睛读到的完全不同。→ 等级读数只由「占地曲线 + 画稿自身疏密」承载，于是「某级画得比下一级还空」成为**代码救不了的画稿硬伤**，只能由构建期拒绝。
 6. **抖动只保留 rot/offset**，`scale` 收窄到 `[0.96,1.04]`。同级不再有可察觉的大小差。
 7. **精确等级恢复为显式通道**（§5.4 的原始诉求「格面上能读出精确等级，否则玩家误伤」在决策变更 II 里被放弃，现在补回，但不用符号编码）：沿用 2026-08-01 主城标签的先例（[`WORLD_MAP_ART_SPEC.md`](../game/WORLD_MAP_ART_SPEC.md) 四节末：符号点阵"让人迷惑"→ 换纯文字 `Lv.{n}`），资源格同样画文字，但**仅 l6+ 且仅近 zoom 显示**——会误伤的是强守军区，低档靠体量读三档足够；`resourceDensity=1.0` 下全等级都标就是满屏噪音。**用位图数字图集或 BitmapText，不要每格 `new PIXI.Text`**（Text 纹理销毁泄漏）。
 
-### 6.3 构建期强制（新增，`pack_resources.cjs`）
+### 6.3 构建期强制（`pack_resources.cjs`）
 
 画稿层的单调性不再靠画师自觉，改为门禁：
 
-- 每帧计算 `inkMass = Σα`、内容 bbox、`equivEdge = √(w·h)`、`density = inkMass/(w·h)`，写入 atlas JSON 的 `meta.resMetrics`（TexturePacker JSON-Hash 容得下自定义字段，PIXI 忽略）。
-- 校验 `density(lv) × LEVEL_SCALE(lv)²` 随 lv 单调不降（ε 容差 2%）。**不达标则 pack 失败**并打印违规表。接进 CI（沿用 `scripts/check*.mjs` 口径）。
-- 为什么这条是硬约束：alpha 补偿只能把画得太满的**压淡**，`alpha ≤ 1` 意味着**没法把画得太空的补浓**。所以"某级画得比低级还空"是画稿层的硬伤，代码救不了。
+- 每帧计算 `inkMass = Σα`、`density = inkMass/(w·h)`、`equivEdge = √(w·h)`，连同解出的 `sizeMul = LEVEL_SCALE(lv)/equivEdge` 和 `alphaMul` 一起写进**每个 frame 条目的 `nw` 字段**——不是 `meta`：`mergeAtlasPages.js` 只取源 json 的 `data.frames`、`meta` 自己重写，放 `meta` 会被静默丢弃；frame 条目是 `{...f}` 整体展开的，自定义字段能穿过合并落进 `world_atlas.json`，也就是客户端真正加载的那一份。PIXI 的 Spritesheet 只读已知键，忽略 `nw`。
+- **等级读数整条在构建期解完**：渲染层因此不含任何 level→尺寸/透明度逻辑，只剩 `scale = tp × MOTIF_SIZE_FRAC × nw.sizeMul × jitter.scale`、`alpha = nw.alphaMul`。图集成为等级读数的唯一权威，client 与 map-editor 两份渲染器不可能再漂移（旧代码靠注释里的「must stay in lockstep」人肉保证）。
+- **求解**：`reach(lv) = density × LEVEL_SCALE(lv)²` 是满笔时的落屏墨量。从 l1 起按最低可行值**前向贪心**，每级至少比上一级高 `INK_GROWTH = 1.06`，同时每帧 alpha 必须留在 `[ALPHA_MIN=0.85, 1]`。这给出最低可行曲线——某级的 `reach` 连它都达不到（容差 `GATE_EPS = 1.02`），就是**真的画得比下一级还空**，与调参无关。
+- 不达标 pack 直接 `exit 1`，逐帧打印短缺百分比和两条修法（画满这一级，或画淡下一级）。过渡期可 `--report-only` 照常出图（新美术还没到位时不阻塞渲染层开发），CI 不带这个开关。
+- **为什么必须是硬门禁**：alpha 只能把画满的**压淡**，`alpha ≤ 1` 意味着**没法把画空的补浓**。
 
-### 6.4 重画清单（20 张 / 46）
+### 6.4 重画清单（17 张 / 46）
 
-用「最长不降子序列的补集」求最小重画集（曲线 0.80→1.30），再并上剪影铁律违规：
+两类并集。**B 类**＝§6.3 门禁实测判定（短缺%＝该帧满笔仍差多少才够压过下一级），**A 类**＝剪影铁律违规，门禁看不见，靠 §6.2 #1 裁决。
 
-| 资源 | 重画 | 原因 |
-|---|---|---|
-| ink | l4 | **减密度**：density 0.397 冲顶，压制 l5–l9 全段 |
-| | l5 | 密度回落；圆肚壶偏离 l1–l4 的圆肩直筒瓶族 |
-| | l6 | 换成方肩瓶（轻度换族）+ 密度回落 |
-| | l7 | 密度回落 |
-| | l8 | **试管架**＝实验室器材/容器，破铁律 + 横向长条偏空 |
-| | l9 | **一个大而空的单体瓶**，读作"空"而非"高"，density 0.115 全段最低 |
-| paper | l6 | **糊成方块/箱**，直接违反 §5.3 #3「轮廓要一眼读成一摞纸」；density 0.055 全表最低 |
-| | l7 | 换成**卷轴+绑带** |
-| | l8 | 密度回落 |
-| | l9 | **大圆筒/卷纸**，读作卫生纸卷 |
-| graphite | l3 | 与 l2 几乎同图，density 反降 20% |
-| | l4 | **减密度**：0.148 冲顶 |
-| | l6 | 换成**瘦长晶柱**，偏离尖锐棱块族 + 偏空 |
-| | l8 | **矿车**＝载具，破铁律 |
-| | l9 | 单个大晶体独大 + 偏空 |
-| metal | l5 | 主体夹被碎屑堆**淹没**，剪影读不出（破 §5.3 #3） |
-| | l6 | 密度回落 |
-| | l8 | **铁盒/罐**＝容器，破铁律 |
-| | l9 | 比 l8 更少，量级回退 |
-| sticker | l8 | **贴纸卷**＝卷状条带，破铁律 + 偏空 |
+| 资源 | 帧 | 类 | 原因 |
+|---|---|---|---|
+| ink | l5 | B | 短缺 7%；圆肚壶偏离 l1–l4 的圆肩直筒瓶族 |
+| | l6 | B | 短缺 9%；换成方肩瓶（轻度换族） |
+| | l7 | B | 短缺 8% |
+| | l8 | **A** | **试管架**＝实验室器材/容器 |
+| | l9 | B | **短缺 85%**（全表最严重）：一个大而空的单体瓶，读作"空"而非"高" |
+| paper | l6 | B | **短缺 129%**（全表之最）：糊成方块/箱，直接违反 §5.3 #3「轮廓要一眼读成一摞纸」 |
+| | l7 | **A** | 换成**卷轴+绑带** |
+| | l9 | **A** | **大圆筒/卷纸**，读作卫生纸卷 |
+| graphite | l5 | B | 短缺 6% |
+| | l6 | B | 短缺 39%；换成瘦长晶柱，偏离尖锐棱块族 |
+| | l8 | **A** | **矿车**＝载具 |
+| | l9 | B | 短缺 15%；单个大晶体独大 + 偏空 |
+| metal | l5 | **A** | 主体夹被碎屑堆**淹没**，剪影读不出（破 §5.3 #3） |
+| | l6 | B | 短缺 15% |
+| | l8 | **A** | **铁盒/罐**＝容器 |
+| | l9 | B | 短缺 41%，量级比 l8 还回退 |
+| sticker | l8 | B | 短缺 8%；**贴纸卷**＝卷状条带 |
 
-> 系统性规律：**l8 普遍冒出容器/载具**（试管架、矿车、铁盒、贴纸卷），**l9 普遍是"一个大而空的单体"**。成因就是 §5.4 那句"形态逐级跃迁，追求最佳表现"——它和 §5.3 #3 的剪影铁律在文档内部就是矛盾的，本次由 §6.2 #1 裁决。
+> **ink l4 / graphite l4 不在清单里**（初稿曾列为"减密度"）。它们 density 确实冲顶，但门禁改成「保持笔触浓度」判据后，正确修法是把**上面那级画满**，而不是把这级画淡——`0.85` 的 alpha 下限只允许微调，画淡不是可用手段。同理 graphite l3、paper l8 落在 `GATE_EPS` 容差内，不必重画。
+>
+> **系统性规律**：**l8 普遍冒出容器/载具**（试管架、矿车、铁盒、贴纸卷），**l9 普遍是"一个大而空的单体"**（ink 短缺 85%、metal 41%、graphite 15%）。成因就是 §5.4 那句"形态逐级跃迁，追求最佳表现"——它和 §5.3 #3 的剪影铁律在文档内部本就矛盾，本次由 §6.2 #1 裁决。
 
 ### 6.5 出图 prompt（接 §5.5 共用前缀 + §5.6 共用负向，另加下面两段增补）
 
@@ -436,7 +438,6 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 
 **主体句**（帧名 → prompt）：
 
-- `res_ink_l4`：`A single round-shouldered glass inkwell bottle filled with ink up to just below its shoulder, the ink rendered with open pen hatching rather than solid black fill, one small blot at its base`
 - `res_ink_l5`：`A single round-shouldered glass inkwell bottle brimming with ink, its cork lying beside it, a second empty bottle tipped over behind it, ink drops and a spreading blot pooled around both`
 - `res_ink_l6`：`Two round-shouldered glass inkwell bottles standing close together, both filled with ink, a cork and a few ink drops at their base`
 - `res_ink_l7`：`Three round-shouldered glass inkwell bottles clustered close together, all filled with ink, one slightly taller, corks and ink drops scattered at their bases`
@@ -444,10 +445,8 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 - `res_ink_l9`：`Seven round-shouldered glass inkwell bottles crowded together in a dense freestanding heap at slightly varied heights, all filled with ink, several corks and a spreading ink blot pooled underneath`
 - `res_paper_l6`：`A tall loose stack of blank sheets with a second shorter stack leaning against it, edges fanned and uneven, a few loose sheets sliding off the top`
 - `res_paper_l7`：`Two tall loose stacks of blank sheets standing side by side, edges fanned and uneven, several loose sheets slipping out between them`
-- `res_paper_l8`：`Three loose stacks of blank sheets of differing heights packed close together, edges fanned, loose sheets spilling from their tops and sides`
 - `res_paper_l9`：`Five loose stacks of blank sheets crowded together at differing heights, edges fanned and uneven, loose sheets spilling all around their bases`
-- `res_graphite_l3`：`A single angular faceted graphite ore chunk, noticeably larger than a fist, with five small ore shards scattered close around its base, light hatching on two facets`
-- `res_graphite_l4`：`A single taller angular faceted graphite ore chunk standing upright, hatching only on its shadowed facets leaving the lit facets open, three ore shards at its base`
+- `res_graphite_l5`：`A single large angular faceted graphite ore chunk standing upright with a generous loose scatter of ore shards heaped all around its base, hatching on two facets`
 - `res_graphite_l6`：`Two angular faceted graphite ore chunks of different sizes resting against each other, a scatter of small ore shards heaped around their bases`
 - `res_graphite_l8`：`A dense freestanding pile of six angular faceted graphite ore chunks heaped up, smaller shards filling the gaps between them`
 - `res_graphite_l9`：`A dense freestanding heap of eight angular faceted graphite ore chunks piled together, many small shards filling every gap, no single chunk dominating`
@@ -457,4 +456,6 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 - `res_metal_l9`：`Seven metal binder clips crowded into a dense freestanding heap at varied angles, looped wire handles overlapping, small metal hardware filling every gap`
 - `res_sticker_l8`：`A thick stack of star-shaped stickers with more loose stars fanned out around it, several stars overlapping the stack`
 
+> **20 → 17 张的调整**：`res_ink_l4` / `res_graphite_l4` / `res_graphite_l3` / `res_paper_l8` 的 prompt 已撤（理由见 §6.4 末），新增 `res_graphite_l5`。
+>
 > 出图后丢进 `art/slg/slg-map/` 重跑 `node art/slg/slg-map/pack_resources.cjs`——§6.3 的校验器会直接判定通过/不通过，不达标的帧会打印在违规表里，按表迭代即可。**不需要人肉目测单调性。**
