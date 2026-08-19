@@ -144,6 +144,15 @@ paper texture, frame, border.
 
 方向按「己方格 → 敌方建筑行」用 `gridToScreen` 现算，所以横竖屏都对——实拍横屏下反冲发生在 x 轴（−2.13px），正是敌方方向映射到 x 的结果。
 
+### 测试覆盖（2026-08-19 收尾）
+
+- `client/test/render/towerArtContract.test.ts`：资产存在、墨迹**比例 ~1:1**（读 PNG 的 IHDR，不需要解码器）、场上贴图与卡面同源、与兵营不同源。
+- `client/test/render/buildingFireEffect.test.ts`（9 例）：开火反冲的格子判别、邻塔不受影响、按朝向选轴、对象池不带走位移、两种建筑各用各的贴图。
+
+**每条都做过定向变异验证**（删格子判别 / 方向写死 / 两种建筑共用贴图 / 删对象池复位），确认对应用例会红。其中对象池那条最初是假绿的，原因记在 [`feedback-verify-regression-test-catches-bug-before-fix`] 那条经验里：复用者若是箭塔，它自己每帧重写 `sp.x`，会把缺陷盖住。
+
+**墨色 / 边缘利度 / 56px 对比度不进单测**：断言它们要解码 PNG，而 `sharp` 只是本 workspace 的传递依赖（client 未声明），进测试就是 CI 隐患。这三项归打包时把关（`pack_arrow_tower.cjs` 打印并卡阈值）——它们是**打包**的属性，只有重新打包才会变。
+
 ## 验收结果
 
 **量化**（`pack_arrow_tower.cjs` 直接打印；下表末列是定稿资产的实测值，五项全过）：

@@ -193,7 +193,7 @@ hudView.container        ← HUD（最顶层）
 | 建筑类型 | 文件 |
 |---|---|
 | `Barracks`（兵营） | `game_infantry_barracks.png` |
-| `ArrowTower`（箭塔） | `game_arrow_tower.png`（2026-08-19 重画。此前一直借用画给「弓箭手兵营」的茅草屋 `game_archer_barracks.png`，已移入 `art/leftover/`；设计/prompt/验收阈值见 [`design/product/battle-arrow-tower-art.md`](../product/battle-arrow-tower-art.md)，源图+打包脚本在 `art/ui/game/pack_arrow_tower.cjs`） |
+| `ArrowTower`（箭塔） | `game_arrow_tower.png`（2026-08-19 重画。此前一直借用画给「弓箭手兵营」的茅草屋 `game_archer_barracks.png`，已移入 `art/leftover/`；设计/prompt/验收阈值见 [`design/product/battle-arrow-tower-art.md`](../product/battle-arrow-tower-art.md)，源图+打包脚本在 `art/ui/game/pack_arrow_tower.cjs`）。**契约测试** `client/test/render/towerArtContract.test.ts`：贴图比例必须 ~1:1（`BuildingView` 强拉正方形，重裁成 3:2 不会报错、只会悄悄变形），且场上贴图与卡面必须是同一个文件 |
 | 基地（双方） | `game_base.png`（0 级，L0 预载），敌方按朝向镜像（横屏左右翻、竖屏上下翻）。1/2 级升级贴图打包在 `assets/base_upgrade_atlas.{png,json}`（`base_lv1`=城池 → upgradeLevel 1，`base_lv2`=宫殿 → upgradeLevel 2/最高级），懒加载见 `render/atlas/baseUpgradeAtlasLoader.ts`，源图+打包脚本在 `art/ui/game/pack_base_atlas.js` |
 
 ### 箭塔攻击范围
