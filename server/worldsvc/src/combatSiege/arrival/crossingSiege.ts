@@ -50,7 +50,7 @@ export async function applyCrossingSiege(
   const garrison = passageGarrison(proc.level);
   // See occupationBattle.ts for the full battle-resolution logic (shared verbatim with applyOccupy in occupation.ts).
   const { res, replay } = await resolveOccupationBattle(core, m, pw, garrison, proc.level);
-  if (hasCardArmy) await writeOccupyCardState(core, m, pw, res.attackerSurvivors, t);
+  if (hasCardArmy) await writeOccupyCardState(core, m, pw, res.attackerSurvivors, t, res.attackerDeployed);
 
   if (res.outcome === 'attacker_win') {
     // 2026-08-09 (user decision — nothing in the game transfers instantly after a battle win):

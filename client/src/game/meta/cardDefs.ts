@@ -11,7 +11,7 @@ import type { CardInstance } from './SaveData';
 import type { EquipmentInstance } from './SaveData';
 import type { EngineCardInstance, UnitType } from '@nw/engine';
 import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT } from '@nw/shared/cards';
-import { UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { SIEGE_TROOPS_PER_UNIT, UNIT_BLUEPRINTS } from '@nw/engine/config';
 import { fromFp } from '@nw/engine';
 
 export { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT };
@@ -79,11 +79,26 @@ export function cardHp(card: CardInstance): number {
   return fromFp(UNIT_BLUEPRINTS[def.unitType as UnitType]?.hp_fp ?? 0);
 }
 
-/** Structure-damage rating for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].siegeValue_fp). */
+/**
+ * Structure-damage rating for a card's unit type, per {@link SIEGE_TROOPS_PER_UNIT} troops carried
+ * (engine blueprint — see UNIT_BLUEPRINTS[unitType].siegeValue_fp).
+ */
 export function cardSiegeValue(card: CardInstance): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
   return fromFp(UNIT_BLUEPRINTS[def.unitType as UnitType]?.siegeValue_fp ?? 0);
+}
+
+/**
+ * The base damage this card will ACTUALLY deal on reaching an enemy base, given the troops currently
+ * assigned to it: `cardSiegeValue × troops / SIEGE_TROOPS_PER_UNIT` (ADR-069, mirrors the engine's
+ * `Unit` constructor). Worth showing next to the rating because the rating alone hides the whole
+ * mechanism — before ADR-069 troops did nothing for base damage, and now they are the dominant term
+ * (a card sitting at 0 troops deals 0, no matter how good its blueprint is). Card level / gear siege
+ * bonuses are NOT included, same as `cardSiegeValue` itself, so this is the unbuffed floor.
+ */
+export function cardSiegeValueEffective(card: CardInstance, troops: number): number {
+  return Math.round((cardSiegeValue(card) * Math.max(0, troops)) / SIEGE_TROOPS_PER_UNIT);
 }
 
 /** Base attack for a card's unit type (engine blueprint — see UNIT_BLUEPRINTS[unitType].attack_fp, not per-level). */

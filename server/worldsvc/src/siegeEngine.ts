@@ -315,19 +315,31 @@ export function computeCardStateUpdates(
   cardState: Record<string, CardSLGState>,
   attackerSurvivors: number,
   nowMs: number,
+  attackerDeployed?: number,
 ): Record<string, CardStateUpdate> {
   const updates: Record<string, CardStateUpdate> = {};
   const cardIds = army.map((e) => e.cardInstanceId).filter((id): id is string => !!id);
   if (cardIds.length === 0) return updates;
 
-  const totalDeployed = cardIds.reduce((s, id) => s + (cardState[id]?.currentTroops ?? 0), 0);
+  const nominalTroops = cardIds.reduce((s, id) => s + (cardState[id]?.currentTroops ?? 0), 0);
   // If no troops deployed, no state change needed.
-  if (totalDeployed === 0) return updates;
+  if (nominalTroops === 0) return updates;
+
+  // ADR-069: the survival ratio must compare like with like. `attackerSurvivors` comes out of the
+  // engine as a sum of per-unit HP, each one clamped to that unit's blueprint capacity, so on the
+  // engine path it can never reach the team's NOMINAL troop total — dividing by the nominal total
+  // (the pre-ADR-069 behavior) capped survival at the clamp ratio (~40-60% for a real card team)
+  // and shredded the team's troops on every battle, won or lost, which is how a player who kept
+  // attacking watched a full team decay to nothing in a handful of fights. Callers that ran the
+  // engine pass `SiegeResolution.attackerDeployed` (the clamped deployed sum); the cheap linear
+  // path's survivors are already in raw-troop units, so its `attackerDeployed` equals the nominal
+  // troops and the ratio is unchanged. Omitted / non-positive → fall back to the nominal total.
+  const denominator = attackerDeployed && attackerDeployed > 0 ? attackerDeployed : nominalTroops;
 
   // Apply baseSurvival floor: even at 0 survivors, each card keeps baseSurvival fraction of its troops.
   const survivalRate = Math.max(
     CARD_BASE_SURVIVAL,
-    Math.min(1, attackerSurvivors / totalDeployed),
+    Math.min(1, attackerSurvivors / denominator),
   );
   const totalZero = attackerSurvivors === 0;
 
@@ -421,14 +433,20 @@ export function runSiegeBattleSync(input: SiegeBattleInput): SiegeResolution {
     else defHp += fromFp(unit.hp_fp);
   }
 
+  // ADR-069: what the attacker actually deployed, measured in the same clamped-HP unit as the
+  // survivor tallies above (the engine recorded it at setup, before the first tick). This is the
+  // only correct denominator for post-battle card survival math — see SiegeResolution.attackerDeployed.
+  const attackerDeployed = Math.floor(fromFp(engine.state.preplacedAttackerHp_fp));
+  const defenderDeployed = Math.floor(fromFp(engine.state.preplacedGarrisonHp_fp));
+
   // winner=Bottom(owner0) = attacker destroyed the base and captured the tile; all other cases (Top wins / timeout / null fallback) = defense holds.
   const outcome: SiegeOutcome = engine.state.winner === Side.Bottom ? 'attacker_win' : 'defender_win';
   if (outcome === 'attacker_win') {
     // Tile captured: attacker survivors return (become new garrison / return to home city); defender is considered routed, no survivors left.
-    return { outcome, attackerSurvivors: Math.floor(atkHp), defenderSurvivors: 0 };
+    return { outcome, attackerSurvivors: Math.floor(atkHp), defenderSurvivors: 0, attackerDeployed, defenderDeployed };
   }
   // Defense holds: defender survivors remain at the tile; attacker survivors retreat and return to the troop pool.
-  return { outcome, attackerSurvivors: Math.floor(atkHp), defenderSurvivors: Math.floor(defHp) };
+  return { outcome, attackerSurvivors: Math.floor(atkHp), defenderSurvivors: Math.floor(defHp), attackerDeployed, defenderDeployed };
 }
 
 /**

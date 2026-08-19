@@ -6,6 +6,7 @@ import { Projectile } from './Projectile';
 import { UNIT_BLUEPRINTS } from './config';
 import { ActiveSpell, GameEvent, GamePhase, MatchSummary, OwnerId, PlayerStats, Side, SpellType, UnitType, UnitBlueprint, sideToOwner } from './types';
 import type { HazardSpec } from './campaign/LevelDefinition';
+import { toFp, type Fp } from './math/fixed';
 
 /** Mutable version of PlayerStats — accumulated throughout the game. */
 export interface PlayerStatsMutable {
@@ -70,6 +71,26 @@ export class GameState {
    * during this match. Used by the `leak_limit` campaign objective.
    */
   enemyLeaks: number = 0;
+
+  /**
+   * Total HP the pre-placed attacker army (SLG siege `level.attackerArmy`) actually entered
+   * the battle with — i.e. AFTER each unit's troop allotment was clamped to its blueprint HP
+   * capacity (see `Unit`'s constructor). 0 for every non-siege mode / level without an
+   * attacker army. Written once at setup (`engine/setup/preplaced.ts`) and never touched by
+   * the simulation, so it is a stable "what was actually deployed" denominator for worldsvc's
+   * post-battle card survival accounting (ADR-069): survivors are measured in clamped HP, so
+   * dividing them by the raw nominal troop total systematically under-reported survival and
+   * bled a team dry even on a win.
+   */
+  preplacedAttackerHp_fp: Fp = toFp(0);
+
+  /**
+   * Defender-side counterpart of {@link GameState.preplacedAttackerHp_fp}: total HP the pre-placed
+   * `level.garrison` entered the battle with, post-capacity-clamp. Needed because a field encounter
+   * (ADR-051) pits two real card armies against each other, so BOTH sides' post-battle troop
+   * bookkeeping needs a deployed-in-clamped-HP denominator (ADR-069).
+   */
+  preplacedGarrisonHp_fp: Fp = toFp(0);
 
   /**
    * Ids of units spawned with `isBoss === true` (campaign `boss` objective).

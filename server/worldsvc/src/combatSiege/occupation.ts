@@ -125,14 +125,14 @@ export class OccupationService {
       // Card survivors also land on cardState (§6.1 — the card keeps its own troops) in addition to seeding
       // the newly captured tile's independent garrison stat below (startOccupationHold); the two are unrelated
       // ledgers, not a double-refund of the same pool (see SLG_DESIGN §4.2).
-      if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
+      if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t, res.attackerDeployed);
       await this.startOccupationHold(m, pw, proc, x, y, res.attackerSurvivors, t, replay);
     } else {
       // Battle lost: a card army's survivors already landed on cardState above (§6.1 — the card keeps its
       // own troops regardless of outcome); the team itself still needs to walk home rather than being freed
       // instantly, same as a flat army's survivor count (2026-08-01, SLG_DESIGN_LOG §46).
       if (hasCardArmy) {
-        await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
+        await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t, res.attackerDeployed);
       }
       if (hasCardArmy || res.attackerSurvivors > 0) {
         await startReturnMarch(this.core, {
@@ -168,14 +168,14 @@ export class OccupationService {
       // processDueOccupations tick that may have already settled/claimed it — in that case just proceed to
       // start our own hold on top of whatever ownership now stands, re-validated by the blocked check upstream).
       await cols.occupations.deleteOne({ _id: tile._id, ownerId: tile.contestedBy });
-      if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
+      if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t, res.attackerDeployed);
       const proc = proceduralTile(m.worldId, tile.x, tile.y);
       await this.startOccupationHold(m, pw, proc, tile.x, tile.y, res.attackerSurvivors, t, replay);
     } else {
       // Same disposition as applyOccupy's loss branch: cardState is already updated above; the team (or a
       // flat army's survivors) walks home over a travel-time return leg (2026-08-01, SLG_DESIGN_LOG §46).
       if (hasCardArmy) {
-        await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t);
+        await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t, res.attackerDeployed);
       }
       if (hasCardArmy || res.attackerSurvivors > 0) {
         await startReturnMarch(this.core, {
