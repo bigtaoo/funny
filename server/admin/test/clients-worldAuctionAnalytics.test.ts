@@ -119,7 +119,7 @@ describe('HttpAuctionClient', () => {
     const rows = await new HttpAuctionClient('http://auction', 'k').queryListings({
       sellerId: 's1',
       itemType: 'card',
-      status: 'active',
+      status: 'open',
       itemName: 'dragon',
       limit: 20,
     });

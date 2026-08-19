@@ -510,7 +510,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(String(rejected[0].reason)).toMatch(/marching, occupying, or stationed|TEAM_BUSY/i);
+    expect(String(rejected[0]!.reason)).toMatch(/marching, occupying, or stationed|TEAM_BUSY/i);
 
     // And the DB agrees: exactly one active march carries this teamId, never two.
     const mine = await svc.getMarches(W, 'a');

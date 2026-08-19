@@ -230,7 +230,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(spends).toEqual([{ accountId: 'alice', amount: SECT_CREATE_COST }]);
     // The founding family's socialsvc mirror carries the sect's display name, not just its id
     // (client family-detail popup shows this — see SOCIAL_SVC_DESIGN.md 2026-07-18 note).
-    expect((await socialsvc.getFamiliesByIds([aa]))[0].sectName).toBe('Sky Sect');
+    expect((await socialsvc.getFamiliesByIds([aa]))[0]!.sectName).toBe('Sky Sect');
   });
 
   it('found sect: name width-capped (full-width = 2, cap 12 → 6 汉字 or 12 letters)', async () => {
@@ -290,11 +290,11 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
     await sect.joinSect(W, 'bob', s.sectId);
     const list = await sect.listSects(W);
-    expect(list[0].memberFamilyCount).toBe(2);
+    expect(list[0]!.memberFamilyCount).toBe(2);
     const detail = await sect.getSect(s.sectId);
     expect(detail!.memberFamilies.map((f) => f.tag).sort()).toEqual(['AW', 'BT']);
     // Joining (not just founding) also mirrors the sect's display name onto the joining family.
-    expect((await socialsvc.getFamiliesByIds([bb]))[0].sectName).toBe('Sky');
+    expect((await socialsvc.getFamiliesByIds([bb]))[0]!.sectName).toBe('Sky');
   });
 
   it('leave sect: member family may leave; leader family cannot leave directly', async () => {
@@ -369,7 +369,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     await sect.sendMessage(W, 'alice', 'Alice', 'hello sect');
     const msgs = await sect.getChannel(W, 'alice');
     expect(msgs).toHaveLength(1);
-    expect(msgs[0].body).toBe('hello sect');
+    expect(msgs[0]!.body).toBe('hello sect');
     await expect(sect.getChannel(W, 'bob')).rejects.toMatchObject({ code: 'NOT_IN_SECT' });
     void s;
   });
@@ -380,7 +380,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     const result = await sect.sendMessage(W, 'alice', 'Alice', 'what the fuck');
     expect(result.body).toBe('what the ****');
     const msgs = await sect.getChannel(W, 'alice');
-    expect(msgs[0].body).toBe('what the ****');
+    expect(msgs[0]!.body).toBe('what the ****');
     void s;
   });
 
@@ -396,11 +396,11 @@ describe.skipIf(!mongo)('SectService e2e', () => {
 
     await sect.sendMessage(W, 'alice', 'Alice', 'hello everyone');
     expect(broadcasts).toHaveLength(1);
-    expect(broadcasts[0].kind).toBe('sect_msg');
-    expect(broadcasts[0].body).toBe('hello everyone');
+    expect(broadcasts[0]!.kind).toBe('sect_msg');
+    expect(broadcasts[0]!.body).toBe('hello everyone');
     // Recipients = all sect members minus the sender alice: bob, bob2, carol (unordered).
-    expect([...broadcasts[0].recipients].sort()).toEqual(['bob', 'bob2', 'carol']);
-    expect(broadcasts[0].recipients).not.toContain('alice');
+    expect([...broadcasts[0]!.recipients].sort()).toEqual(['bob', 'bob2', 'carol']);
+    expect(broadcasts[0]!.recipients).not.toContain('alice');
   });
 
   it('dissolve: clear member sectId + delete channel + bidirectional alliance removal', async () => {
@@ -500,9 +500,9 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     // Client sends a stale cached name (e.g. the raw loginId) — meta's real nickname must win.
     const result = await sectWithMeta.sendMessage(W, 'alice', '233784986', 'hi from alice');
     expect(result.senderName).toBe('RealNickname');
-    expect(broadcasts[0]['fromName']).toBe('RealNickname');
+    expect(broadcasts[0]!['fromName']).toBe('RealNickname');
     const msgs = await sectWithMeta.getChannel(W, 'alice');
-    expect(msgs[0].senderName).toBe('RealNickname');
+    expect(msgs[0]!.senderName).toBe('RealNickname');
 
     // Meta not configured → falls back to the client-supplied senderName.
     broadcasts.length = 0;

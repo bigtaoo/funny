@@ -36,7 +36,15 @@ const stubStats: StatsClient = {
   available: true,
   fetchLive: async (): Promise<LiveStats> => ({ online: 0, queue: 0, rooms: 0, gameInstances: 0, gameLoad: 0 }),
 };
-const stubPlayer: PlayerClient = { available: false, lookupByPublicId: async (): Promise<PlayerProfile | null> => null };
+const stubPlayer: PlayerClient = {
+  available: false,
+  lookupByPublicId: async (): Promise<PlayerProfile | null> => null,
+  // Not exercised by this suite — throw rather than answer, so a route that starts calling them
+  // fails loudly instead of quietly seeing `undefined`.
+  lookupByAccountId: () => { throw new Error('stubPlayer.lookupByAccountId is not stubbed'); },
+  search: () => { throw new Error('stubPlayer.search is not stubbed'); },
+  resetPassword: () => { throw new Error('stubPlayer.resetPassword is not stubbed'); },
+};
 class FakeMail implements MailDispatcher {
   available = true;
   async send(_req: MailSendReq): Promise<MailSendRes> { return { ok: true, recipientCount: 1 }; }

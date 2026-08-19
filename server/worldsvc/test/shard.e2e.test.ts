@@ -25,6 +25,7 @@ import {
 import { WorldService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
 import { MapTemplateService } from '../src/mapTemplateService';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_shard_test';
@@ -244,13 +245,13 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-key': KEY }, body: JSON.stringify({ season: 9 }),
       });
       expect(a.status).toBe(200);
-      const ab = (await a.json()) as { ok: boolean; data: { shardCount: number; worldIds: string[] } };
+      const ab = (await jsonBody(a)) as { ok: boolean; data: { shardCount: number; worldIds: string[] } };
       expect(ab.data.shardCount).toBe(1);
       expect(ab.data.worldIds).toEqual(['s9-0']);
 
       const p = await fetch(`${base}/admin/world/patrol`, { headers: { 'x-internal-key': KEY } });
       expect(p.status).toBe(200);
-      const pb = (await p.json()) as { ok: boolean; data: { scannedWorlds: number } };
+      const pb = (await jsonBody(p)) as { ok: boolean; data: { scannedWorlds: number } };
       expect(pb.data.scannedWorlds).toBeGreaterThanOrEqual(1);
       server.close();
     });
@@ -264,7 +265,7 @@ describe.skipIf(!mongo)('worldsvc G6 multi-shard runtime e2e', () => {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-key': KEY }, body: JSON.stringify({ season: 10, capacity: 10000 }),
       });
       expect(a.status).toBe(200);
-      const ab = (await a.json()) as { ok: boolean; data: { worldIds: string[] } };
+      const ab = (await jsonBody(a)) as { ok: boolean; data: { worldIds: string[] } };
       expect(ab.data.worldIds).toEqual(['s10-0']);
 
       // allocateNextSeason itself does not clone (that call happens at the HTTP-route layer, see admin.ts) —

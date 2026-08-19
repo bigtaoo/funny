@@ -176,7 +176,7 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(rejected[0].reason).toMatchObject({ code: 'ALREADY_IN_FAMILY' });
+    expect(rejected[0]!.reason).toMatchObject({ code: 'ALREADY_IN_FAMILY' });
 
     // Whichever family lost must have its memberCount rolled back to just the leader (1), not left at 2
     // with no corresponding member.
@@ -208,7 +208,7 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(rejected[0].reason).toMatchObject({ code: 'ALREADY_REQUESTED' });
+    expect(rejected[0]!.reason).toMatchObject({ code: 'ALREADY_REQUESTED' });
 
     const pending = await m.collections.familyJoinRequests.find({ accountId: 'm1', status: 'pending' }).toArray();
     expect(pending).toHaveLength(1);
@@ -433,7 +433,7 @@ describe.skipIf(!mongo)('socialsvc FamilyService e2e', () => {
     const pushed = gateway.ofKind('family_msg');
     expect(pushed[0]).toMatchObject({ fromName: 'RealNickname' });
     const history = await svc.getChannel('leader');
-    expect(history[0].senderName).toBe('RealNickname');
+    expect(history[0]!.senderName).toBe('RealNickname');
 
     // meta has no profile for this account → falls back to the client-supplied senderName.
     const fallback = await svc.sendMessage('m1', 'ClientFallback', 'hi again');

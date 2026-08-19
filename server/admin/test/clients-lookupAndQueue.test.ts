@@ -46,7 +46,7 @@ describe('HttpAntiCheatClient', () => {
     const c = new HttpAntiCheatClient('http://meta', 'k');
     const rows = await c.listReviews({ accountId: 'a1', status: 'open', limit: 5 });
     expect(rows).toEqual([{ id: '1' }]);
-    const [url] = fetchMock.mock.calls[0];
+    const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe('http://meta/internal/anticheat/reviews?accountId=a1&status=open&limit=5');
   });
 
@@ -62,7 +62,7 @@ describe('HttpAntiCheatClient', () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, body: { ok: true } });
     const res = await new HttpAntiCheatClient('http://meta', 'k').resolveReview('r1', 'banned', 'admin');
     expect(res).toEqual({ ok: true });
-    const [url, opts] = fetchMock.mock.calls[0];
+    const [url, opts] = fetchMock.mock.calls[0]!;
     expect(url).toBe('http://meta/internal/anticheat/reviews/r1/resolve');
     expect(opts).toMatchObject({ method: 'POST', body: { resolution: 'banned', resolvedBy: 'admin' } });
   });

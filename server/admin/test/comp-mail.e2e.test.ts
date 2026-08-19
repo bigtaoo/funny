@@ -87,7 +87,15 @@ class FakeGateway implements GatewayClient {
   }
   async invalidateFriends(): Promise<void> {}
 }
-class FakeCommercial implements CommercialClient {
+/** The wallet/grant surface metaserver actually touches in this suite. Declared as a `Pick` of the
+ *  real CommercialClient rather than the whole thing: the pool/promo/subscription half (18 more
+ *  methods) is irrelevant here, while everything listed below stays checked against the real
+ *  signatures — see the cast at the buildApp() call for the other half. */
+type FakeCommercialSurface = Pick<CommercialClient,
+  'available' | 'getWallet' | 'grant' | 'shopCharge' | 'gachaDraw' | 'spend' | 'orderDelivered'
+  | 'undeliveredOrders' | 'rechargeVerify' | 'adsCredit' | 'victoryCredit'>;
+
+class FakeCommercial implements FakeCommercialSurface {
   readonly available = true;
   coins = new Map<string, number>();
   granted = new Set<string>();
@@ -95,7 +103,12 @@ class FakeCommercial implements CommercialClient {
     return this.coins.get(id) ?? 0;
   }
   async getWallet(id: string) {
-    return { coins: this.bal(id), pity: {} };
+    // Every WalletView field, not just the two this suite reads: a partial literal used to slip
+    // through only because test/** was never type-checked.
+    return {
+      coins: this.bal(id), pity: {}, fatePoints: 0, subscriptionExpiry: 0,
+      starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0,
+    };
   }
   async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
     if (this.granted.has(a.orderId)) return { ok: true as const, coinsAfter: this.bal(a.accountId) };
@@ -154,13 +167,13 @@ describe.skipIf(!metaMongo || !adminMongo || !socialMongo)('OPS comp ticket ↔ 
     comm = new FakeCommercial();
     // socialsvc: real listening process, backed by its own test Mongo db (mail-write authority, meta proxies GET /mail there too).
     const mailSvc = new MailService({ cols: social.collections, gateway: nullSocialGatewayClient, meta: nullSocialMetaClient, now });
-    const familySvc = new FamilyService({ cols: social.collections, gateway: nullSocialGatewayClient, meta: nullSocialMetaClient });
+    const familySvc = new FamilyService({ cols: social.collections, gateway: nullSocialGatewayClient, meta: nullSocialMetaClient, now });
     const friendSvc = new FriendService({ cols: social.collections, gateway: nullSocialGatewayClient, meta: nullSocialMetaClient, now });
-    socialServer = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: jwt.secret, internalKey: KEY }, familySvc, friendSvc, mailSvc, nullSocialGatewayClient);
+    socialServer = startHttpApi({ host: '127.0.0.1', port: 0, jwtSecret: jwt.secret, internalKey: KEY }, familySvc, friendSvc, mailSvc, nullSocialGatewayClient, nullSocialMetaClient);
     const socialAddr = await new Promise<AddressInfo>((resolve) => socialServer.once('listening', () => resolve(socialServer.address() as AddressInfo)));
     const socialsvcUrl = `http://127.0.0.1:${socialAddr.port}`;
 
-    app = await buildApp({ cols: meta.collections, jwt, internalKey: KEY, gateway, commercial: comm, socialsvcUrl });
+    app = await buildApp({ cols: meta.collections, jwt, internalKey: KEY, gateway, commercial: comm as unknown as CommercialClient, socialsvcUrl });
     await app.listen({ port: 0, host: '127.0.0.1' });
     const addr = app.server.address() as AddressInfo;
     baseUrl = `http://127.0.0.1:${addr.port}`;

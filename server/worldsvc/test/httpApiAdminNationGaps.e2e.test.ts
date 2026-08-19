@@ -21,6 +21,7 @@ import { nullWorldGatewayClient } from '../src/gatewayClient';
 import { nullWorldSocialsvcClient } from '../src/socialsvcClient';
 import { startHttpApi } from '../src/httpApi';
 import type { WorldCommercialClient } from '../src/commercialClient';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_http_admin_nation_gaps_test';
@@ -126,7 +127,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: admin.ts + nation
         method: 'POST', headers: internalHeaders, body: JSON.stringify({ worldId: a, targetWorldId: b }),
       });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(body.data.moved).toBe(1);
       const source = await m.collections.worlds.findOne({ _id: a });
       expect(source!.status).toBe('closed');
@@ -141,7 +142,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: admin.ts + nation
       // calling svc.resetSeason directly, not through the /admin/world/reset route).
       const rejected = await fetch(`${base}/admin/world/reset`, { method: 'POST', headers: internalHeaders, body: JSON.stringify({ worldId: wid }) });
       expect(rejected.status).toBe(409); // WORLD_CLOSED
-      const rejectedBody = await rejected.json();
+      const rejectedBody = await jsonBody(rejected);
       expect(rejectedBody.error.code).toBe('WORLD_CLOSED');
 
       await svcRef.joinWorld(wid, 'reset-test-player'); // 'open' → 'active' (settleSeason requires active/settling)
@@ -172,7 +173,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: admin.ts + nation
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/nations?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      expect(Array.isArray((await ok.json()).data)).toBe(true);
+      expect(Array.isArray((await jsonBody(ok)).data)).toBe(true);
     });
 
     it('POST /world/nations/:idx/name: missing worldId/name → 400; success renames a nation the caller owns', async () => {

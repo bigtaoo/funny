@@ -75,9 +75,9 @@ describe('HttpWorldGatewayClient.push', () => {
     const c = new HttpWorldGatewayClient(base, KEY);
     await expect(c.push('acc1', msg)).resolves.toBeUndefined();
     expect(requests).toHaveLength(1);
-    expect(requests[0].method).toBe('POST');
-    expect(requests[0].url).toBe('/gw/push');
-    expect(requests[0].body).toEqual({ accountId: 'acc1', msg });
+    expect(requests[0]!.method).toBe('POST');
+    expect(requests[0]!.url).toBe('/gw/push');
+    expect(requests[0]!.body).toEqual({ accountId: 'acc1', msg });
   });
 
   it('non-2xx → does not throw (best-effort)', async () => {

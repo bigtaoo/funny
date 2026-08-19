@@ -15,6 +15,7 @@ import { FriendService } from '../src/friendService';
 import { MailService } from '../src/mailService';
 import { startHttpApi } from '../src/httpApi';
 import { FakeMeta, FakeGateway } from './harness';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017';
 const DB = 'nw_social_chat_region_http_test';
@@ -88,7 +89,7 @@ describe.skipIf(!mongo)('socialsvc X-Chat-Region header e2e (O-CM5)', () => {
       body: JSON.stringify({ name: `${CN_ONLY_WORD}Family`, tag: 'NOCN' }),
     });
     expect(r.status).toBe(201);
-    expect((await r.json()).data.name).toBe(`${CN_ONLY_WORD}Family`);
+    expect((await jsonBody(r)).data.name).toBe(`${CN_ONLY_WORD}Family`);
     await familySvc.dissolveFamily('leader'); // leave clean for the next case
   });
 
@@ -99,7 +100,7 @@ describe.skipIf(!mongo)('socialsvc X-Chat-Region header e2e (O-CM5)', () => {
       body: JSON.stringify({ name: `${CN_ONLY_WORD}Family`, tag: 'CNBAD' }),
     });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('BAD_REQUEST');
+    expect((await jsonBody(r)).error.code).toBe('BAD_REQUEST');
   });
 
   it('POST /social/family/:id/messages: X-Chat-Region: cn masks a cn-only word; header absent lets it through', async () => {
@@ -111,7 +112,7 @@ describe.skipIf(!mongo)('socialsvc X-Chat-Region header e2e (O-CM5)', () => {
       body: JSON.stringify({ body: `find me a ${CN_ONLY_WORD} now` }),
     });
     expect(withRegion.status).toBe(200);
-    expect((await withRegion.json()).data.body).toBe('find me a ** now');
+    expect((await jsonBody(withRegion)).data.body).toBe('find me a ** now');
 
     const withoutRegion = await fetch(`${base}/social/family/${fam.familyId}/messages`, {
       method: 'POST',
@@ -119,7 +120,7 @@ describe.skipIf(!mongo)('socialsvc X-Chat-Region header e2e (O-CM5)', () => {
       body: JSON.stringify({ body: `find me a ${CN_ONLY_WORD} now` }),
     });
     expect(withoutRegion.status).toBe(200);
-    expect((await withoutRegion.json()).data.body).toBe(`find me a ${CN_ONLY_WORD} now`);
+    expect((await jsonBody(withoutRegion)).data.body).toBe(`find me a ${CN_ONLY_WORD} now`);
   });
 
   it('POST /social/chat/send: X-Chat-Region: cn masks a cn-only word; header absent lets it through', async () => {
@@ -132,7 +133,7 @@ describe.skipIf(!mongo)('socialsvc X-Chat-Region header e2e (O-CM5)', () => {
       body: JSON.stringify({ toPublicId: 'P-BOB', body: `try ${CN_ONLY_WORD} today` }),
     });
     expect(withRegion.status).toBe(200);
-    const { messageId: idWithRegion } = (await withRegion.json()).data as { messageId: string };
+    const { messageId: idWithRegion } = (await jsonBody(withRegion)).data as { messageId: string };
 
     const withoutRegion = await fetch(`${base}/social/chat/send`, {
       method: 'POST',
@@ -140,11 +141,11 @@ describe.skipIf(!mongo)('socialsvc X-Chat-Region header e2e (O-CM5)', () => {
       body: JSON.stringify({ toPublicId: 'P-BOB', body: `try ${CN_ONLY_WORD} today` }),
     });
     expect(withoutRegion.status).toBe(200);
-    const { messageId: idWithoutRegion } = (await withoutRegion.json()).data as { messageId: string };
+    const { messageId: idWithoutRegion } = (await jsonBody(withoutRegion)).data as { messageId: string };
 
     const convId = ['alice', 'bob'].sort().join(':');
     const history = await fetch(`${base}/social/chat/${convId}/messages`, { headers: aliceAuth });
-    const messages = (await history.json()).data.messages as Array<{ messageId: string; body: string }>;
+    const messages = (await jsonBody(history)).data.messages as Array<{ messageId: string; body: string }>;
     expect(messages.find((msg) => msg.messageId === idWithRegion)?.body).toBe('try ** today');
     expect(messages.find((msg) => msg.messageId === idWithoutRegion)?.body).toBe(`try ${CN_ONLY_WORD} today`);
   });

@@ -25,6 +25,7 @@ import { nullWorldSocialsvcClient } from '../src/socialsvcClient';
 import { startHttpApi } from '../src/httpApi';
 import type { WorldMetaClient } from '../src/metaClient';
 import type { WorldCommercialClient } from '../src/commercialClient';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_http_action_siege_map_gaps_test';
@@ -176,7 +177,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/march?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      expect(Array.isArray((await ok.json()).data)).toBe(true);
+      expect(Array.isArray((await jsonBody(ok)).data)).toBe(true);
     });
 
     it('GET /world/occupations: missing worldId → 400; success (list)', async () => {
@@ -184,7 +185,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/occupations?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      expect(Array.isArray((await ok.json()).data)).toBe(true);
+      expect(Array.isArray((await jsonBody(ok)).data)).toBe(true);
     });
 
     it('GET /world/stationed: missing worldId → 400; success (list)', async () => {
@@ -192,7 +193,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/stationed?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      expect(Array.isArray((await ok.json()).data)).toBe(true);
+      expect(Array.isArray((await jsonBody(ok)).data)).toBe(true);
     });
 
     it('GET /world/territories: missing worldId → 400; success (list)', async () => {
@@ -200,7 +201,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/territories?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      expect(Array.isArray((await ok.json()).data)).toBe(true);
+      expect(Array.isArray((await jsonBody(ok)).data)).toBe(true);
     });
   });
 
@@ -227,7 +228,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
         method: 'POST', headers: auth, body: JSON.stringify({ worldId: W, x: baseX, y: baseY }),
       });
       expect(r.status).toBe(200);
-      const body = await r.json();
+      const body = await jsonBody(r);
       expect(body.data.mainBaseTile).toBe(tileId(W, baseX, baseY));
     });
 
@@ -242,7 +243,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
         method: 'POST', headers: auth, body: JSON.stringify({ worldId: W, x: target.x, y: target.y }),
       });
       expect(r.status).toBe(200);
-      const body = await r.json();
+      const body = await jsonBody(r);
       expect(body.data).toMatchObject({ x: target.x, y: target.y, watchtower: true });
       expect(body.data.me).toBeDefined();
     });
@@ -264,7 +265,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(badKind.status).toBe(400);
       const ok = await fetch(`${base}/world/structure`, { method: 'POST', headers: auth, body: JSON.stringify({ worldId: W, x: target.x, y: target.y, kind: 'blocker' }) });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(body.data.structure).toMatchObject({ kind: 'blocker' });
       expect(body.data.me).toBeDefined();
     });
@@ -277,7 +278,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(noXY.status).toBe(400);
       const ok = await fetch(`${base}/world/structure/demolish`, { method: 'POST', headers: auth, body: JSON.stringify({ worldId: W, x: target.x, y: target.y }) });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(body.data.structure).toBeUndefined();
     });
   });
@@ -291,14 +292,14 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
         body: JSON.stringify({ worldId: W, fromX: baseX, fromY: baseY, toX: target.x, toY: target.y, kind: 'occupy', troops: 600 }),
       });
       expect(dispatch.status).toBe(200);
-      const marchId = (await dispatch.json()).data.marchId as string;
+      const marchId = (await jsonBody(dispatch)).data.marchId as string;
 
       const noWorldRecall = await fetch(`${base}/world/march/${marchId}/recall`, { method: 'POST', headers: auth, body: JSON.stringify({}) });
       expect(noWorldRecall.status).toBe(400);
 
       const recall = await fetch(`${base}/world/march/${marchId}/recall`, { method: 'POST', headers: auth, body: JSON.stringify({ worldId: W }) });
       expect(recall.status).toBe(200);
-      expect((await recall.json()).data.kind).toBe('return');
+      expect((await jsonBody(recall)).data.kind).toBe('return');
 
       const noWorldReturn = await fetch(`${base}/world/march/${marchId}/instant-return`, { method: 'POST', headers: auth, body: JSON.stringify({}) });
       expect(noWorldReturn.status).toBe(400);
@@ -307,7 +308,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(instant.status).toBe(200);
       // The return leg is gone (settled instantly), not still in the march list.
       const marches = await fetch(`${base}/world/march?worldId=${W}`, { headers: auth });
-      expect((await marches.json()).data.some((mm: { marchId: string }) => mm.marchId === marchId)).toBe(false);
+      expect((await jsonBody(marches)).data.some((mm: { marchId: string }) => mm.marchId === marchId)).toBe(false);
     });
   });
 
@@ -370,7 +371,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
         body: JSON.stringify({ worldId: W, fromX: baseX, fromY: baseY, toX: target.x, toY: target.y, troops: npc + 600 }),
       });
       expect(r.status).toBe(200);
-      const body = await r.json();
+      const body = await jsonBody(r);
       expect(body.data.kind).toBe('sweep');
     });
   });
@@ -398,7 +399,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(notFound.status).toBe(404);
       const ok = await fetch(`${base}/world/siege/${siegeId}/replay?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(body.data.siegeId).toBe(siegeId);
       expect(typeof body.data.seed).toBe('number');
 
@@ -415,7 +416,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(noWorld.status).toBe(400);
       const ok = await fetch(`${base}/world/sieges?worldId=${W}&limit=5`, { headers: auth });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(Array.isArray(body.data)).toBe(true);
       expect(body.data.some((s: { siegeId: string }) => s.siegeId === siegeId)).toBe(true);
     });

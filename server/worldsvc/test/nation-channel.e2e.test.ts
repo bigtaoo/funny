@@ -87,7 +87,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
 
     const history = await svc.getChannel(W, 'alice');
     expect(history).toHaveLength(1);
-    expect(history[0].body).toBe('hello world');
+    expect(history[0]!.body).toBe('hello world');
   });
 
   it('sendMessage: masks a sensitive word instead of rejecting delivery (CONTENT_MODERATION_DESIGN.md CM5, mask-not-reject like DM/family chat)', async () => {
@@ -212,7 +212,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       await svc.sendMessage(W, 'alice', 'Alice', 'settled sender posts');
       const history = await svc.getChannel(W, 'bob');
       expect(history).toHaveLength(1);
-      expect(history[0].body).toBe('settled sender posts');
+      expect(history[0]!.body).toBe('settled sender posts');
     });
   });
 
@@ -235,7 +235,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       now: () => 2000,
     });
     await svc.sendMessage(W, 'alice', 'Alice', 'hi');
-    expect(broadcasts[0]['fromPublicId']).toBe('alice#0042');
+    expect(broadcasts[0]!['fromPublicId']).toBe('alice#0042');
   });
 
   it('fromPublicId is empty string when meta not configured', async () => {
@@ -246,9 +246,9 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       now: () => 3000,
     });
     await svc.sendMessage(W, 'alice', 'Alice', 'hi');
-    expect(broadcasts[0]['fromPublicId']).toBe('');
+    expect(broadcasts[0]!['fromPublicId']).toBe('');
     // Must not expose the raw accountId as publicId.
-    expect(broadcasts[0]['fromPublicId']).not.toBe('alice');
+    expect(broadcasts[0]!['fromPublicId']).not.toBe('alice');
   });
 
   // Regression: the profile popup (client) needs a real public id to open + let the user
@@ -299,7 +299,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
 
       const history = await svc.getChannel(W, 'alice');
       expect(history).toHaveLength(1);
-      expect(history[0].senderPublicId).toBe('alice#0042');
+      expect(history[0]!.senderPublicId).toBe('alice#0042');
     });
 
     it('getChannel() falls back to empty string for legacy docs written before this field existed', async () => {
@@ -323,7 +323,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       });
       const history = await svc.getChannel(W, 'alice');
       expect(history).toHaveLength(1);
-      expect(history[0].senderPublicId).toBe('');
+      expect(history[0]!.senderPublicId).toBe('');
     });
   });
 
@@ -351,10 +351,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       // Client sends a stale cached name (e.g. the raw loginId) — meta's real nickname must win.
       const result = await svc.sendMessage(W, 'alice', '233784986', 'hi');
       expect(result.senderName).toBe('RealNickname');
-      expect(broadcasts[0]['fromName']).toBe('RealNickname');
+      expect(broadcasts[0]!['fromName']).toBe('RealNickname');
 
       const history = await svc.getChannel(W, 'alice');
-      expect(history[0].senderName).toBe('RealNickname');
+      expect(history[0]!.senderName).toBe('RealNickname');
     });
 
     it('sendMessage() falls back to the client-supplied senderName when meta has no profile for the account', async () => {

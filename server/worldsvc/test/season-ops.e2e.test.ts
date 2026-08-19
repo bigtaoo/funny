@@ -21,6 +21,7 @@ import { MapTemplateService } from '../src/mapTemplateService';
 import type { WorldMailClient, WorldMailContent } from '../src/mailClient';
 import type { WorldSocialsvcClient, SocialsvcChannel, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
 import type { WorldRedis } from '../src/redis';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_seasonops_test';
@@ -425,7 +426,7 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     it('with X-Internal-Key → 200 (list + settle work)', async () => {
       const list = await fetch(`${base}/admin/world/list`, { headers: { 'x-internal-key': KEY } });
       expect(list.status).toBe(200);
-      const body = (await list.json()) as { ok: boolean; data: Array<{ worldId: string }> };
+      const body = (await jsonBody(list)) as { ok: boolean; data: Array<{ worldId: string }> };
       expect(body.data.some((x) => x.worldId === W)).toBe(true);
 
       const r = await fetch(`${base}/admin/world/settle`, {
