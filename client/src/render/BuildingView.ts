@@ -5,7 +5,7 @@ import { BuildingType } from '@nw/engine/types';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
 import barracksTexUrl from '../assets/buildings/game_infantry_barracks.png';
-import archerTexUrl from '../assets/buildings/game_archer_barracks.png';
+import archerTexUrl from '../assets/buildings/game_arrow_tower.png';
 
 const SPRITE_SIZE = 56;
 const HP_BAR_Y    = 32;

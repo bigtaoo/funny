@@ -192,7 +192,7 @@ hudView.container        ← HUD（最顶层）
 | 建筑类型 | 文件 |
 |---|---|
 | `Barracks`（兵营） | `game_infantry_barracks.png` |
-| `ArrowTower`（箭塔） | `game_archer_barracks.png`（**临时借用**：这张图原本画给「弓箭手兵营」，箭塔一直借用至今；重画的设计+prompt 见 [`design/product/battle-arrow-tower-art.md`](../product/battle-arrow-tower-art.md)，出图后换成 `game_arrow_tower.png`） |
+| `ArrowTower`（箭塔） | `game_arrow_tower.png`（2026-08-19 重画。此前一直借用画给「弓箭手兵营」的茅草屋 `game_archer_barracks.png`，已移入 `art/leftover/`；设计/prompt/验收阈值见 [`design/product/battle-arrow-tower-art.md`](../product/battle-arrow-tower-art.md)，源图+打包脚本在 `art/ui/game/pack_arrow_tower.cjs`） |
 | 基地（双方） | `game_base.png`（0 级，L0 预载），敌方按朝向镜像（横屏左右翻、竖屏上下翻）。1/2 级升级贴图打包在 `assets/base_upgrade_atlas.{png,json}`（`base_lv1`=城池 → upgradeLevel 1，`base_lv2`=宫殿 → upgradeLevel 2/最高级），懒加载见 `render/atlas/baseUpgradeAtlasLoader.ts`，源图+打包脚本在 `art/ui/game/pack_base_atlas.js` |
 
 ### 箭塔攻击范围
@@ -310,7 +310,7 @@ pendingCardDown: { x, y, handIndex } | null             // 按下卡牌后，判
 | 弓箭兵（Archer） | `archer.png` |
 | 盾兵（ShieldBearer） | `shieldbearer.png` |
 | 兵营（Barracks） | `game_infantry_barracks.png`（与场上建筑同图） |
-| 箭塔（ArrowTower） | `game_archer_barracks.png`（与场上建筑同图；同上待换 `game_arrow_tower.png`） |
+| 箭塔（ArrowTower） | `game_arrow_tower.png`（与场上建筑同图） |
 | 法术（Haste / Meteor / Rockslide / BridgeCollapse） | `spell_haste.png` / `spell_meteor.png` / `spell_rockslide.png` / `spell_bridge_collapse.png`（2026-08 起真图，见 `render/cardArt.ts` `CARD_ART_URLS`；后两张为 PvE 关卡专属法术） |
 
 - 插画等比缩放居中于类型行与名称行之间，不被费用圆遮挡
