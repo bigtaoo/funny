@@ -68,6 +68,21 @@ describe('rasterizeMapEdits', () => {
     }
   });
 
+  it('rasterizes a top-tier city as a solid 9×9 block of familyKeep city ground (81 tiles)', () => {
+    // Pins the footprint semantics that survived the 2026-08-19 scattered-keep deletion: `familyKeep`
+    // now means "city ground" and nothing else, and a published city still stamps EVERY tile of its
+    // footprint. That is also the known footgun behind the follow-up task — the client's city-sprite
+    // layer only knows procedural `allCityNodes()` positions, so a designer-placed city currently
+    // renders as 81 per-tile gatehouses instead of one castle. If that gets fixed by changing what
+    // rasterization writes, this expectation is the one to revisit deliberately.
+    const diffs = rasterizeMapEdits(worldId, [], [{ x: 400, y: 400, level: 10, footprint: 9, kind: 'capital' }]);
+    expect(diffs.length).toBe(81);
+    expect(new Set(diffs.map((d) => d.type))).toEqual(new Set(['familyKeep']));
+    const xs = diffs.map((d) => d.x);
+    const ys = diffs.map((d) => d.y);
+    expect([Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]).toEqual([396, 404, 396, 404]);
+  });
+
   it('worldCenter kind rasterizes to type "center" with no resType', () => {
     const diffs = rasterizeMapEdits(worldId, [], [{ x: 50, y: 50, level: 10, footprint: 1, kind: 'worldCenter' }]);
     expect(diffs).toEqual([{ x: 50, y: 50, type: 'center', level: 10 }]);
