@@ -352,7 +352,7 @@ export const en: Record<TranslationKey, string> = {
   'auth.logout': 'Log out',
   'auth.loggingIn': 'Logging in',
   'auth.tapToType': 'Tap to type',
-  'auth.back': '← Back',
+  'auth.back': 'Back',
   'auth.err.invalid': 'Wrong email / username or password',
   'auth.err.taken': 'That email / username is already registered',
   'auth.err.weak': 'Password must be at least 6 characters',

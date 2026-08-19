@@ -433,3 +433,17 @@ buildRewardIcon(reward: {kind, id?, count?}, size, color, opts?) : DisplayObject
 - **已销毁 Container 和已销毁 Sprite 不是一回事**（实测，不是推断）：PIXI 对已销毁 Container 的 `add/removeChild/removeChildren` 完全容忍、不抛；只有已销毁 **Sprite** 的 `transform` 访问才炸。所以“回调只是重绘”的调用点最坏是白干一遍活，“回调直接摸 Sprite”的才是冻屏级——扫这类问题时先按这条分级，别把二十多处全当同等严重。
 - **没亲眼看它红过的回归测试等于没有**：本会话第一版 `FriendsScene` 用例断言的是“destroy 后 render 不抛”，把修复撤掉照样绿（因为它本来就不抛）。改成断言“destroy 后 render 不会把子节点重新塞回容器”才咬合。撤掉改动看它变红——这一步必须做。
 - **撤改动看红时，`perl -0pi -e 's/…\n//'` 会静默失效**：这个仓库的文件是 CRLF，`\n` 匹配不上，脚本什么都没删、测试当然照样绿，很容易误判成“测试没咬合”。用 `\r?\n`。同一个假设还在更早一次合并冲突里吞掉过本文档“批次 4”整节（`indexOf('\n---\n\n## 批次 4')` 返回 -1 → `slice(-1)`）。
+
+---
+
+## 附：active 变体在深色格上被最小化稀释（2026-08-19）
+
+用户报告"锻造图标在黑色背景下几乎不可见"（装备页左侧 rail 的铁砧 tab）。量下来这**不是那一张图画得不好，是整套 46 张 active 图的系统性问题**：把每张 `*_active.png`（长边 128）按运行时真实的 28px 渲染后统计 alpha，**没有一张图存在接近全不透明的像素**，峰值 alpha 只有 55–76%——白墨细线缩 4.5 倍后被下采样平均掉一半，落在 `C.dark` 格子上就是一条 `#808080` 的中灰线。纸面上的 inactive/content 也被同样稀释，但"灰线变浅一点"没人察觉，只有深底这一侧翻车。铁砧受害最重（笔画最细、横向为主）。
+
+**修法**：`pack_tab_icons.cjs` 的 `VARIANTS` 表加第三列 `thicken`，只有 `active` 为真——该变体在 `LONG_EDGE - 2` 处 resize、四周补 1px 透明边，再对 alpha 通道跑一次 3×3 max filter（`dilateAlpha`），等于把每条笔画各向外长 1px 后再交给运行时缩放。效果（28px 下）：峰值 alpha 55–76% → 100%，平均墨量约翻倍，线稿仍读得出是线稿。
+
+- **只加粗 active**：纸面两个变体保持原样，切换 tab 时 1/128 的粗细差在 28px 下是 0.2px，看不出来；同时 diff 只落在 46 张 `*_active.png` 上。
+- **两次膨胀被否**：`dil2` 下盾牌的中缝、卡背包小人开始糊成块（19.08 的并排对比图）；`gamma` 提升单独用效果只有膨胀的一半。
+- **尺寸契约**：`inset`+`extend` 的写法让 active 的**长边**仍然精确等于 `LONG_EDGE`（短边可能因取整差 1px），否则 tab 从 inactive 翻到 active 时图标会跳一下。回归测试在 `client/test/render/tabIconContentVariant.test.ts`（读 PNG IHDR，不引额外依赖）。
+
+**同批**：装备页锻造卡片的 Craft 按钮（深色填充）此前只有文字，现在也画上同一枚 `craftTabIcon`（`EquipmentScene/craft.ts`，`[图标][gap][文案]` 整组按钮内居中、超宽时整组缩放），让按钮和通向它的 tab 读成同一件事。

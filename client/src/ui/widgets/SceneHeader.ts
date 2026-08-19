@@ -9,7 +9,7 @@
  * i18n key per scene. This pins all of that:
  *
  *   - position : back glyph at x = 10 (design px), vertically centred in the bar
- *   - label    : '← ' + t('common.back'), drawn in the blue affordance accent
+ *   - label    : a drawn back-arrow glyph + t('common.back'), both in the blue affordance accent
  *   - hit area : { x: 0, y: 0, w: 160, h: headerH } — larger than the glyph so
  *                it is comfortable to tap
  *   - title    : centred in the bar
@@ -35,6 +35,7 @@ import { getCachedDisplay } from './uiCache';
 import { buildIcon, tabIconVariant, type IconKind } from '../../render/icons';
 import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { FS, snapFont } from '../../render/fontScale';
+import { drawGuilloche } from './SceneHeader/guilloche';
 
 /**
  * Bar styling. As of the 07.07.2026 header-unification pass, **every** secondary
@@ -162,12 +163,33 @@ function measureBackLabel(label: string, size: number): { w: number; h: number }
   return dims;
 }
 
-/** Chip padding + overall (w,h) around the back label — shared by the builder and callers that need the size before a cache-miss draw runs. */
-function backChipSize(label: string, size: number): { padX: number; padY: number; w: number; h: number } {
+/**
+ * Back-arrow glyph box and its gap to the label, as a multiple of the label size — the same
+ * [icon][gap][text] shape {@link buildTitleIcon} gives the title, one notch smaller (1.0 vs 1.25)
+ * because the arrow is a lead-in, not the subject of the chip.
+ */
+const BACK_ARROW_RATIO = 1.0;
+const BACK_ARROW_GAP_RATIO = 0.22;
+
+/** Chip padding + overall (w,h) around the back arrow + label — shared by the builder and callers that need the size before a cache-miss draw runs. */
+function backChipSize(label: string, size: number): { padX: number; padY: number; arrow: number; gap: number; w: number; h: number } {
   const { w: labelW, h: labelH } = measureBackLabel(label, size);
   const padX = Math.round(size * 0.7);
   const padY = Math.round(size * 0.5);
-  return { padX, padY, w: labelW + padX * 2, h: labelH + padY * 2 };
+  const arrow = Math.round(size * BACK_ARROW_RATIO);
+  const gap = Math.round(size * BACK_ARROW_GAP_RATIO);
+  return { padX, padY, arrow, gap, w: arrow + gap + labelW + padX * 2, h: labelH + padY * 2 };
+}
+
+/**
+ * Where a scene may start drawing its own header content: the right edge of the back pill plus a
+ * gap. FamilyScene/SectScene draw their own title cluster into the bar (they pass `title: null`)
+ * and used to re-derive the pill width from a copy of the chip formula — which silently went stale
+ * the moment the chip grew an arrow glyph (19.08.2026).
+ */
+export function backPillRightEdge(h: number): number {
+  const size = backSize(sceneHeaderHeight(h));
+  return BACK_X + backChipSize(t('common.back'), size).w + Math.round(size * 0.6);
 }
 
 /**
@@ -178,7 +200,7 @@ function backChipSize(label: string, size: number): { padX: number; padY: number
  * (§7.5) — this is a subtle underlay, not a primary action button.
  */
 function buildBackChip(label: string, size: number, ctx: BackChipContext): { chip: PIXI.Container; w: number; h: number } {
-  const { padX, w, h } = backChipSize(label, size);
+  const { padX, arrow, gap, w, h } = backChipSize(label, size);
 
   const chip = new PIXI.Container();
   const bg = new PIXI.Graphics();
@@ -188,46 +210,20 @@ function buildBackChip(label: string, size: number, ctx: BackChipContext): { chi
   bg.endFill();
   chip.addChild(bg);
 
+  // Hand-drawn arrow in the same accent ink as the label (see `backArrow` in render/icons) — the
+  // literal "←" it replaces was the one glyph in the bar the sketch pen never touched.
+  const ar = buildIcon('backArrow', arrow, C.accent);
+  ar.x = padX;
+  ar.y = Math.round(h / 2 - arrow / 2);
+  chip.addChild(ar);
+
   const lbl = txt(label, size, C.accent);
   lbl.anchor.set(0, 0.5);
-  lbl.x = padX;
+  lbl.x = padX + arrow + gap;
   lbl.y = h / 2;
   chip.addChild(lbl);
 
   return { chip, w, h };
-}
-
-/** Faint guilloche alpha + strand count — approved 07.07.2026 (banknote texture on the paper bar). */
-const GUILLOCHE_ALPHA = 0.12;
-const GUILLOCHE_STRANDS = 6;
-
-/**
- * Draw the banknote-style guilloche weave into `g`: two mirrored families of
- * phase-shifted compound sine strands, tinted in the category `accent` at a
- * faint alpha so it reads as a premium watermark under the title/back/coins,
- * never competing with them. Amplitude (0.30·h from the mid-line) stays inside
- * the bar, so no clip is needed. Baked once with the rest of the chrome via
- * {@link getCachedDisplay}, so its cost is paid a single time per cache key.
- * This is the exact curve math signed off in the interactive preview.
- */
-function drawGuilloche(g: PIXI.Graphics, w: number, headerH: number, accent: number): void {
-  const mid = headerH / 2;
-  const f1 = (2 * Math.PI * 7) / w;
-  const f2 = (2 * Math.PI * 11) / w;
-  const a1 = headerH * 0.20;
-  const a2 = headerH * 0.10;
-  g.lineStyle(1, accent, GUILLOCHE_ALPHA);
-  for (let fam = 0; fam < 2; fam++) {
-    const dir = fam === 0 ? 1 : -1;
-    for (let s = 0; s < GUILLOCHE_STRANDS; s++) {
-      const ph = (s / GUILLOCHE_STRANDS) * 2 * Math.PI;
-      for (let x = 0; x <= w; x += 2) {
-        const y = mid + dir * (a1 * Math.sin(f1 * x + ph) + a2 * Math.sin(f2 * x + ph * 1.7));
-        if (x === 0) g.moveTo(x, y);
-        else g.lineTo(x, y);
-      }
-    }
-  }
 }
 
 /** Build the static bar chrome (fill + guilloche + accent rule + back chip) at local origin. */
@@ -305,7 +301,7 @@ export function drawSceneHeader(
   const variant = opts?.variant ?? 'paper';
   const accent = opts?.accent ?? HEADER_ACCENT.lobby;
   const size = backSize(headerH);
-  const label = `← ${t('common.back')}`; // "← " + back
+  const label = t('common.back'); // the arrow is a drawn glyph now, see buildBackChip
 
   const chrome = getCachedDisplay(
     `hdr:${variant}:${accent}:${Math.round(w)}x${headerH}:${size}:${label}`,
@@ -384,7 +380,7 @@ export function drawFloatingBackButton(container: PIXI.Container, h: number): Fl
   // regular header would have used at this screen height — keeps this chip
   // matching drawSceneHeader's back-button size on the same device.
   const size = backSize(sceneHeaderHeight(h));
-  const label = `← ${t('common.back')}`;
+  const label = t('common.back');
 
   const { w: chipW, h: chipH } = backChipSize(label, size);
 

@@ -254,3 +254,22 @@ export function drawPlay(g: PIXI.Graphics, s: number, color: number): void {
   const pen = new SketchPen(g, 0x9147);
   pen.stroke([...pts, pts[0]!], { color, width: Math.max(1, s * 0.05), jitter: 0.25, taper: 0.95, double: false });
 }
+
+/**
+ * Back arrow (←) — a hand-drawn left-pointing arrow: one shaft plus an open chevron head.
+ *
+ * Replaces the literal "←" character the back button used to prefix its label with (19.08.2026):
+ * the typographic arrow is drawn by the text renderer at hairline weight and in whatever the CJK
+ * fallback font happens to ship, so it read thinner and flatter than every other glyph in the same
+ * bar. Deliberately heavier-stroked than the rest of this file (0.09·s vs the usual 0.05) — it
+ * carries the affordance on its own, at a smaller box than a tab icon gets.
+ */
+export function drawBackArrow(g: PIXI.Graphics, s: number, color: number): void {
+  const pen = new SketchPen(g, 0x2b71);
+  const w = Math.max(1.6, s * 0.09);
+  const y = s * 0.52;
+  pen.line(s * 0.88, y, s * 0.26, y, { color, width: w, jitter: 0.35, taper: 0.9, double: false });
+  pen.stroke([
+    { x: s * 0.50, y: s * 0.22 }, { x: s * 0.14, y }, { x: s * 0.50, y: s * 0.82 },
+  ], { color, width: w, jitter: 0.35, taper: 0.88, double: false });
+}

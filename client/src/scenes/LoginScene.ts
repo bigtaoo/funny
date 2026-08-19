@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
+import { buildIcon } from '../render/icons';
 import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type View, type Field, type Hit } from './LoginScene/types';
 import { drawLanding, drawForm, drawSubmitting, PRESS_DUR, type FormHost } from './LoginScene/forms';
 
@@ -308,8 +309,17 @@ export class LoginScene implements Scene {
 
     // Back button (only on form views).
     if (this.view === 'password' || this.view === 'register') {
+      // [arrow][gap][label], the same shape SceneHeader's back pill draws — this bar is the one
+      // back button that predates it, and the literal "←" it used to carry read as a hairline
+      // on the dark title fill (19.08.2026).
+      const arrowSz = Math.round(FS.heading);
+      const arrowGap = Math.round(FS.heading * 0.22);
+      const backX = Math.round(w * 0.04);
+      const arrow = buildIcon('backArrow', arrowSz, C.light);
+      arrow.x = backX; arrow.y = Math.round(tbH / 2 - arrowSz / 2);
+      this.container.addChild(arrow);
       const back = txt(t('auth.back'), FS.heading, C.light);
-      back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
+      back.anchor.set(0, 0.5); back.x = backX + arrowSz + arrowGap; back.y = tbH / 2;
       this.container.addChild(back);
       const pad = Math.round(h * 0.02);
       this.hits.push({

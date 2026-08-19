@@ -125,7 +125,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 | 项 | 规格（竖屏 1080×1920 设计空间；横屏等比） |
 |---|---|
 | 位置 | 标题栏左端，`x = 10`、垂直居中于标题栏 |
-| 文案 | `← ` + `t('common.back')`（统一 key，色 `C.accent`） |
+| 文案 | 手绘左箭头 glyph（`backArrow`）+ `t('common.back')`（统一 key，两者同色 `C.accent`） |
 | 命中区 | 左上角 `{ x: 0, y: 0, w: 160, h: HEADER_H }`，比可见文字大以保证触屏好点 |
 | 行为 | 调用 `cb.onBack()`；返回上一场景由 `SceneManager` 处理 |
 | 标题 | 返回按钮右侧，居中或左对齐于标题栏 |
@@ -159,6 +159,8 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 > - **标题字号统一**：此前 5 个场景显式传 `titleSize` 覆盖默认值——`Settings`/`Titles` 0.042、`Room`/`Friends` 0.04、`LevelPrep` 0.032——跨页字号不一致。本次删掉这 5 处覆盖，全部回落默认 `h*0.034`，与 Shop/Gacha/Equipment 等场景完全一致。
 > - **EventScene 补迁**：`EventScene` 此前完全绕开 `SceneHeader`，自绘标题（`h*0.045`）与返回文字（`h*0.032`，位置 `x=w*0.05,y=h*0.04`，私有 i18n key `event.back`），是唯一未接入共享组件的二级场景。本次改用 `drawSceneHeader(this.container, w, h, t('event.title'))`，回退按钮/标题/栏高与其余场景完全一致；`event.back` i18n key 不再使用（**2026-08-16 审计已删**，见 §33——"供未来复用"三周内没人复用，返回文案统一走 `common.back`）。
 > - **未动**：Card/Equipment 的 `drawHeaderCurrency` 紧凑 scale（`100/headerH`，见上「栏高统一」条目）——两场景互为对开页且有明确的溢出规避理由，不属于本次"跨页不一致"的范畴，维持现状。
+
+> **返回箭头改为手绘 glyph（2026-08-19）**：返回文案里的 `←` 是这一栏里唯一**不是**用 sketch 笔触画出来的图形——它由文字渲染器按 CJK 回退字体绘制，笔画细、字形随平台变，跟旁边的手绘标题图标不是一套语言。现在 `backArrow`（`render/icons/ui.ts`，笔宽 `0.09·s`，比其余 glyph 重一档）作为独立 glyph 画在标签左侧，i18n 值退回纯 `返回`/`Back`/`Zurück`（`common.back` 与 LoginScene 的 `auth.back` 都去掉了字面箭头）。chip 宽度由 `backChipSize` 统一计入 glyph + gap；`backPillRightEdge(h)` 新导出给 FamilyScene/SectScene 用（这两处原本各抄了一份 chip 宽度公式，chip 一长它们就算窄）。回归测试 `client/test/ui/backButtonArrowGlyph.ui.ts`。同一次改动把 `drawGuilloche` 拆到 `SceneHeader/guilloche.ts`（500 行约定）。
 
 ---
 

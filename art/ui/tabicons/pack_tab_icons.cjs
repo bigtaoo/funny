@@ -38,8 +38,50 @@ const INK_ACTIVE   = { r: 0xff, g: 0xff, b: 0xff }; // white   — active tab ce
 const INK_INACTIVE = { r: 0x68, g: 0x68, b: 0x68 }; // C.mid   — inactive tab cell (paper fill)
 const INK_CONTENT  = { r: 0x2c, g: 0x2c, b: 0x2a }; // C.dark  — content on paper (reward rows)
 
-/** Output suffix → baked ink. Keep in sync with `RasterIconVariant` in client/src/render/icons.ts. */
-const VARIANTS = [['active', INK_ACTIVE], ['inactive', INK_INACTIVE], ['content', INK_CONTENT]];
+/**
+ * Output suffix → [baked ink, thicken?]. Keep in sync with `RasterIconVariant` in
+ * client/src/render/icons.ts.
+ *
+ * Only `active` is thickened (see {@link dilateAlpha}): a ~2px line at LONG_EDGE minified to the
+ * ~28px a tab cell actually draws lands on well under one output pixel, so the downsampler averages
+ * the stroke down to roughly half alpha. On paper that reads as a slightly lighter grey line and
+ * nobody notices; white ink on the near-black active cell instead lands at ~#808080 — a mid-grey
+ * line on a dark fill, which is the "the anvil tab is basically invisible" report of 19.08.2026.
+ * Measured over all 46 kinds at 28px before the fix: peak alpha 55–76%, i.e. NOT ONE icon had a
+ * single fully-opaque pixel.
+ */
+const VARIANTS = [['active', INK_ACTIVE, true], ['inactive', INK_INACTIVE, false], ['content', INK_CONTENT, false]];
+
+/**
+ * One 3×3 max filter over the alpha channel of an RGBA raw buffer — grows every stroke by one pixel
+ * in each direction, leaving RGB (the already-baked ink) alone.
+ *
+ * Applied at LONG_EDGE, so this is +1/128 of the icon's own size: invisible at the 64px+ a title
+ * glyph draws at, but exactly the compensation a 28px tab cell needs — measured across the set it
+ * takes peak alpha at 28px from 55–76% to a solid 100% and roughly doubles mean coverage, with the
+ * line art still reading as line art. Two passes were tried and rejected: the shield's centre seam
+ * and the roster card's little swordsman start closing up (see the 19.08.2026 side-by-side).
+ */
+function dilateAlpha(buf, W, H) {
+  const out = Buffer.from(buf);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let m = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= W) continue;
+          const a = buf[(yy * W + xx) * 4 + 3];
+          if (a > m) m = a;
+        }
+      }
+      out[(y * W + x) * 4 + 3] = m;
+    }
+  }
+  return out;
+}
 
 // Source file (in this dir) → asset name. Add a row here for each new tab icon pilot batch.
 const JOBS = [
@@ -100,7 +142,7 @@ const JOBS = [
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');
 
-async function recolor(rawData, W, H, ch, ink) {
+async function recolor(rawData, W, H, ch, ink, thicken) {
   const out = Buffer.alloc(W * H * 4);
   let minX = W, minY = H, maxX = -1, maxY = -1;
   for (let y = 0; y < H; y++) {
@@ -132,12 +174,26 @@ async function recolor(rawData, W, H, ch, ink) {
     }
   }
 
-  const scale = LONG_EDGE / Math.max(cropW, cropH);
+  // Thickened variants resize one pixel short on each edge and get that pixel back as transparent
+  // padding below, so the dilate has somewhere to grow into (otherwise the strokes that touch the
+  // crop box — most of them, the box IS the content bounds — grow off-canvas) and every variant of
+  // a kind still exports at the same LONG_EDGE. The ~1.6% smaller drawing inside is what the dilate
+  // then gives back, so active/inactive read at the same size when a tab flips between them.
+  const inset = thicken ? 1 : 0;
+  const scale = (LONG_EDGE - inset * 2) / Math.max(cropW, cropH);
   const newW = Math.max(1, Math.round(cropW * scale));
   const newH = Math.max(1, Math.round(cropH * scale));
-  const buf = await sharp(cropBuf, { raw: { width: cropW, height: cropH, channels: 4 } })
-    .resize(newW, newH, { fit: 'fill' }).png().toBuffer();
-  return { buf, w: newW, h: newH };
+  let img = sharp(cropBuf, { raw: { width: cropW, height: cropH, channels: 4 } })
+    .resize(newW, newH, { fit: 'fill' });
+  if (!thicken) return { buf: await img.png().toBuffer(), w: newW, h: newH };
+
+  const padW = newW + 2, padH = newH + 2;
+  const padded = await img
+    .extend({ top: 1, bottom: 1, left: 1, right: 1, background: { r: ink.r, g: ink.g, b: ink.b, alpha: 0 } })
+    .raw().toBuffer();
+  const buf = await sharp(dilateAlpha(padded, padW, padH), { raw: { width: padW, height: padH, channels: 4 } })
+    .png().toBuffer();
+  return { buf, w: padW, h: padH };
 }
 
 async function process(job) {
@@ -150,8 +206,8 @@ async function process(job) {
   const { width: W, height: H, channels: ch } = info;
 
   const rows = [];
-  for (const [suffix, ink] of VARIANTS) {
-    const result = await recolor(data, W, H, ch, ink);
+  for (const [suffix, ink, thicken] of VARIANTS) {
+    const result = await recolor(data, W, H, ch, ink, thicken);
     if (!result) throw new Error(`${job.name}: empty image (no content)`);
     const outName = `${job.name}_${suffix}.png`;
     await sharp(result.buf).toFile(path.join(OUT_DIR, outName));

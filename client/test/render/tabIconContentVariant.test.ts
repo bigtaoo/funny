@@ -52,6 +52,25 @@ describe('tab-icon PNGs on disk (pack_tab_icons.cjs output)', () => {
     }
   });
 
+  // The `active` variant is thickened at pack time (dilateAlpha in pack_tab_icons.cjs, 19.08.2026)
+  // so white line art still reads on a dark tab cell after minification to ~28px. It buys the room
+  // for that by resizing 1px short on each edge and padding it back, which keeps its LONG edge at
+  // exactly LONG_EDGE like its paper siblings — get that wrong and an icon visibly jumps size the
+  // moment its tab goes from inactive to active. (The short edge can round 1px apart; that is
+  // sub-percent and invisible.)
+  it('keeps the thickened active variant the same pixel size as its paper variants', () => {
+    const sizeOf = (base: string, v: RasterIconVariant): { w: number; h: number } => {
+      const buf = fs.readFileSync(path.join(ASSET_DIR, `${base}_${v}.png`));
+      return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) }; // PNG IHDR
+    };
+    for (const base of bases) {
+      const a = sizeOf(base, 'active');
+      const i = sizeOf(base, 'inactive');
+      expect(Math.max(a.w, a.h), `${base}: active long edge`).toBe(Math.max(i.w, i.h));
+      expect(Math.abs(Math.min(a.w, a.h) - Math.min(i.w, i.h)), `${base}: short edge drift`).toBeLessThanOrEqual(2);
+    }
+  });
+
   it('bakes a genuinely different ink into each variant — no two are byte-identical', () => {
     for (const base of bases) {
       const bytes = VARIANTS.map((v) => fs.readFileSync(path.join(ASSET_DIR, `${base}_${v}.png`)));
