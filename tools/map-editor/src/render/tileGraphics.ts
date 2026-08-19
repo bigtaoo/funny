@@ -11,7 +11,7 @@ import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
 import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
 import type { TerrainTextureName } from './terrainAtlasLoader';
-import { worldSeed, obstacleShoreAt, type ProceduralTile } from '@nw/shared/slg';
+import { worldSeed, obstacleShoreAt, tileFeatureBuilding, type ProceduralTile } from '@nw/shared/slg';
 
 /** Ground + motif + landmark for one tile. `g`'s local origin is the tile's diamond center. */
 export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: TerrainTextureName, tp: number, tx = 0, ty = 0, worldId = ''): void {
@@ -62,15 +62,19 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
   // tile, so this paints a per-level heap on every one of them — dense by design, so the freshly
   // baked l1–l10 graded art (taller/denser = higher level) actually reads on the map. Must stay in
   // lockstep with the game client's drawTileL1 (SLG map render parity).
+  // No `isCityGroundTile` guard needed on this side (the client's drawTileL1 does need one): the
+  // editor's motif gate is `type === 'resource'`, which already excludes familyKeep/center, whereas the
+  // client keys off the tile's `resType` — and city ground carries one.
   if (tile.type === 'resource' && tile.resType) {
     drawResMotif(g, tile.resType, tile.level, tp, tx, ty);
   }
 
-  const featBuilding = tile.type === 'familyKeep' ? 'building_keep'
-    : tile.type === 'stronghold' ? 'building_stronghold'
-    : tile.type === 'bridge' ? 'building_bridge'
-    : tile.type === 'plankway' ? 'building_plankway'
-    : null;
+  // From @nw/shared, not a local ternary: this is the exact mapping that drifted out of lockstep with
+  // the game client on 2026-08-19 (`familyKeep` kept stamping a `building_keep` gatehouse per tile long
+  // after it stopped meaning anything but "city ground", so a published city's whole N×N footprint drew
+  // a wall of overlapping gatehouses under its own sprite). Sharing the function makes the parity
+  // requirement testable instead of a comment — see isCityGroundTile's doc + server/shared/test/core.test.ts.
+  const featBuilding = tileFeatureBuilding(tile.type);
   if (featBuilding) {
     placeBuildingSprite(g, featBuilding, hh, tp * 1.3);
   }

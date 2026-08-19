@@ -134,6 +134,8 @@ export class AdminService {
   slgGenerateMapTemplate(...args: Parameters<MapTemplatesService['slgGenerateMapTemplate']>) { return this.mapTemplates.slgGenerateMapTemplate(...args); }
   slgGetMapTemplateTiles(...args: Parameters<MapTemplatesService['slgGetMapTemplateTiles']>) { return this.mapTemplates.slgGetMapTemplateTiles(...args); }
   slgSaveMapTemplateTiles(...args: Parameters<MapTemplatesService['slgSaveMapTemplateTiles']>) { return this.mapTemplates.slgSaveMapTemplateTiles(...args); }
+  slgGetMapTemplateCities(...args: Parameters<MapTemplatesService['slgGetMapTemplateCities']>) { return this.mapTemplates.slgGetMapTemplateCities(...args); }
+  slgSaveMapTemplateCities(...args: Parameters<MapTemplatesService['slgSaveMapTemplateCities']>) { return this.mapTemplates.slgSaveMapTemplateCities(...args); }
   slgActivateMapTemplate(...args: Parameters<MapTemplatesService['slgActivateMapTemplate']>) { return this.mapTemplates.slgActivateMapTemplate(...args); }
   slgDeleteMapTemplate(...args: Parameters<MapTemplatesService['slgDeleteMapTemplate']>) { return this.mapTemplates.slgDeleteMapTemplate(...args); }
 

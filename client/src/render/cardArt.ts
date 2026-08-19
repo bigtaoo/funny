@@ -24,7 +24,7 @@ import medicArtUrl from '../assets/units/medic.png';
 import berserkerArtUrl from '../assets/units/berserker.png';
 import splitterArtUrl from '../assets/units/splitter.png';
 import barracksArtUrl from '../assets/buildings/game_infantry_barracks.png';
-import towerArtUrl from '../assets/buildings/game_archer_barracks.png';
+import towerArtUrl from '../assets/buildings/game_arrow_tower.png';
 import spellHasteArtUrl from '../assets/spells/spell_haste.png';
 import spellMeteorArtUrl from '../assets/spells/spell_meteor.png';
 import spellRockslideArtUrl from '../assets/spells/spell_rockslide.png';

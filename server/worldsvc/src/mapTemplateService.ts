@@ -10,6 +10,7 @@
 // active template). The external contract (MapTemplateTile: one flat {x,y,type,level,...} per cell) is
 // unchanged — encoding/decoding happens entirely inside this service and core/map.ts.
 import {
+  allCityNodes,
   proceduralTile,
   encodeRow,
   applyEditsToRow,
@@ -17,6 +18,7 @@ import {
   MAP_TEMPLATE_SAVE_MAX_TILES,
   MAP_TEMPLATE_READ_MAX_TILES,
   SlgError,
+  type MapEditorCityNode,
   type MapTemplateSummary,
   type MapTemplateTile,
   type ProceduralTile,
@@ -173,6 +175,39 @@ export class MapTemplateService {
     return { updated: tiles.length };
   }
 
+  /**
+   * The template's city siege-point nodes (ADR-034 §3). Falls back to `allCityNodes(templateId)` for a
+   * template that never published a city list — the templateId IS the generation seed
+   * (`generateTemplate` runs `proceduralTile(templateId, …)`), so that fallback is exactly the node set
+   * the stored terrain was generated against.
+   */
+  async getCities(templateId: string): Promise<MapEditorCityNode[]> {
+    const template = await this.deps.cols.mapTemplates.findOne({ _id: templateId });
+    if (!template) throw new SlgError('NOT_FOUND', `no such template: ${templateId}`);
+    return template.cities ?? allCityNodes(templateId);
+  }
+
+  /**
+   * Replaces the template's city node list wholesale (the editor always holds and uploads all ~64 nodes —
+   * it can drag them but not add or remove any, so there is nothing a diff would buy). Publish uploads
+   * this NEXT TO the tile diff `rasterizeMapEdits` bakes from the same nodes: the tiles are the ground the
+   * cities stand on, this list is what the game's city sprite layer draws.
+   */
+  async saveCities(templateId: string, cities: MapEditorCityNode[]): Promise<{ updated: number }> {
+    const template = await this.deps.cols.mapTemplates.findOne({ _id: templateId });
+    if (!template) throw new SlgError('NOT_FOUND', `no such template: ${templateId}`);
+    for (const c of cities) {
+      if (c.x < 0 || c.x >= template.width || c.y < 0 || c.y >= template.height) {
+        throw new SlgError('BAD_REQUEST', `city ${c.id} at (${c.x},${c.y}) outside template bounds ${template.width}x${template.height}`);
+      }
+    }
+    await this.deps.cols.mapTemplates.updateOne(
+      { _id: templateId },
+      { $set: { cities, updatedAt: this.deps.now() } },
+    );
+    return { updated: cities.length };
+  }
+
   /** §24 "cannot delete the templateId currently set as the config for creating new worlds" — historical world instances are unaffected either way (they hold a clone, not a reference). */
   async deleteTemplate(templateId: string): Promise<void> {
     const template = await this.deps.cols.mapTemplates.findOne({ _id: templateId });
@@ -197,6 +232,12 @@ export class MapTemplateService {
    * intentionally additive and does not change existing world-open behavior.
    * `cloned` counts ROWS (up to `height`, ~1500), not cells — no caller currently inspects this value beyond
    * logging; see module header for why rows replaced cells as the unit of storage.
+   *
+   * The template's CITY NODES are cloned in the same step, onto `WorldDoc.cities` (2026-08-19). They are
+   * always written, even for a template that never published a list — the fallback is
+   * `allCityNodes(templateId)`, i.e. the node set this template's terrain was generated against, which is
+   * NOT the same as `allCityNodes(worldId)` whenever the world's id differs from its templateId. Storing
+   * the resolved list here is what stops the client from having to guess which seed to use.
    */
   async cloneActiveTemplateInto(worldId: string): Promise<{ templateId: string; cloned: number } | null> {
     const template = await this.deps.cols.mapTemplates.findOne({ active: true });
@@ -223,6 +264,10 @@ export class MapTemplateService {
       );
       cloned += batch.length;
     }
+    await this.deps.cols.worlds.updateOne(
+      { _id: worldId },
+      { $set: { cities: template.cities ?? allCityNodes(template._id) } },
+    );
     return { templateId: template._id, cloned };
   }
 }

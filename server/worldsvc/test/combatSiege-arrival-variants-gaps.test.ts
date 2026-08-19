@@ -422,8 +422,8 @@ describe('applySweep', () => {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('landSiege', () => {
-  const winRes = (survivors: number): SiegeResolution => ({ outcome: 'attacker_win', attackerSurvivors: survivors, defenderSurvivors: 0 });
-  const loseRes = (defSurvivors: number): SiegeResolution => ({ outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: defSurvivors });
+  const winRes = (survivors: number): SiegeResolution => ({ outcome: 'attacker_win', attackerSurvivors: survivors, defenderSurvivors: 0, attackerDeployed: survivors, defenderDeployed: 0 });
+  const loseRes = (defSurvivors: number): SiegeResolution => ({ outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: defSurvivors, attackerDeployed: 0, defenderDeployed: defSurvivors });
 
   it('attacker_win on a main base: loots, sends survivors home, applies sect-leader penalty + passive relocation', async () => {
     const { core } = makeCore({ pwById: { [`${W}:${ATK}`]: pw({ mainBaseTile: undefined }) } });
@@ -486,7 +486,7 @@ describe('landSiege', () => {
     const target = tile({ type: 'territory', ownerId: DEF });
     const m = march({ army: [{ cardInstanceId: 'c1', col: 0, row: 0 }] as never });
     const attacker = pw({ cardState: { c1: { currentTroops: 40 } } as never });
-    const res: SiegeResolution = { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 12 };
+    const res: SiegeResolution = { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 12, attackerDeployed: 0, defenderDeployed: 12 };
     await landSiege(core, ctx, m, attacker, target, DEF, pw({ accountId: DEF }), res, 1_000, null);
     expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, { $set: { garrison: 12 }, $inc: { rev: 1 } });
     // hasCardArmy alone (attackerSurvivors=0) still triggers the return leg → playerWorld touched at least once.

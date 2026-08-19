@@ -159,7 +159,9 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
       const noAlloc = await fetch(`${base}/world/troops/distribute`, { method: 'POST', headers: auth, body: JSON.stringify({ worldId: W }) });
       expect(noAlloc.status).toBe(400);
 
-      // A card assigned to a team (teamId set directly — distributeTroops itself never touches meta).
+      // A card assigned to a team (teamId set directly). 100 troops is inside a level-1 lichuang's
+      // cardTroopCap of 200 — distributeTroops does a meta cardInv lookup for that check since 2026-08-19,
+      // which CARD_INV_ANY above already satisfies.
       await m.collections.playerWorld.updateOne(
         { _id: playerWorldId(W, 'acct-1') },
         { $set: { troops: 1000, 'cardState.card-distribute-1': { currentTroops: 0, teamId: 't1' } } },

@@ -484,6 +484,13 @@
       "sourceSize": {
         "w": 106,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 657,
+        "density": 0.0484,
+        "equivEdge": 116.48,
+        "sizeMul": 0.008585,
+        "alphaMul": 1
       }
     },
     "res_graphite_l1": {
@@ -504,6 +511,13 @@
       "sourceSize": {
         "w": 128,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1488,
+        "density": 0.0908,
+        "equivEdge": 128,
+        "sizeMul": 0.00625,
+        "alphaMul": 0.85
       }
     },
     "res_graphite_l10": {
@@ -524,6 +538,13 @@
       "sourceSize": {
         "w": 128,
         "h": 111
+      },
+      "nw": {
+        "inkMass": 2934,
+        "density": 0.20648,
+        "equivEdge": 119.2,
+        "sizeMul": 0.010906,
+        "alphaMul": 0.85
       }
     },
     "res_graphite_l2": {
@@ -544,6 +565,13 @@
       "sourceSize": {
         "w": 128,
         "h": 111
+      },
+      "nw": {
+        "inkMass": 1882,
+        "density": 0.13244,
+        "equivEdge": 119.2,
+        "sizeMul": 0.007178,
+        "alphaMul": 0.85
       }
     },
     "res_graphite_l3": {
@@ -564,6 +592,13 @@
       "sourceSize": {
         "w": 128,
         "h": 125
+      },
+      "nw": {
+        "inkMass": 1683,
+        "density": 0.10519,
+        "equivEdge": 126.49,
+        "sizeMul": 0.007203,
+        "alphaMul": 1
       }
     },
     "res_graphite_l4": {
@@ -584,6 +619,13 @@
       "sourceSize": {
         "w": 96,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1851,
+        "density": 0.15062,
+        "equivEdge": 110.85,
+        "sizeMul": 0.00872,
+        "alphaMul": 0.85
       }
     },
     "res_graphite_l5": {
@@ -604,6 +646,13 @@
       "sourceSize": {
         "w": 128,
         "h": 121
+      },
+      "nw": {
+        "inkMass": 1775,
+        "density": 0.11462,
+        "equivEdge": 124.45,
+        "sizeMul": 0.008214,
+        "alphaMul": 1
       }
     },
     "res_graphite_l6": {
@@ -624,6 +673,13 @@
       "sourceSize": {
         "w": 128,
         "h": 109
+      },
+      "nw": {
+        "inkMass": 1098,
+        "density": 0.0787,
+        "equivEdge": 118.12,
+        "sizeMul": 0.009125,
+        "alphaMul": 1
       }
     },
     "res_graphite_l7": {
@@ -644,6 +700,13 @@
       "sourceSize": {
         "w": 128,
         "h": 114
+      },
+      "nw": {
+        "inkMass": 1532,
+        "density": 0.10498,
+        "equivEdge": 120.8,
+        "sizeMul": 0.009382,
+        "alphaMul": 0.85
       }
     },
     "res_graphite_l8": {
@@ -664,6 +727,13 @@
       "sourceSize": {
         "w": 127,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 2467,
+        "density": 0.15178,
+        "equivEdge": 127.5,
+        "sizeMul": 0.009325,
+        "alphaMul": 0.85
       }
     },
     "res_graphite_l9": {
@@ -684,6 +754,13 @@
       "sourceSize": {
         "w": 106,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1468,
+        "density": 0.10822,
+        "equivEdge": 116.48,
+        "sizeMul": 0.010684,
+        "alphaMul": 1
       }
     },
     "res_ink": {
@@ -704,6 +781,13 @@
       "sourceSize": {
         "w": 117,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 3576,
+        "density": 0.23879,
+        "equivEdge": 122.38,
+        "sizeMul": 0.008172,
+        "alphaMul": 1
       }
     },
     "res_ink_l1": {
@@ -724,6 +808,13 @@
       "sourceSize": {
         "w": 117,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1413,
+        "density": 0.09432,
+        "equivEdge": 122.38,
+        "sizeMul": 0.006537,
+        "alphaMul": 0.85
       }
     },
     "res_ink_l10": {
@@ -744,6 +835,13 @@
       "sourceSize": {
         "w": 128,
         "h": 127
+      },
+      "nw": {
+        "inkMass": 3414,
+        "density": 0.21001,
+        "equivEdge": 127.5,
+        "sizeMul": 0.010196,
+        "alphaMul": 0.85
       }
     },
     "res_ink_l2": {
@@ -764,6 +862,13 @@
       "sourceSize": {
         "w": 82,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 2678,
+        "density": 0.25515,
+        "equivEdge": 102.45,
+        "sizeMul": 0.008351,
+        "alphaMul": 0.85
       }
     },
     "res_ink_l3": {
@@ -784,6 +889,13 @@
       "sourceSize": {
         "w": 128,
         "h": 111
+      },
+      "nw": {
+        "inkMass": 3635,
+        "density": 0.25582,
+        "equivEdge": 119.2,
+        "sizeMul": 0.007644,
+        "alphaMul": 0.85
       }
     },
     "res_ink_l4": {
@@ -804,6 +916,13 @@
       "sourceSize": {
         "w": 100,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 5042,
+        "density": 0.39389,
+        "equivEdge": 113.14,
+        "sizeMul": 0.008544,
+        "alphaMul": 0.85
       }
     },
     "res_ink_l5": {
@@ -824,6 +943,13 @@
       "sourceSize": {
         "w": 128,
         "h": 121
+      },
+      "nw": {
+        "inkMass": 4600,
+        "density": 0.297,
+        "equivEdge": 124.45,
+        "sizeMul": 0.008214,
+        "alphaMul": 1
       }
     },
     "res_ink_l6": {
@@ -844,6 +970,13 @@
       "sourceSize": {
         "w": 128,
         "h": 122
+      },
+      "nw": {
+        "inkMass": 4043,
+        "density": 0.25893,
+        "equivEdge": 124.96,
+        "sizeMul": 0.008625,
+        "alphaMul": 1
       }
     },
     "res_ink_l7": {
@@ -864,6 +997,13 @@
       "sourceSize": {
         "w": 127,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 3747,
+        "density": 0.23051,
+        "equivEdge": 127.5,
+        "sizeMul": 0.008889,
+        "alphaMul": 1
       }
     },
     "res_ink_l8": {
@@ -884,6 +1024,13 @@
       "sourceSize": {
         "w": 128,
         "h": 77
+      },
+      "nw": {
+        "inkMass": 2174,
+        "density": 0.22057,
+        "equivEdge": 99.28,
+        "sizeMul": 0.011975,
+        "alphaMul": 1
       }
     },
     "res_ink_l9": {
@@ -904,6 +1051,13 @@
       "sourceSize": {
         "w": 120,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1788,
+        "density": 0.11639,
+        "equivEdge": 123.94,
+        "sizeMul": 0.010041,
+        "alphaMul": 1
       }
     },
     "res_metal": {
@@ -924,6 +1078,13 @@
       "sourceSize": {
         "w": 112,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1745,
+        "density": 0.12175,
+        "equivEdge": 119.73,
+        "sizeMul": 0.008352,
+        "alphaMul": 1
       }
     },
     "res_metal_l1": {
@@ -944,6 +1105,13 @@
       "sourceSize": {
         "w": 100,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1072,
+        "density": 0.08379,
+        "equivEdge": 113.14,
+        "sizeMul": 0.007071,
+        "alphaMul": 0.85
       }
     },
     "res_metal_l10": {
@@ -964,6 +1132,13 @@
       "sourceSize": {
         "w": 128,
         "h": 120
+      },
+      "nw": {
+        "inkMass": 3126,
+        "density": 0.2035,
+        "equivEdge": 123.94,
+        "sizeMul": 0.010489,
+        "alphaMul": 0.85
       }
     },
     "res_metal_l2": {
@@ -984,6 +1159,13 @@
       "sourceSize": {
         "w": 110,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1358,
+        "density": 0.09647,
+        "equivEdge": 118.66,
+        "sizeMul": 0.00721,
+        "alphaMul": 0.85
       }
     },
     "res_metal_l3": {
@@ -1004,6 +1186,13 @@
       "sourceSize": {
         "w": 107,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1567,
+        "density": 0.11443,
+        "equivEdge": 117.03,
+        "sizeMul": 0.007785,
+        "alphaMul": 0.85
       }
     },
     "res_metal_l4": {
@@ -1024,6 +1213,13 @@
       "sourceSize": {
         "w": 101,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1449,
+        "density": 0.11208,
+        "equivEdge": 113.7,
+        "sizeMul": 0.008502,
+        "alphaMul": 0.85
       }
     },
     "res_metal_l5": {
@@ -1044,6 +1240,13 @@
       "sourceSize": {
         "w": 128,
         "h": 105
+      },
+      "nw": {
+        "inkMass": 2262,
+        "density": 0.16828,
+        "equivEdge": 115.93,
+        "sizeMul": 0.008818,
+        "alphaMul": 0.85
       }
     },
     "res_metal_l6": {
@@ -1064,6 +1267,13 @@
       "sourceSize": {
         "w": 128,
         "h": 105
+      },
+      "nw": {
+        "inkMass": 1588,
+        "density": 0.11817,
+        "equivEdge": 115.93,
+        "sizeMul": 0.009297,
+        "alphaMul": 1
       }
     },
     "res_metal_l7": {
@@ -1084,6 +1294,13 @@
       "sourceSize": {
         "w": 128,
         "h": 123
+      },
+      "nw": {
+        "inkMass": 2126,
+        "density": 0.13501,
+        "equivEdge": 125.48,
+        "sizeMul": 0.009032,
+        "alphaMul": 0.85
       }
     },
     "res_metal_l8": {
@@ -1104,6 +1321,13 @@
       "sourceSize": {
         "w": 128,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 2610,
+        "density": 0.1593,
+        "equivEdge": 128,
+        "sizeMul": 0.009288,
+        "alphaMul": 0.85
       }
     },
     "res_metal_l9": {
@@ -1124,6 +1348,13 @@
       "sourceSize": {
         "w": 115,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1368,
+        "density": 0.09292,
+        "equivEdge": 121.33,
+        "sizeMul": 0.010257,
+        "alphaMul": 1
       }
     },
     "res_paper": {
@@ -1144,6 +1375,13 @@
       "sourceSize": {
         "w": 104,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 350,
+        "density": 0.02627,
+        "equivEdge": 115.38,
+        "sizeMul": 0.008667,
+        "alphaMul": 1
       }
     },
     "res_paper_l1": {
@@ -1164,6 +1402,13 @@
       "sourceSize": {
         "w": 121,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 373,
+        "density": 0.02409,
+        "equivEdge": 124.45,
+        "sizeMul": 0.006428,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l10": {
@@ -1184,6 +1429,13 @@
       "sourceSize": {
         "w": 128,
         "h": 125
+      },
+      "nw": {
+        "inkMass": 2744,
+        "density": 0.17147,
+        "equivEdge": 126.49,
+        "sizeMul": 0.010277,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l2": {
@@ -1204,6 +1456,13 @@
       "sourceSize": {
         "w": 114,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 710,
+        "density": 0.04868,
+        "equivEdge": 120.8,
+        "sizeMul": 0.007083,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l3": {
@@ -1224,6 +1483,13 @@
       "sourceSize": {
         "w": 110,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 696,
+        "density": 0.04945,
+        "equivEdge": 118.66,
+        "sizeMul": 0.007678,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l4": {
@@ -1244,6 +1510,13 @@
       "sourceSize": {
         "w": 101,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1635,
+        "density": 0.12647,
+        "equivEdge": 113.7,
+        "sizeMul": 0.008502,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l5": {
@@ -1264,6 +1537,13 @@
       "sourceSize": {
         "w": 120,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 2441,
+        "density": 0.1589,
+        "equivEdge": 123.94,
+        "sizeMul": 0.008248,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l6": {
@@ -1284,6 +1564,13 @@
       "sourceSize": {
         "w": 128,
         "h": 108
+      },
+      "nw": {
+        "inkMass": 779,
+        "density": 0.05634,
+        "equivEdge": 117.58,
+        "sizeMul": 0.009167,
+        "alphaMul": 1
       }
     },
     "res_paper_l7": {
@@ -1304,6 +1591,13 @@
       "sourceSize": {
         "w": 128,
         "h": 78
+      },
+      "nw": {
+        "inkMass": 906,
+        "density": 0.09076,
+        "equivEdge": 99.92,
+        "sizeMul": 0.011342,
+        "alphaMul": 0.85
       }
     },
     "res_paper_l8": {
@@ -1324,6 +1618,13 @@
       "sourceSize": {
         "w": 128,
         "h": 124
+      },
+      "nw": {
+        "inkMass": 1318,
+        "density": 0.08304,
+        "equivEdge": 125.98,
+        "sizeMul": 0.009437,
+        "alphaMul": 0.895
       }
     },
     "res_paper_l9": {
@@ -1344,6 +1645,13 @@
       "sourceSize": {
         "w": 85,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 781,
+        "density": 0.07175,
+        "equivEdge": 104.31,
+        "sizeMul": 0.011931,
+        "alphaMul": 1
       }
     },
     "res_sticker": {
@@ -1364,6 +1672,13 @@
       "sourceSize": {
         "w": 125,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 677,
+        "density": 0.04231,
+        "equivEdge": 126.49,
+        "sizeMul": 0.007906,
+        "alphaMul": 1
       }
     },
     "res_sticker_l10": {
@@ -1384,6 +1699,13 @@
       "sourceSize": {
         "w": 122,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 2733,
+        "density": 0.17504,
+        "equivEdge": 124.96,
+        "sizeMul": 0.010403,
+        "alphaMul": 0.85
       }
     },
     "res_sticker_l6": {
@@ -1404,6 +1726,13 @@
       "sourceSize": {
         "w": 128,
         "h": 108
+      },
+      "nw": {
+        "inkMass": 1255,
+        "density": 0.09078,
+        "equivEdge": 117.58,
+        "sizeMul": 0.009167,
+        "alphaMul": 0.85
       }
     },
     "res_sticker_l7": {
@@ -1424,6 +1753,13 @@
       "sourceSize": {
         "w": 128,
         "h": 117
+      },
+      "nw": {
+        "inkMass": 1505,
+        "density": 0.10047,
+        "equivEdge": 122.38,
+        "sizeMul": 0.009261,
+        "alphaMul": 0.85
       }
     },
     "res_sticker_l8": {
@@ -1444,6 +1780,13 @@
       "sourceSize": {
         "w": 112,
         "h": 128
+      },
+      "nw": {
+        "inkMass": 1092,
+        "density": 0.0762,
+        "equivEdge": 119.73,
+        "sizeMul": 0.009929,
+        "alphaMul": 1
       }
     },
     "res_sticker_l9": {
@@ -1464,6 +1807,13 @@
       "sourceSize": {
         "w": 128,
         "h": 122
+      },
+      "nw": {
+        "inkMass": 1612,
+        "density": 0.10321,
+        "equivEdge": 124.96,
+        "sizeMul": 0.009958,
+        "alphaMul": 0.85
       }
     },
     "building_bridge": {

@@ -254,3 +254,15 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
   - 这四个联合是 `import type` 直接从 `../../../server/shared/src/*` 拿的，不走 `@nw/shared`——那个 alias 在 `vitest.config.ts` 里只指向浏览器安全的 SLG 切片。type-only 导入运行时被擦除，不会把服务端模块拉进测试进程。
 
 四条新断言同样逐条 red-then-green 实测。收尾验证：`npm run typecheck` 干净，`npm test` 159 文件 / 1341 条绿（本机另有一个别的会话未提交的 `test/textureLoadedGuardCallSites.test.ts` 在红，与本次无关，已排除计数）。
+
+### ⚠️ 坑：唯一一条真导入的用例卡在默认 5s `testTimeout` 上（2026-08-19 实测踩过）
+
+上面那条"测试自己的测试"（`vi.importActual('../../src/render/icons')`）是**全文件唯一一处真正加载 icons 模块**的地方——其余用例都被顶部的 `vi.mock` 挡住了。它要付的代价是完整 transform/collect 一遍 `pixi.js-legacy` + 光栅图标 atlas 依赖图，而这个代价**波动极大**（同一棵树上实测 vitest `collect` 合计 223s–498s），刚好压在 vitest 默认的 5s `testTimeout` 边上：
+
+- 单跑该文件 ~2s 稳过；
+- `npx vitest run` 全量跑、且机器上同时有别的负载（并发的另一个 suite、一次 webpack 构建）时，间歇性 `Test timed out in 5000ms`；机器空闲时连跑三轮全绿。
+- 与任何源码改动无关（有/无其它未提交改动都复现过）。
+
+**修法**：给这**一条**用例显式加 `}, 30_000)`，不要调高全局 `testTimeout`——冷导入的代价只有它在付，全局放宽等于把别处真卡死的用例也一起放过。这也是本仓库既有的约定：`campaign-clear-pipeline` / `campaign-real-layer-interlude-nav` / `judge-runner` 用 `30_000`，`capacitorStubCompile` 用 `60_000`，`pvpSim` 用 `60_000`–`180_000`，全部是**逐用例第三参**；只有 e2e / load 这类整份都慢的 config 才在 `vitest.*.config.ts` 里设 `testTimeout`。另一种可行做法是把 `importActual` 提到 `beforeAll` 里（代价只付一次、且不算进用例预算），但那样反而要额外解释"为什么这个文件有个 beforeAll"，逐用例超时更贴合现状。
+
+验证：`npm run typecheck` 干净，`npx vitest run` 172 文件 / 1460 条绿。

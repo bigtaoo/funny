@@ -22,6 +22,8 @@ import type { WorldCore } from '../core';
 /**
  * Writes post-battle cardState (currentTroops + injuredUntil) for a card army's survivors on an occupy/expulsion
  * march (§6.1 — the card keeps its own troops regardless of outcome). Never touches playerWorld.troops.
+ * `deployed` = `SiegeResolution.attackerDeployed`, the denominator the survival ratio must use (ADR-069);
+ * omitting it falls back to the nominal troop total, which under-reports survival on the engine path.
  */
 export async function writeOccupyCardState(
   core: WorldCore,
@@ -29,8 +31,9 @@ export async function writeOccupyCardState(
   pw: PlayerWorldDoc,
   survivors: number,
   t: number,
+  deployed?: number,
 ): Promise<void> {
-  const cardUpdates = computeCardStateUpdates(m.army ?? [], pw.cardState ?? {}, survivors, t);
+  const cardUpdates = computeCardStateUpdates(m.army ?? [], pw.cardState ?? {}, survivors, t, deployed);
   const cardStateSet: Record<string, unknown> = {};
   for (const [id, update] of Object.entries(cardUpdates)) {
     cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;

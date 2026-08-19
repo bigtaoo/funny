@@ -1,7 +1,7 @@
 // worldsvc httpApi split — internal /admin/world/* branch (C4/§17.7, X-Internal-Key auth, no JWT)
 // (see ../httpApi.ts for the module overview). No behavior change — copied verbatim.
 import type { IncomingMessage, ServerResponse } from 'http';
-import { ErrorCode, SlgError, createLogger, ok, err, type InternalAuthVerifier } from '@nw/shared';
+import { ErrorCode, SlgError, createLogger, ok, err, parseCityNodes, type InternalAuthVerifier } from '@nw/shared';
 import { readJson, send, sendErr, numQ, type RouteDeps } from './helpers';
 
 const log = createLogger('worldsvc');
@@ -55,6 +55,25 @@ export async function handleAdminRoutes(
           const body = await readJson(req);
           const result = await mapTemplateSvc.saveTilesDiff(templateId, Array.isArray(body.tiles) ? (body.tiles as never[]) : []);
           return send(res, 200, ok(result));
+        }
+      }
+      // City siege-point nodes (§24 point-node layer, 2026-08-19) — the map editor's Publish uploads these
+      // next to the tile diff above, so a dragged city moves its sprite as well as its ground.
+      const citiesMatch = /^\/admin\/world\/map-templates\/([^/]+)\/cities$/.exec(aurl.pathname);
+      if (citiesMatch) {
+        const templateId = decodeURIComponent(citiesMatch[1]!);
+        if (method === 'GET') {
+          return send(res, 200, ok(await mapTemplateSvc.getCities(templateId)));
+        }
+        if (method === 'PUT') {
+          const body = await readJson(req);
+          let cities;
+          try {
+            cities = parseCityNodes(body.cities);
+          } catch (e) {
+            return sendErr(res, ErrorCode.BAD_REQUEST, e instanceof Error ? e.message : 'invalid cities payload');
+          }
+          return send(res, 200, ok(await mapTemplateSvc.saveCities(templateId, cities)));
         }
       }
       const activateMatch = /^\/admin\/world\/map-templates\/([^/]+)\/activate$/.exec(aurl.pathname);

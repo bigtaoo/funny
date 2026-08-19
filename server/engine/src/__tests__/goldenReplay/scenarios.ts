@@ -76,6 +76,28 @@ const SIEGE_DESTROY_BASE_LEVEL: LevelDefinition = {
   defenderBuildings: [{ buildingType: BuildingType.ArrowTower, col: ATTACK_LANES[3]! }],
 };
 
+/**
+ * ADR-069 pin: ONE attacker unit carrying 10× the SIEGE_TROOPS_PER_UNIT reference load (600 troops)
+ * walks an empty board and destroys a 100-HP base with a single arrival hit — 11 × 600/60 = 110 siege
+ * damage. Deliberately garrison-free so the base hit is guaranteed to happen: the two pre-existing siege
+ * scenarios both end with `damageDealtToBase: 0` (their attackers die en route), so neither can pin
+ * troop-scaled base damage at all. Before ADR-069 this same setup ended as a DEFENDER win — the lone unit
+ * dealt a flat 11, despawned on arrival, and the "attacker army fully wiped" early-exit fired with the
+ * base still at 89 HP.
+ */
+const SIEGE_TROOP_SCALED_BASE_HIT_LEVEL: LevelDefinition = {
+  id: 'golden_siege_troop_scaled_base_hit',
+  chapter: 0,
+  seed: 28,
+  objective: { kind: 'destroy_base' },
+  waves: { entries: [] },
+  battleTimeoutTicks: 600,
+  attackerArmy: [
+    { unitType: UnitType.Infantry, col: ATTACK_LANES[0]!, row: 3, initialHp: 600 },
+  ],
+  defenderBaseHp: 100,
+};
+
 const CAMPAIGN_TIMED_DEFENSE_LEVEL: LevelDefinition = {
   id: 'golden_campaign_timed_defense',
   chapter: 0,
@@ -192,6 +214,13 @@ export const SCENARIOS: Scenario[] = [
     name: 'siege_timeout_defender_wins',
     config: { seed: 21, mode: 'siege', players: [{ id: 0 }, { id: 1 }], level: SIEGE_TIMEOUT_LEVEL },
     maxTicks: 250,
+    driveMode: 'step',
+  },
+  {
+    name: 'siege_troop_scaled_base_hit',
+    config: { seed: 28, mode: 'siege', players: [{ id: 0 }, { id: 1 }], level: SIEGE_TROOP_SCALED_BASE_HIT_LEVEL },
+    // ~14 rows of walking at 1.4 grid/s ≈ 300 ticks, plus headroom for the post-GameOver idempotence pin.
+    maxTicks: 450,
     driveMode: 'step',
   },
   {

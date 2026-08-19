@@ -238,6 +238,12 @@ troopCap(card) = CardDef.troopCapBase + CardDef.troopCapGrowth × card.level
 ```
 
 > 各兵种基础值和成长率见 `ECONOMY_NUMBERS §15`。
+>
+> **注意公式的实际实现是 `troopCapBase + troopCapGrowth × (level − 1)`**（1 级时等于 base），上面这行按原文保留。
+>
+> **服务端强制（2026-08-19）**：此前这条上限**只有客户端在守**（分兵 stepper / 一键分兵按各卡 `troopCap` 算好再发），`distributeTroops` 自己不校验——它的注释还写着「enforced on every way IN」，与代码不符。手搓一个请求就能把整池兵力堆到一张卡上。在 ADR-069 之前这没什么后果（超过单兵血量上限的兵力是惰性的），ADR-069 让攻城值随携带兵力线性且无上限地缩放之后，这条漏洞等价于「一张卡一击拆掉任何基地」。现在服务端用 `@nw/shared` 的 `cardTroopCap(card)` 真实校验，超限报 `CARD_TROOP_CAP_EXCEEDED`；同一条界限还写进了更新语句的过滤器（`cardState.<id>.currentTroops: {$lte: cap - amount}`），否则两个并发请求各自通过 JS 侧检查后仍能一起越界。战后结算写回（存活比例）只会降低 `currentTroops`，所以「入口」只有这一个。
+>
+> 客户端仍保留自己的 `CardDef` 镜像表（见 `client/src/game/meta/cardDefs.ts` 头部说明），所以两张表的 `troopCapBase`/`troopCapGrowth` 由 `client/test/cardDefsSharedParity.test.ts` 逐卡逐级钉死——一旦漂移，玩家会遇到「按钮给你 350 兵、服务端拒收」这种无法自查的死路。
 
 ### 6.3 训练场与基地兵力池
 
@@ -302,6 +308,8 @@ card.currentTroops = round(deployedHp × survivalRate)
 
 > `baseSurvival`（HP 归零时的最低存活率）= DRAFT，见 `ECONOMY_NUMBERS §15`。
 > 示例（baseSurvival=0.2）：出战 10000，HP 归零 → 存活 2000；HP 剩 50% → 存活 6000；HP 全满 → 存活 10000。
+>
+> **`deployedHp` 的口径（2026-08-19 澄清，见 [ADR-069](../DECISIONS_ADR-041-onward.md#adr-069-slg-攻城值随携带兵力缩放破城不再有12-卡硬顶-npcbasehp-重校准-4060--accepted--2026-08-19)）**：分母是**实际入场的 HP**，不是队伍的名义兵力之和。两者会差很多——每张卡的入场 HP 被截断到该兵种的蓝图单兵血量上限（`min(兵力, 蓝图 hp)`），真实卡队通常只有名义兵力的 40–60% 真正进场。此前代码拿「引擎存活 HP ÷ 名义兵力」当存活率，量纲不一致导致存活率被截断比压顶，**连打赢都要掉一半兵**（生产实例：一场胜仗 402/2510 → 直接触发 20% 保底）。现由 `SiegeResolution.attackerDeployed`/`defenderDeployed` 携带真实入场值，占领/攻地/险地/关口/野战/主城波次六条结算路径统一使用。
 
 ### 7.2 受伤规则
 

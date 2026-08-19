@@ -9,7 +9,8 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { unitPortraitUrl, equippedSkinIdFor, getArtTexture } from '../../render/cardArt';
-import { ATTACK_LANES, BASE_COLS } from '@nw/engine/config';
+import { ATTACK_LANES, BASE_COLS, UNIT_BLUEPRINTS } from '@nw/engine/config';
+import { fromFp } from '@nw/engine';
 import baseTexUrl from '../../assets/buildings/game_base.png';
 import { UnitType, BuildingType } from '@nw/engine/types';
 import { PAD } from './core';
@@ -116,6 +117,15 @@ export function drawUnit(
 
   // Attack mode: a troop bar above the head showing currentTroops / troopCap(card), green→amber→red by
   // fill ratio, so at-a-glance you see how many soldiers each on-field character carries.
+  //
+  // Two-tone since 2026-08-19 (ADR-069): only the first `unitBattleHp` troops become the unit's HP in
+  // battle (the engine clamps `hp = min(troops, blueprint.hp)`), while troops beyond that still buy
+  // base damage (`siegeValue × troops / 60`) and nothing else. Those two roles used to be
+  // indistinguishable in a single flat bar — a shieldbearer at 100/100 troops and an infantry at
+  // 200/200 both read "full", though the infantry was throwing 70% of its soldiers at siege only. The
+  // segment past the HP cap is drawn in a distinct colour so that split is visible where the player
+  // actually allocates. Baseline blueprint HP (no card level / gear), same basis as `cardHp()` in the
+  // roster detail panel — the exact in-battle cap includes those buffs.
   if (hp !== undefined && core.mode === 'attack' && cap && cap > 0) {
     const ratio = Math.max(0, Math.min(1, hp / cap));
     const barW = size,
@@ -125,9 +135,18 @@ export function drawUnit(
     g.beginFill(0x000000, 0.28);
     g.drawRect(bx, byBar, barW, barH);
     g.endFill();
+    const unitBattleHp = fromFp(UNIT_BLUEPRINTS[type]?.hp_fp ?? 0);
+    const hpRatio = Math.max(0, Math.min(ratio, unitBattleHp / cap));
     g.beginFill(barColor, 1);
-    g.drawRect(bx, byBar, barW * ratio, barH);
+    g.drawRect(bx, byBar, barW * hpRatio, barH);
     g.endFill();
+    if (ratio > hpRatio) {
+      // Siege-only surplus: violet, deliberately outside the green/amber/red "how full is it" scale so
+      // it reads as a different KIND of troop rather than a fuller bar.
+      g.beginFill(0x8a6cd4, 1);
+      g.drawRect(bx + barW * hpRatio, byBar, barW * (ratio - hpRatio), barH);
+      g.endFill();
+    }
   }
 
   // ★ badge on the team's leader (the card whose portrait represents the team elsewhere).

@@ -5,7 +5,10 @@
 // round-trips the terrain grid for re-editing (see state/terrainGrid.ts/cities.ts) — this module never
 // needs to invert tiles back into grid cells/cities.
 import { SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type ObstacleKind, type ResourceType, type TileType } from './core';
-import { biomeAt, proceduralTile, type MapTemplateTile } from './mapgen';
+import {
+  biomeAt, proceduralCityGroundTiles, proceduralTile, proceduralTileIgnoringCities,
+  type MapTemplateTile,
+} from './mapgen';
 import { worldSeed } from './noise';
 
 /**
@@ -45,6 +48,23 @@ function _terrainOverride(type: MapEditTileInput['type']): _Override {
   }
 }
 
+/** Options for {@link rasterizeMapEdits}. */
+export interface RasterizeOpts {
+  /**
+   * Declares that `cities` is the COMPLETE city layer for this world, not a subset — which lets the
+   * rasterizer hand every procedural city-ground tile no city in the list still stands on back to plain
+   * terrain (`proceduralTileIgnoringCities`).
+   *
+   * Needed because a DRAGGED city otherwise leaves its old `familyKeep`/`center` ground behind — a phantom
+   * city plot with no building standing on it, 9×9 of it for the world center. It cannot be the default:
+   * with a partial list (one city under test, say) the revert would erase every city the caller never
+   * mentioned. Both of tools/map-editor's call sites — the live preview (render/baseMap.ts) and Publish
+   * (ui/publish.ts) — pass the store's full node list and must set this IDENTICALLY, or the WYSIWYG
+   * guarantee between preview and upload breaks.
+   */
+  citiesAreComplete?: boolean;
+}
+
 interface _Override {
   type: TileType;
   level: number;
@@ -58,14 +78,33 @@ interface _Override {
  * Only returns tiles whose resulting type/level/resType actually differ from the baseline (§24 "only upload
  * the tiles changed this time") — untouched terrain is never included. City nodes are applied after terrain tiles so a
  * dragged city footprint always wins over any terrain it now overlaps.
+ *
+ * Order of the three override passes, lowest priority first:
+ *   1. Vacated procedural city anchors → back to plain terrain (`proceduralTileIgnoringCities`). Requires
+ *      `opts.citiesAreComplete` — see {@link RasterizeOpts}.
+ *   2. Painted terrain cells (river/mountain/neutral/bridge/plankway).
+ *   3. City footprints — always win (DESIGN.md §6.2).
  */
 export function rasterizeMapEdits(
   worldId: string,
   tiles: readonly MapEditTileInput[],
   cities: readonly MapEditCityInput[],
+  opts: RasterizeOpts = {},
 ): MapTemplateTile[] {
   const seed = worldSeed(worldId);
   const overrides = new Map<string, _Override>();
+
+  // Pass 1: hand every procedural city-ground tile back to the terrain. Tiles a city in `cities` still
+  // stands on are re-claimed by pass 3 below; the rest stop being city ground, which is exactly what a
+  // dragged city has to leave behind. Opt-in — see RasterizeOpts.citiesAreComplete.
+  for (const { x, y } of opts.citiesAreComplete ? proceduralCityGroundTiles(worldId) : []) {
+    const bare = proceduralTileIgnoringCities(worldId, x, y);
+    overrides.set(`${x}:${y}`, {
+      type: bare.type, level: bare.level,
+      ...(bare.resType ? { resType: bare.resType } : {}),
+      ...(bare.obstacleKind ? { obstacleKind: bare.obstacleKind } : {}),
+    });
+  }
 
   for (const tile of tiles) {
     if (tile.x < 0 || tile.x >= SLG_MAP_W || tile.y < 0 || tile.y >= SLG_MAP_H) continue;

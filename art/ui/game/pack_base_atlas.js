@@ -10,7 +10,12 @@ const fs = require('fs');
 const path = require('path');
 
 const SRC_DIR = __dirname;
-const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets');
+// assets/buildings/, NOT assets/ — the battle-building art moved into that subdirectory and
+// baseUpgradeAtlasLoader.ts imports it from there, but this path was left behind. Running the
+// script with the old OUT_DIR wrote two files nobody loads (found 2026-08-19 while renaming the
+// sources below; the regenerated PNG is byte-identical to the committed one, so this was purely
+// a stale-path bug, not a content drift).
+const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/buildings');
 
 const CELL = 256;
 const ATLAS_W = 512;
@@ -42,8 +47,8 @@ function hardenAlpha(raw) {
 
 // lv1 = castle-town (walled settlement), lv2 = palace (grandest tier)
 const FILES = [
-  { file: 'rOhtChw7aebowR6NpxcLfX_1783267912263_na1fn_L2hvbWUvdWJ1bnR1L2Nhc3RsZV90b3duX2ljb25fZmluYWw.webp', name: 'base_lv1' },
-  { file: 'wzBuhTmUHq8oAdhwbf5Pkf_1783268977194_na1fn_L2hvbWUvdWJ1bnR1L21lZGlldmFsX3BhbGFjZV9pY29u.webp', name: 'base_lv2' },
+  { file: 'base_lv1_castle_town_src.webp', name: 'base_lv1' },
+  { file: 'base_lv2_palace_src.webp', name: 'base_lv2' },
 ];
 
 /** Zero out faint alpha noise, then crop to the bounding box of remaining content. */

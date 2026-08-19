@@ -44,7 +44,7 @@ const GATE_ASSETS = [
   'src/assets/units/shieldbearer.png',
   'src/assets/buildings/game_base.png',
   'src/assets/buildings/game_infantry_barracks.png',
-  'src/assets/buildings/game_archer_barracks.png',
+  'src/assets/buildings/game_arrow_tower.png',
   'src/assets/logo.png',
   'src/assets/icons/icons_atlas.png',
 ];

@@ -49,6 +49,32 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
     }
   }
 
+  return proceduralTileIgnoringCities(world, x, y);
+}
+
+/**
+ * `proceduralTile()` minus its three city-ground branches (world-center block / province-capital anchor /
+ * graded-city anchor): what the land under a procedural city would have been classified as if no city
+ * stood there. Split out 2026-08-19 for the map editor's publish path — when a designer DRAGS a city
+ * node, `rasterizeMapEdits()` has to paint the city's new footprint AND hand the vacated procedural
+ * anchor back to the terrain, otherwise the old spot keeps its `familyKeep`/`center` city ground and
+ * renders as a phantom city plot with no building on it (a 9×9 one for the world center).
+ *
+ * Caveat, deliberately not solved here: the resource-level cap in a city's occluded back-bands
+ * (`_inCityBackBands` / `RESOURCE_LEVEL_CAP_NEAR_CITY`) is still keyed off the PROCEDURAL city
+ * positions, so a moved city leaves its old back-band cap behind and does not cap behind its new
+ * position. That is a level-distribution artifact (max resource level 5 vs the ring's own roll), not a
+ * render bug — the editor can hand-paint any tile whose level actually matters (see the
+ * `RESOURCE_LEVEL_CAP_NEAR_CITY` comment in cities.ts).
+ */
+export function proceduralTileIgnoringCities(world: string, x: number, y: number): ProceduralTile {
+  const seed = worldSeed(world);
+  const mapW = SLG_MAP_W;
+  const mapH = SLG_MAP_H;
+  const wcx = Math.floor(mapW / 2);
+  const wcy = Math.floor(mapH / 2);
+  const caps = provinceCapitalPositions(mapW, mapH, seed);
+
   // Terrain: 2 main province rings, then river chords, then birth-province branches — first match wins.
   // Ring boundaries are the crease ridges (→ mountain art, crossings = plankway); the two crossing
   // chords are the ink rivers (→ river art, crossings = bridge); branches alternate mountain-spur /
@@ -97,8 +123,8 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
   //     level-9-forced resource tile wearing castle art.
   // These cells now fall through to the ordinary resource/neutral classification below, so the land
   // is still claimable — it just reads as (and yields like) the resource tier its ring says it is.
-  // `familyKeep` survives ONLY as city GROUND: the province-capital / graded-city node branches at the
-  // top of this function, and the map-editor's city-footprint rasterization (mapEdit.ts). If a real
+  // `familyKeep` survives ONLY as city GROUND: the province-capital / graded-city node branches in
+  // `proceduralTile` above, and the map-editor's city-footprint rasterization (mapEdit.ts). If a real
   // chokepoint mechanic is ever designed, reintroduce it with a per-tile Bernoulli hash (see
   // `strongholdThreshold`), never a smooth-noise threshold.
   const [capX, capY] = caps[provIdx]!;

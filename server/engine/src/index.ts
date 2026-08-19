@@ -86,6 +86,9 @@ export {
   BOTTOM_SPAWN_ROW,
   TOP_SPAWN_ROW,
   UNIT_BLUEPRINTS,
+  // ADR-069: the troops→soldier-unit quantum a pre-placed unit's siege value is normalized on.
+  // Exported so the client's roster UI can show the same effective number the engine will deal.
+  SIEGE_TROOPS_PER_UNIT,
 } from './config';
 export type { UnitBlueprint } from './types';
 

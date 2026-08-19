@@ -11,6 +11,7 @@ import {
   CARD_TROOP_METAL_COST,
   CARD_TROOP_REFUND_RATE,
   CARD_RECOVER_COIN_COST,
+  cardTroopCap,
   type CardInstance,
 } from '@nw/shared';
 import { validateAttackerArmy, sanitizeCardArmy } from '../siegeEngine';
@@ -196,7 +197,16 @@ export class CityTeamsService {
    * Distribute troops from the base troop pool (`playerWorld.troops`, the unified 基地兵力池) to card
    * slots (CC-3, CHARACTER_CARDS_DESIGN §6.3). allocations: { [cardInstanceId]: troopsToAdd }.
    * Each card must have a teamId (be in a team). Deducts total from `troops`; updates cardState[id].currentTroops.
-   * Only decreases `troops`, so it can never violate the troopCap invariant (enforced on every way IN).
+   *
+   * Per-card cap (2026-08-19): each card's resulting `currentTroops` must stay within
+   * `cardTroopCap(card)` = troopCapBase + growth×(level-1). This used to be a CLIENT-ONLY rule — the
+   * stepper/fill button capped the numbers it sent and this method's doc comment asserted the invariant
+   * was "enforced on every way IN", but nothing here checked it, so any hand-rolled request could park
+   * an unbounded troop count on a single card. That mattered little while troops above a unit's HP cap
+   * were inert; ADR-069 made siege damage scale linearly and without a ceiling on carried troops, which
+   * turned the unchecked path into "one card with the whole pool flattens any base". Hence the real
+   * check, plus the same per-card guard restated in the update filter so two concurrent calls can't
+   * both pass it.
    */
   async distributeTroops(worldId: string, accountId: string, allocations: Record<string, number>): Promise<void> {
     const { cols } = this.core.deps;
@@ -207,6 +217,7 @@ export class CityTeamsService {
     const cardState = pw.cardState ?? {};
     let totalCost = 0;
     const cardStateInc: Record<string, number> = {};
+    const requested: { id: string; amount: number }[] = [];
 
     for (const [id, amount] of Object.entries(allocations)) {
       if (typeof amount !== 'number' || amount < 0 || !Number.isInteger(amount)) {
@@ -217,18 +228,56 @@ export class CityTeamsService {
       if (!cs?.teamId) throw new SlgError('BAD_REQUEST', `Card ${id} is not assigned to a team`);
       totalCost += amount;
       cardStateInc[`cardState.${id}.currentTroops`] = amount;
+      requested.push({ id, amount });
     }
 
     if (totalCost === 0) return;
+
+    // Per-card cap. `level` lives in the meta save (cardInv), not in worldsvc, so this needs the same
+    // meta round-trip setTeams already does — scoped to the cards actually being topped up. A card the
+    // inventory no longer knows about is rejected rather than waved through: it is the same "stale
+    // reference" shape sanitizeCardArmy drops on the team path, and silently accepting troops for it
+    // would burn them into a slot nothing can ever field.
+    const save = await this.core.meta
+      .getSaveFields(accountId, ['cardInv'], requested.map((r) => r.id))
+      .catch(() => null);
+    if (!save) throw new SlgError('INTERNAL', 'Card inventory unavailable, please retry');
+    const cardInv = save.cardInv ?? {};
+    const capFilter: Record<string, unknown> = {};
+    for (const { id, amount } of requested) {
+      const card = cardInv[id];
+      if (!card) throw new SlgError('BAD_REQUEST', `Card ${id} is not in the inventory`);
+      const cap = cardTroopCap(card);
+      const current = cardState[id]?.currentTroops ?? 0;
+      if (current + amount > cap) {
+        throw new SlgError(
+          'CARD_TROOP_CAP_EXCEEDED',
+          `Card ${id} can hold ${cap} troops (has ${current}, tried to add ${amount})`,
+        );
+      }
+      // Restate the same bound in the update filter: the check above is a read-then-check on `pw`, so
+      // two concurrent calls each adding half the remaining headroom would both pass it. This is the
+      // atomic equivalent, phrased as `$not: {$gt: …}` rather than `$lte: …` ON PURPOSE — `setTeams`
+      // writes only `cardState.<id>.teamId` when it assigns a card, so `currentTroops` is ABSENT until
+      // the first allocation, and a missing field never matches `$lte` (BSON type bracketing). With
+      // `$lte` the player's very first 分兵 onto a fresh team card fails as "not enough troop stock"
+      // with a full pool; the negated form matches a missing field, which is exactly right — absent
+      // means 0 so far, and `amount <= cap` is already established above.
+      capFilter[`cardState.${id}.currentTroops`] = { $not: { $gt: cap - amount } };
+    }
 
     // Atomic guarded debit (troops:{$gte:totalCost} in the filter, $inc not $set): a stale JS-side
     // read-then-check would let two concurrent distributeTroops calls both pass and drive troops negative.
     // The per-card currentTroops bump is also a $inc (not a computed $set) for the same reason.
     const result = await cols.playerWorld.updateOne(
-      { _id: pwId, troops: { $gte: totalCost } },
+      { _id: pwId, troops: { $gte: totalCost }, ...capFilter },
       { $inc: { ...cardStateInc, troops: -totalCost, rev: 1 } },
     );
-    if (result.matchedCount === 0) throw new SlgError('NO_TROOPS', `Not enough troop stock (need ${totalCost})`);
+    if (result.matchedCount === 0) {
+      // Either the pool moved under us or a concurrent allocation ate the per-card headroom; both are
+      // "retry with fresh numbers", and the pool case is by far the more common one.
+      throw new SlgError('NO_TROOPS', `Not enough troop stock (need ${totalCost}), or a card's cap was reached concurrently`);
+    }
   }
 
   /**
