@@ -158,6 +158,7 @@ hudView.container        ← HUD（最顶层）
 | 放置 | scale 0→1，duration 0.3s，ease-out cubic（`BuildingView.acquireSprite`） |
 | 受击 | `BuildingView.playDestroyEffect` 旋转+淡出 |
 | 摧毁 | `death_building` VFX |
+| **开火（箭塔）** | `BuildingView.playFireEffect`，由 `projectile_fired` 事件驱动（`GameRenderer/events.ts`）：整塔沿射击方向反向位移 2.8px（二次衰减，猛出猛收）+ 塔后两道手绘后坐纹（线性淡出，`flagGfx` 节点），共 0.26s。射击方向按「己方格 → 敌方建筑行」用 `gridToScreen` 现算，故横竖屏都对。**匹配靠格子而非 id**：`projectile_fired.attackerId` 在塔射箭时是建筑 id、弓兵射箭时是单位 id，两者分属不同计数器（`allocBuildingId`/`allocUnitId`）会数值撞车，而建筑的箭必从自己格子发出（`performBuildingAttack`），格子即天然判别式。回归测试 `client/test/render/buildingFireEffect.test.ts`。 |
 
 ### Idle 动画
 
@@ -167,7 +168,7 @@ hudView.container        ← HUD（最顶层）
 |---|---|---|
 | 全部建筑 | 精灵垂直 bob（`sprite.y`） | ±1.5px，周期 0.9s，各建筑随机相位偏移 |
 | 兵营 | 旗帜波动（`flagGfx` Graphics） | 旗杆 + 3 条 quadratic bezier 波浪线，频率 ~1.4Hz |
-| 箭塔 | 精灵微旋转（`sprite.angle`） | ±0.5°，周期 ~1.3s |
+| 箭塔 | 精灵微旋转（`sprite.angle`） | ±1.6°，周期 ~2s。**原为 ±0.5°/1.3s**——在 56px 贴图上塔尖位移不到 0.3px，等于没有 idle，而旁边兵营的旗看得见地飘（2026-08-19 用户反馈）。改成更慢更宽的「懒洋洋倾斜」而非抖动 |
 
 ### 基地动画
 

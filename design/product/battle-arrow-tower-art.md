@@ -129,6 +129,21 @@ paper texture, frame, border.
 
 5. **顺带修掉一个静默陷阱**：`pack_base_atlas.js` 的 `OUT_DIR` 还指着 `client/src/assets/`，而战场建筑资产早就搬进了 `assets/buildings/`（`baseUpgradeAtlasLoader.ts` 从那里 import）。按旧路径跑一次，会在 `assets/` 下写出两个**没人加载**的文件——正是我验证改名时踩到的。已改指 `assets/buildings/`。
 
+## 追加：程序动画（2026-08-19 同日）
+
+用户接着问「能不能像兵营一样用程序给箭塔加点动画」。兵营的动画是 `drawFlagWave` 画的一面飘旗，而箭塔那支 `TOWER_SWAY 5.0 rad/s / 0.5°` 在 56px 上让塔尖位移不到 0.3px——**等于没有**。两件事：
+
+- **idle**：摆动改成 3.2 rad/s / ±1.6°，读作「懒洋洋地倾斜」而不是抖动。
+- **开火**：新增 `BuildingView.playFireEffect`，由引擎的 `projectile_fired` 驱动（不是循环——没有目标的塔就是静止的，这本身是信息）。整塔沿射击方向反向弹 2.8px，塔后拖两道手绘后坐纹，0.26s 归位。
+
+三个实现细节值得记：
+
+1. **匹配用格子，不用 id**。`projectile_fired.attackerId` 在塔射箭时是建筑 id、弓兵射箭时是单位 id，而两者分属 `allocBuildingId` / `allocUnitId` 两个计数器，同一个小整数两边都有——只按 id 匹配，弓兵放一箭就会让某座无关的塔抽搐一下（这种 bug 只在拥挤车道里偶现，看着像「塔在随机抖」）。建筑的箭必定从自己格子发出，格子就是引擎白送的判别式。回归测试 `client/test/render/buildingFireEffect.test.ts` 钉的就是这条。
+2. **两条缓动曲线，不是一条**。位移用二次衰减（猛出猛收，像后坐力），笔触用线性淡出。一开始两者共用二次曲线，结果笔触的全强度只有约 40ms（2–3 帧），实拍根本抓不到。
+3. **要在 56px 上被看见的墨，必须画在剪影之外**。第一版把弓弦画在塔顶射击口上，`graphicsData.length === 2` 说明确实画了，但它落在石纹最密的地方，实拍完全看不出来。挪到塔后方就清楚了。
+
+方向按「己方格 → 敌方建筑行」用 `gridToScreen` 现算，所以横竖屏都对——实拍横屏下反冲发生在 x 轴（−2.13px），正是敌方方向映射到 x 的结果。
+
 ## 验收结果
 
 **量化**（`pack_arrow_tower.cjs` 直接打印；下表末列是定稿资产的实测值，五项全过）：
