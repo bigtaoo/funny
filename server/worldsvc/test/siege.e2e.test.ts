@@ -404,7 +404,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     // A losing sweep is replayable too (same follow-up as the win case above) — including end-to-end through
     // listSieges/getSiegeReplay, not just the raw DB fields (mirrors the win case's round-trip check).
     expect(siege?.seed).toEqual(expect.any(Number));
-    expect(siege?.defenderConfig?.garrison?.length).toBeGreaterThan(0);
+    expect((siege?.defenderConfig?.garrison as unknown[] | undefined)?.length).toBeGreaterThan(0);
     const rows = await svc.listSieges(W, 'a');
     expect(rows.find((r) => r.siegeId === siege!._id)?.hasReplay).toBe(true);
     const replay = await svc.getSiegeReplay(W, 'a', siege!._id);

@@ -54,6 +54,7 @@ const fakeMetaResolvesCards: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 /** cardInv resolves nothing — forces getTeams'/setTeams' sanitizeCardArmy to drop any team-assigned card. */
 const fakeMetaNoCards: WorldMetaClient = {
@@ -62,6 +63,7 @@ const fakeMetaNoCards: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 /** In-memory Redis: hash ops + an atomic hmergeJsonField matching the real Lua-script semantics in redis.ts. */
@@ -220,7 +222,7 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
         svc.speedupTraining(W, 'a', 1),
       ]);
 
-      const after = await svc.getMe(W, 'a');
+      const after = await svc.getMe(W, 'a')!;
       const REDUCTION_MS = 60_000; // TROOP_SPEEDUP_SECS_PER_COIN(60) * 1000, 1 coin each
       expect(originalCompleteAt - after.trainingQueue![0]!.completeAt).toBe(REDUCTION_MS * 2);
     });
@@ -243,13 +245,13 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
       await setupCardTeam('a', 'at1', 'card-a', 500);
       // 'move' has no ADR-039 connectivity requirement (unlike occupy/attack) — no connector tile needed.
       const mv = await cardSvc.startMarch(W, 'a', 10, 10, 12, 10, 'move', 1, 'at1');
-      const before = (await cardSvc.getMe(W, 'a')).troops;
+      const before = (await cardSvc.getMe(W, 'a')).troops!;
 
       const recalled = await cardSvc.recallMarch(W, 'a', mv.marchId);
       nowMs = recalled.arriveAt;
       expect(await cardSvc.processDueArrivals()).toBe(1);
 
-      const after = await cardSvc.getMe(W, 'a');
+      const after = await cardSvc.getMe(W, 'a')!;
       expect(after.troops).toBe(before); // no free troops from the card-count-as-troops march.troops field
     });
 
@@ -258,11 +260,11 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
       await cardSvc.joinWorld(W, 'b', 20, 20);
       await setupCardTeam('b', 'bt1', 'card-b', 500);
       const mv = await cardSvc.startMarch(W, 'b', 20, 20, 22, 20, 'move', 1, 'bt1');
-      const before = (await cardSvc.getMe(W, 'b')).troops;
+      const before = (await cardSvc.getMe(W, 'b')).troops!;
       await cardSvc.recallMarch(W, 'b', mv.marchId);
 
       await cardSvc.instantReturnMarch(W, 'b', mv.marchId);
-      const after = await cardSvc.getMe(W, 'b');
+      const after = await cardSvc.getMe(W, 'b')!;
       expect(after.troops).toBe(before);
     });
   });
@@ -335,11 +337,11 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
       };
       await m.collections.marches.insertOne(r1);
       await m.collections.marches.insertOne(r2);
-      const before = (await svc.getMe(W, 'a')).troops;
+      const before = (await svc.getMe(W, 'a')).troops!;
 
       await Promise.all([svc.processDueArrivals(), svc.processDueArrivals()]);
 
-      const after = (await svc.getMe(W, 'a')).troops;
+      const after = (await svc.getMe(W, 'a')).troops!;
       expect(after - before).toBe(250); // both refunds landed — neither lost to the race
       expect(await m.collections.marches.findOne({ _id: 'r1' })).toBeNull();
       expect(await m.collections.marches.findOne({ _id: 'r2' })).toBeNull();
@@ -500,7 +502,7 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
 
       // Removing one source only clears its own entry, not the other's.
       await svc.removeCover(W, 10, 10, tileId(W, 10, 10));
-      const after = redis.coverMapAt(W, tidShared);
+      const after = redis.coverMapAt(W, tidShared)!;
       expect(Object.keys(after)).toHaveLength(1);
       expect(after[tileId(W, 12, 10)]).toBeDefined();
     });
@@ -548,6 +550,9 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
         if (sid) f.sectId = sid; else delete f.sectId;
       }
       async bumpActivity() { /* no-op */ }
+      /** WorldSocialsvcClient gained this alongside bumpActivity; this suite is about sect voting and
+       *  never drives prosperity, so throw rather than answer 0 and look like a real bump. */
+      async bumpActivityAndProsperity(): Promise<number> { throw new Error('FakeSocialsvc.bumpActivityAndProsperity is not stubbed'); }
       async refreshProsperity() { return 0; }
       async resetSlgState() { /* no-op */ }
       async push() { /* no-op */ }
@@ -583,7 +588,7 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
         sect.voteRemoveLeader(W, 'carol', dd),
       ]);
 
-      const after = await sect.getSect(s.sectId);
+      const after = await sect.getSect(s.sectId)!;
       expect(after!.removalVote?.nomineeFamilyId).toBe(dd);
       expect(after!.removalVote?.voteCount).toBe(2); // both votes counted, neither lost to the race
 

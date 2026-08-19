@@ -251,7 +251,7 @@ describe('HttpWorldSocialsvcClient.setSect', () => {
     const c = new HttpWorldSocialsvcClient(base, KEY);
     await expect(c.setSect('fam1', 'sect-1')).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    const [msg, ctx] = errSpy.mock.calls[0];
+    const [msg, ctx] = errSpy.mock.calls[0]!;
     expect(msg).toBe('[worldsvc] socialsvc.setSect failed');
     expect(ctx).toMatchObject({ familyId: 'fam1', sectId: 'sect-1', status: 500 });
   });
@@ -406,7 +406,7 @@ describe('HttpWorldSocialsvcClient.push', () => {
     const c = new HttpWorldSocialsvcClient(base, KEY);
     await expect(c.push({ kind: 'world', worldId: 'w1' }, 'nation_msg', {})).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledTimes(1);
-    const [msg, ctx] = errSpy.mock.calls[0];
+    const [msg, ctx] = errSpy.mock.calls[0]!;
     expect(msg).toBe('[worldsvc] socialsvc.push failed');
     expect(ctx).toMatchObject({ event: 'nation_msg', status: 500 });
   });

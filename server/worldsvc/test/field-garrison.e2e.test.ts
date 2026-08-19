@@ -54,6 +54,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -123,7 +124,7 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
   let redis: FakeRedis;
   let socialsvc: FakeSocialsvc;
   let pushes: { accountId: string; msg: SlgPushMsg }[];
-  const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); } };
+  const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); } , broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
 
   beforeEach(async () => {
     await m.db.dropDatabase();
@@ -455,7 +456,7 @@ describe.skipIf(!mongo)('worldsvc garrison coverage e2e (ADR-051 P3a)', () => {
       // Drain the pool first (as a real departure would have) so the refund is observable — the pool
       // otherwise already sits at troopCap and refundTroops' Math.min cap would silently swallow it.
       await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { troops: 0 } });
-      const before = (await svc.getMe(W, 'a')).troops;
+      const before = (await svc.getMe(W, 'a')).troops!;
 
       await m.collections.marches.insertOne({
         _id: 'mreinforce2', worldId: W, ownerId: 'a', fromTile: tileId(W, 5, 5), toTile: tid,

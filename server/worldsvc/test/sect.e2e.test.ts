@@ -194,8 +194,8 @@ describe.skipIf(!mongo)('SectService e2e', () => {
       accountId,
       troops: 0,
       troopCap: 0,
-      resources: { ink: 0, wood: 0, iron: 0, grain: 0 },
-      yieldRate: { ink: 0, wood: 0, iron: 0, grain: 0 },
+      resources: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
+      yieldRate: { ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 },
       lastTickAt: 0,
       familyId,
       rev: 0,
@@ -459,12 +459,10 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     const fakeMeta: WorldMetaClient = {
       available: true,
       async getProfile(id) { return id === 'alice' ? { publicId: 'alice#1234', displayName: 'Alice' } : null; },
-      async deductMaterial() { throw new Error('unused'); },
       async grantMaterial() { /* no-op */ },
       async getSaveFields() { return null; },
-      async escrowEquipment() { throw new Error('unused'); },
-      async grantEquipment() { /* no-op */ },
       async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
     };
     const sectWithMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, meta: fakeMeta, now: () => Date.now() });
     broadcasts.length = 0;
@@ -488,12 +486,10 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     const fakeMeta: WorldMetaClient = {
       available: true,
       async getProfile(id) { return id === 'alice' ? { publicId: 'alice#1234', displayName: 'RealNickname' } : null; },
-      async deductMaterial() { throw new Error('unused'); },
       async grantMaterial() { /* no-op */ },
       async getSaveFields() { return null; },
-      async escrowEquipment() { throw new Error('unused'); },
-      async grantEquipment() { /* no-op */ },
       async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
     };
     const sectWithMeta = new SectService({ cols: mongo!.collections, commercial, gateway: fakeGateway, socialsvc, meta: fakeMeta, now: () => Date.now() });
     broadcasts.length = 0;
@@ -520,7 +516,7 @@ describe.skipIf(!mongo)('SectService e2e', () => {
 
     const fakeMeta: WorldMetaClient = {
       available: true,
-      async getProfile(id) {
+      async getProfile(id: string) {
         return id === 'alice' ? { publicId: 'alice#1234', displayName: 'Alice', equippedTitle: 'Grandmaster' } : null;
       },
       async deductMaterial() { throw new Error('unused'); },

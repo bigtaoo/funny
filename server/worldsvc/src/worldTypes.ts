@@ -185,6 +185,13 @@ export interface PlayerWorldView {
    * Date.now() itself (same contract as WorldTileView.protectedUntil).
    */
   speedupUntil?: number;
+  /**
+   * Season battle pass held (S8-8 shop). `getMe` has always returned this (core/map.ts spreads it in)
+   * and openapi-world.yml declares it on PlayerWorldView — the TS interface just never listed it, so
+   * every reader had to go through `any`. Added 2026-08-19 when the test programs surfaced two shop
+   * e2e assertions that could not compile against the declared type.
+   */
+  hasBattlePass?: boolean;
   /** Home-city building levels (SLG_CITY_DESIGN; desk≥1, others≥0). */
   buildings?: Partial<Record<BuildingKey, number>>;
   /** Build queue (SLG_CITY_DESIGN §4, ordered by completeAt ascending); client CityScene renders countdowns. */

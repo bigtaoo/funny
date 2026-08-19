@@ -212,7 +212,7 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     expect(aliceMail).toBeTruthy();
     expect(aliceMail!.dispatchKey).toBe(`slg-settle:${W}:s${SEASON}`);
     const scrap = aliceMail!.content.attachments!.find((a) => a.kind === 'material' && a.id === 'scrap');
-    expect(scrap!.count).toBe(SETTLE_REWARDS.champion.items.scrap * CENTER_CAPITAL_MULT);
+    expect(scrap!.count).toBe(SETTLE_REWARDS.champion.items.scrap! * CENTER_CAPITAL_MULT);
 
     // Re-entry: world is already settling; a second settle call must not create a duplicate record ($setOnInsert).
     const before = doc!.settledAt;

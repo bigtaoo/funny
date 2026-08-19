@@ -94,17 +94,13 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
 
   const fakeMeta: WorldMetaClient = {
     available: true,
-    async deductMaterial() { /* n/a */ },
     async grantMaterial() { /* n/a */ },
     async getProfile(): Promise<PlayerProfile | null> { return null; },
     async getSaveFields(accountId): Promise<SaveFields | null> {
-      return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv: cardInvByAccount[accountId] ?? {} };
+      return { equipmentInv: {}, cardInv: cardInvByAccount[accountId] ?? {} };
     },
-    async escrowEquipment() { throw new Error('n/a'); },
-    async grantEquipment() { /* n/a */ },
-    async escrowCard() { throw new Error('n/a'); },
-    async grantCard() { /* n/a */ },
     async grantTitle() { /* n/a */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
   };
 
   /** Find a non-blocking tile near (sx,sy). */

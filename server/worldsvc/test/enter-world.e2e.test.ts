@@ -46,10 +46,11 @@ describe.skipIf(!mongo)('worldsvc enterWorld e2e (P1-5, comm-audit-2026-07-27)',
   };
   const fakeMeta: WorldMetaClient = {
     available: false,
-    async deductMaterial() {},
     async grantMaterial() {},
     async getProfile() { return null; },
     async getSaveFields() { return null; },
+    batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
+    grantTitle: () => { throw new Error('fake WorldMetaClient.grantTitle() is not stubbed in this test'); },
   };
 
   beforeEach(async () => {

@@ -35,6 +35,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -91,7 +92,7 @@ describe.skipIf(!mongo)('worldsvc structure-durability e2e (ADR-051 §5.2)', () 
   let svc: WorldService;
   let redis: FakeRedis;
   const mailCalls: MailCall[] = [];
-  const fakeGateway: WorldGatewayClient = { available: true, async push() {} };
+  const fakeGateway: WorldGatewayClient = { available: true, async push() {} , broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
   const fakeMail: WorldMailClient = {
     available: true,
     async sendSystemMail(accountId, _key, content) { mailCalls.push({ accountId, content }); },

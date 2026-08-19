@@ -102,6 +102,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
@@ -729,7 +730,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
 
     const held = await svc.getTile(W, 'a', target.x, target.y);
     expect(held.contestedByMe).toBe(true);
-    const poolBefore = (await svc.getMe(W, 'a')).troops;
+    const poolBefore = (await svc.getMe(W, 'a')).troops!;
 
     // player cancels from Team Management, mid-hold (no need to wait out OCCUPY_HOLD_SEC).
     await svc.cancelOccupation(W, 'a', 't1');
@@ -868,7 +869,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
       { _id: pwId },
       { $set: { teams: [{ id: 't1', name: 'Flat', army: [{ unitType: 'infantry', col: 0, row: 1, initialHp: 600 }] }] } },
     );
-    const poolBefore = (await svc.getMe(W, 'a')).troops;
+    const poolBefore = (await svc.getMe(W, 'a')).troops!;
     const target = findCoord(14, 14, (t) => (t.type === 'resource' || t.type === 'neutral'));
     const mv = await svc.startMarch(W, 'a', 10, 10, target.x, target.y, 'move', 1, 't1');
     expect(mv.troops).toBe(600);

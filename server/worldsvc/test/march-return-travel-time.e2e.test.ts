@@ -105,6 +105,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 describe.skipIf(!mongo)('worldsvc march-return-travel-time e2e (SLG_DESIGN_LOG.md §47)', () => {
@@ -116,7 +117,7 @@ describe.skipIf(!mongo)('worldsvc march-return-travel-time e2e (SLG_DESIGN_LOG.m
   let spent: { accountId: string; amount: number }[];
   let spendShouldFail: boolean;
 
-  const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); } };
+  const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); } , broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
   const fakeCommercial: WorldCommercialClient = {
     available: true,
     async spend(accountId, amount) {

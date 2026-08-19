@@ -85,6 +85,7 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
     async push(accountId, msg) {
       pushes.push({ accountId, msg });
     },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   beforeEach(async () => {

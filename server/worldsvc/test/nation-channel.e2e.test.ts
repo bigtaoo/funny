@@ -6,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWorldMongo, type WorldMongo, type NationMessageDoc } from '../src/db';
 import { NationChannelService } from '../src/nationChannelService';
 import { nullWorldCommercialClient, type WorldCommercialClient } from '../src/commercialClient';
-import type { HttpWorldGatewayClient } from '../src/gatewayClient';
+import type { WorldGatewayClient } from '../src/gatewayClient';
 import type { WorldMetaClient } from '../src/metaClient';
 import type { WorldSocialsvcClient, FamilyMembership, FamilySummary } from '../src/socialsvcClient';
 
@@ -30,7 +30,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
   const broadcasts: Array<Record<string, unknown>> = [];
   const spends: Array<{ accountId: string; amount: number }> = [];
 
-  const fakeGateway: HttpWorldGatewayClient = {
+  const fakeGateway: WorldGatewayClient = {
     available: true,
     async push() { /* targeted push unused by nation channel */ },
     async broadcast(recipients, msg) {
@@ -220,12 +220,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
     const fakeMeta: WorldMetaClient = {
       available: true,
       async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice' } : null; },
-      async deductMaterial() { throw new Error('unused'); },
       async grantMaterial() { /* no-op */ },
       async getSaveFields() { return null; },
-      async escrowEquipment() { throw new Error('unused'); },
-      async grantEquipment() { /* no-op */ },
       async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
     };
     const svc = new NationChannelService({
       cols: mongo!.collections,
@@ -259,12 +257,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice' } : null; },
-        async deductMaterial() { throw new Error('unused'); },
         async grantMaterial() { /* no-op */ },
         async getSaveFields() { return null; },
-        async escrowEquipment() { throw new Error('unused'); },
-        async grantEquipment() { /* no-op */ },
         async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
       };
       const svc = new NationChannelService({
         cols: mongo!.collections,
@@ -281,12 +277,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice' } : null; },
-        async deductMaterial() { throw new Error('unused'); },
         async grantMaterial() { /* no-op */ },
         async getSaveFields() { return null; },
-        async escrowEquipment() { throw new Error('unused'); },
-        async grantEquipment() { /* no-op */ },
         async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
       };
       const svc = new NationChannelService({
         cols: mongo!.collections,
@@ -334,12 +328,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile(id) { return id === 'alice' ? { publicId: 'alice#0042', displayName: 'RealNickname' } : null; },
-        async deductMaterial() { throw new Error('unused'); },
         async grantMaterial() { /* no-op */ },
         async getSaveFields() { return null; },
-        async escrowEquipment() { throw new Error('unused'); },
-        async grantEquipment() { /* no-op */ },
         async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
       };
       const svc = new NationChannelService({
         cols: mongo!.collections,
@@ -361,12 +353,10 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
       const fakeMeta: WorldMetaClient = {
         available: true,
         async getProfile() { return null; },
-        async deductMaterial() { throw new Error('unused'); },
         async grantMaterial() { /* no-op */ },
         async getSaveFields() { return null; },
-        async escrowEquipment() { throw new Error('unused'); },
-        async grantEquipment() { /* no-op */ },
         async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
       };
       const svc = new NationChannelService({
         cols: mongo!.collections,
@@ -398,7 +388,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
   describe('title / sectName / familyName resolution', () => {
     const fakeMetaWithTitle: WorldMetaClient = {
       available: true,
-      async getProfile(id) {
+      async getProfile(id: string) {
         return id === 'alice' ? { publicId: 'alice#0042', displayName: 'Alice', equippedTitle: 'Grandmaster' } : null;
       },
       async deductMaterial() { throw new Error('unused'); },
@@ -421,6 +411,7 @@ describe.skipIf(!mongo)('NationChannelService e2e', () => {
         async refreshProsperity() { return 0; },
         async resetSlgState() { /* no-op */ },
         async push() { /* no-op */ },
+  bumpActivityAndProsperity: () => { throw new Error('fake WorldSocialsvcClient.bumpActivityAndProsperity() is not stubbed in this test'); },
       };
     }
 

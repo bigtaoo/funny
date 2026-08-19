@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import { FAMILY_MSG_BODY_MAX, SlgError, censorChat, type ChatRegion, type WordlistCache } from '@nw/shared';
 import type { WorldCollections, NationMessageDoc } from './db';
-import type { HttpWorldGatewayClient } from './gatewayClient';
+import type { WorldGatewayClient } from './gatewayClient';
 import type { WorldCommercialClient } from './commercialClient';
 import { nullWorldSocialsvcClient, type WorldSocialsvcClient } from './socialsvcClient';
 import type { WorldMetaClient } from './metaClient';
@@ -31,7 +31,7 @@ export interface NationMessageView {
 
 interface Deps {
   cols: WorldCollections;
-  gateway: HttpWorldGatewayClient;
+  gateway: WorldGatewayClient; // 2026-08-19: was the concrete HttpWorldGatewayClient, but only `broadcast` is used — the interface is the honest dependency (and what every test fake supplies).
   commercial: WorldCommercialClient;
   now: () => number;
   /** socialsvc client (push delegation, SOCIAL_SVC_DESIGN §5); omit to degrade to direct gateway push. */
