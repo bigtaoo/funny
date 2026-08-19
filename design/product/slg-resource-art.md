@@ -527,3 +527,16 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 **ink l7 再次落空，是我的 prompt 有缺陷**：目标 0.28–0.36，实际 **0.153**（比批 1 的 0.246 还低，已存 `art/leftover/res_ink_l7.candidate-b3-0.153.webp`，未采用）。病因是负向里的 `solid black fill / blacked-in shape / ink wash` ——**对墨水瓶来说瓶里的墨本来就是一块实心黑**，ink 全族 l4–l10 都是这么画的（density 0.344–0.514）。禁令一刀切下去，墨液变成了稀疏排线，密度直接砍半。
 
 > **规则修正**：§6.7 第 1 条「禁止实心填充」的适用范围是**物体的材质表面**（玻璃、石棱、金属、纸），**不含被容纳的液体**。墨水瓶里的墨、溢出的墨渍照旧画实心黑——那是 ink 这一族的家族特征，也是它区别于其它四族的剪影依据之一。写 ink 的 prompt 时必须从负向里删掉这几个词。
+
+### 6.9 第四批（ink l7 第三次）· 密度对了但笔触跑了 —— 「墨的画法」定版
+
+`density 0.379`（目标带 0.30–0.38 顶端）、无画框、无蓝调，主体数量全对。**但笔触是另一支笔**：粗而均匀的描边 + 纯平涂实心黑，完全没有排线质感；同族 l4/l6/l8/l9 都是速写钢笔（细而有变化的线，墨是密排交叉线，近看能看出笔画）。存 `art/leftover/res_ink_l7.candidate-b4-0.379-wrong-pen.png`，未采用。
+
+病因是我 §6.8 的修正过冲：prompt 写成 `SOLID BLACK MASS — completely opaque, no white showing through`，把生成器推进了平涂矢量模式，描边跟着一起变粗。
+
+> **「墨」的画法定版（三档里取中间那档）**：
+> - ❌ 排线间距=线宽（§6.7 通用档）→ density 0.153，太浅
+> - ❌ 完全不透明平涂 → density 0.379 但笔触变粗描边+平涂，破坏"一支笔"
+> - ✅ **密排交叉线，笔画几乎相接、区域远看近黑，近看仍是笔画，缝隙间留少量白点** ← ink 族专用档，就是 l6/l8/l9 的实际画法
+>
+> 一并写进 ink 的 prompt：`thin sketchy varied-width pen strokes throughout, bottle outlines thin and slightly broken, never a thick uniform contour`；负向补 `flat fill, solid flat black area, vector, sticker art, thick uniform outline, crisp clean edges`。
