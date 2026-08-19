@@ -1,46 +1,19 @@
 // Low-priority coverage gaps identified while auditing the tileGraphics.ts -> tileGraphics/
 // {tiles,resources,primitives}.ts form① split (2026-08-12, see claudedocs/client-modules.md):
-// drawStar (primitives.ts) and motifJitter (resources.ts) had NO test coverage, direct or
-// indirect — drawStar is only reachable via WorldMapRenderer/fog.ts's capital-marker loop, which
-// no existing test exercises (nothing sets ctx.nations), and motifJitter is only reachable via
-// drawResMotif, whose own atlas-mocking tests (if any existed) never assert on jitter output.
-// Both are pure, cheap to pin directly, and both carry a "must stay in lockstep with the
-// map-editor's identical helper" parity contract (per their own doc comments) that only
-// determinism protects — a drive-by change to either formula would silently break parity with no
-// test noticing. Added per the form① split audit's "cheap to pin directly" guidance; not meant to
-// be exhaustive coverage of tileGraphics.ts.
+// drawStar (primitives.ts) had NO test coverage, direct or indirect — it is only reachable via
+// WorldMapRenderer/fog.ts's capital-marker loop, which no existing test exercises (nothing sets
+// ctx.nations). It is pure and cheap to pin directly. Added per the form① split audit's "cheap to
+// pin directly" guidance; not meant to be exhaustive coverage of tileGraphics.ts.
+//
+// This file also used to pin motifJitter, the resource-motif placement hash, under the same
+// reasoning ("a parity contract that only determinism protects"). That function moved into
+// @nw/shared as resMotifJitter on 2026-08-19 — the map editor now CALLS it instead of keeping a
+// hand-written twin — so its determinism and bounds are pinned in server/shared/test/core.test.ts,
+// where both callers can see them, and the client's routing through it in
+// client/test/ui/worldMapResMotifLevelRead.ui.ts.
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
-import { drawStar, motifJitter } from '../../src/scenes/worldmap/tileGraphics';
-
-describe('motifJitter (2026-07-12 resource-carpet declutter pass)', () => {
-  it('is deterministic: the same (tx, ty) always produces the same jitter (no shimmer on redraw/pan)', () => {
-    const a = motifJitter(37, -12);
-    const b = motifJitter(37, -12);
-    expect(b).toEqual(a);
-  });
-
-  it('different tiles get different jitter (not a constant fallback)', () => {
-    const a = motifJitter(0, 0);
-    const b = motifJitter(1, 0);
-    expect(b).not.toEqual(a);
-  });
-
-  it('every output stays within its documented bound (dx/dy small fractions of tp, scale near 1)', () => {
-    // Sample a spread of integer tile coordinates — the hash is coordinate-based, not random, so
-    // this is a deterministic sweep, not a flaky property test.
-    for (let tx = -5; tx <= 5; tx++) {
-      for (let ty = -5; ty <= 5; ty++) {
-        const j = motifJitter(tx, ty);
-        expect(Math.abs(j.dx)).toBeLessThanOrEqual(0.13);
-        expect(Math.abs(j.dy)).toBeLessThanOrEqual(0.09);
-        expect(Math.abs(j.rot)).toBeLessThanOrEqual(0.35);
-        expect(j.scale).toBeGreaterThanOrEqual(0.85);
-        expect(j.scale).toBeLessThanOrEqual(1.15);
-      }
-    }
-  });
-});
+import { drawStar } from '../../src/scenes/worldmap/tileGraphics';
 
 describe('drawStar (L3 overview / capital markers)', () => {
   function spy(g: PIXI.Graphics): {

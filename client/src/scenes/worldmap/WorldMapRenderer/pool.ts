@@ -114,10 +114,16 @@ export class WorldMapRendererPool implements PoolHandlers {
     const ctx = this.core.ctx;
     const g = slot.g;
     g.clear();
-    // Remove any sprite children added by the previous draw (resource motifs).
+    // Reset children left by the previous draw. Sprites (resource motifs, feature buildings) are
+    // per-draw and get destroyed; anything else is a POOLED child that outlives the draw — today just
+    // the `Lv.N` BitmapText, which is kept alive on purpose so panning does not allocate a text object
+    // per tile per frame — so it is only hidden here. Hiding rather than skipping matters: drawTileL2
+    // (and the L3 batch path) never touch that child at all, so without this a label would survive a
+    // zoom-out and float over a tile drawn with no motif under it.
     for (let i = g.children.length - 1; i >= 0; i--) {
       const c = g.children[i];
       if (c instanceof PIXI.Sprite) { g.removeChild(c); c.destroy({ children: false }); }
+      else c.visible = false;
     }
     const tp = ctx.tp;
     const inBounds = tx >= 0 && ty >= 0 && tx < ctx.mapW && ty < ctx.mapH;

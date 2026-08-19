@@ -6,12 +6,12 @@
 // ally-sect border, level dot.
 import * as PIXI from 'pixi.js-legacy';
 import { ISO_RATIO, diamondPath } from './isoGrid';
-import { getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
+import { getResFrameRead, getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
 import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
 import type { TerrainTextureName } from './terrainAtlasLoader';
-import { worldSeed, obstacleShoreAt, tileFeatureBuilding, type ProceduralTile } from '@nw/shared/slg';
+import { worldSeed, obstacleShoreAt, resMotifPlacement, tileFeatureBuilding, type ProceduralTile } from '@nw/shared/slg';
 
 /** Ground + motif + landmark for one tile. `g`'s local origin is the tile's diamond center. */
 export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: TerrainTextureName, tp: number, tx = 0, ty = 0, worldId = ''): void {
@@ -95,53 +95,36 @@ export function placeBuildingSprite(g: PIXI.Graphics, name: string, hh: number, 
 }
 
 /**
- * Single resource-motif sprite (real per-level art when available, else one generic placeholder) —
- * mirrors the game client's simplified drawResMotif (commit 2a85a917: the per-level art already
- * encodes abundance/defense, so the old count-copy + lv4+/lv7+ defense frames are gone — they just
- * flooded the paper with confetti). No fog path: templates are always fully revealed.
+ * Single resource-motif sprite (real per-level art when available, else one generic placeholder).
+ *
+ * Thin PIXI adapter over @nw/shared's resMotifPlacement — the same call the game client makes, so the
+ * two renderers cannot drift (they were hand-copied bodies until 2026-08-19; see
+ * server/shared/src/slg/core.ts and design/product/slg-resource-art.md §6.3). No level->size or
+ * level->alpha logic lives here: the level read is solved by the resource packer and baked into each
+ * atlas frame's `nw` block. No fog path either — templates are always fully revealed.
  */
 export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number, tx = 0, ty = 0): void {
-  const lv = Math.max(1, Math.min(10, level));
-  const toLocal = (fx: number, fy: number): [number, number] => [(fx - 0.5) * tp, (fy - 0.5) * tp * 0.6];
-  const jitter = motifJitter(tx, ty);
-
   if (!isResAtlasReady()) { drawResMotifFallback(g, resType, tp); return; }
 
+  const lv = Math.max(1, Math.min(10, level));
   const levelTex = getResLevelTexture(resType, lv);
+  const frameName = levelTex ? `res_${resType}_l${lv}` : `res_${resType}`;
   const tex = levelTex ?? getResTexture(resType);
   if (!tex) return;
+
+  const p = resMotifPlacement({
+    tp, tx, ty,
+    read: getResFrameRead(frameName),
+    texW: tex.width, texH: tex.height,
+  });
   const sp = new PIXI.Sprite(tex);
   sp.anchor.set(0.5, 0.5);
-  // Per-level frames all share the same 128px WIDTH and encode the level in HEIGHT (higher
-  // level = taller/denser), so scale them by width — this keeps the per-level height
-  // difference instead of normalizing it away via max(w,h). The generic fallback frame
-  // (types without per-level art) is TALLER than wide, so it stays on max(w,h) to stay
-  // bounded. 0.30: shrunk 0.55→0.48→0.40→0.30 for clear gaps between adjacent tiles' motifs
-  // (resourceDensity=1.0 puts one on every tile); mirrors the game client (parity).
-  const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
-  // Per-tile jitter (2026-07-12, resource-carpet pass) — mirrors the game client's
-  // drawResMotif/motifJitter (SLG map render parity): breaks the perfectly uniform grid look of
-  // identical same-biome frames repeating at real play zoom, without touching density/alpha tuning.
-  sp.scale.set((tp * 0.30) / denom * jitter.scale);
-  sp.rotation = jitter.rot;
-  // Value hierarchy by opacity: resourceDensity=1.0 puts a heap on EVERY tile, so full-strength
-  // everywhere reads as uniform confetti. Fade low-level heaps and keep high-level ones solid so
-  // the eye picks out valuable tiles — lv1≈0.55 → lv10=1.0. Floor 0.4→0.65 (2026-07-11) then
-  // 0.65→0.55 (2026-07-17), paired with the size shrink. Mirrors the game client (parity).
-  sp.alpha = 0.55 + 0.45 * ((lv - 1) / 9);
-  [sp.x, sp.y] = toLocal(0.5, 0.52);
-  sp.x += jitter.dx * tp; sp.y += jitter.dy * tp;
+  sp.scale.set(p.scale);
+  sp.rotation = p.rotation;
+  sp.alpha = p.alpha;
+  sp.x = p.x;
+  sp.y = p.y;
   g.addChild(sp);
-}
-
-/** Deterministic per-tile placement jitter — mirrors the game client's motifJitter (SLG map
- * render parity). See the game client's tileGraphics.ts for the full rationale. */
-export function motifJitter(tx: number, ty: number): { dx: number; dy: number; rot: number; scale: number } {
-  const h1raw = Math.sin(tx * 12.9898 + ty * 78.233) * 43758.5453;
-  const h2raw = Math.sin(tx * 39.346 + ty * 11.135) * 24634.6345;
-  const h1 = h1raw - Math.floor(h1raw);
-  const h2 = h2raw - Math.floor(h2raw);
-  return { dx: (h1 - 0.5) * 0.26, dy: (h2 - 0.5) * 0.18, rot: (h1 - 0.5) * 0.7, scale: 0.85 + h2 * 0.3 };
 }
 
 /** Single programmatic fallback icon when res_atlas hasn't decoded yet — mirrors the game client. */

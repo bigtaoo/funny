@@ -4,6 +4,7 @@
  * this copy skips assetIO.
  */
 import * as PIXI from 'pixi.js-legacy';
+import type { ResMotifFrameRead } from '@nw/shared/slg';
 import atlasUrl from '../assets/slg/res_atlas.png';
 import atlasData from '../assets/slg/res_atlas.json';
 
@@ -23,6 +24,16 @@ export function getResLevelTexture(resType: string, level: number): PIXI.Texture
   if (!sheet) return null;
   const lv = Math.max(1, Math.min(10, Math.round(level)));
   return sheet.textures[`res_${resType}_l${lv}`] ?? null;
+}
+
+/**
+ * The solved level read (`nw`) the resource packer baked into this frame — mirrors the game client's
+ * getResFrameRead. Reads the bundled JSON directly (PIXI's Spritesheet drops unknown frame keys, so
+ * `nw` never reaches the Texture), hence no `sheet` gate.
+ */
+export function getResFrameRead(frameName: string): ResMotifFrameRead | null {
+  const frames = (atlasData as { frames: Record<string, { nw?: ResMotifFrameRead }> }).frames;
+  return frames[frameName]?.nw ?? null;
 }
 
 export async function loadResAtlas(): Promise<void> {
