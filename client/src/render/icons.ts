@@ -34,7 +34,7 @@ import { drawFlag, drawDesk, drawCabinet, drawHammer, drawHourglassSm, drawHourg
 import {
   drawSwords, drawReplay, drawShare, drawHome,
   drawTag, drawCapsule, drawCards, drawStar, drawLock, drawMedal, drawZoom, drawGift,
-  drawClose, drawCheck, drawPlay,
+  drawClose, drawCheck, drawPlay, drawBackArrow,
 } from './icons/ui';
 import {
   drawTitleBronze, drawTitleSilver, drawTitleGold, drawTitlePlatinum, drawTitleDiamond,
@@ -93,7 +93,9 @@ export type DrawableIconKind =
   | 'gift'
   // Common UI dingbats replacing bare typographic glyphs so they share the ink
   // language: close (✕) / confirm tick (✓) / replay-triangle (▶).
-  | 'close' | 'check' | 'play';
+  | 'close' | 'check' | 'play'
+  // Back button (SceneHeader): the hand-drawn left arrow that replaced the literal arrow character.
+  | 'backArrow';
 
 /** Every icon `buildIcon` can build, procedural or raster. */
 export type IconKind = DrawableIconKind | RasterIconKind;
@@ -149,6 +151,7 @@ export const DRAW: Record<DrawableIconKind, (g: PIXI.Graphics, s: number, color:
   titleTop3: drawTitleTop3,
   zoom:    drawZoom,
   gift:    drawGift,
+  backArrow: drawBackArrow,
   close:   drawClose,
   check:   drawCheck,
   play:    drawPlay,

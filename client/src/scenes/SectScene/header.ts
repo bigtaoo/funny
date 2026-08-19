@@ -7,7 +7,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
-import { buildTitleIcon } from '../../ui/widgets/SceneHeader';
+import { buildTitleIcon, backPillRightEdge } from '../../ui/widgets/SceneHeader';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore } from './core';
 
@@ -28,13 +28,9 @@ export function drawHeaderTitle(core: SectSceneCore, headerH: number): void {
   };
   const midY = headerH / 2;
 
-  // Left cluster must clear the back-button pill. Replicates SceneHeader's back-chip metrics
-  // (BACK_X=10, size=0.039·h, padX=0.7·size) so the title always clears the pill.
-  const backSize = Math.round(h * 0.039);
-  const backNode = txt(`← ${t('common.back')}`, backSize, C.accent);
-  const chipW = backNode.width + Math.round(backSize * 0.7) * 2;
-  backNode.destroy();
-  const leftBound = 10 + chipW + Math.round(backSize * 0.6);
+  // Left cluster must clear the back-button pill — asked of SceneHeader rather than re-derived
+  // from a copy of its chip formula, which went stale the moment the chip grew an arrow glyph.
+  const leftBound = backPillRightEdge(h);
 
   const showIdentity = core.landscape && core.sect && core.mode === 'mySect';
   const gap = Math.round(w * 0.02);

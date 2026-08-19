@@ -4,6 +4,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
+import { buildIcon } from '../../render/icons';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
@@ -113,8 +114,24 @@ export class CraftPanel {
     const btn = sketchPanel(btnW, btnH, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(x, y, btnW) });
     btn.x = btnX; btn.y = btnY;
     core.bodyLayer.addChild(btn);
+    // [anvil][gap][label] as one centred group — the same icon the Craft tab in the sidebar rail
+    // uses, so the button and the tab that leads here read as the same action. The white `active`
+    // ink is what the dark button fill asks for; disabled falls back to the paper-grey variant on
+    // the `btnOff` fill. German ("Schmieden") is the label that actually reaches the button's
+    // width, so the group scales down to fit rather than letting the icon push the text out.
     const bl = txt(t('equip.craftBtn'), FS.body, enabled ? C.light : C.mid);
-    bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
+    const icSz = Math.round(FS.body * 1.4);
+    const icGap = Math.round(FS.body * 0.3);
+    const groupW = icSz + icGap + bl.width;
+    const fitW = btnW - 10;
+    const fit = groupW > fitW ? fitW / groupW : 1;
+    const groupX = btnX + (btnW - groupW * fit) / 2;
+    const ic = buildIcon('craftTabIcon', icSz, enabled ? C.light : C.mid);
+    ic.scale.set(fit);
+    ic.x = groupX; ic.y = btnY + (btnH - icSz * fit) / 2;
+    core.bodyLayer.addChild(ic);
+    bl.scale.set(fit);
+    bl.anchor.set(0, 0.5); bl.x = groupX + (icSz + icGap) * fit; bl.y = btnY + btnH / 2;
     core.bodyLayer.addChild(bl);
     if (enabled) {
       core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, owner: defId, action: () => void this.doCraft(defId) });

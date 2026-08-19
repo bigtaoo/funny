@@ -29,7 +29,7 @@ const ALL_KINDS: Record<DrawableIconKind, true> = {
   flag: true, desk: true, cabinet: true, hammer: true,
   hourglassSm: true, hourglassMd: true, hourglassLg: true,
   tag: true, capsule: true, cards: true, star: true, lock: true, medal: true, zoom: true, gift: true,
-  close: true, check: true, play: true,
+  close: true, check: true, play: true, backArrow: true,
   titleBronze: true, titleSilver: true, titleGold: true, titlePlatinum: true, titleDiamond: true,
   titleStar: true, titleMaster: true, titleGrandmaster: true, titleKing: true,
   titleChampion: true, titleTop3: true,

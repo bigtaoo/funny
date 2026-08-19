@@ -352,7 +352,7 @@ export const de: Record<TranslationKey, string> = {
   'auth.logout': 'Abmelden',
   'auth.loggingIn': 'Anmeldung läuft',
   'auth.tapToType': 'Zum Tippen tippen',
-  'auth.back': '← Zurück',
+  'auth.back': 'Zurück',
   'auth.err.invalid': 'Falsche E-Mail / Benutzername oder Passwort',
   'auth.err.taken': 'Diese E-Mail / dieser Benutzername ist bereits registriert',
   'auth.err.weak': 'Passwort muss mindestens 6 Zeichen haben',

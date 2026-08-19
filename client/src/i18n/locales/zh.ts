@@ -357,7 +357,7 @@ export const zh = {
   'auth.logout': '退出登录',
   'auth.loggingIn': '登录中',
   'auth.tapToType': '点此输入',
-  'auth.back': '← 返回',
+  'auth.back': '返回',
   'auth.err.invalid': '邮箱 / 用户名或密码错误',
   'auth.err.taken': '该邮箱 / 用户名已被注册',
   'auth.err.weak': '密码至少 6 位',
