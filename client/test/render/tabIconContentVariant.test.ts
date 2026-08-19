@@ -22,10 +22,21 @@ const VARIANTS: RasterIconVariant[] = ['active', 'inactive', 'content'];
 const ASSET_DIR = path.resolve(__dirname, '../../src/assets/tabicons');
 /** The AI source images + the packing script, one dir up out of the client. */
 const SOURCE_DIR = path.resolve(__dirname, '../../../art/ui/tabicons');
+/**
+ * Art that lives in this directory and is packed by the same script but is NOT a tab icon: it does
+ * not appear in `TAB_ICON_RASTER`, nothing dispatches to it through `buildIcon`, and it carries its
+ * own ink set rather than the tab triple. Every tab-icon contract below has to skip it — see
+ * `backArrowArt.test.ts` for the contracts that DO apply to it.
+ *   `back` — the back-button arrow (19.08.2026): inks `accent` + `active` only.
+ */
+const NON_TAB_BASES = ['back'];
+const INK_SUFFIX_RE = /_(active|inactive|content|accent)\.png$/;
 
 describe('tab-icon PNGs on disk (pack_tab_icons.cjs output)', () => {
-  const files = fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'));
-  const bases = [...new Set(files.map((f) => f.replace(/_(active|inactive|content)\.png$/, '')))].sort();
+  const files = fs.readdirSync(ASSET_DIR)
+    .filter((f) => f.endsWith('.png'))
+    .filter((f) => !NON_TAB_BASES.includes(f.replace(INK_SUFFIX_RE, '')));
+  const bases = [...new Set(files.map((f) => f.replace(INK_SUFFIX_RE, '')))].sort();
 
   it('has at least one icon set to check (guards against an empty/moved asset dir)', () => {
     expect(bases.length).toBeGreaterThan(0);
@@ -39,6 +50,7 @@ describe('tab-icon PNGs on disk (pack_tab_icons.cjs output)', () => {
     const sources = fs.readdirSync(SOURCE_DIR)
       .filter((f) => /^tabicon_.*\.(webp|png)$/.test(f))
       .map((f) => f.replace(/^tabicon_/, '').replace(/\.(webp|png)$/, ''))
+      .filter((n) => !NON_TAB_BASES.includes(n))
       .sort();
     expect(sources).toEqual(bases);
   });
@@ -99,7 +111,8 @@ describe('TAB_ICON_RASTER — the code side of the same contract', () => {
   // `Icon`/`TabIcon` suffix — the pilot trio uses the short form, everything since uses the long one.
   it('has exactly one TAB_ICON_RASTER kind per packed icon (no orphan art)', () => {
     const packed = [...new Set(fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'))
-      .map((f) => f.replace(/_(active|inactive|content)\.png$/, '')))].sort();
+      .map((f) => f.replace(INK_SUFFIX_RE, ''))
+      .filter((n) => !NON_TAB_BASES.includes(n)))].sort();
     expect(kinds.length).toBe(packed.length);
     for (const base of packed) {
       expect(kinds.filter((k) => k === `${base}Icon` || k === `${base}TabIcon`), base).toHaveLength(1);

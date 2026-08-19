@@ -440,10 +440,12 @@ buildRewardIcon(reward: {kind, id?, count?}, size, color, opts?) : DisplayObject
 
 用户报告"锻造图标在黑色背景下几乎不可见"（装备页左侧 rail 的铁砧 tab）。量下来这**不是那一张图画得不好，是整套 46 张 active 图的系统性问题**：把每张 `*_active.png`（长边 128）按运行时真实的 28px 渲染后统计 alpha，**没有一张图存在接近全不透明的像素**，峰值 alpha 只有 55–76%——白墨细线缩 4.5 倍后被下采样平均掉一半，落在 `C.dark` 格子上就是一条 `#808080` 的中灰线。纸面上的 inactive/content 也被同样稀释，但"灰线变浅一点"没人察觉，只有深底这一侧翻车。铁砧受害最重（笔画最细、横向为主）。
 
-**修法**：`pack_tab_icons.cjs` 的 `VARIANTS` 表加第三列 `thicken`，只有 `active` 为真——该变体在 `LONG_EDGE - 2` 处 resize、四周补 1px 透明边，再对 alpha 通道跑一次 3×3 max filter（`dilateAlpha`），等于把每条笔画各向外长 1px 后再交给运行时缩放。效果（28px 下）：峰值 alpha 55–76% → 100%，平均墨量约翻倍，线稿仍读得出是线稿。
+**修法**：`pack_tab_icons.cjs` 的墨色表带上 `thicken` 道数，只有深底墨（`active`）非零——该变体在 `LONG_EDGE - 2` 处 resize、四周补 1px 透明边，再对 alpha 通道跑一次 3×3 max filter（`dilateAlpha`），等于把每条笔画各向外长 1px 后再交给运行时缩放。效果（28px 下）：峰值 alpha 55–76% → 100%，平均墨量约翻倍，线稿仍读得出是线稿。
 
 - **只加粗 active**：纸面两个变体保持原样，切换 tab 时 1/128 的粗细差在 28px 下是 0.2px，看不出来；同时 diff 只落在 46 张 `*_active.png` 上。
 - **两次膨胀被否**：`dil2` 下盾牌的中缝、卡背包小人开始糊成块（19.08 的并排对比图）；`gamma` 提升单独用效果只有膨胀的一半。
 - **尺寸契约**：`inset`+`extend` 的写法让 active 的**长边**仍然精确等于 `LONG_EDGE`（短边可能因取整差 1px），否则 tab 从 inactive 翻到 active 时图标会跳一下。回归测试在 `client/test/render/tabIconContentVariant.test.ts`（读 PNG IHDR，不引额外依赖）。
 
 **同批**：装备页锻造卡片的 Craft 按钮（深色填充）此前只有文字，现在也画上同一枚 `craftTabIcon`（`EquipmentScene/craft.ts`，`[图标][gap][文案]` 整组按钮内居中、超宽时整组缩放），让按钮和通向它的 tab 读成同一件事。
+
+> **同日追加两条（见 [`back-arrow-art.md`](back-arrow-art.md)）**：①膨胀道数改为**按图可配**——能吃几道是形状的属性不是全局常量，返回箭头那种"一条轴加两笔头"的图能吃 3 道，页签图标仍是 1 道；②这次加粗**带着一个当天才发现的黑边 bug**：`dilateAlpha` 只涨 alpha，被它变不透明的像素保留原 RGB，而 sharp 的 resize 会把全透明像素的 RGB 清零，于是每条加粗笔画外面裹了一圈 `thicken` 像素宽的黑边。白墨画在近黑格上完全看不出来，换成蓝墨画在纸面上立刻现形。修法是膨胀后重刷 RGB，46 张 `*_active.png` 已重打。**只在一种底色上验收的资产改动，缺陷会被那种底色藏住。**
