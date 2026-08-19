@@ -1,7 +1,14 @@
 # SLG 地图资源 — AI 出图 prompt 表
 
 状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~395 KB**，client + map-editor 两份字节一致。
+**⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6。当前状态：46 帧全部通过构建期门禁（`node art/slg/slg-map/pack_resources.cjs` 不带 `--report-only` 跑通）；渲染层接线未完成，见 §6.10。**
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
+
+> **⚠️ 决策变更 III（2026-08-19，用户拍板）**：分级读数整套重构，见 **§6**（权威，覆盖 §5.3 #2 与 §5.4 的形态跃迁条款）。起因是「按宽归一」这条旧契约会**惩罚横向生长**——高等级的丰度是横着铺开画的，归一化反而把它压小，实测四类资源全部在 l5→l6 墨量回落，ink l4 成了全十级里视觉最重的一帧。
+> - **剪影铁律（§5.3 #3）优先，§5.4「l6–10 形态逐级跃迁」作废**：同一 resType 的 l1–l10 必须是同一主体，等级只靠个数/堆量增长；容器、载具、器皿、卷状物一律不许（现有 20 张违规帧清单见 §6.4）。
+> - **归一化按等效面积 `√(w·h)`，尺寸交给显式 `LEVEL_SCALE 0.80→1.30`**，alpha 改感知墨量补偿，抖动只留 rot/offset。画稿从此不必为了"更高"扭曲构图。
+> - **构建期门禁**：`pack_resources.cjs` 计算 `density × LEVEL_SCALE²` 并强制单调，不达标 pack 直接失败（§6.3）。原因：alpha 补偿只能压淡画满的，救不了画空的。
+> - **精确等级通道补回**（决策变更 II 曾放弃）：仅 l6+ 且近 zoom 画文字 `Lv.{n}`，沿用主城标签先例，不用符号编码（§6.2 #7）。
 
 > **⚠️ 决策变更 II（2026-07-17，用户拍板）**：推翻 l1–l5「母题 token + 骰子槽计数拼接」。理由：地图上绝大多数格子是低级地（`tileGraphics.ts` 注释 "most tiles sit at low levels"），而拼接图恰是玩家 90% 时间盯着看的主视觉，读作机械印章、表现比 l6–10 专属图差一大截；省的图（4×5 专属 − 4×2 托盘背景 ≈ 12 张）本就是 AI 出图、成本很低。→ **l1–l5 也改每级一张专属手绘**，与 l6–l10 口径统一。
 > - **放弃「数个数读精确等级」**（原 §5.4 的核心诉求）：高档本就已脱离计数，低档统一改为靠**体量/繁简/高度递进**一眼分辨即可。
@@ -337,3 +344,220 @@ shadow, ground line, baseline
 - **可选后续**：若实测低档在整图缩放下仍难辨（silhouette 不够），再单独给这四类补一档极淡的按级 wash（勿回退计数拼接）。
 - ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。粮/木/石/铁全部复用同一 `bakeCountFrames`。
 - **铜钱/铜矿(sticker)** ✅ 已全链路上线（2026-07-07）：美术 l6–10 五张专属进 atlas + worldsvc 生成门槛（`resTypeFor`：resource 格 lvl≥6 按 `copperShare` 覆盖为 sticker，`SLG_GEN.copperMinLevel/copperShare`）。全图扫描验证 level<6 无 sticker、铜矿占资源格 3.4%。见 §5.7-sticker。**经济侧 TBD**：家城 `stickerShop` 是否与地图铜矿并存产铜钱、copperShare 数值调参。
+
+---
+
+## 6. 分级读数重构（2026-08-19 定 · 权威 · 覆盖 §5.3 #2 / §5.4 的形态跃迁条款）
+
+> 触发：用户截图圈出三块 4 级墨水地，反馈「图片大小和第一眼印象明显不是一种地」。查证后发现问题不在这三格，而在**分级读数的整套契约自我否定**。
+
+### 6.1 病根：按宽归一惩罚横向生长
+
+旧契约（`pack_resources.cjs` 注释 + §5.4-lo 末句）：「渲染按宽归一 → 画得越高越满 = 屏上等级越高」。渲染层 `drawResMotif` 的 `denom = tex.width` 忠实实现了它。
+
+但高等级的丰度在画稿里是**横着铺开**（多瓶并排、一簇、一堆）表达的，内容 bbox 变宽，按宽归一立刻把整幅压小——**画得越多，屏上越小**。任何用横向表达"更多"的画法都满足不了这个契约。
+
+实测（把每帧墨量 Σα 按游戏真实缩放折算成"落在一格上的墨量"，相对 ink l1 = 1.00）：
+
+| | l1 | l2 | l3 | l4 | l5 | l6 | l7 | l8 | l9 | l10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ink | 1.00 | 4.35 | 2.59 | **6.44** | 3.80 | 3.52↓ | 3.50 | 2.14 | 2.11 | 3.72 |
+| paper | 0.25 | 0.59 | 0.68 | 1.97 | 2.28 | 0.67↓ | 0.83 | 1.26 | 1.79 | 2.97 |
+| graphite | 0.86 | 1.20 | 1.17 | 2.50 | 1.45 | 0.99↓ | 1.41 | 2.43 | 2.17 | 3.23 |
+| metal | 1.05 | 1.19 | 1.58 | 1.75 | 1.85 | 1.40↓ | 2.02 | 2.62 | 1.79 | 3.52 |
+
+**四类全部在 l5→l6 回落**——正是画法从「单母题长高」（§5.4-lo）跳到「容器/多体大簇」（§5.4 l6–10）的接缝。且 ink l4（6.44）是全十级里视觉最重的一帧，比 l10 重 1.7 倍——这就是用户圈出 4 级地的直接原因。
+
+同级之间的大小差另有来源：`motifJitter` 的 `scale ∈ [0.85,1.15]`，相邻格实测能到 1.15 vs 0.88 = 1.31×。
+
+### 6.2 裁决
+
+1. **剪影铁律（§5.3 #3）优先，§5.4 的「l6–10 形态逐级跃迁，追求最佳表现」作废。** 同一 resType 的 l1–l10 必须是**同一个主体物件**；等级只通过「个数 + 堆量 + 溢出/碎屑」增长。不得引入容器、载具、器皿、卷状物（现有违规见 §6.5）。
+2. **5→6 的画风跳变作废。** l1–l10 是一条连续的量级线，不再分低档段/高档段。
+3. **归一化从「按宽」改为「按等效面积」** `√(w·h)`。横排与竖立占同样视觉面积，横向生长不再被惩罚——**画稿从此不必为了"更高"而扭曲构图**。
+4. **尺寸改由显式曲线承载**：`LEVEL_SCALE = 0.80 → 1.30`（线性，l10 占地 0.30×1.30 = 0.39 tp，仍在 2026-07-17 判定过大的 0.40 以内，且只有稀有的高级格吃到）。等级→尺寸从"画稿隐式"变成"代码显式"。
+5. **⚠️ 墨量判据已于第二批出图后改为「不许倒挂」，见 §6.7——本条的「单调递增」要求作废。** alpha 只做小幅修正，不当通道：`alpha ∈ [0.85, 1.00]`，仅用来削平画稿之间的小落差，替换裸线性 `0.55+0.45*(lv-1)/9`。全图是一支笔画的，某格 0.4、邻格 1.0 读作「换了笔」，不是「资源更少」。
+   > **这一条是被实测打回来改的**：第一版门禁允许 alpha 自由补偿总墨量 Σα，结果它给当前这批画稿判了**通过**——它的"解"是把 ink l4 压到 alpha 0.37、l9 留在 1.00，总墨量确实单调了，但浓淡在格间乱跳，正是本契约要防的观感。**Σα 不是正确的感知模型**：一个大而淡的形状和一个小而黑的形状墨量可以相等，眼睛读到的完全不同。→ 等级读数只由「占地曲线 + 画稿自身疏密」承载，于是「某级画得比下一级还空」成为**代码救不了的画稿硬伤**，只能由构建期拒绝。
+6. **抖动只保留 rot/offset**，`scale` 收窄到 `[0.96,1.04]`。同级不再有可察觉的大小差。
+7. **精确等级恢复为显式通道**（§5.4 的原始诉求「格面上能读出精确等级，否则玩家误伤」在决策变更 II 里被放弃，现在补回，但不用符号编码）：沿用 2026-08-01 主城标签的先例（[`WORLD_MAP_ART_SPEC.md`](../game/WORLD_MAP_ART_SPEC.md) 四节末：符号点阵"让人迷惑"→ 换纯文字 `Lv.{n}`），资源格同样画文字，但**仅 l6+ 且仅近 zoom 显示**——会误伤的是强守军区，低档靠体量读三档足够；`resourceDensity=1.0` 下全等级都标就是满屏噪音。**用位图数字图集或 BitmapText，不要每格 `new PIXI.Text`**（Text 纹理销毁泄漏）。
+
+### 6.3 构建期强制（`pack_resources.cjs`）
+
+画稿层的单调性不再靠画师自觉，改为门禁：
+
+- 每帧计算 `inkMass = Σα`、`density = inkMass/(w·h)`、`equivEdge = √(w·h)`，连同解出的 `sizeMul = LEVEL_SCALE(lv)/equivEdge` 和 `alphaMul` 一起写进**每个 frame 条目的 `nw` 字段**——不是 `meta`：`mergeAtlasPages.js` 只取源 json 的 `data.frames`、`meta` 自己重写，放 `meta` 会被静默丢弃；frame 条目是 `{...f}` 整体展开的，自定义字段能穿过合并落进 `world_atlas.json`，也就是客户端真正加载的那一份。PIXI 的 Spritesheet 只读已知键，忽略 `nw`。
+- **等级读数整条在构建期解完**：渲染层因此不含任何 level→尺寸/透明度逻辑，只剩 `scale = tp × MOTIF_SIZE_FRAC × nw.sizeMul × jitter.scale`、`alpha = nw.alphaMul`。图集成为等级读数的唯一权威，client 与 map-editor 两份渲染器不可能再漂移（旧代码靠注释里的「must stay in lockstep」人肉保证）。
+- **求解**：`reach(lv) = density × LEVEL_SCALE(lv)²` 是满笔时的落屏墨量。从 l1 起按最低可行值**前向贪心**，每级至少比上一级高 `INK_GROWTH = 1.06`，同时每帧 alpha 必须留在 `[ALPHA_MIN=0.85, 1]`。这给出最低可行曲线——某级的 `reach` 连它都达不到（容差 `GATE_EPS = 1.02`），就是**真的画得比下一级还空**，与调参无关。
+- 不达标 pack 直接 `exit 1`，逐帧打印短缺百分比和两条修法（画满这一级，或画淡下一级）。过渡期可 `--report-only` 照常出图（新美术还没到位时不阻塞渲染层开发），CI 不带这个开关。
+- **为什么必须是硬门禁**：alpha 只能把画满的**压淡**，`alpha ≤ 1` 意味着**没法把画空的补浓**。
+
+### 6.4 重画清单（17 张 / 46）
+
+两类并集。**B 类**＝§6.3 门禁实测判定（短缺%＝该帧满笔仍差多少才够压过下一级），**A 类**＝剪影铁律违规，门禁看不见，靠 §6.2 #1 裁决。
+
+| 资源 | 帧 | 类 | 原因 |
+|---|---|---|---|
+| ink | l5 | B | 短缺 7%；圆肚壶偏离 l1–l4 的圆肩直筒瓶族 |
+| | l6 | B | 短缺 9%；换成方肩瓶（轻度换族） |
+| | l7 | B | 短缺 8% |
+| | l8 | **A** | **试管架**＝实验室器材/容器 |
+| | l9 | B | **短缺 85%**（全表最严重）：一个大而空的单体瓶，读作"空"而非"高" |
+| paper | l6 | B | **短缺 129%**（全表之最）：糊成方块/箱，直接违反 §5.3 #3「轮廓要一眼读成一摞纸」 |
+| | l7 | **A** | 换成**卷轴+绑带** |
+| | l9 | **A** | **大圆筒/卷纸**，读作卫生纸卷 |
+| graphite | l5 | B | 短缺 6% |
+| | l6 | B | 短缺 39%；换成瘦长晶柱，偏离尖锐棱块族 |
+| | l8 | **A** | **矿车**＝载具 |
+| | l9 | B | 短缺 15%；单个大晶体独大 + 偏空 |
+| metal | l5 | **A** | 主体夹被碎屑堆**淹没**，剪影读不出（破 §5.3 #3） |
+| | l6 | B | 短缺 15% |
+| | l8 | **A** | **铁盒/罐**＝容器 |
+| | l9 | B | 短缺 41%，量级比 l8 还回退 |
+| sticker | l8 | B | 短缺 8%；**贴纸卷**＝卷状条带 |
+
+> **ink l4 / graphite l4 不在清单里**（初稿曾列为"减密度"）。它们 density 确实冲顶，但门禁改成「保持笔触浓度」判据后，正确修法是把**上面那级画满**，而不是把这级画淡——`0.85` 的 alpha 下限只允许微调，画淡不是可用手段。同理 graphite l3、paper l8 落在 `GATE_EPS` 容差内，不必重画。
+>
+> **系统性规律**：**l8 普遍冒出容器/载具**（试管架、矿车、铁盒、贴纸卷），**l9 普遍是"一个大而空的单体"**（ink 短缺 85%、metal 41%、graphite 15%）。成因就是 §5.4 那句"形态逐级跃迁，追求最佳表现"——它和 §5.3 #3 的剪影铁律在文档内部本就矛盾，本次由 §6.2 #1 裁决。
+
+### 6.5 出图 prompt（接 §5.5 共用前缀 + §5.6 共用负向，另加下面两段增补）
+
+**共用前缀增补**（面积归一后留白直接浪费密度；横向不再被罚）：
+
+```
+The subject fills the frame edge to edge with only a thin even margin — no large
+empty areas anywhere in the frame. The composition may spread horizontally or
+vertically, whichever reads better; wide compositions are not penalised. Draw it
+with dense pen hatching so the whole subject reads dark and solid at a glance —
+not as thin hollow outlines with white interiors.
+```
+
+> 末句是 2026-08-19 第一批出图后补的（§6.6）：8 张不达标的帧里有一半是生成器把主体画成了**空心白轮廓**——瓶子没灌墨、石块不打阴影线、纸叠只有边线。密度是等级读数的载体，必须在 prompt 里明说，不能指望"filling the frame"顺带带出来。
+
+**共用负向增补**：
+
+```
+rack, tray, shelf, crate, box, tin, jar lid, container, cart, wagon, wheels,
+scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
+```
+
+**主体句**（帧名 → prompt）：
+
+- `res_ink_l5`：`A single round-shouldered glass inkwell bottle brimming with ink, its cork lying beside it, a second empty bottle tipped over behind it, ink drops and a spreading blot pooled around both`
+- `res_ink_l6`：`Two round-shouldered glass inkwell bottles standing close together, both filled with ink, a cork and a few ink drops at their base`
+- `res_ink_l7`：`Three round-shouldered glass inkwell bottles clustered close together, all filled with ink, one slightly taller, corks and ink drops scattered at their bases`
+- `res_ink_l8`：`Five round-shouldered glass inkwell bottles packed tightly together in a loose freestanding cluster, all filled with ink, corks and ink drops crowded around their bases`
+- `res_ink_l9`：`Seven round-shouldered glass inkwell bottles crowded together in a dense freestanding heap at slightly varied heights, all filled with ink, several corks and a spreading ink blot pooled underneath`
+- `res_paper_l6`：`A tall loose stack of blank sheets with a second shorter stack leaning against it, edges fanned and uneven, a few loose sheets sliding off the top`
+- `res_paper_l7`：`Two tall loose stacks of blank sheets standing side by side, edges fanned and uneven, several loose sheets slipping out between them`
+- `res_paper_l9`：`Five loose stacks of blank sheets crowded together at differing heights, edges fanned and uneven, loose sheets spilling all around their bases`
+- `res_graphite_l5`：`A single large angular faceted graphite ore chunk standing upright with a generous loose scatter of ore shards heaped all around its base, hatching on two facets`
+- `res_graphite_l6`：`Two angular faceted graphite ore chunks of different sizes resting against each other, a scatter of small ore shards heaped around their bases`
+- `res_graphite_l8`：`A dense freestanding pile of six angular faceted graphite ore chunks heaped up, smaller shards filling the gaps between them`
+- `res_graphite_l9`：`A dense freestanding heap of eight angular faceted graphite ore chunks piled together, many small shards filling every gap, no single chunk dominating`
+- `res_metal_l5`：`A single metal binder clip standing clearly in front of a loose heap of small metal hardware, the clip's triangular body and two looped wire handles fully readable against the heap`
+- `res_metal_l6`：`Two metal binder clips standing side by side, one slightly turned, with a scatter of small metal bits and fasteners heaped around their bases`
+- `res_metal_l8`：`Five metal binder clips packed tightly together at different angles in a freestanding cluster, small metal bits filling the gaps between them`
+- `res_metal_l9`：`Seven metal binder clips crowded into a dense freestanding heap at varied angles, looped wire handles overlapping, small metal hardware filling every gap`
+- `res_sticker_l8`：`A thick stack of star-shaped stickers with more loose stars fanned out around it, several stars overlapping the stack`
+
+> **⚠️ 新美术落地时会撞上一个管线陷阱**：客户端真正加载的是**合并页** `client/src/assets/slg/world_atlas.{png,json}`，而 2026-07-27 的资产整理把 `terrain/city/playerbase/building/city_bld` 这些源图集**从仓库里删掉了**，`mergeAssetAtlases.js` 已不可重跑（缺输入）。本次因为画稿未变、帧尺寸未变，可以用 `node art/scripts/patchMergedAtlas.js client/src/assets/slg/res_atlas.json client/src/assets/slg/world_atlas.json` 就地回贴（它会连带搬运 `nw` 这类自定义 per-frame 字段）。**但新画稿的长宽比一定会变，帧尺寸随之改变，`patchMergedAtlas.js` 会直接拒绝**（它只支持同尺寸回贴）。届时必须：从 git 历史恢复那几个被删的源图集 → 重跑 `mergeAssetAtlases.js` 做整页重排 → 或者给 patch 脚本加"重排整页"能力。**出图之前先把这条路打通**，否则图出完了进不去客户端。
+>
+> **20 → 17 张的调整**：`res_ink_l4` / `res_graphite_l4` / `res_graphite_l3` / `res_paper_l8` 的 prompt 已撤（理由见 §6.4 末），新增 `res_graphite_l5`。
+>
+> 出图后丢进 `art/slg/slg-map/` 重跑 `node art/slg/slg-map/pack_resources.cjs`——§6.3 的校验器会直接判定通过/不通过，不达标的帧会打印在违规表里，按表迭代即可。**不需要人肉目测单调性。**
+
+### 6.6 第一批出图落地（2026-08-19）
+
+17 张出图，**13 张落地，1 张退回，4 张需重出**；同时新图把 4 张留用的老帧比了下去，也进入重画队列。
+
+**落地 13 张**（`art/leftover/res_*.pre-2026-08-19.*` 保留了被替换的旧帧）：ink l5/l6/l8/l9、paper l7/l9、graphite l6/l9、metal l5/l6/l8/l9、sticker l8。剪影违规全部修掉——l8 那批容器/载具（试管架、矿车、铁盒、贴纸卷）没了，metal l5 的夹子从碎屑堆里露出来了，paper l6 不再是方块。
+
+**退回 1 张**：`graphite_l5` 新图密度 0.087 反而低于旧帧 0.115，且画成细长晶柱（往 l6 那个已判违规的毛病上飘）→ 旧帧恢复，新图存 `art/leftover/res_graphite_l5.rejected-2026-08-19-too-sparse.webp`。
+
+**新增管线修正：强制灰度化**。新图带蓝调（`b-r` +6~+51），而它们要并排的老帧全是中性黑（+0~+7），在地图上读作"换了支笔"。`pack_resources.cjs` 现在把所有帧的 RGB 折成 luma 再打包（sticker 的色带在这之后施加，铜→金不受影响）——不靠出图纪律，hue 漂移结构上不可能再发生。
+
+**待重出 8 张**：
+
+| 帧 | 现状 | 判定 | 病因 |
+|---|---|---|---|
+| `res_ink_l7` | 新图 0.246 | 差 22% | 三只瓶子画成了**空玻璃瓶**，没灌墨（prompt 写了 all filled，生成器没照做） |
+| `res_ink_l10` | 旧帧 0.210 | 差 49% | 新 l9 密度 0.379 已经反超顶级，l10 必须是全系最满的一张 |
+| `res_graphite_l5` | 旧帧 0.115 | 差 6% | 旧帧本身偏空（新图更差已退回） |
+| `res_graphite_l7` | 旧帧 0.105 | 差 18% | 被新 l6（0.152）反超 |
+| `res_graphite_l8` | 新图 0.095 | 差 7% | 石块画成**圆钝白多面体**、无阴影线、缝隙没碎屑填充 |
+| `res_metal_l7` | 旧帧 0.135 | 差 19% | 被新 l6（0.197）反超 |
+| `res_paper_l6` | 新图 0.078 | 差 66% | 纸叠只有**空心边线**，侧面没有密集叠层线与排线 |
+| `res_paper_l8` | 旧帧 0.083 | 差 55% | 被新 l7（0.157）反超 |
+
+> **规律**：新画稿普遍比同族老帧密得多，于是"偏空"的判定自动传导到了相邻的老帧上。这正是门禁该有的行为——它不认"这张是新出的"，只认整条曲线。第二批要盯的是**密度**，剪影这一关已经过了。
+
+### 6.7 判据再修正：墨量「不许倒挂」，不是「必须递增」（2026-08-19 第二批后 · 权威）
+
+**「墨量随等级单调递增」这个要求本身不可满足**，而不是画稿不努力。实测证据：
+
+> `res_ink_l4` 是**一只**灌满墨的瓶子，density **0.390**；`res_ink_l9` 是**七只**瓶子，density **0.376**。
+
+等面积归一下，一个大而实心的物体天然比一群带白玻璃间隙的小物体更密。于是「**物件数**」和「**墨量**」互相竞争——要求两者同时随等级递增，任何画稿都做不到。两轮出图把这个矛盾演示了一遍：批 1 偏空 3–4 倍（l6 那批"跳到多体大簇"），我在 prompt 里加了 `dense pen hatching / reads dark and solid`，批 2 就回来了偏满 3–4 倍（graphite l8 density 0.637、metal l7 0.585，而同族邻帧只有 0.15）。**用形容词调密度会震荡，不会收敛。**
+
+**新判据**：`R(lv) = density × LEVEL_SCALE(lv)²` 必须始终不低于「它下方所有等级里最重的那个」的 90%（`INK_TOLERANCE = 0.10`）。也就是只禁止**读反**，不要求每级都更重。
+
+- 为什么这样才对：玩家真正需要的是「不要去打明显打不过的格子」，也就是**高等级绝不能看起来比低等级资源少**。相邻等级的可分辨性由**占地曲线**（代码保证单调，画稿破坏不了）+ **物件数** + **l6 起的 `Lv.N` 文字标签**三条通道承担，不该压在墨量上。
+- 求解时每帧都取「规则允许的最轻」（alpha 可在 `[0.85,1]` 内削），这样单张过黑的画稿不会把它上面所有等级的门槛一起抬高。这条余量实测很有用：graphite l7/l8、metal l7/l8 都是靠把下方那张过黑的帧削 15% 才通过的——15% 在格子尺寸上看不出来，但能换回正确的读数。
+- 报错指名**下方那张卡住它的帧**，因为那张和触发检查的这张一样可能是真凶（批 2 就是这样失败的），并直接给出目标 density。
+
+**第二批落地**：8 张里只留 `res_ink_l10`（顶级最重方向正确，补掉旧帧差 49% 的缺口）；其余 7 张过黑，退回上一版，批 2 文件存 `art/leftover/res_*.rejected-b2-too-dark.*`。另 `res_paper_l6` 那张带**内缩 13px 的画框**，边缘检测抓不到 → `pack_resources.cjs` 新增 `stripBorderRing()` 环扫描（四边同一内缩处同时变黑即判定），自动剥除并打印警告。
+
+**当前仍读反的 3 张**（新判据下）：
+
+| 帧 | 现 density | 目标 | 处境 |
+|---|---|---|---|
+| `res_ink_l7` | 0.246 | ≈0.28–0.36 | 比 l6（0.365）轻 13%。批 1 版瓶子是空玻璃（0.243），批 2 版实心黑（0.518），两头都不对 |
+| `res_paper_l6` | 0.078 | ≈0.12–0.17 | 比 l5（0.152）轻 36% |
+| `res_paper_l8` | 0.083 | ≈0.12–0.17 | 比 l7（0.155）轻 32% |
+
+**第三批 prompt 的写法改变**（不再用形容词描述密度，改用可复现的几何指令）：
+1. **禁止实心填充**：`no area is ever filled solid black; the darkest tone is parallel pen hatching with white paper visible between the strokes`。
+2. **锁定排线占空比**：`the gaps between hatching strokes are as wide as the strokes themselves` —— 排线区恒定约 50% 覆盖率，这是唯一能让色调可预测的说法。
+3. **锁定排线面积占比**：`hatch only <具体部位>，其余表面保持纯白` —— 用部位而不是程度来控制总量。
+
+### 6.8 第三批（3 张）· 几何指令写法验证成功，但要给"墨液"开个口子
+
+**paper l6 / l8 一次命中**：`density 0.160 / 0.138`，落在目标带 0.12–0.17 内，门禁直接通过。paper 全族现在 l4–l10 = `0.126 / 0.159 / 0.160 / 0.157 / 0.138 / 0.172 / 0.171`——齐整到这个程度，说明 §6.7 那三条几何指令（禁实心、排线间距=线宽、按部位而非程度控制排线面积）是可复现的写法，形容词不是。
+
+**ink l7 再次落空，是我的 prompt 有缺陷**：目标 0.28–0.36，实际 **0.153**（比批 1 的 0.246 还低，已存 `art/leftover/res_ink_l7.candidate-b3-0.153.webp`，未采用）。病因是负向里的 `solid black fill / blacked-in shape / ink wash` ——**对墨水瓶来说瓶里的墨本来就是一块实心黑**，ink 全族 l4–l10 都是这么画的（density 0.344–0.514）。禁令一刀切下去，墨液变成了稀疏排线，密度直接砍半。
+
+> **规则修正**：§6.7 第 1 条「禁止实心填充」的适用范围是**物体的材质表面**（玻璃、石棱、金属、纸），**不含被容纳的液体**。墨水瓶里的墨、溢出的墨渍照旧画实心黑——那是 ink 这一族的家族特征，也是它区别于其它四族的剪影依据之一。写 ink 的 prompt 时必须从负向里删掉这几个词。
+
+### 6.9 第四批（ink l7 第三次）· 密度对了但笔触跑了 —— 「墨的画法」定版
+
+`density 0.379`（目标带 0.30–0.38 顶端）、无画框、无蓝调，主体数量全对。**但笔触是另一支笔**：粗而均匀的描边 + 纯平涂实心黑，完全没有排线质感；同族 l4/l6/l8/l9 都是速写钢笔（细而有变化的线，墨是密排交叉线，近看能看出笔画）。存 `art/leftover/res_ink_l7.candidate-b4-0.379-wrong-pen.png`，未采用。
+
+病因是我 §6.8 的修正过冲：prompt 写成 `SOLID BLACK MASS — completely opaque, no white showing through`，把生成器推进了平涂矢量模式，描边跟着一起变粗。
+
+> **「墨」的画法定版（三档里取中间那档）**：
+> - ❌ 排线间距=线宽（§6.7 通用档）→ density 0.153，太浅
+> - ❌ 完全不透明平涂 → density 0.379 但笔触变粗描边+平涂，破坏"一支笔"
+> - ✅ **密排交叉线，笔画几乎相接、区域远看近黑，近看仍是笔画，缝隙间留少量白点** ← ink 族专用档，就是 l6/l8/l9 的实际画法
+>
+> 一并写进 ink 的 prompt：`thin sketchy varied-width pen strokes throughout, bottle outlines thin and slightly broken, never a thick uniform contour`；负向补 `flat fill, solid flat black area, vector, sticker art, thick uniform outline, crisp clean edges`。
+
+### 6.10 收尾状态与剩余工作（2026-08-19）
+
+**美术侧已完成**：五轮出图共 30 张，落地 17 张，46 个分级帧全部通过 §6.7 门禁。被换下的旧帧与落选候选全在 `art/leftover/`（`pre-*` = 被替换的旧帧，`rejected-*` = 判定不合格，`candidate-*` = 同一槽位的落选版本），未删除。
+
+**构建期长出的四道自动防线**（都是被真实事故打出来的，不是预设计）：
+
+| 防线 | 触发事故 |
+|---|---|
+| 墨量倒挂门禁（§6.7） | 用户圈出 4 级墨水地"明显不是一种地" |
+| 强制灰度化（§6.6） | 新图带蓝调 `b-r +6~+52`，老帧全中性黑 |
+| 画框环扫描（§6.7 末） | `res_paper_l6` 带内缩 13px 的画框，边缘检测抓不到 |
+| 实心平涂占比（§6.9） | ink l7 密度达标但变成粗描边+平涂，破坏"一支笔" |
+
+**剩余工作（未开始）**：
+
+1. **整页重排（阻塞项，必须先做）**：客户端读的是合并页 `client/src/assets/slg/world_atlas.{png,json}`，而本次 17 张新帧的**尺寸全变了**，`patchMergedAtlas.js` 只支持同尺寸就地回贴、会直接拒绝。必须从 git 历史恢复被 2026-07-27 资产整理删掉的源图集（`terrain_atlas` / `city_atlas` / `playerbase_atlas` / `building_atlas` / `city_bld_atlas`）后重跑 `mergeAssetAtlases.js`，或给 patch 脚本加整页重排能力。**在这一步完成前，新美术在游戏里看不到。**
+2. **渲染层接线**：`drawResMotif` 改为消费 `nw.sizeMul` / `nw.alphaMul`（等级→尺寸/透明度逻辑全部删掉，图集已是唯一权威）；抖动 `scale` 从 `[0.85,1.15]` 收窄到 `[0.96,1.04]`（`rot`/`dx`/`dy` 保留）。
+3. **两份渲染器合并**：`client/src/scenes/worldmap/tileGraphics/resources.ts` 与 `tools/map-editor/src/render/tileGraphics.ts` 目前是复制粘贴、靠注释里的「must stay in lockstep」人肉保证。纯计算下沉到 `@nw/shared/slg`（两边都已 import 它），各留一个贴图适配器。
+4. **`Lv.N` 文字标签**（§6.2 #7）：仅 l6+ 且近 zoom 显示；用位图数字图集或 `BitmapText`，**不要每格 `new PIXI.Text`**（Text 纹理销毁泄漏）。
+5. **验收**：contact-sheet 生成器进 `art/scripts/`；同 resType 同 level 随机 200 组 `(tx,ty)` 渲染包围盒极差 < 5% 的单测；起客户端在混合等级区截图对比。
