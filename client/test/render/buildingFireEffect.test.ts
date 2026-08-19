@@ -60,6 +60,8 @@ import { Building } from '@nw/engine/Building';
 import { BuildingType, Side } from '@nw/engine/types';
 import type { Board } from '@nw/engine/Board';
 import type { BoardView } from '../../src/render/BoardView';
+import towerArtUrl from '../../src/assets/buildings/game_arrow_tower.png';
+import barracksArtUrl from '../../src/assets/buildings/game_infantry_barracks.png';
 
 const TOWER_ID = 7;
 const COL = 3, ROW = 0;
@@ -74,14 +76,25 @@ const boardView = {
   gridToScreen: (col: number, row: number) => ({ x: col * 60, y: 500 - row * 60 }),
 } as unknown as BoardView;
 
-function towerAt(col = COL, row = ROW): Building {
-  return new Building(BuildingType.ArrowTower, Side.Bottom, col, row, undefined, TOWER_ID);
+/** Landscape-shaped stub: rows run along x, so a shot kicks the sprite horizontally. */
+const rotatedBoardView = {
+  gridToScreen: (col: number, row: number) => ({ x: 500 - row * 60, y: col * 60 }),
+} as unknown as BoardView;
+
+function towerAt(col = COL, row = ROW, id = TOWER_ID): Building {
+  return new Building(BuildingType.ArrowTower, Side.Bottom, col, row, undefined, id);
 }
 
-function spriteOf(view: BuildingView, id: number): { x: number; y: number } {
-  const container = (view as unknown as { sprites: Map<number, { getChildByName(n: string): { x: number; y: number } }> })
-    .sprites.get(id)!;
+function spriteOf(view: BuildingView, id: number): { x: number; y: number; texture: { url: string } } {
+  const container = (view as unknown as {
+    sprites: Map<number, { getChildByName(n: string): { x: number; y: number; texture: { url: string } } }>;
+  }).sprites.get(id)!;
   return container.getChildByName('sprite');
+}
+
+/** Pin the idle phase so the bob term is deterministic — see the note in beforeEach. */
+function pinPhase(view: BuildingView, id: number): void {
+  (view as unknown as { phases: Map<number, number> }).phases.set(id, 0);
 }
 
 describe('BuildingView.playFireEffect', () => {
@@ -96,7 +109,7 @@ describe('BuildingView.playFireEffect', () => {
     // coin flip and any assertion on the sprite's absolute offset is flaky by construction — this
     // very test passed alone and failed in the full run before the phase was pinned. Pinned to 0:
     // at time 0 the bob contributes exactly 0, leaving the recoil as the only thing moving.
-    (view as unknown as { phases: Map<number, number> }).phases.set(TOWER_ID, 0);
+    pinPhase(view, TOWER_ID);
     view.sync(board);
   });
 
@@ -147,5 +160,69 @@ describe('BuildingView.playFireEffect', () => {
     view.update(0.5);
     view.sync(board);
     expect(gfx.strokes).toBe(0);
+  });
+
+  it('leaves every other tower alone when one of them shoots', () => {
+    const other = towerAt(COL + 2, ROW, TOWER_ID + 1);
+    board = boardWith(towerAt(), other);
+    view.sync(board);
+    pinPhase(view, TOWER_ID);
+    pinPhase(view, TOWER_ID + 1);
+    view.sync(board);
+    const otherBefore = spriteOf(view, TOWER_ID + 1).y;
+
+    view.playFireEffect(TOWER_ID, COL, ROW);
+    view.sync(board);
+
+    expect(spriteOf(view, TOWER_ID).y - 0).toBeCloseTo(2.8, 5);          // the shooter kicks
+    expect(spriteOf(view, TOWER_ID + 1).y).toBe(otherBefore);            // its neighbour does not
+  });
+
+  it('does not carry a kick into a barracks that reuses the pooled container', () => {
+    // Two things have to line up for this to test anything. It needs the LANDSCAPE layout, because
+    // only there does the kick have an x component at all (portrait kicks purely along y, which the
+    // bob rewrites every frame anyway). And the container has to be reused by a BARRACKS: the tower
+    // branch rewrites sprite.x every frame and would mask the bug, while the barracks branch returns
+    // before touching it. Verified by deleting the reset line — a tower here still passed.
+    const lView = new BuildingView(rotatedBoardView);
+    const lBoard = boardWith(towerAt());
+    lView.sync(lBoard);
+    pinPhase(lView, TOWER_ID);
+    lView.playFireEffect(TOWER_ID, COL, ROW);
+    lView.sync(lBoard);
+    expect(Math.abs(spriteOf(lView, TOWER_ID).x)).toBeGreaterThan(1);
+
+    lView.sync(boardWith());                                 // tower gone → container released
+    const reused = new Building(BuildingType.Barracks, Side.Bottom, COL + 1, ROW, undefined, TOWER_ID + 5);
+    lView.sync(boardWith(reused));
+    expect(spriteOf(lView, TOWER_ID + 5).x).toBeCloseTo(0, 10);
+  });
+
+  it('kicks along whichever screen axis the current orientation maps the enemy row to', () => {
+    // Landscape lays the board's rows out along x instead of y (verified in a real capture: the
+    // recoil landed on x). shotDirection() recomputes per shot from gridToScreen, so the same cell
+    // must produce a horizontal kick under a rotated layout.
+    const rotatedView = new BuildingView(rotatedBoardView);
+    const rotatedBoard = boardWith(towerAt());
+    rotatedView.sync(rotatedBoard);
+    pinPhase(rotatedView, TOWER_ID);
+    rotatedView.sync(rotatedBoard);
+
+    rotatedView.playFireEffect(TOWER_ID, COL, ROW);
+    rotatedView.sync(rotatedBoard);
+    const sp = spriteOf(rotatedView, TOWER_ID);
+    expect(sp.x).toBeCloseTo(2.8, 5);      // horizontal now
+    expect(sp.y).toBeCloseTo(0, 5);        // and nothing vertical beyond the pinned bob
+  });
+
+  it('gives each building type its own art — the two used to share one file', () => {
+    // The tower spent a long release borrowing game_archer_barracks.png, the barracks' neighbour in
+    // spirit and in filename. Swapping the asset touches four wiring sites; this pins the two that
+    // decide what the board actually draws.
+    const both = boardWith(towerAt(), new Building(BuildingType.Barracks, Side.Bottom, COL + 1, ROW, undefined, TOWER_ID + 3));
+    view.sync(both);
+    expect(spriteOf(view, TOWER_ID).texture.url).toBe(towerArtUrl);
+    expect(spriteOf(view, TOWER_ID + 3).texture.url).toBe(barracksArtUrl);
+    expect(towerArtUrl).not.toBe(barracksArtUrl);
   });
 });
