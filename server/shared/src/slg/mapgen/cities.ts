@@ -85,7 +85,16 @@ export function _worldCityNodes(mapW: number, mapH: number, seed: number): reado
   return nodes;
 }
 
-/** One siege-point node, for editor consumption (DESIGN.md §6.2 data form: point nodes, not tile coverage). */
+/**
+ * One siege-point node (DESIGN.md §6.2 data form: point nodes, not tile coverage).
+ *
+ * No longer editor-only, despite the name (kept to avoid a rename across client/editor/server call
+ * sites): since 2026-08-19 this is also the PUBLISHED form — the map editor uploads its (possibly
+ * dragged) node list next to the tile diff, worldsvc stores it on the template, clones it into each
+ * world at world-open, and serves it back on `POST /world/enter` so the game's city sprite layer draws
+ * the cities that are actually there instead of recomputing `allCityNodes()` from the seed. See
+ * `rasterizeMapEdits` (mapEdit.ts) for the tile side of the same publish.
+ */
 export interface MapEditorCityNode {
   id: string;
   kind: 'capital' | 'worldCenter' | 'garrison';
@@ -101,9 +110,17 @@ export interface MapEditorCityNode {
 /**
  * All siege-point nodes for a world (ADR-034 §3), flattened for the map editor's city-drag tool (§6.1):
  * world center (1) + province capitals (9, excludes the core province — its "capital" *is* the world
- * center) + graded cities from `_worldCityNodes`. Editor-only — `proceduralTile()` above computes
- * these positions independently (not from this list) for the runtime tile classification. Crossings
- * (bridge/plankway) are terrain tiles, not city nodes, so they are not listed here.
+ * center) + graded cities from `_worldCityNodes`. `proceduralTile()` above computes these positions
+ * independently (not from this list) for the runtime tile classification. Crossings (bridge/plankway)
+ * are terrain tiles, not city nodes, so they are not listed here.
+ *
+ * This is the SEED-DERIVED node list — the editor's starting point, and the fallback for a world whose
+ * template predates published city nodes. It is NOT what the game should render for a world cloned from
+ * an edited template: read the served list (`POST /world/enter`'s `cities`) instead, which reflects any
+ * drag the designer published. Two ways this function is wrong for such a world: dragged nodes obviously
+ * moved, and — even with nothing dragged — a template is generated with `proceduralTile(templateId, …)`,
+ * so a world whose id differs from its templateId gets terrain on the template's seed but would get
+ * cities on its own.
  */
 export function allCityNodes(worldId: string): MapEditorCityNode[] {
   const seed = worldSeed(worldId);
@@ -126,4 +143,57 @@ export function allCityNodes(worldId: string): MapEditorCityNode[] {
     nodes.push({ id: `garrison-${garrisonIdx++}`, kind: 'garrison', provinceIdx: node.provinceIdx, x: node.x, y: node.y, level: node.level, footprint: cityFootprint(node.level) });
   }
   return nodes;
+}
+
+/**
+ * Every tile `proceduralTile()` classifies as city GROUND for `worldId`: the world center's whole
+ * `WORLD_CENTER_FOOTPRINT`×`WORLD_CENTER_FOOTPRINT` block, plus the single anchor tile of each province
+ * capital and graded city. Note the asymmetry — only the world center covers its full footprint in the
+ * procedural output; a capital/garrison city is one `familyKeep` tile with its sprite drawn over the
+ * surrounding land (see `cityFootprint`). The map editor's publish path needs this list to hand a
+ * VACATED anchor back to the terrain when a designer drags that city elsewhere (see
+ * `rasterizeMapEdits`). Derived from `allCityNodes()` so it cannot drift from the node list itself; a
+ * regression test pins it against `proceduralTile()`.
+ */
+export function proceduralCityGroundTiles(worldId: string): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (const node of allCityNodes(worldId)) {
+    if (node.kind !== 'worldCenter') {
+      out.push({ x: node.x, y: node.y });
+      continue;
+    }
+    const r = (WORLD_CENTER_FOOTPRINT - 1) / 2;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) out.push({ x: node.x + dx, y: node.y + dy });
+    }
+  }
+  return out;
+}
+
+/** The three node kinds a published city list may carry (see {@link MapEditorCityNode.kind}). */
+const _CITY_KINDS: readonly MapEditorCityNode['kind'][] = ['capital', 'worldCenter', 'garrison'];
+
+/**
+ * Validates an untrusted city-node list (the admin publish payload) into `MapEditorCityNode[]`, or
+ * throws. Lives here rather than in the worldsvc route so the map editor's own JSON import
+ * (`CityStore.loadFromJSON`) and the server agree on exactly one notion of "a well-formed node".
+ * Coordinates must be integers inside the map; `footprint` must be a positive odd number (the
+ * rasterizer centers the plot on the node, so an even side length has no center tile).
+ */
+export function parseCityNodes(raw: unknown): MapEditorCityNode[] {
+  if (!Array.isArray(raw)) throw new Error('expected an array of city nodes');
+  return raw.map((entry, i) => {
+    const n = entry as Partial<MapEditorCityNode>;
+    const bad = (why: string): never => { throw new Error(`city node #${i}: ${why}`); };
+    if (typeof n.id !== 'string' || !n.id) bad('id must be a non-empty string');
+    if (!_CITY_KINDS.includes(n.kind as MapEditorCityNode['kind'])) bad(`invalid kind ${String(n.kind)}`);
+    if (!Number.isInteger(n.x) || n.x! < 0 || n.x! >= SLG_MAP_W) bad(`x out of range: ${String(n.x)}`);
+    if (!Number.isInteger(n.y) || n.y! < 0 || n.y! >= SLG_MAP_H) bad(`y out of range: ${String(n.y)}`);
+    if (!Number.isInteger(n.level) || n.level! < 1 || n.level! > SLG_MAP_MAX_LEVEL) bad(`level out of range: ${String(n.level)}`);
+    if (!Number.isInteger(n.footprint) || n.footprint! < 1 || n.footprint! % 2 === 0) bad(`footprint must be a positive odd integer: ${String(n.footprint)}`);
+    return {
+      id: n.id!, kind: n.kind!, x: n.x!, y: n.y!, level: n.level!, footprint: n.footprint!,
+      ...(Number.isInteger(n.provinceIdx) ? { provinceIdx: n.provinceIdx! } : {}),
+    };
+  });
 }

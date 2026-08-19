@@ -1,9 +1,10 @@
-// Map template e2e (SLG_DESIGN §24 Layer A): generate/list/getTiles/saveTilesDiff/activate/delete + clone-on-open.
+// Map template e2e (SLG_DESIGN §24 Layer A): generate/list/getTiles/saveTilesDiff/get+saveCities/activate/delete
+// + clone-on-open (tiles AND city nodes).
 // Real Mongo (dedicated database); entire suite skipped if Mongo is unreachable.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
-import { proceduralTile, tileAtX } from '@nw/shared';
+import { allCityNodes, proceduralTile, tileAtX } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 import { MapTemplateService } from '../src/mapTemplateService';
@@ -127,6 +128,43 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
     expect(list.data.map((t) => t.templateId)).not.toContain('tpl-b');
   });
 
+  // ── City siege-point nodes (§24 point-node layer, 2026-08-19) ──────────────────────────────
+  it('getCities falls back to allCityNodes(templateId) for a template that never published a list', async () => {
+    const r = await fetch(`${base}/admin/world/map-templates/tpl-a/cities`, { headers });
+    expect(r.status).toBe(200);
+    const b = (await r.json()) as { data: Array<{ id: string }> };
+    // The templateId IS the generation seed (generateTemplate runs proceduralTile(templateId, …)), so the
+    // fallback must key off it — not off any world id.
+    expect(b.data.map((n) => n.id)).toEqual(allCityNodes('tpl-a').map((n) => n.id));
+  });
+
+  it('saveCities replaces the list wholesale and reads back', async () => {
+    const nodes = allCityNodes('tpl-a').slice(0, 3).map((n) => ({ ...n, x: 4, y: 6 }));
+    const put = await fetch(`${base}/admin/world/map-templates/tpl-a/cities`, {
+      method: 'PUT', headers, body: JSON.stringify({ cities: nodes }),
+    });
+    expect(put.status).toBe(200);
+    expect((await put.json()) as { data: { updated: number } }).toMatchObject({ data: { updated: 3 } });
+
+    const r = await fetch(`${base}/admin/world/map-templates/tpl-a/cities`, { headers });
+    const b = (await r.json()) as { data: Array<{ x: number; y: number }> };
+    expect(b.data).toHaveLength(3);
+    expect(b.data.every((n) => n.x === 4 && n.y === 6)).toBe(true);
+  });
+
+  it('saveCities rejects a malformed node and a node outside the template bounds', async () => {
+    const valid = allCityNodes('tpl-a')[0]!;
+    const bad = await fetch(`${base}/admin/world/map-templates/tpl-a/cities`, {
+      method: 'PUT', headers, body: JSON.stringify({ cities: [{ ...valid, kind: 'fortress' }] }),
+    });
+    expect(bad.status).toBe(400);
+    // Inside SLG_MAP_W/H (parseCityNodes passes) but outside this 10x10 template — caught by saveCities.
+    const oob = await fetch(`${base}/admin/world/map-templates/tpl-a/cities`, {
+      method: 'PUT', headers, body: JSON.stringify({ cities: [{ ...valid, x: 500, y: 500 }] }),
+    });
+    expect(oob.status).toBe(400);
+  });
+
   it('opening a world clones the active template into mapBaselineRows (copy, not a live reference)', async () => {
     const openRes = await fetch(`${base}/admin/world/open`, {
       method: 'POST', headers, body: JSON.stringify({ worldId: 's9-tpl', season: 9, shard: 1, capacity: 100 }),
@@ -191,5 +229,31 @@ describe.skipIf(!mongo)('worldsvc map template e2e (§24)', () => {
     const single = await svc.getTile(wid, 'reader-acct', 5, 5);
     expect(single.type).toBe(proc.type);
     expect(single.level).toBe(proc.level);
+  });
+
+  it('opening a world clones the template city nodes onto the WorldDoc, and getCities serves them', async () => {
+    // tpl-a is active and, by now, carries the 3-node list saveCities wrote above.
+    const wid = 's9-cities';
+    const openRes = await fetch(`${base}/admin/world/open`, {
+      method: 'POST', headers, body: JSON.stringify({ worldId: wid, season: 9, shard: 3, capacity: 100 }),
+    });
+    expect(openRes.status).toBe(200);
+
+    const world = await m.collections.worlds.findOne({ _id: wid });
+    expect(world!.cities).toHaveLength(3);
+    // Served list == the clone, NOT allCityNodes(wid) — which is the whole point: this world's terrain came
+    // from tpl-a's seed and its cities were hand-placed.
+    const served = await svc.getCities(wid);
+    expect(served).toEqual(world!.cities);
+    expect(served.map((n) => n.id)).not.toEqual(allCityNodes(wid).map((n) => n.id));
+  });
+
+  it('getCities falls back to allCityNodes(worldId) for a world with no stored list (pre-2026-08-19)', async () => {
+    const wid = 's9-nocities';
+    await m.collections.worlds.insertOne({
+      _id: wid, season: 9, shard: 4, status: 'open', mapW: 20, mapH: 20,
+      openAt: Date.now(), capacity: 100, population: 0, rev: 1,
+    });
+    expect(await svc.getCities(wid)).toEqual(allCityNodes(wid));
   });
 });

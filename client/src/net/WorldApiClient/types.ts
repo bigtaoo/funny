@@ -45,6 +45,13 @@ export type FamilyMessageView = socialComponents['schemas']['FamilyMessageView']
 export type AuctionView = auctionComponents['schemas']['AuctionView'];
 export type NationView = components['schemas']['NationView'];
 export type SeasonView = components['schemas']['SeasonView'];
+/**
+ * One NPC city siege-point node as the SERVER reports it (ADR-034 §3) — structurally the shared
+ * `MapEditorCityNode`. The world map's city sprite layer must draw this list rather than recompute
+ * `allCityNodes(worldId)` locally: cities can be dragged in tools/map-editor and published, and a
+ * template's terrain is generated on the templateId's seed, not the world's own.
+ */
+export type WorldCityNodeView = components['schemas']['WorldCityNodeView'];
 export type SlgShopItemView = components['schemas']['SlgShopItemView'];
 export type SiegeReplayView = components['schemas']['SiegeReplayView'];
 export type SiegeSummaryView = components['schemas']['SiegeSummaryView'];

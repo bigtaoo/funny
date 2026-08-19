@@ -67,6 +67,7 @@ export class WorldService {
   coordY(tid: string): number { return this.core.coordY(tid); }
   capitalsFor(worldId: string): readonly [number, number][] { return this.core.capitalsFor(worldId); }
   getMe(worldId: string, accountId: string): Promise<PlayerWorldView> { return this.core.getMe(worldId, accountId); }
+  getCities(worldId: string): ReturnType<WorldCore['getCities']> { return this.core.getCities(worldId); }
   getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     return this.core.getTile(worldId, accountId, x, y);
   }
@@ -253,9 +254,13 @@ export class WorldService {
     const cy = me.mainBaseTile ? this.coordY(me.mainBaseTile) : Math.floor(this.deps.mapH / 2);
     const lod = zoom === 3 ? 'thin' : 'mid';
 
-    const [season, nations, map, mapSparse, marches, occupations, stationed] = await Promise.all([
+    // `cities` (2026-08-19): the world's ~64 city siege-point nodes, cloned from its map template at
+    // world-open. Sent here rather than from a route of its own because the city sprite layer needs it
+    // exactly once per world-map entry — the same cadence as season/nations, and one fewer round-trip.
+    const [season, nations, cities, map, mapSparse, marches, occupations, stationed] = await Promise.all([
       this.getSeason(worldId),
       this.getNations(worldId),
+      this.getCities(worldId),
       zoom === 1 ? this.getMap(worldId, accountId, cx, cy, r) : Promise.resolve(undefined),
       zoom !== 1 ? this.getMapSparse(worldId, accountId, cx, cy, r, lod) : Promise.resolve(undefined),
       this.getMarches(worldId, accountId),
@@ -264,7 +269,7 @@ export class WorldService {
     ]);
 
     return {
-      season, nations, marches, occupations, stationed,
+      season, nations, cities, marches, occupations, stationed,
       me: { ...me, justJoined },
       ...(map ? { map } : {}),
       ...(mapSparse ? { mapSparse } : {}),

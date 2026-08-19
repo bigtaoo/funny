@@ -47,7 +47,10 @@ export function renderBaseMap(worldId: string): void {
   // (cheap: bounded by total city footprint area, not the whole painted grid), then overlay the
   // painted terrain grid directly (no distance/segment math needed — the grid already IS the tile
   // state, so this is a straight Map copy rather than a re-rasterization).
-  const cityDiffs = rasterizeMapEdits(worldId, [], cityStore.nodes);
+  // citiesAreComplete: cityStore.nodes IS the whole city layer, so a city dragged off its procedural
+  // anchor gives that tile back to the terrain instead of leaving a phantom plot behind. Must match the
+  // Publish call in ui/publish.ts exactly — that identity is what makes this preview WYSIWYG.
+  const cityDiffs = rasterizeMapEdits(worldId, [], cityStore.nodes, { citiesAreComplete: true });
   diffCache = new Map(cityDiffs.map((d) => [`${d.x}:${d.y}`, d]));
   const CROSSING_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
   for (const [key, kind] of terrainStore.cells) {

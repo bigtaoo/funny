@@ -66,8 +66,12 @@ export function drawEditorTile(g: PIXI.Graphics, tile: ProceduralTile, texName: 
     drawResMotif(g, tile.resType, tile.level, tp, tx, ty);
   }
 
-  const featBuilding = tile.type === 'familyKeep' ? 'building_keep'
-    : tile.type === 'stronghold' ? 'building_stronghold'
+  // City GROUND (`familyKeep`/`center`) deliberately stamps NOTHING here — the city's art is the single
+  // footprint-sized sprite render/citySprites.ts draws from cityStore.nodes. `familyKeep` used to stamp
+  // `building_keep`, which turned every published city's N×N footprint into a wall of overlapping
+  // gatehouses under its own sprite (dropped 2026-08-19; kept in lockstep with the game client's
+  // drawTileL1 — SLG map render parity).
+  const featBuilding = tile.type === 'stronghold' ? 'building_stronghold'
     : tile.type === 'bridge' ? 'building_bridge'
     : tile.type === 'plankway' ? 'building_plankway'
     : null;

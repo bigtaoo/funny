@@ -1,7 +1,7 @@
 // Admin backend client for publishing map-template edits (SLG_DESIGN_LOG.md §24). Same Bearer-token/localStorage
 // pattern as tools/ops/src/api.ts (the only other tool with an admin client) — no shared package exists between
 // tools, so this is a deliberately small, scoped-down copy: only the map-template endpoints this tool needs.
-import type { MapTemplateSummary, MapTemplateTile } from '@nw/shared/slg';
+import type { MapEditorCityNode, MapTemplateSummary, MapTemplateTile } from '@nw/shared/slg';
 
 const API_KEY = 'nw_map_editor_admin_api';
 const TOKEN_KEY = 'nw_map_editor_admin_token';
@@ -99,6 +99,15 @@ export class Api {
   }
   async saveMapTemplateTiles(templateId: string, tiles: MapTemplateTile[]): Promise<{ updated: number }> {
     return this.req('PUT', `/admin/slg/map-templates/${encodeURIComponent(templateId)}/tiles`, { tiles });
+  }
+  /**
+   * Replaces the template's city siege-point node list (§24 point-node layer). Published together with the
+   * tile diff above: the tiles are the ground under each city, this list is what the GAME draws city
+   * sprites from (worldsvc clones it onto every world opened off this template). Without it, a dragged
+   * city moved its plot but the game kept drawing the sprite at the seed-derived position.
+   */
+  async saveMapTemplateCities(templateId: string, cities: MapEditorCityNode[]): Promise<{ updated: number }> {
+    return this.req('PUT', `/admin/slg/map-templates/${encodeURIComponent(templateId)}/cities`, { cities });
   }
   async activateMapTemplate(templateId: string): Promise<void> {
     await this.req('POST', `/admin/slg/map-templates/${encodeURIComponent(templateId)}/activate`);

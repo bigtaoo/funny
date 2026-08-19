@@ -4,7 +4,11 @@
  * Hand-drawn structures that stand centered ON a map tile (distinct from the
  * ground-texture terrain atlas), packed into the shared worldAtlas (see that
  * module) as the `building_*`/`icon_*` frames:
- *   building_keep       — strategic chokepoint gatehouse (tile type `familyKeep`)
+ *   building_keep       — strategic chokepoint gatehouse. UNUSED since 2026-08-19: it was the per-tile
+ *                          stamp for tile type `familyKeep`, which now only ever means city ground —
+ *                          drawn by the footprint-sized city sprite instead (see
+ *                          scenes/worldmap/tileGraphics/tiles.ts). Frame kept in the atlas for a future
+ *                          chokepoint mechanic; nothing reads it today.
  *   building_stronghold — dark NPC fort (tile type `stronghold`)
  *   building_bridge     — capturable river crossing bridge (tile type `bridge`)
  *   building_plankway   — capturable mountain crossing plankway (tile type `plankway`)
@@ -18,7 +22,7 @@
  *                          always the geometric fallback, see design/product/slg-building-art.md
  *
  * Loading is fire-and-forget (called on WorldMapScene construction). A decode failure
- * does not block the map: keep/stronghold still show their terrain ground texture, and
+ * does not block the map: stronghold/crossings still show their terrain ground texture, and
  * watchtower/blocker/arrowTower fall back to their programmatic geometric markers. Ink lines
  * are neutral and must NOT be tinted (ownership/level are conveyed by the tile wash underneath).
  */

@@ -195,5 +195,6 @@ export class WorldCore {
   getMapSparse(...args: Parameters<MapService['getMapSparse']>): Promise<WorldMapSparseView> { return this.mapSvc.getMapSparse(...args); }
   getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> { return this.mapSvc.getTile(worldId, accountId, x, y); }
   getMe(worldId: string, accountId: string): Promise<PlayerWorldView> { return this.mapSvc.getMe(worldId, accountId); }
+  getCities(worldId: string): ReturnType<MapService['getCities']> { return this.mapSvc.getCities(worldId); }
   tileDocView(...args: Parameters<MapService['tileDocView']>): WorldTileView { return this.mapSvc.tileDocView(...args); }
 }

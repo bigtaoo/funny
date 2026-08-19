@@ -1,5 +1,5 @@
-// City building sprites: player-base cities (DB tiles, fog-gated, name/level label) and
-// deterministic procedural NPC cities (seed-derived, map-wide), pooled and culled per viewport.
+// City building sprites: player-base cities (DB tiles, fog-gated, name/level label) and NPC cities
+// (the world's published node list, map-wide), pooled and culled per viewport.
 import * as PIXI from 'pixi.js-legacy';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints } from '@nw/shared';
 import { getCityTextureForLevel, getCityContentTopFracForLevel, isCityAtlasReady } from '../../../render/atlas/cityAtlasLoader';
@@ -70,7 +70,7 @@ export class WorldMapRendererCity implements CityHandlers {
 
         const lv = tile.level ?? 1;
         // Every DB base tile reaching this loop belongs to a real player account — own or another
-        // player's; NPC/procedural cities are handled entirely by the separate cityNodes() loop
+        // player's; NPC cities are handled entirely by the separate cityNodes() loop
         // below, never here. So always render from the "stationery fortress" playerbase_atlas,
         // keyed by desk building level (see TileDoc.deskLevel), not `tile.level` — that's the
         // tile's terrain-generated level, frozen at spawn/relocation and never updated afterward,
@@ -254,10 +254,16 @@ export class WorldMapRendererCity implements CityHandlers {
       }
     }
 
-    // Procedural NPC cities (ADR-034 §3: province capitals / graded / gate / world-center nodes). Unlike
-    // player bases (DB tiles, above), these are deterministic terrain features derived locally from the
-    // seed — so they render map-wide (no fog gate, like keeps/strongholds) with a per-LEVEL image sized to
-    // the city's footprint (3/5/7/9 by tier). Keyed 'node:<id>' so they never collide with base '<x>:<y>' keys.
+    // NPC cities (ADR-034 §3: province capitals / graded / world-center nodes). Unlike player bases (DB
+    // tiles, above) these are part of the world's terrain, so they render map-wide (no fog gate, like
+    // strongholds) with a per-LEVEL image sized to the city's footprint (3/5/7/9 by tier). Keyed
+    // 'node:<id>' so they never collide with base '<x>:<y>' keys.
+    //
+    // The node list comes from core.cityNodes() — the SERVER's list for this world when the entry fetch has
+    // landed, the seed-derived allCityNodes() only as a fallback (see core.ts for why the seed alone is not
+    // enough once a map template has been hand-edited). Nothing here reads the footprint tiles: each city
+    // is exactly one sprite masked to its own plot, which is also why tileGraphics/tiles.ts stamps no
+    // per-tile building on `familyKeep`/`center` city ground.
     for (const node of this.core.cityNodes()) {
       if (node.x < x0 || node.x >= x0 + visW || node.y < y0 || node.y >= y0 + visH) continue;
       const tex = getCityTextureForLevel(node.level);
