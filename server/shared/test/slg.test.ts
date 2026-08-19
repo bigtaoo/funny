@@ -7,6 +7,7 @@ import {
   SLG_MAP_H,
   SLG_MAP_MAX_LEVEL,
   SLG_MAP_W,
+  allCityNodes,
   capitalIdxAt,
   proceduralTile,
   provinceCapitalPositions,
@@ -132,7 +133,27 @@ describe('proceduralTile (ADR-034)', () => {
     expect(terrainFrac).toBeLessThan(0.35);
     expect((counts.resource ?? 0) + (counts.neutral ?? 0)).toBeGreaterThan(n * 0.4);
     expect(counts.center ?? 0).toBeGreaterThan(0);
-    expect(counts.familyKeep ?? 0).toBeGreaterThan(0);
+  });
+
+  it('generates familyKeep ONLY as city ground — one tile per capital/graded node, no blobs (2026-08-19)', () => {
+    // Regression guard for the deleted scattered-keep branch (see mapgen/tileGen.ts): it used a smooth
+    // value-noise threshold, which paved 3.3% of the map with contiguous keep blobs (largest 1,745
+    // tiles), each tile stamping its own gatehouse sprite. The only familyKeep tiles left are the
+    // single anchor cells of the province capitals + the 54 graded city nodes.
+    const expected = new Set<string>();
+    const caps = provinceCapitalPositions(SLG_MAP_W, SLG_MAP_H, worldSeed(WORLD));
+    caps.forEach(([x, y], i) => { if (i !== CENTER_CAPITAL_IDX) expected.add(`${x}:${y}`); });
+    for (const node of allCityNodes(WORLD)) {
+      if (node.kind === 'garrison') expected.add(`${node.x}:${node.y}`);
+    }
+
+    const found: string[] = [];
+    for (let y = 0; y < SLG_MAP_H; y++) {
+      for (let x = 0; x < SLG_MAP_W; x++) {
+        if (proceduralTile(WORLD, x, y).type === 'familyKeep') found.push(`${x}:${y}`);
+      }
+    }
+    expect(new Set(found)).toEqual(expected);
   });
 
   it('assigns higher average level to core province tiles than outer province tiles (ADR-034 §4 intent)', () => {

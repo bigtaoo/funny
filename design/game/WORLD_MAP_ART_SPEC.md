@@ -16,7 +16,7 @@
 | `tile_food.png` | 食物资源格（麦穗/农田）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#a8d870` 嫩草绿 |
 | `tile_wood.png` | 木材资源格（树林）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#90b860` 深草绿 |
 | `tile_iron.png` | 铁矿资源格（矿石）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#a0b8c8` 灰蓝 |
-| `tile_familyKeep.png` | **家族要点（familyKeep）**——家族争夺的战略格（注意：非 stronghold） | `#ffd060` 琥珀黄 |
+| ~~`tile_familyKeep.png`~~ | ~~**家族要点（familyKeep）**——家族争夺的战略格（注意：非 stronghold）~~ **已废（2026-08-19）**：散布式关隘生成已删除，`familyKeep` 只剩"城池地面"语义（城池自己有 `city_l*` 精灵），无需独立地形底图；见 [`SLG_DESIGN.md` §3.1](SLG_DESIGN.md) 该条注 | ~~`#ffd060` 琥珀黄~~ |
 | `tile_center.png` | 世界中心（唯一，全图标志性） | `#ffe88a` 浅金 |
 | `tile_obstacle.png` | 不可通行地形（山脉/河流） | `#9a9488` 石灰灰 |
 | `tile_gate.png` | 关隘/桥（可通行的地形节点） | `#c8a878` 沙棕 |

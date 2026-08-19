@@ -27,7 +27,7 @@ export type TileType =
   | 'neutral' // neutral open land (low-level, claimable, minimal yield)
   | 'resource' // resource tile (produces ink/paper/metal)
   | 'territory' // player-claimed territory (only exists after runtime DB write; not generated as this type)
-  | 'familyKeep' // strategic point / family stronghold (sparse, high-level, high-value)
+  | 'familyKeep' // NPC city GROUND (province capital / graded city node, and the map-editor's city footprint). Was also a scattered "strategic point" classification until 2026-08-19 — deleted, see mapgen/tileGen.ts. The `family` in the name is legacy: it has nothing to do with families/sects.
   | 'center' // world center (sect ownership contest point; unique)
   | 'base' // player home-city placement (written to DB at runtime)
   | 'obstacle' // blocking terrain (mountains/rivers; fully impassable, S8-6.6)
@@ -225,14 +225,11 @@ export function cityPlotMaskPoints(footprint: number, tp: number, isoRatio: numb
 export const SLG_GEN = {
   /** Resource tile density: fraction of non-neutral tiles classified as resource tiles (ADR-032: raised to 1.0 — no pure no-yield neutral land; every non-blocking/keep/stronghold/center tile is some level of resource land). */
   resourceDensity: 1.0,
-  /** familyKeep noise threshold; higher = sparser. */
-  keepThreshold: 0.86,
-  /** Minimum distance ratio from a tile's own province capital for strategic points (ADR-034: distance is now to the tile's own province's capital, angle-sector-derived — prevents keeps from spawning too close to any capital). */
-  keepMinDistRatio: 0.12,
   /** Level noise frequency (higher = more fragmented patches; feeds the ADR-034 §4 per-ring cumulative-distribution level lookup, not a distance falloff). */
   levelFreq: 1 / 14,
-  /** Strategic point noise frequency. */
-  keepFreq: 1 / 22,
+  // `keepThreshold` / `keepFreq` / `keepMinDistRatio` were removed 2026-08-19 together with the
+  // scattered familyKeep classification they gated (see mapgen/tileGen.ts for the why + the measured
+  // blob numbers). Nothing else read them.
   /**
    * Provincial bias for the per-tile land-resource draw (ADR-022 provincial-bias model, rewritten
    * 2026-07-15 — see {@link ../mapgen.ts#biomeAt}). Every resource tile independently draws one of the
