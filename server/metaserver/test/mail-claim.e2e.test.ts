@@ -21,6 +21,10 @@ import { HttpMetaSocialsvcClient } from '../dist/socialsvcClient.js';
 import { buildApp } from '../dist/app.js';
 import { MailService } from '../../socialsvc/dist/mailService.js';
 import { createSocialMongo, type SocialMongo } from '../../socialsvc/dist/db.js';
+// socialsvc ships complete no-op clients; the inline literals these replace were hand-rolled and had
+// fallen behind SocialGatewayClient.pushBatch / SocialMetaClient.getPlayerRankByPublicId.
+import { nullSocialGatewayClient } from '../../socialsvc/dist/gatewayClient.js';
+import { nullSocialMetaClient } from '../../socialsvc/dist/metaClient.js';
 
 function makeFakeCommercial(opts: { failFirstNGrants?: number } = {}): CommercialClient {
   const coins = new Map<string, number>();
@@ -29,7 +33,7 @@ function makeFakeCommercial(opts: { failFirstNGrants?: number } = {}): Commercia
   const failFirstNGrants = opts.failFirstNGrants ?? 0;
   return {
     available: true,
-    async getWallet(id: string) { return { coins: coins.get(id) ?? 0, pity: {} }; },
+    async getWallet(id: string) { return { coins: coins.get(id) ?? 0, pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 }; },
     async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
       grantCalls++;
       if (grantCalls <= failFirstNGrants) return { ok: false as const, error: 'INJECTED_FAILURE' };
@@ -114,8 +118,8 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
 
     const mailSvc = new MailService({
       cols: s.collections,
-      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
-      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      gateway: nullSocialGatewayClient,
+      meta: nullSocialMetaClient,
       now: () => Date.now(),
     });
     socialServer = startMinimalSocialInternal(mailSvc, IK);
@@ -142,8 +146,8 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
     // i.e. what auctionsvc's deliverItem ultimately causes to be written into socialsvc's `mails` collection.
     const mailSvc = new MailService({
       cols: s.collections,
-      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
-      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      gateway: nullSocialGatewayClient,
+      meta: nullSocialMetaClient,
       now: () => Date.now(),
     });
     await mailSvc.insertSystemMail(dispatchKey, accountId, {
@@ -168,8 +172,8 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
     const dispatchKey = `auction_expire:${auctionId}`;
     const mailSvc = new MailService({
       cols: s.collections,
-      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
-      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      gateway: nullSocialGatewayClient,
+      meta: nullSocialMetaClient,
       now: () => Date.now(),
     });
     await mailSvc.insertSystemMail(dispatchKey, accountId, {
@@ -191,8 +195,8 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
   it('mail with coins + item + material + skin attachments in one claim: each lands in its own save field, not all dumped into inventory.skins', async () => {
     const mailSvc = new MailService({
       cols: s.collections,
-      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
-      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      gateway: nullSocialGatewayClient,
+      meta: nullSocialMetaClient,
       now: () => Date.now(),
     });
     const dispatchKey = `comp.mixed.${accountId}`;
@@ -240,8 +244,8 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
 
     const mailSvc = new MailService({
       cols: s.collections,
-      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
-      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      gateway: nullSocialGatewayClient,
+      meta: nullSocialMetaClient,
       now: () => Date.now(),
     });
     const dispatchKey = `comp.dupskin.${accountId}`;
@@ -267,8 +271,8 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
   it('coin grant fails after the mail is marked claimed → claim rolled back, mail is claimable again and eventually succeeds', async () => {
     const mailSvc = new MailService({
       cols: s.collections,
-      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
-      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      gateway: nullSocialGatewayClient,
+      meta: nullSocialMetaClient,
       now: () => Date.now(),
     });
     const dispatchKey = `comp.rollback.${accountId}`;
@@ -311,8 +315,8 @@ describe.skipIf(!meta || !social)('mail claim: real cross-service wire (metaserv
     // error) after the coin grant has already landed, then retry and confirm coins land exactly once.
     const mailSvc = new MailService({
       cols: s.collections,
-      gateway: { available: false, push: async () => {}, pushMany: async () => {}, presence: async () => ({}), invalidateFriends: async () => {} },
-      meta: { available: false, resolveByPublicId: async () => null, batchProfiles: async () => new Map() },
+      gateway: nullSocialGatewayClient,
+      meta: nullSocialMetaClient,
       now: () => Date.now(),
     });
     const dispatchKey = `comp.mixedfail.${accountId}`;

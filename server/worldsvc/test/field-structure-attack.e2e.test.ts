@@ -92,7 +92,7 @@ describe.skipIf(!mongo)('worldsvc structure-durability e2e (ADR-051 §5.2)', () 
   let svc: WorldService;
   let redis: FakeRedis;
   const mailCalls: MailCall[] = [];
-  const fakeGateway: WorldGatewayClient = { available: true, async push() {} , broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
+  const fakeGateway: WorldGatewayClient = { available: true, async push() {}, broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
   const fakeMail: WorldMailClient = {
     available: true,
     async sendSystemMail(accountId, _key, content) { mailCalls.push({ accountId, content }); },

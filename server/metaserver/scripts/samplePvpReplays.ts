@@ -19,7 +19,12 @@
 //     actually sample; deferring it to post-selection keeps decompression bounded to the sample size.
 //   - Matches with no restricted deck (nothing to correlate against P1), or replays that fail to decode
 //     (corrupt/incomplete frame log), are logged and skipped, not silently dropped.
-import { MongoClient, type Document } from 'mongodb';
+import { MongoClient, type Collection } from 'mongodb';
+
+// These collections key on a STRING _id (roomId), not the driver's default ObjectId — typing them as
+// bare `Document` made every `{ _id: roomId }` filter an untyped hole. Surfaced when test/ (which
+// imports this script) started being type-checked.
+interface RoomKeyedDoc { _id: string; replayGz?: Buffer }
 import { pathToFileURL } from 'node:url';
 import { decompressReplayDoc } from '@nw/shared';
 import { decodeReplay } from '../src/internal/replayDecode.js';
@@ -61,11 +66,11 @@ async function main(): Promise<void> {
   const client = new MongoClient(MONGO_URI);
   await client.connect();
   const db = client.db(MONGO_DB);
-  const matches = db.collection<Document>('matches');
-  const replayBlobs = db.collection<Document>('replayBlobs');
-  const pvpPlaySequences = db.collection<Document>('pvpPlaySequences');
+  const matches = db.collection<RoomKeyedDoc>('matches');
+  const replayBlobs = db.collection<RoomKeyedDoc>('replayBlobs');
+  const pvpPlaySequences = db.collection<RoomKeyedDoc>('pvpPlaySequences');
 
-  const already = new Set((await pvpPlaySequences.find({}, { projection: { _id: 1 } }).toArray()).map((d) => d._id as string));
+  const already = new Set((await pvpPlaySequences.find({}, { projection: { _id: 1 } }).toArray()).map((d) => d._id));
   const cursor = matches.find({
     ts: { $gte: SINCE },
     hashMismatch: { $exists: false },
@@ -92,7 +97,7 @@ async function main(): Promise<void> {
     const replayDoc = decompressReplayDoc(replayGzBuf);
     if (!replayDoc.decks) { console.warn(`[samplePvpReplays] ${row.roomId}: no restricted deck, skipping`); noDeck++; continue; }
 
-    const result = decodeReplay(replayDoc);
+    const result = decodeReplay(replayDoc as Parameters<typeof decodeReplay>[0]);
     if (!result) { console.warn(`[samplePvpReplays] ${row.roomId}: decode failed (incomplete/corrupt replay), skipping`); failed++; continue; }
 
     console.log(`[samplePvpReplays] ${row.roomId}: ${reason}, ${result.plays.length} plays, winner=${result.winnerSide}`);

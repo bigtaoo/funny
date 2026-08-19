@@ -107,7 +107,7 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
   let svc: WorldService;
   let redis: FakeRedis;
   let pushes: { accountId: string; msg: SlgPushMsg }[];
-  const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); } , broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
+  const fakeGateway: WorldGatewayClient = { available: true, async push(a, msg) { pushes.push({ accountId: a, msg }); }, broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
 
   beforeEach(async () => {
     await m.db.dropDatabase();

@@ -138,10 +138,10 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
 
     const reviews = await getReviews('acctA');
     expect(reviews.length).toBe(1);
-    expect(reviews[0].overclaim).toEqual({ 'kill.archer': 40 });
-    expect(reviews[0].rolledBack).toEqual({ 'kill.archer': 40 });
-    expect(reviews[0].suspicionAfter).toBe(1);
-    expect(reviews[0].status).toBe('open');
+    expect(reviews[0]!.overclaim).toEqual({ 'kill.archer': 40 });
+    expect(reviews[0]!.rolledBack).toEqual({ 'kill.archer': 40 });
+    expect(reviews[0]!.suspicionAfter).toBe(1);
+    expect(reviews[0]!.status).toBe('open');
 
     const match = await getMatch('r1');
     expect(match?.audited?.verdict).toBe('overclaim');
@@ -239,8 +239,8 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     await auditOnce(deps());
     expect((await getSave('acctA'))?.save.stats?.['kill.archer']).toBe(0);
     const reviews = await getReviews('acctA');
-    expect(reviews[0].overclaim).toEqual({ 'kill.archer': 40 });
-    expect(reviews[0].rolledBack).toEqual({ 'kill.archer': 20 });
+    expect(reviews[0]!.overclaim).toEqual({ 'kill.archer': 40 });
+    expect(reviews[0]!.rolledBack).toEqual({ 'kill.archer': 20 });
   });
 
   it('GET /internal/anticheat/reviews: auth guard + filter by accountId', async () => {
@@ -261,7 +261,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     expect(r.statusCode).toBe(200);
     const body = JSON.parse(r.payload) as { reviews: { accountId: string }[] };
     expect(body.reviews.length).toBe(1);
-    expect(body.reviews[0].accountId).toBe('acctA');
+    expect(body.reviews[0]!.accountId).toBe('acctA');
   });
 
   it('POST /internal/anticheat/reviews/:id/resolve: auth guard + marks resolved + rejects unknown id/resolution (2026-07-18 human-review policy)', async () => {
@@ -270,7 +270,7 @@ describe.skipIf(!mongo)('anti-cheat offline audit e2e', () => {
     await seedMatch('r1', { '0': { 'kill.archer': 50 }, '1': {} });
     gateway.next = { ok: true, statsJson: '{"0":{"kill.archer":10},"1":{}}' };
     await auditOnce(deps());
-    const id = (await getReviews('acctA'))[0]._id;
+    const id = (await getReviews('acctA'))[0]!._id;
 
     const unauth = await app.inject({ method: 'POST', url: `/internal/anticheat/reviews/${id}/resolve`, payload: { resolution: 'dismissed' } });
     expect(unauth.statusCode).toBe(401);

@@ -41,7 +41,7 @@ function matchesWithNe(doc: Record<string, unknown>, query: Record<string, unkno
 }
 
 export class FakeCardCollection<T extends { _id: string }> extends FakeCollection<T> {
-  async findOne(query: Record<string, unknown> = {}): Promise<T | null> {
+  override async findOne(query: Record<string, unknown> = {}): Promise<T | null> {
     for (const d of this.docs.values()) if (matchesWithNe(d as unknown as Record<string, unknown>, query)) return d;
     return null;
   }

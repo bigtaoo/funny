@@ -10,6 +10,7 @@ import { registerLadderRoutes } from '../src/internal/ladderRoutes.js';
 import type { InternalCtx } from '../src/internal/context.js';
 import { FakeCollection } from './helpers/fakeCollection.js';
 import { fakeGateway, fakeCommercial, FakeSocialsvc } from './helpers/fakeClients.js';
+import { AccountCache } from '../src/accountCache';
 
 interface SaveDocRow { _id: string; save: SaveData; rev: number }
 interface AccountDoc { _id: string; displayName?: string; publicId?: string }
@@ -43,6 +44,8 @@ function build(opts: { saves?: SaveDocRow[]; accounts?: AccountDoc[]; season?: L
     commercial,
     socialsvc,
     authed: (headers) => headers['x-internal-key'] === KEY,
+    redis: () => { throw new Error('fake InternalCtx.redis() is not stubbed in this test'); },
+    accountCache: new AccountCache(),
   };
   const app = Fastify();
   registerLadderRoutes(app, ctx);

@@ -9,6 +9,7 @@ import { registerEconomyRoutes } from '../src/internal/economyRoutes.js';
 import type { InternalCtx } from '../src/internal/context.js';
 import { FakeCollection } from './helpers/fakeCollection.js';
 import { fakeGateway, fakeCommercial, ThrowingSocialsvc } from './helpers/fakeClients.js';
+import { AccountCache } from '../src/accountCache';
 
 interface SaveDocRow { _id: string; save: SaveData; rev: number }
 
@@ -44,6 +45,8 @@ function build(seedSaves: SaveDocRow[] = [], seedCards: CardInstanceRow[] = []) 
     commercial: fakeCommercial(),
     socialsvc: new ThrowingSocialsvc(),
     authed: (headers) => headers['x-internal-key'] === KEY,
+    redis: () => { throw new Error('fake InternalCtx.redis() is not stubbed in this test'); },
+    accountCache: new AccountCache(),
   };
   const app = Fastify();
   registerEconomyRoutes(app, ctx);
@@ -309,6 +312,8 @@ describe('POST /internal/cards/escrow', () => {
     const ctx: InternalCtx = {
       cols, now: () => 1000, gateway: fakeGateway(), commercial: fakeCommercial(),
       socialsvc: new ThrowingSocialsvc(), authed: (headers) => headers['x-internal-key'] === KEY,
+      redis: () => { throw new Error('fake InternalCtx.redis() is not stubbed in this test'); },
+      accountCache: new AccountCache(),
     };
     const app = Fastify();
     registerEconomyRoutes(app, ctx);

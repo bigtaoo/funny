@@ -217,7 +217,7 @@ describe('grantTitleToPlayer (unit, no Mongo)', () => {
     await grantTitleToPlayer(cols, ACC, 'ach.one', 9999); // re-grant, must be a no-op
 
     const row = (cols.saves as unknown as { docs: Map<string, { save: SaveData }> }).docs.get(ACC)!;
-    expect(row.save.titles.filter((t) => t === 'ach.one')).toHaveLength(1);
+    expect(row.save.titles!.filter((t) => t === 'ach.one')).toHaveLength(1);
     expect(row.save.titleGrants).toMatchObject({ 'ach.one': 1000, 'ach.two': 2000 });
   });
 

@@ -38,7 +38,7 @@ function makeFakeCommercial(): CommercialClient & {
     setCoins: (id: string, n: number) => coins.set(id, n),
     bal,
     async getWallet(id: string) {
-      return { coins: bal(id), pity: {} };
+      return { coins: bal(id), pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 };
     },
     async spend(a: { accountId: string; amount: number; reason: string; orderId: string }) {
       if (spent.has(a.orderId)) return { ok: true as const, coinsAfter: bal(a.accountId) };
@@ -216,7 +216,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const wrappedSaves = {
       findOne: realSaves.findOne.bind(realSaves),
       findOneAndUpdate: async () => null,
-    } as typeof realSaves;
+    } as unknown as typeof realSaves;
     const wrappedCols = { ...m.collections, saves: wrappedSaves };
 
     const first = await craftEquipment(wrappedCols, () => Date.now(), accountId, 'wp_pencil', 'stuck-key');
@@ -330,7 +330,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const wrappedSaves = {
       findOne: realSaves.findOne.bind(realSaves),
       findOneAndUpdate: async () => null,
-    } as typeof realSaves;
+    } as unknown as typeof realSaves;
     const wrappedCols = { ...m.collections, saves: wrappedSaves };
 
     const result = await escrowEquipment(wrappedCols, () => Date.now(), accountId, inst.id, 'order-exhaust');
@@ -374,7 +374,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const r = body(await enhance('e1', key));
     expect(r.data.success).toBe(true);
     expect(r.data.instance.level).toBe(1);
-    expect(r.data.save.materials.scrap).toBe(100 - cost.materials.scrap);
+    expect(r.data.save.materials.scrap).toBe(100 - cost.materials.scrap!);
     expect(r.data.save.wallet.coins).toBe(1000 - cost.coins);
     expect(comm.bal(accountId)).toBe(1000 - cost.coins);
     // Lean response (EQUIPMENT_DESIGN §3.3 phase 2): enhance hands back the updated instance directly.
@@ -391,7 +391,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const r = body(await enhance('e2', key));
     expect(r.data.success).toBe(false);
     expect(r.data.instance.level).toBe(0); // no level loss
-    expect(r.data.save.materials.scrap).toBe(100 - cost.materials.scrap); // still consumed
+    expect(r.data.save.materials.scrap).toBe(100 - cost.materials.scrap!); // still consumed
     expect(r.data.save.wallet.coins).toBe(1000 - cost.coins);
   });
 
@@ -446,7 +446,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(r2.data.success).toBe(r1.data.success);
     expect(r2.data.instance.level).toBe(r1.data.instance.level);
     const save = await readSave();
-    expect(save.materials.scrap).toBe(100 - enhanceCost(0).materials.scrap); // deducted only once
+    expect(save.materials.scrap).toBe(100 - enhanceCost(0).materials.scrap!); // deducted only once
     expect(comm.bal(accountId)).toBe(1000 - enhanceCost(0).coins); // coins deducted only once
   });
 
@@ -492,7 +492,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const refund = salvageRefund('wp_pencil'); // { scrap:3 }
     const r = body(await salvage(['s1'], 'sk1'));
     expect(r.data.refunded).toEqual(refund);
-    expect(r.data.save.materials.scrap).toBe(10 + refund.scrap);
+    expect(r.data.save.materials.scrap).toBe(10 + refund.scrap!);
     // Lean response (EQUIPMENT_DESIGN §3.3 phase 2): the caller already sent instanceIds ['s1'] itself.
     expect(r.data.save.equipmentInv).toBeNull();
     expect((await readInv())['s1']).toBeUndefined();
@@ -503,7 +503,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     await seedInstance('s3', 'wp_pencil', 4);
     await seedMaterials({ scrap: 0 });
     const r = body(await salvage(['s2', 's3'], 'sk-batch'));
-    expect(r.data.refunded.scrap).toBe(salvageRefund('wp_pencil').scrap * 2);
+    expect(r.data.refunded.scrap).toBe(salvageRefund('wp_pencil').scrap! * 2);
     const inv = await readInv();
     expect(inv['s2']).toBeUndefined();
     expect(inv['s3']).toBeUndefined();
@@ -550,7 +550,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const wrappedSaves = {
       findOne: realSaves.findOne.bind(realSaves),
       findOneAndUpdate: async () => null,
-    } as typeof realSaves;
+    } as unknown as typeof realSaves;
     const wrappedCols = { ...m.collections, saves: wrappedSaves };
 
     const first = await salvageEquipment(wrappedCols, () => Date.now(), accountId, ['s10'], 'sk-exhaust');
@@ -563,12 +563,12 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     // cached success without ever applying it, and not double-credit either.
     const retry = body(await salvage(['s10'], 'sk-exhaust'));
     expect(retry.data.refunded).toEqual(refund);
-    expect((await readSave()).materials.scrap).toBe(10 + refund.scrap);
+    expect((await readSave()).materials.scrap).toBe(10 + refund.scrap!);
 
     // A further replay must not credit a second time.
     const replayAgain = body(await salvage(['s10'], 'sk-exhaust'));
     expect(replayAgain.data.refunded).toEqual(refund);
-    expect((await readSave()).materials.scrap).toBe(10 + refund.scrap);
+    expect((await readSave()).materials.scrap).toBe(10 + refund.scrap!);
   });
 
   it('salvage locked → 409 EQUIP_LOCKED; equipped → 409 EQUIP_IN_USE', async () => {
@@ -656,8 +656,8 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     expect(body(res).error.code).toBe('EQUIP_IN_USE');
     // Still only equipped on the original card — never landed on the second.
     const inv = await readCardInv(m, accountId);
-    expect(inv[cardA].gear?.weapon).toBe('w5');
-    expect(inv[cardB].gear?.weapon).toBeUndefined();
+    expect(inv[cardA]!.gear?.weapon).toBe('w5');
+    expect(inv[cardB]!.gear?.weapon).toBeUndefined();
   });
 
   // Regression for the audit-followup-fixes-0729 review: the sequential test above (two SEQUENTIAL equip
@@ -730,7 +730,7 @@ describe.skipIf(!mongo)('equipment backend e2e', () => {
     const wrappedSaves = {
       findOne: realSaves.findOne.bind(realSaves),
       findOneAndUpdate: async () => { findOneAndUpdateCalls++; return null; },
-    } as typeof realSaves;
+    } as unknown as typeof realSaves;
     const wrappedCols = { ...m.collections, saves: wrappedSaves };
 
     const result = await reforgeEquipment(wrappedCols, comm, () => Date.now(), accountId, 'rt3', 'rm3', 'rk-exhaust', undefined);

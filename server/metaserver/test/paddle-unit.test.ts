@@ -329,6 +329,18 @@ class FakeCommercial implements CommercialClient {
   async closeLimitedPool(): Promise<never> { throw new Error('not used by paddle routes'); }
   async listLimitedPools(): Promise<never[]> { return []; }
   async auditCoinGains(): Promise<never[]> { return []; }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async listActiveLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listActiveLimitedPools is not stubbed in this test'); }
+  async redeemFate(): Promise<never> { throw new Error('FakeCommercial.redeemFate is not stubbed in this test'); }
+  async monthlyCardClaim(): Promise<never> { throw new Error('FakeCommercial.monthlyCardClaim is not stubbed in this test'); }
+  async spend(): Promise<never> { throw new Error('FakeCommercial.spend is not stubbed in this test'); }
+  async rechargeVerify(): Promise<never> { throw new Error('FakeCommercial.rechargeVerify is not stubbed in this test'); }
+  async verifyNonCoinReceipt(): Promise<never> { throw new Error('FakeCommercial.verifyNonCoinReceipt is not stubbed in this test'); }
+  async adsCredit(): Promise<never> { throw new Error('FakeCommercial.adsCredit is not stubbed in this test'); }
+  async promoRedeem(): Promise<never> { throw new Error('FakeCommercial.promoRedeem is not stubbed in this test'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
 }
 
 describe.skipIf(!mongo)('checkoutRoute.ts / webhookRoute.ts (src-level route tests)', () => {
@@ -378,7 +390,7 @@ describe.skipIf(!mongo)('checkoutRoute.ts / webhookRoute.ts (src-level route tes
     delete process.env.NW_PADDLE_SANDBOX;
 
     let txCounter = 0;
-    fetchMock = vi.fn(async () => ({
+    fetchMock = vi.fn(async (..._args: unknown[]) => ({
       ok: true,
       status: 200,
       json: async () => ({ data: { id: `txn_${++txCounter}` } }),

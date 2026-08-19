@@ -38,7 +38,7 @@ function makeFakeCommercial(): CommercialClient & { setCoins(id: string, n: numb
     available: true,
     setCoins: (id: string, n: number) => coins.set(id, n),
     bal,
-    async getWallet(id: string) { return { coins: bal(id), pity: {} }; },
+    async getWallet(id: string) { return { coins: bal(id), pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 }; },
     async spend(a: { accountId: string; amount: number; orderId: string }) {
       if (spent.has(a.orderId)) return { ok: true as const, coinsAfter: bal(a.accountId) };
       if (bal(a.accountId) < a.amount) return { ok: false as const, error: 'INSUFFICIENT_FUNDS' };

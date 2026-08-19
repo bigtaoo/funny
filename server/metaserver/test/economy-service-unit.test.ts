@@ -285,6 +285,19 @@ class FakeCommercial implements CommercialClient {
     this.coins.set(a.accountId, this.bal(a.accountId) + entry.coins);
     return { ok: true as const, coinsAfter: this.bal(a.accountId), coinsGranted: entry.coins };
   }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async createCustomPool(): Promise<never> { throw new Error('FakeCommercial.createCustomPool is not stubbed in this test'); }
+  async closeLimitedPool(): Promise<never> { throw new Error('FakeCommercial.closeLimitedPool is not stubbed in this test'); }
+  async listLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listLimitedPools is not stubbed in this test'); }
+  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
+  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
+  async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed in this test'); }
+  async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed in this test'); }
+  async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed in this test'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
+  async auditCoinGains(): Promise<never> { throw new Error('FakeCommercial.auditCoinGains is not stubbed in this test'); }
 }
 
 describe.skipIf(!mongo)('economy service handlers (src import, coverage backfill)', () => {
@@ -299,7 +312,7 @@ describe.skipIf(!mongo)('economy service handlers (src import, coverage backfill
   const auth = () => ({ authorization: `Bearer ${token}` });
 
   async function buildAndAuth(opts: { commercial?: CommercialClient } = {}): Promise<void> {
-    comm = (opts.commercial as FakeCommercial) ?? new FakeCommercial();
+    comm = (opts.commercial as unknown as FakeCommercial) ?? new FakeCommercial();
     fakeNow = Date.now();
     app = await buildApp({ cols: m.collections, jwt, internalKey: 'k', commercial: comm, authRateLimit: 0, now: () => fakeNow });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: `device-${randomUUID()}` } }));

@@ -3,14 +3,16 @@
   "//why": "tsconfig.json is src-only and vitest runs through esbuild (types erased, never checked), so without this second program this package's whole test/ tree gets ZERO type-checking — a fixture that drifted behind its interface stays latent until someone reads it. Added 2026-08-19; mirrors client/tsconfig.test.json. Run via `npm run typecheck:test` (CI: server-checks job, right after the `tsc -b` step).",
   "//rootDir": "Widened from src to the package root because test/ sits outside src/; composite/declaration off + noEmit because this program only reports diagnostics, it never emits.",
   "//references": "`references` MUST be repeated here — `extends` does NOT inherit it. Without it @nw/shared resolves through node_modules to shared/dist/*.d.ts instead of being redirected to shared/src, which showed up as 240 bogus TS2307s in metaserver alone. It still needs those dist/*.d.ts to exist, hence the CI ordering.",
-  "//module": "Deliberately NOT overridden — this package sets module/moduleResolution itself (NodeNext), which already allows the top-level await some e2e tests use. Forcing ES2022 here would be TS5110.",
+  "//module": "ESNext + Bundler resolution rather than the package's own NodeNext: that is what vitest actually does with these files (esbuild, no extension rewriting), and under NodeNext every `../src/x` import in test/ is a TS2835 'needs an explicit .js extension' even though it resolves fine at runtime.",
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "noEmit": true
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
   },
   "references": [
     {

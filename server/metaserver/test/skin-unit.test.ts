@@ -159,7 +159,7 @@ describe.skipIf(!mongo)('skin.ts (src import, coverage backfill)', () => {
       const wrapped = {
         find: real.find.bind(real),
         updateOne: async () => { throw new Error('simulated write failure'); },
-      } as typeof real;
+      } as unknown as typeof real;
       const wrappedCols: Collections = { ...m.collections, skinInstances: wrapped };
       const save = await readSave();
       const counts = await assembleSkinCounts(wrappedCols, accountId, save);
@@ -264,7 +264,7 @@ describe.skipIf(!mongo)('skin.ts (src import, coverage backfill)', () => {
         findOne: real.findOne.bind(real),
         findOneAndUpdate: async () => null,
         updateOne: real.updateOne.bind(real),
-      } as typeof real;
+      } as unknown as typeof real;
       const wrappedCols: Collections = { ...m.collections, saves: wrapped };
       const res = await escrowSkin(wrappedCols, now, accountId, 'skin_ink_blue', 'order-exhaust');
       expect(res).toEqual({ skinId: 'skin_ink_blue' });
@@ -335,7 +335,7 @@ describe.skipIf(!mongo)('skin.ts (src import, coverage backfill)', () => {
         findOne: real.findOne.bind(real),
         findOneAndUpdate: async () => null,
         updateOne: real.updateOne.bind(real),
-      } as typeof real;
+      } as unknown as typeof real;
       const wrappedCols: Collections = { ...m.collections, saves: wrapped };
       const res = await grantSkin(wrappedCols, now, accountId, 'skin_fresh', 'grant-exhaust');
       expect(res).toMatchObject({ code: 'REV_CONFLICT' });

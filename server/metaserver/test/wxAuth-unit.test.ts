@@ -59,7 +59,7 @@ describe('exchangeWxCode', () => {
   it('configured but WeChat responds with an error (no openid) -> throws with errcode/errmsg in the message', async () => {
     process.env.NW_WX_APPID = 'my-appid';
     process.env.NW_WX_SECRET = 'my-secret';
-    vi.stubGlobal('fetch', vi.fn(async () => ({
+    vi.stubGlobal('fetch', vi.fn(async (..._args: unknown[]) => ({
       json: async () => ({ errcode: 40029, errmsg: 'invalid code' }),
     })));
     await expect(exchangeWxCode('bad-code')).rejects.toThrow(/40029/);

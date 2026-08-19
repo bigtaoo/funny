@@ -8,6 +8,9 @@ import type { GatewayClient, JudgeRes } from '../src/gatewayClient.js';
 import type { CommercialClient } from '../src/commercialClient.js';
 
 const KEY = 'test-internal-key';
+// makeNewSave() takes (accountId, now); these calls used to omit it, so every seeded save in this
+// file carried `undefined` timestamps. Fixed instant keeps the seeds deterministic.
+const FIXED_TS = 1_700_000_000_000;
 
 /** Fake judge: configurable available flag + fixed verdict result (no real HTTP calls). */
 function fakeGateway(opts: { available?: boolean; res?: JudgeRes; onJudge?: (req: unknown) => void } = {}): GatewayClient {
@@ -18,8 +21,6 @@ function fakeGateway(opts: { available?: boolean; res?: JudgeRes; onJudge?: (req
       return opts.res ?? { ok: false };
     },
     push: async () => {},
-    presence: async () => ({}),
-    invalidateFriends: async () => {},
   };
 }
 
@@ -113,7 +114,7 @@ function fakeCols(seed: Record<string, SaveData>): { cols: Collections; matches:
         );
         const cursor = {
           sort: (spec: Record<string, 1 | -1>) => {
-            const [[key, dir]] = Object.entries(spec);
+            const [[key, dir]] = Object.entries(spec) as [[string, 1 | -1]];
             items = [...items].sort((a, b) => ((a[key] as number) - (b[key] as number)) * dir);
             return cursor;
           },
@@ -182,7 +183,7 @@ describe('internal routes', () => {
 
   // Per-caller strict mode (NW_INTERNAL_KEYS): each caller has its own dedicated key; the old single shared key is no longer accepted.
   it('strict mode: registered per-caller key is accepted, single shared key is rejected', async () => {
-    const a = makeNewSave('a');
+    const a = makeNewSave('a', FIXED_TS);
     a.pvp.elo = 777;
     const app = build(fakeCols({ a }).cols, fakeGateway(), fakeCommercial(false), {
       gateway: 'gw-key',
@@ -207,7 +208,7 @@ describe('internal routes', () => {
   });
 
   it('GET /internal/elo fetches save ELO (default initial 1000)', async () => {
-    const a = makeNewSave('a');
+    const a = makeNewSave('a', FIXED_TS);
     a.pvp.elo = 1234;
     const app = build(fakeCols({ a }).cols);
     const r1 = await app.inject({ method: 'GET', url: '/internal/elo?accountId=a', headers: { 'x-internal-key': KEY } });
@@ -218,8 +219,8 @@ describe('internal routes', () => {
   });
 
   it('ranked base — both sides agree → settle ELO ±16, write saves, archive, return elo', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const app = build(cols);
     const res = await app.inject({
@@ -251,9 +252,9 @@ describe('internal routes', () => {
   });
 
   it('ECONOMY_BALANCE §2.3 streak acceleration: a hot winner gains more than a fresh loser loses (asymmetric, not zero-sum)', async () => {
-    const a = makeNewSave('a');
+    const a = makeNewSave('a', FIXED_TS);
     a.pvp.streak = 2; // already on a 2-win streak entering this match
-    const b = makeNewSave('b'); // fresh (streak 0)
+    const b = makeNewSave('b', FIXED_TS); // fresh (streak 0)
     const { cols } = fakeCols({ a, b });
     const app = build(cols);
     const res = await app.inject({
@@ -282,8 +283,8 @@ describe('internal routes', () => {
   });
 
   it('S9-6 ranked accumulates achievement stats: kill/cast credited for both sides + only winner stats.pvp.wins +1', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const app = build(cols);
     await app.inject({
@@ -315,8 +316,8 @@ describe('internal routes', () => {
   });
 
   it('S9-6 L1 out-of-bounds: rejects that side\'s kill/cast, but ELO/pvp.wins still settled normally', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols } = fakeCols({ a, b });
     const app = build(cols);
     await app.inject({
@@ -344,8 +345,8 @@ describe('internal routes', () => {
   });
 
   it('S9-6 friendly with stats → not accumulated (only ranked is credited)', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const app = build(cols);
     await app.inject({
@@ -370,8 +371,8 @@ describe('internal routes', () => {
   });
 
   it('ranked winner receives rank-victory coins (by post-settlement rank, winner only)', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols } = fakeCols({ a, b });
     const comm = fakeCommercial(true);
     const app = build(cols, fakeGateway(), comm);
@@ -399,8 +400,8 @@ describe('internal routes', () => {
   });
 
   it('idempotent: duplicate report with same room_id does not settle twice', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols } = fakeCols({ a, b });
     const app = build(cols);
     const payload = {
@@ -418,8 +419,8 @@ describe('internal routes', () => {
   });
 
   it('friendly report → ELO unchanged, archived winner -1', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const app = build(cols);
     const res = await app.inject({
@@ -450,8 +451,8 @@ describe('internal routes', () => {
   };
 
   it('ranked mismatch + judge matches a\'s hash → b judged as loser + archived cheat + ELO settled', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const gateway = fakeGateway({
       available: true,
@@ -477,8 +478,8 @@ describe('internal routes', () => {
   });
 
   it('PVP_LOADOUT §6.2 regression: judgeMismatch() forwards the match\'s decks to gateway.judge()', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols } = fakeCols({ a, b });
     const decks = { top: ['runner'], bottom: ['infantry_1'] };
     let seenReq: { decks?: { top: string[]; bottom: string[] } } | undefined;
@@ -497,8 +498,8 @@ describe('internal routes', () => {
   });
 
   it('friendly-shaped replay without decks (PvE/siege or an unrestricted match) → judge called with no decks key', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols } = fakeCols({ a, b });
     let seenReq: { decks?: unknown } | undefined;
     const gateway = fakeGateway({
@@ -515,8 +516,8 @@ describe('internal routes', () => {
   });
 
   it('ranked mismatch + judge unavailable → voided (not settled, not flagged)', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const app = build(cols, fakeGateway({ available: false }));
     const res = await app.inject({
@@ -529,8 +530,8 @@ describe('internal routes', () => {
   });
 
   it('ranked mismatch + judge result matches neither side → voided', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const gateway = fakeGateway({ available: true, res: { ok: true, stateHash: 'OTHER', winnerSide: 0 } });
     const app = build(cols, gateway);
@@ -545,8 +546,8 @@ describe('internal routes', () => {
 
   // ── C6-d hash mismatch + no judge → hashMismatch=true written to matches (CI guard) ──
   it('C6-d hash_ok=false + judge unavailable → matches.hashMismatch=true', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const app = build(cols, fakeGateway({ available: false }));
     await app.inject({
@@ -557,8 +558,8 @@ describe('internal routes', () => {
   });
 
   it('C6-d hash_ok=true → matches.hashMismatch not written', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const app = build(cols, fakeGateway({ available: false }));
     const noMismatchPayload = {
@@ -576,8 +577,8 @@ describe('internal routes', () => {
 
   // ── login-reconnect-prompt: match report clears the cached resume ticket for both sides ──
   it('login-reconnect-prompt: match report clears activeMatch redis keys for both accountIds', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols } = fakeCols({ a, b });
     const redis = { del: vi.fn().mockResolvedValue(1) };
     const app = build(cols, fakeGateway(), fakeCommercial(false), undefined, redis);
@@ -598,8 +599,8 @@ describe('internal routes', () => {
   });
 
   it('login-reconnect-prompt: idempotent repeat report does not clear redis again', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols } = fakeCols({ a, b });
     const redis = { del: vi.fn().mockResolvedValue(1) };
     const app = build(cols, fakeGateway(), fakeCommercial(false), undefined, redis);
@@ -617,8 +618,8 @@ describe('internal routes', () => {
   });
 
   it('login-reconnect-prompt: no redis configured → match report still succeeds (feature silently disabled)', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols } = fakeCols({ a, b });
     const app = build(cols); // no redis arg
     const res = await app.inject({
@@ -695,8 +696,8 @@ describe('GET /internal/mismatches (C3)', () => {
   });
 
   it('returns only hashMismatch=true matches within the last 24h, newest first', async () => {
-    const a = makeNewSave('a');
-    const b = makeNewSave('b');
+    const a = makeNewSave('a', FIXED_TS);
+    const b = makeNewSave('b', FIXED_TS);
     const { cols, matches } = fakeCols({ a, b });
     const now = 1000;
     matches.push(

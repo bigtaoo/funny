@@ -22,18 +22,18 @@ describe('buildLokiPayload', () => {
     const err = p.streams.find((s) => s.stream.level === 'error')!;
     expect(err.stream).toEqual({ source: 'client', level: 'error' });
     // ts(ms)→ns: 1000ms = 1_000_000_000ns
-    expect(err.values[0][0]).toBe('1000000000');
-    expect(err.values[0][1]).toContain('publicId=123456789');
-    expect(err.values[0][1]).toContain('tag=gateway');
-    expect(err.values[0][1]).toContain('msg=boom');
+    expect(err.values[0]![0]).toBe('1000000000');
+    expect(err.values[0]![1]).toContain('publicId=123456789');
+    expect(err.values[0]![1]).toContain('tag=gateway');
+    expect(err.values[0]![1]).toContain('msg=boom');
     // msg containing spaces is quoted-escaped in logfmt
     const info = p.streams.find((s) => s.stream.level === 'info')!;
-    expect(info.values[0][1]).toContain('msg="hi there"');
+    expect(info.values[0]![1]).toContain('msg="hi there"');
   });
 
   it('invalid level falls back to info; empty input → null', () => {
     const p = buildLokiPayload('1', [{ level: 'bogus', msg: 'x', ts: 5 }], undefined, () => '0')!;
-    expect(p.streams[0].stream.level).toBe('info');
+    expect(p.streams[0]!.stream.level).toBe('info');
     expect(buildLokiPayload('1', [], undefined, () => '0')).toBeNull();
   });
 });
@@ -49,9 +49,9 @@ describe('buildAnomalyLokiPayload', () => {
       () => '0',
     )!;
     expect(p.streams).toHaveLength(1);
-    expect(p.streams[0].stream).toEqual({ source: 'client', kind: 'anomaly' });
-    expect(p.streams[0].values[0][0]).toBe('1000000000'); // ms→ns
-    const line = p.streams[0].values[0][1];
+    expect(p.streams[0]!.stream).toEqual({ source: 'client', kind: 'anomaly' });
+    expect(p.streams[0]!.values[0]![0]!).toBe('1000000000'); // ms→ns
+    const line = p.streams[0]!.values[0]![1]!;
     expect(line).toContain('type=webgl_lost');
     expect(line).toContain('publicId=123456789');
     expect(line).toContain('platform=web');
@@ -62,7 +62,7 @@ describe('buildAnomalyLokiPayload', () => {
 
   it('unknown type falls back to other; empty input → null', () => {
     const p = buildAnomalyLokiPayload('1', [{ type: 'bogus', msg: 'x', ts: 5 }], undefined, undefined, () => '0')!;
-    expect(p.streams[0].values[0][1]).toContain('type=other');
+    expect(p.streams[0]!.values[0]![1]!).toContain('type=other');
     expect(buildAnomalyLokiPayload('1', [], undefined, undefined, () => '0')).toBeNull();
   });
 });
@@ -122,7 +122,7 @@ describe('MetaService.bootstrap (§9.3 only returns flags that differ from defau
 });
 
 describe('MetaService.clientLog (§9.4 targeting guard + forwarding)', () => {
-  const fetchMock = vi.fn(async () => ({ ok: true }) as Response);
+  const fetchMock = vi.fn(async (..._args: unknown[]) => ({ ok: true }) as Response);
   beforeEach(() => {
     fetchMock.mockClear();
     vi.stubGlobal('fetch', fetchMock);
@@ -168,7 +168,7 @@ describe('MetaService.clientLog (§9.4 targeting guard + forwarding)', () => {
 });
 
 describe('MetaService.clientAnomaly (full reporting: not restricted by targeting allowlist + IP rate limit)', () => {
-  const fetchMock = vi.fn(async () => ({ ok: true }) as Response);
+  const fetchMock = vi.fn(async (..._args: unknown[]) => ({ ok: true }) as Response);
   beforeEach(() => { fetchMock.mockClear(); vi.stubGlobal('fetch', fetchMock); });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -218,8 +218,8 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
     // The crash event is filtered (dev hot-reload noise); only the mem event survives.
     expect(out.data.accepted).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const payload = fetchMock.mock.calls[0]![1] as { body: string };
-    const line = JSON.parse(payload.body).streams[0].values[0][1] as string;
+    const payload = fetchMock.mock.calls[0]![1] as unknown as { body: string };
+    const line = JSON.parse(payload.body).streams[0].values[0]![1]! as string;
     expect(line).toContain('type=mem');
   });
 
@@ -264,8 +264,8 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
     )) as { data: { accepted: number } };
     expect(out.data.accepted).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const payload = fetchMock.mock.calls[0]![1] as { body: string };
-    const line = JSON.parse(payload.body).streams[0].values[0][1] as string;
+    const payload = fetchMock.mock.calls[0]![1] as unknown as { body: string };
+    const line = JSON.parse(payload.body).streams[0].values[0]![1]! as string;
     const publicIdMatch = /publicId=(\S+)/.exec(line);
     const platformMatch = /platform=(\S+)/.exec(line);
     expect(publicIdMatch?.[1]?.length).toBe(64);

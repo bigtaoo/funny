@@ -11,7 +11,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type MongoHandle } from '@nw/shared';
 import type { Collection, Document } from 'mongodb';
-import { migrateOneAccount, type CardInstanceLike } from '../scripts/migrateCardInv.js';
+import { migrateOneAccount, type CardInstanceLike, type SaveDocLike, type CardInstanceDocLike } from '../scripts/migrateCardInv.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_migrate_cardinv_test';
@@ -29,8 +29,9 @@ if (!mongo) console.warn(`[migrateCardInv.e2e] Mongo unreachable (${URI}) — sk
 
 describe.skipIf(!mongo)('migrateCardInv (CC-16 migration script)', () => {
   const m = mongo!;
-  let saves: Collection<Document>;
-  let cardInstances: Collection<Document>;
+  // String-keyed collections (accountId / instance id), matching the script's own types — a bare `Collection<Document>` types _id as ObjectId and makes every filter here a type error.
+  let saves: Collection<SaveDocLike>;
+  let cardInstances: Collection<CardInstanceDocLike>;
 
   function card(id: string, defId = 'lichuang'): CardInstanceLike {
     return { id, defId, level: 1, gear: {}, locked: false };
@@ -43,8 +44,8 @@ describe.skipIf(!mongo)('migrateCardInv (CC-16 migration script)', () => {
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
-    saves = m.db.collection<Document>('saves');
-    cardInstances = m.db.collection<Document>('cardInstances');
+    saves = m.db.collection<SaveDocLike>('saves');
+    cardInstances = m.db.collection<CardInstanceDocLike>('cardInstances');
   });
 
   afterAll(async () => { if (mongo) await mongo.close(); });
@@ -57,8 +58,8 @@ describe.skipIf(!mongo)('migrateCardInv (CC-16 migration script)', () => {
     expect(r).toEqual({ ok: true, count: 2 });
     expect(await cardInstances.countDocuments({})).toBe(0);
     const doc = await saves.findOne({ _id: 'acc1' });
-    expect(doc!.save.cardInv).toBeDefined();
-    expect(Object.keys(doc!.save.cardInv)).toHaveLength(2);
+    expect(doc!.save!.cardInv).toBeDefined();
+    expect(Object.keys(doc!.save!.cardInv!)).toHaveLength(2);
   });
 
   it('a real run migrates every card and unsets the embedded field', async () => {
@@ -72,8 +73,8 @@ describe.skipIf(!mongo)('migrateCardInv (CC-16 migration script)', () => {
     expect(docs.find((d) => d._id === 'c1')!.defId).toBe('lichuang');
 
     const saveDoc = await saves.findOne({ _id: 'acc1' });
-    expect(saveDoc!.save.cardInv).toBeUndefined();
-    expect(saveDoc!.save.cardInvCount).toBe(2);
+    expect(saveDoc!.save!.cardInv).toBeUndefined();
+    expect(saveDoc!.save!.cardInvCount).toBe(2);
     expect(saveDoc!.rev).toBe(2); // $inc: rev 1 → 2
   });
 
@@ -119,7 +120,7 @@ describe.skipIf(!mongo)('migrateCardInv (CC-16 migration script)', () => {
         }
         return saves.findOneAndUpdate(filter, update);
       },
-    } as unknown as Collection<Document>;
+    } as unknown as Collection<SaveDocLike>;
 
     const r = await migrateOneAccount(racySaves, cardInstances, 'acc1', false);
 
@@ -128,7 +129,7 @@ describe.skipIf(!mongo)('migrateCardInv (CC-16 migration script)', () => {
     const docs = await cardInstances.find({ accountId: 'acc1' }).toArray();
     expect(docs.map((d) => d._id).sort()).toEqual(['c1', 'c2']);
     const saveDoc = await saves.findOne({ _id: 'acc1' });
-    expect(saveDoc!.save.cardInv).toBeUndefined();
+    expect(saveDoc!.save!.cardInv).toBeUndefined();
     expect(saveDoc!.rev).toBe(100); // bumped to 99 by the simulated race, then +1 on the successful unset
   });
 
@@ -138,7 +139,7 @@ describe.skipIf(!mongo)('migrateCardInv (CC-16 migration script)', () => {
       findOne: saves.findOne.bind(saves),
       // Every attempt loses the race — filter never matches, migrateOneAccount must eventually give up.
       findOneAndUpdate: async () => null,
-    } as unknown as Collection<Document>;
+    } as unknown as Collection<SaveDocLike>;
 
     const r = await migrateOneAccount(alwaysRacySaves, cardInstances, 'acc1', false);
 
@@ -147,6 +148,6 @@ describe.skipIf(!mongo)('migrateCardInv (CC-16 migration script)', () => {
     // cardInstances even though the account is left in the (still-resumable) unmigrated state.
     expect(await cardInstances.countDocuments({ accountId: 'acc1' })).toBe(1);
     const saveDoc = await saves.findOne({ _id: 'acc1' });
-    expect(saveDoc!.save.cardInv).toBeDefined(); // never unset — a future re-run will pick this account back up
+    expect(saveDoc!.save!.cardInv).toBeDefined(); // never unset — a future re-run will pick this account back up
   });
 });

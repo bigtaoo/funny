@@ -18,7 +18,7 @@ describe('achievement definition table', () => {
     for (const a of ACHIEVEMENTS) {
       expect(a.tiers.length).toBe(3);
       for (let i = 1; i < a.tiers.length; i++) {
-        expect(a.tiers[i].threshold).toBeGreaterThanOrEqual(a.tiers[i - 1].threshold);
+        expect(a.tiers[i]!.threshold).toBeGreaterThanOrEqual(a.tiers[i - 1]!.threshold);
       }
     }
   });
@@ -30,22 +30,22 @@ describe('tierState — current tier derivation', () => {
   it('no tier reached: all reached=false', () => {
     const st = tierState(def, { 'kill.archer': 50 }, []);
     expect(st.map((s) => s.reached)).toEqual([false, false, false]);
-    expect(st[0].progress).toBe(50);
+    expect(st[0]!.progress).toBe(50);
   });
 
   it('tiers I/II reached but not claimed: claimable; tier III not yet reached', () => {
     const st = tierState(def, { 'kill.archer': 600 }, []);
-    expect(st[0].claimable).toBe(true);
-    expect(st[1].claimable).toBe(true);
-    expect(st[2].reached).toBe(false);
-    expect(st[0].progress).toBe(100); // capped at threshold
+    expect(st[0]!.claimable).toBe(true);
+    expect(st[1]!.claimable).toBe(true);
+    expect(st[2]!.reached).toBe(false);
+    expect(st[0]!.progress).toBe(100); // capped at threshold
   });
 
   it('tier I already claimed: reached but not claimable', () => {
     const st = tierState(def, { 'kill.archer': 600 }, [1]);
-    expect(st[0].claimed).toBe(true);
-    expect(st[0].claimable).toBe(false);
-    expect(st[1].claimable).toBe(true);
+    expect(st[0]!.claimed).toBe(true);
+    expect(st[0]!.claimable).toBe(false);
+    expect(st[1]!.claimable).toBe(true);
   });
 
   it('missing stats treated as 0', () => {
