@@ -325,7 +325,7 @@ export function buildingMaxHp(level: number): number {
 
 /**
  * NPC-tile symbolic base HP, scaled by tile level (2026-07-17 owner decision, option 2 "缓坡";
- * re-calibrated 40 → 80 on 2026-08-19 by ADR-069, see below):
+ * re-calibrated 40 → 60 on 2026-08-19 by ADR-069, see below):
  * the single-battle NPC capture paths (occupy / sweep / territory tile / stronghold / crossing) run one
  * `runSiegeBattle` whose in-engine defender base HP was originally a flat {@link BASE_HP}=100 regardless of
  * tile level — a low-level tile with a trivial garrison (npcGarrison(1)=120 = 2 infantry) still needed ~10
