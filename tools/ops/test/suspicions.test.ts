@@ -31,19 +31,19 @@ const row = (players: Player[], over: Partial<MismatchView> = {}): MismatchView 
 
 describe('mismatchPlayerLabel', () => {
   it('pairs the name with the publicId when the archive snapshotted both', () => {
-    expect(mismatchPlayerLabel({ side: 0, accountId: 'acc-1', displayName: 'Alice', publicId: '123456789' })).toBe('Alice #123456789');
+    expect(mismatchPlayerLabel({ accountId: 'acc-1', displayName: 'Alice', publicId: '123456789' })).toBe('Alice #123456789');
   });
 
   it('shows the publicId alone when no name was snapshotted', () => {
-    expect(mismatchPlayerLabel({ side: 0, accountId: 'acc-1', publicId: '123456789' })).toBe('#123456789');
+    expect(mismatchPlayerLabel({ accountId: 'acc-1', publicId: '123456789' })).toBe('#123456789');
   });
 
   it('falls back to the name when there is no publicId', () => {
-    expect(mismatchPlayerLabel({ side: 1, accountId: 'acc-2', displayName: 'Bob' })).toBe('Bob');
+    expect(mismatchPlayerLabel({ accountId: 'acc-2', displayName: 'Bob' })).toBe('Bob');
   });
 
   it('falls back to the raw accountId when the row carries neither (pre-snapshot match)', () => {
-    expect(mismatchPlayerLabel({ side: 1, accountId: 'acc-2' })).toBe('acc-2');
+    expect(mismatchPlayerLabel({ accountId: 'acc-2' })).toBe('acc-2');
   });
 });
 
@@ -81,6 +81,27 @@ describe('mismatchRepeats', () => {
 
   it('counts a duplicated accountId within one match once — a desynced room is one event, not two', () => {
     expect(mismatchRepeats([row([alice, { ...alice, side: 1 }])])).toEqual([]);
+  });
+
+  // `players` really can arrive empty: meta projects MatchDoc.players verbatim and does not require it
+  // to be populated (its own /internal/mismatches fixtures use `players: []`). Must not throw — an
+  // unreadable row is still a row the operator should see in the table.
+  it('skips rows with no players instead of throwing', () => {
+    expect(mismatchRepeats([row([]), row([], { roomId: 'r2' })])).toEqual([]);
+    expect(mismatchRepeats([row([]), row([alice, bob]), row([alice, bob], { roomId: 'r2' })])).toEqual([
+      { accountId: 'acc-a', label: 'Alice #111111111', count: 2 },
+      { accountId: 'acc-b', label: 'Bob #222222222', count: 2 },
+    ]);
+  });
+
+  // Rows arrive newest-first from meta, and displayName is a per-match snapshot — so a player who
+  // renamed between two mismatches has two different labels on the wire. Take the newest, or the summary
+  // line would name someone by a name they no longer use while the table below shows the current one.
+  it('labels a repeat offender from the newest row when the name snapshot changed between matches', () => {
+    const renamed: Player = { ...alice, displayName: 'Alicia' };
+    expect(mismatchRepeats([row([renamed, bob]), row([alice, carol], { roomId: 'r2' })])[0]).toEqual({
+      accountId: 'acc-a', label: 'Alicia #111111111', count: 2,
+    });
   });
 });
 
