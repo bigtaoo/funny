@@ -25,12 +25,12 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 | 闸门 | 范围 | 语义 |
 |---|---|---|
 | 单文件 500 行 | `tools/` 全树（`.ts`/`.tsx`，排除 `test/`、`scripts/`、`dist/`） | `tools/scripts/checkFileLength.mjs` 薄封装转调根 `scripts/checkFileLength.mjs`；只在**新文件**越过 500 行、或 `tools/scripts/file-length-baseline.json` 里的已知文件**继续变大**时判红。2026-08-13 (G4) 起 |
-| 覆盖率 | 5 个工具包 | 报表 + **产出必须存在**；**百分比暂不受 90% 门槛约束**（ADR-070）。2026-08-20 起 |
+| 覆盖率 | 5 个工具包 | 报表 + **产出必须存在**；`map-editor` 自 Phase 4a 起**百分比也受 90% 门禁**，其余 4 个仍豁免（ADR-070）。2026-08-20 起 |
 | 可达性 | 5 个工具包各自的 `src/**` | `tools/scripts/checkUnreachableModules.mjs`（逐包调用根 `scripts/checkUnreachableModules.mjs`）：**任何一个 `src/` 下的源文件，若从该包的 bundler entry、`--extra-root` 声明的兄弟产物目录（animator 的 `runtime/`）、以及 `test/**` 这三类根出发都到不了，判红**。2026-08-20 起 |
 
 覆盖率那条的两半要分清：
 - **管路已受门禁**——某个工具包不再产出 `coverage/`，`checkCoverageThreshold.mjs` 判红，跟服务端 workspace 一样。这不是覆盖率回归，报错文案也刻意分开说（"produced no coverage output at all"），免得有人去找缺失的测试而真正要修的是缺失的 CI 步骤。
-- **百分比未受门禁**——每个包各自的 scope 先要做结构性改造才谈得上 90%（下表）。这条豁免在**每次** CI 的 summary 里复述当前值与目标，绿跑也印。
+- **百分比未受门禁**——每个包各自的 scope 先要做结构性改造才谈得上 90%（下表）。这条豁免在**每次** CI 的 summary 里复述当前值与目标，绿跑也印。**已开始收缩**：Phase 4a（2026-08-20）把 `map-editor` 毕业进了 `JSON_SUMMARY_PACKAGES`，豁免名单从 5 个降到 4 个。
 
 ## 可达性闸门（2026-08-20 新增）
 
@@ -53,21 +53,26 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 | 包 | `coverage.include` | scope 内行覆盖 | 全包行覆盖 | 距 90% 要做的事 |
 |---|---|---|---|---|
 | `level-editor` | `state/**`、`units.ts` | **100.0%** (216/216) | 23.8% | 已达标，但 scope 只占 ~1670 行里的 216 行（**五个工具里最窄**）。Phase 4b 先把 `board/BoardPanel.ts`/`timeline/TimelinePanel.ts` 里已导出的坐标/命中数学抽成独立模块（现在夹在拥有 canvas 的面板类里，目录 include 够不着），scope 扩到约 600 行再接门禁 |
-| `map-editor` | `state/**`、`render/{isoGrid,tileStyle}.ts`、`i18n.ts`、`constants.ts` | **98.8%** (644/652) | 38.3% | 已达标。Phase 4a 把 `isoGrid`/`tileStyle` 从 `render/` 挪进独立纯模块（现在只能逐文件列——那是缺模块边界的味道，不是偏好），include 回到目录级后接门禁 |
+| `map-editor` | `state/**`、`tiles/**`、`i18n.ts`、`constants.ts` | **98.8%** (644/652) | 38.3% | **✅ 已接门禁（Phase 4a，2026-08-20）**。`isoGrid`/`tileStyle` 已从 `render/` 移进新的 `src/tiles/`（纯层：一格在屏幕哪儿 / 长什么样），`include` 回到目录级，包也从 `NOT_GATED_JSON_SUMMARY_PACKAGES` 移进 `JSON_SUMMARY_PACKAGES` |
 | `vfx-editor` | `model/**`、`io/**`、`rendering/Playback.ts` | 84.9% (449/529) | 40.4% | Phase 4c：`io/IOController.ts`（74 行，0%）。它没有浏览器依赖挡路，所以「没测」是缺口而非结构限制，故意留在 scope 内 |
 | `animator` | `core/**`、`skeleton/**`、`animation/**`、`io/**` | 64.3% (927/1442) | 23.5% → **29.5%**（2026-08-20 删掉 1424 行不可达死码后实测，见下方「已知遗留」）| Phase 4d：`io/{AutoSaveController,ProjectStore}.ts`（IndexedDB，均 0%，按 vfx-editor 的 `fake-indexeddb` 先例）+ `animation/AnimationController.ts`（41.3%） |
 | `ops` | **无（报全包）** | — | **8.8%** (322/3639) | Phase 4e：它没有可指的逻辑层——2026-08-13 Phase 3 导出的 9 个纯函数各自嵌在一个 90% 是 `h()` DOM 的 `pages/*.ts` 里，最大的非页面文件 `src/api.ts` 自己也只有 22.7%。先把各页纯逻辑抽进 `src/logic/<page>.ts`、`pages/*` 只留 DOM 装配（同 `f22c3df2` 拆 `api.ts`/`types.ts` 的方向），再把 include 收到 `logic/**` + `api/**` |
 
-**为什么两个低分留着**：include 清单刻意把已知未测的文件圈在里面（animator 那两个 0% 的 IndexedDB 文件最典型）——缺口是要干的活，不是要定义掉的东西。反过来，`ops` 只要把 include 缩到 `src/api/**` 就能把印出来的数字抬上去，**一个测试都不用加**，这是覆盖率门禁最不该奖励的事，所以它宁可挂着 8.8% 的全包数字。
+**Phase 4a 实测（2026-08-20，`map-editor`）**：搬 `isoGrid`/`tileStyle` 是**零行为改动**的搬移——production bundle 逐 token 比对，两侧各只有 25 个独有 token，全部是 webpack 的确定性 module id（模块路径集合变了必然重排）与 contenthash 本身，无任何代码/字符串差异（581751 → 581765 字节）。所以这类 graduation **不要指望 contenthash 相同**（那是 animator 删死码那次能用的证据，因为那次模块集合只减不改名）；能用的是 token 集合对比。顺带一并搬走的还有 `TerrainTextureName` 类型：它原来定义在 PIXI 的 `render/terrainAtlasLoader.ts` 里，纯层要用就得 `import type` 一个 PIXI 模块（运行期无害，但边界读不出来），现在类型归 `tiles/tileStyle.ts`、loader 反向 import。**接门禁之后边界是自守的**：往一个已被 include 的目录里丢 PIXI 模块 = 塞进一个 ~0% 的文件 = 打红 90% 那条线；旧的逐文件 include 对「往 `render/` 加文件」完全隐形。
+
+**为什么剩下的低分留着**：include 清单刻意把已知未测的文件圈在里面（animator 那两个 0% 的 IndexedDB 文件最典型）——缺口是要干的活，不是要定义掉的东西。反过来，`ops` 只要把 include 缩到 `src/api/**` 就能把印出来的数字抬上去，**一个测试都不用加**，这是覆盖率门禁最不该奖励的事，所以它宁可挂着 8.8% 的全包数字。
 
 **防刷分的那一列**：报表每行有 `Scope (files)`（measured / `src` 下源文件数）。缩 include 抬 % 的同时这个比例会掉，两个数印在同一张表里，取舍在 review 时就看得见。
 
 ## Phase 4 graduation：怎么把一个工具接进门禁
 
+> 已走过一遍：**4a `map-editor`（2026-08-20）**，五个里的第一个。下面五步就是那次实际做的事。
+
 1. 把该包从 `scripts/coverageLib.mjs` 的 `NOT_GATED_JSON_SUMMARY_PACKAGES` **移到** `JSON_SUMMARY_PACKAGES`。
 2. **两个清单都要检查**——`coverageScripts.test.ts` 有一条专门钉这个错的用例：复制一行、忘了删原来那行，包就同时既受门禁又被豁免（`collectRows` 出两行，门禁被那条豁免行满足，表面看一切正常）。
-3. 更新本文台账 + 该包 `vitest.config.ts` 的注释。
-4. `node scripts/checkCoverageThreshold.mjs` 本地过一遍（它会顺带把剩下的 not-gated 清单重印一次）。
+3. 顺手看一眼 `NOT_GATED_JSON_SUMMARY_PACKAGES` 上方那段注释里的**数量词**（"五个工具包"）——名单少一个，那句话就过时一句。
+4. 更新本文台账 + 该包 `vitest.config.ts` 的注释（包括「scope 内 X%」那个数字：把它复核一遍，别照抄旧值）。
+5. `node scripts/checkCoverageThreshold.mjs` 本地过一遍（它会顺带把剩下的 not-gated 清单重印一次）。本地跑要求**每个**受门禁包都有 `coverage/`，只跑一个包会被判成「产出缺失」而非绿——在 worktree 里可以先把主检出各包已有的 `coverage/coverage-summary.json`（+ `server/engine` 的 `lcov.info`）拷进来占位，只重跑本轮改的那个包。
 
 ## 测试历史
 

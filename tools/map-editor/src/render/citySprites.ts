@@ -6,7 +6,7 @@ import { BASE_SPRITE_TILES } from '../constants';
 import { camera, cityStore } from '../editor';
 import { citySpriteLayer } from '../stage';
 import { getCityTextureForLevel, isCityAtlasReady } from './cityAtlasLoader';
-import { ISO_RATIO } from './isoGrid';
+import { ISO_RATIO } from '../tiles/isoGrid';
 
 /**
  * Rebuilds every city sprite from cityStore.nodes. Cheap (~70 nodes) and deliberately NOT called on

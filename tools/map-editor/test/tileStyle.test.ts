@@ -12,7 +12,7 @@ import {
   TERRAIN_TEX_ALPHA,
   TERRAIN_TEX_ALPHA_DEFAULT,
   terrainTextureName,
-} from '../src/render/tileStyle';
+} from '../src/tiles/tileStyle';
 
 describe('terrainTextureName', () => {
   it('paints rivers as river art and mountains as mountain art (never the position hash)', () => {

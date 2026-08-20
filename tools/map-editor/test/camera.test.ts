@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SLG_MAP_H, SLG_MAP_W } from '@nw/shared/slg';
 import { DEFAULT_TP, VIEW_H, VIEW_PAD_FACTOR, VIEW_W, ZOOM_MAX, ZOOM_MIN } from '../src/constants';
 import { Camera } from '../src/state/camera';
-import { screenToTileF } from '../src/render/isoGrid';
+import { screenToTileF } from '../src/tiles/isoGrid';
 
 let cam: Camera;
 beforeEach(() => {

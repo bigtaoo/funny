@@ -20,7 +20,7 @@ import { baseLayer } from '../stage';
 import { cityCountLabel, setStatus, tileCountLabel } from '../ui/status';
 import { renderTerrainTitle } from '../ui/panels';
 import { drawEditorTile } from './tileGraphics';
-import { terrainTextureName } from './tileStyle';
+import { terrainTextureName } from '../tiles/tileStyle';
 
 export interface EffectiveTile {
   type: TileType;
