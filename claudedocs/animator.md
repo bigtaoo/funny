@@ -47,20 +47,19 @@ cd tools/animator && npm run start   # 端口 9091
 
 **可达性是独立复核过的，不是照抄清单**：写了一次按 tsconfig 解析规则（相对路径 + `baseUrl: ./src` 非相对路径，候选序 `X.ts` → `X/index.ts`）的 import 图遍历，起点取全部三类入口——`src/index.ts`（webpack 唯一 entry）、`runtime/StickmanRuntime.ts`（**不在 `src/` 下，是单独产物，必须单独当根**）、`test/**/*.test.ts` 全部 11 个文件；43 个活文件全部可达，剩下的正好是这 13 个 + `src/globals.d.ts`（ambient 声明文件，无人 import 但 tsc 需要，**保留**）。另外全库 grep 过这批路径名与 `AtlasController`/`AtlasPanel`，命中的全是目录版（`src/io/**`、`src/skeleton/Skeleton.ts`），无一处指向扁平版。
 
-**最硬的一条证据**：删除前后跑 `npm run build`，production bundle 的 contenthash 与文件名完全一致（`bundle.04a1b40b5390a85f7d41.js`，653357 字节）——即这些文件从未进入产物，删除对线上零影响。`npm run typecheck` / `npm test`（128 条）/ `npm run build` 三项删除后全绿，用例数与删除前一致（这批死文件本来就没有测试）。
+**最硬的一条证据**：删除前后跑 `npm run build`，production bundle 的 contenthash 与文件名完全一致（`bundle.04a1b40b5390a85f7d41.js`，653357 字节）——即这些文件从未进入产物，删除对线上零影响。`npm run typecheck` / `npm test` / `npm run build` 三项删除后全绿，用例数与删除前一致（这批死文件本来就没有测试）——任务分支上是 128 条，合并进 `20.08.2026` 后 138 条（多出的 10 条是另一会话同日加的 `RotateBoneCommand` 测试，与本次删除无关）。
 
 **dev server 抽查**：起 9091（本次为避端口冲突起在 9191）加载编辑器，与主检出未修改版本（起在 9192）跑同一段 DOM 事件驱动脚本逐步对比——新建 clip（含 `Undo: Create clip "…"` 标签）、打/删关键帧、`Ctrl+Z`/`Ctrl+Shift+Z`、改 duration、切动画、重命名、删 clip 后回落 `idle`，两侧**每一步的 status 文案与列表状态完全一致**，双方 `errors` 均为空。**注意这个环境的坑**：Browser pane 不 compositing，页面 `document.visibilityState === 'hidden'` 且 `requestAnimationFrame` 永不触发，于是 PIXI ticker 冻结 → 主 canvas 停在 0×0、`#tl-labels` 一行不渲染（`TimelineView.render()` 只在主循环里被调用）。这**不是**回归——未修改的主检出版本表现一模一样；同样原因截图也拿不到（同 Phase 4 的记录），可见性验证只能退化成 DOM 事件驱动 + 与基线逐步比对。
 
-**覆盖率变化**（同一 `@vitest/coverage-v8` provider，`--no-save` 装的，不改 `package.json`）：
+**覆盖率变化**（在合并进 `20.08.2026`（已含 ADR-070 接线 + 另一会话新增的 `RotateBoneCommand` 测试，共 138 条）之后的同一棵树上，前后各实测一次；"删除前"是把这 13 个文件 `git checkout` 回来再跑）：
 
-| 统计范围 | 删除前 | 删除后 |
-|---|---|---|
-| whole-package（coverage 默认 include，含 `runtime/StickmanRuntime.ts`） | 21.92% | **27.53%** |
-| 仅 `src/**` | 22.70% | **28.77%** |
-| ADR-070 committed scope（`src/{core,skeleton,animation,io}/**`） | 61.37% | 61.37%（不变） |
+| 统计范围 | 命令 | 删除前 | 删除后 |
+|---|---|---|---|
+| whole-package | `--coverage.include='**'` | 23.53% | **29.54%** |
+| 仅 `src/**` | `--coverage.include='src/**'` | 24.37% | **30.87%** |
+| ADR-070 scope（`npm run test:coverage`） | `src/{core,skeleton,animation,io}/**` | 64.28% | 64.28%（**不变**）|
 
-前两行涨的就是这 1424 行 0% 死码退出分母；第三行不动，因为死文件全在那份 whitelist 之外——**ADR-070 的 CI 门禁数字不受本次删除影响**，别指望它变。ADR-070 会话里提到的"删除前 23.53%"在本分支复现不出来（本分支基于 `main`），因为那份 worktree 还带着未提交的 Phase 4d `interaction/InteractionController.ts` + 其测试改动，分母/分子都跟 `main` 不同；上表三行都是同一棵树上前后两次实测，自洽可比。
-
+前两行涨的就是这 1424 行 0% 死码退出分母；第三行不动，因为死文件全在那份 include whitelist 之外——**ADR-070 的 CI 门禁数字不受本次删除影响，别指望它变**。台账（`claudedocs/tools-testing.md`）的 animator 全包一列已同步改成 29.5%。引用覆盖率数字时务必说明是哪个口径，否则 64.28% 不动和全包涨 6 个点看起来会像自相矛盾。
 
 ## 参数两层模型
 
