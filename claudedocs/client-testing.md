@@ -39,6 +39,8 @@ vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 
 
 `client/tsconfig.test.json`（extends 主 tsconfig，`include` 追加 `test/**`）把 `src` + `test` 拉进同一个 program 做 `tsc --noEmit`。`npm run typecheck` 跑它，CI `build-test` job 在单测前执行——**test 层的蓝图/DTO 漂移现在会让 CI 红**。改了引擎/网络层的类型后，本地先 `npm run typecheck` 再提交。
 
+**`npm run typecheck` 现在跑两个 program（2026-08-20 起）**：除上面那个，还有 `client/tsconfig.fulllink.json`（`npm run typecheck:fulllink`，链在后面）。它装的是**反方向**的东西——import 了 client 源码的 *server* 测试，今天只有 `server/auctionsvc/test/auction-fulllink.e2e.test.ts`（真实 `WorldApiClient` 打真实 auctionsvc HTTP）。这个文件被 auctionsvc 自己的 `tsconfig.test.json` 排除掉了（它会把 DOM/pixi 拖进一个 Node-only 程序），而 client 这边是全仓库唯一同时装了 `client/node_modules` 和 `server/node_modules` 的 CI job，所以由它接管。两处覆盖：`paths` 里 `@nw/shared` 从 slg 子集换成完整 barrel（那个测试要 `signToken`；完整 barrel 是超集，不影响 client 源码的解析，而"客户端只看 slg 子集"这条边界照旧由 `tsconfig.test.json` 把关），以及 `types`/`typeRoots` 指到 `server/node_modules/@types` 拿 node 类型——**故意不把 `@types/node` 装进 client devDependencies**，否则浏览器代码引用 `process`/`Buffer` 也能过主程序。加新的跨包测试时，往它的 `include` 里加一行（server 侧的守卫脚本会强制这件事，见 [`server-testing.md`](server-testing.md)）。
+
 ### ⚠️ 坑：零参 `vi.fn(() => …)` 会把 `mock.calls` 类型推成空元组 `[]`（2026-08-15 实测踩过）
 
 `test/render/rewardIcon.test.ts` 用 `const buildIcon = vi.fn(() => ({ kind: 'drawn' }))` 声明替身，**没写参数**。vitest 从这个签名推断"这个函数被调用时收到的实参元组"，零参就推成 `[]`；于是文件里每一处 `buildIcon.mock.calls[0][0]`（读回"它被传了哪个 IconKind"，正是这批断言的全部意义）都成了 `error TS2493: Tuple type '[]' of length '0' has no element at index '0'`。
