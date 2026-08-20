@@ -301,7 +301,12 @@ jobs:
       # vitest (esbuild) and webpack don't type-check, and tsconfig.json's include is src-only,
       # so test/** blueprint/DTO drift stays latent. tsconfig.test.json pulls src + test/** into
       # one program so this step fails on that drift (see CC-1 card-instance migration).
-      - name: client typecheck (src + tests)
+      # `npm run typecheck` runs TWO programs: tsconfig.test.json (client src + tests) and
+      # tsconfig.fulllink.json (cross-package: server tests that import the real client net layer,
+      # today only auctionsvc's auction-fulllink e2e). The second one is why this job installs
+      # server/ deps as well — it needs mongodb + @types/node from server/node_modules alongside
+      # client/node_modules, which is the combination no other job has.
+      - name: client typecheck (src + tests, and cross-package full-link program)
         working-directory: client
         run: npm run typecheck
       # Always with coverage, on PRs too — see the matching comment on server-test above. The client

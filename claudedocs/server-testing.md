@@ -425,7 +425,7 @@ analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverag
 
 1. **`references` 不会被 `extends` 继承**，必须在 `tsconfig.test.json` 里原样重复一遍。否则 `@nw/shared` 会退回 node_modules → `shared/dist/*.d.ts`，在没 build 过的检出里直接 240 个假 TS2307（光 metaserver 就这么多）。即便重复了，这些程序仍是**非 build 模式**，依赖 `tsc -b` 产出的 `dist/*.d.ts` 存在——所以 CI 里这一步必须排在 `tsc -b` 之后。
 2. **`module` 要跟着 vitest 的现实走**：继承下来的 CommonJS 会让若干 e2e 里的顶层 `await` 报 TS1378（vitest 按 ESM 转译，运行时完全合法），所以除 metaserver 外都覆盖成 `ES2022`。metaserver 自己是 `NodeNext`，强行改成 ES2022 会 TS5110；但它在 NodeNext 下又会要求 `../src/x` 写成 `../src/x.js`（TS2835），所以单独覆盖成 `ESNext` + `moduleResolution: Bundler`——这才是 vitest 实际的解析方式。
-3. **auctionsvc 排除了 `test/auction-fulllink.e2e.test.ts`**（配置里有注释）：它故意 import 真实的 client `WorldApiClient`，会把 DOM 全局 / pixi / @bufbuild 拖进一个 Node-only 程序，要检查它就得在 server-checks job 里装 client 依赖并加 `lib:DOM`。全仓库唯一一个已知不检查的测试文件。
+3. **auctionsvc 排除了 `test/auction-fulllink.e2e.test.ts`**（配置里有注释）：它故意 import 真实的 client `WorldApiClient`，会把 DOM 全局 / pixi / @bufbuild 拖进一个 Node-only 程序，要检查它就得在 server-checks job 里装 client 依赖并加 `lib:DOM`。当时是全仓库唯一一个不检查的测试文件；**次日（2026-08-20）由 `client/tsconfig.fulllink.json` 接管**，见下一节——`exclude` 保留（它确实不该进 Node-only 程序），但文件本身不再是豁免。
 
 **758 个错误的分布与修法**（多数是机械的，但每一类都藏着"测试其实没在验证它自称验证的东西"）
 
@@ -451,3 +451,29 @@ analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverag
 - 两个一次性迁移脚本（`metaserver/scripts/migrateCardInv.ts`、`samplePvpReplays.ts`）用 `Collection<Document>` 表示 string-keyed 集合，`{_id: accountId}` 过滤全是类型漏洞——它们被测试 import，这次一并类型化。
 
 **验证**：13 个包 `typecheck:test` 全 0 错、根 `tsc -b` 全绿；各包测试套件全跑一遍确认没有行为回归（metaserver 1639 / worldsvc 917 / shared 956 / socialsvc 216 / commercial 213 / gateway 181 / botsvc 119 / gameserver 127 …）。
+
+---
+
+## 唯一的类型检查豁免归零：`client/tsconfig.fulllink.json` 接管跨包 full-link 测试（2026-08-20，worktree `feat/auction-fulllink-typecheck`）
+
+**背景**：上一节把 13 个包的 `test/**` 都接进了类型检查，只留下一个洞——`auctionsvc/test/auction-fulllink.e2e.test.ts` 写在 `tsconfig.test.json` 的 `exclude` 里。它是唯一一个**跨包**测试：一头驱动真实的 `client/src/net/WorldApiClient`（浏览器构建实际发的那份代码），另一头打真实的 auctionsvc `startHttpApi` + `mongodb-memory-server`。它的类型错误此前对任何 CI 步骤都不可见。
+
+**为什么不能塞进任何已有程序**（这三条决定了解法的形状）
+
+- 它同时要 **DOM lib + `client/node_modules`**（`WorldApiClient` → `platform/IPlatform` → `import type * as PIXI from 'pixi.js-legacy'`，类型层真的要 pixi）**和 `server/node_modules` + node 类型**（`mongodb`、`import('http').Server`、`import('net').AddressInfo`）。没有任何现成程序是这个并集。
+- 塞进 `auctionsvc/tsconfig.test.json` 等于把一个 Node-only 配置弯成第二份 client 配置，还要让 `server-checks` job 去装 client 依赖。
+- 塞进 `client/tsconfig.test.json` 会撞 `paths`：client 故意把 `@nw/shared` 窄化成 `../server/shared/src/slg/index.ts`（只给客户端看 slg 子集），而这个测试要 `signToken`/`SlgError`/`EquipmentInstance`——全在完整 barrel 里、不在 slg barrel 里。
+
+**做法**：新增第三个程序 `client/tsconfig.fulllink.json`，专门装「import 了 client 源码的 server 测试」。
+
+- `extends ./tsconfig.json`（拿到 DOM lib、strict、`@nw/engine` 映射），**只覆盖三处**：
+  - `paths` 里 `@nw/shared` 重新指向 `../server/shared/src/index.ts`（完整 barrel）。它是 slg barrel 的**超集**，所以 client 源码在这个程序里不会解析到不同的东西；而"客户端只能看 slg 子集"这条边界仍然由 `tsconfig.test.json` 把关——那才是真正 gate 客户端代码的程序。
+  - `types: ["node"]` + `typeRoots` 指到 `../server/node_modules/@types`。**没有**把 `@types/node` 装进 client devDependencies：那会让浏览器代码引用 `process`/`Buffer` 也能通过主程序的类型检查，是一条有用的边界，不能为了一个测试文件拆掉。
+  - `include` 只有一行（那个测试文件本身），其余全靠 import 追踪进来；以后有第二个跨包测试就再加一行。
+- **宿主放 client 侧而不是 server 侧**，唯一理由是 CI：`client-test` job 本来就 `npm ci` 装了 **server/ 和 client/ 两份**依赖（步骤名"server install (client's @nw/engine + @nw/shared aliases resolve to server/ TS source)"），而 `server-checks` 只装 server/。这是全仓库唯一同时具备两侧依赖的 job。
+- `client/package.json`：新增 `typecheck:fulllink`，并把它**链进** `typecheck`（`tsc -p tsconfig.test.json && npm run typecheck:fulllink`）。于是 CI 现有的 client typecheck 步骤零改动就覆盖到了，不用新增 job（只改了步骤名和注释）。
+- **`exclude` 保留不动**：这个文件确实不该进 auctionsvc 那个 Node-only 程序。变的不是"要不要排除"，而是"排除之后有没有人接"。
+
+**把「零豁免」变成可执行约束**：`scripts/checkWorkspaceCoverage.mjs` 加第三条检查——遍历每个 workspace 的 `tsconfig.test.json#exclude`，每一条都必须出现在 `client/tsconfig.fulllink.json#include` 里（两边路径都归一成 repo 相对的 POSIX 形式再比），否则失败并指名道姓告诉你加到哪。顺带**禁掉 glob 形式的 exclude**（`*`/`?`）：一旦允许通配，"这个文件到底有没有被某个程序检查"就变成不可判定的，守卫本身就失去意义。这条正是上一节留下的教训的推广——`exclude` 是个能悄悄把文件从检查里摘出去的旋钮，跟当年 `--if-present` 悄悄跳过缺失脚本是同一类问题。
+
+**验证**：`client npm run typecheck`（两个程序）+ server `npm run typecheck` / `typecheck:test` / `check:workspacecoverage` 全绿；`auctionsvc` 那 8 个 full-link 用例照旧全过。三次反向验证：①往测试文件里注入两处类型错误（`price: 'ten'`、`const bogus: number = view.auctionId`），确认新程序**报了这两条**而不是静默通过；②把 `tsconfig.fulllink.json#include` 清空，确认守卫报"excluded ... without another program owning it"并退 1；③把 exclude 换成 `test/*.e2e.test.ts`，确认守卫报 glob 不允许并退 1。另外用 `tsc --listFiles` 确认程序里确实同时含 `client/src/net/WorldApiClient.ts`、`client/src/platform/IPlatform.ts`、`pixi.js-legacy`、`server/shared/src/index.ts`、`server/auctionsvc/src/httpApi`、`mongodb/mongodb.d.ts`（934 个文件），排除"程序其实是空的、所以当然全绿"这种假绿。

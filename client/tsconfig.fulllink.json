@@ -1,0 +1,21 @@
+{
+  "//": "Type-check config for CROSS-PACKAGE full-link tests: server tests that import the real client network layer.",
+  "//why": "server/auctionsvc/test/auction-fulllink.e2e.test.ts drives client/src/net/WorldApiClient against a real auctionsvc HTTP server, so it needs BOTH sides in one program: DOM lib + client/node_modules (WorldApiClient -> platform/IPlatform -> pixi.js-legacy types) AND server/node_modules + node types (mongodb, node:http/net, full @nw/shared). No pre-existing program is that superset, which is why the file used to sit in auctionsvc/tsconfig.test.json's `exclude` as the repo's one unchecked test file. It lives on the CLIENT side because the client CI job already installs both server/ and client/ deps (ci.yml: 'server install (client's @nw/engine + @nw/shared aliases resolve to server/ TS source)' + 'client install'), whereas server-checks installs server/ only. Run via `npm run typecheck:fulllink` (chained into `npm run typecheck`, so CI's existing client typecheck step covers it).",
+  "//paths": "Same mappings as tsconfig.json EXCEPT @nw/shared, repointed from src/slg/index.ts to the full src/index.ts: the test imports signToken/SlgError/EquipmentInstance, which the client-facing slg-only barrel deliberately does not re-export. The full barrel is a superset of the slg one, so nothing here resolves differently for client sources -- and the narrow client boundary is still enforced by tsconfig.test.json, the program that actually gates client code.",
+  "//types": "@types/node is NOT a client devDependency on purpose (adding it would let browser code reference `process`/`Buffer` and still type-check). Rather than install it here, point typeRoots at server/node_modules/@types for this program only.",
+  "//include": "One entry, not a glob: everything else in the program arrives by import-following. Add a line per future cross-package test.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "typeRoots": ["../server/node_modules/@types", "./node_modules/@types"],
+    "paths": {
+      "@nw/engine": ["../server/engine/src/index.ts"],
+      "@nw/engine/*": ["../server/engine/src/*"],
+      "@nw/shared/slg/auction": ["../server/shared/src/slg/auction.ts"],
+      "@nw/shared/cards": ["../server/shared/src/cards.ts"],
+      "@nw/shared": ["../server/shared/src/index.ts"]
+    }
+  },
+  "include": ["../server/auctionsvc/test/auction-fulllink.e2e.test.ts"]
+}

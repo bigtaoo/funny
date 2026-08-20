@@ -14,9 +14,15 @@
 // vitest runs through esbuild (types erased, never checked), so a workspace's whole test/ tree got
 // ZERO type-checking unless it also has a `tsconfig.test.json` + a `typecheck:test` script that CI
 // runs. That is now required of every workspace too, so a newly added service can't quietly skip it.
+//
+// Third gap, closed 2026-08-20: a `tsconfig.test.json` can still carve a file back out via `exclude`,
+// which is how auction-fulllink.e2e.test.ts spent a day as the one unchecked server test file. An
+// exclusion is legitimate ONLY if some other program picks the file up -- today that is
+// client/tsconfig.fulllink.json, the cross-package program for server tests that import client source.
+// So every path excluded from a test program must appear in that program's `include`.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SERVER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -42,10 +48,42 @@ for (const w of workspaces) {
   if (!wsPkg.scripts?.['typecheck:test']) missingTestScript.push(w);
 }
 
+// A test file carved out of its workspace's test program (see the header's third note) is only OK if
+// the cross-package program owns it instead. Compare as repo-relative POSIX paths so the two sides --
+// `exclude` relative to server/<ws>/, `include` relative to client/ -- are directly comparable.
+const REPO_ROOT = resolve(SERVER_ROOT, '..');
+const FULLLINK = join(REPO_ROOT, 'client', 'tsconfig.fulllink.json');
+const rel = (base, p) => relative(REPO_ROOT, resolve(base, p)).split(sep).join('/');
+const fulllinkIncludes = existsSync(FULLLINK)
+  ? new Set((JSON.parse(readFileSync(FULLLINK, 'utf8')).include ?? []).map((i) => rel(dirname(FULLLINK), i)))
+  : null;
+const unowned = [];
+const globbedExcludes = [];
+for (const w of workspaces) {
+  const cfgPath = join(SERVER_ROOT, w, 'tsconfig.test.json');
+  if (!existsSync(cfgPath)) continue;
+  for (const ex of JSON.parse(readFileSync(cfgPath, 'utf8')).exclude ?? []) {
+    // Globs would make "is this file checked somewhere?" undecidable here, so they are not allowed.
+    if (/[*?]/.test(ex)) { globbedExcludes.push(`${w}: ${ex}`); continue; }
+    const p = rel(join(SERVER_ROOT, w), ex);
+    if (fulllinkIncludes === null || !fulllinkIncludes.has(p)) unowned.push(`${w}: ${ex} -> ${p}`);
+  }
+}
+
 if (missingFromSolution.length === 0 && extraInSolution.length === 0
-  && missingTestConfig.length === 0 && missingTestScript.length === 0) {
-  console.log(`checkWorkspaceCoverage: OK — all ${workspaces.size} workspaces referenced in tsconfig.build.json, each with a tsconfig.test.json + typecheck:test script.`);
+  && missingTestConfig.length === 0 && missingTestScript.length === 0
+  && unowned.length === 0 && globbedExcludes.length === 0) {
+  console.log(`checkWorkspaceCoverage: OK — all ${workspaces.size} workspaces referenced in tsconfig.build.json, each with a tsconfig.test.json + typecheck:test script; every excluded test file owned by client/tsconfig.fulllink.json.`);
   process.exit(0);
+}
+
+if (unowned.length || globbedExcludes.length) {
+  console.log('FAILED — a test file is excluded from its workspace test program without another program owning it:\n');
+  for (const u of unowned) console.log(`    - ${u} (add that path to client/tsconfig.fulllink.json#include, or drop the exclude)`);
+  for (const g of globbedExcludes) console.log(`    - ${g} (glob excludes are not allowed in tsconfig.test.json — list files literally so this check stays decidable)`);
+  if (missingFromSolution.length === 0 && extraInSolution.length === 0
+    && missingTestConfig.length === 0 && missingTestScript.length === 0) process.exit(1);
+  console.log('');
 }
 
 if (missingTestConfig.length || missingTestScript.length) {
