@@ -84,6 +84,7 @@ interface AdminAccountDoc {
 | `appeals.action` 裁定申诉（approve/deny，撤销 mute/ban） | ✓ | ✓ | – | – |
 | `feedback.view` 查玩家反馈（无裁定；`SERVER_API.md §2.13`） | ✓ | ✓ | ✓ | ✓ |
 | `feedback.action` 标已读 / 写 ops 备注（`SERVER_API.md §2.13.1`，仍非裁定） | ✓ | ✓ | – | – |
+| `promo.manage` 兑换码发码 / 查码（B-PROMO，见 `META_TASKS.md`） | ✓ | ✓ | – | – |
 | `moderation.wordlist.manage` 管理敏感词库外部覆盖表 | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
@@ -248,6 +249,11 @@ DELETE /admin/moderation/wordlists/{region}/words/{word}     → { doc }        
 # 内部端点（X-Internal-Key，非 admin JWT）：meta/social/worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 REGION_WORDLISTS 合并
 GET    /admin/internal/moderation-wordlists          → { items: [...] }                // 原样返回，WordlistCache 60s 轮询 + 本地 effectiveWordlist 叠加
 
+# 兑换码（B-PROMO；promo.manage）——发码入口，玩家侧兑换走 metaserver `POST /promo/redeem`
+GET  /admin/promo/codes                              → { codes: [...] }                // 列全部码；`_id`→`code` 在 admin client 侧改名（commercial 原样返回文档）
+POST /admin/promo/codes  { code, coins, expiresAt?, totalLimit?, note? }
+                                                     → { code }                        // 码 + coins 必填（否则 400），转发 meta→commercial；重复码 409；落审计 promo.create
+
 # 玩家反馈（无裁定/无状态机，只有已读+备注痕迹；SERVER_API.md §2.13）
 GET  /admin/feedback?limit=                          → { feedback: [...] }             // feedback.view，代理 meta GET /internal/feedback
 POST /admin/feedback/{id}/review     { note? }       → { ok: true }                    // feedback.action，标已读 / 写备注；note 省略=只标已读（保留原备注），note:''=清空
@@ -323,7 +329,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 
 - **后端 `server/admin`（第七 workspace，CJS）**：`config.ts`（env）/ `db.ts`（独立库 `notebook_wars_admin`：adminAccounts/compTickets/auditLog/metricSnapshots，snapshot TTL 锚 BSON `at:Date`）/ `service.ts`（`AdminService` + `AdminError`，业务不变量：发起≠审批、`requiredApproveCapability(scope,tier)`、工单状态机、审计落库）/ `httpApi.ts`（node:http + admin JWT 鉴权 + 每端点 RBAC 静态能力门 + CORS）/ `clients.ts`（`HttpStatsClient` 合并 gateway+matchsvc、`HttpPlayerClient` 调 meta `/internal/player`、`HttpMailDispatcher` 按系统邮件端点契约形状对接）/ `seed.ts`（种子超管幂等）/ `index.ts`（引导 + 采样定时器）。
 - **业务侧新增端点**：gateway `GET /internal/stats`（`Gateway.stats()` 在线数）；matchsvc `GET /internal/stats`（`Matchsvc.stats()` + `GameRegistry.stats()` 队列/房间/game）；meta `GET /internal/player?publicId=`（`resolveByPublicId` 反查档案摘要，player.lookup）。
-- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（**barrel 再导出**，各页渲染器拆入 `pages/`：`shared.ts` 公共件 Ctx/showErr/showOk/sparkline/ms↔datetime + `monitor` / `analytics` / `player` / `suspicions` 反作弊 / `tickets` 工单发起+审批 / `audit` / `accounts` / `ladder` / `flags` / `events` / `slgSeason` 赛季运维 / `auctionAudit` 拍卖审计 / `gachaPools` 自定义卡池 / `feedback` 玩家反馈 / `moderationWordlist` 敏感词覆盖表）。不持密钥、不连库、不直连业务服务。
+- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（**barrel 再导出**，各页渲染器拆入 `pages/`：`shared.ts` 公共件 Ctx/showErr/showOk/sparkline/ms↔datetime + `monitor` / `analytics` / `player` / `suspicions` 反作弊 / `tickets` 工单发起+审批 / `audit` / `accounts` / `ladder` / `flags` / `events` / `slgSeason` 赛季运维 / `auctionAudit` 拍卖审计 / `gachaPools` 自定义卡池 / `promo` 兑换码 / `feedback` 玩家反馈 / `moderationWordlist` 敏感词覆盖表）。不持密钥、不连库、不直连业务服务。
 - **部署接线**：`server/package.json` workspaces + `dev:admin`；`Dockerfile` 七包；`docker-compose.prod.yml` admin 服务（caddy 不路由）；`ecosystem.config.cjs` `nw-admin`；`.env.example` + `dev-up.ps1`（dev 种子 root/rootpass）。
 - **验证**：七包 `tsc -b` 全绿 + admin 15 e2e（登录/RBAC/发起≠审批/超额+全服走超管/**单超管自批例外+留痕**/**有第二 super 时恢复四眼**/**禁用的第二审批人不算数**/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
 - **补偿 ↔ 邮件跨进程联调（2026-06-16）**：S6-3 邮件后端就绪，补全 `server/admin/test/comp-mail.e2e.test.ts`——admin 真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen({port:0})` 的 meta 进程（非 fastify inject），6 用例跑通：①单人补偿全链（发起→审批→真 HTTP 投递→玩家收件箱→领取附件→commercial 入账+钱包镜像）②`dispatchKey` 幂等（同 key 重发仅一封，meta `$setOnInsert`）③全服 fan-out + `preview` 命中人数 ④`player.lookup` 经真 `/internal/player` ⑤鉴权边界（错 `X-Internal-Key`→401→工单 failed、玩家无信）⑥收件人不存在→工单 failed。admin e2e 12→18，七包 `tsc -b` 全绿（meta dist 须先 `tsc -b`）。
@@ -370,6 +376,18 @@ admin 后端（G7）已全部就绪；补完 `tools/ops` 对应的两个前端�
 - **纯逻辑抽出单测**：`activeWords`（并集 + 小写化 + 去重，去重保留**最靠前**的来源，使"同时躺在内置和覆盖里的词"归属内置而非覆盖）/ `coveredBy`（跳过被审计条目自身，否则永远命中自己）/ `checkWord`（`empty` / `too_long` / `duplicate` / `redundant` / `ok` 五态）/ `checkMessage`（哪几态**拦**、哪态只**提示**——这条策略本身被钉住）/ `describeCover`（内置 vs 覆盖 × 精确命中 vs 子串命中 四种措辞）五个函数覆盖 `tools/ops/test/moderationWordlist.test.ts` 28 例，含两类容易写反的方向性用例："更宽的前缀（`sca` vs 已生效的 `scam`）不算冗余"、以及"包含关系的措辞方向（覆盖方是**更短**那个）"；同 region 覆盖表内部的兄弟条目互相覆盖（`代练` 盖住 `代练群`，即行内 `no-op` 徽标指向的那种）也单独覆盖——跳过逻辑只能跳过被审计条目**自身**，跳过整个本 region 覆盖表就会漏报。上述用例做过变异验证（把跳过条件放宽成"跳过整张本 region 覆盖表"、把包含措辞方向写反，各自只让对应的那一条用例转红）；`pageModerationWordlist` 本身建 DOM 不测，与 `feedback.ts`/`flags.ts` 同一分工。
 - **落点**：`types.ts` 增 `ChatRegion`/`ModerationWordlistView`/`WordlistOverrideDoc` 三个前端本地镜像类型 + `AdminCapability` 补上此前遗漏的 `moderation.wordlist.manage`（后端 `server/shared/src/admin.ts` 里一直有，前端联合类型里没有）；`api.ts` 增 `moderationWordlists()`/`addModerationWord()`/`removeModerationWord()`。**服务端零改动**——后端本来就是完整的。
 - **验证**：`tools/ops` `tsc --noEmit`（src+test）全绿 + 前端单测 58→77 例全绿；起 worktree 自己的 ops dev server 打真实 admin 进程（Docker 栈 `funny-admin-1` + `nw-local-mongo`）走查：加中文词 `刷钻代充` 到 `cn`（生效数 10→11）、加 `phish` 到 `global` 后 cn/de/en 三个 region 的生效数**同时** +1 而各自覆盖数仍为 0（继承正确）、`Scammer` 对 `en` 与 `phishing-site` 对 `de` 均正确报"blocks nothing new"并指出覆盖来源（大小写归一化生效）、重复词按钮置灰报红、删词后计数回落且 `de` 仍保留继承来的那 1 个；回查 Mongo 确认 `moderationWordlists` 文档与 6 条 `moderation.wordlist.update` 审计 summary 均正确、中文无乱码，走查数据事后清理干净。
+
+### 兑换码发码页（B-PROMO 补顶层，2026-08-20）
+
+与同日另两节（玩家反馈页、敏感词覆盖表页）**同一类缺口、但成因相反**——那两例都是"后端齐全、没人写前端"；兑换码这条链**当初是完整的**（`META_TASKS.md` B-PROMO，2026-06-29 落地，admin 的 `GET/POST /admin/promo/codes` 就在其中），却在 2026-07-28 的死内部端点清理（`COMM_AUDIT_INTERNAL_2026-07-28` batch G，commit `6942481a`）里被删掉了——理由写得很明白：「no ops-frontend page calls any of them」，同时保留了下面的 service/client 层「in case they're wired up later」。于是形成一个自锁的环：路由因为没有前端而被删，前端因为没有路由而没人写。
+
+后果不是"功能缺失"而是**半条链活着**：玩家侧 `POST /promo/redeem` 和商店充值 tab 的兑换码行一直在线（`LOBBY_IA_REDESIGN_LOG.md`），meta 的 `/admin/promo/codes` 与 commercial 的 `/internal/promo/codes` 也从没删过——**只有发码那一端不可达**，运营想发一个码只能拿 internal key 手工 curl meta。本次把顶层两段补回来并配上页面，让这条环闭合。
+
+- **admin 路由**：`GET`/`POST /admin/promo/codes` 按原样恢复（`requireCap(actor, 'promo.manage')`、码+coins 缺失或非正数→400、`svc.createPromoCode` 落 `promo.create` 审计），落在 `httpApi/commerceRoutes.ts` 顶部——正是 2026-08-10 拆分前它在 `httpApi.ts` 里的物理位置（紧邻 Paddle 事件日志之前）。
+- **`pagePromo`（`tools/ops/src/pages/promo.ts`，导航排在 Gacha Pools 之后）**：上方发码表单（Code / Coins / Total redemptions / Expiry 开关 + 时间 / Ops note），下方列表（Code / Coins / Redeemed / Status / Expires / Created / Ops note）。**只发不改不删**：码以自身大写文本为 `_id`、且可能已被玩家兑换过，提前退役只能靠 expiry 或总量上限，所以没有 edit/delete 按钮，代价是表单是唯一会出错的地方——校验因此放在前端而不是每个笔误换一次往返。
+- **三条规则与 commercial 的 `PromoService` 逐条对齐**（页面读到的状态必须等于玩家兑换时真实发生的事）：①码存储前 `trim().toUpperCase()`，表单实时回显「stored as XXX」，免得运营输了小写、看到大写、再怀疑玩家该输哪个；②`promoRedeem` 的校验顺序是**先过期、后超量**，所以既过期又超量的码标 `Expired` 而不是 `Exhausted`（标错会让运营查错方向）；③`$inc redeemed` 是 best-effort（并发下允许超 1 个），故 `redeemed > totalLimit` 也必须读作 Exhausted。纯函数 `normalizePromoCode` / `validatePromoDraft` / `promoStatus` / `redemptionText` 单测覆盖（`tools/ops/test/promo.test.ts` 22 例），`pagePromo` 本身建 DOM 不测。
+- **顺手修掉一个被假 mock 掩盖的真 bug**：admin 的 `PromoCodeView` 声明 `code`，但 commercial 的 `listPromoCodes` 是把 `promoCodes` 文档**原样**返回的（`_id` 就是码），meta 只做转发——真实响应里根本没有 `code` 字段。`clients-adminManage.test.ts` 里那条 list 用例喂的 mock 恰好是接口**声明**的形状（`{ code }`），于是它跟被测代码的类型互相印证、什么都没证明。现在改名落在 `HttpPromoClient.list()`（`_id → code`；commercial 的线上形状被它自己的路由用例钉住，不动），mock 换成真实文档形状并补一条"绝不把 `_id` 漏给下游"的回归用例。若非跑真实进程验证，页面的 Code 一列会是空的而测试全绿。
+- **验证**：admin httpRoutes e2e 50→56 例（create→list 往返/大写归一化/`promo.create` 审计 actor+summary/重复码 409/三种 400/support 403 且未落库/ops 角色可发码），其中促成把静态 `stubPromo` 换成有状态的 `FakePromo`；admin `clients-adminManage` 13→15 例；ops 前端 86→108 例（同日两节各自 +22/+19 的基础上）。admin 全量 219 例、`tools/ops` 108 例全绿，`tsc -b admin` + ops `tsc --noEmit` 干净。起**真实** commercial+meta+admin+ops 四进程（独立库 `nw_promo_verify`），在页面上完成：小写 `autumnfest` 发码 → 列表出现 `AUTUMNFEST`（带 expiry/上限/备注）→ 重复提交得到译好的「already exists (codes are unique, case-insensitive)」而非裸 `BAD_REQUEST` → 四种状态（Active / Exhausted 1⁄1 / Expired / 无限 ∞）同屏可见 → 用页面发的 `WINTERGIFT` 真跑一次玩家兑换（+100 coins，同玩家二次 `PROMO_ALREADY_USED`），回到页面 Redeemed 变 `1 / ∞`；support 账号 `/admin/me` 无 `promo.manage`、两条路由均 403；`GET /admin/audit` 六条 `promo.create` 齐全。（本机 Browser pane 不合成画面、截图接口超时，故以 `read_page`/`get_page_text` 逐项核对文本与结构。）
 
 ### 加固 / 优化（2026-06-16，第二轮）
 

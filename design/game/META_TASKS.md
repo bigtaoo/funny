@@ -316,14 +316,15 @@
 
 > 来源：2026-06-29 全项目体检。下列为已确认的未完成项（功能缺口 / 美术阻塞 / 收尾），尚未排期。复杂项另起专文，简单项就地记录。
 
-### B-PROMO 优惠码兑换系统（替代已删除的 dev 魔术码）✅（2026-06-29 已实现；客户端 UI ✅ 2026-07-01）
+### B-PROMO 优惠码兑换系统（替代已删除的 dev 魔术码）✅（2026-06-29 已实现；客户端 UI ✅ 2026-07-01；ops 发码页 ✅ 2026-08-20）
 
 取代 S2-6 已删除的「魔术码充值」dev 桩（仅 dev、生产 fail-closed；2026-06-29 已整条删除：客户端 `ShopScene` 充值入口 + `createAppCore.rechargeTier`（`taowang*`）+ 相关 i18n）。新系统由后台显式发码，可控、可审计、每人一次：
 
-- [x] **后台发码**（admin / ops）：admin `promo.manage` 能力点（super/ops）；`POST /admin/promo/codes { code, coins, expiresAt?, totalLimit?, note? }` + `GET /admin/promo/codes`；admin → meta `/admin/promo/codes` → commercial `/internal/promo/codes`；审计落 `promo.create`。
+- [x] **后台发码**（admin / ops）：admin `promo.manage` 能力点（super/ops）；`POST /admin/promo/codes { code, coins, expiresAt?, totalLimit?, note? }` + `GET /admin/promo/codes`；admin → meta `/admin/promo/codes` → commercial `/internal/promo/codes`；审计落 `promo.create`。⚠**这两条 admin 路由 2026-07-28 被死端点清理删过一轮**（commit `6942481a`，理由「没有 ops 前端调用」，service/client 层保留），期间发码不可达、只能手工 curl meta；**2026-08-20 连同 ops 发码页一并补回**，环已闭合，详见 `OPS_DESIGN.md`「兑换码发码页（B-PROMO 补顶层，2026-08-20）」。
 - [x] **兑换接口**：玩家侧 metaserver REST `POST /promo/redeem { code }`（JWT 鉴权，operationId `redeemPromoCode`）。校验：码存在 / 未过期 / 未超总量 / **该玩家未用过** → 加币 + 回推 wallet mirror。
 - [x] **每玩家每码一次（幂等）+ commercial 记账**：commercial 新增 `promoCodes`（码定义；`_id=code 大写`，`redeemed` 原子 `$inc`）+ `promoRedemptions`（`_id = accountId:code` 天然唯一，复刻 `recharges.receiptId` 防重模式）两集合；兑换 = `credit(accountId, coins, 'promo')` 入 ledger；并发靠 `insertOne` 唯一冲突回 `PROMO_ALREADY_USED`。
 - [x] 契约：`openapi.yml` 加 `/promo/redeem`；`shared/admin.ts` 加 `promo.manage` 能力 + `promo.create` 审计 action。**主要文件**：`commercial/src/db.ts`（两集合）、`commercial/src/service.ts`（三方法）、`commercial/src/internalHttp.ts`（三端点）、`metaserver/src/commercialClient.ts`（三接口）、`metaserver/src/internal.ts`（两 admin 路由）、`metaserver/src/service.ts`（`redeemPromoCode` handler）、`admin/src/{clients,service,httpApi,index}.ts`。**验收**：`commercial/test/promo.test.ts` 13 e2e（Mongo 不在线 skip，同现有模式）；`tsc -b` shared/commercial/metaserver/admin 全绿。
+- [x] **ops 发码页 + 恢复 admin 路由** ✅（2026-08-20）：上面「后台发码」那一条在 2026-07-28 被 batch G 清理删掉了 HTTP 路由（保留了 service/client），形成自锁的环——路由因为没有前端而删，前端因为没有路由而没人写。结果是**半条链活着**：玩家侧 `POST /promo/redeem` + 商店充值 tab 的兑换码行一直在线，meta/commercial 的发码端点也从没删过，只有 admin 那一段不可达，运营发码只能拿 internal key 手工 curl meta。本次恢复 `GET/POST /admin/promo/codes`（落在 `httpApi/commerceRoutes.ts`，即拆分前它在 `httpApi.ts` 的原位）+ 新增 `tools/ops/src/pages/promo.ts`（只发不改不删；状态判定与 commercial `promoRedeem` 的校验顺序逐条对齐——先过期后超量，`redeemed > totalLimit` 也算 Exhausted）。顺带修掉 `PromoCodeView` 声明 `code` 而线上实际是 `_id` 的长期不一致（`HttpPromoClient.list()` 改名；原单测的 mock 喂的正是接口声明的形状，自证自洽故从未暴露）。详见 [`OPS_DESIGN.md`](OPS_DESIGN.md)「兑换码发码页（B-PROMO 补顶层，2026-08-20）」。
 - [x] **E2E 收尾**（2026-06-29）：魔术码删除后 `full-link.e2e.ts` 仍以常量 `'taowang'` 调 `recharge()`，而该路径现走 `iapVerify` dev 桩、`receiptId` 全局幂等（`dev:<receipt>`）。两条用例共用同一收据 → 第二个账号命中去重分支、拿到**前一个账号**的余额（≈150）→ `expected 150 to be greater than 500` 失败。改为每账号唯一收据（`topup_${uid()}`，非 `tier:` 前缀走 `small`=600 档）。⚠遗留隐患（已记 background task）：`commercial rechargeVerify` 去重分支返回 `existing.accountId` 的钱包余额、`metaserver.iapVerify` 再 mirror 进请求方 → 跨账号余额泄漏；生产不可达（真实平台收据全局唯一），仅复用收据时暴露。
 
 ### 其余确认缺口

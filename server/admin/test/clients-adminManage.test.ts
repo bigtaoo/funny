@@ -110,8 +110,24 @@ describe('HttpPromoClient', () => {
     expect(await new HttpPromoClient(null, 'k').list()).toEqual([]);
     fetchMock.mockResolvedValue({ ok: false, status: 500, body: null, error: 'boom' });
     await expect(new HttpPromoClient('http://meta', 'k').list()).rejects.toThrow();
-    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { codes: [{ code: 'X10' }] } });
-    expect(await new HttpPromoClient('http://meta', 'k').list()).toEqual([{ code: 'X10' }]);
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { codes: [{ _id: 'X10', coins: 100, redeemed: 2, createdBy: 'root', createdAt: 7 }] } });
+    expect(await new HttpPromoClient('http://meta', 'k').list()).toEqual([{ code: 'X10', coins: 100, redeemed: 2, createdBy: 'root', createdAt: 7 }]);
+  });
+
+  // Regression (2026-08-20): this mock used to feed `{ code }` — the shape PromoCodeView *declares* —
+  // so it agreed with the client's own type and proved nothing. commercial actually serves its
+  // promoCodes documents verbatim, where `_id` IS the code (and its own route test pins that), so the
+  // real response carries no `code` field at all. With the mock lying, the ops table's Code column came
+  // back undefined against real services while every test stayed green.
+  it('list renames the wire `_id` to `code` and never leaks `_id` downstream', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { codes: [{ _id: 'WELCOME2026', coins: 250, totalLimit: 500, expiresAt: 99, note: 'launch', redeemed: 3, createdBy: 'adm-1', createdAt: 5 }] },
+    });
+    const [row] = await new HttpPromoClient('http://meta', 'k').list();
+    expect(row).toEqual({ code: 'WELCOME2026', coins: 250, totalLimit: 500, expiresAt: 99, note: 'launch', redeemed: 3, createdBy: 'adm-1', createdAt: 5 });
+    expect(row).not.toHaveProperty('_id');
   });
 
   it('create throws unconfigured(503), on failure/missing code, and resolves the code on success', async () => {

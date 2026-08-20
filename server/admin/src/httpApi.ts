@@ -24,7 +24,7 @@
 //   httpApi/opsConfigRoutes.ts audit log, feature flags, SLG shop price overrides, moderation wordlist overlays
 //   httpApi/accountRoutes.ts  admin account management (superadmin)
 //   httpApi/slgRoutes.ts      ladder season ops + SLG season/audit/map-template ops (worldsvc proxy, G7/§17.7/§24)
-//   httpApi/commerceRoutes.ts Paddle webhook event log, limited-time events, custom gacha pools
+//   httpApi/commerceRoutes.ts promo codes (B-PROMO), Paddle webhook event log, limited-time events, custom gacha pools
 import { createServer, type Server } from 'http';
 import { createLogger, type InternalAuthVerifier, type JwtConfig } from '@nw/shared';
 import { AdminError, type AdminService } from './service';
