@@ -62,6 +62,6 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 
 ## 已知遗留
 
-- ~~`tools/animator/src/` 有 11 个重构前的扁平模块从入口不可达~~ → **2026-08-20 同日已删**（`8dc9e210`，合并 `ed156c7a`，1424 行）。这批文件是接覆盖率时用一次相对 import 可达性遍历发现的：活代码走 `src/index.ts → App.ts →` 目录版模块，而那批旧文件只互相 import（`src/renderer.ts` 里的 `from './skeleton'` 解析到 `src/skeleton.ts`，而非活代码用的 `src/skeleton/Skeleton.ts`），形成独立死图、全 0% 覆盖。删除后 animator 全包行覆盖率 **23.5% → 30.9%**（分母 4707 → 3589 行），scope 内数字不变（64.3%，这批文件本来就在 scope 外）——正是「全包列」该起的作用：它把「分母里有一整块没人跑的代码」显示出来了。
+- ~~**`tools/animator/src/` 有 11 个重构前的扁平模块从入口不可达**~~ —— **已于 2026-08-20 同日删除**（13 个文件 / 1424 行：`animation.ts`/`events.ts`/`interaction.ts`/`io.ts`/`presets.ts`/`renderer.ts`/`skeleton.ts`/`state.ts`/`timeline.ts`/`types.ts`/`ui.ts` + 两个 `export {}` 空壳 `atlas/AtlasController.ts`、`ui/AtlasPanel.ts`）。可达性用一次按 tsconfig 解析规则的 import 遍历独立复核过，起点取全部三类入口（`src/index.ts`、**`runtime/StickmanRuntime.ts`——不在 `src/` 下，是单独产物，必须单独当根**、11 个测试文件），保留 `src/globals.d.ts`（ambient 声明，无人 import 但 tsc 需要）；最硬的证据是删除前后 production bundle 的 contenthash 完全一致（`bundle.04a1b40b5390a85f7d41.js`）。**对本表的影响**：animator 全包 23.53% → **29.54%**（`--coverage.include='src/**'` 口径 24.37% → 30.87%），而 `npm run test:coverage` 印的 scope 内数字 **64.28% 前后不动**——死文件本来就在 include whitelist 之外，别指望门禁数字变。细节见 [`animator.md`](animator.md)「删除重构前的扁平死模块」。
 - 其余四个工具做过同样的可达性遍历，**均无不可达文件**。
-- **`tools/` 的可达性遍历值得偶尔重跑**：这类死图是重构留下的，不会被 500 行闸门或覆盖率闸门发现（死文件既不超长、也在 scope 外），只有全包分母会隐约透光。
+- **`tools/` 的可达性遍历值得偶尔重跑**：这类死图是重构留下的，**两条闸门都发现不了**——死文件既不超长（500 行闸门看不见），也在 coverage scope 之外（受门禁的数字看不见）；只有全包分母会隐约透光，而全包分母不设门禁。上面这次就是接覆盖率时顺手遍历才发现的，不是任何闸门报出来的。
