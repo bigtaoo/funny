@@ -1,7 +1,7 @@
 // Ops admin frontend shell (OPS_DESIGN §7): login page → main shell renders navigation based on capabilities.
 import { Api, ApiError } from './api';
 import { clear, h } from './dom';
-import { pageAccounts, pageAnalytics, pageAppeals, pageAudit, pageAuctionAudit, pageEvents, pageFeedback, pageFlags, pageGachaPools, pageLadderSeason, pageMonitor, pagePaddleEvents, pagePlayer, pagePvpBalance, pageReports, pageSLGSeason, pageSlgShop, pageSuspicions, pageTickets } from './pages';
+import { pageAccounts, pageAnalytics, pageAppeals, pageAudit, pageAuctionAudit, pageEvents, pageFeedback, pageFlags, pageGachaPools, pageLadderSeason, pageModerationWordlist, pageMonitor, pagePaddleEvents, pagePlayer, pagePvpBalance, pageReports, pageSLGSeason, pageSlgShop, pageSuspicions, pageTickets } from './pages';
 import type { AdminCapability, Session } from './types';
 
 interface NavItem {
@@ -35,6 +35,7 @@ const NAV: NavItem[] = [
   { id: 'gacha-pools', label: 'Gacha Pools', cap: 'gacha.pools.manage', render: pageGachaPools },
   { id: 'slg-shop', label: 'SLG Shop Prices', cap: 'slg.shop.manage', render: pageSlgShop },
   { id: 'flags', label: 'Feature Flags', cap: 'config.manage', render: pageFlags },
+  { id: 'moderation-wordlist', label: 'Word Lists', cap: 'moderation.wordlist.manage', render: pageModerationWordlist },
   { id: 'accounts', label: 'Account Mgmt', cap: 'admin.manage', render: pageAccounts },
 ];
 

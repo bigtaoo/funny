@@ -11,6 +11,7 @@ import type {
   CompMailContent,
   CompScope,
   CompTarget,
+  ChatRegion,
   CompTicketView,
   EventDoc,
   EventInput,
@@ -23,6 +24,7 @@ import type {
   FeedbackView,
   FlagRollout,
   LiveStats,
+  ModerationWordlistView,
   PaddleEventView,
   PlayerProfile,
   PlayerSummary,
@@ -36,6 +38,7 @@ import type {
   TradeAuditSnapshot,
   TradeAuditTicketView,
   TrendPoint,
+  WordlistOverrideDoc,
 } from './types';
 
 const API_KEY = 'nw_admin_api';
@@ -363,6 +366,24 @@ export class Api {
   async upsertSlgShopItem(id: string, input: { cost?: number; effect?: Record<string, number | string> }): Promise<SlgShopItemOverrideDoc> {
     const r = await this.req<{ item: SlgShopItemOverrideDoc }>('PUT', `/admin/config/slg-shop/${encodeURIComponent(id)}`, input);
     return r.item;
+  }
+
+  // ── Content-moderation word list overlays (moderation.wordlist.manage, CONTENT_MODERATION_DESIGN §3.2) ──
+  async moderationWordlists(): Promise<ModerationWordlistView[]> {
+    const r = await this.req<{ regions: ModerationWordlistView[] }>('GET', '/admin/moderation/wordlists');
+    return r.regions;
+  }
+  /** Add one word to a region's overlay. Idempotent server-side (the overlay is a set), lowercased on write. */
+  async addModerationWord(region: ChatRegion, word: string): Promise<WordlistOverrideDoc> {
+    const r = await this.req<{ doc: WordlistOverrideDoc }>(
+      'POST', `/admin/moderation/wordlists/${encodeURIComponent(region)}/words`, { word });
+    return r.doc;
+  }
+  /** Remove one word from a region's overlay. Never touches the built-in floor; removing a missing word is a no-op. */
+  async removeModerationWord(region: ChatRegion, word: string): Promise<WordlistOverrideDoc> {
+    const r = await this.req<{ doc: WordlistOverrideDoc }>(
+      'DELETE', `/admin/moderation/wordlists/${encodeURIComponent(region)}/words/${encodeURIComponent(word)}`);
+    return r.doc;
   }
 
   // ── Timed event management (events.manage) ──

@@ -33,6 +33,7 @@ export type AdminCapability =
   | 'appeals.action'
   | 'feedback.view'
   | 'feedback.action'
+  | 'moderation.wordlist.manage'
   | 'admin.manage';
 
 export interface AdminAccountView {
@@ -279,6 +280,30 @@ export interface SlgShopItemRow {
   default: SlgShopItem;
   effective: SlgShopItem;
   doc: SlgShopItemOverrideDoc | null;
+}
+
+// ── Content-moderation word list overlays (CONTENT_MODERATION_DESIGN.md §3.2) ──
+/** Compliance region codes (mirror of @nw/shared chatFilter.ts `ChatRegion`) — compliance regions, not i18n locales. */
+export type ChatRegion = 'global' | 'cn' | 'de' | 'en';
+/**
+ * GET /admin/moderation/wordlists row: one region's code-default floor (`builtin`, always active, not
+ * editable here) plus the DB overlay stacked on top of it (`overlay`). The overlay is purely additive —
+ * a word can be added or removed from it, never subtracted from the floor.
+ * `updatedAt`/`updatedBy` are absent until the region's overlay doc is first written.
+ */
+export interface ModerationWordlistView {
+  region: ChatRegion;
+  builtin: string[];
+  overlay: string[];
+  updatedAt?: number;
+  updatedBy?: string;
+}
+/** Overlay doc returned by an add/remove write (`_id` = region), mirror of @nw/shared `WordlistOverrideDoc`. */
+export interface WordlistOverrideDoc {
+  _id: ChatRegion;
+  words: string[];
+  updatedAt: number;
+  updatedBy: string;
 }
 
 // ── SLG season ops (G7/§17.7, mirror of server/admin/src/clients.ts + @nw/shared) ──

@@ -241,6 +241,13 @@ PUT  /admin/config/slg-shop/{id}  { cost?, effect? } → { item }               
 # 内部端点（X-Internal-Key，非 admin JWT）：worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 SLG_SHOP_ITEMS 合并
 GET  /admin/internal/slg-shop-prices                 → { items: [...] }                // 原样返回，worldsvc 30s 轮询 + 本地 resolveSlgShopItem 合并
 
+# 敏感词覆盖表（moderation.wordlist.manage；CONTENT_MODERATION_DESIGN.md §3.2）——DB 覆盖**叠加**在代码内置词表（REGION_WORDLISTS）之上，只增不减
+GET    /admin/moderation/wordlists                   → { regions: [{ region, builtin, overlay, updatedAt?, updatedBy? }] }  // 四个 region 各自的内置底线 + DB 覆盖
+POST   /admin/moderation/wordlists/{region}/words  { word }  → { doc }                 // 加词（幂等，落 auditLog moderation.wordlist.update）
+DELETE /admin/moderation/wordlists/{region}/words/{word}     → { doc }                 // 删词（只删覆盖表条目，内置词表删不掉）
+# 内部端点（X-Internal-Key，非 admin JWT）：meta/social/worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 REGION_WORDLISTS 合并
+GET    /admin/internal/moderation-wordlists          → { items: [...] }                // 原样返回，WordlistCache 60s 轮询 + 本地 effectiveWordlist 叠加
+
 # 玩家反馈（无裁定/无状态机，只有已读+备注痕迹；SERVER_API.md §2.13）
 GET  /admin/feedback?limit=                          → { feedback: [...] }             // feedback.view，代理 meta GET /internal/feedback
 POST /admin/feedback/{id}/review     { note? }       → { ok: true }                    // feedback.action，标已读 / 写备注；note 省略=只标已读（保留原备注），note:''=清空
@@ -316,7 +323,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 
 - **后端 `server/admin`（第七 workspace，CJS）**：`config.ts`（env）/ `db.ts`（独立库 `notebook_wars_admin`：adminAccounts/compTickets/auditLog/metricSnapshots，snapshot TTL 锚 BSON `at:Date`）/ `service.ts`（`AdminService` + `AdminError`，业务不变量：发起≠审批、`requiredApproveCapability(scope,tier)`、工单状态机、审计落库）/ `httpApi.ts`（node:http + admin JWT 鉴权 + 每端点 RBAC 静态能力门 + CORS）/ `clients.ts`（`HttpStatsClient` 合并 gateway+matchsvc、`HttpPlayerClient` 调 meta `/internal/player`、`HttpMailDispatcher` 按系统邮件端点契约形状对接）/ `seed.ts`（种子超管幂等）/ `index.ts`（引导 + 采样定时器）。
 - **业务侧新增端点**：gateway `GET /internal/stats`（`Gateway.stats()` 在线数）；matchsvc `GET /internal/stats`（`Matchsvc.stats()` + `GameRegistry.stats()` 队列/房间/game）；meta `GET /internal/player?publicId=`（`resolveByPublicId` 反查档案摘要，player.lookup）。
-- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（**barrel 再导出**，各页渲染器拆入 `pages/`：`shared.ts` 公共件 Ctx/showErr/showOk/sparkline/ms↔datetime + `monitor` / `analytics` / `player` / `suspicions` 反作弊 / `tickets` 工单发起+审批 / `audit` / `accounts` / `ladder` / `flags` / `events` / `slgSeason` 赛季运维 / `auctionAudit` 拍卖审计 / `gachaPools` 自定义卡池 / `feedback` 玩家反馈）。不持密钥、不连库、不直连业务服务。
+- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（**barrel 再导出**，各页渲染器拆入 `pages/`：`shared.ts` 公共件 Ctx/showErr/showOk/sparkline/ms↔datetime + `monitor` / `analytics` / `player` / `suspicions` 反作弊 / `tickets` 工单发起+审批 / `audit` / `accounts` / `ladder` / `flags` / `events` / `slgSeason` 赛季运维 / `auctionAudit` 拍卖审计 / `gachaPools` 自定义卡池 / `feedback` 玩家反馈 / `moderationWordlist` 敏感词覆盖表）。不持密钥、不连库、不直连业务服务。
 - **部署接线**：`server/package.json` workspaces + `dev:admin`；`Dockerfile` 七包；`docker-compose.prod.yml` admin 服务（caddy 不路由）；`ecosystem.config.cjs` `nw-admin`；`.env.example` + `dev-up.ps1`（dev 种子 root/rootpass）。
 - **验证**：七包 `tsc -b` 全绿 + admin 15 e2e（登录/RBAC/发起≠审批/超额+全服走超管/**单超管自批例外+留痕**/**有第二 super 时恢复四眼**/**禁用的第二审批人不算数**/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
 - **补偿 ↔ 邮件跨进程联调（2026-06-16）**：S6-3 邮件后端就绪，补全 `server/admin/test/comp-mail.e2e.test.ts`——admin 真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen({port:0})` 的 meta 进程（非 fastify inject），6 用例跑通：①单人补偿全链（发起→审批→真 HTTP 投递→玩家收件箱→领取附件→commercial 入账+钱包镜像）②`dispatchKey` 幂等（同 key 重发仅一封，meta `$setOnInsert`）③全服 fan-out + `preview` 命中人数 ④`player.lookup` 经真 `/internal/player` ⑤鉴权边界（错 `X-Internal-Key`→401→工单 failed、玩家无信）⑥收件人不存在→工单 failed。admin e2e 12→18，七包 `tsc -b` 全绿（meta dist 须先 `tsc -b`）。
@@ -353,6 +360,16 @@ admin 后端（G7）已全部就绪；补完 `tools/ops` 对应的两个前端�
 - **新能力点 `feedback.action`（super/ops）**：查看仍是全角色的 `feedback.view`，写入收窄到 super/ops——support/viewer 保持只读。每次写入落 `feedback.review` 审计，summary 区分 `noted` / `marked read`。
 - **落点**：`@nw/shared` `FeedbackDoc` 增 `readAt?`/`readBy?`/`note?` + `FEEDBACK_NOTE_MAX=500` + `AdminCapability` 增 `feedback.action`；meta `POST /internal/feedback/{id}/review`；admin `FeedbackClient.reviewFeedback` / `FeedbackService.reviewFeedback` / `POST /admin/feedback/{id}/review`；ops `api.feedback()` / `api.reviewFeedback()` + `FeedbackView`。
 - **验证**：meta feedback e2e 10→18 例（鉴权/缺 readBy/404/首次打戳/写备注即已读/`readAt` 不被覆盖而 `readBy`·`note` last-write-wins/省略 note 不清备注·空串清备注/超长截断）、admin feedback e2e 5→10 例、admin httpRoutes e2e 补 review 路由 + support 403、ops 前端 7 例；admin 全量 212 例、`@nw/shared` 1033 例、`tools/ops` 58 例全绿；起 meta+admin+ops 真实进程，经真 `POST /feedback` 灌入中英文反馈，在页面上完成"写备注→计数 3→2、行移出 Unread"与"标已读→计数 2→1"，回查 Mongo 确认 `readAt`/`readBy`/`note` 与两条审计 summary 均正确、中文原文无乱码。
+
+### 敏感词覆盖表页（2026-08-20）
+
+与同日的「玩家反馈页」是同一类缺口的第二例：敏感词库外部化（`CONTENT_MODERATION_DESIGN.md` §3.2，2026-07-29 落地）后端**全套齐全**——`moderationWordlists` 集合、`GET /admin/moderation/wordlists`、`POST/DELETE .../words`、内部轮询源 `GET /admin/internal/moderation-wordlists`、能力点 `moderation.wordlist.manage`、`WordlistCache` 消费侧——唯独 `tools/ops` 里**没有任何代码引用过它们**（`api.ts` 无方法、`types.ts` 无类型、无页面、无导航项）。也就是说 §3.2 承诺的"词库外部化为 ops 可配置项"实际只能靠手写 curl 或直接改库完成，设计里写的"热更新不重启"这一半是真的，"ops 可配置"这一半从来没有入口。本次补完前端。
+
+- **`pageModerationWordlist`（`tools/ops/src/pages/moderationWordlist.ts`，导航项 `Word Lists`，排在 Feature Flags 之后——同属"运营可热改的配置面"那一组）**：四个 region 各一张卡片（`global` 排最前并挂 `inherited by all regions` 标签），每张卡片显示内置底线（只读，一眼看清删不掉的部分）、覆盖表条目（每条一个 `×` 删除按钮）、加词输入框，以及该 region 当前**实际生效**的词数拆分（内置 N + 覆盖 M）。加词/删词后整页重取，保证"继承/冗余"提示始终反映最新状态。
+- **本页真正的业务价值：把"这个词到底加了什么"算出来给运营看**。匹配是**大小写无关的子串匹配**、且生效词表是**并集**（`effectiveWordlist` = global 内置 + region 内置 + global 覆盖 + region 覆盖），因此有三类看着合理、实际什么都没拦住的加词：①词已在内置底线里；②词已由 `global` 覆盖表继承下来（加到 `cn` 上纯属重复）；③词只是**延长**了一个已生效的词（已拦 `scam` 时再加 `scammer`——任何含 `scammer` 的文本本来就含 `scam`）。这三类统一由纯函数 `coveredBy` 判定并在输入时**即时**提示（"Blocks nothing new: ..."），已入库的冗余条目也挂 `no-op` 徽标 + 说明。**只提示不拦截**：归一化第二遍匹配（CM2）的行为与原文子串匹配不完全一致，是否保留某条明确条目是运营的判断，不是本页的。真正拦下来的只有服务端也会 400 的两种（空词、超 `WORD_MAX`=64）和"本 region 覆盖表里已有该词"（按钮直接置灰）。
+- **纯逻辑抽出单测**：`activeWords`（并集 + 小写化 + 去重，去重保留**最靠前**的来源，使"同时躺在内置和覆盖里的词"归属内置而非覆盖）/ `coveredBy`（跳过被审计条目自身，否则永远命中自己）/ `checkWord`（`empty` / `too_long` / `duplicate` / `redundant` / `ok` 五态）三个函数覆盖 `tools/ops/test/moderationWordlist.test.ts` 19 例，含"更宽的前缀（`sca` vs 已生效的 `scam`）不算冗余"这类容易写反的方向性用例；`pageModerationWordlist` 本身建 DOM 不测，与 `feedback.ts`/`flags.ts` 同一分工。
+- **落点**：`types.ts` 增 `ChatRegion`/`ModerationWordlistView`/`WordlistOverrideDoc` 三个前端本地镜像类型 + `AdminCapability` 补上此前遗漏的 `moderation.wordlist.manage`（后端 `server/shared/src/admin.ts` 里一直有，前端联合类型里没有）；`api.ts` 增 `moderationWordlists()`/`addModerationWord()`/`removeModerationWord()`。**服务端零改动**——后端本来就是完整的。
+- **验证**：`tools/ops` `tsc --noEmit`（src+test）全绿 + 前端单测 58→77 例全绿；起 worktree 自己的 ops dev server 打真实 admin 进程（Docker 栈 `funny-admin-1` + `nw-local-mongo`）走查：加中文词 `刷钻代充` 到 `cn`（生效数 10→11）、加 `phish` 到 `global` 后 cn/de/en 三个 region 的生效数**同时** +1 而各自覆盖数仍为 0（继承正确）、`Scammer` 对 `en` 与 `phishing-site` 对 `de` 均正确报"blocks nothing new"并指出覆盖来源（大小写归一化生效）、重复词按钮置灰报红、删词后计数回落且 `de` 仍保留继承来的那 1 个；回查 Mongo 确认 `moderationWordlists` 文档与 6 条 `moderation.wordlist.update` 审计 summary 均正确、中文无乱码，走查数据事后清理干净。
 
 ### 加固 / 优化（2026-06-16，第二轮）
 
