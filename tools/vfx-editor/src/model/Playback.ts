@@ -5,6 +5,12 @@
  * artist sees the effect repeat (independent of the effect's own `loop` flag,
  * which only governs runtime auto-recycling). Scrubbing pauses and sets t
  * directly. `advance(dt)` is driven by the index rAF loop.
+ *
+ * Lives in model/ (not rendering/) because it is editor STATE, not a renderer:
+ * no PIXI, no canvas, no DOM — the rAF loop reads it, it never reaches back.
+ * ADR-070 Phase 4c moved it here so `coverage.include` could name whole
+ * directories instead of listing this one file out of rendering/; see
+ * vitest.config.ts and test/pureLayerBoundary.test.ts.
  */
 export class Playback {
   t = 0;

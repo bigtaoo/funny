@@ -323,6 +323,55 @@ describe('autosave debounce', () => {
   });
 });
 
+describe('autosave failure', () => {
+  it('leaves the effect dirty when the write fails, and the next edit retries it', async () => {
+    const store = new FakeStore();
+    await store.put({ id: 'a', def: makeDef('a'), updatedAt: 1 });
+    let failing = true;
+    const realPut = store.put.bind(store);
+    store.put = async (rec) => { if (failing) throw new Error('quota exceeded'); return realPut(rec); };
+    const { lib, model, onAutosave } = makeLibrary(store);
+    await lib.switchTo('a'); // reports 'saved' once, before any edit
+    onAutosave.mockClear();
+
+    model.setDefaultColor('#ff0000');
+    await tick(1300);
+
+    // It announced the attempt and then said nothing more: no false 'saved'. The dirty flag stays
+    // set, which is the whole point — a failed write must not look like a successful one.
+    expect(onAutosave.mock.calls.map((c) => c[0])).toEqual(['dirty', 'saving']);
+    expect((await store.get('a'))!.def.defaultColor).toBeUndefined();
+
+    failing = false;
+    model.setDefaultColor('#00ff00');
+    await tick(1300);
+    // The retry writes the CURRENT model, so the colour from the failed attempt is superseded
+    // rather than resurrected, and the artist ends up with what is on screen.
+    expect((await store.get('a'))!.def.defaultColor).toBe('#00ff00');
+    expect(onAutosave.mock.calls.map((c) => c[0])).toEqual(['dirty', 'saving', 'dirty', 'saving', 'saved']);
+  });
+});
+
+describe('new-effect ids', () => {
+  it('falls back to a timestamp+random id when crypto.randomUUID is unavailable', async () => {
+    // Non-secure contexts (plain http on a LAN address — how a teammate reaches a colleague's dev
+    // server) expose no `crypto` at all; ids must still be unique enough to key IndexedDB records.
+    vi.stubGlobal('crypto', undefined);
+    const store = new FakeStore();
+    const { lib } = makeLibrary(store);
+    await lib.createNew(makeDef('fresh'));
+    expect(lib.activeId).toMatch(/^e_[0-9a-z]+_[0-9a-z]+$/);
+  });
+
+  it('uses crypto.randomUUID when it is available', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => '11111111-2222-3333-4444-555555555555' });
+    const store = new FakeStore();
+    const { lib } = makeLibrary(store);
+    await lib.createNew(makeDef('fresh'));
+    expect(lib.activeId).toBe('11111111-2222-3333-4444-555555555555');
+  });
+});
+
 describe('best-effort flush on tab hide / close', () => {
   it('the visibilitychange listener flushes a pending dirty edit when the tab becomes hidden', async () => {
     const store = new FakeStore();
