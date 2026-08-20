@@ -8,7 +8,7 @@
 // server/shared/src/slg/core.ts for why the math is shared with the map editor rather than copied
 // into it (both had a hand-written copy until 2026-08-19, kept in step only by a comment).
 import * as PIXI from 'pixi.js-legacy';
-import { resLevelLabelText, resMotifPlacement } from '@nw/shared';
+import { resLevelLabelFontPx, resLevelLabelText, resMotifPlacement } from '@nw/shared';
 import { getResFrameRead, getResLevelTexture, getResTexture, isResAtlasReady } from '../../../render/atlas/resAtlasLoader';
 
 /**
@@ -111,7 +111,7 @@ export function drawResLevelLabel(g: PIXI.Graphics, level: number, tp: number): 
   }
   label.visible = true;
   if (label.text !== text) label.text = text;
-  label.fontSize = Math.max(9, Math.round(tp * 0.13));
+  label.fontSize = resLevelLabelFontPx(tp);
   // Below the motif, inside the diamond: half-height is tp*ISO_RATIO/2 = tp*0.25, and the motif is
   // centred near the middle, so tp*0.15 sits under the art without crossing the lower edge.
   label.x = 0;

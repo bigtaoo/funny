@@ -16,7 +16,7 @@
 // file asserts against the REAL bundled world_atlas.json.
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
-import { resMotifPlacement, resMotifJitter, RES_LEVEL_LABEL_MIN_LEVEL, RES_LEVEL_LABEL_MIN_TP, RES_MOTIF_SIZE_FRAC, type ResMotifFrameRead } from '@nw/shared';
+import { resMotifPlacement, resMotifJitter, RES_LEVEL_LABEL_MIN_LEVEL, RES_LEVEL_LABEL_MIN_TP, RES_LEVEL_LABEL_MAX_PX, RES_LEVEL_LABEL_TP_FRAC, RES_MOTIF_SIZE_FRAC, type ResMotifFrameRead } from '@nw/shared';
 import atlasData from '../../src/assets/slg/world_atlas.json';
 
 const TP = 76; // L1 tile pitch
@@ -193,6 +193,21 @@ describe('the Lv.N label (§6.2 #7)', () => {
   it('draws nothing when zoomed out past legibility', async () => {
     expect(await labels(9, RES_LEVEL_LABEL_MIN_TP - 1)).toHaveLength(0);
     expect(await labels(9, RES_LEVEL_LABEL_MIN_TP)).toHaveLength(1);
+  });
+
+  it('caps the glyph size, so zooming in does not turn the map into a wall of text', async () => {
+    // The l6+ threshold does NOT bound how many labels land on screen: level 6+ is 11.9% of the real
+    // map's resource tiles but arrives in saturated blocks (a 32x32 run where every tile is 6+), and
+    // inside one of those every visible tile is labelled — 650/650 at 1920x1080, 2706/3660 at
+    // 1080x2340. What keeps the layer readable is therefore the label's weight, and `tp` at this same
+    // zoom tier is 98 on a 1080-wide portrait design vs 174 on a 1920 landscape one. Uncapped, that
+    // is 13px and 23px for the same tier; at 23px the type outweighs the artwork it annotates
+    // (slg-resource-art.md §6.12).
+    const [phone] = await labels(8, 98);
+    const [desktop] = await labels(8, 174);
+    expect(phone?.fontSize).toBe(13);
+    expect(desktop?.fontSize).toBe(RES_LEVEL_LABEL_MAX_PX);
+    expect(RES_LEVEL_LABEL_MAX_PX).toBeLessThan(Math.round(174 * RES_LEVEL_LABEL_TP_FRAC));
   });
 
   it('reuses ONE pooled BitmapText per tile slot — never a PIXI.Text, never a fresh object per draw', async () => {
