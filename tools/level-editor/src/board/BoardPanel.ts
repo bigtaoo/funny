@@ -1,14 +1,25 @@
+import { BOARD_COLS, BOARD_ROWS, TOP_SPAWN_ROW } from '@nw/engine/config';
+import type { EditorState } from '../state/EditorState';
 import {
-  ATTACK_LANES,
-  BASE_COLS,
-  BOARD_COLS,
-  BOARD_ROWS,
-  BOTTOM_BUILDING_ROW,
-  BOTTOM_SPAWN_ROW,
-  TOP_BUILDING_ROW,
-  TOP_SPAWN_ROW,
-} from '@nw/engine/config';
-import type { EditorState, MaskKind } from '../state/EditorState';
+  C,
+  DEFAULT_CELL,
+  activeHandles,
+  baseTint,
+  cellAt,
+  cellCenter,
+  crossPathPoints,
+  escortPathPoints,
+  fitCell,
+  headerFor,
+  hitHandle,
+  isAttackLane,
+  isBaseCol,
+  laneHeaderAt,
+  rowToY,
+  type Handle,
+  type Pt,
+  type Tool,
+} from '../layout/board';
 
 /**
  * Board grid panel (P-C).
@@ -23,34 +34,12 @@ import type { EditorState, MaskKind } from '../state/EditorState';
  *    applies the action decided on mousedown (classic paint behaviour).
  *  - Lane headers toggle `activeLanes` for attack lanes.
  * All edits go through {@link EditorState}, which normalizes + broadcasts.
+ *
+ * This class is the DOM/canvas half only: it owns the `<canvas>`, the
+ * ResizeObserver and the window listeners, and delegates every coordinate
+ * transform, hit test, tint lookup and path-polyline decision to the pure
+ * `../layout/board` module (ADR-070 Phase 4b) — which is where the tests live.
  */
-
-const DEFAULT_CELL = 26;
-const MIN_CELL = 16;
-const MAX_CELL = 56;
-const PADDING = 24; // board-mount horizontal padding (12px each side)
-/** Header strip height as a fraction of cell size (lane on/off toggles). */
-const HEADER_RATIO = 0.7;
-
-export const C = {
-  grid: '#3a3a58',
-  combat: '#222234',
-  attack: '#26263c',
-  base: '#3a3420',
-  baseLine: '#6e5a2a',
-  playerRow: '#1e2c3a',
-  playerSpawn: '#243a4e',
-  enemyRow: '#3a1e26',
-  enemySpawn: '#4e2430',
-  noBuild: '#f9e2af',
-  blocked: '#6c7086',
-  laneOn: '#a6e3a1',
-  laneOff: '#45455e',
-  text: '#cdd6f4',
-  dim: '#6e6e8a',
-};
-
-type Tool = MaskKind | 'erase' | 'wp' | 'escort';
 
 /** Path-overlay palette. Detours echo the enemy theme (pink), escorts the green
  *  in-game diamond; both dim to dashed context lines when their tool is inactive. */
@@ -61,66 +50,6 @@ const PATH = {
   escortDim: 'rgba(166,227,161,0.4)',
   handleStroke: '#11111b',
 };
-
-/** A draggable path node surfaced by the active path tool. */
-export type Handle =
-  | { kind: 'wp'; k: number; col: number; row: number }
-  | { kind: 'escortStart'; i: number; col: number; row: number }
-  | { kind: 'escortWp'; i: number; j: number; col: number; row: number };
-
-const BASE_COL_SET = new Set<number>(BASE_COLS as readonly number[]);
-const ATTACK_SET = new Set<number>(ATTACK_LANES as readonly number[]);
-
-// ── Pure grid math (extracted so it's testable without a canvas/DOM) ──────────
-// These mirror the BoardPanel instance methods of the same name 1:1, just with
-// `cell`/`header` passed explicitly instead of read off `this`.
-
-/** Screen Y (within grid area) for a board row — row 0 at the bottom. */
-export function rowToY(row: number, cell: number, header: number): number {
-  return header + (BOARD_ROWS - 1 - row) * cell;
-}
-
-export function cellAt(px: number, py: number, cell: number, header: number): { col: number; row: number } | null {
-  if (py < header) return null;
-  const col = Math.floor(px / cell);
-  const screenRow = Math.floor((py - header) / cell);
-  const row = BOARD_ROWS - 1 - screenRow;
-  if (col < 0 || col >= BOARD_COLS || row < 0 || row >= BOARD_ROWS) return null;
-  return { col, row };
-}
-
-export function laneHeaderAt(px: number, py: number, cell: number, header: number): number | null {
-  if (py >= header) return null;
-  const col = Math.floor(px / cell);
-  return ATTACK_SET.has(col) ? col : null;
-}
-
-/** Screen centre of a board cell. */
-export function cellCenter(col: number, row: number, cell: number, header: number): { x: number; y: number } {
-  return { x: col * cell + cell / 2, y: rowToY(row, cell, header) + cell / 2 };
-}
-
-/** Nearest path node under the cursor (within half a cell), topmost first. */
-export function hitHandle(px: number, py: number, cell: number, header: number, handles: Handle[]): Handle | null {
-  const r = cell * 0.5;
-  for (let i = handles.length - 1; i >= 0; i--) {
-    const h = handles[i]!;
-    const c = cellCenter(h.col, h.row, cell, header);
-    if (Math.hypot(px - c.x, py - c.y) <= r) return h;
-  }
-  return null;
-}
-
-/** Zone tint for a board cell (base column, building/spawn rows, attack lane, or combat). */
-export function baseTint(col: number, row: number): string {
-  if (BASE_COL_SET.has(col)) return C.base;
-  if (row === BOTTOM_BUILDING_ROW) return C.playerRow;
-  if (row === BOTTOM_SPAWN_ROW) return C.playerSpawn;
-  if (row === TOP_BUILDING_ROW) return C.enemyRow;
-  if (row === TOP_SPAWN_ROW) return C.enemySpawn;
-  if (ATTACK_SET.has(col)) return C.attack;
-  return C.combat;
-}
 
 export class BoardPanel {
   readonly canvas = document.createElement('canvas');
@@ -134,7 +63,7 @@ export class BoardPanel {
   /** Current cell size in px; recomputed from the mount width on resize. */
   private cell = DEFAULT_CELL;
   /** Lane on/off header strip height in px (derived from {@link cell}). */
-  private header = Math.round(DEFAULT_CELL * HEADER_RATIO);
+  private header = headerFor(DEFAULT_CELL);
   private ro: ResizeObserver;
 
   constructor(private state: EditorState, private mount: HTMLElement, private onToolChange?: () => void) {
@@ -165,9 +94,9 @@ export class BoardPanel {
    *  store 1:1 with its display size, then redraw. Public so the splitter drag
    *  can refit synchronously (the ResizeObserver covers window resizes). */
   resize(): void {
-    const avail = Math.max(MIN_CELL * BOARD_COLS, this.mount.clientWidth - PADDING);
-    this.cell = Math.max(MIN_CELL, Math.min(MAX_CELL, Math.floor(avail / BOARD_COLS)));
-    this.header = Math.round(this.cell * HEADER_RATIO);
+    const fit = fitCell(this.mount.clientWidth);
+    this.cell = fit.cell;
+    this.header = fit.header;
     const w = BOARD_COLS * this.cell;
     const h = BOARD_ROWS * this.cell + this.header;
     this.canvas.width = w;
@@ -187,19 +116,6 @@ export class BoardPanel {
     return this.tool;
   }
 
-  /** Screen Y (within grid area) for a board row — row 0 at the bottom. */
-  private rowToY(row: number): number {
-    return rowToY(row, this.cell, this.header);
-  }
-
-  private cellAt(px: number, py: number): { col: number; row: number } | null {
-    return cellAt(px, py, this.cell, this.header);
-  }
-
-  private laneHeaderAt(px: number, py: number): number | null {
-    return laneHeaderAt(px, py, this.cell, this.header);
-  }
-
   private onDown(e: MouseEvent): void {
     if (e.button !== 0) return;
     const { x, y } = this.localXY(e);
@@ -207,7 +123,7 @@ export class BoardPanel {
       this.onPathDown(x, y);
       return;
     }
-    const lane = this.laneHeaderAt(x, y);
+    const lane = laneHeaderAt(x, y, this.cell, this.header);
     if (lane !== null) {
       this.state.setLaneActive(lane, !this.state.isLaneActive(lane));
       return;
@@ -248,33 +164,22 @@ export class BoardPanel {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
-  // ── Path editing (crossWaypoints / escort paths) ───────────────────────────
+  // ── thin `this`-bound wrappers over the pure layout module ─────────────────
 
-  /** Screen centre of a board cell. */
+  private cellAt(px: number, py: number): { col: number; row: number } | null {
+    return cellAt(px, py, this.cell, this.header);
+  }
+
   private cellCenter(col: number, row: number): { x: number; y: number } {
     return cellCenter(col, row, this.cell, this.header);
   }
 
-  /** Draggable nodes for the active path tool (none for paint tools). */
-  private activeHandles(): Handle[] {
-    const out: Handle[] = [];
-    if (this.tool === 'wp') {
-      const idx = this.state.selectedWave;
-      const entry = idx !== null ? this.state.waves[idx] : null;
-      entry?.crossWaypoints?.forEach((wp, k) => out.push({ kind: 'wp', k, col: wp.toCol, row: wp.atRow }));
-    } else if (this.tool === 'escort') {
-      this.state.escorts.forEach((esc, i) => {
-        out.push({ kind: 'escortStart', i, col: esc.startCol, row: esc.startRow });
-        esc.path?.forEach((wp, j) => out.push({ kind: 'escortWp', i, j, col: wp.col, row: wp.row }));
-      });
-    }
-    return out;
-  }
-
   /** Nearest path node under the cursor (within half a cell), topmost first. */
   private hitHandle(px: number, py: number): Handle | null {
-    return hitHandle(px, py, this.cell, this.header, this.activeHandles());
+    return hitHandle(px, py, this.cell, this.header, activeHandles(this.tool, this.state));
   }
+
+  // ── Path editing (crossWaypoints / escort paths) ───────────────────────────
 
   private onPathDown(x: number, y: number): void {
     const hit = this.hitHandle(x, y);
@@ -335,7 +240,7 @@ export class BoardPanel {
     ctx.textBaseline = 'middle';
     for (let col = 0; col < BOARD_COLS; col++) {
       const x = col * cell;
-      if (ATTACK_SET.has(col)) {
+      if (isAttackLane(col)) {
         const on = this.state.isLaneActive(col);
         ctx.fillStyle = on ? C.laneOn : C.laneOff;
         ctx.fillRect(x + 2, 2, cell - 4, header - 4);
@@ -343,7 +248,7 @@ export class BoardPanel {
         ctx.fillText(String(col), x + cell / 2, header / 2);
       } else {
         ctx.fillStyle = C.dim;
-        ctx.fillText(BASE_COL_SET.has(col) ? '⌂' : '·', x + cell / 2, header / 2);
+        ctx.fillText(isBaseCol(col) ? '⌂' : '·', x + cell / 2, header / 2);
       }
     }
 
@@ -351,8 +256,8 @@ export class BoardPanel {
     for (let row = 0; row < BOARD_ROWS; row++) {
       for (let col = 0; col < BOARD_COLS; col++) {
         const x = col * cell;
-        const yy = this.rowToY(row);
-        const laneInactive = ATTACK_SET.has(col) && !this.state.isLaneActive(col);
+        const yy = rowToY(row, cell, header);
+        const laneInactive = isAttackLane(col) && !this.state.isLaneActive(col);
 
         ctx.fillStyle = baseTint(col, row);
         ctx.fillRect(x, yy, cell, cell);
@@ -383,24 +288,15 @@ export class BoardPanel {
     this.drawEscortPaths();
   }
 
-  /** Selected wave: spawn at TOP_SPAWN_ROW, elbow down through each waypoint
-   *  (descend in the current col to atRow, then jog to toCol), continue to base. */
+  /** Selected wave: spawn at TOP_SPAWN_ROW, elbow down through each waypoint,
+   *  continue to base (polyline from {@link crossPathPoints}). */
   private drawCrossPath(): void {
     const idx = this.state.selectedWave;
     const entry = idx !== null ? this.state.waves[idx] : null;
     if (!entry) return;
     const active = this.tool === 'wp';
 
-    const pts: { col: number; row: number }[] = [{ col: entry.col, row: TOP_SPAWN_ROW }];
-    let cur = entry.col;
-    for (const wp of entry.crossWaypoints ?? []) {
-      pts.push({ col: cur, row: wp.atRow });
-      pts.push({ col: wp.toCol, row: wp.atRow });
-      cur = wp.toCol;
-    }
-    pts.push({ col: cur, row: 0 });
-
-    this.strokePath(pts, active ? PATH.cross : PATH.crossDim, active ? 2.5 : 1.5, !active);
+    this.strokePath(crossPathPoints(entry), active ? PATH.cross : PATH.crossDim, active ? 2.5 : 1.5, !active);
     this.drawSpawnMarker(entry.col, TOP_SPAWN_ROW, active ? PATH.cross : PATH.crossDim, -1);
     (entry.crossWaypoints ?? []).forEach((wp, k) => {
       if (active) this.drawHandle(wp.toCol, wp.atRow, PATH.cross, String(k + 1));
@@ -416,16 +312,7 @@ export class BoardPanel {
       const base = PATH.escort[i % PATH.escort.length]!;
       const color = active ? base : PATH.escortDim;
 
-      const pts: { col: number; row: number }[] = [{ col: esc.startCol, row: esc.startRow }];
-      let cur = esc.startCol;
-      for (const wp of esc.path ?? []) {
-        pts.push({ col: cur, row: wp.row });
-        pts.push({ col: wp.col, row: wp.row });
-        cur = wp.col;
-      }
-      pts.push({ col: cur, row: TOP_BUILDING_ROW });
-
-      this.strokePath(pts, color, sel ? 2.5 : active ? 1.8 : 1.5, !active);
+      this.strokePath(escortPathPoints(esc), color, sel ? 2.5 : active ? 1.8 : 1.5, !active);
       this.drawSpawnMarker(esc.startCol, esc.startRow, color, 1);
       (esc.path ?? []).forEach((wp, j) => {
         if (active) this.drawHandle(wp.col, wp.row, base, sel ? String(j + 1) : undefined);
@@ -434,7 +321,7 @@ export class BoardPanel {
     });
   }
 
-  private strokePath(pts: { col: number; row: number }[], color: string, width: number, dash: boolean): void {
+  private strokePath(pts: Pt[], color: string, width: number, dash: boolean): void {
     if (pts.length < 2) return;
     const ctx = this.ctx;
     ctx.save();

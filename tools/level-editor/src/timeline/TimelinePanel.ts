@@ -3,6 +3,28 @@ import { TICK_RATE } from '@nw/engine/math/fixed';
 import type { WaveEntry } from '@nw/engine/campaign/LevelDefinition';
 import type { EditorState } from '../state/EditorState';
 import { unitMeta } from '../units';
+import {
+  C,
+  GUTTER_W,
+  LANE_H,
+  RULER_H,
+  blockLabel,
+  blockRect,
+  canvasHeight,
+  gridStepSec,
+  hitTest,
+  isBlockVisible,
+  isMajorSecond,
+  laneColAt,
+  laneIndex,
+  panBy,
+  snapAtTick,
+  tickToX,
+  unitTickXs,
+  visibleSecondRange,
+  xToTick,
+  zoomAround,
+} from '../layout/timeline';
 
 /**
  * Wave timeline panel (P-D) — the core authoring surface.
@@ -22,72 +44,17 @@ import { unitMeta } from '../units';
  * NOTE (open question in DESIGN.md §9): rows are attack lanes here. Overlapping
  * blocks on one lane are drawn translucent rather than sub-row-packed — this is
  * deliberately honest about how busy a lane gets, to judge lanes-vs-groups.
+ *
+ * This class is the DOM/canvas half only: it owns the `<canvas>` and the
+ * listeners, and delegates every tick↔pixel transform, block rectangle, hit
+ * test, drag snap and pan/zoom decision to the pure `../layout/timeline` module
+ * (ADR-070 Phase 4b) — which is where the tests live.
  */
-
-export const GUTTER_W = 56;
-export const RULER_H = 22;
-export const LANE_H = 30;
-const SNAP_TICKS = 3; // 0.1s
-const MIN_PPS = 12;
-const MAX_PPS = 400;
-
-const C = {
-  bg: '#11111b',
-  gutter: '#242436',
-  ruler: '#242436',
-  laneA: '#1c1c2c',
-  laneB: '#191926',
-  grid: '#2e2e46',
-  gridSec: '#3a3a58',
-  text: '#cdd6f4',
-  dim: '#6e6e8a',
-  sel: '#f5e0dc',
-  boss: '#f9e2af',
-};
 
 interface Drag {
   index: number;
   startMouseTick: number;
   origAtTick: number;
-}
-
-// ── Pure coordinate/hit-test math (extracted so it's testable without a canvas/
-// DOM) ── mirrors the TimelinePanel instance methods of the same name 1:1, just
-// with `pxPerSec`/`scrollX` passed explicitly instead of read off `this`.
-
-export function tickToX(tick: number, pxPerSec: number, scrollX: number): number {
-  return GUTTER_W + (tick / TICK_RATE) * pxPerSec - scrollX;
-}
-export function xToTick(x: number, pxPerSec: number, scrollX: number): number {
-  return ((x - GUTTER_W + scrollX) / pxPerSec) * TICK_RATE;
-}
-export function laneIndex(col: number): number {
-  return (ATTACK_LANES as readonly number[]).indexOf(col);
-}
-export function yToLaneIndex(y: number): number {
-  return Math.floor((y - RULER_H) / LANE_H);
-}
-export function entryEndTick(e: WaveEntry): number {
-  return e.atTick + Math.max(0, e.count - 1) * (e.spacingTicks ?? 0);
-}
-
-/** Topmost/last block under the cursor, on whichever lane row it falls in. */
-export function hitTest(
-  x: number, y: number,
-  entries: readonly WaveEntry[], laneCount: number,
-  pxPerSec: number, scrollX: number,
-): number | null {
-  const li = yToLaneIndex(y);
-  if (li < 0 || li >= laneCount) return null;
-  const lane = (ATTACK_LANES as readonly number[])[li]!;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i]!;
-    if (e.col !== lane) continue;
-    const x0 = tickToX(e.atTick, pxPerSec, scrollX);
-    const x1 = Math.max(x0 + 18, tickToX(entryEndTick(e), pxPerSec, scrollX) + 18);
-    if (x >= x0 - 4 && x <= x1) return i;
-  }
-  return null;
 }
 
 export class TimelinePanel {
@@ -121,31 +88,21 @@ export class TimelinePanel {
 
   private resize(): void {
     const w = Math.max(200, this.mount.clientWidth);
-    const h = RULER_H + this.laneCount * LANE_H;
+    const h = canvasHeight(this.laneCount);
     this.canvas.width = w;
     this.canvas.height = h;
     this.canvas.style.height = `${h}px`;
     this.render();
   }
 
-  // ── coordinate transforms ──
-  private tickToX(tick: number): number {
-    return tickToX(tick, this.pxPerSec, this.scrollX);
-  }
+  // ── thin `this`-bound wrappers over the pure layout module ──
   private xToTick(x: number): number {
     return xToTick(x, this.pxPerSec, this.scrollX);
   }
-  private laneIndex(col: number): number {
-    return laneIndex(col);
+  /** X of a whole-second gridline/label at the current pan+zoom. */
+  private secondX(sec: number): number {
+    return tickToX(sec * TICK_RATE, this.pxPerSec, this.scrollX);
   }
-  private yToLaneIndex(y: number): number {
-    return yToLaneIndex(y);
-  }
-  private entryEndTick(e: WaveEntry): number {
-    return entryEndTick(e);
-  }
-
-  // ── hit test (reverse order so the topmost/last block wins) ──
   private hitTest(x: number, y: number): number | null {
     return hitTest(x, y, this.state.waves, this.laneCount, this.pxPerSec, this.scrollX);
   }
@@ -172,16 +129,12 @@ export class TimelinePanel {
     if (!entry) return;
 
     // Horizontal → atTick (snapped, clamped ≥ 0).
-    const deltaTicks = this.xToTick(x) - this.drag.startMouseTick;
-    let atTick = Math.round((this.drag.origAtTick + deltaTicks) / SNAP_TICKS) * SNAP_TICKS;
-    if (atTick < 0) atTick = 0;
+    const atTick = snapAtTick(this.drag.origAtTick, this.xToTick(x) - this.drag.startMouseTick);
 
     // Vertical → col (snap to the lane row under the cursor).
-    const li = this.yToLaneIndex(y);
     const patch: Partial<WaveEntry> = { atTick };
-    if (li >= 0 && li < this.laneCount) {
-      patch.col = (ATTACK_LANES as readonly number[])[li]!;
-    }
+    const col = laneColAt(y, this.laneCount);
+    if (col !== null) patch.col = col;
     this.state.updateWave(this.drag.index, patch);
   }
 
@@ -195,17 +148,14 @@ export class TimelinePanel {
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
-      // Zoom around the cursor.
+      // Zoom around the cursor (keeps the tick under it stationary).
       const { x } = this.localXY(e);
-      const tickAtCursor = this.xToTick(x);
-      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-      this.pxPerSec = Math.min(MAX_PPS, Math.max(MIN_PPS, this.pxPerSec * factor));
-      // keep the tick under the cursor stationary
-      this.scrollX = GUTTER_W + (tickAtCursor / TICK_RATE) * this.pxPerSec - x;
+      const z = zoomAround(this.pxPerSec, this.scrollX, x, e.deltaY);
+      this.pxPerSec = z.pxPerSec;
+      this.scrollX = z.scrollX;
     } else {
-      this.scrollX += e.deltaY + e.deltaX;
+      this.scrollX = panBy(this.scrollX, e.deltaY, e.deltaX);
     }
-    if (this.scrollX < 0) this.scrollX = 0;
     this.render();
   }
 
@@ -233,15 +183,13 @@ export class TimelinePanel {
 
   private drawTimeGrid(w: number, h: number): void {
     const ctx = this.ctx;
-    // choose a tick step that stays readable at the current zoom
-    const stepSec = this.pxPerSec >= 120 ? 1 : this.pxPerSec >= 50 ? 2 : 5;
-    const startSec = Math.floor(this.xToTick(GUTTER_W) / TICK_RATE);
-    const endSec = Math.ceil(this.xToTick(w) / TICK_RATE);
-    for (let sec = Math.max(0, startSec); sec <= endSec; sec++) {
+    const stepSec = gridStepSec(this.pxPerSec);
+    const { startSec, endSec } = visibleSecondRange(this.pxPerSec, this.scrollX, w);
+    for (let sec = startSec; sec <= endSec; sec++) {
       if (sec % stepSec !== 0) continue;
-      const x = this.tickToX(sec * TICK_RATE);
+      const x = this.secondX(sec);
       if (x < GUTTER_W) continue;
-      ctx.strokeStyle = sec % (stepSec * 5) === 0 ? C.gridSec : C.grid;
+      ctx.strokeStyle = isMajorSecond(sec, stepSec) ? C.gridSec : C.grid;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x + 0.5, RULER_H);
@@ -257,22 +205,18 @@ export class TimelinePanel {
     ctx.font = '11px monospace';
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i]!;
-      const li = this.laneIndex(e.col);
+      const li = laneIndex(e.col);
       if (li < 0) continue;
-      const selected = this.state.selectedWave === i;
-      const meta = unitMeta(e.unitType);
-      const yTop = RULER_H + li * LANE_H + 4;
-      const bh = LANE_H - 8;
-      const x0 = this.tickToX(e.atTick);
-      const x1 = this.tickToX(this.entryEndTick(e));
-      const bw = Math.max(18, x1 - x0 + 18);
+      const rect = blockRect(e, li, this.pxPerSec, this.scrollX);
 
       // skip if fully off-screen to the left/right
-      if (x0 + bw < GUTTER_W || x0 > this.canvas.width) continue;
+      if (!isBlockVisible(rect, this.canvas.width)) continue;
 
+      const { x: x0, y: yTop, w: bw, h: bh } = rect;
+      const selected = this.state.selectedWave === i;
       ctx.globalAlpha = selected ? 1 : 0.82;
       this.roundRect(x0, yTop, bw, bh, 4);
-      ctx.fillStyle = meta.color;
+      ctx.fillStyle = unitMeta(e.unitType).color;
       ctx.fill();
       if (selected) {
         ctx.strokeStyle = C.sel;
@@ -282,11 +226,11 @@ export class TimelinePanel {
       ctx.globalAlpha = 1;
 
       // per-unit spacing ticks
-      if (e.count > 1 && (e.spacingTicks ?? 0) > 0) {
+      const tickXs = unitTickXs(e, this.pxPerSec, this.scrollX);
+      if (tickXs.length > 0) {
         ctx.strokeStyle = 'rgba(17,17,27,0.5)';
         ctx.lineWidth = 1;
-        for (let k = 1; k < e.count; k++) {
-          const tx = this.tickToX(e.atTick + k * (e.spacingTicks ?? 0));
+        for (const tx of tickXs) {
           ctx.beginPath();
           ctx.moveTo(tx + 0.5, yTop);
           ctx.lineTo(tx + 0.5, yTop + bh);
@@ -295,7 +239,7 @@ export class TimelinePanel {
       }
 
       ctx.fillStyle = '#11111b';
-      const label = `${meta.label || meta.type}×${e.count}${e.isBoss ? ' ★' : ''}`;
+      const label = blockLabel(e);
       ctx.save();
       ctx.beginPath();
       ctx.rect(x0, yTop, bw, bh);
@@ -337,16 +281,15 @@ export class TimelinePanel {
     ctx.lineTo(w, RULER_H + 0.5);
     ctx.stroke();
 
-    const stepSec = this.pxPerSec >= 120 ? 1 : this.pxPerSec >= 50 ? 2 : 5;
-    const startSec = Math.floor(this.xToTick(GUTTER_W) / TICK_RATE);
-    const endSec = Math.ceil(this.xToTick(w) / TICK_RATE);
+    const stepSec = gridStepSec(this.pxPerSec);
+    const { startSec, endSec } = visibleSecondRange(this.pxPerSec, this.scrollX, w);
     ctx.fillStyle = C.dim;
     ctx.font = '10px monospace';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    for (let sec = Math.max(0, startSec); sec <= endSec; sec++) {
+    for (let sec = startSec; sec <= endSec; sec++) {
       if (sec % stepSec !== 0) continue;
-      const x = this.tickToX(sec * TICK_RATE);
+      const x = this.secondX(sec);
       if (x < GUTTER_W) continue;
       ctx.fillText(`${sec}s`, x + 3, RULER_H / 2);
     }
