@@ -43,27 +43,36 @@ export const JSON_SUMMARY_PACKAGES = [
   // canvas, no DOM) and moved to src/model/Playback.ts, leaving src/rendering/ homogeneously the
   // PIXI half and the include at two directories (src/model/**, src/io/**).
   'tools/vfx-editor',
+  // ADR-070 Phase 4d (2026-08-20, same day): fourth to graduate, and the only one of the five
+  // whose exit condition was pure test-writing with no move at all — its include has been
+  // directory-level (src/core/**, src/skeleton/**, src/animation/**, src/io/**) since ADR-070
+  // landed, and printed 64.3% because it deliberately kept its untested IndexedDB layer inside
+  // the scope. Now 98.9% (1426/1442). NOTE this package has by far the largest gate headroom of
+  // the five (~140 lines at that coverage, vs 72 for map-editor and 49 for level-editor), so
+  // `tools/animator/test/pureLayerBoundary.test.ts` — not the percentage — is what keeps a
+  // PIXI/DOM file out of those four directories.
+  'tools/animator',
 ];
 
 // Workspaces whose `npm run test:coverage` writes coverage/lcov.info instead (Node's built-in
 // test coverage — see server/engine/scripts/runTests.mjs).
 export const LCOV_PACKAGES = ['server/engine'];
 
-// ADR-070 (2026-08-20): the tool packages still on the ratchet — two of the original five, since
-// Phase 4a (tools/map-editor), 4b (tools/level-editor) and 4c (tools/vfx-editor) graduated into the
-// gated list above. Keep this count honest: a stale quantifier here is how "temporary" exemptions
-// go quiet. They emit the same coverage-summary.json as that list, and they appear in the report
-// the same way — but they are NOT gated on the 90% line bar yet, because each one's scope needs
-// structural work first (see each tools/*/vitest.config.ts and claudedocs/tools-testing.md for
-// the per-tool exit condition). What IS gated for them from day one is that the output exists at
-// all: a tool package that stops producing coverage/ fails checkCoverageThreshold.mjs exactly
-// like a server workspace would. The percentage is on a ratchet; the plumbing is not.
-// Graduating one of these (Phase 4a, 4b and 4c did) means MOVING its line up into
+// ADR-070 (2026-08-20): the tool packages still on the ratchet — one of the original five, since
+// Phase 4a (tools/map-editor), 4b (tools/level-editor), 4c (tools/vfx-editor) and 4d
+// (tools/animator) graduated into the gated list above. Keep this count honest: a stale quantifier
+// here is how "temporary" exemptions go quiet. They emit the same coverage-summary.json as that
+// list, and they appear in the report the same way — but they are NOT gated on the 90% line bar
+// yet, because each one's scope needs structural work first (see each tools/*/vitest.config.ts and
+// claudedocs/tools-testing.md for the per-tool exit condition). What IS gated for them from day one
+// is that the output exists at all: a tool package that stops producing coverage/ fails
+// checkCoverageThreshold.mjs exactly like a server workspace would. The percentage is on a
+// ratchet; the plumbing is not.
+// Graduating one of these (Phase 4a, 4b, 4c and 4d did) means MOVING its line up into
 // JSON_SUMMARY_PACKAGES, not copying it: a package listed in both would get two rows out of
 // collectRows(), and the gate would be satisfied by the exempt one while the table read as green.
 // coverageScripts.test.ts pins that with a duplicate check across all three lists.
 export const NOT_GATED_JSON_SUMMARY_PACKAGES = [
-  'tools/animator',
   'tools/ops',
 ];
 

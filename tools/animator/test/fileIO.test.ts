@@ -92,6 +92,19 @@ describe('saveWithPicker', () => {
     expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'animation.tao' });
   });
 
+  // primaryExt() walks every declared type looking for a first accepted extension and returns ''
+  // when there is none — the arm that leaves the suggested name exactly as given. `types` is a
+  // literal at every real call site today, so this is the arm nothing exercises by accident.
+  it('native picker: a types list declaring no extension leaves the name untouched', async () => {
+    const handle = { getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async () => {}, close: async () => {} }) };
+    const picker = vi.fn(async (_opts: unknown) => handle);
+    vi.stubGlobal('window', { showSaveFilePicker: picker });
+
+    await saveWithPicker(blob, 'animation', [{ description: 'Anything', accept: {} }, { accept: { 'text/plain': [] } }]);
+
+    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'animation' });
+  });
+
   it('native picker: a doubled compound extension is collapsed to exactly one', async () => {
     const handle = { getFile: async () => new File([], 'x'), createWritable: async () => ({ write: async () => {}, close: async () => {} }) };
     const picker = vi.fn(async (_opts: unknown) => handle);
