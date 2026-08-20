@@ -18,7 +18,7 @@ import { ProjectStore } from './io/ProjectStore';
 import { Library, AutosaveState } from './io/Library';
 import { exportEffect, importEffect, validate } from './io/IOController';
 import { PreviewRenderer } from './rendering/PreviewRenderer';
-import { Playback } from './rendering/Playback';
+import { Playback } from './model/Playback';
 import { EffectListPanel } from './ui/EffectListPanel';
 import { LayerPanel } from './ui/LayerPanel';
 import { ParamPanel } from './ui/ParamPanel';

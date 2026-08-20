@@ -55,7 +55,10 @@ export class Skeleton {
    * two stay coupled. Joint points only (computeDefaultShadowSize covers leg width).
    *
    * Keep in sync with the game's StickmanRuntime-side Skeleton.computeNaturalHeight.
-   * Returns 0 when there are no clips (signals "unknown").
+   * The rest pose is ALWAYS scanned, so an empty clip list yields the rest-pose extent rather
+   * than 0 — the `: 0` fallback only fires for a degenerate rig with no vertical extent at all,
+   * which the fixed 11-bone definition cannot produce. (Both copies of this comment claimed
+   * "returns 0 when there are no clips" until 2026-08-20, when a test asserting that failed.)
    */
   static computeNaturalHeight(
     clips: Iterable<AnimationClip>,

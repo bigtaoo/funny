@@ -446,3 +446,28 @@ _2026-06-24（补全施工细节）：_
 - **`.github/workflows/vfx-deploy.yml`**：push 到 main 命中 `tools/vfx-editor/**`（或 `wrangler/vfx.jsonc` / 本 workflow）触发，亦可 Actions 页手动 Run；`npm ci → npm run build → npx -y wrangler@4.104.0 deploy -c wrangler/vfx.jsonc`。`concurrency: vfx-deploy` 新跑取消旧跑。
 - **secret 复用**：账号级 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`（与 ops/client/animator 同值，无需新建）。vfx 编辑器**无 Supabase/后端依赖**，构建期不注入任何变量。
 - **启用开关**：repo variable `VFX_DEPLOY_ENABLED = true`（未设则整个 job 跳过，避免配好前每次 push 报红）。设好后即随 vfx 改动自动发布。
+
+### 覆盖率门禁 + 模块分层（ADR-070 Phase 4c，2026-08-20，已完成：typecheck / 136 单测 / production 构建三绿）
+
+编辑器的覆盖率**百分比**从此受仓库 90% 门禁约束（此前只有「必须产出 coverage/」受门禁）。口径见 [ADR-070](../../DECISIONS_ADR-041-onward.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) 与 [`claudedocs/tools-testing.md`](../../../claudedocs/tools-testing.md)；这里只记与本编辑器结构有关的部分。
+
+- **`Playback` 从 `rendering/` 移进 `model/`**。§8 的设计期表把播放控制画在 UI 那侧（`ui/Timeline.ts`），实际落地时时钟单独成类、住在 `rendering/`——但它只有 `t`/`playing`/`duration` 三个字段加 `Math` 运算，无 PIXI、无 canvas、无 DOM；rAF 循环从外面读它，它从不反向伸手。**它不是渲染器，是编辑器状态**，所以现在是 `src/model/Playback.ts`。副作用是 `src/rendering/` 只剩 `PreviewRenderer.ts`，均质地是 PIXI 那一半，依赖方向单向 `model/ ← rendering/`。
+- **实际落地的四层**（与 §8 设计期表的差异一并记在这里，那张表按当时的设想写着 `App.ts`/`ui/Timeline.ts`/`io/AutoSaveController.ts`）：
+
+  | 层 | 文件 | 性质 |
+  |---|---|---|
+  | `src/model/` | `EffectModel.ts`（状态 + CRUD + undo/redo + 预算 metrics）、`Playback.ts`（预览时钟）、`color.ts`、`paramHints.ts` | **无 DOM**，纯逻辑/状态 |
+  | `src/io/` | `IOController.ts`（导入/导出单个特效 JSON）、`ProjectStore.ts`（IndexedDB `nw-vfx`）、`Library.ts`（工作副本 + 选中项 + 防抖自动保存，即设计期表里的 `AutoSaveController`） | 用浏览器 API，但**能 headless 跑**（`fake-indexeddb` / `vi.stubGlobal` / Node 自带 `Blob`+`URL`） |
+  | `src/rendering/` | `PreviewRenderer.ts` | 真 `new PIXI.Application`，无 headless harness |
+  | `src/ui/` + `src/index.ts` | 四个面板 + 组合根（即设计期表里的 `App.ts`）、rAF 循环、splitter | `document.createElement` 装配 |
+
+  前两层是 `coverage.include`（`['src/model/**','src/io/**']`，**100%：529/529 行、函数 76/80**），后两层出界。
+- **`test/pureLayerBoundary.test.ts` 守这条边界**，且判据跟 map-editor/level-editor 那两份**不同**：本编辑器的 `src/io/**` 在门禁范围内，而它**理应**用 `window`/`document`/`localStorage`/`indexedDB`/`Blob`/`URL`——照抄「一律禁 DOM」要么是假话，要么得把 io/ 挤出 scope。所以判据是**能不能 headless 跑**，落成两层一套机制：`model/` 一律禁 DOM，`io/` 只许一份显式白名单的 global（`HTML*Element`、canvas/rAF/observer 一族、`performance` 照禁——io/ 可以跟浏览器说话，但不许造 UI）。另外两条：依赖方向 `io/ → model/` 单向；`coverage.include` 不许再出现逐文件项（4c 刚去掉最后一个）。往 io/ 加浏览器 API 就得改白名单，那正是该说清「它怎么 headless 测」的时刻。
+- **导入/导出的行为契约（`IOController`，此前 0 测试，现 100%）**：导出前用游戏侧同一个 `parseEffectDef` 复核（§10 回写流程的那句「保证导出的 JSON 运行时一定能解析」现在有断言了），文件名取**校验后**的 id；有 File System Access 就走它、用户取消**不许**掉头去下载一个他刚拒绝保存的文件；没有就 `<a download>` + `URL.revokeObjectURL`。导入时「文件不是 JSON」（`JSON parse failed:`）与「JSON 不是合法特效」（`parse error in import`）是两条不同的消息，因为要修的东西不同；校验失败必须两条消息（解析器的具体抱怨 + 「Export blocked」的原因），只留后者会让美术不知道改哪儿。
+
+**9094 实开做数值核对（不是截图）**：浏览器窗格不 composite，截图 5s 超时——但这个编辑器的预览是 **rAF 驱动**的，而隐藏的标签页里 `requestAnimationFrame` **根本不触发**（实测：注册一个回调后同步读回 `rafFired=0`；WebGL2 帧缓冲 600×400 全是清屏黑，非背景像素 **0** 个）。所以对本工具来说 `getImageData`/`readPixels` 采样这条退路也不成立，能核对的是 DOM 与数据这一侧（都是 rAF 无关路径，逐条通过）：
+
+- `scrubTo` 契约：滑块 0/1/500/999/1000 → `t=clamp(v/1000,0,1)`、读数 `t=…` 两位小数、回写滑块 `round(t*1000)`，且每次都**暂停**（按钮回到 `▶ Play`）——纯模块「拖动即暂停，帧停住」那条契约。
+- 真 `MouseEvent` 派到播放键 → `⏸ Pause` / `▶ Play` 往返；派到「+ 图层」→ JSON 面板 `layers` 3 → 4、新层类型等于下拉框选中值、metrics 的 `Layers` 行同步到 4；改 `duration` → JSON 面板 `duration=2` + metrics `Duration (s)2 / 2`。随后两次 Undo 把工作副本还原（3 层 / duration 1）。
+- 导出两条路都在真浏览器里跑通，**逐字节**对上 JSON 面板内容（`JSON.stringify(def,null,2)+'\n'`）：File System Access 路径 `suggestedName=shield.json`、write 1 次、close 1 次、状态 `✓ Saved shield.json …`；删掉 `showSaveFilePicker` 后走 `<a download>`，`download=shield.json`、href 是 `blob:`、blob 类型 `application/json`、`revokeObjectURL` 收到的正是同一个 URL、状态 `✓ Downloaded …`。
+- 三条失败/取消分支：JSON 面板 Apply 一个合法 JSON 但非法特效 → `✗ VFX parse error in json: duration must be > 0`；Apply 一段非 JSON → `JSON parse error:`（index.ts 自己的守卫，与上一条刻意不同源）；导入一个内容非 JSON 的文件 → `✗ JSON parse failed:`（`IOController` 自己的前缀）；用户取消打开对话框 → 状态不变，且**没有**创建任何 `<input type=file>` 回退（不会弹第二个对话框）。控制台与 dev server 日志无报错。

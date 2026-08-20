@@ -1,7 +1,9 @@
-// Playback.ts — the preview clock (normalized progress t over the effect duration). Fully
-// pure/DOM-free already (no PIXI, no canvas), unlike everything else in rendering/*.
+// Playback (src/model/Playback.ts) — the preview clock (normalized progress t over the effect
+// duration). Fully pure/DOM-free (no PIXI, no canvas); it lived in rendering/ next to
+// PreviewRenderer until ADR-070 Phase 4c moved it into the model layer, which is what let
+// coverage.include drop its per-file entry.
 import { describe, it, expect, vi } from 'vitest';
-import { Playback } from '../src/rendering/Playback';
+import { Playback } from '../src/model/Playback';
 
 describe('Playback.advance', () => {
   it('advances t proportionally to elapsed time / duration', () => {
