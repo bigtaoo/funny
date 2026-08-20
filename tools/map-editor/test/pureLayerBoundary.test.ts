@@ -4,15 +4,17 @@
 // WHY THIS EXISTS, and why the coverage gate is not enough on its own. Phase 4a's write-up claimed
 // that once the include is directory-level and the package is gated at 90%, a PIXI/DOM module
 // dropped into one of those directories "turns the gate red", because it lands inside an INCLUDED
-// directory at ~0%. That is directionally true and quantitatively false: the scope is at 644/652
-// lines, so there is `644/0.9 - 652` = 63 lines of headroom, and a 0%-covered file smaller than
-// that keeps the gate GREEN. Ten of this package's sixteen PIXI/DOM files are under 63 lines
-// (every atlas loader, refresh.ts, citySprites.ts, viewport.ts, status.ts, i18nApply.ts,
-// panels.ts), so the "gate catches it" story fails for the majority of the realistic mistakes.
-// Worse, the headroom GROWS as the pure layer's coverage improves — the better the tests get, the
-// more impurity the gate would tolerate. So the boundary needs an assertion of its own, and this
-// is it. The coverage gate still does its own job (the pure layer must stay ≥90% covered); this
-// file pins the other half — that the pure layer is still pure.
+// directory at ~0%. That is directionally true and quantitatively false. The gate's headroom is
+// `covered/0.9 - total`: 63 lines when that was written, 72 now that the scope is at 652/652, and a
+// 0%-covered file smaller than that keeps the gate GREEN. Ten of this package's sixteen PIXI/DOM
+// files are under 63 lines (every atlas loader, refresh.ts, citySprites.ts, viewport.ts, status.ts,
+// i18nApply.ts, panels.ts), so the "gate catches it" story fails for most of the realistic
+// mistakes — verified by dropping a 13-line PIXI+DOM module into src/tiles/ and watching coverage
+// land at 96.98% with the gate still passing. Worse, the headroom GROWS as the pure layer's
+// coverage improves: the better these tests get, the more impurity the percentage would tolerate.
+// So the boundary needs an assertion of its own, and this is it. The coverage gate still does its
+// own job (the pure layer must stay >=90% covered); this file pins the other half — that the pure
+// layer is still pure.
 //
 // Scope is deliberately the two DIRECTORY entries only. `src/i18n.ts` and `src/constants.ts` are in
 // the include list as whole named files, and you cannot add a file to a file — there is no
@@ -133,6 +135,35 @@ describe('pure layer boundary (src/state/**, src/tiles/**)', () => {
     // would make the boundary test above pass vacuously on every file forever.
     const total = PURE_FILES.reduce((n, f) => n + importsOf(readFileSync(f, 'utf8')).length, 0);
     expect(total, 'importsOf() found zero imports across the whole pure layer — the regex is broken').toBeGreaterThan(0);
+  });
+
+  // Both scanners are regex-over-whole-file, and this repo checks out CRLF on Windows
+  // (core.autocrlf=true) while CI checks out LF — exactly the setup where a source scanner works on
+  // one and silently matches nothing on the other, since "found no breaches" and "scanned nothing"
+  // print identically. `$` under /m does match before a bare CR (the spec's LineTerminator includes
+  // it), so the current strip handles both; that is a property of the regex rather than something
+  // the code states, so pin it instead of re-deriving it after the next edit. Deliberately does NOT
+  // assert what the files on disk use — that would flip red depending on which OS ran the checkout.
+  it('scans correctly under both LF and CRLF line endings', () => {
+    const LF = String.fromCharCode(10);
+    const CRLF = String.fromCharCode(13, 10);
+    for (const [name, nl] of [['LF', LF], ['CRLF', CRLF]] as const) {
+      const src = [
+        '// a doc comment mentioning document and window and localStorage',
+        "import { a } from './x';",
+        '/* block comment naming pixi.js-legacy */',
+        'const b = 1;',
+      ].join(nl) + nl;
+      const stripped = stripComments(src);
+      expect(stripped, `line comments not stripped under ${name}`).not.toMatch(/\bdocument\b/);
+      expect(stripped, `block comments not stripped under ${name}`).not.toMatch(/pixi/);
+      expect(importsOf(src), `imports not found under ${name}`).toEqual(['./x']);
+
+      // Multi-line import: the `from` clause lands on its own line. ops has a real one of these,
+      // and it is what broke an earlier version of the reachability guard's import regex.
+      const multi = ['import {', '  a,', '  b,', "} from '../state/camera';"].join(nl) + nl;
+      expect(importsOf(multi), `multi-line import missed under ${name}`).toEqual(['../state/camera']);
+    }
   });
 
   // The load-bearing link between this file and the gate: if someone adds a third directory to

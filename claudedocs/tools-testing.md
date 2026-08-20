@@ -74,7 +74,7 @@ node -e "const t=require('./coverage/coverage-summary.json').total.lines; consol
 - 这不是理论边角：该包 16 个 PIXI/DOM 文件里**有 10 个 ≤63 行**（三个 atlas loader、`refresh.ts`、`citySprites.ts`、`viewport.ts`、`status.ts`、`i18nApply.ts`、`panels.ts`），随便哪一个搬进 `src/tiles/` 门禁都不响。
 - 实测确认过：往 `src/tiles/` 放一个 13 行的 PIXI+DOM 探针文件，`All files` 掉到 96.98%，**门禁照过**。
 
-所以边界要有自己的断言：`tools/map-editor/test/pureLayerBoundary.test.ts`（4 例）——扫 `src/state/**` + `src/tiles/**` 的源码，断言 ①import 白名单（只许 `@nw/shared/slg`、`../constants`、`../i18n` 和纯目录内部；`import type` 一个 PIXI 模块同样算越界，那正是 Phase 4a 搬 `TerrainTextureName` 的理由）②不出现任何 DOM/浏览器全局（先剥注释，免得文档里提一句就误报）③canary：每个纯目录必须扫到文件、import 正则必须至少匹配到一条（CRLF/跨行那类空转 bug）④**受检目录从 `vitest.config.ts` 的 `coverage.include` 反推**，往 include 里加第三个目录而不加守卫，这条直接红。四条断言都做过 red-then-green（含"改名一个纯目录"和"往 include 加一项"两个 canary）。
+所以边界要有自己的断言：`tools/map-editor/test/pureLayerBoundary.test.ts`（4 例）——扫 `src/state/**` + `src/tiles/**` 的源码，断言 ①import 白名单（只许 `@nw/shared/slg`、`../constants`、`../i18n` 和纯目录内部；`import type` 一个 PIXI 模块同样算越界，那正是 Phase 4a 搬 `TerrainTextureName` 的理由）②不出现任何 DOM/浏览器全局（先剥注释，免得文档里提一句就误报）③canary：每个纯目录必须扫到文件、import 正则必须至少匹配到一条（CRLF/跨行那类空转 bug）④**受检目录从 `vitest.config.ts` 的 `coverage.include` 反推**，往 include 里加第三个目录而不加守卫，这条直接红 ⑤扫描器本身在 LF 与 CRLF 下都要工作（本仓库 Windows 检出 CRLF、CI 检出 LF，正是源码扫描器「在一边空转、两边印一样的 OK」的典型场合；顺带钉住跨行 import）。五条断言都做过 red-then-green，含两个 canary（改名一个纯目录、往 include 加一项）和一个真会坏的 LF-only 正则。
 
 **给 4b–4e 的结论**：graduation 不等于边界有人守。`include` 回到目录级只是让「加文件」变得可见**给覆盖率算法**，不等于可见给门禁——门禁只看一个百分比，而百分比有余量。每个毕业的包都该配一条同形的 purity 守卫，`PURE_DIRS` 改一下就能抄。
 
