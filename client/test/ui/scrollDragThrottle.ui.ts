@@ -268,6 +268,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       onBack() {},
       getSave: () => save,
       fuseCards: async () => ({ ok: true }),
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
       setCardLock: async () => ({ ok: true }),
       getOwnedSkins: () => [],
       getEquippedSkin: () => null,

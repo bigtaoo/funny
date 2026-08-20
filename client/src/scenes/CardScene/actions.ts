@@ -68,41 +68,43 @@ export class ActionsPanel {
    * dozen-plus Lv.2→Lv.3 fuses; making the player tap through them one at a time — each with its
    * own ~1.2s ring animation — is the click-noise this replaces.
    *
+   * ONE request for the whole run since 2026-08-20 (POST /cards/fuse-batch). It used to be a
+   * sequential fuse-per-round loop, and each of those round-trips came back carrying a fully
+   * reassembled cardInv — on a several-hundred-card roster that is the stall players reported on
+   * the "make the materials" button. `rounds` is planned up front by the caller against its own
+   * inventory (feedPlan.planPrepRounds); the server re-validates each round anyway and stops at the
+   * first failure, so a plan a concurrent change invalidated costs a short batch, not a wrong one.
+   *
    * Deliberately plays NO per-round animation and no final one either: the ring's geometry belongs
    * to whichever feeder was on screen when the batch started, and that card is consumed or
    * retargeted several times over during the run, so any animation would be showing portraits that
    * no longer mean anything. A count in the summary toast is the honest report.
-   *
-   * Stops at the first failed round and reports what landed, rather than pushing on — the failure
-   * is usually REV_CONFLICT or a timeout, and continuing would spend more cards against a state
-   * the client can no longer trust.
    */
-  async doPrepBatch(nextRound: () => PrepRound, onSettled: (completed: number) => void): Promise<void> {
+  async doPrepBatch(rounds: PrepRound[], onSettled: (completed: number) => void): Promise<void> {
     const core = this.core;
-    if (core.bt.busy) return;
+    if (core.bt.busy || rounds.length === 0) return;
     core.bt.start();
     core.fuseInProgress = true; // suppress update()'s busy-dot redraws mid-run, same as doFuse
     core.feedRedraw?.();
     let completed = 0;
     try {
-      // The destroyed check gates the whole iteration, not just onSettled: if the player backs out
-      // of the roster mid-batch there is no reason to keep spending cards on a panel nobody is
-      // looking at. Rounds already in flight still settle server-side; we just stop issuing — and
-      // stop even asking nextRound for one, since planning a round is itself a read of state the
-      // torn-down panel no longer owns.
-      while (!core.destroyed) {
-        const round = nextRound();
-        if (!round) break;
-        const res = await withTimeout(core.cb.fuseCards(round.targetId, round.materialIds));
-        if (!res.ok) { core.showToast(t(res.key), C.red); break; }
-        completed++;
+      const res = await withTimeout(core.cb.fuseCardsBatch(rounds));
+      if (res.ok) {
+        completed = res.completed;
+        // Report both halves when the run stopped short: the count that landed is the good news,
+        // the reason it stopped is what tells the player whether to try again.
+        if (res.failKey) core.showToast(t(res.failKey), C.red);
+        if (completed > 0) core.showToast(t('roster.fusePrepBatchOk', { n: completed }), C.green);
+      } else {
+        core.showToast(t(res.key), C.red);
       }
-      if (completed > 0) core.showToast(t('roster.fusePrepBatchOk', { n: completed }), C.green);
     } catch (e) {
       core.showToast(t(e instanceof TimeoutError ? 'common.networkTimeout' : 'roster.fuseErr'), C.red);
     } finally {
       core.bt.stop();
       core.fuseInProgress = false;
+      // The batch can resolve after the player backed out of the roster; onSettled would then be
+      // repainting a torn-down panel. The fuses themselves already committed server-side.
       if (core.destroyed) return;
       onSettled(completed);
     }

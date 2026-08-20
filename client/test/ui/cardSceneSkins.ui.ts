@@ -57,6 +57,7 @@ describe('CardScene — Skins tab (folded in from the retired CollectionScene)',
       onBack() {},
       getSave: () => save,
       fuseCards: async () => ({ ok: true }),
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
       setCardLock: async () => ({ ok: true }),
       getOwnedSkins: () => ['skin_e1'],
       getEquippedSkin: (unitType) => equipped[unitType] ?? null,
@@ -84,6 +85,7 @@ describe('CardScene — Skins tab card grid layout', () => {
       onBack() {},
       getSave: () => makeNewSave(),
       fuseCards: async () => ({ ok: true }),
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
       setCardLock: async () => ({ ok: true }),
       // One owned skin per character — every character's card renders exactly 2 tiles
       // (default + owned skin), so all 6 cards are the same height and pack deterministically.

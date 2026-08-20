@@ -735,6 +735,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards/fuse-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run up to 20 fusions in ONE request (roster batch-prep, CHARACTER_CARDS_DESIGN §3.2). Rounds execute in order against the roster the previous round left; the first failing round stops the batch and everything before it stays committed (still 200, see `failed`) */
+        post: operations["cardsFuseBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards/lock": {
         parameters: {
             query?: never;
@@ -3506,6 +3523,60 @@ export interface operations {
                         ok: true;
                         data: {
                             card: components["schemas"]["CardInstance"];
+                            save: components["schemas"]["SaveData"];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            409: components["responses"]["ErrorResp"];
+        };
+    };
+    cardsFuseBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Fusions to run, in order. Each is the same target+5-materials payload /cards/fuse takes */
+                    rounds: {
+                        /** @description CardInstance id of the card to level up */
+                        targetId: string;
+                        /** @description Exactly 5 CardInstance ids to consume (same faction, same level as target; must not be locked) */
+                        materialIds: string[];
+                    }[];
+                    /** @description Client-generated key covering the WHOLE batch; a retry replays the committed round count instead of re-consuming cards */
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success, possibly partial — `completed` rounds committed; `failed` present iff the batch stopped early */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description How many rounds committed */
+                            completed: number;
+                            /** @description The first round that failed; absent when all rounds committed */
+                            failed?: {
+                                /** @description 0-based index into the request's `rounds` */
+                                index: number;
+                                /** @description Same error codes /cards/fuse returns: CARD_NOT_FOUND / CARD_LOCKED / WRONG_FACTION / BAD_REQUEST / REV_CONFLICT */
+                                code: string;
+                                error: string;
+                            };
                             save: components["schemas"]["SaveData"];
                         };
                     };

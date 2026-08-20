@@ -242,6 +242,21 @@ function mutatingFuseCards(
   };
 }
 
+/** Batch-fuse counterpart of mutatingFuseCards: applies the whole planned run in one call. */
+function mutatingFuseBatch(
+  cardInv: Record<string, CardInstance>,
+  calls: { targetId: string; ids: string[] }[],
+): CardCallbacks['fuseCardsBatch'] {
+  return async (rounds) => {
+    for (const r of rounds) {
+      calls.push({ targetId: r.targetId, ids: r.materialIds });
+      for (const id of r.materialIds) delete cardInv[id];
+      cardInv[r.targetId].level += 1;
+    }
+    return { ok: true, completed: rounds.length };
+  };
+}
+
 /** Tap a full ring's Confirm and let the doFuse chain settle. */
 async function confirmFuse(scene: CardScene): Promise<void> {
   hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
@@ -270,6 +285,7 @@ function baseCb(cardInv: Record<string, CardInstance>, overrides: Partial<CardCa
       wallet: { coins: 0 },
     } as unknown as ReturnType<CardCallbacks['getSave']>),
     fuseCards: async () => ({ ok: true }),
+    fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,
@@ -664,7 +680,10 @@ describe('CardScene fuse panel — prep: making the missing materials as an expl
     for (let i = 0; i < 12; i++) cardInv[`mid${i}`] = makeCard(`mid${i}`, 'max', { level: 2 });
 
     const calls: { targetId: string; ids: string[] }[] = [];
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCards: mutatingFuseCards(cardInv, calls),
+      fuseCardsBatch: mutatingFuseBatch(cardInv, calls),
+    }));
     openFuse(scene, target);
     startPrep(scene);
 
@@ -863,6 +882,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       getSave: () => mgr.get(),
       onSaveChanged: (fn) => mgr.subscribe(fn),
       fuseCards: async () => ({ ok: true }),
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
       setCardLock: async () => ({ ok: true }),
       getOwnedSkins: () => [],
       getEquippedSkin: () => null,
@@ -905,6 +925,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
         });
         return { ok: true };
       },
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
       setCardLock: async () => ({ ok: true }),
       getOwnedSkins: () => [],
       getEquippedSkin: () => null,

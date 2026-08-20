@@ -28,7 +28,7 @@ import type {
 import { ApiClientCore } from './ApiClient/core';
 import { AuthService } from './ApiClient/auth';
 import { PveService } from './ApiClient/pve';
-import { EquipmentService } from './ApiClient/equipment';
+import { EquipmentService, type FuseRound, type FuseBatchResponse } from './ApiClient/equipment';
 import { ShopService } from './ApiClient/shop';
 import { GachaService } from './ApiClient/gacha';
 import { SocialService } from './ApiClient/social';
@@ -288,6 +288,13 @@ export class ApiClient {
     idempotencyKey: string
   ): Promise<{ save: SaveData; card: CardInstance }> {
     return this.equipmentSvc.fuseCards(targetCardId, materialCardIds, idempotencyKey);
+  }
+
+  fuseCardsBatch(
+    rounds: FuseRound[],
+    idempotencyKey: string
+  ): Promise<FuseBatchResponse> {
+    return this.equipmentSvc.fuseCardsBatch(rounds, idempotencyKey);
   }
 
   setCardLock(cardInstanceId: string, locked: boolean): Promise<{ save: SaveData }> {

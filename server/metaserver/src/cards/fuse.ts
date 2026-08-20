@@ -1,16 +1,13 @@
 // cards/* split — fuseCards (see ../cards.ts for the module overview).
 import {
-  CARD_DEFS,
-  MAX_CARD_LEVEL,
-  FUSION_MATERIAL_COUNT,
   applyFusion,
   type Collections,
   type SaveData,
   type CardInstance,
-  type CardDef,
 } from '@nw/shared';
 import { getOrCreateSave } from '../save.js';
 import { REV_RETRIES, idemExpireAt, toCardDoc, fromCardDoc, type CardError } from './helpers.js';
+import { checkFuseShape, checkFuseRound } from './fuseRules.js';
 
 /**
  * Fuse material cards into a target card (CHARACTER_CARDS_DESIGN §3, fusion redesign).
@@ -45,15 +42,10 @@ export async function fuseCards(
   materialIds: string[],
   idempotencyKey: string,
 ): Promise<{ card: CardInstance; save: SaveData } | CardError> {
-  if (!targetId) return { error: 'targetId required', code: 'BAD_REQUEST' };
-  if (!Array.isArray(materialIds) || materialIds.length !== FUSION_MATERIAL_COUNT)
-    return { error: `materialIds must contain exactly ${FUSION_MATERIAL_COUNT} entries`, code: 'BAD_REQUEST' };
+  const shapeErr = checkFuseShape(targetId, materialIds);
+  if (shapeErr) return shapeErr;
   if (!idempotencyKey) return { error: 'idempotencyKey required', code: 'BAD_REQUEST' };
-  if (materialIds.includes(targetId))
-    return { error: 'target cannot be its own material', code: 'BAD_REQUEST' };
-  const ids = [...new Set(materialIds)];
-  if (ids.length !== FUSION_MATERIAL_COUNT)
-    return { error: 'materialIds must not contain duplicates', code: 'BAD_REQUEST' };
+  const ids = [...materialIds];
 
   // Idempotency replay (materials already consumed; return current target card state).
   const replay = await cols.cardIdem.findOne({ _id: idempotencyKey });
@@ -72,42 +64,9 @@ export async function fuseCards(
     cols.cardInstances.find({ _id: { $in: [targetId, ...ids] }, accountId }).toArray(),
   ]);
   const curMap = new Map(curDocs.map((d) => [d._id, fromCardDoc(d)]));
-  const curTarget = curMap.get(targetId);
-  if (!curTarget) return { error: 'target card not found', code: 'CARD_NOT_FOUND' };
-  const targetDef = CARD_DEFS[curTarget.defId];
-  if (!targetDef) return { error: `unknown card def: ${curTarget.defId}`, code: 'BAD_REQUEST' };
-  if (curTarget.level >= MAX_CARD_LEVEL)
-    return { error: 'target card is already at max level', code: 'BAD_REQUEST' };
-
-  const validateMaterials = (
-    cardMap: Map<string, CardInstance>,
-    target: CardInstance,
-    tDef: CardDef,
-  ): CardError | null => {
-    for (const matId of ids) {
-      const mat = cardMap.get(matId);
-      if (!mat) return { error: `material card not found: ${matId}`, code: 'CARD_NOT_FOUND' };
-      if (mat.locked) return { error: `material card is locked: ${matId}`, code: 'CARD_LOCKED' };
-      const matDef = CARD_DEFS[mat.defId];
-      if (!matDef) return { error: `unknown card def for material: ${matId}`, code: 'BAD_REQUEST' };
-      if (matDef.faction !== tDef.faction) {
-        return {
-          error: `faction mismatch: target=${tDef.faction}, material=${matDef.faction} (${matId})`,
-          code: 'WRONG_FACTION',
-        };
-      }
-      if (mat.level !== target.level) {
-        return {
-          error: `material level mismatch: target=${target.level}, material=${mat.level} (${matId})`,
-          code: 'BAD_REQUEST',
-        };
-      }
-    }
-    return null;
-  };
-
-  const preErr = validateMaterials(curMap, curTarget, targetDef);
-  if (preErr) return preErr;
+  const checked = checkFuseRound(curMap, targetId, ids);
+  if ('error' in checked) return checked;
+  const curTarget = checked.target;
 
   // Claim idempotency key (dup = concurrent retry → replay path)
   try {
