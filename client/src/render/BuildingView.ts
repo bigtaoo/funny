@@ -1,11 +1,13 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Board } from '@nw/engine/Board';
 import { Building } from '@nw/engine/Building';
-import { BuildingType } from '@nw/engine/types';
+import { BuildingType, Side } from '@nw/engine/types';
+import { BOTTOM_BUILDING_ROW, TOP_BUILDING_ROW } from '@nw/engine/config';
+import { palette } from './theme';
 import { BoardView } from './BoardView';
 import { ObjectPool } from '../cache/ObjectPool';
 import barracksTexUrl from '../assets/buildings/game_infantry_barracks.png';
-import archerTexUrl from '../assets/buildings/game_archer_barracks.png';
+import archerTexUrl from '../assets/buildings/game_arrow_tower.png';
 
 const SPRITE_SIZE = 56;
 const HP_BAR_Y    = 32;
@@ -16,8 +18,25 @@ const BOB_SPEED     = 6.98;  // rad/s → ~0.9s period
 const BOB_AMP       = 1.5;   // px
 const FLAG_SPEED    = 9.0;   // rad/s — flag flutter (faster than body bob)
 const FLAG_AMP      = 3.0;   // px wave amplitude
-const TOWER_SWAY    = 5.0;   // rad/s
-const TOWER_SWAY_DEG = 0.5;  // degrees
+// Arrow tower. The sway used to be 5.0 rad/s / 0.5° — at SPRITE_SIZE that moves the roof tip by
+// less than a third of a pixel, so the tower effectively had no idle animation at all while the
+// barracks visibly fluttered its flag (user report 2026-08-19). Slower and wider now: a lazy lean,
+// not a jitter.
+const TOWER_SWAY    = 3.2;   // rad/s → ~2s period
+const TOWER_SWAY_DEG = 1.6;  // degrees
+
+// Fire feedback. The barracks' animated tell is its flag; a tower's is that you can SEE it shoot.
+// Driven by real projectile_fired events (see playFireEffect), not a loop — a tower that has no
+// target stays still, which is itself information.
+const FIRE_SECONDS  = 0.26;  // recoil + ticks duration
+const FIRE_KICK_PX  = 2.8;   // how far the tower kicks back, opposite the shot
+// Recoil ticks: two short hand-drawn strokes BEHIND the tower. A first version drew a vibrating
+// bowstring across the art's shooting gallery instead; the geometry was there (graphicsData === 2)
+// but at SPRITE_SIZE it sat inside the busiest part of the drawing — the stone courses — and was
+// invisible in a real capture. Ink that has to read at 56px belongs outside the silhouette.
+const TICK_BACK     = 17;    // distance behind the tower centre, just clear of the art's body
+const TICK_SPREAD   = 5;     // perpendicular offset of the two strokes
+const TICK_LEN      = 8;     // stroke length at full strength
 
 // ─── Pool factory / resetter ──────────────────────────────────────────────────
 
@@ -49,6 +68,7 @@ function resetBuildingContainer(c: PIXI.Container): void {
   (c.getChildByName('hpFill')  as PIXI.Graphics).clear();
   (c.getChildByName('flagGfx') as PIXI.Graphics).clear();
   const sp = c.getChildByName('sprite') as PIXI.Sprite;
+  sp.x     = 0;   // the fire kick writes sp.x — a pooled container must not inherit a stale offset
   sp.y     = 0;
   sp.angle = 0;
 }
@@ -61,6 +81,10 @@ export class BuildingView {
   private readonly boardView: BoardView;
   private sprites: Map<number, PIXI.Container> = new Map();
   private phases:  Map<number, number>          = new Map();
+  /** Cell + side per live building, so a fire event can be matched to the right sprite. */
+  private cells:   Map<number, { col: number; row: number; side: Side }> = new Map();
+  /** In-flight fire recoils: seconds left + the shot's screen-space unit vector. */
+  private fires:   Map<number, { left: number; dx: number; dy: number }> = new Map();
   private readonly pool = new ObjectPool<PIXI.Container>(
     createBuildingContainer,
     resetBuildingContainer,
@@ -85,6 +109,10 @@ export class BuildingView {
 
   update(dt: number): void {
     this.time += dt;
+    for (const [id, fire] of this.fires) {
+      fire.left -= dt;
+      if (fire.left <= 0) this.fires.delete(id);
+    }
   }
 
   // ─── Per-frame sync ───────────────────────────────────────────────────────
@@ -102,6 +130,7 @@ export class BuildingView {
         this.container.addChild(sprite);
       }
 
+      this.cells.set(building.id, { col: building.col, row: building.row, side: building.side });
       this.updateSprite(sprite, building);
       this.updateIdleAnim(sprite, building);
     }
@@ -110,6 +139,8 @@ export class BuildingView {
       if (!seen.has(id)) {
         this.sprites.delete(id);
         this.phases.delete(id);
+        this.cells.delete(id);
+        this.fires.delete(id);
         this.pool.release(sprite);
       }
     }
@@ -117,12 +148,33 @@ export class BuildingView {
 
   // ─── Event-driven effects ─────────────────────────────────────────────────
 
+  /**
+   * A building fired a projectile: kick it back and trail recoil ticks for {@link FIRE_SECONDS}.
+   *
+   * Guarded by the origin cell, not just the id: `projectile_fired.attackerId` is a *building* id
+   * when a tower shoots and a *unit* id when an archer shoots, and those two ids come from separate
+   * counters (`allocBuildingId` / `allocUnitId`) — so they collide numerically and an archer's arrow
+   * could otherwise make an unrelated tower recoil. A building's shot always originates exactly at
+   * its own cell (`performBuildingAttack` → `fireProjectile(toFp(building.col), toFp(building.row))`),
+   * which makes the cell a free, engine-guaranteed discriminator.
+   */
+  playFireEffect(buildingId: number, originCol: number, originRow: number): void {
+    const cell = this.cells.get(buildingId);
+    if (!cell || cell.col !== originCol || cell.row !== originRow) return;
+    if (!this.sprites.has(buildingId)) return;
+
+    const dir = this.shotDirection(cell);
+    this.fires.set(buildingId, { left: FIRE_SECONDS, dx: dir.x, dy: dir.y });
+  }
+
   playDestroyEffect(buildingId: number): void {
     const sprite = this.sprites.get(buildingId);
     if (!sprite) return;
 
     this.sprites.delete(buildingId);
     this.phases.delete(buildingId);
+    this.cells.delete(buildingId);
+    this.fires.delete(buildingId);
 
     let frames = 20;
     const tick = (): void => {
@@ -202,11 +254,62 @@ export class BuildingView {
 
     if (building.buildingType === BuildingType.Barracks) {
       this.drawFlagWave(flagGfx, t, phase);
-    } else {
-      // Arrow tower: subtle rotational sway, flag gfx unused
-      sp.angle = Math.sin(t * TOWER_SWAY + phase) * TOWER_SWAY_DEG;
-      flagGfx.clear();
+      return;
     }
+
+    // Arrow tower: idle lean, plus the recoil + bowstring twang of a shot in flight.
+    sp.angle = Math.sin(t * TOWER_SWAY + phase) * TOWER_SWAY_DEG;
+
+    const fire = this.fires.get(building.id);
+    if (!fire) {
+      sp.x = 0;
+      flagGfx.clear();
+      return;
+    }
+
+    // Two curves on purpose. The KICK is squared — it lands hard on the shot and settles back
+    // fast, which is what a recoil feels like. The TICKS fade linearly, because on the squared
+    // curve they were at full strength for ~40ms (2-3 frames at 60fps) and a real capture couldn't
+    // see them at all: a 7px ink stroke needs to be on screen long enough to register.
+    const left = fire.left / FIRE_SECONDS;
+    sp.x  = -fire.dx * FIRE_KICK_PX * left * left;
+    sp.y += -fire.dy * FIRE_KICK_PX * left * left;
+    this.drawFireTicks(flagGfx, left, fire.dx, fire.dy);
+  }
+
+  /**
+   * Two short strokes trailing off the back of the tower as it kicks — the doodle-book way of
+   * saying "this thing just went off". Drawn on the `flagGfx` node, which the tower branch used to
+   * leave permanently empty, and in the same ink as the tower art.
+   */
+  private drawFireTicks(gfx: PIXI.Graphics, strength: number, dx: number, dy: number): void {
+    gfx.clear();
+    const bx = -dx * TICK_BACK, by = -dy * TICK_BACK;   // behind the tower, along the shot axis
+    const px = -dy,             py = dx;                // perpendicular to it
+    const len = TICK_LEN * (0.45 + 0.55 * strength);    // shrinks as it fades, never to nothing
+    gfx.lineStyle(1.8, palette.inkBlue, 0.25 + 0.7 * strength);
+    for (const sign of [1, -1]) {
+      const ox = bx + px * TICK_SPREAD * sign;
+      const oy = by + py * TICK_SPREAD * sign;
+      gfx.moveTo(ox, oy);
+      gfx.lineTo(ox - dx * len, oy - dy * len);
+    }
+  }
+
+  /**
+   * Unit vector, in screen space, from a building's cell toward the enemy building row — the way
+   * its shots go, and (negated) the way it kicks. Recomputed per shot rather than cached because
+   * the same cell maps to a different screen direction after an orientation flip (landscape lays
+   * the columns out along y).
+   */
+  private shotDirection(cell: { col: number; row: number; side: Side }): { x: number; y: number } {
+    const enemyRow = cell.side === Side.Bottom ? TOP_BUILDING_ROW : BOTTOM_BUILDING_ROW;
+    const from = this.boardView.gridToScreen(cell.col, cell.row);
+    const to   = this.boardView.gridToScreen(cell.col, enemyRow);
+    const dx   = to.x - from.x;
+    const dy   = to.y - from.y;
+    const len  = Math.hypot(dx, dy) || 1;
+    return { x: dx / len, y: dy / len };
   }
 
   /** Draw an animated hand-drawn flag at the top of a barracks. */
@@ -241,6 +344,8 @@ export class BuildingView {
     this.pool.drain((c) => c.destroy({ children: true }));
     this.sprites.clear();
     this.phases.clear();
+    this.cells.clear();
+    this.fires.clear();
     this.texBarracks = null;
     this.texArcher   = null;
     this.container.destroy({ children: true });

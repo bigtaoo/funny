@@ -10,6 +10,7 @@ import { createCommercialMongo, type CommercialMongo } from '../src/db';
 import { CommercialService } from '../src/service';
 import { startInternalHttp } from '../src/internalHttp';
 import { createInternalAuth } from '@nw/shared';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_commercial_http_test';
@@ -70,7 +71,7 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
   it('GET /internal/wallet (with key) → default 0', async () => {
     const r = await fetch(`${base}/internal/wallet?accountId=newbie`, { headers: hdr(KEY) });
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({
+    expect(await jsonBody(r)).toEqual({
       ok: true,
       coins: 0,
       pity: {},
@@ -89,7 +90,7 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
       body: JSON.stringify({ accountId: 'u', platform: 'web', receipt: 'tier:t499', receiptId: 'rx1' }),
     });
     // First recharge on a fresh account gets the first-purchase 2× bonus (t499 = 550 → 1100).
-    expect(await r.json()).toMatchObject({ ok: true, coinsGranted: 1100, coinsAfter: 1100 });
+    expect(await jsonBody(r)).toMatchObject({ ok: true, coinsGranted: 1100, coinsAfter: 1100 });
   });
 
   it('POST /internal/shop/charge with qty in the raw JSON body debits cost×qty and records qty on the order (2026-08-10 bulk-buy)', async () => {
@@ -104,15 +105,15 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
       headers: hdr(KEY),
       body: JSON.stringify({ accountId: 'bulk-w', platform: 'web', receipt: 'tier:t499', receiptId: 'rx-bulk-2' }),
     });
-    const before = await (await fetch(`${base}/internal/wallet?accountId=bulk-w`, { headers: hdr(KEY) })).json();
+    const before = await jsonBody(await fetch(`${base}/internal/wallet?accountId=bulk-w`, { headers: hdr(KEY) }));
     const r = await fetch(`${base}/internal/shop/charge`, {
       method: 'POST',
       headers: hdr(KEY),
       body: JSON.stringify({ accountId: 'bulk-w', itemId: 'protect_enhance', cost: 500, qty: 3, orderId: 'oBulk' }),
     });
-    const b = await r.json();
+    const b = await jsonBody(r);
     expect(b).toMatchObject({ ok: true, coinsAfter: before.coins - 500 * 3, status: 'charged' });
-    const undelivered = await (await fetch(`${base}/internal/orders/undelivered?accountId=bulk-w`, { headers: hdr(KEY) })).json();
+    const undelivered = await jsonBody(await fetch(`${base}/internal/orders/undelivered?accountId=bulk-w`, { headers: hdr(KEY) }));
     expect(undelivered.orders[0].result.qty).toBe(3);
   });
 
@@ -122,15 +123,15 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
       headers: hdr(KEY),
       body: JSON.stringify({ accountId: 'no-qty-w', platform: 'web', receipt: 'tier:t499', receiptId: 'rx-noqty' }),
     });
-    const before = await (await fetch(`${base}/internal/wallet?accountId=no-qty-w`, { headers: hdr(KEY) })).json();
+    const before = await jsonBody(await fetch(`${base}/internal/wallet?accountId=no-qty-w`, { headers: hdr(KEY) }));
     const r = await fetch(`${base}/internal/shop/charge`, {
       method: 'POST',
       headers: hdr(KEY),
       body: JSON.stringify({ accountId: 'no-qty-w', itemId: 'protect_enhance', cost: 500, orderId: 'oNoQty' }),
     });
-    const b = await r.json();
+    const b = await jsonBody(r);
     expect(b).toMatchObject({ ok: true, coinsAfter: before.coins - 500 });
-    const undelivered = await (await fetch(`${base}/internal/orders/undelivered?accountId=no-qty-w`, { headers: hdr(KEY) })).json();
+    const undelivered = await jsonBody(await fetch(`${base}/internal/orders/undelivered?accountId=no-qty-w`, { headers: hdr(KEY) }));
     expect(undelivered.orders[0].result.qty).toBe(1);
   });
 
@@ -147,7 +148,7 @@ describe.skipIf(!mongo)('commercial internalHttp', () => {
       body: JSON.stringify({ accountId: 'v', itemId: 'skin_shop_c1', cost: 300, orderId: 'oU' }),
     });
     const r = await fetch(`${base}/internal/orders/undelivered?accountId=v`, { headers: hdr(KEY) });
-    const b = await r.json();
+    const b = await jsonBody(r);
     expect(b.ok).toBe(true);
     expect(b.orders).toHaveLength(1);
     expect(b.orders[0]._id).toBe('oU');

@@ -15,8 +15,13 @@ import { Envelope, FriendUpdateKind } from '../src/generated/transport';
 import { toServerMsg, displayName } from '../src/gateway/types';
 import type { PushMsg } from '../src/matchsvcClient';
 
+/** Builds a raw wire Envelope from a loose `{ oneofField: {...} }` literal. The cast is deliberate:
+ *  ts-proto's DeepPartial carries an "exact object" brand (an `[x: string]: never` intersection) that
+ *  no structurally-typed helper parameter can satisfy, and the point of this suite is to feed
+ *  decodeClient arbitrary raw payloads. The literals at the call sites are still checked against the
+ *  generated field names/shapes by `Envelope.fromPartial` itself when they are written inline. */
 function encodeClientRaw(client: Record<string, unknown>): Uint8Array {
-  return Envelope.encode(Envelope.fromPartial({ client })).finish();
+  return Envelope.encode(Envelope.fromPartial({ client } as Parameters<typeof Envelope.fromPartial>[0])).finish();
 }
 function decodeServerRaw(buf: Uint8Array): Record<string, unknown> {
   return (Envelope.decode(buf).server ?? {}) as Record<string, unknown>;

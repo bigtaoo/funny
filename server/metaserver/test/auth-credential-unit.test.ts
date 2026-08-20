@@ -13,7 +13,10 @@
 // trim-collapsing whitespace payload), censorChat hits on register/rename, feedback rate limiting, and
 // the accountLifecycle handlers (deleteAccount/cancelAccountDeletion/recordGdprConsent).
 import { describe, it, expect } from 'vitest';
-import { makeNewSave, signToken, type Collections, type SaveData, type CommercialClient } from '@nw/shared';
+import { makeNewSave, signToken, type Collections, type SaveData } from '@nw/shared';
+// CommercialClient is metaserver's own client interface, not a @nw/shared export — the old import
+// resolved to nothing and silently made every `as CommercialClient` cast an `as any`.
+import type { CommercialClient } from '../src/commercialClient';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, type BuildAppOpts } from '../src/app.js';
 import { FakeCollection } from './helpers/fakeCollection.js';
@@ -46,7 +49,7 @@ class ThrowingInsertCollection<T extends { _id: string }> extends FakeCollection
   constructor(private readonly toThrow: unknown) {
     super();
   }
-  async insertOne(_doc: T): Promise<{ insertedId: string }> {
+  override async insertOne(_doc: T): Promise<{ insertedId: string }> {
     throw this.toThrow;
   }
 }
@@ -90,14 +93,14 @@ describe('POST /auth/wx (authWxHandler)', () => {
     const app = await makeApp(cols);
     const first = await app.inject({ method: 'POST', url: '/auth/wx', payload: { code: 'wx-1' } });
     expect(first.statusCode).toBe(200);
-    const d1 = (body(first) as { data: Record<string, unknown> }).data;
+    const d1 = (body(first) as unknown as { data: Record<string, unknown> }).data;
     expect(d1.isNew).toBe(true);
     expect(d1.isAnonymous).toBe(false);
     expect(d1.publicId).toMatch(/^\d{9}$/);
     expect(d1.displayName).toBeUndefined();
 
     const second = await app.inject({ method: 'POST', url: '/auth/wx', payload: { code: 'wx-1' } });
-    const d2 = (body(second) as { data: Record<string, unknown> }).data;
+    const d2 = (body(second) as unknown as { data: Record<string, unknown> }).data;
     expect(d2.accountId).toBe(d1.accountId);
     expect(d2.isNew).toBe(false);
     await app.close();
@@ -115,7 +118,7 @@ describe('POST /auth/wx (authWxHandler)', () => {
     const cols = fakeCols({ accounts: [{ _id: 'acc-wx-1', openid: 'dev-openid:wx-named', displayName: 'Wei' }] });
     const app = await makeApp(cols);
     const r = await app.inject({ method: 'POST', url: '/auth/wx', payload: { code: 'wx-named' } });
-    expect((body(r) as { data: Record<string, unknown> }).data.displayName).toBe('Wei');
+    expect((body(r) as unknown as { data: Record<string, unknown> }).data.displayName).toBe('Wei');
     await app.close();
   });
 
@@ -160,7 +163,7 @@ describe('POST /auth/device (authDeviceHandler)', () => {
     const app = await makeApp(cols);
     const r = await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'device-001' } });
     expect(r.statusCode).toBe(200);
-    expect((body(r) as { data: Record<string, unknown> }).data.isAnonymous).toBe(true);
+    expect((body(r) as unknown as { data: Record<string, unknown> }).data.isAnonymous).toBe(true);
     await app.close();
   });
 
@@ -170,7 +173,7 @@ describe('POST /auth/device (authDeviceHandler)', () => {
     });
     const app = await makeApp(cols);
     const r = await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'device-002' } });
-    expect((body(r) as { data: Record<string, unknown> }).data.isAnonymous).toBe(false);
+    expect((body(r) as unknown as { data: Record<string, unknown> }).data.isAnonymous).toBe(false);
     await app.close();
   });
 
@@ -178,7 +181,7 @@ describe('POST /auth/device (authDeviceHandler)', () => {
     const cols = fakeCols({ accounts: [{ _id: 'acc-dev-named', deviceId: 'device-004', displayName: 'Dev' }] });
     const app = await makeApp(cols);
     const r = await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'device-004' } });
-    expect((body(r) as { data: Record<string, unknown> }).data.displayName).toBe('Dev');
+    expect((body(r) as unknown as { data: Record<string, unknown> }).data.displayName).toBe('Dev');
     await app.close();
   });
 
@@ -268,7 +271,7 @@ describe('POST /auth/register (authRegisterHandler)', () => {
       payload: { loginId: 'clean-user', password: 'secret123', displayName: 'CleanName' },
     });
     expect(r.statusCode).toBe(200);
-    const d = (body(r) as { data: Record<string, unknown> }).data;
+    const d = (body(r) as unknown as { data: Record<string, unknown> }).data;
     expect(d.displayName).toBe('CleanName');
     expect(d.isNew).toBe(true);
     expect(d.isAnonymous).toBe(false);
@@ -330,7 +333,7 @@ describe('POST /auth/login (authLoginHandler)', () => {
     await app.inject({ method: 'POST', url: '/auth/register', payload: { loginId: 'named-login-user', password: 'secret123', displayName: 'Nate' } });
     const r = await app.inject({ method: 'POST', url: '/auth/login', payload: { loginId: 'named-login-user', password: 'secret123' } });
     expect(r.statusCode).toBe(200);
-    expect((body(r) as { data: Record<string, unknown> }).data.displayName).toBe('Nate');
+    expect((body(r) as unknown as { data: Record<string, unknown> }).data.displayName).toBe('Nate');
     await app.close();
   });
 });
@@ -339,7 +342,7 @@ describe('POST /auth/login (authLoginHandler)', () => {
 describe('POST /auth/password/change (authPasswordChangeHandler)', () => {
   async function registerAndAuth(app: FastifyInstance, loginId: string, password: string) {
     const r = await app.inject({ method: 'POST', url: '/auth/register', payload: { loginId, password } });
-    const { token } = (body(r) as { data: { token: string } }).data;
+    const { token } = (body(r) as unknown as { data: { token: string } }).data;
     return { authorization: `Bearer ${token}` };
   }
 
@@ -357,7 +360,7 @@ describe('POST /auth/password/change (authPasswordChangeHandler)', () => {
     const cols = fakeCols();
     const app = await makeApp(cols);
     const deviceRes = await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: 'pwchange-device-1' } });
-    const { token } = (body(deviceRes) as { data: { token: string } }).data;
+    const { token } = (body(deviceRes) as unknown as { data: { token: string } }).data;
     const r = await app.inject({
       method: 'POST',
       url: '/auth/password/change',
@@ -496,7 +499,7 @@ describe('POST /profile/rename (profileRenameHandler)', () => {
     const app = await makeApp(cols);
     const r = await app.inject({ method: 'POST', url: '/profile/rename', headers: authHeader('rename-3'), payload: { displayName: 'FreeName' } });
     expect(r.statusCode).toBe(200);
-    const d = (body(r) as { data: Record<string, unknown> }).data;
+    const d = (body(r) as unknown as { data: Record<string, unknown> }).data;
     expect(d.displayName).toBe('FreeName');
     await app.close();
   });
@@ -556,7 +559,7 @@ describe('POST /profile/rename (profileRenameHandler)', () => {
     const app = await makeApp(cols, { commercial });
     const r = await app.inject({ method: 'POST', url: '/profile/rename', headers: authHeader('rename-7'), payload: { displayName: 'PaidName2' } });
     expect(r.statusCode).toBe(200);
-    const d = (body(r) as { data: Record<string, unknown> }).data;
+    const d = (body(r) as unknown as { data: Record<string, unknown> }).data;
     expect(d.displayName).toBe('PaidName2');
     expect((d.save as SaveData).wallet.coins).toBe(4500);
     await app.close();
@@ -581,7 +584,7 @@ describe('POST /account/appeal (submitAppealHandler)', () => {
     const app = await makeApp(cols);
     const r = await app.inject({ method: 'POST', url: '/account/appeal', headers: authHeader('appeal-7'), payload: { reason: 'muted unfairly' } });
     expect(r.statusCode).toBe(200);
-    const doc = await (cols as unknown as { appeals: FakeCollection<{ accountId: string; enforcementSnapshot: Record<string, unknown> }> }).appeals.findOne({ accountId: 'appeal-7' });
+    const doc = await (cols as unknown as { appeals: FakeCollection<{ _id: string; accountId: string; enforcementSnapshot: Record<string, unknown> }> }).appeals.findOne({ accountId: 'appeal-7' });
     expect(doc?.enforcementSnapshot.mutedUntil).toBe(FIXED_TS + 60_000);
     expect(doc?.enforcementSnapshot.reputationScore).toBe(42);
     expect(doc?.enforcementSnapshot.banned).toBeUndefined();
@@ -602,7 +605,7 @@ describe('POST /account/appeal (submitAppealHandler)', () => {
     const app = await makeApp(cols);
     const r = await app.inject({ method: 'POST', url: '/account/appeal', headers: authHeader('appeal-2'), payload: { reason: 'please review' } });
     expect(r.statusCode).toBe(200);
-    const doc = await (cols as unknown as { appeals: FakeCollection<{ accountId: string; status: string; enforcementSnapshot: Record<string, unknown> }> }).appeals.findOne({ accountId: 'appeal-2' });
+    const doc = await (cols as unknown as { appeals: FakeCollection<{ _id: string; accountId: string; status: string; enforcementSnapshot: Record<string, unknown> }> }).appeals.findOne({ accountId: 'appeal-2' });
     expect(doc?.status).toBe('open');
     expect(doc?.enforcementSnapshot.banned).toBe(true);
     await app.close();
@@ -690,7 +693,7 @@ describe('accountLifecycle.ts (bonus, deleteAccount / cancelAccountDeletion / re
 
     const del = await app.inject({ method: 'DELETE', url: '/account', headers: authHeader('life-1') });
     expect(del.statusCode).toBe(200);
-    const { confirmToken } = (body(del) as { data: { confirmToken: string } }).data;
+    const { confirmToken } = (body(del) as unknown as { data: { confirmToken: string } }).data;
     expect(confirmToken).toBeTruthy();
     await app.close();
   });
@@ -699,7 +702,7 @@ describe('accountLifecycle.ts (bonus, deleteAccount / cancelAccountDeletion / re
     const cols = fakeCols({ accounts: [{ _id: 'life-2' }] });
     const app = await makeApp(cols);
     const del = await app.inject({ method: 'DELETE', url: '/account', headers: authHeader('life-2') });
-    const { confirmToken } = (body(del) as { data: { confirmToken: string } }).data;
+    const { confirmToken } = (body(del) as unknown as { data: { confirmToken: string } }).data;
 
     const wrong = await app.inject({ method: 'POST', url: '/account/cancel-deletion', headers: authHeader('life-2'), payload: { confirmToken: 'nope' } });
     expect(wrong.statusCode).toBe(400);

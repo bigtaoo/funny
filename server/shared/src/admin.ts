@@ -327,6 +327,8 @@ export type AuditAction =
   | 'slg.audit.resolve'
   | 'slg.map.template.generate'
   | 'slg.map.template.save'
+  /** Whole-list replace of a map template's city siege-point nodes (§24 point-node layer, 2026-08-19). */
+  | 'slg.map.template.cities'
   | 'slg.map.template.activate'
   | 'slg.map.template.delete'
   | 'slg.shop.price.update'

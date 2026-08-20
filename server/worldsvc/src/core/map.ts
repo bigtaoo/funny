@@ -8,7 +8,7 @@
 // sibling (`computeVisionSources`/`familyMemberIds`/`sectMateMemberIds`/`allySectMemberIds`), the yield
 // sibling (`settle`), and the kernel primitives (`coordX`/`coordY`), so this takes `core: WorldCore` +
 // narrow `yieldSvc: YieldService` + `vision: VisionService` sibling references.
-import { proceduralTile, tileId, playerWorldId, isInVision, sliceRuns, tileAtX, type ProceduralTile } from '@nw/shared';
+import { allCityNodes, proceduralTile, tileId, playerWorldId, isInVision, sliceRuns, tileAtX, type MapEditorCityNode, type ProceduralTile } from '@nw/shared';
 import type { WorldCore } from '../core';
 import type { YieldService } from './yield';
 import type { VisionService } from './vision';
@@ -186,6 +186,22 @@ export class MapService {
       ? await this.core.meta.getProfile(o.ownerId).catch(() => null) : undefined;
     // Structure/ownership is public map-wide; only intel (garrison/HP/watchtower) needs vision (same gate as getMap).
     return { ...this.gateIntel(this.tileDocView(o, accountId, ownerProfile ?? undefined), isInVision(sources, x, y)), visible: true };
+  }
+
+  /**
+   * The world's city siege-point nodes (ADR-034 §3; ~64), for the client's city sprite layer. Cloned onto
+   * the WorldDoc from the active map template at world-open (see MapTemplateService.cloneActiveTemplateInto),
+   * so a city the designer dragged in tools/map-editor has its SPRITE here and its GROUND in the terrain
+   * baseline, in agreement.
+   *
+   * `allCityNodes(worldId)` is the fallback for a world opened before 2026-08-19 (no stored list) — the
+   * old client-side behavior, and correct for a world with no active template, since then its terrain
+   * really is `proceduralTile(worldId, …)`. Not cached: it rides along on `POST /world/enter`, one read
+   * per world-map entry.
+   */
+  async getCities(worldId: string): Promise<MapEditorCityNode[]> {
+    const world = await this.core.deps.cols.worlds.findOne({ _id: worldId });
+    return world?.cities ?? allCityNodes(worldId);
   }
 
   /** Player state in the world: resources are lazily settled (computed on read as yieldRate × dt, capped at RESOURCE_CAP). §14.3. */

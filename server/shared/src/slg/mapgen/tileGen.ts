@@ -49,6 +49,32 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
     }
   }
 
+  return proceduralTileIgnoringCities(world, x, y);
+}
+
+/**
+ * `proceduralTile()` minus its three city-ground branches (world-center block / province-capital anchor /
+ * graded-city anchor): what the land under a procedural city would have been classified as if no city
+ * stood there. Split out 2026-08-19 for the map editor's publish path — when a designer DRAGS a city
+ * node, `rasterizeMapEdits()` has to paint the city's new footprint AND hand the vacated procedural
+ * anchor back to the terrain, otherwise the old spot keeps its `familyKeep`/`center` city ground and
+ * renders as a phantom city plot with no building on it (a 9×9 one for the world center).
+ *
+ * Caveat, deliberately not solved here: the resource-level cap in a city's occluded back-bands
+ * (`_inCityBackBands` / `RESOURCE_LEVEL_CAP_NEAR_CITY`) is still keyed off the PROCEDURAL city
+ * positions, so a moved city leaves its old back-band cap behind and does not cap behind its new
+ * position. That is a level-distribution artifact (max resource level 5 vs the ring's own roll), not a
+ * render bug — the editor can hand-paint any tile whose level actually matters (see the
+ * `RESOURCE_LEVEL_CAP_NEAR_CITY` comment in cities.ts).
+ */
+export function proceduralTileIgnoringCities(world: string, x: number, y: number): ProceduralTile {
+  const seed = worldSeed(world);
+  const mapW = SLG_MAP_W;
+  const mapH = SLG_MAP_H;
+  const wcx = Math.floor(mapW / 2);
+  const wcy = Math.floor(mapH / 2);
+  const caps = provinceCapitalPositions(mapW, mapH, seed);
+
   // Terrain: 2 main province rings, then river chords, then birth-province branches — first match wins.
   // Ring boundaries are the crease ridges (→ mountain art, crossings = plankway); the two crossing
   // chords are the ink rivers (→ river art, crossings = bridge); branches alternate mountain-spur /
@@ -80,16 +106,32 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
     level = Math.min(level, RESOURCE_LEVEL_CAP_NEAR_CITY);
   }
 
-  // Stronghold / familyKeep spacing (unchanged mechanics), now measured from the tile's own province capital.
+  // Stronghold spacing (unchanged mechanics), measured from the tile's own province capital.
+  //
+  // The old sibling of this branch — a scattered `familyKeep` ("关隘") classification gated by
+  // `valueNoise(x, y, SLG_GEN.keepFreq) > SLG_GEN.keepThreshold` — was DELETED 2026-08-19. Two
+  // problems, one of which the stronghold comment right above `strongholdThreshold` already warned
+  // about in the abstract:
+  //   • Smooth value-noise over a threshold produces contiguous BLOBS, not the "sparse strategic
+  //     point" the type was documented as. Measured on the shipping 1500×1500 map: 74,124 keep tiles
+  //     (3.3% of the map) in 472 connected blobs, the largest 1,745 tiles / 68×56 bbox. Every one of
+  //     those tiles stamps its own `building_keep` gatehouse sprite at 1.3× tile size (client
+  //     tileGraphics/tiles.ts), so a blob rendered as one giant wall of overlapping masonry.
+  //   • The type had no mechanics left to justify the space: passage was migrated to capturable
+  //     bridge/plankway tiles (SLG_DESIGN §"统一通道机制"), so a keep gated nothing, carried no NPC
+  //     garrison of its own, dropped no capture reward and had no info text — it was just a
+  //     level-9-forced resource tile wearing castle art.
+  // These cells now fall through to the ordinary resource/neutral classification below, so the land
+  // is still claimable — it just reads as (and yields like) the resource tier its ring says it is.
+  // `familyKeep` survives ONLY as city GROUND: the province-capital / graded-city node branches in
+  // `proceduralTile` above, and the map-editor's city-footprint rasterization (mapEdit.ts). If a real
+  // chokepoint mechanic is ever designed, reintroduce it with a per-tile Bernoulli hash (see
+  // `strongholdThreshold`), never a smooth-noise threshold.
   const [capX, capY] = caps[provIdx]!;
   const distToCap = Math.sqrt((x - capX) ** 2 + (y - capY) ** 2) / _MAP_HALF_DIAGONAL;
   const strongholdRand = rand2(x, y, seed ^ 0x0555);
   if (strongholdRand > SLG_GEN.strongholdThreshold && distToCap > SLG_GEN.strongholdMinDistRatio) {
     return { type: 'stronghold', level: SLG_MAP_MAX_LEVEL, resType: biomeAt(x, y, seed) };
-  }
-  const keepNoise = valueNoise(x, y, SLG_GEN.keepFreq, seed ^ 0x0222);
-  if (keepNoise > SLG_GEN.keepThreshold && distToCap > SLG_GEN.keepMinDistRatio) {
-    return { type: 'familyKeep', level: Math.max(level, SLG_MAP_MAX_LEVEL - 1), resType: biomeAt(x, y, seed) };
   }
 
   // Resource tile vs neutral open land

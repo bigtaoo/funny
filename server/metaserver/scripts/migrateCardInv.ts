@@ -27,7 +27,14 @@
 //   - Idempotent instance upserts: `replaceOne(..., {upsert:true})` keyed by instanceId, not `insertMany`
 //     — a re-run over already-migrated instances is a no-op, never a duplicate-key throw.
 //   - Dry-run mode: pass --dry-run to count + log without writing anything.
-import { MongoClient, type Document } from 'mongodb';
+import { MongoClient, type Collection } from 'mongodb';
+
+// Both collections key on a STRING _id (accountId / card instance id), not the driver's default
+// ObjectId. Typing them as bare `Document` let every `{ _id: accountId }` filter through untyped —
+// which only surfaced once test/ started being type-checked (this script is reachable from
+// migrateCardInv.e2e.test.ts).
+export interface SaveDocLike { _id: string; rev: number; save?: { cardInv?: Record<string, CardInstanceLike>; cardInvCount?: number } }
+export interface CardInstanceDocLike { _id: string; accountId: string; defId: string; level: number; gear: Record<string, string>; locked: boolean }
 import { pathToFileURL } from 'node:url';
 
 const MONGO_URI = process.env.NW_MONGO_URI ?? 'mongodb://localhost:27017';
@@ -46,8 +53,8 @@ export interface CardInstanceLike {
 /** `dryRun` is an explicit param (not the module-level DRY_RUN) so tests can import and drive both
  *  branches directly — see migrateCardInv.test.ts. */
 export async function migrateOneAccount(
-  saves: import('mongodb').Collection<Document>,
-  cardInstances: import('mongodb').Collection<Document>,
+  saves: Collection<SaveDocLike>,
+  cardInstances: Collection<CardInstanceDocLike>,
   accountId: string,
   dryRun: boolean = DRY_RUN,
 ): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
@@ -97,8 +104,8 @@ async function main(): Promise<void> {
   const client = new MongoClient(MONGO_URI);
   await client.connect();
   const db = client.db(MONGO_DB);
-  const saves = db.collection<Document>('saves');
-  const cardInstances = db.collection<Document>('cardInstances');
+  const saves = db.collection<SaveDocLike>('saves');
+  const cardInstances = db.collection<CardInstanceDocLike>('cardInstances');
   await cardInstances.createIndex({ accountId: 1 });
 
   const filter = { 'save.cardInv': { $exists: true } };
@@ -110,7 +117,7 @@ async function main(): Promise<void> {
   let failed = 0;
   const cursor = saves.find(filter, { projection: { _id: 1 } });
   for await (const doc of cursor) {
-    const accountId = doc._id as string;
+    const accountId = doc._id;
     const r = await migrateOneAccount(saves, cardInstances, accountId);
     if (r.ok) {
       totalInstances += r.count;

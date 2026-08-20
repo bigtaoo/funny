@@ -5,7 +5,7 @@ import type { Collection } from 'mongodb';
 
 /**
  * Deck-composition-level PvP win-rate counter (BALANCE data pipeline P1): one row per card per UTC day per mode.
- * Incremented at match-report time from `MatchDoc.replay.decks` (only present for restricted-deck-pool matches) — every card in a
+ * Incremented at match-report time from the decompressed `MatchDoc.replayGz`'s `decks` (only present for restricted-deck-pool matches) — every card in a
  * side's deck gets `games` credited, and `wins` too if that side won. Disputed matches (hashMismatch/cheat) are excluded rather than
  * counted, matching the existing "auto-clean, don't hard-reject" data hygiene approach. Deck-level only — this cannot tell you how a
  * card was actually played, only whether the deck holding it won; see `pvpPlaySequences` (P2, sampled replay decode) for play-by-play.

@@ -104,14 +104,17 @@ describe.skipIf(!mongo)('worldsvc map-token family-emblem badge e2e', () => {
       {
         _id: 'march:alice', worldId: W, ownerId: 'alice', fromTile: tileId(W, 0, 0), toTile: tileId(W, 1, 0),
         kind: 'move', troops: 100, departAt: t, arriveAt: t + 10_000, status: 'marching',
+        rev: 0,
       },
       {
         _id: 'march:bob', worldId: W, ownerId: 'bob', fromTile: tileId(W, 0, 1), toTile: tileId(W, 1, 1),
         kind: 'move', troops: 100, departAt: t, arriveAt: t + 10_000, status: 'marching',
+        rev: 0,
       },
       {
         _id: 'march:carol', worldId: W, ownerId: 'carol', fromTile: tileId(W, 0, 2), toTile: tileId(W, 1, 2),
         kind: 'move', troops: 100, departAt: t, arriveAt: t + 10_000, status: 'marching',
+        rev: 0,
       },
     ]);
 
@@ -160,7 +163,7 @@ describe.skipIf(!mongo)('worldsvc map-token family-emblem badge e2e', () => {
   it('resolveOwnerEmblems degrades gracefully if socialsvc goes down mid-request: list still returns, just without badges', async () => {
     await m.collections.marches.insertOne({
       _id: 'march:alice2', worldId: W, ownerId: 'alice', fromTile: tileId(W, 0, 0), toTile: tileId(W, 1, 0),
-      kind: 'move', troops: 100, departAt: nowMs, arriveAt: nowMs + 10_000, status: 'marching',
+      kind: 'move', troops: 100, departAt: nowMs, arriveAt: nowMs + 10_000, status: 'marching', rev: 0,
     });
     const originalGetFamiliesByIds = socialsvc.getFamiliesByIds.bind(socialsvc);
     socialsvc.getFamiliesByIds = async () => { throw new Error('socialsvc down'); };

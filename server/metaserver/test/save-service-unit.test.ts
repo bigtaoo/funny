@@ -92,6 +92,12 @@ class FakeCommercial implements CommercialClient {
   async recordPaddleEvent(): Promise<never> { throw new Error('not used'); }
   async paddleRefund(): Promise<never> { throw new Error('not used'); }
   async auditCoinGains(): Promise<never[]> { return []; }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
+  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
 }
 
 function baseMatch(roomId: string, players: MatchDoc['players'], extra: Partial<MatchDoc> = {}): MatchDoc {
@@ -119,7 +125,7 @@ describe.skipIf(!mongo)('SaveService handlers (src import, coverage backfill)', 
   const auth = () => ({ authorization: `Bearer ${token}` });
 
   async function buildAndAuth(opts: { commercial?: CommercialClient } = {}): Promise<void> {
-    comm = (opts.commercial as FakeCommercial) ?? new FakeCommercial();
+    comm = (opts.commercial as unknown as FakeCommercial) ?? new FakeCommercial();
     app = await buildApp({ cols: m.collections, jwt, internalKey: KEY, commercial: comm });
     const r = body(await app.inject({ method: 'POST', url: '/auth/device', payload: { deviceId: `device-${Math.random()}` } }));
     token = r.data.token;

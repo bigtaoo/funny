@@ -8,6 +8,8 @@
     "build": "tsc -b",
     "pretypecheck": "npm run gen:api:world",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "pretypecheck:test": "npm run gen:api:world",
     "predev": "npm run gen:api:world",
     "dev": "node --watch --import tsx src/index.ts",
     "start": "node dist/index.js",

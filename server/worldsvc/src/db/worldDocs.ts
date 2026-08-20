@@ -2,7 +2,7 @@
 // shape, same pattern as shared/src/mongo.ts). World/map domain: world metadata, per-tile state
 // (including ADR-051 player-built structures), and the §24 map-template/baseline row storage.
 import type { Collection } from 'mongodb';
-import type { TileType, ResourceType, WorldStatus, TileRun } from '@nw/shared';
+import type { TileType, ResourceType, WorldStatus, TileRun, MapEditorCityNode } from '@nw/shared';
 
 /** Defense configuration: a restricted subset of the engine LevelDefinition (P2/P5, embedded rather than a separate collection). Opaque placeholder until S8-3 wires up the engine. */
 export type DefenseConfig = Record<string, unknown>;
@@ -22,6 +22,16 @@ export interface WorldDoc {
   population: number;
   /** Engine version pinned at world open (C7/§17.9, = @nw/engine ENGINE_VERSION); absent means not pinned (legacy world). */
   engineVersion?: number;
+  /**
+   * City siege-point nodes for this world (ADR-034 §3; ~64 entries), cloned from the active map template
+   * at world-open alongside `mapBaselineRows` — the point-node twin of the terrain baseline (§24 "cloned
+   * rather than referenced live"). Served to the client on `POST /world/enter` so the world map's city
+   * sprite layer draws the cities that are actually on the map instead of recomputing `allCityNodes()`
+   * from the world's own seed (which is wrong twice over for an edited template: dragged cities moved,
+   * and the template's terrain was generated on the TEMPLATE's seed). Absent = pre-2026-08-19 world with
+   * no stored list; the read path falls back to `allCityNodes(worldId)`, exactly the old behavior.
+   */
+  cities?: MapEditorCityNode[];
   rev: number;
 }
 
@@ -109,6 +119,15 @@ export interface MapTemplateDoc {
   active: boolean;
   createdAt: number;
   updatedAt: number;
+  /**
+   * The template's city siege-point nodes (ADR-034 §3), uploaded by tools/map-editor next to the tile
+   * diff — the point-node layer the tile rasterization bakes down from (see shared's `rasterizeMapEdits`).
+   * Stored inline rather than as rows: ~64 nodes, always read and written whole. Absent = never published
+   * a city list (a template generated before 2026-08-19, or one whose cities were never dragged); the
+   * clone path then falls back to `allCityNodes(templateId)`, which is what this template's terrain was
+   * generated against.
+   */
+  cities?: MapEditorCityNode[];
 }
 
 /**

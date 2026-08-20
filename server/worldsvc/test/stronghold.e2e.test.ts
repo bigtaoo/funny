@@ -105,10 +105,11 @@ describe.skipIf(!mongo)('worldsvc stronghold e2e (G8)', () => {
   // Capture grantMaterial (verifies stronghold material loot enters the unified progression pool, §19.5 / G4 §15.6).
   const fakeMeta: WorldMetaClient = {
     available: true,
-    async deductMaterial() { /* stronghold does not deduct materials */ },
     async grantMaterial(accountId, material, qty, orderId) { matGrants.push({ accountId, material, qty, orderId }); },
     async getProfile() { return null; },
     async getSaveFields() { return null; }, // no equipment snapshot → siege engine degrades to plain troop math (E8)
+    batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
+    grantTitle: () => { throw new Error('fake WorldMetaClient.grantTitle() is not stubbed in this test'); },
   };
 
   const sh = findStronghold();

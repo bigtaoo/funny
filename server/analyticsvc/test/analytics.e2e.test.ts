@@ -509,7 +509,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(locales).toContain('zh');
     expect(locales).toContain('en');
     // sorted by device count descending
-    expect(body.data.regions[0].devices).toBeGreaterThanOrEqual(body.data.regions[body.data.regions.length - 1].devices);
+    expect(body.data.regions[0]!.devices).toBeGreaterThanOrEqual(body.data.regions[body.data.regions.length - 1]!.devices);
   });
 
   // ─── os_dist ─────────────────────────────────────────────────────────────
@@ -674,7 +674,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     expect(total).toBe(2); // two session_start events
     // hour buckets in ascending order
     for (let i = 1; i < 24; i++) {
-      expect(body.data.login_hour[i].hour).toBe(i);
+      expect(body.data.login_hour[i]!.hour).toBe(i);
     }
   });
 
@@ -828,7 +828,7 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     // Lifecycle noise is never reported as an action.
     expect(act('session_start')).toBeUndefined();
     // Sorted by reach descending.
-    expect(res.actions[0].devices).toBeGreaterThanOrEqual(res.actions[res.actions.length - 1].devices);
+    expect(res.actions[0]!.devices).toBeGreaterThanOrEqual(res.actions[res.actions.length - 1]!.devices);
   });
 
   it('queryFirstSession returns a zero-filled result (empty funnel, no actions) when no device\'s first session falls in-window', async () => {

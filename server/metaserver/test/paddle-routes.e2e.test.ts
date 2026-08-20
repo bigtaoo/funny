@@ -134,6 +134,28 @@ class FakeCommercial implements CommercialClient {
     this.refunds.push(a.transactionId);
     return { ok: true as const, decrementedCents: 999 };
   }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async shopCharge(): Promise<never> { throw new Error('FakeCommercial.shopCharge is not stubbed in this test'); }
+  async gachaDraw(): Promise<never> { throw new Error('FakeCommercial.gachaDraw is not stubbed in this test'); }
+  async createCustomPool(): Promise<never> { throw new Error('FakeCommercial.createCustomPool is not stubbed in this test'); }
+  async closeLimitedPool(): Promise<never> { throw new Error('FakeCommercial.closeLimitedPool is not stubbed in this test'); }
+  async listLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listLimitedPools is not stubbed in this test'); }
+  async listActiveLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listActiveLimitedPools is not stubbed in this test'); }
+  async redeemFate(): Promise<never> { throw new Error('FakeCommercial.redeemFate is not stubbed in this test'); }
+  async monthlyCardClaim(): Promise<never> { throw new Error('FakeCommercial.monthlyCardClaim is not stubbed in this test'); }
+  async spend(): Promise<never> { throw new Error('FakeCommercial.spend is not stubbed in this test'); }
+  async undeliveredOrders(): Promise<never> { throw new Error('FakeCommercial.undeliveredOrders is not stubbed in this test'); }
+  async rechargeVerify(): Promise<never> { throw new Error('FakeCommercial.rechargeVerify is not stubbed in this test'); }
+  async verifyNonCoinReceipt(): Promise<never> { throw new Error('FakeCommercial.verifyNonCoinReceipt is not stubbed in this test'); }
+  async adsCredit(): Promise<never> { throw new Error('FakeCommercial.adsCredit is not stubbed in this test'); }
+  async victoryCredit(): Promise<never> { throw new Error('FakeCommercial.victoryCredit is not stubbed in this test'); }
+  async promoRedeem(): Promise<never> { throw new Error('FakeCommercial.promoRedeem is not stubbed in this test'); }
+  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
+  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
+  async auditCoinGains(): Promise<never> { throw new Error('FakeCommercial.auditCoinGains is not stubbed in this test'); }
 }
 
 describe.skipIf(!mongo)('paddle routes e2e (checkout + webhook)', () => {
@@ -179,7 +201,7 @@ describe.skipIf(!mongo)('paddle routes e2e (checkout + webhook)', () => {
     // createPaddleTransaction hits the real Paddle API via global fetch — stub it so checkout tests never
     // touch the network. Returns a fresh fake transaction id per call.
     let txCounter = 0;
-    fetchMock = vi.fn(async () => ({
+    fetchMock = vi.fn(async (..._args: unknown[]) => ({
       ok: true,
       json: async () => ({ data: { id: `txn_${++txCounter}` } }),
     }));

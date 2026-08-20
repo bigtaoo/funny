@@ -11,6 +11,7 @@ import { FriendService } from '../src/friendService';
 import { MailService } from '../src/mailService';
 import { startHttpApi } from '../src/httpApi';
 import { FakeMeta, FakeGateway } from './harness';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017';
 const DB = 'nw_social_mail_http_test';
@@ -66,7 +67,7 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
   it('no token → 401', async () => {
     const r = await fetch(`${base}/social/mail/whatever`, { method: 'DELETE' });
     expect(r.status).toBe(401);
-    expect((await r.json()).error.code).toBe('UNAUTHENTICATED');
+    expect((await jsonBody(r)).error.code).toBe('UNAUTHENTICATED');
   });
 
   it('DELETE /mail/{id}: unclaimed attachment → 409 MAIL_HAS_UNCLAIMED_ATTACHMENT, mail survives', async () => {
@@ -78,7 +79,7 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
 
     const r = await fetch(`${base}/social/mail/gift:a`, { method: 'DELETE', headers: auth });
     expect(r.status).toBe(409);
-    expect((await r.json()).error.code).toBe('MAIL_HAS_UNCLAIMED_ATTACHMENT');
+    expect((await jsonBody(r)).error.code).toBe('MAIL_HAS_UNCLAIMED_ATTACHMENT');
     expect(await m.collections.mails.countDocuments({ _id: 'gift:a' })).toBe(1);
   });
 
@@ -94,7 +95,7 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
 
     const r = await fetch(`${base}/social/mail/gift:a`, { method: 'DELETE', headers: auth });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(r)).data).toEqual({ ok: true });
     expect(await m.collections.mails.countDocuments({ _id: 'gift:a' })).toBe(0);
   });
 
@@ -115,7 +116,7 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
     });
     const r = await fetch(`${base}/social/mail`, { headers: auth });
     expect(r.status).toBe(200);
-    const body = await r.json();
+    const body = await jsonBody(r);
     expect((body.data.mail as Array<{ mailId: string }>).some((mm) => mm.mailId === 'list:a')).toBe(true);
   });
 
@@ -126,11 +127,11 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
     });
     const ok = await fetch(`${base}/social/mail/read:a/read`, { method: 'POST', headers: auth });
     expect(ok.status).toBe(200);
-    expect((await ok.json()).data).toEqual({ ok: true });
+    expect((await jsonBody(ok)).data).toEqual({ ok: true });
 
     const missing = await fetch(`${base}/social/mail/does-not-exist/read`, { method: 'POST', headers: auth });
     expect(missing.status).toBe(404);
-    expect((await missing.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(missing)).error.code).toBe('NOT_FOUND');
   });
 
   describe('POST /social/mail/send', () => {
@@ -150,7 +151,7 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
         method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ toPublicId: 'no-such-public-id', subject: 's' }),
       });
       expect(r.status).toBe(404);
-      expect((await r.json()).error.code).toBe('NOT_FOUND');
+      expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
     });
 
     it('not friends with the target -> 403 NOT_FRIEND', async () => {
@@ -158,7 +159,7 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
         method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ toPublicId: 'P-B', subject: 's' }),
       });
       expect(r.status).toBe(403);
-      expect((await r.json()).error.code).toBe('NOT_FRIEND');
+      expect((await jsonBody(r)).error.code).toBe('NOT_FRIEND');
     });
 
     it('friends -> sends successfully, recipient can read it', async () => {
@@ -167,10 +168,10 @@ describe.skipIf(!mongo)('socialsvc mail HTTP routes e2e', () => {
         method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ toPublicId: 'P-B', subject: 'Hi Bob', body: 'How are you?' }),
       });
       expect(r.status).toBe(200);
-      const mailId = (await r.json()).data.mailId as string;
+      const mailId = (await jsonBody(r)).data.mailId as string;
       expect(typeof mailId).toBe('string');
 
-      const inbox = await (await fetch(`${base}/social/mail`, { headers: bAuth })).json();
+      const inbox = await jsonBody(await fetch(`${base}/social/mail`, { headers: bAuth }));
       expect((inbox.data.mail as Array<{ subject: string }>).some((mm) => mm.subject === 'Hi Bob')).toBe(true);
     });
   });
@@ -212,7 +213,7 @@ describe.skipIf(!mongo)('socialsvc internal mail HTTP routes e2e', () => {
       method: 'POST', headers: internalAuth, body: JSON.stringify({ accountId: 'a', orderId: 'o1' }),
     });
     expect(r.status).toBe(404);
-    expect((await r.json()).error.code).toBe('NOT_FOUND');
+    expect((await jsonBody(r)).error.code).toBe('NOT_FOUND');
   });
 
   it('POST /internal/mail/:id/claim: mail with no attachment -> NO_ATTACHMENT', async () => {
@@ -223,7 +224,7 @@ describe.skipIf(!mongo)('socialsvc internal mail HTTP routes e2e', () => {
       method: 'POST', headers: internalAuth, body: JSON.stringify({ accountId: 'a', orderId: 'o1' }),
     });
     expect(r.status).toBe(400);
-    expect((await r.json()).error.code).toBe('NO_ATTACHMENT');
+    expect((await jsonBody(r)).error.code).toBe('NO_ATTACHMENT');
   });
 
   it('POST /internal/mail/:id/claim: already claimed -> ALREADY_CLAIMED', async () => {
@@ -239,7 +240,7 @@ describe.skipIf(!mongo)('socialsvc internal mail HTTP routes e2e', () => {
       method: 'POST', headers: internalAuth, body: JSON.stringify({ accountId: 'a', orderId: 'o2' }),
     });
     expect(second.status).toBe(409);
-    expect((await second.json()).error.code).toBe('ALREADY_CLAIMED');
+    expect((await jsonBody(second)).error.code).toBe('ALREADY_CLAIMED');
   });
 
   it('POST /internal/mail/:id/unclaim: missing accountId/orderId -> 400; success rolls the claim back', async () => {
@@ -273,7 +274,7 @@ describe.skipIf(!mongo)('socialsvc internal mail HTTP routes e2e', () => {
       body: JSON.stringify({ dispatchKey: 'dk-1', to: 'a', content: { subject: 'Gift', body: 'Enjoy!', expireDays: 30 } }),
     });
     expect(ok.status).toBe(200);
-    const inbox = await (await fetch(`${base}/social/mail`, { headers: { authorization: `Bearer ${signToken('a', { secret: SECRET })}` } })).json();
+    const inbox = await jsonBody(await fetch(`${base}/social/mail`, { headers: { authorization: `Bearer ${signToken('a', { secret: SECRET })}` } }));
     expect((inbox.data.mail as Array<{ subject: string }>).some((mm) => mm.subject === 'Gift')).toBe(true);
   });
 

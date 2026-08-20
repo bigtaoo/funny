@@ -36,8 +36,8 @@ describe('achievement coin pool calibration (A-10)', () => {
   it('coins and threshold per tier are both monotonically non-decreasing (incremental claim experience, §4.1)', () => {
     for (const a of ACHIEVEMENTS) {
       for (let i = 1; i < a.tiers.length; i++) {
-        expect(a.tiers[i].coins).toBeGreaterThanOrEqual(a.tiers[i - 1].coins);
-        expect(a.tiers[i].threshold).toBeGreaterThanOrEqual(a.tiers[i - 1].threshold);
+        expect(a.tiers[i]!.coins).toBeGreaterThanOrEqual(a.tiers[i - 1]!.coins);
+        expect(a.tiers[i]!.threshold).toBeGreaterThanOrEqual(a.tiers[i - 1]!.threshold);
       }
     }
   });

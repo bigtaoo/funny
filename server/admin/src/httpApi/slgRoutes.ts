@@ -156,6 +156,23 @@ export async function handleSlgRoutes(ctx: RouteCtx): Promise<boolean> {
     send(res, 200, { ok: true, ...result });
     return true;
   }
+  // City siege-point nodes — the point-node half of a Publish (§24, 2026-08-19). Payload validation
+  // (kinds / coords / odd footprint) is worldsvc's `parseCityNodes`, same as the tile bounds check above.
+  const mapCities = /^\/admin\/slg\/map-templates\/([^/]+)\/cities$/.exec(path);
+  if (method === 'GET' && mapCities) {
+    requireCap(actor, 'slg.map.view');
+    const cities = await svc.slgGetMapTemplateCities(decodeURIComponent(mapCities[1]!));
+    send(res, 200, { ok: true, cities });
+    return true;
+  }
+  if (method === 'PUT' && mapCities) {
+    requireCap(actor, 'slg.map.manage');
+    const templateId = decodeURIComponent(mapCities[1]!);
+    const b = await readJson(req);
+    const result = await svc.slgSaveMapTemplateCities(actor.adminId, templateId, Array.isArray(b.cities) ? (b.cities as never[]) : []);
+    send(res, 200, { ok: true, ...result });
+    return true;
+  }
   const mapActivate = /^\/admin\/slg\/map-templates\/([^/]+)\/activate$/.exec(path);
   if (method === 'POST' && mapActivate) {
     requireCap(actor, 'slg.map.manage');

@@ -274,6 +274,24 @@ export function selectBestCard(
 const SIEGE_VALUE_GROWTH_PER_LEVEL = 0.1;
 
 /**
+ * A single card's troop capacity at its current level: `troopCapBase + troopCapGrowth × (level − 1)`
+ * (CHARACTER_CARDS_DESIGN §6.3). Unknown defId → 0 (defensive; a real card always resolves). Level
+ * clamped to 1..{@link MAX_CARD_LEVEL}.
+ *
+ * This is the SERVER-side authority for the cap. It existed only as `troopCap()` in the client mirror
+ * (`client/src/game/meta/cardDefs.ts`) until 2026-08-19, so `distributeTroops` never actually checked
+ * it — its doc comment claimed the invariant was "enforced on every way IN" while the only thing
+ * enforcing it was the client's own stepper/fill button. `client/test/cardDefsSharedParity.test.ts`
+ * pins the mirror's numbers against this table so the enforced cap can never drift from the shown one.
+ */
+export function cardTroopCap(card: { defId: string; level: number }): number {
+  const def = CARD_DEFS[card.defId];
+  if (!def) return 0;
+  const lv = Math.max(1, Math.min(Math.floor(card.level), MAX_CARD_LEVEL));
+  return def.troopCapBase + def.troopCapGrowth * (lv - 1);
+}
+
+/**
  * A single card's siege value at its current level: `round(siegeValueBase × (1 + 0.1 × (level − 1)))`.
  * Unknown defId → 0 (defensive; a real card always resolves). Level clamped to 1..9.
  */

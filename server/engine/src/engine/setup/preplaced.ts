@@ -7,7 +7,7 @@
 // same as before) AND returned so the caller can wire them into EngineCtx for
 // emitInitialEvents' one-shot spawn events.
 import { TOP_BUILDING_ROW } from '../../config';
-import { toFp } from '../../math/fixed';
+import { addFp, toFp } from '../../math/fixed';
 import { Building } from '../../Building';
 import { EscortUnit } from '../../EscortUnit';
 import type { GameState } from '../../GameState';
@@ -54,6 +54,8 @@ export function createPreplacedEntities(
       const unit = new Unit(entry.unitType, Side.Top, entry.col, entry.row, bp, entry.initialHp, state.allocUnitId());
       state.board.addUnit(unit);
       garrisonUnits.push(unit);
+      // ADR-069: mirror of the attacker accumulator below — see GameState.preplacedGarrisonHp_fp.
+      state.preplacedGarrisonHp_fp = addFp(state.preplacedGarrisonHp_fp, unit.hp_fp);
     }
   }
 
@@ -71,6 +73,10 @@ export function createPreplacedEntities(
       const unit = new Unit(entry.unitType, Side.Bottom, entry.col, entry.row, bp, entry.initialHp, state.allocUnitId());
       state.board.addUnit(unit);
       attackerArmyUnits.push(unit);
+      // ADR-069: remember what the attacker actually deployed (post-clamp HP), before the
+      // simulation starts eating into it — see GameState.preplacedAttackerHp_fp for why
+      // worldsvc needs this rather than re-deriving it from the raw troop allotment.
+      state.preplacedAttackerHp_fp = addFp(state.preplacedAttackerHp_fp, unit.hp_fp);
     }
   }
 

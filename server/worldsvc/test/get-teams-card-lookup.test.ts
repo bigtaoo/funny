@@ -19,7 +19,7 @@ const W = 's1';
 const ACC = 'acc-1';
 
 function card(id: string): CardInstance {
-  return { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false } as unknown as CardInstance;
+  return { id, defId: 'lichuang', level: 1, gear: {}, locked: false } as unknown as CardInstance;
 }
 
 /** A CityService whose playerWorld doc holds `teams` and whose meta returns `cardInv`. */

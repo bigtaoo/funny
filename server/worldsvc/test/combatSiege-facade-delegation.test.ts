@@ -23,7 +23,10 @@ describe('SiegeService (combatSiege.ts) — every facade method forwards to its 
 
   const cases: Array<{
     method: keyof SiegeService;
-    proto: { prototype: Record<string, unknown> };
+    /** The sibling service CLASS (not an instance) — spyOn patches its prototype below. Typed as a
+     *  bare constructor with a `name`: a `Record<string, unknown>` prototype does not describe a class
+     *  instance (no index signature), so every entry in this table failed to type-check. */
+    proto: { name: string; prototype: object };
     protoMethod: string;
     args: unknown[];
   }> = [

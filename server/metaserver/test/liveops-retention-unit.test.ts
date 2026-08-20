@@ -17,7 +17,9 @@
 // $addToSet-with-$each/$push-with-$each+$slice, which FakeCollection doesn't implement.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { makeWeekKey, makeMonthKey, makeDayKey, type Collections, type CommercialClient, type SaveData } from '@nw/shared';
+import { makeNewSave, makeWeekKey, makeMonthKey, makeDayKey, type Collections, type SaveData } from '@nw/shared';
+// CommercialClient is metaserver's own interface, not a @nw/shared export.
+import type { CommercialClient } from '../src/commercialClient';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { deliverRetentionReward, idemExpireAt } from '../src/service/liveops/helpers.js';
@@ -38,7 +40,7 @@ class FakeCommercial implements CommercialClient {
     return this.coins.get(id) ?? 0;
   }
   async getWallet(id: string) {
-    return { coins: this.bal(id), pity: {} } as never;
+    return { coins: this.bal(id), pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 } as never;
   }
   async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
     if (this.failNextOrderId === a.orderId) {
@@ -116,6 +118,15 @@ class FakeCommercial implements CommercialClient {
   async listPromoCodes() {
     return [];
   }
+  // Paddle surface added to CommercialClient later; this suite is retention check-ins only, so throw
+  // rather than answer — an unexpected call should fail loudly, not look like a successful payment.
+  async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed'); }
+  async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed'); }
+  async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed'); }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
 }
 
 interface FakeSaveDoc {
@@ -448,7 +459,7 @@ describe('retention.ts + helpers.ts (src import, coverage backfill)', () => {
       // seed a save + wallet target account so grantEquipment can succeed
       await deps.cols.saves.updateOne(
         { _id: 'acc-helper-1' },
-        { $setOnInsert: { _id: 'acc-helper-1', save: { accountId: 'acc-helper-1', rev: 1, equipmentInvCount: 0, everOwned: {} }, rev: 1 } },
+        { $setOnInsert: { _id: 'acc-helper-1', save: makeNewSave('acc-helper-1', 0), rev: 1 } },
         { upsert: true },
       );
       const r = await deliverRetentionReward(deps, 'acc-helper-1', 'order-1', 'checkin_reward', () => ({
@@ -487,7 +498,7 @@ describe('retention.ts + helpers.ts (src import, coverage backfill)', () => {
       };
       await deps.cols.saves.updateOne(
         { _id: 'acc-race' },
-        { $setOnInsert: { _id: 'acc-race', save: { accountId: 'acc-race', rev: 1, equipmentInvCount: 0, everOwned: {} }, rev: 1 } },
+        { $setOnInsert: { _id: 'acc-race', save: makeNewSave('acc-race', 0), rev: 1 } },
         { upsert: true },
       );
       const r = await deliverRetentionReward(

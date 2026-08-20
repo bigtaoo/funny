@@ -112,6 +112,17 @@ if (schemaErrors.length) {
 
 const files = collectSourceFiles(ROOT).filter((absPath) => !isExcluded(toPosix(relative(ROOT, absPath))));
 
+// Canary (same reasoning as scripts/checkDocLinks.mjs'): scanning nothing is indistinguishable from
+// "nothing is too long" in the output below — a wrong --root, a mistyped exclude prefix, or a widened
+// EXCLUDE_DIRS would all report OK. A guard that fails by turning green is worse than no guard.
+if (files.length === 0) {
+  console.log(
+    `FAILED — scanned 0 source files under ${toPosix(relative(process.cwd(), ROOT))}. Every check below ` +
+      `iterates that list, so this run proves nothing (wrong --root, or the exclude rules now match everything).`,
+  );
+  process.exit(1);
+}
+
 const violations = [];
 const notices = [];
 const seenBaselinePaths = new Set();

@@ -196,6 +196,7 @@ describe.skipIf(!mongo)('worldsvc territory connectivity e2e (ADR-039)', () => {
   const fakeGateway: WorldGatewayClient = {
     available: true,
     async push(_a: string, _msg: SlgPushMsg) { /* not asserted */ },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   beforeEach(async () => {
@@ -465,7 +466,7 @@ describe.skipIf(!mongo)('worldsvc territory connectivity e2e (ADR-039)', () => {
     const hop2 = neighborOf(hop1);
     // Sanity: hop2 must not accidentally also border the base footprint (would make this test vacuous).
     const touchesBase = [[-1, 0], [1, 0], [0, -1], [0, 1]].some(
-      ([dx, dy]) => Math.abs(hop2.x + dx - base.x) <= 1 && Math.abs(hop2.y + dy - base.y) <= 1,
+      ([dx, dy]) => Math.abs(hop2.x + dx! - base.x) <= 1 && Math.abs(hop2.y + dy! - base.y) <= 1,
     );
     expect(touchesBase).toBe(false);
 

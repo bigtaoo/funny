@@ -93,6 +93,12 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
   // is precisely one that has NO entry in the exported `DRAW` dispatch record — `DrawableIconKind`
   // is `Exclude<IconKind, RasterIconKind>`, so a procedural kind is always a DRAW key and an AI
   // raster kind never is. importActual bypasses the vi.mock above to read the genuine table.
+  // 30s, not the default 5s: the `importActual` below is the only cold, un-faked load of the real
+  // icons module in this file, so this one case pays the full transform/collect cost of pixi.js-legacy
+  // plus the raster icon atlas graph. Alone it finishes in ~2s, but under a full `vitest run` with
+  // anything else on the CPU (a sibling suite, a webpack build) that cost swings wide enough to blow
+  // the 5s budget — it timed out intermittently on a busy machine, never on an idle one. Budget is
+  // per-case on purpose: no other case here imports for real, so the global testTimeout stays 5s.
   it('picks raster AI kinds for all three item rewards — never a procedural DRAW glyph', async () => {
     const realIcons = await vi.importActual<typeof import('../../src/render/icons')>(
       '../../src/render/icons',
@@ -101,7 +107,7 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
       .filter(([, iconKind]) => iconKind in realIcons.DRAW)
       .map(([rewardKind, iconKind]) => `${rewardKind} → ${iconKind}`);
     expect(regressedToProcedural).toEqual([]);
-  });
+  }, 30_000);
 
   // Which of the three pre-baked inks the raster art is drawn in (2026-08-16). The `inactive` grey
   // is deliberately de-emphasised for a tab cell the player is NOT on; a reward row is content and

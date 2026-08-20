@@ -4,6 +4,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
+import type { FindOneAndUpdateOptions } from 'mongodb';
 import { buildApp } from '../dist/app.js';
 import type { GatewayClient, JudgeRes } from '../dist/gatewayClient.js';
 import { FakeSocialsvc, ThrowingSocialsvc, fakeGateway } from './helpers/fakeClients.js';
@@ -139,13 +140,13 @@ describe.skipIf(!mongo)('pve server-authoritative e2e', () => {
       findOneAndUpdate: async (
         filter: Parameters<typeof realSaves.findOneAndUpdate>[0],
         update: Parameters<typeof realSaves.findOneAndUpdate>[1],
-        opts?: Parameters<typeof realSaves.findOneAndUpdate>[2],
+        opts?: FindOneAndUpdateOptions,
       ) => {
         const current = await realSaves.findOne(filter as Record<string, unknown>);
         const incomingCardInvCount = (update as { $set?: { save?: { cardInvCount?: number } } }).$set?.save?.cardInvCount;
         const isCardGrantWrite = !!current && incomingCardInvCount !== undefined && incomingCardInvCount !== current.save.cardInvCount;
         if (isCardGrantWrite) return null; // force grantCards's own rev-guarded loop to exhaust
-        return realSaves.findOneAndUpdate(filter, update, opts);
+        return opts ? realSaves.findOneAndUpdate(filter, update, opts) : realSaves.findOneAndUpdate(filter, update);
       },
     } as typeof realSaves;
     const failingApp = await buildApp({ cols: { ...m.collections, saves: wrappedSaves }, jwt, internalKey: 'k' });
@@ -364,8 +365,6 @@ describe.skipIf(!mongo)('pve achievement feed (S9-3b) e2e', () => {
     available: true,
     judge: async () => verdict,
     push: async () => {},
-    presence: async () => ({}),
-    invalidateFriends: async () => {},
   };
   const clear = (levelId: string, stars = 3) =>
     app.inject({ method: 'POST', url: '/pve/clear', headers: auth(), payload: { levelId, stars } });

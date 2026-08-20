@@ -159,18 +159,18 @@ describe.skipIf(!mongo)('metaserver save-service e2e', () => {
     expect(ra.statusCode).toBe(200);
     const aList = body(ra).data.matches as Array<Record<string, unknown>>;
     expect(aList).toHaveLength(1);
-    expect(aList[0].roomId).toBe('HIST1');
-    expect(aList[0].mode).toBe('ranked');
-    expect(aList[0].result).toBe('win');
-    expect(aList[0].eloDelta).toBe(16);
-    expect(typeof aList[0].opponentPublicId).toBe('string');
+    expect(aList[0]!.roomId).toBe('HIST1');
+    expect(aList[0]!.mode).toBe('ranked');
+    expect(aList[0]!.result).toBe('win');
+    expect(aList[0]!.eloDelta).toBe(16);
+    expect(typeof aList[0]!.opponentPublicId).toBe('string');
 
     // Loser b's perspective: loss + eloDelta -16.
     const rb = await app.inject({
       method: 'GET', url: '/match/history', headers: { authorization: `Bearer ${b.token}` },
     });
     const bList = body(rb).data.matches as Array<Record<string, unknown>>;
-    expect(bList[0].result).toBe('loss');
-    expect(bList[0].eloDelta).toBe(-16);
+    expect(bList[0]!.result).toBe('loss');
+    expect(bList[0]!.eloDelta).toBe(-16);
   });
 });

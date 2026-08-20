@@ -116,10 +116,11 @@ describe.skipIf(!mongo)('worldsvc crossing (bridge/plankway) e2e', () => {
   };
   const fakeMeta: WorldMetaClient = {
     available: true,
-    async deductMaterial() {},
     async grantMaterial() {},
     async getProfile() { return null; },
     async getSaveFields() { return null; },
+    batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
+    grantTitle: () => { throw new Error('fake WorldMetaClient.grantTitle() is not stubbed in this test'); },
   };
 
   const bridge = findCrossing('bridge');

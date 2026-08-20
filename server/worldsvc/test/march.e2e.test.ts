@@ -90,6 +90,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     async push(accountId, msg) {
       pushes.push({ accountId, msg });
     },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   beforeEach(async () => {
@@ -179,7 +180,7 @@ describe.skipIf(!mongo)('worldsvc march e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const terr = findCoord((t) => t.type === 'resource', 30, 30);
     await svc.occupyTile(W, 'a', terr.x, terr.y); // direct occupy to create one owned territory (garrison=500)
-    const before = (await svc.getMe(W, 'a')).troops;
+    const before = (await svc.getMe(W, 'a')).troops!;
 
     const mv = await svc.startMarch(W, 'a', 5, 5, terr.x, terr.y, 'reinforce', 300);
     expect((await svc.getMe(W, 'a')).troops).toBe(before - 300); // troops deducted on departure

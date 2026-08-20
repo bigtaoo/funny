@@ -17,7 +17,7 @@
 | `terrain_mountain` | `obstacle`（变体 A） | 山脉，完全不可通行 |
 | `terrain_river` | `obstacle`（变体 B） | 河流，完全不可通行 |
 | `terrain_gate` | `gate` | 关隘/桥，嵌于阻挡带间的唯一通道 |
-| `terrain_keep` | `familyKeep` | 战略要地/咽喉点 |
+| `terrain_keep` | `familyKeep` | 城池地面（州府/分级城锚点格 + 编辑器城池占地）。原语义"战略要地/咽喉点"的散布式生成已于 2026-08-19 删除，见 [`SLG_DESIGN.md` §3.1](../game/SLG_DESIGN.md) 该条注 |
 | `terrain_center` | `center` | 世界中心，赛季终局争夺目标 |
 | `terrain_stronghold` | `stronghold` | 险地，NPC 超强防守的高价值格 |
 

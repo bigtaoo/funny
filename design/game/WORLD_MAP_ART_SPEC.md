@@ -16,7 +16,7 @@
 | `tile_food.png` | 食物资源格（麦穗/农田）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#a8d870` 嫩草绿 |
 | `tile_wood.png` | 木材资源格（树林）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#90b860` 深草绿 |
 | `tile_iron.png` | 铁矿资源格（矿石）（旧命名，权威见 `slg.ts` `ResourceType`=ink/paper/graphite/metal/sticker） | `#a0b8c8` 灰蓝 |
-| `tile_familyKeep.png` | **家族要点（familyKeep）**——家族争夺的战略格（注意：非 stronghold） | `#ffd060` 琥珀黄 |
+| ~~`tile_familyKeep.png`~~ | ~~**家族要点（familyKeep）**——家族争夺的战略格（注意：非 stronghold）~~ **已废（2026-08-19）**：散布式关隘生成已删除，`familyKeep` 只剩"城池地面"语义（城池自己有 `city_l*` 精灵），无需独立地形底图；见 [`SLG_DESIGN.md` §3.1](SLG_DESIGN.md) 该条注 | ~~`#ffd060` 琥珀黄~~ |
 | `tile_center.png` | 世界中心（唯一，全图标志性） | `#ffe88a` 浅金 |
 | `tile_obstacle.png` | 不可通行地形（山脉/河流） | `#9a9488` 石灰灰 |
 | `tile_gate.png` | 关隘/桥（可通行的地形节点） | `#c8a878` 沙棕 |
@@ -76,27 +76,27 @@
 | 资产名 | 描述 | 状态 |
 |---|---|---|
 | `city_l1..l10` | 我/敌/盟主城 + NPC 可攻占城池（每级一张，10 级，归属靠程序上色） | ✅ 已接入 `city_atlas`（3×3 base 锚点，深度排序图层；2026-08-14 起统一命名，无档位回退） |
-| `building_keep` | 战略要点/咽喉点建筑（城楼门楼） | ✅ 已接入 `building_atlas`（2026-07-03） |
+| ~~`building_keep`~~ | ~~战略要点/咽喉点建筑（城楼门楼）~~ **当前无人读取（2026-08-19）**：该 stamp 是 `familyKeep` 格的逐格建筑，而 `familyKeep` 现在只剩「城池地面」语义——城池的美术是城池层那一个按 footprint 缩放的精灵，占地格再各画一座门楼只会连成砖墙（发布过的城是整块 N×N）。图集帧保留备用（日后真做咽喉点玩法可复用），见 [`SLG_LOG_2026-08.md` 2026-08-19 城池节点条](SLG_LOG_2026-08.md) |
 | `building_stronghold` | 险地 NPC 据点（暗色石垒） | ✅ 已接入 `building_atlas`（2026-07-03） |
 | `icon_watchtower` | 己方瞭望塔（扩视野） | ✅ 改版完成——3/4 俯视宽脚架构图，详见 [`slg-building-art.md`](../product/slg-building-art.md) |
 | `icon_blocker` | 己方/家族路障（`tile.structure`，非 arrowTower） | ✅ 已接入 `building_atlas`（2026-08-09），详见 [`slg-building-art.md`](../product/slg-building-art.md) |
 | `icon_arrowTower` | 箭塔（`tile.structure.kind === 'arrowTower'`） | ✅ **已出图、已接入**（2026-08-17）：v1 起一直是纯 `PIXI.Graphics` 几何画法（米白塔身 + 三角屋顶，屋顶按格子归属染色）——地图上那个"尖尖的绿色树状"图标就是它（绿色 = 盟友领地染色）；现已出图并接入 `building_atlas`，详见 [`slg-building-art.md` §6](../product/slg-building-art.md)；atlas 未就绪/帧缺失时仍回落原几何塔身（屋顶保留 ownership tint，真图不 tint） |
 
-> **资源母题 vs 建筑压制（2026-08-17）**：一块被占领的资源格，`resType` 会一直留在 tile 文档上（见下方 `motifResType` 说明），哪怕后来在上面造了瞭望塔/箭塔/路障——旧逻辑不管这些，资源图标和建筑精灵会叠在同一格里，读起来乱（用户截图反馈）。`drawTileL1` 现在在画资源母题前先判是否已有 `featBuilding`（keep/stronghold/bridge/plankway）或 `tile.watchtower` / `tile.structure`，命中则跳过该格的资源图标——建筑本身仍照常画。地形建筑（keep/stronghold/…）在地图生成阶段本就不携带 `resType`，这条判断主要生效在玩家建造的动态层。map-editor 的 `drawEditorTile` 不涉及玩家建筑（只编辑静态模板），资源母题本就按 `tile.type === 'resource'` 互斥门控，无需同步改动。
+> **资源母题 vs 建筑压制（2026-08-17）**：一块被占领的资源格，`resType` 会一直留在 tile 文档上（见下方 `motifResType` 说明），哪怕后来在上面造了瞭望塔/箭塔/路障——旧逻辑不管这些，资源图标和建筑精灵会叠在同一格里，读起来乱（用户截图反馈）。`drawTileL1` 现在在画资源母题前先判是否已有 `featBuilding`（stronghold/bridge/plankway）、**城池地面**（`familyKeep`/`center`）或 `tile.watchtower` / `tile.structure`，命中则跳过该格的资源图标——建筑本身仍照常画。城池地面**照旧带 biome `resType`**（`mapEdit.ts`/`tileGen.ts` 都写），所以这条抑制对它是真在生效：城堡精灵底下摆一堆资源图标同样没意义。**这两个判断自 2026-08-19 起来自 `@nw/shared` 的 `isCityGroundTile()` / `tileFeatureBuilding()`**（跟 `citySpriteTiles` 等放在一起），不再是客户端和编辑器各抄一份的三元表达式——正是这份手抄件在 2026-08-19 漂移过（`familyKeep` 早就只剩城池地面语义了还在逐格盖门楼）。映射本身由 `server/shared/test/core.test.ts` 用全 `TileType` 枚举钉住，客户端确实走这条路由由 `client/test/ui/worldMapCityGroundTiles.ui.ts` 钉住。map-editor 的 `drawEditorTile` 不涉及玩家建筑（只编辑静态模板），资源母题本就按 `tile.type === 'resource'` 互斥门控，无需同步改动。
 >
 > **接入落地（2026-07-03，2026-08-09 追加 icon_blocker + icon_watchtower 改版，2026-08-17 追加 icon_arrowTower）**：
-> `building_keep` / `building_stronghold` / `icon_watchtower` / `icon_blocker` / `icon_arrowTower` 五张手绘钢笔线稿
+> `building_keep`（现已无人读取，见上表）/ `building_stronghold` / `icon_watchtower` / `icon_blocker` / `icon_arrowTower` 五张手绘钢笔线稿
 > 经 `art/slg/slg-map/pack_buildings.cjs`（近白→透明+裁边+长边 256，同 `res` 管线）打包为
 > `client/src/assets/slg/building_atlas.{png,json}`，`buildingAtlasLoader.ts` 懒加载 + 并入进场
 > loading 门控。渲染在 `WorldMapScene.drawTileL1` → `placeBuildingSprite()`：
-> - keep/stronghold 属**地形层**（type 由 `proceduralTile` 决定、全图可见），随格底纹一起画、fog 下压淡；
+> - stronghold/bridge/plankway 属**地形层**（type 由 `proceduralTile` 决定、全图可见），随格底纹一起画、fog 下压淡（keep 曾在此列，2026-08-19 删除）；
 > - watchtower/blocker/arrowTower 属**动态层**（`tile.watchtower` / `tile.structure`），fog 下隐藏，atlas 未就绪回落原几何占位；
 > - 五张均为中性墨线**不 tint**，归属由格下水洗表达；bottom-center 锚在菱形下部使建筑「立」在格上（arrowTower 的几何回退例外——那条路径没有格下水洗替代，仍保留 ownership-tinted 屋顶）。
 >
 > **目标高度的定尺规则（2026-08-15 修正，2026-08-17 补 arrowTower）**：玩家能在**相邻格连片建造**的东西
 > （`icon_watchtower` / `icon_blocker` / `icon_arrowTower`），精灵屏幕宽度（`targetH × 帧宽高比`）要贴着
 > **邻格锚点间距 `tp/2`** 来定，而不是菱形格全宽 `tp`——等距 2:1 下这两个数差一倍。地标地形
-> （`building_keep`/`building_stronghold`，`tp*1.3`）每片区域只有一个，可以放宽。原先按地标的
+> （`building_stronghold`/`building_bridge`/`building_plankway`，`tp*1.3`）每片区域只有一个，可以放宽。原先按地标的
 > 尺度给了 `tp*0.95` / `tp*0.5`（屏宽 1.23 tp / 1.45 tp），一排瞭望塔/拒马糊成一团排线，现为
 > `WATCHTOWER_H = 0.40` / `BLOCKER_H = 0.22` / **`ARROWTOWER_H = 0.50`**（`tileGraphics/tiles.ts`）——箭塔刻意
 > 比前两者窄（屏宽约 `0.25 tp`），呼应它"单格细尖桩"而非"沿边界连片铺开"的定位。推导与截图见
@@ -124,6 +124,11 @@
 > 归属不再靠标签重复表达——地块本身的水洗颜色（`ownerTint`）已经说明白了，标签着色只是同一套配色的
 > 弱回声，不是新的信息编码。实现见 `WorldMapRenderer/city.ts::refreshCityLayer`；回归测试
 > `client/test/ui/worldMapCityLabel.ui.ts`。
+
+> **资源格 `Lv.N` 标签（2026-08-19，不出图，程序绘制）**：沿用上面主城标签的先例（符号编码"让人迷惑"→ 换纯文字），资源格也画 `Lv.{n}`，但**只在 l6 起、且 tile pitch ≥ 64px 时**显示。
+> - **为什么补这条通道**：分级美术重构（[`slg-resource-art.md` §6.7](../product/slg-resource-art.md)）实测发现「物件数」和「墨量」在等面积归一下互相竞争——一只灌满墨的瓶子比七只带白玻璃间隙的瓶子还密——所以画稿能承载"大致多富"，承载不了"精确第几级"。而精确等级正是决定"这块守军打不打得过"的那个数。
+> - **为什么不全等级都标**：`resourceDensity=1.0`，每格都是资源格。实测程序化地图 l6+ 只占 **1.7%**，所以这条规则下标签是稀疏点缀而不是满屏文字；低档三档体量读数已经够用。
+> - **实现**：`tileGraphics/resources.ts::drawResLevelLabel`，一个共享 `PIXI.BitmapFont` + 每个瓦片池槽位复用一个 `BitmapText`（按名字挂在瓦片 Graphics 上，不需要时只 `visible=false`）。**不能每格 `new PIXI.Text`**——那是每格一张 canvas 纹理，正好撞上已知的 Text 纹理销毁泄漏（`claudedocs/client-memory-leak.md`）。画不画、画什么由 `@nw/shared` 的 `resLevelLabelText(level, tp)` 决定，两端共享。配套：`WorldMapRenderer/pool.ts` 的槽位复位从"只删 Sprite 子节点"改为"非 Sprite 子节点一律隐藏"，否则缩到 L2/L3（那两条路径不碰这个子节点）时标签会浮在没有母题的格子上。回归测试 `client/test/ui/worldMapResMotifLevelRead.ui.ts`。
 
 ---
 

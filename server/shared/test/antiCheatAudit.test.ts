@@ -114,6 +114,6 @@ describe('applyRollback', () => {
   it('does not mutate the input stats', () => {
     const prev = stats({ 'kill.archer': 100 });
     applyRollback(prev, { 'kill.archer': 20 });
-    expect(prev['kill.archer']).toBe(100);
+    expect(prev!['kill.archer']).toBe(100);
   });
 });

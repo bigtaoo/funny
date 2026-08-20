@@ -259,7 +259,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(rejected[0].reason).toMatchObject({ code: 'REV_CONFLICT' });
+    expect(rejected[0]!.reason).toMatchObject({ code: 'REV_CONFLICT' });
     expect(spends).toHaveLength(1); // the loser never reached the coin-spend step
 
     // The account's base footprint must be a single coherent 3×3 at whichever destination won, not a

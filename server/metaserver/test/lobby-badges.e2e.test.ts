@@ -38,6 +38,10 @@ class FakeSocialsvc implements MetaSocialsvcClient {
   async claimMail() { return { error: 'NOT_FOUND' as const }; }
   async insertSystemMail(): Promise<never> { throw new Error('not used'); }
   async bulkInsertSystemMail(): Promise<never> { throw new Error('not used'); }
+  // MetaSocialsvcClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async unclaimMail(): Promise<never> { throw new Error('FakeSocialsvc.unclaimMail is not stubbed in this test'); }
 }
 
 describe.skipIf(!mongo)('meta GET /lobby/badges e2e', () => {

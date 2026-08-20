@@ -42,7 +42,7 @@ import {
   drawTitleChampion, drawTitleTop3,
 } from './icons/titles';
 
-export { TAB_ICON_RASTER, tabIconVariant, preloadTabIconTextures } from './icons/tabIconRaster';
+export { TAB_ICON_RASTER, tabIconVariant, preloadTabIconTextures, BACK_ARROW_ART, BACK_ARROW_ASPECT, buildRasterTabIcon } from './icons/tabIconRaster';
 export type { RasterIconKind, RasterIconVariant } from './icons/tabIconRaster';
 
 /** Every `IconKind` drawn procedurally through `DRAW`/SketchPen — i.e. all of them but the raster
@@ -93,7 +93,7 @@ export type DrawableIconKind =
   | 'gift'
   // Common UI dingbats replacing bare typographic glyphs so they share the ink
   // language: close (✕) / confirm tick (✓) / replay-triangle (▶).
-  | 'close' | 'check' | 'play';
+  | 'close' | 'check' | 'play';
 
 /** Every icon `buildIcon` can build, procedural or raster. */
 export type IconKind = DrawableIconKind | RasterIconKind;
@@ -169,7 +169,7 @@ export function buildIcon(
 ): PIXI.DisplayObject {
   const s = Math.round(size);
   const raster = (TAB_ICON_RASTER as Partial<Record<IconKind, Record<RasterIconVariant, string>>>)[kind];
-  if (raster) return buildRasterTabIcon(raster, opts?.variant ?? tabIconVariant(color), s);
+  if (raster) return buildRasterTabIcon(raster[opts?.variant ?? tabIconVariant(color)], s);
   const key = `icon:${kind}:${s}:${(color >>> 0).toString(16)}`;
   return getCachedDisplay(key, () => {
     const g = new PIXI.Graphics();

@@ -9,10 +9,13 @@
 // Checks every tracked *.md file for:
 //   1. relative links whose target file/directory does not exist
 //   2. `#anchor` fragments into .md files with no heading that slugifies to them
+//   3. orphans: a tracked .md nothing links to (added 2026-08-20, ADR-067 round 5 — the
+//      failure mode of a doc SPLIT, where a new spoke file silently never gets linked from
+//      the hub and becomes invisible instead of broken)
 // Oversized docs are reported as a non-blocking notice only.
 //
 // Usage: node scripts/checkDocLinks.mjs [--quiet]
-// Exits 1 on any broken link or anchor.
+// Exits 1 on any broken link, broken anchor, or orphan.
 //
 // Two things this script gets right that a naive version does not, both of which
 // fail SILENTLY (a naive version passes vacuously and you learn nothing):
@@ -25,7 +28,7 @@
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { resolve, dirname, join } from 'node:path';
+import { resolve, dirname, join, relative, sep } from 'node:path';
 
 const QUIET = process.argv.includes('--quiet');
 const LINE_NOTICE_LIMIT = 500;
@@ -78,6 +81,16 @@ const brokenAnchors = [];
 const oversize = [];
 let linksChecked = 0;
 
+/** Repo-relative POSIX paths of every .md that some OTHER .md links to (see the orphan check). */
+const linkedMd = new Set();
+const relPosix = (abs) => relative(process.cwd(), abs).split(sep).join('/');
+
+/** A .md with no inbound link is fine only if something outside the docs graph points at it:
+ *  a README.md is its directory's index (GitHub renders it as such), and CLAUDE.md is loaded by
+ *  the harness, not linked. Anything else needs an inbound link or an entry here WITH a reason. */
+const ROOT_DOCS = new Set(['CLAUDE.md']);
+const isRootDoc = (rel) => ROOT_DOCS.has(rel) || rel === 'README.md' || rel.endsWith('/README.md');
+
 const LINK_RE = /\[(?:[^\]]*)\]\(([^)\s]+?)(?:\s+"[^"]*")?\)/g;
 
 for (const rel of files) {
@@ -102,8 +115,10 @@ for (const rel of files) {
       brokenFiles.push({ rel, line: lineOf(m.index), target });
       continue;
     }
-    if (anchor && /\.md$/i.test(path) && statSync(abs).isFile()) {
-      if (!anchorsOf(abs).has(decodeURIComponent(anchor).toLowerCase()))
+    if (/\.md$/i.test(path) && statSync(abs).isFile()) {
+      // Self-links don't count as inbound: a doc must not be able to vouch for itself.
+      if (relPosix(abs) !== rel) linkedMd.add(relPosix(abs));
+      if (anchor && !anchorsOf(abs).has(decodeURIComponent(anchor).toLowerCase()))
         brokenAnchors.push({ rel, line: lineOf(m.index), target });
     }
   }
@@ -139,10 +154,25 @@ const report = (label, arr, hint) => {
   console.log(`  ${hint}`);
 };
 
+// Orphans: in-degree zero, not reachability from a root — deliberately the weaker of the two.
+// "Does anything link to this file" is as objective as "does this link resolve"; "is it reachable
+// from CLAUDE.md" would need a root set and would flag whole legitimately-standalone subtrees.
+const orphans = files.filter((rel) => !isRootDoc(rel) && !linkedMd.has(rel));
+if (orphans.length) {
+  console.log(`\nFAILED — ${orphans.length} markdown file(s) that nothing links to:`);
+  for (const o of orphans) console.log(`  ${o}`);
+  console.log(
+    '  A doc no page points at is invisible, not broken — nobody finds it to notice it rotted. ' +
+      'This is what a doc split gets wrong: the hub gets written, one spoke never gets linked.\n' +
+      '  Fix by linking it from the doc that owns the topic (preferred — that is the point), or, if it ' +
+      'genuinely has no inbound owner, add it to ROOT_DOCS in this script with a comment saying why.'
+  );
+}
+
 report('link(s) pointing at a file that does not exist', brokenFiles,
   'Usually a wrong relative depth (a doc in design/game/archive/ linking a sibling as if it were in design/game/), or a file that was renamed or split.');
 report('anchor(s) with no matching heading', brokenAnchors,
   'The heading was reworded, or moved into a spoke file — repoint at the file that now holds it. Anchor = heading lowercased, punctuation dropped, spaces to dashes.');
 
-if (brokenFiles.length || brokenAnchors.length) process.exit(1);
-console.log('OK — every relative markdown link and anchor resolves.');
+if (brokenFiles.length || brokenAnchors.length || orphans.length) process.exit(1);
+console.log('OK — every relative markdown link and anchor resolves, and every doc has an inbound link.');

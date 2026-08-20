@@ -33,7 +33,15 @@ const stubStats: StatsClient = {
   available: true,
   fetchLive: async (): Promise<LiveStats> => ({ online: 0, queue: 0, rooms: 0, gameInstances: 0, gameLoad: 0 }),
 };
-const stubPlayer: PlayerClient = { available: false, lookupByPublicId: async () => null };
+const stubPlayer: PlayerClient = {
+  available: false,
+  lookupByPublicId: async () => null,
+  // Not exercised by this suite — throw rather than answer, so a route that starts calling them
+  // fails loudly instead of quietly seeing `undefined`.
+  lookupByAccountId: () => { throw new Error('stubPlayer.lookupByAccountId is not stubbed'); },
+  search: () => { throw new Error('stubPlayer.search is not stubbed'); },
+  resetPassword: () => { throw new Error('stubPlayer.resetPassword is not stubbed'); },
+};
 const stubAnalytics: AnalyticsClient = { available: false, query: async () => ({}) };
 class FakeMail implements MailDispatcher {
   available = true;
@@ -58,12 +66,17 @@ class FakeWorld implements WorldClient {
   async generateMapTemplate() { return { templateId: '', width: 0, height: 0, version: 1, tileCount: 0, active: false, createdAt: 0, updatedAt: 0 }; }
   async getMapTemplateTiles() { return []; }
   async saveMapTemplateTiles() { return { updated: 0 }; }
+  async getMapTemplateCities() { return []; }
+  async saveMapTemplateCities() { return { updated: 0 }; }
   async activateMapTemplate() {}
   async deleteMapTemplate() {}
 }
 class FakeAuction implements AuctionClient {
   available = true;
   async scanAnomalies(): Promise<AuctionAnomaly[]> { return sampleAnomalies; }
+  /** Not exercised here (this suite is the anomaly-scan audit) — throw so a caller that starts
+   *  needing listings fails loudly instead of seeing `undefined`. */
+  async queryListings(): Promise<never> { throw new Error('FakeAuction.queryListings is not stubbed'); }
 }
 // Fake suspiciousPve/ban client: records which accounts got banned, for enforcement-on-actioned assertions.
 // `failFor` lets a test simulate one party's ban call failing (e.g. metaserver unreachable) without the

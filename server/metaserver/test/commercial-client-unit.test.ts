@@ -48,7 +48,7 @@ const GENERIC_OK = {
   id: 'pool1',
   pools: [{ id: 'p1', createdBy: 'ops', createdAt: 1 }],
   claimed: 1,
-  wallet: { coins: 1, pity: {} },
+  wallet: { coins: 1, pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 },
   orders: [{ _id: 'o1', accountId: 'a', kind: 'shop', result: { itemId: 'x' } }],
   coinsGranted: 5,
   product: 'monthly_card',
@@ -151,14 +151,14 @@ describe('HttpCommercialClient — POST-only Body<T> wrapper methods', () => {
 
   it('business error envelope (e.g. INSUFFICIENT_FUNDS) is passed through unchanged, not thrown', async () => {
     const client = new HttpCommercialClient(base, KEY);
-    const r = await client.shopCharge({ accountId: 'a', itemId: 'i', cost: 1, orderId: 'o', clientPlatform: undefined, ...( { _forceBusinessError: 'INSUFFICIENT_FUNDS' } as never) });
+    const r = await client.shopCharge({ accountId: 'a', itemId: 'i', cost: 1, orderId: 'o', clientPlatform: undefined, ...( { _forceBusinessError: 'INSUFFICIENT_FUNDS' } as object) });
     expect(r).toEqual({ ok: false, error: 'INSUFFICIENT_FUNDS' });
   });
 
   it('a 200 response with a non-JSON body leaves r.body null → post() throws, tagged with the path', async () => {
     const client = new HttpCommercialClient(base, KEY);
     await expect(
-      client.spend({ accountId: 'a', amount: 1, reason: 'r', orderId: 'o', ...({ _forceNonJson: true } as never) }),
+      client.spend({ accountId: 'a', amount: 1, reason: 'r', orderId: 'o', ...({ _forceNonJson: true } as object) }),
     ).rejects.toThrow(/commercial \/internal\/spend failed/);
   });
 

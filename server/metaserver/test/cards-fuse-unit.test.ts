@@ -28,7 +28,7 @@ import { seedCard as seedCardDoc, readCardInv } from './helpers/cards.js';
 function makeFakeCommercial(): CommercialClient {
   return {
     available: true,
-    async getWallet() { return { coins: 0, pity: {} }; },
+    async getWallet() { return { coins: 0, pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 }; },
     async spend() { return { ok: true as const, coinsAfter: 0 }; },
   } as unknown as CommercialClient;
 }
@@ -147,7 +147,7 @@ describe.skipIf(!mongo)('fuseCards (src import, coverage backfill)', () => {
     // `cardIdem.insertOne` then hits a genuine duplicate-key error (11000) against this pre-existing doc,
     // exercising the "claim raced with a concurrent fuse attempt" replay branch deterministically.
     await m.collections.cardIdem.insertOne({
-      _id: key, accountId, op: 'other', result: {}, expireAt: new Date(Date.now() + 1000_000),
+      _id: key, accountId, op: 'escrow', result: {}, expireAt: new Date(Date.now() + 1000_000),
     });
     const res = await fuseCards(m.collections, () => Date.now(), accountId, targetId, materialIds, key);
     expect('error' in res).toBe(false);
@@ -165,7 +165,7 @@ describe.skipIf(!mongo)('fuseCards (src import, coverage backfill)', () => {
       findOne: real.findOne.bind(real),
       deleteMany: real.deleteMany.bind(real),
       updateOne: async () => ({ matchedCount: 0, modifiedCount: 0, upsertedCount: 0 }),
-    } as typeof real;
+    } as unknown as typeof real;
     const wrappedCols: Collections = { ...m.collections, cardInstances: wrapped };
     const res = await fuseCards(wrappedCols, () => Date.now(), accountId, targetId, materialIds, 'ik-rev-conflict');
     expect(res).toMatchObject({ code: 'REV_CONFLICT' });
@@ -203,7 +203,7 @@ describe.skipIf(!mongo)('fuseCards (src import, coverage backfill)', () => {
       findOne: realSaves.findOne.bind(realSaves),
       findOneAndUpdate: async () => null,
       updateOne: realSaves.updateOne.bind(realSaves),
-    } as typeof realSaves;
+    } as unknown as typeof realSaves;
     const wrappedCols: Collections = { ...m.collections, saves: wrappedSaves };
     const result = await fuseCards(wrappedCols, () => Date.now(), accountId, targetId, materialIds, 'ik-fuse-exhaust-src');
     expect('error' in result).toBe(false);

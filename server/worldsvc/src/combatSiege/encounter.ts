@@ -100,9 +100,9 @@ export class EncounterService {
    * change onto the in-memory playerWorld doc so a march that fights MULTIPLE encounters in one step batch
    * computes each subsequent survival off the already-reduced troops (not the stale departure count).
    */
-  private async writeFieldCardState(pw: PlayerWorldDoc, army: ArmyEntry[], survivors: number, t: number): Promise<void> {
+  private async writeFieldCardState(pw: PlayerWorldDoc, army: ArmyEntry[], survivors: number, t: number, deployed?: number): Promise<void> {
     const core = this.core;
-    const cardUpdates = computeCardStateUpdates(army, pw.cardState ?? {}, survivors, t);
+    const cardUpdates = computeCardStateUpdates(army, pw.cardState ?? {}, survivors, t, deployed);
     const cardStateSet: Record<string, unknown> = {};
     pw.cardState = pw.cardState ?? {};
     for (const [id, update] of Object.entries(cardUpdates)) {
@@ -261,8 +261,14 @@ export class EncounterService {
     const marcherWon = res.outcome === 'attacker_win';
     const aSurvivors = res.attackerSurvivors;
     const dSurvivors = res.outcome === 'defender_win' ? res.defenderSurvivors : 0;
-    const aRatio = attackerHp > 0 ? aSurvivors / attackerHp : 0;
-    const dRatio = defenderHp > 0 ? dSurvivors / defenderHp : 0;
+    // ADR-069: ratios (and the cardState writes below) divide by what each side ACTUALLY deployed —
+    // per-unit HP clamped to blueprint capacity on the engine path — not by the nominal troop sums
+    // `attackerHp`/`defenderHp`, which for a real card team are typically ~2× larger. The cheap path
+    // reports nominal troops as its deployed values, so those fights are unchanged.
+    const aDeployed = res.attackerDeployed > 0 ? res.attackerDeployed : attackerHp;
+    const dDeployed = res.defenderDeployed > 0 ? res.defenderDeployed : defenderHp;
+    const aRatio = aDeployed > 0 ? aSurvivors / aDeployed : 0;
+    const dRatio = dDeployed > 0 ? dSurvivors / dDeployed : 0;
 
     // ── Marcher (attacker) ledger. Card survivors → cardState (both outcomes). Flat: carry forward on win
     //    (troops stay in transit); on defeat, retreat home over a travel-time return leg (2026-08-01,
@@ -271,12 +277,12 @@ export class EncounterService {
     //    docs share the same teamId, and inserting the new leg while the old one (same team) still exists
     //    trips the {worldId,ownerId,teamId} uniqueness guard.
     if (aHasCard) {
-      await this.writeFieldCardState(pw, rawA, aSurvivors, t);
+      await this.writeFieldCardState(pw, rawA, aSurvivors, t, aDeployed);
     }
 
     // ── Defender ledger. Card survivors → cardState (both outcomes). ──
     if (dHasCard && defPw) {
-      await this.writeFieldCardState(defPw, defRaw, dSurvivors, t);
+      await this.writeFieldCardState(defPw, defRaw, dSurvivors, t, dDeployed);
     }
     if (marcherWon) {
       // Resident defender destroyed: remove its doc + occupancy so the marcher can take the cell (advanceMarch

@@ -27,7 +27,7 @@ import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
 import type { WorldMailClient, WorldMailContent } from '../src/mailClient';
 
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMeta: WorldMetaClient = {
   available: true,
@@ -35,6 +35,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -91,7 +92,7 @@ describe.skipIf(!mongo)('worldsvc structure-durability e2e (ADR-051 §5.2)', () 
   let svc: WorldService;
   let redis: FakeRedis;
   const mailCalls: MailCall[] = [];
-  const fakeGateway: WorldGatewayClient = { available: true, async push() {} };
+  const fakeGateway: WorldGatewayClient = { available: true, async push() {}, broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); } };
   const fakeMail: WorldMailClient = {
     available: true,
     async sendSystemMail(accountId, _key, content) { mailCalls.push({ accountId, content }); },
@@ -261,7 +262,7 @@ describe.skipIf(!mongo)('worldsvc structure-durability e2e (ADR-051 §5.2)', () 
     const state: Record<string, CardSLGState> = {};
     for (let i = 0; i < n; i++) {
       const id = `${prefix}${i}`;
-      inv[id] = { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+      inv[id] = { id, defId: 'lichuang', level: 1, gear: {}, locked: false };
       army.push({ cardInstanceId: id, col: i, row: 1 });
       state[id] = { currentTroops: 60 };
     }

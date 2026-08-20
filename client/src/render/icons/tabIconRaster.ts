@@ -145,6 +145,8 @@ import mailTabIconContentUrl from '../../assets/tabicons/mail_content.png';
 import bagTabIconActiveUrl from '../../assets/tabicons/bag_active.png';
 import bagTabIconInactiveUrl from '../../assets/tabicons/bag_inactive.png';
 import bagTabIconContentUrl from '../../assets/tabicons/bag_content.png';
+import backArrowAccentUrl from '../../assets/tabicons/back_accent.png';
+import backArrowActiveUrl from '../../assets/tabicons/back_active.png';
 import craftTabIconActiveUrl from '../../assets/tabicons/craft_active.png';
 import craftTabIconInactiveUrl from '../../assets/tabicons/craft_inactive.png';
 import craftTabIconContentUrl from '../../assets/tabicons/craft_content.png';
@@ -300,7 +302,10 @@ export const TAB_ICON_RASTER: Record<RasterIconKind, Record<RasterIconVariant, s
  *  the lobby; CardScene/EquipmentScene and any reward row via `preloadRewardIconArt` also do)
  *  so the first render doesn't show a blank icon while it decodes. */
 export function preloadTabIconTextures(): Promise<void> {
-  return preloadTextureList(Object.values(TAB_ICON_RASTER).flatMap((v) => Object.values(v)));
+  return preloadTextureList([
+    ...Object.values(TAB_ICON_RASTER).flatMap((v) => Object.values(v)),
+    ...Object.values(BACK_ARROW_ART),
+  ]);
 }
 
 /**
@@ -334,17 +339,32 @@ export function tabIconVariant(color: number): 'active' | 'inactive' {
  * cheap. If the texture hasn't decoded yet (see `preloadTabIconTextures`), this draws nothing for that
  * one frame rather than a garbage 0/1px-scaled sprite; the caller's next render (post-preload) fixes it.
  */
-export function buildRasterTabIcon(
-  raster: Record<RasterIconVariant, string>, variant: RasterIconVariant, s: number,
-): PIXI.DisplayObject {
-  const tex = getArtTexture(raster[variant]);
+export function buildRasterTabIcon(url: string, w: number, h: number = w): PIXI.DisplayObject {
+  const tex = getArtTexture(url);
   const box = new PIXI.Container();
   if (!tex.baseTexture.valid) return box;
   const sprite = new PIXI.Sprite(tex);
-  const scale = containScale(tex.width, tex.height, s, s);
+  const scale = containScale(tex.width, tex.height, w, h);
   sprite.scale.set(scale);
-  sprite.x = (s - tex.width * scale) / 2;
-  sprite.y = (s - tex.height * scale) / 2;
+  sprite.x = (w - tex.width * scale) / 2;
+  sprite.y = (h - tex.height * scale) / 2;
   box.addChild(sprite);
   return box;
 }
+
+/**
+ * The back-button arrow — deliberately NOT a `RasterIconKind`, because it is not a tab icon and
+ * nothing dispatches to it through `buildIcon`. It is the affordance glyph inside the back pill
+ * (`ui/widgets/SceneHeader.ts`), so the two inks it needs are the blue `accent` for the paper title
+ * bar and white `active` for LoginScene's dark one — not the paper-grey pair every tab icon carries.
+ * Packed from `art/ui/tabicons/tabicon_back.png` with three dilate passes (see the pack script).
+ */
+export const BACK_ARROW_ART = { accent: backArrowAccentUrl as string, active: backArrowActiveUrl as string };
+
+/**
+ * Aspect ratio (w / h) of the packed back-arrow art, so a caller can reserve the arrow's width
+ * BEFORE the texture has decoded — the back pill's chrome is baked into `uiCache` and must not
+ * change size depending on whether the PNG happened to be ready on the first draw.
+ * Guarded against the real PNG by `client/test/render/backArrowArt.test.ts`.
+ */
+export const BACK_ARROW_ASPECT = 128 / 65;

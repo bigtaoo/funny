@@ -128,7 +128,7 @@ export async function landSiege(
   // CC-3: write post-battle cardState (currentTroops + injuredUntil) for attacker card army.
   const attackArmy = m.army ?? [];
   if (hasCardArmy) {
-    const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, res.attackerSurvivors, t);
+    const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, res.attackerSurvivors, t, res.attackerDeployed);
     const cardStateSet: Record<string, unknown> = {};
     for (const [id, update] of Object.entries(cardUpdates)) {
       cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;

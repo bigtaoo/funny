@@ -69,8 +69,8 @@ describe.skipIf(!mongo)('accruePvpCardStats', () => {
     expect(byCard.archer_1).toMatchObject({ games: 1, wins: 1 });
     // $inc only includes `wins` when this side actually won this match — a side that never wins never
     // gets the field created at all (not even wins:0), so assert games only + wins absence here.
-    expect(byCard.shieldbearer_1.games).toBe(1);
-    expect(byCard.shieldbearer_1.wins).toBeUndefined();
+    expect(byCard.shieldbearer_1!.games).toBe(1);
+    expect(byCard.shieldbearer_1!.wins).toBeUndefined();
   });
 
   it('a card appearing multiple times in the same deck (should not happen per PVP_LOADOUT_DESIGN, but de-duped defensively) is only counted once per match per side', async () => {

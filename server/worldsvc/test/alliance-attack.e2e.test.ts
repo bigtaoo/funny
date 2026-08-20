@@ -149,6 +149,7 @@ describe.skipIf(!mongo)('worldsvc alliance attack constraint e2e (R-3 / §8.2)',
   const fakeGateway: WorldGatewayClient = {
     available: true,
     async push(_a: string, _msg: SlgPushMsg) { /* captured push not asserted here */ },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   // Chain: a ∈ famA ∈ sectA; famMate ∈ famA (same family); s2 ∈ famA2 ∈ sectA (same sect, different family);

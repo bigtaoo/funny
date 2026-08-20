@@ -23,11 +23,25 @@ import {
   citySpriteTiles,
   cityGroundFwdPx,
   cityPlotMaskPoints,
+  type TileType,
   EMBLEM_KEYS,
   isEmblemKey,
   EMBLEM_COLORS,
   isEmblemColor,
 } from '../src/slg/core';
+import {
+  isCityGroundTile,
+  tileFeatureBuilding,
+  resMotifJitter,
+  resMotifPlacement,
+  resLevelLabelFontPx,
+  RES_LEVEL_LABEL_TP_FRAC,
+  RES_LEVEL_LABEL_MIN_PX,
+  RES_LEVEL_LABEL_MAX_PX,
+  RES_LEVEL_LABEL_MIN_TP,
+  RES_MOTIF_SIZE_FRAC,
+  RES_MOTIF_FOG_ALPHA,
+} from '../src/slg/tileRender';
 
 describe('SlgError', () => {
   it('carries the ErrorCode value and defaults its message to the code name', () => {
@@ -177,5 +191,166 @@ describe('isEmblemColor', () => {
 
   it('rejects a color not in the preset palette', () => {
     expect(isEmblemColor(0x123456)).toBe(false);
+  });
+});
+
+// ── Per-tile feature art (2026-08-19) ────────────────────────────────────────────────────────
+// These two exist ONLY so the game client's drawTileL1 and the map editor's drawEditorTile cannot
+// disagree (design/tools/map-editor/DESIGN.md §6.3 render parity). Both renderers draw through PIXI,
+// so neither package can cheaply test the mapping itself — the editor's vitest deliberately excludes
+// every PIXI-touching module. Pinning it here is what makes the parity rule enforceable at all.
+const ALL_TILE_TYPES: readonly TileType[] = [
+  'neutral', 'resource', 'territory', 'familyKeep', 'center', 'base', 'obstacle', 'bridge', 'plankway', 'stronghold',
+];
+
+describe('isCityGroundTile', () => {
+  it('is true for exactly the two city-ground types', () => {
+    expect(ALL_TILE_TYPES.filter(isCityGroundTile)).toEqual(['familyKeep', 'center']);
+  });
+
+  it('is false for undefined (a viewport cell with no tile and no procedural guess yet)', () => {
+    expect(isCityGroundTile(undefined)).toBe(false);
+  });
+});
+
+describe('tileFeatureBuilding', () => {
+  it('maps exactly the three one-per-region landmarks, and nothing else', () => {
+    const mapped = ALL_TILE_TYPES
+      .map((t) => [t, tileFeatureBuilding(t)] as const)
+      .filter(([, b]) => b !== null);
+    expect(Object.fromEntries(mapped)).toEqual({
+      stronghold: 'building_stronghold',
+      bridge: 'building_bridge',
+      plankway: 'building_plankway',
+    });
+  });
+
+  it('returns null for CITY GROUND — the 2026-08-19 regression this function exists to prevent', () => {
+    // `familyKeep` used to stamp `building_keep` on every tile of its type. That is invisible on a
+    // procedural city (proceduralTile classifies only the single anchor tile) but paints a wall of
+    // overlapping gatehouses across a PUBLISHED city's whole N×N footprint, under its own sprite.
+    expect(tileFeatureBuilding('familyKeep')).toBeNull();
+    expect(tileFeatureBuilding('center')).toBeNull();
+  });
+
+  it('returns null for undefined and for every ordinary tile type', () => {
+    expect(tileFeatureBuilding(undefined)).toBeNull();
+    for (const t of ['neutral', 'resource', 'territory', 'base', 'obstacle'] as const) {
+      expect(tileFeatureBuilding(t)).toBeNull();
+    }
+  });
+
+  it('never claims a city-ground tile has feature art (the two functions cannot both be true)', () => {
+    for (const t of ALL_TILE_TYPES) {
+      if (isCityGroundTile(t)) expect(tileFeatureBuilding(t)).toBeNull();
+    }
+  });
+});
+
+// ── Resource-motif placement (slg-resource-art.md §6) ─────────────────────────────────────────────
+// Pinned here because the game client and the map editor now BOTH call these instead of each keeping
+// a hand-written copy; two copies had nowhere their agreement could be asserted. The routing half
+// ("the renderer actually calls this") is pinned per package:
+// client/test/ui/worldMapResMotifLevelRead.ui.ts and tools/map-editor/test/resMotifCallSite.test.ts.
+
+describe('resMotifJitter', () => {
+  it('is deterministic: the same (tx, ty) always produces the same jitter (no shimmer on redraw/pan)', () => {
+    expect(resMotifJitter(37, -12)).toEqual(resMotifJitter(37, -12));
+  });
+
+  it('different tiles get different jitter (not a constant fallback)', () => {
+    expect(resMotifJitter(1, 0)).not.toEqual(resMotifJitter(0, 0));
+  });
+
+  it('scale variance is imperceptible — size belongs to the level curve, not to the jitter', () => {
+    // The 2026-08-19 rebuild narrowed this from [0.85, 1.15]. At the old range two NEIGHBOURING tiles
+    // of the same level could differ by 1.15/0.88 = 1.31x, which is what the player was looking at
+    // when they reported three level-4 ink tiles as "obviously not the same kind of tile" (§6.1).
+    let lo = Infinity, hi = -Infinity;
+    for (let tx = -20; tx <= 20; tx++) {
+      for (let ty = -20; ty <= 20; ty++) {
+        const s = resMotifJitter(tx, ty).scale;
+        lo = Math.min(lo, s); hi = Math.max(hi, s);
+      }
+    }
+    expect(lo).toBeGreaterThanOrEqual(0.96);
+    expect(hi).toBeLessThanOrEqual(1.04);
+    expect(hi / lo).toBeLessThan(1.09);
+  });
+
+  it('offset and rotation stay within their documented bounds', () => {
+    for (let tx = -20; tx <= 20; tx++) {
+      for (let ty = -20; ty <= 20; ty++) {
+        const j = resMotifJitter(tx, ty);
+        expect(Math.abs(j.dx)).toBeLessThanOrEqual(0.13);
+        expect(Math.abs(j.dy)).toBeLessThanOrEqual(0.09);
+        expect(Math.abs(j.rot)).toBeLessThanOrEqual(0.35);
+      }
+    }
+  });
+});
+
+describe('resMotifPlacement', () => {
+  const TP = 76; // L1 tile pitch
+  const read = { sizeMul: 0.0089, alphaMul: 0.9 };
+
+  it("takes size from the frame's baked sizeMul, NOT from the texture's own dimensions", () => {
+    // This is the whole point of the rebuild: the retired contract divided by tex.width, so a wide
+    // "more of it" drawing rendered SMALLER. sizeMul already folds the frame's equivalent edge in.
+    const wide = resMotifPlacement({ tp: TP, tx: 3, ty: 4, read, texW: 200, texH: 60 });
+    const tall = resMotifPlacement({ tp: TP, tx: 3, ty: 4, read, texW: 60, texH: 200 });
+    expect(wide.scale).toBe(tall.scale);
+    expect(wide.scale).toBeCloseTo(TP * RES_MOTIF_SIZE_FRAC * read.sizeMul * resMotifJitter(3, 4).scale, 12);
+  });
+
+  it("takes alpha from the frame's baked alphaMul, with no level term of its own", () => {
+    expect(resMotifPlacement({ tp: TP, tx: 0, ty: 0, read, texW: 128, texH: 128 }).alpha).toBe(0.9);
+  });
+
+  it('fog overrides alpha to the type-only dim, whatever the frame says', () => {
+    const p = resMotifPlacement({ tp: TP, tx: 0, ty: 0, read, texW: 128, texH: 128, fogged: true });
+    expect(p.alpha).toBe(RES_MOTIF_FOG_ALPHA);
+  });
+
+  it('a frame with no baked read stays bounded by max(w, h) at full alpha — visible, but claiming no level', () => {
+    const p = resMotifPlacement({ tp: TP, tx: 0, ty: 0, read: null, texW: 200, texH: 60 });
+    expect(p.scale).toBeCloseTo(TP * RES_MOTIF_SIZE_FRAC / 200 * resMotifJitter(0, 0).scale, 12);
+    expect(p.alpha).toBe(1);
+  });
+
+  it('scales linearly with tile pitch, so zooming never changes the relative read', () => {
+    const a = resMotifPlacement({ tp: 40, tx: 7, ty: 9, read, texW: 128, texH: 128 });
+    const b = resMotifPlacement({ tp: 80, tx: 7, ty: 9, read, texW: 128, texH: 128 });
+    expect(b.scale / a.scale).toBeCloseTo(2, 12);
+    expect(b.x / a.x).toBeCloseTo(2, 12);
+  });
+
+  it('offsets stay inside the tile: never more than a fifth of the pitch from its centre', () => {
+    for (let tx = -20; tx <= 20; tx++) {
+      for (let ty = -20; ty <= 20; ty++) {
+        const p = resMotifPlacement({ tp: TP, tx, ty, read, texW: 128, texH: 128 });
+        expect(Math.abs(p.x)).toBeLessThan(TP * 0.2);
+        expect(Math.abs(p.y)).toBeLessThan(TP * 0.2);
+      }
+    }
+  });
+});
+
+describe('resLevelLabelFontPx', () => {
+  it('grows with the tile pitch until the cap, then stops', () => {
+    expect(resLevelLabelFontPx(98)).toBe(Math.round(98 * RES_LEVEL_LABEL_TP_FRAC));
+    expect(resLevelLabelFontPx(174)).toBe(RES_LEVEL_LABEL_MAX_PX);
+    expect(resLevelLabelFontPx(4000)).toBe(RES_LEVEL_LABEL_MAX_PX);
+  });
+
+  it('never drops below the size at which the glyphs read as map dirt', () => {
+    expect(resLevelLabelFontPx(1)).toBe(RES_LEVEL_LABEL_MIN_PX);
+    expect(resLevelLabelFontPx(RES_LEVEL_LABEL_MIN_TP)).toBeGreaterThanOrEqual(RES_LEVEL_LABEL_MIN_PX);
+  });
+
+  it('is monotone in the pitch — zooming in never shrinks the label', () => {
+    for (let tp = RES_LEVEL_LABEL_MIN_TP; tp < 400; tp++) {
+      expect(resLevelLabelFontPx(tp + 1)).toBeGreaterThanOrEqual(resLevelLabelFontPx(tp));
+    }
   });
 });

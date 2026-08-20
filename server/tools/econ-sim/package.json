@@ -9,6 +9,7 @@
     "enhance-protect": "tsx src/enhanceProtectRun.ts",
     "stronghold-combat": "tsx src/strongholdCombatRun.ts",
     "occupy-base-hp": "tsx src/occupyBaseHpRun.ts",
+    "occupy-card-team": "tsx src/occupyCardTeamRun.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

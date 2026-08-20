@@ -112,6 +112,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     async push(accountId, msg) {
       pushes.push({ accountId, msg });
     },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   // CC-3 card resolution (resolveCardArmy/toEngineCardInstances) needs a real cardInv from meta — worldsvc has
@@ -128,6 +129,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
         return accountId === 'a' ? { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv } : null;
       },
       async grantTitle() { /* no-op */ },
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
     };
     return new WorldService({ cols: m.collections, redis: null, gateway: fakeGateway, meta: fakeMeta, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
   }
@@ -198,8 +200,11 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
   it('base HP scales with tile level (2026-07-17): the minimum occupy force takes a level-1 tile, and the siege records defenderBaseHp', async () => {
     // Regression guard for the "cleared the garrison but couldn't destroy the base" bug: a level-1 tile's base HP
     // used to be a flat 100, so OCCUPY_MIN_TROOPS (500 = 8 infantry) cleared the 2-infantry garrison but timed out
-    // against the base (min-win was ~660, see econ-sim occupyBaseHpRun). Now base HP = npcBaseHp(1) = 40, so the
-    // minimum force wins. Also asserts the scaled base HP is actually wired into the engine battle + persisted.
+    // against the base (min-win was ~660, see econ-sim occupyBaseHpRun). Level-scaled base HP made the minimum
+    // force win. This invariant is also what pinned the ADR-069 re-calibration to 60/level rather than 80: the
+    // measured minimum FLAT force for a level-1 tile is 420 troops at 60/level but 540 at 80/level, i.e. 80 would
+    // have re-broken exactly this case (see SLG_NPC_BASE_HP_PER_LEVEL's doc comment).
+    // Also asserts the scaled base HP is actually wired into the engine battle + persisted.
     await svc.joinWorld(W, 'a', 10, 10);
     const target = findCoord((t) => t.type === 'resource' && t.level === 1, 30, 30);
     const proc = proceduralTile(W, target.x, target.y);
@@ -216,12 +221,12 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     const minForceSr = pushes.find((p) => p.accountId === 'a' && p.msg.kind === 'siege_result');
     expect(minForceSr?.msg).toMatchObject({ outcome: 'attacker_win', attackerId: 'a', marchKind: 'occupy' });
 
-    // The persisted siege replay carries the scaled defender base HP (= npcBaseHp(1) = 40) → the engine battle and
+    // The persisted siege replay carries the scaled defender base HP (= npcBaseHp(1) = 60) → the engine battle and
     // any client-side replay use the level-scaled base, not the flat BASE_HP default.
     const siege = await m.collections.sieges.findOne({ attackerId: 'a' }, { sort: { ts: -1 } });
     expect(siege).toBeTruthy();
     expect((siege!.defenderConfig as { defenderBaseHp?: number } | null)?.defenderBaseHp).toBe(npcBaseHp(1));
-    expect(npcBaseHp(1)).toBe(40);
+    expect(npcBaseHp(1)).toBe(60);
   });
 
   it('loses the PvE battle with insufficient troops → survivors refunded, tile remains neutral (no hold)', async () => {
@@ -326,7 +331,7 @@ describe.skipIf(!mongo)('worldsvc occupy-march e2e (ADR-037 §5.4)', () => {
     // (60), so committed strength ≈ 12×60 = 720, the same magnitude as the flat-troop win above (npc+600) — a
     // real card team, not a synthesized force.
     const cardIds = Array.from({ length: 12 }, (_, i) => `card-occ-${i}`);
-    for (const id of cardIds) cardInv[id] = { id, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+    for (const id of cardIds) cardInv[id] = { id, defId: 'lichuang', level: 1, gear: {}, locked: false };
     const cardStateSet: Record<string, CardSLGState> = {};
     for (const id of cardIds) cardStateSet[id] = { currentTroops: 200, teamId: 't1' };
     await m.collections.playerWorld.updateOne(

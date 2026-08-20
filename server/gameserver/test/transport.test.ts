@@ -116,6 +116,8 @@ describe('transport encodeServer (ServerMsg → wire bytes)', () => {
         seed,
         startFrame: 0,
         localSide: 1,
+        opponentName: 'b',
+        opponentPublicId: 'pb',
       }),
     );
     expect(wire.match_start.seed).toBe(seed);
@@ -204,7 +206,7 @@ describe('transport encodeServer (ServerMsg → wire bytes)', () => {
 describe('encodeServer covers all ServerMsg cases', () => {
   const samples: ServerMsg[] = [
     { case: 'room_state', code: 'C', players: [], phase: 0 },
-    { case: 'match_start', roomId: 'r', mode: 0, seed: 1, startFrame: 0, localSide: 0 },
+    { case: 'match_start', roomId: 'r', mode: 0, seed: 1, startFrame: 0, localSide: 0, opponentName: 'b', opponentPublicId: 'pb' },
     { case: 'frame_batch', toFrame: 3, frames: [] },
     { case: 'conn_resync', seed: 1, startFrame: 0, log: [], curFrame: 3 },
     { case: 'peer_dc', side: 0, graceMs: 1 },

@@ -35,7 +35,7 @@ class FakeCommercial implements CommercialClient {
     return this.coins.get(id) ?? 0;
   }
   async getWallet(id: string) {
-    return { coins: this.bal(id), pity: {} };
+    return { coins: this.bal(id), pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 };
   }
   async spend(a: { accountId: string; amount: number; reason: string; orderId: string }) {
     this.spendCallCount++;
@@ -75,6 +75,27 @@ class FakeCommercial implements CommercialClient {
   async victoryCredit(a: { accountId: string; amount: number }) {
     return { ok: true as const, coinsAfter: this.bal(a.accountId), credited: a.amount, capped: false };
   }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async createCustomPool(): Promise<never> { throw new Error('FakeCommercial.createCustomPool is not stubbed in this test'); }
+  async closeLimitedPool(): Promise<never> { throw new Error('FakeCommercial.closeLimitedPool is not stubbed in this test'); }
+  async listLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listLimitedPools is not stubbed in this test'); }
+  async listActiveLimitedPools(): Promise<never> { throw new Error('FakeCommercial.listActiveLimitedPools is not stubbed in this test'); }
+  async redeemFate(): Promise<never> { throw new Error('FakeCommercial.redeemFate is not stubbed in this test'); }
+  async monthlyCardBuy(): Promise<never> { throw new Error('FakeCommercial.monthlyCardBuy is not stubbed in this test'); }
+  async yearCardBuy(): Promise<never> { throw new Error('FakeCommercial.yearCardBuy is not stubbed in this test'); }
+  async monthlyCardClaim(): Promise<never> { throw new Error('FakeCommercial.monthlyCardClaim is not stubbed in this test'); }
+  async starterBuy(): Promise<never> { throw new Error('FakeCommercial.starterBuy is not stubbed in this test'); }
+  async verifyNonCoinReceipt(): Promise<never> { throw new Error('FakeCommercial.verifyNonCoinReceipt is not stubbed in this test'); }
+  async promoRedeem(): Promise<never> { throw new Error('FakeCommercial.promoRedeem is not stubbed in this test'); }
+  async createPromoCode(): Promise<never> { throw new Error('FakeCommercial.createPromoCode is not stubbed in this test'); }
+  async listPromoCodes(): Promise<never> { throw new Error('FakeCommercial.listPromoCodes is not stubbed in this test'); }
+  async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed in this test'); }
+  async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed in this test'); }
+  async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed in this test'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
+  async auditCoinGains(): Promise<never> { throw new Error('FakeCommercial.auditCoinGains is not stubbed in this test'); }
 }
 
 describe.skipIf(!mongo)('meta battle pass e2e', () => {

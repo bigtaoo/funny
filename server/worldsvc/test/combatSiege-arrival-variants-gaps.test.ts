@@ -42,7 +42,7 @@ const TILE = `${W}:5:5`;
 const CARD_DEF_ID = 'lichuang'; // a real @nw/shared CARD_DEFS entry (unitType: infantry)
 
 function cardInv(id: string) {
-  return { [id]: { id, defId: CARD_DEF_ID, level: 1, xp: 0, gear: {}, locked: false } };
+  return { [id]: { id, defId: CARD_DEF_ID, level: 1, gear: {}, locked: false } };
 }
 function saveFieldsWithCard(id: string) {
   return { cardInv: cardInv(id), equipmentInv: {} };
@@ -75,12 +75,12 @@ function tile(overrides: Partial<TileDoc> = {}): TileDoc {
 
 function fakeCtx(): SiegeCtx & Record<string, ReturnType<typeof vi.fn>> {
   return {
-    recordSiege: vi.fn(async () => ({ _id: 'siege-1' })),
-    transferLoot: vi.fn(async () => emptyResources()),
-    applySectLeaderPenalty: vi.fn(async () => {}),
-    passiveRelocate: vi.fn(async () => {}),
-    writeContestedHold: vi.fn(async () => {}),
-    startOccupationHold: vi.fn(async () => {}),
+    recordSiege: vi.fn(async (..._args: unknown[]) => ({ _id: 'siege-1' })),
+    transferLoot: vi.fn(async (..._args: unknown[]) => emptyResources()),
+    applySectLeaderPenalty: vi.fn(async (..._args: unknown[]) => {}),
+    passiveRelocate: vi.fn(async (..._args: unknown[]) => {}),
+    writeContestedHold: vi.fn(async (..._args: unknown[]) => {}),
+    startOccupationHold: vi.fn(async (..._args: unknown[]) => {}),
   } as unknown as SiegeCtx & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -98,17 +98,17 @@ function makeCore(opts: {
   grantMaterial?: ReturnType<typeof vi.fn>;
 } = {}) {
   const pwById = opts.pwById ?? {};
-  const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async () => ({ matchedCount: 1 }));
-  const tilesUpdateOne = opts.tilesUpdateOne ?? vi.fn(async () => ({}));
-  const pushMarch = vi.fn(async () => {});
-  const pushSiege = vi.fn(async () => {});
-  const pushTile = vi.fn(async () => {});
-  const pushTileToObservers = vi.fn(async () => {});
-  const bumpFamilyActivity = vi.fn(async () => {});
-  const setOccupancy = vi.fn(async () => {});
-  const stationedUpdateOne = vi.fn(async () => ({}));
-  const getSaveFields = opts.getSaveFields ?? vi.fn(async () => null);
-  const grantMaterial = opts.grantMaterial ?? vi.fn(async () => {});
+  const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 }));
+  const tilesUpdateOne = opts.tilesUpdateOne ?? vi.fn(async (..._args: unknown[]) => ({}));
+  const pushMarch = vi.fn(async (..._args: unknown[]) => {});
+  const pushSiege = vi.fn(async (..._args: unknown[]) => {});
+  const pushTile = vi.fn(async (..._args: unknown[]) => {});
+  const pushTileToObservers = vi.fn(async (..._args: unknown[]) => {});
+  const bumpFamilyActivity = vi.fn(async (..._args: unknown[]) => {});
+  const setOccupancy = vi.fn(async (..._args: unknown[]) => {});
+  const stationedUpdateOne = vi.fn(async (..._args: unknown[]) => ({}));
+  const getSaveFields = opts.getSaveFields ?? vi.fn(async (..._args: unknown[]) => null);
+  const grantMaterial = opts.grantMaterial ?? vi.fn(async (..._args: unknown[]) => {});
   let tilesFindOneCall = 0;
 
   const core = {
@@ -126,7 +126,7 @@ function makeCore(opts: {
           updateOne: pwUpdateOne,
         },
         stationed: { updateOne: stationedUpdateOne },
-        marches: { insertOne: vi.fn(async () => ({})) },
+        marches: { insertOne: vi.fn(async (..._args: unknown[]) => ({})) },
       },
     },
     coordX: (tid: string) => Number(tid.split(':')[1]),
@@ -140,9 +140,9 @@ function makeCore(opts: {
     pushTileToObservers,
     bumpFamilyActivity,
     setOccupancy,
-    removeCover: vi.fn(async () => {}),
-    recomputeYield: vi.fn(async () => emptyResources()),
-    applyNationChange: vi.fn(async () => true),
+    removeCover: vi.fn(async (..._args: unknown[]) => {}),
+    recomputeYield: vi.fn(async (..._args: unknown[]) => emptyResources()),
+    applyNationChange: vi.fn(async (..._args: unknown[]) => true),
     meta: { getSaveFields, grantMaterial },
   } as unknown as WorldCore;
 
@@ -204,7 +204,7 @@ describe('applyCrossingSiege', () => {
   it('a card army wins → writeOccupyCardState runs before startOccupationHold (persists cardState)', async () => {
     const garrisonLevel = 9;
     const troops = passageGarrison(garrisonLevel) + 500;
-    const getSaveFields = vi.fn(async () => saveFieldsWithCard('c1'));
+    const getSaveFields = vi.fn(async (..._args: unknown[]) => saveFieldsWithCard('c1'));
     const { core, pwUpdateOne } = makeCore({ tilesFindOne: () => null, getSaveFields });
     const ctx = fakeCtx();
     const m = march({ troops, army: [{ cardInstanceId: 'c1', col: 0, row: 0 }] as never });
@@ -216,7 +216,7 @@ describe('applyCrossingSiege', () => {
 
   it('a card army loses to the garrison → still retreats home (hasCardArmy alone satisfies the return-leg gate)', async () => {
     const garrisonLevel = 9; // garrison overwhelms this weak 1-troop card
-    const getSaveFields = vi.fn(async () => saveFieldsWithCard('c1'));
+    const getSaveFields = vi.fn(async (..._args: unknown[]) => saveFieldsWithCard('c1'));
     const { core, pwUpdateOne } = makeCore({
       tilesFindOne: () => null,
       getSaveFields,
@@ -302,7 +302,7 @@ describe('applyStrongholdSiege', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const level = 9;
     const troops = strongholdGarrison(level) + 1000;
-    const pwUpdateOne = vi.fn(async () => ({ matchedCount: 0 }));
+    const pwUpdateOne = vi.fn(async (..._args: unknown[]) => ({ matchedCount: 0 }));
     const { core } = makeCore({
       tilesFindOne: (call) => (call === 1 ? null : tile({ ownerId: ATK })),
       pwById: { [`${W}:${ATK}`]: pw() },
@@ -320,7 +320,7 @@ describe('applyStrongholdSiege', () => {
 
   it('defeat: a card army still retreats home, recordSiege(defender_win, defenderId=undefined)', async () => {
     const level = 9;
-    const getSaveFields = vi.fn(async () => saveFieldsWithCard('c1'));
+    const getSaveFields = vi.fn(async (..._args: unknown[]) => saveFieldsWithCard('c1'));
     const { core, pwUpdateOne } = makeCore({
       tilesFindOne: () => null,
       getSaveFields,
@@ -422,8 +422,8 @@ describe('applySweep', () => {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('landSiege', () => {
-  const winRes = (survivors: number): SiegeResolution => ({ outcome: 'attacker_win', attackerSurvivors: survivors, defenderSurvivors: 0 });
-  const loseRes = (defSurvivors: number): SiegeResolution => ({ outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: defSurvivors });
+  const winRes = (survivors: number): SiegeResolution => ({ outcome: 'attacker_win', attackerSurvivors: survivors, defenderSurvivors: 0, attackerDeployed: survivors, defenderDeployed: 0 });
+  const loseRes = (defSurvivors: number): SiegeResolution => ({ outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: defSurvivors, attackerDeployed: 0, defenderDeployed: defSurvivors });
 
   it('attacker_win on a main base: loots, sends survivors home, applies sect-leader penalty + passive relocation', async () => {
     const { core } = makeCore({ pwById: { [`${W}:${ATK}`]: pw({ mainBaseTile: undefined }) } });
@@ -486,7 +486,7 @@ describe('landSiege', () => {
     const target = tile({ type: 'territory', ownerId: DEF });
     const m = march({ army: [{ cardInstanceId: 'c1', col: 0, row: 0 }] as never });
     const attacker = pw({ cardState: { c1: { currentTroops: 40 } } as never });
-    const res: SiegeResolution = { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 12 };
+    const res: SiegeResolution = { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 12, attackerDeployed: 0, defenderDeployed: 12 };
     await landSiege(core, ctx, m, attacker, target, DEF, pw({ accountId: DEF }), res, 1_000, null);
     expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, { $set: { garrison: 12 }, $inc: { rev: 1 } });
     // hasCardArmy alone (attackerSurvivors=0) still triggers the return leg → playerWorld touched at least once.
@@ -545,9 +545,9 @@ describe('landSiege', () => {
 
 describe('applyBaseSiege', () => {
   function makeBaseCore(opts: { marches?: unknown[]; pwUpdateOne?: ReturnType<typeof vi.fn> } = {}) {
-    const marchesToArray = vi.fn(async () => opts.marches ?? []);
-    const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async () => ({}));
-    const siegeDamageUpdateOne = vi.fn(async () => ({}));
+    const marchesToArray = vi.fn(async (..._args: unknown[]) => opts.marches ?? []);
+    const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async (..._args: unknown[]) => ({}));
+    const siegeDamageUpdateOne = vi.fn(async (..._args: unknown[]) => ({}));
     const { core, ...rest } = makeCore({ pwUpdateOne });
     (core as unknown as { deps: { cols: Record<string, unknown> } }).deps.cols.marches = {
       find: () => ({ toArray: marchesToArray }),
@@ -555,7 +555,7 @@ describe('applyBaseSiege', () => {
     (core as unknown as { deps: { cols: Record<string, unknown> } }).deps.cols.siegeDamage = {
       updateOne: siegeDamageUpdateOne,
     };
-    return { core, marchesToArray, pwUpdateOne, siegeDamageUpdateOne, ...rest };
+    return { ...rest, core, marchesToArray, pwUpdateOne, siegeDamageUpdateOne };
   }
 
   const baseTile = () => tile({ type: 'base', level: 1 });

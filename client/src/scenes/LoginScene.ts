@@ -6,6 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
+import { buildRasterTabIcon, BACK_ARROW_ART, BACK_ARROW_ASPECT, preloadTabIconTextures } from '../render/icons';
 import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type View, type Field, type Hit } from './LoginScene/types';
 import { drawLanding, drawForm, drawSubmitting, PRESS_DUR, type FormHost } from './LoginScene/forms';
 
@@ -71,6 +72,12 @@ export class LoginScene implements Scene {
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.setupHiddenInput();
     this.render();
+    // The back arrow is an AI raster that decodes asynchronously, and this scene runs BEFORE the
+    // lobby (which is what warms these textures for every other scene) — without this, the first
+    // login form to draw would show a label with no arrow. `render()` is destroy-guarded.
+    void preloadTabIconTextures()
+      .catch((err) => console.warn('[LoginScene] back-arrow preload failed:', err))
+      .then(() => this.render());
   }
 
   // ── Scene interface ──────────────────────────────────────────────────────────
@@ -308,8 +315,18 @@ export class LoginScene implements Scene {
 
     // Back button (only on form views).
     if (this.view === 'password' || this.view === 'register') {
+      // [arrow][gap][label], the same shape SceneHeader's back pill draws — this bar is the one
+      // back button that predates it, and the literal arrow it used to carry read as a hairline on
+      // the dark title fill (19.08.2026). White ink, since the bar is `C.dark`.
+      const arrowH = Math.round(FS.heading * 0.62);
+      const arrowSz = Math.round(arrowH * BACK_ARROW_ASPECT);
+      const arrowGap = Math.round(FS.heading * 0.28);
+      const backX = Math.round(w * 0.04);
+      const arrow = buildRasterTabIcon(BACK_ARROW_ART.active, arrowSz, arrowH);
+      arrow.x = backX; arrow.y = Math.round(tbH / 2 - arrowH / 2);
+      this.container.addChild(arrow);
       const back = txt(t('auth.back'), FS.heading, C.light);
-      back.anchor.set(0, 0.5); back.x = Math.round(w * 0.04); back.y = tbH / 2;
+      back.anchor.set(0, 0.5); back.x = backX + arrowSz + arrowGap; back.y = tbH / 2;
       this.container.addChild(back);
       const pad = Math.round(h * 0.02);
       this.hits.push({

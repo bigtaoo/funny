@@ -110,6 +110,23 @@ export interface SiegeResolution {
   attackerSurvivors: number;
   /** Defender surviving troops (on defender_win, remaining garrison; on attacker_win = 0). */
   defenderSurvivors: number;
+  /**
+   * Attacker strength actually committed to this battle, in the SAME unit as
+   * {@link SiegeResolution.attackerSurvivors} — so `attackerSurvivors / attackerDeployed` is a
+   * meaningful survival ratio (ADR-069). The cheap linear path deals in raw troops, so this is
+   * simply the attacker's troop count; the engine path deals in per-unit HP clamped to each
+   * unit's blueprint capacity, so this is that clamped sum (`GameState.preplacedAttackerHp_fp`),
+   * which for a card team is typically only 40-60% of the nominal troop total. Post-battle card
+   * bookkeeping MUST divide by this, never by the nominal troops: the mismatched denominator
+   * used to shave 40-60% off a team's troops on every battle, including won ones.
+   */
+  attackerDeployed: number;
+  /**
+   * Defender counterpart of {@link SiegeResolution.attackerDeployed} — the defending force actually
+   * committed, in the same unit as `defenderSurvivors`. Field encounters (ADR-051) pit two real card
+   * armies against each other, so the defending side needs the same honest denominator (ADR-069).
+   */
+  defenderDeployed: number;
 }
 
 /**
@@ -120,9 +137,9 @@ export function resolveSiege(attackerTroops: number, defenseStrength: number): S
   const atk = Math.max(0, Math.floor(attackerTroops));
   const def = Math.max(0, Math.floor(defenseStrength));
   if (atk > def) {
-    return { outcome: 'attacker_win', attackerSurvivors: atk - def, defenderSurvivors: 0 };
+    return { outcome: 'attacker_win', attackerSurvivors: atk - def, defenderSurvivors: 0, attackerDeployed: atk, defenderDeployed: def };
   }
-  return { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: def - atk };
+  return { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: def - atk, attackerDeployed: atk, defenderDeployed: def };
 }
 
 /**
@@ -307,22 +324,51 @@ export function buildingMaxHp(level: number): number {
 }
 
 /**
- * NPC-tile symbolic base HP, scaled by tile level (2026-07-17 owner decision, option 2 "缓坡"):
+ * NPC-tile symbolic base HP, scaled by tile level (2026-07-17 owner decision, option 2 "缓坡";
+ * re-calibrated 40 → 60 on 2026-08-19 by ADR-069, see below):
  * the single-battle NPC capture paths (occupy / sweep / territory tile / stronghold / crossing) run one
- * `runSiegeBattle` whose in-engine defender base HP was previously a flat {@link BASE_HP}=100 regardless of
+ * `runSiegeBattle` whose in-engine defender base HP was originally a flat {@link BASE_HP}=100 regardless of
  * tile level — a low-level tile with a trivial garrison (npcGarrison(1)=120 = 2 infantry) still needed ~10
  * surviving infantry (siegeValue 11 each) to batter a 100-HP base, so "clear the garrison, fail to destroy
  * the base, time out → defender wins" was the common outcome. Scaling base HP with tile level makes low tiles
  * genuinely soft and high tiles a real wall, mirroring the player-city side where the base gate already scales
- * with wall level via {@link baseDurabilityMax}. Chosen at 40/level (L1=40 ⇒ ~4 infantry survivors; L10=400).
+ * with wall level via {@link baseDurabilityMax}.
  *
  * NOT applied to the ADR-026 main-base WAVE path (arrival.ts pins defenderBaseLevel:0 and keeps the symbolic
  * base a minimal terminator — the real durability there is TileDoc.hp = baseDurabilityMax). Callers opt in by
- * passing `defenderBaseHp: npcBaseHp(tileLevel)` explicitly; {@link buildSiegeLevel} does no implicit derivation.
+ * passing `defenderBaseHp: npcBaseHp(tileLevel)` explicitly; {@link buildSiegeLevel} does no implicit
+ * derivation.
+ *
+ * **2026-08-19 re-calibration (ADR-069), 40 → 60 per level.** The original 40/level was verified with
+ * `tools/econ-sim/src/occupyBaseHpRun.ts`, which attacks with a SYNTHESIZED infantry army — one 60-HP unit
+ * per 60 troops, so its unit count (and therefore its total base damage) grew with troops. Real marches
+ * carry a card TEAM: at most {@link CARD_TEAM_MAX_SIZE} = 12 units regardless of troop count. Since base
+ * damage was a flat per-unit `siegeValue` paid once on arrival, a card team's ENTIRE base damage was capped
+ * around 150-190 — so 40/level made every tile from level 5 up (200+) unbreakable by any card team at any
+ * troop count, while `SIEGE_CHEAP_RATIO` handed those very tiles over for free at 10× garrison. ADR-069
+ * fixed the mechanism (siege value now scales with the troops a unit carries), which turned this constant
+ * into a real, scalable gate for the first time — and at 40/level a mid-tier roster could then take level-10
+ * land with ~24% of its troop capacity, i.e. tile level stopped gating anything. 60/level was picked with
+ * `tools/econ-sim/src/occupyCardTeamRun.ts` (card-team model, the numbers 40/level never could produce)
+ * against the ADR-034 §4 outer-ring level distribution, where 60% of neutral land is level 1-2 and 76% is
+ * level 1-3: a starter (Lv.1, no gear) roster filled to capacity takes level 1-2 land, a mid (Lv.4) roster
+ * reaches level 7 (the resource ring), and a veteran (Lv.8) roster reaches level 10 (the core ring) — with
+ * the engine route staying well under the cheap-path shortcut at every level, so massing troops is never
+ * the cheapest way in. Equipment (up to +60% siege value, EFFECT_CAPS.siegePct) shifts each tier roughly
+ * one ring further, so the tables are the pessimistic edge of the band.
+ *
+ * **Why 60 and not 80** (both give the same tier→ring shape): the FLAT/synthesized attacker path — an
+ * occupy march sent without a team — must keep satisfying the 2026-07-17 regression invariant that
+ * `OCCUPY_MIN_TROOPS` (= GARRISON_PER_TILE = 500) captures a level-1 tile, i.e. the "cleared the garrison
+ * but couldn't destroy the base" failure this constant was introduced to remove must not come back at the
+ * lowest tile level. Measured minimum flat force for level 1: 420 troops at 60/level (comfortable margin)
+ * vs 540 at 80/level — which broke that invariant outright. See `occupy-march.e2e.test.ts`'s
+ * "base HP scales with tile level" case, which pins it.
  * [Econ-sim verified 2026-07-17 (base curve) + 2026-07-22 (robust to equipment/academy attacker hp bonuses up
- * to +20% — see ECONOMY_VERIFICATION_LOG.md §13-SLG-NPC-BASEHP); DRAFT marker removed, 40/level is final.]
+ * to +20% — see ECONOMY_VERIFICATION_LOG.md §13-SLG-NPC-BASEHP) + 2026-08-19 (card-team re-calibration,
+ * §13-SLG-NPC-BASEHP.2).]
  */
-export const SLG_NPC_BASE_HP_PER_LEVEL = 40;
+export const SLG_NPC_BASE_HP_PER_LEVEL = 60;
 
 /** NPC-tile symbolic base HP for a given tile level (floors at one level so every tile has a destructible base). */
 export function npcBaseHp(level: number): number {

@@ -16,6 +16,7 @@ import { FriendService } from '../src/friendService';
 import { MailService } from '../src/mailService';
 import { startHttpApi } from '../src/httpApi';
 import { FakeMeta, FakeGateway } from './harness';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017';
 const DB = 'nw_social_family_http_gaps_test';
@@ -73,7 +74,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes gap-fill e2e', () => {
   async function joinAndAccept(leaderId: string, accountId: string, familyId: string): Promise<void> {
     const join = await fetch(`${base}/social/family/${familyId}/join`, { method: 'POST', headers: authFor(accountId) });
     expect(join.status).toBe(200);
-    const requests = await (await fetch(`${base}/social/family/requests`, { headers: authFor(leaderId) })).json();
+    const requests = await jsonBody(await fetch(`${base}/social/family/requests`, { headers: authFor(leaderId) }));
     const req = (requests.data.requests as Array<{ requestId: string; accountId: string }>).find((r) => r.accountId === accountId)!;
     const respond = await fetch(`${base}/social/family/requests/${req.requestId}/respond`, {
       method: 'POST', headers: { ...authFor(leaderId), 'content-type': 'application/json' }, body: JSON.stringify({ accept: true }),
@@ -97,13 +98,13 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes gap-fill e2e', () => {
       method: 'POST', headers: { ...authFor('creator1'), 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Creators', tag: 'CRT1' }),
     });
     expect(r.status).toBe(201);
-    expect((await r.json()).data).toMatchObject({ familyId: 'fam:CRT1', tag: 'CRT1' });
+    expect((await jsonBody(r)).data).toMatchObject({ familyId: 'fam:CRT1', tag: 'CRT1' });
   });
 
   it('GET /social/family/mine: returns the family the caller belongs to', async () => {
     const r = await fetch(`${base}/social/family/mine`, { headers: authFor('creator1') });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toMatchObject({ familyId: 'fam:CRT1' });
+    expect((await jsonBody(r)).data).toMatchObject({ familyId: 'fam:CRT1' });
   });
 
   it('GET /social/family/search: missing tag -> 400; found -> the matching family view', async () => {
@@ -111,7 +112,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes gap-fill e2e', () => {
     expect(missing.status).toBe(400);
     const found = await fetch(`${base}/social/family/search?tag=CRT1`, { headers: authFor('creator1') });
     expect(found.status).toBe(200);
-    expect((await found.json()).data).toMatchObject({ familyId: 'fam:CRT1' });
+    expect((await jsonBody(found)).data).toMatchObject({ familyId: 'fam:CRT1' });
   });
 
   it('POST /social/family/announcement: missing field -> 400; success sets it', async () => {
@@ -123,13 +124,13 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes gap-fill e2e', () => {
       method: 'POST', headers: { ...authFor('creator1'), 'content-type': 'application/json' }, body: JSON.stringify({ announcement: 'Welcome!' }),
     });
     expect(ok.status).toBe(200);
-    const mine = await (await fetch(`${base}/social/family/mine`, { headers: authFor('creator1') })).json();
+    const mine = await jsonBody(await fetch(`${base}/social/family/mine`, { headers: authFor('creator1') }));
     expect(mine.data.announcement).toBe('Welcome!');
   });
 
   it('member1 joins fam:CRT1 (request + leader accept)', async () => {
     await joinAndAccept('creator1', 'member1', 'fam:CRT1');
-    const mine = await (await fetch(`${base}/social/family/mine`, { headers: authFor('member1') })).json();
+    const mine = await jsonBody(await fetch(`${base}/social/family/mine`, { headers: authFor('member1') }));
     expect(mine.data.familyId).toBe('fam:CRT1');
   });
 
@@ -142,14 +143,14 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes gap-fill e2e', () => {
       method: 'POST', headers: { ...authFor('creator1'), 'content-type': 'application/json' }, body: JSON.stringify({ targetId: 'member1', role: 'elder' }),
     });
     expect(ok.status).toBe(200);
-    const view = await (await fetch(`${base}/social/family/mine`, { headers: authFor('member1') })).json();
+    const view = await jsonBody(await fetch(`${base}/social/family/mine`, { headers: authFor('member1') }));
     expect((view.data.members as Array<{ accountId: string; role: string }>).find((mm) => mm.accountId === 'member1')?.role).toBe('elder');
   });
 
   it('GET /social/family/:id/messages: empty channel history to start', async () => {
     const r = await fetch(`${base}/social/family/fam:CRT1/messages`, { headers: authFor('creator1') });
     expect(r.status).toBe(200);
-    expect((await r.json()).data).toEqual([]);
+    expect((await jsonBody(r)).data).toEqual([]);
   });
 
   it('POST /social/family/:id/messages: missing body -> 400; success pushes family_msg to the other member', async () => {
@@ -161,7 +162,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes gap-fill e2e', () => {
       method: 'POST', headers: { ...authFor('creator1'), 'content-type': 'application/json' }, body: JSON.stringify({ body: 'hello family' }),
     });
     expect(ok.status).toBe(200);
-    const history = await (await fetch(`${base}/social/family/fam:CRT1/messages`, { headers: authFor('creator1') })).json();
+    const history = await jsonBody(await fetch(`${base}/social/family/fam:CRT1/messages`, { headers: authFor('creator1') }));
     expect(history.data).toHaveLength(1);
     expect(gateway.ofKind('family_msg').some((p) => p.body === 'hello family')).toBe(true);
   });
@@ -177,7 +178,7 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes gap-fill e2e', () => {
     });
     expect(ok.status).toBe(200);
     const mineAfterKick = await fetch(`${base}/social/family/mine`, { headers: authFor('member2') });
-    expect((await mineAfterKick.json()).data).toBeNull();
+    expect((await jsonBody(mineAfterKick)).data).toBeNull();
   });
 
   it('member3 joins, then POST /social/family/leave removes them', async () => {
@@ -185,13 +186,13 @@ describe.skipIf(!mongo)('socialsvc family HTTP routes gap-fill e2e', () => {
     const r = await fetch(`${base}/social/family/leave`, { method: 'POST', headers: authFor('member3') });
     expect(r.status).toBe(200);
     const mineAfterLeave = await fetch(`${base}/social/family/mine`, { headers: authFor('member3') });
-    expect((await mineAfterLeave.json()).data).toBeNull();
+    expect((await jsonBody(mineAfterLeave)).data).toBeNull();
   });
 
   it('POST /social/family/disband: leader dissolves the family', async () => {
     const r = await fetch(`${base}/social/family/disband`, { method: 'POST', headers: authFor('creator1') });
     expect(r.status).toBe(200);
     const mineAfterDisband = await fetch(`${base}/social/family/mine`, { headers: authFor('creator1') });
-    expect((await mineAfterDisband.json()).data).toBeNull();
+    expect((await jsonBody(mineAfterDisband)).data).toBeNull();
   });
 });

@@ -81,6 +81,7 @@ export const ErrorCode = {
   CARD_NOT_FOUND: 'CARD_NOT_FOUND',                 // card instance not found in cardInv
   CARD_HAS_GEAR: 'CARD_HAS_GEAR',                   // card has equipped gear; must unequip before listing on auction
   CARD_INJURED: 'CARD_INJURED',                     // card is injured (injuredUntil > now); cannot be assigned to a team
+  CARD_TROOP_CAP_EXCEEDED: 'CARD_TROOP_CAP_EXCEEDED', // allocation would push a card past cardTroopCap(card) (CHARACTER_CARDS_DESIGN §6.3)
   // —— skin trading (auction task2, AUCTION_DESIGN §2.1/§9) ——
   SKIN_NOT_FOUND: 'SKIN_NOT_FOUND',                 // account does not own this skin id
   SKIN_IN_USE: 'SKIN_IN_USE',                       // skin is currently equipped → may not be listed
@@ -201,6 +202,7 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.CARD_NOT_FOUND]: 404,
   [ErrorCode.CARD_HAS_GEAR]: 409,
   [ErrorCode.CARD_INJURED]: 409,
+  [ErrorCode.CARD_TROOP_CAP_EXCEEDED]: 409,
   [ErrorCode.SKIN_NOT_FOUND]: 404,
   [ErrorCode.SKIN_IN_USE]: 409,
   [ErrorCode.POOL_UNAVAILABLE]: 404,

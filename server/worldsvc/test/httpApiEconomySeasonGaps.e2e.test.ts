@@ -21,6 +21,7 @@ import { nullWorldSocialsvcClient } from '../src/socialsvcClient';
 import { startHttpApi } from '../src/httpApi';
 import type { WorldMetaClient } from '../src/metaClient';
 import type { WorldCommercialClient } from '../src/commercialClient';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_http_econ_season_gaps_test';
@@ -43,7 +44,7 @@ if (!mongo) console.warn(`[worldsvc.httpApiEconomySeasonGaps.e2e] Mongo unreacha
 // CARD_INV_ANY fixture. Only needed so PUT /world/teams (even with an empty array) doesn't fail on the
 // unconditional cardInv lookup inside setTeams.
 const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false }),
+  get: (_t, prop: string) => ({ id: prop, defId: 'lichuang', level: 1, gear: {}, locked: false }),
 });
 const fakeMeta: WorldMetaClient = {
   available: true,
@@ -53,6 +54,7 @@ const fakeMeta: WorldMetaClient = {
   async getProfile() { return null; },
   async grantMaterial() {},
   async grantTitle() {},
+  batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
 };
 const fakeCommercial: WorldCommercialClient = {
   available: true,
@@ -139,7 +141,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/teams?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      expect((await ok.json()).data).toEqual([]);
+      expect((await jsonBody(ok)).data).toEqual([]);
     });
 
     it('PUT /world/teams missing worldId → 400; missing teams → 400; success (empty array) → 200', async () => {
@@ -157,7 +159,9 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
       const noAlloc = await fetch(`${base}/world/troops/distribute`, { method: 'POST', headers: auth, body: JSON.stringify({ worldId: W }) });
       expect(noAlloc.status).toBe(400);
 
-      // A card assigned to a team (teamId set directly — distributeTroops itself never touches meta).
+      // A card assigned to a team (teamId set directly). 100 troops is inside a level-1 lichuang's
+      // cardTroopCap of 200 — distributeTroops does a meta cardInv lookup for that check since 2026-08-19,
+      // which CARD_INV_ANY above already satisfies.
       await m.collections.playerWorld.updateOne(
         { _id: playerWorldId(W, 'acct-1') },
         { $set: { troops: 1000, 'cardState.card-distribute-1': { currentTroops: 0, teamId: 't1' } } },
@@ -200,7 +204,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
       expect(badQty.status).toBe(400);
       const ok = await fetch(`${base}/world/troops/train`, { method: 'POST', headers: acct.auth, body: JSON.stringify({ worldId: W, qty: 5 }) });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(body.data.trainingQueue.length).toBeGreaterThan(0);
     });
 
@@ -237,7 +241,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
     it('GET /world/season: success, missing worldId → 400, unknown worldId → 404', async () => {
       const ok = await fetch(`${base}/world/season?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      expect((await ok.json()).data).toMatchObject({ worldId: W });
+      expect((await jsonBody(ok)).data).toMatchObject({ worldId: W });
       const noWorld = await fetch(`${base}/world/season`, { headers: auth });
       expect(noWorld.status).toBe(400);
       const notFound = await fetch(`${base}/world/season?worldId=no-such-world-xyz`, { headers: auth });
@@ -247,7 +251,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
     it('GET /world/shop/items → 200 (item catalog)', async () => {
       const r = await fetch(`${base}/world/shop/items`, { headers: auth });
       expect(r.status).toBe(200);
-      const body = await r.json();
+      const body = await jsonBody(r);
       expect(Array.isArray(body.data)).toBe(true);
       expect(body.data.length).toBeGreaterThan(0);
     });
@@ -270,7 +274,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/season/resolve`, { method: 'POST', headers: auth, body: JSON.stringify({ season: 901 }) });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(typeof body.data.worldId).toBe('string');
     });
 
@@ -280,7 +284,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/season/join`, { method: 'POST', headers: acct.auth, body: JSON.stringify({ season: 902 }) });
       expect(ok.status).toBe(200);
-      expect((await ok.json()).data.joined).toBe(true);
+      expect((await jsonBody(ok)).data.joined).toBe(true);
     });
 
     it('GET /world/season/transfer/targets: missing worldId → 400; success (possibly empty) list', async () => {
@@ -288,7 +292,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
       expect(bad.status).toBe(400);
       const ok = await fetch(`${base}/world/season/transfer/targets?worldId=${W}`, { headers: auth });
       expect(ok.status).toBe(200);
-      expect(Array.isArray((await ok.json()).data)).toBe(true);
+      expect(Array.isArray((await jsonBody(ok)).data)).toBe(true);
     });
 
     it('POST /world/season/transfer: missing fromWorldId/toWorldId → 400; success moves the account between shards', async () => {
@@ -309,7 +313,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
         method: 'POST', headers: acct.auth, body: JSON.stringify({ fromWorldId, toWorldId }),
       });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(body.data).toMatchObject({ joined: true, worldId: toWorldId });
     });
 
@@ -321,7 +325,7 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: economyRoutes + s
         method: 'POST', headers: acct.auth, body: JSON.stringify({ worldId: 's1-http-econ-enter', r: 5, zoom: 1 }),
       });
       expect(ok.status).toBe(200);
-      const body = await ok.json();
+      const body = await jsonBody(ok);
       expect(body.data.me.joined).toBe(true);
       expect(body.data.map).toBeDefined();
       expect(Array.isArray(body.data.marches)).toBe(true);

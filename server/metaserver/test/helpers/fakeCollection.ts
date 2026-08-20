@@ -111,7 +111,7 @@ function makeCursor<T extends Record<string, unknown>>(initial: T[]): Cursor<T> 
   let items = initial;
   const cursor: Cursor<T> = {
     sort(spec) {
-      const [[key, dir]] = Object.entries(spec);
+      const [[key, dir]] = Object.entries(spec) as [[string, 1 | -1]];
       items = [...items].sort((a, b) => {
         const av = getDotted(a, key) as number, bv = getDotted(b, key) as number;
         return av < bv ? -1 * dir : av > bv ? 1 * dir : 0;

@@ -122,7 +122,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     accountId: string,
     x: number,
     y: number,
-    opts: { type: TileDoc['type']; garrison: number; ink?: number; protectedUntil?: number },
+    opts: { type: TileDoc['type']; garrison: number; ink?: number; protectedUntil?: number; level?: number },
   ): Promise<void> {
     const proc = proceduralTile(W, x, y);
     const tile: TileDoc = {
@@ -131,7 +131,12 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
       x,
       y,
       type: opts.type,
-      level: proc.level,
+      // ADR-069 (2026-08-19): a territory tile's in-engine base HP is npcBaseHp(level), and since siege
+      // damage now scales with carried troops that base is a REAL gate — so any test that pins an exact
+      // attacker force has to pin the level too, instead of inheriting whatever the procedural terrain
+      // happens to roll at these coordinates (1..10, i.e. base HP 60..600). `level` defaults to the
+      // procedural value so the fixtures that don't care are unaffected.
+      level: opts.level ?? proc.level,
       ...(proc.resType ? { resType: proc.resType } : {}),
       ownerId: accountId,
       garrison: opts.garrison,
@@ -177,7 +182,9 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
   it('attack territory win: ownership transfer + loot + both-sides yield recalc + under_attack/siege_result push', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
-    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 500, ink: 1000 });
+    // level: 1 → base HP 60 (ADR-069), so the 800-troop flat force below decides this fixture by combat
+    // rather than by whichever tile level the terrain generator rolled here (see setupDefender).
+    await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 500, ink: 1000, level: 1 });
     await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
     const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 800);
@@ -404,7 +411,7 @@ describe.skipIf(!mongo)('worldsvc siege e2e', () => {
     // A losing sweep is replayable too (same follow-up as the win case above) — including end-to-end through
     // listSieges/getSiegeReplay, not just the raw DB fields (mirrors the win case's round-trip check).
     expect(siege?.seed).toEqual(expect.any(Number));
-    expect(siege?.defenderConfig?.garrison?.length).toBeGreaterThan(0);
+    expect((siege?.defenderConfig?.garrison as unknown[] | undefined)?.length).toBeGreaterThan(0);
     const rows = await svc.listSieges(W, 'a');
     expect(rows.find((r) => r.siegeId === siege!._id)?.hasReplay).toBe(true);
     const replay = await svc.getSiegeReplay(W, 'a', siege!._id);

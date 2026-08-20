@@ -1,112 +1,121 @@
-// tileGraphics/resources — resource motif rendering (per-level heap art + programmatic
-// fallback + per-tile placement jitter). Pure PIXI Graphics functions; hold no scene state.
+// tileGraphics/resources — resource motif rendering (per-level art + programmatic fallback).
+// Pure PIXI Graphics functions; hold no scene state.
+//
+// This file is a thin PIXI adapter: every number it draws with comes from @nw/shared's
+// resMotifPlacement (size/alpha/rotation/offset) and from the atlas's own baked `nw` block (the level
+// read). It deliberately contains NO level->size and NO level->alpha logic — see
+// design/product/slg-resource-art.md §6.3 for why that solving moved into the packer, and
+// server/shared/src/slg/core.ts for why the math is shared with the map editor rather than copied
+// into it (both had a hand-written copy until 2026-08-19, kept in step only by a comment).
 import * as PIXI from 'pixi.js-legacy';
-import { getResLevelTexture, getResTexture, isResAtlasReady } from '../../../render/atlas/resAtlasLoader';
-
-// Resource motif size as a fraction of tile pitch `tp`. Shared by the fogged (type-only) and
-// revealed (per-level) draw paths so they never diverge in size. Shrunk 0.40→0.30 (2026-07-17):
-// with resourceDensity=1.0 a motif sits on EVERY tile, so 0.40 filled each tile edge-to-edge and
-// the map read as one uniform carpet of large icons with no visual hierarchy — every tile a
-// competing focal point. 0.30 opens real gaps between adjacent motifs so ownership/terrain and
-// the high-value tiles can lead the eye. Must stay in lockstep with the map-editor's drawResMotif.
-const MOTIF_SIZE_FRAC = 0.30;
+import { resLevelLabelFontPx, resLevelLabelText, resMotifPlacement } from '@nw/shared';
+import { getResFrameRead, getResLevelTexture, getResTexture, isResAtlasReady } from '../../../render/atlas/resAtlasLoader';
 
 /**
  * Render a resource motif sprite onto a tile Graphics.
  *
- * When a hand-drawn `res_{resType}_l{level}` frame exists, draw that real per-level art:
- * the artwork alone carries level/abundance/defense — no programmatic count-replication or
- * pencil defense frames are layered on. All map resTypes now have per-level frames in the atlas
- * (paper/ink/graphite l1–l10 bespoke, metal l1–l10 baked heaps, sticker/copper mine l6–l10 bespoke — sticker
- * only spawns at level ≥6, so it never needs l1–5). Any missing level falls back to the generic
- * `res_{resType}` sprite — deliberately one sprite, no abundance scatter, so the map stays calm.
+ * When a hand-drawn `res_{resType}_l{level}` frame exists, draw that real per-level art: the artwork
+ * plus its baked level read carry level/abundance entirely — no programmatic count-replication and no
+ * pencil defense frames are layered on. All map resTypes have per-level frames (paper/ink/graphite/metal
+ * l1–l10, sticker l6–l10 — sticker only spawns at level ≥6, so it never needs l1–5). Any missing level
+ * falls back to the generic `res_{resType}` sprite — deliberately one sprite, no abundance scatter, so
+ * the map stays calm.
  *
  * Falls back to a single programmatic shape if the atlas hasn't decoded yet.
+ *
+ * `g`'s local origin is the tile diamond's centre (see drawTileL1), which is the origin
+ * resMotifPlacement returns offsets against.
  */
-
 export function drawResMotif(g: PIXI.Graphics, resType: string, level: number, tp: number, fogged = false, tx = 0, ty = 0): void {
-  const lv = Math.max(1, Math.min(10, level));
-  // `g`'s local origin is the tile's diamond center (see drawTileL1); the motif sits
-  // centred and slightly low, y-offset flattened (×0.6) so it never pokes past the
-  // shallower diamond edges near the tile's left/right tips.
-  const toLocal = (fx: number, fy: number): [number, number] => [(fx - 0.5) * tp, (fy - 0.5) * tp * 0.6];
-  const jitter = motifJitter(tx, ty);
-
-  // Outside vision: reveal the resource TYPE only — a single dimmed motif (no level detail,
-  // which §18 keeps hidden under fog, same as the level dot).
-  if (fogged) {
-    if (!isResAtlasReady()) { drawResMotifFallback(g, resType, tp); return; }
-    const ftex = getResTexture(resType);
-    if (!ftex) return;
-    const sp = new PIXI.Sprite(ftex);
-    sp.anchor.set(0.5, 0.5);
-    // Generic type frame (tall, w<h) — keep max(w,h) so it stays bounded; MOTIF_SIZE_FRAC matches
-    // the revealed per-level motif size below so the sprite doesn't jump size when fog clears.
-    sp.scale.set((tp * MOTIF_SIZE_FRAC) / Math.max(ftex.width, ftex.height) * jitter.scale);
-    sp.rotation = jitter.rot;
-    sp.alpha = 0.35;
-    [sp.x, sp.y] = toLocal(0.5, 0.52);
-    sp.x += jitter.dx * tp; sp.y += jitter.dy * tp;
-    g.addChild(sp);
-    return;
-  }
-
   // Programmatic fallback while the atlas is still decoding.
-  if (!isResAtlasReady()) {
-    drawResMotifFallback(g, resType, tp);
-    return;
-  }
+  if (!isResAtlasReady()) { drawResMotifFallback(g, resType, tp); return; }
 
-  // Real per-level art when it exists; otherwise a single generic placeholder sprite.
-  const levelTex = getResLevelTexture(resType, lv);
+  // Outside vision: reveal the resource TYPE only — the generic frame, dimmed, with no level detail
+  // (§18 keeps level hidden under fog, same as the level dot).
+  const lv = Math.max(1, Math.min(10, level));
+  const levelTex = fogged ? null : getResLevelTexture(resType, lv);
+  const frameName = levelTex ? `res_${resType}_l${lv}` : `res_${resType}`;
   const tex = levelTex ?? getResTexture(resType);
   if (!tex) return;
+
+  const p = resMotifPlacement({
+    tp, tx, ty,
+    read: getResFrameRead(frameName),
+    texW: tex.width, texH: tex.height,
+    fogged,
+  });
   const sp = new PIXI.Sprite(tex);
   sp.anchor.set(0.5, 0.5);
-  // Per-level frames all share the same 128px WIDTH and encode the level in HEIGHT (higher
-  // level = taller/denser), so scale them by width — this keeps the per-level height
-  // difference instead of normalizing it away via max(w,h). The generic fallback frame
-  // (types without per-level art) is TALLER than wide, so it stays on max(w,h) to stay
-  // bounded. MOTIF_SIZE_FRAC: shrunk 0.55→0.48→0.40→0.30 to leave clear gaps between adjacent
-  // tiles' motifs (resourceDensity=1.0 puts one on every tile), while l1..l10 still read apart.
-  const denom = levelTex ? tex.width : Math.max(tex.width, tex.height);
-  // Per-tile jitter (2026-07-12, resource-carpet pass): resourceDensity=1.0 puts the SAME
-  // resType/level frame on every tile of a biome region, so at real play zoom (L1) identical
-  // icons tile in a perfectly uniform grid — reads as a printed stamp pattern, not hand-drawn
-  // placement (real-client screenshot at a plain resource patch confirmed this, distinct from
-  // the level-alpha "confetti" issue the 2026-07-11 passes already tuned). motifJitter() gives
-  // each tile a small deterministic (tx,ty)-hashed offset/rotation/scale, same technique as
-  // drawStar's per-vertex wobble — breaks the grid regularity without changing density/alpha/
-  // size tuning from those prior passes. Must stay in lockstep with the map-editor's
-  // drawResMotif (SLG map render parity).
-  sp.scale.set((tp * MOTIF_SIZE_FRAC) / denom * jitter.scale);
-  sp.rotation = jitter.rot;
-  // Value hierarchy by opacity: with resourceDensity=1.0 a heap sits on EVERY tile, so drawing
-  // them all at full strength reads as uniform confetti. Fading low-level heaps (and keeping
-  // high-level ones solid) lets the eye pick out the tiles worth fighting for — lv1≈0.65 → lv10=1.0.
-  // Floor 0.4→0.65 (2026-07-11) then 0.65→0.55 (2026-07-17): paired with the MOTIF_SIZE_FRAC
-  // shrink, a slightly lower floor lets the many low-level tiles recede so the map has a clear
-  // value hierarchy again instead of a uniform carpet. Must stay in lockstep with the
-  // map-editor's drawResMotif (SLG map render parity).
-  sp.alpha = 0.55 + 0.45 * ((lv - 1) / 9);
-  [sp.x, sp.y] = toLocal(0.5, 0.52);
-  sp.x += jitter.dx * tp; sp.y += jitter.dy * tp;
+  sp.scale.set(p.scale);
+  sp.rotation = p.rotation;
+  sp.alpha = p.alpha;
+  sp.x = p.x;
+  sp.y = p.y;
   g.addChild(sp);
 }
 
+// ── Lv.N label (slg-resource-art.md §6.2 #7) ──────────────────────────────────────────────────────
+// Which tiles get one and what it says is resLevelLabelText's call (@nw/shared); everything below is
+// how it gets on screen without leaking textures.
+//
+// A BitmapFont, NOT `new PIXI.Text` per tile. `SLG_GEN.resourceDensity` is 1.0, so every tile on
+// screen is a resource tile and a naive implementation would allocate hundreds of Text objects —
+// each with its OWN canvas-backed texture — and re-allocate them on every pan. That runs straight
+// into the known Text-texture teardown leak (claudedocs/client-memory-leak.md). BitmapText instead
+// draws from ONE shared font page, and the instances are pooled per tile slot (see below), so a
+// full screen of labels costs one texture and no per-pan allocation.
+const LABEL_FONT = 'nw-res-lv';
+const LABEL_NAME = 'resLv';
+/** Baked glyph size. Rendered small (~tp*0.13) and only ever scaled DOWN, so it never softens. */
+const LABEL_FONT_SIZE = 48;
+let labelFont: 'ready' | 'unavailable' | null = null;
+
+/** Build the shared font page once. Returns false where there is no canvas to rasterise it (tests). */
+function ensureLabelFont(): boolean {
+  if (labelFont === null) {
+    try {
+      PIXI.BitmapFont.from(LABEL_FONT, {
+        fontFamily: 'monospace', fontSize: LABEL_FONT_SIZE, fontWeight: 'bold',
+        fill: 0x33302b, stroke: 0xfff8f0, strokeThickness: 5,
+      }, { chars: 'Lv.0123456789' });
+      labelFont = 'ready';
+    } catch {
+      labelFont = 'unavailable';
+    }
+  }
+  return labelFont === 'ready';
+}
+
 /**
- * Deterministic per-tile placement jitter for resource motifs (2026-07-12) — same 2D-hash-of-
- * coordinates technique as drawStar's per-vertex wobble, so identical (tx,ty) always jitters the
- * same way (no shimmer on redraw/pan) without needing a stored seed. `dx`/`dy` are fractions of
- * `tp` (small: ±8%/±6%), `rot` in radians (±~14°), `scale` a multiplier (0.88–1.12). Must stay in
- * lockstep with the map-editor's identical helper (SLG map render parity).
+ * Draw (or hide) the `Lv.N` label on a tile. Pass level 0 to hide — callers do that for tiles whose
+ * motif is suppressed, and pool.ts hides every non-Sprite child before a redraw so a slot reused for
+ * a labelless tile, or for a zoom level that draws no motifs at all, cannot keep a stale one.
+ *
+ * The BitmapText is a NAMED, REUSED child of the tile Graphics rather than a fresh object per draw:
+ * pool slots are recycled constantly while panning, and reusing one instance per slot keeps the
+ * steady state at zero allocations and zero destroys.
  */
-export function motifJitter(tx: number, ty: number): { dx: number; dy: number; rot: number; scale: number } {
-  const h1raw = Math.sin(tx * 12.9898 + ty * 78.233) * 43758.5453;
-  const h2raw = Math.sin(tx * 39.346 + ty * 11.135) * 24634.6345;
-  const h1 = h1raw - Math.floor(h1raw);
-  const h2 = h2raw - Math.floor(h2raw);
-  return { dx: (h1 - 0.5) * 0.26, dy: (h2 - 0.5) * 0.18, rot: (h1 - 0.5) * 0.7, scale: 0.85 + h2 * 0.3 };
+export function drawResLevelLabel(g: PIXI.Graphics, level: number, tp: number): void {
+  const existing = g.getChildByName(LABEL_NAME) as PIXI.BitmapText | null;
+  const text = resLevelLabelText(level, tp);
+  if (!text || !ensureLabelFont()) {
+    if (existing) existing.visible = false;
+    return;
+  }
+  let label = existing;
+  if (!label) {
+    label = new PIXI.BitmapText('', { fontName: LABEL_FONT });
+    label.name = LABEL_NAME;
+    label.anchor.set(0.5, 0.5);
+    g.addChild(label);
+  }
+  label.visible = true;
+  if (label.text !== text) label.text = text;
+  label.fontSize = resLevelLabelFontPx(tp);
+  // Below the motif, inside the diamond: half-height is tp*ISO_RATIO/2 = tp*0.25, and the motif is
+  // centred near the middle, so tp*0.15 sits under the art without crossing the lower edge.
+  label.x = 0;
+  label.y = tp * 0.15;
 }
 
 /** Single programmatic fallback icon when res_atlas is not yet loaded. Draws one small stationery-themed shape. */

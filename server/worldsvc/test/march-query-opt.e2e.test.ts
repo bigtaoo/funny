@@ -83,6 +83,7 @@ describe.skipIf(!mongo)('worldsvc march/stationed query-optimization e2e (2026-0
     async push(accountId, msg) {
       pushes.push({ accountId, msg });
     },
+  broadcast: () => { throw new Error('fake WorldGatewayClient.broadcast() is not stubbed in this test'); },
   };
 
   beforeEach(async () => {

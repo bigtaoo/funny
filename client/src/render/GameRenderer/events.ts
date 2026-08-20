@@ -69,6 +69,10 @@ export class EventsPanel {
         break;
       }
       case 'projectile_fired': {
+        // A tower firing recoils + twangs its bowstring. `attackerId` is a building id here and a
+        // unit id when an archer shoots (separate id counters, overlapping numerically), so the
+        // origin cell — always the building's own cell for a building shot — is what disambiguates.
+        this.core.buildingView.playFireEffect(event.attackerId, event.from.col, fromFp(event.from.y_fp));
         const pos = this.core.boardView.gridToScreen(event.from.col, fromFp(event.from.y_fp));
         const sprite = this.acquireProjectile(event.kind);
         sprite.x = pos.x;

@@ -54,8 +54,8 @@ describe('findMarchPath', () => {
     const path = findMarchPath(W_OPEN, MAP_W, MAP_H, 2, 2, 8, 6, new Set());
     if (!path) return; // skip if the area happens to have an obstacle (should not happen in corner area)
     for (let i = 1; i < path.length; i++) {
-      const dx = Math.abs(path[i].x - path[i - 1].x);
-      const dy = Math.abs(path[i].y - path[i - 1].y);
+      const dx = Math.abs(path[i]!.x - path[i - 1]!.x);
+      const dy = Math.abs(path[i]!.y - path[i - 1]!.y);
       expect(dx + dy).toBe(1); // exactly 1 tile per step, 4 directions
     }
   });
@@ -231,7 +231,7 @@ describe('crossing (bridge/plankway) transit rule', () => {
               const B = { x: x + bdx, y: y + bdy };
               // With only C occupied, the shortest A→B must run straight through C.
               const p = findMarchPath(seed, SLG_MAP_W, SLG_MAP_H, A.x, A.y, B.x, B.y, new Set([cKey]));
-              if (p && p.length === 3 && p[1].x === x && p[1].y === y) {
+              if (p && p.length === 3 && p[1]!.x === x && p[1]!.y === y) {
                 return { seed, C: { x, y }, A, B };
               }
             }

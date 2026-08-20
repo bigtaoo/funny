@@ -7,6 +7,13 @@ vi.mock('../src/battleSession', () => ({ playRankedMatch: vi.fn() }));
 
 const identity: BotIdentity = { deviceId: 'bot-0001', paymentTier: 'free' };
 
+// Stands in for the world client in the cases below that never reach a world call. `any` (like the
+// sibling fake* helpers) rather than a full WorldClient stub: those cases assert on login/social/
+// battle behaviour only, and a real stub would have to grow with every WorldClient method.
+function fakeWorld(): any {
+  return {};
+}
+
 function fakeMeta(): any {
   return { deviceLogin: vi.fn().mockResolvedValue({ token: 't', accountId: 'a1', isNew: false }) };
 }
@@ -197,7 +204,7 @@ describe('BotSession.login / logout', () => {
   // online set despite having no token, permanently occupying a fleet slot that never does anything.
   it('login() failure resets state to offline (and rethrows) instead of sticking at logging_in', async () => {
     const meta: any = { deviceLogin: vi.fn().mockRejectedValue(new Error('meta unreachable')) };
-    const session = new BotSession(identity, meta, fakeSocial(), fakeCommercial(), {}, battleOpts);
+    const session = new BotSession(identity, meta, fakeSocial(), fakeCommercial(), fakeWorld(), battleOpts);
 
     await expect(session.login()).rejects.toThrow('meta unreachable');
     expect(session.state).toBe('offline');
@@ -223,7 +230,7 @@ describe('BotSession.login / logout', () => {
         }),
     );
 
-    const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), {}, {
+    const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), fakeWorld(), {
       gatewayWsUrl: 'ws://unused/gw',
       chancePerTick: 1,
     });
@@ -245,7 +252,7 @@ describe('BotSession.login / logout', () => {
 describe('BotSession.tickFamily', () => {
   it('no token (not logged in) -> no-op, no social calls', async () => {
     const social = fakeSocial();
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), {}, battleOpts);
+    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
     await session.tickFamily();
     expect(social.myFamily).not.toHaveBeenCalled();
   });
@@ -253,7 +260,7 @@ describe('BotSession.tickFamily', () => {
   it('familyless -> searches, joins the first candidate found', async () => {
     const social = fakeSocial();
     social.searchFamilies.mockResolvedValue([{ familyId: 'f1', tag: 'ABC', memberCount: 5, prosperity: 50 }]);
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), {}, battleOpts);
+    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
     await session.login();
 
     await session.tickFamily();
@@ -265,7 +272,7 @@ describe('BotSession.tickFamily', () => {
 
   it('familyless with no candidates found -> searches but joins nothing', async () => {
     const social = fakeSocial(); // searchFamilies defaults to []
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), {}, battleOpts);
+    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
     await session.login();
 
     await session.tickFamily();
@@ -276,7 +283,7 @@ describe('BotSession.tickFamily', () => {
   it('already in a healthy (high-prosperity) family -> no-op, no leave/search', async () => {
     const social = fakeSocial();
     social.myFamily.mockResolvedValue({ familyId: 'f1', tag: 'ABC', memberCount: 5, prosperity: 50 });
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), {}, battleOpts);
+    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
     await session.login();
 
     await session.tickFamily();
@@ -288,7 +295,7 @@ describe('BotSession.tickFamily', () => {
   it('in a low-prosperity ("dead") family -> leaves it (a later tick re-searches once familyless)', async () => {
     const social = fakeSocial();
     social.myFamily.mockResolvedValue({ familyId: 'f1', tag: 'ABC', memberCount: 1, prosperity: 5 });
-    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), {}, battleOpts);
+    const session = new BotSession(identity, fakeMeta(), social, fakeCommercial(), fakeWorld(), battleOpts);
     await session.login();
 
     await session.tickFamily();
@@ -301,7 +308,7 @@ describe('BotSession.tickFamily', () => {
 describe('BotSession payment-tier bootstrap (on login)', () => {
   it('free tier: no commercial call at all', async () => {
     const commercial = fakeCommercial();
-    const session = new BotSession({ deviceId: 'bot-0001', paymentTier: 'free' }, fakeMeta(), fakeSocial(), commercial, {}, battleOpts);
+    const session = new BotSession({ deviceId: 'bot-0001', paymentTier: 'free' }, fakeMeta(), fakeSocial(), commercial, fakeWorld(), battleOpts);
     await session.login();
     expect(commercial.buyMonthlyCard).not.toHaveBeenCalled();
     expect(commercial.buyStarterGrowth).not.toHaveBeenCalled();
@@ -309,7 +316,7 @@ describe('BotSession payment-tier bootstrap (on login)', () => {
 
   it('monthly_card tier: buys the monthly card with a deterministic per-account orderId', async () => {
     const commercial = fakeCommercial();
-    const session = new BotSession({ deviceId: 'bot-0002', paymentTier: 'monthly_card' }, fakeMeta(), fakeSocial(), commercial, {}, battleOpts);
+    const session = new BotSession({ deviceId: 'bot-0002', paymentTier: 'monthly_card' }, fakeMeta(), fakeSocial(), commercial, fakeWorld(), battleOpts);
     await session.login();
     expect(commercial.buyMonthlyCard).toHaveBeenCalledWith('a1', 'bot-bot-0002-monthly_card');
     expect(commercial.buyStarterGrowth).not.toHaveBeenCalled();
@@ -317,7 +324,7 @@ describe('BotSession payment-tier bootstrap (on login)', () => {
 
   it('starter_growth tier: buys the starter-growth pack', async () => {
     const commercial = fakeCommercial();
-    const session = new BotSession({ deviceId: 'bot-0003', paymentTier: 'starter_growth' }, fakeMeta(), fakeSocial(), commercial, {}, battleOpts);
+    const session = new BotSession({ deviceId: 'bot-0003', paymentTier: 'starter_growth' }, fakeMeta(), fakeSocial(), commercial, fakeWorld(), battleOpts);
     await session.login();
     expect(commercial.buyStarterGrowth).toHaveBeenCalledWith('a1', 'bot-bot-0003-starter_growth');
     expect(commercial.buyMonthlyCard).not.toHaveBeenCalled();
@@ -326,7 +333,7 @@ describe('BotSession payment-tier bootstrap (on login)', () => {
   it('a failed purchase does not keep the bot offline, and is retried on the next login', async () => {
     const commercial = fakeCommercial();
     commercial.buyMonthlyCard.mockRejectedValueOnce(new Error('commercial unreachable'));
-    const session = new BotSession({ deviceId: 'bot-0004', paymentTier: 'monthly_card' }, fakeMeta(), fakeSocial(), commercial, {}, battleOpts);
+    const session = new BotSession({ deviceId: 'bot-0004', paymentTier: 'monthly_card' }, fakeMeta(), fakeSocial(), commercial, fakeWorld(), battleOpts);
 
     await session.login();
     expect(session.state).toBe('lobby_idle'); // login still succeeds despite the purchase failure
@@ -338,7 +345,7 @@ describe('BotSession payment-tier bootstrap (on login)', () => {
 
   it('a successful purchase is not repeated on a later re-login (idempotent bootstrap)', async () => {
     const commercial = fakeCommercial();
-    const session = new BotSession({ deviceId: 'bot-0005', paymentTier: 'monthly_card' }, fakeMeta(), fakeSocial(), commercial, {}, battleOpts);
+    const session = new BotSession({ deviceId: 'bot-0005', paymentTier: 'monthly_card' }, fakeMeta(), fakeSocial(), commercial, fakeWorld(), battleOpts);
 
     await session.login();
     session.logout();

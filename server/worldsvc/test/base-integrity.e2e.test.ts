@@ -87,10 +87,11 @@ describe.skipIf(!mongo)('worldsvc capital data-integrity e2e (ADR-025)', () => {
   };
   const fakeMeta: WorldMetaClient = {
     available: false,
-    async deductMaterial() {},
     async grantMaterial() {},
     async getProfile() { return null; },
     async getSaveFields() { return null; },
+    batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
+    grantTitle: () => { throw new Error('fake WorldMetaClient.grantTitle() is not stubbed in this test'); },
   };
 
   const base = findBaseAnchor();

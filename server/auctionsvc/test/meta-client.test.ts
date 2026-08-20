@@ -139,7 +139,7 @@ describe('HttpAuctionMetaClient.grantMaterial (best-effort, never throws)', () =
 });
 
 const EQUIP: EquipmentInstance = { id: 'e1', defId: 'wp_marker', rarity: 'rare', level: 0, affixes: [] };
-const CARD: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, xp: 0, gear: {}, locked: false };
+const CARD: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false };
 
 describe('HttpAuctionMetaClient.escrowEquipment / grantEquipment', () => {
   it('escrow success -> returns the instance snapshot', async () => {

@@ -80,6 +80,13 @@ export async function applyBaseSiege(
   // Wave battle: attacker survivors carry over between waves (scaled by survival ratio).
   let survivorArmy: GarrisonEntry[] = attackerArmy.map((e) => ({ ...e }));
   let attackerSurvivors = sumArmyHp(survivorArmy);
+  // ADR-069: the nominal troop total the assault started with, plus the running product of each
+  // wave's HONEST survival ratio (survivors ÷ what that wave actually deployed in clamped HP).
+  // Before ADR-069 both the inter-wave carry-over and the final cardState write divided engine
+  // survivors by the NOMINAL troop sum, so a card team lost ~half its troops per wave on paper even
+  // when it barely took a scratch — see SiegeResolution.attackerDeployed.
+  const nominalDeployed = attackerSurvivors;
+  let cumSurvivalRatio = 1;
   const defeatedTeamIds: string[] = [];
   const replays: SiegeReplayInputs[] = [];
   let cleared = true;
@@ -121,9 +128,13 @@ export async function applyBaseSiege(
       ...(siegeAcademy ? { siegeAcademy } : {}),
     });
     attackerSurvivors = res.attackerSurvivors;
+    // `deployedHp` (nominal) is the right fallback only for the cheap/flat path, where the two
+    // coincide; the engine path reports its own clamped deployment (ADR-069).
+    const waveDeployed = res.attackerDeployed > 0 ? res.attackerDeployed : deployedHp;
+    const ratio = waveDeployed > 0 ? res.attackerSurvivors / waveDeployed : 0;
+    cumSurvivalRatio *= Math.min(1, ratio);
     if (res.outcome === 'attacker_win') {
       defeatedTeamIds.push(tm.id);
-      const ratio = deployedHp > 0 ? res.attackerSurvivors / deployedHp : 0;
       survivorArmy = scaleArmyByRatio(survivorArmy, ratio);
       if (survivorArmy.length === 0) { cleared = false; break; } // attacker spent — cleared some waves but cannot continue
     } else {
@@ -148,7 +159,12 @@ export async function applyBaseSiege(
   const attackArmy = m.army ?? [];
   const hasCardArmy = attackArmy.some((e) => !!e.cardInstanceId);
   if (hasCardArmy) {
-    const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, attackerSurvivors, t);
+    // ADR-069: express the whole multi-wave assault as one honest survival fraction of the nominal
+    // troops the team left home with (each wave's ratio already measured against its real deployment),
+    // instead of handing the LAST wave's clamped-HP survivor count to a nominal-troop denominator.
+    const cardUpdates = computeCardStateUpdates(
+      attackArmy, pw.cardState ?? {}, Math.round(nominalDeployed * cumSurvivalRatio), t, nominalDeployed,
+    );
     const cardStateSet: Record<string, unknown> = {};
     for (const [id, update] of Object.entries(cardUpdates)) {
       cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;

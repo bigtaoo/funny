@@ -11,7 +11,9 @@
  * Motif lines are black hand-drawn and must NOT be tinted.
  */
 import type * as PIXI from 'pixi.js-legacy';
+import type { ResMotifFrameRead } from '@nw/shared';
 import { worldAtlas as atlas } from './worldAtlas';
+import atlasData from '../../assets/slg/world_atlas.json';
 
 /** True once the atlas PNG has decoded and frames are parsed. */
 export const isResAtlasReady = atlas.isReady;
@@ -32,6 +34,20 @@ export function getResLevelTexture(resType: string, level: number): PIXI.Texture
   if (!atlas.isReady()) return null;
   const lv = Math.max(1, Math.min(10, Math.round(level)));
   return atlas.getTexture(`res_${resType}_l${lv}`);
+}
+
+/**
+ * The solved level read (`nw`) the resource packer baked into this frame — see
+ * {@link ResMotifFrameRead} and design/product/slg-resource-art.md §6.3. Returns null when the frame
+ * has none, which means the bundled atlas predates the 2026-08-19 contract; the renderer then draws
+ * the motif with no level read rather than inventing one.
+ *
+ * Like getCityContentTopFracForLevel, this reads the bundled JSON directly and needs no PNG decode —
+ * PIXI's Spritesheet parser keeps only the keys it knows, so `nw` never reaches the Texture.
+ */
+export function getResFrameRead(frameName: string): ResMotifFrameRead | null {
+  const frames = (atlasData as { frames: Record<string, { nw?: ResMotifFrameRead }> }).frames;
+  return frames[frameName]?.nw ?? null;
 }
 
 /**

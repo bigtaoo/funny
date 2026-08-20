@@ -22,7 +22,8 @@ const KEYS_WITH_VARS: [string, Record<string, string | number>][] = [
   ['status.cityMoved', { id: 'capital-1' }],
   ['status.generating', { id: 'w', w: 1500, h: 1500 }],
   ['status.generated', { id: 'w', tileCount: 7, version: 2 }],
-  ['status.publishing', { n: 3, id: 'w' }],
+  ['status.publishing', { n: 3, cities: 64, id: 'w' }],
+  ['status.published', { n: 3, cities: 64, id: 'w' }],
   ['status.deleteConfirm', { id: 'w' }],
 ];
 

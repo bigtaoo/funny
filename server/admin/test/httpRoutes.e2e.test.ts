@@ -44,7 +44,8 @@ import type {
   SuspiciousPveClient,
   WorldClient, SlgWorldSummary, SlgAllocateResult,
 } from '../src/clients';
-import type { EventDoc, EventInput, CustomPoolConfig, MapTemplateSummary, MapTemplateTile } from '@nw/shared';
+import type { MapEditorCityNode, EventDoc, EventInput, CustomPoolConfig, MapTemplateSummary, MapTemplateTile } from '@nw/shared';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_admin_http_routes_test';
@@ -121,7 +122,7 @@ class FakeAnalytics implements AnalyticsClient {
 class FakeWorld implements WorldClient {
   available = true;
   worlds: SlgWorldSummary[] = [];
-  templates = new Map<string, { summary: MapTemplateSummary; tiles: MapTemplateTile[] }>();
+  templates = new Map<string, { summary: MapTemplateSummary; tiles: MapTemplateTile[]; cities: MapEditorCityNode[] }>();
   async listWorlds() { return this.worlds; }
   async openWorld() {}
   async settleWorld() { return { ranking: [] }; }
@@ -132,7 +133,7 @@ class FakeWorld implements WorldClient {
   async listMapTemplates() { return [...this.templates.values()].map((t) => t.summary); }
   async generateMapTemplate(templateId: string, width: number, height: number): Promise<MapTemplateSummary> {
     const summary: MapTemplateSummary = { templateId, width, height, version: 1, tileCount: width * height, active: false, createdAt: now(), updatedAt: now() };
-    this.templates.set(templateId, { summary, tiles: [] });
+    this.templates.set(templateId, { summary, tiles: [], cities: [] });
     return summary;
   }
   async getMapTemplateTiles(templateId: string) { return this.templates.get(templateId)?.tiles ?? []; }
@@ -140,6 +141,12 @@ class FakeWorld implements WorldClient {
     const entry = this.templates.get(templateId);
     if (entry) entry.tiles = tiles;
     return { updated: tiles.length };
+  }
+  async getMapTemplateCities(templateId: string) { return this.templates.get(templateId)?.cities ?? []; }
+  async saveMapTemplateCities(templateId: string, cities: MapEditorCityNode[]) {
+    const entry = this.templates.get(templateId);
+    if (entry) entry.cities = cities;
+    return { updated: cities.length };
   }
   async activateMapTemplate(templateId: string) { const e = this.templates.get(templateId); if (e) e.summary.active = true; }
   async deleteMapTemplate(templateId: string) { this.templates.delete(templateId); }
@@ -250,7 +257,7 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const json = (await jsonBody(res).catch(() => ({}))) as Record<string, unknown>;
     return { status: res.status, json };
   }
   async function loginAs(username: string, password: string): Promise<string> {
@@ -605,6 +612,36 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       expect(suspiciousPve.banned.has('seller-x')).toBe(true);
       expect(suspiciousPve.banned.has('buyer-y')).toBe(true);
     });
+    it('SLG map templates: city nodes round-trip through the proxy and are audited (2026-08-19)', async () => {
+      // The point-node half of a Publish. It has its own endpoint pair because the nodes are NOT
+      // recoverable from the rasterized tiles — the client's city sprite layer renders this list.
+      await call(rootToken, 'POST', '/admin/slg/map-templates/generate', { templateId: 'tpl-cities', width: 10, height: 10 });
+
+      const empty = await call(rootToken, 'GET', '/admin/slg/map-templates/tpl-cities/cities');
+      expect(empty.status).toBe(200);
+      expect(empty.json.cities).toEqual([]);
+
+      const cities = [{ id: 'garrison-0', kind: 'garrison', provinceIdx: 1, x: 4, y: 6, level: 6, footprint: 7 }];
+      const save = await call(rootToken, 'PUT', '/admin/slg/map-templates/tpl-cities/cities', { cities });
+      expect(save.status).toBe(200);
+      expect(save.json.updated).toBe(1);
+
+      const read = await call(rootToken, 'GET', '/admin/slg/map-templates/tpl-cities/cities');
+      expect(read.json.cities).toEqual(cities);
+
+      // Mutating map-template ops are audited (§24) — a whole-list city replace is one of them.
+      const audit = await call(rootToken, 'GET', '/admin/audit');
+      const entries = audit.json.entries as { action: string; target?: string }[];
+      expect(entries.some((e) => e.action === 'slg.map.template.cities' && e.target === 'tpl-cities')).toBe(true);
+    });
+
+    it('SLG map templates: a missing cities payload saves an empty list rather than 500ing', async () => {
+      await call(rootToken, 'POST', '/admin/slg/map-templates/generate', { templateId: 'tpl-nocities', width: 10, height: 10 });
+      const r = await call(rootToken, 'PUT', '/admin/slg/map-templates/tpl-nocities/cities', {});
+      expect(r.status).toBe(200);
+      expect(r.json.updated).toBe(0);
+    });
+
     it('SLG map templates: generate → list → get tiles → save tiles → activate → delete', async () => {
       const gen = await call(rootToken, 'POST', '/admin/slg/map-templates/generate', { templateId: 'tpl1', width: 10, height: 10 });
       expect(gen.status).toBe(200);

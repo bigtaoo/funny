@@ -11,7 +11,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Collections, CommercialClient, SaveData } from '@nw/shared';
+import type { Collections, SaveData } from '@nw/shared';
+// CommercialClient is metaserver's own interface, not a @nw/shared export.
+import type { CommercialClient } from '../src/commercialClient';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { claimAchievementHandler } from '../src/service/liveops/achievements.js';
@@ -32,7 +34,7 @@ class FakeCommercial implements CommercialClient {
     return this.coins.get(id) ?? 0;
   }
   async getWallet(id: string) {
-    return { coins: this.bal(id), pity: {} } as never;
+    return { coins: this.bal(id), pity: {}, fatePoints: 0, subscriptionExpiry: 0, starterUsed: [], firstPurchaseUsed: false, totalRechargeCents: 0 } as never;
   }
   async grant(a: { accountId: string; amount: number; reason: string; orderId: string }) {
     this.grantCalls++;
@@ -111,6 +113,13 @@ class FakeCommercial implements CommercialClient {
   async listPromoCodes() {
     return [];
   }
+  // CommercialClient members this suite never exercises. They throw rather than answer: each was
+  // simply absent before test/** was type-checked, so any call already crashed — this keeps that
+  // truth while naming what happened.
+  async paddleComplete(): Promise<never> { throw new Error('FakeCommercial.paddleComplete is not stubbed in this test'); }
+  async paddleRefund(): Promise<never> { throw new Error('FakeCommercial.paddleRefund is not stubbed in this test'); }
+  async recordPaddleEvent(): Promise<never> { throw new Error('FakeCommercial.recordPaddleEvent is not stubbed in this test'); }
+  async listPaddleEvents(): Promise<never> { throw new Error('FakeCommercial.listPaddleEvents is not stubbed in this test'); }
 }
 
 interface FakeSaveDoc {

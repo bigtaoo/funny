@@ -14,6 +14,7 @@ import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService } from '../src/service';
 import { startHttpApi } from '../src/httpApi';
 import type { MailDispatcher, MailSendReq, MailSendRes, MailPreviewReq, MailPreviewRes, PlayerClient, PlayerProfile, StatsClient } from '../src/clients';
+import { jsonBody } from './jsonBody';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_admin_internal_http_test';
@@ -44,6 +45,11 @@ class FakeMail implements MailDispatcher {
 const stubPlayer: PlayerClient = {
   available: true,
   lookupByPublicId: async (): Promise<PlayerProfile | null> => null,
+  // Not exercised by this suite — throw rather than answer, so a route that starts calling them
+  // fails loudly instead of quietly seeing `undefined`.
+  lookupByAccountId: () => { throw new Error('stubPlayer.lookupByAccountId is not stubbed'); },
+  search: () => { throw new Error('stubPlayer.search is not stubbed'); },
+  resetPassword: () => { throw new Error('stubPlayer.resetPassword is not stubbed'); },
 };
 
 let t = 1000;
@@ -83,7 +89,7 @@ describe.skipIf(!mongo)('admin internal (X-Internal-Key) HTTP routes e2e', () =>
   it('GET /admin/internal/flags with a valid X-Internal-Key returns the raw seeded doc, no Authorization header sent', async () => {
     const res = await fetch(`${base}/admin/internal/flags`, { headers: { 'x-internal-key': INTERNAL_KEY } });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await jsonBody(res);
     expect(body.ok).toBe(true);
     expect(body.flags).toEqual([{ _id: flagKey, enabled: true, desc: 'seeded for internal HTTP test', updatedAt: expect.any(Number), updatedBy: 'test' }]);
   });
@@ -91,7 +97,7 @@ describe.skipIf(!mongo)('admin internal (X-Internal-Key) HTTP routes e2e', () =>
   it('GET /admin/internal/slg-shop-prices with a valid X-Internal-Key returns the raw seeded override', async () => {
     const res = await fetch(`${base}/admin/internal/slg-shop-prices`, { headers: { 'x-internal-key': INTERNAL_KEY } });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await jsonBody(res);
     expect(body.ok).toBe(true);
     expect(body.items).toEqual([{ _id: shopItemId, cost: 12345, updatedAt: expect.any(Number), updatedBy: 'test' }]);
   });
@@ -99,7 +105,7 @@ describe.skipIf(!mongo)('admin internal (X-Internal-Key) HTTP routes e2e', () =>
   it('GET /admin/internal/moderation-wordlists with a valid X-Internal-Key returns the raw seeded overlay', async () => {
     const res = await fetch(`${base}/admin/internal/moderation-wordlists`, { headers: { 'x-internal-key': INTERNAL_KEY } });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await jsonBody(res);
     expect(body.ok).toBe(true);
     expect(body.items).toEqual([{ _id: 'global', words: ['seeded-bad-word'], updatedAt: expect.any(Number), updatedBy: 'test' }]);
   });
@@ -112,7 +118,7 @@ describe.skipIf(!mongo)('admin internal (X-Internal-Key) HTTP routes e2e', () =>
   ])('GET %s with no X-Internal-Key header → 401, never reaches the service', async (path) => {
     const res = await fetch(`${base}${path}`);
     expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ ok: false, error: 'unauthorized' });
+    expect(await jsonBody(res)).toEqual({ ok: false, error: 'unauthorized' });
   });
 
   it.each([
@@ -122,6 +128,6 @@ describe.skipIf(!mongo)('admin internal (X-Internal-Key) HTTP routes e2e', () =>
   ])('GET %s with a wrong X-Internal-Key → 401', async (path) => {
     const res = await fetch(`${base}${path}`, { headers: { 'x-internal-key': 'not-the-right-key' } });
     expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ ok: false, error: 'unauthorized' });
+    expect(await jsonBody(res)).toEqual({ ok: false, error: 'unauthorized' });
   });
 });

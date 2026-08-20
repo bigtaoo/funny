@@ -110,9 +110,8 @@ const en: Dict = {
   'status.generated': 'Generated template "{id}" — {tileCount} tiles (v{version}).',
   'status.generateFailed': 'Generate failed: {msg}',
   'status.rasterizing': 'Rasterizing edits…',
-  'status.nothingToPublish': 'Nothing to publish — no tiles differ from the procedural baseline.',
-  'status.publishing': 'Publishing {n} tile(s) to template "{id}"…',
-  'status.published': 'Published {n} tile(s) to template "{id}".',
+  'status.publishing': 'Publishing {n} tile(s) + {cities} city node(s) to template "{id}"…',
+  'status.published': 'Published {n} tile(s) + {cities} city node(s) to template "{id}".',
   'status.publishFailed': 'Publish failed: {msg}',
   'status.listFailed': 'Failed to list templates: {msg}',
 };
@@ -222,9 +221,8 @@ const zh: Dict = {
   'status.generated': '已生成模板 "{id}" — {tileCount} 格（v{version}）。',
   'status.generateFailed': '生成失败：{msg}',
   'status.rasterizing': '正在栅格化编辑…',
-  'status.nothingToPublish': '没有可发布的内容 — 没有格子与程序化基线不同。',
-  'status.publishing': '正在发布 {n} 个格子到模板 "{id}"…',
-  'status.published': '已发布 {n} 个格子到模板 "{id}"。',
+  'status.publishing': '正在发布 {n} 个格子 + {cities} 个城池节点到模板 "{id}"…',
+  'status.published': '已发布 {n} 个格子 + {cities} 个城池节点到模板 "{id}"。',
   'status.publishFailed': '发布失败：{msg}',
   'status.listFailed': '获取模板列表失败：{msg}',
 };

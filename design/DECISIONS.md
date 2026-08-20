@@ -84,6 +84,7 @@
 | [ADR-066](DECISIONS_ADR-041-onward.md#adr-066-8-个-cd-workflow-改为依赖-ciworkflow_run不再与-ciyml-并行竞速--accepted--2026-08-12) | 8 个 CD workflow 改为依赖 CI（`workflow_run`），不再与 `ci.yml` 并行竞速 | Accepted | 2026-08-12 |
 | [ADR-067](DECISIONS_ADR-041-onward.md#adr-067-设计文档单文件-500-行上限--hub-索引--分册结构--accepted--2026-08-17) | 设计文档单文件 500 行上限 + 「hub 索引 / 分册」结构 | Accepted | 2026-08-17 |
 | [ADR-068](DECISIONS_ADR-041-onward.md#adr-068-融合面板目标意图契约取代自动换目标--自动连续融合--accepted--2026-08-18) | 融合面板：目标意图契约取代自动换目标 / 自动连续融合 | Accepted | 2026-08-18 |
+| [ADR-069](DECISIONS_ADR-041-onward.md#adr-069-slg-攻城值随携带兵力缩放破城不再有12-卡硬顶-npcbasehp-重校准-4060--accepted--2026-08-19) | SLG 攻城值随携带兵力缩放（破城不再有「12 卡硬顶」）+ npcBaseHp 重校准 40→60 | Accepted | 2026-08-19 |
 
 ---
 

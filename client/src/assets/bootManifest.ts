@@ -44,7 +44,7 @@ import archerArtUrl from './units/archer.png';
 import shieldBearerArtUrl from './units/shieldbearer.png';
 import baseArtUrl from './buildings/game_base.png';
 import barracksArtUrl from './buildings/game_infantry_barracks.png';
-import towerArtUrl from './buildings/game_archer_barracks.png';
+import towerArtUrl from './buildings/game_arrow_tower.png';
 import logoArtUrl from './logo.png';
 
 interface BootStep {

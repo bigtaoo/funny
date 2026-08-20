@@ -8,6 +8,7 @@ import type { Collections } from '@nw/shared';
 import { registerPromoGachaRoutes } from '../src/internal/promoGachaRoutes.js';
 import type { InternalCtx } from '../src/internal/context.js';
 import { fakeGateway, fakeCommercial, ThrowingSocialsvc } from './helpers/fakeClients.js';
+import { AccountCache } from '../src/accountCache';
 
 const KEY = 'test-internal-key';
 const authHeaders = { 'x-internal-key': KEY };
@@ -21,6 +22,8 @@ function build(commercialAvailable = true) {
     commercial,
     socialsvc: new ThrowingSocialsvc(),
     authed: (headers) => headers['x-internal-key'] === KEY,
+    redis: () => { throw new Error('fake InternalCtx.redis() is not stubbed in this test'); },
+    accountCache: new AccountCache(),
   };
   const app = Fastify();
   registerPromoGachaRoutes(app, ctx);

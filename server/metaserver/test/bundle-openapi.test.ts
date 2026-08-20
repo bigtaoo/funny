@@ -9,6 +9,9 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
+// The bundler is a plain .mjs build script with no type declarations; this is the one import in the
+// test tree that has to opt out of checking rather than be fixed at the source.
+// @ts-expect-error -- untyped .mjs build script
 import { bundleSpec, DOMAINS } from '../../contracts/scripts/bundle-openapi.mjs';
 
 const REAL_FRAGMENTS_DIR = resolve(__dirname, '../../contracts/openapi');
