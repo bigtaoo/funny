@@ -2,7 +2,7 @@
 
 状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~417 KB**，client + map-editor 两份字节一致；客户端实际加载的合并页 `world_atlas` 见 §6.11（89 帧 / 1954×1828 / ~1.7 MB 无损）。
 **⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6。当前状态：46 帧全部通过构建期门禁（`node art/slg/slg-map/pack_resources.cjs` 不带 `--report-only` 跑通），渲染层接线亦已完成（§6.11）——等级读数整条在打包期解完、烘进每个 frame 条目的 `nw` 字段，两个渲染器（client + map-editor）都只剩贴图适配器、零等级逻辑。**
-**⚠️ 2026-08-20 实机复核（§6.12）：`res_sticker_l9` / `res_sticker_l10` 判为 §6.2 #1 剪影违规（卷状物）。同日重画：**`l10` **已落地**（穹顶堆体，density 0.259）；**`l9` 第一版退回**（满幅平铺、无外轮廓，比卷筒更糟，已暂时恢复旧卷筒帧）——重出 prompt 与收图判据见 **§6.12.5**，`res_sticker_l9` 是当前唯一的美术欠项。**另查出一处待拍板**：sticker 的 tan→gold 色带在屏上基本不存在（结构性，非参数问题），未修，见 **§6.12.6**。 同节还记了两条不要重复踩的结论：剪影铁律**做不成构建期门禁**（形状签名实测否证，§6.12.2）；`Lv.N` 标签的 l6+ 阈值**不限制屏上标签数**，可读性靠字号上限撑住（§6.12.3）。
+**⚠️ 2026-08-20 实机复核（§6.12）：`res_sticker_l9` / `res_sticker_l10` 判为 §6.2 #1 剪影违规（卷状物）。同日重画：**`l10` **已落地**（穹顶堆体，density 0.259）；**`l9` 第一版退回**（满幅平铺、无外轮廓，比卷筒更糟，已暂时恢复旧卷筒帧）——重出 prompt 与收图判据见 **§6.12.5**，`res_sticker_l9` 是当前唯一的美术欠项。**另查出并已处理一处**：sticker 的 tan→gold 色带在屏上等于不存在（结构性），用户拍板**取消色带**——五族现在统一纯黑墨，`BAND`/`applyBand`/`tintLevelFrame` 已删，见 **§6.12.6**。 同日还修掉一个静默有损 bug：`patchMergedAtlas.js` 的**就地回贴**路径一直在把合并页量化成 palette-8（§6.11 的无损修正当时只落在整页重排那条路径上），见 **§6.12.7**。 同节还记了两条不要重复踩的结论：剪影铁律**做不成构建期门禁**（形状签名实测否证，§6.12.2）；`Lv.N` 标签的 l6+ 阈值**不限制屏上标签数**，可读性靠字号上限撑住（§6.12.3）。
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
 
 > **⚠️ 决策变更 III（2026-08-19，用户拍板）**：分级读数整套重构，见 **§6**（权威，覆盖 §5.3 #2 与 §5.4 的形态跃迁条款）。起因是「按宽归一」这条旧契约会**惩罚横向生长**——高等级的丰度是横着铺开画的，归一化反而把它压小，实测四类资源全部在 l5→l6 墨量回落，ink l4 成了全十级里视觉最重的一帧。
@@ -13,7 +13,7 @@
 
 > **⚠️ 决策变更 II（2026-07-17，用户拍板）**：推翻 l1–l5「母题 token + 骰子槽计数拼接」。理由：地图上绝大多数格子是低级地（`tileGraphics.ts` 注释 "most tiles sit at low levels"），而拼接图恰是玩家 90% 时间盯着看的主视觉，读作机械印章、表现比 l6–10 专属图差一大截；省的图（4×5 专属 − 4×2 托盘背景 ≈ 12 张）本就是 AI 出图、成本很低。→ **l1–l5 也改每级一张专属手绘**，与 l6–l10 口径统一。
 > - **放弃「数个数读精确等级」**（原 §5.4 的核心诉求）：高档本就已脱离计数，低档统一改为靠**体量/繁简/高度递进**一眼分辨即可。
-> - **色带（BAND）豁免推广到全等级**：paper/ink/graphite/metal 的 l1–l10 全部保留原黑墨（靠剪影读级、l1–l10 观感统一）；**只有 sticker 仍上色带**（其 l6→l10 tan→gold = 铜→金，货币主题加分）。见 `pack_resources.cjs` `tintLevelFrame` 豁免正则。
+> - **色带（BAND）豁免推广到全等级**：paper/ink/graphite/metal 的 l1–l10 全部保留原黑墨（靠剪影读级、l1–l10 观感统一）；当时**只有 sticker 仍上色带**（l6→l10 tan→gold = 铜→金，货币主题加分）。**⚠️ 这条已于 2026-08-20 全部作废**：色带实测在屏上贡献为 0（结构性原因），用户拍板取消，五族统一黑墨，`BAND`/`applyBand`/`tintLevelFrame` 已从 `pack_resources.cjs` 删除。见 §6.12.6。
 > - **删除的东西**：`pack_resources.cjs` 里 `bakeCountFrames`/`bakeHeapFrames`/`fillInteriorWhite`/`BAKE`/`DICE`/`HEAP_TYPES` 及高度台阶常量；8 张 `resbg_*` 托盘背景移入 `art/leftover/`。**运行时代码零改**（`getResLevelTexture` 命中 `res_{type}_l1..10` 即画）。
 > - **l1–l5 出图规范 + 20 条 prompt 见 §5.4-lo。**
 
@@ -320,7 +320,7 @@ shadow, ground line, baseline
 
 > 6–10 每条抽 3–5 张挑 1。**剪影注意**：每一级都要让**五角星形 + 翘角**贯穿，别糊成 paper 的「一摞扁矩形」；l8/l9 的「贴纸卷」卷面要**露出星星条带**，别读成 ink 的圆罐或 paper 的大纸卷。
 >
-> **色带（与 paper/ink/graphite 专属帧不同 → 保留）**：铜钱是货币资源，`tintLevelFrame` 的按级色带（l6 tan → l10 gold）恰好把琥珀→金读成「铜/金钱」，主题加分 → 铜矿 l6–10 **不豁免**，专属帧照上色带（即 `tintLevelFrame` 免色带正则**保持不含** sticker）。
+> ~~**色带（与 paper/ink/graphite 专属帧不同 → 保留）**：铜钱是货币资源，`tintLevelFrame` 的按级色带（l6 tan → l10 gold）恰好把琥珀→金读成「铜/金钱」，主题加分 → 铜矿 l6–10 **不豁免**，专属帧照上色带。~~ **⚠️ 已作废（2026-08-20）**：这条色带实测在屏上完全不可见，整套已删除，铜矿和其余四族一样是纯黑墨、只靠五角星剪影区分。理由与实测数据见 §6.12.6。
 
 **落地（✅ 已执行，2026-07-07）**：
 1. ✅ 源图 5 张按丰度定级重命名进 `art/slg/slg-map/`：l6=`res_sticker_l6.webp`(短叠~4+2散) / l7=`res_sticker_l7`(一叠+8散,无卷) / l8=`res_sticker_l8`(单卷半展+3散) / l9=`res_sticker_l9`(卷+一高叠+~10散) / l10=`res_sticker_l10`(大卷+多高叠+满地散)。主扫描 `loadSprite` 自动收。
@@ -332,7 +332,7 @@ shadow, ground line, baseline
 
 **所有帧同一条路**（母题 + 各资源 l1–l10 + sticker l6–10 全是白底手绘真图）：
 1. 白底 png/webp `res_<type>_l<n>.{png,webp}` 放 `art/slg/slg-map/`（文件名即帧名，去扩展）。
-2. 重跑 `node art/slg/slg-map/pack_resources.cjs`：主扫描 `^res_.*\.(webp|png)$` 逐张 `loadSprite`（近白→透明 `alpha=255−luma` 保原墨色 + 裁透明边 + 等比缩长边 128）→ `tintLevelFrame`（**仅 sticker 上色带**，其余保黑墨）→ shelf-pack → 写两份字节一致的 atlas。
+2. 重跑 `node art/slg/slg-map/pack_resources.cjs`：主扫描 `^res_.*\.(webp|png)$` 逐张 `loadSprite`（近白→透明 `alpha=255−luma` 保原墨色 + 裁透明边 + 等比缩长边 128）→ shelf-pack → 写两份字节一致的 atlas。
 3. **零改运行时代码**——`getResLevelTexture('<type>',n)` 命中 `res_<type>_l<n>` 即画。
 4. **替换/新增单张成本极低**：丢新图进目录、重跑脚本即可。
 
@@ -342,8 +342,8 @@ shadow, ground line, baseline
 
 ### 5.9 待定项 / 收尾
 
-- **构建期合成已彻底移除**（2026-07-17）：`bakeCountFrames`/`bakeHeapFrames`/`fillInteriorWhite`/`BAKE`/`DICE`/`HEAP_TYPES`/高度台阶常量全部删除；8 张 `resbg_*` 托盘背景移入 `art/leftover/`。脚本现只做「扫描→抠图→(sticker)色带→打包」。
-- **色带（BAND）现状**：仅 sticker l6–10（tan→gold=铜→金）。paper/ink/graphite/metal 全等级保黑墨（`tintLevelFrame` 豁免正则 `^res_(paper|ink|graphite|metal)_`）。
+- **构建期合成已彻底移除**（2026-07-17）：`bakeCountFrames`/`bakeHeapFrames`/`fillInteriorWhite`/`BAKE`/`DICE`/`HEAP_TYPES`/高度台阶常量全部删除；8 张 `resbg_*` 托盘背景移入 `art/leftover/`。脚本现只做「扫描→抠图→打包」（色带亦已于 2026-08-20 删除，见 §6.12.6）。
+- **色带（BAND）现状**：**已全部取消（2026-08-20）**。五族全等级纯黑墨，`BAND`/`BAND_STRENGTH`/`applyBand`/`tintLevelFrame` 已从 `pack_resources.cjs` 删除。历史：色带曾在 l1–l10 全资源施加，2026-07-17 收窄到只剩 sticker，2026-08-20 实测其屏上贡献为 0 后整套删除（§6.12.6）。
 - **可选后续**：若实测低档在整图缩放下仍难辨（silhouette 不够），再单独给这四类补一档极淡的按级 wash（勿回退计数拼接）。
 - ~~**l1–5 落地方式**~~：✅ 已定=**烘焙合成**（§5.8 步骤 3），token 走 `fillInteriorWhite` 填实后叠骰子槽。粮/木/石/铁全部复用同一 `bakeCountFrames`。
 - **铜钱/铜矿(sticker)** ✅ 已全链路上线（2026-07-07）：美术 l6–10 五张专属进 atlas + worldsvc 生成门槛（`resTypeFor`：resource 格 lvl≥6 按 `copperShare` 覆盖为 sticker，`SLG_GEN.copperMinLevel/copperShare`）。全图扫描验证 level<6 无 sticker、铜矿占资源格 3.4%。见 §5.7-sticker。**经济侧 TBD**：家城 `stickerShop` 是否与地图铜矿并存产铜钱、copperShare 数值调参。
@@ -477,7 +477,7 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 
 **退回 1 张**：`graphite_l5` 新图密度 0.087 反而低于旧帧 0.115，且画成细长晶柱（往 l6 那个已判违规的毛病上飘）→ 旧帧恢复，新图存 `art/leftover/res_graphite_l5.rejected-2026-08-19-too-sparse.webp`。
 
-**新增管线修正：强制灰度化**。新图带蓝调（`b-r` +6~+51），而它们要并排的老帧全是中性黑（+0~+7），在地图上读作"换了支笔"。`pack_resources.cjs` 现在把所有帧的 RGB 折成 luma 再打包（sticker 的色带在这之后施加，铜→金不受影响）——不靠出图纪律，hue 漂移结构上不可能再发生。
+**新增管线修正：强制灰度化**。新图带蓝调（`b-r` +6~+51），而它们要并排的老帧全是中性黑（+0~+7），在地图上读作"换了支笔"。`pack_resources.cjs` 现在把所有帧的 RGB 折成 luma 再打包（当时 sticker 的色带在这之后施加，所以铜→金不受影响；该色带已于 2026-08-20 整套删除，见 §6.12.6）——不靠出图纪律，hue 漂移结构上不可能再发生。
 
 **待重出 8 张**：
 
@@ -566,7 +566,7 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 
 > **两个踩到的坑，都留在脚本注释里**：
 > - **不要用 sharp 的 `composite` 拼帧**：它为了混合会预乘 alpha，取整回来时每个抗锯齿边缘像素都会漂 1–2。这里帧落在空画布的互不重叠矩形上、根本不需要混合，改成裸的逐行 `Buffer.copy`，重排后**每一帧都与来源逐字节相同**——"这次重排有没有动到不该动的美术"才成为可验证的问题（实测：0 像素差）。
-> - **sharp 0.32 的 `png()` 只要带上 `palette`/`quality`/`colours`/`dither`/`effort` 里任意一个就会静默转 8-bit 调色板**（合并页正是这么变成 palette-8 的）。而 6 个子图集合起来有 **392 种 RGBA**，256 格根本装不下：量化会动到 28–54% 的可见像素、单通道最大 43/255、**alpha 最大 12–38**——alpha 漂移直接体现为钢笔抗锯齿边缘发脆。现在只传 `compressionLevel: 9`，无损，代价是 1092 KB → 1747 KB。这是个 CDN 托管、本地缓存、进场才懒加载的场景图集，不进微信主包（`ASSET_PACKAGING.md` §4），这 650 KB 换零漂移划算。
+> - **sharp 0.32 的 `png()` 只要带上 `palette`/`quality`/`colours`/`dither`/`effort` 里任意一个就会静默转 8-bit 调色板**（合并页正是这么变成 palette-8 的）。而 6 个子图集合起来有 **392 种 RGBA**，256 格根本装不下：量化会动到 28–54% 的可见像素、单通道最大 43/255、**alpha 最大 12–38**——alpha 漂移直接体现为钢笔抗锯齿边缘发脆。现在只传 `compressionLevel: 9`，无损，代价是 1092 KB → 1747 KB。**⚠️ 补记（2026-08-20）**：当时这两条修正**只落在整页重排这一条路径**上，就地回贴那条两个坑都还留着，直到 §6.12.7 才一并修掉。这是个 CDN 托管、本地缓存、进场才懒加载的场景图集，不进微信主包（`ASSET_PACKAGING.md` §4），这 650 KB 换零漂移划算。
 
 **2–3. 渲染层接线 + 两份渲染器合并（同一次改动）。** 纯计算下沉到 `@nw/shared/slg/core.ts`，挨着 `citySpriteTiles` 那批：`resMotifPlacement()`（返回 scale/alpha/rotation/x/y）、`resMotifJitter()`、`RES_MOTIF_SIZE_FRAC` / `RES_MOTIF_FOG_ALPHA`、`ResMotifFrameRead` 类型。两个渲染器各自只剩十来行贴图适配器，等级→尺寸/透明度逻辑一行不剩；抖动 `scale` 收窄到 `[0.96,1.04]`，`rot`/`dx`/`dy` 原样。图集的 `nw` 由各自的 `getResFrameRead(frameName)` 读 bundle 进来的 JSON 拿到（PIXI 的 Spritesheet 只保留它认识的键，`nw` 到不了 Texture）——沿用 `cityAtlasLoader.getCityContentTopFracForLevel` 读 `contentTop` 的先例。
 
@@ -684,7 +684,7 @@ The mound sits centred and takes up most of the picture's width, leaving a clear
 
 **顺手修掉的一个打包期 bug**：`pack_resources.cjs` 的主扫描 `^res_.*\.(webp|png)$` 会把**自己这条管线的产物** `res_contact_sheet.png` 当成第 51 个源帧收进图集（`resContactSheet.js` 就写在同一个目录里，§6.11）。之前没暴露是因为上一轮的顺序恰好是「先打包、后出 contact sheet」；这一轮重跑时它就进去了。现在按文件名显式排除（而不是给 contact sheet 改名/换目录——它的路径写在文档里，也是目检习惯的一部分）。
 
-#### 6.12.6 顺带查出：sticker 的 tan→gold 色带在屏上**基本不存在**（未修，待拍板）
+#### 6.12.6 sticker 的 tan→gold 色带在屏上**基本不存在** → 用户拍板取消，五族统一黑墨
 
 复核新 l10 时顺手量了一下「铜→金」这条色带到底有多少落在屏上。把每帧按 alpha 合成到地图纸色 `#f2ece0` 上取均值（也就是眼睛实际拿到的颜色），暖度 `r-b`：
 
@@ -696,9 +696,25 @@ sticker 各级之间**没有梯度**，而且和明确豁免色带的 `graphite_
 
 **病根是结构性的，不是参数没调对**：`applyBand` 是对帧 RGB 做**部分乘法**，而这批帧经过 §5.8 的抠图后只剩「近黑线芯（RGB≈0–40，不透明）+ 半透明灰边（RGB=luma，alpha=255−luma）+ 全透明留白」。乘法对近黑像素无能为力（`0 × 任何颜色 = 0`），而占面积最大的留白是**全透明**、上屏拿的是纸色而不是色带色。色带是 2026-07-17 之前 sticker 还是「母题 + 合成计数托盘」（有大片实心填充区）时设计的，`bakeCountFrames` 一删它就失去了作用对象——只是没人量过，`§5.7-sticker` / `§5.9` 至今仍把它当成活着的主题加分项在写。
 
-**未修，三条路各有代价，请拍板**：
-1. **接受现状，正式承认 sticker 也是黑墨族**（改 `tintLevelFrame` 把 sticker 也放进豁免正则，删掉 `BAND`/`applyBand`/`BAND_STRENGTH` 和文档里的相关表述）。代价：铜钱失去唯一的颜色线索，只靠五角星剪影区分——实测剪影其实够用（§6.12.5 的实机截图里星形在格子上清晰可辨）。收益：删掉一整块死代码，五族口径统一。
-2. **改成上屏 tint**（`sp.tint = BAND[lv]`）。颜色会真的出现（乘法作用在已合成的像素上）。代价：直接违反 §6.11「渲染层零等级逻辑」——等级→颜色又变回渲染层的事，两份渲染器重新需要保持同步。若要走这条，正确做法是把颜色也**烘进 `nw`**（`nw.tint`），渲染层仍然只是照读。
-3. **打包期给 sticker 帧垫一层底色 wash**（在抠图后、给非透明区域和一部分留白填上色带色再合成）。颜色最实在，但会动到「白底线稿」这条美术铁律，且 wash 的浓度又是一个需要门禁的自由参数（§6.7 的老教训）。
+**拍板：取消色带（2026-08-20，用户拍板）。** 铜矿和其余四族一样是纯黑墨，只靠五角星剪影区分。
 
-倾向 **1 或 2-with-`nw.tint`**：1 最便宜且实测无损失，2 是「真要颜色」时唯一不破坏渲染层契约的做法。3 不建议。
+理由不只是省事：**这张地图上的颜色是功能性的，已经被归属占满**——自己蓝 / 敌人红 / 同宗门紫 / 结盟宗门琥珀（ADR-003 / ADR-060）。真把铜矿做成金色，它就会在敌方红、盟友琥珀的格子里和「这块地是谁的」抢读，而后者是玩家每一眼都要读的信息。同时实测五角星剪影**已经够用**（§6.12.5 的实机放大图里星形在 tp=174 的格子上清晰可辨）。曾考虑的另两条路都记在这里免得重新讨论：把颜色烘进 `nw.tint` 让渲染层照读（唯一不破 §6.11「渲染层零等级逻辑」的保色方案，但抢读问题照旧）；打包期垫底色 wash（会动「白底线稿」这条美术铁律，且 wash 浓度又是一个需要门禁的自由参数，§6.7 的老教训）。
+
+**已执行**：`pack_resources.cjs` 删掉 `BAND` / `BAND_STRENGTH` / `applyBand` / `tintLevelFrame` 及其调用（原位留了一段注释记录为什么不要再加回来——**若日后真要按级上色，正确做法是烘进 `nw`，不要在打包期再加 tint pass**）。重跑后 sticker 暖度 `r-b` 从 16.5/14.5 变成 16.4/13.3，也就是删掉前后眼睛看不出区别——这本身就是色带无效的最后一道确认。文档里把它当活功能写的地方（顶部决策变更 II、§5.7-sticker、§5.8、§5.9、§6.6）已一并订正。
+
+#### 6.12.7 顺带修掉：`patchMergedAtlas.js` 的**就地回贴**路径一直在做有损量化 + 混合漂移
+
+§6.11 记的两个坑（「不要用 sharp 的 `composite` 拼帧」「`png()` 带 `palette` 会静默转 8-bit」）当时**只修了整页重排那条路径**。就地回贴那条（帧尺寸没变时走的分支，也是日常跑得最多的一条）两个坑都还在：
+
+```js
+.composite(composites).png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 })
+```
+
+于是**合并页的编码取决于「这次有没有帧尺寸变化」**——变了走重排、无损；没变走就地、量化成 palette-8（alpha 最多漂 12–38，钢笔抗锯齿边缘发脆）。这一轮正好撞上：删色带只改像素不改尺寸 → 走就地 → 页面从 1746 KB 掉到 1088 KB，`paletteBitDepth` 变 8。差一点就把上一轮刚换来的无损又丢回去，而且**没有任何报错**。
+
+**修法**：就地回贴改成和重排同一套做法——裸的逐行 `Buffer.copy`（帧各自落在互不重叠的矩形里，`composite` 的混合本来就没有作用对象），编码只传 `compressionLevel: 9`。
+
+**验收**（这就是无损+逐字节的意义所在，"这次回贴有没有动到不该动的美术"变成可回答的问题）：
+- 50 个回贴帧与 `res_atlas.png` 中的来源**逐字节相同**：50/50
+- 39 个搬运帧与回贴前的合并页**逐字节相同**：39/39
+- 页面 1727.7 KB，非 palette。

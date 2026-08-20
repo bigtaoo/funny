@@ -63,18 +63,13 @@ async function main() {
     return reflow(src, dst);
   }
 
-  const composites = [];
   const patched = [];
   const missing = [];
   for (const [name, sf] of Object.entries(src.json.frames)) {
     const df = dst.json.frames[name];
     if (!df) { missing.push(name); continue; }
-    const cell = await sharp(src.pngPath)
-      .extract({ left: sf.frame.x, top: sf.frame.y, width: sf.frame.w, height: sf.frame.h })
-      .png().toBuffer();
-    composites.push({ input: cell, left: df.frame.x, top: df.frame.y });
-    // Carry over non-standard per-frame metadata the packers emit (contentTop, …) — the client reads
-    // these straight off the merged JSON.
+    // Carry over non-standard per-frame metadata the packers emit (nw, contentTop, …) — the client
+    // reads these straight off the merged JSON.
     for (const key of Object.keys(sf)) {
       if (key === 'frame' || key === 'spriteSourceSize' || key === 'sourceSize') continue;
       df[key] = sf[key];
@@ -87,23 +82,31 @@ async function main() {
     process.exit(1);
   }
 
-  // `composite` BLENDS over what's already there, so the old art would show through wherever the new
-  // frame is transparent (this repack shrinks the art, so most cells now have more transparent margin).
-  // Zero the target rectangles in the raw page first, then draw the new cells onto the cleared page.
+  // Raw row copies, NOT sharp's `composite` — same reason reflow() below does it by hand. `composite`
+  // blends, so it premultiplies alpha and rounds back, drifting every anti-aliased edge pixel by 1-2;
+  // it would also let the old art show through wherever the new cell is transparent. A frame lands in
+  // a rectangle of its own, nothing overlaps, so blending has nothing to contribute. Copying bytes
+  // instead keeps each patched frame bit-identical to its source and leaves every OTHER frame on the
+  // page untouched, which is what makes "did this patch disturb art it had no business touching?" a
+  // question with a checkable answer.
   const { data, info } = await sharp(dst.pngPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const srcRaw = await sharp(src.pngPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   for (const name of patched) {
-    const f = dst.json.frames[name].frame;
-    for (let y = f.y; y < f.y + f.h; y++) {
-      for (let x = f.x; x < f.x + f.w; x++) {
-        const p = (y * info.width + x) * 4;
-        data[p] = 0; data[p + 1] = 0; data[p + 2] = 0; data[p + 3] = 0;
-      }
+    const sf = src.json.frames[name].frame;
+    const df = dst.json.frames[name].frame;
+    for (let row = 0; row < df.h; row++) {
+      const from = ((sf.y + row) * srcRaw.info.width + sf.x) * 4;
+      const to = ((df.y + row) * info.width + df.x) * 4;
+      srcRaw.data.copy(data, to, from, from + df.w * 4);
     }
   }
-  const cleared = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
-  const out = await sharp(cleared)
-    .composite(composites)
-    .png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 })
+  // `compressionLevel` ONLY — see the note in reflow(): in sharp 0.32 any of
+  // `palette`/`quality`/`colours`/`dither`/`effort` silently quantises the page to an 8-bit palette,
+  // which cannot hold this merge's 392 distinct RGBA values and drifts alpha by up to 12-38. This path
+  // carried exactly that bug until 2026-08-20 while reflow() was already lossless, so which encoding
+  // the page got depended on whether any frame had changed size — a coin flip nobody would notice.
+  const out = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+    .png({ compressionLevel: 9 })
     .toBuffer();
 
   fs.writeFileSync(dst.pngPath, out);

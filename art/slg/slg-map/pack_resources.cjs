@@ -82,56 +82,27 @@ const nextPow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };
 // renderer work is not blocked on all 20 replacement drawings landing first. CI runs without it.
 const REPORT_ONLY = process.argv.includes('--report-only');
 
-// ── Per-level tier colour band (sticker only) ──────────────────────────────────
-// Level legibility (l1→l10, taller/fuller/more-scatter) is now carried entirely by the bespoke art's
-// own silhouette — the map renderer draws each level frame width-normalised (on-screen width = const,
-// height follows the frame's aspect ratio, see client/src/render/tileGraphics.ts drawResMotif), so a
-// taller-drawn frame reads as a higher tier with zero renderer change.
-// The colour band below survives ONLY for sticker (铜钱): its l6→l10 tan→gold ramp reads as "copper
-// coin → gold", a thematic bonus. paper/ink/graphite/metal keep their original black ink at every
-// level (read by silhouette, consistent l1–l10) — see tintLevelFrame's exemption.
-// Desaturated tier bands, paper-cohesive (low = cool slate → mid = tan → high = amber → l10 = gold).
-// Applied as a partial multiply so the pencil linework survives. [r,g,b] per level, index = level.
-const BAND = [
-  null,
-  [0x9f, 0xb2, 0xc6], [0x9f, 0xb2, 0xc6], // l1–2 cool slate-blue
-  [0xa6, 0xb8, 0x8c], [0xa6, 0xb8, 0x8c], // l3–4 sage
-  [0xd6, 0xc2, 0x8a], [0xd6, 0xc2, 0x8a], // l5–6 warm tan
-  [0xd8, 0x9f, 0x60], [0xd8, 0x9f, 0x60], // l7–8 amber
-  [0xcf, 0x78, 0x4d],                     // l9   rust
-  [0xe6, 0xb4, 0x22],                     // l10  gold
-];
-const BAND_STRENGTH = 0.72;
-
-/** Partial-multiply tier tint over the opaque pixels of a raw RGBA buffer (in place). */
-function applyBand(buf, w, h, lv) {
-  const c = BAND[lv];
-  if (!c) return;
-  const s = BAND_STRENGTH;
-  for (let i = 0; i < w * h; i++) {
-    if (buf[i * 4 + 3] === 0) continue;
-    for (let k = 0; k < 3; k++) {
-      const src = buf[i * 4 + k];
-      buf[i * 4 + k] = Math.round(src * (1 - s) + (src * c[k] / 255) * s);
-    }
-  }
-}
-
-/** Decode a packed level frame's PNG buffer, apply its tier band, re-encode. Returns a new sprite. */
-async function tintLevelFrame(sprite) {
-  const m = /_l(\d+)$/.exec(sprite.name);
-  if (!m) return sprite;
-  const lv = Number(m[1]);
-  // paper/ink/graphite/metal are bespoke hand-drawn art at EVERY level (l1–l10) — keep their original
-  // black ink so the whole ramp reads by silhouette and stays consistent (2026-07-17: exemption widened
-  // from l6+ to all levels when l1–5 became bespoke too). Only sticker keeps the band (its tan→gold ramp
-  // reads as copper→gold, a thematic cue for the currency resource).
-  if (/^res_(paper|ink|graphite|metal)_/.test(sprite.name)) return sprite;
-  const { data, info } = await sharp(sprite.buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  applyBand(data, info.width, info.height, lv);
-  const buf = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
-  return { ...sprite, buf };
-}
+// ── No colour on any resource frame (retired 2026-08-20) ───────────────────────
+// Every level of every resource is read by silhouette and by how full the drawing is, in one pen's
+// black ink. Sticker used to be the one exception — a tan->gold tier band, l6 copper to l10 gold, kept
+// deliberately in the 2026-07-17 rebuild as a thematic cue for the currency resource.
+//
+// It was measured on 2026-08-20 and it did nothing. Composited over the map paper, the five sticker
+// frames' warmth (r-b) came out 16.5 / 16.6 / 16.3 / 16.6 / 14.5 against 14.6 for graphite l10, which
+// was explicitly EXEMPT from the band, and 18.0 for the bare paper: no gradient, and indistinguishable
+// from an untinted frame. The reason is structural, not a mistuned strength. The band was a partial
+// multiply over frame RGB, but after the white-knockout above a frame holds only near-black stroke
+// cores (a multiply cannot put hue into 0), a thin semi-transparent grey fringe, and fully transparent
+// paper that shows the map's own colour rather than the band's. The band was designed when sticker
+// frames were composited count-trays with large filled areas; deleting bakeCountFrames in 2026-07-17
+// removed the pixels it acted on, and nobody measured it for a month.
+//
+// Retired rather than repaired (user's call, slg-resource-art.md 6.12.6): on this map colour is
+// functional and already spoken for by ownership — own blue, enemy red, sectmate purple, allied sect
+// amber (ADR-003/060) — so a gold copper mine would compete with the tint that tells the player whose
+// tile it is, and the five-pointed star silhouette was verified sufficient on its own in-game. If
+// per-level colour is ever wanted again, bake it into each frame's `nw` block like sizeMul/alphaMul so
+// the renderers stay free of level logic (6.11); do not reintroduce a tint pass here.
 
 /**
  * Solve the level read for one resource type and name whichever frames read backwards.
@@ -256,7 +227,6 @@ async function processImage(file, longEdge) {
       // cast of b-r +6..+51 while every frame they sit beside was neutral (+0..+7), plainly visible as
       // navy tiles among black ones. Collapsing RGB to luma keeps stroke darkness (and therefore the
       // measured density the level read depends on) while making hue drift structurally impossible.
-      // Sticker's tier band is applied afterwards, so it still gets its copper->gold ramp on top.
       const lum = Math.round(0.299 * data[si] + 0.587 * data[si + 1] + 0.114 * data[si + 2]);
       cropBuf[di] = lum; cropBuf[di + 1] = lum; cropBuf[di + 2] = lum;
       cropBuf[di + 3] = data[si + 3];
@@ -299,11 +269,6 @@ async function main() {
 
   const sprites = [];
   for (const f of files) sprites.push(await loadSprite(path.join(__dirname, f)));
-
-  // Tier colour band — sticker only (paper/ink/graphite/metal are exempt at every level, see tintLevelFrame).
-  // Runs before the level-read solve: the band multiplies RGB only, never alpha, so measured density
-  // (and therefore the solved curve) is unaffected by it.
-  for (let i = 0; i < sprites.length; i++) sprites[i] = await tintLevelFrame(sprites[i]);
 
   // ── Solve + gate the level read, per resource type (§6.3) ───────────────────────────────────
   const byType = new Map();
