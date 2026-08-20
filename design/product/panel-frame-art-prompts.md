@@ -298,7 +298,13 @@ tapers to nothing, or breaks into a long gap. Any content inside the rectangle.
 
 **观感**（真 WebGL 截图，Playwright 1280×800 @dpr2，同一屏 old/new 对比，放大 4×）：转角明显是圆的（旧的是尖角 + 过冲），边线是一条有起伏的连续笔画（旧的是高频细毛刺，在大面板上读成直线）。无接缝、无台阶、无越界。
 
-**测试**：`tsc --noEmit` 干净；单元 1499 通过；UI smoke 1882 通过（新增 8 例）；production webpack 构建通过。
+**测试**：`tsc --noEmit` 干净；单元 1499 通过；UI smoke 通过（`test/ui/panelFrameAssembly.ui.ts` 新增 **17 例**）；production webpack 构建通过。
+
+新增测试覆盖三类不变量，且**逐条做过变异验证**（改坏实现确认会红，不是空断言）：
+
+- **接缝**：相邻窗口在屏幕上首尾相接**且**在长条上首尾相接（两者缺一分别是「跳到线的另一段」和「留缝」）；长条走到尽头时回绕到原点；四条边由角块 + 窗口**端到端无洞**覆盖；侧边真的转了 90° 且方向对（缺 `rotation` 时窗口会变成横躺的）。
+- **上色 / 缓存**：每个切片都按 `border` 打 tint；底色和 `fillAlpha` 留在面板自己身上；图集只渲染一次；**只丢掉 `panelFrame` 的 memo、保留 bake 缓存时不重画**。最后这条是补上来的 —— 原来那句「只渲染一次」是**空断言**：`panelFrame` 自己的 memo 把「`bakeLazy` 到底有没有缓存」完全遮住了，变异测试里把 bake 的缓存删掉它照样绿。
+- **迁移面**：`tearDownChildren` 不销毁共享图集纹理（世界地图 HUD 每秒 teardown 一次，销毁了下一帧就空屏或崩）；`sketchAccentBar` 在图集面板上挂一层新 ink、在小面板兜底的裸 `Graphics` 上直接画（保持改前行为）。
 
 **迁移**：`sketchPanel` 返回 `PIXI.Container`（走图集时）。238 个调用点**一个没改**。改动的只有：
 - `sketchAccentBar` 首参 `PIXI.Graphics` → `PIXI.Container`（内部自己挂 ink 层），于是那 18 个把面板当画布继续画的调用点一行没动；
@@ -314,4 +320,4 @@ tapers to nothing, or breaks into a long gap. Any content inside the rectangle.
 - **真机没验**：微信小游戏 + iPad Safari 上的显存和帧率还没跑过（原 §5 验收项 5）。图集比 AI 图集小得多，风险低，但没实测就是没实测。
 - **`opts.width: 5`** 那 2 处按最近档归到 `bold`(2.6)，视觉上比原来细。目前没看出问题，留观察。
 - **参数没调过第二轮**：`WAVE = 26`、幅度 `1.4/2.4/3.6`、半径 `[5.0,6.6,8.0,6.2]` 都是第一版就定的值，截图看着对就没再动。它们全是 `panelFrame.ts` 顶部的常量，随时可改，不需要重新出图 —— 这正是选程序生成而非 AI 出图的理由之一。
-- **三张被打回的 AI 源图**留在 `art/ui/panelframe/`，未入库（§3.3 的量化记录已经把结论存下来了）。
+- **三张被打回的 AI 源图**已按「为什么被打回」重命名归档进 `art/leftover/`（`panelframe_v1_sharp_corners_ink_blots.webp` / `panelframe_v2_rounded_radius_spread.png` / `panelframe_v3_wobble_plateau.png`），`art/ui/panelframe/` 随之删除 —— 最终实现没有任何面板边框美术资产。量化结论在 §3.3。
