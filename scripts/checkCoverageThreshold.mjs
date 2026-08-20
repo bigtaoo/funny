@@ -19,6 +19,13 @@
 // let a broken pipeline masquerade as "coverage is fine" (see claudedocs/worktrees.md's "假绿"
 // precedent for why this repo treats silent skips as bugs, not passes).
 //
+// ADR-070 (2026-08-20) added a second class of row: `gated: false` packages (the five tools/*),
+// which are reported and required to PRODUCE coverage, but not yet held to the percentage. Two
+// deliberate choices there: a missing coverage/ output still fails for them (the plumbing is the
+// part that is gated from day one — a tool that stops emitting coverage is the same broken
+// pipeline it would be anywhere else), and their gap is reprinted in the summary on every run,
+// pass or fail, so the exemption cannot fade into permanence unnoticed.
+//
 // Usage: node scripts/checkCoverageThreshold.mjs   (cwd = repo root; same as coverageSummary.mjs)
 // Override the bar with COVERAGE_THRESHOLD=85 (percent) if ever needed — defaults to 90.
 import { appendFileSync } from 'node:fs';
@@ -37,13 +44,33 @@ const rows = collectRows(ROOT);
 // Unset (local runs) is treated as 'true' — fail closed, same as before.
 const TESTS_OK = (process.env.TESTS_OK ?? 'true') !== 'false';
 
+// Canary, same reasoning as scripts/checkFileLength.mjs' and checkDocLinks': every check below
+// iterates `rows`, so an empty list would print a cheerful "all 0 packages >= 90%" and exit 0 —
+// a gate that retires itself by turning green. An emptied package list in coverageLib.mjs, or a
+// bad `root`, must fail loudly instead.
+if (rows.length === 0) {
+  console.error(
+    'checkCoverageThreshold: FAILED — 0 packages to check. Every assertion here iterates that ' +
+      'list, so this run verified nothing (coverageLib.mjs\'s package lists are empty, or this was ' +
+      'not run from the repo root).',
+  );
+  process.exit(1);
+}
+
 const results = rows.map((row) => {
   if (row.missing) {
+    // A not-gated package (ADR-070) is exempt from the PERCENTAGE, never from having to produce
+    // coverage at all: "tools/ops stopped emitting coverage" is the same broken-pipeline signal
+    // as it would be for a server workspace, and it is the only thing this gate can catch for
+    // them today. Hence fail-closed here regardless of `gated`.
     return TESTS_OK
       ? { pkg: row.pkg, ok: false, reason: 'no coverage/ output found' }
       : { pkg: row.pkg, ok: true, reason: 'not evaluated — its test job failed' };
   }
   const pct = row.lines.pct;
+  if (!row.gated) {
+    return { pkg: row.pkg, ok: true, pct, notGated: true };
+  }
   return { pkg: row.pkg, ok: pct >= THRESHOLD, pct };
 });
 
@@ -56,7 +83,13 @@ lines.push('| Package | Lines | Status |');
 lines.push('|---|---|---|');
 for (const r of results) {
   const pctStr = r.pct === undefined ? '—' : `${r.pct.toFixed(1)}%`;
-  const status = r.ok ? (r.reason ? `⏭️ ${r.reason}` : '✅') : `❌ ${r.reason ?? `below ${THRESHOLD}%`}`;
+  const status = r.notGated
+    ? `🔓 reported, not gated — target ${THRESHOLD}%`
+    : r.ok
+      ? r.reason
+        ? `⏭️ ${r.reason}`
+        : '✅'
+      : `❌ ${r.reason ?? `below ${THRESHOLD}%`}`;
   lines.push(`| ${r.pkg} | ${pctStr} | ${status} |`);
 }
 lines.push('');
@@ -65,16 +98,39 @@ if (!TESTS_OK) {
   lines.push('');
 }
 
+const notGated = results.filter((r) => r.notGated);
 const skipped = results.filter((r) => r.ok && r.reason).length;
-const measured = results.length - skipped;
+const measured = results.length - skipped - notGated.length;
+// The two failure kinds are reported separately: "no coverage/ output" is a broken pipeline, not a
+// coverage regression, and for a not-gated package (ADR-070) calling it "below the bar" would be
+// flatly wrong — that package is exempt from the bar and still failed, which is the whole point of
+// gating the plumbing separately. Lumping them together sent readers looking for missing tests
+// when the actual fix is a missing CI step.
+const missingOutput = failures.filter((f) => f.reason);
+const belowBar = failures.filter((f) => !f.reason);
 if (failures.length > 0) {
-  lines.push(`**FAILED** — ${failures.length} package(s) below the ${THRESHOLD}% line-coverage bar: ${failures.map((f) => f.pkg).join(', ')}.`);
+  if (belowBar.length > 0) {
+    lines.push(`**FAILED** — ${belowBar.length} package(s) below the ${THRESHOLD}% line-coverage bar: ${belowBar.map((f) => `${f.pkg} (${f.pct.toFixed(1)}%)`).join(', ')}.`);
+  }
+  if (missingOutput.length > 0) {
+    lines.push(`**FAILED** — ${missingOutput.length} package(s) produced no coverage output at all: ${missingOutput.map((f) => f.pkg).join(', ')}. That is a broken test/coverage step, not a coverage regression — every package on the list must emit coverage/, including the ones not yet gated on the percentage.`);
+  }
 } else if (skipped > 0) {
-  lines.push(`**NOT ENFORCED** — ${measured} package(s) measured and at or above ${THRESHOLD}%, ${skipped} skipped because their test job failed.`);
+  lines.push(`**NOT ENFORCED** — ${measured} gated package(s) measured and at or above ${THRESHOLD}%, ${skipped} skipped because their test job failed.`);
 } else {
-  lines.push(`**PASSED** — all ${results.length} packages are at or above ${THRESHOLD}% line coverage.`);
+  lines.push(`**PASSED** — all ${measured} gated packages are at or above ${THRESHOLD}% line coverage.`);
 }
 lines.push('');
+// Deliberately restated on every run, pass or fail (ADR-070). A "temporary" exemption that only
+// appears in a design doc becomes permanent quietly; one that reprints its own gap in every CI
+// summary has to be argued for each time someone reads it.
+if (notGated.length > 0) {
+  lines.push(
+    `_Not gated on the ${THRESHOLD}% bar yet (their coverage output is still required to exist): ` +
+      `${notGated.map((r) => `${r.pkg} ${r.pct.toFixed(1)}%`).join(', ')}. Per-tool exit conditions: claudedocs/tools-testing.md._`,
+  );
+  lines.push('');
+}
 
 const report = lines.join('\n');
 console.log(report);
@@ -83,11 +139,13 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 }
 
 if (failures.length > 0) {
-  console.error(`checkCoverageThreshold: ${failures.length} package(s) below ${THRESHOLD}%: ${failures.map((f) => `${f.pkg} (${f.reason ?? f.pct.toFixed(1) + '%'})`).join(', ')}`);
+  console.error(`checkCoverageThreshold: ${failures.length} package(s) failed — ${failures.map((f) => `${f.pkg} (${f.reason ?? 'below ' + THRESHOLD + '%, at ' + f.pct.toFixed(1) + '%'})`).join(', ')}`);
   process.exit(1);
 }
 console.log(
   skipped > 0
-    ? `checkCoverageThreshold: not enforced — ${measured} package(s) >= ${THRESHOLD}%, ${skipped} skipped (their test job failed).`
-    : `checkCoverageThreshold: OK — all ${results.length} packages >= ${THRESHOLD}%.`,
+    ? `checkCoverageThreshold: not enforced — ${measured} gated package(s) >= ${THRESHOLD}%, ${skipped} skipped (their test job failed).`
+    : `checkCoverageThreshold: OK — all ${measured} gated packages >= ${THRESHOLD}%${
+        notGated.length > 0 ? `, ${notGated.length} reported but not gated (${notGated.map((r) => r.pkg).join(', ')})` : ''
+      }.`,
 );
