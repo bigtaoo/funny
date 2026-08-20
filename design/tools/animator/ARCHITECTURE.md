@@ -54,6 +54,8 @@ src/
     └── StatusBar.ts            底部状态栏
 ```
 
+> **2026-08-20：重构前的扁平模块已删除。** `src/` 根目录下曾并存一套重构前的同名扁平文件（`animation.ts`/`events.ts`/`interaction.ts`/`io.ts`/`presets.ts`/`renderer.ts`/`skeleton.ts`/`state.ts`/`timeline.ts`/`types.ts`/`ui.ts`，外加两个 `export {}` 空壳 `atlas/AtlasController.ts`/`ui/AtlasPanel.ts`），共 1424 行。它们只互相 import（`renderer.ts` 里的 `from './skeleton'` 按 Node 解析规则命中的是 `src/skeleton.ts`，不是活代码用的 `src/skeleton/Skeleton.ts`），从 webpack 唯一入口 `src/index.ts` 完全不可达，是一张独立的死图；架构上是"模块单例 `state` + 无类型事件总线"的旧范式，与上面这套"类 + `EventBus<AppEvents>`"实现无共享代码。删除前后 production bundle 的 contenthash 完全一致（`bundle.04a1b40b5390a85f7d41.js`），即它们从未进入产物。注意同名对照关系（`skeleton.ts` vs `skeleton/Skeleton.ts`、`types.ts` vs `core/types.ts` 等）——今后若再遇到类似清理，逐个复核路径，别删错目录版。
+
 ### 依赖方向（单向）
 
 ```
