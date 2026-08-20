@@ -6,8 +6,11 @@ import type { EquipmentInstance, CardInstance } from '../types';
 
 /**
  * Player free-text feedback (UI_DESIGN.md §4.1.1 lobby entry / SERVER_API.md §2.13). Ops-review-only via
- * `GET /internal/feedback` (feedback.view) — no status machine, no verdict: unlike AppealDoc/ReportDoc this
- * is not something ops "resolves", just reads. Not run through censorChat for the same reason as AppealDoc.reason.
+ * `GET /internal/feedback` (feedback.view) — still no status machine, no verdict: unlike AppealDoc/ReportDoc
+ * there is no dismiss/uphold outcome. There is a lightweight triage trail so a growing backlog stays
+ * trackable (feedback.action, `POST /internal/feedback/:id/review`): `readAt` is stamped on the first
+ * review call and never overwritten after, so unread ⟺ `!readAt`; `readBy`/`note` are last-write-wins.
+ * Not run through censorChat for the same reason as AppealDoc.reason.
  */
 export interface FeedbackDoc {
   _id: string; // uuid
@@ -15,6 +18,12 @@ export interface FeedbackDoc {
   text: string;
   clientPlatform?: string;
   createdAt: number;
+  /** First-review timestamp — set once, never overwritten; its absence is the "unread" marker. */
+  readAt?: number;
+  /** adminId of whoever last reviewed this row (last-write-wins). */
+  readBy?: string;
+  /** Ops-authored triage note, last-write-wins; absent means no note has been left. */
+  note?: string;
 }
 
 export interface MailAttachmentDoc {

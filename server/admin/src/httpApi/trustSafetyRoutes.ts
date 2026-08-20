@@ -87,12 +87,26 @@ export async function handleTrustSafetyRoutes(ctx: RouteCtx): Promise<boolean> {
     return true;
   }
 
-  // ── Player feedback (feedback.view, read-only — UI_DESIGN.md §4.1.1 / SERVER_API.md §2.13) ──
+  // ── Player feedback (feedback.view — UI_DESIGN.md §4.1.1 / SERVER_API.md §2.13) ──
   if (method === 'GET' && path === '/admin/feedback') {
     requireCap(actor, 'feedback.view');
     const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? '100')));
     const feedback = await svc.listFeedback(actor.adminId, { limit });
     send(res, 200, { ok: true, feedback });
+    return true;
+  }
+
+  // ── Feedback triage (feedback.action): mark read and/or attach an ops note. Not a verdict —
+  // there is no dismiss/uphold outcome here, unlike the three queues above.
+  const feedbackReviewMatch = path.match(/^\/admin\/feedback\/([^/]+)\/review$/);
+  if (method === 'POST' && feedbackReviewMatch) {
+    requireCap(actor, 'feedback.action');
+    const id = decodeURIComponent(feedbackReviewMatch[1] ?? '');
+    const b = await readJson(req);
+    // Absent `note` = read-mark only (leaves an existing note intact); `''` explicitly clears it.
+    const note = typeof b.note === 'string' ? b.note : undefined;
+    await svc.reviewFeedback(actor.adminId, id, note);
+    send(res, 200, { ok: true });
     return true;
   }
 

@@ -1,6 +1,6 @@
 // Account/profile lookups + moderation (ban/unban, anti-cheat review queue) used by gateway + admin backend.
 import type { FastifyInstance } from 'fastify';
-import { INITIAL_ELO, createLogger, hashPassword, validatePassword } from '@nw/shared';
+import { FEEDBACK_NOTE_MAX, INITIAL_ELO, createLogger, hashPassword, validatePassword } from '@nw/shared';
 import { getProfile, resolveByPublicId, searchAccounts } from '../accounts.js';
 import { profilesOf } from '../social.js';
 import { applyPenalty, ModerationConflictError } from '../moderation.js';
@@ -258,6 +258,34 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: InternalCtx): v
     const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 200);
     const feedback = await cols.feedback.find({}).sort({ createdAt: -1 }).limit(limit).toArray();
     return reply.send({ feedback });
+  });
+
+  // ── POST /internal/feedback/:id/review (feedback.action, SERVER_API.md §2.13) ─────────
+  // Triage-only, not a verdict: mark a row read and/or attach an ops note. `readAt` is stamped on the
+  // first review call and never overwritten afterwards (it answers "when did we first look at this",
+  // not "when was it last touched"), so unread ⟺ `!readAt`. `readBy`/`note` are last-write-wins.
+  // `note` omitted → read-mark only, an existing note is left intact; `note: ''` explicitly clears it.
+  app.post('/internal/feedback/:id/review', async (req, reply) => {
+    if (!authed(req.headers)) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    const { id } = req.params as { id: string };
+    const { readBy, note } = (req.body ?? {}) as { readBy?: string; note?: string };
+    if (!readBy) return reply.code(400).send({ ok: false, error: 'readBy required' });
+    const existing = await cols.feedback.findOne({ _id: id }, { projection: { readAt: 1 } });
+    if (!existing) return reply.code(404).send({ ok: false, error: 'feedback not found' });
+
+    const set: Record<string, unknown> = { readBy };
+    if (!existing.readAt) set.readAt = now();
+    const update: Record<string, unknown> = { $set: set };
+    if (typeof note === 'string') {
+      const trimmed = note.trim().slice(0, FEEDBACK_NOTE_MAX);
+      if (trimmed) set.note = trimmed;
+      else update.$unset = { note: '' };
+    }
+
+    await cols.feedback.updateOne({ _id: id }, update);
+    return reply.send({ ok: true });
   });
 
   // ── GET /internal/appeals?status=&limit= (CONTENT_MODERATION_DESIGN.md CM10) ─────────
