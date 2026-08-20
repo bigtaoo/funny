@@ -1,29 +1,14 @@
 // Player feedback inbox (UI_DESIGN.md §4.1.1 lobby entry, SERVER_API.md §2.13). Deliberately NOT a
 // review queue like reports/appeals: there is no verdict, nothing to dismiss or uphold. What it does
-// have is a triage trail so a growing backlog stays trackable — each row is unread until someone marks
-// it read or leaves a note (`readAt` stamped once, then never overwritten), which is what the
-// Unread/Read filter below partitions on.
+// have is a triage trail so a growing backlog stays trackable — see src/logic/feedback.ts, which owns
+// the unread/read partition and every string this page prints about it.
 import { clear, fmtTime, h, pill } from '../dom';
+import {
+  countsText, emptyText, feedbackCells, type FeedbackFilter, NOTE_MAX, partitionFeedback, readStatus,
+  saveMessage,
+} from '../logic/feedback';
 import type { FeedbackView } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
-
-const NOTE_MAX = 500; // FEEDBACK_NOTE_MAX (@nw/shared social.ts) — server truncates at the same length
-
-export type FeedbackFilter = 'unread' | 'read' | 'all';
-
-/**
- * Split a fetched page into what the table shows plus the unread/total counts. `readAt` is the single
- * read marker (stamped on the first review, never overwritten), so a row carrying only a note cannot
- * exist — no need to consult `note` here.
- */
-export function partitionFeedback(
-  rows: readonly FeedbackView[],
-  filter: FeedbackFilter,
-): { shown: FeedbackView[]; unread: number; total: number } {
-  const unread = rows.filter((f) => !f.readAt).length;
-  const shown = filter === 'all' ? [...rows] : rows.filter((f) => (filter === 'unread' ? !f.readAt : !!f.readAt));
-  return { shown, unread, total: rows.length };
-}
 
 export async function pageFeedback(ctx: Ctx): Promise<void> {
   const { api, root, session } = ctx;
@@ -49,9 +34,9 @@ export async function pageFeedback(ctx: Ctx): Promise<void> {
       // fetched page client-side so the counts stay consistent with what the table actually shows.
       const filter = filterSel.value as FeedbackFilter;
       const { shown, unread, total } = partitionFeedback(await api.feedback({ limit: 200 }), filter);
-      counts.textContent = `${unread} unread / ${total} total`;
+      counts.textContent = countsText(unread, total);
       if (shown.length === 0) {
-        out.append(h('div', { class: 'muted' }, filter === 'unread' ? 'No unread feedback.' : 'No feedback.'));
+        out.append(h('div', { class: 'muted' }, emptyText(filter)));
         return;
       }
       const t = h('table', {});
@@ -76,11 +61,13 @@ export async function pageFeedback(ctx: Ctx): Promise<void> {
 
   /** One row's cells. Split out so the note editor's post-save reload path stays readable. */
   function rowCells(f: FeedbackView): HTMLElement[] {
+    const cells = feedbackCells(f);
+    const read = readStatus(f);
     const statusCell = h('td', {});
-    if (f.readAt) {
+    if (read.read) {
       statusCell.append(
         pill('read', 'ok'),
-        h('div', { class: 'muted' }, `${fmtTime(f.readAt)}${f.readBy ? ` by ${f.readBy}` : ''}`),
+        h('div', { class: 'muted' }, `${fmtTime(f.readAt!)}${read.bySuffix}`),
       );
     } else {
       statusCell.append(pill('unread', 'warn'));
@@ -99,7 +86,7 @@ export async function pageFeedback(ctx: Ctx): Promise<void> {
         rowErr.textContent = '';
         try {
           await api.reviewFeedback(f._id, note);
-          showOk(rowErr, note ? 'Saved.' : 'Marked read.');
+          showOk(rowErr, saveMessage(note));
           await load();
         } catch (e) {
           showErr(rowErr, e);
@@ -108,7 +95,7 @@ export async function pageFeedback(ctx: Ctx): Promise<void> {
       const buttons = h('div', { class: 'row' },
         h('button', { onclick: () => void save(ta.value) }, 'Save note'),
         // Read-mark only: passing no note leaves an existing one intact (server-side semantics).
-        !f.readAt && h('button', { onclick: () => void save(undefined) }, 'Mark read'),
+        !read.read && h('button', { onclick: () => void save(undefined) }, 'Mark read'),
       );
       noteCell.append(ta, buttons, rowErr);
     } else {
@@ -117,9 +104,9 @@ export async function pageFeedback(ctx: Ctx): Promise<void> {
 
     return [
       h('td', {}, fmtTime(f.createdAt)),
-      h('td', {}, f.accountId),
-      h('td', {}, f.clientPlatform ?? '—'),
-      h('td', {}, f.text),
+      h('td', {}, cells.accountId),
+      h('td', {}, cells.platform),
+      h('td', {}, cells.text),
       statusCell,
       noteCell,
     ];

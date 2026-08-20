@@ -1,11 +1,15 @@
-// moderationWordlist.ts's list-merge + redundancy logic (CONTENT_MODERATION_DESIGN.md §3.2). This is
+// src/logic/moderationWordlist.ts — the list-merge + redundancy logic (CONTENT_MODERATION_DESIGN.md §3.2). This is
 // where the page decides what a proposed word would actually accomplish, and it has to agree with
 // @nw/shared `effectiveWordlist`/`matchRaw` — union of global floor + region floor + global overlay +
 // region overlay, matched case-insensitively as a SUBSTRING. Getting that wrong shows the operator a
 // clean "added" for a word that blocks nothing, which is exactly the mistake the page exists to prevent.
 // `pageModerationWordlist` builds DOM and stays untested, same split as feedback.test.ts / flags.test.ts.
 import { describe, it, expect } from 'vitest';
-import { activeWords, checkMessage, checkWord, coveredBy, describeCover, WORD_MAX } from '../src/pages/moderationWordlist';
+import {
+  activeWords, addedText, checkMessage, checkWord, coveredBy, describeCover, effectiveSummary,
+  isBlocked, orderRegions, overlayMetaText, REGION_LABEL, REGION_ORDER, removedText, removeTitle,
+  WORD_MAX,
+} from '../src/logic/moderationWordlist';
 import type { ChatRegion, ModerationWordlistView } from '../src/types';
 
 const view = (region: ChatRegion, builtin: string[], overlay: string[] = []): ModerationWordlistView =>
@@ -187,5 +191,95 @@ describe('checkMessage', () => {
 
   it('quotes the length limit it is enforcing, so the number cannot silently drift from the server', () => {
     expect(checkMessage(checkWord('a'.repeat(WORD_MAX + 1), anyRows, 'cn'))?.text).toContain(String(WORD_MAX));
+  });
+});
+
+const stamp = (ms: number): string => `T${ms}`;
+
+describe('REGION_ORDER / REGION_LABEL / orderRegions', () => {
+  it('puts global first, because every other region inherits it', () => {
+    expect(REGION_ORDER[0]).toBe('global');
+  });
+
+  it('labels every region it orders', () => {
+    expect(REGION_ORDER.filter((r) => !REGION_LABEL[r])).toEqual([]);
+  });
+
+  it('sorts a shuffled payload into card order without touching the caller array', () => {
+    const shuffled = [rows[2]!, rows[0]!, rows[3]!, rows[1]!];
+    expect(orderRegions(shuffled).map((r) => r.region)).toEqual(['global', 'cn', 'de', 'en']);
+    expect(shuffled[0]!.region).toBe('de');
+  });
+
+  it('handles a payload missing some regions', () => {
+    expect(orderRegions([rows[3]!, rows[0]!]).map((r) => r.region)).toEqual(['global', 'en']);
+  });
+});
+
+describe('isBlocked', () => {
+  it('blocks the two cases the server itself would reject, plus an in-overlay duplicate', () => {
+    expect(isBlocked(checkWord('', rows, 'cn'))).toBe(true);
+    expect(isBlocked(checkWord('x'.repeat(WORD_MAX + 1), rows, 'cn'))).toBe(true);
+    expect(isBlocked(checkWord('代练', rows, 'cn'))).toBe(true);
+  });
+
+  it('does NOT block a merely redundant word — that stays advisory', () => {
+    expect(isBlocked(checkWord('scammer', rows, 'cn'))).toBe(false);
+  });
+
+  it('does not block a genuinely new word', () => {
+    expect(isBlocked(checkWord('brandnew', rows, 'cn'))).toBe(false);
+  });
+
+  it('treats a region the payload never mentioned as having an empty overlay, not as a crash', () => {
+    // Every real response carries all four regions, but the duplicate check has to tolerate a region
+    // that is simply absent — otherwise a payload shrinking to three regions would throw here.
+    const withoutDe = rows.filter((r) => r.region !== 'de');
+    expect(checkWord('brandnew', withoutDe, 'de')).toEqual({ kind: 'ok', word: 'brandnew' });
+  });
+
+  it('agrees with checkMessage’s `blocked` flag on every kind — one rule, not three copies', () => {
+    for (const raw of ['', 'x'.repeat(WORD_MAX + 1), '代练', 'scammer', 'brandnew']) {
+      const c = checkWord(raw, rows, 'cn');
+      expect(checkMessage(c)?.blocked ?? false).toBe(isBlocked(c));
+    }
+  });
+});
+
+describe('effectiveSummary', () => {
+  it('counts the live list and splits it by source', () => {
+    // cn sees: global floor (2) + cn floor (1) + global overlay (1) + cn overlay (1)
+    expect(effectiveSummary(rows, 'cn')).toBe('Effective list for cn: 5 words (3 built-in + 2 overlay).');
+  });
+
+  it('counts only its own two lists for global itself', () => {
+    expect(effectiveSummary(rows, 'global')).toBe('Effective list for global: 3 words (2 built-in + 1 overlay).');
+  });
+
+  it('reports zero for an unknown region rather than crashing', () => {
+    expect(effectiveSummary([], 'de')).toBe('Effective list for de: 0 words (0 built-in + 0 overlay).');
+  });
+});
+
+describe('overlayMetaText', () => {
+  it('attributes the last overlay write, stamped through the formatter it was handed', () => {
+    const row = { ...rows[1]!, updatedBy: 'Ada', updatedAt: 42 };
+    expect(overlayMetaText(row, stamp)).toBe('Overlay last written by Ada · T42');
+  });
+
+  it('dashes a nameless writer', () => {
+    expect(overlayMetaText({ ...rows[1]!, updatedBy: '', updatedAt: 42 }, stamp)).toBe('Overlay last written by — · T42');
+  });
+
+  it('says the region is floor-only when no overlay has ever been written', () => {
+    expect(overlayMetaText(rows[2]!, stamp)).toBe('No overlay written yet — built-in floor only.');
+  });
+});
+
+describe('write confirmations', () => {
+  it('names the word, the region, and the propagation delay consumers actually have', () => {
+    expect(addedText('scam', 'cn')).toBe('Added "scam" to the cn overlay (consumers pick it up within 60s).');
+    expect(removedText('scam', 'cn')).toBe('Removed "scam" from the cn overlay (consumers pick it up within 60s).');
+    expect(removeTitle('scam', 'de')).toBe('Remove "scam" from the de overlay');
   });
 });

@@ -25,12 +25,12 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 | 闸门 | 范围 | 语义 |
 |---|---|---|
 | 单文件 500 行 | `tools/` 全树（`.ts`/`.tsx`，排除 `test/`、`scripts/`、`dist/`） | `tools/scripts/checkFileLength.mjs` 薄封装转调根 `scripts/checkFileLength.mjs`；只在**新文件**越过 500 行、或 `tools/scripts/file-length-baseline.json` 里的已知文件**继续变大**时判红。2026-08-13 (G4) 起 |
-| 覆盖率 | 5 个工具包 | 报表 + **产出必须存在**；`map-editor`（4a）/`level-editor`（4b）/`vfx-editor`（4c）/`animator`（4d）**百分比也受 90% 门禁**，只剩 `ops` 仍豁免（ADR-070）。2026-08-20 起 |
+| 覆盖率 | 5 个工具包 | 报表 + **产出必须存在** + **百分比受 90% 门禁**，跟 13 个服务端 workspace 与 `client` 完全同待遇。ADR-070 的「reported, not gated」豁免存在了不到一天：4a–4e 依次毕业，名单空掉，机制随 4e 退休（ADR-070 收尾条）。2026-08-20 起 |
 | 可达性 | 5 个工具包各自的 `src/**` | `tools/scripts/checkUnreachableModules.mjs`（逐包调用根 `scripts/checkUnreachableModules.mjs`）：**任何一个 `src/` 下的源文件，若从该包的 bundler entry、`--extra-root` 声明的兄弟产物目录（animator 的 `runtime/`）、以及 `test/**` 这三类根出发都到不了，判红**。2026-08-20 起 |
 
-覆盖率那条的两半要分清：
-- **管路已受门禁**——某个工具包不再产出 `coverage/`，`checkCoverageThreshold.mjs` 判红，跟服务端 workspace 一样。这不是覆盖率回归，报错文案也刻意分开说（"produced no coverage output at all"），免得有人去找缺失的测试而真正要修的是缺失的 CI 步骤。
-- **百分比未受门禁**——每个包各自的 scope 先要做结构性改造才谈得上 90%（下表）。这条豁免在**每次** CI 的 summary 里复述当前值与目标，绿跑也印。**已开始收缩**：同一天 Phase 4a（`map-editor`）、4b（`level-editor`）、4c（`vfx-editor`）、4d（`animator`）先后毕业进 `JSON_SUMMARY_PACKAGES`，豁免名单从 5 个降到 **1 个**（只剩 `ops`，即 Phase 4e）。也就是说 **4e 是「最后毕业的那条线」**，它额外要退休整套 not-gated 管路——见下方「测试侧不用改」。
+覆盖率那条闸门有两半，都已受门禁：
+- **管路**——某个工具包不再产出 `coverage/`，`checkCoverageThreshold.mjs` 判红。这不是覆盖率回归，报错文案也刻意分开说（"produced no coverage output at all"），免得有人去找缺失的测试而真正要修的是缺失的 CI 步骤。这条分开说的措辞是 ADR-070 那轮顺带修掉的既有缺陷，**跟豁免机制无关，机制退休后保留**。
+- **百分比**——5 个包各自的 scope 现在都 ≥90%（下表；四个 100%、animator 98.9%）。**过渡已结束**：`NOT_GATED_JSON_SUMMARY_PACKAGES`、行上的 `gated` 字段、报表的「reported, not gated」小节、门禁的豁免脚注全部随 Phase 4e 删除。退休的理由与验收条件写在 ADR-070 末尾那条「收尾」记录里；一句话版本是「留着一套能用的、合法地不受门禁约束的机制，本身就是一份长期邀请函」。另一样保留下来的是报表的 **`Scope (files)`** 列——那是防「缩 include 抬 %」的护栏，跟豁免无关，五个包毕业后反而更该看（三个包的 scope 只占 `src` 文件的 1/4 到 1/2）。
 
 ## 可达性闸门（2026-08-20 新增）
 
@@ -56,7 +56,7 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 | `map-editor` | `state/**`、`tiles/**`、`i18n.ts`、`constants.ts` | **100.0%** (652/652)、函数 62/62 | 38.3% | **✅ 已接门禁（Phase 4a，2026-08-20）**。`isoGrid`/`tileStyle` 已从 `render/` 移进新的 `src/tiles/`（纯层：一格在屏幕哪儿 / 长什么样），`include` 回到目录级，包也从 `NOT_GATED_JSON_SUMMARY_PACKAGES` 移进 `JSON_SUMMARY_PACKAGES`。同日补完最后 8 行（150 例），并加了 `pureLayerBoundary.test.ts` 守边界——见下方「覆盖率百分比守不住目录边界」|
 | `vfx-editor` | `model/**`、`io/**` | **100.0%** (529/529)、函数 76/80 | 40.4% → **47.2%** | **✅ 已接门禁（Phase 4c，2026-08-20）**。`io/IOController.ts`（74 行）0% → 100%——它没有浏览器依赖挡路，缺的只是一个测试文件。`rendering/Playback.ts` 这个**本仓库最后一个逐文件 include 项**也去掉了：Playback 是编辑器状态而非渲染器，已移进 `src/model/Playback.ts`，`src/rendering/` 从此均质地是 PIXI 那半。同日加了 `pureLayerBoundary.test.ts`，但**形状跟 4a/4b 不同**——见下方「4c 实测」|
 | `animator` | `core/**`、`skeleton/**`、`animation/**`、`io/**` | 64.3% → **98.9%** (1426/1442)、函数 191/195 | 29.5% → **42.9%** | **✅ 已接门禁（Phase 4d，2026-08-20）**。五个里唯一**一行结构改动都没有**的：include 从 ADR-070 落地那天起就是目录级，64.3% 是因为它刻意把整个没测过的 IndexedDB 层留在 scope 内。`io/{AutoSaveController,ProjectStore,IOController}.ts` 0% → 100%、`animation/AnimationController.ts` 41.3% → 100%、`core/AppState.ts` 81.5% → 100%、`skeleton/Skeleton.ts` 89.0% → 100%、`io/editorProject.ts` 71.4% → 100%。测试 138 → **340 例**。同日加了 `pureLayerBoundary.test.ts`，**形状又跟前三个都不一样**——见下方「4d 实测」|
-| `ops` | **无（报全包）** | — | **8.8%** (322/3639) | Phase 4e：它没有可指的逻辑层——2026-08-13 Phase 3 导出的 9 个纯函数各自嵌在一个 90% 是 `h()` DOM 的 `pages/*.ts` 里，最大的非页面文件 `src/api.ts` 自己也只有 22.7%。先把各页纯逻辑抽进 `src/logic/<page>.ts`、`pages/*` 只留 DOM 装配（同 `f22c3df2` 拆 `api.ts`/`types.ts` 的方向），再把 include 收到 `logic/**` + `api/**` |
+| `ops` | `logic/**`、`api/**` | **100.0%** (1516/1516)、函数 100%、分支 99.87% | 8.8% → **35.4%** (1516/4286，`src/**` 口径；分母涨了是因为纯层拆出 25 个新文件、`pages/*` 反而变薄) | **✅ 已接门禁（Phase 4e，2026-08-20，最后一个）**。原来**根本没有 include**（报全包 8.8%，322/3639，仓库最差）——不是疏忽：Phase 3 导出的 9 个纯函数各自嵌在一个 90% 是 `h()` DOM 的 `pages/*.ts` 里，没有目录可指，缩到 `src/api/**` 又是一个测试不加就把数字抬上去。现在每页一个 `src/logic/<page>.ts`（该页的查询构造、校验、pivot、权限判定、派生文案），`pages/*` 只剩 DOM 装配；`src/api.ts` 并进 `src/api/index.ts`（`src/api/**` 这个 glob 匹配不到 `src/api.ts`）。同日加了 `pureLayerBoundary.test.ts`，**两层判据**——见下方「4e 实测」|
 
 **Phase 4a 实测（2026-08-20，`map-editor`）**：搬 `isoGrid`/`tileStyle` 是**零行为改动**的搬移——production bundle 逐 token 比对，两侧各只有 25 个独有 token，全部是 webpack 的确定性 module id（模块路径集合变了必然重排）与 contenthash 本身，无任何代码/字符串差异（581751 → 581765 字节）。所以这类 graduation **不要指望 contenthash 相同**（那是 animator 删死码那次能用的证据，因为那次模块集合只减不改名）；能用的是 token 集合对比。顺带一并搬走的还有 `TerrainTextureName` 类型：它原来定义在 PIXI 的 `render/terrainAtlasLoader.ts` 里，纯层要用就得 `import type` 一个 PIXI 模块（运行期无害，但边界读不出来），现在类型归 `tiles/tileStyle.ts`、loader 反向 import。~~**接门禁之后边界是自守的**~~ —— **这句话是错的，同日订正，见下一节**。
 
@@ -92,6 +92,21 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 - **行为不变的证据这次最省事**：本轮生产代码的唯一改动是一句 JSDoc 注释，压缩后不进产物，所以既不用 token 对比也不用比 hash。**但别把「这轮不用比」当成通例**：4a/4b 必须比 token（有 module id 表，hash 必变），4c 可以比 hash（scope hoisting 折成单模块、产物里 `__webpack_require__` 出现 0 次），判据见 4c 那条。
 - **可见性核对退化成数值核对**（Browser 窗格不 composite，截图 5s 超时，同 2026-08-20 删死码那次）：dev server 起在 **9191**（默认 9091 被 Docker Desktop 双栈占着，`localhost:9091` 会返 200 但那不是 webpack），在**主检出**的 `.claude/launch.json` 加一条临时配置（`preview_start` 只读主检出那份），收尾时删掉。核对内容刻意选了跟本轮测试同构的那条链路——**自动保存的真实往返**，因为它同时跑真 IndexedDB、真 JSZip、真 `AutoSaveController`/`ProjectStore`/`IOController`：①空库开机 → 自动建 `Untitled`（`crypto.randomUUID` 的 id）并落盘；②`btn-project-rename` → **`meta.name` 变、`updatedAt` 变、blob 字节数不变（984 → 984）**，即真的是 `putMeta` 而不是 `put`；③`btn-project-new` → 新 uuid + 新 blob，旧工程不动，下拉按 `updatedAt` 倒序重排（`Brawler, Archer`）；④**debounce 契约**：1.5s 窗口内连打三次编辑（新建 clip + 两次打关键帧），窗口内 `updatedAt` **一次都没变**，窗口后只变一次、blob 从 1034 涨到 1048；⑤切工程 → 另一个工程的 clip 列表里没有 `probe-clip`，切回来完全恢复，`localStorage` 跟着当前工程走；⑥**刷新页面 → 恢复上次工程（Brawler）连 `probe-clip` 一起**。全程 `error-toast` 为空、控制台无 error。主 canvas 仍是 0×0（不 composite → rAF 不触发 → PIXI ticker 冻结，未修改版本表现一样，不是回归）。核对完把探针工程从 IndexedDB 清掉了。
 
+**Phase 4e 实测（2026-08-20，`ops`，最后一个）**：唯一一个**没有 include 可以先缩**的包，所以结构改造不是「把已导出的东西搬个位置」，而是先造出一个逻辑层来。每页一个 `src/logic/<page>.ts`，`pages/*` 只剩 DOM 装配；另外多做两件事：①`src/api.ts` → `src/api/index.ts`（`src/api/**` 这个 glob **匹配不到 `src/api.ts`**，不合并就得在 include 里加一条逐文件项，正是 4a/4b 拔掉的那个味道；所有 `from '../api'` 的 importer 一行没改，走目录 index 解析）；②`app.ts` 的 NAV 表提进 `src/logic/nav.ts`——`app.ts` 的 import 会把 21 个 page 模块连带整个 DOM 半边拉进来，所以「谁能看见哪个页面」这条唯一的权限渲染规则毕业前根本没法在测试里碰。scope **1516 行 100%**（函数 100%、分支 99.87%），`Scope (files)` 25/53，测试 121 → **615 例**，`Overall (gated)` 94.0% → **94.4%**（19 个包）。
+
+- **`fmtTime` 刻意没进纯层**，这是一条判据而非疏漏：它无 DOM 依赖，但输出是 `Date#toLocaleString`（跟 runner 的 locale/时区绑定），测试只能写成 `expect(fmtTime(x)).toBe(new Date(x).toLocaleString())` 这种同义反复。所以纯层里凡是**围着时间戳造句**的函数（`flagMetaText`/`shopMetaText`/`overlayMetaText`/`auditResolvedByText`）改成把格式化函数当参数收——句子留在纯层、可测（传 `ms => 'T'+ms` 的桩），环境相关的那一步留在 DOM 半边。为了把一行拉进 scope 而搬一个环境相关的格式化器，是拿数字换真实性。
+- **端点面测成一张表**：`test/api.test.ts` 78 行，每行是 `{动词, 路径, body, reply, returns}`——即「谁被 `encodeURIComponent`」「哪个 query 参数是**省略**而不是发空值」「响应从哪个 key 解包」。外加一条 canary：`Api.prototype` 上每个公开方法都必须在表里出现，第一次跑就抓到漏掉的 `logout`。`environment: 'node'` 下装 `fetch`/`localStorage`/`location` 三个桩就能跑整个 transport——这件事本身就是「api/ 是 transport 层而不是 DOM 层」的证据，也是守卫给它单开一层的依据。
+- **抽模块合掉的真重复（第五次验证这条比搬位置值钱）**：analytics 的五段 `*_dist` 是**同一段十五行表格代码逐字抄了五遍**（差异只有列名和取哪个字段当 label）→ 一次 `distribution(rows, key)` + 一个 `shareCard()`，`pages/analytics.ts` 474 → 356 行；`x.publicId ? '#' + x.publicId : <fallback>` 六处三种 fallback → `publicIdLabel`；`name ?? id.slice(0,8)` 五处两种写法 → `adminLabel`；`${n} thing${n===1?'':'s'}` 五处 → `plural`；SLG 世界 "Close" 的确认文案两个分支各写一遍 → `worldActions()` 单一定义；moderationWordlist 把「这次写入该不该拦」问了三遍（两处内联三 kind 判断 + `checkMessage.blocked`）→ `isBlocked()`。
+- **⚠️ 守卫的扫描器有两个 bug，是这个包的内容才触发的**——4a–4d 四轮全绿，并不说明它们对：
+  - `importsOf` 的 `\bfrom\s*['"]` 会命中 `qs.set('from', String(fromMs))` **字符串里**的 `from`，然后把后面直到下一个引号的整行当 specifier 报越界。修法：`(?<!['"])\b` 负向后瞻。
+  - `stripComments` 那两条正则（先块注释、再行注释）会把**行注释里**出现的 `src/api/**` 当成 `/*` 开头，一路吃到文件里下一个 `*/`（本包是 `logout()` 的 `/* ignore */`，四十行之外）——**整个 import 块凭空消失，扫描器报一个它根本没读到的干净文件**。交换两条正则的顺序只是把洞挪到「块注释首行含 `//`」上，所以改成了**逐字符扫描 + 字符串状态机**。跟本页 4b 那条「token 对比别用正则交替」是同一课，只是这次在注释边界上。
+  - 两个都是**扫描器空转**类的 bug：报「没发现越界」和「什么都没扫」印出来一模一样。所以这个包的 canary 除了「每个受检目录都扫到文件」「importsOf 至少匹配到一条」之外，还多一条**真仓库跨行 import**——点名 `logic/auctionAudit.ts` 与 `api/index.ts` 这两个唯一的 import 写成跨行的文件，断言它们的 `../types` 被找到。总量 canary 挡不住「大部分单行 import 还能匹配、只有跨行的丢了」。
+- **两层判据，不是一层**（4a/4b/4c 一层、4d 四层，这里两层）：`src/logic/**` 一个 global 都不许碰；`src/api/**` 允许 `fetch`/`localStorage`/`location` + `Response` 类型（一份**短的闭列表**，不是「非 DOM 皆可」——第四个 global 出现就该被 review 一次，因为那也是 `api.test.ts` 要多装一个桩），两者共同受「不许碰 DOM」。**并成一条会坏在两头**：取并集是放 DOM 进纯层，取交集是用规矩把 REST 客户端判成不可测。另有两条 include 结构断言：每个目录必须**恰好落在一层**（加第三个目录不分类就红），include 里**不许有逐文件项**（逐文件项是这套守卫看不进去的洞，而 `src/api.ts` 本来就是候选）。
+- **`confirm` 这个字段名付了代价**：`worldActions()` 返回的确认文案字段叫 `confirmText` 而不是 `confirm`，因为守卫按**名字**禁 `confirm`，分不清属性名和 `window.confirm()` 调用。刻意保持这种钝——「需要解析才能判对的规则，就会安静地判错」。
+- **门禁余量 168 行，五个包里最大**（4a 72 / 4b 49 / 4d ~140），原因正是「测试越好、能容忍的杂质越多」：scope 打满 100% 的直接结果就是 168 行的 0% 文件可以塞进 `src/logic/` 而门禁不响。**八条断言各做过 red-then-green**：纯层 DOM global、纯层网络 global、纯层跨界 import、include 加第三个目录、include 加逐文件项、纯目录改名、`importsOf` 退回引号盲正则、`stripComments` 退回两条正则。
+- **行为不变的证据：这轮标识符集合不是有用的不变量**（25 个新模块，−260/+401 全是重命名与点号链重排），文档里也不假装它是。承重的是两项：**普通字符串字面量 −1 +13** 全部可解释（一对是 `v <sha>` / `v <sha>-dirty` 构建版本串；其余 12 个是抽取引入的具名判别值与字段名参数——`'settle'/'close'/'reset'/'merge'`、`'approve-self'`、五个 `*_dist` 的 key，以及 `'?'`/`'result'` 从模板串内部升成独立参数）；**模板字面量把 `${...}` 归一化后逐条相等**，只有 5/6 条不同，全部因为 `plural()`/`adminLabel()` 现在拥有了那个片段。**归一化是必须的**：不归一化的话每条含插值的模板都因为压缩后的变量名变化而"不同"，一眼看去像 87 条 diff。
+- **可见性核对：两个 dev server 并排**（Browser 窗格不 composite、截图 5s 超时，同 4c/4d；端口 **9193/9194**，默认 9093 被 Docker Desktop 双栈占着——`localhost:9093` 会返 200 但那不是 webpack；临时配置加在**主检出**的 `.claude/launch.json`，收尾时删掉）。改动前后各起一份、连同一个真 admin 后端（18083），**21 个页面逐个点开，节点数与 `.err` 槽内容逐页一致**（两处 404 和一处 "social backend unavailable" 是那个后端自己的，两侧都有）。唯一差值 Audit 页 60 节点/7 行 vs 81/10——两次探测间审计日志自己多了 3 条，回头重读改动后那页也是 81/10，且两侧都恰好 7 节点/行。跨 origin 的 `localStorage` 不共享，基线那份要手工把 token 拷过去再 reload。另外派真事件跑了三条穿过纯层的链路：Word Lists 输入 `fuckery` → `"fuck" is already active via the built-in global floor, and every "fuckery" contains it`；SLG Shop cost 改 0 点保存 → `cost must be a positive number`（没有发出请求）；Analytics 的 17 个请求 query string 与 `api.test.ts` 表里的断言逐字一致、全 200。
+
 ### ⚠️ 覆盖率百分比守不住目录边界（2026-08-20 订正）
 
 Phase 4a 的原始写法声称「接门禁之后，往 `src/tiles/`/`src/state/` 丢一个 PIXI 模块，等于往已 include 的目录里塞一个 ~0% 的文件，直接打红 90%」。**方向对，量级错**，别再照抄这句：
@@ -108,31 +123,35 @@ node -e "const t=require('./coverage/coverage-summary.json').total.lines; consol
 
 **4b 独立复现了同一件事（2026-08-20）**：`level-editor` 毕业后余量 = `445/0.9 - 445` = **49 行**。这个包的 5 个 out-of-scope 文件是 196–477 行，全都大于 49——所以把**现有**任何一个搬进 `src/layout/` 确实会打红门禁。但那是这几个文件恰好都大，不是门禁的性质：实测往 `src/layout/` 放一个 **10 行**的 DOM 探针，`All files` 97.8%（445/455）、**门禁照过**，而 `pureLayerBoundary.test.ts` 当场判红。所以两件事的分工在第二个包上又验证了一次。
 
-**给 4e 的结论**：graduation 不等于边界有人守。`include` 回到目录级只是让「加文件」变得可见**给覆盖率算法**，不等于可见给门禁——门禁只看一个百分比，而百分比有余量。每个毕业的包都该配一条同形的 purity 守卫，`PURE_DIRS` 改一下就能抄——但**白名单和 DOM 全局清单要按目标工具的实际情况改**，别照抄 map-editor 那份：`level-editor` 根本没有 pixi.js 依赖（面板用裸 `canvas.getContext('2d')`），所以"挡 pixi"那句话在这里没有对应物，承重的是 DOM 全局清单（按该工具 impure 半边真正用到的 global 逐个列：`document`/`window`/`ResizeObserver`/`CanvasRenderingContext2D`/`MouseEvent`/`WheelEvent`/`showOpenFilePicker`…），允许的 bare specifier 也从 `@nw/shared/slg` 变成 `@nw/engine/*`。四条断言各做过 red-then-green 实测（DOM 全局、跨界 import、纯目录改名 canary、往 include 加第三个目录 canary）。**4c 走得更远：连「一律禁 DOM」这个前提本身都可能不成立**（`vfx-editor` 的 `src/io/**` 在门禁范围内、又理应用 IndexedDB/localStorage/Blob），那时要改的不是清单里的条目而是**判据**——见下方「4c 实测」的两层写法。**4d 把这条推到了四层**（同一个包里 `core`/`skeleton` 零浏览器 API、`animation` 只许 rAF 两个、`io` 一份显式清单），并且是唯一一个真有 `pixi.js` 可挡、也是唯一一个 scope 内**必须**跨界 `import type` 一个 PIXI 拥有者的包——见下方「4d 实测」。**四个包四种形状，这本身就是结论**：可以抄的只有骨架（`PURE_DIRS` 从 `coverage.include` 反推 + canary + LF/CRLF），判据每次都得自己量。
+**结论（五个包走完之后）**：graduation 不等于边界有人守。`include` 回到目录级只是让「加文件」变得可见**给覆盖率算法**，不等于可见给门禁——门禁只看一个百分比，而百分比有余量。每个毕业的包都该配一条同形的 purity 守卫，`PURE_DIRS` 改一下就能抄——但**白名单和 DOM 全局清单要按目标工具的实际情况改**，别照抄 map-editor 那份：`level-editor` 根本没有 pixi.js 依赖（面板用裸 `canvas.getContext('2d')`），所以"挡 pixi"那句话在这里没有对应物，承重的是 DOM 全局清单（按该工具 impure 半边真正用到的 global 逐个列：`document`/`window`/`ResizeObserver`/`CanvasRenderingContext2D`/`MouseEvent`/`WheelEvent`/`showOpenFilePicker`…），允许的 bare specifier 也从 `@nw/shared/slg` 变成 `@nw/engine/*`。四条断言各做过 red-then-green 实测（DOM 全局、跨界 import、纯目录改名 canary、往 include 加第三个目录 canary）。**4c 走得更远：连「一律禁 DOM」这个前提本身都可能不成立**（`vfx-editor` 的 `src/io/**` 在门禁范围内、又理应用 IndexedDB/localStorage/Blob），那时要改的不是清单里的条目而是**判据**——见下方「4c 实测」的两层写法。**4d 把这条推到了四层**（同一个包里 `core`/`skeleton` 零浏览器 API、`animation` 只许 rAF 两个、`io` 一份显式清单），并且是唯一一个真有 `pixi.js` 可挡、也是唯一一个 scope 内**必须**跨界 `import type` 一个 PIXI 拥有者的包——见下方「4d 实测」。**4e 又是第五种形状**：`ops` 的 include 名下两个目录**本来就该受不同规矩**（`logic/**` 一个 global 不许碰，`api/**` 允许 `fetch`/`localStorage`/`location` 这三个、REST 客户端的定义就是这个），并成一条会两头都坏；它还是唯一一个连**扫描器本身**都被抓出两个 bug 的包（引号里的 `from`、行注释里的 `src/api/**` 被当成块注释开头）——见下方「4e 实测」。**五个包五种形状，这本身就是结论**：可以抄的只有骨架（受检目录从 `coverage.include` 反推 + canary + LF/CRLF + 每条断言 red-then-green），判据和扫描器每次都得自己量、自己验。余量数字也一样越往后越大：4b 49 行 → 4a 72 → 4d ~140 → **4e 168**，因为它是「测试越好、能容忍的杂质越多」的直接后果。
 
 **防刷分的那一列**：报表每行有 `Scope (files)`（measured / `src` 下源文件数）。缩 include 抬 % 的同时这个比例会掉，两个数印在同一张表里，取舍在 review 时就看得见。
 
-## Phase 4 graduation：怎么把一个工具接进门禁
+## Phase 4 graduation：五个工具怎么接进门禁（**已全部完成**）
 
-> 已走过四遍：**4a `map-editor`**、**4b `level-editor`**、**4c `vfx-editor`**、**4d `animator`**（都是 2026-08-20）。下面六步就是那四次实际做的事。
+> 走了五遍：**4a `map-editor`**、**4b `level-editor`**、**4c `vfx-editor`**、**4d `animator`**、**4e `ops`**（都是 2026-08-20）。
+> **这一节现在是历史**：`NOT_GATED_JSON_SUMMARY_PACKAGES` 已随 4e 退休（见「三条 CI 闸门」与 ADR-070 收尾条），所以第 1–3 步没有对象了。保留它是因为剩下的步骤对**下一个新增的包**仍然适用，而且这五次踩到的坑不该跟着机制一起被删掉。
 
-1. 把该包从 `scripts/coverageLib.mjs` 的 `NOT_GATED_JSON_SUMMARY_PACKAGES` **移到** `JSON_SUMMARY_PACKAGES`。
-2. **两个清单都要检查**——`coverageScripts.test.ts` 有一条专门钉这个错的用例：复制一行、忘了删原来那行，包就同时既受门禁又被豁免（`collectRows` 出两行，门禁被那条豁免行满足，表面看一切正常）。**反向的错**（只删不加）由那条 two-state canary 兜住，见下方「测试侧不用改」。
-3. 顺手看一眼 `NOT_GATED_JSON_SUMMARY_PACKAGES` 上方那段注释里的**数量词**（现在是「一个」）——名单少一个，那句话就过时一句。4d 那次它写着「三个」，且**同一段里有两处**（「还剩 N 个」和「Phase 4a 和 4b did」那句枚举），两处都要改。
-4. 更新本文台账 + 该包 `vitest.config.ts` 的注释（包括「scope 内 X%」那个数字：把它复核一遍，别照抄旧值）。
-5. 加一条 `test/pureLayerBoundary.test.ts`（见上一节；`PURE_DIRS` 从 `coverage.include` 反推，白名单/DOM 清单按本工具改），并把每条断言各做一次 red-then-green。**顺带把「补的测试真的会红」也抽查一遍**：4d 用一个小脚本对 16 处源码逐个做单点变异、跑对应测试文件、再还原，第一轮有 4 处照绿（详见「4d 实测」）——补完覆盖率不等于补了检验能力，而覆盖率报表对这个差别是完全瞎的。
-6. `node scripts/checkCoverageThreshold.mjs` 本地过一遍（它会顺带把剩下的 not-gated 清单重印一次）。本地跑要求**每个**受门禁包都有 `coverage/`，只跑一个包会被判成「产出缺失」而非绿——在 worktree 里可以先把主检出各包已有的 `coverage/coverage-summary.json`（+ `server/engine` 的 `lcov.info`）拷进来占位，只重跑本轮改的那个包。**并行毕业时占位会骗人**：4d rebase 进当日分支后，`vfx-editor` 的占位还是 4c 之前的旧 scope（40.4%），而 4c 已经把它接进门禁了——占位是「借一个数字让脚本跑得起来」，凡是本轮 rebase 带进来的包都得重跑，不然报表里会混着别人的旧口径。
+给一个新包接门禁，今天要做的是：
 
-### 测试侧不用改（2026-08-20 解耦）
+1. 把它加进 `scripts/coverageLib.mjs` 的 `JSON_SUMMARY_PACKAGES`（或 `LCOV_PACKAGES`），并在那一行上方写清楚它的 scope 是什么、为什么。**没有第二条「先豁免」的路了**——那条路存在过不到一天，退休理由见 ADR-070 收尾条。
+2. `coverageScripts.test.ts` 有一条「never list the same package twice」用例钉着「同一个包不能出现在两份清单里」；`tools/` 下的包还额外被那条退休 canary 钉着「每个带 `vitest.config.ts` 的 tools 包都必须在受门禁清单里」——从文件系统读，所以新加一个 tools 工具而忘了把它接进门禁，会直接红。
+3. 更新本文台账 + 该包 `vitest.config.ts` 的注释（包括「scope 内 X%」那个数字：复核一遍，别照抄旧值）。
+4. 加一条 `test/pureLayerBoundary.test.ts`（见上一节；受检目录从 `coverage.include` 反推，判据按本工具量），每条断言各做一次 red-then-green。**顺带把「补的测试真的会红」也抽查一遍**：4d 用一个小脚本对 16 处源码逐个做单点变异、跑对应测试文件、再还原，第一轮有 4 处照绿（详见「4d 实测」）——补完覆盖率不等于补了检验能力，而覆盖率报表对这个差别完全是瞎的。
+5. `node scripts/checkCoverageThreshold.mjs` 本地过一遍。本地跑要求**每个**受门禁包都有 `coverage/`，只跑一个包会被判成「产出缺失」而非绿——在 worktree 里可以先把主检出各包已有的 `coverage/coverage-summary.json`（+ `server/engine` 的 `lcov.info`）拷进来占位，只重跑本轮改的那个包。**并行开发时占位会骗人**：4d rebase 进当日分支后，`vfx-editor` 的占位还是 4c 之前的旧 scope（40.4%），而 4c 已经把它接进门禁了——占位是「借一个数字让脚本跑得起来」，凡是本轮 rebase 带进来的包都得重跑，不然报表里会混着别人的旧口径。4e 同样中过这条（`animator`/`vfx-editor` 两个占位都是 rebase 带进来的）。
 
-只剩 **4e `ops`** 一条线（4a/4b/4c/4d 已毕业）。这套解耦当初就是为了让三条线并行、任意顺序合并，实际也确实做到了（4c 与 4d 同日各自开 worktree、独立落地，`coverageScripts.test.ts` 一行没改）：`coverageScripts.test.ts` 里再没有任何东西写死正在毕业的包名，所以毕业那个 PR 不需要连带改测试文件。做法两条：
+### 那套 not-gated 双清单机制（2026-08-20 上线、同日退休）
 
-- **需要一个真实 not-gated 行的用例**（共 7 条：「低于门槛不判红」「无产出判红」「两类失败分行」「`COVERAGE_THRESHOLD` 不作用于豁免行」「绿跑也复述差距」「报表单列一节」「不进 `Overall`」）从名单里取第一项当样本（`notGatedSample()`），并挂在 `itIfNotGated` 上——名单空了就整条跳过，因为那时根本没有这种行可断言。fixture 的百分比也不再用某个包当时的实测值（原来是 animator 的 64.3），只保留「在门槛的哪一侧」这一个语义。
-- **原来那条 `expect(NOT_GATED.length).toBeGreaterThan(0)`** 改成 two-state：名单非空时断言每一项都确实产出了 not-gated 行；名单为空时断言**豁免已经从输出里消失**（`collectRows` 不再有 `gated: false` 行、报表不再打印「reported, not gated」小节、门禁不再打印豁免脚注），并且 `tools/` 下每个带 `vitest.config.ts` 的包都在受门禁清单里——即「这些包是**搬**进门禁了，不是从表里掉出去了」。它防的事没变（豁免不能悄悄空掉、变成死代码），只是不再由「最后一个合并的人」随机中奖。
+短命但值得记：`NOT_GATED_JSON_SUMMARY_PACKAGES` 让五个 tools 包「出现在报表里、必须产出 coverage、但暂不受百分比约束」，好处是它们从第一天起就被测量，而不是等结构改完才进视野。三件事按这个顺序发生：
 
-**最后毕业的那条线额外要做的事（现在确定就是 4e `ops`）**：名单一空，not-gated 那套管路（`collectRows` 的第三段 spread、两个脚本里的豁免小节/脚注、这 7 条用例 + `itIfNotGated`/`notGatedSample`）就成了死代码，该在同一个 PR 里退休掉；canary 的空名单分支正是那次退休的验收条件——它只接受「输出里再也不声称豁免任何东西」。
+1. **上线**（ADR-070）：豁免必须在**每次** CI summary 里复述当前值与目标，绿跑也印——只写在设计文档里的「临时豁免」会无声变永久。
+2. **与测试解耦**（同日）：`coverageScripts.test.ts` 原本有 7 条用例把 `'tools/ops'` 写死当样本、外加一条 `expect(NOT_GATED.length).toBeGreaterThan(0)`，两处都会在「最后一个合并的人」身上随机炸。改成从名单取样本（`notGatedSample()` + `itIfNotGated`）+ two-state canary。**买到的东西是真的**：4c、4d 各自毕业时 `coverageScripts.test.ts` **一行没改**。
+3. **退休**（4e，同日）：名单空了以后，留着一套「能用的、合法地不受门禁约束」的机制本身就是一份长期邀请函——下一个到不了 90% 的包会先去用它，而不是去改结构。所以第三份清单、行上的 `gated` 字段、报表小节、门禁脚注、那 7 条用例和两个 helper 一并删除；two-state canary 收成单态的 `every row is gated, and the not-gated pipeline is retired`。**保留的两样**：报表的 `Scope (files)` 列，和门禁把「低于门槛」与「完全没产出」分成两条消息——都是那轮顺带修掉的既有问题，跟豁免无关。完整理由与验收条件见 ADR-070 收尾条。
+
+**这段历史里最可复用的一条**：那个 canary 被写错过两次（`toBeGreaterThan(0)` 形状错 → two-state 对 → 单态），但它防的事一次没变——**一个从所有清单里掉出去的包，谁都不再测量它，而这从外面看跟一次成功的退休一模一样**。所以退休时的验收条件是「机制在输出里消失 **且** 每个 tools 包都在受门禁清单里」，两半都断言，缺一半就等于把「悄悄漏掉」当成「按计划完成」。
 
 ## 测试历史
+
 
 四个阶段的补测（2026-08-13，纯逻辑 → 状态管理类 → 业务页 → 渲染/交互层的可抽纯函数）全部完成，细节写在 [`animator.md`](animator.md) 的「测试」节（它是唯一有独立 claudedocs 页的工具；`level-editor`/`vfx-editor`/`ops`/`map-editor` 的说明写在各自 `vitest.config.ts` 的头注释里）。当时明确留下的口子——DOM/PIXI 构造接线需要每个工具各投一套 headless-PIXI harness——就是上表 Phase 4 的来源。
 

@@ -1,5 +1,6 @@
 // Account management page (OPS_DESIGN §7): create ops accounts, change role, disable, reset password.
 import { clear, fmtTime, h, pill } from '../dom';
+import { accountStatus, ADMIN_ROLES, createAccountInput, isSelf, resetPasswordPrompt, toggleButton } from '../logic/accounts';
 import type { AdminAccountView } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
 
@@ -13,11 +14,13 @@ export async function pageAccounts(ctx: Ctx): Promise<void> {
   const uName = h('input', { placeholder: 'Username (≥3)' });
   const uPass = h('input', { type: 'password', placeholder: 'Initial password (≥6)' });
   const uDisp = h('input', { placeholder: 'Display name' });
-  const uRole = h('select', {}, ...['viewer', 'support', 'ops', 'super'].map((r) => h('option', { value: r }, r)));
+  const uRole = h('select', {}, ...ADMIN_ROLES.map((r) => h('option', { value: r }, r)));
   const create = async (): Promise<void> => {
     err.textContent = '';
     try {
-      await api.createAccount({ username: uName.value.trim(), password: uPass.value, role: uRole.value, displayName: uDisp.value.trim() || uName.value.trim() });
+      await api.createAccount(createAccountInput({
+        username: uName.value, password: uPass.value, displayName: uDisp.value, role: uRole.value,
+      }));
       uName.value = '';
       uPass.value = '';
       uDisp.value = '';
@@ -49,9 +52,11 @@ export async function pageAccounts(ctx: Ctx): Promise<void> {
 
 function accountRow(ctx: Ctx, a: AdminAccountView, onChange: () => void): HTMLElement {
   const { api, session } = ctx;
-  const self = a.id === session.admin.id;
+  const self = isSelf(a, session);
+  const status = accountStatus(a);
+  const toggle = toggleButton(a);
   const err = h('div', { class: 'err' });
-  const roleSel = h('select', {}, ...['viewer', 'support', 'ops', 'super'].map((r) => h('option', { value: r, ...(r === a.role ? { selected: 'selected' } : {}) }, r)));
+  const roleSel = h('select', {}, ...ADMIN_ROLES.map((r) => h('option', { value: r, ...(r === a.role ? { selected: 'selected' } : {}) }, r)));
   const saveRole = async (): Promise<void> => {
     err.textContent = '';
     try {
@@ -64,14 +69,14 @@ function accountRow(ctx: Ctx, a: AdminAccountView, onChange: () => void): HTMLEl
   const toggleDisable = async (): Promise<void> => {
     err.textContent = '';
     try {
-      await api.updateAccount(a.id, { disabled: !a.disabled });
+      await api.updateAccount(a.id, { disabled: toggle.nextDisabled });
       onChange();
     } catch (e) {
       showErr(err, e);
     }
   };
   const reset = async (): Promise<void> => {
-    const pw = prompt(`Set new password for ${a.username} (≥6)`);
+    const pw = prompt(resetPasswordPrompt(a.username));
     if (!pw) return;
     err.textContent = '';
     try {
@@ -87,8 +92,8 @@ function accountRow(ctx: Ctx, a: AdminAccountView, onChange: () => void): HTMLEl
     h('td', {}, a.username, self ? h('span', { class: 'muted' }, '(you)') : null),
     h('td', {}, a.displayName),
     h('td', {}, roleSel, h('button', { class: 'ghost', onclick: saveRole }, 'Save')),
-    h('td', {}, a.disabled ? pill('disabled', 'failed') : pill('active', 'executed')),
+    h('td', {}, pill(status.label, status.cls)),
     h('td', {}, fmtTime(a.lastLoginAt ?? 0)),
-    h('td', {}, h('button', { class: a.disabled ? 'ghost' : 'danger', disabled: self, onclick: toggleDisable }, a.disabled ? 'Enable' : 'Disable'), h('button', { class: 'ghost', onclick: reset }, 'Reset password'), err),
+    h('td', {}, h('button', { class: toggle.cls, disabled: self, onclick: toggleDisable }, toggle.label), h('button', { class: 'ghost', onclick: reset }, 'Reset password'), err),
   );
 }

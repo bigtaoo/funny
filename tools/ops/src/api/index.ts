@@ -1,5 +1,11 @@
 // Admin backend REST client (OPS_DESIGN §4.2). Bearer admin token; holds no internal secrets, connects to
 // no database, and never reaches business services directly — everything goes through the admin backend (§7).
+//
+// Was `src/api.ts` until ADR-070 Phase 4e (2026-08-20), when it moved to `src/api/index.ts` so that the
+// endpoint surface and the transport half it already sat on top of form one directory. `coverage.include`
+// is directory-level (`src/api/**`, `src/logic/**`); a per-file `src/api.ts` entry alongside it would have
+// been exactly the missing-module-boundary smell Phase 4a/4b removed from the two sibling tools. Every
+// `from './api'` / `from '../api'` importer resolves to this file unchanged.
 import type {
   AdminAccountView,
   AntiCheatReviewView,
@@ -42,11 +48,11 @@ import type {
   TradeAuditTicketView,
   TrendPoint,
   WordlistOverrideDoc,
-} from './types';
-import { ApiTransport } from './api/transport';
+} from '../types';
+import { ApiTransport } from './transport';
 
 // Re-exported so callers keep importing it from here (pages/shared.ts, pages/gachaPools.ts, app.ts).
-export { ApiError } from './api/transport';
+export { ApiError } from './transport';
 
 export class Api extends ApiTransport {
   // —— Authentication ——

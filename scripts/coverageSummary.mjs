@@ -37,13 +37,14 @@ function fmtScope(row) {
   return `${row.scopeFiles} / ${row.srcFiles}`;
 }
 
-// Overall deliberately sums the GATED packages only (ADR-070). The not-gated tool packages are
-// reported below in their own section with their own subtotal: folding them in would silently
-// redefine a number that has meant "the coverage the release gate enforces" since 2026-08-15, and
-// ops alone (3639 unscoped lines at ~9%) would move it several points on its own.
+// Every row is gated since ADR-070 Phase 4e retired the "reported, not gated" section that used to
+// sit below this table (see coverageLib.mjs). The label stays `Overall (gated)` on purpose: it names
+// what the number MEANS — the coverage the release gate actually enforces — which is how every doc
+// and note has quoted it since 2026-08-15, and renaming it would break the continuity of a tracked
+// number to save one word.
 const overall = { lines: [0, 0], statements: [0, 0], branches: [0, 0], functions: [0, 0] };
 for (const row of rows) {
-  if (row.missing || !row.gated) continue;
+  if (row.missing) continue;
   for (const key of ['lines', 'statements', 'branches', 'functions']) {
     overall[key][0] += row[key].covered;
     overall[key][1] += row[key].total;
@@ -61,15 +62,8 @@ const rowLine = (row) =>
     ? `| ${row.pkg} | — | — | — | — | — |`
     : `| ${row.pkg} | ${fmtPct(row.lines)} | ${fmtPct(row.statements)} | ${fmtPct(row.branches)} | ${fmtPct(row.functions)} | ${fmtScope(row)} |`;
 
-for (const row of rows.filter((r) => r.gated)) lines.push(rowLine(row));
+for (const row of rows) lines.push(rowLine(row));
 lines.push(`| **Overall (gated)** | **${overallPct('lines').toFixed(1)}%** | **${overallPct('statements').toFixed(1)}%** | **${overallPct('branches').toFixed(1)}%** | **${overallPct('functions').toFixed(1)}%** |  |`);
-
-const notGated = rows.filter((r) => !r.gated);
-if (notGated.length > 0) {
-  lines.push('| | | | | | |');
-  lines.push('| _reported, not gated (ADR-070)_ | | | | | |');
-  for (const row of notGated) lines.push(rowLine(row));
-}
 lines.push('');
 
 const missing = rows.filter((r) => r.missing).map((r) => r.pkg);

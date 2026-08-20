@@ -1,10 +1,15 @@
-// suspicions.ts's pure helpers. `fmtStats` renders a statKey→count map for the review table's
+// src/logic/suspicions.ts — the anti-cheat page's pure helpers. `fmtStats` renders a statKey→count map for the review table's
 // pvp_overclaim detail column; the rest belong to the two read-only signal sections restored on
 // 2026-08-20 (C3 mismatches, C4 suspicious-PvE roster). pageSuspicions() itself builds DOM, untested —
 // same split as promo.test.ts / feedback.test.ts.
 import { describe, it, expect } from 'vitest';
-import { fmtStats, mismatchPlayerLabel, mismatchRepeats, pveWarningLevel } from '../src/pages/suspicions';
-import type { MismatchView } from '../src/types';
+import {
+  banConfirm, canResolveReview, fmtStats, mismatchPlayerLabel, mismatchPlayersText, mismatchRepeats,
+  PVE_WARNING_HIGH, pveStatus, pveWarningLevel, repeatsText, reviewDetail, reviewKind, reviewKindPill,
+  reviewPlayerLabel, reviewQuery, reviewResolvedByText, reviewResolveMessage, reviewStatusPills,
+  suspiciousPveLabel,
+} from '../src/logic/suspicions';
+import type { AntiCheatReviewView, MismatchView } from '../src/types';
 
 describe('fmtStats', () => {
   it('returns an em dash for undefined', () => {
@@ -117,5 +122,179 @@ describe('pveWarningLevel', () => {
   it('escalates at the threshold and stays there above it', () => {
     expect(pveWarningLevel(3)).toBe('high');
     expect(pveWarningLevel(12)).toBe('high');
+  });
+});
+
+const review = (over: Partial<AntiCheatReviewView> = {}): AntiCheatReviewView => ({
+  _id: 'r1', accountId: 'acc-1', status: 'open', ts: 1, ...over,
+} as AntiCheatReviewView);
+
+describe('reviewKind', () => {
+  it('reads a row with no kind as a PvP overclaim — that predates the field', () => {
+    expect(reviewKind({})).toBe('pvp_overclaim');
+  });
+
+  it('passes an explicit kind through', () => {
+    expect(reviewKind({ kind: 'pve_reject' })).toBe('pve_reject');
+    expect(reviewKind({ kind: 'coin_anomaly' })).toBe('coin_anomaly');
+  });
+});
+
+describe('reviewDetail', () => {
+  it('compares claimed and judged stars for a PvE reject', () => {
+    expect(reviewDetail(review({
+      kind: 'pve_reject', levelId: 'w2-3', claimedStars: 3, judgedStars: 1, rejectCountAfter: 2,
+    }))).toBe('w2-3: claimed 3★, judged 1★ (reject #2)');
+  });
+
+  it('compares the day gain against its threshold for a coin anomaly', () => {
+    expect(reviewDetail(review({
+      kind: 'coin_anomaly', dayKey: '2026-08-13', nonRechargeGain: 9000, threshold: 5000,
+    }))).toBe('2026-08-13: gained 9000 non-recharge coins (threshold 5000)');
+  });
+
+  it('dumps the four disputed stat maps for a PvP overclaim', () => {
+    expect(reviewDetail(review({
+      roomId: 'room-9', side: 0, reported: { kills: 5 }, authoritative: { kills: 3 },
+      overclaim: { kills: 2 }, rolledBack: {}, suspicionAfter: 12,
+    }))).toBe('room-9 (side 0) reported kills:5 / auth kills:3 / overclaim kills:2 / rolled back — / suspicion 12');
+  });
+
+  it('dashes every field a record did not carry rather than printing undefined', () => {
+    expect(reviewDetail(review({ kind: 'pve_reject' }))).toBe('—: claimed —★, judged —★ (reject #—)');
+    expect(reviewDetail(review({ kind: 'coin_anomaly' }))).toBe('—: gained — non-recharge coins (threshold —)');
+    expect(reviewDetail(review())).toContain('— (side —)');
+  });
+});
+
+describe('reviewKindPill', () => {
+  it('marks a high-severity PvE reject red and an ordinary one amber', () => {
+    expect(reviewKindPill(review({ kind: 'pve_reject', severity: 'high' }))).toEqual({ label: 'PvE', cls: 'failed' });
+    expect(reviewKindPill(review({ kind: 'pve_reject' }))).toEqual({ label: 'PvE', cls: 'warn' });
+  });
+
+  it('marks a coin anomaly amber', () => {
+    expect(reviewKindPill(review({ kind: 'coin_anomaly' }))).toEqual({ label: 'Coin', cls: 'warn' });
+  });
+
+  it('gives a PvP overclaim no pill — the page prints plain text for those', () => {
+    expect(reviewKindPill(review())).toBeNull();
+  });
+});
+
+describe('reviewStatusPills', () => {
+  it('shows just the amber status while open', () => {
+    expect(reviewStatusPills({ status: 'open' })).toEqual([{ label: 'open', cls: 'warn' }]);
+  });
+
+  it('adds the resolution alongside once reviewed, red for a ban', () => {
+    expect(reviewStatusPills({ status: 'reviewed', resolution: 'banned' })).toEqual([
+      { label: 'reviewed', cls: 'ok' }, { label: 'banned', cls: 'failed' },
+    ]);
+    expect(reviewStatusPills({ status: 'reviewed', resolution: 'dismissed' })).toEqual([
+      { label: 'reviewed', cls: 'ok' }, { label: 'dismissed', cls: 'ok' },
+    ]);
+  });
+
+  it('shows no resolution pill for a reviewed record that carries none', () => {
+    expect(reviewStatusPills({ status: 'reviewed' })).toHaveLength(1);
+  });
+});
+
+describe('review queue gating and messages', () => {
+  it('resolves only an open record, and only with anticheat.action', () => {
+    expect(canResolveReview(true, 'open')).toBe(true);
+    expect(canResolveReview(false, 'open')).toBe(false);
+    expect(canResolveReview(true, 'reviewed')).toBe(false);
+  });
+
+  it('attributes a reviewed record, and says nothing for an open one', () => {
+    expect(reviewResolvedByText({ status: 'reviewed', resolvedBy: 'Ada' })).toBe('by Ada');
+    expect(reviewResolvedByText({ status: 'open', resolvedBy: 'Ada' })).toBeNull();
+    expect(reviewResolvedByText({ status: 'reviewed' })).toBeNull();
+  });
+
+  it('confirms a ban by accountId and reports either verdict', () => {
+    expect(banConfirm('acc-1')).toBe('Ban accountId acc-1?');
+    expect(reviewResolveMessage('banned')).toBe('Banned.');
+    expect(reviewResolveMessage('dismissed')).toBe('Dismissed.');
+  });
+
+  it('names the player by publicId where there is one', () => {
+    expect(reviewPlayerLabel({ publicId: '123456789', accountId: 'acc-1' })).toBe('#123456789');
+    expect(reviewPlayerLabel({ accountId: 'acc-1' })).toBe('acc-1');
+  });
+});
+
+describe('reviewQuery', () => {
+  it('always sends the status and limit', () => {
+    expect(reviewQuery('', 'open', 100)).toEqual({ status: 'open', limit: 100 });
+  });
+
+  it('adds a trimmed accountId only when the operator typed one', () => {
+    expect(reviewQuery('  acc-1  ', 'all', 50)).toEqual({ accountId: 'acc-1', status: 'all', limit: 50 });
+    expect(reviewQuery('   ', 'all', 50)).toEqual({ status: 'all', limit: 50 });
+  });
+});
+
+describe('repeatsText', () => {
+  it('lists each repeat offender with its count', () => {
+    expect(repeatsText([{ label: '#1 Ada', count: 3 }, { label: '#2', count: 2 }])).toBe('#1 Ada ×3, #2 ×2');
+  });
+
+  it('is empty when nobody repeats — the page then renders no summary line', () => {
+    expect(repeatsText([])).toBe('');
+  });
+});
+
+describe('mismatchPlayersText', () => {
+  it('orders the two sides so the same match always reads the same way round', () => {
+    const m = { players: [
+      { accountId: 'b', side: 1, publicId: '2' },
+      { accountId: 'a', side: 0, publicId: '1' },
+    ] } as Pick<MismatchView, 'players'>;
+    expect(mismatchPlayersText(m)).toBe('#1 vs #2');
+  });
+
+  it('does not reorder the caller array', () => {
+    const players = [
+      { accountId: 'b', side: 1, publicId: '2' },
+      { accountId: 'a', side: 0, publicId: '1' },
+    ];
+    mismatchPlayersText({ players } as Pick<MismatchView, 'players'>);
+    expect(players[0]!.accountId).toBe('b');
+  });
+
+  it('dashes a match that snapshotted no players', () => {
+    expect(mismatchPlayersText({ players: [] } as Pick<MismatchView, 'players'>)).toBe('—');
+  });
+});
+
+describe('suspiciousPveLabel', () => {
+  it('shows name and publicId together when both are known', () => {
+    expect(suspiciousPveLabel({ _id: 'acc-1', displayName: 'Ada', publicId: '123456789' })).toBe('Ada #123456789');
+  });
+
+  it('shows the name alone when there is no publicId, with no trailing space', () => {
+    expect(suspiciousPveLabel({ _id: 'acc-1', displayName: 'Ada' })).toBe('Ada');
+  });
+
+  it('falls back to publicId, then to the raw accountId', () => {
+    expect(suspiciousPveLabel({ _id: 'acc-1', publicId: '123456789' })).toBe('#123456789');
+    expect(suspiciousPveLabel({ _id: 'acc-1' })).toBe('acc-1');
+  });
+});
+
+describe('pveStatus and the high-severity threshold', () => {
+  it('mirrors meta severity rule at the documented count', () => {
+    expect(PVE_WARNING_HIGH).toBe(3);
+    expect(pveWarningLevel(PVE_WARNING_HIGH)).toBe('high');
+    expect(pveWarningLevel(PVE_WARNING_HIGH - 1)).toBe('normal');
+  });
+
+  it('reads a ban state into a pill', () => {
+    expect(pveStatus(true)).toEqual({ label: 'banned', cls: 'failed' });
+    expect(pveStatus(false)).toEqual({ label: 'active', cls: 'ok' });
+    expect(pveStatus(undefined)).toEqual({ label: 'active', cls: 'ok' });
   });
 });

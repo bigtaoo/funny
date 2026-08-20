@@ -3,6 +3,7 @@
 // every other transaction.* event (payment_failed, canceled, past_due, …), which the webhook would
 // otherwise drop silently.
 import { clear, fmtTime, h } from '../dom';
+import { detailTitle, paddleCells, paddleQuery, prettyRawEvent } from '../logic/paddleEvents';
 import { showErr, type Ctx } from './shared';
 
 export async function pagePaddleEvents(ctx: Ctx): Promise<void> {
@@ -30,10 +31,7 @@ export async function pagePaddleEvents(ctx: Ctx): Promise<void> {
   const reload = async (): Promise<void> => {
     err.textContent = '';
     try {
-      const events = await api.paddleEvents({
-        ...(accountInput.value.trim() ? { accountId: accountInput.value.trim() } : {}),
-        ...(txInput.value.trim() ? { transactionId: txInput.value.trim() } : {}),
-      });
+      const events = await api.paddleEvents(paddleQuery(accountInput.value, txInput.value));
       clear(box);
       const t = h(
         'table',
@@ -49,27 +47,22 @@ export async function pagePaddleEvents(ctx: Ctx): Promise<void> {
         ),
       );
       for (const e of events) {
+        const c = paddleCells(e);
         const row = h(
           'tr',
           {
             style: 'cursor:pointer',
             onclick: () => {
               clear(detailOut);
-              let pretty = e.rawEvent;
-              try {
-                pretty = JSON.stringify(JSON.parse(e.rawEvent), null, 2);
-              } catch {
-                // rawEvent wasn't valid JSON — show as-is.
-              }
-              detailOut.append(h('h3', {}, `${e.eventType} — ${e.transactionId}`), h('pre', {}, pretty));
+              detailOut.append(h('h3', {}, detailTitle(e)), h('pre', {}, prettyRawEvent(e.rawEvent)));
               detailOut.style.display = '';
             },
           },
           h('td', {}, fmtTime(e.ts)),
-          h('td', {}, e.eventType),
-          h('td', {}, e.status ?? '—'),
-          h('td', {}, e.transactionId),
-          h('td', {}, e.accountId ?? '—'),
+          h('td', {}, c.eventType),
+          h('td', {}, c.status),
+          h('td', {}, c.transactionId),
+          h('td', {}, c.accountId),
         );
         t.append(row);
       }

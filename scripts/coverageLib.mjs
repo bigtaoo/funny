@@ -52,29 +52,37 @@ export const JSON_SUMMARY_PACKAGES = [
   // `tools/animator/test/pureLayerBoundary.test.ts` — not the percentage — is what keeps a
   // PIXI/DOM file out of those four directories.
   'tools/animator',
+  // ADR-070 Phase 4e (2026-08-20, same day): the last of the five, and the only one that had NO
+  // include list at all — it reported its whole self at 8.84% (322/3639) on purpose, because the
+  // nine pure helpers it had exported each still lived inside a pages/*.ts file that was 90%
+  // h()-built DOM, so there was no directory to point at and no honest way to scope it without
+  // first building the layer. Every page now has a src/logic/<page>.ts (its queries, validation,
+  // pivots, permission decisions and derived labels) with pages/* as DOM assembly, and src/api.ts
+  // moved to src/api/index.ts so the endpoint surface and its transport share one directory. The
+  // include is ['src/logic/**', 'src/api/**'] — 1516/1516 lines. Its two directories are held to
+  // DIFFERENT purity rules by tools/ops/test/pureLayerBoundary.test.ts (logic/ may touch no global
+  // at all; api/ may use fetch/localStorage/location and no DOM), because a REST client that were
+  // forbidden the network would just be untestable by fiat.
+  'tools/ops',
 ];
 
 // Workspaces whose `npm run test:coverage` writes coverage/lcov.info instead (Node's built-in
 // test coverage — see server/engine/scripts/runTests.mjs).
 export const LCOV_PACKAGES = ['server/engine'];
 
-// ADR-070 (2026-08-20): the tool packages still on the ratchet — one of the original five, since
-// Phase 4a (tools/map-editor), 4b (tools/level-editor), 4c (tools/vfx-editor) and 4d
-// (tools/animator) graduated into the gated list above. Keep this count honest: a stale quantifier
-// here is how "temporary" exemptions go quiet. They emit the same coverage-summary.json as that
-// list, and they appear in the report the same way — but they are NOT gated on the 90% line bar
-// yet, because each one's scope needs structural work first (see each tools/*/vitest.config.ts and
-// claudedocs/tools-testing.md for the per-tool exit condition). What IS gated for them from day one
-// is that the output exists at all: a tool package that stops producing coverage/ fails
-// checkCoverageThreshold.mjs exactly like a server workspace would. The percentage is on a
-// ratchet; the plumbing is not.
-// Graduating one of these (Phase 4a, 4b, 4c and 4d did) means MOVING its line up into
-// JSON_SUMMARY_PACKAGES, not copying it: a package listed in both would get two rows out of
-// collectRows(), and the gate would be satisfied by the exempt one while the table read as green.
-// coverageScripts.test.ts pins that with a duplicate check across all three lists.
-export const NOT_GATED_JSON_SUMMARY_PACKAGES = [
-  'tools/ops',
-];
+// There used to be a third list here — `NOT_GATED_JSON_SUMMARY_PACKAGES`, ADR-070's "reported, not
+// gated" ratchet: packages that had to EMIT coverage but were not yet held to the 90% percentage,
+// so the five tools/ packages could be measured from day one while their scopes were restructured
+// one at a time. Phase 4a–4e emptied it (map-editor, level-editor, vfx-editor, animator, ops) and
+// Phase 4e retired the mechanism with it, on the reasoning recorded in ADR-070's closing entry: the
+// exemption was a bounded transition device, and leaving a working way to be exempt from the gate in
+// place is a standing invitation to reach for it instead of doing the structural work — which is the
+// one thing ADR-070 decided against. Re-adding it is a ~40-line change and is in the history.
+//
+// What that transition left behind and is NOT part of the ratchet, so it stays: the `Scope (files)`
+// column (so a shrunken `coverage.include` is visible next to the percentage it flatters), and the
+// gate's split between "below the bar" and "produced no coverage at all" — two different failures
+// that used to print as one wrong message.
 
 export function readJsonSummary(root, pkg) {
   try {
@@ -163,17 +171,17 @@ export function readLcov(root, pkg) {
 }
 
 /** Reads every tracked package's coverage output (root = repo root, i.e. process.cwd() when run
- *  from CI). Row shape: `{ pkg, gated, srcFiles, missing: true }` or `{ pkg, gated, srcFiles,
- *  scopeFiles, lines, statements, branches, functions }` where each metric is
- *  `{ total, covered, pct }`.
+ *  from CI). Row shape: `{ pkg, srcFiles, missing: true }` or `{ pkg, srcFiles, scopeFiles, lines,
+ *  statements, branches, functions }` where each metric is `{ total, covered, pct }`.
  *
- *  `gated: false` (ADR-070) means "report it, don't hold it to the percentage bar yet" — the
- *  threshold script still requires the output to EXIST, it just doesn't compare the number. */
+ *  Every row is gated. Rows used to carry a `gated` boolean for ADR-070's ratchet; that field went
+ *  away with the third list above — see its note for why, and coverageScripts.test.ts's
+ *  "every row is gated, and the not-gated pipeline is gone" case for the assertion that keeps it
+ *  away. */
 export function collectRows(root) {
-  const withMeta = (gated) => (row) => ({ ...row, gated, srcFiles: countSrcFiles(root, row.pkg) });
+  const withMeta = (row) => ({ ...row, srcFiles: countSrcFiles(root, row.pkg) });
   return [
-    ...JSON_SUMMARY_PACKAGES.map((pkg) => readJsonSummary(root, pkg)).map(withMeta(true)),
-    ...LCOV_PACKAGES.map((pkg) => readLcov(root, pkg)).map(withMeta(true)),
-    ...NOT_GATED_JSON_SUMMARY_PACKAGES.map((pkg) => readJsonSummary(root, pkg)).map(withMeta(false)),
+    ...JSON_SUMMARY_PACKAGES.map((pkg) => readJsonSummary(root, pkg)).map(withMeta),
+    ...LCOV_PACKAGES.map((pkg) => readLcov(root, pkg)).map(withMeta),
   ];
 }

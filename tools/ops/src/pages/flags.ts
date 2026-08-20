@@ -1,17 +1,12 @@
 // Feature flags page (FEATURE_FLAGS_DESIGN §5): master toggle + targeting (pct/region/platform/allow-deny).
+// The rollout object, the omit-when-empty rules and the provenance line live in src/logic/flags.ts.
 import { clear, fmtTime, h, pill } from '../dom';
-import type { FeatureFlagRow, FlagPlatform, FlagRollout } from '../types';
+import {
+  buildRollout, FLAG_PLATFORMS, flagMetaText, flagUpsertInput, isClientLogFlag, platformChecked,
+  rolloutInputs,
+} from '../logic/flags';
+import type { FeatureFlagRow, FlagRollout } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
-
-const FLAG_PLATFORMS: FlagPlatform[] = ['web', 'wechat', 'crazygames'];
-
-/** Comma- or newline-separated string → trimmed, non-empty array. */
-export function parseList(raw: string): string[] {
-  return raw
-    .split(/[\n,]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
 
 export async function pageFlags(ctx: Ctx): Promise<void> {
   const { api, root } = ctx;
@@ -27,23 +22,24 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
   const buildCard = (row: FeatureFlagRow): HTMLElement => {
     const doc = row.doc;
     const r: FlagRollout = doc?.rollout ?? {};
+    const initial = rolloutInputs(r);
     const enabled = h('input', { type: 'checkbox' }) as HTMLInputElement;
     enabled.checked = doc ? doc.enabled : false;
     const pct = h('input', { type: 'number', min: '0', max: '100', style: 'width:80px',
-      value: r.pct !== undefined ? String(r.pct) : '' }) as HTMLInputElement;
-    const regions = h('input', { style: 'width:100%', value: (r.regions ?? []).join(', '),
+      value: initial.pct }) as HTMLInputElement;
+    const regions = h('input', { style: 'width:100%', value: initial.regions,
       placeholder: 'e.g. eu, us, cn (empty = all)' }) as HTMLInputElement;
     const platBoxes = FLAG_PLATFORMS.map((p) => {
       const cb = h('input', { type: 'checkbox' }) as HTMLInputElement;
-      cb.checked = (r.platforms ?? []).includes(p);
+      cb.checked = platformChecked(r, p);
       return { p, cb };
     });
     const allow = h('textarea', { rows: '2', style: 'width:100%',
-      placeholder: 'accountId comma/newline separated (match = on)' }, (r.allowAccounts ?? []).join('\n')) as HTMLTextAreaElement;
+      placeholder: 'accountId comma/newline separated (match = on)' }, initial.allowAccounts) as HTMLTextAreaElement;
     const deny = h('textarea', { rows: '2', style: 'width:100%',
-      placeholder: 'accountId comma/newline separated (match = off)' }, (r.denyAccounts ?? []).join('\n')) as HTMLTextAreaElement;
+      placeholder: 'accountId comma/newline separated (match = off)' }, initial.denyAccounts) as HTMLTextAreaElement;
     const allowPublicIds = h('textarea', { rows: '2', style: 'width:100%',
-      placeholder: '9-digit publicId comma/newline separated (match = on)' }, (r.allowPublicIds ?? []).join('\n')) as HTMLTextAreaElement;
+      placeholder: '9-digit publicId comma/newline separated (match = on)' }, initial.allowPublicIds) as HTMLTextAreaElement;
 
     const status = h('span', {});
     const saveBtn = h('button', {}, 'Save') as HTMLButtonElement;
@@ -52,23 +48,15 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
       status.className = '';
       saveBtn.disabled = true;
       try {
-        const rollout: FlagRollout = {};
-        if (pct.value.trim() !== '') rollout.pct = Math.max(0, Math.min(100, Number(pct.value)));
-        const reg = parseList(regions.value);
-        if (reg.length) rollout.regions = reg;
-        const plats = platBoxes.filter((b) => b.cb.checked).map((b) => b.p);
-        if (plats.length) rollout.platforms = plats;
-        const al = parseList(allow.value);
-        if (al.length) rollout.allowAccounts = al;
-        const dn = parseList(deny.value);
-        if (dn.length) rollout.denyAccounts = dn;
-        const apid = parseList(allowPublicIds.value);
-        if (apid.length) rollout.allowPublicIds = apid;
-        await api.upsertFlag(row.key, {
-          enabled: enabled.checked,
-          ...(Object.keys(rollout).length ? { rollout } : {}),
-          ...(row.desc ? { desc: row.desc } : {}),
+        const rollout = buildRollout({
+          pct: pct.value,
+          regions: regions.value,
+          platforms: platBoxes.filter((b) => b.cb.checked).map((b) => b.p),
+          allowAccounts: allow.value,
+          denyAccounts: deny.value,
+          allowPublicIds: allowPublicIds.value,
         });
+        await api.upsertFlag(row.key, flagUpsertInput(row, enabled.checked, rollout));
         showOk(status, 'Saved (server propagates within 30s)');
       } catch (e) {
         showErr(status, e);
@@ -77,10 +65,7 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
       }
     };
 
-    const meta = doc
-      ? h('div', { class: 'muted', style: 'font-size:12px' },
-          `Last modified: ${doc.updatedBy || '—'} · ${fmtTime(doc.updatedAt)}`)
-      : h('div', { class: 'muted', style: 'font-size:12px' }, `Not overridden, using default (${row.default ? 'on' : 'off'})`);
+    const meta = h('div', { class: 'muted', style: 'font-size:12px' }, flagMetaText(row, fmtTime));
 
     const fieldRow = (label: string, control: Node): HTMLElement =>
       h('div', { style: 'margin:6px 0' }, h('label', { style: 'display:block;font-size:13px;color:var(--muted)' }, label), control);
@@ -100,7 +85,7 @@ export async function pageFlags(ctx: Ctx): Promise<void> {
       fieldRow('Allow accounts (match = on, overrides targeting)', allow),
       fieldRow('Deny accounts (match = off, overrides everything)', deny),
       fieldRow('Allow publicIds (9-digit player id, match = on)', allowPublicIds),
-      ...(row.key.startsWith('client_log_')
+      ...(isClientLogFlag(row.key)
         ? [h('div', { class: 'muted', style: 'font-size:12px;color:var(--muted)' },
             'Target a single player: set rollout % to 0 (off for everyone else), add only their 9-digit publicId to allowPublicIds above. ' +
             'Client uploads the most verbose enabled level (debug>info>warn>error). Query: Grafana {source="client"} | logfmt | publicId="..."')]

@@ -1,15 +1,8 @@
 // Live monitor page (OPS_DESIGN §7). Self-collected metrics + 6h trend sparkline.
+// The metric table, the grid's cells and both intervals live in src/logic/monitor.ts (ADR-070 4e).
 import { clear, h } from '../dom';
+import { AUTO_REFRESH_MS, availabilityNote, liveCells, METRICS, metricLabel, trendCaption, trendFromMs } from '../logic/monitor';
 import { showErr, sparkline, type Ctx } from './shared';
-
-// Self-collected metrics → display labels (same order as the backend METRIC_KEYS).
-const METRICS: [string, string][] = [
-  ['online', 'Online connections'],
-  ['queue', 'Matchmaking queue'],
-  ['rooms', 'Active rooms'],
-  ['gameInstances', 'Game instances'],
-  ['gameLoad', 'Game load'],
-];
 
 export async function pageMonitor(ctx: Ctx): Promise<void> {
   const { api, root, onTeardown } = ctx;
@@ -26,28 +19,20 @@ export async function pageMonitor(ctx: Ctx): Promise<void> {
     try {
       const live = await api.monitorLive();
       clear(grid);
-      const cells: [string, number][] = [
-        ['Online connections', live.online],
-        ['Matchmaking queue', live.queue],
-        ['Active rooms', live.rooms],
-        ['Game instances', live.gameInstances],
-        ['Game load', live.gameLoad ?? 0],
-      ];
-      for (const [k, v] of cells) {
+      for (const [k, v] of liveCells(live)) {
         grid.append(h('div', { class: 'stat' }, h('div', { class: 'v' }, String(v)), h('div', { class: 'k' }, k)));
       }
-      err.textContent = live.available ? '' : 'Note: stats backend not configured, showing 0.';
+      err.textContent = availabilityNote(live);
     } catch (e) {
       showErr(err, e);
     }
   };
   const refreshTrend = async (): Promise<void> => {
     const metric = metricSel.value;
-    const label = METRICS.find(([v]) => v === metric)?.[1] ?? metric;
     try {
-      const pts = await api.trend(metric, Date.now() - 6 * 3600 * 1000);
+      const pts = await api.trend(metric, trendFromMs(Date.now()));
       clear(trendBox);
-      trendBox.append(h('div', { class: 'muted' }, `${label} trend (last 6h, ${pts.length} samples)`));
+      trendBox.append(h('div', { class: 'muted' }, trendCaption(metricLabel(metric), pts.length)));
       trendBox.append(sparkline(pts.map((p) => p.value)));
     } catch {
       /* trend may be empty */
@@ -69,7 +54,7 @@ export async function pageMonitor(ctx: Ctx): Promise<void> {
   };
   autoChk.addEventListener('change', () => {
     stop();
-    if (autoChk.checked) timer = setInterval(() => void refresh(), 10_000);
+    if (autoChk.checked) timer = setInterval(() => void refresh(), AUTO_REFRESH_MS);
   });
   onTeardown(stop);
 

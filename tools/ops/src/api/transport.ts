@@ -1,9 +1,15 @@
 // Wire plumbing for the ops admin REST client, split out of api.ts on 2026-08-20 to clear the
 // 500-line convention gate (ADR-067; tools/scripts/checkFileLength.mjs). Nothing moved semantically:
 // this is the transport half — base URL resolution, the Bearer token in localStorage, the single
-// fetch wrapper and its error mapping — while api.ts keeps the endpoint surface, the half that
+// fetch wrapper and its error mapping — while `./index.ts` keeps the endpoint surface, the half that
 // actually grows every time a page is added. `ApiError` lives here because `req` is what throws it,
-// and api.ts re-exports it so every existing `from './api'` / `from '../api'` import is unchanged.
+// and ./index.ts re-exports it so every existing `from './api'` / `from '../api'` import is unchanged.
+//
+// This directory is the ops console's TRANSPORT layer, and `test/pureLayerBoundary.test.ts` guards it
+// as such (ADR-070 Phase 4e): it may reach for the three browser globals a REST client genuinely needs
+// — `fetch`, `localStorage`, `location` — and nothing else. Anything that touches `document`, builds
+// DOM, or imports from `../dom` / `../pages` belongs on the other side of that line. The stricter half
+// of the same guard covers `src/logic/**`, which may touch no global at all.
 
 const API_KEY = 'nw_admin_api';
 const TOKEN_KEY = 'nw_admin_token';
