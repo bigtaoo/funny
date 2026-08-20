@@ -3,15 +3,21 @@
 // Input: 4 AI-generated white-background doodles in this directory (dark ink lines + single red marker accent).
 // Processing: near-white pixels → transparent (paper background is cream #faf6ee; leaving it would expose white squares; same "remove white background" pipeline as decor)
 //      → trim transparent edges → scale long edge to 256 → transparent PNG-32.
-// Output: client/src/assets/spell_*.png, named spell_${SpellType}, consumed by HandView.CARD_ART_URLS.
+// Output: client/src/assets/spells/spell_*.png, named spell_${SpellType}, consumed by cardArt.ts
+// (CARD_ART_URLS).
 //
 // Reuses client's sharp. After updating an image, rename/overwrite the source file and re-run `node pack_spells.cjs`.
 
+const fs = require('fs');
 const path = require('path');
 const sharp = require(path.join(__dirname, '../../client/node_modules/sharp'));
 
 const SRC = __dirname;
-const OUT = path.join(__dirname, '../../client/src/assets');
+// assets/spells/, NOT assets/ — the asset reorg (ASSET_PACKAGING §"目录") moved this into its own
+// subdirectory and cardArt.ts imports from there, but this script's OUT_DIR was left pointing at
+// the old flat location (same stale-path bug pack_base_atlas.js hit and fixed 2026-08-19: running
+// this wrote 4 files nobody loads instead of updating the real asset).
+const OUT = path.join(__dirname, '../../client/src/assets/spells');
 const LONG_EDGE = 256;
 const WHITE_THRESHOLD = 240; // all three r,g,b channels >= this value → classified as background white → made transparent
 
@@ -43,11 +49,15 @@ async function processOne(srcFile, outName) {
   }
 
   // 3. Rebuild → trim transparent edges → scale proportionally to long edge 256 → PNG
+  fs.mkdirSync(OUT, { recursive: true });
   const outPath = path.join(OUT, outName);
   const meta = await sharp(data, { raw: { width, height, channels } })
     .trim()
     .resize({ width: LONG_EDGE, height: LONG_EDGE, fit: 'inside', withoutEnlargement: false })
-    .png()
+    // Quantized palette PNG (client/src/assets publish-bytes convention — see
+    // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md): safe here since the
+    // source is single-accent ink line art, not a precision-measured greyscale (cf. pack_resources.cjs).
+    .png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 })
     .toFile(outPath);
 
   const pct = ((cleared / (width * height)) * 100).toFixed(0);

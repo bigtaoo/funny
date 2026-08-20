@@ -254,7 +254,11 @@ async function process(job) {
     const result = await recolor(data, W, H, ch, ink, passes);
     if (!result) throw new Error(`${job.name}: empty image (no content)`);
     const outName = `${job.name}_${suffix}.png`;
-    await sharp(result.buf).toFile(path.join(OUT_DIR, outName));
+    // Quantized palette PNG (client/src/assets publish-bytes convention — see
+    // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md): each output is one baked
+    // ink color at varying alpha, trivially safe to quantize. This is the real final encode (not
+    // the intermediate .png() in recolor() above, which sharp(result.buf) here decodes and re-writes).
+    await sharp(result.buf).png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 }).toFile(path.join(OUT_DIR, outName));
     rows.push({ name: outName, w: result.w, h: result.h });
   }
   return rows;
