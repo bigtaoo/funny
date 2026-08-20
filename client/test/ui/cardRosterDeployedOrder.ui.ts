@@ -59,6 +59,7 @@ function buildScene(cards: CardInstance[], cardState: Record<string, CardSLGStat
     getSave: () => save,
     getCardState: () => cardState,
     fuseCards: async () => ({ ok: true }),
+    fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,

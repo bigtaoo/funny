@@ -15,8 +15,8 @@ import type { Affix, GearSlotMap } from '../types';
 export interface CardIdemDoc {
   _id: string; // idempotencyKey / orderId
   accountId: string;
-  op: 'fuse' | 'escrow';
-  result: unknown; // { targetId: string } for fuse; CardInstance for escrow
+  op: 'fuse' | 'fuseBatch' | 'escrow';
+  result: unknown; // { targetId: string } for fuse; { rounds: number } for fuseBatch; CardInstance for escrow
   expireAt: Date;
 }
 

@@ -64,6 +64,7 @@ function openLenaDetail(troops: number | undefined): CardScene {
       wallet: { coins: 0 },
     } as unknown as ReturnType<CardCallbacks['getSave']>),
     fuseCards: async () => ({ ok: true }),
+    fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,

@@ -4,14 +4,14 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorCode, ERROR_HTTP_STATUS, err, ok } from '@nw/shared';
 import { craftEquipment, enhanceEquipment, salvageEquipment, equipEquipment, reforgeEquipment } from '../equipment.js';
-import { fuseCards, setCardLock } from '../cards.js';
+import { fuseCards, fuseCardsBatch, setCardLock, type FuseRound } from '../cards.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { accountIdOf, clientPlatformOf, type MetaCore } from './base.js';
 
 type InventoryHandlers = Pick<
   MetaHandlers,
   | 'craftEquipment' | 'enhanceEquipment' | 'salvageEquipment' | 'equipEquipment' | 'reforgeEquipment'
-  | 'cardsFuse' | 'cardsLock' | 'cardsUnlock'
+  | 'cardsFuse' | 'cardsFuseBatch' | 'cardsLock' | 'cardsUnlock'
 >;
 
 export class InventoryService {
@@ -107,6 +107,20 @@ export class InventoryService {
       const r = await fuseCards(cols, now, accountId, targetId, materialIds, idempotencyKey);
       if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
       return ok({ card: r.card, save: r.save });
+    }
+
+    /**
+     * Run a whole run of fusions in ONE request (roster batch-prep, CHARACTER_CARDS_DESIGN §3.2).
+     * Partial success is a 200 with `completed` < rounds.length plus `failed` — see fuseCardsBatch;
+     * only a batch that could not start at all (bad shape, first round invalid) is an error status.
+     */
+    async cardsFuseBatch(req: FastifyRequest, reply: FastifyReply) {
+      const accountId = accountIdOf(req);
+      const { rounds, idempotencyKey } = req.body as { rounds: FuseRound[]; idempotencyKey: string };
+      const { cols, now } = this.core.deps;
+      const r = await fuseCardsBatch(cols, now, accountId, rounds, idempotencyKey);
+      if ('error' in r) return reply.code(ERROR_HTTP_STATUS[r.code] ?? 400).send(err(r.code as ErrorCode, r.error));
+      return ok({ completed: r.completed, ...(r.failed ? { failed: r.failed } : {}), save: r.save });
     }
 
     /**

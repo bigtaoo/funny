@@ -8,6 +8,23 @@ import type {
 } from '../../game/meta/SaveData';
 import type { ApiClientCore } from './core';
 
+/** One fusion inside a batch — the target+5-materials pair POST /cards/fuse takes on its own. */
+export interface FuseRound {
+  targetId: string;
+  materialIds: string[];
+}
+
+/**
+ * POST /cards/fuse-batch. Partial success is a 200: `completed` counts the rounds that committed
+ * from the start of the request's list, and `failed` (present only then) names the first that did
+ * not, so the caller can report what landed without a second read.
+ */
+export interface FuseBatchResponse {
+  completed: number;
+  failed?: { index: number; code: string; error: string };
+  save: SaveData;
+}
+
 export interface EquipmentApi {
   craftEquipment(
     defId: string,
@@ -32,6 +49,10 @@ export interface EquipmentApi {
     materialCardIds: string[],
     idempotencyKey: string
   ): Promise<{ save: SaveData; card: CardInstance }>;
+  fuseCardsBatch(
+    rounds: FuseRound[],
+    idempotencyKey: string
+  ): Promise<FuseBatchResponse>;
   setCardLock(cardInstanceId: string, locked: boolean): Promise<{ save: SaveData }>;
   reforgeEquipment(
     targetId: string,
@@ -130,6 +151,17 @@ export class EquipmentService implements EquipmentApi {
       materialIds: materialCardIds,
       idempotencyKey,
     });
+  }
+
+  /**
+   * Run a whole run of fusions in ONE request (roster batch-prep, CHARACTER_CARDS_DESIGN §3.2).
+   * The rounds execute server-side in order against the roster the previous round left behind, so
+   * the client plans the run locally (feedPlan.planPrepRounds) instead of paying a round-trip —
+   * plus a full cardInv reassembly — per fuse. Partial success is a normal 200: `completed` says how
+   * many rounds landed and `failed` names the first that didn't.
+   */
+  async fuseCardsBatch(rounds: FuseRound[], idempotencyKey: string): Promise<FuseBatchResponse> {
+    return this.core.post<FuseBatchResponse>('/cards/fuse-batch', { rounds, idempotencyKey });
   }
 
   /**

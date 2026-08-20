@@ -77,6 +77,7 @@ function buildCardScene(w: number, h: number) {
     onBack: () => { calls.back++; },
     getSave: () => save,
     fuseCards: async () => ({ ok: true }),
+    fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,

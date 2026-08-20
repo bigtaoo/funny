@@ -91,6 +91,7 @@ function baseCb(cardInv: Record<string, CardInstance>, overrides: Partial<CardCa
     onBack() {},
     getSave: () => ({ cardInv, equipmentInv: {}, wallet: { coins: 0 } } as unknown as ReturnType<CardCallbacks['getSave']>),
     fuseCards: async () => ({ ok: true }),
+    fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,
@@ -109,6 +110,32 @@ function openFuse(scene: CardScene, target: CardInstance): void {
   // harness stubs to a no-op that never re-invokes its callback — any test that taps Confirm on a
   // full ring must stub it, or the awaited doFuse()/playFusionAnim() chain hangs forever.
   priv(scene).feed.playFusionAnim = async () => {};
+}
+
+/**
+ * Server-shaped BATCH stub, mirroring fuseCardsBatch: applies the planned rounds in order against
+ * the same cardInv the panel reads, and stops at `failOnRound` — reporting the rounds that landed,
+ * exactly as the endpoint reports a run that halted on its first bad round. `failOnRound: 0` returns
+ * the whole-request error instead, which is what the endpoint sends when its FIRST round is already
+ * invalid and nothing was committed at all.
+ */
+function mutatingFuseBatch(
+  cardInv: Record<string, CardInstance>,
+  calls: { targetId: string; ids: string[] }[],
+  failOnRound?: number,
+): CardCallbacks['fuseCardsBatch'] {
+  return async (rounds) => {
+    if (failOnRound === 0) return { ok: false as const, key: 'roster.err.generic' as never };
+    let completed = 0;
+    for (const r of rounds) {
+      if (completed === failOnRound) return { ok: true as const, completed, failKey: 'roster.fuseErr' as never };
+      calls.push({ targetId: r.targetId, ids: r.materialIds });
+      for (const id of r.materialIds) delete cardInv[id];
+      cardInv[r.targetId].level += 1;
+      completed++;
+    }
+    return { ok: true as const, completed };
+  };
 }
 
 /** Server-shaped fuse stub: consumes the materials, levels the target up, records the call. */
@@ -238,7 +265,7 @@ describe('CardScene fuse panel — batch prep', () => {
     // 3 short at Lv.2 ⇒ 3 rounds x 6 Lv.1 cards = 18. The stub rejects the second call.
     const { target, cardInv } = prepInv(3, 3 * PREP_COST_PER_CARD);
     const calls: { targetId: string; ids: string[] }[] = [];
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls, 1) }));
+    const scene = buildScene(baseCb(cardInv, { fuseCardsBatch: mutatingFuseBatch(cardInv, calls, 1) }));
     openFuse(scene, target);
     startPrep(scene);
 
@@ -256,7 +283,7 @@ describe('CardScene fuse panel — batch prep', () => {
   it('a rejected FIRST round leaves the run untouched and the panel usable', async () => {
     const { target, cardInv } = prepInv(2, 2 * PREP_COST_PER_CARD);
     const calls: { targetId: string; ids: string[] }[] = [];
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls, 0) }));
+    const scene = buildScene(baseCb(cardInv, { fuseCardsBatch: mutatingFuseBatch(cardInv, calls, 0) }));
     openFuse(scene, target);
     startPrep(scene);
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.action();
@@ -271,36 +298,34 @@ describe('CardScene fuse panel — batch prep', () => {
   it('is busy-locked: a second tap while a batch is running is a no-op', async () => {
     const { target, cardInv } = prepInv(2, 2 * PREP_COST_PER_CARD);
     const calls: { targetId: string; ids: string[] }[] = [];
-    let release: (v: { ok: true }) => void = () => {};
-    const gate = new Promise<{ ok: true }>((r) => { release = r; });
+    let release: (v: { ok: true; completed: number }) => void = () => {};
+    const gate = new Promise<{ ok: true; completed: number }>((r) => { release = r; });
+    let batchCalls = 0;
     const scene = buildScene(baseCb(cardInv, {
-      fuseCards: async (targetId: string, ids: string[]) => {
+      fuseCardsBatch: async (rounds) => {
+        batchCalls++;
         await gate;
-        return mutatingFuseCards(cardInv, calls)(targetId, ids);
+        return mutatingFuseBatch(cardInv, calls)(rounds);
       },
     }));
     openFuse(scene, target);
     startPrep(scene);
 
-    let firstRounds = 1;
-    void priv(scene).core.doPrepBatch(
-      () => (firstRounds-- > 0 ? { targetId: 'lo0', materialIds: ['lo1', 'lo2', 'lo3', 'lo4', 'lo5'] } : null),
-      () => {},
-    );
+    void priv(scene).core.doPrepBatch([{ targetId: 'lo0', materialIds: ['lo1', 'lo2', 'lo3', 'lo4', 'lo5'] }], () => {});
     await flushAsync();
     expect(priv(scene).core.bt.busy).toBe(true);
+    expect(batchCalls).toBe(1);
 
-    let secondRan = false;
-    await priv(scene).core.doPrepBatch(() => { secondRan = true; return null; }, () => {});
-    expect(secondRan, 'the second batch must not even ask for a round').toBe(false);
+    await priv(scene).core.doPrepBatch([{ targetId: 'lo6', materialIds: ['lo7', 'lo8', 'lo9', 'lo10', 'lo11'] }], () => {});
+    expect(batchCalls, 'the second batch must not reach the network at all').toBe(1);
 
-    release({ ok: true });
+    release({ ok: true, completed: 1 });
     await flushAsync();
   });
 
   it('clears bt.busy / fuseInProgress when a round throws (no permanent render lock)', async () => {
     const { target, cardInv } = prepInv(2, 2 * PREP_COST_PER_CARD);
-    const scene = buildScene(baseCb(cardInv, { fuseCards: async () => { throw new Error('boom'); } }));
+    const scene = buildScene(baseCb(cardInv, { fuseCardsBatch: async () => { throw new Error('boom'); } }));
     openFuse(scene, target);
     startPrep(scene);
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.action();
@@ -312,15 +337,17 @@ describe('CardScene fuse panel — batch prep', () => {
 
   it('does not touch the panel when the scene was destroyed mid-run', async () => {
     const { target, cardInv } = prepInv(2, 2 * PREP_COST_PER_CARD);
-    let release: (v: { ok: true }) => void = () => {};
-    const scene = buildScene(baseCb(cardInv, { fuseCards: () => new Promise((r) => { release = r; }) }));
+    let release: (v: { ok: true; completed: number }) => void = () => {};
+    let issued = 0;
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCardsBatch: () => { issued++; return new Promise((r) => { release = r; }); },
+    }));
     openFuse(scene, target);
     startPrep(scene);
 
     let settled = false;
-    let issued = 0;
     void priv(scene).core.doPrepBatch(
-      () => { issued++; return { targetId: 'lo0', materialIds: ['lo1', 'lo2', 'lo3', 'lo4', 'lo5'] }; },
+      [{ targetId: 'lo0', materialIds: ['lo1', 'lo2', 'lo3', 'lo4', 'lo5'] }],
       () => { settled = true; },
     );
     await flushAsync();
@@ -328,11 +355,10 @@ describe('CardScene fuse panel — batch prep', () => {
 
     scene.destroy();
     expect(priv(scene).core.destroyed).toBe(true);
-    expect(() => release({ ok: true })).not.toThrow();
+    expect(() => release({ ok: true, completed: 1 })).not.toThrow();
     await expect(flushAsync()).resolves.toBeUndefined();
 
     expect(settled, 'onSettled must not run against a torn-down scene').toBe(false);
-    expect(issued, 'and no further round is issued once the player has left').toBe(1);
     expect(priv(scene).core.bt.busy).toBe(false);
   });
 });
@@ -341,7 +367,10 @@ describe('CardScene fuse panel — a completed prep hands the goal back ready to
   it('pops the crumb and returns to the goal with all five slots filled', async () => {
     const { target, cardInv } = prepInv(2, 2 * PREP_COST_PER_CARD);
     const calls: { targetId: string; ids: string[] }[] = [];
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCards: mutatingFuseCards(cardInv, calls),
+      fuseCardsBatch: mutatingFuseBatch(cardInv, calls),
+    }));
     openFuse(scene, target);
     startPrep(scene);
     hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.action();
@@ -431,7 +460,10 @@ describe('CardScene fuse panel — two-level prep (chain-funded)', () => {
   it('runs the whole chain through and hands the goal back ready to fuse', async () => {
     const { target, cardInv } = chainInv();
     const calls: { targetId: string; ids: string[] }[] = [];
-    const scene = buildScene(baseCb(cardInv, { fuseCards: mutatingFuseCards(cardInv, calls) }));
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCards: mutatingFuseCards(cardInv, calls),
+      fuseCardsBatch: mutatingFuseBatch(cardInv, calls),
+    }));
     openFuse(scene, target);
     startPrep(scene); // frame 1: produce 1 Lv.3 for the goal, centred on a Lv.2
     startPrep(scene); // frame 2: produce 2 Lv.2 for that card, centred on a Lv.1

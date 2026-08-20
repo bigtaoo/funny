@@ -18,6 +18,8 @@
 //   · cards/lock.ts     setCardLock Toggle the lock flag on one card (mirrors no other collections).
 //   · cards/escrow.ts   escrowCard  worldsvc auction escrow: validate gear all empty → remove from cardInstances → return snapshot (mirrors equipment.ts escrowEquipment).
 //   · cards/fuse.ts     fuseCards   Consume exactly FUSION_MATERIAL_COUNT material cards (same faction, same level as the target) to raise the target one level; idempotencyKey prevents double-consumption.
+//   · cards/fuseBatch.ts fuseCardsBatch  N fusions in ONE request (roster batch-prep): one roster read, one cardInv reassembly, one save write instead of N of each.
+//   · cards/fuseRules.ts checkFuseShape/checkFuseRound  The pure fusion rule check both of the above run per round.
 //   · cards/helpers.ts  shared types (CardMailCtx/CardErrorCode/CardError) + toCardDoc/fromCardDoc/idemExpireAt/REV_RETRIES, used across the files above.
 //
 // grantCards/setCardLock/fuseCards/escrowCard use the optimistic-lock rev guard + retries pattern (same as equipment.ts).
@@ -27,4 +29,6 @@ export * from './cards/query.js';
 export * from './cards/grant.js';
 export * from './cards/lock.js';
 export * from './cards/escrow.js';
+export * from './cards/fuseRules.js';
 export * from './cards/fuse.js';
+export * from './cards/fuseBatch.js';

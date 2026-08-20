@@ -111,6 +111,23 @@ describe('ApiClient card/equipment request bodies (CC-1/E3/E6)', () => {
     });
   });
 
+  // The point of the endpoint is that a whole prep run costs ONE request; a regression that
+  // reintroduced per-round calls would still pass a body-shape assertion, so count the calls too.
+  it('fuseCardsBatch: one POST /cards/fuse-batch carrying every round', async () => {
+    const calls = installFetch(() => ({ json: { ok: true, data: { completed: 2, save: {} } } }));
+    const api = new ApiClient('https://h/api');
+    const rounds = [
+      { targetId: 'f1', materialIds: ['a1', 'a2', 'a3', 'a4', 'a5'] },
+      { targetId: 'f2', materialIds: ['b1', 'b2', 'b3', 'b4', 'b5'] },
+    ];
+    const res = await api.fuseCardsBatch(rounds, 'idem-batch');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('https://h/api/cards/fuse-batch');
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.body).toEqual({ rounds, idempotencyKey: 'idem-batch' });
+    expect(res.completed).toBe(2);
+  });
+
   it('reforgeEquipment: POST /equipment/reforge with targetId/materialId/idempotencyKey', async () => {
     const calls = installFetch(() => ({ json: { ok: true, data: { instance: {}, save: {} } } }));
     const api = new ApiClient('https://h/api');

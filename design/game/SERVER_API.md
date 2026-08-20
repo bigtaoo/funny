@@ -186,12 +186,14 @@ POST /equipment/equip    { slot, instanceId|null, unitType? }              → {
 > 卡实例段（`cardInv`）同样由 `/cards/*` 服务器权威端点写（`PUT /save` 已下线，见 §2.2）。喂卡升级=融合 5 张同阵营同级材料。
 
 ```
-POST /cards/fuse    { targetId, materialIds[5], idempotencyKey }  → { card, save } | 400/404/409
-POST /cards/lock    { cardInstanceId }                            → { save }   // 幂等：重复锁定成功
-POST /cards/unlock  { cardInstanceId }                            → { save }
+POST /cards/fuse        { targetId, materialIds[5], idempotencyKey }      → { card, save } | 400/404/409
+POST /cards/fuse-batch  { rounds[{targetId,materialIds[5]}], idempotencyKey } → { completed, failed?, save } | 400/404/409
+POST /cards/lock        { cardInstanceId }                                → { save }   // 幂等：重复锁定成功
+POST /cards/unlock      { cardInstanceId }                                → { save }
 ```
 
 - **`/cards/fuse`**：恰好 5 张同阵营同级材料卡升目标卡一级；**锁定的材料被拒**；`idempotencyKey` 防重试双扣。
+- **`/cards/fuse-batch`**（2026-08-20）：一次请求跑完整轮备料（最多 20 轮）。轮次**按序**执行，每轮针对"上一轮执行完之后"的名册校验，所以后一轮可以吃掉前一轮刚升级出来的卡。**首轮就非法** → 报错（400/404/409，不改任何数据）；**跑到一半失败** → 仍是 200，`completed` 报实际落地轮数、`failed.index/code` 报第一个失败轮。整批共用一个 `idempotencyKey`（重试回放已落地轮数，不会重复吞卡），只读一次名册、只回一次 `cardInv`、只扣一次 `cardInvCount` —— 这正是它存在的理由：改造前客户端的"合成所需材料"按钮是每轮一个 `POST /cards/fuse`，每个响应都带一份重组好的完整 `cardInv`，几百张卡的名册上肉眼可见地卡。
 - **`/cards/lock` / `/cards/unlock`**：锁定卡不可作喂卡材料（防误吞）。
 
 ### 2.9 活动 / Live-ops（ADR-014 / `EVENTS_DESIGN.md`）

@@ -573,6 +573,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onBack() {},
         getSave: () => makeNewSave('acc_test'),
         fuseCards: async () => ({ ok: true }),
+        fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
         setCardLock: async () => ({ ok: true }),
         getOwnedSkins: () => [],
         getEquippedSkin: (_unitType: UnitType) => null,

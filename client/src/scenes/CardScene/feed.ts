@@ -57,8 +57,8 @@ import { playFusionAnimImpl, type FuseRingGeom } from './feedAnim';
 import { drawHeaderAndRing } from './feedRing';
 import { drawFuseCandidateRow, type FuseGroup } from './feedList';
 import {
-  MAX_PREP_DEPTH, autoFillMaterials, countPrepRounds, listFusableTargets, pickFeeder, planPrep,
-  readyMaterials,
+  MAX_PREP_DEPTH, autoFillMaterials, listFusableTargets, pickFeeder, planPrep, planPrepRounds,
+  readyMaterials, type PrepRoundPlan,
 } from './feedPlan';
 import {
   CRUMB_U, GAP_U, STRIP_U, drawFuseFooter, drawGapNotice, drawPrepBatchBtn, drawPrepCrumb,
@@ -154,15 +154,18 @@ export class FeedPanel {
       retarget(back ?? currentTarget);
     };
 
-    /** Rounds still worth batching at the innermost frame (capped by what's left to produce). */
-    const prepRoundsLeft = (): number => {
+    /**
+     * The run still worth batching at the innermost frame, planned in full (capped by what's left to
+     * produce). One plan feeds both the button's "x N" label and the single request it fires.
+     */
+    const prepRunLeft = (): PrepRoundPlan[] => {
       const top = prepStack[prepStack.length - 1];
-      if (!top) return 0;
+      if (!top) return [];
       const inv = invOf();
       const faction = factionOf(inv[top.targetId]);
       const remain = top.needed - top.produced;
-      if (!faction || remain <= 0) return 0;
-      return countPrepRounds(faction, top.targetLevel - 1, inv, candidateOf, remain);
+      if (!faction || remain <= 0) return [];
+      return planPrepRounds(faction, top.targetLevel - 1, inv, candidateOf, remain);
     };
 
     /** Credit `n` produced materials to the innermost frame and unwind every frame it completes. */
@@ -179,19 +182,10 @@ export class FeedPanel {
     };
 
     const runPrepBatch = (): void => {
-      const top = prepStack[prepStack.length - 1];
-      if (!top) return;
+      const rounds = prepRunLeft();
+      if (rounds.length === 0) return;
       void core.doPrepBatch(
-        () => {
-          const inv = invOf();
-          const faction = factionOf(inv[top.targetId]);
-          if (!faction || top.produced >= top.needed) return null;
-          const feeder = pickFeeder(faction, top.targetLevel - 1, inv, candidateOf);
-          if (!feeder) return null;
-          const mats = autoFillMaterials(feeder, inv, candidateOf, FUSION_MATERIAL_COUNT);
-          if (mats.length < FUSION_MATERIAL_COUNT) return null;
-          return { targetId: feeder.id, materialIds: mats.map((m) => m.id) };
-        },
+        rounds,
         (completed) => {
           if (completed > 0) core.render(); // materials were consumed: refresh the grid + header behind
           creditPrep(completed);
@@ -294,7 +288,7 @@ export class FeedPanel {
       const maxed = currentTarget.level >= MAX_CARD_LEVEL;
       const prep = maxed ? null : planPrep(currentTarget, inv, candidateOf);
       const showGap = !maxed && poolSize < FUSION_MATERIAL_COUNT;
-      const batchRounds = showGap ? 0 : prepRoundsLeft();
+      const batchRounds = showGap ? 0 : prepRunLeft().length;
       const showBatch = batchRounds > 1;
       const recommend = prepStack.length
         ? []

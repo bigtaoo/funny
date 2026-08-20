@@ -56,6 +56,7 @@ function buildScene(openEquipment?: (cardId: string, slot?: EquipSlot) => void):
     onBack() {},
     getSave: () => save,
     fuseCards: async () => ({ ok: true }),
+    fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,

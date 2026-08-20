@@ -16,7 +16,7 @@ import { serverReplayToReplay } from '../../../net/serverReplay';
 import { allEquippedSkins, skinEquipKey } from '../../../game/meta/skinDefs';
 import { genUuid } from '../../../platform/uuid';
 import type { EquipSlot } from '../../../game/meta/SaveData';
-import { toEngineCardInstances } from '../../../game/meta/cardDefs';
+import { toEngineCardInstances, FUSION_MATERIAL_COUNT } from '../../../game/meta/cardDefs';
 import { teamDisplayName } from '../../../game/meta/teamTroops';
 import { WorldApiClient, type CardSLGState } from '../../../net/WorldApiClient';
 import type { CardRosterView } from '../../../scenes/CardScene';
@@ -194,6 +194,23 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
             saveManager.adoptServer(save);
             analytics.track('card_fuse', { target_id: targetCardId, material_count: materialCardIds.length });
             return { ok: true as const };
+          } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
+        },
+        /**
+         * Batch prep (CHARACTER_CARDS_DESIGN §3.2): the whole planned run in ONE request. A short run
+         * is a normal response (the server stops at its first bad round) and comes back through
+         * `completed`, not as a throw; every round-level code collapses to the same generic line the
+         * single-fuse path uses, since they all mean "your view of the roster moved, look again".
+         */
+        async fuseCardsBatch(rounds) {
+          if (!client) return { ok: false as const, key: 'roster.err.offline' as TranslationKey };
+          try {
+            const { completed, failed, save } = await client.fuseCardsBatch(rounds, genUuid());
+            saveManager.adoptServer(save);
+            if (completed > 0) {
+              analytics.track('card_fuse', { target_id: rounds[0].targetId, material_count: completed * FUSION_MATERIAL_COUNT });
+            }
+            return { ok: true as const, completed, ...(failed ? { failKey: 'roster.fuseErr' as TranslationKey } : {}) };
           } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
         },
         async setCardLock(cardInstanceId, locked) {

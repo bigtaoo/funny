@@ -89,6 +89,7 @@
 |---|---|
 | `POST /equipment/equip` | 参数 `unitType?` → `cardInstanceId?`（必填之一） |
 | `POST /cards/fuse`（2026-07-19 取代 `/cards/feed`） | `{ targetId, materialIds[]（恰好 5 个）, idempotencyKey }` → 校验同阵营同等级+未锁定+未满级，扣除 5 张材料，目标 `level+1`，返回新 SaveData |
+| `POST /cards/fuse-batch`（2026-08-20 新增） | `{ rounds[{targetId, materialIds[5]}]（≤20 轮）, idempotencyKey }` → 按序跑完整轮备料，返回 `{ completed, failed?, save }`。首轮非法即报错；中途失败仍是 200 并报已落地轮数。一次读名册、一次回 `cardInv`、一次扣 `cardInvCount`（见 §3.2 备料批量化） |
 | `POST /cards/lock` / `POST /cards/unlock` | 新增（2026-07-14 补齐，CC4 锁定/解锁）：`{ cardInstanceId }` → 翻转 `locked` 标志，返回新 SaveData。幂等（已是目标状态则不 bump rev）。此前客户端 `setCardLock` 已调用但服务端从未注册路由 → 线上一直 404「Action failed」 |
 | `GET /cards` | 新增（可选）：返回 `cardInv`（SaveData 推送已覆盖，作补充拉取） |
 | `PUT /world/teams` | `ArmyEntry` 字段变：`unitType` → `cardInstanceId` |
