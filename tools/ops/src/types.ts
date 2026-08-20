@@ -355,78 +355,16 @@ export interface SlgAllocateResult {
   allocatedFamilies: number;
 }
 
-export type AuctionAnomalyReason = 'repeated' | 'designated' | 'high_value';
-export interface AuctionAnomaly {
-  sellerId: string;
-  buyerId: string;
-  trades: number;
-  designatedTrades: number;
-  totalCoins: number;
-  firstTs: number;
-  lastTs: number;
-  severity: 'medium' | 'high';
-  reasons: AuctionAnomalyReason[];
-}
-
-// ── Ops auction listing lookup (mirror of @nw/shared AuctionListingAdminView/AuctionListingQuery) ──
-export interface AuctionListingQuery {
-  sellerId?: string;
-  itemType?: 'material' | 'equipment' | 'card' | 'skin';
-  status?: 'open' | 'sold' | 'cancelled' | 'expired';
-  itemName?: string;
-  limit?: number;
-}
-
-export interface AuctionListingAdminView {
-  auctionId: string;
-  sellerId: string;
-  itemType: 'material' | 'equipment' | 'card' | 'skin';
-  itemName: string;
-  item: Record<string, unknown>;
-  qty: number;
-  price: number;
-  currency: string;
-  designatedBuyerId?: string;
-  expireAt: number;
-  status: 'open' | 'sold' | 'cancelled' | 'expired';
-  buyerId?: string;
-  soldAt?: number;
-  closedAt?: number;
-  saleMode: 'fixed' | 'auction';
-  startPrice?: number;
-  buyoutPrice?: number;
-  topBid?: { bidderId: string; amount: number; ts: number };
-  rev: number;
-}
-
-export interface TradeAuditSnapshot {
-  worldId: string;
-  sellerId: string;
-  buyerId: string;
-  trades: number;
-  designatedTrades: number;
-  totalCoins: number;
-  firstTs: number;
-  lastTs: number;
-  severity: 'medium' | 'high';
-  reasons: AuctionAnomalyReason[];
-}
-
-export type TradeAuditTicketStatus = 'open' | 'dismissed' | 'actioned';
-
-export interface TradeAuditTicketView {
-  id: string;
-  snapshot: TradeAuditSnapshot;
-  status: TradeAuditTicketStatus;
-  filedBy: string;
-  filedByName?: string;
-  filedAt: number;
-  note?: string;
-  resolvedBy?: string;
-  resolvedByName?: string;
-  resolvedAt?: number;
-  enforcement?: { sellerBanned: boolean; buyerBanned: boolean };
-}
+// ── SLG auction audit / anti-RMT (G7) — moved to types/auction.ts, re-exported so importers are unaffected ──
+export type {
+  AuctionAnomalyReason,
+  AuctionAnomaly,
+  AuctionListingQuery,
+  AuctionListingAdminView,
+  TradeAuditSnapshot,
+  TradeAuditTicketStatus,
+  TradeAuditTicketView,
+} from './types/auction';
 
 // ── Timed events (B6, mirror of @nw/shared events.ts) ──
 export type EventTaskKind = 'pve.clear' | 'pvp.win' | 'ad.watch';
