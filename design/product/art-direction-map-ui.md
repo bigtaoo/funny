@@ -202,7 +202,7 @@ client/src/assets/decor/   # 最终透明 PNG / 图集
 - 「按下放大」是 v0.3 起对旧条款「按下=轻微下压 + 纸张褶皱」的口径修订：先用**放大回弹**做点击确认（实现简单、反馈明确）；后续做正式纸面动效时可叠加褶皱，但「中心放大 + 延迟触发」的反馈契约保留。
 - 错误信息为「黏性」时必须可被编辑清除：用户一改输入就清掉上一条错误（实时合规提示同步刷新），避免按钮看着像卡死。
 - 首个落地参考实现：登录/注册场景 `client/src/scenes/LoginScene.ts`（`submitEnabled()` 判定 + `addButton(enabled)` 灰显 + `press` 放大回弹）。
-- **全屏场景共享原语**：所有 canvas 绘制的全屏场景（login / room / shop / gacha / result / replay / intro / settings）统一从 `client/src/render/sketchUi.ts` 取手绘 UI 原语——`buildPaperBackground`（纸底 + 抖动格线 + 红装订线，bake 缓存）、`sketchPanel`（平涂 + `SketchPen.rect` 涂鸦边框，**替代 `drawRoundedRect`**，落实「按钮非完美圆角」）、`sketchAccentBar`、`ui` 调色板（纸底/格线/红色引自 `theme.palette`）、`seedFor`（稳定 seed 防重渲染抖动）。新场景一律复用，不再各自手画背景/圆角按钮或硬编码调色板。**字体暂留 `monospace`**（手写字体需打包字体面，单列任务）。
+- **全屏场景共享原语**：所有 canvas 绘制的全屏场景（login / room / shop / gacha / result / replay / intro / settings）统一从 `client/src/render/sketchUi.ts` 取手绘 UI 原语——`buildPaperBackground`（纸底 + 抖动格线 + 红装订线，bake 缓存）、`sketchPanel`（平涂 `Graphics` + 九宫装配的手绘边框——四条长边条按原生尺寸平铺 + 四个**半径各不相同**的手绘圆转角，切片来自 `render/panelFrame.ts` 启动时烘一次的图集；**替代 `drawRoundedRect`**，落实「按钮非完美圆角」——注意本条禁的是等半径/模板画的圆角，手转的不等半径圆角正是它要的东西，2026-08-20 起转角就是圆的，详见 [`panel-frame-art-prompts.md`](panel-frame-art-prompts.md)）、`sketchAccentBar`、`ui` 调色板（纸底/格线/红色引自 `theme.palette`）、`seedFor`（稳定 seed 防重渲染抖动）。新场景一律复用，不再各自手画背景/圆角按钮或硬编码调色板。**字体暂留 `monospace`**（手写字体需打包字体面，单列任务）。
 
 ### 7.6 页签主图标 AI 化（v0.7 试点 · 2026-08-14，状态：试点批 + 批次 2/3/4/5 全部出图并接线完成；共 43 个光栅图标 / 129 张 PNG）
 
