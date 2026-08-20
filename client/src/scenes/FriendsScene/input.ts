@@ -55,7 +55,11 @@ export function onPointerUp(core: FriendsSceneCore, x: number, y: number): void 
   // Hits inside the scroll layer were recorded in build space; the layer may since have been
   // translated by applyScroll(), so map the tap into that space. Non-scroll hits and the region
   // clamp below stay in screen space. (CardCodexScene's handleUp does the same.)
-  const scrollDelta = core.repaint.scrollDelta;
+  //
+  // Deliberately the APPLIED delta, not the pending one: `scrollY` moves inline in onWheel/
+  // onPointerMove while the layer only follows on the next update() drain, so for one frame they
+  // disagree — and a tap has to be judged against what is actually on screen.
+  const scrollDelta = core.repaint.appliedScrollDelta;
   for (const hit of core.hits) {
     const r = hit.rect;
     const py = hit.scroll ? y + scrollDelta : y;

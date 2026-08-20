@@ -152,9 +152,17 @@ function assertFriendsDragTranslatesWithoutRebuild(scene: any, input: InputManag
  * assertions above would all still pass.
  */
 function rowScreenYs(scene: any): number[] {
-  const layer = scene.core.repaint.layer;
-  // Row backgrounds only (each row's sketchPanel is the one child positioned at the row's top).
-  return layer.children.map((c: any) => Math.round(c.y + layer.y)).sort((a: number, b: number) => a - b);
+  const core = scene.core;
+  const applied = core.repaint.appliedScrollDelta;
+  // Row hits identify rows unambiguously (full content width, inside the scroll layer) — and they
+  // are the same rects the tap path uses. Restricted to the visible region on purpose: the overscan
+  // window is built around whatever scrollY was current, so a translated tree and a rebuilt one
+  // legitimately hold different row *sets* at the edges; what has to agree is what the player sees.
+  return core.hits
+    .filter((h: any) => h.scroll && Math.round(h.rect.w) === Math.round(core.cW))
+    .map((h: any) => Math.round(h.rect.y - applied))
+    .filter((y: number) => y >= core.regionTop && y <= core.regionBottom)
+    .sort((a: number, b: number) => a - b);
 }
 
 describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
@@ -338,6 +346,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     scene.update(1 / 60);
     const translated = rowScreenYs(scene);
     expect(scene.core.scrollY).toBe(137);
+    expect(translated.length).toBeGreaterThan(3); // the comparison below must not be vacuous
 
     // Same scroll position, arrived at by a full rebuild instead of a translate.
     scene.render();

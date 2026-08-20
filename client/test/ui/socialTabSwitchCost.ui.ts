@@ -218,3 +218,112 @@ describe('social tab timers — one string, not the whole tree', () => {
     scene.destroy();
   });
 });
+
+// ── The repaint-skip signature must cover everything the page renders ─────────
+//
+// refresh()'s "payload unchanged → don't repaint" shortcut is only safe while refreshSignature()
+// covers every field the friends list, the mail list and the tab-rail badges actually draw. Drop one
+// from the signature and this whole class of change goes silently un-drawn — a friend stays "online"
+// forever, a claimed reward keeps its button. That is the "guards fail by turning green" shape
+// claudedocs/client-testing.md warns about, so each rendered field gets its own case here rather
+// than trusting one representative mutation.
+
+type Mutation = { name: string; apply(state: MutableState): void };
+
+interface MutableState {
+  friends: FriendView[];
+  incoming: Array<{ requestId: string; fromPublicId: string; fromName: string; toPublicId: string; createdAt: number }>;
+  mail: Array<{ mailId: string; from: string; subject: string; body: string; createdAt: number; expireAt: number; read: boolean; claimed: boolean }>;
+  unread: number;
+  conversations: Array<{ convId: string; peer: { publicId: string; displayName: string }; lastTs: number; unread: number }>;
+}
+
+function freshState(): MutableState {
+  return {
+    friends: [{ publicId: '100000000', displayName: 'Friend0', online: true, alias: 'Ali', rank: 'rank.bronze', avatarId: 'a:1' }],
+    incoming: [],
+    mail: [{ mailId: 'm1', from: 'system', subject: 's', body: 'b', createdAt: 1, expireAt: 9, read: false, claimed: false }],
+    unread: 1,
+    conversations: [{ convId: 'c1', peer: { publicId: '100000000', displayName: 'Friend0' }, lastTs: 1, unread: 2 }],
+  };
+}
+
+const MUTATIONS: Mutation[] = [
+  { name: 'a friend goes offline (row border, status dot and status text)', apply: (s) => { s.friends[0]!.online = false; } },
+  { name: 'a friend is renamed (row label)', apply: (s) => { s.friends[0]!.displayName = 'Renamed'; } },
+  { name: 'a friend alias is set (row label takes the alias)', apply: (s) => { s.friends[0]!.alias = 'NewAli'; } },
+  { name: 'a friend rank changes (row subtitle)', apply: (s) => { s.friends[0]!.rank = 'rank.gold'; } },
+  { name: 'a friend avatar changes (row portrait)', apply: (s) => { s.friends[0]!.avatarId = 'a:2'; } },
+  { name: 'a friend is removed (row disappears)', apply: (s) => { s.friends = []; } },
+  { name: 'a friend request arrives (requests section + rail badge)', apply: (s) => { s.incoming = [{ requestId: 'r1', fromPublicId: '2', fromName: 'Zed', toPublicId: '1', createdAt: 1 }]; } },
+  { name: 'a mail is read (unread dot)', apply: (s) => { s.mail[0]!.read = true; } },
+  { name: 'a mail reward is claimed (claim button)', apply: (s) => { s.mail[0]!.claimed = true; } },
+  { name: 'the unread mail count changes (rail badge)', apply: (s) => { s.unread = 0; } },
+  { name: 'a mail is deleted (row disappears)', apply: (s) => { s.mail = []; } },
+  { name: 'unread chat count changes (row bubble + Friends rail dot)', apply: (s) => { s.conversations[0]!.unread = 5; } },
+];
+
+describe('social refresh — the repaint-skip signature covers every rendered field', () => {
+  for (const m of MUTATIONS) {
+    it(`repaints when ${m.name}`, async () => {
+      const state = freshState();
+      const { scene } = buildScene({
+        loadFriends: async () => state.friends,
+        loadRequests: async () => ({ incoming: state.incoming as any, outgoing: [] }),
+        loadMail: async () => ({ mail: state.mail as any, unread: state.unread }),
+        loadConversations: async () => state.conversations as any,
+      });
+      await settle();
+
+      const renders = countRenders(scene);
+      // Same data back first: this must NOT repaint, or the case below proves nothing.
+      await scene.network.refresh();
+      await settle();
+      expect(renders.calls()).toBe(0);
+
+      m.apply(state);
+      await scene.network.refresh();
+      await settle();
+      expect(renders.calls()).toBe(1);
+      scene.destroy();
+    });
+  }
+
+  it('still paints the very first load even when the account is completely empty', async () => {
+    // The empty payload's signature is a fixed string, so back-to-back empty refreshes match — the
+    // initial paint rides on refresh()'s `wasLoading` branch instead. Without it a brand-new account
+    // would open onto a blank page with no "no friends yet" copy.
+    const { scene } = buildScene({
+      loadFriends: async () => [],
+      loadRequests: async () => ({ incoming: [], outgoing: [] }),
+      loadMail: async () => ({ mail: [], unread: 0 }),
+      loadConversations: async () => [],
+    });
+    expect(scene.core.loading).toBe(true);
+    await settle();
+    expect(scene.core.loading).toBe(false);
+    // The list actually drew (the loading label is gone, the empty-state copy is in the tree).
+    expect(scene.core.repaint.layer.children.length).toBeGreaterThan(0);
+    scene.destroy();
+  });
+
+  it('a failed refresh does not refresh-stamp, so the next tab switch retries', async () => {
+    let fail = true;
+    const { scene, calls } = buildScene({
+      loadFriends: async () => { calls.friends++; if (fail) throw new Error('offline'); return []; },
+    });
+    await settle();
+    const failedAt = scene.core.lastRefreshAt;
+    expect(failedAt).toBe(0); // never stamped
+
+    fail = false;
+    const beforeSwitch = calls.friends;
+    scene.core.switchTab('mail');
+    await settle();
+    // Staleness is measured off lastRefreshAt; leaving it unstamped is what makes the retry happen
+    // rather than the tab trusting data it never received.
+    expect(calls.friends).toBe(beforeSwitch + 1);
+    expect(scene.core.lastRefreshAt).toBeGreaterThan(0);
+    scene.destroy();
+  });
+});

@@ -151,6 +151,39 @@ describe('FriendsScene — the family/sect hub hand-off never happens from insid
     scene.destroy();
   });
 
+  it('switchTab jumps to the sect hub too, and only when there is actually a sect', () => {
+    let scene: any;
+    let sectJumps = 0;
+    scene = buildScene(() => true, () => { sectJumps++; scene.destroy(); return true; });
+    scene.core.slgLoaded = true;
+    // In a family, but that family has no sect — the tab is a create/join page, not a shortcut.
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1' };
+    scene.core.switchTab('sect');
+    expect(sectJumps).toBe(0);
+    expect(scene.core.tab).toBe('sect');
+    expect(scene.core.dead).toBe(false);
+
+    // Now the family belongs to a sect. Re-tapping the active tab is a no-op, so come back via
+    // another tab first — mirroring how a player actually gets there.
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1', sectId: 'sect_1' };
+    scene.core.switchTab('friends');
+    scene.core.switchTab('sect');
+    expect(sectJumps).toBe(1);
+  });
+
+  it('the sect tab does not jump when the player has no family at all', () => {
+    let jumps = 0;
+    const scene = buildScene(() => true, () => { jumps++; return true; });
+    scene.core.slgLoaded = true;
+    // sectId without familyId shouldn't happen server-side, but autoJumpOrgHub requires the family
+    // anyway — sect membership hangs off it, so there is nothing to open without one.
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false, sectId: 'sect_1' };
+    scene.core.switchTab('sect');
+    expect(jumps).toBe(0);
+    expect(scene.core.dead).toBe(false);
+    scene.destroy();
+  });
+
   it('loadSLGStatus resolving into a family jumps on completion, and does not re-render a dead scene', async () => {
     let scene: any;
     let jumps = 0;
