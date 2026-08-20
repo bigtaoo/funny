@@ -2,7 +2,7 @@
 
 状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~417 KB**，client + map-editor 两份字节一致；客户端实际加载的合并页 `world_atlas` 见 §6.11（89 帧 / 1954×1828 / ~1.7 MB 无损）。
 **⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6。当前状态：46 帧全部通过构建期门禁（`node art/slg/slg-map/pack_resources.cjs` 不带 `--report-only` 跑通），渲染层接线亦已完成（§6.11）——等级读数整条在打包期解完、烘进每个 frame 条目的 `nw` 字段，两个渲染器（client + map-editor）都只剩贴图适配器、零等级逻辑。**
-**⚠️ 2026-08-20 实机复核（§6.12）：`res_sticker_l9` / `res_sticker_l10` 判为 §6.2 #1 剪影违规（卷状物），已退回待重画——prompt 与密度目标带见 §6.12.1，是当前唯一的美术欠项。** 同节还记了两条不要重复踩的结论：剪影铁律**做不成构建期门禁**（形状签名实测否证，§6.12.2）；`Lv.N` 标签的 l6+ 阈值**不限制屏上标签数**，可读性靠字号上限撑住（§6.12.3）。
+**⚠️ 2026-08-20 实机复核（§6.12）：`res_sticker_l9` / `res_sticker_l10` 判为 §6.2 #1 剪影违规（卷状物）。同日重画：**`l10` **已落地**（穹顶堆体，density 0.259）；**`l9` 第一版退回**（满幅平铺、无外轮廓，比卷筒更糟，已暂时恢复旧卷筒帧）——重出 prompt 与收图判据见 **§6.12.5**，`res_sticker_l9` 是当前唯一的美术欠项。**另查出一处待拍板**：sticker 的 tan→gold 色带在屏上基本不存在（结构性，非参数问题），未修，见 **§6.12.6**。 同节还记了两条不要重复踩的结论：剪影铁律**做不成构建期门禁**（形状签名实测否证，§6.12.2）；`Lv.N` 标签的 l6+ 阈值**不限制屏上标签数**，可读性靠字号上限撑住（§6.12.3）。
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
 
 > **⚠️ 决策变更 III（2026-08-19，用户拍板）**：分级读数整套重构，见 **§6**（权威，覆盖 §5.3 #2 与 §5.4 的形态跃迁条款）。起因是「按宽归一」这条旧契约会**惩罚横向生长**——高等级的丰度是横着铺开画的，归一化反而把它压小，实测四类资源全部在 l5→l6 墨量回落，ink l4 成了全十级里视觉最重的一帧。
@@ -557,7 +557,7 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 | 画框环扫描（§6.7 末） | `res_paper_l6` 带内缩 13px 的画框，边缘检测抓不到 |
 | 实心平涂占比（§6.9） | ink l7 密度达标但变成粗描边+平涂，破坏"一支笔" |
 
-**剩余工作**：§6.10 当时列的五项全部完成（2026-08-19，见 §6.11）。此后 2026-08-20 的实机复核又开出一项美术欠项——`res_sticker_l9/l10` 剪影退回重画，见 §6.12.1。
+**剩余工作**：§6.10 当时列的五项全部完成（2026-08-19，见 §6.11）。此后 2026-08-20 的实机复核又开出一项美术欠项——`res_sticker_l9/l10` 剪影退回重画（§6.12.1）；同日 l10 已重画落地、l9 第一版退回，见 §6.12.5。
 
 ### 6.11 渲染层接线落地（2026-08-19 · §6.10 的五项全部完成）
 
@@ -659,3 +659,46 @@ l6+ 合计 **11.9% 的资源格**（不是之前以为的 1.7%），而且**不�
 
 - **合并页无损编码**（1092 KB → 1747 KB）：保留。这是 CDN 托管、进场才懒加载、不进微信主包的场景图集（`ASSET_PACKAGING.md` §4），而 palette-8 的代价是 alpha 最多漂 12/255，直接体现为钢笔抗锯齿边缘发脆——本轮整套工作的落点就是这批线稿的手感，用它换 650 KB 不划算。真要改回去是一行（`patchMergedAtlas.js` 的 `png()` 传 `palette: true, dither: 0`）。
 - **「同级包围盒 200 样本各自在均值 ±5% 内」**：保留。抖动区间 `[0.96,1.04]` 的极值比是 1.083，原口径「极差 < 5%」数学上不可满足；真要按极值比 < 5% 收，得把抖动收到 `[0.975,1.025]`，代价是同级格子的大小变化几乎看不见了（抖动存在的理由就是打破印章感，见 `resMotifJitter` 注释）。两个数（±5% 与极值比 1.083）测试里都断言了。
+
+#### 6.12.5 第一批重画（2026-08-20）：l10 落地，l9 退回（满幅平铺、无外轮廓）
+
+`res_sticker_l10` **落地**：density **0.259**（目标带 0.12–0.20 之上，门禁全绿——l9 只要不超过它就行，方向对），画成一个**穹顶状堆体**，外轮廓一圈星尖，画幅四角留白，格子里一眼读成「一大堆星星贴纸」。旧帧存 `art/leftover/res_sticker_l10.pre-2026-08-20-roll.webp`。
+
+`res_sticker_l9` **退回**（存 `art/leftover/res_sticker_l9.rejected-2026-08-20-no-silhouette.webp`）。density 0.181 达标、无蓝调、无画框、无筒壁——**剪影这一关反而输得更彻底**：生成器把「filling the frame edge to edge / no large empty areas」当成了「把画布铺满」，星星一直铺到四个角，内容 bbox 占原图 99%×95%、aspect 1.03，抠图后就是一个**正方形**。contact sheet 上它读成一块方形噪点，连「是个东西」都读不出来，比它要替换的卷筒更糟（§6.4 里 `paper_l6` 那次「糊成方块」是同一个失效）。**l9 暂时恢复旧卷筒帧**——一个族不对但读得出来的物件，仍然是比一块噪点更小的害。l9 是当前唯一的美术欠项。
+
+> **写 prompt 的教训**：§6.5 那句「填满画幅、不留大块空白」对**单体/小簇**是对的（它当初解决的是留白浪费密度），但对「一堆」这种主体是**歧义**的——l10 同一句话出了穹顶、l9 出了平铺，等于抛硬币。凡是主体为「heap / hoard / pile」的帧，必须**另外显式约束外轮廓**：说清「一个土丘、四角留白、轮廓要能看见」，并且用**个数 + 单颗占画幅比例**（几何量）来控制铺满程度，而不是「填满」这种程度词——这和 §6.7 用几何指令替形容词是同一条原则，只不过这次要管的量是**构图**而非色调。
+
+**l9 重出 prompt**（GPT Image 2 单段版，已把上面那条教训写进去；负向折进正文）：
+
+```
+A hand-drawn doodle icon for a strategy-game map tile, drawn in a worn school notebook with one dark-ink pen. Slightly wobbly imperfect strokes, like a teenager sketching in the margins, but clean enough to read at a small size. Flat 2D line art in neutral black ink on a plain pure-white background — no colour anywhere, no blue or navy tint to the ink, no grey background, no notebook grid or ruled lines, no drop shadow, no ground line, no text, letters or numbers, and no drawn border or frame of any kind around the image.
+
+The subject is ONE single low mound of five-pointed star-shaped stickers, seen from slightly above and to one side, standing alone on empty white paper. Its outer edge must be clearly visible all the way round as a spiky star-tipped silhouette, and all four corners of the picture stay empty white — this is one object on a page, NOT a pattern and NOT stars tiled across the whole canvas. The mound is wider than it is tall, roughly two thirds as tall as it is wide. It is built from three uneven stacks of stars leaning together, with about eight loose peeled stars scattered around and between their bases. Draw about twenty stars in total and no more, big enough to count: the largest star spans roughly one third of the picture's width. Every stack must visibly be made of stars — star points and peeling corners sticking out past the edges of the stack all the way round. Do not draw any roll, rolled tape, sticker roll, spool, reel, tube, cylinder, can, tin, drum, strip of tape, tape dispenser, ribbon, box, crate, tray, rack or container of any kind: nothing in this picture may have a smooth curved wall. Do not let the stacks read as a pile of flat rectangular sheets either.
+
+Tone: hatch only the visible side edges of each stack and the shaded half of each loose star; every star face stays pure white. The white gaps between hatching strokes are as wide as the strokes themselves. No area is ever filled solid black, and there is no flat opaque fill and no thick uniform contour — the darkest tone in the picture is parallel pen hatching with white paper visible between the strokes.
+
+The mound sits centred and takes up most of the picture's width, leaving a clear white margin all round it. Style of West of Loathing / doodle art — no painterly rendering, no shading gradients, no glow, no 3D render, no photorealism, no clean vector look, no thick bold cartoon outline.
+```
+
+收图判据：density 只要落 **0.09–0.18**（下限 0.077 由 l8 卡，上限只需低于 l10 的 0.259，门禁会判）；真正要看的是 **① 抠图后 aspect 不能接近 1.0 且内容 bbox 不能占满原图**（平铺的标志，`pack_resources.cjs` 打印的 `w×h` 一眼能看出来）、**② 星星能数得出来**（跟 l6–l8 一族）、**③ 没有筒壁**。
+
+**顺手修掉的一个打包期 bug**：`pack_resources.cjs` 的主扫描 `^res_.*\.(webp|png)$` 会把**自己这条管线的产物** `res_contact_sheet.png` 当成第 51 个源帧收进图集（`resContactSheet.js` 就写在同一个目录里，§6.11）。之前没暴露是因为上一轮的顺序恰好是「先打包、后出 contact sheet」；这一轮重跑时它就进去了。现在按文件名显式排除（而不是给 contact sheet 改名/换目录——它的路径写在文档里，也是目检习惯的一部分）。
+
+#### 6.12.6 顺带查出：sticker 的 tan→gold 色带在屏上**基本不存在**（未修，待拍板）
+
+复核新 l10 时顺手量了一下「铜→金」这条色带到底有多少落在屏上。把每帧按 alpha 合成到地图纸色 `#f2ece0` 上取均值（也就是眼睛实际拿到的颜色），暖度 `r-b`：
+
+| | sticker l6 | l7 | l8 | l9 | l10 | graphite l10（**免色带**） | 纸色本身 |
+|---|---|---|---|---|---|---|---|
+| `r-b` | 16.5 | 16.6 | 16.3 | 16.6 | 14.5 | **14.6** | 18.0 |
+
+sticker 各级之间**没有梯度**，而且和明确豁免色带的 `graphite_l10` 一模一样（14.5 vs 14.6）——色带贡献可视为 0，`tan → gold` 的等级斜坡在屏上读不出来。
+
+**病根是结构性的，不是参数没调对**：`applyBand` 是对帧 RGB 做**部分乘法**，而这批帧经过 §5.8 的抠图后只剩「近黑线芯（RGB≈0–40，不透明）+ 半透明灰边（RGB=luma，alpha=255−luma）+ 全透明留白」。乘法对近黑像素无能为力（`0 × 任何颜色 = 0`），而占面积最大的留白是**全透明**、上屏拿的是纸色而不是色带色。色带是 2026-07-17 之前 sticker 还是「母题 + 合成计数托盘」（有大片实心填充区）时设计的，`bakeCountFrames` 一删它就失去了作用对象——只是没人量过，`§5.7-sticker` / `§5.9` 至今仍把它当成活着的主题加分项在写。
+
+**未修，三条路各有代价，请拍板**：
+1. **接受现状，正式承认 sticker 也是黑墨族**（改 `tintLevelFrame` 把 sticker 也放进豁免正则，删掉 `BAND`/`applyBand`/`BAND_STRENGTH` 和文档里的相关表述）。代价：铜钱失去唯一的颜色线索，只靠五角星剪影区分——实测剪影其实够用（§6.12.5 的实机截图里星形在格子上清晰可辨）。收益：删掉一整块死代码，五族口径统一。
+2. **改成上屏 tint**（`sp.tint = BAND[lv]`）。颜色会真的出现（乘法作用在已合成的像素上）。代价：直接违反 §6.11「渲染层零等级逻辑」——等级→颜色又变回渲染层的事，两份渲染器重新需要保持同步。若要走这条，正确做法是把颜色也**烘进 `nw`**（`nw.tint`），渲染层仍然只是照读。
+3. **打包期给 sticker 帧垫一层底色 wash**（在抠图后、给非透明区域和一部分留白填上色带色再合成）。颜色最实在，但会动到「白底线稿」这条美术铁律，且 wash 的浓度又是一个需要门禁的自由参数（§6.7 的老教训）。
+
+倾向 **1 或 2-with-`nw.tint`**：1 最便宜且实测无损失，2 是「真要颜色」时唯一不破坏渲染层契约的做法。3 不建议。

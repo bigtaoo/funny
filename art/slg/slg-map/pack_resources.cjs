@@ -287,8 +287,13 @@ async function processImage(file, longEdge) {
 const loadSprite = (file) => processImage(file, LONG_EDGE);
 
 async function main() {
+  // `res_contact_sheet.png` is this pipeline's own OUTPUT (art/scripts/resContactSheet.js writes it
+  // here, slg-resource-art.md §6.11) and it matches the source pattern, so the second run after a
+  // sheet exists silently packs the sheet as a 51st frame — 5 KB of atlas spent on a picture of the
+  // atlas, and the frame count check stops meaning anything. Exclude it by name rather than renaming
+  // the sheet: the sheet's path is referenced from the doc and from the verification habit.
   const files = fs.readdirSync(__dirname)
-    .filter((f) => /^res_.*\.(webp|png)$/i.test(f))
+    .filter((f) => /^res_.*\.(webp|png)$/i.test(f) && f !== 'res_contact_sheet.png')
     .sort();
   if (!files.length) { console.error('No res_*.{webp,png} files found'); process.exit(1); }
 
