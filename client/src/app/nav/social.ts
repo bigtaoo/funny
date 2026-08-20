@@ -1,6 +1,6 @@
 // Social navigation: friends list, mail, direct chat (S6). Extracted from createAppCore.
 import * as analytics from '../../analytics';
-import { WorldApiClient } from '../../net/WorldApiClient';
+import { WorldApiClient, type FamilyDetailView } from '../../net/WorldApiClient';
 import type { FriendsView, ChatView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
@@ -31,6 +31,13 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     // but still valid. Do NOT guard on empty string; worldsvc is always reachable.
     const worldApi = new WorldApiClient(platform.storage);
     let slgWorldId: string | null = null;
+    /**
+     * The family detail loadSLGStatus just fetched, handed straight to FamilyScene when the family
+     * tab jumps into it (openFamilyHub below) so it doesn't re-issue the identical GET
+     * /social/family/mine a moment later. One-shot: consumed on hand-off, so any later entry into
+     * the hub re-fetches rather than painting a stale roster.
+     */
+    let slgFamily: FamilyDetailView | null = null;
     const ensureWorldId = async (): Promise<string> => {
       if (slgWorldId) return slgWorldId;
       if (!worldApi) throw new Error('no world api');
@@ -91,6 +98,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
             ensureWorldId(),
             worldApi.getMyFamily().catch(() => null),
           ]);
+          slgFamily = fam;
           const status: import('../../scenes/FriendsScene').SLGSocialStatus = {
             worldId: wid,
             familyId: undefined,
@@ -126,8 +134,23 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         viewFamily: (familyId) => worldApi.getFamily(familyId),
         createSect:   async (name, tag) => { const wid = await ensureWorldId(); await worldApi.createSect(wid, name, tag); },
         joinSect:     async (sectId) => { const wid = await ensureWorldId(); await worldApi.joinSect(wid, sectId); },
-        openFamilyHub: () => { if (slgWorldId) nav.goFamilyHub(worldApi, slgWorldId, backTo, opts?.overlay); },
-        openSectHub:   () => { if (slgWorldId) nav.goSectHub(worldApi, slgWorldId, backTo, opts?.overlay); },
+        // Both return whether they navigated (see FriendsSceneCallbacks.openFamilyHub) — the shard
+        // is resolved inside loadSLGStatus, so a null slgWorldId means its status fetch never
+        // completed and the tab should keep showing its own loading state.
+        openFamilyHub: () => {
+          if (!slgWorldId) return false;
+          // Hand over the roster loadSLGStatus already fetched and clear it, so FamilyScene paints
+          // immediately instead of re-running the same request behind a second loading screen.
+          const preload = slgFamily;
+          slgFamily = null;
+          nav.goFamilyHub(worldApi, slgWorldId, backTo, opts?.overlay, preload);
+          return true;
+        },
+        openSectHub: () => {
+          if (!slgWorldId) return false;
+          nav.goSectHub(worldApi, slgWorldId, backTo, opts?.overlay);
+          return true;
+        },
         loadWorldChat: async (before) => { const wid = await ensureWorldId(); return worldApi.getWorldChannel(wid, { before }); },
         sendWorldChat: async (body, senderName) => { const wid = await ensureWorldId(); await worldApi.sendWorldChannelMessage(wid, body, senderName); },
         playerName: () => playerName(),

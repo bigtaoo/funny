@@ -19,9 +19,5 @@
   "scenes/EquipmentScene/core.ts": {
     "lines": 525,
     "reason": "Shared-state root all 5 domain classes (inventory/craft/detail/assign/reforge) depend on, plus input/lifecycle plumbing and 3 lazy-hook fields the two bidirectional pairs found during the 2026-08-11 conversion (inventory<->detail, detail<->assign) needed. Two further seams WERE already extracted (types.ts, layout.ts, helpers.ts) — this is what's left after that."
-  },
-  "scenes/FriendsScene/core.ts": {
-    "lines": 505,
-    "reason": "2026-08-12 PR #98: duel-invite/room-queue-mutex fix added one new `reason:'busy'` branch to an existing ternary chain in applyDuelCancelled plus a 1-line incomingDuelInvite reset — a single case in an existing switch, no seam to extract for a 5-line diff."
   }
 }

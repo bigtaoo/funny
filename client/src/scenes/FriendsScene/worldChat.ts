@@ -8,11 +8,10 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
-import { caretDisplay } from '../../ui/inputDisplay';
 import { drawChatLine } from '../../ui/widgets/chatRow';
 import type { WorldChatMessage } from '../../net/WorldApiClient';
 import type { FriendsSceneCore } from './core';
-import { addButton, centerLabel, centerLabelFixed, openHiddenInput, scrollRegion } from './chrome';
+import { addButton, caretText, centerLabel, centerLabelFixed, openHiddenInput, scrollRegion } from './chrome';
 import type { NetworkHandlers } from './network';
 
 export class WorldChatPanel {
@@ -44,28 +43,33 @@ export class WorldChatPanel {
     inputBg.x = px; inputBg.y = inputY + Math.round(inputH * 0.125);
     core.container.addChild(inputBg);
     const padX = Math.round(inputW * 0.04);
-    const inputTxt = txt(
-      caretDisplay(core.worldChatInput, core.worldChatActive && core.caretOn, t('social.world.placeholder')),
-      snapFont(Math.round(inputH * 0.3)),
-      core.worldChatInput ? C.dark : C.mid,
-    );
     // Clip to the input box (portrait's narrow inputW made a long line spill past the box and
     // over the send button, see git history) and, once the line overflows, anchor from the right
     // so the caret at the end stays visible while typing — same scroll behaviour a native text
-    // input gives you.
+    // input gives you. Re-applied on every string change, the caret blink's in-place swap included
+    // (that's what `reflow` is for), since one caret glyph can tip the line over the threshold.
+    const reflowInput = (obj: PIXI.Text): void => {
+      if (obj.width > inputW - padX * 2) {
+        obj.anchor.set(1, 0.5);
+        obj.x = px + inputW - padX;
+      } else {
+        obj.anchor.set(0, 0.5);
+        obj.x = px + padX;
+      }
+    };
+    const inputTxt = caretText(core, {
+      active: core.worldChatActive, value: core.worldChatInput,
+      placeholder: t('social.world.placeholder'),
+      size: snapFont(Math.round(inputH * 0.3)), color: core.worldChatInput ? C.dark : C.mid,
+      reflow: reflowInput,
+    });
     const inputClip = new PIXI.Graphics();
     inputClip.beginFill(0xffffff);
     inputClip.drawRect(px, inputBg.y, inputW, inputBoxH);
     inputClip.endFill();
     core.container.addChild(inputClip);
     inputTxt.mask = inputClip;
-    if (inputTxt.width > inputW - padX * 2) {
-      inputTxt.anchor.set(1, 0.5);
-      inputTxt.x = px + inputW - padX;
-    } else {
-      inputTxt.anchor.set(0, 0.5);
-      inputTxt.x = px + padX;
-    }
+    reflowInput(inputTxt);
     inputTxt.y = inputY + inputH / 2;
     core.container.addChild(inputTxt);
     core.hits.push({ rect: { x: px, y: inputY, w: inputW, h: inputH }, fn: () => {
@@ -126,6 +130,9 @@ export class WorldChatPanel {
     core.maxScroll = Math.max(0, startCy + core.worldMessages.length * (rh + rowGap) - regionH);
     if (core.worldStick) core.scrollY = core.maxScroll;
     else if (core.scrollY > core.maxScroll) core.scrollY = core.maxScroll;
+    // scrollRegion() above baselined the layer at the pre-settle scrollY; rows below are placed at
+    // the settled one, so re-baseline or the next drag would translate by that stale difference.
+    core.repaint.markScrollBuilt();
 
     let cy = startCy;
     const screenY = (c: number) => core.regionTop + c - core.scrollY;

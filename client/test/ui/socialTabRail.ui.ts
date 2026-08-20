@@ -24,6 +24,7 @@ import { sidebarNavW, bottomNavH } from '../../src/ui/widgets/HubTabs';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
+import * as friendsInput from '../../src/scenes/FriendsScene/input';
 import type { WorldApiClient, FamilyDetailView, SectDetailView } from '../../src/net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../src/ui/widgets/socialTabRail';
 
@@ -134,14 +135,15 @@ function clickRailTab(scene: any, tab: SocialTab): void {
   core.handleUp(pos.x, pos.y);
 }
 
-/** FriendsScene dispatches through the pointer-down/up click path (`onPointerDown` +
- *  `onPointerUp`), not `handleDown` — both live on the composed `core` field (2026-08-11
- *  composition conversion — see claudedocs/client-modules.md's split-form priority note). */
+/** FriendsScene dispatches through the pointer-down/up click path (`onPointerDown` + `onPointerUp`),
+ *  not `handleDown` — free functions over the composed `core` field since 2026-08-20, when the
+ *  gesture dispatch moved out of core.ts into FriendsScene/input.ts (they were core methods from the
+ *  2026-08-11 composition conversion until then). */
 function clickFriendsRailTab(scene: any, tab: SocialTab): void {
   const pos = tabLabelPos(scene, tab);
   if (!pos) return;
-  scene.core.onPointerDown(pos.x, pos.y);
-  scene.core.onPointerUp(pos.x, pos.y);
+  friendsInput.onPointerDown(scene.core, pos.x, pos.y);
+  friendsInput.onPointerUp(scene.core, pos.x, pos.y);
 }
 
 describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
