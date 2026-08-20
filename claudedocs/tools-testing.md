@@ -25,12 +25,12 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 | 闸门 | 范围 | 语义 |
 |---|---|---|
 | 单文件 500 行 | `tools/` 全树（`.ts`/`.tsx`，排除 `test/`、`scripts/`、`dist/`） | `tools/scripts/checkFileLength.mjs` 薄封装转调根 `scripts/checkFileLength.mjs`；只在**新文件**越过 500 行、或 `tools/scripts/file-length-baseline.json` 里的已知文件**继续变大**时判红。2026-08-13 (G4) 起 |
-| 覆盖率 | 5 个工具包 | 报表 + **产出必须存在**；`map-editor`（Phase 4a）与 `level-editor`（Phase 4b）**百分比也受 90% 门禁**，其余 3 个仍豁免（ADR-070）。2026-08-20 起 |
+| 覆盖率 | 5 个工具包 | 报表 + **产出必须存在**；`map-editor`（4a）/`level-editor`（4b）/`vfx-editor`（4c）**百分比也受 90% 门禁**，其余 2 个仍豁免（ADR-070）。2026-08-20 起 |
 | 可达性 | 5 个工具包各自的 `src/**` | `tools/scripts/checkUnreachableModules.mjs`（逐包调用根 `scripts/checkUnreachableModules.mjs`）：**任何一个 `src/` 下的源文件，若从该包的 bundler entry、`--extra-root` 声明的兄弟产物目录（animator 的 `runtime/`）、以及 `test/**` 这三类根出发都到不了，判红**。2026-08-20 起 |
 
 覆盖率那条的两半要分清：
 - **管路已受门禁**——某个工具包不再产出 `coverage/`，`checkCoverageThreshold.mjs` 判红，跟服务端 workspace 一样。这不是覆盖率回归，报错文案也刻意分开说（"produced no coverage output at all"），免得有人去找缺失的测试而真正要修的是缺失的 CI 步骤。
-- **百分比未受门禁**——每个包各自的 scope 先要做结构性改造才谈得上 90%（下表）。这条豁免在**每次** CI 的 summary 里复述当前值与目标，绿跑也印。**已开始收缩**：同一天 Phase 4a（`map-editor`）、Phase 4b（`level-editor`）先后毕业进 `JSON_SUMMARY_PACKAGES`，豁免名单从 5 个降到 3 个。
+- **百分比未受门禁**——每个包各自的 scope 先要做结构性改造才谈得上 90%（下表）。这条豁免在**每次** CI 的 summary 里复述当前值与目标，绿跑也印。**已开始收缩**：同一天 Phase 4a（`map-editor`）、4b（`level-editor`）、4c（`vfx-editor`）先后毕业进 `JSON_SUMMARY_PACKAGES`，豁免名单从 5 个降到 2 个（animator / ops）。
 
 ## 可达性闸门（2026-08-20 新增）
 
@@ -54,7 +54,7 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 |---|---|---|---|---|
 | `level-editor` | `state/**`、`layout/**`、`units.ts` | **100.0%** (445/445)、函数 64/64 | 25.7% | **✅ 已接门禁（Phase 4b，2026-08-20）**。坐标/命中数学 + 原本埋在 `resize()`/`onMove()`/`onWheel()`/draw 方法里的纯决策已从两个面板类移进新的 `src/layout/{board,timeline}.ts`（纯层：一格/一个 block 在屏幕哪儿、光标下是什么、什么颜色、路径怎么走），`src/board/`+`src/timeline/` 从此均质地是 DOM 那半。scope 216 → **445** 行（ADR-070 原估 ~600，见下方「4b 实测」）。同日加了 `pureLayerBoundary.test.ts` 守边界 |
 | `map-editor` | `state/**`、`tiles/**`、`i18n.ts`、`constants.ts` | **100.0%** (652/652)、函数 62/62 | 38.3% | **✅ 已接门禁（Phase 4a，2026-08-20）**。`isoGrid`/`tileStyle` 已从 `render/` 移进新的 `src/tiles/`（纯层：一格在屏幕哪儿 / 长什么样），`include` 回到目录级，包也从 `NOT_GATED_JSON_SUMMARY_PACKAGES` 移进 `JSON_SUMMARY_PACKAGES`。同日补完最后 8 行（150 例），并加了 `pureLayerBoundary.test.ts` 守边界——见下方「覆盖率百分比守不住目录边界」|
-| `vfx-editor` | `model/**`、`io/**`、`rendering/Playback.ts` | 84.9% (449/529) | 40.4% | Phase 4c：`io/IOController.ts`（74 行，0%）。它没有浏览器依赖挡路，所以「没测」是缺口而非结构限制，故意留在 scope 内 |
+| `vfx-editor` | `model/**`、`io/**` | **100.0%** (529/529)、函数 76/80 | 40.4% → **47.2%** | **✅ 已接门禁（Phase 4c，2026-08-20）**。`io/IOController.ts`（74 行）0% → 100%——它没有浏览器依赖挡路，缺的只是一个测试文件。`rendering/Playback.ts` 这个**本仓库最后一个逐文件 include 项**也去掉了：Playback 是编辑器状态而非渲染器，已移进 `src/model/Playback.ts`，`src/rendering/` 从此均质地是 PIXI 那半。同日加了 `pureLayerBoundary.test.ts`，但**形状跟 4a/4b 不同**——见下方「4c 实测」|
 | `animator` | `core/**`、`skeleton/**`、`animation/**`、`io/**` | 64.3% (927/1442) | 23.5% → **29.5%**（2026-08-20 删掉 1424 行不可达死码后实测，见下方「已知遗留」）| Phase 4d：`io/{AutoSaveController,ProjectStore}.ts`（IndexedDB，均 0%，按 vfx-editor 的 `fake-indexeddb` 先例）+ `animation/AnimationController.ts`（41.3%） |
 | `ops` | **无（报全包）** | — | **8.8%** (322/3639) | Phase 4e：它没有可指的逻辑层——2026-08-13 Phase 3 导出的 9 个纯函数各自嵌在一个 90% 是 `h()` DOM 的 `pages/*.ts` 里，最大的非页面文件 `src/api.ts` 自己也只有 22.7%。先把各页纯逻辑抽进 `src/logic/<page>.ts`、`pages/*` 只留 DOM 装配（同 `f22c3df2` 拆 `api.ts`/`types.ts` 的方向），再把 include 收到 `logic/**` + `api/**` |
 
@@ -68,6 +68,14 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 
 **为什么剩下的低分留着**：include 清单刻意把已知未测的文件圈在里面（animator 那两个 0% 的 IndexedDB 文件最典型）——缺口是要干的活，不是要定义掉的东西。反过来，`ops` 只要把 include 缩到 `src/api/**` 就能把印出来的数字抬上去，**一个测试都不用加**，这是覆盖率门禁最不该奖励的事，所以它宁可挂着 8.8% 的全包数字。
 
+**Phase 4c 实测（2026-08-20，`vfx-editor`）**：这个包的退出条件只写了「补 `io/IOController.ts`（74 行 0%）」，实做时另一半才是有内容的那半——**去掉本仓库最后一个逐文件 include 项** `rendering/Playback.ts`。4a 的判断是「逐文件 include 是缺模块边界的味道」，先验证前提：`Playback.ts` 只有 `t`/`playing`/`duration` 加 `Math`，无 PIXI/canvas/DOM，rAF 循环从外面读它、它从不反向伸手——它不是渲染器，是**编辑器状态**。于是移进 `src/model/Playback.ts`，`src/rendering/` 只剩 `PreviewRenderer.ts`（均质地是 PIXI 那半），依赖方向单向 `model/ ← rendering/`，`include` 回到 `['src/model/**','src/io/**']`。测试 114 → **136 例**，scope 内 84.9% → **100.0%（529/529）**，全包 40.4% → **47.2%**，`Overall (gated)` 94.0% → **94.1%**（16 → 17 个包）。
+
+- **purity 守卫在这个包必须换判据，不是换条目**。`src/io/**` 在受门禁的 scope 里，而它**理应**用 `window`/`document`/`localStorage`/`indexedDB`/`Blob`/`URL`——持久化和文件交换就是它的活。照抄 level-editor 的「一律禁 DOM 全局」要么是假话，要么只能把 io/ 挤出 scope，而后者正是 ADR-070 拒绝的「把缺口定义掉」。所以判据换成本包真正那条线：**能不能 headless 跑**（scope 内每个浏览器 API 都有真替身：IndexedDB → `fake-indexeddb`、window/document/localStorage → `vi.stubGlobal`、Blob/URL → Node 自带，下载出来的 blob 用 `node:buffer` 的 `resolveObjectURL` 读回来验字节；`new PIXI.Application` 一个都没有）。落成**两层、一套机制**：`src/model/**` 一律禁 DOM，`src/io/**` 只许一份显式白名单的 global（其余照禁：全部 `HTML*Element`、canvas/rAF/observer 一族、`performance`）。白名单是**预算不是描述**——往 io/ 加一个浏览器 API 就得改这份清单，那正是该说清「它怎么 headless 测」的时刻。
+- **另外两条断言前两轮没有**：①**依赖方向** `io/ → model/` 单向（`model/` 不许 import `io/`）——两个目录都受门禁，`include` 本身给不出方向；②`coverage.include` **不许再出现逐文件项**——4c 刚去掉最后一个，加回来得先过这条，而不是当一行小改动溜进去。六条断言各做过 red-then-green（含「io/ 里放 `requestAnimationFrame` 判红、而 `document` 放行」这条，专门证明两层是活的，不是一层伪装成两层）。
+- **「百分比守不住边界」第三次独立复现**：余量 = `529/0.9 - 529` = **58 行**（4a 72、4b 49）。实测往 `src/model/` 放一个 **5 行** DOM 探针，`All files` 99.06%、**门禁照过**，守卫当场红。
+- **行为不变的证据这次是逐字节相同的 bundle**（contenthash `442ad037…` 不变，562501 字节），但**别把它当成新规则**：原因是这个包的产物里**根本没有 module id**——整张图被 scope hoisting 折成一个模块，562KB 产物里 `__webpack_require__` 出现 **0 次**，模块路径没进产物。4a/4b 的产物有 module id 表，所以那两次 hash 必变。判据是「产物里有没有 module id」而不是「有没有搬文件」：`grep -c __webpack_require__ dist/bundle.*.js` 为 0 才能拿 hash 当证据，否则退回 token 集合对比。
+- **补完最后 6 行时发现一条真空白**：`ProjectStore` 的首次运行 `onupgradeneeded`（新用户必走的第一条路）**从没被任何测试走过**——`ProjectStore.test.ts` 的 `beforeEach` 用裸连接重置状态（`deleteDatabase` 会挂），而那条裸连接顺手把库和 object store 建好了，等被测类打开时 store 已存在。修法是单开一个测试文件（vitest 按文件隔离 → `fake-indexeddb/auto` 是全新空库），并把「库尚不存在」这个承重前提**写成断言**，文件隔离哪天关掉它会红，而不是继续绿着什么也不证明。**这类「重置逻辑顺手把被测的初始化路径做掉了」的空白，覆盖率报表是能看见的**（那几行就是红的），代价是得去看，而不是只看总百分比。
+- **明确不补**：剩下 4 个未覆盖**函数**全是 IndexedDB 的 `onerror`/`onabort` reject 回调；碰到它们得把 `fake-indexeddb` 换成对被测 API 自身的 mock，买一个数字丢掉测试意义。门禁只看行覆盖率（仓库既有约定），理由写在 `vitest.config.ts` 注释里，免得下一个人当成漏掉的活。
 ### ⚠️ 覆盖率百分比守不住目录边界（2026-08-20 订正）
 
 Phase 4a 的原始写法声称「接门禁之后，往 `src/tiles/`/`src/state/` 丢一个 PIXI 模块，等于往已 include 的目录里塞一个 ~0% 的文件，直接打红 90%」。**方向对，量级错**，别再照抄这句：
@@ -84,13 +92,13 @@ node -e "const t=require('./coverage/coverage-summary.json').total.lines; consol
 
 **4b 独立复现了同一件事（2026-08-20）**：`level-editor` 毕业后余量 = `445/0.9 - 445` = **49 行**。这个包的 5 个 out-of-scope 文件是 196–477 行，全都大于 49——所以把**现有**任何一个搬进 `src/layout/` 确实会打红门禁。但那是这几个文件恰好都大，不是门禁的性质：实测往 `src/layout/` 放一个 **10 行**的 DOM 探针，`All files` 97.8%（445/455）、**门禁照过**，而 `pureLayerBoundary.test.ts` 当场判红。所以两件事的分工在第二个包上又验证了一次。
 
-**给 4c–4e 的结论**：graduation 不等于边界有人守。`include` 回到目录级只是让「加文件」变得可见**给覆盖率算法**，不等于可见给门禁——门禁只看一个百分比，而百分比有余量。每个毕业的包都该配一条同形的 purity 守卫，`PURE_DIRS` 改一下就能抄——但**白名单和 DOM 全局清单要按目标工具的实际情况改**，别照抄 map-editor 那份：`level-editor` 根本没有 pixi.js 依赖（面板用裸 `canvas.getContext('2d')`），所以"挡 pixi"那句话在这里没有对应物，承重的是 DOM 全局清单（按该工具 impure 半边真正用到的 global 逐个列：`document`/`window`/`ResizeObserver`/`CanvasRenderingContext2D`/`MouseEvent`/`WheelEvent`/`showOpenFilePicker`…），允许的 bare specifier 也从 `@nw/shared/slg` 变成 `@nw/engine/*`。四条断言各做过 red-then-green 实测（DOM 全局、跨界 import、纯目录改名 canary、往 include 加第三个目录 canary）。
+**给 4d–4e 的结论**：graduation 不等于边界有人守。`include` 回到目录级只是让「加文件」变得可见**给覆盖率算法**，不等于可见给门禁——门禁只看一个百分比，而百分比有余量。每个毕业的包都该配一条同形的 purity 守卫，`PURE_DIRS` 改一下就能抄——但**白名单和 DOM 全局清单要按目标工具的实际情况改**，别照抄 map-editor 那份：`level-editor` 根本没有 pixi.js 依赖（面板用裸 `canvas.getContext('2d')`），所以"挡 pixi"那句话在这里没有对应物，承重的是 DOM 全局清单（按该工具 impure 半边真正用到的 global 逐个列：`document`/`window`/`ResizeObserver`/`CanvasRenderingContext2D`/`MouseEvent`/`WheelEvent`/`showOpenFilePicker`…），允许的 bare specifier 也从 `@nw/shared/slg` 变成 `@nw/engine/*`。四条断言各做过 red-then-green 实测（DOM 全局、跨界 import、纯目录改名 canary、往 include 加第三个目录 canary）。**4c 走得更远：连「一律禁 DOM」这个前提本身都可能不成立**（`vfx-editor` 的 `src/io/**` 在门禁范围内、又理应用 IndexedDB/localStorage/Blob），那时要改的不是清单里的条目而是**判据**——见下方「4c 实测」的两层写法。
 
 **防刷分的那一列**：报表每行有 `Scope (files)`（measured / `src` 下源文件数）。缩 include 抬 % 的同时这个比例会掉，两个数印在同一张表里，取舍在 review 时就看得见。
 
 ## Phase 4 graduation：怎么把一个工具接进门禁
 
-> 已走过两遍：**4a `map-editor`** 和 **4b `level-editor`**（都是 2026-08-20）。下面六步就是那两次实际做的事。
+> 已走过三遍：**4a `map-editor`**、**4b `level-editor`**、**4c `vfx-editor`**（都是 2026-08-20）。下面六步就是那三次实际做的事。
 
 1. 把该包从 `scripts/coverageLib.mjs` 的 `NOT_GATED_JSON_SUMMARY_PACKAGES` **移到** `JSON_SUMMARY_PACKAGES`。
 2. **两个清单都要检查**——`coverageScripts.test.ts` 有一条专门钉这个错的用例：复制一行、忘了删原来那行，包就同时既受门禁又被豁免（`collectRows` 出两行，门禁被那条豁免行满足，表面看一切正常）。**反向的错**（只删不加）由那条 two-state canary 兜住，见下方「测试侧不用改」。
@@ -101,7 +109,7 @@ node -e "const t=require('./coverage/coverage-summary.json').total.lines; consol
 
 ### 测试侧不用改（2026-08-20 解耦）
 
-剩下的 **4c `vfx-editor` / 4d `animator` / 4e `ops`** 三条线可以并行、任意顺序合并：`coverageScripts.test.ts` 里再没有任何东西写死正在毕业的包名，所以毕业那个 PR 不需要连带改测试文件。做法两条：
+剩下的 **4d `animator` / 4e `ops`** 两条线（4c 已毕业）可以并行、任意顺序合并：`coverageScripts.test.ts` 里再没有任何东西写死正在毕业的包名，所以毕业那个 PR 不需要连带改测试文件。做法两条：
 
 - **需要一个真实 not-gated 行的用例**（共 7 条：「低于门槛不判红」「无产出判红」「两类失败分行」「`COVERAGE_THRESHOLD` 不作用于豁免行」「绿跑也复述差距」「报表单列一节」「不进 `Overall`」）从名单里取第一项当样本（`notGatedSample()`），并挂在 `itIfNotGated` 上——名单空了就整条跳过，因为那时根本没有这种行可断言。fixture 的百分比也不再用某个包当时的实测值（原来是 animator 的 64.3），只保留「在门槛的哪一侧」这一个语义。
 - **原来那条 `expect(NOT_GATED.length).toBeGreaterThan(0)`** 改成 two-state：名单非空时断言每一项都确实产出了 not-gated 行；名单为空时断言**豁免已经从输出里消失**（`collectRows` 不再有 `gated: false` 行、报表不再打印「reported, not gated」小节、门禁不再打印豁免脚注），并且 `tools/` 下每个带 `vitest.config.ts` 的包都在受门禁清单里——即「三个包是**搬**进门禁了，不是从表里掉出去了」。它防的事没变（豁免不能悄悄空掉、变成死代码），只是不再由「最后一个合并的人」随机中奖。
