@@ -26,6 +26,7 @@ export type AdminCapability =
   | 'config.manage'
   | 'events.manage'
   | 'gacha.pools.manage'
+  | 'promo.manage'
   | 'paddle.events.view'
   | 'reports.view'
   | 'reports.action'
@@ -477,4 +478,19 @@ export interface AdminGachaPool {
   createdBy: string;
   createdAt: number;
   closedAt?: number;
+}
+
+// ── Promo codes (B-PROMO; mirror of admin's PromoCodeView, itself commercial's promoCodes doc) ──
+// `redeemed` counts redemptions across all players; a code with no `totalLimit` is unlimited, one with
+// no `expiresAt` never expires. Per-player single use is enforced server-side (promoRedemptions), so it
+// is not a field here.
+export interface PromoCodeView {
+  code: string;
+  coins: number;
+  expiresAt?: number;
+  totalLimit?: number;
+  redeemed: number;
+  note?: string;
+  createdBy: string;
+  createdAt: number;
 }

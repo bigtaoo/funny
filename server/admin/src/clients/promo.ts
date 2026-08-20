@@ -14,6 +14,15 @@ export interface PromoCodeView {
   createdAt: number;
 }
 
+/**
+ * Raw wire shape of one row from meta's GET /admin/promo/codes. commercial serves its `promoCodes`
+ * documents verbatim (`_id` IS the uppercase code) and its own route test pins that shape, so the
+ * rename to `code` happens here — this client is what promises `PromoCodeView` to the ops-facing route.
+ */
+interface PromoCodeWireDoc extends Omit<PromoCodeView, 'code'> {
+  _id: string;
+}
+
 export interface PromoClient {
   readonly available: boolean;
   list(): Promise<PromoCodeView[]>;
@@ -30,14 +39,14 @@ export class HttpPromoClient implements PromoClient {
 
   async list(): Promise<PromoCodeView[]> {
     if (!this.metaBaseUrl) return [];
-    const r = await fetchInternalJson<{ codes?: PromoCodeView[] }>(`${this.metaBaseUrl}/admin/promo/codes`, {
+    const r = await fetchInternalJson<{ codes?: PromoCodeWireDoc[] }>(`${this.metaBaseUrl}/admin/promo/codes`, {
       caller: 'admin',
       key: this.internalKey,
       timeoutMs: 10000,
       label: 'meta GET /admin/promo/codes',
     });
     if (!r.ok) throw new EventsClientError(r.status || 502, `list promo codes ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
-    return r.body?.codes ?? [];
+    return (r.body?.codes ?? []).map(({ _id, ...rest }) => ({ code: _id, ...rest }));
   }
 
   async create(args: { code: string; coins: number; expiresAt?: number; totalLimit?: number; note?: string; createdBy: string }): Promise<{ code: string }> {
