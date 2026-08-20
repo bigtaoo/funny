@@ -235,3 +235,118 @@ describe('the Lv.N label (§6.2 #7)', () => {
     expect(g.children[0]!.visible).toBe(false);
   });
 });
+
+// ── Invariants of the shipped atlas artifacts ──────────────────────────────────────────────────────
+// Everything above tests the level READ. This block tests the atlas FILES, because the resource
+// pipeline (art/slg/slg-map/pack_resources.cjs -> art/scripts/patchMergedAtlas.js) has no tests of its
+// own and both bugs found on 2026-08-20 were silent: neither changed a number anyone looks at, and
+// both are one word away from coming back. Asserting on the committed artifacts catches them by
+// effect, which is the part that matters and the part that survives a rewrite of those scripts.
+describe('the shipped atlas artifacts', () => {
+  const EXPECTED_RES_FRAMES = [
+    ...['ink', 'paper', 'graphite', 'metal'].flatMap((t) => Array.from({ length: 10 }, (_, i) => `res_${t}_l${i + 1}`)),
+    ...[6, 7, 8, 9, 10].map((lv) => `res_sticker_l${lv}`),   // sticker only spawns at level >= 6
+    'res_ink', 'res_paper', 'res_graphite', 'res_metal', 'res_sticker', // generic fallback / fogged frames
+  ];
+
+  it('carries exactly the 50 resource frames — no more, no fewer', async () => {
+    // `res_contact_sheet.png` is written INTO art/slg/slg-map/ by art/scripts/resContactSheet.js and
+    // matches the packer's own source pattern `^res_.*\.(webp|png)$`, so the second pack after a sheet
+    // exists packed the sheet as a 51st frame: the pipeline's output fed back in as its input,
+    // spending atlas on a picture of the atlas. Nothing failed and no number moved.
+    //
+    // Asserted on res_atlas.json, NOT on the merged world_atlas.json this file otherwise reads. That
+    // is where the bug lands, and only there: patchMergedAtlas.js copies frames the merged page
+    // already has and reports the rest as skipped, so a spurious 51st frame never reaches the merged
+    // page at all. Checked against world_atlas this test passes with the bug present — verified.
+    const srcJson = (await import('../../src/assets/slg/res_atlas.json')).default as unknown as
+      { frames: Record<string, unknown> };
+    const res = Object.keys(srcJson.frames);
+    expect(res.sort()).toEqual([...EXPECTED_RES_FRAMES].sort());
+  });
+
+  it('every visible pixel of every resource frame is neutral ink', async () => {
+    // Two rules collapse into one assertion. (1) Frames are force-greyscaled at pack time because a
+    // generation run that happens to favour a blue cast (measured b-r +6..+51 in the 2026-08-19 batch)
+    // reads on the map as a different pen next to the neutral frames it sits beside (§6.6). (2) The
+    // per-level colour band is gone: sticker's tan->gold ramp was measured to contribute nothing on
+    // screen and was retired, and the note in the packer asks anyone who wants per-level colour back to
+    // bake it into `nw` rather than re-add a tint pass (§6.12.6). A re-added tint pass, or a dropped
+    // greyscale step, both colour the strokes and land here.
+    //
+    // Only pixels at or above ALPHA_TRIM count, and that bound is load-bearing rather than defensive.
+    // Written without it this failed at a spread of 37 on the palette-quantised atlas — but measuring
+    // it showed every one of those pixels was under the alpha floor, i.e. invisible, and 0% of VISIBLE
+    // pixels were non-neutral either before or after. So this assertion does NOT catch quantisation
+    // (the palette test below does, and quantisation's real damage was to alpha, not hue); over-tight
+    // here it would have failed for a reason that has nothing to do with what it is guarding.
+    const ALPHA_TRIM = 16;
+    const sharp = (await import('sharp')).default;
+    const png = `${__dirname}/../../src/assets/slg/res_atlas.png`;
+    const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const offenders: string[] = [];
+    for (const name of Object.keys(FRAMES).filter((n) => n.startsWith('res_'))) {
+      const f = (FRAMES[name] as unknown as { frame: { x: number; y: number; w: number; h: number } }).frame;
+      let worst = 0;
+      for (let y = f.y; y < f.y + f.h; y++) {
+        for (let x = f.x; x < f.x + f.w; x++) {
+          const i = (y * info.width + x) * info.channels;
+          if (data[i + 3]! < ALPHA_TRIM) continue;
+          worst = Math.max(worst, Math.abs(data[i]! - data[i + 1]!), Math.abs(data[i]! - data[i + 2]!));
+        }
+      }
+      if (worst > 2) offenders.push(`${name} (max channel spread ${worst})`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('neither atlas PNG is palette-quantised, and the frames keep their alpha resolution', async () => {
+    // Both PNGs in this pipeline were written with sharp's `palette: true` at some point, and in sharp
+    // 0.32 ANY of palette/quality/colours/dither/effort silently switches on 8-bit quantisation. It was
+    // fixed for the merged page's reflow branch in §6.11, left in its in-place branch until §6.12.7,
+    // and left in the packer's own res_atlas encode until §6.12.8 — three sites, same trap, each silent.
+    //
+    // The damage is on ALPHA, not colour: quantising res_atlas cut it from 240 distinct alpha values to
+    // 143, and alpha IS the artwork here (frames are white-knocked-out line art, so alpha carries every
+    // stroke and every anti-aliased edge). Asserting the encoding rather than the pixels is what makes
+    // this checkable at all — a quantised page still looks approximately right.
+    const sharp = (await import('sharp')).default;
+    const dir = `${__dirname}/../../src/assets/slg`;
+    for (const name of ['res_atlas.png', 'world_atlas.png']) {
+      // `paletteBitDepth` is absent from sharp's bundled Metadata type but is returned at runtime
+      // (sharp 0.32) whenever the PNG is palette-encoded — undefined is what "not quantised" looks like.
+      const meta = await sharp(`${dir}/${name}`).metadata() as { paletteBitDepth?: number; channels?: number };
+      expect({ name, palette: meta.paletteBitDepth, channels: meta.channels }).toEqual({ name, palette: undefined, channels: 4 });
+    }
+    const { data } = await sharp(`${dir}/res_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alphas = new Set<number>();
+    for (let i = 3; i < data.length; i += 4) if (data[i]! >= 16) alphas.add(data[i]!);
+    expect(alphas.size).toBeGreaterThan(200);
+  });
+
+  it('every resource frame in the merged page is byte-identical to res_atlas', async () => {
+    // patchMergedAtlas.js copies frames from res_atlas into world_atlas. It used sharp's `composite`,
+    // which premultiplies alpha to blend and rounds back, drifting every anti-aliased edge pixel by
+    // 1-2 — on frames a given patch has no business touching at all. Frames land in non-overlapping
+    // rectangles, so blending has nothing to contribute and raw row copies are both correct and
+    // exactly checkable. This assertion is what makes "did that repack disturb the art?" answerable.
+    const sharp = (await import('sharp')).default;
+    const dir = `${__dirname}/../../src/assets/slg`;
+    const srcJson = (await import('../../src/assets/slg/res_atlas.json')).default as unknown as
+      { frames: Record<string, { frame: { x: number; y: number; w: number; h: number } }> };
+    const src = await sharp(`${dir}/res_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const dst = await sharp(`${dir}/world_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const drifted: string[] = [];
+    for (const [name, sf] of Object.entries(srcJson.frames)) {
+      const df = (FRAMES[name] as unknown as { frame: { x: number; y: number; w: number; h: number } } | undefined)?.frame;
+      if (!df) { drifted.push(`${name} missing from world_atlas`); continue; }
+      expect([df.w, df.h]).toEqual([sf.frame.w, sf.frame.h]);
+      for (let row = 0; row < df.h && !drifted.includes(name); row++) {
+        const a = ((sf.frame.y + row) * src.info.width + sf.frame.x) * 4;
+        const b = ((df.y + row) * dst.info.width + df.x) * 4;
+        if (Buffer.compare(src.data.subarray(a, a + df.w * 4), dst.data.subarray(b, b + df.w * 4)) !== 0) drifted.push(name);
+      }
+    }
+    expect(drifted).toEqual([]);
+  });
+});

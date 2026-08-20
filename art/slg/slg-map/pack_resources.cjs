@@ -327,10 +327,32 @@ async function main() {
   }
   const ATLAS_H = nextPow2(usedH);
 
-  // Composite atlas (compressed PNG: palette + max effort)
-  const composites = sprites.map((s) => ({ input: s.buf, left: s.x, top: s.y }));
-  const atlasBuf = await sharp({ create: { width: ATLAS_W, height: ATLAS_H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite(composites).png({ palette: true, compressionLevel: 9, effort: 10 }).toBuffer();
+  // Draw the frames onto the page with raw row copies, and encode LOSSLESS.
+  //
+  // Both halves of this were bugs, both silent, and both are the same pair of sharp traps that bit
+  // patchMergedAtlas.js twice (see its notes and slg-resource-art.md §6.12.7 / §6.12.8):
+  //   • `composite` blends, so it premultiplies alpha and rounds back, drifting every anti-aliased
+  //     edge pixel. Frames sit in non-overlapping rectangles separated by PAD, so there is nothing to
+  //     blend; copying bytes makes each frame on the page byte-identical to what processImage produced.
+  //   • `png({ palette: true, ... })` quantises to a 256-entry palette. That silently undid the forced
+  //     greyscale a few lines up: every frame goes in as (l,l,l,255-l) and came out of the quantiser
+  //     with up to 37 of spread between its own channels, i.e. coloured ink, which is exactly the
+  //     "reads as a different pen" failure §6.6 added the greyscale for. It also drifts alpha, which
+  //     the level read is measured from.
+  // Lossless costs ~2x the file. res_atlas.png is NOT loaded by the game (the client imports only the
+  // merged world_atlas — see client/src/render/atlas/resAtlasLoader.ts); it is the input to
+  // patchMergedAtlas.js and the atlas the map-editor dev tool reads, so on the shipping path this
+  // costs nothing at all.
+  const page = Buffer.alloc(ATLAS_W * ATLAS_H * 4);
+  for (const s of sprites) {
+    const raw = await sharp(s.buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    for (let row = 0; row < s.h; row++) {
+      const from = row * raw.info.width * 4;
+      raw.data.copy(page, ((s.y + row) * ATLAS_W + s.x) * 4, from, from + s.w * 4);
+    }
+  }
+  const atlasBuf = await sharp(page, { raw: { width: ATLAS_W, height: ATLAS_H, channels: 4 } })
+    .png({ compressionLevel: 9 }).toBuffer();
 
   // Export JSON (TexturePacker JSON-Hash) — frame names have no extension, for use as textures['res_ink']
   const frames = {};
