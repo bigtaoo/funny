@@ -8,14 +8,10 @@
 import * as PIXI from 'pixi.js-legacy';
 import atlasUrl from '../assets/slg/terrain_atlas.png';
 import atlasData from '../assets/slg/terrain_atlas.json';
-
-export type TerrainTextureName =
-  | 'terrain_grass'
-  | 'terrain_mountain'
-  | 'terrain_river'
-  | 'terrain_keep'
-  | 'terrain_center'
-  | 'terrain_stronghold';
+// The frame-name union lives in the pure tile layer, which is what maps a tile to one of these
+// names; this loader only turns a name into a PIXI.Texture. See tiles/tileStyle.ts for why the
+// dependency points that way.
+import type { TerrainTextureName } from '../tiles/tileStyle';
 
 let sheet: PIXI.Spritesheet | null = null;
 let loading: Promise<void> | null = null;

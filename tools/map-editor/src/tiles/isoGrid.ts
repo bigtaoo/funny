@@ -10,6 +10,18 @@
  * All screen-space helpers here are pan-relative — callers add `panX`/`panY`
  * themselves, matching the existing WorldMapScene convention of keeping pan
  * as a separate world-space pixel offset.
+ *
+ * ── Why src/tiles/ (ADR-070 Phase 4a, 2026-08-20) ──────────────────────────
+ * `src/tiles/` is the editor's PURE tile layer: given a tile, where does it sit
+ * on screen (this file) and what does it look like (tileStyle.ts). Nothing in
+ * here may import `pixi.js-legacy` or touch the DOM — the PIXI drawing that
+ * consumes these answers lives in `src/render/` (tileGraphics/baseMap/overlay/
+ * citySprites/*AtlasLoader), and it depends on this directory, never the other
+ * way round. Both files used to sit in `src/render/` among that drawing code,
+ * which forced vitest's `coverage.include` to name them file-by-file; the split
+ * lets the include go back to being directory-level, and now that map-editor is
+ * gated on the 90% line (ADR-070 Phase 4a graduated it), dropping a PIXI module
+ * in here turns the gate red instead of quietly diluting a hand-kept file list.
  */
 
 /** Diamond height = width * ISO_RATIO. 0.5 is the standard 2:1 mobile-SLG ratio. */

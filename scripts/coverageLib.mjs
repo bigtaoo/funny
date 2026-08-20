@@ -23,23 +23,33 @@ export const JSON_SUMMARY_PACKAGES = [
   'server/metaserver',
   'server/socialsvc',
   'server/worldsvc',
+  // ADR-070 Phase 4a (2026-08-20): the first tools/ package to graduate off the not-gated list
+  // below. Its coverage.include is now directory-level only (src/state/**, src/tiles/**, plus two
+  // whole top-level files) after the pure iso-projection/tile-styling pair moved out of the PIXI
+  // half of src/render/ into src/tiles/ — the per-file include entries that used to be needed
+  // were the missing module boundary, and were the stated exit condition for this package.
+  'tools/map-editor',
 ];
 
 // Workspaces whose `npm run test:coverage` writes coverage/lcov.info instead (Node's built-in
 // test coverage — see server/engine/scripts/runTests.mjs).
 export const LCOV_PACKAGES = ['server/engine'];
 
-// ADR-070 (2026-08-20): the five tool packages. They emit the same coverage-summary.json as the
-// list above, and they appear in the report the same way — but they are NOT gated on the 90% line
-// bar yet, because each one's scope needs structural work first (see each tools/*/vitest.config.ts
-// and claudedocs/tools-testing.md for the per-tool exit condition). What IS gated for them from
-// day one is that the output exists at all: a tool package that stops producing coverage/ fails
-// checkCoverageThreshold.mjs exactly like a server workspace would. The percentage is on a ratchet;
-// the plumbing is not.
+// ADR-070 (2026-08-20): the tool packages still on the ratchet — four of the original five, since
+// Phase 4a graduated tools/map-editor into the gated list above. They emit the same
+// coverage-summary.json as that list, and they appear in the report the same way — but they are NOT
+// gated on the 90% line bar yet, because each one's scope needs structural work first (see each
+// tools/*/vitest.config.ts and claudedocs/tools-testing.md for the per-tool exit condition). What
+// IS gated for them from day one is that the output exists at all: a tool package that stops
+// producing coverage/ fails checkCoverageThreshold.mjs exactly like a server workspace would. The
+// percentage is on a ratchet; the plumbing is not.
+// Graduating one of these (Phase 4a did, for tools/map-editor) means MOVING its line up into
+// JSON_SUMMARY_PACKAGES, not copying it: a package listed in both would get two rows out of
+// collectRows(), and the gate would be satisfied by the exempt one while the table read as green.
+// coverageScripts.test.ts pins that with a duplicate check across all three lists.
 export const NOT_GATED_JSON_SUMMARY_PACKAGES = [
   'tools/animator',
   'tools/level-editor',
-  'tools/map-editor',
   'tools/ops',
   'tools/vfx-editor',
 ];

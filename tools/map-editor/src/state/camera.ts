@@ -8,7 +8,7 @@
 // than a write baked into clampPan().
 import { SLG_MAP_H, SLG_MAP_W } from '@nw/shared/slg';
 import { DEFAULT_TP, VIEW_H, VIEW_W, ZOOM_MAX, ZOOM_MIN } from '../constants';
-import { screenToTile, screenToTileF, tileToScreen, visibleTileBounds } from '../render/isoGrid';
+import { screenToTile, screenToTileF, tileToScreen, visibleTileBounds } from '../tiles/isoGrid';
 import type { TilePoint } from './terrainGrid';
 
 export interface ScreenPoint {

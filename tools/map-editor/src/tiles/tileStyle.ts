@@ -2,8 +2,26 @@
 // client/src/scenes/worldmap/tileStyle.ts down to the parts the editor needs. The editor only
 // ever draws proceduralTile()/rasterizeMapEdits() output (no runtime ownership/fog state), so
 // the ownerTint/fog/mine/ally machinery from the client original is dropped entirely.
+//
+// Lives in src/tiles/ (ADR-070 Phase 4a), not src/render/: nothing here imports PIXI or touches
+// the DOM — see src/tiles/isoGrid.ts's header for what that directory boundary is for.
 import { biomeMixAt, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
-import type { TerrainTextureName } from './terrainAtlasLoader';
+
+/**
+ * Frame names in the SLG ground-tile atlas. Declared HERE rather than next to the loader that
+ * reads those frames (src/render/terrainAtlasLoader.ts) so the dependency runs pure → PIXI and
+ * never back: this module's whole job is mapping a tile to one of these names, and importing the
+ * type from the atlas loader would put a PIXI module in the import graph of the pure layer (a
+ * type-only import, so harmless at runtime, but it makes the boundary unreadable — and the
+ * boundary is the thing src/tiles/ exists to state). The loader imports it from here instead.
+ */
+export type TerrainTextureName =
+  | 'terrain_grass'
+  | 'terrain_mountain'
+  | 'terrain_river'
+  | 'terrain_keep'
+  | 'terrain_center'
+  | 'terrain_stronghold';
 
 export const TERRAIN_COLORS: Record<string, number> = {
   neutral:    0xf5f0e8,
