@@ -7,8 +7,41 @@
 // rather than hand-rolled coordinates, so it doesn't hardcode bone-geometry constants that
 // belong to Skeleton.ts.
 import { describe, it, expect } from 'vitest';
-import { pointToSegmentDist, findBoneAt } from '../src/interaction/InteractionController';
+import { pointToSegmentDist, findBoneAt, unwrapAngleStep } from '../src/interaction/InteractionController';
 import { Skeleton } from '../src/skeleton/Skeleton';
+
+const DEG = Math.PI / 180;
+
+describe('unwrapAngleStep', () => {
+  it('returns the plain difference for a small step with no wrap', () => {
+    expect(unwrapAngleStep(10 * DEG, 30 * DEG)).toBeCloseTo(20 * DEG, 10);
+    expect(unwrapAngleStep(30 * DEG, 10 * DEG)).toBeCloseTo(-20 * DEG, 10);
+  });
+
+  it('unwraps a step that crosses the +180°/-180° seam forward', () => {
+    // 170° -> -170° is a 20° step forward across the seam, not a 340° step back.
+    expect(unwrapAngleStep(170 * DEG, -170 * DEG)).toBeCloseTo(20 * DEG, 10);
+  });
+
+  it('unwraps a step that crosses the seam backward', () => {
+    expect(unwrapAngleStep(-170 * DEG, 170 * DEG)).toBeCloseTo(-20 * DEG, 10);
+  });
+
+  it('accumulates a continuous multi-turn drag without snapping back at the seam', () => {
+    // Simulate a drag sweeping steadily counter-clockwise past 180° twice, sampled
+    // every 10°, the way onMouseMove would. Regression for the atan2-wrap bug: the
+    // old "current - drag-start" math would jump by a full turn right at each seam
+    // crossing instead of keeping the sweep continuous.
+    let prev = 0;
+    let accumDeg = 0;
+    for (let deg = 10; deg <= 720; deg += 10) {
+      const wrapped = ((deg + 180) % 360) - 180; // simulate atan2's (-180°,180°] range
+      accumDeg += unwrapAngleStep(prev * DEG, wrapped * DEG) / DEG;
+      prev = wrapped;
+    }
+    expect(accumDeg).toBeCloseTo(720, 5);
+  });
+});
 
 describe('pointToSegmentDist', () => {
   it('is 0 for a point exactly on the segment', () => {
