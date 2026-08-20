@@ -298,6 +298,31 @@ describe('planPrepRounds — the run the batch endpoint is handed', () => {
     const inv = invOf(fillers('lc', 'lichuang', 2, FUSION_MATERIAL_COUNT));
     expect(planPrepRounds('tao', 2, inv, free, 9)).toEqual([]);
   });
+
+  it('never makes a geared card a round target, and spends the gear-free copies first', () => {
+    // Two rules that used to be enforced round-by-round, as each request was assembled. The plan is
+    // now built in one pass and shipped as ONE request the server executes without re-consulting the
+    // client, and the server does NOT check gear — it just deletes materials — so a plan that named
+    // a geared card as feeder would silently dismantle a loadout with nothing left to stop it.
+    const geared = fillers('g', 'lichuang', 2, 3).map((c) => ({ ...c, gear: { weapon: 'eq1' } }));
+    const inv = invOf(fillers('lc', 'lichuang', 2, 9), geared);
+    const plan = planPrepRounds('tao', 2, inv, free, 9);
+    expect(plan.length).toBeGreaterThan(0);
+
+    const gearedIds = new Set(geared.map((c) => c.id));
+    for (const r of plan) expect(gearedIds.has(r.targetId), `${r.targetId} carries gear`).toBe(false);
+    // Round 0 has nine gear-free copies to choose five materials from, so it must not touch a geared
+    // one — this is autoFillMaterials' ordering, which the pre-2026-08-20 round-count simulation
+    // (plain readyMaterials) did not model, so count and run could disagree about what gets spent.
+    for (const id of plan[0]!.materialIds) expect(gearedIds.has(id)).toBe(false);
+  });
+
+  it('respects a locked card as neither target nor material', () => {
+    const inv = invOf(fillers('lc', 'lichuang', 2, 6));
+    inv.lc0 = { ...inv.lc0!, locked: true };
+    // 6 cards, one locked ⇒ 5 usable, which is one short of a feeder plus its five materials.
+    expect(planPrepRounds('tao', 2, inv, free, 9)).toEqual([]);
+  });
 });
 
 describe('autoFillMaterials — what the ring pre-loads', () => {
