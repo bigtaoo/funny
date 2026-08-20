@@ -81,3 +81,26 @@
 1. **不许依赖没注入的随机源**。业务代码里的 `Math.random()` 要么走注入（如本轮的 `WorldServiceDeps.rng`），要么测试绕开它（显式坐标/显式 id）。
 2. **不许"写完立刻读" fire-and-forget**。正确姿势是 `vi.waitFor` 轮询（先例：`metaserver/test/pvp-card-stats.e2e.test.ts`、`gameserver/test/lifecycle.test.ts`）。
 3. **并发用例不许断言具体的交错**。断言要对所有合法交错都成立（先例：`worldsvc/test/review-fixes-2026-08-03.e2e.test.ts` 的 coin conservation 写法）；确实要覆盖某条竞态分支时，注入钩子把那个交错**制造出来**（同文件的 `onSpend`），别指望调度器碰巧给你。
+---
+
+## 守卫脚本自己接入测试 + 两条 canary（2026-08-20，worktree `feat/guard-script-tests`）
+
+`server/scripts/checkWorkspaceCoverage.mjs` 和根 `scripts/checkFileLength.mjs` 是两道 CI 门禁，此前**零测试**。这不是"顺手补个覆盖率"——这两个脚本的失效方式是**变绿**：
+
+- `checkWorkspaceCoverage.mjs` 的每一个检查都在遍历 `package.json#workspaces`。列表为空时所有循环都是空转，它会打印 `OK — all 0 workspaces` 并退 0，看上去像一次干净的运行。
+- `checkFileLength.mjs` 在 `collectSourceFiles` 返回空数组时打印 `scanned 0 source files, 0 over 500 lines` 并退 0 —— 跟"仓库很健康"的输出无法区分。`--root` 写错、`EXCLUDE_DIRS` 被放宽、某个 `--exclude-prefix` 打错字，门禁就此静默退休。
+
+也就是说，**这两道门禁一旦坏掉，症状是 CI 一直绿，没有任何东西会察觉**。`scripts/checkDocLinks.mjs` 早就为这件事写了 canary（"if this ever hits zero the scan silently stopped working … every check below would pass vacuously"），这两个没有。
+
+**做法**
+
+- 各补一条 canary：workspaces 为空 → 失败；扫到 0 个源文件 → 失败。两条的报错都明说"这次运行什么也没验证"，而不是报告成功。
+- `checkWorkspaceCoverage.mjs` 加 `--root=<dir>`（默认仍是脚本自身所在的 `server/`，CI 不变），拼写与兄弟脚本 `checkFileLength.mjs` 早已有的那个一致。这是让它能对着 fixture 目录树跑的唯一改动，**没有**为了可测性去重构内部结构。
+- 新增 `shared/test/guardScripts.test.ts`（21 例）：**spawn 真正的 CLI 入口，断言退出码 + stdout**，不 import 内部函数。理由是退出码才是 CI 真正消费的契约；fixture 是 `mkdtemp` 出来的临时目录树，`afterEach` 清掉。
+  - `checkWorkspaceCoverage` 11 例：happy path、canary、workspace 漏在 `tsconfig.build.json#references` 外、references 里有已删服务的残留条目、缺 `tsconfig.test.json`、缺 `typecheck:test` 脚本、**exclude 被 fulllink 程序接管（通过）**、无人接管（失败）、接管程序文件整个不存在（失败，而不是当成"没什么要查的"）、glob exclude 被拒、两类问题同时出现时都报出来。
+  - `checkFileLength` 10 例：happy、canary、新超限文件不在 baseline、baseline 内不超、超过 baseline 记录值、reason 太短（G3 形状规则）、超过 hard cap、baseline 条目已缩回限内（非阻塞提示且退 0）、`generated/`+`test/`+`.d.ts` 确实被跳过、用法错误退 2。
+- 最值得钉的是那条**通过**方向的用例：ownership 检查两边的路径拼写故意不同（`exclude` 相对 `server/<ws>/`，`include` 相对 `client/`），只有归一成同一种 repo 相对 POSIX 形式才对得上。归一写坏了会 fail-closed（吵闹但安全），所以真正需要证明的是"它确实能对上"，而不是"它会报错"。
+
+**顺带发现（不在本次范围内修）**：跑真仓库时 `check:filelength` 在当日分支上**本来就是红的**，两处都来自别的会话的合并——`server/shared/src/slg/core.ts` 687 行且不在 baseline（2026-08-19 那批 `isCityGroundTile`/`tileFeatureBuilding` 上移导致），`client/src/net/WorldApiClient.ts` 544 行 vs baseline 542。canary 只在"扫到 0 个"时才触发，跟这两条无关；主检出上未带任何本次改动复现同样结果。拆还是进 baseline、以及 +2 的理由，都该由改动它们的人定。
+
+**验证**：新用例 21/21 绿（两条 off-by-one 期望值在首跑时就被自己咬出来了，说明它们真的在读输出而不是只看退出码）；`shared` 全量 52 文件 1021 例绿；`shared` `typecheck:test` 干净；两个脚本对真仓库跑的结果与改动前一致（`checkWorkspaceCoverage` 绿；`checkFileLength` 红在上面那两条既有问题上）。
