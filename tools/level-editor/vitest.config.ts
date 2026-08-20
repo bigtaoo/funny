@@ -1,5 +1,5 @@
 import path from 'path';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 
 // Phase 1-3 covered the editor's PURE logic layer (see claudedocs/animator.md's 2026-08-13 notes
 // on scope): units.ts (display metadata) + state/EditorState.ts (the level-editing state
@@ -24,5 +24,22 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     environment: 'node',
     globals: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'html', 'json-summary'],
+      reportsDirectory: './coverage',
+      // ADR-070 (2026-08-20): the machine-readable form of the scope described in prose above.
+      // 100% (216/216) as of 2026-08-20 — but read that number next to the whole-package one the
+      // root report prints beside it (23.8%), because this scope is only 216 of the tool's ~1670
+      // lines. A gate over 13% of a package is thin, and this is the narrowest scope of the five
+      // tools, which is exactly why ADR-070's Phase 4b widens it: board/BoardPanel.ts and
+      // timeline/TimelinePanel.ts already hold pure exported coordinate/hit-test math
+      // (rowToY/cellAt/laneHeaderAt/cellCenter/hitHandle/baseTint, tickToX/xToTick/laneIndex/
+      // yToLaneIndex/entryEndTick/hitTest), extracted in Phase 4 back in 2026-08-13 but still
+      // living inside the canvas-owning panel classes, so no directory include can reach them.
+      // Moving them into their own modules is the point of Phase 4b; then they come in here.
+      include: ['src/state/**', 'src/units.ts'],
+      exclude: [...coverageConfigDefaults.exclude],
+    },
   },
 });
