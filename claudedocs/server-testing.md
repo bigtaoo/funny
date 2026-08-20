@@ -477,3 +477,25 @@ analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverag
 **把「零豁免」变成可执行约束**：`scripts/checkWorkspaceCoverage.mjs` 加第三条检查——遍历每个 workspace 的 `tsconfig.test.json#exclude`，每一条都必须出现在 `client/tsconfig.fulllink.json#include` 里（两边路径都归一成 repo 相对的 POSIX 形式再比），否则失败并指名道姓告诉你加到哪。顺带**禁掉 glob 形式的 exclude**（`*`/`?`）：一旦允许通配，"这个文件到底有没有被某个程序检查"就变成不可判定的，守卫本身就失去意义。这条正是上一节留下的教训的推广——`exclude` 是个能悄悄把文件从检查里摘出去的旋钮，跟当年 `--if-present` 悄悄跳过缺失脚本是同一类问题。
 
 **验证**：`client npm run typecheck`（两个程序）+ server `npm run typecheck` / `typecheck:test` / `check:workspacecoverage` 全绿；`auctionsvc` 那 8 个 full-link 用例照旧全过。三次反向验证：①往测试文件里注入两处类型错误（`price: 'ten'`、`const bogus: number = view.auctionId`），确认新程序**报了这两条**而不是静默通过；②把 `tsconfig.fulllink.json#include` 清空，确认守卫报"excluded ... without another program owning it"并退 1；③把 exclude 换成 `test/*.e2e.test.ts`，确认守卫报 glob 不允许并退 1。另外用 `tsc --listFiles` 确认程序里确实同时含 `client/src/net/WorldApiClient.ts`、`client/src/platform/IPlatform.ts`、`pixi.js-legacy`、`server/shared/src/index.ts`、`server/auctionsvc/src/httpApi`、`mongodb/mongodb.d.ts`（934 个文件），排除"程序其实是空的、所以当然全绿"这种假绿。
+---
+
+## `MatchReplayDoc.frames[].cmds[].commands`：`unknown` → `string`（2026-08-20，worktree `feat/replay-commands-string`）
+
+上一节接入 `test/**` 类型检查时留下的第二笔类型债（第一笔是 full-link 那个豁免）。`@nw/shared` 的 `MatchReplayDoc` 把命令字节声明成 `unknown`，注释写的是「BSON binary（opaque game.proto bytes）」——**两个都是 2026-07-20 gzip 改动之前的遗留**。
+
+**为什么 `string` 才是唯一正确的形状**（这条是本次改动的全部依据）
+
+- `MatchReplayDoc` 从来不以 BSON 形式落库。自 2026-07-20 存储成本修复起，它只以 **JSON 形式存在于 gzip blob 里**（`compressReplayDoc` → `MatchDoc.replayGz` / `ReplayBlobDoc.replayGz`），而 `MatchDoc.replay` 这个内嵌字段早就不存在了（只剩 `replayGz` / `replayRef`）。全仓库 grep 确认没有任何代码还在读旧字段。
+- JSON 没有字节类型。所以 Buffer 根本活不过这条管线：`JSON.stringify(Buffer)` 出来的是 `{"type":"Buffer","data":[…]}`，`JSON.parse` 回来就是那个对象，往下游裁判/复算一喂就是垃圾。
+- 真正的字节→base64 转换只有**一处**：gameserver 的 `metaReport.ts`，把 `MatchReplay`（内部类型，`commands: Uint8Array`）转成 `MatchReplayDoc`（存储类型，`commands: string`）。两个类型之所以不同，就是这一步。
+
+**改动**：`commands: unknown` → `commands: string`，并把注释改成说明「proto 里是 `bytes`，但这份 doc 只以 JSON 存在，所以是 base64」。随之删掉两处 `String(c.commands)` 强转（`metaserver/src/anticheatAudit.ts` 的 `toJudgeFrames`、`internal/matchReport/peerJudge.ts` 的 judge 调用）——它们对已经是字符串的值是空操作，只是把形状藏起来了；真要是 Buffer 走到那儿，`String()` 给出的也是垃圾而不是补救。顺手订正两句已经指向不存在字段的注释（`ReplayBlobDoc` 的 `MatchDoc.replay`、`balanceDocs.ts` 的 `MatchDoc.replay.decks`）。
+
+`server` 全量 `tsc -b` + `typecheck:test` **零错误**——上一轮把 380 个测试文件接进类型检查时，已经把所有夹具规范成了字符串，所以这次收紧没有暴露任何调用方。
+
+**补了两个此前不存在的用例，把契约的两端都钉住**（光收紧类型是编译期的事，运行时行为一个字没变，所以真正的价值在这两条）
+
+- `shared/test/replayCodec.test.ts`：**为什么不能是字节**。故意越过类型塞一个 Buffer 进去，断言 round-trip 回来的是 `{type:'Buffer',data:[0,1,2]}` 而不是 Buffer；同一批字节的 base64 则原样回来且能解回原字节。等于把上面「JSON 没有字节类型」这句话变成可执行的。
+- `gameserver/test/metaReport.test.ts`：**生产端确实做了 base64**。这个文件原有的 16 个用例**全部**用 `frames: []`，也就是说 `metaReport.ts` 里那行 base64 编码——两个类型差异的唯一理由——从来没有被任何测试执行过。新用例塞一帧真命令字节，从 POST 出去的 `replay_gz` 解回来，断言等于 `Buffer.from(bytes).toString('base64')` 且能解回原字节。反向验过：把那行的 `.toString('base64')` 去掉，用例立刻红在 `expected { type: 'Buffer', …(1) } to be 'BwD/Kg=='`——正是上面描述的失效形态。
+
+**验证**：`server` `tsc -b` / `typecheck:test` / `check:workspacecoverage` 全绿；`shared` 51 文件 997 例、`gameserver` 11 文件 128 例（+1）、`metaserver` 全量套件全绿。两条新用例都做了 red-then-green 实测（破坏点见上），`MatchReplayDoc` 的收紧本身也反向验过（往夹具里塞 Buffer 确实报 TS2322）。

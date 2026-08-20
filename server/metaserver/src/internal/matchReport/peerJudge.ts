@@ -21,10 +21,10 @@ export async function judgeMismatch(
     seed: Number(body.seed),
     mode: 1, // RANKED (judge client re-computes as netplay; mode is audit-semantic only)
     endFrame: replayDoc.endFrame,
-    // command bytes are already base64 (stored as `unknown` in MatchReplayDoc — BSON binary shape); coerce to string, passed through as-is otherwise.
+    // command bytes stay base64 all the way to the judge client — never decoded on this path.
     frames: replayDoc.frames.map((f) => ({
       frame: f.frame,
-      cmds: f.cmds.map((c) => ({ side: c.side, commands: String(c.commands) })),
+      cmds: f.cmds.map((c) => ({ side: c.side, commands: c.commands })),
     })),
     exclude: body.players.map((p) => p.accountId),
     ...(replayDoc.decks ? { decks: replayDoc.decks } : {}),

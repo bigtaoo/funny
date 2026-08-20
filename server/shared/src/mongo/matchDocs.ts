@@ -5,15 +5,20 @@ import type { StatKey } from '../achievements';
 
 /**
  * Inline replay (S1-RP): seed + config + non-empty frame log, no state.
- * Mirrors `contracts/replay.proto`; `frames[].cmds[].commands` are BSON binary
- * (opaque game.proto bytes — the server never decodes them, M12).
+ * Mirrors `contracts/replay.proto`, where `commands` is `bytes` — but this doc is **never** written
+ * to Mongo as BSON. Since the 2026-07-20 storage-cost fix it exists only as JSON inside a gzip blob
+ * (`compressReplayDoc` → `MatchDoc.replayGz` / `ReplayBlobDoc.replayGz`), and JSON has no byte type:
+ * `frames[].cmds[].commands` is the **base64** of those opaque game.proto bytes, produced that way at
+ * the single source (gameserver `metaReport.ts`) and passed through undecoded end to end (M12).
+ * Typed `string` since 2026-08-20 — it was `unknown` (a leftover of the pre-gzip BSON-binary shape),
+ * which made every consumer coerce it back with `String(...)`.
  */
 export interface MatchReplayDoc {
   engineVersion: number;
   mode: string;
   seed: string;
   endFrame: number;
-  frames: { frame: number; cmds: { side: number; commands: unknown }[] }[];
+  frames: { frame: number; cmds: { side: number; commands: string }[] }[];
   meta: { recordedAt: number; winner: number };
   /** Deck loadout at match start (PVP_LOADOUT_DESIGN §6.2); absent when the match had no loadout gating. */
   decks?: { top: string[]; bottom: string[] };
@@ -95,7 +100,7 @@ export interface MatchDoc {
 /**
  * External replay storage for large matches (S1-RP): when the embedded frame log exceeds the size threshold, the replay is stored in this
  * separate collection and `MatchDoc.replayRef = roomId` points here, keeping `matches` documents compact and list/history queries fast.
- * `GET /match/{roomId}/replay` checks `MatchDoc.replay` (embedded) first and falls back to this collection if absent.
+ * `GET /match/{roomId}/replay` checks `MatchDoc.replayGz` (embedded) first and falls back to this collection if absent.
  * (Still Mongo BSON binary, not an external object store / S3 — that is a future infra decision, see META_TASKS S1-RP.)
  */
 export interface ReplayBlobDoc {

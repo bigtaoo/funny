@@ -130,8 +130,9 @@ describe.skipIf(!mongo)('match replay fetch e2e', () => {
     const res = await app.inject({ method: 'GET', url: '/match/RR3/replay', headers: { authorization: `Bearer ${tokenA}` } });
     expect(res.statusCode).toBe(200);
     const replay = decodeReplayGzResponse((body(res) as { data: { replayGz: string } }).data);
-    // MatchReplayDoc types `commands` as unknown (the doc is engine-opaque); on the wire it is base64.
-    expect((replay.frames[0]!.cmds[0]!.commands as string).length).toBe(big.length);
+    // `commands` is base64 of the opaque engine bytes, never decoded on this path — so its length
+    // is the length of the base64 the payload put in, not the byte count it decodes to.
+    expect(replay.frames[0]!.cmds[0]!.commands.length).toBe(big.length);
   });
 
   /**
