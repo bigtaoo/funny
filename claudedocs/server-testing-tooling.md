@@ -106,6 +106,16 @@
 
 **验证**：新用例 28/28 绿（两条 off-by-one 期望值在首跑时就被自己咬出来了，说明它们真的在读输出而不是只看退出码）；`shared` 全量 52 文件 1028 例绿；`shared` `typecheck:test` 干净；两个脚本对真仓库跑的结果与改动前一致（`checkWorkspaceCoverage` 绿；`checkFileLength` 红在上面那两条既有问题上）。
 
+## 第四道守卫：`tools/` 可达性闸门（2026-08-20）
+
+家族里的第四个脚本，跟上面三个同形（根 `scripts/checkUnreachableModules.mjs`，带 `--root=` seam、带 canary、由 spawn 真 CLI 的测试钉住）：**判红条件是某个 `src/` 下的源文件从任何根都到不了**。根有三类——bundler entry、`--extra-root` 声明的兄弟产物目录、`test/**`。
+
+起因不是理论洁癖：`tools/animator/src/` 里躺着 1424 行重构前的死模块（13 文件），**同时躲过了行数闸门和覆盖率闸门，而且是构造性的**——每个文件都不到 500 行，又全在 coverage `include` 之外。它是有人恰好手跑一次 import 遍历才发现的。这条闸门就是把那次遍历固化下来。
+
+- **最容易写错、也最要紧的一处**：`./x` 的候选顺序必须 `x.ts` 先于 `x/index.ts`。animator 那张死图正是靠这一点自闭合（死的 `renderer.ts` 里 `from './skeleton'` 命中死的 `src/skeleton.ts`，不是活的 `src/skeleton/Skeleton.ts`），顺序反了整张死图会被判成活的。这条做过 red-then-green 实测。
+- **测试**：`server/shared/test/reachabilityGuard.test.ts`（15 例），末例是真仓库集成（跑 `tools/` 封装、断言 5 个包全 OK）——封装里包名写错或漏了 animator 的 `--extra-root`，前 14 例全绿也守不住任何东西。另一条 red-then-green：把 import 正则从 `[^;]*?` 改成 `.*?`（不跨行）→ 跨行那例红，**并且真仓库集成例也跟着红了，因为 `ops` 里真有一处跨行 import**。
+- 口径与范围细节（为什么测试文件也算根、为什么 `client`/`server`/`desktop-shell` 不在范围内）见 [`tools-testing.md`](tools-testing.md)「可达性闸门」。
+
 ## `tools/` 接入覆盖率报表：reported, not gated（2026-08-20，worktree `feat/tools-coverage-gate`，ADR-070）
 
 上面那条「14 个包全部 ≥90%」的里程碑从来没覆盖工具链——`tools/` 完全在门禁之外，且**不是**"缺数据 fail closed"，而是根本不在 `coverageLib.mjs` 的清单里：五个工具包都没有 `test:coverage` 脚本、都没装 `@vitest/coverage-v8`，`tools-test` job 不产 coverage 产物，`coverage-report` job 连 `needs` 都不含它。现在补上，细节与各包台账见 [`tools-testing.md`](tools-testing.md)，这里只记工具/流水线侧的三点：

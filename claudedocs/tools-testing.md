@@ -20,16 +20,29 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 
 `desktop-shell` 没有测试基础设施（1 个依赖的 Electron 壳），**不在**任何覆盖率清单里；它的 `tsc -p tsconfig.json`（即 `npm run build`）就是它的类型检查。
 
-## 两条 CI 闸门
+## 三条 CI 闸门
 
 | 闸门 | 范围 | 语义 |
 |---|---|---|
 | 单文件 500 行 | `tools/` 全树（`.ts`/`.tsx`，排除 `test/`、`scripts/`、`dist/`） | `tools/scripts/checkFileLength.mjs` 薄封装转调根 `scripts/checkFileLength.mjs`；只在**新文件**越过 500 行、或 `tools/scripts/file-length-baseline.json` 里的已知文件**继续变大**时判红。2026-08-13 (G4) 起 |
 | 覆盖率 | 5 个工具包 | 报表 + **产出必须存在**；**百分比暂不受 90% 门槛约束**（ADR-070）。2026-08-20 起 |
+| 可达性 | 5 个工具包各自的 `src/**` | `tools/scripts/checkUnreachableModules.mjs`（逐包调用根 `scripts/checkUnreachableModules.mjs`）：**任何一个 `src/` 下的源文件，若从该包的 bundler entry、`--extra-root` 声明的兄弟产物目录（animator 的 `runtime/`）、以及 `test/**` 这三类根出发都到不了，判红**。2026-08-20 起 |
 
 覆盖率那条的两半要分清：
 - **管路已受门禁**——某个工具包不再产出 `coverage/`，`checkCoverageThreshold.mjs` 判红，跟服务端 workspace 一样。这不是覆盖率回归，报错文案也刻意分开说（"produced no coverage output at all"），免得有人去找缺失的测试而真正要修的是缺失的 CI 步骤。
 - **百分比未受门禁**——每个包各自的 scope 先要做结构性改造才谈得上 90%（下表）。这条豁免在**每次** CI 的 summary 里复述当前值与目标，绿跑也印。
+
+## 可达性闸门（2026-08-20 新增）
+
+起因是 animator 那 1424 行死码（见下方「已知遗留」）：它**同时躲过了另外两条闸门，且是构造性的**——每个文件都不到 500 行（行数闸门看不见），又全在 coverage `include` 之外（受门禁的百分比看不见）。当初是有人恰好手跑了一次 import 遍历才发现的，靠运气；现在那次遍历变成了常驻闸门。
+
+- **判定口径刻意宽松**：只要**任何一个根**能到达就算活的，**包括测试文件**。「只有测试 import 它」不是死码，那是另一件（弱得多的）事，本闸门不表态；只有「全仓库没有任何东西提到它」才判红。
+- **解析顺序是承重的**：`./x` 必须先试 `x.ts`、再试 `x/index.ts`。animator 那张死图正是靠这一点自闭合的（死的 `renderer.ts` 里 `from './skeleton'` 命中死的 `src/skeleton.ts`，而不是活的 `src/skeleton/Skeleton.ts`）——**顺序反了，整张死图会被判成活的**。这条有专门的测试钉住，把脚本里的顺序调过来它就红。
+- **`--extra-root` 是必需的逃生口**，不是可选装饰：animator 的 `runtime/StickmanRuntime.ts` 在 `src/` 外、没有任何 entry import 它，不把 `runtime/` 声明成根，它拉进来的文件会全体误报。误报一旦大到让人烦，闸门就会被关掉——所以这条也双向钉了测试（不给 `--extra-root` 必须红，给了必须绿）。
+- **canary**：扫到 0 个文件 / 0 个根，或者 entry 找不到，都直接判红——否则「什么都没扫」和「什么问题都没有」印出来是同一句 OK。
+- **测试**：`server/shared/test/reachabilityGuard.test.ts`（15 例，与 `guardScripts.test.ts`/`coverageScripts.test.ts` 同一手法：spawn 真 CLI、断言退出码 + stdout、跑一次性 fixture 目录树）。最后一例是**真仓库集成**——直接跑 `tools/` 的封装、断言 5 个包全 OK，因为封装里包名写错或漏了 animator 的 `--extra-root`，前 14 例全绿也照样什么都没守住。两条承重断言都做过 red-then-green 实测（把解析顺序调反 → 顺序那例红；把 import 正则改成不跨行 → 跨行那例红，**顺带把真仓库集成例也带红了，因为 ops 里真有一处跨行 import**）。
+
+**这条闸门管不到什么**：`client/`、`server/` 都不在范围内（多入口，模型不适用），`desktop-shell` 也不在（Electron main/preload 对，没有单入口 web bundle）。
 
 ## 覆盖率口径：scoped `include`
 
@@ -64,4 +77,4 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 
 - ~~**`tools/animator/src/` 有 11 个重构前的扁平模块从入口不可达**~~ —— **已于 2026-08-20 同日删除**（13 个文件 / 1424 行：`animation.ts`/`events.ts`/`interaction.ts`/`io.ts`/`presets.ts`/`renderer.ts`/`skeleton.ts`/`state.ts`/`timeline.ts`/`types.ts`/`ui.ts` + 两个 `export {}` 空壳 `atlas/AtlasController.ts`、`ui/AtlasPanel.ts`）。可达性用一次按 tsconfig 解析规则的 import 遍历独立复核过，起点取全部三类入口（`src/index.ts`、**`runtime/StickmanRuntime.ts`——不在 `src/` 下，是单独产物，必须单独当根**、11 个测试文件），保留 `src/globals.d.ts`（ambient 声明，无人 import 但 tsc 需要）；最硬的证据是删除前后 production bundle 的 contenthash 完全一致（`bundle.04a1b40b5390a85f7d41.js`）。**对本表的影响**：animator 全包 23.53% → **29.54%**（`--coverage.include='src/**'` 口径 24.37% → 30.87%），而 `npm run test:coverage` 印的 scope 内数字 **64.28% 前后不动**——死文件本来就在 include whitelist 之外，别指望门禁数字变。细节见 [`animator.md`](animator.md)「删除重构前的扁平死模块」。
 - 其余四个工具做过同样的可达性遍历，**均无不可达文件**。
-- **`tools/` 的可达性遍历值得偶尔重跑**：这类死图是重构留下的，**两条闸门都发现不了**——死文件既不超长（500 行闸门看不见），也在 coverage scope 之外（受门禁的数字看不见）；只有全包分母会隐约透光，而全包分母不设门禁。上面这次就是接覆盖率时顺手遍历才发现的，不是任何闸门报出来的。
+- ~~**`tools/` 的可达性遍历值得偶尔重跑**~~ —— **已于同日变成第三条闸门**（`tools/scripts/checkUnreachableModules.mjs`，见上方「可达性闸门」）。当初记这条的理由依然成立、且正是闸门存在的理由：这类死图是重构留下的，**原来那两条闸门都发现不了**——死文件既不超长（500 行闸门看不见），也在 coverage scope 之外（受门禁的数字看不见），只有全包分母会隐约透光，而全包分母不设门禁。上面那次是接覆盖率时顺手遍历才发现的，不是任何闸门报出来的；现在不必再靠「偶尔想起来重跑」。

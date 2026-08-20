@@ -51,6 +51,8 @@ cd tools/animator && npm run start   # 端口 9091
 
 **dev server 抽查**：起 9091（本次为避端口冲突起在 9191）加载编辑器，与主检出未修改版本（起在 9192）跑同一段 DOM 事件驱动脚本逐步对比——新建 clip（含 `Undo: Create clip "…"` 标签）、打/删关键帧、`Ctrl+Z`/`Ctrl+Shift+Z`、改 duration、切动画、重命名、删 clip 后回落 `idle`，两侧**每一步的 status 文案与列表状态完全一致**，双方 `errors` 均为空。**注意这个环境的坑**：Browser pane 不 compositing，页面 `document.visibilityState === 'hidden'` 且 `requestAnimationFrame` 永不触发，于是 PIXI ticker 冻结 → 主 canvas 停在 0×0、`#tl-labels` 一行不渲染（`TimelineView.render()` 只在主循环里被调用）。这**不是**回归——未修改的主检出版本表现一模一样；同样原因截图也拿不到（同 Phase 4 的记录），可见性验证只能退化成 DOM 事件驱动 + 与基线逐步比对。
 
+**同日补了闸门**：这类死图原来两条 CI 闸门都发现不了（不超 500 行、又在 coverage scope 外），全靠有人恰好手跑一次遍历。现在那次遍历固化成第三条闸门 `tools/scripts/checkUnreachableModules.mjs`（5 个工具包各跑一次，animator 额外声明 `--extra-root=runtime`），测试在 `server/shared/test/reachabilityGuard.test.ts`（15 例）。口径见 `claudedocs/tools-testing.md`「可达性闸门」。**把这 13 个文件里任意一个 checkout 回来，闸门立刻红**（实测过）。
+
 **覆盖率变化**（在合并进 `20.08.2026`（已含 ADR-070 接线 + 另一会话新增的 `RotateBoneCommand` 测试，共 138 条）之后的同一棵树上，前后各实测一次；"删除前"是把这 13 个文件 `git checkout` 回来再跑）：
 
 | 统计范围 | 命令 | 删除前 | 删除后 |
