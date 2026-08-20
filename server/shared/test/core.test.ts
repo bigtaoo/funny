@@ -27,6 +27,11 @@ import {
   tileFeatureBuilding,
   resMotifJitter,
   resMotifPlacement,
+  resLevelLabelFontPx,
+  RES_LEVEL_LABEL_TP_FRAC,
+  RES_LEVEL_LABEL_MIN_PX,
+  RES_LEVEL_LABEL_MAX_PX,
+  RES_LEVEL_LABEL_MIN_TP,
   RES_MOTIF_SIZE_FRAC,
   RES_MOTIF_FOG_ALPHA,
   type TileType,
@@ -325,6 +330,25 @@ describe('resMotifPlacement', () => {
         expect(Math.abs(p.x)).toBeLessThan(TP * 0.2);
         expect(Math.abs(p.y)).toBeLessThan(TP * 0.2);
       }
+    }
+  });
+});
+
+describe('resLevelLabelFontPx', () => {
+  it('grows with the tile pitch until the cap, then stops', () => {
+    expect(resLevelLabelFontPx(98)).toBe(Math.round(98 * RES_LEVEL_LABEL_TP_FRAC));
+    expect(resLevelLabelFontPx(174)).toBe(RES_LEVEL_LABEL_MAX_PX);
+    expect(resLevelLabelFontPx(4000)).toBe(RES_LEVEL_LABEL_MAX_PX);
+  });
+
+  it('never drops below the size at which the glyphs read as map dirt', () => {
+    expect(resLevelLabelFontPx(1)).toBe(RES_LEVEL_LABEL_MIN_PX);
+    expect(resLevelLabelFontPx(RES_LEVEL_LABEL_MIN_TP)).toBeGreaterThanOrEqual(RES_LEVEL_LABEL_MIN_PX);
+  });
+
+  it('is monotone in the pitch — zooming in never shrinks the label', () => {
+    for (let tp = RES_LEVEL_LABEL_MIN_TP; tp < 400; tp++) {
+      expect(resLevelLabelFontPx(tp + 1)).toBeGreaterThanOrEqual(resLevelLabelFontPx(tp));
     }
   });
 });

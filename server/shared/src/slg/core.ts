@@ -631,8 +631,15 @@ export function resMotifPlacement(opts: {
  *
  * From 6 up, not everywhere: the mistake worth preventing is marching into a garrison you cannot
  * beat, which only happens at the high tiers; the low tiers just need the three-band volume read they
- * already have. And `SLG_GEN.resourceDensity` is 1.0 — labelling every tier would put text on EVERY
- * tile on screen, which is noise, not information.
+ * already have.
+ *
+ * This threshold does NOT bound how many labels land on screen, and it was written as if it did.
+ * `SLG_GEN.resourceDensity` is 1.0, and scanning `proceduralTile` over the whole 1500x1500 map puts
+ * level 6+ at 11.9% of resource tiles overall but in large fully-saturated blocks — there is a 32x32
+ * run near the world centre where every single tile is 6+. Inside those blocks every visible tile is
+ * labelled (measured: 650/650 at 1920x1080, 2706/3660 at 1080x2340), so the only thing keeping the
+ * layer readable is the label's own weight, not this filter — see {@link RES_LEVEL_LABEL_MAX_PX} and
+ * slg-resource-art.md §6.12.
  */
 export const RES_LEVEL_LABEL_MIN_LEVEL = 6;
 
@@ -642,6 +649,29 @@ export const RES_LEVEL_LABEL_MIN_LEVEL = 6;
  * levels drop markers entirely (zoom.ts L2/L3).
  */
 export const RES_LEVEL_LABEL_MIN_TP = 64;
+
+/** Glyph size as a fraction of the tile pitch, before {@link RES_LEVEL_LABEL_MAX_PX} caps it. */
+export const RES_LEVEL_LABEL_TP_FRAC = 0.13;
+/** Floor from {@link RES_LEVEL_LABEL_MIN_TP}'s reasoning: below ~9 px the glyphs read as map dirt. */
+export const RES_LEVEL_LABEL_MIN_PX = 9;
+/**
+ * Ceiling on the glyph size, in screen px.
+ *
+ * The label is chrome laid over the artwork, not part of it, so it should not keep growing with the
+ * tile. `tp` at the closest zoom tier swings from 98 (portrait, 1080 design width) to 174 (landscape,
+ * 1920) — the same tier, nearly double the pitch. Uncapped, `tp * 0.13` gives 13 px on a phone, which
+ * is right, and 23 px on a desktop, which is 44% of the motif's own width; measured on the real map's
+ * densest l6+ region that is 650 labels over 650 visible tiles and the map reads as a wall of text
+ * rather than as drawn resources (slg-resource-art.md §6.12). Capping lands desktop on the weight the
+ * phone already had, and leaves the phone untouched.
+ */
+export const RES_LEVEL_LABEL_MAX_PX = 17;
+
+/** Rendered glyph size for a `Lv.N` label on a tile of pitch `tp`. */
+export function resLevelLabelFontPx(tp: number): number {
+  const px = Math.round(tp * RES_LEVEL_LABEL_TP_FRAC);
+  return Math.max(RES_LEVEL_LABEL_MIN_PX, Math.min(RES_LEVEL_LABEL_MAX_PX, px));
+}
 
 /**
  * The label text for a resource tile, or null when this tile/zoom should show none.

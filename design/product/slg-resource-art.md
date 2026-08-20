@@ -2,6 +2,7 @@
 
 状态：母题 5 张 ✅ 已出图（2026-07-01）；**四种基础资源(粮/木/石/铁) l1–l10 全部专属手绘、打包上线 ✅；铜钱/铜矿(sticker) l6–l10 五张专属上线 ✅（无 l1–5，只在 6 级地及以上，§5.7-sticker）**——所有 `res_{type}_l{n}` 都是白底手绘真图直接进 atlas，**构建期不再合成任何帧**（`bakeCountFrames`/`bakeHeapFrames`/`resbg_*` 托盘背景已于 2026-07-17 全部删除，见下方决策变更 II）。当前 atlas = **50 帧 / 512×2048 / ~417 KB**，client + map-editor 两份字节一致；客户端实际加载的合并页 `world_atlas` 见 §6.11（89 帧 / 1954×1828 / ~1.7 MB 无损）。
 **⚠️ 分级读数契约已于 2026-08-19 重构，出图前必读 §6。当前状态：46 帧全部通过构建期门禁（`node art/slg/slg-map/pack_resources.cjs` 不带 `--report-only` 跑通），渲染层接线亦已完成（§6.11）——等级读数整条在打包期解完、烘进每个 frame 条目的 `nw` 字段，两个渲染器（client + map-editor）都只剩贴图适配器、零等级逻辑。**
+**⚠️ 2026-08-20 实机复核（§6.12）：`res_sticker_l9` / `res_sticker_l10` 判为 §6.2 #1 剪影违规（卷状物），已退回待重画——prompt 与密度目标带见 §6.12.1，是当前唯一的美术欠项。** 同节还记了两条不要重复踩的结论：剪影铁律**做不成构建期门禁**（形状签名实测否证，§6.12.2）；`Lv.N` 标签的 l6+ 阈值**不限制屏上标签数**，可读性靠字号上限撑住（§6.12.3）。
 关联：资源命名定版见 [`design/game/SLG_DESIGN.md`](../game/SLG_DESIGN.md) §3.4；美术铁律 / decor 出图管线见 [`art-direction.md`](art-direction.md) §〇 / §6.2；分级出图规范见下方 **§5**
 
 > **⚠️ 决策变更 III（2026-08-19，用户拍板）**：分级读数整套重构，见 **§6**（权威，覆盖 §5.3 #2 与 §5.4 的形态跃迁条款）。起因是「按宽归一」这条旧契约会**惩罚横向生长**——高等级的丰度是横着铺开画的，归一化反而把它压小，实测四类资源全部在 l5→l6 墨量回落，ink l4 成了全十级里视觉最重的一帧。
@@ -305,7 +306,9 @@ shadow, ground line, baseline
 >
 > 因此铜矿**没有 l1–5**：无「计数托盘」、无 `resbg_sticker_*` 背景，只出 **5 张专属手绘 `res_sticker_l6..l10`**。母题不变=翘角五角星贴纸（铜币位，读成「钱/币」），五角星是 5 资源里唯一星形剪影，天然不撞瓶/纸/棱块/夹子。守 §5.3 硬约束（单色墨线 + 纯白底，不上色不阴影渐变）。
 
-**l6–10：每级专属手绘**（接 §5.5 共用前缀 + §5.6 共用负向），形态逐级跃迁，剪影各异（短叠 → 叠簇 → 贴纸卷 → 卷+堆 → 铜钱仓）：
+**l6–10：每级专属手绘**（接 §5.5 共用前缀 + §5.6 共用负向）。
+
+> **⚠️ 下表的 l8/l9/l10 三行已作废**（「贴纸卷 / 卷+堆 / 大卷+多高叠」）：卷状物违反 §6.2 #1 剪影铁律。l8 已于 2026-08-19 按「星叠 + 散星」重出（§6.6）；**l9/l10 于 2026-08-20 退回待重画，以 §6.12.1 为准**。整行保留只为记录原始出图口径。
 
 | 级 | 帧名 | 形态 | 主体 prompt |
 |---|---|---|---|
@@ -554,7 +557,7 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 | 画框环扫描（§6.7 末） | `res_paper_l6` 带内缩 13px 的画框，边缘检测抓不到 |
 | 实心平涂占比（§6.9） | ink l7 密度达标但变成粗描边+平涂，破坏"一支笔" |
 
-**剩余工作**：全部完成（2026-08-19，见 §6.11）。
+**剩余工作**：§6.10 当时列的五项全部完成（2026-08-19，见 §6.11）。此后 2026-08-20 的实机复核又开出一项美术欠项——`res_sticker_l9/l10` 剪影退回重画，见 §6.12.1。
 
 ### 6.11 渲染层接线落地（2026-08-19 · §6.10 的五项全部完成）
 
@@ -575,3 +578,84 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 - 单测三层：`server/shared/test/core.test.ts` 钉公式本身；`client/test/ui/worldMapResMotifLevelRead.ui.ts` 拿**真实 bundle 的 `world_atlas.json`** 钉端到端（每帧都有 `nw`、alpha 落在 `[0.85,1]`、四类资源 l1→l10 占地严格递增且首尾正好落在 0.80/1.30、同 resType 同 level 200 组 `(tx,ty)` 每个都在均值 ±5% 内、`drawResMotif` 确实走共享公式、雾下只画类型帧）；`tools/map-editor/test/resMotifCallSite.test.ts` 用源码扫描钉编辑器确实路由过去（编辑器的 vitest 按设计不覆盖 PIXI 层，沿用 `rasterizeCallSites.test.ts` 的做法；已反向验证过：把 `sp.alpha` 改回 `0.55+0.45*(lv-1)/9` 会红）。
 > **「包围盒极差 < 5%」的口径**：断言写成「200 个样本每个都在均值 ±5% 内」。抖动区间 `[0.96,1.04]` 的**极值比**是 1.083，本来就不可能小于 5%；真正要防的是"相邻同级格子看起来不一样大"，±5% 是对它更贴切也更严的说法。两个数都在测试里断言了。
 
+
+### 6.12 实机复核（2026-08-20）· sticker l9/l10 剪影退回 + `Lv.N` 标签在真实密度下的定稿
+
+§6.11 收尾后按游戏真实缩放出图（`resContactSheet.js`）+ 在真实客户端上按真实地图数据截图复核，得到三件结论：一条美术退回、一条判据的**否证**、一条标签定稿。
+
+#### 6.12.1 `res_sticker_l9` / `res_sticker_l10` 判为 §6.2 #1 剪影违规 → 退回重画
+
+§6.4 的重画清单只列了 sticker l8（贴纸卷），但 **l9/l10 是同一个毛病的更重版本**——它们来自 §5.7-sticker 那张表的「l9 = 卷+堆 / l10 = 铜钱仓（大卷+多高叠）」，而「卷」正是 §6.2 #1 明令禁止的**卷状物**。当时漏掉是因为 §6.4 是拿门禁跑出来的 B 类清单做底稿，A 类只补了肉眼过一遍——而 l9/l10 的卷被一圈散落星星包着，缩略图上不明显。
+
+实机确认（`world:1:0` 的 sticker l9+ 最密区 `(872,998)`，L1 zoom）：l9 帧在地图上读成一个**光壁圆筒**，旁边点两颗星，是全屏唯一的平滑筒状剪影——既不像贴纸叠，也和 ink 族的圆罐撞脸。l10 稍好（叠体占比更高）但仍带一个立着的大卷。
+
+**判决**：两帧退回，按 l6→l8 已经成立的家族画法（**星形贴纸叠 + 散落翘角星**，个数递增）重出。§5.7-sticker 那张表的 l8/l9/l10 三行（贴纸卷 / 卷+堆 / 大卷+多高叠）**作废**，以本节为准。
+
+**门禁给出的密度目标带**（按 §6.7 判据在现有 sticker 家族 `l6=0.091 / l7=0.100 / l8=0.112 / l9=0.103 / l10=0.175` 上解出来的）：
+
+| 帧 | 目标 density | 说明 |
+|---|---|---|
+| `res_sticker_l9` | **0.09–0.14** | 硬下限 0.077（被 l8 卡）；落在带内即通过 |
+| `res_sticker_l10` | **0.12–0.20** | 硬下限随 l9 落点浮动（l9=0.13 时为 0.089）；必须 ≥ l9 |
+
+> sticker 全族的 density（0.09–0.18）本来就比 ink（0.25–0.51）稀疏一大截——星形是空心轮廓件。门禁是**按族**判的，不要照 ink 的数值去堆密度，那会把星星画成实心黑块（§6.9 的老毛病）。
+
+**出图 prompt**（接 §5.5 共用前缀 + §5.6 共用负向 + §6.5 两段增补，另加下面这段）：
+
+共用负向再补（这两帧的病根词，必须显式禁掉）：
+
+```
+roll, rolled tape, sticker roll, spool, reel, tube, cylinder, can, tin, drum,
+strip, tape dispenser, ribbon
+```
+
+主体句：
+
+- `res_sticker_l9`：`A dense freestanding heap of five-pointed star-shaped stickers: three uneven stacks of stars crowded together at slightly different heights, each stack's star points and peeling corners sticking out past the edges of the stack, with a generous scatter of loose peeled stars heaped around and between them. Hatch only the visible side edges of each stack and the shaded half of each loose star; the star faces stay pure white. No area is ever filled solid black; the gaps between hatching strokes are as wide as the strokes themselves.`
+- `res_sticker_l10`：`An overflowing freestanding hoard of five-pointed star-shaped stickers: five uneven stacks of stars crowded shoulder to shoulder at varied heights, every stack visibly made of stars — points and peeling corners jutting out all round its silhouette — with loose peeled stars spilling out of the gaps and heaped thickly around the base, the richest pile of the set. Hatch only the visible side edges of each stack and the shaded half of each loose star; the star faces stay pure white. No area is ever filled solid black; the gaps between hatching strokes are as wide as the strokes themselves.`
+
+> **剪影自查**（§5.7-sticker 的老提醒仍然有效，且这次就是栽在这里）：每一叠都必须让**星形的尖角 + 翘角**戳出叠体轮廓，否则会糊成 paper 的「一摞扁矩形」；同时**不许出现任何平滑筒壁**，否则又变成本次退回的原因。
+>
+> 落地路径已通：帧长宽比会变、帧尺寸随之变，`patchMergedAtlas.js` 会自动走 §6.11 的**整页重排**分支，不再需要恢复 2026-07-27 删掉的源图集。顺序仍是 `pack_resources.cjs` → `patchMergedAtlas.js` → `resContactSheet.js` 目检。
+
+#### 6.12.2 否证：剪影铁律**做不成构建期门禁**（别再试形状签名这条路）
+
+§6.4 写了「A 类违规门禁看不见」，本次试着让它看得见：按 `pack_resources.cjs` 的同一条抠图管线取出 46 帧的**填洞后外轮廓**（背景 flood-fill，玻璃/纸面这类内部留白算进主体），算三个形状签名——`solidity`（轮廓面积 / 凸包面积）、`compact`（P²/4πA，平滑团≈1、锯齿轮廓远大于 1）、内部留白占比——再看每帧偏离本族中位数多少。假设是「同族十级同一主体」应当聚成一簇，违规帧应当是离群点。
+
+**结果是明确的否证**：`sticker l9` 的 solidity 0.802 = 本族中位数、compact 比值 1.09；`l10` 是 0.878 / 0.99。两帧都躺在分布正中央。而已经人工判过合格的帧里，`metal l6` 的 compact 比值 3.32、`graphite l5` 2.69、`sticker l7` 1.98——离群程度是违规帧的 2–3 倍。
+
+病因很朴素：l9/l10 的圆筒**被一圈散落星星包着**，锯齿的散星支配了外轮廓，平滑筒壁藏在凸包内部，全局形状签名根本触不到它。要抓「主体中间有一块平滑柱体」得上真正的形状检测（长直平行边 / 大面积平滑凸子区域），而这套稿子的线是刻意手抖的，误判率不会低——那已经不是「被事故打出来的一道便宜防线」（§6.10 那四道都是几十行的像素统计），而是一个会自己长出维护成本的分类器。
+
+**结论：不建这道门禁。** 剪影铁律（§6.2 #1）继续靠**出图后目检**裁决，`resContactSheet.js` 是这条判据的唯一工具。已把测得的数据留在这里，免得日后有人再花一轮去试同一条路。
+
+#### 6.12.3 `Lv.N` 标签：l6+ 这个阈值**根本没有限制屏上标签数**
+
+§6.11 只在人造的高等级密集区看过标签。本次拿真实地图数据复核，先把 `proceduralTile` 在整张 1500×1500 上扫了一遍：
+
+| | l1 | l2 | l3 | l4 | l5 | l6 | l7 | l8 | l9 | l10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 占资源格 | 20.1% | 33.0% | 18.1% | 8.8% | 8.0% | 5.4% | 3.5% | 1.9% | 0.90% | 0.23% |
+
+l6+ 合计 **11.9% 的资源格**（不是之前以为的 1.7%），而且**不是均匀撒开的**：世界中心一带有整块饱和区——扫出一个 **32×32 全部 ≥6** 的连续块（`(672,520)` 一带），另有 `(754,346)` 这样十级俱全的过渡带。低等级区是真的干净（`(160,160)` 一带 20×20 里 l6+ = 0）。
+
+于是 `RES_LEVEL_LABEL_MIN_LEVEL = 6` 这个阈值的原注释（「不然会每格都有字」）**说反了**：在饱和区里 l6+ 就是每格都有字。实测（真实客户端，`showWorldMap` + reject-fast stub，L1 zoom）：
+
+| 视口 | tp | 池内瓦片 | 饱和区可见标签 | 过渡带 | 低等级区 |
+|---|---|---|---|---|---|
+| 1920×1080 | 174 | 650 | **650 / 650** | 335 | 0 |
+| 1080×2340 | 98 | 3660 | **2706 / 3660** | 714 | 60 |
+
+**唯一在撑住可读性的东西是标签自身的字重**，而字重当时是 `tp * 0.13` 无上限：同一个 zoom 档，竖屏（1080 设计宽）tp=98 → 13px（合适），横屏（1920）tp=174 → **23px**（是母题自身宽度的 44%）。桌面上整屏读作一面文字墙，母题被自己的注解压住——正好把 §6 这一整轮美术工作盖掉。
+
+**定稿：给字号加上限。** `resLevelLabelFontPx(tp) = clamp(round(tp × 0.13), 9, 17)`（`@nw/shared`，挨着 `resLevelLabelText`）。竖屏 13px 不变（主平台不动），桌面 23 → 17px，落回竖屏本来就有的那个字重。**策略不动**（仍是 l6+ / tp ≥ 64）：过渡带那张图证明标签是有用的——`Lv.10 → Lv.9 → Lv.8 → Lv.7 → Lv.6` 的等级带在屏上直接读成一条斜坡，正是 §6.2 #7 想要的可供性。改的只是权重，不是通道。
+
+- 代码：`server/shared/src/slg/core.ts` 新增 `RES_LEVEL_LABEL_TP_FRAC / _MIN_PX / _MAX_PX / resLevelLabelFontPx()`；`client/.../tileGraphics/resources.ts` 只改 `label.fontSize` 一行。`RES_LEVEL_LABEL_MIN_LEVEL` 的注释按上面的实测改写（原文声称阈值能防「每格都有字」，实测不成立）。
+- 测试：`server/shared/test/core.test.ts` 钉公式（到顶即停、下限、对 tp 单调）；`client/test/ui/worldMapResMotifLevelRead.ui.ts` 钉两个真实 tp 的落点（98→13、174→17）。已反向验证：改回 `Math.max(9, Math.round(tp*0.13))` 会红。
+- **标签与母题重叠是已知且接受的**：标签在 `y = tp*0.15`，而母题半高最大能到 `0.20 tp`（`LEVEL_SCALE` 1.30 时）再叠 `dy` 抖动 0.09 tp——菱形内没有一处能容下不压图的文字。靠 BitmapFont 自带的白描边保可读，不再挪位。
+
+> **留给用户拍板的一条（本次没动）**：竖屏 L1 一屏 **3660** 格。这不是标签问题，是 zoom 档位问题——`makeZoomCfgs` 的最近档是 `floor(w/11)`，竖屏设计高远大于横屏，同一个除数在竖屏摊出的格数是横屏的 5.6 倍。要么给竖屏单独收紧最近档的除数，要么加第四档。改动会影响整张地图的观感，不在本任务范围内。
+
+#### 6.12.4 §6.11 两处取舍：复核后**都保留**
+
+- **合并页无损编码**（1092 KB → 1747 KB）：保留。这是 CDN 托管、进场才懒加载、不进微信主包的场景图集（`ASSET_PACKAGING.md` §4），而 palette-8 的代价是 alpha 最多漂 12/255，直接体现为钢笔抗锯齿边缘发脆——本轮整套工作的落点就是这批线稿的手感，用它换 650 KB 不划算。真要改回去是一行（`patchMergedAtlas.js` 的 `png()` 传 `palette: true, dither: 0`）。
+- **「同级包围盒 200 样本各自在均值 ±5% 内」**：保留。抖动区间 `[0.96,1.04]` 的极值比是 1.083，原口径「极差 < 5%」数学上不可满足；真要按极值比 < 5% 收，得把抖动收到 `[0.975,1.025]`，代价是同级格子的大小变化几乎看不见了（抖动存在的理由就是打破印章感，见 `resMotifJitter` 注释）。两个数（±5% 与极值比 1.083）测试里都断言了。
