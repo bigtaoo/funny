@@ -13,15 +13,22 @@
 // (`gated: false` — reported, must emit coverage, not held to the percentage yet), and "exempt from
 // the bar" is exactly the kind of rule that rots into "exempt from everything" without a test
 // pinning the difference.
+//
+// That second class is also temporary by design — Phase 4c/4d/4e each move one tools/ package out
+// of it, on separate branches, in any order — so no case here may name a package that is on its way
+// out, and the list going empty must be an expected state rather than a failure. See itIfNotGated /
+// notGatedSample below, and the "either still exempt a package, or have retired the whole not-gated
+// pipeline" case, which is where the intent of the old non-empty assertion now lives.
 import { describe, expect, it, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT_SCRIPTS = resolve(HERE, '..', '..', '..', 'scripts');
+const REPO_ROOT = resolve(HERE, '..', '..', '..');
+const ROOT_SCRIPTS = join(REPO_ROOT, 'scripts');
 const SUMMARY_SCRIPT = join(ROOT_SCRIPTS, 'coverageSummary.mjs');
 const THRESHOLD_SCRIPT = join(ROOT_SCRIPTS, 'checkCoverageThreshold.mjs');
 const LIB_URL = pathToFileURL(join(ROOT_SCRIPTS, 'coverageLib.mjs')).href;
@@ -49,6 +56,30 @@ const LISTS = libEval<{ gatedJson: string[]; lcov: string[]; notGated: string[] 
 const { gatedJson: JSON_SUMMARY_PACKAGES, lcov: LCOV_PACKAGES, notGated: NOT_GATED_JSON_SUMMARY_PACKAGES } = LISTS;
 const GATED = [...JSON_SUMMARY_PACKAGES, ...LCOV_PACKAGES];
 
+/**
+ * ADR-070 Phase 4c/4d/4e each graduate one remaining tools/ package off
+ * NOT_GATED_JSON_SUMMARY_PACKAGES, on their own branches, in whatever order they land — and the
+ * last of the three empties the list. So nothing below may name a package that is on its way out:
+ * a case that hardcoded 'tools/ops' would go red on the day 4e merged, in a PR that never touched
+ * this file. Every case that needs an actual not-gated row takes its subject from the list instead
+ * (which package it is has never been the point — only that it is exempt from the percentage), and
+ * is skipped once the list is empty, because there is then no such row to make an assertion about.
+ *
+ * "Skipped" is only safe because the empty-list state is asserted on directly, rather than being
+ * the absence of an assertion: see "either still exempt a package, or have retired the whole
+ * not-gated pipeline" below, which is the one case here that must NOT become conditional.
+ */
+const itIfNotGated = it.runIf(NOT_GATED_JSON_SUMMARY_PACKAGES.length > 0);
+
+function notGatedSample(): string {
+  const pkg = NOT_GATED_JSON_SUMMARY_PACKAGES[0];
+  // Unreachable — every caller is an itIfNotGated case. Throwing beats defaulting to a placeholder
+  // name: a placeholder would keep building a fixture tree and let the case pass while asserting
+  // nothing about the exemption it is named after.
+  if (pkg === undefined) throw new Error('notGatedSample(): list is empty — this case must be skipped, not run');
+  return pkg;
+}
+
 const trees: string[] = [];
 afterEach(() => {
   for (const t of trees.splice(0)) rmSync(t, { recursive: true, force: true });
@@ -61,6 +92,17 @@ function write(root: string, rel: string, content: string): void {
 }
 
 const metric = (pct: number) => ({ total: 1000, covered: Math.round(pct * 10), pct });
+
+// Default fixture percentages: one comfortably above the 90% bar, one far below it, so "gated rows
+// pass / not-gated rows are reported anyway" is the baseline every case below mutates one thing
+// about. Deliberately not any real package's measured number — these used to be 93.4 and 64.3
+// (animator's scope figure the day ADR-070 landed), which reads as a snapshot of a specific tool
+// and goes quietly stale as that tool's coverage moves or as the tool graduates off the list. All
+// the fixture needs is which side of the bar each one is on — plus, for the gated one, that it sits
+// between the default 90% bar and the raised bar the COVERAGE_THRESHOLD case below passes in.
+const GATED_FIXTURE_PCT = 93;
+const RAISED_THRESHOLD = 95;
+const NOT_GATED_FIXTURE_PCT = 20;
 
 /**
  * A repo-shaped tree carrying coverage output for every package coverageLib knows about — the
@@ -84,7 +126,7 @@ function coverageTree(
     for (let i = 0; i < srcFiles; i++) write(root, `${pkg}/src/f${i}.ts`, 'export const x = 1;\n');
     if (omit.has(pkg)) continue;
 
-    const p = pct[pkg] ?? (NOT_GATED_JSON_SUMMARY_PACKAGES.includes(pkg) ? 64.3 : 93.4);
+    const p = pct[pkg] ?? (NOT_GATED_JSON_SUMMARY_PACKAGES.includes(pkg) ? NOT_GATED_FIXTURE_PCT : GATED_FIXTURE_PCT);
     if (LCOV_PACKAGES.includes(pkg)) {
       const hit = Math.round(p * 10);
       write(
@@ -112,11 +154,69 @@ function run(script: string, root: string, env: Record<string, string> = {}): { 
 
 describe('coverageLib package lists', () => {
   // The outside-in half of checkCoverageThreshold's "0 packages to check" canary: that canary
-  // catches an emptied list at runtime, this catches it at review time.
-  it('are all non-empty', () => {
+  // catches an emptied list at runtime, this catches it at review time. Both gated lists must
+  // simply be non-empty — there is no future in which this repo legitimately stops measuring the
+  // vitest workspaces or server/engine.
+  it('keep both gated lists non-empty', () => {
     expect(JSON_SUMMARY_PACKAGES.length).toBeGreaterThan(0);
     expect(LCOV_PACKAGES.length).toBeGreaterThan(0);
-    expect(NOT_GATED_JSON_SUMMARY_PACKAGES.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The not-gated list is the one that CAN legitimately empty — that is the point of ADR-070
+   * Phase 4, and 4c/4d/4e are the last three. So this used to be a plain
+   * `expect(NOT_GATED.length).toBeGreaterThan(0)`, which had the right intent and the wrong shape:
+   * it would have gone red on whichever of the three merged last, at random, for a change that did
+   * exactly what the ADR asked for.
+   *
+   * The intent worth keeping is "the exemption must not go quiet". Deleting the assertion is the
+   * one thing that cannot happen, because a silently-emptied list is precisely what it guards: a
+   * graduation that deletes a line without adding it to JSON_SUMMARY_PACKAGES (the mirror of the
+   * copy-instead-of-move mistake the next case pins) leaves a package measured by nothing, and
+   * would look like a successful retirement.
+   *
+   * So: two acceptable states, and the assertion says which one we are in.
+   *   - list non-empty → every entry must actually surface as a not-gated row (the exemption is
+   *     live and visible, which is what the reprint-every-run rule in ADR-070 is for);
+   *   - list empty → the exemption must be gone from the OUTPUT, not just from the list: no
+   *     `gated: false` row out of collectRows, no "reported, not gated" section in the report, no
+   *     exemption footnote in the gate. That is the observable form of "the mechanism retired as
+   *     planned" and it is what distinguishes a real 4e landing from a line dropped by accident,
+   *     which would leave a package missing from every list and hence from every row.
+   * What is never acceptable is "empty list, but the pipeline still claims to exempt something".
+   */
+  it('either still exempt a package, or have retired the whole not-gated pipeline', () => {
+    const root = coverageTree();
+    const notGatedRows = libEval<string[]>(
+      `lib.collectRows(${JSON.stringify(root)}).filter((r) => !r.gated).map((r) => r.pkg)`,
+    );
+
+    if (NOT_GATED_JSON_SUMMARY_PACKAGES.length > 0) {
+      expect(notGatedRows).toEqual(NOT_GATED_JSON_SUMMARY_PACKAGES);
+      return;
+    }
+
+    expect(notGatedRows).toEqual([]);
+
+    // Retirement means the last tools/ packages MOVED into the gated list, not that they fell out
+    // of the table — the mirror of the copy-instead-of-move mistake, and the half that the old
+    // non-empty assertion used to catch for free. Read off the filesystem rather than named, so
+    // this stays true for whatever the tools/ set is by then.
+    const toolPkgs = readdirSync(join(REPO_ROOT, 'tools'), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && existsSync(join(REPO_ROOT, 'tools', e.name, 'vitest.config.ts')))
+      .map((e) => `tools/${e.name}`);
+    expect(toolPkgs.length).toBeGreaterThan(0);
+    for (const pkg of toolPkgs) expect(GATED).toContain(pkg);
+
+    const summary = run(SUMMARY_SCRIPT, root);
+    expect(summary.code).toBe(0);
+    expect(summary.out).not.toContain('reported, not gated');
+
+    const gate = run(THRESHOLD_SCRIPT, root);
+    expect(gate.code).toBe(0);
+    expect(gate.out).not.toContain('reported, not gated');
+    expect(gate.out).not.toContain('Not gated on the');
+    expect(gate.out).not.toContain('not yet gated');
   });
 
   // The mistake this exists for: ADR-070 Phase 4 graduates one tool at a time by moving it from
@@ -187,46 +287,53 @@ describe('checkCoverageThreshold.mjs', () => {
   });
 
   // The core ADR-070 contract: exempt from the percentage, not from the pipeline.
-  it('does NOT fail a not-gated package far below the bar', () => {
-    const r = run(THRESHOLD_SCRIPT, coverageTree({ pct: { 'tools/ops': 8.8 } }));
+  itIfNotGated('does NOT fail a not-gated package far below the bar', () => {
+    const pkg = notGatedSample();
+    const r = run(THRESHOLD_SCRIPT, coverageTree({ pct: { [pkg]: 8.8 } }));
     expect(r.code).toBe(0);
     expect(r.out).toContain('reported, not gated');
-    expect(r.out).toContain('tools/ops 8.8%');
+    expect(r.out).toContain(`${pkg} 8.8%`);
   });
 
-  it('DOES fail a not-gated package that produced no coverage at all', () => {
-    const r = run(THRESHOLD_SCRIPT, coverageTree({ omit: ['tools/ops'] }));
+  itIfNotGated('DOES fail a not-gated package that produced no coverage at all', () => {
+    const pkg = notGatedSample();
+    const r = run(THRESHOLD_SCRIPT, coverageTree({ omit: [pkg] }));
     expect(r.code).toBe(1);
     expect(r.out).toContain('produced no coverage output at all');
-    expect(r.out).toContain('tools/ops');
+    expect(r.out).toContain(pkg);
     // Not a coverage regression, and saying so would send readers hunting for missing tests.
     expect(r.out).not.toContain('below the 90% line-coverage bar');
   });
 
-  it('reports missing output and below-bar failures as separate lines', () => {
-    const r = run(THRESHOLD_SCRIPT, coverageTree({ omit: ['tools/ops'], pct: { 'server/admin': 12 } }));
+  itIfNotGated('reports missing output and below-bar failures as separate lines', () => {
+    const r = run(THRESHOLD_SCRIPT, coverageTree({ omit: [notGatedSample()], pct: { 'server/admin': 12 } }));
     expect(r.code).toBe(1);
     expect(r.out).toContain('below the 90% line-coverage bar');
     expect(r.out).toContain('produced no coverage output at all');
   });
 
+  // Two GATED packages, though this case used to omit one of each: the missing-output branch runs
+  // before the gated/not-gated split, so one path covers both, and picking gated packages keeps
+  // this case running after the not-gated list empties. Its not-gated half is the case above.
   it('skips missing output instead of double-reporting when a test job already failed', () => {
-    const r = run(THRESHOLD_SCRIPT, coverageTree({ omit: ['tools/ops', 'server/admin'] }), { TESTS_OK: 'false' });
+    const r = run(THRESHOLD_SCRIPT, coverageTree({ omit: ['server/admin', 'server/gateway'] }), { TESTS_OK: 'false' });
     expect(r.code).toBe(0);
     expect(r.out).toContain('NOT ENFORCED');
     expect(r.out).toContain('2 skipped');
   });
 
-  it('honours COVERAGE_THRESHOLD, and never applies it to the not-gated rows', () => {
-    const tree = coverageTree({ pct: { 'tools/ops': 70 } });
-    expect(run(THRESHOLD_SCRIPT, tree, { COVERAGE_THRESHOLD: '95' }).code).toBe(1);
+  itIfNotGated('honours COVERAGE_THRESHOLD, and never applies it to the not-gated rows', () => {
+    // 70 is above the lowered bar this case passes in and below the raised one, so the row would
+    // read as a pass on one of the two runs if the exemption were ever applied as a threshold.
+    const tree = coverageTree({ pct: { [notGatedSample()]: 70 } });
+    expect(run(THRESHOLD_SCRIPT, tree, { COVERAGE_THRESHOLD: String(RAISED_THRESHOLD) }).code).toBe(1);
     const r = run(THRESHOLD_SCRIPT, tree, { COVERAGE_THRESHOLD: '60' });
     expect(r.code).toBe(0);
     // 70% clears a 60% bar, but the row is still printed as exempt rather than as a pass.
     expect(r.out).toContain('reported, not gated — target 60%');
   });
 
-  it('restates the not-gated gap on a passing run, not only on failure', () => {
+  itIfNotGated('restates the not-gated gap on a passing run, not only on failure', () => {
     const r = run(THRESHOLD_SCRIPT, coverageTree());
     expect(r.code).toBe(0);
     for (const pkg of NOT_GATED_JSON_SUMMARY_PACKAGES) expect(r.out).toContain(pkg);
@@ -244,7 +351,7 @@ describe('coverageSummary.mjs', () => {
     expect(r.out).toContain('2 / 7');
   });
 
-  it('separates the not-gated packages into their own section', () => {
+  itIfNotGated('separates the not-gated packages into their own section', () => {
     const r = run(SUMMARY_SCRIPT, coverageTree());
     expect(r.out).toContain('_reported, not gated (ADR-070)_');
     for (const pkg of NOT_GATED_JSON_SUMMARY_PACKAGES) expect(r.out).toContain(`| ${pkg} |`);
@@ -252,7 +359,7 @@ describe('coverageSummary.mjs', () => {
 
   // Overall has meant "the coverage the release gate enforces" since 2026-08-15. A 0% tool must
   // not move it, or every reader of that number silently gets a different one than they think.
-  it('keeps not-gated packages out of the Overall row', () => {
+  itIfNotGated('keeps not-gated packages out of the Overall row', () => {
     const zeroed = Object.fromEntries(NOT_GATED_JSON_SUMMARY_PACKAGES.map((p) => [p, 0]));
     const r = run(SUMMARY_SCRIPT, coverageTree({ pct: zeroed }));
     const overall = /\*\*Overall \(gated\)\*\* \| \*\*([\d.]+)%\*\*/.exec(r.out);
