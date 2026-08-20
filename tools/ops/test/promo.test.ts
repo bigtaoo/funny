@@ -1,9 +1,12 @@
-// promo.ts's pure helpers (B-PROMO mint page). Everything here exists to keep the operator's reading of a
-// code identical to what a player's redeem attempt actually does in commercial's PromoService — the page
-// cannot call that code, so these tests are what pins the two together. pagePromo() builds DOM, untested,
-// same split as feedback.test.ts / gachaPools.test.ts.
+// src/logic/promo.ts — the B-PROMO mint page's helpers. Everything here exists to keep the operator's
+// reading of a code identical to what a player's redeem attempt actually does in commercial's
+// PromoService — the page cannot call that code, so these tests are what pins the two together.
+// pagePromo() builds DOM and stays untested, same split as feedback.test.ts / gachaPools.test.ts.
 import { describe, it, expect } from 'vitest';
-import { normalizePromoCode, promoStatus, redemptionText, validatePromoDraft, type PromoDraft } from '../src/pages/promo';
+import {
+  createError, DEFAULT_EXPIRY_MS, normalizedPreview, normalizePromoCode, promoDraft, promoStatus,
+  redemptionText, validatePromoDraft, type PromoDraft,
+} from '../src/logic/promo';
 import type { PromoCodeView } from '../src/types';
 
 const NOW = 1_700_000_000_000;
@@ -121,5 +124,74 @@ describe('redemptionText', () => {
 
   it('a limit of 0 is impossible via the form but must not be mistaken for uncapped', () => {
     expect(redemptionText({ redeemed: 0, totalLimit: 0 })).toBe('0 / 0');
+  });
+});
+
+describe('promoDraft', () => {
+  const fields = { code: ' welcome ', coins: '250', expiryEnabled: false, expiry: '', totalLimit: '', note: '' };
+
+  it('keeps the code as typed — normalization happens at submit, so the preview can show the diff', () => {
+    expect(promoDraft(fields)).toEqual({ code: ' welcome ', coins: 250 });
+  });
+
+  it('omits an unticked expiry entirely rather than sending NaN', () => {
+    expect(promoDraft({ ...fields, expiry: '2026-09-01T10:00' })).not.toHaveProperty('expiresAt');
+  });
+
+  it('includes the expiry once the checkbox is ticked', () => {
+    const d = promoDraft({ ...fields, expiryEnabled: true, expiry: '2026-09-01T10:00' });
+    expect(d.expiresAt).toBe(new Date('2026-09-01T10:00').getTime());
+  });
+
+  it('omits a blank total limit and a blank note', () => {
+    const d = promoDraft({ ...fields, totalLimit: '  ', note: '   ' });
+    expect(d).not.toHaveProperty('totalLimit');
+    expect(d).not.toHaveProperty('note');
+  });
+
+  it('trims the note and parses the limit', () => {
+    expect(promoDraft({ ...fields, totalLimit: '500', note: '  launch  ' }))
+      .toMatchObject({ totalLimit: 500, note: 'launch' });
+  });
+
+  it('lets an unparseable coins field through as NaN, which validation then reports', () => {
+    expect(validatePromoDraft(promoDraft({ ...fields, coins: 'many' }), NOW)).toMatch(/positive/i);
+  });
+
+  it('offers a 30-day default expiry', () => {
+    expect(DEFAULT_EXPIRY_MS).toBe(30 * 86400_000);
+  });
+});
+
+describe('normalizedPreview', () => {
+  it('echoes the stored form when it differs from what was typed', () => {
+    expect(normalizedPreview(' welcome ')).toBe('stored as WELCOME');
+    expect(normalizedPreview('welcome')).toBe('stored as WELCOME');
+  });
+
+  it('stays quiet when the typed code IS the stored form — echoing it would be noise', () => {
+    expect(normalizedPreview('WELCOME')).toBe('');
+  });
+
+  it('stays quiet for an empty field', () => {
+    expect(normalizedPreview('')).toBe('');
+    expect(normalizedPreview('   ')).toBe('');
+  });
+});
+
+describe('createError', () => {
+  it('translates commercial’s 409 into something an operator can act on', () => {
+    const out = createError({ status: 409, code: 'BAD_REQUEST' }, 'WELCOME') as Error;
+    expect(out.message).toBe('Code WELCOME already exists (codes are unique, case-insensitive).');
+  });
+
+  it('passes any other error through untouched', () => {
+    const original = new Error('network down');
+    expect(createError(original, 'WELCOME')).toBe(original);
+  });
+
+  it('passes a genuine 400 through — only the duplicate case is ambiguous', () => {
+    const original = { status: 400, code: 'BAD_REQUEST', message: 'coins must be positive' };
+    expect(createError(original, 'WELCOME')).toBe(original);
   });
 });

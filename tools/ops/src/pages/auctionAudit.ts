@@ -1,7 +1,14 @@
 // SLG anomalous trade audit page (G7 anti-RMT, §17.7; slg.audit.view / slg.audit.manage):
 // look up individual auction listings, scan for suspicious seller→buyer pairs, file audit tickets, then adjudicate.
+// Query assembly, the pill palettes and every derived label live in src/logic/auctionAudit.ts (4e).
 import { clear, fmtTime, h, pill } from '../dom';
-import type { AuctionAnomaly, AuctionListingAdminView, AuctionListingQuery, TradeAuditTicketView } from '../types';
+import {
+  anomaliesFoundText, auditResolvedByText, auditTicketFiledBy, auditTicketStatusCls, canAdjudicate,
+  enforcementText, listingCloseTs, listingItemText, listingPriceLabel, listingQuery,
+  listingsFoundText, listingStatusCls, noAnomaliesText, resolvePrompt, scanWindowSec, sellerBuyerText,
+  severityCls, snapshotOf,
+} from '../logic/auctionAudit';
+import type { AuctionAnomaly, AuctionListingAdminView, TradeAuditTicketView } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
 
 export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
@@ -37,27 +44,26 @@ export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
   lookupOut.style.display = 'none';
 
   const runLookup = async (): Promise<void> => {
-    const filter: AuctionListingQuery = {};
-    const sellerId = lookupSellerInput.value.trim();
-    const itemName = lookupItemNameInput.value.trim();
-    if (sellerId) filter.sellerId = sellerId;
-    if (lookupItemTypeSel.value) filter.itemType = lookupItemTypeSel.value as AuctionListingQuery['itemType'];
-    if (lookupStatusSel.value) filter.status = lookupStatusSel.value as AuctionListingQuery['status'];
-    if (itemName) filter.itemName = itemName;
-    if (!filter.sellerId && !filter.itemType && !filter.itemName) {
-      showErr(lookupErr, new Error('at least one of sellerId / itemType / item name is required'));
+    const query = listingQuery({
+      sellerId: lookupSellerInput.value,
+      itemType: lookupItemTypeSel.value,
+      status: lookupStatusSel.value,
+      itemName: lookupItemNameInput.value,
+    });
+    if (!query.ok) {
+      showErr(lookupErr, new Error(query.error));
       return;
     }
     lookupErr.textContent = '';
     clear(lookupOut);
     try {
-      const listings = await api.slgQueryAuctionListings(filter);
+      const listings = await api.slgQueryAuctionListings(query.filter);
       lookupOut.style.display = '';
       if (listings.length === 0) {
         lookupOut.append(h('div', { class: 'muted' }, 'No matching listings.'));
         return;
       }
-      lookupOut.append(h('div', { class: 'muted' }, `${listings.length} listing${listings.length === 1 ? '' : 's'} found`));
+      lookupOut.append(h('div', { class: 'muted' }, listingsFoundText(listings.length)));
       const t = h('table', {},
         h('tr', {},
           h('th', {}, 'Auction ID'),
@@ -108,14 +114,13 @@ export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
     scanErr.textContent = '';
     clear(scanOut);
     try {
-      const windowSec = windowInput.value.trim() ? Number(windowInput.value.trim()) : undefined;
-      const anomalies = await api.slgScanAnomalies(worldId, windowSec);
+      const anomalies = await api.slgScanAnomalies(worldId, scanWindowSec(windowInput.value));
       scanOut.style.display = '';
       if (anomalies.length === 0) {
-        scanOut.append(h('div', { class: 'muted' }, `No anomalies found in world "${worldId}".`));
+        scanOut.append(h('div', { class: 'muted' }, noAnomaliesText(worldId)));
         return;
       }
-      scanOut.append(h('div', { class: 'muted' }, `${anomalies.length} suspicious pair${anomalies.length === 1 ? '' : 's'} found in world "${worldId}"`));
+      scanOut.append(h('div', { class: 'muted' }, anomaliesFoundText(anomalies.length, worldId)));
       const t = h('table', {},
         h('tr', {},
           h('th', {}, 'Seller'),
@@ -204,28 +209,20 @@ export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
   await ticketRefresh();
 }
 
-const LISTING_STATUS_CLS: Record<string, string> = { open: 'warn', sold: '', cancelled: '', expired: 'failed' };
-
 function listingRow(l: AuctionListingAdminView): HTMLElement {
-  const priceLabel = l.saleMode === 'auction'
-    ? `${l.topBid ? `bid ${l.topBid.amount}` : `start ${l.startPrice ?? l.price}`}${l.buyoutPrice != null ? ` / buyout ${l.buyoutPrice}` : ''}`
-    : String(l.price);
-  const closedTs = l.soldAt ?? l.closedAt;
   return h('tr', {},
     h('td', { class: 'muted', style: 'font-size:12px' }, l.auctionId),
     h('td', {}, l.sellerId),
-    h('td', {}, `${l.itemType}: ${l.itemName || '—'}`),
+    h('td', {}, listingItemText(l)),
     h('td', { style: 'text-align:right' }, String(l.qty)),
-    h('td', { style: 'text-align:right' }, priceLabel),
+    h('td', { style: 'text-align:right' }, listingPriceLabel(l)),
     h('td', {}, l.saleMode),
-    h('td', {}, pill(l.status, LISTING_STATUS_CLS[l.status] ?? '')),
+    h('td', {}, pill(l.status, listingStatusCls(l.status))),
     h('td', {}, l.designatedBuyerId ?? '—'),
     h('td', {}, l.buyerId ?? '—'),
-    h('td', { class: 'muted', style: 'font-size:12px' }, closedTs ? fmtTime(closedTs) : fmtTime(l.expireAt)),
+    h('td', { class: 'muted', style: 'font-size:12px' }, fmtTime(listingCloseTs(l))),
   );
 }
-
-const SEVERITY_CLS: Record<string, string> = { high: 'failed', medium: 'warn' };
 
 function anomalyRow(ctx: Ctx, a: AuctionAnomaly, worldId: string, onTicketFiled: () => Promise<void>): HTMLElement {
   const { api, session } = ctx;
@@ -236,18 +233,7 @@ function anomalyRow(ctx: Ctx, a: AuctionAnomaly, worldId: string, onTicketFiled:
         onclick: async (): Promise<void> => {
           fileErr.textContent = '';
           try {
-            await api.slgFileAuditTicket({
-              worldId,
-              sellerId: a.sellerId,
-              buyerId: a.buyerId,
-              trades: a.trades,
-              designatedTrades: a.designatedTrades,
-              totalCoins: a.totalCoins,
-              firstTs: a.firstTs,
-              lastTs: a.lastTs,
-              severity: a.severity,
-              reasons: a.reasons,
-            });
+            await api.slgFileAuditTicket(snapshotOf(a, worldId));
             showOk(fileErr, 'Ticket filed');
             await onTicketFiled();
           } catch (e) {
@@ -262,14 +248,12 @@ function anomalyRow(ctx: Ctx, a: AuctionAnomaly, worldId: string, onTicketFiled:
     h('td', { style: 'text-align:right' }, String(a.trades)),
     h('td', { style: 'text-align:right' }, String(a.designatedTrades)),
     h('td', { style: 'text-align:right' }, a.totalCoins.toLocaleString()),
-    h('td', {}, pill(a.severity, SEVERITY_CLS[a.severity] ?? 'warn')),
+    h('td', {}, pill(a.severity, severityCls(a.severity))),
     h('td', {}, a.reasons.join(', ')),
     h('td', { class: 'muted', style: 'font-size:12px' }, `${fmtTime(a.firstTs)} – ${fmtTime(a.lastTs)}`),
     canManage ? h('td', {}, fileBtn, fileErr) : null,
   );
 }
-
-const TICKET_STATUS_CLS: Record<string, string> = { open: 'warn', dismissed: '', actioned: 'failed' };
 
 function auditTicketRow(ctx: Ctx, tk: TradeAuditTicketView, onRefresh: () => Promise<void>): HTMLElement {
   const { api, session } = ctx;
@@ -277,7 +261,7 @@ function auditTicketRow(ctx: Ctx, tk: TradeAuditTicketView, onRefresh: () => Pro
   const resolveErr = h('span', { class: 'err' });
 
   const resolve = async (disposition: 'dismissed' | 'actioned'): Promise<void> => {
-    const note = prompt(`${disposition === 'actioned' ? 'Confirmed violation' : 'Dismiss'}: add a note (optional)`) ?? '';
+    const note = prompt(resolvePrompt(disposition)) ?? '';
     resolveErr.textContent = '';
     try {
       await api.slgResolveAuditTicket(tk.id, disposition, note);
@@ -288,19 +272,16 @@ function auditTicketRow(ctx: Ctx, tk: TradeAuditTicketView, onRefresh: () => Pro
   };
 
   const buttons: HTMLElement[] = [];
-  if (canManage && tk.status === 'open') {
+  if (canAdjudicate(canManage, tk.status)) {
     buttons.push(
       h('button', { class: 'ghost', onclick: () => void resolve('dismissed') }, 'Dismiss'),
       h('button', { class: 'danger', onclick: () => void resolve('actioned') }, 'Action'),
     );
   } else if (tk.status !== 'open') {
-    const resolvedBy = tk.resolvedByName ?? (tk.resolvedBy ? tk.resolvedBy.slice(0, 8) : '—');
-    buttons.push(h('span', { class: 'muted', style: 'font-size:12px' }, `by ${resolvedBy}${tk.resolvedAt ? ` · ${fmtTime(tk.resolvedAt)}` : ''}`));
+    buttons.push(h('span', { class: 'muted', style: 'font-size:12px' }, auditResolvedByText(tk, fmtTime)));
     if (tk.note) buttons.push(h('div', { class: 'muted', style: 'font-size:12px' }, tk.note));
     if (tk.enforcement) {
-      const { sellerBanned, buyerBanned } = tk.enforcement;
-      buttons.push(h('div', { class: 'muted', style: 'font-size:12px' },
-        `Enforcement: seller ${sellerBanned ? 'banned' : 'ban failed'}, buyer ${buyerBanned ? 'banned' : 'ban failed'}`));
+      buttons.push(h('div', { class: 'muted', style: 'font-size:12px' }, enforcementText(tk.enforcement)));
     }
   }
 
@@ -308,13 +289,13 @@ function auditTicketRow(ctx: Ctx, tk: TradeAuditTicketView, onRefresh: () => Pro
   return h('tr', {},
     h('td', { class: 'muted', style: 'font-size:12px' }, fmtTime(tk.filedAt)),
     h('td', {}, snap.worldId),
-    h('td', {}, `${snap.sellerId} → ${snap.buyerId}`),
+    h('td', {}, sellerBuyerText(snap)),
     h('td', { style: 'text-align:right' }, String(snap.trades)),
     h('td', { style: 'text-align:right' }, snap.totalCoins.toLocaleString()),
-    h('td', {}, pill(snap.severity, SEVERITY_CLS[snap.severity] ?? 'warn')),
+    h('td', {}, pill(snap.severity, severityCls(snap.severity))),
     h('td', {}, snap.reasons.join(', ')),
-    h('td', {}, pill(tk.status, TICKET_STATUS_CLS[tk.status] ?? '')),
-    h('td', { class: 'muted', style: 'font-size:12px' }, tk.filedByName ?? tk.filedBy.slice(0, 8)),
+    h('td', {}, pill(tk.status, auditTicketStatusCls(tk.status))),
+    h('td', { class: 'muted', style: 'font-size:12px' }, auditTicketFiledBy(tk)),
     canManage ? h('td', {}, ...buttons, resolveErr) : null,
   );
 }

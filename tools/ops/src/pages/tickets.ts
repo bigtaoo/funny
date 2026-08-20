@@ -1,20 +1,22 @@
 // Compensation tickets page (OPS_DESIGN §7): create → four-eyes approve → execute; list + actions.
+// Which actions a ticket offers is decided in src/logic/tickets.ts (ADR-070 Phase 4e) — this file
+// only binds handlers to whatever that returns.
 import { clear, fmtTime, h, pill } from '../dom';
-import type { CompAttachment, CompScope, CompTarget, CompTicketView } from '../types';
+import {
+  buildTarget, canInitiate, describeAttachments, describeTarget, previewText, statusFilter,
+  type TicketAction, ticketActions, ticketInput, ticketPeople, TICKET_STATUSES,
+} from '../logic/tickets';
+import type { CompScope, CompTicketView } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
 
 export async function pageTickets(ctx: Ctx): Promise<void> {
   const { api, session, root } = ctx;
-  const caps = session.capabilities;
   clear(root);
   root.append(h('h2', {}, 'Compensation tickets'));
 
-  const canInitiateSingle = caps.includes('comp.initiate.single');
-  const canInitiateGlobal = caps.includes('comp.initiate.global');
+  if (canInitiate(session)) root.append(ticketForm(ctx, () => void reload()));
 
-  if (canInitiateSingle || canInitiateGlobal) root.append(ticketForm(ctx, () => void reload()));
-
-  const filterSel = h('select', {}, ...['', 'pending', 'approved', 'executed', 'rejected', 'cancelled', 'failed'].map((s) => h('option', { value: s }, s || 'All')));
+  const filterSel = h('select', {}, ...TICKET_STATUSES.map((s) => h('option', { value: s }, s || 'All')));
   const listBox = h('div', { class: 'card' });
   const err = h('div', { class: 'err' });
   root.append(h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Status filter'), filterSel, h('button', { class: 'ghost', onclick: () => void reload() }, 'Refresh')), err, listBox);
@@ -23,7 +25,7 @@ export async function pageTickets(ctx: Ctx): Promise<void> {
   const reload = async (): Promise<void> => {
     err.textContent = '';
     try {
-      const tickets = await api.tickets(filterSel.value || undefined);
+      const tickets = await api.tickets(statusFilter(filterSel.value));
       clear(listBox);
       if (tickets.length === 0) {
         listBox.append(h('div', { class: 'muted' }, 'No tickets'));
@@ -39,16 +41,8 @@ export async function pageTickets(ctx: Ctx): Promise<void> {
   await reload();
 }
 
-export function describeTarget(target: CompTarget): string {
-  return 'publicId' in target ? '#' + target.publicId : `all-server(${target.filter.kind})`;
-}
-export function describeAttachments(att: CompAttachment[]): string {
-  return att.map((a) => (a.kind === 'coins' ? `${a.count ?? 0} coins` : `${a.kind}:${a.id ?? '?'}×${a.count ?? 1}`)).join(', ') || 'none';
-}
-
 function ticketRow(ctx: Ctx, tk: CompTicketView, onChange: () => void): HTMLElement {
   const { api, session } = ctx;
-  const caps = session.capabilities;
   const err = h('div', { class: 'err' });
   const act = async (action: 'approve' | 'reject' | 'cancel' | 'retry', note?: string): Promise<void> => {
     err.textContent = '';
@@ -59,35 +53,25 @@ function ticketRow(ctx: Ctx, tk: CompTicketView, onChange: () => void): HTMLElem
       showErr(err, e);
     }
   };
-  const buttons: HTMLElement[] = [];
-  const isMine = tk.initiatedBy === session.admin.id;
-  // Approval capability (mirrors the backend): global→approve.global; overquota→approve.single.overquota; otherwise approve.single.
-  const approveCap =
-    tk.scope === 'global'
-      ? 'comp.approve.global'
-      : tk.amountTier === 'overquota'
-        ? 'comp.approve.single.overquota'
-        : 'comp.approve.single';
-  const hasApproveCap = caps.includes(approveCap as never);
-  if (tk.status === 'pending') {
-    if (hasApproveCap && !isMine) {
-      buttons.push(h('button', { onclick: () => void act('approve') }, 'Approve'));
-      buttons.push(h('button', { class: 'warn', onclick: () => void act('reject', prompt('Rejection reason?') ?? '') }, 'Reject'));
-    } else if (hasApproveCap && isMine) {
-      // Single-super-admin self-approval transitional mode: the UI optimistically shows "Approve"; the backend
-      // makes the final call — a 403 is returned if a second qualified approver exists (restoring four-eyes).
-      // Rejection has no self-approval exemption (use cancel instead), so "Reject" is not shown during self-approval.
-      buttons.push(
-        h(
+  const button = (a: TicketAction): HTMLElement => {
+    switch (a) {
+      case 'approve':
+        return h('button', { onclick: () => void act('approve') }, 'Approve');
+      case 'reject':
+        return h('button', { class: 'warn', onclick: () => void act('reject', prompt('Rejection reason?') ?? '') }, 'Reject');
+      case 'approve-self':
+        return h(
           'button',
           { title: 'Self-approval allowed when no other qualified approver exists (backend decides, audit trail kept)', onclick: () => void act('approve') },
           'Approve (self)',
-        ),
-      );
+        );
+      case 'cancel':
+        return h('button', { class: 'ghost', onclick: () => void act('cancel') }, 'Cancel');
+      case 'retry':
+        return h('button', { class: 'warn', onclick: () => void act('retry') }, 'Retry');
     }
-    if (isMine || session.admin.role === 'super') buttons.push(h('button', { class: 'ghost', onclick: () => void act('cancel') }, 'Cancel'));
-  }
-  if (tk.status === 'failed' && hasApproveCap) buttons.push(h('button', { class: 'warn', onclick: () => void act('retry') }, 'Retry'));
+  };
+  const people = ticketPeople(tk);
 
   return h(
     'tr',
@@ -97,9 +81,9 @@ function ticketRow(ctx: Ctx, tk: CompTicketView, onChange: () => void): HTMLElem
     h('td', {}, describeTarget(tk.target)),
     h('td', {}, describeAttachments(tk.mail.attachments)),
     h('td', {}, tk.reason),
-    h('td', {}, tk.initiatedByName ?? tk.initiatedBy.slice(0, 8), h('div', { class: 'muted' }, fmtTime(tk.initiatedAt))),
-    h('td', {}, tk.approvedByName ?? (tk.approvedBy ? tk.approvedBy.slice(0, 8) : '—'), tk.recipientCount !== undefined ? h('div', { class: 'muted' }, `${tk.recipientCount} recipients`) : null, tk.error ? h('div', { class: 'err' }, tk.error) : null),
-    h('td', {}, ...buttons, err),
+    h('td', {}, people.initiated, h('div', { class: 'muted' }, fmtTime(tk.initiatedAt))),
+    h('td', {}, people.approved, tk.recipientCount !== undefined ? h('div', { class: 'muted' }, `${tk.recipientCount} recipients`) : null, tk.error ? h('div', { class: 'err' }, tk.error) : null),
+    h('td', {}, ...ticketActions(tk, session).map(button), err),
   );
 }
 
@@ -122,20 +106,20 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
     targetRow.style.display = scopeSel.value === 'single' ? '' : 'none';
   });
 
-  const buildTarget = (): CompTarget =>
-    scopeSel.value === 'single' ? { publicId: publicIdInput.value.trim() } : { filter: { kind: 'all' } };
+  const fields = (): Parameters<typeof ticketInput>[0] => ({
+    scope: scopeSel.value,
+    publicId: publicIdInput.value,
+    subject: subjectInput.value,
+    body: bodyInput.value,
+    coins: coinsInput.value,
+    expireDays: expireInput.value,
+    reason: reasonInput.value,
+  });
 
   const submit = async (): Promise<void> => {
     err.textContent = '';
-    const coins = Number(coinsInput.value) || 0;
-    const attachments: CompAttachment[] = coins > 0 ? [{ kind: 'coins', count: coins }] : [];
     try {
-      await api.initiate({
-        scope: scopeSel.value as CompScope,
-        target: buildTarget(),
-        mail: { subject: subjectInput.value.trim(), body: bodyInput.value.trim(), attachments, expireDays: Number(expireInput.value) || 30 },
-        reason: reasonInput.value.trim(),
-      });
+      await api.initiate(ticketInput(fields()));
       showOk(err, 'Ticket created, awaiting approval');
       subjectInput.value = '';
       bodyInput.value = '';
@@ -149,8 +133,8 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
   const doPreview = async (): Promise<void> => {
     err.textContent = '';
     try {
-      const r = await api.preview(scopeSel.value as CompScope, buildTarget());
-      previewOut.textContent = `Estimated ${r.recipientCount} recipient${r.recipientCount === 1 ? '' : 's'}${r.available ? '' : ' (mail backend not ready, estimate unavailable)'}`;
+      const r = await api.preview(scopeSel.value as CompScope, buildTarget(scopeSel.value, publicIdInput.value));
+      previewOut.textContent = previewText(r);
     } catch (e) {
       showErr(err, e);
     }

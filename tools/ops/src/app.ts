@@ -1,44 +1,47 @@
 // Ops admin frontend shell (OPS_DESIGN §7): login page → main shell renders navigation based on capabilities.
+// The nav table and its capability filter live in src/logic/nav.ts (ADR-070 Phase 4e); this file binds
+// each entry's id to the page renderer that draws it.
 import { Api, ApiError } from './api';
 import { clear, h } from './dom';
+import {
+  buildLabel, buildTitle, LOGGED_OUT_MESSAGE, type NavEntry, NO_CAPABILITIES_MESSAGE,
+  SESSION_EXPIRED_MESSAGE, visibleNav, whoText,
+} from './logic/nav';
 import { pageAccounts, pageAnalytics, pageAppeals, pageAudit, pageAuctionAudit, pageEvents, pageFeedback, pageFlags, pageGachaPools, pageLadderSeason, pageModerationWordlist, pageMonitor, pagePaddleEvents, pagePlayer, pagePromo, pagePvpBalance, pageReports, pageSLGSeason, pageSlgShop, pageSuspicions, pageTickets } from './pages';
-import type { AdminCapability, Session } from './types';
+import type { Session } from './types';
 
-interface NavItem {
-  id: string;
-  label: string;
-  cap: AdminCapability;
-  render: (ctx: {
-    api: Api;
-    session: Session;
-    root: HTMLElement;
-    onTeardown: (fn: () => void) => void;
-  }) => void | Promise<void>;
-}
+type PageRender = (ctx: {
+  api: Api;
+  session: Session;
+  root: HTMLElement;
+  onTeardown: (fn: () => void) => void;
+}) => void | Promise<void>;
 
-const NAV: NavItem[] = [
-  { id: 'monitor', label: 'Monitor', cap: 'monitor.view', render: pageMonitor },
-  { id: 'analytics', label: 'Analytics', cap: 'analytics.view', render: pageAnalytics },
-  { id: 'pvp-balance', label: 'PvP Balance', cap: 'analytics.view', render: pagePvpBalance },
-  { id: 'player', label: 'Player Lookup', cap: 'player.lookup', render: pagePlayer },
-  { id: 'suspicions', label: 'Anti-Cheat', cap: 'anticheat.view', render: pageSuspicions },
-  { id: 'reports', label: 'UGC Reports', cap: 'reports.view', render: pageReports },
-  { id: 'appeals', label: 'Player Appeals', cap: 'appeals.view', render: pageAppeals },
-  { id: 'feedback', label: 'Player Feedback', cap: 'feedback.view', render: pageFeedback },
-  { id: 'tickets', label: 'Comp Tickets', cap: 'comp.view', render: pageTickets },
-  { id: 'audit', label: 'Audit', cap: 'audit.view.self', render: pageAudit },
-  { id: 'paddle-events', label: 'Paddle Events', cap: 'paddle.events.view', render: pagePaddleEvents },
-  { id: 'slg-season', label: 'SLG Season', cap: 'slg.season.view', render: pageSLGSeason },
-  { id: 'slg-audit', label: 'SLG Audit', cap: 'slg.audit.view', render: pageAuctionAudit },
-  { id: 'ladder', label: 'Ladder Season', cap: 'ladder.season.manage', render: pageLadderSeason },
-  { id: 'events', label: 'Timed Events', cap: 'events.manage', render: pageEvents },
-  { id: 'gacha-pools', label: 'Gacha Pools', cap: 'gacha.pools.manage', render: pageGachaPools },
-  { id: 'promo', label: 'Promo Codes', cap: 'promo.manage', render: pagePromo },
-  { id: 'slg-shop', label: 'SLG Shop Prices', cap: 'slg.shop.manage', render: pageSlgShop },
-  { id: 'flags', label: 'Feature Flags', cap: 'config.manage', render: pageFlags },
-  { id: 'moderation-wordlist', label: 'Word Lists', cap: 'moderation.wordlist.manage', render: pageModerationWordlist },
-  { id: 'accounts', label: 'Account Mgmt', cap: 'admin.manage', render: pageAccounts },
-];
+/** id → renderer, keyed on logic/nav.ts's NAV_ENTRIES. A missing id renders nothing, which is why
+ *  visibleNav's output is filtered through this map rather than trusted blindly. */
+const RENDERERS: Record<string, PageRender> = {
+  monitor: pageMonitor,
+  analytics: pageAnalytics,
+  'pvp-balance': pagePvpBalance,
+  player: pagePlayer,
+  suspicions: pageSuspicions,
+  reports: pageReports,
+  appeals: pageAppeals,
+  feedback: pageFeedback,
+  tickets: pageTickets,
+  audit: pageAudit,
+  'paddle-events': pagePaddleEvents,
+  'slg-season': pageSLGSeason,
+  'slg-audit': pageAuctionAudit,
+  ladder: pageLadderSeason,
+  events: pageEvents,
+  'gacha-pools': pageGachaPools,
+  promo: pagePromo,
+  'slg-shop': pageSlgShop,
+  flags: pageFlags,
+  'moderation-wordlist': pageModerationWordlist,
+  accounts: pageAccounts,
+};
 
 export class App {
   /** Teardown callbacks registered for the current page (run on navigation, logout, or session expiry to stop timers etc.). */
@@ -51,7 +54,7 @@ export class App {
     // Mid-session 401 → tear down the current page and redirect to the login page.
     this.api.onUnauthorized = () => {
       this.runTeardowns();
-      this.renderLogin('Session expired. Please log in again.');
+      this.renderLogin(SESSION_EXPIRED_MESSAGE);
     };
   }
 
@@ -106,18 +109,18 @@ export class App {
 
   renderApp(session: Session): void {
     clear(this.mount);
-    const items = NAV.filter((n) => session.capabilities.includes(n.cap));
+    const items = visibleNav(session.capabilities).filter((n) => RENDERERS[n.id]);
     const main = h('main', {});
     const navEl = h('nav', {});
 
-    const select = (item: NavItem): void => {
+    const select = (item: NavEntry): void => {
       this.runTeardowns(); // stop timers and other cleanup from the previous page
       for (const a of Array.from(navEl.children)) a.classList.toggle('active', a.getAttribute('data-id') === item.id);
       clear(main);
       const onTeardown = (fn: () => void): void => {
         this.teardowns.push(fn);
       };
-      void Promise.resolve(item.render({ api: this.api, session, root: main, onTeardown })).catch((e) => {
+      void Promise.resolve(RENDERERS[item.id]!({ api: this.api, session, root: main, onTeardown })).catch((e) => {
         main.append(h('div', { class: 'err' }, (e as Error).message));
       });
     };
@@ -131,18 +134,18 @@ export class App {
       'header',
       {},
       h('span', { class: 'brand' }, '🛠 Admin Panel'),
-      h('span', { class: 'who' }, `${session.admin.displayName} · ${session.admin.role}`),
-      h('span', { class: 'build', title: `Built at ${__BUILD_TIME__} (UTC)` }, `v ${__BUILD_VERSION__}`),
+      h('span', { class: 'who' }, whoText(session.admin)),
+      h('span', { class: 'build', title: buildTitle(__BUILD_TIME__) }, buildLabel(__BUILD_VERSION__)),
       logout,
     );
     this.mount.append(header, navEl, main);
     if (items[0]) select(items[0]);
-    else main.append(h('div', { class: 'err' }, 'This account has no visible capabilities. Contact a super-admin.'));
+    else main.append(h('div', { class: 'err' }, NO_CAPABILITIES_MESSAGE));
   }
 
   private async doLogout(): Promise<void> {
     this.runTeardowns();
     await this.api.logout();
-    this.renderLogin('Logged out.');
+    this.renderLogin(LOGGED_OUT_MESSAGE);
   }
 }
