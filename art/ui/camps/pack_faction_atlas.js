@@ -12,7 +12,16 @@
  * — same single-colour-source contract as the faction dots they replace.
  *
  * Output: client/src/assets/factions/factions.png (+ .json spritesheet), frames
- * named `tao` / `anna` so getFactionIconTexture(faction) can look them up directly.
+ * named `tao` / `anna`. This is an INTERMEDIATE artifact, not what the client
+ * loads: the 2026-07-27 asset merge folded these two frames into the shared L0
+ * `client/src/assets/icons/icons_atlas.{png,json}` (see render/atlas/iconsAtlas.ts)
+ * and deleted the standalone factions/ atlas from the repo, so
+ * getFactionIconTexture(faction) looks them up in iconsAtlas today. Re-running
+ * this script only regenerates the intermediate — to actually update the art
+ * the client ships, follow with:
+ *   node art/scripts/patchMergedAtlas.js client/src/assets/factions/factions.json client/src/assets/icons/icons_atlas.json
+ * (mergeAssetAtlases.js can no longer do this merge itself: its other source
+ * atlases were deleted in the same 072131d8 reorg.)
  *
  * Run: node art/ui/camps/pack_faction_atlas.js   (needs client/node_modules/sharp)
  */
@@ -71,7 +80,7 @@ async function whiteLineFrame(file) {
     frames[key] = { frame: { x: i * FRAME, y: 0, w: FRAME, h: FRAME }, sourceSize: { w: FRAME, h: FRAME }, spriteSourceSize: { x: 0, y: 0, w: FRAME, h: FRAME } };
   }
   const atlasW = FRAME * SOURCES.length, atlasH = FRAME;
-  fs.mkdirSync(OUT_DIR, { recursive: true }); // never actually run before — OUT_DIR didn't exist
+  fs.mkdirSync(OUT_DIR, { recursive: true }); // OUT_DIR was deleted by the 072131d8 asset merge (art already landed in icons_atlas; see header)
   // Quantized palette PNG (client/src/assets publish-bytes convention — see
   // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md): trivially safe, the whole
   // atlas is pure white lines at varying alpha (tinted per-faction at runtime, see header note).
