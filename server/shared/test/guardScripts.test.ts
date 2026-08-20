@@ -1,17 +1,18 @@
-// Tests for the two CI guard scripts that had none: server/scripts/checkWorkspaceCoverage.mjs and
-// the shared root scripts/checkFileLength.mjs.
+// Tests for the three CI guard scripts that had none: server/scripts/checkWorkspaceCoverage.mjs and
+// the shared root scripts/checkFileLength.mjs + scripts/checkDocLinks.mjs.
 //
-// Why these need tests at all, when they ARE the tests for everything else: both fail by turning
+// Why these need tests at all, when they ARE the tests for everything else: they fail by turning
 // GREEN. checkWorkspaceCoverage reported a cheerful "OK — all 0 workspaces" on an empty workspace
 // list, and checkFileLength exited 0 after scanning 0 files — a wrong --root, a widened exclude rule,
 // or a renamed key and the gate stops gating while CI stays green. Nothing would have noticed.
-// checkDocLinks.mjs already carried a canary for exactly this; these two now do too, and these tests
-// are what keep the canaries (and the rest of the logic) honest.
+// checkDocLinks already carried a canary for exactly this shape; the other two now do too, and these
+// tests are what keep the canaries (and the rest of the logic) honest.
 //
 // They drive the real CLI entry points — spawn node, assert exit code + stdout — against throwaway
 // fixture trees, rather than importing internals. That is deliberate: the exit code IS the contract
-// CI consumes, and `--root=` (added to checkWorkspaceCoverage for this, same spelling as the sibling
-// script already used) is the only seam needed to point them somewhere other than the real repo.
+// CI consumes. `--root=` (added to checkWorkspaceCoverage for this, same spelling as the sibling
+// script already used) is the only seam added anywhere; checkFileLength already had it, and
+// checkDocLinks needs none — it resolves against cwd, so a different cwd is the whole fixture.
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const COVERAGE_SCRIPT = resolve(HERE, '..', '..', 'scripts', 'checkWorkspaceCoverage.mjs');
 const FILELENGTH_SCRIPT = resolve(HERE, '..', '..', '..', 'scripts', 'checkFileLength.mjs');
+const DOCLINKS_SCRIPT = resolve(HERE, '..', '..', '..', 'scripts', 'checkDocLinks.mjs');
 
 const trees: string[] = [];
 afterEach(() => {
@@ -280,5 +282,106 @@ describe('checkFileLength.mjs', () => {
 
   it('exits 2 on a usage error rather than passing', () => {
     expect(run(FILELENGTH_SCRIPT, []).code).toBe(2);
+  });
+});
+
+// ── scripts/checkDocLinks.mjs (shared root script) ──────────────────────────────────────────────
+
+/**
+ * This one needs no --root seam: it discovers files via `git ls-files` and resolves everything
+ * against process.cwd(), so pointing it at a fixture is just spawning it with a different cwd —
+ * which also means these tests exercise the real git integration rather than a stubbed file list.
+ * `git add` (no commit — nothing here needs a user.email) is what puts files in the index that
+ * `git ls-files` reads.
+ */
+function docTree(spec: Record<string, string>): string {
+  const root = tree(spec);
+  for (const args of [['init', '-q'], ['add', '.']]) {
+    const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed in fixture: ${r.stderr}`);
+  }
+  return root;
+}
+
+const runDocs = (root: string) => {
+  const r = spawnSync(process.execPath, [DOCLINKS_SCRIPT], { cwd: root, encoding: 'utf8' });
+  return { code: r.status ?? -1, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+};
+
+describe('checkDocLinks.mjs', () => {
+  it('passes a tree where every doc resolves and is linked', () => {
+    const r = runDocs(docTree({
+      'CLAUDE.md': '# root\n\n[hub](docs/hub.md)\n',
+      'docs/hub.md': '# hub\n\n## 一节\n\n[spoke](spoke.md)\n',
+      'docs/spoke.md': '# spoke\n\n[back](hub.md#一节)\n',
+    }));
+    expect(r.out).toContain('every doc has an inbound link');
+    expect(r.code).toBe(0);
+  });
+
+  it('fails on a link whose target does not exist', () => {
+    const r = runDocs(docTree({
+      'CLAUDE.md': '# root\n\n[gone](docs/gone.md)\n',
+    }));
+    expect(r.out).toContain('pointing at a file that does not exist');
+    expect(r.code).toBe(1);
+  });
+
+  it('fails on an #anchor with no matching heading, and accepts one that matches (CJH heading, CRLF file)', () => {
+    const bad = runDocs(docTree({
+      'CLAUDE.md': '# root\r\n\r\n[x](docs/hub.md#没有这个标题)\r\n',
+      'docs/hub.md': '# hub\r\n\r\n## 真的标题\r\n',
+    }));
+    expect(bad.out).toContain('anchor(s) with no matching heading');
+    expect(bad.code).toBe(1);
+
+    const good = runDocs(docTree({
+      'CLAUDE.md': '# root\r\n\r\n[x](docs/hub.md#真的标题)\r\n',
+      'docs/hub.md': '# hub\r\n\r\n## 真的标题\r\n',
+    }));
+    expect(good.code).toBe(0);
+  });
+
+  /**
+   * The 2026-08-20 orphan check, i.e. the failure mode of a doc split: the hub gets written and one
+   * spoke never gets linked, so it is invisible rather than broken and no other check can see it.
+   */
+  it('fails on a doc nothing links to', () => {
+    const r = runDocs(docTree({
+      'CLAUDE.md': '# root\n\n[hub](docs/hub.md)\n',
+      'docs/hub.md': '# hub\n',
+      'docs/orphan.md': '# orphan\n',
+    }));
+    expect(r.out).toContain('nothing links to');
+    expect(r.out).toContain('docs/orphan.md');
+    expect(r.code).toBe(1);
+  });
+
+  it('does not let a doc launder itself out of orphanhood with a self-link', () => {
+    const r = runDocs(docTree({
+      'CLAUDE.md': '# root\n\n[hub](docs/hub.md)\n',
+      'docs/hub.md': '# hub\n',
+      'docs/orphan.md': '# orphan\n\n[me](orphan.md)\n',
+    }));
+    expect(r.out).toContain('docs/orphan.md');
+    expect(r.code).toBe(1);
+  });
+
+  it('exempts README.md at any depth and CLAUDE.md — they are entry points, not linked pages', () => {
+    const r = runDocs(docTree({
+      'CLAUDE.md': '# root\n\n[hub](docs/hub.md)\n',
+      'README.md': '# readme\n',
+      'docs/hub.md': '# hub\n',
+      'server/tools/thing/README.md': '# thing\n',
+    }));
+    expect(r.out).not.toContain('nothing links to');
+    expect(r.code).toBe(0);
+  });
+
+  /** Its pre-existing canary, kept honest here: a tree with docs but no relative links at all. */
+  it('canary: a scan that finds zero relative links FAILS instead of passing vacuously', () => {
+    const r = runDocs(docTree({ 'CLAUDE.md': '# root, no links at all\n' }));
+    expect(r.out).toContain('the scan itself is broken');
+    expect(r.code).toBe(1);
   });
 });
