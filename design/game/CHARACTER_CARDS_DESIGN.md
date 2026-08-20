@@ -152,7 +152,15 @@ cardInv: Record<string, CardInstance>  // key = CardInstance.id，上限 500（2
 
 **落地**：`client/src/scenes/CardScene/feedPlan.ts`（纯规划/排序，取代 `feedAutoTarget.ts`）+ `feedGap.ts`（面包屑/缺口通知/批量按钮/推荐条/页脚）+ `feedRing.ts`（环形，从 `feed.ts` 拆出以守 500 行约定）+ `feed.ts`（状态机重写）+ `actions.ts`（`doPrepBatch`）+ `core.ts`（`doPrepBatch` 懒钩子；`sortCards`/`injuryCountdown` 外移到 `cardSort.ts` 腾出行数）。测试：`test/feedPlan.test.ts`（23 例，取代 `feedAutoTarget.test.ts`）+ `test/ui/cardFusePanel.ui.ts`（37 例，两个旧 describe 整体替换）。08-18 当时**服务端零改动**——融合规则、`5^(L-1)` 曲线、`FUSION_MATERIAL_COUNT=5`、`MAX_CARD_LEVEL=9` 全部未动，改的只是交互契约。
 
-**2026-08-20 批量端点落地**：服务端 `cards/fuseRules.ts`（`checkFuseShape`/`checkFuseRound`，单发与批量共用的纯规则）+ `cards/fuseBatch.ts`（`fuseCardsBatch`）+ `service/inventory.ts` 的 `cardsFuseBatch` 路由 + 契约 `openapi/paths/inventory.yml` 的 `/cards/fuse-batch`（`CardIdemDoc.op` 加 `'fuseBatch'`）；客户端 `net/ApiClient/equipment.ts` 的 `fuseCardsBatch` + `feedPlan.ts` 的 `planPrepRounds`（`countPrepRounds` 改为它的 `.length`）+ `actions.ts` 的 `doPrepBatch` 改成单请求 + `CardCallbacks.fuseCardsBatch`。测试：`server/metaserver/test/cards-fuse-batch-unit.test.ts`（9 例，真 Mongo：整批提交/后轮吃前轮产物/中途失败只落已成轮/首轮非法即报错/idem 回放/轮数上限）+ client `test/feedPlan.test.ts` 的 `planPrepRounds` 组 + `test/api-client.test.ts`「一次请求带上所有轮次」+ `test/ui/cardFusePanelPrep.ui.ts` 的批量用例改走 `fuseCardsBatch` stub。
+**2026-08-20 批量端点落地**：服务端 `cards/fuseRules.ts`（`checkFuseShape`/`checkFuseRound`，单发与批量共用的纯规则）+ `cards/fuseBatch.ts`（`fuseCardsBatch`）+ `service/inventory.ts` 的 `cardsFuseBatch` 路由 + 契约 `openapi/paths/inventory.yml` 的 `/cards/fuse-batch`（`CardIdemDoc.op` 加 `'fuseBatch'`）；客户端 `net/ApiClient/equipment.ts` 的 `fuseCardsBatch` + `feedPlan.ts` 的 `planPrepRounds`（`countPrepRounds` 改为它的 `.length`）+ `actions.ts` 的 `doPrepBatch` 改成单请求 + `CardCallbacks.fuseCardsBatch`。测试：`server/metaserver/test/cards-fuse-batch-unit.test.ts`（18 例，真 Mongo；`fuseBatch.ts`/`fuseRules.ts` 行/分支 100%）+ client `test/feedPlan.test.ts` 的 `planPrepRounds` 组 + `test/api-client.test.ts`「一次请求带上所有轮次」+ `test/ui/cardFusePanelPrep.ui.ts` 的批量用例改走 `fuseCardsBatch` stub + `test/cardRoster-offline.test.ts` 的 `fuseCardsBatch` 适配层组。
+
+值得单独点名的几条守卫（都是"只看别的用例会漏掉"的形状）：
+- **「整批只读一次名册」**（服务端）：包住 `cardInstances.find` 数调用次数。一个"每轮各读一次"的实现能通过本文件其它所有用例，却正好把这次优化撤销回去——这条是唯一盯着它的。
+- **「一次点击只发一个请求」**（client UI）：其它用例数的是**轮数**，数轮数分不出批量和它取代的串行循环，所以单独数请求数。
+- **中途出事之后的四种收尾**（服务端）：mid-batch `REV_CONFLICT`、save 在扣减前消失、rev 重试耗尽、key 被并发请求先占。共同的不变量是**已提交的轮次保持已提交且可回放，绝不会被重跑吞第二次卡**——注意这里跟单发 `fuseCards` 故意不同：单发在 `REV_CONFLICT` 时回滚 idem 认领，批量**不能**回滚（前面几轮真的落库了）。
+- **计划自相矛盾时不背锅**（服务端）：同一张卡被两轮点名 → 第二轮 `CARD_NOT_FOUND` 而不是白升一级；跨账号 id → `CARD_NOT_FOUND`。
+- **带装备的卡永远不当炉子**（client 规划层）：服务端 `checkFuseRound` **不看装备**，只按 id 删卡，所以这条规则的唯一执行点在客户端规划；批量化之后一次错误规划会一口气烧掉整轮，比逐轮时代更值得钉死。顺带钉住"材料优先花无装备的副本"——旧的轮数模拟走 `readyMaterials`、真跑走 `autoFillMaterials`，两者排序不同，本来存在算出的 N 与实际花的卡不一致的口子。
+- **契约上下界自己也要拦**（服务端）：HTTP 上的空批/超轮由 openapi `minItems`/`maxItems` 挡下，根本走不到函数里，所以另有一组直接调函数的用例证明 `MAX_FUSE_BATCH_ROUNDS` 这道闸真的存在（并且是闭区间）。
 
 **明确没有采纳的方案（2026-08-18 拍板）**：曾提出取消"材料必须严格同级"、改用融合当量（一张 Lv.n 卡 = `5^(n-1)` 点，任意等级都能投，配进度条与溢出结转），可把 125 次点击压成 1 次。**否决，两条理由**：①严格同级在做**分层**的活——玩家只面对「还差 2 张 Lv.3」，当量制会把总量摊开成「还差 3125 张 Lv.1」，正是 07-19 重设计好不容易藏起来的那个吓人数字；②当量制 + 进度条会诱导玩家把整个阵营的低级卡一次梭哈，**替补席直接清空**，而 CC7 把背包上限从 150 扩到 500 的本意恰恰是"让玩家能多留些卡备战 SLG 队伍"。
 

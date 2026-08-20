@@ -9,6 +9,8 @@
 //     the goal — the player must never be left staring at a card that only exists to be consumed.
 //  3. doPrepBatch stops at the first failed round and reports what landed, rather than pushing on
 //     against a state the client can no longer trust.
+//  3b. The run leaves as ONE request (2026-08-20) — the per-round loop it replaced is exactly the
+//     regression this file has to catch, and a round-counting assertion alone would not see it.
 //  4. The usual busy/destroyed guards every network action in this codebase carries.
 //  5. Prep is not offered when there is no card that could serve as the feeder.
 //  6. The chain-funded two-level run end to end, plus the depth bound that stops a third.
@@ -17,6 +19,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
+import * as log from '../../src/net/log';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 import { FUSION_MATERIAL_COUNT } from '../../src/game/meta/cardDefs';
@@ -359,6 +362,66 @@ describe('CardScene fuse panel — batch prep', () => {
     await expect(flushAsync()).resolves.toBeUndefined();
 
     expect(settled, 'onSettled must not run against a torn-down scene').toBe(false);
+    expect(priv(scene).core.bt.busy).toBe(false);
+  });
+
+  it('sends the whole run as ONE request carrying every round', async () => {
+    // The point of /cards/fuse-batch. Counting ROUNDS (as the sibling cases do) cannot tell a batch
+    // apart from the sequential loop it replaced — only counting requests can, so this case owns that.
+    const { target, cardInv } = prepInv(3, 3 * PREP_COST_PER_CARD);
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const requests: { targetId: string; materialIds: string[] }[][] = [];
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCardsBatch: async (rounds) => {
+        requests.push(rounds);
+        return mutatingFuseBatch(cardInv, calls)(rounds);
+      },
+    }));
+    openFuse(scene, target);
+    startPrep(scene);
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 3 }))!)!.action();
+    await flushAsync();
+
+    expect(requests, 'one tap ⇒ one request').toHaveLength(1);
+    expect(requests[0], 'and it carries the whole run the button advertised').toHaveLength(3);
+    // A plan is only executable as written if no card is spent twice across its rounds.
+    const spent = requests[0]!.flatMap((r) => [r.targetId, ...r.materialIds]);
+    expect(new Set(spent).size).toBe(spent.length);
+    expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel')), 'all three landed ⇒ frame popped').toBeNull();
+  });
+
+  it('reports the stop reason next to the count when a run halts partway', async () => {
+    // Half the value of a partial success is knowing it WAS partial. The count alone reads as
+    // "3 rounds asked for, 1 done" with no explanation.
+    const { target, cardInv } = prepInv(3, 3 * PREP_COST_PER_CARD);
+    const calls: { targetId: string; ids: string[] }[] = [];
+    const toastSpy = vi.spyOn(log, 'showToastMessage');
+    const scene = buildScene(baseCb(cardInv, { fuseCardsBatch: mutatingFuseBatch(cardInv, calls, 1) }));
+    openFuse(scene, target);
+    startPrep(scene);
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 3 }))!)!.action();
+    await flushAsync();
+
+    expect(toastSpy).toHaveBeenCalledWith(t('roster.fuseErr'), 'error');
+    expect(toastSpy).toHaveBeenCalledWith(t('roster.fusePrepBatchOk', { n: 1 }), 'success');
+    toastSpy.mockRestore();
+  });
+
+  it('an empty plan reaches neither the network nor the busy flag', async () => {
+    // planPrepRounds returns [] whenever the frame can no longer fund a round; doPrepBatch must treat
+    // that as "nothing to do" rather than opening a request the server would reject as an empty batch.
+    const { target, cardInv } = prepInv(2, 2 * PREP_COST_PER_CARD);
+    let requests = 0;
+    const scene = buildScene(baseCb(cardInv, {
+      fuseCardsBatch: async () => { requests++; return { ok: true as const, completed: 0 }; },
+    }));
+    openFuse(scene, target);
+    startPrep(scene);
+
+    let settled = false;
+    await priv(scene).core.doPrepBatch([], () => { settled = true; });
+    expect(requests).toBe(0);
+    expect(settled, 'and no settle callback either — nothing happened to report').toBe(false);
     expect(priv(scene).core.bt.busy).toBe(false);
   });
 });

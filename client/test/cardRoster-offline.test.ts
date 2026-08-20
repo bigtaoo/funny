@@ -15,14 +15,16 @@ import type { CardCallbacks } from '../src/scenes/CardScene';
 import type { EquipmentCallbacks } from '../src/scenes/EquipmentScene';
 import { UnitType } from '@nw/engine/types';
 
-function buildCtx(opts: { online: boolean }): {
+function buildCtx(opts: { online: boolean; api?: Partial<ApiClient> }): {
   ctx: AppCtx;
   getCardRoster: () => CardCallbacks | null;
   getEquipment: () => EquipmentCallbacks | null;
   save: { equipped: Record<string, string>; cardInv: Record<string, unknown>; inventory: { skins: string[] } };
+  adopted: () => unknown[];
 } {
   let lastCardRoster: CardCallbacks | null = null;
   let lastEquipment: EquipmentCallbacks | null = null;
+  const adopted: unknown[] = [];
   const save = {
     equipped: {} as Record<string, string>,
     cardInv: {} as Record<string, unknown>,
@@ -39,7 +41,7 @@ function buildCtx(opts: { online: boolean }): {
   const ctx: AppCtx = {
     platform: { storage: { getItem: () => null } } as unknown as AppCtx['platform'],
     views,
-    api: opts.online ? ({} as ApiClient) : undefined,
+    api: opts.online ? ((opts.api ?? {}) as ApiClient) : undefined,
     baseUrl: null,
     saveManager: {
       get: () => save,
@@ -49,6 +51,7 @@ function buildCtx(opts: { online: boolean }): {
         const key = `skin:${unitType}`;
         if (skinId) save.equipped[key] = skinId; else delete save.equipped[key];
       },
+      adoptServer: (next: unknown) => { adopted.push(next); },
     } as unknown as AppCtx['saveManager'],
     replayStore: {} as unknown as AppCtx['replayStore'],
     featureFlags: null,
@@ -64,7 +67,13 @@ function buildCtx(opts: { online: boolean }): {
     resolveWorldShard: () => {},
   };
 
-  return { ctx, getCardRoster: () => lastCardRoster, getEquipment: () => lastEquipment, save };
+  return {
+    ctx,
+    getCardRoster: () => lastCardRoster,
+    getEquipment: () => lastEquipment,
+    save,
+    adopted: () => adopted,
+  };
 }
 
 describe('createGameNav — goCardRoster offline', () => {
@@ -87,7 +96,57 @@ describe('createGameNav — goCardRoster offline', () => {
 
     await expect(cb.fuseCards('target', ['mat1', 'mat2', 'mat3', 'mat4', 'mat5']))
       .resolves.toEqual({ ok: false, key: 'roster.err.offline' });
+    await expect(cb.fuseCardsBatch([{ targetId: 'target', materialIds: ['m1', 'm2', 'm3', 'm4', 'm5'] }]))
+      .resolves.toEqual({ ok: false, key: 'roster.err.offline' });
     await expect(cb.setCardLock('c1', true)).resolves.toEqual({ ok: false, key: 'roster.err.offline' });
+  });
+
+  // The batch callback is the only place the wire response is translated for the panel — it adopts
+  // the save, decides whether the run counts as a failure, and swallows transport errors. The UI
+  // suites stub it out wholesale, so without these three cases nothing exercises that translation.
+  describe('online: the fuseCardsBatch adapter', () => {
+    const ROUNDS = [
+      { targetId: 'f1', materialIds: ['a1', 'a2', 'a3', 'a4', 'a5'] },
+      { targetId: 'f2', materialIds: ['b1', 'b2', 'b3', 'b4', 'b5'] },
+    ];
+
+    it('adopts the returned save and reports a clean run with no failure key', async () => {
+      const nextSave = { rev: 7 };
+      const { ctx, getCardRoster, adopted } = buildCtx({
+        online: true,
+        api: { fuseCardsBatch: async () => ({ completed: 2, save: nextSave }) } as unknown as Partial<ApiClient>,
+      });
+      createGameNav(ctx).goCardRoster();
+
+      await expect(getCardRoster()!.fuseCardsBatch(ROUNDS)).resolves.toEqual({ ok: true, completed: 2 });
+      expect(adopted(), 'the roster must see the post-batch save, not re-fetch it').toEqual([nextSave]);
+    });
+
+    it('a run that halted is still ok — the count stands, with a key explaining the stop', async () => {
+      const { ctx, getCardRoster, adopted } = buildCtx({
+        online: true,
+        api: {
+          fuseCardsBatch: async () => ({ completed: 1, failed: { index: 1, code: 'CARD_LOCKED', error: 'x' }, save: {} }),
+        } as unknown as Partial<ApiClient>,
+      });
+      createGameNav(ctx).goCardRoster();
+
+      await expect(getCardRoster()!.fuseCardsBatch(ROUNDS))
+        .resolves.toEqual({ ok: true, completed: 1, failKey: 'roster.fuseErr' });
+      expect(adopted(), 'partial progress still changed the roster').toHaveLength(1);
+    });
+
+    it('a transport failure is a plain error, and nothing is adopted from it', async () => {
+      const { ctx, getCardRoster, adopted } = buildCtx({
+        online: true,
+        api: { fuseCardsBatch: async () => { throw new Error('offline mid-flight'); } } as unknown as Partial<ApiClient>,
+      });
+      createGameNav(ctx).goCardRoster();
+
+      await expect(getCardRoster()!.fuseCardsBatch(ROUNDS))
+        .resolves.toEqual({ ok: false, key: 'roster.err.generic' });
+      expect(adopted()).toEqual([]);
+    });
   });
 
   it('skin equip works offline (client-sync write, not a server call)', () => {
