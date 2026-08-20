@@ -41,7 +41,7 @@ function getDrawOrderReversed(): readonly string[] {
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-class RotateBoneCommand implements Command {
+export class RotateBoneCommand implements Command {
   readonly label: string;
 
   constructor(

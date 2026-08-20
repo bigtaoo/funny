@@ -7,8 +7,11 @@
 // rather than hand-rolled coordinates, so it doesn't hardcode bone-geometry constants that
 // belong to Skeleton.ts.
 import { describe, it, expect } from 'vitest';
-import { pointToSegmentDist, findBoneAt, unwrapAngleStep } from '../src/interaction/InteractionController';
+import { pointToSegmentDist, findBoneAt, unwrapAngleStep, RotateBoneCommand } from '../src/interaction/InteractionController';
 import { Skeleton } from '../src/skeleton/Skeleton';
+import { EventBus, type AppEvents } from '../src/core/EventBus';
+import { AppState } from '../src/core/AppState';
+import { AnimationController } from '../src/animation/AnimationController';
 
 const DEG = Math.PI / 180;
 
@@ -40,6 +43,96 @@ describe('unwrapAngleStep', () => {
       prev = wrapped;
     }
     expect(accumDeg).toBeCloseTo(720, 5);
+  });
+});
+
+// RotateBoneCommand is where a drag's accumulated `dragAccumDeg` (see unwrapAngleStep
+// above) actually gets written into a keyframe on mouseUp. It has zero PIXI/DOM
+// dependency — same real-instance approach as editorProject.test.ts — so it's exercised
+// directly rather than only implicitly through IO round-trip tests.
+function makeAnimCtrl() {
+  const bus = new EventBus<AppEvents>();
+  const state = new AppState(bus);
+  const animCtrl = new AnimationController(bus, state);
+  return { animCtrl, state };
+}
+
+describe('RotateBoneCommand', () => {
+  it('does nothing when there is no current clip selected', () => {
+    const { animCtrl } = makeAnimCtrl();
+    const cmd = new RotateBoneCommand(animCtrl, 'spine', 0, 90, 0, false);
+    expect(() => cmd.execute()).not.toThrow();
+    expect(animCtrl.currentClip).toBeNull();
+  });
+
+  it('creates a keyframe at the given time when none exists yet, holding only the rotated bone', () => {
+    const { animCtrl } = makeAnimCtrl();
+    animCtrl.createClip('idle');
+    animCtrl.selectClip('idle');
+
+    const cmd = new RotateBoneCommand(animCtrl, 'spine', 0, 45, 0, /* hadKeyframe */ false);
+    cmd.execute();
+
+    const kf = animCtrl.currentClip!.keyframes.find(k => k.time === 0);
+    expect(kf).toBeDefined();
+    expect(kf!.bones.get('spine')?.rotation).toBe(45);
+  });
+
+  it('patches only the target bone on an existing keyframe, leaving sibling bones untouched', () => {
+    const { animCtrl } = makeAnimCtrl();
+    animCtrl.createClip('idle');
+    animCtrl.selectClip('idle');
+    animCtrl.addKeyframeAt(0, new Map([
+      ['spine', { rotation: 10 }],
+      ['head',  { rotation: -5 }],
+    ]));
+
+    const cmd = new RotateBoneCommand(animCtrl, 'spine', 10, 400, 0, /* hadKeyframe */ true);
+    cmd.execute();
+
+    const kf = animCtrl.currentClip!.keyframes.find(k => k.time === 0)!;
+    expect(kf.bones.get('spine')?.rotation).toBe(400);
+    expect(kf.bones.get('head')?.rotation).toBe(-5);
+  });
+
+  it('round-trips a large, unbounded rotation unchanged — no wrap/clamp on write', () => {
+    // Regression guard for the drag-angle fix: a multi-turn drag can legitimately
+    // accumulate past 360°, and that raw value must survive storage untouched.
+    const { animCtrl } = makeAnimCtrl();
+    animCtrl.createClip('idle');
+    animCtrl.selectClip('idle');
+
+    const cmd = new RotateBoneCommand(animCtrl, 'spine', 22, 758.7, 0, false);
+    cmd.execute();
+
+    expect(animCtrl.currentClip!.keyframes[0].bones.get('spine')?.rotation).toBe(758.7);
+  });
+
+  it('undo removes the keyframe it created when there was none before', () => {
+    const { animCtrl } = makeAnimCtrl();
+    animCtrl.createClip('idle');
+    animCtrl.selectClip('idle');
+
+    const cmd = new RotateBoneCommand(animCtrl, 'spine', 0, 45, 0, /* hadKeyframe */ false);
+    cmd.execute();
+    expect(animCtrl.currentClip!.keyframes).toHaveLength(1);
+
+    cmd.undo();
+    expect(animCtrl.currentClip!.keyframes).toHaveLength(0);
+  });
+
+  it('undo restores the previous rotation on a keyframe that already existed', () => {
+    const { animCtrl } = makeAnimCtrl();
+    animCtrl.createClip('idle');
+    animCtrl.selectClip('idle');
+    animCtrl.addKeyframeAt(0, new Map([['spine', { rotation: 10 }]]));
+
+    const cmd = new RotateBoneCommand(animCtrl, 'spine', 10, 400, 0, /* hadKeyframe */ true);
+    cmd.execute();
+    cmd.undo();
+
+    const kf = animCtrl.currentClip!.keyframes.find(k => k.time === 0)!;
+    expect(kf.bones.get('spine')?.rotation).toBe(10);
   });
 });
 
