@@ -23,6 +23,13 @@ import {
   citySpriteTiles,
   cityGroundFwdPx,
   cityPlotMaskPoints,
+  type TileType,
+  EMBLEM_KEYS,
+  isEmblemKey,
+  EMBLEM_COLORS,
+  isEmblemColor,
+} from '../src/slg/core';
+import {
   isCityGroundTile,
   tileFeatureBuilding,
   resMotifJitter,
@@ -34,12 +41,7 @@ import {
   RES_LEVEL_LABEL_MIN_TP,
   RES_MOTIF_SIZE_FRAC,
   RES_MOTIF_FOG_ALPHA,
-  type TileType,
-  EMBLEM_KEYS,
-  isEmblemKey,
-  EMBLEM_COLORS,
-  isEmblemColor,
-} from '../src/slg/core';
+} from '../src/slg/tileRender';
 
 describe('SlgError', () => {
   it('carries the ErrorCode value and defaults its message to the code name', () => {
