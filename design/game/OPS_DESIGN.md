@@ -67,7 +67,7 @@ interface AdminAccountDoc {
 | `analytics.view` 数据分析 | ✓ | ✓ | – | ✓ |
 | `player.lookup` 查玩家档案 | ✓ | ✓ | ✓ | – |
 | `player.password_reset` 重置玩家密码（无联系方式时的支持工具，仅超管） | ✓ | – | – | – |
-| `anticheat.view` 查反作弊审核队列（S9-7） | ✓ | ✓ | – | – |
+| `anticheat.view` 查反作弊审核队列（S9-7）+ C3 hash 不一致对局表 + C4 可疑 PvE 账号表 | ✓ | ✓ | – | – |
 | `anticheat.action` 手动封禁/解封账号（S4-4，玩家查询详情页内联按钮） | ✓ | ✓ | – | – |
 | `comp.initiate.single` 发起个人补偿 | ✓ | ✓ | ✓ | – |
 | `comp.initiate.global` 发起全服补偿 | ✓ | ✓ | – | – |
@@ -214,6 +214,10 @@ POST /admin/accounts/{accountId}/unban               → { ok }                 
 GET  /admin/anticheat/reviews?accountId=&status=&limit=  → { reviews: [...] }          // anticheat.view，kind='pvp_overclaim'|'pve_reject'|'coin_anomaly'
 POST /admin/anticheat/reviews/{id}/resolve  { accountId, resolution }  → { ok }        // anticheat.action：resolution='dismissed'|'banned'；banned 内部走上面同一条 ban 端点，全库仅此一条封号执行路径
 > **金币异常（2026-07-26）**：`kind='coin_anomaly'` 由 metaserver 每 24h 一次的离线扫描产生（`coinAnomalyAudit.ts`），向 commercial 查询「昨天」这个 UTC 自然日里，哪些账号从非充值来源（`ledger.reason !== 'recharge'`）净入账超过 `COIN_ANOMALY_DAILY_THRESHOLD`（3000）金币，逐个写入本队列（`_id=coin:{accountId}:{dayKey}`，天然幂等，重复扫描不会重复入队）。不自动封号，`详情`列展示 `dayKey`/`nonRechargeGain`/`threshold`，人工判定后走上面同一条 dismiss/ban 流程。
+
+# 反作弊两张只读信号表（C3/C4，anticheat.view）——无裁定半边，处置一律走上面那条手动 ban
+GET  /admin/mismatches                               → { mismatches: [...] }           // 24h 内 `matches.hashMismatch=true`（双端 hash 分歧且裁判未能裁决）的对局，meta 侧封顶 200 行；`players` 原样带归档时的 displayName/publicId 快照
+GET  /admin/suspicious-pve                           → { accounts: [...] }             // `accounts.flags.pveWarnings > 0` 的账号，按次数倒序封顶 200 行；该计数自 2026-07-18 起纯属审核信号（不再触发封号）
 
 # 补偿工单
 POST /admin/comp/tickets       { scope, target, mail, reason }  → { ticketId }        // comp.initiate.*
@@ -388,6 +392,26 @@ admin 后端（G7）已全部就绪；补完 `tools/ops` 对应的两个前端�
 - **三条规则与 commercial 的 `PromoService` 逐条对齐**（页面读到的状态必须等于玩家兑换时真实发生的事）：①码存储前 `trim().toUpperCase()`，表单实时回显「stored as XXX」，免得运营输了小写、看到大写、再怀疑玩家该输哪个；②`promoRedeem` 的校验顺序是**先过期、后超量**，所以既过期又超量的码标 `Expired` 而不是 `Exhausted`（标错会让运营查错方向）；③`$inc redeemed` 是 best-effort（并发下允许超 1 个），故 `redeemed > totalLimit` 也必须读作 Exhausted。纯函数 `normalizePromoCode` / `validatePromoDraft` / `promoStatus` / `redemptionText` 单测覆盖（`tools/ops/test/promo.test.ts` 22 例），`pagePromo` 本身建 DOM 不测。
 - **顺手修掉一个被假 mock 掩盖的真 bug**：admin 的 `PromoCodeView` 声明 `code`，但 commercial 的 `listPromoCodes` 是把 `promoCodes` 文档**原样**返回的（`_id` 就是码），meta 只做转发——真实响应里根本没有 `code` 字段。`clients-adminManage.test.ts` 里那条 list 用例喂的 mock 恰好是接口**声明**的形状（`{ code }`），于是它跟被测代码的类型互相印证、什么都没证明。现在改名落在 `HttpPromoClient.list()`（`_id → code`；commercial 的线上形状被它自己的路由用例钉住，不动），mock 换成真实文档形状并补一条"绝不把 `_id` 漏给下游"的回归用例。若非跑真实进程验证，页面的 Code 一列会是空的而测试全绿。
 - **验证**：admin httpRoutes e2e 50→56 例（create→list 往返/大写归一化/`promo.create` 审计 actor+summary/重复码 409/三种 400/support 403 且未落库/ops 角色可发码），其中促成把静态 `stubPromo` 换成有状态的 `FakePromo`；admin `clients-adminManage` 13→15 例；ops 前端 86→108 例（同日两节各自 +22/+19 的基础上）。admin 全量 219 例、`tools/ops` 108 例全绿，`tsc -b admin` + ops `tsc --noEmit` 干净。起**真实** commercial+meta+admin+ops 四进程（独立库 `nw_promo_verify`），在页面上完成：小写 `autumnfest` 发码 → 列表出现 `AUTUMNFEST`（带 expiry/上限/备注）→ 重复提交得到译好的「already exists (codes are unique, case-insensitive)」而非裸 `BAD_REQUEST` → 四种状态（Active / Exhausted 1⁄1 / Expired / 无限 ∞）同屏可见 → 用页面发的 `WINTERGIFT` 真跑一次玩家兑换（+100 coins，同玩家二次 `PROMO_ALREADY_USED`），回到页面 Redeemed 变 `1 / ∞`；support 账号 `/admin/me` 无 `promo.manage`、两条路由均 403；`GET /admin/audit` 六条 `promo.create` 齐全。（本机 Browser pane 不合成画面、截图接口超时，故以 `read_page`/`get_page_text` 逐项核对文本与结构。）
+
+### 反作弊两张信号表（C3/C4 补顶层，2026-08-20）
+
+同日兑换码那节（上一节）修的是 batch G 的**第一个**误判，这节修剩下的两个——同一次提交（`6942481a`）里被同一条理由（「no ops-frontend page calls any of them」）删掉的 `GET /admin/mismatches` 与 `GET /admin/suspicious-pve`，同样保留了 service/client 层「in case they're wired up later」。三个误判成因完全一致，故不再重复推演自锁环的部分，只记双向核查的结论和这次的实现取舍。
+
+**双向核查（batch G 当初跳过的那一步）**——判死一个端点必须同时问「数据还在产吗」和「这个特性还算交付了吗」，只看 admin 层的调用方是不够的：
+
+| | 数据生产端 | 文档口径 | 有无替代面 |
+|---|---|---|---|
+| C3 `/admin/mismatches` | **在产**。`metaserver/src/internal/matchReport/reportRoute.ts` 每局都算 `hashMismatch = !hash_ok && !cheat`，命中就写 `matches.hashMismatch=true`；这类争议局**刻意不打 `expireAt`**（其余对局 7 天 TTL），注释写明是「for ops review + anti-cheat audit trail」 | `META_TASKS.md` S4-2 已 `[x]`，验收写「mismatch 落 `matches.hashMismatch` + admin 告警」；归档 PARALLEL_DEV_PLAN C3 点名 `GET /admin/mismatches` 就是那个「告警」面 | **无**。反作弊审核队列的 `kind` 只有 `pvp_overclaim`/`pve_reject`/`coin_anomaly`，从来不含 mismatch；全库没有第二个地方列争议对局 |
+| C4 `/admin/suspicious-pve` | **在产**。`metaserver/src/service/pve/verify.ts` 每次 rejected 都 `$inc flags.pveWarnings` | `ACCOUNT_DESIGN.md` §C4+S4-4「2026-06-29 完整落地」清单里就列着 `GET /admin/suspicious-pve`（前端入口） | **部分重叠但不等价**，见下 |
+
+C4 这条值得单独说清楚，因为它是三个误判里唯一有理由犹豫的：`pve_reject` 审核队列确实可见，且每条记录都带 `rejectCountAfter`。但队列是**逐事件**的、默认只筛 `status='open'`，一条记录被裁定后就从视图里消失——**跨已裁定记录的累犯**在全库任何地方都看不到了，而这正是 `flags.pveWarnings` 这个累计计数存在的意义：自 2026-07-18 取消三振自动封号后它「纯属展示/审核信号」（`accountDocs.ts` 注释原话），也就是说**这张表是它唯一的读者**——路由一删，meta 每次递增的这个数字全库无人可读。反过来看，走 (b) 删净的收益也很薄：`SuspiciousPveClient` 本身必须留（`banAccount`/`unbanAccount` 是全库唯一一条封号执行路径，玩家查询页、`resolveAntiCheatReview`、SLG 交易审计工单三处都在用），`anticheat.view` 能力点也必须留（审核队列在用），真正能删的只有 `listSuspiciousPve` 一个方法。
+
+- **admin 路由**：两条按原样恢复（`requireCap(actor, 'anticheat.view')`、响应体分别是 `{ mismatches }` / `{ accounts }`），落在 `httpApi/trustSafetyRoutes.ts` 而**不是**拆分前的物理位置（`monitorRoutes` 对应的那段 if-chain）——同一个能力门、同一个运营人一次看三张表，按 2026-08-10 拆分时定的「按域分组，物理顺序无意义（路径集合不重叠）」口径归到这里。
+- **`MismatchRow.players` 补 `displayName?`/`publicId?`**：meta 是把整个 `players` 数组投影出来的，`MatchDoc.players` 里本来就有归档时的身份快照——原类型只声明 `{side, accountId}`，属于「类型比线上响应窄」，页面照此渲染就只能显示裸 accountId，而可读的姓名/公开 id 就在响应里躺着没人用。这是兑换码那节 `PromoCodeView.code` 同一类的类型-线上不符，只是方向相反（那边是声明了线上没有的字段），修法一致：以线上真实形状为准，并补一条「身份快照必须原样穿透」的客户端回归用例。
+- **前端落在现有 `pageSuspicions`（`tools/ops/src/pages/suspicions.ts`，115→275 行）而非两个新页**：两条路由和审核队列共用 `anticheat.view`，导航里再加两个近乎同名的 anticheat 项只会变噪声。页面结构改成 `h2 Anti-cheat` + 三节 `h3`（Review queue / Hash mismatches (last 24 h) / Suspicious PvE accounts），导航标签相应从「Anti-Cheat Review」改为「Anti-Cheat」。三节各自加载、各自报错——meta 某一条不可达不能把另两节一起清空。
+- **mismatch 一节不只是把 200 行摊平**：`BOTSVC_DESIGN.md` §8 记着 bot 压测时 `mismatch` 大量来自单事件循环饿死导致的失同步，也就是说这张表的行数天然掺着「一次基础设施故障」而非「一批作弊者」。因此表上方加一行 `mismatchRepeats()` 汇总——只列在窗口内出现于**多于一局**的账号（按局计重，同一局里出现两次仍算一次），运营先看这行就能分清「一次 desync 风暴」和「某个账号反复出现」；时序表本身反而答不了这个问题。
+- **PvE 一节的 `pveWarningLevel()` 对齐服务端阈值**：`>= 3`（`PVE_REJECT_BAN_THRESHOLD`，前端按 ops 惯例本地镜像常量并注明出处）标红，与 meta 给同一账号的审核记录打 `severity:'high'` 用的是同一条线——两节要是各标一套，运营会得到两份互相矛盾的「谁是累犯」。行内动作只有 `anticheat.action` 可见的 Ban/Unban，复用玩家查询页那条既有端点（不新增封号路径）。
+- **验证**：admin `httpRoutes.e2e` 56→59 例（C3 整行原样返回含身份快照 / C4 列表 + 经 ban 端点封禁后 `banned` 翻转 / support 两条均 403），过程中把返回空数组的 `stubMismatches`、`FakeSuspiciousPve.listSuspiciousPve` 换成真实形状（空数组无论路由怎么写都能过，等于没测）；`clients-lookupAndQueue` +1 例（身份快照穿透）；ops 前端 119 例（108→119，新增 `mismatchPlayerLabel`/`mismatchRepeats`/`pveWarningLevel` 单测）。admin 全量 223 例、`tools/ops` 119 例全绿，`tsc -b shared admin` + ops `tsc --noEmit` 干净，ops 生产 webpack 构建干净。
 
 ### 加固 / 优化（2026-06-16，第二轮）
 

@@ -21,7 +21,7 @@ const NAV: NavItem[] = [
   { id: 'analytics', label: 'Analytics', cap: 'analytics.view', render: pageAnalytics },
   { id: 'pvp-balance', label: 'PvP Balance', cap: 'analytics.view', render: pagePvpBalance },
   { id: 'player', label: 'Player Lookup', cap: 'player.lookup', render: pagePlayer },
-  { id: 'suspicions', label: 'Anti-Cheat Review', cap: 'anticheat.view', render: pageSuspicions },
+  { id: 'suspicions', label: 'Anti-Cheat', cap: 'anticheat.view', render: pageSuspicions },
   { id: 'reports', label: 'UGC Reports', cap: 'reports.view', render: pageReports },
   { id: 'appeals', label: 'Player Appeals', cap: 'appeals.view', render: pageAppeals },
   { id: 'feedback', label: 'Player Feedback', cap: 'feedback.view', render: pageFeedback },

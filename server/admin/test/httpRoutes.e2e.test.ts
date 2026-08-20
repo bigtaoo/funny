@@ -94,12 +94,34 @@ class FakeAntiCheat implements AntiCheatClient {
     return { ok: true };
   }
 }
-const stubMismatches: MismatchClient = { available: true, listMismatches: async () => [] };
+// Real-shaped rows rather than the empty list this stub used to return: `players` is MatchDoc.players
+// verbatim, so it carries the archive-time identity snapshot, and the routes below assert that the whole
+// row reaches the ops frontend (an empty list would pass no matter what the route did with it).
+const stubMismatches: MismatchClient = {
+  available: true,
+  listMismatches: async () => [
+    {
+      roomId: 'room-desync-1',
+      mode: 'ranked',
+      players: [
+        { side: 0, accountId: 'acc-a', displayName: 'Alice', publicId: '111111111' },
+        { side: 1, accountId: 'acc-b', displayName: 'Bob', publicId: '222222222' },
+      ],
+      reason: 'mismatch',
+      ts: 42,
+    },
+  ],
+};
 const stubPvpCardStats: PvpCardStatsClient = { available: true, listPvpCardStats: async () => [{ cardId: 'c1', games: 10, wins: 6 }] };
 class FakeSuspiciousPve implements SuspiciousPveClient {
   available = true;
   banned = new Set<string>();
-  async listSuspiciousPve() { return []; }
+  // `banned` is read back into the roster so the ban route and the C4 list can be shown to agree — the
+  // roster's only action is that same manual ban, and an operator who bans from it must see it take.
+  rows = [
+    { _id: 'acc-flagged', displayName: 'Flagged', publicId: '333333333', pveWarnings: 4, createdAt: 7 },
+  ];
+  async listSuspiciousPve() { return this.rows.map((r) => ({ ...r, banned: this.banned.has(r._id) })); }
   async banAccount(accountId: string) { this.banned.add(accountId); return { ok: true }; }
   async unbanAccount(accountId: string) { this.banned.delete(accountId); return { ok: true }; }
 }
@@ -464,6 +486,40 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
     it('support role lacks anticheat.view → 403', async () => {
       const r = await call(csToken, 'GET', '/admin/anticheat/reviews');
       expect(r.status).toBe(403);
+    });
+    // Both routes below were deleted on 2026-07-28 for having no ops caller and restored on 2026-08-20;
+    // these are the tests that were missing then, and would have made the deletion fail loudly now.
+    it('C3 mismatch list: returns the rows verbatim, identity snapshot included', async () => {
+      const r = await call(rootToken, 'GET', '/admin/mismatches');
+      expect(r.status).toBe(200);
+      expect(r.json.mismatches).toEqual([
+        {
+          roomId: 'room-desync-1',
+          mode: 'ranked',
+          players: [
+            { side: 0, accountId: 'acc-a', displayName: 'Alice', publicId: '111111111' },
+            { side: 1, accountId: 'acc-b', displayName: 'Bob', publicId: '222222222' },
+          ],
+          reason: 'mismatch',
+          ts: 42,
+        },
+      ]);
+    });
+    it('C4 suspicious-PvE roster: lists warning counts, and reflects a ban made through the ban route', async () => {
+      const before = await call(rootToken, 'GET', '/admin/suspicious-pve');
+      expect(before.status).toBe(200);
+      expect(before.json.accounts).toEqual([
+        { _id: 'acc-flagged', displayName: 'Flagged', publicId: '333333333', pveWarnings: 4, banned: false, createdAt: 7 },
+      ]);
+      expect((await call(rootToken, 'POST', '/admin/accounts/acc-flagged/ban')).status).toBe(200);
+      const after = await call(rootToken, 'GET', '/admin/suspicious-pve');
+      expect(after.json.accounts[0]).toMatchObject({ _id: 'acc-flagged', banned: true });
+      // Leave the shared fake as it was found — the ban/unban test in playerRoutes asserts on this set.
+      expect((await call(rootToken, 'POST', '/admin/accounts/acc-flagged/unban')).status).toBe(200);
+    });
+    it('both C3/C4 lists are gated on anticheat.view, which support lacks → 403', async () => {
+      expect((await call(csToken, 'GET', '/admin/mismatches')).status).toBe(403);
+      expect((await call(csToken, 'GET', '/admin/suspicious-pve')).status).toBe(403);
     });
     it('UGC report queue: list then resolve (upheld → applies enforcement penalty)', async () => {
       const list = await call(rootToken, 'GET', '/admin/reports?status=open');

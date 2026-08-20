@@ -24,6 +24,7 @@ import type {
   FeedbackView,
   FlagRollout,
   LiveStats,
+  MismatchView,
   ModerationWordlistView,
   PaddleEventView,
   PlayerProfile,
@@ -36,6 +37,7 @@ import type {
   SlgShopItemOverrideDoc,
   SlgShopItemRow,
   SlgWorldSummary,
+  SuspiciousPveView,
   TradeAuditSnapshot,
   TradeAuditTicketView,
   TrendPoint,
@@ -225,6 +227,18 @@ export class Api {
   /** Human resolution of a review record: dismiss (no action) or ban (goes through the same manual ban path as Player Lookup). */
   async resolveAntiCheatReview(id: string, accountId: string, resolution: 'dismissed' | 'banned'): Promise<void> {
     await this.req('POST', `/admin/anticheat/reviews/${encodeURIComponent(id)}/resolve`, { accountId, resolution });
+  }
+
+  // —— Read-only anti-cheat signal lists (C3/C4, anticheat.view) ——
+  /** Matches whose two clients disagreed on the final state hash and that the peer judge could not adjudicate (last 24 h). */
+  async mismatches(): Promise<MismatchView[]> {
+    const r = await this.req<{ mismatches: MismatchView[] }>('GET', '/admin/mismatches');
+    return r.mismatches;
+  }
+  /** Accounts with at least one rejected PvE spot-check, most-flagged first. */
+  async suspiciousPve(): Promise<SuspiciousPveView[]> {
+    const r = await this.req<{ accounts: SuspiciousPveView[] }>('GET', '/admin/suspicious-pve');
+    return r.accounts;
   }
 
   // —— UGC report review queue (CONTENT_MODERATION_DESIGN.md CM9/CM11) ——

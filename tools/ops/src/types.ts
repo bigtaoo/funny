@@ -163,6 +163,34 @@ export interface AntiCheatReviewView {
   resolution?: 'dismissed' | 'banned';
 }
 
+/**
+ * One unadjudicated hash-mismatch match (C3; mirror of admin's `MismatchRow` = a `matches` doc with
+ * `hashMismatch: true`). Read-only: there is nothing to resolve on a match, only players to look at.
+ * `displayName`/`publicId` are identity snapshots taken when the match was archived, so a later rename
+ * is not reflected — and either may be absent on an old row.
+ */
+export interface MismatchView {
+  roomId: string;
+  mode: string;
+  players: { side: number; accountId: string; displayName?: string; publicId?: string }[];
+  reason: string;
+  ts: number;
+}
+
+/**
+ * One account carrying rejected PvE spot-checks (C4; mirror of admin's `SuspiciousPveRow`). `_id` is the
+ * accountId. `pveWarnings` has not been a ban trigger since 2026-07-18 — it is a review signal, and the
+ * only action available on a row is the same manual ban Player Lookup offers.
+ */
+export interface SuspiciousPveView {
+  _id: string;
+  displayName?: string;
+  publicId?: string;
+  pveWarnings: number;
+  banned: boolean;
+  createdAt: number;
+}
+
 /** UGC report record (CONTENT_MODERATION_DESIGN.md CM9/CM11; mirror of socialsvc's ReportDoc). */
 export interface ReportView {
   _id: string;

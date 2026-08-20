@@ -77,6 +77,26 @@ describe('HttpMismatchClient', () => {
     expect(await new HttpMismatchClient('http://meta', 'k').listMismatches()).toEqual([{ roomId: 'r1' }]);
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://meta/internal/mismatches');
   });
+
+  // Meta projects the whole `players` array, so the archive-time displayName/publicId snapshot is on the
+  // wire. Fed a real-shaped row here (not the interface's minimum) because the ops table names players
+  // from those two fields — a client that quietly narrowed `players` would empty that column silently.
+  it('passes the players identity snapshot through untouched', async () => {
+    const matches = [
+      {
+        roomId: 'r2',
+        mode: 'ranked',
+        players: [
+          { side: 0, accountId: 'acc-a', displayName: 'Alice', publicId: '111111111' },
+          { side: 1, accountId: 'acc-b' },
+        ],
+        reason: 'mismatch',
+        ts: 9,
+      },
+    ];
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { matches } });
+    expect(await new HttpMismatchClient('http://meta', 'k').listMismatches()).toEqual(matches);
+  });
 });
 
 describe('HttpPvpCardStatsClient', () => {
