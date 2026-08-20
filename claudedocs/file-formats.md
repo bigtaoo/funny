@@ -50,3 +50,13 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 ZIP 内含 `editor.json`（v1，动画+绑定+挂点+编辑器状态）+ `images/*.png`（各骨骼原始 PNG，无损）
 
 保存用 File System Access API（`showSaveFilePicker`），Firefox 退回 `<a download>`。
+
+## `client/src/assets` 的 png —— 必须是"发布态"，可直接核查
+
+**约定**：`art/<category>/<name>/*` 是画师原始母版（`.xcf`/超大 `.png`，永不进包，见 ASSET_PACKAGING §1）；`client/src/assets/**/*.png` 必须是**已按母版导出、已压缩、可以直接发布**的最终字节——不是"顺手从 art/ 复制一份"。webpack 的 `asset/resource` 规则（`client/webpack.config.js:76`）只是原样拷贝，不接 imagemin/pngquant/oxipng 之类的压缩步骤，`client/src/assets` 里放什么字节，产物就是什么字节，压缩这一步必须在导入前的处理脚本里做完。
+
+**兵种卡图**（2026-08-20 落地）：`art/scripts/exportUnitCardArt.mjs` 从 `art/units/<name>/*.png` + `art/skins/<name>/<name>.png` 母版重新导出 `client/src/assets/units/*.png`——用 sharp（已在 `client/node_modules` 里，vendored libimagequant）量化到 ≤256 色调色板 PNG（`quality:90`，比默认 100 再挤掉一截，medic/runner 这类头像省 10-25%；这批线稿+交叉排线风格的立绘容错高，quality:90 视觉上零差异，已逐张肉眼比对过），效果/压缩都拉满（`effort:10`/`compressionLevel:9`）。
+
+分辨率上限按真实展示尺寸分两档核查过：本体卡图（`UNITS`）largest 用法是 `GachaScene` 抽卡揭示卡（portrait 常规 ~648 逻辑 px，宽屏桌面边界情况 ~1150px），封 `2200px`——现有母版都没超过，这批的省字节几乎全来自换编码方式而非缩分辨率；`archer/infantry/shieldbearer` 此前是从母版原样复制、从未处理过，收益最大（60-86%），其余单位早年已手工量化过一轮，字节数基本打平（±5% 内）。皮肤（`SKINS`）只在 `ShopScene` 换装购买卡出现，是 ~300px 见方的 contain-box，从来没有揭示卡那种大图待遇，封 `900px`（300×3x DPR）——几个母版（756-940px 原生）因此被裁到 900，取代了各皮肤此前互不一致、未留文档的手工缩放（560-940px 不等，比例从 0.6 到 1.0 都有），`skin_shieldbearer` 因为原来手工缩得比 900 更小，按统一政策重导出后字节数略增（+21%），但换来的是"分辨率上限有文档、可推导"，而不是"当年不知道谁裁的"。
+
+**改母版后重新导出**：改完 `art/units/<name>/` 或 `art/skins/<name>/` 下的立绘，跑一遍 `node art/scripts/exportUnitCardArt.mjs`（全量重导出全部 12 兵种 + 6 皮肤，无 CLI 参数），再肉眼核对输出（该脚本会打印每张的 前/后 字节数 + 调色板/真彩两种编码各自的大小，方便判断该单位是否吃量化）。新增兵种/皮肤时记得把它的母版路径加进脚本顶部的 `UNITS`/`SKINS` 映射。
