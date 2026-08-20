@@ -1,6 +1,6 @@
 # 面板边框 AI 化 + 九宫装配 — Prompt 文档
 
-> 创建：2026-08-20 · 状态：**v1 已出图并打回（§3.3），v2 prompt 待出图**
+> 创建：2026-08-20 · 状态：**v1/v2/v3 三版出图全部打回；建议改走"程序生成一次 + 九宫装配"，待拍板（§3.4）**
 > 配套代码（改动落点）：[`client/src/render/sketchUi.ts`](../../client/src/render/sketchUi.ts) 的 `sketchPanel` / `sketchButton` / `sketchAccentBar`
 > 美术总纲：[`art-direction.md`](art-direction.md) §0（资产分工）/ §6.2（抠白底管线）· [`art-direction-map-ui.md`](art-direction-map-ui.md) §7.5（按钮与菜单 —— 本次要**修订**其中一条口径，见下方 §1）
 > 同类文档（管线沿用）：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（批 1–4）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md) · [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)
@@ -98,36 +98,40 @@
 
 一张图同时供出 4 个角块 + 4 条长边条（打包脚本切，见 §4），**style 一致性因此免费**——四角和四边出自同一支笔、同一次落笔。
 
-### 3.1 Prompt（v2 候选 —— v1 打回后重写，见 §3.3）
+### 3.1 Prompt（v3 候选 —— v2 打回后只改转角标定和抖动的"次数/波长"，见 §3.3）
 
 ```
 A single large rectangle border hand-drawn in dark ink on a clean white sheet of
 paper, filling most of the frame with a generous even white margin on all four
 sides, and nothing else in the image at all.
 
-THE CORNERS. Each of the four corners is a turn the hand rounded as it went, not
-a sharp point and not a drafted arc: the line curves through the corner over a
-radius of roughly two to three times the line's own thickness, so the turn reads
-as visibly rounded rather than pointed. The four corners are rounded by
-noticeably DIFFERENT amounts from one another — one turn tighter and almost
-angular, another looser and wider, the other two somewhere between — never four
-matching arcs of the same radius, never the even uniform corner radius of a
-printed box or a user-interface panel or a shape drawn round a template, coin, or
-compass. On one or two of the four corners only, the pen carried a little past
-the turn and left a short stub tail sticking out beyond the corner, no longer
-than twice the line's thickness. The ink runs a touch heavier through each turn
-where the hand slowed, but only a touch — no big round blot or blob at any
-corner, nothing that reads as a dot, rivet, screw head, or tack.
+THE CORNERS. Every one of the four corners is a turn the hand rounded as it went
+— not one of them is a sharp point, and not one of them is a wide sweeping curve.
+Each turn rounds over a radius of between two and three and a half times the
+line's own thickness: small enough that the corner still reads as a corner, large
+enough that it is clearly not pointed. Within that narrow range the four differ
+from one another — the tightest about twice the line thickness, the loosest about
+three and a half times, the other two in between — so no two corners match, but
+none of them falls outside the range. Do not leave any corner almost square, and
+do not let any corner balloon into a long arc that eats into the sides. On one or
+two of the four corners only, the pen carried a little past the turn and left a
+short stub tail sticking out beyond the corner, no longer than twice the line's
+thickness. The ink runs a touch heavier through each turn where the hand slowed,
+but only a touch — no big round blot or blob at any corner, nothing that reads as
+a dot, rivet, screw head, or tack.
 
-THE FOUR SIDES. The sides run horizontally and vertically overall — the top and
-bottom stay level end to end, the left and right stay upright end to end, with no
-sag, bow, droop, lean, or taper to any side — but no side is a straight line. Each
-side visibly wanders off a straight path and back again: at its widest the line
-strays about two to three times its own thickness away from true, and each such
-excursion spans roughly five to ten times the line's thickness before it comes
-back, so the whole side reads as a long slow hand-drawn waver, an unhurried
-rolling swell, NOT as a tight high-frequency tremble and NOT as a sharp zigzag
-with angular kinks. The line's thickness also swells and thins unevenly along its
+THE FOUR SIDES. Each side stays level over its whole length — the top and bottom
+horizontal end to end, the left and right upright end to end — with NO long slow
+bow, sag, droop, lean, arc, or taper: a side must never wander away from level
+over a long stretch before coming back. Within that, no side is a straight line
+either. Each side is covered end to end by MANY separate small excursions — at
+least twenty along each side — where the line strays off true and returns: each
+single excursion reaches about two to three times the line's own thickness away
+from true at its widest, and completes and comes back within roughly five to ten
+times the line's thickness of travel along the side. The result reads as a busy
+hand-drawn waver repeating the whole way along, NOT as one or two big smooth
+curves bending the whole side, NOT as a tight fine tremble, and NOT as a sharp
+angular zigzag. The line's thickness also swells and thins unevenly along its
 length, the ink runs darker where the pen slowed and lighter where it sped up, and
 in a few short stretches the pen was retraced so a faint second stroke runs
 alongside the first before merging back in.
@@ -136,19 +140,21 @@ Uniform flat dark ink of a single value throughout, roughly hex 2C2C2A, drawn
 with a fine ink pen by a talented teenager in a school notebook. Plain clean white
 background, absolutely empty inside the rectangle and outside it.
 
-Avoid: sharp pointed mitred corners. An even uniform corner radius, all four
-corners rounded the same amount, a corner arc drawn round a template or compass,
-the rounded-rectangle look of a printed box or an app UI panel. A big ink blot,
-blob, dot, rivet, screw head, or tack at any corner. Ruler-straight sides, sides
-drawn along a straightedge, technical or drafting precision, a tight jittery
-tremble, a sharp angular zigzag. A second inner or outer rectangle, a double
-frame, nested boxes, ruled or dashed or dotted lines. Corner ornaments,
-flourishes, scrollwork, washi tape, paper clips, staples, torn or deckled paper
-edges, folded corners. Any text, letters, numbers, handwriting, labels, signature,
-watermark. Any hatching, cross-hatching, shading, gradient, drop shadow, glow,
-texture fill, paper grain, watercolor, or color of any kind. Any perspective,
-tilt, rotation, or 3D depth. Any side that fades out, tapers to nothing, or breaks
-into a long gap. Any content inside the rectangle.
+Avoid: sharp pointed mitred corners, any corner left almost square, any corner
+rounded into a wide sweeping arc, all four corners rounded the same amount, an
+even uniform corner radius, a corner arc drawn round a template or compass, the
+rounded-rectangle look of a printed box or an app UI panel. A big ink blot, blob,
+dot, rivet, screw head, or tack at any corner. One or two big smooth bows spanning
+a whole side, a side that drifts off level and returns only once, a sagging or
+bowed or leaning side. Ruler-straight sides, sides drawn along a straightedge,
+technical or drafting precision, a tight jittery tremble, a sharp angular zigzag.
+A second inner or outer rectangle, a double frame, nested boxes, ruled or dashed
+or dotted lines. Corner ornaments, flourishes, scrollwork, washi tape, paper clips,
+staples, torn or deckled paper edges, folded corners. Any text, letters, numbers,
+handwriting, labels, signature, watermark. Any hatching, cross-hatching, shading,
+gradient, drop shadow, glow, texture fill, paper grain, watercolor, or color of
+any kind. Any perspective, tilt, rotation, or 3D depth. Any side that fades out,
+tapers to nothing, or breaks into a long gap. Any content inside the rectangle.
 ```
 
 ### 3.2 四条硬约束 —— 为什么单独拎出来
@@ -190,6 +196,78 @@ into a long gap. Any content inside the rectangle.
 **顺带否掉的一条替代路（对比图 D 行）**：只把 `pen.jitter` 从 1.1 调到 4.0、不出图。抖动量够了，但因为 `segLen=10` 没动，折角太陡，**读成锯齿 zigzag 而不是手抖**。这条路要成立必须振幅和波长一起放大（jitter 4 配 segLen 30–40），而且**它完全不解 §0 那个每秒 8.6 ms / 132k 顶点 / 13 次 flush 的性能问题**——所以只作为兜底记录，不作为方案。
 
 **同时暴露的一条认知修正**：原 §1.1 写的出图理由是"追求程序笔触画不出的细节（墨点积聚 / 纸纤维 / 笔尖分叉）"，实测站不住——**4–8px 线宽里没有像素容得下这些细节**，位图的细节优势只存在于角部，而角部一旦画得有细节就大到小面板放不下。所以本次出图的真实收益重新表述为：**① 性能（唯一只能靠这条路解的，43× CPU / 130× 顶点 / 13 次 flush → 1 次合批）；② 抖动幅度与转角形状由我们在打包时决定，不再受"程序笔触幅度不随尺寸走"的约束。** 不是"更精致"。
+
+
+**v2（2026-08-20，打回 —— 方向对，标定不对）** —— 按 §1.2 的"手绘圆转角"重写 prompt 后的第一版。1536×1024（生成器选了 3:2，不是要求的正方；不是问题，见下）。
+
+| 指标 | v1 | **v2 实测** | 要求 |
+|---|---|---|---|
+| 转角半径 / 线宽 | 尖角 + 8× 墨团 | **TL 1.3× · BR 2.3× · BL 7.6× · TR 9.5×** | 2–3.5×，四角**都**在带内 |
+| 角块尺寸（ink 4px） | 51 设计 px | **50 设计 px** | ≤20 |
+| 抖动 \|dev\| / 线宽（**去漂移后**） | 0.06× | **0.24–0.40×** | 2–3× |
+| 低频漂移 | 0.94–2.57px ✅ | **9.5–19.7px** ⚠️ | 越小越好（管线可修） |
+| 四边首尾 y 差 | 0 ~ −2.5px ✅ | −10.5 ~ +14.0px ⚠️ | 越小越好 |
+| 墨色单一（0–47 区间占比） | ✅ | **88.7%** ✅ | — |
+| 无内框 / 框内空 / 无文字 / 无阴影 | ✅ | ✅ | — |
+
+**成立的部分**：转角"圆"这件事目视和量化都成立，四角圆度确实各不相同 —— §1.2 那个"手绘圆转角"的判断是对的，方向不用回炉。
+
+**两条要重出的**：
+
+1. **半径标定散得太开（1.3×–9.5×，跨度 8.4 倍）。** "四个角圆得不一样"这条指令生效过头了：TL（1.3×）基本还是个尖角，用户抱怨的"太尖锐"在那个角上没解决；TR（9.5×）和 BL（7.6×）又大到把角块顶到 50 设计 px，跟 v1 一样装不进 30–44px 高的面板。修法是把范围写成**带**（2–3.5×）并明确"四个角**都**要落在带内"，Avoid 里同时点名"某个角接近直角"和"大扫弧"。
+2. **抖动是靠"整条边弯"凑出来的，不是手抖。** 原始 \|dev\| 看着不错（bottom p90 达 1.33×），但拆开看低频漂移占了 9.5–19.7px，**减掉整条边的弯曲之后只剩 0.24–0.40×**。
+   - **这是 v2 prompt 自身的一处矛盾，我写漏了**：同一段里既要求 `no sag, bow, droop, lean, or taper`，又要求 `strays about two to three times its own thickness away from true`——模型把两条一起满足的最省力办法就是"整条边缓慢弯过去"（局部看处处平缓，整体看弯了 20px）。v3 补上缺的那一半约束：**给起伏次数下限**（每条边至少 20 次独立起伏）+ 明确禁止"整条边只弯一次再回来"。按线宽 8.75px、边长 1408px 算，波长 5–10 倍线宽 = 44–88px，本该有 16–32 次起伏，v2 实际只有一两次大弯。
+   - 顺带说明为什么低频漂移不能留着不管：§4 步骤 3 的去漂移是**必须**跑的。ink 4px（缩放 0.55×）时，bottom 那条边 19.7px 的弯曲落到 300px 宽的面板上约 8 设计 px 的下坠——44px 高的面板上塌 18%，一眼是坏的；而且不同面板取到长条的不同段，有的下坠有的上翘，还不一致。
+
+**不是问题的**：画布 3:2 而非正方 → 竖边 896px，ink 4px 时竖条 410 设计 px，最高的面板（行军列表 220px）够用。将来出现更高的面板才需要回绕。
+
+
+**v3（2026-08-20，打回 —— 但这一版把问题定性了）** —— 1402×1122。漂移修好了、转角收窄了一半，**抖动幅度原地不动**。
+
+| 指标 | v1 | v2 | **v3** | 要求 |
+|---|---|---|---|---|
+| 抖动 \|dev\| / 线宽（去漂移后） | 0.06× | 0.24–0.40× | **0.26–0.37×** | 2–3× |
+| 转角半径 / 线宽 | 尖角 + 8× 墨团 | 1.25–10.44× | **1.32–5.25×** | 2–3.5× |
+| 角块尺寸 | 51 设计 px（ink4） | 50 设计 px（ink4） | **22 设计 px（ink3）/ 29（ink4）** | ≤20 |
+| 低频漂移 | 0.9–2.6px | 9.5–19.7px | **3.4–9.2px** | 越小越好 |
+| 四边首尾 y 差 | 0 ~ −2.5px | −10.5 ~ +14.0px | **−4.0 ~ +3.0px** | 越小越好 |
+| 墨色单一（0–47 占比） | ✅ | 88.7% | **88.9%** | — |
+
+**"给起伏次数下限 + 禁止整条边只弯一次"这条改动生效了**：漂移从 9.5–19.7px 掉到 3.4–9.2px，首尾 y 差从 ±14px 掉到 ±4px。转角带也从 8.4 倍跨度收到 4.0 倍，角块尺寸 ink3 时 22 设计 px 已经接近 ≤20 的目标。
+
+**但抖动幅度三版下来是 0.06× → 0.35× → 0.32×，第二版之后完全平台化。** 这是决定性的：
+
+- 目标 2–3× 是按"明显比现状更抖"定的。**现状 `SketchPen` 是 `jitter 1.1 / width 2.2` = 0.5×，加 ghost 第二笔偏移后有效散布约 0.9×。** 也就是说 v3 的线**比游戏里现在跑着的程序笔触还直**（0.32× vs 0.5×）。
+- 三轮 prompt 只在第一轮换来一次提升（0.06→0.35），之后再怎么改措辞都不动。**生成器画的是"工整的手绘线"，不肯把振幅推到线宽的 2–3 倍。** 这个指标 prompt 磨不出来。
+
+### 3.4 结论：改走"程序生成一次 + 九宫装配"（待拍板）
+
+三轮实测把两条原以为属于"出图"的收益逐条否掉了：
+
+1. **"位图有程序画不出的细节"** —— §3.3 已否：4–8px 线宽里没有像素容得下墨点积聚/纸纤维/笔尖分叉。
+2. **"抖动幅度和转角形状改由打包时决定"**（§1.1 修订后的主要理由之一）—— v3 否：交给 AI 出图，这两个指标恰恰**不可控**，磨了三轮转角还有一个角是 1.32×、抖动卡在 0.32×。而它们在代码里就是两个数字。
+
+而 §0 那个真正的收益 —— **43× CPU / 130× 顶点 / 13 次强制 flush → 1 次合批** —— 来自 **§2 的九宫装配（sprite 合批）**，**跟图是 AI 画的还是程序画的完全无关**。
+
+所以建议：**图集改成程序生成一次**（`SketchPen` 画 4 条长边条 + 4 个角块 → `bake()` 成一张 RenderTexture），§2 的装配方案（长条顺序开窗、平铺不拉伸、tint 上色、`seedFor` 派生偏移、小面板降级）**一字不改**。
+
+| | AI 出图 | 程序生成一次 |
+|---|---|---|
+| 性能收益 | 43× | **43×（相同，收益来自装配不来自图源）** |
+| 抖动幅度 | 卡在 0.32×，磨不动 | **代码里一个数，想要多少给多少** |
+| 转角半径 | 1.32–5.25×，抽奖 | **2.0/2.4/2.8/3.2× 四角精确指定** |
+| 长条长度 | 621–931 设计 px（聊天条 1920 要回绕） | **2048px，全项目零回绕接缝** |
+| 变体数量 | 一张图 | **边条/角块各出 N 套，`seedFor` 有更多可选** |
+| 包体 | 一张 PNG | **0** |
+| 显存 | AI 图集 | 一张 ~2048×256 RenderTexture，更小 |
+| 管线 | 抠白底 + 去漂移 + 切片 + 3 档膨胀 + manifest | **不需要**（无白底可抠、无漂移可去、切片坐标是自己算的） |
+| 失去的 | — | AI 的墨迹质感（按第 1 条，在这个线宽下价值为 0） |
+
+一次性烘焙成本：4 条长条 + 4 个角块 ≈ 4 万顶点、启动时约 3 ms，**画一次**，不是每秒 13 次。`bake()` 无 renderer 时回落到实时 Graphics 的既有契约（`buildPaperBackground` 就是这么做的）照用。
+
+建议起点参数（都可即时调）：线宽 base 2.2（thin/base/bold 三档不变）· 抖动振幅 2.5× 线宽 ≈ 5.5px · 波长 6× 线宽 ≈ 13px（比现 `segLen=10` 稍长，避开 §3.3 记的锯齿坑）· 转角半径 2.0/2.4/2.8/3.2× 线宽 · 长条 2048px。
+
+---
 
 ## 4. 打包管线
 
