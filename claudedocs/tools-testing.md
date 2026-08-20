@@ -90,14 +90,23 @@ node -e "const t=require('./coverage/coverage-summary.json').total.lines; consol
 
 ## Phase 4 graduation：怎么把一个工具接进门禁
 
-> 已走过两遍：**4a `map-editor`** 和 **4b `level-editor`**（都是 2026-08-20）。下面五步就是那两次实际做的事。
+> 已走过两遍：**4a `map-editor`** 和 **4b `level-editor`**（都是 2026-08-20）。下面六步就是那两次实际做的事。
 
 1. 把该包从 `scripts/coverageLib.mjs` 的 `NOT_GATED_JSON_SUMMARY_PACKAGES` **移到** `JSON_SUMMARY_PACKAGES`。
-2. **两个清单都要检查**——`coverageScripts.test.ts` 有一条专门钉这个错的用例：复制一行、忘了删原来那行，包就同时既受门禁又被豁免（`collectRows` 出两行，门禁被那条豁免行满足，表面看一切正常）。
+2. **两个清单都要检查**——`coverageScripts.test.ts` 有一条专门钉这个错的用例：复制一行、忘了删原来那行，包就同时既受门禁又被豁免（`collectRows` 出两行，门禁被那条豁免行满足，表面看一切正常）。**反向的错**（只删不加）由那条 two-state canary 兜住，见下方「测试侧不用改」。
 3. 顺手看一眼 `NOT_GATED_JSON_SUMMARY_PACKAGES` 上方那段注释里的**数量词**（"五个工具包"）——名单少一个，那句话就过时一句。
 4. 更新本文台账 + 该包 `vitest.config.ts` 的注释（包括「scope 内 X%」那个数字：把它复核一遍，别照抄旧值）。
 5. 加一条 `test/pureLayerBoundary.test.ts`（见上一节；`PURE_DIRS` 从 `coverage.include` 反推，白名单/DOM 清单按本工具改），并把四条断言各做一次 red-then-green。
 6. `node scripts/checkCoverageThreshold.mjs` 本地过一遍（它会顺带把剩下的 not-gated 清单重印一次）。本地跑要求**每个**受门禁包都有 `coverage/`，只跑一个包会被判成「产出缺失」而非绿——在 worktree 里可以先把主检出各包已有的 `coverage/coverage-summary.json`（+ `server/engine` 的 `lcov.info`）拷进来占位，只重跑本轮改的那个包。
+
+### 测试侧不用改（2026-08-20 解耦）
+
+剩下的 **4c `vfx-editor` / 4d `animator` / 4e `ops`** 三条线可以并行、任意顺序合并：`coverageScripts.test.ts` 里再没有任何东西写死正在毕业的包名，所以毕业那个 PR 不需要连带改测试文件。做法两条：
+
+- **需要一个真实 not-gated 行的用例**（共 7 条：「低于门槛不判红」「无产出判红」「两类失败分行」「`COVERAGE_THRESHOLD` 不作用于豁免行」「绿跑也复述差距」「报表单列一节」「不进 `Overall`」）从名单里取第一项当样本（`notGatedSample()`），并挂在 `itIfNotGated` 上——名单空了就整条跳过，因为那时根本没有这种行可断言。fixture 的百分比也不再用某个包当时的实测值（原来是 animator 的 64.3），只保留「在门槛的哪一侧」这一个语义。
+- **原来那条 `expect(NOT_GATED.length).toBeGreaterThan(0)`** 改成 two-state：名单非空时断言每一项都确实产出了 not-gated 行；名单为空时断言**豁免已经从输出里消失**（`collectRows` 不再有 `gated: false` 行、报表不再打印「reported, not gated」小节、门禁不再打印豁免脚注），并且 `tools/` 下每个带 `vitest.config.ts` 的包都在受门禁清单里——即「三个包是**搬**进门禁了，不是从表里掉出去了」。它防的事没变（豁免不能悄悄空掉、变成死代码），只是不再由「最后一个合并的人」随机中奖。
+
+**最后毕业的那条线额外要做的事**：名单一空，not-gated 那套管路（`collectRows` 的第三段 spread、两个脚本里的豁免小节/脚注、这 7 条用例 + `itIfNotGated`/`notGatedSample`）就成了死代码，该在同一个 PR 里退休掉；canary 的空名单分支正是那次退休的验收条件——它只接受「输出里再也不声称豁免任何东西」。
 
 ## 测试历史
 
