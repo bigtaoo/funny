@@ -84,10 +84,25 @@ export class RepaintState {
     if (this.layer && !this.layer.destroyed) this.layer.y = 0;
   }
 
-  /** How far the built tree is from where it should be — also the offset scroll-layer hit rects
-   *  need at hit-test time, since they were recorded in build space (see core.onPointerUp). */
-  get scrollDelta(): number {
+  /** How far the built tree is from where `scrollY` now says it should be. Drives applyScroll's
+   *  translate-or-rebuild decision. NOT the right number for hit-testing — see appliedScrollDelta. */
+  get pendingScrollDelta(): number {
     return this.core.scrollY - this.builtScrollY;
+  }
+
+  /**
+   * How far the layer has *actually* been moved — i.e. what the player is currently looking at.
+   * This, not {@link pendingScrollDelta}, is what hit-testing must use: `scrollY` is updated inline
+   * by the pointer/wheel handlers but the layer only moves when update() drains `scrollDirty` on the
+   * next frame, so for one frame the two disagree. Offsetting a tap by a translate that hasn't
+   * happened yet lands it on the wrong row (a wheel tick followed immediately by a click).
+   */
+  get appliedScrollDelta(): number {
+    if (!this.layer || this.layer.destroyed) return 0;
+    // `|| 0` normalises the -0 that negating a resting layer.y produces. Harmless in arithmetic
+    // (-0 === 0), but it makes `Object.is`-based comparisons (vitest's toBe, and any future
+    // identity check) fail in a way that reads as a real offset bug.
+    return -this.layer.y || 0;
   }
 
   /** The viewport rect the indicator is drawn against (also the content mask's rect). */
@@ -102,7 +117,7 @@ export class RepaintState {
    * a render on a non-scrolling tab correctly falls through to render().
    */
   applyScroll(): void {
-    const delta = this.scrollDelta;
+    const delta = this.pendingScrollDelta;
     if (!this.layer || this.layer.destroyed || Math.abs(delta) > this.overscan) {
       this.core.render();
       return;
