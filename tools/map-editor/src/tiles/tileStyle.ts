@@ -72,7 +72,14 @@ export const RES_TEX_TINT: Record<string, number> = {
   sticker:  0xf0cfe1, // soft rose
 };
 
-function lerpHexColor(c1: number, c2: number, t: number): number {
+/**
+ * Per-channel RGB blend, used only by biomeGroundTint's `t > 0` branch — which biomeMixAt can no
+ * longer produce (see below). Exported for test/tileStyle.test.ts: a helper kept alive for a future
+ * re-enable is worth exactly as much as its correctness, and with no reachable caller nothing else
+ * would ever notice a channel-order or rounding slip. Not exported in the game client's copy, which
+ * has no test covering this layer at all.
+ */
+export function lerpHexColor(c1: number, c2: number, t: number): number {
   const r1 = (c1 >> 16) & 0xff, g1 = (c1 >> 8) & 0xff, b1 = c1 & 0xff;
   const r2 = (c2 >> 16) & 0xff, g2 = (c2 >> 8) & 0xff, b2 = c2 & 0xff;
   const r = Math.round(r1 + (r2 - r1) * t), g = Math.round(g1 + (g2 - g1) * t), b = Math.round(b1 + (b2 - b1) * t);
@@ -81,7 +88,15 @@ function lerpHexColor(c1: number, c2: number, t: number): number {
 
 /** Solid ground tint keyed off the tile's own province's leaning resource type (2026-07-15 rewrite —
  * see leaningResourceForProvince in @nw/shared). Mirrors the game client's tileStyle.ts
- * biomeGroundTint (SLG map render parity). */
+ * biomeGroundTint (SLG map render parity).
+ *
+ * biomeMixAt always returns t=0 now (resource types are drawn per-tile, so there is no
+ * resource-zone boundary left to cross-fade — the only region border left is the province's own,
+ * already a hard political line), so lerpHexColor's branch here is effectively dead but kept for
+ * the type/shape so this call site doesn't need to change again if a future pass reintroduces
+ * blending. That sentence is in the game client's copy of this function and was dropped when this
+ * file was hand-copied; restored 2026-08-20, because "0% covered" reads as "untested" rather than
+ * "unreachable on purpose" to whoever next audits this package's coverage. */
 export function biomeGroundTint(x: number, y: number, seed: number): number {
   const mix = biomeMixAt(x, y, seed);
   return mix.t === 0 ? RES_TEX_TINT[mix.a]! : lerpHexColor(RES_TEX_TINT[mix.a]!, RES_TEX_TINT[mix.b]!, mix.t);

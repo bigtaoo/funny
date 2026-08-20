@@ -24,10 +24,13 @@ export default defineConfig({
       reporter: ['text', 'lcov', 'html', 'json-summary'],
       reportsDirectory: './coverage',
       // ADR-070 (2026-08-20): the machine-readable form of the prose scope above — "camera math,
-      // hit-testing, the terrain/city stores, the iso projection, tile styling and i18n". 98.8%
-      // (644/652) as of 2026-08-20, and every covered line in the whole package falls inside this
-      // list, i.e. the scope matches what the suite actually exercises rather than being drawn
-      // around it after the fact.
+      // hit-testing, the terrain/city stores, the iso projection, tile styling and i18n". 100.0%
+      // (652/652) lines and 62/62 functions as of 2026-08-20, and every covered line in the whole
+      // package falls inside this list, i.e. the scope matches what the suite actually exercises
+      // rather than being drawn around it after the fact. The uncovered BRANCHES that remain
+      // (camera.ts's map-smaller-than-viewport arms of clampPan, tileStyle.ts's `??` fallbacks on
+      // its palette lookups) are unreachable with a 1500x1500 map and valid TileTypes; the gate is
+      // on lines only, by long-standing convention (see checkCoverageThreshold.mjs's header).
       //
       // Phase 4a (same day) made this list purely directory/whole-file level and put the package
       // under the 90% gate (it moved from NOT_GATED_JSON_SUMMARY_PACKAGES to
@@ -40,9 +43,16 @@ export default defineConfig({
       // layer, no PIXI, no DOM) and `src/render/` is uniformly the PIXI half. Out of scope:
       // render/*, ui/*, input/*, api.ts, dom.ts, stage.ts, editor.ts, index.ts.
       //
-      // The gate now enforces the boundary too: a PIXI module dropped into src/tiles/ (or
-      // src/state/) lands in an INCLUDED directory at ~0%, which fails the 90% bar instead of
-      // quietly diluting a hand-maintained file list the way an added render/ file used to.
+      // The boundary itself is pinned by test/pureLayerBoundary.test.ts, NOT by this percentage.
+      // The first version of this note claimed the gate did it — that a PIXI module dropped into an
+      // included directory lands there at ~0% and fails the 90% bar. Measured, that is false for
+      // most real cases: at 652/652 there is `652/0.9 - 652` = 72 lines of headroom, and 10 of this
+      // package's 16 PIXI/DOM files are smaller than that (every atlas loader, refresh.ts,
+      // citySprites.ts, viewport.ts, status.ts, i18nApply.ts, panels.ts). Verified by actually
+      // dropping a 13-line PIXI+DOM module into src/tiles/: coverage 96.98%, gate PASSES. Worse,
+      // the headroom GROWS as these tests improve. So the percentage gate and the purity guard are
+      // two separate jobs, and pureLayerBoundary.test.ts derives the directories it checks from
+      // this very include list, so adding a third one here fails until it is guarded too.
       include: ['src/state/**', 'src/tiles/**', 'src/i18n.ts', 'src/constants.ts'],
       exclude: [...coverageConfigDefaults.exclude],
     },
