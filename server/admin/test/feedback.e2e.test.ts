@@ -58,9 +58,16 @@ class FakeFeedback implements FeedbackClient {
     { _id: 'f2', accountId: 'acc-2', text: 'please add more character skins', clientPlatform: 'wx', createdAt: 1 },
   ];
   calls: { limit?: number }[] = [];
+  reviewCalls: { id: string; readBy: string; note?: string }[] = [];
+  /** Set false to simulate metaserver's 404 (unknown feedback id). */
+  reviewOk = true;
   async listFeedback(opts?: { limit?: number }): Promise<FeedbackRow[]> {
     this.calls.push({ limit: opts?.limit });
     return this.rows;
+  }
+  async reviewFeedback(id: string, readBy: string, note?: string): Promise<{ ok: boolean }> {
+    this.reviewCalls.push({ id, readBy, note });
+    return { ok: this.reviewOk };
   }
 }
 
@@ -118,10 +125,48 @@ describe.skipIf(!mongo)('admin player-feedback bridge e2e', () => {
     expect(audit).toHaveLength(0);
   });
 
-  it('role/capability wiring: feedback.view is held by every role (read-only, no feedback.action exists)', async () => {
+  it('role/capability wiring: every role can view; only super/ops can triage (feedback.action)', async () => {
     const { roleHasCapability, ADMIN_ROLES } = await import('@nw/shared');
     for (const role of ADMIN_ROLES) {
       expect(roleHasCapability(role, 'feedback.view')).toBe(true);
     }
+    expect(ADMIN_ROLES.filter((r) => roleHasCapability(r, 'feedback.action'))).toEqual(['super', 'ops']);
+  });
+
+  // ── Triage trail (feedback.action). Still not a verdict — the service just forwards the read-mark /
+  // note write to metaserver and audits it; there is no dismiss/uphold outcome as in reports/appeals.
+  describe('reviewFeedback', () => {
+    it('forwards the actor as readBy and audits the note write', async () => {
+      await svc.reviewFeedback(root.adminId, 'f1', 'forwarded to design');
+      expect(fakeFeedback.reviewCalls).toEqual([{ id: 'f1', readBy: root.adminId, note: 'forwarded to design' }]);
+      const audit = await m.collections.auditLog.find({ action: 'feedback.review', target: 'f1' }).toArray();
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.summary).toContain('noted');
+    });
+
+    it('a read-mark passes no note through (leaving any existing note intact) and audits as "marked read"', async () => {
+      await svc.reviewFeedback(root.adminId, 'f2');
+      expect(fakeFeedback.reviewCalls).toEqual([{ id: 'f2', readBy: root.adminId, note: undefined }]);
+      const audit = await m.collections.auditLog.find({ action: 'feedback.review', target: 'f2' }).toArray();
+      expect(audit[0]!.summary).toContain('marked read');
+    });
+
+    it('an explicit empty note (clear) is forwarded verbatim, not swallowed as "omitted"', async () => {
+      await svc.reviewFeedback(root.adminId, 'f1', '');
+      expect(fakeFeedback.reviewCalls).toEqual([{ id: 'f1', readBy: root.adminId, note: '' }]);
+    });
+
+    it('surfaces a 404 when the row is gone, without writing an audit entry', async () => {
+      fakeFeedback.reviewOk = false;
+      await expect(svc.reviewFeedback(root.adminId, 'gone')).rejects.toThrow(AdminError);
+      const audit = await m.collections.auditLog.find({ action: 'feedback.review', target: 'gone' }).toArray();
+      expect(audit).toHaveLength(0);
+    });
+
+    it('surfaces a 503 when the feedback backend is unavailable, without calling through', async () => {
+      fakeFeedback.available = false;
+      await expect(svc.reviewFeedback(root.adminId, 'f1')).rejects.toThrow(AdminError);
+      expect(fakeFeedback.reviewCalls).toEqual([]);
+    });
   });
 });

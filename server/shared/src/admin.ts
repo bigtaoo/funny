@@ -46,7 +46,8 @@ export type AdminCapability =
   | 'reports.action' // dismiss / uphold a report (CONTENT_MODERATION_DESIGN.md CM9)
   | 'appeals.view' // view the appeal review queue (CONTENT_MODERATION_DESIGN.md CM11)
   | 'appeals.action' // approve / deny an appeal (CONTENT_MODERATION_DESIGN.md CM10)
-  | 'feedback.view' // view player feedback submissions, read-only (SERVER_API.md §2.13)
+  | 'feedback.view' // view player feedback submissions (SERVER_API.md §2.13)
+  | 'feedback.action' // mark a feedback submission read / attach an ops note (SERVER_API.md §2.13)
   | 'admin.manage'; // account / role management
 
 /**
@@ -89,6 +90,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'appeals.view',
     'appeals.action',
     'feedback.view',
+    'feedback.action',
     'admin.manage',
   ],
   ops: [
@@ -120,6 +122,7 @@ export const ROLE_CAPABILITIES: Record<AdminRole, readonly AdminCapability[]> = 
     'appeals.view',
     'appeals.action',
     'feedback.view',
+    'feedback.action',
   ],
   support: [
     'monitor.view',

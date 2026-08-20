@@ -31,6 +31,8 @@ export type AdminCapability =
   | 'reports.action'
   | 'appeals.view'
   | 'appeals.action'
+  | 'feedback.view'
+  | 'feedback.action'
   | 'admin.manage';
 
 export interface AdminAccountView {
@@ -186,6 +188,22 @@ export interface AppealView {
   resolvedBy?: string;
   resolvedAt?: number;
   resolutionNote?: string;
+}
+
+/**
+ * Player feedback row (mirror of metaserver's FeedbackDoc, SERVER_API.md §2.13). No verdict/status
+ * machine — just a triage trail: `readAt` is stamped on the first review and never overwritten, so
+ * unread ⟺ `!readAt`; `readBy`/`note` are last-write-wins.
+ */
+export interface FeedbackView {
+  _id: string;
+  accountId: string;
+  text: string;
+  clientPlatform?: string;
+  createdAt: number;
+  readAt?: number;
+  readBy?: string;
+  note?: string;
 }
 
 export interface PlayerProfile {

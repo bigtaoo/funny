@@ -82,7 +82,8 @@ interface AdminAccountDoc {
 | `reports.action` 裁定举报（dismiss/uphold，联动信誉分处罚） | ✓ | ✓ | – | – |
 | `appeals.view` 查申诉队列 | ✓ | ✓ | ✓ | ✓ |
 | `appeals.action` 裁定申诉（approve/deny，撤销 mute/ban） | ✓ | ✓ | – | – |
-| `feedback.view` 查玩家反馈（只读，无裁定；`SERVER_API.md §2.13`） | ✓ | ✓ | ✓ | ✓ |
+| `feedback.view` 查玩家反馈（无裁定；`SERVER_API.md §2.13`） | ✓ | ✓ | ✓ | ✓ |
+| `feedback.action` 标已读 / 写 ops 备注（`SERVER_API.md §2.13.1`，仍非裁定） | ✓ | ✓ | – | – |
 | `moderation.wordlist.manage` 管理敏感词库外部覆盖表 | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
@@ -180,7 +181,8 @@ admin 执行器（approved 后，可自动或手动触发）
 | `POST /internal/anticheat/reviews/{id}/resolve` | meta | 人工裁定一条审核记录（`anticheat.action`）：只改 `status`/`resolution`/`resolvedBy`，本身不封号——`resolution:'banned'` 时 admin 侧另调 `/internal/accounts/{id}/ban`，全库只有一条封号执行路径（2026-07-18，取代 PvE reject 三振自动封号） | ✅ |
 | `POST /internal/mail/system/send` | **meta**（SOCIAL_DESIGN S6-3） | 执行补偿 = 创建系统邮件（单人/批量，幂等键） | ✅ 已联调 |
 | `POST /internal/mail/system/preview` | meta | 全服补偿 dry-run 估算命中人数 | ✅ 已联调 |
-| `GET /internal/feedback?limit=` | meta（`SERVER_API.md §2.13`） | 玩家反馈列表（只读，`feedback.view`），按 `createdAt` 倒序 | ✅ |
+| `GET /internal/feedback?limit=` | meta（`SERVER_API.md §2.13`） | 玩家反馈列表（`feedback.view`），按 `createdAt` 倒序 | ✅ |
+| `POST /internal/feedback/{id}/review` | meta（`SERVER_API.md §2.13.1`） | 标已读 / 写 ops 备注（`feedback.action`）：`readAt` 首次打戳后不再覆盖，`readBy`/`note` last-write-wins；仍无裁定语义 | ✅ |
 
 > 邮件相关端点由 `SOCIAL_DESIGN` 的 S6-3 落地；admin 侧先按契约形状对接，**2026-06-16 跨进程实跑联调通过**（`server/admin/test/comp-mail.e2e.test.ts`：真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen` 的 meta 进程，跑通 单人补偿全链/`dispatchKey` 幂等/全服 fan-out+preview/player.lookup/错 key→401→工单 failed/收件人不存在→failed）。
 
@@ -239,8 +241,9 @@ PUT  /admin/config/slg-shop/{id}  { cost?, effect? } → { item }               
 # 内部端点（X-Internal-Key，非 admin JWT）：worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 SLG_SHOP_ITEMS 合并
 GET  /admin/internal/slg-shop-prices                 → { items: [...] }                // 原样返回，worldsvc 30s 轮询 + 本地 resolveSlgShopItem 合并
 
-# 玩家反馈（feedback.view，只读，无裁定/无状态机）
-GET  /admin/feedback?limit=                          → { feedback: [...] }             // 代理 meta GET /internal/feedback
+# 玩家反馈（无裁定/无状态机，只有已读+备注痕迹；SERVER_API.md §2.13）
+GET  /admin/feedback?limit=                          → { feedback: [...] }             // feedback.view，代理 meta GET /internal/feedback
+POST /admin/feedback/{id}/review     { note? }       → { ok: true }                    // feedback.action，标已读 / 写备注；note 省略=只标已读（保留原备注），note:''=清空
 
 # 审计
 GET  /admin/audit?actor=&from=&to=                   → { entries: [...] }              // all=超管 / self=本人
@@ -313,7 +316,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 
 - **后端 `server/admin`（第七 workspace，CJS）**：`config.ts`（env）/ `db.ts`（独立库 `notebook_wars_admin`：adminAccounts/compTickets/auditLog/metricSnapshots，snapshot TTL 锚 BSON `at:Date`）/ `service.ts`（`AdminService` + `AdminError`，业务不变量：发起≠审批、`requiredApproveCapability(scope,tier)`、工单状态机、审计落库）/ `httpApi.ts`（node:http + admin JWT 鉴权 + 每端点 RBAC 静态能力门 + CORS）/ `clients.ts`（`HttpStatsClient` 合并 gateway+matchsvc、`HttpPlayerClient` 调 meta `/internal/player`、`HttpMailDispatcher` 按系统邮件端点契约形状对接）/ `seed.ts`（种子超管幂等）/ `index.ts`（引导 + 采样定时器）。
 - **业务侧新增端点**：gateway `GET /internal/stats`（`Gateway.stats()` 在线数）；matchsvc `GET /internal/stats`（`Matchsvc.stats()` + `GameRegistry.stats()` 队列/房间/game）；meta `GET /internal/player?publicId=`（`resolveByPublicId` 反查档案摘要，player.lookup）。
-- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（**barrel 再导出**，各页渲染器拆入 `pages/`：`shared.ts` 公共件 Ctx/showErr/showOk/sparkline/ms↔datetime + `monitor` / `analytics` / `player` / `suspicions` 反作弊 / `tickets` 工单发起+审批 / `audit` / `accounts` / `ladder` / `flags` / `events` / `slgSeason` 赛季运维 / `auctionAudit` 拍卖审计 / `gachaPools` 自定义卡池）。不持密钥、不连库、不直连业务服务。
+- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（**barrel 再导出**，各页渲染器拆入 `pages/`：`shared.ts` 公共件 Ctx/showErr/showOk/sparkline/ms↔datetime + `monitor` / `analytics` / `player` / `suspicions` 反作弊 / `tickets` 工单发起+审批 / `audit` / `accounts` / `ladder` / `flags` / `events` / `slgSeason` 赛季运维 / `auctionAudit` 拍卖审计 / `gachaPools` 自定义卡池 / `feedback` 玩家反馈）。不持密钥、不连库、不直连业务服务。
 - **部署接线**：`server/package.json` workspaces + `dev:admin`；`Dockerfile` 七包；`docker-compose.prod.yml` admin 服务（caddy 不路由）；`ecosystem.config.cjs` `nw-admin`；`.env.example` + `dev-up.ps1`（dev 种子 root/rootpass）。
 - **验证**：七包 `tsc -b` 全绿 + admin 15 e2e（登录/RBAC/发起≠审批/超额+全服走超管/**单超管自批例外+留痕**/**有第二 super 时恢复四眼**/**禁用的第二审批人不算数**/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
 - **补偿 ↔ 邮件跨进程联调（2026-06-16）**：S6-3 邮件后端就绪，补全 `server/admin/test/comp-mail.e2e.test.ts`——admin 真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen({port:0})` 的 meta 进程（非 fastify inject），6 用例跑通：①单人补偿全链（发起→审批→真 HTTP 投递→玩家收件箱→领取附件→commercial 入账+钱包镜像）②`dispatchKey` 幂等（同 key 重发仅一封，meta `$setOnInsert`）③全服 fan-out + `preview` 命中人数 ④`player.lookup` 经真 `/internal/player` ⑤鉴权边界（错 `X-Internal-Key`→401→工单 failed、玩家无信）⑥收件人不存在→工单 failed。admin e2e 12→18，七包 `tsc -b` 全绿（meta dist 须先 `tsc -b`）。
@@ -340,6 +343,16 @@ admin 后端（G7）已全部就绪；补完 `tools/ops` 对应的两个前端�
 - **验证**：`tools/ops` tsc --noEmit 零错误。
 
 **补记（2026-08-10，生产事故修复，见 `SLG_DESIGN_LOG.md §17.15`）**：`pageSLGSeason` 加「Allocate next season」卡片（Season + Capacity 两个输入框），放在「Open a new world」表单**上方**，调用新增的 `api.slgAllocateNextSeason(season, capacity?)` → `POST /admin/slg/season/allocate`。这是唯一会真正推进赛季号的操作（内部走 `allocateNextSeason` 雪花分片分配 + 逐 shard 克隆地图模板）；「Open a new world」表单保留作低级 escape hatch（重开已关闭世界 / 单独补一个分片），UI 文案标注优先用前者——此前运营只有后者可用，在已存在的 `worldId` 上重填新 `season` 会被 `$setOnInsert` 静默丢弃，返回成功但赛季号从未真正推进。`types.ts` 新增 `SlgAllocateResult`。
+
+### 玩家反馈页 + 已读/备注痕迹（2026-08-20）
+
+玩家反馈链路（`SERVER_API.md §2.13`）此前**只有后端**：`POST /feedback` 提交、metaserver `feedback` 集合、`GET /internal/feedback`、admin `GET /admin/feedback`、能力点 `feedback.view` 与全套 e2e 都已就绪，唯独**没人写过消费它的 ops 页面**——契约齐全但运营在后台看不到任何反馈。本次补完前端，并顺带补上原设计缺失的追踪能力（原设计明确"无状态机"，代价是反馈累积后无法区分哪几条看过了）。
+
+- **`pageFeedback`（`tools/ops/src/pages/feedback.ts`，导航排在 Player Appeals 之后）**：Unread / All / Read 过滤 + `N unread / M total` 计数；表格列 Time / Player / Platform / Feedback / Status / Ops note。后端只有一条扁平的 `createdAt` 倒序列表、没有 read 过滤，所以拉一页（limit 200）后在**前端切分**，计数始终按整页算而不是按当前视图算——切分逻辑提取为纯函数 `partitionFeedback` 单测覆盖（`tools/ops/test/feedback.test.ts` 7 例），`pageFeedback` 本身建 DOM 不测，与 `appeals.test.ts` 同一分工。
+- **triage 语义（有意最轻）**：仍**不是**状态机，没有"处理中/已处理"、没有裁定。`readAt` 首次 review 打戳后永不覆盖，**未读 ⟺ `!readAt`**；写备注同时打 `readAt`（一次动作），故不存在"有备注但未读"的行。「Save note」提交文本框内容，「Mark read」不带 note 提交、**保留已有备注**（避免误删）；备注清空须显式提交空串。已读行不再显示「Mark read」按钮，改显示 `readAt` + `readBy`。
+- **新能力点 `feedback.action`（super/ops）**：查看仍是全角色的 `feedback.view`，写入收窄到 super/ops——support/viewer 保持只读。每次写入落 `feedback.review` 审计，summary 区分 `noted` / `marked read`。
+- **落点**：`@nw/shared` `FeedbackDoc` 增 `readAt?`/`readBy?`/`note?` + `FEEDBACK_NOTE_MAX=500` + `AdminCapability` 增 `feedback.action`；meta `POST /internal/feedback/{id}/review`；admin `FeedbackClient.reviewFeedback` / `FeedbackService.reviewFeedback` / `POST /admin/feedback/{id}/review`；ops `api.feedback()` / `api.reviewFeedback()` + `FeedbackView`。
+- **验证**：meta feedback e2e 10→18 例（鉴权/缺 readBy/404/首次打戳/写备注即已读/`readAt` 不被覆盖而 `readBy`·`note` last-write-wins/省略 note 不清备注·空串清备注/超长截断）、admin feedback e2e 5→10 例、admin httpRoutes e2e 补 review 路由 + support 403、ops 前端 7 例；admin 全量 212 例、`@nw/shared` 1033 例、`tools/ops` 58 例全绿；起 meta+admin+ops 真实进程，经真 `POST /feedback` 灌入中英文反馈，在页面上完成"写备注→计数 3→2、行移出 Unread"与"标已读→计数 2→1"，回查 Mongo 确认 `readAt`/`readBy`/`note` 与两条审计 summary 均正确、中文原文无乱码。
 
 ### 加固 / 优化（2026-06-16，第二轮）
 

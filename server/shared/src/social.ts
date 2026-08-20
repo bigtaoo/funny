@@ -40,6 +40,9 @@ export const FEEDBACK_TEXT_MAX = 1000;
 /** Feedback submission rate limit: max POST /feedback per account per 24h window (SERVER_API.md §2.13). */
 export const FEEDBACK_RATE_LIMIT_PER_DAY = 5;
 
+/** Maximum length of an ops-authored triage note on a feedback submission (SERVER_API.md §2.13, feedback.action). Admin-authored, not player-facing. */
+export const FEEDBACK_NOTE_MAX = 500;
+
 // ── Deterministic id derivation (no lookup required; computable by either side) ──────────────
 /**
  * Chat conversation id: two accountIds sorted and concatenated (SOC4). Either party can derive

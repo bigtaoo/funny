@@ -206,4 +206,5 @@ export class AdminService {
 
   // ── feedback ──
   listFeedback(...args: Parameters<FeedbackService['listFeedback']>) { return this.feedback.listFeedback(...args); }
+  reviewFeedback(...args: Parameters<FeedbackService['reviewFeedback']>) { return this.feedback.reviewFeedback(...args); }
 }

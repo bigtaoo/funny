@@ -223,10 +223,25 @@ const stubEnforcement: EnforcementClient = {
   available: true,
   applyPenalty: async () => ({ ok: true, result: { reputationScore: 80, action: 'warn' } }),
 };
-const stubFeedback: FeedbackClient = {
-  available: true,
-  listFeedback: async (): Promise<FeedbackRow[]> => [{ _id: 'fb1', accountId: 'acc-1', text: 'great game', createdAt: 1 }],
-};
+class FakeFeedback implements FeedbackClient {
+  available = true;
+  rows: FeedbackRow[] = [{ _id: 'fb1', accountId: 'acc-1', text: 'great game', createdAt: 1 }];
+  async listFeedback(): Promise<FeedbackRow[]> {
+    return this.rows;
+  }
+  /** Mirrors metaserver's triage semantics closely enough for the route test: unknown id → not ok (404). */
+  async reviewFeedback(id: string, readBy: string, note?: string): Promise<{ ok: boolean }> {
+    const row = this.rows.find((r) => r._id === id);
+    if (!row) return { ok: false };
+    row.readAt ??= 1;
+    row.readBy = readBy;
+    if (typeof note === 'string') {
+      if (note.trim()) row.note = note.trim();
+      else delete row.note;
+    }
+    return { ok: true };
+  }
+}
 
 async function actorOf(svc: AdminService, username: string): Promise<Actor> {
   const doc = (await mongo!.collections.adminAccounts.findOne({ username }))!;
@@ -244,6 +259,7 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
   let gachaPools: FakeGachaPools;
   let reports: FakeReports;
   let appeals: FakeAppeals;
+  let feedback: FakeFeedback;
   let world: FakeWorld;
   let analytics: FakeAnalytics;
 
@@ -276,6 +292,7 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
     gachaPools = new FakeGachaPools();
     reports = new FakeReports();
     appeals = new FakeAppeals();
+    feedback = new FakeFeedback();
     world = new FakeWorld();
     analytics = new FakeAnalytics();
 
@@ -283,7 +300,7 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       cols: m.collections, now,
       stats: stubStats, players: stubPlayer, antiCheat, mismatches: stubMismatches, pvpCardStats: stubPvpCardStats,
       suspiciousPve, mail, analytics, world, auction: stubAuction, ladder: stubLadder, events, gachaPools,
-      promo: stubPromo, paddleEvents: stubPaddleEvents, reports, appeals, enforcement: stubEnforcement, feedback: stubFeedback,
+      promo: stubPromo, paddleEvents: stubPaddleEvents, reports, appeals, enforcement: stubEnforcement, feedback,
     });
 
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
@@ -451,6 +468,17 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       const r = await call(rootToken, 'GET', '/admin/feedback?limit=10');
       expect(r.status).toBe(200);
       expect(r.json.feedback).toHaveLength(1);
+    });
+    it('POST /admin/feedback/:id/review marks read + notes, and 404s on an unknown id', async () => {
+      const r = await call(rootToken, 'POST', '/admin/feedback/fb1/review', { note: 'forwarded to design' });
+      expect(r.status).toBe(200);
+      expect(feedback.rows[0]).toMatchObject({ note: 'forwarded to design', readBy: expect.any(String), readAt: 1 });
+      const missing = await call(rootToken, 'POST', '/admin/feedback/nope/review', {});
+      expect(missing.status).toBe(404);
+    });
+    it('support role can view feedback but lacks feedback.action → 403', async () => {
+      expect((await call(csToken, 'GET', '/admin/feedback')).status).toBe(200);
+      expect((await call(csToken, 'POST', '/admin/feedback/fb1/review', {})).status).toBe(403);
     });
   });
 

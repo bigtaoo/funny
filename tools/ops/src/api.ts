@@ -20,6 +20,7 @@ import type {
   CustomPoolConfig,
   FeatureFlagDoc,
   FeatureFlagRow,
+  FeedbackView,
   FlagRollout,
   LiveStats,
   PaddleEventView,
@@ -246,6 +247,18 @@ export class Api {
   /** Approve clears the account's active mute/temp-ban/ban (not reputationScore, CM10); deny just stamps the record. */
   async resolveAppeal(id: string, resolution: 'approved' | 'denied', note?: string): Promise<void> {
     await this.req('POST', `/admin/appeals/${encodeURIComponent(id)}/resolve`, { resolution, ...(note ? { note } : {}) });
+  }
+
+  // —— Player feedback (SERVER_API.md §2.13): read + triage trail, no verdict/status machine ——
+  async feedback(opts?: { limit?: number }): Promise<FeedbackView[]> {
+    const qs = new URLSearchParams();
+    if (opts?.limit) qs.set('limit', String(opts.limit));
+    const r = await this.req<{ feedback: FeedbackView[] }>('GET', `/admin/feedback?${qs}`);
+    return r.feedback;
+  }
+  /** Mark a row read and/or attach an ops note. `note` omitted leaves an existing note intact; `''` clears it. */
+  async reviewFeedback(id: string, note?: string): Promise<void> {
+    await this.req('POST', `/admin/feedback/${encodeURIComponent(id)}/review`, note === undefined ? {} : { note });
   }
 
   // —— Compensation tickets ——
