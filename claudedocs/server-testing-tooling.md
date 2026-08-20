@@ -105,3 +105,13 @@
 **顺带发现（不在本次范围内修）**：跑真仓库时 `check:filelength` 在当日分支上**本来就是红的**，两处都来自别的会话的合并——`server/shared/src/slg/core.ts` 687 行且不在 baseline（2026-08-19 那批 `isCityGroundTile`/`tileFeatureBuilding` 上移导致），`client/src/net/WorldApiClient.ts` 544 行 vs baseline 542。canary 只在"扫到 0 个"时才触发，跟这两条无关；主检出上未带任何本次改动复现同样结果。拆还是进 baseline、以及 +2 的理由，都该由改动它们的人定。
 
 **验证**：新用例 28/28 绿（两条 off-by-one 期望值在首跑时就被自己咬出来了，说明它们真的在读输出而不是只看退出码）；`shared` 全量 52 文件 1028 例绿；`shared` `typecheck:test` 干净；两个脚本对真仓库跑的结果与改动前一致（`checkWorkspaceCoverage` 绿；`checkFileLength` 红在上面那两条既有问题上）。
+
+## `tools/` 接入覆盖率报表：reported, not gated（2026-08-20，worktree `feat/tools-coverage-gate`，ADR-070）
+
+上面那条「14 个包全部 ≥90%」的里程碑从来没覆盖工具链——`tools/` 完全在门禁之外，且**不是**"缺数据 fail closed"，而是根本不在 `coverageLib.mjs` 的清单里：五个工具包都没有 `test:coverage` 脚本、都没装 `@vitest/coverage-v8`，`tools-test` job 不产 coverage 产物，`coverage-report` job 连 `needs` 都不含它。现在补上，细节与各包台账见 [`tools-testing.md`](tools-testing.md)，这里只记工具/流水线侧的三点：
+
+- **`coverageLib.mjs` 多了第二类行**：`NOT_GATED_JSON_SUMMARY_PACKAGES`（5 个 `tools/*`），`collectRows` 给每行打 `gated` 标记与 `srcFiles` 计数。`gated: false` = 进报表、**必须产出 coverage**、但百分比暂不比 90%。产出缺失照样 fail-closed——「tools/ops 悄悄不产 coverage 了」是断掉的流水线，跟它在哪个清单上无关；这条也是这一阶段唯一能替 tools 守住的东西（百分比走 ADR-070 的 Phase 4 逐个 ratchet）。
+- **两处既有缺陷顺带修掉**：①门禁把「完全没产出」报成「低于 90% 门槛」——对 not-gated 包这话直接是错的（它豁免于门槛却仍然失败），对 gated 包也会把人引去找缺失的测试而真正要修的是缺失的 CI 步骤；现已分成两条消息。②补上兄弟守卫早有的 canary：待检包数为 0 时判红，而不是印「all 0 packages >= 90%」退出 0。
+- **两条反刷分护栏**：报表每行新增 `Scope (files)` 列（measured / `src` 源文件数）——`client`（只圈 `src/game/**`）和四个 scoped 的 tools 包都刻意只测全树的一部分，这是合理且有记录的选择，但也是**唯一能不加测试就抬高百分比的旋钮**，把 scope 大小印在它所修饰的数字旁边，缩窄在同一张表里就现形；`checkCoverageThreshold.mjs` 则每次运行都复述 not-gated 包的当前值与目标（绿跑也印），只写在设计文档里的「临时豁免」会无声变成永久。`Overall` 仍只统计 gated 包——把 tools 折进去会悄悄重定义一个自 2026-08-15 起就意为"发布门禁实际强制的覆盖率"的数字。
+- **CI**：`tools-test` 改跑 `npm run test:coverage`（这些套件都是纯逻辑、各约 1s，不存在 client 那种 v8 插桩税），上传一个以 `tools/` 为根的 artifact（同 server `rest` 分片那个 rooting 技巧），`coverage-report` 增加 `needs: tools-test` + 下载回 `tools/`，并把 `tools-test.result` 并入 `TESTS_OK`（否则一次 tools 测试挂会自报两次红，正是上面 `TESTS_OK` 那条要打断的级联）。
+- **测试**：新增 `server/shared/test/coverageScripts.test.ts`（18 例）——与 `guardScripts.test.ts` 同一手法（spawn 真实 CLI 打 fixture 树，退出码才是 CI 消费的契约）。**注意一个坑**：vitest **无法加载项目 root 之外的 `.mjs`**（整文件报 SyntaxError、位置指在 import 说明符上），所以包清单和 `countSrcFiles` 是通过子进程（`libEval`）读的，不是直接 import。三条关键断言都做过红检（把行为改坏确认变红再还原）。
