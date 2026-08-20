@@ -1,20 +1,26 @@
-// Regression guard for the "enter Family/Sect tab → app crashes with
-// `can't access property "_parentID", e.transform is null`" bug (06.07.2026).
+// Where the family/sect hub hand-off is allowed to happen — and where it must not.
 //
-// Root cause: FriendsSceneBase.render() (base.ts) detaches the persistent
-// `popup.container` singleton before tearing down the rest of the tree, then
-// re-adds it at the end of the same render() call. drawFamilyTab()/drawSectTab()
-// (orgForm.ts) synchronously call `cb.openFamilyHub?.()` / `cb.openSectHub?.()`
-// once the player already belongs to a family/sect — in the real app this
-// navigates to FamilyScene/SectScene and destroys the current FriendsScene
-// (including popup.destroy(), which nulls popup.container.transform). Because
-// that destroy happens *while still inside* the same render() call, execution
-// used to fall through to `this.container.addChild(this.popup.container)` on the
-// now-destroyed container and throw. Fixed by bailing out of render() right
-// after the tab dispatch if the scene was destroyed mid-call (base.ts).
+// History. The family/sect tabs are a shortcut into FamilyScene/SectScene once the player already
+// belongs to one, and drawFamilyTab()/drawSectTab() (orgForm.ts) used to take that shortcut from
+// inside render(): a synchronous `cb.openFamilyHub?.()` mid-tree-walk, which in the real app
+// destroys the current FriendsScene (incl. popup.destroy(), nulling popup.container.transform)
+// while render() is still building it. Execution then fell through to
+// `container.addChild(popup.container)` on a destroyed container and threw
+// `can't access property "_parentID", e.transform is null` (06.07.2026). That was patched by
+// bailing out of render() if the scene died mid-call.
 //
-// Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via
-// vitest.ui.config.ts). Run: npm run test:ui
+// The jump itself was the real cost though (social-tab-switch-cost, 2026-08-20): tapping the tab
+// painted a whole throwaway FriendsScene frame and only then tore it all down for a scene swap.
+// The hand-off now lives in core.autoJumpOrgHub(), called from exactly the two moments the answer
+// can change — switchTab() (status already known) and loadSLGStatus()'s completion (status just
+// arrived) — and never from a draw method.
+//
+// So these tests pin two things: render() must NOT navigate (the frame it would have thrown away is
+// the bug), and the two legitimate entry points must. The mid-render crash guard in endRender()
+// stays as a backstop and is still exercised via the loadSLGStatus path.
+//
+// Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via vitest.ui.config.ts).
+// Run: npm run test:ui
 
 import { describe, it, expect } from 'vitest';
 import { createLayout } from '../../src/layout/ScalingManager';
@@ -34,7 +40,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const [W, H] = [800, 1280];
 
-function buildScene(openFamilyHub: () => void, openSectHub: () => void): any {
+function buildScene(openFamilyHub: () => boolean, openSectHub: () => boolean): any {
   return new FriendsScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenRoom() {},
     myPublicId: '',
@@ -58,64 +64,115 @@ function buildScene(openFamilyHub: () => void, openSectHub: () => void): any {
   });
 }
 
-describe('FriendsScene — navigating to family/sect hub mid-render does not crash', () => {
-  it('drawFamilyTab: openFamilyHub destroying the scene synchronously during render() does not throw', () => {
-    let scene: any;
-    let destroyedDuringRender = false;
-    scene = buildScene(
-      () => { scene.destroy(); destroyedDuringRender = true; },
-      () => {},
-    );
+describe('FriendsScene — the family/sect hub hand-off never happens from inside render()', () => {
+  it('drawFamilyTab does not navigate: rendering the family tab of a player who has one is inert', () => {
+    let jumps = 0;
+    const scene = buildScene(() => { jumps++; return true; }, () => true);
 
-    // Player already belongs to a family → drawFamilyTab() takes the
-    // "openFamilyHub and bail" branch instead of drawing the info/create UI.
     scene.core.tab = 'family';
     scene.core.slgLoaded = true;
     scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' };
 
     expect(() => scene.render()).not.toThrow();
-    expect(destroyedDuringRender).toBe(true);
-    expect(scene.core.dead).toBe(true);
+    expect(jumps).toBe(0);
+    expect(scene.core.dead).toBe(false);
+    scene.destroy();
   });
 
-  it('drawSectTab: openSectHub destroying the scene synchronously during render() does not throw', () => {
-    let scene: any;
-    let destroyedDuringRender = false;
-    scene = buildScene(
-      () => {},
-      () => { scene.destroy(); destroyedDuringRender = true; },
-    );
+  it('drawSectTab does not navigate either', () => {
+    let jumps = 0;
+    const scene = buildScene(() => true, () => { jumps++; return true; });
 
-    // Player already belongs to a family and a sect → drawSectTab() takes the
-    // "openSectHub and bail" branch.
     scene.core.tab = 'sect';
     scene.core.slgLoaded = true;
     scene.core.slgStatus = { worldId: 'world:1:0', isLeader: true, familyId: 'fam_1', sectId: 'sect_1' };
 
     expect(() => scene.render()).not.toThrow();
-    expect(destroyedDuringRender).toBe(true);
-    expect(scene.core.dead).toBe(true);
+    expect(jumps).toBe(0);
+    expect(scene.core.dead).toBe(false);
+    scene.destroy();
   });
 
-  it('loadSLGStatus resolving after the scene has already navigated away does not re-render a dead scene', async () => {
+  it('switchTab jumps straight to the family hub without painting a frame first', () => {
     let scene: any;
+    let jumps = 0;
+    let renders = 0;
+    let rendersAtJump = -1;
     scene = buildScene(
-      () => { scene.destroy(); },
-      () => {},
+      () => { jumps++; rendersAtJump = renders; scene.destroy(); return true; },
+      () => true,
+    );
+    scene.core.slgLoaded = true;
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' };
+
+    // Count renders from here on, so the constructor's own initial render doesn't muddy the check.
+    const realRender = scene.render.bind(scene);
+    scene.render = () => { renders++; realRender(); };
+    scene.core.render = scene.render;
+
+    scene.core.switchTab('family');
+
+    expect(jumps).toBe(1);
+    // The whole point: no throwaway FriendsScene frame between the tap and the scene swap.
+    expect(rendersAtJump).toBe(0);
+    expect(renders).toBe(0);
+  });
+
+  it('switchTab still paints the family tab when the player has no family (nothing to jump into)', () => {
+    let jumps = 0;
+    const scene = buildScene(() => { jumps++; return true; }, () => true);
+    scene.core.slgLoaded = true;
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false };
+
+    scene.core.switchTab('family');
+
+    expect(jumps).toBe(0);
+    expect(scene.core.tab).toBe('family');
+    expect(scene.core.dead).toBe(false);
+    scene.destroy();
+  });
+
+  it('a hub callback that reports it could not navigate (shard unresolved) leaves the tab rendering', () => {
+    let scene: any;
+    // Mirrors createSocialNav's openFamilyHub returning false while slgWorldId is still null.
+    scene = buildScene(() => false, () => false);
+    scene.core.slgLoaded = true;
+    scene.core.slgStatus = { worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' };
+
+    let renders = 0;
+    const realRender = scene.render.bind(scene);
+    scene.render = () => { renders++; realRender(); };
+    scene.core.render = scene.render;
+
+    scene.core.switchTab('family');
+
+    expect(renders).toBe(1);
+    expect(scene.core.dead).toBe(false);
+    scene.destroy();
+  });
+
+  it('loadSLGStatus resolving into a family jumps on completion, and does not re-render a dead scene', async () => {
+    let scene: any;
+    let jumps = 0;
+    scene = buildScene(
+      () => { jumps++; scene.destroy(); return true; },
+      () => true,
     );
 
     scene.core.tab = 'family';
     scene.core.slgLoaded = false;
     scene.core.slgStatus = null;
-    // slgLoaded is false → render() kicks off loadSLGStatus() itself, which
-    // resolves to a familyId once awaited, triggering openFamilyHub on the
-    // finally-render — must not throw even though the scene destroys itself.
+    // slgLoaded is false → drawFamilyTab kicks off loadSLGStatus() itself, which resolves to a
+    // familyId — the jump then happens in its finally, not mid-render. Still must not throw even
+    // though the callback destroys the scene (the endRender `dead` backstop).
     (scene as { core: { cb: { loadSLGStatus(): Promise<unknown> } } }).core.cb.loadSLGStatus =
       async () => ({ worldId: 'world:1:0', isLeader: false, familyId: 'fam_1' });
 
     expect(() => scene.render()).not.toThrow();
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
+    expect(jumps).toBe(1);
     expect(scene.core.dead).toBe(true);
   });
 });

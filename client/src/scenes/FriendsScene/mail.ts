@@ -55,7 +55,9 @@ export class MailPanel {
       cy += rh + rowGap;
     }
     core.maxScroll = Math.max(0, cy - regionH);
-    if (core.scrollY > core.maxScroll) core.scrollY = core.maxScroll;
+    // Post-hoc clamp (mail deleted since the last render) — flag it so update() applies the shift
+    // next frame; see the matching comment in friendsList.drawList.
+    if (core.scrollY > core.maxScroll) { core.scrollY = core.maxScroll; core.scrollDirty = true; }
   }
 
   private drawMailRow(layer: PIXI.Container, m: MailView, y: number): void {

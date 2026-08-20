@@ -13,7 +13,7 @@ import type { FriendView, FriendRequestView } from '../../net/ApiClient';
 import { buildAvatar } from '../../render/avatar';
 import { rankLabel } from './core';
 import type { FriendsSceneCore } from './core';
-import { addButton } from './chrome';
+import { addButton, scrollRegion } from './chrome';
 import type { NetworkHandlers } from './network';
 import { serverNow } from '../../net/serverClock';
 
@@ -45,15 +45,9 @@ export class FriendsListPanel {
     core.regionTop = aY + aH + Math.round(h * 0.02);
     core.regionBottom = core.bodyBottom;
     const regionH = core.regionBottom - core.regionTop;
-
-    const clip = new PIXI.Graphics();
-    clip.beginFill(0xffffff);
-    clip.drawRect(0, core.regionTop, w, regionH);
-    clip.endFill();
-    core.container.addChild(clip);
-    const layer = new PIXI.Container();
-    layer.mask = clip;
-    core.container.addChild(layer);
+    // Shared helper rather than an inline clip+layer, so this list also registers as the render's
+    // scroll layer and gets the cheap drag-translate path (see chrome.ts's scrollRegion).
+    const { layer } = scrollRegion(core, regionH);
 
     if (core.loading) {
       const l = txt(t('friends.loading'), FS.title, C.mid);
@@ -113,7 +107,11 @@ export class FriendsListPanel {
     }
 
     core.maxScroll = Math.max(0, cy - regionH);
-    if (core.scrollY > core.maxScroll) core.scrollY = core.maxScroll;
+    // Content height is only known once the rows are laid out, so a shrink (friend removed, request
+    // answered) can only be clamped after the fact — rows above were already placed at the old
+    // scrollY. Flag it so update() applies the difference next frame instead of leaving the view
+    // silently out of sync with scrollY until the player happens to scroll again.
+    if (core.scrollY > core.maxScroll) { core.scrollY = core.maxScroll; core.scrollDirty = true; }
   }
 
   private drawRequestRow(layer: PIXI.Container, r: FriendRequestView, _contentY: number, y: number): void {
@@ -165,6 +163,9 @@ export class FriendsListPanel {
       snapFont(Math.round(rh * 0.28)), C.dark, true);
     label.anchor.set(0, 0.5); label.x = rx + Math.round(rw * 0.06); label.y = y + rh * 0.5;
     layer.addChild(label);
+    // Kept so the once-a-second countdown rewrites this one string (repaint.tickDuelBanner) instead
+    // of rebuilding the whole tree.
+    core.repaint.duelBannerLabel = label;
 
     const bW = Math.round(rw * 0.18);
     const bH = Math.round(rh * 0.5);

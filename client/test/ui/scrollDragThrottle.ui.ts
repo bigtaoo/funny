@@ -15,6 +15,12 @@
 // These tests assert the contract directly: N handleMove calls between two update() ticks must
 // produce at most the one render() from the frame boundary, not one per handleMove call.
 //
+// FriendsScene has since gone a step further (social-tab-switch-cost, 2026-08-20): it lays rows out
+// one region-height beyond the viewport in each direction, so a drag inside that band translates the
+// already-built layer and rebuilds nothing at all — see assertFriendsDragTranslatesWithoutRebuild
+// below, which pins that stronger contract plus the rebuild fallback past the band. Every other
+// scene here is still on the plain once-per-frame throttle.
+//
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via vitest.ui.config.ts).
 // Run: npm run test:ui
 
@@ -97,14 +103,20 @@ function assertScrollDragThrottled(scene: any, input: InputManager): void {
 }
 
 /**
- * Same contract as assertScrollDragThrottled(), but drags upward (decreasing y — the
- * gesture a user makes to scroll a list *down*). FriendsScene/ChatScene's onPointerMove only
- * flags scrollDirty when the requested offset actually differs from the current scrollY; at
- * scrollY=0 a downward drag clamps right back to 0 and never dirties, so those two scenes need
- * the opposite direction from the FamilyScene-style ScrollTapGesture scenes above.
+ * FriendsScene goes one better than the once-per-frame throttle above (social-tab-switch-cost,
+ * 2026-08-20): rows are laid out one region-height beyond the viewport in each direction, so a drag
+ * inside that overscan band translates the pre-built layer and renders ZERO times — the full
+ * rebuild only comes back once the drag runs past what was built. This asserts both halves.
+ *
+ * Drags upward (decreasing y — the gesture that scrolls a list *down*): onPointerMove only flags
+ * scrollDirty when the requested offset actually differs from the current scrollY, and at scrollY=0
+ * a downward drag clamps straight back to 0 and never dirties.
  */
-function assertScrollDragThrottledUpward(scene: any, input: InputManager): void {
+function assertFriendsDragTranslatesWithoutRebuild(scene: any, input: InputManager): void {
   const renderSpy = vi.spyOn(scene, 'render');
+  const layer = scene.core.repaint.layer;
+  expect(layer).toBeTruthy();
+  expect(scene.core.repaint.overscan).toBeGreaterThan(60);
 
   input._emitDown(W / 2, H / 2);
   input._emitMove(W / 2, H / 2 - 20);
@@ -112,13 +124,37 @@ function assertScrollDragThrottledUpward(scene: any, input: InputManager): void 
   input._emitMove(W / 2, H / 2 - 60);
   expect(renderSpy).not.toHaveBeenCalled();
 
+  // Drained on the frame boundary as before — but as a layer translate, not a rebuild.
   scene.update(1 / 60);
-  expect(renderSpy).toHaveBeenCalledTimes(1);
+  expect(renderSpy).not.toHaveBeenCalled();
+  expect(scene.core.repaint.layer).toBe(layer); // same tree, just moved
+  expect(layer.y).toBe(-60);
 
+  // A second frame with no further movement must not do anything at all.
+  scene.update(1 / 60);
+  expect(renderSpy).not.toHaveBeenCalled();
+
+  // Past the overscan band there is nothing pre-built left to show — fall back to a rebuild.
+  const beyond = scene.core.repaint.overscan + 100;
+  input._emitMove(W / 2, H / 2 - beyond);
   scene.update(1 / 60);
   expect(renderSpy).toHaveBeenCalledTimes(1);
 
   scene.destroy();
+}
+
+/**
+ * The translate has to land the content in exactly the place a rebuild would have. Nothing above
+ * checks that — `layer.y === -60` only says the layer moved by the right amount, not that the rows
+ * inside it were laid out against the right origin. So: drag, then force a real rebuild at that same
+ * scrollY, and compare where the rows actually ended up on screen. An off-by-one in the build-space
+ * math (or a missed markScrollBuilt re-baseline) shows up here as a mismatch, where the cheap-path
+ * assertions above would all still pass.
+ */
+function rowScreenYs(scene: any): number[] {
+  const layer = scene.core.repaint.layer;
+  // Row backgrounds only (each row's sketchPanel is the one child positioned at the row's top).
+  return layer.children.map((c: any) => Math.round(c.y + layer.y)).sort((a: number, b: number) => a - b);
 }
 
 describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
@@ -253,7 +289,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     scene.destroy();
   });
 
-  it('FriendsScene: friends-list drag-scroll renders once per frame, not once per pointermove (2026-07-18 fix)', async () => {
+  it('FriendsScene: friends-list drag-scroll translates the built layer instead of rebuilding it (2026-08-20 fix)', async () => {
     const friends: FriendView[] = Array.from({ length: 30 }, (_, i) => ({
       publicId: String(100000000 + i), displayName: `Friend${i}`, online: i % 2 === 0,
     }));
@@ -275,7 +311,43 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     expect(scene.core.maxScroll).toBeGreaterThan(0);
     // Drag upward (decreasing y) from scrollY=0 so the requested scroll offset actually
     // changes (a downward drag would clamp to the same 0 and never dirty the scroll).
-    assertScrollDragThrottledUpward(scene, input);
+    assertFriendsDragTranslatesWithoutRebuild(scene, input);
+  });
+
+  it('FriendsScene: a translated layer puts rows exactly where a rebuild at that scrollY would', async () => {
+    const friends: FriendView[] = Array.from({ length: 30 }, (_, i) => ({
+      publicId: String(100000000 + i), displayName: `Friend${i}`, online: i % 2 === 0,
+    }));
+    const input = new InputManager();
+    const scene = new FriendsScene(createLayout(W, H), input, {
+      onBack() {}, onOpenRoom() {},
+      myPublicId: '', getProfileExtra: async () => ({}),
+      loadFriends: async () => friends,
+      loadRequests: async () => ({ incoming: [], outgoing: [] }),
+      search: async () => ({ publicId: '123456789', displayName: 'Bob' }),
+      addFriend: async () => {}, respond: async () => {}, removeFriend: async () => {}, blockUser: async () => {}, reportUser: async () => {}, duelInvite: () => {}, duelRespond: () => {},
+      loadConversations: async () => [], openChat() {},
+      loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
+      claimMail: async () => true, deleteMail: async () => {},
+    }) as any;
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(scene.core.maxScroll).toBeGreaterThan(200);
+
+    input._emitDown(W / 2, H / 2);
+    input._emitMove(W / 2, H / 2 - 137); // an awkward offset, so an off-by-one can't hide
+    scene.update(1 / 60);
+    const translated = rowScreenYs(scene);
+    expect(scene.core.scrollY).toBe(137);
+
+    // Same scroll position, arrived at by a full rebuild instead of a translate.
+    scene.render();
+    expect(scene.core.repaint.layer.y).toBe(0); // freshly baselined
+    const rebuilt = rowScreenYs(scene);
+
+    // The translated view builds an overscan band the rebuild also builds, so both lists cover the
+    // same rows — every on-screen position must match.
+    expect(translated).toEqual(rebuilt);
+    scene.destroy();
   });
 
   it('FriendsScene: scrollY reflects the final drag position (not an intermediate one) once drained', async () => {

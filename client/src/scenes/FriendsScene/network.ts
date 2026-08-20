@@ -40,6 +40,7 @@ export class NetworkPanel implements NetworkHandlers {
 
   async refresh(): Promise<void> {
     const core = this.core;
+    const wasLoading = core.loading;
     try {
       const [friends, requests, mail, convs] = await Promise.all([
         core.cb.loadFriends(),
@@ -53,11 +54,19 @@ export class NetworkPanel implements NetworkHandlers {
       core.mail = mail.mail;
       core.mailUnread = mail.unread;
       core.conversations = convs;
+      core.lastRefreshAt = Date.now();
     } catch {
       if (core.loading) core.toast('friends.error');
     } finally {
       core.loading = false;
-      if (!core.dead) core.render();
+      // refresh() runs on every inbound push (presence/request/chat/mail) and on a stale tab switch,
+      // and most of those land with an identical payload — repainting anyway meant a second, network-
+      // delayed full rebuild flashing over whatever the player was already looking at (or typing
+      // into). Only repaint when the first load just finished or the data actually moved.
+      const sig = refreshSignature(core);
+      const changed = sig !== core.refreshSig;
+      core.refreshSig = sig;
+      if (!core.dead && (wasLoading || changed)) core.render();
     }
   }
 
@@ -76,7 +85,10 @@ export class NetworkPanel implements NetworkHandlers {
     } finally {
       core.slgLoading = false;
       core.slgLoaded = true;
-      if (!core.dead) core.render();
+      // This status is what decides whether the family/sect tab is a page or a jump into its own hub
+      // scene, so resolve that here rather than in drawFamilyTab/drawSectTab — those used to navigate
+      // (and so destroy this scene) from inside render(). Skip the repaint when we're leaving anyway.
+      if (!core.dead && !core.autoJumpOrgHub()) core.render();
     }
   }
 
@@ -327,6 +339,22 @@ export class NetworkPanel implements NetworkHandlers {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * Cheap change-detector over everything refresh() writes onto core — see the repaint skip in
+ * refresh()'s finally. Covers exactly the fields the friends/mail panels and the tab-rail badges
+ * read, so a signature match means no visible difference; anything cheaper than a full tree rebuild
+ * is worth it here, and this runs once per refresh rather than per row.
+ */
+function refreshSignature(core: FriendsSceneCore): string {
+  return [
+    core.friends.map((f) => `${f.publicId}|${f.online ? 1 : 0}|${f.alias ?? ''}|${f.displayName}|${f.rank ?? ''}|${f.avatarId ?? ''}`).join(','),
+    core.incoming.map((r) => `${r.requestId}|${r.fromName}`).join(','),
+    core.mail.map((m) => `${m.mailId}|${m.read ? 1 : 0}|${m.claimed ? 1 : 0}`).join(','),
+    String(core.mailUnread),
+    core.conversations.map((c) => `${c.peer.publicId}|${c.unread}`).join(','),
+  ].join('¦');
+}
 
 function addErrorKey(e: unknown): TranslationKey {
   const code = (e as { code?: string } | null)?.code;

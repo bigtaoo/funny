@@ -268,3 +268,13 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 **修法**：给这**一条**用例显式加 `}, 30_000)`，不要调高全局 `testTimeout`——冷导入的代价只有它在付，全局放宽等于把别处真卡死的用例也一起放过。这也是本仓库既有的约定：`campaign-clear-pipeline` / `campaign-real-layer-interlude-nav` / `judge-runner` 用 `30_000`，`capacitorStubCompile` 用 `60_000`，`pvpSim` 用 `60_000`–`180_000`，全部是**逐用例第三参**；只有 e2e / load 这类整份都慢的 config 才在 `vitest.*.config.ts` 里设 `testTimeout`。另一种可行做法是把 `importActual` 提到 `beforeAll` 里（代价只付一次、且不算进用例预算），但那样反而要额外解释"为什么这个文件有个 beforeAll"，逐用例超时更贴合现状。
 
 验证：`npm run typecheck` 干净，`npx vitest run` 172 文件 / 1460 条绿。
+
+## 性能契约怎么测：拿「重绘次数」当断言，并用 mutation 验证它不是空转（2026-08-20，社交页签卡顿修复）
+
+`design/game/SOCIAL_DESIGN.md` 同日那行修的是三处「本来不该发生的整树重建 / 网络请求」。这类修复的麻烦在于**它没有可见产出**——页面长得一模一样，只是少做了事，所以断言必须直接钉住「做了多少次」，而不是「结果对不对」。三条经验：
+
+- **重绘次数：替换 `core.render`，不要 `vi.spyOn(scene, 'render')`。** 场景自己的 `render` 是 private，且真正被各面板/`NetworkPanel` 调用的是构造时注入的 `core.render` 回调；spy 外层那个既拦不全，`vi.spyOn` 拿到的包装函数在 `scene.core.render = () => spy()` 这种转写里还会丢 `this`（`Cannot read properties of undefined (reading 'core')`，本次实测踩过）。直接 `scene.core.render = vi.fn()` 最稳，`socialTabSwitchCost.ui.ts` 的 `countRenders()` 就是这个形状。
+- **网络次数：让每个 callback 自增一个计数器，然后整体 `toEqual` 一个字面量对象。** 只断言「某一项没涨」很容易在别处偷偷多打一个请求；`expect(calls).toEqual({friends:1, requests:1, mail:1, conversations:1, world:1})` 把「切世界频道只该拉世界频道」这句话完整钉住。
+- **⚠️ 「只平移不重建」这类优化，光断言「没重建」是不够的——必须再断言「平移后东西在对的位置」。** `expect(layer.y).toBe(-60)` 只说明图层挪了正确的距离，**不说明图层里的行当初是按正确原点排的**：漏一次 `markScrollBuilt()` 重新基准、或 build 空间算错一个像素，这条照样绿。补法是**几何等价性用例**——拖一个别扭的距离（137px，避免凑巧对齐），记下逐行屏幕 y，再 `scene.render()` 在同一 `scrollY` 上强制整树重建一次，两个列表必须 `toEqual`。**并且要 mutation 验一遍**：把 `layer.y = -delta` 改成 `-delta + 1`，确认这两条用例会同时红（本次验过，会红）——不验的话很容易写出一条恒绿的假测试，正是本文件「审计 backlog」几条老坑的同一种形状。
+
+顺带一条接线坑：这次把 `FriendsScene` 的指针分发从 `core.ts` 的方法挪成了 `input.ts` 的自由函数，`test/ui/socialTabRail.ui.ts` 里直接调 `scene.core.onPointerDown(...)` 的地方随之全部失败（`is not a function`）。**改文件结构前先 `grep -rn "core\.\(onPointer\|handle\)" client/test`**——`client-modules.md` 第 19 条早就记过「改链会牵连测试接线」，挪方法到自由函数是同一类破坏，只是更隐蔽（`tsc` 拦不住 `as any` 的测试）。

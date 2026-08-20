@@ -4,7 +4,7 @@ import * as analytics from '../../analytics';
 import { ENGINE_VERSION } from '../../game';
 import type { Replay, LevelDefinition } from '../../game';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
-import { WorldApiClient } from '../../net/WorldApiClient';
+import { WorldApiClient, type FamilyDetailView } from '../../net/WorldApiClient';
 import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { WorldMapView } from '../../scenes/WorldMapScene';
 import type { AppCtx, Nav } from '../appCtx';
@@ -218,7 +218,14 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   // Defaults to the world map since that's the only entry point today that doesn't thread one
   // through (e.g. a future direct "family" button on the map itself). `overlay` keeps the SLG map
   // alive underneath when the hub was opened from the world map (see goWorldMap.returnToMap).
-  function goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId), overlay = false): void {
+  /** @param preloadedFamily Family detail the caller has already fetched (the social hub's family
+   *  tab, whose status load just pulled it) — lets FamilyScene paint straight away instead of
+   *  re-issuing the same GET behind a loading screen. Omitted by every other entry point. */
+  function goFamilyHub(
+    worldApi: WorldApiClient, worldId: string,
+    onExit: () => void = () => goWorldMap(worldApi, worldId), overlay = false,
+    preloadedFamily?: FamilyDetailView | null,
+  ): void {
     const myAccountId = saveManager.get().accountId;
     const view = views.showFamily({
       onBack: onExit,
@@ -230,6 +237,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       },
       worldApi,
       worldId,
+      ...(preloadedFamily ? { preloadedFamily } : {}),
       myAccountId,
       playerName: playerName(),
       addFriend: async (publicId) => { await api!.requestFriend(publicId); },

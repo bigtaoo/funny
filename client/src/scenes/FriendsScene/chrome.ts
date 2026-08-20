@@ -11,9 +11,9 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
+import { caretDisplay } from '../../ui/inputDisplay';
 import { drawSocialTabRail, SOCIAL_TAB_ICON, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
-import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import type { FriendsSceneCore } from './core';
 
@@ -31,6 +31,9 @@ export function beginRender(core: FriendsSceneCore): void {
   // Cleared each render; only a scroll panel (friends list / world chat / mail) sets it
   // back > 0, so drawScrollbar() below is a no-op on the non-scrolling tabs.
   core.maxScroll = 0;
+  // Everything the incremental-repaint paths hold onto was just destroyed by tearDownChildren —
+  // drop the refs so they fall back to a full render instead of touching a dead display object.
+  core.repaint.reset();
 
   // Landscape only for now — see ShopScene.drawBackground / LOBBY_IA_REDESIGN §14.
   const railX = core.landscape ? sidebarNavW(core.w, core.h, true) : undefined;
@@ -40,28 +43,20 @@ export function beginRender(core: FriendsSceneCore): void {
   drawHeader(core);
 }
 
-/** render()'s closing steps — re-attach the popup/modal singletons. Guards `dead` itself since
- *  drawFamilyTab/drawSectTab can synchronously navigate away (openFamilyHub/openSectHub) once a
- *  family/sect already exists, which destroys this scene (incl. popup.container) mid-render —
- *  re-adding it below would then throw. */
+/** render()'s closing steps — re-attach the popup/modal singletons. The `dead` guard is kept as a
+ *  backstop: drawFamilyTab/drawSectTab used to synchronously navigate away (openFamilyHub/
+ *  openSectHub) once a family/sect existed, destroying this scene — incl. popup.container — while
+ *  render() was still walking its own tree, so re-adding it here threw. Those jumps now happen from
+ *  switchTab/loadSLGStatus instead (see core.autoJumpOrgHub), never from a draw method. */
 export function endRender(core: FriendsSceneCore): void {
   if (core.dead) return;
-  drawScrollbar(core);
+  // Shared scroll indicator for whichever panel set a scrollable region this render (friends list /
+  // world chat / mail all write regionTop/regionBottom + maxScroll). A no-op when maxScroll is 0
+  // (reset at the top of render()), so the non-scrolling tabs pay nothing. Owned by `repaint`
+  // because a drag has to redraw the thumb on its own, outside any render.
+  core.repaint.drawScrollbar();
   core.container.addChild(core.popup.container);
   core.container.addChild(core.modalLayer);
-}
-
-/**
- * Shared scroll indicator for whichever panel set a scrollable region this render
- * (friends list / world chat / mail all write regionTop/regionBottom + maxScroll).
- * No-op when maxScroll is 0 (reset at the top of render()).
- */
-export function drawScrollbar(core: FriendsSceneCore): void {
-  drawScrollIndicator(
-    core.container,
-    { x: 0, y: core.regionTop, w: core.w, h: core.regionBottom - core.regionTop },
-    core.scrollY, core.maxScroll,
-  );
 }
 
 // ── Tab rail (5 tabs, vertical, left of the binding line) ──────────────────────
@@ -97,6 +92,34 @@ export function drawHeader(core: FriendsSceneCore): void {
 
 // ── Shared render primitives ─────────────────────────────────────────────────
 
+/**
+ * The value Text for an on-canvas text field: renders `value` with a blinking caret while focused,
+ * and — when focused — registers itself so the 0.5s blink can swap the caret in place instead of
+ * re-rendering the whole tree (see ./repaint.ts). Every field on these tabs goes through here so
+ * none can drift into the old "draw a caret nobody can cheaply update" shape.
+ *
+ * The caller still positions/anchors the returned Text and adds it to its own parent.
+ */
+export function caretText(core: FriendsSceneCore, opts: {
+  active: boolean;
+  value: string;
+  size: number;
+  color: number;
+  /** Shown in place of the value when the field is empty and unfocused. */
+  placeholder: string;
+  /** Re-applies width-dependent layout after the string changes (see CaretField.reflow). */
+  reflow?: (obj: PIXI.Text) => void;
+}): PIXI.Text {
+  const obj = txt(caretDisplay(opts.value, opts.active && core.caretOn, opts.placeholder), opts.size, opts.color);
+  if (opts.active) {
+    core.repaint.caretField = {
+      obj, value: opts.value, placeholder: opts.placeholder,
+      ...(opts.reflow ? { reflow: opts.reflow } : {}),
+    };
+  }
+  return obj;
+}
+
 /** Center label (fixed position, not in the scroll layer). */
 export function centerLabelFixed(core: FriendsSceneCore, text: string): void {
   const regionH = core.regionBottom - core.regionTop;
@@ -105,6 +128,13 @@ export function centerLabelFixed(core: FriendsSceneCore, text: string): void {
   core.container.addChild(lbl);
 }
 
+/**
+ * Open a masked scroll region and register it as *the* scroll layer for this render, so a drag can
+ * translate it instead of rebuilding every row (see FriendsSceneCore's cheap-scroll block). The clip
+ * stays in `container`, outside the layer, so translating the layer scrolls the content under a
+ * fixed viewport. Rows are laid out one region-height beyond the viewport in each direction
+ * (`scrollOverscan`), which is how far a drag can go before it needs a rebuild.
+ */
 export function scrollRegion(core: FriendsSceneCore, regionH: number): { layer: PIXI.Container } {
   const { w } = core;
   const clip = new PIXI.Graphics();
@@ -113,6 +143,7 @@ export function scrollRegion(core: FriendsSceneCore, regionH: number): { layer: 
   const layer = new PIXI.Container();
   layer.mask = clip;
   core.container.addChild(layer);
+  core.repaint.register(layer, regionH);
   return { layer };
 }
 

@@ -81,3 +81,35 @@ describe('FamilyScene loadData() — first-paint decouple', () => {
     expect(core.cb.worldApi.getFamilyChannel).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 2026-08-20 (social-tab-switch-cost): the social hub's family tab jumps here right after its own
+ * status load pulled GET /social/family/mine, and loadData() then pulled the identical response
+ * again — a second loading screen between tapping the tab and seeing the roster, on top of the
+ * scene swap itself. The opener now hands its copy over as `preloadedFamily`.
+ */
+describe('FamilyScene loadData() — preloadedFamily hand-off', () => {
+  it('uses the handed-over family instead of re-fetching it', async () => {
+    const core = fakeCore();
+    (core.cb as { preloadedFamily?: unknown }).preloadedFamily = FAM;
+    const data = new DataPanel(core);
+
+    await data.loadData();
+
+    expect(core.cb.worldApi.getMyFamily).not.toHaveBeenCalled();
+    expect(core.mode).toBe('myFamily');
+    expect(core.family).toBe(FAM);
+    // The channel is a separate round-trip and still has to happen.
+    expect(core.cb.worldApi.getFamilyChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it('still fetches when no family was handed over (every other entry point)', async () => {
+    const core = fakeCore();
+    const data = new DataPanel(core);
+
+    await data.loadData();
+
+    expect(core.cb.worldApi.getMyFamily).toHaveBeenCalledTimes(1);
+    expect(core.mode).toBe('myFamily');
+  });
+});

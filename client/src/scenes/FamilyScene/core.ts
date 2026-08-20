@@ -57,6 +57,13 @@ export interface FamilySceneCallbacks {
   onNavTab(tab: SocialTab): void;
   worldApi: WorldApiClient;
   worldId: string;
+  /**
+   * Family detail the opener already fetched, so the first paint doesn't wait on a second identical
+   * GET /social/family/mine. Set only by the social hub's family tab, which jumps here right after
+   * its own status load pulled exactly this (see createSocialNav's openFamilyHub) — every other
+   * entry point omits it and loadData() fetches as before.
+   */
+  preloadedFamily?: FamilyDetailView;
   /** current player's accountId */
   myAccountId: string;
   /** current player's display name, denormalized onto sent family messages */

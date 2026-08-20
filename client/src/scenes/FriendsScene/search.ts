@@ -123,6 +123,7 @@ export class SearchPanel {
     }
 
     core.maxScroll = Math.max(0, cy - regionH);
-    if (core.scrollY > core.maxScroll) core.scrollY = core.maxScroll;
+    // Post-hoc clamp — flag it so update() applies the shift next frame; see friendsList.drawList.
+    if (core.scrollY > core.maxScroll) { core.scrollY = core.maxScroll; core.scrollDirty = true; }
   }
 }
