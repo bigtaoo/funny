@@ -12,6 +12,7 @@ import {
   TERRAIN_TEX_ALPHA,
   TERRAIN_TEX_ALPHA_DEFAULT,
   terrainTextureName,
+  lerpHexColor,
 } from '../src/tiles/tileStyle';
 
 describe('terrainTextureName', () => {
@@ -125,5 +126,55 @@ describe('biomeGroundTint', () => {
     for (let x = 20; x < 1480; x += 211) {
       for (let y = 20; y < 1480; y += 211) expect(palette.has(biomeGroundTint(x, y, 11))).toBe(true);
     }
+  });
+});
+
+// lerpHexColor is the one function in this file with no reachable caller: biomeGroundTint's only
+// other branch wins unconditionally now that biomeMixAt always returns t=0. It is kept on purpose
+// (so the call site survives a future re-enable of biome blending — see the note on
+// biomeGroundTint), and that is exactly why it needs a test: an unreachable helper cannot be
+// caught being wrong by anything else, and a channel-order slip in a packed-RGB lerp is invisible
+// by inspection. These cases also document what the blend is SUPPOSED to do, for whoever turns it
+// back on.
+describe('lerpHexColor (retained for a future biome cross-fade — currently unreachable)', () => {
+  it('returns the endpoints exactly at t=0 and t=1', () => {
+    expect(lerpHexColor(0x102030, 0xa0b0c0, 0)).toBe(0x102030);
+    expect(lerpHexColor(0x102030, 0xa0b0c0, 1)).toBe(0xa0b0c0);
+  });
+
+  it('blends each channel independently, not the packed integer', () => {
+    // Packed-int interpolation would carry between channels; per-channel must not. Midpoint of
+    // 0x0000ff and 0x00ff00 is 0x008080 (both channels at 0x7f.8 -> rounds to 0x80), NOT the
+    // 0x007f80 you get from lerping the numbers 255 and 65280 and re-splitting.
+    expect(lerpHexColor(0x0000ff, 0x00ff00, 0.5)).toBe(0x008080);
+    // Red left untouched while green/blue move proves the channels are actually separated.
+    expect(lerpHexColor(0xff0000, 0xff00ff, 0.5)).toBe(0xff0080);
+  });
+
+  it('rounds per channel and never overflows into the next one', () => {
+    // 0x01 -> 0x02 at t=0.5 is 1.5, rounding UP to 2 (Math.round), and the byte above it must not
+    // pick up a carry.
+    expect(lerpHexColor(0x000101, 0x000202, 0.5)).toBe(0x000202);
+    for (let i = 0; i <= 10; i++) {
+      const c = lerpHexColor(0x000000, 0xffffff, i / 10);
+      const [r, g, b] = [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+      expect(r).toBe(g);
+      expect(g).toBe(b);
+      expect(c).toBeLessThanOrEqual(0xffffff);
+      expect(c).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('blends the real RES_TEX_TINT palette into a color between the two', () => {
+    const mid = lerpHexColor(RES_TEX_TINT.paper!, RES_TEX_TINT.ink!, 0.5);
+    for (const shift of [16, 8, 0]) {
+      const ch = (v: number) => (v >> shift) & 0xff;
+      const lo = Math.min(ch(RES_TEX_TINT.paper!), ch(RES_TEX_TINT.ink!));
+      const hi = Math.max(ch(RES_TEX_TINT.paper!), ch(RES_TEX_TINT.ink!));
+      expect(ch(mid)).toBeGreaterThanOrEqual(lo);
+      expect(ch(mid)).toBeLessThanOrEqual(hi);
+    }
+    expect(mid).not.toBe(RES_TEX_TINT.paper!);
+    expect(mid).not.toBe(RES_TEX_TINT.ink!);
   });
 });

@@ -53,14 +53,30 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 | 包 | `coverage.include` | scope 内行覆盖 | 全包行覆盖 | 距 90% 要做的事 |
 |---|---|---|---|---|
 | `level-editor` | `state/**`、`units.ts` | **100.0%** (216/216) | 23.8% | 已达标，但 scope 只占 ~1670 行里的 216 行（**五个工具里最窄**）。Phase 4b 先把 `board/BoardPanel.ts`/`timeline/TimelinePanel.ts` 里已导出的坐标/命中数学抽成独立模块（现在夹在拥有 canvas 的面板类里，目录 include 够不着），scope 扩到约 600 行再接门禁 |
-| `map-editor` | `state/**`、`tiles/**`、`i18n.ts`、`constants.ts` | **98.8%** (644/652) | 38.3% | **✅ 已接门禁（Phase 4a，2026-08-20）**。`isoGrid`/`tileStyle` 已从 `render/` 移进新的 `src/tiles/`（纯层：一格在屏幕哪儿 / 长什么样），`include` 回到目录级，包也从 `NOT_GATED_JSON_SUMMARY_PACKAGES` 移进 `JSON_SUMMARY_PACKAGES` |
+| `map-editor` | `state/**`、`tiles/**`、`i18n.ts`、`constants.ts` | **100.0%** (652/652)、函数 62/62 | 38.3% | **✅ 已接门禁（Phase 4a，2026-08-20）**。`isoGrid`/`tileStyle` 已从 `render/` 移进新的 `src/tiles/`（纯层：一格在屏幕哪儿 / 长什么样），`include` 回到目录级，包也从 `NOT_GATED_JSON_SUMMARY_PACKAGES` 移进 `JSON_SUMMARY_PACKAGES`。同日补完最后 8 行（150 例），并加了 `pureLayerBoundary.test.ts` 守边界——见下方「覆盖率百分比守不住目录边界」|
 | `vfx-editor` | `model/**`、`io/**`、`rendering/Playback.ts` | 84.9% (449/529) | 40.4% | Phase 4c：`io/IOController.ts`（74 行，0%）。它没有浏览器依赖挡路，所以「没测」是缺口而非结构限制，故意留在 scope 内 |
 | `animator` | `core/**`、`skeleton/**`、`animation/**`、`io/**` | 64.3% (927/1442) | 23.5% → **29.5%**（2026-08-20 删掉 1424 行不可达死码后实测，见下方「已知遗留」）| Phase 4d：`io/{AutoSaveController,ProjectStore}.ts`（IndexedDB，均 0%，按 vfx-editor 的 `fake-indexeddb` 先例）+ `animation/AnimationController.ts`（41.3%） |
 | `ops` | **无（报全包）** | — | **8.8%** (322/3639) | Phase 4e：它没有可指的逻辑层——2026-08-13 Phase 3 导出的 9 个纯函数各自嵌在一个 90% 是 `h()` DOM 的 `pages/*.ts` 里，最大的非页面文件 `src/api.ts` 自己也只有 22.7%。先把各页纯逻辑抽进 `src/logic/<page>.ts`、`pages/*` 只留 DOM 装配（同 `f22c3df2` 拆 `api.ts`/`types.ts` 的方向），再把 include 收到 `logic/**` + `api/**` |
 
-**Phase 4a 实测（2026-08-20，`map-editor`）**：搬 `isoGrid`/`tileStyle` 是**零行为改动**的搬移——production bundle 逐 token 比对，两侧各只有 25 个独有 token，全部是 webpack 的确定性 module id（模块路径集合变了必然重排）与 contenthash 本身，无任何代码/字符串差异（581751 → 581765 字节）。所以这类 graduation **不要指望 contenthash 相同**（那是 animator 删死码那次能用的证据，因为那次模块集合只减不改名）；能用的是 token 集合对比。顺带一并搬走的还有 `TerrainTextureName` 类型：它原来定义在 PIXI 的 `render/terrainAtlasLoader.ts` 里，纯层要用就得 `import type` 一个 PIXI 模块（运行期无害，但边界读不出来），现在类型归 `tiles/tileStyle.ts`、loader 反向 import。**接门禁之后边界是自守的**：往一个已被 include 的目录里丢 PIXI 模块 = 塞进一个 ~0% 的文件 = 打红 90% 那条线；旧的逐文件 include 对「往 `render/` 加文件」完全隐形。
+**Phase 4a 实测（2026-08-20，`map-editor`）**：搬 `isoGrid`/`tileStyle` 是**零行为改动**的搬移——production bundle 逐 token 比对，两侧各只有 25 个独有 token，全部是 webpack 的确定性 module id（模块路径集合变了必然重排）与 contenthash 本身，无任何代码/字符串差异（581751 → 581765 字节）。所以这类 graduation **不要指望 contenthash 相同**（那是 animator 删死码那次能用的证据，因为那次模块集合只减不改名）；能用的是 token 集合对比。顺带一并搬走的还有 `TerrainTextureName` 类型：它原来定义在 PIXI 的 `render/terrainAtlasLoader.ts` 里，纯层要用就得 `import type` 一个 PIXI 模块（运行期无害，但边界读不出来），现在类型归 `tiles/tileStyle.ts`、loader 反向 import。~~**接门禁之后边界是自守的**~~ —— **这句话是错的，同日订正，见下一节**。
 
 **为什么剩下的低分留着**：include 清单刻意把已知未测的文件圈在里面（animator 那两个 0% 的 IndexedDB 文件最典型）——缺口是要干的活，不是要定义掉的东西。反过来，`ops` 只要把 include 缩到 `src/api/**` 就能把印出来的数字抬上去，**一个测试都不用加**，这是覆盖率门禁最不该奖励的事，所以它宁可挂着 8.8% 的全包数字。
+
+### ⚠️ 覆盖率百分比守不住目录边界（2026-08-20 订正）
+
+Phase 4a 的原始写法声称「接门禁之后，往 `src/tiles/`/`src/state/` 丢一个 PIXI 模块，等于往已 include 的目录里塞一个 ~0% 的文件，直接打红 90%」。**方向对，量级错**，别再照抄这句：
+
+```bash
+node -e "const t=require('./coverage/coverage-summary.json').total.lines; console.log(Math.floor(t.covered/0.9 - t.total))"
+```
+
+- 门禁的余量 = `covered/0.9 - total`。map-editor 补完测试后是 **72 行**（补测试之前是 63 行）——**测试越好，能容忍的杂质越多**，这条反向激励才是问题的根。
+- 这不是理论边角：该包 16 个 PIXI/DOM 文件里**有 10 个 ≤63 行**（三个 atlas loader、`refresh.ts`、`citySprites.ts`、`viewport.ts`、`status.ts`、`i18nApply.ts`、`panels.ts`），随便哪一个搬进 `src/tiles/` 门禁都不响。
+- 实测确认过：往 `src/tiles/` 放一个 13 行的 PIXI+DOM 探针文件，`All files` 掉到 96.98%，**门禁照过**。
+
+所以边界要有自己的断言：`tools/map-editor/test/pureLayerBoundary.test.ts`（4 例）——扫 `src/state/**` + `src/tiles/**` 的源码，断言 ①import 白名单（只许 `@nw/shared/slg`、`../constants`、`../i18n` 和纯目录内部；`import type` 一个 PIXI 模块同样算越界，那正是 Phase 4a 搬 `TerrainTextureName` 的理由）②不出现任何 DOM/浏览器全局（先剥注释，免得文档里提一句就误报）③canary：每个纯目录必须扫到文件、import 正则必须至少匹配到一条（CRLF/跨行那类空转 bug）④**受检目录从 `vitest.config.ts` 的 `coverage.include` 反推**，往 include 里加第三个目录而不加守卫，这条直接红。四条断言都做过 red-then-green（含"改名一个纯目录"和"往 include 加一项"两个 canary）。
+
+**给 4b–4e 的结论**：graduation 不等于边界有人守。`include` 回到目录级只是让「加文件」变得可见**给覆盖率算法**，不等于可见给门禁——门禁只看一个百分比，而百分比有余量。每个毕业的包都该配一条同形的 purity 守卫，`PURE_DIRS` 改一下就能抄。
 
 **防刷分的那一列**：报表每行有 `Scope (files)`（measured / `src` 下源文件数）。缩 include 抬 % 的同时这个比例会掉，两个数印在同一张表里，取舍在 review 时就看得见。
 
