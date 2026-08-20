@@ -101,13 +101,46 @@
 
 ## 6. 编辑器架构（`tools/level-editor/`）
 
+### 6.0 纯层 / DOM 层的分界（`src/layout/`，2026-08-20 ADR-070 Phase 4b）
+
+源码按「有没有 canvas / DOM」一分为二，两个画布面板的**全部**坐标、命中、配色与路径决策住在纯层：
+
+```
+src/layout/board.ts      纯：一格在屏幕哪儿（rowToY/cellAt/cellCenter/laneHeaderAt）、光标下是哪个
+                            路径节点（hitHandle + activeHandles）、一格什么颜色（baseTint + 调色板 C）、
+                            网格怎么适配面板宽度（fitCell/headerFor）、变道/护送路径怎么走
+                            （crossPathPoints/escortPathPoints，「先在本列下降、再横跳」的折线）
+src/layout/timeline.ts   纯：tick↔像素（tickToX/xToTick）、哪一行是哪条车道（laneIndex/yToLaneIndex/
+                            laneColAt）、一个 block 占哪块矩形（blockRect + isBlockVisible/unitTickXs/
+                            blockLabel）、光标下是哪个 block（hitTest）、标尺步长与可见秒区间
+                            （gridStepSec/isMajorSecond/visibleSecondRange）、拖拽吸附与平移缩放
+                            （snapAtTick/zoomAround/panBy）
+src/state/EditorState.ts 纯：编辑状态机（规范化 + 广播）
+src/units.ts             纯：单位显示元数据
+── 以上是覆盖率门禁的 scope（445 行，100%），以下是 DOM 那一半 ──
+src/board/BoardPanel.ts        拥有 <canvas>/ResizeObserver/window 监听，只做绘制与事件接线
+src/timeline/TimelinePanel.ts  同上
+src/inspector/*, src/index.ts  DOM 表单与装配
+```
+
+依赖方向**单向**：`layout/ ← {board,timeline}/`。面板类里不再有任何几何算式——它们把 `this.cell`/
+`this.header`/`this.pxPerSec`/`this.scrollX` 传进纯函数，拿回结果去画。
+
+**为什么这条线要有测试守着**：`tools/level-editor` 自本次起受 90% 覆盖率门禁（`coverage.include`
+= `src/state/**` + `src/layout/**` + `src/units.ts`），但**百分比守不住目录边界**——门禁余量
+`445/0.9 - 445` = 49 行，往 `src/layout/` 丢一个 10 行的 DOM 文件覆盖率只掉到 97.8%、门禁照过（实测）。
+所以另有 `test/pureLayerBoundary.test.ts`：扫这两个纯目录的源码，断言 ①import 白名单（只许
+`@nw/engine/*`、`../units` 和纯目录内部，`import type` 一个面板模块同样算越界）②不出现任何 DOM 全局
+③受检目录**从 `coverage.include` 反推**（往 include 加目录不加守卫直接红）④扫描器在 LF/CRLF 下都工作。
+
+
 ### 6.1 棋盘格面板
 
 - 12 列 × 18 行网格（纯 Canvas）。按 §3 朝向：顶部敌方、底部玩家。
 - 底图分区着色：攻击车道 / 基地列（5,6）/ 双方建造行 / 出生行 用不同底色区分，一眼看清布局语义。
 - 交互：点击/拖拽涂格 → 在 `blocked` / `noBuild` 之间切换（工具按钮选当前画笔）；整列开关 → `activeLanes`。
 - 与时间线联动：选中某车道时高亮，方便对照该列的出兵。
-- **动态尺寸 + 命中精度**：格子尺寸 `cell`/`header` 是 `BoardPanel` 的实例状态（**非模块常量**），按 mount 宽度在 16–56px 间选取；画布 backing store 与显示尺寸严格 **1:1**，所以无论面板拖多宽、DPI/缩放如何，点击坐标都精确命中格子（与 `TimelinePanel` 同款 `ResizeObserver` 模式 + 分隔条同步调 `board.resize()`）。
+- **动态尺寸 + 命中精度**：格子尺寸 `cell`/`header` 是 `BoardPanel` 的实例状态（**非模块常量**），由纯函数 `layout/board.ts` 的 `fitCell(mountWidth)` 按 mount 宽度在 16–56px 间选取（面板太窄时宁可让网格溢出，也不缩到 16px 以下）；画布 backing store 与显示尺寸严格 **1:1**，所以无论面板拖多宽、DPI/缩放如何，点击坐标都精确命中格子（与 `TimelinePanel` 同款 `ResizeObserver` 模式 + 分隔条同步调 `board.resize()`）。
 
 ### 6.2 波次时间线（核心）
 
