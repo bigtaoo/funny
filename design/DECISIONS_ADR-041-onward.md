@@ -380,3 +380,25 @@
 - **明确未改**：攻打真人主城的 ADR-026 波次路径那记「延迟建筑血量伤害」仍按 `teamSiegeValue(队伍, cardInv)` 取每卡固定攻城值之和、**不随兵力缩放**——那是另一套系统（`TileDoc.hp` = `baseDurabilityMax`，带每小时回血），跟着一起改会顺带重定 PvP 主城攻防节奏，本次刻意不动；这条不一致是已知的、有意的。此外未改：`SIEGE_CHEAP_RATIO=10`（作为「压倒性优势跳过引擎」的省算捷径保留，现在它比引擎路线贵，不再是最优解）；`npcGarrison=120×等级`；险地/关口守军（11800/10350，两者恒走廉价路径，基地血量对其无影响）；每张卡的血量截断本身（那是「兵力=血量」模型的一部分，改它是另一场重构）。
 - **已知遗留（两条均已于同日收尾，见 [`SLG_LOG_2026-08.md`](game/SLG_LOG_2026-08.md) 末节）**：①~~`distributeTroops` 不在服务端校验 `troopCap`~~ → 已按 `cardTroopCap(card)` 强制 + `CARD_TROOP_CAP_EXCEEDED` 错误码 + update 过滤器堵并发，客户端镜像表由 parity 测试钉死；②~~分兵界面不显示「该卡单兵血量上限」~~ → 编队兵力条改双色（血量段 / 紫色的「只算攻城值」段），花名册详情超限时加一行说明。
 - **影响**：`server/engine/src/{Unit.ts,GameState.ts,config.ts,math/fixed.ts（新增 divFp）,engine/setup/preplaced.ts}`；`server/shared/src/slg/siege.ts`；`server/worldsvc/src/{siegeEngine.ts,combatSiege/{occupationBattle,encounter,occupation}.ts,combatSiege/arrival/{baseSiege,landSiege,strongholdSiege,crossingSiege}.ts}`；`server/tools/econ-sim/src/occupyCardTeamRun.ts`（新增）+ `package.json` 脚本。测试：新增 `server/engine/src/__tests__/siege-value-troop-scaling.test.ts`（7 例）、新增 golden 场景 `siege_troop_scaled_base_hit`（既有两个 siege 场景的攻方全都半路死光、`damageDealtToBase: 0`，钉不到这条路径）、`server/worldsvc/test/occupation-battle.test.ts` +5 例。文档：`SLG_LOG_2026-08.md`、`ECONOMY_VERIFICATION_LOG_CAPACITY.md §13-SLG-NPC-BASEHP.2`。
+
+## ADR-070 tools/ 覆盖率口径 scoped include 与 reported-not-gated 过渡 — Accepted — 2026-08-20
+
+- **决策**：`tools/` 五个包（animator / level-editor / map-editor / ops / vfx-editor）纳入仓库根覆盖率报表与门禁脚本，但**百分比暂不受 90% 门槛约束**（`gated: false`，列在 `scripts/coverageLib.mjs` 的 `NOT_GATED_JSON_SUMMARY_PACKAGES`）；**覆盖率产出本身立刻受门禁**——某个 tools 包不再产出 `coverage/` 与服务端 workspace 一样判红。口径沿用 `client` 已有的 **scoped `include`** 做法，不新造「per-package 地板」机制。
+- **背景**：此前 tools/ 完全在门禁之外——不是「缺数据 fail closed」，而是根本不在 `coverageLib.mjs` 的包清单里，五个包都没有 `test:coverage` 脚本、都没装 `@vitest/coverage-v8`，`tools-test` job 不产 coverage 产物、`coverage-report` job 连 `needs` 都不含它。2026-08-15 那条「14 个包全部 ≥90%」的里程碑，从来没覆盖过工具链。
+- **为什么是 scoped include，而不是给 tools 设 8.8% 的地板**：90% 这个数在本仓库**从来不是「整个包 90%」**——`client/vitest.config.ts` 的 `coverage.include` 只圈 `src/game/**`，PIXI 渲染/UI/场景层明确出界，理由是「只有几个 mock 掉 PIXI 的窄回归守卫，报出来的覆盖率稀疏且误导，系统性渲染测试是 `test:ui`/`test:e2e` 的活」。tools 的编辑器是同一处境（无 headless-PIXI harness）。给 tools 单开一套地板机制，等于为同一个问题造第二套答案，而且地板数字（8.8%）会永久留在仓库里当既成事实。
+- **各工具 scope 与现状**（2026-08-20 实测，scope 内行覆盖率 / scope 覆盖的 src 文件数）：
+
+  | 包 | `coverage.include` | scope 内 | 全包 | Phase 4 退出条件 |
+  |---|---|---|---|---|
+  | `level-editor` | `state/**` + `units.ts` | 100.0% (216/216) | 23.8% | **4b** 把 `board/BoardPanel.ts`/`timeline/TimelinePanel.ts` 里已导出的坐标/命中数学抽成独立模块（现在夹在拥有 canvas 的面板类里，目录 include 够不着），scope 从 216 行扩到约 600 行后接门禁 |
+  | `map-editor` | `state/**`、`render/{isoGrid,tileStyle}.ts`、`i18n.ts`、`constants.ts` | 98.8% (644/652) | 38.3% | **4a** 把 `isoGrid`/`tileStyle` 从 `render/` 挪进独立纯模块（现在只能逐文件列，是缺模块边界的味道），然后接门禁 |
+  | `vfx-editor` | `model/**`、`io/**`、`rendering/Playback.ts` | 84.9% (449/529) | 40.4% | **4c** 补 `io/IOController.ts`（74 行 0%，无浏览器依赖挡路，是缺口不是结构限制）到 ≥90% |
+  | `animator` | `core/**`、`skeleton/**`、`animation/**`、`io/**` | 64.3% (927/1442) | 23.5% | **4d** 按 vfx-editor 的 `fake-indexeddb` 先例补 `io/{AutoSaveController,ProjectStore}.ts`（均 0%）与 `animation/AnimationController.ts`（41.3%） |
+  | `ops` | **无**（报全包） | 8.8% (322/3639) | 8.8% | **4e** 把各页纯逻辑抽进 `src/logic/<page>.ts`、`pages/*` 只留 DOM 装配（同 `f22c3df2` 拆 `api.ts`/`types.ts` 的方向），然后 include 收到 `logic/**` + `api/**` |
+
+- **include 清单不是挑好看的**：两个低分（animator 64.3%、vfx-editor 84.9%）恰恰因为把**已知未测**的文件留在了 scope 内（animator 的 IndexedDB `AutoSaveController`/`ProjectStore` 都是 0%）——缺口是要干的活，不是要定义掉的东西。`ops` 更是直接不设 include：它没有可指的逻辑层（2026-08-13 Phase 3 导出的 9 个纯函数各自嵌在一个 90% 是 `h()` DOM 的 `pages/*.ts` 里），缩到 `src/api/**` 或 `!src/pages/**` 能把印出来的数字抬上去而**一个测试都不用加**，这正是覆盖率门禁最不该奖励的事。
+- **两条反刷分护栏**（与上一条是同一个担忧的两面）：①报表每行新增 **Scope (files)** 列（measured / src 文件数），把「scope 有多大」印在它所修饰的百分比旁边——谁缩 include 去抬 %，同一张表里这个比例就会掉；②`checkCoverageThreshold.mjs` **每次运行都复述** not-gated 包的当前值与目标（绿跑也印）。只写在设计文档里的「临时豁免」会无声变成永久，每轮 CI 都自报差距的豁免每次被读到都得重新被接受一次。
+- **`Overall` 仍只统计 gated 包**：把 tools 折进去会悄悄重定义一个自 2026-08-15 起就意为「发布门禁实际强制的覆盖率」的数字（未设 scope 的 ops 单独一个就能拉低好几个点）。not-gated 包在报表里单独一节、单独小计。
+- **顺带修掉的既有缺陷**：①门禁把「完全没产出 coverage」的包报成「低于 90% 门槛」——对 not-gated 包这话直接是错的（它豁免于门槛却仍然失败，而这恰恰是分开门禁管路的意义），对 gated 包也会把人引去找缺失的测试、而真正要修的是缺失的 CI 步骤；两类失败现已分开成两条消息。②补上兄弟守卫早就有的 canary：待检包数为 0 时判红，而不是印一句「all 0 packages >= 90%」退出 0。
+- **同期发现但未在此处修**：`tools/animator/src/` 下有 11 个重构前的扁平模块（约 1437 行）从入口 `src/index.ts` 完全不可达（活代码走 `App.ts` → 目录版模块），全是 0% 覆盖，白拖低 animator 的全包数字。删除动作单独成任务，不与覆盖率接线混在一个改动里。
+- **影响**：`tools/*/{package.json,package-lock.json,vitest.config.ts}`（5 个包）；`scripts/{coverageLib,coverageSummary,checkCoverageThreshold}.mjs`；`.github/workflows/ci.yml`（`tools-test` 改跑 `test:coverage` + 上传产物，`coverage-report` 增加 `needs`/下载/`TESTS_OK`）。测试：新增 `server/shared/test/coverageScripts.test.ts`（18 例，三条关键断言均做过红检）。文档：[`claudedocs/tools-testing.md`](../claudedocs/tools-testing.md)（新增）。

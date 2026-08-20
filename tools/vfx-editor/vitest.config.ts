@@ -1,5 +1,5 @@
 import path from 'path';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 
 // Phase 1-2 covered the editor's PURE model layer (model/color.ts, model/EffectModel.ts,
 // model/paramHints.ts) plus io/{ProjectStore,Library}.ts — see claudedocs/animator.md's
@@ -30,5 +30,24 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     environment: 'node',
     globals: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'html', 'json-summary'],
+      reportsDirectory: './coverage',
+      // ADR-070 (2026-08-20): the machine-readable form of the prose scope above. 84.9%
+      // (449/529) as of 2026-08-20 — short of the 90% bar, and deliberately so: io/IOController.ts
+      // (74 lines, 0%) stays IN scope even though it is pure assembly glue, because unlike
+      // animator's DOM/PIXI panels it has no browser dependency standing in the way, so "untested"
+      // here is a gap rather than a structural limit. Closing it is ADR-070's Phase 4c.
+      //
+      // rendering/Playback.ts is listed per-file for the same reason map-editor lists two files
+      // under render/: it is 100%-pure preview-clock math sharing a directory with
+      // PreviewRenderer.ts's real `new PIXI.Application`. Out of scope: that renderer, all of ui/*
+      // (including ParamPanel.ts, whose four pure exported helpers — formOf/firstValue/lastValue/
+      // sortKfs — are embedded in a 194-line DOM panel that no directory include can split), and
+      // index.ts.
+      include: ['src/model/**', 'src/io/**', 'src/rendering/Playback.ts'],
+      exclude: [...coverageConfigDefaults.exclude],
+    },
   },
 });

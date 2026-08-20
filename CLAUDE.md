@@ -36,6 +36,7 @@ claudedocs/      模块级快查文档（按需加载）
 | 客户端内存/生命周期 | [`claudedocs/client-memory-leak.md`](claudedocs/client-memory-leak.md) | — |
 | 服务端 | [`claudedocs/server.md`](claudedocs/server.md) | `design/game/META_DESIGN.md` |
 | botsvc | — | `design/game/BOTSVC_DESIGN.md` |
+| 工具链测试/覆盖率 | [`claudedocs/tools-testing.md`](claudedocs/tools-testing.md) | — |
 | animator | [`claudedocs/animator.md`](claudedocs/animator.md) | `design/tools/animator/` |
 | level-editor | — | `design/tools/level-editor/DESIGN.md` |
 | map-editor | — | `design/tools/map-editor/DESIGN.md` |
