@@ -19,6 +19,7 @@ import { palette } from './theme';
 import { bake } from './bake';
 import { FS } from './fontScale';
 import { makeText } from './pixiText';
+import { addPanelFrame } from './panelFrame';
 
 /**
  * Shared scene palette. Paper / ruled line / margin / red flow from the theme
@@ -223,18 +224,60 @@ export interface PanelOpts {
 }
 
 /**
- * A hand-drawn panel: flat fill + a scribbled SketchPen border (corners overshoot
- * the box the way a hand lifts past the turn). Returned at local origin (0,0) —
- * the caller positions it and may add children. Replaces every `drawRoundedRect`.
+ * A hand-drawn panel: flat fill + a hand-drawn border. Returned at local origin
+ * (0,0) — the caller positions it and may add children. Replaces every
+ * `drawRoundedRect`.
+ *
+ * The border comes from the baked atlas in {@link ./panelFrame} — long edge strips
+ * pasted at native scale plus four rounded corner pieces, all sprites off one
+ * baseTexture. That is what makes the wobble read the same on a 1920px panel as on
+ * a 300px one (the old `SketchPen.rect` had a fixed 1.1px jitter, invisible once
+ * the panel got wide) and what took the world-map HUD's per-rebuild cost from
+ * 132,300 vertices / 8.6 ms down to a few hundred vertices — see panelFrame.ts.
+ *
+ * Falls back to stroking the border live with {@link SketchPen} when the atlas is
+ * unavailable (no bake renderer — headless tests) or the panel is too small to
+ * seat two corner pieces (chat's 22×18 unread badge). Small panels lose nothing
+ * visually: a 1.1px jitter is plainly visible at that size, which is exactly why
+ * it was never the problem there.
+ *
+ * Returns a `Container`, not a `Graphics` — to draw extra ink into a panel, use
+ * {@link inkLayer}.
  */
-export function sketchPanel(w: number, h: number, opts: PanelOpts): PIXI.Graphics {
+export function sketchPanel(w: number, h: number, opts: PanelOpts): PIXI.Container {
   const g = new PIXI.Graphics();
   g.beginFill(opts.fill, opts.fillAlpha ?? 1);
   g.drawRect(0, 0, w, h);
   g.endFill();
-  new SketchPen(g, opts.seed ?? seedFor(w, h, opts.border)).rect(2, 2, w - 4, h - 4, {
-    color: opts.border, width: opts.width ?? 2, jitter: 1.0,
-  });
+  const seed = opts.seed ?? seedFor(w, h, opts.border);
+  const width = opts.width ?? 2;
+
+  const wrap = new PIXI.Container();
+  if (addPanelFrame(wrap, w, h, opts.border, width, seed)) {
+    wrap.addChildAt(g, 0);   // fill under the frame sprites
+    return wrap;
+  }
+  // Fallback: stroke the border live into the fill Graphics and return THAT, not a
+  // wrapper. Returning the bare Graphics keeps the pre-atlas node shape exactly —
+  // which matters because the headless UI smoke suite deliberately runs without a
+  // renderer and locates panels structurally (`instanceof PIXI.Graphics`,
+  // `constructor === PIXI.Container`). Wrapping unconditionally would have moved the
+  // fill a level deeper and shifted its position onto the parent, breaking ~23 of
+  // those assertions for no behavioural reason.
+  wrap.destroy();
+  new SketchPen(g, seed).rect(2, 2, w - 4, h - 4, { color: opts.border, width, jitter: 1.0 });
+  return g;
+}
+
+/**
+ * Append a `Graphics` to `target` and return it, for callers that need to draw
+ * their own ink on top of a {@link sketchPanel} (accent bars, dividers, custom
+ * strokes). Exists because a panel is a `Container` of sprites now, so there is no
+ * single `Graphics` to hand out.
+ */
+export function inkLayer(target: PIXI.Container): PIXI.Graphics {
+  const g = new PIXI.Graphics();
+  target.addChild(g);
   return g;
 }
 
@@ -245,15 +288,19 @@ export function sketchPanel(w: number, h: number, opts: PanelOpts): PIXI.Graphic
  * instance keeps its distinct hand-drawn jitter; omit it to hash from the size.
  * Re-skinning every primary button in the game is now a single edit here.
  */
-export function sketchButton(w: number, h: number, seed?: number): PIXI.Graphics {
+export function sketchButton(w: number, h: number, seed?: number): PIXI.Container {
   return sketchPanel(w, h, { fill: ui.dark, border: ui.accent, seed });
 }
 
 /**
  * A hand-drawn left-edge ink accent stroke (replaces the flat `drawRect` accent
- * bar on list rows / player slots). Draws into `g` in its local coords.
+ * bar on list rows / player slots). Draws into `target` in its local coords —
+ * accepts the panel container directly and mints its own ink layer, so the ~18
+ * call sites that pass a `sketchPanel` result straight in did not have to change
+ * when panels became containers.
  */
-export function sketchAccentBar(g: PIXI.Graphics, h: number, color: number, seed = 9): void {
+export function sketchAccentBar(target: PIXI.Container, h: number, color: number, seed = 9): void {
+  const g = target instanceof PIXI.Graphics ? target : inkLayer(target);
   new SketchPen(g, seed).line(4, 5, 4, h - 5, { color, width: 4.5, jitter: 0.8, taper: 0.85 });
 }
 

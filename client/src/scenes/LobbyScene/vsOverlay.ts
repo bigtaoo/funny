@@ -6,6 +6,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { SketchPen } from '../../render/sketch';
+import { inkLayer } from '../../render/sketchUi';
 import { C, txt, sketchPanel, type LobbySceneCore } from './core';
 import { FS, snapFont } from '../../render/fontScale';
 
@@ -47,7 +48,8 @@ function buildPlayerCard(w: number, h: number, name: string, accentColor: number
   // Seed by side colour so the you/opp cards scrawl differently.
   const bg = sketchPanel(w, h, { fill: C.paper, border: accentColor, width: 2.4, seed: accentColor });
   // Ink accent stroke down the left edge.
-  new SketchPen(bg, accentColor ^ 0x55).line(4, 5, 4, h - 5, { color: accentColor, width: 5, jitter: 0.8, taper: 0.85 });
+  new SketchPen(inkLayer(bg), accentColor ^ 0x55)
+    .line(4, 5, 4, h - 5, { color: accentColor, width: 5, jitter: 0.8, taper: 0.85 });
   const nameLabel = txt(name, snapFont(Math.round(h * 0.45)), C.dark, true);
   nameLabel.name = 'nameLabel'; nameLabel.anchor.set(0, 0.5);
   nameLabel.x = Math.round(w * 0.08); nameLabel.y = h / 2;

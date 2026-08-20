@@ -153,7 +153,7 @@ export function drawDecor(root: PIXI.Container, kind: string, x: number, y: numb
 }
 
 /** A taped-shut overlay on a locked TOC card. */
-export function drawTape(card: PIXI.Graphics, w: number, h: number, seed: number): void {
+export function drawTape(card: PIXI.Container, w: number, h: number, seed: number): void {
   const tw = Math.round(w * 0.18), th = Math.round(h * 0.5);
   const tape = new PIXI.Graphics();
   tape.beginFill(C.gold, 0.28); tape.drawRect(-tw / 2, -th / 2, tw, th); tape.endFill();
