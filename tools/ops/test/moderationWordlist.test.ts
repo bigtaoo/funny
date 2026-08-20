@@ -5,7 +5,7 @@
 // clean "added" for a word that blocks nothing, which is exactly the mistake the page exists to prevent.
 // `pageModerationWordlist` builds DOM and stays untested, same split as feedback.test.ts / flags.test.ts.
 import { describe, it, expect } from 'vitest';
-import { activeWords, checkWord, coveredBy, WORD_MAX } from '../src/pages/moderationWordlist';
+import { activeWords, checkMessage, checkWord, coveredBy, describeCover, WORD_MAX } from '../src/pages/moderationWordlist';
 import type { ChatRegion, ModerationWordlistView } from '../src/types';
 
 const view = (region: ChatRegion, builtin: string[], overlay: string[] = []): ModerationWordlistView =>
@@ -90,6 +90,18 @@ describe('coveredBy', () => {
     expect(coveredBy('代练', alsoGlobal, 'cn')).toEqual({ word: '代练', region: 'global', source: 'overlay' });
   });
 
+  it('attributes a sibling entry in the SAME overlay, not just other lists', () => {
+    // Both live in cn's overlay: '代练' covers '代练群' (that is what the row's no-op badge points at).
+    const siblings = [view('global', ['fuck']), view('cn', ['外挂'], ['代练', '代练群'])];
+    expect(coveredBy('代练群', siblings, 'cn')).toEqual({ word: '代练', region: 'cn', source: 'overlay' });
+  });
+
+  it('works for the global card itself, where there is no region list to inherit from', () => {
+    expect(coveredBy('fucker', rows, 'global')).toEqual({ word: 'fuck', region: 'global', source: 'builtin' });
+    // A cn-only word must NOT be treated as covering anything in global (inheritance is one-way).
+    expect(coveredBy('代练', rows, 'global')).toBeNull();
+  });
+
   it('normalizes case and surrounding whitespace before comparing', () => {
     expect(coveredBy('  SCAMMER ', rows, 'de')).toEqual({ word: 'scam', region: 'global', source: 'overlay' });
   });
@@ -132,5 +144,48 @@ describe('checkWord', () => {
   it('accepts the same word in a different region when only that region lacks it', () => {
     // '代练' is in cn's overlay but nothing covers it for `en`.
     expect(checkWord('代练', rows, 'en')).toEqual({ kind: 'ok', word: '代练' });
+  });
+});
+
+describe('describeCover', () => {
+  it('names the built-in floor and the region it comes from', () => {
+    expect(describeCover({ word: 'scam', region: 'en', source: 'builtin' }, 'scam'))
+      .toBe('"scam" is already active via the built-in en floor');
+  });
+
+  it('names the overlay when the cover is an ops-added word', () => {
+    expect(describeCover({ word: 'phish', region: 'global', source: 'overlay' }, 'phish'))
+      .toBe('"phish" is already active via the global overlay');
+  });
+
+  it('adds the containment clause — in the right direction — only for a substring cover', () => {
+    // The covering word is the SHORTER one; the candidate contains it, never the reverse.
+    expect(describeCover({ word: 'scam', region: 'en', source: 'builtin' }, 'scammer'))
+      .toBe('"scam" is already active via the built-in en floor, and every "scammer" contains it');
+  });
+});
+
+describe('checkMessage', () => {
+  const anyRows = rows;
+
+  it('says nothing at all for a genuinely useful addition', () => {
+    expect(checkMessage(checkWord('phishsite', anyRows, 'cn'))).toBeNull();
+  });
+
+  it('blocks exactly the three cases the operator cannot act on', () => {
+    for (const raw of ['   ', 'a'.repeat(WORD_MAX + 1), '代练']) {
+      expect(checkMessage(checkWord(raw, anyRows, 'cn'))).toMatchObject({ blocked: true });
+    }
+  });
+
+  it('leaves a redundant word ADVISORY — the write is still allowed (CM2 caveat, module header)', () => {
+    const msg = checkMessage(checkWord('scammer', anyRows, 'en'));
+    expect(msg).toMatchObject({ blocked: false });
+    expect(msg?.text).toContain('Blocks nothing new');
+    expect(msg?.text).toContain('Add it anyway');
+  });
+
+  it('quotes the length limit it is enforcing, so the number cannot silently drift from the server', () => {
+    expect(checkMessage(checkWord('a'.repeat(WORD_MAX + 1), anyRows, 'cn'))?.text).toContain(String(WORD_MAX));
   });
 });

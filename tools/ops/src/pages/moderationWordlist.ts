@@ -114,8 +114,12 @@ export function checkWord(
   return by ? { kind: 'redundant', word, by } : { kind: 'ok', word };
 }
 
-/** Operator-facing wording for a check result. `null` = nothing worth saying (a plain, useful addition). */
-function checkMessage(c: WordCheck): { text: string; blocked: boolean } | null {
+/**
+ * Operator-facing wording for a check result. `null` = nothing worth saying (a plain, useful addition).
+ * `blocked` carries the policy: the two cases the server itself would 400 on plus an in-overlay duplicate
+ * disable the button, while `redundant` stays advisory (see the module header on why).
+ */
+export function checkMessage(c: WordCheck): { text: string; blocked: boolean } | null {
   switch (c.kind) {
     case 'empty':
       return { text: 'Enter a word.', blocked: true };
@@ -131,7 +135,7 @@ function checkMessage(c: WordCheck): { text: string; blocked: boolean } | null {
 }
 
 /** Human phrasing for "why this word is already covered", distinguishing an exact hit from a substring one. */
-function describeCover(by: ActiveWord, word: string): string {
+export function describeCover(by: ActiveWord, word: string): string {
   const where = by.source === 'builtin'
     ? `the built-in ${by.region} floor`
     : `the ${by.region} overlay`;
