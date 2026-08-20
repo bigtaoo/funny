@@ -59,11 +59,11 @@ function parsePerSideStats(
   }
 }
 
-/** Converts archived replay frames (commands already as base64 strings) → judge frames. */
+/** Converts archived replay frames → judge frames. Both sides carry the command bytes as base64, undecoded. */
 function toJudgeFrames(replay: MatchReplayDoc): JudgeFrame[] {
   return replay.frames.map((f) => ({
     frame: f.frame,
-    cmds: f.cmds.map((c) => ({ side: c.side, commands: String(c.commands) })),
+    cmds: f.cmds.map((c) => ({ side: c.side, commands: c.commands })),
   }));
 }
 

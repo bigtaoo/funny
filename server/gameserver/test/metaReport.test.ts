@@ -2,6 +2,7 @@
 // abandon() method (login-reconnect-prompt, 2026-07-28) — a fake global fetch stands in for meta,
 // same technique as matchsvc/test/gatewayClient.test.ts.
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { decompressReplayDoc } from '@nw/shared';
 import { MetaReporter } from '../src/metaReport';
 import type { MatchReport } from '../src/Room';
 
@@ -132,6 +133,33 @@ describe('MetaReporter.report (smoke — existing behavior, no prior test file)'
     }) as unknown as typeof fetch;
     const reporter = new MetaReporter('http://meta:8080', 'key');
     await expect(reporter.report(BASE_REPORT)).resolves.toBeNull();
+  });
+
+  /**
+   * The one place bytes become base64 in this codebase: `MatchReplay.frames[].cmds[].commands` is
+   * `Uint8Array` (engine/transport side), `MatchReplayDoc`'s is `string` (storage side, because the
+   * doc only ever exists as JSON inside a gzip blob — see shared/test/replayCodec.test.ts for why
+   * bytes cannot survive that). Every previous fixture in this file used `frames: []`, so this
+   * conversion — and therefore the whole reason the two types differ — was never executed by a test.
+   */
+  it('non-empty frames: engine command bytes are base64-encoded into replay_gz', async () => {
+    const reporter = new MetaReporter('http://meta:8080', 'key');
+    const bytes = Uint8Array.from([7, 0, 255, 42]);
+    await reporter.report({
+      ...BASE_REPORT,
+      replay: {
+        ...BASE_REPORT.replay,
+        endFrame: 2,
+        frames: [{ frame: 2, cmds: [{ side: 1, commands: bytes }] }],
+      },
+    });
+    const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const sent = JSON.parse(String((init as RequestInit).body)) as { replay_gz: string };
+    const doc = decompressReplayDoc(Buffer.from(sent.replay_gz, 'base64'));
+    const commands = doc.frames[0]!.cmds[0]!.commands;
+    expect(commands).toBe(Buffer.from(bytes).toString('base64'));
+    // …and it is genuinely round-trippable back to the original bytes, not a lossy stringification.
+    expect(Uint8Array.from(Buffer.from(commands, 'base64'))).toEqual(bytes);
   });
 
   it('ranked match with an elo payload -> report() returns it', async () => {
