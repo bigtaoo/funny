@@ -231,6 +231,7 @@ interface AppealDoc {
 
 - **2026-07-29，O-CM5 修复**：客户端 `X-Chat-Region` 请求头补齐 + 伴生 CORS gap 修复，详见 §8 O-CM5。
 - **2026-07-30，O-CM6/O-CM7 修复**：`ReportsMixin.resolveReport` 重写为"先查报告（open 优先，退而查 resolution 状态判断是否为重试）→ 校验/派生 targetId → 按需 resolve → 按需 applyPenalty"，一次改动同时解决"处罚失败后无法安全重试"（O-CM6）与"accountId 不回查报告 targetId"（O-CM7）。详见 §8 O-CM6/O-CM7。
+- **2026-08-20，§3.2 的 ops 入口补齐**：词库外部化的后端 2026-07-29 就全做完了，但 `tools/ops` 里从来没有页面消费过它——§3.2 承诺的"ops 可配置"实际只能靠 curl 或直接改库（"热更新不重启"那一半一直是真的）。新增 `tools/ops/src/pages/moderationWordlist.ts`（导航 `Word Lists`，`moderation.wordlist.manage` 门禁），服务端零改动。页面额外把"加这个词到底拦下了什么"算出来提示运营：因为 `effectiveWordlist` 是**并集**、`matchRaw` 是**大小写无关子串**匹配，"已在内置底线里 / 已由 `global` 覆盖表继承 / 只是延长了已生效的词（已拦 `scam` 再加 `scammer`）"三类加词都不会多拦任何文本——只提示不拦截（CM2 归一化那一遍与原文子串匹配不完全一致，是否保留明确条目归运营判断）。详见 [`OPS_DESIGN.md`](OPS_DESIGN.md)「敏感词覆盖表页（2026-08-20）」。
 
 ### 9.1 P1+P2：归一化 + 词库外部化 + 五处覆盖缺口（2026-07-29）
 
