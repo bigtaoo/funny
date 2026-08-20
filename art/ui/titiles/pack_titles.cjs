@@ -4,18 +4,23 @@
 // medal-on-ribbon line art, distinguished by the engraved motif). Processing: near-white
 // pixels → transparent → trim transparent edges → scale long edge to 256 → transparent
 // PNG-32 (same "remove white background" pipeline as spells/decor).
-// Output: client/src/assets/title_*.png, consumed by client/src/render/titleArt.ts
+// Output: client/src/assets/titles/title_*.png, consumed by client/src/render/titleArt.ts
 // (TitlesScene tints the sprite per owned/equipped/locked state, same as the old
 // programmatic 'medal' glyph did).
 //
 // Reuses client's sharp. After updating an image, overwrite the source file and re-run
 // `node pack_titles.cjs`.
 
+const fs = require('fs');
 const path = require('path');
 const sharp = require(path.join(__dirname, '../../../client/node_modules/sharp'));
 
 const SRC = __dirname;
-const OUT = path.join(__dirname, '../../../client/src/assets');
+// assets/titles/, NOT assets/ — same stale-path bug pack_base_atlas.js hit and fixed 2026-08-19,
+// and pack_spells.cjs also had (fixed alongside this one): the asset reorg (ASSET_PACKAGING
+// §"目录") moved this into its own subdirectory and titleArt.ts imports from there, but this
+// script's OUT_DIR was left pointing at the old flat location.
+const OUT = path.join(__dirname, '../../../client/src/assets/titles');
 const LONG_EDGE = 256;
 const WHITE_THRESHOLD = 240; // all three r,g,b channels >= this value → classified as background white → made transparent
 
@@ -47,11 +52,15 @@ async function processOne(srcFile, outName) {
   }
 
   // 3. Rebuild → trim transparent edges → scale proportionally to long edge 256 → PNG
+  fs.mkdirSync(OUT, { recursive: true });
   const outPath = path.join(OUT, outName);
   const meta = await sharp(data, { raw: { width, height, channels } })
     .trim()
     .resize({ width: LONG_EDGE, height: LONG_EDGE, fit: 'inside', withoutEnlargement: false })
-    .png()
+    // Quantized palette PNG (client/src/assets publish-bytes convention — see
+    // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md): safe here since the
+    // source is single-ink medal line art, not a precision-measured greyscale (cf. pack_resources.cjs).
+    .png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 })
     .toFile(outPath);
 
   const pct = ((cleared / (width * height)) * 100).toFixed(0);

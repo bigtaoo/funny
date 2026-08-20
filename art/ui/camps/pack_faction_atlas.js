@@ -16,6 +16,7 @@
  *
  * Run: node art/ui/camps/pack_faction_atlas.js   (needs client/node_modules/sharp)
  */
+const fs = require('fs');
 const path = require('path');
 const sharp = require(path.join(__dirname, '../../../client/node_modules/sharp'));
 
@@ -70,10 +71,14 @@ async function whiteLineFrame(file) {
     frames[key] = { frame: { x: i * FRAME, y: 0, w: FRAME, h: FRAME }, sourceSize: { w: FRAME, h: FRAME }, spriteSourceSize: { x: 0, y: 0, w: FRAME, h: FRAME } };
   }
   const atlasW = FRAME * SOURCES.length, atlasH = FRAME;
+  fs.mkdirSync(OUT_DIR, { recursive: true }); // never actually run before — OUT_DIR didn't exist
+  // Quantized palette PNG (client/src/assets publish-bytes convention — see
+  // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md): trivially safe, the whole
+  // atlas is pure white lines at varying alpha (tinted per-faction at runtime, see header note).
   await sharp({ create: { width: atlasW, height: atlasH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite(composites).png({ compressionLevel: 9 }).toFile(path.join(OUT_DIR, 'factions.png'));
+    .composite(composites).png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 }).toFile(path.join(OUT_DIR, 'factions.png'));
 
   const json = { frames, meta: { image: 'factions.png', format: 'RGBA8888', size: { w: atlasW, h: atlasH }, scale: '1' } };
-  require('fs').writeFileSync(path.join(OUT_DIR, 'factions.json'), JSON.stringify(json, null, 2));
+  fs.writeFileSync(path.join(OUT_DIR, 'factions.json'), JSON.stringify(json, null, 2));
   console.log('wrote', path.join(OUT_DIR, 'factions.png'), atlasW + 'x' + atlasH);
 })().catch((e) => { console.error(e); process.exit(1); });
