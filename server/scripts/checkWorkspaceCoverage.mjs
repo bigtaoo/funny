@@ -25,10 +25,27 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const SERVER_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+// `--root=<dir>` points the whole check at a different server/ tree; defaults to this script's own
+// (the only thing CI ever wants). It exists so the check is testable against fixture trees instead of
+// only against the real repo — same flag and spelling as the sibling scripts/checkFileLength.mjs.
+const rootArg = process.argv.slice(2).find((a) => a.startsWith('--root='));
+const SERVER_ROOT = rootArg
+  ? resolve(process.cwd(), rootArg.slice('--root='.length))
+  : join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const pkg = JSON.parse(readFileSync(join(SERVER_ROOT, 'package.json'), 'utf8'));
 const workspaces = new Set(pkg.workspaces ?? []);
+
+// Canary (same reasoning as scripts/checkDocLinks.mjs'): with zero workspaces every loop below is a
+// no-op and the script would report a cheerful "OK — all 0 workspaces", i.e. pass vacuously. A guard
+// that fails by turning green is worse than no guard.
+if (workspaces.size === 0) {
+  console.log(
+    `checkWorkspaceCoverage: FAILED — ${join(SERVER_ROOT, 'package.json')} lists no workspaces. ` +
+      `Every check here iterates that list, so there is nothing to verify and this run proves nothing.`,
+  );
+  process.exit(1);
+}
 
 const solution = JSON.parse(readFileSync(join(SERVER_ROOT, 'tsconfig.build.json'), 'utf8'));
 const referenced = new Set((solution.references ?? []).map((r) => r.path));
