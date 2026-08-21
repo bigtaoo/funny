@@ -26,7 +26,7 @@
 **而这一整套每秒重建一次** —— [`WorldMapRenderer/lifecycle.ts:53`](../../client/src/scenes/worldmap/WorldMapRenderer/lifecycle.ts:53) 的 `hudTickTimer >= 1 → renderHud()` 无条件跑（为了让行军倒计时不冻住，P1-1 引入）。8.6 ms 是开发机 JIT 预热后的数；低端机 / 微信小游戏按 3–5× 估（**未实测真机**），即每秒一次 30–50 ms 的卡顿。
 
 机制侧两条确认（读 pixi 源码，非推测）：
-- `GraphicsGeometry.BATCHABLE_SIZE = 100`，`isBatchable()` 是 `points.length < 200`，即**不到 100 顶点**才合批。sketch 面板动辄上万顶点，全部走 `renderer.batch.flush(); _renderDirect()`（[`Graphics.js:365`](../../client/node_modules/@pixi/graphics/lib/Graphics.js:365)）——它不只自己占一次 draw call，**还打断周围内容的批**。
+- `GraphicsGeometry.BATCHABLE_SIZE = 100`，`isBatchable()` 是 `points.length < 200`，即**不到 100 顶点**才合批。sketch 面板动辄上万顶点，全部走 `renderer.batch.flush(); _renderDirect()`（`@pixi/graphics` 的 `Graphics.js:365`，`node_modules` 内非仓库文件，故不加链接）——它不只自己占一次 draw call，**还打断周围内容的批**。
 - `pixi.js-legacy@7.4` 打包了 `NineSlicePlane`，但它是 `Mesh`，不参与 sprite 批渲染 → **本方案不用它**（见 §2）。
 
 **所以出图 + 九宫不是性能风险，是性能净收益（43× CPU / 130× 顶点 / 13 次 flush → 1 次合批），顺带才解决"看着方"。** 这是当初把所有自绘框收敛到单一出口的最大一次红利：238 处调用点一处不改。
