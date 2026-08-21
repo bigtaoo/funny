@@ -18,7 +18,7 @@ node scripts/coverageSummary.mjs          # 报表，永不失败
 node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则退出 1
 ```
 
-`desktop-shell` 没有测试基础设施（1 个依赖的 Electron 壳），**不在**任何覆盖率清单里；它的 `tsc -p tsconfig.json`（即 `npm run build`）就是它的类型检查。
+`desktop-shell` 没有测试基础设施（1 个依赖的 Electron 壳），**不在**任何覆盖率清单里；它的 `tsc -p tsconfig.json`（即 `npm run build`）就是它的类型检查。**也刻意不给它写单测**（ADR-071）：539 行全是 Electron 主进程接线（`BrowserWindow`/`ipcMain`/`autoUpdater`/`git` 调用），要测就得把整个 Electron 面 mock 掉，断言的是 mock 而不是它的行为。它受的约束是**可达性闸门**（2026-08-21 接入，见下），那条不需要跑它。
 
 ## 三条 CI 闸门
 
@@ -40,9 +40,11 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 - **解析顺序是承重的**：`./x` 必须先试 `x.ts`、再试 `x/index.ts`。animator 那张死图正是靠这一点自闭合的（死的 `renderer.ts` 里 `from './skeleton'` 命中死的 `src/skeleton.ts`，而不是活的 `src/skeleton/Skeleton.ts`）——**顺序反了，整张死图会被判成活的**。这条有专门的测试钉住，把脚本里的顺序调过来它就红。
 - **`--extra-root` 是必需的逃生口**，不是可选装饰：animator 的 `runtime/StickmanRuntime.ts` 在 `src/` 外、没有任何 entry import 它，不把 `runtime/` 声明成根，它拉进来的文件会全体误报。误报一旦大到让人烦，闸门就会被关掉——所以这条也双向钉了测试（不给 `--extra-root` 必须红，给了必须绿）。
 - **canary**：扫到 0 个文件 / 0 个根，或者 entry 找不到，都直接判红——否则「什么都没扫」和「什么问题都没有」印出来是同一句 OK。
-- **测试**：`server/shared/test/reachabilityGuard.test.ts`（15 例，与 `guardScripts.test.ts`/`coverageScripts.test.ts` 同一手法：spawn 真 CLI、断言退出码 + stdout、跑一次性 fixture 目录树）。最后一例是**真仓库集成**——直接跑 `tools/` 的封装、断言 5 个包全 OK，因为封装里包名写错或漏了 animator 的 `--extra-root`，前 14 例全绿也照样什么都没守住。两条承重断言都做过 red-then-green 实测（把解析顺序调反 → 顺序那例红；把 import 正则改成不跨行 → 跨行那例红，**顺带把真仓库集成例也带红了，因为 ops 里真有一处跨行 import**）。
+- **测试**：`server/shared/test/reachabilityGuard.test.ts`（15 例，与 `guardScripts.test.ts`/`coverageScripts.test.ts` 同一手法：spawn 真 CLI、断言退出码 + stdout、跑一次性 fixture 目录树）。最后一例是**真仓库集成**——直接跑 `tools/` 的封装、断言 6 个包全 OK（2026-08-21 起含 `desktop-shell`，并额外断言它那三个 `--entry` 根逐字出现），因为封装里包名写错、漏了 animator 的 `--extra-root` 或漏了 desktop-shell 的某个 preload 根，前 14 例全绿也照样什么都没守住。两条承重断言都做过 red-then-green 实测（把解析顺序调反 → 顺序那例红；把 import 正则改成不跨行 → 跨行那例红，**顺带把真仓库集成例也带红了，因为 ops 里真有一处跨行 import**）。
 
-**这条闸门管不到什么**：`client/`、`server/` 都不在范围内（多入口，模型不适用），`desktop-shell` 也不在（Electron main/preload 对，没有单入口 web bundle）。
+**`desktop-shell` 已于 2026-08-21 接进来（ADR-071）**，此前写的「不适用」（Electron main/preload 对，没有单入口 web bundle）复核后不成立：闸门判的是**根与 import**，不是 bundle。它的根是三个而不是一个——`src/main.ts` 是真入口，两个 preload 由 Electron 按路径字符串加载（`main.ts` 里 `preload: path.join(__dirname, 'preload.js')`），没人 import 它们，所以要用 `--entry` 声明成根，否则它们和它们独占 import 的东西会全体误报（跟 animator 的 `runtime/` 需要 `--extra-root` 是同一类逃生口，只是这三个都在 `src/` 下）。接进来之后 9 个文件全部可达。**它恰恰是最该被这条闸门管的包**：`tools/` 里唯一以周为单位不动的（上次改动 2026-07-28），又不在任何 coverage `include` 里，也就是另外两条闸门同样看不见它。反向验过：往 `src/` 扔一个 10 行死文件，闸门报 `1/6`。
+
+**这条闸门管不到什么**：`client/`、`server/` 都不在范围内（多入口，模型不适用）。
 
 ## 覆盖率口径：scoped `include`
 

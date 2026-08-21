@@ -86,6 +86,7 @@
 | [ADR-068](DECISIONS_ADR-041-onward.md#adr-068-融合面板目标意图契约取代自动换目标--自动连续融合--accepted--2026-08-18) | 融合面板：目标意图契约取代自动换目标 / 自动连续融合 | Accepted | 2026-08-18 |
 | [ADR-069](DECISIONS_ADR-041-onward.md#adr-069-slg-攻城值随携带兵力缩放破城不再有12-卡硬顶-npcbasehp-重校准-4060--accepted--2026-08-19) | SLG 攻城值随携带兵力缩放（破城不再有「12 卡硬顶」）+ npcBaseHp 重校准 40→60 | Accepted | 2026-08-19 |
 | [ADR-070](DECISIONS_ADR-041-onward.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) | `tools/` 覆盖率口径：scoped include + 「reported, not gated」过渡 | Accepted | 2026-08-20 |
+| [ADR-071](DECISIONS_ADR-041-onward.md#adr-071-门禁盲区收口--非-workspace-包接进-ci--desktop-shell-接进可达性--客户端覆盖率-scope-扩到已测模块--accepted--2026-08-21) | 门禁盲区收口：非 workspace 包接进 CI、`desktop-shell` 接进可达性、客户端覆盖率 scope 扩到已测模块 | Accepted | 2026-08-21 |
 
 ---
 

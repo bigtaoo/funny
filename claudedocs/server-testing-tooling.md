@@ -125,3 +125,13 @@
 - **两条反刷分护栏**：报表每行新增 `Scope (files)` 列（measured / `src` 源文件数）——`client`（只圈 `src/game/**`）和四个 scoped 的 tools 包都刻意只测全树的一部分，这是合理且有记录的选择，但也是**唯一能不加测试就抬高百分比的旋钮**，把 scope 大小印在它所修饰的数字旁边，缩窄在同一张表里就现形；`checkCoverageThreshold.mjs` 则每次运行都复述 not-gated 包的当前值与目标（绿跑也印），只写在设计文档里的「临时豁免」会无声变成永久。`Overall` 仍只统计 gated 包——把 tools 折进去会悄悄重定义一个自 2026-08-15 起就意为"发布门禁实际强制的覆盖率"的数字。
 - **CI**：`tools-test` 改跑 `npm run test:coverage`（这些套件都是纯逻辑、各约 1s，不存在 client 那种 v8 插桩税），上传一个以 `tools/` 为根的 artifact（同 server `rest` 分片那个 rooting 技巧），`coverage-report` 增加 `needs: tools-test` + 下载回 `tools/`，并把 `tools-test.result` 并入 `TESTS_OK`（否则一次 tools 测试挂会自报两次红，正是上面 `TESTS_OK` 那条要打断的级联）。
 - **测试**：新增 `server/shared/test/coverageScripts.test.ts`（18 例）——与 `guardScripts.test.ts` 同一手法（spawn 真实 CLI 打 fixture 树，退出码才是 CI 消费的契约）。**注意一个坑**：vitest **无法加载项目 root 之外的 `.mjs`**（整文件报 SyntaxError、位置指在 import 说明符上），所以包清单和 `countSrcFiles` 是通过子进程（`libEval`）读的，不是直接 import。三条关键断言都做过红检（把行为改坏确认变红再还原）。
+
+## 第五道守卫：非 workspace 包必须被 ci.yml 点名（2026-08-21，ADR-071）
+
+`server/tools/econ-sim`（SLG 经济模拟器，3509 行 + 18 例测试）不是 workspace。后果不是「少一个包」，而是**所有按 workspace 扇出的东西同时够不着它**：`tsc -b tsconfig.build.json` 的 solution 文件、`npm run <x> --workspaces --if-present` 的每一次扇出、`coverageLib.mjs` 的包清单——于是它的 typecheck 和测试**从来没有在 CI 里跑过一次**，而它 import `@nw/shared`/`@nw/engine` 的数值常量，最后一次改动是 ADR-069（2026-08-19）。这类失效同样是安静的：引擎改个数值把它变砖，要等到有人真去跑模拟才知道。
+
+- **修法不是「加两个 CI 步骤」**，而是给 `checkWorkspaceCoverage.mjs` 加第五道检查：从磁盘枚举 `server/` 下所有**非** workspace 的 `package.json`，凡有 `test` 脚本的，必须能在 `.github/workflows/ci.yml` 里找到一个 `working-directory:` 指着它、且 `run:` 真的跑那个脚本的步骤（有 `typecheck` 的同样要）。**从磁盘枚举**是重点——这个脚本当初存在的理由就是手写清单漏了 `socialsvc`/`botsvc`，用手写清单补手写清单的洞没有意义。
+- **近似名字刻意判否**：`npm run test:coverage` 不算跑了 `test`，`typecheck:test` 不算跑了 `typecheck`（正则用 `(?![\w:-])` 收边）。一个名字差一点的步骤能让检查过而脚本不跑，那这道守卫就白加了。
+- **解析方式是文本，不是 YAML parse**：按 `- name:` 切步骤、各自取 `working-directory:` 与 `run:` 正文。这些脚本刻意零依赖，而 ci.yml 里的 `working-directory` 全是单行值。
+- **econ-sim 不进 90% 名单**：3509 行里大半是 `*Run.ts` 入口脚本，设百分比门槛只会买到「为百分比写的测试」。**跑它的 18 例**才是要的——它们锁的是强化保护成本、据点战斗这类平衡数值。CI 里它挂在 `rest` shard（不需要 Mongo/Redis，5s；单开一个 runner 会花 30s 装环境跑 5s 测试），typecheck 挂在 `server-checks` 的 `tsc -b` 之后（要靠那步产出的 `dist/` 解析 `@nw/*`）。**不需要安装步骤**：它自己没有 `node_modules`，`tsc`/`vitest`/`@nw/*` 全靠向上走解析到 `server/` 的 hoist 树。
+- **测试**：`guardScripts.test.ts` 28 → **32** 例（+4：两个脚本都有步骤时通过——这条是承重的，它证明 `working-directory` 的匹配真的对得上而不是全都判红；没有步骤时失败并同时点名 `test` 与 `typecheck`；`test:coverage` 这种近似名字不算；没有 `test` 脚本的包不管）。fixture 侧新增两个旋钮：`extraPackages`（造非 workspace 包）与 `ciSteps`（造 ci.yml）。三向反验都在真仓库上跑过一遍（无步骤→红、两步都在→绿、只有 test→红且只报 typecheck）。

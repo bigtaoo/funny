@@ -321,8 +321,12 @@ describe('FriendsScene — social tab rail still dispatches to switchTab after s
       // No family/sect membership yet → clicking those tabs shows the inline
       // create/join forms instead of auto-navigating away (see orgForm.ts).
       loadSLGStatus: async () => ({ worldId: 'world:1:0', isLeader: false }),
-      openFamilyHub() {},
-      openSectHub() {},
+      // Return false = "did not navigate": with no membership these are never reached (see the
+      // comment above), and a stub that does nothing has not navigated anywhere. Their contract
+      // gained this return in 623380d2 (2026-08-20) and this fixture was missed, which is why
+      // `npm run typecheck` was red on the day branch before 2026-08-21.
+      openFamilyHub: () => false,
+      openSectHub: () => false,
     });
   }
 

@@ -211,10 +211,16 @@ describe('tools/scripts/checkUnreachableModules.mjs (the real wrapper)', () => {
   it('reports every tool package reachable', () => {
     const r = spawnSync(process.execPath, [TOOLS_WRAPPER], { cwd: TOOLS_DIR, encoding: 'utf8' });
     const out = `${r.stdout}${r.stderr}`;
-    for (const pkg of ['animator', 'level-editor', 'map-editor', 'ops', 'vfx-editor']) {
+    for (const pkg of ['animator', 'level-editor', 'map-editor', 'ops', 'vfx-editor', 'desktop-shell']) {
       expect(out).toContain(`${pkg}: OK`);
     }
     expect(out).toContain('runtime/');
+    // desktop-shell joined 2026-08-21 and is the only package with custom --entry roots: Electron
+    // loads its two preloads by path string, so they are roots rather than imports. Asserting the
+    // roots by name is the point — a wrapper that dropped them would report the preloads (and
+    // whatever only they import) as unreachable, and a wrapper that dropped src/main.ts would
+    // report almost the whole package, i.e. both directions fail loudly rather than silently.
+    expect(out).toContain('src/main.ts, src/preload.ts, src/preloadSidebar.ts');
     expect(r.status).toBe(0);
   });
 });

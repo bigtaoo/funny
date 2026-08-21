@@ -33,6 +33,31 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 
 **⚠️ 2026-08-15：模拟类套件拆出去了（`vitest.sim.config.ts`）**。`test/difficulty/**`（ch1-6 + core）和 `test/pvpSim.test.ts` 跑的是整场无头战斗模拟，占这套件 188s 里的 ~175s，且插桩税按引擎 tick 线性叠加——带 `--coverage` 时整套从 188s 涨到 668s，几乎全部由它们贡献。实测把它们排除后 **client 行覆盖只掉 0.05 个百分点（91.20% → 91.15%）**：它们碰到的 `src/game/**` 早被单元测试覆盖了，它们的真实价值是行为/平衡回归（"第 6 章还打得过吗"），不是覆盖率来源。所以：`vitest.config.ts` 的 `exclude` 排掉这两处，新增 `vitest.sim.config.ts` 专收它们（不带 coverage），`package.json` 里 `test` 和 `test:coverage` **都在末尾链一条 `npm run test:sim`**——一个测试文件都没少跑，只是不再给最贵的那批插桩。带 coverage 的那半从 668s 掉到 ~13s，这才让 CI 有条件在 **PR 和 push-to-main 两端都跑 coverage**（此前 PR 上不跑，导致覆盖率回归和时序 flake 只能在合并后的 main 上暴露，连带挡掉部署——见 `claudedocs/server.md` "CI 稳定性"节）。新增只跑模拟的入口：`npm run test:sim`。
 
+### 覆盖率 scope 扩到「已经被测到的模块」（2026-08-21，ADR-071）
+
+`include` 不再只有 `src/game/**`。起因是一次全仓库门禁体检：`src/game/**` 只有 **1924 可执行行**，是 `client/src` 全部 **55143 行**的 3.5%——数字诚实，但门禁管的地盘很小。
+
+**先把实情量出来再决定**（把 include 临时放宽到 `src/**` 跑一遍现有 409 个测试文件）：全树行覆盖 **30.6%**（16897/55143），去掉生成代码（`net/proto` 4204 行、`i18n/locales` 4425 行）约 **21%**。但这个数是两群完全不同的代码叠出来的：
+
+| 分层 | 行数 | 覆盖 |
+|---|---|---|
+| `scenes/worldmap` | 4548 | 1.9% |
+| `scenes/CardScene` | 2070 | 10.9% |
+| `scenes/FriendsScene` | 1888 | 2.9% |
+| `scenes/CityScene` / `AuctionScene` | 1486 / 1363 | 0% / 0% |
+| `render/GameRenderer` | 901 | 0% |
+| `ui/dialogs` | 898 | 2.7% |
+| —— 而另一群 —— | | |
+| `src/game/**` 之外已 ≥90% 的模块（47 个，≥10 行的） | 2336 | **97.8%** |
+
+第二群是这次扩进来的：**已经测好、却不受任何门禁约束**的模块（`net/judgeRunner.ts`、`layout/{Portrait,Landscape}Layout.ts`、`scenes/CardScene/feedPlan.ts`、`render/vfx/parseEffectDef.ts`、`ui/busyTracker.ts` …）——它们掉到 50% 也不会有任何一个 CI 步骤变红。扩完 **scope 1924 → 4245 行，行覆盖 91.2% → 94.7%（73 文件）**。scope 翻倍而百分比**上升**，跟「缩 include 抬百分比」正好相反（后者由报表的 `Scope (files)` 列盯着）。
+
+- **≥10 可执行行才列**：barrel 和 1 行 re-export 壳（`net/anomaly.ts`、`app/nav/shop.ts`、`render/atlas/emblemAtlas.ts`、`platform/stubs/**`…）100% 覆盖但守不住任何东西，只会让清单变长。
+- **两个大 facade 明确不进**：`net/ApiClient.ts`/`WorldApiClient.ts`（~50%）是一行一个转发，覆盖率说明不了任何事（同一理由让它们在 500 行 baseline 里也是例外条目）。
+- **这份逐文件清单是过渡的**，ADR-070 那条「逐文件 include 是缺模块边界的味道」仍然成立：它针对的是逐文件项**收窄** scope（把没测的兄弟藏在好看的数字后面），这里每一项只**增加**受门禁的地盘。清单同时就是 ADR-070 客户端半边（4b）的待办——每抽出一个场景的纯逻辑目录，那个目录替掉它名下的若干逐文件项。
+- **`test/coverageScope.test.ts` 钉住它别烂掉**（48 例）：每一项必须还匹配得到真文件（**改名/删文件会让一项静默失配、scope 无声缩小，而百分比通常还会升**，因为掉出去的都是覆盖好的模块——这正是 `checkFileLength`/`checkCoverageThreshold` 两条 canary 防的那种「靠变绿退休」）、清单不许空（canary）、不许有已被目录项覆盖的冗余项。红绿两向都实测过。
+- **不追整包 90%**：按上表缺口要再覆盖约 3 万行，且相当大比例是 PIXI 绘制代码，测出来的是 mock 的行为。系统性渲染/场景测试仍然是 `test:ui`/`test:e2e` 的活（两者都不产覆盖率）。
+
 ## 静态类型检查（`npm run typecheck` / CI）
 
 vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 的 `include` 只有 `src/**`——**`test/**` 从不被类型检查**。历史上这让 test 里对 `GameConfig` / DTO / proto 形状的引用可以运行期侥幸通过（esbuild 擦掉类型），却是潜伏 bug（典型：CC-1 把 `GameConfig.unitLevels` 换成 `cardInstances`、`JudgeRequest` 新增必填 `unitLevels` 后，多个 test 仍用旧形状）。

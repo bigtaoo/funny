@@ -110,6 +110,20 @@ jobs:
       - name: server typecheck (test programs — test/** in every workspace)
         working-directory: server
         run: npm run typecheck:test
+      # 2026-08-21: server/tools/econ-sim is the one package under server/ that is NOT a workspace
+      # (it is a headless balance simulator, not a service), so every command above — `tsc -b` on the
+      # solution file, `--workspaces` fan-outs, the coverage gate's package list — skipped it by
+      # construction. It had therefore never been type-checked or tested in CI at all, while still
+      # importing @nw/shared/@nw/engine numeric constants and being edited as recently as ADR-069
+      # (2026-08-19): an engine renumbering could brick it and nothing would say so until someone
+      # went to run a simulation. No install step needed — it has no node_modules of its own and
+      # resolves tsc/vitest/@nw/* from server/'s hoisted tree by walking up. Must run AFTER the
+      # `tsc -b` above, same reason as the step above it: @nw/* resolve through the built dist/.
+      # scripts/checkWorkspaceCoverage.mjs now fails if this step (or the test one in server-test)
+      # stops naming it, so it cannot silently fall back out the way it silently stayed out.
+      - name: server econ-sim typecheck (non-workspace package)
+        working-directory: server/tools/econ-sim
+        run: npm run typecheck
 
   # 2026-08-14: split out of the old single "build + unit tests" job (see claudedocs/server.md) —
   # `npm run test:coverage --workspaces` used to run all 13 server workspaces back-to-back on one
@@ -230,6 +244,19 @@ jobs:
           args=()
           for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
           npm run test:coverage "${args[@]}" --if-present
+
+      # 2026-08-21, same gap as server-checks' econ-sim typecheck step: not a workspace, so no
+      # `--workspaces` fan-out ever reached its 18 tests (~5s). Rides the `rest` shard rather than
+      # getting a runner of its own — it needs neither Mongo nor Redis, and a shard of its own would
+      # spend 30s on checkout+install to run 5s of tests. Deliberately NOT added to
+      # coverageLib.mjs's gated list: it is a one-off simulator whose bulk is `*Run.ts` entry
+      # scripts, so a 90% bar there would only buy tests written for the percentage. Running its
+      # tests at all is the whole point — they lock in balance numbers (enhance-protect costs,
+      # stronghold combat) that engine changes can silently invalidate.
+      - name: server econ-sim tests (non-workspace package)
+        if: matrix.shard.name == 'rest'
+        working-directory: server/tools/econ-sim
+        run: npm test
 
       # coverage-report (below) needs every shard's coverage/ output on one filesystem; each
       # shard only produces coverage dirs for the workspaces it actually ran, so the glob below

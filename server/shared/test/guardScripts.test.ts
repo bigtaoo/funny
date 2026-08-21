@@ -63,6 +63,10 @@ function coverageTree(opts: {
   testConfig?: Record<string, unknown> | null;
   typecheckTestScript?: boolean;
   fulllinkInclude?: string[] | null;
+  /** A non-workspace package under server/ (the econ-sim shape), as {dir -> its scripts}. */
+  extraPackages?: Record<string, Record<string, string>>;
+  /** ci.yml steps as [working-directory, run body] pairs; the file is omitted when undefined. */
+  ciSteps?: Array<[string, string]>;
 } = {}): string {
   const workspaces = opts.workspaces ?? ['shared'];
   const references = opts.references ?? workspaces;
@@ -79,6 +83,15 @@ function coverageTree(opts: {
   }
   if (opts.fulllinkInclude !== null) {
     spec['client/tsconfig.fulllink.json'] = json({ include: opts.fulllinkInclude ?? [] });
+  }
+  for (const [dir, scripts] of Object.entries(opts.extraPackages ?? {})) {
+    spec[`server/${dir}/package.json`] = json({ name: `@nw/${dir.split('/').pop()}`, scripts });
+  }
+  if (opts.ciSteps) {
+    const steps = opts.ciSteps
+      .map(([dir, run]) => `      - name: step for ${dir}\n        working-directory: ${dir}\n        run: ${run}\n`)
+      .join('');
+    spec['.github/workflows/ci.yml'] = `jobs:\n  j:\n    steps:\n${steps}`;
   }
   return tree(spec);
 }
@@ -172,6 +185,58 @@ describe('checkWorkspaceCoverage.mjs', () => {
     }));
     expect(r.out).toContain('glob excludes are not allowed');
     expect(r.code).toBe(1);
+  });
+
+  /**
+   * The 2026-08-21 check. server/tools/econ-sim is the shape it exists for: a package under server/
+   * that is not a workspace, so `tsc -b` on the solution file, every `--workspaces` fan-out and
+   * coverageLib.mjs's list all skipped it at once and CI ran neither its typecheck nor its 18 tests
+   * for as long as it existed. The passing case below is the load-bearing one — it proves the
+   * ci.yml/`working-directory` matching actually lines up, rather than the check failing closed on
+   * everything (which would look like a working guard while proving nothing).
+   */
+  it('accepts a non-workspace package whose test + typecheck scripts both have a ci.yml step', () => {
+    const r = runCoverage(coverageTree({
+      extraPackages: { 'tools/sim': { test: 'vitest run', typecheck: 'tsc --noEmit' } },
+      ciSteps: [
+        ['server/tools/sim', 'npm run typecheck'],
+        ['server/tools/sim', 'npm test'],
+      ],
+    }));
+    expect(r.out).toContain('every non-workspace package with tests wired into ci.yml');
+    expect(r.code).toBe(0);
+  });
+
+  it('fails on a non-workspace package with tests that no ci.yml step runs', () => {
+    const r = runCoverage(coverageTree({
+      extraPackages: { 'tools/sim': { test: 'vitest run' } },
+      ciSteps: [['server', 'npm run test:coverage']],
+    }));
+    expect(r.out).toContain('server/tools/sim: has a "test" script that no ci.yml step runs');
+    expect(r.code).toBe(1);
+  });
+
+  /**
+   * `npm run test:coverage` must not count as running `test`, nor `typecheck:test` as `typecheck`:
+   * a near-miss step name is exactly what would let this check pass while the script it claims to
+   * cover never runs.
+   */
+  it('does not accept a near-miss script name (test:coverage) as running the test script', () => {
+    const r = runCoverage(coverageTree({
+      extraPackages: { 'tools/sim': { test: 'vitest run' } },
+      ciSteps: [['server/tools/sim', 'npm run test:coverage']],
+    }));
+    expect(r.out).toContain('server/tools/sim: has a "test" script that no ci.yml step runs');
+    expect(r.code).toBe(1);
+  });
+
+  it('ignores a non-workspace package with no test script (nothing for CI to run)', () => {
+    const r = runCoverage(coverageTree({
+      extraPackages: { 'tools/sim': { build: 'tsc' } },
+      ciSteps: [['server', 'npm ci']],
+    }));
+    expect(r.out).toContain('OK —');
+    expect(r.code).toBe(0);
   });
 
   it('reports the drift and the ownership failure together when both are present', () => {
