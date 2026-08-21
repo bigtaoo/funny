@@ -513,7 +513,9 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       ]);
       expect((await call(rootToken, 'POST', '/admin/accounts/acc-flagged/ban')).status).toBe(200);
       const after = await call(rootToken, 'GET', '/admin/suspicious-pve');
-      expect(after.json.accounts[0]).toMatchObject({ _id: 'acc-flagged', banned: true });
+      expect(after.json.accounts).toEqual([
+        { _id: 'acc-flagged', displayName: 'Flagged', publicId: '333333333', pveWarnings: 4, banned: true, createdAt: 7 },
+      ]);
       // Leave the shared fake as it was found — the ban/unban test in playerRoutes asserts on this set.
       expect((await call(rootToken, 'POST', '/admin/accounts/acc-flagged/unban')).status).toBe(200);
     });
