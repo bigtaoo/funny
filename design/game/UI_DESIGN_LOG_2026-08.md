@@ -214,3 +214,13 @@ const rowY  = isPortrait
 **必须是屏幕空间**（这是唯一有点绕的地方）：它要框住 `gameLayer` **缩放后**的矩形；`bgLayer` 是 Cover、`gameLayer` 是 Contain，有留白时两者缩放比例天然不同，所以任何设计空间图层都对不齐那个边框。手机路径（`pageX < 2`）一个图元都不画且 `visible=false`，零开销。
 
 **验证**：`tsc --noEmit` 双 config 绿；新增 [`client/test/ui/deskSurround.ui.ts`](../../client/test/ui/deskSurround.ui.ts) 5 例；`test:ui` 200 文件 / 1768 例全绿。**像素核对**：iPad 12.9" 重拍大厅/大世界两屏确认——带内取样 `rgb(222,211,189)`（桌面 kraft）、页内 `rgb(245,240,232)`（纸白），页缘阴影与墨线可见，`art/store/en/*__ipad_12.9.png` 已更新。
+
+## 37. 头像/图标框的双层背景改成单层+描边（2026-08-21）
+
+**起因**：用户看融合弹窗（[`CardScene/feed.ts`](../../client/src/scenes/CardScene/feed.ts) 的环形材料选择）截图，问"头像背后为什么又叠了一张方形底图，是不是重复渲染了"。查证后发现：`feedList.ts` 的候选行确实是**外层行背景 + 内层头像框**两个 `sketchPanel` 紧贴叠放——行背景已经铺了一层米白色 `sketchPanel`，头像框又在贴身位置铺一层几乎同色的 `0xf0eee7` 填充，行高矮（`thumbBox = rowH - 8*S`）时两层边距只剩 4px，读出来就是"重复画了一个方块"而不是"卡框"。
+
+进一步排查发现这**不是孤立 bug**，是整个卡牌模块统一沿用的"格子背景 + 内嵌头像/图标框"两层结构——[`CardScene/list.ts`](../../client/src/scenes/CardScene/list.ts)（花名册网格）、[`CardScene/detail.ts`](../../client/src/scenes/CardScene/detail.ts)（详情弹窗立绘）、[`CardScene/skins.ts`](../../client/src/scenes/CardScene/skins.ts)（皮肤列表）都是同样的写法，此外沿着 `sketchPanel(` 全仓排查又找到 [`EquipmentScene/assign.ts`](../../client/src/scenes/EquipmentScene/assign.ts)、[`EquipmentScene/cells.ts`](../../client/src/scenes/EquipmentScene/cells.ts)、[`EquipmentScene/craft.ts`](../../client/src/scenes/EquipmentScene/craft.ts)、[`DefenseEditorScene/roster.ts`](../../client/src/scenes/DefenseEditorScene/roster.ts)、[`worldmap/WorldMapPanels/shop.ts`](../../client/src/scenes/worldmap/WorldMapPanels/shop.ts)、[`CityScene/teamRow.ts`](../../client/src/scenes/CityScene/teamRow.ts)、[`AuctionScene/list.ts`](../../client/src/scenes/AuctionScene/list.ts) 共 7 处同款。内层 frame 的 `fill` 有的纯装饰（跟外层同一个 `C.mid`/同色，如 list.ts、skins.ts、shop.ts、AuctionScene/list.ts），有的 border 传达真实信息（阵营色/稀有度色，如 feedList.ts、detail.ts、EquipmentScene/cells.ts、craft.ts）——但**填充本身在所有 7+5 处都是多余的**：外层背景已经是唯一需要的那一层。
+
+**修法**：给全部 12 处内层 frame 的 `sketchPanel` 调用加 `fillAlpha: 0`（`sketchPanel` 本就支持这个参数，见 [`render/sketchUi.ts`](../../client/src/render/sketchUi.ts) 的 `PanelOpts`），让外层背景透出来，只留手绘描边——传达阵营/稀有度信息的边框颜色原样保留，纯装饰性的边框也保留（仍是"卡框"视觉，只是不再重复填色）。融合弹窗环形图（`feedRing.ts`）本身没有这个问题，一直是单层圆形（填充+描边一次画成），不用改。
+
+**验证**：`tsc --noEmit` 全绿；受影响场景的既有 `test:ui` 用例（`cardFusePanel`/`cardFusePanelPrep`/`cardSceneSkins`/`cardDetailFlipAndSkin`/`cardArtLoadingSpinner`/`auctionScene`/`equipmentEnhanceIncrementalRedraw`/`equipmentEquippedTagOverflow`/`worldMapShopPanel`，9 文件 / 179 例）全绿。**像素核对**：用 `#fusedemo` 临时 hash 路由（仿 §"Screenshotting a panel that needs a FABRICATED save state" 的记忆写法，构造好目标卡+材料池的 `cardInv` 后直接 `feed.openFuseSelect(target)`，跳过登录/后端）截了融合弹窗改前改后两张图对比——两层填色本来就是几乎同色（这正是它读起来"像是重复"而不是"明显叠色"的原因），像素级差异不大，但结构上从两层裁成了一层，且跟环形图的单层画法统一。

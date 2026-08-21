@@ -154,8 +154,11 @@ export class ShopPanel implements ShopHandlers {
     const imgBox = cellH - pad * 2 - btnBandH - 8;
     const imgX = x + pad,
       imgY = y + pad;
+    // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind already
+    // fills+borders in this same accent color, so this frame's own fill only duplicated it.
     const frame = sketchPanel(imgBox, imgBox, {
       fill: 0xf0eee7,
+      fillAlpha: 0,
       border: C.accent,
       seed: seedFor(x, y, imgBox),
     });

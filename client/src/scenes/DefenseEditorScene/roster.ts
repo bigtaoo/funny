@@ -236,8 +236,11 @@ export function renderRosterCell(
 
   const imgH = cellH - pad * 2;
   const imgW = Math.round(imgH * 0.72);
+  // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind is already
+  // the one background layer, this frame is a stroke-only outline.
   const frame = sketchPanel(imgW, imgH, {
     fill: 0xf0eee7,
+    fillAlpha: 0,
     border: C.mid,
     seed: seedFor(x, y, imgW),
   });

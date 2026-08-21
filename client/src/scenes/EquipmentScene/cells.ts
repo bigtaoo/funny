@@ -133,7 +133,9 @@ export function renderInstanceCell(
   const imgBox = EQUIP_CELL_H - (pad + headerH) - pad - btnBandH - bandGap;
   const imgX = x + pad;
   const imgY = y + pad + headerH;
-  const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
+  // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind already
+  // fills+borders in this same rarity color, so this frame's own fill only duplicated it.
+  const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, fillAlpha: 0, border: color, seed: seedFor(x, y, imgBox) });
   frame.x = imgX; frame.y = imgY;
   core.bodyLayer.addChild(frame);
   core.addGlyph(slot, inst.rarity, imgX + imgBox / 2, imgY + imgBox / 2, imgBox - 8, seedFor(x, imgBox, cellW), 1, inst.defId);

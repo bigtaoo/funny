@@ -223,7 +223,9 @@ export class ListPanel {
     // column to its right — see renderItemPicture for the real per-item art). ──
     const imgSize = Math.min(AUC_CELL_H - pad * 2, 130);
     const imgX = x + pad; const imgY = y + (AUC_CELL_H - imgSize) / 2;
-    const frame = sketchPanel(imgSize, imgSize, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgSize) });
+    // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind is already
+    // the one background layer, this frame is a stroke-only outline.
+    const frame = sketchPanel(imgSize, imgSize, { fill: 0xf0eee7, fillAlpha: 0, border: C.mid, seed: seedFor(x, y, imgSize) });
     frame.x = imgX; frame.y = imgY;
     core.bodyLayer.addChild(frame);
     this.renderItemPicture(auc, imgX + imgSize / 2, imgY + imgSize / 2, Math.round(imgSize * 0.62), seedFor(x, y, imgSize));
