@@ -55,6 +55,10 @@
 
 **实施时的两处偏差**（核实后发现清单本身有误判，均已在"实施记录"和"拍板决策"表中记录）：`/mm/room/start` 三层链和 `Matchsvc.cancel` 中，前者被证实**不是**死代码（`matchsvc.test.ts`/gateway 两个测试文件直接调用验证其 no-op+拒绝语义，删除后破坏 9 个测试，已恢复）；`socialsvc GET /internal/reports` 也**不是**死代码（自身注释记载为合规最小可见性兜底，刻意保留可达但暂无调用方）。其余清单项目均按原计划确认删除。
 
+**事后修正：batch G 里 admin 那三条的判据本身是错的（2026-08-20 全部回滚）**。`GET+POST /admin/promo/codes`、`GET /admin/mismatches`、`GET /admin/suspicious-pve` 当时用的理由是「no ops-frontend page calls any of them」，并保留下层 service/client「in case they're wired up later」——**这条判据对顶层路由不成立**。ops 前端是这三条路由的唯一消费者，所以「没有前端调用」在这里等价于「这个特性没接完」，而不是「这个特性死了」；再加上保留下层，结果是一个自锁的环：路由因为没有前端而被删，前端因为没有路由而没人写。三条的数据生产端从头到尾没停过（commercial `promoCodes` + 玩家侧 `POST /promo/redeem` 一直在线；`matches.hashMismatch` 每局在写且这类争议局刻意不打 TTL；`accounts.flags.pveWarnings` 每次 PvE reject 在 `$inc`），设计文档也都把这三条列为**已交付**（`META_TASKS.md` B-PROMO / S4-2、`ACCOUNT_DESIGN.md` §C4+S4-4）。三条已于 2026-08-20 连同各自的 ops 页面一并补回，见 `OPS_DESIGN.md`「兑换码发码页」与「反作弊两张信号表」两节。
+
+**给下一轮审计的判据**（比 batch G 的「零调用方」严格一档）：判死一个端点要同时满足①**没有生产者**——没有代码在写它读的那份数据；②**没有交付承诺**——没有设计文档把它的可见性算作已交付需求。只查调用方会把「上层没接完的活」误判成「下层已死的码」，且删掉的恰好是唯一能接的那一端。批次 G 前面记的两处偏差（`/mm/room/start`、socialsvc `/internal/reports`）是靠跨包测试和端点自身注释兜住的，这三条没有测试也没有注释兜——所以恢复时一并补了对应的路由测试。
+
 **治理**：meta `authed()` 透传 `x-internal-caller`（当前审计归因恒 null）；botsvc capacityClient 改 `internalHeaders`（strict 模式下现状会 401）；meta 44 处手写认证改 preHandler；worldsvc 500 响应泄漏内部异常（对齐 auctionsvc 已修的 comm-audit B15）。
 
 ## 拍板决策（本轮）

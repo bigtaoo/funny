@@ -144,7 +144,23 @@ cardInv: Record<string, CardInstance>  // key = CardInstance.id，上限 500（2
 
 **批量备料**：备料层内剩余 ≥2 轮时给出「一键合成剩余 (×N)」（`countPrepRounds` 模拟真实库存算出的可完成轮数，不是 `avail / 6` 的算术上界）。这是把那 124 次无决策点击折叠成**一次玩家显式授权**的操作——与"暗中换目标"性质完全不同：只在**同一个备料帧内**批量，绝不跨卡。实现上刻意**不播每轮动画、也不播收尾动画**（环形几何属于开始那一刻的炉子卡，运行中已被消耗/换过多次，任何动画都在展示已经失效的头像），改用汇总 toast 报告实际完成轮数；首轮失败即停并只报已落地的轮数（失败通常是 `REV_CONFLICT`/超时，继续跑等于对着客户端已不可信的状态继续花卡）；循环条件同时判 `core.destroyed`——玩家中途退出花名册后不再发起新一轮，连"规划下一轮"都不做（规划本身就是在读一个已经销毁的面板不再拥有的状态）。
 
-**落地**：`client/src/scenes/CardScene/feedPlan.ts`（纯规划/排序，取代 `feedAutoTarget.ts`）+ `feedGap.ts`（面包屑/缺口通知/批量按钮/推荐条/页脚）+ `feedRing.ts`（环形，从 `feed.ts` 拆出以守 500 行约定）+ `feed.ts`（状态机重写）+ `actions.ts`（`doPrepBatch`）+ `core.ts`（`doPrepBatch` 懒钩子；`sortCards`/`injuryCountdown` 外移到 `cardSort.ts` 腾出行数）。测试：`test/feedPlan.test.ts`（23 例，取代 `feedAutoTarget.test.ts`）+ `test/ui/cardFusePanel.ui.ts`（37 例，两个旧 describe 整体替换）。**服务端零改动**——融合规则、`5^(L-1)` 曲线、`FUSION_MATERIAL_COUNT=5`、`MAX_CARD_LEVEL=9` 全部未动，本次改的只是交互契约。
+**一次请求跑完整批（2026-08-20，性能）**：上面这套一开始是**客户端串行循环**——每轮一个 `POST /cards/fuse`，拿到新 save 再规划下一轮。玩家反馈"点下去明显卡顿"，原因不在渲染（批量期间 `fuseInProgress` 已经压住了所有重绘），而在**每一轮都要付一次往返、而且每个响应都带一份重新组装的完整 `cardInv`**（`app.ts` 的 `preSerialization` 钩子会 `cardInstances.find({accountId})` 全量重组）——几百张卡的名册上，5 轮就是 5 次全量名册的下行。改为**整批一次请求**：新增 `POST /cards/fuse-batch`（`server/metaserver/src/cards/fuseBatch.ts`，规则校验与单发共用 `cards/fuseRules.ts`），客户端用 `planPrepRounds` 一次性把整轮规划好再发出去。
+
+- **规划为什么可以提前做**：一次融合的结果是完全确定的（5 张点名的材料消失、炉子 +1 级），`countPrepRounds` 本来就是靠模拟这件事算出按钮上那个 ×N 的——现在把"模拟"直接产出成要发的轮次列表，`countPrepRounds` 退化成 `planPrepRounds().length`，两者再也不可能算出不同的数（旧版模拟用 `readyMaterials`、真跑用 `autoFillMaterials`，排序不同，本来就有分叉的口子）。
+- **服务端语义**：轮次按序执行，每轮针对"上一轮执行完之后"的名册校验（名册只读一次，之后在内存里往前推——真正防并发的是每轮目标更新上的 `level` 乐观锁，不是这次读有多新）。**首轮就非法** → 报错、不动任何数据、不占 idem key；**中途失败** → 仍是 200，`completed` 报实际落地轮数、`failed.index/code` 报第一个失败轮，跟客户端旧的串行语义逐字一致，所以 UI 那套"报告落地了多少"的处理没改。整批共用一个 `idempotencyKey`，回放已落地轮数而不是重跑。`MAX_FUSE_BATCH_ROUNDS = 20` 是纯余量上限（当前按钮最多要 5 轮），防手搓客户端把一次请求变成无界写循环。
+- **省下的**：N 次往返 → 1 次；N 次全量 `cardInv` 重组 → 1 次；N 次 `cardInvCount` 扣减 → 1 次。
+
+**落地**：`client/src/scenes/CardScene/feedPlan.ts`（纯规划/排序，取代 `feedAutoTarget.ts`）+ `feedGap.ts`（面包屑/缺口通知/批量按钮/推荐条/页脚）+ `feedRing.ts`（环形，从 `feed.ts` 拆出以守 500 行约定）+ `feed.ts`（状态机重写）+ `actions.ts`（`doPrepBatch`）+ `core.ts`（`doPrepBatch` 懒钩子；`sortCards`/`injuryCountdown` 外移到 `cardSort.ts` 腾出行数）。测试：`test/feedPlan.test.ts`（23 例，取代 `feedAutoTarget.test.ts`）+ `test/ui/cardFusePanel.ui.ts`（37 例，两个旧 describe 整体替换）。08-18 当时**服务端零改动**——融合规则、`5^(L-1)` 曲线、`FUSION_MATERIAL_COUNT=5`、`MAX_CARD_LEVEL=9` 全部未动，改的只是交互契约。
+
+**2026-08-20 批量端点落地**：服务端 `cards/fuseRules.ts`（`checkFuseShape`/`checkFuseRound`，单发与批量共用的纯规则）+ `cards/fuseBatch.ts`（`fuseCardsBatch`）+ `service/inventory.ts` 的 `cardsFuseBatch` 路由 + 契约 `openapi/paths/inventory.yml` 的 `/cards/fuse-batch`（`CardIdemDoc.op` 加 `'fuseBatch'`）；客户端 `net/ApiClient/equipment.ts` 的 `fuseCardsBatch` + `feedPlan.ts` 的 `planPrepRounds`（`countPrepRounds` 改为它的 `.length`）+ `actions.ts` 的 `doPrepBatch` 改成单请求 + `CardCallbacks.fuseCardsBatch`。测试：`server/metaserver/test/cards-fuse-batch-unit.test.ts`（18 例，真 Mongo；`fuseBatch.ts`/`fuseRules.ts` 行/分支 100%）+ client `test/feedPlan.test.ts` 的 `planPrepRounds` 组 + `test/api-client.test.ts`「一次请求带上所有轮次」+ `test/ui/cardFusePanelPrep.ui.ts` 的批量用例改走 `fuseCardsBatch` stub + `test/cardRoster-offline.test.ts` 的 `fuseCardsBatch` 适配层组。
+
+值得单独点名的几条守卫（都是"只看别的用例会漏掉"的形状）：
+- **「整批只读一次名册」**（服务端）：包住 `cardInstances.find` 数调用次数。一个"每轮各读一次"的实现能通过本文件其它所有用例，却正好把这次优化撤销回去——这条是唯一盯着它的。
+- **「一次点击只发一个请求」**（client UI）：其它用例数的是**轮数**，数轮数分不出批量和它取代的串行循环，所以单独数请求数。
+- **中途出事之后的四种收尾**（服务端）：mid-batch `REV_CONFLICT`、save 在扣减前消失、rev 重试耗尽、key 被并发请求先占。共同的不变量是**已提交的轮次保持已提交且可回放，绝不会被重跑吞第二次卡**——注意这里跟单发 `fuseCards` 故意不同：单发在 `REV_CONFLICT` 时回滚 idem 认领，批量**不能**回滚（前面几轮真的落库了）。
+- **计划自相矛盾时不背锅**（服务端）：同一张卡被两轮点名 → 第二轮 `CARD_NOT_FOUND` 而不是白升一级；跨账号 id → `CARD_NOT_FOUND`。
+- **带装备的卡永远不当炉子**（client 规划层）：服务端 `checkFuseRound` **不看装备**，只按 id 删卡，所以这条规则的唯一执行点在客户端规划；批量化之后一次错误规划会一口气烧掉整轮，比逐轮时代更值得钉死。顺带钉住"材料优先花无装备的副本"——旧的轮数模拟走 `readyMaterials`、真跑走 `autoFillMaterials`，两者排序不同，本来存在算出的 N 与实际花的卡不一致的口子。
+- **契约上下界自己也要拦**（服务端）：HTTP 上的空批/超轮由 openapi `minItems`/`maxItems` 挡下，根本走不到函数里，所以另有一组直接调函数的用例证明 `MAX_FUSE_BATCH_ROUNDS` 这道闸真的存在（并且是闭区间）。
 
 **明确没有采纳的方案（2026-08-18 拍板）**：曾提出取消"材料必须严格同级"、改用融合当量（一张 Lv.n 卡 = `5^(n-1)` 点，任意等级都能投，配进度条与溢出结转），可把 125 次点击压成 1 次。**否决，两条理由**：①严格同级在做**分层**的活——玩家只面对「还差 2 张 Lv.3」，当量制会把总量摊开成「还差 3125 张 Lv.1」，正是 07-19 重设计好不容易藏起来的那个吓人数字；②当量制 + 进度条会诱导玩家把整个阵营的低级卡一次梭哈，**替补席直接清空**，而 CC7 把背包上限从 150 扩到 500 的本意恰恰是"让玩家能多留些卡备战 SLG 队伍"。
 

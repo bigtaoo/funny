@@ -110,8 +110,73 @@ describe('HttpPromoClient', () => {
     expect(await new HttpPromoClient(null, 'k').list()).toEqual([]);
     fetchMock.mockResolvedValue({ ok: false, status: 500, body: null, error: 'boom' });
     await expect(new HttpPromoClient('http://meta', 'k').list()).rejects.toThrow();
-    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { codes: [{ code: 'X10' }] } });
-    expect(await new HttpPromoClient('http://meta', 'k').list()).toEqual([{ code: 'X10' }]);
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { codes: [{ _id: 'X10', coins: 100, redeemed: 2, createdBy: 'root', createdAt: 7 }] } });
+    expect(await new HttpPromoClient('http://meta', 'k').list()).toEqual([{ code: 'X10', coins: 100, redeemed: 2, createdBy: 'root', createdAt: 7 }]);
+  });
+
+  // Regression (2026-08-20): this mock used to feed `{ code }` — the shape PromoCodeView *declares* —
+  // so it agreed with the client's own type and proved nothing. commercial actually serves its
+  // promoCodes documents verbatim, where `_id` IS the code (and its own route test pins that), so the
+  // real response carries no `code` field at all. With the mock lying, the ops table's Code column came
+  // back undefined against real services while every test stayed green.
+  it('list renames the wire `_id` to `code` and never leaks `_id` downstream', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: { codes: [{ _id: 'WELCOME2026', coins: 250, totalLimit: 500, expiresAt: 99, note: 'launch', redeemed: 3, createdBy: 'adm-1', createdAt: 5 }] },
+    });
+    const [row] = await new HttpPromoClient('http://meta', 'k').list();
+    expect(row).toEqual({ code: 'WELCOME2026', coins: 250, totalLimit: 500, expiresAt: 99, note: 'launch', redeemed: 3, createdBy: 'adm-1', createdAt: 5 });
+    expect(row).not.toHaveProperty('_id');
+  });
+
+  // `available` is the flag PromoService's degrade branch reads (see promo.test.ts) — pinning it here
+  // is what connects the two halves: unconfigured must be falsy there, or the service silently starts
+  // calling a client with no base URL.
+  it('available reflects whether a meta base URL was configured', () => {
+    expect(new HttpPromoClient(null, 'k').available).toBe(false);
+    expect(new HttpPromoClient('http://meta', 'k').available).toBe(true);
+  });
+
+  // The remaining `??` legs in this client are all "meta answered, but not with what we asked for"
+  // shapes. They matter because the ops page renders whatever comes back: a swallowed undefined here
+  // is an empty table or a blank error box, with nothing in the log to explain either.
+  it('list treats a 200 with no `codes` array as an empty list, not a crash in the _id→code map', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: {} });
+    expect(await new HttpPromoClient('http://meta', 'k').list()).toEqual([]);
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: null });
+    expect(await new HttpPromoClient('http://meta', 'k').list()).toEqual([]);
+  });
+
+  it('list reports a status-less network failure as 502 "network error" rather than "HTTP 0"/undefined', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 0, body: null });
+    await expect(new HttpPromoClient('http://meta', 'k').list()).rejects.toMatchObject({
+      status: 502,
+      message: 'list promo codes network error',
+    });
+  });
+
+  // Note the status it carries: `r.status || 502` keeps the transport's 200, so the thrown error is
+  // an EventsClientError(200). That is not a bug but it is only harmless because httpApi.ts's mapper
+  // sends anything outside 400..599 as 502 — asserted here so the two halves stay in sync if either
+  // side's fallback is ever changed.
+  it('create rejects a 200 that omits the code — the caller would otherwise return { code: undefined } as success', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: {} });
+    await expect(new HttpPromoClient('http://meta', 'k').create({ code: 'X10', coins: 1, createdBy: 'a' }))
+      .rejects.toMatchObject({ status: 200, message: 'create promo code HTTP 200' });
+  });
+
+  it('create falls back through body.error → r.error → "HTTP <status>" for its message', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, body: null, error: 'socket hang up' });
+    await expect(new HttpPromoClient('http://meta', 'k').create({ code: 'X10', coins: 1, createdBy: 'a' }))
+      .rejects.toMatchObject({ message: 'socket hang up' });
+    fetchMock.mockResolvedValue({ ok: false, status: 500, body: null });
+    await expect(new HttpPromoClient('http://meta', 'k').create({ code: 'X10', coins: 1, createdBy: 'a' }))
+      .rejects.toMatchObject({ message: 'create promo code HTTP 500' });
+    // status 0 (never reached meta) → 502, the one leg list already covers but create did not.
+    fetchMock.mockResolvedValue({ ok: false, status: 0, body: null });
+    await expect(new HttpPromoClient('http://meta', 'k').create({ code: 'X10', coins: 1, createdBy: 'a' }))
+      .rejects.toMatchObject({ status: 502 });
   });
 
   it('create throws unconfigured(503), on failure/missing code, and resolves the code on success', async () => {

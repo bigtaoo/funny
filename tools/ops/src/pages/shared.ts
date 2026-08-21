@@ -1,9 +1,15 @@
 // Shared plumbing for the ops admin page renderers (OPS_DESIGN §7). Pure DOM.
 // The per-page modules under pages/ each render into ctx.root; pages.ts re-exports
 // them as a flat barrel so app.ts imports stay stable.
+//
+// ADR-070 Phase 4e (2026-08-20) moved the arithmetic that used to live here — the ms ↔
+// datetime-local pair and the sparkline's point list — into src/logic/shared.ts, leaving this file
+// as what its header always claimed it was: the DOM half. `sparkline` below is the shape that split
+// takes everywhere in this console: geometry in logic/, element construction here.
 import type { Api } from '../api';
 import { ApiError } from '../api';
 import { h } from '../dom';
+import { SPARK_H, SPARK_W, sparklinePoints } from '../logic/shared';
 import type { Session } from '../types';
 
 export type Ctx = { api: Api; session: Session; root: HTMLElement; onTeardown: (fn: () => void) => void };
@@ -18,34 +24,25 @@ export function showOk(el: HTMLElement, msg: string): void {
   el.className = 'err ok';
 }
 
+/** `showErr` into a fresh node, for the callers that append an error instead of filling a slot. */
+export function errNode(e: unknown): HTMLElement {
+  const el = h('div', {});
+  showErr(el, e);
+  return el;
+}
+
 /** Inline SVG sparkline (shared by the live monitor + analytics DAU trend). */
 export function sparkline(values: number[]): HTMLElement {
   if (values.length === 0) return h('div', { class: 'muted' }, 'No data');
-  const w = 600;
-  const ht = 80;
-  const max = Math.max(1, ...values);
-  const step = values.length > 1 ? w / (values.length - 1) : w;
-  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(ht - (v / max) * (ht - 6) - 3).toFixed(1)}`).join(' ');
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${w} ${ht}`);
+  svg.setAttribute('viewBox', `0 0 ${SPARK_W} ${SPARK_H}`);
   svg.setAttribute('width', '100%');
-  svg.setAttribute('height', String(ht));
+  svg.setAttribute('height', String(SPARK_H));
   const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-  poly.setAttribute('points', pts);
+  poly.setAttribute('points', sparklinePoints(values));
   poly.setAttribute('fill', 'none');
   poly.setAttribute('stroke', '#2f5fcf');
   poly.setAttribute('stroke-width', '2');
   svg.append(poly);
   return svg as unknown as HTMLElement;
-}
-
-// ms ↔ datetime-local ("YYYY-MM-DDTHH:mm", local timezone). Shared by events + gacha pools.
-export function msToLocalInput(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-export function localInputToMs(v: string): number {
-  const t = new Date(v).getTime();
-  return Number.isFinite(t) ? t : NaN;
 }

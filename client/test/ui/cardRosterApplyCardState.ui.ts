@@ -92,6 +92,7 @@ function buildScene(cards: CardInstance[], designW = 1920, designH = 1080): {
     getCardState: () => liveCardState,
     getTeamName: (teamId) => liveTeamNames?.[teamId],
     fuseCards: async () => ({ ok: true }),
+    fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
     setCardLock: async () => ({ ok: true }),
     getOwnedSkins: () => [],
     getEquippedSkin: () => null,

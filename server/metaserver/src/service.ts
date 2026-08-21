@@ -113,6 +113,7 @@ export class MetaService implements MetaHandlers {
   equipEquipment(...args: Parameters<InventoryService['equipEquipment']>) { return this.inventorySvc.equipEquipment(...args); }
   reforgeEquipment(...args: Parameters<InventoryService['reforgeEquipment']>) { return this.inventorySvc.reforgeEquipment(...args); }
   cardsFuse(...args: Parameters<InventoryService['cardsFuse']>) { return this.inventorySvc.cardsFuse(...args); }
+  cardsFuseBatch(...args: Parameters<InventoryService['cardsFuseBatch']>) { return this.inventorySvc.cardsFuseBatch(...args); }
   cardsLock(...args: Parameters<InventoryService['cardsLock']>) { return this.inventorySvc.cardsLock(...args); }
   cardsUnlock(...args: Parameters<InventoryService['cardsUnlock']>) { return this.inventorySvc.cardsUnlock(...args); }
 

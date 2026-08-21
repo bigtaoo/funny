@@ -1,0 +1,141 @@
+// Terrain/resource fill colors + texture-name mapping — trimmed from the game client's
+// client/src/scenes/worldmap/tileStyle.ts down to the parts the editor needs. The editor only
+// ever draws proceduralTile()/rasterizeMapEdits() output (no runtime ownership/fog state), so
+// the ownerTint/fog/mine/ally machinery from the client original is dropped entirely.
+//
+// Lives in src/tiles/ (ADR-070 Phase 4a), not src/render/: nothing here imports PIXI or touches
+// the DOM — see src/tiles/isoGrid.ts's header for what that directory boundary is for.
+import { biomeMixAt, type ObstacleKind, type ResourceType, type TileType } from '@nw/shared/slg';
+
+/**
+ * Frame names in the SLG ground-tile atlas. Declared HERE rather than next to the loader that
+ * reads those frames (src/render/terrainAtlasLoader.ts) so the dependency runs pure → PIXI and
+ * never back: this module's whole job is mapping a tile to one of these names, and importing the
+ * type from the atlas loader would put a PIXI module in the import graph of the pure layer (a
+ * type-only import, so harmless at runtime, but it makes the boundary unreadable — and the
+ * boundary is the thing src/tiles/ exists to state). The loader imports it from here instead.
+ */
+export type TerrainTextureName =
+  | 'terrain_grass'
+  | 'terrain_mountain'
+  | 'terrain_river'
+  | 'terrain_keep'
+  | 'terrain_center'
+  | 'terrain_stronghold';
+
+export const TERRAIN_COLORS: Record<string, number> = {
+  neutral:    0xf5f0e8,
+  resource:   0xf0ece0,
+  familyKeep: 0xe8d29a,
+  center:     0xf0dfa0,
+  obstacle:   0xc4bdb0,
+  bridge:     0xb9c6d2, // river crossing (bridge) — cool stone-blue
+  plankway:   0xb2967a, // mountain crossing (plankway) — warm timber brown
+  stronghold: 0x9a7a6a,
+  territory:  0xf5f0e8,
+  base:       0xf5f0e8,
+};
+
+export const RES_COLORS: Record<string, number> = {
+  ink:      0xe4e2ea,
+  paper:    0xf0ebdd,
+  graphite: 0xe2e0da,
+  metal:    0xe4e8e6,
+  sticker:  0xefe4ea,
+};
+
+// Ground-texture opacity + colored-pencil tint — mirrors the game client's tileStyle.ts so the
+// editor preview matches what players see. The terrain atlas is grey pencil on pale paper, so
+// multiplying a light hue (TERRAIN_TEX_TINT) washes each tile toward that color while strokes stay
+// dark; mountain/river also drop to 0.5 alpha so obstacle weaves recede into the paper.
+export const TERRAIN_TEX_ALPHA_DEFAULT = 0.95; // 0.85→0.95 (2026-07-11 legibility pass). Mirrors the game client's tileStyle.ts (parity).
+export const TERRAIN_TEX_ALPHA: Partial<Record<TerrainTextureName, number>> = {
+  // 0.5→0.68→0.8→0.92 (2026-07-08, 2026-07-11, 2026-07-12): the paper-blend at 0.8 ate the last of
+  // the contrast the already-downsampled rock/wave linework had left, washing obstacles to a flat
+  // color block. Mirrors the game client's tileStyle.ts (parity).
+  terrain_mountain: 0.92,
+  terrain_river:    0.92,
+};
+
+// Per-resource biome tint for the ground of a `resource` tile — applied by drawEditorTile so each
+// province's leaning resource reads as a faint colored region (三战-style terrain legibility)
+// beneath the per-level motif. Deliberately high-luminance & paper-adjacent so the wash whispers
+// the province's leaning without competing with the motif. Mirrors the game client's tileStyle.ts
+// (SLG map render parity). Left faint by design — see the game client's tileStyle.ts for the full
+// history/rationale note (2026-07-15 rewrite: resType is genuinely per-tile independent now, ground
+// tint keys off the tile's PROVINCE leaning instead — see biomeGroundTint below).
+export const RES_TEX_TINT: Record<string, number> = {
+  paper:    0xf1e6c0, // warm straw
+  ink:      0xc6cfe8, // cool periwinkle
+  graphite: 0xd2d4d0, // neutral graphite grey
+  metal:    0xc7dccb, // steel mint
+  sticker:  0xf0cfe1, // soft rose
+};
+
+/**
+ * Per-channel RGB blend, used only by biomeGroundTint's `t > 0` branch — which biomeMixAt can no
+ * longer produce (see below). Exported for test/tileStyle.test.ts: a helper kept alive for a future
+ * re-enable is worth exactly as much as its correctness, and with no reachable caller nothing else
+ * would ever notice a channel-order or rounding slip. Not exported in the game client's copy, which
+ * has no test covering this layer at all.
+ */
+export function lerpHexColor(c1: number, c2: number, t: number): number {
+  const r1 = (c1 >> 16) & 0xff, g1 = (c1 >> 8) & 0xff, b1 = c1 & 0xff;
+  const r2 = (c2 >> 16) & 0xff, g2 = (c2 >> 8) & 0xff, b2 = c2 & 0xff;
+  const r = Math.round(r1 + (r2 - r1) * t), g = Math.round(g1 + (g2 - g1) * t), b = Math.round(b1 + (b2 - b1) * t);
+  return (r << 16) | (g << 8) | b;
+}
+
+/** Solid ground tint keyed off the tile's own province's leaning resource type (2026-07-15 rewrite —
+ * see leaningResourceForProvince in @nw/shared). Mirrors the game client's tileStyle.ts
+ * biomeGroundTint (SLG map render parity).
+ *
+ * biomeMixAt always returns t=0 now (resource types are drawn per-tile, so there is no
+ * resource-zone boundary left to cross-fade — the only region border left is the province's own,
+ * already a hard political line), so lerpHexColor's branch here is effectively dead but kept for
+ * the type/shape so this call site doesn't need to change again if a future pass reintroduces
+ * blending. That sentence is in the game client's copy of this function and was dropped when this
+ * file was hand-copied; restored 2026-08-20, because "0% covered" reads as "untested" rather than
+ * "unreachable on purpose" to whoever next audits this package's coverage. */
+export function biomeGroundTint(x: number, y: number, seed: number): number {
+  const mix = biomeMixAt(x, y, seed);
+  return mix.t === 0 ? RES_TEX_TINT[mix.a]! : lerpHexColor(RES_TEX_TINT[mix.a]!, RES_TEX_TINT[mix.b]!, mix.t);
+}
+
+export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;
+export const TERRAIN_TEX_TINT: Partial<Record<TerrainTextureName, number>> = {
+  terrain_grass:      0xc8dcb0, // generic land / grass — warm sage, deepened 2026-07-11
+  terrain_river:      0x8fbadb, // river — cool blue, deepened 2026-07-12 (was 0xa9cbe0 at 0.8 alpha; paired with the 0.92 alpha bump)
+  terrain_mountain:   0xa2a7b0, // mountain — cool stone grey, deepened 2026-07-12 (was 0xb3b7bd at 0.8 alpha; paired with the 0.92 alpha bump)
+  terrain_keep:       0xe0c481, // chokepoint keep — warm amber, deepened 2026-07-11
+  terrain_center:     0xe6d377, // world center — soft gold, deepened 2026-07-11
+  terrain_stronghold: 0xba9a80, // NPC stronghold — muted stone brown, deepened 2026-07-11
+};
+
+/** Terrain/resource base fill (no ownership) — desaturated, paper-cohesive, same palette as the game client. */
+export function terrainFill(type: TileType, resType?: ResourceType): number {
+  if (type === 'resource' && resType) return RES_COLORS[resType] ?? TERRAIN_COLORS.resource!;
+  return TERRAIN_COLORS[type] ?? TERRAIN_COLORS.neutral!;
+}
+
+/** Ground texture for a bare obstacle kind — mirrors the game client's tileStyle.ts obstacleTextureName
+ * (SLG map render parity). Used for the edge "shore" wash — see drawEditorTile. */
+export function obstacleTextureName(kind: ObstacleKind): TerrainTextureName {
+  return kind === 'river' ? 'terrain_river' : 'terrain_mountain';
+}
+
+/** Hand-drawn ground texture for a tile type — identical mapping to the game client's terrainTextureName(). */
+export function terrainTextureName(type: string, tx: number, ty: number, obstacleKind?: ObstacleKind): TerrainTextureName {
+  switch (type) {
+    case 'obstacle':    return obstacleKind === 'river' ? 'terrain_river'
+                             : obstacleKind === 'mountain' ? 'terrain_mountain'
+                             : (tx * 31 + ty * 17) % 2 === 0 ? 'terrain_mountain' : 'terrain_river';
+    // Crossings render the spanned terrain as ground; the bridge/plankway building draws on top (drawEditorTile).
+    case 'bridge':      return 'terrain_river';
+    case 'plankway':    return 'terrain_mountain';
+    case 'familyKeep':  return 'terrain_keep';
+    case 'center':      return 'terrain_center';
+    case 'stronghold':  return 'terrain_stronghold';
+    default:            return 'terrain_grass';
+  }
+}

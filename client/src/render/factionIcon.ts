@@ -10,10 +10,14 @@
  *   tao  — an Eastern coiled-dragon medallion (round, dense); Chinese-named cards.
  *   anna — a Western heraldic eagle displayed (winged, radial); Western-named cards.
  *
- * Art comes from a 2-frame atlas (assets/factions/, built by
- * art/ui/camps/pack_faction_atlas.js) of WHITE line-art on transparent, tinted
- * per-faction at runtime. A procedural glyph is the fallback until the atlas
- * finishes decoding.
+ * Art is a 2-frame `tao`/`anna` cel of WHITE line-art on transparent, tinted
+ * per-faction at runtime. It was built by art/ui/camps/pack_faction_atlas.js
+ * into a standalone assets/factions/ atlas, then folded into the shared L0
+ * `icons_atlas` (assets/icons/icons_atlas.{png,json} — see atlas/iconsAtlas.ts)
+ * by the 2026-07-27 asset merge, which is why this module reads `tao`/`anna`
+ * frames out of `iconsAtlas` below instead of a dedicated loader — same
+ * pattern as equipment/material/avatar icons sharing that one sheet. A
+ * procedural glyph is the fallback if the shared atlas hasn't decoded yet.
  *
  * The emblems are detailed line-art — crisp at ≥48px, faint at ≤20px — so only
  * the roomy card-detail modal shows the full totem via `buildFactionIcon`. The
@@ -34,13 +38,14 @@ export const FACTION_COLOR: Record<Faction, number> = {
 };
 
 /**
- * Decode + parse the totem atlas. Idempotent; rejects on decode error (callers
- * degrade to the procedural glyph). Wired into bootManifest L0, mirroring the
- * equipment atlas.
+ * Alias for `iconsAtlas.load` (unused internally — bootManifest.ts calls
+ * `iconsAtlas.load()` directly as one shared L0 step for all four consumers).
+ * Kept for callers that want to await totem-art readiness without importing
+ * the atlas module by name.
  */
 export const loadFactionAtlas = atlas.load;
 
-// ── Placeholder glyphs (swap for the totem atlas when art arrives) ──────────
+// ── Procedural fallback glyphs (used until the shared atlas has decoded) ────
 
 /** tao — a fountain-pen nib pointing up: tapered body, centre slit, ink drop. */
 function drawNib(g: PIXI.Graphics, s: number, color: number): void {

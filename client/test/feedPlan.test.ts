@@ -14,7 +14,7 @@
 // need not — a deployed card can still be the fusion *target*, only never a *material*).
 import { describe, it, expect } from 'vitest';
 import {
-  PREP_COST_PER_CARD, autoFillMaterials, countPrepRounds, listFusableTargets, pickFeeder, planPrep,
+  PREP_COST_PER_CARD, autoFillMaterials, countPrepRounds, listFusableTargets, pickFeeder, planPrep, planPrepRounds,
 } from '../src/scenes/CardScene/feedPlan';
 import { FUSION_MATERIAL_COUNT, MAX_CARD_LEVEL } from '../src/game/meta/cardDefs';
 import type { CardInstance } from '../src/game/meta/SaveData';
@@ -260,6 +260,68 @@ describe('countPrepRounds — the number on the batch button', () => {
   it('is 0 when a single round is unaffordable', () => {
     const inv = invOf(fillers('lc', 'lichuang', 2, FUSION_MATERIAL_COUNT));
     expect(countPrepRounds('tao', 2, inv, free, 9)).toBe(0);
+  });
+});
+
+describe('planPrepRounds — the run the batch endpoint is handed', () => {
+  // The plan goes out as ONE POST /cards/fuse-batch, so it has to be executable as written: every
+  // round names cards that still exist at that point in the run, and no card is spent twice.
+  it('emits one round per completable fusion, spending each card at most once', () => {
+    const inv = invOf(fillers('lc', 'lichuang', 2, 12));
+    const plan = planPrepRounds('tao', 2, inv, free, 9);
+    expect(plan).toHaveLength(2);
+    const spent = plan.flatMap((r) => [r.targetId, ...r.materialIds]);
+    expect(new Set(spent).size, 'no card appears in two rounds').toBe(spent.length);
+    for (const r of plan) expect(r.materialIds).toHaveLength(FUSION_MATERIAL_COUNT);
+  });
+
+  it('never lists a round target as its own material', () => {
+    const inv = invOf(fillers('lc', 'lichuang', 2, 12));
+    for (const r of planPrepRounds('tao', 2, inv, free, 9)) {
+      expect(r.materialIds).not.toContain(r.targetId);
+    }
+  });
+
+  it('agrees with the count shown on the button', () => {
+    const inv = invOf(fillers('lc', 'lichuang', 2, 18));
+    expect(planPrepRounds('tao', 2, inv, free, 9)).toHaveLength(countPrepRounds('tao', 2, inv, free, 9));
+  });
+
+  it('leaves the caller inventory untouched — it plans, it does not apply', () => {
+    const inv = invOf(fillers('lc', 'lichuang', 2, 12));
+    const before = Object.keys(inv).length;
+    planPrepRounds('tao', 2, inv, free, 9);
+    expect(Object.keys(inv)).toHaveLength(before);
+  });
+
+  it('is empty when a single round is unaffordable', () => {
+    const inv = invOf(fillers('lc', 'lichuang', 2, FUSION_MATERIAL_COUNT));
+    expect(planPrepRounds('tao', 2, inv, free, 9)).toEqual([]);
+  });
+
+  it('never makes a geared card a round target, and spends the gear-free copies first', () => {
+    // Two rules that used to be enforced round-by-round, as each request was assembled. The plan is
+    // now built in one pass and shipped as ONE request the server executes without re-consulting the
+    // client, and the server does NOT check gear — it just deletes materials — so a plan that named
+    // a geared card as feeder would silently dismantle a loadout with nothing left to stop it.
+    const geared = fillers('g', 'lichuang', 2, 3).map((c) => ({ ...c, gear: { weapon: 'eq1' } }));
+    const inv = invOf(fillers('lc', 'lichuang', 2, 9), geared);
+    const plan = planPrepRounds('tao', 2, inv, free, 9);
+    expect(plan.length).toBeGreaterThan(0);
+
+    const gearedIds = new Set(geared.map((c) => c.id));
+    for (const r of plan) expect(gearedIds.has(r.targetId), `${r.targetId} carries gear`).toBe(false);
+    // Round 0 has nine gear-free copies to choose five materials from, so it must not touch a geared
+    // one — this is autoFillMaterials' ordering, which the pre-2026-08-20 round-count simulation
+    // (plain readyMaterials) did not model, so count and run could disagree about what gets spent.
+    for (const id of plan[0]!.materialIds) expect(gearedIds.has(id)).toBe(false);
+  });
+
+  it('respects a locked card as neither target nor material', () => {
+    const inv = invOf(fillers('lc', 'lichuang', 2, 6));
+    inv.lc0 = { ...inv.lc0!, locked: true };
+    // 6 cards, one locked ⇒ 5 usable, which is one short of a feeder plus its five materials.
+    expect(planPrepRounds('tao', 2, inv, free, 9)).toEqual([]);
   });
 });
 

@@ -242,6 +242,66 @@
       '404': { $ref: '#/components/responses/ErrorResp' }
       '409': { $ref: '#/components/responses/ErrorResp' }
 
+/cards/fuse-batch:
+  post:
+    operationId: cardsFuseBatch
+    tags: [save]
+    summary: Run up to 20 fusions in ONE request (roster batch-prep, CHARACTER_CARDS_DESIGN §3.2). Rounds execute in order against the roster the previous round left; the first failing round stops the batch and everything before it stays committed (still 200, see `failed`)
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [rounds, idempotencyKey]
+            properties:
+              rounds:
+                type: array
+                minItems: 1
+                maxItems: 20
+                description: Fusions to run, in order. Each is the same target+5-materials payload /cards/fuse takes
+                items:
+                  type: object
+                  required: [targetId, materialIds]
+                  properties:
+                    targetId: { type: string, description: CardInstance id of the card to level up }
+                    materialIds:
+                      type: array
+                      items: { type: string }
+                      minItems: 5
+                      maxItems: 5
+                      description: Exactly 5 CardInstance ids to consume (same faction, same level as target; must not be locked)
+              idempotencyKey: { type: string, description: Client-generated key covering the WHOLE batch; a retry replays the committed round count instead of re-consuming cards }
+    responses:
+      '200':
+        description: Success, possibly partial — `completed` rounds committed; `failed` present iff the batch stopped early
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [completed, save]
+                  properties:
+                    completed: { type: integer, description: How many rounds committed, counted from the start of `rounds` }
+                    failed:
+                      type: object
+                      description: The first round that failed; absent when all rounds committed
+                      required: [index, code, error]
+                      properties:
+                        index: { type: integer, description: 0-based index into the request's `rounds` }
+                        code: { type: string, description: "Same error codes /cards/fuse returns: CARD_NOT_FOUND / CARD_LOCKED / WRONG_FACTION / BAD_REQUEST / REV_CONFLICT" }
+                        error: { type: string }
+                    save: { $ref: '#/components/schemas/SaveData' }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+      '401': { $ref: '#/components/responses/ErrorResp' }
+      '404': { $ref: '#/components/responses/ErrorResp' }
+      '409': { $ref: '#/components/responses/ErrorResp' }
+
 /cards/lock:
   post:
     operationId: cardsLock

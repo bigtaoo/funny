@@ -2,7 +2,7 @@
   "frames": {
     "decor_arrow": {
       "frame": {
-        "x": 2,
+        "x": 68,
         "y": 134,
         "w": 64,
         "h": 43
@@ -20,9 +20,29 @@
         "h": 43
       }
     },
+    "decor_atlas": {
+      "frame": {
+        "x": 2,
+        "y": 134,
+        "w": 64,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 64,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 64,
+        "h": 46
+      }
+    },
     "decor_cloud": {
       "frame": {
-        "x": 68,
+        "x": 134,
         "y": 134,
         "w": 64,
         "h": 37
@@ -142,8 +162,8 @@
     },
     "decor_scribble_out": {
       "frame": {
-        "x": 134,
-        "y": 134,
+        "x": 2,
+        "y": 182,
         "w": 64,
         "h": 13
       },

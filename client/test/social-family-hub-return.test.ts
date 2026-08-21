@@ -122,6 +122,49 @@ describe('regression: family/sect hub must return to wherever social was opened 
     expect(customOnBack).toHaveBeenCalledTimes(1);
   });
 
+  // social-tab-switch-cost (2026-08-20): loadSLGStatus already fetched the family detail, so the
+  // hand-off carries it through instead of making FamilyScene re-request the same thing behind a
+  // second loading screen. One-shot — a later entry into the hub must fetch fresh.
+  it('openFamilyHub hands the family detail loadSLGStatus already fetched to goFamilyHub, once', async () => {
+    (globalThis as Record<string, unknown>).fetch = async (url: string) => {
+      if (url.includes('/world/active-season')) return jsonResponse({ ok: true, data: { season: 1 } });
+      if (url.includes('/world/season/resolve')) return jsonResponse({ ok: true, data: { worldId: 'world:1:0' } });
+      if (url.includes('/social/family/requests')) return jsonResponse({ ok: true, data: { requests: [] } });
+      if (url.includes('/social/family/mine')) {
+        return jsonResponse({ ok: true, data: { familyId: 'fam_1', name: 'Clan', tag: 'CLN', leaderId: 'other', members: [] } });
+      }
+      throw new Error(`unexpected fetch in test: ${url}`);
+    };
+    const goFamilyHub = vi.fn();
+    const { ctx, getCb } = buildCtx({ goFamilyHub, goLobby: vi.fn() });
+    const { goFriends } = createSocialNav(ctx);
+
+    goFriends();
+    const cb = getCb();
+    await cb.loadSLGStatus?.();
+
+    expect(cb.openFamilyHub?.()).toBe(true);
+    expect(goFamilyHub.mock.calls[0]![4]).toMatchObject({ familyId: 'fam_1' });
+
+    // Consumed — a second jump must not replay a now-possibly-stale roster. (goFamilyHub drops a
+    // null preload rather than forwarding it, so FamilyScene falls back to fetching.)
+    expect(cb.openFamilyHub?.()).toBe(true);
+    expect(goFamilyHub.mock.calls[1]![4]).toBeNull();
+  });
+
+  it('openFamilyHub reports false (and does not navigate) before the world shard resolves', () => {
+    stubWorldFetch();
+    const goFamilyHub = vi.fn();
+    const { ctx, getCb } = buildCtx({ goFamilyHub, goLobby: vi.fn() });
+    const { goFriends } = createSocialNav(ctx);
+
+    goFriends();
+    // loadSLGStatus has NOT run, so slgWorldId is still null. The family tab needs to hear that the
+    // jump didn't happen, or it skips its own render and leaves a blank page behind.
+    expect(getCb().openFamilyHub?.()).toBe(false);
+    expect(goFamilyHub).not.toHaveBeenCalled();
+  });
+
   it('with no onBack passed (e.g. opened from the lobby), the hub falls back to goLobby — not a hardcoded world map', async () => {
     stubWorldFetch();
     const goFamilyHub = vi.fn();

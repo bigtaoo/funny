@@ -32,7 +32,8 @@ import { drawConfirmDialog, type ModalHit } from '../../ui/dialogs/confirmDialog
 import { tearDownChildren } from '../../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../../net/log';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
-import { wheelScrollY } from '../../ui/wheelScroll';
+import { RepaintState } from './repaint';
+import { onPointerDown, onPointerMove, onPointerUp, onWheel } from './input';
 import type {
   FriendView,
   FriendRequestView,
@@ -56,7 +57,16 @@ import type { FriendsSceneCallbacks, Hit, Tab, View, SLGSocialStatus } from './t
 
 export type { SLGSocialStatus, FriendsSceneCallbacks, Tab, View, Hit } from './types';
 
-const DRAG_THRESHOLD = 8;
+/** Pointer travel (px) before a tap becomes a drag. Read by ./input.ts's onPointerMove. */
+export const DRAG_THRESHOLD = 8;
+
+/**
+ * How long refresh()'s payload (friends / requests / mail / conversations) stays trusted before a
+ * tab switch re-pulls it. Live gateway pushes (applyFriendRequest / applyFriendUpdate /
+ * applyChatMessage / applyMailNew) already refresh on every real change, so this only covers the
+ * offline/backgrounded case where those pushes never arrived — see switchTab.
+ */
+const REFRESH_STALE_MS = 30_000;
 
 /** Default `Core.net` before the outer assembly wires the real NetworkPanel — never actually
  *  reachable in practice (see `net`'s own doc comment) but keeps the field well-typed from the start. */
@@ -178,9 +188,21 @@ export class FriendsSceneCore {
   maxScroll = 0;
   regionTop = 0;
   regionBottom = 0;
-  /** Set by onPointerMove during a drag, drained (render() called) once per frame in update()
-   *  instead of rendering inline — see scroll-drag-throttle-pattern memory. */
+  /** Set by onPointerMove during a drag, drained once per frame in update() instead of acting
+   *  inline — see scroll-drag-throttle-pattern memory. Drained via applyScroll(), which translates
+   *  the pre-built layer rather than re-rendering when it can. */
   scrollDirty = false;
+
+  /**
+   * Handles for the incremental repaint paths (scroll translate / caret blink / duel countdown) —
+   * everything that used to be an unconditional full render(). See ./repaint.ts.
+   */
+  readonly repaint = new RepaintState(this);
+  /** When refresh() last completed (epoch ms) — drives switchTab's staleness check (REFRESH_STALE_MS). */
+  lastRefreshAt = 0;
+  /** Signature of the last refresh() payload, so an unchanged re-pull skips its repaint (see refresh()). */
+  refreshSig = '';
+
   pointerActive = false;
   dragging = false;
   downX = 0;
@@ -224,20 +246,23 @@ export class FriendsSceneCore {
     this.modalLayer = new PIXI.Container();
     this.container.addChild(this.modalLayer);
 
-    this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
-    this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
-    this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
-    this.unsubs.push(input.onWheel((x, y, deltaY) => this.onWheel(y, deltaY)));
+    // Gesture dispatch lives in ./input.ts (free functions over `core`) — see its header.
+    this.unsubs.push(input.onDown((x, y) => onPointerDown(this, x, y)));
+    this.unsubs.push(input.onMove((x, y) => onPointerMove(this, x, y)));
+    this.unsubs.push(input.onUp((x, y) => onPointerUp(this, x, y)));
+    this.unsubs.push(input.onWheel((x, y, deltaY) => onWheel(this, y, deltaY)));
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
   }
 
   // ── Scene interface ──────────────────────────────────────────────────────────
 
   update(dt: number): void {
-    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+    // All three tickers below route through `repaint` rather than render() — they each move one
+    // thing, and a full render() rebuilds the entire tree (see ./repaint.ts's header).
+    if (this.scrollDirty) { this.scrollDirty = false; this.repaint.applyScroll(); }
     if (this.familyActiveInput || this.sectActiveInput || this.worldChatActive) {
       this.caretTimer += dt;
-      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
+      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.repaint.blinkCaret(); }
     }
     if (this.incomingDuelInvite) {
       // Local-only countdown display; if it runs out before the server's own duel_cancelled/match_found
@@ -248,7 +273,7 @@ export class FriendsSceneCore {
         this.render();
       } else {
         this.duelBannerTimer += dt;
-        if (this.duelBannerTimer >= 1) { this.duelBannerTimer = 0; this.render(); }
+        if (this.duelBannerTimer >= 1) { this.duelBannerTimer = 0; this.repaint.tickDuelBanner(); }
       }
     }
   }
@@ -305,8 +330,12 @@ export class FriendsSceneCore {
     this.render();
   }
 
+  /** Should a row at build-space screen y `yTop` be built this render? Widened by the scroll
+   *  overscan so a drag has pre-built content to translate into view (0 on unmasked tabs — see
+   *  RepaintState.overscan). */
   rowVisible(yTop: number, rowH: number): boolean {
-    return yTop + rowH >= this.regionTop && yTop <= this.regionBottom;
+    const pad = this.repaint.overscan;
+    return yTop + rowH >= this.regionTop - pad && yTop <= this.regionBottom + pad;
   }
 
   /** Unread 1:1 chat messages from a given friend (0 if no conversation / all read). */
@@ -321,70 +350,6 @@ export class FriendsSceneCore {
     return this.conversations.reduce((s, c) => s + (c.unread > 0 ? c.unread : 0), 0);
   }
 
-  // ── Input ──────────────────────────────────────────────────────────────────
-
-  onPointerDown(x: number, y: number): void {
-    if (this.popup.isOpen || this.modalOpen) return;
-    this.pointerActive = true;
-    this.dragging = false;
-    this.downX = x;
-    this.downY = y;
-    this.dragStartScroll = this.scrollY;
-  }
-
-  onPointerMove(x: number, y: number): void {
-    if (!this.pointerActive || this.popup.isOpen) return;
-    if (!this.dragging && Math.hypot(x - this.downX, y - this.downY) > DRAG_THRESHOLD) {
-      this.dragging = true;
-    }
-    if (this.dragging && this.maxScroll > 0) {
-      const next = clamp(this.dragStartScroll + (this.downY - y), 0, this.maxScroll);
-      if (next !== this.scrollY) {
-        this.scrollY = next;
-        // World channel: dragging back to the bottom re-pins to the latest; scrolling up releases the
-        // pin so a re-fetch (e.g. after posting) doesn't yank the reader down. Other tabs ignore it.
-        if (this.tab === 'world') this.worldStick = next >= this.maxScroll - 1;
-        this.scrollDirty = true;
-      }
-    }
-  }
-
-  onPointerUp(x: number, y: number): void {
-    // onPointerDown returns before setting pointerActive while the popup/modal is open, so this must
-    // be checked before the pointerActive guard below — otherwise a popup/modal tap-up short-circuits
-    // with "no gesture in progress" and never reaches its own hit-test.
-    if (this.popup.isOpen) { this.popup.handleTap(x, y); return; }
-    if (this.modalOpen) {
-      // Reverse order: the full-screen dim rect is pushed first, so checking in push order would
-      // let it win over the OK/Cancel buttons drawn on top of it (see FamilyScene/base.ts precedent).
-      for (let i = this.modalHits.length - 1; i >= 0; i--) {
-        const { rect, action } = this.modalHits[i]!;
-        if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { action(); return; }
-      }
-      return;
-    }
-    if (!this.pointerActive) return;
-    this.pointerActive = false;
-    if (this.dragging) { this.dragging = false; return; }
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-        if (hit.scroll && (y < this.regionTop || y > this.regionBottom)) continue;
-        hit.fn();
-        return;
-      }
-    }
-  }
-
-  onWheel(y: number, deltaY: number): void {
-    if (this.popup.isOpen || this.modalOpen) return;
-    const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.maxScroll);
-    if (next === null) return;
-    this.scrollY = next;
-    // World channel: scrolling up releases the "stick to latest" pin, same as drag — see onPointerMove.
-    if (this.tab === 'world') this.worldStick = next >= this.maxScroll - 1;
-    this.scrollDirty = true;
-  }
 
   onBack(): void {
     if (this.openMailItem) { this.openMailItem = null; this.render(); return; }
@@ -408,9 +373,38 @@ export class FriendsSceneCore {
     this.clearHiddenInput();
     this.familySubview = 'info';
     this.sectSubview = 'info';
+    // Decide the family/sect hand-off BEFORE painting: those tabs are a shortcut into a separate
+    // scene once the player has an org, so rendering first only to navigate away throws the whole
+    // frame out again (social-tab-switch-cost, 2026-08-20).
+    if (this.autoJumpOrgHub(tab)) return;
     this.render();
-    void this.net.refresh();
+    // Only the friends and mail tabs read what refresh() pulls, and gateway pushes keep it live —
+    // so re-pull on switch just to cover staleness, not on every tap. The old unconditional call
+    // fired 4 concurrent requests per tab tap (even onto tabs using none of them) and then forced a
+    // second, network-delayed full rebuild on top of the one above.
+    if ((tab === 'friends' || tab === 'mail') && Date.now() - this.lastRefreshAt > REFRESH_STALE_MS) {
+      void this.net.refresh();
+    }
     this.triggerTabLoads(tab);
+  }
+
+  /**
+   * The family/sect tabs are a shortcut into FamilyScene/SectScene once the player actually has one.
+   * That's a whole separate scene, so the jump has to happen *instead of* a render, never during one
+   * — drawFamilyTab/drawSectTab used to call it mid-tree-walk, destroying this scene (and its popup
+   * container) while render() was still building it, which is what endRender's `dead` guard exists
+   * to survive. Returns true when it navigated away.
+   *
+   * Called from exactly two places, the only two moments the answer can change: switchTab (status
+   * already known) and loadSLGStatus's completion (status just arrived).
+   */
+  autoJumpOrgHub(tab: Tab = this.tab): boolean {
+    const s = this.slgStatus;
+    if (!s) return false;
+    if (tab === 'family' && s.familyId) return this.cb.openFamilyHub?.() ?? false;
+    // Sect membership hangs off the family, so no family means the sect tab has nothing to open.
+    if (tab === 'sect' && s.familyId && s.sectId) return this.cb.openSectHub?.() ?? false;
+    return false;
   }
 
   /** Kicks off whichever background loads a given tab needs, shared by the constructor's

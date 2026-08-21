@@ -47,6 +47,10 @@ import type { UnitType } from '@nw/engine/types';
 
 export type CardActionResult = { ok: true } | { ok: false; key: TranslationKey };
 
+/** A batch fuse's outcome. Partial success is still `ok`: the server commits rounds in order and stops
+ *  at the first failure, so `completed` is the honest count and `failKey` says why it stopped. */
+export type CardBatchResult = { ok: true; completed: number; failKey?: TranslationKey } | { ok: false; key: TranslationKey };
+
 export type CardSceneTab = 'list' | 'skins';
 
 export interface CardCallbacks {
@@ -60,6 +64,8 @@ export interface CardCallbacks {
   getTeamName?(teamId: string): string | undefined;
   /** Fuse cards: consumes exactly 5 materialCardIds (same faction+level as target), targetCardId +1 level. */
   fuseCards(targetCardId: string, materialCardIds: string[]): Promise<CardActionResult>;
+  /** Run a whole planned run of fuses as ONE request — see POST /cards/fuse-batch. */
+  fuseCardsBatch(rounds: { targetId: string; materialIds: string[] }[]): Promise<CardBatchResult>;
   /** Toggle card lock. */
   setCardLock(cardInstanceId: string, locked: boolean): Promise<CardActionResult>;
   /** Recover an injured card by spending coins. Only present when in SLG context. */
@@ -122,16 +128,18 @@ export { sortCards, injuryCountdown } from './cardSort';
 /** feed.ts's fuse-confirm button call signature — see the file-header comment on {@link CardSceneCore.doFuse}. */
 export type DoFuseFn = (targetId: string, materialIds: string[], onSettled?: (success: boolean) => void) => Promise<void>;
 
-/** One fuse a prep batch is about to run, or null when the run should stop. See {@link DoPrepBatchFn}. */
-export type PrepRound = { targetId: string; materialIds: string[] } | null;
+/** One fuse of a prep batch. See {@link DoPrepBatchFn}. */
+export type PrepRound = { targetId: string; materialIds: string[] };
 
 /**
- * feed.ts's batch-prep button call signature (2026-08-18). `nextRound` is re-evaluated against the
- * freshly adopted save between fuses rather than planned up front, so the batch can never spend
- * cards a mid-run failure already consumed; `onSettled` receives how many rounds actually landed.
+ * feed.ts's batch-prep button call signature (2026-08-18; single-request since 2026-08-20). The run
+ * is planned up front by the caller (feedPlan.planPrepRounds) and shipped as ONE POST
+ * /cards/fuse-batch rather than a fuse-per-round loop — five round-trips, each returning a fully
+ * reassembled cardInv, is the stall this replaces. The server still validates each round and stops at
+ * the first failure, so `onSettled` gets how many landed, as the sequential version reported it.
  */
 export type DoPrepBatchFn = (
-  nextRound: () => PrepRound,
+  rounds: PrepRound[],
   onSettled: (completed: number) => void,
 ) => Promise<void>;
 

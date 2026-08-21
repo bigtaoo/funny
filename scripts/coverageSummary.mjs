@@ -16,6 +16,11 @@
 //   - server/engine runs its compiled dist/ output through Node's own `node --test
 //     --experimental-test-coverage`, which only writes lcov (coverage/lcov.info) — summed by hand
 //     below from its LF/LH/BRF/BRH/FNF/FNH lines.
+//
+// 2026-08-20 (ADR-070): the five tools/* packages joined the table in their own "reported, not
+// gated" section, and every row gained a "Scope (files)" column — see coverageLib.mjs's
+// countSrcFiles for why a percentage is not meaningful here without the size of the scope it was
+// measured over.
 import { appendFileSync } from 'node:fs';
 import { collectRows } from './coverageLib.mjs';
 
@@ -26,6 +31,17 @@ function fmtPct(metric) {
   return metric ? `${metric.pct.toFixed(1)}%` : '—';
 }
 
+/** "measured N of M source files" — see countSrcFiles in coverageLib.mjs for why this is printed. */
+function fmtScope(row) {
+  if (row.missing || row.srcFiles === 0) return '—';
+  return `${row.scopeFiles} / ${row.srcFiles}`;
+}
+
+// Every row is gated since ADR-070 Phase 4e retired the "reported, not gated" section that used to
+// sit below this table (see coverageLib.mjs). The label stays `Overall (gated)` on purpose: it names
+// what the number MEANS — the coverage the release gate actually enforces — which is how every doc
+// and note has quoted it since 2026-08-15, and renaming it would break the continuity of a tracked
+// number to save one word.
 const overall = { lines: [0, 0], statements: [0, 0], branches: [0, 0], functions: [0, 0] };
 for (const row of rows) {
   if (row.missing) continue;
@@ -39,16 +55,15 @@ const overallPct = (key) => (overall[key][1] === 0 ? 0 : (overall[key][0] / over
 const lines = [];
 lines.push('## Test coverage');
 lines.push('');
-lines.push('| Package | Lines | Statements | Branches | Functions |');
-lines.push('|---|---|---|---|---|');
-for (const row of rows) {
-  if (row.missing) {
-    lines.push(`| ${row.pkg} | — | — | — | — |`);
-  } else {
-    lines.push(`| ${row.pkg} | ${fmtPct(row.lines)} | ${fmtPct(row.statements)} | ${fmtPct(row.branches)} | ${fmtPct(row.functions)} |`);
-  }
-}
-lines.push(`| **Overall** | **${overallPct('lines').toFixed(1)}%** | **${overallPct('statements').toFixed(1)}%** | **${overallPct('branches').toFixed(1)}%** | **${overallPct('functions').toFixed(1)}%** |`);
+lines.push('| Package | Lines | Statements | Branches | Functions | Scope (files) |');
+lines.push('|---|---|---|---|---|---|');
+const rowLine = (row) =>
+  row.missing
+    ? `| ${row.pkg} | — | — | — | — | — |`
+    : `| ${row.pkg} | ${fmtPct(row.lines)} | ${fmtPct(row.statements)} | ${fmtPct(row.branches)} | ${fmtPct(row.functions)} | ${fmtScope(row)} |`;
+
+for (const row of rows) lines.push(rowLine(row));
+lines.push(`| **Overall (gated)** | **${overallPct('lines').toFixed(1)}%** | **${overallPct('statements').toFixed(1)}%** | **${overallPct('branches').toFixed(1)}%** | **${overallPct('functions').toFixed(1)}%** |  |`);
 lines.push('');
 
 const missing = rows.filter((r) => r.missing).map((r) => r.pkg);

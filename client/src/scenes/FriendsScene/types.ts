@@ -63,8 +63,15 @@ export interface FriendsSceneCallbacks {
   viewFamily?(familyId: string): Promise<FamilyDetailView>;
   createSect?(name: string, tag: string): Promise<void>;
   joinSect?(sectId: string): Promise<void>;
-  openFamilyHub?(): void;
-  openSectHub?(): void;
+  /**
+   * Jump into the family hub scene (the family tab is a shortcut into it once the player has one).
+   * Returns whether it actually navigated — false when the world shard isn't resolved yet, so
+   * {@link FriendsSceneCore.autoJumpOrgHub} knows to keep painting this scene instead of leaving a
+   * blank page behind a navigation that never happened.
+   */
+  openFamilyHub?(): boolean;
+  /** Same contract as {@link openFamilyHub}, for the sect hub. */
+  openSectHub?(): boolean;
   loadWorldChat?(before?: number): Promise<WorldChatMessage[]>;
   sendWorldChat?(body: string, senderName: string): Promise<void>;
   playerName?(): string;

@@ -6,6 +6,27 @@ import type { CommandManager, Command } from '../core/CommandManager';
 import type { BoneKeyframe } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 
+// ── Angle math ────────────────────────────────────────────────────────────────
+
+/**
+ * Unwrap one incremental angle step (radians, `to - from`) into `(-π, π]`.
+ *
+ * `Math.atan2` wraps at ±180°. Diffing the *current* drag angle against the
+ * angle captured once at drag-start breaks the moment a continuous drag
+ * crosses that seam: the raw difference suddenly jumps by a full turn,
+ * making the bone snap backward (or spin an extra turn it shouldn't).
+ * Instead, accumulate the small step between *consecutive* mousemove
+ * samples — physical mouse movement between two samples never approaches
+ * 180°, so unwrapping each step individually keeps a continuous drag
+ * continuous, however many turns it spans.
+ */
+export function unwrapAngleStep(fromRad: number, toRad: number): number {
+  let step = toRad - fromRad;
+  if (step > Math.PI)  step -= 2 * Math.PI;
+  if (step < -Math.PI) step += 2 * Math.PI;
+  return step;
+}
+
 // ── Hit-test ──────────────────────────────────────────────────────────────────
 
 const HIT_RADIUS = 10;
@@ -20,7 +41,7 @@ function getDrawOrderReversed(): readonly string[] {
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-class RotateBoneCommand implements Command {
+export class RotateBoneCommand implements Command {
   readonly label: string;
 
   constructor(
@@ -127,7 +148,8 @@ export class InteractionController {
   private isDragging     = false;
   private dragBoneId:    string | null = null;
   private dragStartX     = 0;
-  private dragStartAngle = 0;  // angle at drag start
+  private dragLastAngle  = 0;  // mouse angle at the previous sample (for incremental unwrap)
+  private dragAccumDeg   = 0;  // continuous rotation delta accumulated since drag start
   private dragOldRotation = 0; // rotation delta before drag
 
   constructor(
@@ -171,7 +193,8 @@ export class InteractionController {
 
         // Bone's pivot position for angle calculation
         const pivot = worldPose.get(boneId)!;
-        this.dragStartAngle  = Math.atan2(y - pivot.sy, x - pivot.sx);
+        this.dragLastAngle   = Math.atan2(y - pivot.sy, x - pivot.sx);
+        this.dragAccumDeg    = 0;
         this.dragOldRotation = wp.get(boneId)?.rotation ?? 0;
       }
     } else {
@@ -190,8 +213,9 @@ export class InteractionController {
     if (!pivot) return;
 
     const angle = Math.atan2(y - pivot.sy, x - pivot.sx);
-    const deltaDeg = ((angle - this.dragStartAngle) * 180) / Math.PI;
-    this.animCtrl.setBoneDelta(this.dragBoneId, deltaDeg);
+    this.dragAccumDeg += (unwrapAngleStep(this.dragLastAngle, angle) * 180) / Math.PI;
+    this.dragLastAngle = angle;
+    this.animCtrl.setBoneDelta(this.dragBoneId, this.dragAccumDeg);
   }
 
   private onMouseUp(): void {

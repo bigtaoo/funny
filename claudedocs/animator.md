@@ -6,7 +6,9 @@
 cd tools/animator && npm run start   # 端口 9091
 ```
 
-## 测试（2026-08-13 新增，此前 tools/ 全零测试基建）
+## 测试（2026-08-13 新增，此前 tools/ 全零测试基建；2026-08-20 接入 90% 门禁）
+
+**当前状态（2026-08-20，ADR-070 Phase 4d）**：`340` 例，受门禁的 scope（`coverage.include` = `src/{core,skeleton,animation,io}/**`）行覆盖 **98.9%（1426/1442）**、函数 191/195，包已从 `NOT_GATED_JSON_SUMMARY_PACKAGES` 移进 `JSON_SUMMARY_PACKAGES`（`scripts/coverageLib.mjs`），**百分比现在真的会判红 CI**。全包 42.9%（`--coverage.include='**'`）。口径与逐工具台账见 [`tools-testing.md`](tools-testing.md)；本轮的取舍细节见下方「Phase 4d」。
 
 `npm test`（vitest，node 环境）+ `npm run typecheck`（`tsconfig.test.json`，把 `test/**` 拉进同一个 tsc program，同 `client/tsconfig.test.json` 的漂移防护）。54 条用例覆盖 `io/{fileIO,clipSerialization,editorProject,taoExport}.ts`（IOController 拆分出的四个模块，见下方"主要源文件"）：
 
@@ -39,7 +41,61 @@ cd tools/animator && npm run start   # 端口 9091
 - `animator/interaction/InteractionController.ts`——`pointToSegmentDist`（模块级几何函数，加 `export`）+ `findBoneAt`（原是 private 方法但方法体完全不读 `this`，等价提成模块级自由函数，类里留一行委托）。`InteractionController.test.ts`（9 条）用**真实** `Skeleton.computeFK(0,0,new Map())` 静息姿势坐标（而非手造坐标）验证 head 命中圈、骨骼线段命中、脱靶返回 null。
 - `level-editor/board/BoardPanel.ts` + `timeline/TimelinePanel.ts`——这两个文件其实完全没用 PIXI（`level-editor` 压根没这个依赖，只有原始 `canvas.getContext('2d')`），是这轮最大的一块：`rowToY`/`cellAt`/`laneHeaderAt`/`cellCenter`/`hitHandle`/`baseTint`（`BoardPanel.test.ts`，24 条）与 `tickToX`/`xToTick`/`laneIndex`/`yToLaneIndex`/`entryEndTick`/`hitTest`（`TimelinePanel.test.ts`，16 条）从读 `this.cell`/`this.header`/`this.pxPerSec`/`this.scrollX` 的 private 方法，改造成显式传参的模块级纯函数（行为不变，每个调用点同步改成委托），`Handle`/`C`（调色板）/`GUTTER_W`/`RULER_H`/`LANE_H` 一并导出供测试直接比对，不写死字面量。**收尾前额外做了真实 dev-server 抽查**（不是只信单测）：起 `level-editor` 起 `npm run start`，加载示例关卡后用 `dispatchEvent` 模拟真实鼠标点击（因为这个环境的 Browser pane 不支持截图，退化成读 canvas 像素而非看图）——点一个 attack-lane 格子命中的颜色精确匹配 `C.attack`（`#26263c`），刷成 no-build 笔刷后混色结果和 `rgba(249,226,175,0.22)` 叠加公式手算的期望值只差 1 个色阶（抗锯齿舍入），车道开关的 header 点击也从 `C.laneOn` 精确翻到 `C.laneOff`——证明"点击→命中测试→改状态→重渲染"整条链路和重构前完全一致；`animator` 同样起了 dev server 做多点位点击回归，未见任何运行时异常。四工具其余部分（`Renderer.ts`/`ContextMenu.ts`/`ui/*` 面板类的构造与拖拽拼装、`PreviewRenderer.ts` 的 `new PIXI.Application`、`BoardPanel`/`TimelinePanel` 类本身、`index.ts`/`inspector/*`）仍是纯 DOM/PIXI 构造期胶水代码，留白，无 headless 适配层可用。
 
-累计：animator 128 条、vfx-editor 114 条、level-editor 77 条（以上均含 Phase 1-4）、ops 51 条（Phase 3，含此前 bootstrap 的 `shared.test.ts` 6 条）。
+累计（2026-08-13 收尾时）：animator 128 条、vfx-editor 114 条、level-editor 77 条（以上均含 Phase 1-4）、ops 51 条（Phase 3，含此前 bootstrap 的 `shared.test.ts` 6 条）。**这四个数都已过时**——2026-08-20 的 ADR-070 Phase 4a–4d 分别把 map-editor / level-editor / vfx-editor / animator 推到了 90% 门禁之内（animator 138 → 340 例，见下方「Phase 4d」）；当前值以 [`tools-testing.md`](tools-testing.md) 的台账为准。
+
+## Phase 4d：补满 ADR-070 scope 并接入门禁（2026-08-20）
+
+138 → **340 例**，scope 内 64.3% → **98.9%**。五个工具里未覆盖行最多的一个（515 行），也是唯一**不需要抽模块**的一个——`include` 一直是目录级，缺的纯粹是测试。新增/扩充：
+
+| 文件 | 例数 | 从 → 到 | 关键点 |
+|---|---|---|---|
+| `test/AnimationController.test.ts` | 57 | 41.3% → 100% | clip/关键帧 CRUD + 播放时钟。`requestAnimationFrame`/`cancelAnimationFrame` 用一个**可控** stub（排队的回调只在测试调 `step(ts)` 时跑，一次一帧），所以 `tick()` 推进的是测试给的时间戳而不是墙上时间；loop 取模、非 loop 夹到 duration 并停止重排、pause 后迟到的一帧什么都不做、pause→play 重新取基线都各有一例 |
+| `test/AutoSaveController.test.ts` | 41 | **0% → 100%** | debounce 合并、tab 隐藏/关闭兜底 flush、工程库增删改切、启动恢复。用内存态 `FakeStore` 而不是 `fake-indexeddb`——原因见下 |
+| `test/ProjectStore.test.ts` | 14 | **0% → 100%** | 真（内存态）IndexedDB，`fake-indexeddb`。**全文不用 fake timers** |
+| `test/IOController.test.ts` | 16 | **0% → 100%** | 工具栏接线 + 两个 host builder 的 getter/setter 对 |
+| `test/AppState.test.ts` | 22 | 81.5% → 100% | 每个 setter「发不发事件」——`rig:change`/`binding:change`/`attachment:change` 同时是 `DIRTY_EVENTS` 成员，所以「这次改动发不发事件」就是「这次编辑存不存盘」 |
+| `test/Skeleton.test.ts` | 20 | 89.0% → 100% | `computeDefaultShadowSize` 此前 0 覆盖；FK 与 `computeNaturalHeight` 的期望值从 `BONE_MAP`/`computeFK` 反推而不是抄像素数 |
+| `test/editorProject.test.ts` | +18 (→31) | 71.4% → 100% | `triggerLoadEditor` 的三路分流 + 首次保存/另存为的磁盘身份路径 |
+| `test/fileIO.test.ts` | +1 (→25) | 96.5% → 100% | `primaryExt()` 的「types 里没有扩展名」那条臂 |
+| `test/pureLayerBoundary.test.ts` | 13 | 新增 | graduation 要求的边界守卫，见下 |
+
+- **`fake-indexeddb` 与 fake timers 只能二选一，所以两份文件分工**：`ProjectStore.test.ts` 跑真库（照 vfx-editor 先例）；`AutoSaveController` 的每条有意思的行为都绕着 `DEBOUNCE_MS = 1500` 转，**必须** `vi.useFakeTimers()`，而两者混用会挂死到 hook 超时（`fake-indexeddb` 自己的异步模拟也排在真计时器上——本文档上方 Phase 2 那条踩坑记录写的就是这个，vfx-editor 的 `Library.test.ts` 撞过同一面墙），于是换成只实现 `listMeta`/`getBlob`/`put`/`putMeta`/`delete` 的内存态 `FakeStore`，顺带能数写入次数。**这个分工写在两份文件的头注释里**，免得后来人「统一一下」——把 ProjectStore 也换成 FakeStore 就没人测真库了，给 AutoSaveController 换成真库就挂死。
+- **`IOController.test.ts` 的 mock 方向跟 `editorProject.test.ts` 是反的，这是故意的**。后者什么都不 mock（真 JSZip、真 `AppState`/`AnimationController`）；前者把 `editorProject`/`taoExport` 两个流程模块整个 mock 掉。因为 2026-08-13 拆分之后（771 → 123 行）这个类只剩三件事：五个 `document.getElementById(...)?.addEventListener(...)`（id 写错就是一个静默死掉的按钮，`?.` 把 miss 吞了）、两个 host builder 的 getter/setter 对（「一次 load 清掉 `editorFilePath`、一次磁盘保存设上它，且真的写回 IOController 自己的字段」的唯一实现方式）、以及「哪个入口把哪个 host 交给哪个流程」。把流程当边界 mock 掉，这三件事才第一次可观测。顺带钉住 `taoExportHost` **比** `editorProjectHost` **窄**（无 `cmdManager`；`editorFilePath`/`editorFileHandle` 只有 getter）。
+- **`test/pureLayerBoundary.test.ts`：接门禁不等于边界有人守**。门禁余量 = `covered/0.9 - total` = **142 行**（map-editor 72、level-editor 49、vfx-editor 58），实测把一个 **143 行** 的 0% PIXI+DOM 探针丢进 `src/animation/`，`All files` 90.08%、**门禁照过**，而守卫三条断言当场红。这个包的判据跟前三个都不同：
+  - **DOM 四层，默认拒绝**：`core`/`skeleton` 零浏览器 API、`animation` 只许 `requestAnimationFrame`/`cancelAnimationFrame`、`io` 一份 20 项显式清单（磁盘/IndexedDB/File-System-Access，天然长但封闭）。另有一份 `FORBIDDEN_GLOBALS`（`PIXI`、`CanvasRenderingContext2D`、`ResizeObserver`、`MouseEvent`/`WheelEvent`/`KeyboardEvent`…）独立于逐目录白名单再判一次——放宽某个目录也不可能顺带放进 PIXI。清单是把 impure 半边用到的 global 减去 pure 半边用到的**实测**出来的，不是照抄。
+  - **值导入与类型导入分开判**：值导入只许 `jszip` + 纯目录内部；类型导入额外允许**恰好一个** specifier `../images/ImageController`（host 接口必须指名这个持有 `pixi.js` 的类，无处可搬——跟 4a 把 `TerrainTextureName` 搬出 map-editor 渲染器不矛盾，那里被指名的是个配色类型），并**专门断言不许把它改成值导入**。
+  - **`runtime/` 只许伸进受守目录**：`runtime/StickmanRuntime.ts` import `core/types`/`animation/interpolate`/`skeleton/Skeleton`，所以「纯层保持 PIXI-free」是「第二个产物编得过」的前提，不是抽象偏好。
+  - 7 条断言各做过 red-then-green（PIXI 值导入、跨界类型导入、类型导入改值导入、纯目录改名、`coverage.include` 加第五个目录、`runtime/` 伸出界、`codeOnly()` 不再剥字符串）。字符串剥离用逐字符扫描器而不是正则交替——事件名 `'history:change'` 会让 `\bhistory\b` 误报，而正则交替在转义引号处会级联错位（4b 记过）。
+- **补完覆盖率之后又抽查了「测试真的会红吗」**：对生产代码做 16 处单点变异、跑对应测试、还原。第一轮 12 红 **4 绿**，四处各有各的原因，都值得记住：
+  1. `AutoSaveController.remove()` 的 `clearTimeout` 删掉照绿——两条收尾路径最后都会把 `dirty` 清掉，残留计时器醒来撞上 `if (!this.dirty) return`。改成断言**机制**：`expect(vi.getTimerCount()).toBe(0)`。
+  2. `flushNow()` 的 `clearTimeout` 同理。
+  3. `pasteKeyframe` 的深拷贝删掉照绿——`copyKeyframe` 进剪贴板时已经拷过一次，所以「改源关键帧不影响粘贴出来的」全都还成立。真正靠第二次拷贝的是「同一份剪贴板粘两次，两个关键帧不共享 bones Map」，补上就红。
+  4. `computeDefaultShadowSize` 的 `Math.max(4, …)` 地板**不可达**（w≈54 → `ceil(w*0.3)`≈16）。原断言把整个表达式含地板照抄了一遍，看着像覆盖其实什么都没钉；改成只断言 0.3 比例 + 一句「地板对固定 11 骨骼 rig 不可达」的注释。同 map-editor 的 `clampPan`/`lerpHexColor` 一类。
+- **顺手订正两处文档谎，零行为改动**：①`Skeleton.computeNaturalHeight` 的注释说「没有 clip 时返回 0」——不对，`scan(new Map())` 无条件跑，空 clip 列表返回静息姿高度（实测 169.007），`: 0` 那条兜底要求 rig 没有竖直跨度，固定 11 骨骼给不出。**`client/src/render/stickman/skeleton.ts` 那份手抄件抄的是同一句错话**，两份注释各自都写着「与另一份保持同步」，所以一起改。②`vitest.config.ts` 头注释说 Phase 4d 是「抽 `pointToSegmentDist`/`getKfColors`」——ADR-070 的 4d 其实是本轮这个测试缺口，那个抽取没有排期。
+- **剩下 16 行不补**：`io/taoExport.ts` 的贴图烘焙（`document.createElement('canvas')` + `ctx.drawImage`），是这个 scope 里唯一真需要 headless canvas 的地方。
+- **可见性核对退化成数值核对**（Browser 窗格不 composite、截图 5s 超时，同下一节；dev server 起在 **9191**，默认 9091 被 Docker Desktop 双栈占着）。核对的是跟本轮测试同构、且同时跑真 IndexedDB + 真 JSZip 的那条链路——自动保存往返：空库开机自动建 `Untitled` 并落盘；rename 后 **`meta.name` 变、blob 字节数不变（984 → 984）**（证明真走的是 `putMeta` 而非 `put`）；新建工程 → 新 uuid + 新 blob、旧工程不动、下拉按 `updatedAt` 倒序重排；**1.5s 窗口内连打三次编辑，`updatedAt` 一次都没变，窗口后只变一次**，blob 1034 → 1048；切工程/切回来内容各自恢复、`localStorage` 跟着走；**刷新页面恢复上次工程连新建的 clip 一起**。全程无 `error` 浮层、控制台无 error。主 canvas 仍 0×0（不 composite → rAF 不触发 → PIXI ticker 冻结，未修改版本一样，不是回归）。
+
+## 删除重构前的扁平死模块（2026-08-20）
+
+`src/` 根目录下重构前的一整套同名扁平模块被删除，共 **13 个文件 / 1424 行**：`animation.ts`(182)、`events.ts`(42)、`interaction.ts`(147)、`io.ts`(102)、`presets.ts`(80)、`renderer.ts`(217)、`skeleton.ts`(81)、`state.ts`(97)、`timeline.ts`(190)、`types.ts`(43)、`ui.ts`(239)，加两个只有 `export {}` 的空壳 `atlas/AtlasController.ts`、`ui/AtlasPanel.ts`（注释自称已被 `images/ImageController.ts`/`ui/ImagePanel.ts` 取代）。这批文件只互相 import，从 webpack 唯一入口 `./src/index.ts` 完全不可达——`renderer.ts` 里的 `from './skeleton'` 按 Node 解析规则命中 `src/skeleton.ts`（`src/skeleton/` 下没有 `index.ts`），而不是活代码用的 `src/skeleton/Skeleton.ts`，于是整批构成一张自闭合的死图。范式也完全不同：死图是"模块单例 `state` + payload 为 `unknown` 的字符串常量事件总线"，活代码是"类 + `EventBus<AppEvents>` 强类型总线"。
+
+**可达性是独立复核过的，不是照抄清单**：写了一次按 tsconfig 解析规则（相对路径 + `baseUrl: ./src` 非相对路径，候选序 `X.ts` → `X/index.ts`）的 import 图遍历，起点取全部三类入口——`src/index.ts`（webpack 唯一 entry）、`runtime/StickmanRuntime.ts`（**不在 `src/` 下，是单独产物，必须单独当根**）、`test/**/*.test.ts` 全部 11 个文件；43 个活文件全部可达，剩下的正好是这 13 个 + `src/globals.d.ts`（ambient 声明文件，无人 import 但 tsc 需要，**保留**）。另外全库 grep 过这批路径名与 `AtlasController`/`AtlasPanel`，命中的全是目录版（`src/io/**`、`src/skeleton/Skeleton.ts`），无一处指向扁平版。
+
+**最硬的一条证据**：删除前后跑 `npm run build`，production bundle 的 contenthash 与文件名完全一致（`bundle.04a1b40b5390a85f7d41.js`，653357 字节）——即这些文件从未进入产物，删除对线上零影响。`npm run typecheck` / `npm test` / `npm run build` 三项删除后全绿，用例数与删除前一致（这批死文件本来就没有测试）——任务分支上是 128 条，合并进 `20.08.2026` 后 138 条（多出的 10 条是另一会话同日加的 `RotateBoneCommand` 测试，与本次删除无关）。
+
+**dev server 抽查**：起 9091（本次为避端口冲突起在 9191）加载编辑器，与主检出未修改版本（起在 9192）跑同一段 DOM 事件驱动脚本逐步对比——新建 clip（含 `Undo: Create clip "…"` 标签）、打/删关键帧、`Ctrl+Z`/`Ctrl+Shift+Z`、改 duration、切动画、重命名、删 clip 后回落 `idle`，两侧**每一步的 status 文案与列表状态完全一致**，双方 `errors` 均为空。**注意这个环境的坑**：Browser pane 不 compositing，页面 `document.visibilityState === 'hidden'` 且 `requestAnimationFrame` 永不触发，于是 PIXI ticker 冻结 → 主 canvas 停在 0×0、`#tl-labels` 一行不渲染（`TimelineView.render()` 只在主循环里被调用）。这**不是**回归——未修改的主检出版本表现一模一样；同样原因截图也拿不到（同 Phase 4 的记录），可见性验证只能退化成 DOM 事件驱动 + 与基线逐步比对。
+
+**同日补了闸门**：这类死图原来两条 CI 闸门都发现不了（不超 500 行、又在 coverage scope 外），全靠有人恰好手跑一次遍历。现在那次遍历固化成第三条闸门 `tools/scripts/checkUnreachableModules.mjs`（5 个工具包各跑一次，animator 额外声明 `--extra-root=runtime`），测试在 `server/shared/test/reachabilityGuard.test.ts`（15 例）。口径见 `claudedocs/tools-testing.md`「可达性闸门」。**把这 13 个文件里任意一个 checkout 回来，闸门立刻红**（实测过）。
+
+**覆盖率变化**（在合并进 `20.08.2026`（已含 ADR-070 接线 + 另一会话新增的 `RotateBoneCommand` 测试，共 138 条）之后的同一棵树上，前后各实测一次；"删除前"是把这 13 个文件 `git checkout` 回来再跑）：
+
+| 统计范围 | 命令 | 删除前 | 删除后 |
+|---|---|---|---|
+| whole-package | `--coverage.include='**'` | 23.53% | **29.54%** |
+| 仅 `src/**` | `--coverage.include='src/**'` | 24.37% | **30.87%** |
+| ADR-070 scope（`npm run test:coverage`） | `src/{core,skeleton,animation,io}/**` | 64.28% | 64.28%（**不变**）|
+
+前两行涨的就是这 1424 行 0% 死码退出分母；第三行不动，因为死文件全在那份 include whitelist 之外——**ADR-070 的 CI 门禁数字不受本次删除影响，别指望它变**。台账（`claudedocs/tools-testing.md`）的 animator 全包一列已同步改成 29.5%。引用覆盖率数字时务必说明是哪个口径，否则 64.28% 不动和全包涨 6 个点看起来会像自相矛盾。
 
 ## 参数两层模型
 

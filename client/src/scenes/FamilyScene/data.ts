@@ -29,7 +29,10 @@ export class DataPanel implements DataHandlers {
     try {
       // Family membership lives in socialsvc; worldsvc's playerWorld.familyId is a
       // join-time-only mirror that never reflects a family created/joined afterward.
-      const fam = await core.cb.worldApi.getMyFamily();
+      // The social hub hands its own just-fetched copy over on the way in (preloadedFamily) — the
+      // family tab's status load pulled the identical response moments ago, and re-requesting it
+      // put a redundant loading screen between tapping the tab and seeing the roster.
+      const fam = core.cb.preloadedFamily ?? await core.cb.worldApi.getMyFamily();
       if (fam) {
         await this.applyFamily(fam);
       } else {

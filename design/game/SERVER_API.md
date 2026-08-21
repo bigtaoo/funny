@@ -186,12 +186,14 @@ POST /equipment/equip    { slot, instanceId|null, unitType? }              → {
 > 卡实例段（`cardInv`）同样由 `/cards/*` 服务器权威端点写（`PUT /save` 已下线，见 §2.2）。喂卡升级=融合 5 张同阵营同级材料。
 
 ```
-POST /cards/fuse    { targetId, materialIds[5], idempotencyKey }  → { card, save } | 400/404/409
-POST /cards/lock    { cardInstanceId }                            → { save }   // 幂等：重复锁定成功
-POST /cards/unlock  { cardInstanceId }                            → { save }
+POST /cards/fuse        { targetId, materialIds[5], idempotencyKey }      → { card, save } | 400/404/409
+POST /cards/fuse-batch  { rounds[{targetId,materialIds[5]}], idempotencyKey } → { completed, failed?, save } | 400/404/409
+POST /cards/lock        { cardInstanceId }                                → { save }   // 幂等：重复锁定成功
+POST /cards/unlock      { cardInstanceId }                                → { save }
 ```
 
 - **`/cards/fuse`**：恰好 5 张同阵营同级材料卡升目标卡一级；**锁定的材料被拒**；`idempotencyKey` 防重试双扣。
+- **`/cards/fuse-batch`**（2026-08-20）：一次请求跑完整轮备料（最多 20 轮）。轮次**按序**执行，每轮针对"上一轮执行完之后"的名册校验，所以后一轮可以吃掉前一轮刚升级出来的卡。**首轮就非法** → 报错（400/404/409，不改任何数据）；**跑到一半失败** → 仍是 200，`completed` 报实际落地轮数、`failed.index/code` 报第一个失败轮。整批共用一个 `idempotencyKey`（重试回放已落地轮数，不会重复吞卡），只读一次名册、只回一次 `cardInv`、只扣一次 `cardInvCount` —— 这正是它存在的理由：改造前客户端的"合成所需材料"按钮是每轮一个 `POST /cards/fuse`，每个响应都带一份重组好的完整 `cardInv`，几百张卡的名册上肉眼可见地卡。
 - **`/cards/lock` / `/cards/unlock`**：锁定卡不可作喂卡材料（防误吞）。
 
 ### 2.9 活动 / Live-ops（ADR-014 / `EVENTS_DESIGN.md`）
@@ -259,10 +261,23 @@ PUT  /title/equip          (JWT) { titleId }  → { save: SaveData }  | 403（�
 POST /feedback   (JWT) { text }  → { ok: true }  | 400（空文本）| 429（超出限流）
 ```
 
-- 不是补偿/审批工单流的一部分——单纯的玩家心声收集，无状态机、无"处理中/已处理"概念，ops 只读（`GET /internal/feedback`，见 §8）。
+- 不是补偿/审批工单流的一部分——单纯的玩家心声收集，**无裁定/无 dismiss-uphold 结论**（区别于举报/申诉队列）。但有一层轻量**已读/备注痕迹**，见下方 §2.13.1。
 - `text`：1..`FEEDBACK_TEXT_MAX`（1000）字符，服务端 `trim()` 后校验非空；不经 `censorChat` 敏感词处理（同 `AppealDoc.reason` 的先例——面向 ops 的心声原文，不面向其他玩家展示）。
 - **限流**：`createRateLimiter`（`@nw/shared`），按 accountId 维度，`FEEDBACK_RATE_LIMIT`＝5 次 / 24h（超出返回 429，不静默丢弃——玩家提交是主动行为，需要明确反馈，不同于 telemetry 类"静默丢弃超限请求"的处理）。
-- 落 metaserver 新集合 `feedback`（`{_id, accountId, text, clientPlatform?, createdAt}`），随 JWT 身份写入，不需要玩家提供联系方式。
+- 落 metaserver 集合 `feedback`（`{_id, accountId, text, clientPlatform?, createdAt}` + §2.13.1 的三个 triage 字段），随 JWT 身份写入，不需要玩家提供联系方式。
+
+#### 2.13.1 已读/备注痕迹（2026-08-20 补，`feedback.action`）
+
+原设计只有"ops 只读列表"，反馈累积后无法追踪"哪几条看过了"。补一层最轻的 triage 状态——**仍然不是状态机**，没有"处理中/已处理"，只回答"看没看过 + ops 留了什么话"：
+
+```
+POST /internal/feedback/{id}/review   (X-Internal-Key) { readBy, note? }  → { ok: true } | 400（缺 readBy）| 404
+```
+
+- `FeedbackDoc` 增三字段：`readAt?`（**首次** review 时打戳，之后**永不覆盖**——它回答"我们第一次看到这条是什么时候"，不是"最后一次动过"）、`readBy?`（最后一次操作者 adminId，last-write-wins）、`note?`（ops 备注，1..`FEEDBACK_NOTE_MAX`＝500，last-write-wins）。
+- **未读 ⟺ `!readAt`**。`readAt` 是唯一的已读判据，写备注同时也会打上 `readAt`（一次动作，不需要先标已读再写备注），所以不存在"有备注但未读"的行。
+- `note` **省略** = 只标已读，保留原有备注不动；`note: ''`（或纯空白）= **显式清空**备注。这个区分是为了让"标已读"按钮不会误删已写好的备注。
+- 权限：查看仍是全角色的 `feedback.view`；写入需 `feedback.action`（仅 super/ops——客服 support 与 viewer 只读）。每次写入落一条 `feedback.review` 审计，summary 区分 `noted` / `marked read`。
 
 ---
 

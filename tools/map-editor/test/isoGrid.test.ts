@@ -11,7 +11,7 @@ import {
   screenToTileF,
   tileToScreen,
   visibleTileBounds,
-} from '../src/render/isoGrid';
+} from '../src/tiles/isoGrid';
 
 const TP = 80;
 

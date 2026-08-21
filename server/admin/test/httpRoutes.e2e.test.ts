@@ -94,12 +94,34 @@ class FakeAntiCheat implements AntiCheatClient {
     return { ok: true };
   }
 }
-const stubMismatches: MismatchClient = { available: true, listMismatches: async () => [] };
+// Real-shaped rows rather than the empty list this stub used to return: `players` is MatchDoc.players
+// verbatim, so it carries the archive-time identity snapshot, and the routes below assert that the whole
+// row reaches the ops frontend (an empty list would pass no matter what the route did with it).
+const stubMismatches: MismatchClient = {
+  available: true,
+  listMismatches: async () => [
+    {
+      roomId: 'room-desync-1',
+      mode: 'ranked',
+      players: [
+        { side: 0, accountId: 'acc-a', displayName: 'Alice', publicId: '111111111' },
+        { side: 1, accountId: 'acc-b', displayName: 'Bob', publicId: '222222222' },
+      ],
+      reason: 'mismatch',
+      ts: 42,
+    },
+  ],
+};
 const stubPvpCardStats: PvpCardStatsClient = { available: true, listPvpCardStats: async () => [{ cardId: 'c1', games: 10, wins: 6 }] };
 class FakeSuspiciousPve implements SuspiciousPveClient {
   available = true;
   banned = new Set<string>();
-  async listSuspiciousPve() { return []; }
+  // `banned` is read back into the roster so the ban route and the C4 list can be shown to agree — the
+  // roster's only action is that same manual ban, and an operator who bans from it must see it take.
+  rows = [
+    { _id: 'acc-flagged', displayName: 'Flagged', publicId: '333333333', pveWarnings: 4, createdAt: 7 },
+  ];
+  async listSuspiciousPve() { return this.rows.map((r) => ({ ...r, banned: this.banned.has(r._id) })); }
   async banAccount(accountId: string) { this.banned.add(accountId); return { ok: true }; }
   async unbanAccount(accountId: string) { this.banned.delete(accountId); return { ok: true }; }
 }
@@ -188,11 +210,26 @@ class FakeGachaPools implements GachaPoolsClient {
   }
   async close(id: string) { const p = this.pools.get(id); if (p) p.closedAt = now(); return { id }; }
 }
-const stubPromo: PromoClient = {
-  available: true,
-  list: async (): Promise<PromoCodeView[]> => [{ code: 'WELCOME10', coins: 100, redeemed: 0, createdBy: 'root', createdAt: 1 }],
-  create: async (args) => ({ code: args.code }),
-};
+// Stateful (unlike the original static stub) so the promo routes can be exercised as a real
+// create -> list round trip: the mint side is the whole point of restoring them, and a create that
+// never shows up in the list is exactly the failure the ops page would hit. Uppercase normalization
+// and the duplicate-code conflict both live in commercial, so they are mirrored here.
+class FakePromo implements PromoClient {
+  available = true;
+  codes = new Map<string, PromoCodeView>();
+  async list(): Promise<PromoCodeView[]> { return [...this.codes.values()]; }
+  async create(args: { code: string; coins: number; expiresAt?: number; totalLimit?: number; note?: string; createdBy: string }) {
+    const code = args.code.trim().toUpperCase();
+    if (this.codes.has(code)) throw new EventsClientError(409, 'BAD_REQUEST');
+    this.codes.set(code, {
+      code, coins: Math.floor(args.coins), redeemed: 0, createdBy: args.createdBy, createdAt: now(),
+      ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
+      ...(args.totalLimit !== undefined ? { totalLimit: Math.floor(args.totalLimit) } : {}),
+      ...(args.note ? { note: args.note } : {}),
+    });
+    return { code };
+  }
+}
 const stubPaddleEvents: PaddleEventsClient = {
   available: true,
   list: async () => [{ transactionId: 'txn1', eventType: 'transaction.completed', rawEvent: '{}', ts: 1 }],
@@ -223,10 +260,25 @@ const stubEnforcement: EnforcementClient = {
   available: true,
   applyPenalty: async () => ({ ok: true, result: { reputationScore: 80, action: 'warn' } }),
 };
-const stubFeedback: FeedbackClient = {
-  available: true,
-  listFeedback: async (): Promise<FeedbackRow[]> => [{ _id: 'fb1', accountId: 'acc-1', text: 'great game', createdAt: 1 }],
-};
+class FakeFeedback implements FeedbackClient {
+  available = true;
+  rows: FeedbackRow[] = [{ _id: 'fb1', accountId: 'acc-1', text: 'great game', createdAt: 1 }];
+  async listFeedback(): Promise<FeedbackRow[]> {
+    return this.rows;
+  }
+  /** Mirrors metaserver's triage semantics closely enough for the route test: unknown id → not ok (404). */
+  async reviewFeedback(id: string, readBy: string, note?: string): Promise<{ ok: boolean }> {
+    const row = this.rows.find((r) => r._id === id);
+    if (!row) return { ok: false };
+    row.readAt ??= 1;
+    row.readBy = readBy;
+    if (typeof note === 'string') {
+      if (note.trim()) row.note = note.trim();
+      else delete row.note;
+    }
+    return { ok: true };
+  }
+}
 
 async function actorOf(svc: AdminService, username: string): Promise<Actor> {
   const doc = (await mongo!.collections.adminAccounts.findOne({ username }))!;
@@ -242,14 +294,20 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
   let suspiciousPve: FakeSuspiciousPve;
   let events: FakeEvents;
   let gachaPools: FakeGachaPools;
+  let promo: FakePromo;
   let reports: FakeReports;
   let appeals: FakeAppeals;
+  let feedback: FakeFeedback;
   let world: FakeWorld;
   let analytics: FakeAnalytics;
 
   let rootToken: string;
   let opsToken: string;
   let csToken: string;
+  // Accounts are keyed on a randomUUID `_id`, and that is what lands in `createdBy`/audit `actor` —
+  // never the username. Captured here so the promo assertions can name the right value.
+  let rootId: string;
+  let opsId: string;
 
   async function call(token: string | null, method: string, path: string, body?: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
     const res = await fetch(`${base}${path}`, {
@@ -274,8 +332,10 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
     suspiciousPve = new FakeSuspiciousPve();
     events = new FakeEvents();
     gachaPools = new FakeGachaPools();
+    promo = new FakePromo();
     reports = new FakeReports();
     appeals = new FakeAppeals();
+    feedback = new FakeFeedback();
     world = new FakeWorld();
     analytics = new FakeAnalytics();
 
@@ -283,12 +343,13 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       cols: m.collections, now,
       stats: stubStats, players: stubPlayer, antiCheat, mismatches: stubMismatches, pvpCardStats: stubPvpCardStats,
       suspiciousPve, mail, analytics, world, auction: stubAuction, ladder: stubLadder, events, gachaPools,
-      promo: stubPromo, paddleEvents: stubPaddleEvents, reports, appeals, enforcement: stubEnforcement, feedback: stubFeedback,
+      promo, paddleEvents: stubPaddleEvents, reports, appeals, enforcement: stubEnforcement, feedback,
     });
 
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
     const root = await actorOf(svc, 'root');
-    await svc.createAccount(root, { username: 'ops2', password: 'ops2pass', role: 'ops', displayName: 'Ops Two' });
+    rootId = root.adminId;
+    opsId = (await svc.createAccount(root, { username: 'ops2', password: 'ops2pass', role: 'ops', displayName: 'Ops Two' })).id;
     await svc.createAccount(root, { username: 'csuser', password: 'cspass', role: 'support', displayName: 'CS' });
 
     server = startHttpApi({ host: '127.0.0.1', port: 0, jwt: { secret: JWT_SECRET }, internalAuth: loadInternalAuth(INTERNAL_KEY) }, svc);
@@ -426,6 +487,42 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       const r = await call(csToken, 'GET', '/admin/anticheat/reviews');
       expect(r.status).toBe(403);
     });
+    // Both routes below were deleted on 2026-07-28 for having no ops caller and restored on 2026-08-20;
+    // these are the tests that were missing then, and would have made the deletion fail loudly now.
+    it('C3 mismatch list: returns the rows verbatim, identity snapshot included', async () => {
+      const r = await call(rootToken, 'GET', '/admin/mismatches');
+      expect(r.status).toBe(200);
+      expect(r.json.mismatches).toEqual([
+        {
+          roomId: 'room-desync-1',
+          mode: 'ranked',
+          players: [
+            { side: 0, accountId: 'acc-a', displayName: 'Alice', publicId: '111111111' },
+            { side: 1, accountId: 'acc-b', displayName: 'Bob', publicId: '222222222' },
+          ],
+          reason: 'mismatch',
+          ts: 42,
+        },
+      ]);
+    });
+    it('C4 suspicious-PvE roster: lists warning counts, and reflects a ban made through the ban route', async () => {
+      const before = await call(rootToken, 'GET', '/admin/suspicious-pve');
+      expect(before.status).toBe(200);
+      expect(before.json.accounts).toEqual([
+        { _id: 'acc-flagged', displayName: 'Flagged', publicId: '333333333', pveWarnings: 4, banned: false, createdAt: 7 },
+      ]);
+      expect((await call(rootToken, 'POST', '/admin/accounts/acc-flagged/ban')).status).toBe(200);
+      const after = await call(rootToken, 'GET', '/admin/suspicious-pve');
+      expect(after.json.accounts).toEqual([
+        { _id: 'acc-flagged', displayName: 'Flagged', publicId: '333333333', pveWarnings: 4, banned: true, createdAt: 7 },
+      ]);
+      // Leave the shared fake as it was found — the ban/unban test in playerRoutes asserts on this set.
+      expect((await call(rootToken, 'POST', '/admin/accounts/acc-flagged/unban')).status).toBe(200);
+    });
+    it('both C3/C4 lists are gated on anticheat.view, which support lacks → 403', async () => {
+      expect((await call(csToken, 'GET', '/admin/mismatches')).status).toBe(403);
+      expect((await call(csToken, 'GET', '/admin/suspicious-pve')).status).toBe(403);
+    });
     it('UGC report queue: list then resolve (upheld → applies enforcement penalty)', async () => {
       const list = await call(rootToken, 'GET', '/admin/reports?status=open');
       expect(list.status).toBe(200);
@@ -451,6 +548,17 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       const r = await call(rootToken, 'GET', '/admin/feedback?limit=10');
       expect(r.status).toBe(200);
       expect(r.json.feedback).toHaveLength(1);
+    });
+    it('POST /admin/feedback/:id/review marks read + notes, and 404s on an unknown id', async () => {
+      const r = await call(rootToken, 'POST', '/admin/feedback/fb1/review', { note: 'forwarded to design' });
+      expect(r.status).toBe(200);
+      expect(feedback.rows[0]).toMatchObject({ note: 'forwarded to design', readBy: expect.any(String), readAt: 1 });
+      const missing = await call(rootToken, 'POST', '/admin/feedback/nope/review', {});
+      expect(missing.status).toBe(404);
+    });
+    it('support role can view feedback but lacks feedback.action → 403', async () => {
+      expect((await call(csToken, 'GET', '/admin/feedback')).status).toBe(200);
+      expect((await call(csToken, 'POST', '/admin/feedback/fb1/review', {})).status).toBe(403);
     });
   });
 
@@ -658,6 +766,58 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
 
   // ── commerceRoutes: Paddle event log, limited-time events, custom gacha pools ──
   describe('commerceRoutes', () => {
+    // ── Promo codes (B-PROMO): restored 2026-08-20 after the 2026-07-28 dead-endpoint sweep deleted
+    // them for having no ops-frontend caller. These cases are what makes that sweep's premise false in
+    // future, so the routes are not "unreachable" again on the next audit.
+    it('promo: create → list reflects it (code stored uppercase, note/limit/expiry carried through)', async () => {
+      expect((await call(rootToken, 'GET', '/admin/promo/codes')).json.codes).toEqual([]);
+      const create = await call(rootToken, 'POST', '/admin/promo/codes', {
+        code: 'welcome2026', coins: 250, totalLimit: 500, expiresAt: 9_000_000_000_000, note: 'launch week',
+      });
+      expect(create.status).toBe(200);
+      expect(create.json.code).toBe('WELCOME2026');
+      const list = await call(rootToken, 'GET', '/admin/promo/codes');
+      expect(list.status).toBe(200);
+      expect(list.json.codes).toMatchObject([
+        { code: 'WELCOME2026', coins: 250, totalLimit: 500, expiresAt: 9_000_000_000_000, note: 'launch week', redeemed: 0, createdBy: rootId },
+      ]);
+    });
+    it('promo: creating writes a promo.create audit entry naming the code + coin amount', async () => {
+      await call(rootToken, 'POST', '/admin/promo/codes', { code: 'AUDITED', coins: 42 });
+      const audit = await call(rootToken, 'GET', '/admin/audit');
+      const entry = (audit.json.entries as Array<{ action: string; target?: string; summary?: string }>)
+        .find((e) => e.action === 'promo.create' && e.target === 'AUDITED');
+      expect(entry).toMatchObject({ actor: rootId, summary: '42 coins' });
+    });
+    it('promo: a duplicate code surfaces the 409 from commercial rather than a generic 500', async () => {
+      expect((await call(rootToken, 'POST', '/admin/promo/codes', { code: 'DUPE', coins: 10 })).status).toBe(200);
+      const again = await call(rootToken, 'POST', '/admin/promo/codes', { code: 'dupe', coins: 10 });
+      expect(again.status).toBe(409);
+    });
+    // Guarding here (not only in commercial) keeps a typo'd form from costing a round trip, and stops a
+    // 0-coin code — which commercial rejects with an opaque 'BAD_REQUEST' — from ever being sent.
+    it('promo: missing code or non-positive coins → 400 before any client call', async () => {
+      expect((await call(rootToken, 'POST', '/admin/promo/codes', { coins: 100 })).status).toBe(400);
+      expect((await call(rootToken, 'POST', '/admin/promo/codes', { code: 'FREE', coins: 0 })).status).toBe(400);
+      expect((await call(rootToken, 'POST', '/admin/promo/codes', { code: 'FREE', coins: -5 })).status).toBe(400);
+      const bad = await call(rootToken, 'POST', '/admin/promo/codes', { code: '', coins: 100 });
+      expect(bad.status).toBe(400);
+      expect(bad.json).toMatchObject({ ok: false, code: 'bad_request' });
+    });
+    // promo.manage is super/ops only — minting currency must not be reachable by support/CS.
+    it('promo: a role without promo.manage gets 403 on both read and mint', async () => {
+      expect((await call(csToken, 'GET', '/admin/promo/codes')).status).toBe(403);
+      const post = await call(csToken, 'POST', '/admin/promo/codes', { code: 'SNEAKY', coins: 100 });
+      expect(post.status).toBe(403);
+      expect(post.json).toMatchObject({ ok: false, code: 'forbidden' });
+      expect(promo.codes.has('SNEAKY')).toBe(false);
+    });
+    it('promo: an ops-role actor (which does hold promo.manage) can mint', async () => {
+      const r = await call(opsToken, 'POST', '/admin/promo/codes', { code: 'OPSMADE', coins: 5 });
+      expect(r.status).toBe(200);
+      expect(promo.codes.get('OPSMADE')).toMatchObject({ coins: 5, createdBy: opsId });
+    });
+
     it('GET /admin/paddle/events', async () => {
       const r = await call(rootToken, 'GET', '/admin/paddle/events?accountId=acc-1');
       expect(r.status).toBe(200);

@@ -232,8 +232,10 @@ function verdict(ok) { return ok ? 'PASS' : 'FAIL'; }
   if (thicken > 0) thickenAlpha(resized.data, resized.info.width, resized.info.height, thicken);
   if (harden) hardenAlpha(resized.data);
   fs.mkdirSync(path.dirname(out), { recursive: true });
+  // Quantized palette PNG (client/src/assets publish-bytes convention — see
+  // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md).
   await sharp(resized.data, { raw: { width: resized.info.width, height: resized.info.height, channels: 4 } })
-    .png().toFile(out);
+    .png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 }).toFile(out);
 
   // 4. acceptance metrics
   const a = await measureAsset(out);

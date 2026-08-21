@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SLG_MAP_H, SLG_MAP_W } from '@nw/shared/slg';
 import { DEFAULT_TP, VIEW_H, VIEW_PAD_FACTOR, VIEW_W, ZOOM_MAX, ZOOM_MIN } from '../src/constants';
 import { Camera } from '../src/state/camera';
-import { screenToTileF } from '../src/render/isoGrid';
+import { screenToTileF } from '../src/tiles/isoGrid';
 
 let cam: Camera;
 beforeEach(() => {
@@ -220,5 +220,42 @@ describe('Camera.visibleRange', () => {
     const close = cam.visibleRange(VIEW_PAD_FACTOR);
     const area = (r: { x0: number; x1: number; y0: number; y1: number }) => (r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1);
     expect(area(close)).toBeLessThan(area(wide));
+  });
+});
+
+// layerOf() is the busiest camera method in the render layer (every tile Graphics in baseMap.ts,
+// every city sprite in citySprites.ts, every overlay polygon in overlay.ts positions itself with
+// it) and had no test at all — it was the one uncovered line pair in this file. What makes it worth
+// pinning is not the arithmetic but the contract in camera.ts's own header: the pan lives on
+// `worldLayer.position`, so children must be positioned PAN-FREE. Get that wrong and a pan
+// double-counts — the container moves and every child moves with it, which is the "drag the map and
+// everything slides twice as fast" class of bug, invisible until you actually drag.
+describe('Camera.layerOf', () => {
+  it('is screenOf minus the pan, on both axes', () => {
+    cam.centerOnMap();
+    for (const [tx, ty] of [[0, 0], [1, 0], [0, 1], [375, 620], [SLG_MAP_W - 1, SLG_MAP_H - 1]]) {
+      const layer = cam.layerOf(tx!, ty!);
+      const screen = cam.screenOf(tx!, ty!);
+      expect(layer.x).toBeCloseTo(screen.x - cam.panX, 10);
+      expect(layer.y).toBeCloseTo(screen.y - cam.panY, 10);
+    }
+  });
+
+  it('does not move when the camera pans — the pan is the container\'s job, not the child\'s', () => {
+    cam.centerOnMap();
+    const before = cam.layerOf(400, 400);
+    cam.panBy(-137, 61);
+    expect(cam.panX, 'the pan must actually have changed, or this asserts nothing').not.toBe(0);
+    const after = cam.layerOf(400, 400);
+    expect(after).toEqual(before);
+    // ...while the viewport-space position DID move, by exactly the pan delta.
+    expect(cam.screenOf(400, 400).x - before.x).toBeCloseTo(cam.panX, 10);
+  });
+
+  it('does move when the camera zooms — tp is baked into the child position', () => {
+    cam.setZoom(20);
+    const wide = cam.layerOf(400, 400);
+    cam.setZoom(60);
+    expect(cam.layerOf(400, 400)).not.toEqual(wide);
   });
 });

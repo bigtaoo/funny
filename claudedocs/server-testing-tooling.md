@@ -105,3 +105,33 @@
 **顺带发现（不在本次范围内修）**：跑真仓库时 `check:filelength` 在当日分支上**本来就是红的**，两处都来自别的会话的合并——`server/shared/src/slg/core.ts` 687 行且不在 baseline（2026-08-19 那批 `isCityGroundTile`/`tileFeatureBuilding` 上移导致），`client/src/net/WorldApiClient.ts` 544 行 vs baseline 542。canary 只在"扫到 0 个"时才触发，跟这两条无关；主检出上未带任何本次改动复现同样结果。拆还是进 baseline、以及 +2 的理由，都该由改动它们的人定。
 
 **验证**：新用例 28/28 绿（两条 off-by-one 期望值在首跑时就被自己咬出来了，说明它们真的在读输出而不是只看退出码）；`shared` 全量 52 文件 1028 例绿；`shared` `typecheck:test` 干净；两个脚本对真仓库跑的结果与改动前一致（`checkWorkspaceCoverage` 绿；`checkFileLength` 红在上面那两条既有问题上）。
+
+## 第四道守卫：`tools/` 可达性闸门（2026-08-20）
+
+家族里的第四个脚本，跟上面三个同形（根 `scripts/checkUnreachableModules.mjs`，带 `--root=` seam、带 canary、由 spawn 真 CLI 的测试钉住）：**判红条件是某个 `src/` 下的源文件从任何根都到不了**。根有三类——bundler entry、`--extra-root` 声明的兄弟产物目录、`test/**`。
+
+起因不是理论洁癖：`tools/animator/src/` 里躺着 1424 行重构前的死模块（13 文件），**同时躲过了行数闸门和覆盖率闸门，而且是构造性的**——每个文件都不到 500 行，又全在 coverage `include` 之外。它是有人恰好手跑一次 import 遍历才发现的。这条闸门就是把那次遍历固化下来。
+
+- **最容易写错、也最要紧的一处**：`./x` 的候选顺序必须 `x.ts` 先于 `x/index.ts`。animator 那张死图正是靠这一点自闭合（死的 `renderer.ts` 里 `from './skeleton'` 命中死的 `src/skeleton.ts`，不是活的 `src/skeleton/Skeleton.ts`），顺序反了整张死图会被判成活的。这条做过 red-then-green 实测。
+- **测试**：`server/shared/test/reachabilityGuard.test.ts`（15 例），末例是真仓库集成（跑 `tools/` 封装、断言 5 个包全 OK）——封装里包名写错或漏了 animator 的 `--extra-root`，前 14 例全绿也守不住任何东西。另一条 red-then-green：把 import 正则从 `[^;]*?` 改成 `.*?`（不跨行）→ 跨行那例红，**并且真仓库集成例也跟着红了，因为 `ops` 里真有一处跨行 import**。
+- 口径与范围细节（为什么测试文件也算根、为什么 `client`/`server`/`desktop-shell` 不在范围内）见 [`tools-testing.md`](tools-testing.md)「可达性闸门」。
+
+## `tools/` 接入覆盖率报表：reported, not gated（2026-08-20，worktree `feat/tools-coverage-gate`，ADR-070）
+
+上面那条「14 个包全部 ≥90%」的里程碑从来没覆盖工具链——`tools/` 完全在门禁之外，且**不是**"缺数据 fail closed"，而是根本不在 `coverageLib.mjs` 的清单里：五个工具包都没有 `test:coverage` 脚本、都没装 `@vitest/coverage-v8`，`tools-test` job 不产 coverage 产物，`coverage-report` job 连 `needs` 都不含它。现在补上，细节与各包台账见 [`tools-testing.md`](tools-testing.md)，这里只记工具/流水线侧的三点：
+
+- **`coverageLib.mjs` 多了第二类行**：`NOT_GATED_JSON_SUMMARY_PACKAGES`（5 个 `tools/*`），`collectRows` 给每行打 `gated` 标记与 `srcFiles` 计数。`gated: false` = 进报表、**必须产出 coverage**、但百分比暂不比 90%。产出缺失照样 fail-closed——「tools/ops 悄悄不产 coverage 了」是断掉的流水线，跟它在哪个清单上无关；这条也是这一阶段唯一能替 tools 守住的东西（百分比走 ADR-070 的 Phase 4 逐个 ratchet）。
+- **两处既有缺陷顺带修掉**：①门禁把「完全没产出」报成「低于 90% 门槛」——对 not-gated 包这话直接是错的（它豁免于门槛却仍然失败），对 gated 包也会把人引去找缺失的测试而真正要修的是缺失的 CI 步骤；现已分成两条消息。②补上兄弟守卫早有的 canary：待检包数为 0 时判红，而不是印「all 0 packages >= 90%」退出 0。
+- **两条反刷分护栏**：报表每行新增 `Scope (files)` 列（measured / `src` 源文件数）——`client`（只圈 `src/game/**`）和四个 scoped 的 tools 包都刻意只测全树的一部分，这是合理且有记录的选择，但也是**唯一能不加测试就抬高百分比的旋钮**，把 scope 大小印在它所修饰的数字旁边，缩窄在同一张表里就现形；`checkCoverageThreshold.mjs` 则每次运行都复述 not-gated 包的当前值与目标（绿跑也印），只写在设计文档里的「临时豁免」会无声变成永久。`Overall` 仍只统计 gated 包——把 tools 折进去会悄悄重定义一个自 2026-08-15 起就意为"发布门禁实际强制的覆盖率"的数字。
+- **CI**：`tools-test` 改跑 `npm run test:coverage`（这些套件都是纯逻辑、各约 1s，不存在 client 那种 v8 插桩税），上传一个以 `tools/` 为根的 artifact（同 server `rest` 分片那个 rooting 技巧），`coverage-report` 增加 `needs: tools-test` + 下载回 `tools/`，并把 `tools-test.result` 并入 `TESTS_OK`（否则一次 tools 测试挂会自报两次红，正是上面 `TESTS_OK` 那条要打断的级联）。
+- **测试**：新增 `server/shared/test/coverageScripts.test.ts`（18 例）——与 `guardScripts.test.ts` 同一手法（spawn 真实 CLI 打 fixture 树，退出码才是 CI 消费的契约）。**注意一个坑**：vitest **无法加载项目 root 之外的 `.mjs`**（整文件报 SyntaxError、位置指在 import 说明符上），所以包清单和 `countSrcFiles` 是通过子进程（`libEval`）读的，不是直接 import。三条关键断言都做过红检（把行为改坏确认变红再还原）。
+
+## 第五道守卫：非 workspace 包必须被 ci.yml 点名（2026-08-21，ADR-071）
+
+`server/tools/econ-sim`（SLG 经济模拟器，3509 行 + 18 例测试）不是 workspace。后果不是「少一个包」，而是**所有按 workspace 扇出的东西同时够不着它**：`tsc -b tsconfig.build.json` 的 solution 文件、`npm run <x> --workspaces --if-present` 的每一次扇出、`coverageLib.mjs` 的包清单——于是它的 typecheck 和测试**从来没有在 CI 里跑过一次**，而它 import `@nw/shared`/`@nw/engine` 的数值常量，最后一次改动是 ADR-069（2026-08-19）。这类失效同样是安静的：引擎改个数值把它变砖，要等到有人真去跑模拟才知道。
+
+- **修法不是「加两个 CI 步骤」**，而是给 `checkWorkspaceCoverage.mjs` 加第五道检查：从磁盘枚举 `server/` 下所有**非** workspace 的 `package.json`，凡有 `test` 脚本的，必须能在 `.github/workflows/ci.yml` 里找到一个 `working-directory:` 指着它、且 `run:` 真的跑那个脚本的步骤（有 `typecheck` 的同样要）。**从磁盘枚举**是重点——这个脚本当初存在的理由就是手写清单漏了 `socialsvc`/`botsvc`，用手写清单补手写清单的洞没有意义。
+- **近似名字刻意判否**：`npm run test:coverage` 不算跑了 `test`，`typecheck:test` 不算跑了 `typecheck`（正则用 `(?![\w:-])` 收边）。一个名字差一点的步骤能让检查过而脚本不跑，那这道守卫就白加了。
+- **解析方式是文本，不是 YAML parse**：按 `- name:` 切步骤、各自取 `working-directory:` 与 `run:` 正文。这些脚本刻意零依赖，而 ci.yml 里的 `working-directory` 全是单行值。
+- **econ-sim 不进 90% 名单**：3509 行里大半是 `*Run.ts` 入口脚本，设百分比门槛只会买到「为百分比写的测试」。**跑它的 18 例**才是要的——它们锁的是强化保护成本、据点战斗这类平衡数值。CI 里它挂在 `rest` shard（不需要 Mongo/Redis，5s；单开一个 runner 会花 30s 装环境跑 5s 测试），typecheck 挂在 `server-checks` 的 `tsc -b` 之后（要靠那步产出的 `dist/` 解析 `@nw/*`）。**不需要安装步骤**：它自己没有 `node_modules`，`tsc`/`vitest`/`@nw/*` 全靠向上走解析到 `server/` 的 hoist 树。
+- **测试**：`guardScripts.test.ts` 28 → **32** 例（+4：两个脚本都有步骤时通过——这条是承重的，它证明 `working-directory` 的匹配真的对得上而不是全都判红；没有步骤时失败并同时点名 `test` 与 `typecheck`；`test:coverage` 这种近似名字不算；没有 `test` 脚本的包不管）。fixture 侧新增两个旋钮：`extraPackages`（造非 workspace 包）与 `ciSteps`（造 ci.yml）。三向反验都在真仓库上跑过一遍（无步骤→红、两步都在→绿、只有 test→红且只报 typecheck）。

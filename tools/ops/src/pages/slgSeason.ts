@@ -1,19 +1,13 @@
 // SLG season management page (G7/§17.7; slg.season.view / slg.season.manage):
 // list world status + open/settle/reset/close lifecycle transitions.
+// Which transitions a world offers, and every confirm prompt, come from src/logic/slgSeason.ts.
 import { clear, fmtTime, h, pill } from '../dom';
+import {
+  allocateConfirm, allocateOkText, mergeConfirm, mergeOkText, mergePrompt, openConfirm,
+  populationText, seasonShardText, type WorldAction, worldActions, worldStatusCls,
+} from '../logic/slgSeason';
 import type { SlgWorldSummary } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
-
-const SLG_WORLD_STATUS_CLS: Record<string, string> = {
-  open: 'ok',
-  settling: 'warn',
-  resetting: 'warn',
-  closed: '',
-};
-
-function slgWorldStatusPill(status: string): HTMLElement {
-  return pill(status, SLG_WORLD_STATUS_CLS[status] ?? 'info');
-}
 
 export async function pageSLGSeason(ctx: Ctx): Promise<void> {
   const { api, session, root } = ctx;
@@ -28,12 +22,11 @@ export async function pageSLGSeason(ctx: Ctx): Promise<void> {
 
   const err = h('div', { class: 'err' });
   const worldsBox = h('div', { class: 'card' }, 'Loading...');
-  let worlds: SlgWorldSummary[] = [];
 
   const refresh = async (): Promise<void> => {
     err.textContent = '';
     try {
-      worlds = await api.slgListWorlds();
+      const worlds = await api.slgListWorlds();
       clear(worldsBox);
       if (worlds.length === 0) {
         worldsBox.append(h('div', { class: 'muted' }, 'No worlds found (worldsvc offline or no worlds registered).'));
@@ -68,11 +61,11 @@ export async function pageSLGSeason(ctx: Ctx): Promise<void> {
     allocBtn.onclick = async (): Promise<void> => {
       allocErr.textContent = '';
       const season = Number(nextSeasonInput.value);
-      if (!confirm(`Allocate season ${season} (capacity ${allocCapInput.value} per shard)? This settles shard balancing from the previous season's results and opens fresh worlds — every account will be routed to the new map on next login.`)) return;
+      if (!confirm(allocateConfirm(season, allocCapInput.value))) return;
       allocBtn.disabled = true;
       try {
         const r = await api.slgAllocateNextSeason(season, Number(allocCapInput.value));
-        showOk(allocErr, `Season ${season} allocated: ${r.shardCount} shard(s) — ${r.worldIds.join(', ')} (${r.allocatedFamilies} families placed)`);
+        showOk(allocErr, allocateOkText(season, r));
         await refresh();
       } catch (e) {
         showErr(allocErr, e);
@@ -106,7 +99,7 @@ export async function pageSLGSeason(ctx: Ctx): Promise<void> {
       openErr.textContent = '';
       const worldId = wIdInput.value.trim();
       if (!worldId) { showErr(openErr, new Error('worldId is required')); return; }
-      if (!confirm(`Open world "${worldId}" season ${seasonInput.value} shard ${shardInput.value} cap ${capInput.value}?`)) return;
+      if (!confirm(openConfirm(worldId, seasonInput.value, shardInput.value, capInput.value))) return;
       openBtn.disabled = true;
       try {
         await api.slgOpenSeason(worldId, Number(seasonInput.value), Number(shardInput.value), Number(capInput.value));
@@ -149,11 +142,7 @@ function slgWorldRow(ctx: Ctx, w: SlgWorldSummary, onRefresh: () => Promise<void
   const canManage = session.capabilities.includes('slg.season.manage');
   const rowErr = h('span', { class: 'err' });
 
-  const doAction = async (
-    label: string,
-    confirmMsg: string,
-    action: () => Promise<unknown>,
-  ): Promise<void> => {
+  const run = async (confirmMsg: string, action: () => Promise<unknown>): Promise<void> => {
     if (!confirm(confirmMsg)) return;
     rowErr.textContent = '';
     pageErr.textContent = '';
@@ -166,50 +155,38 @@ function slgWorldRow(ctx: Ctx, w: SlgWorldSummary, onRefresh: () => Promise<void
   };
 
   const doMerge = async (): Promise<void> => {
-    const targetWorldId = prompt(`Merge "${w.worldId}" into which shard? (worldId, e.g. s${w.season}-0)`);
+    const targetWorldId = prompt(mergePrompt(w));
     if (!targetWorldId) return;
-    if (!confirm(`DANGER: Move every remaining player out of "${w.worldId}" into "${targetWorldId}", then permanently close "${w.worldId}"? Irreversible — use only for a low-population shard (§27).`)) return;
+    if (!confirm(mergeConfirm(w.worldId, targetWorldId))) return;
     rowErr.textContent = '';
     pageErr.textContent = '';
     try {
       const r = await api.slgMergeShard(w.worldId, targetWorldId);
-      showOk(rowErr, `Moved ${r.moved} player(s)${r.failed.length ? `, ${r.failed.length} failed (see server logs)` : ''}`);
+      showOk(rowErr, mergeOkText(r));
       await onRefresh();
     } catch (e) {
       showErr(rowErr, e);
     }
   };
 
-  const buttons: HTMLElement[] = [];
-  if (canManage) {
-    if (w.status === 'open' || w.status === 'active') {
-      buttons.push(
-        h('button', { class: 'warn',
-          onclick: () => void doAction('Settle', `Settle world "${w.worldId}"? This distributes rewards and marks the season as settling.`, () => api.slgSettleSeason(w.worldId)) },
-          'Settle'),
-        h('button', { class: 'ghost',
-          onclick: () => void doAction('Close', `Archive world "${w.worldId}"? This permanently closes it.`, () => api.slgCloseSeason(w.worldId)) },
-          'Close'),
-        h('button', { class: 'danger', onclick: () => void doMerge() }, 'Merge into…'),
-      );
-    } else if (w.status === 'settling' || w.status === 'resetting') {
-      buttons.push(
-        h('button', { class: 'danger',
-          onclick: () => void doAction('Reset', `DANGER: Reset world "${w.worldId}"? This wipes all world data and re-opens it. Irreversible.`, () => api.slgResetSeason(w.worldId)) },
-          'Reset'),
-        h('button', { class: 'ghost',
-          onclick: () => void doAction('Close', `Archive world "${w.worldId}"? This permanently closes it.`, () => api.slgCloseSeason(w.worldId)) },
-          'Close'),
-      );
-    }
-  }
+  const button = (a: WorldAction): HTMLElement => {
+    const onclick = (): void => {
+      switch (a.id) {
+        case 'settle': void run(a.confirmText!, () => api.slgSettleSeason(w.worldId)); return;
+        case 'reset': void run(a.confirmText!, () => api.slgResetSeason(w.worldId)); return;
+        case 'close': void run(a.confirmText!, () => api.slgCloseSeason(w.worldId)); return;
+        case 'merge': void doMerge(); return;
+      }
+    };
+    return h('button', { class: a.cls, onclick }, a.label);
+  };
 
   return h('tr', {},
     h('td', {}, w.worldId),
-    h('td', {}, `S${w.season} · shard ${w.shard}`),
-    h('td', {}, slgWorldStatusPill(w.status)),
-    h('td', { style: 'text-align:right' }, `${w.population.toLocaleString()} / ${w.capacity.toLocaleString()}`),
+    h('td', {}, seasonShardText(w)),
+    h('td', {}, pill(w.status, worldStatusCls(w.status))),
+    h('td', { style: 'text-align:right' }, populationText(w)),
     h('td', {}, fmtTime(w.openAt)),
-    canManage ? h('td', {}, ...buttons, rowErr) : null,
+    canManage ? h('td', {}, ...worldActions(w, canManage).map(button), rowErr) : null,
   );
 }

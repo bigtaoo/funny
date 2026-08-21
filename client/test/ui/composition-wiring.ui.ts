@@ -328,6 +328,12 @@ describe('FriendsScene composition wiring', () => {
     // field the outer assembly overwrites right after constructing NetworkPanel — must not still
     // be the core.ts no-op default (see core.ts's file-header comment).
     expect((core as Record<string, unknown>).net).toBe(scene.network);
+    // 2026-08-20 split-offs: orgForm delegates the family browse/join flow to OrgBrowsePanel, and
+    // Core owns a RepaintState for the incremental repaint paths — both over that same core.
+    const orgForm = scene.orgForm as Record<string, unknown>;
+    expect((orgForm.browse as Record<string, unknown>).core).toBe(core);
+    expect((orgForm.browse as Record<string, unknown>).network).toBe(scene.network);
+    expect(((core as Record<string, unknown>).repaint as Record<string, unknown>).core).toBe(core);
     (scene.destroy as () => void)();
   });
 });
@@ -395,6 +401,7 @@ describe('CardScene composition wiring', () => {
       onBack() {},
       getSave: () => makeNewSave(),
       fuseCards: async () => ({ ok: true }),
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
       setCardLock: async () => ({ ok: true }),
       getOwnedSkins: () => [],
       getEquippedSkin: () => null,

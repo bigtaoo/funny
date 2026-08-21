@@ -75,7 +75,10 @@ async function process(job) {
   const newH = Math.max(1, Math.round(cropH * scale));
   await sharp(cropBuf, { raw: { width: cropW, height: cropH, channels: 4 } })
     .resize(newW, newH, { fit: 'fill' })
-    .png()
+    // Quantized palette PNG (client/src/assets publish-bytes convention — see
+    // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md): trivially safe here, the
+    // whole frame is one baked ink color at varying alpha.
+    .png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 })
     .toFile(path.join(OUT_DIR, `${job.name}.png`));
 
   return { name: job.name, w: newW, h: newH, ink: `#${[job.ink.r, job.ink.g, job.ink.b].map((v) => v.toString(16).padStart(2, '0')).join('')}` };

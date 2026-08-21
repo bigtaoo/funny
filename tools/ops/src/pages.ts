@@ -20,3 +20,6 @@ export { pageGachaPools } from './pages/gachaPools';
 export { pageSlgShop } from './pages/slgShop';
 export { pageReports } from './pages/reports';
 export { pageAppeals } from './pages/appeals';
+export { pageModerationWordlist } from './pages/moderationWordlist';
+export { pageFeedback } from './pages/feedback';
+export { pagePromo } from './pages/promo';

@@ -1,5 +1,6 @@
 // Audit log page (OPS_DESIGN §7): operator action log; super-admins may query other actors.
 import { clear, fmtTime, h } from '../dom';
+import { auditCells, auditQuery } from '../logic/audit';
 import { showErr, type Ctx } from './shared';
 
 export async function pageAudit(ctx: Ctx): Promise<void> {
@@ -29,17 +30,12 @@ export async function pageAudit(ctx: Ctx): Promise<void> {
   const reload = async (): Promise<void> => {
     err.textContent = '';
     try {
-      const fromMs = fromInput.value ? Date.parse(fromInput.value) : NaN;
-      const toMs = toInput.value ? Date.parse(toInput.value) + 24 * 3600 * 1000 : NaN; // include the full selected day
-      const entries = await api.audit({
-        ...(canAll && actorInput.value.trim() ? { actor: actorInput.value.trim() } : {}),
-        ...(Number.isFinite(fromMs) ? { from: fromMs } : {}),
-        ...(Number.isFinite(toMs) ? { to: toMs } : {}),
-      });
+      const entries = await api.audit(auditQuery({ canAll, actor: actorInput.value, from: fromInput.value, to: toInput.value }));
       clear(box);
       const t = h('table', {}, h('tr', {}, h('th', {}, 'Time'), h('th', {}, 'Operator'), h('th', {}, 'Action'), h('th', {}, 'Target'), h('th', {}, 'Summary'), h('th', {}, 'IP')));
       for (const e of entries) {
-        t.append(h('tr', {}, h('td', {}, fmtTime(e.ts)), h('td', {}, e.actorName ?? e.actor.slice(0, 8)), h('td', {}, e.action), h('td', {}, e.target ?? '—'), h('td', {}, e.summary ?? '—'), h('td', {}, e.ip ?? '—')));
+        const c = auditCells(e);
+        t.append(h('tr', {}, h('td', {}, fmtTime(e.ts)), h('td', {}, c.operator), h('td', {}, c.action), h('td', {}, c.target), h('td', {}, c.summary), h('td', {}, c.ip)));
       }
       box.append(entries.length ? t : h('div', { class: 'muted' }, 'No records'));
     } catch (e) {

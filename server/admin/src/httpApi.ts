@@ -19,12 +19,12 @@
 //   httpApi/session.ts        preAuth (health/OPTIONS/internal flags+shop-prices+wordlists) + login + logout/me
 //   httpApi/monitorRoutes.ts  monitor live/trend, analytics summary/events, PvP card win-rate report
 //   httpApi/playerRoutes.ts   player search/detail/password-reset, manual ban/unban (S4-4)
-//   httpApi/trustSafetyRoutes.ts anticheat review queue, UGC report queue, player appeal queue, feedback (read-only)
+//   httpApi/trustSafetyRoutes.ts anticheat review queue + the two read-only anti-cheat lists (C3 mismatches, C4 suspicious-PvE), UGC report queue, player appeal queue, feedback (read-only)
 //   httpApi/compRoutes.ts     compensation ticket create/list/preview/approve/reject/cancel/retry
 //   httpApi/opsConfigRoutes.ts audit log, feature flags, SLG shop price overrides, moderation wordlist overlays
 //   httpApi/accountRoutes.ts  admin account management (superadmin)
 //   httpApi/slgRoutes.ts      ladder season ops + SLG season/audit/map-template ops (worldsvc proxy, G7/§17.7/§24)
-//   httpApi/commerceRoutes.ts Paddle webhook event log, limited-time events, custom gacha pools
+//   httpApi/commerceRoutes.ts promo codes (B-PROMO), Paddle webhook event log, limited-time events, custom gacha pools
 import { createServer, type Server } from 'http';
 import { createLogger, type InternalAuthVerifier, type JwtConfig } from '@nw/shared';
 import { AdminError, type AdminService } from './service';

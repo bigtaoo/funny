@@ -54,6 +54,8 @@ src/
     └── StatusBar.ts            底部状态栏
 ```
 
+> **2026-08-20：重构前的扁平模块已删除。** `src/` 根目录下曾并存一套重构前的同名扁平文件（`animation.ts`/`events.ts`/`interaction.ts`/`io.ts`/`presets.ts`/`renderer.ts`/`skeleton.ts`/`state.ts`/`timeline.ts`/`types.ts`/`ui.ts`，外加两个 `export {}` 空壳 `atlas/AtlasController.ts`/`ui/AtlasPanel.ts`），共 1424 行。它们只互相 import（`renderer.ts` 里的 `from './skeleton'` 按 Node 解析规则命中的是 `src/skeleton.ts`，不是活代码用的 `src/skeleton/Skeleton.ts`），从 webpack 唯一入口 `src/index.ts` 完全不可达，是一张独立的死图；架构上是"模块单例 `state` + 无类型事件总线"的旧范式，与上面这套"类 + `EventBus<AppEvents>`"实现无共享代码。删除前后 production bundle 的 contenthash 完全一致（`bundle.04a1b40b5390a85f7d41.js`），即它们从未进入产物。注意同名对照关系（`skeleton.ts` vs `skeleton/Skeleton.ts`、`types.ts` vs `core/types.ts` 等）——今后若再遇到类似清理，逐个复核路径，别删错目录版。
+
 ### 依赖方向（单向）
 
 ```
@@ -251,6 +253,8 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 **例外**：拖拽骨骼时写入 `liveDelta`（不入栈），mouseUp 时创建 `RotateBoneCommand` 一次性提交。
 
 快捷键：`Ctrl+Z` undo，`Ctrl+Shift+Z` / `Ctrl+Y` redo。
+
+**拖拽角度换算（2026-08-20 修复）**：`InteractionController` 早期实现是每次 `mousemove` 都用「当前鼠标角度 - mousedown 时刻的起始角度」算增量（`Math.atan2` 返回值裁在 `(-180°,180°]`），拖拽轨迹一旦跨过 ±180° 这条裂缝，差值会突然多/少整整一圈——症状是"不想转圈却转了一大圈"或"转到一半自己弹回去"。修复后改为**逐步累加相邻两次 `mousemove` 采样之间的增量**（每步都单独做 `(-180°,180°]` 归一化，见 `unwrapAngleStep`），因为两次采样之间物理鼠标位移必然很小、不会真的接近 180°，逐步累加就不会被裂缝打断，可以连续转任意多圈。关键帧里存的仍是无界连续角度（不做 clamp/取模，多圈动画靠这个），插值（`interpolateBone`）保持纯线性 lerp 不变。`RotateBoneCommand`（拖拽结果落盘的地方，零 PIXI 依赖）随手一并导出加测试，覆盖"新建关键帧/patch 已有关键帧只改目标骨骼/大角度值原样落盘不做 wrap/undo 两种分支"，之前只被 IO 往返测试间接跑到过，没钉过自己的边界。
 
 ---
 

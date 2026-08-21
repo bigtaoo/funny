@@ -110,6 +110,20 @@ jobs:
       - name: server typecheck (test programs — test/** in every workspace)
         working-directory: server
         run: npm run typecheck:test
+      # 2026-08-21: server/tools/econ-sim is the one package under server/ that is NOT a workspace
+      # (it is a headless balance simulator, not a service), so every command above — `tsc -b` on the
+      # solution file, `--workspaces` fan-outs, the coverage gate's package list — skipped it by
+      # construction. It had therefore never been type-checked or tested in CI at all, while still
+      # importing @nw/shared/@nw/engine numeric constants and being edited as recently as ADR-069
+      # (2026-08-19): an engine renumbering could brick it and nothing would say so until someone
+      # went to run a simulation. No install step needed — it has no node_modules of its own and
+      # resolves tsc/vitest/@nw/* from server/'s hoisted tree by walking up. Must run AFTER the
+      # `tsc -b` above, same reason as the step above it: @nw/* resolve through the built dist/.
+      # scripts/checkWorkspaceCoverage.mjs now fails if this step (or the test one in server-test)
+      # stops naming it, so it cannot silently fall back out the way it silently stayed out.
+      - name: server econ-sim typecheck (non-workspace package)
+        working-directory: server/tools/econ-sim
+        run: npm run typecheck
 
   # 2026-08-14: split out of the old single "build + unit tests" job (see claudedocs/server.md) —
   # `npm run test:coverage --workspaces` used to run all 13 server workspaces back-to-back on one
@@ -230,6 +244,19 @@ jobs:
           args=()
           for w in ${{ matrix.shard.workspaces }}; do args+=(-w "$w"); done
           npm run test:coverage "${args[@]}" --if-present
+
+      # 2026-08-21, same gap as server-checks' econ-sim typecheck step: not a workspace, so no
+      # `--workspaces` fan-out ever reached its 18 tests (~5s). Rides the `rest` shard rather than
+      # getting a runner of its own — it needs neither Mongo nor Redis, and a shard of its own would
+      # spend 30s on checkout+install to run 5s of tests. Deliberately NOT added to
+      # coverageLib.mjs's gated list: it is a one-off simulator whose bulk is `*Run.ts` entry
+      # scripts, so a 90% bar there would only buy tests written for the percentage. Running its
+      # tests at all is the whole point — they lock in balance numbers (enhance-protect costs,
+      # stronghold combat) that engine changes can silently invalidate.
+      - name: server econ-sim tests (non-workspace package)
+        if: matrix.shard.name == 'rest'
+        working-directory: server/tools/econ-sim
+        run: npm test
 
       # coverage-report (below) needs every shard's coverage/ output on one filesystem; each
       # shard only produces coverage dirs for the workspaces it actually ran, so the glob below
@@ -374,12 +401,27 @@ jobs:
           for d in animator level-editor map-editor ops vfx-editor; do
             (cd "$d" && npm run typecheck)
           done
-      - name: tools unit tests (animator, level-editor, map-editor, ops, vfx-editor)
+      # 2026-08-20 (ADR-070): was `npm test`; now the coverage variant, because tools/* joined the
+      # root coverage report and the coverage-report job below needs these artifacts. Same test
+      # files and assertions either way — these suites are pure-logic and take ~1s each, so the v8
+      # instrumentation tax that forced client's sim-suite split is not a factor here.
+      - name: tools unit tests + coverage (animator, level-editor, map-editor, ops, vfx-editor)
         working-directory: tools
         run: |
           for d in animator level-editor map-editor ops vfx-editor; do
-            (cd "$d" && npm test)
+            (cd "$d" && npm run test:coverage)
           done
+      # All five coverage dirs share the `tools/` ancestor, so this uploads one artifact rooted
+      # there and coverage-report downloads it straight back into `tools/` — same rooting trick the
+      # server "rest" shard uses for its 11 workspace dirs.
+      - name: upload coverage artifact (tools)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tools-coverage
+          path: tools/*/coverage
+          if-no-files-found: ignore
+          retention-days: 1
       - name: tools build (animator/level-editor/vfx-editor/desktop-shell)
         working-directory: tools
         run: |
@@ -389,6 +431,13 @@ jobs:
       - name: tools file length check
         working-directory: tools
         run: node scripts/checkFileLength.mjs
+      # 2026-08-20: added after animator turned out to be carrying 1424 lines of pre-refactor
+      # modules that nothing imported. That graph was invisible to BOTH gates above by
+      # construction — every file under 500 lines, and all of them outside every coverage
+      # `include` — so nothing here would ever have reported it. See claudedocs/tools-testing.md.
+      - name: tools reachability check (no unreachable src files)
+        working-directory: tools
+        run: node scripts/checkUnreachableModules.mjs
 
   # Reads every server-test shard's + client-test's uploaded coverage/ artifacts (each shard only
   # produced coverage for the workspaces it ran) back onto one filesystem, then prints the same
@@ -399,7 +448,7 @@ jobs:
   # gate below is only a release gate if it can also block the PR that would breach it.
   coverage-report:
     name: test coverage report
-    needs: [server-test, client-test]
+    needs: [server-test, client-test, tools-test]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -432,6 +481,12 @@ jobs:
         with:
           name: client-coverage
           path: client/coverage
+      # Rooted at tools/ so each `<tool>/coverage/` subpath is reconstructed (see the upload step).
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: tools-coverage
+          path: tools
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -450,9 +505,14 @@ jobs:
       # the run is already red and no deploy can fire, so the gate has nothing left to protect: it
       # reports the partial table and exits 0. It still fails closed on a MISSING package when all
       # test jobs passed — that case really is "coverage silently stopped being produced".
+      # tools-test joined TESTS_OK (2026-08-20, ADR-070): the tools/* rows are exempt from the 90%
+      # PERCENTAGE but not from having to produce coverage at all, so a failed tools-test job must
+      # suppress the "no coverage/ output for tools/ops" failure the same way it already does for a
+      # failed server shard — otherwise one red tools test reports itself twice, with the louder,
+      # wronger message winning (the exact cascade the TESTS_OK comment above was added to break).
       - name: enforce >=90% line coverage per package
         env:
-          TESTS_OK: ${{ needs.server-test.result == 'success' && needs.client-test.result == 'success' }}
+          TESTS_OK: ${{ needs.server-test.result == 'success' && needs.client-test.result == 'success' && needs.tools-test.result == 'success' }}
         run: node scripts/checkCoverageThreshold.mjs
 
   # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),

@@ -68,7 +68,10 @@ export class Skeleton {
    * the export bake uses the identical measure, so the two stay coupled.
    *
    * Keep in sync with the animator's Skeleton.computeNaturalHeight.
-   * Returns 0 when there are no clips (signals "unknown" → fall back to flat scale).
+   * The rest pose is ALWAYS scanned, so an empty clip list yields the rest-pose extent rather
+   * than 0; the `: 0` fallback ("unknown" → fall back to flat scale) only fires for a degenerate
+   * rig with no vertical extent, which the fixed 11-bone definition cannot produce. (Both copies
+   * of this comment claimed "returns 0 when there are no clips" until 2026-08-20.)
    */
   static computeNaturalHeight(
     clips: Iterable<AnimationClip>,

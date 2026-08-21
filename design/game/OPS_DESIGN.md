@@ -67,7 +67,7 @@ interface AdminAccountDoc {
 | `analytics.view` 数据分析 | ✓ | ✓ | – | ✓ |
 | `player.lookup` 查玩家档案 | ✓ | ✓ | ✓ | – |
 | `player.password_reset` 重置玩家密码（无联系方式时的支持工具，仅超管） | ✓ | – | – | – |
-| `anticheat.view` 查反作弊审核队列（S9-7） | ✓ | ✓ | – | – |
+| `anticheat.view` 查反作弊审核队列（S9-7）+ C3 hash 不一致对局表 + C4 可疑 PvE 账号表 | ✓ | ✓ | – | – |
 | `anticheat.action` 手动封禁/解封账号（S4-4，玩家查询详情页内联按钮） | ✓ | ✓ | – | – |
 | `comp.initiate.single` 发起个人补偿 | ✓ | ✓ | ✓ | – |
 | `comp.initiate.global` 发起全服补偿 | ✓ | ✓ | – | – |
@@ -82,7 +82,9 @@ interface AdminAccountDoc {
 | `reports.action` 裁定举报（dismiss/uphold，联动信誉分处罚） | ✓ | ✓ | – | – |
 | `appeals.view` 查申诉队列 | ✓ | ✓ | ✓ | ✓ |
 | `appeals.action` 裁定申诉（approve/deny，撤销 mute/ban） | ✓ | ✓ | – | – |
-| `feedback.view` 查玩家反馈（只读，无裁定；`SERVER_API.md §2.13`） | ✓ | ✓ | ✓ | ✓ |
+| `feedback.view` 查玩家反馈（无裁定；`SERVER_API.md §2.13`） | ✓ | ✓ | ✓ | ✓ |
+| `feedback.action` 标已读 / 写 ops 备注（`SERVER_API.md §2.13.1`，仍非裁定） | ✓ | ✓ | – | – |
+| `promo.manage` 兑换码发码 / 查码（B-PROMO，见 `META_TASKS.md`） | ✓ | ✓ | – | – |
 | `moderation.wordlist.manage` 管理敏感词库外部覆盖表 | ✓ | ✓ | – | – |
 | `audit.view.all` 看全部审计 | ✓ | – | – | – |
 | `audit.view.self` 看自己操作（登录即有） | ✓ | ✓ | ✓ | ✓ |
@@ -180,7 +182,8 @@ admin 执行器（approved 后，可自动或手动触发）
 | `POST /internal/anticheat/reviews/{id}/resolve` | meta | 人工裁定一条审核记录（`anticheat.action`）：只改 `status`/`resolution`/`resolvedBy`，本身不封号——`resolution:'banned'` 时 admin 侧另调 `/internal/accounts/{id}/ban`，全库只有一条封号执行路径（2026-07-18，取代 PvE reject 三振自动封号） | ✅ |
 | `POST /internal/mail/system/send` | **meta**（SOCIAL_DESIGN S6-3） | 执行补偿 = 创建系统邮件（单人/批量，幂等键） | ✅ 已联调 |
 | `POST /internal/mail/system/preview` | meta | 全服补偿 dry-run 估算命中人数 | ✅ 已联调 |
-| `GET /internal/feedback?limit=` | meta（`SERVER_API.md §2.13`） | 玩家反馈列表（只读，`feedback.view`），按 `createdAt` 倒序 | ✅ |
+| `GET /internal/feedback?limit=` | meta（`SERVER_API.md §2.13`） | 玩家反馈列表（`feedback.view`），按 `createdAt` 倒序 | ✅ |
+| `POST /internal/feedback/{id}/review` | meta（`SERVER_API.md §2.13.1`） | 标已读 / 写 ops 备注（`feedback.action`）：`readAt` 首次打戳后不再覆盖，`readBy`/`note` last-write-wins；仍无裁定语义 | ✅ |
 
 > 邮件相关端点由 `SOCIAL_DESIGN` 的 S6-3 落地；admin 侧先按契约形状对接，**2026-06-16 跨进程实跑联调通过**（`server/admin/test/comp-mail.e2e.test.ts`：真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen` 的 meta 进程，跑通 单人补偿全链/`dispatchKey` 幂等/全服 fan-out+preview/player.lookup/错 key→401→工单 failed/收件人不存在→failed）。
 
@@ -212,6 +215,10 @@ GET  /admin/anticheat/reviews?accountId=&status=&limit=  → { reviews: [...] } 
 POST /admin/anticheat/reviews/{id}/resolve  { accountId, resolution }  → { ok }        // anticheat.action：resolution='dismissed'|'banned'；banned 内部走上面同一条 ban 端点，全库仅此一条封号执行路径
 > **金币异常（2026-07-26）**：`kind='coin_anomaly'` 由 metaserver 每 24h 一次的离线扫描产生（`coinAnomalyAudit.ts`），向 commercial 查询「昨天」这个 UTC 自然日里，哪些账号从非充值来源（`ledger.reason !== 'recharge'`）净入账超过 `COIN_ANOMALY_DAILY_THRESHOLD`（3000）金币，逐个写入本队列（`_id=coin:{accountId}:{dayKey}`，天然幂等，重复扫描不会重复入队）。不自动封号，`详情`列展示 `dayKey`/`nonRechargeGain`/`threshold`，人工判定后走上面同一条 dismiss/ban 流程。
 
+# 反作弊两张只读信号表（C3/C4，anticheat.view）——无裁定半边，处置一律走上面那条手动 ban
+GET  /admin/mismatches                               → { mismatches: [...] }           // 24h 内 `matches.hashMismatch=true`（双端 hash 分歧且裁判未能裁决）的对局，meta 侧封顶 200 行；`players` 原样带归档时的 displayName/publicId 快照
+GET  /admin/suspicious-pve                           → { accounts: [...] }             // `accounts.flags.pveWarnings > 0` 的账号，按次数倒序封顶 200 行；该计数自 2026-07-18 起纯属审核信号（不再触发封号）
+
 # 补偿工单
 POST /admin/comp/tickets       { scope, target, mail, reason }  → { ticketId }        // comp.initiate.*
 GET  /admin/comp/tickets?status=                     → { tickets: [...] }             // comp.view
@@ -239,8 +246,21 @@ PUT  /admin/config/slg-shop/{id}  { cost?, effect? } → { item }               
 # 内部端点（X-Internal-Key，非 admin JWT）：worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 SLG_SHOP_ITEMS 合并
 GET  /admin/internal/slg-shop-prices                 → { items: [...] }                // 原样返回，worldsvc 30s 轮询 + 本地 resolveSlgShopItem 合并
 
-# 玩家反馈（feedback.view，只读，无裁定/无状态机）
-GET  /admin/feedback?limit=                          → { feedback: [...] }             // 代理 meta GET /internal/feedback
+# 敏感词覆盖表（moderation.wordlist.manage；CONTENT_MODERATION_DESIGN.md §3.2）——DB 覆盖**叠加**在代码内置词表（REGION_WORDLISTS）之上，只增不减
+GET    /admin/moderation/wordlists                   → { regions: [{ region, builtin, overlay, updatedAt?, updatedBy? }] }  // 四个 region 各自的内置底线 + DB 覆盖
+POST   /admin/moderation/wordlists/{region}/words  { word }  → { doc }                 // 加词（幂等，落 auditLog moderation.wordlist.update）
+DELETE /admin/moderation/wordlists/{region}/words/{word}     → { doc }                 // 删词（只删覆盖表条目，内置词表删不掉）
+# 内部端点（X-Internal-Key，非 admin JWT）：meta/social/worldsvc 不连 admin 库，轮询此端点拉原始覆盖记录，本地与 REGION_WORDLISTS 合并
+GET    /admin/internal/moderation-wordlists          → { items: [...] }                // 原样返回，WordlistCache 60s 轮询 + 本地 effectiveWordlist 叠加
+
+# 兑换码（B-PROMO；promo.manage）——发码入口，玩家侧兑换走 metaserver `POST /promo/redeem`
+GET  /admin/promo/codes                              → { codes: [...] }                // 列全部码；`_id`→`code` 在 admin client 侧改名（commercial 原样返回文档）
+POST /admin/promo/codes  { code, coins, expiresAt?, totalLimit?, note? }
+                                                     → { code }                        // 码 + coins 必填（否则 400），转发 meta→commercial；重复码 409；落审计 promo.create
+
+# 玩家反馈（无裁定/无状态机，只有已读+备注痕迹；SERVER_API.md §2.13）
+GET  /admin/feedback?limit=                          → { feedback: [...] }             // feedback.view，代理 meta GET /internal/feedback
+POST /admin/feedback/{id}/review     { note? }       → { ok: true }                    // feedback.action，标已读 / 写备注；note 省略=只标已读（保留原备注），note:''=清空
 
 # 审计
 GET  /admin/audit?actor=&from=&to=                   → { entries: [...] }              // all=超管 / self=本人
@@ -288,6 +308,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 ## 7. 客户端/前端（`tools/ops`）
 
 - 纯前端（TS + 轻量 DOM，参考 level-editor 的"纯 Canvas/DOM 不依赖 Pixi"路线；表单密集，无需 Pixi），webpack dev server 独立端口（如 9093）。
+- **分层（2026-08-20，ADR-070 Phase 4e）**：`src/logic/<page>.ts` 存该页的纯决策、`src/pages/<page>.ts` 只做 DOM 装配、`src/api/` 是 REST 客户端。三层各有不同的纯度规矩，由 `test/pureLayerBoundary.test.ts` 断言；`logic/` + `api/` 受 90% 覆盖率门禁（实测 100%）。详见 §7 末尾的模块清单与 [`claudedocs/tools-testing.md`](../../claudedocs/tools-testing.md)。
 - 登录页 → 主框架按 `capabilities` 渲染导航：监控看板 / 数据分析 / 玩家查询 / 补偿工单 / 审计 / 账号管理。
 - 调 admin 后端 REST（fetch + Bearer admin token）。
 - 不持任何密钥、不连库、不直连业务服务——一切经 admin 后端。
@@ -313,7 +334,7 @@ POST   /admin/accounts/{id}/reset-password { password }
 
 - **后端 `server/admin`（第七 workspace，CJS）**：`config.ts`（env）/ `db.ts`（独立库 `notebook_wars_admin`：adminAccounts/compTickets/auditLog/metricSnapshots，snapshot TTL 锚 BSON `at:Date`）/ `service.ts`（`AdminService` + `AdminError`，业务不变量：发起≠审批、`requiredApproveCapability(scope,tier)`、工单状态机、审计落库）/ `httpApi.ts`（node:http + admin JWT 鉴权 + 每端点 RBAC 静态能力门 + CORS）/ `clients.ts`（`HttpStatsClient` 合并 gateway+matchsvc、`HttpPlayerClient` 调 meta `/internal/player`、`HttpMailDispatcher` 按系统邮件端点契约形状对接）/ `seed.ts`（种子超管幂等）/ `index.ts`（引导 + 采样定时器）。
 - **业务侧新增端点**：gateway `GET /internal/stats`（`Gateway.stats()` 在线数）；matchsvc `GET /internal/stats`（`Matchsvc.stats()` + `GameRegistry.stats()` 队列/房间/game）；meta `GET /internal/player?publicId=`（`resolveByPublicId` 反查档案摘要，player.lookup）。
-- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：`api.ts`（Bearer + localStorage 续登）/ `app.ts`（登录 + 按 capabilities 渲染导航）/ `pages.ts`（**barrel 再导出**，各页渲染器拆入 `pages/`：`shared.ts` 公共件 Ctx/showErr/showOk/sparkline/ms↔datetime + `monitor` / `analytics` / `player` / `suspicions` 反作弊 / `tickets` 工单发起+审批 / `audit` / `accounts` / `ladder` / `flags` / `events` / `slgSeason` 赛季运维 / `auctionAudit` 拍卖审计 / `gachaPools` 自定义卡池）。不持密钥、不连库、不直连业务服务。
+- **前端 `tools/ops`（纯 TS + DOM，无框架，webpack 9093）**：三层，边界由 `tools/ops/test/pureLayerBoundary.test.ts` 断言（ADR-070 Phase 4e，2026-08-20）。**`src/api/`** = REST 客户端（`index.ts` 端点面 + `transport.ts` base URL/token/`req`/`ApiError`；只许碰 `fetch`/`localStorage`/`location`，不碰 DOM）。**`src/logic/`** = 纯决策层，一页一个模块（`shared.ts` 公共件 + `nav.ts` 导航表与能力过滤 + `monitor`/`analytics`/`player`/`suspicions`/`reports`/`appeals`/`feedback`/`tickets`/`audit`/`paddleEvents`/`slgSeason`/`auctionAudit`/`ladder`/`pvpBalance`/`flags`/`events`/`gachaPools`/`promo`/`slgShop`/`accounts`/`moderationWordlist`）：每页的查询构造、表单校验、pivot/分享比例、**权限判定**（哪个工单给哪些按钮、哪个 SLG 世界给哪些生命周期动作）、派生文案；一个 global 都不碰，所以整层可单测。**`src/pages/` + `src/app.ts` + `src/dom.ts`** = DOM 装配（`h()` 建表、绑事件、`confirm`/`prompt`），`pages.ts`/`types.ts` 仍是 barrel（拍卖审计那组类型在 `types/auction.ts`）。依赖方向单向 `logic/ ← pages/ → api/`。不持密钥、不连库、不直连业务服务。
 - **部署接线**：`server/package.json` workspaces + `dev:admin`；`Dockerfile` 七包；`docker-compose.prod.yml` admin 服务（caddy 不路由）；`ecosystem.config.cjs` `nw-admin`；`.env.example` + `dev-up.ps1`（dev 种子 root/rootpass）。
 - **验证**：七包 `tsc -b` 全绿 + admin 15 e2e（登录/RBAC/发起≠审批/超额+全服走超管/**单超管自批例外+留痕**/**有第二 super 时恢复四眼**/**禁用的第二审批人不算数**/dry-run/幂等执行+重试/审计可见性/player.lookup/采样 trend/账号管理）+ gateway 10 / matchsvc 17 / meta 74 不破 + `tools/ops` tsc + webpack 构建。
 - **补偿 ↔ 邮件跨进程联调（2026-06-16）**：S6-3 邮件后端就绪，补全 `server/admin/test/comp-mail.e2e.test.ts`——admin 真实 `HttpMailDispatcher`/`HttpPlayerClient` 经 `fetch` 打真实 `app.listen({port:0})` 的 meta 进程（非 fastify inject），6 用例跑通：①单人补偿全链（发起→审批→真 HTTP 投递→玩家收件箱→领取附件→commercial 入账+钱包镜像）②`dispatchKey` 幂等（同 key 重发仅一封，meta `$setOnInsert`）③全服 fan-out + `preview` 命中人数 ④`player.lookup` 经真 `/internal/player` ⑤鉴权边界（错 `X-Internal-Key`→401→工单 failed、玩家无信）⑥收件人不存在→工单 failed。admin e2e 12→18，七包 `tsc -b` 全绿（meta dist 须先 `tsc -b`）。
@@ -340,6 +361,63 @@ admin 后端（G7）已全部就绪；补完 `tools/ops` 对应的两个前端�
 - **验证**：`tools/ops` tsc --noEmit 零错误。
 
 **补记（2026-08-10，生产事故修复，见 `SLG_DESIGN_LOG.md §17.15`）**：`pageSLGSeason` 加「Allocate next season」卡片（Season + Capacity 两个输入框），放在「Open a new world」表单**上方**，调用新增的 `api.slgAllocateNextSeason(season, capacity?)` → `POST /admin/slg/season/allocate`。这是唯一会真正推进赛季号的操作（内部走 `allocateNextSeason` 雪花分片分配 + 逐 shard 克隆地图模板）；「Open a new world」表单保留作低级 escape hatch（重开已关闭世界 / 单独补一个分片），UI 文案标注优先用前者——此前运营只有后者可用，在已存在的 `worldId` 上重填新 `season` 会被 `$setOnInsert` 静默丢弃，返回成功但赛季号从未真正推进。`types.ts` 新增 `SlgAllocateResult`。
+
+### 玩家反馈页 + 已读/备注痕迹（2026-08-20）
+
+玩家反馈链路（`SERVER_API.md §2.13`）此前**只有后端**：`POST /feedback` 提交、metaserver `feedback` 集合、`GET /internal/feedback`、admin `GET /admin/feedback`、能力点 `feedback.view` 与全套 e2e 都已就绪，唯独**没人写过消费它的 ops 页面**——契约齐全但运营在后台看不到任何反馈。本次补完前端，并顺带补上原设计缺失的追踪能力（原设计明确"无状态机"，代价是反馈累积后无法区分哪几条看过了）。
+
+- **`pageFeedback`（`tools/ops/src/pages/feedback.ts`，导航排在 Player Appeals 之后）**：Unread / All / Read 过滤 + `N unread / M total` 计数；表格列 Time / Player / Platform / Feedback / Status / Ops note。后端只有一条扁平的 `createdAt` 倒序列表、没有 read 过滤，所以拉一页（limit 200）后在**前端切分**，计数始终按整页算而不是按当前视图算——切分逻辑提取为纯函数 `partitionFeedback` 单测覆盖（`tools/ops/test/feedback.test.ts` 7 例），`pageFeedback` 本身建 DOM 不测，与 `appeals.test.ts` 同一分工。
+- **triage 语义（有意最轻）**：仍**不是**状态机，没有"处理中/已处理"、没有裁定。`readAt` 首次 review 打戳后永不覆盖，**未读 ⟺ `!readAt`**；写备注同时打 `readAt`（一次动作），故不存在"有备注但未读"的行。「Save note」提交文本框内容，「Mark read」不带 note 提交、**保留已有备注**（避免误删）；备注清空须显式提交空串。已读行不再显示「Mark read」按钮，改显示 `readAt` + `readBy`。
+- **新能力点 `feedback.action`（super/ops）**：查看仍是全角色的 `feedback.view`，写入收窄到 super/ops——support/viewer 保持只读。每次写入落 `feedback.review` 审计，summary 区分 `noted` / `marked read`。
+- **落点**：`@nw/shared` `FeedbackDoc` 增 `readAt?`/`readBy?`/`note?` + `FEEDBACK_NOTE_MAX=500` + `AdminCapability` 增 `feedback.action`；meta `POST /internal/feedback/{id}/review`；admin `FeedbackClient.reviewFeedback` / `FeedbackService.reviewFeedback` / `POST /admin/feedback/{id}/review`；ops `api.feedback()` / `api.reviewFeedback()` + `FeedbackView`。
+- **验证**：meta feedback e2e 10→18 例（鉴权/缺 readBy/404/首次打戳/写备注即已读/`readAt` 不被覆盖而 `readBy`·`note` last-write-wins/省略 note 不清备注·空串清备注/超长截断）、admin feedback e2e 5→10 例、admin httpRoutes e2e 补 review 路由 + support 403、ops 前端 7 例；admin 全量 212 例、`@nw/shared` 1033 例、`tools/ops` 58 例全绿；起 meta+admin+ops 真实进程，经真 `POST /feedback` 灌入中英文反馈，在页面上完成"写备注→计数 3→2、行移出 Unread"与"标已读→计数 2→1"，回查 Mongo 确认 `readAt`/`readBy`/`note` 与两条审计 summary 均正确、中文原文无乱码。
+
+### 敏感词覆盖表页（2026-08-20）
+
+与同日的「玩家反馈页」是同一类缺口的第二例：敏感词库外部化（`CONTENT_MODERATION_DESIGN.md` §3.2，2026-07-29 落地）后端**全套齐全**——`moderationWordlists` 集合、`GET /admin/moderation/wordlists`、`POST/DELETE .../words`、内部轮询源 `GET /admin/internal/moderation-wordlists`、能力点 `moderation.wordlist.manage`、`WordlistCache` 消费侧——唯独 `tools/ops` 里**没有任何代码引用过它们**（`api.ts` 无方法、`types.ts` 无类型、无页面、无导航项）。也就是说 §3.2 承诺的"词库外部化为 ops 可配置项"实际只能靠手写 curl 或直接改库完成，设计里写的"热更新不重启"这一半是真的，"ops 可配置"这一半从来没有入口。本次补完前端。
+
+- **`pageModerationWordlist`（`tools/ops/src/pages/moderationWordlist.ts`，导航项 `Word Lists`，排在 Feature Flags 之后——同属"运营可热改的配置面"那一组）**：四个 region 各一张卡片（`global` 排最前并挂 `inherited by all regions` 标签），每张卡片显示内置底线（只读，一眼看清删不掉的部分）、覆盖表条目（每条一个 `×` 删除按钮）、加词输入框，以及该 region 当前**实际生效**的词数拆分（内置 N + 覆盖 M）。加词/删词后整页重取，保证"继承/冗余"提示始终反映最新状态。
+- **本页真正的业务价值：把"这个词到底加了什么"算出来给运营看**。匹配是**大小写无关的子串匹配**、且生效词表是**并集**（`effectiveWordlist` = global 内置 + region 内置 + global 覆盖 + region 覆盖），因此有三类看着合理、实际什么都没拦住的加词：①词已在内置底线里；②词已由 `global` 覆盖表继承下来（加到 `cn` 上纯属重复）；③词只是**延长**了一个已生效的词（已拦 `scam` 时再加 `scammer`——任何含 `scammer` 的文本本来就含 `scam`）。这三类统一由纯函数 `coveredBy` 判定并在输入时**即时**提示（"Blocks nothing new: ..."），已入库的冗余条目也挂 `no-op` 徽标 + 说明。**只提示不拦截**：归一化第二遍匹配（CM2）的行为与原文子串匹配不完全一致，是否保留某条明确条目是运营的判断，不是本页的。真正拦下来的只有服务端也会 400 的两种（空词、超 `WORD_MAX`=64）和"本 region 覆盖表里已有该词"（按钮直接置灰）。
+- **纯逻辑抽出单测**：`activeWords`（并集 + 小写化 + 去重，去重保留**最靠前**的来源，使"同时躺在内置和覆盖里的词"归属内置而非覆盖）/ `coveredBy`（跳过被审计条目自身，否则永远命中自己）/ `checkWord`（`empty` / `too_long` / `duplicate` / `redundant` / `ok` 五态）/ `checkMessage`（哪几态**拦**、哪态只**提示**——这条策略本身被钉住）/ `describeCover`（内置 vs 覆盖 × 精确命中 vs 子串命中 四种措辞）五个函数覆盖 `tools/ops/test/moderationWordlist.test.ts` 28 例，含两类容易写反的方向性用例："更宽的前缀（`sca` vs 已生效的 `scam`）不算冗余"、以及"包含关系的措辞方向（覆盖方是**更短**那个）"；同 region 覆盖表内部的兄弟条目互相覆盖（`代练` 盖住 `代练群`，即行内 `no-op` 徽标指向的那种）也单独覆盖——跳过逻辑只能跳过被审计条目**自身**，跳过整个本 region 覆盖表就会漏报。上述用例做过变异验证（把跳过条件放宽成"跳过整张本 region 覆盖表"、把包含措辞方向写反，各自只让对应的那一条用例转红）；`pageModerationWordlist` 本身建 DOM 不测，与 `feedback.ts`/`flags.ts` 同一分工。
+- **落点**：`types.ts` 增 `ChatRegion`/`ModerationWordlistView`/`WordlistOverrideDoc` 三个前端本地镜像类型 + `AdminCapability` 补上此前遗漏的 `moderation.wordlist.manage`（后端 `server/shared/src/admin.ts` 里一直有，前端联合类型里没有）；`api.ts` 增 `moderationWordlists()`/`addModerationWord()`/`removeModerationWord()`。**服务端零改动**——后端本来就是完整的。
+- **验证**：`tools/ops` `tsc --noEmit`（src+test）全绿 + 前端单测 58→77 例全绿；起 worktree 自己的 ops dev server 打真实 admin 进程（Docker 栈 `funny-admin-1` + `nw-local-mongo`）走查：加中文词 `刷钻代充` 到 `cn`（生效数 10→11）、加 `phish` 到 `global` 后 cn/de/en 三个 region 的生效数**同时** +1 而各自覆盖数仍为 0（继承正确）、`Scammer` 对 `en` 与 `phishing-site` 对 `de` 均正确报"blocks nothing new"并指出覆盖来源（大小写归一化生效）、重复词按钮置灰报红、删词后计数回落且 `de` 仍保留继承来的那 1 个；回查 Mongo 确认 `moderationWordlists` 文档与 6 条 `moderation.wordlist.update` 审计 summary 均正确、中文无乱码，走查数据事后清理干净。
+
+### 兑换码发码页（B-PROMO 补顶层，2026-08-20）
+
+与同日另两节（玩家反馈页、敏感词覆盖表页）**同一类缺口、但成因相反**——那两例都是"后端齐全、没人写前端"；兑换码这条链**当初是完整的**（`META_TASKS.md` B-PROMO，2026-06-29 落地，admin 的 `GET/POST /admin/promo/codes` 就在其中），却在 2026-07-28 的死内部端点清理（`COMM_AUDIT_INTERNAL_2026-07-28` batch G，commit `6942481a`）里被删掉了——理由写得很明白：「no ops-frontend page calls any of them」，同时保留了下面的 service/client 层「in case they're wired up later」。于是形成一个自锁的环：路由因为没有前端而被删，前端因为没有路由而没人写。
+
+后果不是"功能缺失"而是**半条链活着**：玩家侧 `POST /promo/redeem` 和商店充值 tab 的兑换码行一直在线（`LOBBY_IA_REDESIGN_LOG.md`），meta 的 `/admin/promo/codes` 与 commercial 的 `/internal/promo/codes` 也从没删过——**只有发码那一端不可达**，运营想发一个码只能拿 internal key 手工 curl meta。本次把顶层两段补回来并配上页面，让这条环闭合。
+
+- **admin 路由**：`GET`/`POST /admin/promo/codes` 按原样恢复（`requireCap(actor, 'promo.manage')`、码+coins 缺失或非正数→400、`svc.createPromoCode` 落 `promo.create` 审计），落在 `httpApi/commerceRoutes.ts` 顶部——正是 2026-08-10 拆分前它在 `httpApi.ts` 里的物理位置（紧邻 Paddle 事件日志之前）。
+- **`pagePromo`（`tools/ops/src/pages/promo.ts`，导航排在 Gacha Pools 之后）**：上方发码表单（Code / Coins / Total redemptions / Expiry 开关 + 时间 / Ops note），下方列表（Code / Coins / Redeemed / Status / Expires / Created / Ops note）。**只发不改不删**：码以自身大写文本为 `_id`、且可能已被玩家兑换过，提前退役只能靠 expiry 或总量上限，所以没有 edit/delete 按钮，代价是表单是唯一会出错的地方——校验因此放在前端而不是每个笔误换一次往返。
+- **三条规则与 commercial 的 `PromoService` 逐条对齐**（页面读到的状态必须等于玩家兑换时真实发生的事）：①码存储前 `trim().toUpperCase()`，表单实时回显「stored as XXX」，免得运营输了小写、看到大写、再怀疑玩家该输哪个；②`promoRedeem` 的校验顺序是**先过期、后超量**，所以既过期又超量的码标 `Expired` 而不是 `Exhausted`（标错会让运营查错方向）；③`$inc redeemed` 是 best-effort（并发下允许超 1 个），故 `redeemed > totalLimit` 也必须读作 Exhausted。纯函数 `normalizePromoCode` / `validatePromoDraft` / `promoStatus` / `redemptionText` 单测覆盖（`tools/ops/test/promo.test.ts` 22 例），`pagePromo` 本身建 DOM 不测。
+- **顺手修掉一个被假 mock 掩盖的真 bug**：admin 的 `PromoCodeView` 声明 `code`，但 commercial 的 `listPromoCodes` 是把 `promoCodes` 文档**原样**返回的（`_id` 就是码），meta 只做转发——真实响应里根本没有 `code` 字段。`clients-adminManage.test.ts` 里那条 list 用例喂的 mock 恰好是接口**声明**的形状（`{ code }`），于是它跟被测代码的类型互相印证、什么都没证明。现在改名落在 `HttpPromoClient.list()`（`_id → code`；commercial 的线上形状被它自己的路由用例钉住，不动），mock 换成真实文档形状并补一条"绝不把 `_id` 漏给下游"的回归用例。若非跑真实进程验证，页面的 Code 一列会是空的而测试全绿。
+- **验证**：admin httpRoutes e2e 50→56 例（create→list 往返/大写归一化/`promo.create` 审计 actor+summary/重复码 409/三种 400/support 403 且未落库/ops 角色可发码），其中促成把静态 `stubPromo` 换成有状态的 `FakePromo`；admin `clients-adminManage` 13→15 例；ops 前端 86→108 例（同日两节各自 +22/+19 的基础上）。admin 全量 219 例、`tools/ops` 108 例全绿，`tsc -b admin` + ops `tsc --noEmit` 干净。起**真实** commercial+meta+admin+ops 四进程（独立库 `nw_promo_verify`），在页面上完成：小写 `autumnfest` 发码 → 列表出现 `AUTUMNFEST`（带 expiry/上限/备注）→ 重复提交得到译好的「already exists (codes are unique, case-insensitive)」而非裸 `BAD_REQUEST` → 四种状态（Active / Exhausted 1⁄1 / Expired / 无限 ∞）同屏可见 → 用页面发的 `WINTERGIFT` 真跑一次玩家兑换（+100 coins，同玩家二次 `PROMO_ALREADY_USED`），回到页面 Redeemed 变 `1 / ∞`；support 账号 `/admin/me` 无 `promo.manage`、两条路由均 403；`GET /admin/audit` 六条 `promo.create` 齐全。（本机 Browser pane 不合成画面、截图接口超时，故以 `read_page`/`get_page_text` 逐项核对文本与结构。）
+- **补测（2026-08-20 同日）**：上面那轮验证只证明了「配置正确时能用」，覆盖率一查发现 `service/promo.ts` 与 `clients/promo.ts` 都是**行 100% 但分支 66%**——两个 `!promo.available` 分支（`NW_META_BASE_URL` 没配时运营看到什么）从未执行过，因为 httpRoutes e2e 的 promo fake 永远 `available: true`；meta 侧同类路由是有「commercial unavailable → 503」用例的，admin 侧偏偏没有。补 `server/admin/test/promo.test.ts`（7 例，不需要 Mongo：unavailable 路径在碰集合之前就返回/抛出，`audit()` 只用到 `auditLog.insertOne` + `now()`，沿用 `core-identity.test.ts` 的 stub cast 先例），钉住这里真正的**读写不对称**设计：list 静默降级成 `[]`（后台其余部分照样渲染），create 则用自己的 `503 promo_unavailable` 大声失败（而不是客户端那个笼统的 502）；以及**顺序**——被拒的 create 必须既不落审计也不碰客户端，因为「码从未生成却留了一条 `promo.create`」比失败本身更糟（那条审计是这个码存在过的唯一记录）；还有审计的 target 必须是 commercial 返回的规范化码而非运营输入的原文，否则审计里写着一个库里不存在的码。三处变异各只让对应的一例转红（删掉 list 守卫 / 审计 `args.code` / 把 503 守卫挪到客户端调用之后）。`clients-adminManage` 15→20 例，补上 `?? []`（`_id→code` map 跑在它上面）、无 status 的网络失败、200 但没带 code、以及 `available` getter 本身（正是 service 降级分支读的那个标志）。两个 promo 文件现在行/分支/函数全 100%，admin 全量 219→235 例、包行覆盖 93.53%→93.74%。（`tools/ops` 不在覆盖率闸门的包列表里——只有 `client` + 13 个 server workspace + engine——所以 `pagePromo` 那段建 DOM 的代码不测不会碰闸门，与所有同级页面同一约定。）
+
+### 反作弊两张信号表（C3/C4 补顶层，2026-08-20）
+
+同日兑换码那节（上一节）修的是 batch G 的**第一个**误判，这节修剩下的两个——同一次提交（`6942481a`）里被同一条理由（「no ops-frontend page calls any of them」）删掉的 `GET /admin/mismatches` 与 `GET /admin/suspicious-pve`，同样保留了 service/client 层「in case they're wired up later」。三个误判成因完全一致，故不再重复推演自锁环的部分，只记双向核查的结论和这次的实现取舍。
+
+**双向核查（batch G 当初跳过的那一步）**——判死一个端点必须同时问「数据还在产吗」和「这个特性还算交付了吗」，只看 admin 层的调用方是不够的：
+
+| | 数据生产端 | 文档口径 | 有无替代面 |
+|---|---|---|---|
+| C3 `/admin/mismatches` | **在产**。`metaserver/src/internal/matchReport/reportRoute.ts` 每局都算 `hashMismatch = !hash_ok && !cheat`，命中就写 `matches.hashMismatch=true`；这类争议局**刻意不打 `expireAt`**（其余对局 7 天 TTL），注释写明是「for ops review + anti-cheat audit trail」 | `META_TASKS.md` S4-2 已 `[x]`，验收写「mismatch 落 `matches.hashMismatch` + admin 告警」；归档 PARALLEL_DEV_PLAN C3 点名 `GET /admin/mismatches` 就是那个「告警」面 | **无**。反作弊审核队列的 `kind` 只有 `pvp_overclaim`/`pve_reject`/`coin_anomaly`，从来不含 mismatch；全库没有第二个地方列争议对局 |
+| C4 `/admin/suspicious-pve` | **在产**。`metaserver/src/service/pve/verify.ts` 每次 rejected 都 `$inc flags.pveWarnings` | `ACCOUNT_DESIGN.md` §C4+S4-4「2026-06-29 完整落地」清单里就列着 `GET /admin/suspicious-pve`（前端入口） | **部分重叠但不等价**，见下 |
+
+C4 这条值得单独说清楚，因为它是三个误判里唯一有理由犹豫的：`pve_reject` 审核队列确实可见，且每条记录都带 `rejectCountAfter`。但队列是**逐事件**的、默认只筛 `status='open'`，一条记录被裁定后就从视图里消失——**跨已裁定记录的累犯**在全库任何地方都看不到了，而这正是 `flags.pveWarnings` 这个累计计数存在的意义：自 2026-07-18 取消三振自动封号后它「纯属展示/审核信号」（`accountDocs.ts` 注释原话），也就是说**这张表是它唯一的读者**——路由一删，meta 每次递增的这个数字全库无人可读。反过来看，走 (b) 删净的收益也很薄：`SuspiciousPveClient` 本身必须留（`banAccount`/`unbanAccount` 是全库唯一一条封号执行路径，玩家查询页、`resolveAntiCheatReview`、SLG 交易审计工单三处都在用），`anticheat.view` 能力点也必须留（审核队列在用），真正能删的只有 `listSuspiciousPve` 一个方法。
+
+- **admin 路由**：两条按原样恢复（`requireCap(actor, 'anticheat.view')`、响应体分别是 `{ mismatches }` / `{ accounts }`），落在 `httpApi/trustSafetyRoutes.ts` 而**不是**拆分前的物理位置（`monitorRoutes` 对应的那段 if-chain）——同一个能力门、同一个运营人一次看三张表，按 2026-08-10 拆分时定的「按域分组，物理顺序无意义（路径集合不重叠）」口径归到这里。
+- **`MismatchRow.players` 补 `displayName?`/`publicId?`**：meta 是把整个 `players` 数组投影出来的，`MatchDoc.players` 里本来就有归档时的身份快照——原类型只声明 `{side, accountId}`，属于「类型比线上响应窄」，页面照此渲染就只能显示裸 accountId，而可读的姓名/公开 id 就在响应里躺着没人用。这是兑换码那节 `PromoCodeView.code` 同一类的类型-线上不符，只是方向相反（那边是声明了线上没有的字段），修法一致：以线上真实形状为准，并补一条「身份快照必须原样穿透」的客户端回归用例。
+- **前端落在现有 `pageSuspicions`（`tools/ops/src/pages/suspicions.ts`，115→275 行）而非两个新页**：两条路由和审核队列共用 `anticheat.view`，导航里再加两个近乎同名的 anticheat 项只会变噪声。页面结构改成 `h2 Anti-cheat` + 三节 `h3`（Review queue / Hash mismatches (last 24 h) / Suspicious PvE accounts），导航标签相应从「Anti-Cheat Review」改为「Anti-Cheat」。三节各自加载、各自报错——meta 某一条不可达不能把另两节一起清空。
+- **mismatch 一节不只是把 200 行摊平**：`BOTSVC_DESIGN.md` §8 记着 bot 压测时 `mismatch` 大量来自单事件循环饿死导致的失同步，也就是说这张表的行数天然掺着「一次基础设施故障」而非「一批作弊者」。因此表上方加一行 `mismatchRepeats()` 汇总——只列在窗口内出现于**多于一局**的账号（按局计重，同一局里出现两次仍算一次），运营先看这行就能分清「一次 desync 风暴」和「某个账号反复出现」；时序表本身反而答不了这个问题。
+- **PvE 一节的 `pveWarningLevel()` 对齐服务端阈值**：`>= 3`（`PVE_REJECT_BAN_THRESHOLD`，前端按 ops 惯例本地镜像常量并注明出处）标红，与 meta 给同一账号的审核记录打 `severity:'high'` 用的是同一条线——两节要是各标一套，运营会得到两份互相矛盾的「谁是累犯」。行内动作只有 `anticheat.action` 可见的 Ban/Unban，复用玩家查询页那条既有端点（不新增封号路径）。
+- **验证**：admin `httpRoutes.e2e` 56→59 例（C3 整行原样返回含身份快照 / C4 列表 + 经 ban 端点封禁后 `banned` 翻转 / support 两条均 403），过程中把返回空数组的 `stubMismatches`、`FakeSuspiciousPve.listSuspiciousPve` 换成真实形状（空数组无论路由怎么写都能过，等于没测）；`clients-lookupAndQueue` +1 例（身份快照穿透）；ops 前端 119 例（108→119，新增 `mismatchPlayerLabel`/`mismatchRepeats`/`pveWarningLevel` 单测）。admin 全量 223 例、`tools/ops` 119 例全绿，`tsc -b shared admin` 干净，ops 生产 webpack 构建干净。起**真实** metaserver+admin+ops 三进程（独立库 `nw_c3c4_verify`）走查：累犯行显示 `Alice ×3, Bob ×2` 而只出现一局的 Carol 正确缺席、`room-4` 无身份快照回落裸 accountId、超 24h 与 hash 正常的对局均被排除；名册按 5/2/1 排序且零警告的账号不出现；点 Ban 真写进 `flags.banned` + 一条 `account.ban` 审计，该行回来变 `banned`/Unban，再点 Unban 两者同时清掉；support 账号两条路由 403、super 200、无 token 401。（本机 Browser pane 不合成画面、截图超时，故以 `read_page`/`get_page_text` 核对。）
+- **补测一轮（同日稍后）**：上面那句「ops `tsc --noEmit` 干净」当时是**错的**——`npm run typecheck` 是在写测试文件**之前**跑的，而 `vitest` 不做类型检查、`webpack` 生产构建只编译 `src/` 不碰 `test/`，于是 `mismatchPlayerLabel` 的四个用例多传了它并不接收的 `side` 字段（对象字面量 excess-property 报错）一路混过验证进了提交。教训：**加完测试文件必须重跑该包覆盖 test 的那个脚本**（ops 是 `npm run typecheck`，metaserver 是 `typecheck:test`——`npm test` 里的 `tsc -b` 只管 src）。同时补了两类真正缺的用例：
+  - **C4 的 meta 路由用例此前是自证自洽的**（`pve-anticheat.test.ts`）：`accounts.find()` 的 fake **完全忽略传进来的 query**，在 `toArray` 里自己重新实现了一遍 `pveWarnings > 0` + 倒序 + `slice(0,200)`。实测把路由改成 `$gt: 5`、把 sort 翻成升序、把 cap 改成 20、从 projection 里删掉 `publicId`——**四种改法旧用例全部 9/9 通过**，也就是说它验证的是 fake 而不是路由；而本节的名册页恰恰把「按次数倒序」当作产品前提在读。现在 fake 改为按**路由真正传入**的 query/sort/limit 求值并记录下来（`asked`），用例断言 `{'flags.pveWarnings':{$gt:0}}` / `{-1}` / `200` / 六个投影字段，且断言返回顺序为 `acc-4, acc-1, acc-2`；同四种变异现在全部被抓。属 [[mock-must-not-echo-the-interface-shape]] 同一类陷阱。
+  - **`mismatchRepeats` 两个边界**：`players` 真的可能是空数组（meta 原样投影 `MatchDoc.players`，其自身用例的 fixture 就用 `players: []`），空行必须跳过而不是抛；以及同一账号在两局之间**改过名**时（`displayName` 是每局快照）标签取**最新**那行——meta 返回是 newest-first，取错会让汇总行用一个玩家已经不再使用的名字。两条都做了变异验证（改成覆盖标签 / 改成不设防的 `players[0]`，各自精确失败一条）。**未加**的：`LadderService` 的 `available===false → []` 守卫（真实 `HttpMismatchClient` 在 `metaBaseUrl` 为 null 时本来也返回 `[]`，测它等于测重言式）、`tools/ops/src/api.ts` 的响应解包（该包目前没有任何 api 层测试，为一行 `r.mismatches` 引入 fetch mock 模式不划算，属既有的包级空档）、`pageSuspicions` 建 DOM 部分（全包页面渲染器一律不测，同 `promo.ts`）。metaserver 全量 103 文件/1648 例 + `typecheck:test`、ops 121 例 + `typecheck` 全绿。
+  - **同一提交还漏了另一道门**：`75bd1957` 把 `tools/ops/src/types.ts` 从 496 推到 524 行，越过 `tools/` 自己那道 `checkFileLength.mjs`（`cd tools && node scripts/checkFileLength.mjs`，与 server/client 的是**各自独立的调用**，跑仓库根那个查不到 `tools/`）。同类原因：包级全量验证（`tsc` + vitest + 生产构建）会从这道门旁边直接走过去。已由并行会话的 `f22c3df2` 拆 `types/auction.ts` 修掉（同时修了 `47eaa423` 留下的 `api.ts` 508 行）。**教训与上一条同源**：改动只要给 `tools/*` 加行，收尾前要单独跑那道门；文件本来就在 450–500 区间时更要当成警告——端点/类型 barrel 每加一个页面都会被追加，早晚在某次普通功能提交上越线。
 
 ### 加固 / 优化（2026-06-16，第二轮）
 

@@ -21,7 +21,7 @@
 // client/tsconfig.fulllink.json, the cross-package program for server tests that import client source.
 // So every path excluded from a test program must appear in that program's `include`.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -87,11 +87,73 @@ for (const w of workspaces) {
   }
 }
 
+// Fourth gap, closed 2026-08-21: every check above reads package.json#workspaces, and so does every
+// CI fan-out in the repo (`tsc -b` on the solution file, `npm run <x> --workspaces --if-present`,
+// coverageLib.mjs's package list). A package under server/ that is NOT a workspace is therefore
+// invisible to all of them at once: server/tools/econ-sim had 18 tests and a typecheck script and
+// CI ran neither, ever, while it imported @nw/shared/@nw/engine numeric constants and was edited as
+// late as ADR-069 (2026-08-19). Rule: a non-workspace package under server/ that has a `test` script
+// must be named by a ci.yml step that runs it (plus its `typecheck` script, if it has one).
+// Enumerating from disk is the point — that is what makes forgetting one impossible, exactly as the
+// workspaces/references check above does for services.
+const CI_YML = join(REPO_ROOT, '.github', 'workflows', 'ci.yml');
+// Steps are split on `- name:` and each chunk's `working-directory:` + `run:` body is matched as
+// text. A YAML parse would be more precise and needs a dependency this repo's scripts deliberately
+// don't have; the shapes ci.yml actually uses are all single-line `working-directory:` values.
+const ciSteps = existsSync(CI_YML)
+  ? readFileSync(CI_YML, 'utf8')
+      .split(/^\s*- name:/m)
+      .slice(1)
+      .map((chunk) => ({
+        dir: /^\s*working-directory:\s*(\S+)\s*$/m.exec(chunk)?.[1],
+        body: chunk,
+      }))
+  : null;
+// `(?![\w:-])` so `npm run test:coverage` does not count as running a `test` script (nor
+// `typecheck:test` as `typecheck`) — a near-miss step name is exactly the kind of thing that would
+// make this check pass while the script it names never runs.
+const SCRIPT_PATTERNS = { test: /npm (run )?test(?![\w:-])/, typecheck: /npm run typecheck(?![\w:-])/ };
+const uncheckedPackages = [];
+const findPackages = (dir, out = []) => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (['node_modules', 'dist', 'coverage', '.git', 'generated'].includes(entry.name)) continue;
+    if (dir === SERVER_ROOT && workspaces.has(entry.name)) continue; // handled by every check above
+    const sub = join(dir, entry.name);
+    if (existsSync(join(sub, 'package.json'))) out.push(sub);
+    findPackages(sub, out);
+  }
+  return out;
+};
+if (ciSteps !== null) {
+  for (const pkgDir of findPackages(SERVER_ROOT)) {
+    const scripts = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).scripts ?? {};
+    if (!scripts.test) continue; // nothing to run in CI; not this check's business
+    const dirRel = relative(REPO_ROOT, pkgDir).split(sep).join('/');
+    const steps = ciSteps.filter((s) => s.dir === dirRel);
+    for (const script of ['test', 'typecheck']) {
+      if (!scripts[script]) continue;
+      if (!steps.some((s) => SCRIPT_PATTERNS[script].test(s.body))) {
+        uncheckedPackages.push(`${dirRel}: has a "${script}" script that no ci.yml step runs`);
+      }
+    }
+  }
+}
+
 if (missingFromSolution.length === 0 && extraInSolution.length === 0
   && missingTestConfig.length === 0 && missingTestScript.length === 0
-  && unowned.length === 0 && globbedExcludes.length === 0) {
-  console.log(`checkWorkspaceCoverage: OK — all ${workspaces.size} workspaces referenced in tsconfig.build.json, each with a tsconfig.test.json + typecheck:test script; every excluded test file owned by client/tsconfig.fulllink.json.`);
+  && unowned.length === 0 && globbedExcludes.length === 0 && uncheckedPackages.length === 0) {
+  console.log(`checkWorkspaceCoverage: OK — all ${workspaces.size} workspaces referenced in tsconfig.build.json, each with a tsconfig.test.json + typecheck:test script; every excluded test file owned by client/tsconfig.fulllink.json; every non-workspace package with tests wired into ci.yml.`);
   process.exit(0);
+}
+
+if (uncheckedPackages.length) {
+  console.log('FAILED — a non-workspace package under server/ has scripts that CI never runs (no --workspaces fan-out reaches it):\n');
+  for (const u of uncheckedPackages) console.log(`    - ${u} (add a ci.yml step with \`working-directory: <that path>\`, or drop the script)`);
+  if (missingFromSolution.length === 0 && extraInSolution.length === 0
+    && missingTestConfig.length === 0 && missingTestScript.length === 0
+    && unowned.length === 0 && globbedExcludes.length === 0) process.exit(1);
+  console.log('');
 }
 
 if (unowned.length || globbedExcludes.length) {

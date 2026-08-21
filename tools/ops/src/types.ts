@@ -26,11 +26,15 @@ export type AdminCapability =
   | 'config.manage'
   | 'events.manage'
   | 'gacha.pools.manage'
+  | 'promo.manage'
   | 'paddle.events.view'
   | 'reports.view'
   | 'reports.action'
   | 'appeals.view'
   | 'appeals.action'
+  | 'feedback.view'
+  | 'feedback.action'
+  | 'moderation.wordlist.manage'
   | 'admin.manage';
 
 export interface AdminAccountView {
@@ -159,6 +163,34 @@ export interface AntiCheatReviewView {
   resolution?: 'dismissed' | 'banned';
 }
 
+/**
+ * One unadjudicated hash-mismatch match (C3; mirror of admin's `MismatchRow` = a `matches` doc with
+ * `hashMismatch: true`). Read-only: there is nothing to resolve on a match, only players to look at.
+ * `displayName`/`publicId` are identity snapshots taken when the match was archived, so a later rename
+ * is not reflected — and either may be absent on an old row.
+ */
+export interface MismatchView {
+  roomId: string;
+  mode: string;
+  players: { side: number; accountId: string; displayName?: string; publicId?: string }[];
+  reason: string;
+  ts: number;
+}
+
+/**
+ * One account carrying rejected PvE spot-checks (C4; mirror of admin's `SuspiciousPveRow`). `_id` is the
+ * accountId. `pveWarnings` has not been a ban trigger since 2026-07-18 — it is a review signal, and the
+ * only action available on a row is the same manual ban Player Lookup offers.
+ */
+export interface SuspiciousPveView {
+  _id: string;
+  displayName?: string;
+  publicId?: string;
+  pveWarnings: number;
+  banned: boolean;
+  createdAt: number;
+}
+
 /** UGC report record (CONTENT_MODERATION_DESIGN.md CM9/CM11; mirror of socialsvc's ReportDoc). */
 export interface ReportView {
   _id: string;
@@ -186,6 +218,22 @@ export interface AppealView {
   resolvedBy?: string;
   resolvedAt?: number;
   resolutionNote?: string;
+}
+
+/**
+ * Player feedback row (mirror of metaserver's FeedbackDoc, SERVER_API.md §2.13). No verdict/status
+ * machine — just a triage trail: `readAt` is stamped on the first review and never overwritten, so
+ * unread ⟺ `!readAt`; `readBy`/`note` are last-write-wins.
+ */
+export interface FeedbackView {
+  _id: string;
+  accountId: string;
+  text: string;
+  clientPlatform?: string;
+  createdAt: number;
+  readAt?: number;
+  readBy?: string;
+  note?: string;
 }
 
 export interface PlayerProfile {
@@ -263,6 +311,30 @@ export interface SlgShopItemRow {
   doc: SlgShopItemOverrideDoc | null;
 }
 
+// ── Content-moderation word list overlays (CONTENT_MODERATION_DESIGN.md §3.2) ──
+/** Compliance region codes (mirror of @nw/shared chatFilter.ts `ChatRegion`) — compliance regions, not i18n locales. */
+export type ChatRegion = 'global' | 'cn' | 'de' | 'en';
+/**
+ * GET /admin/moderation/wordlists row: one region's code-default floor (`builtin`, always active, not
+ * editable here) plus the DB overlay stacked on top of it (`overlay`). The overlay is purely additive —
+ * a word can be added or removed from it, never subtracted from the floor.
+ * `updatedAt`/`updatedBy` are absent until the region's overlay doc is first written.
+ */
+export interface ModerationWordlistView {
+  region: ChatRegion;
+  builtin: string[];
+  overlay: string[];
+  updatedAt?: number;
+  updatedBy?: string;
+}
+/** Overlay doc returned by an add/remove write (`_id` = region), mirror of @nw/shared `WordlistOverrideDoc`. */
+export interface WordlistOverrideDoc {
+  _id: ChatRegion;
+  words: string[];
+  updatedAt: number;
+  updatedBy: string;
+}
+
 // ── SLG season ops (G7/§17.7, mirror of server/admin/src/clients.ts + @nw/shared) ──
 export interface SlgWorldSummary {
   worldId: string;
@@ -283,78 +355,16 @@ export interface SlgAllocateResult {
   allocatedFamilies: number;
 }
 
-export type AuctionAnomalyReason = 'repeated' | 'designated' | 'high_value';
-export interface AuctionAnomaly {
-  sellerId: string;
-  buyerId: string;
-  trades: number;
-  designatedTrades: number;
-  totalCoins: number;
-  firstTs: number;
-  lastTs: number;
-  severity: 'medium' | 'high';
-  reasons: AuctionAnomalyReason[];
-}
-
-// ── Ops auction listing lookup (mirror of @nw/shared AuctionListingAdminView/AuctionListingQuery) ──
-export interface AuctionListingQuery {
-  sellerId?: string;
-  itemType?: 'material' | 'equipment' | 'card' | 'skin';
-  status?: 'open' | 'sold' | 'cancelled' | 'expired';
-  itemName?: string;
-  limit?: number;
-}
-
-export interface AuctionListingAdminView {
-  auctionId: string;
-  sellerId: string;
-  itemType: 'material' | 'equipment' | 'card' | 'skin';
-  itemName: string;
-  item: Record<string, unknown>;
-  qty: number;
-  price: number;
-  currency: string;
-  designatedBuyerId?: string;
-  expireAt: number;
-  status: 'open' | 'sold' | 'cancelled' | 'expired';
-  buyerId?: string;
-  soldAt?: number;
-  closedAt?: number;
-  saleMode: 'fixed' | 'auction';
-  startPrice?: number;
-  buyoutPrice?: number;
-  topBid?: { bidderId: string; amount: number; ts: number };
-  rev: number;
-}
-
-export interface TradeAuditSnapshot {
-  worldId: string;
-  sellerId: string;
-  buyerId: string;
-  trades: number;
-  designatedTrades: number;
-  totalCoins: number;
-  firstTs: number;
-  lastTs: number;
-  severity: 'medium' | 'high';
-  reasons: AuctionAnomalyReason[];
-}
-
-export type TradeAuditTicketStatus = 'open' | 'dismissed' | 'actioned';
-
-export interface TradeAuditTicketView {
-  id: string;
-  snapshot: TradeAuditSnapshot;
-  status: TradeAuditTicketStatus;
-  filedBy: string;
-  filedByName?: string;
-  filedAt: number;
-  note?: string;
-  resolvedBy?: string;
-  resolvedByName?: string;
-  resolvedAt?: number;
-  enforcement?: { sellerBanned: boolean; buyerBanned: boolean };
-}
+// ── SLG auction audit / anti-RMT (G7) — moved to types/auction.ts, re-exported so importers are unaffected ──
+export type {
+  AuctionAnomalyReason,
+  AuctionAnomaly,
+  AuctionListingQuery,
+  AuctionListingAdminView,
+  TradeAuditSnapshot,
+  TradeAuditTicketStatus,
+  TradeAuditTicketView,
+} from './types/auction';
 
 // ── Timed events (B6, mirror of @nw/shared events.ts) ──
 export type EventTaskKind = 'pve.clear' | 'pvp.win' | 'ad.watch';
@@ -434,4 +444,19 @@ export interface AdminGachaPool {
   createdBy: string;
   createdAt: number;
   closedAt?: number;
+}
+
+// ── Promo codes (B-PROMO; mirror of admin's PromoCodeView, itself commercial's promoCodes doc) ──
+// `redeemed` counts redemptions across all players; a code with no `totalLimit` is unlimited, one with
+// no `expiresAt` never expires. Per-player single use is enforced server-side (promoRedemptions), so it
+// is not a field here.
+export interface PromoCodeView {
+  code: string;
+  coins: number;
+  expiresAt?: number;
+  totalLimit?: number;
+  redeemed: number;
+  note?: string;
+  createdBy: string;
+  createdAt: number;
 }

@@ -5,12 +5,11 @@
 // template output): ownership wash, fog-of-war, base-tile city sprite, HP bars, watchtower,
 // ally-sect border, level dot.
 import * as PIXI from 'pixi.js-legacy';
-import { ISO_RATIO, diamondPath } from './isoGrid';
+import { ISO_RATIO, diamondPath } from '../tiles/isoGrid';
 import { getResFrameRead, getResLevelTexture, getResTexture, isResAtlasReady } from './resAtlasLoader';
 import { getTerrainTexture, isTerrainAtlasReady } from './terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from './buildingAtlasLoader';
-import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from './tileStyle';
-import type { TerrainTextureName } from './terrainAtlasLoader';
+import { terrainFill, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName, type TerrainTextureName } from '../tiles/tileStyle';
 import { worldSeed, obstacleShoreAt, resMotifPlacement, tileFeatureBuilding, type ProceduralTile } from '@nw/shared/slg';
 
 /** Ground + motif + landmark for one tile. `g`'s local origin is the tile's diamond center. */

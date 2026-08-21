@@ -2,16 +2,9 @@
 // (speedups ×3 / resource packs ×3 / protection shields ×2 / battle pass ×1). One card per item,
 // mirroring the Feature Flags page layout — a per-row Save button PUTs just that item.
 import { clear, fmtTime, h } from '../dom';
+import { effectFieldFor, effectInputValue, shopItemInput, shopMetaText } from '../logic/slgShop';
 import type { SlgShopItemRow } from '../types';
 import { showErr, showOk, type Ctx } from './shared';
-
-/** The single numeric effect field each item kind cares about (duration_sec / each / pass_season); battle_pass has nothing worth editing beyond cost. */
-const EFFECT_FIELD: Record<SlgShopItemRow['default']['kind'], { key: string; label: string } | null> = {
-  troop_speedup: { key: 'duration_sec', label: 'Duration (seconds)' },
-  resource_pack: { key: 'each', label: 'Amount per resource' },
-  protection: { key: 'duration_sec', label: 'Duration (seconds)' },
-  battle_pass: null,
-};
 
 export async function pageSlgShop(ctx: Ctx): Promise<void> {
   const { api, root } = ctx;
@@ -26,14 +19,13 @@ export async function pageSlgShop(ctx: Ctx): Promise<void> {
   root.append(list);
 
   const buildCard = (row: SlgShopItemRow): HTMLElement => {
-    const doc = row.doc;
-    const effectField = EFFECT_FIELD[row.default.kind];
+    const effectField = effectFieldFor(row.default.kind);
 
     const cost = h('input', { type: 'number', min: '1', style: 'width:140px',
       value: String(row.effective.cost) }) as HTMLInputElement;
     const effectInput = effectField
       ? (h('input', { type: 'number', min: '0', style: 'width:140px',
-          value: String(row.effective.effect[effectField.key] ?? '') }) as HTMLInputElement)
+          value: effectInputValue(row, effectField) }) as HTMLInputElement)
       : null;
 
     const status = h('span', {});
@@ -43,15 +35,9 @@ export async function pageSlgShop(ctx: Ctx): Promise<void> {
       status.className = '';
       saveBtn.disabled = true;
       try {
-        const costVal = Number(cost.value);
-        if (!Number.isFinite(costVal) || costVal <= 0) throw new Error('cost must be a positive number');
-        const input: { cost?: number; effect?: Record<string, number> } = { cost: costVal };
-        if (effectField && effectInput) {
-          const effVal = Number(effectInput.value);
-          if (!Number.isFinite(effVal) || effVal < 0) throw new Error(`${effectField.label} must be a non-negative number`);
-          input.effect = { [effectField.key]: effVal };
-        }
-        await api.upsertSlgShopItem(row.id, input);
+        const parsed = shopItemInput(row.default.kind, cost.value, effectInput?.value ?? '');
+        if (!parsed.ok) throw new Error(parsed.error);
+        await api.upsertSlgShopItem(row.id, parsed.input);
         showOk(status, 'Saved (worldsvc picks it up within 30s)');
       } catch (e) {
         showErr(status, e);
@@ -60,11 +46,7 @@ export async function pageSlgShop(ctx: Ctx): Promise<void> {
       }
     };
 
-    const meta = doc
-      ? h('div', { class: 'muted', style: 'font-size:12px' },
-          `Overridden by ${doc.updatedBy || '—'} · ${fmtTime(doc.updatedAt)}`)
-      : h('div', { class: 'muted', style: 'font-size:12px' },
-          `Not overridden, using default (cost ${row.default.cost})`);
+    const meta = h('div', { class: 'muted', style: 'font-size:12px' }, shopMetaText(row, fmtTime));
 
     const fieldRow = (label: string, control: Node): HTMLElement =>
       h('div', { style: 'margin:6px 0' }, h('label', { style: 'display:block;font-size:13px;color:var(--muted)' }, label), control);

@@ -8,7 +8,7 @@ import type { ApiClient } from '../net/ApiClient';
 import type { SaveManager, ReplayStore } from '../game/meta';
 import type { FeatureFlags } from '../net/featureFlags';
 import type { NetSession } from '../net/NetSession';
-import type { WorldApiClient } from '../net/WorldApiClient';
+import type { WorldApiClient, FamilyDetailView } from '../net/WorldApiClient';
 import type { Replay, OwnerId, PlayerStats, MatchStartInfo, AIDifficulty } from '../game';
 import type { EloResult } from '../scenes/ResultScene';
 import type { ProfileData } from '../ui/dialogs/ProfilePopup';
@@ -61,7 +61,9 @@ export interface Nav {
   // SLG panels reachable from the world map take `opts.overlay` (keep the map alive) + `opts.onBack`
   // (where the panel's back button lands — defaults to a full goWorldMap rebuild when omitted).
   goDefenseEditor(worldApi: WorldApiClient, worldId: string, tileKey: string, opts?: { overlay?: boolean; onBack?: () => void }): void;
-  goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void, overlay?: boolean): void;
+  /** `preloadedFamily`: a family detail the caller already fetched, so FamilyScene can paint without
+   *  re-issuing the same request (used by the social hub's family tab — see createWorldNav). */
+  goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void, overlay?: boolean, preloadedFamily?: FamilyDetailView | null): void;
   goSectHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void, overlay?: boolean): void;
   goAuctionHouse(worldApi: WorldApiClient, worldId: string, opts?: { overlay?: boolean; onBack?: () => void }): void;
   goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void;

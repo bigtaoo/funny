@@ -200,12 +200,54 @@ export function pickFeeder(
   return best;
 }
 
+/** One fusion of a prep run: exactly what POST /cards/fuse-batch takes per round. */
+export interface PrepRoundPlan {
+  targetId: string;
+  materialIds: string[];
+}
+
 /**
- * How many prep rounds at `level` the player can still complete back-to-back — the "x N" on the
- * batch-prep button. Simulated against a scratch copy of the inventory rather than derived from
+ * The whole prep run at `level`, planned up front — every fusion the player's roster can currently
+ * fund, in the order they must execute, capped at `limit` produced cards.
+ *
+ * Simulated against a scratch copy of the inventory rather than derived from
  * `avail / PREP_COST_PER_CARD`, because a feeder also has to be gear-free and hold its own five
  * materials, so the arithmetic bound is an upper limit, not the real answer.
+ *
+ * Planning the run in one pass (rather than re-deriving one round at a time from the save the
+ * server just returned) is what lets the batch go out as a single request — see
+ * ../../net/ApiClient/equipment.ts's fuseCardsBatch and actions.ts's doPrepBatch. It is sound
+ * because a fusion's outcome is fully determined: five named materials vanish and the feeder gains
+ * a level, which is exactly what this loop writes into `sim`. The server re-validates every round
+ * against real state anyway and reports how many landed, so a plan invalidated by a concurrent
+ * change costs a short batch, not a wrong one.
  */
+export function planPrepRounds(
+  faction: string,
+  level: number,
+  inv: Record<string, CardInstance>,
+  candidateOf: (id: string) => boolean,
+  limit: number,
+): PrepRoundPlan[] {
+  const sim: Record<string, CardInstance> = { ...inv };
+  const plan: PrepRoundPlan[] = [];
+  while (plan.length < limit) {
+    const feeder = pickFeeder(faction, level, sim, candidateOf);
+    if (!feeder) break;
+    // autoFillMaterials, not plain readyMaterials: the run has to consume the same cards, in the
+    // same least-regrettable order, that a hand-driven fuse of this feeder would have consumed —
+    // and the simulation has to spend exactly what the request will spend, or the round count and
+    // the run diverge.
+    const mats = autoFillMaterials(feeder, sim, candidateOf, FUSION_MATERIAL_COUNT);
+    if (mats.length < FUSION_MATERIAL_COUNT) break;
+    for (const m of mats) delete sim[m.id];
+    sim[feeder.id] = { ...feeder, level: feeder.level + 1 };
+    plan.push({ targetId: feeder.id, materialIds: mats.map((m) => m.id) });
+  }
+  return plan;
+}
+
+/** How many rounds planPrepRounds can fund — the "x N" on the batch-prep button. */
 export function countPrepRounds(
   faction: string,
   level: number,
@@ -213,18 +255,7 @@ export function countPrepRounds(
   candidateOf: (id: string) => boolean,
   limit: number,
 ): number {
-  const sim: Record<string, CardInstance> = { ...inv };
-  let rounds = 0;
-  while (rounds < limit) {
-    const feeder = pickFeeder(faction, level, sim, candidateOf);
-    if (!feeder) break;
-    const mats = readyMaterials(feeder, sim, candidateOf).slice(0, FUSION_MATERIAL_COUNT);
-    if (mats.length < FUSION_MATERIAL_COUNT) break;
-    for (const m of mats) delete sim[m.id];
-    sim[feeder.id] = { ...feeder, level: feeder.level + 1 };
-    rounds++;
-  }
-  return rounds;
+  return planPrepRounds(faction, level, inv, candidateOf, limit).length;
 }
 
 /**

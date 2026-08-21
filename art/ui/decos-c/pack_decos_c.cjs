@@ -104,7 +104,9 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const canvas = sharp({ create: { width: ATLAS_W, height: ATLAS_H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } });
   const composites = sprites.map((s) => ({ input: s.buf, left: s.x, top: s.y }));
-  await canvas.composite(composites).png().toFile(path.join(OUT_DIR, 'decor_c_atlas.png'));
+  // Quantized palette PNG (client/src/assets publish-bytes convention — see
+  // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md).
+  await canvas.composite(composites).png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 }).toFile(path.join(OUT_DIR, 'decor_c_atlas.png'));
 
   // Export JSON (TexturePacker JSON-Hash) — frame names have no extension, for use as textures['decoc_crown']
   const frames = {};

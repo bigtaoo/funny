@@ -33,6 +33,31 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 
 **⚠️ 2026-08-15：模拟类套件拆出去了（`vitest.sim.config.ts`）**。`test/difficulty/**`（ch1-6 + core）和 `test/pvpSim.test.ts` 跑的是整场无头战斗模拟，占这套件 188s 里的 ~175s，且插桩税按引擎 tick 线性叠加——带 `--coverage` 时整套从 188s 涨到 668s，几乎全部由它们贡献。实测把它们排除后 **client 行覆盖只掉 0.05 个百分点（91.20% → 91.15%）**：它们碰到的 `src/game/**` 早被单元测试覆盖了，它们的真实价值是行为/平衡回归（"第 6 章还打得过吗"），不是覆盖率来源。所以：`vitest.config.ts` 的 `exclude` 排掉这两处，新增 `vitest.sim.config.ts` 专收它们（不带 coverage），`package.json` 里 `test` 和 `test:coverage` **都在末尾链一条 `npm run test:sim`**——一个测试文件都没少跑，只是不再给最贵的那批插桩。带 coverage 的那半从 668s 掉到 ~13s，这才让 CI 有条件在 **PR 和 push-to-main 两端都跑 coverage**（此前 PR 上不跑，导致覆盖率回归和时序 flake 只能在合并后的 main 上暴露，连带挡掉部署——见 `claudedocs/server.md` "CI 稳定性"节）。新增只跑模拟的入口：`npm run test:sim`。
 
+### 覆盖率 scope 扩到「已经被测到的模块」（2026-08-21，ADR-071）
+
+`include` 不再只有 `src/game/**`。起因是一次全仓库门禁体检：`src/game/**` 只有 **1924 可执行行**，是 `client/src` 全部 **55143 行**的 3.5%——数字诚实，但门禁管的地盘很小。
+
+**先把实情量出来再决定**（把 include 临时放宽到 `src/**` 跑一遍现有 409 个测试文件）：全树行覆盖 **30.6%**（16897/55143），去掉生成代码（`net/proto` 4204 行、`i18n/locales` 4425 行）约 **21%**。但这个数是两群完全不同的代码叠出来的：
+
+| 分层 | 行数 | 覆盖 |
+|---|---|---|
+| `scenes/worldmap` | 4548 | 1.9% |
+| `scenes/CardScene` | 2070 | 10.9% |
+| `scenes/FriendsScene` | 1888 | 2.9% |
+| `scenes/CityScene` / `AuctionScene` | 1486 / 1363 | 0% / 0% |
+| `render/GameRenderer` | 901 | 0% |
+| `ui/dialogs` | 898 | 2.7% |
+| —— 而另一群 —— | | |
+| `src/game/**` 之外已 ≥90% 的模块（47 个，≥10 行的） | 2336 | **97.8%** |
+
+第二群是这次扩进来的：**已经测好、却不受任何门禁约束**的模块（`net/judgeRunner.ts`、`layout/{Portrait,Landscape}Layout.ts`、`scenes/CardScene/feedPlan.ts`、`render/vfx/parseEffectDef.ts`、`ui/busyTracker.ts` …）——它们掉到 50% 也不会有任何一个 CI 步骤变红。扩完 **scope 1924 → 4245 行，行覆盖 91.2% → 94.7%（73 文件）**。scope 翻倍而百分比**上升**，跟「缩 include 抬百分比」正好相反（后者由报表的 `Scope (files)` 列盯着）。
+
+- **≥10 可执行行才列**：barrel 和 1 行 re-export 壳（`net/anomaly.ts`、`app/nav/shop.ts`、`render/atlas/emblemAtlas.ts`、`platform/stubs/**`…）100% 覆盖但守不住任何东西，只会让清单变长。
+- **两个大 facade 明确不进**：`net/ApiClient.ts`/`WorldApiClient.ts`（~50%）是一行一个转发，覆盖率说明不了任何事（同一理由让它们在 500 行 baseline 里也是例外条目）。
+- **这份逐文件清单是过渡的**，ADR-070 那条「逐文件 include 是缺模块边界的味道」仍然成立：它针对的是逐文件项**收窄** scope（把没测的兄弟藏在好看的数字后面），这里每一项只**增加**受门禁的地盘。清单同时就是 ADR-070 客户端半边（4b）的待办——每抽出一个场景的纯逻辑目录，那个目录替掉它名下的若干逐文件项。
+- **`test/coverageScope.test.ts` 钉住它别烂掉**（48 例）：每一项必须还匹配得到真文件（**改名/删文件会让一项静默失配、scope 无声缩小，而百分比通常还会升**，因为掉出去的都是覆盖好的模块——这正是 `checkFileLength`/`checkCoverageThreshold` 两条 canary 防的那种「靠变绿退休」）、清单不许空（canary）、不许有已被目录项覆盖的冗余项。红绿两向都实测过。
+- **不追整包 90%**：按上表缺口要再覆盖约 3 万行，且相当大比例是 PIXI 绘制代码，测出来的是 mock 的行为。系统性渲染/场景测试仍然是 `test:ui`/`test:e2e` 的活（两者都不产覆盖率）。
+
 ## 静态类型检查（`npm run typecheck` / CI）
 
 vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 的 `include` 只有 `src/**`——**`test/**` 从不被类型检查**。历史上这让 test 里对 `GameConfig` / DTO / proto 形状的引用可以运行期侥幸通过（esbuild 擦掉类型），却是潜伏 bug（典型：CC-1 把 `GameConfig.unitLevels` 换成 `cardInstances`、`JudgeRequest` 新增必填 `unitLevels` 后，多个 test 仍用旧形状）。
@@ -268,3 +293,35 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 **修法**：给这**一条**用例显式加 `}, 30_000)`，不要调高全局 `testTimeout`——冷导入的代价只有它在付，全局放宽等于把别处真卡死的用例也一起放过。这也是本仓库既有的约定：`campaign-clear-pipeline` / `campaign-real-layer-interlude-nav` / `judge-runner` 用 `30_000`，`capacitorStubCompile` 用 `60_000`，`pvpSim` 用 `60_000`–`180_000`，全部是**逐用例第三参**；只有 e2e / load 这类整份都慢的 config 才在 `vitest.*.config.ts` 里设 `testTimeout`。另一种可行做法是把 `importActual` 提到 `beforeAll` 里（代价只付一次、且不算进用例预算），但那样反而要额外解释"为什么这个文件有个 beforeAll"，逐用例超时更贴合现状。
 
 验证：`npm run typecheck` 干净，`npx vitest run` 172 文件 / 1460 条绿。
+
+## 性能契约怎么测：拿「重绘次数」当断言，并用 mutation 验证它不是空转（2026-08-20，社交页签卡顿修复）
+
+`design/game/SOCIAL_DESIGN.md` 同日那行修的是三处「本来不该发生的整树重建 / 网络请求」。这类修复的麻烦在于**它没有可见产出**——页面长得一模一样，只是少做了事，所以断言必须直接钉住「做了多少次」，而不是「结果对不对」。三条经验：
+
+- **重绘次数：替换 `core.render`，不要 `vi.spyOn(scene, 'render')`。** 场景自己的 `render` 是 private，且真正被各面板/`NetworkPanel` 调用的是构造时注入的 `core.render` 回调；spy 外层那个既拦不全，`vi.spyOn` 拿到的包装函数在 `scene.core.render = () => spy()` 这种转写里还会丢 `this`（`Cannot read properties of undefined (reading 'core')`，本次实测踩过）。直接 `scene.core.render = vi.fn()` 最稳，`socialTabSwitchCost.ui.ts` 的 `countRenders()` 就是这个形状。
+- **网络次数：让每个 callback 自增一个计数器，然后整体 `toEqual` 一个字面量对象。** 只断言「某一项没涨」很容易在别处偷偷多打一个请求；`expect(calls).toEqual({friends:1, requests:1, mail:1, conversations:1, world:1})` 把「切世界频道只该拉世界频道」这句话完整钉住。
+- **⚠️ 「只平移不重建」这类优化，光断言「没重建」是不够的——必须再断言「平移后东西在对的位置」。** `expect(layer.y).toBe(-60)` 只说明图层挪了正确的距离，**不说明图层里的行当初是按正确原点排的**：漏一次 `markScrollBuilt()` 重新基准、或 build 空间算错一个像素，这条照样绿。补法是**几何等价性用例**——拖一个别扭的距离（137px，避免凑巧对齐），记下逐行屏幕 y，再 `scene.render()` 在同一 `scrollY` 上强制整树重建一次，两个列表必须 `toEqual`。**并且要 mutation 验一遍**：把 `layer.y = -delta` 改成 `-delta + 1`，确认这两条用例会同时红（本次验过，会红）——不验的话很容易写出一条恒绿的假测试，正是本文件「审计 backlog」几条老坑的同一种形状。
+
+顺带一条接线坑：这次把 `FriendsScene` 的指针分发从 `core.ts` 的方法挪成了 `input.ts` 的自由函数，`test/ui/socialTabRail.ui.ts` 里直接调 `scene.core.onPointerDown(...)` 的地方随之全部失败（`is not a function`）。**改文件结构前先 `grep -rn "core\.\(onPointer\|handle\)" client/test`**——`client-modules.md` 第 19 条早就记过「改链会牵连测试接线」，挪方法到自由函数是同一类破坏，只是更隐蔽（`tsc` 拦不住 `as any` 的测试）。
+
+### ⚠️ 「少做事」的优化：先问「做完之后还有什么能悄悄错掉」，而不是只钉住「少做了」（2026-08-20 同日续，实测抓到自己的回归）
+
+上一节那批断言全绿之后，被追问「有测试可以加吗」，回头审一遍才发现钉住的全是**「省掉了」这一半**（没重拉、没重建、只动了一个 `Text`），而**「省掉之后还照样对」这一半**几乎是空的。写第一条补测的过程中就撞出一个真回归：
+
+`FriendsScene` 的行命中矩形记在 build 空间，`onPointerUp` 要加回图层的位移才能判定。我第一版用的是 `scrollY - builtScrollY` —— **待应用**的差值。但 `onWheel`/`onPointerMove` 是**同步**改 `scrollY` 的，图层却要等下一帧 `update()` 排掉 `scrollDirty` 才真的平移。于是「滚轮滚一下、下一帧还没到就点击」这一帧窗口里，屏幕没动而换算按已动来算，**点击整整错一行**（点第 3 行打开第 7 行）。改动前没有任何偏移，所以这纯粹是优化自己引入的。
+
+**修法**是把两个概念拆开：`pendingScrollDelta`（逻辑意图，只给「平移还是重建」的判断用）与 `appliedScrollDelta`（`-layer.y`，屏幕上**实际**的位移）。**命中判定一律用「实际」那个** —— 点击必须按玩家真正看到的画面判，不能按尚未生效的意图判。这条推广得很开：任何「状态同步改、画面下一帧才跟上」的优化，都会多出一个两者不一致的窗口，而**输入处理正好落在这个窗口里**。
+
+由此总结出的补测清单（`test/ui/socialScrollTranslate.ui.ts`），下次做同类优化可以照抄这几个角度：
+
+1. **输入还能不能打中**——最容易漏，也最容易被用户发现。既有用例只断言了「拖拽不触发点击」，那是**反向**断言，永远不检验「点对了」。要正向断言到具体对象（这里用 `friendIndex(opened[1]) === friendIndex(before) + 1`）。
+2. **不一致窗口里的输入**——刻意在「状态已改、画面未动」时触发一次点击。
+3. **重画的东西会不会累积**——快速路径里每帧 `destroy()` 旧的再画新的，漏一次 `destroy` 就是每次手势泄漏一个对象。断言 `container.children.length` 拖 N 帧不变。
+4. **同类面板里最特殊的那一个**——世界频道是唯一在 `scrollRegion()` 之后才定 `scrollY` 的（stick-to-latest），缺 `markScrollBuilt()` 重新基准会整列表错位；只测好友列表测不到它。
+5. **没享受到优化的路径必须保持原样**——家族浏览列表直接画进 `container`（无遮罩），所以 `overscan` 必须是 0，否则行会画到区域外。这条原本只存在于我的注释推理里。
+6. **回落路径**——每条增量路径在目标对象被 `destroy()` 后必须回落整树重建且不抛。
+7. **「没变就不重画」的判据要逐字段钉**——`refreshSignature` 少覆盖一个字段，就是那类改动永远不上屏。12 个会渲染的字段各一条用例，比一条「代表性」用例可靠得多；并且**每条都先断言「同样数据不重画」再断言「改了要重画」**，否则后半句可能是因为它总是重画才过的。
+
+**⚠️ 两个 harness 坑**（都实测踩过）：①`createLayout(800, 1280)` **不等于**设计空间是 800×1280 —— `ScalingManager` 会映射到更大的空间（这组输入下 `regionTop≈431`、`cW≈1026`），硬编码的 `regionTop + 80` 会落在第一行**上方** 6px 处，测试表现为「点了但没命中」。一律从 `core.hits`/`core.regionTop` 等活布局里读坐标。②headless `measureText` 是 `字符数 * 7`，跟字号无关 —— 想测「文字溢出后右对齐」得给足字符数（80 个字符只有 560px，不够；用字段自己的 `maxLength` 200 才稳），别按真实字号估。
+
+**另**：`git checkout -- <file>` 会把**未提交的修复**跟 mutation 一起冲掉（本轮踩过：验完 mutant 用 `git checkout` 还原，结果把同文件里还没提交的 `appliedScrollDelta` 修复也还原了，`git diff --stat` 才看出来）。验 mutation 优先用 Edit 精确改回那一行，或者验之前先提交。

@@ -128,7 +128,9 @@ async function main() {
     create: { width: ATLAS_W, height: ATLAS_H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
   })
     .composite(composites)
-    .png({ compressionLevel: 9, effort: 10 })
+    // Quantized palette PNG (client/src/assets publish-bytes convention — see
+    // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md).
+    .png({ palette: true, quality: 90, compressionLevel: 9, effort: 10 })
     .toFile(outPng);
   console.log(`✓ atlas PNG → ${outPng}`);
 

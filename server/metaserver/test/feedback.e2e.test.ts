@@ -168,4 +168,81 @@ describe.skipIf(!mongo)('player feedback e2e', () => {
     const { feedback } = JSON.parse(listed.payload) as { feedback: { accountId: string; text: string }[] };
     expect(feedback.some((f) => f.accountId === accountId && f.text === 'please add more character skins')).toBe(true);
   });
+
+  // ── Triage trail (feedback.action, POST /internal/feedback/:id/review) ──────────────
+  // Not a verdict/status machine (there is nothing to dismiss or uphold, unlike appeals) — just enough
+  // state for a growing backlog to stay trackable: unread ⟺ !readAt.
+  describe('POST /internal/feedback/:id/review', () => {
+    async function submit(deviceId: string, text: string): Promise<string> {
+      const { accountId, token } = await newDevice(deviceId);
+      await app.inject({
+        method: 'POST', url: '/feedback',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { text },
+      });
+      return (await m.collections.feedback.findOne({ accountId }))!._id;
+    }
+    const review = (id: string, payload: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: `/internal/feedback/${id}/review`, headers: { 'x-internal-key': KEY }, payload });
+
+    it('requires the internal key', async () => {
+      const id = await submit('dev-review-authed', 'needs a key');
+      const r = await app.inject({ method: 'POST', url: `/internal/feedback/${id}/review`, payload: { readBy: 'admin-1' } });
+      expect(r.statusCode).toBe(401);
+      expect((await m.collections.feedback.findOne({ _id: id }))?.readAt).toBeFalsy();
+    });
+
+    it('rejects a call without readBy (the row would be marked read by nobody)', async () => {
+      const id = await submit('dev-review-no-actor', 'who read this?');
+      expect((await review(id, { note: 'orphan note' })).statusCode).toBe(400);
+      expect((await m.collections.feedback.findOne({ _id: id }))?.note).toBeFalsy();
+    });
+
+    it('404s on an unknown id', async () => {
+      expect((await review('no-such-feedback', { readBy: 'admin-1' })).statusCode).toBe(404);
+    });
+
+    it('marks a row read: stamps readAt/readBy, leaving note unset', async () => {
+      const id = await submit('dev-review-mark', 'a fine game');
+      expect((await review(id, { readBy: 'admin-1' })).statusCode).toBe(200);
+      const doc = await m.collections.feedback.findOne({ _id: id });
+      expect(doc?.readAt).toBeGreaterThan(0);
+      expect(doc?.readBy).toBe('admin-1');
+      expect(doc?.note).toBeFalsy();
+    });
+
+    it('writing a note also marks the row read (one action, not two)', async () => {
+      const id = await submit('dev-review-note', 'the tutorial drags');
+      await review(id, { readBy: 'admin-1', note: 'known, tracked in the onboarding backlog' });
+      const doc = await m.collections.feedback.findOne({ _id: id });
+      expect(doc?.note).toBe('known, tracked in the onboarding backlog');
+      expect(doc?.readAt).toBeGreaterThan(0);
+    });
+
+    it('readAt is first-review-only (never overwritten), while readBy/note are last-write-wins', async () => {
+      const id = await submit('dev-review-twice', 'balance feels off');
+      await review(id, { readBy: 'admin-1' });
+      const first = (await m.collections.feedback.findOne({ _id: id }))!.readAt;
+      await review(id, { readBy: 'admin-2', note: 'forwarded to design' });
+      const doc = await m.collections.feedback.findOne({ _id: id });
+      expect(doc?.readAt).toBe(first); // "when did we first look at this", not "last touched"
+      expect(doc?.readBy).toBe('admin-2');
+      expect(doc?.note).toBe('forwarded to design');
+    });
+
+    it('omitting note leaves an existing note intact; an empty note explicitly clears it', async () => {
+      const id = await submit('dev-review-clear', 'crashes on level 3');
+      await review(id, { readBy: 'admin-1', note: 'repro pending' });
+      await review(id, { readBy: 'admin-1' }); // read-mark only — must not wipe the note
+      expect((await m.collections.feedback.findOne({ _id: id }))?.note).toBe('repro pending');
+      await review(id, { readBy: 'admin-1', note: '   ' }); // whitespace-only == clear
+      expect((await m.collections.feedback.findOne({ _id: id }))?.note).toBeFalsy();
+    });
+
+    it('truncates an over-long note to FEEDBACK_NOTE_MAX', async () => {
+      const id = await submit('dev-review-long-note', 'wall of text incoming');
+      await review(id, { readBy: 'admin-1', note: 'x'.repeat(2000) });
+      expect((await m.collections.feedback.findOne({ _id: id }))?.note?.length).toBe(500);
+    });
+  });
 });
