@@ -97,8 +97,12 @@ export function categoryOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string |
   return null;
 }
 
-/** Derived display name for ops lookup: material name / equipment defId / card defId / skinId. */
-function itemNameOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string {
+/**
+ * Derived display name for ops lookup: material name / equipment defId / card defId / skinId.
+ * Exported since 2026-08-24 so the owed-settlement view can label a journal step's item snapshot with
+ * exactly the same string the listing lookup shows — ops reads the two side by side.
+ */
+export function itemNameOf(doc: Pick<AuctionDoc, 'itemType' | 'item'>): string {
   if (doc.itemType === 'material') return (doc.item['material'] as string | undefined) ?? '';
   if (doc.itemType === 'equipment') return equipInstanceOf(doc.item)?.defId ?? '';
   if (doc.itemType === 'card') return cardInstanceOf(doc.item)?.defId ?? '';
@@ -122,6 +126,9 @@ export function docToAdminView(doc: AuctionDoc): AuctionListingAdminView {
     ...(doc.buyerId ? { buyerId: doc.buyerId } : {}),
     ...(doc.soldAt != null ? { soldAt: doc.soldAt } : {}),
     ...(doc.closedAt != null ? { closedAt: doc.closedAt } : {}),
+    // A closed listing with no settledAt still owes its hand-over (U13 close-out) — the one auction state
+    // ops previously had no way to see, since the retry loop only reported itself to the log.
+    ...(doc.settledAt != null ? { settledAt: doc.settledAt } : {}),
     saleMode: doc.saleMode ?? 'fixed',
     ...(doc.startPrice != null ? { startPrice: doc.startPrice } : {}),
     ...(doc.buyoutPrice != null ? { buyoutPrice: doc.buyoutPrice } : {}),

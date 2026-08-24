@@ -13,6 +13,8 @@ import type {
   AuditEntryView,
   AuctionAnomaly,
   AuctionListingAdminView,
+  AuctionSettlementDebtView,
+  AuctionSettlementQuery,
   AuctionListingQuery,
   CompMailContent,
   CompScope,
@@ -446,6 +448,16 @@ export class Api extends ApiTransport {
     if (filter.limit != null) qs.set('limit', String(filter.limit));
     const r = await this.req<{ listings: AuctionListingAdminView[] }>('GET', `/admin/slg/audit/listings?${qs}`);
     return r.listings;
+  }
+  /** Settlements that still owe a hand-over (U13 close-out). Read-only: auctionsvc's sweep is what retries them. */
+  async slgListSettlementDebts(filter: AuctionSettlementQuery): Promise<AuctionSettlementDebtView[]> {
+    const qs = new URLSearchParams();
+    if (filter.auctionId) qs.set('auctionId', filter.auctionId);
+    if (filter.accountId) qs.set('accountId', filter.accountId);
+    if (filter.minAttempts != null) qs.set('minAttempts', String(filter.minAttempts));
+    if (filter.limit != null) qs.set('limit', String(filter.limit));
+    const r = await this.req<{ settlements: AuctionSettlementDebtView[] }>('GET', `/admin/slg/audit/settlements?${qs}`);
+    return r.settlements;
   }
   async slgListAuditTickets(status?: string): Promise<TradeAuditTicketView[]> {
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';

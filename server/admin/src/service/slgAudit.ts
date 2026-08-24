@@ -10,6 +10,8 @@ import type {
   AuctionAnomaly,
   AuctionListingAdminView,
   AuctionListingQuery,
+  AuctionSettlementDebtView,
+  AuctionSettlementQuery,
   TradeAuditSnapshot,
   TradeAuditTicketStatus,
   TradeAuditTicketView,
@@ -22,6 +24,7 @@ import { validateAuditSnapshot } from './validators';
 export interface SlgAuditHandlers {
   slgScanAnomalies(worldId: string, windowSec?: number): Promise<AuctionAnomaly[]>;
   slgQueryAuctionListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]>;
+  slgListSettlementDebts(filter: AuctionSettlementQuery): Promise<AuctionSettlementDebtView[]>;
   slgFileAuditTicket(actor: Actor, snapshot: TradeAuditSnapshot): Promise<TradeAuditTicketView>;
   slgListAuditTickets(filter: { status?: string }): Promise<TradeAuditTicketView[]>;
   slgResolveAuditTicket(actor: Actor, id: string, disposition: string, note: string): Promise<TradeAuditTicketView>;
@@ -51,6 +54,20 @@ export class SlgAuditService {
     async slgQueryAuctionListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]> {
       if (!this.core.auction.available) return [];
       return this.core.auction.queryListings(filter);
+    }
+
+    /**
+     * Ops owed-settlement lookup (capability slg.audit.view): auction settlements that have not finished
+     * handing everything over. Returns empty if auctionsvc is unreachable.
+     *
+     * Distinct from both neighbours above: the anomaly scan aggregates completed trades looking for RMT,
+     * the listing lookup shows one listing's record — this shows the *cross-service* half, i.e. a sale that
+     * closed but whose item or proceeds have not landed. Read-only on purpose: the auctionsvc sweep already
+     * retries every one of these forever, so there is no ops action to expose, only a state to see.
+     */
+    async slgListSettlementDebts(filter: AuctionSettlementQuery): Promise<AuctionSettlementDebtView[]> {
+      if (!this.core.auction.available) return [];
+      return this.core.auction.listSettlementDebts(filter);
     }
 
     /**

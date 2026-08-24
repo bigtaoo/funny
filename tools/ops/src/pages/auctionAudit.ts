@@ -4,11 +4,15 @@
 import { clear, fmtTime, h, pill } from '../dom';
 import {
   anomaliesFoundText, auditResolvedByText, auditTicketFiledBy, auditTicketStatusCls, canAdjudicate,
-  enforcementText, listingCloseTs, listingItemText, listingPriceLabel, listingQuery,
-  listingsFoundText, listingStatusCls, noAnomaliesText, resolvePrompt, scanWindowSec, sellerBuyerText,
-  severityCls, snapshotOf,
+  completedText, enforcementText, listingCloseTs, listingItemText, listingPriceLabel, listingQuery,
+  listingSettlementCls, listingSettlementText, listingsFoundText, listingStatusCls, noAnomaliesText,
+  noSettlementsText, owedSummary, resolvePrompt, scanWindowSec, sellerBuyerText, settlementAttemptsText,
+  settlementCycleText, settlementPhaseText, settlementQuery, settlementRowCls, settlementsFoundText,
+  settlementTimingText, severityCls, snapshotOf,
 } from '../logic/auctionAudit';
-import type { AuctionAnomaly, AuctionListingAdminView, TradeAuditTicketView } from '../types';
+import type {
+  AuctionAnomaly, AuctionListingAdminView, AuctionSettlementDebtView, TradeAuditTicketView,
+} from '../types';
 import { showErr, showOk, type Ctx } from './shared';
 
 export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
@@ -75,6 +79,7 @@ export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
           h('th', {}, 'Status'),
           h('th', {}, 'Designated buyer'),
           h('th', {}, 'Buyer'),
+          h('th', {}, 'Settled'),
           h('th', {}, 'Expire / closed'),
         ),
       );
@@ -155,6 +160,74 @@ export async function pageAuctionAudit(ctx: Ctx): Promise<void> {
     scanOut,
   );
 
+  // ── Owed settlements (U13 close-out) ──
+  // The one auction state that used to exist only in a log line: a settlement that closed the listing but
+  // has not managed to hand the item or the coins over. auctionsvc retries these forever on its own
+  // backoff, so this table is deliberately read-only — a "retry now" button would just race the sweep.
+  const owedAuctionInput = h('input', { placeholder: 'auctionId (optional)' }) as HTMLInputElement;
+  const owedAccountInput = h('input', { placeholder: 'accountId (actor or anyone owed, optional)' }) as HTMLInputElement;
+  const owedMinAttemptsInput = h('input', { type: 'number', min: '0', style: 'width:120px', placeholder: 'min attempts' }) as HTMLInputElement;
+  const owedErr = h('div', { class: 'err' });
+  const owedOut = h('div', { class: 'card' });
+  owedOut.style.display = 'none';
+
+  const runOwed = async (): Promise<void> => {
+    const query = settlementQuery({
+      auctionId: owedAuctionInput.value,
+      accountId: owedAccountInput.value,
+      minAttempts: owedMinAttemptsInput.value,
+    });
+    if (!query.ok) {
+      showErr(owedErr, new Error(query.error));
+      return;
+    }
+    owedErr.textContent = '';
+    clear(owedOut);
+    try {
+      const debts = await api.slgListSettlementDebts(query.filter);
+      owedOut.style.display = '';
+      if (debts.length === 0) {
+        owedOut.append(h('div', { class: 'muted' }, noSettlementsText(Object.keys(query.filter).length > 0)));
+        return;
+      }
+      owedOut.append(h('div', { class: 'muted' }, settlementsFoundText(debts.length)));
+      const t = h('table', {},
+        h('tr', {},
+          h('th', {}, 'Order ID'),
+          h('th', {}, 'Flow'),
+          h('th', {}, 'Actor'),
+          h('th', {}, 'Still owed'),
+          h('th', {}, 'Already done'),
+          h('th', {}, 'Attempts'),
+          h('th', {}, 'Cycle'),
+          h('th', {}, 'Timing'),
+        ),
+      );
+      for (const d of debts) t.append(settlementRow(d));
+      owedOut.append(t);
+    } catch (e) {
+      showErr(owedErr, e);
+      owedOut.style.display = 'none';
+    }
+  };
+
+  root.append(
+    h('div', { class: 'card', style: 'margin-bottom:12px' },
+      h('div', { class: 'muted', style: 'margin-bottom:6px' },
+        'Unfinished settlements — a listing that closed but whose item or proceeds have not been handed over yet. ' +
+        'auctionsvc retries every one of these on its own backoff, so this is a read-only view; the rows worth ' +
+        'acting on are the ones marked stuck (retried many times and still failing).'),
+      h('div', { class: 'row' },
+        h('div', {}, h('label', {}, 'Auction ID'), owedAuctionInput),
+        h('div', {}, h('label', {}, 'Account ID'), owedAccountInput),
+        h('div', {}, h('label', {}, 'Min attempts'), owedMinAttemptsInput),
+        h('button', { onclick: runOwed }, 'List owed'),
+      ),
+      owedErr,
+    ),
+    owedOut,
+  );
+
   // ── Audit ticket queue ──
   const ticketFilterSel = h('select', {},
     h('option', { value: '' }, 'All'),
@@ -220,7 +293,27 @@ function listingRow(l: AuctionListingAdminView): HTMLElement {
     h('td', {}, pill(l.status, listingStatusCls(l.status))),
     h('td', {}, l.designatedBuyerId ?? '—'),
     h('td', {}, l.buyerId ?? '—'),
+    // A closed listing with no settledAt still owes its hand-over — see the owed-settlements table below
+    // for what exactly, and to whom.
+    h('td', {}, pill(listingSettlementText(l), listingSettlementCls(l))),
     h('td', { class: 'muted', style: 'font-size:12px' }, fmtTime(listingCloseTs(l))),
+  );
+}
+
+/**
+ * One unfinished settlement. `orderId` is the row a human actually acts on: every downstream key for this
+ * settlement is derived from it, so it is what gets pasted into a commercial order or meta mail lookup.
+ */
+function settlementRow(d: AuctionSettlementDebtView): HTMLElement {
+  return h('tr', {},
+    h('td', { class: 'muted', style: 'font-size:12px' }, d.orderId),
+    h('td', {}, settlementPhaseText(d)),
+    h('td', {}, d.actorId),
+    h('td', {}, owedSummary(d)),
+    h('td', { class: 'muted', style: 'font-size:12px' }, completedText(d)),
+    h('td', { style: 'text-align:right' }, pill(settlementAttemptsText(d), settlementRowCls(d))),
+    h('td', { class: 'muted', style: 'font-size:12px' }, settlementCycleText(d)),
+    h('td', { class: 'muted', style: 'font-size:12px' }, settlementTimingText(d, fmtTime)),
   );
 }
 

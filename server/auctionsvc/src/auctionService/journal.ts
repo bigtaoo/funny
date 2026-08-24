@@ -13,11 +13,14 @@
 // may well have landed — so rolling back would mint coins or duplicate items. Those are retried against
 // the downstream's own idempotency key until they answer definitively, and only then does the rollback
 // decide what actually needs undoing.
-import { SlgError } from '@nw/shared';
+// AUCTION_SETTLEMENT_STUCK_ATTEMPTS is the shared threshold for "retried a lot and still failing": this
+// file escalates its log level at it, and journalAudit.ts flags the row `stuck` at it. One constant so
+// "loud in the logs" and "listed for ops" cannot drift into meaning different things.
+import { AUCTION_SETTLEMENT_STUCK_ATTEMPTS, SlgError } from '@nw/shared';
 import type { AuctionItemSnapshot, AuctionOrderDoc, AuctionOrderKind, AuctionOrderStep } from '../db';
 import type { AuctionServiceDeps } from './base';
 import { AuctionOrderStepRunner } from './journalSteps';
-import type { JournalPlan } from './journalPlans';
+import { applicableCompensation, type JournalPlan } from './journalPlans';
 
 /**
  * How long a `pending` row must sit untouched before another caller may take it over. Mirrors
@@ -32,8 +35,6 @@ export const CLAIM_GRACE_MS = 15000;
 const BACKOFF_BASE_MS = 2000;
 const BACKOFF_CAP_MS = 300000;
 
-/** Attempts after which a still-unpaid debt is logged at error level every time, so a permanently broken hand-over is visible in ops. */
-const LOUD_AFTER_ATTEMPTS = 10;
 
 /** Journal rows are kept this long after going terminal (audit trail for the ops "look up the orderId" workflow), then TTL-purged. */
 const ORDER_RETENTION_MS = 30 * 24 * 3600 * 1000;
@@ -243,8 +244,7 @@ export class AuctionOrderJournal {
     }
     if (!definitive) return; // still ambiguous — the sweep retries rather than guessing
 
-    const applicable = row.compensation
-      .filter((s) => s.requires == null || row.done[s.requires] != null)
+    const applicable = applicableCompensation(row.compensation, row.done)
       // Hand back what was actually escrowed, not what was requested. A listing arrives holding only an
       // `instanceId`/`skinId`; meta answers the escrow with the full instance, and that snapshot is the only
       // thing `grantEquipment`/`grantCard` (or a return mail) can act on — rolling back with the requested
@@ -313,7 +313,7 @@ export class AuctionOrderJournal {
     );
     row.attempts = attempts;
     const detail = { order: row._id, kind: row.kind, step: step.name, op: step.op, attempts, err: err.message };
-    if (attempts >= LOUD_AFTER_ATTEMPTS) console.error('[auctionsvc] settlement step still owed after many retries', detail);
+    if (attempts >= AUCTION_SETTLEMENT_STUCK_ATTEMPTS) console.error('[auctionsvc] settlement step still owed after many retries', detail);
     else console.warn('[auctionsvc] settlement step deferred, will retry', detail);
   }
 

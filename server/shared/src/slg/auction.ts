@@ -121,7 +121,78 @@ export interface AuctionListingAdminView {
   startPrice?: number;
   buyoutPrice?: number;
   topBid?: { bidderId: string; amount: number; ts: number };
+  /**
+   * When this listing's cross-service settlement finished. A CLOSED listing (sold/cancelled/expired)
+   * with no `settledAt` is one whose hand-over is still owed — the buyer has not been sent their item,
+   * or the seller their proceeds. That is the state ops needs to be able to see, and it is also what
+   * the journal sweep scans for, so a listing in it is being retried, not abandoned.
+   */
+  settledAt?: number;
   rev: number;
+}
+
+// ── Owed settlements (auctionsvc /internal/audit/settlements, admin.slg.audit.view) ──
+// The auction house settles across three services, so a settlement is a small durable to-do list
+// (`auctionOrders`) rather than one atomic write. Almost always that list drains within a tick and
+// nobody needs to look; what ops needs is the exception — a hand-over that has been retried many
+// times and is still failing, which otherwise exists only in a log line.
+
+/**
+ * Attempts after which a still-unpaid settlement step counts as stuck rather than merely in flight.
+ * Shared so the journal's own escalating log level and the ops-facing `stuck` flag cannot drift apart:
+ * "loud in the logs" and "listed for ops" must mean the same thing.
+ */
+export const AUCTION_SETTLEMENT_STUCK_ATTEMPTS = 10;
+
+/** One still-owed hand-over, summarised for ops: who is owed what, plus the key to look it up downstream. */
+export interface AuctionSettlementStepView {
+  /** Progress name within the settlement (`spend` / `item` / `seller` / `refundPrev` / `return` / `unclaim`). */
+  name: string;
+  op: 'escrow' | 'grant' | 'spend' | 'mailItem' | 'mailCoins' | 'unclaim';
+  /** The account whose assets this step moves. Absent for a purely local step (`unclaim`). */
+  accountId?: string;
+  /** Coin amount, for `spend` / `mailCoins`. */
+  amount?: number;
+  /** Item summary (`material scrap x3`, `equipment wp_marker`), for `escrow` / `grant` / `mailItem`. */
+  item?: string;
+  /** The downstream idempotency key — the exact string to search commercial's orders or meta's mail dispatch log for. */
+  key: string;
+}
+
+/** One settlement that still owes something. */
+export interface AuctionSettlementDebtView {
+  /** The journal row id, which is also the base of every downstream key for this settlement. */
+  orderId: string;
+  auctionId: string;
+  kind: 'list' | 'buy' | 'bid' | 'settle' | 'cancel' | 'expire';
+  /** The account the settlement is acting for (buyer / bidder / seller). */
+  actorId: string;
+  /**
+   * `forward` — the settlement committed and is still owed hand-overs (someone is waiting on goods or coins).
+   * `rollback` — it could not go forward and is unwinding (releasing a claim, handing an escrow back).
+   */
+  phase: 'forward' | 'rollback';
+  /** What is still owed, in the order it will be retried. */
+  owed: AuctionSettlementStepView[];
+  /** Names of the steps that already landed — how far this settlement got, without reading the raw document. */
+  completed: string[];
+  attempts: number;
+  /** Retried at least AUCTION_SETTLEMENT_STUCK_ATTEMPTS times and still failing: worth a human looking. */
+  stuck: boolean;
+  /** How many times this settlement has been reopened (each reopen re-keys its downstream calls). */
+  cycle: number;
+  createdAt: number;
+  /** Earliest time the sweep will try again (per-row exponential backoff). */
+  nextAttemptAt: number;
+}
+
+export interface AuctionSettlementQuery {
+  auctionId?: string;
+  /** Match the acting account, or any account owed something by this settlement. */
+  accountId?: string;
+  /** Only settlements that have already failed at least this many times. Omitted / 0 = every unfinished one. */
+  minAttempts?: number;
+  limit?: number;
 }
 
 /**

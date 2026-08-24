@@ -88,6 +88,11 @@
 - **`AuctionDoc.settledAt`**：交付真正完成才写。它的**缺失**就是 `repairUnsettled` 的扫描条件，因此 `purgeClosedListings` 也加了「不删还欠着交付的挂单」——否则会把唯一的欠账凭证删掉。
 - **历史数据**：启动期迁移（`db.ts::runMigrations`，服务收流量前跑完）给所有**已终态**挂单补 `settledAt`。旧代码关掉的那些要么已发邮件、要么已静默丢失，数据里分不出来；重驱动它们会按账本的新 dispatchKey 再发一遍附件，把一次不可挽回的旧丢失变成一次新的复制。
 - **系统邮件不再吞异常**：`HttpAuctionMailClient` 配置可用时发送失败**抛错**（未配置的 null client 仍静默 no-op）。旧的「记日志后返回」是生产上最可能真丢资产的一条：meta 抖一个 500，卖家的钱或买家的货就没了，只留一行日志，而且没有任何东西会去重试。
+- **ops 可见性（同日补齐）**：欠账原先只体现在日志里（`settlement step still owed after many retries`），也就是「没人发现，直到玩家来投诉」。现在两处能看：
+  - `AuctionListingAdminView` 增加 `settledAt`，ops 挂单查询多一列「Settled」——**已结束的挂单没有 `settledAt` 就是还欠着交付**（open 挂单本来就没什么可交付，显示 `—`，不算欠账）。
+  - 新端点 `GET /internal/audit/settlements` → admin `GET /admin/slg/audit/settlements`（能力沿用 `slg.audit.view`，未新增能力）→ ops「SLG Audit」页新增「Unfinished settlements」区块。每行给出：账本行 id（= 该次结算所有下游键的前缀，直接拿去 commercial/meta 查）、流程与方向（`buy · delivering` / `bid · unwinding`）、**还欠谁什么**（`seller: alice ← 1080 coins`）、已完成到哪一步、重试次数（≥ `AUCTION_SETTLEMENT_STUCK_ATTEMPTS`=10 标 `stuck`）、重开次数、以及「欠了多久 / 下次何时重试」。
+  - **刻意只读，没有「立即重试」按钮**：扫描器本来就在按自己的退避永不放弃地重试，手动戳只会和它抢；真正有用的下一步动作（去修那个一直失败的 meta 端点、开补偿工单）都在这个服务之外。
+  - `accountId` 过滤同时匹配 `actorId` **和任何被某个步骤欠着的账号**——被超价的出价者不是那笔出价流程的 actor，只按 actorId 过滤会对「玩家说没收到退款」这个问题回答「没有欠账」。
 
 ---
 

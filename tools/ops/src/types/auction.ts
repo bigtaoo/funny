@@ -46,7 +46,44 @@ export interface AuctionListingAdminView {
   startPrice?: number;
   buyoutPrice?: number;
   topBid?: { bidderId: string; amount: number; ts: number };
+  /** When the cross-service settlement finished. Absent on a CLOSED listing = the hand-over is still owed. */
+  settledAt?: number;
   rev: number;
+}
+
+// ── Owed settlements (mirror of @nw/shared AuctionSettlementDebtView/Query, U13 close-out) ──
+// An auction settlement spans three services, so it runs as a durable to-do list the auctionsvc sweep
+// retries forever. Ops does not normally care; what ops needs is the exception — one that keeps failing.
+export interface AuctionSettlementStepView {
+  name: string;
+  op: 'escrow' | 'grant' | 'spend' | 'mailItem' | 'mailCoins' | 'unclaim';
+  accountId?: string;
+  amount?: number;
+  item?: string;
+  /** The downstream idempotency key: paste this into a commercial order / meta mail-dispatch lookup. */
+  key: string;
+}
+
+export interface AuctionSettlementDebtView {
+  orderId: string;
+  auctionId: string;
+  kind: 'list' | 'buy' | 'bid' | 'settle' | 'cancel' | 'expire';
+  actorId: string;
+  phase: 'forward' | 'rollback';
+  owed: AuctionSettlementStepView[];
+  completed: string[];
+  attempts: number;
+  stuck: boolean;
+  cycle: number;
+  createdAt: number;
+  nextAttemptAt: number;
+}
+
+export interface AuctionSettlementQuery {
+  auctionId?: string;
+  accountId?: string;
+  minAttempts?: number;
+  limit?: number;
 }
 
 export interface TradeAuditSnapshot {

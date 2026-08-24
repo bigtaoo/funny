@@ -1,4 +1,11 @@
-import { fetchInternalJson, type AuctionAnomaly, type AuctionListingAdminView, type AuctionListingQuery } from '@nw/shared';
+import {
+  fetchInternalJson,
+  type AuctionAnomaly,
+  type AuctionListingAdminView,
+  type AuctionListingQuery,
+  type AuctionSettlementDebtView,
+  type AuctionSettlementQuery,
+} from '@nw/shared';
 
 // ── Auction anomaly scan (auctionsvc /internal/audit/anomalies, G7/§17.7) ──────────
 // Auction task5 (AUCTION_DESIGN §9): auctionsvc is now the sole owner of auction state, decoupled from
@@ -9,6 +16,12 @@ export interface AuctionClient {
   scanAnomalies(windowSec?: number): Promise<AuctionAnomaly[]>;
   /** Ops lookup: query listings (any status) by sellerId / itemType / status / itemName (auctionsvc /internal/audit/listings). */
   queryListings(filter: AuctionListingQuery): Promise<AuctionListingAdminView[]>;
+  /**
+   * Ops lookup: settlements that still owe a hand-over (auctionsvc /internal/audit/settlements, U13 close-out).
+   * A settlement crosses three services, so it is a durable to-do list the sweep retries forever; this is the
+   * only way to see one that keeps failing, which previously existed solely as a log line.
+   */
+  listSettlementDebts(filter: AuctionSettlementQuery): Promise<AuctionSettlementDebtView[]>;
 }
 
 export class HttpAuctionClient implements AuctionClient {
@@ -52,6 +65,26 @@ export class HttpAuctionClient implements AuctionClient {
       label: 'auctionsvc /internal/audit/listings',
     });
     if (!r.ok) throw new Error(`queryListings failed: ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
+    return r.body?.data ?? [];
+  }
+
+  async listSettlementDebts(filter: AuctionSettlementQuery): Promise<AuctionSettlementDebtView[]> {
+    if (!this.baseUrl) return [];
+    const qs = new URLSearchParams();
+    if (filter.auctionId) qs.set('auctionId', filter.auctionId);
+    if (filter.accountId) qs.set('accountId', filter.accountId);
+    if (filter.minAttempts != null) qs.set('minAttempts', String(filter.minAttempts));
+    if (filter.limit != null) qs.set('limit', String(filter.limit));
+    const r = await fetchInternalJson<{ ok?: boolean; data?: AuctionSettlementDebtView[] }>(`${this.baseUrl}/internal/audit/settlements?${qs}`, {
+      caller: 'admin',
+      key: this.internalKey,
+      timeoutMs: 10000,
+      label: 'auctionsvc /internal/audit/settlements',
+    });
+    // Throws rather than returning empty, same as the two lookups above: "no owed settlements" and
+    // "auctionsvc did not answer" mean opposite things here, and quietly showing the reassuring one is
+    // how a stuck debt stays invisible for another week.
+    if (!r.ok) throw new Error(`listSettlementDebts failed: ${r.status ? `HTTP ${r.status}` : r.error ?? 'network error'}`);
     return r.body?.data ?? [];
   }
 }

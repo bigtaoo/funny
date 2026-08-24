@@ -1,6 +1,7 @@
 // httpApi.ts route coverage gap-fill: auction.e2e.test.ts (AuctionService directly) and
 // auction-fulllink.e2e.test.ts (real HTTP, but only the happy paths a real client actually drives)
-// between them never exercise: the /internal/audit/listings ops route (X-Internal-Key gate + query
+// between them never exercise: the /internal/audit/listings and /internal/audit/settlements ops routes
+// (X-Internal-Key gate + query
 // filter wiring — the auctionsvc-side counterpart of admin's slgAudit.slgQueryAuctionListings), GET
 // /auction/refprice, /auction/create's own input-validation 400s (itemType/item/qty/durationSec
 // required; price required for a fixed sale; startPrice required for an auction sale), the generic
@@ -71,6 +72,69 @@ describe('GET /internal/audit/listings (ops audit pull, X-Internal-Key)', () => 
     const base = await startServer({ queryListings });
     const res = await fetch(`${base}/internal/audit/listings`, { method: 'POST', headers: { 'x-internal-key': INTERNAL_KEY } });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /internal/audit/settlements (owed-settlement lookup, X-Internal-Key)', () => {
+  it('valid key: forwards auctionId/accountId/minAttempts/limit to listSettlementDebts', async () => {
+    let received: unknown;
+    const base = await startServer({
+      listSettlementDebts: async (filter) => { received = filter; return []; },
+    });
+    const res = await fetch(`${base}/internal/audit/settlements?auctionId=a:s:1:1&accountId=acc-2&minAttempts=10&limit=25`, {
+      headers: { 'x-internal-key': INTERNAL_KEY },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, data: [] });
+    expect(received).toEqual({ auctionId: 'a:s:1:1', accountId: 'acc-2', minAttempts: 10, limit: 25 });
+  });
+
+  it('no filters -> nothing but the default limit, i.e. "everything still owed"', async () => {
+    // The unfiltered call is the useful one here (unlike the listing lookup, whose unbounded query the ops
+    // page refuses): an unfinished settlement is rare by nature, so the whole set is the interesting answer.
+    let received: unknown;
+    const base = await startServer({ listSettlementDebts: async (filter) => { received = filter; return []; } });
+    await fetch(`${base}/internal/audit/settlements`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(received).toEqual({ limit: 50 });
+  });
+
+  it('omits a non-numeric minAttempts rather than forwarding NaN', async () => {
+    let received: unknown;
+    const base = await startServer({ listSettlementDebts: async (filter) => { received = filter; return []; } });
+    await fetch(`${base}/internal/audit/settlements?minAttempts=abc`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(received).toEqual({ limit: 50 });
+  });
+
+  it('forwards an explicit minAttempts=0', async () => {
+    let received: unknown;
+    const base = await startServer({ listSettlementDebts: async (filter) => { received = filter; return []; } });
+    await fetch(`${base}/internal/audit/settlements?minAttempts=0`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(received).toEqual({ minAttempts: 0, limit: 50 });
+  });
+
+  it('missing X-Internal-Key -> 401, listSettlementDebts never called', async () => {
+    const listSettlementDebts = async () => { throw new Error('must not be called'); };
+    const base = await startServer({ listSettlementDebts });
+    const res = await fetch(`${base}/internal/audit/settlements`);
+    expect(res.status).toBe(401);
+    expect((await res.json() as { error: { code: string } }).error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('wrong X-Internal-Key -> 401', async () => {
+    const base = await startServer({ listSettlementDebts: async () => [] });
+    const res = await fetch(`${base}/internal/audit/settlements`, { headers: { 'x-internal-key': 'not-the-key' } });
+    expect(res.status).toBe(401);
+  });
+
+  it('non-GET method -> 404, never reaches the service — this route is read-only by design', async () => {
+    // There is deliberately no "retry now": auctionsvc's sweep already retries every owed hand-over on its
+    // own backoff, so a manual poke would only race it.
+    const listSettlementDebts = async () => { throw new Error('must not be called'); };
+    const base = await startServer({ listSettlementDebts });
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      const res = await fetch(`${base}/internal/audit/settlements`, { method, headers: { 'x-internal-key': INTERNAL_KEY } });
+      expect(res.status, method).toBe(404);
+    }
   });
 });
 

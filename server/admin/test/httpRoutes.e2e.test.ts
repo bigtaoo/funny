@@ -173,10 +173,20 @@ class FakeWorld implements WorldClient {
   async activateMapTemplate(templateId: string) { const e = this.templates.get(templateId); if (e) e.summary.active = true; }
   async deleteMapTemplate(templateId: string) { this.templates.delete(templateId); }
 }
+/** Records the filter the route built, so the query-string wiring is asserted and not just the status code. */
+let auctionSettlementFilter: unknown;
 const stubAuction: AuctionClient = {
   available: true,
   scanAnomalies: async () => [{ sellerId: 's1', buyerId: 'b1', trades: 3, designatedTrades: 1, totalCoins: 500, firstTs: 1, lastTs: 2, severity: 'medium', reasons: ['repeated'] }],
   queryListings: async () => [{ auctionId: 'a1', sellerId: 's1', itemType: 'material', itemName: 'wood', item: {}, qty: 1, price: 10, currency: 'coins' } as never],
+  listSettlementDebts: async (filter) => {
+    auctionSettlementFilter = filter;
+    return [{
+      orderId: 'auction_buy:a1:b1', auctionId: 'a1', kind: 'buy', actorId: 'b1', phase: 'forward',
+      owed: [{ name: 'item', op: 'mailItem', key: 'auction_buy:a1:b1:item', accountId: 'b1', item: 'material wood' }],
+      completed: ['spend'], attempts: 12, stuck: true, cycle: 0, createdAt: 1, nextAttemptAt: 2,
+    }];
+  },
 };
 const stubLadder: LadderClient = {
   available: true,
@@ -705,6 +715,21 @@ describe.skipIf(!mongo)('admin ops HTTP routes e2e', () => {
       const listings = await call(rootToken, 'GET', '/admin/slg/audit/listings?sellerId=s1');
       expect(listings.status).toBe(200);
       expect(listings.json.listings).toHaveLength(1);
+    });
+    it('SLG owed settlements: listed with the filters forwarded, and gated on slg.audit.view', async () => {
+      const all = await call(rootToken, 'GET', '/admin/slg/audit/settlements');
+      expect(all.status).toBe(200);
+      expect(all.json.settlements).toHaveLength(1);
+      expect((all.json.settlements as { stuck: boolean }[])[0]!.stuck).toBe(true);
+      // Unfiltered is the useful default here; only the limit/minAttempts keys are absent, not empty strings.
+      expect(auctionSettlementFilter).toEqual({ minAttempts: undefined, limit: undefined });
+
+      const filtered = await call(rootToken, 'GET', '/admin/slg/audit/settlements?auctionId=a1&accountId=b1&minAttempts=10&limit=25');
+      expect(filtered.status).toBe(200);
+      expect(auctionSettlementFilter).toEqual({ auctionId: 'a1', accountId: 'b1', minAttempts: 10, limit: 25 });
+
+      // support has no slg.audit.view, so it must not be able to read who is owed what.
+      expect((await call(csToken, 'GET', '/admin/slg/audit/settlements')).status).toBe(403);
     });
     it('SLG audit tickets: file → list → resolve (actioned → auto-ban both parties)', async () => {
       const file = await call(rootToken, 'POST', '/admin/slg/audit/tickets', {
