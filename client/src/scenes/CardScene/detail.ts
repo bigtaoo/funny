@@ -6,7 +6,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { unitPortraitUrl } from '../../render/cardArt';
+import { unitPortraitUrl, getArtTexture } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
 import { buildLevelStars } from '../../render/levelStars';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
@@ -17,26 +17,98 @@ import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandida
 import { skinsForUnitType, skinDisplayName } from '../../game/meta/skinDefs';
 import type { UnitType } from '@nw/engine/types';
 import { CardSceneCore, MODAL_DIM, injuryCountdown } from './core';
+import { drawDetailFace, flipDetailPortrait } from './detailPortrait';
 import type { ActionsPanel } from './actions';
 import type { FeedPanel } from './feed';
 
 /** Detail-modal domain (see ../CardScene.ts assembly + ./core.ts for the shared state). */
 export class DetailPanel {
+  /**
+   * {@link detailSignature} of the modal currently on screen, or null when nothing is drawn — the
+   * gate {@link ensureDetail} uses to skip a rebuild. See that method for why this exists.
+   */
+  private sig: string | null = null;
+
   constructor(
     private readonly core: CardSceneCore,
     private readonly actions: ActionsPanel,
     private readonly feed: FeedPanel,
   ) {}
 
+  /**
+   * Draw the detail modal for `cardId` **only if it isn't already on screen unchanged**.
+   *
+   * This is what the assembly's render() calls. render() runs for reasons that have nothing to do
+   * with the modal — a busy-dot tick, a save-change ping, a portrait texture finishing its load, a
+   * scroll-driven grid refresh — and it used to call {@link openDetail} unconditionally every time.
+   * That rebuilt ~15 `PIXI.Text` nodes whose `resolution` is `dpr × modalScale` (2–2.3x), i.e. the
+   * most expensive text in the scene to rasterize: ~4.3 ms per pass, measured at dpr 1, for a panel
+   * that in almost every case had not changed by one pixel.
+   *
+   * The signature covers everything the panel draws, so "unchanged" is safe rather than hopeful; on
+   * a skip the existing scene graph AND the existing `core.modalHits`/`modalScale` are what stay
+   * valid, which is why nothing here touches them.
+   */
+  ensureDetail(cardId: string): void {
+    const core = this.core;
+    const next = this.detailSignature(cardId);
+    if (next !== null && next === this.sig && core.modalOpen && core.detailId === cardId) return;
+    this.openDetail(cardId);
+  }
+
+  /**
+   * Everything the modal draws, flattened into one string — the sibling of ListPanel's
+   * cellSignature, and the same maintenance rule applies: **anything new the panel renders has to
+   * show up here**, or it will draw once and then never update.
+   */
+  private detailSignature(cardId: string): string | null {
+    const core = this.core;
+    const save = core.cb.getSave();
+    const card = save.cardInv?.[cardId];
+    if (!card) return null;
+    const def = CARD_DEFS[card.defId];
+    const state = core.cb.getCardState?.()?.[card.id];
+    const now = Date.now();
+    const gear = (['weapon', 'armor', 'trinket'] as EquipSlot[]).map((slot) => {
+      const inst = card.gear[slot] ? save.equipmentInv?.[card.gear[slot]!] : undefined;
+      return inst ? `${inst.defId}:${inst.rarity}:${inst.level}` : '-';
+    }).join(',');
+    const injuredUntil = state?.injuredUntil ?? 0;
+    // The countdown STRING, not the deadline: rebuild once per displayed minute, not per tick.
+    const injured = injuredUntil > now ? injuryCountdown(injuredUntil, now) : '';
+    const unitType = def?.unitType as UnitType | undefined;
+    const skin = unitType ? core.cb.getEquippedSkin(unitType) ?? '' : '';
+    const ownedSkins = unitType ? skinsForUnitType(unitType, core.cb.getOwnedSkins()).join(',') : '';
+    const artUrl = unitType ? unitPortraitUrl(unitType, core.cb.getEquippedSkin(unitType)) ?? '' : '';
+    const artReady = artUrl && getArtTexture(artUrl).baseTexture.valid ? '1' : '0';
+    const materialsOwned = card.level >= MAX_CARD_LEVEL ? -1
+      : fusionMaterialCandidates(card, save.cardInv ?? {})
+        .filter((c) => !core.cb.getCardState?.()?.[c.id]?.teamId).length;
+    return [
+      cardId, card.defId, card.level, card.locked ? 1 : 0, gear,
+      state === undefined ? '-' : state.currentTroops, state?.teamId ?? '-',
+      state?.teamId ? core.cb.getTeamName?.(state.teamId) ?? '' : '', injured,
+      materialsOwned, skin, ownedSkins, artUrl, artReady,
+      core.bt.busy ? 1 : 0, core.skinPickerOpen ? 1 : 0, core.detailFlipped ? 1 : 0,
+    ].join('|');
+  }
+
   openDetail(cardId: string): void {
     const core = this.core;
     const save = core.cb.getSave();
     const card = save.cardInv?.[cardId];
-    if (!card) { core.detailId = null; core.closeModal(); return; }
+    if (!card) { core.detailId = null; this.sig = null; core.closeModal(); return; }
     core.detailId = cardId;
+    this.sig = this.detailSignature(cardId);
 
     const { w, h } = core;
     const ml = core.modalLayer;
+    // Stop an in-flight portrait flip before its container is destroyed underneath it: the tick
+    // closure writes `container.scale.x` every frame, and PIXI nulls `transform` on destroy, so a
+    // rebuild mid-flip used to throw out of the shared ticker (latent since the flip landed —
+    // closeModal cleaned this up, a plain re-render never did).
+    core.flipTickerCleanup?.();
+    core.flipTickerCleanup = null;
     tearDownChildren(ml);
     core.modalHits = [];
     core.modalOpen = true;
@@ -132,7 +204,7 @@ export class DetailPanel {
     const faceLayer = new PIXI.Container();
     faceLayer.position.set(portraitX + portraitBox / 2, portraitY + portraitBox / 2);
     panelRoot.addChild(faceLayer);
-    this.drawDetailFace(faceLayer, portraitBox, artUrl, loreText, core.detailFlipped);
+    drawDetailFace(core, faceLayer, portraitBox, artUrl, loreText, core.detailFlipped);
     // Skipped while the skin picker popover is open (2026-08-03 fix): the popover's own dim
     // backdrop geometrically overlaps this same portrait rect (registered later, further down),
     // and hit-testing resolves first-match-wins in registration order — without this guard, a tap
@@ -140,7 +212,7 @@ export class DetailPanel {
     if (!core.skinPickerOpen) {
       core.modalHits.push({
         rect: core.toModalScreen({ x: portraitX, y: portraitY, w: portraitBox, h: portraitBox }),
-        action: () => this.flipDetailPortrait(faceLayer, portraitBox, artUrl, loreText),
+        action: () => flipDetailPortrait(core, faceLayer, portraitBox, artUrl, loreText),
       });
     }
 
@@ -366,49 +438,6 @@ export class DetailPanel {
     core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => core.closeDetail() });
   }
 
-  /** Draw the portrait face: art (front) or word-wrapped lore text (back), centered on the container's local origin. */
-  drawDetailFace(container: PIXI.Container, box: number, artUrl: string | undefined, loreText: string, flipped: boolean): void {
-    const core = this.core;
-    tearDownChildren(container);
-    if (!flipped) {
-      if (artUrl) core.drawArtFit(artUrl, -box / 2, -box / 2, box, container);
-      return;
-    }
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0xf0eee7).drawRect(-box / 2, -box / 2, box, box).endFill();
-    container.addChild(bg);
-    const lore = core.stxt(loreText, FS.micro, C.mid);
-    lore.style.wordWrap = true;
-    lore.style.wordWrapWidth = box - 10;
-    lore.x = -box / 2 + 5; lore.y = -box / 2 + 5;
-    container.addChild(lore);
-  }
-
-  /** Squash-flip the portrait face container (scaleX 1→0→1, swapping content at the midpoint) via PIXI.Ticker.shared. */
-  flipDetailPortrait(container: PIXI.Container, box: number, artUrl: string | undefined, loreText: string): void {
-    const core = this.core;
-    core.flipTickerCleanup?.();
-    const DUR_MS = 260;
-    let elapsed = 0;
-    let swapped = false;
-    const tick = () => {
-      elapsed += PIXI.Ticker.shared.deltaMS;
-      const t = Math.min(1, elapsed / DUR_MS);
-      if (!swapped && t >= 0.5) {
-        swapped = true;
-        core.detailFlipped = !core.detailFlipped;
-        this.drawDetailFace(container, box, artUrl, loreText, core.detailFlipped);
-      }
-      container.scale.x = Math.max(0.02, t < 0.5 ? 1 - t / 0.5 : (t - 0.5) / 0.5);
-      if (t >= 1) {
-        container.scale.x = 1;
-        PIXI.Ticker.shared.remove(tick);
-        core.flipTickerCleanup = null;
-      }
-    };
-    core.flipTickerCleanup = () => PIXI.Ticker.shared.remove(tick);
-    PIXI.Ticker.shared.add(tick);
-  }
 
   /** Render 3 gear slot boxes (icon + level badge) inside the detail modal. */
   renderDetailGearSlots(card: CardInstance, mx: number, cy: number, mw: number, save: SaveData): void {

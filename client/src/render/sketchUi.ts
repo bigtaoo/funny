@@ -165,6 +165,23 @@ export function seedFor(x: number, y: number, w: number, h = 0): number {
 }
 
 /**
+ * {@link seedFor} for a string key (a card / item instance id) instead of a rect.
+ *
+ * Use this wherever the scrawl must stay put while the thing it belongs to MOVES: a
+ * roster cell's border seeded from its on-screen rect re-jitters ("boils") on every
+ * scroll frame, because y changes every frame — and once the grid stopped rebuilding
+ * cells on scroll (ListPanel.syncCells) a position-derived seed would also have meant
+ * the border silently disagreeing with the cell it was baked for. Seeding from the
+ * instance id instead gives each card one stable hand-drawn border for its lifetime.
+ */
+export function seedForId(id: string, salt = 0): number {
+  let s = 2166136261;
+  for (let i = 0; i < id.length; i++) s = ((s ^ id.charCodeAt(i)) * 16777619) >>> 0;
+  s = ((s ^ Math.round(salt)) * 16777619) >>> 0;
+  return s || 1;
+}
+
+/**
  * X of the red notebook margin rule (see buildPaperBackground). Content columns
  * should start to its right so icon cards don't sit on top of the red stripe.
  */

@@ -49,6 +49,17 @@ export function bake(key: string, displayObject: PIXI.DisplayObject, w: number, 
 }
 
 /**
+ * Renderer resolution the {@link bake} family draws at. Callers that bake a
+ * `PIXI.Text` must stamp this onto `text.resolution` before handing it over:
+ * `PIXI.Text` picks its own glyph-canvas resolution from `settings.RESOLUTION`,
+ * which is not necessarily the renderer's, and any mismatch shows up as a soft
+ * or over-sharp bake. 1 when no renderer is wired.
+ */
+export function bakeResolution(): number {
+  return renderer?.resolution ?? 1;
+}
+
+/**
  * Lazy variant of {@link bake}: only invokes `draw()` on a cache miss, so a
  * cache hit costs nothing (no Graphics built, no layout). The drawn object is
  * rendered into the texture and then destroyed — the caller never sees it; it
