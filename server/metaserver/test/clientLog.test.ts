@@ -44,8 +44,7 @@ describe('buildAnomalyLokiPayload', () => {
     const p = buildAnomalyLokiPayload(
       '123456789',
       [{ type: 'webgl_lost', msg: 'context lost', ts: 1000, detail: '{"a":1}' }],
-      'web',
-      '0861367',
+      { platform: 'web', buildVersion: '0861367' },
       () => '0',
     )!;
     expect(p.streams).toHaveLength(1);
@@ -61,9 +60,57 @@ describe('buildAnomalyLokiPayload', () => {
   });
 
   it('unknown type falls back to other; empty input → null', () => {
-    const p = buildAnomalyLokiPayload('1', [{ type: 'bogus', msg: 'x', ts: 5 }], undefined, undefined, () => '0')!;
+    const p = buildAnomalyLokiPayload('1', [{ type: 'bogus', msg: 'x', ts: 5 }], {}, () => '0')!;
     expect(p.streams[0]!.values[0]![1]!).toContain('type=other');
-    expect(buildAnomalyLokiPayload('1', [], undefined, undefined, () => '0')).toBeNull();
+    expect(buildAnomalyLokiPayload('1', [], {}, () => '0')).toBeNull();
+  });
+
+  // ── device / orientation context (2026-08-24) ──
+  // The whole point of these fields is Grafana filterability, so the assertions are on the exact
+  // `key=value` logfmt tokens a query matches — not on mere substring presence.
+  it('stamps the session device bucket on every line and the per-event orientation on its own', () => {
+    const p = buildAnomalyLokiPayload(
+      '123456789',
+      [
+        { type: 'crash', msg: 'died', ts: 1000, orient: 'landscape', vp: '844x390', sinceRot: 0 },
+        { type: 'jserror', msg: 'boom', ts: 2000, orient: 'portrait', vp: '390x844' },
+      ],
+      { platform: 'web', device: 'phone', dpr: 3, mem: 4 },
+      () => '0',
+    )!;
+    const [crash, jserr] = p.streams[0]!.values.map((v) => v[1]!);
+    // Session fields ride on both lines...
+    for (const line of [crash, jserr]) {
+      expect(line).toContain('device=phone');
+      expect(line).toContain('dpr=3');
+      expect(line).toContain('mem=4');
+    }
+    // ...while orientation is per-event: the crash describes the session that died, the jserror the live one.
+    expect(crash).toContain('orient=landscape');
+    expect(crash).toContain('vp=844x390');
+    expect(crash).toContain('sinceRot=0');
+    expect(jserr).toContain('orient=portrait');
+    expect(jserr).not.toContain('sinceRot=');
+  });
+
+  it('drops off-allowlist device/orient values instead of passing them inline', () => {
+    // Both fields are client-supplied on an endpoint deliberately exempt from the allowPublicIds
+    // gate, so an unbounded value would let any client inflate Loki cardinality and poison
+    // `| logfmt | device="phone"` with near-miss spellings.
+    const p = buildAnomalyLokiPayload(
+      '1',
+      [{ type: 'mem', msg: 'x', ts: 5, orient: 'sideways' }],
+      { device: 'refrigerator' },
+      () => '0',
+    )!;
+    const line = p.streams[0]!.values[0]![1]!;
+    expect(line).not.toContain('device=');
+    expect(line).not.toContain('orient=');
+  });
+
+  it('rounds a fractional sinceRot — it is a millisecond count, not a measurement', () => {
+    const p = buildAnomalyLokiPayload('1', [{ type: 'mem', msg: 'x', ts: 5, sinceRot: 12.7 }], {}, () => '0')!;
+    expect(p.streams[0]!.values[0]![1]!).toContain('sinceRot=13');
   });
 });
 
@@ -270,5 +317,47 @@ describe('MetaService.clientAnomaly (full reporting: not restricted by targeting
     const platformMatch = /platform=(\S+)/.exec(line);
     expect(publicIdMatch?.[1]?.length).toBe(64);
     expect(platformMatch?.[1]?.length).toBe(32);
+  });
+
+  // ── device / orientation fields (2026-08-24) ──
+  it('carries the device envelope and per-event orientation through to the Loki line', async () => {
+    const svc = makeService(null, 'http://loki/push');
+    const out = (await svc.clientAnomaly(
+      req({
+        body: {
+          publicId: '1', platform: 'web', device: 'phone', dpr: 3, mem: 4,
+          events: [{ type: 'crash', msg: 'died', ts: 1, orient: 'landscape', vp: '844x390', sinceRot: 120 }],
+        },
+      }),
+      reply(),
+    )) as { data: { accepted: number } };
+    expect(out.data.accepted).toBe(1);
+    const payload = fetchMock.mock.calls[0]![1] as unknown as { body: string };
+    const line = JSON.parse(payload.body).streams[0].values[0]![1]! as string;
+    for (const token of ['device=phone', 'dpr=3', 'mem=4', 'orient=landscape', 'vp=844x390', 'sinceRot=120']) {
+      expect(line).toContain(token);
+    }
+  });
+
+  it('clamps and caps the new client-supplied fields', async () => {
+    // Same threat model as the oversized-publicId regression above: this endpoint is exempt from the
+    // allowlist gate, so every one of these lands inline on up to 200 Loki lines per request.
+    const svc = makeService(null, 'http://loki/push');
+    await svc.clientAnomaly(
+      req({
+        body: {
+          publicId: '1', device: 'd'.repeat(100), dpr: 9999, mem: 1e9,
+          events: [{ type: 'mem', msg: 'x', ts: 1, vp: 'v'.repeat(100), sinceRot: Number.MAX_SAFE_INTEGER }],
+        },
+      }),
+      reply(),
+    );
+    const payload = fetchMock.mock.calls[0]![1] as unknown as { body: string };
+    const line = JSON.parse(payload.body).streams[0].values[0]![1]! as string;
+    expect(line).toContain('dpr=16');            // clamped
+    expect(line).toContain('mem=1024');          // clamped
+    expect(line).toContain('sinceRot=86400000'); // clamped to 24h
+    expect(/vp=(\S+)/.exec(line)?.[1]?.length).toBe(16); // capped
+    expect(line).not.toContain('device=');       // capped to 16 chars, then dropped by the value allowlist
   });
 });

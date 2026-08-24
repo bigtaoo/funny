@@ -30,6 +30,11 @@ vi.mock('../../src/render/rewardIcon', () => ({ preloadRewardIconArt: () => rewa
 vi.mock('../../src/render/gachaArt', () => ({ preloadGachaTextures: () => gacha() }));
 vi.mock('../../src/render/atlas/worldAtlas', () => ({ worldAtlas: { load: () => world() } }));
 
+// Rotation clock, driven by the tests. Defaults to "never rotated", which is the state every test
+// below except the rotation block runs in — awaitRotationQuiet returns immediately there.
+const rotation: { at: number | undefined } = { at: undefined };
+vi.mock('../../src/net/anomaly/deviceContext', () => ({ lastRotationAt: () => rotation.at }));
+
 // After vi.mock (hoisted regardless of physical order — same pattern as battleGate.ui.ts).
 import { startIdlePrefetch, resetIdlePrefetchForTest } from '../../src/assets/idlePrefetch';
 
@@ -157,5 +162,56 @@ describe('idlePrefetch', () => {
     await vi.advanceTimersByTimeAsync(3_000);
     expect(events).toContain('start:boot:background');
     vi.useRealTimers();
+  });
+
+  // ── mid-rotation hold (2026-08-24) ──
+  // requestIdleCallback is not sufficient on its own here: a rotation's cost is largely off the main
+  // thread (drawing-buffer reallocation, texture re-upload), so the thread can look idle at exactly
+  // the moment GPU and memory pressure peak. Decoding a multi-megabyte texture into that window is
+  // the worst available timing on a memory-capped mobile WebView.
+  describe('holds off while the screen is rotating', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      // Honour the requested deadline, unlike the fire-immediately stub the other tests use — the
+      // whole point here is *when* the wave is allowed to start.
+      (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback =
+        (cb: () => void, opts?: { timeout: number }) => { setTimeout(cb, opts?.timeout ?? 0); return 1; };
+    });
+    afterEach(() => { rotation.at = undefined; vi.useRealTimers(); });
+
+    it('delays the first wave until the screen has been still for a moment', async () => {
+      void startIdlePrefetch();
+      await vi.advanceTimersByTimeAsync(2_999);
+      expect(events).toEqual([]); // still inside the opening 3s idle delay
+
+      const rotatedAt = Date.now(); // the player turns the phone right as that delay expires
+      rotation.at = rotatedAt;
+      await vi.advanceTimersByTimeAsync(1);
+      expect(events).toEqual([]); // ...so the wave is held rather than started
+
+      // Quiet is measured from the flip, not from when the wave wanted to run.
+      await vi.advanceTimersByTimeAsync(rotatedAt + 1_499 - Date.now());
+      expect(events).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(events).toEqual(['start:boot:background']); // 1500ms of stillness reached
+    });
+
+    it('does not hold a session that has never rotated', async () => {
+      void startIdlePrefetch();
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(events).toEqual(['start:boot:background']);
+    });
+
+    it('gives up waiting rather than stalling forever while the screen keeps turning', async () => {
+      // Bounded by MAX_QUIET_WAITS. A player idly flipping the phone back and forth must not be
+      // able to park the prefetch permanently — the waves still have to land eventually.
+      void startIdlePrefetch();
+      await vi.advanceTimersByTimeAsync(3_000);
+      for (let i = 0; i < 6; i += 1) {
+        rotation.at = Date.now();
+        await vi.advanceTimersByTimeAsync(1_500);
+      }
+      expect(events).toContain('start:boot:background');
+    });
   });
 });

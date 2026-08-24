@@ -18,6 +18,8 @@
  *   - **Cheapest first.** The battle set gates the most common next action; the 3.3 MB
  *     gacha set — the least likely and the largest — goes last.
  *   - **Opt-out on metered links.** `saveData` / 2g effective types skip it entirely.
+ *   - **Never mid-rotation.** A wave holds until the screen has been still for a moment — see
+ *     awaitRotationQuiet for why idle-scheduling alone does not cover this.
  *
  * Every loader below is URL-keyed and idempotent, so a wave that the player "beats" by
  * entering the scene first costs nothing: the scene's own gate joins the in-flight
@@ -28,6 +30,7 @@ import { ensureBattleAssets } from './battleAssets';
 import { worldAtlas } from '../render/atlas/worldAtlas';
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import { preloadGachaTextures } from '../render/gachaArt';
+import { lastRotationAt } from '../net/anomaly/deviceContext';
 
 /** Minimal shape of the (non-standard, Chromium-only) Network Information API. */
 interface NetworkInformation {
@@ -54,6 +57,32 @@ function whenIdle(timeoutMs: number): Promise<void> {
     if (ric) ric(() => resolve(), { timeout: timeoutMs });
     else setTimeout(resolve, timeoutMs);
   });
+}
+
+/** How long after an orientation flip a wave is held back. Comfortably past PixiAppViews'
+ *  REBUILD_COALESCE_MS plus the rebuild itself, so the two never overlap. */
+const ROTATION_QUIET_MS = 1_500;
+/** Bound on how long a wave will wait for quiet, so continuous rotation can't stall the chain forever. */
+const MAX_QUIET_WAITS = 4;
+
+/**
+ * Hold off while the screen is mid-rotation.
+ *
+ * `requestIdleCallback` is not enough on its own here: a rotation's cost is largely *off* the main
+ * thread — the WebGL drawing buffer is reallocated and the lobby's textures are re-uploaded — so the
+ * thread can look idle at the exact moment GPU and memory pressure peak. Decoding a multi-megabyte
+ * texture into that window is the worst available timing, and on a memory-capped mobile WebView the
+ * failure mode is not slowness but the renderer process being killed. Waiting a beat costs a prefetch
+ * nothing: every wave is speculative by definition, and the scene gates re-await the same loaders.
+ */
+async function awaitRotationQuiet(): Promise<void> {
+  for (let i = 0; i < MAX_QUIET_WAITS; i++) {
+    const rot = lastRotationAt();
+    if (rot === undefined) return;
+    const since = Date.now() - rot;
+    if (since >= ROTATION_QUIET_MS) return;
+    await whenIdle(ROTATION_QUIET_MS - since);
+  }
 }
 
 /** Ordered cheapest/likeliest first — see the "cheapest first" note in the file header. */
@@ -97,6 +126,7 @@ export function startIdlePrefetch(): Promise<void> {
       // A generous first delay keeps the prefetch clear of the lobby's own construction
       // and its opening API calls; later waves only need to yield between each other.
       .then(() => whenIdle(i === 0 ? 3_000 : 1_000))
+      .then(() => awaitRotationQuiet())
       .then(() => wave.run())
       .catch((err) => console.warn(`[prefetch] wave ${wave.id} failed:`, err)),
     Promise.resolve() as Promise<unknown>,
