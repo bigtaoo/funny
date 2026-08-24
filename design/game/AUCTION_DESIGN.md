@@ -62,17 +62,32 @@
 ### 2.3 成交流程（一口价，已实跑；竞拍见 §4.B）
 
 ```
-买方 buyAuction
+买方 buyAuction（2026-08-24 起：先认领、后扣款）
   ├─ 校验：存在 / status=open / 非自买 / 未过期 / （若定向）== designatedBuyerId
-  ├─ 1. commercial.spend(buyer, totalPrice, buyOrderId)     扣买方金币（不足→抛错不成交）
-  ├─ 2. 原子 findOneAndUpdate {status:open}→sold            防并发重复购买；抢失败→退买方款（走邮件，见下）
-  ├─ 3. mail.sendSystemMail(buyer, `${orderId}:item`, …)    标的走系统邮件发给买方（领取后入库）
+  ├─ 0. 结算账本落意图（auctionOrders，key = auction_buy:{id}:{buyerId}）
+  ├─ 1. 原子 findOneAndUpdate {status:open, rev}→sold        防并发重复购买；抢失败→无任何扣款，直接报错
+  ├─ 2. commercial.spend(buyer, totalPrice, 账本步骤 key)    扣买方金币（明确不足→回滚 sold→open；超时未知→挂账重试）
+  ├─ 3. mail.sendSystemMail(buyer, `…:item`, …)             标的走系统邮件发给买方（领取后入库）
   └─ 4. mail.sendSystemMail(seller, `…:seller`, coins attach) 卖方收款（税后）走系统邮件，领取后 commercial.grant 入账
 ```
 
 - **2026-07-18 拍板**：卖方收款、竞价被超/拍卖被抢的**所有**退款一律走系统邮件（`kind:'coins'` 附件，领取时 metaserver `claimMail` 才调 `commercial.grant`），`auctionsvc` 不再有任何路径直接 `commercial.grant` 到账——只有真实充值（Paddle webhook）才直接进钱包。`AuctionCommercialClient` 因此只剩 `spend`（扣买方款），`grant` 方法已删除。
-- **幂等**：每步 orderId 派生自 `auctionId`（`auction_buy:{id}` / `:item` / `:seller`），重放安全。
-- **失败补偿**：买方已扣款但步骤 3/4 失败 → 标的停在 `sold`，运维后台凭 orderId 查并补发（已在代码注释明确；接 OPS 工单见 §4.D）。
+- **2026-08-24 拍板：一口价改「先认领、后扣款」**（U13 收口）。原顺序是先扣款再认领，因此存在「已扣款却被抢走 → 发退款邮件」这条补偿路径；而那笔退款的 dispatchKey 派生自**挂单**、不含买家，两个抢失败的买家会去重成一封，第二个人的钱直接消失。倒过来之后这条路径整体不存在：没抢到就没扣过钱。代价是余额不足的买家会让该挂单瞬时不可购买（补偿把 `sold→open` 撤回），可自愈。
+  - **竞拍出价刻意保持相反顺序**（先扣款、后写 `topBid`）：`topBid` 是日后结拍付给卖家的依据，绝不能存在「有出价、没托管款」的中间态。退款路径因此在竞拍侧保留，但改由账本驱动重试，不再是一次性 best-effort。
+- **幂等键**：全部由 `auctionService/journalPlans.ts` 统一铸造（`flowKey`/`stepKey`），**代码里其它任何地方不许手写 `auction_…` 字面量**，由 `npm run check:auctionjournal` 门禁强制。账本行 id 是「去重身份」（同一 (挂单, 账号[, 金额]) 的重复提交撞在一起），下游 orderId/dispatchKey 再带上账本的 `cycle`——所以「上一次尝试已退款后的真实重试」是一次真实扣款，而不是被 commercial 当成重放白送。
+- **失败补偿**：见下 §2.4。「运维凭 orderId 手动补发」已由自动重试取代。
+
+### 2.4 跨集合结算账本（U13 收口，2026-08-24）
+
+一次成交要原子的三件事落在**三个进程、四个库**里：金币在 commercial（`notebook_wars_commercial`，HTTP `/internal/spend`）、挂单状态在 auctionsvc（`notebook_wars_auction`）、标的与卖家收款在 metaserver（`notebook_wars`，系统邮件）。Mongo 事务只覆盖单个 client/session，最多能包住 `auctions`+`auctionDaily`+`auctionPrices`——**钱和货一个都不在里面**。因此不引入事务，改用 commercial 的 `orders` 集合早就在用的形状：**幂等键 + 持久化待办 + 可重驱动**。
+
+- **`auctionOrders` 集合**（auction 库）：一次跨服务流程一行。`steps`（欠着的副作用，仅 `$push`）/`done`（点路径 `$set` 记完成）/`started`（前缀步骤已发起）/`compensation`（走不下去时撤什么，`requires` 指明依赖哪个正向步骤真落地了）/`decided`（请求路径是否越过了分叉点）/`prefix`（分叉前有几个步骤）/`cycle`（重开次数，用于给下游换键）。
+- **能跑通的关键前提**：下游本来就都幂等了——commercial 按 `orderId` 去重且绑定首个使用它的账号，系统邮件按 `dispatchKey` 去重，meta 库存端点按 `orderId` 去重。所以账本**不需要实现分布式原子性**，只需要记住「还欠谁什么」并能重跑。
+- **失败分两类，处置相反**（整个引擎的核心）：**业务拒绝**（`SlgError`：余额不足 / 装备已装备 / 卡有配装…）是下游真的判过并拒了，证明什么都没动，可以立刻回滚；**传输失败**（超时 / 连接重置 / 502）什么都不证明，请求可能已经完全生效，此时回滚就是凭空造币或复制道具——这类一律按下游自己的幂等键重试到拿到确定答案，再决定要撤什么。
+- **两个驱动**（`scheduler.ts` 每 10s，`journalSweep.ts`）：`resumePending` 续跑请求路径半途死掉、或交付被 meta 抖断的行（每行自带 2s 倍增至 5min 的退避，**永不放弃**——欠的是真资产）；`repairUnsettled` 补那个顺序关不掉的缺口——结拍/撤单/过期这三个流程是「先认领、后写账本行」（交付方向单一，且赢家要认领成功才知道），崩在中间没有行可续，但会留下「终态挂单 + 无 `settledAt`」，这本身就是欠账凭证，plan 是文档的纯函数所以能重建。
+- **`AuctionDoc.settledAt`**：交付真正完成才写。它的**缺失**就是 `repairUnsettled` 的扫描条件，因此 `purgeClosedListings` 也加了「不删还欠着交付的挂单」——否则会把唯一的欠账凭证删掉。
+- **历史数据**：启动期迁移（`db.ts::runMigrations`，服务收流量前跑完）给所有**已终态**挂单补 `settledAt`。旧代码关掉的那些要么已发邮件、要么已静默丢失，数据里分不出来；重驱动它们会按账本的新 dispatchKey 再发一遍附件，把一次不可挽回的旧丢失变成一次新的复制。
+- **系统邮件不再吞异常**：`HttpAuctionMailClient` 配置可用时发送失败**抛错**（未配置的 null client 仍静默 no-op）。旧的「记日志后返回」是生产上最可能真丢资产的一条：meta 抖一个 500，卖家的钱或买家的货就没了，只留一行日志，而且没有任何东西会去重试。
 
 ---
 
@@ -94,7 +109,7 @@
 - **状态**：`AuctionStatus = open | sold | expired | cancelled`（`shared/slg.ts`）。
 - **时长**：`AUCTION_DURATIONS_SEC = [72h]`（固定，2026-07-05 起客户端不再提供时长选择）；`expireAt = createAt + durationSec`。
 - **过期不走 Mongo TTL**：TTL 自删会在结算前丢掉托管物（U13）→ 故意用**普通索引 `{expireAt:1}` + scheduler 扫描器**（每 2s tick，每批 ≤50 条，原子 `open→expired` + 退还卖方）。`§14.3` 表里「TTL {expireAt}」按此实现期决定改为普通索引。
-- **并发**：所有终态转移走 `findOneAndUpdate({status:'open'})` 原子认领 + `rev` 自增，防双花/重复结算。
+- **并发**：所有终态转移走 `findOneAndUpdate` 原子认领 + `rev` 自增，防双花/重复结算。**2026-08-24 起 filter 一律带 `rev`**（原先 `settleAuctionWin` 与过期分支只有 `{status:'open'}`）：状态不变的并发写（一笔新出价）不会被 status 过滤挡住，结拍会按**陈旧 `topBid`** 成交——标的发给刚被退款的上一位出价者，新出价者的托管款孤立。带上 `rev` 后这一跳直接失败，扫描器下一 tick 用新快照重算。
 - **终态时间戳 `closedAt`**（2026-07-14）：每次 `open→sold/cancelled/expired` 转移都写 `closedAt=now`（`sold` 另留 `soldAt` 供审计向后兼容）。用途见下「我的挂单历史保留」。
 - **「我的挂单」历史 + 保留清理**（2026-07-14）：`getMyListings` 返回该卖家**所有状态**的挂单（`open` 按 `expireAt` 倒序在前，其后是保留期内的已结束历史），拉取上限 `MY_LISTINGS_FETCH_LIMIT=100`（大于 open 上限 `AUCTION_MAX_LISTINGS=20`，给历史留位）。客户端「我的挂单」行：`open` 显示「取消」按钮；`sold/cancelled/expired` 改显状态徽标（已售/已取消/已过期·已退回），不显倒计时、无可点区域。已结束挂单超过保留期（`AUCTION_CLOSED_RETENTION_SEC=30d`，≥ `AUDIT_WINDOW_SEC=7d` 以免误删审计窗口内的成交单）由 scheduler 每 1h 一次 `purgeClosedListings` 物理删除（`status≠open` 且 `closedAt`——旧文档回退 `expireAt`——早于 cutoff），防列表无限增长。`open` 挂单永不清理（仍持托管物/活跃竞价）。
 
@@ -198,7 +213,9 @@
 ```
 _id: auctionId(sellerId, ts, seq)   // 进程内 seq 防同毫秒撞键，不再含 worldId 分量
 sellerId, itemType, item, qty, price, currency('coins'),
-designatedBuyerId?, expireAt(ms), status, buyerId?, rev
+designatedBuyerId?, expireAt(ms), status, buyerId?, rev,
+soldAt?, closedAt?, settledAt?          // settledAt = 跨服务交付真正完成（§2.4）
+saleMode?, startPrice?, buyoutPrice?, topBid?
 ```
 
 索引（`auctionsvc/src/db.ts ensureIndexes` ✅ 已去 worldId）：
@@ -206,6 +223,9 @@ designatedBuyerId?, expireAt(ms), status, buyerId?, rev
 - `{sellerId}` — 我的挂单
 - `{designatedBuyerId}` — 定向收件
 - `{expireAt}` — **普通索引（非 TTL，故意）**，过期扫描器用
+- `{status, settledAt}` — 结算账本的修复扫描（终态但还没交付完，§2.4）
+
+另一个集合 **`auctionOrders`**（跨集合结算账本，§2.4；字段权威在 `auctionsvc/src/db.ts` 的 `AuctionOrderDoc`）：`{status, nextAttemptAt}` 驱动续跑扫描，`{auctionId}` 反查，`{purgeAt}` TTL（**只在行终结时才写 `purgeAt`**——pending 行是未结的欠账，绝不能被 TTL 清掉）。
 
 ### 5.2 REST 端点（独立服务 `auctionsvc` `/auction/*`，端口 18086，✅ 已落地；Caddy/compose 已切 `/auction*` → `auctionsvc:18086`（§9 任务5）；worldsvc 侧的旧 `auctionService.ts` 及 `/auction/*` 路由已删（§9 任务6））
 

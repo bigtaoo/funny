@@ -3,6 +3,13 @@
 // Direct delivery by accountId (meta single-send branch skips publicId resolution when accountId is provided).
 // NW_META_INTERNAL_URL not configured → available=false → delivery/return does not send mail (best-effort; does not block settlement).
 // Migrated from server/worldsvc/src/mailClient.ts (caller name updated to 'auctionsvc').
+//
+// 2026-08-24 (U13 close-out): a CONFIGURED client now THROWS on a failed send. It used to log and return,
+// which meant one meta 500 silently destroyed a seller's proceeds or a buyer's item — the likeliest asset
+// loss in production, needing no crash at all. The caller (journalSteps.ts → journal.ts) records the step
+// as still-owed and the scheduler sweep retries it until it lands. The null client below stays a silent
+// no-op: with meta unconfigured there is nothing to retry, and the design's stated degradation is that
+// mail delivery does not block settlement.
 
 import { fetchInternalJson, type EquipmentInstance, type CardInstance } from '@nw/shared';
 
@@ -26,7 +33,11 @@ export interface AuctionMailContent {
 
 export interface AuctionMailClient {
   readonly available: boolean;
-  /** System mail (dispatchKey idempotency, attachments: material/equipment/card/skin). Best-effort; failures are logged and do not block settlement. */
+  /**
+   * System mail (dispatchKey idempotency, attachments: material/equipment/card/skin).
+   * Throws on a failed send when the client is configured, so the journal can record the hand-over as
+   * still owed and retry it; the null (unconfigured) client is a silent no-op.
+   */
   sendSystemMail(accountId: string, dispatchKey: string, content: AuctionMailContent): Promise<void>;
 }
 
@@ -58,11 +69,12 @@ export class HttpAuctionMailClient implements AuctionMailClient {
       label: '/internal/mail/system/send',
     });
     if (!res.ok) {
-      console.error('[auctionsvc] mail.sendSystemMail failed', { accountId, dispatchKey, status: res.status, err: res.error });
-    } else if (res.body?.ok === false) {
+      throw new Error(`mail.sendSystemMail failed: ${res.error ?? `status ${res.status}`}`);
+    }
+    if (res.body?.ok === false) {
       // meta answers HTTP 200 with {ok:false} when the recipient is unknown or socialsvc persistence failed —
-      // HTTP status alone can't detect a dropped mail. Retry/compensation is a later batch; make the loss visible.
-      console.error('[auctionsvc] mail.sendSystemMail rejected', { accountId, dispatchKey, err: res.body.error });
+      // HTTP status alone can't detect a dropped mail, so this has to be inspected explicitly and raised too.
+      throw new Error(`mail.sendSystemMail rejected: ${res.body.error ?? 'unknown'}`);
     }
   }
 }

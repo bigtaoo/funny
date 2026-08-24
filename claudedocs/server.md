@@ -139,7 +139,7 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
     - `worldsvc/test/settle-expr-parity.e2e.test.ts`（12 例）把 `settle()` 和 `settleExpr()` 同输入对跑、要求逐位相等，覆盖夹取 / dt≤0 / 缺字段 / 超上限 / cabinet 抬高上限 / `scale`。此前"必须同步"只写在注释里、**没有任何东西强制**。变异验证：移除 `settleExpr` 的上限夹取 → 4 例立刻失败。
     - `server/scripts/checkAbsoluteWrites.mjs`（`npm run check:absolutewrites`，已接入 ci.yml）把本轮判据变成 gate：`playerWorld`/`tiles` 上任何 `$set` 运行总量的写入，必须是 delta 表达式或在 `ALLOWED` 里带理由。**这个脚本自己被两次修正**——先是扫注释（记录旧 `$set` 形状的说明文字把它自己绊倒了），再是把 delta 判断做在整个 `$set` 字面量上（每条管道都带 `rev: { $add: … }`，于是整块被豁免，一个把 `troops` 改回绝对值的变异**没被拦住**）。现在逐字段判断、先剥注释，变异必被抓。
   - **归因纠正（值得记住的教训）**：第一版注释和测试把 `damage.ts` 的病因写成"同一 tick 内多个攻击者互相覆盖"，测试在**修复前的代码上也通过**——因为 `processDueSiegeDamage` 是 `for … await` 顺序循环、每次迭代自己重读，同跳内本来就正确叠加。真实对手是 `scheduler.ts` 用 `Promise.allSettled` **并发**跑的五个 tick 任务（`processCompletedBuilds` 的墙升级重设 durability）以及多实例部署。修复本身是对的，错的是理由；测试改成在读写窗口内注入交错后才真正会咬人。**写并发回归测试时，"顺序调用两次"几乎从不等于"并发"。**
-  - **仍开放**：拍卖成交的跨集合幂等与回滚（唯一还剩的跨集合多步原子性，单文档 CAS 帮不上忙）。
+  - **U13 的最后一条已另开一轮收口**：拍卖成交的跨集合幂等与回滚不属于这套单文档手法（原子性边界跨三个进程、四个库），见本文「拍卖行成交原子性」。
 
 ## 经济核验工具（econ-sim，A 轨）
 
@@ -157,6 +157,28 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
 - **限时活动管理（B6，2026-06-24）**：补齐「创建活动」运营层（此前 `cols.events` 只读无写，线上永远空）。能力 `events.manage`（super/ops）。admin `eventsClient` 经 X-Internal-Key 代理 meta `/admin/events`（`GET` 列全部含未开始/已结束 + `POST` 创建 + `PATCH/DELETE /:id`）；写库前过 `validateEventInput`（@nw/shared，kind 白名单/时间窗/正整数/coins需count·material·skin需id/id去重），删除保留 `eventParticipants` 历史。ops 前端「限时活动」菜单 `pageEvents`（列表+状态+JSON 表单+删除确认）。⚠ 新能力需 VPS admin 后端 `--build` 重建菜单才出现。仍未建：生命周期自动调度器（settled 结算/清积分），见 `design/game/EVENTS_DESIGN.md §10`
 - **埋点（A9）**：`/analytics/events` fire-and-forget（`writeConcern:{w:0}`）；`analyticsvc/src/scheduler.ts` 每小时 ETL 漏斗
   - **`AnalyticsService` 拆分（2026-08-02）**：`service.ts` 947 行（其中前 357 行是模块级声明）按 metaserver `service.ts`+`service/*` 同款 mixin 链拆为 `service/defs.ts`（采样配置 / 上报与查询结果类型 / 手写 UA 解析 / 五套漏斗的有序步骤定义——纯声明，无状态无 I/O）+ `service/base.ts`（collections 句柄 + 构造 + getConfig）+ `service/traffic.ts`（事件数/DAU/登录小时/留存/首次会话）+ `service/funnel.ts`（漏斗 ETL + tutorial/scene/level/feature-guide 漏斗）+ `service/dist.ts`（地区/OS/浏览器/设备/国家/徽章分布）+ `service/ingest.ts`（A9-3 写入路径）。`service.ts` 收为 27 行装配壳并 `export * from './service/defs'`，故 `httpApi.ts`/`index.ts`/`scheduler.ts`/e2e 仍从 `'./service'` 取 `AnalyticsService`/`EventBatch`/`ResolvedGeo`，零改动。**副作用**：`dayStart`/`toDateStr`/`clampEventTs`/`ACTION_NOISE`/`EMPTY_STEP_KEYS`/`MAX_EVENT_TS_*` 原是模块私有，因 mixin 分在别的文件里要用而改为从 `defs.ts` 导出，经 `export *` 进入了 `service.ts` 的对外面。
+
+## 拍卖行成交原子性
+
+- **跨集合结算账本（U13 收口，2026-08-24 第四轮）**：前三轮扫的是 worldsvc 的单文档并发写；拍卖成交是**唯一一条跨集合**的多步原子性问题，前三轮那套 rev CAS / 聚合管道完全帮不上忙。
+  - **为什么不上事务**：一次成交要原子的三件事落在**三个进程、四个库**——金币在 commercial（`notebook_wars_commercial`，HTTP `/internal/spend`）、挂单状态在 auctionsvc（`notebook_wars_auction`）、标的与卖家收款在 meta（`notebook_wars`，系统邮件）。Mongo 事务只覆盖单个 client/session，最多能包住 `auctions`+`auctionDaily`+`auctionPrices`——**钱和货一个都不在里面**。买来的覆盖率是零，代价是把 auctionsvc 的测试 harness 从 standalone mongod 改副本集、并破掉 `shared/src/mongo.ts` 那条「单文档 CAS、零事务」的全库约定。**故走幂等键 + 补偿**，形状照抄 commercial `orders` 早就在用的那套（insert-first 抢键 → 状态 → `isStaleClaim` + CAS 续跑，`commercial/src/service/base.ts`）。
+  - **能跑通的前提**：下游本来就都幂等了——commercial 按 `orderId` 去重**且把它绑定到首个使用它的账号**，系统邮件按 `dispatchKey` 去重，meta 库存端点按 `orderId` 去重。所以账本不需要实现分布式原子性，只需要一份**能被重新驱动的持久化待办**。
+  - **新集合 `auctionOrders`**（auction 库，一次跨服务流程一行）+ 四个文件：`journalPlans.ts`（**全部幂等键 + 五个流程的 plan**，纯函数）/ `journalSteps.ts`（**唯一**碰跨服务资产的地方）/ `journal.ts`（引擎：`begin`/`advance`/`decide`/`finalize`/`rollback`，请求路径与扫描器**跑同一份代码**，避免「一个公式两种语言」）/ `journalSweep.ts`（`resumePending` 续跑 + `repairUnsettled` 修复）。五个流程全部上账本：挂单托管 / 一口价成交 / 出价托管 / 结拍 / 撤单+过期退回。
+  - **引擎的核心判据**：失败分两类，处置相反。**业务拒绝**（`SlgError` —— 余额不足 / 装备已装备 / 卡有配装）是下游真判过并拒了，证明什么都没动，可以立刻回滚；**传输失败**（超时 / 连接重置 / 502）什么都不证明，请求可能已完全生效，**此时回滚就是凭空造币或复制道具**——一律按下游自己的幂等键重试到拿到确定答案，再决定要撤什么。配套两个字段让回滚不靠猜：`started`（前缀步骤已发起，区分「没试过」与「试过但结果未知」——否则回滚会把前缀调用本身打出去，纯粹为了把钱再邮回来）、`requires`（补偿步骤依赖哪个正向步骤真落地了）。
+  - **`decided` 是「向前」与「回滚」的分界**：之前请求还没承诺往下走（可能死在了玩家什么都不知道的时候）→ 撤；之后是一笔已经答应的交易 → 跑完（下游明确拒绝仍会经 `finalize` 的 catch 撤回）。
+  - **顺序改动（用户拍板）**：一口价改**先认领、后扣款**，「已扣款却被抢走 → 退款」这条补偿路径整体消失。**竞拍出价刻意保持相反顺序**（先扣款、后写 `topBid`）——`topBid` 是日后结拍付给卖家的依据，绝不能存在「有出价、没托管款」的中间态。这个不对称是有意的，改任一侧前先读 `journalPlans.ts` 里两个 plan 的注释。
+  - **顺带查出并修掉的实际缺陷**（都是这轮真正的收益）：
+    - `auction_buy:{id}` **不含买家**：两个买家抢同一挂单时，第二个撞上 commercial 的跨账号归属校验、拿到莫名 `BAD_REQUEST`（玩家看到的不是「已被抢走」）；更糟的是扣款成功后崩溃会让这个 orderId 被那个没拿到货的买家**永久占用**，该挂单从此谁都买不了。
+    - 同一竞拍者同一金额的**两次并发出价共用键**：commercial 只扣一次，输掉 CAS 的那一路照样发一笔全额退款邮件——凭空造币。
+    - `settleAuctionWin` 的 CAS **只有 `{status:'open'}`、漏了 `rev`**：一笔新出价落在过期扫描器的批量读与结算之间时（每条中间夹着多次 HTTP 邮件，窗口很宽），按**陈旧 `topBid`** 成交——标的发给刚被退款的上一位出价者，新出价者的托管款孤立。这属于前三轮那一类，漏在了这儿。过期分支的 `open→expired` 同样补了 `rev`。
+    - **系统邮件失败只记日志不抛**：生产上最可能真丢资产的一条，连崩溃都不需要——meta 抖一个 500，卖家的钱或买家的货就没了，只留一行日志，且没有任何东西会去重试。`HttpAuctionMailClient` 现在配置可用时**抛错**（未配置的 null client 仍静默 no-op，保持 AUCTION_DESIGN 声明的降级语义）。
+    - `spend` 请求体没带 `reason`，commercial 侧 `str(b.reason)` 取到空串 → 所有拍卖扣款在 ledger 里 reason 为空。
+  - **`settledAt` 与两个连带改动**：`AuctionDoc.settledAt` 只在交付真正完成后写，它的**缺失**是 `repairUnsettled` 的扫描条件（结拍/撤单/过期是「先认领、后写账本行」，崩在中间没有行可续，但会留下「终态挂单 + 无 `settledAt`」这份欠账凭证，plan 是文档的纯函数所以能重建）。因此 ①`purgeClosedListings` 加了「不删还欠着交付的挂单」；②`db.ts::runMigrations`（启动期、收流量前）给所有已终态挂单补 `settledAt`——旧代码关掉的那些要么已发邮件、要么已静默丢失，数据里分不出来，重驱动会按新 dispatchKey 再发一遍附件，把一次不可挽回的旧丢失变成一次**新的复制**。
+  - **防腐设施**：`npm run check:auctionjournal`（`server/scripts/checkAuctionJournal.mjs`，已接 ci.yml）——五条文件作用域规则，把每种跨服务能力（`commercial.spend` / `sendSystemMail` / `meta.escrow*|grant*|deductMaterial` / `deliverItem|deliverCoins`）和**全部 `auction_…` 幂等键字面量**各锁在唯一一个文件里；先剥注释（每条规则的说明都必然引用它禁止的形状，会失败在自己文档上的门禁会被删掉），并额外检查「规则在它该管的文件里还匹配得到东西」，防止能力搬走后规则静默失效。
+  - **门禁自身做了变异测试**：`auctionsvc/test/check-auction-journal.test.ts` 建临时 fixture 树——干净树必须过、五条规则各自被重新引入必须挂并报对规则、只出现在注释里必须过、能力搬出 owner 文件必须报「silently enforcing nothing」。（上一轮 `checkAbsoluteWrites` 的第一版就是因为 `rev` 的管道自增顺带豁免了同一个 `$set` 里的其它字段，成了一个不能失败的门禁。）
+  - **行为侧回归** `auctionsvc/test/journal-atomicity.e2e.test.ts`（真 Mongo，22 例）。两点刻意与既有 `auction.e2e.test.ts` 不同：①**下游 fake 是忠实的**——`commercial.spend` 复刻了真实的 insert-first orderId 槽位**和**跨账号归属校验、带余额、只记真实发生的扣款；邮件 fake 按 dispatchKey 去重且可指定某个交付失败 N 次。共用键在「只往数组里 push」的 fake 上看起来就是两次正常调用，**这轮的键位 bug 对那种 fake 是不可见的**。②**并发一律在读写窗口内注入**，绝不用「顺序调两次」代替——后者在修复前的代码上照样通过。三条关键用例已实测在修复前的代码上失败：去掉购买键里的 buyerId → 报 key 归属冲突而非 `AUCTION_CLOSED`；去掉结拍的 `rev` → `expected 'sold' to be 'open'`；去掉重复提交去重 → `expected 10 to be +0`（10 金币凭空退款）。另外把 `repairUnsettled` 改成 no-op 也验证了修复用例会挂。
+  - **既有测试的三处预期变更**：`mailClient.test.ts` 两例从「失败只记日志不抛」翻成「必须抛」；`auction.e2e.test.ts` 的「被抢走 → 退款邮件」整例重写为「压根没扣款」（顺序倒过来后那个结果不存在了）；`composition-wiring.test.ts` 注入的依赖从 `AuctionServiceDelivery` 换成 `AuctionOrderJournal`（`delivery.ts` 移到 `journalSteps.ts` 后面，facade 不再持有它）。auctionsvc 行覆盖率 92.0% → 95.06%（217 例全绿）。
+  - **未做、留作后续**：ops 后台还看不到「还欠着交付」这个状态（`AuctionListingAdminView` 没有 `settledAt`，也没有列 `auctionOrders` 的端点）。自动重试已经把「凭 orderId 手动补发」这个工单场景消掉了大半，但一个卡在 `attempts >= 10` 的欠账目前只体现在日志里。要做就得动 openapi + admin 前端，本轮刻意没顺手半做。
 
 ## 上线收口（Track 2，2026-06-23）
 

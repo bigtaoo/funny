@@ -83,6 +83,11 @@ export class AuctionServiceListing {
     const cutoff = this.deps.now() - retentionSec * 1000;
     const res = await this.deps.cols.auctions.deleteMany({
       status: { $ne: 'open' },
+      // Never purge a listing whose hand-over is still owed (U13 close-out): a terminal status with no
+      // `settledAt` is exactly what the journal sweep's repair pass scans for, and it rebuilds the plan
+      // from this document — deleting it would destroy the only record that the seller is still owed
+      // their item or the buyer their purchase.
+      settledAt: { $exists: true },
       $or: [
         { closedAt: { $lt: cutoff } },
         { closedAt: { $exists: false }, expireAt: { $lt: cutoff } },
