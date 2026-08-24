@@ -34,12 +34,13 @@ import {
 } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { getArtTexture, containScale } from '../../render/cardArt';
-import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, sceneHeaderHeight, headerCurrencyWidth, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
+import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER } from '../../game/meta/cardDefs';
 
 export type {
   CardActionResult, CardBatchResult, CardSceneTab, CardCallbacks, CardRosterView, Rect, Hit,
@@ -81,6 +82,8 @@ export class CardSceneCore {
   headerOverlayLayer!: PIXI.Container;
 
   backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Right edge of the header's title group — drawHeaderCurrency's fit backstop. See build(). */
+  titleRight = 0;
   /** Title-bar height, set from the shared header in build() — drives all body layout below it. */
   headerH = 0;
   /** `owner` (card instance id) tags a roster-cell hit so applyCardState()'s refresh can drop and
@@ -263,14 +266,43 @@ export class CardSceneCore {
     this.loadingLayer = new PIXI.Container();
     this.container.addChild(this.loadingLayer);
 
+    // The title band has to know how wide the coin/capacity cluster ListPanel.renderHeaderCurrency()
+    // draws on top of it: the old fixed 20%-of-width guess was ~7 points short of the real cluster on
+    // a 430pt portrait viewport, so the centred "Hero Roster" ran straight under the coin number
+    // (2026-08-24). Measured from the same spec the draw call uses.
+    const spec = this.headerCurrencySpec();
     const hdr = drawSceneHeader(this.container, w, h, t('roster.title'), {
       variant: 'paper', accent: HEADER_ACCENT.spend, icon: 'rosterIcon',
+      rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), spec.coins, [], spec.capacity, spec.scale),
     });
     this.backRect = hdr.backRect;
     this.headerH = hdr.headerH;
+    this.titleRight = hdr.titleRight;
 
     this.headerOverlayLayer = new PIXI.Container();
     this.container.addChild(this.headerOverlayLayer);
+  }
+
+  /**
+   * Inputs for the header's coin + capacity cluster, in one place because two callers need the same
+   * answer: build() measures it to size the title band, ListPanel.renderHeaderCurrency() draws it.
+   * Splitting the expression between them is exactly how the reserve and the cluster drift apart.
+   */
+  headerCurrencySpec(): { coins: number; capacity: { text: string; color: number }; scale: number } {
+    const save = this.cb.getSave();
+    const count = Object.keys(save.cardInv ?? {}).length;
+    const warn = count >= CARD_INV_CAP - CARD_INV_OVERFLOW_BUFFER;
+    const full = count >= CARD_INV_CAP;
+    return {
+      coins: save.wallet.coins,
+      capacity: {
+        text: t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP)),
+        color: full ? C.red : warn ? C.gold : C.mid,
+      },
+      // Keep the readout at a compact absolute size (matches EquipmentScene, its [Cards|Equipment]
+      // peer) rather than scaling it up with the taller unified header.
+      scale: 100 / sceneHeaderHeight(this.h),
+    };
   }
 
   /**

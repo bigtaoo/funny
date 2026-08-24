@@ -14,7 +14,7 @@ import { buildDecorCLayer } from '../../render/decorCLayer';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { drawSocialTabRail, SOCIAL_TAB_ICON, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
-import { drawSceneHeader, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight } from '../../ui/widgets/SceneHeader';
 import type { FriendsSceneCore } from './core';
 
 /** render()'s opening steps — clears this frame's tree and draws the shared background. Called from
@@ -82,12 +82,18 @@ export function drawHeader(core: FriendsSceneCore): void {
   const titleKey = `friends.tab.${core.tab}` as TranslationKey;
   // Title glyph comes from the same table as the tab rail's (socialTabRail.ts) — one concept per
   // social tab, whether it's drawn in the cell or above the page.
+  // World channel posts cost coins — show the current balance top-right while on that tab, and
+  // reserve its real width so a centred title can't run under it on a narrow portrait bar
+  // (2026-08-24). Only the world tab draws a cluster, so the other tabs keep the full band.
+  const coins = core.tab === 'world' && core.cb.getCoins ? core.cb.getCoins() : null;
   const hdr = drawSceneHeader(core.container, w, h, t(titleKey), {
     variant: 'paper', icon: SOCIAL_TAB_ICON[core.tab],
+    ...(coins === null ? {} : { rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins) }),
   });
   core.hits.push({ rect: hdr.backRect, fn: () => core.onBack() });
-  // World channel posts cost coins — show the current balance top-right while on that tab.
-  if (core.tab === 'world' && core.cb.getCoins) drawHeaderCurrency(core.container, w, hdr.headerH, core.cb.getCoins());
+  if (coins !== null) {
+    drawHeaderCurrency(core.container, w, hdr.headerH, coins, [], undefined, 1, hdr.titleRight);
+  }
 }
 
 // ── Shared render primitives ─────────────────────────────────────────────────

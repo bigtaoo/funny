@@ -31,6 +31,7 @@ import { tearDownChildren, drawLoadingOverlay } from '../render/sketchUi';
 import { preloadTabIconTextures } from '../render/icons';
 import { drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { EquipmentSceneCore } from './EquipmentScene/core';
+import { renderHeaderCurrency, renderMaterialsBand } from './EquipmentScene/headerRow';
 import type { EquipmentCallbacks, EquipTab } from './EquipmentScene/core';
 import { EQUIP_SUBTABS } from './EquipmentScene/types';
 import { FILTER_H, MAT_BAND_H, TAB_LOADOUT_GAP } from './EquipmentScene/layout';
@@ -102,7 +103,7 @@ export class EquipmentScene implements Scene {
     // While assigning, Back cancels the card picker rather than leaving the scene.
     core.hitRects.push({ rect: core.backRect, action: () => core.backAction() });
 
-    core.renderHeaderCurrency();
+    renderHeaderCurrency(core);
     this.inventory.renderSidebar();
     if (core.assign) {
       // The card picker replaces the header row entirely — hide the materials band left over from
@@ -153,7 +154,7 @@ export class EquipmentScene implements Scene {
       core.hitRects.push(...hits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
 
       let bottom = top + stripH;
-      core.renderMaterialsBand(0, bottom, w);
+      renderMaterialsBand(core, 0, bottom, w);
       bottom += MAT_BAND_H;
       if (core.activeTab === 'inv') {
         this.inventory.renderSlotFilter(0, bottom, w);
@@ -169,7 +170,7 @@ export class EquipmentScene implements Scene {
 
     let rightBottom = top;
     // Materials band (both tabs) — the three crafting materials, relocated out of the header.
-    core.renderMaterialsBand(rightX, rightBottom, rightW);
+    renderMaterialsBand(core, rightX, rightBottom, rightW);
     rightBottom += MAT_BAND_H;
     if (core.activeTab === 'inv') {
       this.inventory.renderSlotFilter(rightX, rightBottom, rightW);

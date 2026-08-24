@@ -325,3 +325,11 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 **⚠️ 两个 harness 坑**（都实测踩过）：①`createLayout(800, 1280)` **不等于**设计空间是 800×1280 —— `ScalingManager` 会映射到更大的空间（这组输入下 `regionTop≈431`、`cW≈1026`），硬编码的 `regionTop + 80` 会落在第一行**上方** 6px 处，测试表现为「点了但没命中」。一律从 `core.hits`/`core.regionTop` 等活布局里读坐标。②headless `measureText` 是 `字符数 * 7`，跟字号无关 —— 想测「文字溢出后右对齐」得给足字符数（80 个字符只有 560px，不够；用字段自己的 `maxLength` 200 才稳），别按真实字号估。
 
 **另**：`git checkout -- <file>` 会把**未提交的修复**跟 mutation 一起冲掉（本轮踩过：验完 mutant 用 `git checkout` 还原，结果把同文件里还没提交的 `appliedScrollDelta` 修复也还原了，`git diff --stat` 才看出来）。验 mutation 优先用 Edit 精确改回那一行，或者验之前先提交。
+
+## `__nwE2E.app`：用真实显示树量几何，而不是肉眼看截图（2026-08-24）
+
+`src/entries/web-e2e.ts` 的 `window.__nwE2E` 现在除了 `views`/`state` 还挂了 **`app`**（那个真实的 `PIXI.Application`），于是 Playwright 脚本可以 `walk(__nwE2E.app.stage)` 读每个节点的 `getBounds()`，把「标题有没有压到金币数上」变成一个数字而不是一次目测。`app` 是从 `PixiAppViews` 的 `private readonly app` 上读的（TS 的 private 在运行时不存在）——`wrapViews` 是唯一的注入点而它只拿到 views，为一个纯测试需求在 `startApp` 上开生产接缝更不划算；`web-e2e.ts` 本来就是永不发布的测试专用入口（同文件头注释，跟 `no-debug-hooks-in-src.test.ts` 扫的那种临时 hook 不是一回事）。
+
+**为什么非得用真实浏览器**：本套件的 headless `measureText` 是恒定 `7px/字符`且**与字号无关**（见本文档上面那条 2026-08-09 的记录）。页头重叠这个 bug 正好是字号驱动的——mock 下货币簇量出来 171px，还小于旧的 216px 预留，**bug 在 headless 里根本不存在**。所以那次的分工是：机制在单元层测（`test/ui/sceneHeaderCurrencyFit.ui.ts`，用长标题 + 放大 scale 按比例还原条件后做红绿对照）、接线用静态扫描守（`test/headerCurrencyReserve.test.ts`，正是它抓出 grep 漏掉的三个场景）、**像素结论只由浏览器给**。写这类测试前先问一句「这个 bug 在 mock 下复现得出来吗」，能省掉一整轮自欺欺人的绿。
+
+**用起来**：`npx webpack serve --mode development --port <port> --env TARGET=web-e2e`，Playwright `waitForFunction(() => window.__nwE2E?.app)`，`page.evaluate` 里遍历 `app.stage`。别在 `newPage()` 之后再 `setViewportSize()`——场景只在构造时读一次 `ILayout`，事后改视口只会把旧布局拉变形（第一次试的时候就是这样拍出一张假的「竖屏坏了」）。

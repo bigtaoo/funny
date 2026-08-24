@@ -344,3 +344,36 @@
 - **测试**（`client/test/shopActions.test.ts` — 方法级，`onBuyBulk`）：busy-lock、成功=一次调用（`cb.buy(itemId, qty)`）+ 一次刷新、`ok:false`=不刷新（全有或全无，2026-08-10 起不再有"中途失败保留部分成功"的分支）、`TimeoutError`、`qty=0` 防御性回归（不调用 `buy()`/不 toast/照常释放忙锁）。**`client/test/ui/shopScene.ui.ts` — 走真实按钮命中列表（不是直接调方法）**：①卡只够买 1 件时 ×10 禁用（无命中矩形）而 Buy 仍可点；②够买 10 件时点击 ×10 调用 `buy('protect_enhance', 10)` **一次**（2026-08-10 起，此前是十次）；③material 档不出现这个按钮；④点一次 ×10 后同步 `render()` 已把按钮画成禁用态——第二次真实点击根本摸不到命中矩形（busy-lock 在 UI 层的真实表现，不只是方法内部的 `if (busy) return`）；⑤**端到端**：钱包状态随 `buy()` 真实扣减 `cost×qty`、10 连购花光额度后下一帧 ×10 灰掉但 Buy 仍可点（`getCoins`/`buy`/`loadItems` 三者接线正确，不是分别孤立测过就直接假定拼起来也对）。服务端侧新增 `economy.e2e.test.ts`（qty 计费/发货/全有全无/材料每日上限/对账重放/schema 上限校验）+ `commercial/test/service.e2e.test.ts`（`shopCharge` qty 计费/全有全无/越界拒绝）+ `shared/test/dailyCounter.test.ts`（`bumpCappedCounter` 的 `by` 参数）。
 - **验证**：`tsc --noEmit` 全绿；`npx vitest run test/shopActions.test.ts`（23 例）+ `npx vitest run --config vitest.ui.config.ts test/ui/shopScene.ui.ts`（43 例）全绿，无回归。**未做真人截图**：本次会话 Browser 预览面板同样报 "pane not displayed"（同 §20.5/§21–24 的已知环境限制，且本机当时 metaserver 未起，商城道具列表本就依赖服务端 `getShopItems`，离线也看不到这张卡）；多按钮纵向堆叠是 `drawCard()`/`drawButton()` 现有几何路径（月卡已在生产验证过同一路径），未新增布局代码，故以上面两个文件的 headless 像素坐标断言 + 既有生产先例作为验证依据。
 - **涉及文件**：`client/src/scenes/ShopScene/shop.ts`、`client/src/scenes/ShopScene/base.ts`、`client/src/scenes/ShopScene/actions.ts`、`client/src/i18n/locales/{zh,en,de}.ts`、`client/test/shopActions.test.ts`、`client/test/ui/shopScene.ui.ts`。
+
+---
+
+## 26. 页头标题与金币读数在竖屏下重叠（2026-08-24）
+
+**症状**：430pt 宽的竖屏下，卡背包页头的居中标题 "Hero Roster" 直接压在金币数 `95,946,835` 上，金币图标画在字母 `r` 上。Chrome 实测：标题右边缘 346.9px，金币文字从 325.3px 开始。
+
+**根因**：`drawSceneHeader()` 给右侧的货币簇（各场景自己画在页头之上的 `drawHeaderCurrency`）**留的是固定 20% 条宽**（`TITLE_RIGHT_RESERVE_RATIO`）。这个比例做不到它要做的事——货币簇的宽度取决于调用方的数据：金币位数、有没有容量读数（`73/500`）、有几个材料 chip。卡背包这一组实测占了条宽的 ~27%，于是标题的允许区间伸进了货币簇里。原注释把固定比例说成是主动取舍（"cluster 是本函数返回后才由场景画的，没法拿到真实宽度"），但场景其实拿得到——它有金币数和容量串。
+
+顺带说明为什么不是「把返回按钮/标题字号调小」：`backSize()` 由 `headerH` 推导，而 `PortraitLayout` 把设计高度拉长以保持页头恒占 12% 屏高，所以竖屏下返回胶囊吃掉 559/1080 设计 px（52% 条宽）。这是 12.07.2026 拍板的触控目标放大，不在本次范围内单方面回退。
+
+**修法**（两段，各自独立成立）：
+
+1. **真量一次，而不是猜。** `SceneHeader/currency.ts` 把「摆放」抽成一条内部路径 `buildCluster()`，`drawHeaderCurrency()` 与新导出的 **`headerCurrencyWidth()`** 共用它——所以量出来的数和画出来的宽**不可能对不上**。`drawSceneHeader()` 新增 `opts.rightReserve`（设计 px，另外自动加上和返回胶囊同一档的呼吸间距）；**8 个画货币簇的场景**全部改为先量后传。标题装不下时沿用既有的 `fit` 等比缩小——**让标题让位而不是让读数让位**是刻意的取舍：余额是玩家要读的实时数据，标题是他已经知道的标签。
+2. **运行时兜底。** `SceneHeaderResult` 新增 `titleRight`（本次实际画出的内容右边缘），场景把它作为 `drawHeaderCurrency(..., leftBound)` 回传。标题在 `build()` 里烘一次、货币簇每帧重画，所以余额中途多一位数时第 1 段的预留会过期；这时整簇按右边缘等比缩小，而不是退回重叠。**故意不设下限**：缩到看不清说明预留算错了，静默重叠只会把问题藏起来。
+
+**实测**（Chromium，430×932，dpr 2）：
+
+| | 标题右边缘 | 金币文字左边缘 |
+|---|---|---|
+| 改前 | 346.9 px | 325.3 px（重叠 21.6 px） |
+| 改后 | 299.2 px | 325.3 px |
+
+余额短时预留也跟着变小：`1,234` 时标题右边缘回到 330.5 px。**横屏逐像素零差异**（1280×720 页头条 before/after diff = 0/481280 像素）——本次改动只在窄条上生效。
+
+**影响面**：`AuctionScene` / `BattlePassScene` / `CardScene` / `EquipmentScene` / `FriendsScene`（world 页签）/ `GachaScene` / `RechargeScene` / `ShopScene`。其中后三个是**测试找出来的**，不是 grep 找出来的——先前那次 `grep -rn drawHeaderCurrency src/ | head` 被 `head` 截断在 5 条。
+
+**连带拆分**：`EquipmentScene/core.ts` 因新增的 spec 方法涨到 549 行、超过 baseline，按 form① 挖出 `headerRow.ts`（`renderHeaderCurrency` / `renderMaterialsBand` / `headerCurrencySpec` 三者共享「这一行放不下材料标签所以另开一条带」这个前提，故归在一处），回落 489 行，**baseline 例外条目随之删除**。
+
+**回归测试**：
+- `client/test/ui/sceneHeaderCurrencyFit.ui.ts`（12 例）——量测与绘制一致、预留随数据变化、有/无预留的红绿对照、预留也装不下时的兜底、默认路径不变。**注意**：headless 的 `measureText` 是恒定 7px/字符且与字号无关（见 `claudedocs/client-testing.md`），本 bug 在 headless 里**根本复现不出来**（该 mock 下货币簇只有 171px，还小于旧的 216px 预留）——所以场景级「有没有重叠」那一条第一版写完就作废了，机制改在单元层用「长标题 + 放大 scale」按比例还原后再断言，文件头把这件事写明了。
+- `client/test/headerCurrencyReserve.test.ts`（17 例，静态扫描）——每个 `drawHeaderCurrency` 调用点都必须传 `leftBound`，且同目录内必须有 `headerCurrencyWidth(...) + rightReserve` 的配对；调用点清单本身带 canary（改名不许让整个套件静默变空）。这是能机械守住的那一半，也正是它抓出了漏掉的三个场景。
+- 像素证据只能靠浏览器：`web-e2e` 入口的 `__nwE2E` 现在**多暴露一个 `app`**（读 `PixiAppViews` 的 `private readonly app`——`wrapViews` 是唯一的注入点且只拿到 views，为测试专用需求开生产接缝更不划算），Playwright 因此能遍历真实显示树、读 `getBounds()` 出数，而不是靠肉眼看截图。

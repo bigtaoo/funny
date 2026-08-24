@@ -6,7 +6,7 @@ import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { sidebarNavW, bottomNavH } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
@@ -242,12 +242,19 @@ export class BattlePassScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     // ── Title bar ────────────────────────────────────────────────────────────
-    const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'), { accent: HEADER_ACCENT.spend, icon: 'battlepassTabIcon' });
+    // Reserve the coin readout's real width before the title is laid out, so a centred title can't
+    // run under it on a narrow portrait bar (2026-08-24). Both are drawn here, one after the other,
+    // so the measurement is always current and drawHeaderCurrency's own fit backstop never engages.
+    const coins = this.cb.getCoins();
+    const hdr = drawSceneHeader(this.container, w, h, t('battlepass.title'), {
+      accent: HEADER_ACCENT.spend, icon: 'battlepassTabIcon',
+      rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
+    });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
     // Coin balance (top-right): shared header readout — identical across every scene.
-    drawHeaderCurrency(this.container, w, tbH, this.cb.getCoins());
+    drawHeaderCurrency(this.container, w, tbH, coins, [], undefined, 1, hdr.titleRight);
 
     // Shop group nav (LOBBY_IA_REDESIGN §9): [Shop|Coins|Gacha|BattlePass], battle pass active. Only
     // drawn in group context. Landscape draws it now (disjoint rail); portrait defers to after the

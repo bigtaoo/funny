@@ -46,7 +46,7 @@ import { ui as C, buildPaperBackground, tearDownChildren } from '../../render/sk
 import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import { showToastMessage } from '../../net/log';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency, headerCurrencyWidth } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import type { AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
@@ -81,6 +81,8 @@ export class AuctionSceneCore {
   /** Back-button hit rect from the shared SceneHeader (BACK_HIT_W-wide) — cached here since render()
    * rebuilds hitRects from scratch every call and must not narrow it. */
   backRect = { x: 0, y: 0, w: 80, h: this.headerH };
+  /** Right edge of the header's title group — drawHeaderCurrency's fit backstop. See build(). */
+  titleRight = 0;
 
   activeTab: AucTab = 'all';
   allFilter: AucFilter = '';
@@ -217,11 +219,16 @@ export class AuctionSceneCore {
 
     // Static header — shared standard height/title size (matches every other secondary scene); only the
     // SLG-red accent rule distinguishes it. headerH drives the body layout below.
+    // Reserve the coin readout's real width so a centred title can't run under it on a narrow
+    // portrait bar (2026-08-24); renderHeaderCurrency() passes hdr.titleRight back as its own
+    // backstop for the case where the balance gains a digit while the scene is open.
     const hdr = drawSceneHeader(this.container, w, this.h, t('auction.title'), {
       variant: 'paper', accent: HEADER_ACCENT.slg, icon: 'auctionTabIcon',
+      rightReserve: headerCurrencyWidth(sceneHeaderHeight(this.h), this.cb.getSave?.()?.wallet.coins ?? 0),
     });
     this.headerH = hdr.headerH;
     this.backRect = hdr.backRect;
+    this.titleRight = hdr.titleRight;
     this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
 
     this.headerOverlayLayer = new PIXI.Container();
@@ -233,7 +240,7 @@ export class AuctionSceneCore {
   renderHeaderCurrency(): void {
     tearDownChildren(this.headerOverlayLayer);
     const coins = this.cb.getSave?.()?.wallet.coins ?? 0;
-    drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, coins);
+    drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, coins, [], undefined, 1, this.titleRight);
   }
 
   // ── Data ──────────────────────────────────────────────────────────────────
