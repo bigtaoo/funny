@@ -4,7 +4,9 @@
 // "independent function module" case: one cohesive unit — what a battle does to the cards that fought it,
 // and how that is persisted — with no dependency on the rest of the engine.
 //
-// Re-exported from siegeEngine.ts, so every existing `from '../../siegeEngine'` import keeps working.
+// Imported directly by the four settlement call sites, NOT re-exported from siegeEngine.ts: that module is
+// loaded inside the siege worker thread, where a runtime relative import does not resolve on Linux (see the
+// INVARIANT comment in siegeEngine.ts).
 import { CARD_BASE_SURVIVAL, CARD_INJURY_DURATION_MS } from '@nw/shared';
 import type { ArmyEntry, CardSLGState } from './db';
 

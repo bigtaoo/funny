@@ -46,9 +46,18 @@ import {
 } from '@nw/shared';
 import type { ArmyEntry, CardSLGState } from './db';
 
-// Post-battle card-army state moved to ./cardStateSettlement.ts on 2026-08-24 (500-line convention).
-// Re-exported so existing `from '../../siegeEngine'` import sites are unaffected.
-export { computeCardStateUpdates, cardStateDeltaPipeline, type CardStateUpdate } from './cardStateSettlement';
+// INVARIANT: this file must never gain a RUNTIME relative import/re-export (`import`/`export … from './x'`
+// without an explicit extension). `import type` is fine — it is erased before the module ever loads.
+//
+// siegeEngine.ts is loaded inside the siege worker thread (siegeWorker.ts), which runs under tsx, whose
+// extensionless-specifier resolution is broken in a worker_thread realm on Linux — see siegeWorker.ts's own
+// comment for the 2026-08-14 investigation. On Windows the same specifier resolves fine, so a violation
+// passes locally and fails only on CI. It bit again on 2026-08-24: splitting the post-battle card-army
+// state into ./cardStateSettlement.ts and re-exporting it from here (to keep existing import sites working)
+// turned this module's first runtime relative import into a hard worker crash — "Cannot find module
+// .../src/cardStateSettlement". The three symbols are imported from './cardStateSettlement' directly at
+// their four call sites instead, and siegeengine-worker-imports.test.ts pins this invariant statically so
+// the next violation fails on every machine rather than only on Linux.
 // NOT a top-level import (see runSiegeBattle below for why) — deliberately deferred to a lazy
 // dynamic import inside that function's body instead of `import { getSiegeWorkerPool } from
 // './siegeWorkerPool'` up here.

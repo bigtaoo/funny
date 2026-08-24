@@ -3,7 +3,7 @@
 // (a plain WorldCore instance) and `ctx` (the assembled SiegeService, typed narrowly as
 // SiegeCtx). No behavior change.
 import type { SiegeResolution } from '@nw/shared';
-import { computeCardStateUpdates, cardStateDeltaPipeline } from '../../siegeEngine';
+import { computeCardStateUpdates, cardStateDeltaPipeline } from '../../cardStateSettlement';
 import type { TileDoc, PlayerWorldDoc, MarchDoc } from '../../db';
 import { lootSummary, emptyResources } from '../../core';
 import type { WorldCore } from '../../core';

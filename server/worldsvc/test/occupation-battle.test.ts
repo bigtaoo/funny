@@ -9,7 +9,8 @@
 // same style as get-teams-card-lookup.test.ts / siege-cheap-fallback.test.ts.
 import { describe, expect, it, vi } from 'vitest';
 import { resolveSiege, npcBaseHp, siegeSeedFromId, moraleCombatMultiplier, MARCH_MORALE_MAX, SIEGE_CHEAP_RATIO, CARD_BASE_SURVIVAL, CARD_INJURY_DURATION_MS } from '@nw/shared';
-import { synthesizeArmy, sumArmyHp, computeCardStateUpdates, cardStateDeltaPipeline } from '../src/siegeEngine';
+import { synthesizeArmy, sumArmyHp } from '../src/siegeEngine';
+import { computeCardStateUpdates, cardStateDeltaPipeline } from '../src/cardStateSettlement';
 import { resolveOccupationBattle, writeOccupyCardState } from '../src/combatSiege/occupationBattle';
 import type { WorldCore } from '../src/core';
 import type { MarchDoc, PlayerWorldDoc } from '../src/db';

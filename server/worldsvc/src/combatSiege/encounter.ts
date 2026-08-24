@@ -35,12 +35,11 @@ import {
   scaleArmyByRatio,
   resolveCardArmy,
   toEngineCardInstances,
-  computeCardStateUpdates,
-  cardStateDeltaPipeline,
   sumArmyHp,
   toDefenderFormation,
   shouldUseCheapSiege,
 } from '../siegeEngine';
+import { computeCardStateUpdates, cardStateDeltaPipeline } from '../cardStateSettlement';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { MarchDoc, PlayerWorldDoc, StationedDoc, ArmyEntry } from '../db';
 import { WorldCore } from '../core';

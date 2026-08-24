@@ -13,7 +13,8 @@ import {
   moraleCombatMultiplier,
   type SiegeResolution,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, cardStateDeltaPipeline, shouldUseCheapSiege } from '../siegeEngine';
+import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, shouldUseCheapSiege } from '../siegeEngine';
+import { computeCardStateUpdates, cardStateDeltaPipeline } from '../cardStateSettlement';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { MarchDoc, PlayerWorldDoc } from '../db';
 import type { SiegeReplayInputs } from '../worldTypes';
