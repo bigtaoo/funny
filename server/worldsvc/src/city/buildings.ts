@@ -168,18 +168,34 @@ export class CityBuildingsService {
     const next: Partial<Record<BuildingKey, number>> = { ...(fresh.buildings ?? { desk: 1 }) };
     for (const e of done) next[e.key] = Math.max(next[e.key] ?? buildingLevel(fresh.buildings, e.key), e.toLevel);
     const newQueue = (fresh.buildQueue ?? []).filter((e) => e.completeAt > t);
-    const resources = this.core.settle(fresh, t); // settle at the old rate/cap up to now, before the rate changes
     // Compute the post-upgrade yield from the new levels directly (buildings not yet persisted).
     const yieldRate = await this.core.recomputeYield(worldId, accountId, next, fresh.hasBattlePass);
     const bq = buildQueueOps(newQueue);
-    await cols.playerWorld.updateOne(
-      { _id: docId },
+    // 2026-08-24 (unguarded-write sweep): this write had no filter beyond `_id` and carried an absolute
+    // `resources` settled from the `fresh` snapshot read at the top of this method — with recomputeYield's
+    // tile scans in between, and reachable both from the 2s scheduler tick and synchronously from
+    // speedupBuild. Any concurrent credit or debit in that window was silently discarded.
+    //
+    // settleExpr still takes the OLD `fresh.buildings` for the storage cap: the accrual must be banked at
+    // the pre-upgrade rate/cap before the new levels land, which is what the deleted comment above said and
+    // what a single `$set` stage gives for free (every expression reads the pre-update document, so
+    // `buildings: next` in the same stage cannot affect it).
+    await cols.playerWorld.updateOne({ _id: docId }, [
       {
-        $set: { buildings: next, buildQueue: newQueue, resources, yieldRate, troopCap: troopCapFor(next), lastTickAt: t, ...bq.set },
-        $inc: { rev: 1 },
-        ...(Object.keys(bq.unset).length ? { $unset: bq.unset } : {}),
+        $set: {
+          buildings: next,
+          buildQueue: newQueue,
+          resources: this.core.settleExpr(fresh.buildings, t),
+          yieldRate,
+          troopCap: troopCapFor(next),
+          lastTickAt: t,
+          ...bq.set,
+          // buildQueueOps only ever unsets this one mirror field; `$$REMOVE` is its pipeline spelling.
+          ...(Object.keys(bq.unset).length ? { nextBuildCompleteAt: '$$REMOVE' } : {}),
+          rev: { $add: ['$rev', 1] },
+        },
       },
-    );
+    ]);
     // D-CITY-8: a completed `wall` upgrade raises durabilityMax — regen up to now, then apply the delta
     // (preserves absolute damage already taken instead of resetting to full), and rebase the regen anchor.
     if (done.some((e) => e.key === 'wall') && fresh.mainBaseTile) {

@@ -191,8 +191,19 @@ export class CityTrainingService {
       const queue = applyTrainingSpeedupCatchup(doc.trainingQueue ?? [], doc.speedupUntil, settledFrom, t);
       if (queue === doc.trainingQueue) continue; // no-op catch-up (buff not active this window) — nothing to persist
       const tq = trainingQueueOps(queue);
+      // 2026-08-24 (unguarded-write sweep): `queue` is the WHOLE array recomputed from the snapshot read at
+      // the top of this tick, and this used to be a blind `$set` on `_id` alone — so a trainTroops landing
+      // in the window had its freshly-enqueued batch written straight back out of existence, resources
+      // already spent. Guarding on `speedupSettledAt` is exact rather than approximate: every other writer
+      // that rewrites `trainingQueue` (trainTroops / speedupTraining / the shop's troop_speedup) also
+      // advances this watermark, so "the watermark moved" is precisely "someone else recomputed the queue
+      // under me". Losing the race costs nothing — the watermark is not advanced either, so the next tick
+      // (2s) recomputes the same overlap against the fresh array. Preferred over translating
+      // applyTrainingSpeedupCatchup into an aggregation expression, which would fork the buff formula into
+      // a second language for no gain.
+      const watermark = doc.speedupSettledAt === undefined ? { $exists: false } : doc.speedupSettledAt;
       await cols.playerWorld.updateOne(
-        { _id: doc._id },
+        { _id: doc._id, speedupSettledAt: watermark as never },
         { $set: { trainingQueue: queue, speedupSettledAt: t, ...tq.set }, $inc: { rev: 1 } },
       );
     }

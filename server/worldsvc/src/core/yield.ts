@@ -53,18 +53,25 @@ export class YieldService {
    * `cap` is still a literal computed from the caller's `buildings` snapshot: it only moves on a building
    * upgrade, and a one-tick-stale cap self-corrects on the next settle. Keep this in lockstep with `settle` —
    * same `min(cap, floor(resources + yieldRate × dtHours))`, same `?? 0` (as `$ifNull`), same `max(0, dt)`.
+   *
+   * `scale` (optional) multiplies the settled figure, floored — the shape every "settle, then take a
+   * percentage" caller needs (currently only applySectLeaderPenalty's -50%). Applying it here rather than
+   * at the call site is the whole point: a caller that settles in JS just to scale the result is back to
+   * publishing a snapshot-derived absolute value, which is the lost-update shape this method exists to
+   * remove. Matches the JS original's order exactly — scale the *capped* settle, then floor.
    */
-  settleExpr(buildings: Partial<Record<BuildingKey, number>> | undefined, now: number): Record<string, unknown> {
+  settleExpr(buildings: Partial<Record<BuildingKey, number>> | undefined, now: number, scale?: number): Record<string, unknown> {
     const cap = resourceCapFor(buildings);
     const dtHours = { $divide: [{ $max: [0, { $subtract: [now, '$lastTickAt'] }] }, 3_600_000] };
     const out: Record<string, unknown> = {};
     for (const rt of RESOURCE_TYPES) {
-      out[rt] = {
+      const settled = {
         $min: [cap, { $floor: { $add: [
           { $ifNull: ['$resources.' + rt, 0] },
           { $multiply: [{ $ifNull: ['$yieldRate.' + rt, 0] }, dtHours] },
         ] } }],
       };
+      out[rt] = scale === undefined ? settled : { $floor: { $multiply: [settled, scale] } };
     }
     return out;
   }
