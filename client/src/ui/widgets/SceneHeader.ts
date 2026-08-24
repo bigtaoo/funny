@@ -81,6 +81,12 @@ export interface SceneHeaderResult {
   headerH: number;
   /** Back-button hit area to register with the scene's own hit testing. */
   backRect: Rect;
+  /**
+   * Right edge (design px) of everything this drew: the [icon][title] group, or the back pill when
+   * there is no title. Pass it as `drawHeaderCurrency`'s `leftBound` so a currency cluster can tell
+   * whether it still fits — see that function for why the reserve alone isn't enough.
+   */
+  titleRight: number;
 }
 
 /**
@@ -112,11 +118,16 @@ const TITLE_ICON_RATIO = 1.25;
 const TITLE_ICON_GAP_RATIO = 0.34;
 
 /**
- * Share of the bar width held back on the right for the currency cluster scenes draw on top of the
- * header (see {@link drawHeaderCurrency}): a coin glyph plus a 3–7 digit amount. Deliberately a
- * fixed reserve rather than plumbing the real cluster width through every caller — the cluster is
- * drawn after this returns, by the scene, and a title that stops a little early costs nothing while
- * one that runs under the coin readout is unreadable.
+ * Fallback share of the bar width held back on the right for the currency cluster scenes draw on top
+ * of the header (see {@link drawHeaderCurrency}), used when the caller does not pass a measured
+ * `rightReserve`.
+ *
+ * A ratio cannot actually do this job and 0.2 was measurably too small: the cluster's width depends
+ * on the caller's data — digit count, whether there is a capacity readout, how many material chips —
+ * and on a 430pt portrait viewport the roster's coin balance plus `73/500` came to ~27% of the bar,
+ * so the centred title ran straight under the coin number (2026-08-24). Callers that draw a cluster
+ * should pass `rightReserve: headerCurrencyWidth(...)`; this constant only still covers the ones
+ * that draw none, where over-reserving is the harmless direction.
  */
 const TITLE_RIGHT_RESERVE_RATIO = 0.2;
 
@@ -320,6 +331,12 @@ export function drawSceneHeader(
   opts?: {
     headerH?: number; titleSize?: number; variant?: SceneHeaderVariant; accent?: number;
     titleAlign?: 'center' | 'left'; icon?: IconKind;
+    /**
+     * Design px to hold back on the right for a currency cluster the caller draws itself — measure it
+     * with `headerCurrencyWidth(...)`. Replaces the {@link TITLE_RIGHT_RESERVE_RATIO} guess, and gets
+     * the same breathing gap the back pill has so the title never butts straight against the coin glyph.
+     */
+    rightReserve?: number;
   },
 ): SceneHeaderResult {
   const headerH = opts?.headerH ?? sceneHeaderHeight(h);
@@ -327,6 +344,9 @@ export function drawSceneHeader(
   const accent = opts?.accent ?? HEADER_ACCENT.lobby;
   const size = backSize(headerH);
   const label = t('common.back'); // the arrow is a glyph now, drawn on top — see addBackArrow
+  // Right edge of the drawn content, reported back for the currency cluster's own fit check. Starts
+  // at the back pill so a title-less bar still gets a truthful answer rather than 0.
+  let titleRight = BACK_X + backChipSize(label, size).w;
 
   const chrome = getCachedDisplay(
     `hdr:${variant}:${accent}:${Math.round(w)}x${headerH}:${size}:${label}`,
@@ -349,8 +369,12 @@ export function drawSceneHeader(
     // narrow portrait bar, where the back pill alone eats a third of the width — the first in-game
     // capture of this pass had the icon painted across the back label, and clamping it right then
     // pushed "Hero Roster" off the right edge.
-    const afterBackPill = BACK_X + backChipSize(label, size).w + Math.round(size * 0.6);
-    const bandW = w - afterBackPill - Math.round(w * TITLE_RIGHT_RESERVE_RATIO);
+    const gap = Math.round(size * 0.6);
+    const afterBackPill = BACK_X + backChipSize(label, size).w + gap;
+    const reserve = opts?.rightReserve !== undefined
+      ? opts.rightReserve + gap
+      : Math.round(w * TITLE_RIGHT_RESERVE_RATIO);
+    const bandW = w - afterBackPill - reserve;
     // Shrink icon and text together rather than dropping the icon or letting either clip — the
     // same "scale a label down to fit its cell" rule the tab strips already use (HubTabs.ts).
     // Only long labels on a narrow bar ever scale; CJK titles are 3–4 glyphs and fit outright.
@@ -372,6 +396,7 @@ export function drawSceneHeader(
     titleNode.x = groupX + leadW;
     titleNode.y = headerH / 2;
     container.addChild(titleNode);
+    titleRight = groupX + leadW + titleNode.width;
   }
 
   // Hit/geometry width: at least the comfortable BACK_HIT_W tap target, but never smaller
@@ -388,7 +413,7 @@ export function drawSceneHeader(
   const { w: chipW, h: chipH } = backChipSize(label, size);
   addBackArrow(container, BACK_X, Math.round((headerH - chipH) / 2), size, variant === 'dark');
 
-  return { headerH, backRect: { x: 0, y: 0, w: Math.max(BACK_HIT_W, chipW), h: headerH } };
+  return { headerH, backRect: { x: 0, y: 0, w: Math.max(BACK_HIT_W, chipW), h: headerH }, titleRight };
 }
 
 /** Local origin of the floating back chip in design space — same 10px inset as the bar (§3.1). */
@@ -429,4 +454,4 @@ export function drawFloatingBackButton(container: PIXI.Container, h: number): Fl
 }
 
 export type { HeaderCurrencyChip } from './SceneHeader/currency';
-export { drawHeaderCurrency } from './SceneHeader/currency';
+export { drawHeaderCurrency, headerCurrencyWidth } from './SceneHeader/currency';

@@ -5,7 +5,7 @@ import { t, TranslationKey } from '../../i18n';
 import type { Rarity } from '../../game/meta/SaveData';
 import { ui as C, txt } from '../../render/sketchUi';
 import { gachaBannerTexture } from '../../render/gachaArt';
-import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { buildIcon } from '../../render/icons';
 import { FS } from '../../render/fontScale';
@@ -25,12 +25,19 @@ export class PagePanel implements PageHandlers {
 
   drawHeader(): number {
     const { w, h } = this.core;
-    const hdr = drawSceneHeader(this.core.container, w, h, t('gacha.title'), { accent: HEADER_ACCENT.spend, icon: 'gachaTabIcon' });
+    // Reserve the coin readout's real width before the title is laid out, so a centred title cannot
+    // run under it on a narrow portrait bar (2026-08-24). Drawn right after the header, so the
+    // measurement is always current and drawHeaderCurrency's own fit backstop never has to engage.
+    const coins = this.core.cb.getCoins();
+    const hdr = drawSceneHeader(this.core.container, w, h, t('gacha.title'), {
+      accent: HEADER_ACCENT.spend, icon: 'gachaTabIcon',
+      rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
+    });
     const tbH = hdr.headerH;
     this.core.hits.push({ rect: hdr.backRect, fn: () => this.core.cb.onBack() });
 
     // Coin balance (top-right): shared header readout — identical across every scene.
-    drawHeaderCurrency(this.core.container, w, tbH, this.core.cb.getCoins());
+    drawHeaderCurrency(this.core.container, w, tbH, coins, [], undefined, 1, hdr.titleRight);
 
     return tbH;
   }

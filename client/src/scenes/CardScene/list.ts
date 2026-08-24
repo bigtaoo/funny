@@ -22,7 +22,6 @@ import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTa
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, CardInstance } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
-import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER } from '../../game/meta/cardDefs';
 import { CardSceneCore, CARD_CELL_H, CARD_CELL_W_TARGET, sortCards } from './core';
 import { renderCardCell, cellSignature, type LocalHit } from './rosterCell';
 import type { DetailPanel } from './detail';
@@ -143,16 +142,13 @@ export class ListPanel {
   renderHeaderCurrency(): void {
     const core = this.core;
     tearDownChildren(core.headerOverlayLayer);
-    const save = core.cb.getSave();
-    const count = Object.keys(save.cardInv ?? {}).length;
-    const warn = count >= CARD_INV_CAP - CARD_INV_OVERFLOW_BUFFER;
-    const full = count >= CARD_INV_CAP;
-    // Keep the coin + capacity readout at a compact absolute size (matches EquipmentScene, its
-    // [Cards|Equipment] peer) rather than scaling it up with the taller unified header.
-    drawHeaderCurrency(core.headerOverlayLayer, core.w, core.headerH, save.wallet.coins, [], {
-      text: `${t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP))}`,
-      color: full ? C.red : warn ? C.gold : C.mid,
-    }, 100 / core.headerH);
+    // Spec (and therefore size) comes from core so build()'s title-band reserve and this draw call
+    // can't disagree; core.titleRight is the backstop for a balance that gains a digit mid-scene.
+    const spec = core.headerCurrencySpec();
+    drawHeaderCurrency(
+      core.headerOverlayLayer, core.w, core.headerH, spec.coins, [], spec.capacity, spec.scale,
+      core.titleRight,
+    );
   }
 
   /** Tear the whole grid down — leaving the roster tab (skins) or an emptied inventory. */

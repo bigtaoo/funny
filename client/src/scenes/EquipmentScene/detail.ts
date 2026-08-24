@@ -26,6 +26,7 @@ import { RARITY_COLOR } from './layout';
 import { itemName, affixDesc, materialsStr, equippedIds, stackSiblingIds, canAffordEnhance } from './helpers';
 import type { CellAction } from './types';
 import type { EquipmentSceneCore } from './core';
+import { renderHeaderCurrency, renderMaterialsBand } from './headerRow';
 import type { AssignPanel } from './assign';
 import type { ReforgePanel } from './reforge';
 
@@ -298,14 +299,14 @@ export class DetailPanel {
   private refreshChromeAndModal(): void {
     const core = this.core;
     if (core.destroyed) return;
-    core.renderHeaderCurrency();
+    renderHeaderCurrency(core);
     const { w, h, landscape } = core;
     // Portrait's materials band spans full width, below the Inventory/Craft header strip instead of
     // right of a left rail (see the assembly's renderHeaderRow) — landscape keeps the
     // sidebarNavW-offset band.
     const leftW = landscape ? sidebarNavW(w, h, true) : 0;
     const bandY = landscape ? core.headerH : core.headerH + hubTabsHeight(h);
-    core.renderMaterialsBand(leftW, bandY, w - leftW);
+    renderMaterialsBand(core, leftW, bandY, w - leftW);
     tearDownChildren(core.loadingLayer);
     if (core.detailId) this.openDetail(core.detailId);
     else if (core.modalOpen) core.closeModal();

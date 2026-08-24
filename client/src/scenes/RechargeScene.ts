@@ -8,7 +8,7 @@ import { buildIcon, type IconKind } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { buildRewardIcon, preloadRewardIconArt } from '../render/rewardIcon';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
@@ -237,10 +237,17 @@ export class RechargeScene implements Scene {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
-    const hdr = drawSceneHeader(this.container, w, h, t('recharge.title'), { accent: HEADER_ACCENT.spend, icon: 'rechargeTabIcon' });
+    // Reserve the coin readout's real width before the title is laid out, so a centred title cannot
+    // run under it on a narrow portrait bar (2026-08-24). Drawn right after the header, so the
+    // measurement is always current and drawHeaderCurrency's own fit backstop never has to engage.
+    const coins = this.cb.getCoins();
+    const hdr = drawSceneHeader(this.container, w, h, t('recharge.title'), {
+      accent: HEADER_ACCENT.spend, icon: 'rechargeTabIcon',
+      rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
+    });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
-    drawHeaderCurrency(this.container, w, tbH, this.cb.getCoins());
+    drawHeaderCurrency(this.container, w, tbH, coins, [], undefined, 1, hdr.titleRight);
     // Landscape draws the rail now (disjoint region); portrait defers to after the body so the
     // bottom bar paints on top of the scroll track (see the ends of this method).
     if (landscape) this.drawSidebar(tbH);

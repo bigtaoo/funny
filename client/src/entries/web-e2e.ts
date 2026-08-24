@@ -1,3 +1,4 @@
+import type * as PIXI from 'pixi.js-legacy';
 import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import type { AppViews } from '../app/AppViews';
@@ -64,7 +65,17 @@ function instrumentViews(views: AppViews): AppViews {
       return handle;
     };
   }
-  (window as unknown as { __nwE2E: { views: AppViews; state: E2EState } }).__nwE2E = { views, state };
+  // `app` too, so a Playwright script can walk the real display tree (`app.stage`) and assert on
+  // measured geometry instead of eyeballing a screenshot — the only way to check text layout with
+  // the REAL font, since the headless harness's `measureText` mock is a flat 7px/char and
+  // font-size-independent (see claudedocs/client-testing.md). Read off the `private readonly app`
+  // field rather than plumbed through `startApp`: `wrapViews` is the only injection point that
+  // exists and it is handed the views instance alone, and TS privacy is erased at runtime. A
+  // production seam for a test-only need would be the worse trade.
+  const app = (views as unknown as { app?: PIXI.Application }).app;
+  (window as unknown as {
+    __nwE2E: { views: AppViews; state: E2EState; app?: PIXI.Application };
+  }).__nwE2E = { views, state, app };
   return views;
 }
 
