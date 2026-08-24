@@ -310,6 +310,14 @@ export interface CardStateUpdate {
  * @param attackerSurvivors Total attacker surviving HP from the engine
  * @param nowMs           Current time in ms (for injuredUntil calculation)
  */
+/**
+ * Concurrency: the four callers that persist this (arrival/baseSiege, arrival/landSiege, encounter,
+ * occupationBattle) all `$set` dotted `cardState.<id>.*` paths on `_id` alone. The 2026-08-24
+ * unguarded-write sweep left them that way on purpose — per-card paths plus the TEAM_BUSY gate mean two
+ * settlements can never target one card, and nothing here replaces `cardState` wholesale. The one open
+ * interaction (a `distributeTroops` top-up landing inside a settlement) and why closing it is a gameplay
+ * decision rather than a concurrency fix are written up in claudedocs/server.md.
+ */
 export function computeCardStateUpdates(
   army: ArmyEntry[],
   cardState: Record<string, CardSLGState>,

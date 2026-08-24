@@ -237,6 +237,8 @@ export async function migratePlayerWorldTroopPool(playerWorld: Collection<Player
     const legacyStock = (doc as { baseTroopStock?: number }).baseTroopStock ?? 0;
     const newCap = troopCapFor(doc.buildings);
     const newTroops = Math.min(newCap, (doc.troops ?? 0) + legacyStock);
+    // Unguarded on purpose (2026-08-24 sweep): runMigrations (db/client.ts) runs once at boot, before the
+    // service accepts traffic or starts its scheduler, so there is no concurrent writer to lose here.
     await playerWorld.updateOne(
       { _id: doc._id },
       {

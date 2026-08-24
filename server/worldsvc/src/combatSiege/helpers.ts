@@ -202,13 +202,17 @@ export class SiegeHelpersService {
     if (famIds.length === 0) return;
     const members = await cols.playerWorld.find({ worldId, familyId: { $in: famIds } }).toArray();
     const keep = 1 - SECT_LEADER_PENALTY_RATE;
+    // 2026-08-24 (unguarded-write sweep): the worst-shaped write of the batch. It settled each member in
+    // JS, scaled the result, and blind-`$set` the absolute figure with only `_id` in the filter — inside a
+    // sequential loop over every member of every family in the sect. The members are all read up front, so
+    // the staleness window for the last member spans every preceding member's write; on a large sect that
+    // is a long time for a concurrent purchase, refund or settlement to be silently rolled back. Doing the
+    // settle-and-scale inside the update (settleExpr's `scale`) makes each write depend only on that
+    // member's own live document, so the loop length stops mattering.
     for (const mm of members) {
-      const resources = this.core.settle(mm, t);
-      for (const rt of RESOURCE_TYPES) resources[rt] = Math.floor((resources[rt] ?? 0) * keep);
-      await cols.playerWorld.updateOne(
-        { _id: mm._id },
-        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-      );
+      await cols.playerWorld.updateOne({ _id: mm._id }, [
+        { $set: { resources: this.core.settleExpr(mm.buildings, t, keep), lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+      ]);
     }
   }
 

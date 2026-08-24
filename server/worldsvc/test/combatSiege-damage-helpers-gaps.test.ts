@@ -17,6 +17,7 @@ import {
   SIEGE_LOOT_RATE,
   RESOURCE_TYPES,
   RESOURCE_CAP,
+  SECT_LEADER_PENALTY_RATE,
 } from '@nw/shared';
 import { SiegeDamageService } from '../src/combatSiege/damage';
 import { SiegeHelpersService } from '../src/combatSiege/helpers';
@@ -756,6 +757,10 @@ describe('SiegeHelpersService.applySectLeaderPenalty', () => {
       },
       socialsvc: { getFamiliesBySect },
       settle: (doc: PlayerWorldDoc) => ({ ...doc.resources }),
+      // 2026-08-24: applySectLeaderPenalty settles-and-scales inside the update now (core/yield.ts
+      // settleExpr with its `scale` argument), so this fake only has to exist — the arithmetic it used to
+      // stand in for is verified against a real Mongo in playerworld-unguarded-writes.e2e.test.ts.
+      settleExpr: (_b: unknown, _now: number, scale?: number) => ({ __scale: scale }),
     } as unknown as WorldCore;
     return { svc: new SiegeHelpersService(core), updateOne, getFamiliesBySect };
   }
@@ -817,8 +822,16 @@ describe('SiegeHelpersService.applySectLeaderPenalty', () => {
     });
     await svc.applySectLeaderPenalty(W, DEF, 1_000);
     expect(updateOne).toHaveBeenCalledTimes(1);
+    // The docked figure is now computed by Mongo from the live document, so this unit test can only check
+    // that the right scale is handed over (`1 - SECT_LEADER_PENALTY_RATE`) and that the write is a pipeline.
+    // The resulting number — including its interaction with the storage cap and a concurrent credit — is
+    // asserted end-to-end in playerworld-unguarded-writes.e2e.test.ts, which is strictly more than this
+    // assertion ever covered: it used to check arithmetic this process performed on a fake.
     const [, args] = updateOne.mock.calls[0]!;
-    expect((args as { $set: { resources: Record<string, number> } }).$set.resources.ink).toBe(50); // keep 1-0.5
+    expect(Array.isArray(args)).toBe(true);
+    const stage = (args as { $set: { resources: { __scale?: number }; lastTickAt: number } }[])[0]!;
+    expect(stage.$set.resources.__scale).toBeCloseTo(1 - SECT_LEADER_PENALTY_RATE);
+    expect(stage.$set.lastTickAt).toBe(1_000);
   });
 });
 

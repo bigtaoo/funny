@@ -173,8 +173,6 @@ export class TerritoryService {
     if (pw.troops < GARRISON_PER_TILE) throw new SlgError('NO_TROOPS', 'Insufficient troops to garrison the tile');
 
     const t = now();
-    const resources = this.core.settle(pw, t);
-
     const resType = proc.resType;
     const tileDoc: TileDoc = {
       _id: tid,
@@ -194,12 +192,24 @@ export class TerritoryService {
     // The `pw.troops < GARRISON_PER_TILE` check above is only a fast-fail on a possibly-stale read; guard
     // the actual deduction atomically too — two concurrent occupyTile calls (or occupy + startMarch racing
     // on the same pool) could otherwise both pass the early check and both $inc, driving troops negative.
+    // 2026-08-24 (unguarded-write sweep): the troop debit was always atomic, but the `resources` beside it
+    // was an absolute value settled from the `pw` snapshot — published after a tiles upsert and
+    // recomputeYield's scans, with nothing stopping it overwriting whatever landed in between (a teams.ts
+    // `$inc` refund, another settle). settleExpr computes the accrual from the live document instead, so the
+    // write commutes; the `$gte` filter is the real precondition and is unchanged.
     const deducted = await cols.playerWorld.updateOne(
       { _id: pw._id, troops: { $gte: GARRISON_PER_TILE } },
-      {
-        $set: { resources, yieldRate, lastTickAt: t },
-        $inc: { troops: -GARRISON_PER_TILE, rev: 1 },
-      },
+      [
+        {
+          $set: {
+            resources: this.core.settleExpr(pw.buildings, t),
+            yieldRate,
+            lastTickAt: t,
+            troops: { $subtract: ['$troops', GARRISON_PER_TILE] },
+            rev: { $add: ['$rev', 1] },
+          },
+        },
+      ],
     );
     if (deducted.matchedCount === 0) {
       // Lost the race: roll back the tile claim just written so the account isn't left owning a tile with
@@ -242,7 +252,6 @@ export class TerritoryService {
     if (tile.type === 'base') throw new SlgError('TILE_NOT_OWNED', 'Cannot abandon the capital');
 
     const t = now();
-    const resources = this.core.settle(pw, t);
     const refund = tile.garrison ?? 0;
     await cols.tiles.deleteOne({ _id: tid }); // abandon → revert to procedural neutral (sparse storage leaves no empty shell)
     // 2026-07-23: giving up the tile frees any team stationed on it (the team pops back to idle-at-home). Recall
@@ -255,13 +264,21 @@ export class TerritoryService {
     // is deleted above, so the structure is gone; only the Redis cover index needs the explicit sweep).
     if (tile.structure?.kind === 'arrowTower') await this.core.removeCover(worldId, x, y, tid);
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
+    // 2026-08-24 (unguarded-write sweep): same fix as occupyTile, and this site had no filter at all — a
+    // blind write of a snapshot-derived `resources` after a tile delete, a stationed claim, up to two
+    // removeCover calls and recomputeYield: the widest lost-update window in the file. `troops` stays an
+    // unclamped add (`$inc` semantics preserved) — a garrison refund may exceed troopCap, same as before.
+    await cols.playerWorld.updateOne({ _id: pw._id }, [
       {
-        $set: { resources, yieldRate, lastTickAt: t },
-        $inc: { troops: refund, rev: 1 },
+        $set: {
+          resources: this.core.settleExpr(pw.buildings, t),
+          yieldRate,
+          lastTickAt: t,
+          troops: { $add: ['$troops', refund] },
+          rev: { $add: ['$rev', 1] },
+        },
       },
-    );
+    ]);
     return this.core.getMe(worldId, accountId);
   }
 
@@ -323,20 +340,14 @@ export class TerritoryService {
     );
 
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
-    // 2026-08-24: this write is now unconditional, and must be.
-    //
-    // It used to be guarded on `rev: claimedRev` and to throw REV_CONFLICT on a miss — but by this point the
-    // coins are already spent AND the old capital's 9 tiles are already deleted and the new ones written. A
-    // throw here therefore did not "fail loudly" in any useful sense: it left the account charged, its
-    // footprint physically moved, and `mainBaseTile` still pointing at a tile that no longer exists. The
-    // guard was protecting a lost update at the cost of a far worse inconsistency.
-    //
-    // It is also no longer needed. The only reason it existed was the snapshot-derived `resources` value this
-    // used to `$set`; settleExpr computes the identical accrual from the live document instead, so nothing
-    // here is stale: `yieldRate` is recomputed from the tiles table *after* the swap (authoritative),
-    // `mainBaseTile`/`lastTickAt` are values this command owns outright. Mutual exclusion between two
-    // concurrent relocations is unaffected — that is the job of the rev CAS claim above, which still fails
-    // the loser fast, before any coin is spent or any tile touched.
+    // 2026-08-24: this write is unconditional, and must be. It used to be guarded on `rev: claimedRev` and
+    // throw REV_CONFLICT — but by here the coins are spent AND the 9 base tiles are already moved, so a throw
+    // left the account charged, relocated, and `mainBaseTile` pointing at a deleted tile: a lost update
+    // traded for a far worse inconsistency. The guard is also unnecessary now — settleExpr computes the
+    // accrual from the live document, and `yieldRate` (recomputed from the tiles table after the swap),
+    // `mainBaseTile` and `lastTickAt` are all values this command owns. Mutual exclusion between two
+    // concurrent relocations is unchanged: that is the rev CAS claim above, which still fails the loser
+    // before any coin is spent.
     await cols.playerWorld.updateOne({ _id: pw._id }, [
       {
         $set: {
