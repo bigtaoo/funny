@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-17（§11 首屏加载策略优化：preload 提示 + L0 双层 + L1 空闲预取；§11.4 补齐回归测试）
+> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-24（§12 gacha 资源压缩 3274→1198 KB + 转屏路径开销；§11.3 预取新增"转屏让路"一条）
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -264,8 +264,9 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 3. **先便宜后贵**：`boot 背景层` → `battle`（12 兵 `.tao` + 英雄/法术卡图，即 `enterBattle` 要等的全集）→ `icons:reward`（tab 图标 + 金币/材料 atlas）→ `slg:world`（1.2 MB 世界地图 atlas）→ `gacha`（3.3 MB，最大且最不常用，放最后）。
 4. **计费链路直接跳过**：`navigator.connection` 的 `saveData` 或 `effectiveType` 为 `2g`/`slow-2g` 时整体不跑（该 API 在 Safari/Firefox/微信不存在，视为普通链路照常预取）。
 5. **永不 reject**：单波失败只打 warn，链路继续（同 `preloadBoot` 的容错写法）。
+6. **转屏期间让路**（2026-08-24 加，见 §12）：距上次转屏不足 1.5s 时整波往后推。`requestIdleCallback` 单独不够——转屏的开销大部分**不在主线程**（帧缓冲重分配、纹理重传），所以 GPU 与内存压力峰值时主线程反而看起来空闲；往这个窗口塞一张几 MB 的纹理解码是最差时机，而在内存受限的内嵌 WebView 上失败模式不是变慢、是进程被杀。有次数上限，来回翻手机不会把预取永久停住。
 
-因为所有 loader 都是 URL 幂等的，玩家"抢先"进了某个场景也不亏：场景自己的闸门会 join 到同一个 in-flight promise，不会重复请求。
+因为所有 loader 都是 URL 幂等的，玩家"抢先"进了某个场景也不亏：场景自己的闸门会 join 到同一个 in-flight promise，不会重复请求。同理，等一等对预取零成本：每一波本就是投机的。
 
 ### 11.4 回归测试
 
@@ -292,3 +293,28 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 
 - `client/public/index.html` 不是任何 target 的 HtmlWebpackPlugin 模板（模板是 `public/<target>/index.html`），疑似历史残留；`public/crazygames/index.html` 也缺 `#boot` 预占位（web/mobile 两个有），但 CrazyGames 有 SDK 自己的 splash 兜底，暂不动。
 - §7 的"L0 瘦身复核"由本节 §11.2 执行了一轮；下次复核时同样按"玩家必须等它吗"而不是"它是不是 L0"来判。
+
+---
+
+## 12. gacha 资源压缩 + 转屏路径开销（2026-08-24）
+
+### 12.1 gacha 那 3.3 MB 根本不是"资源多"
+
+排查手机崩溃时顺带核对 §2 表里那条「gacha 全套 3.3 MB」——**11 张图，凭什么 3.3 MB**。用 sharp 逐张读元数据：全部是**未量化的 24/32 位真彩色 PNG**（`paletteBitDepth` 缺席）。webpack 对 png 走 `type:'asset/resource'`，是纯字节拷贝，**构建链路里根本不存在任何 png 压缩步骤**（见 [[unit-card-art-compression-pipeline]] 的同类结论）——`client/src/assets` 里躺着什么字节，玩家就下载什么字节。
+
+**2026-08-20 那轮扫过 `art/**/pack_*.{js,cjs}` + units/skins 的压缩整改为什么漏了它**：gacha 的打包脚本不在 `art/` 下，而是 `client/scripts/prepare-gacha-assets.mjs`，扫描的 glob 根本没覆盖到。而它的编码参数是 `.png({ compressionLevel: 9 })` —— 恰好是 sharp 里**唯一**保持真彩色无损的组合（只要再传 `effort`/`palette`/`quality` 中任意一个就会静默量化成 8 位调色板，这个反直觉的坑见 [[unit-card-art-compression-pipeline]]）。等于说：那个脚本一直在**认真地做无损压缩**，而无损压缩对这种水墨/交叉排线风格的图基本等于不压。
+
+**改动**：新增 `art/scripts/exportGachaArt.mjs`（对齐 `exportUnitCardArt.mjs` 的既有范式：从 `art/ui/gacha/` 母版重新导出，`{palette:true, quality:90, effort:10, compressionLevel:9}`），**删除** `client/scripts/prepare-gacha-assets.mjs`。删而不留的理由：它没有被任何构建步骤引用（纯手动脚本），留着的唯一效果就是下次谁跑一遍、这 2 MB 悄无声息地回来。缩放几何（卡背/banner/月卡用 cover 裁切、边框用 contain + 透明留白以免裁掉角上花纹）从旧脚本原样搬过来，保证输出可逐像素对比。
+
+**结果：3274.5 KB → 1198.2 KB（-63.4%）**。11 张全部变小（新脚本以「即将被覆盖的那个文件」为基线，任何一张变大就非零退出——[[unit-card-art-compression-pipeline]] 记的「拿母版当基线」那个坑不会重演）。逐张肉眼比对（边框叠在棋盘格上看 alpha 边缘）无可见劣化；数值上可见像素的平均 RGB 偏差 0.57–3.37，预乘后 ≤0.47。
+
+唯一真正下采样的是 `monthly_card`（560×240 → 420×180）：它只在 ShopScene 当缩略图用，contain 进一个 ≤138 设计 px 的方框，原来带着约 4 倍于所需的像素。卡背与边框**保持原尺寸**——它们在单抽揭示界面反而是被放大到约 4 倍用的（见 12.3）。
+
+### 12.2 转屏路径上的两处开销
+
+见 [FEATURE_FLAGS_DESIGN.md](FEATURE_FLAGS_DESIGN.md) §8 的 2026-08-24 条目（`PixiAppViews.onResize` 拆成「立刻重贴画布 / 延后重建大厅」+ 空转 resize 闸；`idlePrefetch` 转屏让路）。与本文的关系：§11.3 的预取时序表新增第 6 条。
+
+### 12.3 遗留
+
+- **卡背被放大约 4 倍在用**：`gacha_card_*.png` 是 400×560，而单抽揭示界面把它铺到最大约 1690×2193（16:9 横屏）。修它要加字节（母版是 1060×1484，够用），属于「清晰度 vs 体积」的美术取舍，未动。
+- `art/ui/gacha/gacha_card_rare_alt.png` 是未使用的母版（`render/gachaArt.ts` 每个稀有度只映射一张卡背）。未删，但 `exportGachaArt.mjs` 把它列进 `UNUSED_MASTERS` 显式报出来，而不是默默忽略。
