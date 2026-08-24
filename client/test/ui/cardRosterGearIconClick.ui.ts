@@ -66,11 +66,22 @@ function buildScene(openEquipment?: (cardId: string, slot?: EquipSlot) => void):
   return new CardScene(createLayout(1920, 1080), new InputManager(), cb);
 }
 
+/**
+ * Screen-space centre of a gear icon. Roster cells are laid out in CELL-LOCAL coordinates and
+ * positioned by moving their container (see list.ts's header — that is what lets a scroll step be
+ * one `position.set` instead of a rebuild), so an icon's own `.x/.y` is an offset inside its cell,
+ * while hit rects are always in screen space. Walk the transform to compare the two.
+ */
+function iconCenter(icon: PIXI.DisplayObject): PIXI.Point {
+  return icon.getGlobalPosition();
+}
+
 /** The hit rect whose rect contains the icon's own center point. */
 function hitRectAt(hitRects: HitRect[], icon: PIXI.DisplayObject): { hit: HitRect | undefined; index: number } {
+  const { x, y } = iconCenter(icon);
   const index = hitRects.findIndex((h) => (
-    icon.x >= h.rect.x && icon.x <= h.rect.x + h.rect.w
-    && icon.y >= h.rect.y && icon.y <= h.rect.y + h.rect.h
+    x >= h.rect.x && x <= h.rect.x + h.rect.w
+    && y >= h.rect.y && y <= h.rect.y + h.rect.h
   ));
   return { hit: index === -1 ? undefined : hitRects[index], index };
 }
@@ -118,8 +129,9 @@ describe('CardScene roster list — gear icons are individually clickable, strai
       const globalCellIndex = internals.core.hitRects.indexOf(ownedByA[3]!);
       expect(globalIconIndex).toBeLessThan(globalCellIndex);
       // Sanity: that hit rect really is the one covering this icon.
-      expect(icon.x).toBeGreaterThanOrEqual(ownedByA[i]!.rect.x);
-      expect(icon.x).toBeLessThanOrEqual(ownedByA[i]!.rect.x + ownedByA[i]!.rect.w);
+      const cx = iconCenter(icon).x;
+      expect(cx).toBeGreaterThanOrEqual(ownedByA[i]!.rect.x);
+      expect(cx).toBeLessThanOrEqual(ownedByA[i]!.rect.x + ownedByA[i]!.rect.w);
     }
 
     scene.destroy();

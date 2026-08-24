@@ -196,3 +196,16 @@ Loki `type=mem` 埋点显示：`baseTexTop` 里按 URL 的资源纹理桶（`a.g
 - DeckBuilderScene：数据量刚好卡在"buffer 也覆盖得住"的区间，同样靠强制 `scrollY` 到超大值验证裁剪确实会减少构建数量。
 
 **回归测试**：`test/ui/cardCodexVirtualization.ui.ts`（4 条：测量态永远缓存全部 entries、`tileRows.size` 不超过行数上限、强制极小视口后确认命中裁剪、拖到底部驱逐首行+构建末行、`destroy()` 不重复销毁）、`test/ui/deckBuilderVirtualization.ui.ts`（3 条：真实屏幕本就 `scrollMax>0`、拖到底部仍能看到最后一张卡、强制超大 `scrollY` 后构建的 Text 数量确实下降）、`test/ui/cityBuildingGridVirtualization.ui.ts`（2 条：`scrollY` getter 劫持后 Text 数量下降、极端滚动值不抛异常）；`cardCodexFlip.ui.ts`/`cardCodexScene.ui.ts`/`cardCodexPortraitWidthAndText.ui.ts`/`deckBuilderScroll.ui.ts`/`deckBuilderEloRelock.ui.ts`/`cityScene.ui.ts`/`cityFillAllTeams.ui.ts`/`cityTrainTroops.ui.ts` 等既有测试全部复跑确认无回归；`checkFileLength.mjs`/`tsc --noEmit`/全量 `client` UI 测试套件（173 文件/1549 条）均绿。
+
+---
+
+## 10. `render/fastText.ts` 的共享纹理与 `tearDownChildren` 的关系（2026-08-24）
+
+`cachedTxt()`（有界字符串集，见 `design/game/CHARACTER_CARDS_DESIGN_IMPL.md §10.5`）打破了 §8.4 那条"Text 纹理从不共享，所以 `texture:true` 对 Text 恒安全"的前提——**但没有打破它的结论**，因为它交出去的不是 `PIXI.Text` 而是 `PIXI.Sprite`：
+
+- 缓存里持有的是那个 `PIXI.Text` 本体（**必须**：`Text.destroy()` 结尾会 `this._ownCanvas && (this.canvas.height = this.canvas.width = 0)`，即使调用方传了 `texture:false` 也一样，所以"取走 texture 再销毁 Text"会把位图清零，缓存标签全渲染成纯黑块——真在浏览器里踩到过）。它永远不进场景树。
+- 调用点拿到的 `Sprite` 进场景树。`tearDownChildren` 对非 Text 节点一律 `texture:false`，于是拆一屏 UI 不会碰到缓存纹理——与 `bake()` 的纸背景、`panelFrame` 的边框图集完全同一条既有规则，不需要新的例外。
+- 只有 LRU 逐出和 `resetFastTextCaches()`（仅测试）会真正 `destroy({texture:true, baseTexture:true})`。上限 320 条，逐出即释放，所以"字符串集其实无界"的误用退化成"和以前一样慢"，不会变成泄漏。
+- `numTxt()` 同理：字形图集是一张按 (字号,粗细,颜色) 记忆化的 `BaseTexture`，发出去的是它的子纹理 Sprite，进程内只烘一次。
+
+顺带修掉一处旧的裸写法：`CardScene/core.ts` 的 `destroy()` 原本是 §8.5 点名的那种 `this.container.destroy({children:true})`，现改为先 `tearDownChildren(this.container)`。§8.7 的第 3 条复议过 `{children:true}` 对 Text 其实够用，但接了 fastText 之后这里**必须**先过 `tearDownChildren`：它对 Sprite 明确传 `texture:false`，是把"释放普通 Text、别碰共享纹理"这个区分写死在一处的唯一办法。

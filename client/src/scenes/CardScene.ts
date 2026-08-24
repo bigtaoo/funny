@@ -87,19 +87,34 @@ export class CardScene implements Scene {
     tearDownChildren(core.bodyLayer);
     core.hitRects = [];
     tearDownChildren(core.loadingLayer);
-    core.activeSpinners = [];
+    // Prune, don't clear. This used to be `activeSpinners = []`, on the assumption that every live
+    // spinner belonged to something this pass is about to redraw — no longer true: the roster grid's
+    // cells (core.gridLayer) and an unchanged detail modal both survive a render() now, and dropping
+    // them from the list would silently freeze their still-loading portrait spinners. Filtering on
+    // `destroyed` right after the bodyLayer teardown above keeps the old "no accumulation across
+    // repeated renders" property (the ones that pass just killed are already flagged) while letting
+    // the survivors keep spinning. See cardArtLoadingSpinner.ui.ts.
+    core.activeSpinners = core.activeSpinners.filter((g) => !g.destroyed);
+    // Drop the fast-path scroll hook; whichever grid renders below re-installs its own.
+    core.scrollRedraw = null;
     core.hitRects.push({ rect: core.backRect, action: () => core.cb.onBack() });
 
     this.list.renderHeaderCurrency();
     this.list.renderSidebar();
-    if (core.tab === 'skins') this.skins.renderSkinsTab();
-    else this.list.renderList();
+    if (core.tab === 'skins') {
+      // The grid layer is persistent, so leaving the tab has to tear it down explicitly — a plain
+      // `tearDownChildren(bodyLayer)` no longer reaches the cells.
+      this.list.clearGrid();
+      this.skins.renderSkinsTab();
+    } else {
+      this.list.renderList();
+    }
 
     if (core.fuseRingOpen) {
       // The fusion ring owns its own redraw (feedRedraw) and must not be reopened-over or closed by
       // a generic render() pass — see fuseRingOpen's doc comment (core.ts).
     } else if (core.tab === 'list' && core.detailId) {
-      this.detail.openDetail(core.detailId);
+      this.detail.ensureDetail(core.detailId);
     } else if (core.modalOpen) {
       core.closeModal();
     }
