@@ -47,7 +47,10 @@ export class HttpAuctionCommercialClient implements AuctionCommercialClient {
       caller: 'auctionsvc',
       key: this.internalKey,
       method: 'POST',
-      body: { accountId, amount, orderId, ...(clientPlatform ? { clientPlatform } : {}) },
+      // `reason` lands in commercial's ledger row. It used to be omitted entirely, so every auction
+      // purchase and every escrowed bid showed up in the coin ledger with an empty reason — invisible to
+      // any per-sink breakdown. commercial's /internal/spend reads it as `str(b.reason)`.
+      body: { accountId, amount, orderId, reason: 'auction', ...(clientPlatform ? { clientPlatform } : {}) },
       timeoutMs: 5000,
       label: '/internal/spend',
     });

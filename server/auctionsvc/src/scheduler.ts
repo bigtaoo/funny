@@ -9,7 +9,15 @@ export interface Scheduler {
 /** How often to purge closed-listing history (sold/cancelled/expired past the retention window). Coarse — data isn't time-critical. */
 const PURGE_TICK_MS = 60 * 60 * 1000; // 1h
 
-/** Process expired auctions once per tickMs (default 2s); purge closed-listing history once per PURGE_TICK_MS. */
+/**
+ * How often to sweep the settlement journal (U13 close-out): resume flows whose request path died, and
+ * repair listings that closed without handing anything over. Faster than the purge tick because these are
+ * unpaid debts — a player waiting on an item or their coins — but far slower than the expiry tick, since
+ * the journal's own per-row backoff (2s doubling to 5min) already decides when each row is actually due.
+ */
+const SWEEP_TICK_MS = 10 * 1000; // 10s
+
+/** Process expired auctions once per tickMs (default 2s); sweep the settlement journal per SWEEP_TICK_MS; purge closed-listing history once per PURGE_TICK_MS. */
 export function startScheduler(auctionSvc: AuctionService, tickMs = 2000): Scheduler {
   let running = false;
   const timer = setInterval(() => {
@@ -23,6 +31,24 @@ export function startScheduler(auctionSvc: AuctionService, tickMs = 2000): Sched
       });
   }, tickMs);
   timer.unref?.();
+
+  let sweeping = false;
+  const sweepTimer = setInterval(() => {
+    if (sweeping) return;
+    sweeping = true;
+    void auctionSvc
+      .sweepSettlements()
+      .then(({ resumed, repaired }) => {
+        if (resumed > 0 || repaired > 0) {
+          console.log(`[auction-scheduler] settlement sweep: resumed ${resumed}, repaired ${repaired}`);
+        }
+      })
+      .catch((e) => console.error('[auction-scheduler] sweepSettlements failed:', (e as Error).message))
+      .finally(() => {
+        sweeping = false;
+      });
+  }, SWEEP_TICK_MS);
+  sweepTimer.unref?.();
 
   let purging = false;
   const purgeTimer = setInterval(() => {
@@ -38,5 +64,5 @@ export function startScheduler(auctionSvc: AuctionService, tickMs = 2000): Sched
   }, PURGE_TICK_MS);
   purgeTimer.unref?.();
 
-  return { stop: () => { clearInterval(timer); clearInterval(purgeTimer); } };
+  return { stop: () => { clearInterval(timer); clearInterval(sweepTimer); clearInterval(purgeTimer); } };
 }

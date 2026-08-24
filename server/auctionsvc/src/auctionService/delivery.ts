@@ -1,47 +1,63 @@
 // auctionsvc AuctionService split — system-mail delivery helpers (see ../auctionService.ts).
 //
 // Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
-// composition): zero dependencies on any other layer, only `deps` — depended on by trade.ts.
-// `deliverItem`/`deliverCoins` moved from `protected` to public.
-import type { AuctionDoc } from '../db';
+// composition): zero dependencies on any other layer, only `deps`.
+//
+// 2026-08-24 (U13 close-out): callers changed from "the listing document" to "an `AuctionItemSnapshot`",
+// and both methods now THROW on a failed send instead of logging and returning. Reached only from
+// journalSteps.ts, whose caller records the step as still-owed and retries it — the old best-effort
+// swallow was the likeliest way to lose real assets in production, since one meta 500 was enough to
+// destroy a seller's proceeds or a buyer's item with nothing but a log line to show for it.
+import type { AuctionItemSnapshot } from '../db';
 import type { AuctionMailAttachment } from '../mailClient';
 import type { AuctionServiceDeps } from './base';
 import { AUCTION_MAIL_EXPIRE_DAYS, equipInstanceOf, cardInstanceOf } from './base';
+
+/**
+ * Mail attachment for a listing payload: equipment/card carry the full instance snapshot, material
+ * carries id+qty, skin carries the id only. Null means there is nothing deliverable in the payload (a
+ * malformed listing), which callers treat as a completed hand-over rather than a retryable failure —
+ * retrying cannot conjure an instance that was never stored.
+ */
+function attachmentOf(snapshot: AuctionItemSnapshot): AuctionMailAttachment | null {
+  if (snapshot.itemType === 'material') {
+    const material = snapshot.item['material'] as string;
+    return { kind: 'material', id: material, count: snapshot.qty };
+  }
+  if (snapshot.itemType === 'equipment') {
+    const inst = equipInstanceOf(snapshot.item);
+    return inst ? { kind: 'equipment', instance: inst } : null;
+  }
+  if (snapshot.itemType === 'card') {
+    const inst = cardInstanceOf(snapshot.item);
+    return inst ? { kind: 'card', instance: inst } : null;
+  }
+  if (snapshot.itemType === 'skin') {
+    const skinId = snapshot.item['skinId'] as string | undefined;
+    return skinId ? { kind: 'skin', id: skinId } : null;
+  }
+  return null;
+}
 
 export class AuctionServiceDelivery {
   constructor(private readonly deps: AuctionServiceDeps) {}
 
   /**
-   * Delivers the listed item to the target account via system mail (escrow-out model, AUCTION_DESIGN):
+   * Delivers a listed item to the target account via system mail (escrow-out model, AUCTION_DESIGN):
    *   buyer on sale (reason 'sold') / seller on cancel or expiry (reason 'returned').
-   * The item does NOT go straight into the inventory — the recipient must claim the mail attachment
-   * (equipment/card carry the full instance snapshot; material carries id+qty; skin carries id only).
-   * dispatchKey = orderId → idempotent (each call site passes a stable, unique orderId).
-   * Best-effort: mail unavailable → no-op (same degradation as the previous direct-grant path).
+   * The item does NOT go straight into the inventory — the recipient must claim the mail attachment.
+   * dispatchKey = the journal step's key → idempotent across retries and resumes.
    */
   async deliverItem(
     toAccountId: string,
-    doc: AuctionDoc,
-    orderId: string,
+    snapshot: AuctionItemSnapshot,
+    dispatchKey: string,
     reason: 'sold' | 'returned',
   ): Promise<void> {
-    let attachment: AuctionMailAttachment | null = null;
-    if (doc.itemType === 'material') {
-      const material = doc.item['material'] as string;
-      attachment = { kind: 'material', id: material, count: doc.qty };
-    } else if (doc.itemType === 'equipment') {
-      const inst = equipInstanceOf(doc.item);
-      if (inst) attachment = { kind: 'equipment', instance: inst };
-    } else if (doc.itemType === 'card') {
-      const inst = cardInstanceOf(doc.item);
-      if (inst) attachment = { kind: 'card', instance: inst };
-    } else if (doc.itemType === 'skin') {
-      const skinId = doc.item['skinId'] as string | undefined;
-      if (skinId) attachment = { kind: 'skin', id: skinId };
-    }
+    const attachment = attachmentOf(snapshot);
     if (!attachment) return;
     // subject/body are i18n keys resolved client-side.
-    await this.deps.mail.sendSystemMail(toAccountId, orderId, {
+    await this.deps.mail.sendSystemMail(toAccountId, dispatchKey, {
       subject: `auction.mail.${reason}.subject`,
       body: `auction.mail.${reason}.body`,
       attachments: [attachment],
@@ -53,16 +69,16 @@ export class AuctionServiceDelivery {
    * Delivers coins to an account via system mail (claimed → commercial.grant at claim time, metaserver claimMail).
    * Used for both seller sale proceeds ('proceeds') and buyer/bidder escrow refunds ('refund') — no path in
    * auctionsvc credits coins directly anymore; only real-money recharge goes straight to the wallet.
-   * dispatchKey = orderId → idempotent (each call site passes a stable, unique orderId).
+   * dispatchKey = the journal step's key → idempotent across retries and resumes.
    */
   async deliverCoins(
     toAccountId: string,
     amount: number,
-    orderId: string,
+    dispatchKey: string,
     reason: 'proceeds' | 'refund',
   ): Promise<void> {
     if (amount <= 0) return;
-    await this.deps.mail.sendSystemMail(toAccountId, orderId, {
+    await this.deps.mail.sendSystemMail(toAccountId, dispatchKey, {
       subject: `auction.mail.${reason}.subject`,
       body: `auction.mail.${reason}.body`,
       attachments: [{ kind: 'coins', count: amount }],
