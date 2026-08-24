@@ -8,7 +8,7 @@
  * sites keep their import path.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { ui as C, txt } from '../../../render/sketchUi';
+import { ui as C, txt, tearDownChildren } from '../../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../../render/icons';
 import { buildCoinIcon } from '../../../render/atlas/coinIconAtlas';
 import { snapFont } from '../../../render/fontScale';
@@ -28,6 +28,15 @@ export interface HeaderCurrencyChip {
  * of a separate band underneath it (the two used to visually float apart — see the
  * "equipment/card inventory" header-alignment fix). Draw into a per-render overlay layer added
  * *after* the cached header chrome, so the coin icon isn't hidden behind the bar.
+ *
+ * `leftBound` (design px) is the right edge of whatever the header already drew — pass
+ * {@link SceneHeaderResult.titleRight}. It is a **backstop**, not the primary layout: the title
+ * band is supposed to have been sized with {@link headerCurrencyWidth} so the cluster fits at full
+ * size. It engages when that reserve went stale — the title is baked once in a scene's build() while
+ * this redraws every render, so a coin balance that gains a digit mid-scene can outgrow the space
+ * measured for it — and then scales the whole cluster down (anchored on its right edge) rather than
+ * letting the two overlap. Deliberately unfloored: a fit small enough to be unreadable means the
+ * reserve was wrong, and silently overlapping instead would hide that.
  */
 export function drawHeaderCurrency(
   container: PIXI.Container,
@@ -36,8 +45,52 @@ export function drawHeaderCurrency(
   chips: readonly HeaderCurrencyChip[] = [],
   capacity?: { text: string; color: number },
   scale = 1,
+  leftBound?: number,
 ): void {
-  const midY = headerH / 2;
+  const { cluster, width } = buildCluster(headerH, coins, chips, capacity, scale);
+  const avail = leftBound === undefined ? width : w - RIGHT_MARGIN - leftBound;
+  const fit = width > 0 && avail > 0 && width > avail ? avail / width : 1;
+  cluster.scale.set(fit);
+  cluster.x = w - RIGHT_MARGIN - width * fit;
+  cluster.y = headerH / 2;
+  container.addChild(cluster);
+}
+
+/**
+ * Width the cluster {@link drawHeaderCurrency} would draw for the same arguments, in design px —
+ * so a caller can reserve exactly that much before `drawSceneHeader` bakes the title
+ * (`opts.rightReserve`). Shares one layout path with the drawing, so the two cannot drift apart;
+ * measuring does build and then tear down the nodes, which is why this belongs in a scene's build()
+ * and not in a per-frame path.
+ *
+ * The fixed-ratio reserve this replaces (SceneHeader.ts's TITLE_RIGHT_RESERVE_RATIO, 20% of the bar)
+ * was too small for a coin balance plus a capacity readout: on a 430pt-wide portrait viewport the
+ * roster's cluster measured ~27% of the bar and the centred title ran straight under the coin number
+ * (2026-08-24).
+ */
+export function headerCurrencyWidth(
+  headerH: number,
+  coins: number,
+  chips: readonly HeaderCurrencyChip[] = [],
+  capacity?: { text: string; color: number },
+  scale = 1,
+): number {
+  const { cluster, width } = buildCluster(headerH, coins, chips, capacity, scale);
+  tearDownChildren(cluster);
+  cluster.destroy();
+  return width;
+}
+
+/** Inset of the cluster's right edge from the bar's right edge (design px). */
+const RIGHT_MARGIN = 10;
+
+function buildCluster(
+  headerH: number,
+  coins: number,
+  chips: readonly HeaderCurrencyChip[],
+  capacity: { text: string; color: number } | undefined,
+  scale: number,
+): { cluster: PIXI.Container; width: number } {
   const iconSize = Math.round(headerH * 0.32 * scale);
   const fontSize = snapFont(Math.round(headerH * 0.26 * scale));
   const labelSize = snapFont(Math.round(fontSize * 0.8));
@@ -83,7 +136,5 @@ export function drawHeaderCurrency(
     cx -= gap; // trim the trailing gap after the last chip
   }
 
-  cluster.x = w - 10 - cx;
-  cluster.y = midY;
-  container.addChild(cluster);
+  return { cluster, width: cx };
 }

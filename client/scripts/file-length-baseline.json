@@ -11,13 +11,5 @@
   "net/WorldApiClient.ts": {
     "lines": 544,
     "reason": "Same thin-forwarding-facade shape as ApiClient.ts above (shrunk 712→534 by the 2026-08-11 composition conversion; 534→542 on 2026-08-14 adding setFamilyEmblem/setSectEmblem, two more one-line forwards for the new emblem-picker endpoints; 542→544 on 2026-08-19 re-exporting the WorldCityNodeView type for the published-city-node rendering fix) — dozens of call sites already call `worldApi.methodName(...)` directly."
-  },
-  "scenes/CardScene/core.ts": {
-    "lines": 519,
-    "reason": "Shared-state root that all 5 domain classes (list/skins/detail/feed/actions) depend on, after the 2026-08-11 mixin→composition conversion. feed.ts (was 741) DID have a natural further seam and was pulled under 500 by extracting feedAnim.ts + feedList.ts; core.ts has no equivalent seam without arbitrarily fragmenting one cohesive state object."
-  },
-  "scenes/EquipmentScene/core.ts": {
-    "lines": 525,
-    "reason": "Shared-state root all 5 domain classes (inventory/craft/detail/assign/reforge) depend on, plus input/lifecycle plumbing and 3 lazy-hook fields the two bidirectional pairs found during the 2026-08-11 conversion (inventory<->detail, detail<->assign) needed. Two further seams WERE already extracted (types.ts, layout.ts, helpers.ts) — this is what's left after that."
   }
 }

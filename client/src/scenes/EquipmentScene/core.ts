@@ -46,18 +46,19 @@ import { showToastMessage } from '../../net/log';
 import { snapFont } from '../../render/fontScale';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { buildDecorCLayer } from '../../render/decorCLayer';
-import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { headerCurrencySpec } from './headerRow';
 import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import type { SaveData, EquipSlot, EquipRarity } from '../../game/meta/SaveData';
-import { EQUIPMENT_INV_CAP, EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
+import { EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
 import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { buildLevelStars as buildLevelStarsRow } from '../../render/levelStars';
-import { MAT_BAND_H, MAT_COLOR, TRACKED_MATERIALS, matIconKind } from './layout';
+import { MAT_COLOR, matIconKind } from './layout';
 import type { EquipTab, SectionKey, Rect } from './types';
 
 export type { EquipResult, EnhanceResult, EquipmentCallbacks, EquipTab, SectionKey, Rect, CellAction, EquipGridLayout } from './types';
@@ -123,6 +124,8 @@ export class EquipmentSceneCore {
   useProtectEnhance = false;
 
   backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Right edge of the header's title group — drawHeaderCurrency's fit backstop. See build(). */
+  titleRight = 0;
   /** Title-bar height, set from the shared header in build() — drives all body layout below it. */
   headerH = 0;
   bodyLayer!: PIXI.Container;
@@ -273,11 +276,18 @@ export class EquipmentSceneCore {
     this.container.addChild(this.loadingLayer);
 
     // Static header (back + title); the back hit is (re)registered by the assembly's render().
+    // The title band has to know how wide the coin/capacity cluster renderHeaderCurrency() will draw
+    // on top of it, or a centred title runs under the coin number on a narrow portrait bar — measure
+    // the real thing rather than leaving drawSceneHeader to guess a ratio (2026-08-24).
+    const headerH = sceneHeaderHeight(h);
+    const spec = headerCurrencySpec(this);
     const hdr = drawSceneHeader(this.container, w, h, t('equip.title'), {
       variant: 'paper', accent: HEADER_ACCENT.spend, icon: 'equipIcon',
+      rightReserve: headerCurrencyWidth(headerH, spec.coins, [], spec.capacity, spec.scale),
     });
     this.backRect = hdr.backRect;
     this.headerH = hdr.headerH;
+    this.titleRight = hdr.titleRight;
 
     this.headerOverlayLayer = new PIXI.Container();
     this.container.addChild(this.headerOverlayLayer);
@@ -287,52 +297,6 @@ export class EquipmentSceneCore {
   backAction(): void {
     if (this.assign) this.cancelAssignHook();
     else this.cb.onBack();
-  }
-
-  /**
-   * Coin + material + capacity readout drawn into the header row itself (headerOverlayLayer sits
-   * on top of the static header chrome), so it lines up with the "Equipment" title instead of floating
-   * in its own band underneath. Called on every render(), independent of the assembly's renderHeaderRow/
-   * assign mode, so it stays visible even while the card-assign picker is open.
-   */
-  renderHeaderCurrency(): void {
-    tearDownChildren(this.headerOverlayLayer);
-    const save = this.cb.getSave();
-    const count = Object.keys(save.equipmentInv).length;
-    // Header carries only the coin balance + capacity — a compact right cluster that leaves room
-    // for the left-aligned title on the narrow portrait bar. The three crafting materials are too
-    // wide to fit here with readable labels, so they get their own body band (renderMaterialsBand).
-    drawHeaderCurrency(this.headerOverlayLayer, this.w, this.headerH, save.wallet.coins, [], {
-      text: `${count}/${EQUIPMENT_INV_CAP}`,
-      color: count >= EQUIPMENT_INV_CAP ? C.red : C.mid,
-    }, 100 / this.headerH);
-  }
-
-  /**
-   * Slim materials band at the top of the body (right of the sidebar rail): the three crafting
-   * materials as icon + name + amount, at a readable size. Moved out of the header (see
-   * renderHeaderCurrency) so the labels no longer collide with the title on the narrow portrait bar.
-   */
-  renderMaterialsBand(x: number, y: number, w: number): void {
-    tearDownChildren(this.materialsLayer);
-    const save = this.cb.getSave();
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0xf3f1ea).drawRect(x, y, w, MAT_BAND_H).endFill();
-    this.materialsLayer.addChild(bg);
-
-    const midY = y + MAT_BAND_H / 2;
-    const iconSize = Math.round(MAT_BAND_H * 0.44);
-    const fontSize = snapFont(Math.round(MAT_BAND_H * 0.4));
-    const slotW = w / TRACKED_MATERIALS.length;
-    TRACKED_MATERIALS.forEach((m, i) => {
-      const cx = x + i * slotW + Math.round(slotW * 0.1);
-      const ic = buildMaterialIcon(m as MaterialKind, iconSize, MAT_COLOR[m] ?? C.mid);
-      ic.x = cx; ic.y = midY - iconSize / 2;
-      this.materialsLayer.addChild(ic);
-      const lbl = txt(`${t(`material.${m}` as TranslationKey)} ${save.materials[m] ?? 0}`, fontSize, C.dark);
-      lbl.anchor.set(0, 0.5); lbl.x = cx + iconSize + 6; lbl.y = midY;
-      this.materialsLayer.addChild(lbl);
-    });
   }
 
   // ── Confirm modal ───────────────────────────────────────────────────────────

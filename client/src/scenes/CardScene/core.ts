@@ -28,120 +28,33 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
-import { t, type TranslationKey } from '../../i18n';
+import { t } from '../../i18n';
 import {
   ui as C, scaledTxt, buildPaperBackground, tearDownChildren,
 } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { getArtTexture, containScale } from '../../render/cardArt';
-import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, sceneHeaderHeight, headerCurrencyWidth, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
-import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
-import type { CardSLGState } from '../../net/WorldApiClient';
-import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
-import type { UnitType } from '@nw/engine/types';
+import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER } from '../../game/meta/cardDefs';
 
-export type CardActionResult = { ok: true } | { ok: false; key: TranslationKey };
-
-/** A batch fuse's outcome. Partial success is still `ok`: the server commits rounds in order and stops
- *  at the first failure, so `completed` is the honest count and `failKey` says why it stopped. */
-export type CardBatchResult = { ok: true; completed: number; failKey?: TranslationKey } | { ok: false; key: TranslationKey };
-
-export type CardSceneTab = 'list' | 'skins';
-
-export interface CardCallbacks {
-  onBack(): void;
-  getSave(): SaveData;
-  /** Subscribe to SaveManager writes; re-renders this scene when a concurrently-mounted peer scene changes the save (wallet/inventory/...). Push the returned unsub onto `unsubs`. */
-  onSaveChanged?(listener: () => void): () => void;
-  /** SLG per-card state (troops/injury/teamId); undefined when outside SLG. */
-  getCardState?(): Record<string, CardSLGState> | undefined;
-  /** Human-readable name for an SLG team id; undefined when outside SLG or the team can't be resolved. */
-  getTeamName?(teamId: string): string | undefined;
-  /** Fuse cards: consumes exactly 5 materialCardIds (same faction+level as target), targetCardId +1 level. */
-  fuseCards(targetCardId: string, materialCardIds: string[]): Promise<CardActionResult>;
-  /** Run a whole planned run of fuses as ONE request — see POST /cards/fuse-batch. */
-  fuseCardsBatch(rounds: { targetId: string; materialIds: string[] }[]): Promise<CardBatchResult>;
-  /** Toggle card lock. */
-  setCardLock(cardInstanceId: string, locked: boolean): Promise<CardActionResult>;
-  /** Recover an injured card by spending coins. Only present when in SLG context. */
-  recoverCard?(cardInstanceId: string): Promise<CardActionResult>;
-  /**
-   * Navigate to equipment scene for a specific card. Absent offline (E5 is server-authoritative).
-   * `slot`, when given (a specific gear-slot tap), pre-selects the matching filter tab instead of "All".
-   */
-  openEquipment?(cardInstanceId: string, slot?: EquipSlot): void;
-  /**
-   * Open the equipment bag as a peer of the roster (LOBBY_IA_REDESIGN). When injected, a
-   * [Cards|Equipment] group tab strip is shown; tapping Equipment enters the bag (no active card).
-   * Absent offline.
-   */
-  openEquipmentBag?(): void;
-  /** Owned skin ids (server-authoritative inventory; readable offline from the local mirror). */
-  getOwnedSkins(): string[];
-  /** Currently equipped skin id for a character, or null for the default look (LOBBY_IA_REDESIGN §15). */
-  getEquippedSkin(unitType: UnitType): string | null;
-  /** Equip a skin on a character, or null to revert to the default look. */
-  equipSkin(unitType: UnitType, skinId: string | null): void;
-  /**
-   * Content tab to open on first paint; defaults to the roster grid ('list'). Lets a caller land
-   * directly on the Skins wardrobe — e.g. tapping the Skins peer from EquipmentScene's sidebar rail
-   * (the [Cards | Equipment | Skins] growth group, LOBBY_IA_REDESIGN §15).
-   */
-  initialTab?: CardSceneTab;
-}
-
-/**
- * Handle returned by AppViews.showCardRoster, letting the caller push a late-arriving SLG fetch
- * (getCardState/getTeamName data resolving after the roster already opened without it) into an
- * already-open roster — see game.ts goCardRoster.
- */
-export interface CardRosterView {
-  /** Re-render just the SLG-derived bits of already-visible cells; see ListPanel.applyCardState. */
-  applyCardState(): void;
-}
-
-export const MODAL_DIM = 0x000000;
-
-// Roster grid: icon-card cells — a full-height portrait on the left with all the
-// hero info (name / level / power / troops / gear) stacked immediately to its right.
-// Narrower than the equipment cells so hero cards pack denser and don't read as empty.
-export const CELL_GAP = 12;
-// Taller than EquipmentScene's EQUIP_CELL_H (they used to be unified at 177): hero cards carry a
-// full-height character portrait that reads better with more vertical room, so the roster grid is
-// deliberately taller. Width is still deliberately narrower so hero cards pack denser.
-export const CARD_CELL_H = 266; // 1.5x the previous 177 (taller hero cards)
-export const CARD_CELL_W_TARGET = 300;
-
-export interface Rect { x: number; y: number; w: number; h: number; }
-
-export interface Hit { rect: Rect; action: () => void; owner?: string; }
+export type {
+  CardActionResult, CardBatchResult, CardSceneTab, CardCallbacks, CardRosterView, Rect, Hit,
+  DoFuseFn, PrepRound, DoPrepBatchFn,
+} from './types';
+export { MODAL_DIM, CELL_GAP, CARD_CELL_H, CARD_CELL_W_TARGET } from './types';
+import type {
+  CardCallbacks, CardSceneTab, Rect, Hit, DoFuseFn, DoPrepBatchFn,
+} from './types';
+import { MODAL_DIM } from './types';
 
 // Roster ordering + injury countdown moved to ./cardSort.ts (2026-08-18) — pure functions with
 // no dependency on this class's state; re-exported so importers keep the same module path.
 export { sortCards, injuryCountdown } from './cardSort';
-
-/** feed.ts's fuse-confirm button call signature — see the file-header comment on {@link CardSceneCore.doFuse}. */
-export type DoFuseFn = (targetId: string, materialIds: string[], onSettled?: (success: boolean) => void) => Promise<void>;
-
-/** One fuse of a prep batch. See {@link DoPrepBatchFn}. */
-export type PrepRound = { targetId: string; materialIds: string[] };
-
-/**
- * feed.ts's batch-prep button call signature (2026-08-18; single-request since 2026-08-20). The run
- * is planned up front by the caller (feedPlan.planPrepRounds) and shipped as ONE POST
- * /cards/fuse-batch rather than a fuse-per-round loop — five round-trips, each returning a fully
- * reassembled cardInv, is the stall this replaces. The server still validates each round and stops at
- * the first failure, so `onSettled` gets how many landed, as the sequential version reported it.
- */
-export type DoPrepBatchFn = (
-  rounds: PrepRound[],
-  onSettled: (completed: number) => void,
-) => Promise<void>;
 
 export class CardSceneCore {
   readonly container: PIXI.Container;
@@ -153,12 +66,24 @@ export class CardSceneCore {
   readonly bt = new BusyTracker();
 
   bodyLayer!: PIXI.Container;
+  /**
+   * Persistent, masked home of the roster grid's per-card cells (ListPanel). Deliberately NOT part
+   * of {@link bodyLayer}: the assembly's render() tears bodyLayer down wholesale, and the whole
+   * point of the incremental grid is that a cell survives a re-render (and a scroll frame) instead
+   * of being rebuilt — see ListPanel.syncCells. Sits below bodyLayer so the chrome drawn there (tab
+   * rail, scroll indicator, empty-state label) still paints over the cells.
+   */
+  gridLayer!: PIXI.Container;
+  /** Clip rect for {@link gridLayer}; ListPanel redraws it whenever the grid viewport changes. */
+  gridClip!: PIXI.Graphics;
   modalLayer!: PIXI.Container;
   loadingLayer!: PIXI.Container;
   /** Drawn after the static header chrome so the coin balance + capacity readout sit on the same row as the title (matches EquipmentScene, EQUIPMENT_DESIGN header-alignment fix). */
   headerOverlayLayer!: PIXI.Container;
 
   backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Right edge of the header's title group — drawHeaderCurrency's fit backstop. See build(). */
+  titleRight = 0;
   /** Title-bar height, set from the shared header in build() — drives all body layout below it. */
   headerH = 0;
   /** `owner` (card instance id) tags a roster-cell hit so applyCardState()'s refresh can drop and
@@ -206,6 +131,14 @@ export class CardSceneCore {
   private readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
   private scrollDirty = false;
+  /**
+   * Cheap redraw for a scroll step, installed by whichever grid is on screen (ListPanel.renderList).
+   * A scroll only changes cell positions — never the card order, the cell contents or the chrome —
+   * so a full render() there is pure waste: it used to re-mint every visible cell's ~7 PIXI.Text
+   * every frame of a drag (~11 ms of rasterize + upload at 15 cells, measured). Null → update()
+   * falls back to render(), which is still what the skins tab wants.
+   */
+  scrollRedraw: (() => void) | null = null;
   /** [Cards|Equipment?|Skins] sidebar nav — always shown (Skins is always reachable, LOBBY_IA_REDESIGN §15). */
   private readonly showSidebar = true;
   /** Active content tab: the card grid, or the skins wardrobe. */
@@ -320,6 +253,12 @@ export class CardSceneCore {
     const decoC = buildDecorCLayer(w, h);
     if (decoC) this.container.addChild(decoC);
 
+    this.gridLayer = new PIXI.Container();
+    this.gridClip = new PIXI.Graphics();
+    this.container.addChild(this.gridLayer);
+    this.container.addChild(this.gridClip);
+    this.gridLayer.mask = this.gridClip;
+
     this.bodyLayer = new PIXI.Container();
     this.container.addChild(this.bodyLayer);
     this.modalLayer = new PIXI.Container();
@@ -327,14 +266,43 @@ export class CardSceneCore {
     this.loadingLayer = new PIXI.Container();
     this.container.addChild(this.loadingLayer);
 
+    // The title band has to know how wide the coin/capacity cluster ListPanel.renderHeaderCurrency()
+    // draws on top of it: the old fixed 20%-of-width guess was ~7 points short of the real cluster on
+    // a 430pt portrait viewport, so the centred "Hero Roster" ran straight under the coin number
+    // (2026-08-24). Measured from the same spec the draw call uses.
+    const spec = this.headerCurrencySpec();
     const hdr = drawSceneHeader(this.container, w, h, t('roster.title'), {
       variant: 'paper', accent: HEADER_ACCENT.spend, icon: 'rosterIcon',
+      rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), spec.coins, [], spec.capacity, spec.scale),
     });
     this.backRect = hdr.backRect;
     this.headerH = hdr.headerH;
+    this.titleRight = hdr.titleRight;
 
     this.headerOverlayLayer = new PIXI.Container();
     this.container.addChild(this.headerOverlayLayer);
+  }
+
+  /**
+   * Inputs for the header's coin + capacity cluster, in one place because two callers need the same
+   * answer: build() measures it to size the title band, ListPanel.renderHeaderCurrency() draws it.
+   * Splitting the expression between them is exactly how the reserve and the cluster drift apart.
+   */
+  headerCurrencySpec(): { coins: number; capacity: { text: string; color: number }; scale: number } {
+    const save = this.cb.getSave();
+    const count = Object.keys(save.cardInv ?? {}).length;
+    const warn = count >= CARD_INV_CAP - CARD_INV_OVERFLOW_BUFFER;
+    const full = count >= CARD_INV_CAP;
+    return {
+      coins: save.wallet.coins,
+      capacity: {
+        text: t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP)),
+        color: full ? C.red : warn ? C.gold : C.mid,
+      },
+      // Keep the readout at a compact absolute size (matches EquipmentScene, its [Cards|Equipment]
+      // peer) rather than scaling it up with the taller unified header.
+      scale: 100 / sceneHeaderHeight(this.h),
+    };
   }
 
   /**
@@ -499,7 +467,10 @@ export class CardSceneCore {
       for (const g of this.activeSpinners) if (!g.destroyed) g.rotation = this.spinnerAngle;
       this.activeSpinners = this.activeSpinners.filter((g) => !g.destroyed);
     }
-    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+    if (this.scrollDirty) {
+      this.scrollDirty = false;
+      if (this.scrollRedraw) this.scrollRedraw(); else this.render();
+    }
     if (this.feedScrollDirty) { this.feedScrollDirty = false; this.feedRedraw?.(); }
     // Advance the busy-dot state every frame, but skip the re-render mid-fuse: rebuilding the scene
     // there tears down the fusion-animation graphics and crashes their rAF loop (see fuseInProgress).
@@ -513,6 +484,11 @@ export class CardSceneCore {
     this.flipTickerCleanup = null;
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
+    // tearDownChildren first, then destroy: the bare `destroy({ children: true })` this used to be
+    // frees nested PIXI.Text objects but leaves their canvases orphaned (the `texture` flag defaults
+    // to false for descendants — see tearDownChildren's doc). It also does the right thing by the
+    // shared caches, freeing only Text and leaving Sprites' textures (fastText, bake, atlases) alone.
+    tearDownChildren(this.container);
     this.container.destroy({ children: true });
   }
 }

@@ -28,7 +28,7 @@ import { ui as C, buildPaperBackground, marginLineX } from '../../render/sketchU
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
 import { type MaterialKind } from '../../render/atlas/materialAtlas';
-import { drawSceneHeader, drawHeaderCurrency, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
+import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
@@ -317,12 +317,19 @@ export class ShopSceneCore {
   /** Header bar with title, back, and coin balance. Returns its height. */
   drawHeader(): number {
     const { w, h } = this;
-    const hdr = drawSceneHeader(this.container, w, h, t('shop.title'), { accent: HEADER_ACCENT.spend, icon: 'shopTabIcon' });
+    // Reserve the coin readout's real width before the title is laid out, so a centred title cannot
+    // run under it on a narrow portrait bar (2026-08-24). Drawn right after the header, so the
+    // measurement is always current and drawHeaderCurrency's own fit backstop never has to engage.
+    const coins = this.cb.getCoins();
+    const hdr = drawSceneHeader(this.container, w, h, t('shop.title'), {
+      accent: HEADER_ACCENT.spend, icon: 'shopTabIcon',
+      rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
+    });
     const tbH = hdr.headerH;
     this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
 
     // Coin balance (top-right): shared header readout so it reads identically across every scene.
-    drawHeaderCurrency(this.container, w, tbH, this.cb.getCoins());
+    drawHeaderCurrency(this.container, w, tbH, coins, [], undefined, 1, hdr.titleRight);
 
     return tbH;
   }

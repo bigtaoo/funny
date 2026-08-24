@@ -1,39 +1,80 @@
 // Roster list view: the [Cards|Equipment] sidebar rail, the header currency/capacity readout, the
 // scrolling icon-card grid, and the per-card cell renderer. Depends on DetailPanel (openDetail) —
 // see ../CardScene.ts assembly for the construction order.
+//
+// The grid is INCREMENTAL (2026-08-24, see design/game/CHARACTER_CARDS_DESIGN_IMPL.md §10.5). Three
+// invariants make that work, and breaking any one of them puts the per-frame cost back:
+//   1. Cells live in `core.gridLayer`, not `core.bodyLayer` — the assembly's render() tears
+//      bodyLayer down wholesale, so a cell parked there could never survive a re-render.
+//   2. A cell is rebuilt only when its ./rosterCell signature changes. Scrolling moves the
+//      cell CONTAINER (one `position.set`) and nothing else; the ~7 text nodes inside it are
+//      untouched. Anything a cell draws must therefore appear in the signature, or it will go
+//      stale — that is the one maintenance burden this design adds.
+//   3. Cell contents are laid out in CELL-LOCAL coordinates (origin at the cell's top-left), which
+//      is what lets (2) move a whole cell by setting one position. Hit rects come back from
+//      ./rosterCell in local space and are offset into screen space by syncCells.
 import * as PIXI from 'pixi.js-legacy';
-import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { t } from '../../i18n';
+import { ui as C, txt, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { buildIcon } from '../../render/icons';
-import { buildLevelStars } from '../../render/levelStars';
-import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
-import { FACTION_COLOR } from '../../render/factionIcon';
-import { cardInstanceArtUrl } from '../../render/cardArt';
 import { drawHeaderCurrency } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
+import type { SaveData, CardInstance } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
-import { CARD_DEFS, CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER, MAX_CARD_LEVEL, troopCap, cardPower, cardAttack, cardHp } from '../../game/meta/cardDefs';
-import { CardSceneCore, CARD_CELL_H, CARD_CELL_W_TARGET, sortCards, injuryCountdown } from './core';
+import { CardSceneCore, CARD_CELL_H, CARD_CELL_W_TARGET, sortCards } from './core';
+import { renderCardCell, cellSignature, type LocalHit } from './rosterCell';
 import type { DetailPanel } from './detail';
 
 // Roster grid packs a fixed 5 cards per row (was auto-fit ~6) with roomier gaps than the shared CELL_GAP.
 const ROSTER_COLS = 5;
 const ROSTER_GAP = 24;
+/** Extra rows kept built above/below the viewport so a drag doesn't build cells at the edge. */
+const ROW_MARGIN = 1;
+
+/** Everything about the grid that a scroll step does NOT change — recomputed only by renderList. */
+interface GridLayout {
+  cols: number;
+  cellW: number;
+  /** Left edge of column 0, and the width of the whole grid column (for the scroll indicator). */
+  left: number;
+  avail: number;
+  /** Top of the scroll viewport (= headerH) and its height. */
+  listY: number;
+  availH: number;
+  /** Card ids in grid order (row-major), from sortCards. */
+  order: string[];
+  maxScroll: number;
+}
+
+interface CellRec {
+  container: PIXI.Container;
+  /** {@link cellSignature} value the current contents were drawn from. */
+  sig: string;
+  hits: LocalHit[];
+}
 
 /** List domain (see ../CardScene.ts assembly + ./core.ts for the shared state). */
 export class ListPanel {
+  /** Materialized cells, keyed by card instance id. Only rows near the viewport are present. */
+  private cells = new Map<string, CellRec>();
   /**
-   * Per-card cell container + on-screen rect from the last renderList layout pass — lets
-   * applyCardState()/refreshCardCell() redraw a single cell in place (SLG border/troop/team-tag
-   * only) instead of a full relayout when cb.getCardState() data changes after the roster is
-   * already open. Repopulated on every renderList pass; a card's cell position/size never
-   * depends on SLG state, so there's no need to invalidate these across a state-only refresh.
+   * Per-card cell container + on-screen rect from the last syncCells pass. Kept as plain mirrors of
+   * {@link cells} because they are the roster's test seam (see test/ui/cardRoster*.ui.ts) and are
+   * read by nothing else.
    */
   private cellContainers = new Map<string, PIXI.Container>();
   private cellRects = new Map<string, { x: number; y: number; w: number }>();
+
+  private layout: GridLayout | null = null;
+  /**
+   * Length of core.hitRects once the static chrome (back button, tab rail) has registered — the
+   * grid owns everything past it, and syncCells truncates back to here before re-emitting, so a
+   * scroll step can't accumulate stale cell hits.
+   */
+  private hitBase = 0;
+  /** Scroll indicator from the last draw, so a scroll step can replace just that one Graphics. */
+  private indicator: PIXI.Graphics | null = null;
 
   constructor(
     private readonly core: CardSceneCore,
@@ -41,45 +82,24 @@ export class ListPanel {
   ) {}
 
   /**
-   * Redraw one roster cell in place (its SLG-derived border/troop-count/deployed-tag) — see
-   * applyCardState(). Returns false (caller has nothing to fall back to; the cell just stays as
-   * last rendered) when the cell isn't currently tracked, e.g. scrolled out of view since the
-   * last full render.
-   */
-  private refreshCardCell(cardId: string): boolean {
-    const core = this.core;
-    const container = this.cellContainers.get(cardId);
-    const rect = this.cellRects.get(cardId);
-    if (!container || container.destroyed || !rect) return false;
-    const save = core.cb.getSave();
-    const card = save.cardInv?.[cardId];
-    if (!card) return false;
-
-    tearDownChildren(container);
-    core.hitRects = core.hitRects.filter((h) => h.owner !== cardId);
-    const state = core.cb.getCardState?.()?.[cardId];
-    const outerLayer = core.bodyLayer;
-    core.bodyLayer = container;
-    this.renderCardCell(card, rect.x, rect.y, rect.w, state, Date.now(), save);
-    core.bodyLayer = outerLayer;
-    return true;
-  }
-
-  /**
-   * Patch the SLG-derived parts of every currently-tracked roster cell (+ the detail modal, if
-   * open) in place after cb.getCardState()/getTeamName() data changes — e.g. game.ts'
-   * goCardRoster's worldsvc fetch resolving after the roster already gave up and opened without
-   * it. Deliberately not a full render(): the grid's layout (card order/position/size) never
-   * depends on SLG state, so rebuilding the sidebar/header/scroll position would just be wasted
-   * work (and would reset scroll position — a visible regression a full re-render would cause).
+   * Patch the SLG-derived parts of the grid (+ the detail modal, if open) after
+   * cb.getCardState()/getTeamName() data changes — e.g. game.ts' goCardRoster's worldsvc fetch
+   * resolving after the roster already gave up and opened without it.
+   *
+   * Deliberately not a full render(): the grid's LAYOUT (card order/position/size) never depends on
+   * SLG state, so rebuilding the sidebar/header/scroll position would just be wasted work (and
+   * would reset scroll position — a visible regression a full re-render would cause). syncCells
+   * picks up the change on its own, because cb.getCardState() feeds the cell signature: the cells
+   * whose troop count / team / injury changed are redrawn in place (same container object), the
+   * rest are left untouched.
    */
   applyCardState(): void {
     const core = this.core;
-    if (core.tab !== 'list') return;
-    for (const cardId of this.cellContainers.keys()) this.refreshCardCell(cardId);
+    if (core.tab !== 'list' || !this.layout) return;
+    this.syncCells();
     // Same fuseRingOpen guard as the assembly's render() modal dispatch (2026-08-03 fix) — a late
     // SLG fetch resolving while the fusion ring is open must not reopen the plain detail popup over it.
-    if (core.detailId && !core.fuseRingOpen) this.detail.openDetail(core.detailId);
+    if (core.detailId && !core.fuseRingOpen) this.detail.ensureDetail(core.detailId);
   }
 
   /**
@@ -122,16 +142,28 @@ export class ListPanel {
   renderHeaderCurrency(): void {
     const core = this.core;
     tearDownChildren(core.headerOverlayLayer);
-    const save = core.cb.getSave();
-    const count = Object.keys(save.cardInv ?? {}).length;
-    const warn = count >= CARD_INV_CAP - CARD_INV_OVERFLOW_BUFFER;
-    const full = count >= CARD_INV_CAP;
-    // Keep the coin + capacity readout at a compact absolute size (matches EquipmentScene, its
-    // [Cards|Equipment] peer) rather than scaling it up with the taller unified header.
-    drawHeaderCurrency(core.headerOverlayLayer, core.w, core.headerH, save.wallet.coins, [], {
-      text: `${t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP))}`,
-      color: full ? C.red : warn ? C.gold : C.mid,
-    }, 100 / core.headerH);
+    // Spec (and therefore size) comes from core so build()'s title-band reserve and this draw call
+    // can't disagree; core.titleRight is the backstop for a balance that gains a digit mid-scene.
+    const spec = core.headerCurrencySpec();
+    drawHeaderCurrency(
+      core.headerOverlayLayer, core.w, core.headerH, spec.coins, [], spec.capacity, spec.scale,
+      core.titleRight,
+    );
+  }
+
+  /** Tear the whole grid down — leaving the roster tab (skins) or an emptied inventory. */
+  clearGrid(): void {
+    for (const rec of this.cells.values()) {
+      rec.container.parent?.removeChild(rec.container);
+      tearDownChildren(rec.container);
+      rec.container.destroy();
+    }
+    this.cells.clear();
+    this.cellContainers.clear();
+    this.cellRects.clear();
+    this.layout = null;
+    this.indicator = null;
+    this.core.scrollRedraw = null;
   }
 
   renderList(): void {
@@ -151,8 +183,7 @@ export class ListPanel {
       lbl.style.wordWrap = true; lbl.style.wordWrapWidth = w - 32;
       core.bodyLayer.addChild(lbl);
       core.maxScroll = 0;
-      this.cellContainers = new Map();
-      this.cellRects = new Map();
+      this.clearGrid();
       return;
     }
 
@@ -175,213 +206,139 @@ export class ListPanel {
     const cellW = (avail - ROSTER_GAP * (cols - 1)) / cols;
     const rows = Math.ceil(sorted.length / cols);
     const totalH = rows * (CARD_CELL_H + ROSTER_GAP) + ROSTER_GAP;
-    // Row visibility below is still draw-cull only (a row either draws in full or is skipped
-    // entirely, never cropped) — see renderCardCell. peekViewportH's mid-row shrink is for grids
-    // that *rely on* that crop to show a genuine partial row; applied here it would just exclude a
-    // row that would otherwise render in full within the naive viewport, leaving a dead gap at the
-    // bottom that pops the row in only once scrolling pushes it past the shrunk cutoff (2026-07-23
-    // roster bug) — so availH stays the plain reserved height, not a peekViewportH() result.
-    // Also the wheel-scroll viewport bounds, see wheelScroll.ts.
+    // Row windowing below is still cull-only (syncCells builds whole rows, never cropped ones) —
+    // peekViewportH's mid-row shrink is for grids that *rely on* a crop to show a genuine partial
+    // row; applied here it would just exclude a row that would otherwise render in full within the
+    // naive viewport, leaving a dead gap at the bottom that pops the row in only once scrolling
+    // pushes it past the shrunk cutoff (2026-07-23 roster bug) — so availH stays the plain reserved
+    // height, not a peekViewportH() result. Also the wheel-scroll viewport bounds, see wheelScroll.ts.
     const maxScroll = Math.max(0, totalH - availH);
     core.scrollY = Math.max(0, Math.min(core.scrollY, maxScroll));
     core.scrollRegionTop = listY;
     core.scrollRegionBottom = listY + availH;
     core.maxScroll = maxScroll;
 
-    const now = Date.now();
-    this.cellContainers = new Map();
-    this.cellRects = new Map();
-    const outerLayer = core.bodyLayer;
-    // Cards draw into a masked sub-layer so a row straddling the availH edge (still counted
-    // "visible" by the draw-cull check above, since only its *top* has to be within bounds) never
-    // bleeds past listY+availH and paints over the portrait bottom nav bar drawn just below it —
-    // mirrors EquipmentScene InventoryMixin's identical gridLayer/clip treatment (2026-08-09 fix).
-    const gridLayer = new PIXI.Container();
-    outerLayer.addChild(gridLayer);
-    const clip = new PIXI.Graphics();
-    clip.beginFill(0xffffff).drawRect(0, listY, w, availH).endFill();
-    outerLayer.addChild(clip);
-    gridLayer.mask = clip;
-    core.bodyLayer = gridLayer;
-    sorted.forEach((card, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const x = left + col * (cellW + ROSTER_GAP);
-      const y = listY + ROSTER_GAP + row * (CARD_CELL_H + ROSTER_GAP) - core.scrollY;
-      if (y + CARD_CELL_H >= listY && y <= listY + availH) {
-        // Each cell renders into its own container (child of gridLayer) so a later
-        // applyCardState() can tear down and redraw just this one cell — see refreshCardCell().
-        const cellC = new PIXI.Container();
-        gridLayer.addChild(cellC);
-        this.cellContainers.set(card.id, cellC);
-        this.cellRects.set(card.id, { x, y, w: cellW });
-        core.bodyLayer = cellC;
-        this.renderCardCell(card, x, y, cellW, cardState[card.id], now, save);
-        core.bodyLayer = gridLayer;
-      }
-    });
-    core.bodyLayer = outerLayer;
+    this.layout = { cols, cellW, left, avail, listY, availH, order: sorted.map((c) => c.id), maxScroll };
 
-    drawScrollIndicator(core.bodyLayer, { x: left, y: listY, w: avail, h: availH }, core.scrollY, Math.max(0, totalH - availH));
+    // Cells draw into core.gridLayer, masked to the viewport so a row straddling the availH edge
+    // (or one of the ROW_MARGIN rows built just outside it) never paints over the portrait bottom
+    // nav bar drawn just below — mirrors EquipmentScene InventoryMixin's identical clip treatment
+    // (2026-08-09 fix). The layer and its mask are persistent (core.build); only the rect moves.
+    core.gridClip.clear().beginFill(0xffffff).drawRect(0, listY, w, availH).endFill();
+
+    this.hitBase = core.hitRects.length;
+    this.syncCells();
+    this.drawIndicator();
+    // From here on a drag/wheel step only has to re-place the cells and the indicator.
+    core.scrollRedraw = () => this.syncScroll();
+  }
+
+  /** Scroll fast path (core.scrollRedraw): re-place cells, build any row that just came into range. */
+  private syncScroll(): void {
+    const core = this.core;
+    const layout = this.layout;
+    if (!layout) { core.render(); return; }
+    core.scrollY = Math.max(0, Math.min(core.scrollY, layout.maxScroll));
+    this.syncCells();
+    this.drawIndicator();
+  }
+
+  private drawIndicator(): void {
+    const layout = this.layout;
+    if (!layout) return;
+    // bodyLayer is torn down by every render(), so the previous indicator may already be dead —
+    // only detach one that is still live (and still parented), never resurrect a destroyed node.
+    if (this.indicator && !this.indicator.destroyed) {
+      this.indicator.parent?.removeChild(this.indicator);
+      this.indicator.destroy();
+    }
+    this.indicator = drawScrollIndicator(
+      this.core.bodyLayer,
+      { x: layout.left, y: layout.listY, w: layout.avail, h: layout.availH },
+      this.core.scrollY, layout.maxScroll,
+    );
   }
 
   /**
-   * Icon-card cell: a full-height unit portrait on the left, with every hero detail
-   * (name / level / power / troops / status / gear) stacked in a column immediately to
-   * its right. Border color encodes SLG state (injured = red, deployed = accent).
+   * Bring the materialized cell set in line with the current scrollY: build/rebuild the rows within
+   * ROW_MARGIN of the viewport, drop the rest, and re-emit every live cell's hit rects in screen
+   * space. Cheap by design — for a plain scroll every cell hits the signature fast path and the
+   * whole pass is one `position.set` plus one hit-rect object per cell.
    */
-  renderCardCell(
-    card: CardInstance,
-    x: number,
-    y: number,
-    cellW: number,
-    state: CardSLGState | undefined,
-    now: number,
-    save: SaveData,
-  ): void {
+  private syncCells(): void {
     const core = this.core;
-    const def = CARD_DEFS[card.defId];
-    const injuredUntil = state?.injuredUntil ?? 0;
-    const isInjured = injuredUntil > now;
-    const inTeam = !!state?.teamId;
-    const pad = 10;
+    const layout = this.layout;
+    if (!layout) return;
+    const save = core.cb.getSave();
+    const cardState = core.cb.getCardState?.() ?? {};
+    const now = Date.now();
+    const rowH = CARD_CELL_H + ROSTER_GAP;
+    const rowTop = (row: number): number => layout.listY + ROSTER_GAP + row * rowH - core.scrollY;
 
-    const border = isInjured ? C.red : (inTeam ? C.accent : C.mid);
-    const cell = sketchPanel(cellW, CARD_CELL_H, { fill: 0xfaf9f5, border, seed: seedFor(x, y, cellW) });
-    cell.x = x; cell.y = y;
-    core.bodyLayer.addChild(cell);
+    const lastRow = Math.ceil(layout.order.length / layout.cols) - 1;
+    const firstVisible = Math.floor((core.scrollY - ROSTER_GAP) / rowH);
+    const lastVisible = Math.floor((core.scrollY + layout.availH - ROSTER_GAP) / rowH);
+    const from = Math.max(0, firstVisible - ROW_MARGIN);
+    const to = Math.min(lastRow, lastVisible + ROW_MARGIN);
 
-    // ── Left: full-height portrait in a light frame (portrait spans the whole cell height) ──
-    const imgH = CARD_CELL_H - pad * 2;
-    const imgW = Math.round(imgH * 0.72); // portrait-tall frame (unit art is taller than wide)
-    const imgX = x + pad;
-    const imgY = y + pad;
-    // fillAlpha: 0 — the cell behind it is already the one background layer; this frame is a
-    // stroke-only "picture window" outline, not a second flat fill stacked on top (2026-08-21 fix,
-    // see design/game/CHARACTER_CARDS_DESIGN.md's UI note).
-    const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, fillAlpha: 0, border: C.mid, seed: seedFor(x, y, imgW) });
-    frame.x = imgX; frame.y = imgY;
-    core.bodyLayer.addChild(frame);
-    const artUrl = cardInstanceArtUrl(card) ?? undefined;
-    if (artUrl) core.drawArtFit(artUrl, imgX + 2, imgY + 2, imgW - 4, core.bodyLayer, imgH - 4);
-
-    // ── Right: info column (name at top, stats stacked below) ──
-    const ax = imgX + imgW + 12;
-    const rightW = x + cellW - pad - ax; // available text width to the right of the portrait
-
-    // Name row: faction dot + name (name clipped so long names don't overrun the column). The
-    // dense roster rows keep a plain colour dot — the full totem (detail modal) is unreadable this
-    // small; here colour alone conveys faction. Colour still comes from the one FACTION_COLOR source.
-    const dot = new PIXI.Graphics();
-    dot.beginFill(FACTION_COLOR[def?.faction ?? 'tao']).drawCircle(0, 0, 5).endFill();
-    dot.x = ax + 5; dot.y = y + pad + 7;
-    core.bodyLayer.addChild(dot);
-
-    const cardName = t(`card.${card.defId}.name` as TranslationKey);
-    const nameLbl = txt(cardName, FS.bodyLg, C.dark, true);
-    nameLbl.x = ax + 16; nameLbl.y = y + pad;
-    nameLbl.style.wordWrap = false;
-    // Leave room for the lock badge on the name row when locked.
-    const nameMaxW = rightW - 16 - (card.locked ? 24 : 0);
-    if (nameLbl.width > nameMaxW) nameLbl.scale.set(Math.min(1, nameMaxW / nameLbl.width));
-    core.bodyLayer.addChild(nameLbl);
-
-    // Lock badge (top-right of the info column).
-    if (card.locked) {
-      const lk = buildIcon('lock', 18, C.mid);
-      lk.x = x + cellW - pad - 18; lk.y = y + pad;
-      core.bodyLayer.addChild(lk);
-    }
-
-    let ay = y + pad + 34;
-    // Level as a row of gold stars, not a small "Lv.N" — level is the headline stat and a lone
-    // number was too easy to overlook. One filled star per level (max MAX_CARD_LEVEL); the row
-    // shrinks to fit the info column so high-level cards still stay on one line.
-    const starN = Math.max(1, Math.min(MAX_CARD_LEVEL, card.level));
-    const { container: stars } = buildLevelStars(starN, rightW, 15, 3);
-    stars.name = 'levelStars'; // test hook: one child per level star (see cardSceneLevelStars.ui.ts)
-    stars.x = ax; stars.y = ay;
-    core.bodyLayer.addChild(stars);
-    ay += 24;
-
-    const power = Math.round(cardPower(card, save.equipmentInv ?? {}));
-    const pwrLbl = txt(`${t('roster.power')} ${power}`, FS.small, C.dark);
-    pwrLbl.x = ax; pwrLbl.y = ay; core.bodyLayer.addChild(pwrLbl);
-    ay += 24;
-
-    const atkLbl = txt(`${t('roster.atk')} ${cardAttack(card)}`, FS.small, C.dark);
-    atkLbl.x = ax; atkLbl.y = ay; core.bodyLayer.addChild(atkLbl);
-    ay += 24;
-
-    const hpLbl = txt(`${t('roster.hp')} ${cardHp(card)}`, FS.small, C.dark);
-    hpLbl.x = ax; hpLbl.y = ay; core.bodyLayer.addChild(hpLbl);
-    ay += 24;
-
-    if (def && state !== undefined) {
-      const cap = troopCap(card);
-      const cur = state.currentTroops;
-      const troopLbl = txt(`${cur}/${cap}`, FS.small, cur >= cap ? C.gold : C.mid);
-      troopLbl.x = ax; troopLbl.y = ay; core.bodyLayer.addChild(troopLbl);
-      ay += 24;
-    }
-
-    // Status tag (deployed / injured) — named to the actual team when the caller can resolve it.
-    // Deployed gets a bit of extra breathing room above it so it doesn't read as just another stat row.
-    if (inTeam) {
-      ay += 6;
-      const teamName = state?.teamId ? core.cb.getTeamName?.(state.teamId) : undefined;
-      const tagText = teamName ? t('roster.inTeamNamed').replace('{team}', teamName) : t('roster.inTeam');
-      const tag = txt(`[${tagText}]`, FS.tiny, C.accent, true);
-      if (tag.width > rightW) tag.scale.set(Math.max(0.01, rightW / tag.width));
-      tag.x = ax; tag.y = ay; core.bodyLayer.addChild(tag); ay += 20;
-    } else if (isInjured) {
-      const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, FS.tiny, C.red);
-      tag.x = ax; tag.y = ay; core.bodyLayer.addChild(tag); ay += 20;
-    }
-
-    // Gear slot icons (weapon/armor/trinket) — the actual equipped item art, or the
-    // hollow "+" placeholder when the slot is empty (matches renderDetailGearSlots'
-    // treatment). buildEquipIcon already renders empty slots as a distinct outline
-    // glyph, so no extra dimming is needed here (a dimmed real-item glyph used to
-    // read as a low-rarity equipped item at a glance). Sized 2x the original 22px
-    // badges so rarity/art actually reads at this density; the row shrinks (never
-    // below the old 22px) rather than spill onto the portrait if the info column is
-    // ever too narrow to fit it.
-    const gearIconSizeTarget = 44;
-    const gearGapTarget = 4;
-    const gearRowWTarget = gearIconSizeTarget * 3 + gearGapTarget * 2;
-    const gearScale = gearRowWTarget > rightW ? Math.max(0.5, rightW / gearRowWTarget) : 1;
-    const gearIconSize = gearIconSizeTarget * gearScale;
-    const gearStep = gearIconSize + gearGapTarget * gearScale;
-    const gearCenterY = y + CARD_CELL_H - pad - gearIconSize / 2;
-    (['weapon', 'armor', 'trinket'] as EquipSlot[]).forEach((slot, i) => {
-      const instId = card.gear[slot];
-      const inst = instId ? save.equipmentInv?.[instId] : undefined;
-      const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', gearIconSize, seedFor(x, y, i + 1));
-      icon.name = `gearIcon:${slot}`; // test hook: see gearIconSize2x.ui.ts
-      const iconCx = x + cellW - pad - gearIconSize / 2 - (2 - i) * gearStep;
-      icon.position.set(iconCx, gearCenterY);
-      core.bodyLayer.addChild(icon);
-
-      // Each gear icon jumps straight to that slot in EquipmentScene (matches the
-      // detail modal's per-slot taps, renderDetailGearSlots in detail.ts) instead of
-      // only opening via the whole-cell tap — the icons looked like buttons but
-      // weren't actually clickable, which was part of why their intent read as
-      // unclear (roster feedback 2026-08-01). Pushed before the whole-cell hitRect
-      // below so it wins the first-match hit test.
-      if (core.cb.openEquipment && !core.bt.busy) {
-        core.hitRects.push({
-          rect: { x: iconCx - gearIconSize / 2, y: gearCenterY - gearIconSize / 2, w: gearIconSize, h: gearIconSize },
-          action: () => core.cb.openEquipment!(card.id, slot),
-          owner: card.id,
-        });
+    core.hitRects.length = this.hitBase;
+    const live = new Set<string>();
+    for (let row = from; row <= to; row++) {
+      const y = rowTop(row);
+      for (let col = 0; col < layout.cols; col++) {
+        const id = layout.order[row * layout.cols + col];
+        if (id === undefined) break;
+        const card = save.cardInv?.[id];
+        if (!card) continue;
+        const x = layout.left + col * (layout.cellW + ROSTER_GAP);
+        live.add(id);
+        const rec = this.ensureCell(card, cardState[id], now, save);
+        rec.container.position.set(x, y);
+        this.cellRects.set(id, { x, y, w: layout.cellW });
+        for (const hit of rec.hits) {
+          core.hitRects.push({
+            rect: { x: x + hit.rect.x, y: y + hit.rect.y, w: hit.rect.w, h: hit.rect.h },
+            action: hit.action,
+            owner: id,
+          });
+        }
       }
-    });
+    }
 
-    core.hitRects.push({
-      rect: { x, y, w: cellW, h: CARD_CELL_H },
-      action: () => this.detail.openDetail(card.id),
-      owner: card.id,
-    });
+    for (const [id, rec] of [...this.cells]) {
+      if (live.has(id)) continue;
+      rec.container.parent?.removeChild(rec.container);
+      tearDownChildren(rec.container);
+      rec.container.destroy();
+      this.cells.delete(id);
+      this.cellContainers.delete(id);
+      this.cellRects.delete(id);
+    }
   }
+
+  /**
+   * The cell for `card`, drawn if it doesn't exist and redrawn IN PLACE (same container object) if
+   * anything it depends on changed. Reusing the container is what lets applyCardState patch a cell
+   * without disturbing the rest of the scene graph.
+   */
+  private ensureCell(
+    card: CardInstance, state: CardSLGState | undefined, now: number, save: SaveData,
+  ): CellRec {
+    const cellW = this.layout!.cellW;
+    const sig = cellSignature(this.core, card, state, now, save, cellW);
+    const existing = this.cells.get(card.id);
+    if (existing && existing.sig === sig) return existing;
+
+    const container = existing?.container ?? new PIXI.Container();
+    if (existing) tearDownChildren(container);
+    else this.core.gridLayer.addChild(container);
+    const hits = renderCardCell(
+      this.core, card, container, cellW, state, now, save, (id) => this.detail.openDetail(id),
+    );
+    const rec: CellRec = { container, sig, hits };
+    this.cells.set(card.id, rec);
+    this.cellContainers.set(card.id, container);
+    return rec;
+  }
+
 }

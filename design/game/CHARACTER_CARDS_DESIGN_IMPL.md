@@ -54,13 +54,50 @@
 
 废弃 `CollectionScene`（纯图鉴+衣柜页，功能与养成/生涯页重复度低但布局/风格自成一套），拆解并入既有页面：
 
-- **卡详情 Modal 新增翻转**：点击卡面立绘播放翻转动画（scaleX 1→0→1 的挤压翻转，中点切换正反面内容，`CardScene/detail.ts` 的 `flipDetailPortrait`/`drawDetailFace`），背面展示背景故事文案（新 i18n 字段 `card.<defId>.lore`，与既有 `card.<defId>.desc`——**技能效果说明**——是两个不同槏位，不能共用）。再次点击翻回卡图。
+- **卡详情 Modal 新增翻转**：点击卡面立绘播放翻转动画（scaleX 1→0→1 的挤压翻转，中点切换正反面内容，`CardScene/detailPortrait.ts` 的 `flipDetailPortrait`/`drawDetailFace`（2026-08-24 从 `detail.ts` 拆出）），背面展示背景故事文案（新 i18n 字段 `card.<defId>.lore`，与既有 `card.<defId>.desc`——**技能效果说明**——是两个不同槏位，不能共用）。再次点击翻回卡图。
 - **换皮肤入口在卡详情**：卡面右下角出现"更换皮肤"角标（仅当该角色有 ≥1 张已拥有的皮肤，`skinsForUnitType()` 非空时才显示），点击弹出可穿戴皮肤选择弹层；确认后该卡的立绘换成皮肤形象展示（皮肤实际美术资源仍未产出——见 `render/UnitView.ts` "Art-blocked"——本次只接好数据/UI 管线）。
 - **养成页新增「皮肤」侧栏页签**：`[卡背包|装备|皮肤]`（`CardScene/skins.ts`），按角色分区展示默认外观 + 已拥有皮肤，点击直接装备（客户端同步字段写入，不需要联网，见 §2.3 SAVE_VERSION 5）。
 - **衣柜卡片网格改版（2026-07-15）**：原先每个角色一整行纵向堆叠、色卡固定 96px，整屏可用宽度基本没用上（右侧大片空白，且无滚动裁剪，皮肤多时会直接溢出屏幕）。改为每个角色一张卡片——左侧全高立绘（沿用 roster 网格的 0.72 立绘比例）、右侧姓名+阵营点 + 横向铺开的皮肤色卡（超出卡片宽度自动换行）；卡片本身按自适应列数（`CARD_W_TARGET` 决定列宽目标）masonry 网格排列，每列独立追踪当前高度，卡片自身高度随皮肤数量变化。同时补上 `drawScrollIndicator`（此前完全没有滚动裁剪）。**1.5x 收窄跟进（同日）**：卡片整体放大 1.5x 的同时，把 `CARD_W_TARGET` 从 620 降到 440（贴合"立绘+2 张色卡"这一常见内容宽度，而不是撑满列宽留大片空白），副作用是横屏 1920px 宽下从 2 列变为 3 列——空间利用更充分，视为预期行为而非回归。
 - **衣柜卡片高度 1.5 倍 + 收紧留白（2026-07-15 二次调整）**：卡片整体尺寸（立绘、色卡、间距）等比放大到约 1.5 倍（`PORTRAIT_MAX_H` 150→225、`TILE_W/H` 84→108 等）；`CARD_W_TARGET` 从 620 收紧到 440（按最常见的 2 张色卡一行的实际所需宽度定），并将 `cellW` 按 `CARD_W_TARGET*1.15` 封顶而非把整行可用宽度平均拉伸，消除了色卡右侧大片留白。
 - **全卡图鉴移入生涯组**：新场景 `CardCodexScene`，作为生涯（Career）hub 第 4 个侧栏页签 `[生涯统计|称号|成就|图鉴]`（`CareerTabs.ts`），展示 `CARD_DEFINITIONS` 全池，未拥有角色（`getOwnedUnitTypes()` 判定，无对应 Hero Roster 实例）灰显+锁图标；建筑/法术类卡没有"拥有"概念，恒不锁。
 - **离线兜底改为读本地缓存**：原 `CollectionScene` 承担的"养成页离线兜底"角色不再需要——`CardScene` 本身已支持离线只读（喂卡/锁定/挂拍卖等服务器权威操作离线时优雅失败，读 `roster.err.offline`；换皮肤本就是本地操作，离线一样可用）。首次登录、本地无缓存的新玩家展示空态视为正常。
+
+
+### 10.5 卡背包渲染性能：增量网格 + 一次性文字（2026-08-24）
+
+**症状**：73 张卡的卡背包，拖动列表明显掉帧。
+
+**根因**：`CardScene.render()` 开头就 `tearDownChildren(core.bodyLayer)` 整树重建，而拖动经 `core.scrollDirty` 每帧触发它一次。1920×1080 下可见 15 个格子、每格 7 个 `PIXI.Text` = **每帧销毁并重建 105 个文字纹理**。每个 `PIXI.Text` 自带一张 canvas，构造要跑 `measureText`+`fillText`，首次绘制还要上传 GPU；在 Chrome dpr 1 实测这 105 次光栅化+上传单独就要 **~11 ms/帧**，还没算绘制。详情弹窗更贵：它的文字 `resolution = dpr × modalScale`（2~2.3 倍），纹理面积约 5 倍，而 `render()` 每次都无条件 `openDetail()` 重建整个面板（~15 个高分辨率文字，~4.3 ms/次）。
+
+对照：边框那半早就优化过了（`render/panelFrame.ts`，世界地图 HUD 132,300 顶点 / 8.6 ms → 几百顶点）。同一个坑在文字上一直没填。
+
+**四项改动**：
+
+1. **滚动不再走全量 `render()`**。格子布局只依赖 `scrollY`，于是拆成"布局"与"落位"两步：`renderList()` 算一次 `GridLayout`（列数/格宽/左边距/视口/`order`/`maxScroll`）并装上 `core.scrollRedraw` 快路径；`update()` 优先调它。滚动时 `syncCells()` 只做三件事——把每个格子容器 `position.set` 一次、重发命中矩形、按行窗口增删刚进/出视野的行（视口上下各多留 `ROW_MARGIN=1` 行，避免在边缘现建）。格子因此必须活过 `render()`：它们挂在新的 **`core.gridLayer`**（持久、带 `gridClip` 遮罩）而不是 `bodyLayer`。滚动条也不再重建整个 `bodyLayer`，只换那一个 `Graphics`。
+2. **格子按内容签名复用**。`rosterCell.ts` 的 `cellSignature()` 把格子读到的一切拍平成一个字符串（defId/等级/锁/三件装备/兵力/队伍名/受伤倒计时**字符串**/立绘 url + 是否已解码/格宽/`bt.busy`）；签名不变就整个容器原封不动，签名变了就**原地**重绘（同一个 container 对象）。`applyCardState()` 因此退化为一次 `syncCells()`——晚到的 SLG 数据自然只重绘受影响的那几格。**维护约定：格子新画了什么，就必须同步进签名**，否则它会画一次然后永不更新。
+3. **详情弹窗只在数据变了才重建**。`render()` 改调 `DetailPanel.ensureDetail()`，它同样用签名（卡属性/装备/SLG/融合材料数/皮肤/`bt.busy`/`skinPickerOpen`/`detailFlipped`/立绘就绪）判定；跳过重建时现有的 `modalHits`/`modalScale` 正好继续有效，所以什么都不动。顺手修掉一个潜伏 bug：翻面动画进行中被 `render()` 打断会把 `faceLayer` 销毁在 ticker 闭包脚下（`container.scale.x` 写到 `transform` 已置空的对象上抛错），`openDetail()` 现在先 `flipTickerCleanup?.()`。
+4. **文字改走 `render/fastText.ts`**（新模块，全局可复用）：
+   - `cachedTxt()` —— 有界字符串集（i18n 标签、卡名）：每个 (字符串, 字号, 颜色, 粗细) 只光栅化一次，之后发 `PIXI.Sprite`。LRU 上限 320，逐出时销毁。
+   - `numTxt()` —— 无界数字串（计数、`当前/上限`）：每个字符预先画进一张 (字号, 粗细, 颜色) 的字形图集，数字按 `i × advance` 拼 sprite。零光栅化，且共用一张 baseTexture → 与周围面板边框合批。
+   - 因此把 `战力 249` 这类行拆成 `statRow()`：标签走 `cachedTxt`、数值走 `numTxt`；等宽字体下 `标签宽 + 一个 advance` 正好是原单串里数值的起点，布局不变。队伍标签（玩家自定名）与受伤倒计时留在普通 `txt()` —— 它们不是有界集合。
+
+**实测**（Chromium + swiftshader，dpr 1 / 800×450，真实指针拖动 100 帧，3 次取样）：
+
+| | p50 | p90 | p99 |
+|---|---|---|---|
+| 改前 | 8.6–15.6 ms | **50–62 ms** | **68–75 ms** |
+| 改后 | 16.6 ms | **19.3–19.6 ms** | 32–38 ms |
+
+改前是双峰分布（空帧很快、重建帧很慢），也就是肉眼可见的卡顿；改后稳定贴着 vsync。headless 侧同样量了一遍场景自身的逻辑开销：全量 `render()` 8.16 ms → 滚动快路径 0.098 ms。
+
+**像素保真**（真实 Chromium，3× device pixel，与改前逐像素对比）：标签/卡名**完全一致**；数字位移 0 px、墨量差 **0.03%**。两个坑值得记住：
+
+- `PIXI.Text.destroy()` 结尾会 `this._ownCanvas && (this.canvas.height = this.canvas.width = 0)`——**即使传了 `texture: false`**。所以"取走它的 texture 再销毁 Text"会上传一张空位图，所有缓存标签渲染成纯黑块。`cachedTxt` 因此把整个 `Text` 留在缓存里当 canvas 的所有者。
+- 字形图集**必须按最终颜色**光栅化，不能"白色画一次 + 逐处 tint"。Chrome 的字形抗锯齿是按填充色做 gamma 校正的，白字乘到墨灰比直接画墨灰**明显更重**（实测墨量 +11%）。颜色是有界的（卡背包用 3 种），一张图集换一种颜色不亏。
+
+**文件长度门禁连带的拆分**（`client/scripts/checkFileLength.mjs`）：`list.ts` 566 → 348（挖出 `rosterCell.ts`，单格渲染 + 签名，二者是同一份契约的两半，必须放在一起读）；`detail.ts` 528 → 485（挖出 `detailPortrait.ts`，翻面 + 正反面）；`core.ts` 550 → 462（挖出 `types.ts`，抄 `EquipmentScene/types.ts` 的先例），**其 baseline 例外条目随之删除**。
+
+**回归测试**：`test/ui/cardRosterIncrementalScroll.ui.ts`（快路径装载、容器与子节点身份不变、命中矩形随动且不累积、行窗口增删、切页签清空网格）、`test/ui/cardDetailRebuildGate.ui.ts`（不变则不重建 + 4 种"必须重建"）、`test/ui/fastText.ui.ts`（缓存命中/键维度/LRU 逐出/销毁契约/按色图集/字符集回退）。
 
 ---
 
