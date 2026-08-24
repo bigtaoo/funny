@@ -294,7 +294,6 @@ export class TerritoryService {
     // their base-tile deleteMany/insert into a corrupted mixed-location footprint.
     const claim = await cols.playerWorld.updateOne({ _id: pw._id, rev: pw.rev }, { $inc: { rev: 1 } });
     if (claim.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
-    const claimedRev = pw.rev + 1;
 
     // Deduct coins first (failure throws INSUFFICIENT_FUNDS; map state is not modified).
     const orderId = `slg_relocate:${worldId}:${accountId}:${now()}`;
@@ -323,17 +322,32 @@ export class TerritoryService {
       baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),
     );
 
-    const resources = this.core.settle(pw, t);
     const yieldRate = await this.core.recomputeYield(worldId, accountId);
-    // Rev-guarded on the just-claimed generation (not a blind $set, unlike every other spend/mutation site
-    // in this file already fixed): if some other concurrent mutation (buildWatchtower/buildStructure/a
-    // training tick) landed during the tile-swap work above and bumped rev again, this must fail loudly
-    // rather than silently overwrite that mutation's already-applied resources delta.
-    const settled = await cols.playerWorld.updateOne(
-      { _id: pw._id, rev: claimedRev },
-      { $set: { resources, yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
-    );
-    if (settled.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
+    // 2026-08-24: this write is now unconditional, and must be.
+    //
+    // It used to be guarded on `rev: claimedRev` and to throw REV_CONFLICT on a miss — but by this point the
+    // coins are already spent AND the old capital's 9 tiles are already deleted and the new ones written. A
+    // throw here therefore did not "fail loudly" in any useful sense: it left the account charged, its
+    // footprint physically moved, and `mainBaseTile` still pointing at a tile that no longer exists. The
+    // guard was protecting a lost update at the cost of a far worse inconsistency.
+    //
+    // It is also no longer needed. The only reason it existed was the snapshot-derived `resources` value this
+    // used to `$set`; settleExpr computes the identical accrual from the live document instead, so nothing
+    // here is stale: `yieldRate` is recomputed from the tiles table *after* the swap (authoritative),
+    // `mainBaseTile`/`lastTickAt` are values this command owns outright. Mutual exclusion between two
+    // concurrent relocations is unaffected — that is the job of the rev CAS claim above, which still fails
+    // the loser fast, before any coin is spent or any tile touched.
+    await cols.playerWorld.updateOne({ _id: pw._id }, [
+      {
+        $set: {
+          resources: this.core.settleExpr(pw.buildings, t),
+          yieldRate,
+          mainBaseTile: newTid,
+          lastTickAt: t,
+          rev: { $add: ['$rev', 1] },
+        },
+      },
+    ]);
 
     // Push changes for both the old and new tiles (old address reverts to neutral, new address becomes the capital).
     const after = await cols.tiles.findOne({ _id: newTid });

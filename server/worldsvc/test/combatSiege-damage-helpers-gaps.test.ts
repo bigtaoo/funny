@@ -104,6 +104,10 @@ function makeCore(opts: {
     recomputeYield,
     applyNationChange,
     settle,
+    // 2026-08-24: the settle these services persist is now an aggregation expression evaluated by Mongo
+    // against the live document (core/yield.ts settleExpr), not a value computed here — these unit tests
+    // never reach a real server, so an empty expression object is all the call sites need.
+    settleExpr: () => ({}),
     marchSeq: 0,
     pushMarch: vi.fn(async (..._args: unknown[]) => {}),
     marchView: (m: MarchDoc) => m as unknown as never,
@@ -850,6 +854,10 @@ describe('SiegeHelpersService.passiveRelocate', () => {
         },
       },
       removeCover,
+      // 2026-08-24: the settle these services persist is now an aggregation expression evaluated by Mongo
+      // against the live document (core/yield.ts settleExpr), not a value computed here — these unit tests
+      // never reach a real server, so an empty expression object is all the call sites need.
+      settleExpr: () => ({}),
       pickRandomEmptyTile: vi.fn(async (..._args: unknown[]) => opts.spot ?? null),
       baseTileDocs,
       recomputeYield: vi.fn(async (..._args: unknown[]) => emptyResources()),
@@ -884,9 +892,11 @@ describe('SiegeHelpersService.passiveRelocate', () => {
   it('no legal empty tile found (spot=null) → unsets mainBaseTile + sends the breach mail, skips baseTileDocs', async () => {
     const { svc, pwUpdateOne, sendSystemMail } = makeSvc({ playerDoc: pw({ accountId: DEF }), spot: null });
     await svc.passiveRelocate(W, DEF, 1_000);
+    // Pipeline update (2026-08-24): the write also banks the resource accrual at the old yieldRate in the
+    // same atomic step, so `$unset: { mainBaseTile: '' }` became the pipeline spelling `'$$REMOVE'`.
     expect(pwUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ _id: `${W}:${DEF}` }),
-      expect.objectContaining({ $unset: { mainBaseTile: '' } }),
+      [expect.objectContaining({ $set: expect.objectContaining({ mainBaseTile: '$$REMOVE', resources: expect.anything() }) })],
     );
     expect(sendSystemMail).toHaveBeenCalledTimes(1);
   });
@@ -903,7 +913,7 @@ describe('SiegeHelpersService.passiveRelocate', () => {
     expect(tilesUpdateOne).toHaveBeenCalled();
     expect(pwUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ _id: `${W}:${DEF}` }),
-      expect.objectContaining({ $set: expect.objectContaining({ mainBaseTile: `${W}:9:9` }) }),
+      [expect.objectContaining({ $set: expect.objectContaining({ mainBaseTile: `${W}:9:9`, resources: expect.anything() }) })],
     );
     expect(pushTile).toHaveBeenCalledTimes(1);
     expect(pushTileToObservers).toHaveBeenCalledTimes(1);

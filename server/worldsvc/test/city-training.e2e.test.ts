@@ -413,6 +413,51 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     }
   });
 
+  // 2026-08-24 (troop duplication). processCompletedTraining used to read a `{_id, troops, troopCap,
+  // trainingQueue}` projection for every due player, then write `$set: { troops: min(troopCap, snapshot +
+  // trained) }` with only `_id` in the filter — an absolute value derived from a snapshot, published after
+  // the buff catch-up write loop and one `$pull` round-trip per completed batch. Any `$inc: { troops: -n }`
+  // landing in that window (startMarch / distributeTroops / occupyTile) was silently reverted: the troops
+  // came back while the march was already out. Exploitable rather than merely theoretical — the window
+  // recurs every 2s at a moment the player can predict to the second from their own queue countdown.
+  //
+  // The settlement is now a single aggregation-pipeline update computed from the live document, so a
+  // concurrent deduction survives it. Injected here by wrapping the first updateOne of the tick (with no
+  // speedup buff on the account, the catch-up loop writes nothing, so the first call *is* the settlement).
+  it('processCompletedTraining credits trained troops without reverting a concurrent deduction that lands in its window', async () => {
+    const { x, y } = findCoord(45, 45);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+    await svc.trainTroops(W, 'a', 100);
+    const DEPLOYED = 30;
+
+    const pwId = playerWorldId(W, 'a');
+    const realUpdateOne = m.collections.playerWorld.updateOne.bind(m.collections.playerWorld);
+    let injected = false;
+    const spy = vi.spyOn(m.collections.playerWorld, 'updateOne').mockImplementation(async (...args: Parameters<typeof realUpdateOne>) => {
+      if (!injected) {
+        injected = true;
+        await realUpdateOne({ _id: pwId }, { $inc: { troops: -DEPLOYED } } as never);
+      }
+      return realUpdateOne(...args);
+    });
+    try {
+      nowMs += TROOP_TRAIN_TIME_SEC * 100 * 1000 + 1000;
+      expect(await svc.processCompletedTraining()).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(injected).toBe(true); // the race was actually exercised
+
+    // 0 (drained) + 100 (trained) − 30 (deployed mid-settlement). The pre-fix code returned 100: the absolute
+    // `$set` overwrote the deduction, handing the player 30 troops they had already sent out.
+    const doc = await rawDoc('a');
+    expect(doc!.troops).toBe(100 - DEPLOYED);
+    expect(doc!.trainingQueue ?? []).toHaveLength(0);
+    expect(doc!.nextTrainingCompleteAt).toBeUndefined(); // mirror removed via $$REMOVE, not set to null
+  });
+
   it('ensureIndexes builds a partial index on nextTrainingCompleteAt (not a full-collection scan)', async () => {
     const { x, y } = findCoord(40, 40);
     await svc.joinWorld(W, 'a', x, y);

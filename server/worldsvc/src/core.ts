@@ -144,6 +144,7 @@ export class WorldCore {
 
   // ── yield (core/yield.ts) ─────────────────────────────────────────
   settle(doc: PlayerWorldDoc, now: number): Record<ResourceType, number> { return this.yieldSvc.settle(doc, now); }
+  settleExpr(...args: Parameters<YieldService['settleExpr']>): ReturnType<YieldService['settleExpr']> { return this.yieldSvc.settleExpr(...args); }
   yieldRecord(tiles: { type: TileType; level: number; resType?: ResourceType }[]): Record<ResourceType, number> { return this.yieldSvc.yieldRecord(tiles); }
   recomputeYield(...args: Parameters<YieldService['recomputeYield']>): ReturnType<YieldService['recomputeYield']> { return this.yieldSvc.recomputeYield(...args); }
 
