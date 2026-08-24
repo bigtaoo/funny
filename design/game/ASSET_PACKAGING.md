@@ -312,7 +312,7 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 
 ### 12.2 转屏路径上的两处开销
 
-见 [FEATURE_FLAGS_DESIGN.md](FEATURE_FLAGS_DESIGN.md) §8 的 2026-08-24 条目（`PixiAppViews.onResize` 拆成「立刻重贴画布 / 延后重建大厅」+ 空转 resize 闸；`idlePrefetch` 转屏让路）。与本文的关系：§11.3 的预取时序表新增第 6 条。
+见 [FEATURE_FLAGS_DESIGN_LOG.md](FEATURE_FLAGS_DESIGN_LOG.md)（[FEATURE_FLAGS_DESIGN.md](FEATURE_FLAGS_DESIGN.md) §8 的分册）的 2026-08-24 条目（`PixiAppViews.onResize` 拆成「立刻重贴画布 / 延后重建大厅」+ 空转 resize 闸；`idlePrefetch` 转屏让路）。与本文的关系：§11.3 的预取时序表新增第 6 条。
 
 ### 12.3 遗留
 

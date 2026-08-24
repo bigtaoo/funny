@@ -115,27 +115,45 @@ interface CommonProps {
 ──────────────────────────────────────────────────────────────────
 定时器到期（30s）                  低      兜底，正常游戏中的定期上报
 队列超 50 条                      中      防止内存积压
-场景切换（每次 screen_view 前）    中      天然检查点，成本低，几乎消除窗口期丢失
+场景切换（每次 screen_view 前）    中      天然检查点，**仅在已登录时**触发（见下）
 visibilitychange → hidden         高      浏览器切标签 / 最小化 / 锁屏
-beforeunload                      最高    关 Tab，用 sendBeacon（不阻塞）
+beforeunload                      最高    关 Tab，用 keepalive fetch（不阻塞）
 wx.onHide                         最高    微信小游戏切后台
 ```
 
-**`sendBeacon` 是关闭场景的关键**：`beforeunload` 里普通 `fetch` 会被浏览器取消，
-`navigator.sendBeacon` 专为页面关闭设计，浏览器保证发出：
+**⚠ 离场用 keepalive fetch，不用 `sendBeacon`（2026-08-24 修正，此前本节写反了）**：
+`beforeunload` 里普通 `fetch` 确实会被取消——但**带 `keepalive: true` 的不会**，那正是
+规范给页面卸载准备的机制。而 `sendBeacon` 有一个致命限制：**它完全无法设置请求头**，
+于是永远带不上 `Authorization`。服务端的 `user_id` 只从这个头解析（§7），
+结果是**只走离场路径的事件 100% 匿名**——2026-08-24 生产库实测：
+`session_end` 2848 条、`churn_signal` 2848 条，**无一条**能归属到玩家；
+而搭上定时 flush 的事件（`gacha_draw` 具名 3297 / 匿名 247）完全正常。
+流失漏斗恰恰建立在前两个事件上，等于整个漏斗没有身份维度。
 
 ```typescript
 function flushSync(batch: EventBatch): void {
   const body = JSON.stringify(batch);
-  if (navigator.sendBeacon) {
-    navigator.sendBeacon('/analytics/events', body);   // 关闭时用
-  } else {
-    fetch('/analytics/events', { method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      keepalive: true, body });                        // keepalive fallback
+  // headers() 带上 Authorization；credentials:'omit' 是必须的——analyticsvc 回
+  // access-control-allow-origin: *，而通配符 origin 对「带凭据请求」非法。
+  if (typeof fetch === 'function') {
+    void fetch(URL, { method: 'POST', headers: headers(), keepalive: true,
+                      credentials: 'omit', body }).catch(() => {});
+    return;
   }
+  navigator.sendBeacon?.(URL, body);   // 无 fetch 的环境兜底：匿名数据也好过没有
 }
 ```
+
+代价：`Authorization` 头会让这个 POST 变成**预检请求**，而卸载时再跑一次 OPTIONS 往返
+是不可靠的。所以 analyticsvc 同步补了 `Access-Control-Max-Age`（§7）——定时 flush 的
+预检结果还是热的，离场这次就是单次请求。
+
+**`screen_view` 检查点改为「已登录才 flush」**：`user_id` 是**按批**在入库时从
+`Authorization` 解析的，所以提前 flush 会把此前排队的所有事件**永久**盖成匿名。
+而首个 `screen_view` 就发生在开局几秒内、登录尚未完成——这个检查点一直在和它同批排队的
+登录赛跑，`session_start` 因此匿名 355 次、具名仅 128 次。等待不丢数据：定时器、
+50 条阈值、离场 flush 都照常触发，队列上限也仍是 200。真的全程未登录的玩家，
+事件照样发出、照样匿名，那对他们本就是正确结果。
 
 微信没有 `sendBeacon`，但 `wx.onHide` 回调里有足够时间完成一次 `wx.request`。
 

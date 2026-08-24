@@ -6,7 +6,7 @@
 // composition in ../service.ts.
 
 import { AnalyticsCollections } from '../db';
-import { RegionRow, OsRow, BadgeDistRow, BrowserRow, DeviceTypeRow, GeoRow, dayStart } from './defs';
+import { RegionRow, OsRow, BadgeDistRow, BrowserRow, DeviceTypeRow, WebViewRow, GeoRow, dayStart } from './defs';
 
 export class DistService {
   constructor(
@@ -55,6 +55,27 @@ export class DistService {
     ];
     const rows = await this.cols.events.aggregate<{ _id: string; devices: number }>(pipeline).toArray();
     return rows.map((r) => ({ browser: r._id || 'unknown', devices: r.devices }));
+  }
+
+  /**
+   * In-app WebView distribution (2026-08-24): unique device count by host app, with ordinary browser
+   * traffic bucketed as `none`.
+   *
+   * Reported separately from `browser` rather than replacing it — see parseUserAgent for why. The
+   * bucket worth watching is anything but `none`: those sessions run under much tighter memory
+   * ceilings and are killed rather than shown an error, so a crash rate that looks unremarkable
+   * overall can be concentrated almost entirely here.
+   */
+  async queryWebViewDist(days: number): Promise<WebViewRow[]> {
+    const since = new Date(dayStart(this.now()) - (days - 1) * 86400_000);
+    const pipeline = [
+      { $match: { ts: { $gte: since }, event: 'session_start' } },
+      { $group: { _id: { webview: '$webview', device: '$device_id' } } },
+      { $group: { _id: '$_id.webview', devices: { $sum: 1 } } },
+      { $sort: { devices: -1 as const } },
+    ];
+    const rows = await this.cols.events.aggregate<{ _id: string; devices: number }>(pipeline).toArray();
+    return rows.map((r) => ({ webview: r._id || 'none', devices: r.devices }));
   }
 
   /** Device-type distribution (A9-9): mobile / tablet / desktop, server-derived from UA at ingest. */

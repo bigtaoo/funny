@@ -12,7 +12,7 @@ describe('parseUserAgent', () => {
     const ua =
       'Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 ' +
       'Chrome/107.0.0.0 Mobile Safari/537.36 MicroMessenger/8.0.34.2400(0x28002234) Process/tools';
-    expect(parseUserAgent(ua)).toEqual({ browser: 'wechat', device_type: 'mobile' });
+    expect(parseUserAgent(ua)).toEqual({ browser: 'wechat', device_type: 'mobile', webview: 'wechat' });
   });
 
   it('detects QQBrowser ahead of the generic Chrome match', () => {
@@ -84,5 +84,89 @@ describe('parseUserAgent', () => {
 
   it('an unrecognised UA string still returns a device_type (desktop default) with browser unknown', () => {
     expect(parseUserAgent('some-weird-custom-client/1.0')).toEqual({ browser: 'unknown', device_type: 'desktop' });
+  });
+});
+
+// ─── In-app WebView detection + the Android tablet fix (2026-08-24) ───────────
+//
+// Both of these hid real populations rather than producing visibly wrong output, which is why they
+// survived: a mislabelled session looks exactly like a correctly-labelled one in a dashboard.
+describe('parseUserAgent — in-app WebViews', () => {
+  it('names the Google app WebView instead of reporting it as plain Safari', () => {
+    // The exact UA from the 2026-08-22 crash loop (FEATURE_FLAGS_DESIGN §8). It carries no
+    // CriOS/Chrome token, so it fell through to `safari` and was indistinguishable from the real
+    // browser — while actually being the memory-capped environment the crashes came from.
+    const ua =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ' +
+      'GSA/419.4.905781065 Mobile/15E148 Safari/604.1';
+    expect(parseUserAgent(ua)).toEqual({ browser: 'safari', device_type: 'mobile', webview: 'gsa' });
+  });
+
+  it('names the Facebook and Instagram WebViews, preferring the more specific product', () => {
+    const fb =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ' +
+      'Mobile/15E148 [FBAN/FBIOS;FBAV/440.0.0.30.109]';
+    expect(parseUserAgent(fb).webview).toBe('facebook');
+    // Instagram's in-app browser reports BOTH Instagram and FBAV — the specific one must win.
+    const ig =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ' +
+      'Mobile/15E148 Instagram 302.0.0.23.113 (iPhone14,5; iOS 17_0) FBAV/302.0.0.23.113';
+    expect(parseUserAgent(ig).webview).toBe('instagram');
+  });
+
+  it('names the generic Android System WebView by its `; wv` marker', () => {
+    const ua =
+      'Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TQ3A; wv) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'Version/4.0 Chrome/119.0.0.0 Mobile Safari/537.36';
+    expect(parseUserAgent(ua)).toEqual({ browser: 'chrome', device_type: 'mobile', webview: 'android-wv' });
+  });
+
+  it('leaves the field absent for an ordinary browser, so "absent" keeps meaning "not a WebView"', () => {
+    const ua =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ' +
+      'Version/17.0 Mobile/15E148 Safari/604.1';
+    expect(parseUserAgent(ua).webview).toBeUndefined();
+    expect(parseUserAgent(undefined).webview).toBeUndefined();
+  });
+
+  it('does not change the browser bucket it was hiding behind', () => {
+    // The ops browser chart is a time series; renaming these values would silently rewrite history.
+    const gsa = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 GSA/419.4 Mobile/15E148 Safari/604.1';
+    expect(parseUserAgent(gsa).browser).toBe('safari');
+  });
+});
+
+describe('parseUserAgent — Android tablets are tablets', () => {
+  it('classifies an Android tablet as tablet, not mobile', () => {
+    // Android tablets omit the `Mobile` token that phones carry, and carry no `Tablet` token either.
+    // The old rule tested `Mobi|Android` as one alternation, so every Android tablet counted as a phone.
+    const tablet =
+      'Mozilla/5.0 (Linux; Android 13; SM-X710) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'Chrome/119.0.0.0 Safari/537.36';
+    expect(parseUserAgent(tablet).device_type).toBe('tablet');
+  });
+
+  it('still classifies an Android phone as mobile', () => {
+    const phone =
+      'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'Chrome/119.0.0.0 Mobile Safari/537.36';
+    expect(parseUserAgent(phone).device_type).toBe('mobile');
+  });
+
+  it('agrees with the anomaly channel\'s own classifier on the same UA', () => {
+    // client/src/net/anomaly/deviceContext.ts classify() answers the same question for the same
+    // session. The two cannot share code across the package boundary, so the agreement is pinned here:
+    // a session that reads as `phone` there must not read as `tablet` here, or cross-referencing the
+    // two channels during an incident produces contradictions.
+    const cases: Array<[string, string]> = [
+      ['Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1', 'mobile'],
+      ['Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1', 'tablet'],
+      ['Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/119.0.0.0 Mobile Safari/537.36', 'mobile'],
+      ['Mozilla/5.0 (Linux; Android 13; SM-X710) AppleWebKit/537.36 Chrome/119.0.0.0 Safari/537.36', 'tablet'],
+      ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0 Safari/537.36', 'desktop'],
+    ];
+    for (const [ua, expected] of cases) {
+      expect(parseUserAgent(ua).device_type, ua).toBe(expected);
+    }
   });
 });

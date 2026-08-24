@@ -40,7 +40,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
 
     const [
       summary, evCounts, dau, funnel, regions, osDist, loginHour, retention, firstSession,
-      levelFunnel, tutorialFunnel, sceneFunnel, featureGuideFunnel, browserDist, deviceTypeDist, geoDist, badgeDist,
+      levelFunnel, tutorialFunnel, sceneFunnel, featureGuideFunnel, browserDist, deviceTypeDist, webviewDist, geoDist, badgeDist,
     ] = await Promise.allSettled([
       api.analyticsSummary(),
       api.analyticsEvents('event_counts', days),
@@ -57,6 +57,7 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       api.analyticsEvents('feature_guide_funnel', days),
       api.analyticsEvents('browser_dist', days),
       api.analyticsEvents('device_type_dist', days),
+      api.analyticsEvents('webview_dist', days),
       api.analyticsEvents('geo_dist', days),
       api.analyticsEvents('badge_dist', days),
     ]);
@@ -256,6 +257,11 @@ export async function pageAnalytics(ctx: Ctx): Promise<void> {
       [distribution(sectionRows(osDist, (v) => v.os_dist), 'os'), 'OS', `OS distribution (last ${days} days, session_start)`],
       [distribution(sectionRows(browserDist, (v) => v.browser_dist), 'browser'), 'Browser', `Browser distribution (last ${days} days, session_start)`],
       [distribution(sectionRows(deviceTypeDist, (v) => v.device_type_dist), 'device_type'), 'Device type', `Device type distribution (last ${days} days, session_start)`],
+      // Separate from Browser on purpose: an in-app WebView reports as the browser it embeds, so
+      // until this table existed that whole population was invisible inside the Safari/Chrome rows.
+      // It is worth watching on its own because those sessions run under much tighter memory limits
+      // and get killed outright rather than shown an error. `none` is ordinary browser traffic.
+      [distribution(sectionRows(webviewDist, (v) => v.webview_dist), 'webview'), 'In-app WebView', `In-app WebView distribution (last ${days} days, session_start)`],
     ];
     for (const [rows, header, caption] of shareTables) {
       if (rows.length) body.append(shareCard(caption, header, 'Devices', rows));

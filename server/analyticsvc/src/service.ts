@@ -64,6 +64,7 @@ export class AnalyticsService {
   queryOsDist(...args: Parameters<DistService['queryOsDist']>) { return this.dist.queryOsDist(...args); }
   queryBrowserDist(...args: Parameters<DistService['queryBrowserDist']>) { return this.dist.queryBrowserDist(...args); }
   queryDeviceTypeDist(...args: Parameters<DistService['queryDeviceTypeDist']>) { return this.dist.queryDeviceTypeDist(...args); }
+  queryWebViewDist(...args: Parameters<DistService['queryWebViewDist']>) { return this.dist.queryWebViewDist(...args); }
   queryGeoDist(...args: Parameters<DistService['queryGeoDist']>) { return this.dist.queryGeoDist(...args); }
   queryBadgeDist(...args: Parameters<DistService['queryBadgeDist']>) { return this.dist.queryBadgeDist(...args); }
 
