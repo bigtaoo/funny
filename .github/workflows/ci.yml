@@ -98,6 +98,13 @@ jobs:
       - name: server workspace coverage check
         working-directory: server
         run: npm run check:workspacecoverage
+      # claudedocs/server.md "SLG worldsvc 要点": the 2026-08-24 concurrency sweep concluded that a $set
+      # publishing an absolute, snapshot-derived running total IS the lost-update shape (it cost us an
+      # exploitable troop duplication, deleted reinforcements, and multi-attacker siege damage). Nothing in
+      # the type system enforces that, so this gate fails on a new one — or on an allowance gone stale.
+      - name: server absolute-write drift check
+        working-directory: server
+        run: npm run check:absolutewrites
       - name: server typecheck (tsc -b, solution file — all 13 workspaces)
         working-directory: server
         run: npm run typecheck

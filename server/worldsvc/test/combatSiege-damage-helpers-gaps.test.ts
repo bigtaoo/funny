@@ -268,7 +268,7 @@ describe('SiegeDamageService settleSiegeDamage — building survives (newHp > 0)
     });
     await settle(core, fakeHelpers(), dmgDoc({ damage: 10, attackerSurvivors: 7 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { hp: maxHp - 10 }, $inc: { rev: 1 } },
     );
     expect(pwUpdateOne).toHaveBeenCalledTimes(1); // return-march refund for the attacker
@@ -294,7 +294,7 @@ describe('SiegeDamageService settleSiegeDamage — building survives (newHp > 0)
     });
     await settle(core, fakeHelpers(), dmgDoc({ damage: 10, attackerSurvivors: 0 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { hp: maxHp - 10 }, $inc: { rev: 1 } },
     );
   });
@@ -328,7 +328,7 @@ describe('SiegeDamageService settleSiegeDamage — building survives (newHp > 0)
     });
     await settle(core, fakeHelpers(), dmgDoc({ isBase: true, damage: 5, attackerSurvivors: 0 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { durability: expectedNewHp, durabilityMax: maxDur, durabilityRegenAt: 1_000 }, $inc: { rev: 1 } },
     );
   });
@@ -343,7 +343,7 @@ describe('SiegeDamageService settleSiegeDamage — isBase edge fallbacks', () =>
     });
     await settle(core, fakeHelpers(), dmgDoc({ isBase: true, damage: 5, attackerSurvivors: 0 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { durability: maxDur - 5, durabilityMax: maxDur, durabilityRegenAt: 1_000 }, $inc: { rev: 1 } },
     );
   });
@@ -357,7 +357,7 @@ describe('SiegeDamageService settleSiegeDamage — isBase edge fallbacks', () =>
     });
     await settle(core, fakeHelpers(), dmgDoc({ isBase: true, damage: 5, attackerSurvivors: 0 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { durability: maxDur - 5, durabilityMax: maxDur, durabilityRegenAt: 1_000 }, $inc: { rev: 1 } },
     );
   });
