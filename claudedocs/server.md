@@ -178,7 +178,14 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
   - **门禁自身做了变异测试**：`auctionsvc/test/check-auction-journal.test.ts` 建临时 fixture 树——干净树必须过、五条规则各自被重新引入必须挂并报对规则、只出现在注释里必须过、能力搬出 owner 文件必须报「silently enforcing nothing」。（上一轮 `checkAbsoluteWrites` 的第一版就是因为 `rev` 的管道自增顺带豁免了同一个 `$set` 里的其它字段，成了一个不能失败的门禁。）
   - **行为侧回归** `auctionsvc/test/journal-atomicity.e2e.test.ts`（真 Mongo，22 例）。两点刻意与既有 `auction.e2e.test.ts` 不同：①**下游 fake 是忠实的**——`commercial.spend` 复刻了真实的 insert-first orderId 槽位**和**跨账号归属校验、带余额、只记真实发生的扣款；邮件 fake 按 dispatchKey 去重且可指定某个交付失败 N 次。共用键在「只往数组里 push」的 fake 上看起来就是两次正常调用，**这轮的键位 bug 对那种 fake 是不可见的**。②**并发一律在读写窗口内注入**，绝不用「顺序调两次」代替——后者在修复前的代码上照样通过。三条关键用例已实测在修复前的代码上失败：去掉购买键里的 buyerId → 报 key 归属冲突而非 `AUCTION_CLOSED`；去掉结拍的 `rev` → `expected 'sold' to be 'open'`；去掉重复提交去重 → `expected 10 to be +0`（10 金币凭空退款）。另外把 `repairUnsettled` 改成 no-op 也验证了修复用例会挂。
   - **既有测试的三处预期变更**：`mailClient.test.ts` 两例从「失败只记日志不抛」翻成「必须抛」；`auction.e2e.test.ts` 的「被抢走 → 退款邮件」整例重写为「压根没扣款」（顺序倒过来后那个结果不存在了）；`composition-wiring.test.ts` 注入的依赖从 `AuctionServiceDelivery` 换成 `AuctionOrderJournal`（`delivery.ts` 移到 `journalSteps.ts` 后面，facade 不再持有它）。auctionsvc 行覆盖率 92.0% → 95.06%（217 例全绿）。
-  - **未做、留作后续**：ops 后台还看不到「还欠着交付」这个状态（`AuctionListingAdminView` 没有 `settledAt`，也没有列 `auctionOrders` 的端点）。自动重试已经把「凭 orderId 手动补发」这个工单场景消掉了大半，但一个卡在 `attempts >= 10` 的欠账目前只体现在日志里。要做就得动 openapi + admin 前端，本轮刻意没顺手半做。
+  - **ops 欠账可见性（同日第二轮补齐）**：原先一个卡在 `attempts >= 10` 的欠账只体现在日志里——等于「没人发现，直到玩家来投诉」。整条链补完：
+    - **auctionsvc**：`auctionService/journalAudit.ts`（新，只读）`listSettlementDebts(filter)` 读 `auctionOrders` 的 `pending` 行（done 已交付完、aborted 已干净撤回，都不是欠账），排序「重试最多的在前，然后最老的」——这两种形状才值得人看，失败一次的几乎都只是在退避里。内部端点 `GET /internal/audit/settlements`（X-Internal-Key，仅 GET）。`docToAdminView` 加 `settledAt`。
+    - **admin**：`AuctionClient.listSettlementDebts` → `SlgAuditService.slgListSettlementDebts`（能力沿用 `slg.audit.view`，**没有新增能力**，省掉「新能力要 VPS `--build` 重建菜单」那步）→ `GET /admin/slg/audit/settlements`。
+    - **ops 前端**：「SLG Audit」页新增「Unfinished settlements」区块 + 挂单查询表多一列「Settled」（`OWED` 标红）。每行给出账本行 id（= 该次结算所有下游键的前缀，直接拿去查 commercial 订单 / meta 邮件派发）、流程与方向、**还欠谁什么**、已完成到哪、重试次数（`stuck` 标记）、重开次数、欠了多久 / 下次何时重试。
+    - **刻意只读，没有「立即重试」按钮**：扫描器本来就在永不放弃地重试，手动戳只会和它抢；真正有用的下一步动作都在这个服务之外。三层的注释都写了这条，免得后来人以为是漏做。
+    - **两个容易做错的点**：①`accountId` 过滤必须同时匹配 `actorId` **和任何被步骤欠着的账号**（`steps.accountId` / `compensation.accountId`）——被超价的出价者不是那笔出价流程的 actor，只按 actorId 过滤会对「玩家说没收到退款」精确地回答「没有欠账」。②欠账列表必须复用引擎的 `applicableCompensation`（已从 `journalPlans.ts` 导出，rollback 和这个读模型共用）——否则「这次回滚到底会不会退这笔」会分叉成两个公式，控制台就会显示引擎压根不打算付的欠账。
+    - **`AUCTION_SETTLEMENT_STUCK_ATTEMPTS` 挪进 `@nw/shared`**：journal.ts 用它决定日志升级到 error，`journalAudit.ts` 用它决定 `stuck` 标记。一个常量，免得「日志里喊得很大声」和「在 ops 里列为卡住」漂移成两回事。
+    - **验证**：真实链路跑通过一次——内存 mongod + 桩 auctionsvc + **真实 admin 后端** + ops dev server，登录后驱动两张表，DOM 里逐格核对（`OWED`/`settled`/`—` 三态、`buy · delivering`/`bid · unwinding`、`seller: alice ← 1080 coins`、`14 (stuck)` 的 `pill failed`、`retry #1`、校验分支报错不发请求）。**这个环境的 browser pane 不合成帧，截不了图**，所以证据是 DOM 抽取而非截图。
 
 ## 上线收口（Track 2，2026-06-23）
 

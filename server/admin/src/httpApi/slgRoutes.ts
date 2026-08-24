@@ -97,6 +97,19 @@ export async function handleSlgRoutes(ctx: RouteCtx): Promise<boolean> {
     send(res, 200, { ok: true, listings });
     return true;
   }
+  if (method === 'GET' && path === '/admin/slg/audit/settlements') {
+    requireCap(actor, 'slg.audit.view');
+    const auctionId = url.searchParams.get('auctionId') ?? undefined;
+    const accountId = url.searchParams.get('accountId') ?? undefined;
+    const settlements = await svc.slgListSettlementDebts({
+      ...(auctionId ? { auctionId } : {}),
+      ...(accountId ? { accountId } : {}),
+      minAttempts: numOpt(url.searchParams.get('minAttempts')),
+      limit: numOpt(url.searchParams.get('limit')),
+    });
+    send(res, 200, { ok: true, settlements });
+    return true;
+  }
   if (method === 'GET' && path === '/admin/slg/audit/tickets') {
     requireCap(actor, 'slg.audit.view');
     const status = url.searchParams.get('status');

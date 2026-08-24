@@ -3,11 +3,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   anomaliesFoundText, auditResolvedByText, auditTicketFiledBy, auditTicketStatusCls, canAdjudicate,
-  enforcementText, listingCloseTs, listingItemText, listingPriceLabel, listingQuery,
-  listingsFoundText, listingStatusCls, noAnomaliesText, resolvePrompt, scanWindowSec, sellerBuyerText,
-  severityCls, snapshotOf,
+  completedText, enforcementText, listingCloseTs, listingItemText, listingPriceLabel, listingQuery,
+  listingSettlementCls, listingSettlementState, listingSettlementText, listingsFoundText,
+  listingStatusCls, noAnomaliesText, noSettlementsText, owedStepText, owedSummary, resolvePrompt,
+  scanWindowSec, sellerBuyerText, settlementAttemptsText, settlementCycleText, settlementPhaseText,
+  settlementQuery, settlementRowCls, settlementsFoundText, settlementTimingText, severityCls, snapshotOf,
 } from '../src/logic/auctionAudit';
-import type { AuctionAnomaly, AuctionListingAdminView, TradeAuditTicketView } from '../src/types';
+import type {
+  AuctionAnomaly, AuctionListingAdminView, AuctionSettlementDebtView, AuctionSettlementStepView,
+  TradeAuditTicketView,
+} from '../src/types';
 
 const stamp = (ms: number): string => `T${ms}`;
 const blank = { sellerId: '', itemType: '', status: '', itemName: '' };
@@ -180,5 +185,165 @@ describe('audit ticket row', () => {
     expect(enforcementText({ sellerBanned: true, buyerBanned: true })).toBe('Enforcement: seller banned, buyer banned');
     expect(enforcementText({ sellerBanned: true, buyerBanned: false })).toBe('Enforcement: seller banned, buyer ban failed');
     expect(enforcementText({ sellerBanned: false, buyerBanned: false })).toBe('Enforcement: seller ban failed, buyer ban failed');
+  });
+});
+
+// ── Owed settlements (U13 close-out) ──
+
+const debt = (over: Partial<AuctionSettlementDebtView> = {}): AuctionSettlementDebtView => ({
+  orderId: 'auction_buy:a-1:acc-2', auctionId: 'a-1', kind: 'buy', actorId: 'acc-2',
+  phase: 'forward', owed: [], completed: [], attempts: 1, stuck: false, cycle: 0,
+  createdAt: 1000, nextAttemptAt: 5000, ...over,
+});
+
+const step = (over: Partial<AuctionSettlementStepView> = {}): AuctionSettlementStepView => ({
+  name: 'seller', op: 'mailCoins', key: 'auction_buy:a-1:acc-2:seller', ...over,
+});
+
+describe('listingSettlementState', () => {
+  it('separates "nothing to settle yet" from "settled" from "still owed"', () => {
+    // The three-way split is the whole point: an OPEN listing has no hand-over due, so treating a missing
+    // settledAt as a debt there would paint the entire live market as broken.
+    expect(listingSettlementState(listing({ status: 'open' }))).toBe('open');
+    expect(listingSettlementState(listing({ status: 'sold', settledAt: 900 }))).toBe('settled');
+    expect(listingSettlementState(listing({ status: 'sold' }))).toBe('owed');
+  });
+
+  it('treats every closed status the same way — cancelled and expired owe the seller their item back', () => {
+    expect(listingSettlementState(listing({ status: 'cancelled' }))).toBe('owed');
+    expect(listingSettlementState(listing({ status: 'expired' }))).toBe('owed');
+    expect(listingSettlementState(listing({ status: 'expired', settledAt: 1 }))).toBe('settled');
+  });
+
+  it('reads a settledAt of 0 as settled, not as absent', () => {
+    // Epoch-0 is not a real timestamp, but `settledAt != null` vs a truthiness check is exactly the sort of
+    // slip that would silently reclassify a settled listing as a debt.
+    expect(listingSettlementState(listing({ status: 'sold', settledAt: 0 }))).toBe('settled');
+  });
+
+  it('labels and colours only the owed case', () => {
+    expect(listingSettlementText(listing({ status: 'open' }))).toBe('—');
+    expect(listingSettlementText(listing({ status: 'sold', settledAt: 9 }))).toBe('settled');
+    expect(listingSettlementText(listing({ status: 'sold' }))).toBe('OWED');
+    expect(listingSettlementCls(listing({ status: 'sold' }))).toBe('failed');
+    expect(listingSettlementCls(listing({ status: 'sold', settledAt: 9 }))).toBe('');
+    expect(listingSettlementCls(listing({ status: 'open' }))).toBe('');
+  });
+});
+
+describe('settlementQuery', () => {
+  const blankOwed = { auctionId: '', accountId: '', minAttempts: '' };
+
+  it('allows the fully unfiltered query — "show me everything still owed" is the useful one here', () => {
+    // Deliberately the opposite rule from listingQuery: the unfinished set is tiny by nature, so an
+    // unbounded query is cheap AND is the question ops actually asks.
+    expect(settlementQuery(blankOwed)).toEqual({ ok: true, filter: {} });
+  });
+
+  it('trims the free-text fields and treats whitespace as blank', () => {
+    expect(settlementQuery({ ...blankOwed, auctionId: '  a-1 ', accountId: ' acc-2 ' }))
+      .toEqual({ ok: true, filter: { auctionId: 'a-1', accountId: 'acc-2' } });
+    expect(settlementQuery({ ...blankOwed, auctionId: '   ' })).toEqual({ ok: true, filter: {} });
+  });
+
+  it('accepts a min-attempts threshold, including an explicit zero', () => {
+    expect(settlementQuery({ ...blankOwed, minAttempts: '10' })).toEqual({ ok: true, filter: { minAttempts: 10 } });
+    expect(settlementQuery({ ...blankOwed, minAttempts: '0' })).toEqual({ ok: true, filter: { minAttempts: 0 } });
+  });
+
+  it('rejects a min-attempts that is not a non-negative integer', () => {
+    for (const bad of ['-1', '1.5', 'abc', '1e3x']) {
+      expect(settlementQuery({ ...blankOwed, minAttempts: bad }), bad)
+        .toEqual({ ok: false, error: 'min attempts must be a non-negative integer' });
+    }
+  });
+});
+
+describe('owed-settlement labels', () => {
+  it('distinguishes "nothing owed" from "the filter matched nothing"', () => {
+    // A blank table is the normal state here, so the two readings have to be told apart in words —
+    // otherwise a too-narrow filter reads as an all-clear.
+    expect(noSettlementsText(false)).toBe('Nothing owed — every settlement has handed over.');
+    expect(noSettlementsText(true)).toBe('No unfinished settlements match this filter.');
+  });
+
+  it('counts unfinished settlements with a plural', () => {
+    expect(settlementsFoundText(1)).toBe('1 unfinished settlement found');
+    expect(settlementsFoundText(3)).toBe('3 unfinished settlements found');
+  });
+
+  it('marks only a stuck row as failed — everything else is mid-backoff and self-resolving', () => {
+    expect(settlementRowCls(debt({ stuck: true }))).toBe('failed');
+    expect(settlementRowCls(debt({ stuck: false }))).toBe('warn');
+    expect(settlementAttemptsText(debt({ attempts: 14, stuck: true }))).toBe('14 (stuck)');
+    expect(settlementAttemptsText(debt({ attempts: 2, stuck: false }))).toBe('2');
+  });
+
+  it('says what the settlement is doing in words, not field names', () => {
+    expect(settlementPhaseText(debt({ kind: 'buy', phase: 'forward' }))).toBe('buy · delivering');
+    expect(settlementPhaseText(debt({ kind: 'bid', phase: 'rollback' }))).toBe('bid · unwinding');
+    expect(settlementPhaseText(debt({ kind: 'settle', phase: 'forward' }))).toBe('settle · delivering');
+  });
+
+  it('only mentions the cycle when the settlement has actually been reopened', () => {
+    expect(settlementCycleText(debt({ cycle: 0 }))).toBe('');
+    expect(settlementCycleText(debt({ cycle: 2 }))).toBe('retry #2');
+  });
+
+  it('lists what already landed, and says so plainly when nothing has', () => {
+    expect(completedText(debt({ completed: [] }))).toBe('nothing yet');
+    expect(completedText(debt({ completed: ['spend', 'item'] }))).toBe('spend, item');
+  });
+
+  it('reports both how long it has been owed and when the sweep will retry', () => {
+    // The "next try" half is what stops a reader concluding the row is abandoned — it is not, the sweep
+    // is just backing off.
+    expect(settlementTimingText(debt({ createdAt: 10, nextAttemptAt: 99 }), stamp)).toBe('since T10 · next try T99');
+  });
+});
+
+describe('owedStepText', () => {
+  it('names the coin amount for a payment', () => {
+    expect(owedStepText(step({ name: 'seller', accountId: 'acc-1', amount: 270 })))
+      .toBe('seller: acc-1 ← 270 coins');
+  });
+
+  it('names the item for a delivery', () => {
+    expect(owedStepText(step({ name: 'item', op: 'mailItem', accountId: 'acc-2', item: 'equipment wp_marker' })))
+      .toBe('item: acc-2 ← equipment wp_marker');
+  });
+
+  it('prefers the coin amount when a step somehow carries both', () => {
+    expect(owedStepText(step({ accountId: 'acc-1', amount: 5, item: 'material scrap' })))
+      .toBe('seller: acc-1 ← 5 coins');
+  });
+
+  it('falls back to the op name when a step carries neither', () => {
+    expect(owedStepText(step({ name: 'escrow', op: 'escrow', accountId: 'acc-1' })))
+      .toBe('escrow: acc-1 ← escrow');
+  });
+
+  it('says "internal" for a local step rather than naming a phantom account', () => {
+    // `unclaim` releases a listing this service claimed; nobody downstream is owed anything by it.
+    expect(owedStepText(step({ name: 'unclaim', op: 'unclaim' }))).toBe('unclaim: unclaim (internal)');
+  });
+
+  it('reads a zero amount as an amount, not as absent', () => {
+    expect(owedStepText(step({ accountId: 'acc-1', amount: 0 }))).toBe('seller: acc-1 ← 0 coins');
+  });
+});
+
+describe('owedSummary', () => {
+  it('joins every owed step, so one row shows the whole debt', () => {
+    expect(owedSummary(debt({
+      owed: [
+        step({ name: 'item', op: 'mailItem', accountId: 'acc-2', item: 'material scrap x3' }),
+        step({ name: 'seller', accountId: 'acc-1', amount: 27 }),
+      ],
+    }))).toBe('item: acc-2 ← material scrap x3; seller: acc-1 ← 27 coins');
+  });
+
+  it('renders an empty debt as a dash rather than a blank cell', () => {
+    expect(owedSummary(debt({ owed: [] }))).toBe('—');
   });
 });

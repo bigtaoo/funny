@@ -115,6 +115,23 @@ export function startHttpApi(
         })));
       }
 
+      // ── Internal ops (owed-settlement lookup, U13 close-out): X-Internal-Key, no player JWT ──
+      // Read-only by design: the scheduler sweep already retries every owed hand-over forever on its own
+      // backoff, so there is nothing here for ops to poke — only something for them to see.
+      if (path === '/internal/audit/settlements') {
+        if (!internalAuth.verify(req.headers).ok) {
+          return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
+        }
+        if (method !== 'GET') return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
+        const minAttemptsQ = q.get('minAttempts');
+        return send(res, 200, ok(await auctionSvc.listSettlementDebts({
+          ...(q.get('auctionId') ? { auctionId: q.get('auctionId')! } : {}),
+          ...(q.get('accountId') ? { accountId: q.get('accountId')! } : {}),
+          ...(minAttemptsQ != null && Number.isFinite(Number(minAttemptsQ)) ? { minAttempts: Number(minAttemptsQ) } : {}),
+          limit: numQ(q.get('limit'), 50),
+        })));
+      }
+
       // ── JWT verification (extract accountId only, no DB connection) ──
       const token = extractBearer(req.headers['authorization']);
       let accountId: string;

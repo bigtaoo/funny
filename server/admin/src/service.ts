@@ -142,6 +142,7 @@ export class AdminService {
   // ── slgAudit ──
   slgScanAnomalies(...args: Parameters<SlgAuditService['slgScanAnomalies']>) { return this.slgAudit.slgScanAnomalies(...args); }
   slgQueryAuctionListings(...args: Parameters<SlgAuditService['slgQueryAuctionListings']>) { return this.slgAudit.slgQueryAuctionListings(...args); }
+  slgListSettlementDebts(...args: Parameters<SlgAuditService['slgListSettlementDebts']>) { return this.slgAudit.slgListSettlementDebts(...args); }
   slgFileAuditTicket(...args: Parameters<SlgAuditService['slgFileAuditTicket']>) { return this.slgAudit.slgFileAuditTicket(...args); }
   slgListAuditTickets(...args: Parameters<SlgAuditService['slgListAuditTickets']>) { return this.slgAudit.slgListAuditTickets(...args); }
   slgResolveAuditTicket(...args: Parameters<SlgAuditService['slgResolveAuditTicket']>) { return this.slgAudit.slgResolveAuditTicket(...args); }

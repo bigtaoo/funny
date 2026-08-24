@@ -27,6 +27,7 @@
 //   auctionService/journalSteps.ts AuctionOrderStepRunner the ONLY place a cross-service asset call happens — depends on delivery
 //   auctionService/journal.ts     AuctionOrderJournal    the settlement journal engine (begin/advance/decide/finalize/rollback) — depends on journalSteps + journalPlans
 //   auctionService/journalSweep.ts AuctionServiceJournalSweep scheduler-driven resume + repair passes — depends on journal + journalPlans
+//   auctionService/journalAudit.ts AuctionServiceJournalAudit read-only ops view of settlements that still owe something — depends on journalPlans
 //   auctionService/create.ts      AuctionServiceCreate   createAuction (+ cap-reject rollback) — depends on pricing AND journal
 //   auctionService/trade.ts       AuctionServiceTrade    buyAuction/placeBid/settleAuctionWin/cancelAuction/processExpiredAuctions — depends on pricing AND journal
 //   auctionService/audit.ts       AuctionServiceAudit    D/G7 anomaly audit scan (scanAnomalies) — depends on nothing
@@ -44,6 +45,7 @@ import { AuctionServicePricing } from './auctionService/pricing';
 import { AuctionServiceListing } from './auctionService/listing';
 import { AuctionOrderJournal } from './auctionService/journal';
 import { AuctionServiceJournalSweep } from './auctionService/journalSweep';
+import { AuctionServiceJournalAudit } from './auctionService/journalAudit';
 import { AuctionServiceCreate } from './auctionService/create';
 import { AuctionServiceTrade } from './auctionService/trade';
 import { AuctionServiceAudit } from './auctionService/audit';
@@ -54,6 +56,7 @@ export class AuctionService {
   private readonly listing: AuctionServiceListing;
   private readonly journal: AuctionOrderJournal;
   private readonly journalSweep: AuctionServiceJournalSweep;
+  private readonly journalAudit: AuctionServiceJournalAudit;
   private readonly create: AuctionServiceCreate;
   private readonly trade: AuctionServiceTrade;
   private readonly audit: AuctionServiceAudit;
@@ -63,6 +66,7 @@ export class AuctionService {
     this.listing = new AuctionServiceListing(deps);
     this.journal = new AuctionOrderJournal(deps);
     this.journalSweep = new AuctionServiceJournalSweep(deps, this.journal);
+    this.journalAudit = new AuctionServiceJournalAudit(deps);
     this.create = new AuctionServiceCreate(deps, this.pricing, this.journal);
     this.trade = new AuctionServiceTrade(deps, this.pricing, this.journal);
     this.audit = new AuctionServiceAudit(deps);
@@ -89,6 +93,8 @@ export class AuctionService {
   // ── settlement journal ──
   /** Resume interrupted settlements + repair listings that closed without handing anything over (scheduler tick). */
   sweepSettlements(...args: Parameters<AuctionServiceJournalSweep['sweep']>) { return this.journalSweep.sweep(...args); }
+  /** Ops read: settlements that still owe a hand-over (admin.slg.audit.view). Read-only — the sweep is what actually retries. */
+  listSettlementDebts(...args: Parameters<AuctionServiceJournalAudit['listSettlementDebts']>) { return this.journalAudit.listSettlementDebts(...args); }
 
   // ── audit ──
   scanAnomalies(...args: Parameters<AuctionServiceAudit['scanAnomalies']>) { return this.audit.scanAnomalies(...args); }

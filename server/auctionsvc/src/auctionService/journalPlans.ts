@@ -187,6 +187,17 @@ export function planForSettle(
   };
 }
 
+/**
+ * The compensation steps that actually apply, given what landed.
+ *
+ * Shared by the engine's rollback and by the ops-facing owed-settlement view (journalAudit.ts) on
+ * purpose: "what would this rollback still do" has to be one formula, or the console would show ops a
+ * debt the engine has no intention of paying (or hide one it does).
+ */
+export function applicableCompensation(compensation: AuctionOrderStep[], done: Record<string, number>): AuctionOrderStep[] {
+  return compensation.filter((s) => s.requires == null || done[s.requires] != null);
+}
+
 /** Cancel / expiry: hand the escrowed item back to the seller. Claim-first and forward-only, same as settlement. */
 export function planForReturn(rowId: string, cycle: number, sellerId: string, snapshot: AuctionItemSnapshot): JournalPlan {
   return {
