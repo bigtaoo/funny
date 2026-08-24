@@ -206,7 +206,15 @@ describe('PixiAppViews — lobby resize listener lifetime', () => {
 });
 
 describe('PixiAppViews — resize-driven lobby rebuild', () => {
-  it('resizes renderer + layout, then rebuilds through onResized', () => {
+  // The rebuild is deferred behind REBUILD_COALESCE_MS as of 2026-08-24 (see onResize), so every
+  // case here drives timers by hand. The canvas re-fit stays synchronous and is asserted as such.
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** Longer than REBUILD_COALESCE_MS — "the viewport has settled". */
+  const SETTLE = 200;
+
+  it('re-fits the canvas synchronously, then rebuilds through onResized once settled', () => {
     const h = setup();
     const rebuilds: number[] = [];
     h.views.onResized = () => { rebuilds.push(1); h.views.showLobby(NO_CB); };
@@ -216,19 +224,84 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
     h.screen.height = 1200;
     h.win.fire('resize');
 
+    // Immediate half: the canvas must track the viewport or it visibly lags a rotation.
     expect(h.renderer.resize).toHaveBeenCalledWith(800, 1200);
     expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+    // Deferred half: the expensive scene rebuild has not run yet.
+    expect(rebuilds).toEqual([]);
+
+    vi.advanceTimersByTime(SETTLE);
     expect(rebuilds).toEqual([1]);
     // The rebuilt lobby is built against the NEW size, not the boot-time one.
     const rebuilt = last(built.filter((b) => b.name === 'LobbyScene'), 'LobbyScene build');
     expect((rebuilt.args[0] as ILayout).designHeight).toBeGreaterThan((rebuilt.args[0] as ILayout).designWidth);
   });
 
+  it('collapses a whole rotation into ONE rebuild, not one per event', () => {
+    // A device rotation fires `resize` repeatedly as iOS reports the viewport progressively through
+    // the animation. Rebuilding the lobby on each one meant N full scene teardowns — N rounds of
+    // texture churn at the exact moment the WebView is already paying for a drawing-buffer
+    // reallocation. On a memory-capped in-app WebView that is a plausible way to get killed outright.
+    const h = setup();
+    const rebuilds: number[] = [];
+    h.views.onResized = () => { rebuilds.push(1); h.views.showLobby(NO_CB); };
+    h.views.showLobby(NO_CB);
+
+    for (const [w, hh] of [[900, 1100], [1000, 1000], [1150, 850], [1200, 800]] as const) {
+      h.screen.width = w; h.screen.height = hh;
+      h.win.fire('resize');
+      vi.advanceTimersByTime(40); // mid-animation: inside the coalescing window
+    }
+    expect(rebuilds).toEqual([]);
+
+    vi.advanceTimersByTime(SETTLE);
+    expect(rebuilds).toEqual([1]);
+    // Every intermediate size still reached the canvas — only the rebuild was coalesced.
+    expect(h.renderer.resize).toHaveBeenCalledTimes(4);
+    expect(h.renderer.resize).toHaveBeenLastCalledWith(1200, 800);
+  });
+
+  it('ignores a resize event that reports no actual size change', () => {
+    // Mobile browsers fire `resize` for things that are not resizes: chrome bars sliding, the
+    // on-screen keyboard, scroll-driven toolbar hiding. Each used to rebuild the lobby for nothing.
+    const h = setup();
+    const rebuilds: number[] = [];
+    h.views.onResized = () => { rebuilds.push(1); h.views.showLobby(NO_CB); };
+    h.views.showLobby(NO_CB);
+
+    h.win.fire('resize'); // same 1280x720 the harness booted with
+    vi.advanceTimersByTime(SETTLE);
+
+    expect(h.renderer.resize).not.toHaveBeenCalled();
+    expect(h.scaling.resize).not.toHaveBeenCalled();
+    expect(rebuilds).toEqual([]);
+  });
+
+  it('cancels a pending rebuild when the player navigates away first', () => {
+    // Load-bearing now that the rebuild is deferred: rotate, then immediately tap into another
+    // screen, and a queued showLobby() would otherwise fire ~180ms later and yank the player back
+    // to the lobby from wherever they had just gone.
+    const h = setup();
+    const rebuilds: number[] = [];
+    h.views.onResized = () => { rebuilds.push(1); h.views.showLobby(NO_CB); };
+    h.views.showLobby(NO_CB);
+
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    h.views.showSettings({} as never); // leaves the lobby before the rebuild lands
+
+    vi.advanceTimersByTime(SETTLE);
+    expect(rebuilds).toEqual([]);
+    expect(last(built, 'scene build').name).toBe('SettingsScene');
+  });
+
   it('swaps the rebuilt lobby instantly even when the caller asks for a fade', () => {
     const h = setup();
     h.views.onResized = () => { h.views.showLobby(NO_CB, { fade: true }); };
     h.views.showLobby(NO_CB);
+    h.screen.width = 800; h.screen.height = 1200;
     h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
     expect(h.lastGoto().opts).toEqual({ fade: false });
   });
 

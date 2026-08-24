@@ -5,6 +5,7 @@
 import { recentClientLogs, netLog } from '../log';
 import { getApiBaseUrl } from '../config';
 import type { IStorage } from '../../platform/IPlatform';
+import { deviceClass, deviceMemoryGb, devicePixelRatio, momentContext, type MomentContext } from './deviceContext';
 
 export const log = netLog('anomaly');
 
@@ -16,6 +17,12 @@ interface AnomalyEvent {
   ts: number; // epoch ms
   msg: string;
   detail?: string; // structured supplement serialized into a single string, truncated to prevent overflow
+  // Moment-level device context (deviceContext.ts), captured when the event is reported rather than
+  // when the batch is flushed — up to FLUSH_DEBOUNCE_MS separates the two, which is long enough to
+  // matter for sinceRot on exactly the rotation-time failures these fields exist to find.
+  orient?: MomentContext['orient'];
+  vp?: MomentContext['vp'];
+  sinceRot?: MomentContext['sinceRot'];
 }
 
 const ENDPOINT = '/client/anomaly';
@@ -69,19 +76,47 @@ function stringifyDetail(detail: Record<string, unknown>): string {
   return clip(s, DETAIL_MAX);
 }
 
+/**
+ * The upload envelope: who is reporting, on what hardware, running which build. Session-stable, so
+ * it rides on the batch rather than on every event; clientLog.ts stamps it onto each Loki line.
+ *
+ * `device`/`dpr`/`mem` were added 2026-08-24 — see deviceContext.ts for why `platform` alone (a build
+ * target, not a device) left mobile-only failures unfilterable.
+ */
+function envelope(events: AnomalyEvent[]): string {
+  return JSON.stringify({
+    publicId: readPublicId() ?? undefined,
+    platform: platformName(),
+    buildVersion: readBuildVersion(),
+    device: deviceClass(),
+    dpr: devicePixelRatio(),
+    mem: deviceMemoryGb(),
+    events,
+  });
+}
+
 class AnomalyReporter {
   private queue: AnomalyEvent[] = [];
   private sent = 0;
   private lastByType: Partial<Record<AnomalyType, number>> = {};
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** Report a single anomaly event (with cooldown + session cap + detail truncation). Safe in any environment; enqueues for exit beacon when baseUrl is unavailable. */
-  report(type: AnomalyType, msg: string, detail?: Record<string, unknown>): void {
+  /**
+   * Report a single anomaly event (with cooldown + session cap + detail truncation). Safe in any
+   * environment; enqueues for exit beacon when baseUrl is unavailable.
+   *
+   * `ctx` overrides the live device context, and exists for exactly one caller: the crash sentinel,
+   * which reports on the **previous** session during the next startup. Snapshotting the current
+   * orientation/viewport there would describe the session that survived, not the one that died —
+   * and would quietly invent a "the crash happened in portrait" claim out of the reader's own
+   * post-crash screen position. The sentinel passes the dead session's persisted values instead.
+   */
+  report(type: AnomalyType, msg: string, detail?: Record<string, unknown>, ctx?: MomentContext): void {
     const now = Date.now();
     if (now - (this.lastByType[type] ?? -Infinity) < COOLDOWN_MS[type]) return; // within cooldown: discard
     if (this.sent + this.queue.length >= SESSION_CAP) return;                    // session cap reached
     this.lastByType[type] = now;
-    const ev: AnomalyEvent = { type, ts: now, msg: clip(msg, MSG_MAX) };
+    const ev: AnomalyEvent = { type, ts: now, msg: clip(msg, MSG_MAX), ...(ctx ?? momentContext()) };
     if (detail) ev.detail = stringifyDetail(detail);
     this.queue.push(ev);
     this.scheduleFlush();
@@ -102,7 +137,7 @@ class AnomalyReporter {
       await fetch(`${base}${ENDPOINT}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), buildVersion: readBuildVersion(), events }),
+        body: envelope(events),
         keepalive: true,
         credentials: 'omit', // telemetry is unauthenticated (publicId in body); no cookies → cross-origin CORS needs no ACAC
       });
@@ -130,7 +165,7 @@ class AnomalyReporter {
     }));
     const events = this.queue.splice(0, this.queue.length).concat(crumbs);
     this.sent += events.length;
-    const body = JSON.stringify({ publicId: readPublicId() ?? undefined, platform: platformName(), buildVersion: readBuildVersion(), events });
+    const body = envelope(events);
     const url = `${base}${ENDPOINT}`;
     try { void fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true, credentials: 'omit' }); } catch { /* swallow */ }
   }
@@ -139,6 +174,6 @@ class AnomalyReporter {
 export const anomalyReporter = new AnomalyReporter();
 
 /** Report a single anomaly event (unified entry point for MemoryMonitor / PerfMonitor / watchdog / error hooks). */
-export function reportAnomaly(type: AnomalyType, msg: string, detail?: Record<string, unknown>): void {
-  anomalyReporter.report(type, msg, detail);
+export function reportAnomaly(type: AnomalyType, msg: string, detail?: Record<string, unknown>, ctx?: MomentContext): void {
+  anomalyReporter.report(type, msg, detail, ctx);
 }
