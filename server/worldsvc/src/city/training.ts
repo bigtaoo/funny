@@ -212,21 +212,49 @@ export class CityTrainingService {
       const queue = doc.trainingQueue ?? [];
       const done = queue.filter((e) => e.completeAt <= t);
       if (done.length === 0) continue;
-      const remaining = queue.filter((e) => e.completeAt > t);
-      const troopsReady = done.reduce((s, e) => s + e.qty, 0);
-      const newTroops = Math.min(doc.troopCap, doc.troops + troopsReady);
-      // Atomic: $inc troops + remove completed batches (matched precisely by completeAt)
-      for (const e of done) {
-        await cols.playerWorld.updateOne(
-          { _id: doc._id },
-          { $pull: { trainingQueue: { completeAt: e.completeAt } } as never },
-        );
-      }
-      const tq = trainingQueueOps(remaining);
-      await cols.playerWorld.updateOne(
-        { _id: doc._id },
-        { $set: { troops: newTroops, ...tq.set }, $inc: { rev: 1 }, ...(Object.keys(tq.unset).length ? { $unset: tq.unset } : {}) },
-      );
+      // 2026-08-24 (troop-duplication fix): credit + dequeue in ONE aggregation-pipeline update, computed
+      // entirely from the LIVE document instead of the `docs` snapshot read above.
+      //
+      // The previous shape — an N-way `$pull` loop followed by `$set: { troops: <snapshot-derived absolute> }`
+      // with only `_id` in the filter — was this collection's most exploitable race. `newTroops` came from
+      // `doc.troops`, read at the top of the tick, before the buff catch-up write loop above and before one
+      // `$pull` round-trip per completed batch; any `$inc: { troops: -n }` landing in that window (startMarch,
+      // distributeTroops, occupyTile) was silently reverted by the absolute `$set` — the troops came back while
+      // the march was already out. Duplication, on a window that recurs every 2s at a moment the player can
+      // predict to the second off their own queue countdown. The stale `remaining` array carried a second,
+      // quieter failure: a batch queued by a concurrent trainTroops in the same window was dropped from the
+      // derived `nextTrainingCompleteAt` mirror (or the mirror was `$unset` outright), stranding it — invisible
+      // to this indexed due-scan until the player happened to touch the queue again.
+      //
+      // Both vanish by never round-tripping the values through this process: `$filter` dequeues by the same
+      // `completeAt <= t` predicate the snapshot used, the credited quantity is `$sum`med from the entries that
+      // filter actually removes, the clamp reads the live `$troopCap` (so a concurrent drillYard upgrade is
+      // honoured too), and the mirror is derived from the post-filter array. One atomic document update: no
+      // intermediate state, no filter guard needed — and other writers' `$inc` deltas now survive, because this
+      // write no longer carries an absolute value for anything.
+      //
+      // Pipeline updates (Mongo 4.2+) are a new idiom in this repo — they stay inside its "single-document CAS,
+      // no cross-collection transactions" convention (see combatSiege/transfer.ts), which is what makes the
+      // dropped guard safe rather than merely cheaper.
+      const dueEntries = { $filter: { input: { $ifNull: ['$trainingQueue', []] }, as: 'e', cond: { $lte: ['$$e.completeAt', t] } } };
+      const keptEntries = { $filter: { input: { $ifNull: ['$trainingQueue', []] }, as: 'e', cond: { $gt: ['$$e.completeAt', t] } } };
+      await cols.playerWorld.updateOne({ _id: doc._id }, [
+        {
+          $set: {
+            troops: { $min: ['$troopCap', { $add: ['$troops', { $sum: { $map: { input: dueEntries, as: 'e', in: '$$e.qty' } } }] }] },
+            trainingQueue: keptEntries,
+          },
+        },
+        {
+          // Second stage so both expressions below read stage 1's already-filtered queue. `$$REMOVE` rather than
+          // null keeps the partial index's `$exists` predicate honest: a null would still be indexed *and* would
+          // still match the `{ $lte: t }` due-scan every tick (null sorts below numbers in BSON order).
+          $set: {
+            nextTrainingCompleteAt: { $cond: [{ $gt: [{ $size: '$trainingQueue' }, 0] }, { $min: '$trainingQueue.completeAt' }, '$$REMOVE'] },
+            rev: { $add: ['$rev', 1] },
+          },
+        },
+      ]);
       n += done.length;
     }
     return n;

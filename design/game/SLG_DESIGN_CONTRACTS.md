@@ -137,6 +137,12 @@
 ### 14.3 Mongo 集合（worldsvc 库，权威）
 
 > 写型沿用单文档原子 + `rev` 乐观锁（META_DESIGN §6.3）。
+>
+> **`playerWorld` 两条硬不变量（2026-08-24 并发审计后补录，违反过 6 处）**：
+> 1. **改 `yieldRate` ⇒ 同一次原子写里按旧费率结算 `resources` 并推进 `lastTickAt`。** 惰性结算算的是 `resources + yieldRate × (now − lastTickAt)`，只改其中一个就会丢产出（推进锚点不结算）或按新费率追溯重算整段未结算窗口（改费率不推进锚点）。
+> 2. **反之，不改上述三者之一的写不该顺手落盘 settle。** `settle()` 是读时惰性的（`getMe` 每次重算），落盘只有在「改 `yieldRate` / 改 `buildings`（容量上限）/ 花资源」时才必要；多余的落盘既要靠 `rev` 守卫护着陈旧快照（进而在 2s 调度 tick 的 rev bump 下频繁抛 `REV_CONFLICT` 给玩家），又因为多夹一次上限而略微亏玩家。
+>
+> 需要在库内结算时用 `core/yield.ts::settleExpr()`（`settle()` 的聚合管道孪生体）而不是"读快照→算→`$set` 绝对值"——后者是本集合全部已知 lost-update 的共同形状。
 
 | 集合 | `_id` | 关键字段 | 索引 |
 |---|---|---|---|
@@ -263,7 +269,9 @@ GET  /world/season                  当前赛季/重置时间/大比状态
 - **U10 防守 config 旋钮接引擎 ✅（2026-06-18）**：三组新旋钮已完整落地——①**garrison（驻军单位）**：`LevelDefinition.garrison[]`（unitType/col/row），siege 模式下构造期在 Top 侧指定行列预置兵，首 tick `emitInitialEvents` 发 `unit_spawned`+`unit_move_start` 事件，单位随即按正常移动系统向 Bottom 行进；②**defenderBuildings（防守建筑）**：`LevelDefinition.defenderBuildings[]`（buildingType/col），放在 `TOP_BUILDING_ROW=17`，首 tick 发 `building_placed(owner=1)` 事件，ArrowTower/Barracks 即刻生效（射程攻击/生产单位）；③**defenderBaseLevel（基地强化）**：`LevelDefinition.defenderBaseLevel`（`0..BASE_UPGRADE_COSTS.length`，2026-07-11 天梯改动后为 0–2），直接设 `topPlayer.upgradeLevel`（跳过 ink 消耗），影响 ink 回复加成。`levelSchema` 三字段全部验证（unitType/buildingType/lane 合法性 + baseLevel 范围随 `BASE_UPGRADE_COSTS.length` 联动）；**天梯红线不动**（仅在 siege 路径生效，pvp/netplay 无 level）；31 新单测全绿；265 全量回归全绿。**遗留一致性修复（2026-07-15）**：`shared/src/slg/siege.ts` 的 `clampBaseLevel()` 在 2026-07-11 那次改动（4级砍3级）后仍硬编码 `Math.min(3,…)`，未跟随 `BASE_UPGRADE_COSTS.length`（=2）同步，导致 tileLevel≥4 的高等级据点攻城会派生非法 `defenderBaseLevel=3` 被 `levelSchema` 拒绝；已改为硬编码 `2` 并加注释标注需与 `engine/campaign/levelSchema.ts` 的 `MAX_BASE_LEVEL` 保持同步（两包无跨包依赖，无法直接 import 常量）。
 - **U11 视区订阅推送扇出**：300-500 人地图 `tile_update`/`march_update` 风暴，需节流/聚合（P9 订阅模型的规模化）；密集首府区域尤需注意。（原文按 1 万人量级写，已随 U4 复核降级，风险等级相应降低但机制仍需做）
 - **U12 worldsvc 单点 march 调度**：ZSET 到点消费是单点；300-500 人规模下压力显著小于原 1 万人估算，前期单进程可接受，暂不需要选主/分片。
-- **U13 多步原子性**：占地/丢地改 `yieldRate` 与读时惰性结算的并发（rev 守卫够不够）；拍卖成交（扣卖方挂存 + 给买方 + 抽税）的跨文档幂等与回滚；门主被打全宗门资源 -50% 的大规模写操作原子性。
+- **U13 多步原子性 — 前半已查清并修复（2026-08-24），后半仍开放**：
+  - **"占地/丢地改 `yieldRate` 与读时惰性结算的并发（rev 守卫够不够）"→ 答案是：守卫不是重点，写的形状才是。** 全量审计 45 个 `playerWorld` 写入点后定案两条硬不变量（见 §14.3），并修了 4 类问题：训练落地的兵力复制（`$set` 绝对值 + 无守卫 + 中间有 await，可被玩家稳定利用）、6 处 `yieldRate`/settle 不变量破绽、`startMarch` 那次**多余**的 settle 落盘（删除而非加重试——它是玩家可见 `REV_CONFLICT` 的主要来源）、`relocateBase` 收尾写改无条件（避免"已扣费 + 已搬家 + `mainBaseTile` 悬空"）。同时引入库内结算表达式 `settleExpr`，本库首次使用聚合管道 update。细节见 [`claudedocs/server.md`](../../claudedocs/server.md) "SLG worldsvc 要点"。
+  - **仍开放**：其余 20 处无守卫写入的逐个定性；`resources` 上 `$set` 绝对值与 `$inc` 增量混用（前者会抹掉后者刚落地的退款）；拍卖成交（扣卖方挂存 + 给买方 + 抽税）的跨文档幂等与回滚；**门主被打全宗门资源 -50%（`applySectLeaderPenalty`）的大规模写操作原子性——它正是那 20 处无守卫写入里的高危点之一**（对全宗门成员逐个 `settle`→`$set` 绝对值，成员数可达数十，循环末尾那几个的窗口很长）。
 - **U14 A\* 寻路性能（ADR-049 后重新提起）✅ 已确认+已修复（2026-07-27）**：地图已放大到 1500×1500，`findMarchPath` 最坏情况计算量随之上升——本条原为"监控项"，design-doc-audit-2026-07 的 econ-sim 行军疲劳核验中实测复现：**根因不是长河阻隔，而是 4 方向移动 + 精确 Manhattan 启发式在无障碍网格上对任意 (dx,dy) 都"平局"**（起止点间所有单调格路径代价相同），朴素 A* 在无平局打破策略时可能要展开接近整个 dx×dy 包围盒才能确认最优解——旧 500×500 地图最坏对角距离（~350×350≈122,500 格）安全落在 `MAX_NODES=500,000` 内从未暴露；新图上常规对角距离（如 dx=dy=600，包围盒 360,000 格）就能顶穿这个上限，导致明明可达的目标被误判 `PATH_BLOCKED`。**修复**：`server/shared/src/slg/march.ts` 的启发式加了一个极小的"叉积"平局打破偏置（偏向起止点连线，系数 `1/(2·mapW·mapH+1)`，数学上保证不会选到比最优解更长的路径），把探索量从 O(dx·dy) 降到接近 O(dx+dy)。回归测试见 `worldsvc/test/pathfinding.test.ts`「长距离对角行军」用例；详见 [`ECONOMY_VERIFICATION_LOG.md` §13-SLG-MARCH.4](ECONOMY_VERIFICATION_LOG.md)。**注**：跨 crossing（桥/栈道）未占领时仍会被正确判定为不可达（`PATH_BLOCKED`）——这是 ADR-034 的既定省份隔离设计（见 §13-SLG-MARCH.1），不受本次修复影响。
 - **U15 Voronoi 分区计算**：首府坐标固定后，Voronoi 分区可预计算并缓存（或实时算），每格 tileId 的国家归属查询路径确定（worldsvc 内存缓存 + Mongo 按需）。
 

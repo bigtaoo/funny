@@ -840,6 +840,11 @@ export const zh = {
   'world.err.pathBlocked': '无可通行路线（地形阻挡）',
   'world.err.notConnected': '目标地块须与本宗门已占领地相邻',
   'world.err.satchelCap': '队伍携带兵力超过挎包上限，请建造/升级挎包或减少该队伍兵力',
+  // REV_CONFLICT (2026-08-24): optimistic-lock miss on the player's world doc. The dispatch path that used to
+  // produce most of these no longer writes at all, but the remaining guarded spenders (shop / buildStructure /
+  // buildWatchtower) can still lose a race, and this code previously fell through to the raw English server
+  // message — "Concurrent update, please retry" — in an otherwise fully localised UI.
+  'world.err.revConflict': '状态刚刚发生变化，请重试',
   // ── Military actions / siege (C2) ────────────────────────────────────────
   'world.actAttack': '围攻',
   'world.actReinforce': '增援',

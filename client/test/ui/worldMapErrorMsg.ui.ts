@@ -64,6 +64,16 @@ describe('WorldMapNet.errorMsg — SLG error-code mapping', () => {
       .toBe(t('world.shopAlreadyActive'));
   });
 
+  it('REV_CONFLICT maps to localized copy instead of leaking the server\'s raw English retry text', () => {
+    // 2026-08-24: worldsvc throws REV_CONFLICT('Concurrent update, please retry') on an optimistic-lock miss.
+    // It had no entry in the map, so that raw English string surfaced verbatim in an otherwise fully
+    // localized toast. The dispatch path that produced most of them no longer writes to playerWorld at all,
+    // but the guarded resource spenders (shop / buildStructure / buildWatchtower) can still lose a race.
+    const mapped = net.errorMsg(new WorldApiError('REV_CONFLICT', 'Concurrent update, please retry'));
+    expect(mapped).toBe(t('world.err.revConflict'));
+    expect(mapped).not.toContain('Concurrent update');
+  });
+
   it('unmapped code falls back to the raw server message', () => {
     expect(net.errorMsg(new WorldApiError('SOME_UNMAPPED_CODE', 'raw server text')))
       .toBe('raw server text');

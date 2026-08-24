@@ -106,6 +106,10 @@ function makeCore(opts: {
     coordY: (tid: string) => Number(tid.split(':')[2]),
     marchView: (m: MarchDoc) => m as unknown as never,
     settle: (doc: PlayerWorldDoc) => ({ ...doc.resources }),
+    // 2026-08-24: the settle these services persist is now an aggregation expression evaluated by Mongo
+    // against the live document (core/yield.ts settleExpr), not a value computed here — these unit tests
+    // never reach a real server, so an empty expression object is all the call sites need.
+    settleExpr: () => ({}),
     pushMarch, pushSiege, pushTile, pushTileToObservers, bumpFamilyActivity, setOccupancy,
     removeCover: vi.fn(async () => {}),
     recomputeYield: vi.fn(async () => emptyResources()),
@@ -259,7 +263,10 @@ describe('OccupationService.writeContestedHold', () => {
 
   it('defenderId passed (a PvP capture) → recomputes + writes that account\'s yieldRate immediately', async () => {
     const { core, pwUpdateOne, recomputeYield } = (() => {
-      const built = makeCore();
+      // 2026-08-24: the defender's own doc must now be readable — the write banks their resource accrual at
+      // the OLD yieldRate in the same atomic step, and the storage cap for that settle comes from their
+      // `buildings`. (`pw` in scope inside writeContestedHold is the *attacker's* doc, so it cannot serve.)
+      const built = makeCore({ pwById: { [`${W}:${DEF}`]: pw({ accountId: DEF }) } });
       return { ...built, recomputeYield: built.core.recomputeYield as unknown as ReturnType<typeof vi.fn> };
     })();
     const svc = new OccupationService(core, fakeHelpers());
@@ -267,7 +274,7 @@ describe('OccupationService.writeContestedHold', () => {
     expect(recomputeYield).toHaveBeenCalledWith(W, DEF);
     expect(pwUpdateOne).toHaveBeenCalledWith(
       { _id: `${W}:${DEF}` },
-      expect.objectContaining({ $set: expect.objectContaining({ yieldRate: expect.anything() }) }),
+      [expect.objectContaining({ $set: expect.objectContaining({ yieldRate: expect.anything(), resources: expect.anything(), lastTickAt: 1_000 }) })],
     );
   });
 

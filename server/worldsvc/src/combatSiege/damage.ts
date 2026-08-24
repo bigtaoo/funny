@@ -128,9 +128,27 @@ export class SiegeDamageService {
         },
       );
       const atkYield = await this.core.recomputeYield(d.worldId, d.attackerId);
-      if (attacker) await cols.playerWorld.updateOne({ _id: attacker._id }, { $set: { yieldRate: atkYield, lastTickAt: t }, $inc: { rev: 1 } });
+      // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
+      // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
+      // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
+      // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
+      // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
+      if (attacker) {
+        await cols.playerWorld.updateOne({ _id: attacker._id }, [
+          { $set: { resources: this.core.settleExpr(attacker.buildings, t), yieldRate: atkYield, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+        ]);
+      }
       const defYield = await this.core.recomputeYield(d.worldId, defenderId);
-      await cols.playerWorld.updateOne({ _id: playerWorldId(d.worldId, defenderId) }, { $set: { yieldRate: defYield }, $inc: { rev: 1 } });
+      // The defender write previously set yieldRate alone — no lastTickAt, so nothing was discarded, but the
+      // whole un-settled window was then repriced at the post-loss (lower) rate: production the defender had
+      // already earned at the old rate quietly shrank. Same fix, plus the read this site needs for the cap.
+      const defPwId = playerWorldId(d.worldId, defenderId);
+      const defPwForYield = await cols.playerWorld.findOne({ _id: defPwId });
+      if (defPwForYield) {
+        await cols.playerWorld.updateOne({ _id: defPwId }, [
+          { $set: { resources: this.core.settleExpr(defPwForYield.buildings, t), yieldRate: defYield, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+        ]);
+      }
       void this.core.applyNationChange(d.worldId, tile.x, tile.y, d.attackerId, attacker?.familyId);
     }
 

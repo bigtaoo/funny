@@ -238,10 +238,25 @@ export class SiegeHelpersService {
     const spot = await this.core.pickRandomEmptyTile(worldId);
     if (!spot) {
       const yieldRate = await this.core.recomputeYield(worldId, defenderId);
-      await cols.playerWorld.updateOne(
-        { _id: pw._id },
-        { $set: { yieldRate, lastTickAt: t }, $unset: { mainBaseTile: '' }, $inc: { rev: 1 } },
-      );
+      // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
+      // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
+      // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
+      // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
+      // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
+      // Worst instance of the two: the player has just lost their capital and every tile, and the old code
+      // then silently ate whatever they had produced since their last settle. `$$REMOVE` is the pipeline
+      // spelling of the `$unset: { mainBaseTile: '' }` this replaces.
+      await cols.playerWorld.updateOne({ _id: pw._id }, [
+        {
+          $set: {
+            resources: this.core.settleExpr(pw.buildings, t),
+            yieldRate,
+            lastTickAt: t,
+            mainBaseTile: '$$REMOVE',
+            rev: { $add: ['$rev', 1] },
+          },
+        },
+      ]);
       void this.core.mail.sendSystemMail(defenderId, `slg-durability-relocate:${worldId}:${defenderId}:${t}`, {
         subject: 'slg.city.durabilityBreached.subject',
         body: 'slg.city.durabilityBreached.body',
@@ -267,10 +282,22 @@ export class SiegeHelpersService {
     );
 
     const yieldRate = await this.core.recomputeYield(worldId, defenderId);
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
-      { $set: { yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
-    );
+    // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
+    // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
+    // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
+    // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
+    // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
+    await cols.playerWorld.updateOne({ _id: pw._id }, [
+      {
+        $set: {
+          resources: this.core.settleExpr(pw.buildings, t),
+          yieldRate,
+          mainBaseTile: newTid,
+          lastTickAt: t,
+          rev: { $add: ['$rev', 1] },
+        },
+      },
+    ]);
     const after = await cols.tiles.findOne({ _id: newTid });
     if (after) {
       void this.core.pushTile(defenderId, after);

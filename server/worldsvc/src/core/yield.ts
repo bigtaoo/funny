@@ -40,6 +40,35 @@ export class YieldService {
     return out;
   }
 
+  /**
+   * Aggregation-pipeline twin of {@link settle} (2026-08-24): the identical accrual formula, but evaluated
+   * *inside* the update against the live document instead of from a snapshot read in this process.
+   *
+   * Every caller that persists a settle used to compute it here and `$set` the absolute result, which is only
+   * safe behind a `rev` guard — and a doc-wide `rev` guard on a document a 2s scheduler tick also writes to
+   * means the interactive command loses the race and the player eats a "Concurrent update, please retry".
+   * Reading `$resources`/`$yieldRate`/`$lastTickAt` from the document being written removes the read-modify-write
+   * window entirely, so the write commutes with every other writer and needs no guard at all.
+   *
+   * `cap` is still a literal computed from the caller's `buildings` snapshot: it only moves on a building
+   * upgrade, and a one-tick-stale cap self-corrects on the next settle. Keep this in lockstep with `settle` —
+   * same `min(cap, floor(resources + yieldRate × dtHours))`, same `?? 0` (as `$ifNull`), same `max(0, dt)`.
+   */
+  settleExpr(buildings: Partial<Record<BuildingKey, number>> | undefined, now: number): Record<string, unknown> {
+    const cap = resourceCapFor(buildings);
+    const dtHours = { $divide: [{ $max: [0, { $subtract: [now, '$lastTickAt'] }] }, 3_600_000] };
+    const out: Record<string, unknown> = {};
+    for (const rt of RESOURCE_TYPES) {
+      out[rt] = {
+        $min: [cap, { $floor: { $add: [
+          { $ifNull: ['$resources.' + rt, 0] },
+          { $multiply: [{ $ifNull: ['$yieldRate.' + rt, 0] }, dtHours] },
+        ] } }],
+      };
+    }
+    return out;
+  }
+
   /** Aggregate a list of {type,level,resType} tiles into an hourly yield record. */
   yieldRecord(
     tiles: { type: TileType; level: number; resType?: ResourceType }[],

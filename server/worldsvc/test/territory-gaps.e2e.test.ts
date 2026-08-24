@@ -331,26 +331,48 @@ describe.skipIf(!mongo)('TerritoryService branch gaps e2e', () => {
       expect(spent.length).toBe(0); // failed before spending coins
     });
 
-    it('REV_CONFLICT when the final settle write loses the race (coins already spent)', async () => {
+    // 2026-08-24: this used to assert REV_CONFLICT here, locking in a genuinely bad outcome. By the time the
+    // final write runs, the coins are spent AND the old capital's 9 tiles are deleted and the new ones
+    // written — so throwing left the account charged, its footprint physically moved, and `mainBaseTile`
+    // still pointing at a tile that no longer exists. The guard existed only because the write `$set` a
+    // snapshot-derived `resources`; settleExpr now computes that accrual from the live document, so the
+    // write carries nothing stale and lands unconditionally. Mutual exclusion between two concurrent
+    // relocations is unchanged — that is the rev CAS claim above, which still fails the loser before any
+    // coin is spent (covered by the preceding test).
+    it('final settle write lands even when a concurrent mutation bumps rev mid-relocation (no stranded spend, no dangling mainBaseTile)', async () => {
       const site = findCapitalSite(10, 10);
       await svc.joinWorld(W, 'a', site.x, site.y);
       await fund('a');
+      // fund() stores 1,000,000 per resource, far above RESOURCE_CAP (200k) — the settle clamp would swallow
+      // the injected credit below and make the no-clobber assertion vacuous. Start well under the cap.
+      await m.collections.playerWorld.updateOne(
+        { _id: playerWorldId(W, 'a') },
+        { $set: { resources: { ink: 50_000, paper: 50_000, graphite: 50_000, metal: 50_000, sticker: 50_000 }, lastTickAt: nowMs } },
+      );
+      const before = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
       const target = findCapitalSite(50, 50);
       for (const c of baseFootprintCells(target.x, target.y)) await svc.occupyTile(W, 'a', c.x, c.y);
-      // First updateOne call is the rev-claim (must succeed); the second is the final settle (force-fail it).
+
+      // First updateOne call is the rev-claim; land a concurrent credit right after it, i.e. inside the
+      // window the old rev guard used to fail on.
       const realUpdateOne = m.collections.playerWorld.updateOne.bind(m.collections.playerWorld);
       let call = 0;
       const spy2 = vi.spyOn(m.collections.playerWorld, 'updateOne').mockImplementation(async (...args: Parameters<typeof realUpdateOne>) => {
         call++;
-        if (call === 2) return { matchedCount: 0 } as never;
+        if (call === 2) await realUpdateOne({ _id: playerWorldId(W, 'a') }, { $inc: { 'resources.ink': 7_777, rev: 1 } } as never);
         return realUpdateOne(...args);
       });
       try {
-        await expect(svc.relocateBase(W, 'a', target.x, target.y)).rejects.toMatchObject({ code: 'REV_CONFLICT' });
+        const after = await svc.relocateBase(W, 'a', target.x, target.y);
+        expect(after.mainBaseTile).toBe(tileId(W, target.x, target.y));
       } finally {
         spy2.mockRestore();
       }
-      expect(spent.length).toBe(1); // coins already spent before the losing write
+      expect(spent.length).toBe(1);
+      const doc = await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') });
+      expect(doc!.mainBaseTile).toBe(tileId(W, target.x, target.y)); // persisted, not just returned
+      // The concurrent credit survived the settle — settleExpr read it from the live document.
+      expect(doc!.resources.ink).toBeGreaterThanOrEqual(before!.resources.ink + 7_777);
     });
   });
 
