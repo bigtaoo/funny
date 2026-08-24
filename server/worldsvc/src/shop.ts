@@ -125,13 +125,19 @@ export class ShopService {
           const durSec = Number(item.effect['duration_sec'] ?? 0);
           const baseId = fresh.mainBaseTile;
           if (baseId) {
-            const existingProtection = await cols.tiles.findOne({ _id: baseId });
-            const currentProtectUntil = existingProtection?.protectedUntil ?? t;
-            const newProtectUntil = Math.max(currentProtectUntil, t) + durSec * 1000;
-            await cols.tiles.updateOne(
-              { _id: baseId },
-              { $set: { protectedUntil: newProtectUntil }, $inc: { rev: 1 } },
-            );
+            // 2026-08-24 (tiles sweep): the stacked end-time used to be computed from a `findOne` two lines up
+            // and blind-`$set`. Sequential purchases were always fine (each re-read saw the previous result) —
+            // the exposure is two requests genuinely in flight together, which for a shield bought during an
+            // incoming siege is exactly when a player buys one: both are charged, only one extension applies.
+            // The same max-then-add, evaluated against the live document, makes the purchases commute.
+            await cols.tiles.updateOne({ _id: baseId }, [
+              {
+                $set: {
+                  protectedUntil: { $add: [{ $max: [{ $ifNull: ['$protectedUntil', t] }, t] }, durSec * 1000] },
+                  rev: { $add: ['$rev', 1] },
+                },
+              },
+            ]);
           }
         }
       } else {

@@ -130,6 +130,17 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
   - **仍然开放的一处，明确不在并发扫尾范围内**：`city/teams.ts::distributeTroops` 对 `cardState.<id>.currentTroops` 做 `$inc`，但**没有"这张卡是否正在外征战"的门禁**——分兵若落在某次战斗结算的读与写之间，会被结算的 `newTroops` 覆盖，玩家白掉从池子里付出去的兵。之所以不在这轮动：①窗口是单次结算写入内部的几毫秒，不是被修那批的 2s 级窗口；②要正确关掉它，要么禁止给出征中的卡分兵（这是玩法规则，不是并发修复），要么把结算改成"扣损失"的 `$inc`——但 `newTroops` 是对出战兵力乘存活率、不是减法，改了就是改战斗数值。两者都该单独拍板。
   - **回归测试**：`worldsvc/test/playerworld-unguarded-writes.e2e.test.ts`（真 Mongo，7 例）。每例都在"读与写之间"确定性地注入一次真实的 `$inc` 增量再断言它存活；其中 4 例已验证在修复前的代码上失败（`expected 50000 to be 57777`，即增量被覆盖），catch-up 那例失败为 `length 2 but got 1`。**注意**：该文件里宗门惩罚的算术断言是从 `combatSiege-damage-helpers-gaps.test.ts` **搬过来的**——结算移进管道后，本进程内的 mock 再也观察不到那个数字，原处只保留"交给 Mongo 的 scale 是否正确 + 是否走管道"的形状断言。这是覆盖率的净增强（原断言验的是 mock 上由本进程算出的算术），但**以后凡是把算术移进聚合管道，都必须同步把数值断言迁到真 Mongo 的 e2e，否则等于静默删掉覆盖**。
 
+- **`tiles` 扫尾 + cardState 改扣损失 + 两个新防腐设施（2026-08-24 第三轮，收口）**：前两轮只扫了 `playerWorld`；`tiles` 有同样的 `$set` 绝对值 / `$inc` 增量混用。19 个写入点逐个定性，改了 5 处：
+  - `combatSiege/arrival/landSiege.ts` 两处（守方胜的 `garrison`、结构 chip 的 `structure.hp` + 驻军清空）→ 改成持久化**伤亡/削减量**并 `$max: [0, …]` 夹底。`garrison` 是 `troops` 的翻版：增援到达走 `$inc`（`combatMarch/arrival.ts`），攻城结算原先写绝对值。
+  - `shop.ts` 保护罩叠加 → 管道 `$max` 后 `$add`，两次并发购买可交换（原先都扣钱、只生效一次）。
+  - `combatSiege/damage.ts` 的存活 HP 写入、`city/buildings.ts` 的墙升级 durability 重设 → **rev CAS + 有界重试**，不是管道：值不是文档的纯函数（`maxHp` 来自守方墙等级、base 分支还要折进 `regenDurability`），而"重读后重算"恰恰是正确语义。
+  - **cardState 改扣损失（用户拍板：允许给出征中的卡分兵）**：四处战斗结算不再写绝对存活数，改为持久化每卡**损失**（新 `cardStateSettlement.ts` 的 `cardStateDeltaPipeline`）。**无并发时 `deployed - losses` 恰等于 `newTroops`，结果逐位相同**；只有并发增兵时才有差异——那次增兵会完整存活而不是被抹掉。
+  - **两个新的防腐设施**（本轮真正的长期价值）：
+    - `worldsvc/test/settle-expr-parity.e2e.test.ts`（12 例）把 `settle()` 和 `settleExpr()` 同输入对跑、要求逐位相等，覆盖夹取 / dt≤0 / 缺字段 / 超上限 / cabinet 抬高上限 / `scale`。此前"必须同步"只写在注释里、**没有任何东西强制**。变异验证：移除 `settleExpr` 的上限夹取 → 4 例立刻失败。
+    - `server/scripts/checkAbsoluteWrites.mjs`（`npm run check:absolutewrites`，已接入 ci.yml）把本轮判据变成 gate：`playerWorld`/`tiles` 上任何 `$set` 运行总量的写入，必须是 delta 表达式或在 `ALLOWED` 里带理由。**这个脚本自己被两次修正**——先是扫注释（记录旧 `$set` 形状的说明文字把它自己绊倒了），再是把 delta 判断做在整个 `$set` 字面量上（每条管道都带 `rev: { $add: … }`，于是整块被豁免，一个把 `troops` 改回绝对值的变异**没被拦住**）。现在逐字段判断、先剥注释，变异必被抓。
+  - **归因纠正（值得记住的教训）**：第一版注释和测试把 `damage.ts` 的病因写成"同一 tick 内多个攻击者互相覆盖"，测试在**修复前的代码上也通过**——因为 `processDueSiegeDamage` 是 `for … await` 顺序循环、每次迭代自己重读，同跳内本来就正确叠加。真实对手是 `scheduler.ts` 用 `Promise.allSettled` **并发**跑的五个 tick 任务（`processCompletedBuilds` 的墙升级重设 durability）以及多实例部署。修复本身是对的，错的是理由；测试改成在读写窗口内注入交错后才真正会咬人。**写并发回归测试时，"顺序调用两次"几乎从不等于"并发"。**
+  - **仍开放**：拍卖成交的跨集合幂等与回滚（唯一还剩的跨集合多步原子性，单文档 CAS 帮不上忙）。
+
 ## 经济核验工具（econ-sim，A 轨）
 
 - `server/tools/econ-sim/`（纯 TS，`import @nw/shared`，**不连库**，经济侧的 difficultySim 对应物）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`（或带场景文件参数）；`npx tsc --noEmit` 自检。

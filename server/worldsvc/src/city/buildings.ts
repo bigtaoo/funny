@@ -202,14 +202,29 @@ export class CityBuildingsService {
       const oldMax = baseDurabilityMax(buildingLevel(fresh.buildings, 'wall'));
       const newMax = baseDurabilityMax(buildingLevel(next, 'wall'));
       if (newMax !== oldMax) {
-        const tile = await cols.tiles.findOne({ _id: fresh.mainBaseTile });
-        if (tile) {
+        // 2026-08-24 (tiles sweep): rev-guarded with a bounded retry. This publishes an absolute durability
+        // derived from a snapshot read one line up, and the document it targets is the base tile — the same
+        // one processDueSiegeDamage writes. Unguarded, a wall upgrade completing while the base was under
+        // siege reverted the damage taken in between: a free heal, in the player's favour and reachable
+        // simply by queueing a wall upgrade before logging off. Retry rather than a pipeline for the same
+        // reason as the siege path: regenDurability is a shared formula and re-reading is the correct
+        // semantics (rebase the raised cap onto whatever damage now stands).
+        const MAX_TILE_ATTEMPTS = 5;
+        for (let attempt = 0; attempt < MAX_TILE_ATTEMPTS; attempt++) {
+          const tile = await cols.tiles.findOne({ _id: fresh.mainBaseTile });
+          if (!tile) break;
           const regened = regenDurability(tile.durability ?? oldMax, oldMax, tile.durabilityRegenAt ?? t, t);
           const durability = Math.min(newMax, regened + (newMax - oldMax));
-          await cols.tiles.updateOne(
-            { _id: fresh.mainBaseTile },
+          const res = await cols.tiles.updateOne(
+            { _id: fresh.mainBaseTile, rev: tile.rev },
             { $set: { durability, durabilityMax: newMax, durabilityRegenAt: t }, $inc: { rev: 1 } },
           );
+          if (res.matchedCount > 0) break;
+          if (attempt === MAX_TILE_ATTEMPTS - 1) {
+            // The cap still rises with the building level on the next hit/regen that touches the tile, so a
+            // lost race here costs the player nothing permanent — log it and move on.
+            console.error('[worldsvc] applyDueBuilds: wall durability rebase lost the rev race', { tile: fresh.mainBaseTile });
+          }
         }
       }
     }

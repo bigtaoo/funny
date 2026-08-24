@@ -449,10 +449,17 @@ describe('landSiege', () => {
     const ctx = fakeCtx();
     const target = tile({ type: 'territory', ownerId: DEF, structure: { kind: 'arrowTower', level: 1, hp: 100, hpMax: 100, ownerId: DEF, builtAt: 0 } as never });
     await landSiege(core, ctx, march(), pw(), target, DEF, pw({ accountId: DEF }), winRes(30), 1_000, null);
-    expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
-      { $set: { 'structure.hp': 70, garrison: 0 }, $inc: { rev: 1 } },
-    );
+    // 2026-08-24: the chip and the garrison wipe are persisted as deltas now (a reinforce landing in the
+    // window must survive), so the 100 → 70 arithmetic reads as "subtract the 30 surviving attackers".
+    expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, [
+      {
+        $set: {
+          'structure.hp': { $subtract: [{ $ifNull: ['$structure.hp', 100] }, 30] },
+          garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 0] }] }, // fixture garrison is 0
+          rev: { $add: ['$rev', 1] },
+        },
+      },
+    ]);
     expect(ctx.writeContestedHold).not.toHaveBeenCalled();
   });
 
@@ -488,7 +495,17 @@ describe('landSiege', () => {
     const attacker = pw({ cardState: { c1: { currentTroops: 40 } } as never });
     const res: SiegeResolution = { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 12, attackerDeployed: 0, defenderDeployed: 12 };
     await landSiege(core, ctx, m, attacker, target, DEF, pw({ accountId: DEF }), res, 1_000, null);
-    expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, { $set: { garrison: 12 }, $inc: { rev: 1 } });
+    // 2026-08-24: persisted as casualties rather than "set to survivors", so a reinforce arriving in the
+    // same processDueArrivals tick is no longer erased. The fixture tile starts at garrison 0 and the
+    // resolution reports 12 survivors, so the clamped loss is 0 — nothing to deduct.
+    expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, [
+      {
+        $set: {
+          garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 0] }] },
+          rev: { $add: ['$rev', 1] },
+        },
+      },
+    ]);
     // hasCardArmy alone (attackerSurvivors=0) still triggers the return leg → playerWorld touched at least once.
     expect(pwUpdateOne.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
@@ -508,8 +525,11 @@ describe('landSiege', () => {
     const m = march({ army: [{ cardInstanceId: 'c1', col: 0, row: 0 }] as never });
     const attacker = pw({ cardState: { c1: { currentTroops: 50 } } as never });
     await landSiege(core, ctx, m, attacker, target, DEF, pw({ accountId: DEF }), winRes(50), 1_000, null);
-    const cardWrite = pwUpdateOne.mock.calls.find(([, args]) =>
-      Object.keys((args as { $set: Record<string, unknown> }).$set).some((k) => k.startsWith('cardState.')));
+    // 2026-08-24: cardState settlements are delta pipelines, so the dotted paths live in stage 0's $set.
+    const cardWrite = pwUpdateOne.mock.calls.find(([, args]) => {
+      const stage = Array.isArray(args) ? (args as { $set?: Record<string, unknown> }[])[0] : (args as { $set?: Record<string, unknown> });
+      return Object.keys(stage?.$set ?? {}).some((k) => k.startsWith('cardState.'));
+    });
     expect(cardWrite).toBeDefined();
   });
 

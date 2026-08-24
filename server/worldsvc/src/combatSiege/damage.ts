@@ -76,10 +76,47 @@ export class SiegeDamageService {
 
     if (newHp > 0) {
       // Building survives: reduce HP (durability for a base, plain hp otherwise); besiegers return to the pool.
-      const survivorSet = d.isBase
-        ? { durability: newHp, durabilityMax: maxHp, durabilityRegenAt: t }
-        : { hp: newHp };
-      await cols.tiles.updateOne({ _id: d.tile }, { $set: survivorSet, $inc: { rev: 1 } });
+      //
+      // 2026-08-24 (tiles sweep): this was a blind `$set` of an absolute HP computed from the `tile` snapshot
+      // read at the top of this method.
+      //
+      // NOT, as a first pass at this claimed, a race between besiegers of the same building: the loop above is
+      // `for … await` and each `settleSiegeDamage` re-reads the tile, so hits within one tick already stack
+      // correctly. The real exposure is across the FIVE tick tasks `scheduler.ts` fires concurrently under
+      // `Promise.allSettled` — `processCompletedBuilds` rebases `durability`/`durabilityMax` when a wall
+      // upgrade completes, and interleaved with this write one of the two was lost: either the upgrade
+      // reverted damage taken (a free heal) or this hit undid the raised cap. Multi-instance deployment has
+      // the same shape for the besieger case too, which the sequential argument above does not cover.
+      //
+      // A rev CAS with a bounded retry, not a pipeline: the value is not a pure function of the document
+      // (`maxHp` comes from the defender's wall level and the base branch folds in `regenDurability`), and
+      // recomputing against a fresh read is exactly the right semantics — whatever landed in between is now
+      // visible and this hit applies on top of it. Scheduler path, so exhausting the attempts logs and drops
+      // the hit rather than surfacing anything to a player.
+      const MAX_ATTEMPTS = 5;
+      let curTile = tile;
+      let landed = false;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const attemptMaxHp = d.isBase ? maxHp : buildingMaxHp(curTile.level ?? 1);
+        const rawHp = d.isBase ? (curTile.durability ?? attemptMaxHp) : (curTile.hp ?? attemptMaxHp);
+        const hpNow = d.isBase ? regenDurability(rawHp, attemptMaxHp, curTile.durabilityRegenAt ?? t, t) : rawHp;
+        const hpAfter = hpNow - Math.max(0, Math.floor(d.damage));
+        // A concurrent hit may have already taken the building below zero; that hit owns the capture, so
+        // stop here rather than writing a negative HP or racing it for the hand-over.
+        if (hpAfter <= 0) return;
+        const set = d.isBase
+          ? { durability: hpAfter, durabilityMax: attemptMaxHp, durabilityRegenAt: t }
+          : { hp: hpAfter };
+        const res = await cols.tiles.updateOne({ _id: d.tile, rev: curTile.rev }, { $set: set, $inc: { rev: 1 } });
+        if (res.matchedCount > 0) { landed = true; break; }
+        const fresh = await cols.tiles.findOne({ _id: d.tile });
+        if (!fresh) return; // tile gone (captured/abandoned under us) — nothing left to damage
+        curTile = fresh;
+      }
+      if (!landed) {
+        console.error('[worldsvc] settleSiegeDamage: HP write lost the rev race every attempt', { tile: d.tile });
+        return;
+      }
       if (attacker && d.attackerSurvivors > 0) {
         await startReturnMarch(this.core, {
           worldId: d.worldId, ownerId: d.attackerId, fromTile: d.tile,

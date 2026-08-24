@@ -221,8 +221,13 @@ describe('OccupationService.applyOccupy — real battle outcome (forced cheap vi
     await svc.applyOccupy(m, p, 1_000);
     // writeOccupyCardState's cardState write + writeContestedHold's tile write both touch playerWorld/tiles;
     // specifically assert at least one playerWorld write happened for the cardState update.
-    const cardWrite = pwUpdateOne.mock.calls.find(([, args]) =>
-      Object.keys((args as { $set?: Record<string, unknown> }).$set ?? {}).some((k) => k.startsWith('cardState.')));
+    // 2026-08-24: cardState settlements are delta pipelines, so the dotted paths live in stage 0's $set.
+    const cardWrite = pwUpdateOne.mock.calls.find(([, args]) => {
+      const stage = Array.isArray(args)
+        ? (args as { $set?: Record<string, unknown> }[])[0]
+        : (args as { $set?: Record<string, unknown> });
+      return Object.keys(stage?.$set ?? {}).some((k) => k.startsWith('cardState.'));
+    });
     expect(cardWrite).toBeDefined();
   });
 });

@@ -17,7 +17,7 @@ import {
   type SiegeOutcome,
   type SiegeResolution,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, computeCardStateUpdates, shouldUseCheapSiege } from '../../siegeEngine';
+import { runSiegeBattle, synthesizeArmy, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, computeCardStateUpdates, cardStateDeltaPipeline, shouldUseCheapSiege } from '../../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDamageDoc } from '../../db';
 import { lootSummary, emptyResources } from '../../core';
@@ -165,14 +165,11 @@ export async function applyBaseSiege(
     const cardUpdates = computeCardStateUpdates(
       attackArmy, pw.cardState ?? {}, Math.round(nominalDeployed * cumSurvivalRatio), t, nominalDeployed,
     );
-    const cardStateSet: Record<string, unknown> = {};
-    for (const [id, update] of Object.entries(cardUpdates)) {
-      cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-      cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
-    }
-    if (Object.keys(cardStateSet).length > 0) {
-      await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-    }
+    // 2026-08-24: persist the battle's per-card LOSS, not an absolute survivor count — see
+    // cardStateDeltaPipeline. Identical result with no concurrent write; a distributeTroops top-up that does
+    // land in the window now survives instead of being erased.
+    const cardPipeline = cardStateDeltaPipeline(cardUpdates);
+    if (cardPipeline.length > 0) await cols.playerWorld.updateOne({ _id: pw._id }, cardPipeline);
   }
 
   if (cleared) {

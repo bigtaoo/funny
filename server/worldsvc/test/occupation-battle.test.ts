@@ -9,7 +9,7 @@
 // same style as get-teams-card-lookup.test.ts / siege-cheap-fallback.test.ts.
 import { describe, expect, it, vi } from 'vitest';
 import { resolveSiege, npcBaseHp, siegeSeedFromId, moraleCombatMultiplier, MARCH_MORALE_MAX, SIEGE_CHEAP_RATIO, CARD_BASE_SURVIVAL, CARD_INJURY_DURATION_MS } from '@nw/shared';
-import { synthesizeArmy, sumArmyHp, computeCardStateUpdates } from '../src/siegeEngine';
+import { synthesizeArmy, sumArmyHp, computeCardStateUpdates, cardStateDeltaPipeline } from '../src/siegeEngine';
 import { resolveOccupationBattle, writeOccupyCardState } from '../src/combatSiege/occupationBattle';
 import type { WorldCore } from '../src/core';
 import type { MarchDoc, PlayerWorldDoc } from '../src/db';
@@ -111,7 +111,18 @@ describe('resolveOccupationBattle', () => {
 describe('writeOccupyCardState', () => {
   const cardArmy = [{ cardInstanceId: 'c1', col: 0, row: 0 }, { cardInstanceId: 'c2', col: 1, row: 0 }] as never;
 
-  it('writes exactly the $set computeCardStateUpdates produces for a card army with deployed troops', async () => {
+  /**
+   * The loss literal the pipeline subtracts for one card. 2026-08-24: settlements persist the battle's
+   * casualties as a delta rather than an absolute survivor count (siegeEngine cardStateDeltaPipeline), so the
+   * number these tests care about moved from the `$set` value to the `$subtract` operand — still a plain
+   * literal computed in this process, so it is still directly assertable.
+   */
+  function lossFor(call: unknown, id: string): number {
+    const stage = (call as { $set: Record<string, { $max: [number, { $subtract: [unknown, number] }] }> }[])[0]!;
+    return stage.$set[`cardState.${id}.currentTroops`]!.$max[1].$subtract[1];
+  }
+
+  it('writes exactly the delta pipeline computeCardStateUpdates produces for a card army with deployed troops', async () => {
     const updateOne = vi.fn(async (..._args: unknown[]) => ({}));
     const core = fakeCore(undefined, updateOne);
     const m = march({ army: cardArmy });
@@ -121,16 +132,13 @@ describe('writeOccupyCardState', () => {
     await writeOccupyCardState(core, m, pw, survivors, nowMs);
 
     const expectedUpdates = computeCardStateUpdates(cardArmy, pw.cardState ?? {}, survivors, nowMs);
-    const expectedSet: Record<string, unknown> = {};
-    for (const [id, u] of Object.entries(expectedUpdates)) {
-      expectedSet[`cardState.${id}.currentTroops`] = u.currentTroops;
-      expectedSet[`cardState.${id}.injuredUntil`] = u.injuredUntil ?? null;
-    }
     expect(updateOne).toHaveBeenCalledTimes(1);
-    expect(updateOne).toHaveBeenCalledWith(
-      { _id: pw._id },
-      { $set: expectedSet, $inc: { rev: 1 } },
-    );
+    // Asserting against the shared builder pins the call site to it, so a site that hand-rolled its own
+    // (absolute) write again would fail here rather than quietly diverging.
+    expect(updateOne).toHaveBeenCalledWith({ _id: pw._id }, cardStateDeltaPipeline(expectedUpdates));
+    // And the deltas are the battle's actual casualties: 40+60 deployed, 50 survivors → 50% survival.
+    expect(lossFor(updateOne.mock.calls[0]![1], 'c1')).toBe(20); // 40 → 20
+    expect(lossFor(updateOne.mock.calls[0]![1], 'c2')).toBe(30); // 60 → 30
   });
 
   it('a flat (non-card) army never writes cardState — computeCardStateUpdates returns empty, no-op', async () => {
@@ -159,9 +167,10 @@ describe('writeOccupyCardState', () => {
     // capacity clamp) and brought 150 of those home: the team kept 75% of its strength, not 30%.
     const pw = playerWorld({ cardState: { c1: { currentTroops: 200 }, c2: { currentTroops: 300 } } as never });
     await writeOccupyCardState(core, m, pw, /* survivors */ 150, 1_700_000_000_000, /* deployed */ 200);
-    const set = (updateOne.mock.calls[0]![1] as { $set: Record<string, number> }).$set;
-    expect(set['cardState.c1.currentTroops']).toBe(150); // 200 × 0.75
-    expect(set['cardState.c2.currentTroops']).toBe(225); // 300 × 0.75
+    // Same arithmetic as before the delta switch, stated as the casualties instead of the survivors:
+    // 200 × 0.75 = 150 kept → 50 lost; 300 × 0.75 = 225 kept → 75 lost.
+    expect(lossFor(updateOne.mock.calls[0]![1], 'c1')).toBe(50);
+    expect(lossFor(updateOne.mock.calls[0]![1], 'c2')).toBe(75);
   });
 });
 
