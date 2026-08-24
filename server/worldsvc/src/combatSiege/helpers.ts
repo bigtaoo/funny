@@ -202,13 +202,17 @@ export class SiegeHelpersService {
     if (famIds.length === 0) return;
     const members = await cols.playerWorld.find({ worldId, familyId: { $in: famIds } }).toArray();
     const keep = 1 - SECT_LEADER_PENALTY_RATE;
+    // 2026-08-24 (unguarded-write sweep): the worst-shaped write of the batch. It settled each member in
+    // JS, scaled the result, and blind-`$set` the absolute figure with only `_id` in the filter — inside a
+    // sequential loop over every member of every family in the sect. The members are all read up front, so
+    // the staleness window for the last member spans every preceding member's write; on a large sect that
+    // is a long time for a concurrent purchase, refund or settlement to be silently rolled back. Doing the
+    // settle-and-scale inside the update (settleExpr's `scale`) makes each write depend only on that
+    // member's own live document, so the loop length stops mattering.
     for (const mm of members) {
-      const resources = this.core.settle(mm, t);
-      for (const rt of RESOURCE_TYPES) resources[rt] = Math.floor((resources[rt] ?? 0) * keep);
-      await cols.playerWorld.updateOne(
-        { _id: mm._id },
-        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-      );
+      await cols.playerWorld.updateOne({ _id: mm._id }, [
+        { $set: { resources: this.core.settleExpr(mm.buildings, t, keep), lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+      ]);
     }
   }
 
@@ -238,10 +242,25 @@ export class SiegeHelpersService {
     const spot = await this.core.pickRandomEmptyTile(worldId);
     if (!spot) {
       const yieldRate = await this.core.recomputeYield(worldId, defenderId);
-      await cols.playerWorld.updateOne(
-        { _id: pw._id },
-        { $set: { yieldRate, lastTickAt: t }, $unset: { mainBaseTile: '' }, $inc: { rev: 1 } },
-      );
+      // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
+      // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
+      // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
+      // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
+      // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
+      // Worst instance of the two: the player has just lost their capital and every tile, and the old code
+      // then silently ate whatever they had produced since their last settle. `$$REMOVE` is the pipeline
+      // spelling of the `$unset: { mainBaseTile: '' }` this replaces.
+      await cols.playerWorld.updateOne({ _id: pw._id }, [
+        {
+          $set: {
+            resources: this.core.settleExpr(pw.buildings, t),
+            yieldRate,
+            lastTickAt: t,
+            mainBaseTile: '$$REMOVE',
+            rev: { $add: ['$rev', 1] },
+          },
+        },
+      ]);
       void this.core.mail.sendSystemMail(defenderId, `slg-durability-relocate:${worldId}:${defenderId}:${t}`, {
         subject: 'slg.city.durabilityBreached.subject',
         body: 'slg.city.durabilityBreached.body',
@@ -267,10 +286,22 @@ export class SiegeHelpersService {
     );
 
     const yieldRate = await this.core.recomputeYield(worldId, defenderId);
-    await cols.playerWorld.updateOne(
-      { _id: pw._id },
-      { $set: { yieldRate, mainBaseTile: newTid, lastTickAt: t }, $inc: { rev: 1 } },
-    );
+    // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
+    // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
+    // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
+    // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
+    // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
+    await cols.playerWorld.updateOne({ _id: pw._id }, [
+      {
+        $set: {
+          resources: this.core.settleExpr(pw.buildings, t),
+          yieldRate,
+          mainBaseTile: newTid,
+          lastTickAt: t,
+          rev: { $add: ['$rev', 1] },
+        },
+      },
+    ]);
     const after = await cols.tiles.findOne({ _id: newTid });
     if (after) {
       void this.core.pushTile(defenderId, after);

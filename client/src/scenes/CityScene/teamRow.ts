@@ -144,8 +144,11 @@ export function renderTeamCard(
     const artSize = Math.min(cardH - pad * 2, 76);
     const ax = x + cardW - pad - artSize;
     const ay = y + (cardH - artSize) / 2;
+    // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the team card behind is
+    // already the one background layer, this frame is a stroke-only gold outline.
     const frame = sketchPanel(artSize, artSize, {
       fill: 0xf0eee7,
+      fillAlpha: 0,
       border: C.gold,
       width: 1.6,
       seed: seedFor(ax, ay, artSize),

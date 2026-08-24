@@ -62,7 +62,15 @@ export function buildLokiPayload(
 // ── Client anomaly events reported in full → Loki (parallel and complementary to the targeted log collection above; not subject to allowPublicIds) ──
 //
 // Loki ingestion convention: labels are only { source="client", kind="anomaly" } (low cardinality);
-// type/publicId/platform/detail/msg are all placed **inline** (logfmt). Grafana: `{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`.
+// type/publicId/platform/device/dpr/mem/buildVersion/orient/vp/sinceRot/detail/msg are all placed
+// **inline** (logfmt). Grafana: `{source="client",kind="anomaly"} | logfmt | type="webgl_lost"`.
+//
+// The device/orient/vp/sinceRot group was added 2026-08-24. Before it, `platform` (a BUILD TARGET —
+// web | wechat | crazygames) was the only reporter attribute, so a phone and a desktop browser were
+// indistinguishable in Loki and "it only crashes on mobile" was an unfalsifiable claim. Rotation-time
+// failures were doubly invisible, orientation never having been recorded at all. Useful queries now:
+//   {source="client",kind="anomaly"} | logfmt | device="phone"                     — mobile only
+//   {source="client",kind="anomaly"} | logfmt | type="crash" | sinceRot < 2000      — died just after a rotate
 
 /** A single client anomaly event (same shape as AnomalyEvent in the client-side net/anomaly.ts). */
 export interface ClientAnomalyEvent {
@@ -70,17 +78,46 @@ export interface ClientAnomalyEvent {
   msg: string;
   ts: number; // epoch ms (client clock)
   detail?: string;
+  // Moment-level device context (client net/anomaly/deviceContext.ts). Per-event rather than per-batch
+  // because they change within one batch's debounce window — a crash report describes the orientation
+  // of the session that DIED, while a jserror queued alongside it describes the live one.
+  orient?: string;   // portrait | landscape
+  vp?: string;       // viewport as WxH in CSS px
+  sinceRot?: number; // ms since the last orientation flip; absent when the session never rotated
+}
+
+/** Session-stable reporter envelope, stamped onto every line of the batch. */
+export interface ClientAnomalySession {
+  platform?: string;     // build target: web | wechat | crazygames
+  buildVersion?: string;
+  device?: string;       // phone | tablet | desktop | unknown — the hardware bucket `platform` never carried
+  dpr?: number;
+  mem?: number;          // approximate device RAM in GB (Chromium only)
 }
 
 /** Allowlist of anomaly types accepted into Loki (prevents clients from injecting arbitrary types that inflate inline cardinality or mislead queries). */
 const ALLOWED_ANOMALY_TYPES = new Set(['mem', 'cpu', 'webgl_lost', 'anr', 'jserror', 'crash']);
 
-/** Build an anomaly logfmt line: type/publicId are mandatory, platform/buildVersion/detail are optional, msg comes last. */
-function buildAnomalyLine(publicId: string, platform: string | undefined, buildVersion: string | undefined, e: ClientAnomalyEvent): string {
+/** Allowlist for the inline device bucket — same rationale as ALLOWED_ANOMALY_TYPES: this value is
+ *  client-supplied and lands inline on every line, so an unbounded string would let any client inflate
+ *  cardinality (and make `| logfmt | device="phone"` unreliable by seeding near-miss spellings). */
+const ALLOWED_DEVICES = new Set(['phone', 'tablet', 'desktop', 'unknown']);
+
+/** Same for orientation: exactly two real values, anything else is dropped rather than passed through. */
+const ALLOWED_ORIENTS = new Set(['portrait', 'landscape']);
+
+/** Build an anomaly logfmt line: type/publicId are mandatory, everything else is optional, msg comes last. */
+function buildAnomalyLine(publicId: string, s: ClientAnomalySession, e: ClientAnomalyEvent): string {
   const type = ALLOWED_ANOMALY_TYPES.has(e.type) ? e.type : 'other';
   const parts = [`type=${logfmtValue(type)}`, `publicId=${logfmtValue(publicId)}`];
-  if (platform) parts.push(`platform=${logfmtValue(platform)}`);
-  if (buildVersion) parts.push(`buildVersion=${logfmtValue(buildVersion)}`);
+  if (s.platform) parts.push(`platform=${logfmtValue(s.platform)}`);
+  if (s.device && ALLOWED_DEVICES.has(s.device)) parts.push(`device=${logfmtValue(s.device)}`);
+  if (typeof s.dpr === 'number' && Number.isFinite(s.dpr)) parts.push(`dpr=${s.dpr}`);
+  if (typeof s.mem === 'number' && Number.isFinite(s.mem)) parts.push(`mem=${s.mem}`);
+  if (s.buildVersion) parts.push(`buildVersion=${logfmtValue(s.buildVersion)}`);
+  if (e.orient && ALLOWED_ORIENTS.has(e.orient)) parts.push(`orient=${logfmtValue(e.orient)}`);
+  if (e.vp) parts.push(`vp=${logfmtValue(e.vp)}`);
+  if (typeof e.sinceRot === 'number' && Number.isFinite(e.sinceRot)) parts.push(`sinceRot=${Math.round(e.sinceRot)}`);
   if (e.detail) parts.push(`detail=${logfmtValue(e.detail)}`);
   parts.push(`msg=${logfmtValue(e.msg)}`);
   return parts.join(' ');
@@ -93,14 +130,13 @@ function buildAnomalyLine(publicId: string, platform: string | undefined, buildV
 export function buildAnomalyLokiPayload(
   publicId: string,
   events: ClientAnomalyEvent[],
-  platform: string | undefined,
-  buildVersion: string | undefined,
+  session: ClientAnomalySession,
   fallbackNs: () => string,
 ): { streams: { stream: Record<string, string>; values: [string, string][] }[] } | null {
   const values: [string, string][] = [];
   for (const e of events) {
     const ns = Number.isFinite(e.ts) && e.ts > 0 ? (BigInt(Math.floor(e.ts)) * 1_000_000n).toString() : fallbackNs();
-    values.push([ns, buildAnomalyLine(publicId, platform, buildVersion, e)]);
+    values.push([ns, buildAnomalyLine(publicId, session, e)]);
   }
   if (values.length === 0) return null;
   return { streams: [{ stream: { source: 'client', kind: 'anomaly' }, values }] };

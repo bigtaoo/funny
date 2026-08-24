@@ -3,7 +3,7 @@
 // (a plain WorldCore instance) and `ctx` (the assembled SiegeService, typed narrowly as
 // SiegeCtx). No behavior change.
 import type { SiegeResolution } from '@nw/shared';
-import { computeCardStateUpdates } from '../../siegeEngine';
+import { computeCardStateUpdates, cardStateDeltaPipeline } from '../../cardStateSettlement';
 import type { TileDoc, PlayerWorldDoc, MarchDoc } from '../../db';
 import { lootSummary, emptyResources } from '../../core';
 import type { WorldCore } from '../../core';
@@ -62,11 +62,21 @@ export async function landSiege(
       // the assault retreats (survivors walk home / card survival written below), the garrison is spent, and the
       // reduced hp persists. Only when hp≤0 (the else branch's raze + capture) does the structure fall and the tile
       // change hands — so repeated assaults grind the bar down before it drops (§5.2 "多次攻打把血条磨到 0 才倒").
-      const remainingHp = (target.structure.hp ?? target.structure.hpMax) - res.attackerSurvivors;
-      await cols.tiles.updateOne(
-        { _id: m.toTile },
-        { $set: { 'structure.hp': remainingHp, garrison: 0 }, $inc: { rev: 1 } }, // garrison was wiped by the assault; structure alone remains
-      );
+      // 2026-08-24 (tiles sweep): both fields used to be absolute values derived from the `target` snapshot
+      // this battle resolved against, published with only `_id` in the filter. The chip is a plain
+      // subtraction, so it is expressible as a delta; the garrison "wipe" likewise removes exactly the
+      // defenders the battle killed, which is not the same as "set to 0" once a reinforce march can land in
+      // the window — that reinforcement should still be standing afterwards, not silently deleted.
+      const killedGarrison = target.garrison ?? 0;
+      await cols.tiles.updateOne({ _id: m.toTile }, [
+        {
+          $set: {
+            'structure.hp': { $subtract: [{ $ifNull: ['$structure.hp', target.structure.hpMax] }, res.attackerSurvivors] },
+            garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, killedGarrison] }] },
+            rev: { $add: ['$rev', 1] },
+          },
+        },
+      ]);
       // Assault retreats home over a travel-time return leg (2026-08-01, SLG_DESIGN_LOG §46) instead of an
       // instant pool credit.
       if (hasCardArmy || res.attackerSurvivors > 0) {
@@ -110,10 +120,20 @@ export async function landSiege(
     // return leg (2026-08-01, SLG_DESIGN_LOG §46; §16.5 survivor refund, engine provides real survivors);
     // fallen troops are permanently lost. On the cheap fallback path where attackerSurvivors=0 (and no card
     // army), there is nothing to send home — same as the pre-existing full-wipe convention.
-    await cols.tiles.updateOne(
-      { _id: m.toTile },
-      { $set: { garrison: res.defenderSurvivors }, $inc: { rev: 1 } },
-    );
+    // 2026-08-24 (tiles sweep): this was `$set: { garrison: res.defenderSurvivors }` — an absolute count
+    // derived from the garrison this battle fought, unguarded. `processDueArrivals` settles siege arrivals
+    // and reinforce arrivals in the SAME tick, and `combatMarch/arrival.ts` credits a reinforcement with
+    // `$inc: { garrison }`; a defender reinforcing the tile under attack — the most ordinary defensive play
+    // there is — had those troops silently erased. Persist the casualties instead.
+    const defenderLosses = Math.max(0, (target.garrison ?? 0) - res.defenderSurvivors);
+    await cols.tiles.updateOne({ _id: m.toTile }, [
+      {
+        $set: {
+          garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, defenderLosses] }] },
+          rev: { $add: ['$rev', 1] },
+        },
+      },
+    ]);
     if (hasCardArmy || res.attackerSurvivors > 0) {
       await startReturnMarch(core, {
         worldId: m.worldId, ownerId: m.ownerId, fromTile: m.toTile, x: target.x, y: target.y,
@@ -129,15 +149,11 @@ export async function landSiege(
   const attackArmy = m.army ?? [];
   if (hasCardArmy) {
     const cardUpdates = computeCardStateUpdates(attackArmy, pw.cardState ?? {}, res.attackerSurvivors, t, res.attackerDeployed);
-    const cardStateSet: Record<string, unknown> = {};
-    for (const [id, update] of Object.entries(cardUpdates)) {
-      cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-      if (update.injuredUntil != null) cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil;
-      else cardStateSet[`cardState.${id}.injuredUntil`] = null; // clear stale injury
-    }
-    if (Object.keys(cardStateSet).length > 0) {
-      await cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-    }
+    // 2026-08-24: persist the battle's per-card LOSS, not an absolute survivor count — see
+    // cardStateDeltaPipeline. Identical result with no concurrent write; a distributeTroops top-up that does
+    // land in the window now survives instead of being erased.
+    const cardPipeline = cardStateDeltaPipeline(cardUpdates);
+    if (cardPipeline.length > 0) await cols.playerWorld.updateOne({ _id: pw._id }, cardPipeline);
   }
 
   // §17.4 activity increment: siege (attacker / defender) → both sides' families +1 (landing point for decisive battles).

@@ -120,7 +120,9 @@ export class DetailPanel {
     const portraitBox = 96;
     const portraitX = mx + 12;
     const portraitY = cy;
-    const frame = sketchPanel(portraitBox, portraitBox, { fill: 0xf0eee7, border: factionColor, seed: seedFor(portraitX, portraitY, portraitBox) });
+    // fillAlpha: 0 — see list.ts's renderCardCell (2026-08-21): the modal panel behind is already
+    // the one background layer, this frame is a stroke-only faction-colored outline.
+    const frame = sketchPanel(portraitBox, portraitBox, { fill: 0xf0eee7, fillAlpha: 0, border: factionColor, seed: seedFor(portraitX, portraitY, portraitBox) });
     frame.x = portraitX; frame.y = portraitY;
     panelRoot.addChild(frame);
     const artUrl = def

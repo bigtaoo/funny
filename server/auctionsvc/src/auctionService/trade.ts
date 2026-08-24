@@ -2,29 +2,49 @@
 //
 // Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
 // composition): depends on AuctionServicePricing (checkPriceGuard/bumpDaily/recordSoldPrice) AND
-// AuctionServiceDelivery (deliverItem/deliverCoins) — the only file in the chain needing both.
+// AuctionOrderJournal (every cross-service side effect) — the only file in the chain needing both.
+//
+// 2026-08-24 (U13 close-out): every flow here now runs against the settlement journal instead of firing
+// cross-service calls inline. What that changed, beyond crash-safety:
+//   • `buyAuction` claims the listing BEFORE charging, so the old "charged, then sniped, then refunded
+//     under a key shared with the winning buyer" path is gone entirely.
+//   • Both purchase keys carry the buyer. `auction_buy:{id}` did not, so the second of two racing buyers
+//     got a bare BAD_REQUEST from commercial's cross-account guard, and a crash after a charge left the
+//     key owned forever by a buyer who never got the item — nobody could buy that listing again.
+//   • `settleAuctionWin` claims under a `rev` guard. Without one, a bid landing between the expiry
+//     scanner's batch read and its settle CAS was silently overwritten: the item went to the previous
+//     bidder (who had already been refunded) and the new top bidder's escrow was orphaned.
+//   • Two concurrent same-amount bids from one bidder collide on the journal row instead of sharing a
+//     `spend` orderId, which used to mail a full refund against a single charge.
 import { AUCTION_TAX_RATE, AUCTION_DAILY_BUY_CAP, AUCTION_MIN_INCREMENT_RATIO, AUCTION_ANTI_SNIPE_WINDOW_SEC, SlgError } from '@nw/shared';
 import type { AuctionDoc } from '../db';
 import type { AuctionServiceDeps } from './base';
 import { docToView, categoryOf, type AuctionView } from './base';
 import type { AuctionServicePricing } from './pricing';
-import type { AuctionServiceDelivery } from './delivery';
+import type { AuctionOrderJournal } from './journal';
+import { flowKey, outbidRefundStep, planForBid, planForBuy, planForReturn, planForSettle, snapshotOf } from './journalPlans';
 
 export class AuctionServiceTrade {
   constructor(
     private readonly deps: AuctionServiceDeps,
     private readonly pricing: AuctionServicePricing,
-    private readonly delivery: AuctionServiceDelivery,
+    private readonly journal: AuctionOrderJournal,
   ) {}
 
   /**
-   * Purchase an auction listing (fixed-price only; atomically claims status open→sold).
-   * Designated-buyer check → daily cap (C) → deduct buyer coins → atomic status update → deliver item → pay seller (after tax).
-   * If buyer deduction succeeds but a subsequent step fails: item remains in sold state; ops admin can look up orderId and manually redeliver.
+   * Purchase an auction listing (fixed-price only).
+   *
+   * Order of operations: validate → journal the intent → atomically claim the listing (open→sold) →
+   * charge → deliver item → pay seller (post-tax). Claiming before charging is what makes the failure
+   * modes benign: losing the claim means no coins ever moved, and a charge that is definitively refused
+   * releases the claim again through the journal's compensation, so at worst the listing is briefly
+   * unavailable. A charge whose outcome is unknown (timeout) is neither delivered nor refunded — it is
+   * retried against commercial's own orderId idempotency until it answers.
+   *
    * Auction listings (saleMode='auction') do not go through this path — bidding/buyout uses placeBid.
    */
   async buyAuction(buyerId: string, auctionId: string, clientPlatform?: string): Promise<AuctionView> {
-    const { cols, now, commercial } = this.deps;
+    const { cols, now } = this.deps;
 
     const doc = await cols.auctions.findOne({ _id: auctionId });
     if (!doc) throw new SlgError('AUCTION_NOT_FOUND');
@@ -36,50 +56,75 @@ export class AuctionServiceTrade {
       throw new SlgError('NOT_DESIGNATED_BUYER');
     }
 
-    // C Daily purchase cap (reserve slot before charging)
-    await this.pricing.bumpDaily(buyerId, 'buys', AUCTION_DAILY_BUY_CAP);
-
     const totalPrice = doc.price * doc.qty;
     const tax = Math.floor(totalPrice * AUCTION_TAX_RATE);
-    const sellerReceives = totalPrice - tax;
+    const sellerReceives = totalPrice - tax; // tax is a pure coin sink (AUCTION_DESIGN §2.2) — nothing to credit
+    const snapshot = snapshotOf(doc);
+    const rowId = flowKey('buy', auctionId, buyerId);
 
-    const buyOrderId = `auction_buy:${auctionId}`;
+    const begun = await this.journal.begin(rowId, 'buy', auctionId, buyerId, (cycle) =>
+      planForBuy(rowId, cycle, buyerId, doc.sellerId, auctionId, snapshot, totalPrice, sellerReceives, clientPlatform),
+    );
+    if (begun.state === 'inflight') throw new SlgError('REV_CONFLICT', 'A purchase of this listing is already being settled, please retry');
+    if (begun.state === 'replay') return docToView((await cols.auctions.findOne({ _id: auctionId })) ?? doc);
+    const row = begun.row;
 
-    // 1. Deduct coins from buyer (insufficient funds → throw, no sale)
-    await commercial.spend(buyerId, totalPrice, buyOrderId, clientPlatform);
+    // C Daily purchase cap. Checked after the journal key is claimed so a duplicate submission or a replay
+    // cannot burn a slot; a rejection here releases the row without ever having moved anything.
+    try {
+      await this.pricing.bumpDaily(buyerId, 'buys', AUCTION_DAILY_BUY_CAP);
+    } catch (e) {
+      await this.journal.abort(row);
+      throw e;
+    }
 
-    // 2. Atomic status open→sold (prevents concurrent double-purchase)
-    const updated = await cols.auctions.findOneAndUpdate(
-      { _id: auctionId, status: 'open' },
-      { $set: { status: 'sold', buyerId, soldAt: now(), closedAt: now(), rev: doc.rev + 1 } },
+    // Atomic claim open→sold. The `rev` guard makes "the price I charge is the price I read" structural:
+    // the total was computed from this snapshot, so any concurrent write to the listing must invalidate it
+    // rather than let a stale total through.
+    const claimed = await cols.auctions.findOneAndUpdate(
+      { _id: auctionId, status: 'open', rev: doc.rev },
+      { $set: { status: 'sold', buyerId, soldAt: now(), closedAt: now() }, $inc: { rev: 1 } },
       { returnDocument: 'after' },
     );
-    if (!updated) {
-      // Concurrently sniped by another buyer → refund buyer coins via mail (best-effort)
-      await this.delivery.deliverCoins(buyerId, totalPrice, `${buyOrderId}:refund`, 'refund');
+    if (!claimed) {
+      await this.journal.abort(row);
+      // Distinguish honestly rather than reporting AUCTION_CLOSED for both: a lost `rev` race on a still-open
+      // listing is retryable, a closed listing is not.
+      const cur = await cols.auctions.findOne({ _id: auctionId });
+      if (cur && cur.status === 'open') throw new SlgError('REV_CONFLICT', 'Listing changed while purchasing, please retry');
       throw new SlgError('AUCTION_CLOSED');
     }
 
-    // 3. Deliver item to buyer via system mail (escrow-out: buyer claims the attachment)
-    await this.delivery.deliverItem(buyerId, doc, `${buyOrderId}:item`, 'sold');
+    await this.journal.decide(row);
+    await this.journal.finalize(row);
 
-    // 4. Pay seller coins via mail (after tax, best-effort)
-    await this.delivery.deliverCoins(doc.sellerId, sellerReceives, `${buyOrderId}:seller`, 'proceeds');
+    // The buyer's answer hinges on the charge alone. If it landed, they own the listing even when the
+    // delivery mails are still owed (the sweep keeps retrying those). If its outcome is still unknown,
+    // saying "bought" would be a lie — report retryable instead and let the sweep settle or release it.
+    const settled = await this.journal.read(rowId);
+    if (settled?.done['spend'] == null) {
+      throw new SlgError('REV_CONFLICT', 'Payment is still being confirmed, please retry');
+    }
 
-    // G Record sale unit price into sliding window
+    // G Record sale unit price into the sliding window.
     await this.pricing.recordSoldPrice(categoryOf(doc), doc.price);
 
-    return docToView(updated);
+    return docToView(claimed);
   }
 
   /**
    * Place an auction bid (saleMode='auction', B).
    * amount = bid unit price (coins/item); escrowed total = amount × qty.
-   * Validate → daily cap → escrow bid coins → atomic topBid write (rev guard) → refund previous bidder → anti-snipe extension.
-   * If amount reaches/exceeds buyoutPrice → immediate settlement (item to bidder, seller receives post-tax proceeds; coins already escrowed, no second deduction).
+   * Validate → journal → escrow bid coins → atomic topBid write (rev guard) → refund the outbid bidder →
+   * anti-snipe extension. If amount reaches/exceeds buyoutPrice → immediate settlement (coins already
+   * escrowed, no second deduction).
+   *
+   * Note the deliberate asymmetry with buyAuction: here the coins are taken FIRST. A recorded `topBid` is
+   * what a later settlement pays the seller against, so it must never exist without escrowed coins behind
+   * it — which is why this flow keeps a refund path at all, now journaled rather than best-effort.
    */
   async placeBid(bidderId: string, auctionId: string, amount: number, clientPlatform?: string): Promise<AuctionView> {
-    const { cols, now, commercial } = this.deps;
+    const { cols, now } = this.deps;
     if (amount <= 0) throw new SlgError('BAD_REQUEST');
 
     const doc = await cols.auctions.findOne({ _id: auctionId });
@@ -92,7 +137,7 @@ export class AuctionServiceTrade {
       throw new SlgError('NOT_DESIGNATED_BUYER');
     }
 
-    // Minimum bid: start price / current top bid + minimum increment
+    // Minimum bid: start price / current top bid + minimum increment.
     // Buyout bypasses the increment floor — it only needs to clear the seller's buyout price.
     const isBuyout = doc.buyoutPrice != null && amount >= doc.buyoutPrice;
     if (!isBuyout) {
@@ -108,17 +153,42 @@ export class AuctionServiceTrade {
     // G Price guardrail (bid unit price is also subject to the guardrail)
     await this.pricing.checkPriceGuard(categoryOf(doc), amount);
 
-    // C Daily bid cap
-    await this.pricing.bumpDaily(bidderId, 'buys', AUCTION_DAILY_BUY_CAP);
-
     const prevBid = doc.topBid;
     const escrowTotal = amount * doc.qty;
-    const bidOrderId = `auction_bid:${auctionId}:${bidderId}:${amount}`;
+    const rowId = flowKey('bid', auctionId, bidderId, String(amount));
 
-    // 1. Escrow bid coins (insufficient funds → throw, topBid unchanged)
-    await commercial.spend(bidderId, escrowTotal, bidOrderId, clientPlatform);
+    // Claiming the row before charging is what closes the old double-refund: two concurrent identical bids
+    // from one bidder used to share a `spend` orderId, so commercial charged once while the CAS loser
+    // mailed out a full refund.
+    const begun = await this.journal.begin(rowId, 'bid', auctionId, bidderId, (cycle) =>
+      planForBid(rowId, cycle, bidderId, escrowTotal, clientPlatform),
+    );
+    if (begun.state === 'inflight') throw new SlgError('REV_CONFLICT', 'An identical bid is already being processed, please retry');
+    if (begun.state === 'replay') return docToView((await cols.auctions.findOne({ _id: auctionId })) ?? doc);
+    const row = begun.row;
 
-    // 2. Anti-snipe: bid placed within window before expiry → extend expireAt by the same window
+    // C Daily bid cap (see buyAuction for why this sits after the journal claim).
+    try {
+      await this.pricing.bumpDaily(bidderId, 'buys', AUCTION_DAILY_BUY_CAP);
+    } catch (e) {
+      await this.journal.abort(row);
+      throw e;
+    }
+
+    // 1. Escrow the bid coins (insufficient funds → throws, topBid unchanged).
+    try {
+      await this.journal.advance(row);
+    } catch (e) {
+      await this.journal.abort(row);
+      throw e;
+    }
+    if (row.done['spend'] == null) {
+      // Indeterminate charge: the row stays pending and the sweep resolves it (escrow then refund, since
+      // the bid was never recorded). Recording a topBid now could leave a bid with no coins behind it.
+      throw new SlgError('REV_CONFLICT', 'Payment is still being confirmed, please retry');
+    }
+
+    // 2. Anti-snipe: a bid placed within the window before expiry extends expireAt by the same window.
     const ts = now();
     const windowMs = AUCTION_ANTI_SNIPE_WINDOW_SEC * 1000;
     const newExpireAt = doc.expireAt - ts < windowMs ? ts + windowMs : doc.expireAt;
@@ -131,25 +201,21 @@ export class AuctionServiceTrade {
         // listAuctions' DB-level `.sort({price:1})` reflects the same effective price docToView
         // displays — otherwise an auction-mode listing's browse position stays pinned to its
         // stale startPrice forever while the price shown to players climbs with every bid.
-        $set: { topBid: { bidderId, amount, ts }, price: amount, expireAt: newExpireAt, rev: doc.rev + 1 },
+        $set: { topBid: { bidderId, amount, ts }, price: amount, expireAt: newExpireAt },
+        $inc: { rev: 1 },
       },
       { returnDocument: 'after' },
     );
     if (!updated) {
-      // Concurrently superseded or already closed → refund this escrow via mail
-      await this.delivery.deliverCoins(bidderId, escrowTotal, `${bidOrderId}:refund`, 'refund');
+      // Concurrently superseded or already closed → the journal's compensation refunds this escrow, and
+      // (unlike before) keeps retrying until the refund mail actually lands.
+      await this.journal.abort(row);
       throw new SlgError('AUCTION_CLOSED');
     }
 
-    // 4. Refund previous top bidder's escrowed coins via mail (best-effort, idempotent)
-    if (prevBid) {
-      await this.delivery.deliverCoins(
-        prevBid.bidderId,
-        prevBid.amount * doc.qty,
-        `auction_bid_refund:${auctionId}:${prevBid.bidderId}:${prevBid.amount}`,
-        'refund',
-      );
-    }
+    // 4. Record the decision, appending the outbid bidder's refund — known only now.
+    await this.journal.decide(row, prevBid ? [outbidRefundStep(auctionId, prevBid.bidderId, prevBid.amount, doc.qty)] : []);
+    await this.journal.finalize(row);
 
     // 5. Buyout: bid reaches/exceeds buyoutPrice → immediate settlement
     if (doc.buyoutPrice != null && amount >= doc.buyoutPrice) {
@@ -159,31 +225,37 @@ export class AuctionServiceTrade {
   }
 
   /**
-   * Settle an auction win (internal): deliver item to the top bidder and pay seller post-tax proceeds (coins already escrowed, no second deduction).
-   * Atomic open→sold prevents double-settlement with the expiry scanner or a concurrent buyout. If concurrently already settled → read and return the current state.
+   * Settle an auction win (internal): deliver the item to the top bidder and pay the seller post-tax
+   * proceeds (coins already escrowed at bid time, so this flow is forward-only — there is no charge to
+   * fail and nothing to compensate).
+   *
+   * The claim is guarded on `rev`, not just `status:'open'`. A bare status filter let the expiry scanner
+   * settle against a `topBid` that had already been superseded between its batch read and this write:
+   * the item went to the previous bidder — who had by then been refunded — while the new top bidder's
+   * escrow was orphaned. Losing the guard now just means the caller sees the current state and the
+   * scanner picks the listing up again on its next tick with a fresh snapshot.
    */
   private async settleAuctionWin(doc: AuctionDoc): Promise<AuctionView> {
+    const { cols } = this.deps;
     const top = doc.topBid!;
     const now = this.deps.now();
-    const updated = await this.deps.cols.auctions.findOneAndUpdate(
-      { _id: doc._id, status: 'open' },
-      { $set: { status: 'sold', buyerId: top.bidderId, soldAt: now, closedAt: now, rev: doc.rev + 1 } },
+    const updated = await cols.auctions.findOneAndUpdate(
+      { _id: doc._id, status: 'open', rev: doc.rev },
+      { $set: { status: 'sold', buyerId: top.bidderId, soldAt: now, closedAt: now }, $inc: { rev: 1 } },
       { returnDocument: 'after' },
     );
     if (!updated) {
-      const cur = await this.deps.cols.auctions.findOne({ _id: doc._id });
+      const cur = await cols.auctions.findOne({ _id: doc._id });
       return docToView(cur ?? doc);
     }
 
     const totalPrice = top.amount * doc.qty;
     const tax = Math.floor(totalPrice * AUCTION_TAX_RATE);
     const sellerReceives = totalPrice - tax;
-    const orderId = `auction_settle:${doc._id}`;
+    await this.runClaimedFlow('settle', updated, (rowId, cycle) =>
+      planForSettle(rowId, cycle, top.bidderId, doc.sellerId, snapshotOf(doc), sellerReceives),
+    );
 
-    // Deliver item to the winner via system mail (escrow-out: winner claims the attachment)
-    await this.delivery.deliverItem(top.bidderId, doc, `${orderId}:item`, 'sold');
-    // Pay seller post-tax proceeds via mail
-    await this.delivery.deliverCoins(doc.sellerId, sellerReceives, `${orderId}:seller`, 'proceeds');
     // G Record sale unit price
     await this.pricing.recordSoldPrice(categoryOf(doc), top.amount);
 
@@ -193,7 +265,8 @@ export class AuctionServiceTrade {
   /**
    * Cancel a listing (seller only, status=open).
    * Auction listing with existing bids → cancel rejected (protects bidders); zero bids → can cancel.
-   * Refund item to seller (material / equipment / card / skin, best-effort).
+   * The escrowed item goes back to the seller through the journal, so a crash or a meta hiccup after the
+   * status flip no longer destroys it.
    */
   async cancelAuction(sellerId: string, auctionId: string): Promise<AuctionView> {
     const { cols } = this.deps;
@@ -211,13 +284,12 @@ export class AuctionServiceTrade {
     // up the fresh (bid-carrying) doc, which then correctly rejects at the topBid check above.
     const updated = await cols.auctions.findOneAndUpdate(
       { _id: auctionId, status: 'open', rev: doc.rev },
-      { $set: { status: 'cancelled', closedAt: this.deps.now(), rev: doc.rev + 1 } },
+      { $set: { status: 'cancelled', closedAt: this.deps.now() }, $inc: { rev: 1 } },
       { returnDocument: 'after' },
     );
     if (!updated) throw new SlgError('AUCTION_CLOSED');
 
-    // Return item to seller via system mail (escrow-out: seller claims the attachment to get it back)
-    await this.delivery.deliverItem(sellerId, doc, `auction_cancel:${auctionId}`, 'returned');
+    await this.runClaimedFlow('cancel', updated, (rowId, cycle) => planForReturn(rowId, cycle, sellerId, snapshotOf(doc)));
 
     return docToView(updated);
   }
@@ -241,24 +313,46 @@ export class AuctionServiceTrade {
     for (const doc of expired) {
       const isAuctionWin = (doc.saleMode ?? 'fixed') === 'auction' && !!doc.topBid;
       if (isAuctionWin) {
-        // Settle auction win (settleAuctionWin contains atomic open→sold to prevent concurrent double-settle)
+        // settleAuctionWin's rev-guarded claim prevents a double settle and, unlike the old status-only
+        // filter, refuses to settle against a topBid that was superseded since this batch was read.
         await this.settleAuctionWin(doc);
         processed++;
         continue;
       }
 
-      // Atomic open→expired (prevents concurrent double-processing)
+      // Atomic open→expired. rev-guarded for the same reason as cancelAuction: a bid landing since the
+      // batch read leaves status untouched, and expiring a listing that now carries an escrowed bid would
+      // orphan the bidder's coins (this branch has no refund path — a bid-carrying listing must go through
+      // settleAuctionWin instead, which the next tick will do with a fresh snapshot).
       const res = await cols.auctions.findOneAndUpdate(
-        { _id: doc._id, status: 'open' },
-        { $set: { status: 'expired', closedAt: ts, rev: doc.rev + 1 } },
+        { _id: doc._id, status: 'open', rev: doc.rev },
+        { $set: { status: 'expired', closedAt: ts }, $inc: { rev: 1 } },
         { returnDocument: 'after' },
       );
-      if (!res) continue; // concurrently claimed by another processor, skip
+      if (!res) continue; // concurrently claimed or superseded, skip
 
-      // Return item to seller via system mail (escrow-out: seller claims the attachment to get it back)
-      await this.delivery.deliverItem(doc.sellerId, doc, `auction_expire:${doc._id}`, 'returned');
+      await this.runClaimedFlow('expire', res, (rowId, cycle) => planForReturn(rowId, cycle, doc.sellerId, snapshotOf(doc)));
       processed++;
     }
     return processed;
+  }
+
+  /**
+   * Shared tail for the three claim-first flows (settle / cancel / expire): the listing is already in its
+   * terminal status, so the hand-over is forward-only and the journal row is written `decided`.
+   *
+   * A crash in the gap between the claim and this row is covered by the sweep's repair pass rather than by
+   * ordering: a listing sitting in a terminal status with no `settledAt` IS the record that a hand-over is
+   * owed, and the plan can be rebuilt from the document alone.
+   */
+  private async runClaimedFlow(
+    kind: 'settle' | 'cancel' | 'expire',
+    doc: AuctionDoc,
+    build: (rowId: string, cycle: number) => ReturnType<typeof planForReturn>,
+  ): Promise<void> {
+    const rowId = flowKey(kind, doc._id);
+    const begun = await this.journal.begin(rowId, kind, doc._id, doc.sellerId, (cycle) => build(rowId, cycle));
+    if (begun.state !== 'fresh') return; // already settled, or being settled by the sweep
+    await this.journal.finalize(begun.row);
   }
 }

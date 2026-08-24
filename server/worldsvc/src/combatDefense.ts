@@ -36,6 +36,9 @@ export class DefenseService {
       const pwId = playerWorldId(worldId, accountId);
       const pw = await cols.playerWorld.findOne({ _id: pwId });
       if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
+      // Unguarded on purpose (2026-08-24 sweep): the value written is supplied by this command, not derived
+      // from a snapshot read, and the `$set` is scoped to its own dotted path — so there is no other writer's
+      // delta for it to overwrite. Last-writer-wins on a field the player just set is the intended semantics.
       await cols.playerWorld.updateOne(
         { _id: pwId },
         { $set: { defense: defenseConfig }, $inc: { rev: 1 } },

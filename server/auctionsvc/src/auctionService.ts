@@ -19,13 +19,22 @@
 // methods, and trade.ts also calls delivery.ts's — but they form a clean one-directional DAG (no
 // cycles), so composition still applies cleanly, just with two of the six siblings taking a
 // constructor-injected reference to another instead of standing fully alone:
-//   auctionService/base.ts     (types + AuctionServiceDeps + doc↔view mapping helpers — the DAG's implicit root, no class of its own)
-//   auctionService/pricing.ts  AuctionServicePricing  C daily caps (bumpDaily) + G price guardrail (refPrice/checkPriceGuard/getRefBand/recordSoldPrice) — depends on nothing
-//   auctionService/delivery.ts AuctionServiceDelivery system-mail delivery (deliverItem/deliverCoins) — depends on nothing
-//   auctionService/listing.ts  AuctionServiceListing  read-only queries: listAuctions/queryListings/getMyListings/purgeClosedListings — depends on nothing
-//   auctionService/create.ts   AuctionServiceCreate   createAuction (+ cap-reject rollback) — depends on pricing
-//   auctionService/trade.ts    AuctionServiceTrade    buyAuction/placeBid/settleAuctionWin/cancelAuction/processExpiredAuctions — depends on pricing AND delivery
-//   auctionService/audit.ts    AuctionServiceAudit    D/G7 anomaly audit scan (scanAnomalies) — depends on nothing
+//   auctionService/base.ts        (types + AuctionServiceDeps + doc↔view mapping helpers — the DAG's implicit root, no class of its own)
+//   auctionService/pricing.ts     AuctionServicePricing  C daily caps (bumpDaily) + G price guardrail (refPrice/checkPriceGuard/getRefBand/recordSoldPrice) — depends on nothing
+//   auctionService/delivery.ts    AuctionServiceDelivery system-mail delivery (deliverItem/deliverCoins) — depends on nothing; owned by journalSteps.ts, no longer a facade field
+//   auctionService/listing.ts     AuctionServiceListing  read-only queries: listAuctions/queryListings/getMyListings/purgeClosedListings — depends on nothing
+//   auctionService/journalPlans.ts                       (free functions) every idempotency key + every flow's plan — depends on nothing
+//   auctionService/journalSteps.ts AuctionOrderStepRunner the ONLY place a cross-service asset call happens — depends on delivery
+//   auctionService/journal.ts     AuctionOrderJournal    the settlement journal engine (begin/advance/decide/finalize/rollback) — depends on journalSteps + journalPlans
+//   auctionService/journalSweep.ts AuctionServiceJournalSweep scheduler-driven resume + repair passes — depends on journal + journalPlans
+//   auctionService/journalAudit.ts AuctionServiceJournalAudit read-only ops view of settlements that still owe something — depends on journalPlans
+//   auctionService/create.ts      AuctionServiceCreate   createAuction (+ cap-reject rollback) — depends on pricing AND journal
+//   auctionService/trade.ts       AuctionServiceTrade    buyAuction/placeBid/settleAuctionWin/cancelAuction/processExpiredAuctions — depends on pricing AND journal
+//   auctionService/audit.ts       AuctionServiceAudit    D/G7 anomaly audit scan (scanAnomalies) — depends on nothing
+//
+// 2026-08-24 (U13 close-out): the four journal files above are new, and `delivery.ts` moved from "called
+// by trade.ts" to "called only by journalSteps.ts". See journal.ts for why a journal rather than a Mongo
+// transaction (the atomicity boundary spans three processes and four databases).
 // No behavior change: every method body is unchanged aside from `this.xxx()` → `this.pricing.xxx()`/
 // `this.delivery.xxx()` at the two real cross-layer call sites, and `protected` → public visibility
 // on the handful of methods those two call sites reach (bumpDaily/checkPriceGuard/recordSoldPrice/
@@ -33,8 +42,10 @@
 export { type AuctionView, type AuctionServiceDeps } from './auctionService/base';
 import type { AuctionServiceDeps } from './auctionService/base';
 import { AuctionServicePricing } from './auctionService/pricing';
-import { AuctionServiceDelivery } from './auctionService/delivery';
 import { AuctionServiceListing } from './auctionService/listing';
+import { AuctionOrderJournal } from './auctionService/journal';
+import { AuctionServiceJournalSweep } from './auctionService/journalSweep';
+import { AuctionServiceJournalAudit } from './auctionService/journalAudit';
 import { AuctionServiceCreate } from './auctionService/create';
 import { AuctionServiceTrade } from './auctionService/trade';
 import { AuctionServiceAudit } from './auctionService/audit';
@@ -42,18 +53,22 @@ import { AuctionServiceAudit } from './auctionService/audit';
 /** The full service, composed from the six concern layers above. */
 export class AuctionService {
   private readonly pricing: AuctionServicePricing;
-  private readonly delivery: AuctionServiceDelivery;
   private readonly listing: AuctionServiceListing;
+  private readonly journal: AuctionOrderJournal;
+  private readonly journalSweep: AuctionServiceJournalSweep;
+  private readonly journalAudit: AuctionServiceJournalAudit;
   private readonly create: AuctionServiceCreate;
   private readonly trade: AuctionServiceTrade;
   private readonly audit: AuctionServiceAudit;
 
   constructor(deps: AuctionServiceDeps) {
     this.pricing = new AuctionServicePricing(deps);
-    this.delivery = new AuctionServiceDelivery(deps);
     this.listing = new AuctionServiceListing(deps);
-    this.create = new AuctionServiceCreate(deps, this.pricing);
-    this.trade = new AuctionServiceTrade(deps, this.pricing, this.delivery);
+    this.journal = new AuctionOrderJournal(deps);
+    this.journalSweep = new AuctionServiceJournalSweep(deps, this.journal);
+    this.journalAudit = new AuctionServiceJournalAudit(deps);
+    this.create = new AuctionServiceCreate(deps, this.pricing, this.journal);
+    this.trade = new AuctionServiceTrade(deps, this.pricing, this.journal);
     this.audit = new AuctionServiceAudit(deps);
   }
 
@@ -74,6 +89,12 @@ export class AuctionService {
   placeBid(...args: Parameters<AuctionServiceTrade['placeBid']>) { return this.trade.placeBid(...args); }
   cancelAuction(...args: Parameters<AuctionServiceTrade['cancelAuction']>) { return this.trade.cancelAuction(...args); }
   processExpiredAuctions(...args: Parameters<AuctionServiceTrade['processExpiredAuctions']>) { return this.trade.processExpiredAuctions(...args); }
+
+  // ── settlement journal ──
+  /** Resume interrupted settlements + repair listings that closed without handing anything over (scheduler tick). */
+  sweepSettlements(...args: Parameters<AuctionServiceJournalSweep['sweep']>) { return this.journalSweep.sweep(...args); }
+  /** Ops read: settlements that still owe a hand-over (admin.slg.audit.view). Read-only — the sweep is what actually retries. */
+  listSettlementDebts(...args: Parameters<AuctionServiceJournalAudit['listSettlementDebts']>) { return this.journalAudit.listSettlementDebts(...args); }
 
   // ── audit ──
   scanAnomalies(...args: Parameters<AuctionServiceAudit['scanAnomalies']>) { return this.audit.scanAnomalies(...args); }

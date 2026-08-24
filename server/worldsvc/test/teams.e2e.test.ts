@@ -518,15 +518,24 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     expect(mine.filter((m) => m.teamId === 't1')).toHaveLength(1);
   });
 
-  it('regression: startMarch (card army) rejects with REV_CONFLICT instead of silently overwriting a concurrent settlement\'s resources', async () => {
-    // Root cause: startMarch computes `resources` from the `pw` snapshot read at the top of the function,
-    // then — after several intervening awaits (computeMarchPath's Mongo scans, the marches.insertOne) —
-    // used to blind-$set that stale value with no rev filter at all for a card-army/idle-redispatch march
-    // (the flat-army branch at least filtered on `troops`, but not `rev` either). A concurrent settlement
-    // for the same account landing in that window (e.g. another of its own return-march refunds) would
-    // have its already-applied resources delta silently discarded. Simulate that exact window
-    // deterministically by bumping rev via a wrapped `marches.insertOne` (which runs right before the
-    // final resources write) instead of relying on true concurrency.
+  it('regression: startMarch (card army) writes no playerWorld state at all — a concurrent settlement in its window survives, and the dispatch itself no longer fails with REV_CONFLICT', async () => {
+    // History of this test. startMarch used to compute `resources` from the `pw` snapshot read at the top of
+    // the function and then — after several intervening awaits (a cross-service meta.getSaveFields call,
+    // computeMarchPath's Mongo scans, the marches.insertOne) — blind-$set that stale value, discarding any
+    // concurrent settlement's delta. The 2026-08-04 fix added a `rev: pw.rev` guard, and this test asserted
+    // the resulting REV_CONFLICT.
+    //
+    // 2026-08-24 removed the write instead of guarding it. `settle()` is lazy-on-read (getMe recomputes it
+    // from the document every time), so persisting it is only required by a write that changes an input to
+    // the accrual — yieldRate, buildings, or the balance itself — and dispatching a march changes none of
+    // them. The guard had turned a silent lost update into a constant user-visible "Concurrent update,
+    // please retry", because a 2s scheduler tick bumps `rev` on the very same document.
+    //
+    // So the assertions move from the *mechanism* (throws REV_CONFLICT, write refused) to the *property* the
+    // mechanism existed to protect (the concurrent delta survives untouched) plus the absence of the failure
+    // mode it introduced (the dispatch completes). Strictly stronger: the old code could only satisfy the
+    // first half. The injected write carries a real resources delta, not just a rev bump, so a regression to
+    // blind-$set would fail the resources assertion even if it kept rev bookkeeping tidy.
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(10, 5);
     await setupDefender('b', tgt.x, tgt.y, 50);
@@ -547,8 +556,9 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
         if (!injected) {
           injected = true;
           // Simulate a concurrent settlement for this same account landing in the window between
-          // startMarch's initial pw read and its final resources write.
-          await m.collections.playerWorld.updateOne({ _id: pwBefore!._id }, { $inc: { rev: 1 } });
+          // startMarch's initial pw read and where its final resources write used to be. A real credit,
+          // so the assertion below detects a clobber and not merely a stale rev.
+          await m.collections.playerWorld.updateOne({ _id: pwBefore!._id }, { $inc: { 'resources.ink': 12_345, rev: 1 } });
         }
         return realMarches.insertOne(doc);
       },
@@ -563,15 +573,21 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
       meta: fakeMeta,
     });
 
-    await expect(svcRaced.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't-race')).rejects.toMatchObject({ code: 'REV_CONFLICT' });
+    const view = await svcRaced.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't-race');
+    expect(view.teamId).toBe('t-race');
 
-    // The march must have been rolled back (not left as a phantom in-flight march)...
+    // The march is real and in flight — the concurrent write no longer costs the player their dispatch.
     const marches = await m.collections.marches.find({ worldId: W, ownerId: 'a', teamId: 't-race' }).toArray();
-    expect(marches).toHaveLength(0);
-    // ...and rev must be exactly +1 from the injected bump alone — the rejected write must not have landed
-    // on top of it (which would silently reset `resources` back to the stale pre-injection snapshot).
+    expect(marches).toHaveLength(1);
+
     const pwAfter = await m.collections.playerWorld.findOne({ _id: pwBefore!._id });
+    // rev is +1 from the injected bump *alone*: a card-army dispatch writes nothing to playerWorld, so it
+    // neither guards on rev nor bumps it (rev is an optimistic lock with no business meaning — it appears in
+    // no PlayerWorldView and no httpApi response — so bumping it for a no-op write would only invalidate
+    // other writers' guards for free).
     expect(pwAfter!.rev).toBe(pwBefore!.rev + 1);
+    // And the concurrent settlement's credit is intact — the lost update the rev guard was added for.
+    expect(pwAfter!.resources.ink).toBe(pwBefore!.resources.ink + 12_345);
   });
 
   it('idle-team gate: a team stays "out" through the occupation-hold countdown (busyHold blocks any kind, unconditionally); once it settles into 停留 idle, it can attack straight from there (2026-08-08 parity change) instead of requiring a recall first', async () => {

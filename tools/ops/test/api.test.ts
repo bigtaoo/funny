@@ -421,6 +421,15 @@ const CASES: EndpointCase[] = [
     reply: { listings: [] }, returns: [] },
   { name: 'slgQueryAuctionListings sends limit=0 rather than dropping it', call: (a) => a.slgQueryAuctionListings({ sellerId: 'a', limit: 0 }),
     method: 'GET', path: '/admin/slg/audit/listings?sellerId=a&limit=0', reply: { listings: [] }, returns: [] },
+  { name: 'slgListSettlementDebts unfiltered lists everything still owed', call: (a) => a.slgListSettlementDebts({}), method: 'GET',
+    path: '/admin/slg/audit/settlements?', reply: { settlements: [] }, returns: [] },
+  { name: 'slgListSettlementDebts with every filter', call: (a) => a.slgListSettlementDebts({ auctionId: 'a:s:1:1', accountId: 'acc-1', minAttempts: 10, limit: 25 }),
+    method: 'GET', path: '/admin/slg/audit/settlements?auctionId=a%3As%3A1%3A1&accountId=acc-1&minAttempts=10&limit=25',
+    reply: { settlements: [] }, returns: [] },
+  // minAttempts=0 means "every unfinished settlement", which is a different request from omitting it only
+  // in that it is explicit — dropping a literal 0 the way a truthiness check would is the bug this pins.
+  { name: 'slgListSettlementDebts sends minAttempts=0 rather than dropping it', call: (a) => a.slgListSettlementDebts({ minAttempts: 0 }),
+    method: 'GET', path: '/admin/slg/audit/settlements?minAttempts=0', reply: { settlements: [] }, returns: [] },
   { name: 'slgListAuditTickets unfiltered', call: (a) => a.slgListAuditTickets(), method: 'GET', path: '/admin/slg/audit/tickets',
     reply: { tickets: [] }, returns: [] },
   { name: 'slgListAuditTickets filtered', call: (a) => a.slgListAuditTickets('open'), method: 'GET',

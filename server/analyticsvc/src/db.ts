@@ -24,6 +24,10 @@ export interface EventDoc {
   /** Server-derived from `ua` at ingest time (never trust a client-supplied browser name). */
   browser?: string;
   device_type?: 'mobile' | 'tablet' | 'desktop';
+  /** Host app when the page runs inside an embedded WebView (gsa/facebook/instagram/line/…), absent
+   *  for ordinary browser traffic. See parseUserAgent — in-app WebViews were previously indistinguishable
+   *  from the browser they embed, which hid the environment class most prone to being killed for memory. */
+  webview?: string;
   /** Request IP (X-Forwarded-For / socket) at ingest time — used for account-protection lookups
    * (shared-IP abuse/multi-account detection) as well as the geo_* fields below. */
   ip?: string;
@@ -52,6 +56,10 @@ export interface SessionDoc {
   dpr?: number;
   browser?: string;
   device_type?: 'mobile' | 'tablet' | 'desktop';
+  /** Host app when the page runs inside an embedded WebView (gsa/facebook/instagram/line/…), absent
+   *  for ordinary browser traffic. See parseUserAgent — in-app WebViews were previously indistinguishable
+   *  from the browser they embed, which hid the environment class most prone to being killed for memory. */
+  webview?: string;
   ip?: string;
   geo_country?: string;
   geo_region?: string;
@@ -108,6 +116,7 @@ export async function createAnalyticsMongo(uri: string, dbName: string): Promise
     await events.createIndex({ session_id: 1 });
     await events.createIndex({ browser: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ device_type: 1, ts: -1 }, { sparse: true });
+    await events.createIndex({ webview: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ geo_country: 1, ts: -1 }, { sparse: true });
     await events.createIndex({ ip: 1, ts: -1 }, { sparse: true });
     // sessions: TTL 90 days, same window as events (2026-07-27 audit finding: previously permanent)

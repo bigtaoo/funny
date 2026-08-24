@@ -17,6 +17,7 @@ import {
   SIEGE_LOOT_RATE,
   RESOURCE_TYPES,
   RESOURCE_CAP,
+  SECT_LEADER_PENALTY_RATE,
 } from '@nw/shared';
 import { SiegeDamageService } from '../src/combatSiege/damage';
 import { SiegeHelpersService } from '../src/combatSiege/helpers';
@@ -104,6 +105,10 @@ function makeCore(opts: {
     recomputeYield,
     applyNationChange,
     settle,
+    // 2026-08-24: the settle these services persist is now an aggregation expression evaluated by Mongo
+    // against the live document (core/yield.ts settleExpr), not a value computed here — these unit tests
+    // never reach a real server, so an empty expression object is all the call sites need.
+    settleExpr: () => ({}),
     marchSeq: 0,
     pushMarch: vi.fn(async (..._args: unknown[]) => {}),
     marchView: (m: MarchDoc) => m as unknown as never,
@@ -263,7 +268,7 @@ describe('SiegeDamageService settleSiegeDamage — building survives (newHp > 0)
     });
     await settle(core, fakeHelpers(), dmgDoc({ damage: 10, attackerSurvivors: 7 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { hp: maxHp - 10 }, $inc: { rev: 1 } },
     );
     expect(pwUpdateOne).toHaveBeenCalledTimes(1); // return-march refund for the attacker
@@ -289,7 +294,7 @@ describe('SiegeDamageService settleSiegeDamage — building survives (newHp > 0)
     });
     await settle(core, fakeHelpers(), dmgDoc({ damage: 10, attackerSurvivors: 0 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { hp: maxHp - 10 }, $inc: { rev: 1 } },
     );
   });
@@ -323,7 +328,7 @@ describe('SiegeDamageService settleSiegeDamage — building survives (newHp > 0)
     });
     await settle(core, fakeHelpers(), dmgDoc({ isBase: true, damage: 5, attackerSurvivors: 0 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { durability: expectedNewHp, durabilityMax: maxDur, durabilityRegenAt: 1_000 }, $inc: { rev: 1 } },
     );
   });
@@ -338,7 +343,7 @@ describe('SiegeDamageService settleSiegeDamage — isBase edge fallbacks', () =>
     });
     await settle(core, fakeHelpers(), dmgDoc({ isBase: true, damage: 5, attackerSurvivors: 0 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { durability: maxDur - 5, durabilityMax: maxDur, durabilityRegenAt: 1_000 }, $inc: { rev: 1 } },
     );
   });
@@ -352,7 +357,7 @@ describe('SiegeDamageService settleSiegeDamage — isBase edge fallbacks', () =>
     });
     await settle(core, fakeHelpers(), dmgDoc({ isBase: true, damage: 5, attackerSurvivors: 0 }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
-      { _id: TILE },
+      { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { durability: maxDur - 5, durabilityMax: maxDur, durabilityRegenAt: 1_000 }, $inc: { rev: 1 } },
     );
   });
@@ -752,6 +757,10 @@ describe('SiegeHelpersService.applySectLeaderPenalty', () => {
       },
       socialsvc: { getFamiliesBySect },
       settle: (doc: PlayerWorldDoc) => ({ ...doc.resources }),
+      // 2026-08-24: applySectLeaderPenalty settles-and-scales inside the update now (core/yield.ts
+      // settleExpr with its `scale` argument), so this fake only has to exist — the arithmetic it used to
+      // stand in for is verified against a real Mongo in playerworld-unguarded-writes.e2e.test.ts.
+      settleExpr: (_b: unknown, _now: number, scale?: number) => ({ __scale: scale }),
     } as unknown as WorldCore;
     return { svc: new SiegeHelpersService(core), updateOne, getFamiliesBySect };
   }
@@ -813,8 +822,16 @@ describe('SiegeHelpersService.applySectLeaderPenalty', () => {
     });
     await svc.applySectLeaderPenalty(W, DEF, 1_000);
     expect(updateOne).toHaveBeenCalledTimes(1);
+    // The docked figure is now computed by Mongo from the live document, so this unit test can only check
+    // that the right scale is handed over (`1 - SECT_LEADER_PENALTY_RATE`) and that the write is a pipeline.
+    // The resulting number — including its interaction with the storage cap and a concurrent credit — is
+    // asserted end-to-end in playerworld-unguarded-writes.e2e.test.ts, which is strictly more than this
+    // assertion ever covered: it used to check arithmetic this process performed on a fake.
     const [, args] = updateOne.mock.calls[0]!;
-    expect((args as { $set: { resources: Record<string, number> } }).$set.resources.ink).toBe(50); // keep 1-0.5
+    expect(Array.isArray(args)).toBe(true);
+    const stage = (args as { $set: { resources: { __scale?: number }; lastTickAt: number } }[])[0]!;
+    expect(stage.$set.resources.__scale).toBeCloseTo(1 - SECT_LEADER_PENALTY_RATE);
+    expect(stage.$set.lastTickAt).toBe(1_000);
   });
 });
 
@@ -850,6 +867,10 @@ describe('SiegeHelpersService.passiveRelocate', () => {
         },
       },
       removeCover,
+      // 2026-08-24: the settle these services persist is now an aggregation expression evaluated by Mongo
+      // against the live document (core/yield.ts settleExpr), not a value computed here — these unit tests
+      // never reach a real server, so an empty expression object is all the call sites need.
+      settleExpr: () => ({}),
       pickRandomEmptyTile: vi.fn(async (..._args: unknown[]) => opts.spot ?? null),
       baseTileDocs,
       recomputeYield: vi.fn(async (..._args: unknown[]) => emptyResources()),
@@ -884,9 +905,11 @@ describe('SiegeHelpersService.passiveRelocate', () => {
   it('no legal empty tile found (spot=null) → unsets mainBaseTile + sends the breach mail, skips baseTileDocs', async () => {
     const { svc, pwUpdateOne, sendSystemMail } = makeSvc({ playerDoc: pw({ accountId: DEF }), spot: null });
     await svc.passiveRelocate(W, DEF, 1_000);
+    // Pipeline update (2026-08-24): the write also banks the resource accrual at the old yieldRate in the
+    // same atomic step, so `$unset: { mainBaseTile: '' }` became the pipeline spelling `'$$REMOVE'`.
     expect(pwUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ _id: `${W}:${DEF}` }),
-      expect.objectContaining({ $unset: { mainBaseTile: '' } }),
+      [expect.objectContaining({ $set: expect.objectContaining({ mainBaseTile: '$$REMOVE', resources: expect.anything() }) })],
     );
     expect(sendSystemMail).toHaveBeenCalledTimes(1);
   });
@@ -903,7 +926,7 @@ describe('SiegeHelpersService.passiveRelocate', () => {
     expect(tilesUpdateOne).toHaveBeenCalled();
     expect(pwUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ _id: `${W}:${DEF}` }),
-      expect.objectContaining({ $set: expect.objectContaining({ mainBaseTile: `${W}:9:9` }) }),
+      [expect.objectContaining({ $set: expect.objectContaining({ mainBaseTile: `${W}:9:9`, resources: expect.anything() }) })],
     );
     expect(pushTile).toHaveBeenCalledTimes(1);
     expect(pushTileToObservers).toHaveBeenCalledTimes(1);

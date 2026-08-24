@@ -7,7 +7,9 @@ import { createAdminMongo, type AdminMongo } from '../src/db';
 import { AdminService, type Actor } from '../src/service';
 import { seedSuperAdmin } from '../src/seed';
 import type { MailDispatcher, MailSendReq, MailSendRes, MailPreviewReq, MailPreviewRes, PlayerClient, StatsClient, AnalyticsClient, WorldClient, AuctionClient, SuspiciousPveClient } from '../src/clients';
-import type { AuctionAnomaly, LiveStats, TradeAuditSnapshot } from '@nw/shared';
+import type {
+  AuctionAnomaly, AuctionSettlementDebtView, AuctionSettlementQuery, LiveStats, TradeAuditSnapshot,
+} from '@nw/shared';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_admin_audit_test';
@@ -73,10 +75,37 @@ class FakeWorld implements WorldClient {
 }
 class FakeAuction implements AuctionClient {
   available = true;
+  /** Records the filter the service forwarded, so the pass-through is asserted rather than assumed. */
+  settlementFilter: unknown;
   async scanAnomalies(): Promise<AuctionAnomaly[]> { return sampleAnomalies; }
   /** Not exercised here (this suite is the anomaly-scan audit) — throw so a caller that starts
    *  needing listings fails loudly instead of seeing `undefined`. */
   async queryListings(): Promise<never> { throw new Error('FakeAuction.queryListings is not stubbed'); }
+  async listSettlementDebts(filter: AuctionSettlementQuery): Promise<AuctionSettlementDebtView[]> {
+    this.settlementFilter = filter;
+    return sampleDebts;
+  }
+}
+
+/** One unfinished settlement: the buyer paid, but neither the item nor the seller's coins have landed. */
+const sampleDebts: AuctionSettlementDebtView[] = [
+  {
+    orderId: 'auction_buy:a:rich:1:1:mule', auctionId: 'a:rich:1:1', kind: 'buy', actorId: 'mule',
+    phase: 'forward',
+    owed: [
+      { name: 'item', op: 'mailItem', key: 'auction_buy:a:rich:1:1:mule:item', accountId: 'mule', item: 'material scrap x2' },
+      { name: 'seller', op: 'mailCoins', key: 'auction_buy:a:rich:1:1:mule:seller', accountId: 'rich', amount: 180 },
+    ],
+    completed: ['spend'], attempts: 14, stuck: true, cycle: 0, createdAt: 1, nextAttemptAt: 2,
+  },
+];
+
+/** An auctionsvc that is not configured at all — the degradation every slgAudit read shares. */
+class UnavailableAuction implements AuctionClient {
+  available = false;
+  async scanAnomalies(): Promise<AuctionAnomaly[]> { throw new Error('must not be called'); }
+  async queryListings(): Promise<never> { throw new Error('must not be called'); }
+  async listSettlementDebts(): Promise<never> { throw new Error('must not be called'); }
 }
 // Fake suspiciousPve/ban client: records which accounts got banned, for enforcement-on-actioned assertions.
 // `failFor` lets a test simulate one party's ban call failing (e.g. metaserver unreachable) without the
@@ -110,14 +139,16 @@ describe.skipIf(!mongo)('admin SLG audit e2e', () => {
   const m = mongo!;
   let svc: AdminService;
   let suspiciousPve: FakeSuspiciousPve;
+  let auction: FakeAuction;
 
   beforeEach(async () => {
     await m.db.dropDatabase();
     await m.ensureIndexes(3600);
     suspiciousPve = new FakeSuspiciousPve();
+    auction = new FakeAuction();
     svc = new AdminService({
       cols: m.collections, stats: stubStats, players: stubPlayer, mail: new FakeMail(),
-      analytics: stubAnalytics, world: new FakeWorld(), auction: new FakeAuction(), suspiciousPve, now,
+      analytics: stubAnalytics, world: new FakeWorld(), auction, suspiciousPve, now,
     });
     await seedSuperAdmin(m.collections, 'root', 'rootpass', now);
   });
@@ -131,6 +162,26 @@ describe.skipIf(!mongo)('admin SLG audit e2e', () => {
     const anomalies = await svc.slgScanAnomalies('s1-0');
     expect(anomalies).toHaveLength(1);
     expect(anomalies[0]!.severity).toBe('high');
+  });
+
+  it('owed settlements proxy auctionsvc and forward the filter verbatim', async () => {
+    const debts = await svc.slgListSettlementDebts({ accountId: 'mule', minAttempts: 10 });
+    expect(debts).toHaveLength(1);
+    expect(debts[0]!.stuck).toBe(true);
+    // The two halves ops reads: who is owed what, and how far the settlement got before stalling.
+    expect(debts[0]!.owed.map((o) => o.accountId)).toEqual(['mule', 'rich']);
+    expect(debts[0]!.completed).toEqual(['spend']);
+    expect(auction.settlementFilter).toEqual({ accountId: 'mule', minAttempts: 10 });
+  });
+
+  it('owed settlements degrade to empty when auctionsvc is not configured, without calling it', async () => {
+    // Same posture as the two neighbouring reads: an unconfigured auctionsvc is a deployment state, not an
+    // ops-visible error. A REACHABLE auctionsvc that fails still throws (see the client test).
+    const degraded = new AdminService({
+      cols: m.collections, stats: stubStats, players: stubPlayer, mail: new FakeMail(),
+      analytics: stubAnalytics, world: new FakeWorld(), auction: new UnavailableAuction(), suspiciousPve, now,
+    });
+    expect(await degraded.slgListSettlementDebts({})).toEqual([]);
   });
 
   it('file ticket + pairKey deduplication (same pair open does not create duplicate)', async () => {

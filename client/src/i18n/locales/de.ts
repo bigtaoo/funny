@@ -825,6 +825,7 @@ export const de: Record<TranslationKey, string> = {
   'world.err.pathBlocked': 'Keine begehbare Route (Gelände blockiert)',
   'world.err.notConnected': 'Das Ziel muss an das Gebiet deiner Sekte angrenzen',
   'world.err.satchelCap': 'Das Team trägt mehr Truppen als das Ranzen-Limit — Ranzen bauen/aufwerten oder Team verkleinern',
+  'world.err.revConflict': 'Dein Status hat sich gerade geändert — bitte erneut versuchen',
   // Militäraktionen / Belagerung (C2)
   'world.actAttack': 'Belagern',
   'world.actReinforce': 'Verstärken',

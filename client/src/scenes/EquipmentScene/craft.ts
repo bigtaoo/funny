@@ -95,7 +95,9 @@ export class CraftPanel {
     const imgBox = CRAFT_CELL_H - (pad + 32) - pad;
     const imgX = x + pad;
     const imgY = y + pad + 32;
-    const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, border: color, seed: seedFor(x, y, imgBox) });
+    // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind is already
+    // the one background layer, this frame is a stroke-only rarity-colored outline.
+    const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, fillAlpha: 0, border: color, seed: seedFor(x, y, imgBox) });
     frame.x = imgX; frame.y = imgY;
     core.bodyLayer.addChild(frame);
     core.addGlyph(def.slot, def.rarity, imgX + imgBox / 2, imgY + imgBox / 2, imgBox - 8, seedFor(x, imgBox, cellW), 1, defId);

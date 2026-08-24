@@ -155,7 +155,9 @@ describe('Full pipeline: client POST events through server buildAnomalyLokiPaylo
     // Take the body actually emitted by the client and feed it into the server's real Loki formatting function (what the handler does internally).
     const body = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
     expect(body.buildVersion).toBe('0.0.0'); // __NW_BUILD_VERSION__ unbaked in test env
-    const payload = buildAnomalyLokiPayload(body.publicId, body.events, body.platform, body.buildVersion, () => '0')!;
+    // Whole envelope, forwarded the way the handler forwards it — so a client field that never
+    // reaches the Loki line (the failure mode this seam exists to catch) fails here.
+    const payload = buildAnomalyLokiPayload(body.publicId, body.events, body, () => '0')!;
 
     expect(payload.streams).toHaveLength(1);
     expect(payload.streams[0].stream).toEqual({ source: 'client', kind: 'anomaly' });
@@ -357,5 +359,69 @@ describe('Crash sentinel immediate eager flush on catch-up report (Bug B regress
     const sentinel = JSON.parse(cap.store.get(SENTINEL)!);
     expect(sentinel.cleanExit).toBeUndefined();
     expect(typeof sentinel.startedAt).toBe('number');
+  });
+});
+
+// ── Crash reports describe the session that DIED, not the one filing the report (2026-08-24) ──────
+describe('Crash sentinel device context', () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it('reports the dead session\'s orientation, not the reader\'s current one', async () => {
+    // The trap this guards: a crash report is filed on the NEXT startup. Snapshotting the live
+    // orientation there would describe the session that survived — and would manufacture a confident
+    // "it crashed in portrait" claim out of nothing but how the player happened to be holding the
+    // phone when they reopened the game. That is worse than having no field at all, because it reads
+    // as evidence.
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
+    vi.stubGlobal('innerWidth', 390);   // reader is in PORTRAIT now...
+    vi.stubGlobal('innerHeight', 844);
+    cap.store.set(SENTINEL, JSON.stringify({
+      startedAt: 1000, lastSeenAt: 5000,
+      orient: 'landscape', vp: '844x390', lastRotAt: 5000,  // ...but it died in LANDSCAPE, mid-rotation
+    }));
+
+    mod.initCrashSentinel();
+
+    const sent = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const crash = sent.events.find((e: { type: string }) => e.type === 'crash');
+    expect(crash.orient).toBe('landscape');
+    expect(crash.vp).toBe('844x390');
+    // lastSeenAt === lastRotAt: the last thing we ever heard from that session was it rotating.
+    expect(crash.sinceRot).toBe(0);
+  });
+
+  it('carries no sinceRot for a session that never rotated', async () => {
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
+    cap.store.set(SENTINEL, JSON.stringify({ startedAt: 1000, lastSeenAt: 5000, orient: 'portrait' }));
+
+    mod.initCrashSentinel();
+
+    const sent = JSON.parse((cap.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const crash = sent.events.find((e: { type: string }) => e.type === 'crash');
+    expect(crash.orient).toBe('portrait');
+    expect(crash.sinceRot).toBeUndefined();
+  });
+
+  it('persists a rotation immediately, so a kill right after one still lands on disk', async () => {
+    // Before this, the sentinel was only written every 15s. A session that rotated and was killed
+    // moments later left nothing but `aliveMs:0` — indistinguishable from dying instantly at boot,
+    // and with no record that a rotation had ever happened. That is precisely the case we could not see.
+    const { mod, cap } = await freshAnomaly({ publicId: PUBLIC_ID, buildVersion: 'abc1234' });
+    vi.stubGlobal('innerWidth', 390);
+    vi.stubGlobal('innerHeight', 844);
+
+    mod.initCrashSentinel();
+    expect(JSON.parse(cap.store.get(SENTINEL)!).lastRotAt).toBeUndefined();
+
+    vi.stubGlobal('innerWidth', 844); // turned sideways...
+    vi.stubGlobal('innerHeight', 390);
+    cap.fire('resize');               // ...well inside the 15s heartbeat gap
+
+    const sentinel = JSON.parse(cap.store.get(SENTINEL)!);
+    expect(typeof sentinel.lastRotAt).toBe('number');
+    expect(sentinel.orient).toBe('landscape');
+    expect(sentinel.vp).toBe('844x390');
+    // The rotation write doubles as a liveness stamp, which is what sharpens aliveMs for these deaths.
+    expect(sentinel.lastSeenAt).toBe(sentinel.lastRotAt);
   });
 });

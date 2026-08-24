@@ -305,8 +305,11 @@ export function drawRecommendStrip(
   let cx = x + 6 * S;
   for (const card of shown) {
     const def = CARD_DEFS[card.defId];
+    // fillAlpha: 0 — see list.ts's renderCardCell (2026-08-21): the modal panel behind is already
+    // the one background layer, this chip is a stroke-only outline.
     const frame = sketchPanel(chipW, chipH, {
       fill: 0xf5f3ec,
+      fillAlpha: 0,
       border: deployedOf(card.id) ? C.gold : (def ? FACTION_COLOR[def.faction] : C.mid),
       seed: seedFor(0, 27, chipW),
     });

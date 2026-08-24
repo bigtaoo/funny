@@ -159,7 +159,7 @@ Lets operations pull **a single player's** client logs into Loki/Grafana by **9-
 The mechanism goes through feature flags (`client_log_error/warn/info/debug` four tiered switches + `allowPublicIds` targeting dimension);
 client polls `GET /bootstrap` every 2 minutes for the matched level, then on match batches logs at or above the threshold from a ring buffer via `POST /client/log`, metaserver forwards to Loki.
 
-- **Full design and implementation record**: `design/game/FEATURE_FLAGS_DESIGN.md` §9 + §8 "2026-06-24 · Client Log Targeted Collection" (authoritative).
+- **Full design and implementation record**: `design/game/FEATURE_FLAGS_DESIGN.md` §9 (spec) + `design/game/FEATURE_FLAGS_DESIGN_LOG.md` §8 "2026-06-24 · Client Log Targeted Collection" (authoritative; §8 was split out of FEATURE_FLAGS_DESIGN.md per ADR-067).
 - **How to use** (operations): ops "Feature Flags" → select the desired level flag (e.g. `client_log_debug`) → **set gray ratio to 0** + put target 9-digit publicId in **allowPublicIds** → save. Client matches within ≤2 minutes and starts reporting. Grafana left bar "Notebook Wars → Client Logs (Targeted Collection)" panel: fill in publicId to view.
 - **⚠ Critical exclusion gotcha**: filling allowPublicIds without setting pct=0 → flag opens for **everyone** (full client reporting, catastrophic). Must use `pct:0` (exclude everyone else) + `allowPublicIds` (allow-list for targeting).
 - **Loki ingestion convention**: labels only `{source="client", level=...}` (low cardinality); `publicId` / `tag` / `msg` in **line body** (logfmt); Grafana query: `{source="client"} | logfmt | publicId="<9-digit>"`.

@@ -16,13 +16,16 @@ export class IngestService {
   async ingestEvents(batch: EventBatch, userId: string | undefined, geo?: ResolvedGeo): Promise<void> {
     if (!batch.events || batch.events.length === 0) return;
 
-    const { browser, device_type } = parseUserAgent(batch.ua);
+    const { browser, device_type, webview } = parseUserAgent(batch.ua);
     const deviceFields = {
       ...(batch.ua ? { ua: batch.ua } : {}),
       ...(typeof batch.screen_w === 'number' ? { screen_w: batch.screen_w } : {}),
       ...(typeof batch.screen_h === 'number' ? { screen_h: batch.screen_h } : {}),
       ...(typeof batch.dpr === 'number' ? { dpr: batch.dpr } : {}),
       ...(batch.ua ? { browser, device_type } : {}),
+      // Only set when the UA actually identifies a host app, so "absent" keeps meaning "an ordinary
+      // browser" and the sparse index below stays small.
+      ...(webview ? { webview } : {}),
       ...(geo?.ip ? { ip: geo.ip } : {}),
       ...(geo?.country ? { geo_country: geo.country } : {}),
       ...(geo?.region ? { geo_region: geo.region } : {}),

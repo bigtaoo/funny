@@ -45,6 +45,19 @@ import {
   type CardInstance,
 } from '@nw/shared';
 import type { ArmyEntry, CardSLGState } from './db';
+
+// INVARIANT: this file must never gain a RUNTIME relative import/re-export (`import`/`export … from './x'`
+// without an explicit extension). `import type` is fine — it is erased before the module ever loads.
+//
+// siegeEngine.ts is loaded inside the siege worker thread (siegeWorker.ts), which runs under tsx, whose
+// extensionless-specifier resolution is broken in a worker_thread realm on Linux — see siegeWorker.ts's own
+// comment for the 2026-08-14 investigation. On Windows the same specifier resolves fine, so a violation
+// passes locally and fails only on CI. It bit again on 2026-08-24: splitting the post-battle card-army
+// state into ./cardStateSettlement.ts and re-exporting it from here (to keep existing import sites working)
+// turned this module's first runtime relative import into a hard worker crash — "Cannot find module
+// .../src/cardStateSettlement". The three symbols are imported from './cardStateSettlement' directly at
+// their four call sites instead, and siegeengine-worker-imports.test.ts pins this invariant statically so
+// the next violation fails on every machine rather than only on Linux.
 // NOT a top-level import (see runSiegeBattle below for why) — deliberately deferred to a lazy
 // dynamic import inside that function's body instead of `import { getSiegeWorkerPool } from
 // './siegeWorkerPool'` up here.
@@ -293,65 +306,6 @@ export function toEngineCardInstances(
   return { cardInstances, engEquipInv: equipmentInv as EngineEquipInv };
 }
 
-/** Post-battle card state updates for attacker cards (CC-3, CHARACTER_CARDS_DESIGN §7.1/§7.2). */
-export interface CardStateUpdate {
-  currentTroops: number;
-  injuredUntil?: number;
-}
-
-/**
- * Computes per-card state updates after a siege battle (CC-3).
- * Uses a uniform attacker survival rate (total surviving HP / total deployed HP) applied proportionally
- * to each card's currentTroops. Cards whose HP reaches zero (total survivors == 0) are marked injured.
- * baseSurvival guarantees a minimum troop fraction even on full defeat (CHARACTER_CARDS_DESIGN §7.1).
- *
- * @param army            Attacker army entries with cardInstanceId
- * @param cardState       Current card state (for deployedTroops lookup)
- * @param attackerSurvivors Total attacker surviving HP from the engine
- * @param nowMs           Current time in ms (for injuredUntil calculation)
- */
-export function computeCardStateUpdates(
-  army: ArmyEntry[],
-  cardState: Record<string, CardSLGState>,
-  attackerSurvivors: number,
-  nowMs: number,
-  attackerDeployed?: number,
-): Record<string, CardStateUpdate> {
-  const updates: Record<string, CardStateUpdate> = {};
-  const cardIds = army.map((e) => e.cardInstanceId).filter((id): id is string => !!id);
-  if (cardIds.length === 0) return updates;
-
-  const nominalTroops = cardIds.reduce((s, id) => s + (cardState[id]?.currentTroops ?? 0), 0);
-  // If no troops deployed, no state change needed.
-  if (nominalTroops === 0) return updates;
-
-  // ADR-069: the survival ratio must compare like with like. `attackerSurvivors` comes out of the
-  // engine as a sum of per-unit HP, each one clamped to that unit's blueprint capacity, so on the
-  // engine path it can never reach the team's NOMINAL troop total — dividing by the nominal total
-  // (the pre-ADR-069 behavior) capped survival at the clamp ratio (~40-60% for a real card team)
-  // and shredded the team's troops on every battle, won or lost, which is how a player who kept
-  // attacking watched a full team decay to nothing in a handful of fights. Callers that ran the
-  // engine pass `SiegeResolution.attackerDeployed` (the clamped deployed sum); the cheap linear
-  // path's survivors are already in raw-troop units, so its `attackerDeployed` equals the nominal
-  // troops and the ratio is unchanged. Omitted / non-positive → fall back to the nominal total.
-  const denominator = attackerDeployed && attackerDeployed > 0 ? attackerDeployed : nominalTroops;
-
-  // Apply baseSurvival floor: even at 0 survivors, each card keeps baseSurvival fraction of its troops.
-  const survivalRate = Math.max(
-    CARD_BASE_SURVIVAL,
-    Math.min(1, attackerSurvivors / denominator),
-  );
-  const totalZero = attackerSurvivors === 0;
-
-  for (const id of cardIds) {
-    const deployed = cardState[id]?.currentTroops ?? 0;
-    const newTroops = Math.round(deployed * survivalRate);
-    const update: CardStateUpdate = { currentTroops: newTroops };
-    if (totalZero) update.injuredUntil = nowMs + CARD_INJURY_DURATION_MS;
-    updates[id] = update;
-  }
-  return updates;
-}
 
 /** Both-sides army layout and level parameters for a siege battle (attacker required; defender may be null = base-only). */
 export interface SiegeBattleInput {

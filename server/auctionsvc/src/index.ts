@@ -15,6 +15,9 @@ async function main(): Promise<void> {
 
   const mongo = await createAuctionMongo(env.auctionMongoUri, env.auctionMongoDb);
   await mongo.ensureIndexes();
+  // Before the HTTP server accepts traffic and before the scheduler's sweep starts, so there are no
+  // concurrent writers (same posture as worldsvc's runMigrations).
+  await mongo.runMigrations();
 
   const commercial = env.commercialInternalUrl
     ? new HttpAuctionCommercialClient(env.commercialInternalUrl, env.internalKey)

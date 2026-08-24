@@ -5,9 +5,14 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FlagContext, FlagPlatform } from '@nw/shared';
 import { ok, FLAG_KEYS, flagDefault, extractBearer, verifyToken, FLAG_PLATFORMS } from '@nw/shared';
 import { ErrorCode, err } from '@nw/shared';
-import { buildLokiPayload, buildAnomalyLokiPayload, pushToLoki, type ClientLogEntry, type ClientAnomalyEvent } from '../clientLog.js';
+import { buildLokiPayload, buildAnomalyLokiPayload, pushToLoki, type ClientLogEntry, type ClientAnomalyEvent, type ClientAnomalySession } from '../clientLog.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
 import { createRateLimiter, type RateLimiter, type MetaCore } from './base.js';
+
+/** Clamp a client-supplied number into a sane range (telemetry is unauthenticated — see clientAnomaly). */
+function clampNum(n: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, n));
+}
 
 type TelemetryHandlers = Pick<
   MetaHandlers,
@@ -125,7 +130,10 @@ export class TelemetryService {
      * **Always returns 200** (Loki unreachable / rate-limited / invalid input also does not affect players).
      */
     async clientAnomaly(req: FastifyRequest, reply: FastifyReply) {
-      const body = (req.body ?? {}) as { publicId?: unknown; platform?: unknown; buildVersion?: unknown; events?: unknown };
+      const body = (req.body ?? {}) as {
+        publicId?: unknown; platform?: unknown; buildVersion?: unknown; events?: unknown;
+        device?: unknown; dpr?: unknown; mem?: unknown;
+      };
       if (!Array.isArray(body.events)) {
         return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing events'));
       }
@@ -138,8 +146,16 @@ export class TelemetryService {
       // before login/allowlisting), so without a cap here a client could submit an oversized publicId
       // that buildAnomalyLine then embeds verbatim into every one of up to 200 Loki lines per request.
       const publicId = typeof body.publicId === 'string' && body.publicId ? body.publicId.slice(0, 64) : 'anon';
-      const platform = typeof body.platform === 'string' ? body.platform.slice(0, 32) : undefined;
-      const buildVersion = typeof body.buildVersion === 'string' && body.buildVersion ? body.buildVersion.slice(0, 32) : undefined;
+      // Session envelope. `device`/`dpr`/`mem` are capped/clamped here for the same reason publicId is:
+      // this endpoint is exempt from the allowPublicIds gate, so every field lands inline on up to 200
+      // Loki lines per request. buildAnomalyLine additionally allowlists `device` by value.
+      const session: ClientAnomalySession = {
+        platform: typeof body.platform === 'string' ? body.platform.slice(0, 32) : undefined,
+        buildVersion: typeof body.buildVersion === 'string' && body.buildVersion ? body.buildVersion.slice(0, 32) : undefined,
+        device: typeof body.device === 'string' ? body.device.slice(0, 16) : undefined,
+        dpr: typeof body.dpr === 'number' && Number.isFinite(body.dpr) ? clampNum(body.dpr, 0, 16) : undefined,
+        mem: typeof body.mem === 'number' && Number.isFinite(body.mem) ? clampNum(body.mem, 0, 1024) : undefined,
+      };
       const events: ClientAnomalyEvent[] = (body.events as unknown[]).slice(0, 200).flatMap((raw) => {
         if (!raw || typeof raw !== 'object') return [];
         const o = raw as Record<string, unknown>;
@@ -150,17 +166,25 @@ export class TelemetryService {
         // drop crash events from unbaked dev builds (buildVersion '0.0.0') so a client that missed the fix can't
         // refill Loki with false "unclean exit" crashes from dev hot-reloads. Other anomaly types and real-build
         // crashes (including crashes with no buildVersion reported) pass through untouched.
-        if (type === 'crash' && buildVersion === '0.0.0') return [];
+        if (type === 'crash' && session.buildVersion === '0.0.0') return [];
         const e: ClientAnomalyEvent = {
           type,
           msg,
           ts: typeof o.ts === 'number' && Number.isFinite(o.ts) ? o.ts : this.core.deps.now(),
         };
         if (typeof o.detail === 'string' && o.detail) e.detail = o.detail.slice(0, 1000);
+        // Moment-level device context; buildAnomalyLine allowlists `orient` by value.
+        if (typeof o.orient === 'string' && o.orient) e.orient = o.orient.slice(0, 16);
+        if (typeof o.vp === 'string' && o.vp) e.vp = o.vp.slice(0, 16);
+        if (typeof o.sinceRot === 'number' && Number.isFinite(o.sinceRot)) {
+          // Clamped rather than dropped: a bogus value is still evidence the client rotated, and the
+          // ceiling (24h) keeps a garbage number from reading as a plausible duration.
+          e.sinceRot = clampNum(o.sinceRot, 0, 86_400_000);
+        }
         return [e];
       });
 
-      const payload = buildAnomalyLokiPayload(publicId, events, platform, buildVersion, () =>
+      const payload = buildAnomalyLokiPayload(publicId, events, session, () =>
         (BigInt(this.core.deps.now()) * 1_000_000n).toString(),
       );
       if (payload) void pushToLoki(this.core.deps.lokiPushUrl, payload);

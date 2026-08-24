@@ -168,32 +168,63 @@ export class CityBuildingsService {
     const next: Partial<Record<BuildingKey, number>> = { ...(fresh.buildings ?? { desk: 1 }) };
     for (const e of done) next[e.key] = Math.max(next[e.key] ?? buildingLevel(fresh.buildings, e.key), e.toLevel);
     const newQueue = (fresh.buildQueue ?? []).filter((e) => e.completeAt > t);
-    const resources = this.core.settle(fresh, t); // settle at the old rate/cap up to now, before the rate changes
     // Compute the post-upgrade yield from the new levels directly (buildings not yet persisted).
     const yieldRate = await this.core.recomputeYield(worldId, accountId, next, fresh.hasBattlePass);
     const bq = buildQueueOps(newQueue);
-    await cols.playerWorld.updateOne(
-      { _id: docId },
+    // 2026-08-24 (unguarded-write sweep): this write had no filter beyond `_id` and carried an absolute
+    // `resources` settled from the `fresh` snapshot read at the top of this method — with recomputeYield's
+    // tile scans in between, and reachable both from the 2s scheduler tick and synchronously from
+    // speedupBuild. Any concurrent credit or debit in that window was silently discarded.
+    //
+    // settleExpr still takes the OLD `fresh.buildings` for the storage cap: the accrual must be banked at
+    // the pre-upgrade rate/cap before the new levels land, which is what the deleted comment above said and
+    // what a single `$set` stage gives for free (every expression reads the pre-update document, so
+    // `buildings: next` in the same stage cannot affect it).
+    await cols.playerWorld.updateOne({ _id: docId }, [
       {
-        $set: { buildings: next, buildQueue: newQueue, resources, yieldRate, troopCap: troopCapFor(next), lastTickAt: t, ...bq.set },
-        $inc: { rev: 1 },
-        ...(Object.keys(bq.unset).length ? { $unset: bq.unset } : {}),
+        $set: {
+          buildings: next,
+          buildQueue: newQueue,
+          resources: this.core.settleExpr(fresh.buildings, t),
+          yieldRate,
+          troopCap: troopCapFor(next),
+          lastTickAt: t,
+          ...bq.set,
+          // buildQueueOps only ever unsets this one mirror field; `$$REMOVE` is its pipeline spelling.
+          ...(Object.keys(bq.unset).length ? { nextBuildCompleteAt: '$$REMOVE' } : {}),
+          rev: { $add: ['$rev', 1] },
+        },
       },
-    );
+    ]);
     // D-CITY-8: a completed `wall` upgrade raises durabilityMax — regen up to now, then apply the delta
     // (preserves absolute damage already taken instead of resetting to full), and rebase the regen anchor.
     if (done.some((e) => e.key === 'wall') && fresh.mainBaseTile) {
       const oldMax = baseDurabilityMax(buildingLevel(fresh.buildings, 'wall'));
       const newMax = baseDurabilityMax(buildingLevel(next, 'wall'));
       if (newMax !== oldMax) {
-        const tile = await cols.tiles.findOne({ _id: fresh.mainBaseTile });
-        if (tile) {
+        // 2026-08-24 (tiles sweep): rev-guarded with a bounded retry. This publishes an absolute durability
+        // derived from a snapshot read one line up, and the document it targets is the base tile — the same
+        // one processDueSiegeDamage writes. Unguarded, a wall upgrade completing while the base was under
+        // siege reverted the damage taken in between: a free heal, in the player's favour and reachable
+        // simply by queueing a wall upgrade before logging off. Retry rather than a pipeline for the same
+        // reason as the siege path: regenDurability is a shared formula and re-reading is the correct
+        // semantics (rebase the raised cap onto whatever damage now stands).
+        const MAX_TILE_ATTEMPTS = 5;
+        for (let attempt = 0; attempt < MAX_TILE_ATTEMPTS; attempt++) {
+          const tile = await cols.tiles.findOne({ _id: fresh.mainBaseTile });
+          if (!tile) break;
           const regened = regenDurability(tile.durability ?? oldMax, oldMax, tile.durabilityRegenAt ?? t, t);
           const durability = Math.min(newMax, regened + (newMax - oldMax));
-          await cols.tiles.updateOne(
-            { _id: fresh.mainBaseTile },
+          const res = await cols.tiles.updateOne(
+            { _id: fresh.mainBaseTile, rev: tile.rev },
             { $set: { durability, durabilityMax: newMax, durabilityRegenAt: t }, $inc: { rev: 1 } },
           );
+          if (res.matchedCount > 0) break;
+          if (attempt === MAX_TILE_ATTEMPTS - 1) {
+            // The cap still rises with the building level on the next hit/regen that touches the tile, so a
+            // lost race here costs the player nothing permanent — log it and move on.
+            console.error('[worldsvc] applyDueBuilds: wall durability rebase lost the rev race', { tile: fresh.mainBaseTile });
+          }
         }
       }
     }

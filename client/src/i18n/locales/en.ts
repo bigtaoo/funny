@@ -825,6 +825,7 @@ export const en: Record<TranslationKey, string> = {
   'world.err.pathBlocked': 'No passable route (terrain blocks the way)',
   'world.err.notConnected': 'Target must border your sect\'s territory',
   'world.err.satchelCap': 'Team carries more troops than the satchel cap — build/upgrade a satchel or reduce the team',
+  'world.err.revConflict': 'Your state just changed — please try again',
   // Military actions / siege (C2)
   'world.actAttack': 'Siege',
   'world.actReinforce': 'Reinforce',

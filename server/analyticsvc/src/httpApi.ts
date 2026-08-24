@@ -59,14 +59,32 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   });
 }
 
-function send(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, {
-    'content-type': 'application/json',
+// How long a browser may cache the preflight for POST /analytics/events. Load-bearing, not a
+// micro-optimisation: that POST carries an `Authorization` header, which makes it preflighted, and
+// the client's hide/unload flush (analytics/queue.ts flushSync) has to complete while the page is
+// going away. Without caching, every flush pays an OPTIONS round trip first and the unload one is
+// racing teardown to do it. With it, the periodic flush keeps the preflight warm and the unload
+// flush goes out as a single request. 24h is the practical ceiling browsers honour.
+const PREFLIGHT_MAX_AGE_S = 86_400;
+
+function corsHeaders(): Record<string, string> {
+  return {
     'access-control-allow-origin': '*',
     'access-control-allow-headers': 'authorization,content-type,x-internal-key',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-  });
+    'access-control-max-age': String(PREFLIGHT_MAX_AGE_S),
+  };
+}
+
+function send(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json', ...corsHeaders() });
   res.end(JSON.stringify(body));
+}
+
+/** Preflight reply: headers only. A 204 must not carry a body, so this cannot go through send(). */
+function sendPreflight(res: ServerResponse): void {
+  res.writeHead(204, corsHeaders());
+  res.end();
 }
 
 function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
@@ -86,7 +104,7 @@ export function startHttpApi(
         return send(res, 200, { ok: true, service: 'analyticsvc' });
       }
       if (method === 'OPTIONS') {
-        return send(res, 204, {});
+        return sendPreflight(res);
       }
 
       // ─── GET /analytics/config (no auth, accessible anonymously) ─────────────────────────
@@ -192,6 +210,10 @@ export function startHttpApi(
         if (type === 'browser_dist') {
           const browser_dist = await svc.queryBrowserDist(days);
           return send(res, 200, ok({ type, browser_dist }));
+        }
+        if (type === 'webview_dist') {
+          const webview_dist = await svc.queryWebViewDist(days);
+          return send(res, 200, ok({ type, webview_dist }));
         }
         if (type === 'device_type_dist') {
           const device_type_dist = await svc.queryDeviceTypeDist(days);

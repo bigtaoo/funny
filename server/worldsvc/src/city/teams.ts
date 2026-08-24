@@ -302,6 +302,9 @@ export class CityTeamsService {
       accountId, CARD_RECOVER_COIN_COST, `recover:${worldId}:${accountId}:${cardInstanceId}:${nowMs}`, clientPlatform,
     );
 
+    // Unguarded on purpose (2026-08-24 sweep): the value written is supplied by this command, not derived
+    // from a snapshot read, and the `$set` is scoped to its own dotted path — so there is no other writer's
+    // delta for it to overwrite. Last-writer-wins on a field the player just set is the intended semantics.
     await cols.playerWorld.updateOne(
       { _id: pwId },
       { $set: { [`cardState.${cardInstanceId}.injuredUntil`]: null }, $inc: { rev: 1 } },

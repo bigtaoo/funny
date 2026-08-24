@@ -35,11 +35,11 @@ import {
   scaleArmyByRatio,
   resolveCardArmy,
   toEngineCardInstances,
-  computeCardStateUpdates,
   sumArmyHp,
   toDefenderFormation,
   shouldUseCheapSiege,
 } from '../siegeEngine';
+import { computeCardStateUpdates, cardStateDeltaPipeline } from '../cardStateSettlement';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { MarchDoc, PlayerWorldDoc, StationedDoc, ArmyEntry } from '../db';
 import { WorldCore } from '../core';
@@ -103,21 +103,23 @@ export class EncounterService {
   private async writeFieldCardState(pw: PlayerWorldDoc, army: ArmyEntry[], survivors: number, t: number, deployed?: number): Promise<void> {
     const core = this.core;
     const cardUpdates = computeCardStateUpdates(army, pw.cardState ?? {}, survivors, t, deployed);
-    const cardStateSet: Record<string, unknown> = {};
+    // 2026-08-24: persist the battle's per-card LOSS, not an absolute survivor count — see
+    // cardStateDeltaPipeline. Identical result with no concurrent write; a distributeTroops top-up that does
+    // land in the window now survives instead of being erased.
     pw.cardState = pw.cardState ?? {};
     for (const [id, update] of Object.entries(cardUpdates)) {
-      cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-      cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
       // Keep the in-memory copy consistent for a possible second encounter in the same advanceMarch loop.
+      // Mirror the same clamped subtraction the pipeline performs, so the second encounter's `deployed`
+      // matches what the database now holds rather than the absolute this used to assume.
+      const prev = pw.cardState[id]?.currentTroops ?? 0;
       pw.cardState[id] = {
         ...(pw.cardState[id] ?? { currentTroops: 0 }),
-        currentTroops: update.currentTroops,
+        currentTroops: Math.max(0, prev - update.losses),
         ...(update.injuredUntil != null ? { injuredUntil: update.injuredUntil } : {}),
       };
     }
-    if (Object.keys(cardStateSet).length > 0) {
-      await core.deps.cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-    }
+    const cardPipeline = cardStateDeltaPipeline(cardUpdates);
+    if (cardPipeline.length > 0) await core.deps.cols.playerWorld.updateOne({ _id: pw._id }, cardPipeline);
   }
 
   /**

@@ -135,6 +135,38 @@ describe('HttpAuctionClient', () => {
     expect(rows).toEqual([{ id: 'l1' }]);
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://auction/internal/audit/listings?sellerId=s1&itemType=card&status=open&itemName=dragon&limit=20');
   });
+
+  it('listSettlementDebts returns [] unconfigured, throws on failure, builds the full query string, and maps a good response', async () => {
+    expect(await new HttpAuctionClient(null, 'k').listSettlementDebts({})).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Throws rather than returning empty: "nothing owed" and "auctionsvc did not answer" are opposite
+    // readings of the same blank table, and showing the reassuring one is how a stuck debt stays hidden.
+    fetchMock.mockResolvedValue({ ok: false, status: 503, body: null, error: 'down' });
+    await expect(new HttpAuctionClient('http://auction', 'k').listSettlementDebts({})).rejects.toThrow('listSettlementDebts failed');
+
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: { data: [{ orderId: 'auction_buy:a:b' }] } });
+    const rows = await new HttpAuctionClient('http://auction', 'k').listSettlementDebts({
+      auctionId: 'a:s:1:1',
+      accountId: 'acc-2',
+      minAttempts: 10,
+      limit: 25,
+    });
+    expect(rows).toEqual([{ orderId: 'auction_buy:a:b' }]);
+    expect(fetchMock.mock.calls.at(-1)?.[0])
+      .toBe('http://auction/internal/audit/settlements?auctionId=a%3As%3A1%3A1&accountId=acc-2&minAttempts=10&limit=25');
+
+    // Unfiltered = "everything still owed", the useful default for this endpoint.
+    await new HttpAuctionClient('http://auction', 'k').listSettlementDebts({});
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://auction/internal/audit/settlements?');
+
+    // An explicit 0 must survive: it means "no threshold", which a truthiness check would drop.
+    await new HttpAuctionClient('http://auction', 'k').listSettlementDebts({ minAttempts: 0 });
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('http://auction/internal/audit/settlements?minAttempts=0');
+
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: {} });
+    expect(await new HttpAuctionClient('http://auction', 'k').listSettlementDebts({})).toEqual([]);
+  });
 });
 
 describe('HttpAnalyticsClient', () => {

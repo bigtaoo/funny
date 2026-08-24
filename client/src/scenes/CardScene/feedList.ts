@@ -53,7 +53,10 @@ export function drawFuseCandidateRow(
   const thumbX = listX + 4 * S;
   const thumbY = rowTop + (rowH - thumbBox) / 2;
   if (gDef) {
-    const frame = sketchPanel(thumbBox, thumbBox, { fill: 0xf0eee7, border: FACTION_COLOR[gDef.faction], seed: seedFor(i, 24, thumbBox) });
+    // fillAlpha: 0 — see list.ts's renderCardCell (2026-08-21): rowBg above is already the one
+    // background layer, this frame is a stroke-only faction-colored outline, not a second fill
+    // stacked directly against it (the two were nearly the same cream at this row's small scale).
+    const frame = sketchPanel(thumbBox, thumbBox, { fill: 0xf0eee7, fillAlpha: 0, border: FACTION_COLOR[gDef.faction], seed: seedFor(i, 24, thumbBox) });
     frame.x = thumbX; frame.y = thumbY;
     listC.addChild(frame);
     const artUrl = cardInstanceArtUrl({ defId: g.defId });

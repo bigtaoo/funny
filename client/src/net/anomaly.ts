@@ -27,6 +27,11 @@
 // importing only from its siblings (never back from here), so this split stays acyclic.
 export type { AnomalyType } from './anomaly/reporter';
 export { anomalyReporter, reportAnomaly, setAnomalyStorage, readBuildVersion } from './anomaly/reporter';
+export type { DeviceClass, MomentContext, OrientationName } from './anomaly/deviceContext';
+export {
+  deviceClass, devicePixelRatio, deviceMemoryGb,
+  orientation, momentContext, installRotationWatch, lastRotationAt,
+} from './anomaly/deviceContext';
 export {
   setActiveScene, getActiveScene, setAnrContextProvider,
   recordFrameSample, recordConstructSample, recordRenderSample,

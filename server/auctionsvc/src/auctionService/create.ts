@@ -1,18 +1,27 @@
 // auctionsvc AuctionService split — create listing (see ../auctionService.ts).
 //
 // Independent sibling class (2026-08-11 re-audit, converted from a linear inheritance chain to
-// composition): depends on AuctionServicePricing (checkPriceGuard/bumpDaily) — the only cross-layer
-// edge in this file, injected via the constructor instead of inherited.
+// composition): depends on AuctionServicePricing (checkPriceGuard/bumpDaily) and, since the 2026-08-24
+// U13 close-out, on AuctionOrderJournal for the escrow itself.
+//
+// What the journal changed here: the escrow → insert window is now recorded, so a crash between "the item
+// left the seller's inventory" and "the listing exists" hands the item back instead of destroying it. The
+// old inline try/catch rollbacks only ever fired on a thrown business error — a process death in that
+// window silently ate the seller's equipment, and an escrow that timed out (rather than being refused) was
+// rolled back on a guess, which could just as easily duplicate the item.
 import { AUCTION_DURATIONS_SEC, AUCTION_MAX_LISTINGS, AUCTION_DAILY_LIST_CAP, AUCTION_BANNED_MATERIALS, SlgError } from '@nw/shared';
 import type { AuctionDoc } from '../db';
 import type { AuctionServiceDeps } from './base';
-import { docToView, makeAuctionId, nextAuctionSeq, categoryOf, equipInstanceOf, cardInstanceOf, type AuctionView } from './base';
+import { docToView, makeAuctionId, nextAuctionSeq, categoryOf, equipInstanceOf, type AuctionView } from './base';
 import type { AuctionServicePricing } from './pricing';
+import type { AuctionOrderJournal } from './journal';
+import { flowKey, planForList } from './journalPlans';
 
 export class AuctionServiceCreate {
   constructor(
     private readonly deps: AuctionServiceDeps,
     private readonly pricing: AuctionServicePricing,
+    private readonly journal: AuctionOrderJournal,
   ) {}
 
   /**
@@ -40,7 +49,7 @@ export class AuctionServiceCreate {
   }): Promise<AuctionView> {
     const { sellerId, itemType, item, qty, durationSec, designatedBuyerId } = params;
     const saleMode = params.saleMode ?? 'fixed';
-    const { cols, now, meta } = this.deps;
+    const { cols, now } = this.deps;
 
     if (!AUCTION_DURATIONS_SEC.includes(durationSec)) throw new SlgError('BAD_REQUEST');
     // Equipment, card and skin qty is always 1 (non-stackable unique instances); material qty must be a
@@ -66,12 +75,7 @@ export class AuctionServiceCreate {
       unitPrice = params.price;
     }
 
-    const ts = now();
-    const seq = nextAuctionSeq();
-    const aid = makeAuctionId(sellerId, ts, seq);
-    const orderId = `auction_list:${aid}`;
-    let storedItem: Record<string, unknown> = item;
-
+    // ── Pre-escrow validation: everything decidable without touching the seller's inventory ──
     if (itemType === 'material') {
       // E Bound-material block
       const material = item['material'] as string | undefined;
@@ -82,68 +86,64 @@ export class AuctionServiceCreate {
       // guardrail check applies unconditionally to every bid amount including a buyout, so a buyout price
       // above the ceiling would otherwise be accepted here but then be permanently un-triggerable at bid
       // time (PRICE_OUT_OF_RANGE), silently making the seller's configured buyout unusable.
-      await this.pricing.checkPriceGuard(categoryOf({ itemType, item }), unitPrice);
-      if (buyoutPrice != null) await this.pricing.checkPriceGuard(categoryOf({ itemType, item }), buyoutPrice);
-      // Concurrent listing count cap
-      const openCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
-      if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
-      // C Daily new-listing cap (reserve slot)
-      await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
-      // Deduct material from meta (escrow)
-      await meta.deductMaterial(sellerId, material, qty, orderId);
-    } else if (itemType === 'equipment') {
-      // A Equipment trade: client sends instanceId; server escrows the full instance (removes from seller inventory) → stores snapshot.
-      const instanceId = item['instanceId'];
-      if (typeof instanceId !== 'string') throw new SlgError('BAD_REQUEST');
-      const openCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
-      if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
-      // Escrow: equipped/locked/not-found causes meta to throw SlgError (EQUIP_IN_USE/EQUIP_LOCKED/EQUIP_NOT_FOUND).
-      const instance = await meta.escrowEquipment(sellerId, instanceId, orderId);
-      storedItem = { instance };
-      try {
-        // G Price guardrail (equipment by defId/rarity/level category) + C daily cap — return escrowed instance on failure.
-        // See the material branch above for why buyoutPrice needs the same guardrail check as unitPrice.
-        await this.pricing.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, unitPrice);
-        if (buyoutPrice != null) await this.pricing.checkPriceGuard(`equip:${instance.defId}:${instance.level}`, buyoutPrice);
-        await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
-      } catch (e) {
-        await meta.grantEquipment(sellerId, instance, `${orderId}:return`);
-        throw e;
-      }
-    } else if (itemType === 'card') {
-      // CC-5 Card trade: client sends instanceId; server escrows the full instance (validates gear all empty, removes from cardInv) → stores snapshot.
-      const instanceId = item['instanceId'];
-      if (typeof instanceId !== 'string') throw new SlgError('BAD_REQUEST');
-      const openCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
-      if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
-      // Escrow: gear-not-empty/not-found causes meta to throw SlgError (CARD_HAS_GEAR/CARD_NOT_FOUND).
-      const instance = await meta.escrowCard(sellerId, instanceId, orderId);
-      storedItem = { instance };
-      try {
-        // C Daily cap — return escrowed card on failure.
-        await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
-      } catch (e) {
-        await meta.grantCard(sellerId, instance, `${orderId}:return`);
-        throw e;
-      }
+      const category = categoryOf({ itemType, item });
+      await this.pricing.checkPriceGuard(category, unitPrice);
+      if (buyoutPrice != null) await this.pricing.checkPriceGuard(category, buyoutPrice);
+    } else if (itemType === 'equipment' || itemType === 'card') {
+      if (typeof item['instanceId'] !== 'string') throw new SlgError('BAD_REQUEST');
     } else if (itemType === 'skin') {
-      // Skin trade (§9 task4): client sends skinId; server escrows it (removes from inventory.skins) → stores {skinId}.
-      const skinId = item['skinId'];
-      if (typeof skinId !== 'string') throw new SlgError('BAD_REQUEST');
-      const openCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
-      if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
-      // Escrow: equipped/not-owned causes meta to throw SlgError (SKIN_IN_USE/SKIN_NOT_FOUND).
-      const escrowedId = await meta.escrowSkin(sellerId, skinId, orderId);
-      storedItem = { skinId: escrowedId };
-      try {
-        // C Daily cap — return escrowed skin on failure (no price guardrail for skins — cold-start pass-through, market-determined).
-        await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
-      } catch (e) {
-        await meta.grantSkin(sellerId, escrowedId, `${orderId}:return`);
-        throw e;
-      }
+      if (typeof item['skinId'] !== 'string') throw new SlgError('BAD_REQUEST');
     } else {
       throw new SlgError('BAD_REQUEST');
+    }
+    // Concurrent listing count cap (fast-fail only; the authoritative recount is after the insert below).
+    const openCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
+    if (openCount >= AUCTION_MAX_LISTINGS) throw new SlgError('AUCTION_LIMIT_REACHED');
+
+    const ts = now();
+    const aid = makeAuctionId(sellerId, ts, nextAuctionSeq());
+    const rowId = flowKey('list', aid);
+    const requested = { itemType, item, qty: effectiveQty };
+
+    // The auction id is freshly minted per request, so this key cannot collide — `begin` is here for the
+    // durable record of the escrow, not for dedupe.
+    const begun = await this.journal.begin(rowId, 'list', aid, sellerId, (cycle) => planForList(rowId, cycle, sellerId, requested));
+    if (begun.state !== 'fresh') throw new SlgError('REV_CONFLICT', 'Listing is already being created, please retry');
+    const row = begun.row;
+
+    // Escrow: removes the item from the seller. Equipped/locked/gear-not-empty/not-found → meta throws an
+    // SlgError, which is definitive, so the journal rolls the flow back with nothing to hand back.
+    try {
+      await this.journal.advance(row);
+    } catch (e) {
+      await this.journal.abort(row);
+      throw e;
+    }
+    if (row.done['escrow'] == null) {
+      // Indeterminate escrow: the sweep resolves it against meta's own orderId idempotency and, since the
+      // listing was never created, hands the item back. Guessing here is what would duplicate it.
+      throw new SlgError('REV_CONFLICT', 'Listing is still being confirmed, please retry');
+    }
+    // Material escrow has nothing to resolve (the payload is already complete); the others come back as
+    // the full instance snapshot the listing stores.
+    const storedItem = row.escrowed?.item ?? item;
+
+    try {
+      if (itemType === 'equipment') {
+        // G Price guardrail (equipment by defId/level category) — only computable once the instance is known.
+        // See the material branch above for why buyoutPrice needs the same check as unitPrice.
+        const inst = equipInstanceOf(storedItem);
+        const category = inst ? `equip:${inst.defId}:${inst.level}` : null;
+        await this.pricing.checkPriceGuard(category, unitPrice);
+        if (buyoutPrice != null) await this.pricing.checkPriceGuard(category, buyoutPrice);
+      }
+      // C Daily new-listing cap (reserve slot). Deliberately after the escrow for every itemType: a cap
+      // rejection now costs the seller nothing, whereas reserving first burned a slot whenever the escrow
+      // then failed.
+      await this.pricing.bumpDaily(sellerId, 'lists', AUCTION_DAILY_LIST_CAP);
+    } catch (e) {
+      await this.journal.abort(row); // hands the escrowed item straight back (op 'grant', requires 'escrow')
+      throw e;
     }
 
     const doc: AuctionDoc = {
@@ -164,48 +164,24 @@ export class AuctionServiceCreate {
     };
     await cols.auctions.insertOne(doc);
 
-    // Authoritative cap enforcement: the per-itemType `openCount >= AUCTION_MAX_LISTINGS` checks above
-    // are only a fast-fail optimization against a stale read — they run before this insert, so concurrent
-    // createAuction calls from the same seller can all pass them before any of them has inserted. This
-    // recount reflects the true persisted state right after the insert, so no race window can leave a
-    // seller above the cap. Its only imperfection: under a genuine simultaneous race, more than one
-    // concurrent request may be told to retry even though a slot was available for one of them — safety
-    // holds (the cap is never exceeded), and a retry immediately succeeds once the field self-corrects.
+    // Authoritative cap enforcement: the `openCount` check above is only a fast-fail optimization against a
+    // stale read — it runs before this insert, so concurrent createAuction calls from the same seller can
+    // all pass it before any of them has inserted. This recount reflects the true persisted state right
+    // after the insert, so no race window can leave a seller above the cap. Its only imperfection: under a
+    // genuine simultaneous race, more than one concurrent request may be told to retry even though a slot
+    // was available for one of them — safety holds (the cap is never exceeded), and a retry immediately
+    // succeeds once the field self-corrects.
     const finalOpenCount = await cols.auctions.countDocuments({ sellerId, status: 'open' });
     if (finalOpenCount > AUCTION_MAX_LISTINGS) {
       await cols.auctions.deleteOne({ _id: aid });
-      await this.returnEscrowedOnCapReject(sellerId, itemType, storedItem, effectiveQty, `${orderId}:capreturn`);
+      await this.journal.abort(row);
       throw new SlgError('AUCTION_LIMIT_REACHED');
     }
 
-    return docToView(doc);
-  }
+    // The listing exists: nothing is owed any more, so close the row out.
+    await this.journal.decide(row);
+    await this.journal.finalize(row);
 
-  /**
-   * Directly returns an escrowed item to the seller (immediate re-grant, not mail — mirrors the
-   * escrow-failure rollback already used inline above for equipment/card/skin) after the post-insert
-   * AUCTION_MAX_LISTINGS recheck rejects a listing whose escrow already succeeded.
-   */
-  private async returnEscrowedOnCapReject(
-    sellerId: string,
-    itemType: 'material' | 'equipment' | 'card' | 'skin',
-    storedItem: Record<string, unknown>,
-    qty: number,
-    orderId: string,
-  ): Promise<void> {
-    const { meta } = this.deps;
-    if (itemType === 'material') {
-      const material = storedItem['material'] as string;
-      await meta.grantMaterial(sellerId, material, qty, orderId);
-    } else if (itemType === 'equipment') {
-      const inst = equipInstanceOf(storedItem);
-      if (inst) await meta.grantEquipment(sellerId, inst, orderId);
-    } else if (itemType === 'card') {
-      const inst = cardInstanceOf(storedItem);
-      if (inst) await meta.grantCard(sellerId, inst, orderId);
-    } else if (itemType === 'skin') {
-      const skinId = storedItem['skinId'] as string | undefined;
-      if (skinId) await meta.grantSkin(sellerId, skinId, orderId);
-    }
+    return docToView(doc);
   }
 }

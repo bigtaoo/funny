@@ -126,7 +126,7 @@
 > `client/test/ui/worldMapCityLabel.ui.ts`。
 
 > **资源格 `Lv.N` 标签（2026-08-19，不出图，程序绘制）**：沿用上面主城标签的先例（符号编码"让人迷惑"→ 换纯文字），资源格也画 `Lv.{n}`，但**只在 l6 起、且 tile pitch ≥ 64px 时**显示。
-> - **为什么补这条通道**：分级美术重构（[`slg-resource-art.md` §6.7](../product/slg-resource-art.md)）实测发现「物件数」和「墨量」在等面积归一下互相竞争——一只灌满墨的瓶子比七只带白玻璃间隙的瓶子还密——所以画稿能承载"大致多富"，承载不了"精确第几级"。而精确等级正是决定"这块守军打不打得过"的那个数。
+> - **为什么补这条通道**：分级美术重构（[`slg-resource-art-levels.md` §6.7](../product/slg-resource-art-levels.md)）实测发现「物件数」和「墨量」在等面积归一下互相竞争——一只灌满墨的瓶子比七只带白玻璃间隙的瓶子还密——所以画稿能承载"大致多富"，承载不了"精确第几级"。而精确等级正是决定"这块守军打不打得过"的那个数。
 > - **为什么不全等级都标**：`resourceDensity=1.0`，每格都是资源格。实测程序化地图 l6+ 只占 **1.7%**，所以这条规则下标签是稀疏点缀而不是满屏文字；低档三档体量读数已经够用。
 > - **实现**：`tileGraphics/resources.ts::drawResLevelLabel`，一个共享 `PIXI.BitmapFont` + 每个瓦片池槽位复用一个 `BitmapText`（按名字挂在瓦片 Graphics 上，不需要时只 `visible=false`）。**不能每格 `new PIXI.Text`**——那是每格一张 canvas 纹理，正好撞上已知的 Text 纹理销毁泄漏（`claudedocs/client-memory-leak.md`）。画不画、画什么由 `@nw/shared` 的 `resLevelLabelText(level, tp)` 决定，两端共享。配套：`WorldMapRenderer/pool.ts` 的槽位复位从"只删 Sprite 子节点"改为"非 Sprite 子节点一律隐藏"，否则缩到 L2/L3（那两条路径不碰这个子节点）时标签会浮在没有母题的格子上。回归测试 `client/test/ui/worldMapResMotifLevelRead.ui.ts`。
 

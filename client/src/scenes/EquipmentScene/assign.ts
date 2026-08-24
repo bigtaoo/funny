@@ -156,7 +156,9 @@ export class AssignPanel {
     const imgW = Math.round(imgH * 0.72);
     const imgX = x + pad;
     const imgY = y + pad;
-    const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, imgW) });
+    // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind is already
+    // the one background layer, this frame is a stroke-only outline.
+    const frame = sketchPanel(imgW, imgH, { fill: 0xf0eee7, fillAlpha: 0, border: C.mid, seed: seedFor(x, y, imgW) });
     frame.x = imgX; frame.y = imgY;
     core.bodyLayer.addChild(frame);
     const artUrl = cardInstanceArtUrl(card) ?? undefined;

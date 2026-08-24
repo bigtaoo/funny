@@ -13,7 +13,8 @@ import {
   moraleCombatMultiplier,
   type SiegeResolution,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, computeCardStateUpdates, shouldUseCheapSiege } from '../siegeEngine';
+import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, shouldUseCheapSiege } from '../siegeEngine';
+import { computeCardStateUpdates, cardStateDeltaPipeline } from '../cardStateSettlement';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { MarchDoc, PlayerWorldDoc } from '../db';
 import type { SiegeReplayInputs } from '../worldTypes';
@@ -34,14 +35,11 @@ export async function writeOccupyCardState(
   deployed?: number,
 ): Promise<void> {
   const cardUpdates = computeCardStateUpdates(m.army ?? [], pw.cardState ?? {}, survivors, t, deployed);
-  const cardStateSet: Record<string, unknown> = {};
-  for (const [id, update] of Object.entries(cardUpdates)) {
-    cardStateSet[`cardState.${id}.currentTroops`] = update.currentTroops;
-    cardStateSet[`cardState.${id}.injuredUntil`] = update.injuredUntil != null ? update.injuredUntil : null;
-  }
-  if (Object.keys(cardStateSet).length > 0) {
-    await core.deps.cols.playerWorld.updateOne({ _id: pw._id }, { $set: cardStateSet, $inc: { rev: 1 } });
-  }
+  // 2026-08-24: persist the battle's per-card LOSS, not an absolute survivor count — see
+  // cardStateDeltaPipeline. Identical result with no concurrent write; a distributeTroops top-up that does
+  // land in the window now survives instead of being erased.
+  const cardPipeline = cardStateDeltaPipeline(cardUpdates);
+  if (cardPipeline.length > 0) await core.deps.cols.playerWorld.updateOne({ _id: pw._id }, cardPipeline);
 }
 
 /**

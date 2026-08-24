@@ -145,6 +145,7 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await mongo!.collections.auctions.deleteMany({});
     await mongo!.collections.auctionDaily.deleteMany({});
     await mongo!.collections.auctionPrices.deleteMany({});
+    await mongo!.collections.auctionOrders.deleteMany({});
     spends.length = 0;
     materialDeducts.length = 0;
     materialGrants.length = 0;
@@ -172,6 +173,32 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
   });
 
   const DUR = AUCTION_DURATIONS_SEC[0]!; // shortest duration (e.g. 3600s)
+
+  /**
+   * A service whose `auctions.findOneAndUpdate` runs `hook` once, immediately BEFORE the real call.
+   *
+   * This is the only honest way to test a lost-update window: calling the same method twice in sequence is
+   * not concurrency, and a test written that way passes just as happily against the broken code (the
+   * 2026-08-24 worldsvc sweep got caught by exactly that twice). Hooking the compare-and-swap itself puts
+   * a genuine competing write between the caller's read and its write, which is where the race lives.
+   */
+  const interleaveOnClaim = (hook: () => Promise<void>): AuctionService => {
+    const real = mongo!.collections.auctions;
+    const patched = new Proxy(real, {
+      get(target, prop, receiver) {
+        if (prop !== 'findOneAndUpdate') return Reflect.get(target, prop, receiver);
+        return async (...args: unknown[]) => {
+          await hook();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (target.findOneAndUpdate as any)(...args);
+        };
+      },
+    });
+    return new AuctionService({
+      cols: { ...mongo!.collections, auctions: patched },
+      commercial, meta, mail, now: () => nowMs,
+    });
+  };
 
   it('list auction → deduct and escrow materials', async () => {
     const view = await svc.createAuction({
@@ -314,47 +341,89 @@ describe.skipIf(!mongo)('AuctionService e2e', () => {
     await expect(svc.buyAuction('carol', view.auctionId)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
   });
 
-  it('buy: insufficient funds (commercial rejects spend) → no sale, listing stays open, nothing delivered', async () => {
+  it('buy: insufficient funds (commercial rejects spend) → no sale, listing released back to open, nothing delivered', async () => {
     const view = await svc.createAuction({
       sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
     });
     const originalSpend = commercial.spend;
-    commercial.spend = async () => { throw new Error('INSUFFICIENT_FUNDS'); };
+    // SlgError, not a bare Error: the real HttpAuctionCommercialClient maps commercial's business
+    // rejections through toSpendError, and the journal treats only that class as DEFINITIVE proof that no
+    // charge happened. A bare Error is a transport failure, which proves nothing and must not be rolled
+    // back on a guess — see the next test.
+    commercial.spend = async () => { throw new SlgError('INSUFFICIENT_FUNDS'); };
     try {
-      await expect(svc.buyAuction('bob', view.auctionId)).rejects.toThrow('INSUFFICIENT_FUNDS');
+      await expect(svc.buyAuction('bob', view.auctionId)).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
     } finally {
       commercial.spend = originalSpend;
     }
+    // The listing was claimed before the charge was attempted, so the compensation has to hand it back.
     const stored = await mongo!.collections.auctions.findOne({ _id: view.auctionId });
     expect(stored?.status).toBe('open');
+    expect(stored?.buyerId).toBeUndefined();
     expect(mailAtt('bob', 'auction_buy:')).toBeUndefined();
     expect(mailAtt('alice', 'auction_buy:')).toBeUndefined();
   });
 
-  it('buy: concurrently sniped between doc read and settle → buyer refunded via mail', async () => {
+  it('buy: a charge whose outcome is UNKNOWN (transport failure) is neither delivered nor refunded — it stays owed', async () => {
     const view = await svc.createAuction({
       sellerId: 'alice', itemType: 'material',
       item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
     });
-    // Simulate another buyer completing the sale between bob's initial doc read and the atomic
-    // open→sold write (commercial.spend is awaited in between, so it's a convenient interleave point).
     const originalSpend = commercial.spend;
-    commercial.spend = async (accountId, amount, orderId) => {
-      spends.push({ account: accountId, amount, orderId });
-      await mongo!.collections.auctions.updateOne(
-        { _id: view.auctionId },
-        { $set: { status: 'sold', buyerId: 'eve', soldAt: nowMs, closedAt: nowMs, rev: 2 } },
-      );
-    };
+    // A timeout/socket reset: commercial may well have applied the debit before the answer was lost.
+    // Guessing "did not happen" and releasing the listing would hand the item to someone else while the
+    // first buyer stays charged; guessing "did happen" and delivering would give away goods for free.
+    commercial.spend = async () => { throw new Error('socket hang up'); };
     try {
-      await expect(svc.buyAuction('bob', view.auctionId)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
+      await expect(svc.buyAuction('bob', view.auctionId)).rejects.toMatchObject({ code: 'REV_CONFLICT' });
     } finally {
       commercial.spend = originalSpend;
     }
-    // bob's already-deducted coins come back via mail, not a direct wallet credit
-    expect(mailAtt('bob', 'auction_buy:')).toMatchObject({ kind: 'coins', count: 10 });
-    expect(mailFor('bob', 'auction_buy:')?.content.subject).toBe('auction.mail.refund.subject');
+    // Neither outcome was committed: the listing is still claimed, no mail went out, and the journal row
+    // is still pending with the charge recorded as attempted-but-unresolved.
+    const stored = await mongo!.collections.auctions.findOne({ _id: view.auctionId });
+    expect(stored?.status).toBe('sold');
+    expect(stored?.settledAt).toBeUndefined();
+    expect(mails.filter((m) => m.dispatchKey.includes(view.auctionId))).toHaveLength(0);
+    const row = await mongo!.collections.auctionOrders.findOne({ _id: `auction_buy:${view.auctionId}:bob` });
+    expect(row?.status).toBe('pending');
+    expect(row?.done['spend']).toBeUndefined();
+  });
+
+  it('buy: concurrently sniped between doc read and claim → bob is never charged at all (no refund needed)', async () => {
+    const view = await svc.createAuction({
+      sellerId: 'alice', itemType: 'material',
+      item: { material: 'scrap' }, qty: 1, price: 10, durationSec: DUR,
+    });
+    // 2026-08-24 (U13 close-out): this test used to assert "bob is charged, then refunded by mail". Under
+    // claim-then-charge that outcome no longer exists — and it was worth removing, because the refund it
+    // asserted went out under a dispatch key derived from the LISTING with no buyer in it, so two losing
+    // buyers would have deduped into one refund and the second would simply have lost their coins.
+    //
+    // The interleave has to land in the window between bob's doc read and his claim CAS, which is why it
+    // hooks the CAS itself rather than calling a second buyAuction sequentially: a sequential snipe would
+    // be caught by the cheap `status !== 'open'` check up front and never exercise the CAS at all.
+    let sniped = false;
+    const interleaved = interleaveOnClaim(async () => {
+      if (sniped) return;
+      sniped = true;
+      await mongo!.collections.auctions.updateOne(
+        { _id: view.auctionId },
+        { $set: { status: 'sold', buyerId: 'eve', soldAt: nowMs, closedAt: nowMs }, $inc: { rev: 1 } },
+      );
+    });
+
+    await expect(interleaved.buyAuction('bob', view.auctionId)).rejects.toMatchObject({ code: 'AUCTION_CLOSED' });
+
+    expect(sniped).toBe(true); // the interleave really did run inside the window
+    expect(spends.filter((sp) => sp.account === 'bob')).toHaveLength(0);
+    expect(mails.filter((m) => m.account === 'bob')).toHaveLength(0);
+    // eve keeps the listing; bob's journal row closed out as aborted with nothing owed.
+    const stored = await mongo!.collections.auctions.findOne({ _id: view.auctionId });
+    expect(stored?.buyerId).toBe('eve');
+    const row = await mongo!.collections.auctionOrders.findOne({ _id: `auction_buy:${view.auctionId}:bob` });
+    expect(row?.status).toBe('aborted');
   });
 
   it('designated buyer: another buyer → NOT_DESIGNATED_BUYER', async () => {

@@ -147,7 +147,6 @@ export class CommandService {
     const defenderId = await validateMarchTarget(this.core, worldId, accountId, kind, toX, toY, toTid, hasCardArmy, troops, stationMode);
 
     const t = now();
-    const resources = this.core.settle(pw, t);
     // ADR-051 (P3c): a re-dispatched idle team's troops already left the pool at its original dispatch (they are
     // "out in the field"), so there is no pool balance to check or deduct — same exemption as a card army.
     if (!hasCardArmy && !idleRedispatch && pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
@@ -195,13 +194,39 @@ export class CommandService {
     // march. This frees the field cell and doubles as the team lock: two racing re-dispatches of the same team both
     // pass the findOne gate above, but only one findOneAndDelete wins — the loser gets TEAM_BUSY. The parked team's
     // occupancy entry is dropped too (idle teams register no cover, so there is nothing to remove from that index).
-    // Ordering: the path was already computed (read-only) above, so nothing between here and the insert can throw
-    // and orphan the team. A same-tile occupy (to === from) is an in-place occupation (§4.3): the length-1 path
-    // settles instantly and flows through the normal applyOccupy pipeline.
+    // A same-tile occupy (to === from) is an in-place occupation (§4.3): the length-1 path settles instantly and
+    // flows through the normal applyOccupy pipeline.
+    //
+    // 2026-08-24: this claim is destructive and used to be one-way. The comment here previously asserted that
+    // "nothing between here and the insert can throw and orphan the team" — but the insert itself throws on
+    // E11000, and the playerWorld write below could throw too, and neither path restored the StationedDoc. The
+    // team was simply gone from the field: deleted from `stationed`, with no march to show for it. Every failure
+    // path after the claim now runs `restoreClaim`.
+    let restoreClaim: (() => Promise<void>) | null = null;
     if (idleRedispatch) {
       const claim = await cols.stationed.findOneAndDelete({ worldId, ownerId: accountId, teamId });
       if (!claim) throw new SlgError('TEAM_BUSY', 'Team is no longer stationed (already re-commanded); recall it first');
       await this.core.clearOccupancy(worldId, claim.tile, claim.tile);
+      restoreClaim = async () => {
+        try {
+          await cols.stationed.insertOne(claim);
+        } catch (e) {
+          // Another unit took the cell while the dispatch was in flight (P2 hand-off) — there is nothing safe to
+          // put back onto it, and the team is accounted for by whoever holds the tile now.
+          if ((e as { code?: number }).code === 11000) return;
+          throw e;
+        }
+        // Mirror of the registration in combatMarch/arrival.ts's park path (idle mode → own cell only, no cover).
+        await this.core.setOccupancy(worldId, claim.tile, {
+          kind: 'stationed',
+          id: claim.tile,
+          ownerId: claim.ownerId,
+          ...(claim.familyId ? { familyId: claim.familyId } : {}),
+          teamId: claim.teamId,
+          tile: claim.tile,
+          leaveAt: Number.MAX_SAFE_INTEGER,
+        });
+      };
     }
     // The partial-unique index on {worldId,ownerId,teamId} (db.ts) is the atomic backstop for the idle-team
     // gate above: two concurrent dispatches of the same team both clear the findOne pre-check, but only one insert
@@ -210,46 +235,49 @@ export class CommandService {
     try {
       await cols.marches.insertOne(doc);
     } catch (e) {
+      await restoreClaim?.();
       if (teamId && (e as { code?: number }).code === 11000) {
         throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
       }
       throw e;
     }
-    // Deduct troops on departure (in-transit; not in the pool) — skipped for card armies, whose strength
-    // already lives in cardState.currentTroops and never touches playerWorld.troops (see hasCardArmy above).
-    // The `pw.troops < troops` check above is only a fast-fail on a possibly-stale read; the real guard is
-    // this atomic `troops: {$gte: troops}` filter — without it, two concurrent dispatches can both pass the
-    // early check and both $inc, driving troops negative (over-deploying more troops than the account has).
-    // `resources` was computed above from the `pw` snapshot read at the top of this function, and several
-    // awaits have run since (computeMarchPath's Mongo scans, the idle-redispatch claim). Both branches below
-    // guard the write on `rev: pw.rev` (2026-08-04 fix, closing the same stale-read-then-blind-`$set` lost-update
-    // class that combatShared.ts's refundTroops and combatSiege/helpers.ts's transferLoot were already guarded
-    // against): without it, a concurrent settlement for this same account (e.g. this march's own eventual
-    // return-leg refund, or another siege/occupation landing at the same tick) that bumped rev in between would
-    // have its already-applied resources delta silently overwritten by this call's stale-computed value.
-    if (hasCardArmy || idleRedispatch) {
-      const settled = await cols.playerWorld.updateOne(
-        { _id: pw._id, rev: pw.rev },
-        { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-      );
-      if (settled.matchedCount === 0) {
-        await cols.marches.deleteOne({ _id: mid });
-        throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
-      }
-    } else {
+    // 2026-08-24: a card-army / idle-redispatch dispatch now writes nothing to playerWorld at all.
+    //
+    // What stood here was a persisted resource settle (`$set: { resources, lastTickAt }`) guarded on
+    // `rev: pw.rev`, and it was the largest single source of user-visible REV_CONFLICT ("Concurrent update,
+    // please retry"): `pw` is read at the top of this function, the write lands after a cross-service
+    // `meta.getSaveFields` call and computeMarchPath's A* Mongo scans, and a 2s scheduler tick bumps `rev` on
+    // the very same document (processCompletedTraining's speedup catch-up rewrites the queue on every tick a
+    // buff is active). Failure probability was roughly window/2000ms — frequent enough to break ordinary play.
+    //
+    // The guard was never the problem; the write was. `settle()` is lazy-on-read — getMe recomputes it from
+    // the document on every read (core/map.ts) — so persisting it is only *required* by a write that changes
+    // an input to the accrual: yieldRate, buildings (the storage cap), or the resource balance itself.
+    // Dispatching a march changes none of the three. Deleting the write removes the conflict at its source
+    // instead of retrying it, and is marginally in the player's favour: every persisted settle re-applies the
+    // storage clamp, so settling less often discards less overflow at cap.
+    //
+    // `rev` is deliberately not bumped either. It carries no business meaning (absent from PlayerWorldView and
+    // from every httpApi response) — it exists purely as an optimistic lock, so bumping it from a write that
+    // changes nothing would only invalidate other writers' guards for free.
+    if (!hasCardArmy && !idleRedispatch) {
+      // The flat troop pool is the only playerWorld state this command actually changes. `troops: { $gte: troops }`
+      // is the real business precondition and is atomic by itself (without it, two concurrent dispatches both pass
+      // the fast-fail check above and both $inc, driving troops negative). The `rev: pw.rev` that used to ride
+      // along is gone, and with it the disambiguating re-read that existed only because the combined filter could
+      // not tell "insufficient troops" from "someone else wrote": a miss here now means exactly one thing.
+      // `rev` is still bumped, because `troops` genuinely changed and other writers snapshot it.
       const deducted = await cols.playerWorld.updateOne(
-        { _id: pw._id, troops: { $gte: troops }, rev: pw.rev },
-        { $set: { resources, lastTickAt: t }, $inc: { troops: -troops, rev: 1 } },
+        { _id: pw._id, troops: { $gte: troops } },
+        { $inc: { troops: -troops, rev: 1 } },
       );
       if (deducted.matchedCount === 0) {
-        // Lost the race the fast-fail check above couldn't catch: roll back the march just inserted so the
-        // account isn't left with a phantom in-flight march that drained no pool troops. Disambiguate the
-        // two possible causes (the combined filter can't tell them apart) with one fresh read: genuinely
-        // insufficient troops vs. a stale rev (some other concurrent mutation landed in between).
+        // Roll back the march just inserted, so the account is not left with a phantom in-flight march that
+        // drained no pool troops. (restoreClaim is null on this branch today — an idle re-dispatch always takes
+        // the exemption above — but this function's branch condition has already been widened once, 2026-08-08.)
         await cols.marches.deleteOne({ _id: mid });
-        const fresh = await cols.playerWorld.findOne({ _id: pw._id });
-        if (fresh && fresh.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
-        throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
+        await restoreClaim?.();
+        throw new SlgError('NO_TROOPS', 'Insufficient troops');
       }
     }
     const view = this.core.marchView(doc);

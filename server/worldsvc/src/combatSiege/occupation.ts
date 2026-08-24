@@ -264,10 +264,20 @@ export class OccupationService {
 
     if (defenderId) {
       const defYield = await this.core.recomputeYield(m.worldId, defenderId);
-      await cols.playerWorld.updateOne(
-        { _id: playerWorldId(m.worldId, defenderId) },
-        { $set: { yieldRate: defYield }, $inc: { rev: 1 } },
-      );
+      // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
+      // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
+      // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
+      // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
+      // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
+      // `pw` in scope here is the *attacker's* doc, so the defender's buildings (for the storage cap) need
+      // their own read — cheap on this scheduler path, and it also lets a missing doc skip the write.
+      const defPwId = playerWorldId(m.worldId, defenderId);
+      const defPw = await cols.playerWorld.findOne({ _id: defPwId });
+      if (defPw) {
+        await cols.playerWorld.updateOne({ _id: defPwId }, [
+          { $set: { resources: this.core.settleExpr(defPw.buildings, t), yieldRate: defYield, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+        ]);
+      }
     }
   }
 
@@ -400,7 +410,14 @@ export class OccupationService {
     const pw = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, d.ownerId) });
     if (pw) {
       const yieldRate = await this.core.recomputeYield(d.worldId, d.ownerId);
-      await cols.playerWorld.updateOne({ _id: pw._id }, { $set: { yieldRate }, $inc: { rev: 1 } });
+      // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
+      // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
+      // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
+      // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
+      // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
+      await cols.playerWorld.updateOne({ _id: pw._id }, [
+        { $set: { resources: this.core.settleExpr(pw.buildings, t), yieldRate, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+      ]);
       void this.core.bumpFamilyActivity(d.worldId, pw.familyId, 1);
     }
     // Post-capture disposition (2026-07-23, user decision): by default the capturing team STAYS stationed on

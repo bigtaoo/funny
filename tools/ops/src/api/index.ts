@@ -13,6 +13,8 @@ import type {
   AuditEntryView,
   AuctionAnomaly,
   AuctionListingAdminView,
+  AuctionSettlementDebtView,
+  AuctionSettlementQuery,
   AuctionListingQuery,
   CompMailContent,
   CompScope,
@@ -124,6 +126,7 @@ export class Api extends ApiTransport {
     feature_guide_funnel?: { feature: string; shown: number; closed: number; replays: number; close_rate?: number }[];
     browser_dist?: { browser: string; devices: number }[];
     device_type_dist?: { device_type: string; devices: number }[];
+    webview_dist?: { webview: string; devices: number }[];
     geo_dist?: { country: string; devices: number }[];
     badge_dist?: { mode: string; result: string; badge: string; count: number }[];
   }> {
@@ -445,6 +448,16 @@ export class Api extends ApiTransport {
     if (filter.limit != null) qs.set('limit', String(filter.limit));
     const r = await this.req<{ listings: AuctionListingAdminView[] }>('GET', `/admin/slg/audit/listings?${qs}`);
     return r.listings;
+  }
+  /** Settlements that still owe a hand-over (U13 close-out). Read-only: auctionsvc's sweep is what retries them. */
+  async slgListSettlementDebts(filter: AuctionSettlementQuery): Promise<AuctionSettlementDebtView[]> {
+    const qs = new URLSearchParams();
+    if (filter.auctionId) qs.set('auctionId', filter.auctionId);
+    if (filter.accountId) qs.set('accountId', filter.accountId);
+    if (filter.minAttempts != null) qs.set('minAttempts', String(filter.minAttempts));
+    if (filter.limit != null) qs.set('limit', String(filter.limit));
+    const r = await this.req<{ settlements: AuctionSettlementDebtView[] }>('GET', `/admin/slg/audit/settlements?${qs}`);
+    return r.settlements;
   }
   async slgListAuditTickets(status?: string): Promise<TradeAuditTicketView[]> {
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';

@@ -117,7 +117,9 @@ export class SkinsPanel {
 
     // ── Left: portrait (capped height so a many-skin card doesn't stretch the art) ──
     const portraitH = Math.min(cardH - CARD_PAD * 2, PORTRAIT_MAX_H);
-    const frame = sketchPanel(portraitW, portraitH, { fill: 0xf0eee7, border: C.mid, seed: seedFor(x, y, portraitW) });
+    // fillAlpha: 0 — see list.ts's renderCardCell (2026-08-21): the card behind is already the one
+    // background layer, this frame is a stroke-only outline.
+    const frame = sketchPanel(portraitW, portraitH, { fill: 0xf0eee7, fillAlpha: 0, border: C.mid, seed: seedFor(x, y, portraitW) });
     frame.x = x + CARD_PAD; frame.y = y + CARD_PAD;
     core.bodyLayer.addChild(frame);
     const artUrl = unitPortraitUrl(unitType, equipped);

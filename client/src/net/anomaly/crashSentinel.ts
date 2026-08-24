@@ -5,17 +5,59 @@
 // has already loaded (app.ts injects platform storage during startup, before initCrashSentinel()
 // but the ordering isn't a hard guarantee this module should bake in).
 import { recentClientLogs } from '../log';
+import { installRotationWatch, lastRotationAt, momentContext, type MomentContext } from './deviceContext';
 import { anomalyReporter, clip, getStorage, log, MSG_MAX, readBuildVersion, reportAnomaly } from './reporter';
 
 const SENTINEL_KEY = 'nw_session_sentinel';
 const HEARTBEAT_MS = 15_000;
 
-interface Sentinel { startedAt: number; lastSeenAt: number; cleanExit?: boolean; lastError?: string; }
+interface Sentinel {
+  startedAt: number;
+  lastSeenAt: number;
+  cleanExit?: boolean;
+  lastError?: string;
+  // Device context as of the last write, so a crash report can describe the session that DIED
+  // rather than the one reading the sentinel afterwards (see reporter.report's `ctx` parameter).
+  orient?: MomentContext['orient'];
+  vp?: MomentContext['vp'];
+  /** Epoch ms of this session's last orientation flip; absent if it never rotated. */
+  lastRotAt?: number;
+}
 
 function lsGet(k: string): string | null { try { return getStorage().getItem(k); } catch { return null; } }
 function lsSet(k: string, v: string): void { try { getStorage().setItem(k, v); } catch { /* ignore */ } }
 
 let sentinel: Sentinel | null = null;
+
+/** Refresh the liveness stamp + device context and persist. Called on the heartbeat and, crucially,
+ *  the instant the screen rotates — see the rotation-watch wiring in initCrashSentinel. */
+function touchSentinel(): void {
+  if (!sentinel) return;
+  sentinel.lastSeenAt = Date.now();
+  const ctx = momentContext();
+  sentinel.orient = ctx.orient;
+  sentinel.vp = ctx.vp;
+  sentinel.lastRotAt = lastRotationAt();
+  lsSet(SENTINEL_KEY, JSON.stringify(sentinel));
+}
+
+/**
+ * Reconstruct the dead session's moment-context from its sentinel.
+ *
+ * `sinceRot` here means "how long after its last rotation was that session still known to be
+ * alive" — a lower bound on survival-after-rotation, since lastSeenAt is only as fresh as the last
+ * heartbeat or rotation write. A crash carrying sinceRot≈0 is therefore the signature we are
+ * hunting: the last thing we ever heard from that session was it rotating.
+ */
+function deadSessionContext(prev: Sentinel): MomentContext {
+  const ctx: MomentContext = {};
+  if (prev.orient) ctx.orient = prev.orient;
+  if (prev.vp) ctx.vp = prev.vp;
+  if (typeof prev.lastRotAt === 'number') {
+    ctx.sinceRot = Math.max(0, (prev.lastSeenAt ?? prev.startedAt) - prev.lastRotAt);
+  }
+  return ctx;
+}
 
 /**
  * Call once on startup: ① detect whether the previous session ended abnormally (crash) and file a late report; ② start the current session sentinel + heartbeat.
@@ -39,7 +81,7 @@ export function initCrashSentinel(): void {
           lastSeenAt: prev.lastSeenAt,
           aliveMs,
           ...(prev.lastError ? { lastError: prev.lastError } : {}),
-        });
+        }, deadSessionContext(prev));
         // Immediately flush via beacon rather than waiting 1.5s for the batched fetch: crashes often cascade
         // (crash again after reload), and if this session also crashes within 1.5s the debounce timer never fires
         // → the previous crash late-report is never sent. Beacon dequeues immediately and survives an instant re-crash.
@@ -49,13 +91,20 @@ export function initCrashSentinel(): void {
     } catch { /* corrupted sentinel: ignore */ }
   }
   sentinel = { startedAt: Date.now(), lastSeenAt: Date.now() };
-  lsSet(SENTINEL_KEY, JSON.stringify(sentinel));
+  touchSentinel();
+
+  // Persist on every orientation flip, not just on the 15s heartbeat. Two things depend on this:
+  //   ① the flip itself survives a kill that follows it — otherwise a rotate-then-die reports as a
+  //      bare aliveMs:0 with no rotation on record, which is precisely the case we cannot currently see;
+  //   ② it sharpens aliveMs. A session that rotates at t+3s and dies at t+4s used to be indistinguishable
+  //      from one that died at t+0.1s (both "aliveMs:0", the first heartbeat never having landed).
+  installRotationWatch(touchSentinel);
+
   setInterval(() => {
     if (!sentinel) return;
-    sentinel.lastSeenAt = Date.now();
     const errs = recentClientLogs(40).filter((e) => e.level === 'error');
     if (errs.length) sentinel.lastError = clip(errs[errs.length - 1].msg, MSG_MAX);
-    lsSet(SENTINEL_KEY, JSON.stringify(sentinel));
+    touchSentinel();
   }, HEARTBEAT_MS);
 }
 
@@ -63,6 +112,5 @@ export function initCrashSentinel(): void {
 export function markCleanExit(): void {
   if (!sentinel) return;
   sentinel.cleanExit = true;
-  sentinel.lastSeenAt = Date.now();
-  lsSet(SENTINEL_KEY, JSON.stringify(sentinel));
+  touchSentinel();
 }
