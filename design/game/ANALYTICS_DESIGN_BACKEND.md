@@ -25,18 +25,18 @@ notebook_wars_analytics
 │       { _id, session_id, user_id?, device_id, platform, os,
 │          game_version, locale, event, props{}, ts: Date,
 │          ua?, screen_w?, screen_h?, dpr?,             ← 客户端上报（A9-9，web only）
-│          browser?, device_type?,                       ← 服务端由 ua 解析（A9-9）
+│          browser?, device_type?, webview?,             ← 服务端由 ua 解析（A9-9；webview 2026-08-24 加）
 │          ip?, geo_country?, geo_region?, geo_city? }    ← ip 为请求 IP（A9-9 起落库，账号防护用途）；geo_* 由 ip 解析
 │       索引：{ ts: -1 } / { event: 1, ts: -1 } / { user_id: 1, ts: -1 } /
 │              { event: 1, 'props.level_id': 1, ts: -1 } / { session_id: 1 } /
-│              { browser: 1, ts: -1 } / { device_type: 1, ts: -1 } / { geo_country: 1, ts: -1 } / { ip: 1, ts: -1 }
+│              { browser: 1, ts: -1 } / { device_type: 1, ts: -1 } / { webview: 1, ts: -1 } / { geo_country: 1, ts: -1 } / { ip: 1, ts: -1 }
 │       TTL: expireAfterSeconds=0 on ts（配合 expireAt 字段）或 TTL index on ts 90天
 │
 ├── sessions       会话摘要（永久，每 session 一行）
 │       { session_id, user_id?, device_id, platform, os,
 │          started_at: Date, ended_at?: Date, duration_sec?,
 │          scenes_visited[], events_count,
-│          ua?, screen_w?, screen_h?, dpr?, browser?, device_type?,
+│          ua?, screen_w?, screen_h?, dpr?, browser?, device_type?, webview?,
 │          ip?, geo_country?, geo_region?, geo_city? }
 │       索引：{ started_at: -1 } / { device_id: 1, started_at: -1 } / { ip: 1, started_at: -1 }
 │
@@ -326,6 +326,13 @@ cohort（某日活跃设备）
 ### 9.8 设备 / 地理分布（A9-9）
 
 **真实设备信息**：此前 `os` 字段只是 `navigator.platform`（如 "Win32"），无法区分浏览器或移动端/桌面端。客户端新增上报 `ua`（完整 `navigator.userAgent`，微信小游戏侧不发，因为没有 UA 概念）、`screen_w/screen_h/dpr`（屏幕尺寸 + 像素比，微信侧用 `wx.getSystemInfoSync()` 取值）。服务端 `parseUserAgent()`（`analyticsvc/src/service.ts`）在入库时**由服务端解析** `browser`（chrome/safari/firefox/edge/wechat/qqbrowser/opera/…）与 `device_type`（mobile/tablet/desktop）——不信任客户端可能自报的浏览器名。`GET /internal/query?type=browser_dist|device_type_dist` 对应查询，ops 页面新增两张分布卡。
+
+**内嵌 WebView 归因（`webview`，2026-08-24 加）**：`browser` 之外**另开一个维度**，取值为宿主 App（`gsa`/`facebook`/`instagram`/`line`/`tiktok`/`snapchat`/`twitter`/`wechat`/`android-wv`），普通浏览器流量该字段**缺席**（`webview_dist` 里归为 `none`）。
+
+- **为什么不并进 `browser`**：① `browser` 的取值已经在喂 ops 分布图的时间序列，改名等于悄悄改写历史；② 答案本来就不是浏览器名——GSA 的 WebView **确实**是 WebKit，`browser=safari` 是**不完整**而非错误。它藏起来的是宿主 App，而宿主 App 才是关键：内嵌 WebView 的内存上限远比独立浏览器紧，超限时被系统直接杀进程而非报错。在这个字段之前，这类会话和普通 Safari/Chrome 流量完全无法区分——2026-08-22 那次 Google App WebView 里的崩溃循环（见 [`FEATURE_FLAGS_DESIGN_LOG.md`](FEATURE_FLAGS_DESIGN_LOG.md) 2026-08-24 条目）因此根本没法归因到环境类别。
+- 查询 `GET /internal/query?type=webview_dist`，ops「In-app WebView」分布卡。
+
+**同批修掉的 `device_type` 误判**：安卓平板不带手机才有的 `Mobile` token，也不带 `Tablet` token，而原规则把 `Mobi|Android` 写成同一个或分支——于是**每一台安卓平板都被记成手机**。现改为 `Android` 命中后再看有无 `Mobi`。这条与客户端 `net/anomaly/deviceContext.ts` 的 `classify()` 刻意保持一致：两者对同一次会话回答同一个问题，互相矛盾比各自粗一点更糟，测试里有一条用例把两边钉在一起。
 
 **IP 地理定位 + 账号防护**：`server/analyticsvc/src/httpApi.ts` 的 `POST /analytics/events` 从 `X-Forwarded-For`（Caddy 反代自动注入）取客户端 IP，存入 `EventDoc.ip`/`SessionDoc.ip`（`{ ip: 1, ts: -1 }` / `{ ip: 1, started_at: -1 }` 索引，供后续查「同一 IP 下有几个账号/设备」这类风控场景使用），并用 `geoip-lite`（离线库，无外部网络调用）解析出 `geo_country/geo_region/geo_city`。`GET /internal/query?type=geo_dist` 按国家分组，ops 新增「Geo (country) distribution」卡；原有的「Region distribution」卡实际统计的是 `locale`（语言码）而非地理位置，已改名为「Locale distribution」以免混淆。
 

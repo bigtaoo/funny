@@ -121,7 +121,11 @@ export interface ResolvedGeo {
 // Intentionally hand-rolled (no ua-parser-js dependency) — analyticsvc is a plain node:http service with
 // no framework, and we only need coarse browser-name/device-type buckets for the ops dashboard, not exact
 // version parsing.
-export function parseUserAgent(ua: string | undefined): { browser: string; device_type: 'mobile' | 'tablet' | 'desktop' } {
+export function parseUserAgent(ua: string | undefined): {
+  browser: string;
+  device_type: 'mobile' | 'tablet' | 'desktop';
+  webview?: string;
+} {
   const s = ua ?? '';
   let browser = 'unknown';
   if (/MicroMessenger/i.test(s)) browser = 'wechat';
@@ -132,11 +136,51 @@ export function parseUserAgent(ua: string | undefined): { browser: string; devic
   else if (/CriOS|Chrome\//i.test(s)) browser = 'chrome';
   else if (/Safari\//i.test(s)) browser = 'safari';
 
-  let device_type: 'mobile' | 'tablet' | 'desktop' = 'desktop';
-  if (/iPad|Tablet(?!.*Mobile)/i.test(s)) device_type = 'tablet';
-  else if (/Mobi|Android|iPhone|iPod/i.test(s)) device_type = 'mobile';
+  // Kept as its own axis rather than folded into `browser`, for two reasons: `browser` values already
+  // feed the ops distribution chart and renaming them would silently rewrite history, and the answer
+  // is genuinely not a browser name — a GSA WebView really *is* WebKit, so `browser=safari` is
+  // incomplete rather than wrong. What it hides is the host app, and the host app is what matters:
+  // in-app WebViews run under far tighter memory ceilings than the standalone browser and get killed
+  // by the OS instead of surfacing an error. Before this field, every one of them was indistinguishable
+  // from ordinary Safari/Chrome traffic — which is how a crash-loop report from a Google-app WebView
+  // (2026-08-22, see FEATURE_FLAGS_DESIGN §8) could not be attributed to its environment class at all.
+  const webview = detectWebView(s);
 
-  return { browser, device_type };
+  // Mirrors client/src/net/anomaly/deviceContext.ts's classify(). The two are deliberately kept in
+  // step: `device_type` here and `device` on the anomaly channel answer the same question about the
+  // same session, and a disagreement between them would be worse than either being slightly coarse.
+  // Both traps below fail in the direction that HIDES a non-phone, which is the direction that misleads.
+  let device_type: 'mobile' | 'tablet' | 'desktop' = 'desktop';
+  if (/iPad/i.test(s)) device_type = 'tablet';
+  // Android tablets omit the `Mobile` token that Android phones carry. The previous rule tested
+  // `Mobi|Android` together, so every Android tablet was counted as a phone.
+  else if (/Android/i.test(s)) device_type = /Mobi/i.test(s) ? 'mobile' : 'tablet';
+  else if (/Tablet|PlayBook|Silk/i.test(s)) device_type = 'tablet';
+  else if (/Mobi|iPhone|iPod/i.test(s)) device_type = 'mobile';
+
+  return webview ? { browser, device_type, webview } : { browser, device_type };
+}
+
+/**
+ * Name the host app when the page is running inside an embedded WebView rather than a real browser.
+ * Undefined for ordinary browser traffic.
+ *
+ * Order matters: several of these apps stack their token onto an otherwise normal Safari/Chrome UA,
+ * and a few carry more than one (Instagram's in-app browser reports both `Instagram` and `FBAV`),
+ * so the more specific product is tested first.
+ */
+function detectWebView(s: string): string | undefined {
+  if (/MicroMessenger/i.test(s)) return 'wechat';
+  if (/Instagram/i.test(s)) return 'instagram';
+  if (/FBAN|FBAV|FB_IAB/i.test(s)) return 'facebook';
+  if (/\bGSA\//i.test(s)) return 'gsa';           // the Google app on iOS
+  if (/\bLine\//i.test(s)) return 'line';
+  if (/musical_ly|BytedanceWebview|TikTok/i.test(s)) return 'tiktok';
+  if (/Snapchat/i.test(s)) return 'snapchat';
+  if (/\bTwitter\b/i.test(s)) return 'twitter';
+  // Generic Android System WebView: Chrome's UA with a `; wv` marker in the platform section.
+  if (/;\s*wv\)/i.test(s)) return 'android-wv';
+  return undefined;
 }
 
 // ─── Query result types (A9-6) ───────────────────────────────────────────────────────
@@ -282,6 +326,8 @@ export interface FeatureGuideFunnelRow {
 // ─── Device / geo distributions (A9-9) ────────────────────────────────────────
 export interface BrowserRow { browser: string; devices: number }
 export interface DeviceTypeRow { device_type: string; devices: number }
+/** Host app for embedded-WebView sessions;  is ordinary browser traffic. */
+export interface WebViewRow { webview: string; devices: number }
 export interface GeoRow { country: string; devices: number }
 
 export interface OnboardingStepRow {
@@ -322,6 +368,7 @@ export interface QueryResult {
   feature_guide_funnel?: FeatureGuideFunnelRow[];
   browser_dist?: BrowserRow[];
   device_type_dist?: DeviceTypeRow[];
+  webview_dist?: WebViewRow[];
   geo_dist?: GeoRow[];
 }
 

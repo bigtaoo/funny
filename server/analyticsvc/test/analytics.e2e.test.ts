@@ -79,6 +79,18 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     const res = await fetch(`${base}/analytics/events`, { method: 'OPTIONS' });
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-methods')).toContain('POST');
+    expect(res.headers.get('access-control-allow-headers')).toContain('authorization');
+  });
+
+  it('the preflight is cacheable and carries no body (2026-08-24)', async () => {
+    // Both halves matter for the client's hide/unload flush (analytics/queue.ts flushSync). That POST
+    // carries an Authorization header, so it is preflighted, and it has to complete while the page is
+    // being torn down. Without max-age every flush pays an extra OPTIONS round trip first and the
+    // unload one races teardown to do it; with it, the periodic flush keeps the preflight warm.
+    const res = await fetch(`${base}/analytics/events`, { method: 'OPTIONS' });
+    expect(Number(res.headers.get('access-control-max-age'))).toBeGreaterThan(0);
+    // A 204 must not carry a body — it used to be answered through the JSON sender, which wrote `{}`.
+    expect(await res.text()).toBe('');
   });
 
   // ─── Unmatched route ────────────────────────────────────────────────────────
@@ -640,6 +652,14 @@ describe.skipIf(!mongo)('analyticsvc e2e', () => {
     const body = (await res.json()) as { ok: boolean; data: { type: string; browser_dist: unknown[] } };
     expect(body.data.type).toBe('browser_dist');
     expect(Array.isArray(body.data.browser_dist)).toBe(true);
+  });
+
+  it('GET /internal/query?type=webview_dist dispatches to queryWebViewDist', async () => {
+    const res = await fetch(`${base}/internal/query?type=webview_dist&days=7`, { headers: { 'x-internal-key': INTERNAL_KEY } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; data: { type: string; webview_dist: unknown[] } };
+    expect(body.data.type).toBe('webview_dist');
+    expect(Array.isArray(body.data.webview_dist)).toBe(true);
   });
 
   it('GET /internal/query?type=device_type_dist dispatches to queryDeviceTypeDist', async () => {

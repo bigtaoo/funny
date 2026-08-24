@@ -114,8 +114,10 @@ describe('EventQueue — flush()', () => {
 });
 
 describe('EventQueue — checkpoint()', () => {
-  it('flushes only when the queue is non-empty', () => {
-    const q = makeQueue();
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('flushes only when the queue is non-empty AND a token exists', () => {
+    const q = makeQueue({ getToken: () => 'jwt' });
     const flushSpy = vi.spyOn(q, 'flush').mockResolvedValue(undefined);
 
     q.checkpoint();
@@ -125,6 +127,23 @@ describe('EventQueue — checkpoint()', () => {
     q.checkpoint();
     expect(flushSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('does not flush while the player is still anonymous', () => {
+    // Regression (2026-08-24): `user_id` is resolved per BATCH from the Authorization header at
+    // ingest, so an early flush permanently stamps everything queued so far as anonymous. The first
+    // screen_view — which is what calls checkpoint() — lands within the opening seconds, before
+    // login has finished, so this checkpoint kept racing the login it was queued alongside and
+    // session_start went out unattributed 355 times against 128 identified in prod.
+    const q = makeQueue({ getToken: () => undefined });
+    const flushSpy = vi.spyOn(q, 'flush').mockResolvedValue(undefined);
+
+    q.push({ event: 'session_start', ts: 1 });
+    q.checkpoint();
+
+    expect(flushSpy).not.toHaveBeenCalled();
+    // Deferred, not dropped — the timer, the size threshold and the unload flush all still fire.
+    expect(rawQueue(q)).toHaveLength(1);
+  });
 });
 
 describe('EventQueue — flushSync()', () => {
@@ -132,36 +151,62 @@ describe('EventQueue — flushSync()', () => {
 
   it('no-ops when the queue is empty', () => {
     const beacon = vi.fn();
+    const fetchMock = vi.fn();
     vi.stubGlobal('navigator', { sendBeacon: beacon });
+    vi.stubGlobal('fetch', fetchMock);
     const q = makeQueue();
     q.flushSync();
     expect(beacon).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('uses navigator.sendBeacon when available and clears the queue synchronously', () => {
+  it('sends the bearer token on the unload path — the whole point of not using sendBeacon', () => {
+    // Regression (2026-08-24). sendBeacon cannot set headers at all, so while this path used it,
+    // every event that only ever leaves on hide/unload was recorded anonymously 100% of the time:
+    // prod held 2848 session_end and 2848 churn_signal rows and not one was attributable to a
+    // player, while events riding a periodic flush were attributed fine.
+    const beacon = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('navigator', { sendBeacon: beacon });
+    vi.stubGlobal('fetch', fetchMock);
+    const q = makeQueue({ getToken: () => 'jwt-token' });
+    q.push({ event: 'session_end', ts: 1 });
+    q.flushSync();
+
+    expect(beacon).not.toHaveBeenCalled(); // even though it was available
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://analytics.test/analytics/events');
+    expect(init.keepalive).toBe(true);
+    expect(init.headers['Authorization']).toBe('Bearer jwt-token');
+    // A wildcard access-control-allow-origin is invalid for a credentialed request, so cookies
+    // must stay off or the browser rejects the response outright.
+    expect(init.credentials).toBe('omit');
+    expect(JSON.parse(init.body).events).toEqual([{ event: 'session_end', ts: 1 }]);
+    expect(rawQueue(q)).toHaveLength(0);
+  });
+
+  it('omits the header entirely when anonymous, rather than sending an empty one', () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('navigator', {});
+    vi.stubGlobal('fetch', fetchMock);
+    const q = makeQueue({ getToken: () => undefined });
+    q.push({ event: 'e1', ts: 1 });
+    q.flushSync();
+
+    expect(fetchMock.mock.calls[0]![1].headers['Authorization']).toBeUndefined();
+  });
+
+  it('falls back to sendBeacon where fetch does not exist — anonymous data beats none', () => {
     const beacon = vi.fn();
     vi.stubGlobal('navigator', { sendBeacon: beacon });
-    const q = makeQueue();
+    vi.stubGlobal('fetch', undefined);
+    const q = makeQueue({ getToken: () => 'jwt' });
     q.push({ event: 'e1', ts: 1 });
     q.flushSync();
 
     expect(beacon).toHaveBeenCalledTimes(1);
-    const [url, body] = beacon.mock.calls[0]!;
-    expect(url).toBe('https://analytics.test/analytics/events');
-    expect(JSON.parse(body).events).toEqual([{ event: 'e1', ts: 1 }]);
-    expect(rawQueue(q)).toHaveLength(0);
-  });
-
-  it('falls back to keepalive fetch when sendBeacon is unavailable', () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal('navigator', {});
-    vi.stubGlobal('fetch', fetchMock);
-    const q = makeQueue();
-    q.push({ event: 'e1', ts: 1 });
-    q.flushSync();
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]![1].keepalive).toBe(true);
+    expect(JSON.parse(beacon.mock.calls[0]![1]).events).toEqual([{ event: 'e1', ts: 1 }]);
     expect(rawQueue(q)).toHaveLength(0);
   });
 });

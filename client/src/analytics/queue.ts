@@ -49,9 +49,24 @@ export class EventQueue {
     }
   }
 
-  /** Called before a screen_view — low-cost checkpoint flush. */
+  /**
+   * Called before a screen_view — low-cost checkpoint flush.
+   *
+   * Deliberately skipped while no token is available yet. `user_id` is resolved per BATCH from the
+   * Authorization header at ingest, so flushing early permanently stamps everything queued so far as
+   * anonymous — and the first screen_view lands within the opening seconds of a session, before login
+   * has finished. That is why `session_start` was anonymous 355 times against 128 identified in prod
+   * as of 2026-08-24: the checkpoint kept racing the login it was queued alongside.
+   *
+   * Nothing is lost by waiting. This flush is an optimisation, not a delivery guarantee — the 30s
+   * timer, the 50-event threshold and the unload flush all still fire, and queue growth stays bounded
+   * by MAX_QUEUE_SIZE either way. A player who genuinely never logs in gets the same events, sent a
+   * little later and still anonymous, which is the correct outcome for them.
+   */
   checkpoint(): void {
-    if (this.queue.length > 0) void this.flush();
+    if (this.queue.length === 0) return;
+    if (!this.opts.getToken()) return;
+    void this.flush();
   }
 
   start(): void {
@@ -66,22 +81,56 @@ export class EventQueue {
     }
   }
 
-  /** Synchronous fire-and-forget for beforeunload / wx.onHide. */
+  /** POST headers for a batch: JSON, plus the bearer token when the player is logged in. */
+  private headers(): Record<string, string> {
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = this.opts.getToken();
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
+  }
+
+  private get url(): string {
+    return `${this.opts.analyticsBaseUrl}/analytics/events`;
+  }
+
+  /**
+   * Fire-and-forget flush for the hide / unload path (visibilitychange→hidden, beforeunload,
+   * wx.onHide).
+   *
+   * **Uses a keepalive fetch, NOT navigator.sendBeacon** — the reason is the whole point of this
+   * method. `sendBeacon` cannot set request headers at all, so a beacon can never carry the
+   * `Authorization` bearer token, and analyticsvc attributes `user_id` purely from that header. Every
+   * event that only ever leaves on this path was therefore recorded anonymously, 100% of the time:
+   * as of 2026-08-24 prod held 2848 `session_end` and 2848 `churn_signal` rows and **not one** of them
+   * was attributable to a player, while events that happen to ride a periodic flush (`gacha_draw`:
+   * 3297 identified vs 247 anonymous) were fine. It read like a sampling quirk; it was a hard
+   * structural gap in exactly the two events the churn funnel is built on.
+   *
+   * A keepalive fetch is the spec-sanctioned unload-surviving alternative and can set headers. It is
+   * already the same choice net/anomaly's exit beacon made, for a related reason (there: sendBeacon is
+   * always credentialed, which its CORS setup rejects outright).
+   *
+   * Cost: an `Authorization` header makes this a preflighted request, and a preflight racing page
+   * unload is not something to rely on — hence the `Access-Control-Max-Age` analyticsvc now returns,
+   * so the periodic flush's preflight is still warm and this one goes out as a single request.
+   *
+   * `sendBeacon` remains the fallback where `fetch` does not exist. Anonymous data beats none.
+   */
   flushSync(): void {
     if (this.queue.length === 0) return;
     const batch = this.buildBatch();
     this.queue = [];
     const body = JSON.stringify(batch);
-    const url = `${this.opts.analyticsBaseUrl}/analytics/events`;
+    if (typeof fetch === 'function') {
+      // credentials:'omit' is deliberate, not cargo-culted: analyticsvc answers with
+      // `access-control-allow-origin: *`, and a wildcard origin is invalid for a credentialed
+      // request — so sending cookies here would make the browser reject the response outright.
+      void fetch(this.url, { method: 'POST', headers: this.headers(), keepalive: true, credentials: 'omit', body })
+        .catch(() => {});
+      return;
+    }
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-      navigator.sendBeacon(url, body);
-    } else {
-      void fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        keepalive: true,
-        body,
-      }).catch(() => {});
+      navigator.sendBeacon(this.url, body);
     }
   }
 
@@ -91,12 +140,10 @@ export class EventQueue {
     const snapshot = this.queue;
     this.queue = [];
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const token = this.opts.getToken();
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      await fetch(`${this.opts.analyticsBaseUrl}/analytics/events`, {
+      await fetch(this.url, {
         method: 'POST',
-        headers,
+        headers: this.headers(),
+        credentials: 'omit',
         body: JSON.stringify(batch),
       });
       this.retries = 0;

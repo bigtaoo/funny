@@ -377,6 +377,44 @@ describe.skipIf(!mongo)('analyticsvc service domains (funnel / dist / sessions w
     });
   });
 
+  // ─── in-app WebView attribution (2026-08-24) ──────────────────────────────
+
+  describe('webview field persistence', () => {
+    it('stores the host app for an in-app WebView session, and omits it for a real browser', async () => {
+      // The wiring most likely to rot silently: parseUserAgent could keep returning `webview`
+      // correctly while ingest quietly stops spreading it onto the doc, and nothing would look wrong.
+      const gsa =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ' +
+        'GSA/419.4.905781065 Mobile/15E148 Safari/604.1';
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-wv-1', device_id: 'dev-wv-1', platform: 'web', os: 'iOS', game_version: '1', locale: 'zh',
+          ua: gsa, events: [{ event: 'session_start', ts: Date.now() }],
+        },
+        undefined,
+      );
+      const wv = await mongo!.collections.events.findOne({ session_id: 'sess-wv-1' });
+      expect(wv?.webview).toBe('gsa');
+      // The browser bucket it was hiding inside is deliberately unchanged.
+      expect(wv?.browser).toBe('safari');
+      expect(wv?.device_type).toBe('mobile');
+
+      const safari =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ' +
+        'Version/17.0 Mobile/15E148 Safari/604.1';
+      await svc.ingestEvents(
+        {
+          session_id: 'sess-wv-2', device_id: 'dev-wv-2', platform: 'web', os: 'iOS', game_version: '1', locale: 'zh',
+          ua: safari, events: [{ event: 'session_start', ts: Date.now() }],
+        },
+        undefined,
+      );
+      const plain = await mongo!.collections.events.findOne({ session_id: 'sess-wv-2' });
+      // Absent, not empty-string: "absent" has to keep meaning "ordinary browser" for the sparse index.
+      expect(plain?.webview).toBeUndefined();
+    });
+  });
+
   // ─── sessions collection write path (ingestEvents) ────────────────────────
 
   describe('sessions collection write path', () => {

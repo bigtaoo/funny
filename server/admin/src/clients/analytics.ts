@@ -42,6 +42,7 @@ export interface AnalyticsStepFunnelResult {
 }
 export interface AnalyticsBrowserRow { browser: string; devices: number }
 export interface AnalyticsDeviceTypeRow { device_type: string; devices: number }
+export interface AnalyticsWebViewRow { webview: string; devices: number }
 export interface AnalyticsGeoRow { country: string; devices: number }
 // Post-match badge/title distribution (ANALYTICS_DESIGN §5.8): count of matches per (mode, result, hero badge).
 export interface AnalyticsBadgeDistRow { mode: string; result: string; badge: string; count: number }
@@ -60,6 +61,7 @@ export interface AnalyticsQueryResult {
   scene_funnel?: AnalyticsStepFunnelResult;
   browser_dist?: AnalyticsBrowserRow[];
   device_type_dist?: AnalyticsDeviceTypeRow[];
+  webview_dist?: AnalyticsWebViewRow[];
   geo_dist?: AnalyticsGeoRow[];
   badge_dist?: AnalyticsBadgeDistRow[];
 }
@@ -96,6 +98,7 @@ export class HttpAnalyticsClient implements AnalyticsClient {
       scene_funnel?: AnalyticsStepFunnelResult;
       browser_dist?: AnalyticsBrowserRow[];
       device_type_dist?: AnalyticsDeviceTypeRow[];
+      webview_dist?: AnalyticsWebViewRow[];
       geo_dist?: AnalyticsGeoRow[];
       badge_dist?: AnalyticsBadgeDistRow[];
     };

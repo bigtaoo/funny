@@ -124,6 +124,7 @@ export class Api extends ApiTransport {
     feature_guide_funnel?: { feature: string; shown: number; closed: number; replays: number; close_rate?: number }[];
     browser_dist?: { browser: string; devices: number }[];
     device_type_dist?: { device_type: string; devices: number }[];
+    webview_dist?: { webview: string; devices: number }[];
     geo_dist?: { country: string; devices: number }[];
     badge_dist?: { mode: string; result: string; badge: string; count: number }[];
   }> {
