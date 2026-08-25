@@ -1508,7 +1508,7 @@ export const en: Record<TranslationKey, string> = {
   // ── City / Home Desk (SLG_CITY_DESIGN P1) ────────────────────────────────
   'city.title': 'Home City',
   'city.military.teams': 'Teams',
-  'city.military.teamIdle': 'Garrisoned',
+  'city.military.teamIdle': 'At home',
   // No trailing ellipsis — the team row appends 1–3 animated dots itself (CityScene render.ts).
   'city.military.teamLoading': 'Loading',
   'city.military.fillAllTeams': 'Fill All Teams',
@@ -1617,4 +1617,6 @@ export const en: Record<TranslationKey, string> = {
 
   'world.team.marching': 'Marching',
   'world.team.occupying': 'Occupying, {time} left',
+  'world.team.stationedIdle': 'In the field',
+  'world.team.garrisoned': 'Field garrison',
 };

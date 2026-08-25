@@ -118,6 +118,7 @@ function stubWorldApiWithTrain(fx: TrainFixture): { api: WorldApiClient; me: Pla
     getTeams: () => Promise.resolve([]),
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
+    getStationed: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     trainTroops,

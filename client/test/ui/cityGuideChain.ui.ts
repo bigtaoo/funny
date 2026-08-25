@@ -77,6 +77,7 @@ function stubWorldApi(): WorldApiClient {
     getTeams: () => Promise.resolve([]),
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
+    getStationed: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
   } as unknown as WorldApiClient;

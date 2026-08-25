@@ -206,6 +206,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
         getTeams: () => Promise.resolve([]),
         getMarches: () => Promise.resolve([]),
         getOccupations: () => Promise.resolve([]),
+        getStationed: () => Promise.resolve([]),
         upgradeBuilding: () => new Promise(() => {}),
         speedupBuild: () => new Promise(() => {}),
       } as unknown as WorldApiClient,

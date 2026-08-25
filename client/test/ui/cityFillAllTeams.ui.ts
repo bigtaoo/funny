@@ -76,6 +76,7 @@ function buildHarness(fx: Fixture) {
     getTeams: () => Promise.resolve(fx.teams),
     getMarches: () => Promise.resolve(fx.marches ?? []),
     getOccupations: () => Promise.resolve([]),
+    getStationed: () => Promise.resolve([]),
     distributeTroops,
   } as unknown as WorldApiClient;
 

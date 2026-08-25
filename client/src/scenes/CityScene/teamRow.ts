@@ -172,6 +172,17 @@ export function renderTeamCard(
     const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
     statusLbl = t('roster.injured').replace('{time}', timeStr);
     statusColor = C.red as number;
+  } else if (order && 'station' in order) {
+    // Parked on a field tile (2026-07-23 field-stationing) — 驻扎 garrison holds its 3×3 footprint,
+    // 停留 idle just stands there and can still be re-commanded. Either way it is NOT at home, so
+    // saying 驻军在家 was a plain lie. Kept to the same 4-glyph footprint as 驻军在家 (no tile
+    // coordinates): in portrait the leader portrait squeezes this text column down to its 40px
+    // floor, where even the existing label already wraps — a "(x,y)" suffix would run into the
+    // hero/troops sub-label below. The tile itself is one tap away on the world map.
+    statusLbl = t(
+      order.station.mode === 'garrison' ? 'world.team.garrisoned' : 'world.team.stationedIdle'
+    );
+    statusColor = C.gold as number;
   } else if (order) {
     const remaining = Math.max(
       0,

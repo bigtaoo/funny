@@ -1643,6 +1643,9 @@ export const zh = {
   // Team management "取消指令" (2026-07-15): force a busy team back to idle
   'world.team.marching': '行军中',
   'world.team.occupying': '占领中 剩{time}',
+  // Field-stationed away from home (2026-07-23 field-stationing; city team row 2026-08-25)
+  'world.team.stationedIdle': '野外停留',
+  'world.team.garrisoned': '野外驻扎',
 };
 
 export type TranslationKey = keyof typeof zh;
