@@ -449,7 +449,7 @@ _2026-06-24（补全施工细节）：_
 
 ### 覆盖率门禁 + 模块分层（ADR-070 Phase 4c，2026-08-20，已完成：typecheck / 136 单测 / production 构建三绿）
 
-编辑器的覆盖率**百分比**从此受仓库 90% 门禁约束（此前只有「必须产出 coverage/」受门禁）。口径见 [ADR-070](../../DECISIONS_ADR-041-onward.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) 与 [`claudedocs/tools-testing.md`](../../../claudedocs/tools-testing.md)；这里只记与本编辑器结构有关的部分。
+编辑器的覆盖率**百分比**从此受仓库 90% 门禁约束（此前只有「必须产出 coverage/」受门禁）。口径见 [ADR-070](../../DECISIONS_ADR-070-onward.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) 与 [`claudedocs/tools-testing.md`](../../../claudedocs/tools-testing.md)；这里只记与本编辑器结构有关的部分。
 
 - **`Playback` 从 `rendering/` 移进 `model/`**。§8 的设计期表把播放控制画在 UI 那侧（`ui/Timeline.ts`），实际落地时时钟单独成类、住在 `rendering/`——但它只有 `t`/`playing`/`duration` 三个字段加 `Math` 运算，无 PIXI、无 canvas、无 DOM；rAF 循环从外面读它，它从不反向伸手。**它不是渲染器，是编辑器状态**，所以现在是 `src/model/Playback.ts`。副作用是 `src/rendering/` 只剩 `PreviewRenderer.ts`，均质地是 PIXI 那一半，依赖方向单向 `model/ ← rendering/`。
 - **实际落地的四层**（与 §8 设计期表的差异一并记在这里，那张表按当时的设想写着 `App.ts`/`ui/Timeline.ts`/`io/AutoSaveController.ts`）：

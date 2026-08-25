@@ -7,7 +7,7 @@
 
 格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`（`Proposed` = 已登记、未拍板的候选提案，不代表当前实现，实施前需另开确认）
 > **2026-08-17 拆分**：原文件 803 行，ADR 正文按编号搬进两个分册，本文保留索引。编号/标题/锚点全部未变。
-> **新拍板追加到 [`DECISIONS_ADR-041-onward.md`](DECISIONS_ADR-041-onward.md) 末尾**，并在下表补一行。
+> **新拍板追加到 [`DECISIONS_ADR-070-onward.md`](DECISIONS_ADR-070-onward.md) 末尾**，并在下表补一行。
 
 ---
 
@@ -56,39 +56,39 @@
 | [ADR-038](DECISIONS_ADR-001-040.md#adr-038-废弃-collectionscene皮肤装备关系从全局单槏位改为逐卡独立--accepted--2026-07-13) | 废弃 `CollectionScene`，皮肤装备关系从全局单槏位改为逐卡独立 | Accepted | 2026-07-13 |
 | [ADR-039](DECISIONS_ADR-001-040.md#adr-039-slg-连地占领硬性规则宗门级判定含首府桥栈道-accepted--2026-07-14) | SLG 连地占领硬性规则（宗门级判定，含首府/桥栈道） | Accepted | 2026-07-14 |
 | [ADR-040](DECISIONS_ADR-001-040.md#adr-040-metaserver-openapiyml-按域拆分为-fragment合并生成服务不拆-accepted--2026-07-14) | metaserver `openapi.yml` 按域拆分为 fragment，合并生成（服务不拆） | Accepted | 2026-07-14 |
-| [ADR-041](DECISIONS_ADR-041-onward.md#adr-041-主城点击直达-desk去掉城池菜单弹窗-清理主城手动防守配置残留--accepted--2026-07-18) | 主城点击直达 Desk（去掉城池菜单弹窗）+ 清理主城「手动防守配置」残留 | Accepted | 2026-07-18 |
-| [ADR-042](DECISIONS_ADR-041-onward.md#adr-042-家族加入改为需-leaderelder-审批解决-social_svc_design-8-o1-accepted--2026-07-18) | 家族加入改为需 leader/elder 审批（解决 SOCIAL_SVC_DESIGN §8 O1） | Accepted | 2026-07-18 |
-| [ADR-043](DECISIONS_ADR-041-onward.md#adr-043-角色卡升级从连续-xp-曲线改为离散五合一融合--背包-150500-扩容--accepted--2026-07-19) | 角色卡升级从连续 XP 曲线改为离散五合一融合 + 背包 150→500 扩容 | Accepted | 2026-07-19 |
-| [ADR-044](DECISIONS_ADR-041-onward.md#adr-044-cityscenehome-desk开关改为-scenemanager-覆盖层不再重建-worldmapscene--accepted--2026-07-20) | CityScene（Home Desk）开关改为 SceneManager 覆盖层，不再重建 WorldMapScene | Accepted | 2026-07-20 |
-| [ADR-045](DECISIONS_ADR-041-onward.md#adr-045-累计充值商城可见自主领取非静默邮件-退款扣计数器--不回填历史--accepted--2026-07-21) | 累计充值：商城可见自主领取（非静默邮件）+ 退款扣计数器 + 不回填历史 | Accepted | 2026-07-21 |
-| [ADR-046](DECISIONS_ADR-041-onward.md#adr-046-slg-覆盖层扩展到全部子界面从世界地图打开的任何界面返回时都不重建地图--accepted--2026-07-21) | SLG 覆盖层扩展到全部子界面：从世界地图打开的任何界面返回时都不重建地图 | Accepted | 2026-07-21 |
-| [ADR-047](DECISIONS_ADR-041-onward.md#adr-047-行军疲劳绑定行军实例非队伍-只做距离消耗不做静止回复--accepted--2026-07-21) | 行军疲劳：绑定行军实例（非队伍）+ 只做距离消耗，不做静止回复 | Accepted | 2026-07-21 |
-| [ADR-048](DECISIONS_ADR-041-onward.md#adr-048-slg-兵力池统一basetroopstock-并入-playerworldtroops补记-adr--accepted--2026-07-22) | SLG 兵力池统一：`baseTroopStock` 并入 `playerWorld.troops`（补记 ADR） | Accepted | 2026-07-22 |
-| [ADR-049](DECISIONS_ADR-041-onward.md#adr-049-slg-地图尺寸-500500--15001500对齐主流-slg-accepted--2026-07-22) | SLG 地图尺寸 500×500 → 1500×1500（对齐主流 SLG） | Accepted | 2026-07-22 |
-| [ADR-050](DECISIONS_ADR-041-onward.md#adr-050-装备分解新增稀有度门槛史诗-epic-永不可分解不论等级--accepted--2026-07-22) | 装备分解新增稀有度门槛：史诗 Epic 永不可分解，不论等级 | Accepted | 2026-07-22 |
-| [ADR-051](DECISIONS_ADR-041-onward.md#adr-051-slg-实时野战遭遇系统停留驻扎拆分--redis-逐格行军--玩家建筑层--accepted--2026-07-24) | SLG 实时野战遭遇系统：停留/驻扎拆分 + Redis 逐格行军 + 玩家建筑层 | Accepted | 2026-07-24 |
-| [ADR-052](DECISIONS_ADR-041-onward.md#adr-052-f2p-月度金币产出基线从-300-重定为-29008700补跑总产出核算--accepted--2026-07-27) | F2P 月度金币产出基线从 "~300" 重定为 "~2,900–8,700"（补跑总产出核算） | Accepted | 2026-07-27 |
-| [ADR-053](DECISIONS_ADR-041-onward.md#adr-053-行军疲劳预算改为地图比率制修复-adr-047-vs-adr-049-的漂移--accepted--2026-07-27) | 行军疲劳预算改为地图比率制，修复 ADR-047 vs ADR-049 的漂移 | Accepted | 2026-07-27 |
-| [ADR-054](DECISIONS_ADR-041-onward.md#adr-054-slg-险地持久材料掉率下调408级修复-adr-049-引入的经济稀释破线--accepted--2026-07-27) | SLG 险地持久材料掉率下调（4→0.8/级）修复 ADR-049 引入的经济稀释破线 | Accepted | 2026-07-27 |
-| [ADR-055](DECISIONS_ADR-041-onward.md#adr-055-工具协作方向改为-electron-桌面壳--本地-git取代-animator-云工作区同步桥--accepted--2026-07-28) | 工具协作方向改为 Electron 桌面壳 + 本地 git，取代 animator 云工作区同步桥 | Accepted | 2026-07-28 |
-| [ADR-056](DECISIONS_ADR-041-onward.md#adr-056-equippedflags-改全服务器权威put-save-整个下线--accepted--2026-07-28) | `equipped`/`flags` 改全服务器权威，`PUT /save` 整个下线 | Accepted | 2026-07-28 |
-| [ADR-057](DECISIONS_ADR-041-onward.md#adr-057-内容治理体系敏感词归一化--词库外部化--举报处理闭环--信誉分分级处罚--审核申诉后台--accepted--2026-07-29) | 内容治理体系（敏感词归一化 + 词库外部化 + 举报处理闭环 + 信誉分分级处罚 + 审核/申诉后台） | Accepted | 2026-07-29 |
-| [ADR-058](DECISIONS_ADR-041-onward.md#adr-058-客户端出站请求全局限速-5秒--补齐-metaserver-超时--三个-slg-社群场景补齐-busy-锁按钮置灰--accepted--2026-08-01) | 客户端出站请求全局限速 5/秒 + 补齐 metaserver 超时 + 三个 SLG 社群场景补齐 busy 锁/按钮置灰 | Accepted | 2026-08-01 |
-| [ADR-059](DECISIONS_ADR-041-onward.md#adr-059-物品唯一id溯源范围--装备角色卡补溯源字段材料皮肤称号维持数量计数去重集合--accepted--2026-08-04) | 物品唯一id/溯源范围 — 装备/角色卡补溯源字段，材料/皮肤/称号维持数量计数/去重集合 | Accepted | 2026-08-04 |
-| [ADR-060](DECISIONS_ADR-041-onward.md#adr-060-slg-世界地图新增两档归属色宗门成员紫-盟友宗门琥珀--accepted--2026-08-08) | SLG 世界地图新增两档归属色：宗门成员（紫）/ 盟友宗门（琥珀） | Accepted | 2026-08-08 |
-| [ADR-061](DECISIONS_ADR-041-onward.md#adr-061-皮肤实例化落地item_identity_designmd-任务1真实例--玩家主动出售拍卖挂单契约不变--accepted--2026-08-08) | 皮肤实例化落地（ITEM_IDENTITY_DESIGN.md 任务1）：真实例 + 玩家主动出售，拍卖挂单契约不变 | Accepted | 2026-08-08 |
-| [ADR-062](DECISIONS_ADR-041-onward.md#adr-062-pvp-攻打真人领地复用占领倒计时不再即时易主-修复已占领地块的资源类型不显示--accepted--2026-08-09) | PvP 攻打真人领地复用占领倒计时（不再即时易主）+ 修复已占领地块的资源类型不显示 | Accepted | 2026-08-09 |
-| [ADR-063](DECISIONS_ADR-041-onward.md#adr-063-装备强化主词条倍率改非线性递增表--78-引入掉级风险--accepted--2026-08-10) | 装备强化：主词条倍率改非线性递增表 + +7/+8 引入掉级风险 | Accepted | 2026-08-10 |
-| [ADR-064](DECISIONS_ADR-041-onward.md#adr-064-装备背包库存硬上限由-300-提升至-1000--accepted--2026-08-10) | 装备背包库存硬上限由 300 提升至 1000 | Accepted | 2026-08-10 |
-| [ADR-065](DECISIONS_ADR-041-onward.md#adr-065-引擎战斗数值全面定点化所有连续型战斗数值-fp_scale1000统一复用现有定点域--accepted--2026-08-12) | 引擎战斗数值全面定点化（所有连续型战斗数值 ×FP_SCALE=1000，统一复用现有定点域） | Accepted | 2026-08-12 |
-| [ADR-066](DECISIONS_ADR-041-onward.md#adr-066-8-个-cd-workflow-改为依赖-ciworkflow_run不再与-ciyml-并行竞速--accepted--2026-08-12) | 8 个 CD workflow 改为依赖 CI（`workflow_run`），不再与 `ci.yml` 并行竞速 | Accepted | 2026-08-12 |
-| [ADR-067](DECISIONS_ADR-041-onward.md#adr-067-设计文档单文件-500-行上限--hub-索引--分册结构--accepted--2026-08-17) | 设计文档单文件 500 行上限 + 「hub 索引 / 分册」结构 | Accepted | 2026-08-17 |
-| [ADR-068](DECISIONS_ADR-041-onward.md#adr-068-融合面板目标意图契约取代自动换目标--自动连续融合--accepted--2026-08-18) | 融合面板：目标意图契约取代自动换目标 / 自动连续融合 | Accepted | 2026-08-18 |
-| [ADR-069](DECISIONS_ADR-041-onward.md#adr-069-slg-攻城值随携带兵力缩放破城不再有12-卡硬顶-npcbasehp-重校准-4060--accepted--2026-08-19) | SLG 攻城值随携带兵力缩放（破城不再有「12 卡硬顶」）+ npcBaseHp 重校准 40→60 | Accepted | 2026-08-19 |
-| [ADR-070](DECISIONS_ADR-041-onward.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) | `tools/` 覆盖率口径：scoped include + 「reported, not gated」过渡 | Accepted | 2026-08-20 |
-| [ADR-071](DECISIONS_ADR-041-onward.md#adr-071-门禁盲区收口--非-workspace-包接进-ci--desktop-shell-接进可达性--客户端覆盖率-scope-扩到已测模块--accepted--2026-08-21) | 门禁盲区收口：非 workspace 包接进 CI、`desktop-shell` 接进可达性、客户端覆盖率 scope 扩到已测模块 | Accepted | 2026-08-21 |
-| [ADR-072](DECISIONS_ADR-041-onward.md#adr-072-装备页改为卡背包之上的-overlay--adr-044-的模式下沉到成长组--accepted--2026-08-25) | 装备页改为卡背包之上的 overlay：卡背包不再重建，滚动位置与详情弹窗跨岔路留存 | Accepted | 2026-08-25 |
-| [ADR-073](DECISIONS_ADR-041-onward.md#adr-073-整页-bake-按上屏缩放定分辨率--横屏宽高比上限--纹理字节口径--accepted--2026-08-25) | 整页 bake 按上屏缩放定分辨率（修手机整页纹理 111 MB/张）+ 横屏 2.4:1 宽高比上限 + 纹理字节口径 | Accepted | 2026-08-25 |
+| [ADR-041](DECISIONS_ADR-041-069.md#adr-041-主城点击直达-desk去掉城池菜单弹窗-清理主城手动防守配置残留--accepted--2026-07-18) | 主城点击直达 Desk（去掉城池菜单弹窗）+ 清理主城「手动防守配置」残留 | Accepted | 2026-07-18 |
+| [ADR-042](DECISIONS_ADR-041-069.md#adr-042-家族加入改为需-leaderelder-审批解决-social_svc_design-8-o1-accepted--2026-07-18) | 家族加入改为需 leader/elder 审批（解决 SOCIAL_SVC_DESIGN §8 O1） | Accepted | 2026-07-18 |
+| [ADR-043](DECISIONS_ADR-041-069.md#adr-043-角色卡升级从连续-xp-曲线改为离散五合一融合--背包-150500-扩容--accepted--2026-07-19) | 角色卡升级从连续 XP 曲线改为离散五合一融合 + 背包 150→500 扩容 | Accepted | 2026-07-19 |
+| [ADR-044](DECISIONS_ADR-041-069.md#adr-044-cityscenehome-desk开关改为-scenemanager-覆盖层不再重建-worldmapscene--accepted--2026-07-20) | CityScene（Home Desk）开关改为 SceneManager 覆盖层，不再重建 WorldMapScene | Accepted | 2026-07-20 |
+| [ADR-045](DECISIONS_ADR-041-069.md#adr-045-累计充值商城可见自主领取非静默邮件-退款扣计数器--不回填历史--accepted--2026-07-21) | 累计充值：商城可见自主领取（非静默邮件）+ 退款扣计数器 + 不回填历史 | Accepted | 2026-07-21 |
+| [ADR-046](DECISIONS_ADR-041-069.md#adr-046-slg-覆盖层扩展到全部子界面从世界地图打开的任何界面返回时都不重建地图--accepted--2026-07-21) | SLG 覆盖层扩展到全部子界面：从世界地图打开的任何界面返回时都不重建地图 | Accepted | 2026-07-21 |
+| [ADR-047](DECISIONS_ADR-041-069.md#adr-047-行军疲劳绑定行军实例非队伍-只做距离消耗不做静止回复--accepted--2026-07-21) | 行军疲劳：绑定行军实例（非队伍）+ 只做距离消耗，不做静止回复 | Accepted | 2026-07-21 |
+| [ADR-048](DECISIONS_ADR-041-069.md#adr-048-slg-兵力池统一basetroopstock-并入-playerworldtroops补记-adr--accepted--2026-07-22) | SLG 兵力池统一：`baseTroopStock` 并入 `playerWorld.troops`（补记 ADR） | Accepted | 2026-07-22 |
+| [ADR-049](DECISIONS_ADR-041-069.md#adr-049-slg-地图尺寸-500500--15001500对齐主流-slg-accepted--2026-07-22) | SLG 地图尺寸 500×500 → 1500×1500（对齐主流 SLG） | Accepted | 2026-07-22 |
+| [ADR-050](DECISIONS_ADR-041-069.md#adr-050-装备分解新增稀有度门槛史诗-epic-永不可分解不论等级--accepted--2026-07-22) | 装备分解新增稀有度门槛：史诗 Epic 永不可分解，不论等级 | Accepted | 2026-07-22 |
+| [ADR-051](DECISIONS_ADR-041-069.md#adr-051-slg-实时野战遭遇系统停留驻扎拆分--redis-逐格行军--玩家建筑层--accepted--2026-07-24) | SLG 实时野战遭遇系统：停留/驻扎拆分 + Redis 逐格行军 + 玩家建筑层 | Accepted | 2026-07-24 |
+| [ADR-052](DECISIONS_ADR-041-069.md#adr-052-f2p-月度金币产出基线从-300-重定为-29008700补跑总产出核算--accepted--2026-07-27) | F2P 月度金币产出基线从 "~300" 重定为 "~2,900–8,700"（补跑总产出核算） | Accepted | 2026-07-27 |
+| [ADR-053](DECISIONS_ADR-041-069.md#adr-053-行军疲劳预算改为地图比率制修复-adr-047-vs-adr-049-的漂移--accepted--2026-07-27) | 行军疲劳预算改为地图比率制，修复 ADR-047 vs ADR-049 的漂移 | Accepted | 2026-07-27 |
+| [ADR-054](DECISIONS_ADR-041-069.md#adr-054-slg-险地持久材料掉率下调408级修复-adr-049-引入的经济稀释破线--accepted--2026-07-27) | SLG 险地持久材料掉率下调（4→0.8/级）修复 ADR-049 引入的经济稀释破线 | Accepted | 2026-07-27 |
+| [ADR-055](DECISIONS_ADR-041-069.md#adr-055-工具协作方向改为-electron-桌面壳--本地-git取代-animator-云工作区同步桥--accepted--2026-07-28) | 工具协作方向改为 Electron 桌面壳 + 本地 git，取代 animator 云工作区同步桥 | Accepted | 2026-07-28 |
+| [ADR-056](DECISIONS_ADR-041-069.md#adr-056-equippedflags-改全服务器权威put-save-整个下线--accepted--2026-07-28) | `equipped`/`flags` 改全服务器权威，`PUT /save` 整个下线 | Accepted | 2026-07-28 |
+| [ADR-057](DECISIONS_ADR-041-069.md#adr-057-内容治理体系敏感词归一化--词库外部化--举报处理闭环--信誉分分级处罚--审核申诉后台--accepted--2026-07-29) | 内容治理体系（敏感词归一化 + 词库外部化 + 举报处理闭环 + 信誉分分级处罚 + 审核/申诉后台） | Accepted | 2026-07-29 |
+| [ADR-058](DECISIONS_ADR-041-069.md#adr-058-客户端出站请求全局限速-5秒--补齐-metaserver-超时--三个-slg-社群场景补齐-busy-锁按钮置灰--accepted--2026-08-01) | 客户端出站请求全局限速 5/秒 + 补齐 metaserver 超时 + 三个 SLG 社群场景补齐 busy 锁/按钮置灰 | Accepted | 2026-08-01 |
+| [ADR-059](DECISIONS_ADR-041-069.md#adr-059-物品唯一id溯源范围--装备角色卡补溯源字段材料皮肤称号维持数量计数去重集合--accepted--2026-08-04) | 物品唯一id/溯源范围 — 装备/角色卡补溯源字段，材料/皮肤/称号维持数量计数/去重集合 | Accepted | 2026-08-04 |
+| [ADR-060](DECISIONS_ADR-041-069.md#adr-060-slg-世界地图新增两档归属色宗门成员紫-盟友宗门琥珀--accepted--2026-08-08) | SLG 世界地图新增两档归属色：宗门成员（紫）/ 盟友宗门（琥珀） | Accepted | 2026-08-08 |
+| [ADR-061](DECISIONS_ADR-041-069.md#adr-061-皮肤实例化落地item_identity_designmd-任务1真实例--玩家主动出售拍卖挂单契约不变--accepted--2026-08-08) | 皮肤实例化落地（ITEM_IDENTITY_DESIGN.md 任务1）：真实例 + 玩家主动出售，拍卖挂单契约不变 | Accepted | 2026-08-08 |
+| [ADR-062](DECISIONS_ADR-041-069.md#adr-062-pvp-攻打真人领地复用占领倒计时不再即时易主-修复已占领地块的资源类型不显示--accepted--2026-08-09) | PvP 攻打真人领地复用占领倒计时（不再即时易主）+ 修复已占领地块的资源类型不显示 | Accepted | 2026-08-09 |
+| [ADR-063](DECISIONS_ADR-041-069.md#adr-063-装备强化主词条倍率改非线性递增表--78-引入掉级风险--accepted--2026-08-10) | 装备强化：主词条倍率改非线性递增表 + +7/+8 引入掉级风险 | Accepted | 2026-08-10 |
+| [ADR-064](DECISIONS_ADR-041-069.md#adr-064-装备背包库存硬上限由-300-提升至-1000--accepted--2026-08-10) | 装备背包库存硬上限由 300 提升至 1000 | Accepted | 2026-08-10 |
+| [ADR-065](DECISIONS_ADR-041-069.md#adr-065-引擎战斗数值全面定点化所有连续型战斗数值-fp_scale1000统一复用现有定点域--accepted--2026-08-12) | 引擎战斗数值全面定点化（所有连续型战斗数值 ×FP_SCALE=1000，统一复用现有定点域） | Accepted | 2026-08-12 |
+| [ADR-066](DECISIONS_ADR-041-069.md#adr-066-8-个-cd-workflow-改为依赖-ciworkflow_run不再与-ciyml-并行竞速--accepted--2026-08-12) | 8 个 CD workflow 改为依赖 CI（`workflow_run`），不再与 `ci.yml` 并行竞速 | Accepted | 2026-08-12 |
+| [ADR-067](DECISIONS_ADR-041-069.md#adr-067-设计文档单文件-500-行上限--hub-索引--分册结构--accepted--2026-08-17) | 设计文档单文件 500 行上限 + 「hub 索引 / 分册」结构 | Accepted | 2026-08-17 |
+| [ADR-068](DECISIONS_ADR-041-069.md#adr-068-融合面板目标意图契约取代自动换目标--自动连续融合--accepted--2026-08-18) | 融合面板：目标意图契约取代自动换目标 / 自动连续融合 | Accepted | 2026-08-18 |
+| [ADR-069](DECISIONS_ADR-041-069.md#adr-069-slg-攻城值随携带兵力缩放破城不再有12-卡硬顶-npcbasehp-重校准-4060--accepted--2026-08-19) | SLG 攻城值随携带兵力缩放（破城不再有「12 卡硬顶」）+ npcBaseHp 重校准 40→60 | Accepted | 2026-08-19 |
+| [ADR-070](DECISIONS_ADR-070-onward.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) | `tools/` 覆盖率口径：scoped include + 「reported, not gated」过渡 | Accepted | 2026-08-20 |
+| [ADR-071](DECISIONS_ADR-070-onward.md#adr-071-门禁盲区收口--非-workspace-包接进-ci--desktop-shell-接进可达性--客户端覆盖率-scope-扩到已测模块--accepted--2026-08-21) | 门禁盲区收口：非 workspace 包接进 CI、`desktop-shell` 接进可达性、客户端覆盖率 scope 扩到已测模块 | Accepted | 2026-08-21 |
+| [ADR-072](DECISIONS_ADR-070-onward.md#adr-072-装备页改为卡背包之上的-overlay--adr-044-的模式下沉到成长组--accepted--2026-08-25) | 装备页改为卡背包之上的 overlay：卡背包不再重建，滚动位置与详情弹窗跨岔路留存 | Accepted | 2026-08-25 |
+| [ADR-073](DECISIONS_ADR-070-onward.md#adr-073-整页-bake-按上屏缩放定分辨率--横屏宽高比上限--纹理字节口径--accepted--2026-08-25) | 整页 bake 按上屏缩放定分辨率（修手机整页纹理 111 MB/张）+ 横屏 2.4:1 宽高比上限 + 纹理字节口径 | Accepted | 2026-08-25 |
 
 ---
 
@@ -97,4 +97,7 @@
 | 范围 | 文件 |
 |---|---|
 | ADR-001 ~ ADR-040 | [`DECISIONS_ADR-001-040.md`](DECISIONS_ADR-001-040.md) |
-| ADR-041 起（**新增写这里**） | [`DECISIONS_ADR-041-onward.md`](DECISIONS_ADR-041-onward.md) |
+| ADR-041 ~ ADR-069 | [`DECISIONS_ADR-041-069.md`](DECISIONS_ADR-041-069.md) |
+| ADR-070 起（**新增写这里**） | [`DECISIONS_ADR-070-onward.md`](DECISIONS_ADR-070-onward.md) |
+
+> 分册只在超过 ADR-067 的 500 行上限时才开新的一册，**编号与标题一律不变**——所以 `#adr-0NN-...` 这个锚点在哪一册里都是同一个，换册只换文件名。2026-08-17 拆出 ADR-001~040 / ADR-041 起两册；2026-08-25 把后者（533 行）再拆成 ADR-041~069 / ADR-070 起。
