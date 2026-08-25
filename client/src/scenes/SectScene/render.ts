@@ -12,7 +12,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { buildIcon } from '../../render/icons';
-import { caretDisplay } from '../../ui/inputDisplay';
+import { caretText } from './repaint';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore, SectTab } from './core';
 import type { ActionsHandlers } from './actions';
@@ -128,7 +128,16 @@ export class RenderPanel {
     nameField.x = inX; nameField.y = y;
     core.bodyLayer.addChild(nameField);
     const nameEmpty = core.createName.length === 0 && !nameFocused;
-    const nl = txt(nameEmpty ? t('social.sect.namePlaceholder') : caretDisplay(core.createName, nameFocused && core.caretOn, ' '), FS.bodyLg * S, nameEmpty ? C.mid : C.dark);
+    // caretText (not a plain txt) so the 0.5 s blink and each keystroke rewrite this one Text
+    // instead of the whole form — see ./repaint.ts. Placeholder while focused is a bare space:
+    // it keeps the line's height through the caret's off phase without showing the hint text.
+    const nl = caretText(core, {
+      active: nameFocused,
+      value: core.createName,
+      size: FS.bodyLg * S,
+      color: nameEmpty ? C.mid : C.dark,
+      placeholder: nameFocused ? ' ' : t('social.sect.namePlaceholder'),
+    });
     nl.anchor.set(0, 0.5); nl.x = inX + 12 * S; nl.y = y + fieldH / 2;
     core.bodyLayer.addChild(nl);
     core.hitRects.push({ rect: { x: inX, y, w: inW, h: fieldH }, action: () => this.input.openInputFor('name') });
@@ -148,7 +157,9 @@ export class RenderPanel {
     const tagField = sketchPanel(tagFieldW, fieldH, { fill: 0xfaf9f5, border: tagFocused ? C.accent : C.mid, seed: seedFor(1, 0, tagFieldW) });
     tagField.x = inX; tagField.y = y;
     core.bodyLayer.addChild(tagField);
-    const tl = txt(caretDisplay(core.createTag, tagFocused && core.caretOn, ' '), FS.bodyLg * S, C.dark);
+    const tl = caretText(core, {
+      active: tagFocused, value: core.createTag, size: FS.bodyLg * S, color: C.dark, placeholder: ' ',
+    });
     tl.anchor.set(0, 0.5); tl.x = inX + 12 * S; tl.y = y + fieldH / 2;
     core.bodyLayer.addChild(tl);
     core.hitRects.push({ rect: { x: inX, y, w: tagFieldW, h: fieldH }, action: () => this.input.openInputFor('tag') });

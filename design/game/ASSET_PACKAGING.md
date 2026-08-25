@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-24（§12 gacha 资源压缩 3274→1198 KB + 转屏路径开销；§11.3 预取新增"转屏让路"一条）
+> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-25（§13 加载链路复核；§14 预取按使用面裁剪 + 省流开关；§15 补测试（资源孤儿守卫 + 缓存策略门禁 + 两个门禁的变异测试））
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -34,7 +34,7 @@ webpack 当前对图片 / `.tao` 用 `asset/resource`，每个资源被发成**�
 | 层 | 何时加载 | 归属 | 体量 |
 |---|---|---|---|
 | **L0 启动必需** | 启动闸门内 `await` 完才进大厅（带加载进度） | 代码核心包 + 大厅/战场装饰三组 atlas（A `decor_atlas` / B `label_*` / C `decor_c_atlas`）+ 开局三兵 `infantry/archer/shieldbearer` 的 `.tao`+卡图 `.png` + `game_base`/兵营卡图 | 代码 ~1.5 MB + 资源 ~1.8 MB |
-| **L1 按需** | 进对应场景时懒加载（HTTP/CDN 按 URL 拉） | gacha 全套（卡背/框/banner/月卡 3.3 MB）、英雄单位 `max/lena/mara` 的 `.tao`+`.png`（`max.tao` 单个 ~600 KB）、法术卡图、收集册大图、装饰 C 组之外的氛围图 | ~5 MB |
+| **L1 按需** | 进对应场景时懒加载（HTTP/CDN 按 URL 拉） | gacha 全套（卡背/框/banner/月卡，2026-08-24 起 1.2 MB，见 §12.1）、英雄单位 `max/lena/mara` 的 `.tao`+`.png`（`max.tao` 单个 ~600 KB）、法术卡图、收集册大图、装饰 C 组之外的氛围图 | ~5 MB |
 | **L2 永不进包** | — | `art/` 下全部 `.xcf` GIMP 源、`.tao.editor` 编辑元数据、地图/概念源图 | ~47 MB |
 
 **L0 清单的单一来源 = `client/src/assets/bootManifest.ts`**。新增"开局必现"的资源往该清单加一条；其余一律默认 L1（不进闸门）。**保持 L0 极小**是这套设计的纪律——每加一条都拖慢首屏。
@@ -149,8 +149,8 @@ interface AssetIO {
 
 1. **微信上线闭环**：上传 `cdn/*` 到 CDN 子域 + 微信后台域名白名单 + 微信 IDE 实测 webpack 产物运行（§4.2 遗留 2/3/4）。
 2. ~~**L1 PNG 经 AssetIO**~~：**已完成（2026-06-30）**——见 §4.2 preloadTextures + URL alias 方案。
-3. ~~**Web JS code-split**~~：**已决定不做（2026-06-30）**。微信不支持运行时 `import()`、套壳全量本地化，受益平台仅 Web；风险大于收益，正式放弃。
-4. **L0 瘦身复核**：定期核对 `bootManifest`，把"非首局必现"的项降级回 L1。
+3. ~~**Web JS code-split**~~：**已决定不做（2026-06-30，2026-08-25 用户复述确认）**。微信不支持运行时 `import()`、套壳全量本地化，受益平台仅 Web；风险大于收益，正式放弃。**代价已用体积门禁兜住**：不拆就意味着这一个包只会长不会分，所以 §13.4 给它加了绝对上限。
+4. **L0 瘦身复核**：定期核对 `bootManifest`，把"非首局必现"的项降级回 L1。**自 §13.4 起有门禁**：L0 阻塞层总字节超预算直接 CI 红。
 
 ---
 
@@ -261,7 +261,7 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 
 1. **严格串行**：一波 await 完才起下一波。并行预取会跟玩家接下来真正的操作抢连接。
 2. **空闲调度**：每波从 `requestIdleCallback` 起（没有该 API 的环境如微信退化成 timer），主线程忙就自动往后推。首波额外留 3s，避开首屏场景自己的构造和开屏 API 调用。
-3. **先便宜后贵**：`boot 背景层` → `battle`（12 兵 `.tao` + 英雄/法术卡图，即 `enterBattle` 要等的全集）→ `icons:reward`（tab 图标 + 金币/材料 atlas）→ `slg:world`（1.2 MB 世界地图 atlas）→ `gacha`（3.3 MB，最大且最不常用，放最后）。
+3. **先便宜后贵**：`boot 背景层` → `battle`（12 兵 `.tao` + 英雄/法术卡图，即 `enterBattle` 要等的全集）→ `icons:reward`（tab 图标 + 金币/材料 atlas）→ `slg:world`（2.0 MB 世界地图 atlas，见 §13.5）→ `gacha`（1.2 MB，最不常用，放最后）。
 4. **计费链路直接跳过**：`navigator.connection` 的 `saveData` 或 `effectiveType` 为 `2g`/`slow-2g` 时整体不跑（该 API 在 Safari/Firefox/微信不存在，视为普通链路照常预取）。
 5. **永不 reject**：单波失败只打 warn，链路继续（同 `preloadBoot` 的容错写法）。
 6. **转屏期间让路**（2026-08-24 加，见 §12）：距上次转屏不足 1.5s 时整波往后推。`requestIdleCallback` 单独不够——转屏的开销大部分**不在主线程**（帧缓冲重分配、纹理重传），所以 GPU 与内存压力峰值时主线程反而看起来空闲；往这个窗口塞一张几 MB 的纹理解码是最差时机，而在内存受限的内嵌 WebView 上失败模式不是变慢、是进程被杀。有次数上限，来回翻手机不会把预取永久停住。
@@ -318,3 +318,169 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 
 - **卡背被放大约 4 倍在用**：`gacha_card_*.png` 是 400×560，而单抽揭示界面把它铺到最大约 1690×2193（16:9 横屏）。修它要加字节（母版是 1060×1484，够用），属于「清晰度 vs 体积」的美术取舍，未动。
 - `art/ui/gacha/gacha_card_rare_alt.png` 是未使用的母版（`render/gachaArt.ts` 每个稀有度只映射一张卡背）。未删，但 `exportGachaArt.mjs` 把它列进 `UNUSED_MASTERS` 显式报出来，而不是默默忽略。
+
+---
+
+## 13. 加载链路复核（2026-08-25）
+
+一次针对「目前的加载方式是否合理」的全链路复核（构建配置 → boot 清单 → 场景闸门 → **线上真实响应头**）。分层模型本身站得住，本节记的是四处落地缺口 + 两处**把复核自己的错误结论也记下来**的更正。
+
+### 13.1 线上缓存头一直没生效（P0，实测确认）
+
+[deploy-cloudflare.md](../product/deploy-cloudflare.md) 的缓存策略表从一开始就写着 `<hash>.js` → `public, max-age=31536000, immutable`。**线上不是这样**：
+
+```
+curl -sSI https://a.gamestao.com/<hash>.js
+→ Cache-Control: public, max-age=0, must-revalidate      # CF Workers 默认策略
+```
+
+带 ETag 的条件请求确实返回 304、body 为 0，但**每个资源每次会话都要付一次回源校验**——2 MB 的 bundle 那一次还卡在关键路径上（校验完才能开始 parse）。等于把 §11 preload 分层争来的收益吐掉了一部分，且只有回访玩家吃亏（所以最不容易被发现）。
+
+**成因**：`webpack.config.js` 的 `StaticMetaPlugin` 生成的 `_headers` **只有 `/index.html` 和 `/version.json` 两条**，从来没有 hashed 文件那条。`client/nginx.conf` 里那条 `immutable` 写对了，但那是本地 Docker 模拟，**生产走 CF Workers、根本不经过 nginx**——两套配置只有一套被真正部署，另一套长期充当"我们已经配了"的错觉来源。
+
+**修法**：产物布局改成 **content-hash 的一律进 `static/`**（`output.filename` + `assetModuleFilename`），`_headers` 加一条 `/static/*  Cache-Control: …immutable`。
+
+> ⚠ **为什么必须靠目录前缀分开，而不是 `/*` + 更窄的规则覆盖**：CF 的 `_headers` **没有优先级模型**——"匹配到多条规则的请求会继承所有规则的 header"，且**同名 header 被设置两次时是用逗号拼接**，不是覆盖。所以 `/*` immutable + `/index.html` no-cache 的结果是一条自相矛盾的 `Cache-Control: …immutable, no-cache, must-revalidate`。而 `/*.js` 这种「splat 后面跟字面后缀」的写法官方文档里根本没有（文档只保证 `/static/*` 这种形态，且明说"只能有一个 splat"）。**结论：让两类文件的路径天然不重叠，是唯一不依赖未文档化行为的写法。** 副作用是 `dist/` 根目录从 240 个 hash 文件变回 12 个有名字的文件，可读性反而好了。
+
+### 13.2 抽卡进场闸门（§10 只做了一半）
+
+§10 为战斗补了 `enterBattle` → `ensureBattleAssets` 闸门，抽卡没补：`GachaScene` 里是 `void preloadGachaTextures()`（不 await），而 `gachaArt` 发的是 `PIXI.Texture.from(url)`——冷缓存时返回空纹理。
+
+布局不会坏（`reveal.ts` 显式设了 `width/height`，PIXI 的 `_onTextureUpdate` 会在纹理到位后重算 scale），但**卡背/边框会先空一拍再 pop 出来**，而这是全游戏最讲究演出的一屏。`idlePrefetch` 只是让它变罕见而非不可能：gacha 是**最后一波**（约 3s + 4×1s 之后），开局直奔抽卡就是在跟它赛跑，省流链路则整个跳过预取。
+
+**改动**：把 §10 的闸门机制从 `battleGate.ts` 提成通用件 `app/assetGate.ts` 的 `enterWithAssets(deps, warm, build, {fade?})`，`enterBattle` 退化成"战斗专属 warm + 选择淡入"的薄封装，`PixiAppViews.showGacha` 成为第二个调用方。
+
+> ⚠ **两条路径的输入冻结释放方式不同**，这是这个模块唯一容易写错、且读代码看不出来的地方：淡入路径由 `SceneManager` 的过渡负责解冻，**非淡入路径没有任何人解冻**，必须闸门自己 `suppress(false)`——漏了就是一块看着正常、但不响应点击的屏幕。`test/ui/assetGate.ui.ts` 专门锁这一条（已反向验证：删掉 `suppress(false)` 该用例变红）。
+
+### 13.3 后端 preconnect：把握手塞进闸门的空窗
+
+`startApp` 是 `await preloadBoot()` 之后才 `core.start()`，第一个后端请求因此**整个落在闸门之后**——冷链路上 DNS + TCP + TLS 全在关键路径上，而闸门期间这条连接完全空闲。
+
+`PreloadBootAssetsPlugin` 现在额外注入 `<link rel="preconnect">`（构建期烘焙的 `apiBase`/`worldBase`/`socialBase`/`auctionBase`，去重、丢掉空值即同源那几个）。`crossorigin` 与 preload 同理不可省：后端走 CORS，credentials mode 对不上的那条连接不会被复用。
+
+> **⚠ 复核自己的第一版结论过头了，一并记下**：原话是「首屏串行，L0 闸门跑完才发 auth/save」——**大厅首绘其实从不等网络**，`resolveEntry()` 立刻 `nav.goLobby()`、`void saveManager.adoptSession()` 在后台拉。所以这里真正的收益不是首绘变快，而是**大厅显示本地/陈旧值的那段窗口变短**（金币数、名册、以及断线重连提示），量级 ≈ 一次握手。
+>
+> **更深的那步（真正预取 `GET /save` 的响应、让 core 复用）评估后放弃**：SaveManager 的 `reconcile`/`accountId`/`pendingActiveMatch` 语义复杂（`accountId` 在 pull 之前就被 eager 写入，注释里专门解释了为什么它不等于 `save.rev` 归属的账号），往里塞一个预取响应，最可能的复发形态正是历史上踩过的「切号后拿到上一个账号的数据」。收益是"少一个 RTT 的陈旧窗口"，代价是这类 bug——不值。
+
+### 13.4 出包体积门禁（`scripts/checkBundleSize.mjs`）
+
+bundle 从 §1 记的 ~1.5 MB 长到 2.08 MB（raw），**没有任何东西发现这件事**；`bootManifest.ts` 那句"keep both lists MINIMAL"背后也只有一行注释。仿 `checkFileLength.mjs` 补一个门禁，CI 在 `client web build` 之后跑。
+
+| 指标 | 2026-08-25 实测 | 预算 | 看的是什么 |
+|---|---|---|---|
+| `entry.brotli` | 470.9 KiB | 550 KiB | 整包代码，跑任何东西之前都得下完 |
+| `boot.gate` | 694.2 KiB | 800 KiB | **玩家真正在等的那一层**（L0 阻塞层） |
+| `dist.total` | 22.9 MiB | 26000 KiB | 前两者都看不见的美术膨胀 |
+
+两个设计选择：
+- **绝对预算 + 明示余量，不是 ratchet**。行数是人加的，字节是依赖升级/minifier 版本/美术重导出天天在动的——no-growth ratchet 会在没做错事的提交上变红，然后训练所有人条件反射地抬基线。
+- **量真产物，不重新推导**。entry 和 L0 层都是从产物 `dist/index.html` 里读回来的（L0 层 = plugin 写的那批 `fetchpriority=high` preload，而 `bootPreloadManifest.test.ts` 已经把它钉死在 `bootManifest.ts` 的阻塞层上），所以门禁不可能和清单漂移，且算的是 minify + contenthash 之后的字节。
+- ⚠ `entry.brotli` 是**本地 q11**，只作相对指标：CF 是实时压缩、质量低得多，同一个文件线上是 600393 字节。别把这个数读成"玩家下载了多少"。
+
+### 13.5 两条**被推翻的**复核结论（重要，别再重犯）
+
+复核最初还提了两条，深挖后发现都是**错的**，而且错法是同一种：拿"客户端有没有 `import`"当唯一判据，去评判一个**构建管线中间产物**。
+
+1. **`world_atlas.png`（2.0 MB，唯一的真彩色大图）不要量化成调色板。** 它现在这么大是 2026-08-20 **故意改的**：`pack_resources.cjs` → `patchMergedAtlas.js` 这条链上同一对 sharp 陷阱有三处实例，`palette: true` 会静默把 alpha 精度打到 240→143 种，修完体积从 1.76 MB 涨到 2.05 MB。见 [slg-resource-art.md](../product/slg-resource-art.md) §6.12.7–6.12.9，那次还补了**断言两张 PNG 都不是 palette 编码**的测试。原文结论照抄：**「If size ever needs cutting, cut frames or dimensions, not the encoding.」** gacha 那套 `{palette:true, quality:90}` 之所以能用，是因为那批图不吃 alpha 精度——不能推广。
+2. **`res_atlas.{png,json}`（904 KB）不是可删的孤儿。** 客户端确实没有 `import` 它（所以**它本来就不进包**，从不消耗玩家带宽），但它是 `pack_resources.cjs` 的产物、`patchMergedAtlas.js` 回贴合并页时的**帧来源**，还有 4 条测试直接断言这个文件（帧数 50、非 palette 编码、可见 alpha >200 种、与合并页逐帧字节一致）。删了就是把管线和测试一起打断。
+   > ✅ **但这条的根因已修（2026-08-25，用户提议）**：既然它是中间产物，就不该住在 `client/src/assets/` 里。已 `git mv` 到 **`art/slg/slg-map/`**（本文 §2 的 L2「永不进包」层，且正是 `pack_resources.cjs` 自己所在的目录），`OUT_DIRS[0]` 改成 `path.resolve(__dirname, '.')`。
+   >
+   > 关键是**两个 `OUT_DIRS` 的角色本来就不同，只是原先看不出来**：`tools/map-editor/src/assets/slg/` 那份是**真·出包资源**（`resAtlasLoader.ts` 直接 import——map-editor 至今没做合并页，仍按分组读各自 atlas），而 client 那份从来只是回贴用的帧来源。挪完之后 `client/src/assets/slg/` 只剩 `world_atlas.{png,json}`，目录里每个文件都是真的会发给玩家的东西，**"没人 import" 这个信号重新变得可信**。
+
+> **教训**：`client/src/assets/` 下曾经同时躺着"要发给玩家的资源"和"构建管线的中间产物"，两者靠有没有 TS `import` 区分**只对第一类成立**——而这正是上面那个误判的来源。第 2 条的修法（把中间产物挪出 `src/assets/`）就是让这个信号重新可信；**新增管线中间产物时照此办理，别再往 `client/src/assets/` 里放**。至于判断一个已有资源能不能动：先 `grep -rl <文件名> art/ client/scripts/ tools/`，不要只 grep `client/src`。
+
+### 13.6 遗留
+
+- **`world_atlas` 的 2.0 MB 仍然是最大单文件，且 `idlePrefetch` 无条件为每个非省流玩家预取 + 解码它**（1960×1827 RGBA ≈ 13.7 MB 内存），哪怕这人从没点开过世界地图——§12 排查的正是手机崩溃，这个方向是反的。编码不能动（见 13.5），所以剩下的路是 **①按 §6.12 的原话砍帧/砍尺寸，或 ②让这一波预取变成有条件的**（玩家已解锁/用过 SLG 才预热）。②改动小、零美术风险，是下一步的首选。
+- `idlePrefetch` 的省流判据 `navigator.connection` 是 Chromium 独有的，**iOS Safari 与微信小游戏永远走全量预取**（约 5 MB），且不看玩家是否解锁了对应功能。与上一条是同一件事的两面，建议一起做。
+- §11.5 那条「`client/public/index.html` 疑似历史残留」本轮未动。
+
+---
+
+## 14. 预取按使用面裁剪 + 省流开关（2026-08-25）
+
+§13.6 留的那条尾巴。起点是一句判断：**这不是「省流判据不准」的问题，是「预取得太多」的问题**——换个更准的网络探测最多让一部分玩家少下 5 MB，而按使用信号裁剪对**所有平台、所有网络**都生效，还顺带解决了内存那一半（wifi 上照样白解码 13.7 MB，跟计费与否无关）。所以顺序是 ①裁剪 → ②补探测 → ④给玩家开关，网络探测是次要的。
+
+新增 `client/src/assets/prefetchPolicy.ts`，把 `idlePrefetch` 需要但够不着的三件事收在一处：玩家设置、平台网络 API、场景写下的使用标记。
+
+### 14.1 ① 两个大波次按「用过才预热」裁剪
+
+`slg:world`（2.0 MB）+ `gacha`（1.2 MB）占 ~5 MB 预取量的 3.2 MB，而且是仅有的两个**玩家可能一次都不进**的界面。`WAVES` 表新增可选 `when`：
+
+| 波次 | 门控 | 理由 |
+|---|---|---|
+| `boot:background` / `icons:reward` / `battle` | 无 | 每个账号都会走到（第一局是所有人都做的事） |
+| `slg:world` | `hasUsedFeature('world')` | 全游戏最大单文件，1960×1827 RGBA ≈ **13.7 MB 解码内存** |
+| `gacha` | `hasUsedFeature('gacha')` | 且它自 §13.2 起本来就有进场闸门 |
+
+**标记是提示，不是权限**，所以刻意做得便宜、本地：写 `platform.storage`，**不走服务端 `flags`**——后者要一次 `PUT /flags` 往返，去记一件「猜错零成本」的事。猜错确实零成本：每个场景闸门都会重新 await 同一批幂等 loader，没预热的界面就是照旧付自己的闸门，跟本节存在之前一模一样。
+
+**标记写在场景自己的资源需求点**（`WorldMapRenderer/lifecycle.ts` 的 `bootstrap()`、`PixiAppViews.showGacha` 的闸门），**不写在 loader 里**——预取调用的正是那些 loader，写在那儿会让每个波次跑一次之后就自我论证。
+
+跳过的波次会 `console.info` 报出来（`[prefetch] not warming (never opened): …`），不静默瘦身。
+
+### 14.2 ② 微信改用 `wx.getNetworkType()`
+
+`navigator.connection` 是 Chromium 独有，微信运行时里**根本不存在**，所以此前微信构建一律读成「未知链路」、任何网络下都全量预取。`wx.getNetworkType` 是一等 API，仓库里**从来没被调用过**，`wx.d.ts` 里连声明都没有。
+
+`IPlatform` 新增可选 `getNetworkKind?(): Promise<NetworkKind>`；不实现的平台回落到 `navigatorNetworkKind()`（web/CrazyGames/mobile 本来就该用这个）。映射：`wifi`→wifi、`2g`→slow、`3g/4g/5g`→cellular、`none`→none、其余→unknown（这个列表加过 `5g`，所以按开集处理，不穷举 switch）。探测**永不 reject**，失败即 `unknown`＝当普通链路。
+
+> ⚠ **`cellular` 不跳过预取**，这条边界是承重的：要拦的是「投机字节真的伤人」的链路，不是「凡不是 wifi」——放宽会把大多数手机的预取直接关掉。让 4G 保持诚实的不是更严的网络判据，而是更小的投机集合（即 ①），而后者在 iOS Safari 这种**完全没有可用网络 API** 的地方同样成立。web 路径和平台探测两边各有一条测试钉住这个边界。
+
+### 14.3 ④ 设置里的「省流量」开关
+
+自动判据的补集：`navigator.connection` 在 iOS Safari / Firefox / 所有 iOS 内嵌浏览器里都不存在。**这里不要猜链路**——测吞吐会答错问题（快的 LTE 既快又计费），干脆让玩家自己说。全平台生效、不依赖任何 API、不可能猜错。开关写 `nw_data_saver`，`shouldSkipPrefetch()` 里优先级最高（marks 也压不过它）。
+
+**次日生效**：本次会话的预取链在玩家走到设置界面时早已决定甚至跑完，字节已经花掉了；这个开关管的是**之后的会话**，不做中途取消。
+
+布局上它是**标签 + 开关同一行**（不同于周围的分区），因为它挤在语言按钮和 Help/Account（0.73h）之间的空档里，堆叠式放不下。该场景**每个分区的 y 都是 h 的手调分数、无滚动无流式布局**，所以碰撞不会被推开、只会**默默画在邻居身上**——`test/ui/settingsDataSaverRow.ui.ts` 因此断言的是几何关系（4 种视口 × 3 种语言），而不是「标签在不在」。
+
+### 14.4 实测
+
+新档（从没开过世界地图/抽卡）：控制台 `[prefetch] not warming (never opened): slg:world, gacha`，`static/` 请求里**没有** 2002 KB 的 `world_atlas.png`、也没有 gacha 那批图。写入两个标记后重载：world atlas 恢复预取。两个方向都在真实运行的客户端里验过。
+
+> ⚠ **设置界面没有截图核对**：本轮 Browser pane 不显示（`screenshot` 一直超时）。改用几何断言覆盖，见 14.3 —— 对「不同宽高比下会不会重叠」这个具体风险，几何断言反而比一张截图更强，也每次 CI 都在跑。反向验证过（把行挪到 0.72h 制造重叠，4 个视口全红）。
+
+### 14.5 遗留
+
+- §13.6 第一条（world atlas 无条件预取）由本节 ① 解决；**编码仍然不能动**（§13.5）。若哪天世界地图必须对所有人预热，剩下的路仍是按 §6.12 的原话砍帧/砍尺寸。
+- 使用标记只有「用过 / 没用过」，没有时效。一个玩了一次 SLG 就再不碰的账号会一直预热那 2.0 MB。加个「最近 N 天」窗口是显然的下一步，但在有数据说明这值得之前不做——现在这版已经把最坏情况（从没进过的人）解决了。
+
+---
+
+## 15. 补测试：把三处约定变成被检查的不变量（2026-08-25）
+
+§13/§14 落地后复核覆盖，发现四处缺口。共同点是**都不是"逻辑没测"，而是"约定只写在注释和文档里"**——而本文档记的两次事故（§13.1 缓存头、§13.5 误判中间产物）恰恰都是「文档说了、代码没做」或「约定存在、无人检查」造成的。
+
+### 15.1 `client/src/assets/` 无孤儿（`test/assetsAreShipped.test.ts`）
+
+§13.5 的根因修复（把 `res_atlas` 挪进 `art/`）让「没人 import ⇒ 没用」重新成立，但**没有任何东西阻止下一个中间产物再放回来**。现在每个 `client/src/assets/` 下的资源文件逐个断言「至少被某个模块引用」。
+
+失败时**不是 lint 错误而是设计问题**，且只有两个正确答案：这文件属于 `art/`（它是管线产物），或者应该有人 import 它（它是被重构孤立掉的真美术，现在正静默地没出现在游戏里）。
+
+顺带覆盖了 `.hires` 约定的另一半：`foo.hires.png` 是靠 webpack `NormalModuleReplacementPlugin` 按约定解析的、**没有字面 import**（所以要豁免），但一个 `foo.png` 已经不存在的 `.hires` 文件就是真孤儿——静默、且读代码看不出来。
+
+### 15.2 缓存策略门禁（`scripts/checkCachePolicy.mjs` + `test/cachePolicyGate.test.ts`）
+
+§13.1 修好了 `_headers`，但**修好之后同样没有东西防止它再退化**。新增门禁读**产物** `dist/`（不是意图），CI 里跟体积门禁并排跑，断言四件事：
+
+1. 每个 contenthash 文件都被某条规则以 `immutable` + `max-age≥1y` 覆盖；
+2. `index.html` / `version.json` 仍然回源校验，且**绝不** immutable；
+3. **没有任何文件被两条 `Cache-Control` 规则同时命中**——这是核心不变量，因为 CF 是**逗号拼接而非覆盖**；
+4. contenthash 产物确实在 `static/` 下（`output.filename` 被改回根目录就会红）。
+
+### 15.3 两个门禁自己的变异测试
+
+`claudedocs` 里已经记过这条教训（「gate 脚本自己要做变异测试」），而 §13.4 加体积门禁时我没照做。现在两个脚本都加了 `--dist=` / `--budget=` 参数，纯粹为了让测试能拿 fixture 目录喂它们，**逐条断言"该红的时候真的会红"**：
+
+- `cachePolicyGate.test.ts`（11 例）：`_headers` 整个缺失（**production 当时的真实状态**）、hash 文件没规则、规则不是 immutable、`/*` + `/index.html` 重叠、index.html 被 immutable、产物跑出 `static/`、多 splat 图案、注释/空行、以及 favicon 这类固定名文件**不该**被要求有规则。
+- `bundleSizeGate.test.ts`（9 例）：三个预算各自超标、背景层 preload **不**计入 L0 闸门、**没有构建时必须响亮失败**（"什么都没量到"绝不能读成"没有超标"）、preload 插件没跑、指标缺预算条目、index.html 引用了不存在的文件。
+
+> 写这批测试时踩到一个值得记的坑：「超预算」那条 fixture 最初用 `i * k % 256` 生成"不可压缩"的字节，**周期只有 256，brotli 直接压没了**，于是 200 KB 的包压回预算内、测试因为错误的原因变绿。换成带种子的 LCG 才真正不可压缩。**给压缩相关的门禁造 fixture 时，"看起来随机"和"熵足够"是两回事。**
+
+### 15.4 另外两处（§14 的）
+
+- `test/ui/wechatNetworkKind.ui.ts`：`wx.getNetworkType` 的字符串映射逐值断言。这个列表**已经长过一次**（`5g` 是后加的），而映射把新值悄悄放错桶不会报错、只会做出更差的决定。另测两条失败路径（`fail` 回调、API 直接抛）都必须 resolve 成 `unknown`——`shouldSkipPrefetch()` 会 await 它，reject 会把整条预取链带下水。
+- `test/ui/settingsDataSaverRow.ui.ts` 新增点击路径：此前只证明了这行**画得出**当前状态，没有任何东西证明**点了有用**——而一个 hit rect 没注册、或注册在错坐标的开关，在截图里完全正确。改为走场景真实的 `hits` 列表触发，位置也一并被断言。
+
+四条新守卫全部反向验证过（放一个假中间产物进 `assets/`、删 `_headers` 那条规则、把 `host.hits.push` 摘掉、把行挪到 0.72h——各自对应的用例都变红）。

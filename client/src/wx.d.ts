@@ -224,6 +224,20 @@ declare module wx {
 
   function hideLoading(): void;
 
+  /**
+   * Current link type. WeChat's answer to a question the web platform cannot ask here at all:
+   * `navigator.connection` is Chromium-only and absent from the mini-game runtime, so before this
+   * the WeChat build always read as "unknown link" and prefetched unconditionally
+   * (ASSET_PACKAGING §14). `networkType` is one of 'wifi' | '2g' | '3g' | '4g' | '5g' | 'none' |
+   * 'unknown'; the list has grown before ('5g' was added later), so callers must treat it as an
+   * open set rather than exhaustively switching on it.
+   */
+  function getNetworkType(opts: {
+    success?: (res: { networkType: string }) => void;
+    fail?: (err: unknown) => void;
+    complete?: () => void;
+  }): void;
+
   function showLoading(opts: { title: string; mask?: boolean }): void;
 
   function showToast(opts: {

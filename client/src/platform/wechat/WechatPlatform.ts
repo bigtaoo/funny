@@ -4,6 +4,7 @@ import { InputManager } from '../../inputSystem/InputManager';
 import { WechatAdapter } from '../../inputSystem/WechatAdapter';
 import type { Locale } from '../../i18n';
 import type { IapKind } from '../iap';
+import type { NetworkKind } from '../../assets/prefetchPolicy';
 import { reportAnomaly } from '../../net/anomaly';
 
 /**
@@ -31,6 +32,7 @@ declare const wx: {
   shareAppMessage(opts: { title?: string; query?: string; imageUrl?: string }): void;
   getLaunchOptionsSync(): { query?: Record<string, string> };
   createRewardedVideoAd(opts: { adUnitId: string }): WxRewardedVideoAd;
+  getNetworkType(opts: { success?: (res: { networkType: string }) => void; fail?: (err: unknown) => void }): void;
 };
 
 /** Rewarded-video-ad instance (WeChat mini-game ads API). One instance is reused across watches. */
@@ -127,6 +129,40 @@ export class WechatPlatform implements IPlatform {
     } catch {
       return 'zh-CN';
     }
+  }
+
+  /**
+   * Link type for the speculative-prefetch decision (ASSET_PACKAGING §14).
+   *
+   * WeChat is the one platform where this is answerable properly: `navigator.connection` — the
+   * web's only source, and Chromium-only there — does not exist in this runtime, so before this
+   * the mini-game fell through to "unknown link" and prefetched unconditionally on any connection.
+   * `wx.getNetworkType` is a first-class API and was simply never called anywhere in the codebase.
+   *
+   * Only '2g' maps to `slow`; 3g and up stay `cellular`, which does NOT skip the prefetch. That
+   * boundary is deliberate and matches the web path — see `prefetchPolicy.shouldSkipPrefetch` for
+   * why "anything short of wifi" is the wrong rule. Unrecognised values (the list gained '5g'
+   * after launch and can gain more) fall to `unknown`, i.e. behave as a normal link.
+   */
+  getNetworkKind(): Promise<NetworkKind> {
+    return new Promise<NetworkKind>((resolve) => {
+      try {
+        wx.getNetworkType({
+          success: ({ networkType }) => {
+            if (networkType === 'wifi') resolve('wifi');
+            else if (networkType === 'none') resolve('none');
+            else if (networkType === '2g') resolve('slow');
+            else if (/^\dg$/.test(networkType)) resolve('cellular');
+            else resolve('unknown');
+          },
+          // Never reject: a failed probe must degrade to "normal link", the same as a platform
+          // that cannot answer at all. The per-feature marks are what keep that case honest.
+          fail: () => resolve('unknown'),
+        });
+      } catch {
+        resolve('unknown');
+      }
+    });
   }
 
   /**

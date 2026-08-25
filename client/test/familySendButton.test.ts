@@ -25,12 +25,16 @@ import { InputPanel } from '../src/scenes/FamilyScene/input';
 import type { FamilySceneCore } from '../src/scenes/FamilyScene/core';
 import type { DataHandlers } from '../src/scenes/FamilyScene/data';
 import { BusyTracker } from '../src/ui/busyTracker';
+import { FamilyRepaint } from '../src/scenes/FamilyScene/repaint';
 
 interface Msg { id: string; senderId: string; senderName: string; body: string; ts: number }
 
-/** Bare-bones stand-in for FamilySceneCore — only the fields doSendMsg()/submitMessage() touch. */
+/** Bare-bones stand-in for FamilySceneCore — only the fields doSendMsg()/submitMessage() touch.
+ *  `repaint` is the real thing (2026-08-25): a keystroke now rewrites the send field's own Text, and
+ *  with nothing rendered here it has no Text registered, so it falls back to core.render() — the
+ *  production fallback, which is what these tests observe. */
 function fakeCore(): FamilySceneCore {
-  return {
+  const core = {
     destroyed: false,
     family: { familyId: 'fam1' },
     members: [] as unknown[],
@@ -49,6 +53,8 @@ function fakeCore(): FamilySceneCore {
     showToast: vi.fn(),
     errorMsg: (e: unknown): string => String(e),
   } as unknown as FamilySceneCore;
+  (core as { repaint: FamilyRepaint }).repaint = new FamilyRepaint(core);
+  return core;
 }
 
 function fakeData(): DataHandlers {

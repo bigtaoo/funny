@@ -208,6 +208,37 @@ function friendIndex(displayName: string): number {
 
 // ── The thumb must not pile up ────────────────────────────────────────────────
 
+describe('FriendsScene cheap scroll — a drag past the end stops at the end', () => {
+  // The sibling pages (Sect/Family, 2026-08-25) shipped this bug: their gesture reported raw finger
+  // travel and the per-frame full render was what clamped it, so once the cheap-scroll path replaced
+  // that render an over-drag translated the list into blank space. FriendsScene never had it —
+  // onPointerMove has always clamped — but nothing pinned that, so here it is.
+  it('over-dragging leaves the offset at maxScroll and does not translate past it', async () => {
+    const { scene, input } = build();
+    await settle();
+    const core = scene.core;
+    expect(core.maxScroll).toBeGreaterThan(0);
+
+    const y = firstVisibleRowCentre(scene);
+    input._emitDown(tapX(scene), y);
+    input._emitMove(tapX(scene), y - (core.maxScroll + 500));
+    scene.update(1 / 60);
+
+    expect(core.scrollY).toBe(core.maxScroll);
+    // The layer may have been rebuilt (the drag left the overscan band) — either way what is on
+    // screen must sit exactly at the end, never beyond it.
+    expect(core.repaint.appliedScrollDelta).toBeLessThanOrEqual(core.maxScroll);
+    expect(core.repaint.pendingScrollDelta + core.repaint.builtScrollY).toBe(core.maxScroll);
+
+    // Reversing the finger back inside the range follows it again (the clamp is a ceiling, not a
+    // latch): drag back to 200px short of the end and the content is 200px short of the end.
+    input._emitMove(tapX(scene), y - (core.maxScroll - 200));
+    scene.update(1 / 60);
+    expect(core.scrollY).toBe(core.maxScroll - 200);
+    scene.destroy();
+  });
+});
+
 describe('FriendsScene cheap scroll — the scroll thumb is replaced, not stacked', () => {
   it('many drag frames leave the container child count unchanged', async () => {
     const { scene, input } = build();

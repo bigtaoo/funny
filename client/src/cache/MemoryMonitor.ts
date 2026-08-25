@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
 import { reportAnomaly, setAnrContextProvider, getActiveScene } from '../net/anomaly';
 import { snapshotPools } from './poolRegistry';
+import { bakeStats } from '../render/bake';
 
 // Runtime memory monitor: reads JS heap usage every few seconds, emits a console.warn when the threshold
 // is exceeded, and dumps idle-object counts / rough size estimates for all object pools (poolRegistry.snapshotPools).
@@ -12,6 +13,12 @@ import { snapshotPools } from './poolRegistry';
 // pinning the entire scene graph, growing past 10 GB across multiple games) are exactly JS-heap leaks,
 // so watching usedJSHeapSize catches this class of issue precisely. Only Chromium / WeChat support performance.memory;
 // other environments automatically fall back to "listen only to wx signals, skip heap sampling".
+//
+// The GPU side is covered separately, and by two different shapes of signal — because the 2026-08-25 crash
+// showed one of them alone is not enough. genTexCount() counts generated textures (the "hundreds of
+// un-destroyed Texts" leak); texBytes() sums decoded BYTES (the "three RenderTextures at 111 MB each"
+// blowout, which is a count of 3 and invisible to both the count gate and the heap gate). Neither
+// substitutes for the other, so both have a budget and both feed every report.
 
 const log = netLog('mem');
 const MB = 1024 * 1024;
@@ -32,6 +39,21 @@ const DEFAULT_WARN_MB = 400;
  * for the leak class fixed in the overlay-scene teardown pass.
  */
 const DEFAULT_GEN_TEX_BUDGET = 600;
+
+/**
+ * Soft budget (MB) for **decoded texture bytes** across the whole base-texture cache.
+ *
+ * Why a byte budget exists alongside the count above: on 2026-08-25 a phone-class in-app WebView
+ * died on a reload loop because the first lobby paint allocated three page-sized RenderTextures of
+ * 111 MB each. `genTexCount` saw that as **3** — comfortably inside a budget of 600 — so nothing
+ * fired, and `usedJSHeapSize` barely moved because the bytes are GPU-side. A count cannot express
+ * "few but enormous"; bytes can, and it is the axis the OS actually kills on.
+ *
+ * 256 MB is set as "no phone should ever be here": a healthy client after the bake-resolution fix
+ * sits around one screen's worth of pixels per cached page layer (~7-10 MB each on a phone).
+ * Tunable via localStorage.setItem('nw_tex_budget_mb', '128').
+ */
+const DEFAULT_TEX_BUDGET_MB = 256;
 
 const SAMPLE_EVERY_MS = 5_000;   // sampling interval
 const REWARN_EVERY_MS = 30_000;  // minimum interval between two consecutive warnings (to avoid log spam)
@@ -67,6 +89,15 @@ function genTexBudget(): number {
     if (Number.isFinite(v) && v > 0) return v;
   } catch { /* localStorage unavailable: use default */ }
   return DEFAULT_GEN_TEX_BUDGET;
+}
+
+function texBudgetMB(): number {
+  try {
+    const raw = globalThis.localStorage?.getItem('nw_tex_budget_mb');
+    const v = raw == null ? NaN : Number(raw);
+    if (Number.isFinite(v) && v > 0) return v;
+  } catch { /* localStorage unavailable: use default */ }
+  return DEFAULT_TEX_BUDGET_MB;
 }
 
 const round = (n: number, d = 1): number => {
@@ -140,6 +171,66 @@ function genTexCount(): number {
   return n;
 }
 
+/** Walk cap for {@link texBytes}: the base-texture cache is normally in the hundreds. */
+const TEX_SCAN_CAP = 20_000;
+
+export interface TexByteStats {
+  /** Decoded bytes across the whole base-texture cache. */
+  totalMB: number;
+  /** Of which: **generated** (non-URL) textures — Text / RenderTexture / generateTexture results. */
+  generatedMB: number;
+  /** The single biggest base texture — the one line that names a "few but enormous" problem. */
+  largestMB: number;
+  /** Bucket (or pixi uid) of that biggest texture, plus its size in real pixels. */
+  largest: string;
+}
+
+/**
+ * Decoded texture bytes, not entry counts.
+ *
+ * {@link genTexCount} answers "how many generated textures are alive", which is the right question
+ * for the leak class it was written for (hundreds of un-destroyed Texts) and the wrong one for the
+ * 2026-08-25 crash: three RenderTextures of 111 MB each are a count of 3 and a third of a gigabyte.
+ * `usedJSHeapSize` cannot see them either — they are GPU-side — so bytes here are the only channel
+ * that would have shown it. `realWidth/realHeight` already include the texture's own resolution,
+ * which is precisely the factor that was wrong.
+ *
+ * Exported for `test/render/textureByteAccounting.test.ts` — the rest of the module's reporting
+ * surface is private, but the arithmetic here is the whole point of the change and worth pinning.
+ */
+export function texBytes(): TexByteStats | null {
+  const c = (PIXI.utils as unknown as Record<string, Record<string, unknown> | undefined>).BaseTextureCache;
+  if (!c) return null;
+  let total = 0;
+  let generated = 0;
+  let topBytes = 0;
+  let topKey = '';
+  let topW = 0;
+  let topH = 0;
+  const keys = Object.keys(c);
+  const n = Math.min(keys.length, TEX_SCAN_CAP);
+  for (let i = 0; i < n; i++) {
+    const k = keys[i]!;
+    const bt = c[k] as unknown as { realWidth?: number; realHeight?: number } | undefined;
+    const w = bt?.realWidth ?? 0;
+    const h = bt?.realHeight ?? 0;
+    if (!(w > 0) || !(h > 0)) continue;
+    // RGBA8, base level only. Mipmapped art costs ~1/3 more (ART_TEX_OPTIONS enables mipmaps on
+    // WebGL2 for downscaled portraits), but PIXI only generates them for some sources — so this
+    // deliberately under-reports by a bounded amount rather than inflating every entry by a third.
+    const bytes = w * h * 4;
+    total += bytes;
+    if (texBucket(k) === 'generated:') generated += bytes;
+    if (bytes > topBytes) { topBytes = bytes; topKey = k; topW = w; topH = h; }
+  }
+  return {
+    totalMB:     round(total / MB),
+    generatedMB: round(generated / MB),
+    largestMB:   round(topBytes / MB),
+    largest:     topKey ? `${texBucket(topKey) === 'generated:' ? topKey : texBucket(topKey)} ${topW}x${topH}` : '',
+  };
+}
+
 /**
  * Top texture-cache buckets by entry count — the single most useful signal for a "baseTex keeps climbing"
  * report: it distinguishes an unbounded *asset* cache (many entries under one art directory, retained forever
@@ -175,6 +266,9 @@ export class MemoryMonitor {
   /** Generated-texture count at the previous *sample* (every SAMPLE_EVERY_MS, not just on warn) — the budget
    * guard only fires when the count is over budget AND still growing, so a large-but-stable set stays quiet. */
   private lastSampledGenTex = -1;
+  /** Decoded texture MB at the previous sample — the byte gate, like the count gate, only fires
+   *  when it is over budget AND still growing, so a large-but-stable working set stays quiet. */
+  private lastSampledTexMB = -1;
 
   install(ticker: PIXI.Ticker, stage?: PIXI.Container): void {
     this.ticker = ticker;
@@ -184,8 +278,16 @@ export class MemoryMonitor {
     // Feed live GPU/texture counters into ANR reports: a freeze that always fires with a huge baseTex count
     // points at texture pressure, whereas one at a low count is a pure compute stall. Cheap counters only —
     // no scene-graph walk here (the watchdog fires *during* a stall; walking the tree would worsen it).
+    // `texMB` is in that budget: one pass over the cache keys reading two numbers off each entry, a few
+    // hundred iterations against the 200k-node walk that is deliberately excluded — and after 2026-08-25
+    // it is the counter most likely to explain a stall, since a count of 3 hid a third of a gigabyte.
     setAnrContextProvider(() => ({
-      gpu: { tex: cacheSize('TextureCache'), baseTex: cacheSize('BaseTextureCache'), tickers: this.ticker?.count ?? -1 },
+      gpu: {
+        tex: cacheSize('TextureCache'),
+        baseTex: cacheSize('BaseTextureCache'),
+        ...(() => { const b = texBytes(); return b ? { texMB: b.totalMB, largestMB: b.largestMB } : {}; })(),
+        tickers: this.ticker?.count ?? -1,
+      },
     }));
 
     // WeChat Mini Game: the OS low-memory callback is the real budget gate (performance.memory is typically unavailable in the WeChat runtime).
@@ -210,6 +312,9 @@ export class MemoryMonitor {
     //   ② generated (non-URL) base-texture count over budget AND still climbing — the GPU-side leak the
     //      heap gate is blind to (generated textures are mostly GPU memory). Works with no performance.memory,
     //      so it also covers Safari/WeChat where heap sampling is unavailable.
+    //   ③ decoded texture BYTES over budget AND still climbing — the axis ② cannot express. A handful
+    //      of oversized RenderTextures is a small count and a huge footprint (2026-08-25: three at
+    //      111 MB), and it is bytes, not entries, that the OS kills a mobile WebView over.
     const heap = readHeap();
     const usedMB = heap ? heap.usedJSHeapSize / MB : 0;
     const threshold = warnThresholdMB();
@@ -221,7 +326,14 @@ export class MemoryMonitor {
     this.lastSampledGenTex = generated;
     const genOver = generated > budget && genClimbing;
 
-    if (!heapOver && !genOver) return;
+    const tex = texBytes();
+    const texMB = tex?.totalMB ?? 0;
+    const texBudget = texBudgetMB();
+    const texClimbing = this.lastSampledTexMB < 0 || texMB > this.lastSampledTexMB;
+    this.lastSampledTexMB = texMB;
+    const texOver = tex != null && texMB > texBudget && texClimbing;
+
+    if (!heapOver && !genOver && !texOver) return;
 
     const t = nowMs();
     if (t - this.lastWarnMs < REWARN_EVERY_MS) return;
@@ -229,7 +341,9 @@ export class MemoryMonitor {
     this.dump(
       heapOver
         ? `JS heap ${usedMB.toFixed(0)}MB exceeds warning threshold of ${threshold}MB`
-        : `generated textures ${generated} exceed budget of ${budget} and still climbing (likely a Text/RenderTexture leak)`,
+        : genOver
+          ? `generated textures ${generated} exceed budget of ${budget} and still climbing (likely a Text/RenderTexture leak)`
+          : `decoded textures ${texMB.toFixed(0)}MB exceed budget of ${texBudget}MB and still climbing (largest ${tex?.largest} at ${tex?.largestMB}MB)`,
     );
   };
 
@@ -250,11 +364,23 @@ export class MemoryMonitor {
     const generated = genTexCount();
     const genDelta = this.lastGenTex >= 0 ? generated - this.lastGenTex : 0;
     this.lastGenTex = generated;
+    // Bytes alongside the counts. `bytes` is the whole base-texture cache; `bake` is the subset this
+    // app allocates on purpose and can name — its `largest` carries the bake cache key (e.g.
+    // `lobbybg:3000x1080@3`), which is the difference between "a generated texture is huge" and
+    // "this call site is huge". See texBytes()/bakeStats() for why counts alone were not enough.
+    const bytes = texBytes();
+    const baked = bakeStats();
     const gpu = {
       tex: cacheSize('TextureCache'),
       baseTex: cacheSize('BaseTextureCache'),
       generated,
       genDelta,
+      ...(bytes ? { texMB: bytes.totalMB, genMB: bytes.generatedMB, largest: bytes.largest, largestMB: bytes.largestMB } : {}),
+      bake: {
+        n: baked.count,
+        MB: round(baked.bytes / MB),
+        ...(baked.largest ? { top: `${baked.largest.key} ${baked.largest.w}x${baked.largest.h}`, topMB: round(baked.largest.bytes / MB) } : {}),
+      },
       nodes: nodes >= NODE_WALK_CAP ? `${NODE_WALK_CAP}+` : nodes,
       tickers: this.ticker?.count ?? -1,
     };

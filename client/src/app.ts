@@ -25,6 +25,7 @@ import { setBakeRenderer } from './render/bake';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
 import { startIdlePrefetch } from './assets/idlePrefetch';
+import { installPrefetchPolicy } from './assets/prefetchPolicy';
 import { LoadingOverlay } from './ui/LoadingOverlay';
 import { createAppCore } from './app/createAppCore';
 import { PixiAppViews } from './app/PixiAppViews';
@@ -230,10 +231,19 @@ export async function startApp(
 
   core.start();
 
-  // ── L1 idle prefetch (ASSET_PACKAGING §11) ──────────────────────────────────
+  // ── L1 idle prefetch (ASSET_PACKAGING §11, §14) ─────────────────────────────
   // The first scene is now up and the player is reading it. Spend that idle window
   // warming what the next gates (enterBattle / WorldMapScene / GachaScene) would
   // otherwise download only once the player asks for the scene. Strictly serial,
   // idle-scheduled and never rejecting — see idlePrefetch.ts.
+  //
+  // The policy install has to happen first: it carries the storage the per-feature usage marks and
+  // the data-saver setting live in, plus this platform's network probe (WeChat's wx.getNetworkType
+  // has no web equivalent, and the web's navigator.connection does not exist there). Uninstalled,
+  // the prefetch reads as "no marks, no data-saver", which would leave both gated waves off.
+  installPrefetchPolicy({
+    storage: platform.storage,
+    ...(platform.getNetworkKind ? { getNetworkKind: () => platform.getNetworkKind!() } : {}),
+  });
   void startIdlePrefetch();
 }

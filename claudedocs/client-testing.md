@@ -304,6 +304,25 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 顺带一条接线坑：这次把 `FriendsScene` 的指针分发从 `core.ts` 的方法挪成了 `input.ts` 的自由函数，`test/ui/socialTabRail.ui.ts` 里直接调 `scene.core.onPointerDown(...)` 的地方随之全部失败（`is not a function`）。**改文件结构前先 `grep -rn "core\.\(onPointer\|handle\)" client/test`**——`client-modules.md` 第 19 条早就记过「改链会牵连测试接线」，挪方法到自由函数是同一类破坏，只是更隐蔽（`tsc` 拦不住 `as any` 的测试）。
 
+### 「少做事」的优化会顺手撤掉别处的**意外兜底**——A/B 逐像素比对能把它抓出来（2026-08-25，宗门页签同款修复）
+
+`SectScene` 这轮把「滚动逐帧 / 光标 0.5s / 按键 / `bt.tick()` 0.4s」四条整树重建全部换成增量路径后，多出两条上一轮没有的经验：
+
+- **双栏场景的增量滚动，必须断言「另一栏没动」。** 一个共享的 `scrollDirty` 布尔配上「按当前列取 scrollY」的老写法，在横屏两栏并列时会把两栏一起平移，而单栏用例全绿。改成按列（band）存状态后，用例里每次拖一栏都顺带 `expect(otherLayer.y).toBe(<原值>)`——这是唯一能钉住路由没串的断言。
+- **⚠️ 减少重绘 = 撤掉别处「靠重绘兜底」的东西。** `buildRasterTabIcon`（AI 图标）在纹理还没解码时**画一个空容器**，且没有任何 `loaded` 回调；这个页面以前每秒好几次的多余重建，恰好把解码完的图标「意外补上」了。删掉那些重建后，冷缓存路径下 rail/表头图标会一直空着——修法是装配壳补一行 `preloadTabIconTextures().then(() => this.render())`（CardScene/EquipmentScene 早就这么写）。**推论**：动手删「多余重绘」之前，先想一遍「有谁在偷偷指望它」（异步解码的纹理、外部推送、时间相关的文案）。
+- **这类「长得一模一样、只是少做事」的改动，其实可以逐像素 A/B——不需要后端账号。** `TARGET=web-e2e` 暴露的 `window.__nwE2E.views.showSect(cb)` 能直接用桩数据挂载单个场景（`worldApi` 传字面量对象即可，`preloadedFamily`/`preloadedSect` 连 loading 都省了），于是一份 Playwright 脚本分别打**改前的主检出**和**改后的 worktree** 两个 dev server，`sharp` 原始像素相减即可。本轮结果：首帧逐像素完全一致；滚动后那帧差 0.36%，全在手绘边框上（`seedFor(cy, ...)` 的种子取自行的 build 空间 y，平移保留原种子、重建才换抖动）——**这个 0.36% 本身就是有用的信息**：它说明「滚动时手绘边框每帧重新抖动」以前是真在发生的，现在反而稳了。Browser 面板依旧不合成帧（`screenshot` 超时），走的是 `memory/playwright-screenshot-recipe` 那条路。
+
+**同日第五轮：清单第 3 项（「快速路径会不会泄漏」）第一次真正兑现。** 之前两轮我都把它当成形式化的一条（拖 8 帧数一下子节点），这次它直接抓出一个 bug：`drawBar()` 的父容器硬编码 `bodyLayer`，于是弹窗平移时滑块被重画到**页面图层**上——弹窗的滚动条没了，页面上多出一条每帧重画的。**为什么「数子节点」能抓到它**：泄漏和「画错容器」在计数上是同一种症状（某个容器的子节点数不该变却变了），所以断言要**同时数两个容器**——内容所在的那个（不该增）和不该被碰的那个（也不该增）。只数一个就只能看见一半。教训推广：任何「每帧 destroy + 重建一个小对象」的快速路径，都要把「它被放回了正确的父容器」和「数量没涨」一起钉住。
+
+**同日第四轮（弹窗列表统一）两条**：①**「可达性」类断言必须按屏幕位置判定，不能按「有没有被建出来」**——overscan 会把视口外一屏的行也建进图层，所以「最后一项不在屏上」写成 `layer` 里找不到那段文字是**假的**（我第一版就这么写，直接假红）。补了 `visibleModalTexts()`：只算 `y + layer.y` 落在 `modalRegion` 内的 Text。②改动把**弹窗点击从 pointer-down 挪到 pointer-up**（跟页面统一，拖列表不再误触行），而绝大多数弹窗测试是直接调 `hit.action()` 的，所以没被影响——**这正好说明「直接调 action」的测试写法在这类交互改动下更稳，但它也测不到 down/up 语义**；真正需要钉住 down/up 的用例要走 `input._emitDown/_emitUp`。另外 `modalLayer.children` 的一层扫描又踩了一次（同上一轮 `bodyLayer` 那条），两处测试改成递归 walk。
+
+**同日第三轮（被问「还有测试可以加吗」，照清单自查又抓到一个真 bug）**：`ScrollTapGesture` 返回的是未截顶的手指位移，旧代码靠**每帧那次整树 render 里的 clamp** 把它拉回 `max`——增量重绘把那次 render 删掉后，clamp 也没了，拖过末端会把图层平移出内容之外、露出一条不会回弹的空白。**教训比 bug 本身重要：删掉一次「多余的重绘」时，要顺着问「这次 render 里除了画东西，还顺手做了什么」**——lists.ts 那句 `core[scrollKey] = Math.max(0, Math.min(...))` 就是躲在渲染代码里的**状态修正**，不是绘制。这类「渲染副作用」在本仓很常见（clamp、`channelStick` 的 pin、`peekViewportH` 的视口收缩都在 render 里算），迁到增量路径时必须逐个盘一遍，而不是只盯着「画得对不对」。本轮同时补齐了清单里此前空着的几项：滚轮未排空就点击（applied vs pending 窗口，宗门/家族两条都 mutation 验证过）、平移一行后同一点命中下一行、滚动条重画不累积子节点、图层被 destroy / 根本没建图层两种回落、竖屏只建一列、频道列的几何等价性、名册遮罩边界。
+
+**同日续，家族页同款修复又多两条**：
+
+- **A/B 像素差的「读图」也会读错——先按 y 分段统计，再看图。** 家族页首帧差 2.2%，叠成红色蒙层后「每行边框都红」，看着像行渲染变了；按 100px 分段数一遍才发现差异 99% 集中在 y 0–299（图标）和 y 1300–1499（底部），行区间（300–1300）**一个像素都不差**——我在蒙层里把未变化的像素画成了淡灰底，行的墨线本来就是灰的，被我读成了红。**先出数字（分段计数 / >60 / >150 / >300 的分桶），再出图**，顺序反了就会给自己讲一个错的故事。
+- **这类改动会顺手暴露真 bug：** 家族名册的行原本直接画在 `bodyLayer` 上、没有遮罩，滚到底那一行整个溢出视口、**盖在底部导航条上**（`peekViewportH` 的本意是「露一截被裁开的行」，没有遮罩就成了「露一整行画在别人身上」）。给名册加遮罩层是为了能平移，但同时把这个存在很久的溢出修掉了——**逐像素 A/B 的价值不只是「证明没变」，它会把这种一直在眼前、没人报的错位摆到你面前**。
+
 ### ⚠️ 「少做事」的优化：先问「做完之后还有什么能悄悄错掉」，而不是只钉住「少做了」（2026-08-20 同日续，实测抓到自己的回归）
 
 上一节那批断言全绿之后，被追问「有测试可以加吗」，回头审一遍才发现钉住的全是**「省掉了」这一半**（没重拉、没重建、只动了一个 `Text`），而**「省掉之后还照样对」这一半**几乎是空的。写第一条补测的过程中就撞出一个真回归：
@@ -333,3 +352,68 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 **为什么非得用真实浏览器**：本套件的 headless `measureText` 是恒定 `7px/字符`且**与字号无关**（见本文档上面那条 2026-08-09 的记录）。页头重叠这个 bug 正好是字号驱动的——mock 下货币簇量出来 171px，还小于旧的 216px 预留，**bug 在 headless 里根本不存在**。所以那次的分工是：机制在单元层测（`test/ui/sceneHeaderCurrencyFit.ui.ts`，用长标题 + 放大 scale 按比例还原条件后做红绿对照）、接线用静态扫描守（`test/headerCurrencyReserve.test.ts`，正是它抓出 grep 漏掉的三个场景）、**像素结论只由浏览器给**。写这类测试前先问一句「这个 bug 在 mock 下复现得出来吗」，能省掉一整轮自欺欺人的绿。
 
 **用起来**：`npx webpack serve --mode development --port <port> --env TARGET=web-e2e`，Playwright `waitForFunction(() => window.__nwE2E?.app)`，`page.evaluate` 里遍历 `app.stage`。别在 `newPage()` 之后再 `setViewportSize()`——场景只在构造时读一次 `ILayout`，事后改视口只会把旧布局拉变形（第一次试的时候就是这样拍出一张假的「竖屏坏了」）。
+
+## 错误路径也是一条要钉的链：码 → 文案 → toast（2026-08-25，社交页第四轮补测）
+
+社交页那三轮补测都在钉「渲染/交互**少做事**之后还有什么能悄悄错掉」。第四轮换了一条完全不同的链：**请求失败之后，玩家读到的那句话**。结果发现两个场景的 `errorMsg()` 映射表（宗门 8 条码、家族 7 条码）一直是零覆盖，而且既有测试是**擦边而过**的三种典型形状，值得单列出来：
+
+1. `sectActionBusyLock.ui.ts` / `familyActionBusyLock.ui.ts` 只钉了 `TimeoutError → common.networkTimeout`——那是 `errorMsg()` 的**第一个 if**，后面整张服务端码表从没进过测试。
+2. `sectActions.test.ts` 的 `FakeSectSceneCore` 把 `errorMsg` 替换成了 `String(e)`。这是很合理的 fake（那份测试要的是动作体，不是文案），但它让「动作 reject 分支有覆盖」这句话**读起来像是映射也被覆盖了**，实际不是。
+3. `familySendButton.test.ts` 断言了失败时乐观行回滚 + toast 被调用，但没断言 toast 的**内容**——`showToast(anything)` 和 `showToast(映射后的文案)` 是两回事。
+
+> **教训**：「这条错误分支有测试」和「这条错误分支给玩家的文案有测试」是两个不同的命题。前者看 `catch` 有没有被执行到，后者要一路断言到字符串。fake 掉 `errorMsg` 的测试文件越多，越容易误以为后者也齐了。
+
+### 三种手法，各覆盖不同的失效方式
+
+- **映射表一码一例**（`sectErrorPaths.ui.ts` 8 例 + `familyErrorPaths.ui.ts` 7 例）：断言 `errorMsg(new WorldApiError(code, 'raw')) === t(key)`。**不要写成一个 forEach**——漏一行时红的必须是那一行的用例名，而不是一个匿名的循环失败。这轮 mutation 验证删了 `SECT_FULL` / `INVALID_TAG` / `ALREADY_REQUESTED` 三行，恰好红 6 例（3 条对应用例 + 2 条聚合例 + 1 条正好用了 `ALREADY_REQUESTED` 的接线例）。
+- **一条聚合例兜漏译**：`expect(msg).not.toBe('raw-server-text')`（这行映射存在）+ `expect(msg).not.toMatch(/^sect\.err\./)`（key 背后真的有文案）。前者防映射被删，后者防 i18n 里少了一份语言时 `t()` 透出 key 本身。三语的**键集合**另外用 `diff <(grep -o "'sect\.err\.[a-zA-Z]*'" zh.ts|sort) …` 逐键比过——数个数（三份都是 15）会被「一边多一个、另一边少一个」骗过去。
+- **接线用例走真实场景**：映射表测得再全，也不保证某个 `catch` 真的调了 `errorMsg`。所以另挑代表性动作（宗门 doJoin/doCreate/doAlly/doLeave/openBrowseList，家族 doCreate/confirmKick→doKick/submitMessage/doJoin/openJoinList）在真实 scene 上让 `worldApi` reject 一个**具体码**，断言 toast 收到映射后的文案 + `bt.busy` 回 false + 重绘发生 + **失败不改状态**（创建失败仍停在表单、退出失败不掉出 mySect、踢人失败成员仍在名册）。最后一条是这类用例最容易漏、也最容易真出 bug 的部分：乐观更新写在 `try` 里还是 `catch` 外，只有断言状态才看得出来。
+
+### 结构性守卫：真正会坏的是「以后新加的那个动作」
+
+两个场景之间有 ~20 个 `withTimeout` 调用点，各带一个 `catch`。逐个写行为用例既贵又没意义——现有的 20 个都是对的。会坏的是**下一个**：新动作落地，它的 catch 顺手 `showToast(String(e))`，整张映射表对它静默失效，而任何行为测试都看不见（写测试的时候那个动作还不存在）。
+
+于是加了 `test/socialErrorWiring.test.ts`：读 5 个域文件的源码，用括号配平抠出每个 `catch (x) { … }` 的 body，凡是里面有 `showToast(` 的就必须有 `errorMsg(x)`（用**该 catch 自己的绑定名**，否则 `catch (err)` 里写 `errorMsg(e)` 这种也能混过去）。不 toast 的 catch（静默/只打日志）自然跳过。同形状的既有例子：`tabIconWarmupCallSites.test.ts`、`header currency reserve` 那组。
+
+两条纪律：
+
+- **必须带 canary**。这套测试全部依赖一个正则，正则一旦被重构成 0 命中就变成永绿。所以第一例断言「扫到的 catch 数 ≥ 15」。
+- **失败信息要点名 file:line**。把违规项收集成字符串数组再 `expect(offenders).toEqual([])`，红的时候直接读到 `src/scenes/FamilyScene/actions.ts:185 — catch (e) toasts without errorMsg(e)`；写成 `expect(ok).toBe(true)` 就只剩「false 不等于 true」。
+---
+
+## 补测的三个盲区，都是「测了旁边、没测中间」（2026-08-25，ADR-073 后续）
+
+ADR-073 首轮跟着修复落了 26 例测试，然后做变异验红，发现其中相当一部分**在修复被撤销后依然全绿**。三个盲区各有一类普适性：
+
+### 1. 参数化的测试测不到「谁来传参」这条接线
+
+`bakePageResolution.test.ts` 20 例把 `pageBakeResolution()` 的算术钉得很死——但它自己调 `setDesignScale()` 设缩放。而生产里唯一调它的地方是 `ScalingManager.applyScaling` 里的一行。**把那一行删掉，20 例全绿，111 MB 的纹理原样回来**。
+
+补的是 `test/ui/bakeDesignScaleWiring.ui.ts`：构造**真的** `ScalingManager`（UI 套件有 headless PIXI，能跑真 `Graphics`/`Container`），**全程不碰 `setDesignScale`**，直接断言 `pageBakeResolution()` 已经是那个 layout 的 contain 缩放。变异 M1 验证：这个文件红、`bakePageResolution.test.ts` **保持绿**——盲区的存在本身被记录下来了。
+
+> 与 ADR-072 那条「首轮测试全在场景层和视图层，漏了中间那层导航接线，而原 bug 恰恰只长在那里」是同一条。**规律**：凡是测试自己能"注入"的东西，就是生产代码里某处在注入的东西，那个注入点需要单独一例。
+
+### 2. opt-in 的 flag 需要调用点守卫，否则两个方向都会静默腐烂
+
+`pageScale` 是刻意 opt-in 的（整页要 device-exact，小 chrome 不能）。这种 flag 的腐烂是双向的：新加的整页 bake 忘带 → 又一张百 MB 纹理；从现有 7 处删掉一处 → 一个屏一个屏地退回去。两种都没有任何一处会红。
+
+`test/pageBakeCallSites.test.ts` 扫源码枚举所有 `bake(`/`bakeLazy(` 调用点，跟一份显式期望表比对。**新调用点会让测试红**，直到作者把它归类——这就是目的。两个实现细节值得记：
+
+- **必须先剥注释**。这几个文件本身就在注释里*描述*这个约定（"Statically baked (`bake()`, zero runtime cost)"），正则区分不了。实测撞到：`decorCLayer.ts` 报了 2 个调用点，实际 1 个。
+- **要有一例守住"扫描本身没扫空"**。正则一旦失配，底下所有断言都会空转通过。
+
+### 3. 冷却/去抖会让"应该保持安静"的测试**因为错误的原因**通过
+
+`MemoryMonitor` 的字节闸是「超预算 **且** 仍在涨」。直觉写法：触发一次 → 同样字节再 tick → 断言安静。**这个写法在 latch 被删掉后照样绿**，因为 `REWARN_EVERY_MS`（30s）把第二次报告挡掉了。变异 M8 抓到的正是这个。
+
+修法不是去伪造 `performance.now()`，而是**换一个不依赖时间的隔离手法**：第一次 tick 把预算调到没人能越过（于是记下 `lastSampledTexMB` 却从不上报、rewarn 闸也没被碰过），第二次 tick 才把预算调低——此时决定结果的**只有** latch。
+
+> **规律**：任何带冷却/去抖/节流的逻辑，"断言它保持安静"的测试都要先确认安静**是被测的那个条件**造成的，而不是被冷却造成的。判定方法只有变异验红。
+
+### 顺带：把两个已测文件搬进覆盖率门禁（ADR-071 那份过渡清单的用法）
+
+`src/render/bake.ts` 和 `src/cache/MemoryMonitor.ts` 此前都不在 `coverage.include` 里——测了但不受门禁，能腐烂到 50% 也没人红。补完后两个都是 **100% 行覆盖**，一并加进清单：client 整体 94.77% → **95.12%**，而 scope 变宽了两个文件（"scope 翻倍而百分比上升"那个方向）。
+
+门禁是**按文件**的，所以把新的字节代码纳入门禁，就得连它的邻居一起覆盖——于是顺手补上了 ANR context provider、`wx.onMemoryWarning`、`uninstall()`、JS 堆触发分支、`countNodes` 走真 stage。其中 **ANR 报告带 `texMB`/`largestMB` 是 ADR-073 里写下的声明，却一例没测**（那个 provider 只在 install 时注册、只由 ANR 看门狗调用）。
+
+**14 个变异逐一验红**（M1–M14，覆盖三项修复 + 新增的报告路径），全部红在该红的那一例上。harness 上的两个坑：vitest 的 reporter 输出**带 ANSI 转义**，`/FAIL\s+(\S+\.test\.ts)/` 这类正则匹配不到（表现为"所有变异都没被抓到"，看起来像测试全废）；多行锚点要兼容 **CRLF**，否则在 Windows 检出上静默 skip。

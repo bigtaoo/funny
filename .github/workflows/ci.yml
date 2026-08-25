@@ -371,6 +371,25 @@ jobs:
         working-directory: client
         run: npm run build:web
 
+      # Shipped-size budgets (ASSET_PACKAGING §13). Immediately after the build, because it measures
+      # the real dist/ output rather than re-deriving what should be in it. Absolute budgets with
+      # headroom, NOT a ratchet — scripts/bundle-size-budget.json records why each number is what it
+      # is. Exists because the bundle grew ~1.5 MB → 2.08 MB with nothing watching, and because
+      # bootManifest.ts's "keep the L0 tier MINIMAL" rule had only a code comment behind it.
+      - name: client shipped-size budget
+        working-directory: client
+        run: npm run check:bundlesize
+
+      # Cache policy on the emitted dist/ (ASSET_PACKAGING §13.1). The rule this enforces was
+      # "configured" in the design doc and in nginx.conf for over a year while the file production
+      # actually reads — the emitted _headers — did not have it, so every repeat session paid a
+      # conditional request per asset. Checks the artifact, not the intent. Both this gate and the
+      # size gate have their own mutation tests (test/cachePolicyGate.test.ts,
+      # test/bundleSizeGate.test.ts): a gate nobody has watched fail is not a gate.
+      - name: client cache policy
+        working-directory: client
+        run: npm run check:cachepolicy
+
       # Same flake ledger as the server shards — written only when client's e2e/load configs had to
       # retry a test (the plain unit suite deliberately has no retry; see claudedocs/server.md).
       - name: upload flaky-test report (client)

@@ -14,6 +14,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { InputPanel } from '../src/scenes/FamilyScene/input';
 import type { FamilySceneCore } from '../src/scenes/FamilyScene/core';
+import { FamilyRepaint } from '../src/scenes/FamilyScene/repaint';
 import type { DataHandlers } from '../src/scenes/FamilyScene/data';
 
 /** Fake DOM <input> that records its event listeners so a test can fire them by name. */
@@ -42,9 +43,12 @@ function installDocument(): { created: FakeInput[] } {
   return { created };
 }
 
-/** Bare-bones stand-in for FamilySceneCore — only the fields openSendInput() reads/writes. */
+/** Bare-bones stand-in for FamilySceneCore — only the fields openSendInput() reads/writes.
+ *  `repaint` is the real thing (2026-08-25): a keystroke rewrites the send field's own Text now, and
+ *  with nothing rendered here there is no Text registered, so it falls back to core.render() — the
+ *  production fallback, which is what the assertions below observe. */
 function fakeCore(): FamilySceneCore {
-  return {
+  const core = {
     destroyed: false,
     sendInput: null,
     sendText: '',
@@ -52,6 +56,8 @@ function fakeCore(): FamilySceneCore {
     caretTimer: 99,
     render: vi.fn(),
   } as unknown as FamilySceneCore;
+  (core as unknown as { repaint: FamilyRepaint }).repaint = new FamilyRepaint(core);
+  return core;
 }
 
 const fakeData: DataHandlers = {

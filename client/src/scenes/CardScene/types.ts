@@ -67,6 +67,14 @@ export interface CardCallbacks {
 export interface CardRosterView {
   /** Re-render just the SLG-derived bits of already-visible cells; see ListPanel.applyCardState. */
   applyCardState(): void;
+  /**
+   * Switch the content tab of an already-open roster (ADR-072). The counterpart to
+   * {@link CardCallbacks.initialTab} for the case where the roster is still alive underneath an
+   * EquipmentScene overlay: tapping the Skins peer in that overlay's rail pops back to *this* roster
+   * and moves it to the wardrobe, instead of rebuilding the whole scene with `initialTab: 'skins'`.
+   * Behaves exactly like tapping that tab in the roster's own rail would.
+   */
+  showTab(tab: CardSceneTab): void;
 }
 
 export const MODAL_DIM = 0x000000;

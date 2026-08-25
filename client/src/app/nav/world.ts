@@ -4,7 +4,7 @@ import * as analytics from '../../analytics';
 import { ENGINE_VERSION } from '../../game';
 import type { Replay, LevelDefinition } from '../../game';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
-import { WorldApiClient, type FamilyDetailView } from '../../net/WorldApiClient';
+import { WorldApiClient, type FamilyDetailView, type SectDetailView } from '../../net/WorldApiClient';
 import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { WorldMapView } from '../../scenes/WorldMapScene';
 import type { AppCtx, Nav } from '../appCtx';
@@ -262,7 +262,11 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     }
   }
 
-  function goSectHub(worldApi: WorldApiClient, worldId: string, onExit: () => void = () => goWorldMap(worldApi, worldId), overlay = false): void {
+  function goSectHub(
+    worldApi: WorldApiClient, worldId: string,
+    onExit: () => void = () => goWorldMap(worldApi, worldId), overlay = false,
+    preload?: { family?: FamilyDetailView | null; sect?: SectDetailView | null },
+  ): void {
     const myAccountId = saveManager.get().accountId;
     const view = views.showSect({
       onBack: onExit,
@@ -273,6 +277,8 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       },
       worldApi,
       worldId,
+      ...(preload?.family ? { preloadedFamily: preload.family } : {}),
+      ...(preload?.sect ? { preloadedSect: preload.sect } : {}),
       myAccountId,
       playerName: playerName(),
       getCoins: () => saveManager.get().wallet.coins,

@@ -54,6 +54,9 @@ import { ScalingManager, createLayout } from '../layout/ScalingManager';
 import { InputManager } from '../inputSystem/InputManager';
 import type { ILayout } from '../layout/ILayout';
 import { enterBattle, DeferredSceneCalls } from './battleGate';
+import { enterWithAssets } from './assetGate';
+import { preloadGachaTextures } from '../render/gachaArt';
+import { markFeatureUsed } from '../assets/prefetchPolicy';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './AppViews';
 
 /**
@@ -224,9 +227,30 @@ export class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('ShopScene', () => new ShopScene(this.layout, this.input, cb)));
   }
 
+  /**
+   * Gated on the gacha PNG set (ASSET_PACKAGING §10, extended to gacha 2026-08-25). §10 closed the
+   * "进场才发现没资源" gap for battles only; gacha kept a fire-and-forget `void preloadGachaTextures()`
+   * inside the scene, and `gachaArt` hands out `PIXI.Texture.from(url)` — an empty texture on a cold
+   * cache. PIXI's Sprite re-derives scale when the texture finally decodes, so the layout survives,
+   * but the card backs and frames pop in blank-then-filled during the single most staged moment in
+   * the game. `idlePrefetch` makes that rare rather than impossible: gacha is deliberately its LAST
+   * wave (biggest, least likely), so a player who taps 抽卡 in the first seconds still races it, and
+   * a metered/save-data link skips prefetch entirely.
+   *
+   * No cross-fade: the menu screens switch instantly, and `enterWithAssets` releases the input
+   * freeze itself on that path.
+   */
   showGacha(cb: GachaSceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(this.timedBuild('GachaScene', () => new GachaScene(this.layout, this.input, cb)));
+    // Same reasoning as WorldMapRenderer's `markFeatureUsed('world')`: the gate below is this
+    // feature's asset-demand site, so it is where "this player pulls" becomes true and the wave
+    // becomes worth warming next session (ASSET_PACKAGING §14).
+    markFeatureUsed('gacha');
+    void enterWithAssets(
+      { app: this.app, manager: this.manager, input: this.input },
+      (onProgress) => preloadGachaTextures(onProgress),
+      () => this.timedBuild('GachaScene', () => new GachaScene(this.layout, this.input, cb)),
+    );
   }
 
   showCampaignMap(cb: CampaignMapCallbacks): void {
@@ -248,12 +272,23 @@ export class PixiAppViews implements AppViews {
     this.leaveLobby();
     const scene = this.timedBuild('CardScene', () => new CardScene(this.layout, this.input, cb));
     this.manager.goto(scene);
-    return { applyCardState: () => scene.applyCardState() };
+    return {
+      applyCardState: () => scene.applyCardState(),
+      showTab: (tab) => scene.showTab(tab),
+    };
   }
 
-  showEquipment(cb: EquipmentCallbacks): void {
+  /**
+   * `opts.overlay` mounts the equipment screen on top of the still-live CardScene (`pushOverlay`)
+   * instead of replacing it, so gear editing never rebuilds the roster (ADR-072) — same arrangement
+   * mountSlg gives the SLG panels over the world map. Overlay mounts are only reached from inside the
+   * roster, which already left the lobby, so `leaveLobby` is skipped there (as it is for mountSlg).
+   */
+  showEquipment(cb: EquipmentCallbacks, opts?: MountOpts): void {
+    const scene = this.timedBuild('EquipmentScene', () => new EquipmentScene(this.layout, this.input, cb));
+    if (opts?.overlay) { this.manager.pushOverlay(scene); return; }
     this.leaveLobby();
-    this.manager.goto(this.timedBuild('EquipmentScene', () => new EquipmentScene(this.layout, this.input, cb)));
+    this.manager.goto(scene);
   }
 
   showStats(cb: StatsCallbacks): void {

@@ -41,7 +41,10 @@ export class InputPanel implements InputHandlers {
       } else {
         core.createTag = inp.value.toUpperCase();
       }
-      if (!core.destroyed) core.render();
+      // Only this field's string changed, and its panel/hit rect are fixed-width — rewrite that one
+      // Text rather than rebuilding the form per keystroke (falls back to render() if the Text is
+      // gone; see ./repaint.ts).
+      if (!core.destroyed) core.repaint.setFieldValue(field === 'name' ? core.createName : core.createTag);
     });
     inp.addEventListener('blur', () => {
       core.createField = null;
@@ -66,7 +69,8 @@ export class InputPanel implements InputHandlers {
     inp.focus();
     inp.addEventListener('input', () => {
       core.channelInput = inp.value;
-      if (!core.destroyed) core.render();
+      // Same one-Text keystroke path as the create form above (see ./repaint.ts).
+      if (!core.destroyed) core.repaint.setFieldValue(core.channelInput);
     });
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') void this.actions.doSendChannelMessage();

@@ -209,3 +209,38 @@ Loki `type=mem` 埋点显示：`baseTexTop` 里按 URL 的资源纹理桶（`a.g
 - `numTxt()` 同理：字形图集是一张按 (字号,粗细,颜色) 记忆化的 `BaseTexture`，发出去的是它的子纹理 Sprite，进程内只烘一次。
 
 顺带修掉一处旧的裸写法：`CardScene/core.ts` 的 `destroy()` 原本是 §8.5 点名的那种 `this.container.destroy({children:true})`，现改为先 `tearDownChildren(this.container)`。§8.7 的第 3 条复议过 `{children:true}` 对 Text 其实够用，但接了 fastText 之后这里**必须**先过 `tearDownChildren`：它对 Sprite 明确传 `texture:false`，是把"释放普通 Text、别碰共享纹理"这个区分写死在一处的唯一办法。
+
+---
+
+## 11. 第四类：整页 bake 按渲染器分辨率烘 → 单张百 MB 纹理 → 内嵌 WebView 进程被杀（2026-08-25）
+
+与 §9 是姐妹问题（都是「移动端 GPU 峰值 → 整页崩」），但机制正相反：§9 是**很多个**小对象没做视口裁剪，本节是**三个**巨大的纹理。两者对监控的要求也正相反——§9 那类计数能看见，本节这类只有字节能看见。
+
+### 11.1 症状与定位
+
+Loki `type=crash`：同一 publicId 51 秒内 6 次启动，每次 `aliveMs:0`，`device=phone dpr=3 orient=landscape vp=750x270`，**没有一条带 `sinceRot`**（=这些会话从没转过屏，排除转屏路径）。四个 JS 层通道（`jserror`/`webgl_lost`/`anr`/`mem`）全部沉默——OS 杀渲染进程不经过 JS。
+
+`vp=750x270` = iPhone 13 横屏 844×390 扣掉刘海安全区（94）与宿主 App chrome（120），即一个内嵌 WKWebView，宽高比 2.78:1。
+
+### 11.2 根因
+
+`render/bake.ts` 的每一张纹理都用 `resolution: renderer.resolution`（= 未加限的 `devicePixelRatio`，这台机器上是 3）。但 bake 出来的东西画在**设计空间**，而设计空间是按 `ScalingManager` 的 `gameLayer.scale` 缩放后才上屏的——这台机器上是 **0.25**。
+
+于是 `LandscapeLayout` 被 2.78 的宽高比撑到 3000×1080 后，一张整页 bake 是 **9000×3240 = 111 MB**，而它最终只映射到 750×3 = 2250 设备像素宽：**每轴过采样 4 倍，像素数浪费 16 倍**。大厅一次画三张（`lobbybg`/`decorc`/`wear`，见 `LobbyScene/build.ts`），首屏一次性要 **334 MB**。
+
+桌面 dpr=1 时同样的代码只要 7.9 MB/张——**便宜 14 倍，所以这个坑在开发机上永远看不见**。
+
+### 11.3 修复（ADR-073）
+
+1. **整页 bake 按有效缩放烘**：`bake(..., { pageScale: true })` 用 `pageBakeResolution()` = `renderer.resolution × gameLayer.scale`（向上取整到 1/16，上限 `renderer.resolution`，下限 0.25）。设备像素 1:1，**画质零损失**——不是降质换内存。7 处调用点：`sketchUi.buildPaperBackground`（约 30 个场景共用）、`LobbyScene` 的 `buildBackground`、`wearOverlay`、`decorCLayer`、`decorLayer`、`BoardView` 的棋盘纸、`ResultScene` 的页边。
+2. **小块 UI chrome 刻意不改**（`uiCache`/`panelFrame`/`boil`）：它们是 KB 级，而且有些骑在会放大到 scale>1 的容器上，device-exact 会肉眼变糊。`bakeResolution()`（`fastText` 的字形栅格化）同理不动——文字最怕糊，字形图集又最便宜。
+3. **分辨率进 cache key**：同一设计矩形在一次会话里会以不同缩放显示（工具栏滑动、窗口拖动），旧 key（tag + 设计尺寸）会把按别的采样率烘的纹理命中回来，之后**整场会话都糊**且无从归因。
+4. **`LandscapeLayout` 加 2.4:1 上限**（`MAX_W = 2592`）：真机横屏最宽是 21:9=2.33，2.78 只可能来自被宿主 chrome 裁过的 WebView。超过上限就按高度 contain、侧边交给已有的桌面衬底（iPad 早就走这条路）。
+5. **`MemoryMonitor` 增加字节口径**：`texBytes()` 汇总解码字节 + 点名最大那一张，`bakeStats()` 给出 bake 缓存的字节与最大条目的 **cache key**。字节另有预算（`nw_tex_budget_mb`，默认 256）。
+
+### 11.4 给后人的教训
+
+- **「个数」这个量纲表达不了「少而巨大」**。`generated` 纹理计数 = 3，预算 600，纹理占了 334 MB——闸门形同不存在。任何 GPU 侧的预算都得有字节那一路。
+- **设计空间的 bake 要按上屏缩放定分辨率，不是按 `devicePixelRatio`**。`devicePixelRatio` 只回答「一个 CSS 像素几个设备像素」，它不知道你的设计矩形被缩了 4 倍。
+- **启动瞬间的视口可能是 0**（隐藏标签页/未布局的内嵌页，与 `resettledLayout` 同源）。任何从视口反推出来的比例都要有下限兜底：本次 `createLayout(0,0)` 会给出 1/2000 级的 scale，不设 `MIN_PAGE_RES` 就会把整页烘成糊图。这是在本机 Browser 面板（`visibilityState: hidden`）里实测撞到的。
+- **遥测字段的价值在缺席时**：这轮定案靠的是 `sinceRot` **没出现**（证明没转屏），而不是它出现。08-24 加字段那次写的「下次不必再迂回」确实兑现了。

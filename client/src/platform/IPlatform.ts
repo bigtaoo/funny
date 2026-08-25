@@ -3,6 +3,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Locale } from '../i18n';
 import type { IapKind } from './iap';
 import type { SafeAreaInsets } from '../layout/ILayout';
+import type { NetworkKind } from '../assets/prefetchPolicy';
 
 /**
  * Outcome of {@link IPlatform.shareReplay}, so the caller can tell the player what happened:
@@ -44,6 +45,17 @@ export interface IPlatform {
 
   /** Persistent key-value storage */
   storage: IStorage;
+
+  /**
+   * Current link type, used only to decide whether to run the speculative L1 prefetch
+   * (ASSET_PACKAGING §14). Optional: platforms that don't implement it fall back to
+   * `prefetchPolicy.navigatorNetworkKind` (the Chromium-only Network Information API), which is
+   * what web/CrazyGames/mobile want anyway. WeChat overrides it because `navigator.connection`
+   * does not exist in that runtime while `wx.getNetworkType` does.
+   *
+   * Must never reject — an unanswerable probe resolves `'unknown'`, i.e. "treat as a normal link".
+   */
+  getNetworkKind?(): Promise<NetworkKind>;
 
   /**
    * Raw system language tag, e.g. "zh-CN" / "en-US".

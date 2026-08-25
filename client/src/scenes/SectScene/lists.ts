@@ -7,8 +7,9 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { scrollRegionLayer } from '../../ui/widgets/scrollRegionLayer';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
-import { caretDisplay } from '../../ui/inputDisplay';
+import { caretText } from './repaint';
 import { drawChatLine } from '../../ui/widgets/chatRow';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { FS } from '../../render/fontScale';
@@ -45,14 +46,14 @@ export function renderFamiliesList(
   core.familiesRegionBottom = y0 + viewH;
   core[scrollKey] = Math.max(0, Math.min(core[scrollKey], core.familiesMax));
 
-  const list = new PIXI.Container();
-  const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH).endFill();
-  list.mask = mask;
-  core.bodyLayer.addChild(list, mask);
+  // Rows are built one viewport beyond the mask in each direction (`over`), so a drag inside that
+  // band just translates `list` instead of rebuilding every hand-drawn row — see ./repaint.ts.
+  const { layer: list } = scrollRegionLayer(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH });
+  const over = viewH;
 
   let cy = y0 - core[scrollKey];
   for (const fam of sect.memberFamilies) {
-    if (cy + ROW_H >= y0 && cy <= y0 + viewH) {
+    if (cy + ROW_H >= y0 - over && cy <= y0 + viewH + over) {
       const isLeaderFam = fam.familyId === sect.leaderFamilyId;
       const bar = new PIXI.Graphics();
       sketchAccentBar(bar, ROW_H - 6, isLeaderFam ? C.accent : C.mid);
@@ -98,13 +99,16 @@ export function renderFamiliesList(
         list.addChild(vl);
         const nomId = fam.familyId;
         const nomLabel = `[${fam.tag}] ${fam.name}`;
-        if (!busy) core.hitRects.push({ rect: { x: voteBtnX, y: cy + (ROW_H - 34) / 2, w: voteW, h: 34 }, action: () => actions.confirmVote(nomId, nomLabel) });
+        if (!busy) core.hitRects.push({ rect: { x: voteBtnX, y: cy + (ROW_H - 34) / 2, w: voteW, h: 34 }, action: () => actions.confirmVote(nomId, nomLabel), scroll: 'families' });
       }
     }
     cy += ROW_H;
   }
 
-  drawScrollIndicator(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH }, core[scrollKey], Math.max(0, listH - viewH));
+  const view = { x: x0, y: y0, w: colW, h: viewH };
+  const max = Math.max(0, listH - viewH);
+  const bar = drawScrollIndicator(core.bodyLayer, view, core[scrollKey], max);
+  core.repaint.register('families', { layer: list, key: scrollKey, view, max, bar });
 }
 
 /** Narrow slice of ActionsHandlers + InputHandlers that renderChannel needs. */
@@ -148,16 +152,16 @@ export function renderChannel(
   if (core.channelStick) core[scrollKey] = core.channelMax;
   else core[scrollKey] = Math.max(0, Math.min(core[scrollKey], core.channelMax));
 
-  const list = new PIXI.Container();
-  const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH2).endFill();
-  list.mask = mask;
-  core.bodyLayer.addChild(list, mask);
+  // One viewport of extra messages built in each direction, so a drag translates instead of
+  // rebuilding — same as the families column above (see ./repaint.ts).
+  const { layer: list } = scrollRegionLayer(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH2 });
+  const over = viewH2;
 
   // Channel is returned newest-first; render oldest-at-top for natural reading.
   const ordered = [...core.messages].reverse();
   let cy = y0 - core[scrollKey];
   for (const msg of ordered) {
-    if (cy + ROW_H < y0 || cy > y0 + viewH2) { cy += ROW_H; continue; }
+    if (cy + ROW_H < y0 - over || cy > y0 + viewH2 + over) { cy += ROW_H; continue; }
     drawChatLine(
       list, x0 + 12, cy + ROW_H / 2,
       { senderName: msg.senderName, title: msg.title, sectName: msg.sectName, familyName: msg.familyName },
@@ -166,7 +170,10 @@ export function renderChannel(
     cy += ROW_H;
   }
 
-  drawScrollIndicator(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH2 }, core[scrollKey], Math.max(0, msgH - viewH2));
+  const view = { x: x0, y: y0, w: colW, h: viewH2 };
+  const max = Math.max(0, msgH - viewH2);
+  const bar = drawScrollIndicator(core.bodyLayer, view, core[scrollKey], max);
+  core.repaint.register('channel', { layer: list, key: scrollKey, view, max, bar });
 
   const inputY = y0 + availH2 + 4;
   const sendW = 96;
@@ -174,10 +181,15 @@ export function renderChannel(
   const field = sketchPanel(fieldW, inputH, { fill: 0xfaf9f5, border: core.channelActive ? C.accent : C.mid, seed: seedFor(0, 0, fieldW) });
   field.x = x0 + 6; field.y = inputY;
   core.bodyLayer.addChild(field);
-  const fl = txt(
-    caretDisplay(core.channelInput, core.channelActive && core.caretOn, t('sect.msgPlaceholder')),
-    FS.label, core.channelInput ? C.dark : C.mid,
-  );
+  // Routed through caretText so the 0.5 s blink and each keystroke rewrite this one Text instead of
+  // the whole column (./repaint.ts). Colour is value-dependent (grey while empty), hence colorFor.
+  const fl = caretText(core, {
+    active: core.channelActive,
+    value: core.channelInput,
+    size: FS.label,
+    color: (v: string) => (v ? C.dark : C.mid),
+    placeholder: t('sect.msgPlaceholder'),
+  });
   fl.anchor.set(0, 0.5); fl.x = x0 + 12; fl.y = inputY + inputH / 2;
   core.bodyLayer.addChild(fl);
   core.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => input.openSendInput() });

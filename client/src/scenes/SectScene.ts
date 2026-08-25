@@ -23,6 +23,7 @@ import { ModalsPanel } from './SectScene/modals';
 import { ActionsPanel } from './SectScene/actions';
 import { InputPanel } from './SectScene/input';
 import { RenderPanel } from './SectScene/render';
+import { preloadTabIconTextures } from '../render/icons';
 
 export type { SectSceneCallbacks, SectSceneView } from './SectScene/core';
 
@@ -58,6 +59,13 @@ export class SectScene implements Scene {
       openAlliesView: () => this.actions.openAlliesView(),
     };
     this.core.emblemHooks = { openEmblemPicker: () => this.actions.openEmblemPicker() };
+
+    // Warm the rail/title glyph PNGs and redraw once they land — the same one-liner CardScene/
+    // EquipmentScene use, for the same reason: buildRasterTabIcon draws NOTHING while its texture is
+    // still decoding, and this page is reachable without passing through LobbyScene (which warms them
+    // for everything entered from the lobby). It used to self-heal by accident, off the per-frame
+    // scroll/caret/busy renders that ./SectScene/repaint.ts has now removed.
+    void preloadTabIconTextures().then(() => this.render());
 
     void this.data.loadData();
   }

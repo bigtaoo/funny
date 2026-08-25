@@ -39,7 +39,7 @@ import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
-import { wheelScrollY } from '../../ui/wheelScroll';
+import { subscribeInput, unsubscribeInput } from './input';
 import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER } from '../../game/meta/cardDefs';
 
 export type {
@@ -95,9 +95,9 @@ export class CardSceneCore {
    * (tap-vs-drag deferred to pointer-up via ScrollTapGesture), a slider must track the pointer live
    * while down, so it's a separate list checked first in handleDown/handleMove.
    */
-  private modalSliders: { rect: Rect; onDrag: (x: number) => void }[] = [];
+  modalSliders: { rect: Rect; onDrag: (x: number) => void }[] = [];
   /** Slider currently being dragged (set on a down inside a modalSliders rect), or null. */
-  private activeModalSlider: ((x: number) => void) | null = null;
+  activeModalSlider: ((x: number) => void) | null = null;
   modalOpen = false;
   /**
    * Detail-modal scale transform (popup-scale-to-80pct fix, 2026-07-14): the whole modal panel is
@@ -128,9 +128,9 @@ export class CardSceneCore {
    * Tap-vs-drag gesture tracker: defers a cell's hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a card scrolls instead of opening its detail). See ScrollTapGesture.
    */
-  private readonly gesture = new ScrollTapGesture();
+  readonly gesture = new ScrollTapGesture();
   /** Set by handleMove instead of rendering inline — see EquipmentSceneBase.scrollDirty for why. */
-  private scrollDirty = false;
+  scrollDirty = false;
   /**
    * Cheap redraw for a scroll step, installed by whichever grid is on screen (ListPanel.renderList).
    * A scroll only changes cell positions — never the card order, the cell contents or the chrome —
@@ -152,7 +152,7 @@ export class CardSceneCore {
   /** Feed-select modal: largest valid {@link feedScrollPx} (contentH − listH); set each redraw. */
   feedScrollMax = 0;
   /** Feed-select modal: latched by a drag-move, consumed in update() to redraw at most once per frame. */
-  private feedScrollDirty = false;
+  feedScrollDirty = false;
   /** Feed-select modal: the panel redraw closure, so update()/handleMove can re-draw it. Null when closed. */
   feedRedraw: (() => void) | null = null;
   /** Removes the in-flight portrait flip's PIXI.Ticker.shared listener, if any (avoids leaking it across re-renders/destroy). */
@@ -177,7 +177,33 @@ export class CardSceneCore {
    * the assembly's `render()` dispatch and `applyCardState()` both check this before touching detailId.
    */
   fuseRingOpen = false;
+  /**
+   * Subscriptions torn down only at {@link destroy} — today just `cb.onSaveChanged`. Deliberately
+   * NOT unsubscribed by {@link pause}: while an EquipmentScene overlay sits on top (ADR-072) every
+   * equip/unequip writes the save, and the roster underneath has to keep folding those in, or the
+   * player pops back to stale power/gear readouts on the cards they just changed. Only the pointer
+   * subscriptions below are suspended for that span.
+   */
   private readonly unsubs: (() => void)[] = [];
+  /**
+   * Pointer subscriptions, suspended by {@link pause} and re-established by {@link resume} — see
+   * Scene.pause: InputManager broadcasts to every subscriber regardless of z-order, so a tap meant
+   * for the overlay above would otherwise also run this scene's hit-rects underneath it.
+   */
+  inputUnsubs: (() => void)[] = [];
+  /** Kept for {@link resume}'s re-subscribe — the constructor's `input` param is otherwise not retained. */
+  private readonly input: InputManager;
+  /** True between {@link pause} and {@link resume}: an overlay owns the screen, this scene is covered. */
+  paused = false;
+  /**
+   * Set when a render() was requested while {@link paused} and skipped. A covered scene has nothing
+   * to show for the work — and the overlay's own actions (equip/unequip/salvage/craft) each fire
+   * `cb.onSaveChanged`, so an unguarded pass would rebuild the whole roster several times behind an
+   * opaque panel. resume() renders once instead, off the final save.
+   *
+   * Set by the outer assembly's render() (the only gate that sees every render path), cleared here.
+   */
+  pendingRender = false;
   /** Portrait urls whose texture we've hooked for a one-shot re-render on load. */
   private readonly artHooked = new Set<string>();
   /**
@@ -216,19 +242,10 @@ export class CardSceneCore {
     this.cb = cb;
     this.tab = cb.initialTab ?? 'list';
     this.container = new PIXI.Container();
+    this.input = input;
     this.build();
 
-    this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.unsubs.push(input.onMove((x, y) => this.handleMove(x, y)));
-    this.unsubs.push(input.onUp(() => this.handleUp()));
-    // Desktop mouse-wheel scroll (browser only — see wheelScroll.ts); the detail/feed modal doesn't
-    // scroll via this path, so a wheel event while one is open is ignored, mirroring handleMove's
-    // modalOpen guard below.
-    this.unsubs.push(input.onWheel((x, y, deltaY) => {
-      if (this.modalOpen) return;
-      const next = wheelScrollY(this.scrollRegionTop, this.scrollRegionBottom, y, deltaY, this.scrollY, this.maxScroll);
-      if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
-    }));
+    subscribeInput(this, input);
     // Guarded on fuseInProgress: fuseCards() resolves the save change synchronously via adoptServer,
     // firing this listener mid-fuse before playFusionAnim runs — an unguarded render() there would
     // tear the fusion ring/animation down out from under itself.
@@ -242,6 +259,32 @@ export class CardSceneCore {
     // fuseRingOpen is set, so a render() during that span refreshes the background and leaves the
     // modal layer untouched.
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.fuseInProgress) this.render(); }));
+  }
+
+  /**
+   * Scene.pause — an overlay (EquipmentScene, ADR-072) has been pushed on top; this scene stays
+   * alive, mounted and subscribed to the save, but stops taking pointer input and stops rendering
+   * (see {@link pendingRender}). Idempotent.
+   */
+  pause(): void {
+    if (this.paused) return;
+    this.paused = true;
+    unsubscribeInput(this);
+    // A drag in flight when the overlay opened would otherwise resume mid-gesture on the way back,
+    // turning the pop into a stray tap or a scroll jump.
+    this.gesture.cancel();
+    this.activeModalSlider = null;
+  }
+
+  /** Reverse of {@link pause}: re-take pointer input and flush the render the paused span skipped. */
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    subscribeInput(this, this.input);
+    if (this.pendingRender) {
+      this.pendingRender = false;
+      this.render();
+    }
   }
 
   private build(): void {
@@ -399,68 +442,6 @@ export class CardSceneCore {
 
   // ── Input / lifecycle ─────────────────────────────────────────────────────
 
-  private handleDown(x: number, y: number): void {
-    if (this.bt.busy) return;
-    if (this.modalOpen) {
-      // The header Back button must stay reachable even with the detail modal open — otherwise a
-      // tap there falls through to the modal's own dim-to-close catch-all and just closes the
-      // modal instead of leaving the scene (LOBBY_IA_REDESIGN back-button-always-works fix, 2026-07-14).
-      if (this.inRect(x, y, this.backRect)) { this.cb.onBack(); return; }
-      // A slider (feed quantity drag bar) must track the pointer live, not defer to up like a tap —
-      // check it first and, if hit, jump the value to the press point immediately.
-      for (const { rect, onDrag } of this.modalSliders) {
-        if (this.inRect(x, y, rect)) { this.activeModalSlider = onDrag; onDrag(x); return; }
-      }
-      // Defer the modal hit to pointer-UP and drop it if the pointer drags past the threshold, same
-      // as the grid behind it — so a press-drag-release on a feed-select row (or any modal row) only
-      // toggles on release, and a drag away doesn't accidentally toggle it (2026-07-17).
-      let modalHit: (() => void) | null = null;
-      for (const { rect, action } of this.modalHits) {
-        if (this.inRect(x, y, rect)) { modalHit = action; break; }
-      }
-      // The feed modal is drag-scrollable: track from its own scroll base so a drag pans the list
-      // (see handleMove). Other modals don't scroll — feedRedraw is null and the returned delta is ignored.
-      this.gesture.down(this.feedScrollPx, y, modalHit);
-      return;
-    }
-    // Don't fire the hit action here — capture it and start gesture tracking. If the pointer then
-    // drags past the threshold it becomes a scroll and the tap is dropped on up; otherwise the tap
-    // fires on up. This lets a drag that starts *on a card cell* scroll the grid instead of instantly
-    // opening that card's detail.
-    let hit: (() => void) | null = null;
-    for (const { rect, action } of this.hitRects) {
-      if (this.inRect(x, y, rect)) { hit = action; break; }
-    }
-    this.gesture.down(this.scrollY, y, hit);
-  }
-
-  private handleMove(x: number, y: number): void {
-    if (this.activeModalSlider) { this.activeModalSlider(x); return; }
-    // Feed the move to the gesture even while a modal is open: the modal doesn't scroll, but this
-    // latches `moved` once the pointer crosses the drag threshold so the pending modal tap is dropped on up.
-    const scroll = this.gesture.move(y);
-    if (this.modalOpen) {
-      // Only the feed modal scrolls; apply the drag delta to its pixel offset (clamped on redraw)
-      // and latch a dirty flag so update() redraws the panel at most once per frame.
-      if (scroll !== null && this.feedRedraw) {
-        this.feedScrollPx = Math.max(0, Math.min(scroll, this.feedScrollMax));
-        this.feedScrollDirty = true;
-      }
-      return;
-    }
-    if (scroll !== null) { this.scrollY = scroll; this.scrollDirty = true; }
-  }
-
-  private handleUp(): void {
-    if (this.activeModalSlider) { this.activeModalSlider = null; return; }
-    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
-    this.gesture.up()?.();
-  }
-
-  private inRect(x: number, y: number, r: Rect): boolean {
-    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-  }
-
   update(dt: number): void {
     if (this.activeSpinners.length) {
       this.spinnerAngle += dt * 4;
@@ -482,6 +463,7 @@ export class CardSceneCore {
     this.destroyed = true;
     this.flipTickerCleanup?.();
     this.flipTickerCleanup = null;
+    unsubscribeInput(this);
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
     // tearDownChildren first, then destroy: the bare `destroy({ children: true })` this used to be

@@ -93,6 +93,10 @@ export const de: Record<TranslationKey, string> = {
   // ── Persönliche Einstellungen ───────────────────────────────────────────────
   'settings.title': 'Profil',
   'settings.guest': 'Gast',
+  'settings.dataSaver': 'Datensparmodus',
+  'settings.dataSaverOn': 'An',
+  'settings.dataSaverOff': 'Aus',
+  'settings.dataSaverHint': 'Lädt Bilder für noch nicht geöffnete Bildschirme nicht mehr im Voraus, sondern erst beim Aufrufen.',
   'settings.language': 'Sprache',
   'settings.account': 'Konto',
   'settings.offlineHint': 'Offline-Modus. Melde dich an für Cloud-Speicher / Online / Shop.',

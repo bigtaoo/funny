@@ -36,6 +36,19 @@ export function preloadTexture(url: string): Promise<void> {
   }));
 }
 
-export function preloadTextureList(urls: string[]): Promise<void> {
-  return Promise.all(urls.map(preloadTexture)).then(() => undefined);
+/**
+ * Preload a whole list in parallel. `onProgress` fires as each url settles (never rejects —
+ * `preloadTexture` resolves on decode error too), so a caller can drive a LoadingOverlay off it
+ * exactly like `bootManifest.preloadBoot` / `battleAssets.ensureBattleAssets` do.
+ */
+export function preloadTextureList(
+  urls: string[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  const total = urls.length;
+  let done = 0;
+  onProgress?.(0, total);
+  return Promise.all(urls.map((url) =>
+    preloadTexture(url).finally(() => { done += 1; onProgress?.(done, total); })
+  )).then(() => undefined);
 }

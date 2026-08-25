@@ -26,7 +26,9 @@ const ASSETS_DIR = path.join(CLIENT_DIR, 'src/assets');
 // untyped-module error under `npm run typecheck`. createRequire loads it as the CommonJS
 // module it is, with the shape asserted here instead.
 const requireJs = createRequire(path.join(__dirname, 'preloadBootAssetsPlugin.test.ts'));
-const PreloadBootAssetsPlugin = requireJs('../build/preloadBootAssets.js') as new () => {
+const PreloadBootAssetsPlugin = requireJs('../build/preloadBootAssets.js') as new (opts?: {
+  preconnect?: string[];
+}) => {
   apply(compiler: unknown): void;
 };
 
@@ -50,7 +52,7 @@ function allAssetSources(dir = ASSETS_DIR): string[] {
  * copy of the plugin's own lists) keeps this file decoupled from which assets are currently in
  * which tier — it asserts properties that must hold for whatever the lists happen to contain.
  */
-async function run(opts: { sources?: string[]; publicPath?: string } = {}): Promise<{ tags: Tag[]; warnings: string[]; headTags: unknown[] }> {
+async function run(opts: { sources?: string[]; publicPath?: string; preconnect?: string[] } = {}): Promise<{ tags: Tag[]; warnings: string[]; headTags: unknown[] }> {
   const sources = opts.sources ?? allAssetSources();
   const assets: FakeAsset[] = sources.map((src, i) => ({
     name: `${String(i).padStart(20, '0')}${path.extname(src)}`,
@@ -62,7 +64,8 @@ async function run(opts: { sources?: string[]; publicPath?: string } = {}): Prom
   let onCompilation: ((c: unknown) => void) | null = null;
   const compiler = { hooks: { compilation: { tap: (_n: string, fn: (c: unknown) => void) => { onCompilation = fn; } } } };
 
-  new PreloadBootAssetsPlugin().apply(compiler);
+  // No `preconnect` by default, so every existing assertion below still sees preload tags only.
+  new PreloadBootAssetsPlugin({ preconnect: opts.preconnect ?? [] }).apply(compiler);
   expect(onCompilation, 'plugin never tapped compiler.hooks.compilation').not.toBeNull();
   onCompilation!(compilation);
 
@@ -136,5 +139,43 @@ describe('preloadBootAssets plugin', () => {
     expect(warnings[0]).toContain(dropped);
     // A stale list must not be able to break a release build, only shrink the preload set.
     expect(tags.length).toBe(full.tags.length - 1);
+  });
+});
+
+/**
+ * Backend preconnect (ASSET_PACKAGING §11, added 2026-08-25). `startApp` only fires its first
+ * backend request after the L0 gate resolves, so on a cold link the DNS + TCP + TLS handshake to a
+ * cross-origin backend lands entirely after the gate — while the connection sat idle throughout it.
+ */
+describe('preloadBootAssets plugin — backend preconnect', () => {
+  const preconnects = (tags: Tag[]): Tag[] => tags.filter((t) => t.attributes.rel === 'preconnect');
+
+  it('emits one preconnect per distinct backend origin', async () => {
+    const { tags } = await run({
+      preconnect: [
+        'https://api.gamestao.com/api',
+        'https://api.gamestao.com',       // same origin as the first — must collapse
+        'https://cdn.example.com/assets',
+      ],
+    });
+    expect(preconnects(tags).map((t) => t.attributes.href))
+      .toEqual(['https://api.gamestao.com', 'https://cdn.example.com']);
+  });
+
+  // Web/CrazyGames production bakes '' for the same-origin, reverse-proxied backends. The browser
+  // is already connected to that origin, so a preconnect there is pure noise in the head.
+  it('drops empty (same-origin) and unparseable bases rather than emitting junk', async () => {
+    const { tags, warnings } = await run({ preconnect: ['', 'not a url', 'wss://api.example.com/gw'] });
+    expect(preconnects(tags)).toEqual([]);
+    expect(warnings).toEqual([]); // a bad base URL is net/config.ts's complaint, not a build failure
+  });
+
+  // Same reasoning as the preload tags: the backend is fetched with CORS, and a socket opened
+  // without matching credentials mode is not the one that gets reused.
+  it('marks preconnects crossorigin=anonymous, ahead of the asset preloads', async () => {
+    const { tags } = await run({ preconnect: ['https://api.gamestao.com'] });
+    expect(tags[0].attributes.rel).toBe('preconnect');
+    expect(tags[0].attributes.crossorigin).toBe('anonymous');
+    expect(tags[1].attributes.rel).toBe('preload');
   });
 });

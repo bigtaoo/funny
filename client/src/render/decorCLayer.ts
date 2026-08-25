@@ -93,7 +93,7 @@ export function buildDecorCLayer(w: number, h: number): PIXI.Container | null {
   const root = new PIXI.Container();
   root.interactiveChildren = false;
 
-  const tex = bake(`decorc:${Math.round(w)}x${Math.round(h)}`, content, w, h);
+  const tex = bake(`decorc:${Math.round(w)}x${Math.round(h)}`, content, w, h, { pageScale: true });
   content.destroy({ children: true });
   if (tex) {
     root.addChild(new PIXI.Sprite(tex));

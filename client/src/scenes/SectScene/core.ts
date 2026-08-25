@@ -31,14 +31,15 @@ import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
 import type {
-  WorldApiClient, SectView, SectDetailView, SectMessageView,
+  WorldApiClient, SectView, SectDetailView, SectMessageView, FamilyDetailView,
 } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
-import { wheelScrollY } from '../../ui/wheelScroll';
 import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
 import { drawHeaderTitle } from './header';
+import { SectRepaint, type ScrollCol } from './repaint';
+import { onPointerDown, onPointerMove, onPointerUp, onWheel } from './pointer';
 
 export interface SectSceneCallbacks {
   onBack(): void;
@@ -46,6 +47,15 @@ export interface SectSceneCallbacks {
   onNavTab(tab: SocialTab): void;
   worldApi: WorldApiClient;
   worldId: string;
+  /**
+   * What the social hub already fetched on its way in — its status load pulled the identical
+   * GET /social/family/mine and GET /world/.../sects/:id moments earlier, and re-requesting them put
+   * a redundant loading screen between tapping the Sect tab and seeing the roster. One-shot: the hub
+   * clears them on hand-off, so any later entry re-fetches rather than painting a stale roster.
+   * `preloadedSect` is only trusted when its sectId matches the family's (see DataPanel.loadData).
+   */
+  preloadedFamily?: FamilyDetailView | null;
+  preloadedSect?: SectDetailView | null;
   /** current player's accountId */
   myAccountId: string;
   /** display name used as senderName for channel messages */
@@ -133,6 +143,16 @@ export class SectSceneCore {
   /** Channel viewport vertical bounds, set each renderChannel call — same reasoning as familiesRegion*. */
   channelRegionTop = 0;
   channelRegionBottom = 0;
+  /** Scroll state for whichever list modal is open (browse / ally / manage-allies). Same shape as the
+   *  page columns above; the tree lives in `modalLayer`, so it is rebuilt through `modalRedraw`
+   *  rather than render() — see ./repaint.ts's applyScroll. */
+  modalScrollY = 0;
+  modalMax = 0;
+  modalRegionTop = 0;
+  modalRegionBottom = 0;
+  /** Redraw for the open list modal, set by whichever modal renderer built it and cleared by
+   *  closeModal(). Null while no scrollable modal is open (confirm dialog, emblem picker). */
+  modalRedraw: (() => void) | null = null;
   /** Title-bar height, set from the shared header — drives all body layout below it. */
   headerH = 0;
   /** Live header text/button nodes (title +, in landscape, the sect identity + alliance controls
@@ -143,15 +163,22 @@ export class SectSceneCore {
    * Tap-vs-drag gesture tracker: defers a hit action to pointer-up and drops it if the pointer
    * dragged (so a drag starting on a member/list cell scrolls instead of firing it). See ScrollTapGesture.
    */
-  private readonly gesture = new ScrollTapGesture();
+  readonly gesture = new ScrollTapGesture();
   /** Which column the in-progress drag scrolls — captured at pointer-down, applied in handleMove. */
-  private dragTarget: 'families' | 'channel' = 'families';
-  /** Set by handleMove instead of rendering inline — see FamilySceneBase.scrollDirty for why. */
-  private scrollDirty = false;
+  dragCol: ScrollCol = 'families';
+  /** The column a drag/wheel just moved, set by handleMove/handleWheel instead of acting inline (raw
+   *  pointermove events outrun the display refresh rate). Drained once per frame in update() through
+   *  repaint.applyScroll, which translates the pre-built layer instead of rebuilding it. */
+  scrollDirtyCol: ScrollCol | null = null;
+  /** Handles for the incremental repaint paths (per-column scroll translate / caret blink /
+   *  keystroke) — everything that used to be an unconditional full render(). See ./repaint.ts. */
+  readonly repaint = new SectRepaint(this);
 
-  // Hit rects
-  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
-  modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  // Hit rects. `scroll` marks a rect recorded in a scroll layer's build space (see ./repaint.ts):
+  // handleDown maps the tap into that space and drops it when the tap landed outside the column's
+  // viewport, where the overscan band's pre-built rows live.
+  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void; scroll?: ScrollCol }[] = [];
+  modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void; scroll?: ScrollCol }[] = [];
   modalOpen = false;
 
   destroyed = false;
@@ -259,8 +286,11 @@ export class SectSceneCore {
   /** Tears down + redraws the header/rail chrome shared by every mode; returns nothing — the outer
    *  render() dispatcher calls this, then draws the rail itself, then switches on `mode`. */
   beginRender(): void {
-    tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
+    tearDownChildren(this.bodyLayer); // free the Text baseTextures this frame's tree is about to drop
     this.hitRects = [];
+    // Everything the incremental-repaint paths hold onto lived in bodyLayer and was just destroyed —
+    // drop the refs so each path falls back to a full render instead of touching a dead node.
+    this.repaint.reset();
     this.renderHeader();
   }
 
@@ -281,6 +311,10 @@ export class SectSceneCore {
     tearDownChildren(this.modalLayer);
     this.modalHits = [];
     this.modalOpen = false;
+    // The next modal opens at the top of its list, and nothing is left to redraw.
+    this.modalRedraw = null;
+    this.modalScrollY = 0;
+    this.modalMax = 0;
   }
 
   // ── Toast ───────────────────────────────────────────────────────────────────
@@ -309,86 +343,34 @@ export class SectSceneCore {
 
   // ── Scene interface ─────────────────────────────────────────────────────────
 
-  handleDown(x: number, y: number): void {
-    if (this.modalOpen) {
-      // Reverse order: the full-screen dim-to-close rect is always pushed first, so checking
-      // in push order made it win over every button drawn on top of it — see FamilySceneBase's
-      // handleDown for the same fix and the bug it addresses.
-      for (let i = this.modalHits.length - 1; i >= 0; i--) {
-        const { rect, action } = this.modalHits[i]!;
-        if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-          action(); return;
-        }
-      }
-      return;
-    }
-    // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
-    // scroll and the tap is dropped, so a drag starting on a cell scrolls instead of firing it.
-    let hit: (() => void) | null = null;
-    for (const { rect, action } of this.hitRects) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
-    }
-    // Landscape split view has two independently-scrolling columns — route by which side of the
-    // divider the drag started on. Portrait's tab view has one column at a time, scrolled by
-    // whichever tab is active (both share scrollY — see renderTabbedView).
-    this.dragTarget =
-      this.mode !== 'mySect' ? 'families'
-      : this.landscape ? (x >= this.chatColX ? 'channel' : 'families')
-      : 'families';
-    this.gesture.down(this.dragTarget === 'channel' ? this.scrollYChannel : this.scrollY, y, hit);
-  }
+  // Pointer/wheel dispatch lives in ./pointer.ts (form ① free functions over `core`) — these four
+  // stay as one-line delegates because Core's own InputManager subscriptions and a couple of dozen
+  // tests call them by name.
+  handleDown(x: number, y: number): void { onPointerDown(this, x, y); }
 
-  handleMove(_x: number, y: number): void {
-    const scroll = this.gesture.move(y);
-    if (scroll === null) return;
-    // Dragging to the bottom re-pins the channel to the latest; scrolling up releases the pin so
-    // incoming messages don't yank the reader back down. Portrait routes the channel tab through
-    // scrollY (dragTarget stays 'families'), so classify by the active tab there.
-    if (this.dragTarget === 'channel') {
-      this.scrollYChannel = scroll;
-      this.channelStick = scroll >= this.channelMax - 1;
-    } else {
-      this.scrollY = scroll;
-      if (this.activeTab === 'channel') this.channelStick = scroll >= this.channelMax - 1;
-    }
-    this.scrollDirty = true;
-  }
+  handleMove(_x: number, y: number): void { onPointerMove(this, y); }
 
-  handleUp(_x: number, _y: number): void {
-    // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
-    this.gesture.up()?.();
-  }
+  handleUp(x: number, y: number): void { onPointerUp(this, x, y); }
 
-  /** PC-only mouse-wheel scroll (see wheelScroll.ts). Mirrors handleMove's routing: in the landscape
-   *  split view the families/channel columns scroll independently (routed by chatColX, same as
-   *  handleDown); portrait's single-column tab view scrolls whichever tab is active, both sharing
-   *  scrollY (see renderTabbedView). */
-  handleWheel(x: number, y: number, deltaY: number): void {
-    if (this.modalOpen || this.mode !== 'mySect') return;
-    const useChannel = this.landscape ? x >= this.chatColX : this.activeTab === 'channel';
-    if (useChannel) {
-      // renderChannel is called with scrollKey='scrollYChannel' in the landscape split view but
-      // 'scrollY' in the portrait tabbed view (single shared field) — see renderTabbedView/renderSplitView.
-      const cur = this.landscape ? this.scrollYChannel : this.scrollY;
-      const next = wheelScrollY(this.channelRegionTop, this.channelRegionBottom, y, deltaY, cur, this.channelMax);
-      if (next === null) return;
-      if (this.landscape) this.scrollYChannel = next; else this.scrollY = next;
-      this.channelStick = next >= this.channelMax - 1;
-      this.scrollDirty = true;
-    } else {
-      const next = wheelScrollY(this.familiesRegionTop, this.familiesRegionBottom, y, deltaY, this.scrollY, this.familiesMax);
-      if (next === null) return;
-      this.scrollY = next;
-      this.scrollDirty = true;
-    }
-  }
+  handleWheel(x: number, y: number, deltaY: number): void { onWheel(this, x, y, deltaY); }
 
   update(dt: number): void {
-    if (this.bt.tick(dt)) this.render();
-    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+    // Deliberately no redraw off the busy tracker: nothing on this scene draws its dots/loading
+    // overlay (bt only greys buttons while a mutating action is in flight), and every bt.start()/
+    // stop() already pairs with its own render() in actions.ts — so ticking it used to cost 2.5 full
+    // rebuilds a second for zero visual change. Add a dots overlay and it has to route through
+    // `repaint`, not render().
+    this.bt.tick(dt);
+    // Both tickers below move exactly one thing where render() rebuilds the whole body, so they go
+    // through `repaint` instead (see ./repaint.ts).
+    if (this.scrollDirtyCol) {
+      const col = this.scrollDirtyCol;
+      this.scrollDirtyCol = null;
+      this.repaint.applyScroll(col);
+    }
     if (this.createField || this.channelActive) {
       this.caretTimer += dt;
-      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
+      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.repaint.blinkCaret(); }
     }
   }
 
