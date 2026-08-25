@@ -111,6 +111,7 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
   - `combatSiege/arrival/citySiege.ts`（波次梯战斗 + 安排延迟耐久伤害）、`combatSiege/cityDamage.ts`（耐久结算 + 易主 + 公告）。后者从 `combatSiege/damage.ts` 分出来是因为几乎没有共享逻辑：城池不是格子、没有账号主人、易主写的是宗门归属和频道公告而不是主城搬迁或格子交接。`settleSiegeDamage` 靠 `SiegeDamageDoc.cityId` 分流。
   - **两个容易踩的机制点**（都是实测逼出来的，改之前先读 `citySiege.ts` 的注释）：①**波次梯是「每次行军各打一遍完整 3 波」，不是城池共享状态 + 重生计时**——共享波次一旦清空，重生窗口内到达的每次行军都会以「无守军」拿到整份耐久伤害，一个人 5 队邻格往返就能刷几十次零成本命中；②**每波必须显式传 `defenderBaseHp`**，否则回落到引擎平坦的 `BASE_HP=100`，而 ADR-069 之后一张带 300 兵的盾兵卡一击就砸掉它，波次在守军开火前就结束、整条梯子免费。
   - 契约：`openapi-world.yml` 的 `WorldCityNodeView` 加了 `ownerSectId`/`durability`/`durabilityMax`/`regenPerHour`/`protectedUntil`/`siegeLog`，`PlayerWorldView` 加了 `sectId`（客户端据此决定是否给围攻按钮）；新增 `GET /world/cities` 仅用于城池面板打开时刷新——**刻意不做推送**：一座城每小时会被打几十次，按宗门（≤900 人）扇出每一击是推送水龙头，易主才走宗门频道公告。
+  - **客户端血条锚点坑**：城池血条要锚在 `getCityContentTopFracForLevel(level)` 给的**美术顶边**，不是 `-sprite.height`（精灵单元格顶边）——`citySpriteTiles` 按 footprint 定尺，每张图上方都有透明留白，7×7 的城会把血条顶到视口外、看起来像没做。紧挨着的主城血条 2026-07-22 就因矮建筑踩过同一个坑。这个只有真跑起来截图才看得出来。
   - 回归：`worldsvc/test/city-siege.e2e.test.ts`（21 例，真 Mongo）、`shared/test/citySiege.test.ts`（19 例纯函数）、`econ-sim/src/citySiege.test.ts`（28 例含真引擎战斗的门禁）、`client/test/ui/worldMapCityClick.ui.ts`（15 例面板）。
 - `shared/slg/mapgen.ts`：`proceduralTile(world,x,y)` 确定性程序化地图（单一来源，client/server 共用）
 - `auctions.expireAt` **故意非 TTL**——过期需结算退还托管物/竞拍结拍，用普通索引+扫描器

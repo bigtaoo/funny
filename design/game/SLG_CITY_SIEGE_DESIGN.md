@@ -395,6 +395,7 @@ P2 的标定先于 P1 跑完，所以 P1 实现的是**已实测定案**的机�
    - **刻意不做推送**：一座城每小时会被命中几十次，按宗门扇出每一击是推送水龙头。城池面板打开时刷一次（`WorldMapNet.refreshCities`），地图上的血条只需大致正确；易主才走频道公告。
 7. ✅ **客户端**（`WorldMapInput.showCityPanel` + `WorldMapRenderer/city.ts`）：城池精灵上方的耐久条（只在受损时画，跟主城血条同一套克制）；面板显示**绝对值**耐久 + 每小时回复量 + 归属宗门 + 保护期倒计时 + 本轮各宗门贡献；围攻按钮仅在服务端所有前置条件都已满足时出现（无宗门/保护期内/本宗门已持有 → 隐藏并说明原因，与占领按钮 2026-08-02 的约定一致）。
    - **耐久必须显示绝对值**：曲线是「大基数 + 小步长」（§6.5），Lv.3 与 Lv.10 只差约 22%，只给百分比会被当成 bug。
+   - **⚠️ 血条锚点踩过一次（截图核对抓到的，代码审读抓不到）**：血条第一版锚在 `-sprite.height`（精灵单元格的顶边）。但 `citySpriteTiles` 是按 footprint 定精灵尺寸的，而每张城池图上方都有透明留白——一座 7×7 的 Lv.6 城，单元格顶边比屋顶高出几百像素，血条直接飘到视口外，看起来像「没做」。改用 `getCityContentTopFracForLevel(level)`（该函数的文档注释里点名的调用方就是 `WorldMapRenderer/city.ts`，而紧挨着的主城血条早在 2026-07-22 就因为矮建筑的同一症状修过一次）。**教训：这类缺陷只有真跑起来看一眼才会现形。**
 8. ✅ 赛季生命周期：`openSeason`/`resetWorld` 各调一次 `initCities`；`cities` 进重置清空集合列表（与 `siegeDamage`/`occupations`/`stationed` 同批）。
 9. ✅ 回归测试：`worldsvc/test/city-siege.e2e.test.ts`（21 例，真 Mongo）+ `shared/test/citySiege.test.ts`（19 例纯函数）+ `client/test/ui/worldMapCityClick.ui.ts`（15 例，P0 的 5 条保留 + P1 的 10 条）。P0 的 `city-ground.e2e.test.ts` 里那条 attack 用例从「未实现」改成断言宗门门槛。
 
