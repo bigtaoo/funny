@@ -422,7 +422,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 ### 28px 验收：40 张过、4 张待重出
 
-在 28px（页签/词条实际尺寸）纸底+深底两种衬底上逐张看过 contact sheet，另外用 Playwright 实拍了称号墙（11 张一屏）、结算页、装备背包+强化弹窗三处真实界面。**4 张需要重出**（prompt 已在下文，重出时只换源图、重跑 pack 脚本，代码零改动）：
+在 28px（页签/词条实际尺寸）纸底+深底两种衬底上逐张看过 contact sheet，另外用 Playwright 实拍了称号墙（11 张一屏）、结算页、装备背包+强化弹窗三处真实界面。**4 张需要重出**（v2 prompt 见下方「重出 prompt（v2）」一节，重出时只换源图、重跑 pack 脚本，代码零改动）：
 
 | kind | 问题 | 重出时要改的措辞 |
 |---|---|---|
@@ -432,6 +432,65 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 | `titleGrandmaster` | 与 `titleMaster` 的差异只有一顶很小的皇冠，28px 上勉强 | 皇冠要**明显大一档**（但仍小于 `titleKing` 那顶）；这一档的原则「明显小于下一级」在 28px 上过头了 |
 
 其余 40 张验收通过。次弱但可用、记录在案不重出的：`atk`（匕首细、迸溅线在 28px 消失）、`scrap`（撕边糊成一块纸）、`armor`/`armorHeavy`（28px 上都是「一个忙碌的圆」，只看得出后者更重）、`globe`（读成球而不是地球，但它只是 toast 兜底图）。
+
+## 重出 prompt（v2，2026-08-25 当日）
+
+上一节点名的 4 条（6 张图）的重出 prompt。**改的不是画风，只是导致返工的那一处措辞**——每条下面先写「v1 为什么塌」再给完整 prompt，重出时不要凭印象改别的地方。落地方式不变：存成 `art/ui/tabicons/tabicon_<kind>.{webp,png}`（**大小写照抄 kind 名**，会直接覆盖现有源图），重跑 `node art/ui/tabicons/pack_tab_icons.cjs`，代码零改动、测试不用碰。
+
+### 沙漏三档（`tabicon_hourglassSm` / `Md` / `Lg`，3 张）
+
+**v1 为什么塌**：①沙量用「几粒沙 + 几道下落线」表达，这是**点状细节**，缩到 28px 全部消失，三档看起来一样；②三张的外框各画各的（无立柱 / 细立柱 / 带旋钮的粗立柱），破了「同一只沙漏、只有沙不同」的家族感，反而让人以为是三个不同道具。
+
+**v2 的两条硬约束**：①沙子改成**一整块实心黑色沙堆**，堆的**高度**就是唯一的档位信号——不画沙粒、不画点阵纹理、不画下落线、不画右侧加速刻度；②上半球**三档一律空的**（沙已流下去，物理上也说得通），外框措辞三张逐字相同、且明确不画立柱。**三张务必放在同一个请求/同一段对话里连续出**，靠「沿用上一张的构图，只改沙堆高度」保证外框一致——这跟 P7 阶梯是同一个理由。
+
+**26 小档（`tabicon_hourglassSm`）**
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a plain hourglass — one flat rectangular wooden cap across the top, one across the bottom, and between them two triangular glass bulbs meeting at a pinched narrow waist in the middle; no side posts, pillars or frame of any kind joining the caps. The lower bulb holds a small mound of sand drawn as ONE SOLID FILLED BLACK SHAPE resting on the bottom cap, filling only about the bottom fifth of the lower bulb. The upper bulb is completely empty. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the sand is a flat solid black area, everything else is bare line art. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, individual sand grains, dotted or stippled sand texture, falling-sand streak lines, speed/tick marks beside the glass, side posts or a stand or legs, wings, sand in the upper bulb, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+**27 中档（`tabicon_hourglassMd`）**
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the SAME hourglass as the previous image, drawn the same way stroke for stroke — one flat rectangular wooden cap across the top, one across the bottom, two triangular glass bulbs meeting at a pinched narrow waist, no side posts, pillars or frame of any kind. The only difference is the amount of sand: the lower bulb is now a little over HALF filled with sand, drawn as ONE SOLID FILLED BLACK SHAPE resting on the bottom cap, its flat top edge sitting clearly above the halfway line of the lower bulb. The upper bulb is completely empty. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the sand is a flat solid black area, everything else is bare line art. Must stay clearly recognizable when scaled down to 28x28 pixels, and the sand mass must read as unmistakably larger than a bottom-fifth version at that size. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, changing the hourglass outline or cap shapes in any way, individual sand grains, dotted or stippled sand texture, falling-sand streak lines, speed/tick marks beside the glass, side posts or a stand or legs, sand in the upper bulb, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+**28 大档（`tabicon_hourglassLg`）**
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the SAME hourglass as the previous two images, drawn the same way stroke for stroke — one flat rectangular wooden cap across the top, one across the bottom, two triangular glass bulbs meeting at a pinched narrow waist, no side posts, pillars or frame of any kind. The only difference is the amount of sand: the lower bulb is now almost entirely filled with sand, drawn as ONE SOLID FILLED BLACK SHAPE that reaches nearly up to the pinched waist, leaving only a thin sliver of empty glass. The upper bulb is completely empty. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the sand is a flat solid black area, everything else is bare line art. Must stay clearly recognizable when scaled down to 28x28 pixels, and must read as unmistakably the fullest of a three-tier set at that size. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, changing the hourglass outline or cap shapes in any way, individual sand grains, dotted or stippled sand texture, falling-sand streak lines, speed/tick marks beside the glass, side posts or a stand or legs, sand spilling outside the glass, sand in the upper bulb, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 11 毛笔（`tabicon_brush`）
+
+**v1 为什么塌**：笔锋只是「略微散开的尖」，本身就细，28px 一缩只剩一根竖棍，读成铅笔——而铅笔恰好是这套图里最挤的语义（`lead`/`pencils`/`duelTabIcon` 都在那一带）。笔尖那滴墨在 28px 上根本看不见，纯属噪点。
+
+**v2 的改法**：笔锋改成**实心黑色的宽扇形**，明确要求「宽度是笔柄的两三倍」，形成「细杆 + 底部一大块黑」的强对比；墨滴删掉；金属箍留一道（它在 28px 上刚好还能当一个断点，把杆和锋分开）。
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a single upright calligraphy writing brush, held vertically: a thin plain round handle taking up the upper two thirds, one short metal ferrule band across it, and below that a broad fanned-out bristle tip filled in as ONE SOLID BLACK WEDGE — the bristle head must be two to three times WIDER than the handle and short rather than long, so the whole icon reads as a thin stick with a heavy dark brush head at the bottom. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the bristle head is a flat solid black area, the handle is bare line art, no wood-grain lines. Must stay clearly recognizable when scaled down to 28x28 pixels, where the wide dark bristle head is what separates it from a pencil. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a narrow or tightly-pointed bristle tip, thin separate hair strokes instead of one solid head, a bristle head no wider than the handle, an ink drop below the tip, a brush lying flat or held at an angle, a pencil-like sharpened cone, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 8 铅笔芯（`tabicon_lead`）
+
+**v1 为什么塌**：v1 的避让把「完整铅笔」堵得太死（怕撞 `pencils`/`duelTabIcon`），结果模型交出一个**纯几何锥形**——28px 上就是个三角形，跟 `play` 的实心右向三角容易混，而且完全读不出「笔芯」。
+
+**v2 的改法**：不再要求「只有笔芯、一点笔身都不许有」，改成画**一小截折断的笔尖**：削尖的锥体 + 底部一圈削出来的木质斜面 + 断口是毛糙的，锥尖填实。这样它有了「被削过、被折断」的具体特征，不再是几何三角；同时它仍然是「一小截」，不会跟整支交叉铅笔撞。
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a short snapped-off pencil point standing upright, tip pointing up — the sharpened graphite cone at the top is filled in solid black, below it a short collar of pale shaved wood whittled into a few visible flat facets that flare out slightly wider than the cone, and the very bottom is a ragged, uneven snapped-off break line rather than a clean cut. It must read as a broken-off pencil tip, NOT as a plain geometric triangle or cone. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the graphite cone is a flat solid black area, the wooden collar is bare line art. Must stay clearly recognizable when scaled down to 28x28 pixels, where the flared faceted wooden collar and the ragged base are what stop it reading as a triangle. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a plain smooth triangle or cone with nothing at its base, a solid triangle pointing left or right, an equilateral triangle, a whole full-length pencil with a long barrel, an eraser end, two pencils, a straight clean flat cut at the bottom, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 41 称号·宗师（`tabicon_titleGrandmaster`）
+
+**v1 为什么塌**：v1 的措辞是「皇冠要明显小、比顶级那顶朴素」——本意是保住阶梯，结果在 28px 上小到看不出有皇冠，跟下一级 `titleMaster`（星+桂冠，无皇冠）分不开。**皇冠有无这件事本身要在 28px 上成立，才谈得上「比王者朴素」。**
+
+**v2 的改法**：皇冠放大到「约星体宽度的三分之一、三个尖、冠带填实」，改由**另一条**特征跟 `titleKing` 拉开——王者有**背后的放射光线**且皇冠更高更繁复，宗师**一根光线都没有**。也就是说：跟下一级比「有没有光线」，跟上一级比「有没有皇冠」，两个方向各由一个 28px 上立得住的特征承担。
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the eighth rank in a nine-step medal progression — a five-pointed star medal hanging below two short ribbon tails, with a small sprig of laurel leaves (three or four simple leaf shapes on a thin stem) wrapped around one side of the star, and a plain three-pointed crown sitting on top of the star. The crown must be clearly visible at small sizes: roughly one third as wide as the star itself, with three distinct points and a filled-in solid band across its base — noticeably present, but plain and squat rather than tall or ornate. There are NO light rays anywhere behind or around the medal. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading. Must stay clearly recognizable when scaled down to 28x28 pixels, where the presence of the crown is what separates it from the same star-and-laurel medal without one. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a tiny crown that disappears at small sizes, a tall ornate crown, a cross or orb on top of the crown, radiating light rays or a burst behind the medal, a full wreath wrapping all the way around, a shield shape instead of a star, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 重出后的验收口径
+
+跟本轮一样：打包后在 **28px** 纸底+深底两种衬底上看 contact sheet，沙漏三档必须**并排**看（单看一张永远觉得没问题，这正是 v1 过关的原因）；`lead` 要跟 `play` 并排，`brush` 要跟 `lead`/`pencils` 并排，`titleGrandmaster` 要跟 `titleMaster`/`titleKing` 三张并排。
 
 ## 回归测试
 
