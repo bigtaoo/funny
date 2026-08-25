@@ -71,6 +71,35 @@ describe('ScrollTapGesture', () => {
     expect(g.move(100)).toBeNull();
   });
 
+  // cancel() exists for scenes that can stop receiving pointer events mid-gesture: Scene.pause()
+  // (ADR-072 — an overlay was pushed on top) unsubscribes from InputManager, so the `up` that would
+  // have ended the gesture never arrives. Without cancel(), the pending tap survives the whole detour
+  // and fires on the next unrelated release after the overlay is popped.
+  it('cancel() drops a gesture in flight without firing its pending tap', () => {
+    const g = new ScrollTapGesture();
+    const tap = vi.fn();
+    g.down(0, 100, tap);
+    expect(g.active).toBe(true);
+
+    g.cancel();
+
+    expect(tap).not.toHaveBeenCalled();
+    expect(g.active).toBe(false);
+    // And the release that eventually arrives is inert, rather than firing the cancelled tap.
+    expect(g.up()).toBeNull();
+    expect(tap).not.toHaveBeenCalled();
+  });
+
+  it('a gesture started after cancel() still works (cancel resets, it does not disable)', () => {
+    const g = new ScrollTapGesture();
+    g.down(0, 100, vi.fn());
+    g.cancel();
+
+    const tap = vi.fn();
+    g.down(0, 300, tap);
+    expect(g.up()).toBe(tap);
+  });
+
   it('resets state on up so the next gesture starts clean (a drag then a tap)', () => {
     const g = new ScrollTapGesture();
     const drag = vi.fn();
