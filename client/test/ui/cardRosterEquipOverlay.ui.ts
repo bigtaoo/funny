@@ -20,7 +20,8 @@
 //
 // Runs under the headless PIXI adapter (vitest.ui.config.ts). Run: npm run test:ui
 import { describe, it, expect, vi } from 'vitest';
-import type * as PIXI from 'pixi.js-legacy';
+import * as PIXI from 'pixi.js-legacy';
+import { SceneManager, type Scene } from '../../src/scenes/SceneManager';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
@@ -114,8 +115,34 @@ function buildScene(): Harness {
 
 /** Emit a tap (down+up at the same point) the way a platform adapter would. */
 function tap(input: InputManager, x: number, y: number): void {
+  emitDown(input, x, y);
+  emitUp(input, x, y);
+}
+
+function emitDown(input: InputManager, x: number, y: number): void {
   (input as unknown as { _emitDown(x: number, y: number): void })._emitDown(x, y);
+}
+
+function emitUp(input: InputManager, x: number, y: number): void {
   (input as unknown as { _emitUp(x: number, y: number): void })._emitUp(x, y);
+}
+
+/** Fake PIXI.Application exposing just what SceneManager touches (same shape as sceneManager.ui.ts). */
+function makeApp(): { app: PIXI.Application; stage: PIXI.Container } {
+  const stage = new PIXI.Container();
+  return {
+    app: {
+      ticker: { add: () => {}, deltaMS: 16 },
+      stage,
+      screen: { width: 1920, height: 1080 },
+    } as unknown as PIXI.Application,
+    stage,
+  };
+}
+
+/** Stand-in for the EquipmentScene that gets pushed on top. */
+function stubOverlay(): Scene {
+  return { container: new PIXI.Container(), update: () => {}, destroy: () => {} };
 }
 
 /** Scroll the roster down by a wheel notch, the PC path (wheelScroll.ts). */
@@ -227,6 +254,27 @@ describe('CardScene under an EquipmentScene overlay (ADR-072)', () => {
     expect(slotsSeen.sort()).toEqual(['armor', 'trinket', 'weapon']);
   });
 
+  it('a gesture in flight when the overlay opens does not fire its tap after the pop', () => {
+    // pause() unsubscribes from InputManager, so the `up` that would have ended this gesture never
+    // arrives — without ScrollTapGesture.cancel() the pending tap survives the whole detour and
+    // fires on the next unrelated release, opening a card the player never tapped.
+    const h = buildScene();
+    const { x, y, w, h: bh } = h.core.backRect;
+    const [cx, cy] = [x + w / 2, y + bh / 2];
+
+    emitDown(h.input, cx, cy); // pressed Back, but the overlay opens before the release
+    h.scene.pause();
+    h.scene.resume();
+    emitUp(h.input, cx, cy);
+
+    expect(h.onBack).not.toHaveBeenCalled();
+    // …and the next real tap still works.
+    tap(h.input, cx, cy);
+    expect(h.onBack).toHaveBeenCalledTimes(1);
+
+    h.scene.destroy();
+  });
+
   it('showTab() moves a live roster to the wardrobe without a rebuild', () => {
     // The Skins peer in the overlay's own rail pops back to this scene and calls showTab('skins'),
     // instead of the old goCardRoster(back, 'skins') full rebuild.
@@ -236,6 +284,40 @@ describe('CardScene under an EquipmentScene overlay (ADR-072)', () => {
     expect(h.core.tab).toBe('skins');
     h.scene.showTab('skins'); // idempotent
     expect(h.core.tab).toBe('skins');
+    h.scene.destroy();
+  });
+});
+
+// The two halves above are joined here: SceneManager's own suite proves pushOverlay CALLS pause() on
+// a stub scene, and the cases above prove what CardScene.pause() DOES — but nothing checks that a real
+// CardScene is actually wired to that seam. If pause()/resume() were dropped from the scene,
+// SceneManager silently no-ops (they are optional on Scene) and taps meant for the overlay would run
+// the roster's hit rects underneath it, with every test above still green.
+describe('CardScene under a real SceneManager overlay (ADR-072)', () => {
+  it('is the same instance after the pop, with its scroll offset and input intact', () => {
+    const { app, stage } = makeApp();
+    const mgr = new SceneManager(app);
+    const h = buildScene();
+    mgr.goto(h.scene);
+
+    wheelDown(h);
+    const scrolled = h.core.scrollY;
+    expect(scrolled).toBeGreaterThan(0);
+
+    mgr.pushOverlay(stubOverlay());
+    expect(h.core.paused).toBe(true);
+    // A tap meant for the overlay must not reach the roster underneath.
+    const { x, y, w, h: bh } = h.core.backRect;
+    tap(h.input, x + w / 2, y + bh / 2);
+    expect(h.onBack).not.toHaveBeenCalled();
+
+    mgr.popOverlay();
+    expect(h.core.paused).toBe(false);
+    expect(stage.children).toContain(h.scene.container); // never unmounted, never rebuilt
+    expect(h.core.scrollY).toBe(scrolled);
+    tap(h.input, x + w / 2, y + bh / 2);
+    expect(h.onBack).toHaveBeenCalledTimes(1);
+
     h.scene.destroy();
   });
 });
