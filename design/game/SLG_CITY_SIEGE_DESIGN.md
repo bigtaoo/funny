@@ -310,7 +310,14 @@ interface CityDoc {
 5. ✅ **P0 顺带修掉两处此前没察觉的漏洞**：①落主城/自动出生**从来没有排除城池地面**（`spawn.ts` 四处内联的 `center/obstacle/bridge/plankway/stronghold` 列表都漏了 `familyKeep`）——footprint 化后这个洞会从「每城 1 格」放大到「每城最多 81 格」，现收敛为单一谓词 `isReservedBaseTerrain()`；②手动落主城（`territory.ts` 内部/测试路径）同样没有拦截。
 6. ✅ 回归测试：新建 `server/worldsvc/test/city-ground.e2e.test.ts`（11 例）+ `client/test/ui/worldMapCityClick.ui.ts`（6 例），改写 `server/shared/test/{cities,slg}.test.ts` 的锚点断言为 footprint 断言、`review-fixes-2026-08-03.e2e.test.ts` 的 `applyNationChange` 用例换成 `initNations` 清空用例。
 
-> **变异验红（4 处，逐一实测）**：M1 把分级城改回锚点匹配、M2 摘掉 occupy 的 `familyKeep` 拦截、M3 摘掉 `initNations` 的清空、M4 关掉客户端城池分支——各自都让对应用例转红。**M1 的第一次尝试暴露了一个测试盲区并已修掉**：`city-ground.e2e.test.ts` 的取城辅助函数原本「取第一座能用的城」，实际总是取到**州府**（另一条生成分支），于是把分级城分支改坏了整个套件仍然全绿。现在它按 `kind` 取城、且要求格子的 level 等于该城自身 level（否则会拿到邻近州府 9×9 footprint 吞掉的格子——实测踩到过）。
+7. ✅ **补测一轮（同日第二刀）**：`_inCityFootprint`/`_cityGroundNodeAt` 的边界直测（四种 footprint 的「边上 vs 边外一格」、核心省州府不得被当作 `familyKeep` 认领）、**整块 81 格 footprint 逐格不出图**（配对反证：同样 81 格换成资源地必须出 81 个精灵）、**被拖走的城要交还整块旧 footprint**（原用例只查锚点一格）、**发布未改动的节点表必须是零 diff**、以及**到达时二次校验**（在途 occupy/move 落到城池地面）。
+
+> **⚠️ 补测过程中发现并修掉一个真 bug（不在 P0 原计划内）**：`rasterizeMapEdits` 画城是**后写覆盖**、顺序取决于调用方数组（分级城在最后），而 `_cityGroundNodeAt` 是**州府优先、首个命中即返回**。两座城 footprint 重叠时（贴边城的锚点被夹回图内，plot 就会伸进邻城）二者结论不同——一个 Lv.8 分级城会盖掉 Lv.10 州府的格子，于是**发布出来的模板和生成器对同一格的 level 不一致**，而这个 level 从 P1 起就是城池的耐久/守军规模。现已改为按 `worldCenter > capital > garrison` 优先级绘制、先占者胜，与生成器对齐。是「发布未改动节点表 = 零 diff」这条断言在 (1499, 328) 抓出来的。
+>
+> **变异验红（5 处，逐一实测）**：M1 把分级城改回锚点匹配、M2 摘掉 occupy 的 `familyKeep` 拦截、M3 摘掉 `initNations` 的清空、M4 关掉客户端城池分支、M5 把两处到达时校验改回只认 `center`——各自都让对应用例转红。**其中三次暴露了测试自身的问题**：
+> - **M1 第一轮没红**：`city-ground.e2e.test.ts` 的取城辅助函数原本「取第一座能用的城」，实际总是取到**州府**（另一条生成分支），于是把分级城分支改坏了整个套件仍然全绿。现在按 `kind` 取城、且要求格子 level 等于该城自身 level（否则会拿到邻近州府 9×9 footprint 吞掉的格子，实测踩到过）。
+> - **M5 第一轮没红**：两条「到达时」用例其实**从没走到被测的那道校验**——occupy 在 ADR-039 连地检查处就退了、move 在缺队伍处就退了。补上「先占下城墙外一格」和「带真队伍」的前置后，M5 才现出真形：旧校验下 occupy **会占下城池地面**、move **会把队伍驻扎进城墙里**。两条各配一个「同样的行军打城墙外的地就该成功」的反证，避免「什么都没发生」被读成通过。
+> - **重叠用例原本是空跑**：`city-ground-test`/`s99-0`/`w1` 三个种子实测**零重叠**，用例等于什么都没验。现钉在 `s1-cityground`（实测 15 格重叠）并断言命中数，种子一变就会失败而不是静默变空。
 >
 > **另一处坑记一笔**：worldsvc 的测试吃的是 `@nw/shared` 的 **`dist/`**，不是 `src/`。改完 shared 源码不 `npm run build` 就跑 worldsvc 测试，验的是上一次的编译产物——M1 的第一轮结论就是这么被污染的。
 
