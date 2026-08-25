@@ -7,6 +7,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { scrollRegionLayer } from '../../ui/widgets/scrollRegionLayer';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { caretText } from './repaint';
 import { drawChatLine } from '../../ui/widgets/chatRow';
@@ -45,13 +46,9 @@ export function renderFamiliesList(
   core.familiesRegionBottom = y0 + viewH;
   core[scrollKey] = Math.max(0, Math.min(core[scrollKey], core.familiesMax));
 
-  const list = new PIXI.Container();
-  const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH).endFill();
-  list.mask = mask;
-  core.bodyLayer.addChild(list, mask);
   // Rows are built one viewport beyond the mask in each direction (`over`), so a drag inside that
   // band just translates `list` instead of rebuilding every hand-drawn row — see ./repaint.ts.
-  // The mask is a sibling, not a child, so it stays put while the layer moves under it.
+  const { layer: list } = scrollRegionLayer(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH });
   const over = viewH;
 
   let cy = y0 - core[scrollKey];
@@ -155,12 +152,9 @@ export function renderChannel(
   if (core.channelStick) core[scrollKey] = core.channelMax;
   else core[scrollKey] = Math.max(0, Math.min(core[scrollKey], core.channelMax));
 
-  const list = new PIXI.Container();
-  const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH2).endFill();
-  list.mask = mask;
-  core.bodyLayer.addChild(list, mask);
   // One viewport of extra messages built in each direction, so a drag translates instead of
   // rebuilding — same as the families column above (see ./repaint.ts).
+  const { layer: list } = scrollRegionLayer(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH2 });
   const over = viewH2;
 
   // Channel is returned newest-first; render oldest-at-top for natural reading.

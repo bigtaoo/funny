@@ -23,6 +23,7 @@ import { initI18n } from '../../src/i18n';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { ui as C } from '../../src/render/sketchUi';
 import { MUTED } from '../../src/scenes/FamilyScene/lists';
+import { drawFamilyPickModal, drawJoinRequestsModal } from '../../src/scenes/FamilyScene/modals';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../../src/net/WorldApiClient';
 
 // Minimal DOM stub for the hidden-input fields, recording each element's listeners so a test can
@@ -613,6 +614,177 @@ describe('FamilyScene: what the cheap scroll made possible to get wrong', () => 
     expect(Math.round(b.y + b.height)).toBe(Math.round(core.membersRegionBottom));
     // …and the viewport itself stops short of the bottom nav bar.
     expect(core.membersRegionBottom).toBeLessThanOrEqual(core.bodyBottom);
+    scene.destroy();
+  });
+});
+
+// ── list modals ───────────────────────────────────────────────────────────────
+// The browse/join picker used to draw `families.slice(0, 6)` — six entries, no scroll, no hint that
+// more existed — and the join-request sheet drew every row unclipped, straight past the panel's
+// bottom edge. Both are scroll regions now (col 'modal', rebuilt through core.modalRedraw since
+// modalLayer is outside render()'s tree). See FamilyScene/modals.ts.
+
+const MANY_FAMILIES = Array.from({ length: 30 }, (_, i) => ({
+  familyId: `fam_${i}`, name: `Family ${i}`, tag: `F${i}`, leaderId: 'x', memberCount: i, prosperity: i,
+}));
+
+const MANY_REQUESTS = Array.from({ length: 20 }, (_, i) => ({
+  requestId: `req_${i}`, accountId: `acc_req_${i}`, displayName: `Applicant ${i}`, createdAt: i,
+}));
+
+/** Row labels actually VISIBLE in the modal's viewport — built-but-clipped overscan rows do not
+ *  count, which is the whole point of the assertions below. */
+function visibleModalTexts(core: any): string[] {
+  const layer = core.repaint.layerFor('modal');
+  if (!layer) return [];
+  const out: string[] = [];
+  const walk = (node: PIXI.Container): void => {
+    for (const c of node.children) {
+      if (c instanceof PIXI.Text) {
+        const sy = c.y + layer.y;
+        if (sy >= core.modalRegionTop && sy <= core.modalRegionBottom) out.push(c.text);
+      }
+      if ((c as PIXI.Container).children) walk(c as PIXI.Container);
+    }
+  };
+  walk(layer);
+  return out;
+}
+
+async function openPicker(): Promise<{ scene: any; input: InputManager; core: any; onPick: any }> {
+  const { scene, input, core } = await mount(800, 1280);
+  const onPick = vi.fn();
+  drawFamilyPickModal(core, MANY_FAMILIES as any, onPick);
+  expect(core.modalOpen).toBe(true);
+  return { scene, input, core, onPick };
+}
+
+describe('FamilyScene: the list modals are real scroll regions', () => {
+  it('the picker reaches every entry instead of stopping at six', async () => {
+    const { scene, input, core } = await openPicker();
+    expect(core.modalMax).toBeGreaterThan(0);
+    expect(visibleModalTexts(core).some((s) => s.includes('Family 29'))).toBe(false);
+
+    for (let i = 0; i < 40 && core.modalScrollY < core.modalMax; i++) {
+      input._emitWheel(core.w / 2, core.modalRegionTop + 20, 200);
+      scene.update(1 / 60);
+    }
+    expect(core.modalScrollY).toBe(core.modalMax);
+    expect(visibleModalTexts(core).some((s) => s.includes('Family 29'))).toBe(true);
+    scene.destroy();
+  });
+
+  it('a drag translates the picker instead of rebuilding it, and stops at the end', async () => {
+    const { scene, input, core } = await openPicker();
+    const layer = core.repaint.layerFor('modal');
+    expect(layer).toBeTruthy();
+
+    const y = core.modalRegionTop + 30;
+    input._emitDown(core.w / 2, y);
+    input._emitMove(core.w / 2, y - 40);
+    scene.update(1 / 60);
+    expect(core.repaint.layerFor('modal')).toBe(layer);
+    expect(layer.y).toBe(-40);
+
+    input._emitMove(core.w / 2, y - (core.modalMax + 400));
+    scene.update(1 / 60);
+    expect(core.modalScrollY).toBe(core.modalMax);
+    scene.destroy();
+  });
+
+  it('a picker row tap after scrolling picks the row that is on screen', async () => {
+    const { scene, input, core, onPick } = await openPicker();
+    input._emitWheel(core.w / 2, core.modalRegionTop + 20, 80);
+    scene.update(1 / 60);
+
+    const applied = core.repaint.appliedDelta('modal');
+    expect(applied).toBe(80);
+    const hit = core.modalHits
+      .filter((h: any) => h.scroll === 'modal')
+      .map((h: any) => ({ rect: h.rect, sy: h.rect.y - applied }))
+      .find((h: any) => h.sy > core.modalRegionTop + 10 && h.sy + h.rect.h < core.modalRegionBottom - 10);
+    expect(hit).toBeTruthy();
+    const px = hit.rect.x + hit.rect.w / 2;
+    const py = hit.sy + hit.rect.h / 2;
+
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    expect(onPick).toHaveBeenCalledTimes(1);
+    const translated = onPick.mock.calls[0]![0];
+
+    core.modalRedraw();
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    expect(onPick.mock.calls[1]![0]).toBe(translated);
+    scene.destroy();
+  });
+
+  it('a drag that starts on a picker row scrolls instead of picking it', async () => {
+    const { scene, input, core, onPick } = await openPicker();
+    const y = core.modalRegionTop + 30;
+    input._emitDown(core.w / 2, y);
+    input._emitMove(core.w / 2, y - 60);
+    scene.update(1 / 60);
+    input._emitUp(core.w / 2, y - 60);
+    expect(onPick).not.toHaveBeenCalled();
+    expect(core.modalScrollY).toBe(60);
+    scene.destroy();
+  });
+
+  it('the approval sheet scrolls, and an in-flight repaint keeps the reader in place', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    core.joinRequests = MANY_REQUESTS as any;
+    const onRespond = vi.fn();
+    drawJoinRequestsModal(core, onRespond);
+    expect(core.modalMax).toBeGreaterThan(0);
+    expect(visibleModalTexts(core).some((s) => s.includes('Applicant 19'))).toBe(false);
+
+    // Scrolling to the end brings the tail of the backlog into view — before this pass those rows
+    // were painted past the panel's bottom edge with nothing clipping or scrolling them.
+    for (let i = 0; i < 40 && core.modalScrollY < core.modalMax; i++) {
+      input._emitWheel(core.w / 2, core.modalRegionTop + 20, 200);
+      scene.update(1 / 60);
+    }
+    expect(core.modalScrollY).toBe(core.modalMax);
+    expect(visibleModalTexts(core).some((s) => s.includes('Applicant 19'))).toBe(true);
+
+    core.modalScrollY = 0;
+    core.modalRedraw();
+    input._emitWheel(core.w / 2, core.modalRegionTop + 20, 150);
+    scene.update(1 / 60);
+    expect(core.modalScrollY).toBe(150);
+
+    // This is the redraw doRespondJoinRequest fires to grey the buttons mid-flight: it must not
+    // yank a long backlog back to the top.
+    core.modalRedraw();
+    expect(core.modalScrollY).toBe(150);
+
+    // A fresh open starts at the top again.
+    core.closeModal();
+    drawJoinRequestsModal(core, onRespond);
+    expect(core.modalScrollY).toBe(0);
+    scene.destroy();
+  });
+
+  it('approve/reject still fire from the sheet once it is scrolled', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    core.joinRequests = MANY_REQUESTS as any;
+    const onRespond = vi.fn();
+    drawJoinRequestsModal(core, onRespond);
+    input._emitWheel(core.w / 2, core.modalRegionTop + 20, 100);
+    scene.update(1 / 60);
+
+    const applied = core.repaint.appliedDelta('modal');
+    const hit = core.modalHits
+      .filter((h: any) => h.scroll === 'modal')
+      .map((h: any) => ({ rect: h.rect, sy: h.rect.y - applied }))
+      .find((h: any) => h.sy > core.modalRegionTop + 10 && h.sy + h.rect.h < core.modalRegionBottom - 10);
+    expect(hit).toBeTruthy();
+    input._emitDown(hit.rect.x + hit.rect.w / 2, hit.sy + hit.rect.h / 2);
+    input._emitUp(hit.rect.x + hit.rect.w / 2, hit.sy + hit.rect.h / 2);
+    expect(onRespond).toHaveBeenCalledTimes(1);
+    expect(typeof onRespond.mock.calls[0]![0]).toBe('string'); // a requestId
+    expect(typeof onRespond.mock.calls[0]![1]).toBe('boolean'); // accept flag
     scene.destroy();
   });
 });

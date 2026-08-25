@@ -30,8 +30,13 @@ import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { Rect } from '../../layout/ILayout';
 import type { FamilySceneCore } from './core';
 
-/** The two scrollable columns. Portrait shows one at a time (tab); landscape shows both. */
-export type ScrollCol = 'members' | 'channel';
+/**
+ * The scrollable regions this scene can build. 'members'/'channel' are the page columns (portrait
+ * shows one at a time, landscape both); 'modal' is whichever list modal is open — it lives in
+ * `modalLayer`, which render() never touches, so its rebuild goes through `core.modalRedraw`
+ * instead (see applyScroll).
+ */
+export type ScrollCol = 'members' | 'channel' | 'modal';
 
 /**
  * One column's cheap-scroll state (CardCodexScene/FriendsScene/SectScene precedent): rows were laid out once,
@@ -41,8 +46,8 @@ export type ScrollCol = 'members' | 'channel';
  */
 interface Band {
   layer: PIXI.Container;
-  /** Which of core's two scroll fields this column reads — see FamilySceneCore.scrollKeyFor. */
-  key: 'scrollY' | 'scrollYChannel';
+  /** Which of core's scroll fields this column reads — see FamilySceneCore.scrollKeyFor. */
+  key: 'scrollY' | 'scrollYChannel' | 'modalScrollY';
   /** Extra content height built beyond the viewport in each direction (one viewport height). */
   overscan: number;
   /** The scroll offset the rows inside `layer` were laid out against. */
@@ -124,10 +129,16 @@ export class FamilyRepaint {
    * the first scroll after a render that built no scroll layer falls through to render().
    */
   applyScroll(col: ScrollCol): void {
+    // A modal is not part of render() — modalLayer survives beginRender untouched — so its rebuild
+    // is the closure the modal registered. `?.()` also makes a drag inside a NON-list modal (the
+    // confirm dialog, the emblem picker) a no-op instead of a pointless page rebuild.
+    const rebuild = col === 'modal'
+      ? (): void => { this.core.modalRedraw?.(); }
+      : (): void => { this.core.render(); };
     const band = this.bands.get(col);
-    if (!band || band.layer.destroyed) { this.core.render(); return; }
+    if (!band || band.layer.destroyed) { rebuild(); return; }
     const delta = this.core[band.key] - band.builtScrollY;
-    if (Math.abs(delta) > band.overscan) { this.core.render(); return; }
+    if (Math.abs(delta) > band.overscan) { rebuild(); return; }
     band.layer.y = -delta;
     this.drawBar(band);
   }

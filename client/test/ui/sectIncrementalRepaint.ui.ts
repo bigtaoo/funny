@@ -598,3 +598,166 @@ describe('SectScene: what the cheap scroll made possible to get wrong', () => {
     scene.destroy();
   });
 });
+
+// ── list modals ───────────────────────────────────────────────────────────────
+// The browse / ally / manage-allies picker used to draw `sects.slice(0, maxRows)` with no mask and
+// no scroll: everything past the modal's height was unreachable, and nothing on screen said so.
+// It is a scroll region now, on the same band machinery as the page columns (col 'modal', rebuilt
+// through core.modalRedraw since modalLayer is outside render()'s tree).
+
+/** 30 sects — comfortably more than any modal height can show at once. */
+const MANY_SECTS = Array.from({ length: 30 }, (_, i) => ({
+  sectId: `sect_${i}`, name: `Sect ${i}`, tag: `S${i}`, leaderId: 'x', leaderFamilyId: 'y',
+  memberFamilyCount: i, prosperity: i * 10, allySectIds: [],
+}));
+
+/** Row labels actually VISIBLE in the modal's viewport — built-but-clipped overscan rows do not
+ *  count, which is the whole point of the assertions below. */
+function visibleModalTexts(core: any): string[] {
+  const layer = core.repaint.layerFor('modal');
+  if (!layer) return [];
+  const out: string[] = [];
+  const walk = (node: PIXI.Container): void => {
+    for (const c of node.children) {
+      if (c instanceof PIXI.Text) {
+        const sy = c.y + layer.y;
+        if (sy >= core.modalRegionTop && sy <= core.modalRegionBottom) out.push(c.text);
+      }
+      if ((c as PIXI.Container).children) walk(c as PIXI.Container);
+    }
+  };
+  walk(layer);
+  return out;
+}
+
+/** Open the picker with a spy on the row callback. */
+async function openPicker(w = 800, h = 1280): Promise<{ scene: any; input: InputManager; core: any; onPick: any }> {
+  const { scene, input, core } = await mount(w, h);
+  const onPick = vi.fn();
+  scene.modals.showSectPickModal(MANY_SECTS as any, onPick, 'sect.noSects');
+  expect(core.modalOpen).toBe(true);
+  return { scene, input, core, onPick };
+}
+
+describe('SectScene: the pick modal is a real scroll region', () => {
+  it('reaches every entry instead of silently cutting the list off', async () => {
+    const { scene, input, core } = await openPicker();
+    expect(core.modalMax).toBeGreaterThan(0);
+    // The last sect is NOT on screen at rest…
+    expect(visibleModalTexts(core).some((s) => s.includes('Sect 29'))).toBe(false);
+
+    // …and scrolling to the end brings it in (wheel in big steps, draining each frame).
+    for (let i = 0; i < 40 && core.modalScrollY < core.modalMax; i++) {
+      input._emitWheel(core.w / 2, core.modalRegionTop + 20, 200);
+      scene.update(1 / 60);
+    }
+    expect(core.modalScrollY).toBe(core.modalMax);
+    expect(visibleModalTexts(core).some((s) => s.includes('Sect 29'))).toBe(true);
+    scene.destroy();
+  });
+
+  it('a drag translates the built list instead of rebuilding it, and stops at the end', async () => {
+    const { scene, input, core } = await openPicker();
+    const layer = core.repaint.layerFor('modal');
+    expect(layer).toBeTruthy();
+
+    const y = core.modalRegionTop + 40;
+    input._emitDown(core.w / 2, y);
+    input._emitMove(core.w / 2, y - 50);
+    scene.update(1 / 60);
+    expect(core.repaint.layerFor('modal')).toBe(layer); // same tree, moved
+    expect(layer.y).toBe(-50);
+    expect(core.modalScrollY).toBe(50);
+
+    // Over-drag stops at the end rather than translating into blank space (same clamp the page
+    // columns needed once the per-frame rebuild stopped doing it for us).
+    input._emitMove(core.w / 2, y - (core.modalMax + 400));
+    scene.update(1 / 60);
+    expect(core.modalScrollY).toBe(core.modalMax);
+    scene.destroy();
+  });
+
+  it('a wheel over the modal scrolls the modal, not the page underneath', async () => {
+    const { scene, input, core } = await openPicker();
+    const pageScroll = core.scrollY;
+    input._emitWheel(core.w / 2, core.modalRegionTop + 20, 120);
+    scene.update(1 / 60);
+    expect(core.modalScrollY).toBe(120);
+    expect(core.scrollY).toBe(pageScroll);
+    scene.destroy();
+  });
+
+  it('a row tap after scrolling picks the row that is on screen', async () => {
+    const { scene, input, core, onPick } = await openPicker();
+    input._emitWheel(core.w / 2, core.modalRegionTop + 20, 120);
+    scene.update(1 / 60);
+
+    const applied = core.repaint.appliedDelta('modal');
+    expect(applied).toBe(120);
+    const hit = core.modalHits
+      .filter((h: any) => h.scroll === 'modal')
+      .map((h: any) => ({ rect: h.rect, sy: h.rect.y - applied }))
+      .find((h: any) => h.sy > core.modalRegionTop + 10 && h.sy + h.rect.h < core.modalRegionBottom - 10);
+    expect(hit).toBeTruthy();
+    const px = hit.rect.x + hit.rect.w / 2;
+    const py = hit.sy + hit.rect.h / 2;
+
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    expect(onPick).toHaveBeenCalledTimes(1);
+    const translated = onPick.mock.calls[0]![0];
+
+    // A rebuild at the same offset must resolve the identical point to the identical sect.
+    core.modalRedraw();
+    expect(core.repaint.layerFor('modal').y).toBe(0);
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    expect(onPick).toHaveBeenCalledTimes(2);
+    expect(onPick.mock.calls[1]![0]).toBe(translated);
+    scene.destroy();
+  });
+
+  it('a drag that starts on a row scrolls instead of picking it', async () => {
+    const { scene, input, core, onPick } = await openPicker();
+    const y = core.modalRegionTop + 40;
+    input._emitDown(core.w / 2, y);
+    input._emitMove(core.w / 2, y - 60);
+    scene.update(1 / 60);
+    input._emitUp(core.w / 2, y - 60);
+    expect(onPick).not.toHaveBeenCalled();
+    expect(core.modalScrollY).toBe(60);
+    scene.destroy();
+  });
+
+  it('closing resets the offset so the next open starts at the top', async () => {
+    const { scene, input, core, onPick } = await openPicker();
+    input._emitWheel(core.w / 2, core.modalRegionTop + 20, 200);
+    scene.update(1 / 60);
+    expect(core.modalScrollY).toBe(200);
+
+    core.closeModal();
+    expect(core.modalRedraw).toBeNull();
+    expect(core.modalScrollY).toBe(0);
+
+    scene.modals.showSectPickModal(MANY_SECTS as any, onPick, 'sect.noSects');
+    expect(core.modalScrollY).toBe(0);
+    // …while an explicit redraw of an OPEN modal keeps the reader in place.
+    input._emitWheel(core.w / 2, core.modalRegionTop + 20, 160);
+    scene.update(1 / 60);
+    core.modalRedraw();
+    expect(core.modalScrollY).toBe(160);
+    scene.destroy();
+  });
+
+  it('a drag inside a non-list modal is a harmless no-op', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    scene.modals.showConfirm('Really?', () => {});
+    expect(core.modalRedraw).toBeNull(); // confirm dialogs register no scroll band
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(400, 640);
+    input._emitMove(400, 560);
+    scene.update(1 / 60);
+    expect(renderSpy).not.toHaveBeenCalled(); // and no pointless page rebuild either
+    scene.destroy();
+  });
+});
