@@ -24,8 +24,14 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib';
 
-const DIST = resolve(process.cwd(), 'dist');
-const BUDGET_PATH = resolve(process.cwd(), 'scripts', 'bundle-size-budget.json');
+// `--dist` / `--budget` exist so test/bundleSizeGate.test.ts can point the gate at fixture trees
+// and confirm it actually FAILS when a budget is blown. A gate nobody has seen fail is not a gate.
+const arg = (name, dflt) => {
+  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
+  return resolve(process.cwd(), hit ? hit.slice(name.length + 3) : dflt);
+};
+const DIST = arg('dist', 'dist');
+const BUDGET_PATH = arg('budget', join('scripts', 'bundle-size-budget.json'));
 const KIB = 1024;
 
 function fail(msg) {

@@ -10,7 +10,7 @@
 // Screenshots were not available while this was written (the Browser pane was not displaying), and
 // this is the better check anyway: it covers several viewport shapes at once, and it keeps covering
 // them every CI run instead of once.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -137,5 +137,77 @@ describe('SettingsScene — data-saver row', () => {
       setLocale('en');
       resetPrefetchPolicyForTest();
     }
+  });
+});
+
+/**
+ * The toggle's click path. The row above only proves it RENDERS the current state; nothing so far
+ * proves tapping it changes anything — and a toggle wired to a hit rect that is never registered,
+ * or registered at the wrong coordinates, looks completely correct in a screenshot.
+ *
+ * Driven through the scene's real `hits` list rather than by calling `setDataSaverEnabled`
+ * directly, so the rect's position is part of what is asserted.
+ */
+describe('SettingsScene — data-saver toggle click', () => {
+  /** Build a scene (not just its container) plus the storage its toggle writes to. */
+  function scene(): { s: SettingsScene; storage: IStorage } {
+    const storage = memStorage();
+    resetPrefetchPolicyForTest();
+    installPrefetchPolicy({ storage });
+    const s = new SettingsScene(createLayout(800, 1280), new InputManager(), {
+      onBack() {}, playerName: 'Tester', publicId: '1', pvp: { rank: 'bronze', elo: 1 },
+      renameCost: 500, getCoins: () => 0, onRename: async (n: string) => ({ ok: true, name: n }),
+      onReplayTutorial() {}, onLogout() {},
+    });
+    return { s, storage };
+  }
+
+  /** The hit whose rect covers the toggle button, found the way a tap would find it. */
+  function toggleHit(s: SettingsScene): () => void {
+    const label = collect(s.container).find((n) => n.text === t('settings.dataSaver'));
+    expect(label, 'data-saver label missing').toBeDefined();
+    const midY = (label!.top + label!.bottom) / 2;
+    // The toggle sits to the RIGHT of the label on the same row (see drawDataSaver) — anything at
+    // this y further left would be the label itself, which is not clickable.
+    const hit = s.hits.find((h) => h.rect.y <= midY && midY <= h.rect.y + h.rect.h && h.rect.x > 800 * 0.5);
+    expect(hit, `no hit rect on the data-saver row (rects: ${JSON.stringify(s.hits.map((x) => x.rect))})`).toBeDefined();
+    return hit!.fn;
+  }
+
+  afterEach(() => resetPrefetchPolicyForTest());
+
+  it('turns the setting on, and the row redraws showing it', () => {
+    const { s, storage } = scene();
+    expect(isDataSaverEnabled()).toBe(false);
+
+    toggleHit(s)();
+
+    expect(isDataSaverEnabled()).toBe(true);
+    expect(storage.getItem('nw_data_saver')).toBe('1');
+    // The tap re-renders, so the label must now read "On" — a toggle that flips state but keeps
+    // showing the old one reads as broken and gets tapped again.
+    expect(collect(s.container).map((n) => n.text)).toContain(t('settings.dataSaverOn'));
+  });
+
+  it('turns it back off, clearing the key rather than storing a falsy string', () => {
+    const { s, storage } = scene();
+    toggleHit(s)();
+    toggleHit(s)();
+
+    expect(isDataSaverEnabled()).toBe(false);
+    // Not `'0'`: isDataSaverEnabled() compares against '1', so a stored '0' would read as off too
+    // and this would pass either way — but a key left behind is one more thing to reason about,
+    // and setDataSaverEnabled documents removal.
+    expect(storage.getItem('nw_data_saver')).toBeNull();
+    expect(collect(s.container).map((n) => n.text)).toContain(t('settings.dataSaverOff'));
+  });
+
+  it('survives a round trip through a fresh policy install (it is persisted, not in-memory)', () => {
+    const { s, storage } = scene();
+    toggleHit(s)();
+
+    resetPrefetchPolicyForTest();
+    installPrefetchPolicy({ storage }); // new session, same storage
+    expect(isDataSaverEnabled()).toBe(true);
   });
 });

@@ -19,6 +19,7 @@
     "rest:gen": "node scripts/gen-openapi.mjs",
     "check:filelength": "node scripts/checkFileLength.mjs",
     "check:bundlesize": "node scripts/checkBundleSize.mjs",
+    "check:cachepolicy": "node scripts/checkCachePolicy.mjs",
     "format": "prettier --write .",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit -p tsconfig.test.json && npm run typecheck:fulllink",
