@@ -97,6 +97,10 @@ export const zh = {
   // ── Personal settings ─────────────────────────────────────────────────────
   'settings.title': '个人设置',
   'settings.guest': '访客',
+  'settings.dataSaver': '省流量',
+  'settings.dataSaverOn': '已开启',
+  'settings.dataSaverOff': '已关闭',
+  'settings.dataSaverHint': '开启后不再提前预载后续界面的图片，进入时改为现下载。',
   'settings.language': '语言',
   'settings.account': '账号',
   'settings.offlineHint': '当前为单机模式，登录后可云存档 / 联机 / 商店。',

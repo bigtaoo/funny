@@ -10,6 +10,7 @@ import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } 
 import { FS, snapFont } from '../../render/fontScale';
 import { buildAvatar } from '../../render/avatar';
 import type { SettingsSceneCallbacks, Hit } from './types';
+import { isDataSaverEnabled, setDataSaverEnabled } from '../../assets/prefetchPolicy';
 
 const LOCALE_LABEL: Record<Locale, string> = { zh: '中文', en: 'English', de: 'Deutsch' };
 
@@ -167,6 +168,61 @@ export function drawLanguage(host: PanelHost): void {
         fn: () => { setLocale(loc); host.render(); },
       });
     }
+  });
+}
+
+/**
+ * Data saver (ASSET_PACKAGING §14). The player-owned half of "don't spend my bandwidth
+ * speculatively" — the automatic half (`prefetchPolicy.shouldSkipPrefetch`) can only read
+ * `navigator.connection`, which is Chromium-only and therefore absent on iOS Safari, Firefox and
+ * inside every iOS in-app browser. Rather than guess the link there (throughput would answer the
+ * wrong question — a fast LTE link is fast AND metered), this just lets the player say so. Works
+ * on every platform, needs no API, and cannot be wrong.
+ *
+ * Laid out as label + toggle on ONE row, unlike the sections around it: it sits in the gap between
+ * the language buttons (bottom ≈ 0.587h) and the Help/Account labels (0.73h), and a stacked
+ * label-over-button block does not fit there without pushing the rest of the screen around.
+ */
+export function drawDataSaver(host: PanelHost): void {
+  const { w, h, container } = host;
+  const rowY = Math.round(h * 0.635);
+  const label = txt(t('settings.dataSaver'), FS.title, C.dark, true);
+  label.anchor.set(0, 0.5); label.x = Math.round(w * 0.12); label.y = rowY;
+  container.addChild(label);
+
+  const on = isDataSaverEnabled();
+  // Matches the language row's button metrics so the two read as the same kind of control.
+  const btnW = Math.round(w * 0.22);
+  const btnH = Math.round(h * 0.062);
+  const bx = Math.round(w * 0.62);
+  const by = rowY - Math.round(btnH / 2);
+
+  const box = new PIXI.Graphics();
+  box.beginFill(on ? C.accent : C.paper);
+  box.drawRect(0, 0, btnW, btnH);
+  box.endFill();
+  new SketchPen(box, 83).rect(2, 2, btnW - 4, btnH - 4, {
+    color: on ? C.gold : C.dark, width: on ? 2.8 : 2, jitter: 1.0,
+  });
+  box.x = bx; box.y = by;
+  container.addChild(box);
+
+  const lbl = txt(t(on ? 'settings.dataSaverOn' : 'settings.dataSaverOff'), snapFont(Math.round(btnH * 0.36)), on ? 0xffffff : C.dark, on);
+  lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = by + btnH / 2;
+  container.addChild(lbl);
+
+  const hint = txt(t('settings.dataSaverHint'), FS.label, C.mid);
+  hint.anchor.set(0, 0.5); hint.x = Math.round(w * 0.12); hint.y = rowY + Math.round(h * 0.038);
+  // The sentence is long in every locale and this row is width-constrained by the toggle beside it.
+  if (hint.width > w * 0.46) hint.scale.set((w * 0.46) / hint.width);
+  container.addChild(hint);
+
+  host.hits.push({
+    rect: { x: bx, y: by, w: btnW, h: btnH },
+    // Takes effect from the next launch: this session's prefetch chain has already been decided
+    // (and, on the lobby the player came from, very likely already finished). Not worth cancelling
+    // mid-flight — the bytes are spent, and the setting is about the sessions after this one.
+    fn: () => { setDataSaverEnabled(!on); host.render(); },
   });
 }
 

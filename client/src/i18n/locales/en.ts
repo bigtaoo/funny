@@ -93,6 +93,10 @@ export const en: Record<TranslationKey, string> = {
   // ── Personal settings ───────────────────────────────────────────────────────
   'settings.title': 'Profile',
   'settings.guest': 'Guest',
+  'settings.dataSaver': 'Data saver',
+  'settings.dataSaverOn': 'On',
+  'settings.dataSaverOff': 'Off',
+  'settings.dataSaverHint': 'Stop pre-loading art for screens you have not opened yet; it downloads when you get there instead.',
   'settings.language': 'Language',
   'settings.account': 'Account',
   'settings.offlineHint': 'Offline mode. Log in for cloud save / online play / shop.',
