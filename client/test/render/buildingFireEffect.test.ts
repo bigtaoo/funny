@@ -241,6 +241,36 @@ describe('BuildingView.playFireEffect', () => {
     expect(Math.abs(sp.scale.x - 1)).toBeLessThanOrEqual(0.012);   // BOB_SCALE_AMP bound
   });
 
+  it('pulses the tower body the same way, independent of its own sway angle', () => {
+    // The scale pulse is written unconditionally before the barracks/tower branch, so a tower
+    // must breathe too — not just get folded into "tower has its own animation, must be fine".
+    pinPhase(view, TOWER_ID);
+    view.update(0.37);
+    view.sync(board);
+    const sp = spriteOf(view, TOWER_ID) as unknown as { scale: { x: number } };
+    expect(sp.scale.x).not.toBe(1);
+    expect(Math.abs(sp.scale.x - 1)).toBeLessThanOrEqual(0.012);   // BOB_SCALE_AMP bound
+  });
+
+  it('drops a released building\'s baseScale entry — no unbounded growth across a battle', () => {
+    const id = TOWER_ID + 11;
+    board = boardWith(towerAt(), towerAt(COL + 1, ROW, id));
+    view.sync(board);
+    const baseScales = (view as unknown as { baseScales: Map<number, number> }).baseScales;
+    expect(baseScales.has(id)).toBe(true);
+
+    board = boardWith(towerAt());   // the second tower is destroyed/leaves the board
+    view.sync(board);
+    expect(baseScales.has(id)).toBe(false);
+  });
+
+  it('destroy() clears baseScales along with the other per-building maps', () => {
+    const baseScales = (view as unknown as { baseScales: Map<number, number> }).baseScales;
+    expect(baseScales.size).toBeGreaterThan(0);   // the beforeEach tower is still live
+    view.destroy();
+    expect(baseScales.size).toBe(0);
+  });
+
   it('gives each building type its own art — the two used to share one file', () => {
     // The tower spent a long release borrowing game_archer_barracks.png, the barracks' neighbour in
     // spirit and in filename. Swapping the asset touches four wiring sites; this pins the two that

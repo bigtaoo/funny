@@ -362,6 +362,7 @@ export class BuildingView {
     this.pool.drain((c) => c.destroy({ children: true }));
     this.sprites.clear();
     this.phases.clear();
+    this.baseScales.clear();
     this.cells.clear();
     this.fires.clear();
     this.texBarracks = null;
