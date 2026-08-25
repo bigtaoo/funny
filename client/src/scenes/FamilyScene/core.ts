@@ -41,48 +41,19 @@ import { showToastMessage } from '../../net/log';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
-import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView, FamilyJoinRequestView } from '../../net/WorldApiClient';
+import type { FamilyDetailView, FamilyMemberView, FamilyMessageView, FamilyJoinRequestView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
 import { drawHeaderTitle } from './header';
+import { FamilyRepaint, type ScrollCol } from './repaint';
+import type { FamilySceneCallbacks, FamilyTab, ViewMode } from './types';
 
-export interface FamilySceneCallbacks {
-  onBack(): void;
-  /** Open the sect hub (S8-4b) — sect = a family-of-families, rooted in the family UI. */
-  onOpenSect(): void;
-  /** Rail click for one of the other 4 social tabs (friends/sect/world/mail); 'family' is a no-op. */
-  onNavTab(tab: SocialTab): void;
-  worldApi: WorldApiClient;
-  worldId: string;
-  /**
-   * Family detail the opener already fetched, so the first paint doesn't wait on a second identical
-   * GET /social/family/mine. Set only by the social hub's family tab, which jumps here right after
-   * its own status load pulled exactly this (see createSocialNav's openFamilyHub) — every other
-   * entry point omits it and loadData() fetches as before.
-   */
-  preloadedFamily?: FamilyDetailView;
-  /** current player's accountId */
-  myAccountId: string;
-  /** current player's display name, denormalized onto sent family messages */
-  playerName: string;
-  /** Send a friend request to another player (unified profile popup's "Add Friend" action). */
-  addFriend(publicId: string): Promise<void>;
-  /** publicIds of the caller's current friends — gates the profile popup's Add Friend / Message action. */
-  getFriendPublicIds(): Promise<Set<string>>;
-  /** Open a 1:1 chat with a member who's already a friend (unified profile popup's "Message" action). */
-  openChat(peerPublicId: string, peerName: string): void;
-}
-
-/** Handle returned by showFamily so the core can push live family-channel messages in. */
-export interface FamilySceneView {
-  applyFamilyMsg(msg: FamilyMessageView): void;
-}
-
-export type FamilyTab = 'members' | 'channel';
-export type ViewMode = 'loading' | 'noFamily' | 'create' | 'myFamily';
+// Pure declarations live in ./types.ts (form ①, no logic) — re-exported here so existing
+// `from './FamilyScene/core'` imports keep resolving to the same names.
+export type { FamilySceneCallbacks, FamilySceneView, FamilyTab, ViewMode } from './types';
 
 export class FamilySceneCore {
   readonly container: PIXI.Container;
@@ -159,15 +130,20 @@ export class FamilySceneCore {
    */
   private readonly gesture = new ScrollTapGesture();
   /** Which column the in-progress drag scrolls — captured at pointer-down, applied in handleMove. */
-  private dragTarget: 'members' | 'channel' = 'members';
-  /** Set by handleMove instead of rendering inline — pointermove can fire far faster than the display
-   *  refresh rate, and render() fully tears down/rebuilds every Text/Graphics node in the roster and
-   *  channel lists, so calling it per-event caused visible jank while dragging. update() (ticker-gated,
-   *  once per frame) drains this instead. */
-  private scrollDirty = false;
+  private dragCol: ScrollCol = 'members';
+  /** The column a drag/wheel just moved, set by handleMove/handleWheel instead of acting inline —
+   *  pointermove fires far faster than the display refresh rate. update() (ticker-gated, once per
+   *  frame) drains it through repaint.applyScroll, which translates the pre-built column instead of
+   *  tearing down and rebuilding every Text/Graphics node in it. */
+  private scrollDirtyCol: ScrollCol | null = null;
+  /** Handles for the incremental repaint paths (per-column scroll translate / caret blink /
+   *  keystroke) — everything that used to be an unconditional full render(). See ./repaint.ts. */
+  readonly repaint = new FamilyRepaint(this);
 
-  // Hit rects
-  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  // Hit rects. `scroll` marks a rect recorded in a scroll layer's build space (see ./repaint.ts):
+  // handleDown maps the tap into that space and drops it when the tap landed outside the column's
+  // viewport, where the overscan band's pre-built rows live.
+  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void; scroll?: ScrollCol }[] = [];
   modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
   modalOpen = false;
 
@@ -237,6 +213,31 @@ export class FamilySceneCore {
     return Math.round(this.h * 0.085);
   }
 
+  /**
+   * Which column a pointer at screen `x` scrolls. The landscape split view shows both columns side
+   * by side (routed by the divider); portrait shows one at a time, so the active tab decides. Modes
+   * other than 'myFamily' have neither column, and a scroll there falls back to a full render anyway.
+   */
+  scrollColAt(x: number): ScrollCol {
+    if (this.mode !== 'myFamily') return 'members';
+    if (this.landscape) return x >= this.chatColX ? 'channel' : 'members';
+    return this.activeTab;
+  }
+
+  /** Which of the two scroll fields a column's position lives in — mirrors the `scrollKey` every
+   *  render path passes to renderMembers/renderChannel: unlike the sect page, both orientations map
+   *  the roster to `scrollY` and the channel to `scrollYChannel`. */
+  scrollKeyFor(col: ScrollCol): 'scrollY' | 'scrollYChannel' {
+    return col === 'channel' ? 'scrollYChannel' : 'scrollY';
+  }
+
+  /** Is screen `y` inside a column's viewport? See handleDown for why a hit needs this. */
+  private inViewport(col: ScrollCol, y: number): boolean {
+    return col === 'channel'
+      ? y >= this.channelRegionTop && y <= this.channelRegionBottom
+      : y >= this.membersRegionTop && y <= this.membersRegionBottom;
+  }
+
   get isFamilyLeader(): boolean {
     return this.family?.members?.find((m) => m.accountId === this.cb.myAccountId)?.role === 'leader';
   }
@@ -287,8 +288,11 @@ export class FamilySceneCore {
   /** Tears down + redraws the header/rail chrome shared by every mode; returns nothing — the outer
    *  render() dispatcher calls this, then draws the rail itself, then switches on `mode`. */
   beginRender(): void {
-    tearDownChildren(this.bodyLayer); // create-form input re-renders per keystroke → free Text textures
+    tearDownChildren(this.bodyLayer); // free the Text baseTextures this frame's tree is about to drop
     this.hitRects = [];
+    // Everything the incremental-repaint paths hold onto lived in bodyLayer and was just destroyed —
+    // drop the refs so each path falls back to a full render instead of touching a dead node.
+    this.repaint.reset();
     this.renderHeader();
   }
 
@@ -356,30 +360,32 @@ export class FamilySceneCore {
     }
     // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
     // scroll and the tap is dropped, so a drag starting on a cell scrolls instead of firing it.
+    //
+    // A rect tagged `scroll` was recorded in its column's build space, and that layer may since have
+    // been translated by a cheap scroll — so map the tap into the same space, deliberately by the
+    // APPLIED delta rather than the pending one (see FamilyRepaint.appliedDelta).
     let hit: (() => void) | null = null;
-    for (const { rect, action } of this.hitRects) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
+    for (const { rect, action, scroll } of this.hitRects) {
+      const py = scroll ? y + this.repaint.appliedDelta(scroll) : y;
+      if (x < rect.x || x > rect.x + rect.w || py < rect.y || py > rect.y + rect.h) continue;
+      // Rows are built one viewport beyond the region in each direction, so a hit rect alone no
+      // longer implies "on screen" — a tap outside the column's viewport must miss.
+      if (scroll && !this.inViewport(scroll, y)) continue;
+      hit = action; break;
     }
-    // Landscape split view has two independently-scrolling columns — route by which side of the
-    // divider the drag started on. Portrait's tab view has one column at a time, scrolled by
-    // whichever tab is active (members ↔ scrollY, channel ↔ scrollYChannel — see renderTabbedView).
-    this.dragTarget =
-      this.mode !== 'myFamily' ? 'members'
-      : this.landscape ? (x >= this.chatColX ? 'channel' : 'members')
-      : this.activeTab;
-    this.gesture.down(this.dragTarget === 'channel' ? this.scrollYChannel : this.scrollY, y, hit);
+    this.dragCol = this.scrollColAt(x);
+    this.gesture.down(this[this.scrollKeyFor(this.dragCol)], y, hit);
   }
 
   handleMove(_x: number, y: number): void {
     const next = this.gesture.move(y);
     if (next === null) return;
-    if (this.dragTarget === 'channel') {
-      this.scrollYChannel = next;
-      // Dragging to the bottom re-pins to the latest; scrolling up releases the pin so incoming
-      // messages don't yank the reader back down (the "channel jumps while I'm reading" complaint).
-      this.channelStick = next >= this.channelMax - 1;
-    } else this.scrollY = next;
-    this.scrollDirty = true;
+    const col = this.dragCol;
+    this[this.scrollKeyFor(col)] = next;
+    // Dragging to the bottom re-pins to the latest; scrolling up releases the pin so incoming
+    // messages don't yank the reader back down (the "channel jumps while I'm reading" complaint).
+    if (col === 'channel') this.channelStick = next >= this.channelMax - 1;
+    this.scrollDirtyCol = col;
   }
 
   handleUp(x: number, y: number): void {
@@ -397,28 +403,37 @@ export class FamilySceneCore {
    *  scrollY, channel ↔ scrollYChannel — see renderTabbedView). */
   handleWheel(x: number, y: number, deltaY: number): void {
     if (this.profilePopup.isOpen || this.modalOpen || this.mode !== 'myFamily') return;
-    const useChannel = this.landscape ? x >= this.chatColX : this.activeTab === 'channel';
-    if (useChannel) {
-      const next = wheelScrollY(this.channelRegionTop, this.channelRegionBottom, y, deltaY, this.scrollYChannel, this.channelMax);
-      if (next === null) return;
-      this.scrollYChannel = next;
-      this.channelStick = next >= this.channelMax - 1;
-      this.scrollDirty = true;
-    } else {
-      const next = wheelScrollY(this.membersRegionTop, this.membersRegionBottom, y, deltaY, this.scrollY, this.membersMax);
-      if (next === null) return;
-      this.scrollY = next;
-      this.scrollDirty = true;
-    }
+    const col = this.scrollColAt(x);
+    const key = this.scrollKeyFor(col);
+    const channel = col === 'channel';
+    const top = channel ? this.channelRegionTop : this.membersRegionTop;
+    const bottom = channel ? this.channelRegionBottom : this.membersRegionBottom;
+    const max = channel ? this.channelMax : this.membersMax;
+    const next = wheelScrollY(top, bottom, y, deltaY, this[key], max);
+    if (next === null) return;
+    this[key] = next;
+    if (channel) this.channelStick = next >= this.channelMax - 1;
+    this.scrollDirtyCol = col;
   }
 
   update(dt: number): void {
-    if (this.bt.tick(dt)) this.render();
-    if (this.scrollDirty) { this.scrollDirty = false; this.render(); }
+    // Deliberately no redraw off the busy tracker: nothing on this scene draws its dots/loading
+    // overlay (bt only greys buttons while a mutating action is in flight), and every bt.start()/
+    // stop() already pairs with its own render() (actions.ts / input.ts's submitMessage) — so
+    // ticking it used to cost 2.5 full rebuilds a second for zero visual change. Add a dots overlay
+    // and it has to route through `repaint`, not render().
+    this.bt.tick(dt);
+    // Both tickers below move exactly one thing where render() rebuilds the whole body, so they go
+    // through `repaint` instead (see ./repaint.ts).
+    if (this.scrollDirtyCol) {
+      const col = this.scrollDirtyCol;
+      this.scrollDirtyCol = null;
+      this.repaint.applyScroll(col);
+    }
     // Blink the caret while either the create-form fields or the channel send box are focused.
     if (this.createField || this.sendInput) {
       this.caretTimer += dt;
-      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.render(); }
+      if (this.caretTimer >= 0.5) { this.caretTimer = 0; this.caretOn = !this.caretOn; this.repaint.blinkCaret(); }
     }
   }
 

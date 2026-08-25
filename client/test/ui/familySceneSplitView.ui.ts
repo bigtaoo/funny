@@ -117,6 +117,21 @@ function textsOf(scene: any): string[] {
   return out;
 }
 
+/** Same walk as `textsOf`, but returns the Text nodes themselves — the roster rows moved into their
+ *  own masked scroll layer with the 2026-08-25 incremental-repaint pass (FamilyScene/repaint.ts), so
+ *  a direct `bodyLayer.children` scan no longer sees them at all. */
+function textNodesOf(scene: any): PIXI.Text[] {
+  const out: PIXI.Text[] = [];
+  const walk = (node: PIXI.Container): void => {
+    for (const c of node.children) {
+      if (c instanceof PIXI.Text) out.push(c);
+      if ((c as PIXI.Container).children) walk(c as PIXI.Container);
+    }
+  };
+  walk(scene.core.bodyLayer);
+  return out;
+}
+
 /** Header identity (title + landscape `[TAG] Name` / prosperity / count) is drawn on the scene
  *  container, on top of the cached header chrome — not in bodyLayer. */
 function headerTextsOf(scene: any): string[] {
@@ -340,7 +355,7 @@ describe('FamilyScene — member rows & self action', () => {
     await flush(scene);
     scene.render();
 
-    const rows = scene.core.bodyLayer.children.filter((c: unknown) => c instanceof PIXI.Text) as PIXI.Text[];
+    const rows = textNodesOf(scene);
     const name = rows.find((c) => c.text === 'tao')!;
     const role = rows.find((c) => c.text === 'Leader')!;
     expect(name).toBeTruthy();
@@ -359,8 +374,12 @@ describe('FamilyScene — member rows & self action', () => {
     scene.render();
 
     // sketchPanel() row backgrounds are Containers (not Text/Graphics accent bars). There must be
-    // at least one background container per rendered member row.
-    const panels = scene.core.bodyLayer.children.filter(
+    // at least one background container per rendered member row. Counted inside the roster's own
+    // scroll layer (2026-08-25): counting bodyLayer's direct children would also sweep in the rail
+    // cells and the layer itself, so the assertion would pass without a single row being drawn.
+    const layer = scene.core.repaint.layerFor('members');
+    expect(layer).toBeTruthy();
+    const panels = layer.children.filter(
       (c: unknown) => c instanceof PIXI.Container && !(c instanceof PIXI.Text),
     );
     expect(panels.length).toBeGreaterThanOrEqual(3);
@@ -372,9 +391,7 @@ describe('FamilyScene — member rows & self action', () => {
     scene.actions.confirmDissolve = vi.fn();
     scene.render();
 
-    const btn = (scene.core.bodyLayer.children as PIXI.Text[]).find(
-      (c) => c instanceof PIXI.Text && c.text === 'Dissolve Family',
-    )!;
+    const btn = textNodesOf(scene).find((c) => c.text === 'Dissolve Family')!;
     // Label anchor is (0.5,0.5) so its x/y are the button centre — route a tap there.
     // The hit action fires on pointer-up now (ScrollTapGesture defers taps so a drag scrolls).
     scene.core.handleDown(btn.x, btn.y);
@@ -392,9 +409,7 @@ describe('FamilyScene — member rows & self action', () => {
     scene.actions.confirmLeave = vi.fn();
     scene.render();
 
-    const btn = (scene.core.bodyLayer.children as PIXI.Text[]).find(
-      (c) => c instanceof PIXI.Text && c.text === 'Leave Family',
-    )!;
+    const btn = textNodesOf(scene).find((c) => c.text === 'Leave Family')!;
     scene.core.handleDown(btn.x, btn.y);
     scene.core.handleUp(btn.x, btn.y);
     expect(scene.actions.confirmLeave).toHaveBeenCalledTimes(1);
