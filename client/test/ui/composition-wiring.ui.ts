@@ -288,6 +288,8 @@ describe('FamilyScene composition wiring', () => {
     expect((scene.input as Record<string, unknown>).data).toBe(scene.data);
     expect((scene.renderPanel as Record<string, unknown>).actions).toBe(scene.actions);
     expect((scene.renderPanel as Record<string, unknown>).input).toBe(scene.input);
+    // 2026-08-25: Core owns a FamilyRepaint for the incremental repaint paths, over that same core.
+    expect(((core as Record<string, unknown>).repaint as Record<string, unknown>).core).toBe(core);
     // header.ts (drawn from Core, before ActionsPanel exists) opens the emblem-picker modal through
     // this same lazy-callback trick as `render` (family-emblem-art-prompts.md, 2026-08-14) — must
     // reach the real ActionsPanel.openEmblemPicker without throwing (no family loaded here, so it

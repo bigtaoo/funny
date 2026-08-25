@@ -24,6 +24,7 @@ import { DataPanel } from './FamilyScene/data';
 import { ActionsPanel } from './FamilyScene/actions';
 import { InputPanel } from './FamilyScene/input';
 import { RenderPanel } from './FamilyScene/render';
+import { preloadTabIconTextures } from '../render/icons';
 
 export type { FamilySceneCallbacks, FamilySceneView } from './FamilyScene/core';
 
@@ -52,6 +53,13 @@ export class FamilyScene implements Scene {
     // family tab shows the chrome instantly instead of a blank body while loadData()'s network
     // round-trips are in flight (the "tab switch takes several seconds" complaint).
     this.render();
+    // Warm the rail/tab/title glyph PNGs and redraw once they land — the same one-liner
+    // CardScene/EquipmentScene/SectScene use, for the same reason: buildRasterTabIcon draws NOTHING
+    // while its texture is still decoding, and this page is reachable without passing through
+    // LobbyScene (which warms them for everything entered from the lobby). It used to self-heal by
+    // accident, off the per-frame scroll/caret/busy renders that ./FamilyScene/repaint.ts removed.
+    void preloadTabIconTextures().then(() => this.render());
+
     void this.data.loadData();
   }
 

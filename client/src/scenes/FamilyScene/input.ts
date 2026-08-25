@@ -48,7 +48,10 @@ export class InputPanel implements InputHandlers {
       } else {
         core.createTag = inp.value.toUpperCase();
       }
-      if (!core.destroyed) core.render();
+      // Only this field's string changed, and its panel/hit rect are fixed-width — rewrite that one
+      // Text rather than rebuilding the form per keystroke (falls back to render() if the Text is
+      // gone; see ./repaint.ts).
+      if (!core.destroyed) core.repaint.setFieldValue(field === 'name' ? core.createName : core.createTag);
     });
     inp.addEventListener('blur', () => {
       core.createField = null;
@@ -73,7 +76,8 @@ export class InputPanel implements InputHandlers {
     // caret. Without this the field stayed on the placeholder and typing looked like a no-op.
     inp.addEventListener('input', () => {
       core.sendText = inp.value;
-      if (!core.destroyed) core.render();
+      // Same one-Text keystroke path as the create form above (see ./repaint.ts).
+      if (!core.destroyed) core.repaint.setFieldValue(core.sendText);
     });
     inp.addEventListener('keydown', async (e) => {
       if (e.key === 'Enter') {

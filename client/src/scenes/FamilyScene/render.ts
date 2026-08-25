@@ -11,7 +11,7 @@ import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/s
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
-import { caretDisplay } from '../../ui/inputDisplay';
+import { caretText } from './repaint';
 import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore, FamilyTab } from './core';
 import type { ActionsHandlers } from './actions';
@@ -95,7 +95,12 @@ export class RenderPanel {
     const nameField = sketchPanel(w - fieldX - 20, fieldH, { fill: 0xfaf9f5, border: core.createField === 'name' ? C.accent : C.mid, seed: seedFor(0, 0, w - fieldX) });
     nameField.x = fieldX; nameField.y = y1;
     core.bodyLayer.addChild(nameField);
-    const nl = txt(caretDisplay(core.createName, core.createField === 'name' && core.caretOn, ' '), FS.heading, C.dark);
+    // caretText (not a plain txt) so the 0.5 s blink and each keystroke rewrite this one Text
+    // instead of the whole form — see ./repaint.ts. Placeholder is a bare space: it keeps the
+    // line's height through the caret's off phase without showing hint text.
+    const nl = caretText(core, {
+      active: core.createField === 'name', value: core.createName, size: FS.heading, color: C.dark, placeholder: ' ',
+    });
     nl.x = fieldX + 8; nl.y = y1 + fieldH / 2 - nl.height / 2;
     core.bodyLayer.addChild(nl);
     core.hitRects.push({ rect: { x: fieldX, y: y1, w: w - fieldX - 20, h: fieldH }, action: () => this.input.openInputFor('name') });
@@ -108,7 +113,9 @@ export class RenderPanel {
     const tagField = sketchPanel(tagW, fieldH, { fill: 0xfaf9f5, border: core.createField === 'tag' ? C.accent : C.mid, seed: seedFor(1, 0, tagW) });
     tagField.x = fieldX; tagField.y = y2;
     core.bodyLayer.addChild(tagField);
-    const tl = txt(caretDisplay(core.createTag, core.createField === 'tag' && core.caretOn, ' '), FS.heading, C.dark);
+    const tl = caretText(core, {
+      active: core.createField === 'tag', value: core.createTag, size: FS.heading, color: C.dark, placeholder: ' ',
+    });
     tl.x = fieldX + 8; tl.y = y2 + fieldH / 2 - tl.height / 2;
     core.bodyLayer.addChild(tl);
     core.hitRects.push({ rect: { x: fieldX, y: y2, w: tagW, h: fieldH }, action: () => this.input.openInputFor('tag') });
