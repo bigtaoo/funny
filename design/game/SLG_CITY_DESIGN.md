@@ -160,7 +160,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 | `DRILL_TRAIN_SPEED_STEP` | 0.08（-8%/级，地板 0.5） | 练兵场每级训练提速。**后期收益走这里，不走更大的单批**（见 `TROOP_TRAIN_BATCH_MAX`） |
 | `TROOP_TRAIN_BATCH_MAX` | 5,000（2026-07-22 由 500 提升；**刻意不随 troopCap 成长**） | 单批训练人数上限。跟着 troopCap 涨会立刻把死槽变回来（满级 10,000/批 → 只需 2 槽），正是 ADR-075 要消灭的东西 |
 | `TROOP_TRAIN_QUEUE_MAX` | **1**（ADR-075；原 2） | 零级训练队列槽位。必须 ≥1——练兵场建成前 troopCap 已非零，0 槽会让新号无法练兵 |
-| `DRILL_QUEUE_LEVEL_THRESHOLDS` | **[4, 10]**（ADR-075；原 `DRILL_QUEUE_PER_LEVELS=2`） | 练兵场加槽等级 → 槽位 **1 / 2 / 3**（L0–3 / L4–9 / L10）。有用槽位的天花板是 `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)`（超出的批次会先被 troopCap 校验拒掉，永远占不到槽），旧的 `2+floor(L/2)` 在 batchMax 提到 5000 后满级有 **3 个死槽**。阈值刻意低于天花板：每槽都有用，且「空仓填满」在任何等级都恰好 2 次上线 |
+| `DRILL_QUEUE_LEVEL_THRESHOLDS` | **[4, 10]**（ADR-075；原 `DRILL_QUEUE_PER_LEVELS=2`） | 练兵场加槽等级 → 槽位 **1 / 2 / 3**（L0–3 / L4–9 / L10）。有用槽位的天花板是 `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)`（超出的批次会先被 troopCap 校验拒掉，永远占不到槽），旧的 `2+floor(L/2)` 在 batchMax 提到 5000 后满级有 **3 个死槽**。阈值刻意不超过天花板（仅 L0 持平）：每槽都有用，且「空仓填满」在任何等级**不超过 2 次上线**（L0=1 次，L1 起=2 次；测试钉住） |
 | `SATCHEL_CARRY_STEP` | **= `DRILL_TROOPCAP_STEP`**（ADR-075；原字面量 1,000） | 书包每级单队携带上限。改成直接引用而非恰好相等的字面量，D-CITY-9 的「满级书包 == 满级 troopCap」不变式从此按构造成立 |
 | `WALL_DEFENSE_STEP` | DRAFT | 城墙每级主城基地/守军加成（P2） |
 | `BUILD_COST_{key}(level)` | DRAFT | 升级消耗 5 资源曲线；高级吃 graphite+sticker（sink） |

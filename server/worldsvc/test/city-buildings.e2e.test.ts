@@ -12,6 +12,8 @@ import {
   SLG_MAP_H,
   TROOP_CAP_BASE,
   DRILL_TROOPCAP_STEP,
+  DESK_MAX_LEVEL,
+  troopCapFor,
   STICKER_SELF_BASE,
   RESOURCE_CAP,
   buildCost,
@@ -185,6 +187,39 @@ describe.skipIf(!mongo)('worldsvc home-city buildings e2e', () => {
     nowMs += buildTimeSec('drillYard', 1) * 1000 + 1;
     await svc.processCompletedBuilds();
     expect((await svc.getMe(W, 'a')).troopCap).toBe(TROOP_CAP_BASE + DRILL_TROOPCAP_STEP);
+  });
+
+  /**
+   * The field manifestation ADR-075's boot migration exists to prevent, pinned at the layer where it actually
+   * bit: `troopCap` is PERSISTED and only recomputed here, in applyDueBuilds. So when the re-tune changed the
+   * formula (base 10000+1000/level -> 5000+1500/level), an account carrying a cap from the OLD curve had a
+   * larger stored value than the new formula yields for the NEXT level up — completing a drillYard build
+   * *reduced* the player's troop cap. True for every upgrade out of L0-L6.
+   *
+   * migrateTroopCapRetune re-derives everyone at boot so no such doc survives; this test states the invariant
+   * that must hold afterwards, and would equally catch a future formula change that reintroduces the inversion
+   * without a matching migration.
+   */
+  it('completing a drillYard build never lowers the stored troopCap, even from a stale pre-re-tune cap', async () => {
+    const { x, y } = findCoord(35, 35);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    // Plant a doc frozen on the pre-ADR-075 curve: drillYard L4 with the old 10000 + 4x1000 stored cap.
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { 'buildings.drillYard': 4, 'buildings.desk': DESK_MAX_LEVEL, troopCap: 14000, troops: 14000 } as never },
+    );
+    await m.runMigrations(); // what boot does — re-derive the cap before the player can build again
+    const migrated = (await svc.getMe(W, 'a')).troopCap!;
+    expect(migrated).toBe(troopCapFor({ drillYard: 4 }));
+
+    await svc.upgradeBuilding(W, 'a', 'drillYard');
+    nowMs += buildTimeSec('drillYard', 5) * 1000 + 1;
+    await svc.processCompletedBuilds();
+
+    const after = (await svc.getMe(W, 'a')).troopCap!;
+    expect(after).toBe(troopCapFor({ drillYard: 5 }));
+    expect(after).toBeGreaterThan(migrated); // an upgrade must never shrink the cap
   });
 
   it('desk gate rejects upgrading a building above the desk level', async () => {

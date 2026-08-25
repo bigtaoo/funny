@@ -485,8 +485,9 @@ export const TROOP_TRAIN_BATCH_MAX = 5000;
  * — beyond that the cap check rejects the batch before the slot is ever used. When the 2026-07-22 tune raised
  * TROOP_TRAIN_BATCH_MAX 500 → 5000, that ceiling collapsed from 40 slots to 4 while the old
  * `2 + floor(drillYard/2)` curve kept handing out up to 7, i.e. 3 permanently dead slots at max level. The
- * curve is now 1 / 2 / 3 slots (see DRILL_QUEUE_LEVEL_THRESHOLDS), deliberately kept *below* that ceiling at
- * every level so every slot stays useful and topping the pool off always takes a second visit.
+ * curve is now 1 / 2 / 3 slots (see DRILL_QUEUE_LEVEL_THRESHOLDS), deliberately kept at or below that ceiling at
+ * every level so every slot stays useful and refilling an empty pool never costs more than two sit-downs
+ * (asserted in city-buildings.test.ts — the bound is the reason the curve is 1/2/3 and not something else).
  */
 export const TROOP_TRAIN_QUEUE_MAX = 1;
 /** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */

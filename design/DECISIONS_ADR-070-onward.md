@@ -160,7 +160,7 @@
   2. **训练队列槽位有一半是死的**。有用槽位数最多 `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)`（超出的批次会先被 troopCap 校验拒掉，永远占不到槽），2026-07-22 把 `TROOP_TRAIN_BATCH_MAX` 从 500 提到 5,000 时这个天花板从 40 槽塌到 4 槽，但 `2 + floor(drillYard/2)` 的旧曲线仍最多发 7 槽——满级 **3 个永久死槽**。用户从截图里的「最大 +0」发现这条（面板当时也没显示槽位占用，见下）。
 - **决策**（用户拍板，逐条）：
   1. **`TROOP_CAP_BASE` 10,000 → 5,000，`DRILL_TROOPCAP_STEP` 1,000 → 1,500**。满级仍是 20,000（`5000 + 10×1500`），但整条曲线变 **4×**、每级 +30% 基数。
-  2. **训练队列槽位曲线 `1 / 2 / 3`**：`TROOP_TRAIN_QUEUE_MAX` 2 → **1**，`DRILL_QUEUE_PER_LEVELS`（每 N 级 +1 槽）换成阈值表 `DRILL_QUEUE_LEVEL_THRESHOLDS = [4, 10]`（L0–3 一槽、L4–9 两槽、L10 三槽）。刻意**低于**上述天花板：每一槽都有用，且「空仓填满」在任何等级都恰好是 2 次上线（L0：2 批 ÷ 1 槽；L10：4 批 ÷ 3 槽）。基数必须 ≥1——练兵场建成前 troopCap 已非零，0 槽会让新号无法练兵。
+  2. **训练队列槽位曲线 `1 / 2 / 3`**：`TROOP_TRAIN_QUEUE_MAX` 2 → **1**，`DRILL_QUEUE_PER_LEVELS`（每 N 级 +1 槽）换成阈值表 `DRILL_QUEUE_LEVEL_THRESHOLDS = [4, 10]`（L0–3 一槽、L4–9 两槽、L10 三槽）。刻意**不超过**上述天花板（仅 L0 持平——它的上限 5000 正好就是一批）：每一槽都有用，且「空仓填满」在任何等级**都不超过 2 次上线**（L0 一批就填满，1 次；L1 起每级恰好 2 次，L10 是 4 批 ÷ 3 槽）。这条上限已由 `city-buildings.test.ts` 的不变式测试钉住（写测试时正好抓到本 ADR 初稿把它写成了“恰好 2 次”——L0 其实是 1 次）。基数必须 ≥1——练兵场建成前 troopCap 已非零，0 槽会让新号无法练兵。
   3. **`TROOP_TRAIN_BATCH_MAX` 保持 5,000，不随 troopCap 成长**。让单批上限跟着涨会立刻把死槽变回来（满级 10,000/批 → 只需 2 槽），正是本 ADR 要消灭的东西。练兵场的后期收益体现在 `drillTrainMult`（每级 -8% 训练时长）而非更大的单批。
   4. **`SATCHEL_CARRY_STEP` 改为直接等于 `DRILL_TROOPCAP_STEP`**（不再是一个恰好相等的字面量 1000）。D-CITY-9 的不变式「满级书包单队能带满满级兵力池」从此按构造成立：同基数、同步长、同 10 级。
   5. **险地/关隘守军常量不动**（`STRONGHOLD_GARRISON_PER_LEVEL=1180` / `CROSSING_GARRISON_PER_LEVEL=1150`）。用户拍板不等比下调，接受 PvE 门槛从练兵场 L1/L2 后移到 **L4（关隘）/ L5（险地）**——「4 到 5 级很快的」，且这两个解锁正是升级动力最直观的兑现物。已用 `strongholdCombatRun.ts` 实跑确认而非推算，见 [`ECONOMY_VERIFICATION_LOG_CAPACITY.md §13-SLG-STRONGHOLD.7`](game/ECONOMY_VERIFICATION_LOG_CAPACITY.md)。

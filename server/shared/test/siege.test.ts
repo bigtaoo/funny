@@ -20,6 +20,12 @@ import {
   resolveSiege,
   siegeSeedFromId,
   strongholdGarrison,
+  passageGarrison,
+  troopCapFor,
+  satchelCarryCapFor,
+  DESK_MAX_LEVEL,
+  SLG_MAP_MAX_LEVEL,
+  CROSSING_TILE_LEVEL,
   strongholdMaterialLoot,
   teamSiegeValue,
   waveSeed,
@@ -91,6 +97,50 @@ describe('npcGarrison / strongholdGarrison / strongholdMaterialLoot', () => {
   it('material loot scales linearly by level (real strongholds are always level 10 — see STRONGHOLD_LEVEL — so both asserted levels land on whole-number qty)', () => {
     expect(strongholdMaterialLoot(5)).toEqual({ material: 'binding', qty: 4 });
     expect(strongholdMaterialLoot(10)).toEqual({ material: 'binding', qty: 8 });
+  });
+});
+
+/**
+ * The stronghold/crossing gates are a plain linear troops-vs-garrison comparison in production
+ * (`shouldUseCheapSiege` routes every synthesized-defender siege past the real engine — see
+ * STRONGHOLD_GARRISON_PER_LEVEL's doc comment), which makes the whole design intent expressible as
+ * inequalities between four constants that live in two different files.
+ *
+ * Until ADR-075 those inequalities were only ever checked by `server/tools/econ-sim/src/strongholdCombatRun.ts`
+ * — a script someone has to remember to run. It was NOT remembered twice: ADR-048 raised TROOP_CAP_BASE
+ * 2000 -> 10000 and left a fresh player able to take every stronghold on the map at 100% win rate (caught
+ * weeks later by an audit, see ECONOMY_VERIFICATION_LOG_CAPACITY §13-SLG-STRONGHOLD.5), and the same coupling
+ * came up again for ADR-075. These are the ends of that design intent pinned in a test that runs on every
+ * commit; the script keeps its job of finding the exact opening level and printing the sweep.
+ */
+describe('PvE gate calibration invariants (troopCap curve vs stronghold/crossing garrisons)', () => {
+  const STRONGHOLD = strongholdGarrison(SLG_MAP_MAX_LEVEL);            // strongholds always spawn at map max
+  const CROSSING = passageGarrison(CROSSING_TILE_LEVEL);               // crossings one level below (mapEdit.ts)
+  const MAXED = { drillYard: DESK_MAX_LEVEL };
+  const MAXED_SATCHEL = { satchel: DESK_MAX_LEVEL };
+
+  it('a fresh player can take neither gate — the whole pool is below both garrisons', () => {
+    expect(troopCapFor(undefined)).toBeLessThan(CROSSING);
+    expect(troopCapFor(undefined)).toBeLessThan(STRONGHOLD);
+  });
+
+  it('a maxed drillYard can take both — neither gate is ever permanently unconquerable', () => {
+    expect(troopCapFor(MAXED)).toBeGreaterThan(STRONGHOLD);
+    expect(troopCapFor(MAXED)).toBeGreaterThan(CROSSING);
+  });
+
+  it('the crossing stays the lighter gate, so it always opens at a lower drillYard level', () => {
+    expect(CROSSING).toBeLessThan(STRONGHOLD);
+  });
+
+  /**
+   * The coupling ADR-075 flagged as unmodelled: "can take it" above is about the POOL, but a siege is one
+   * team's deployment, bounded by satchelCarryCapFor. If the satchel curve ever tops out below a garrison, the
+   * gate is unopenable by a single team no matter how big the pool gets — and nothing else in the codebase
+   * notices, because the pool-side inequality still reads fine.
+   */
+  it('a maxed satchel can actually deliver a gate-breaking army in one team', () => {
+    expect(satchelCarryCapFor(MAXED_SATCHEL)).toBeGreaterThan(STRONGHOLD);
   });
 });
 

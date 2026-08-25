@@ -53,6 +53,7 @@ import {
   passageGarrison,
   resolveSiege,
   SLG_MAP_MAX_LEVEL,
+  CROSSING_TILE_LEVEL,
   TROOP_CAP_BASE,
   DRILL_TROOPCAP_STEP,
   SIEGE_CHEAP_RATIO,
@@ -60,7 +61,7 @@ import {
 
 /** Real garrison sizes at the levels these buildings actually generate at (not a hypothetical 1..5 range). */
 export const STRONGHOLD_LEVEL = SLG_MAP_MAX_LEVEL; // strongholds always spawn at map max level
-export const CROSSING_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1); // mapgen.ts _crossingTile
+export const CROSSING_LEVEL = CROSSING_TILE_LEVEL; // single source in @nw/shared mapEdit.ts (was open-coded here)
 export const STRONGHOLD_GARRISON = strongholdGarrison(STRONGHOLD_LEVEL);
 export const CROSSING_GARRISON = passageGarrison(CROSSING_LEVEL);
 

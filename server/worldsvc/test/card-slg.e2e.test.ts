@@ -246,6 +246,19 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     expect(pw?.troops).toBe(0);
   });
 
+  it('runMigrations treats a doc with no `buildings` field as drillYard 0, not as a doc to skip', async () => {
+    // The second $ifNull in the same expression as the `troops` one above: without it, `$buildings.drillYard`
+    // is missing -> the $multiply yields null -> the derived cap is null, the $ne filter matches, and the doc
+    // gets its troopCap overwritten with null. Legacy/hand-written docs are the shape that hits this.
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    await m.collections.playerWorld.updateOne({ _id: pwId }, { $unset: { buildings: '' } as never, $set: { troopCap: 12345, troops: 12345 } });
+    await m.runMigrations();
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.troopCap).toBe(TROOP_CAP_BASE);  // no drillYard at all -> the bare base
+    expect(pw?.troops).toBe(TROOP_CAP_BASE);    // clamped down from 12345
+  });
+
   it('runMigrations leaves an already-correct troopCap (and its troops) untouched — idempotent', async () => {
     const pwId = playerWorldId(W, 'a');
     await svc.joinWorld(W, 'a', 5, 5);
