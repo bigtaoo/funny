@@ -1,7 +1,9 @@
 /**
  * Regression coverage (client-resource-mgmt audit 2026-07-29): render/atlas/spriteAtlas.ts's
- * createAtlasLoader, render/atlas/coinIconAtlas.ts, and render/stickman/StickmanRuntime.loadAsset all
- * shared the same bug — a failed load() cached the *rejected* promise forever, so a single
+ * createAtlasLoader, the now-deleted render/atlas/coinIconAtlas.ts (coin balance/reward icons were
+ * folded into the plain `TAB_ICON_RASTER` table 2026-08-25, which has no promise cache of its own
+ * to go stale), and render/stickman/StickmanRuntime.loadAsset all shared the same bug — a failed
+ * load() cached the *rejected* promise forever, so a single
  * transient network blip (very plausible on WeChat / mobile) permanently negative-cached the
  * atlas/rig for the rest of the session: every subsequent call replayed the same old rejection
  * instead of retrying, even once the network recovered. The fix resets the cache slot to null in
@@ -26,11 +28,6 @@ vi.mock('pixi.js-legacy', () => ({
     constructor(public baseTex: unknown, public data: unknown) {}
     async parse(): Promise<void> { /* no-op success */ }
   },
-  // icons.ts (imported transitively via coinIconAtlas.ts's buildIcon) now pulls in
-  // cardArt.ts -> preloadTextures.ts for the raster tab-icon art (batch 2/3), which
-  // reads these at module scope for ART_TEX_OPTIONS.
-  MIPMAP_MODES: { OFF: 0, POW2: 1, ON: 2, ON_MANUAL: 3 },
-  SCALE_MODES: { NEAREST: 0, LINEAR: 1 },
 }));
 
 function flakyThenOkIO(): AssetIO {
@@ -81,25 +78,10 @@ describe('spriteAtlas.createAtlasLoader: retries after a failed load (does not n
   });
 });
 
-describe('coinIconAtlas: retries after a failed load (does not negative-cache)', () => {
-  it('a failed loadCoinIconAtlas() followed by a retry succeeds', async () => {
-    const { setAssetIO } = await import('../../src/assets/assetIO');
-    const io = flakyThenOkIO();
-    setAssetIO(io);
-    const mod = await import('../../src/render/atlas/coinIconAtlas');
-
-    await expect(mod.loadCoinIconAtlas()).rejects.toThrow('network blip');
-    expect(mod.isCoinIconAtlasReady()).toBe(false);
-
-    await mod.loadCoinIconAtlas(); // retry
-    expect(mod.isCoinIconAtlasReady()).toBe(true);
-    expect((io.textureSource as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
-  });
-});
-
 describe('baseUpgradeAtlasLoader: retries after a failed load (does not negative-cache)', () => {
-  // 2026-08-03 fix — this loader had the exact same bug as spriteAtlas/coinIconAtlas above but was
-  // missed by the 2026-07-29 audit that fixed those two (see claudedocs/client-modules.md).
+  // 2026-08-03 fix — this loader had the exact same bug as spriteAtlas/coinIconAtlas (since deleted,
+  // see this file's header comment) above but was missed by the 2026-07-29 audit that fixed those two
+  // (see claudedocs/client-modules.md).
   it('a failed loadBaseUpgradeAtlas() followed by a retry succeeds', async () => {
     const { setAssetIO } = await import('../../src/assets/assetIO');
     const io = flakyThenOkIO();

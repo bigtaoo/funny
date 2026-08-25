@@ -77,10 +77,14 @@ describe('WorldMapPanels.renderHud — header bar shows production, not the "Wor
 
   /** Production labels live inside the cluster Container (not directly under headerHudLayer) —
    *  find that cluster (the one plain Container that isn't the auction button's chrome/icon/text)
-   *  and read its Text children's rendered strings. */
+   *  and read its Text children's rendered strings. Bare `PIXI.Container` identity alone doesn't
+   *  single it out any more: the shop entry button's `coinSack` icon (raster since 2026-08-25) is
+   *  also a bare `new PIXI.Container()` (see buildRasterTabIcon) — the readout is the only one of
+   *  the two that ever holds PIXI.Text children. */
   function findCluster(ctx: WorldMapContext): PIXI.Container {
     const cluster = (ctx.headerHudLayer.children as PIXI.DisplayObject[])
-      .find((c): c is PIXI.Container => c.constructor === PIXI.Container);
+      .find((c): c is PIXI.Container => c.constructor === PIXI.Container
+        && (c.children as PIXI.DisplayObject[]).some((ch) => ch instanceof PIXI.Text));
     if (!cluster) throw new Error('production cluster not found in headerHudLayer');
     return cluster;
   }

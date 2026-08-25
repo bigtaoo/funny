@@ -1,5 +1,5 @@
 /**
- * icons.ts — small hand-drawn UI glyphs (book / globe / coin / trophy).
+ * icons.ts — small hand-drawn UI glyphs (book / globe / trophy / castle).
  *
  * Replaces emoji placeholders in the lobby with SketchPen line-art so the icons
  * share the worn-notebook ink language (art-direction: three stationery pens,
@@ -24,7 +24,6 @@ import {
   TAB_ICON_RASTER, tabIconVariant, buildRasterTabIcon,
   type RasterIconKind, type RasterIconVariant,
 } from './icons/tabIconRaster';
-import { drawCoin, drawCoins, drawCoinStack, drawCoinSack, drawCoinChest } from './icons/currency';
 import { drawBook, drawGlobe, drawTrophy, drawCastle, drawPencils } from './icons/motifs';
 import {
   drawScrap, drawLead, drawBinding,
@@ -48,9 +47,7 @@ export type { RasterIconKind, RasterIconVariant } from './icons/tabIconRaster';
 /** Every `IconKind` drawn procedurally through `DRAW`/SketchPen — i.e. all of them but the raster
  *  tab icons, which `buildIcon` dispatches to `./icons/tabIconRaster` instead. */
 export type DrawableIconKind =
-  | 'book' | 'globe' | 'coin' | 'trophy' | 'castle' | 'pencils'
-  // Recharge tiers (ShopScene): escalating treasure to make bigger tiers read richer.
-  | 'coins' | 'coinStack' | 'coinSack' | 'coinChest'
+  | 'book' | 'globe' | 'trophy' | 'castle' | 'pencils'
   // Equipment page materials (EQUIPMENT_DESIGN): scrap / lead / binding.
   | 'scrap' | 'lead' | 'binding'
   // Equipment page stat icons: attack / HP / armor / move-speed / attack-speed.
@@ -101,11 +98,6 @@ export type IconKind = DrawableIconKind | RasterIconKind;
 export const DRAW: Record<DrawableIconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
   book:    drawBook,
   globe:   drawGlobe,
-  coin:    drawCoin,
-  coins:     drawCoins,
-  coinStack: drawCoinStack,
-  coinSack:  drawCoinSack,
-  coinChest: drawCoinChest,
   trophy:  drawTrophy,
   castle:  drawCastle,
   pencils: drawPencils,

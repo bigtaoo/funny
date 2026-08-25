@@ -49,9 +49,9 @@ function internals(scene: ShopScene): {
 
 // Wrap-don't-replace treatment (same convention as mailAttachmentIcons.ui.ts's 2026-08-01 spec):
 // the 2026-08-04 fix routes ShopScene's material cards through buildMaterialIcon (the AI-bitmap
-// path every other material-icon site already used) instead of the generic buildCoinIcon→buildIcon
-// procedural-glyph fallback — this spy lets the regression test below inspect which MaterialKind
-// each card actually resolves to, without touching real rendering.
+// path every other material-icon site already used) instead of the generic `icon` field's
+// `buildIcon` call — this spy lets the regression test below inspect which MaterialKind each card
+// actually resolves to, without touching real rendering.
 vi.mock('../../src/render/atlas/materialAtlas', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/render/atlas/materialAtlas')>();
   return { ...actual, buildMaterialIcon: vi.fn(actual.buildMaterialIcon) };

@@ -501,8 +501,8 @@ describe('LobbyScene composition wiring', () => {
     // rebuild() calling back into build()) was resolved by moving rebuild() onto Core instead.
     expect((scene.build as Record<string, unknown>).badges).toBe(scene.badges);
     expect((scene.build as Record<string, unknown>).overlays).toBe(scene.overlays);
-    // Core's rebuild() (fired from its own onSaveChanged/coinIconAtlas construction-time hooks, and
-    // from badges.ts's applyEventsAvailable) reaches BuildPanel.build() through the lazy `buildHook`
+    // Core's rebuild() (fired from its own onSaveChanged/preloadTabIconTextures construction-time
+    // hooks, and from badges.ts's applyEventsAvailable) reaches BuildPanel.build() through the lazy `buildHook`
     // field the outer assembly overwrites right after constructing BuildPanel — must not still be
     // the core.ts no-op default.
     expect((core as Record<string, unknown>).buildHook).not.toBeUndefined();
