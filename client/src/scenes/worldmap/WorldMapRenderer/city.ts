@@ -319,7 +319,14 @@ export class WorldMapRendererCity implements CityHandlers {
         const barW = spriteTiles * tp * 0.5;
         const barH = Math.max(3, tp * 0.07);
         const bx = -barW / 2;
-        const by = -sprite.height - barH - Math.max(2, tp * 0.04);
+        // Above the ACTUAL art, not the sprite's full cell: `citySpriteTiles` sizes the sprite from the
+        // plot footprint, and every frame has transparent padding above its silhouette, so anchoring to
+        // -sprite.height floats the bar hundreds of px over the roof — off-screen entirely for a 7x7 city.
+        // Measured on a Lv.6 city before this fix: the bar rendered above the viewport and looked absent.
+        // Same treatment (and the same `getCityContentTopFracForLevel`) as the player-base bar above, whose
+        // own 2026-07-22 bug report was this exact symptom for short buildings.
+        const contentTop = getCityContentTopFracForLevel(node.level);
+        const by = -sprite.height * (1 - contentTop) - barH - Math.max(2, tp * 0.04);
         cityHp.lineStyle(0.8, 0x3a2a1a, 0.85);
         cityHp.beginFill(0x2a1e12, 0.8);
         cityHp.drawRect(bx, by, barW, barH);
