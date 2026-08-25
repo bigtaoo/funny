@@ -7,6 +7,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
+import { scrollRegionLayer } from '../../ui/widgets/scrollRegionLayer';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { buildAvatar } from '../../render/avatar';
 import { caretText } from './repaint';
@@ -73,10 +74,7 @@ export function renderMembers(
   // card — see ./repaint.ts. The mask is a sibling, not a child, so it stays put while the layer
   // moves under it. (Before this the roster drew straight onto bodyLayer with no mask at all, which
   // is also why a row straddling the bottom edge used to bleed past the viewport unclipped.)
-  const list = new PIXI.Container();
-  const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH).endFill();
-  list.mask = mask;
-  core.bodyLayer.addChild(list, mask);
+  const { layer: list } = scrollRegionLayer(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH });
   const over = viewH;
 
   const btnH = Math.round(R * 0.44);
@@ -251,10 +249,7 @@ export function renderChannel(
   if (core.channelStick) core[scrollKey] = core.channelMax;
   else core[scrollKey] = Math.max(0, Math.min(core[scrollKey], core.channelMax));
 
-  const list = new PIXI.Container();
-  const mask = new PIXI.Graphics().beginFill(0xffffff).drawRect(x0, y0, colW, viewH2).endFill();
-  list.mask = mask;
-  core.bodyLayer.addChild(list, mask);
+  const { layer: list } = scrollRegionLayer(core.bodyLayer, { x: x0, y: y0, w: colW, h: viewH2 });
   // One viewport of extra messages built in each direction, so a drag translates instead of
   // rebuilding — same as the roster column above (see ./repaint.ts).
   const over = viewH2;

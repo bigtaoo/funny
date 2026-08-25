@@ -60,6 +60,21 @@ async function flush(scene: any): Promise<void> {
   await scene.data.loadData();
 }
 
+/** Every Text string under the modal layer, recursing — the pick / approval lists moved into their
+ *  own masked scroll layer with the 2026-08-25 modal-scroll pass (FamilyScene/modals.ts), so a
+ *  one-level `modalLayer.children` scan no longer sees a single row. */
+function modalTextsOf(scene: any): string[] {
+  const out: string[] = [];
+  const walk = (node: PIXI.Container): void => {
+    for (const c of node.children) {
+      if (c instanceof PIXI.Text) out.push(c.text);
+      if ((c as PIXI.Container).children) walk(c as PIXI.Container);
+    }
+  };
+  walk(scene.core.modalLayer);
+  return out;
+}
+
 describe('FamilyScene — pending join-request approval', () => {
   it('leader with no pending requests: button is not shown, listJoinRequests still called', async () => {
     const scene = buildScene(makeFamily(), []);
@@ -115,9 +130,7 @@ describe('FamilyScene — pending join-request approval', () => {
     btnHit.action();
 
     expect(scene.core.modalOpen).toBe(true);
-    const modalTexts = scene.core.modalLayer.children
-      .filter((c: unknown) => c instanceof PIXI.Text)
-      .map((c: PIXI.Text) => c.text);
+    const modalTexts = modalTextsOf(scene);
     expect(modalTexts).toContain('Newbie');
     expect(modalTexts).toContain('Approve');
     expect(modalTexts).toContain('Reject');
@@ -230,9 +243,7 @@ describe('FamilyScene — applicant side (join a family submits a request, not m
 
     expect(scene.core.cb.worldApi.listFamilies).toHaveBeenCalled();
     expect(scene.core.modalOpen).toBe(true);
-    const modalTexts = scene.core.modalLayer.children
-      .filter((c: unknown) => c instanceof PIXI.Text)
-      .map((c: PIXI.Text) => c.text);
+    const modalTexts = modalTextsOf(scene);
     expect(modalTexts.some((s: string) => s.includes('Alpha'))).toBe(true);
   });
 
