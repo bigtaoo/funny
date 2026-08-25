@@ -379,3 +379,41 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 - **必须带 canary**。这套测试全部依赖一个正则，正则一旦被重构成 0 命中就变成永绿。所以第一例断言「扫到的 catch 数 ≥ 15」。
 - **失败信息要点名 file:line**。把违规项收集成字符串数组再 `expect(offenders).toEqual([])`，红的时候直接读到 `src/scenes/FamilyScene/actions.ts:185 — catch (e) toasts without errorMsg(e)`；写成 `expect(ok).toBe(true)` 就只剩「false 不等于 true」。
+---
+
+## 补测的三个盲区，都是「测了旁边、没测中间」（2026-08-25，ADR-073 后续）
+
+ADR-073 首轮跟着修复落了 26 例测试，然后做变异验红，发现其中相当一部分**在修复被撤销后依然全绿**。三个盲区各有一类普适性：
+
+### 1. 参数化的测试测不到「谁来传参」这条接线
+
+`bakePageResolution.test.ts` 20 例把 `pageBakeResolution()` 的算术钉得很死——但它自己调 `setDesignScale()` 设缩放。而生产里唯一调它的地方是 `ScalingManager.applyScaling` 里的一行。**把那一行删掉，20 例全绿，111 MB 的纹理原样回来**。
+
+补的是 `test/ui/bakeDesignScaleWiring.ui.ts`：构造**真的** `ScalingManager`（UI 套件有 headless PIXI，能跑真 `Graphics`/`Container`），**全程不碰 `setDesignScale`**，直接断言 `pageBakeResolution()` 已经是那个 layout 的 contain 缩放。变异 M1 验证：这个文件红、`bakePageResolution.test.ts` **保持绿**——盲区的存在本身被记录下来了。
+
+> 与 ADR-072 那条「首轮测试全在场景层和视图层，漏了中间那层导航接线，而原 bug 恰恰只长在那里」是同一条。**规律**：凡是测试自己能"注入"的东西，就是生产代码里某处在注入的东西，那个注入点需要单独一例。
+
+### 2. opt-in 的 flag 需要调用点守卫，否则两个方向都会静默腐烂
+
+`pageScale` 是刻意 opt-in 的（整页要 device-exact，小 chrome 不能）。这种 flag 的腐烂是双向的：新加的整页 bake 忘带 → 又一张百 MB 纹理；从现有 7 处删掉一处 → 一个屏一个屏地退回去。两种都没有任何一处会红。
+
+`test/pageBakeCallSites.test.ts` 扫源码枚举所有 `bake(`/`bakeLazy(` 调用点，跟一份显式期望表比对。**新调用点会让测试红**，直到作者把它归类——这就是目的。两个实现细节值得记：
+
+- **必须先剥注释**。这几个文件本身就在注释里*描述*这个约定（"Statically baked (`bake()`, zero runtime cost)"），正则区分不了。实测撞到：`decorCLayer.ts` 报了 2 个调用点，实际 1 个。
+- **要有一例守住"扫描本身没扫空"**。正则一旦失配，底下所有断言都会空转通过。
+
+### 3. 冷却/去抖会让"应该保持安静"的测试**因为错误的原因**通过
+
+`MemoryMonitor` 的字节闸是「超预算 **且** 仍在涨」。直觉写法：触发一次 → 同样字节再 tick → 断言安静。**这个写法在 latch 被删掉后照样绿**，因为 `REWARN_EVERY_MS`（30s）把第二次报告挡掉了。变异 M8 抓到的正是这个。
+
+修法不是去伪造 `performance.now()`，而是**换一个不依赖时间的隔离手法**：第一次 tick 把预算调到没人能越过（于是记下 `lastSampledTexMB` 却从不上报、rewarn 闸也没被碰过），第二次 tick 才把预算调低——此时决定结果的**只有** latch。
+
+> **规律**：任何带冷却/去抖/节流的逻辑，"断言它保持安静"的测试都要先确认安静**是被测的那个条件**造成的，而不是被冷却造成的。判定方法只有变异验红。
+
+### 顺带：把两个已测文件搬进覆盖率门禁（ADR-071 那份过渡清单的用法）
+
+`src/render/bake.ts` 和 `src/cache/MemoryMonitor.ts` 此前都不在 `coverage.include` 里——测了但不受门禁，能腐烂到 50% 也没人红。补完后两个都是 **100% 行覆盖**，一并加进清单：client 整体 94.77% → **95.12%**，而 scope 变宽了两个文件（"scope 翻倍而百分比上升"那个方向）。
+
+门禁是**按文件**的，所以把新的字节代码纳入门禁，就得连它的邻居一起覆盖——于是顺手补上了 ANR context provider、`wx.onMemoryWarning`、`uninstall()`、JS 堆触发分支、`countNodes` 走真 stage。其中 **ANR 报告带 `texMB`/`largestMB` 是 ADR-073 里写下的声明，却一例没测**（那个 provider 只在 install 时注册、只由 ANR 看门狗调用）。
+
+**14 个变异逐一验红**（M1–M14，覆盖三项修复 + 新增的报告路径），全部红在该红的那一例上。harness 上的两个坑：vitest 的 reporter 输出**带 ANSI 转义**，`/FAIL\s+(\S+\.test\.ts)/` 这类正则匹配不到（表现为"所有变异都没被抓到"，看起来像测试全废）；多行锚点要兼容 **CRLF**，否则在 Windows 检出上静默 skip。
