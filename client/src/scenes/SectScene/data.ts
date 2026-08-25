@@ -4,7 +4,7 @@
 // DataPanel has no dependency on any other domain class — Actions depends on IT (2026-08-11
 // converted from the former `XMixin(Base)` inheritance chain to an independent class over `core`,
 // per claudedocs/client-modules.md's split-form priority note).
-import type { SectMessageView } from '../../net/WorldApiClient';
+import type { SectDetailView, SectMessageView } from '../../net/WorldApiClient';
 import { loadEmblemAtlas } from '../../render/emblemIcon';
 import type { SectSceneCore } from './core';
 
@@ -24,7 +24,9 @@ export class DataPanel implements DataHandlers {
     try {
       // Family membership lives in socialsvc; worldsvc's playerWorld.familyId is a
       // join-time-only mirror that never reflects a family created/joined afterward.
-      const fam = await core.cb.worldApi.getMyFamily();
+      // The social hub hands its own just-fetched copy over on the way in (preloadedFamily /
+      // preloadedSect below) — see SectSceneCallbacks for why.
+      const fam = core.cb.preloadedFamily ?? await core.cb.worldApi.getMyFamily();
       if (!fam) {
         core.inFamily = false;
         core.mode = 'noSect';
@@ -33,7 +35,11 @@ export class DataPanel implements DataHandlers {
         core.myFamilyId = fam.familyId;
         core.myFamilyRole = fam.members?.find(m => m.accountId === core.cb.myAccountId)?.role ?? 'member';
         if (fam.sectId) {
-          await this.loadMySect(fam.sectId);
+          // Only for THIS sect: a preload left over from a different sect (or a stale one from
+          // before a join/leave) would paint the wrong roster.
+          const pre = core.cb.preloadedSect;
+          if (pre && pre.sectId === fam.sectId) await this.applySect(pre);
+          else await this.loadMySect(fam.sectId);
         } else {
           core.mode = 'noSect';
         }
@@ -45,10 +51,18 @@ export class DataPanel implements DataHandlers {
   }
 
   async loadMySect(sectId: string): Promise<void> {
+    await this.applySect(await this.core.cb.worldApi.getSect(sectId));
+  }
+
+  /** Adopt a sect detail (freshly fetched or handed over by the hub) and pull its channel. */
+  private async applySect(sect: SectDetailView): Promise<void> {
     const core = this.core;
-    const sect = await core.cb.worldApi.getSect(sectId);
     core.sect = sect;
     core.mode = 'mySect';
+    // Paint the roster/identity as soon as the sect is known — the channel is a second round-trip,
+    // so don't hold the whole page blank on it (mirrors FamilyScene/data.ts's applyFamily). The
+    // caller renders again once loadChannel() lands, filling the message list in.
+    if (!core.destroyed) core.render();
     // Emblem atlas is lazy-loaded (not boot L0 — see emblemAtlas.ts); kick it off once we know the
     // sect's own badge or any member family's badge is set, re-rendering once it resolves so the
     // header/summary-row/family-list badges (header.ts / render.ts / lists.ts) don't stay blank.

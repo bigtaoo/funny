@@ -8,7 +8,7 @@ import type { ApiClient } from '../net/ApiClient';
 import type { SaveManager, ReplayStore } from '../game/meta';
 import type { FeatureFlags } from '../net/featureFlags';
 import type { NetSession } from '../net/NetSession';
-import type { WorldApiClient, FamilyDetailView } from '../net/WorldApiClient';
+import type { WorldApiClient, FamilyDetailView, SectDetailView } from '../net/WorldApiClient';
 import type { Replay, OwnerId, PlayerStats, MatchStartInfo, AIDifficulty } from '../game';
 import type { EloResult } from '../scenes/ResultScene';
 import type { ProfileData } from '../ui/dialogs/ProfilePopup';
@@ -64,7 +64,11 @@ export interface Nav {
   /** `preloadedFamily`: a family detail the caller already fetched, so FamilyScene can paint without
    *  re-issuing the same request (used by the social hub's family tab — see createWorldNav). */
   goFamilyHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void, overlay?: boolean, preloadedFamily?: FamilyDetailView | null): void;
-  goSectHub(worldApi: WorldApiClient, worldId: string, onExit?: () => void, overlay?: boolean): void;
+  goSectHub(
+    worldApi: WorldApiClient, worldId: string, onExit?: () => void, overlay?: boolean,
+    /** One-shot hand-off of what the caller already fetched — see SectSceneCallbacks.preloadedSect. */
+    preload?: { family?: FamilyDetailView | null; sect?: SectDetailView | null },
+  ): void;
   goAuctionHouse(worldApi: WorldApiClient, worldId: string, opts?: { overlay?: boolean; onBack?: () => void }): void;
   goShop(onBack?: () => void, initialTab?: 'shop' | 'coins'): void;
   goGacha(group?: { shopBack?: () => void }): void;
