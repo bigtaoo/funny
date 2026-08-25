@@ -226,7 +226,8 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 - **变化**：开放门槛从练兵场 **L1 / L2** 后移到 **L4 / L5**。这是 ADR-075 的**目的**而非副作用——该 ADR 存在的理由是让练兵场每一级都值得买，而这两个 PvE 解锁是升级动力最直观的兑现物；用户拍板「4 到 5 级很快的」。
 - **另一条没有建模的耦合（登记，非本轮修）**：这些「打得过」的兵力是**单次出征的部署量**，还要受书包（satchel）单队携带上限约束——`SATCHEL_CARRY_BASE = TROOP_CAP_BASE = 5,000`、每级 +1,500，所以真要把 12,500 兵一次带到险地，书包也得到 L5。这条耦合在旧基线下同样存在（当时需要书包 ~L2），`strongholdCombat.ts` 的 `ProgressionScenario` 始终只建模兵力数、不建模携带上限。ADR-075 只是把所需等级从 ~2 抬到 ~5，没有引入新的结构问题，但如果将来有人把「练兵场 L5 就能开险地」当精确承诺来用，需要连书包一起算。
 - **回归护栏**：`strongholdCombat.ts` 里的门槛等级不再是散落的字面量 `2`/`1`，改成导出常量 `STRONGHOLD_OPEN_DRILL_LEVELS`/`CROSSING_OPEN_DRILL_LEVELS`，`strongholdCombat.test.ts` 的阈值扫描从这两个常量派生（并断言 crossing 门槛严格小于 stronghold、门槛下一级仍必败）；`strongholdCombatRun.ts` 的扫描范围从硬编码 4 级放宽到 `DESK_MAX_LEVEL`，否则新门槛（L5）会掉在扫描窗口外、脚本报「opens by drillYard+?」。
-- **验证**：`npm run stronghold-combat`（`server/tools/econ-sim`）两门均 PASS；`econ-sim` 18 例、`@nw/shared` `city-buildings.test.ts` 15 例全绿。
+- **验证**：`npm run stronghold-combat`（`server/tools/econ-sim`）两门均 PASS；`econ-sim` 18 例、`@nw/shared` `city-buildings.test.ts` 全绿。
+- **本节的结论不再只靠脚本守着（2026-08-25 补）**：.5 那次事故的真正教训不是「常量算错了」，而是**这套不等式只有一个需要人主动去跑的脚本在守**——ADR-048 把基数提到 10,000 后「新手开局即 100% 攻破险地」的状态存续了数周，直到一次审计才发现。现已把设计意图的两端钉进 `server/shared/test/siege.test.ts` 的 `PvE gate calibration invariants` 一组用例（每次提交都跑）：①新号兵力池低于两个守军（打不过）；②满级练兵场高于两个守军（**永远不会变成打不下**）；③关隘严格轻于险地（开放顺序）；④满级书包单队投送量高于险地守军（本节上面登记的「未建模耦合」——池子够但单队带不动，则门槛实际不可开，而池子那侧的不等式看起来仍然正常）。回归有效性已验证：把守军回滚到 .5 修复前的 360/200，用例 ① 立刻红（`expected 10000 to be less than 1800`）——正是当年那次事故的形状。脚本继续负责它擅长的事：定位精确开放等级、打印逐级胜率表。
 
 ## 13-SLG-NPC-BASEHP. NPC 单场围攻基地血量装备/学院加成叠加补测（2026-07-22，`[⚠️ 结论已被 §13-SLG-NPC-BASEHP.2 取代]`）
 

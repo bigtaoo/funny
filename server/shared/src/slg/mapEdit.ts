@@ -30,8 +30,14 @@ export interface MapEditCityInput {
   kind: 'capital' | 'worldCenter' | 'garrison';
 }
 
-/** Level assigned to a hand-placed crossing building (matches the procedural auto-crossing level). */
-const CROSSING_TILE_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
+/**
+ * Level every crossing building spawns at — procedural auto-crossings (mapgen `_crossingTile`) and
+ * hand-placed ones alike. Exported (2026-08-25) because `Math.max(2, SLG_MAP_MAX_LEVEL - 1)` had been
+ * open-coded in three places — here, `econ-sim/strongholdCombat.ts`, and siege.ts's doc comment as the
+ * prose "currently 9" — which is the same shape as the constant drift ADR-075 spent its whole day on.
+ * The garrison a player actually faces is `passageGarrison(CROSSING_TILE_LEVEL)`.
+ */
+export const CROSSING_TILE_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
 
 function _cityTileType(kind: MapEditCityInput['kind']): TileType {
   return kind === 'worldCenter' ? 'center' : 'familyKeep';

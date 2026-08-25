@@ -60,9 +60,11 @@ export const DRILL_TRAIN_SPEED_FLOOR = 0.5;    // drillYard: training-time multi
  *
  * A threshold list rather than the old `floor(level / DRILL_QUEUE_PER_LEVELS)` because the useful slot count
  * is `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)` (a batch beyond that is rejected by the troopCap check before
- * it can occupy a slot) and that ceiling — 2 slots at L0 rising to 4 at L10 — is not a multiple of anything.
- * These three thresholds stay strictly below it at every level, so no slot is ever dead and topping an empty
- * pool off to the cap always takes exactly two visits (L0: 2 batches ÷ 1 slot; L10: 4 ÷ 3). Keep it that way:
+ * it can occupy a slot) and that ceiling — 1 slot at L0 rising to 4 at L10 — is not a multiple of anything.
+ * These three thresholds stay at or below it at every level (equal only at L0, whose cap is exactly one
+ * batch), so no slot is ever dead and topping an empty
+ * pool off to the cap never takes more than two visits, at any level (L0 fits in one batch, so one visit;
+ * every level above needs exactly two — L10 is 4 batches over 3 slots). Keep it that way:
  * scaling TROOP_TRAIN_BATCH_MAX up with troopCap would immediately re-create dead slots, which is the bug the
  * 2026-08-25 re-tune existed to remove.
  */
