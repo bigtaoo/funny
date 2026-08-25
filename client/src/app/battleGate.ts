@@ -3,42 +3,26 @@
  * (ASSET_PACKAGING §10). Pulled out of app.ts on purpose: app.ts imports ~30 scene classes for
  * its other show* methods (including WorldMapScene/FamilyScene/etc., whose import graphs reach
  * `@nw/shared` and therefore require `server/node_modules` to even resolve) — this module only
- * needs SceneManager/InputManager/LoadingOverlay/battleAssets, so it (and its tests) stay cheap
- * to import in isolation.
+ * needs assetGate (SceneManager/InputManager/LoadingOverlay) + battleAssets, so it (and its
+ * tests) stay cheap to import in isolation.
  */
-import * as PIXI from 'pixi.js-legacy';
-import type { Scene, SceneManager, GotoOptions } from '../scenes/SceneManager';
-import type { InputManager } from '../inputSystem/InputManager';
-import { LoadingOverlay } from '../ui/LoadingOverlay';
+import type { Scene } from '../scenes/SceneManager';
+import { enterWithAssets, type AssetGateDeps } from './assetGate';
 import { ensureBattleAssets, type BattleAssetOptions } from '../assets/battleAssets';
 
-export interface BattleGateDeps {
-  app: PIXI.Application;
-  manager: SceneManager;
-  input: InputManager;
-}
+export type BattleGateDeps = AssetGateDeps;
 
 /**
- * Freezes input (pointer input bypasses PIXI — a bare visual overlay can't block taps on the
- * still-live outgoing scene, same reasoning as SceneManager's own fade-transition input gate),
- * shows a LoadingOverlay while `ensureBattleAssets` warms unit rigs/skins/card art, THEN builds +
- * gotos the real scene with a cross-fade. `manager.goto(..., {fade:true})`'s own transition takes
- * over un-suppressing input once the fade settles — calling `suppress(true)` again there is a
- * harmless no-op.
+ * Warms unit rigs/skins/card art behind a loading screen, then cross-fades into the battle scene.
+ * The gate mechanics themselves live in `assetGate.enterWithAssets` (shared with the gacha gate);
+ * this is only the battle-specific warm step + the cross-fade choice.
  */
-export async function enterBattle<T extends Scene>(
+export function enterBattle<T extends Scene>(
   deps: BattleGateDeps,
   opts: BattleAssetOptions,
   build: () => T,
 ): Promise<T> {
-  deps.input.suppress(true);
-  const overlay = new LoadingOverlay(deps.app);
-  await ensureBattleAssets(opts, (done, total) => overlay.setProgress(total ? done / total : 1));
-  overlay.destroy();
-  const scene = build();
-  const gotoOpts: GotoOptions = { fade: true };
-  deps.manager.goto(scene, gotoOpts);
-  return scene;
+  return enterWithAssets(deps, (onProgress) => ensureBattleAssets(opts, onProgress), build, { fade: true });
 }
 
 /**

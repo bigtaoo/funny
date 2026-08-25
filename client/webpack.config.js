@@ -131,7 +131,21 @@ module.exports = (env, argv) => {
       // called), but "unreachable" is a property of today's call sites, not of the build.
       asyncChunks: false,
     } : {
-      filename: isProd ? '[contenthash].js' : 'index.js',
+      // Everything content-hashed goes under `static/` — the JS bundle and every
+      // `asset/resource` file (png/tao/…). That prefix is not cosmetic: it is what lets
+      // the emitted `_headers` (see StaticMetaPlugin below) carry ONE unambiguous
+      // `/static/*  Cache-Control: …immutable` rule with **zero overlap** against the
+      // fixed-name files that must stay revalidated (index.html / version.json /
+      // favicons / the legal pages). Cloudflare's `_headers` has no precedence model —
+      // "an incoming request which matches multiple rules' URL patterns will inherit all
+      // rules' headers", and a header set twice is *joined with a comma* — so a broad
+      // `/*` immutable rule plus a narrow `/index.html` no-cache rule would emit a single
+      // self-contradicting `Cache-Control: …immutable, no-cache, must-revalidate` header
+      // rather than overriding. Non-overlapping patterns are the only way to express this
+      // policy without relying on undocumented matching behaviour (`/*.js`-style splats
+      // with a literal suffix are nowhere in the docs either).
+      filename: isProd ? 'static/[contenthash].js' : 'static/index.js',
+      assetModuleFilename: 'static/[contenthash][ext]',
       path: path.resolve(__dirname, 'dist'),
       clean: true,
     },
@@ -141,7 +155,11 @@ module.exports = (env, argv) => {
       // <link rel="preload"> for the boot-tier assets, so the browser starts fetching them
       // during the bundle download instead of after startApp() runs (ASSET_PACKAGING §11).
       // Needs HtmlWebpackPlugin's hooks, hence WeChat (no HTML host) is excluded.
-      ...(isWechat ? [] : [new PreloadBootAssetsPlugin()]),
+      // `preconnect`: the backend origins the first post-gate request will hit. Deduped/filtered
+      // inside the plugin; the empty (same-origin, reverse-proxied) values drop out on their own.
+      ...(isWechat ? [] : [new PreloadBootAssetsPlugin({
+        preconnect: [apiBase, worldBase, socialBase, auctionBase],
+      })]),
       // Copy marketing landing (home) + legal pages (terms/privacy/refunds/pricing) + branding icons
       // (favicon / apple-touch / PWA manifest, referenced by <link> in the HTML templates) to dist root.
       // home.html is the crawler-readable site Paddle reviews (the game root / is a bare canvas).
@@ -164,8 +182,25 @@ module.exports = (env, argv) => {
               () => {
                 compilation.emitAsset('version.json', new webpack.sources.RawSource(JSON.stringify({ v: version })));
                 // _headers: Cloudflare Workers static assets support this file for response-header control.
-                // index.html / version.json: no-cache; JS files with contenthash: cache forever.
+                //
+                // ⚠ The `/static/*` rule is the one that actually matters, and it was MISSING until
+                // 2026-08-25 — deploy-cloudflare.md's cache table has always claimed contenthashed
+                // files are served `immutable`, but only client/nginx.conf (the local Docker sim,
+                // which production never goes through) implemented it. Production therefore fell
+                // back to the Workers default, measured live on a.gamestao.com as
+                // `Cache-Control: public, max-age=0, must-revalidate` — i.e. the 2 MB bundle AND
+                // every single hashed png/tao paid a conditional request (304) on every session,
+                // with the bundle's revalidation sitting on the critical path ahead of parse.
+                // That silently ate a good part of what §11's <link rel=preload> tiering bought.
+                //
+                // Both patterns below are non-overlapping BY CONSTRUCTION (see output.filename /
+                // assetModuleFilename above for why that is a hard requirement, not tidiness):
+                // everything content-hashed lives under `static/`, everything fixed-name at root.
                 const headers = [
+                  // Content-hashed: a changed byte mints a new filename, so the old URL can never
+                  // go stale. Covers the JS bundle and every asset/resource file.
+                  '/static/*',
+                  '  Cache-Control: public, max-age=31536000, immutable',
                   '/index.html',
                   '  Cache-Control: no-cache, must-revalidate',
                   '/version.json',

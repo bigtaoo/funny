@@ -1,0 +1,17 @@
+{
+  "_readme": "Shipped-size budgets for the web build, enforced by scripts/checkBundleSize.mjs (ASSET_PACKAGING §13). Any \"_\"-prefixed key is a comment. These are ABSOLUTE budgets with deliberate headroom, not high-water marks: raising one is a decision that needs a written reason here, the same way a file-length-baseline entry does. If a number goes red, the first question is what got bigger and whether it had to.",
+  "_measured": "Baselined 2026-08-25 against the TARGET=web production build: entry.brotli 470.9 KiB, boot.gate 694.2 KiB, dist.total 22.9 MiB.",
+
+  "entry.brotli": {
+    "maxBytes": 563200,
+    "reason": "550 KiB — ~17% over the 470.9 KiB measured 2026-08-25. The bundle is deliberately NOT code-split (user decision, ASSET_PACKAGING §7 item 3: WeChat has no runtime import(), the native shell shortcuts everything locally, so only Web could benefit) — which is exactly why it needs a ceiling instead. It has already grown from the ~1.5 MB raw recorded in §1 to 2.08 MB raw with nobody noticing. Note this is local brotli q11; Cloudflare compresses on the fly at a lower quality and serves ~600 KB for the same file. The local figure is the stable relative metric, not a prediction of the wire size."
+  },
+  "boot.gate": {
+    "maxBytes": 819200,
+    "reason": "800 KiB — ~15% over the 694.2 KiB measured 2026-08-25. This is the one tier the player actually waits on behind the loading screen, and bootManifest.ts's 'keep both lists MINIMAL' rule had no enforcement behind it. Headroom is intentionally tight: an addition here should be a conscious call, and the right answer is usually BACKGROUND_STEPS or L1 instead."
+  },
+  "dist.total": {
+    "maxBytes": 26624000,
+    "reason": "26000 KiB — ~11% over the 22.9 MiB measured 2026-08-25. Catches art bloat that the two gates above cannot see, because most assets are L1 and neither blocks boot. Matters most for the targets that inherit this figure wholesale: the native shell packages it and the WeChat build has a hard 4 MB main-package limit with the rest on CDN."
+  }
+}
