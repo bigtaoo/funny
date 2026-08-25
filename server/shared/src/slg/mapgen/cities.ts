@@ -50,6 +50,53 @@ export function _inCityBackBands(x: number, y: number, cityX: number, cityY: num
 
 interface _CityNode { x: number; y: number; level: number; kind: 'garrison'; provinceIdx?: number; }
 
+/** True if (x,y) falls inside the square `footprint`×`footprint` block centred on (cx,cy). */
+export function _inCityFootprint(x: number, y: number, cx: number, cy: number, footprint: number): boolean {
+  const r = (footprint - 1) / 2;
+  return Math.abs(x - cx) <= r && Math.abs(y - cy) <= r;
+}
+
+/**
+ * The province-capital / graded city whose **footprint** covers (x,y), or null (ADR-074).
+ *
+ * Before ADR-074 `proceduralTile` matched city positions with `capitalIdxAt` / `node.x === x && node.y === y`
+ * — i.e. it classified only a city's single ANCHOR cell as `familyKeep`, while the client drew a
+ * `cityFootprint(level)`-sized sprite over it. A Lv.8 city was therefore 1 cell of city ground plus 48
+ * ordinary resource tiles hidden under the artwork, each independently occupiable by any single player
+ * (用户 2026-08-25 截图: 城墙内部弹出「墨水 Lv.2 / 建议兵力 240」的普通占领框). The map editor's publish path
+ * (`rasterizeMapEdits`) had always stamped the WHOLE footprint, so the two map-generation paths also
+ * disagreed about the same city. This function is the fix for both: footprint containment, matching
+ * `rasterizeMapEdits`.
+ *
+ * Capitals are tested before graded cities so that an overlap resolves the same way the old anchor-match
+ * ordering did (capital branch came first). The world center is NOT handled here — it has always covered
+ * its full `WORLD_CENTER_FOOTPRINT` block and is classified as `center`, not `familyKeep`, by
+ * `proceduralTile` before it ever reaches this function.
+ */
+export function _cityGroundNodeAt(
+  mapW: number,
+  mapH: number,
+  seed: number,
+  x: number,
+  y: number,
+): { level: number } | null {
+  const caps = provinceCapitalPositions(mapW, mapH, seed);
+  const capFootprint = cityFootprint(PROVINCE_CAPITAL_LEVEL);
+  for (let i = 0; i < caps.length; i++) {
+    // The core province's "capital" IS the world center (provinceCapitalPositions pins it to the exact map
+    // center). `allCityNodes` skips it for the same reason, and `proceduralTile` classifies that block as
+    // `center` before reaching here — claiming it as a `familyKeep` capital footprint too would only matter
+    // if this function were ever called first, and then it would be wrong (no city sprite is drawn for it).
+    if (i === CENTER_CAPITAL_IDX) continue;
+    const [cx, cy] = caps[i]!;
+    if (_inCityFootprint(x, y, cx, cy, capFootprint)) return { level: PROVINCE_CAPITAL_LEVEL };
+  }
+  for (const node of _worldCityNodes(mapW, mapH, seed)) {
+    if (_inCityFootprint(x, y, node.x, node.y, cityFootprint(node.level))) return { level: node.level };
+  }
+  return null;
+}
+
 const _cityNodeCache = new Map<number, readonly _CityNode[]>();
 
 // Note: crossings (passage across obstacle bands) are no longer city nodes — they are `bridge`/`plankway`
@@ -146,25 +193,31 @@ export function allCityNodes(worldId: string): MapEditorCityNode[] {
 }
 
 /**
- * Every tile `proceduralTile()` classifies as city GROUND for `worldId`: the world center's whole
- * `WORLD_CENTER_FOOTPRINT`×`WORLD_CENTER_FOOTPRINT` block, plus the single anchor tile of each province
- * capital and graded city. Note the asymmetry — only the world center covers its full footprint in the
- * procedural output; a capital/garrison city is one `familyKeep` tile with its sprite drawn over the
- * surrounding land (see `cityFootprint`). The map editor's publish path needs this list to hand a
- * VACATED anchor back to the terrain when a designer drags that city elsewhere (see
- * `rasterizeMapEdits`). Derived from `allCityNodes()` so it cannot drift from the node list itself; a
- * regression test pins it against `proceduralTile()`.
+ * Every tile `proceduralTile()` classifies as city GROUND for `worldId`: **the whole footprint of every
+ * city** — world center, province capitals and graded cities alike.
+ *
+ * Until ADR-074 (2026-08-25) this was asymmetric: only the world center covered its full footprint, while
+ * a capital/garrison contributed its single anchor cell, because that is all `proceduralTile` classified.
+ * That asymmetry was the bug, not a design choice (see `_cityGroundNodeAt`), and it is gone on both sides.
+ *
+ * The map editor's publish path needs this list to hand a VACATED footprint back to the terrain when a
+ * designer drags a city elsewhere (see `rasterizeMapEdits`). Derived from `allCityNodes()` so it cannot
+ * drift from the node list itself; a regression test pins it against `proceduralTile()`.
+ *
+ * Cities near a map edge have their footprints clipped to the map, and two cities' footprints may overlap
+ * — so callers must treat the result as a SET of coordinates, not a count (it can contain duplicates).
  */
 export function proceduralCityGroundTiles(worldId: string): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
   for (const node of allCityNodes(worldId)) {
-    if (node.kind !== 'worldCenter') {
-      out.push({ x: node.x, y: node.y });
-      continue;
-    }
-    const r = (WORLD_CENTER_FOOTPRINT - 1) / 2;
+    const r = (node.footprint - 1) / 2;
     for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) out.push({ x: node.x + dx, y: node.y + dy });
+      for (let dx = -r; dx <= r; dx++) {
+        const x = node.x + dx;
+        const y = node.y + dy;
+        if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue;
+        out.push({ x, y });
+      }
     }
   }
   return out;

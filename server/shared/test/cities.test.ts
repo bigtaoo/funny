@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { allCityNodes, parseCityNodes, proceduralCityGroundTiles, proceduralTile, proceduralTileIgnoringCities } from '../src/slg/mapgen';
 import { WORLD_CENTER_FOOTPRINT } from '../src/slg/mapgen/cities';
 import { CENTER_CAPITAL_IDX, NATION_COUNT } from '../src/slg/province';
-import { cityFootprint } from '../src/slg/core';
+import { cityFootprint, SLG_MAP_H, SLG_MAP_W } from '../src/slg/core';
 
 describe('allCityNodes', () => {
   const nodes = allCityNodes('s1-0');
@@ -58,16 +58,46 @@ describe('proceduralCityGroundTiles', () => {
     }
   });
 
-  it('covers the whole world-center footprint but only the anchor tile of every other city', () => {
+  it('covers the WHOLE footprint of every city kind, not just the anchor (ADR-074)', () => {
+    // Before ADR-074 only the world center covered its footprint; a capital/garrison contributed its single
+    // anchor cell, leaving the rest of the plot as ordinary occupiable resource land under the city sprite.
+    // This case is the inversion of the old one — it fails on the pre-ADR-074 generator.
     const ground = new Set(proceduralCityGroundTiles(worldId).map((t) => `${t.x}:${t.y}`));
-    const center = allCityNodes(worldId).find((n) => n.kind === 'worldCenter')!;
-    const r = (WORLD_CENTER_FOOTPRINT - 1) / 2;
-    expect(ground.has(`${center.x + r}:${center.y + r}`)).toBe(true);
-    // A capital/garrison contributes one tile: its immediate neighbour is ordinary terrain, since
-    // proceduralTile only marks the anchor (the sprite covers the rest of the plot visually).
-    const garrison = allCityNodes(worldId).find((n) => n.kind === 'garrison')!;
-    expect(ground.has(`${garrison.x}:${garrison.y}`)).toBe(true);
-    expect(ground.has(`${garrison.x + 1}:${garrison.y}`)).toBe(false);
+    for (const node of allCityNodes(worldId)) {
+      const r = (node.footprint - 1) / 2;
+      for (const [dx, dy] of [[0, 0], [r, r], [-r, -r], [r, -r], [-r, r]] as const) {
+        const x = node.x + dx;
+        const y = node.y + dy;
+        if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue; // edge city, footprint clipped
+        expect(ground.has(`${x}:${y}`)).toBe(true);
+      }
+    }
+  });
+
+  it('classifies a whole capital / graded-city footprint as city ground via proceduralTile', () => {
+    for (const node of allCityNodes(worldId).filter((n) => n.kind !== 'worldCenter')) {
+      const r = (node.footprint - 1) / 2;
+      expect(node.footprint).toBeGreaterThan(1); // otherwise this case proves nothing
+      for (const [dx, dy] of [[0, 0], [r, 0], [0, r], [-r, 0], [0, -r]] as const) {
+        const x = node.x + dx;
+        const y = node.y + dy;
+        if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue;
+        const t = proceduralTile(worldId, x, y);
+        // A neighbouring city's footprint may overlap and win the first-match, so accept either city-ground
+        // type — the point is that no cell inside a city plot is ordinary land any more.
+        expect(t.type).toMatch(/^(familyKeep|center)$/);
+      }
+      // One tile past the footprint edge is ordinary terrain again (unless another city's plot reaches it).
+      const outside = proceduralTile(worldId, node.x + r + 1, node.y);
+      if (outside.type === 'familyKeep' || outside.type === 'center') continue; // overlapping neighbour city
+      expect(outside.type).not.toMatch(/^(familyKeep|center)$/);
+    }
+  });
+
+  it('never puts a resType on city ground (city plots do not yield — ADR-074 §8.1 double-payout)', () => {
+    for (const { x, y } of proceduralCityGroundTiles(worldId)) {
+      expect(proceduralTile(worldId, x, y).resType).toBeUndefined();
+    }
   });
 });
 

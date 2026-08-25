@@ -9,13 +9,28 @@ import {
   SLG_MAP_W,
   allCityNodes,
   capitalIdxAt,
+  cityFootprint,
   proceduralTile,
   provinceCapitalPositions,
   provinceIdxAt,
   worldSeed,
 } from '../src/slg';
+import { PROVINCE_CAPITAL_LEVEL } from '../src/slg/mapgen/cities';
 
 const WORLD = 's99-0';
+
+/** Adds every in-bounds cell of the `footprint`×`footprint` block centred on (cx,cy) to `into`. */
+function addFootprint(into: Set<string>, cx: number, cy: number, footprint: number): void {
+  const r = (footprint - 1) / 2;
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const x = cx + dx;
+      const y = cy + dy;
+      if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue;
+      into.add(`${x}:${y}`);
+    }
+  }
+}
 
 describe('provinceIdxAt (ADR-034 angle-sector ring model)', () => {
   it('classifies the exact map center as the core province', () => {
@@ -135,16 +150,24 @@ describe('proceduralTile (ADR-034)', () => {
     expect(counts.center ?? 0).toBeGreaterThan(0);
   });
 
-  it('generates familyKeep ONLY as city ground — one tile per capital/graded node, no blobs (2026-08-19)', () => {
+  it('generates familyKeep ONLY as city ground — exactly the capital/graded footprints, no blobs (2026-08-19 / ADR-074)', () => {
     // Regression guard for the deleted scattered-keep branch (see mapgen/tileGen.ts): it used a smooth
     // value-noise threshold, which paved 3.3% of the map with contiguous keep blobs (largest 1,745
-    // tiles), each tile stamping its own gatehouse sprite. The only familyKeep tiles left are the
-    // single anchor cells of the province capitals + the 54 graded city nodes.
+    // tiles), each tile stamping its own gatehouse sprite.
+    //
+    // ADR-074 widened the legitimate set from each city's single ANCHOR cell to its whole FOOTPRINT
+    // (cityFootprint(level) = 3/5/7/9), so the expectation is rebuilt from the node list's footprints
+    // rather than its anchors. The guard keeps its teeth two ways: the set comparison is still EXACT
+    // (any familyKeep tile outside a declared city plot fails), and the count is bounded well below the
+    // blob bug's magnitude — legitimate city ground is ~0.1% of the map, the blobs were 3.3%.
     const expected = new Set<string>();
     const caps = provinceCapitalPositions(SLG_MAP_W, SLG_MAP_H, worldSeed(WORLD));
-    caps.forEach(([x, y], i) => { if (i !== CENTER_CAPITAL_IDX) expected.add(`${x}:${y}`); });
+    caps.forEach(([cx, cy], i) => {
+      if (i === CENTER_CAPITAL_IDX) return; // core province's capital IS the world center (type 'center')
+      addFootprint(expected, cx, cy, cityFootprint(PROVINCE_CAPITAL_LEVEL));
+    });
     for (const node of allCityNodes(WORLD)) {
-      if (node.kind === 'garrison') expected.add(`${node.x}:${node.y}`);
+      if (node.kind === 'garrison') addFootprint(expected, node.x, node.y, node.footprint);
     }
 
     const found: string[] = [];
@@ -154,28 +177,35 @@ describe('proceduralTile (ADR-034)', () => {
       }
     }
     expect(new Set(found)).toEqual(expected);
+    // Magnitude bound, independent of the set comparison: 54 graded cities (footprint 5/5/5/7/7/7 by
+    // tier) + 9 capitals at 9×9 ≈ 2.6k tiles. 0.5% of a 1500×1500 map leaves generous headroom for a
+    // future footprint bump while still failing hard on anything blob-shaped.
+    expect(found.length).toBeLessThan(SLG_MAP_W * SLG_MAP_H * 0.005);
   });
 
   it('holds that familyKeep invariant across other seeds too (the deleted noise gate was seed-dependent)', () => {
     // The blob bug's severity swung with the seed (74k tiles on one world, 90k on another), so pin the
     // invariant on more than WORLD. Stride 3 instead of a full scan to keep the suite fast: it samples
     // 1/9 of the map, which cannot miss any cluster ≥3 tiles wide — the only thing being guarded here
-    // (the single-tile city anchors are asserted exactly by the full-map test above).
+    // (the exact footprint sets are asserted cell-by-cell by the full-map test above).
     for (const world of ['s99-1', 'w1', 'preview']) {
-      const anchors = new Set<string>();
+      const plots = new Set<string>();
       const caps = provinceCapitalPositions(SLG_MAP_W, SLG_MAP_H, worldSeed(world));
-      caps.forEach(([x, y], i) => { if (i !== CENTER_CAPITAL_IDX) anchors.add(`${x}:${y}`); });
+      caps.forEach(([cx, cy], i) => {
+        if (i === CENTER_CAPITAL_IDX) return;
+        addFootprint(plots, cx, cy, cityFootprint(PROVINCE_CAPITAL_LEVEL));
+      });
       for (const node of allCityNodes(world)) {
-        if (node.kind === 'garrison') anchors.add(`${node.x}:${node.y}`);
+        if (node.kind === 'garrison') addFootprint(plots, node.x, node.y, node.footprint);
       }
       const strays: string[] = [];
       for (let y = 0; y < SLG_MAP_H; y += 3) {
         for (let x = 0; x < SLG_MAP_W; x += 3) {
           const key = `${x}:${y}`;
-          if (proceduralTile(world, x, y).type === 'familyKeep' && !anchors.has(key)) strays.push(key);
+          if (proceduralTile(world, x, y).type === 'familyKeep' && !plots.has(key)) strays.push(key);
         }
       }
-      expect(strays, `${world} generated familyKeep tiles outside its city anchors`).toEqual([]);
+      expect(strays, `${world} generated familyKeep tiles outside its city plots`).toEqual([]);
     }
   });
 

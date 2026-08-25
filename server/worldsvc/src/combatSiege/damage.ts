@@ -186,7 +186,6 @@ export class SiegeDamageService {
           { $set: { resources: this.core.settleExpr(defPwForYield.buildings, t), yieldRate: defYield, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
         ]);
       }
-      void this.core.applyNationChange(d.worldId, tile.x, tile.y, d.attackerId, attacker?.familyId);
     }
 
     const after = await cols.tiles.findOne({ _id: d.tile });

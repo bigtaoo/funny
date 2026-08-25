@@ -102,7 +102,7 @@ core/nation.ts:41              applyNationChange() → capitalIdxAt(x,y) ≥ 0 �
 - footprint 内所有格子：`type = familyKeep`（世界中心 `center`）、`level = 城池等级`、**不带 `resType`**（城池地面不产出，产出改由 §8 的宗门加成承担——避免「占了城还能一格格收租」的双份收益）。
 - `validateMarchTarget` 对 `familyKeep`：`occupy` / `sweep` / `move` **全禁**，只允许 `attack`。
 
-**经济影响可忽略**：全图城池 footprint 合计 = 分级城（12×5² + 12×5² + 12×5² + 6×7² + 6×7² + 6×7²）+ 州府（9×9²）+ 世界中心（9²）≈ **2,592 格 / 2,250,000 格 = 0.12%**，且这些格子本来就被城池贴图挡着、`RESOURCE_LEVEL_CAP_NEAR_CITY` 已经把它们周边压到 5 级以下。
+**经济影响可忽略**：全图城池 footprint 合计**实测 2,276 格 / 2,250,000 格 = 0.101%**（P0 落地后用 `allCityNodes` 去重实测；朴素算式给 2,592，差额来自相邻城 footprint 重叠与贴边裁剪）。且这些格子本来就被城池贴图挡着、`RESOURCE_LEVEL_CAP_NEAR_CITY` 已经把它们周边压到 5 级以下。
 
 ### 4.2 `CityDoc`（新集合 `cities`）
 
@@ -289,8 +289,8 @@ interface CityDoc {
 
 §1.4 的漏洞修掉后，「占一格建国」这条路径消失，现存 `nations` 数据全部是通过该漏洞产生的，语义上不再有效。
 
-- **`applyNationChange` 从 `occupy` 路径摘除**（`combatSiege/occupation.ts:472`）。州府归属改由 §7 的城池易主逻辑承担，归属主体从 `ownerId`(账号)+`familyId`(家族) 改为 **`ownerSectId`(宗门)**。
-- **现存 `nations` 集合直接清空**（用户拍板，不做赛季内迁移）。已建国玩家会失去国家 —— 可接受，因为该状态本身来自漏洞。
+- ✅ **`applyNationChange` 已整个删除**（P0，2026-08-25；不只是从 `occupy` 路径摘除——两个调用点与两层门面一起清掉）。州府归属改由 §7 的城池易主逻辑承担，归属主体从 `ownerId`(账号)+`familyId`(家族) 改为 **`ownerSectId`(宗门)**。
+- ✅ **`nations` 归属清空已落地**（用户拍板，不做赛季内迁移）：`initNations` 现在会 `$unset` 既有文档的 `ownerId`/`familyId`/`nationName`/`foundedAt`。已建国玩家会失去国家 —— 可接受，因为该状态本身来自漏洞。**注意生效时机**：只在赛季开启 / 世界重置时跑，**已经开着的世界要跑一次 `/admin/world/reset` 或手动清 `nations`**，否则旧归属（及其 +10%/+15% 加成）会一直留着。刻意没做「玩家进世界时自愈」。
 - **`NATION_BONUS_PRODUCTION`(+10% 全省产量) 移除**：州府的经济收益已并入 §8.1 的产量表，保留就是双计。
 - **`NATION_BONUS_DEFENSE`(+15% 守军防御) 保留**：作为州府的军事身份，且它是防守侧、不参与 §6 的攻方模型。
 - `nations` 集合本身是否保留取决于 P3 实现：若城池 `CityDoc` 能完全承载州府语义（省份归属 + 防御加成查询），则整个集合与 `NationService` 一并删除；这个判断留到 P3 动手时做，不在本文预先拍。
@@ -299,15 +299,22 @@ interface CityDoc {
 
 ## 10. 分期落地
 
-### P0 止血（doc-only 之后第一刀，可独立交付）
+### P0 止血 ✅ 已落地（2026-08-25）
 
 目标：让「一个人吃掉城池」当天不可能，不等完整实体落地。
 
-1. `proceduralTile` 按 footprint 判定城池地面（§4.1），同时消除 §1.2 的两路径漂移。
-2. `validateMarchTarget` 给 `familyKeep` 加拦截：`occupy`/`sweep`/`move` 全禁。
-3. **`applyNationChange` 从 occupy 路径摘掉**（§1.4），清空 `nations`。
-4. 客户端点城弹「城池 · 需攻城」信息框，替掉现在的普通占领框。
-5. 回归测试：`proceduralTile` footprint 覆盖、`familyKeep` 四个 `kind` 全拦、州府 occupy 不再建国。
+1. ✅ **`proceduralTile` 按 footprint 判定城池地面**（§4.1）——新增 `_cityGroundNodeAt()`/`_inCityFootprint()`（`mapgen/cities.ts`），替掉旧的 `capitalIdxAt` + `node.x===x && node.y===y` 精确锚点匹配；`proceduralCityGroundTiles()` 同步改为枚举整块 footprint，§1.2 的两路径漂移消除。**城池地面不再带 `resType`**（`mapEdit.ts` 一并对齐，否则每座城的 footprint 会永久变成对基线的 diff）。
+2. ✅ **`validateMarchTarget` 给 `familyKeep` 加拦截**：`occupy`/`sweep`/`move` 全禁；`attack` 抛显式的 `City siege is not implemented yet`（不落到 ownerless 分支那句已经错了的「use occupy/sweep」）。直接占领路径 `territory.ts occupyTile` 同样补上。
+3. ✅ **`applyNationChange` 整个删除**（不只是从 occupy 路径摘掉）——两个调用点（`settleOccupation`、`settleSiegeDamage`）连 `core`/`service` 两层门面一起清掉。`initNations` 改为**同时清空既有文档的归属字段**（`ownerId`/`familyId`/`nationName`/`foundedAt`），赛季开启与世界重置都会生效。
+4. ✅ 客户端点城弹「城池 · Lv.N · 需加入帮会后合力围攻」信息框（只有关闭按钮，不给出征入口），替掉普通占领框；i18n zh/en/de 三份。
+5. ✅ **P0 顺带修掉两处此前没察觉的漏洞**：①落主城/自动出生**从来没有排除城池地面**（`spawn.ts` 四处内联的 `center/obstacle/bridge/plankway/stronghold` 列表都漏了 `familyKeep`）——footprint 化后这个洞会从「每城 1 格」放大到「每城最多 81 格」，现收敛为单一谓词 `isReservedBaseTerrain()`；②手动落主城（`territory.ts` 内部/测试路径）同样没有拦截。
+6. ✅ 回归测试：新建 `server/worldsvc/test/city-ground.e2e.test.ts`（11 例）+ `client/test/ui/worldMapCityClick.ui.ts`（6 例），改写 `server/shared/test/{cities,slg}.test.ts` 的锚点断言为 footprint 断言、`review-fixes-2026-08-03.e2e.test.ts` 的 `applyNationChange` 用例换成 `initNations` 清空用例。
+
+> **变异验红（4 处，逐一实测）**：M1 把分级城改回锚点匹配、M2 摘掉 occupy 的 `familyKeep` 拦截、M3 摘掉 `initNations` 的清空、M4 关掉客户端城池分支——各自都让对应用例转红。**M1 的第一次尝试暴露了一个测试盲区并已修掉**：`city-ground.e2e.test.ts` 的取城辅助函数原本「取第一座能用的城」，实际总是取到**州府**（另一条生成分支），于是把分级城分支改坏了整个套件仍然全绿。现在它按 `kind` 取城、且要求格子的 level 等于该城自身 level（否则会拿到邻近州府 9×9 footprint 吞掉的格子——实测踩到过）。
+>
+> **另一处坑记一笔**：worldsvc 的测试吃的是 `@nw/shared` 的 **`dist/`**，不是 `src/`。改完 shared 源码不 `npm run build` 就跑 worldsvc 测试，验的是上一次的编译产物——M1 的第一轮结论就是这么被污染的。
+
+**P0 明确留下的临时状态**：`nations` 没有任何写入方了，所以 `NATION_BONUS_PRODUCTION`(+10%) 与 `NATION_BONUS_DEFENSE`(+15%) 双双**空转**，直到 P1 把州府归属改成宗门后重新接线（§9）。读取路径刻意保留未删——先删机制再建替代品没有意义。另外 `initNations` 只在**赛季开启 / 世界重置**时跑，所以**已经开着的世界会保留旧的建国归属**（含通过该漏洞建的国），需要跑一次 `/admin/world/reset` 或手动清一次 `nations` 集合。
 
 ### P1 城池实体
 

@@ -6,10 +6,9 @@
 // needs to invert tiles back into grid cells/cities.
 import { SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type ObstacleKind, type ResourceType, type TileType } from './core';
 import {
-  biomeAt, proceduralCityGroundTiles, proceduralTile, proceduralTileIgnoringCities,
+  proceduralCityGroundTiles, proceduralTile, proceduralTileIgnoringCities,
   type MapTemplateTile,
 } from './mapgen';
-import { worldSeed } from './noise';
 
 /**
  * A painted terrain-grid cell. `river`/`mountain` bake to impassable `obstacle`; `neutral` carves a band
@@ -91,7 +90,6 @@ export function rasterizeMapEdits(
   cities: readonly MapEditCityInput[],
   opts: RasterizeOpts = {},
 ): MapTemplateTile[] {
-  const seed = worldSeed(worldId);
   const overrides = new Map<string, _Override>();
 
   // Pass 1: hand every procedural city-ground tile back to the terrain. Tiles a city in `cities` still
@@ -121,7 +119,10 @@ export function rasterizeMapEdits(
         const x = city.x + dx;
         const y = city.y + dy;
         if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue;
-        overrides.set(`${x}:${y}`, { type, level: city.level, resType: type === 'familyKeep' ? biomeAt(x, y, seed) : undefined });
+        // No `resType` on city ground (ADR-074) — it does not yield, and `proceduralTile` stopped emitting
+        // one too, so keeping it here would make every published city footprint a permanent diff against
+        // the procedural baseline (81 tiles per capital) for a field nothing reads.
+        overrides.set(`${x}:${y}`, { type, level: city.level });
       }
     }
   }

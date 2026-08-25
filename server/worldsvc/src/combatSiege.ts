@@ -1,6 +1,6 @@
 // worldsvc combat domain: siege / sweep arrival settlement (S8-3) + delayed building-HP model (ADR-026).
 // Peeled out of CombatService (2026-07-03); split by domain into ./combatSiege/*.ts (2026-07-07). Depends on
-// WorldCore for shared state, settle/yield, push/schedule infra, nations (applyNationChange), loot protection
+// WorldCore for shared state, settle/yield, push/schedule infra, loot protection
 // and vision. Marches (combatMarch) dispatch attack/sweep arrivals here via applySiege / applySweep, and the
 // scheduler drives processDueSiegeDamage. No behavior change.
 //
