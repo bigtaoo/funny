@@ -5,7 +5,7 @@
 import { MongoClient, Db, type MongoClientOptions } from 'mongodb';
 import type { WorldCollections, WorldMongo } from './collections';
 import { type WorldDoc, type TileDoc, type MapTemplateDoc, type MapTemplateRowDoc, type MapBaselineRowDoc, ensureWorldIndexes } from './worldDocs';
-import { type PlayerWorldDoc, ensurePlayerIndexes, migratePlayerWorldTroopPool } from './playerDocs';
+import { type PlayerWorldDoc, ensurePlayerIndexes, migratePlayerWorldTroopPool, migrateTroopCapRetune } from './playerDocs';
 import {
   type MarchDoc,
   type SiegeDoc,
@@ -92,6 +92,9 @@ export async function createWorldMongo(
   /** One-time data migrations run once at boot after ensureIndexes. See playerDocs.ts for the migration itself. */
   async function runMigrations(): Promise<void> {
     await migratePlayerWorldTroopPool(collections.playerWorld);
+    // Second: the pool-unification pass above writes troopCap from the live formula too, but only for the
+    // legacy `baseTroopStock` docs it touches. This one covers everyone (see migrateTroopCapRetune).
+    await migrateTroopCapRetune(collections.playerWorld);
   }
 
   return {

@@ -124,21 +124,34 @@ export interface ProgressionScenario {
 
 /** Fresh/new player: base troop cap (drillYard=0), no satchel investment. Design intent: "nearly always lose". */
 export const SCENARIO_BASE: ProgressionScenario = { label: `fresh (troopCap=${TROOP_CAP_BASE})`, troops: TROOP_CAP_BASE };
+/** drillYard levels at which each gate first flips winnable under the cheap linear model (strongholdCombatRun.ts). */
+export const STRONGHOLD_OPEN_DRILL_LEVELS = 5;
+export const CROSSING_OPEN_DRILL_LEVELS = 4;
 /**
- * Modestly-invested player: drillYard raised 2 levels — the threshold where the STRONGHOLD (heavier gate)
- * flips winnable under the cheap linear model (see strongholdCombatRun.ts). The CROSSING (lighter gate)
- * already opens one level earlier, at +1; that scenario is built inline where tested (e.g.
- * strongholdCombat.test.ts) rather than exported here, since the two buildings intentionally open at
- * different investment levels.
+ * Invested player: drillYard raised {@link STRONGHOLD_OPEN_DRILL_LEVELS} levels — the threshold where the
+ * STRONGHOLD (heavier gate) flips winnable under the cheap linear model (see strongholdCombatRun.ts). The
+ * CROSSING (lighter gate) opens a level earlier, at {@link CROSSING_OPEN_DRILL_LEVELS}; that scenario is built
+ * inline where tested (e.g. strongholdCombat.test.ts) rather than exported here, since the two buildings
+ * intentionally open at different investment levels.
+ *
+ * 2026-08-25 re-tune (TROOP_CAP_BASE 10000→5000, DRILL_TROOPCAP_STEP 1000→1500, garrisons deliberately held
+ * fixed): was `drillYard+2` / crossing at `+1`. The gates moved out by 3 levels each — intended, see
+ * TROOP_CAP_BASE's doc comment. Note the levels are no longer sufficient on their own: `troops` here is a
+ * *deployment*, and the satchel per-march carry cap (SATCHEL_CARRY_BASE=TROOP_CAP_BASE=5000, +1500/level)
+ * means a real attacker also needs satchel ~L5 to physically carry 12500 into one siege. That coupling
+ * predates this re-tune (satchel ~L2 was needed under the old baseline) and is still not modelled here.
  *
  * 2026-07-27 re-calibration (ADR-048 TROOP_CAP_BASE 2000→10000): was `troopCap=4500, drillYard~3` under the
- * old baseline. Both garrisons now comfortably exceed {@link SIEGE_SYNTH_ARMY_MAX_TROOPS}, so — per the
+ * pre-ADR-048 baseline. Both garrisons now comfortably exceed {@link SIEGE_SYNTH_ARMY_MAX_TROOPS}, so — per the
  * IMPORTANT CORRECTION in this file's header — production always resolves these fights via the cheap linear
  * `resolveSiege` (attacker wins iff troops > garrison), not the real engine. That makes this a simple,
  * comfortable (multi-thousand-troop-margin) calibration, unlike the razor-thin band a naive real-engine-only
  * simulation would suggest.
  */
-export const SCENARIO_INVESTED: ProgressionScenario = { label: `invested (troopCap=${TROOP_CAP_BASE + 2 * DRILL_TROOPCAP_STEP}, drillYard+2)`, troops: TROOP_CAP_BASE + 2 * DRILL_TROOPCAP_STEP };
+export const SCENARIO_INVESTED: ProgressionScenario = {
+  label: `invested (troopCap=${TROOP_CAP_BASE + STRONGHOLD_OPEN_DRILL_LEVELS * DRILL_TROOPCAP_STEP}, drillYard+${STRONGHOLD_OPEN_DRILL_LEVELS})`,
+  troops: TROOP_CAP_BASE + STRONGHOLD_OPEN_DRILL_LEVELS * DRILL_TROOPCAP_STEP,
+};
 // Deliberately NOT tested here: unit-level (equipment/card) progression. Under the cheap linear path this is
 // low-risk to ignore: an equipment/academy attacker-power bonus (up to +20% elsewhere, see
 // SLG_NPC_BASE_HP_PER_LEVEL's doc comment) just proportionally raises effective troops in a straight-line

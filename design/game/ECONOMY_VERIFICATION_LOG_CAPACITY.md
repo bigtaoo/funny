@@ -208,6 +208,26 @@ TileDoc 占大头（20–50×/玩家），`proceduralTile()` 按需计算未占�
 - **建议**（不在本次经济校验 plan 范围内,留给下次调参/设计讨论）：给 `strongholdMinDistRatio` 按环带类型分别取值(而不是全环带一个常量),或者把核心州的排除距离改成相对核心州自身半径的比例,而不是相对全图半对角线的固定 0.25。
 - **状态**：**NEEDS ATTENTION，未 CLOSED**——险地整体经济账（§13-STRONGHOLD.1-5）不受影响,但"核心州玩家永远摸不到本州险地"是一个真实的分布公平性问题,建议下次涉及 ADR-034 环带数值微调时一并处理。
 
+### 13-SLG-STRONGHOLD.7 ADR-075（`TROOP_CAP_BASE` 10,000 → 5,000 / `DRILL_TROOPCAP_STEP` 1,000 → 1,500）复核：守军常量**不动**，门槛后移（2026-08-25，`[✅ PASS・CLOSED]`）
+
+> §13-SLG-STRONGHOLD.5 最后留下的教训是「`TROOP_CAP_BASE` 与两个守军常量本应联动」。ADR-075 又一次动了这条基线，所以本节按 .5 结尾的要求重跑 `strongholdCombatRun.ts`，而不是假设等比缩放成立。**这次的结论是刻意不联动**——用户拍板保留守军值、让门槛随新曲线后移。
+
+**新基线**：`troopCap(L) = 5000 + 1500L`（L = 练兵场等级，0..10，满级仍 20,000）。守军保持 `STRONGHOLD_GARRISON=11,800`（level 10）/ `CROSSING_GARRISON=10,350`（level 9）。分流仍是纯线性（两个守军都 > `SIEGE_SYNTH_ARMY_MAX_TROOPS`≈ 9,600，`shouldUseCheapSiege` 必走 `resolveSiege`），故本节仍是不等式核验而非引擎博弈，理由见 .5。
+
+| 练兵场 | troopCap | 关隘（10,350） | 险地（11,800） |
+|---|---|---|---|
+| L0（新号） | 5,000 | 0% | 0% |
+| L1–L3 | 6,500 / 8,000 / 9,500 | 0% | 0% |
+| **L4** | 11,000 | **100%** | 0% |
+| **L5** | 12,500 | 100% | **100%** |
+| L6–L10 | 14,000 → 20,000 | 100% | 100% |
+
+- **[PASS]** 「新手必败」仍成立，而且余量比旧基线宽得多（5,000 vs 10,350，此前是 10,000 vs 10,350 的 350 兵薄边）；「关隘早于险地开放」的排序也仍成立（L4 < L5）。
+- **变化**：开放门槛从练兵场 **L1 / L2** 后移到 **L4 / L5**。这是 ADR-075 的**目的**而非副作用——该 ADR 存在的理由是让练兵场每一级都值得买，而这两个 PvE 解锁是升级动力最直观的兑现物；用户拍板「4 到 5 级很快的」。
+- **另一条没有建模的耦合（登记，非本轮修）**：这些「打得过」的兵力是**单次出征的部署量**，还要受书包（satchel）单队携带上限约束——`SATCHEL_CARRY_BASE = TROOP_CAP_BASE = 5,000`、每级 +1,500，所以真要把 12,500 兵一次带到险地，书包也得到 L5。这条耦合在旧基线下同样存在（当时需要书包 ~L2），`strongholdCombat.ts` 的 `ProgressionScenario` 始终只建模兵力数、不建模携带上限。ADR-075 只是把所需等级从 ~2 抬到 ~5，没有引入新的结构问题，但如果将来有人把「练兵场 L5 就能开险地」当精确承诺来用，需要连书包一起算。
+- **回归护栏**：`strongholdCombat.ts` 里的门槛等级不再是散落的字面量 `2`/`1`，改成导出常量 `STRONGHOLD_OPEN_DRILL_LEVELS`/`CROSSING_OPEN_DRILL_LEVELS`，`strongholdCombat.test.ts` 的阈值扫描从这两个常量派生（并断言 crossing 门槛严格小于 stronghold、门槛下一级仍必败）；`strongholdCombatRun.ts` 的扫描范围从硬编码 4 级放宽到 `DESK_MAX_LEVEL`，否则新门槛（L5）会掉在扫描窗口外、脚本报「opens by drillYard+?」。
+- **验证**：`npm run stronghold-combat`（`server/tools/econ-sim`）两门均 PASS；`econ-sim` 18 例、`@nw/shared` `city-buildings.test.ts` 15 例全绿。
+
 ## 13-SLG-NPC-BASEHP. NPC 单场围攻基地血量装备/学院加成叠加补测（2026-07-22，`[⚠️ 结论已被 §13-SLG-NPC-BASEHP.2 取代]`）
 
 > **2026-08-19 更正**：本节的攻方模型（合成步兵军）与真实占领行军（12 卡队）不符，结论「`40×level` 保持不变」已被下一节的卡队模型重校准取代（现值 `60×level`）。本节的方法与敏感度复测过程仍然有效——只是它测的是合成军路径（扫荡/无队伍平兵行军），不是卡队路径。

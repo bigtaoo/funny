@@ -1538,6 +1538,7 @@ export const de: Record<TranslationKey, string> = {
   'city.bonusAcademyDmg': 'Angriffseinheiten Schaden +{pct}%',
   'city.bonusSatchel': 'Truppenobergrenze pro Marsch: {n}',
   'city.troopCap': 'Truppen {cur}/{cap}',
+  'city.trainQueueStatus': 'Warteschlange {n}/{max} · in Ausbildung {training} · Platz für {left}',
   'city.trainEntry': 'Bildet aus: {n} · noch {time}',
   'city.trainMax': 'Max +{n}',
   'city.err.noResources': 'Nicht genug Ressourcen',

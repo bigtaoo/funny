@@ -4,7 +4,7 @@
 // and the one-time troop-pool-unification migration that reads/writes this same collection.
 import type { Collection, Filter } from 'mongodb';
 import type { ResourceType, BuildingKey } from '@nw/shared';
-import { troopCapFor, TRAIN_SPEEDUP_BUFF_MULT } from '@nw/shared';
+import { troopCapFor, TROOP_CAP_BASE, DRILL_TROOPCAP_STEP, TRAIN_SPEEDUP_BUFF_MULT } from '@nw/shared';
 import type { DefenseConfig } from './worldDocs';
 
 /**
@@ -250,4 +250,39 @@ export async function migratePlayerWorldTroopPool(playerWorld: Collection<Player
     migrated++;
   }
   if (migrated > 0) console.log(`[world-mongo] troop-pool unification: folded baseTroopStock into troops for ${migrated} players`);
+}
+
+/**
+ * One-time data migration run once at boot after ensureIndexes: re-derive the stored `troopCap` from
+ * `buildings` and clamp `troops` into it.
+ *
+ * `troopCap` is **persisted**, not computed per read — it is only refreshed when a build completes
+ * (city/buildings.ts applyDueBuilds) or by a migration like this one. That is normally invisible, but it makes
+ * any change to the troopCap FORMULA a data problem rather than just a code change, and the 2026-08-25 re-tune
+ * (TROOP_CAP_BASE 10000 -> 5000, DRILL_TROOPCAP_STEP 1000 -> 1500) is the sharp case: without this pass, an
+ * account sitting at drillYard L4 keeps its old stored 14000 until its NEXT drillYard build lands, at which
+ * point applyDueBuilds recomputes it under the new formula as 12500 — i.e. **buying a drillYard level would
+ * lower the player's troop cap**. That inversion holds for every upgrade out of L0-L6 (old `10000+1000L` beats
+ * new `6500+1500L` while L < 7), so it is not an edge case, and the player-facing framing ("upgraded the
+ * building, got a smaller army") is about the worst possible reading of a growth re-tune.
+ *
+ * So the new curve is applied to everyone at once instead. Accounts below drillYard L10 see their cap drop and
+ * lose the troops above it — accepted deliberately when the re-tune landed mid-season (these numbers are still
+ * DRAFT; see TROOP_CAP_BASE's doc comment). Idempotent: the `$expr` filter matches only documents whose stored
+ * cap disagrees with the live formula, so re-running it (or booting a fresh world) is a no-op, and it needs no
+ * bookkeeping flag. Written as one aggregation-pipeline updateMany rather than a cursor loop because the whole
+ * update is expressible over live document values; unguarded for the same reason as the migration above —
+ * runMigrations runs before the service accepts traffic or starts its scheduler.
+ */
+export async function migrateTroopCapRetune(playerWorld: Collection<PlayerWorldDoc>): Promise<void> {
+  const derivedCap = { $add: [TROOP_CAP_BASE, { $multiply: [{ $ifNull: ['$buildings.drillYard', 0] }, DRILL_TROOPCAP_STEP] }] };
+  const res = await playerWorld.updateMany({ $expr: { $ne: ['$troopCap', derivedCap] } } as unknown as Filter<PlayerWorldDoc>, [
+    { $set: { troopCap: derivedCap } },
+    // Second stage so the clamp reads stage 1's already-updated cap rather than the stale stored one.
+    // `$ifNull` is load-bearing: `$min` SKIPS nulls, so on a doc with no `troops` field at all
+    // (the shape migratePlayerWorldTroopPool's own e2e covers) a bare `$min: ['$troops', '$troopCap']`
+    // returns the cap — silently granting a full army instead of clamping nothing.
+    { $set: { troops: { $min: [{ $ifNull: ['$troops', 0] }, '$troopCap'] }, rev: { $add: ['$rev', 1] } } },
+  ]);
+  if (res.modifiedCount > 0) console.log(`[world-mongo] troopCap re-derive: refreshed troopCap/troops for ${res.modifiedCount} players`);
 }

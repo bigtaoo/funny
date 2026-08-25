@@ -152,3 +152,21 @@
   - **14 个变异逐一验红**（M1–M14）。M1 尤其记一笔：它红的同时 `bakePageResolution.test.ts` **保持绿**，把盲区的存在本身留成了记录。
   - **顺带把 `src/render/bake.ts` 与 `src/cache/MemoryMonitor.ts` 加进 `coverage.include`**（ADR-071 那份过渡清单的既定用法：只增加受门禁的地盘）。两者补完都是 **100% 行覆盖**；client 整体 94.77% → **95.12%**，scope 同时变宽两个文件。门禁按文件计，所以纳入新的字节代码就得连邻居一起覆盖——ANR provider / `wx.onMemoryWarning` / `uninstall()` / JS 堆分支 / `countNodes` 走真 stage 均随之补上。
 - **验证**：client typecheck（`tsconfig.json` + `tsconfig.test.json` + fulllink，fulllink 在主检出复跑——worktree 里只 junction 了 `client/node_modules`，server 源码解析不到 `mongodb`）/ 单测 189 文件 1943 例 / UI 222 文件 2055 例 / sim 8 文件 13 例 / `build:web` 全绿；`node scripts/checkCoverageThreshold.mjs` 19 个包全过（client 95.1%）。**像素级截图本会话无法取得**：Browser 面板 `visibilityState: hidden`、不合成帧（已知环境限制，非应用问题）。可做的实机验证都做了——在 dev server 上按上报的 750×270（dpr 2）真实启动，canvas 1500×540、WebGL 上下文正常（`MAX_TEXTURE_SIZE` 16384）、控制台除「无后端」的 `/bootstrap` 连接失败外无任何错误，走上限+衬底那条新路径不抛异常；`MemoryMonitor` 的运行时 dump 也取不到（隐藏面板 rAF 被节流，ticker 不推进）。
+
+## ADR-075 SLG 兵力上限曲线重调：基数腰斩 + 每级加倍（练兵场成长感）+ 训练队列槽位去死值 — Accepted — 2026-08-25
+
+- **问题**（用户拍板起点，两个独立但同源的数值脱钩）：
+  1. **`troopCap` 成长太小，练兵场（drillYard）没有升级动力**。ADR-048 把 `TROOP_CAP_BASE` 提到 10,000、`DRILL_TROOPCAP_STEP` 留在 1,000，于是练兵场整条 10 级曲线只值 **2×** 兵力池（10,000 → 20,000），首级只值 +10%——而练兵场是兵力池成长的**唯一**来源，感知不到就等于可跳过。
+  2. **训练队列槽位有一半是死的**。有用槽位数最多 `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)`（超出的批次会先被 troopCap 校验拒掉，永远占不到槽），2026-07-22 把 `TROOP_TRAIN_BATCH_MAX` 从 500 提到 5,000 时这个天花板从 40 槽塌到 4 槽，但 `2 + floor(drillYard/2)` 的旧曲线仍最多发 7 槽——满级 **3 个永久死槽**。用户从截图里的「最大 +0」发现这条（面板当时也没显示槽位占用，见下）。
+- **决策**（用户拍板，逐条）：
+  1. **`TROOP_CAP_BASE` 10,000 → 5,000，`DRILL_TROOPCAP_STEP` 1,000 → 1,500**。满级仍是 20,000（`5000 + 10×1500`），但整条曲线变 **4×**、每级 +30% 基数。
+  2. **训练队列槽位曲线 `1 / 2 / 3`**：`TROOP_TRAIN_QUEUE_MAX` 2 → **1**，`DRILL_QUEUE_PER_LEVELS`（每 N 级 +1 槽）换成阈值表 `DRILL_QUEUE_LEVEL_THRESHOLDS = [4, 10]`（L0–3 一槽、L4–9 两槽、L10 三槽）。刻意**低于**上述天花板：每一槽都有用，且「空仓填满」在任何等级都恰好是 2 次上线（L0：2 批 ÷ 1 槽；L10：4 批 ÷ 3 槽）。基数必须 ≥1——练兵场建成前 troopCap 已非零，0 槽会让新号无法练兵。
+  3. **`TROOP_TRAIN_BATCH_MAX` 保持 5,000，不随 troopCap 成长**。让单批上限跟着涨会立刻把死槽变回来（满级 10,000/批 → 只需 2 槽），正是本 ADR 要消灭的东西。练兵场的后期收益体现在 `drillTrainMult`（每级 -8% 训练时长）而非更大的单批。
+  4. **`SATCHEL_CARRY_STEP` 改为直接等于 `DRILL_TROOPCAP_STEP`**（不再是一个恰好相等的字面量 1000）。D-CITY-9 的不变式「满级书包单队能带满满级兵力池」从此按构造成立：同基数、同步长、同 10 级。
+  5. **险地/关隘守军常量不动**（`STRONGHOLD_GARRISON_PER_LEVEL=1180` / `CROSSING_GARRISON_PER_LEVEL=1150`）。用户拍板不等比下调，接受 PvE 门槛从练兵场 L1/L2 后移到 **L4（关隘）/ L5（险地）**——「4 到 5 级很快的」，且这两个解锁正是升级动力最直观的兑现物。已用 `strongholdCombatRun.ts` 实跑确认而非推算，见 [`ECONOMY_VERIFICATION_LOG_CAPACITY.md §13-SLG-STRONGHOLD.7`](game/ECONOMY_VERIFICATION_LOG_CAPACITY.md)。
+  6. **`GARRISON_PER_TILE` 不动**（仍 500）。新号能占的格子从 20 减到 10，用户拍板「新手期变弱没问题」。
+  7. **立即落，不等赛季边界**（数值仍标 DRAFT）。
+- **存量数据（关键，落地时才发现的真问题）**：`troopCap` 是**持久字段**，只在建造完工（`city/buildings.ts` `applyDueBuilds`）时按公式重算，**不是每次读都算**。所以改公式是一次数据变更而不只是代码变更——若放任不管，存量号会卡在旧的存储值上，直到下一次练兵场升级完工才重算，而新公式在 L<7 时**低于**旧公式（旧 `10000+1000L` vs 新 `6500+1500L`），于是「升级练兵场反而兵力上限变小」。对 L0–L6 的升级全都成立，不是边缘情况。修法：新增 boot 迁移 `migrateTroopCapRetune`（`worldsvc/src/db/playerDocs.ts`，接进 `runMigrations`）把全体 `troopCap` 按公式重算并把 `troops` 夹进新上限——一次性掉兵，用户已认可。用 `$expr` 过滤只命中「存储值与公式不符」的文档，故幂等、无需记账位。
+- **UI 联动**：训练面板（`client/src/scenes/CityScene/trainModal.ts`）此前只有「兵力 {cur}/{cap}」+ 批次行，玩家看到置灰的「最大 +0」时既看不出槽位占用、也看不出兵力上限的余量早已被在训批次预定（`capLeft = cap - troops - 已排队`），更分不清是「槽位满」还是「兵力满」——两者 toast 不同、解法不同（等 vs 升练兵场）。新增一行 `city.trainQueueStatus`（三语）：`队列 {n}/{max} · 在训 {training} · 可训 {left}`，槽位满或可训为 0 时转红。
+- **影响**：`server/shared/src/slg/core.ts`（`TROOP_CAP_BASE`/`TROOP_TRAIN_QUEUE_MAX`）、`slg/city.ts`（`DRILL_TROOPCAP_STEP`/`DRILL_QUEUE_LEVEL_THRESHOLDS`/`SATCHEL_CARRY_STEP`/`trainQueueMaxFor`）、`slg/siege.ts`（两个守军常量的校准注释，值不变）、`worldsvc/src/db/{playerDocs,client}.ts`（新迁移）、`server/tools/econ-sim`（`strongholdCombat*` 的门槛等级改为派生常量 `STRONGHOLD_OPEN_DRILL_LEVELS`/`CROSSING_OPEN_DRILL_LEVELS`，扫描范围放宽到 `DESK_MAX_LEVEL`）、客户端训练面板 + 三语 i18n。
+- **验证**：`strongholdCombatRun.ts` 实跑 **两门均 PASS**（新号 5,000 双双 0%；关隘 L4=11,000 起 100%、险地 L5=12,500 起 100%）；`econ-sim` 18 例、`@nw/shared` city-buildings 15 例（新增「任何等级都不发放 troopCap 填不满的槽位」全区间断言 + 「满级书包 == 满级 troopCap」不变式断言）、`worldsvc` 全量 e2e（含新增 2 例迁移用例：陈旧 cap 重算并夹兵 / 已正确时幂等不改 rev）、client `tsc --noEmit` + UI 16 例（新增状态行断言）+ i18n 6 文件全绿。

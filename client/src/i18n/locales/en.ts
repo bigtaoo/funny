@@ -1538,6 +1538,7 @@ export const en: Record<TranslationKey, string> = {
   'city.bonusAcademyDmg': 'Attack damage +{pct}%',
   'city.bonusSatchel': 'Per-march troop-carry cap: {n}',
   'city.troopCap': 'Troops {cur}/{cap}',
+  'city.trainQueueStatus': 'Queue {n}/{max} · in training {training} · room for {left}',
   'city.trainEntry': 'Training {n} · {time} left',
   'city.trainMax': 'Max +{n}',
   'city.err.noResources': 'Not enough resources',
