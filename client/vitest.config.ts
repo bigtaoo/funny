@@ -79,10 +79,12 @@ export default defineConfig({
         'src/app/nav/room.ts',
         // assets / cache / i18n / layout
         'src/assets/assetIO.ts',
+        'src/cache/MemoryMonitor.ts',
         'src/cache/ObjectPool.ts',
         'src/cache/poolRegistry.ts',
         'src/i18n/index.ts',
         'src/layout/LandscapeLayout.ts',
+        'src/render/bake.ts',
         'src/layout/PortraitLayout.ts',
         // net: the transport bits with real suites (the two big *ApiClient facades are ~50% and
         // stay out — they are one-line forwards whose coverage says nothing either way)

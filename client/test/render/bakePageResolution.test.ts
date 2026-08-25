@@ -37,7 +37,7 @@ vi.mock('pixi.js-legacy', () => {
 
 import * as PIXI from 'pixi.js-legacy';
 import {
-  bake, bakeLazy, bakeStats, clearBakeCache, pageBakeResolution,
+  bake, bakeLazy, bakeResolution, bakeStats, clearBakeCache, hasBakeRenderer, pageBakeResolution,
   setBakeRenderer, setDesignScale, resetDesignScaleForTest,
 } from '../../src/render/bake';
 import { createLayout } from '../../src/layout/ScalingManager';
@@ -222,6 +222,30 @@ describe('cache identity', () => {
     expect(after).not.toBe(before);
     expect(realSize(before)).toEqual({ w: 300, h: 150 });
     expect(realSize(after)).toEqual({ w: 600, h: 300 });
+  });
+});
+
+describe('the two renderer-presence accessors', () => {
+  it('hasBakeRenderer tracks whether one is wired', () => {
+    // Callers branch on this to decide between a baked Sprite and a live Graphics (headless tests,
+    // and fastText's "no real canvas either" proxy). Exercised all over the UI suite, which reports
+    // no coverage — so it is pinned here, where the gate can see it.
+    setBakeRenderer(null as unknown as PIXI.IRenderer);
+    expect(hasBakeRenderer()).toBe(false);
+    useRenderer(2);
+    expect(hasBakeRenderer()).toBe(true);
+  });
+
+  it('bakeResolution stays the RAW renderer resolution, ignoring the design scale', () => {
+    // Deliberate asymmetry with pageBakeResolution (see bake.ts): this is what fastText rasterizes
+    // glyph canvases at, and glyph sprites do ride on containers that animate above scale 1.
+    // If this ever starts tracking designScale, text goes soft on every phone.
+    useRenderer(3);
+    setDesignScale(0.25);
+    expect(bakeResolution()).toBe(3);
+    expect(pageBakeResolution()).toBe(0.75);
+    setBakeRenderer(null as unknown as PIXI.IRenderer);
+    expect(bakeResolution()).toBe(1);
   });
 });
 
