@@ -122,34 +122,73 @@ describe('rasterizeMapEdits', () => {
       expect(diffs.every((d) => Math.abs(d.x - 600) <= 1 && Math.abs(d.y - 600) <= 1)).toBe(true);
     });
 
-    it('publishing the unchanged node list is a no-op — every anchor is re-painted as it was', () => {
+    it('publishing the unchanged node list is a TRUE no-op — zero diffs (ADR-074)', () => {
+      // Strengthened by ADR-074, and it is the single assertion that pins the two generation paths together.
+      // Before ADR-074 this could only check "nothing lands on a vacated anchor", because the paths genuinely
+      // disagreed: `rasterizeMapEdits` stamped a city's whole footprint while `proceduralTile` marked only its
+      // anchor, so re-publishing an UNCHANGED city list produced a diff for every non-anchor footprint cell
+      // (up to 80 per capital). Now both are footprint-based and neither writes a `resType` on city ground, so
+      // re-publishing what is already there must change literally nothing.
+      //
+      // This is also the guard against re-introducing `resType` on city ground on one side only: doing so
+      // would make every city footprint cell a permanent diff against the baseline, silently bloating every
+      // published template.
       const diffs = rasterizeMapEdits(worldId, [], allCityNodes(worldId), { citiesAreComplete: true });
-      // Each city's own anchor is reverted by pass 1 then re-claimed by pass 3 at the same type/level, so
-      // it drops out of the diff. Footprint tiles AROUND a capital/garrison do change (proceduralTile only
-      // marks the anchor) — the assertion is that nothing lands on a VACATED anchor.
-      const ground = new Set(proceduralCityGroundTiles(worldId).map((t) => `${t.x}:${t.y}`));
-      for (const d of diffs) {
-        if (!ground.has(`${d.x}:${d.y}`)) continue;
-        expect(d.type).toMatch(/^(familyKeep|center)$/);
+      expect(diffs).toEqual([]);
+    });
+
+    it('resolves overlapping city plots by PRIORITY, not by list order (capital beats graded city)', () => {
+      // Two plots overlapping is not hypothetical: a map-edge city has its anchor clamped into the map, so
+      // its footprint can reach into a neighbour's. `proceduralTile` resolves such a cell capital-first;
+      // this pass used to be last-write-wins over the caller's array order (garrisons last), so a Lv.8
+      // garrison overwrote a Lv.10 capital's cell and the published template disagreed with the generator
+      // about that cell's level — which from ADR-074 P1 is the city's HP/garrison scale.
+      const capital = { x: 700, y: 700, level: 10, footprint: 9, kind: 'capital' as const };
+      const garrison = { x: 704, y: 700, level: 8, footprint: 7, kind: 'garrison' as const };
+      const overlap = `${700 + 4}:${700}`; // capital's east edge, inside the garrison's plot too
+      // Garrison listed FIRST, so plain "later writes win" would hand the cell to the capital anyway —
+      // pass both orders to prove the result is order-independent.
+      for (const cities of [[garrison, capital], [capital, garrison]]) {
+        const byKey = new Map(rasterizeMapEdits(worldId, [], cities).map((d) => [`${d.x}:${d.y}`, d]));
+        expect(byKey.get(overlap)?.level, `order ${cities.map((c) => c.kind).join(',')}`).toBe(10);
+        // Garrison plot is x 701..707, capital's is x 696..704 → 705..707 belongs to the garrison alone.
+        expect(byKey.get('707:700')?.level).toBe(8);
       }
     });
 
-    it('hands the old anchor of a dragged city back to the terrain', () => {
+    it('hands the WHOLE vacated footprint of a dragged city back to the terrain, not just its anchor', () => {
+      // ADR-074 widened what "vacated" means. This case used to assert only the old ANCHOR cell, which was
+      // all a procedural city occupied; a footprint-based city that is dragged away must hand back every one
+      // of its (up to 48 for a graded city, 80 for a capital) cells, or the old spot keeps a phantom city
+      // plot — occupiable-looking ground that the server still treats as siege-only city ground, with no
+      // city sprite drawn on it. Anchor-only clean-up would leave exactly that.
       const nodes = allCityNodes(worldId);
       const moved = nodes.find((n) => n.kind === 'garrison')!;
       const from = { x: moved.x, y: moved.y };
-      // Drag it far enough that neither its new footprint nor any other city covers the old anchor.
+      const r = (moved.footprint - 1) / 2;
+      expect(r).toBeGreaterThanOrEqual(1); // otherwise "whole footprint" means nothing
+      // Drag it far enough that neither its new footprint nor any other city covers the old plot.
       const dragged = nodes.map((n) => (n.id === moved.id ? { ...n, x: n.x - 40, y: n.y - 40 } : n));
-      expect(proceduralTile(worldId, from.x, from.y).type).toBe('familyKeep');
 
       const diffs = rasterizeMapEdits(worldId, [], dragged, { citiesAreComplete: true });
-      const vacated = diffs.find((d) => d.x === from.x && d.y === from.y);
-      expect(vacated).toBeDefined();
-      expect(vacated!.type).not.toBe('familyKeep');
-      expect(vacated!.type).not.toBe('center');
-      // ...and the new position is city ground now.
-      const landed = diffs.find((d) => d.x === from.x - 40 && d.y === from.y - 40);
-      expect(landed?.type).toBe('familyKeep');
+      const byKey = new Map(diffs.map((d) => [`${d.x}:${d.y}`, d]));
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = from.x + dx;
+          const y = from.y + dy;
+          // Only cells this city actually held procedurally are its to hand back; a neighbouring city's
+          // overlapping plot keeps its own cells (and is re-claimed by pass 3 as city ground).
+          if (proceduralTile(worldId, x, y).type !== 'familyKeep') continue;
+          const d = byKey.get(`${x}:${y}`);
+          expect(d, `vacated cell ${x}:${y} was not handed back`).toBeDefined();
+          expect(d!.type).not.toBe('familyKeep');
+          expect(d!.type).not.toBe('center');
+        }
+      }
+      // ...and the new plot is city ground now, across its whole footprint.
+      for (const [dx, dy] of [[0, 0], [r, r], [-r, -r]] as const) {
+        expect(byKey.get(`${from.x - 40 + dx}:${from.y - 40 + dy}`)?.type).toBe('familyKeep');
+      }
     });
 
     it('hands the whole 9x9 block back when the world center is dragged', () => {

@@ -111,7 +111,18 @@ export function rasterizeMapEdits(
     overrides.set(`${tile.x}:${tile.y}`, _terrainOverride(tile.type));
   }
 
-  for (const city of cities) {
+  // Cities are painted in PRIORITY order and the first claim on a cell wins, mirroring how
+  // `proceduralTile` resolves the same overlap: world centre (its own branch, before anything else),
+  // then province capitals, then graded cities (`_cityGroundNodeAt` tests capitals first and returns on
+  // first match). Two cities' footprints DO overlap in practice — a map-edge city gets its anchor clamped
+  // into the map, so its plot can reach into a neighbour's — and this loop used to be plain last-write-wins
+  // over the caller's array order, which put graded cities last and let a Lv.8 garrison overwrite a Lv.10
+  // capital's cell. The published template then disagreed with the generator about that cell's LEVEL,
+  // which from ADR-074 P1 onward is the city's HP/garrison scale, not just cosmetic. Caught by
+  // mapEdit.test.ts's "publishing the unchanged node list is a TRUE no-op" case at (1499, 328).
+  const CITY_PAINT_RANK: Record<MapEditCityInput['kind'], number> = { worldCenter: 0, capital: 1, garrison: 2 };
+  const claimed = new Set<string>();
+  for (const city of [...cities].sort((a, b) => CITY_PAINT_RANK[a.kind] - CITY_PAINT_RANK[b.kind])) {
     const half = Math.floor(city.footprint / 2);
     const type = _cityTileType(city.kind);
     for (let dy = -half; dy <= half; dy++) {
@@ -119,10 +130,13 @@ export function rasterizeMapEdits(
         const x = city.x + dx;
         const y = city.y + dy;
         if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue;
+        const key = `${x}:${y}`;
+        if (claimed.has(key)) continue; // a higher-priority city already holds this cell
+        claimed.add(key);
         // No `resType` on city ground (ADR-074) — it does not yield, and `proceduralTile` stopped emitting
         // one too, so keeping it here would make every published city footprint a permanent diff against
         // the procedural baseline (81 tiles per capital) for a field nothing reads.
-        overrides.set(`${x}:${y}`, { type, level: city.level });
+        overrides.set(key, { type, level: city.level });
       }
     }
   }

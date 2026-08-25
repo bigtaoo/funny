@@ -28,7 +28,7 @@ import {
   type CardInstance,
   type MapEditorCityNode,
 } from '@nw/shared';
-import { createWorldMongo, type WorldMongo, type TeamTemplate, type CardSLGState } from '../src/db';
+import { createWorldMongo, type WorldMongo, type TeamTemplate, type CardSLGState, type MarchDoc } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient } from '../src/gatewayClient';
 import type { WorldMetaClient } from '../src/metaClient';
@@ -233,7 +233,94 @@ describe.skipIf(!mongo)('worldsvc wild-city ground e2e (ADR-074 P0)', () => {
     }
   });
 
-  // ── ④ Nation founding is gone ──────────────────────────────────────────────────────────────
+  // ── ④ Arrival-time guard (defence in depth) ────────────────────────────────────────────────
+  // The departure-side guards above are not the only line: `combatSiege/occupation.ts` (occupy) and
+  // `combatMarch/arrival.ts` (move) re-validate the target on ARRIVAL, because the world can change in
+  // flight. Both used to name `center` alone and now use `isCityGroundTile`, so a march that got airborne
+  // before the guards existed — or against a template whose designer dragged a city under its path — is
+  // refused on landing instead of capturing city ground. Marches are inserted directly to bypass
+  // startMarch, which is exactly the state an in-flight march from the old build would be in.
+
+  /**
+   * `interior` is the plot's EAST EDGE cell, so the cell one step further east is ordinary land outside the
+   * walls. Claiming it gives A territory adjacent to `interior`, which is what makes the ADR-039
+   * connectivity check pass — without it `applyOccupy` refunds on connectivity and returns BEFORE reaching
+   * the city-ground guard, i.e. the test passes without exercising anything (measured: mutation M5 left
+   * both arrival cases green until this setup was added).
+   */
+  async function claimNeighbourOutsideWalls(): Promise<{ x: number; y: number }> {
+    const n = { x: interior.x + 1, y: interior.y };
+    expect(proceduralTile(W, n.x, n.y).type).not.toBe('familyKeep'); // must be outside the plot
+    await svc.occupyTile(W, A, n.x, n.y);
+    return n;
+  }
+
+  /** Insert an already-due march straight into the collection, then settle arrivals. */
+  async function arriveDirect(kind: 'occupy' | 'move', toX: number, toY: number, extra: Partial<MarchDoc> = {}): Promise<void> {
+    await m.collections.marches.insertOne({
+      _id: `m-${kind}-${toX}-${toY}-${nowMs}`, worldId: W, ownerId: A,
+      fromTile: tileId(W, base.x, base.y), toTile: tileId(W, toX, toY),
+      kind, troops: 3000,
+      departAt: nowMs, arriveAt: nowMs, status: 'marching', rev: 0,
+      ...extra,
+    } as MarchDoc);
+    await svc.processDueArrivals();
+  }
+
+  it('an in-flight OCCUPY march landing on city ground does not capture it', async () => {
+    await claimNeighbourOutsideWalls();
+    await arriveDirect('occupy', interior.x, interior.y);
+    const tile = await m.collections.tiles.findOne({ _id: tileId(W, interior.x, interior.y) });
+    // Either no tile doc at all, or one that never gained an owner / occupation hold.
+    expect(tile?.ownerId).toBeUndefined();
+    expect(tile?.contestedBy).toBeUndefined();
+    // The march is settled (claimed and consumed), not left pending forever.
+    expect(await m.collections.marches.countDocuments({ worldId: W, kind: 'occupy' })).toBe(0);
+  });
+
+  it('guards that occupy case: the SAME march against the land outside the walls DOES capture', async () => {
+    // Proves the assertions above are the city-ground rule and not the march never being processed —
+    // the failure mode this whole block had before `claimNeighbourOutsideWalls` existed.
+    const n = await claimNeighbourOutsideWalls();
+    const target = { x: n.x + 1, y: n.y };
+    if (proceduralTile(W, target.x, target.y).type === 'familyKeep') return; // another plot — skip, rare
+    await arriveDirect('occupy', target.x, target.y);
+    const tile = await m.collections.tiles.findOne({ _id: tileId(W, target.x, target.y) });
+    // Captures land as either an owner (instant) or a pending occupation hold, depending on the garrison
+    // battle — either outcome proves the march reached the capture logic.
+    expect(tile?.ownerId ?? tile?.contestedBy).toBeTruthy();
+  });
+
+  it('an in-flight MOVE march landing on city ground does not station a team there', async () => {
+    // A move needs a real team, or applyMove/tryParkTeam bails before the guard (same vacuity trap).
+    const cardId = 'card-arrive-1';
+    await svc.setTeams(W, A, [{ id: 'at1', name: 'at1', army: [{ cardInstanceId: cardId, col: 0, row: 1 }] }] as TeamTemplate[]);
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, A) },
+      { $set: { [`cardState.${cardId}`]: { currentTroops: 600, teamId: 'at1' } as CardSLGState } },
+    );
+    await arriveDirect('move', interior.x, interior.y, {
+      teamId: 'at1', troops: 1, army: [{ cardInstanceId: cardId, col: 0, row: 1 }], stationMode: 'idle',
+    });
+    expect(await m.collections.stationed.findOne({ _id: tileId(W, interior.x, interior.y) })).toBeNull();
+  });
+
+  it('guards that move case: the same team DOES station on ordinary land outside the walls', async () => {
+    const cardId = 'card-arrive-2';
+    await svc.setTeams(W, A, [{ id: 'at2', name: 'at2', army: [{ cardInstanceId: cardId, col: 0, row: 1 }] }] as TeamTemplate[]);
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, A) },
+      { $set: { [`cardState.${cardId}`]: { currentTroops: 600, teamId: 'at2' } as CardSLGState } },
+    );
+    const outside = { x: interior.x + 1, y: interior.y };
+    expect(proceduralTile(W, outside.x, outside.y).type).not.toBe('familyKeep');
+    await arriveDirect('move', outside.x, outside.y, {
+      teamId: 'at2', troops: 1, army: [{ cardInstanceId: cardId, col: 0, row: 1 }], stationMode: 'idle',
+    });
+    expect(await m.collections.stationed.findOne({ _id: tileId(W, outside.x, outside.y) })).not.toBeNull();
+  });
+
+  // ── ⑤ Nation founding is gone ──────────────────────────────────────────────────────────────
   it('does not found a nation from occupying a province-capital cell (the ADR-074 headline hole)', async () => {
     const caps = svc.capitalsFor(W);
     // Any non-core capital; its whole footprint is city ground now, so the anchor is unoccupiable.
