@@ -146,8 +146,14 @@ export class SectRepaint {
 
   /** (Re)draw just one column's scroll thumb, at its current position. */
   private drawBar(band: Band): void {
+    // Draw it back into whatever container the CONTENT lives in — bodyLayer for the page columns,
+    // modalLayer for a list modal. This used to be hardcoded to bodyLayer, so the first translate of
+    // a modal destroyed the modal's own thumb and drew the replacement onto the page underneath the
+    // dim (2026-08-25, caught by the "scrollbar is replaced, not stacked" case below the fold).
+    // Reading it off the layer cannot drift out of sync with where the rows actually are.
+    const parent = band.layer.parent ?? this.core.bodyLayer;
     if (band.bar) { band.bar.destroy(); band.bar = null; }
-    band.bar = drawScrollIndicator(this.core.bodyLayer, band.view, this.core[band.key], band.max);
+    band.bar = drawScrollIndicator(parent, band.view, this.core[band.key], band.max);
   }
 
   /** Swap the caret in or out of the focused field's existing Text. */
