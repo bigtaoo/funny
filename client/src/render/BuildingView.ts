@@ -14,8 +14,17 @@ const HP_BAR_Y    = 32;
 const HP_BAR_W    = 40;
 
 // Idle animation constants
-const BOB_SPEED     = 6.98;  // rad/s → ~0.9s period
-const BOB_AMP       = 1.5;   // px
+//
+// The body idle used to be a vertical sp.y offset (±1.5px). That moved the sprite's *texture*
+// while the HP bar and flag stayed drawn at the container's fixed coordinates — so the art
+// visibly detached from its own health bar and flagpole every cycle, and combined with the
+// tower's independent-frequency sway (below), two asynchronous position sources looked like
+// jitter rather than breathing (user report 2026-08-25: "看着眼花，容易分散注意力"). A scale
+// pulse fixes both problems at once: it can't desync from siblings drawn in the same local
+// space, and the eye is far less sensitive to a few percent of size change than to the same
+// magnitude of translation, so it reads as calm breathing even at a similar frequency.
+const BOB_SPEED     = 6.98;   // rad/s → ~0.9s period
+const BOB_SCALE_AMP = 0.012;  // ±1.2% size pulse, applied on top of each sprite's base scale
 const FLAG_SPEED    = 9.0;   // rad/s — flag flutter (faster than body bob)
 const FLAG_AMP      = 3.0;   // px wave amplitude
 // Arrow tower. The sway used to be 5.0 rad/s / 0.5° — at SPRITE_SIZE that moves the roof tip by
@@ -81,6 +90,8 @@ export class BuildingView {
   private readonly boardView: BoardView;
   private sprites: Map<number, PIXI.Container> = new Map();
   private phases:  Map<number, number>          = new Map();
+  /** Each sprite's non-idle scale (from SPRITE_SIZE / texture size) — the breathing pulse multiplies this. */
+  private baseScales: Map<number, number>       = new Map();
   /** Cell + side per live building, so a fire event can be matched to the right sprite. */
   private cells:   Map<number, { col: number; row: number; side: Side }> = new Map();
   /** In-flight fire recoils: seconds left + the shot's screen-space unit vector. */
@@ -139,6 +150,7 @@ export class BuildingView {
       if (!seen.has(id)) {
         this.sprites.delete(id);
         this.phases.delete(id);
+        this.baseScales.delete(id);
         this.cells.delete(id);
         this.fires.delete(id);
         this.pool.release(sprite);
@@ -173,6 +185,7 @@ export class BuildingView {
 
     this.sprites.delete(buildingId);
     this.phases.delete(buildingId);
+    this.baseScales.delete(buildingId);
     this.cells.delete(buildingId);
     this.fires.delete(buildingId);
 
@@ -208,6 +221,7 @@ export class BuildingView {
     }
     sp.width  = SPRITE_SIZE;
     sp.height = SPRITE_SIZE;
+    this.baseScales.set(building.id, sp.scale.x);
 
     // Spawn animation: scale 0→1, ease-out cubic, ~0.3s at 60fps
     c.scale.set(0);
@@ -244,11 +258,14 @@ export class BuildingView {
 
   private updateIdleAnim(c: PIXI.Container, building: Building): void {
     const phase = this.phases.get(building.id) ?? 0;
+    const base  = this.baseScales.get(building.id) ?? 1;
     const t     = this.time;
     const sp    = c.getChildByName('sprite') as PIXI.Sprite;
 
-    // All buildings: gentle vertical bob
-    sp.y = Math.sin(t * BOB_SPEED + phase) * BOB_AMP;
+    // All buildings: gentle size-pulse breathing (see BOB_SCALE_AMP comment for why this
+    // replaced a positional bob). Scale only — sp.y stays at 0 so the sprite never drifts
+    // from the HP bar / flag drawn in the same container-local space.
+    sp.scale.set(base * (1 + Math.sin(t * BOB_SPEED + phase) * BOB_SCALE_AMP));
 
     const flagGfx = c.getChildByName('flagGfx') as PIXI.Graphics;
 
@@ -263,6 +280,7 @@ export class BuildingView {
     const fire = this.fires.get(building.id);
     if (!fire) {
       sp.x = 0;
+      sp.y = 0;
       flagGfx.clear();
       return;
     }
@@ -273,7 +291,7 @@ export class BuildingView {
     // see them at all: a 7px ink stroke needs to be on screen long enough to register.
     const left = fire.left / FIRE_SECONDS;
     sp.x  = -fire.dx * FIRE_KICK_PX * left * left;
-    sp.y += -fire.dy * FIRE_KICK_PX * left * left;
+    sp.y  = -fire.dy * FIRE_KICK_PX * left * left;
     this.drawFireTicks(flagGfx, left, fire.dx, fire.dy);
   }
 

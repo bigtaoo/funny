@@ -24,7 +24,7 @@ vi.mock('pixi.js-legacy', () => {
     alpha = 1;
     angle = 0;
     x = 0; y = 0;
-    scale = { _v: 1, set(v: number): void { this._v = v; } };
+    scale = { x: 1, y: 1, set(v: number): void { this.x = v; this.y = v; } };
     addChild(...kids: FakeContainer[]): FakeContainer { for (const k of kids) { k.parent = this; this.children.push(k); } return kids[0]!; }
     removeFromParent(): void { this.parent = null; }
     getChildByName(n: string): FakeContainer | undefined { return this.children.find((c) => c.name === n); }
@@ -92,7 +92,7 @@ function spriteOf(view: BuildingView, id: number): { x: number; y: number; textu
   return container.getChildByName('sprite');
 }
 
-/** Pin the idle phase so the bob term is deterministic — see the note in beforeEach. */
+/** Pin the idle phase so the breathing scale pulse is deterministic — see the note in beforeEach. */
 function pinPhase(view: BuildingView, id: number): void {
   (view as unknown as { phases: Map<number, number> }).phases.set(id, 0);
 }
@@ -105,10 +105,12 @@ describe('BuildingView.playFireEffect', () => {
     view = new BuildingView(boardView);
     board = boardWith(towerAt());
     view.sync(board);
-    // acquireSprite() seeds each building's idle phase with Math.random(), so the bob term is a
-    // coin flip and any assertion on the sprite's absolute offset is flaky by construction — this
-    // very test passed alone and failed in the full run before the phase was pinned. Pinned to 0:
-    // at time 0 the bob contributes exactly 0, leaving the recoil as the only thing moving.
+    // acquireSprite() seeds each building's idle phase with Math.random(), so the breathing pulse
+    // is a coin flip and any assertion on the sprite's absolute scale is flaky by construction —
+    // this very test passed alone and failed in the full run before the phase was pinned. Pinned
+    // to 0: at time 0 the pulse contributes exactly 0. The idle animation is a scale pulse only
+    // (see BOB_SCALE_AMP in BuildingView.ts) and never touches sp.x/sp.y, so the recoil below is
+    // the only thing that moves the sprite's position.
     pinPhase(view, TOWER_ID);
     view.sync(board);
   });
@@ -128,23 +130,22 @@ describe('BuildingView.playFireEffect', () => {
     view.sync(board);
     const sp = spriteOf(view, TOWER_ID);
     expect(sp.x).toBe(0);
-    expect(Math.abs(sp.y)).toBeLessThanOrEqual(1.5); // idle bob only (BOB_AMP)
+    expect(sp.y).toBe(0); // idle animation is a scale pulse now — never touches position
   });
 
   it('ignores an id it has no sprite for', () => {
     expect(() => view.playFireEffect(TOWER_ID + 99, COL, ROW)).not.toThrow();
   });
 
-  it('settles back to the idle bob once the recoil elapses', () => {
-    const BOB_AMP = 1.5;
+  it('settles back to y=0 once the recoil elapses — idle no longer moves the sprite', () => {
     view.playFireEffect(TOWER_ID, COL, ROW);
     view.sync(board);
-    expect(Math.abs(spriteOf(view, TOWER_ID).y)).toBeGreaterThan(BOB_AMP);   // kick dominates
+    expect(Math.abs(spriteOf(view, TOWER_ID).y)).toBeGreaterThan(0);   // the kick moves it
 
     view.update(0.5);            // well past FIRE_SECONDS
     view.sync(board);
-    // Only the bob is left, and with the phase pinned its amplitude is a hard bound.
-    expect(Math.abs(spriteOf(view, TOWER_ID).y)).toBeLessThanOrEqual(BOB_AMP);
+    // Nothing is left to move it back to: idle is a scale pulse, not a position offset.
+    expect(spriteOf(view, TOWER_ID).y).toBe(0);
     expect(spriteOf(view, TOWER_ID).x).toBeCloseTo(0, 10);
   });
 
@@ -181,9 +182,10 @@ describe('BuildingView.playFireEffect', () => {
   it('does not carry a kick into a barracks that reuses the pooled container', () => {
     // Two things have to line up for this to test anything. It needs the LANDSCAPE layout, because
     // only there does the kick have an x component at all (portrait kicks purely along y, which the
-    // bob rewrites every frame anyway). And the container has to be reused by a BARRACKS: the tower
-    // branch rewrites sprite.x every frame and would mask the bug, while the barracks branch returns
-    // before touching it. Verified by deleting the reset line — a tower here still passed.
+    // tower's no-fire branch zeroes every frame anyway). And the container has to be reused by a
+    // BARRACKS: the tower branch rewrites sprite.x every frame and would mask the bug, while the
+    // barracks branch returns before touching it. Verified by deleting the reset line — a tower
+    // here still passed.
     const lView = new BuildingView(rotatedBoardView);
     const lBoard = boardWith(towerAt());
     lView.sync(lBoard);
@@ -212,7 +214,31 @@ describe('BuildingView.playFireEffect', () => {
     rotatedView.sync(rotatedBoard);
     const sp = spriteOf(rotatedView, TOWER_ID);
     expect(sp.x).toBeCloseTo(2.8, 5);      // horizontal now
-    expect(sp.y).toBeCloseTo(0, 5);        // and nothing vertical beyond the pinned bob
+    expect(sp.y).toBeCloseTo(0, 10);       // idle never touches position, so nothing vertical at all
+  });
+
+  it('breathes via a scale pulse and never drifts sp.x/sp.y while idle (2026-08-25 fix)', () => {
+    // Was a ±1.5px sp.y offset that desynced the sprite from its own HP bar/flag (drawn at fixed
+    // container-local coordinates) and beat against the tower's independent-frequency sway —
+    // reported as "看着眼花，容易分散注意力". Replaced with a scale pulse, which can't desync from
+    // siblings drawn in the same local space.
+    const id = TOWER_ID + 10;
+    const bBoard = boardWith(new Building(BuildingType.Barracks, Side.Bottom, COL, ROW, undefined, id));
+    const bView = new BuildingView(boardView);
+    bView.sync(bBoard);
+    pinPhase(bView, id);
+    bView.sync(bBoard);
+    const sp = spriteOf(bView, id) as unknown as { x: number; y: number; scale: { x: number } };
+    expect(sp.x).toBe(0);
+    expect(sp.y).toBe(0);
+    expect(sp.scale.x).toBe(1);   // sin(0) === 0 at the pinned phase
+
+    bView.update(0.37);
+    bView.sync(bBoard);
+    expect(sp.x).toBe(0);
+    expect(sp.y).toBe(0);                                          // idle never moves the sprite
+    expect(sp.scale.x).not.toBe(1);                                // but it does pulse the scale
+    expect(Math.abs(sp.scale.x - 1)).toBeLessThanOrEqual(0.012);   // BOB_SCALE_AMP bound
   });
 
   it('gives each building type its own art — the two used to share one file', () => {
