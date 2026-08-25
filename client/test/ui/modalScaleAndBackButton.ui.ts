@@ -83,8 +83,26 @@ function buildCardScene(w: number, h: number) {
     getEquippedSkin: () => null,
     equipSkin() {},
   };
-  const scene = new CardScene(createLayout(w, h), new InputManager(), cb);
-  return { scene, calls };
+  // The pointer stream is what these tests drive: CardScene's handlers moved off `core` into
+  // CardScene/input.ts (2026-08-25, ADR-072 split), so the tap goes in the front door — through the
+  // real InputManager — rather than by reaching for a private method.
+  const input = new InputManager();
+  const scene = new CardScene(createLayout(w, h), input, cb);
+  return { scene, calls, input };
+}
+
+/** Emit a tap (down+up, no drag) at the centre of `rect`, as a platform adapter would. */
+function tapVia(input: InputManager, rect: Rect): void {
+  emitDown(input, rect.x + rect.w / 2, rect.y + rect.h / 2);
+  emitUp(input, rect.x + rect.w / 2, rect.y + rect.h / 2);
+}
+
+function emitDown(input: InputManager, x: number, y: number): void {
+  (input as unknown as { _emitDown(x: number, y: number): void })._emitDown(x, y);
+}
+
+function emitUp(input: InputManager, x: number, y: number): void {
+  (input as unknown as { _emitUp(x: number, y: number): void })._emitUp(x, y);
 }
 
 function buildEquipmentScene(w: number, h: number) {
@@ -117,24 +135,24 @@ function tapCenter(handler: { handleDown(x: number, y: number): void }, rect: Re
 
 describe('Back button stays reachable while a detail modal is open', () => {
   it('CardScene: tapping Back with the roster detail modal open calls onBack, not just closes the modal', () => {
-    const { scene, calls } = buildCardScene(...LANDSCAPE);
+    const { scene, calls, input } = buildCardScene(...LANDSCAPE);
     (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('c1');
     expect(cardInternals(scene).modalOpen).toBe(true);
 
-    tapCenter(cardInternals(scene), cardInternals(scene).backRect);
+    tapVia(input, cardInternals(scene).backRect);
 
     expect(calls.back).toBe(1);
     scene.destroy();
   });
 
   it('CardScene: tapping outside the panel (not on Back) still just closes the modal', () => {
-    const { scene, calls } = buildCardScene(...LANDSCAPE);
+    const { scene, calls, input } = buildCardScene(...LANDSCAPE);
     (scene as unknown as { detail: { openDetail(id: string): void } }).detail.openDetail('c1');
     // Bottom-right corner of the screen: outside both the Back rect and the (now-enlarged,
     // but still centered) panel. Modal hits now fire on pointer-UP (press-drag-release), so a tap
     // is down+up with no drag in between.
-    cardInternals(scene).handleDown(cardInternals(scene).w - 2, cardInternals(scene).h - 2);
-    cardInternals(scene).handleUp();
+    emitDown(input, cardInternals(scene).w - 2, cardInternals(scene).h - 2);
+    emitUp(input, cardInternals(scene).w - 2, cardInternals(scene).h - 2);
 
     expect(calls.back).toBe(0);
     expect(cardInternals(scene).modalOpen).toBe(false);

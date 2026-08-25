@@ -478,7 +478,12 @@ export class DetailPanel {
       if (core.cb.openEquipment && !core.bt.busy) {
         core.modalHits.push({
           rect: core.toModalScreen({ x, y: cy, w: cellW, h: cellH }),
-          action: () => { core.closeModal(); core.cb.openEquipment!(card.id, slot); },
+          // Deliberately does NOT close the modal first (ADR-072): EquipmentScene now mounts as an
+          // overlay over this still-live roster, so leaving the detail open means backing out of the
+          // gear screen lands the player right back on the same card — with the new piece already
+          // shown, since the roster stayed subscribed to the save through the detour. Closing it here
+          // (as this used to) would have made "equip three pieces" three round trips through the grid.
+          action: () => core.cb.openEquipment!(card.id, slot),
         });
       }
     });

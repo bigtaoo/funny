@@ -32,6 +32,7 @@ import { FeedPanel } from './CardScene/feed';
 import { ActionsPanel } from './CardScene/actions';
 
 export type { CardCallbacks, CardActionResult, CardRosterView, CardSceneTab } from './CardScene/core';
+import type { CardSceneTab } from './CardScene/core';
 
 /**
  * CardScene — the Hero Roster scene registered against SceneManager, thin assembly over the
@@ -72,8 +73,37 @@ export class CardScene implements Scene {
     this.core.update(dt);
   }
 
+  /**
+   * Scene.pause/resume — an EquipmentScene overlay has been pushed on top of this still-live roster
+   * (ADR-072). Delegated to Core, which suspends only the pointer subscriptions (the save
+   * subscription stays live so the gear edits made up there land here) — see CardSceneCore.pause.
+   */
+  pause(): void {
+    this.core.pause();
+  }
+
+  resume(): void {
+    this.core.resume();
+  }
+
   destroy(): void {
     this.core.destroy();
+  }
+
+  /**
+   * Move an already-open roster to another content tab — the live-scene counterpart of
+   * CardCallbacks.initialTab, used when the Skins peer is tapped in the EquipmentScene overlay's
+   * rail (see CardRosterView.showTab). No-op when already on that tab, so a redundant call can't
+   * throw away the scroll offset.
+   */
+  showTab(tab: CardSceneTab): void {
+    const core = this.core;
+    if (core.destroyed || core.tab === tab) return;
+    core.tab = tab;
+    // Deliberately just tab + render, byte-for-byte what the in-scene rail's own handler does
+    // (ListPanel.renderSidebar's onSelect) — including leaving scrollY and detailId alone, so
+    // arriving from the overlay's rail behaves exactly like tapping the rail here would have.
+    this.render();
   }
 
   /** Re-render just the SLG-derived bits of already-visible roster cells — see CardRosterView. */
@@ -84,6 +114,9 @@ export class CardScene implements Scene {
   private render(): void {
     const core = this.core;
     if (core.destroyed) return;
+    // Covered by an overlay (ADR-072): nothing here can be seen, and the overlay's own actions each
+    // write the save, which would otherwise drive a full roster rebuild per equip. Defer to resume().
+    if (core.paused) { core.pendingRender = true; return; }
     tearDownChildren(core.bodyLayer);
     core.hitRects = [];
     tearDownChildren(core.loadingLayer);

@@ -87,6 +87,7 @@
 | [ADR-069](DECISIONS_ADR-041-onward.md#adr-069-slg-攻城值随携带兵力缩放破城不再有12-卡硬顶-npcbasehp-重校准-4060--accepted--2026-08-19) | SLG 攻城值随携带兵力缩放（破城不再有「12 卡硬顶」）+ npcBaseHp 重校准 40→60 | Accepted | 2026-08-19 |
 | [ADR-070](DECISIONS_ADR-041-onward.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) | `tools/` 覆盖率口径：scoped include + 「reported, not gated」过渡 | Accepted | 2026-08-20 |
 | [ADR-071](DECISIONS_ADR-041-onward.md#adr-071-门禁盲区收口--非-workspace-包接进-ci--desktop-shell-接进可达性--客户端覆盖率-scope-扩到已测模块--accepted--2026-08-21) | 门禁盲区收口：非 workspace 包接进 CI、`desktop-shell` 接进可达性、客户端覆盖率 scope 扩到已测模块 | Accepted | 2026-08-21 |
+| [ADR-072](DECISIONS_ADR-041-onward.md#adr-072-装备页改为卡背包之上的-overlay--adr-044-的模式下沉到成长组--accepted--2026-08-25) | 装备页改为卡背包之上的 overlay：卡背包不再重建，滚动位置与详情弹窗跨岔路留存 | Accepted | 2026-08-25 |
 
 ---
 

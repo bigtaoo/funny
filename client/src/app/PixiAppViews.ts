@@ -267,12 +267,23 @@ export class PixiAppViews implements AppViews {
     this.leaveLobby();
     const scene = this.timedBuild('CardScene', () => new CardScene(this.layout, this.input, cb));
     this.manager.goto(scene);
-    return { applyCardState: () => scene.applyCardState() };
+    return {
+      applyCardState: () => scene.applyCardState(),
+      showTab: (tab) => scene.showTab(tab),
+    };
   }
 
-  showEquipment(cb: EquipmentCallbacks): void {
+  /**
+   * `opts.overlay` mounts the equipment screen on top of the still-live CardScene (`pushOverlay`)
+   * instead of replacing it, so gear editing never rebuilds the roster (ADR-072) — same arrangement
+   * mountSlg gives the SLG panels over the world map. Overlay mounts are only reached from inside the
+   * roster, which already left the lobby, so `leaveLobby` is skipped there (as it is for mountSlg).
+   */
+  showEquipment(cb: EquipmentCallbacks, opts?: MountOpts): void {
+    const scene = this.timedBuild('EquipmentScene', () => new EquipmentScene(this.layout, this.input, cb));
+    if (opts?.overlay) { this.manager.pushOverlay(scene); return; }
     this.leaveLobby();
-    this.manager.goto(this.timedBuild('EquipmentScene', () => new EquipmentScene(this.layout, this.input, cb)));
+    this.manager.goto(scene);
   }
 
   showStats(cb: StatsCallbacks): void {

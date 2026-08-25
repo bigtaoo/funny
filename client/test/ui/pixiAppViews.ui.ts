@@ -53,6 +53,7 @@ vi.mock('../../src/scenes/LobbyScene', () => ({
   },
 }));
 vi.mock('../../src/scenes/SettingsScene', () => ({ SettingsScene: sceneBase('SettingsScene') }));
+vi.mock('../../src/scenes/EquipmentScene', () => ({ EquipmentScene: sceneBase('EquipmentScene') }));
 vi.mock('../../src/scenes/FamilyScene', () => ({ FamilyScene: sceneBase('FamilyScene') }));
 vi.mock('../../src/scenes/WorldMapScene', () => ({
   WorldMapScene: class extends sceneBase('WorldMapScene') {
@@ -331,6 +332,35 @@ describe('PixiAppViews — SLG panel mounts', () => {
     const h = setup();
     h.views.hideOverlay();
     expect(h.manager.popOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('pushes the equipment screen as an overlay when opts.overlay is set (ADR-072)', () => {
+    // Entered from the Hero Roster: CardScene stays `current` underneath so the roster keeps its
+    // scroll offset and open detail modal. Same branch mountSlg gives the SLG panels, one level down.
+    const h = setup();
+    h.views.showEquipment({} as never, { overlay: true });
+    expect(h.manager.pushOverlay).toHaveBeenCalledTimes(1);
+    expect(h.manager.goto).not.toHaveBeenCalled();
+  });
+
+  it('gotos the equipment screen as a full swap without opts.overlay', () => {
+    // The campaign-map entry: there is no roster underneath to preserve.
+    const h = setup();
+    h.views.showEquipment({} as never);
+    expect(h.manager.goto).toHaveBeenCalledTimes(1);
+    expect(h.manager.pushOverlay).not.toHaveBeenCalled();
+  });
+
+  it('an overlay equipment mount leaves the lobby resize listener alone (leaveLobby is skipped)', () => {
+    // leaveLobby() is what detaches it; the overlay path must not run it, because the scene it is
+    // mounted over (CardScene) already left the lobby and is still the one that owns the screen.
+    const h = setup();
+    h.views.showLobby(NO_CB);
+    expect(h.win.count('resize')).toBe(1);
+    h.views.showEquipment({} as never, { overlay: true });
+    expect(h.win.count('resize')).toBe(1);
+    h.views.showEquipment({} as never);
+    expect(h.win.count('resize')).toBe(0);
   });
 
   it('cross-fades into the world map (one of the few faded transitions)', () => {
