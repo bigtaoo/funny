@@ -55,7 +55,14 @@ const ALL_GACHA_URLS = [
   bannerStandardUrl as string,
 ];
 
-/** Warm the gacha PNG set into the AssetIO disk cache + PIXI texture cache. */
-export function preloadGachaTextures(): Promise<void> {
-  return preloadTextureList(ALL_GACHA_URLS);
+/**
+ * Warm the gacha PNG set into the AssetIO disk cache + PIXI texture cache.
+ *
+ * Awaited behind a loading screen by `enterGacha` (ASSET_PACKAGING §10, extended to gacha on
+ * 2026-08-25) and re-called fire-and-forget by `GachaScene` itself — idempotent per URL, so the
+ * second call joins the first's in-flight promise rather than re-fetching. Never rejects: every
+ * step degrades to `preloadTexture`'s resolve-on-error, same contract as the boot/battle gates.
+ */
+export function preloadGachaTextures(onProgress?: (done: number, total: number) => void): Promise<void> {
+  return preloadTextureList(ALL_GACHA_URLS, onProgress);
 }

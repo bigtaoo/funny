@@ -371,6 +371,15 @@ jobs:
         working-directory: client
         run: npm run build:web
 
+      # Shipped-size budgets (ASSET_PACKAGING §13). Immediately after the build, because it measures
+      # the real dist/ output rather than re-deriving what should be in it. Absolute budgets with
+      # headroom, NOT a ratchet — scripts/bundle-size-budget.json records why each number is what it
+      # is. Exists because the bundle grew ~1.5 MB → 2.08 MB with nothing watching, and because
+      # bootManifest.ts's "keep the L0 tier MINIMAL" rule had only a code comment behind it.
+      - name: client shipped-size budget
+        working-directory: client
+        run: npm run check:bundlesize
+
       # Same flake ledger as the server shards — written only when client's e2e/load configs had to
       # retry a test (the plain unit suite deliberately has no retry; see claudedocs/server.md).
       - name: upload flaky-test report (client)

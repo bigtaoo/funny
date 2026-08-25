@@ -62,7 +62,46 @@ function asAttrFor(sourceFile) {
   return sourceFile.endsWith('.tao') ? 'fetch' : 'image';
 }
 
+/**
+ * Distinct http(s) origins from a list of baked backend base URLs.
+ *
+ * Empty strings are the "same-origin, reverse-proxied" case (web/CrazyGames production) — the
+ * browser is already connected to that origin, so a preconnect would be noise. Anything
+ * unparseable is dropped rather than thrown on: a bad base URL must not break a release build,
+ * and net/config.ts is the place that gets to complain about it.
+ */
+function backendOrigins(urls) {
+  const origins = [];
+  for (const url of urls) {
+    if (!url) continue;
+    let origin;
+    try { origin = new URL(url).origin; } catch { continue; }
+    if (!/^https?:$/.test(new URL(url).protocol)) continue;
+    if (!origins.includes(origin)) origins.push(origin);
+  }
+  return origins;
+}
+
+/**
+ * `opts.preconnect`: backend base URLs whose connection should be opened DURING the boot gate.
+ *
+ * Rationale (ASSET_PACKAGING §11, extended 2026-08-25): `startApp` awaits `preloadBoot()` and only
+ * afterwards does `core.start()` → `resolveEntry()` fire the first backend request. The lobby's
+ * first paint does not block on that request (resolveEntry navigates immediately and pulls in the
+ * background), so this is not about first paint — it is about how long the lobby shows local/stale
+ * values before the server-authoritative pull lands, and about the resume-match prompt. On a cold
+ * link the first request to a cross-origin backend pays DNS + TCP + TLS before a single byte of
+ * `/save` moves, and today all of that sits *after* the gate. A preconnect moves the handshake
+ * into the gate's own dead time, which is exactly when the connection is idle anyway.
+ *
+ * `crossorigin` is required for the same reason it is on the preloads above — the backend is
+ * fetched with CORS, and a preconnect socket opened without it is not the one that gets reused.
+ */
 class PreloadBootAssetsPlugin {
+  constructor(opts = {}) {
+    this.preconnectOrigins = backendOrigins(opts.preconnect ?? []);
+  }
+
   apply(compiler) {
     compiler.hooks.compilation.tap('PreloadBootAssetsPlugin', (compilation) => {
       HtmlWebpackPlugin.getHooks(compilation).alterAssetTagGroups.tap(
@@ -113,6 +152,15 @@ class PreloadBootAssetsPlugin {
           // Ahead of the bundle's own <script>: the preload scanner should see these
           // before it commits bandwidth to the (much larger) JS file.
           data.headTags.unshift(...tags);
+
+          // Ahead of even those: a handshake costs no bandwidth to speak of, and the sooner it
+          // starts the more of it overlaps the bundle download + the boot gate.
+          data.headTags.unshift(...this.preconnectOrigins.map((href) => ({
+            tagName: 'link',
+            voidTag: true,
+            meta: { plugin: 'PreloadBootAssetsPlugin' },
+            attributes: { rel: 'preconnect', href, crossorigin: 'anonymous' },
+          })));
           return data;
         }
       );

@@ -54,6 +54,8 @@ import { ScalingManager, createLayout } from '../layout/ScalingManager';
 import { InputManager } from '../inputSystem/InputManager';
 import type { ILayout } from '../layout/ILayout';
 import { enterBattle, DeferredSceneCalls } from './battleGate';
+import { enterWithAssets } from './assetGate';
+import { preloadGachaTextures } from '../render/gachaArt';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './AppViews';
 
 /**
@@ -224,9 +226,26 @@ export class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('ShopScene', () => new ShopScene(this.layout, this.input, cb)));
   }
 
+  /**
+   * Gated on the gacha PNG set (ASSET_PACKAGING §10, extended to gacha 2026-08-25). §10 closed the
+   * "进场才发现没资源" gap for battles only; gacha kept a fire-and-forget `void preloadGachaTextures()`
+   * inside the scene, and `gachaArt` hands out `PIXI.Texture.from(url)` — an empty texture on a cold
+   * cache. PIXI's Sprite re-derives scale when the texture finally decodes, so the layout survives,
+   * but the card backs and frames pop in blank-then-filled during the single most staged moment in
+   * the game. `idlePrefetch` makes that rare rather than impossible: gacha is deliberately its LAST
+   * wave (biggest, least likely), so a player who taps 抽卡 in the first seconds still races it, and
+   * a metered/save-data link skips prefetch entirely.
+   *
+   * No cross-fade: the menu screens switch instantly, and `enterWithAssets` releases the input
+   * freeze itself on that path.
+   */
   showGacha(cb: GachaSceneCallbacks): void {
     this.leaveLobby();
-    this.manager.goto(this.timedBuild('GachaScene', () => new GachaScene(this.layout, this.input, cb)));
+    void enterWithAssets(
+      { app: this.app, manager: this.manager, input: this.input },
+      (onProgress) => preloadGachaTextures(onProgress),
+      () => this.timedBuild('GachaScene', () => new GachaScene(this.layout, this.input, cb)),
+    );
   }
 
   showCampaignMap(cb: CampaignMapCallbacks): void {

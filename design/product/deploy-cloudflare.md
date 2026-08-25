@@ -156,11 +156,29 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 
 | 文件 | 命名规则 | Cache-Control | 原理 |
 |---|---|---|---|
-| `<hash>.js` | contenthash | `public, max-age=31536000, immutable` | 内容变 → 文件名变 → 新 URL，永久缓存安全 |
+| `static/<hash>.js` + `static/<hash>.{png,tao,…}` | contenthash | `public, max-age=31536000, immutable` | 内容变 → 文件名变 → 新 URL，永久缓存安全 |
 | `index.html` | 固定名 | `no-cache, must-revalidate` | 每次加载都验证，拿到最新 JS 文件名 |
 | `version.json` | 固定名 | `no-cache, must-revalidate` | 客户端轮询用，必须实时 |
+| 其余根目录固定名文件（favicon/图标/法务页） | 固定名 | CF 默认（`max-age=0, must-revalidate`） | 极少变、体积小，回源校验成本可忽略；换图标要能立刻生效 |
 
-**实现**：`webpack.config.js` 生产构建时自动输出 `_headers` 文件（CF Workers static assets 支持此格式），并将 JS 输出改为 `[contenthash].js`；`client/nginx.conf` 同步配置（Docker 环境用）。
+**实现**：`webpack.config.js` 生产构建时自动输出 `_headers` 文件（CF Workers static assets 支持此格式），并把**所有 contenthash 产物（JS + 每个 `asset/resource` 文件）输出到 `static/` 子目录**；`client/nginx.conf` 同步配置（Docker 环境用）。
+
+> ### ⚠ 这张表曾经有一年多是**纯粹的错觉**（2026-08-25 修复）
+>
+> 上面第一行从写下那天起就没在生产上成立过。`_headers` 的生成代码里**只有 `index.html` 和 `version.json` 两条**，contenthash 文件那条从来没写进去；`client/nginx.conf` 里倒是配对了，但那只是本地 Docker 模拟，**生产走 CF Workers、根本不经过 nginx**。于是线上一直落在 Workers 的默认策略上：
+>
+> ```
+> curl -sSI https://a.gamestao.com/<hash>.js
+> → Cache-Control: public, max-age=0, must-revalidate
+> ```
+>
+> 后果：**回访玩家每次会话都要为每个资源付一次回源校验**（304、body 为 0，但 RTT 照付），其中 2 MB bundle 的那一次卡在关键路径最前面——校验完才能开始 parse。ASSET_PACKAGING §11 靠 `<link rel=preload>` 分层争来的收益因此被吐掉一部分。
+>
+> **为什么没人发现**：本地 nginx 那份配置是对的，文档这张表也是对的，**唯独真正被部署的那份不对**——三处里有两处给了正确的印象。只有直接 `curl` 生产域名才看得出来。
+>
+> **同类风险的通用规避**：一份只在本地生效的配置（`nginx.conf`）和一份只在生产生效的配置（`_headers`），语义必须一致却没有任何东西保证它们一致。改任一处之后，**用 `curl -sSI` 对生产域名验一次**，别只信文档和本地。
+>
+> **为什么 `_headers` 必须靠 `static/` 前缀分开、而不能写 `/*` 再拿更窄的规则覆盖**：CF 的 `_headers` 没有优先级模型（多条匹配则**全部继承**，同名 header **逗号拼接**而非覆盖），`/*.js` 这种带字面后缀的 splat 也不在文档保证内。详见 ASSET_PACKAGING §13.1。
 
 **客户端主动刷新**：`client/src/entries/web.ts` 在 `visibilitychange`（玩家切回前台）时拉 `/version.json`，与运行中的 `__NW_BUILD_VERSION__` 对比，版本不同则 `location.reload()`。确保已开着页面的玩家（尤其 iPad 后台切回）能立即获取新版本，无需手动刷新。
 
