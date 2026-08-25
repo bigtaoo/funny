@@ -412,3 +412,207 @@ describe('FamilyScene: the busy tracker no longer drives redraws', () => {
     scene.destroy();
   });
 });
+
+/** Every Text under `node`, recursing — chat lines are drawn into nested containers. */
+function textNodes(node: PIXI.Container): PIXI.Text[] {
+  const out: PIXI.Text[] = [];
+  const walk = (n: PIXI.Container): void => {
+    for (const c of n.children) {
+      if (c instanceof PIXI.Text) out.push(c);
+      if ((c as PIXI.Container).children) walk(c as PIXI.Container);
+    }
+  };
+  walk(node);
+  return out;
+}
+
+/** Roster order of an accountId, so "the next row down" is checkable exactly. */
+const rowIndex = (accountId: string): number => members.findIndex((m) => m.accountId === accountId);
+
+/** Pick a roster row's name/profile target that is comfortably inside the viewport as displayed. */
+function visibleRowTarget(core: any): { px: number; py: number } {
+  const applied = core.repaint.appliedDelta('members');
+  const hit = core.hitRects
+    .filter((h: any) => h.scroll === 'members' && h.rect.x <= core.railW + 10)
+    .map((h: any) => ({ rect: h.rect, sy: h.rect.y - applied }))
+    .find((h: any) => h.sy > core.membersRegionTop + 30 && h.sy + h.rect.h < core.membersRegionBottom - 30);
+  expect(hit).toBeTruthy();
+  return { px: hit.rect.x + 20, py: hit.sy + hit.rect.h / 2 };
+}
+
+/** Tap a screen point and report which member the roster resolved it to (null = nothing fired). */
+function tapMember(input: InputManager, spy: any, px: number, py: number): string | null {
+  const before = spy.mock.calls.length;
+  input._emitDown(px, py);
+  input._emitUp(px, py);
+  return spy.mock.calls.length > before
+    ? ((spy.mock.calls[spy.mock.calls.length - 1]![0] as any).accountId as string)
+    : null;
+}
+
+describe('FamilyScene: what the cheap scroll made possible to get wrong', () => {
+  it('a drag past the end stops at the end instead of translating into blank space', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const max = core.membersMax;
+    expect(max).toBeGreaterThan(0);
+
+    // Park at the very end (a long drag leaves the overscan band, so this rebuilds and re-baselines).
+    input._emitDown(400, 900);
+    input._emitMove(400, 900 - (max + 300));
+    scene.update(1 / 60);
+    input._emitUp(400, 900 - (max + 300));
+    expect(core.scrollY).toBe(max);
+    expect(core.repaint.layerFor('members').y).toBe(0);
+
+    // A further drag stays inside the band, so it takes the translate path — which used to move the
+    // layer past the content's end and leave a blank strip nothing clamped back (the per-frame full
+    // render that used to re-clamp is exactly what this pass removed).
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(400, 900);
+    input._emitMove(400, 800);
+    scene.update(1 / 60);
+    expect(core.scrollY).toBe(max);
+    expect(core.repaint.layerFor('members').y).toBe(0);
+    expect(renderSpy).not.toHaveBeenCalled();
+
+    // Reversing the finger must move the content immediately (no dead zone to unwind first).
+    input._emitMove(400, 1000);
+    scene.update(1 / 60);
+    expect(core.scrollY).toBeLessThan(max);
+    scene.destroy();
+  });
+
+  it('a tap right after a wheel tick — before the frame drains — hits what is on screen', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const openProfile = vi.spyOn(core, 'openMemberProfile').mockImplementation(() => {});
+    const { px, py } = visibleRowTarget(core);
+    const R = core.rowH;
+
+    const before = tapMember(input, openProfile, px, py);
+    expect(before).toBeTruthy();
+
+    // Wheel exactly one row and do NOT tick: scrollY has moved, the layer has not. A tap judged
+    // against the pending offset would resolve one row off; it must be judged against the screen.
+    input._emitWheel(px, py, R);
+    expect(core.scrollY).toBe(R);
+    expect(core.repaint.appliedDelta('members')).toBe(0);
+    expect(tapMember(input, openProfile, px, py)).toBe(before);
+
+    scene.update(1 / 60);
+    expect(core.repaint.appliedDelta('members')).toBe(R);
+    expect(tapMember(input, openProfile, px, py)).not.toBe(before);
+    scene.destroy();
+  });
+
+  it('after translating exactly one row, the same point hits the NEXT member', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const openProfile = vi.spyOn(core, 'openMemberProfile').mockImplementation(() => {});
+    const { px, py } = visibleRowTarget(core);
+    const R = core.rowH;
+
+    const first = tapMember(input, openProfile, px, py)!;
+    input._emitDown(px, py);
+    input._emitMove(px, py - R);
+    scene.update(1 / 60);
+    input._emitUp(px, py - R);
+    const second = tapMember(input, openProfile, px, py)!;
+
+    expect(rowIndex(second)).toBe(rowIndex(first) + 1);
+    scene.destroy();
+  });
+
+  it('the per-frame scrollbar redraw does not accumulate children', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const before = core.bodyLayer.children.length;
+    input._emitDown(400, 900);
+    for (let i = 1; i <= 8; i++) {
+      input._emitMove(400, 900 - i * 12);
+      scene.update(1 / 60);
+    }
+    expect(core.repaint.appliedDelta('members')).toBe(96);
+    expect(core.bodyLayer.children.length).toBe(before);
+    scene.destroy();
+  });
+
+  it('falls back to a full render when the built layer is gone', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    core.repaint.layerFor('members').destroy();
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(400, 900);
+    input._emitMove(400, 840);
+    scene.update(1 / 60);
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+
+  it('a mode that builds no scroll layer at all still scrolls by falling back to render', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    core.family = null;
+    core.mode = 'create';
+    scene.render();
+    expect(core.repaint.layerFor('members')).toBeNull();
+    expect(core.repaint.layerFor('channel')).toBeNull();
+
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(400, 900);
+    input._emitMove(400, 840);
+    scene.update(1 / 60);
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+
+  it('portrait builds exactly one column — the hidden tab has no stale band to translate', async () => {
+    const { scene, core } = await mount(800, 1280);
+    expect(core.activeTab).toBe('members');
+    expect(core.repaint.layerFor('members')).toBeTruthy();
+    expect(core.repaint.layerFor('channel')).toBeNull();
+
+    core.activeTab = 'channel';
+    scene.render();
+    expect(core.repaint.layerFor('channel')).toBeTruthy();
+    expect(core.repaint.layerFor('members')).toBeNull();
+    scene.destroy();
+  });
+
+  it('channel: a translated column puts messages exactly where a rebuild would', async () => {
+    const { scene, input, core } = await mount(1280, 800);
+    const layer = core.repaint.layerFor('channel');
+    expect(core.channelMax).toBeGreaterThan(50);
+
+    const chatX = core.chatColX + 40;
+    input._emitDown(chatX, 400);
+    input._emitMove(chatX, 400 + 43); // awkward offset, and < channelMax so it stays a translate
+    scene.update(1 / 60);
+    const screenYs = (): number[] => {
+      const l = core.repaint.layerFor('channel');
+      return textNodes(l)
+        .map((t) => Math.round(t.y + l.y))
+        .filter((y) => y >= core.channelRegionTop && y <= core.channelRegionBottom)
+        .sort((a, b) => a - b);
+    };
+    const translated = screenYs();
+    expect(translated.length).toBeGreaterThan(3);
+    expect(layer.y).toBe(43);
+
+    scene.render();
+    expect(core.repaint.layerFor('channel').y).toBe(0);
+    expect(screenYs()).toEqual(translated);
+    scene.destroy();
+  });
+
+  it('the roster is masked to exactly its viewport, so the bottom row cannot bleed over the nav bar', async () => {
+    // The pre-2026-08-25 roster drew straight onto bodyLayer with no mask at all: the row straddling
+    // the fold was drawn in full and painted over the portrait bottom-nav bar. The mask that makes
+    // the cheap scroll possible is also what clips it, so pin its rect against the viewport.
+    const { scene, core } = await mount(800, 1280);
+    const layer = core.repaint.layerFor('members');
+    const mask = layer.mask as PIXI.Graphics;
+    expect(mask).toBeTruthy();
+    const b = mask.getBounds();
+    expect(Math.round(b.y)).toBe(Math.round(core.membersRegionTop));
+    expect(Math.round(b.y + b.height)).toBe(Math.round(core.membersRegionBottom));
+    // …and the viewport itself stops short of the bottom nav bar.
+    expect(core.membersRegionBottom).toBeLessThanOrEqual(core.bodyBottom);
+    scene.destroy();
+  });
+});

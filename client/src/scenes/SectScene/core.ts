@@ -387,9 +387,15 @@ export class SectSceneCore {
   }
 
   handleMove(_x: number, y: number): void {
-    const scroll = this.gesture.move(y);
-    if (scroll === null) return;
+    const raw = this.gesture.move(y);
+    if (raw === null) return;
     const col = this.dragCol;
+    // Clamp to the column's extent HERE, not just at the next rebuild. The gesture reports raw
+    // finger travel, and the cheap-scroll path translates whatever the scroll field says — so before
+    // repaint.ts an over-drag past the end was silently re-clamped by the full render this no longer
+    // does, and the list would keep translating into blank space (2026-08-25, caught while writing
+    // socialRepaintCoverage tests). Matches FriendsScene's onPointerMove, which always clamped.
+    const scroll = Math.min(raw, col === 'channel' ? this.channelMax : this.familiesMax);
     this[this.scrollKeyFor(col)] = scroll;
     // Dragging to the bottom re-pins the channel to the latest; scrolling up releases the pin so
     // incoming messages don't yank the reader back down.
