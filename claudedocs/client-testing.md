@@ -352,3 +352,30 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 **为什么非得用真实浏览器**：本套件的 headless `measureText` 是恒定 `7px/字符`且**与字号无关**（见本文档上面那条 2026-08-09 的记录）。页头重叠这个 bug 正好是字号驱动的——mock 下货币簇量出来 171px，还小于旧的 216px 预留，**bug 在 headless 里根本不存在**。所以那次的分工是：机制在单元层测（`test/ui/sceneHeaderCurrencyFit.ui.ts`，用长标题 + 放大 scale 按比例还原条件后做红绿对照）、接线用静态扫描守（`test/headerCurrencyReserve.test.ts`，正是它抓出 grep 漏掉的三个场景）、**像素结论只由浏览器给**。写这类测试前先问一句「这个 bug 在 mock 下复现得出来吗」，能省掉一整轮自欺欺人的绿。
 
 **用起来**：`npx webpack serve --mode development --port <port> --env TARGET=web-e2e`，Playwright `waitForFunction(() => window.__nwE2E?.app)`，`page.evaluate` 里遍历 `app.stage`。别在 `newPage()` 之后再 `setViewportSize()`——场景只在构造时读一次 `ILayout`，事后改视口只会把旧布局拉变形（第一次试的时候就是这样拍出一张假的「竖屏坏了」）。
+
+## 错误路径也是一条要钉的链：码 → 文案 → toast（2026-08-25，社交页第四轮补测）
+
+社交页那三轮补测都在钉「渲染/交互**少做事**之后还有什么能悄悄错掉」。第四轮换了一条完全不同的链：**请求失败之后，玩家读到的那句话**。结果发现两个场景的 `errorMsg()` 映射表（宗门 8 条码、家族 7 条码）一直是零覆盖，而且既有测试是**擦边而过**的三种典型形状，值得单列出来：
+
+1. `sectActionBusyLock.ui.ts` / `familyActionBusyLock.ui.ts` 只钉了 `TimeoutError → common.networkTimeout`——那是 `errorMsg()` 的**第一个 if**，后面整张服务端码表从没进过测试。
+2. `sectActions.test.ts` 的 `FakeSectSceneCore` 把 `errorMsg` 替换成了 `String(e)`。这是很合理的 fake（那份测试要的是动作体，不是文案），但它让「动作 reject 分支有覆盖」这句话**读起来像是映射也被覆盖了**，实际不是。
+3. `familySendButton.test.ts` 断言了失败时乐观行回滚 + toast 被调用，但没断言 toast 的**内容**——`showToast(anything)` 和 `showToast(映射后的文案)` 是两回事。
+
+> **教训**：「这条错误分支有测试」和「这条错误分支给玩家的文案有测试」是两个不同的命题。前者看 `catch` 有没有被执行到，后者要一路断言到字符串。fake 掉 `errorMsg` 的测试文件越多，越容易误以为后者也齐了。
+
+### 三种手法，各覆盖不同的失效方式
+
+- **映射表一码一例**（`sectErrorPaths.ui.ts` 8 例 + `familyErrorPaths.ui.ts` 7 例）：断言 `errorMsg(new WorldApiError(code, 'raw')) === t(key)`。**不要写成一个 forEach**——漏一行时红的必须是那一行的用例名，而不是一个匿名的循环失败。这轮 mutation 验证删了 `SECT_FULL` / `INVALID_TAG` / `ALREADY_REQUESTED` 三行，恰好红 6 例（3 条对应用例 + 2 条聚合例 + 1 条正好用了 `ALREADY_REQUESTED` 的接线例）。
+- **一条聚合例兜漏译**：`expect(msg).not.toBe('raw-server-text')`（这行映射存在）+ `expect(msg).not.toMatch(/^sect\.err\./)`（key 背后真的有文案）。前者防映射被删，后者防 i18n 里少了一份语言时 `t()` 透出 key 本身。三语的**键集合**另外用 `diff <(grep -o "'sect\.err\.[a-zA-Z]*'" zh.ts|sort) …` 逐键比过——数个数（三份都是 15）会被「一边多一个、另一边少一个」骗过去。
+- **接线用例走真实场景**：映射表测得再全，也不保证某个 `catch` 真的调了 `errorMsg`。所以另挑代表性动作（宗门 doJoin/doCreate/doAlly/doLeave/openBrowseList，家族 doCreate/confirmKick→doKick/submitMessage/doJoin/openJoinList）在真实 scene 上让 `worldApi` reject 一个**具体码**，断言 toast 收到映射后的文案 + `bt.busy` 回 false + 重绘发生 + **失败不改状态**（创建失败仍停在表单、退出失败不掉出 mySect、踢人失败成员仍在名册）。最后一条是这类用例最容易漏、也最容易真出 bug 的部分：乐观更新写在 `try` 里还是 `catch` 外，只有断言状态才看得出来。
+
+### 结构性守卫：真正会坏的是「以后新加的那个动作」
+
+两个场景之间有 ~20 个 `withTimeout` 调用点，各带一个 `catch`。逐个写行为用例既贵又没意义——现有的 20 个都是对的。会坏的是**下一个**：新动作落地，它的 catch 顺手 `showToast(String(e))`，整张映射表对它静默失效，而任何行为测试都看不见（写测试的时候那个动作还不存在）。
+
+于是加了 `test/socialErrorWiring.test.ts`：读 5 个域文件的源码，用括号配平抠出每个 `catch (x) { … }` 的 body，凡是里面有 `showToast(` 的就必须有 `errorMsg(x)`（用**该 catch 自己的绑定名**，否则 `catch (err)` 里写 `errorMsg(e)` 这种也能混过去）。不 toast 的 catch（静默/只打日志）自然跳过。同形状的既有例子：`tabIconWarmupCallSites.test.ts`、`header currency reserve` 那组。
+
+两条纪律：
+
+- **必须带 canary**。这套测试全部依赖一个正则，正则一旦被重构成 0 命中就变成永绿。所以第一例断言「扫到的 catch 数 ≥ 15」。
+- **失败信息要点名 file:line**。把违规项收集成字符串数组再 `expect(offenders).toEqual([])`，红的时候直接读到 `src/scenes/FamilyScene/actions.ts:185 — catch (e) toasts without errorMsg(e)`；写成 `expect(ok).toBe(true)` 就只剩「false 不等于 true」。
