@@ -179,6 +179,9 @@
   - **顺带发现两条与决策 5 相关的代码事实**：`teamSiegeValue()` 只读卡的 `defId`+`level`，**装备的 +60% 攻城值和 §8.3 的宗门攻城值加成都不进耐久伤害**。门禁 ③ 是带着这两条假想倍率测的，所以 P3 接线不会破平衡；但「要不要接」现在是个显式的待拍板项（接了会让装备成为城战第二道主要门槛）。
   - **一条未闭合的残余风险**：金币加速训练（`TROOP_SPEEDUP_SECS_PER_COIN=60`）是无上限的钱→兵通道。单人要追平最弱野城回复需约 1,120 金币/时连续 2 小时以上 + 134,375 墨水/时，实践中被资源侧掐住但原理上不封顶。若上线后真出现单人破城，**正解是加「每人对单座城的每小时伤害硬上限」，不是继续抬回复**（后者会把所有档位的所需人数一起抬高）。
   - 详细演算、被否原案的逐条理由、残余风险清单：[`ECONOMY_VERIFICATION_LOG.md`](game/ECONOMY_VERIFICATION_LOG.md) §13-SLG-CITYSIEGE（分册 `ECONOMY_VERIFICATION_LOG_CAPACITY.md`）。数值真源 `server/shared/src/slg/citySiege.ts`，回归 `server/tools/econ-sim/src/citySiege.test.ts`（28 例）。
+- **P1 落地回执（2026-08-25 同日）**：城池成为实体。新集合 `cities`（约 64 个 `CityDoc`/世界），归属主体 `ownerSectId`（**宗门**，决策 1/6 的口径）；`validateMarchTarget` 的 attack 分支接上宗门门槛（复用既有 `NOT_IN_SECT` 403，**先判宗门再判连地**——两者都不满足时能行动的是前者）；每次行军各打完整 3 波守军梯，清完全梯走既有 `siegeDamage` 管道挂 5 分钟延迟扣耐久；耐久惰性回复；易主给最后一击的宗门（决策 2）+ 2 小时保护期 + 耐久重置为满 + 三路频道公告 + 一封给落最后一击那名玩家的邮件（**不按宗门 ≤900 人扇出邮件**）；客户端城池面板显示**绝对值**耐久（曲线是大基数+小步长，Lv.3 与 Lv.10 只差约 22%，只给百分比会被当成 bug）。
+  - **一个实测抓到的坑**：`applySiege` 的到达时连地复检用 `targetFootprintCells`，而城池地面没有 `TileDoc`，该 helper 会退化成「只有落地那一格」——一座 5×5 城的锚点离攻方真正持有的边界地有 3 格，于是每一次城池围攻都在到达时被判成「补给线被切断」原地驻扎。e2e 一开始 8 例红才现形，departure 侧的判定是对的。
+  - **P1 明确没做**：§8 的三条收益（产量 / 全域 buff / 出兵锚点）一条未接，所以现在打下一座城除战略遏制外**没有任何收益**；`NATION_BONUS_PRODUCTION`/`NATION_BONUS_DEFENSE` 继续空转（P1 只改了城池归属，没把州府的省级加成重新接到 `CityDoc.ownerSectId`）；`CityDoc.defenderLock` 建好了但无写入方（P3 宗门驻防队用）。都在 P3。
 
 ## ADR-075 SLG 兵力上限曲线重调：基数腰斩 + 每级加倍（练兵场成长感）+ 训练队列槽位去死值 — Accepted — 2026-08-25
 

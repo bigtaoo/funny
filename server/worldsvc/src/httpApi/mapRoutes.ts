@@ -84,6 +84,19 @@ export async function handleMapRoutes(ctx: RouteCtx): Promise<boolean> {
     return true;
   }
 
+  // ── Wild-city siege state (ADR-074 P1): the ~64 city nodes with live durability / owning sect ──
+  // The same payload `POST /world/enter` already embeds. This route exists so the city info panel can
+  // REFRESH while it is open (durability regenerates continuously and other sects are hitting the same
+  // walls) without re-running the whole map entry. Deliberately not pushed: a durability hit lands up to
+  // dozens of times an hour per city, and fanning each one out to ≤900 sect members would be a push
+  // faucet — capture, the event that actually matters, announces itself on the sect channel instead.
+  if (method === 'GET' && path === '/world/cities') {
+    const worldId = q.get('worldId');
+    if (!worldId) { sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required'); return true; }
+    send(res, 200, ok(await svc.getCityViews(worldId)));
+    return true;
+  }
+
   // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26): full list of owned tiles ──
   if (method === 'GET' && path === '/world/territories') {
     const worldId = q.get('worldId');

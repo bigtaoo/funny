@@ -44,6 +44,7 @@ import type { ChatRegion } from '@nw/shared';
 import { YieldService } from './core/yield';
 import { PushService, type OccEntry, type CoverEntry } from './core/push';
 import { NationService } from './core/nation';
+import { CitySiegeService, type CityState } from './core/citySiege';
 import { SpawnService } from './core/spawn';
 import { VisionService } from './core/vision';
 import { MapService } from './core/map';
@@ -77,6 +78,7 @@ export class WorldCore {
   private readonly yieldSvc: YieldService;
   private readonly pushSvc: PushService;
   private readonly nationSvc: NationService;
+  private readonly citySvc: CitySiegeService;
   private readonly spawnSvc: SpawnService;
   private readonly visionSvc: VisionService;
   private readonly mapSvc: MapService;
@@ -96,6 +98,7 @@ export class WorldCore {
     this.yieldSvc = new YieldService(this);
     this.pushSvc = new PushService(this);
     this.nationSvc = new NationService(this);
+    this.citySvc = new CitySiegeService(this);
     this.spawnSvc = new SpawnService(this);
     this.visionSvc = new VisionService(this, this.pushSvc);
     this.mapSvc = new MapService(this, this.yieldSvc, this.visionSvc);
@@ -167,6 +170,14 @@ export class WorldCore {
     return this.nationSvc.setNationName(worldId, accountId, capitalIdx, name, region);
   }
   getNationAt(worldId: string, x: number, y: number): Promise<NationDoc | null> { return this.nationSvc.getNationAt(worldId, x, y); }
+
+  // ── wild-city siege (core/citySiege.ts, ADR-074 P1) ───────────────
+  initCities(worldId: string): Promise<void> { return this.citySvc.initCities(worldId); }
+  getCityStates(worldId: string): Promise<CityState[]> { return this.citySvc.getCityStates(worldId); }
+  getCity(worldId: string, nodeId: string): Promise<CityState | null> { return this.citySvc.getCity(worldId, nodeId); }
+  cityAt(worldId: string, x: number, y: number): Promise<CityState | null> { return this.citySvc.cityAt(worldId, x, y); }
+  requireSect(worldId: string, accountId: string): Promise<string> { return this.citySvc.requireSect(worldId, accountId); }
+  getCityViews(worldId: string): ReturnType<CitySiegeService['getCityViews']> { return this.citySvc.getCityViews(worldId); }
 
   // ── spawn (core/spawn.ts) ─────────────────────────────────────────
   pickRandomEmptyTile(...args: Parameters<SpawnService['pickRandomEmptyTile']>): ReturnType<SpawnService['pickRandomEmptyTile']> { return this.spawnSvc.pickRandomEmptyTile(...args); }

@@ -156,6 +156,15 @@ export const CITY_DURABILITY_PER_LEVEL = 900;
 export const CITY_REGEN_BASE = 12_000;
 /** Regen added per city level, per hour. */
 export const CITY_REGEN_PER_LEVEL = 500;
+/**
+ * Post-capture protection window for a wild city (§7). Deliberately much shorter than the main base's
+ * `PROTECTION_SEC` (8h): a captured city ALSO resets to full durability for its new owner, so retaking it
+ * already costs a second complete assault. The main base gets no such reset (it relocates instead), which
+ * makes its shield the only protection it has. This window exists only to stop a losing sect from flipping
+ * the city back with a second wave it had already staged a few minutes behind the first.
+ */
+export const CITY_CAPTURE_PROTECTION_MS = 2 * 60 * 60 * 1000;
+
 /** Durability + regen multiplier for the world center (the single contested core-province objective). */
 export const CITY_WORLD_CENTER_MULT = 2;
 
@@ -182,4 +191,46 @@ export function regenCityDurability(current: number, max: number, regenAt: numbe
   if (current >= max) return max;
   const elapsedHours = Math.max(0, now - regenAt) / 3_600_000;
   return Math.min(max, current + elapsedHours * ratePerHour);
+}
+
+// ── City-node lookup + doc identity ──────────────────────────────────────────────────────────────
+/** Mongo `_id` of a city document (mirrors `playerWorldId`'s shape). */
+export function cityDocId(worldId: string, nodeId: string): string {
+  return `city:${worldId}:${nodeId}`;
+}
+
+/**
+ * Rank used to break footprint overlaps: world center beats a province capital beats a graded city.
+ * Must stay identical to `CITY_PAINT_RANK` in mapEdit.ts and to the capitals-first order
+ * `_cityGroundNodeAt` walks — two cities' plots DO overlap in practice (a map-edge city has its anchor
+ * clamped back inside the map), and from ADR-074 P1 on the winner decides the cell's level, which is the
+ * besieged city's durability and garrison scale.
+ */
+export const CITY_KIND_RANK: Record<CityKind, number> = { worldCenter: 0, capital: 1, garrison: 2 };
+
+/** The minimal city-node shape this lookup needs (structurally satisfied by `MapEditorCityNode` and by worldsvc's `CityDoc`). */
+export interface CityFootprintNode {
+  kind: CityKind;
+  x: number;
+  y: number;
+  footprint: number;
+}
+
+/**
+ * The city whose footprint covers (x,y), or null. Overlaps resolve by {@link CITY_KIND_RANK} so this
+ * agrees with `rasterizeMapEdits` and `_cityGroundNodeAt` about which city owns a contested cell — the
+ * three must not drift (a 2026-08-25 P0 bug was exactly that drift, see SLG_CITY_SIEGE_DESIGN §10-P0).
+ *
+ * Shared rather than duplicated per caller because three call sites need the same answer: the server's
+ * siege validation ("which city is this march attacking"), the server's arrival settlement, and the
+ * client's map click ("which city's panel do I open").
+ */
+export function cityNodeCovering<T extends CityFootprintNode>(nodes: readonly T[], x: number, y: number): T | null {
+  let best: T | null = null;
+  for (const node of nodes) {
+    const r = (node.footprint - 1) / 2;
+    if (Math.abs(x - node.x) > r || Math.abs(y - node.y) > r) continue;
+    if (!best || CITY_KIND_RANK[node.kind] < CITY_KIND_RANK[best.kind]) best = node;
+  }
+  return best;
 }

@@ -138,8 +138,21 @@ export interface SiegeDamageDoc {
   worldId: string;
   attackerId: string;
   defenderId?: string;  // building owner (absent for ownerless PvE buildings)
-  tile: string;         // target building tile (anchor for a main base)
+  tile: string;         // target building tile (anchor for a main base); for a city hit, the footprint cell the march landed on
   isBase: boolean;      // true → main base (HP≤0 triggers passiveRelocate); false → territory/level tile (HP≤0 → hand over)
+  /**
+   * ADR-074 P1: set when the target is a WILD CITY (`CityDoc._id`) rather than a tile-scale building. The
+   * settlement branch is entirely different — durability lives on the city document, ownership is by sect,
+   * and capture posts announcements instead of relocating a base — so `settleSiegeDamage` dispatches on the
+   * presence of this field (see combatSiege/cityDamage.ts). `isBase` is false for these.
+   */
+  cityId?: string;
+  /**
+   * Besieging sect at the moment the ladder was cleared, snapshotted rather than re-read at settlement:
+   * ownership must go to the sect that actually did the work, not to whichever sect the attacker happens to
+   * belong to five minutes later. Only set alongside `cityId`.
+   */
+  attackerSectId?: string;
   damage: number;       // attacking team's siege value to subtract from building HP
   attackerSurvivors: number; // attacker surviving troops, refunded / used as new garrison on capture
   familyId?: string;    // attacker family (activity/nation bookkeeping at settlement)

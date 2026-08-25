@@ -1,6 +1,6 @@
 # Notebook Wars — 野外城池攻占设计（宗门级攻城）
 
-> 状态：设计中（**数值已经 econ-sim 实测标定，2026-08-25**；机制原案有三处被实测否掉，见 §5）· 权威：本文（野外城池机制基准）· 创建：2026-08-25
+> 状态：**P0/P1/P2 已落地（2026-08-25）**，P3（守方 + §8 三条收益接线）未开工。数值已经 econ-sim 实测标定；机制原案有三处被实测否掉，见 §5。· 权威：本文（野外城池机制基准）· 创建：2026-08-25
 > 上级：[`SLG_DESIGN.md`](SLG_DESIGN.md)（大世界总纲，§3.1 城池节点 / §5 攻防模型）。本文把 SLG §3.1 里长期挂着「城池的驻军/耐久数值仍是 §5 待定项，本轮只做视觉」的那个缺口补完，并把它从「贴图」升级成一个有数据模型、有归属、有收益的玩法实体。
 > 配套：[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)（**主城**内政，勿混淆——本文是**野外 NPC 城池**）、[`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md)（数字登记，本系统落 §13-SLG-CITYSIEGE）、[`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)（核验流程）、[`SOCIAL_DESIGN.md`](SOCIAL_DESIGN.md)（家族/宗门层级）。数值真源：`server/shared/src/slg/siege.ts`。
 > 拍板：[ADR-074](../DECISIONS.md)（2026-08-25，用户当场四问四答）。
@@ -86,9 +86,9 @@ core/nation.ts:41              applyNationChange() → capitalIdxAt(x,y) ≥ 0 �
 ## 3. 攻打门槛：必须有宗门（ADR-074 决策 1）
 
 - **判据**：`playerWorld.sectId` 存在。`sectId` 已在 `joinWorld` 时镜像到 `PlayerWorldDoc`（`core/vision.ts` 的 comm-audit batch F item 8b），无需跨服查询。
-- **拦截点**：`validateMarchTarget` 的 `attack` 分支，新增城池目标判定后第一道检查，抛 `SlgError('NO_SECT')`。
+- ✅ **拦截点**：`validateMarchTarget` 的 `attack` 分支，城池目标判定后的第一道检查，抛 `SlgError('NOT_IN_SECT')`（复用既有的 403 错误码，而非新造 `NO_SECT`——客户端已经有它的 i18n）。**顺序刻意在连地判定之前**，理由见 §10-P1 第 3 条。
 - **为什么是宗门而不是家族**：ADR-039 连地判定本来就是**按宗门领地**算的（`isConnectedToSectTerritory`）。如果门槛放到家族级，会出现「能打但连不上地」的割裂——同一层级才自洽。本项目 zh 文案 `profile.sect` 即「帮会」= 宗门，且 `social.sect.noFamily` 说明加宗门前必须先有家族，所以宗门门槛天然包含家族门槛。
-- **客户端**：无宗门玩家点城，弹「城池 · 需加入帮会」信息框（不给出征按钮），而不是当前的普通占领框。
+- ✅ **客户端**：无宗门玩家点城，面板说明「须先加入帮会才能围攻城池」且不给出征按钮（与占领按钮同一约定：不满足的前置条件隐藏按钮而不是置灰）。
 
 ---
 
@@ -126,6 +126,8 @@ interface CityDoc {
   durabilityRegenAt: number;// 惰性回复基准时刻（惰性回复的「上次结算时刻」）
   regenPerHour: number;     // = cityRegenPerHour(level, kind)，快照下来省一次重算
 
+  ownerSectName?: string;   // 归属宗门名快照（地图标注无需再查宗门）
+
   // 守军波次状态。NPC 波次是**每次行军各打完整 3 波**（§5），所以这里不存 NPC 波次；
   // 本字段留给 P3 的宗门驻防队：被打败的驻防队锁定 CITY_WAVE_RESPAWN_MS 不能再上阵。
   defenderLock?: Record<string, number>; // teamId → injuredUntil
@@ -135,9 +137,9 @@ interface CityDoc {
 }
 ```
 
-- 世界开季时 `initCities(worldId)` 按模板下发的 `cities` 节点表批量 `$setOnInsert`（照 `initNations` 的形，幂等）。
-- 索引：`{ worldId: 1 }`、`{ worldId: 1, ownerSectId: 1 }`（§8 宗门加成聚合）、`{ _id }`。
-- 赛季重置：进 `season/management.ts` 的清空集合列表（与 `siegeDamage`/`occupations`/`stationed` 同批）。
+- ✅ 世界开季 / 世界重置时 `initCities(worldId)` 按**模板下发的** `cities` 节点表建档（照 `initNations` 的形，幂等）。几何与耐久上限每次重刷、**已受的伤不重置**、归属/保护期/围攻日志每次清空——理由见 §10-P1 第 2 条。
+- ✅ 索引：`{ worldId: 1 }`、`{ worldId: 1, ownerSectId: 1 }`（§8 宗门加成聚合）、`{ worldId: 1, x: 1, y: 1 }`（footprint 反查的盒查询）。
+- ✅ 赛季重置：已进 `season/management.ts` 的清空集合列表（与 `siegeDamage`/`occupations`/`stationed` 同批）。
 
 ---
 
@@ -375,11 +377,31 @@ interface CityDoc {
 
 **P0 明确留下的临时状态**：`nations` 没有任何写入方了，所以 `NATION_BONUS_PRODUCTION`(+10%) 与 `NATION_BONUS_DEFENSE`(+15%) 双双**空转**，直到 P1 把州府归属改成宗门后重新接线（§9）。读取路径刻意保留未删——先删机制再建替代品没有意义。另外 `initNations` 只在**赛季开启 / 世界重置**时跑，所以**已经开着的世界会保留旧的建国归属**（含通过该漏洞建的国），需要跑一次 `/admin/world/reset` 或手动清一次 `nations` 集合。
 
-### P1 城池实体
+### P1 城池实体 ✅ 已落地（2026-08-25）
 
-`CityDoc` + `initCities` + attack 分支 + 宗门门槛 + **每次行军各打完整 3 波守军**（不是共享波次+重生，理由见 §5）+ 耐久/回复（惰性）+ 易主（保护期/邮件/公告/`siegeLog`）+ 客户端血条（**显示绝对值**，§6.5）与攻城面板。契约面：`openapi-world.yml` 加城池视图字段（走 ADR-040 的 `openapi/` 分域片段，勿直接编辑 `openapi.yml`）。
+P2 的标定先于 P1 跑完，所以 P1 实现的是**已实测定案**的机制，不是本文最初写下的那版（三条机制原案被否，见 §5）。
 
-> P2 先于 P1 跑完，所以 P1 实现的是**已标定**的机制：波次固定 3、每波守军 `210×等级`、每波基地血量 `45×等级`、耐久 `26000+900×等级`、回复 `12000+500×等级`/时。这些常量都在 `server/shared/src/slg/citySiege.ts`，不要在服务里重新定义。
+1. ✅ **`CityDoc` + 新集合 `cities`**（`worldsvc/src/db/cityDocs.ts`）：每世界约 64 个文档，归属主体 `ownerSectId`（宗门），索引 `{worldId}` / `{worldId, ownerSectId}` / `{worldId, x, y}`。**不是**挂在锚点格子的 `TileDoc` 上——footprint 有 9~81 格且不可分割，耐久/归属/围攻日志是**城池**的属性；挂在格子上还会跟主城与建筑路径已经在用的 `hp`/`durability` 撞名。
+2. ✅ **`CitySiegeService`**（`worldsvc/src/core/citySiege.ts`，`core/nation.ts` 的对位物，组合而非继承）：`initCities`（幂等，赛季开启/世界重置各跑一次）、`getCityStates`/`getCity`/`cityAt`（footprint 反查）、`requireSect`（攻打门槛）、`getCityViews`（带惰性回复的视图）。
+   - **节点表来源是 `core.getCities(worldId)`**（世界文档上从地图模板克隆下来的那份），不是 `allCityNodes(worldId)`：后者会把城池的血量放在贴图**不在**的位置（模板地形按 templateId 的种子生成，且设计师可能拖过城）。
+   - `initCities` **每次都重刷**几何与耐久上限（`$set`），但**不重置已受的伤**（`durability` 只在 `$setOnInsert`）。所以地图编辑器改了城池等级、或常量重调过，下次开季会重新缩放城墙，而正在被围攻的城不会被治好。归属/保护期/围攻日志则每次 `$unset`——赛季级状态不能被「同 worldId 重开」继承（`initNations` 关的是同一个洞）。
+3. ✅ **attack 分支 + 宗门门槛**（`combatMarch/startMarchValidation.ts`）：顺序刻意是**先宗门、后连地**——两者都不满足时，玩家能行动的是前者，报连地错误会让人跑去打一片他还是用不上的地。复用既有 `NOT_IN_SECT`(403) 而不是新造 `NO_SECT`。另外拦「本宗门已持有」（`ALLY_TILE`）与「保护期内」（`PROTECTED`）。连地判定按**整块 footprint**（`targetFootprintCells` 只认主城 3×3，城池自带一份）。
+4. ✅ **波次梯 + 耐久**（`combatSiege/arrival/citySiege.ts`）：每次行军各打完整 3 波，残兵按每波真实存活率（ADR-069 的分母）在波间衰减；清完全梯 → 走既有 `siegeDamage` 管道挂 5 分钟延迟，伤害 = `teamSiegeValue`；被击退 → 零伤害、残兵走真实返程。
+   - **到达时也重新判一遍连地**，而且必须用城池 footprint：`applySiege` 原本用 `targetFootprintCells`，城池地面没有 `TileDoc`，那个 helper 会退化成「只有落地那一格」——一座 5×5 城的锚点离攻方真正持有的边界地有 3 格，于是**每一次城池围攻都会在到达时被判成「补给线被切断」而原地驻扎**。实测抓到的（e2e 一开始 8 例红）。
+5. ✅ **耐久结算 + 易主**（`combatSiege/cityDamage.ts`，由 `settleSiegeDamage` 按 `SiegeDamageDoc.cityId` 分流）：惰性回复 → 扣伤害 → 累加 `siegeLog[sectId]`；归零则**最后一击那名玩家所属宗门**得城（ADR-074 决策 2），写 `capturedAt`/`protectedUntil`，耐久**重置为满**（否则刚付了整场代价的宗门拿到一座任何人下一击就能翻走的空城），清 `siegeLog`。
+   - 并发用 rev CAS + 有界重试（与格子路径同款），而 CAS 顺带充当「谁先到」的裁决者：同一 `rev` 只有一次更新能匹配，所以**易主与公告都只可能发生一次**。
+   - 公告三路 + 一封邮件：新主宗门频道、原主宗门频道（城池归宗门所有，没有单个 defender 可推 `under_attack`，原主频道那条**就是**通知）、世界中心易主发全服频道；邮件只发给**落下最后一击的那名玩家**。刻意不按宗门（≤900 人）扇出邮件——64 座城每次易主群发一遍是邮件水龙头，频道公告已经覆盖在线成员且有 7 天 TTL。
+6. ✅ **契约面**（直接编辑 `openapi-world.yml`；ADR-040 的 `openapi/` 分域片段只管 `openapi.yml`）：`WorldCityNodeView` 加 `ownerSectId`/`ownerSectName`/`durability`/`durabilityMax`/`regenPerHour`/`protectedUntil`/`siegeLog`；`PlayerWorldView` 加 `sectId`（客户端据此决定是否给围攻按钮）；新增 `GET /world/cities`。
+   - **刻意不做推送**：一座城每小时会被命中几十次，按宗门扇出每一击是推送水龙头。城池面板打开时刷一次（`WorldMapNet.refreshCities`），地图上的血条只需大致正确；易主才走频道公告。
+7. ✅ **客户端**（`WorldMapInput.showCityPanel` + `WorldMapRenderer/city.ts`）：城池精灵上方的耐久条（只在受损时画，跟主城血条同一套克制）；面板显示**绝对值**耐久 + 每小时回复量 + 归属宗门 + 保护期倒计时 + 本轮各宗门贡献；围攻按钮仅在服务端所有前置条件都已满足时出现（无宗门/保护期内/本宗门已持有 → 隐藏并说明原因，与占领按钮 2026-08-02 的约定一致）。
+   - **耐久必须显示绝对值**：曲线是「大基数 + 小步长」（§6.5），Lv.3 与 Lv.10 只差约 22%，只给百分比会被当成 bug。
+8. ✅ 赛季生命周期：`openSeason`/`resetWorld` 各调一次 `initCities`；`cities` 进重置清空集合列表（与 `siegeDamage`/`occupations`/`stationed` 同批）。
+9. ✅ 回归测试：`worldsvc/test/city-siege.e2e.test.ts`（21 例，真 Mongo）+ `shared/test/citySiege.test.ts`（19 例纯函数）+ `client/test/ui/worldMapCityClick.ui.ts`（15 例，P0 的 5 条保留 + P1 的 10 条）。P0 的 `city-ground.e2e.test.ts` 里那条 attack 用例从「未实现」改成断言宗门门槛。
+
+**P1 明确留下的临时状态**：
+- `CityDoc.defenderLock` 已建字段但 P1 无写入方——它是 P3 宗门驻防队的锁定期（`CITY_WAVE_RESPAWN_MS`），NPC 波次是每次行军重打的，不需要。
+- `nations` 的两条加成仍然空转：`NATION_BONUS_PRODUCTION`/`NATION_BONUS_DEFENSE` 的读取路径还在，但 P1 只把**城池**归属改成了宗门，没有把州府的省级加成重新接到 `CityDoc.ownerSectId` 上（§9 与 §8 的收益接线都在 P3）。
+- §8 的三条收益（产量 / 全域 buff / 出兵锚点）一条都没接：P1 只做「打得下来、守得住、看得见」。
 
 ### P2 数值核验（上线门禁）✅ 已落地（2026-08-25，先于 P1 跑完）
 
@@ -417,8 +439,10 @@ interface CityDoc {
 | **金币加速训练（新增，未闭合）** | ⚠️ `TROOP_SPEEDUP_SECS_PER_COIN=60` 是无上限的钱→兵通道。单人要追平最弱野城的回复需额外 13,437 兵/时 ≈ **1,120 金币/时** 连续 2 小时以上 + 134,375 墨水/时 支撑，实践中被资源侧掐住（大号约 26,000 墨水/时 → 2,600 兵/时），原理上不封顶。若上线后真出现单人破城，**正解不是继续抬回复**（会把所有档位的所需人数一起抬高），而是加一条「每人对单座城的每小时伤害硬上限」 |
 | **新手对城池零贡献（新增）** | 实测新手档（练兵场 L0 + 卡 Lv.1 + 裸装）在**任何**城池等级都清不完波次梯，一次伤害都造不成。§8.2「城池收益是宗门招人筹码」仍成立，但新人是**享受**收益不是**参与**攻城；「几十人围攻」的人指几十个练兵场 L6 + 卡 Lv.6 + 满装的成员 |
 | **`teamSiegeValue` 不读装备（新增）** | 代码事实：`EFFECT_CAPS.siegePct_fp`(+60%) 只作用于引擎蓝图的 `siegeValue_fp`（战斗中对象征性基地的伤害），**不影响落到耐久上的那一下**。是否要把它接进耐久伤害是个待拍板的设计问题——门禁已按「接了」测过，接线不会破平衡，但会让装备成为城战的第二个主要门槛 |
-| `nations` 集合是否整体删除 | 留到 P3 判断（§9 末条） |
-| 城池易主保护期时长 | 沿用主城口径，未单独定数 |
+| `nations` 集合是否整体删除 | 留到 P3 判断（§9 末条）。P1 只把**城池**归属改成了宗门，州府的省级加成（`NATION_BONUS_*`）仍未重新接线，两条加成继续空转 |
+| **§8 三条收益一条未接（P1 后新增）** | 产量 / 全域 buff / 出兵锚点全在 P3。P1 只做「打得下来、守得住、看得见」，所以现在打下一座城**除了战略遏制没有任何收益**——不是遗漏，是分期 |
+| **`CityDoc.defenderLock` 是空字段（P1 后新增）** | 建好了但 P1 无写入方：它是 P3 宗门驻防队的锁定期（`CITY_WAVE_RESPAWN_MS`）。NPC 波次每次行军重打，不需要锁定 |
+| 城池易主保护期时长 | ✅ 已定 `CITY_CAPTURE_PROTECTION_MS = 2 小时`，**刻意短于**主城的 `PROTECTION_SEC`(8 小时)：城池易主时耐久同时重置为满，重夺本就要再打一整场；主城没有这个重置（它是搬迁），护盾是它唯一的保护 |
 | 城池血条 UI 必须显示绝对值 | §6.5：耐久是「大基数 + 小步长」，Lv.3 与 Lv.10 只差 22%，只显示百分比会被读成 bug |
 | 宗门人数上限对 §8.1 总 faucet 的影响 | 宗门 ≤900 人（`GW_PUSH_REDIS_CHANNEL` 注释口径）；满编宗门吃满上限时的全服 faucet 总量待 `SLG_ECONOMY_CHECK.md` 轨道 2（赛季资源）核算 |
 | §8.1 城池产量 vs 训练资源消耗（新增） | 满配档 8,640 兵/时 的训练吞吐需要 86,400 墨水/时，远超单人产出上限。P2 的持续输出率因此是**乐观上界**（假设有存货可倾，对门禁而言方向安全）；P3 接产量时要在轨道 2 里连带复核 |

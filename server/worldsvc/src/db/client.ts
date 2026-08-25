@@ -23,6 +23,7 @@ import {
   ensureSocialIndexes,
 } from './socialDocs';
 import { type SeasonResultDoc, type ShardAllocationDoc, type ShardTransferDoc, ensureSeasonIndexes } from './seasonDocs';
+import { type CityDoc, ensureCityIndexes } from './cityDocs';
 
 export async function createWorldMongo(
   uri: string,
@@ -55,6 +56,7 @@ export async function createWorldMongo(
     occupations: db.collection<OccupationDoc>('occupations'),
     stationed: db.collection<StationedDoc>('stationed'),
     nations: db.collection<NationDoc>('nations'),
+    cities: db.collection<CityDoc>('cities'),
     seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
     shardTransfers: db.collection<ShardTransferDoc>('shardTransfers'),
@@ -87,6 +89,7 @@ export async function createWorldMongo(
       collections.nations,
     );
     await ensureSeasonIndexes(collections.seasonResults, collections.shardAllocations);
+    await ensureCityIndexes(collections.cities);
   }
 
   /** One-time data migrations run once at boot after ensureIndexes. See playerDocs.ts for the migration itself. */
