@@ -20,7 +20,7 @@
 // file already does. External call sites (httpApi/index/scheduler + this package's own e2e tests) only
 // ever reach 12 of WorldCore's ~46 forwarded methods directly on the service instance (grep-verified
 // against test/*.test.ts + httpApi/**): getMe/getTile/getMap/getMapSparse/setNationName/
-// applyNationChange/addCover/removeCover/initNations/getNations/capitalsFor/pickSpawnTile — those are
+// addCover/removeCover/initNations/getNations/capitalsFor/pickSpawnTile — those are
 // re-forwarded below, one line each, same shape as the domain-class forwards later in this file.
 // `deps`/`coordX`/`coordY` are also forwarded (used internally by `enterWorld` below).
 import { WorldCore } from './core';
@@ -77,9 +77,6 @@ export class WorldService {
   }
   getNations(worldId: string): Promise<NationDoc[]> { return this.core.getNations(worldId); }
   initNations(worldId: string): Promise<void> { return this.core.initNations(worldId); }
-  applyNationChange(worldId: string, x: number, y: number, winnerAccountId: string, winnerFamilyId?: string): Promise<boolean> {
-    return this.core.applyNationChange(worldId, x, y, winnerAccountId, winnerFamilyId);
-  }
   setNationName(worldId: string, accountId: string, capitalIdx: number, name: string, region?: ChatRegion): Promise<void> {
     return this.core.setNationName(worldId, accountId, capitalIdx, name, region);
   }

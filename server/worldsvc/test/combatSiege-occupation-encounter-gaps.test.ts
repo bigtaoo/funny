@@ -113,7 +113,6 @@ function makeCore(opts: {
     pushMarch, pushSiege, pushTile, pushTileToObservers, bumpFamilyActivity, setOccupancy,
     removeCover: vi.fn(async () => {}),
     recomputeYield: vi.fn(async () => emptyResources()),
-    applyNationChange: vi.fn(async () => true),
     isConnectedToSectTerritory,
     meta: { getSaveFields: vi.fn(async () => null) },
     socialsvc: { getFamiliesByIds: vi.fn(async () => []) },

@@ -63,7 +63,7 @@ export async function applyStrongholdSiege(
   if (res.outcome === 'attacker_win') {
     // 2026-08-09 (user decision — nothing in the game transfers instantly after a battle win):
     // capture starts the same OCCUPY_HOLD_SEC hold as every other capture (writeContestedHold);
-    // ownerId/yieldRate/applyNationChange wait for settleOccupation (occupation.ts) — only the
+    // ownerId/yieldRate wait for settleOccupation (occupation.ts) — only the
     // one-time capture reward + material drop below still land immediately (loot convention,
     // unaffected — same as every other siege outcome in this file).
     await ctx.writeContestedHold(m, pw, proc, x, y, res.attackerSurvivors, t);

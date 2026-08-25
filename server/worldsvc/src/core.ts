@@ -163,9 +163,6 @@ export class WorldCore {
   // ── nation (core/nation.ts) ───────────────────────────────────────
   initNations(worldId: string): Promise<void> { return this.nationSvc.initNations(worldId); }
   getNations(worldId: string): Promise<NationDoc[]> { return this.nationSvc.getNations(worldId); }
-  applyNationChange(worldId: string, x: number, y: number, winnerAccountId: string, winnerFamilyId?: string): Promise<boolean> {
-    return this.nationSvc.applyNationChange(worldId, x, y, winnerAccountId, winnerFamilyId);
-  }
   setNationName(worldId: string, accountId: string, capitalIdx: number, name: string, region?: ChatRegion): Promise<void> {
     return this.nationSvc.setNationName(worldId, accountId, capitalIdx, name, region);
   }

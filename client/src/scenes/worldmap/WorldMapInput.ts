@@ -253,6 +253,20 @@ export class WorldMapInput {
       return;
     }
 
+    // Wild city (ADR-074): a city's whole footprint is `familyKeep` city ground — indivisible, siege-only,
+    // and gated on sect membership. Before ADR-074 only the anchor cell carried this type and nothing on
+    // either side rejected it, so clicking inside a city's walls fell through to the neutral branch below
+    // and offered a plain 占领 against the underlying resource tile's NPC garrison (用户 2026-08-25 截图:
+    // 「墨水 · Lv.2 · 建议兵力 240」 on a Lv.8 city). Info-only for now: the siege itself is P1, so no march
+    // button is offered rather than one the server would reject with 'City siege is not implemented yet'.
+    if (tile?.type === 'familyKeep') {
+      const cityHead = [t('world.city'), `(${tx}, ${ty})`];
+      if (tile.level != null) cityHead.push(t('world.cityLevel').replace('{lv}', String(tile.level)));
+      cityHead.push(t('world.cityHint'));
+      this.ctx.panels.showModal(cityHead, [{ label: '✕', action: () => this.ctx.panels.closeModal() }]);
+      return;
+    }
+
     // Stronghold (G8 §3.1): while unoccupied it is an ultra-strong NPC garrison — cannot be directly occupied or swept, only besieged (march with a team). Once captured it becomes a territory tile handled by the mine/occupied branches above.
     if (tile?.type === 'stronghold') {
       this.ctx.panels.showModal(

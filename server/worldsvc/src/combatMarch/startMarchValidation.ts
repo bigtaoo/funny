@@ -32,6 +32,10 @@ export async function validateMarchTarget(
   let defenderId: string | undefined; // attack: the attacked player's accountId (under_attack warning is pushed immediately on departure)
   if (kind === 'occupy') {
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot directly occupy the world center');
+    // City ground (ADR-074): a wild city's whole footprint is indivisible and can only be taken by siege.
+    // Until ADR-074 `familyKeep` had NO branch in this switch at all — every cell of a city plot was an
+    // ordinary occupy target (see SLG_CITY_SIEGE_DESIGN §1.3). `center` is handled by its own branch above.
+    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cities cannot be occupied; use attack siege to capture');
     // Stronghold (G8 §3.1): guarded by an extremely powerful system NPC; cannot be directly occupied — must be captured via attack siege.
     if (proc.type === 'stronghold' && !toTile?.ownerId) {
       throw new SlgError('TILE_OCCUPIED', 'Strongholds cannot be directly occupied; use attack siege to capture');
@@ -57,6 +61,10 @@ export async function validateMarchTarget(
   } else if (kind === 'attack') {
     // Siege: target must be another player's territory/capital, or an ownerless stronghold (G8 PvE to defeat the system garrison). Use occupy/sweep for neutral ownerless tiles.
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be sieged');
+    // City siege is the ADR-074 P1 scope (CityDoc + garrison waves + durability). P0 only closes the holes,
+    // so a city is currently un-takeable by any route — say so explicitly instead of falling through to the
+    // ownerless branch below, whose 'use occupy/sweep' advice is now wrong for city ground (both are blocked).
+    if (proc.type === 'familyKeep') throw new SlgError('BAD_REQUEST', 'City siege is not implemented yet');
     if (!toTile?.ownerId) {
       // ADR-037 (§5.4): no owner but mid occupation-hold (an occupy march already won its PvE battle and is
       // waiting out the hold countdown) — this is a valid expulsion attack target; the pending occupier gets
@@ -100,6 +108,9 @@ export async function validateMarchTarget(
     // (stronghold/bridge/plankway — captured via attack, never merely stood on), and not a tile that already
     // holds a stationed team (anyone's) — one park per tile.
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot move onto the world center');
+    // City ground (ADR-074): captured by siege, never merely stood on — same rule as the world center and
+    // the PvE-only chokes (stronghold/bridge/plankway) checked further down this branch.
+    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cannot move onto a city; capture it by siege');
     const stationedHere = await cols.stationed.findOne({ _id: toTid });
     if (stationedHere) throw new SlgError('TILE_OCCUPIED', 'A team is already stationed on this tile');
     const isGarrison = stationMode === 'garrison';
@@ -122,6 +133,9 @@ export async function validateMarchTarget(
   } else {
     // sweep: clear NPC garrison from neutral / resource tiles (no occupation; loot is carried back on return).
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot sweep the world center');
+    // City ground (ADR-074): no farmable NPC garrison inside a city plot — the city's own garrison waves
+    // only exist on the siege path, so sweeping it must not be a cheap loot route around them.
+    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cities must be captured via attack siege; sweeping is not allowed');
     // Stronghold (G8): ultra-strong system garrison; cannot be swept for loot — must be captured via attack siege.
     if (proc.type === 'stronghold') throw new SlgError('TILE_OCCUPIED', 'Strongholds must be captured via attack siege; sweeping is not allowed');
     // Crossings (bridge/plankway): garrisoned choke buildings; cannot be swept — must be captured via attack siege.

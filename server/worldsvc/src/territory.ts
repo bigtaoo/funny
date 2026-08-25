@@ -64,6 +64,10 @@ export class TerritoryService {
       if (!this.core.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Capital coordinates out of bounds');
       const proc = proceduralTile(worldId, x, y);
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
+      // City ground (ADR-074): a wild city's footprint is not buildable land. Before ADR-074 only the
+      // single city anchor was `familyKeep` and nothing rejected it, so a manually placed capital could
+      // land on top of a city.
+      if (proc.type === 'familyKeep') throw new SlgError('BAD_REQUEST', 'Cannot place capital on city ground');
       if (proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle or crossing (bridge/plankway) terrain');
       if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
       const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
@@ -155,6 +159,10 @@ export class TerritoryService {
 
     const proc = proceduralTile(worldId, x, y);
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be directly occupied');
+    // City ground (ADR-074) — mirrors the `occupy` march branch in startMarchValidation. This direct
+    // occupy path had the same hole: nothing rejected `familyKeep`, so every cell of a city plot was
+    // claimable land (SLG_CITY_SIEGE_DESIGN §1.3).
+    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cities cannot be occupied; use attack siege to capture');
     if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', 'Obstacle terrain cannot be occupied');
 
     const tid = tileId(worldId, x, y);
