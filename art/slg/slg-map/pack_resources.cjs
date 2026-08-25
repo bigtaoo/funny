@@ -14,7 +14,8 @@
  *   3. Scale proportionally so the long edge = LONG_EDGE (128px; map icons are viewed closely + clustered).
  *   4. Shelf-pack into a single atlas PNG (PAD spacing to prevent bleeding).
  *   5. Export res_atlas.png + res_atlas.json (TexturePacker JSON-Hash, parsed directly by PIXI.Spritesheet).
- *   6. Copy both into client/src/assets/slg/ for the game to consume.
+ *   6. Write byte-identical copies to both consumers — see OUT_DIRS below for why one of them is a
+ *      pipeline intermediate that the game never imports, and the other is a real shipped asset.
  *
  * Usage:    node pack_resources.cjs
  * Requires: reuses client/node_modules/sharp (no separate install needed).
@@ -71,9 +72,20 @@ const INK_TOLERANCE = 0.10;    // how far below the heaviest lower tier a frame 
 const ALPHA_MIN = 0.85;
 const GATE_EPS = 1.02;         // a frame landing within 2% of the required ink is at the band's edge, not a defect
 const levelScale = (lv) => LEVEL_SCALE_LO + (LEVEL_SCALE_HI - LEVEL_SCALE_LO) * (lv - 1) / 9;
+// Two consumers, two very different roles — see §5.8, and keep the copies byte-identical:
+//   · HERE (art/slg/slg-map/) — a PIPELINE INTERMEDIATE, not a shipped asset. The game client never
+//     imports res_atlas; it reads the merged `world_atlas` page, into which art/scripts/
+//     patchMergedAtlas.js re-stamps these frames. This copy exists only to be that stamp source (and
+//     for the 4 assertions in client/test/ui/worldMapResMotifLevelRead.ui.ts). It lived under
+//     client/src/assets/slg/ until 2026-08-25, where it read as a 904 KB shipped asset that nothing
+//     imported — and was duly proposed for deletion in a loading review. `art/` is ASSET_PACKAGING
+//     §2's L2 tier ("永不进包"), which is exactly what this file is.
+//   · map-editor — a genuinely SHIPPED asset (tools/map-editor/src/render/resAtlasLoader.ts imports
+//     the png directly). map-editor never moved to the merged-atlas scheme, so it still consumes the
+//     per-group atlases as-is.
 const OUT_DIRS = [
-  path.resolve(__dirname, '../../../client/src/assets/slg'),
-  path.resolve(__dirname, '../../../tools/map-editor/src/assets/slg'),  // §5.8: keep both byte-identical
+  path.resolve(__dirname, '.'),
+  path.resolve(__dirname, '../../../tools/map-editor/src/assets/slg'),
 ];
 
 const nextPow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };
@@ -384,7 +396,7 @@ async function main() {
     meta: { app: 'pack_resources.cjs', image: 'res_atlas.png', format: 'RGBA8888', size: { w: ATLAS_W, h: ATLAS_H }, scale: '1' },
   };
 
-  // Write byte-identical copies to every consumer (§5.8: client + map-editor)
+  // Write byte-identical copies to every consumer (§5.8: art/ intermediate + map-editor's shipped copy)
   for (const dir of OUT_DIRS) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'res_atlas.png'), atlasBuf);

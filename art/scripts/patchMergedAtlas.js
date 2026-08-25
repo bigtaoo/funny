@@ -26,7 +26,8 @@
 //   GPUs enforce).
 //
 // Run: node art/scripts/patchMergedAtlas.js <source-atlas.json> <merged-atlas.json>
-// e.g. node art/scripts/patchMergedAtlas.js client/src/assets/slg/res_atlas.json client/src/assets/slg/world_atlas.json
+// e.g. node art/scripts/patchMergedAtlas.js art/slg/slg-map/res_atlas.json client/src/assets/slg/world_atlas.json
+//      (the source atlas is a pipeline intermediate under art/, NOT a shipped asset — see pack_resources.cjs OUT_DIRS)
 const fs = require('fs');
 const path = require('path');
 const { shelfPack } = require('./mergeAtlasPages');

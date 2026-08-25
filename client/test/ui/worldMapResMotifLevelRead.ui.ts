@@ -19,6 +19,17 @@ import * as PIXI from 'pixi.js-legacy';
 import { resMotifPlacement, resMotifJitter, RES_LEVEL_LABEL_MIN_LEVEL, RES_LEVEL_LABEL_MIN_TP, RES_LEVEL_LABEL_MAX_PX, RES_LEVEL_LABEL_TP_FRAC, RES_MOTIF_SIZE_FRAC, type ResMotifFrameRead } from '@nw/shared';
 import atlasData from '../../src/assets/slg/world_atlas.json';
 
+/**
+ * The two atlases this file asserts on sit in different trees, and the split is the point:
+ *   · MERGED_DIR — `world_atlas.{png,json}`, the SHIPPED merged page the client actually imports.
+ *   · SRC_ATLAS_PNG — `res_atlas.png`, `pack_resources.cjs`'s output and `patchMergedAtlas.js`'s
+ *     stamp source. Nothing in client/src imports it, so on 2026-08-25 it moved out of
+ *     client/src/assets/slg into art/ (ASSET_PACKAGING §2's "never packaged" L2 tier), where a
+ *     904 KB file that no code imports reads as what it is instead of as dead shipped art.
+ */
+const MERGED_DIR = `${__dirname}/../../src/assets/slg`;
+const SRC_ATLAS_PNG = `${__dirname}/../../../art/slg/slg-map/res_atlas.png`;
+
 const TP = 76; // L1 tile pitch
 const RES_TYPES = ['ink', 'paper', 'graphite', 'metal'] as const; // sticker only spawns at l6+
 type Frame = { frame: { w: number; h: number }; nw?: ResMotifFrameRead };
@@ -259,7 +270,7 @@ describe('the shipped atlas artifacts', () => {
     // is where the bug lands, and only there: patchMergedAtlas.js copies frames the merged page
     // already has and reports the rest as skipped, so a spurious 51st frame never reaches the merged
     // page at all. Checked against world_atlas this test passes with the bug present — verified.
-    const srcJson = (await import('../../src/assets/slg/res_atlas.json')).default as unknown as
+    const srcJson = (await import('../../../art/slg/slg-map/res_atlas.json')).default as unknown as
       { frames: Record<string, unknown> };
     const res = Object.keys(srcJson.frames);
     expect(res.sort()).toEqual([...EXPECTED_RES_FRAMES].sort());
@@ -282,7 +293,7 @@ describe('the shipped atlas artifacts', () => {
     // here it would have failed for a reason that has nothing to do with what it is guarding.
     const ALPHA_TRIM = 16;
     const sharp = (await import('sharp')).default;
-    const png = `${__dirname}/../../src/assets/slg/res_atlas.png`;
+    const png = `${__dirname}/../../../art/slg/slg-map/res_atlas.png`;
     const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const offenders: string[] = [];
     for (const name of Object.keys(FRAMES).filter((n) => n.startsWith('res_'))) {
@@ -311,14 +322,17 @@ describe('the shipped atlas artifacts', () => {
     // stroke and every anti-aliased edge). Asserting the encoding rather than the pixels is what makes
     // this checkable at all — a quantised page still looks approximately right.
     const sharp = (await import('sharp')).default;
-    const dir = `${__dirname}/../../src/assets/slg`;
-    for (const name of ['res_atlas.png', 'world_atlas.png']) {
+    // The two PNGs no longer live side by side: res_atlas moved to art/ on 2026-08-25 (it is a
+    // pipeline intermediate the client never imports — see pack_resources.cjs OUT_DIRS), while
+    // world_atlas is the shipped merged page.
+    for (const name of [SRC_ATLAS_PNG, `${MERGED_DIR}/world_atlas.png`]) {
       // `paletteBitDepth` is absent from sharp's bundled Metadata type but is returned at runtime
       // (sharp 0.32) whenever the PNG is palette-encoded — undefined is what "not quantised" looks like.
-      const meta = await sharp(`${dir}/${name}`).metadata() as { paletteBitDepth?: number; channels?: number };
-      expect({ name, palette: meta.paletteBitDepth, channels: meta.channels }).toEqual({ name, palette: undefined, channels: 4 });
+      const meta = await sharp(name).metadata() as { paletteBitDepth?: number; channels?: number };
+      const label = name.split('/').pop();
+      expect({ label, palette: meta.paletteBitDepth, channels: meta.channels }).toEqual({ label, palette: undefined, channels: 4 });
     }
-    const { data } = await sharp(`${dir}/res_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const { data } = await sharp(SRC_ATLAS_PNG).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const alphas = new Set<number>();
     for (let i = 3; i < data.length; i += 4) if (data[i]! >= 16) alphas.add(data[i]!);
     expect(alphas.size).toBeGreaterThan(200);
@@ -331,11 +345,10 @@ describe('the shipped atlas artifacts', () => {
     // rectangles, so blending has nothing to contribute and raw row copies are both correct and
     // exactly checkable. This assertion is what makes "did that repack disturb the art?" answerable.
     const sharp = (await import('sharp')).default;
-    const dir = `${__dirname}/../../src/assets/slg`;
-    const srcJson = (await import('../../src/assets/slg/res_atlas.json')).default as unknown as
+    const srcJson = (await import('../../../art/slg/slg-map/res_atlas.json')).default as unknown as
       { frames: Record<string, { frame: { x: number; y: number; w: number; h: number } }> };
-    const src = await sharp(`${dir}/res_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    const dst = await sharp(`${dir}/world_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const src = await sharp(SRC_ATLAS_PNG).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const dst = await sharp(`${MERGED_DIR}/world_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const drifted: string[] = [];
     for (const [name, sf] of Object.entries(srcJson.frames)) {
       const df = (FRAMES[name] as unknown as { frame: { x: number; y: number; w: number; h: number } } | undefined)?.frame;

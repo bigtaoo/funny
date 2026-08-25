@@ -107,7 +107,7 @@ background, notebook grid lines, ruled lines, drop shadow, ground line, baseline
 
 1. 源图（白底 png/webp）放 `art/slg/slg-map/`，语义名 `res_ink.png` / `res_paper.png` / `res_graphite.png` / `res_metal.png` / `res_sticker.webp`。
 2. 打包脚本 `art/slg/slg-map/pack_resources.cjs`（复用 client 的 sharp）：近白→透明（`alpha=255-luma`，保留原墨色）+ 裁透明边 + 等比缩放长边 **128** + shelf-pack → 图集宽 512。
-3. 产物**直接输出**到 `client/src/assets/slg/res_atlas.png`（palette+压缩，~40 KB）+ `res_atlas.json`（TexturePacker JSON-Hash，帧名不带扩展名，如 `res_ink`）。改图后重跑 `node pack_resources.cjs` 即覆盖。
+3. 产物**直接输出**到 `art/slg/slg-map/res_atlas.png`（2026-08-25 起；此前在 `client/src/assets/slg/`，见 §5.8）+ `res_atlas.json`（TexturePacker JSON-Hash，帧名不带扩展名，如 `res_ink`）。改图后重跑 `node pack_resources.cjs` 即覆盖。
 4. 线条为原墨色、**不 tint**；作淡显时由渲染期 alpha 压淡（同 A/C 组）。
 5. 加载可复刻 `client/src/render/atlas/decorCAtlas.ts`（`PIXI.Spritesheet`，改 import 路径到 `slg/res_atlas.{png,json}`）。
 
@@ -336,7 +336,16 @@ shadow, ground line, baseline
 3. **零改运行时代码**——`getResLevelTexture('<type>',n)` 命中 `res_<type>_l<n>` 即画。
 4. **替换/新增单张成本极低**：丢新图进目录、重跑脚本即可。
 
-**产物**：`client/src/assets/slg/res_atlas.{png,json}` + `tools/map-editor/src/assets/slg/` 两份字节一致（`OUT_DIRS` 一次写两处）。当前 **50 帧**（5 母题 + paper/ink/graphite/metal 各 l1–10 + sticker l6–10），**512×2048，~395 KB**。
+**产物**：`art/slg/slg-map/res_atlas.{png,json}` + `tools/map-editor/src/assets/slg/` 两份字节一致（`OUT_DIRS` 一次写两处）。当前 **50 帧**（5 母题 + paper/ink/graphite/metal 各 l1–10 + sticker l6–10），**512×2048，~395 KB**。
+
+> **⚠️ 两个 `OUT_DIRS` 的角色完全不同（2026-08-25 起，第一份换了位置）**：
+>
+> | 位置 | 角色 | 谁 import |
+> |---|---|---|
+> | `art/slg/slg-map/` | **管线中间产物**——`patchMergedAtlas.js` 回贴合并页 `world_atlas` 时的帧来源，外加 `client/test/ui/worldMapResMotifLevelRead.ui.ts` 那 4 条断言的读取对象 | **没有任何代码 import**，从不进包 |
+> | `tools/map-editor/src/assets/slg/` | **真·出包资源** | `tools/map-editor/src/render/resAtlasLoader.ts` 直接 import（map-editor 至今没做合并页，仍按分组读各自 atlas） |
+>
+> 第一份原先放在 `client/src/assets/slg/`，在那里它看起来就是一个「904 KB、却没人 import 的出包资源」——2026-08-25 的一次加载链路复核据此把它判成可删孤儿（差点删掉整条回贴管线，见 [ASSET_PACKAGING.md](../game/ASSET_PACKAGING.md) §13.5）。挪进 `art/`（该文 §2 定义的 L2「永不进包」层）之后，它的身份从目录位置本身就能读出来，不再需要靠"记得这回事"来避免误判。
 
 > 历史（2026-07-06 → 07-08）：曾用 `bakeCountFrames`（l1–5 母题+骰子槽计数托盘）+ `bakeHeapFrames`（过渡态合成堆叠）+ `resbg_*` 托盘背景。**均于 2026-07-17 删除**（决策变更 II），l1–5 改专属手绘。
 

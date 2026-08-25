@@ -382,9 +382,12 @@ bundle 从 §1 记的 ~1.5 MB 长到 2.08 MB（raw），**没有任何东西发�
 复核最初还提了两条，深挖后发现都是**错的**，而且错法是同一种：拿"客户端有没有 `import`"当唯一判据，去评判一个**构建管线中间产物**。
 
 1. **`world_atlas.png`（2.0 MB，唯一的真彩色大图）不要量化成调色板。** 它现在这么大是 2026-08-20 **故意改的**：`pack_resources.cjs` → `patchMergedAtlas.js` 这条链上同一对 sharp 陷阱有三处实例，`palette: true` 会静默把 alpha 精度打到 240→143 种，修完体积从 1.76 MB 涨到 2.05 MB。见 [slg-resource-art.md](../product/slg-resource-art.md) §6.12.7–6.12.9，那次还补了**断言两张 PNG 都不是 palette 编码**的测试。原文结论照抄：**「If size ever needs cutting, cut frames or dimensions, not the encoding.」** gacha 那套 `{palette:true, quality:90}` 之所以能用，是因为那批图不吃 alpha 精度——不能推广。
-2. **`client/src/assets/slg/res_atlas.{png,json}`（904 KB）不是可删的孤儿。** 客户端确实没有 `import` 它（所以**它本来就不进包**，从不消耗玩家带宽），但它是 `pack_resources.cjs` 的产物、`patchMergedAtlas.js` 回贴合并页时的**帧来源**，还有 4 条测试直接断言这个文件（帧数 50、非 palette 编码、可见 alpha >200 种、与合并页逐帧字节一致），并且在 `tools/map-editor/src/assets/slg/` 有一份字节一致的镜像。删了就是把管线和测试一起打断。
+2. **`res_atlas.{png,json}`（904 KB）不是可删的孤儿。** 客户端确实没有 `import` 它（所以**它本来就不进包**，从不消耗玩家带宽），但它是 `pack_resources.cjs` 的产物、`patchMergedAtlas.js` 回贴合并页时的**帧来源**，还有 4 条测试直接断言这个文件（帧数 50、非 palette 编码、可见 alpha >200 种、与合并页逐帧字节一致）。删了就是把管线和测试一起打断。
+   > ✅ **但这条的根因已修（2026-08-25，用户提议）**：既然它是中间产物，就不该住在 `client/src/assets/` 里。已 `git mv` 到 **`art/slg/slg-map/`**（本文 §2 的 L2「永不进包」层，且正是 `pack_resources.cjs` 自己所在的目录），`OUT_DIRS[0]` 改成 `path.resolve(__dirname, '.')`。
+   >
+   > 关键是**两个 `OUT_DIRS` 的角色本来就不同，只是原先看不出来**：`tools/map-editor/src/assets/slg/` 那份是**真·出包资源**（`resAtlasLoader.ts` 直接 import——map-editor 至今没做合并页，仍按分组读各自 atlas），而 client 那份从来只是回贴用的帧来源。挪完之后 `client/src/assets/slg/` 只剩 `world_atlas.{png,json}`，目录里每个文件都是真的会发给玩家的东西，**"没人 import" 这个信号重新变得可信**。
 
-> **教训**：`client/src/assets/` 下同时躺着"要发给玩家的资源"和"构建管线的中间产物"，两者靠有没有 TS `import` 区分**只对第一类成立**。判断一个资源能不能动之前，先 `grep -rl <文件名> art/ client/scripts/ tools/`，不要只 grep `client/src`。
+> **教训**：`client/src/assets/` 下曾经同时躺着"要发给玩家的资源"和"构建管线的中间产物"，两者靠有没有 TS `import` 区分**只对第一类成立**——而这正是上面那个误判的来源。第 2 条的修法（把中间产物挪出 `src/assets/`）就是让这个信号重新可信；**新增管线中间产物时照此办理，别再往 `client/src/assets/` 里放**。至于判断一个已有资源能不能动：先 `grep -rl <文件名> art/ client/scripts/ tools/`，不要只 grep `client/src`。
 
 ### 13.6 遗留
 
