@@ -6,6 +6,7 @@
 // auction (guardrails + anomaly detection), city (home-city building system), province (nation/province geometry),
 // shop (SLG shop items), prosperity (prosperity/season settlement/sharding), mapgen (terrain + proceduralTile + templates),
 // march (tile yield + A* pathfinding), siege (siege settlement + vision + siege level + card troop system),
+// citySiege (ADR-074 wild-city siege: wave ladder + durability/regen + yield),
 // transfer (G6 mid-season shard transfer/merge, §27).
 export * from './core';
 export * from './tileRender';
@@ -24,5 +25,6 @@ export * from './mapEdit';
 export * from './mapRle';
 export * from './march';
 export * from './siege';
+export * from './citySiege';
 export * from './transfer';
 export { worldSeed } from './noise';

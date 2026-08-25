@@ -14,8 +14,13 @@ import {
 
 /** World-center city footprint side length (ADR-034 §3: a "9×9 tile" solid, same family as BASE_FOOTPRINT but larger — the core province's contested objective). */
 export const WORLD_CENTER_FOOTPRINT = 9;
-/** Per-outer-province graded city level tiers (ADR-034 §3: 2×3 + 2×4 + 2×5 + 1×6 + 1×7 + 1×8 = 9 cities/province, 54 total). */
-const _OUTER_GRADED_CITY_TIERS: readonly number[] = [3, 3, 4, 4, 5, 5, 6, 7, 8];
+/**
+ * Per-outer-province graded city level tiers (ADR-034 §3: 2×3 + 2×4 + 2×5 + 1×6 + 1×7 + 1×8 = 9
+ * cities/province, 54 total). Exported since ADR-074: `citySiege.ts` derives
+ * {@link WILD_CITY_MIN_LEVEL} from it rather than re-stating "the weakest wild city is level 3", which
+ * is the level the single-player-proof siege invariant is measured against.
+ */
+export const OUTER_GRADED_CITY_TIERS: readonly number[] = [3, 3, 4, 4, 5, 5, 6, 7, 8];
 /** State-capital city level (DRAFT — a province's capital is its strongest city). */
 export const PROVINCE_CAPITAL_LEVEL = SLG_MAP_MAX_LEVEL;
 
@@ -116,7 +121,7 @@ export function _worldCityNodes(mapW: number, mapH: number, seed: number): reado
     const sectorWidth = _TWO_PI / 6;
     const angleLo = p * sectorWidth + sectorWidth * 0.12;
     const angleHi = (p + 1) * sectorWidth - sectorWidth * 0.12;
-    for (let ci = 0; ci < _OUTER_GRADED_CITY_TIERS.length; ci++) {
+    for (let ci = 0; ci < OUTER_GRADED_CITY_TIERS.length; ci++) {
       const salt = seed ^ 0x0f00 ^ (p * 100 + ci);
       const angle = angleLo + rand2(p, ci, salt) * (angleHi - angleLo);
       const rNorm = PROVINCE_RESOURCE_OUTER_RADIUS_RATIO + 0.05
@@ -124,7 +129,7 @@ export function _worldCityNodes(mapW: number, mapH: number, seed: number): reado
       const r = rNorm * halfDiag;
       const x = Math.max(0, Math.min(mapW - 1, Math.round(cx + Math.cos(angle) * r)));
       const y = Math.max(0, Math.min(mapH - 1, Math.round(cy + Math.sin(angle) * r)));
-      nodes.push({ x, y, level: _OUTER_GRADED_CITY_TIERS[ci]!, kind: 'garrison', provinceIdx: p });
+      nodes.push({ x, y, level: OUTER_GRADED_CITY_TIERS[ci]!, kind: 'garrison', provinceIdx: p });
     }
   }
 
