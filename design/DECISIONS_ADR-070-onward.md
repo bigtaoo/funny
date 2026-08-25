@@ -183,6 +183,12 @@
   - **一个实测抓到的坑**：`applySiege` 的到达时连地复检用 `targetFootprintCells`，而城池地面没有 `TileDoc`，该 helper 会退化成「只有落地那一格」——一座 5×5 城的锚点离攻方真正持有的边界地有 3 格，于是每一次城池围攻都在到达时被判成「补给线被切断」原地驻扎。e2e 一开始 8 例红才现形，departure 侧的判定是对的。
   - **P1 明确没做**：§8 的三条收益（产量 / 全域 buff / 出兵锚点）一条未接，所以现在打下一座城除战略遏制外**没有任何收益**；`NATION_BONUS_PRODUCTION`/`NATION_BONUS_DEFENSE` 继续空转（P1 只改了城池归属，没把州府的省级加成重新接到 `CityDoc.ownerSectId`）；`CityDoc.defenderLock` 建好了但无写入方（P3 宗门驻防队用）。都在 P3。
 
+- **补测回执（2026-08-25 同日第三刀，用户问「有没有可以加的测试」）——又抓出一个真 bug**：`validateMarchTarget` 的 `attack` 分支里，ADR-074 之前那条 `if (proc.type === 'center') throw 'World center is contested by sects and cannot be sieged'` 排在 P1 新加的城池分支**之前**；而 `isCityGroundTile` 覆盖 `center` 和 `familyKeep` 两种，世界中心的地面是 `center`。于是**决策 2/5 里最有价值的那座城（§8.3 攻城值 +5%、行军 −10%、全服公告）成了 P1 唯一打不了的城**，`settleCityDamage` 的全服频道公告成了死代码。P1 原有 21 条 e2e 全用分级城，一条都没碰到。已把城池分支移到那条拦截之前——那条拦截在「城池只是一张贴图」的年代是对的，本 ADR 恰好把它变成了错的。
+  - 另外补齐三处缺口：`GET /world/cities` 的路由分派（`mapRoutes.ts` 每条分支走真 HTTP 的那个文件里漏了新路由）、赛季开启/重置的 city 生命周期（`cities` 进清空列表 + `initCities` 挂进 openSeason/resetWorld，两件都没有断言）、以及 `initCities` 是否跟随**发布的**节点表而不是种子（本 ADR 自己的核心 bug 类型，却只测了种子回退）。
+  - **客户端血条那个 bug 是截图发现的、15 条 UI 测试全绿**——它们断言面板的文案与按钮，不断言位置。新建的 6 例专测几何（血条与美术顶边的间距是小常数、且不随 footprint 增长）。**渲染层的回归测试必须断言几何，只断言内容会漏掉整类「画在屏幕外」的缺陷。**
+  - 顺手把城池优先级的第三份拷贝（`rasterizeMapEdits` 的 `CITY_PAINT_RANK`）收成共享的 `CITY_KIND_RANK` 一份，并改用**行为**断言钉住（真实重叠格上生成器/查找/「发布未改动节点表零 diff」三者一致）——断言常量相等抓不到 P0 那个「Lv.8 盖掉 Lv.10」的 bug。
+  - 变异验红 6 处全部实测转红。测试计数：city-siege e2e 21→26、shared citySiege 19→20、新增客户端血条 6 例、两个既有文件各 +2。
+
 ## ADR-075 SLG 兵力上限曲线重调：基数腰斩 + 每级加倍（练兵场成长感）+ 训练队列槽位去死值 — Accepted — 2026-08-25
 
 - **问题**（用户拍板起点，两个独立但同源的数值脱钩）：

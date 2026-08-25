@@ -24,6 +24,9 @@ import {
   allCityNodes,
   proceduralTile,
   isCityGroundTile,
+  rasterizeMapEdits,
+  SLG_MAP_W,
+  SLG_MAP_H,
   SLG_TEAM_INJURY_MS,
   PROTECTION_SEC,
   OUTER_GRADED_CITY_TIERS,
@@ -181,6 +184,54 @@ describe('citySiege: cityNodeCovering', () => {
       if (x < 0 || y < 0) continue;
       expect(isCityGroundTile(proceduralTile(worldId, x, y).type), `${x},${y}`).toBe(true);
       expect(cityNodeCovering(nodes, x, y)).not.toBeNull();
+    }
+  });
+
+  it('the rasterizer resolves a real overlap to the SAME city this lookup names', () => {
+    // The behavioural half of the ranking pin above, and the one that matters: `rasterizeMapEdits` used to
+    // carry its own `CITY_PAINT_RANK` literal — a third copy of the ordering alongside `_cityGroundNodeAt`'s
+    // walk order — and a Lv.8 graded city overwrote a Lv.10 capital's cells, so the published template and
+    // the generator disagreed about that cell's LEVEL (= the besieged city's durability and garrison scale).
+    // Asserting the constants are equal would not have caught that; asserting the two AGREE on a real
+    // overlapping cell does. Seed pinned because it is measured to overlap — a seed with no overlap makes
+    // this case silently vacuous, which is a mistake this suite's P0 predecessor actually made.
+    const worldId = 's1-cityground';
+    const nodes = allCityNodes(worldId);
+    const overlapping: { x: number; y: number }[] = [];
+    for (const node of nodes) {
+      const r = (node.footprint - 1) / 2;
+      for (let dy = -r; dy <= r && overlapping.length < 6; dy++) {
+        for (let dx = -r; dx <= r && overlapping.length < 6; dx++) {
+          const x = node.x + dx;
+          const y = node.y + dy;
+          if (x < 0 || y < 0 || x >= SLG_MAP_W || y >= SLG_MAP_H) continue;
+          // A cell is contested when more than one node's plot covers it.
+          const covering = nodes.filter((n) => {
+            const nr = (n.footprint - 1) / 2;
+            return Math.abs(x - n.x) <= nr && Math.abs(y - n.y) <= nr;
+          });
+          if (covering.length > 1) overlapping.push({ x, y });
+        }
+      }
+    }
+    expect(overlapping.length, 'seed no longer produces overlapping city plots — repin it').toBeGreaterThan(0);
+
+    // The generator and the lookup must name the same winner...
+    for (const cell of overlapping) {
+      const winner = cityNodeCovering(nodes, cell.x, cell.y)!;
+      const gen = proceduralTile(worldId, cell.x, cell.y);
+      expect(gen.level, `${cell.x},${cell.y} generator level`).toBe(winner.level);
+      expect(gen.type, `${cell.x},${cell.y} generator type`).toBe(winner.kind === 'worldCenter' ? 'center' : 'familyKeep');
+    }
+
+    // ...and so must the rasterizer, which is asserted through its no-op property: `rasterizeMapEdits`
+    // returns only the DIFF against the procedural baseline, so publishing the UNCHANGED node list must
+    // emit nothing for a contested cell. If its ranking ever drifts from the other two, that cell starts
+    // showing up as a diff — which is exactly how the original Lv.8-over-Lv.10 bug was caught, at (1499, 328).
+    const diff = rasterizeMapEdits(worldId, [], nodes, { citiesAreComplete: true });
+    const diffCells = new Set(diff.map((t) => `${t.x}:${t.y}`));
+    for (const cell of overlapping) {
+      expect(diffCells.has(`${cell.x}:${cell.y}`), `${cell.x},${cell.y} became a diff — the three rankings drifted`).toBe(false);
     }
   });
 

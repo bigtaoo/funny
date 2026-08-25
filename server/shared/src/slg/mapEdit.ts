@@ -9,6 +9,7 @@ import {
   proceduralCityGroundTiles, proceduralTile, proceduralTileIgnoringCities,
   type MapTemplateTile,
 } from './mapgen';
+import { CITY_KIND_RANK } from './citySiege';
 
 /**
  * A painted terrain-grid cell. `river`/`mountain` bake to impassable `obstacle`; `neutral` carves a band
@@ -126,9 +127,14 @@ export function rasterizeMapEdits(
   // capital's cell. The published template then disagreed with the generator about that cell's LEVEL,
   // which from ADR-074 P1 onward is the city's HP/garrison scale, not just cosmetic. Caught by
   // mapEdit.test.ts's "publishing the unchanged node list is a TRUE no-op" case at (1499, 328).
-  const CITY_PAINT_RANK: Record<MapEditCityInput['kind'], number> = { worldCenter: 0, capital: 1, garrison: 2 };
+  //
+  // The ranking itself is `CITY_KIND_RANK` from citySiege.ts, imported rather than restated: this used to
+  // be a local `CITY_PAINT_RANK` literal, i.e. a third copy of the same ordering alongside
+  // `_cityGroundNodeAt`'s walk order and (from ADR-074 P1) `cityNodeCovering`'s tie-break. Three copies of
+  // the rule that decides a contested cell's LEVEL — which is the besieged city's durability and garrison
+  // scale — is exactly the drift that produced the bug this comment describes. One source now.
   const claimed = new Set<string>();
-  for (const city of [...cities].sort((a, b) => CITY_PAINT_RANK[a.kind] - CITY_PAINT_RANK[b.kind])) {
+  for (const city of [...cities].sort((a, b) => CITY_KIND_RANK[a.kind] - CITY_KIND_RANK[b.kind])) {
     const half = Math.floor(city.footprint / 2);
     const type = _cityTileType(city.kind);
     for (let dy = -half; dy <= half; dy++) {

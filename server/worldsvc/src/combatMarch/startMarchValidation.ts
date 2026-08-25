@@ -60,10 +60,16 @@ export async function validateMarchTarget(
     if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Can only reinforce your own tile');
   } else if (kind === 'attack') {
     // Siege: target must be another player's territory/capital, or an ownerless stronghold (G8 PvE to defeat the system garrison). Use occupy/sweep for neutral ownerless tiles.
-    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be sieged');
-    // City siege is the ADR-074 P1 scope (CityDoc + garrison waves + durability). P0 only closes the holes,
-    // so a city is currently un-takeable by any route — say so explicitly instead of falling through to the
-    // ownerless branch below, whose 'use occupy/sweep' advice is now wrong for city ground (both are blocked).
+    //
+    // NOTE the ordering: the wild-city branch below runs BEFORE any `center` check, because
+    // `isCityGroundTile` covers `center` as well as `familyKeep` — the world center IS a city (the biggest
+    // one). A pre-ADR-074 guard here read `if (proc.type === 'center') throw 'World center is contested by
+    // sects and cannot be sieged'`, which was true when a city was a sprite; leaving it in front made the
+    // world center — the one objective the whole shard fights over (§8.3: +5% siege value, -10% march time,
+    // a server-wide announcement) — the single city P1 could not besiege at all, and turned
+    // `settleCityDamage`'s world-channel announcement into dead code. Caught by the e2e case that captures
+    // the world center; the other 21 cases all used graded cities and never noticed.
+    //
     // Wild city (ADR-074 P1). Three gates, in this order:
     //   1. the besieger must be in a sect (decision 1) — checked FIRST so a sect-less player gets the
     //      actionable error rather than a connectivity one they cannot fix;

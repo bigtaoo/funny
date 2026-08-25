@@ -397,7 +397,27 @@ P2 的标定先于 P1 跑完，所以 P1 实现的是**已实测定案**的机�
    - **耐久必须显示绝对值**：曲线是「大基数 + 小步长」（§6.5），Lv.3 与 Lv.10 只差约 22%，只给百分比会被当成 bug。
    - **⚠️ 血条锚点踩过一次（截图核对抓到的，代码审读抓不到）**：血条第一版锚在 `-sprite.height`（精灵单元格的顶边）。但 `citySpriteTiles` 是按 footprint 定精灵尺寸的，而每张城池图上方都有透明留白——一座 7×7 的 Lv.6 城，单元格顶边比屋顶高出几百像素，血条直接飘到视口外，看起来像「没做」。改用 `getCityContentTopFracForLevel(level)`（该函数的文档注释里点名的调用方就是 `WorldMapRenderer/city.ts`，而紧挨着的主城血条早在 2026-07-22 就因为矮建筑的同一症状修过一次）。**教训：这类缺陷只有真跑起来看一眼才会现形。**
 8. ✅ 赛季生命周期：`openSeason`/`resetWorld` 各调一次 `initCities`；`cities` 进重置清空集合列表（与 `siegeDamage`/`occupations`/`stationed` 同批）。
-9. ✅ 回归测试：`worldsvc/test/city-siege.e2e.test.ts`（21 例，真 Mongo）+ `shared/test/citySiege.test.ts`（19 例纯函数）+ `client/test/ui/worldMapCityClick.ui.ts`（15 例，P0 的 5 条保留 + P1 的 10 条）。P0 的 `city-ground.e2e.test.ts` 里那条 attack 用例从「未实现」改成断言宗门门槛。
+9. ✅ 回归测试：`worldsvc/test/city-siege.e2e.test.ts`（**26** 例，真 Mongo）+ `shared/test/citySiege.test.ts`（**20** 例纯函数）+ `client/test/ui/worldMapCityClick.ui.ts`（15 例面板，P0 的 5 条保留 + P1 的 10 条）+ `client/test/ui/worldMapCityDurabilityBar.ui.ts`（**6** 例血条几何）+ `httpApiActionSiegeMapGaps.e2e.test.ts` / `season-ops.e2e.test.ts` 各 +2。P0 的 `city-ground.e2e.test.ts` 里那条 attack 用例从「未实现」改成断言宗门门槛。补测过程见下方第三刀。
+
+
+> **补测一轮（同日第三刀，用户问「有没有可以加的测试」后按 `sectService` 那次的规矩复查）**：`claudedocs/server-audits.md` 记着上一次同样一句话查出了 `/sect/*` 全部 10 条路由零 wire-level 覆盖。这次按同一套「不看方法名、看路由字符串 / 看机制的每条分支」复查，找出 4 个缺口并补齐，**其中一个缺口背后是真 bug**。
+>
+> **⚠️ 补测抓出一个真 bug（P1 原计划外，且严重）：世界中心根本没法围攻。** `validateMarchTarget` 的 `attack` 分支里有一条 ADR-074 之前就存在的拦截——`if (proc.type === 'center') throw 'World center is contested by sects and cannot be sieged'`——它排在我新加的城池分支**之前**。而 `isCityGroundTile` 覆盖 `center` 和 `familyKeep` 两种，世界中心的地面是 `center`，于是**全图最重要的那一座城（§8.3：攻城值 +5%、行军 −10%、全服公告）是 P1 唯一一座打不了的城**，`settleCityDamage` 里那段世界中心的全服频道公告成了死代码。原来的 21 条 e2e 全部用分级城，一条都没碰到。修法是把城池分支移到该拦截之前（那条拦截在「城池只是贴图」的年代是对的，ADR-074 恰好把它变成了错的）。
+>
+> **新增覆盖（4 处缺口）**：
+> - **`GET /world/cities` 的路由分派零覆盖**（`httpApiActionSiegeMapGaps.e2e.test.ts` +2 例）。那个文件的唯一职责就是把 `mapRoutes.ts` 里每一条 `if (method===X && path===Y)` 走一遍真 HTTP，我加路由时没加进去——正是「方法名出现在测试里 ≠ 路由被覆盖」那个坑。断言不止 `Array.isArray`：逐条检查 `durability`/`durabilityMax`/`regenPerHour`，否则一个返回裸节点表的路由也能过（血条就画不出来了）。
+> - **赛季生命周期零覆盖**（`season-ops.e2e.test.ts` +2 例）：`cities` 进了 resetSeason 的清空列表、`initCities` 挂进了 openSeason/resetWorld，两件都没有任何东西看着。**验红时发现断言写得不准**：去掉清空后「归属被清」的断言仍然绿，因为 `initCities` 每次都会 `$unset` 归属——清空真正独有的作用是删掉**节点表里已不存在的孤儿文档**（地图模板改过之后的残留）。已按这个改断言并记在用例注释里。
+> - **`initCities` 是否跟随「发布的」节点表**（`city-siege.e2e.test.ts`）：这是 ADR-074 自己的核心 bug 类型（种子 vs 发布），却只测了种子回退路径。新用例把城拖走 11/7 格并改等级，断言文档跟着走、`durabilityMax` 按新等级重算、footprint 反查认新锚点。
+> - **到达时的三条重新校验 + 一条陈旧分支**（`city-siege.e2e.test.ts`）：在途中退出宗门、在途中城池进入保护期、结算时城池文档已被世界重置删掉。这三条都是「出发侧对、到达侧错」的形状——P1 已经踩过一次（连地判定），所以值得逐条钉。
+> - **客户端血条的几何**（新建 `client/test/ui/worldMapCityDurabilityBar.ui.ts`，6 例）：见下条。
+>
+> **⚠️ 另一处：血条那个 bug 是截图发现的，15 条 UI 测试全绿——因为它们断言的是面板的**文案和按钮**，不是**位置**。** 新用例把 `getCityContentTopFracForLevel` mock 成 0.5（真图有留白时才能区分两种写法），断言「血条与美术顶边的间距是个小常数、且不随 footprint 增长」。验红：把代码回滚成 `-sprite.height`，两条几何用例立刻红（间距 437px vs 允许的 16px）。**这条教训比这个 bug 本身值钱：渲染层的回归测试要断言几何，只断言内容会漏掉整类「画在屏幕外」的缺陷。**
+>
+> **顺手消掉一处重复**：`rasterizeMapEdits` 里的 `CITY_PAINT_RANK` 是城池优先级的**第三份拷贝**（另两份是 `_cityGroundNodeAt` 的遍历顺序和 P1 新增的 `cityNodeCovering`）。P0 那个「Lv.8 分级城盖掉 Lv.10 州府」的 bug 就是这三份漂移出来的。改成 import 共享的 `CITY_KIND_RANK`，并加一条**行为**断言（不是常量相等断言——那条抓不到当年那个 bug）：真实重叠格上，生成器、`cityNodeCovering`、以及「发布未改动节点表必须零 diff」三者必须一致。
+>
+> **变异验红 6 处，逐一实测**：M-A 反转 rasterizer 的城池优先级、M-B 让 `/world/cities` 返回裸节点表、M-C 从 resetSeason 删掉 `cities`、M-D 从 openSeason 删掉 `initCities`、M-E 把那条 `center` 拦截加回城池分支之前、M-F 把血条锚点回滚成 `-sprite.height`——各自都让对应用例转红。
+>
+> **登记一条没测的**（不是漏，是刻意）：`settleCityDamage` 的 rev-CAS 重试循环与 `MAX_ATTEMPTS` 耗尽分支。要确定性地制造 5 次连续 rev 冲突需要往结算里插测试钩子，成本高于收益；并发正确性目前靠「同一 `rev` 只有一次更新能匹配」这个结构性质 + 「本宗门已持有则作废」那条用例间接覆盖。
 
 **P1 明确留下的临时状态**：
 - `CityDoc.defenderLock` 已建字段但 P1 无写入方——它是 P3 宗门驻防队的锁定期（`CITY_WAVE_RESPAWN_MS`），NPC 波次是每次行军重打的，不需要。
@@ -444,6 +464,7 @@ P2 的标定先于 P1 跑完，所以 P1 实现的是**已实测定案**的机�
 | **§8 三条收益一条未接（P1 后新增）** | 产量 / 全域 buff / 出兵锚点全在 P3。P1 只做「打得下来、守得住、看得见」，所以现在打下一座城**除了战略遏制没有任何收益**——不是遗漏，是分期 |
 | **`CityDoc.defenderLock` 是空字段（P1 后新增）** | 建好了但 P1 无写入方：它是 P3 宗门驻防队的锁定期（`CITY_WAVE_RESPAWN_MS`）。NPC 波次每次行军重打，不需要锁定 |
 | 城池易主保护期时长 | ✅ 已定 `CITY_CAPTURE_PROTECTION_MS = 2 小时`，**刻意短于**主城的 `PROTECTION_SEC`(8 小时)：城池易主时耐久同时重置为满，重夺本就要再打一整场；主城没有这个重置（它是搬迁），护盾是它唯一的保护 |
+| ~~世界中心打不了~~ | ✅ 已修（补测抓出）：`attack` 分支里 ADR-074 之前的 `center` 拦截排在城池分支之前，把全图最重要的那座城变成唯一打不了的城，`settleCityDamage` 的全服公告成了死代码。现已把城池分支移到它之前 |
 | 城池血条 UI 必须显示绝对值 | §6.5：耐久是「大基数 + 小步长」，Lv.3 与 Lv.10 只差 22%，只显示百分比会被读成 bug |
 | 宗门人数上限对 §8.1 总 faucet 的影响 | 宗门 ≤900 人（`GW_PUSH_REDIS_CHANNEL` 注释口径）；满编宗门吃满上限时的全服 faucet 总量待 `SLG_ECONOMY_CHECK.md` 轨道 2（赛季资源）核算 |
 | §8.1 城池产量 vs 训练资源消耗（新增） | 满配档 8,640 兵/时 的训练吞吐需要 86,400 墨水/时，远超单人产出上限。P2 的持续输出率因此是**乐观上界**（假设有存货可倾，对门禁而言方向安全）；P3 接产量时要在轨道 2 里连带复核 |

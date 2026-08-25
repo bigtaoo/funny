@@ -43,6 +43,7 @@ import { WorldService } from '../src/service';
 import type { WorldGatewayClient } from '../src/gatewayClient';
 import type { WorldMetaClient } from '../src/metaClient';
 import type { WorldSocialsvcClient } from '../src/socialsvcClient';
+import type { WorldMailClient, WorldMailContent } from '../src/mailClient';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_world_citysiege_test';
@@ -112,6 +113,13 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
   const now = () => nowMs;
   let svc: WorldService;
 
+  /** Capture-mail recorder — §7 sends exactly ONE, to the player who landed the killing blow. */
+  const mailCalls: { accountId: string; dispatchKey: string; content: WorldMailContent }[] = [];
+  const fakeMail: WorldMailClient = {
+    available: true,
+    async sendSystemMail(accountId, dispatchKey, content) { mailCalls.push({ accountId, dispatchKey, content }); },
+  };
+
   const fakeGateway: WorldGatewayClient = {
     available: true,
     async push() { /* pushes are irrelevant to these assertions */ },
@@ -177,6 +185,28 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     );
   }
 
+  /**
+   * Re-plant `acct`'s capital at (ax,ay) by writing its nine tiles directly. `relocateBase` cannot be used:
+   * it requires the destination 3x3 to be territory the account ALREADY owns, which is the opposite of what
+   * a "move me next to that city" fixture needs.
+   */
+  async function moveBase(acct: string, ax: number, ay: number): Promise<void> {
+    await m.collections.tiles.deleteMany({ worldId: W, type: 'base', ownerId: acct });
+    const anchorId = tileId(W, ax, ay);
+    await m.collections.tiles.insertOne({
+      _id: anchorId, worldId: W, x: ax, y: ay, type: 'base', level: 2, ownerId: acct,
+      garrison: 500, hp: 200, rev: 0,
+    } as never);
+    for (const c of baseFootprintCells(ax, ay)) {
+      if (c.x === ax && c.y === ay) continue;
+      await m.collections.tiles.insertOne({
+        _id: tileId(W, c.x, c.y), worldId: W, x: c.x, y: c.y, type: 'base',
+        baseRing: true, baseAnchor: anchorId, level: 1, ownerId: acct, rev: 0,
+      } as never);
+    }
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, acct) }, { $set: { mainBaseTile: anchorId }, $inc: { rev: 1 } });
+  }
+
   /** Claim the beachhead cell for `acct` directly, so ADR-039 connectivity to the city plot is satisfied. */
   async function claimBeachhead(acct: string): Promise<void> {
     await m.collections.tiles.updateOne(
@@ -218,6 +248,7 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     await m.db.dropDatabase();
     await m.ensureIndexes();
     nowMs = 1_000_000;
+    mailCalls.length = 0;
     membership.clear();
     membership.set(A, { familyId: `fam-of-${SECT_A}`, sectId: SECT_A });
     membership.set(B, { familyId: `fam-of-${SECT_B}`, sectId: SECT_B });
@@ -226,6 +257,7 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
       redis: null,
       gateway: fakeGateway,
       meta: fakeMeta,
+      mail: fakeMail,
       socialsvc: fakeSocialsvc,
       mapW: SLG_MAP_W,
       mapH: SLG_MAP_H,
@@ -283,6 +315,30 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     // Damage is NOT reset: only the CAP is re-stamped, so a level change published mid-season rescales the
     // wall without healing a city that is under siege right now.
     expect(after!.durability).toBe(1234);
+  });
+
+  it('follows the world PUBLISHED node list, not the seed-derived one', async () => {
+    // ADR-074's own core bug class. `allCityNodes(worldId)` is a seed computation; the list that agrees with
+    // the GROUND is the one cloned onto the WorldDoc from the active map template, which a designer can drag
+    // in tools/map-editor. Deriving city HP from the seed would put a city's durability where its sprite is
+    // NOT — the exact shape of the 2026-08-19 "sprite layer recomputed allCityNodes" bug, one layer down.
+    const nodes = await svc.getCities(W);
+    const moved = nodes.map((n) => (n.id === city.id ? { ...n, x: n.x - 11, y: n.y + 7, level: 8, footprint: 7 } : n));
+    await m.collections.worlds.updateOne(
+      { _id: W },
+      { $set: { cities: moved, season: 1, shard: 0, status: 'open' as const, mapW: SLG_MAP_W, mapH: SLG_MAP_H, openAt: nowMs, capacity: 10, population: 0, rev: 1 } },
+      { upsert: true },
+    );
+    await svc.initCities(W);
+
+    const doc = (await m.collections.cities.findOne({ _id: CITY_ID }))!;
+    expect({ x: doc.x, y: doc.y }).toEqual({ x: city.x - 11, y: city.y + 7 });
+    // The dragged level must drive the durability curve too — level IS the wall's depth and the garrison's
+    // size from P1 onward, so a stale level is a stale difficulty, not a cosmetic mismatch.
+    expect(doc.level).toBe(8);
+    expect(doc.durabilityMax).toBe(cityDurabilityMax(8, 'garrison'));
+    // And the footprint lookup must follow it: the OLD anchor is no longer this city.
+    expect((await svc.cityAt(W, city.x - 11, city.y + 7))?.nodeId).toBe(city.id);
   });
 
   // ── ② The sect gate (ADR-074 decision 1) ──────────────────────────────────────────────────
@@ -458,6 +514,76 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     const doc = await m.collections.cities.findOne({ _id: CITY_ID });
     expect(doc!.durability).toBe(500); // untouched
     expect(await m.collections.sectMessages.countDocuments({ worldId: W })).toBe(0);
+  });
+
+  it('a world-center capture also announces on the WORLD channel, and mails the killing blow', async () => {
+    // §7: the world center is the one objective the whole shard cares about, so it gets the world channel on
+    // top of the two sect channels. The mail goes to ONE player — the one whose march landed the last hit —
+    // deliberately not fanned out to a sect's ≤900 members across 64 cities.
+    const wcId = cityDocId(W, 'worldCenter');
+    const wc = (await m.collections.cities.findOne({ _id: wcId }))!;
+    await armSiegeTeam(A, SECT_A, 300);
+    // The world center sits at the map's middle, ~600 tiles from this suite's default base — far past the
+    // A* budget ("No viable path found"). Move the besieger next to it for this case only.
+    const wcBase = findNearbyBase(wc.x + (wc.footprint - 1) / 2 + 3, wc.y);
+    await moveBase(A, wcBase.x, wcBase.y);
+    const wcOutside = { x: wc.x + (wc.footprint - 1) / 2 + 1, y: wc.y };
+    await m.collections.tiles.updateOne(
+      { _id: tileId(W, wcOutside.x, wcOutside.y) },
+      { $set: { worldId: W, x: wcOutside.x, y: wcOutside.y, type: 'territory' as const, level: 1, ownerId: A, garrison: 500, rev: 0 } },
+      { upsert: true },
+    );
+    const view = await svc.startMarch(W, A, wcBase.x, wcBase.y, wc.x, wc.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+    nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
+    await m.collections.cities.updateOne({ _id: wcId }, { $set: { durability: 1, durabilityRegenAt: nowMs } });
+    await svc.processDueSiegeDamage(nowMs);
+
+    expect((await m.collections.cities.findOne({ _id: wcId }))!.ownerSectId).toBe(SECT_A);
+    const worldMsgs = await m.collections.nationMessages.find({ worldId: W }).toArray();
+    expect(worldMsgs).toHaveLength(1);
+    expect(worldMsgs[0]!.body).toContain('slg.city.worldCenterCaptured');
+    expect(worldMsgs[0]!.senderId).toBe('system');
+    expect(mailCalls.map((c) => c.accountId)).toEqual([A]);
+    expect(mailCalls[0]!.dispatchKey).toContain(wcId); // idempotent per city+time, not per player
+  });
+
+  // ── ④b Arrival-time re-validation (departure checks all go stale in transit) ───────────────
+  it('a besieger who LEAVES their sect mid-flight lands a miss, not a hit', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    await claimBeachhead(A);
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, A) }, { $unset: { sectId: '' } });
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+    expect(await m.collections.siegeDamage.countDocuments({ worldId: W })).toBe(0);
+  });
+
+  it('a city that entered its protection window mid-flight takes no damage', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    await claimBeachhead(A);
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    await m.collections.cities.updateOne({ _id: CITY_ID }, { $set: { ownerSectId: SECT_B, protectedUntil: view.arriveAt + 600_000 } });
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+    expect(await m.collections.siegeDamage.countDocuments({ worldId: W })).toBe(0);
+    expect((await m.collections.cities.findOne({ _id: CITY_ID }))!.ownerSectId).toBe(SECT_B);
+  });
+
+  it('voids the delayed hit when the city document itself is gone (world reset under a pending siege)', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    await claimBeachhead(A);
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+    expect(await m.collections.siegeDamage.countDocuments({ worldId: W })).toBe(1);
+    await m.collections.cities.deleteOne({ _id: CITY_ID }); // e.g. /admin/world/reset mid-window
+    nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
+    // Must not throw, must not resurrect the document, and must consume the pending hit.
+    await svc.processDueSiegeDamage(nowMs);
+    expect(await m.collections.cities.countDocuments({ _id: CITY_ID })).toBe(0);
+    expect(await m.collections.siegeDamage.countDocuments({ worldId: W })).toBe(0);
   });
 
   // ── ⑤ Views ───────────────────────────────────────────────────────────────────────────────
