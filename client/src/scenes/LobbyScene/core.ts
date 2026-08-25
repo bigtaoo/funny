@@ -157,7 +157,7 @@ export function buildBackground(w: number, h: number): PIXI.DisplayObject {
   const mx = Math.round(w * 0.09);
   pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
 
-  const tex = bake(`lobbybg:${Math.round(w)}x${Math.round(h)}`, gfx, w, h);
+  const tex = bake(`lobbybg:${Math.round(w)}x${Math.round(h)}`, gfx, w, h, { pageScale: true });
   if (tex) {
     const s = new PIXI.Sprite(tex);
     gfx.destroy();

@@ -347,7 +347,7 @@ export class BoardView {
     });
 
     const key = `board:${this.layout.orientation}:${Math.round(r.w)}x${Math.round(r.h)}:${cell}`;
-    const tex = bake(key, gfx, r.w, r.h);
+    const tex = bake(key, gfx, r.w, r.h, { pageScale: true });
     if (tex) {
       const sprite = new PIXI.Sprite(tex);
       sprite.position.set(r.x, r.y);

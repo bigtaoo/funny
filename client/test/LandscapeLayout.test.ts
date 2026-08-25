@@ -4,7 +4,8 @@ import { createLayout } from '../src/layout/ScalingManager';
 import { Side } from '../src/game';
 
 // The landscape design height is fixed at 1080; the width follows the *safe
-// drawable area* aspect (never below the classic 1920) so fit-to-height scaling
+// drawable area* aspect (never below the classic 1920, and since 2026-08-25 never
+// above 2592 = 2.4:1) so fit-to-height scaling
 // leaves no side letterbox on tall phones held sideways. Safe-area insets are
 // applied upstream in createLayout (which shrinks the area) and by ScalingManager
 // (which offsets the layer). Mirror of PortraitLayout.test.ts.
@@ -35,6 +36,34 @@ describe('LandscapeLayout dynamic width', () => {
     const scaleW = 844 / l.designWidth;
     const scaleH = 390 / l.designHeight;
     expect(Math.abs(scaleW - scaleH)).toBeLessThan(0.001);
+  });
+
+  it('stops widening past 2.4:1 and lets the desk surround take the bands', () => {
+    // 750x270 CSS px: the iPhone 13 in-app WebView behind the 2026-08-25 crash loop — 2.78:1,
+    // because the notch safe area took 94px off the width and the host app's bars 120px off the
+    // height. Uncapped that asked for a 3000-wide design rect: 56% more empty paper flanking a
+    // 1260-wide board, and 56% more pixels in every page-sized texture (see render/bake.ts).
+    const l = new LandscapeLayout(750, 270);
+    expect(l.designWidth).toBe(2592);
+    // Past the cap it contains to height, so side bands appear — which is exactly what
+    // ScalingManager's desk surround is for (it already does this on every iPad).
+    const scale = Math.min(750 / l.designWidth, 270 / l.designHeight);
+    expect(scale).toBe(270 / l.designHeight);
+    expect(750 - l.designWidth * scale).toBeGreaterThan(2);
+    // The board still fits with room for both HUD columns (boardX >= 330 for every allowed width).
+    expect(l.boardRect.x).toBeGreaterThanOrEqual(330);
+    expect(l.hudBottomLeftRect.x).toBeGreaterThanOrEqual(0);
+  });
+
+  it('leaves every real phone aspect below the cap', () => {
+    // 16:9 through 21:9 (the widest shipping phone aspect) must still fill the width with no bands.
+    for (const [w, h] of [[1920, 1080], [844, 390], [2340, 1080], [2520, 1080]] as const) {
+      const l = new LandscapeLayout(w, h);
+      expect(l.designWidth).toBeLessThan(2592);
+      const scaleW = w / l.designWidth;
+      const scaleH = h / l.designHeight;
+      expect(Math.abs(scaleW - scaleH)).toBeLessThan(0.001);
+    }
   });
 
   it('anchors the HUD strips to the board and fills the hand to the board width', () => {

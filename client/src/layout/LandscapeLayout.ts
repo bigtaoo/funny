@@ -39,14 +39,33 @@ const CARD_MAR = 8;
  * identical to the historical fixed 1920×1080 board. Wider screens (tall phones
  * held sideways = ~19.5:9, etc.) get a proportionally wider design space so the
  * game fills the full width instead of being letterboxed with dead bands left
- * and right.
+ * and right — up to {@link MAX_W}, past which they letterbox again on purpose.
  */
 const REFERENCE_W = 1920;
 
 /**
+ * Ceiling on the reclaimed design width — 2.4:1, i.e. 1080 * 2.4.
+ *
+ * The floor above stops a squat screen from being letterboxed; this stops an absurdly wide one from
+ * inflating the design rect without bound. Every real phone held sideways lands under it: 16:9 is
+ * 1.78, iPhone 13 is 2.16, and the widest shipping phone aspect (21:9, some Xperias) is 2.33.
+ *
+ * What is NOT a phone aspect is an in-app WebView that has been cropped by its host's chrome. The
+ * viewport behind the 2026-08-25 crash loop was 750x270 CSS px — 2.78:1, because the notch safe
+ * area took 94px off the width and the host app's bars took 120px off the height. Uncapped that
+ * asked for a 3000x1080 design rect: 56% wider than the reference, all of it empty paper flanking a
+ * board that is only 1260 wide, and 56% more pixels in every page-sized texture (see render/bake.ts).
+ * Past this cap the game contains to height and `ScalingManager` fills the side bands with the desk
+ * surround it already draws for iPads — a centred page on a desk, which is the intended reading of
+ * "the screen is the wrong shape for the notebook".
+ */
+const MAX_W = 2592;
+
+/**
  * Landscape layout — design height fixed at 1080; design width follows the aspect
- * of the *safe drawable area* (never narrower than 1920) so `ScalingManager`'s
- * fit-to-height scaling leaves no side letterbox. Safe-area insets are handled
+ * of the *safe drawable area* (never narrower than {@link REFERENCE_W}, never wider
+ * than {@link MAX_W}) so `ScalingManager`'s fit-to-height scaling leaves no side
+ * letterbox on any real phone. Safe-area insets are handled
  * once, by ScalingManager offsetting the whole game layer inside the safe region
  * — so this layout simply anchors to its own 0…designWidth edges and every scene
  * (battle and menu) is protected uniformly.
@@ -98,10 +117,11 @@ export class LandscapeLayout implements ILayout {
     this.availW = availW;
     this.availH = availH;
 
-    // Design width matches the safe-area aspect (fit-to-height leaves no letterbox),
-    // clamped so a squat/near-4:3 landscape still gets the classic 1920 width.
+    // Design width matches the safe-area aspect (fit-to-height leaves no letterbox), clamped at both
+    // ends: a squat/near-4:3 landscape still gets the classic 1920 width, and a viewport wider than
+    // any real phone (see MAX_W) stops widening and letterboxes onto the desk surround instead.
     const aspectW = Math.round(DESIGN_H * (availW / Math.max(1, availH)));
-    this.designWidth = Math.max(REFERENCE_W, aspectW);
+    this.designWidth = Math.min(MAX_W, Math.max(REFERENCE_W, aspectW));
 
     // Center the board horizontally in the (possibly widened) design space. The
     // vertical layout is unchanged — height is fixed, only width is reclaimed.

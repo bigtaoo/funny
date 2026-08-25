@@ -247,7 +247,7 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 与 §9 的「日志定向采集」**并列、互补、反向**：定向采集只在被 `allowPublicIds` 点名的 publicId 上回捞日志；本通道相反——**任何**客户端遇到异常都**主动直报**，无需事先点名，专为「在全网定位野外异常」而设。
 
 - **上报的 6 类异常**（客户端 `net/anomaly.ts` 的 `AnomalyType`）：
-  - `mem` — JS 堆超阈值（`MemoryMonitor` 旁路喂入；与原有 `netLog('mem').warn` 入环形缓冲并行）。detail 除 `heap`/`poolTotal` 外带 `gpu:{tex,baseTex,nodes,tickers}`（2026-06-27 加，见 §8）——池空（`poolTotal.estMB≈0`）却堆涨时，这三个数把纯 JS 保留型泄漏定性到具体一类：`tex/baseTex` 增=纹理缓存无界、`nodes` 增=退场不 destroy 的场景图残留、`tickers` 增=`ticker.add` 漏配对 `remove` 的闭包钉死。
+  - `mem` — JS 堆超阈值（`MemoryMonitor` 旁路喂入；与原有 `netLog('mem').warn` 入环形缓冲并行）。detail 除 `heap`/`poolTotal` 外带 `gpu:{tex,baseTex,nodes,tickers}`（2026-06-27 加，见 §8）——池空（`poolTotal.estMB≈0`）却堆涨时，这三个数把纯 JS 保留型泄漏定性到具体一类：`tex/baseTex` 增=纹理缓存无界、`nodes` 增=退场不 destroy 的场景图残留、`tickers` 增=`ticker.add` 漏配对 `remove` 的闭包钉死。**2026-08-25 起 `gpu` 同时带字节口径**：`texMB`/`genMB`/`largest`/`largestMB`（整个 base-texture 缓存的解码字节，及最大那一张）+ `bake:{n,MB,top,topMB}`（bake 缓存，`top` 带的是 bake 的 cache key，例如 `lobbybg:2592x1080@0.75`）；字节另有独立预算（`nw_tex_budget_mb`，默认 256）单独触发 `mem`。**加它的理由是计数口径漏过了一次真崩溃**：三张 111 MB 的 RenderTexture 在 `generated` 计数里是 **3**，对着 600 的预算毫无反应，而 JS 堆也看不见 GPU 侧的字节——「少而巨大」这件事只有字节表达得出来，而系统杀进程杀的正是字节（见 §8 的 2026-08-25 条与 ADR-073）。`anr` 报告的 `gpu` 也带上了 `texMB`/`largestMB`（一次遍历缓存键读两个数，与被刻意排除的 20 万节点场景图遍历不是一个量级）。
   - `cpu` — 主线程持续饱和（`PerfMonitor`，新增）：① `PerformanceObserver('longtask')` 长任务忙碌比 ≥ 0.5；② 持续低 FPS（连续 ≈10s < 30，用 `ticker.deltaMS` 估，微信亦可）。浏览器无直接 CPU API，主线程饱和是其可观测等价。
   - `webgl_lost` — `webglcontextlost`（黑屏类故障关键信号）。
   - `anr` — 主循环卡死：独立 wall-clock 看门狗，主线程冻结 >4s（恢复后据时间漂移反推；`document.hidden` 时不计，避免后台节流误报）。
