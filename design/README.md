@@ -24,7 +24,7 @@
 | 文档 | 范围 |
 |---|---|
 | [README.md](README.md) | 本文：索引 / 权威登记 / 文档规约 |
-| [DECISIONS.md](DECISIONS.md) | ADR 决策日志（造成漂移的关键拍板）——**索引表**，正文见 [ADR-001~040](DECISIONS_ADR-001-040.md) / [ADR-041~066](DECISIONS_ADR-041-onward.md)（新拍板写后者） |
+| [DECISIONS.md](DECISIONS.md) | ADR 决策日志（造成漂移的关键拍板）——**索引表**，正文见 [ADR-001~040](DECISIONS_ADR-001-040.md) / [ADR-041~069](DECISIONS_ADR-041-069.md) / [ADR-070 起](DECISIONS_ADR-070-onward.md)（新拍板写最后一册） |
 
 ### 1.2 游戏与服务端（`design/game/`）
 | 文档 | 范围 | 状态 |
