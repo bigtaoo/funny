@@ -282,8 +282,12 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
   - `helpers.teamOrder()` 返回类型加第三支 `{ station }`，优先级排在 march/occ 之后（撤军途中两份文档会短暂同时存在，此时应显示「行军中」）；按 `mine !== false` 过滤——ADR-051 P4 起 `/world/stationed` 也返回视野内的**敌方**驻军（`teamId` 被服务端抹掉，但字段形状相同），不过滤会让敌方驻军抢占我方槽位。
   - 文案新增 `world.team.stationedIdle`（野外停留 / In the field / Im Feld）与 `world.team.garrisoned`（野外驻扎 / Field garrison / Stationiert），对应 ADR-051 P3a 的 停留（自由，可原地再指挥）/ 驻扎（锁定，守 3×3）两态；状态色沿用 march/occ 的金色（= 不在家）。**故意不带坐标后缀**：竖屏下领队头像把状态文字列压到 `max(40, …)` 的 40px 下限，现有 4 字标签就已在换行，再挂个 `(x,y)` 会撞到下面的武将/兵力副标签；坐标去地图看。
   - 顺带修英文歧义：`city.military.teamIdle` 英文原文就叫 "Garrisoned"（本意是「在家驻军」），与新的野外驻扎撞车，改成 "At home"（德文 `Garnisoniert` → `Daheim`）。中文「驻军在家」不变。
+- **补测 + 顺手修一处自造的闪烁（同日追加）**：审覆盖率时发现 station 分支写在加载态之上，于是「station 先落地、marches 还在飞」的瞬间会直接写「野外驻扎」——而 station 是三源里**最低**的一档（撤军途中 march 与 station 文档并存），下一帧就得自我纠正成「行军中」，正是 §8.8 立 `ordersLoaded` 要防的那种闪烁。改成 `station && core.ordersLoaded`（顺带把三元 union 在开头拆成 `station` / `activeOrder` 两个局部变量——不拆的话未落地的 station 会掉进 march/occ 分支读 `occ.dueAt` 得到 `NaN`）。新增测试：
+  - `cityScene.ui.ts` **+4 例**：station 单独落地不算结算（不许提前写「野外停留」）、station 先落地→另两个端点带回撤军 march 时 march 赢且中途从未显示过驻扎、另两个端点空回时立刻显示、`getStationed` 拒绝也要结算状态（第三条失败路径，前两条 §8.8 已有）。
+  - `client/test/ui/cityTeamOrder.ui.ts` **新文件 6 例**：直接断言 `helpers.teamOrder()` 这个纯函数（渲染文本只能看出哪个分支赢了，看不出全组合下的排序与归属过滤是否成立）——三源都指同一槽时 march>occ>station、只有别人的槽位有文档时返回 null、station 原样返回且 `mode` 不丢、敌方 march 与敌方 station（`mine:false`）都忽略而无 `mine` 字段的旧文档算自己、敌方 march 不遮住我方 station。同文件另 1 例钉住**取数扇出**：五个分片都发且 `getTeams` 排第一（`net/rateGate.ts` 的 5 令牌桶严格 FIFO，桶抽干时发起顺序就是服务顺序，此前没有任何测试钉这条，少发一个分片或调换顺序都是静默回归）。
+  - 变异验证（逐个改坏源码确认用例会挂）：去掉 `ordersLoaded` 门 → 「单独落地不算结算」挂；去掉 `stationed` 的 `mine !== false` → 敌方驻军用例挂；把 station 排到 occ 之前 → 排序用例挂；删掉 `getStationed` 分片 / 把 `getMe` 挪到 `getTeams` 前面 → 扇出用例挂；删掉 stationed 分片的结算钩子 → 拒绝用例挂。（`.catch` 与 `.finally` 在此**互换不会挂**——`.catch` 就在它前面，两者等价，与 §8.8 记的那笔同理。）
 - 覆盖测试：`client/test/ui/cityScene.ui.ts` **+5 例**——停留队伍显示「野外停留」且不再出现「驻军在家」、驻扎与停留两态文案可区分、混合场景下只有真在家的那一队保留「驻军在家」、视野内敌方驻军（`mine:false`）不抢我方槽位、撤军途中 march 压过 station。既有「只落一个 order 端点不算数」用例改成三端点口径。另有 9 个测试文件的 `WorldApiClient` stub 补 `getStationed`（拆栅栏后缺方法会真的抛，同 §8.8 那笔）。
-- 验证：`tsc --noEmit` 全绿、`test:ui` 225 文件 / 2099 例全绿、`npm test` 190 文件 / 1949 例全绿、`build:web` 构建成功。**未做真机截图**：复现需要一个野外驻扎中的账号，本地 docker 栈里 `stationed` 集合为空、用户报的状态在部署后端上；Browser 面板本次仍取不到画面（同 §8.7 的老问题），按用户指示叫停，视觉侧以 headless UI 用例（真 `PIXI.Text` 节点文本）为准。
+- 验证：`tsc --noEmit` 全绿、`test:ui` 226 文件 / 2109 例全绿、`npm test` 190 文件 / 1950 例全绿、`build:web` 构建成功。**未做真机截图**：复现需要一个野外驻扎中的账号，本地 docker 栈里 `stationed` 集合为空、用户报的状态在部署后端上；Browser 面板本次仍取不到画面（同 §8.7 的老问题），按用户指示叫停，视觉侧以 headless UI 用例（真 `PIXI.Text` 节点文本）为准。
 
 ---
 

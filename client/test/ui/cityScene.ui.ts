@@ -647,11 +647,12 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     let resolveOccupations!: (v: unknown[]) => void;
     let rejectOccupations!: (e: Error) => void;
     let resolveStationed!: (v: unknown[]) => void;
+    let rejectStationed!: (e: Error) => void;
     let resolveMeRaw!: (v: PlayerWorldView) => void;
     const teams = new Promise<unknown[]>((r, j) => { resolveTeams = r; rejectTeams = j; });
     const marches = new Promise<unknown[]>((r) => { resolveMarches = r; });
     const occupations = new Promise<unknown[]>((r, j) => { resolveOccupations = r; rejectOccupations = j; });
-    const stationed = new Promise<unknown[]>((r) => { resolveStationed = r; });
+    const stationed = new Promise<unknown[]>((r, j) => { resolveStationed = r; rejectStationed = j; });
     const me = new Promise<PlayerWorldView>((r) => { resolveMeRaw = r; });
     return {
       api: {
@@ -669,6 +670,7 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
       resolveOccupations,
       rejectOccupations,
       resolveStationed,
+      rejectStationed,
       resolveOrders: () => { resolveMarches([]); resolveOccupations([]); resolveStationed([]); },
       resolveMe: (over: Partial<PlayerWorldView> = {}) => resolveMeRaw({
         resources: {}, buildings: {}, buildQueue: [],
@@ -807,6 +809,55 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
+  it('a station landing alone is not enough to settle the status either', async () => {
+    const { api, resolveTeams, resolveStationed } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() }]);
+    await flush();
+    // A station is the LOWEST-ranked of the three sources: a recall march (mid-recall both docs
+    // exist) would outrank it, and marches hasn't answered yet — so asserting 野外停留 here would
+    // be the same self-correcting flash the loading state exists to avoid.
+    expect(texts().some(isLoadingLabel)).toBe(true);
+    expect(texts()).not.toContain(t('world.team.stationedIdle'));
+    expect(texts()).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('a station known first shows once the other two endpoints land, and loses to the march they carry', async () => {
+    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe();
+    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() }]);
+    await flush();
+    expect(texts().some(isLoadingLabel)).toBe(true);
+
+    // The recall march the gate was waiting for: it must win, and the station must never have
+    // been shown in between.
+    resolveMarches([{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }]);
+    resolveOccupations([]);
+    await flush();
+    expect(texts()).toContain(t('world.team.marching'));
+    expect(texts()).not.toContain(t('world.team.stationedIdle'));
+    scene.destroy();
+  });
+
+  it('a station shows as soon as the other two endpoints come back empty', async () => {
+    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe();
+    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now(), mode: 'garrison' }]);
+    resolveMarches([]);
+    resolveOccupations([]);
+    await flush();
+    expect(texts()).toContain(t('world.team.garrisoned'));
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    expect(texts()).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
   // ── Failure paths: the loading state must END on rejection, not spin forever ────────────────
   // These ride on `.finally()`, which is easy to regress into `.then()` while refactoring.
 
@@ -829,6 +880,22 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     resolveMarches([]);
     rejectOccupations(new Error('offline'));
     resolveStationed([]);
+    await flush();
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    expect(texts()).toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('getStationed rejecting still settles the status (treated as no field station)', async () => {
+    // ordersLoaded rides on `.finally()` for all three slices — an easy regression into `.then()`,
+    // and this one is the newest of the three (2026-08-25), so it gets its own case.
+    const { api, resolveTeams, resolveMarches, resolveOccupations, rejectStationed, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe();
+    resolveMarches([]);
+    resolveOccupations([]);
+    rejectStationed(new Error('offline'));
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(false);
     expect(texts()).toContain(t('city.military.teamIdle'));
