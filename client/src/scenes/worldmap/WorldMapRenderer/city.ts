@@ -281,6 +281,11 @@ export class WorldMapRendererCity implements CityHandlers {
         cityC = new PIXI.Container();
         cityC.addChild(sprite);
         cityC.addChild(plotMask);
+        // ADR-074 P1: durability bar. NOT inside the plot mask — the mask clips the building art to its
+        // own plot diamond, and a bar hovering above the roof would be clipped away with it.
+        const hpbar = new PIXI.Graphics();
+        hpbar.name = 'hpbar';
+        cityC.addChild(hpbar);
         ctx.cityLayer.addChild(cityC);
         ctx.citySprites.set(key, cityC);
       }
@@ -301,6 +306,30 @@ export class WorldMapRendererCity implements CityHandlers {
       plotMask.beginFill(0xffffff);
       plotMask.drawPolygon(cityPlotMaskPoints(node.footprint, tp, ISO_RATIO, spriteTiles * tp));
       plotMask.endFill();
+
+      // ADR-074 P1 durability bar. Only when damaged, same restraint as the player-base bar above: 64
+      // permanently-full bars would be pure clutter, and a city at full durability is not under siege.
+      // The bar is a RATIO only — the absolute numbers live in the info panel, because the durability
+      // curve is base-dominated (26,000 + 900/level, see SLG_CITY_SIEGE_DESIGN §6.5) and a bar alone
+      // cannot convey that a level-10 capital's wall is only ~22% deeper than a level-3 city's.
+      const cityHp = cityC.getChildByName('hpbar') as PIXI.Graphics;
+      cityHp.clear();
+      if (node.durabilityMax && node.durability != null && node.durability < node.durabilityMax) {
+        const ratio = Math.max(0, Math.min(1, node.durability / node.durabilityMax));
+        const barW = spriteTiles * tp * 0.5;
+        const barH = Math.max(3, tp * 0.07);
+        const bx = -barW / 2;
+        const by = -sprite.height - barH - Math.max(2, tp * 0.04);
+        cityHp.lineStyle(0.8, 0x3a2a1a, 0.85);
+        cityHp.beginFill(0x2a1e12, 0.8);
+        cityHp.drawRect(bx, by, barW, barH);
+        cityHp.endFill();
+        const fill = ratio > 0.5 ? 0x3aa03a : (ratio > 0.25 ? 0xd8a520 : 0xcc2222);
+        cityHp.lineStyle(0);
+        cityHp.beginFill(fill, 0.95);
+        cityHp.drawRect(bx, by, barW * ratio, barH);
+        cityHp.endFill();
+      }
     }
 
     // Destroy sprites that have scrolled off-screen

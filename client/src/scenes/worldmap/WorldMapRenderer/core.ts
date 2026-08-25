@@ -13,6 +13,7 @@
 // found during the conversion — both involving the old pool.ts — were resolved).
 import { allCityNodes, type MapEditorCityNode } from '@nw/shared';
 import type { WorldMapContext } from '../WorldMapContext';
+import type { WorldCityNodeView } from '../../../net/WorldApiClient';
 
 export class WorldMapRendererCore {
   /** Seed-derived NPC city nodes for the current world, memoized (they depend only on the seed). Only used
@@ -37,8 +38,14 @@ export class WorldMapRendererCore {
    * `allCityNodes(worldId)` remains the fallback for the frames before the entry fetch lands, for an
    * offline/failed entry fetch, and for test fixtures that never call it — all cases where the world has
    * no server-side city list to disagree with.
+   *
+   * Return type is the SERVER view (`WorldCityNodeView`), not the shared `MapEditorCityNode`, because since
+   * ADR-074 P1 the served list also carries live siege state (owning sect, durability, protection window)
+   * that the sprite layer draws. `allCityNodes` supplies only the geometry half, so on the fallback path
+   * those fields are simply absent — which is exactly right: a client with no server list has no business
+   * drawing a durability bar it cannot know the value of.
    */
-  cityNodes(): MapEditorCityNode[] {
+  cityNodes(): WorldCityNodeView[] {
     if (this.ctx.cityNodes) return this.ctx.cityNodes;
     if (this.seedCityNodesCache && this.seedCityNodesWorld === this.ctx.cb.worldId) return this.seedCityNodesCache;
     this.seedCityNodesCache = allCityNodes(this.ctx.cb.worldId);

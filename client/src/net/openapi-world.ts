@@ -318,6 +318,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/cities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wild-city siege state (ADR-074 P1)
+         * @description The world's ~64 city siege-point nodes with their live siege state — the same payload `POST /world/enter` already embeds, exposed on its own so the city info panel can refresh while open (durability regenerates continuously, and other sects are hitting the same walls) without re-running a whole map entry. Deliberately NOT pushed: a durability hit lands dozens of times an hour per city and fanning each out to a sect of up to ~900 members would be a push faucet. Capture — the event that actually matters — announces itself on the sect channel instead.
+         */
+        get: operations["getWorldCities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/territories": {
         parameters: {
             query?: never;
@@ -922,6 +942,8 @@ export interface components {
             };
             mainBaseTile?: string;
             familyId?: string;
+            /** @description ADR-074 P1: the sect this account belongs to (mirrored onto PlayerWorldDoc at joinWorld). Absent when unaffiliated. The client needs it to decide whether a wild city's info panel may offer a siege button — only sect members can besiege a city. */
+            sectId?: string;
             territoryCount?: number;
             /** @description Season battle pass held (S8-8 shop; grants training/build speed + yield bonuses, cleared on season reset). Client uses this to grey out the shop's battle-pass row once already active (single-slot — repeat purchase is rejected with ALREADY_ACTIVE). */
             hasBattlePass?: boolean;
@@ -1124,6 +1146,22 @@ export interface components {
             level: number;
             /** @description Square plot side length in tiles (3/5/7/9 by tier; 9 for the world center). Always odd — the plot is centered on x/y. */
             footprint: number;
+            /** @description ADR-074 P1: the sect holding this city. Absent = still NPC-held. Ownership is by SECT, never by account or family — the account+family attribution the deleted `applyNationChange` used is what let a single player take a whole province. */
+            ownerSectId?: string;
+            /** @description Owning sect's display name, snapshotted at capture so the map can label the city without a sect lookup. */
+            ownerSectName?: string;
+            /** @description Epoch ms; while in the future the city cannot be besieged (post-capture window, CITY_CAPTURE_PROTECTION_MS). Absent/0 = besiegeable. */
+            protectedUntil?: number;
+            /** @description Current durability with lazy regen already applied at response time — the HP bar's numerator. Render it as an ABSOLUTE value, not only a percentage: the curve is base-dominated (26,000 + 900/level), so a level-3 city and a level-10 capital differ by only ~22% and a percentage-only bar reads as a bug. See SLG_CITY_SIEGE_DESIGN §6.5 for why the curve is shaped that way (per-siege troop cost rises ~2.7x with city level, so a level-proportional wall would push the attackers-needed curve to roughly L squared). */
+            durability?: number;
+            /** @description Full durability for this city's level/kind (`cityDurabilityMax`). World center is x2. */
+            durabilityMax?: number;
+            /** @description Durability regenerated per hour (`cityRegenPerHour`). This is the single-player gate: it exceeds what one fully maxed account can sustain, so a lone besieger's progress is always negative. Surfaced so the client can show "recovers in N hours" rather than an unexplained rising bar. */
+            regenPerHour?: number;
+            /** @description sectId to cumulative durability damage this siege round (§7). Cleared on capture. Ownership goes to the LAST hit, not the largest contributor — this exists so the client can show a per-sect contribution panel, and so switching to a cumulative-damage rule later needs no migration. */
+            siegeLog?: {
+                [key: string]: number;
+            };
         };
         SeasonView: {
             worldId: string;
@@ -1931,6 +1969,30 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
             401: components["responses"]["ErrorResp"];
             500: components["responses"]["ErrorResp"];
+        };
+    };
+    getWorldCities: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["WorldCityNodeView"][];
+                    };
+                };
+            };
         };
     };
     listTerritories: {

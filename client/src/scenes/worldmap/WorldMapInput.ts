@@ -21,8 +21,12 @@ import type { TerrainTextureName } from '../../render/atlas/terrainAtlasLoader';
 import type { ZoomCfg, PoolSlot } from './zoom';
 import type { WorldMapContext, WorldMapCallbacks, DeployKind } from './WorldMapContext';
 import { hitTestHeaderButtons } from './WorldMapInput/headerButtons';
+import { showCityPanel, type CityPanelState } from './WorldMapInput/cityPanel';
 
 export class WorldMapInput {
+  /** State owned by the extracted city-siege panel (see ./WorldMapInput/cityPanel.ts). */
+  private readonly cityPanel: CityPanelState = { openAt: null };
+
   constructor(private readonly ctx: WorldMapContext) {}
 
   /**
@@ -257,13 +261,9 @@ export class WorldMapInput {
     // and gated on sect membership. Before ADR-074 only the anchor cell carried this type and nothing on
     // either side rejected it, so clicking inside a city's walls fell through to the neutral branch below
     // and offered a plain 占领 against the underlying resource tile's NPC garrison (用户 2026-08-25 截图:
-    // 「墨水 · Lv.2 · 建议兵力 240」 on a Lv.8 city). Info-only for now: the siege itself is P1, so no march
-    // button is offered rather than one the server would reject with 'City siege is not implemented yet'.
+    // 「墨水 · Lv.2 · 建议兵力 240」 on a Lv.8 city).
     if (tile?.type === 'familyKeep') {
-      const cityHead = [t('world.city'), `(${tx}, ${ty})`];
-      if (tile.level != null) cityHead.push(t('world.cityLevel').replace('{lv}', String(tile.level)));
-      cityHead.push(t('world.cityHint'));
-      this.ctx.panels.showModal(cityHead, [{ label: '✕', action: () => this.ctx.panels.closeModal() }]);
+      showCityPanel(this.ctx, this.cityPanel, tx, ty, tile.level ?? undefined);
       return;
     }
 

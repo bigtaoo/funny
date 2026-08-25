@@ -144,6 +144,9 @@ describe.skipIf(!mongo)('worldsvc wild-city ground e2e (ADR-074 P0)', () => {
     // ($expr population < capacity), and the nation docs are all these cases need — same "no world doc =
     // uncapped" setup the sibling e2e suites use.
     await svc.initNations(W);
+    // ADR-074 P1: the attack-branch case below needs the city documents to exist, so the sect gate is what
+    // rejects it rather than the "city not initialized in this world" fallback.
+    await svc.initCities(W);
     await svc.joinWorld(W, A, base.x, base.y);
     await m.collections.playerWorld.updateOne(
       { _id: playerWorldId(W, A) },
@@ -196,11 +199,15 @@ describe.skipIf(!mongo)('worldsvc wild-city ground e2e (ADR-074 P0)', () => {
       .rejects.toMatchObject({ code: 'TILE_OCCUPIED' });
   });
 
-  it('rejects an attack march with an explicit not-implemented error, not the misleading "use occupy/sweep"', async () => {
-    // P0 closes the holes; the siege itself is P1. The ownerless branch's TILE_NOT_OWNED advice ("use
-    // occupy/sweep") would be actively wrong here since both are now blocked.
+  it('rejects an attack march from a sect-less player with the sect gate, not the misleading "use occupy/sweep"', async () => {
+    // P0 made this a flat BAD_REQUEST ("City siege is not implemented yet"); P1 replaced it with the real
+    // gate (ADR-074 decision 1 — only sect members may besiege). Either way the point is that the ownerless
+    // branch's TILE_NOT_OWNED advice ("use occupy/sweep") must NOT be what comes back: both are blocked on
+    // city ground. `A` here has no sect, which is the common case for this suite's accounts.
+    // The full siege path (sect gate → connectivity → wave ladder → durability) is covered by
+    // city-siege.e2e.test.ts.
     await expect(svc.startMarch(W, A, base.x, base.y, interior.x, interior.y, 'attack', 600))
-      .rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      .rejects.toMatchObject({ code: 'NOT_IN_SECT' });
   });
 
   it('rejects the direct occupyTile path on a city plot interior cell', async () => {

@@ -12,6 +12,7 @@ import type {
   PlayerWorldView,
   EnterWorldView,
   ShardTransferTargetView,
+  WorldCityNodeView,
   MarchKind,
 } from './types';
 
@@ -71,6 +72,17 @@ export class WorldService {
   /** Full list of owned tiles (territory + captured stronghold; excludes the 3×3 capital footprint). Backs the Territory Overview panel (SLG_DESIGN_LOG.md §26). */
   async getTerritories(worldId: string): Promise<WorldTileView[]> {
     return this.core.req('GET', `/world/territories?worldId=${encodeURIComponent(worldId)}`);
+  }
+
+  /**
+   * Wild-city siege state (ADR-074 P1): the ~64 city nodes with live durability / owning sect / protection
+   * window. Same payload `enterWorld` already embeds — this exists so the city info panel can refresh while
+   * open, since durability regenerates continuously and other sects are hitting the same walls. Not pushed:
+   * a durability hit lands dozens of times an hour per city, so a push per hit to a sect of up to ~900
+   * members would be a faucet; capture announces itself on the sect channel instead.
+   */
+  async getCities(worldId: string): Promise<WorldCityNodeView[]> {
+    return this.core.req('GET', `/world/cities?worldId=${encodeURIComponent(worldId)}`);
   }
 
   /** Enter the world: the system automatically places the player's city (§3.4; prefers near family → outer-ring newcomer zone); spawn point is server-determined, player does not pass coordinates. */

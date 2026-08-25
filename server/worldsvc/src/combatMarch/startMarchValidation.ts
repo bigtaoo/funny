@@ -5,7 +5,7 @@
 // pve.ts/liveops.ts's mixin-chain split) plus the handful of locals startMarch had already computed by
 // this point, so it lifts out verbatim as a free function taking them as explicit parameters). No
 // behavior change: returns the resolved `defenderId` (attack only) or throws the same SlgError as before.
-import { proceduralTile, SlgError, OCCUPY_MIN_TROOPS, type MarchKind } from '@nw/shared';
+import { proceduralTile, isCityGroundTile, SlgError, OCCUPY_MIN_TROOPS, type MarchKind } from '@nw/shared';
 import { WorldCore } from '../core';
 
 /**
@@ -64,7 +64,32 @@ export async function validateMarchTarget(
     // City siege is the ADR-074 P1 scope (CityDoc + garrison waves + durability). P0 only closes the holes,
     // so a city is currently un-takeable by any route — say so explicitly instead of falling through to the
     // ownerless branch below, whose 'use occupy/sweep' advice is now wrong for city ground (both are blocked).
-    if (proc.type === 'familyKeep') throw new SlgError('BAD_REQUEST', 'City siege is not implemented yet');
+    // Wild city (ADR-074 P1). Three gates, in this order:
+    //   1. the besieger must be in a sect (decision 1) — checked FIRST so a sect-less player gets the
+    //      actionable error rather than a connectivity one they cannot fix;
+    //   2. the city must exist as an entity and not already belong to the besieger's own sect;
+    //   3. it must not be inside its post-capture protection window.
+    // ADR-039 connectivity is checked by the shared tail below, against the whole footprint.
+    if (isCityGroundTile(proc.type)) {
+      const sectId = await core.requireSect(worldId, accountId);
+      const city = await core.cityAt(worldId, toX, toY);
+      // No city document: a world opened before P1 and never reset. Refuse rather than let a march fly at
+      // a target that cannot be settled (`applyCitySiege` would treat it as a miss on arrival anyway).
+      if (!city) throw new SlgError('BAD_REQUEST', 'This city is not yet initialized in this world');
+      if (city.ownerSectId === sectId) throw new SlgError('ALLY_TILE', 'Your sect already holds this city');
+      if ((city.protectedUntil ?? 0) > now()) throw new SlgError('PROTECTED', 'This city is under post-capture protection');
+      // A city's footprint is 3-9 cells wide, so connectivity must be tested against the whole plot, not
+      // the single landed cell — `targetFootprintCells` only knows about a base's 3x3 ring, so the city
+      // case supplies its own cells.
+      const r = (city.footprint - 1) / 2;
+      const cells: { x: number; y: number }[] = [];
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) cells.push({ x: city.x + dx, y: city.y + dy });
+      if (!(await core.isConnectedToSectTerritory(worldId, accountId, cells))) {
+        throw new SlgError('TERRITORY_NOT_CONNECTED', "The city must border your sect's territory");
+      }
+      if (!hasCardArmy && troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
+      return undefined; // no single defender account: a city is held by a sect (no under_attack warning)
+    }
     if (!toTile?.ownerId) {
       // ADR-037 (§5.4): no owner but mid occupation-hold (an occupy march already won its PvE battle and is
       // waiting out the hold countdown) — this is a valid expulsion attack target; the pending occupier gets

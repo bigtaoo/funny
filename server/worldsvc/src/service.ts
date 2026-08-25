@@ -68,6 +68,12 @@ export class WorldService {
   capitalsFor(worldId: string): readonly [number, number][] { return this.core.capitalsFor(worldId); }
   getMe(worldId: string, accountId: string): Promise<PlayerWorldView> { return this.core.getMe(worldId, accountId); }
   getCities(worldId: string): ReturnType<WorldCore['getCities']> { return this.core.getCities(worldId); }
+  /** ADR-074 P1: the city node list enriched with live siege state (durability/owning sect/protection). */
+  getCityViews(worldId: string): ReturnType<WorldCore['getCityViews']> { return this.core.getCityViews(worldId); }
+  /** ADR-074 P1: create the world's city documents (season open / world reset; idempotent). */
+  initCities(worldId: string): Promise<void> { return this.core.initCities(worldId); }
+  /** ADR-074 P1: the city whose footprint covers (x,y), durability brought up to date, or null. */
+  cityAt(worldId: string, x: number, y: number): ReturnType<WorldCore['cityAt']> { return this.core.cityAt(worldId, x, y); }
   getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     return this.core.getTile(worldId, accountId, x, y);
   }
@@ -254,10 +260,13 @@ export class WorldService {
     // `cities` (2026-08-19): the world's ~64 city siege-point nodes, cloned from its map template at
     // world-open. Sent here rather than from a route of its own because the city sprite layer needs it
     // exactly once per world-map entry — the same cadence as season/nations, and one fewer round-trip.
+    // ADR-074 P1: each node now carries its live siege state too (owning sect, durability with lazy regen
+    // already applied, protection window, per-sect siege log) — the same one-read-per-entry cadence, so the
+    // map can draw a city's HP bar and its info panel without a second round-trip per city.
     const [season, nations, cities, map, mapSparse, marches, occupations, stationed] = await Promise.all([
       this.getSeason(worldId),
       this.getNations(worldId),
-      this.getCities(worldId),
+      this.getCityViews(worldId),
       zoom === 1 ? this.getMap(worldId, accountId, cx, cy, r) : Promise.resolve(undefined),
       zoom !== 1 ? this.getMapSparse(worldId, accountId, cx, cy, r, lod) : Promise.resolve(undefined),
       this.getMarches(worldId, accountId),

@@ -14,6 +14,7 @@ export * from './db/worldDocs';
 export * from './db/playerDocs';
 export * from './db/combatDocs';
 export * from './db/socialDocs';
+export * from './db/cityDocs';
 export * from './db/seasonDocs';
 export * from './db/collections';
 export * from './db/client';

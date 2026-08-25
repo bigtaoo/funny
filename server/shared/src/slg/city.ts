@@ -6,10 +6,13 @@
 // (SLG_ECONOMY_CHECK), register figures in ECONOMY_NUMBERS §13-SLG-CITY.
 
 import {
-  RESOURCE_CAP, RESOURCE_TYPES, TROOP_CAP_BASE, TROOP_TRAIN_QUEUE_MAX,
-  TROOP_TRAIN_INK_COST, TROOP_TRAIN_PAPER_COST, TROOP_TRAIN_GRAPHITE_COST, TROOP_TRAIN_METAL_COST, TROOP_TRAIN_STICKER_COST,
+  RESOURCE_CAP, RESOURCE_TYPES, TROOP_CAP_BASE,
   type ResourceType,
 } from './core';
+import {
+  TROOP_TRAIN_QUEUE_MAX,
+  TROOP_TRAIN_INK_COST, TROOP_TRAIN_PAPER_COST, TROOP_TRAIN_GRAPHITE_COST, TROOP_TRAIN_METAL_COST, TROOP_TRAIN_STICKER_COST,
+} from './training';
 
 export type BuildingKey =
   | 'desk'         // hub: single total-level gate for every other building + base durability / build-queue slots
