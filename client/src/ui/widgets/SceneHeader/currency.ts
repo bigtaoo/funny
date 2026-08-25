@@ -10,7 +10,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, tearDownChildren } from '../../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../../render/icons';
-import { buildCoinIcon } from '../../../render/atlas/coinIconAtlas';
 import { snapFont } from '../../../render/fontScale';
 
 export interface HeaderCurrencyChip {
@@ -104,9 +103,7 @@ function buildCluster(
     icon: IconKind, color: number, amount: number, label?: string,
     amountColor: number = C.dark, bold = false,
   ): void => {
-    // 'coin' goes through the shared atlas-backed glyph so this reads identically to the shop's
-    // balance icon; other currency chips (materials, etc.) keep the procedural buildIcon draw.
-    const ic = icon === 'coin' ? buildCoinIcon(icon, iconSize, color) : buildIcon(icon, iconSize, color);
+    const ic = buildIcon(icon, iconSize, color);
     ic.x = cx; ic.y = -iconSize / 2;
     cluster.addChild(ic);
     cx += iconSize + 4;

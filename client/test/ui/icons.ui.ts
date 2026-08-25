@@ -12,9 +12,10 @@ import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { DRAW, type DrawableIconKind } from '../../src/render/icons';
 
+// coin/coins/coinStack/coinSack/coinChest moved to TAB_ICON_RASTER 2026-08-25 (folded in from the
+// deleted coinIconAtlas.ts) — no longer drawable, so no longer in this geometry smoke check.
 const ALL_KINDS: DrawableIconKind[] = [
-  'book', 'globe', 'coin', 'trophy', 'castle', 'pencils',
-  'coins', 'coinStack', 'coinSack', 'coinChest',
+  'book', 'globe', 'trophy', 'castle', 'pencils',
   'scrap', 'lead', 'binding',
   'atk', 'hp', 'armor', 'armorHeavy', 'spd', 'atkspd',
   'brush',

@@ -400,6 +400,8 @@ buildRewardIcon(reward: {kind, id?, count?}, size, color, opts?) : DisplayObject
 
 ### 状态：批次 4 完成 ✅
 
+> **2026-08-25 勘误**：本节里的 `buildCoinIcon`/`client/src/render/atlas/coinIconAtlas.ts` 已不存在——那层包装被折进了 `render/icons/tabIconRaster.ts` 的 `TAB_ICON_RASTER` 表，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 现在和其它光栅 kind 一样直接由 `buildIcon()` 解析（正是本节吐槽的"`buildCoinIcon` 明明存在，还是有 4 处直接调了 `buildIcon('coin')`"这条隐患的架构级修复）。`buildRewardIcon` 的 `coins` 分支相应改成 `buildIcon(...)`。详见 `LOBBY_IA_REDESIGN_LOG.md`"金币图标架构收口"一节。
+
 ---
 
 ## 批次 4 追加：第三种 content 墨色（2026-08-16）

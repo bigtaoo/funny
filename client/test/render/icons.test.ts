@@ -18,10 +18,10 @@ import { DRAW, tabIconVariant, type DrawableIconKind } from '../../src/render/ic
 // Exhaustive map of every DrawableIconKind (IconKind minus the raster-only tab icons, which skip
 // DRAW entirely — see icons.ts's TAB_ICON_RASTER). Typed Record<DrawableIconKind, true> so the
 // compiler forces it to stay in sync with the union — adding a drawable kind without updating this
-// map fails to compile.
+// map fails to compile. coin/coins/coinStack/coinSack/coinChest moved out to TAB_ICON_RASTER
+// 2026-08-25 (folded in from the deleted coinIconAtlas.ts) — no longer drawable at all.
 const ALL_KINDS: Record<DrawableIconKind, true> = {
-  book: true, globe: true, coin: true, trophy: true, castle: true, pencils: true,
-  coins: true, coinStack: true, coinSack: true, coinChest: true,
+  book: true, globe: true, trophy: true, castle: true, pencils: true,
   scrap: true, lead: true, binding: true,
   atk: true, hp: true, armor: true, armorHeavy: true, spd: true, atkspd: true,
   brush: true,

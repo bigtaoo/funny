@@ -112,9 +112,9 @@ export interface CardSpec {
   /**
    * Crafting-material bitmap (scrap/lead/binding), drawn instead of `icon` when set — takes
    * precedence over `icon` but not `artUrl`. Materials must go through buildMaterialIcon (not the
-   * generic buildCoinIcon→buildIcon procedural-glyph fallback) so they match the AI bitmap art
-   * already used everywhere else materials appear (equipment page, gacha reveal/odds, daily/event/
-   * battle-pass reward rows) — see materialAtlas.ts's doc comment.
+   * generic `icon` field's `buildIcon` call) so they match the AI bitmap art already used
+   * everywhere else materials appear (equipment page, gacha reveal/odds, daily/event/battle-pass
+   * reward rows) — see materialAtlas.ts's doc comment.
    */
   materialKind?: MaterialKind;
   title: string;

@@ -53,10 +53,6 @@ vi.mock('pixi.js-legacy', () => {
   };
 });
 
-// ── webpack-served asset used by coinIconAtlas.ts (imported transitively via core.ts) ──
-vi.mock('../../src/assets/shop/coins.png',  () => ({ default: 'coins.png' }));
-vi.mock('../../src/assets/shop/coins.json', () => ({ default: { frames: {}, meta: {} } }));
-
 // ── jszip stub (StickmanRuntime, imported transitively via core.ts) ────────────
 vi.mock('jszip', () => ({ default: { loadAsync: () => Promise.reject(new Error('unused in this test')) } }));
 
