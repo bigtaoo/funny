@@ -76,4 +76,44 @@ describe('buildEmblemIcon — size-gated medallion vs plain tinted sprite', () =
     expect(buildEmblemIcon('emblem_bear' as never, 30, TINT)).toBeNull();
     expect(buildEmblemIcon('emblem_bear' as never, 60, TINT)).toBeNull();
   });
+
+  // Every existing call site tears the returned node down with a bare `.destroy()` — header.ts's
+  // `for (const n of core.headerExtras) n.destroy();`, tokens.ts's `entry.badge.sprite.destroy()`
+  // (3 sites) — none of them pass `{ children: true }`. That was harmless while this always
+  // returned a childless Sprite; below the medallion threshold it now returns a Container holding
+  // a Graphics + a Sprite, and a bare Container.destroy() does NOT cascade to children by default
+  // (PIXI only recurses when asked to) — every redraw would leak the disc/sprite pair. buildEmblemIcon
+  // pins `children: true` on the returned badge's own destroy() so this holds regardless of what
+  // (if anything) a caller passes.
+  describe('destroy() — the medallion badge must free its own children even when called bare', () => {
+    it('a bare destroy() (the pattern every real call site uses) still destroys the disc + icon', () => {
+      const badge = buildEmblemIcon(KEY, 30, TINT) as PIXI.Container;
+      const [disc, sprite] = badge.children as [PIXI.Graphics, PIXI.Sprite];
+      expect(disc.destroyed).toBe(false);
+      expect(sprite.destroyed).toBe(false);
+
+      badge.destroy(); // exactly what header.ts / tokens.ts call — no options
+
+      expect(disc.destroyed).toBe(true);
+      expect(sprite.destroyed).toBe(true);
+    });
+
+    it('destroy(true) / destroy({}) also cascade (children:true is forced regardless of input)', () => {
+      const a = buildEmblemIcon(KEY, 30, TINT) as PIXI.Container;
+      a.destroy(true);
+      expect((a.children[0] as PIXI.Graphics)?.destroyed ?? true).toBe(true);
+
+      const b = buildEmblemIcon(KEY, 30, TINT) as PIXI.Container;
+      const [bDisc, bSprite] = b.children as [PIXI.Graphics, PIXI.Sprite];
+      b.destroy({});
+      expect(bDisc.destroyed).toBe(true);
+      expect(bSprite.destroyed).toBe(true);
+    });
+
+    it('the plain-sprite branch (≥44px) is unaffected — a bare destroy() destroys it directly, same as before', () => {
+      const sprite = buildEmblemIcon(KEY, 60, TINT) as PIXI.Sprite;
+      sprite.destroy();
+      expect(sprite.destroyed).toBe(true);
+    });
+  });
 });

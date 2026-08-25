@@ -77,6 +77,16 @@ export function buildEmblemIcon(key: EmblemKey, size: number, tint: number): PIX
     // No tint here on purpose — white line art knocked out of the solid disc, not a faint colour
     // line on paper (that faintness is the whole problem this branch exists to fix).
     badge.addChild(sprite);
+    // Every existing call site tears this down with a bare `.destroy()` (header.ts's headerExtras
+    // loop, tokens.ts's badge teardown) — correct for the plain-Sprite branch below, which has no
+    // children, but a bare Container.destroy() does NOT cascade to children by default (needs
+    // `{ children: true }`), so without this override the disc/sprite pair leaks on every redraw.
+    // Pin the option here instead of touching every caller, so this stays true regardless of what
+    // (if anything) a future caller passes.
+    const baseDestroy = badge.destroy.bind(badge);
+    badge.destroy = (options?: Parameters<typeof baseDestroy>[0]): void => {
+      baseDestroy({ ...(typeof options === 'object' ? options : {}), children: true });
+    };
     return badge;
   }
   const sprite = new PIXI.Sprite(tex);
