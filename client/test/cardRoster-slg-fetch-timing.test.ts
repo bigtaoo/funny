@@ -48,7 +48,7 @@ function buildCtx(): {
     showCardRoster: (cb: CardCallbacks): CardRosterView => {
       showCardRosterCalls++;
       lastCardRoster = cb;
-      return { applyCardState: () => { applyCardStateCalls++; } };
+      return { applyCardState: () => { applyCardStateCalls++; }, showTab: () => {} };
     },
   } as unknown as AppViews;
 

@@ -83,6 +83,10 @@ const DT = 1 / 30;
 
 export class HeadlessAppViews implements AppViews {
   screen: ScreenName = 'none';
+  /** Scene {@link hideOverlay} reveals — 'worldMap' for the SLG panels, 'cardRoster' for the equipment overlay. */
+  overlayHost: ScreenName = 'worldMap';
+  /** Last tab {@link CardRosterView.showTab} was asked for on the live roster (ADR-072). */
+  cardRosterTab: 'list' | 'skins' | null = null;
 
   intro?: IntroSceneCallbacks;
   realLayerInterlude?: { illustrationUrl: string; textKey: TranslationKey; cb: IllustratedInterludeCallbacks };
@@ -164,9 +168,18 @@ export class HeadlessAppViews implements AppViews {
     this.screen = 'cardRoster'; this.cardRoster = cb;
     // No real grid to patch here — a test drives goCardRoster's late-data path via cb.getCardState()
     // directly, so this is a no-op stub, not a functioning redraw.
-    return { applyCardState: () => {} };
+    return { applyCardState: () => {}, showTab: (tab) => { this.cardRosterTab = tab; } };
   }
-  showEquipment(cb: EquipmentCallbacks): void { this.screen = 'equipment'; this.equipment = cb; }
+  /**
+   * `opts.overlay` (ADR-072) mounts over the roster rather than replacing it — modelled here the same
+   * way the SLG panels are: the screen becomes 'equipment' either way, and {@link hideOverlay} knows
+   * which host to reveal from {@link overlayHost}.
+   */
+  showEquipment(cb: EquipmentCallbacks, opts?: MountOpts): void {
+    if (opts?.overlay) this.overlayHost = 'cardRoster';
+    this.screen = 'equipment';
+    this.equipment = cb;
+  }
   showStats(cb: StatsCallbacks): void { this.screen = 'stats'; this.stats = cb; }
   showAchievements(_cb: AchievementCallbacks): void { this.screen = 'achievements'; }
   showLeaderboard(_cb: LeaderboardCallbacks): void { this.screen = 'leaderboard'; }
@@ -177,7 +190,7 @@ export class HeadlessAppViews implements AppViews {
   showEvents(cb: EventCallbacks): void { this.screen = 'events'; this.events = cb; }
   showCity(_cb: CitySceneCallbacks, _opts?: MountOpts): void { this.screen = 'city'; }
   /** Pop any SLG overlay panel — the base scene underneath is always the world map. */
-  hideOverlay(): void { this.screen = 'worldMap'; }
+  hideOverlay(): void { this.screen = this.overlayHost; this.overlayHost = 'worldMap'; }
   showReplay(
     replay: Replay, cb: ReplaySceneCallbacks, providedLevel?: LevelDefinition, _equippedSkins?: readonly string[],
     // 2026-08-12 fix: mirror ReplayScene's real constructor params so a headless test can drive a

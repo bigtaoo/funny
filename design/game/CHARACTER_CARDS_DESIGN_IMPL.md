@@ -37,6 +37,7 @@
 - 基础属性（按等级展示）、技能描述（含当前等级效果值）、带兵上限
 - **等级星星 + HP/攻城值（2026-07-24）**：等级展示由 `Lv.N` 文字统一改为与网格一致的金色星星行；新增 HP、攻城值（siege value）两行静态属性，取自引擎 `UNIT_BLUEPRINTS[unitType].hp/.siegeValue`（`cardDefs.ts` 新增 `cardHp`/`cardSiegeValue`，按兵种查表，非按卡实例/等级，因引擎目前没有per-instance/per-level 的 HP/攻城成长）。
 - 装备 3 槽（点击进装备选择流）——**点某一槽直接跳到该槽对应的筛选页签**（武器/护具/饰品），而非停在「全部」（2026-07-14）：被点的 `slot` 经 `openEquipment(cardId, slot)` → `goEquipment(...,initialFilterSlot)` → `EquipmentScene` 构造时播种 `filterSlot`。不带 slot（如从大厅装备背包入口）仍默认「全部」
+- **装备页是 overlay，弹窗不关（2026-08-25，ADR-072）**：点装备槽不再 `closeModal()`，`EquipmentScene` 经 `SceneManager.pushOverlay` 盖在**还活着**的卡背包之上，返回是一次 `popOverlay`。玩家退回来落在同一张卡的详情上，滚动位置和弹窗都在，数值已是穿完的新值——连穿三件不再需要三次「下拉 + 重新点卡」。花名册网格里那三个装备图标（§10.1）走同一条路。
 - 融合入口（2026-07-19 重设计，取代原"携手成长"喂卡流程）：中心卡+5 材料槽环绕布局，见 §3.2；未满级时详情页显示"材料 n/5"进度条（已拥有的同阵营同等级材料数，不是旧版的 XP 进度）
 - 锁定/解锁切换
 - 挂拍卖行（需先卸下所有装备）

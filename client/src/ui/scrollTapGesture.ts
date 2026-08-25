@@ -58,4 +58,16 @@ export class ScrollTapGesture {
     this.moved = false;
     return tap;
   }
+
+  /**
+   * Drop a gesture in flight without firing its pending tap. For scenes that can stop receiving
+   * pointer events mid-gesture — a scene paused under an overlay (Scene.pause) unsubscribes from
+   * InputManager, so the `up` that would have ended the gesture never arrives and the stale
+   * pending tap would fire on the *next* unrelated release after the overlay is popped.
+   */
+  cancel(): void {
+    this.start = null;
+    this.pendingTap = null;
+    this.moved = false;
+  }
 }

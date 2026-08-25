@@ -35,8 +35,14 @@ function listSourceFiles(dir: string): string[] {
 // completely unscanned by this file. Currently all of them happen to be wrapped correctly, but
 // that was luck, not enforcement; a future onWheel call that forgets unsubs.push would sail
 // through this test. Folded in alongside onDown/onMove/onUp so it can't silently drift again.
+//
+// 2026-08-25: the array holding the unsubs no longer has to be named exactly `unsubs`. CardScene now
+// splits its subscriptions in two (ADR-072) — `inputUnsubs` for the pointer streams, which pause()
+// detaches while an overlay covers the scene, and `unsubs` for the save subscription, which must
+// survive that span — so the name is matched with a `[\w.]*[Uu]nsubs` prefix instead of literally.
+// The convention being enforced is "the unsub is stored and drained", not one particular identifier.
 const SUBSCRIBE_RE = /\.(onDown|onMove|onUp|onWheel)\(/;
-const WRAPPED_RE = /unsubs\.push\(\s*[\w.]*\.(onDown|onMove|onUp|onWheel)\(/;
+const WRAPPED_RE = /[\w.]*[Uu]nsubs\.push\(\s*[\w.]*\.(onDown|onMove|onUp|onWheel)\(/;
 
 // 2026-08-03: a file could satisfy WRAPPED_RE (the subscribe call is pushed into `unsubs`) and
 // still leak if its destroy() never actually iterates that array — the audit that added this
@@ -44,7 +50,7 @@ const WRAPPED_RE = /unsubs\.push\(\s*[\w.]*\.(onDown|onMove|onUp|onWheel)\(/;
 // Matches both conventions used across the codebase: `unsubs.forEach(u => u())` and
 // `for (const u of ...unsubs) u()` (the latter sometimes via a nested path like `this.ctx.unsubs`
 // or `ctx.unsubs`, see WorldMapScene.ts).
-const DRAIN_RE = /unsubs\.forEach\(|for\s*\(\s*const\s+\w+\s+of\s+[\w.]*unsubs\s*\)/;
+const DRAIN_RE = /[\w.]*[Uu]nsubs\.forEach\(|for\s*\(\s*const\s+\w+\s+of\s+[\w.]*[Uu]nsubs\s*\)/;
 
 describe('InputManager subscription cleanup convention', () => {
   it('every onDown/onMove/onUp/onWheel subscription in client/src is wrapped in unsubs.push(...)', () => {

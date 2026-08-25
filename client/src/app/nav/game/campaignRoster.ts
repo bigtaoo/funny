@@ -22,6 +22,8 @@ import { WorldApiClient, type CardSLGState } from '../../../net/WorldApiClient';
 import type { CardRosterView } from '../../../scenes/CardScene';
 import type { IconKind } from '../../../render/icons';
 import { matchBadgeTelemetry } from '../../../scenes/ResultScene';
+import { buildEquipmentActions } from './equipmentActions';
+import type { MountOpts } from '../../AppViews';
 import type { AppCtx, Nav } from '../../appCtx';
 import { TOKEN_KEY, TUTORIAL_DONE_FLAG } from '../../appConstants';
 import { pickPracticeDifficulty } from '../lobby';
@@ -179,8 +181,23 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     let liveCardState: Record<string, CardSLGState> | undefined;
     let liveTeamNames: Record<string, string> | undefined;
 
+    /**
+     * Handle to the roster that is currently on screen, so the equipment overlay opened from it can
+     * drive it directly (pop + switch tab) instead of rebuilding it — see openEquipmentBag's onSkins
+     * below. Assigned by openRoster; the equip callbacks below only ever run after that.
+     */
+    let rosterView: CardRosterView | null = null;
+
+    /**
+     * Close the equipment overlay and reveal the live roster underneath (ADR-072). The roster kept
+     * its scroll offset and open detail modal the whole time, and its save subscription stayed
+     * subscribed through the detour, so the gear just equipped is already reflected — nothing to
+     * re-fetch here, unlike the SLG map's returnFromCityToMap.
+     */
+    const returnToRoster = (): void => { views.hideOverlay(); };
+
     const openRoster = (): CardRosterView => {
-      return views.showCardRoster({
+      rosterView = views.showCardRoster({
         onBack() { back(); },
         initialTab,
         getSave: () => saveManager.get(),
@@ -223,14 +240,29 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
           } catch { return { ok: false as const, key: 'roster.err.generic' as TranslationKey }; }
         },
         // Per-card gear editing + the standalone equipment bag are server-authoritative — omitted offline.
+        // Both open EquipmentScene as an overlay on top of this still-live roster (ADR-072): gear
+        // editing is a detour *within* the roster, and the old `goCardRoster(back)` return rebuilt the
+        // scene from scratch — dropping the scroll offset and the open detail modal, so a player
+        // equipping three pieces onto one card had to scroll back down and re-open it each time.
         ...(online ? {
-          openEquipment: (cardInstanceId: string, slot?: EquipSlot) => goEquipment(() => goCardRoster(back), 'none', cardInstanceId, undefined, slot),
-          openEquipmentBag: () => goEquipment(() => goCardRoster(back), 'roster', '', () => goCardRoster(back, 'skins')),
+          openEquipment: (cardInstanceId: string, slot?: EquipSlot) =>
+            goEquipment(returnToRoster, 'none', cardInstanceId, undefined, slot, { overlay: true }),
+          openEquipmentBag: () => goEquipment(
+            returnToRoster,
+            'roster',
+            '',
+            // Skins peer in the overlay's rail: pop back to the live roster and move it to the
+            // wardrobe, rather than rebuilding it with `initialTab: 'skins'`.
+            () => { views.hideOverlay(); rosterView?.showTab('skins'); },
+            undefined,
+            { overlay: true },
+          ),
         } : {}),
         getOwnedSkins: () => saveManager.get().inventory.skins,
         getEquippedSkin: (unitType) => saveManager.get().equipped[skinEquipKey(unitType)] ?? null,
         equipSkin: (unitType, skinId) => saveManager.equipSkin(unitType, skinId),
       });
+      return rosterView;
     };
 
     // SLG per-card state (troop count / deployed team) lives in worldsvc's PlayerWorldView, separate
@@ -272,29 +304,15 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     }
   }
 
-  /** Map equipment endpoint error codes → i18n key (E5). */
-  function equipErrKey(e: unknown): TranslationKey {
-    if (e instanceof ApiError) {
-      switch (e.code) {
-        case 'INSUFFICIENT_MATERIALS': return 'equip.err.materials';
-        case 'INSUFFICIENT_FUNDS':     return 'equip.err.coins';
-        case 'INVENTORY_FULL':         return 'equip.err.full';
-        case 'ENHANCE_MAX_LEVEL':      return 'equip.err.maxLevel';
-        case 'NOT_SALVAGEABLE':        return 'equip.err.notSalvageable';
-        case 'INVALID_SLOT':           return 'equip.err.invalidSlot';
-        case 'EQUIP_LOCKED':           return 'equip.err.locked';
-        case 'EQUIP_IN_USE':           return 'equip.err.inUse';
-        case 'NOT_REFORGE_ELIGIBLE':   return 'equip.err.notReforgeEligible';
-        case 'INVALID_RARITY':         return 'equip.err.invalidRarity';
-      }
-    }
-    return 'equip.err.generic';
-  }
-
   /**
    * Equipment system (E5). Server-authoritative; requires an online login. Can be entered from
    * the campaign map (default back) or the roster ("Develop" tab); `back` determines where the
    * user returns to.
+   *
+   * `opts.overlay` mounts it on top of a still-live CardScene instead of replacing it (ADR-072) —
+   * passed only by the roster's own two entries, whose `back` is a {@link AppViews.hideOverlay} pop.
+   * The campaign-map entry keeps the plain full-scene swap: there is no roster underneath it to
+   * preserve, and its `back` really does have to build one.
    */
   function goEquipment(
     back: () => void = goCampaignMap,
@@ -302,6 +320,7 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
     cardInstanceId = '',
     onSkins?: () => void,
     initialFilterSlot?: EquipSlot,
+    opts?: MountOpts,
   ): void {
     if (!api) { back(); return; }
     const client = api;
@@ -325,66 +344,8 @@ export function createCampaignRosterNav(ctx: AppCtx): CampaignRosterNav {
       ...(initialFilterSlot ? { initialFilterSlot } : {}),
       getSave: () => saveManager.get(),
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
-      async craft(defId: string) {
-        try {
-          const { save, instance } = await client.craftEquipment(defId, genUuid());
-          saveManager.adoptServerPartial(save, { upsert: [instance] });
-          analytics.track('equip_craft', { def_id: defId });
-          return { ok: true as const };
-        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
-      },
-      async enhance(instanceId: string, useProtect?: boolean) {
-        // Captured before the call (not derived from the response) because a failed +7/+8 attempt can
-        // now demote the item (ADR-063) — `instance.level - (success?1:0)` would silently mis-attribute
-        // a demoted result's from_level once level could move by more than the success/fail delta.
-        const fromLevel = saveManager.get().equipmentInv[instanceId]?.level ?? 0;
-        try {
-          const { success, instance, save } = await client.enhanceEquipment(instanceId, genUuid(), useProtect);
-          saveManager.adoptServerPartial(save, { upsert: [instance] });
-          analytics.track('equip_enhance', {
-            def_id: instance.defId, from_level: fromLevel, success,
-            demoted: instance.level < fromLevel, use_protect: !!useProtect,
-          });
-          return { ok: true as const, success, level: instance.level };
-        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
-      },
-      async salvage(instanceIds: string[]) {
-        try {
-          const { save } = await client.salvageEquipment(instanceIds, genUuid());
-          saveManager.adoptServerPartial(save, { remove: instanceIds });
-          analytics.track('equip_salvage', { count: instanceIds.length });
-          return { ok: true as const };
-        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
-      },
-      async equip(slot: EquipSlot, instanceId: string | null, cid: string) {
-        try {
-          const { save } = await client.equipEquipment(slot, instanceId, cid);
-          // The response is lean (cardInv omitted, EQUIPMENT_DESIGN §3.3 phase 2) — equip only moves a
-          // gear pointer on `cid`'s card, so mirror that single mutation locally via cardUpsert instead
-          // of leaving the local cardInv stale (adoptServerPartial's own cardInv reconstruction otherwise
-          // just re-applies the unchanged local copy, so nothing reflected the new/removed gear pointer
-          // until the next full save refresh — CardScene/the Equipped loadout strip stayed stuck showing
-          // the pre-equip gear, 2026-07-29 fix). Mirrors equipEquipment's own gear[slot] mutation exactly.
-          const card = saveManager.get().cardInv[cid];
-          const cardUpsert = card ? (() => {
-            const gear = { ...card.gear };
-            if (instanceId === null) delete gear[slot]; else gear[slot] = instanceId;
-            return [{ ...card, gear }];
-          })() : undefined;
-          saveManager.adoptServerPartial(save, { cardUpsert });
-          analytics.track('equip_equip', { slot, instance_id: instanceId ?? '', card_instance_id: cid });
-          return { ok: true as const };
-        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
-      },
-      async reforge(targetId: string, materialId: string) {
-        try {
-          const { instance, save } = await client.reforgeEquipment(targetId, materialId, genUuid());
-          saveManager.adoptServerPartial(save, { upsert: [instance], remove: [materialId] });
-          analytics.track('equip_reforge', { target_id: targetId });
-          return { ok: true as const };
-        } catch (e) { return { ok: false as const, key: equipErrKey(e) }; }
-      },
-    });
+      ...buildEquipmentActions(client, saveManager),
+    }, opts);
   }
 
   function goCampaign(levelId: string | undefined): void {

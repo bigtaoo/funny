@@ -143,11 +143,17 @@ export interface FadeOpts {
 }
 
 /**
- * Mount mode for the SLG panels that can be opened both as a top-level scene (from the lobby) and
- * as an overlay on top of the still-live WorldMapScene (from within the SLG). When `overlay` is set,
- * the panel is pushed via SceneManager.pushOverlay — the map stays alive, mounted and ticking
- * underneath, so closing the panel ({@link AppViews.hideOverlay}) never tears down and rebuilds the
- * SLG world map (ADR-044). When unset the panel is a normal full-scene `goto` swap.
+ * Mount mode for the panels that can be opened both as a top-level scene and as an overlay on top of
+ * a still-live host scene. When `overlay` is set, the panel is pushed via SceneManager.pushOverlay —
+ * the host stays alive, mounted and ticking underneath, so closing the panel
+ * ({@link AppViews.hideOverlay}) never tears it down and rebuilds it. When unset the panel is a
+ * normal full-scene `goto` swap.
+ *
+ * Two host scenes use this today:
+ *   - WorldMapScene, for every SLG panel opened from the map (ADR-044).
+ *   - CardScene, for the EquipmentScene opened from the Hero Roster (ADR-072) — same reasoning one
+ *     level down: gear editing is a detour *within* the roster, and rebuilding the roster on return
+ *     threw away its scroll offset and open detail modal.
  */
 export interface MountOpts {
   overlay?: boolean;
@@ -197,8 +203,13 @@ export interface AppViews {
   showCardCodex(cb: CardCodexCallbacks): void;
   /** Hero Roster (CC-6): owned card instances — level / troops / gear / feed / lock. Server-authoritative; requires login. Entry point per CHARACTER_CARDS_DESIGN §10. Returns a handle so a late-resolving SLG fetch can patch the already-open roster in place — see CardRosterView. */
   showCardRoster(cb: CardCallbacks): CardRosterView;
-  /** Equipment system (E5): inventory / forging / enhancement / dismantling / equipping. Server-authoritative; requires login. */
-  showEquipment(cb: EquipmentCallbacks): void;
+  /**
+   * Equipment system (E5): inventory / forging / enhancement / dismantling / equipping.
+   * Server-authoritative; requires login. `opts.overlay` opens it over the live Hero Roster
+   * (see {@link MountOpts}) when entered from CardScene, so returning is a {@link hideOverlay} pop
+   * with no roster rebuild.
+   */
+  showEquipment(cb: EquipmentCallbacks, opts?: MountOpts): void;
   showStats(cb: StatsCallbacks): void;
   showAchievements(cb: AchievementCallbacks): void;
   /** Global ladder leaderboard (SE-6). */
@@ -257,8 +268,8 @@ export interface AppViews {
    */
   showCity(cb: CitySceneCallbacks, opts?: MountOpts): void;
   /**
-   * Pop whatever SLG panel was pushed with `{ overlay: true }`, resuming the WorldMapScene underneath.
-   * No-op when nothing is overlaid.
+   * Pop whatever panel was pushed with `{ overlay: true }`, resuming the host scene underneath
+   * (WorldMapScene for the SLG panels, CardScene for EquipmentScene). No-op when nothing is overlaid.
    */
   hideOverlay(): void;
   /**
