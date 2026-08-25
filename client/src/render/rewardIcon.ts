@@ -31,7 +31,7 @@
  * rows should call the preloader once in their constructor and re-render on resolve.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { buildIcon, preloadTabIconTextures, tabIconVariant, type IconKind } from './icons';
+import { buildIcon, preloadIconArt, tabIconVariant, type IconKind } from './icons';
 import { buildMaterialIcon, loadMaterialAtlas, type MaterialKind } from './atlas/materialAtlas';
 
 /** The shape every reward-ish payload on the wire shares (battle pass / daily / event / mail…). */
@@ -109,7 +109,7 @@ export function buildRewardIcon(
  */
 export function preloadRewardIconArt(): Promise<void> {
   return Promise.allSettled([
-    preloadTabIconTextures(),
+    preloadIconArt(),
     loadMaterialAtlas(),
   ]).then(() => undefined);
 }

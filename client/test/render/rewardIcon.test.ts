@@ -41,13 +41,13 @@ const buildMaterialIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'material' })
 // The two remaining art-warming loaders are fakes too, so `preloadRewardIconArt` can be driven
 // through its failure paths without real network/decode work. There used to be a third
 // (loadCoinIconAtlas) — removed 2026-08-25 along with coinIconAtlas.ts itself, since the coin tiers
-// now warm through preloadTabIconTextures like every other raster icon.
-const preloadTabIconTextures = vi.fn((): Promise<void> => Promise.resolve());
+// now warm through preloadIconArt like every other raster icon.
+const preloadIconArt = vi.fn((): Promise<void> => Promise.resolve());
 const loadMaterialAtlas = vi.fn((): Promise<void> => Promise.resolve());
 
 vi.mock('../../src/render/icons', () => ({
   buildIcon: (...a: BuildIconVariantArgs) => buildIcon(...a),
-  preloadTabIconTextures: () => preloadTabIconTextures(),
+  preloadIconArt: () => preloadIconArt(),
   // Real implementation, not a stub — which pre-baked ink a reward row asks for is decided by this
   // luma test, so faking it would hollow out the variant assertions below.
   tabIconVariant: (color: number): 'active' | 'inactive' => {
@@ -86,24 +86,26 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
   // kind is AI art or a procedural glyph — `buildIcon` is faked here, so 'cards' and 'rosterIcon'
   // look identical to it. Someone reverting this module and its expectation table together (exactly
   // the 2026-08-15 bug, which had `card`→'cards'/`equipment`→'armor'/`skin`→'brush') would keep this
-  // file green. So check the expectation table itself against the real icons.ts: a raster tab icon
-  // is precisely one that has NO entry in the exported `DRAW` dispatch record — `DrawableIconKind`
-  // is `Exclude<IconKind, RasterIconKind>`, so a procedural kind is always a DRAW key and an AI
-  // raster kind never is. importActual bypasses the vi.mock above to read the genuine table.
+  // file green. So check the expectation table itself against the real icons.ts: a variant-baked tab
+  // icon is precisely one that has NO entry in the exported `INK_ICON_ART` table — `IconKind` is
+  // `InkIconKind | RasterIconKind` and the two never overlap (`inkIconArt.test.ts` pins that), so a
+  // kind found in the ink table is one whose `content` ink this module cannot ask for. Before
+  // 2026-08-25 the same check read the procedural `DRAW` record, which the batch-7 art retired.
+  // importActual bypasses the vi.mock above to read the genuine table.
   // 30s, not the default 5s: the `importActual` below is the only cold, un-faked load of the real
   // icons module in this file, so this one case pays the full transform/collect cost of pixi.js-legacy
   // plus the raster icon atlas graph. Alone it finishes in ~2s, but under a full `vitest run` with
   // anything else on the CPU (a sibling suite, a webpack build) that cost swings wide enough to blow
   // the 5s budget — it timed out intermittently on a busy machine, never on an idle one. Budget is
   // per-case on purpose: no other case here imports for real, so the global testTimeout stays 5s.
-  it('picks raster AI kinds for all three item rewards — never a procedural DRAW glyph', async () => {
+  it('picks variant-baked tab-icon kinds for all three item rewards — never a tinted ink glyph', async () => {
     const realIcons = await vi.importActual<typeof import('../../src/render/icons')>(
       '../../src/render/icons',
     );
-    const regressedToProcedural = Object.entries(AI_ITEM_ICON)
-      .filter(([, iconKind]) => iconKind in realIcons.DRAW)
+    const regressedToInkGlyph = Object.entries(AI_ITEM_ICON)
+      .filter(([, iconKind]) => iconKind in realIcons.INK_ICON_ART)
       .map(([rewardKind, iconKind]) => `${rewardKind} → ${iconKind}`);
-    expect(regressedToProcedural).toEqual([]);
+    expect(regressedToInkGlyph).toEqual([]);
   }, 30_000);
 
   // Which of the three pre-baked inks the raster art is drawn in (2026-08-16). The `inactive` grey
@@ -267,12 +269,12 @@ describe('coinIconTier / materialKind', () => {
     expect([0, -1].map(coinIconTier)).toEqual(['coin', 'coin']);
   });
 
-  // The DRAW cross-check above does this for the three item rewards; these two do it for the coin
+  // The ink-table cross-check above does this for the three item rewards; these two do it for the coin
   // and material routes. buildMaterialIcon is faked here (and buildIcon's raster dispatch is faked
   // for the assertions above it in this file too), so a tier renamed (or a sixth tier added)
   // without matching art would pass every other assertion in this file and then miss the raster
   // table at runtime — degrading to a blank icon with nothing going red. Cross-checks the real
-  // `TAB_ICON_RASTER` (importActual bypasses the vi.mock above, same technique as the DRAW
+  // `TAB_ICON_RASTER` (importActual bypasses the vi.mock above, same technique as the ink-table
   // cross-check) rather than a standalone atlas manifest — coins have not had one of their own
   // since coinIconAtlas.ts was folded into the shared raster table (2026-08-25).
   it('only names coin tiers the AI coin atlas has a frame for', async () => {
@@ -307,9 +309,9 @@ describe('coinIconTier / materialKind', () => {
 // be nothing worse than a procedural glyph (or, for the raster-only kinds, a blank frame) for a
 // moment. `Promise.allSettled` is what buys that, and swapping it for `Promise.all` is a one-word
 // edit no other test would notice. Two loaders, not three: loadCoinIconAtlas was folded into
-// preloadTabIconTextures 2026-08-25 along with the rest of coinIconAtlas.ts.
+// preloadIconArt 2026-08-25 along with the rest of coinIconAtlas.ts.
 describe('preloadRewardIconArt', () => {
-  const loaders = [preloadTabIconTextures, loadMaterialAtlas];
+  const loaders = [preloadIconArt, loadMaterialAtlas];
 
   it('warms both art sources', async () => {
     loaders.forEach((l) => l.mockClear());

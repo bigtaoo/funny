@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { TAB_ICON_RASTER, type RasterIconVariant } from '../../src/render/icons';
+import { TAB_ICON_RASTER, INK_ICON_ART, INK_ICON_ALIASES, type RasterIconVariant } from '../../src/render/icons';
 
 const VARIANTS: RasterIconVariant[] = ['active', 'inactive', 'content'];
 const ASSET_DIR = path.resolve(__dirname, '../../src/assets/tabicons');
@@ -29,7 +29,17 @@ const SOURCE_DIR = path.resolve(__dirname, '../../../art/ui/tabicons');
  * `backArrowArt.test.ts` for the contracts that DO apply to it.
  *   `back` — the back-button arrow (19.08.2026): inks `accent` + `active` only.
  */
-const NON_TAB_BASES = ['back'];
+const NON_TAB_BASES = [
+  'back',
+  // The batch-7 ink icons (2026-08-25): packed by the same script into the same directory, but with
+  // ONE white master each (`inks: ['active']`) because they are tinted live rather than picking a
+  // pre-baked ink — so every three-variant contract below has to skip them. Their own contracts,
+  // including that they must NOT have the other two inks, live in `inkIconArt.test.ts`. Derived from
+  // the table rather than listed, minus the 5 aliases, which have no packed art of their own at all
+  // (and one of which, `home`, shares its name with a genuine tab-icon base — listing it here by
+  // hand would quietly exempt `homeTabIcon` from the tab contracts).
+  ...Object.keys(INK_ICON_ART).filter((k) => !(INK_ICON_ALIASES as readonly string[]).includes(k)),
+];
 const INK_SUFFIX_RE = /_(active|inactive|content|accent)\.png$/;
 /**
  * `TAB_ICON_RASTER` kinds that are NOT packed by pack_tab_icons.cjs into ASSET_DIR at all — the 5

@@ -1,10 +1,11 @@
 # 批次 7：剩余全部程序矢量图标 — Prompt 文档
 
-> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**待办**（本批只交付 prompt，不含实际出图/接线）
+> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地，其中 4 张待重出，见文末「出图与接线结果」）
 > 前六批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（试点/批次 2/3/4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题+剩余页签，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页主视觉，3 张）
-> 配套代码：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（`DrawableIconKind` + `DRAW` 表）· [`client/src/render/icons/{equipment,ui,slg,motifs,titles,currency}.ts`](../../client/src/render/icons/)（本批要替换的矢量画法）· [`client/src/render/icons/tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts)（出图后落地处）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
+> 配套代码（接线后）：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（只剩两表分派，`DrawableIconKind`/`DRAW` 已删）· [`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（**本批落地处**：`InkIconKind` + `INK_ICON_ART` + `buildInkIcon` 运行时染色）· [`client/src/render/icons/tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts)（前六批的页签表，未改）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
+> 已删除的矢量画法：`client/src/render/icons/{equipment,ui,slg,motifs,titles,currency,primitives}.ts` 七个文件整体删除（`DRAW` 清零后全部变死代码）
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6
-> 状态：**判断+prompt 已定稿，44 条待出图**（原始 49 个矢量 `IconKind` 中 5 个判断为复用现成光栅图，见下）
+> 状态：**全部完成**（原始 49 个矢量 `IconKind` 中 5 个复用现成光栅图、44 个出新图；44 张已出图、打包、接线，4 张标记待重出）
 
 ## 背景：前六批 + 金币收口之后，还剩的就是这些
 
@@ -26,7 +27,7 @@
 | `gift` | `FriendsScene/mail.ts`（邮件附件标记）、`ShopScene/shop.ts`（`starter_growth` 商品图标） | **复用 `weeklyTabIcon`**（系丝带的礼物方盒） | `weeklyTabIcon` 的判断原话就是"系十字丝带的礼物方盒"，跟 `gift` 矢量画法的"箱体+盖沿+中央缎带+双环蝴蝶结"是同一件东西，只是叫法不同 |
 | `tag` | `WorldMapPanels/headerHud.ts` 的 `entryBtn('tag', t('world.auction'), …)`（世界地图头栏"拍卖行"按钮）、`WorldMapPanels/shop.ts`（商品兜底图标）、`AuctionScene/itemLabels.ts`（非拍卖模式兜底） | **复用 `auctionTabIcon`**（竞价号牌） | 三处剩余调用点全部是"拍卖/上架"语义，`AuctionScene/list.ts` 自己的 `all` 页签早就从 `tag` 切到了 `shopTabIcon`（另一个复用决策）；世界地图头栏那个按钮字面标签就是 `world.auction`，直接指向拍卖场，没有理由不用 `auctionTabIcon` |
 
-**接线待办（不在本批范围，出图前不需要动代码）**：上面 5 处的调用点改字符串（`'swords'`→`'pvpTabIcon'` 等）就行，`hammer`/`bidTabIcon`/`craftTabIcon`/`gachaTabIcon`/`weeklyTabIcon`/`auctionTabIcon`/`homeTabIcon`/`pvpTabIcon` 均已是现成光栅图，无需等新图。
+**接线结果（2026-08-25，与本表原计划不同）**：原计划是把这 5 处的调用点字符串改成 `'pvpTabIcon'` 等。实际接线时发现其中 4 个的调用点在传**有意义的颜色**（胜负绿红 / 拍卖红 / 附件金 / 奖励自身色），换成页签 kind 会走 `tabIconVariant` 把颜色抹平，于是改成**美术别名**：这 5 个 kind 留在 `INK_ICON_ART` 里、url 指向被复用那张图已有的白母版。「同一概念只画一次」的去重结论不变（不多出任何一张图），tint 保住，约 15 个调用点零改动。详见文末「出图与接线结果」。
 
 剩下 44 个按优先级分 8 档，判据是"平均玩家实际见到的频率"，不是字母序或代码里的声明顺序：
 
@@ -70,12 +71,12 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a single simple symmetric heart shape, two rounded lobes meeting at a point at the bottom. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a pulse/heartbeat line through it, a crack or break in it, wings, an arrow through it, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 3 护甲（`tabicon_armorstat`）
+### 3 护甲（`tabicon_armor`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a small round buckler shield seen face-on — a plain circle with one raised boss/rivet in the very center, one horizontal reinforcing band crossing the middle, and a few small rivets spaced around the rim. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading, no metal-texture hatching. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a kite-shaped or teardrop-shaped shield, a pointed bottom, a breastplate or torso-armor shape, a sword or crossed swords behind it, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 4 护甲·加固档（`tabicon_armorheavy`）
+### 4 护甲·加固档（`tabicon_armorHeavy`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the same small round riveted buckler shield as a plain armor icon, but visibly reinforced: an extra outer ring around the rim, a noticeably thicker border, and rivets doubled up on both ends of the horizontal reinforcing band. Must read as clearly heavier/more armored than the plain version at a glance. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading, no metal-texture hatching. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, changing to a kite-shaped or teardrop shield, a breastplate shape, spikes sticking outward, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
@@ -252,17 +253,17 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a tall rectangular filing cabinet with three stacked drawers, each drawer marked by one short horizontal handle line. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, two or four drawers instead of three, an open drawer, wheels or legs, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 26 沙漏·小档（`tabicon_hourglasssm`）
+### 26 沙漏·小档（`tabicon_hourglassSm`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: an hourglass with a plain flat wooden cap at the top and bottom and a pinched narrow waist in the middle, with just a thin trickle of a couple of sand grains and one short falling-sand line in the lower bulb, the upper bulb almost completely empty. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a full/overflowing lower bulb, a stand or legs under it, wings, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 27 沙漏·中档（`tabicon_hourglassmd`）
+### 27 沙漏·中档（`tabicon_hourglassMd`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the same plain wooden hourglass shape as a smaller tier, but roughly half full — a noticeably bigger pile of sand filling about half the lower bulb, two grains and two short falling-sand lines, and some sand still visible sitting in the upper bulb. Must read as clearly fuller than a bare-trickle version at a glance. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, changing the overall hourglass silhouette, an almost-empty lower bulb, an almost-empty upper bulb, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 28 沙漏·大档（`tabicon_hourglasslg`）
+### 28 沙漏·大档（`tabicon_hourglassLg`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the same plain wooden hourglass shape again, now nearly brimming — the lower bulb almost overflowing with sand, three grains and three short falling-sand lines, and only a small amount of sand left sitting in the upper bulb. Must read as clearly the fullest of a three-tier set at a glance. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, changing the overall hourglass silhouette, sand spilling outside the glass, a full upper bulb, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
@@ -328,70 +329,117 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 | 43 | `titleChampion` | **盾形**轮廓（不是圆盘/星形）+ 缠绕一圈月桂叶 + 顶部一顶小皇冠 | 与 titleGrandmaster/King 的皇冠+星体组合区分：底形必须是盾，不是星 |
 | 44 | `titleTop3` | 同 titleChampion 的盾形+月桂叶，但**不带皇冠** | 与 titleChampion 的唯一差异就是有没有皇冠，两者必须能在 28px 一眼分辨 |
 
-### 34 称号·青铜（`tabicon_titlebronze`）
+### 34 称号·青铜（`tabicon_titleBronze`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the first, plainest rank in a nine-step medal progression — a single round medal disc hanging below two short ribbon tails, the disc face completely blank. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, any inner ring, facets, rays, a crown, a wreath, a star shape, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 35 称号·白银（`tabicon_titlesilver`）
+### 35 称号·白银（`tabicon_titleSilver`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the second rank in a nine-step medal progression, one step up from the plainest bronze version — the same round medal disc hanging below two short ribbon tails, but now with one extra plain concentric inner circle drawn inside the disc face. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, and must read as one small step more elaborate than an entirely blank medal. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, rays or facets, a crown, a wreath, a star shape, more than one inner ring, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 36 称号·黄金（`tabicon_titlegold`）
+### 36 称号·黄金（`tabicon_titleGold`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the third rank in a nine-step medal progression, one step up from the silver version — the same round medal disc with one concentric inner ring, hanging below two short ribbon tails, now with a few short rays radiating outward from the center like a small burst of light layered over the ring. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, and must read as one small step more elaborate than the plain-ring version. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a full sunburst covering the whole disc, facets or a hexagonal edge, a crown, a wreath, a star shape, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 37 称号·铂金（`tabicon_titleplatinum`）
+### 37 称号·铂金（`tabicon_titlePlatinum`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the fourth rank in a nine-step medal progression, one step up from the gold version — the same medal with the center light-ray burst, hanging below two short ribbon tails, but the outer disc is now cut into a plain hexagonal facet shape instead of a smooth circle, sharp straight edges all around. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, and must read as one small step more elaborate than the round gold version. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a smooth round disc, more than six facet edges, a crown, a wreath, a star shape, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 38 称号·钻石（`tabicon_titlediamond`）
+### 38 称号·钻石（`tabicon_titleDiamond`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the fifth rank in a nine-step medal progression, one step up from the hexagonal platinum version — the same medal hanging below two short ribbon tails, but now cut into many more, sharper angular facets radiating outward like a dense diamond-cut gem, more pointed and busier than a plain hexagon while still clearly reading as one round-ish disc overall. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, and must read as one small step more elaborate than the six-sided platinum version. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, turning into a five-pointed star outline, a smooth hexagon, a crown, a wreath, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 39 称号·星耀（`tabicon_titlestar`）
+### 39 称号·星耀（`tabicon_titleStar`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the sixth rank in a nine-step medal progression, one step up from the faceted diamond disc — the medal body itself is now a single solid five-pointed star shape instead of a round disc, still hanging below the same two short ribbon tails. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, and the ribbon tails below it must stay visible so it still reads as a medal, not a bare star. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, no ribbons at all (a bare star with nothing hanging below it), a wreath, a crown, more or fewer than five points, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 40 称号·大师（`tabicon_titlemaster`）
+### 40 称号·大师（`tabicon_titleMaster`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the seventh rank in a nine-step medal progression, one step up from the plain star version — the same five-pointed star medal hanging below two short ribbon tails, now with a small sprig of laurel leaves (three or four simple leaf shapes on a thin stem) wrapped around one side of the star. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, and must read as one small step more elaborate than the bare star version. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a full wreath wrapping all the way around, a crown, more than one small laurel sprig, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 41 称号·宗师（`tabicon_titlegrandmaster`）
+### 41 称号·宗师（`tabicon_titleGrandmaster`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the eighth rank in a nine-step medal progression, one step up from the laurel-sprig star version — the same five-pointed star with a laurel sprig on one side, hanging below two short ribbon tails, now with one small simple crown sitting on top of the star. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, and the crown must be noticeably small and simple — a smaller, plainer crown than a top-tier version would have. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a large ornate crown, radiating light rays behind the medal, a shield shape instead of a star, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 42 称号·王者（`tabicon_titleking`）
+### 42 称号·王者（`tabicon_titleKing`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the ninth and top rank in a nine-step medal progression, one step up from the small-crown grandmaster version, the most elaborate of the whole set — the same five-pointed star with a laurel sprig on one side, hanging below two short ribbon tails, topped with a noticeably bigger and more ornate crown than the previous rank, and with a few extra light-ray lines fanning outward from behind the whole medal. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels despite being the busiest icon in the set — keep the extra rays few and short rather than crowding the silhouette. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a tiny plain crown, no rays at all, a shield shape instead of a star, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 43 赛季称号·冠军（`tabicon_titlechampion`）
+### 43 赛季称号·冠军（`tabicon_titleChampion`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a plain heraldic shield outline (not a star, not a round disc) with a small sprig of laurel leaves wrapped around one side of it, and one small simple crown sitting on top of the shield. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a star or round disc instead of a shield, a kite-shaped equipment shield with a center boss (that reads as armor, not a badge), a full wreath around the whole shield, ribbon tails, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 44 赛季称号·前三（`tabicon_titletop3`）
+### 44 赛季称号·前三（`tabicon_titleTop3`）
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the same plain heraldic shield outline with a small sprig of laurel leaves wrapped around one side of it as a companion "champion" badge, but with NO crown on top at all — this is the one clear difference between the two, so leave the top of the shield completely bare. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, and the absence of a crown must be unambiguous even at that size. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, any crown or crown-like shape on top, a star or round disc instead of a shield, a kite-shaped equipment shield with a center boss, a full wreath around the whole shield, ribbon tails, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
 ---
 
-## 接线待办清单（出图之后，不在本批范围）
+## 出图与接线结果（2026-08-25 当日完成）
 
-1. **5 处纯复用**（见判断表）：改字符串即可，无需等新图——`swords`→`pvpTabIcon`、`home`→`homeTabIcon`、`capsule`→`gachaTabIcon`（4 处调用点）、`gift`→`weeklyTabIcon`（2 处）、`tag`→`auctionTabIcon`（3 处）。
-2. **出图落地**：44 张图按 `tabicon_<name>` 命名放进 `art/ui/tabicons/`，`pack_tab_icons.cjs` 的 `JOBS` 数组各加一条，跑打包脚本产出 `<name>_active/_inactive/_content.png` 三档墨色。
-3. **代码接线**：`icons/tabIconRaster.ts` 的 `RasterIconKind`/`TAB_ICON_RASTER` 各加 44 条；`icons.ts` 的 `DrawableIconKind`/`DRAW` 表删掉对应 44 个 kind（连同 5 个复用掉的一起，`icons.ts` 的 `DRAW` 表最终会清空到只剩 0 个矢量 kind——届时 `icons/{equipment,ui,slg,motifs,titles}.ts` 里对应的 `draw*` 函数全部变成死代码，可以整批删除，`currency.ts` 的 `drawInk` 也一并删除）。
-4. **回归测试同步**：`test/render/icons.test.ts`/`test/ui/icons.ui.ts` 的 `ALL_KINDS` 列表要跟着每一批接线同步收缩；本文件末尾新增的 `iconArtPromptCoverage.test.ts`（见下）在那之前只负责盯住"这份 prompt 文档没有漏掉任何一个还活着的矢量 kind"，接线完成后可以整份删除（它的存在意义就是给这份 backlog 文档在出图/接线完成前提供一份不会腐烂的清单）。
+### 落地方式：第三条路（运行时染色），跟批次 6 的结论相反
+
+批次 6 遇到「光栅墨色打包时烤死、调用点却按状态传色」这个问题时，选的是**不给 pack 加烤色、由调用点显式声明变体**——因为那四处的颜色在卡片边框/墨条/chip 边框上都有冗余承载。这 44 个不能照抄那条：`medal` 的金/银/铜**就是**排行榜第几名、`star` 的颜色**就是**卡池稀有度、称号墙的金色**就是**「已装备」、`check` 的绿**就是**成功、HUD 墨水瓶的蓝**就是**「我方的墨」。颜色是唯一载体，映射成 `tabIconVariant` 的预烤灰会静默抹平全部这些区分（而且编译器一句话都不会说）。
+
+所以这批走第三条路：
+
+- **pack 脚本每张只烤一张白色母版**（JOBS 行加 `inks: ['active']`，44 张 PNG 而不是 132 张）。
+- **新增 `client/src/render/icons/inkIconRaster.ts`**：`InkIconKind`（49 个）+ `INK_ICON_ART`（kind → 白母版 url）+ `buildInkIcon(url, s, color)`，后者 `sprite.tint = color`——白 × tint 精确等于 tint，于是 `color` 恢复成「按字面用」，跟矢量时代的契约一模一样。这不是新发明：`render/titleArt.ts` 从一开始就这么给四枚永久称号的 PNG 染色；pack 脚本头部那条「烤色、别运行时染色」说的是**成品全彩图**（金币位图），那种图没有单一墨色可乘。
+- `buildIcon` 先查 `TAB_ICON_RASTER`（页签表，`color` 是明暗提示）、落到 `INK_ICON_ART`（内容表，`color` 是字面墨色）。两表不许出现同名 kind——查表顺序会让 ink 那行被静默忽略、连带丢掉 tint，所以有测试专门盯这一条。
+
+### 5 处「纯复用」最终做成了美术别名，不是改字符串
+
+原计划（下方判断表）是把 `swords`→`pvpTabIcon` 这类调用点字符串直接换掉。实际接线时发现**这 5 个里有 4 个的调用点在传有意义的颜色**：`StatsScene` 按胜/负给 `swords` 染绿/红、`AuctionScene` 给拍卖模式的 `tag` 徽标染红、`FriendsScene` 的邮件附件 `gift` 是金色、`BattlePassScene` 把奖励自身的颜色传给 `capsule`。换成页签 kind 就会走 `tabIconVariant`，这些颜色全部丢失。
+
+改成：**这 5 个 kind 留在 `INK_ICON_ART` 里，但 url 指向被复用那张图已有的白母版**（`swords`→`pvp_active.png`、`home`→`home_active.png`、`capsule`→`gacha_active.png`、`gift`→`weekly_active.png`、`tag`→`auction_active.png`）。「同一个概念只画一次」这个去重结论照旧成立（不多出任何一张图），tint 保住，而且约 15 个调用点一行都不用改。别名清单在 `INK_ICON_ALIASES` 里导出，测试用它把「有自己美术的 44 个」和「别名的 5 个」两套契约分开检查。
+
+顺带一条**没有改**的：`AuctionScene/itemLabels.ts` 的 `saleModeKind()` 拍卖档仍返回 `hammer`。新的 `hammer` 是平头锻造锤（prompt 明确避让 `bidTabIcon` 的拍卖槌），严格说不是槌——但矢量时代那里画的也是锤子，语义没有退步，而且这一屏里 `bidTabIcon` 只出现在别处，不并排。留作已知的小语义妥协，不为它单开一个 kind。
+
+### 资产命名：base name 就是 kind name
+
+跟页签表的 `fooTabIcon` ↔ `foo_active.png` 后缀转换不同，这一批**源图/产出图的 base 名与 `IconKind` 完全一致**，大小写都保留：`tabicon_armorHeavy.webp` → `armorHeavy_active.png` → kind `armorHeavy`。理由是让 `inkIconArt.test.ts` 能直接拿 `Object.keys(INK_ICON_ART)` 去磁盘上对账，不必再维护第二张「kind → 文件名」映射表（那张表就是最容易和现实漂移的东西）。
+
+### 接线改动清单（实际做了什么）
+
+1. `art/ui/tabicons/`：44 张源图按 `tabicon_<kind>.{webp,png}` 命名归位（40 张 webp + 4 张 png），`pack_tab_icons.cjs` 的 `JOBS` 加 44 行（全部 `inks: ['active']`），跑脚本产出 44 张 `<kind>_active.png`。
+2. 新增 `client/src/render/icons/inkIconRaster.ts`（见上）。
+3. `client/src/render/icons.ts` 瘦成纯分派：删掉 `DrawableIconKind`/`DRAW`/`getCachedDisplay` 那条路径，`IconKind = InkIconKind | RasterIconKind`；新增 `preloadIconArt()`（同时预热两张表）。
+4. 删除 `client/src/render/icons/{motifs,equipment,slg,ui,titles,currency,primitives}.ts`。
+5. `HUDView.ts`：`drawInk` 的最后一个调用点改走 `buildIcon('ink', 28, factionInk.friend)`。因为光栅图解码前画不出东西、而 HUD 一局只构建一次，墨水瓶单独放在一个持久 `Container` 里，`preloadInkIconTextures()` resolve 后只重填这一个 holder（不重建整个 HUD）。
+6. **`preloadTabIconTextures` → `preloadIconArt` 的 6 个场景调用点**（`CardScene`/`EquipmentScene`/`FamilyScene`/`SectScene`/`LobbyScene/core`/`LoginScene` + `rewardIcon.ts`）。这条不是收拾干净而已：装备词条/UI 图钉/称号这些新图**不在**页签表里，还调旧函数的页面会只预热一半，另一半永久空白。`test/tabIconWarmupCallSites.test.ts` 的静态断言跟着改成新符号。
+7. 测试：新增 `client/test/render/inkIconArt.test.ts`（磁盘/表两半对账）；`icons.test.ts` 的 `DRAW` 分派用例换成两表分派用例；`rewardIcon.test.ts` 的「别退回程序 glyph」交叉校验改成查 `INK_ICON_ART`；`tabIconContentVariant.test.ts` 的三墨色契约排除这 44 个 base（它们只有一张母版，且**必须**没有另外两张——那正是「被悄悄改回预烤灰」的形态）；删除 `test/ui/icons.ui.ts`（几何 smoke check，随 draw 函数一起没了）与 `test/render/iconArtPromptCoverage.test.ts`（它的存在意义就是在出图前盯住这份 backlog，已到期）。两个 HUD 测试（`hudHeartHpBar`/`hudSurrenderLabel`）的 pixi mock 补了 `MIPMAP_MODES`/`removeChildren`/`BaseTexture.from`——HUDView 现在会拉起 `render/cardArt` 那条图。`test/ui/resultSceneBuilderCallSites.ui.ts` 原本靠「同一 kind 两个尺寸的 glyph 宽度不同」反推参数，光栅图在无头环境下宽度恒为 0，改成读 title 的 y（同样由 `iconSize` 推出）。
+
+### 28px 验收：40 张过、4 张待重出
+
+在 28px（页签/词条实际尺寸）纸底+深底两种衬底上逐张看过 contact sheet，另外用 Playwright 实拍了称号墙（11 张一屏）、结算页、装备背包+强化弹窗三处真实界面。**4 张需要重出**（prompt 已在下文，重出时只换源图、重跑 pack 脚本，代码零改动）：
+
+| kind | 问题 | 重出时要改的措辞 |
+|---|---|---|
+| `hourglassSm`/`Md`/`Lg` | 三档在 28px 上**几乎分不开**：沙量差异靠点状沙粒，缩小后全糊；且三张外框不一致（无立柱 / 细立柱 / 带旋钮粗立柱），破了「同一只沙漏、只有沙不同」的家族感 | 沙堆改成**实心大色块**而不是点阵，并明确要求三张外框逐笔相同（建议同一批请求里一次出三张，跟 P7 阶梯同样的做法） |
+| `brush` | 笔锋在 28px 只剩一根竖棍，读成铅笔而不是毛笔 | 笔锋要**更宽更短、明显外扩**，与笔柄形成粗细对比；笔尖那滴墨可以去掉（28px 上本来就看不见） |
+| `lead` | 画成了纯锥形，28px 上读成三角形，跟 `play` 的实心三角容易混 | 要求**保留一小段方形笔杆截面**或在锥体上加一道横向断口，让它读成「一截笔芯」而不是几何三角 |
+| `titleGrandmaster` | 与 `titleMaster` 的差异只有一顶很小的皇冠，28px 上勉强 | 皇冠要**明显大一档**（但仍小于 `titleKing` 那顶）；这一档的原则「明显小于下一级」在 28px 上过头了 |
+
+其余 40 张验收通过。次弱但可用、记录在案不重出的：`atk`（匕首细、迸溅线在 28px 消失）、`scrap`（撕边糊成一块纸）、`armor`/`armorHeavy`（28px 上都是「一个忙碌的圆」，只看得出后者更重）、`globe`（读成球而不是地球，但它只是 toast 兜底图）。
 
 ## 回归测试
 
-`client/test/render/iconArtPromptCoverage.test.ts`（放在 `test/render/` 而不是新开目录，跟 `tabIconContentVariant.test.ts` 同理——`import` `render/icons.ts` 会带出 `pixi.js-legacy`，但断言本身不涉及真实渲染，纯 Node 环境即可）：断言 `render/icons.ts` 真实的 `DrawableIconKind`（`Object.keys(DRAW)`）里，除了上面判断为复用的 5 个（`swords`/`home`/`capsule`/`gift`/`tag`），剩下每一个 kind 都在本文档里以 `` `kind` `` 的形式出现过恰好一次——防止以后有人往 `DRAW` 表新增/改名一个矢量 kind，却忘了同步进这份 backlog 文档（这份文档出图/接线完成前就是"还欠多少张图"的唯一权威清单，清单本身腐烂掉比没有清单更危险）。反向也测：文档里点名"复用"的 5 个 kind 不能真的还在 `DRAW` 表里叫别的名字重复出现。
+出图前这份文档的回归测试是 `client/test/render/iconArtPromptCoverage.test.ts`——断言 `DRAW` 表里每个还活着的矢量 kind 都在本文档里有交代，防止有人改 `DRAW` 却忘了同步这份 backlog（清单本身腐烂比没有清单更危险）。**接线完成后它已按原计划整份删除**：`DRAW` 表不存在了，backlog 也清空了，它守的东西两头都没了。
+
+接手它的是 `client/test/render/inkIconArt.test.ts`，守的是不一样的东西——不再是「文档别腐烂」，而是「表和磁盘别漂移」：
+
+- 磁盘一半：44 个有自己美术的 kind 各有且仅有一张 `<kind>_active.png`，且**没有** `_inactive`/`_content`/`_accent`（多烤出来那两张正是「被悄悄改回预烤灰、丢掉全部 tint」的形态）；每个 kind 有且仅有一张 `tabicon_<kind>.*` 源图（落选稿按约定进 `_rejected/`）。
+- 表一半：`INK_ICON_ART` 覆盖 49 个 kind；与 `TAB_ICON_RASTER` 无同名 kind（`buildIcon` 先查页签表，同名会让 ink 行被静默忽略）；5 个别名各自指向被复用那张图的 `active` url。
+
+vitest 下所有 `.png` import 会塌成同一个 data URI，所以 url 身份只在磁盘一半有意义、key 存在性只在表一半有意义——两半互相盖不住，跟 `tabIconContentVariant.test.ts` 同样的拆法、同样的理由。

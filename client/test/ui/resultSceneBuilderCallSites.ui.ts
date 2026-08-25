@@ -13,7 +13,6 @@ import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { ResultScene, type ResultProfiles } from '../../src/scenes/ResultScene';
 import { initI18n } from '../../src/i18n';
-import { buildIcon } from '../../src/render/icons';
 import type { PlayerStats } from '@nw/engine/types';
 import type { ProfileData } from '../../src/ui/dialogs/ProfilePopup';
 
@@ -68,21 +67,20 @@ describe('ResultScene builder call sites — correct field threading (form① sp
     const medallion = scene.container.getChildByName('resultSecondaryBadge') as PIXI.Container | null;
     if (!medallion) throw new Error('resultSecondaryBadge medallion not found — expected a secondary badge to render');
 
-    // buildBadgeMedallion's own contract: iconSize = Math.round(h * 0.065), drawn via buildIcon
-    // (cached per exact size). Rather than guess buildIcon's own width-vs-size relationship, build
-    // both an h-derived and a (wrong) w-derived reference icon of the SAME kind and compare the
-    // medallion's actual glyph width against each — robust to buildIcon's internal bounding-box math.
-    const glyph = medallion.children[0] as PIXI.Container;
-    const badgeIcon = 'swords' as const; // TOP_DMG — the first secondary badge for this calibrated stat line
-    const expectedIconSize = Math.round(H * 0.065);
-    const wrongIconSize = Math.round(W * 0.065);
-    expect(expectedIconSize).not.toBe(wrongIconSize); // sanity: distinguishable
-    const expectedGlyph = buildIcon(badgeIcon, expectedIconSize, 0x555555) as PIXI.Container;
-    const wrongGlyph = buildIcon(badgeIcon, wrongIconSize, 0x555555) as PIXI.Container;
-    expect(expectedGlyph.width).not.toBeCloseTo(wrongGlyph.width, 0); // sanity: the two references differ
+    // Read the dimension back off the TITLE's y, not off the glyph's rendered width. The glyph was
+    // the obvious probe while `swords` was a procedural SketchPen drawing, but batch 7 (2026-08-25)
+    // made every icon a PNG and `buildIcon` returns an EMPTY container until the texture decodes —
+    // which under this headless harness is never, so a width comparison measures 0 against 0 and
+    // passes whatever the call site threads. buildBadgeMedallion lays the title out at
+    // `iconSize + h * 0.008` with `iconSize = Math.round(h * 0.065)`, so the same wrong-parameter bug
+    // moves it just as unmistakably, and this probe survives the art landing.
+    const titleY = (medallion.children[1] as PIXI.Text).y;
+    const expectedTitleY = Math.round(H * 0.065) + H * 0.008;
+    const wrongTitleY = Math.round(W * 0.065) + W * 0.008;
+    expect(expectedTitleY).not.toBeCloseTo(wrongTitleY, 0); // sanity: the two references differ
 
-    expect(glyph.width).toBeCloseTo(expectedGlyph.width, 0);
-    expect(glyph.width).not.toBeCloseTo(wrongGlyph.width, 0);
+    expect(titleY).toBeCloseTo(expectedTitleY, 0);
+    expect(titleY).not.toBeCloseTo(wrongTitleY, 0);
 
     scene.destroy();
   });

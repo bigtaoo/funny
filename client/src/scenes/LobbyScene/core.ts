@@ -18,7 +18,7 @@
 // glyph, folded into the same TAB_ICON_RASTER table 2026-08-25 — finishes decoding after the first
 // draw) only ever touches Core-owned fields except for the final "now redraw everything" step,
 // which is BuildPanel's build() — a method that doesn't exist yet when Core's own constructor
-// wires up the onSaveChanged/preloadTabIconTextures listeners that (later, async) need to call it.
+// wires up the onSaveChanged/preloadIconArt listeners that (later, async) need to call it.
 // Resolved via the established default-no-op-field two-phase-construction pattern (see
 // client-modules.md): Core declares `buildHook` defaulting to a no-op, and the outer assembly
 // overwrites it with the real `() => this.build.build()` immediately after constructing BuildPanel,
@@ -31,7 +31,7 @@
 // badges.ts, tearing down Core state then calling build()) whenever the events strip item needs to
 // appear/disappear. Splitting "paint the badge dots" and "trigger a full relayout" across the same
 // two files was the wrong boundary: rebuild() itself doesn't actually belong to the badges domain at
-// all — it's a whole-scene concern (the exact same teardown+build() sequence preloadTabIconTextures
+// all — it's a whole-scene concern (the exact same teardown+build() sequence preloadIconArt
 // and onSaveChanged already needed from Core's own constructor), it just happened to live in badges.ts
 // because that's where the first caller that needed it (events-strip visibility) was implemented.
 // Moving rebuild() here (Core) removes the back-edge entirely: badges.ts now only ever calls
@@ -49,7 +49,7 @@ import { palette } from '../../render/theme';
 import { bake } from '../../render/bake';
 import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
-import { preloadTabIconTextures } from '../../render/icons';
+import { preloadIconArt } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
 import { tearDownChildren } from '../../render/sketchUi';
 
@@ -386,7 +386,7 @@ export class LobbySceneCore {
     // title-bar and tab-strip glyphs (scene-title icon pass) are already decoded by the time they
     // draw, which matters most for the ones that render exactly once and never redraw (settings /
     // level prep / room).
-    preloadTabIconTextures()
+    preloadIconArt()
       .catch((err) => console.warn('[LobbyScene] tab icon preload failed:', err))
       .then(() => { if (!this.destroyed) this.rebuild(); });
   }

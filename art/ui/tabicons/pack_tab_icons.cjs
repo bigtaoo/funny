@@ -165,6 +165,64 @@ const JOBS = [
   // would draw. `thicken: 3` because a bare arrow can't close up and needs the extra weight at the
   // small box the back pill gives it — see dilateAlpha.
   { src: 'tabicon_back.png', name: 'back', inks: ['accent', 'active'], thicken: 3 },
+  // Batch 7 (design/product/tab-icon-art-prompts-batch7.md, 2026-08-25) — everything the six
+  // navigation batches left procedural: equipment affix/material glyphs, the generic UI dingbats a
+  // dozen screens share, the SLG building + speedup-tier art, the five old fallback motifs, and the
+  // 11-step title ladder. These draw at 20-28px (affix rows are the smallest icons in the game), so
+  // they take the same `thicken: 1` default as the tab cells rather than batch 6's large-motif
+  // treatment. The 11 `title*` rows are a PROGRESSION — see the doc's P7 note: each step only adds
+  // one detail to the previous, so they must be reviewed as a set at 28px, not one at a time.
+  //
+  // `inks: ['active']` — ONE white master each, not the tab triple. Unlike a tab cell, every one of
+  // these sites passes `buildIcon` a literal ink it means (LeaderboardScene tints `medal` gold/
+  // silver/bronze per rank, GachaScene tints `star` per rarity, TitlesScene tints the ladder glyph
+  // per owned/equipped state, HUDView wants `ink` in the faction blue), so they are runtime-TINTED
+  // from the white art instead of picking a pre-baked grey — see icons/inkIconRaster.ts. Baking the
+  // other two inks would be 88 PNGs nobody draws, and would quietly drop every one of those tints.
+  { src: 'tabicon_atk.webp',              name: 'atk', inks: ['active'] },
+  { src: 'tabicon_hp.webp',               name: 'hp', inks: ['active'] },
+  { src: 'tabicon_armor.webp',            name: 'armor', inks: ['active'] },
+  { src: 'tabicon_armorHeavy.webp',       name: 'armorHeavy', inks: ['active'] },
+  { src: 'tabicon_spd.webp',              name: 'spd', inks: ['active'] },
+  { src: 'tabicon_atkspd.webp',           name: 'atkspd', inks: ['active'] },
+  { src: 'tabicon_scrap.webp',            name: 'scrap', inks: ['active'] },
+  { src: 'tabicon_lead.webp',             name: 'lead', inks: ['active'] },
+  { src: 'tabicon_binding.webp',          name: 'binding', inks: ['active'] },
+  { src: 'tabicon_hammer.webp',           name: 'hammer', inks: ['active'] },
+  { src: 'tabicon_brush.webp',            name: 'brush', inks: ['active'] },
+  { src: 'tabicon_ink.webp',              name: 'ink', inks: ['active'] },
+  { src: 'tabicon_replay.webp',           name: 'replay', inks: ['active'] },
+  { src: 'tabicon_share.webp',            name: 'share', inks: ['active'] },
+  { src: 'tabicon_star.webp',             name: 'star', inks: ['active'] },
+  { src: 'tabicon_lock.webp',             name: 'lock', inks: ['active'] },
+  { src: 'tabicon_medal.webp',            name: 'medal', inks: ['active'] },
+  { src: 'tabicon_close.webp',            name: 'close', inks: ['active'] },
+  { src: 'tabicon_check.webp',            name: 'check', inks: ['active'] },
+  { src: 'tabicon_play.webp',             name: 'play', inks: ['active'] },
+  { src: 'tabicon_zoom.webp',             name: 'zoom', inks: ['active'] },
+  { src: 'tabicon_cards.webp',            name: 'cards', inks: ['active'] },
+  { src: 'tabicon_flag.webp',             name: 'flag', inks: ['active'] },
+  { src: 'tabicon_desk.webp',             name: 'desk', inks: ['active'] },
+  { src: 'tabicon_cabinet.webp',          name: 'cabinet', inks: ['active'] },
+  { src: 'tabicon_hourglassSm.webp',      name: 'hourglassSm', inks: ['active'] },
+  { src: 'tabicon_hourglassMd.webp',      name: 'hourglassMd', inks: ['active'] },
+  { src: 'tabicon_hourglassLg.webp',      name: 'hourglassLg', inks: ['active'] },
+  { src: 'tabicon_book.webp',             name: 'book', inks: ['active'] },
+  { src: 'tabicon_globe.webp',            name: 'globe', inks: ['active'] },
+  { src: 'tabicon_trophy.webp',           name: 'trophy', inks: ['active'] },
+  { src: 'tabicon_castle.webp',           name: 'castle', inks: ['active'] },
+  { src: 'tabicon_pencils.webp',          name: 'pencils', inks: ['active'] },
+  { src: 'tabicon_titleBronze.webp',      name: 'titleBronze', inks: ['active'] },
+  { src: 'tabicon_titleSilver.webp',      name: 'titleSilver', inks: ['active'] },
+  { src: 'tabicon_titleGold.webp',        name: 'titleGold', inks: ['active'] },
+  { src: 'tabicon_titlePlatinum.webp',    name: 'titlePlatinum', inks: ['active'] },
+  { src: 'tabicon_titleDiamond.webp',     name: 'titleDiamond', inks: ['active'] },
+  { src: 'tabicon_titleStar.webp',        name: 'titleStar', inks: ['active'] },
+  { src: 'tabicon_titleMaster.webp',      name: 'titleMaster', inks: ['active'] },
+  { src: 'tabicon_titleGrandmaster.png',  name: 'titleGrandmaster', inks: ['active'] },
+  { src: 'tabicon_titleKing.png',         name: 'titleKing', inks: ['active'] },
+  { src: 'tabicon_titleChampion.png',     name: 'titleChampion', inks: ['active'] },
+  { src: 'tabicon_titleTop3.png',         name: 'titleTop3', inks: ['active'] },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');
