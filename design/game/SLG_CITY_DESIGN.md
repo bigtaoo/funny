@@ -71,8 +71,8 @@
 | `metalForge` | 金属铸坊 | 资源 | **metal 全局产率乘数** | `recomputeYield` | P1 |
 | `stickerShop` | 贴纸铺 | 资源（民居模型） | **sticker 主城自产**（铜币位/通用资源 faucet，非地块）→ **激活 sticker faucet**；绝不产 coin | `recomputeYield` 自产项 | P1 |
 | `cabinet` | 文件柜 | 仓储 | 提 `RESOURCE_CAP`（仓储上限）+ 被掠夺时保护一部分（三战仓库护粮） | `settleResources` cap + `applySiege` loot | P1 |
-| `drillYard` | 练兵场 | 军事 | 提 `troopCap`（**总兵力上限**）+ 训练速度（`trainTroops` 时长）+ 训练队列上限（`TROOP_TRAIN_QUEUE_MAX`）+ 解锁更高兵种训练 | `trainTroops` / `troopCap` | P1 |
-| `satchel` | 书包 | 军事 | 提**单支队伍出征携带兵力上限**（与 `drillYard` 的总兵力上限是两个独立维度，D-CITY-9）：`satchelCarryCapFor`=`SATCHEL_CARRY_BASE`(=`TROOP_CAP_BASE`=**10000**，2026-07-22 兵力池统一后，零级即可单队带满初始兵力池) + `satchel` 每级 `SATCHEL_CARRY_STEP`(=1000)，满级(L10)=**20,000**，与 `drillYard` 满级总 `troopCap` 相等（满配才能单队打满仓）。 | `server/worldsvc/src/combatMarch.ts` `startMarch`：team 出征时校验实际携带兵力（flat army 用 `troops`；card army 用 `cardState.currentTroops` 求和）不超过该 cap，超限 `SATCHEL_CAP_EXCEEDED` | **已实现** |
+| `drillYard` | 练兵场 | 军事 | 提 `troopCap`（**总兵力上限**，`5000+1500×lvl`，ADR-075）+ 训练速度（`trainTroops` 时长，每级 -8%，地板 0.5）+ 训练队列槽位（`TROOP_TRAIN_QUEUE_MAX` + `DRILL_QUEUE_LEVEL_THRESHOLDS` → 1/2/3）+ 解锁更高兵种训练。**两个 PvE 门槛的实际钥匙**：L4 开关隘、L5 开险地（ADR-075 后移，守军常量不动，见 ECONOMY_VERIFICATION_LOG_CAPACITY §13-SLG-STRONGHOLD.7） | `trainTroops` / `troopCap` | P1 |
+| `satchel` | 书包 | 军事 | 提**单支队伍出征携带兵力上限**（与 `drillYard` 的总兵力上限是两个独立维度，D-CITY-9）：`satchelCarryCapFor`=`SATCHEL_CARRY_BASE`(=`TROOP_CAP_BASE`=**5000**，ADR-075；零级即可单队带满初始兵力池) + `satchel` 每级 `SATCHEL_CARRY_STEP`(=`DRILL_TROOPCAP_STEP`=**1500**，ADR-075 改为直接引用而非字面量)，满级(L10)=**20,000**，与 `drillYard` 满级总 `troopCap` 相等（满配才能单队打满仓）——同基数、同步长、同 10 级，该相等现在按构造成立，shared 单测有断言。 | `server/worldsvc/src/combatMarch.ts` `startMarch`：team 出征时校验实际携带兵力（flat army 用 `troops`；card army 用 `cardState.currentTroops` 求和）不超过该 cap，超限 `SATCHEL_CAP_EXCEEDED` | **已实现** |
 | `wall` | 城墙 | 城防 | **主城耐久（durability）上限来源**（D-CITY-8，2026-07-16 已实现，由"围攻时临时给守军加 HP"升级为持久化耐久值）：被围攻战斗获胜后 5 分钟宽限期，按攻方攻城值扣耐久；耐久随时间自愈；归零 = 城池摧毁 + 丢失全部领地 + 强制迁城 + 系统邮件 | 主城 `settleSiegeDamage` + `baseDurabilityMax`/`regenDurability`（`shared/src/slg/siege.ts`） | P2（耐久化改造 P3 已实现，客户端血条/特效待后续） |
 | `academy` | 书院 | 科技 | **SLG 赛季内**蓝图 buff（HP/伤害/速度），季末清；UI 独立成军事屏的科技树面板（D-CITY-12） | `buildSiegeBlueprints` 赛季叠加层 | P2 |
 | ~~（委任）~~ | ~~内政官~~ | ~~加成~~ | ~~派角色卡进建筑，按角色属性给该建筑额外加成~~ | ~~各建筑乘数~~ | **DROPPED** |
@@ -155,8 +155,13 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 | `BUILD_YIELD_STEP` | 0.05（+5%/级） | inkPot/paperTray/graphiteMill/metalForge 每级产率乘数（4 地块） |
 | `STICKER_SELF_BASE` | DRAFT | stickerShop（民居模型）自产 sticker 基底/h（× lvl）；graphite 走地块产，无自产基底 |
 | `CABINET_CAP_STEP` | 0.1（+10%/级） | 文件柜每级仓储上限；满级保护掠夺 X% |
-| `DRILL_TROOPCAP_STEP` | DRAFT | 练兵场每级 troopCap 增量 |
-| `DRILL_TRAIN_SPEED_STEP` | DRAFT | 练兵场每级训练提速 |
+| `TROOP_CAP_BASE` | **5,000**（ADR-075，2026-08-25；原 10,000） | 零级兵力池上限 = 新号开局兵力 |
+| `DRILL_TROOPCAP_STEP` | **1,500**（ADR-075；原 1,000） | 练兵场每级 troopCap 增量。满级仍 20,000（`5000+10×1500`），但整条曲线由 **2× 变 4×**、首级由 +10% 变 +30%——练兵场是兵力池成长的唯一来源，旧曲线感知不到等于可跳过 |
+| `DRILL_TRAIN_SPEED_STEP` | 0.08（-8%/级，地板 0.5） | 练兵场每级训练提速。**后期收益走这里，不走更大的单批**（见 `TROOP_TRAIN_BATCH_MAX`） |
+| `TROOP_TRAIN_BATCH_MAX` | 5,000（2026-07-22 由 500 提升；**刻意不随 troopCap 成长**） | 单批训练人数上限。跟着 troopCap 涨会立刻把死槽变回来（满级 10,000/批 → 只需 2 槽），正是 ADR-075 要消灭的东西 |
+| `TROOP_TRAIN_QUEUE_MAX` | **1**（ADR-075；原 2） | 零级训练队列槽位。必须 ≥1——练兵场建成前 troopCap 已非零，0 槽会让新号无法练兵 |
+| `DRILL_QUEUE_LEVEL_THRESHOLDS` | **[4, 10]**（ADR-075；原 `DRILL_QUEUE_PER_LEVELS=2`） | 练兵场加槽等级 → 槽位 **1 / 2 / 3**（L0–3 / L4–9 / L10）。有用槽位的天花板是 `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)`（超出的批次会先被 troopCap 校验拒掉，永远占不到槽），旧的 `2+floor(L/2)` 在 batchMax 提到 5000 后满级有 **3 个死槽**。阈值刻意低于天花板：每槽都有用，且「空仓填满」在任何等级都恰好 2 次上线 |
+| `SATCHEL_CARRY_STEP` | **= `DRILL_TROOPCAP_STEP`**（ADR-075；原字面量 1,000） | 书包每级单队携带上限。改成直接引用而非恰好相等的字面量，D-CITY-9 的「满级书包 == 满级 troopCap」不变式从此按构造成立 |
 | `WALL_DEFENSE_STEP` | DRAFT | 城墙每级主城基地/守军加成（P2） |
 | `BUILD_COST_{key}(level)` | DRAFT | 升级消耗 5 资源曲线；高级吃 graphite+sticker（sink） |
 | `BUILD_TIME_{key}(level)` | DRAFT | 建造时长曲线（= coin 加速变现点） |
@@ -213,6 +218,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 - **加速按钮**：队列非空时显示，复用 `city.speedup`/`speedupTraining`（与建造队列加速同一套系数 `TROOP_SPEEDUP_SECS_PER_COIN`）。
 - 新增 i18n：`city.trainEntry`/`city.trainMax`/`city.err.trainQueueFull`（zh/en/de 三语）；另有历史遗留 key `city.trainPanel`（定义了但从未被任何代码引用），当时留作弹窗标题的候选、未强行塞入布局——**2026-08-16 的 i18n 死 key 审计已删**（见 `UI_DESIGN.md` §33；真要加弹窗标题时重新加一个 key 比养着一个没人用的便宜）。
 - 覆盖测试：`client/test/ui/cityTrainTroops.ui.ts`（headless PIXI，驱动真实 `handleDown`/`handleUp` 命中测试，覆盖 +10 训练成功 / 队列已满不下单 / 加速按钮调用）。
+- **2026-08-25（ADR-075）补上状态行**：面板此前只有「兵力 {cur}/{cap}」+ 批次行，玩家看到置灰的「最大 +0」时既看不出槽位占用、也看不出兵力上限的余量早已被在训批次预定（`capLeft = cap - troops - 已排队`），更分不清是「槽位满」还是「兵力满」——两者 toast 不同、解法也不同（等 vs 升练兵场）。新增一行 `city.trainQueueStatus`（三语）：`队列 {n}/{max} · 在训 {training} · 可训 {left}`，槽位满或可训为 0 时整行转红。`可训` 直接对上「最大 +N」的数字，置灰原因自解释。UI 测试新增该行的断言（含「可训 = cap - troops - 已排队，不是 cap - troops」）。
 - **已知限制**：`CitySceneCallbacks.onTrainTroops`/`onSpeedupTraining` 两个从未被赋值的可选回调字段已删除——`CityScene` 现在直接调 `this.cb.worldApi.trainTroops/speedupTraining`，与 `doUpgrade`/`doSpeedup` 走同一模式，不再经过父级回调层。
 - **练兵消耗扩展为五资源（2026-08-01）**：练兵不再只吃 `ink`——每兵额外消耗 `paper`/`graphite`/`metal` 各 5、`sticker` 1（`ink` 每兵 10 不变），新增常量 `TROOP_TRAIN_PAPER_COST`/`TROOP_TRAIN_GRAPHITE_COST`/`TROOP_TRAIN_METAL_COST`/`TROOP_TRAIN_STICKER_COST`（`server/shared/src/slg/core.ts`）+ 汇总函数 `troopTrainCost(qty)`（`server/shared/src/slg/city.ts`）。服务端 `trainTroops`（`server/worldsvc/src/city.ts`）与建筑升级同款「按 `RESOURCE_TYPES` 逐项校验再扣减」写法，任一资源不足即整单拒绝（`INSUFFICIENT_RESOURCES`）。客户端 `Max` 档位与三个预设按钮的可点亮判定同步改为五资源联合校验（不再只看 `ink`），点击禁用态按钮时的 toast 也从「墨水不足」专属文案改回通用 `city.err.noResources`（此前 `capLeft<=0` 判定错位导致误报「兵力已达上限」的 bug 顺带修复，见 2026-08-01 会话）。旧 i18n key `city.err.noInk` 已删除（zh/en/de）。`server/tools/econ-sim` 的 `armyPacing()`/`cityRun.ts` 同步把 `inkToFill` 换成完整五资源 `cost` 打印，避免数值验证工具静默漏算新增的四项 sink。
 

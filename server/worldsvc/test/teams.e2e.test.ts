@@ -20,6 +20,9 @@ import {
   SLG_MAP_H,
   SIEGE_TEAM_CAP,
   TROOP_CAP_BASE,
+  SATCHEL_CARRY_BASE,
+  SATCHEL_CARRY_STEP,
+  satchelCarryCapFor,
   type CardInstance,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -371,7 +374,7 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
 
     // 12 infantry (CARD_TEAM_MAX_SIZE cap), each carrying 160 troops via cardState (not initialHp — card
     // entries carry none, so `march.troops` below degenerates to a card count; see combatMarch.ts's CC-3 note);
-    // 12×160 = 1920 stays under the default (no-satchel) SATCHEL_CARRY_BASE (= TROOP_CAP_BASE = 10000) carry
+    // 12×160 = 1920 stays under the default (no-satchel) SATCHEL_CARRY_BASE (= TROOP_CAP_BASE) carry
     // cap. An overwhelming force over the 100 garrison → capture.
     const entries = await armyWithTroops('a', 12, 160);
     await svc.setTeams(W, 'a', [{ id: 't1', name: 'Assault', army: entries }]);
@@ -438,15 +441,20 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     const tgt = findCoord(10, 5);
     await setupDefender('b', tgt.x, tgt.y, 50);
     await connect(svc, 'a', tgt);
-    // no satchel built → cap = SATCHEL_CARRY_BASE (= TROOP_CAP_BASE = 10000); 12 units × 900 = 10800 committed
-    // exceeds it, but stays under base + one satchel step (10000 + SATCHEL_CARRY_STEP 1000 = 11000) so the
-    // satchel:1 upgrade below is exactly enough to let the same team depart.
+    // No satchel built → cap = SATCHEL_CARRY_BASE (= TROOP_CAP_BASE); 12 units × 900 = 10800 committed exceeds
+    // it. The satchel level that first covers 10800 is DERIVED, not hardcoded: the 2026-08-25 re-tune moved
+    // SATCHEL_CARRY_BASE/STEP (10000/1000 → 5000/1500) and the old literal `satchel: 1` silently stopped being
+    // enough, so both sides of the boundary are computed from the live constants instead.
+    const committed = 12 * 900;
+    const satchelLvl = Math.ceil((committed - SATCHEL_CARRY_BASE) / SATCHEL_CARRY_STEP);
+    expect(satchelCarryCapFor({ satchel: satchelLvl })).toBeGreaterThanOrEqual(committed);
+    expect(satchelCarryCapFor({ satchel: satchelLvl - 1 })).toBeLessThan(committed); // exactly enough, not more
     const entries = await armyWithTroops('a', 12, 900);
     await svc.setTeams(W, 'a', [{ id: 't1', name: 'Overloaded', army: entries }]);
     await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).rejects.toThrow(/satchel/i);
 
     // building satchel raises the cap enough for the same team to depart.
-    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { buildings: { desk: 1, satchel: 1 } } });
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { buildings: { desk: 1, satchel: satchelLvl } } });
     await expect(svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 1, 't1')).resolves.toBeTruthy();
   });
 

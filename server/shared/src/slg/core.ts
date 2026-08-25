@@ -277,10 +277,28 @@ export const SLG_GEN = {
 } as const;
 
 // ── Numeric constants (U6 DRAFT; tune after launch) ────────────────────
-// Base city troop pool cap (drillYard adds +DRILL_TROOPCAP_STEP/level on top). Set to the
-// new-player join grant so a fresh capital holds its whole starting reserve (unified troop pool,
-// CHARACTER_CARDS_DESIGN §6.3/§6.5 — troops = 基地兵力池, distributed to cards from here).
-export const TROOP_CAP_BASE = 10000;
+/**
+ * Base city troop pool cap (drillYard adds +DRILL_TROOPCAP_STEP/level on top), and the new-player join
+ * grant — a fresh capital holds its whole starting reserve (unified troop pool, CHARACTER_CARDS_DESIGN
+ * §6.3/§6.5 — troops = 基地兵力池, distributed to cards from here).
+ *
+ * **2026-08-25 re-tune (ADR-048 revision, 10000 → 5000).** ADR-048's 10000 base against
+ * DRILL_TROOPCAP_STEP=1000 made drillYard's whole 10-level arc worth only a **2×** pool (10000 → 20000),
+ * and its first level worth +10% — too little to be felt, so the building read as skippable even though it
+ * is the sole source of troop-pool growth. The max is unchanged at 20000; the base is halved and the step
+ * raised to 1500 instead, making the arc **4×** and each level +30% of base. Deliberate consequences, all
+ * accepted rather than compensated for:
+ *   - **The PvE gate arc stretches.** Crossing (10350) / stronghold (11800) garrisons are NOT rescaled, so
+ *     they now open at drillYard L4 / L5 instead of L1 / L2 — see siege.ts's two garrison constants.
+ *   - **The early game is poorer.** A fresh player fields 5000 troops, and at OCCUPY_MIN_TROOPS=500 can
+ *     hold 10 tiles rather than 20. GARRISON_PER_TILE is deliberately left at 500.
+ *   - **Existing players lose troops once.** troopCap is recomputed from buildings on every read
+ *     (worldsvc/db/playerDocs.ts refreshTroopCap) and clamps `troops` down, so every account below
+ *     drillYard L10 sees its cap drop (L0 halves; L10 is unchanged). Landed mid-season knowingly — these
+ *     numbers are still DRAFT.
+ * Re-run `server/tools/econ-sim/src/strongholdCombatRun.ts` after touching this or DRILL_TROOPCAP_STEP.
+ */
+export const TROOP_CAP_BASE = 5000;
 export const MARCH_SPEED_SEC_PER_TILE = 6; // seconds of march time per tile
 export const MARCH_MIN_TROOPS = 1; // minimum troops required to send a march
 /** Morale ceiling for a fresh march (normalized to 100 points). Bound to the march instance — resets to full on every departure. */
@@ -458,8 +476,19 @@ export const TROOP_TRAIN_STICKER_COST = 1;
 export const TROOP_TRAIN_TIME_SEC = 5;
 /** Maximum troops per training batch (single-batch queue size cap). */
 export const TROOP_TRAIN_BATCH_MAX = 5000;
-/** Maximum concurrent training batches (training queue slots). */
-export const TROOP_TRAIN_QUEUE_MAX = 2;
+/**
+ * Base concurrent training batches (training queue slots) with no drillYard built; drillYard adds slots at
+ * DRILL_QUEUE_LEVEL_THRESHOLDS. Must stay ≥1 — troopCap is nonzero before the drill yard exists, so a zero
+ * base would make training unreachable for a fresh player.
+ *
+ * **2026-08-25 re-tune (2 → 1).** Slots are only worth anything up to `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)`
+ * — beyond that the cap check rejects the batch before the slot is ever used. When the 2026-07-22 tune raised
+ * TROOP_TRAIN_BATCH_MAX 500 → 5000, that ceiling collapsed from 40 slots to 4 while the old
+ * `2 + floor(drillYard/2)` curve kept handing out up to 7, i.e. 3 permanently dead slots at max level. The
+ * curve is now 1 / 2 / 3 slots (see DRILL_QUEUE_LEVEL_THRESHOLDS), deliberately kept *below* that ceiling at
+ * every level so every slot stays useful and topping the pool off always takes a second visit.
+ */
+export const TROOP_TRAIN_QUEUE_MAX = 1;
 /** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */
 export const TROOP_SPEEDUP_SECS_PER_COIN = 60;
 /**

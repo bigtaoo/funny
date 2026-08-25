@@ -1561,6 +1561,7 @@ export const zh = {
   'city.bonusAcademyDmg': '出征单位伤害 +{pct}%',
   'city.bonusSatchel': '单队出征携带兵力上限 {n}',
   'city.troopCap': '兵力 {cur}/{cap}',
+  'city.trainQueueStatus': '队列 {n}/{max} · 在训 {training} · 可训 {left}',
   'city.trainEntry': '训练中 {n} · 剩 {time}',
   'city.trainMax': '最大 +{n}',
   'city.err.noResources': '资源不足',

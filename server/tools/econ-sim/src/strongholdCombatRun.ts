@@ -25,10 +25,11 @@ import {
   CROSSING_GARRISON,
   SCENARIO_BASE,
   SCENARIO_INVESTED,
+  CROSSING_OPEN_DRILL_LEVELS,
   winRateOver,
   type ProgressionScenario,
 } from './strongholdCombat';
-import { TROOP_CAP_BASE, DRILL_TROOPCAP_STEP } from '@nw/shared';
+import { TROOP_CAP_BASE, DRILL_TROOPCAP_STEP, DESK_MAX_LEVEL } from '@nw/shared';
 
 function bar(s: string) { console.log('═'.repeat(78)); console.log(s); console.log('═'.repeat(78)); }
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
@@ -70,7 +71,7 @@ const shBase = winRateOver(STRONGHOLD_GARRISON, STRONGHOLD_LEVEL, SCENARIO_BASE,
 const shInvested = winRateOver(STRONGHOLD_GARRISON, STRONGHOLD_LEVEL, SCENARIO_INVESTED, SEEDS);
 console.log(`  ${SCENARIO_BASE.label.padEnd(35)}  win-rate ${pct(shBase.winRate)}`);
 console.log(`  ${SCENARIO_INVESTED.label.padEnd(35)}  win-rate ${pct(shInvested.winRate)}  (avg survivors ${shInvested.avgAttackerSurvivors.toFixed(0)})`);
-const shTable = levelTable(STRONGHOLD_GARRISON, STRONGHOLD_LEVEL, 4);
+const shTable = levelTable(STRONGHOLD_GARRISON, STRONGHOLD_LEVEL, DESK_MAX_LEVEL);
 console.log('  Live per-drillYard-level sweep:');
 printLevelTable(shTable);
 const shOpensAt = firstWinningLevel(shTable);
@@ -80,11 +81,12 @@ console.log(`  [${shGateOk ? 'PASS' : 'FAIL'}] fresh loses outright AND opens by
 // ── Crossing: same shape, lighter garrison → should open with less investment than stronghold ──
 console.log(`── CROSSING (garrison=${CROSSING_GARRISON}) ──`);
 const crBase = winRateOver(CROSSING_GARRISON, CROSSING_LEVEL, SCENARIO_BASE, SEEDS);
-const crInvested1: ProgressionScenario = { label: `invested (troopCap=${TROOP_CAP_BASE + DRILL_TROOPCAP_STEP}, drillYard+1)`, troops: TROOP_CAP_BASE + DRILL_TROOPCAP_STEP };
+const crInvestedTroops = TROOP_CAP_BASE + CROSSING_OPEN_DRILL_LEVELS * DRILL_TROOPCAP_STEP;
+const crInvested1: ProgressionScenario = { label: `invested (troopCap=${crInvestedTroops}, drillYard+${CROSSING_OPEN_DRILL_LEVELS})`, troops: crInvestedTroops };
 const crInvested = winRateOver(CROSSING_GARRISON, CROSSING_LEVEL, crInvested1, SEEDS);
 console.log(`  ${SCENARIO_BASE.label.padEnd(35)}  win-rate ${pct(crBase.winRate)}`);
 console.log(`  ${crInvested1.label.padEnd(35)}  win-rate ${pct(crInvested.winRate)}`);
-const crTable = levelTable(CROSSING_GARRISON, CROSSING_LEVEL, 4);
+const crTable = levelTable(CROSSING_GARRISON, CROSSING_LEVEL, DESK_MAX_LEVEL);
 console.log('  Live per-drillYard-level sweep:');
 printLevelTable(crTable);
 const crOpensAt = firstWinningLevel(crTable);
@@ -108,5 +110,5 @@ console.log('  same-day pass of this recalibration missed that dispatch and chas
 console.log('  engine\'s board-depth cliff instead — a problem that does not actually occur in production. Re-run this');
 console.log('  script after any future change to TROOP_CAP_BASE, DRILL_TROOPCAP_STEP, or SIEGE_SYNTH_ARMY_MAX_TROOPS.\n');
 
-console.log(shGateOk && crGateOk ? '✅ BOTH CONSTANTS CONFIRMED for TROOP_CAP_BASE=10000.' : '❌ NEEDS TUNING.');
-console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.5');
+console.log(shGateOk && crGateOk ? `✅ BOTH CONSTANTS CONFIRMED for TROOP_CAP_BASE=${TROOP_CAP_BASE}/step=${DRILL_TROOPCAP_STEP}.` : '❌ NEEDS TUNING.');
+console.log('\nRegister conclusions → ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.5 (2026-07-27) / .7 (2026-08-25)');

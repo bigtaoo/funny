@@ -8,6 +8,7 @@ import {
   TROOP_CAP_BASE,
   RESOURCE_CAP,
   TROOP_TRAIN_QUEUE_MAX,
+  TROOP_TRAIN_BATCH_MAX,
   TROOP_TRAIN_INK_COST,
   TROOP_TRAIN_PAPER_COST,
   TROOP_TRAIN_GRAPHITE_COST,
@@ -23,7 +24,7 @@ import {
   ACADEMY_DAMAGE_STEP,
   ACADEMY_SIEGE_STEP,
   DRILL_TROOPCAP_STEP,
-  DRILL_QUEUE_PER_LEVELS,
+  DRILL_QUEUE_LEVEL_THRESHOLDS,
   SATCHEL_CARRY_BASE,
   SATCHEL_CARRY_STEP,
   buildingLevel,
@@ -103,7 +104,30 @@ describe('storage / troop / training derived caps', () => {
     expect(drillTrainMult({ drillYard: 2 })).toBeLessThan(1);
     expect(drillTrainMult({ drillYard: 100 })).toBeGreaterThanOrEqual(0.5); // floored
     expect(trainQueueMaxFor(undefined)).toBe(TROOP_TRAIN_QUEUE_MAX);
-    expect(trainQueueMaxFor({ drillYard: 5 })).toBe(TROOP_TRAIN_QUEUE_MAX + Math.floor(5 / DRILL_QUEUE_PER_LEVELS));
+    // 1 slot at L0-L3, 2 at L4-L9, 3 at L10 (DRILL_QUEUE_LEVEL_THRESHOLDS = [4, 10]).
+    expect(trainQueueMaxFor({ drillYard: 3 })).toBe(TROOP_TRAIN_QUEUE_MAX);
+    expect(trainQueueMaxFor({ drillYard: 4 })).toBe(TROOP_TRAIN_QUEUE_MAX + 1);
+    expect(trainQueueMaxFor({ drillYard: 9 })).toBe(TROOP_TRAIN_QUEUE_MAX + 1);
+    expect(trainQueueMaxFor({ drillYard: DESK_MAX_LEVEL })).toBe(TROOP_TRAIN_QUEUE_MAX + DRILL_QUEUE_LEVEL_THRESHOLDS.length);
+  });
+  /**
+   * The 2026-08-25 re-tune's whole point: a slot beyond `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)` can never be
+   * filled (the troopCap check in worldsvc trainTroops rejects the batch first), so granting one is dead value
+   * — which is exactly what `2 + floor(level/2)` did after TROOP_TRAIN_BATCH_MAX went 500 → 5000. Asserted
+   * across the whole level range so any future move of TROOP_CAP_BASE / DRILL_TROOPCAP_STEP /
+   * TROOP_TRAIN_BATCH_MAX / the thresholds fails here instead of silently re-growing dead slots.
+   */
+  it('never grants a training queue slot that troopCap cannot fill', () => {
+    for (let lvl = 0; lvl <= DESK_MAX_LEVEL; lvl++) {
+      const buildings = { drillYard: lvl };
+      const usable = Math.ceil(troopCapFor(buildings) / TROOP_TRAIN_BATCH_MAX);
+      expect(trainQueueMaxFor(buildings)).toBeLessThanOrEqual(usable);
+      expect(trainQueueMaxFor(buildings)).toBeGreaterThanOrEqual(1); // training must be reachable at every level
+    }
+  });
+  /** D-CITY-9: a maxed satchel carries a maxed drillYard's whole pool in one team (same base, same step). */
+  it('maxed satchel carry cap equals maxed troopCap', () => {
+    expect(satchelCarryCapFor({ satchel: DESK_MAX_LEVEL })).toBe(troopCapFor({ drillYard: DESK_MAX_LEVEL }));
   });
 });
 
