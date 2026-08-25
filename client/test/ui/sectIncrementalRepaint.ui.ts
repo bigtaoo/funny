@@ -761,3 +761,167 @@ describe('SectScene: the pick modal is a real scroll region', () => {
     scene.destroy();
   });
 });
+
+describe('SectScene: what the scrollable modal made possible to get wrong', () => {
+  it('a tap right after a wheel tick — before the frame drains — picks what is on screen', async () => {
+    const { scene, input, core, onPick } = await openPicker();
+    const rowAt = (): any => {
+      const applied = core.repaint.appliedDelta('modal');
+      return core.modalHits
+        .filter((h: any) => h.scroll === 'modal')
+        .map((h: any) => ({ rect: h.rect, sy: h.rect.y - applied }))
+        .find((h: any) => h.sy > core.modalRegionTop + 10 && h.sy + h.rect.h < core.modalRegionBottom - 10);
+    };
+    const target = rowAt();
+    const px = target.rect.x + target.rect.w / 2;
+    const py = target.sy + target.rect.h / 2;
+
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    const before = onPick.mock.calls[0]![0];
+
+    // Wheel and do NOT tick: modalScrollY moved, the layer has not. Judging the tap by the pending
+    // offset would resolve a different row than the one under the finger.
+    input._emitWheel(px, py, 80);
+    expect(core.modalScrollY).toBe(80);
+    expect(core.repaint.appliedDelta('modal')).toBe(0);
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    expect(onPick.mock.calls[1]![0]).toBe(before);
+
+    // Once drained, the same point is a different sect.
+    scene.update(1 / 60);
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    expect(onPick.mock.calls[2]![0]).not.toBe(before);
+    scene.destroy();
+  });
+
+  it('the modal scrollbar is replaced in the MODAL layer, not stacked and not on the page', async () => {
+    const { scene, input, core } = await openPicker();
+    const beforeModal = core.modalLayer.children.length;
+    const beforeBody = core.bodyLayer.children.length;
+    for (let i = 0; i < 8; i++) {
+      input._emitWheel(core.w / 2, core.modalRegionTop + 20, 20);
+      scene.update(1 / 60);
+    }
+    expect(core.modalScrollY).toBe(160);
+    // Flat: one leaked Graphics per frame would read as +8 here…
+    expect(core.modalLayer.children.length).toBe(beforeModal);
+    // …and a thumb redrawn into the wrong container would show up as +8 on the page instead, with
+    // the modal's own thumb gone. (That was the first version's bug — see repaint.ts's drawBar.)
+    expect(core.bodyLayer.children.length).toBe(beforeBody);
+    scene.destroy();
+  });
+
+  it('an empty list registers no band, and dragging it is harmless', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    scene.modals.showSectPickModal([], vi.fn(), 'sect.noSects');
+    expect(core.modalOpen).toBe(true);
+    expect(core.modalMax).toBe(0);
+    expect(core.repaint.layerFor('modal')).toBeNull();
+
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(core.w / 2, core.h / 2);
+    input._emitMove(core.w / 2, core.h / 2 - 70);
+    scene.update(1 / 60);
+    expect(core.modalOpen).toBe(true);
+    expect(renderSpy).not.toHaveBeenCalled(); // rebuilds the (empty) modal at most, never the page
+    scene.destroy();
+  });
+
+  it('a drag past the overscan band rebuilds the modal instead of running out of rows', async () => {
+    // 200 entries: the extent is many viewports, so one long drag genuinely leaves the pre-built
+    // window and has to fall back — for a modal that means core.modalRedraw, not render().
+    const { scene, input, core } = await mount(800, 1280);
+    const many = Array.from({ length: 200 }, (_, i) => ({
+      sectId: `sect_${i}`, name: `Sect ${i}`, tag: `S${i}`, leaderId: 'x', leaderFamilyId: 'y',
+      memberFamilyCount: 1, prosperity: 1, allySectIds: [],
+    }));
+    scene.modals.showSectPickModal(many as any, vi.fn(), 'sect.noSects');
+    const first = core.repaint.layerFor('modal');
+    expect(core.modalMax).toBeGreaterThan(core.repaint.overscanFor('modal'));
+
+    const y = core.modalRegionTop + 40;
+    input._emitDown(core.w / 2, y);
+    input._emitMove(core.w / 2, y - (core.modalMax + 500));
+    scene.update(1 / 60);
+
+    expect(core.modalScrollY).toBe(core.modalMax);
+    expect(core.repaint.layerFor('modal')).not.toBe(first); // rebuilt, not translated
+    expect(visibleModalTexts(core).some((s) => s.includes('Sect 199'))).toBe(true);
+    scene.destroy();
+  });
+
+  it('a modal whose layer was destroyed rebuilds through modalRedraw, not through render()', async () => {
+    const { scene, input, core } = await openPicker();
+    core.repaint.layerFor('modal').destroy();
+    const real = core.modalRedraw!;
+    const redraw = vi.fn(() => real());
+    core.modalRedraw = redraw;
+    const renderSpy = vi.spyOn(scene, 'render');
+
+    input._emitDown(core.w / 2, core.modalRegionTop + 40);
+    input._emitMove(core.w / 2, core.modalRegionTop - 20);
+    scene.update(1 / 60);
+
+    expect(redraw).toHaveBeenCalledTimes(1);
+    expect(renderSpy).not.toHaveBeenCalled(); // the page has no business rebuilding for this
+    expect(core.repaint.layerFor('modal')).toBeTruthy(); // a live tree again
+    scene.destroy();
+  });
+
+  it('the read-only allies list still scrolls, and its rows stay untappable', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const onPick = vi.fn();
+    scene.modals.showSectPickModal(MANY_SECTS as any, onPick, 'sect.noAllies', true);
+    // Read-only means no row hits at all — only the dim-to-close rect.
+    expect(core.modalHits.filter((h: any) => h.scroll === 'modal')).toHaveLength(0);
+    expect(core.modalMax).toBeGreaterThan(0);
+
+    const y = core.modalRegionTop + 40;
+    input._emitDown(core.w / 2, y);
+    input._emitMove(core.w / 2, y - 60);
+    scene.update(1 / 60);
+    expect(core.repaint.layerFor('modal').y).toBe(-60); // scrolls
+    input._emitUp(core.w / 2, y - 60);
+
+    input._emitDown(core.w / 2, y);
+    input._emitUp(core.w / 2, y);
+    expect(onPick).not.toHaveBeenCalled();
+    // With no row hit registered, the tap falls through to the full-screen dim rect underneath and
+    // dismisses the sheet. That predates the scroll work (rows never had hits here) and is fine for
+    // a read-only list — pinned so it stays a decision rather than an accident.
+    expect(core.modalOpen).toBe(false);
+    scene.destroy();
+  });
+
+  it('tapping the dim closes the modal, but dragging on it does not', async () => {
+    const { scene, input, core } = await openPicker();
+    // Well above the panel: the only hit here is the full-screen dim rect.
+    input._emitDown(core.w / 2, 20);
+    input._emitMove(core.w / 2, 90); // a drag, so the tap is dropped
+    input._emitUp(core.w / 2, 90);
+    expect(core.modalOpen).toBe(true);
+
+    input._emitDown(core.w / 2, 20);
+    input._emitUp(core.w / 2, 20);
+    expect(core.modalOpen).toBe(false);
+    scene.destroy();
+  });
+
+  it('the confirm dialog still answers taps now that modal hits fire on pointer-up', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const onOk = vi.fn();
+    scene.modals.showConfirm('Dissolve?', onOk);
+    // Confirm dialogs register no scroll band, so their hits are plain screen-space rects.
+    expect(core.modalRedraw).toBeNull();
+    const hits = core.modalHits.filter((h: any) => h.rect.w < core.w); // skip the dim
+    expect(hits.length).toBeGreaterThanOrEqual(2);
+    const ok = hits[0];
+    input._emitDown(ok.rect.x + ok.rect.w / 2, ok.rect.y + ok.rect.h / 2);
+    input._emitUp(ok.rect.x + ok.rect.w / 2, ok.rect.y + ok.rect.h / 2);
+    expect(onOk).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+});

@@ -788,3 +788,99 @@ describe('FamilyScene: the list modals are real scroll regions', () => {
     scene.destroy();
   });
 });
+
+describe('FamilyScene: what the scrollable modals made possible to get wrong', () => {
+  it('a tap right after a wheel tick — before the frame drains — picks what is on screen', async () => {
+    const { scene, input, core, onPick } = await openPicker();
+    const rowAt = (): any => {
+      const applied = core.repaint.appliedDelta('modal');
+      return core.modalHits
+        .filter((h: any) => h.scroll === 'modal')
+        .map((h: any) => ({ rect: h.rect, sy: h.rect.y - applied }))
+        .find((h: any) => h.sy > core.modalRegionTop + 10 && h.sy + h.rect.h < core.modalRegionBottom - 10);
+    };
+    const target = rowAt();
+    const px = target.rect.x + target.rect.w / 2;
+    const py = target.sy + target.rect.h / 2;
+
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    const before = onPick.mock.calls[0]![0];
+
+    input._emitWheel(px, py, 40);
+    expect(core.modalScrollY).toBe(40);
+    expect(core.repaint.appliedDelta('modal')).toBe(0);
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    expect(onPick.mock.calls[1]![0]).toBe(before);
+
+    scene.update(1 / 60);
+    input._emitDown(px, py);
+    input._emitUp(px, py);
+    expect(onPick.mock.calls[2]![0]).not.toBe(before);
+    scene.destroy();
+  });
+
+  it('the modal scrollbar is replaced, not stacked, across many frames', async () => {
+    const { scene, input, core } = await openPicker();
+    const before = core.modalLayer.children.length;
+    for (let i = 0; i < 8; i++) {
+      input._emitWheel(core.w / 2, core.modalRegionTop + 20, 10);
+      scene.update(1 / 60);
+    }
+    expect(core.modalScrollY).toBe(80);
+    expect(core.modalLayer.children.length).toBe(before);
+    scene.destroy();
+  });
+
+  it('rejecting a request while scrolled to the end re-clamps instead of leaving the sheet past its content', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    core.joinRequests = MANY_REQUESTS as any;
+    drawJoinRequestsModal(core, (id, accept) => void scene.actions.doRespondJoinRequest(id, accept));
+
+    for (let i = 0; i < 40 && core.modalScrollY < core.modalMax; i++) {
+      input._emitWheel(core.w / 2, core.modalRegionTop + 20, 200);
+      scene.update(1 / 60);
+    }
+    const atEnd = core.modalMax;
+    expect(core.modalScrollY).toBe(atEnd);
+
+    // A rejection drops that row and redraws with keepScroll — with a shorter list the old offset is
+    // past the new end, so the redraw has to clamp it (the render-side clamp this scene relies on).
+    core.joinRequests = (MANY_REQUESTS as any).slice(0, 3);
+    core.modalRedraw();
+    expect(core.modalMax).toBeLessThan(atEnd);
+    expect(core.modalScrollY).toBe(core.modalMax);
+    expect(core.repaint.appliedDelta('modal')).toBe(0);
+    scene.destroy();
+  });
+
+  it('the emblem picker registers no scroll band, and a drag inside it changes nothing', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    scene.actions.openEmblemPicker();
+    expect(core.modalOpen).toBe(true);
+    expect(core.modalRedraw).toBeNull();          // not a list modal
+    expect(core.repaint.layerFor('modal')).toBeNull();
+
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(core.w / 2, core.h / 2);
+    input._emitMove(core.w / 2, core.h / 2 - 80);
+    scene.update(1 / 60);
+    input._emitUp(core.w / 2, core.h / 2 - 80);
+
+    expect(core.modalOpen).toBe(true);            // still open (the drag dropped its tap)
+    expect(renderSpy).not.toHaveBeenCalled();     // and no page rebuild
+    scene.destroy();
+  });
+
+  it('the emblem picker still answers taps now that modal hits fire on pointer-up', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    scene.actions.openEmblemPicker();
+    // Cancel is the last hit the dialog pushes (see emblemPickerDialog.ts) — tapping it closes.
+    const cancel = core.modalHits[core.modalHits.length - 1];
+    input._emitDown(cancel.rect.x + cancel.rect.w / 2, cancel.rect.y + cancel.rect.h / 2);
+    input._emitUp(cancel.rect.x + cancel.rect.w / 2, cancel.rect.y + cancel.rect.h / 2);
+    expect(core.modalOpen).toBe(false);
+    scene.destroy();
+  });
+});
