@@ -111,7 +111,7 @@ export function buildDecorLayer(layout: ILayout): PIXI.Container | null {
     if (placed === 0) { content.destroy({ children: true }); continue; }
 
     const key = `decor:${layout.orientation}:${band.side}:${Math.round(rect.w)}x${Math.round(rect.h)}:${layout.cellSize}`;
-    const tex = bake(key, content, rect.w, rect.h);
+    const tex = bake(key, content, rect.w, rect.h, { pageScale: true });
     if (tex) {
       const sprite = new PIXI.Sprite(tex);
       sprite.position.set(rect.x, rect.y);

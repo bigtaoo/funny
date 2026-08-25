@@ -220,7 +220,9 @@ export function buildPaperBackground(
     pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
   }
 
-  const tex = bake(`${tag}:${Math.round(w)}x${Math.round(h)}:${railX ?? ''}`, gfx, w, h);
+  const tex = bake(
+    `${tag}:${Math.round(w)}x${Math.round(h)}:${railX ?? ''}`, gfx, w, h, { pageScale: true },
+  );
   if (tex) {
     const s = new PIXI.Sprite(tex);
     gfx.destroy();

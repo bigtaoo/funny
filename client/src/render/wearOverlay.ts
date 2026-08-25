@@ -78,7 +78,7 @@ export function buildWearOverlay(w: number, h: number): PIXI.DisplayObject {
     gfx.endFill();
   }
 
-  const tex = bake(`wear:${Math.round(w)}x${Math.round(h)}`, gfx, w, h);
+  const tex = bake(`wear:${Math.round(w)}x${Math.round(h)}`, gfx, w, h, { pageScale: true });
   const node: PIXI.DisplayObject = tex ? new PIXI.Sprite(tex) : gfx;
   if (tex) gfx.destroy();
   node.eventMode = 'none';

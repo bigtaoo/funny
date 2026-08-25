@@ -3,6 +3,7 @@ import { ILayout, SafeAreaInsets } from './ILayout';
 import { PortraitLayout } from './PortraitLayout';
 import { LandscapeLayout } from './LandscapeLayout';
 import { Side } from '../game';
+import { setDesignScale } from '../render/bake';
 
 export type Orientation = 'portrait' | 'landscape';
 
@@ -167,6 +168,11 @@ export class ScalingManager {
     // safe-area aspect, this fits to width with no letterbox on tall phones.
     const gameScale = Math.min(availW / dw, availH / dh);
     this.gameLayer.scale.set(gameScale);
+    // Page-sized bakes are drawn in design space but only ever SEEN at this scale, so the bake
+    // layer needs it to size their textures for real device pixels (render/bake.ts's file header
+    // has the 334 MB lobby this stops). Pushed from here because this is the single place the scale
+    // is computed — a caller-side copy would drift on the next resize path someone adds.
+    setDesignScale(gameScale);
     this.gameLayer.x = Math.round(availX + (availW - dw * gameScale) / 2);
     this.gameLayer.y = Math.round(availY + (availH - dh * gameScale) / 2);
 

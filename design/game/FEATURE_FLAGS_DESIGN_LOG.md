@@ -236,3 +236,25 @@
 **证据强度（如实记）**：真实崩溃样本 **n=1**，且遥测本身当时缺设备/朝向字段，无法在统计层面确认。时间线对得上（该构建含 2026-08-17 的加载优化 `132a83e9`），代码里也确实存在「resize 同步重建大厅」与「idle prefetch 大图解码」撞车的路径——这是目前唯一站得住脚的机制假设，但仍是**假设**。3 和 4 两项独立于该假设也都是实打实的浪费，值得修；1 和 2 的价值恰恰在于：下一次再发生，就不必再走一遍 analyticsvc 对时间线的迂回路。
 
 **验证**：client `npm run typecheck` clean、`server npm run typecheck` clean；新增 `client/test/deviceContext.test.ts` 20 例（含一条把 `orientation()` 与 layout 层 `detectOrientation()` 钉在一起的用例——deviceContext 刻意不 import 后者以免把 PIXI/engine 拖进崩溃上报路径，那份重复只在两者一致时才安全）；`anomaly-chain.test.ts` 15→18 例（新增 crash 携带死亡会话朝向、未转屏不带 `sinceRot`、转屏即写盘）；`pixiAppViews.ui.ts` 13→16 例（一次转屏只重建一次、空转 resize 直接忽略、离开大厅取消待执行重建）；`idlePrefetch.ui.ts` 7→10 例（转屏期间延后、未转屏不延后、连续转屏有上限）；`clientLog.test.ts` 16→19 例（会话字段每行都盖、朝向按事件、白名单外的值直接丢弃、`sinceRot` 取整）。
+
+---
+
+## 2026-08-25 — 手机崩溃定案：不是转屏，是整页 bake 按渲染器分辨率烘出的百 MB 纹理
+
+**新证据**：同一个 publicId `678315307` 又崩了一串，这次带上了 2026-08-24 那批遥测。8 条 `type=crash`，51 秒内 6 次启动、每次 `aliveMs:0`，全部 `device=phone dpr=3 orient=landscape vp=750x270`，且——关键——**一条 `sinceRot` 都没有**。
+
+**这直接否掉了 08-24 的假设**。`sinceRot` 缺席意味着那些会话从出生到死**从没翻过朝向**：它们是横屏启动、横屏死的，转屏路径根本没进。08-24 那条「一次转屏 = N 次大厅重建」的机制假设到此结案为**不是本次崩溃的原因**（那两项修复本身仍然是实打实的浪费，不回退）。上一条记录里写的「下一次再发生，就不必再走一遍 analyticsvc 的迂回」兑现了：这一轮没有查任何服务端日志，靠三个新字段就把范围缩到了「横屏、这个视口、启动即死」。
+
+**`vp=750x270` 是怎么来的**：iPhone 13 横屏 844×390，刘海左右安全区各 47 → 宽 844−94=750；宿主 App 的上下 chrome 约 120 → 高 390−120=270。即 08-24 已确认的那个内嵌 WKWebView，宽高比 **2.78:1**。
+
+**根因（代码层，可算出精确数字）**：
+- `LandscapeLayout` 的 `designWidth = max(1920, 1080 × availW/availH)`，**当时无上限** → 2.78 的宽高比撑出 **3000×1080** 的设计矩形。
+- `render/bake.ts` 用 `resolution: renderer.resolution`，而它等于未加限的 `window.devicePixelRatio` = 3。
+- 于是每张整页 bake 是 **9000×3240 = 111 MB**。`gameLayer.scale` 是 0.25，也就是这张纹理最终只映射到 750×3 = 2250 设备像素上——**每轴过采样 4 倍，像素数浪费 16 倍**。
+- 大厅一次画**三张**（`lobbybg` / `decorc` / `wear`），首屏一次性向内存受限的 WKWebView 要 **334 MB**。系统直接杀渲染进程：`aliveMs:0`、无 `jserror`（不是 JS 异常）、无 `webgl_lost`、无 `mem`。
+
+**为什么四个通道全瞎**：`MemoryMonitor` 盯的是 JS 堆（GPU 侧看不见）+ **generated 纹理的个数**——三张 111 MB 的纹理在计数口径里就是 **3**，对着 600 的预算毫无反应。「少而巨大」这件事，计数这个量纲根本表达不出来。
+
+**改动（见 ADR-073）**：整页 bake 改按 `renderer.resolution × gameLayer.scale` 烘（设备像素 1:1，画质零损失）；`LandscapeLayout` 加 2.4:1 上限；`MemoryMonitor` 新增**字节**口径（`texMB`/`genMB`/`largest`/`bake.top`）并给字节单独设预算，`mem` 与 `anr` 两种报告都带上。
+
+**顺带发现并修掉的隐患**：视口在启动瞬间读到 0（隐藏标签页/未布局的内嵌页，与 `resettledLayout` 同源的 WebKit 未定型问题）时，`createLayout(0,0)` 会算出 1/2000 级别的 scale，新逻辑会把整页 bake 烘成 1/16 分辨率的糊图。已加 `MIN_PAGE_RES = 0.25` 下限兜底；真视口到达后靠「分辨率进 cache key」自动重烘。这个隐患是在本机 Browser 面板（`visibilityState: hidden`）里实测撞到的，不是推演。
