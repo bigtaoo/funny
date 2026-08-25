@@ -378,9 +378,13 @@ export class FamilySceneCore {
   }
 
   handleMove(_x: number, y: number): void {
-    const next = this.gesture.move(y);
-    if (next === null) return;
+    const raw = this.gesture.move(y);
+    if (raw === null) return;
     const col = this.dragCol;
+    // Clamp to the column's extent HERE, not just at the next rebuild — see SectScene/core.ts's
+    // handleMove for the full note: the cheap-scroll path translates whatever the scroll field says,
+    // so an over-drag past the end would otherwise scroll the list into blank space and stay there.
+    const next = Math.min(raw, col === 'channel' ? this.channelMax : this.membersMax);
     this[this.scrollKeyFor(col)] = next;
     // Dragging to the bottom re-pins to the latest; scrolling up releases the pin so incoming
     // messages don't yank the reader back down (the "channel jumps while I'm reading" complaint).

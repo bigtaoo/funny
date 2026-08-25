@@ -408,3 +408,193 @@ describe('SectScene: the busy tracker no longer drives redraws', () => {
     scene.destroy();
   });
 });
+
+/** Every Text under `node`, recursing — chat lines are drawn into nested containers. */
+function textNodes(node: PIXI.Container): PIXI.Text[] {
+  const out: PIXI.Text[] = [];
+  const walk = (n: PIXI.Container): void => {
+    for (const c of n.children) {
+      if (c instanceof PIXI.Text) out.push(c);
+      if ((c as PIXI.Container).children) walk(c as PIXI.Container);
+    }
+  };
+  walk(node);
+  return out;
+}
+
+/** Pick a roster tap target that is comfortably inside the viewport as currently displayed. */
+function visibleVoteTarget(core: any): { px: number; py: number } {
+  const applied = core.repaint.appliedDelta('families');
+  const hit = core.hitRects
+    .filter((h: any) => h.scroll === 'families')
+    .map((h: any) => ({ rect: h.rect, sy: h.rect.y - applied }))
+    .find((h: any) => h.sy > core.familiesRegionTop + 30 && h.sy + h.rect.h < core.familiesRegionBottom - 30);
+  expect(hit).toBeTruthy();
+  return { px: hit.rect.x + hit.rect.w / 2, py: hit.sy + hit.rect.h / 2 };
+}
+
+/** Tap a screen point and report which family the roster resolved it to (null = nothing fired). */
+function tapFamily(input: InputManager, spy: any, px: number, py: number): string | null {
+  const before = spy.mock.calls.length;
+  input._emitDown(px, py);
+  input._emitUp(px, py);
+  return spy.mock.calls.length > before ? (spy.mock.calls[spy.mock.calls.length - 1]![0] as string) : null;
+}
+
+describe('SectScene: what the cheap scroll made possible to get wrong', () => {
+  it('a drag past the end stops at the end instead of translating into blank space', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const max = core.familiesMax;
+    expect(max).toBeGreaterThan(0);
+
+    // Park at the very end (a long drag leaves the overscan band, so this rebuilds and re-baselines).
+    input._emitDown(400, 640);
+    input._emitMove(400, 640 - (max + 300));
+    scene.update(1 / 60);
+    input._emitUp(400, 640 - (max + 300));
+    expect(core.scrollY).toBe(max);
+    expect(core.repaint.layerFor('families').y).toBe(0);
+
+    // A further drag from there stays inside the band, so it takes the translate path — which used
+    // to move the layer past the content's end and leave a blank strip that nothing clamped back
+    // (the full render that used to re-clamp every frame is exactly what this pass removed).
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(400, 640);
+    input._emitMove(400, 540);
+    scene.update(1 / 60);
+    expect(core.scrollY).toBe(max);
+    expect(core.repaint.layerFor('families').y).toBe(0);
+    expect(renderSpy).not.toHaveBeenCalled(); // clamped, so there is nothing to redraw either
+
+    // Reversing the finger must move the content immediately (no dead zone to unwind first).
+    input._emitMove(400, 740);
+    scene.update(1 / 60);
+    expect(core.scrollY).toBeLessThan(max);
+    scene.destroy();
+  });
+
+  it('a tap right after a wheel tick — before the frame drains — hits what is on screen', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const confirmVote = vi.spyOn(scene.actions, 'confirmVote').mockImplementation(() => {});
+    const { px, py } = visibleVoteTarget(core);
+
+    const before = tapFamily(input, confirmVote, px, py);
+    expect(before).toBeTruthy();
+
+    // Wheel exactly one row and do NOT tick: scrollY has moved, the layer has not. A tap judged
+    // against the pending offset (scrollY - builtScrollY) would resolve one row off; it must be
+    // judged against what the player is looking at.
+    input._emitWheel(px, py, ROW_H);
+    expect(core.scrollY).toBe(ROW_H);
+    expect(core.repaint.appliedDelta('families')).toBe(0);
+    expect(tapFamily(input, confirmVote, px, py)).toBe(before);
+
+    // Once the frame drains, the same point is genuinely a different row.
+    scene.update(1 / 60);
+    expect(core.repaint.appliedDelta('families')).toBe(ROW_H);
+    expect(tapFamily(input, confirmVote, px, py)).not.toBe(before);
+    scene.destroy();
+  });
+
+  it('after translating exactly one row, the same point hits the NEXT family', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const confirmVote = vi.spyOn(scene.actions, 'confirmVote').mockImplementation(() => {});
+    const { px, py } = visibleVoteTarget(core);
+
+    const first = tapFamily(input, confirmVote, px, py)!;
+    input._emitDown(px, py);
+    input._emitMove(px, py - ROW_H);
+    scene.update(1 / 60);
+    input._emitUp(px, py - ROW_H);
+    const second = tapFamily(input, confirmVote, px, py)!;
+
+    // Ids are fam_0..fam_N in roster order, so "the next one" is checkable exactly — a sign flip or
+    // an off-by-one row would land somewhere else entirely.
+    const idx = (id: string): number => Number(id.split('_')[1]);
+    expect(idx(second)).toBe(idx(first) + 1);
+    scene.destroy();
+  });
+
+  it('the per-frame scrollbar redraw does not accumulate children', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    const before = core.bodyLayer.children.length;
+    input._emitDown(400, 640);
+    for (let i = 1; i <= 8; i++) {
+      input._emitMove(400, 640 - i * 12);
+      scene.update(1 / 60); // each drained frame destroys + redraws the indicator
+    }
+    expect(core.repaint.appliedDelta('families')).toBe(96);
+    // One leaked Graphics per frame would read as +8 here, and it would keep growing per gesture.
+    expect(core.bodyLayer.children.length).toBe(before);
+    scene.destroy();
+  });
+
+  it('falls back to a full render when the built layer is gone', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    core.repaint.layerFor('families').destroy();
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(400, 640);
+    input._emitMove(400, 580);
+    scene.update(1 / 60);
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+
+  it('a mode that builds no scroll layer at all still scrolls by falling back to render', async () => {
+    const { scene, input, core } = await mount(800, 1280);
+    core.sect = null;
+    core.mode = 'create';
+    scene.render();
+    expect(core.repaint.layerFor('families')).toBeNull();
+    expect(core.repaint.layerFor('channel')).toBeNull();
+
+    const renderSpy = vi.spyOn(scene, 'render');
+    input._emitDown(400, 640);
+    input._emitMove(400, 580);
+    scene.update(1 / 60);
+    expect(renderSpy).toHaveBeenCalledTimes(1);
+    scene.destroy();
+  });
+
+  it('portrait builds exactly one column, so the shared scrollY cannot move the other one', async () => {
+    const { scene, core } = await mount(800, 1280);
+    // Portrait renders one tab at a time, and both tabs drive `scrollY` on this scene (unlike the
+    // landscape split view, where the channel owns scrollYChannel) — so the invariant that keeps a
+    // drag from moving the hidden column is that the hidden column has no band at all.
+    expect(core.activeTab).toBe('families');
+    expect(core.repaint.layerFor('families')).toBeTruthy();
+    expect(core.repaint.layerFor('channel')).toBeNull();
+
+    core.activeTab = 'channel';
+    scene.render();
+    expect(core.repaint.layerFor('channel')).toBeTruthy();
+    expect(core.repaint.layerFor('families')).toBeNull();
+    scene.destroy();
+  });
+
+  it('channel: a translated column puts messages exactly where a rebuild would', async () => {
+    const { scene, input, core } = await mount(1280, 800); // landscape: channel owns scrollYChannel
+    const layer = core.repaint.layerFor('channel');
+    expect(core.channelMax).toBeGreaterThan(100);
+
+    const chatX = core.chatColX + 40;
+    input._emitDown(chatX, 400);
+    input._emitMove(chatX, 400 + 91); // awkward offset again
+    scene.update(1 / 60);
+    const screenYs = (): number[] => {
+      const l = core.repaint.layerFor('channel');
+      return textNodes(l)
+        .map((t) => Math.round(t.y + l.y))
+        .filter((y) => y >= core.channelRegionTop && y <= core.channelRegionBottom)
+        .sort((a, b) => a - b);
+    };
+    const translated = screenYs();
+    expect(translated.length).toBeGreaterThan(3);
+    expect(layer.y).toBe(91);
+
+    scene.render(); // same scroll position, rebuilt instead of translated
+    expect(core.repaint.layerFor('channel').y).toBe(0);
+    expect(screenYs()).toEqual(translated);
+    scene.destroy();
+  });
+});
