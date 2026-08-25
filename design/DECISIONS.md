@@ -89,6 +89,7 @@
 | [ADR-071](DECISIONS_ADR-070-onward.md#adr-071-门禁盲区收口--非-workspace-包接进-ci--desktop-shell-接进可达性--客户端覆盖率-scope-扩到已测模块--accepted--2026-08-21) | 门禁盲区收口：非 workspace 包接进 CI、`desktop-shell` 接进可达性、客户端覆盖率 scope 扩到已测模块 | Accepted | 2026-08-21 |
 | [ADR-072](DECISIONS_ADR-070-onward.md#adr-072-装备页改为卡背包之上的-overlay--adr-044-的模式下沉到成长组--accepted--2026-08-25) | 装备页改为卡背包之上的 overlay：卡背包不再重建，滚动位置与详情弹窗跨岔路留存 | Accepted | 2026-08-25 |
 | [ADR-073](DECISIONS_ADR-070-onward.md#adr-073-整页-bake-按上屏缩放定分辨率--横屏宽高比上限--纹理字节口径--accepted--2026-08-25) | 整页 bake 按上屏缩放定分辨率（修手机整页纹理 111 MB/张）+ 横屏 2.4:1 宽高比上限 + 纹理字节口径 | Accepted | 2026-08-25 |
+| [ADR-074](DECISIONS_ADR-070-onward.md#adr-074-野外城池从贴图升级为宗门级攻城实体--accepted--2026-08-25) | 野外城池从贴图升级为宗门级攻城实体（宗门门槛 + 耐久/回复封死单人 + `nations` 清空） | Accepted | 2026-08-25 |
 
 ---
 
