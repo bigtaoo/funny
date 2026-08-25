@@ -188,3 +188,5 @@ paper texture, frame, border.
 实现细节：`sp.width`/`sp.height` 赋值把 `SPRITE_SIZE` 换算成的基础缩放存进 `baseScales`（每建筑一份，随生成/回收成对维护），呼吸公式变成 `sp.scale.set(base * (1 + sin(...) * BOB_SCALE_AMP))`。顺带修了一个由此暴露的潜在 bug：箭塔开火反冲原来写的是 `sp.y += ...`，靠 body bob 每帧先把 `sp.y` 重置成新的基准值、`+=` 才不会越叠越大——去掉 body bob 对 `sp.y` 的写入后，`+=` 会在整个 0.26s 反冲窗口里逐帧累加，改成和 `sp.x` 一样的直接赋值 `sp.y = ...`。
 
 测试：[`client/test/render/buildingFireEffect.test.ts`](../../client/test/render/buildingFireEffect.test.ts) 改用支持 `.x`/`.y` 的 `scale` mock，新增一条钉住"idle 只改缩放、从不写位置"的用例，其余用例的断言从"幅度不超过 `BOB_AMP`"改成精确的 `toBe(0)`（因为新实现下 idle 时 `sp.y` 恒为 0，不再是一个近似上界）。
+
+**收尾补测（同日）**：新增的 `baseScales` 私有 Map 一开始漏了在 `destroy()` 里 `.clear()`（`phases`/`cells`/`fires` 都清了，这个没清），会在每次战斗结束后留下所有建筑 id 的条目。补了三条回归测试（`destroy()` 清空 baseScales / 建筑离场时 `sync()` 也要清 / 箭塔和兵营共享同一段 idle 逻辑，塔也要有缩放呼吸），每条都用「先删对应清理代码确认测试变红、再恢复」的方式验证过。
