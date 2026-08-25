@@ -1,6 +1,6 @@
 // Social navigation: friends list, mail, direct chat (S6). Extracted from createAppCore.
 import * as analytics from '../../analytics';
-import { WorldApiClient, type FamilyDetailView } from '../../net/WorldApiClient';
+import { WorldApiClient, type FamilyDetailView, type SectDetailView } from '../../net/WorldApiClient';
 import type { FriendsView, ChatView } from '../AppViews';
 import type { AppCtx, Nav } from '../appCtx';
 import { FALLBACK_SEASON, PLAYER_PUBLIC_ID_KEY } from '../appConstants';
@@ -38,6 +38,9 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
      * the hub re-fetches rather than painting a stale roster.
      */
     let slgFamily: FamilyDetailView | null = null;
+    /** Same one-shot hand-off for the sect tab: loadSLGStatus fetches the sect detail for its name,
+     *  which is the whole payload SectScene opens on (see openSectHub below). */
+    let slgSect: SectDetailView | null = null;
     const ensureWorldId = async (): Promise<string> => {
       if (slgWorldId) return slgWorldId;
       if (!worldApi) throw new Error('no world api');
@@ -122,6 +125,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
               status.sectId = fam.sectId;
               try {
                 const sect = await worldApi.getSect(fam.sectId);
+                slgSect = sect ?? null;
                 status.sectName = sect?.name;
               } catch { /* sect lookup best-effort; sectId alone is still useful to the caller */ }
             }
@@ -148,7 +152,13 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
         },
         openSectHub: () => {
           if (!slgWorldId) return false;
-          nav.goSectHub(worldApi, slgWorldId, backTo, opts?.overlay);
+          // Same hand-off as openFamilyHub above: the status load already pulled both the family and
+          // the sect detail, so SectScene can paint its roster instead of re-running them behind a
+          // second loading screen. Cleared here so a later entry re-fetches.
+          const preload = { family: slgFamily, sect: slgSect };
+          slgFamily = null;
+          slgSect = null;
+          nav.goSectHub(worldApi, slgWorldId, backTo, opts?.overlay, preload);
           return true;
         },
         loadWorldChat: async (before) => { const wid = await ensureWorldId(); return worldApi.getWorldChannel(wid, { before }); },

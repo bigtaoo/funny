@@ -152,6 +152,41 @@ describe('regression: family/sect hub must return to wherever social was opened 
     expect(goFamilyHub.mock.calls[1]![4]).toBeNull();
   });
 
+  // sect-incremental-repaint (2026-08-25): the same one-shot hand-off for the Sect tab. loadSLGStatus
+  // fetches the family AND (for the tab's sect name) the sect detail — which together are exactly
+  // what SectScene opens on, so re-requesting them was a second loading screen for nothing.
+  it('openSectHub hands the family + sect detail loadSLGStatus already fetched to goSectHub, once', async () => {
+    (globalThis as Record<string, unknown>).fetch = async (url: string) => {
+      if (url.includes('/world/active-season')) return jsonResponse({ ok: true, data: { season: 1 } });
+      if (url.includes('/world/season/resolve')) return jsonResponse({ ok: true, data: { worldId: 'world:1:0' } });
+      if (url.includes('/social/family/mine')) {
+        return jsonResponse({ ok: true, data: { familyId: 'fam_1', name: 'Clan', tag: 'CLN', sectId: 'sect_1', leaderId: 'other', members: [] } });
+      }
+      if (url.includes('/sect/sect_1')) {
+        return jsonResponse({ ok: true, data: { sectId: 'sect_1', name: 'Sect', tag: 'SCT', memberFamilies: [] } });
+      }
+      throw new Error(`unexpected fetch in test: ${url}`);
+    };
+    const goSectHub = vi.fn();
+    const { ctx, getCb } = buildCtx({ goSectHub, goLobby: vi.fn() });
+    const { goFriends } = createSocialNav(ctx);
+
+    goFriends();
+    const cb = getCb();
+    await cb.loadSLGStatus?.();
+
+    expect(cb.openSectHub?.()).toBe(true);
+    expect(goSectHub.mock.calls[0]![4]).toMatchObject({
+      family: { familyId: 'fam_1' },
+      sect: { sectId: 'sect_1' },
+    });
+
+    // Consumed — a second jump must not replay a possibly-stale roster (goSectHub drops the null
+    // halves rather than forwarding them, so SectScene falls back to fetching).
+    expect(cb.openSectHub?.()).toBe(true);
+    expect(goSectHub.mock.calls[1]![4]).toEqual({ family: null, sect: null });
+  });
+
   it('openFamilyHub reports false (and does not navigate) before the world shard resolves', () => {
     stubWorldFetch();
     const goFamilyHub = vi.fn();
