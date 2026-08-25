@@ -56,6 +56,7 @@ import type { ILayout } from '../layout/ILayout';
 import { enterBattle, DeferredSceneCalls } from './battleGate';
 import { enterWithAssets } from './assetGate';
 import { preloadGachaTextures } from '../render/gachaArt';
+import { markFeatureUsed } from '../assets/prefetchPolicy';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './AppViews';
 
 /**
@@ -241,6 +242,10 @@ export class PixiAppViews implements AppViews {
    */
   showGacha(cb: GachaSceneCallbacks): void {
     this.leaveLobby();
+    // Same reasoning as WorldMapRenderer's `markFeatureUsed('world')`: the gate below is this
+    // feature's asset-demand site, so it is where "this player pulls" becomes true and the wave
+    // becomes worth warming next session (ASSET_PACKAGING §14).
+    markFeatureUsed('gacha');
     void enterWithAssets(
       { app: this.app, manager: this.manager, input: this.input },
       (onProgress) => preloadGachaTextures(onProgress),

@@ -18,6 +18,7 @@ import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererFog } from './fog';
 import type { WorldMapRendererVignette } from './vignette';
 import type { WorldMapRendererBuild } from './build';
+import { markFeatureUsed } from '../../../assets/prefetchPolicy';
 
 export interface LifecycleHandlers {
   update(dt: number): void;
@@ -156,6 +157,12 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
   /** Load the map atlases behind the loading cover, then reveal the map fully textured. */
   bootstrap(): void {
     const ctx = this.core.ctx;
+    // This is the SLG map's own asset-demand site, so it is where "this player uses the world map"
+    // is true — next session `idlePrefetch` will warm the 2.0 MB / ~13.7 MB-decoded world atlas
+    // ahead of this cover instead of behind it (ASSET_PACKAGING §14). Marked here rather than in
+    // the loaders below because the prefetch calls those same loaders, which would make the wave
+    // self-justifying after a single run.
+    markFeatureUsed('world');
     const atlasLoads = [
       loadTerrainAtlas().catch((err) => console.warn('[WorldMapScene] terrain atlas load failed:', err)),
       loadCityAtlas().catch((err) => console.warn('[WorldMapScene] city atlas load failed:', err)),

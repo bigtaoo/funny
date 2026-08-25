@@ -13,7 +13,7 @@ import type { AvatarCategory } from '../render/avatar';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
 import type { SettingsSceneCallbacks, RenameOutcome, Hit } from './SettingsScene/types';
-import { drawProfile, drawLanguage, drawHelp, drawAccount, type PanelHost } from './SettingsScene/panels';
+import { drawProfile, drawLanguage, drawDataSaver, drawHelp, drawAccount, type PanelHost } from './SettingsScene/panels';
 import { drawAvatarPickerOverlay, showLockToast, type PickerHost } from './SettingsScene/avatarPicker';
 import { drawRenameOverlay, drawDeleteConfirm, type OverlayHost } from './SettingsScene/overlays';
 
@@ -230,6 +230,7 @@ export class SettingsScene implements Scene {
     const tbH = this.drawHeader();
     drawProfile(this.asPanelHost(), tbH);
     drawLanguage(this.asPanelHost());
+    drawDataSaver(this.asPanelHost());
     if (this.cb.onReplayTutorial) drawHelp(this.asPanelHost());
     drawAccount(this.asPanelHost());
     if (this.avatarPickerOpen) drawAvatarPickerOverlay(this.asPickerHost());

@@ -15,9 +15,15 @@
  *     contend for the connection with whatever the player actually did next.
  *   - **Idle-scheduled.** Each wave starts from `requestIdleCallback` (falling back to a
  *     timer where it doesn't exist, e.g. WeChat), so a busy main thread defers it.
- *   - **Cheapest first.** The battle set gates the most common next action; the 3.3 MB
- *     gacha set — the least likely and the largest — goes last.
- *   - **Opt-out on metered links.** `saveData` / 2g effective types skip it entirely.
+ *   - **Cheapest first.** The battle set gates the most common next action; the gacha
+ *     set — the least likely and the largest — goes last.
+ *   - **Opt-out on metered links**, and on the player's own data-saver setting — see
+ *     `prefetchPolicy.shouldSkipPrefetch`.
+ *   - **Scoped to features the player actually uses** (2026-08-25, §14). The two big waves
+ *     (`slg:world` 2.0 MB, `gacha` 1.2 MB) only run once the player has opened that screen at
+ *     least once. Before this, every player warmed all ~5 MB including the two screens they
+ *     might never visit — and the world atlas's real cost is not even the download but the
+ *     ~13.7 MB its 1960×1827 RGBA page decodes to, which is spent on wifi just the same.
  *   - **Never mid-rotation.** A wave holds until the screen has been still for a moment — see
  *     awaitRotationQuiet for why idle-scheduling alone does not cover this.
  *
@@ -31,23 +37,10 @@ import { worldAtlas } from '../render/atlas/worldAtlas';
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import { preloadGachaTextures } from '../render/gachaArt';
 import { lastRotationAt } from '../net/anomaly/deviceContext';
-
-/** Minimal shape of the (non-standard, Chromium-only) Network Information API. */
-interface NetworkInformation {
-  saveData?: boolean;
-  effectiveType?: string;
-}
+import { hasUsedFeature, shouldSkipPrefetch } from './prefetchPolicy';
 
 interface IdleWindow {
   requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-}
-
-/** True when the player has asked not to spend bandwidth speculatively. */
-function isMeteredConnection(): boolean {
-  const conn = (navigator as Navigator & { connection?: NetworkInformation }).connection;
-  if (!conn) return false; // API absent (Safari/Firefox/WeChat) — assume a normal link
-  if (conn.saveData) return true;
-  return conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g';
 }
 
 /** Resolve on the next idle slot, or after `timeoutMs` at the latest. */
@@ -85,8 +78,14 @@ async function awaitRotationQuiet(): Promise<void> {
   }
 }
 
-/** Ordered cheapest/likeliest first — see the "cheapest first" note in the file header. */
-const WAVES: ReadonlyArray<{ id: string; run: () => Promise<unknown> }> = [
+/**
+ * Ordered cheapest/likeliest first — see the "cheapest first" note in the file header.
+ *
+ * `when` (optional) gates a wave on evidence it is worth warming at all. A wave with no `when`
+ * runs for everyone: those are the ones every player reaches (the boot background tier, the menu
+ * icon set, the battle set — a first match is the one thing every account does).
+ */
+const WAVES: ReadonlyArray<{ id: string; run: () => Promise<unknown>; when?: () => boolean }> = [
   // The boot manifest's background tier. Normally already resolved by the time we get
   // here (preloadBoot kicks it off); listed so a boot-time failure gets one more try.
   { id: 'boot:background', run: () => preloadBootBackground() },
@@ -101,10 +100,13 @@ const WAVES: ReadonlyArray<{ id: string; run: () => Promise<unknown> }> = [
   // Everything enterBattle's gate awaits: all 12 unit rigs + hero/spell card art.
   // Default skins only — an equipped skin is still resolved by the gate itself.
   { id: 'battle',          run: () => ensureBattleAssets({}) },
-  // SLG world map, one 1.2 MB sheet — WorldMapScene shows a cover until it decodes.
-  { id: 'slg:world',       run: () => worldAtlas.load() },
-  // 3.3 MB of card backs/frames/banners. Biggest and least urgent, so: last.
-  { id: 'gacha',           run: () => preloadGachaTextures() },
+  // SLG world map, one 2.0 MB sheet — WorldMapScene shows a cover until it decodes. Gated: this
+  // is the single biggest asset in the game and, at 1960×1827 RGBA, ~13.7 MB decoded. A player who
+  // has never opened the world map should not be carrying that, on any link.
+  { id: 'slg:world',       run: () => worldAtlas.load(),      when: () => hasUsedFeature('world') },
+  // 1.2 MB of card backs/frames/banners. Biggest of the rest and least urgent, so: last. Gated for
+  // the same reason as the world map, and it has its own entry gate since 2026-08-25 either way.
+  { id: 'gacha',           run: () => preloadGachaTextures(), when: () => hasUsedFeature('gacha') },
 ];
 
 let started = false;
@@ -114,14 +116,21 @@ let started = false;
  * does anything) and never rejects — a failed wave logs and the next one still runs,
  * exactly like the boot gate. Fire-and-forget: nothing awaits the returned promise.
  */
-export function startIdlePrefetch(): Promise<void> {
-  if (started) return Promise.resolve();
+export async function startIdlePrefetch(): Promise<void> {
+  if (started) return;
   started = true;
-  if (isMeteredConnection()) {
-    console.info('[prefetch] skipped: metered/save-data connection');
-    return Promise.resolve();
+  if (await shouldSkipPrefetch()) {
+    console.info('[prefetch] skipped: metered link or data-saver setting');
+    return;
   }
-  return WAVES.reduce(
+  // Decided once, up front, rather than per wave: the marks cannot change while the chain runs
+  // (the player is sitting on the lobby), and evaluating them here is what makes the skip
+  // reportable as one line instead of silently thinning the chain — see "no silent caps".
+  const due = WAVES.filter((w) => !w.when || w.when());
+  const skipped = WAVES.filter((w) => !due.includes(w)).map((w) => w.id);
+  if (skipped.length) console.info(`[prefetch] not warming (never opened): ${skipped.join(', ')}`);
+
+  await due.reduce(
     (chain, wave, i) => chain
       // A generous first delay keeps the prefetch clear of the lobby's own construction
       // and its opening API calls; later waves only need to yield between each other.
@@ -130,7 +139,8 @@ export function startIdlePrefetch(): Promise<void> {
       .then(() => wave.run())
       .catch((err) => console.warn(`[prefetch] wave ${wave.id} failed:`, err)),
     Promise.resolve() as Promise<unknown>,
-  ).then(() => { console.info('[prefetch] L1 warm'); });
+  );
+  console.info('[prefetch] L1 warm');
 }
 
 /** Test seam: forget that a prefetch already ran. */
