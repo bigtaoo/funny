@@ -224,3 +224,18 @@ const rowY  = isPortrait
 **修法**：给全部 12 处内层 frame 的 `sketchPanel` 调用加 `fillAlpha: 0`（`sketchPanel` 本就支持这个参数，见 [`render/sketchUi.ts`](../../client/src/render/sketchUi.ts) 的 `PanelOpts`），让外层背景透出来，只留手绘描边——传达阵营/稀有度信息的边框颜色原样保留，纯装饰性的边框也保留（仍是"卡框"视觉，只是不再重复填色）。融合弹窗环形图（`feedRing.ts`）本身没有这个问题，一直是单层圆形（填充+描边一次画成），不用改。
 
 **验证**：`tsc --noEmit` 全绿；受影响场景的既有 `test:ui` 用例（`cardFusePanel`/`cardFusePanelPrep`/`cardSceneSkins`/`cardDetailFlipAndSkin`/`cardArtLoadingSpinner`/`auctionScene`/`equipmentEnhanceIncrementalRedraw`/`equipmentEquippedTagOverflow`/`worldMapShopPanel`，9 文件 / 179 例）全绿。**像素核对**：用 `#fusedemo` 临时 hash 路由（仿 §"Screenshotting a panel that needs a FABRICATED save state" 的记忆写法，构造好目标卡+材料池的 `cardInv` 后直接 `feed.openFuseSelect(target)`，跳过登录/后端）截了融合弹窗改前改后两张图对比——两层填色本来就是几乎同色（这正是它读起来"像是重复"而不是"明显叠色"的原因），像素级差异不大，但结构上从两层裁成了一层，且跟环形图的单层画法统一。
+
+## 38. 回放：「Replay」标签移到纸页边、视角文字标签换成血条名字牌（2026-08-26）
+
+**起因（用户截图反馈，横屏回放）**：① 左上「● 回放」标签钉在设计空间最左边（`designWidth * 0.04`），而横屏下棋盘两侧各有 ≥330px 的纸页留白（见 [`LandscapeLayout`](../../client/src/layout/LandscapeLayout.ts) 的 `boardX` 注释），标签离它所标注的东西隔了一整个留白宽；② 左下角 `视角：玩家1` 这行独立文字标签（`replay.viewpoint`）——用户要求去掉，改成「己方名字挂在己方血条上、敌方名字挂在敌方血条左侧」，也就是 PvP 里对手昵称的那套呈现。
+
+评估结论：用户给的两种方案其实是同一种——PvP 的对手昵称本来就是「血条左侧的名字牌」（[`labels.ts`](../../client/src/render/GameRenderer/labels.ts) 的 `drawOpponentLabel`），所以回放两侧统一复用这套名字牌，不再自己发明第二种呈现。
+
+**改动**：
+- **共用名字牌**：`labels.ts` 抽出 `drawNameChip(core, name, fill, bh, place)`——按标签实测宽度撑出 `drawHudButton('secondary')` 底板，落点由调用方的 `place(bw, bh)` 决定（好右对齐/按实测宽度回退）。`drawOpponentLabel`（PvP）改为它的一个调用点，几何一像素不变。
+- **回放两块名字牌**（替换 `replay.viewpoint` 文字标签，i18n key 已从 zh/en/de 删除）：敌方牌在顶部血条左侧 12px（同 PvP）；视角方牌挂自己的血条。两块统一 34px 高（PvP 那块仍是投降键的 44px）。**为什么敌方牌比 PvP 矮、且以血条而非顶栏居中**：回放隐藏投降键（`getSurrenderRect()` 全零，没有可借的按钮带），而 `ReplayScene` 的进度条正好压在顶栏下沿——顶栏居中的 44px 牌会被它切掉底边（实测过），所以改成「以血条居中、再钳进顶栏上 72%」。
+- **视角方牌的落点**：优先放血条左侧（竖屏——血条居中于棋盘，左边有富余）；横屏的左信息栏（`hudBottomLeftRect`，300 宽）只比血条（`HP_BAR_W = 237`）宽 50px 放不下，退回栏顶、右对齐到血条右边缘，即老 `视角：` 标签原来的位置。判据是实测宽度够不够，不写 `orientation` 分支。
+- **`HUDView` 新增 `getPlayerHpRect()`**（对称于既有的 `getEnemyHpRect()`）——名字牌需要己方血条的矩形。
+- **「● 回放」标签**：横屏右对齐进棋盘左侧留白（离棋盘边 40px）并上移到顶栏自己的带子上、与计时器同一行（计时器在棋盘边内 14px，两者之间因此留出约 54px，不会读成一行）。竖屏留白只有 36px，放不下 → 保持原样（`w*0.04` + 进度条上方那行），判据同样是实测宽度而非 orientation。
+
+**验证**：`tsc --noEmit` 绿；`test:ui` 229 文件 / 2161 例 + `vitest run` 195 文件 / 2036 例全绿；webpack production 构建通过。既有的 siege 名字用例改为**钉住新规则**：每个名字恰好出现 2 次（基地牌 + 血条名字牌），且不再出现 `View:` 前缀串。**像素核对**：Browser 面板仍报「pane 未显示、无法合成帧」（同 §26 记录的限制），改用 `start:e2e` 入口 + Playwright 直接 `__nwE2E.views.showReplay(合成的 Replay)` 截图——横屏 1700×850 与竖屏 480×900 各一张，确认：横屏「● Replay」落在留白里与计时器同排、敌方牌完整位于进度条上方（3× 放大核对过没被切）、视角方牌右对齐在自己的墨量/血条之上；竖屏两块名字牌都在血条左侧、「● Replay」回到老位置不压计时器。

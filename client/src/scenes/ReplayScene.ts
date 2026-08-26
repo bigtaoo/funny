@@ -277,15 +277,24 @@ export class ReplayScene implements Scene {
     this.progressFill = new PIXI.Graphics();
     this.overlay.addChild(track, this.progressFill);
 
-    // "REPLAY" tag (top-left).
+    // "REPLAY" tag. Landscape pulls it out of the design-space left edge (where the old
+    // 4%-of-width anchor stranded it, a long way from anything it labels) and right-aligns it
+    // into the paper margin beside the board: that margin is ≥330px there, so the tag lands on
+    // the top strip's band on the timer's row, 40px clear of the board edge — the timer itself
+    // sits 14px inside that edge, which keeps the two from reading as one run-on line.
+    // Portrait's margin is only 36px wide, so there's nowhere to put it: keep the old
+    // below-the-strip spot rather than clipping it or stacking it on the timer.
     const tag = makeText(`● ${t('replay.title')}`, {
       fontSize: snapFont(Math.round(btnH * 0.5)),
       fill: 0xaa2222,
       fontWeight: 'bold',
       fontFamily: 'monospace',
     });
-    tag.x = Math.round(w * 0.04);
-    tag.y = this.barY - 2;
+    const topR = this.layout.hudTopRect;
+    const marginX = Math.round(this.layout.boardRect.x - tag.width - 40);
+    const inMargin = marginX >= 8;
+    tag.x = inMargin ? marginX : Math.round(w * 0.04);
+    tag.y = inMargin ? Math.round(topR.y + (topR.h - tag.height) / 2) : this.barY - 2;
     this.overlay.addChild(tag);
 
     // Transport row centred under the bar, sized off the board width so it never

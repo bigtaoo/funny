@@ -417,7 +417,7 @@ describe('ReplayScene — transport chrome geometry (§26)', () => {
 // Siege replays feed the attacker/defender display names through meta.players
 // (owner-indexed: bottom = attacker = owner0, top = defender = owner1). The generic
 // PvP/campaign placeholders (replay.player1/2) only show when a name is blank. This
-// asserts both base plates and the current-viewpoint tag pick up the provided names.
+// asserts both base plates and both HP-bar name chips pick up the provided names.
 describe('ReplayScene — siege player names', () => {
   /** All PIXI.Text strings in a container subtree. */
   function collectTexts(node: PIXI.Container): string[] {
@@ -430,7 +430,7 @@ describe('ReplayScene — siege player names', () => {
     return out;
   }
 
-  it('draws attacker (bottom) + defender (top) names on base plates and the viewpoint tag', () => {
+  it('draws attacker (bottom) + defender (top) names on base plates and both HP-bar chips', () => {
     const replay = recordReplay(30);
     replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: 'DefBob' } };
     const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
@@ -443,8 +443,13 @@ describe('ReplayScene — siege player names', () => {
     expect(texts).toContain('DefBob');
     expect(texts).not.toContain('Player 1');
     expect(texts).not.toContain('Player 2');
-    // Viewpoint tag defaults to the bottom (attacker) side.
-    expect(texts.some((s) => s.includes('AtkAlice'))).toBe(true);
+    // Each name renders exactly twice: the base plate plus the HP-bar chip (the viewpoint
+    // side's chip on our own bar, the enemy's left of the top-strip bar). The old standalone
+    // "View: <name>" tag is gone — the chip on our own HP bar carries that now, so a bare
+    // name, not a prefixed string, is what identifies the current viewpoint.
+    expect(texts.filter((s) => s === 'AtkAlice')).toHaveLength(2);
+    expect(texts.filter((s) => s === 'DefBob')).toHaveLength(2);
+    expect(texts.some((s) => s.includes('View:'))).toBe(false);
     scene.destroy();
   });
 
