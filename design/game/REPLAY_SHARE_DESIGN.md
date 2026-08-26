@@ -2,7 +2,7 @@
 
 > 状态：**已实现**（2026-06-24 拍板 → 2026-06-24 实现）· 权威：本文（录像分享机制）· 依赖底座：S1-RP 录像录制/回放（见 `META_TASKS.md`）· 契约 → `server/contracts/openapi.yml`
 
-> **实现落点速查**：状态流格式/编解码 `client/src/game/replay/StateReplay.ts`；录制器单例 `client/src/game/replay/StateRecorder.ts`（挂 `GameRenderer.update` 帧钩子）；哑播放器 `client/src/scenes/StatePlayerScene.ts`；分享入口 `ResultScene` / `ReplayScene`（`onShare` 回调 → `createAppCore.doShareReplay`）；平台分叉 `IPlatform.shareReplay` / `getLaunchShareCode`（web/wechat/crazygames 三实现）；启动路由 `createAppCore.start → goStatePlayer`；服务端 `server/shared/src/mongo.ts`（`stateReplayShares` 集合 + TTL）+ `server/metaserver/src/service.ts`（`createStateReplayShare` / `getStateReplayShare`）+ `openapi.yml`（`POST /replay/share` / 公开 `GET /r/{shareCode}`）；round-trip 单测 `client/test/stateReplay.test.ts`。
+> **实现落点速查**：状态流格式/编解码 `client/src/game/replay/StateReplay.ts`；录制器单例 `client/src/game/replay/StateRecorder.ts`（挂 `GameRenderer.update` 帧钩子；名册/皮肤由 `GameRenderer.buildSceneGraph → setRoster` 报进来）；哑播放器 `client/src/scenes/StatePlayerScene.ts` + 观战 HUD `client/src/scenes/StatePlayerScene/hud.ts`；分享入口 `ResultScene` / `ReplayScene`（`onShare` 回调 → `createAppCore.doShareReplay`）；平台分叉 `IPlatform.shareReplay` / `getLaunchShareCode`（web/wechat/crazygames 三实现）；启动路由 `createAppCore.start → goStatePlayer`；服务端 `server/shared/src/mongo.ts`（`stateReplayShares` 集合 + TTL）+ `server/metaserver/src/service.ts`（`createStateReplayShare` / `getStateReplayShare`）+ `openapi.yml`（`POST /replay/share` / 公开 `GET /r/{shareCode}`）；round-trip 单测 `client/test/stateReplay.test.ts`、录制器 `client/test/stateRecorder.test.ts`、分享入口的名字落位 `client/test/share-replay-name-side.test.ts`、接线/几何 `client/test/ui/statePlayerShareFidelity.ui.ts`、真渲染器 `client/test/browser/shareReplay.spec.ts`。
 
 把已有的「游戏内录像」延伸到**游戏外分享**：让没有账号、甚至没装游戏的人，点开一个链接 / 微信卡片就能直接看一局录像，并顺势引导下载试玩。
 
@@ -51,8 +51,9 @@
 
 镜像渲染所需的最小可视集，建议字段（实测再定稿）：
 
-- 头部：`schemaVersion`（**渲染 schema 版本，非 engineVersion**）、`mode`、`boardMeta`（棋盘尺寸/车道/障碍，画背景用）、`players`（双方展示名/头像/段位，画 HUD 用）、`tickRate`、`endTick`、`winner`。
+- 头部：`schemaVersion`（**渲染 schema 版本，非 engineVersion**；当前 **2**）、`mode`、`boardMeta`（棋盘尺寸/车道/障碍，画背景用）、`players`（双方展示名 + **已装备皮肤 id `skins`**，画 HUD / 换皮用）、`tickRate`、`endTick`、`winner`。
 - 帧序列：每 tick 的实体列表 —— 单位 `{id, type, side, col/row 或量化坐标, hp, state/anim, facing, target?}`、建筑 `{id, type, side, col/row, hp}`、可选离散事件 `{spawn/death/hit/projectile}`（驱动特效）。
+- 帧序列（续）：每 tick 另记 **`res`（每方墨水 + 基地升级等级）** —— 哑播放器没有引擎，HUD 上这两个读数无法从实体快照推出来，只能录。
 
 **压缩策略**：
 - **delta 编码**：每帧只记相对上一帧变化的字段（位置/血量插值，未变实体不重复）。
@@ -100,6 +101,11 @@
 - transport 覆盖层同 `ReplayScene`：播放/暂停、1×/2×/4×、进度条。
 - 退出去向：**重放** / **返回登录** / **进大厅（试玩）** —— 后两个是拉新入口。
 - 落地页轻量化收益：哑播放器无需引擎/数值 bundle，分享页包更小、非玩家加载更快。
+- **观战 HUD**（`StatePlayerScene/hud.ts`）：上/下两条 HUD 带各显示**一方**的展示名 + 基地血条 + 墨水，外加比赛时钟。观战者没有「我方」，所以两边都显示（战斗内 `HUDView` 只显示自己那份）。**不复用 `HUDView`**：它按真 `GameState` 同步、要读数值表（`@nw/engine/config` 的 `BASE_HP`/升级费用），还画玩家自己的按钮（升级/换手牌/投降）—— 这些在分享录像里既没有数据也没有意义。
+- **皮肤**：owner 0 恒在下方（`ownerToSide`），故头部里 owner 0 的 `skins` 作为 UnitView 的「local」集、owner 1 的作为「opponent」集 —— 与真打同一条规则（皮肤只改自己那方的单位）。
+- **动作**：`UnitView.sync(board, dt)` 的 `dt` 是**唯一**推进 stickman 时钟的东西，且必须是**按倍速缩放后**的 dt（1×/2×/4× 下腿脚要跟着走）。
+
+> **历史坑（2026-08-26 修，用户报的分享链接）**：分享出去的录像「①角色没皮肤 ②角色没动作 ③没有任何 UI 信息（血量/墨水）」三连，三个独立成因：①哑播放器 `new UnitView(..., [])` 硬编码空皮肤表，**而且**状态流头部根本没有皮肤字段可读（schema v1）；②`unitView.sync(board, 0)` 把 dt 写死 0 —— 单位照样在棋盘上滑，但每个 rig 都冻在自己 clip 的第一帧；③哑播放器只画了两个名字标签 + transport，没有 HUD，而且墨水本来也没录。修法：schema 升 v2（头部 `players[].skins` + 每帧 `res`）、`GameRenderer.buildSceneGraph` 把它给 UnitView 的同一份名册 `setRoster` 报给录制器、哑播放器传真 dt 并新增观战 HUD。**顺带修**：`doShareReplay` 曾把分享者名字硬钉在 side 0，联机 joiner（owner 1）分享出去的录像双方名字是错的 —— 现在名字落在名册里 `localOwner` 指的那一侧；transport 进度条改锚在 HUD 上带下方（原按 designHeight 比例算，横屏时压在敌方血条上）。老链接（v1）继续能放：无皮肤、隐藏墨水读数，其余照旧。
 
 ### 4.3 分享入口（只在两处出现）
 
@@ -155,5 +161,7 @@
 > - **实测（确定性合成：整 10 分钟 / 18000 帧 / 场上 ~50 单位）**：满帧 JSON ~90MB → 抽稀省 94% → gzip 再省 95% → **base64 上传仅 ~367KB**（6.7 分钟约 245KB），均 << 2MB；还原最大位置误差 0.0085 格。体量已非瓶颈，故 `MAX_FRAMES` 由 12000（6.7min）上调到 **18000（10min）**；该上限现主要约束**录制期内存**（满帧逐 tick 驻留，所有平台都付，分享仅 Web 可用）—— 若内存吃紧再降。
 >
 > **2026-07-03 回归修复（e2e 首次真跑暴露）**：上面的 `bodyLimit=4MB` 被 Paddle 回调静默击穿——`registerPaddleRoutes` 在**共享 app 实例**上 `addContentTypeParser('application/json', {bodyLimit:64KB})` 用于抓 webhook 原始体，Fastify content-type parser 非路由级而是**全局替换**，于是所有 JSON 路由（含 `/replay/share`、`/internal/match/report`）都被压到 64KB，>64KB 一律 Fastify 413，优雅 400 与大回放归档全失效。修复：把 webhook 路由 + 其 parser 收进独立 `app.register(async (webhook)=>{…})` 封装作用域，64KB 只作用于 webhook 自身；其余路由回到 app 的 4MB。守卫：`state-replay-share.e2e`（2MB→应用层 400）+ `match-replay.e2e`（400KB 归档 replayRef 可取回）。
+> **2026-08-26 复测（schema v2 加了每帧墨水）**：`res` 是流里变化最密的标量（每方 ~2/s，即每 ~15 tick 一次台阶，每次都要落一个 delta 帧），同一条 10 分钟/~50 单位的合成对局上传体量 367KB → **388.6KB**（+6%），仍远低于 2MB 上限；`stateReplaySize.perf.test.ts` 的合成器已带上 `res`，护栏覆盖这部分。
+
 - 铸码限流阈值 / 分享过期策略：每账号 `STATE_REPLAY_SHARE_PER_HOUR=20`/小时（429）；`STATE_REPLAY_EXPIRE_DAYS=14` 天 TTL 自清。永久 vs N 天上线期再定。
 - 微信分享卡片封面：当前用 `shareAppMessage` 默认截图，静态图 vs 后续烤短动图待定。

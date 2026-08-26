@@ -80,6 +80,8 @@ export class HUDView {
   private _playerInfoRect:  Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Enemy HP bar (top strip, board-centered) — the opponent name button anchors to its left. */
   private _enemyHpRect:     Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Own HP bar (bottom-left column) — the replay viewpoint name chip anchors to it. */
+  private _playerHpRect:    Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   /** True when upgrade is currently affordable (set each frame by sync). */
   upgradeEnabled = false;
@@ -111,6 +113,7 @@ export class HUDView {
   getEnemyInfoRect():        Rect        { return this._enemyInfoRect; }
   getPlayerInfoRect():       Rect        { return this._playerInfoRect; }
   getEnemyHpRect():          Rect        { return this._enemyHpRect; }
+  getPlayerHpRect():         Rect        { return this._playerHpRect; }
   /** Tighten the opponent profile-tap region to the name button (set by GameRenderer). */
   setEnemyInfoRect(r: Rect): void        { this._enemyInfoRect = r; }
 
@@ -318,6 +321,7 @@ export class HUDView {
       this.playerHpGfx.x   = this.baseCenterX() - HP_BAR_W / 2;
       this.playerHpGfx.y   = bLR.y + (bLR.h - HP_CELL_H) / 2;
     }
+    this._playerHpRect = { x: this.playerHpGfx.x, y: this.playerHpGfx.y, w: HP_BAR_W, h: HP_CELL_H };
 
     // Bottom action buttons (refresh + upgrade) — larger than the surrender button,
     // laid out inside the bottom-right rect. Portrait: side by side (wide, short

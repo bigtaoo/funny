@@ -18,6 +18,7 @@ import { initI18n, t } from '../../src/i18n';
 import { GachaScene, type GachaSceneCallbacks } from '../../src/scenes/GachaScene';
 import { BattlePassScene, type BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
 import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
+import { sceneHeaderHeight } from '../../src/ui/widgets/SceneHeader';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -332,6 +333,49 @@ describe('ShopScene — Recharge peer tab (GACHA_DESIGN §13, ADR-045)', () => {
     expect(openedGacha).toBe(1);
     tapTab(scene, BATTLEPASS);
     expect(openedBattlePass).toBe(1);
+    scene.destroy();
+  });
+});
+
+// Regression coverage for the 2026-08-26 report (first seen on the card roster's Skins tab, then
+// audited across every rail): [Shop|Top Up] are two LOCAL tabs of this one scene sitting in the same
+// rail as the peer scenes, but drawHeader() hard-coded t('shop.title') — so the Top Up page claimed
+// to be "Shop" while the rail highlighted Top Up. Both labels exist twice in the tree (rail cell +
+// header), so these read the header band by geometry rather than searching the whole container.
+describe('ShopScene — header title names the active local tab', () => {
+  const HEADER_H = sceneHeaderHeight(1280); // same layout every buildShop() uses
+
+  function headerBandTexts(scene: ShopScene): string[] {
+    const out: string[] = [];
+    const walk = (node: PIXI.Container): void => {
+      if (node instanceof PIXI.Text) {
+        if (node.getGlobalPosition().y < HEADER_H) out.push(node.text);
+        return;
+      }
+      for (const c of node.children) walk(c as PIXI.Container);
+    };
+    walk(scene.container);
+    return out;
+  }
+
+  it('reads "Shop" on the shop tab and "Top Up" on the coins tab', () => {
+    const scene = buildShop({ rechargeCoins: async () => ({ ok: true }) });
+    expect(headerBandTexts(scene)).toContain(SHOP);
+    expect(headerBandTexts(scene)).not.toContain(COINS);
+
+    tapTab(scene, COINS);
+    expect(headerBandTexts(scene)).toContain(COINS);
+    expect(headerBandTexts(scene)).not.toContain(SHOP);
+
+    tapTab(scene, SHOP);
+    expect(headerBandTexts(scene)).toContain(SHOP);
+    scene.destroy();
+  });
+
+  it('opens straight into the Top Up title when the coins tab is the initial one', () => {
+    const scene = buildShop({ rechargeCoins: async () => ({ ok: true }), initialTab: 'coins' });
+    expect(headerBandTexts(scene)).toContain(COINS);
+    expect(headerBandTexts(scene)).not.toContain(SHOP);
     scene.destroy();
   });
 });

@@ -12,6 +12,7 @@ import { ui, sketchPanel, seedFor } from '../render/sketchUi';
 import { buildIcon } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { stateRecorder } from '../game/replay/StateRecorder';
+import { StatePlayerHud } from './StatePlayerScene/hud';
 import type {
   StateReplay,
   StateFrame,
@@ -40,6 +41,14 @@ export interface StatePlayerSceneCallbacks {
 
 const SPEEDS = [1, 2, 4] as const;
 
+/** Cap on the "shared replay" tag's font size — see where it is laid out. */
+const TAG_FS_MAX = 26;
+
+/** That owner's equipped skin ids, or none (v1 streams carry no skins at all — REPLAY_SHARE_DESIGN §2.2). */
+export function skinsForOwner(replay: StateReplay, owner: 0 | 1): readonly string[] {
+  return replay.header.players.find((p) => p.side === owner)?.skins ?? [];
+}
+
 /** Minimal unit structure actually read by UnitView.sync (feed data structurally; no real engine Unit needed). */
 interface UnitLike {
   id: number;
@@ -50,6 +59,12 @@ interface UnitLike {
   hp: number;
   maxHp: number;
   state: UnitState;
+  /**
+   * UnitView time-scales the attack clip to the unit's real attack cadence. The state stream doesn't
+   * record combat stats, so 0 = "play the clip at its authored duration" (StickmanRuntime.setAttackInterval).
+   * Must still be present: reading it off an object that lacks it yields NaN, not a skipped scale.
+   */
+  effectiveAttackIntervalTicks: number;
 }
 /** Minimal building structure actually read by BuildingView.sync. */
 interface BuildingLike {
@@ -73,6 +88,7 @@ export class StatePlayerScene implements Scene {
   private readonly unitView: UnitView;
   private readonly buildingView: BuildingView;
   private readonly vfx: VFXSystem;
+  private readonly hud: StatePlayerHud;
 
   private readonly frames: StateFrame[];
   private readonly endTick: number;
@@ -113,36 +129,48 @@ export class StatePlayerScene implements Scene {
     this.tickRate = Math.max(1, replay.header.tickRate);
 
     this.boardView = new BoardView(layout);
-    this.unitView = new UnitView(this.boardView, Side.Bottom, []);
+    // The dumb player always draws owner 0 at the bottom (ownerToSide), so owner 0's recorded skins are
+    // UnitView's "local" set and owner 1's the "opponent" set — each side keeps its own look, same rule as
+    // a live match (a skin only ever re-skins its owner's units, UnitView.acquireSprite).
+    this.unitView = new UnitView(
+      this.boardView, Side.Bottom, skinsForOwner(replay, 0), null, null, skinsForOwner(replay, 1),
+    );
     this.buildingView = new BuildingView(this.boardView);
     this.vfx = new VFXSystem();
+    this.hud = new StatePlayerHud(layout, replay.header.players);
 
     this.container.addChild(this.boardView.container);
     this.container.addChild(this.unitView.container);
     this.container.addChild(this.buildingView.container);
     this.container.addChild(this.vfx.container);
+    this.container.addChild(this.hud.container);
 
     const w = layout.designWidth;
     this.barW = Math.round(w * 0.5);
     this.barX = Math.round((w - this.barW) / 2);
-    this.barY = Math.round(layout.designHeight * 0.045);
-    this.buildPlayerLabels(replay);
+    // Just below the HUD's top strip — a fraction of the design height put the progress bar *inside*
+    // the strip in landscape (where the strip is a bigger share of a shorter design space), on top of
+    // the enemy HP bar.
+    this.barY = Math.round(layout.hudTopRect.y + layout.hudTopRect.h + 12);
     this.buildOverlay(replay);
     this.container.addChild(this.overlay);
 
     // Render the first frame immediately to avoid a blank screen at the start.
-    this.renderAt();
+    this.renderAt(0);
   }
 
   update(dt: number): void {
     if (this.playing && !this.ended) {
-      this.clock += dt * SPEEDS[this.speedIdx]!;
+      const scaled = dt * SPEEDS[this.speedIdx]!;
+      this.clock += scaled;
       if (this.clock * this.tickRate >= this.endTick) {
         this.clock = this.endTick / this.tickRate;
         this.ended = true;
         this.playing = false;
       }
-      this.renderAt();
+      // Pass the *scaled* delta: the stickman clocks have to run at playback speed too, otherwise 2×/4×
+      // moves the units around the board while their legs walk at 1× (or, with dt 0, not at all).
+      this.renderAt(scaled);
     }
     // Advance the rendering assets' own animations (building sway / VFX) continuously.
     this.boardView.update(dt);
@@ -159,12 +187,13 @@ export class StatePlayerScene implements Scene {
     this.unitView.destroy();
     this.buildingView.destroy();
     this.vfx.destroy();
+    this.hud.destroy();
     this.container.destroy({ children: true });
   }
 
   // ── Frame advance + interpolation ──────────────────────────────────────────────────────────
 
-  private renderAt(): void {
+  private renderAt(dt: number): void {
     if (this.frames.length === 0) return;
     const curTick = this.clock * this.tickRate;
 
@@ -195,8 +224,12 @@ export class StatePlayerScene implements Scene {
     // feed data as structured objects cast to the parameter types — no real engine Board needed
     // (the dumb player doesn't run the engine).
     type BoardArg = Parameters<UnitView['sync']>[0];
-    this.unitView.sync(this.buildBoard(a, b, frac) as unknown as BoardArg, 0);
+    this.unitView.sync(this.buildBoard(a, b, frac) as unknown as BoardArg, dt);
     this.buildingView.sync({ buildings: this.buildBuildings(a) } as unknown as BoardArg);
+
+    // HUD + board base rings from the same frame (base HP, ink, upgrade level).
+    this.hud.sync(a, curTick / this.tickRate);
+    for (const r of a.res ?? []) this.boardView.setBaseUpgradeLevel(r.owner, r.upgrade);
   }
 
   /** Build the interpolated board (unit coordinates linearly interpolated between a and b; unmatched entities use their own frame value). */
@@ -218,6 +251,7 @@ export class StatePlayerScene implements Scene {
         hp: u.hp,
         maxHp: u.maxHp,
         state: u.state as UnitState,
+        effectiveAttackIntervalTicks: 0,
       });
     }
     return { units, buildings: this.buildBuildings(a) };
@@ -276,24 +310,6 @@ export class StatePlayerScene implements Scene {
 
   // ── Overlay ─────────────────────────────────────────────────────────────────
 
-  private buildPlayerLabels(replay: StateReplay): void {
-    const { designWidth: w, designHeight: h } = this.layout;
-    const fs = FS.heading;
-    for (const p of replay.header.players) {
-      const name = p.name || (p.side === 0 ? t('stateplayer.you') : t('stateplayer.opponent'));
-      const label = makeText(name, {
-        fontSize: fs,
-        fill: p.side === 0 ? 0x2244aa : 0xaa2222,
-        fontWeight: 'bold',
-        fontFamily: 'monospace',
-      });
-      label.anchor.set(p.side === 0 ? 0 : 1, 0);
-      label.x = p.side === 0 ? Math.round(w * 0.04) : Math.round(w * 0.96);
-      label.y = Math.round(h * 0.11);
-      this.overlay.addChild(label);
-    }
-  }
-
   private buildOverlay(replay: StateReplay): void {
     const { designWidth: w } = this.layout;
     const btnH = Math.round(this.layout.designHeight * 0.05);
@@ -305,10 +321,13 @@ export class StatePlayerScene implements Scene {
     this.progressFill = new PIXI.Graphics();
     this.overlay.addChild(track, this.progressFill);
 
-    // Hand-drawn play glyph + label (replaces the ▶ dingbat prefix).
-    const tagSz = Math.round(btnH * 0.5);
+    // Hand-drawn play glyph + label (replaces the ▶ dingbat prefix). Capped: sized off the button
+    // height alone, on a tall portrait screen the label grew until it ran under the centered transport
+    // buttons. It has to fit in the strip left of the progress bar (which starts at barX).
+    const tagSz = Math.min(TAG_FS_MAX, Math.round(btnH * 0.5));
+    const tagX = Math.round(w * 0.02);
     const tagIc = buildIcon('play', tagSz, 0x2244aa);
-    tagIc.x = Math.round(w * 0.04); tagIc.y = this.barY - 2;
+    tagIc.x = tagX; tagIc.y = this.barY - 2;
     this.overlay.addChild(tagIc);
     const tag = makeText(t('stateplayer.tag'), {
       fontSize: snapFont(tagSz),
@@ -316,8 +335,14 @@ export class StatePlayerScene implements Scene {
       fontWeight: 'bold',
       fontFamily: 'monospace',
     });
-    tag.x = Math.round(w * 0.04) + tagSz + 4;
+    tag.x = tagX + tagSz + 4;
     tag.y = this.barY - 2;
+    // Fit it into the gap left of the progress bar. Measured, not estimated: the label is translated
+    // (13 chars in English, 21 in German, 4 CJK glyphs in Chinese), so the cap above is necessary but
+    // not sufficient. The headless text mock measures a flat 7px/char, so only the real renderer
+    // exercises this — see test/browser/shareReplay.spec.ts.
+    const tagAvail = this.barX - tag.x - 8;
+    if (tag.width > tagAvail) tag.scale.set(tagAvail / tag.width);
     this.overlay.addChild(tag);
 
     const rowY = this.barY + 18;
@@ -385,7 +410,7 @@ export class StatePlayerScene implements Scene {
     this.ended = false;
     this.playing = true;
     this.endPanel.visible = false;
-    this.renderAt();
+    this.renderAt(0);
   }
 
   private makeButton(

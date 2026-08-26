@@ -40,11 +40,10 @@ export function createResultNav(ctx: AppCtx): ResultNav {
    */
   async function doShareReplay(overrides: { mode?: string; winner?: number } = {}): Promise<void> {
     if (!api) return;
-    const players = [
-      { name: playerName(), side: 0 as const },
-      { name: '', side: 1 as const },
-    ];
-    const enc = stateRecorder.build({ ...overrides, players });
+    // Only the sharer's own name is passed: which *side* it belongs on (and the opponent's name, and both
+    // sides' skins) comes from the roster the render layer reported — the netplay joiner plays owner 1, so
+    // hardcoding the local name onto side 0 used to mislabel half of all shared matches.
+    const enc = stateRecorder.build({ ...overrides, localName: playerName() });
     if (!enc) return;
     try {
       const { shareCode } = await api.createStateReplayShare(enc);

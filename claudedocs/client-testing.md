@@ -141,6 +141,10 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 - `client/playwright.config.ts`：`webServer` 拉起 `npm run start:e2e`（`webpack serve --env TARGET=web-e2e`，独立端口 9096，避免和 `npm start` 的 9090 撞车）。
 - 测试文件：`client/test/browser/*.spec.ts`。
+  - `smoke.spec.ts`：上面那两条 happy-path，**需要全套后端**。
+  - `shareReplay.spec.ts`（2026-08-26 加）：分享录像落地页（`?r=<code>`）。**不需要后端** —— 只把 `GET {api}/r/<code>` 用 `page.route` 拦下来喂一份手写状态流（`unpackReplayBlob` 接受未压缩的普通对象，fixture 可以直接内联 JSON），其余照真渲染器跑。所以它是这层里唯一能本地随手跑、也是唯一能验「皮肤/动作/HUD 真的画出来了」的：皮肤靠**差分**断言（webpack 用内容哈希命名资源，URL 里看不出是哪份 rig，但「带皮肤的流比同一条不带皮肤的流多请求 2 个 `.tao`」看得出，且不写死默认 rig 的数量），动作靠**同一 canvas 相隔 0.4s 两帧像素不同**，HUD 靠遍历真 `app.stage` 找可见的纯数字文本（= 两侧墨水读数）。通过时也把那一帧作为 Playwright attachment 附在报告里，供人眼看一遍。
+  - ⚠️ **两个 spec 不能各自 `declare global` 同一个 `window.__nwE2E`**：`tsconfig.test.json` 把 `src` + `test` 拉进**同一个 program**，两份对同一属性的 augmentation 会互相污染 —— `shareReplay.spec.ts` 一开始声明成 `state: Record<string, unknown>`，结果 `smoke.spec.ts` 里 `state.lobbyCb.onOpenRoom()` 这类调用全变成 `Object is of type 'unknown'`（10 条报错**落在别人的文件里**，很容易误判成那个文件的问题）。新 spec 一律用**局部 type + 就地 cast**，不动全局 `Window`；注意传给 `page.evaluate` 的闭包会被序列化，**只能引用类型（会被擦除），不能引用模块作用域的值**（helper 函数不行）。
+  - ⚠️ 客户端 `target`/`lib` 是 ES2020：`Array.prototype.at()` 在 `npm test` 下跑得好好的（esbuild 擦类型），只有 `npm run typecheck` 会红（TS2550）。写测试断言"最后一次调用"要用 `calls[calls.length - 1]`。
 - `package.json` 新增 `test:browser`，**不进默认 `npm test`**（避免拖慢本地/CI 快路径；这条本身需要真浏览器 + 真后端）。
 - 范围红线：不做截图 diff / 视觉回归（UI 未定型部分——SLG——暂不纳入，等它定型后再补对应路径）。只保「能不能起来 + 两号能不能真联上 + 不报错」。
 
@@ -494,3 +498,13 @@ ADR-073 首轮跟着修复落了 26 例测试，然后做变异验红，发现�
 v1 的递增**比 v2 还猛**——它的毛病从来不是墨少，而是墨**散成点、缩小就没了**。墨量量的是"有多少墨"，不是"墨聚不聚得起来"。所以那条断言只会放行坏的那一套、白送一份虚假安全感。**结论：这个测试没加**，只留了一条明确写着自己是地板的用例（三档墨量有序、不许两档指向同一张源图——防的是 JOBS 行复制粘贴和 Sm/Lg 装反，这两种错人眼审查反而不会去找），文件头注释直接写明它守不住辨识度、辨识度归 28px 并排人眼看。`armorHeavy` 比 `armor` 墨量多 ≥1.15×（实测 1.48×）那条留着——同一个剪影只是"更厚重"，墨量在这里恰好是对的指标。
 
 **可复用的判断**：给美术加自动化守卫之前，先拿**已经被打回的那一版**去跑一遍。跑不红的指标不要留在测试里。
+
+## ⚠️ 坑：headless 里 `hitTest` 打空，是变换没刷，不是命中区写错（2026-08-26，回放视角切换按钮）
+
+`test/ui` 想「像真指针一样」验证一个按钮可点，正确做法是 `new PIXI.EventBoundary(root).hitTest(x, y)` 而不是裸 `emit('pointertap')`（理由见 `test/ui/scenes.ui.ts` 里 ResultScene 那段注释：裸 emit 绕过命中测试，祖先被 `eventMode:'none'` 剪掉也照样绿）。但 headless 里这条路有个前提没人写下来：
+
+`Graphics.containsPoint(全局点)` 会拿节点自己的 `worldTransform` 反变换回本地坐标再判形状，而 `worldTransform` 只在**渲染**（或显式 `updateTransform()`）时才更新。`test:ui` 从不渲染 stage，于是 PIXI 这一帧没碰过的节点仍是单位矩阵，全局点直接落到形状外——**任何 hitTest 都返回 null**。
+
+要命的是它「时好时坏」：同一个按钮，回放**播放中**能命中、**播完之后**就命中不了——因为 `ReplayScene.update()` 在 `ended` 之后不再调 `renderer.update()`，那条顺带刷到这棵子树的路径断了。读起来完全像产品 bug（「播完之后按钮就废了」），实际是测试环境。
+
+**做法**：hit 之前先 `scene.container.getBounds()` 强刷一遍变换（`Container.getBounds()` 在无 parent 时会走 `_tempDisplayObjectParent` + 递归 `updateTransform()`）。**别直接调 `container.updateTransform()`**——根节点没有 parent，它会在 `this.parent.transform` 上抛 NPE。

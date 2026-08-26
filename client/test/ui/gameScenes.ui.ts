@@ -15,7 +15,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from '../../src/scenes/SceneManager';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
-import { initI18n } from '../../src/i18n';
+import { initI18n, setLocale, t } from '../../src/i18n';
 
 import { GameScene } from '../../src/scenes/GameScene';
 import { ReplayScene } from '../../src/scenes/ReplayScene';
@@ -391,6 +391,37 @@ describe('ReplayScene — transport chrome geometry (§26)', () => {
     scene.destroy();
   });
 
+  // The tag used to sit at 4% of the design width, below the strip and a long way from anything it
+  // labels. In landscape it now right-aligns into the paper margin beside the board, ON the strip's
+  // band — which puts it on the timer's row, so "doesn't collide with the timer" is the load-
+  // bearing part (the timer sits 14px INSIDE the board edge, the tag 40px outside it).
+  it('the REPLAY tag sits on the top strip in the paper margin, clear of the timer and the board', () => {
+    const layout = createLayout(...LANDSCAPE);
+    const scene = new ReplayScene(layout, new InputManager(), recordReplay(30), {
+      onExit() {}, onShare() {},
+    }) as any;
+    scene.update(1 / 30);
+
+    const topR = layout.hudTopRect;
+    const board = layout.boardRect;
+    const tag = (scene.overlay as PIXI.Container).children.find(
+      (c): c is PIXI.Text => c instanceof PIXI.Text && c.text.includes(t('replay.title')),
+    )!;
+    expect(tag).toBeTruthy();
+
+    // On the strip's band, not dangling below it onto the paper.
+    expect(tag.y).toBeGreaterThanOrEqual(topR.y);
+    expect(tag.y + tag.height).toBeLessThanOrEqual(topR.y + topR.h);
+    // In the margin beside the board — right of the design edge, left of the board.
+    expect(tag.x).toBeGreaterThan(0);
+    expect(tag.x + tag.width).toBeLessThan(board.x);
+    // And clear of the timer it now shares a row with.
+    const timer = (scene.renderer.core.hudView as any).timerText as PIXI.Text;
+    expect(timer.x).toBeGreaterThan(tag.x + tag.width + 20);
+
+    scene.destroy();
+  });
+
   it('clears the screen-edge loss vignette the instant playback ends, instead of leaving it pinned', () => {
     const replay = recordReplay(30);
     const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), replay, {
@@ -417,7 +448,7 @@ describe('ReplayScene — transport chrome geometry (§26)', () => {
 // Siege replays feed the attacker/defender display names through meta.players
 // (owner-indexed: bottom = attacker = owner0, top = defender = owner1). The generic
 // PvP/campaign placeholders (replay.player1/2) only show when a name is blank. This
-// asserts both base plates and the current-viewpoint tag pick up the provided names.
+// asserts both base plates and both HP-bar name chips pick up the provided names.
 describe('ReplayScene — siege player names', () => {
   /** All PIXI.Text strings in a container subtree. */
   function collectTexts(node: PIXI.Container): string[] {
@@ -430,7 +461,7 @@ describe('ReplayScene — siege player names', () => {
     return out;
   }
 
-  it('draws attacker (bottom) + defender (top) names on base plates and the viewpoint tag', () => {
+  it('draws attacker (bottom) + defender (top) names once each, on the two HP-bar chips', () => {
     const replay = recordReplay(30);
     replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: 'DefBob' } };
     const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
@@ -438,13 +469,17 @@ describe('ReplayScene — siege player names', () => {
     });
     scene.update(1 / 30);
     const texts = collectTexts((scene as any).container);
-    // Both base name plates render with the real names, not the generic placeholders.
+    // The real names render, not the generic placeholders.
     expect(texts).toContain('AtkAlice');
     expect(texts).toContain('DefBob');
     expect(texts).not.toContain('Player 1');
     expect(texts).not.toContain('Player 2');
-    // Viewpoint tag defaults to the bottom (attacker) side.
-    expect(texts.some((s) => s.includes('AtkAlice'))).toBe(true);
+    // Exactly one chip per side — the viewpoint player's on our own HP bar, the enemy's left
+    // of the top-strip bar. The standalone "View: <name>" tag and the two over-the-base name
+    // plates are both gone, so a bare name on the near-side HP bar is the whole viewpoint cue.
+    expect(texts.filter((s) => s === 'AtkAlice')).toHaveLength(1);
+    expect(texts.filter((s) => s === 'DefBob')).toHaveLength(1);
+    expect(texts.some((s) => s.includes('View:'))).toBe(false);
     scene.destroy();
   });
 
@@ -459,5 +494,160 @@ describe('ReplayScene — siege player names', () => {
     expect(texts).toContain('AtkAlice');
     expect(texts).toContain('Player 2'); // blank top → placeholder
     scene.destroy();
+  });
+
+  // The name chips are the only thing that says which side you're watching now that the
+  // over-the-base plates are gone (2026-08-26), so what "our side" means geometrically has to
+  // be exactly what a live match means by it: the viewed side's base on the near side (left in
+  // landscape), its HP on the bottom strip. That holds for BOTH viewpoints because a flip
+  // rebuilds the renderer on `layout.mirrored()` — the very layout a netplay joiner plays on.
+  it('either viewpoint puts the viewed side where a live match puts it (own base near side)', () => {
+    const replay = recordReplay(30);
+    replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: 'DefBob' } };
+    const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
+      onExit() {},
+    });
+    scene.update(1 / 30);
+
+    const view = (): { side: Side; owner: number; own: number; enemy: number } => {
+      const core = (scene as any).renderer.core;
+      return {
+        side: core.layout.localSide,
+        owner: core.localOwner,
+        own: core.layout.playerBaseRect().x,
+        enemy: core.layout.enemyBaseRect().x,
+      };
+    };
+
+    // Default viewpoint = the recording's bottom player (owner 0), whose base is the left one.
+    const bottomView = view();
+    expect(bottomView.side).toBe(Side.Bottom);
+    expect(bottomView.owner).toBe(0);
+    expect(bottomView.own).toBeLessThan(bottomView.enemy);
+    expect(collectTexts((scene as any).container)).toContain('AtkAlice');
+
+    // Flip, then let the cross-fade finish so `renderer` is the new (mirrored) one.
+    (scene as any).switchViewpoint();
+    for (let i = 0; i < 20; i++) scene.update(1 / 30);
+    const topView = view();
+    expect(topView.side).toBe(Side.Top);
+    expect(topView.owner).toBe(1);
+
+    // Both bases stay on the same screen halves — only WHOSE they are changes. Compared against
+    // a real joiner-side layout, not against hardcoded pixels.
+    const joinerLayout = createLayout(...LANDSCAPE, Side.Top);
+    expect(topView.own).toBe(joinerLayout.playerBaseRect().x);
+    expect(topView.enemy).toBe(joinerLayout.enemyBaseRect().x);
+    expect(topView.own).toBe(bottomView.own);
+    expect(topView.enemy).toBe(bottomView.enemy);
+
+    scene.destroy();
+  });
+
+  // The flip used to be a tap on either base and nothing else — an invisible gesture, and fully
+  // undiscoverable once the over-the-base name plates went away. It's a transport button now
+  // (2026-08-26). Driven through a real EventBoundary hit-test, not a bare emit on a node we
+  // found ourselves: the point is that the button is actually reachable under the overlay/
+  // renderer stacking, which an emit would pass regardless (see the ResultScene note in
+  // scenes.ui.ts).
+  describe('viewpoint-flip transport button', () => {
+    function build(): ReplayScene {
+      const replay = recordReplay(30);
+      replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: 'DefBob' } };
+      const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
+        onExit() {},
+        onShare() {},
+      });
+      scene.update(1 / 30);
+      return scene;
+    }
+
+    /** Hit-test the flip button at its label's centre and fire it, then settle the cross-fade. */
+    function tapFlip(scene: ReplayScene): void {
+      const overlay = (scene as any).overlay as PIXI.Container;
+      const label = overlay.children.find(
+        (c): c is PIXI.Text => c instanceof PIXI.Text && c.text === 'Flip View',
+      );
+      expect(label).toBeDefined();
+      const b = label!.getBounds();
+      // Headless-only step: `containsPoint` maps the global point through the node's
+      // worldTransform, and nothing renders the stage here, so a node PIXI hasn't touched this
+      // frame still carries an identity transform and misses every hit. Live, the renderer
+      // updates the whole tree before each event. Without this the assertion below flips from
+      // pass to fail purely on whether the scene happened to walk that subtree.
+      scene.container.getBounds(); // (no parent, so getBounds — not updateTransform — is the way in)
+      const hit = new PIXI.EventBoundary(scene.container).hitTest(b.x + b.width / 2, b.y + b.height / 2);
+      expect(hit).not.toBeNull();
+      (hit!.emit as (e: string) => void)('pointertap');
+      for (let i = 0; i < 20; i++) scene.update(1 / 30);
+    }
+
+    const side = (scene: ReplayScene): Side => (scene as any).renderer.core.layout.localSide;
+
+    it('flips the viewpoint, and the whole row still fits inside the board', () => {
+      const scene = build();
+      const board = (scene as any).layout.boardRect;
+      const rowY = (scene as any).barY + 18;
+      const btns = ((scene as any).overlay as PIXI.Container).children.filter(
+        (c) => c instanceof PIXI.Graphics && c.eventMode === 'static' && Math.round(c.y) === rowY,
+      );
+      // play / speed / flip / share / exit — the flip button is the new fifth one.
+      expect(btns).toHaveLength(5);
+      // Hand-drawn borders jitter a couple of px past the panel rect, hence the tolerance;
+      // the point is that adding a button didn't push the row off the map edges.
+      const bounds = btns.map((b) => b.getBounds());
+      expect(Math.min(...bounds.map((r) => r.x))).toBeGreaterThanOrEqual(board.x - 6);
+      expect(Math.max(...bounds.map((r) => r.x + r.width))).toBeLessThanOrEqual(board.x + board.w + 6);
+
+      expect(side(scene)).toBe(Side.Bottom);
+      tapFlip(scene);
+      expect(side(scene)).toBe(Side.Top);
+      tapFlip(scene);
+      expect(side(scene)).toBe(Side.Bottom); // and back
+      scene.destroy();
+    });
+
+    it('still flips after playback has ended (inspecting the final frame from the other side)', () => {
+      const scene = build();
+      for (let i = 0; i < (scene as any).endFrame + 5; i++) scene.update(1 / 30);
+      expect((scene as any).ended).toBe(true);
+      tapFlip(scene);
+      expect(side(scene)).toBe(Side.Top);
+      scene.destroy();
+    });
+
+    // The fifth button widened the row, which in portrait pushed its left edge under where the
+    // "REPLAY" tag used to sit (below the top strip) — invisible in English/Chinese, obvious in
+    // German. The tag now lives ON the strip in both orientations, so it cannot reach the row at
+    // all; German is the case that proves it, hence the locale flip.
+    it('the REPLAY tag stays on the top strip in portrait, clear of the enemy HP bar (de)', () => {
+      setLocale('de');
+      try {
+        const replay = recordReplay(30);
+        const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), replay, {
+          onExit() {},
+          onShare() {},
+        });
+        scene.update(1 / 30);
+        const layout = (scene as any).layout;
+        const topR = layout.hudTopRect;
+        const overlay = (scene as any).overlay as PIXI.Container;
+        const tag = overlay.children.find(
+          (c): c is PIXI.Text => c instanceof PIXI.Text && c.text.includes('Wiederholung'),
+        );
+        expect(tag).toBeDefined();
+        // Inside the strip on both axes — the transport row sits below the strip, so this is
+        // what makes an overlap impossible regardless of how wide the row grows.
+        expect(tag!.y).toBeGreaterThanOrEqual(topR.y);
+        expect(tag!.y + tag!.height).toBeLessThanOrEqual(topR.y + topR.h);
+        expect(tag!.x + tag!.width).toBeLessThanOrEqual(topR.x + topR.w);
+        // …and right of the (board-centered) enemy HP bar it shares the strip with.
+        const enemyHp = (scene as any).renderer.core.hudView.getEnemyHpRect();
+        expect(tag!.x).toBeGreaterThan(enemyHp.x + enemyHp.w);
+        scene.destroy();
+      } finally {
+        setLocale('en');
+      }
+    });
   });
 });

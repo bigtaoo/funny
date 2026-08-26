@@ -181,3 +181,85 @@ describe('CardScene — Skins tab card grid layout', () => {
     scene.destroy();
   });
 });
+
+// Regression coverage for the 2026-08-26 fix: the title bar was drawn once in CardSceneCore.build()
+// with a hard-coded t('roster.title'), so the wardrobe sat under a header reading "Hero Roster" with
+// the roster glyph. It is its own layer now, redrawn per render() from the active tab — which is why
+// the assertions below read the title out of `core.headerLayer` rather than searching the whole tree
+// (the sidebar rail carries the very same two labels).
+describe('CardScene — header title follows the active tab', () => {
+  // Every string drawn into the header layer except the back pill's own label (the shared chrome's,
+  // not this scene's) — i.e. the title, and nothing else.
+  function headerTitle(scene: CardScene): string | null {
+    const layer = (scene as unknown as { core: { headerLayer: PIXI.Container } }).core.headerLayer;
+    const texts: string[] = [];
+    const walk = (node: PIXI.Container): void => {
+      if (node instanceof PIXI.Text) { texts.push(node.text); return; }
+      for (const c of node.children) walk(c as PIXI.Container);
+    };
+    walk(layer);
+    const titles = texts.filter((s) => s !== t('common.back'));
+    expect(titles).toHaveLength(1);
+    return titles[0];
+  }
+
+  const cb = (initialTab?: 'list' | 'skins'): CardCallbacks => ({
+    onBack() {},
+    getSave: () => makeNewSave(),
+    fuseCards: async () => ({ ok: true }),
+    fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
+    setCardLock: async () => ({ ok: true }),
+    getOwnedSkins: () => ['skin_e1'],
+    getEquippedSkin: () => null,
+    equipSkin: () => {},
+    ...(initialTab ? { initialTab } : {}),
+  });
+
+  it('says "Skins" on the wardrobe and "Hero Roster" on the grid, including after a live switch', () => {
+    const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb());
+    expect(headerTitle(scene)).toBe(t('roster.title'));
+
+    tap(scene, t('roster.tab.skins'));
+    expect(headerTitle(scene)).toBe(t('roster.tab.skins'));
+
+    tap(scene, t('roster.title')); // back to the roster grid via the rail
+    expect(headerTitle(scene)).toBe(t('roster.title'));
+    scene.destroy();
+  });
+
+  // The other half of the same report: the coin/capacity cluster is drawn into headerOverlayLayer
+  // from the same headerCurrencySpec() the title band measures, and the capacity counts CARDS —
+  // meaningless over a page of skins.
+  it('drops the card-capacity readout on the wardrobe and keeps the coin balance', () => {
+    const overlayTexts = (scene: CardScene): string[] => {
+      const layer = (scene as unknown as { core: { headerOverlayLayer: PIXI.Container } }).core.headerOverlayLayer;
+      const out: string[] = [];
+      const walk = (node: PIXI.Container): void => {
+        if (node instanceof PIXI.Text) { out.push(node.text); return; }
+        for (const c of node.children) walk(c as PIXI.Container);
+      };
+      walk(layer);
+      return out;
+    };
+    const capacity = t('roster.capacity').replace('{cur}', '0').replace('{cap}', '500');
+    const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb());
+    expect(overlayTexts(scene)).toContain(capacity);
+
+    tap(scene, t('roster.tab.skins'));
+    expect(overlayTexts(scene)).not.toContain(capacity);
+    expect(overlayTexts(scene).length).toBeGreaterThan(0); // the coin balance still reads out
+
+    tap(scene, t('roster.title'));
+    expect(overlayTexts(scene)).toContain(capacity);
+    scene.destroy();
+  });
+
+  it('opens straight into the right title when the wardrobe is the initial tab', () => {
+    const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb('skins'));
+    expect(headerTitle(scene)).toBe(t('roster.tab.skins'));
+    // showTab() is the EquipmentScene-overlay path onto the same tab state — same title rule.
+    scene.showTab('list');
+    expect(headerTitle(scene)).toBe(t('roster.title'));
+    scene.destroy();
+  });
+});
