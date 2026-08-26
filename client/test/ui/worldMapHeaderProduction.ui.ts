@@ -82,9 +82,9 @@ describe('WorldMapPanels.renderHud — header bar shows production, not the "Wor
    *  also a bare `new PIXI.Container()` (see buildRasterTabIcon) — the readout is the only one of
    *  the two that ever holds PIXI.Text children. */
   function findCluster(ctx: WorldMapContext): PIXI.Container {
-    const cluster = (ctx.headerHudLayer.children as PIXI.DisplayObject[])
-      .find((c): c is PIXI.Container => c.constructor === PIXI.Container
-        && (c.children as PIXI.DisplayObject[]).some((ch) => ch instanceof PIXI.Text));
+    const cluster = (ctx.headerHudLayer.children as PIXI.Container[])
+      .find((c) => c.constructor === PIXI.Container
+        && c.children.some((ch) => ch instanceof PIXI.Text));
     if (!cluster) throw new Error('production cluster not found in headerHudLayer');
     return cluster;
   }
