@@ -68,16 +68,25 @@ describe('packed icon art — silhouette proportions', () => {
    * to fit would be worse than the wasted width. Add a row here only with a reason — the point of the
    * gate is that a sliver has to be an argued decision rather than an accident of what came back from
    * the image model.
-   *   `weapon` (3.28) — one upright sword, the equipment slot filter. Shipped since batch 5.
-   *   `event`  (2.72) — a horizontal string of bunting; wide rather than tall, same trade.
-   *   `atk`    (2.33) — an upright dagger, and permanently so. Two redraws tried to square it up and
-   *                     each produced a different object: bolting the width onto the crossguard gave a
-   *                     hammer/anvil (v3), bolting it onto the impact sparks gave a helicopter (v4).
-   *                     A dagger is a tall subject; widening it means welding a wide part to its side,
-   *                     and whatever gets welded on becomes the thing you read. Both rejects are in
+   *
+   * The value is that base's OWN ceiling, not a pass. An unconditional exemption switches the gate off
+   * for the one kind most likely to need it: `atk` v5 came back at 28x128 (4.57:1) — a hair's-breadth
+   * from `brush` v2's 4.74, the failure this whole file exists to catch — and a bare allowlist would
+   * have shipped it silently, because the redraw that produced it was ordered by the very note saying
+   * `atk` is allowed to be tall. Each cap is set just above what the accepted art measures — and the
+   * number to compare against is the WIDEST-RATIO variant, not the `active` one: unthickened inks skip
+   * dilateAlpha's passes, so `weapon` is 3.28 active but 3.46 content/inactive.
+   *   `weapon` (3.46, cap 3.6) — one upright sword, the equipment slot filter. Shipped since batch 5.
+   *   `event`  (2.84, cap 3.0) — a horizontal string of bunting; wide rather than tall, same trade.
+   *   `atk`    (2.33, cap 2.5) — an upright dagger, and tall for good. Two redraws tried to square it
+   *                     up and each produced a different object: bolting the width onto the crossguard
+   *                     gave a hammer/anvil (v3), bolting it onto the impact sparks gave a helicopter
+   *                     (v4). A dagger is a tall subject; widening it means welding a wide part to its
+   *                     side, and whatever gets welded on becomes the thing you read. But "tall" is
+   *                     not "unbounded" — hence 2.5, which v5's 4.57 fails. All three rejects are in
    *                     art/ui/tabicons/_rejected/; the write-up is in the batch-7 doc's last section.
    */
-  const ELONGATED_ON_PURPOSE = new Set(['weapon', 'event', 'atk']);
+  const ELONGATED_ON_PURPOSE = new Map([['weapon', 3.6], ['event', 3.0], ['atk', 2.5]]);
 
   const files = fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'));
 
@@ -85,23 +94,23 @@ describe('packed icon art — silhouette proportions', () => {
     expect(files.length).toBeGreaterThan(100);
   });
 
-  it(`keeps every glyph under ${MAX_RATIO}:1 unless it is on the elongated-on-purpose list`, () => {
+  it(`keeps every glyph under ${MAX_RATIO}:1, or under its own cap on the elongated-on-purpose list`, () => {
     const tooThin: string[] = [];
     for (const f of files) {
       const base = f.replace(/_(active|inactive|content|accent)\.png$/, '');
-      if (ELONGATED_ON_PURPOSE.has(base)) continue;
+      const limit = ELONGATED_ON_PURPOSE.get(base) ?? MAX_RATIO;
       const { w, h } = pngSize(f);
       const ratio = Math.max(w, h) / Math.min(w, h);
-      if (ratio > MAX_RATIO) tooThin.push(`${f} ${w}x${h} = ${ratio.toFixed(2)}:1`);
+      if (ratio > limit) tooThin.push(`${f} ${w}x${h} = ${ratio.toFixed(2)}:1 (limit ${limit})`);
     }
     // A failure here is a source-image problem, not a code problem: redraw with the overall
     // silhouette constrained (see the batch-7 doc's `brush` v3 prompt for the wording that works),
-    // or add the base to ELONGATED_ON_PURPOSE with a reason.
+    // or add the base to ELONGATED_ON_PURPOSE with a reason AND a cap that the art actually meets.
     expect(tooThin).toEqual([]);
   });
 
   it('lists nothing in ELONGATED_ON_PURPOSE that no longer needs the exemption', () => {
-    const stale = [...ELONGATED_ON_PURPOSE].filter((base) => {
+    const stale = [...ELONGATED_ON_PURPOSE.keys()].filter((base) => {
       const f = files.find((x) => x.startsWith(`${base}_`));
       if (!f) return false; // gone entirely — the next test catches that
       const { w, h } = pngSize(f);
@@ -111,7 +120,7 @@ describe('packed icon art — silhouette proportions', () => {
   });
 
   it('lists nothing in ELONGATED_ON_PURPOSE that has no art at all', () => {
-    const missing = [...ELONGATED_ON_PURPOSE].filter((b) => !files.some((f) => f.startsWith(`${b}_`)));
+    const missing = [...ELONGATED_ON_PURPOSE.keys()].filter((b) => !files.some((f) => f.startsWith(`${b}_`)));
     expect(missing).toEqual([]);
   });
 });

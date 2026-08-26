@@ -1,11 +1,11 @@
 # 批次 7：剩余全部程序矢量图标 — Prompt 文档
 
-> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3（另 4 条「可用但偏弱」）：**已出图并打包 2026-08-26**——`globe`/`armor`/`armorHeavy`/`scrap` 四张过，`atk` 打回；v4 也打回（读成直升机），**v5 改掉头接受竖长构图**
+> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3（另 4 条「可用但偏弱」）：**已出图并打包 2026-08-26**——`globe`/`armor`/`armorHeavy`/`scrap` 四张过，`atk` 已打回 v3（锤子）/v4（直升机）/v5（造型对了、但 4.57:1 细条），**v6 重算了比例数字**
 > 前六批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（试点/批次 2/3/4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题+剩余页签，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页主视觉，3 张）
 > 配套代码（接线后）：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（只剩两表分派，`DrawableIconKind`/`DRAW` 已删）· [`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（**本批落地处**：`InkIconKind` + `INK_ICON_ART` + `buildInkIcon` 运行时染色）· [`client/src/render/icons/tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts)（前六批的页签表，未改）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
 > 已删除的矢量画法：`client/src/render/icons/{equipment,ui,slg,motifs,titles,currency,primitives}.ts` 七个文件整体删除（`DRAW` 清零后全部变死代码）
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6
-> 状态：**接线全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind）；**剩下的只有 `atk` 一张**：v3 五张里 `globe`/`armor`/`armorHeavy`/`scrap` 已验收并打包上线，`atk` v3 读成锤子/铁砧、v4 读成直升机，源图一直是 v1；v5 已放弃「近正方」这条错误约束，prompt 见文末
+> 状态：**接线全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind）；**剩下的只有 `atk` 一张**：v3 五张里 `globe`/`armor`/`armorHeavy`/`scrap` 已验收并打包上线，`atk` 三轮均打回（v3 锤子 / v4 直升机 / v5 造型对但 4.57:1），源图一直是 v1；v6 prompt 见文末，另 `iconArtAspect.test.ts` 的豁免已从「无条件」改成「每个 kind 自己的上限」
 
 ## 背景：前六批 + 金币收口之后，还剩的就是这些
 
@@ -656,3 +656,30 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ```
 
 **这一格的教训，跟 `brush` 那一格是同一条但方向相反**：`brush` 是「三轮之后发现主体选错了」，`atk` 是「三轮之后发现**约束**选错了」。共同点是——第三轮该问的不是「这张画得对不对」，而是「我给它的题目对不对」。
+
+### `atk` v5：造型终于对了，比例是我自己的 prompt 算出来的 —— 顺带补上了守卫的漏洞（2026-08-26）
+
+v5 把**造型**全部做对了：实心宽刀身、清晰的刀尖、护手是一根小实心横条、三道迸溅线又短又粗又贴尖、彼此分离。28px 上它确实读成匕首，v1 的两处缺陷都不在了。
+
+**问题出在比例：28×128 = 4.57:1。** 这是 `brush` v2（27×128，4.74:1）的翻版——在 28px 格子里只画到约 6px 宽，剩下 22px 空白。放进词条行里就是一道竖着的细黑条，跟旁边的 `weapon`/`hammer` 完全不在一个体量上。源图进 `_rejected/tabicon_atk_v5_sliver28x128.webp`。
+
+**这一次的责任在 prompt 的算术，不在模型。** v5 prompt 里写着：
+
+- 刀身「约为自身长度的四分之一宽」→ 刀身本身就是 1:4
+- 护手「约为刀身宽度的一倍半」→ 整图最宽处 = 1.5 × 刀身宽 = 0.375 × 刀身长
+- 于是整图 ≈ 刀身长 × 1.4（含护手+柄+迸溅）÷ (0.375 × 刀身长) ≈ **3.7:1**
+
+**模型照做了，结果就是我算出来的那个数。** 我在 v5 里删掉「近正方」是对的（那条约束确实制造了锤子和直升机），但删掉之后**没有换上任何宽度纪律**，反而写进了一组本身就通向细长的数字。三轮的账：v3/v4 是**约束选错**，v5 是**约束删对了、但替换它的数字没算**。
+
+**顺带暴露了守卫的一个真漏洞，已修。** 上一轮我把 `atk` 写进 `ELONGATED_ON_PURPOSE` 时给的是**无条件豁免**——于是 4.57:1 的 v5 会被 `iconArtAspect.test.ts` **静默放行**，而且偏偏是「因为它被允许长，所以没人再量它」这条因果。这正是这份测试当初为 `brush` v2 存在的那个失败。改法：白名单从 `Set` 改成 `Map<base, 该 kind 自己的上限>`（`weapon` 3.6 / `event` 3.0 / `atk` 2.5），豁免不再是「关掉门禁」而是「把门槛抬到论证过的高度」。两条附带发现：
+
+- 上限要按**长宽比最大的那个变体**定，不是 `active`：未加粗的墨色跳过 `dilateAlpha` 的膨胀，所以 `weapon` 是 active 3.28、content/inactive **3.46**。第一版上限 3.4 当场被这两张打红——测试自己抓到了我。
+- 按本文档「给美术加守卫前先拿被打回的那版跑一遍」那条规矩，新上限拿 v5 实跑过：`atk_active.png 28x128 = 4.57:1 (limit 2.5)` 变红，确认这道门禁真的关得住它，而不是只写得好看。
+
+**`atk` v6 prompt**（造型措辞一字不改，只重算三个数，并给出双边界）：
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: an upright dagger pointing straight up — a SHORT, BROAD, STUBBY dagger, not a slender one. The blade is a broad leaf shape filled in as ONE SOLID BLACK MASS, about HALF as wide as it is long, coming to a clear sharp point at the very top with clear empty white space around that point. Beneath the blade sits one crossguard drawn as a short SOLID BLACK BAR, about TWICE the blade's width. Below that, a short plain handle no longer than a third of the blade. Three SHORT thick spark strokes sit just above the point — one straight up, one to the upper left, one to the upper right — each no longer than a quarter of the blade's length, each starting almost touching the point and radiating OUTWARD AND UPWARD, each clearly separate from the blade and from the other two. PROPORTION CHECK, and this is a hard requirement: measure the whole drawing's bounding box — its total height must be between about 1.8 and 2.3 times its total width, and must NEVER exceed 2.4 times. It is a tall icon, but it is not a sliver: if the drawing is more than twice and a half as tall as it is wide, the blade is too narrow and must be redrawn broader. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the blade and the crossguard are flat solid black areas, the handle is bare line art. Must stay clearly recognizable as a DAGGER when scaled down to 28x28 pixels, where the heavy black blade is what reads. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a narrow needle-thin or spike-like blade, a blade more than three times as long as it is wide, a very tall thin composition, a total height more than 2.4 times the total width, long sparks, sparks that sweep backwards or droop downwards like wings or rotor blades, sparks that merge into each other or into the blade's outline, a blade with no visible point, anything that reads as a helicopter, insect, dragonfly or mosquito, a crossguard that is the largest shape in the picture, a T-shaped silhouette, anything that reads as a hammer, mallet, anvil, rubber stamp or a tool resting on a bar, a squat or square composition, a hollow outlined blade, a fuller or blood groove line, a long two-handed sword, an ornate pommel, two crossed blades, a shield behind it, a hand gripping it, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+**三轮下来，`atk` 这一格真正的教训**：这套 prompt 里凡是写成「A 是 B 的 N 倍」的句子，都要**先把整图的长宽比乘出来再写进去**。`brush` v2、`atk` v3/v4/v5 四次返工全是同一件事的不同面——局部比例约束会算出一个整体比例，模型交付的就是那个算出来的数，而不是你脑子里的那张图。
