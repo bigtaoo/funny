@@ -117,7 +117,7 @@ const ALLOWED = [
     reason: 'stronghold reward: rev-guarded against a freshly re-read doc with a bounded retry.',
   },
   {
-    file: 'worldsvc/src/territory.ts',
+    file: 'worldsvc/src/territory/structures.ts',
     match: 'resources, lastTickAt: t',
     reason: 'buildWatchtower / buildStructure are rev-guarded and throw on a miss, having spent nothing.',
   },
