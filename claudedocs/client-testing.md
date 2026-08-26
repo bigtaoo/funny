@@ -498,3 +498,13 @@ ADR-073 首轮跟着修复落了 26 例测试，然后做变异验红，发现�
 v1 的递增**比 v2 还猛**——它的毛病从来不是墨少，而是墨**散成点、缩小就没了**。墨量量的是"有多少墨"，不是"墨聚不聚得起来"。所以那条断言只会放行坏的那一套、白送一份虚假安全感。**结论：这个测试没加**，只留了一条明确写着自己是地板的用例（三档墨量有序、不许两档指向同一张源图——防的是 JOBS 行复制粘贴和 Sm/Lg 装反，这两种错人眼审查反而不会去找），文件头注释直接写明它守不住辨识度、辨识度归 28px 并排人眼看。`armorHeavy` 比 `armor` 墨量多 ≥1.15×（实测 1.48×）那条留着——同一个剪影只是"更厚重"，墨量在这里恰好是对的指标。
 
 **可复用的判断**：给美术加自动化守卫之前，先拿**已经被打回的那一版**去跑一遍。跑不红的指标不要留在测试里。
+
+## ⚠️ 坑：headless 里 `hitTest` 打空，是变换没刷，不是命中区写错（2026-08-26，回放视角切换按钮）
+
+`test/ui` 想「像真指针一样」验证一个按钮可点，正确做法是 `new PIXI.EventBoundary(root).hitTest(x, y)` 而不是裸 `emit('pointertap')`（理由见 `test/ui/scenes.ui.ts` 里 ResultScene 那段注释：裸 emit 绕过命中测试，祖先被 `eventMode:'none'` 剪掉也照样绿）。但 headless 里这条路有个前提没人写下来：
+
+`Graphics.containsPoint(全局点)` 会拿节点自己的 `worldTransform` 反变换回本地坐标再判形状，而 `worldTransform` 只在**渲染**（或显式 `updateTransform()`）时才更新。`test:ui` 从不渲染 stage，于是 PIXI 这一帧没碰过的节点仍是单位矩阵，全局点直接落到形状外——**任何 hitTest 都返回 null**。
+
+要命的是它「时好时坏」：同一个按钮，回放**播放中**能命中、**播完之后**就命中不了——因为 `ReplayScene.update()` 在 `ended` 之后不再调 `renderer.update()`，那条顺带刷到这棵子树的路径断了。读起来完全像产品 bug（「播完之后按钮就废了」），实际是测试环境。
+
+**做法**：hit 之前先 `scene.container.getBounds()` 强刷一遍变换（`Container.getBounds()` 在无 parent 时会走 `_tempDisplayObjectParent` + 递归 `updateTransform()`）。**别直接调 `container.updateTransform()`**——根节点没有 parent，它会在 `this.parent.transform` 上抛 NPE。
