@@ -239,3 +239,9 @@ const rowY  = isPortrait
 - **「● 回放」标签**：横屏右对齐进棋盘左侧留白（离棋盘边 40px）并上移到顶栏自己的带子上、与计时器同一行（计时器在棋盘边内 14px，两者之间因此留出约 54px，不会读成一行）。竖屏留白只有 36px，放不下 → 保持原样（`w*0.04` + 进度条上方那行），判据同样是实测宽度而非 orientation。
 
 **验证**：`tsc --noEmit` 绿；`test:ui` 229 文件 / 2161 例 + `vitest run` 195 文件 / 2036 例全绿；webpack production 构建通过。既有的 siege 名字用例改为**钉住新规则**：每个名字恰好出现 2 次（基地牌 + 血条名字牌），且不再出现 `View:` 前缀串。**像素核对**：Browser 面板仍报「pane 未显示、无法合成帧」（同 §26 记录的限制），改用 `start:e2e` 入口 + Playwright 直接 `__nwE2E.views.showReplay(合成的 Replay)` 截图——横屏 1700×850 与竖屏 480×900 各一张，确认：横屏「● Replay」落在留白里与计时器同排、敌方牌完整位于进度条上方（3× 放大核对过没被切）、视角方牌右对齐在自己的墨量/血条之上；竖屏两块名字牌都在血条左侧、「● Replay」回到老位置不压计时器。
+
+**追加（同日，用户确认后）**：**基地上方的两块名牌一并删掉**，回放的名字呈现收敛成「每条血条一块名字牌」——和 PvP 完全同构（PvP 也没有基地名牌，只有顶部对手昵称牌）。唯一多出来的是视角方那块牌：真打时你不需要被告知自己是谁，回放需要。
+
+**顺带核实了「基地方位/视角与真实 PvP 一致」**（用户要求确认）：一致，而且是**结构性**的而非巧合——回放切视角走的是 `layout.mirrored()`，也就是联机 joiner（`localSide = Side.Top`）真打时用的那套 layout；`playerBaseRect()` 对两个 `localSide` 都返回近侧（横屏最左）、`enemyBaseRect()` 都返回远侧，`localOwner = sideToOwner(layout.localSide)` 又驱动 HUD「己方在下条、敌方在上条」。实测（1700×850，横屏，`__nwE2E` 取 live scene）：默认视角 `side=bottom / owner=0`，翻转后 `side=top / owner=1`，两次 `playerBaseRect().x` 都是 450、`enemyBaseRect().x` 都是 1570 —— 只有「这座城是谁的」变了，城的位置没动；名字牌与手牌同步换成另一方。新增用例 `either viewpoint puts the viewed side where a live match puts it`（`test/ui/gameScenes.ui.ts`）把这条钉住，比的是 `createLayout(..., Side.Top)` 真造出来的 joiner layout，不是硬编码像素。既有 siege 名字用例相应改成每个名字**恰好出现 1 次**。
+
+**验证**：`tsc --noEmit` + `tsc -p tsconfig.test.json` 绿；`test:ui` 229 文件 / 2162 例 + `vitest run` 195 文件 / 2036 例全绿；webpack production 通过；横屏两个视角各截一张确认名牌消失、其余不变。

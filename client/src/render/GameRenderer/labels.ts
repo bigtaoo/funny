@@ -48,40 +48,19 @@ function drawNameChip(
 }
 
 /**
- * Replay-only name labels (S1-RP). Two pieces:
- *  • a name plate above each base — the local (viewpoint) side over `playerBaseRect`,
- *    the opponent over `enemyBaseRect`, keyed off `localOwner` so they follow a viewpoint flip;
- *  • a name chip on each HP bar — the same presentation netplay uses for the opponent
- *    (drawOpponentLabel): enemy left of the top-strip HP bar, viewpoint player on its own
- *    HP bar in the bottom-left column. This replaces the old "View: <name>" text tag —
- *    whose name sits on *our* HP bar is what makes the current viewpoint unambiguous.
- * Both read from `core.replayNames` (owner-indexed); no-op outside replay (gated by the caller).
+ * Replay-only name labels (S1-RP): one name chip per HP bar, the same presentation netplay
+ * uses for the opponent (drawOpponentLabel) — enemy left of the top-strip HP bar, viewpoint
+ * player on its own HP bar in the bottom-left column. Whose name sits on *our* bar is what
+ * makes the current viewpoint unambiguous, so this replaces both the old "View: <name>" text
+ * tag and the pair of name plates that used to float over the two bases (the plates said
+ * nothing the HP bars don't: the layout already puts the viewed side's base on the near side,
+ * exactly as it does for a netplay joiner — see LandscapeLayout.playerBaseRect).
+ * Names come from `core.replayNames` (owner-indexed); no-op outside replay (gated by the caller).
  */
 export function drawReplayNameLabels(core: GameRendererCore): void {
   const names = core.replayNames!;
   const localName = names[core.localOwner];
   const enemyName = names[core.localOwner === 0 ? 1 : 0];
-
-  // Base name plates (over each base, centered on the base rect's top edge).
-  const plate = (name: string, rect: Rect): void => {
-    const label = makeText(name, {
-      fontSize: snapFont(22), fill: 0x333333, fontWeight: 'bold', fontFamily: 'monospace',
-    });
-    const padX = 12;
-    const bw = Math.ceil(label.width) + padX * 2;
-    const bh = Math.ceil(label.height) + 8;
-    const bx = Math.round(rect.x + rect.w / 2 - bw / 2);
-    const by = Math.round(rect.y - bh - 6);
-    const bg = new PIXI.Graphics();
-    drawHudButton(bg, bw, bh, 'secondary', { radius: 4 });
-    bg.x = bx; bg.y = by;
-    label.anchor.set(0.5);
-    label.x = bx + bw / 2;
-    label.y = by + bh / 2;
-    core.container.addChild(bg, label);
-  };
-  plate(localName, core.layout.playerBaseRect());
-  plate(enemyName, core.layout.enemyBaseRect());
 
   // Enemy chip — left of the top-strip HP bar, exactly where netplay puts the opponent's
   // nickname (drawOpponentLabel). Shorter than that one, and centered on the HP bar rather

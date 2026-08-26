@@ -430,7 +430,7 @@ describe('ReplayScene — siege player names', () => {
     return out;
   }
 
-  it('draws attacker (bottom) + defender (top) names on base plates and both HP-bar chips', () => {
+  it('draws attacker (bottom) + defender (top) names once each, on the two HP-bar chips', () => {
     const replay = recordReplay(30);
     replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: 'DefBob' } };
     const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
@@ -438,17 +438,16 @@ describe('ReplayScene — siege player names', () => {
     });
     scene.update(1 / 30);
     const texts = collectTexts((scene as any).container);
-    // Both base name plates render with the real names, not the generic placeholders.
+    // The real names render, not the generic placeholders.
     expect(texts).toContain('AtkAlice');
     expect(texts).toContain('DefBob');
     expect(texts).not.toContain('Player 1');
     expect(texts).not.toContain('Player 2');
-    // Each name renders exactly twice: the base plate plus the HP-bar chip (the viewpoint
-    // side's chip on our own bar, the enemy's left of the top-strip bar). The old standalone
-    // "View: <name>" tag is gone — the chip on our own HP bar carries that now, so a bare
-    // name, not a prefixed string, is what identifies the current viewpoint.
-    expect(texts.filter((s) => s === 'AtkAlice')).toHaveLength(2);
-    expect(texts.filter((s) => s === 'DefBob')).toHaveLength(2);
+    // Exactly one chip per side — the viewpoint player's on our own HP bar, the enemy's left
+    // of the top-strip bar. The standalone "View: <name>" tag and the two over-the-base name
+    // plates are both gone, so a bare name on the near-side HP bar is the whole viewpoint cue.
+    expect(texts.filter((s) => s === 'AtkAlice')).toHaveLength(1);
+    expect(texts.filter((s) => s === 'DefBob')).toHaveLength(1);
     expect(texts.some((s) => s.includes('View:'))).toBe(false);
     scene.destroy();
   });
@@ -463,6 +462,54 @@ describe('ReplayScene — siege player names', () => {
     const texts = collectTexts((scene as any).container);
     expect(texts).toContain('AtkAlice');
     expect(texts).toContain('Player 2'); // blank top → placeholder
+    scene.destroy();
+  });
+
+  // The name chips are the only thing that says which side you're watching now that the
+  // over-the-base plates are gone (2026-08-26), so what "our side" means geometrically has to
+  // be exactly what a live match means by it: the viewed side's base on the near side (left in
+  // landscape), its HP on the bottom strip. That holds for BOTH viewpoints because a flip
+  // rebuilds the renderer on `layout.mirrored()` — the very layout a netplay joiner plays on.
+  it('either viewpoint puts the viewed side where a live match puts it (own base near side)', () => {
+    const replay = recordReplay(30);
+    replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: 'DefBob' } };
+    const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
+      onExit() {},
+    });
+    scene.update(1 / 30);
+
+    const view = (): { side: Side; owner: number; own: number; enemy: number } => {
+      const core = (scene as any).renderer.core;
+      return {
+        side: core.layout.localSide,
+        owner: core.localOwner,
+        own: core.layout.playerBaseRect().x,
+        enemy: core.layout.enemyBaseRect().x,
+      };
+    };
+
+    // Default viewpoint = the recording's bottom player (owner 0), whose base is the left one.
+    const bottomView = view();
+    expect(bottomView.side).toBe(Side.Bottom);
+    expect(bottomView.owner).toBe(0);
+    expect(bottomView.own).toBeLessThan(bottomView.enemy);
+    expect(collectTexts((scene as any).container)).toContain('AtkAlice');
+
+    // Flip, then let the cross-fade finish so `renderer` is the new (mirrored) one.
+    (scene as any).switchViewpoint();
+    for (let i = 0; i < 20; i++) scene.update(1 / 30);
+    const topView = view();
+    expect(topView.side).toBe(Side.Top);
+    expect(topView.owner).toBe(1);
+
+    // Both bases stay on the same screen halves — only WHOSE they are changes. Compared against
+    // a real joiner-side layout, not against hardcoded pixels.
+    const joinerLayout = createLayout(...LANDSCAPE, Side.Top);
+    expect(topView.own).toBe(joinerLayout.playerBaseRect().x);
+    expect(topView.enemy).toBe(joinerLayout.enemyBaseRect().x);
+    expect(topView.own).toBe(bottomView.own);
+    expect(topView.enemy).toBe(bottomView.enemy);
+
     scene.destroy();
   });
 });
