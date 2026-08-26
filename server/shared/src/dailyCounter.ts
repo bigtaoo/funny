@@ -105,7 +105,6 @@ class LocalBackend implements CounterBackend {
     return true;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async expire(_key: string, _ttlSec: number): Promise<void> {
     /* no-op: process memory already dies with the process, nothing to bound. */
   }

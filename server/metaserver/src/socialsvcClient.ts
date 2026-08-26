@@ -116,7 +116,6 @@ export class HttpMetaSocialsvcClient implements MetaSocialsvcClient {
       label: '/internal/mail/:id/unclaim',
     });
     if (!r.ok) {
-      // eslint-disable-next-line no-console
       console.error('[meta] unclaimMail failed — mail may be stuck claimed-but-undelivered', { mailId, accountId, orderId, status: r.status });
     }
   }

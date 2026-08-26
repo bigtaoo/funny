@@ -6,7 +6,7 @@
 import { cityFootprint, SLG_GEN, SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type ObstacleKind } from '../core';
 import { valueNoise, worldSeed, rand2 } from '../noise';
 import {
-  capitalIdxAt, NATION_KIND_BY_IDX, PROVINCE_CORE_RADIUS_RATIO, PROVINCE_RESOURCE_OUTER_RADIUS_RATIO,
+  NATION_KIND_BY_IDX, PROVINCE_CORE_RADIUS_RATIO, PROVINCE_RESOURCE_OUTER_RADIUS_RATIO,
   provinceCapitalPositions, provinceIdxAt, _MAP_HALF_DIAGONAL,
 } from '../province';
 import type { ProceduralTile } from './types';

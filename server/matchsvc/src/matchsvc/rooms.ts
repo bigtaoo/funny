@@ -8,7 +8,7 @@
 import { randomUUID, randomInt } from 'crypto';
 import { createLogger, type RedisLike } from '@nw/shared';
 import { saveRoom, clearRoomAccount, deleteRoom, type PersistedRoom } from '../persist';
-import { CODE_ALPHABET, CODE_LEN, REAP_MS, RoomPhase, type MatchStarterPort, type PlayerView, type Push, type Room, type Slot } from './types';
+import { CODE_ALPHABET, CODE_LEN, REAP_MS, RoomPhase, type MatchStarterPort, type PlayerView, type Push, type Room } from './types';
 
 const log = createLogger('matchsvc');
 

@@ -99,7 +99,8 @@ export class AnimationController {
   }
 
   toggle(): void {
-    this.state.isPlaying ? this.pause() : this.play();
+    if (this.state.isPlaying) this.pause();
+    else this.play();
   }
 
   private tick(ts: number): void {

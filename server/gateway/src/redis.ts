@@ -72,6 +72,19 @@ export interface GatewaySubscriber {
  * On connection failure → returns null (real-time push + cross-instance kick both degraded).
  * autoResubscribe=true ensures Redis re-subscription after reconnection (B7 acceptance criterion).
  */
+/**
+ * The ioredis surface this file touches. Same reasoning as worldsvc/src/redis.ts: the module is
+ * loaded through a variable specifier, so its real types are unavailable here and a structural type
+ * is what replaces `any`. `RedisLike` (from @nw/shared) stays the type of the *client* — narrowing
+ * that one is a separate job, since it is shared by matchsvc/commercial/metaserver too.
+ */
+type IoRedisCtor = new (url: string, opts: Record<string, unknown>) => RedisLike & {
+  on(event: 'error' | 'ready' | 'message', handler: (...args: never[]) => void): void;
+  subscribe(channel: string): Promise<unknown>;
+  duplicate(): RedisLike;
+  quit(): Promise<unknown>;
+};
+
 export async function connectGatewaySubscriber(
   url: string | undefined,
   onBroadcast: (recipients: string[], msg: PushMsg, roomId?: string) => void,
@@ -80,8 +93,8 @@ export async function connectGatewaySubscriber(
   if (!url) return null;
   try {
     const spec = 'ioredis';
-    const mod: any = await import(spec);
-    const Redis = mod.default ?? mod;
+    const mod = (await import(spec)) as { default?: IoRedisCtor };
+    const Redis = mod.default ?? (mod as unknown as IoRedisCtor);
     const subClient = new Redis(url, {
       lazyConnect: false,
       maxRetriesPerRequest: 3,

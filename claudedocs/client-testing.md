@@ -390,6 +390,8 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 **⚠️ 别报「lint 绿」当成新信息**：这条门在 2026-08-26 之前从来没跑过，所以它现在的绿是一条**新基线**，不是「一直很干净」。
 
+**同日后续：规则提到仓库根，lint 铺到了 server/ 和 tools/**。复活 client lint 最大的发现不是那 224 个 error，是 **client 当时是全仓库唯一有 linter 的包**——`server/`（13 个 workspace，包括数值权威 `@nw/engine`）和 5 个 tools 连 `lint` 脚本都没有。现在规则在仓库根 `eslint.shared.mjs`（`sharedRules({ js, tseslint, prettierConfig })` + `sharedIgnores`），client / server / 每个 tool 各自一份薄配置 import 它——共用文件**自己不 import plugin**，因为 plugin 按 import 它的文件解析，而这几个包的 `node_modules` 是分开的。server 的首跑结果见 [`server.md`](server.md)（623 文件 / 58 问题），tools 的见 [`tools-testing.md`](tools-testing.md)（6 问题，三个工具全绿）。
+
 ## 「按字数截断」这类 bug：机制在 headless 测，宽度预算只能真浏览器给（2026-08-26，聊天行按宽度截断）
 
 `drawChatLine` 原本把消息正文切在 60 **字**，而真正裁掉文字的是所在列的**宽度**。改成按宽度截断（`ui/widgets/truncateText.ts`）之后，测试的分工正好是上面那条 `__nwE2E.app` 记录说的形状，值得再记一次落点：

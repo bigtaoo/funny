@@ -133,7 +133,7 @@ export interface CommercialClient {
     orderId: string;
     clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number }>>;
-  orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Body<{}>>;
+  orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Body<object>>;
   undeliveredOrders(accountId: string): Promise<UndeliveredOrder[]>;
   rechargeVerify(args: {
     accountId: string;
@@ -371,7 +371,7 @@ export class HttpCommercialClient implements CommercialClient {
   }
 
   orderDelivered(args: { orderId: string; refundCoins?: number }) {
-    return this.post<{}>('/internal/order/delivered', args);
+    return this.post<object>('/internal/order/delivered', args);
   }
 
   async undeliveredOrders(accountId: string): Promise<UndeliveredOrder[]> {

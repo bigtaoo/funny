@@ -15,7 +15,6 @@ import { Unit, resetUnitIds } from '../Unit';
 import { HazardSystem } from '../systems/HazardSystem';
 import { UnitType, Side } from '../types';
 import { TICK_RATE, toFp, mulFp } from '../math/fixed';
-import type { HazardSpec } from '../campaign/LevelDefinition';
 
 test('empty hazards: tick() is a complete no-op, even for units with already-modified speed/rangeMod', () => {
   resetUnitIds();

@@ -106,7 +106,7 @@ async function markAudited(
  * Any exception is only logged, the audited mark is not set (preserving re-sample eligibility), and the error is not rethrown.
  */
 export async function auditOnce(deps: AuditDeps): Promise<AuditResult> {
-  const { cols, gateway, now } = deps;
+  const { cols, gateway } = deps;
   const result: AuditResult = { examined: 0, audited: 0, flagged: 0, skipped: 0 };
   if (!gateway.available) return result; // no judge → never convict
 

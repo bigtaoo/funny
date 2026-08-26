@@ -39,6 +39,19 @@
 - **`test/**` 也纳入类型检查（2026-08-19）**：每个 workspace 除 `tsconfig.json`（只含 `src/**`）外还有一份 `tsconfig.test.json`（`src/**` + `test/**`，只报错不产出），跑法是包内 `npm run typecheck:test` 或根目录 `npm run typecheck:test` 扇出全部 13 个包；CI 在 `server-checks` job 的 `tsc -b` **之后**跑（这些是非 build 程序，要用 `tsc -b` 产出的 `dist/*.d.ts` 解析 `@nw/*`）。`checkWorkspaceCoverage.mjs` 会检查每个包都有这份配置和脚本，**并且检查 `tsconfig.test.json#exclude` 里的每个文件都被 `client/tsconfig.fulllink.json` 接管**（2026-08-20 起；唯一一条 exclude 是 auctionsvc 的 full-link e2e，它 import 真实 client 网络层，只有 client CI job 同时装了两侧依赖能检查它）。注意 `references` 不被 `extends` 继承、必须在 test 配置里重复；`module` 各包按 vitest 的实际解析覆盖（详见 [`server-testing-typecheck.md`](server-testing-typecheck.md) 该节）。首次接入暴露 758 个错误 / 140 个文件，已全部清零。
 - **codegen 自动前置（2026-08-08）**：metaserver / worldsvc / socialsvc / auctionsvc（openapi）+ gateway / gameserver（proto）六个包各自的 `build`/`typecheck`/`dev`/`test` 都挂了对应 `pre<script>`，本地跑这四个命令时 npm 会自动先跑一遍 `gen:api:*`（metaserver 是 `gen:api:contracts && gen:api:server`）/`proto:gen`，不用再记得手动生成——**这不是取代 CI 的 `:check` 步骤**，只是把「忘记生成」的窗口从「commit 前」提前到「本地敲命令那一刻」；CI 的 staleness check 仍是最后一道防线（防手改生成文件、跳过 npm 脚本直接改 `.yml`/`.proto` 又不本地跑一遍等场景）。`npm run dev:all`（`dev-up.ps1`）走的是 `node --watch` 直连、不经过 npm 脚本，因此在 `dev-up.ps1` 里单独插了一步「regen codegen」覆盖这条路径。触发事件：同一天两次因为改 `.yml` 忘记重新生成导致 CI 挂（worldsvc sect-mate 字段、socialsvc accountId 字段）。**补记**：socialsvc 那次事故暴露 `.github/workflows/ci.yml` 其实从未挂 `gen:api:social:check`（只有 contracts/server/world/auction 四步，social 被漏掉），本地 pre-hook 之外这条线之前完全没有 CI 兜底；已于当日补上第五步 `gen:api:social:check`，现在六个包（四个 openapi + 两个 proto）在 CI 侧才算真正对齐。
 
+- **ESLint（新增 2026-08-26）**：`cd server && npm run lint`（= `eslint .`）。**在这之前 server/ 从来没有过 linter** —— 全仓库只有 `client/` 有，而且那一份也已经坏了很久没人发现（同日复活，见 [`client-testing.md`](client-testing.md)）。意味着规则一直只管着 UI 层，钱、匹配、模拟这三块一直没人看。
+  - **一份配置管 13 个 workspace**：`server/eslint.config.mjs`（scope = 各 workspace 的 `src/**`，test 先不纳入）。规则本体在仓库根 `eslint.shared.mjs`，与 `client/` 和 `tools/*` 共用。那个文件**自己不 import 任何 plugin**（plugin 按 import 它的文件解析，而这几个包的 `node_modules` 是分开的），而是由各包把自己的 `js` / `tseslint` / `prettierConfig` 传进 `sharedRules({...})`。
+  - **首跑 623 个文件、58 个问题**，没有一个是「代码烂」，分布很说明问题：
+    - **34 个残留 import/局部量**，大多是 2026-08-11 mixin-chain 拆分和 `territory/structures.ts`（ADR-051）拆分后 import 块没跟着瀑——跟 client 那 76 个 `WorldMapInput.ts` 未用 import 是同一回事。
+    - **6 个 `Pick<MetaHandlers, ...>` 类型别名活在代码里但没人引用**（`metaserver/src/service/{auth,inventory,progression,save,social,telemetry}.ts`）。这几个别名本意是「本 service 负责这几条路由」的契约，但没有任何 class `implements` 它们，所以它们只是注释。**处理方式不是删，是给六个 class 都加上 `implements`**——`tsc -b` 直接通过，所以它们本来就是对的，现在变成了真门（路由改名/改签名会在这里红）。
+    - **5 个 `preserve-caught-error`（ESLint 新核心规则）全在 `commercial/src/iap/*`**：apple / google×2 / stripe / wechat 的验单失败路径都是 `throw new Error(\`... ${(e as Error).message}\`)`——只抄了 message，原始 error（栈、cause 链）直接丢。已全部改成带 `{ cause: e }`。支付验证链是最想要栈的地方，而这一条以前没任何东西能发现。
+    - **5 个 `{}` 当「无 payload 的 ok」用**（`Result<{}>` / `Body<{}>` / `post<{}>`）——`{}` 并不是那个类型（它接受任何非 null 值），改成 `object`。
+    - **11 个 `any`**：9 个是 engine AI 测试里 `(cmd as any).col` 这种读联合类型字段（改成 `Extract<PlayerCommand, { type: 'play_card' }>`，順手把字段名拼错也变成编译错误）；2 个是 gateway/worldsvc `const mod: any = await import(spec)`（改成局部 `IoRedisCtor` 结构类型）。
+    - **3 个 `eslint-disable` 注释什么都没拑住**（`no-console` / `no-unused-vars` / `require-await`）——写在从来没被 lint 过的代码里的 disable，典型的 cargo cult，已删。
+  - **两个规则级的决定（写在 `eslint.shared.mjs` 里）**：`ignoreRestSiblings: true`（`({ accountId, ...rest }) => rest` 是「剔除一个字段」的惯用写法，socialsvc `family/query.ts` 用它给非成员剔掉 accountId，是隐私剔除不是死代码）；`coverage/**` 必须 ignore（istanbul 报告自带的 `prettify.js` 等带 `eslint-disable` 头，不屏蔽会多出 96 条 unused-directive 警告，把真正的 4 条埋掉）。
+  - **CI**：`server-checks` job 里紧跟 `server file length check` 的 `server lint` 一步。error 挂 job。
+  - **尚未纳入（明确的缺口，不是忘了）**：`test/**` —— 约 600 个测试文件是另一类 lint 问题（fixture 合法地拿半成品对象），而且 `typecheck:test` 已经盯着它们的类型；同时拉进来会把 src 的首跑结果埋掉。engine 的测试是例外（它们在 `src/__tests__/` 里，因此已经在 scope 内）。
+
 ## 启动（dev）
 
 ```powershell

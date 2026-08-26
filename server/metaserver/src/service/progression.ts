@@ -42,7 +42,7 @@ export interface LeaderboardEntry {
 
 const LEADERBOARD_CACHE_MS = 60 * 1000;
 
-export class ProgressionService {
+export class ProgressionService implements ProgressionHandlers {
   constructor(private readonly core: MetaCore) {}
 
     /**

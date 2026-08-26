@@ -9,12 +9,6 @@ import {
   GARRISON_PER_TILE,
   troopCapFor,
   RELOCATE_COST,
-  WATCHTOWER_COST,
-  ARROW_TOWER_COST,
-  BLOCKER_COST,
-  ARROW_TOWER_HP,
-  BLOCKER_HP,
-  RESOURCE_TYPES,
   SlgError,
   buildingLevel,
   type ResourceType,
@@ -22,7 +16,7 @@ import {
 } from '@nw/shared';
 import { WorldCore, emptyResources } from './core';
 import { buildWatchtower, buildStructure, demolishStructure } from './territory/structures';
-import type { TileDoc, TileStructure, PlayerWorldDoc } from './db';
+import type { TileDoc, PlayerWorldDoc } from './db';
 import type { WorldTileView, PlayerWorldView } from './worldTypes';
 
 export class TerritoryService {
