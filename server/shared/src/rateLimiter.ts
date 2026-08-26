@@ -1,7 +1,7 @@
 // Sliding-window rate limiting (originally metaserver-only, 2026-07-27; extracted to @nw/shared 2026-07-29
 // so gateway's per-connection control-message limiting — SERVER_LOGIC_AUDIT_2026-07-29 known-gap #4 — can
 // reuse the exact same in-process/Redis-backed duo instead of growing a second implementation).
-import type { RedisLike } from './activeMatch';
+import type { RedisLike } from './redisClient';
 
 /** Sliding-window rate limiter keyed by an arbitrary string (IP, accountId, ...). Implementations may be
  *  in-process (single instance) or Redis-backed (precise across instances); see createRateLimiter below. */
@@ -40,7 +40,6 @@ export class SlidingRateLimiter implements RateLimiter {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async allow(key: string, now: number): Promise<boolean> {
     this.maybeSweep(now);
     const win = this.windows.get(key)?.filter((t) => now - t < this.windowMs) ?? [];

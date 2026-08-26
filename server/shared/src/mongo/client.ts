@@ -3,7 +3,7 @@
 // `ensureIndexes` (delegates to each domain file's own ensureXIndexes, called in the original file's order —
 // cross-collection index-creation order carries no behavioral meaning, only same-collection order does, and
 // that's preserved inside each domain function).
-import { MongoClient, Db, type MongoClientOptions } from 'mongodb';
+import { MongoClient, type MongoClientOptions } from 'mongodb';
 import type { Collections, MongoHandle } from './collections';
 import { type SaveDoc, type AccountDoc, type StaminaDoc, ensureAccountIndexes } from './accountDocs';
 import {

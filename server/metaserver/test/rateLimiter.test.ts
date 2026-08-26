@@ -6,6 +6,7 @@
 // unchanged post-migration.
 import { describe, it, expect, vi } from 'vitest';
 import { SlidingRateLimiter, RedisSlidingRateLimiter, createRateLimiter, type RateLimiter } from '../src/service/base.js';
+import type { RedisLike } from '@nw/shared';
 
 describe('service/base.ts rate limiter re-export (logic lives in @nw/shared)', () => {
   it('createRateLimiter(null, ...) returns the in-process fallback and enforces the limit', async () => {
@@ -17,7 +18,7 @@ describe('service/base.ts rate limiter re-export (logic lives in @nw/shared)', (
   });
 
   it('createRateLimiter(redis, ...) returns the Redis-backed implementation', () => {
-    const fakeRedis = { eval: vi.fn() };
+    const fakeRedis = { eval: vi.fn() } as unknown as RedisLike; // EVAL is the only command the Redis-backed limiter issues
     expect(createRateLimiter(fakeRedis, 'ns', 5, 1000)).toBeInstanceOf(RedisSlidingRateLimiter);
   });
 });

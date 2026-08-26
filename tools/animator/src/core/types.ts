@@ -72,6 +72,15 @@ export type AnimationStore = Map<string, AnimationClip>;
  *  Each bone has exactly one image (1:1 mapping via ImageController).
  *  rotation / scaleX / scaleY are static offsets applied on top of animated transforms,
  *  useful for correcting image orientation/size to match the bone. */
+/** Per-bone static sprite binding — the artist's "how does this image sit on this bone"
+ *  correction, applied on top of the animated keyframe channels.
+ *
+ *  Deliberately NO offsetX/offsetY. A binding-level world-space offset existed
+ *  2026-06-05..09 and was removed in favour of letting `anchorX`/`anchorY` fall outside
+ *  0–1, which expresses the same shift in image-space units that scale with the sprite.
+ *  Reintroducing an offset channel would give two ways to say one thing; if a static
+ *  shift is needed, widen the anchor. Note that the removal left non-zero offsets behind
+ *  in 7 shipped bundles — see claudedocs/file-formats.md before touching this. */
 export interface SpriteBinding {
   anchorX:  number;   // image-space pivot X (0=left, 1=right); values outside 0–1 allowed
   anchorY:  number;   // image-space pivot Y (0=top, 1=bottom); values outside 0–1 allowed

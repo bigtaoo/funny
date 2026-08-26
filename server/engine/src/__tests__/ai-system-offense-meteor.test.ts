@@ -15,7 +15,14 @@ import { GameState } from '../GameState';
 import { Unit, resetUnitIds } from '../Unit';
 import { Prng } from '../math/prng';
 import { CARD_DEFINITIONS } from '../config';
-import { AIDifficulty, CardType, Side, SpellType, UnitType } from '../types';
+/**
+ * The only PlayerCommand variant carrying handIndex/col/row. The assertions below used to
+ * read those off `cmd as any`, which also silently accepted a misspelt field name (the
+ * expected value would just compare against `undefined`); this keeps the field names checked.
+ */
+type PlayCardCommand = Extract<PlayerCommand, { type: 'play_card' }>;
+
+import { AIDifficulty, CardType, PlayerCommand, Side, SpellType, UnitType } from '../types';
 
 const meteorCard = CARD_DEFINITIONS.find(
   (c) => c.cardType === CardType.Spell && c.spellType === SpellType.Meteor,
@@ -50,7 +57,7 @@ test('AISystem offensive meteor (L5, useValueTrades off): fires on a far cluster
 
   const cmds = driveToDecision(ai, state, 5);
   assert.equal(cmds.length, 1);
-  const cmd = cmds[0] as any;
+  const cmd = cmds[0] as PlayCardCommand;
   assert.equal(cmd.type, 'play_card');
   assert.equal(cmd.handIndex, 0);
   assert.equal(cmd.col, 2);
@@ -65,7 +72,7 @@ test('AISystem offensive meteor (L10, useValueTrades on): the ink-value-gated te
 
   const cmds = driveToDecision(ai, state, 10);
   assert.equal(cmds.length, 1);
-  const cmd = cmds[0] as any;
+  const cmd = cmds[0] as PlayCardCommand;
   assert.equal(cmd.type, 'play_card');
   assert.equal(cmd.handIndex, 0);
   assert.equal(cmd.col, 2);

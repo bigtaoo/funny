@@ -11,6 +11,7 @@ import {
   dailyCounterKey,
   connectDailyCounterRedis,
 } from '../src/dailyCounter';
+import type { RedisLike } from '../src/redisClient';
 
 describe('dailyCounterKey', () => {
   it('formats as nw:<ns>:<accountId>:<dayKey>', () => {
@@ -149,7 +150,7 @@ function fakeRedisClient() {
     if (!h) { h = new Map(); hashes.set(key, h); }
     return h;
   };
-  return {
+  const client = {
     hincrby: vi.fn(async (key: string, field: string, delta: number) => {
       const h = hashOf(key);
       const next = (Number(h.get(field) ?? '0')) + delta;
@@ -167,6 +168,9 @@ function fakeRedisClient() {
     }),
     expire: vi.fn(async (_key: string, _ttlSec: number) => 'OK'),
   };
+  // Only the four commands redisBackend() issues; `& RedisLike` widens it to the full client interface
+  // while keeping the vi.fn() types (same convention as activeMatch.test.ts's fakeRedisClient).
+  return client as typeof client & RedisLike;
 }
 
 describe('bumpCappedCounter / readCounterField (fake redis client, exercises the redisBackend adapter)', () => {

@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { Matchsvc, type PushMsg } from '../src/Matchsvc';
 import { GameRegistry } from '../src/GameRegistry';
 import { saveRoom, saveQueueEntry, saveDuelInvite, loadAllRooms, loadAllQueueEntries, loadAllDuelInvites } from '../src/persist';
+import type { RedisLike } from '@nw/shared';
 import type { Room, DuelPlayer } from '../src/Matchsvc';
 import type { QueueEntry } from '../src/Matchmaking';
 
@@ -88,7 +89,10 @@ function fakeRedis() {
     return builder;
   }
 
-  return { ...ops, multi, strings, zsets };
+  // Same subset-fake convention as test/persist.test.ts: only the commands persist.ts issues are
+  // implemented, then widened to the full client interface (`strings`/`zsets` stay reachable for assertions).
+  const fake = { ...ops, multi, strings, zsets };
+  return fake as typeof fake & RedisLike;
 }
 
 function makeSvc(redis: ReturnType<typeof fakeRedis> | null, now?: () => number) {

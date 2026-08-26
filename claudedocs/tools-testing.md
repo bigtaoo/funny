@@ -9,6 +9,7 @@
 cd tools/<tool> && npm test                 # vitest run
 cd tools/<tool> && npm run test:coverage    # 同上 + coverage/（v8）
 cd tools/<tool> && npm run typecheck        # tsc --noEmit -p tsconfig.test.json
+cd tools/<tool> && npm run lint             # eslint .（2026-08-26 新增）
 ```
 
 权威的**跨包**覆盖率数字来自仓库根（读的是各包刚产出的 `coverage/`，跟 CI 同一份脚本）：
@@ -20,7 +21,7 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 
 `desktop-shell` 没有测试基础设施（1 个依赖的 Electron 壳），**不在**任何覆盖率清单里；它的 `tsc -p tsconfig.json`（即 `npm run build`）就是它的类型检查。**也刻意不给它写单测**（ADR-071）：539 行全是 Electron 主进程接线（`BrowserWindow`/`ipcMain`/`autoUpdater`/`git` 调用），要测就得把整个 Electron 面 mock 掉，断言的是 mock 而不是它的行为。它受的约束是**可达性闸门**（2026-08-21 接入，见下），那条不需要跑它。
 
-## 三条 CI 闸门
+## 四条 CI 闸门
 
 | 闸门 | 范围 | 语义 |
 |---|---|---|
@@ -28,9 +29,20 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 | 覆盖率 | 5 个工具包 | 报表 + **产出必须存在** + **百分比受 90% 门禁**，跟 13 个服务端 workspace 与 `client` 完全同待遇。ADR-070 的「reported, not gated」豁免存在了不到一天：4a–4e 依次毕业，名单空掉，机制随 4e 退休（ADR-070 收尾条）。2026-08-20 起 |
 | 可达性 | 5 个工具包各自的 `src/**` | `tools/scripts/checkUnreachableModules.mjs`（逐包调用根 `scripts/checkUnreachableModules.mjs`）：**任何一个 `src/` 下的源文件，若从该包的 bundler entry、`--extra-root` 声明的兄弟产物目录（animator 的 `runtime/`）、以及 `test/**` 这三类根出发都到不了，判红**。2026-08-20 起 |
 
+| ESLint | 5 个工具包各自的 `src/**` | 各包 `eslint.config.mjs`，规则共用仓库根 `eslint.shared.mjs`（跟 `client/` 和 `server/` 同一份）。error 判红。`desktop-shell` 不在内（跟它不在测试/覆盖率名单里同理）。2026-08-26 起 |
+
 覆盖率那条闸门有两半，都已受门禁：
 - **管路**——某个工具包不再产出 `coverage/`，`checkCoverageThreshold.mjs` 判红。这不是覆盖率回归，报错文案也刻意分开说（"produced no coverage output at all"），免得有人去找缺失的测试而真正要修的是缺失的 CI 步骤。这条分开说的措辞是 ADR-070 那轮顺带修掉的既有缺陷，**跟豁免机制无关，机制退休后保留**。
 - **百分比**——5 个包各自的 scope 现在都 ≥90%（下表；四个 100%、animator 98.9%）。**过渡已结束**：`NOT_GATED_JSON_SUMMARY_PACKAGES`、行上的 `gated` 字段、报表的「reported, not gated」小节、门禁的豁免脚注全部随 Phase 4e 删除。退休的理由与验收条件写在 ADR-070 末尾那条「收尾」记录里；一句话版本是「留着一套能用的、合法地不受门禁约束的机制，本身就是一份长期邀请函」。另一样保留下来的是报表的 **`Scope (files)`** 列——那是防「缩 include 抬 %」的护栏，跟豁免无关，五个包毕业后反而更该看（三个包的 scope 只占 `src` 文件的 1/4 到 1/2）。
+
+## ESLint（2026-08-26 新增：五个工具以前一个 lint 都没有）
+
+背景：同日发现 `client/` 的 `npm run lint` 已经在启动阶段坏了很久而没任何 CI 步骤跑它（见 [`client-testing.md`](client-testing.md)）；修好之后更大的缺口才露出来——**client 是当时全仓库唯一有 linter 的包**，`server/` 13 个 workspace 和这五个工具都没有。
+
+- **三处共一份规则**：仓库根 `eslint.shared.mjs` 导出 `sharedRules({ js, tseslint, prettierConfig })` 和 `sharedIgnores`。它**自己不 import 任何 plugin**——plugin 按 import 它的文件解析，而 client / server / 每个 tool 的 `node_modules` 是分开的，所以各包各自 import 再传进去。五个工具各新增了一份 30 行的 `eslint.config.mjs` + `lint` 脚本 + 5 个 devDependency（eslint / @eslint/js / @typescript-eslint 两个 / eslint-config-prettier）。**合并后主检出要在每个 tool 里补一次 `npm install`**（`claudedocs/worktrees.md` 那条「worktree 里 `npm install` 会把 junction 换成真实目录」的陷阱）。
+- **首跑只有 6 个问题，level-editor / ops / map-editor 直接全绿**。这个数字本身是个结论：工具链虽然没 lint，但它们的 `src` 这两年跟着拆分/可达性门禁走，残留代码早就被那两道门厕干净了。
+- **animator 4 个**：一个三元运算当语句用（`isPlaying ? pause() : play()`）、一个什么都没拑住的 `eslint-disable`、一个未用的 `MouseEvent` 参数，以及一个**真正值钱的发现**：`timeline/TimelineView.ts` 里的 `MoveKeyframeCommand` 类**完全没人用**——也就是说**时间轴上拖关键帧不可撤销**（`onMouseMove` 直接调 `moveKeyframe()` 并覆写 `dragKfTime`，到 mouse-up 时拖拽的原始时间已经丢了；`onMouseUp` 的注释写着「commit as Command if time actually changed」但什么都没做）。**没删，也没就地修**：删了就抹掉了这个缺口的唯一痕迹，而接上需要新增 `dragKfStartTime` 字段 + `CommandManager.pushExecuted(cmd)` 入口（现有 `execute()` 会在已经改过的 state 上重跑 `moveKeyframe`），是单独一件事。类头上的注释把这些写清了 + 一条带理由的 disable。**→ 同日晚些时候已按这份注释接完**（`pushExecuted` + `dragKfStartTime` + `endKfDrag()`，dev server 实测 undo/redo 往返正确；随后又补了一批**回归测试**——把判定抽成导出的 `getKfDragCommit` 并 `export` 掉 `MoveKeyframeCommand`，用真实 `AnimationController` 重放拖拽，`TimelineView.test.ts` 10 → 21 条），那条 disable 和 `NOT WIRED UP` 注释块一并删除，细节见 [`animator.md`](animator.md)「关键帧拖拽终于进 Undo 栈」。**这条是本轮 lint 最值钱的产出，也是它最该被记住的形状**：另外三条闸门一条都看不见它——文件不超长、`timeline/` 不在 coverage include 里、`TimelineView.ts` 本身从入口完全可达（可达性闸门判的是**文件**，不是文件里的**符号**），而 `tsc` 默认不报未使用的**顶层声明**（`noUnusedLocals` 只管函数内的局部变量）。「定义了但从未被构造的类」此前在 `tools/` 里没有任何自动化能发现。
+- **vfx-editor 2 个**：一个未用 import，一个 `prefer-const` 是规则弄错了——`index.ts` 的 `let effectList` 必须先声明后赋值（Library 的回调闭包引用它，`effectList?.refresh()` 的 `?.` 就是防回调提前触发），改 `const` 要么 TDZ 抛错要么得重排代码。已在共用配置里改成 `['error', { ignoreReadBeforeAssign: true }]`（这正是该规则为这种形状提供的选项），其余 prefer-const 能抓的照旧报。
 
 ## 可达性闸门（2026-08-20 新增）
 

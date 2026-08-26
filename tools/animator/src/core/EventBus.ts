@@ -22,7 +22,11 @@ export interface AppEvents {
   'preview:mode':   'skeleton' | 'sprite';
 
   // Undo/Redo
-  'history:change': { canUndo: boolean; canRedo: boolean; label: string };
+  // Both labels are always sent, each already carrying its own "Nothing to …" fallback. There used
+  // to be a single `label` field holding `canUndo ? undoLabel : redoLabel`, which meant the redo
+  // label was unreachable whenever anything was undoable — that is why the Redo button had no
+  // tooltip until 2026-08-26. Consumers pick the one they need.
+  'history:change': { canUndo: boolean; canRedo: boolean; undoLabel: string; redoLabel: string };
 
   // Attachment points
   'attachment:change': void;
@@ -46,7 +50,6 @@ export interface AppEvents {
 
 // ── EventBus<T> ───────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Listener<P> = (payload: P) => void;
 
 /** When the event payload is void, the emit call takes no payload argument. */

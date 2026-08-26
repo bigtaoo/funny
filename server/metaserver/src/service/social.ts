@@ -21,7 +21,7 @@ type SocialHandlers = Pick<
   | 'claimMail' | 'sendMail'
 >;
 
-export class SocialService {
+export class SocialService implements SocialHandlers {
   constructor(private readonly core: MetaCore) {}
 
     /** Proxy to socialsvc (pass-through JWT + body). socialsvc not configured → 503. */

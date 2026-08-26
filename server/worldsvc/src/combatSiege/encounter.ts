@@ -19,7 +19,6 @@
 // constructed with a reference to SiegeHelpersService (./helpers.ts, for recordSiege) — assembled by
 // composition in ../combatSiege.ts. No behavior change.
 import {
-  tileId,
   siegeSeedFromId,
   playerWorldId,
   resolveSiege,

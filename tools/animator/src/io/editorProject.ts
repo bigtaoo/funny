@@ -14,6 +14,7 @@ import type { EventBus, AppEvents } from '../core/EventBus';
 import type { AttachmentPoint, SpriteBinding } from '../core/types';
 import { basename, isDesktop, saveWithPicker, type WritableFileHandle } from './fileIO';
 import { deserializeClip, serializeClip, type SerializedClip } from './clipSerialization';
+import { serializeBinding, serializeBindings } from './bindingSerialization';
 
 // ── Editor project format (version 1) ────────────────────────────────────────
 
@@ -100,8 +101,7 @@ export async function buildEditorBlob(host: EditorProjectHost): Promise<Blob> {
     animations[name] = serializeClip(clip);
   });
 
-  const bindings: Record<string, SpriteBinding> = {};
-  host.state.boneBindings.forEach((b, id) => { bindings[id] = { ...b }; });
+  const bindings = serializeBindings(host.state.boneBindings);
 
   const attachmentPoints: AttachmentPoint[] = [];
   host.state.attachmentPoints.forEach(pt => attachmentPoints.push({ ...pt }));
@@ -232,9 +232,12 @@ export async function loadEditorBlob(host: EditorProjectHost, data: Blob, label:
     host.animCtrl.clearAll();
     [...host.state.boneBindings.keys()].forEach(id => host.state.removeBinding(id));
 
-    // Restore animations + bindings + attachments + rig
+    // Restore animations + bindings + attachments + rig. Bindings go through
+    // serializeBinding so a project saved by an older animator cannot carry keys the
+    // current SpriteBinding no longer declares (offsetX/offsetY — see that type) into
+    // live state; loading an old project normalises it.
     for (const [boneId, binding] of Object.entries(project.bindings)) {
-      host.state.setBinding(boneId, binding);
+      host.state.setBinding(boneId, serializeBinding(binding));
     }
     if (Array.isArray(project.attachmentPoints) && project.attachmentPoints.length > 0) {
       host.state.setAllAttachmentPoints(project.attachmentPoints);

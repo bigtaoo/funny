@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "lint": "eslint .",
     "typecheck": "tsc -b tsconfig.build.json",
     "typecheck:test": "npm run typecheck:test --workspaces --if-present",
     "check:filelength": "node scripts/checkFileLength.mjs",
@@ -52,6 +53,11 @@
     "mongodb-memory-server@11.2.0": true
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^2.1.8"
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.68.0",
+    "@typescript-eslint/parser": "^8.68.0",
+    "@vitest/coverage-v8": "^2.1.8",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8"
   }
 }

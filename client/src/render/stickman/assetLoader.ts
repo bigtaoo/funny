@@ -8,6 +8,7 @@ import JSZip from 'jszip';
 import { Skeleton } from './skeleton';
 import type { AnimationClip, BoneKeyframe, SpriteBinding } from './types';
 import type { TaoAsset, TaoAttachmentPoint } from './runtimeTypes';
+import { asEasing, type TaoAnimationJson, type TaoSpritesheetJson } from './taoFormat';
 import { STICKMAN_SCALE, OUTLINE_GAP_PX, OUTLINE_WIDTH_PX } from './constants';
 import { loadImageEl, clampInt, buildBoneOutline } from './outline';
 import { assetIO } from '../../assets/assetIO';
@@ -19,24 +20,29 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
   const zip = await JSZip.loadAsync(buf);
 
   // ── animation.json ────────────────────────────────────────────────────
-  const animRaw = JSON.parse(await zip.file('animation.json')!.async('string')) as any;
+  const animRaw = JSON.parse(
+    await zip.file('animation.json')!.async('string'),
+  ) as TaoAnimationJson;
 
   const clips = new Map<string, AnimationClip>();
-  for (const [name, raw] of Object.entries(animRaw.animations as Record<string, any>)) {
+  for (const [name, raw] of Object.entries(animRaw.animations)) {
     clips.set(name, {
       duration:  raw.duration,
       loop:      raw.loop,
-      keyframes: (raw.keyframes as any[]).map(kf => ({
+      keyframes: raw.keyframes.map(kf => ({
         time:  kf.time,
         bones: new Map<string, BoneKeyframe>(
-          Object.entries(kf.bones as Record<string, BoneKeyframe>),
+          Object.entries(kf.bones).map(([boneId, bkf]) => [
+            boneId,
+            { ...bkf, easing: asEasing(bkf.easing) },
+          ]),
         ),
       })),
     });
   }
 
   const bindings = new Map<string, SpriteBinding>();
-  for (const [boneId, b] of Object.entries(animRaw.bindings as Record<string, any>)) {
+  for (const [boneId, b] of Object.entries(animRaw.bindings)) {
     bindings.set(boneId, {
       anchorX:  b.anchorX  ?? 0.5,
       anchorY:  b.anchorY  ?? 0.5,
@@ -45,14 +51,16 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
       rotation: b.rotation ?? 0,
       scaleX:   b.scaleX   ?? 1,
       scaleY:   b.scaleY   ?? 1,
-      offsetX:  b.offsetX  ?? 0,
-      offsetY:  b.offsetY  ?? 0,
+      // NOTE: `b.offsetX`/`b.offsetY` are deliberately NOT read. 7 bundles in
+      // src/assets still carry non-zero values from the 2026-06-05..09 window when
+      // SpriteBinding briefly had an offset channel; it was removed on 2026-06-09 in
+      // favour of out-of-range anchors. See claudedocs/file-formats.md.
     });
   }
 
   const boneLengthScales = new Map<string, number>();
   if (animRaw.boneLengthScales) {
-    for (const [id, s] of Object.entries(animRaw.boneLengthScales as Record<string, number>)) {
+    for (const [id, s] of Object.entries(animRaw.boneLengthScales)) {
       boneLengthScales.set(id, s);
     }
   }
@@ -71,7 +79,9 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
     : STICKMAN_SCALE;
 
   // ── spritesheet ───────────────────────────────────────────────────────
-  const spRaw  = JSON.parse(await zip.file('spritesheet.json')!.async('string')) as any;
+  const spRaw  = JSON.parse(
+    await zip.file('spritesheet.json')!.async('string'),
+  ) as TaoSpritesheetJson;
   const pngBlob = await zip.file('spritesheet.png')!.async('blob');
   const pngUrl  = URL.createObjectURL(pngBlob);
 
@@ -79,11 +89,11 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
   await new Promise<void>((resolve, reject) => {
     if (baseTex.valid) { resolve(); return; }
     baseTex.once('loaded', resolve);
-    baseTex.once('error',  (err: any) => reject(new Error(`Spritesheet load error: ${err}`)));
+    baseTex.once('error',  (err: unknown) => reject(new Error(`Spritesheet load error: ${err}`)));
   });
 
   const textures = new Map<string, PIXI.Texture>();
-  for (const [boneId, fd] of Object.entries(spRaw.frames as Record<string, any>)) {
+  for (const [boneId, fd] of Object.entries(spRaw.frames)) {
     // Shadow is drawn procedurally (unified soft ellipse); ignore any packed
     // shadow frame so legacy bundles render the same as freshly-exported ones.
     if (boneId === 'shadow') continue;
@@ -100,7 +110,7 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
   try {
     const ssImg = await loadImageEl(pngUrl);
     URL.revokeObjectURL(pngUrl);
-    for (const [boneId, fd] of Object.entries(spRaw.frames as Record<string, any>)) {
+    for (const [boneId, fd] of Object.entries(spRaw.frames)) {
       if (boneId === 'shadow') continue;
       const { x, y, w, h } = fd.frame;
       const binding = bindings.get(boneId);
@@ -122,7 +132,7 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
 
   // ── attachment points ────────────────────────────────────────────────────
   const attachmentPoints = new Map<string, TaoAttachmentPoint>();
-  for (const ap of (animRaw.attachmentPoints ?? []) as any[]) {
+  for (const ap of animRaw.attachmentPoints ?? []) {
     attachmentPoints.set(ap.id, {
       id:         ap.id,
       parentBone: ap.parentBone ?? 'root',

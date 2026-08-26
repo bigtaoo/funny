@@ -33,7 +33,7 @@ function build(seedEvents: EventDoc[] = []) {
     commercial: fakeCommercial(),
     socialsvc: new ThrowingSocialsvc(),
     authed: (headers) => headers['x-internal-key'] === KEY,
-    redis: () => { throw new Error('fake InternalCtx.redis() is not stubbed in this test'); },
+    redis: null, // only the matchReport routes read InternalCtx.redis, and these suites don't register them
     accountCache: new AccountCache(),
   };
   const app = Fastify();

@@ -1,68 +1,14 @@
 import type { EventBus, AppEvents } from '../core/EventBus';
 import type { AppState } from '../core/AppState';
 import type { AnimationController } from '../animation/AnimationController';
-import type { CommandManager, Command } from '../core/CommandManager';
+import type { CommandManager } from '../core/CommandManager';
 import type { AnimationClip, BoneKeyframe, EasingType, Keyframe } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 import { ContextMenu } from './ContextMenu';
+import { MoveKeyframeCommand, SetEasingCommand, DeleteKeyframeCommand } from './commands';
 
 const ROW_H   = 26;
 const RULER_H = 20;
-
-// ── Commands ──────────────────────────────────────────────────────────────────
-
-class MoveKeyframeCommand implements Command {
-  readonly label: string;
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly oldTime: number,
-    private readonly newTime: number,
-  ) {
-    this.label = `Move Keyframe ${oldTime.toFixed(3)}s → ${newTime.toFixed(3)}s`;
-  }
-  execute(): void { this.animCtrl.moveKeyframe(this.oldTime, this.newTime); }
-  undo():    void { this.animCtrl.moveKeyframe(this.newTime, this.oldTime); }
-}
-
-class SetEasingCommand implements Command {
-  readonly label: string;
-  private old: EasingType | undefined;
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly time: number,
-    private readonly boneId: string,
-    private readonly easing: EasingType,
-  ) {
-    this.label = `Set easing ${boneId} @ ${time.toFixed(3)}s`;
-  }
-  execute(): void {
-    const kf = this.animCtrl.currentClip?.keyframes.find(k => Math.abs(k.time - this.time) < 0.001);
-    this.old = kf?.bones.get(this.boneId)?.easing;
-    this.animCtrl.updateKeyframeProp(this.time, this.boneId, { easing: this.easing });
-  }
-  undo(): void {
-    this.animCtrl.updateKeyframeProp(this.time, this.boneId, { easing: this.old });
-  }
-}
-
-class DeleteKeyframeCommand implements Command {
-  readonly label: string;
-  private deleted: Map<string, BoneKeyframe> | null = null;
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly time: number,
-  ) {
-    this.label = `Delete Keyframe @ ${time.toFixed(3)}s`;
-  }
-  execute(): void {
-    const kf = this.animCtrl.currentClip?.keyframes.find(k => Math.abs(k.time - this.time) < 0.001);
-    if (kf) this.deleted = new Map(Array.from(kf.bones.entries()).map(([id, b]) => [id, { ...b }]));
-    this.animCtrl.deleteKeyframeAt(this.time);
-  }
-  undo(): void {
-    if (this.deleted) this.animCtrl.addKeyframeAt(this.time, this.deleted);
-  }
-}
 
 // ── TimelineView ──────────────────────────────────────────────────────────────
 
@@ -72,7 +18,10 @@ export class TimelineView {
 
   private isScrubbing  = false;
   private isDraggingKf = false;
+  /** Live-updated as the drag moves; the keyframe's current time. */
   private dragKfTime   = 0;
+  /** The keyframe's time when the drag started — the undo target. */
+  private dragKfStartTime = 0;
 
   private scrollY      = 0;
   private isDraggingScroll = false;
@@ -104,7 +53,7 @@ export class TimelineView {
     canvasEl.addEventListener('mousedown',   e => this.onMouseDown(e));
     canvasEl.addEventListener('mousemove',   e => this.onMouseMove(e));
     canvasEl.addEventListener('mouseup',     e => this.onMouseUp(e));
-    canvasEl.addEventListener('mouseleave',  () => { this.isScrubbing = false; this.isDraggingKf = false; });
+    canvasEl.addEventListener('mouseleave',  () => { this.isScrubbing = false; this.endKfDrag(); });
     canvasEl.addEventListener('contextmenu', e => this.onContextMenu(e));
     canvasEl.addEventListener('wheel',       e => this.onWheel(e), { passive: false });
 
@@ -384,8 +333,9 @@ export class TimelineView {
 
     const hit = this.findKfAt(e.clientX, e.clientY);
     if (hit) {
-      this.isDraggingKf = true;
-      this.dragKfTime   = hit.kf.time;
+      this.isDraggingKf    = true;
+      this.dragKfTime      = hit.kf.time;
+      this.dragKfStartTime = hit.kf.time;
       this.state.setSelectedKfTime(hit.kf.time);
       this.state.setCurrentTime(hit.kf.time);
       this.state.setSelectedBone(hit.boneId);
@@ -414,12 +364,24 @@ export class TimelineView {
     }
   }
 
-  private onMouseUp(e: MouseEvent): void {
-    if (this.isDraggingKf) {
-      // Already mutated via moveKeyframe; commit as Command if time actually changed
-      this.isDraggingKf = false;
-    }
+  private onMouseUp(_e: MouseEvent): void {
+    this.endKfDrag();
     this.isScrubbing = false;
+  }
+
+  /**
+   * Finish a keyframe drag. onMouseMove already mutated the clip via moveKeyframe, so the
+   * command is recorded with pushExecuted (no re-run) — otherwise it would move the keyframe
+   * a second time. A drag that ended where it started records nothing.
+   */
+  private endKfDrag(): void {
+    if (!this.isDraggingKf) return;
+    this.isDraggingKf = false;
+
+    const commit = getKfDragCommit(this.dragKfStartTime, this.dragKfTime);
+    if (!commit) return;
+
+    this.cmdManager.pushExecuted(new MoveKeyframeCommand(this.animCtrl, commit.from, commit.to));
   }
 
   private onContextMenu(e: MouseEvent): void {
@@ -443,6 +405,23 @@ export class TimelineView {
       { label: 'Delete keyframe', action: () => this.cmdManager.execute(new DeleteKeyframeCommand(this.animCtrl, kf.time)) },
     ]);
   }
+}
+
+// ── Keyframe drag helpers ─────────────────────────────────────────────────────
+
+/**
+ * Decides whether a finished keyframe drag is worth an undo entry, and with which times.
+ *
+ * Both ends are rounded to the millisecond because that is what `AnimationController.moveKeyframe`
+ * actually stores — undo/redo must address the stored value, not the raw pointer position, or they
+ * land a sub-tolerance remainder away from it. Rounding first also means a drag that never left the
+ * keyframe's own millisecond (a click, or a jitter of a few microseconds) returns null instead of
+ * pushing a command whose undo would be a visible no-op.
+ */
+export function getKfDragCommit(startTime: number, endTime: number): { from: number; to: number } | null {
+  const from = Math.round(startTime * 1000) / 1000;
+  const to   = Math.round(endTime   * 1000) / 1000;
+  return from === to ? null : { from, to };
 }
 
 // ── Keyframe colour helpers ───────────────────────────────────────────────────

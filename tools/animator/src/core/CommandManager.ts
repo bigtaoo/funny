@@ -27,6 +27,19 @@ export class CommandManager {
     this.emitChange();
   }
 
+  /**
+   * Record a command whose effect has ALREADY been applied to the model — push to the undo
+   * stack and clear the redo stack WITHOUT calling execute(). For interactions that mutate
+   * live while the user drags (keyframe drag), where re-running execute() would apply the
+   * change a second time on top of state that already moved.
+   */
+  pushExecuted(cmd: Command): void {
+    this.undoStack.push(cmd);
+    if (this.undoStack.length > MAX_STACK) this.undoStack.shift();
+    this.redoStack = [];
+    this.emitChange();
+  }
+
   undo(): void {
     const cmd = this.undoStack.pop();
     if (!cmd) return;
@@ -67,7 +80,8 @@ export class CommandManager {
     this.bus.emit('history:change', {
       canUndo: this.canUndo,
       canRedo: this.canRedo,
-      label: this.canUndo ? this.undoLabel : this.redoLabel,
+      undoLabel: this.undoLabel,
+      redoLabel: this.redoLabel,
     });
   }
 }

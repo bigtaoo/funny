@@ -24,7 +24,7 @@ export async function stripeVerify(
       },
     });
   } catch (e) {
-    throw new Error(`stripe fetch failed: ${(e as Error).message}`);
+    throw new Error(`stripe fetch failed: ${(e as Error).message}`, { cause: e });
   }
   if (resp.status === 404) return { ok: false, coins: 0 };
   if (!resp.ok) {

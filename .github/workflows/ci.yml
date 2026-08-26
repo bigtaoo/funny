@@ -91,6 +91,17 @@ jobs:
       - name: server file length check
         working-directory: server
         run: npm run check:filelength
+      # ESLint, new on 2026-08-26 and new to server/ entirely: until this day client/ was the only
+      # package in the repo with a linter, so the rules were enforced on the UI layer and nowhere
+      # near the money, match, or simulation code. One config at server/ covers all 13 workspaces
+      # (rules shared with client/ and tools/* in eslint.shared.mjs). First run over 623 files
+      # found 58 problems and no rot: 34 imports/locals left behind by the mixin-chain and
+      # territory/structures splits, 11 `any`, 5 rethrows dropping the original error in the IAP
+      # verification paths, 5 `{}`-as-empty-payload, and 3 eslint-disable comments suppressing
+      # nothing (written in code that had never been linted). Errors fail the job.
+      - name: server lint
+        working-directory: server
+        run: npm run lint
       # Guards against a workspace silently getting zero CI type-checking (socialsvc/botsvc were
       # missing from this step's old hand-enumerated package list for weeks before anyone noticed —
       # see claudedocs/server.md). Fails if tsconfig.build.json's references drift from
@@ -436,6 +447,21 @@ jobs:
         run: |
           for d in animator level-editor map-editor ops vfx-editor desktop-shell; do
             (cd "$d" && npm ci)
+          done
+      # ESLint, new on 2026-08-26: none of the five tools had a lint script before that day (nor did
+      # server/; client/'s existed but had been failing at startup, unwatched, for months — see
+      # claudedocs/client-testing.md). Rules are shared with client/ and server/ via the repo-root
+      # eslint.shared.mjs. First run found 6 problems across all five: level-editor, ops and
+      # map-editor were already clean; animator had a ternary-as-statement, a stale eslint-disable,
+      # an unused handler param, and one genuinely dead command class that turned out to be a
+      # missing feature (keyframe drags are not undoable — documented in place, not deleted);
+      # vfx-editor had an unused import and one prefer-const the rule was wrong about.
+      # desktop-shell has no lint script (it is build-only, like its typecheck).
+      - name: tools lint (animator, level-editor, map-editor, ops, vfx-editor)
+        working-directory: tools
+        run: |
+          for d in animator level-editor map-editor ops vfx-editor; do
+            (cd "$d" && npm run lint)
           done
       # 2026-08-13 follow-up: animator/level-editor/vfx-editor gained the same typecheck+test
       # scripts as map-editor/ops (io/ split coverage + a bootstrap pure-module test each — see

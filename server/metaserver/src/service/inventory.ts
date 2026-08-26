@@ -14,7 +14,7 @@ type InventoryHandlers = Pick<
   | 'cardsFuse' | 'cardsFuseBatch' | 'cardsLock' | 'cardsUnlock'
 >;
 
-export class InventoryService {
+export class InventoryService implements InventoryHandlers {
   constructor(private readonly core: MetaCore) {}
 
     /**

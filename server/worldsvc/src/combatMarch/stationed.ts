@@ -3,7 +3,7 @@
 //
 // Independent sibling class (2026-08-11 mixin-chain split, claudedocs/server.md "拆分形态的优先级"
 // 形态②): only ever calls `this.core` — assembled by composition in ../combatMarch.ts.
-import { tileId, marchId, playerWorldId, marchDurationFromPath, isInVision, SlgError } from '@nw/shared';
+import { marchId, playerWorldId, marchDurationFromPath, isInVision, SlgError } from '@nw/shared';
 import type { MarchDoc } from '../db';
 import { WorldCore } from '../core';
 import type { MarchView, StationedView } from '../worldTypes';

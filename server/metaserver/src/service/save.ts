@@ -34,7 +34,7 @@ const STATE_REPLAY_EXPIRE_DAYS = 14;
 /** Per-account share minting rate limit: maximum shares per hour. */
 const STATE_REPLAY_SHARE_PER_HOUR = 20;
 
-export class SaveService {
+export class SaveService implements SaveHandlers {
   /**
    * State-stream share minting rate limit (REPLAY_SHARE_DESIGN §3.1): sliding window of mint counts per
    * account within the last 1 hour. Redis-backed when configured (2026-07-27, precise across instances);
