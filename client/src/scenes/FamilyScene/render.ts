@@ -16,7 +16,8 @@ import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore, FamilyTab } from './core';
 import type { ActionsHandlers } from './actions';
 import type { InputHandlers } from './input';
-import { renderMembers as renderMembersImpl, renderChannel as renderChannelImpl, truncateToWidth, MUTED } from './lists';
+import { renderMembers as renderMembersImpl, renderChannel as renderChannelImpl, MUTED } from './lists';
+import { truncateToWidth } from '../../ui/widgets/truncateText';
 
 /** Largest font size ≤ `size` (down to 11px) at which `label` fits within `maxW`. Portrait pins
  *  the width axis while h-relative sizing scales off the (much taller) height, so a fixed-box label

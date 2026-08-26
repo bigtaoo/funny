@@ -16,7 +16,7 @@ import { systemText } from '../src/i18n/systemText';
 import { zh } from '../src/i18n/locales/zh';
 import { en } from '../src/i18n/locales/en';
 import { de } from '../src/i18n/locales/de';
-import { ORG_NAME_WIDTH_MAX } from '@nw/shared';
+import { ORG_NAME_WIDTH_MAX, orgNameWidth } from '@nw/shared';
 
 describe('systemText', () => {
   it('translates a bare key', () => {
@@ -82,37 +82,55 @@ describe('ADR-074 capture copy binds every placeholder it declares', () => {
 
   const LOCALES: Array<[string, Record<string, string>]> = [['zh', zh], ['en', en], ['de', de]];
 
-  // drawChatLine draws one unwrapped line and cuts the body at `maxBodyChars` (default 60). That
-  // cap is NOT the real constraint: the row is clipped by its column first. Measured against the
-  // live scene at landscape design width 1500, the sect channel's column (SectScene/lists.ts, a
-  // split view) clips at roughly 34 CJK / 39 latin chars, while the world channel
-  // (FriendsScene/worldChat.ts) is a full-width row and has the whole 60 to play with. The German
-  // copy originally written here rendered at 55 chars and was visibly cut mid-word in the sect
-  // column — caught by screenshot, not by the old 60-char assertion, which is why the budget below
-  // is per-channel.
+  // drawChatLine draws one unwrapped line, so an announcement that overruns its channel loses its
+  // tail. Since 2026-08-26 it truncates by available WIDTH with an `…` (ui/widgets/truncateText.ts)
+  // rather than at 60 characters, so an overrun now degrades legibly instead of vanishing mid-word —
+  // but a capture notice that cannot say which city was taken is still a broken notice, hence a
+  // budget here.
   //
-  // The sect name is player-chosen, so the budget has to be checked at the widest name the server
-  // will accept (ORG_NAME_WIDTH_MAX = 12 display units, i.e. 12 ASCII chars), not a short sample.
+  // The budget is in DISPLAY UNITS (orgNameWidth: full-width/CJK = 2, everything else = 1), not
+  // characters. That is the whole point: a character count is what made the previous version of this
+  // test wrong twice over. It carried a 34-CJK / 41-Latin pair, and those two cannot both describe
+  // one column — a monospace CJK glyph is ~1.8 Latin advances, so 34 CJK is ~62 units against 41.
+  // One number in the right unit replaces both.
+  //
+  // Where the numbers come from — measured in a real browser (Playwright against `npm run
+  // start:e2e`, window.__nwE2E, viewport 1600x900 → the NARROWEST landscape design width, 1920;
+  // the harness in test:ui cannot answer this, its measureText is a flat 7px/code-unit). At
+  // FS.label = 24 the real monospace advance is 13.2px Latin / 24.0px CJK (ratio 1.82), and the
+  // body's available width for a `system`-tagged row came out at:
+  //   sect channel (SectScene/lists.ts, landscape split column)   700px = 53.0 units
+  //   world channel (FriendsScene/worldChat.ts, full-width row)  1386px = 105.0 units
+  // Both include drawChatLine's ": " prefix (2 units), which the dictionary string does not, and
+  // both are stable across locales because the cap is geometry. Budgets below take the remainder
+  // minus a small margin. orgNameWidth charging CJK 2.0 against a real 1.82 is itself conservative.
   const SECT_CHANNEL = ['slg.city.captured', 'slg.city.lost'] as const;      // postSect → narrow column
   const WORLD_CHANNEL = ['slg.city.worldCenterCaptured'] as const;           // nationMessages → full width
+  const SECT_BUDGET = 48;    // of 51 available
+  const WORLD_BUDGET = 96;   // of 103 available
   const WIDEST = {
     kind: 'garrison', node: 'n7', level: 9, x: 128, y: 128,
+    // The sect name is player-chosen, so measure at the widest the server will accept, not a
+    // convenient short sample.
     sect: 'W'.repeat(ORG_NAME_WIDTH_MAX),
   };
   const render = (s: string) => s.replace(/\{(\w+)\}/g, (w, n: string) => String((WIDEST as Record<string, unknown>)[n] ?? w));
 
   it.each(SECT_CHANNEL)('%s fits the sect channel column at the widest legal sect name', (key) => {
     for (const [locale, dict] of LOCALES) {
-      const budget = locale === 'zh' ? 34 : 41;
       const out = render(dict[key]!);
-      expect(out.length, `${key} in ${locale} (budget ${budget}): "${out}"`).toBeLessThanOrEqual(budget);
+      const width = orgNameWidth(out);
+      expect(width, `${key} in ${locale} is ${width}/${SECT_BUDGET} display units: "${out}"`)
+        .toBeLessThanOrEqual(SECT_BUDGET);
     }
   });
 
   it.each(WORLD_CHANNEL)('%s fits a full-width chat row at the widest legal sect name', (key) => {
     for (const [locale, dict] of LOCALES) {
       const out = render(dict[key]!);
-      expect(out.length, `${key} in ${locale}: "${out}"`).toBeLessThanOrEqual(60);
+      const width = orgNameWidth(out);
+      expect(width, `${key} in ${locale} is ${width}/${WORLD_BUDGET} display units: "${out}"`)
+        .toBeLessThanOrEqual(WORLD_BUDGET);
     }
   });
 
