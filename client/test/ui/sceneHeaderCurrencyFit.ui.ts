@@ -238,7 +238,9 @@ function buildPortraitRoster(coins: number): CardScene {
 }
 
 interface RosterInternals {
-  core: { headerOverlayLayer: PIXI.Container; container: PIXI.Container; headerH: number; titleRight: number };
+  // The title lives in its own layer since 2026-08-26 (it follows the active tab, so it is redrawn
+  // per render() instead of being baked once into `container` — see CardSceneCore.renderHeader).
+  core: { headerOverlayLayer: PIXI.Container; headerLayer: PIXI.Container; headerH: number; titleRight: number };
 }
 
 describe('CardScene portrait header — title and coin readout do not overlap (2026-08-24)', () => {
@@ -246,7 +248,7 @@ describe('CardScene portrait header — title and coin readout do not overlap (2
     const scene = buildPortraitRoster(95946835);
     const { core } = scene as unknown as RosterInternals;
 
-    const title = core.container.children.find(
+    const title = core.headerLayer.children.find(
       (c): c is PIXI.Text => c instanceof PIXI.Text && c.text === t('roster.title'),
     );
     expect(title, 'header title not found').toBeDefined();

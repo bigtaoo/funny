@@ -382,7 +382,7 @@
 - `client/test/headerCurrencyReserve.test.ts`（17 例，静态扫描）——每个 `drawHeaderCurrency` 调用点都必须传 `leftBound`，且同目录内必须有 `headerCurrencyWidth(...) + rightReserve` 的配对；调用点清单本身带 canary（改名不许让整个套件静默变空）。这是能机械守住的那一半，也正是它抓出了漏掉的三个场景。
 - 像素证据只能靠浏览器：`web-e2e` 入口的 `__nwE2E` 现在**多暴露一个 `app`**（读 `PixiAppViews` 的 `private readonly app`——`wrapViews` 是唯一的注入点且只拿到 views，为测试专用需求开生产接缝更不划算），Playwright 因此能遍历真实显示树、读 `getBounds()` 出数，而不是靠肉眼看截图。
 
-## 27. 皮肤页签顶着「卡背包」的标题（2026-08-26）
+## 27. 页头标题不跟着页签走（皮肤页 / 商店充值页，2026-08-26）
 
 **症状**：卡背包场景切到「皮肤」页签后，页头标题仍是「卡背包」、图标仍是卡背包的 `rosterIcon`——左侧导轨高亮在「皮肤」，页头却说这是卡背包（用户报的 bug，截图为横屏 1600×760）。
 
@@ -390,9 +390,29 @@
 
 **修法**：把标题条从 build 的一次性脚手架里拆出来，单独一层 `core.headerLayer`（插在 `loadingLayer` 与 `headerOverlayLayer` 之间，z 序不变），新增 `core.renderHeader()` 按 `core.tab` 取标题与图标（`roster.title`/`rosterIcon` 对 `roster.tab.skins`/`skinIcon`），由 `CardScene.render()` 在注册返回键 hit 之前调用——`backRect` 归页头所有，必须先重画再登记。形状与 `FriendsScene/chrome.ts` 的 `drawHeader()` 一致（标题键由当前页签推导，每次 render 重画）。货币簇的 `rightReserve` 仍走同一个 `headerCurrencySpec()`，§26 的量测约定不变。
 
-**已知遗留**：皮肤页签的页头右上角仍显示卡牌容量读数 `74/500`（`headerCurrencySpec()` 不分页签）。衣柜里这个数没有意义，但它不是本次报的问题，未动。
+**顺带**：皮肤页签的页头右上角原本还挂着卡牌容量读数 `74/500`（`headerCurrencySpec()` 不分页签）——数的是卡，画在一页皮肤上面。`capacity` 改成 `tab === 'skins' ? undefined : {...}`（`drawHeaderCurrency` 的该参数本就可选），金币照旧；预留宽度走同一个 spec，所以量测与绘制仍不可能对不上。
 
-**回归测试**：`client/test/ui/cardSceneSkins.ui.ts` 新增 2 例——导轨来回切、以及 `initialTab: 'skins'` / `showTab()` 两条入口，断言 `core.headerLayer` 里那条非返回键文字。断言必须读这一层而不是整棵树：左侧导轨画的正是同样这两个词。
+**同一 bug 类：商店的「充值」页签**（同一次审计发现，一并修）。`ShopScene` 的 `tab: 'shop' | 'coins'` 是**本场景内的两个页签**，却和抽卡/通行证/累计充值这些**同组的别的场景**共用一条导轨；`drawHeader()` 写死 `t('shop.title')`，于是充值页高亮在「充值」、页头却写着「商店」。改为按 `this.tab` 取 `shop.coinsTab`/`coinTabIcon`。它的页头本就每帧重画（`render()` → `drawHeader()`），所以不需要 CardScene 那种分层。
 
-**像素证据**：`web-e2e` + Playwright（浏览器面板不合成，走 stub 挂载法：`views.showCardRoster(cb)` 直接开场景，无后端无登录），衣柜页头读作「Skins」+ 皮肤图标，卡牌页头仍读「Hero Roster」。
+**其余页面审计结论**（这次把所有带导轨/页签的场景过了一遍）：
+
+| 场景 | 页签性质 | 结论 |
+|---|---|---|
+| `CardScene`、`ShopScene` | 导轨里混着**同组别的页面**和本场景的本地页签 | **本次修**：页头必须报出高亮那格的名字 |
+| `DailyScene`、`FriendsScene` | 主导轨，四/五个各自独立的功能 | 早已按页签换标题，无需改 |
+| `AuctionScene`（全部/我的寄售/我的出价） | 同一个场馆内的**筛选**，导轨里没有别的场景 | 保持「拍卖行」——场馆名才是有用的上下文 |
+| `EquipmentScene`（背包/锻造）、`AchievementScene`（成就分类） | `drawSidebarTabs(..., { sub: true })` 的**下挂子页签** | 保持父页标题 |
+| `GachaScene`、`BattlePassScene`、`RechargeScene` | 导轨全是别的场景，自己那格 `active` | 标题本就等于高亮格 |
+| `FamilyScene`、`SectScene` | 页头是自绘的组织名 | 不适用 |
+| `EventScene` | 活动名横条，活动标题另画在正文里 | 保持「活动」 |
+| `SettingsScene` 头像选择、世界地图领地面板 | 页签在弹窗/面板内，不涉及场景页头 | 不适用 |
+
+判据一句话：**导轨里只要出现别的页面，页头就得说出高亮那格的名字**；纯粹是一个场所内部的筛选或下挂子页签时，页头保持场所名。
+
+**回归测试**：
+- `client/test/ui/cardSceneSkins.ui.ts` 新增 3 例——导轨来回切、`initialTab: 'skins'` / `showTab()` 两条入口、以及容量读数的进出。标题断言必须读 `core.headerLayer` 而不是整棵树：左侧导轨画的正是同样这两个词。
+- `client/test/ui/shopGroupTabs.ui.ts` 新增 2 例——同样的双份文字问题，这里按几何区分（`getGlobalPosition().y < sceneHeaderHeight()` 才算页头那条带）。红绿对照做过：回退 `ShopScene` 的改动后这 2 例都红。
+- `client/test/ui/sceneHeaderCurrencyFit.ui.ts` 跟着改了一处**读法**（§26 那条断言原本从 `core.container.children` 里找标题，现在标题在 `core.headerLayer` 里）——不是放宽断言，是同一个断言指向新的层。它也是唯一抓到本次分层改动的既有测试。
+
+**像素证据**：`web-e2e` + Playwright（浏览器面板不合成，走 stub 挂载法：`views.showCardRoster(cb)` / `views.showShop(cb)` 直接开场景，无后端无登录）。衣柜页头读「Skins」+ 皮肤图标、右上角只剩金币；商店充值页读「Top Up」+ 金币图标。
 

@@ -227,6 +227,33 @@ describe('CardScene — header title follows the active tab', () => {
     scene.destroy();
   });
 
+  // The other half of the same report: the coin/capacity cluster is drawn into headerOverlayLayer
+  // from the same headerCurrencySpec() the title band measures, and the capacity counts CARDS —
+  // meaningless over a page of skins.
+  it('drops the card-capacity readout on the wardrobe and keeps the coin balance', () => {
+    const overlayTexts = (scene: CardScene): string[] => {
+      const layer = (scene as unknown as { core: { headerOverlayLayer: PIXI.Container } }).core.headerOverlayLayer;
+      const out: string[] = [];
+      const walk = (node: PIXI.Container): void => {
+        if (node instanceof PIXI.Text) { out.push(node.text); return; }
+        for (const c of node.children) walk(c as PIXI.Container);
+      };
+      walk(layer);
+      return out;
+    };
+    const capacity = t('roster.capacity').replace('{cur}', '0').replace('{cap}', '500');
+    const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb());
+    expect(overlayTexts(scene)).toContain(capacity);
+
+    tap(scene, t('roster.tab.skins'));
+    expect(overlayTexts(scene)).not.toContain(capacity);
+    expect(overlayTexts(scene).length).toBeGreaterThan(0); // the coin balance still reads out
+
+    tap(scene, t('roster.title'));
+    expect(overlayTexts(scene)).toContain(capacity);
+    scene.destroy();
+  });
+
   it('opens straight into the right title when the wardrobe is the initial tab', () => {
     const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb('skins'));
     expect(headerTitle(scene)).toBe(t('roster.tab.skins'));

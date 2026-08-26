@@ -314,15 +314,24 @@ export class ShopSceneCore {
     if (decoC) this.container.addChild(decoC);
   }
 
-  /** Header bar with title, back, and coin balance. Returns its height. */
+  /**
+   * Header bar with title, back, and coin balance. Returns its height.
+   *
+   * Title + glyph name the ACTIVE tab, not the scene: [Shop|Top Up] are two local tabs of the same
+   * scene and both appear in the shop-group rail, so a fixed `shop.title` left the Top Up page under
+   * a header reading "Shop" while the rail highlighted Top Up (2026-08-26, same report as the card
+   * roster's skins tab). The rail's own labels are reused verbatim — the header must say what the
+   * highlighted rail cell says.
+   */
   drawHeader(): number {
     const { w, h } = this;
     // Reserve the coin readout's real width before the title is laid out, so a centred title cannot
     // run under it on a narrow portrait bar (2026-08-24). Drawn right after the header, so the
     // measurement is always current and drawHeaderCurrency's own fit backstop never has to engage.
     const coins = this.cb.getCoins();
-    const hdr = drawSceneHeader(this.container, w, h, t('shop.title'), {
-      accent: HEADER_ACCENT.spend, icon: 'shopTabIcon',
+    const coinsTab = this.tab === 'coins';
+    const hdr = drawSceneHeader(this.container, w, h, t(coinsTab ? 'shop.coinsTab' : 'shop.title'), {
+      accent: HEADER_ACCENT.spend, icon: coinsTab ? 'coinTabIcon' : 'shopTabIcon',
       rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
     });
     const tbH = hdr.headerH;
