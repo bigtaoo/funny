@@ -17,6 +17,22 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 
 `boneLengthScales` 稀疏对象，只记录非 1.0 的骨骼；缺省或缺键均视为 1.0。
 
+### `binding` 的七个字段 —— 没有 `offsetX/offsetY`（2026-08-26 定案）
+
+`bindings[boneId]` **只有** `anchorX/anchorY/flipX/zOrder/rotation/scaleX/scaleY` 七个字段。静态位移一律走 **`anchorX/anchorY` 允许超出 0–1** 这条路（image-space、随贴图缩放），**不存在** binding 级的世界坐标偏移通道。
+
+历史与已定案的处理：
+
+- `SpriteBinding` 曾在 **2026-06-05 ~ 06-09** 短暂带过 `offsetX/offsetY`（世界坐标像素偏移）。**2026-06-09（`0f438040`）删除**：同一个 commit 里去掉了类型字段、去掉了 animator `Renderer.ts` 的应用（sprite 位置 + anchor gizmo 连线），并把 anchor 的注释从"0–1"改成"**允许超出 0–1**"——即以放宽 anchor 取代该通道。
+- 但那次删除**没迁移数据、也漏了客户端**：`client/src/assets` 里 18 个包中有 **7 个**仍带非零值（`harpy` / `infantry` / `ironclad` / `medic` / `runner` / `skins/skin_infantry` / `splitter`），对应 `art/**/*.tao.editor` 母版同样带；而客户端 `pose.ts` 一直在 `sprite.x/y` 上加这两个值。
+- 数据能存活十周，是因为写侧每一跳都是**无类型对象展开**（`{ ...b }`，`editorProject.ts` / `taoExport.ts`），会捎带类型从未声明的键——类型检查和画师都看不见它。
+- **它不是美术意图**：animator 预览从 2026-06-09 起就不应用这两个值，所以画师**从来没看见过它们的效果**，也没有任何 UI 能编辑；而 7 个包里的偏移值**逐字节相同**（`l_lower_arm(-1,13)` / `r_upper_leg(-12,7)` / `r_lower_leg(-8,0)` / `l_upper_leg(16,0)` / `l_lower_leg(2,0)`），而同一批 binding 的 anchor/rotation/scale 却每个单位都单独调过（`harpy` scale 0.3 vs `infantry` 0.55，rotation −40 vs −97，`splitter` 甚至 `anchorX: 1.2` 已超出 0–1）。这是模板项目里冻住的一组常量，不是逐单位调出来的美术数值。
+- **结论：判定为死字段，画面以 animator 预览（画师验收的那一版）为准。**
+  - 客户端 `assetLoader.ts` **不再读**、`pose.ts` **不再加**这两个值——`pose.ts` 那句"composite formula (matches animator Renderer.ts)"从此才真正成立（此前恰恰在这两个字段上不一致）。
+  - 写侧新增 `io/bindingSerialization.ts`，**逐字段构造** binding 取代 `{ ...b }` 展开：类型删掉的字段不再写出，加字段则会在此处编译报错。加载 `.tao.editor` 时同样过一遍，老存档打开即归一化。
+  - **不做批量重导出**：既然没人再读这两个键，包里的残留就是死字节；且 `art/**` 母版与 `client/src/assets/**` 已分叉（见下方 2026-07-17 note），重导出风险远大于收益。画师下次打开并保存对应 `.tao.editor` 时会自然清掉。
+  - 画面影响：这 7 个单位的相关肢体各移动 **1.2–2.1 屏幕像素**（偏移在 rig 空间最大 16，乘 `targetScreenPx ÷ naturalHeight` ≈ 0.074–0.130；单位屏高 54px）。方向是**回到画师在 animator 里对齐的关节位置**。
+
 ### 单位身高档（`unitHeight`）—— 导出元数据（art-direction §4.5.3）
 
 导出时按所选**身高档**（animator 导出面板 `Tier` 下拉 S/M/L/XL）把贴图烘到**绝对目标分辨率**，并写入这一块作**记录/自描述**：
