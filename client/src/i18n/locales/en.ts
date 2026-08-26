@@ -1453,14 +1453,18 @@ export const en: Record<TranslationKey, string> = {
   // Wild-city ownership change (ADR-074 P1): the mail goes only to the player who landed the final
   // blow; the announcements go to the sect / world channels. Params come from body() in
   // worldsvc/combatSiege/cityDamage.ts (kind/node/level/x/y/sect).
-  // Keep the channel lines short: drawChatLine draws one unwrapped line, and `maxBodyChars=60` is a
-  // character cap, not the real constraint — the sect channel's column clips around 39 chars
-  // (measured, landscape design width 1500). The world channel is a full-width row, so
-  // worldCenterCaptured has room that captured/lost (both postSect) do not.
+  // The channel lines have a length budget, but its unit is DISPLAY WIDTH, not characters:
+  // drawChatLine draws one unwrapped line and truncates to the available width with an `…`
+  // (ui/widgets/truncateText.ts). The budget lives in client/test/i18n-system-text.test.ts, in
+  // orgNameWidth units (full-width = 2, else 1): 48 for captured/lost (both postSect → the narrow
+  // sect column), 96 for worldCenterCaptured (full-width world row). Both were measured in a real
+  // browser at the narrowest landscape design width, 1920: 700px and 1386px of body width. Run that
+  // test before editing copy — an overrun no longer cuts mid-word, but it does turn into an
+  // ellipsis, which costs the notice the one thing it exists to say.
   'slg.city.captured.subject': 'City Captured',
   'slg.city.captured.mail': 'Your final blow took the Lv.{level} city at ({x}, {y}). It is now held by {sect}. Its durability has been reset to full and it is protected from siege for a while.',
-  'slg.city.captured': 'Captured the Lv.{level} city at ({x}, {y})',
-  'slg.city.lost': '({x}, {y}) Lv.{level} lost to {sect}',
+  'slg.city.captured': 'Our sect captured the Lv.{level} city at ({x}, {y})',
+  'slg.city.lost': 'Our sect lost Lv.{level} ({x}, {y}) to {sect}',
   'slg.city.worldCenterCaptured': '{sect} captured the world center at ({x}, {y})',
 
   // ── Limited-time events (B6) ─────────────────────────────────────────────

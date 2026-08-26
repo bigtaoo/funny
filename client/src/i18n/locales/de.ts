@@ -1453,14 +1453,19 @@ export const de: Record<TranslationKey, string> = {
   // Besitzerwechsel einer Wildstadt (ADR-074 P1): die Mail geht nur an den Spieler mit dem letzten
   // Schlag, die Ankündigungen an den Sekten- bzw. Weltkanal. Parameter kommen aus body() in
   // worldsvc/combatSiege/cityDamage.ts (kind/node/level/x/y/sect).
-  // Die Kanalzeilen kurz halten: drawChatLine zeichnet eine Zeile ohne Umbruch, und `maxBodyChars=60`
-  // ist nur eine Zeichengrenze — die Spalte des Sektenkanals schneidet schon bei ca. 41 Zeichen ab
-  // (gemessen, Design-Breite 1500 im Landscape). Der Weltkanal ist eine Zeile über die volle Breite,
-  // worldCenterCaptured hat also Platz, den captured/lost (beide via postSect) nicht haben.
+  // Die Kanalzeilen haben ein Längenbudget, aber die Einheit ist die ANZEIGEBREITE, nicht die
+  // Zeichenzahl: drawChatLine zeichnet eine Zeile ohne Umbruch und kürzt auf die verfügbare Breite
+  // mit einem `…` (ui/widgets/truncateText.ts). Das Budget steht in
+  // client/test/i18n-system-text.test.ts, in orgNameWidth-Einheiten (Vollbreite = 2, sonst 1):
+  // 48 für captured/lost (beide via postSect → die schmale Sektenspalte), 96 für
+  // worldCenterCaptured (Weltkanal, volle Breite). Beide in einem echten Browser gemessen, bei der
+  // schmalsten Landscape-Designbreite 1920: 700px bzw. 1386px Textbreite. Vor Textänderungen diesen
+  // Test laufen lassen — ein Überlauf schneidet kein halbes Wort mehr ab, wird aber zu einer
+  // Ellipse, und dann sagt die Meldung nicht mehr, welche Stadt wer eingenommen hat.
   'slg.city.captured.subject': 'Stadt erobert',
   'slg.city.captured.mail': 'Dein letzter Schlag hat die Stadt Lv.{level} bei ({x}, {y}) eingenommen. Sie wird jetzt von {sect} gehalten. Ihre Haltbarkeit wurde vollständig zurückgesetzt und sie ist vorerst vor Belagerungen geschützt.',
-  'slg.city.captured': 'Stadt Lv.{level} bei ({x}, {y}) erobert',
-  'slg.city.lost': 'Lv.{level} ({x}, {y}) an {sect} verloren',
+  'slg.city.captured': 'Unsere Sekte hat Stadt Lv.{level} ({x}, {y}) erobert',
+  'slg.city.lost': 'Stadt Lv.{level} ({x}, {y}) an {sect} verloren',
   'slg.city.worldCenterCaptured': '{sect} hat das Weltzentrum bei ({x}, {y}) erobert',
 
   // ── Zeitlich begrenzte Events (B6) ──────────────────────────────────────
