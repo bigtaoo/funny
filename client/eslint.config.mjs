@@ -97,12 +97,24 @@ export default [
       // the next row correct by default.
       'no-useless-assignment': 'off',
 
-      // Kept visible rather than enforced. The 12 remaining sites are all untyped-interop surfaces
-      // — `render/stickman/assetLoader.ts` and `skeleton.ts` parsing a third-party binary rig
-      // format, plus one PIXI cast — where a hand-written type would be fiction. `tsc --noEmit`
-      // is the real type gate; making this an error would only buy a row of eslint-disable
-      // comments. Warnings do not fail `npm run lint`, so this reports without blocking.
-      '@typescript-eslint/no-explicit-any': 'warn',
+      // Error, with zero exemptions in src/ — no `eslint-disable` for it anywhere.
+      //
+      // It started as a warning (12 hits) on the reasoning that they were untyped third-party
+      // interop where a hand-written type would be fiction. That reasoning was wrong, and it is
+      // worth recording why: the 9 hits in `render/stickman/assetLoader.ts` were `JSON.parse(...)
+      // as any` over `.tao` bundles — OUR OWN format, whose writer (`tools/animator/src/io/
+      // taoExport.ts`) has been fully typed all along. JSZip is third-party; the JSON inside the
+      // ZIP is not. So the reader was throwing away a contract that already existed on the writer
+      // side: rename a field in taoExport.ts and nothing failed anywhere — the client read
+      // `undefined` and fell back to a default. `src/render/stickman/taoFormat.ts` is now the
+      // reader's half of that contract. The other 3 were a `(Skeleton as any)` static-init cast
+      // (the animator's copy of the same file already had a readonly-stripping mapped type for
+      // exactly this) and one `as any` on a computed i18n key where `as TranslationKey` is the
+      // established house idiom elsewhere.
+      //
+      // The lesson generalises: "a type here would be fiction" is worth checking against who
+      // writes the data before believing it. Inside this repo the answer is usually "we do".
+      '@typescript-eslint/no-explicit-any': 'error',
     },
   },
   {

@@ -17,6 +17,32 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 
 `boneLengthScales` 稀疏对象，只记录非 1.0 的骨骼；缺省或缺键均视为 1.0。
 
+### 两半份契约：写侧 `taoExport.ts` ／ 读侧 `taoFormat.ts`（2026-08-26 补）
+
+- **写**：`tools/animator/src/io/taoExport.ts`（`SerializedProject` / `SpritesheetJson`）+ `io/clipSerialization.ts`（`SerializedClip`）。
+- **读**：`client/src/render/stickman/taoFormat.ts`。以前这边是 `JSON.parse(...) as any` 直接下标，于是两边**没有任何东西连着**：写侧改字段名不会让任何地方报错，client 只是读到 `undefined` 后 fallback。
+- 读侧比写侧**故意宽松**（字段大多 optional）：`src/assets/*.tao` 里有早于几次格式修订的包（无 `unitHeight` / 无 `boneLengthScales`），靠 `?? 默认值` 才能加载。required 只给「缺了就加不载」的字段。
+- 两份声明**故意重复**（animator 和 client 是两个包、无共享类型依赖，而 `.tao` 是磁盘/CDN 上的文件，版本真的可以不一致）：手动保同步，实在对不上就 bump `version`。
+
+### ⚠️ `binding.offsetX/offsetY`：在包里、在渲染里，但不在写侧类型里
+
+上面 JSON 示例的 `bindings` 列了 7 个字段，跟 animator 的 `SpriteBinding` 一致。但把 `client/src/assets` 下 **18 个 `.tao` 全解开扫一遗**发现：其中 **7 个包带非零的第 8、9 个字段 `offsetX`/`offsetY`**（世界空间像素偏移）：
+
+| 包 | 非零偏移的骸骷 |
+|---|---|
+| `units/infantry` `units/ironclad` `units/medic` `units/runner` | `l_lower_arm(-1,13)` `r_upper_leg(-12,7)` `r_lower_leg(-8,0)` `l_upper_leg(16,0)` `l_lower_leg(2,0)` |
+| `units/harpy` | `r_upper_leg(-12,7)` `r_lower_leg(-8,0)` `l_upper_leg(16,0)` `l_lower_leg(2,0)` |
+| `units/skins/skin_infantry` | `l_lower_arm(-1,13)` `r_upper_leg(-12,7)` `l_upper_leg(16,0)` |
+| `units/splitter` | `r_upper_leg(-12,7)` |
+
+对应的 `art/*.tao.editor` 里也有同一套值，运行时（`assetLoader.ts` → `SpriteBinding.offsetX/Y`）真的读并应用。但 animator 的 `SpriteBinding`（`tools/animator/src/core/types.ts`）**根本没有这两个 channel**，编辑器 UI 也没地方调它们。它们能从 editor project 活着进到导出包，全靠路上每一跳都是 `{ ...b }` 这种不看类型的展开（JS 展开会带上类型里没声明的键）。
+
+**风险**：任何把 binding 改成**逐字段构造**的修改（归一化、重置、新增一个写回 binding 的 UI）都会静默弄丢它们，那 7 个单位的肢体位置就会偏（最大 16px），而这种偏在游戏里看上去就像“动画本来就这样”。**读侧已在 `taoFormat.ts` 写清现状；写侧要么把两个 channel 正式声明出来（并给编辑器一个入口），要么故意废弃并重导那 7 个包 —— 还没拍。**
+
+### `easing`：字段存在，但真包里一次都没出现过
+
+同一轮扫描（108 clips / 445 keyframes / 1968 个 bone delta）里 `easing` 出现 **0 次**——animator 从没写过，所以现在所有关键帧实际都是线性插值。写侧类型把它当 `string`，运行时是 `EasingType` 联合；读侧用 `taoFormat.ts` 的 `asEasing()` 收窄（不认识的值 → `undefined` → `interpolate.ts` 当 `'linear'`，跟以前那个 `as BoneKeyframe` 直接断言的行为一致）。
+
 ### 单位身高档（`unitHeight`）—— 导出元数据（art-direction §4.5.3）
 
 导出时按所选**身高档**（animator 导出面板 `Tier` 下拉 S/M/L/XL）把贴图烘到**绝对目标分辨率**，并写入这一块作**记录/自描述**：

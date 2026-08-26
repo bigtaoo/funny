@@ -374,7 +374,19 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 **顺手修出来的真东西**：`CardScene/actions.ts` 的 `finally` 里有个 `return`（`no-unsafe-finally`）——照当时的写法无害（try 不 return、catch 吞掉），但它会静默吃掉 catch 块自己抛出的异常，而那个守卫本来也不需要待在 `finally` 里；清理归 `finally`，守卫挪到后面。另外 `HUDView/hpBar.ts` 的 `HP_CELL_H` 是血条还是矩形时代的遗留常量（心形 pip 只用 `HP_CELL_W`）。
 
-**剩 12 个 warning（`no-explicit-any`）是故意的**：全在 `render/stickman/assetLoader.ts` / `skeleton.ts` 解析第三方二进制骨骼格式那一片，手写类型是编故事；`tsc --noEmit` 才是真正的类型门。warning 不会让 `npm run lint` 非零退出，所以 CI 不会因此红。
+**`no-explicit-any` 同日从 warning 改成 error（src/ 零例外、零 disable）—— 当初定 warning 的理由是错的**：
+
+当时写的是「那 12 处全在解析第三方二进制骨骼格式，手写类型是编故事」。它不成立：`.tao` 是**我们自己的格式**，写侧就在 `tools/animator/src/io/taoExport.ts`，`SerializedProject` / `SerializedClip` / `SpritesheetJson` 一直是完整类型。JSZip 是第三方，ZIP **里面的 JSON 不是**。所以 9 处 `assetLoader.ts` 的 `JSON.parse(...) as any` 不是「无类型可写」，而是**把写侧已经存在的契约丢了**：改一个字段名，两边都不报错，client 读到 `undefined` 后默默 fallback 到默认值（一个 zOrder 0 / scale 1 的人形看上去“正常”得足以上线）。
+
+- 新增 `client/src/render/stickman/taoFormat.ts` = 读侧的那半份契约（比写侧故意更宽松：`src/assets` 里有早于几次格式修订的旧包，靠 `?? default` 才能加载）。
+- `skeleton.ts` 那 2 处 `(Skeleton as any).BONE_MAP = ...` —— 直接用 animator 同名文件**自己已经在用**的 readonly-剥除 mapped type（`MutableSkeleton`）。
+- `EventScene.ts` 那 1 处计算 i18n key 的 `as any` —— `as TranslationKey` 就是本仓库其他地方（`AuctionScene/itemLabels.ts` 等）的惯用写法。
+
+所以升 error 并不需要「堆一排 disable」：9 处真修 + 3 处换成已有惯用写法。**经验可以外推**：「这里写类型是编故事」先去查一下数据是谁写的，在本仓库里答案通常是「我们自己」。
+
+**验证方式不是看截图，是扫真包**（这轮改动除了 easing 收窄外全是类型层，截图证不了东西）：拿 `client/node_modules/jszip` 把 `src/assets` 下 18 个 `.tao` 全解了一遗，108 clips / 445 keyframes / 1968 个 bone delta。两个结论：
+1. **`easing` 字段在真包里出现 0 次** —— animator 从没写过，所以所有关键帧实际都是线性插值，`asEasing()` 在现有资产上是 no-op（行为零风险）。
+2. **扫出了一条真的格式漂移**：`binding.offsetX/offsetY` 写侧类型里**根本不存在**（animator 的 `SpriteBinding` 只有 7 个字段），但 18 个包里有 **7 个带非零值**（harpy / infantry / ironclad / medic / runner / skin_infantry / splitter，最大 ±16px 肢体偏移），`art/*.tao.editor` 里也有，而 client 真的在渲染时读并应用它。它们能活到今天完全靠每一跳都是 `{ ...b }` 这种不看类型的展开——**任何改成逐字段构造 binding 的代码会静默弄丢它们，那 7 个单位的肢体会偏**。读侧已经在 `taoFormat.ts` 里写清了现状；写侧（animator 要么把这两个 channel 声明出来、要么故意丢掉并重导 7 个包）是另一件事。
 
 **⚠️ 别报「lint 绿」当成新信息**：这条门在 2026-08-26 之前从来没跑过，所以它现在的绿是一条**新基线**，不是「一直很干净」。
 
