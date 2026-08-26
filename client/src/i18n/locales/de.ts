@@ -1452,12 +1452,15 @@ export const de: Record<TranslationKey, string> = {
   'slg.city.durabilityBreached.body': 'Die Haltbarkeit deiner Hauptstadt ist auf null gefallen. Die Stadt wurde zerstört und dein gesamtes Territorium ist verloren. Öffne die Weltkarte, um zu sehen, wo deine Hauptstadt jetzt steht, und baue deine Verteidigung neu auf.',
   // Besitzerwechsel einer Wildstadt (ADR-074 P1): die Mail geht nur an den Spieler mit dem letzten
   // Schlag, die Ankündigungen an den Sekten- bzw. Weltkanal. Parameter kommen aus body() in
-  // worldsvc/combatSiege/cityDamage.ts (kind/node/level/x/y/sect). Die drei Kanalzeilen kurz
-  // halten — drawChatLine schneidet bei 60 Zeichen ab.
+  // worldsvc/combatSiege/cityDamage.ts (kind/node/level/x/y/sect).
+  // Die Kanalzeilen kurz halten: drawChatLine zeichnet eine Zeile ohne Umbruch, und `maxBodyChars=60`
+  // ist nur eine Zeichengrenze — die Spalte des Sektenkanals schneidet schon bei ca. 41 Zeichen ab
+  // (gemessen, Design-Breite 1500 im Landscape). Der Weltkanal ist eine Zeile über die volle Breite,
+  // worldCenterCaptured hat also Platz, den captured/lost (beide via postSect) nicht haben.
   'slg.city.captured.subject': 'Stadt erobert',
   'slg.city.captured.mail': 'Dein letzter Schlag hat die Stadt Lv.{level} bei ({x}, {y}) eingenommen. Sie wird jetzt von {sect} gehalten. Ihre Haltbarkeit wurde vollständig zurückgesetzt und sie ist vorerst vor Belagerungen geschützt.',
-  'slg.city.captured': 'Unsere Sekte hat Stadt Lv.{level} bei ({x}, {y}) erobert',
-  'slg.city.lost': 'Stadt Lv.{level} bei ({x}, {y}) ging an {sect} verloren',
+  'slg.city.captured': 'Stadt Lv.{level} bei ({x}, {y}) erobert',
+  'slg.city.lost': 'Lv.{level} ({x}, {y}) an {sect} verloren',
   'slg.city.worldCenterCaptured': '{sect} hat das Weltzentrum bei ({x}, {y}) erobert',
 
   // ── Zeitlich begrenzte Events (B6) ──────────────────────────────────────
