@@ -77,6 +77,11 @@ export class CardSceneCore {
   gridClip!: PIXI.Graphics;
   modalLayer!: PIXI.Container;
   loadingLayer!: PIXI.Container;
+  /**
+   * The title bar itself, in its own layer because the title belongs to the active tab and so has
+   * to be redrawn on every render() — see {@link renderHeader}.
+   */
+  headerLayer!: PIXI.Container;
   /** Drawn after the static header chrome so the coin balance + capacity readout sit on the same row as the title (matches EquipmentScene, EQUIPMENT_DESIGN header-alignment fix). */
   headerOverlayLayer!: PIXI.Container;
 
@@ -308,21 +313,36 @@ export class CardSceneCore {
     this.loadingLayer = new PIXI.Container();
     this.container.addChild(this.loadingLayer);
 
+    this.headerLayer = new PIXI.Container();
+    this.container.addChild(this.headerLayer);
+    this.renderHeader();
+
+    this.headerOverlayLayer = new PIXI.Container();
+    this.container.addChild(this.headerOverlayLayer);
+  }
+
+  /**
+   * Title bar for the tab that is on screen. Drawn per render(), not once in build(): the header
+   * used to be part of the one-shot layer scaffold, so switching to the wardrobe left "Hero Roster"
+   * (and the roster glyph) sitting above a page of skins (2026-08-26). Same shape as FriendsScene's
+   * drawHeader — title + glyph both keyed off the active tab.
+   */
+  renderHeader(): void {
+    const { w, h } = this;
+    tearDownChildren(this.headerLayer);
+    const skins = this.tab === 'skins';
     // The title band has to know how wide the coin/capacity cluster ListPanel.renderHeaderCurrency()
     // draws on top of it: the old fixed 20%-of-width guess was ~7 points short of the real cluster on
     // a 430pt portrait viewport, so the centred "Hero Roster" ran straight under the coin number
     // (2026-08-24). Measured from the same spec the draw call uses.
     const spec = this.headerCurrencySpec();
-    const hdr = drawSceneHeader(this.container, w, h, t('roster.title'), {
-      variant: 'paper', accent: HEADER_ACCENT.spend, icon: 'rosterIcon',
+    const hdr = drawSceneHeader(this.headerLayer, w, h, t(skins ? 'roster.tab.skins' : 'roster.title'), {
+      variant: 'paper', accent: HEADER_ACCENT.spend, icon: skins ? 'skinIcon' : 'rosterIcon',
       rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), spec.coins, [], spec.capacity, spec.scale),
     });
     this.backRect = hdr.backRect;
     this.headerH = hdr.headerH;
     this.titleRight = hdr.titleRight;
-
-    this.headerOverlayLayer = new PIXI.Container();
-    this.container.addChild(this.headerOverlayLayer);
   }
 
   /**

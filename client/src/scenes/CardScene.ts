@@ -130,6 +130,9 @@ export class CardScene implements Scene {
     core.activeSpinners = core.activeSpinners.filter((g) => !g.destroyed);
     // Drop the fast-path scroll hook; whichever grid renders below re-installs its own.
     core.scrollRedraw = null;
+    // Before the back hit is registered: the header owns backRect, and its title/glyph follow the
+    // active tab (core.renderHeader).
+    core.renderHeader();
     core.hitRects.push({ rect: core.backRect, action: () => core.cb.onBack() });
 
     this.list.renderHeaderCurrency();

@@ -381,3 +381,18 @@
 - `client/test/ui/sceneHeaderCurrencyFit.ui.ts`（12 例）——量测与绘制一致、预留随数据变化、有/无预留的红绿对照、预留也装不下时的兜底、默认路径不变。**注意**：headless 的 `measureText` 是恒定 7px/字符且与字号无关（见 `claudedocs/client-testing.md`），本 bug 在 headless 里**根本复现不出来**（该 mock 下货币簇只有 171px，还小于旧的 216px 预留）——所以场景级「有没有重叠」那一条第一版写完就作废了，机制改在单元层用「长标题 + 放大 scale」按比例还原后再断言，文件头把这件事写明了。
 - `client/test/headerCurrencyReserve.test.ts`（17 例，静态扫描）——每个 `drawHeaderCurrency` 调用点都必须传 `leftBound`，且同目录内必须有 `headerCurrencyWidth(...) + rightReserve` 的配对；调用点清单本身带 canary（改名不许让整个套件静默变空）。这是能机械守住的那一半，也正是它抓出了漏掉的三个场景。
 - 像素证据只能靠浏览器：`web-e2e` 入口的 `__nwE2E` 现在**多暴露一个 `app`**（读 `PixiAppViews` 的 `private readonly app`——`wrapViews` 是唯一的注入点且只拿到 views，为测试专用需求开生产接缝更不划算），Playwright 因此能遍历真实显示树、读 `getBounds()` 出数，而不是靠肉眼看截图。
+
+## 27. 皮肤页签顶着「卡背包」的标题（2026-08-26）
+
+**症状**：卡背包场景切到「皮肤」页签后，页头标题仍是「卡背包」、图标仍是卡背包的 `rosterIcon`——左侧导轨高亮在「皮肤」，页头却说这是卡背包（用户报的 bug，截图为横屏 1600×760）。
+
+**根因**：页头是在 `CardSceneCore.build()` 里**一次性**画进 `this.container` 的，标题写死 `t('roster.title')`。`build()` 属于「层脚手架」，整个场景生命周期只跑一次；而 `render()` 每次重画的是 `bodyLayer`（导轨、内容网格）和 `headerOverlayLayer`（金币/容量读数）。于是页签一切，除了标题以外全都变了。`initialTab: 'skins'` 直接开进衣柜、以及 ADR-072 的 `showTab('skins')`（从装备页导轨跳过来）也同样中招。
+
+**修法**：把标题条从 build 的一次性脚手架里拆出来，单独一层 `core.headerLayer`（插在 `loadingLayer` 与 `headerOverlayLayer` 之间，z 序不变），新增 `core.renderHeader()` 按 `core.tab` 取标题与图标（`roster.title`/`rosterIcon` 对 `roster.tab.skins`/`skinIcon`），由 `CardScene.render()` 在注册返回键 hit 之前调用——`backRect` 归页头所有，必须先重画再登记。形状与 `FriendsScene/chrome.ts` 的 `drawHeader()` 一致（标题键由当前页签推导，每次 render 重画）。货币簇的 `rightReserve` 仍走同一个 `headerCurrencySpec()`，§26 的量测约定不变。
+
+**已知遗留**：皮肤页签的页头右上角仍显示卡牌容量读数 `74/500`（`headerCurrencySpec()` 不分页签）。衣柜里这个数没有意义，但它不是本次报的问题，未动。
+
+**回归测试**：`client/test/ui/cardSceneSkins.ui.ts` 新增 2 例——导轨来回切、以及 `initialTab: 'skins'` / `showTab()` 两条入口，断言 `core.headerLayer` 里那条非返回键文字。断言必须读这一层而不是整棵树：左侧导轨画的正是同样这两个词。
+
+**像素证据**：`web-e2e` + Playwright（浏览器面板不合成，走 stub 挂载法：`views.showCardRoster(cb)` 直接开场景，无后端无登录），衣柜页头读作「Skins」+ 皮肤图标，卡牌页头仍读「Hero Roster」。
+
