@@ -12,6 +12,9 @@
 // design/product/panel-frame-art-prompts.md §0) so a slow machine or a cold JIT
 // cannot fail the run, while a return to per-render `SketchPen.rect` — 132,300
 // vertices and 8.6 ms over this same panel set — blows straight through them.
+// The one wall-clock number takes the BEST of 9 rounds for the same reason: a shared
+// CI runner made that promise false with a single sample (2026-08-26), and a lone
+// sample of a sub-millisecond workload measures the scheduler, not the code.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { setBakeRenderer, clearBakeCache } from '../../src/render/bake';
@@ -364,9 +367,18 @@ describe('panelFrame — cost gate over the world-map HUD panel set', () => {
     expect(atlasMs).toBeLessThan(400);
     for (let i = 0; i < 5; i++) for (const [, w, h] of HUD_PANELS) panel(w, h);   // warm
 
-    const t0 = performance.now();
-    const panels = HUD_PANELS.map(([, w, h]) => panel(w, h));
-    const build = performance.now() - t0;
+    // BEST of N rounds, not one sample. This runs on shared CI runners, where a single
+    // sample can absorb an arbitrary scheduler stall: a 2026-08-26 run measured 5.05 ms
+    // for the same work that best-of-9 puts at 0.18 ms here, and failed the gate below on
+    // noise alone. Noise only ever ADDS time, so the minimum is the honest estimate of
+    // what this machine costs — and it is still the number a real regression moves.
+    let build = Infinity;
+    let panels: PIXI.Container[] = [];
+    for (let i = 0; i < 9; i++) {
+      const t0 = performance.now();
+      panels = HUD_PANELS.map(([, w, h]) => panel(w, h));
+      build = Math.min(build, performance.now() - t0);
+    }
 
     let verts = 0, nonBatchable = 0, fellBack = 0;
     for (const p of panels) {
@@ -380,13 +392,19 @@ describe('panelFrame — cost gate over the world-map HUD panel set', () => {
     // the one Graphics that stays non-batchable — by design, and cheap at that size.
     expect(fellBack).toBe(1);
     expect(nonBatchable).toBe(fellBack);
-    // Measured 2026-08-20 on the dev machine: ~0.6 ms and ~700 vertices (of which
-    // ~650 are that one fallback badge). Was 8.6 ms / 132,300 verts / 13 flushes.
+    // Measured on the dev machine: ~700 vertices (of which ~650 are that one fallback
+    // badge), and best-of-9 at 0.18 ms (2026-08-26; the 2026-08-20 figure of ~0.6 ms was
+    // a single sample of the same work). Was 8.6 ms / 132,300 verts / 13 flushes.
+    //
+    // `verts` is the load-bearing half of this gate: it is deterministic on every machine,
+    // and a return to per-render SketchPen.rect moves it 704 -> 132,300. The 4 ms is a
+    // catastrophe backstop with ~22x headroom over the best-of-9 cost, sized so hardware
+    // several times slower than the dev machine still passes.
     expect(verts).toBeLessThan(2000);
     expect(build).toBeLessThan(4);
     console.log(
       `panelFrame cost over ${HUD_PANELS.length} world-map HUD panels: ` +
-      `build=${build.toFixed(2)}ms verts=${verts} nonBatchable=${nonBatchable} fellBack=${fellBack} ` +
+      `build=${build.toFixed(2)}ms (best of 9) verts=${verts} nonBatchable=${nonBatchable} fellBack=${fellBack} ` +
       `(pre-atlas baseline: 8.60ms / 132300 / 13 / 0); one-time atlas build ${atlasMs.toFixed(1)}ms`,
     );
   });
