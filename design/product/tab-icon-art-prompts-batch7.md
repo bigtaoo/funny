@@ -539,3 +539,10 @@ v3（近正方形构图，`_rejected/tabicon_brush_v3_bellshape.webp`）解决�
 - 表一半：`INK_ICON_ART` 覆盖 49 个 kind；与 `TAB_ICON_RASTER` 无同名 kind（`buildIcon` 先查页签表，同名会让 ink 行被静默忽略）；5 个别名各自指向被复用那张图的 `active` url。
 
 vitest 下所有 `.png` import 会塌成同一个 data URI，所以 url 身份只在磁盘一半有意义、key 存在性只在表一半有意义——两半互相盖不住，跟 `tabIconContentVariant.test.ts` 同样的拆法、同样的理由。
+
+批次 7 收尾又补了两条（细节见 [`claudedocs/client-testing.md`](../../claudedocs/client-testing.md) 末节）：
+
+- `client/test/render/buildIconDispatch.test.ts`——mock 掉两个子模块，钉住**分派方向**：ink kind 的 `color` 必须原封不动传下去，页签 kind 必须传变体 url 且不能把颜色带过去。上面两份测试都不管这个方向，而"把某个 kind 挪错表"正是会让所有 tint 静默塌成灰的那种改动。顺带钉 `preloadIconArt()` 真的预热两张表。
+- `client/test/render/iconArtAspect.test.ts`——长短边比 > 2.2 就红（白名单 `weapon`/`event`/`atk` + 理由）。这条是 `brush` v2 那一轮的直接产物：27×128 的图在正方形格子里只占约 6px 宽，而它满足 prompt 的每个字。
+
+**没加的那一条也记在案**：沙漏三档的"墨量逐档递增"断言抓不到 v1 的点阵沙问题（v1 的增幅 ×1.78/×1.71 反而比 v2 的 ×1.25/×1.12 大），只会放行坏的那套。给美术加守卫前先拿被打回的那版跑一遍，跑不红就别留。
