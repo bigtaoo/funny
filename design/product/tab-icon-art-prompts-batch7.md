@@ -1,11 +1,11 @@
 # 批次 7：剩余全部程序矢量图标 — Prompt 文档
 
-> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3（另 4 条「可用但偏弱」）：**已出图并打包 2026-08-26**——`globe`/`armor`/`armorHeavy`/`scrap` 四张过，`atk` 打回等 v4
+> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3（另 4 条「可用但偏弱」）：**已出图并打包 2026-08-26**——`globe`/`armor`/`armorHeavy`/`scrap` 四张过，`atk` 打回；v4 也打回（读成直升机），**v5 改掉头接受竖长构图**
 > 前六批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（试点/批次 2/3/4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题+剩余页签，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页主视觉，3 张）
 > 配套代码（接线后）：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（只剩两表分派，`DrawableIconKind`/`DRAW` 已删）· [`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（**本批落地处**：`InkIconKind` + `INK_ICON_ART` + `buildInkIcon` 运行时染色）· [`client/src/render/icons/tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts)（前六批的页签表，未改）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
 > 已删除的矢量画法：`client/src/render/icons/{equipment,ui,slg,motifs,titles,currency,primitives}.ts` 七个文件整体删除（`DRAW` 清零后全部变死代码）
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6
-> 状态：**接线全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind）；**剩下的只有 `atk` 一张**：v3 五张里 `globe`/`armor`/`armorHeavy`/`scrap` 已验收并打包上线，`atk` v3 读成锤子/铁砧、源图退回 v1，v4 prompt 见文末
+> 状态：**接线全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind）；**剩下的只有 `atk` 一张**：v3 五张里 `globe`/`armor`/`armorHeavy`/`scrap` 已验收并打包上线，`atk` v3 读成锤子/铁砧、v4 读成直升机，源图一直是 v1；v5 已放弃「近正方」这条错误约束，prompt 见文末
 
 ## 背景：前六批 + 金币收口之后，还剩的就是这些
 
@@ -633,3 +633,26 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ```
 
 **顺带记一条测试口径**：`iconArtAspect.test.ts` 的 `armorHeavy/armor` 墨量下限是 1.15，v1 实测 1.48、v3 实测 **1.21**——比值反而降了，因为 v3 的**基础档**本身就重了一倍多（28px 墨量 164 → 379）。也就是说这个比值同时受两档影响，**它是防「加固档不再更重」的地板，不是「区分度」的度量**（跟沙漏那条同一个道理，见本文档「没加的那一条也记在案」）。v3 的两档在 28px 上并排一眼分得开，比值 1.21 不是问题；但下次再调 `armor` 时要知道离地板只剩 0.06。
+
+### `atk` v4 也不行 —— 第三轮了，问题在上一层（2026-08-26）
+
+v4 把 v3 的错处全改对了：护手确实缩成了一根小实心横条、不再是画面里最大的形状，刀身也是实心的。但**宽度这次由迸溅线承担**——两道侧线被画得又长又向下后掠，并且跟刀尖连成一体，于是 28px 上是一架**直升机**（旋翼 + 机身 + 起落架），远看也像蜻蜓/蚊子。刀尖因为跟迸溅线交汇，反而没有可见的尖了。源图进 `_rejected/tabicon_atk_v4_sparksreadashelicopter.webp`，`atk` 仍留 v1。
+
+两轮连起来看，因果就很清楚了：
+
+| 轮次 | 「近正方」这条约束由谁满足 | 结果读成 |
+|---|---|---|
+| v3 | 护手撑成巨大空心横杠 | 锤子 / 铁砧 |
+| v4 | 迸溅线拉长、外张、后掠 | 直升机 / 昆虫 |
+
+**匕首天生是竖长物体。要把它撑成正方形，只能在两侧焊一个宽部件——焊在哪儿，它就变成以那个部件为主体的另一样东西。** 所以 v3/v4 不是两次失手，是同一条错误约束的两个必然出口。
+
+按本文档自己那条规矩（**返工到第三轮要往上一层看**，`brush` 那一节），上一层的问题是：**这个图标需不需要近正方？** 不需要。`iconArtAspect.test.ts` 的 `ELONGATED_ON_PURPOSE` 白名单存在的意义就是「主题天生就长，压扁比浪费画框更糟」——`weapon`（3.28:1，一把竖剑）已上线且没人有意见，`atk`（2.33:1）本来就在名单里。**当初把「近正方」写进 v3 prompt 是把一条工程约束（别浪费格子）当成了美术目标，代价是丢掉了主体本身。**
+
+于是 v5 放弃正方，回到竖长匕首，**只修 v1 那两处真正的缺陷**——空心细刀身 → 实心宽刀身；迸溅线又细又离尖远 → 短、粗、起点贴着刀尖——构图一个字不改。`atk` 因此**永久留在** `ELONGATED_ON_PURPOSE`，那一行的理由已改写成这段经过。
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: an upright dagger pointing straight up, drawn TALLER THAN IT IS WIDE — roughly twice as tall as it is wide, the natural proportions of a dagger. Do NOT try to make the picture square. The blade is a broad leaf shape filled in as ONE SOLID BLACK MASS, about a quarter as wide as it is long, coming to a clear sharp point at the very top with clear empty white space around that point. Beneath the blade sits one small crossguard drawn as a short SOLID BLACK BAR, about one and a half times the blade's width. Below that, a short plain handle. Three SHORT thick spark strokes sit just above the point — one straight up, one to the upper left, one to the upper right — each no longer than a quarter of the blade's length, each starting almost touching the point and radiating OUTWARD AND UPWARD, each clearly separate from the blade and from the other two. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the blade and the crossguard are flat solid black areas, the handle is bare line art. Must stay clearly recognizable as a DAGGER when scaled down to 28x28 pixels, where the heavy black blade is what reads. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, long sparks, sparks that sweep backwards or droop downwards like wings or rotor blades, sparks that merge into each other or into the blade's outline, a blade with no visible point, anything that reads as a helicopter, insect, dragonfly or mosquito, a crossguard wider than the blade is long, a crossguard that is the largest shape in the picture, a T-shaped silhouette, anything that reads as a hammer, mallet, anvil, rubber stamp or a tool resting on a bar, a squat or square composition, a hollow outlined blade, a fuller or blood groove line, a needle-thin blade, a long two-handed sword, an ornate pommel, two crossed blades, a shield behind it, a hand gripping it, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+**这一格的教训，跟 `brush` 那一格是同一条但方向相反**：`brush` 是「三轮之后发现主体选错了」，`atk` 是「三轮之后发现**约束**选错了」。共同点是——第三轮该问的不是「这张画得对不对」，而是「我给它的题目对不对」。

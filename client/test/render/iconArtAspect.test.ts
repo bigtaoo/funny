@@ -70,8 +70,12 @@ describe('packed icon art — silhouette proportions', () => {
    * the image model.
    *   `weapon` (3.28) — one upright sword, the equipment slot filter. Shipped since batch 5.
    *   `event`  (2.72) — a horizontal string of bunting; wide rather than tall, same trade.
-   *   `atk`    (2.33) — an upright dagger. Already recorded as one of batch 7's weaker glyphs
-   *                     (design/product/tab-icon-art-prompts-batch7.md) for exactly this reason.
+   *   `atk`    (2.33) — an upright dagger, and permanently so. Two redraws tried to square it up and
+   *                     each produced a different object: bolting the width onto the crossguard gave a
+   *                     hammer/anvil (v3), bolting it onto the impact sparks gave a helicopter (v4).
+   *                     A dagger is a tall subject; widening it means welding a wide part to its side,
+   *                     and whatever gets welded on becomes the thing you read. Both rejects are in
+   *                     art/ui/tabicons/_rejected/; the write-up is in the batch-7 doc's last section.
    */
   const ELONGATED_ON_PURPOSE = new Set(['weapon', 'event', 'atk']);
 
