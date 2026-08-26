@@ -36,15 +36,14 @@ import armorHeavyInkUrl from '../../assets/tabicons/armorHeavy_active.png';
 import spdInkUrl from '../../assets/tabicons/spd_active.png';
 import atkspdInkUrl from '../../assets/tabicons/atkspd_active.png';
 
-// Equipment enhance panel: the three upgrade materials, the enhance button's own forging hammer (a
-// flat-headed smith's hammer, NOT `bidTabIcon`'s auction gavel), the skin tag's brush - plus `ink`,
-// the battle currency in HUDView, whose `drawInk` had carried a "placeholder until the AI-drawn
-// glyph lands" note since the day it was written.
+// Equipment enhance panel: the three upgrade materials and the enhance button's own forging hammer
+// (a flat-headed smith's hammer, NOT `bidTabIcon`'s auction gavel) - plus `ink`, the battle currency
+// in HUDView, whose `drawInk` had carried a "placeholder until the AI-drawn glyph lands" note since
+// the day it was written.
 import scrapInkUrl from '../../assets/tabicons/scrap_active.png';
 import leadInkUrl from '../../assets/tabicons/lead_active.png';
 import bindingInkUrl from '../../assets/tabicons/binding_active.png';
 import hammerInkUrl from '../../assets/tabicons/hammer_active.png';
-import brushInkUrl from '../../assets/tabicons/brush_active.png';
 import inkInkUrl from '../../assets/tabicons/ink_active.png';
 
 // Generic UI dingbats: results-page actions, gacha rarity pips, lock badges, the leaderboard's
@@ -95,19 +94,28 @@ import titleKingInkUrl from '../../assets/tabicons/titleKing_active.png';
 import titleChampionInkUrl from '../../assets/tabicons/titleChampion_active.png';
 import titleTop3InkUrl from '../../assets/tabicons/titleTop3_active.png';
 
-// The 5 kinds batch 7's dedupe pass judged "no new drawing needed" (see the doc's judgement table):
-// each ALIASES the white master of an existing tab icon rather than getting art of its own, so the
-// concept is drawn exactly once in the game. They live here rather than as call-site renames to
-// `pvpTabIcon`/`gachaTabIcon`/... because 4 of the 5 have call sites where `color` carries real
-// information a pre-baked tab ink would throw away: StatsScene tints `swords` green/red per match
-// result, AuctionScene tints the `tag` sale-mode badge red for auction rows, FriendsScene draws the
-// mail-attachment `gift` in gold, BattlePassScene passes `capsule` the reward's own colour. The
-// tinted path keeps all of that and needs no churn at the ~15 sites involved.
+// The 6 kinds that ALIAS the white master of an existing tab icon rather than getting art of their
+// own, so each concept is drawn exactly once in the game. They live here rather than as call-site
+// renames to `pvpTabIcon`/`gachaTabIcon`/... because most of them have call sites where `color`
+// carries real information a pre-baked tab ink would throw away: StatsScene tints `swords` green/red
+// per match result, AuctionScene tints the `tag` sale-mode badge red for auction rows, FriendsScene
+// draws the mail-attachment `gift` in gold, BattlePassScene passes `capsule` the reward's own
+// colour, GachaScene tints `brush` per rarity. The tinted path keeps all of that and needs no churn
+// at the ~20 sites involved.
+//
+// Five of the six came out of batch 7's dedupe table. `brush` joined them after three redraws:
+// it is the "this is a skin/cosmetic" content badge (skin listings, the card skins grid, gacha
+// rarity pips, the shop's skin products), and a stationery brush is the metaphor this project
+// already rejected for skins once - `skinIcon` is a theatre mask precisely because "文具/画笔"
+// collided with the equipment-material glyphs, which are also stationery (see
+// design/product/art-direction-map-ui.md). Keeping a brush as the skin badge re-imported exactly
+// that collision, so the badge now borrows the mask instead.
 import swordsInkUrl from '../../assets/tabicons/pvp_active.png';
 import homeInkUrl from '../../assets/tabicons/home_active.png';
 import capsuleInkUrl from '../../assets/tabicons/gacha_active.png';
 import giftInkUrl from '../../assets/tabicons/weekly_active.png';
 import tagInkUrl from '../../assets/tabicons/auction_active.png';
+import brushInkUrl from '../../assets/tabicons/skin_active.png';
 
 /**
  * Every `IconKind` that resolves to a runtime-tinted ink PNG (see the module header) - i.e. all of
@@ -117,15 +125,15 @@ import tagInkUrl from '../../assets/tabicons/auction_active.png';
  */
 export type InkIconKind =
   | 'atk' | 'hp' | 'armor' | 'armorHeavy' | 'spd' | 'atkspd'
-  | 'scrap' | 'lead' | 'binding' | 'hammer' | 'brush' | 'ink'
+  | 'scrap' | 'lead' | 'binding' | 'hammer' | 'ink'
   | 'replay' | 'share' | 'star' | 'lock' | 'medal' | 'close' | 'check' | 'play' | 'zoom' | 'cards'
   | 'flag' | 'desk' | 'cabinet' | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
   | 'book' | 'globe' | 'trophy' | 'castle' | 'pencils'
   | 'titleBronze' | 'titleSilver' | 'titleGold' | 'titlePlatinum' | 'titleDiamond'
   | 'titleStar' | 'titleMaster' | 'titleGrandmaster' | 'titleKing'
   | 'titleChampion' | 'titleTop3'
-  // Aliases onto an existing icon's art (see the import block above) — no drawing of their own.
-  | 'swords' | 'home' | 'capsule' | 'gift' | 'tag';
+  // Aliases onto an existing icon's art (see the import block above) - no drawing of their own.
+  | 'swords' | 'home' | 'capsule' | 'gift' | 'tag' | 'brush';
 
 /**
  * One white master PNG per {@link InkIconKind} - tinted at draw time by {@link buildInkIcon}.
@@ -146,7 +154,6 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   lead:              leadInkUrl as string,
   binding:           bindingInkUrl as string,
   hammer:            hammerInkUrl as string,
-  brush:             brushInkUrl as string,
   ink:               inkInkUrl as string,
   replay:            replayInkUrl as string,
   share:             shareInkUrl as string,
@@ -185,17 +192,18 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   capsule:           capsuleInkUrl as string,
   gift:              giftInkUrl as string,
   tag:               tagInkUrl as string,
+  brush:             brushInkUrl as string,
 };
 
 /**
- * The 5 kinds whose entry above ALIASES another icon's white master instead of naming art of their
- * own (see that import block). Exported so `inkIconArt.test.ts` can hold the two halves of the
- * naming contract apart: every OTHER ink kind must have a `<kind>_active.png` packed from a
- * `tabicon_<kind>.*` source of its own, while these five must have neither.
+ * The kinds whose entry above ALIASES another icon's white master instead of naming art of their own
+ * (see that import block). Exported so `inkIconArt.test.ts` can hold the two halves of the naming
+ * contract apart: every OTHER ink kind must have a `<kind>_active.png` packed from a
+ * `tabicon_<kind>.*` source of its own, while these must have neither.
  */
-export const INK_ICON_ALIASES: readonly InkIconKind[] = ['swords', 'home', 'capsule', 'gift', 'tag'];
+export const INK_ICON_ALIASES: readonly InkIconKind[] = ['swords', 'home', 'capsule', 'gift', 'tag', 'brush'];
 
-/** Warm the 49 ink-icon PNGs into the PIXI texture cache - see `preloadTabIconTextures`. */
+/** Warm the ink-icon PNGs into the PIXI texture cache - see `preloadTabIconTextures`. */
 export function preloadInkIconTextures(): Promise<void> {
   return preloadTextureList(Object.values(INK_ICON_ART));
 }

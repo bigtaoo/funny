@@ -32,12 +32,14 @@ const OWN_ART = (Object.keys(INK_ICON_ART) as InkIconKind[])
 /** Which existing tab icon each alias is expected to borrow its master from. */
 const ALIAS_OF: Record<string, keyof typeof TAB_ICON_RASTER> = {
   swords: 'pvpTabIcon', home: 'homeTabIcon', capsule: 'gachaTabIcon',
-  gift: 'weeklyTabIcon', tag: 'auctionTabIcon',
+  gift: 'weeklyTabIcon', tag: 'auctionTabIcon', brush: 'skinIcon',
 };
 
 describe('ink-icon art on disk (pack_tab_icons.cjs, inks: [active])', () => {
   it('packs exactly one white master per ink kind, and nothing else for it', () => {
-    expect(OWN_ART.length).toBe(44); // the batch-7 count; a 45th needs a doc entry, not a silent add
+    // 43, not batch 7's original 44: `brush` gave up its own art after three redraws and became a
+    // `skinIcon` alias (see inkIconRaster.ts). A 44th needs a doc entry, not a silent add.
+    expect(OWN_ART.length).toBe(43);
     for (const kind of OWN_ART) {
       expect(fs.existsSync(path.join(ASSET_DIR, `${kind}_active.png`)), `${kind}_active.png`).toBe(true);
       // The other three inks would be ~130 PNGs nobody draws — and baking them is the shape of the
@@ -65,7 +67,7 @@ describe('ink-icon art on disk (pack_tab_icons.cjs, inks: [active])', () => {
 });
 
 describe('INK_ICON_ART — the code side of the same contract', () => {
-  it('holds a url for all 49 kinds, aliases included', () => {
+  it('holds a url for every kind, aliases included', () => {
     expect(Object.keys(INK_ICON_ART).length).toBe(OWN_ART.length + INK_ICON_ALIASES.length);
     for (const url of Object.values(INK_ICON_ART)) expect(typeof url).toBe('string');
   });

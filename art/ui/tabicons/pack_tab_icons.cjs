@@ -189,7 +189,6 @@ const JOBS = [
   { src: 'tabicon_lead.webp',              name: 'lead', inks: ['active'] },
   { src: 'tabicon_binding.webp',           name: 'binding', inks: ['active'] },
   { src: 'tabicon_hammer.webp',            name: 'hammer', inks: ['active'] },
-  { src: 'tabicon_brush.webp',             name: 'brush', inks: ['active'] },
   { src: 'tabicon_ink.webp',               name: 'ink', inks: ['active'] },
   { src: 'tabicon_replay.webp',            name: 'replay', inks: ['active'] },
   { src: 'tabicon_share.webp',             name: 'share', inks: ['active'] },

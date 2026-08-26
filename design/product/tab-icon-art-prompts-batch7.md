@@ -103,7 +103,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 | 8 | `lead` | 单独的削尖铅笔芯（只有笔芯，没有笔身） | 不画完整铅笔（那是 `pencils`/`duelTabIcon` 的活） |
 | 9 | `binding` | 孤立的螺旋装订圈（三圈弹簧线，周围没有书页/封面） | 不能带出书页轮廓（`campaignTabIcon` 的翻开笔记本已经用了装订圈做背景细节，这张必须只画圈本身） |
 | 10 | `hammer` | 平头锻造锤：直柄+矩形锤头，侧视 | 不是圆头双面法槌（`bidTabIcon`）；不是铁砧（`craftTabIcon`）；锤头不能斜置挥动姿态 |
-| 11 | `brush` | 直立毛笔：木柄+一道金属箍+散开笔锋+笔尖一滴墨 | — |
+| 11 | `brush` | ~~直立毛笔：木柄+一道金属箍+散开笔锋+笔尖一滴墨~~ **作废：三轮后判为不该出图，改成 `skinIcon` 别名，见文末** | — |
 
 ### 7 旧纸片（`tabicon_scrap`）
 ```
@@ -125,7 +125,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a single blacksmith's hammer seen in profile, standing upright — a short straight handle with a plain flat-ended rectangular block head fixed at a right angle across the top. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading, no wood-grain lines. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a round double-faced gavel head, a claw on the head, a swung/angled pose, an anvil beneath it, sparks or impact lines, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
 
-### 11 毛笔（`tabicon_brush`）
+### 11 毛笔（`tabicon_brush`）— **作废，见文末「`brush` 收在了别名上」**
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a single upright calligraphy writing brush — a plain round wooden handle, one thin metal ferrule band partway down, and a slightly splayed, fanned-out bristle tip at the bottom with one small ink drop just below the tip. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading, no wood-grain lines. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a paintbrush lying flat, a tightly-pointed unsplayed tip, ink dripping in multiple drops, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
@@ -395,10 +395,10 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 所以这批走第三条路：
 
 - **pack 脚本每张只烤一张白色母版**（JOBS 行加 `inks: ['active']`，44 张 PNG 而不是 132 张）。
-- **新增 `client/src/render/icons/inkIconRaster.ts`**：`InkIconKind`（49 个）+ `INK_ICON_ART`（kind → 白母版 url）+ `buildInkIcon(url, s, color)`，后者 `sprite.tint = color`——白 × tint 精确等于 tint，于是 `color` 恢复成「按字面用」，跟矢量时代的契约一模一样。这不是新发明：`render/titleArt.ts` 从一开始就这么给四枚永久称号的 PNG 染色；pack 脚本头部那条「烤色、别运行时染色」说的是**成品全彩图**（金币位图），那种图没有单一墨色可乘。
+- **新增 `client/src/render/icons/inkIconRaster.ts`**：`InkIconKind`（49 个 = 43 自有 + 6 别名）+ `INK_ICON_ART`（kind → 白母版 url）+ `buildInkIcon(url, s, color)`，后者 `sprite.tint = color`——白 × tint 精确等于 tint，于是 `color` 恢复成「按字面用」，跟矢量时代的契约一模一样。这不是新发明：`render/titleArt.ts` 从一开始就这么给四枚永久称号的 PNG 染色；pack 脚本头部那条「烤色、别运行时染色」说的是**成品全彩图**（金币位图），那种图没有单一墨色可乘。
 - `buildIcon` 先查 `TAB_ICON_RASTER`（页签表，`color` 是明暗提示）、落到 `INK_ICON_ART`（内容表，`color` 是字面墨色）。两表不许出现同名 kind——查表顺序会让 ink 那行被静默忽略、连带丢掉 tint，所以有测试专门盯这一条。
 
-### 5 处「纯复用」最终做成了美术别名，不是改字符串
+### 「纯复用」最终做成了美术别名，不是改字符串（5 处 + 后来的 `brush`）
 
 原计划（下方判断表）是把 `swords`→`pvpTabIcon` 这类调用点字符串直接换掉。实际接线时发现**这 5 个里有 4 个的调用点在传有意义的颜色**：`StatsScene` 按胜/负给 `swords` 染绿/红、`AuctionScene` 给拍卖模式的 `tag` 徽标染红、`FriendsScene` 的邮件附件 `gift` 是金色、`BattlePassScene` 把奖励自身的颜色传给 `capsule`。换成页签 kind 就会走 `tabIconVariant`，这些颜色全部丢失。
 
@@ -497,7 +497,7 @@ v1 的源图按约定移进了 `art/ui/tabicons/_rejected/`（`tabicon_<kind>_v1
 | `hourglassSm`/`Md`/`Lg` | **过** | 实心沙堆这一招成立：28px 上三档一眼分得开（细条 / 半满 / 满到收口），外框三张一致。这一条从「三档看起来一样」到「一眼分开」，改的只有"沙子别用点阵"这一句 |
 | `lead` | **过** | 实心锥 + 外张的木质切面 + 毛糙断口，28px 上是明确的「削尖的笔尖」，跟 `play` 的实心三角并排毫无歧义 |
 | `titleGrandmaster` | **过** | 皇冠在 28px 上是一条带尖的实心暗带，跟 `titleMaster`（无皇冠）、`titleKing`（更高更繁复 + 放射光线）三张并排都拉得开。**残留小瑕疵**（不重出）：它的绶带比 `titleMaster` 短一截、星体在画框里偏大，家族里的比例不算完全统一——但区分度由皇冠承担，够用 |
-| `brush` | **还差一版** | 笔锋照要求做成了实心宽楔形、也确实比笔柄宽两三倍——**但整张图的长宽比是 27:128（1:4.74）**，见下 |
+| `brush` | **不再出图，改成 `skinIcon` 别名** | v2 的笔锋照要求做成了实心宽楔形、也确实比笔柄宽两三倍——但整张图长宽比 27:128（1:4.74），见下；v3 把构图收成近正方形（108:128）解决了存在感，却读成钟形/蘑菇。第四轮之前先回头看了一眼**这个图标该不该是画笔**，答案是不该——见下 |
 
 **`brush` 暴露的是一条通用陷阱，值得单独记一笔**：`pack_tab_icons.cjs` 会先把源图裁到内容边界，再让**长边**等于 `LONG_EDGE`；运行时 `buildInkIcon`/`buildRasterTabIcon` 又是 contain-fit 进一个**正方形**盒子。所以**一张细长的图在 28px 格子里只占宽度的一小半**——1:4.74 的 brush 实际只画到约 6px 宽，剩下 22px 是空白，缩下去就是一根头发丝加一个小黑点，比 v1 更没存在感。**prompt 里写「笔锋比笔柄宽两三倍」是不够的**：那只约束了图内两个部件的相对比例，没约束整张图的外轮廓比例，模型完全可以画一根又细又长的杆来满足它。
 
@@ -510,6 +510,20 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ```
 
 本轮 5 张已打包接线（`brush` 暂时留 v2，比 v1 的细线稿仍强一档），`tsc --noEmit` + 图标契约测试全绿。
+
+### `brush` 收在了别名上，不是第四张图（2026-08-26）
+
+v3（近正方形构图，`_rejected/tabicon_brush_v3_bellshape.webp`）解决了 v2 的存在感问题——28px 上终于有真正的墨量——但笔锋是向下**外扩并收成圆底**，读成钟形/蘑菇/吸盘；毛笔应该在金属箍处最宽、往下**收窄**成散开的笔尖。本来要出 v4 改这一条，改之前回头看了一眼更上游的问题：**这个图标该不该是一支画笔。**
+
+答案是不该。`art-direction-map-ui.md` 记着当年定 `skinIcon`（戏剧面具）的原话：
+
+> 皮肤则是"文具/画笔"这条思路本身跟装备材料图标（也是文具）语义撞车，改走"戏剧面具"完全跳出文具语言才定案。
+
+也就是说**项目早就判定「画笔」不适合表达皮肤**——而 `brush` 至今是 6 处皮肤内容徽标（`AuctionScene` 的 `itemKind('skin')`、`CardScene` 皮肤格、`GachaScene` 稀有度点、`ShopScene` 皮肤商品、`CardScene/detail` 徽标、拍卖上架选择器），等于把当年特意绕开的撞车又搬了回来。更直接的证据：这两张图**同屏出现**（拍卖选择器里皮肤筛选片是面具、行内徽标是画笔；卡牌皮肤页标题是面具、格子是画笔），同一个概念两套画法。
+
+所以 `brush` 不再有自己的美术，改成 **`skinIcon` 的别名**（第 6 个别名，与 `swords`/`home`/`capsule`/`gift`/`tag` 同一手法：`INK_ICON_ART` 里保留 kind、url 指向 `skin_active.png`）。6 个调用点一行不改，`GachaScene` 按稀有度染色照旧生效，零新资产。**批次 7 的最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind**（原计划 44 + 5）。
+
+这一格的教训不在画笔本身，而在**返工到第三轮时该往上一层看**：v1→v2→v3 每一轮都在修「这支画笔画得对不对」，而真正的问题是「这里不该是画笔」——这个判断三个月前就做过一次，只是没有落到这 6 个调用点上。
 
 ### 重出后的验收口径
 
