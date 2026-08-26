@@ -412,6 +412,7 @@
 **回归测试**：
 - `client/test/ui/cardSceneSkins.ui.ts` 新增 3 例——导轨来回切、`initialTab: 'skins'` / `showTab()` 两条入口、以及容量读数的进出。标题断言必须读 `core.headerLayer` 而不是整棵树：左侧导轨画的正是同样这两个词。
 - `client/test/ui/shopGroupTabs.ui.ts` 新增 2 例——同样的双份文字问题，这里按几何区分（`getGlobalPosition().y < sceneHeaderHeight()` 才算页头那条带）。红绿对照做过：回退 `ShopScene` 的改动后这 2 例都红。
+- `client/test/ui/headerTitleFollowsTab.ui.ts`（新文件，6 例）——上表那条判据本身的守卫，两半都盯：Card/Shop/Daily/Friends 四个「导轨里有别的页面」的场景必须按页签换标题（Daily/Friends 此前没人断言过页头，它们各自的用例只断言过「这个词出现在树里」，而导轨本身就画着这个词），Auction（三个筛选）/Equipment（背包·锻造子页签）则必须**不**换。统一按几何读页头（`getGlobalPosition().y < sceneHeaderHeight()`），不依赖各场景怎么搭层。红绿对照做过：把两处修复回退后 Card/Shop 两例红、其余四例绿。
 - `client/test/ui/sceneHeaderCurrencyFit.ui.ts` 跟着改了一处**读法**（§26 那条断言原本从 `core.container.children` 里找标题，现在标题在 `core.headerLayer` 里）——不是放宽断言，是同一个断言指向新的层。它也是唯一抓到本次分层改动的既有测试。
 
 **像素证据**：`web-e2e` + Playwright（浏览器面板不合成，走 stub 挂载法：`views.showCardRoster(cb)` / `views.showShop(cb)` 直接开场景，无后端无登录）。衣柜页头读「Skins」+ 皮肤图标、右上角只剩金币；商店充值页读「Top Up」+ 金币图标。
