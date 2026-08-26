@@ -15,7 +15,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from '../../src/scenes/SceneManager';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
-import { initI18n, setLocale } from '../../src/i18n';
+import { initI18n, setLocale, t } from '../../src/i18n';
 
 import { GameScene } from '../../src/scenes/GameScene';
 import { ReplayScene } from '../../src/scenes/ReplayScene';
@@ -387,6 +387,37 @@ describe('ReplayScene — transport chrome geometry (§26)', () => {
     // Not fully opaque (the whole point of the fix) and not so faint it's unreadable.
     expect(fillAlpha).toBeLessThan(0.9);
     expect(fillAlpha).toBeGreaterThan(0.3);
+
+    scene.destroy();
+  });
+
+  // The tag used to sit at 4% of the design width, below the strip and a long way from anything it
+  // labels. In landscape it now right-aligns into the paper margin beside the board, ON the strip's
+  // band — which puts it on the timer's row, so "doesn't collide with the timer" is the load-
+  // bearing part (the timer sits 14px INSIDE the board edge, the tag 40px outside it).
+  it('the REPLAY tag sits on the top strip in the paper margin, clear of the timer and the board', () => {
+    const layout = createLayout(...LANDSCAPE);
+    const scene = new ReplayScene(layout, new InputManager(), recordReplay(30), {
+      onExit() {}, onShare() {},
+    }) as any;
+    scene.update(1 / 30);
+
+    const topR = layout.hudTopRect;
+    const board = layout.boardRect;
+    const tag = (scene.overlay as PIXI.Container).children.find(
+      (c): c is PIXI.Text => c instanceof PIXI.Text && c.text.includes(t('replay.title')),
+    )!;
+    expect(tag).toBeTruthy();
+
+    // On the strip's band, not dangling below it onto the paper.
+    expect(tag.y).toBeGreaterThanOrEqual(topR.y);
+    expect(tag.y + tag.height).toBeLessThanOrEqual(topR.y + topR.h);
+    // In the margin beside the board — right of the design edge, left of the board.
+    expect(tag.x).toBeGreaterThan(0);
+    expect(tag.x + tag.width).toBeLessThan(board.x);
+    // And clear of the timer it now shares a row with.
+    const timer = (scene.renderer.core.hudView as any).timerText as PIXI.Text;
+    expect(timer.x).toBeGreaterThan(tag.x + tag.width + 20);
 
     scene.destroy();
   });
