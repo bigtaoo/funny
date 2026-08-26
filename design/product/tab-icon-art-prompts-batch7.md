@@ -1,11 +1,11 @@
 # 批次 7：剩余全部程序矢量图标 — Prompt 文档
 
-> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3：另 4 条「可用但偏弱」的 prompt 已写（**待出图**，见文末「重出 prompt（v3）」）
+> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3（另 4 条「可用但偏弱」）：**已出图并打包 2026-08-26**——`globe`/`armor`/`armorHeavy`/`scrap` 四张过，`atk` 打回等 v4
 > 前六批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（试点/批次 2/3/4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题+剩余页签，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页主视觉，3 张）
 > 配套代码（接线后）：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（只剩两表分派，`DrawableIconKind`/`DRAW` 已删）· [`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（**本批落地处**：`InkIconKind` + `INK_ICON_ART` + `buildInkIcon` 运行时染色）· [`client/src/render/icons/tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts)（前六批的页签表，未改）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
 > 已删除的矢量画法：`client/src/render/icons/{equipment,ui,slg,motifs,titles,currency,primitives}.ts` 七个文件整体删除（`DRAW` 清零后全部变死代码）
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6
-> 状态：**接线全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind）；**唯一剩下的是美术工作**：`atk`/`scrap`/`armor`+`armorHeavy`/`globe` 五张的 v3 prompt 已定稿，图还没出
+> 状态：**接线全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind）；**剩下的只有 `atk` 一张**：v3 五张里 `globe`/`armor`/`armorHeavy`/`scrap` 已验收并打包上线，`atk` v3 读成锤子/铁砧、源图退回 v1，v4 prompt 见文末
 
 ## 背景：前六批 + 金币收口之后，还剩的就是这些
 
@@ -431,7 +431,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 | `lead` | 画成了纯锥形，28px 上读成三角形，跟 `play` 的实心三角容易混 | 要求**保留一小段方形笔杆截面**或在锥体上加一道横向断口，让它读成「一截笔芯」而不是几何三角 |
 | `titleGrandmaster` | 与 `titleMaster` 的差异只有一顶很小的皇冠，28px 上勉强 | 皇冠要**明显大一档**（但仍小于 `titleKing` 那顶）；这一档的原则「明显小于下一级」在 28px 上过头了 |
 
-其余 40 张验收通过。次弱但可用、当时记录在案不重出的（**2026-08-26 改为重出，prompt 见文末「重出 prompt（v3）」**）：`atk`（匕首细、迸溅线在 28px 消失）、`scrap`（撕边糊成一块纸）、`armor`/`armorHeavy`（28px 上都是「一个忙碌的圆」，只看得出后者更重）、`globe`（读成球而不是地球，但它只是 toast 兜底图）。
+其余 40 张验收通过。次弱但可用、当时记录在案不重出的（**2026-08-26 改为重出：4 张已上线、`atk` 待 v4，见文末「重出 prompt（v3）」**）：`atk`（匕首细、迸溅线在 28px 消失）、`scrap`（撕边糊成一块纸）、`armor`/`armorHeavy`（28px 上都是「一个忙碌的圆」，只看得出后者更重）、`globe`（读成球而不是地球，但它只是 toast 兜底图）。
 
 ## 重出 prompt（v2，2026-08-25 当日）
 
@@ -610,3 +610,26 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ### v3 的验收口径
 
 跟前两轮同口径，逐条指定并排对象：`atk` 跟 `weapon`（竖剑）、`hp`、`spd` 一行并排看装备词条行；`scrap` 跟 `cards`/`book` 并排（都是纸）；`armor` 与 `armorHeavy` **必须并排**，另外各自跟 `coin`、`globe` 并排一次（这一轮它们要解决的正是「细环圆」的形态撞车）；`globe` 单看即可（它只是 toast 兜底图）。此外重出 `atk` 后先跑 `npm test -- iconArtAspect`：白名单没删干净会红，删对了那条测试自己会说话；`armorHeavy/armor` 的墨量比也由同一份测试兜着（下限 1.15，v3 的粗黑边预计在 1.3 以上）。
+
+### v3 出图结果（2026-08-26）：4 条过、`atk` 打回
+
+五张图当天出回来，按 v3 验收口径在 28px 纸底 + 深底两套衬底上并排看过（生成脚本走的是真实链路：`pack_tab_icons.cjs` 出白色母版 → 染色 → contain-fit 进 28×28 → 最近邻放大观察）。
+
+| kind | 结论 | 说明 |
+|---|---|---|
+| `globe` | **过（提升最大的一张）** | 三块实心大陆、其中两块顶到圆边被切断，28px 上是毫无歧义的地球，不再是十字准星球。**「把被禁的东西放回来」才是这条的解法**——v1 那句 `no continents or landmasses` 挡掉的不是碎海岸线，是唯一能说明它是地球的东西 |
+| `armor` / `armorHeavy` | **过** | 纹章式四分圆成立：两张一眼分得开（加固档的粗黑外沿把白扇区压小了一圈），跟 `coin` 的空心环、`equip` 的鸢形盾、`armorslot` 的胸甲三张并排都没有歧义，「忙碌的圆」问题解决。**残留**：它更像纹章/饼图而不是「护甲」，语义靠词条文字承担；这是拿「28px 分得开 + 不撞车」换来的，接受 |
+| `scrap` | **过（偏弱）** | 大缺口这一招成立，28px 上读得出「撕下来的纸」，比 v1 那个纯方框强一档。**残留两点**：①墨量仍是全套最低的一档（28px 实测 162，`globe` 363、`armor` 379），整张几乎全是线稿；②底边的大齿跟 `castle` 的城垛是上下镜像关系，两者不同屏，暂不处理 |
+| `atk` | **打回，源图退回 v1** | 见下 |
+
+**`atk` v3 为什么打回**：模型用**把护手撑成一个巨大空心长方形**的办法去满足「近正方」，同时刀身缩成一个小黑块——28px 上整张图是「一根短柄插在一条横杠上」，跟 `hammer`（锤子）、`craft`（铁砧）并排看是同一个「工具压在横条上」的家族，读不出匕首。**v3 比 v1 更糟**（v1 至少还是把刀），所以源图退回 v1（`_rejected/tabicon_atk_v3_hollowbarreadsashammer.webp`），`ELONGATED_ON_PURPOSE` 里的 `atk` 那行**保持不动**，等 v4。
+
+这条的教训是**约束的代价会落在没被约束的那个部件上**：v3 只写了「护手要比刀身宽」和「整图近正方」，没写护手**不许是画面里最大的形状**，于是模型拿最省事的一条路满足了两句话。跟 `brush` v2「笔锋比笔柄宽两三倍却画成一根细长杆」是同一个形状的错误——**局部比例约束不构成整体构图约束**。
+
+**`atk` v4 prompt**（只改一件事：宽度预算从护手挪到迸溅扇形）：
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a dagger pointing straight up. THE BLADE IS THE DOMINANT SHAPE: a leaf-shaped blade filled in as ONE SOLID BLACK MASS, coming to a clear point at the top, and taking up about three fifths of the icon's whole height on its own — nothing else in the picture may be bigger than it. Directly beneath the blade sits a SHORT crossguard drawn as one small SOLID BLACK BAR, only about one and a half times as wide as the blade and quite thin — it is a minor detail, not a platform. Below that, a short stubby plain handle. Three thick spark strokes spring from the blade's point and FAN OUT WIDE — one to the upper left, one straight up, one to the upper right — and it is this wide spark fan, NOT a wide crossguard, that makes the drawing roughly as wide as it is tall. COMPOSITION: total height no more than about 1.4 times total width. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the blade and the crossguard are flat solid black areas, the handle is bare line art. Must stay clearly recognizable as a DAGGER when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a hollow open rectangle as the crossguard, a crossguard wider than half the picture, a crossguard that is the largest shape in the picture, a short stubby blade, a blade shorter than the crossguard is wide, a T-shaped or cross-shaped silhouette, anything that reads as a hammer, mallet, anvil, rubber stamp or a tool resting on a bar, a tall narrow composition, a long slender blade, a hollow outlined blade, a fuller or blood groove line, thin hairline sparks, sparks floating away from the tip, more than four sparks, a long two-handed sword, an ornate pommel, two crossed blades, a shield behind it, a hand gripping it, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+**顺带记一条测试口径**：`iconArtAspect.test.ts` 的 `armorHeavy/armor` 墨量下限是 1.15，v1 实测 1.48、v3 实测 **1.21**——比值反而降了，因为 v3 的**基础档**本身就重了一倍多（28px 墨量 164 → 379）。也就是说这个比值同时受两档影响，**它是防「加固档不再更重」的地板，不是「区分度」的度量**（跟沙漏那条同一个道理，见本文档「没加的那一条也记在案」）。v3 的两档在 28px 上并排一眼分得开，比值 1.21 不是问题；但下次再调 `armor` 时要知道离地板只剩 0.06。
