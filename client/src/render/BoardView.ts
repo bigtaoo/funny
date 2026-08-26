@@ -10,7 +10,7 @@ import { buildBattleLabels, type BattleLabelContext } from './battleLabels';
 import {
   buildBases, applyBaseBreath, applyHitPulse, applyCriticalRing,
   playBaseCrackEffect, setBaseCritical, setBaseUpgradeLevel, playBaseUpgradeEffect,
-  drawFactionGroundPatch, type BaseRef, type BasesHost,
+  type BaseRef, type BasesHost,
 } from './BoardView/bases';
 import { showUnitLaneHighlights, showBuildingHighlights, showMeteorTargetHighlight, showColumnTargetHighlight, laneRect } from './BoardView/highlights';
 import { playMeteorEffect, playRockslideEffect } from './BoardView/effects';

@@ -16,7 +16,6 @@ import type {
   StateReplay,
   StateFrame,
   StateUnit,
-  StateBuilding,
   EncodedStateReplay,
 } from '../game/replay/StateReplay';
 

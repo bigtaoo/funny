@@ -24,7 +24,7 @@ import { ILayout, Rect } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import type { ShopItem } from '../../net/ApiClient';
-import { ui as C, buildPaperBackground, marginLineX } from '../../render/sketchUi';
+import { buildPaperBackground, marginLineX } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { type IconKind } from '../../render/icons';
 import { type MaterialKind } from '../../render/atlas/materialAtlas';

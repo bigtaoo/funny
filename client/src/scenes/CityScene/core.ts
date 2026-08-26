@@ -27,7 +27,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
-import { t } from '../../i18n';
 import { ui as C, tearDownChildren } from '../../render/sketchUi';
 import type {
   WorldApiClient,
@@ -48,8 +47,6 @@ import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { GuideOverlay } from '../../render/GuideOverlay';
-import { loadResAtlas } from '../../render/atlas/resAtlasLoader';
-import { loadCityBldAtlas } from '../../render/atlas/cityBldAtlasLoader';
 import type { SaveData } from '../../game/meta/SaveData';
 import * as actions from './actions';
 import * as helpers from './helpers';

@@ -7,7 +7,6 @@
 // only rebind this throwaway host object, never reaching back to the scene's own field (same
 // reasoning as SettingsScene/avatarPicker.ts's PickerHost).
 import * as PIXI from 'pixi.js-legacy';
-import { Rect } from '../../layout/ILayout';
 import { t, TranslationKey } from '../../i18n';
 import type { RoomState, PlayerSlot } from '../../net/proto/transport';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';

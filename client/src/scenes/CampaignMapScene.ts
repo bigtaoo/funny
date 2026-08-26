@@ -4,7 +4,6 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { CHAPTER_ORDER, getChapterMap } from '../game';
-import type { ChapterMap } from '../game';
 import { isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
@@ -385,7 +384,6 @@ export class CampaignMapScene implements Scene {
 
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());
-    const online = this.cb.isOnline();
     const pending = new Set(this.cb.getPendingLevels());
 
     // Content rect (kept right of the red margin at 0.09w, padded all round).

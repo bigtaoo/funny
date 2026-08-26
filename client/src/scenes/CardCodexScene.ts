@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, buildPaperBackground, tearDownChildren } from '../render/sketchUi';
+import { buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { cardArtUrl, preloadL1CardArtTextures } from '../render/cardArt';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';

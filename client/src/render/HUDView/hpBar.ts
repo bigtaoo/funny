@@ -5,7 +5,6 @@ import * as PIXI from 'pixi.js-legacy';
 
 const HP_CELLS    = 10;
 const HP_CELL_W   = 21;
-const HP_CELL_H   = 15;
 const HP_CELL_GAP = 3;
 export const HP_BAR_W = HP_CELLS * (HP_CELL_W + HP_CELL_GAP) - HP_CELL_GAP;
 

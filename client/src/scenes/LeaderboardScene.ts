@@ -416,7 +416,6 @@ export class LeaderboardScene implements Scene {
     x: number, y: number, w: number, rowH: number,
     index: number,
   ): void {
-    const { h } = this;
     const isTop3 = e.rank <= 3;
     const accent = isTop3 ? C.gold : C.line;
 

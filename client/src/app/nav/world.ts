@@ -54,6 +54,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     // (SceneManager.pushOverlay via `{ overlay: true }`) instead of replacing it, so returning to the
     // map is a pop with no teardown+rebuild (ADR-044, extended from City-only to all SLG panels).
     // `view` is captured by the callbacks/closures below; they only fire after showWorldMap assigns it.
+    // eslint-disable-next-line prefer-const -- assigned by showWorldMap ~60 lines below; the closures in between capture it, so the two cannot be merged.
     let view: WorldMapView;
 
     // (Re)bind the gateway push handlers to the live map handle (march/tile/under-attack/siege

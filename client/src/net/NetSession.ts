@@ -410,7 +410,11 @@ export class NetSession {
     log.info('connecting data plane (game)', { gameUrl });
     this.ticket = ticket;
     let everOpened = false;
+    // Declared before it is assigned on purpose: the option callbacks in the object literal below
+    // capture `client`. prefer-const wants the two merged into one `const`, which would put those
+    // callbacks inside `client`'s own temporal dead zone at the moment they are created.
     let client!: NetClient;
+    // eslint-disable-next-line prefer-const -- see the comment above the declaration.
     client = new NetClient(this.platform, {
       url: gameUrl,
       tag: 'game',

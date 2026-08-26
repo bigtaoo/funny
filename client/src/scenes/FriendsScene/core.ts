@@ -27,7 +27,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { ILayout } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
-import { ProfilePopup, type ProfileExtra } from '../../ui/dialogs/ProfilePopup';
+import { ProfilePopup } from '../../ui/dialogs/ProfilePopup';
 import { drawConfirmDialog, type ModalHit } from '../../ui/dialogs/confirmDialog';
 import { tearDownChildren } from '../../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../../net/log';

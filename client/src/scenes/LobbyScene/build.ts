@@ -10,8 +10,6 @@
 // fresh layers so a rebuild doesn't lose the current badge state) and OverlaysPanel (handleDown
 // dispatches guide/settlement/toast dismissal and the world-lock info bubble through it) — see
 // ./core.ts's file-header comment for how the old bidirectional build.ts↔badges.ts pair was
-// resolved (rebuild() moved to Core; this file no longer has any back-edge from either sibling).
-import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { buildWearOverlay } from '../../render/wearOverlay';
 import { buildDecorCLayer } from '../../render/decorCLayer';

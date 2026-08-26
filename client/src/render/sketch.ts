@@ -225,7 +225,7 @@ function clipLineToRect(
  * Demo sampler — draws a labelled grid of the pen's repertoire into `g`.
  * Wired by the `?sketch` boot path so the look can be eyeballed in isolation.
  */
-export function drawSketchDemo(g: PIXI.Graphics, w: number, h: number): void {
+export function drawSketchDemo(g: PIXI.Graphics, w: number, _h: number): void {
   const pen = new SketchPen(g, 42);
 
   // Single tapered ink strokes, varying width.
