@@ -337,6 +337,12 @@ export class StatePlayerScene implements Scene {
     });
     tag.x = tagX + tagSz + 4;
     tag.y = this.barY - 2;
+    // Fit it into the gap left of the progress bar. Measured, not estimated: the label is translated
+    // (13 chars in English, 21 in German, 4 CJK glyphs in Chinese), so the cap above is necessary but
+    // not sufficient. The headless text mock measures a flat 7px/char, so only the real renderer
+    // exercises this — see test/browser/shareReplay.spec.ts.
+    const tagAvail = this.barX - tag.x - 8;
+    if (tag.width > tagAvail) tag.scale.set(tagAvail / tag.width);
     this.overlay.addChild(tag);
 
     const rowY = this.barY + 18;

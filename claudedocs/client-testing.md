@@ -143,6 +143,8 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - 测试文件：`client/test/browser/*.spec.ts`。
   - `smoke.spec.ts`：上面那两条 happy-path，**需要全套后端**。
   - `shareReplay.spec.ts`（2026-08-26 加）：分享录像落地页（`?r=<code>`）。**不需要后端** —— 只把 `GET {api}/r/<code>` 用 `page.route` 拦下来喂一份手写状态流（`unpackReplayBlob` 接受未压缩的普通对象，fixture 可以直接内联 JSON），其余照真渲染器跑。所以它是这层里唯一能本地随手跑、也是唯一能验「皮肤/动作/HUD 真的画出来了」的：皮肤靠**差分**断言（webpack 用内容哈希命名资源，URL 里看不出是哪份 rig，但「带皮肤的流比同一条不带皮肤的流多请求 2 个 `.tao`」看得出，且不写死默认 rig 的数量），动作靠**同一 canvas 相隔 0.4s 两帧像素不同**，HUD 靠遍历真 `app.stage` 找可见的纯数字文本（= 两侧墨水读数）。通过时也把那一帧作为 Playwright attachment 附在报告里，供人眼看一遍。
+  - ⚠️ **两个 spec 不能各自 `declare global` 同一个 `window.__nwE2E`**：`tsconfig.test.json` 把 `src` + `test` 拉进**同一个 program**，两份对同一属性的 augmentation 会互相污染 —— `shareReplay.spec.ts` 一开始声明成 `state: Record<string, unknown>`，结果 `smoke.spec.ts` 里 `state.lobbyCb.onOpenRoom()` 这类调用全变成 `Object is of type 'unknown'`（10 条报错**落在别人的文件里**，很容易误判成那个文件的问题）。新 spec 一律用**局部 type + 就地 cast**，不动全局 `Window`；注意传给 `page.evaluate` 的闭包会被序列化，**只能引用类型（会被擦除），不能引用模块作用域的值**（helper 函数不行）。
+  - ⚠️ 客户端 `target`/`lib` 是 ES2020：`Array.prototype.at()` 在 `npm test` 下跑得好好的（esbuild 擦类型），只有 `npm run typecheck` 会红（TS2550）。写测试断言"最后一次调用"要用 `calls[calls.length - 1]`。
 - `package.json` 新增 `test:browser`，**不进默认 `npm test`**（避免拖慢本地/CI 快路径；这条本身需要真浏览器 + 真后端）。
 - 范围红线：不做截图 diff / 视觉回归（UI 未定型部分——SLG——暂不纳入，等它定型后再补对应路径）。只保「能不能起来 + 两号能不能真联上 + 不报错」。
 

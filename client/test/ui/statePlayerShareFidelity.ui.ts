@@ -13,13 +13,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
-import { initI18n } from '../../src/i18n';
+import { initI18n, t } from '../../src/i18n';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { GameScene } from '../../src/scenes/GameScene';
 import { StatePlayerScene, skinsForOwner } from '../../src/scenes/StatePlayerScene';
 import { UnitView } from '../../src/render/UnitView';
+import { BoardView } from '../../src/render/BoardView';
 import { stateRecorder } from '../../src/game/replay/StateRecorder';
-import { STATE_SCHEMA_VERSION, type StateFrame, type StateReplay } from '../../src/game/replay/StateReplay';
+import {
+  STATE_SCHEMA_VERSION, encodeStateReplay, decodeStateReplay,
+  type StateFrame, type StateReplay,
+} from '../../src/game/replay/StateReplay';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -32,21 +36,35 @@ const memStore = (() => {
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const PORTRAIT: [number, number] = [800, 1280];
+const LANDSCAPE: [number, number] = [1280, 800];
 
 const CB = { onPlayDemo() {}, onBackToLogin() {} };
 
-/** Hand-built stream (no recorder needed): one walking unit per side, ink 7 vs 3, a skin each. */
+/** Most recent call of a spy. (`Array.prototype.at` needs lib es2022; this project targets ES2020.) */
+function lastCall<A extends unknown[]>(spy: { mock: { calls: A[] } }): A {
+  const { calls } = spy.mock;
+  const last = calls[calls.length - 1];
+  if (!last) throw new Error('spy was never called');
+  return last;
+}
+
+/**
+ * Hand-built stream (no recorder needed): one walking unit per side, a skin each, and ink that moves
+ * in opposite directions per side (owner 0: 7 → 9 → 11, owner 1: 3 → 2 → 1) so a test can tell "the
+ * HUD is synced every frame" from "the HUD was filled in once at build time", and "owner 0's readout"
+ * from "owner 1's".
+ */
 function mkShared(opts: { skins?: boolean; res?: boolean } = {}): StateReplay {
   const { skins = true, res = true } = opts;
-  const frame = (tick: number, row: number): StateFrame => ({
-    tick,
+  const frame = (i: number, row: number): StateFrame => ({
+    tick: i * 30,
     units: [
       { id: 1, type: 'infantry', side: 0, col: 3, row, hp: 100, maxHp: 100, state: 'moving' },
       { id: 2, type: 'archer', side: 1, col: 8, row: 16, hp: 60, maxHp: 60, state: 'moving' },
     ],
     buildings: [],
     bases: [{ owner: 0, hp: 80, maxHp: 100 }, { owner: 1, hp: 100, maxHp: 100 }],
-    ...(res ? { res: [{ owner: 0, ink: 7, upgrade: 1 }, { owner: 1, ink: 3, upgrade: 0 }] } : {}),
+    ...(res ? { res: [{ owner: 0, ink: 7 + i * 2, upgrade: 1 }, { owner: 1, ink: 3 - i, upgrade: 0 }] } : {}),
   });
   return {
     header: {
@@ -61,16 +79,46 @@ function mkShared(opts: { skins?: boolean; res?: boolean } = {}): StateReplay {
         { name: 'Anna', side: 1, ...(skins ? { skins: ['skin_shop_r1'] } : {}) },
       ],
     },
-    frames: [frame(0, 1), frame(30, 4), frame(60, 7)],
+    frames: [frame(0, 1), frame(1, 4), frame(2, 7)],
   };
 }
 
-/** The scene's HUD, reached through the private field the tests need to observe. */
-function hudOf(scene: StatePlayerScene): {
+interface HudProbe {
   container: PIXI.Container;
-  sides: Record<0 | 1, { hp: PIXI.Graphics }>;
-} {
-  return (scene as unknown as { hud: { container: PIXI.Container; sides: Record<0 | 1, { hp: PIXI.Graphics }> } }).hud;
+  sides: Record<0 | 1, { hp: PIXI.Graphics; inkText: PIXI.Text }>;
+}
+
+/** The scene's HUD, reached through the private field the tests need to observe. */
+function hudOf(scene: StatePlayerScene): HudProbe {
+  return (scene as unknown as { hud: HudProbe }).hud;
+}
+
+/** The transport overlay (progress bar / buttons / tag), likewise private. */
+function overlayOf(scene: StatePlayerScene): PIXI.Container {
+  return (scene as unknown as { overlay: PIXI.Container }).overlay;
+}
+
+/** Every drawn, currently-visible box under `root`, in design space. Empty graphics are skipped —
+ *  PIXI reports a zero-size rect at the origin for them, which would false-positive an overlap. */
+function visibleBoxes(root: PIXI.Container): PIXI.Rectangle[] {
+  const out: PIXI.Rectangle[] = [];
+  const walk = (c: PIXI.Container): void => {
+    if (!c.visible) return;
+    for (const ch of c.children) {
+      if (!(ch instanceof PIXI.Container)) continue;
+      if (!ch.visible) continue;
+      if (ch.children.length > 0) { walk(ch); continue; }
+      const b = ch.getBounds();
+      if (b.width > 0 && b.height > 0) out.push(b);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/** Do two boxes overlap vertically (the axis the HUD strips divide the screen on)? */
+function overlapsBand(box: PIXI.Rectangle, band: { y: number; h: number }): boolean {
+  return box.y < band.y + band.h && box.y + box.height > band.y;
 }
 
 /** Visible plain-integer texts under `root` — the ink readouts (the clock is "m:ss", names are words). */
@@ -103,12 +151,12 @@ describe('StatePlayerScene — shared replay renders skins / animation / HUD', (
 
     scene.update(1 / 30);
     expect(sync).toHaveBeenCalled();
-    expect(sync.mock.calls.at(-1)![1]).toBeCloseTo(1 / 30, 6);
+    expect(lastCall(sync)[1]).toBeCloseTo(1 / 30, 6);
 
     // At 2× the units cross the board twice as fast, so their legs have to run twice as fast too.
     (scene as unknown as { speedIdx: number }).speedIdx = 1;
     scene.update(1 / 30);
-    expect(sync.mock.calls.at(-1)![1]).toBeCloseTo(2 / 30, 6);
+    expect(lastCall(sync)[1]).toBeCloseTo(2 / 30, 6);
 
     scene.destroy();
     sync.mockRestore();
@@ -128,6 +176,122 @@ describe('StatePlayerScene — shared replay renders skins / animation / HUD', (
 
     scene.destroy();
   });
+
+  it('puts each owner\'s readouts on its own strip — owner 0 bottom, owner 1 top', () => {
+    // The mapping is fixed (the dumb player never mirrors the viewpoint), and swapping it is the
+    // classic failure here — a set-wise check on the two numbers would pass a swap.
+    const layout = createLayout(...PORTRAIT);
+    const scene = new StatePlayerScene(layout, mkShared(), CB);
+    scene.update(1 / 30);
+    const hud = hudOf(scene);
+
+    expect(hud.sides[0].inkText.text).toBe('7');
+    expect(hud.sides[1].inkText.text).toBe('3');
+    for (const [owner, band] of [[0, layout.hudBottomLeftRect], [1, layout.hudTopRect]] as const) {
+      for (const gfx of [hud.sides[owner].hp, hud.sides[owner].inkText]) {
+        expect(overlapsBand(gfx.getBounds(), band)).toBe(true);
+      }
+    }
+    // Names too: each side's label sits in that side's strip.
+    const label = (name: string): PIXI.Text => {
+      const found = hud.container.children.find((c): c is PIXI.Text => c instanceof PIXI.Text && c.text === name);
+      if (!found) throw new Error(`no HUD label for ${name}`);
+      return found;
+    };
+    expect(overlapsBand(label('Tao').getBounds(), layout.hudBottomLeftRect)).toBe(true);
+    expect(overlapsBand(label('Anna').getBounds(), layout.hudTopRect)).toBe(true);
+
+    scene.destroy();
+  });
+
+  it('keeps the HUD in sync as playback advances (not filled in once at build time)', () => {
+    const scene = new StatePlayerScene(createLayout(...PORTRAIT), mkShared(), CB);
+    scene.update(1 / 30);
+    expect([hudOf(scene).sides[0].inkText.text, hudOf(scene).sides[1].inkText.text]).toEqual(['7', '3']);
+
+    // Past tick 30 → the second frame is current: owner 0 spent up to 9, owner 1 down to 2.
+    for (let i = 0; i < 34; i++) scene.update(1 / 30);
+    expect([hudOf(scene).sides[0].inkText.text, hudOf(scene).sides[1].inkText.text]).toEqual(['9', '2']);
+
+    scene.destroy();
+  });
+
+  it('drives the board\'s base rings from the recorded upgrade level', () => {
+    const spy = vi.spyOn(BoardView.prototype, 'setBaseUpgradeLevel');
+    const scene = new StatePlayerScene(createLayout(...PORTRAIT), mkShared(), CB);
+    scene.update(1 / 30);
+
+    expect(spy).toHaveBeenCalledWith(0, 1); // fixture: owner 0 upgraded once
+    expect(spy).toHaveBeenCalledWith(1, 0);
+
+    scene.destroy();
+    spy.mockRestore();
+  });
+
+  it('feeds UnitView a finite attack interval (a missing field would reach the rig as NaN)', () => {
+    const sync = vi.spyOn(UnitView.prototype, 'sync');
+    const scene = new StatePlayerScene(createLayout(...PORTRAIT), mkShared(), CB);
+    scene.update(1 / 30);
+
+    const board = lastCall(sync)[0] as unknown as {
+      units: Map<number, { effectiveAttackIntervalTicks: number }>;
+    };
+    for (const unit of board.units.values()) {
+      expect(Number.isFinite(unit.effectiveAttackIntervalTicks)).toBe(true);
+    }
+
+    scene.destroy();
+    sync.mockRestore();
+  });
+
+  it('re-shares an adopted stream verbatim, skins and ink included', () => {
+    stateRecorder.reset();
+    const encoded = encodeStateReplay(mkShared());
+    const scene = new StatePlayerScene(createLayout(...PORTRAIT), decodeStateReplay(encoded), CB, encoded);
+
+    // Watching someone's share and hitting share again must forward the original bytes — no re-capture
+    // (the dumb player runs no engine, so there is nothing to re-record), and no header rewrite either.
+    expect(stateRecorder.build({ localName: 'SomeoneElse' })).toBe(encoded);
+    expect(encoded.header.players[0]?.skins).toEqual(['skin_l1']);
+    expect(encoded.frames.some((f) => f.rs !== undefined)).toBe(true);
+
+    scene.destroy();
+    stateRecorder.reset();
+  });
+});
+
+// The transport chrome floats over the board, so nothing keeps it off the HUD strips but the geometry
+// itself: the progress bar used to be placed at a fraction of the design height, which in landscape
+// (a shorter design space with the same 70px strip) landed it inside the top strip, on top of the
+// enemy HP bar; the "shared replay" tag was sized off the button height alone and grew until it ran
+// under the centered transport buttons on a tall portrait screen.
+describe('StatePlayerScene — transport chrome clears the HUD strips', () => {
+  for (const [label, size] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
+    it(`${label}: no transport widget overlaps either strip, and the tag stays left of the bar`, () => {
+      const layout = createLayout(...size);
+      const scene = new StatePlayerScene(layout, mkShared(), CB);
+      scene.update(1 / 30);
+
+      const boxes = visibleBoxes(overlayOf(scene));
+      expect(boxes.length).toBeGreaterThan(0);
+      for (const band of [layout.hudTopRect, layout.hudBottomLeftRect]) {
+        for (const box of boxes) expect(overlapsBand(box, band)).toBe(false);
+      }
+
+      // The "shared replay" tag lives in the gap left of the progress bar; its font size is capped
+      // and it is additionally scaled down to fit that gap. Only its *presence and side* can be
+      // checked here — the harness' measureText mock is a flat 7px/char, font-size-independent, so
+      // a too-wide label is invisible to it. The real fit is exercised in
+      // test/browser/shareReplay.spec.ts.
+      const tag = overlayOf(scene).children.find(
+        (c): c is PIXI.Text => c instanceof PIXI.Text && c.text === t('stateplayer.tag'),
+      );
+      expect(tag).toBeDefined();
+      expect(tag!.x).toBeLessThan((scene as unknown as { barX: number }).barX);
+
+      scene.destroy();
+    });
+  }
 
   it('hides the ink readout for a v1 stream instead of showing a fabricated 0', () => {
     const scene = new StatePlayerScene(createLayout(...PORTRAIT), mkShared({ res: false }), CB);

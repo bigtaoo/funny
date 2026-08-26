@@ -12,11 +12,16 @@
 
 import { test, expect, type Browser, type Page } from '@playwright/test';
 
-declare global {
-  interface Window {
-    __nwE2E?: { state: Record<string, unknown>; app?: { stage: unknown } };
-  }
-}
+/**
+ * The slice of the test-only `window.__nwE2E` hook (entries/web-e2e.ts) this spec reads. Cast locally
+ * rather than augmenting the global `Window`: smoke.spec.ts already augments it with a different
+ * `state` type, and two augmentations of one property in the same program collide (it type-checks as
+ * one program — see tsconfig.test.json).
+ */
+type E2EWindow = {
+  __nwE2E?: { state?: { screen?: string }; app?: { stage: { children?: unknown[] } } };
+};
+
 
 const SHARE_CODE = 'testsharecode0000000000';
 
@@ -86,7 +91,7 @@ async function openSharedReplay(
   );
   await page.goto(`/?r=${SHARE_CODE}`);
   // The share code skips intro/consent/login entirely and lands straight in the dumb player.
-  await page.waitForFunction(() => window.__nwE2E?.state?.screen === 'statePlayer', undefined, { timeout: 20_000 });
+  await page.waitForFunction(() => (window as unknown as E2EWindow).__nwE2E?.state?.screen === 'statePlayer', undefined, { timeout: 20_000 });
   return { rigs, errors };
 }
 
@@ -104,7 +109,8 @@ async function visibleCounts(page: Page): Promise<string[]> {
         } else if (ch.children) walk(ch);
       }
     };
-    walk(window.__nwE2E!.app!.stage as { children?: unknown[] });
+    const stage = (window as unknown as E2EWindow).__nwE2E?.app?.stage;
+    if (stage) walk(stage);
     return out;
   });
 }
