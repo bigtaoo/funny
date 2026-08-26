@@ -10,6 +10,8 @@
 // No Redis URL configured → returns null, real-time channel push AND cross-instance kick are both disabled
 // (single-instance deployments don't need either — the local onConnection() eviction already covers it).
 // Dynamic ioredis import: compiles even when ioredis is not installed (mirrors worldsvc/redis.ts).
+// NB gateway/package.json DOES declare ioredis (2026-08-26 check) — the pattern is inherited from
+// @nw/shared's activeMatch.ts, which genuinely cannot import it. A type-only import would work here.
 //
 // Presence tracking (2026-07-27 mid-term audit item 5/5): Gateway.presenceOf answers "is this account
 // online" purely from its own in-process `conns` map, which is correct today (single gateway instance,
@@ -66,6 +68,19 @@ export interface GatewaySubscriber {
 }
 
 /**
+ * The ioredis surface this file touches. Same reasoning as worldsvc/src/redis.ts: the module is
+ * loaded through a variable specifier, so its real types are unavailable here and a structural type
+ * is what replaces `any`. `RedisLike` (from @nw/shared) stays the type of the *client* — narrowing
+ * that one is a separate job, since it is shared by matchsvc/commercial/metaserver too.
+ */
+type IoRedisCtor = new (url: string, opts: Record<string, unknown>) => RedisLike & {
+  on(event: 'error' | 'ready' | 'message', handler: (...args: never[]) => void): void;
+  subscribe(channel: string): Promise<unknown>;
+  duplicate(): RedisLike;
+  quit(): Promise<unknown>;
+};
+
+/**
  * Connect and subscribe to GW_PUSH_REDIS_CHANNEL. Push envelopes are consumed by Gateway.routeBroadcast
  * (pushes only to locally-online recipients); kick envelopes by onKick (closes a locally-held stale
  * connection for the given accountId, skipping ones this same instance just originated).
@@ -80,8 +95,8 @@ export async function connectGatewaySubscriber(
   if (!url) return null;
   try {
     const spec = 'ioredis';
-    const mod: any = await import(spec);
-    const Redis = mod.default ?? mod;
+    const mod = (await import(spec)) as { default?: IoRedisCtor };
+    const Redis = mod.default ?? (mod as unknown as IoRedisCtor);
     const subClient = new Redis(url, {
       lazyConnect: false,
       maxRetriesPerRequest: 3,

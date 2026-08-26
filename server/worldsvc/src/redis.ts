@@ -38,6 +38,28 @@ export interface WorldRedis {
   hmergeJsonField?(key: string, field: string, entryKey: string, entryJson: string | null): Promise<unknown>;
 }
 
+/**
+ * The ioredis surface this file actually touches. ioredis's own types are not imported because the
+ * module is loaded through a variable specifier (see the note above `connectRedis`), so nothing here
+ * can `import type` from it; a hand-written structural type is the honest alternative to `any`, and
+ * its only claim is "these are the calls below".
+ */
+interface IoRedisClient {
+  on(event: 'error', handler: (err: Error) => void): void;
+  once(event: 'ready' | 'error', handler: () => void): void;
+  off(event: 'ready' | 'error', handler: () => void): void;
+  disconnect(): void;
+  publish(channel: string, message: string): Promise<unknown>;
+  hset(key: string, field: string, value: string): Promise<unknown>;
+  hget(key: string, field: string): Promise<string | null>;
+  hdel(key: string, ...fields: string[]): Promise<unknown>;
+  del(key: string): Promise<unknown>;
+  quit(): Promise<unknown>;
+  eval(script: string, numKeys: number, ...args: string[]): Promise<unknown>;
+}
+
+type IoRedisCtor = new (url: string, opts: Record<string, unknown>) => IoRedisClient;
+
 /** Bounded wait for the initial connection outcome (see doc comment on connectRedis below). */
 const INITIAL_CONNECT_TIMEOUT_MS = 5000;
 
@@ -63,10 +85,13 @@ return 1
 export async function connectRedis(url: string | undefined): Promise<WorldRedis | null> {
   if (!url) return null;
   try {
-    // Variable specifier: bypasses tsc static module resolution (ioredis may not be installed in dev).
+    // Variable specifier: bypasses tsc static module resolution. NB the reason is inherited, not
+    // local — worldsvc/package.json DOES declare ioredis; the pattern comes from @nw/shared's
+    // activeMatch.ts, which does not (2026-08-26 check). A plain `import type Redis from 'ioredis'`
+    // would work here and give the real types; the alias below is the smaller step.
     const spec = 'ioredis';
-    const mod: any = await import(spec);
-    const Redis = mod.default ?? mod;
+    const mod = (await import(spec)) as { default?: IoRedisCtor };
+    const Redis = mod.default ?? (mod as unknown as IoRedisCtor);
     const client = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
     client.on('error', (e: Error) => console.error('[world-redis] error:', e.message));
 

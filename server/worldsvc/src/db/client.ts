@@ -2,7 +2,7 @@
 // shape). The actual Mongo client factory: connect, build the `WorldCollections` handle bag, wire up
 // `ensureIndexes` (delegates to each domain file's own ensureXIndexes, called in the original file's order
 // — cross-collection index-creation order carries no behavioral meaning) and `runMigrations`.
-import { MongoClient, Db, type MongoClientOptions } from 'mongodb';
+import { MongoClient, type MongoClientOptions } from 'mongodb';
 import type { WorldCollections, WorldMongo } from './collections';
 import { type WorldDoc, type TileDoc, type MapTemplateDoc, type MapTemplateRowDoc, type MapBaselineRowDoc, ensureWorldIndexes } from './worldDocs';
 import { type PlayerWorldDoc, ensurePlayerIndexes, migratePlayerWorldTroopPool, migrateTroopCapRetune } from './playerDocs';

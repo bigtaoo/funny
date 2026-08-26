@@ -17,7 +17,7 @@ import {
   type SiegeOutcome,
   type SiegeResolution,
 } from '@nw/shared';
-import { runSiegeBattle, synthesizeArmy, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, shouldUseCheapSiege } from '../../siegeEngine';
+import { runSiegeBattle, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, shouldUseCheapSiege } from '../../siegeEngine';
 import { computeCardStateUpdates, cardStateDeltaPipeline } from '../../cardStateSettlement';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, SiegeDamageDoc } from '../../db';

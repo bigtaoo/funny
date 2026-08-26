@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
-import { t } from '../i18n';
+import { t, type TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { buildRewardIcon, preloadRewardIconArt } from '../render/rewardIcon';
 import { buildDecorCLayer } from '../render/decorCLayer';
@@ -247,7 +247,7 @@ export class EventScene implements Scene {
       bg.x = PAD; bg.y = cy;
       this.container.addChild(bg);
 
-      const label = txt(t(`event.tasks.${task.kind}` as any) ?? task.kind, snapFont(Math.round(cardH * 0.34)), 0x333333);
+      const label = txt(t(`event.tasks.${task.kind}` as TranslationKey) ?? task.kind, snapFont(Math.round(cardH * 0.34)), 0x333333);
       label.anchor.set(0, 0.5);
       label.x = PAD + cardW * 0.04;
       label.y = cy + cardH * 0.5;

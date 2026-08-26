@@ -43,7 +43,7 @@ export async function wxPayVerify(
       },
     });
   } catch (e) {
-    throw new Error(`wx pay fetch failed: ${(e as Error).message}`);
+    throw new Error(`wx pay fetch failed: ${(e as Error).message}`, { cause: e });
   }
   if (!resp.ok) {
     const body = await resp.text();

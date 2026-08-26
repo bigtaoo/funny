@@ -37,8 +37,6 @@ import {
   buildSiegeBattle,
   SIEGE_BATTLE_TIMEOUT_TICKS,
   SIEGE_CHEAP_RATIO,
-  CARD_BASE_SURVIVAL,
-  CARD_INJURY_DURATION_MS,
   CARD_DEFS,
   type SiegeOutcome,
   type SiegeResolution,

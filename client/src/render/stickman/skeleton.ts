@@ -117,5 +117,12 @@ const _boneDefs: BoneDef[] = RAW_DEFS.map(raw => {
   return def;
 });
 
-(Skeleton as any).BONE_MAP  = _boneMap;
-(Skeleton as any).BONE_DEFS = _boneDefs;
+// Cast away readonly so we can assign once at init time (same shape as the animator's
+// tools/animator/src/skeleton/Skeleton.ts, which this file mirrors).
+type MutableSkeleton = {
+  -readonly [K in keyof typeof Skeleton]: (typeof Skeleton)[K];
+};
+const S = Skeleton as unknown as MutableSkeleton;
+
+S.BONE_MAP  = _boneMap;
+S.BONE_DEFS = _boneDefs;

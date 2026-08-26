@@ -44,7 +44,7 @@ type AuthHandlers = Pick<
   | 'submitAppeal' | 'submitFeedback'
 >;
 
-export class AuthService {
+export class AuthService implements AuthHandlers {
   private readonly oauth = createOAuthService();
 
   /**

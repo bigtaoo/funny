@@ -11,6 +11,20 @@ const RULER_H = 20;
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
+/**
+ * NOT WIRED UP — and deliberately kept rather than deleted, because it is the only trace of a
+ * missing feature: dragging a keyframe on the timeline is not undoable. `onMouseDown` records
+ * `dragKfTime`, `onMouseMove` calls `animCtrl.moveKeyframe()` directly on every move (overwriting
+ * `dragKfTime` as it goes, so the drag's ORIGINAL time is already lost by mouse-up), and
+ * `onMouseUp`'s comment says "commit as Command if time actually changed" — but nothing does.
+ * Ctrl+Z after a drag therefore undoes whatever came before it instead.
+ *
+ * Wiring it needs two things this class cannot supply on its own: a `dragKfStartTime` field kept
+ * across the move handler, and a `CommandManager.pushExecuted(cmd)` entry point — `execute()` would
+ * re-run `moveKeyframe(oldTime, newTime)` on state that has already been mutated. Surfaced by the
+ * animator's first-ever lint run (2026-08-26); tracked separately.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- see above: dead scaffolding kept on purpose
 class MoveKeyframeCommand implements Command {
   readonly label: string;
   constructor(
@@ -414,7 +428,7 @@ export class TimelineView {
     }
   }
 
-  private onMouseUp(e: MouseEvent): void {
+  private onMouseUp(_e: MouseEvent): void {
     if (this.isDraggingKf) {
       // Already mutated via moveKeyframe; commit as Command if time actually changed
       this.isDraggingKf = false;

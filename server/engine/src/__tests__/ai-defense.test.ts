@@ -16,8 +16,15 @@ import { Building } from '../Building';
 import { Prng } from '../math/prng';
 import { toFp } from '../math/fixed';
 import { BOARD_COLS, CARD_DEFINITIONS, TOP_BUILDING_ROW, ATTACK_LANES } from '../config';
-import { BuildingType, CardType, Side, SpellType, UnitType } from '../types';
+import { BuildingType, CardType, PlayerCommand, Side, SpellType, UnitType } from '../types';
 import { tryDefend, tryHaste } from '../systems/ai/defense';
+/**
+ * The only PlayerCommand variant carrying handIndex/col/row. The assertions below used to
+ * read those off `cmd as any`, which also silently accepted a misspelt field name (the
+ * expected value would just compare against `undefined`); this keeps the field names checked.
+ */
+type PlayCardCommand = Extract<PlayerCommand, { type: 'play_card' }>;
+
 import { DIFFICULTY, AiCtx, DifficultyParams } from '../systems/ai/types';
 
 function cardIndexOf(pred: (c: (typeof CARD_DEFINITIONS)[number]) => boolean): number {
@@ -55,9 +62,9 @@ test('tryDefend places an arrow tower in the most-pressured open building lane w
 
   assert.ok(cmd, 'expected a command');
   assert.equal(cmd!.type, 'play_card');
-  assert.equal((cmd as any).col, 7, 'tower should go in the most-threatened open lane');
-  assert.equal((cmd as any).handIndex, 0);
-  assert.equal((cmd as any).row, undefined, 'building placement never carries a row');
+  assert.equal((cmd as PlayCardCommand).col, 7, 'tower should go in the most-threatened open lane');
+  assert.equal((cmd as PlayCardCommand).handIndex, 0);
+  assert.equal((cmd as PlayCardCommand).row, undefined, 'building placement never carries a row');
 });
 
 test('tryDefend skips the tower branch once every building lane is occupied, falling through to a unit block', () => {
@@ -80,7 +87,7 @@ test('tryDefend skips the tower branch once every building lane is occupied, fal
 
   assert.ok(cmd, 'expected a fallback command (unit block)');
   assert.equal(cmd!.type, 'play_card');
-  assert.equal((cmd as any).handIndex, 1, 'should have fallen through to the Infantry card, not the tower');
+  assert.equal((cmd as PlayCardCommand).handIndex, 1, 'should have fallen through to the Infantry card, not the tower');
 });
 
 // ─── tryHaste ────────────────────────────────────────────────────────────────────────
@@ -135,6 +142,6 @@ test('tryHaste targets the column with the most friendly units, ignoring dead an
   const cmd = tryHaste(state, 1, 9);
   assert.ok(cmd, 'expected Haste to be cast on the busiest column');
   assert.equal(cmd!.type, 'play_card');
-  assert.equal((cmd as any).col, 3);
-  assert.equal((cmd as any).handIndex, 0);
+  assert.equal((cmd as PlayCardCommand).col, 3);
+  assert.equal((cmd as PlayCardCommand).handIndex, 0);
 });

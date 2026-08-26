@@ -69,7 +69,7 @@ export async function googleVerify(
   try {
     accessToken = await getGoogleAccessToken(sa);
   } catch (e) {
-    throw new Error(`google auth failed: ${(e as Error).message}`);
+    throw new Error(`google auth failed: ${(e as Error).message}`, { cause: e });
   }
 
   const url =
@@ -80,7 +80,7 @@ export async function googleVerify(
   try {
     resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   } catch (e) {
-    throw new Error(`google play fetch failed: ${(e as Error).message}`);
+    throw new Error(`google play fetch failed: ${(e as Error).message}`, { cause: e });
   }
 
   if (resp.status === 404) return { ok: false, coins: 0 };

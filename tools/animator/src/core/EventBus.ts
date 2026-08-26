@@ -46,7 +46,6 @@ export interface AppEvents {
 
 // ── EventBus<T> ───────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Listener<P> = (payload: P) => void;
 
 /** When the event payload is void, the emit call takes no payload argument. */

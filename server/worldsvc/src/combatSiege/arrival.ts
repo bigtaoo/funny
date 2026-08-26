@@ -42,7 +42,7 @@ import {
 import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCardArmy, toEngineCardInstances, shouldUseCheapSiege } from '../siegeEngine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
-import type { TileDoc, PlayerWorldDoc, MarchDoc } from '../db';
+import type { PlayerWorldDoc, MarchDoc } from '../db';
 import { WorldCore } from '../core';
 import type { SiegeReplayInputs } from '../worldTypes';
 import { refundTroops, parkMarchInPlace } from '../combatShared';

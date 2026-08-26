@@ -14,7 +14,7 @@ import { Unit, resetUnitIds } from '../Unit';
 import { Building, resetBuildingIds } from '../Building';
 import { SpellSystem } from '../systems/SpellSystem';
 import {
-  HASTE_DURATION_TICKS, HASTE_SPEED_MULT, METEOR_DAMAGE, ROCKSLIDE_DAMAGE,
+  HASTE_DURATION_TICKS, HASTE_SPEED_MULT, ROCKSLIDE_DAMAGE,
   BRIDGE_COLLAPSE_DURATION_TICKS,
 } from '../config';
 import { fp, scaleFp, toFp } from '../math/fixed';

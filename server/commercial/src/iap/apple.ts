@@ -51,7 +51,7 @@ export async function appleVerify(
       data = await applePost(APPLE_SANDBOX_URL, payload);
     }
   } catch (e) {
-    throw new Error(`apple verify failed: ${(e as Error).message}`);
+    throw new Error(`apple verify failed: ${(e as Error).message}`, { cause: e });
   }
 
   if (data.status !== 0) return { ok: false, coins: 0 };

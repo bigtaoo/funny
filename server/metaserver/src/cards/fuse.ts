@@ -59,7 +59,10 @@ export async function fuseCards(
   }
 
   // Pre-validation, checked ONCE (not re-validated after this point — see the function doc comment).
-  const [cur, curDocs] = await Promise.all([
+  // getOrCreateSave is called for its side effect (create-if-missing, so the rev-guarded save
+  // loop below finds a doc); its return value is deliberately dropped — that loop re-reads the
+  // save anyway, and using this copy would be reading a value already one write out of date.
+  const [, curDocs] = await Promise.all([
     getOrCreateSave(cols, accountId, now()),
     cols.cardInstances.find({ _id: { $in: [targetId, ...ids] }, accountId }).toArray(),
   ]);
