@@ -804,6 +804,20 @@ export const en: Record<TranslationKey, string> = {
   'world.recommendTroops': 'Recommended troops {n}',
   'world.buildingHp': 'HP {hp}/{max}',
   'world.center': 'World Center',
+  'world.city': 'City',
+  'world.cityLevel': 'Lv.{lv} city',
+  'world.cityHint': 'A wild city — join a sect and besiege it together; the land inside its walls cannot be claimed tile by tile',
+  'world.cityUnclaimed': 'Unclaimed (NPC garrison)',
+  'world.cityOwnedBy': 'Held by {sect}',
+  'world.cityOwnedByUs': 'Held by {sect} (your sect)',
+  'world.cityDurability': 'Durability {cur} / {max}',
+  'world.cityRegen': 'Recovers {n} durability per hour — no single player can out-damage that; it takes a coordinated assault',
+  'world.cityProtected': 'Protected after capture; besiegeable again in {d}',
+  'world.citySiegeLog': 'This round · {sect}: {n}',
+  'world.citySiegeLogUs': 'your sect',
+  'world.cityNeedSect': 'You must join a sect before you can besiege a city',
+  'world.cityOursHint': 'Your sect already holds this city',
+  'world.actSiegeCity': 'Besiege',
   'world.stronghold': 'Stronghold',
   'world.strongholdHint': 'Heavily-defended NPC bastion — take it by siege; capturing claims it as territory and grants a large resource reward',
   'world.marchList': 'Marches',
@@ -1436,6 +1450,22 @@ export const en: Record<TranslationKey, string> = {
   'slg.settle.bp.body': 'As a Battle Pass holder, here is your extra end-of-season reward.',
   'slg.city.durabilityBreached.subject': 'Capital Breached',
   'slg.city.durabilityBreached.body': 'The durability of your capital has hit zero. The city was destroyed and all of your territory is lost. Open the world map to see where your capital stands now and rebuild your defenses.',
+  // Wild-city ownership change (ADR-074 P1): the mail goes only to the player who landed the final
+  // blow; the announcements go to the sect / world channels. Params come from body() in
+  // worldsvc/combatSiege/cityDamage.ts (kind/node/level/x/y/sect).
+  // The channel lines have a length budget, but its unit is DISPLAY WIDTH, not characters:
+  // drawChatLine draws one unwrapped line and truncates to the available width with an `…`
+  // (ui/widgets/truncateText.ts). The budget lives in client/test/i18n-system-text.test.ts, in
+  // orgNameWidth units (full-width = 2, else 1): 48 for captured/lost (both postSect → the narrow
+  // sect column), 96 for worldCenterCaptured (full-width world row). Both were measured in a real
+  // browser at the narrowest landscape design width, 1920: 700px and 1386px of body width. Run that
+  // test before editing copy — an overrun no longer cuts mid-word, but it does turn into an
+  // ellipsis, which costs the notice the one thing it exists to say.
+  'slg.city.captured.subject': 'City Captured',
+  'slg.city.captured.mail': 'Your final blow took the Lv.{level} city at ({x}, {y}). It is now held by {sect}. Its durability has been reset to full and it is protected from siege for a while.',
+  'slg.city.captured': 'Our sect captured the Lv.{level} city at ({x}, {y})',
+  'slg.city.lost': 'Our sect lost Lv.{level} ({x}, {y}) to {sect}',
+  'slg.city.worldCenterCaptured': '{sect} captured the world center at ({x}, {y})',
 
   // ── Limited-time events (B6) ─────────────────────────────────────────────
   'event.title': 'Events',
@@ -1508,7 +1538,7 @@ export const en: Record<TranslationKey, string> = {
   // ── City / Home Desk (SLG_CITY_DESIGN P1) ────────────────────────────────
   'city.title': 'Home City',
   'city.military.teams': 'Teams',
-  'city.military.teamIdle': 'Garrisoned',
+  'city.military.teamIdle': 'At home',
   // No trailing ellipsis — the team row appends 1–3 animated dots itself (CityScene render.ts).
   'city.military.teamLoading': 'Loading',
   'city.military.fillAllTeams': 'Fill All Teams',
@@ -1538,6 +1568,7 @@ export const en: Record<TranslationKey, string> = {
   'city.bonusAcademyDmg': 'Attack damage +{pct}%',
   'city.bonusSatchel': 'Per-march troop-carry cap: {n}',
   'city.troopCap': 'Troops {cur}/{cap}',
+  'city.trainQueueStatus': 'Queue {n}/{max} · in training {training} · room for {left}',
   'city.trainEntry': 'Training {n} · {time} left',
   'city.trainMax': 'Max +{n}',
   'city.err.noResources': 'Not enough resources',
@@ -1617,4 +1648,6 @@ export const en: Record<TranslationKey, string> = {
 
   'world.team.marching': 'Marching',
   'world.team.occupying': 'Occupying, {time} left',
+  'world.team.stationedIdle': 'In the field',
+  'world.team.garrisoned': 'Field garrison',
 };

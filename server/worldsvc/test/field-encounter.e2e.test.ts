@@ -14,6 +14,9 @@ import {
   baseFootprintCells,
   MARCH_SPEED_SEC_PER_TILE,
   MARCH_MORALE_MAX,
+  SATCHEL_CARRY_BASE,
+  SATCHEL_CARRY_STEP,
+  GARRISON_PER_TILE,
   SLG_MAP_W,
   SLG_MAP_H,
 } from '@nw/shared';
@@ -123,12 +126,21 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
     await m.close();
   });
 
-  /** Set a card team on a player + its deployed troop count in cardState. */
+  /**
+   * Set a card team on a player + its deployed troop count in cardState, and grant whatever satchel level that
+   * deployment needs to be legal at departure (startMarch's SATCHEL_CAP_EXCEEDED check).
+   *
+   * The satchel level is DERIVED, not assumed: these fixtures deploy deliberately overwhelming armies (9,000+)
+   * that used to fit under the no-satchel carry cap back when SATCHEL_CARRY_BASE was 10,000, and the 2026-08-25
+   * re-tune (base 5,000, +1,500/level) silently turned every one of them into a departure rejection. Deriving it
+   * keeps the tests about field encounters instead of about carry-cap arithmetic.
+   */
   async function setupCardArmy(accountId: string, teamId: string, cardId: string, troops: number): Promise<void> {
     await svc.setTeams(W, accountId, [{ id: teamId, name: teamId, army: [{ cardInstanceId: cardId, col: 0, row: 1 }] }] as TeamTemplate[]);
+    const satchel = Math.max(0, Math.ceil((troops - SATCHEL_CARRY_BASE) / SATCHEL_CARRY_STEP));
     await m.collections.playerWorld.updateOne(
       { _id: playerWorldId(W, accountId) },
-      { $set: { [`cardState.${cardId}`]: { currentTroops: troops, teamId } as CardSLGState } },
+      { $set: { [`cardState.${cardId}`]: { currentTroops: troops, teamId } as CardSLGState, 'buildings.satchel': satchel } },
     );
   }
 
@@ -159,6 +171,13 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
    * and targets the same unowned resource/neutral tiles the card-army tests use.
    */
   async function startAFlatMarch(dest: { x: number; y: number }, troops: number): Promise<{ marchId: string; departAt: number; path: { x: number; y: number }[] }> {
+    // Same derivation as setupCardArmy, plus a pool big enough to fund the march (a flat army is debited from
+    // `troops` on departure, and TROOP_CAP_BASE is 5,000 since 2026-08-25).
+    const satchel = Math.max(0, Math.ceil((troops - SATCHEL_CARRY_BASE) / SATCHEL_CARRY_STEP));
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { 'buildings.satchel': satchel, troops: troops + GARRISON_PER_TILE * 9, troopCap: troops + GARRISON_PER_TILE * 9 } },
+    );
     const mv = await svc.startMarch(W, 'a', 5, 5, dest.x, dest.y, 'sweep', troops);
     const doc = await m.collections.marches.findOne({ _id: mv.marchId });
     return { marchId: mv.marchId, departAt: mv.departAt, path: doc!.path! };
@@ -179,7 +198,7 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
   it('scenario 1 — a march wins against an enemy stationed team, destroys it, and keeps marching', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'b', 40, 40);
-    await setupCardArmy('a', 'at1', 'a-card', 9_000); // overwhelming attacker (>10x defender, satchel-legal)
+    await setupCardArmy('a', 'at1', 'a-card', 9_000); // overwhelming attacker (>10x defender, satchel level derived in setupCardArmy)
 
     const dest = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 5, 22);
     const { marchId, departAt, path } = await startAMove(dest);
@@ -317,7 +336,7 @@ describe.skipIf(!mongo)('worldsvc field-encounter e2e (ADR-051 P2b)', () => {
   it('scenario 2 — a march wins against another enemy march sharing the cell and takes it over', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     await svc.joinWorld(W, 'b', 40, 40);
-    await setupCardArmy('a', 'at1', 'a-card', 9_000); // overwhelming attacker (>10x defender, satchel-legal)
+    await setupCardArmy('a', 'at1', 'a-card', 9_000); // overwhelming attacker (>10x defender, satchel level derived in setupCardArmy)
     await setupCardArmy('b', 'bt1', 'b-card', 30);      // weak resident march
 
     const dest = findCoord((t) => t.type === 'resource' || t.type === 'neutral', 5, 22);

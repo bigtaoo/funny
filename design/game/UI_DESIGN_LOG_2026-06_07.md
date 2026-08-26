@@ -138,7 +138,7 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 
 - **血条按阵营配色**：`HUDView.drawHpBar` 改为吃 `color`——我方 `factionInk.friend`(蓝)、敌方 `factionInk.enemy`(红)；对方名字文字（`GameRenderer/base.ts drawOpponentLabel`）也改红。
 - **低血告警＝动效，不用红**（用户拍板）：色相恒表阵营，危险靠「闪」表达，避免我方低血红与敌方红撞色。两级——**低血（≤3 格）**在自身色相里轻微脉动；**危急（最后一格 / ≤15% 基地血）**升级为快速闪烁 + 血条上方琥珀 ⚠（`drawHpWarning`）＋**棋盘上对应基地城堡四周脉动光环**（敌红催补刀/己蓝催防守，`BoardView.setBaseCritical(owner,on)`＋`applyCriticalRing`，环在 sprite 之下；`GameRenderer` 每帧按 ≤15% 触发）。棋盘光环是关键——突脸发生在棋盘、也是视线焦点，把注意力钉在真正要出事的地方。敌我基地同享此逻辑。
-- **墨汁图标**：`render/icons/currency.ts` 新增 `drawInk(g,s,color)`（手绘墨水瓶＋一滴墨，我方蓝），替换 HUD 里裸的 `⬤`；每帧由 `positionInkIcon` 贴在数值左侧（横竖屏皆可）。真图待 AI 立绘替换（prompt 见提交记录）。
+- **墨汁图标**：`render/icons/currency.ts` 新增 `drawInk(g,s,color)`（手绘墨水瓶＋一滴墨，我方蓝），替换 HUD 里裸的 `⬤`；每帧由 `positionInkIcon` 贴在数值左侧（横竖屏皆可）。真图待 AI 立绘替换（prompt 见提交记录）。**（2026-08-25 已替换：AI 图批次 7 的 `ink`，`drawInk` 连同 `icons/currency.ts` 删除；仍是我方蓝——走运行时染色而非打包烤色，见 `design/product/tab-icon-art-prompts-batch7.md`。）**
 - **升级按钮特效**：够钱时除变 `primary` 外，`animateUpgradeFx` 加马克笔黄（`fx.upgrade`）呼吸光环 + 上方跳动 `▼`（§4.27 起 `primary` 换成专门的 `gold` 变体）。
 - **投降按钮加高**：`BTN_H` 30 → 44。
 - **单位阵营地面标记加强**：`UnitView.drawFactionMarker` 由 0.16/0.22 双椭圆改为 0.22/0.38/0.55 三层，脚下红/蓝更醒目。

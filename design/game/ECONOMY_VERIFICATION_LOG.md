@@ -1,6 +1,6 @@
 # 经济数值核验记录（ECONOMY_VERIFICATION_LOG）
 
-> 本文承接 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) 的数值定义，登记 econ-sim 各轨（NATION/CITY/C/D/E/F/STRONGHOLD）的核验过程与结论——均已标注「已过核验」/CLOSED，属一次性验证记录而非持续调参的数值权威。章节号延续主文档编号（§13-SLG-*），**不重新编号**，外部引用把文件名从 `ECONOMY_NUMBERS.md` 换成本文件即可定位到同一节。数值权威（可调参数表本身）仍以 `ECONOMY_NUMBERS.md` 为准。
+> 本文承接 [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) 的数值定义，登记 econ-sim 各轨（NATION/CITY/C/D/E/F/STRONGHOLD/CITYSIEGE）的核验过程与结论——均已标注「已过核验」/CLOSED，属一次性验证记录而非持续调参的数值权威。章节号延续主文档编号（§13-SLG-*），**不重新编号**，外部引用把文件名从 `ECONOMY_NUMBERS.md` 换成本文件即可定位到同一节。数值权威（可调参数表本身）仍以 `ECONOMY_NUMBERS.md` 为准。
 
 
 ## 分册
@@ -10,7 +10,7 @@
 | 内容 | 文件 |
 |---|---|
 | 开头 ~ 经济数值核验记录（ECONOMY_VERIFICATION_LOG） | **本文** |
-| 13-SLG-F 容量估算、13-SLG-STRONGHOLD 险地、13-SLG-NPC-BASEHP、13-SLG-MARCH 行军疲劳 | [`ECONOMY_VERIFICATION_LOG_CAPACITY.md`](ECONOMY_VERIFICATION_LOG_CAPACITY.md) |
+| 13-SLG-F 容量估算、13-SLG-STRONGHOLD 险地、13-SLG-NPC-BASEHP、13-SLG-MARCH 行军疲劳、13-SLG-CITYSIEGE 野外城池攻占 | [`ECONOMY_VERIFICATION_LOG_CAPACITY.md`](ECONOMY_VERIFICATION_LOG_CAPACITY.md) |
 
 ## 13-SLG-NATION. 国民产出加成核验（B 轨「裸经济不破」·纯季内·不进 §6.1）`[已过核验 2026-07-05，用 500×500 + 三层环带布局重跑]`
 

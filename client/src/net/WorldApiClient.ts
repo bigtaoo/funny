@@ -193,6 +193,8 @@ export class WorldApiClient {
     return this.world.joinWorld(worldId);
   }
 
+  /** ADR-074 P1: refresh the wild-city siege state without re-running a whole map entry. */
+  getCities(worldId: string): Promise<WorldCityNodeView[]> { return this.world.getCities(worldId); }
   enterWorld(worldId: string, r: number, zoom: 1 | 2 | 3): Promise<EnterWorldView> {
     return this.world.enterWorld(worldId, r, zoom);
   }

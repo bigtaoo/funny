@@ -40,7 +40,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, scaledTxt, buildPaperBackground, drawLoadingOverlay, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, scaledTxt, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
 import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import { showToastMessage } from '../../net/log';
 import { snapFont } from '../../render/fontScale';
@@ -51,11 +51,10 @@ import { headerCurrencySpec } from './headerRow';
 import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
-import type { SaveData, EquipSlot, EquipRarity } from '../../game/meta/SaveData';
+import type { EquipSlot, EquipRarity } from '../../game/meta/SaveData';
 import { EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
-import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
-import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
+import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { buildLevelStars as buildLevelStarsRow } from '../../render/levelStars';
 import { MAT_COLOR, matIconKind } from './layout';
@@ -387,9 +386,7 @@ export class EquipmentSceneCore {
       if (kind) {
         const ic = (kind === 'scrap' || kind === 'lead' || kind === 'binding')
           ? buildMaterialIcon(kind, size, iconColor)
-          : kind === 'coin'
-            ? buildCoinIcon(kind, size, iconColor)
-            : buildIcon(kind, size, iconColor);
+          : buildIcon(kind, size, iconColor);
         ic.x = cx; ic.y = midY - size / 2;
         parent.addChild(ic);
         cx += size + 1;

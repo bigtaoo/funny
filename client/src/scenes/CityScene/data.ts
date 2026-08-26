@@ -6,7 +6,13 @@
 import { loadResAtlas } from '../../render/atlas/resAtlasLoader';
 import { loadCityBldAtlas } from '../../render/atlas/cityBldAtlasLoader';
 import type { CitySceneCallbacks } from './core';
-import type { TeamTemplate, MarchView, OccupationView, PlayerWorldView } from '../../net/WorldApiClient';
+import type {
+  TeamTemplate,
+  MarchView,
+  OccupationView,
+  StationedView,
+  PlayerWorldView,
+} from '../../net/WorldApiClient';
 
 export interface DataHost {
   readonly cb: CitySceneCallbacks;
@@ -14,6 +20,7 @@ export interface DataHost {
   teams: TeamTemplate[];
   marches: MarchView[];
   occupations: OccupationView[];
+  stationed: StationedView[];
   teamsLoaded: boolean;
   ordersLoaded: boolean;
   setMe(me: PlayerWorldView): void;
@@ -21,7 +28,7 @@ export interface DataHost {
 }
 
 /**
- * Fetch the four independent data slices this scene needs. Deliberately NOT a `Promise.all`
+ * Fetch the five independent data slices this scene needs. Deliberately NOT a `Promise.all`
  * barrier (2026-08-02): awaiting all four before the first paint made every slice as slow as the
  * slowest one — the team row in particular sat on placeholder content until getMe/getMarches/
  * getOccupations had also answered, long after /world/teams itself had landed. Each slice now
@@ -71,9 +78,9 @@ export function load(host: DataHost): void {
       /* offline — resource bar / building grid keep their pre-load zeros */
     });
 
-  // marches + occupations both feed teamOrder(), so `ordersLoaded` only flips once both have
-  // settled — see the field's doc comment for why the status line waits on that.
-  let ordersPending = 2;
+  // marches + occupations + stationed all feed teamOrder(), so `ordersLoaded` only flips once all
+  // three have settled — see the field's doc comment for why the status line waits on that.
+  let ordersPending = 3;
   const orderSettled = (): void => {
     if (--ordersPending === 0) host.ordersLoaded = true;
     paint();
@@ -94,6 +101,17 @@ export function load(host: DataHost): void {
     })
     .catch(() => {
       /* offline — treated as no active hold */
+    })
+    .finally(orderSettled);
+  // Field-stationed teams (2026-07-23): parked on a tile with neither a march nor an occupation
+  // doc, so without this slice the row reports 驻军在家 for a squad standing out on the map.
+  void host.cb.worldApi
+    .getStationed(host.cb.worldId)
+    .then((stationed) => {
+      host.stationed = stationed;
+    })
+    .catch(() => {
+      /* offline — treated as no field station */
     })
     .finally(orderSettled);
 }

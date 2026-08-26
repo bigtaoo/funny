@@ -1,10 +1,10 @@
 // Static guard: every page that can be entered WITHOUT passing through LobbyScene must warm the
-// raster tab-icon art itself and redraw when it lands (2026-08-25).
+// raster icon art itself and redraw when it lands (2026-08-25).
 //
 // Why this is a test and not a comment: `buildRasterTabIcon` (render/icons/tabIconRaster.ts) returns
 // an EMPTY container while its PNG is still decoding, and registers no 'loaded' callback — so a page
 // that paints before the atlas is warm simply has no rail/tab/title glyphs until *something* redraws
-// it. LobbyScene warms them for everything entered from the lobby (see preloadTabIconTextures' doc
+// it. LobbyScene warms them for everything entered from the lobby (see preloadIconArt's doc
 // comment), and CardScene/EquipmentScene have long carried their own one-liner for the direct-entry
 // case.
 //
@@ -34,10 +34,10 @@ describe('tab-icon warm-up call sites', () => {
   for (const file of DIRECT_ENTRY_SCENES) {
     it(`${file} warms the tab-icon art and redraws once it resolves`, () => {
       const src = fs.readFileSync(path.join(SRC, file), 'utf8');
-      expect(src).toContain('preloadTabIconTextures');
+      expect(src).toContain('preloadIconArt');
       // The redraw is the half that actually fixes anything — a bare preload with no `.then` leaves
       // the already-painted frame glyph-less forever.
-      expect(src).toMatch(/preloadTabIconTextures\(\)\s*\.then\(\(\)\s*=>\s*this\.render\(\)\)/);
+      expect(src).toMatch(/preloadIconArt\(\)\s*\.then\(\(\)\s*=>\s*this\.render\(\)\)/);
     });
   }
 

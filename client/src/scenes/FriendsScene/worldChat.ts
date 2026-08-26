@@ -153,10 +153,13 @@ export class WorldChatPanel {
     bg.x = rx; bg.y = y;
     layer.addChild(bg);
 
+    // Full-width row (unlike the Sect/Family split-view columns), so a message here has roughly
+    // half again as much room before chatRow.ts has to truncate it.
+    const inset = Math.round(rw * 0.04);
     drawChatLine(
-      layer, rx + Math.round(rw * 0.04), y + rh / 2,
+      layer, rx + inset, y + rh / 2,
       { senderName: m.senderName, title: m.title, sectName: m.sectName, familyName: m.familyName },
-      m.body, snapFont(Math.round(rh * 0.32)), snapFont(Math.round(rh * 0.32)),
+      m.body, snapFont(Math.round(rh * 0.32)), snapFont(Math.round(rh * 0.32)), rw - inset * 2,
     );
 
     core.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openWorldSenderProfile(m) });

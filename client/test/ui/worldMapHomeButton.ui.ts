@@ -113,8 +113,12 @@ describe('WorldMapPanels.renderHud — home button (回家)', () => {
   it('the resource cluster stays clear of the home button, not just the shop button', () => {
     const { ctx, panels } = buildHudHarness(`${WORLD_ID}:${BASE.x}:${BASE.y}`);
     panels.renderHud();
-    const cluster = (ctx.headerHudLayer.children as PIXI.DisplayObject[])
-      .find((c): c is PIXI.Container => c.constructor === PIXI.Container)!;
+    // Bare `PIXI.Container` identity alone doesn't single out the readout any more: the shop entry
+    // button's `coinSack` icon (raster since 2026-08-25) is also a bare `new PIXI.Container()` (see
+    // buildRasterTabIcon) — the readout is the only one of the two that holds PIXI.Text children.
+    const cluster = (ctx.headerHudLayer.children as PIXI.Container[])
+      .find((c) => c.constructor === PIXI.Container
+        && c.children.some((ch) => ch instanceof PIXI.Text))!;
     expect(cluster.x + cluster.width).toBeLessThanOrEqual(ctx.homeBtnRect.x);
   });
 

@@ -8,6 +8,7 @@ import {
   TROOP_CAP_BASE,
   RESOURCE_CAP,
   TROOP_TRAIN_QUEUE_MAX,
+  TROOP_TRAIN_BATCH_MAX,
   TROOP_TRAIN_INK_COST,
   TROOP_TRAIN_PAPER_COST,
   TROOP_TRAIN_GRAPHITE_COST,
@@ -23,7 +24,7 @@ import {
   ACADEMY_DAMAGE_STEP,
   ACADEMY_SIEGE_STEP,
   DRILL_TROOPCAP_STEP,
-  DRILL_QUEUE_PER_LEVELS,
+  DRILL_QUEUE_LEVEL_THRESHOLDS,
   SATCHEL_CARRY_BASE,
   SATCHEL_CARRY_STEP,
   buildingLevel,
@@ -103,7 +104,72 @@ describe('storage / troop / training derived caps', () => {
     expect(drillTrainMult({ drillYard: 2 })).toBeLessThan(1);
     expect(drillTrainMult({ drillYard: 100 })).toBeGreaterThanOrEqual(0.5); // floored
     expect(trainQueueMaxFor(undefined)).toBe(TROOP_TRAIN_QUEUE_MAX);
-    expect(trainQueueMaxFor({ drillYard: 5 })).toBe(TROOP_TRAIN_QUEUE_MAX + Math.floor(5 / DRILL_QUEUE_PER_LEVELS));
+    // 1 slot at L0-L3, 2 at L4-L9, 3 at L10 (DRILL_QUEUE_LEVEL_THRESHOLDS = [4, 10]).
+    expect(trainQueueMaxFor({ drillYard: 3 })).toBe(TROOP_TRAIN_QUEUE_MAX);
+    expect(trainQueueMaxFor({ drillYard: 4 })).toBe(TROOP_TRAIN_QUEUE_MAX + 1);
+    expect(trainQueueMaxFor({ drillYard: 9 })).toBe(TROOP_TRAIN_QUEUE_MAX + 1);
+    expect(trainQueueMaxFor({ drillYard: DESK_MAX_LEVEL })).toBe(TROOP_TRAIN_QUEUE_MAX + DRILL_QUEUE_LEVEL_THRESHOLDS.length);
+  });
+  /**
+   * The 2026-08-25 re-tune's whole point: a slot beyond `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)` can never be
+   * filled (the troopCap check in worldsvc trainTroops rejects the batch first), so granting one is dead value
+   * — which is exactly what `2 + floor(level/2)` did after TROOP_TRAIN_BATCH_MAX went 500 → 5000. Asserted
+   * across the whole level range so any future move of TROOP_CAP_BASE / DRILL_TROOPCAP_STEP /
+   * TROOP_TRAIN_BATCH_MAX / the thresholds fails here instead of silently re-growing dead slots.
+   */
+  it('never grants a training queue slot that troopCap cannot fill', () => {
+    for (let lvl = 0; lvl <= DESK_MAX_LEVEL; lvl++) {
+      const buildings = { drillYard: lvl };
+      const usable = Math.ceil(troopCapFor(buildings) / TROOP_TRAIN_BATCH_MAX);
+      expect(trainQueueMaxFor(buildings)).toBeLessThanOrEqual(usable);
+      expect(trainQueueMaxFor(buildings)).toBeGreaterThanOrEqual(1); // training must be reachable at every level
+    }
+  });
+  /**
+   * troopCap must be strictly increasing in drillYard level. Sounds tautological for `base + step*level`, but
+   * it is the formula-level guard for the failure ADR-075 actually produced in the field: `troopCap` is a
+   * PERSISTED field (worldsvc city/buildings.ts applyDueBuilds), so re-tuning base/step made a stored cap from
+   * the OLD curve larger than the recomputed one from the NEW curve, and completing a drillYard build LOWERED
+   * the player's cap. A boot migration re-derives everyone, but the cheap standing guard against re-introducing
+   * "an upgrade makes you weaker" belongs here: any future step<=0, non-linear tier table, or cap/clamp added
+   * to this formula fails on this line instead of in production.
+   */
+  it('troopCap strictly increases with every drillYard level', () => {
+    for (let lvl = 1; lvl <= DESK_MAX_LEVEL; lvl++) {
+      expect(troopCapFor({ drillYard: lvl })).toBeGreaterThan(troopCapFor({ drillYard: lvl - 1 }));
+    }
+    expect(troopCapFor({ drillYard: 0 })).toBe(TROOP_CAP_BASE);
+  });
+  /**
+   * ADR-075 chose the queue-slot thresholds so that refilling an empty pool to the cap stays cheap in
+   * *sit-downs* at every level — the number of times the player has to come back and re-queue, which is the
+   * cost they actually feel. Slots buy exactly that, so bounding it is the reason the curve is 1/2/3 and not
+   * something else, and it is asserted rather than described: it breaks silently the moment troopCap,
+   * TROOP_TRAIN_BATCH_MAX or the thresholds move independently, and the symptom — the late game needing MORE
+   * visits than the early game — is precisely the "investing feels bad" shape the ADR set out to remove.
+   *
+   * Worth noting how this test earned itself: the ADR draft and three design docs all claimed "exactly two
+   * visits at every level". It is two from L1 up, but ONE at L0, where the base cap is exactly one batch. The
+   * bound below is the claim that actually holds.
+   */
+  it('refilling an empty pool never costs more than two visits, at any drillYard level', () => {
+    const visits = (lvl: number) => {
+      const buildings = { drillYard: lvl };
+      const batches = Math.ceil(troopCapFor(buildings) / TROOP_TRAIN_BATCH_MAX);
+      return Math.ceil(batches / trainQueueMaxFor(buildings));
+    };
+    for (let lvl = 0; lvl <= DESK_MAX_LEVEL; lvl++) {
+      expect(visits(lvl), `drillYard ${lvl}`).toBeLessThanOrEqual(2);
+    }
+    // ...and investing past the first level never costs MORE visits than the first level did — the
+    // anti-regression bite. (L0 is the one cheaper point: its cap is exactly one batch.)
+    for (let lvl = 2; lvl <= DESK_MAX_LEVEL; lvl++) {
+      expect(visits(lvl), `drillYard ${lvl} vs 1`).toBeLessThanOrEqual(visits(1));
+    }
+  });
+  /** D-CITY-9: a maxed satchel carries a maxed drillYard's whole pool in one team (same base, same step). */
+  it('maxed satchel carry cap equals maxed troopCap', () => {
+    expect(satchelCarryCapFor({ satchel: DESK_MAX_LEVEL })).toBe(troopCapFor({ drillYard: DESK_MAX_LEVEL }));
   });
 });
 

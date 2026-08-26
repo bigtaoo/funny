@@ -8,7 +8,7 @@
 //     ④ season is null when this worldId has no provisioned world doc (contract's nullable case).
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { allCityNodes, tileId } from '@nw/shared';
+import { allCityNodes, tileId, cityDurabilityMax, cityRegenPerHour } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient, SlgPushMsg } from '../src/gatewayClient';
@@ -131,12 +131,19 @@ describe.skipIf(!mongo)('worldsvc enterWorld e2e (P1-5, comm-audit-2026-07-27)',
     }
   });
 
+  // ADR-074 P1 changed this payload on purpose: each node now also carries its live siege state
+  // (durability with lazy regen applied, owning sect, protection window). So the two geometry cases below
+  // compare only the GEOMETRY half — an exact deep-equal against the raw node list would now fail for the
+  // right reason, and asserting the enriched object literally would just restate the implementation.
+  const geometryOf = (nodes: readonly { id: string; kind: string; x: number; y: number; level: number; footprint: number }[]) =>
+    nodes.map((n) => ({ id: n.id, kind: n.kind, x: n.x, y: n.y, level: n.level, footprint: n.footprint }));
+
   it('falls back to the seed-derived list for a world with no stored node list', async () => {
     // This suite's world has no WorldDoc at all (see the season-is-null case above), which is also the
     // pre-2026-08-19 / no-active-template case: the terrain really is proceduralTile(worldId, …), so
     // allCityNodes(worldId) is the correct answer rather than a guess.
     const entry = await svc.enterWorld(W, 'a', 10, 1);
-    expect(entry.cities).toEqual(allCityNodes(W));
+    expect(geometryOf(entry.cities)).toEqual(geometryOf(allCityNodes(W)));
   });
 
   it('serves the world stored list instead, once one exists (a published/edited template)', async () => {
@@ -149,7 +156,32 @@ describe.skipIf(!mongo)('worldsvc enterWorld e2e (P1-5, comm-audit-2026-07-27)',
       { upsert: true },
     );
     const entry = await svc.enterWorld(W, 'a', 10, 1);
-    expect(entry.cities).toEqual(moved);
-    expect(entry.cities).not.toEqual(allCityNodes(W));
+    expect(geometryOf(entry.cities)).toEqual(geometryOf(moved));
+    expect(geometryOf(entry.cities)).not.toEqual(geometryOf(allCityNodes(W)));
+  });
+
+  it('carries every node\'s live siege state, so the map can draw a durability bar without a second fetch', async () => {
+    // ADR-074 P1. Deliberately NOT a push: a durability hit lands dozens of times an hour per city, so
+    // fanning each out to a sect of up to ~900 members would be a push faucet. The entry payload plus the
+    // panel's own GET /world/cities refresh is the whole delivery path.
+    await svc.initCities(W);
+    const entry = await svc.enterWorld(W, 'a', 10, 1);
+    for (const n of entry.cities) {
+      expect(n.durabilityMax).toBe(cityDurabilityMax(n.level, n.kind));
+      expect(n.durability).toBe(n.durabilityMax); // untouched cities start intact
+      expect(n.regenPerHour).toBe(cityRegenPerHour(n.level, n.kind));
+      expect(n.ownerSectId).toBeUndefined();       // NPC-held until a sect takes it
+    }
+  });
+
+  it('still serves a drawable durability for a world whose cities were never initialized', async () => {
+    // A world opened before ADR-074 P1 and not since reset has city GROUND but no city documents. The map
+    // must still get a full bar to draw rather than an undefined it would have to special-case.
+    const entry = await svc.enterWorld(W, 'a', 10, 1);
+    expect(entry.cities.length).toBeGreaterThan(0);
+    for (const n of entry.cities) {
+      expect(n.durability).toBe(cityDurabilityMax(n.level, n.kind));
+      expect(n.durabilityMax).toBe(cityDurabilityMax(n.level, n.kind));
+    }
   });
 });

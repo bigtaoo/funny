@@ -27,7 +27,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
-import { t } from '../../i18n';
 import { ui as C, tearDownChildren } from '../../render/sketchUi';
 import type {
   WorldApiClient,
@@ -36,6 +35,7 @@ import type {
   TeamTemplate,
   MarchView,
   OccupationView,
+  StationedView,
 } from '../../net/WorldApiClient';
 import {
   BUILDING_KEYS,
@@ -47,8 +47,6 @@ import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { GuideOverlay } from '../../render/GuideOverlay';
-import { loadResAtlas } from '../../render/atlas/resAtlasLoader';
-import { loadCityBldAtlas } from '../../render/atlas/cityBldAtlasLoader';
 import type { SaveData } from '../../game/meta/SaveData';
 import * as actions from './actions';
 import * as helpers from './helpers';
@@ -140,13 +138,16 @@ export class CitySceneCore {
   teams: TeamTemplate[] = [];
   marches: MarchView[] = [];
   occupations: OccupationView[] = [];
+  /** Own teams parked on field tiles (停留/驻扎). Loaded alongside marches/occupations because a
+   *  stationed team is away from home too — see helpers.teamOrder. */
+  stationed: StationedView[] = [];
   /** True once GET /world/teams has settled (either way). Until then the team row draws loading
    *  placeholders instead of five real cards reading "(empty)" — that label claims "you own no
    *  teams", which is a lie during a fetch that takes most of a second against a remote shard. */
   teamsLoaded = false;
-  /** True once BOTH GET /world/march and GET /world/occupations have settled. teamOrder() needs both,
-   *  so a filled team's status line stays in its loading state until then rather than flashing
-   *  "闲置" at a team that turns out to be marching. */
+  /** True once ALL THREE of GET /world/march, /world/occupations and /world/stationed have settled.
+   *  teamOrder() needs all three, so a filled team's status line stays in its loading state until
+   *  then rather than flashing "闲置" at a team that turns out to be marching or parked on a tile. */
   ordersLoaded = false;
   /** 0–2 dot-animation phase for the team-row loading placeholders; advanced by tickLoadDots(). */
   loadDots = 0;
@@ -351,6 +352,8 @@ export class CitySceneCore {
       set marches(v) { core.marches = v; },
       get occupations() { return core.occupations; },
       set occupations(v) { core.occupations = v; },
+      get stationed() { return core.stationed; },
+      set stationed(v) { core.stationed = v; },
       get teamsLoaded() { return core.teamsLoaded; },
       set teamsLoaded(v) { core.teamsLoaded = v; },
       get ordersLoaded() { return core.ordersLoaded; },
@@ -426,8 +429,10 @@ export class CitySceneCore {
 
   // ── Shared helpers — see CityScene/helpers.ts ──────────────────────────────
 
-  teamOrder(teamId: string): { march: MarchView } | { occ: OccupationView } | null {
-    return helpers.teamOrder(this.marches, this.occupations, teamId);
+  teamOrder(
+    teamId: string
+  ): { march: MarchView } | { occ: OccupationView } | { station: StationedView } | null {
+    return helpers.teamOrder(this.marches, this.occupations, this.stationed, teamId);
   }
 
   committedTroops(army: TeamTemplate['army']): number {

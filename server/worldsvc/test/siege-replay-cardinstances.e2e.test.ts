@@ -21,6 +21,8 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   TROOP_CAP_BASE,
+  SATCHEL_CARRY_BASE,
+  SATCHEL_CARRY_STEP,
 } from '@nw/shared';
 import type { CardInstance } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -148,11 +150,17 @@ describe.skipIf(!mongo)('siege replay cardInstances/equipmentInv fidelity (2026-
     const target = findCoord((t) => t.type === 'resource' && t.level === 1, 30, 30);
     await connect(svc, 'a', target);
 
-    // 9000: comfortably clears the npcGarrison(1)=120 * SIEGE_CHEAP_RATIO(10) = 1200 threshold, and
-    // stays under the default per-march satchel carry cap (10000).
+    // 9000: comfortably clears the npcGarrison(1)=120 * SIEGE_CHEAP_RATIO(10) = 1200 threshold. It no longer
+    // fits under the default per-march satchel carry cap (SATCHEL_CARRY_BASE dropped 10000 -> 5000 in the
+    // 2026-08-25 re-tune), so the satchel level that covers it is derived from the live constants below.
     await m.collections.playerWorld.updateOne(
       { _id: playerWorldId(W, 'a') },
-      { $set: { 'cardState.card-occ-1': { currentTroops: 9000, teamId: 't1' } as CardSLGState } },
+      {
+        $set: {
+          'cardState.card-occ-1': { currentTroops: 9000, teamId: 't1' } as CardSLGState,
+          'buildings.satchel': Math.ceil((9000 - SATCHEL_CARRY_BASE) / SATCHEL_CARRY_STEP),
+        },
+      },
     );
     await svc.setTeams(W, 'a', [{ id: 't1', name: 'OccupyForce', army: [cardEntry('card-occ-1')] }]);
 

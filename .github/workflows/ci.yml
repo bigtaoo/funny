@@ -341,6 +341,16 @@ jobs:
       - name: client file length check
         working-directory: client
         run: npm run check:filelength
+      # ESLint. New step, but not a new script: `npm run lint` existed and had been broken for a
+      # while — ESLint reached v9, stopped reading `.eslintrc.js`, and the command died at startup
+      # with "couldn't find an eslint.config.*". Nothing reported it because no workflow ever ran
+      # it, which is the same "a gate nobody has watched fail is not a gate" problem called out on
+      # the cache-policy step below. The config is now flat (client/eslint.config.mjs) and this
+      # step is what stops it rotting again. Errors fail the job; the handful of remaining
+      # `no-explicit-any` findings are warnings on purpose (see the config) and do not.
+      - name: client lint
+        working-directory: client
+        run: npm run lint
       # vitest (esbuild) and webpack don't type-check, and tsconfig.json's include is src-only,
       # so test/** blueprint/DTO drift stays latent. tsconfig.test.json pulls src + test/** into
       # one program so this step fails on that drift (see CC-1 card-instance migration).

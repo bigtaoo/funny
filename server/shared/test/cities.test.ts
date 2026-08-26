@@ -2,9 +2,10 @@
 // graded garrison cities into the map editor's siege-point node list (ADR-034 §3).
 import { describe, it, expect } from 'vitest';
 import { allCityNodes, parseCityNodes, proceduralCityGroundTiles, proceduralTile, proceduralTileIgnoringCities } from '../src/slg/mapgen';
-import { WORLD_CENTER_FOOTPRINT } from '../src/slg/mapgen/cities';
-import { CENTER_CAPITAL_IDX, NATION_COUNT } from '../src/slg/province';
-import { cityFootprint } from '../src/slg/core';
+import { WORLD_CENTER_FOOTPRINT, PROVINCE_CAPITAL_LEVEL, _cityGroundNodeAt, _inCityFootprint } from '../src/slg/mapgen/cities';
+import { CENTER_CAPITAL_IDX, NATION_COUNT, provinceCapitalPositions } from '../src/slg/province';
+import { worldSeed } from '../src/slg/noise';
+import { cityFootprint, SLG_MAP_H, SLG_MAP_W } from '../src/slg/core';
 
 describe('allCityNodes', () => {
   const nodes = allCityNodes('s1-0');
@@ -58,16 +59,114 @@ describe('proceduralCityGroundTiles', () => {
     }
   });
 
-  it('covers the whole world-center footprint but only the anchor tile of every other city', () => {
+  it('covers the WHOLE footprint of every city kind, not just the anchor (ADR-074)', () => {
+    // Before ADR-074 only the world center covered its footprint; a capital/garrison contributed its single
+    // anchor cell, leaving the rest of the plot as ordinary occupiable resource land under the city sprite.
+    // This case is the inversion of the old one — it fails on the pre-ADR-074 generator.
     const ground = new Set(proceduralCityGroundTiles(worldId).map((t) => `${t.x}:${t.y}`));
-    const center = allCityNodes(worldId).find((n) => n.kind === 'worldCenter')!;
-    const r = (WORLD_CENTER_FOOTPRINT - 1) / 2;
-    expect(ground.has(`${center.x + r}:${center.y + r}`)).toBe(true);
-    // A capital/garrison contributes one tile: its immediate neighbour is ordinary terrain, since
-    // proceduralTile only marks the anchor (the sprite covers the rest of the plot visually).
-    const garrison = allCityNodes(worldId).find((n) => n.kind === 'garrison')!;
-    expect(ground.has(`${garrison.x}:${garrison.y}`)).toBe(true);
-    expect(ground.has(`${garrison.x + 1}:${garrison.y}`)).toBe(false);
+    for (const node of allCityNodes(worldId)) {
+      const r = (node.footprint - 1) / 2;
+      for (const [dx, dy] of [[0, 0], [r, r], [-r, -r], [r, -r], [-r, r]] as const) {
+        const x = node.x + dx;
+        const y = node.y + dy;
+        if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue; // edge city, footprint clipped
+        expect(ground.has(`${x}:${y}`)).toBe(true);
+      }
+    }
+  });
+
+  it('classifies a whole capital / graded-city footprint as city ground via proceduralTile', () => {
+    for (const node of allCityNodes(worldId).filter((n) => n.kind !== 'worldCenter')) {
+      const r = (node.footprint - 1) / 2;
+      expect(node.footprint).toBeGreaterThan(1); // otherwise this case proves nothing
+      for (const [dx, dy] of [[0, 0], [r, 0], [0, r], [-r, 0], [0, -r]] as const) {
+        const x = node.x + dx;
+        const y = node.y + dy;
+        if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue;
+        const t = proceduralTile(worldId, x, y);
+        // A neighbouring city's footprint may overlap and win the first-match, so accept either city-ground
+        // type — the point is that no cell inside a city plot is ordinary land any more.
+        expect(t.type).toMatch(/^(familyKeep|center)$/);
+      }
+      // One tile past the footprint edge is ordinary terrain again (unless another city's plot reaches it).
+      const outside = proceduralTile(worldId, node.x + r + 1, node.y);
+      if (outside.type === 'familyKeep' || outside.type === 'center') continue; // overlapping neighbour city
+      expect(outside.type).not.toMatch(/^(familyKeep|center)$/);
+    }
+  });
+
+  it('never puts a resType on city ground (city plots do not yield — ADR-074 §8.1 double-payout)', () => {
+    for (const { x, y } of proceduralCityGroundTiles(worldId)) {
+      expect(proceduralTile(worldId, x, y).resType).toBeUndefined();
+    }
+  });
+});
+
+describe('_inCityFootprint / _cityGroundNodeAt (ADR-074 footprint resolution)', () => {
+  const worldId = 'city-ground-test';
+  const seed = worldSeed(worldId);
+
+  it('includes the footprint edge and excludes one cell past it', () => {
+    // Off-by-one here is the difference between a city plot and a city plot with a claimable ring of land
+    // around its wall — the exact shape of the bug ADR-074 fixes, one radius out.
+    for (const fp of [3, 5, 7, 9]) {
+      const r = (fp - 1) / 2;
+      expect(_inCityFootprint(100, 100, 100, 100, fp)).toBe(true);      // anchor
+      expect(_inCityFootprint(100 + r, 100 + r, 100, 100, fp)).toBe(true);  // far corner
+      expect(_inCityFootprint(100 - r, 100 - r, 100, 100, fp)).toBe(true);  // near corner
+      expect(_inCityFootprint(100 + r + 1, 100, 100, 100, fp)).toBe(false); // one past the edge
+      expect(_inCityFootprint(100, 100 + r + 1, 100, 100, fp)).toBe(false);
+    }
+  });
+
+  it('a 1-tile footprint is the anchor alone (the degenerate case the editor allows)', () => {
+    expect(_inCityFootprint(50, 50, 50, 50, 1)).toBe(true);
+    expect(_inCityFootprint(51, 50, 50, 50, 1)).toBe(false);
+  });
+
+  it('never claims the core province capital — that block is the world center, typed `center`', () => {
+    // provinceCapitalPositions pins the core province's "capital" to the exact map centre, and
+    // `proceduralTile` classifies that 9×9 as `center` in its own earlier branch. If _cityGroundNodeAt
+    // also claimed it as a familyKeep capital footprint, any caller reaching here first would get the
+    // wrong type for the world centre — and no city sprite is drawn for that phantom capital.
+    const caps = provinceCapitalPositions(SLG_MAP_W, SLG_MAP_H, seed);
+    const [ccx, ccy] = caps[CENTER_CAPITAL_IDX]!;
+    expect(_cityGroundNodeAt(SLG_MAP_W, SLG_MAP_H, seed, ccx, ccy)).toBeNull();
+    expect(proceduralTile(worldId, ccx, ccy).type).toBe('center');
+  });
+
+  it('resolves a cell shared by two plots to the CAPITAL, matching rasterizeMapEdits priority', () => {
+    // Overlaps are real (a map-edge city's anchor is clamped inward, so its plot can reach a neighbour's).
+    // Both paths must pick the same winner or a published template disagrees with the generator about that
+    // cell's level — from ADR-074 P1 that level is the city's HP/garrison scale. See the matching
+    // mapEdit.test.ts case for the publish side.
+    //
+    // Pinned to a seed that MEASURABLY overlaps: 's1-cityground' has 15 garrison cells inside a capital's
+    // plot, while this file's usual 'city-ground-test' (and 's99-0', 'w1') have none — written against
+    // those, this case looked green while covering nothing. The loop therefore also asserts it found some,
+    // so a future seed change cannot silently turn it back into a no-op.
+    const overlapWorld = 's1-cityground';
+    const overlapSeed = worldSeed(overlapWorld);
+    const caps = provinceCapitalPositions(SLG_MAP_W, SLG_MAP_H, overlapSeed);
+    const capR = (cityFootprint(PROVINCE_CAPITAL_LEVEL) - 1) / 2;
+    let checked = 0;
+    for (const node of allCityNodes(overlapWorld)) {
+      if (node.kind !== 'garrison') continue;
+      const r = (node.footprint - 1) / 2;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = node.x + dx;
+          const y = node.y + dy;
+          if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue;
+          const inCapital = caps.some(([cx, cy], i) => i !== CENTER_CAPITAL_IDX && _inCityFootprint(x, y, cx, cy, capR * 2 + 1));
+          if (!inCapital) continue;
+          expect(_cityGroundNodeAt(SLG_MAP_W, SLG_MAP_H, overlapSeed, x, y)?.level).toBe(PROVINCE_CAPITAL_LEVEL);
+          expect(proceduralTile(overlapWorld, x, y).level).toBe(PROVINCE_CAPITAL_LEVEL);
+          checked++;
+        }
+      }
+    }
+    expect(checked, 'no overlapping plots on this seed — the case covered nothing').toBe(15);
   });
 });
 

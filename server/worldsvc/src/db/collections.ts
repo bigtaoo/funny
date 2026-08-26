@@ -6,6 +6,7 @@ import type { WorldDoc, TileDoc, MapTemplateDoc, MapTemplateRowDoc, MapBaselineR
 import type { PlayerWorldDoc } from './playerDocs';
 import type { MarchDoc, SiegeDoc, SiegeDamageDoc, OccupationDoc, StationedDoc } from './combatDocs';
 import type { SectDoc, FamilyMessageDoc, SectMessageDoc, NationMessageDoc, NationDoc } from './socialDocs';
+import type { CityDoc } from './cityDocs';
 import type { SeasonResultDoc, ShardAllocationDoc, ShardTransferDoc } from './seasonDocs';
 
 export interface WorldCollections {
@@ -22,6 +23,8 @@ export interface WorldCollections {
   occupations: Collection<OccupationDoc>;
   stationed: Collection<StationedDoc>;
   nations: Collection<NationDoc>;
+  /** ADR-074 P1 wild cities (~64/world) — the besiegeable city entities. */
+  cities: Collection<CityDoc>;
   seasonResults: Collection<SeasonResultDoc>;
   shardAllocations: Collection<ShardAllocationDoc>;
   shardTransfers: Collection<ShardTransferDoc>;

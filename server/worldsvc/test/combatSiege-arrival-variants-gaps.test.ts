@@ -142,7 +142,6 @@ function makeCore(opts: {
     setOccupancy,
     removeCover: vi.fn(async (..._args: unknown[]) => {}),
     recomputeYield: vi.fn(async (..._args: unknown[]) => emptyResources()),
-    applyNationChange: vi.fn(async (..._args: unknown[]) => true),
     meta: { getSaveFields, grantMaterial },
   } as unknown as WorldCore;
 

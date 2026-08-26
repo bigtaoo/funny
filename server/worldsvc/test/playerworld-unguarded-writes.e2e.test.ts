@@ -30,6 +30,7 @@ import {
   SECT_LEADER_PENALTY_RATE,
   RESOURCE_TYPES,
   TROOP_TRAIN_TIME_SEC,
+  DRILL_QUEUE_LEVEL_THRESHOLDS,
   buildCost,
   buildTimeSec,
 } from '@nw/shared';
@@ -255,6 +256,9 @@ describe.skipIf(!mongo)('playerWorld unguarded-write sweep e2e (2026-08-24)', ()
           resources: { ink: 190_000, paper: 190_000, graphite: 190_000, metal: 190_000, sticker: 190_000 },
           lastTickAt: nowMs,
           troops: 0,
+          // 2 training queue slots — the base cap is 1 batch (TROOP_TRAIN_QUEUE_MAX), and this test needs a
+          // second trainTroops to land inside the catch-up window below.
+          'buildings.drillYard': DRILL_QUEUE_LEVEL_THRESHOLDS[0]!,
           speedupUntil: nowMs + 86_400_000, // buff active, so the catch-up loop has work to do
         },
       },
@@ -275,7 +279,7 @@ describe.skipIf(!mongo)('playerWorld unguarded-write sweep e2e (2026-08-24)', ()
 
     // A second trainTroops lands inside the catch-up's read→write window. Pre-fix, the blind $set wrote the
     // one-entry snapshot array back and the new batch vanished — resources already spent on it.
-    // TROOP_TRAIN_QUEUE_MAX is 2 with no drillYard, so this second batch is the last slot — it fits.
+    // The drillYard level seeded above buys a 2nd slot, so this second batch is the last one — it fits.
     const inj = injectOnCursor(m.collections.playerWorld, () => svc.trainTroops(W, 'd', 100));
     try {
       await svc.processCompletedTraining();

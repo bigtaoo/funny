@@ -6,10 +6,10 @@
 // needs to invert tiles back into grid cells/cities.
 import { SLG_MAP_H, SLG_MAP_MAX_LEVEL, SLG_MAP_W, type ObstacleKind, type ResourceType, type TileType } from './core';
 import {
-  biomeAt, proceduralCityGroundTiles, proceduralTile, proceduralTileIgnoringCities,
+  proceduralCityGroundTiles, proceduralTile, proceduralTileIgnoringCities,
   type MapTemplateTile,
 } from './mapgen';
-import { worldSeed } from './noise';
+import { CITY_KIND_RANK } from './citySiege';
 
 /**
  * A painted terrain-grid cell. `river`/`mountain` bake to impassable `obstacle`; `neutral` carves a band
@@ -30,8 +30,14 @@ export interface MapEditCityInput {
   kind: 'capital' | 'worldCenter' | 'garrison';
 }
 
-/** Level assigned to a hand-placed crossing building (matches the procedural auto-crossing level). */
-const CROSSING_TILE_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
+/**
+ * Level every crossing building spawns at — procedural auto-crossings (mapgen `_crossingTile`) and
+ * hand-placed ones alike. Exported (2026-08-25) because `Math.max(2, SLG_MAP_MAX_LEVEL - 1)` had been
+ * open-coded in three places — here, `econ-sim/strongholdCombat.ts`, and siege.ts's doc comment as the
+ * prose "currently 9" — which is the same shape as the constant drift ADR-075 spent its whole day on.
+ * The garrison a player actually faces is `passageGarrison(CROSSING_TILE_LEVEL)`.
+ */
+export const CROSSING_TILE_LEVEL = Math.max(2, SLG_MAP_MAX_LEVEL - 1);
 
 function _cityTileType(kind: MapEditCityInput['kind']): TileType {
   return kind === 'worldCenter' ? 'center' : 'familyKeep';
@@ -91,7 +97,6 @@ export function rasterizeMapEdits(
   cities: readonly MapEditCityInput[],
   opts: RasterizeOpts = {},
 ): MapTemplateTile[] {
-  const seed = worldSeed(worldId);
   const overrides = new Map<string, _Override>();
 
   // Pass 1: hand every procedural city-ground tile back to the terrain. Tiles a city in `cities` still
@@ -113,7 +118,23 @@ export function rasterizeMapEdits(
     overrides.set(`${tile.x}:${tile.y}`, _terrainOverride(tile.type));
   }
 
-  for (const city of cities) {
+  // Cities are painted in PRIORITY order and the first claim on a cell wins, mirroring how
+  // `proceduralTile` resolves the same overlap: world centre (its own branch, before anything else),
+  // then province capitals, then graded cities (`_cityGroundNodeAt` tests capitals first and returns on
+  // first match). Two cities' footprints DO overlap in practice — a map-edge city gets its anchor clamped
+  // into the map, so its plot can reach into a neighbour's — and this loop used to be plain last-write-wins
+  // over the caller's array order, which put graded cities last and let a Lv.8 garrison overwrite a Lv.10
+  // capital's cell. The published template then disagreed with the generator about that cell's LEVEL,
+  // which from ADR-074 P1 onward is the city's HP/garrison scale, not just cosmetic. Caught by
+  // mapEdit.test.ts's "publishing the unchanged node list is a TRUE no-op" case at (1499, 328).
+  //
+  // The ranking itself is `CITY_KIND_RANK` from citySiege.ts, imported rather than restated: this used to
+  // be a local `CITY_PAINT_RANK` literal, i.e. a third copy of the same ordering alongside
+  // `_cityGroundNodeAt`'s walk order and (from ADR-074 P1) `cityNodeCovering`'s tie-break. Three copies of
+  // the rule that decides a contested cell's LEVEL — which is the besieged city's durability and garrison
+  // scale — is exactly the drift that produced the bug this comment describes. One source now.
+  const claimed = new Set<string>();
+  for (const city of [...cities].sort((a, b) => CITY_KIND_RANK[a.kind] - CITY_KIND_RANK[b.kind])) {
     const half = Math.floor(city.footprint / 2);
     const type = _cityTileType(city.kind);
     for (let dy = -half; dy <= half; dy++) {
@@ -121,7 +142,13 @@ export function rasterizeMapEdits(
         const x = city.x + dx;
         const y = city.y + dy;
         if (x < 0 || x >= SLG_MAP_W || y < 0 || y >= SLG_MAP_H) continue;
-        overrides.set(`${x}:${y}`, { type, level: city.level, resType: type === 'familyKeep' ? biomeAt(x, y, seed) : undefined });
+        const key = `${x}:${y}`;
+        if (claimed.has(key)) continue; // a higher-priority city already holds this cell
+        claimed.add(key);
+        // No `resType` on city ground (ADR-074) — it does not yield, and `proceduralTile` stopped emitting
+        // one too, so keeping it here would make every published city footprint a permanent diff against
+        // the procedural baseline (81 tiles per capital) for a field nothing reads.
+        overrides.set(key, { type, level: city.level });
       }
     }
   }

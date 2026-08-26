@@ -10,7 +10,7 @@ import { buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { CODE_ALPHABET, CODE_LEN, type RoomSceneCallbacks, type View, type Hit } from './RoomScene/types';
+import { CODE_LEN, type RoomSceneCallbacks, type View, type Hit } from './RoomScene/types';
 import { drawIdle, drawSearching, drawConnecting, drawCodeEntry, drawInRoom, type RoomViewHost } from './RoomScene/views';
 
 export { CODE_ALPHABET } from './RoomScene/types';

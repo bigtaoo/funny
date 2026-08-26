@@ -22,9 +22,12 @@ import {
   TROOP_TRAIN_METAL_COST,
   TROOP_TRAIN_STICKER_COST,
   TROOP_TRAIN_TIME_SEC,
+  TROOP_TRAIN_QUEUE_MAX,
+  DRILL_QUEUE_LEVEL_THRESHOLDS,
   TRAIN_SPEEDUP_BUFF_MULT,
   baseFootprintCells,
   baseFootprintInBounds,
+  isCityGroundTile,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
@@ -56,7 +59,7 @@ function findCoord(sx: number, sy: number): { x: number; y: number } {
         if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
         const blocked = baseFootprintCells(x, y).some((c) => {
           const t = proceduralTile(W, c.x, c.y);
-          return t.type === 'center' || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
+          return isCityGroundTile(t.type) || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
         });
         if (!blocked) return { x, y };
       }
@@ -87,6 +90,16 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
   /** A fresh capital starts with troops already at troopCap (territory.ts joinWorld) — drain it first so trainTroops has room. */
   async function drainTroops(accountId: string): Promise<void> {
     await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, accountId) }, { $set: { troops: 0 } });
+  }
+
+  /**
+   * Grant drillYard levels so the training queue has more than the base 1 slot (2026-08-25 re-tune:
+   * TROOP_TRAIN_QUEUE_MAX=1, +1 slot at DRILL_QUEUE_LEVEL_THRESHOLDS = L4/L10). Only `buildings` is written —
+   * the slot check reads it directly (trainQueueMaxFor), while the cap check reads the stored `troopCap`,
+   * which these tests keep out of the way by draining troops to 0 and queueing 100 at a time.
+   */
+  async function grantQueueSlots(accountId: string, drillYard: number): Promise<void> {
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, accountId) }, { $set: { 'buildings.drillYard': drillYard } });
   }
 
   /** Raw doc read — nextTrainingCompleteAt is scheduler-only and not part of PlayerWorldView. */
@@ -175,11 +188,22 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     await svc.joinWorld(W, 'a', x, y);
     await fund('a');
     await drainTroops('a');
-    await svc.trainTroops(W, 'a', 100);
-    await svc.trainTroops(W, 'a', 100); // fills the queue to TROOP_TRAIN_QUEUE_MAX (2, no drillYard built)
+    await svc.trainTroops(W, 'a', 100); // fills the queue to TROOP_TRAIN_QUEUE_MAX (1, no drillYard built)
     await expect(svc.trainTroops(W, 'a', 100)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    // the rejected 3rd attempt must not have been pushed onto the queue.
-    expect((await rawDoc('a'))!.trainingQueue).toHaveLength(2);
+    // the rejected attempt must not have been pushed onto the queue.
+    expect((await rawDoc('a'))!.trainingQueue).toHaveLength(TROOP_TRAIN_QUEUE_MAX);
+  });
+
+  it('drillYard raises the slot cap: at its first threshold a second batch is accepted and a third is not', async () => {
+    const { x, y } = findCoord(52, 52);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+    await grantQueueSlots('a', DRILL_QUEUE_LEVEL_THRESHOLDS[0]!);
+    await svc.trainTroops(W, 'a', 100);
+    await svc.trainTroops(W, 'a', 100);
+    await expect(svc.trainTroops(W, 'a', 100)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect((await rawDoc('a'))!.trainingQueue).toHaveLength(TROOP_TRAIN_QUEUE_MAX + 1);
   });
 
   it('a second trainTroops call (queue already non-empty) leaves nextTrainingCompleteAt at the existing head', async () => {
@@ -188,10 +212,11 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     await fund('a');
     await drainTroops('a');
 
+    await grantQueueSlots('a', DRILL_QUEUE_LEVEL_THRESHOLDS[0]!); // 2 slots — the base cap is 1 batch
     await svc.trainTroops(W, 'a', 100);
     const firstHead = (await rawDoc('a'))!.nextTrainingCompleteAt;
 
-    const after = await svc.trainTroops(W, 'a', 100); // chains after the first (queue max is 2 by default)
+    const after = await svc.trainTroops(W, 'a', 100); // chains after the first
     expect(after.trainingQueue).toHaveLength(2);
     expect((await rawDoc('a'))!.nextTrainingCompleteAt).toBe(firstHead);
   });
@@ -201,6 +226,7 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     await svc.joinWorld(W, 'a', x, y);
     await fund('a');
     await drainTroops('a');
+    await grantQueueSlots('a', DRILL_QUEUE_LEVEL_THRESHOLDS[0]!); // 2 slots — the base cap is 1 batch
 
     await svc.trainTroops(W, 'a', 100);
     await svc.trainTroops(W, 'a', 100);
@@ -364,7 +390,7 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
   // training.ts branch gap (2026-08-15): speedupTraining's "cascade startAt/completeAt for remaining
   // batches after compression" loop (lines ~144-149) only runs with >= 2 entries surviving the drain —
   // every other speedupTraining test either drains the whole (1-entry) queue or leaves it untouched.
-  // Directly seeds a 3-entry queue (bypassing trainTroops's TROOP_TRAIN_QUEUE_MAX=2 slot gate, which
+  // Directly seeds a 3-entry queue (bypassing trainTroops's slot gate, which
   // speedupTraining itself does not enforce) so a partial speedup can fully drain entry 1 and partially
   // compress entry 2, forcing entry 3's startAt/completeAt to cascade off entry 2's new completion time.
   it('speedupTraining cascades startAt/completeAt onto a 3rd queued batch after compressing the 2nd', async () => {

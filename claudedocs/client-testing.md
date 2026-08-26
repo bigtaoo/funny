@@ -269,13 +269,13 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - **`size` / `color` 透传此前零覆盖**——只断言过实参 0（kind），所以任何一条路线把尺寸/墨色丢掉或调换顺序都没人管。新用例给四条路线（tab-icon / coin / material / 裸材质 kind）各喂一组不同的 size+color，串线也能抓。
 - **`materialFallback` 不得盖过已识别的 id**：源码是 `materialKind(id) ?? fallback`，两者顺序调换会让 EventScene 的 `materialFallback: null` 把**所有**材质行都清空（而不只是不认识的那些）。
 - 另补 `count` 缺失时的 `?? 0` 分支、`material` 无 id 时回落 scrap、以及 `coinIconTier` 各档**阈值下方一格**（原有用例正好压在阈值上，只钉住 `>=`→`>`，钉不住"阈值被悄悄调低"）。
-- **一条"测试自己的测试"**：原有断言把期望值写成字面量 `'rosterIcon'`，而 `buildIcon` 在本文件里是被 mock 掉的——也就是说把源码和期望表**一起**改回程序化的 `'cards'`/`'armor'`/`'brush'`（这正是 2026-08-15 那个 bug 的原貌），整份文件照样全绿。新用例用 `vi.importActual` 读真实 `icons.ts`，断言这三个 IconKind **不在导出的 `DRAW` 表里**——`DRAW` 的 key 恰是 `DrawableIconKind`，而 `IconKind = DrawableIconKind | RasterIconKind` 两半互斥（2026-08-18 拆出 `icons/tabIconRaster.ts` 前写成 `DrawableIconKind = Exclude<IconKind, RasterIconKind>`，等价），所以"是 DRAW 的 key"等价于"是程序化 glyph"。实测：把 card 改回 `'cards'` 并同步改期望表，只有这一条变红。
+- **一条"测试自己的测试"**：原有断言把期望值写成字面量 `'rosterIcon'`，而 `buildIcon` 在本文件里是被 mock 掉的——也就是说把源码和期望表**一起**改回程序化的 `'cards'`/`'armor'`/`'brush'`（这正是 2026-08-15 那个 bug 的原貌），整份文件照样全绿。新用例用 `vi.importActual` 读真实 `icons.ts`，断言这三个 IconKind **不在另一张表里**——原本查的是 `DRAW`（`DRAW` 的 key 恰是 `DrawableIconKind`，两半互斥，所以"是 DRAW 的 key"等价于"是程序化 glyph"）；**2026-08-25 批次 7 把 `DRAW` 整张删了**，改查 `INK_ICON_ART`（运行时染色的内容图表，同样与 `TAB_ICON_RASTER` 互斥），断言的意思跟着变成"必须是烤了三种墨的页签图，不能是只有一张白母版的 ink 图"——因为奖励行要的正是 `content` 那一档墨，ink 图没有那一档。实测：把 card 改回 `'cards'` 并同步改期望表，只有这一条变红。
 
 六条新断言全部做了 red-then-green 实测（逐个破坏源码确认变红再还原，破坏点见上）。收尾验证：`npm run typecheck` 干净，`npm test` 158 文件 / 1335 条绿。
 
 **第二轮（同日，21 → 25 条）**，补的是"mock 看不见的那一半"——上面那批断言全都盯着实参字符串，而三个 builder 在本文件里是假的，所以**字符串本身是否对应真实素材**、以及**服务端会不会送来没人处理的 kind**，两处都没人看：
 
-- **coin / material 两条路线的"素材表交叉校验"**（对应上一轮给三种道具做的 `DRAW` 校验）：`coinIconTier` 能返回的 5 个 tier 必须在 `assets/shop/coins.json` 的 frame 名里，`materialKind` 认的 3 个 id 必须在 `assets/icons/icons_atlas.json` 里（材质走共享 L0 icons atlas）。改名一档或加第六档而没配图，此前整份文件照样全绿，运行时静默退回程序化 glyph——正是 08-15 那个 bug 的形态，只是换到 mock 遮住的那条路线上。实测把 `coinChest` 改成 `coinChestX`：该条变红。
+- **coin / material 两条路线的"素材表交叉校验"**（对应上一轮给三种道具做的表交叉校验）：`coinIconTier` 能返回的 5 个 tier 必须在 `render/icons.ts` 真实的 `TAB_ICON_RASTER` 表里有对应 key（`vi.importActual` 绕过本文件顶部的 mock，同上一条一样的技术），`materialKind` 认的 3 个 id 必须在 `assets/icons/icons_atlas.json` 里（材质走共享 L0 icons atlas）。改名一档或加第六档而没配图，此前整份文件照样全绿，运行时静默退回程序化 glyph——正是 08-15 那个 bug 的形态，只是换到 mock 遮住的那条路线上。实测把 `coinChest` 改成 `coinChestX`：该条变红。（2026-08-25：coin 一侧原本校验的是独立的 `assets/shop/coins.json` 图集清单——那份文件连同 `coinIconAtlas.ts`/`buildCoinIcon` 一起被折进了 `TAB_ICON_RASTER`，改校验真实模块而不是一份不再存在的图集 manifest。）
 - **`opts.coinKind` 不得泄漏到非 coin 路线**：RechargeScene 是对一档里的**每个** reward 都传 `{ coinKind }`（不只 coins），所以把这个 lookup 提到 kind dispatch 之上会把它的卡牌/材质行画成钱堆。实测把 card 路线改成 `buildIcon(opts?.coinKind ?? 'rosterIcon', …)`：只有这条变红。
 - **服务端 kind 全集的编译期穷举**：`RewardLike.kind` 是裸 `string`，类型上跟喂它的五个服务端联合类型（`CheckinRewardKind` / `WeeklyChestRewardKind` / `BpRewardKind` / `RechargeRewardKind` / `MailAttachmentKind`）没有任何连接——服务端加一种 kind，客户端编译照过，六块屏幕上静默渲染成无图行。新用例用 `Record<五个联合, 'picture' | 'text'>` 把这条线接上：少一个成员就 `npm run typecheck` 报 TS2741（实测删掉 `skin:` 一行确实报），逼人显式给新 kind 做决定；运行时再断言这个决定跟 resolver 的实际行为一致（实测删掉 skin 路线：该条 + 对应 each 用例变红）。表里 `stamina`/`item` 标 `'text'` 是**有意无图**（调用方画 capsule 或裸 "+N"），不是待办。
   - 这四个联合是 `import type` 直接从 `../../../server/shared/src/*` 拿的，不走 `@nw/shared`——那个 alias 在 `vitest.config.ts` 里只指向浏览器安全的 SLG 切片。type-only 导入运行时被擦除，不会把服务端模块拉进测试进程。
@@ -353,6 +353,40 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 **用起来**：`npx webpack serve --mode development --port <port> --env TARGET=web-e2e`，Playwright `waitForFunction(() => window.__nwE2E?.app)`，`page.evaluate` 里遍历 `app.stage`。别在 `newPage()` 之后再 `setViewportSize()`——场景只在构造时读一次 `ILayout`，事后改视口只会把旧布局拉变形（第一次试的时候就是这样拍出一张假的「竖屏坏了」）。
 
+## `npm run lint` 复活：一道没人跑过、也没人发现它坏了的门（2026-08-26）
+
+**发现**：`cd client && npm run lint` 直接在启动阶段失败——装的是 ESLint 10.x（只读 flat config），仓库里只有 `.eslintrc.js`。而 `.github/workflows/*.yml` 里**没有任何步骤跑 lint**，所以这条命令坏了多久没人知道，也没人需要知道。这跟 `check:cachepolicy` 那条注释说的是同一个病：**没人看着它失败过的门，不是门**。
+
+**两层腐烂，第二层比第一层值钱**：
+- ESLint v9 换配置格式，`.eslintrc.js` 不再被读 —— 这层只是让命令跑不起来。
+- 老配置里唯一有价值的东西是 `no-restricted-syntax` 那段**确定性禁令**（禁 `Math.random()` / `Date.now()` / `new Date()`），而它的 `files` 指向 `src/game/GameEngine.ts`、`src/game/systems/**`、`src/game/math/**` 等 8 个路径 —— **这些路径 2026-08-02 引擎搬到 `server/engine/src`（@nw/engine）时就全删了**。所以就算 lint 能跑，那段 override 也一个文件都匹配不上。**换配置格式和搬代码，任意一件单独发生都足以静默注销这条规则。**
+
+**落点**：
+- `client/eslint.config.mjs`（flat）替代 `.eslintrc.js`。需要新增 devDependency `@eslint/js`（ESLint 10 不再自带 `eslint:recommended`）——**合并后主检出要补一次 `cd client && npm install`**，见 `claudedocs/worktrees.md` 那条「worktree 里 `npm install` 会把 junction 换成真实目录」的陷阱。
+- **确定性门禁搬到 `client/test/engineDeterminism.test.ts`**：对 `server/engine/src` 做源码扫描。放在测试里而不是给 engine 单独立一套 ESLint，是因为 engine 那个包没有 lint 配置，新立一套等于把门放在 CI 不跑的地方；这个套件 CI 每次都跑。两个防呆：①扫描前先剥注释和字符串字面量——`math/fixed.ts` / `math/prng.ts` 的注释里**写着**这三个禁令，裸 grep 在干净的树上就能报 5 个假阳性；②一条 canary 断言「至少扫到 20 个文件且包含 GameEngine.ts」，引擎再搬家时会红，而不是静默地扫了个空。**做过变异验证**：往 `GameEngine.ts` 注入一行 `Math.random()`，测试报出 `GameEngine.ts:10`，不是摆设。
+- CI 加 `client lint` 步骤（`client-test` job，紧跟 `client file length check`）。
+- Prettier **故意不再当 lint 规则**跑：老配置 extend 了 `plugin:prettier/recommended`，但 `eslint-plugin-prettier` 锁在 4.2.5（早于 flat config），而且拿 linter 跑 formatter 又慢、Prettier 官方也不推荐。格式化归 `npm run format`，`eslint-config-prettier` 仍然应用（只为关掉会跟它吵架的风格规则）。
+
+**首跑 224 个 error，处理方式分三类**（不是「一堆错」，是一堆**待判定**）：
+1. **真死代码，删**：110 个未用 import + 十几个未用局部量。最大一坨是 `scenes/worldmap/WorldMapInput.ts` 的 **76 个未用 import**——那文件早先拆成了 `WorldMapInput/*.ts`，import 块没跟着瘦。86 个 import 名里只有 10 个还在用。这就是这道门的直接价值。
+2. **规则不懂本仓库的约定，教它**：`_dt`/`_winner`/`_accountId` 这种「存在只为满足签名」的参数有 24 个，配 `argsIgnorePattern: '^_'` 即可，而不是把一百个参数改名。
+3. **规则的前提在这里是错的，关掉并写清理由**：`no-useless-assignment` 的 13 个命中全是两种形状——**循环累加器**（`cy += rowH` 作为行循环最后一句，被判「最后一轮没人读」，而前 N-1 轮都在读，删了直接坏）和**防御性初始值**（`let seed = 0` 后在 try/catch 每个分支赋值）。`no-this-alias` 的 11 个全是 `const view = this` / `const core = this` 这种给 `this` 起可读名字的本仓库惯用写法，不是它要抓的 `var self = this` 老 hack。
+
+**顺手修出来的真东西**：`CardScene/actions.ts` 的 `finally` 里有个 `return`（`no-unsafe-finally`）——照当时的写法无害（try 不 return、catch 吞掉），但它会静默吃掉 catch 块自己抛出的异常，而那个守卫本来也不需要待在 `finally` 里；清理归 `finally`，守卫挪到后面。另外 `HUDView/hpBar.ts` 的 `HP_CELL_H` 是血条还是矩形时代的遗留常量（心形 pip 只用 `HP_CELL_W`）。
+
+**剩 12 个 warning（`no-explicit-any`）是故意的**：全在 `render/stickman/assetLoader.ts` / `skeleton.ts` 解析第三方二进制骨骼格式那一片，手写类型是编故事；`tsc --noEmit` 才是真正的类型门。warning 不会让 `npm run lint` 非零退出，所以 CI 不会因此红。
+
+**⚠️ 别报「lint 绿」当成新信息**：这条门在 2026-08-26 之前从来没跑过，所以它现在的绿是一条**新基线**，不是「一直很干净」。
+
+## 「按字数截断」这类 bug：机制在 headless 测，宽度预算只能真浏览器给（2026-08-26，聊天行按宽度截断）
+
+`drawChatLine` 原本把消息正文切在 60 **字**，而真正裁掉文字的是所在列的**宽度**。改成按宽度截断（`ui/widgets/truncateText.ts`）之后，测试的分工正好是上面那条 `__nwE2E.app` 记录说的形状，值得再记一次落点：
+
+- **机制归 `test/ui/chatRowTruncation.ui.ts`（headless）**：`fitToWidth` 返回的串真的塞得进 `maxW`（拿真的 `PIXI.Text` 复量一遍，顺带钉住 `TextMetrics` 与 `Text` 量出来一致——也就是 `makeText()` 的 CJK padding 不计入宽高这条前提）、截了一定补 `…`、不会把 emoji 的代理对切成半个、名字牌超宽时正文不会被挤成空。
+- **有一条断言是故意不写在这里的**：「同一宽度装得下的汉字比拉丁字母少」——这恰恰是「字数上限不可能对」的根因，但 headless 的 `measureText` 是每个 UTF-16 码元固定 7px，**不看字号也不看字种**，三种语言在这套件里量出来完全一样，写了也只是恒绿。文件里留了注释说明为什么缺这条，别当成漏测补回来。
+- **宽度预算归真浏览器**：Playwright + `npm run start:e2e` + `window.__nwE2E`，视口取 **1600x900**（`LandscapeLayout` 的设计宽下限是 1920，所以这就是最窄、最坏的一档；再宽只会更宽松）。`showSect(...)` / `showFriends(...)` 直接喂手搓的 callbacks + 假 `worldApi`，不需要后端也不需要登录。量出来：24px monospace 步进 **13.2px（拉丁）/ 24.0px（汉字）**，比值 1.82；`system` 发送者那一行的正文可用宽度 **宗门频道 700px、世界频道 1386px**。
+- **文案预算落在 `test/i18n-system-text.test.ts`**（快、无 PIXI），单位用 `@nw/shared` 的 `orgNameWidth`（全角 2、其余 1）而不是字符数——**一个数管三种语言**。上一版那对「34（中文）/ 41（拉丁）」字数上限是错的：换算到位宽差了 20 多，不可能同时描述同一列，而且两个都偏保守，把文案压过头了。
+
 ## 错误路径也是一条要钉的链：码 → 文案 → toast（2026-08-25，社交页第四轮补测）
 
 社交页那三轮补测都在钉「渲染/交互**少做事**之后还有什么能悄悄错掉」。第四轮换了一条完全不同的链：**请求失败之后，玩家读到的那句话**。结果发现两个场景的 `errorMsg()` 映射表（宗门 8 条码、家族 7 条码）一直是零覆盖，而且既有测试是**擦边而过**的三种典型形状，值得单列出来：
@@ -417,3 +451,32 @@ ADR-073 首轮跟着修复落了 26 例测试，然后做变异验红，发现�
 门禁是**按文件**的，所以把新的字节代码纳入门禁，就得连它的邻居一起覆盖——于是顺手补上了 ANR context provider、`wx.onMemoryWarning`、`uninstall()`、JS 堆触发分支、`countNodes` 走真 stage。其中 **ANR 报告带 `texMB`/`largestMB` 是 ADR-073 里写下的声明，却一例没测**（那个 provider 只在 install 时注册、只由 ANR 看门狗调用）。
 
 **14 个变异逐一验红**（M1–M14，覆盖三项修复 + 新增的报告路径），全部红在该红的那一例上。harness 上的两个坑：vitest 的 reporter 输出**带 ANSI 转义**，`/FAIL\s+(\S+\.test\.ts)/` 这类正则匹配不到（表现为"所有变异都没被抓到"，看起来像测试全废）；多行锚点要兼容 **CRLF**，否则在 Windows 检出上静默 skip。
+
+## 图标改成 AI 图之后，测试要盯的东西换了地方（2026-08-26，批次 7 收尾补测）
+
+批次 7 把最后 44 个矢量图标换成 PNG、删掉 `DRAW` 表之后，两个原有守卫失效了：`test/render/icons.test.ts` 的「每个 kind 都能解析出一个画函数」和 `test/ui/icons.ui.ts` 的「几何 smoke check / 沙漏三档画的图元逐档变多」。前者改成了两表分派守卫，后者整份删除——它守的是画函数，画函数没了。补的三条测试对应三种**新**的失效方式。
+
+### 1. 「颜色是提示」还是「颜色是信息」，靠分派守卫（`test/render/buildIconDispatch.test.ts`）
+
+`buildIcon` 现在分派两张表，区别只有一条：页签表的 `color` 是明暗**提示**（被 `tabIconVariant` 吃掉、换成打包时烤死的三种墨之一），ink 表的 `color` 是**字面墨色**（`sprite.tint`）。把某个 kind 挪错表，`medal` 的金/银/铜（排行榜名次）、`star` 的稀有度色、称号墙的"已装备"金、HUD 墨水瓶的我方蓝就**全部塌成同一个灰**——不报错、不崩、编译器也不说话。
+
+`icons.test.ts` 只断言两表互斥、`inkIconArt.test.ts` 只断言表和磁盘对得上，**都不管分派方向**。所以单独一份 mock 掉两个子模块的契约测试：ink kind 必须把 `color` 原封不动传给 `buildInkIcon`；页签 kind 必须传变体 url 且**不能把颜色带过去**（断言 `mock.calls[0]` 长度就是 2）；`opts.variant` 只对页签 kind 有效；`size` 只 round 一次。红-绿实测：把 ink 分支改成走 `tabIconVariant` 挑灰，三条变红。
+
+顺带钉住 `preloadIconArt()` 真的预热**两张**表——`tabIconWarmupCallSites.test.ts` 只管场景调没调对函数，管不着这个函数自己有没有偷工。
+
+### 2. 图本身的比例会毁掉图（`test/render/iconArtAspect.test.ts`）
+
+`pack_tab_icons.cjs` 裁到内容边界后归一化**长边**，运行时两个 builder 又 contain-fit 进**正方形**盒子——所以一张细长的源图在 28px 格子里只画到宽度的一小半。`brush` v2 回来是 27×128（4.74:1），在 28px 页签格里只有约 6px 宽，读成一根头发加一个点；**而它满足 prompt 的每一个字**（笔锋确实比笔柄宽两三倍——prompt 约束了图内相对比例，没约束外轮廓）。这种错只有人盯着 contact sheet 才看得出来，于是改成门禁：长短边比 > 2.2 就红，例外走 `ELONGATED_ON_PURPOSE` 白名单+理由（`weapon` 竖剑 3.28、`event` 横向彩旗串 2.72、`atk` 竖匕首 2.33），并反向断言白名单里没有已经不需要豁免的条目——跟 `checkFileLength.mjs` 的 baseline 一个路子。全套 183 张的比例中位数 1.24。红-绿实测：用被淘汰的 v2 源图造一张 27×128 探针塞进资产目录，门禁点名报出 `brushprobe_active.png 27x128 = 4.74:1`。
+
+### 3. 反例：**别加那个看起来最自然的沙漏测试**
+
+`icons.ui.ts` 删掉的用例里有一条是「沙漏三档画的图元数逐档变多」。图形化之后最自然的等价物是「三档在 28px 的墨量逐档变多」。**实测这个指标抓不到真实 bug**：
+
+| | v1（点阵沙，验收失败） | v2（实心沙，验收通过） |
+|---|---|---|
+| 28px 墨量 Sm/Md/Lg | 29.2 / 52.1 / 89.3 | 128.3 / 160.9 / 180.9 |
+| 相邻档增幅 | **×1.78 / ×1.71** | ×1.25 / ×1.12 |
+
+v1 的递增**比 v2 还猛**——它的毛病从来不是墨少，而是墨**散成点、缩小就没了**。墨量量的是"有多少墨"，不是"墨聚不聚得起来"。所以那条断言只会放行坏的那一套、白送一份虚假安全感。**结论：这个测试没加**，只留了一条明确写着自己是地板的用例（三档墨量有序、不许两档指向同一张源图——防的是 JOBS 行复制粘贴和 Sm/Lg 装反，这两种错人眼审查反而不会去找），文件头注释直接写明它守不住辨识度、辨识度归 28px 并排人眼看。`armorHeavy` 比 `armor` 墨量多 ≥1.15×（实测 1.48×）那条留着——同一个剪影只是"更厚重"，墨量在这里恰好是对的指标。
+
+**可复用的判断**：给美术加自动化守卫之前，先拿**已经被打回的那一版**去跑一遍。跑不红的指标不要留在测试里。

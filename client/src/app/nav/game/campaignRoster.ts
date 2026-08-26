@@ -11,8 +11,6 @@ import { getLevel, CAMPAIGN_LEVEL_ORDER, achievementStatDelta, type AIDifficulty
 import { TUTORIAL_LEVEL_ID } from '@nw/engine';
 import { computeStars, buildStarContext } from '../../../game/meta/campaignRewards';
 import { t, type TranslationKey } from '../../../i18n';
-import { ApiError } from '../../../net/ApiClient';
-import { serverReplayToReplay } from '../../../net/serverReplay';
 import { allEquippedSkins, skinEquipKey } from '../../../game/meta/skinDefs';
 import { genUuid } from '../../../platform/uuid';
 import type { EquipSlot } from '../../../game/meta/SaveData';

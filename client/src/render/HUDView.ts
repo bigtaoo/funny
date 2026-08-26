@@ -9,7 +9,7 @@ import { t } from '../i18n';
 import { drawHudButton, hudButtonText, HudButtonVariant } from '../ui/widgets/hudButton';
 import { FS, snapFont } from './fontScale';
 import { factionInk, fx } from './theme';
-import { drawInk } from './icons/currency';
+import { buildIcon, preloadInkIconTextures } from './icons';
 import { drawHpBar, HP_BAR_W } from './HUDView/hpBar';
 import { showSurrenderConfirm, hideSurrenderConfirm, showGameOver, type OverlayHost } from './HUDView/overlays';
 
@@ -47,7 +47,8 @@ export class HUDView {
 
   private timerText!:       PIXI.Text;
   private inkText!:         PIXI.Text;
-  private inkIcon!:         PIXI.Graphics;
+  /** Holder for the ink-well glyph — refilled once its PNG decodes, see `fillInkIcon`. */
+  private inkIcon!:         PIXI.Container;
   private playerHpGfx!:     PIXI.Graphics;
   private enemyHpGfx!:      PIXI.Graphics;
   private upgradeBtnBg!:    PIXI.Graphics;
@@ -155,6 +156,12 @@ export class HUDView {
     const canRefresh = p.ink >= HAND_REFRESH_COST;
     this.refreshEnabled = canRefresh;
     this.setRefreshBtnStyle(canRefresh);
+  }
+
+  /** (Re)draw the ink-well glyph into its holder, in our faction ink. */
+  private fillInkIcon(): void {
+    this.inkIcon.removeChildren();
+    this.inkIcon.addChild(buildIcon('ink', INK_ICON_S, factionInk.friend));
   }
 
   /** Place the ink glyph just left of the (variable-width) ink count, both orientations. */
@@ -284,8 +291,13 @@ export class HUDView {
     // Ink — a dedicated ink-well glyph (our faction blue) followed by the count.
     // The glyph is positioned each frame by positionInkIcon (count width varies).
     this.inkText = makeText('0', { ...TEXT_STYLE, fontSize: FS.title });
-    this.inkIcon = new PIXI.Graphics();
-    drawInk(this.inkIcon, INK_ICON_S, factionInk.friend);
+    this.inkIcon = new PIXI.Container();
+    this.fillInkIcon();
+    // The glyph is AI art (batch 7 retired `drawInk`, the procedural placeholder it replaced), so it
+    // renders empty until the PNG has decoded. Every other raster-icon site re-renders its whole
+    // scene on the preload promise; the HUD is built exactly once per match, so it refills just this
+    // one holder instead — `positionInkIcon` keeps working either way, the box size is a constant.
+    void preloadInkIconTextures().then(() => { if (!this.inkIcon.destroyed) this.fillInkIcon(); });
 
     // Player HP bar
     this.playerHpGfx = new PIXI.Graphics();

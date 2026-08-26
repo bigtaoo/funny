@@ -259,7 +259,12 @@ export class SectMembershipService {
     if (!isEmblemColor(emblemColor)) throw new SlgError('BAD_REQUEST');
     const fam = await this.requireFamilyLeader(requesterId);
     if (!fam.sectId) throw new SlgError('NOT_IN_SECT');
-    const sect = await this.deps.cols.sects.findOne({ _id: fam.sectId, worldId });
+    // NOTE: no `worldId` in this filter — matches every sibling lookup in this file
+    // (dissolveSect/allySect/unallySect/voteRemoveLeader all key off `_id: fam.sectId` alone).
+    // `fam.sectId` already fully scopes to a world (sectId() embeds it: `s:{worldId}:{TAG}`),
+    // so an extra `worldId` filter here only added a way for the two to drift apart and throw
+    // NOT_FOUND on a sect that in fact exists — reported as "宗门不存在" from the emblem picker.
+    const sect = await this.deps.cols.sects.findOne({ _id: fam.sectId });
     if (!sect) throw new SlgError('NOT_FOUND');
     if (sect.leaderId !== requesterId) throw new SlgError('NO_PERMISSION', 'Only the sect leader can change the sect emblem');
     await this.deps.cols.sects.updateOne({ _id: sect._id }, { $set: { emblemKey, emblemColor } });

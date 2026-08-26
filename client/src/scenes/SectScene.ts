@@ -23,7 +23,7 @@ import { ModalsPanel } from './SectScene/modals';
 import { ActionsPanel } from './SectScene/actions';
 import { InputPanel } from './SectScene/input';
 import { RenderPanel } from './SectScene/render';
-import { preloadTabIconTextures } from '../render/icons';
+import { preloadIconArt } from '../render/icons';
 
 export type { SectSceneCallbacks, SectSceneView } from './SectScene/core';
 
@@ -65,7 +65,7 @@ export class SectScene implements Scene {
     // still decoding, and this page is reachable without passing through LobbyScene (which warms them
     // for everything entered from the lobby). It used to self-heal by accident, off the per-frame
     // scroll/caret/busy renders that ./SectScene/repaint.ts has now removed.
-    void preloadTabIconTextures().then(() => this.render());
+    void preloadIconArt().then(() => this.render());
 
     void this.data.loadData();
   }

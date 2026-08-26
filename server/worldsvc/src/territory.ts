@@ -1,4 +1,5 @@
-// worldsvc territory domain (S8-1): enter world / occupy / abandon / relocate / watchtower.
+// worldsvc territory domain (S8-1): enter world / occupy / abandon / relocate.
+// The ADR-051 player-built structures (watchtower / arrowTower / blocker) live in ./territory/structures.ts.
 // Peeled out of the WorldService god-class (2026-07-03). Depends only on WorldCore. No behavior change.
 import {
   proceduralTile,
@@ -20,6 +21,7 @@ import {
   type BuildingKey,
 } from '@nw/shared';
 import { WorldCore, emptyResources } from './core';
+import { buildWatchtower, buildStructure, demolishStructure } from './territory/structures';
 import type { TileDoc, TileStructure, PlayerWorldDoc } from './db';
 import type { WorldTileView, PlayerWorldView } from './worldTypes';
 
@@ -64,6 +66,10 @@ export class TerritoryService {
       if (!this.core.inBounds(x, y)) throw new SlgError('OUT_OF_RANGE', 'Capital coordinates out of bounds');
       const proc = proceduralTile(worldId, x, y);
       if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot place capital at the world center');
+      // City ground (ADR-074): a wild city's footprint is not buildable land. Before ADR-074 only the
+      // single city anchor was `familyKeep` and nothing rejected it, so a manually placed capital could
+      // land on top of a city.
+      if (proc.type === 'familyKeep') throw new SlgError('BAD_REQUEST', 'Cannot place capital on city ground');
       if (proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway') throw new SlgError('BAD_REQUEST', 'Cannot place capital on obstacle or crossing (bridge/plankway) terrain');
       if (proc.type === 'stronghold') throw new SlgError('BAD_REQUEST', 'Cannot place capital on stronghold terrain');
       const occ = await cols.tiles.findOne({ _id: tileId(worldId, x, y) });
@@ -155,6 +161,10 @@ export class TerritoryService {
 
     const proc = proceduralTile(worldId, x, y);
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be directly occupied');
+    // City ground (ADR-074) — mirrors the `occupy` march branch in startMarchValidation. This direct
+    // occupy path had the same hole: nothing rejected `familyKeep`, so every cell of a city plot was
+    // claimable land (SLG_CITY_SIEGE_DESIGN §1.3).
+    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cities cannot be occupied; use attack siege to capture');
     if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', 'Obstacle terrain cannot be occupied');
 
     const tid = tileId(worldId, x, y);
@@ -369,128 +379,19 @@ export class TerritoryService {
     return this.core.getMe(worldId, accountId);
   }
 
-  /**
-   * Build a watchtower (§18 G5 V2): spend resources on a player-owned non-capital tile to upgrade it to a
-   * large-radius (VISION_WATCHTOWER_RADIUS) persistent vision source. Persisted with TileDoc — losing the tile
-   * also destroys the tower; no separate refund.
-   * Validation: joined + own territory + not capital (capital has built-in vision). Idempotent: if tower already exists, return current view without charging again.
-   */
-  async buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
-    const { cols, now } = this.core.deps;
-    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-
-    const tid = tileId(worldId, x, y);
-    const tile = await cols.tiles.findOne({ _id: tid });
-    if (!tile || tile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
-    if (tile.type === 'base') throw new SlgError('BAD_REQUEST', 'The capital has built-in vision; a watchtower cannot be built here');
-    if (tile.watchtower) return this.core.tileDocView(tile, accountId); // idempotent
-
-    // Settle resources first, then validate sufficiency, then deduct (insufficient resources throw INSUFFICIENT_RESOURCES; map state is not modified).
-    const t = now();
-    const resources = this.core.settle(pw, t);
-    for (const rt of RESOURCE_TYPES) {
-      if ((resources[rt] ?? 0) < (WATCHTOWER_COST[rt] ?? 0)) {
-        throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient resources to build a watchtower');
-      }
-    }
-    for (const rt of RESOURCE_TYPES) resources[rt] -= WATCHTOWER_COST[rt] ?? 0;
-
-    // Deduct resources first, guarded on rev (computed from this exact `pw` read): a concurrent build/upgrade
-    // call that lands first bumps rev, so this write must fail rather than silently overwrite it with a
-    // stale-computed resources object. Deduct BEFORE marking the tile so a losing race (REV_CONFLICT) never
-    // leaves a free, un-paid-for watchtower on the tile.
-    const deducted = await cols.playerWorld.updateOne(
-      { _id: pw._id, rev: pw.rev },
-      { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-    );
-    if (deducted.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
-
-    await cols.tiles.updateOne({ _id: tid }, { $set: { watchtower: true }, $inc: { rev: 1 } });
-
-    const after = await cols.tiles.findOne({ _id: tid });
-    if (after) {
-      void this.core.pushTile(accountId, after); // owner refetch → expanded vision from the new tower takes effect on next getMap
-      await this.core.pushTileToObservers(after, new Set([accountId])); // tower is a visible structure; observers within vision also see it
-    }
-    return this.core.tileDocView(after!, accountId);
+  // ── ADR-051 (P5) player-built structures ────────────────────────────────────────────────────
+  // Bodies live in ./territory/structures.ts (2026-08-25, "单文件 500 行收敛"): the watchtower + arrowTower/
+  // blocker trio only ever reads `core` and shared cost/HP constants — no shared state with join/occupy/
+  // abandon/relocate above — so it is the clean independent-function-module cut (split-priority order:
+  // independent modules > composition > chain). The service keeps the three methods so every call site
+  // (service.ts facade, httpApi, e2e) is unchanged.
+  buildWatchtower(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
+    return buildWatchtower(this.core, worldId, accountId, x, y);
   }
-
-  /**
-   * ADR-051 (P5): build a player structure (arrowTower / blocker) on own or same-family territory (§8-O2). Mirrors
-   * buildWatchtower's settle→validate→deduct flow. arrowTower registers its 3×3 coverage in the `cover` reverse
-   * index (kind:'tower') so advanceMarch's tile-entry check chips passing enemies; blocker registers no coverage —
-   * it is enforced at pathfinding time (findMarchPath) instead. One structure per tile.
-   */
-  async buildStructure(worldId: string, accountId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView> {
-    const { cols, now } = this.core.deps;
-    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-    if (!pw) throw new SlgError('TILE_NOT_OWNED', 'Not yet in the world');
-
-    const tid = tileId(worldId, x, y);
-    const tile = await cols.tiles.findOne({ _id: tid });
-    if (!tile) throw new SlgError('TILE_NOT_OWNED', 'Not your territory');
-    // §8-O2: own or same-family territory only (prevents malicious choke-point building on neutral/enemy land).
-    const family = await this.core.familyMemberIds(worldId, accountId);
-    const friendly = tile.ownerId === accountId || (!!tile.ownerId && family.has(tile.ownerId));
-    if (!friendly) throw new SlgError('TILE_NOT_OWNED', 'Structures can only be built on your own or family territory');
-    if (tile.type === 'base') throw new SlgError('BAD_REQUEST', 'Cannot build a structure on the capital');
-    if (tile.structure) throw new SlgError('TILE_OCCUPIED', 'This tile already has a structure'); // one structure per tile
-
-    const cost = kind === 'arrowTower' ? ARROW_TOWER_COST : BLOCKER_COST;
-    const hpMax = kind === 'arrowTower' ? ARROW_TOWER_HP : BLOCKER_HP;
-    const t = now();
-    const resources = this.core.settle(pw, t);
-    for (const rt of RESOURCE_TYPES) {
-      if ((resources[rt] ?? 0) < (cost[rt] ?? 0)) throw new SlgError('INSUFFICIENT_RESOURCES', 'Insufficient resources to build this structure');
-    }
-    for (const rt of RESOURCE_TYPES) resources[rt] -= cost[rt] ?? 0;
-
-    const structure: TileStructure = {
-      kind, level: 1, hp: hpMax, hpMax, ownerId: accountId,
-      ...(pw.familyId ? { familyId: pw.familyId } : {}), builtAt: t,
-    };
-    // Deduct resources first, guarded on rev (same reasoning as buildWatchtower above): a concurrent build/
-    // upgrade call landing first must fail this write rather than silently double-spend, and it must fail
-    // BEFORE the tile is marked with the structure so a losing race never leaves a free structure.
-    const deducted = await cols.playerWorld.updateOne(
-      { _id: pw._id, rev: pw.rev },
-      { $set: { resources, lastTickAt: t }, $inc: { rev: 1 } },
-    );
-    if (deducted.matchedCount === 0) throw new SlgError('REV_CONFLICT', 'Concurrent update, please retry');
-    await cols.tiles.updateOne({ _id: tid }, { $set: { structure }, $inc: { rev: 1 } });
-
-    if (kind === 'arrowTower') {
-      await this.core.addCover(worldId, x, y, {
-        kind: 'tower', sourceTile: tid, ownerId: accountId, ...(pw.familyId ? { familyId: pw.familyId } : {}),
-      });
-    }
-
-    const after = await cols.tiles.findOne({ _id: tid });
-    if (after) {
-      void this.core.pushTile(accountId, after);
-      await this.core.pushTileToObservers(after, new Set([accountId]));
-    }
-    return this.core.tileDocView(after!, accountId);
+  buildStructure(worldId: string, accountId: string, x: number, y: number, kind: 'arrowTower' | 'blocker'): Promise<WorldTileView> {
+    return buildStructure(this.core, worldId, accountId, x, y, kind);
   }
-
-  /** ADR-051 (P5): demolish one's own structure. Clears the arrowTower's 3×3 coverage; blocker just drops off the tile. */
-  async demolishStructure(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
-    const { cols } = this.core.deps;
-    const tid = tileId(worldId, x, y);
-    const tile = await cols.tiles.findOne({ _id: tid });
-    if (!tile || !tile.structure) throw new SlgError('TILE_NOT_OWNED', 'No structure here');
-    if (tile.structure.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Not your structure');
-
-    const wasTower = tile.structure.kind === 'arrowTower';
-    await cols.tiles.updateOne({ _id: tid }, { $unset: { structure: '' }, $inc: { rev: 1 } });
-    if (wasTower) await this.core.removeCover(worldId, x, y, tid);
-
-    const after = await cols.tiles.findOne({ _id: tid });
-    if (after) {
-      void this.core.pushTile(accountId, after);
-      await this.core.pushTileToObservers(after, new Set([accountId]));
-    }
-    return this.core.tileDocView(after!, accountId);
+  demolishStructure(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
+    return demolishStructure(this.core, worldId, accountId, x, y);
   }
 }

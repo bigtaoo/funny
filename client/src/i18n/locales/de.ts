@@ -804,6 +804,20 @@ export const de: Record<TranslationKey, string> = {
   'world.recommendTroops': 'Empfohlene Truppen {n}',
   'world.buildingHp': 'TP {hp}/{max}',
   'world.center': 'Weltzentrum',
+  'world.city': 'Stadt',
+  'world.cityLevel': 'Stadt Lv.{lv}',
+  'world.cityHint': 'Eine wilde Stadt – tritt einem Bund bei und belagere sie gemeinsam; das Land innerhalb der Mauern lässt sich nicht Feld für Feld einnehmen',
+  'world.cityUnclaimed': 'Unbesetzt (NPC-Garnison)',
+  'world.cityOwnedBy': 'Gehalten von {sect}',
+  'world.cityOwnedByUs': 'Gehalten von {sect} (dein Bund)',
+  'world.cityDurability': 'Mauerwerk {cur} / {max}',
+  'world.cityRegen': 'Regeneriert {n} Mauerwerk pro Stunde — mehr, als ein einzelner Spieler schaffen kann; nur ein gemeinsamer Angriff reicht',
+  'world.cityProtected': 'Nach der Eroberung geschützt; wieder belagerbar in {d}',
+  'world.citySiegeLog': 'Diese Runde · {sect}: {n}',
+  'world.citySiegeLogUs': 'dein Bund',
+  'world.cityNeedSect': 'Du musst einem Bund beitreten, um eine Stadt zu belagern',
+  'world.cityOursHint': 'Dein Bund hält diese Stadt bereits',
+  'world.actSiegeCity': 'Belagern',
   'world.stronghold': 'Feste',
   'world.strongholdHint': 'Stark verteidigte NPC-Bastion – nur durch Belagerung einnehmbar; bei Erfolg wird sie dein Gebiet und bringt eine große Ressourcenbelohnung',
   'world.marchList': 'Märsche',
@@ -1436,6 +1450,23 @@ export const de: Record<TranslationKey, string> = {
   'slg.settle.bp.body': 'Als Battle-Pass-Inhaber erhältst du diese zusätzliche Saisonend-Belohnung.',
   'slg.city.durabilityBreached.subject': 'Hauptstadt gefallen',
   'slg.city.durabilityBreached.body': 'Die Haltbarkeit deiner Hauptstadt ist auf null gefallen. Die Stadt wurde zerstört und dein gesamtes Territorium ist verloren. Öffne die Weltkarte, um zu sehen, wo deine Hauptstadt jetzt steht, und baue deine Verteidigung neu auf.',
+  // Besitzerwechsel einer Wildstadt (ADR-074 P1): die Mail geht nur an den Spieler mit dem letzten
+  // Schlag, die Ankündigungen an den Sekten- bzw. Weltkanal. Parameter kommen aus body() in
+  // worldsvc/combatSiege/cityDamage.ts (kind/node/level/x/y/sect).
+  // Die Kanalzeilen haben ein Längenbudget, aber die Einheit ist die ANZEIGEBREITE, nicht die
+  // Zeichenzahl: drawChatLine zeichnet eine Zeile ohne Umbruch und kürzt auf die verfügbare Breite
+  // mit einem `…` (ui/widgets/truncateText.ts). Das Budget steht in
+  // client/test/i18n-system-text.test.ts, in orgNameWidth-Einheiten (Vollbreite = 2, sonst 1):
+  // 48 für captured/lost (beide via postSect → die schmale Sektenspalte), 96 für
+  // worldCenterCaptured (Weltkanal, volle Breite). Beide in einem echten Browser gemessen, bei der
+  // schmalsten Landscape-Designbreite 1920: 700px bzw. 1386px Textbreite. Vor Textänderungen diesen
+  // Test laufen lassen — ein Überlauf schneidet kein halbes Wort mehr ab, wird aber zu einer
+  // Ellipse, und dann sagt die Meldung nicht mehr, welche Stadt wer eingenommen hat.
+  'slg.city.captured.subject': 'Stadt erobert',
+  'slg.city.captured.mail': 'Dein letzter Schlag hat die Stadt Lv.{level} bei ({x}, {y}) eingenommen. Sie wird jetzt von {sect} gehalten. Ihre Haltbarkeit wurde vollständig zurückgesetzt und sie ist vorerst vor Belagerungen geschützt.',
+  'slg.city.captured': 'Unsere Sekte hat Stadt Lv.{level} ({x}, {y}) erobert',
+  'slg.city.lost': 'Stadt Lv.{level} ({x}, {y}) an {sect} verloren',
+  'slg.city.worldCenterCaptured': '{sect} hat das Weltzentrum bei ({x}, {y}) erobert',
 
   // ── Zeitlich begrenzte Events (B6) ──────────────────────────────────────
   'event.title': 'Events',
@@ -1508,7 +1539,7 @@ export const de: Record<TranslationKey, string> = {
   // ── Heimatstadt / Schreibtisch (SLG_CITY_DESIGN P1) ──────────────────────
   'city.title': 'Heimatstadt',
   'city.military.teams': 'Teams',
-  'city.military.teamIdle': 'Garnisoniert',
+  'city.military.teamIdle': 'Daheim',
   // No trailing ellipsis — the team row appends 1–3 animated dots itself (CityScene render.ts).
   'city.military.teamLoading': 'Lädt',
   'city.military.fillAllTeams': 'Alle Teams auffüllen',
@@ -1538,6 +1569,7 @@ export const de: Record<TranslationKey, string> = {
   'city.bonusAcademyDmg': 'Angriffseinheiten Schaden +{pct}%',
   'city.bonusSatchel': 'Truppenobergrenze pro Marsch: {n}',
   'city.troopCap': 'Truppen {cur}/{cap}',
+  'city.trainQueueStatus': 'Warteschlange {n}/{max} · in Ausbildung {training} · Platz für {left}',
   'city.trainEntry': 'Bildet aus: {n} · noch {time}',
   'city.trainMax': 'Max +{n}',
   'city.err.noResources': 'Nicht genug Ressourcen',
@@ -1617,4 +1649,6 @@ export const de: Record<TranslationKey, string> = {
 
   'world.team.marching': 'Im Marsch',
   'world.team.occupying': 'Besetzt, noch {time}',
+  'world.team.stationedIdle': 'Im Feld',
+  'world.team.garrisoned': 'Stationiert',
 };

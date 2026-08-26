@@ -136,6 +136,7 @@ describe('scene showToast() routes to the global toast sink (success/error kind)
       getTeams: () => new Promise<never>(() => {}),
       getMarches: () => new Promise<never>(() => {}),
       getOccupations: () => new Promise<never>(() => {}),
+      getStationed: () => new Promise<never>(() => {}),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;

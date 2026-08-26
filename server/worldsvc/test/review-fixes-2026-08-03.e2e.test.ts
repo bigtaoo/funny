@@ -451,22 +451,34 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
     });
   });
 
-  // ── Finding #10: core/nation.ts $unset familyId + content moderation ────────────────────
-  describe('core/nation.ts: applyNationChange familyId + setNationName moderation', () => {
-    it('applyNationChange $unsets familyId when the new winner has no family (not left stale)', async () => {
-      await svc.initNations(W); // applyNationChange's updateOne has no upsert — the NationDoc must pre-exist
+  // ── Finding #10: core/nation.ts stale-ownership clearing + content moderation ────────────
+  // The original first case here covered `applyNationChange`'s familyId $unset. ADR-074 DELETED
+  // `applyNationChange` outright (plain-occupying one capital cell founded a nation for a single
+  // player), so that case is gone rather than adapted — there is no longer any code path that assigns
+  // nation ownership. It is replaced by a case pinning the behaviour that took its place.
+  describe('core/nation.ts: initNations ownership clearing + setNationName moderation', () => {
+    it('initNations CLEARS stale ownership on an existing NationDoc (ADR-074: nations 直接清空)', async () => {
+      await svc.initNations(W);
       const caps = svc.capitalsFor(W);
       const [cx, cy] = caps[0]!;
       const idx = capitalIdxAt(cx, cy, caps);
       const nationId = `nation:${W}:${idx}`;
 
-      await svc.applyNationChange(W, cx, cy, 'winnerA', 'famA');
-      expect((await m.collections.nations.findOne({ _id: nationId }))!.familyId).toBe('famA');
+      // Simulate a nation founded through the now-deleted exploit path (a single player occupying the
+      // capital anchor). Written straight to the collection because no code can produce it any more.
+      await m.collections.nations.updateOne(
+        { _id: nationId },
+        { $set: { ownerId: 'exploiter', familyId: 'famA', nationName: 'Stale', foundedAt: 1 } },
+      );
 
-      await svc.applyNationChange(W, cx, cy, 'winnerB', undefined);
+      await svc.initNations(W);
       const doc = await m.collections.nations.findOne({ _id: nationId });
-      expect(doc!.ownerId).toBe('winnerB');
+      expect(doc).not.toBeNull(); // the capital doc itself survives — only its ownership is cleared
+      expect(doc!.ownerId).toBeUndefined();
       expect(doc!.familyId).toBeUndefined();
+      expect(doc!.nationName).toBeUndefined();
+      expect(doc!.foundedAt).toBeUndefined();
+      expect(doc!.capitalIdx).toBe(idx); // identity fields untouched
     });
 
     it('setNationName enforces width bounds (2-12 display units) and content moderation, matching sect/family names', async () => {
@@ -474,7 +486,9 @@ describe.skipIf(!mongo)('worldsvc review-fixes regression (2026-08-03)', () => {
       const caps = svc.capitalsFor(W);
       const [cx, cy] = caps[1]!;
       const idx = capitalIdxAt(cx, cy, caps);
-      await svc.applyNationChange(W, cx, cy, 'namer', undefined);
+      // Ownership is set directly: ADR-074 deleted applyNationChange, and P1's sect-keyed city capture
+      // is not built yet, so there is no production path that makes someone a nation owner right now.
+      await m.collections.nations.updateOne({ _id: `nation:${W}:${idx}` }, { $set: { ownerId: 'namer' } });
 
       await expect(svc.setNationName(W, 'namer', idx, 'x')).rejects.toMatchObject({ code: 'BAD_REQUEST' }); // width 1 < 2
       await expect(svc.setNationName(W, 'namer', idx, '七个汉字超限了')).rejects.toMatchObject({ code: 'BAD_REQUEST' }); // 7*2=14 > 12

@@ -50,7 +50,6 @@ export { MODAL_DIM, CELL_GAP, CARD_CELL_H, CARD_CELL_W_TARGET } from './types';
 import type {
   CardCallbacks, CardSceneTab, Rect, Hit, DoFuseFn, DoPrepBatchFn,
 } from './types';
-import { MODAL_DIM } from './types';
 
 // Roster ordering + injury countdown moved to ./cardSort.ts (2026-08-18) — pure functions with
 // no dependency on this class's state; re-exported so importers keep the same module path.

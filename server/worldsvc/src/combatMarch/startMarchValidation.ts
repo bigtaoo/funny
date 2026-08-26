@@ -5,7 +5,7 @@
 // pve.ts/liveops.ts's mixin-chain split) plus the handful of locals startMarch had already computed by
 // this point, so it lifts out verbatim as a free function taking them as explicit parameters). No
 // behavior change: returns the resolved `defenderId` (attack only) or throws the same SlgError as before.
-import { proceduralTile, SlgError, OCCUPY_MIN_TROOPS, type MarchKind } from '@nw/shared';
+import { proceduralTile, isCityGroundTile, SlgError, OCCUPY_MIN_TROOPS, type MarchKind } from '@nw/shared';
 import { WorldCore } from '../core';
 
 /**
@@ -32,6 +32,10 @@ export async function validateMarchTarget(
   let defenderId: string | undefined; // attack: the attacked player's accountId (under_attack warning is pushed immediately on departure)
   if (kind === 'occupy') {
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot directly occupy the world center');
+    // City ground (ADR-074): a wild city's whole footprint is indivisible and can only be taken by siege.
+    // Until ADR-074 `familyKeep` had NO branch in this switch at all — every cell of a city plot was an
+    // ordinary occupy target (see SLG_CITY_SIEGE_DESIGN §1.3). `center` is handled by its own branch above.
+    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cities cannot be occupied; use attack siege to capture');
     // Stronghold (G8 §3.1): guarded by an extremely powerful system NPC; cannot be directly occupied — must be captured via attack siege.
     if (proc.type === 'stronghold' && !toTile?.ownerId) {
       throw new SlgError('TILE_OCCUPIED', 'Strongholds cannot be directly occupied; use attack siege to capture');
@@ -56,7 +60,42 @@ export async function validateMarchTarget(
     if (!toTile || toTile.ownerId !== accountId) throw new SlgError('TILE_NOT_OWNED', 'Can only reinforce your own tile');
   } else if (kind === 'attack') {
     // Siege: target must be another player's territory/capital, or an ownerless stronghold (G8 PvE to defeat the system garrison). Use occupy/sweep for neutral ownerless tiles.
-    if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'World center is contested by sects and cannot be sieged');
+    //
+    // NOTE the ordering: the wild-city branch below runs BEFORE any `center` check, because
+    // `isCityGroundTile` covers `center` as well as `familyKeep` — the world center IS a city (the biggest
+    // one). A pre-ADR-074 guard here read `if (proc.type === 'center') throw 'World center is contested by
+    // sects and cannot be sieged'`, which was true when a city was a sprite; leaving it in front made the
+    // world center — the one objective the whole shard fights over (§8.3: +5% siege value, -10% march time,
+    // a server-wide announcement) — the single city P1 could not besiege at all, and turned
+    // `settleCityDamage`'s world-channel announcement into dead code. Caught by the e2e case that captures
+    // the world center; the other 21 cases all used graded cities and never noticed.
+    //
+    // Wild city (ADR-074 P1). Three gates, in this order:
+    //   1. the besieger must be in a sect (decision 1) — checked FIRST so a sect-less player gets the
+    //      actionable error rather than a connectivity one they cannot fix;
+    //   2. the city must exist as an entity and not already belong to the besieger's own sect;
+    //   3. it must not be inside its post-capture protection window.
+    // ADR-039 connectivity is checked by the shared tail below, against the whole footprint.
+    if (isCityGroundTile(proc.type)) {
+      const sectId = await core.requireSect(worldId, accountId);
+      const city = await core.cityAt(worldId, toX, toY);
+      // No city document: a world opened before P1 and never reset. Refuse rather than let a march fly at
+      // a target that cannot be settled (`applyCitySiege` would treat it as a miss on arrival anyway).
+      if (!city) throw new SlgError('BAD_REQUEST', 'This city is not yet initialized in this world');
+      if (city.ownerSectId === sectId) throw new SlgError('ALLY_TILE', 'Your sect already holds this city');
+      if ((city.protectedUntil ?? 0) > now()) throw new SlgError('PROTECTED', 'This city is under post-capture protection');
+      // A city's footprint is 3-9 cells wide, so connectivity must be tested against the whole plot, not
+      // the single landed cell — `targetFootprintCells` only knows about a base's 3x3 ring, so the city
+      // case supplies its own cells.
+      const r = (city.footprint - 1) / 2;
+      const cells: { x: number; y: number }[] = [];
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) cells.push({ x: city.x + dx, y: city.y + dy });
+      if (!(await core.isConnectedToSectTerritory(worldId, accountId, cells))) {
+        throw new SlgError('TERRITORY_NOT_CONNECTED', "The city must border your sect's territory");
+      }
+      if (!hasCardArmy && troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
+      return undefined; // no single defender account: a city is held by a sect (no under_attack warning)
+    }
     if (!toTile?.ownerId) {
       // ADR-037 (§5.4): no owner but mid occupation-hold (an occupy march already won its PvE battle and is
       // waiting out the hold countdown) — this is a valid expulsion attack target; the pending occupier gets
@@ -100,6 +139,9 @@ export async function validateMarchTarget(
     // (stronghold/bridge/plankway — captured via attack, never merely stood on), and not a tile that already
     // holds a stationed team (anyone's) — one park per tile.
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot move onto the world center');
+    // City ground (ADR-074): captured by siege, never merely stood on — same rule as the world center and
+    // the PvE-only chokes (stronghold/bridge/plankway) checked further down this branch.
+    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cannot move onto a city; capture it by siege');
     const stationedHere = await cols.stationed.findOne({ _id: toTid });
     if (stationedHere) throw new SlgError('TILE_OCCUPIED', 'A team is already stationed on this tile');
     const isGarrison = stationMode === 'garrison';
@@ -122,6 +164,9 @@ export async function validateMarchTarget(
   } else {
     // sweep: clear NPC garrison from neutral / resource tiles (no occupation; loot is carried back on return).
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot sweep the world center');
+    // City ground (ADR-074): no farmable NPC garrison inside a city plot — the city's own garrison waves
+    // only exist on the siege path, so sweeping it must not be a cheap loot route around them.
+    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cities must be captured via attack siege; sweeping is not allowed');
     // Stronghold (G8): ultra-strong system garrison; cannot be swept for loot — must be captured via attack siege.
     if (proc.type === 'stronghold') throw new SlgError('TILE_OCCUPIED', 'Strongholds must be captured via attack siege; sweeping is not allowed');
     // Crossings (bridge/plankway): garrisoned choke buildings; cannot be swept — must be captured via attack siege.

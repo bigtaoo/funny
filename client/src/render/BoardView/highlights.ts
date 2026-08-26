@@ -4,7 +4,7 @@
 // (.clear()/.beginFill()/…) — never reassign it — so a plain readonly reference is enough, no host
 // object needed at all.
 import * as PIXI from 'pixi.js-legacy';
-import { ATTACK_LANES, BOARD_COLS, BOARD_ROWS } from '@nw/engine/config';
+import { BOARD_COLS, BOARD_ROWS } from '@nw/engine/config';
 import { Side } from '../../game';
 import { ILayout, Rect } from '../../layout/ILayout';
 import { fx } from '../theme';

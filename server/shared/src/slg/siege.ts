@@ -1,6 +1,8 @@
-// SLG siege settlement (S8-3, §5.3), vision/fog of war (G5, §8.2/§2.1/§15.2), playable siege defense level (S8-3b/C2),
+// SLG siege settlement (S8-3, §5.3), playable siege defense level (S8-3b/C2),
 // CC-3 card-based troop system (CHARACTER_CARDS_DESIGN §6/§7/§8), and ADR-026 building HP + siege value.
-// Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]).
+// Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]); vision/fog of war moved on to
+// `vision.ts` (2026-08-25) when ADR-074 P0's doc comments pushed this file past the 500-line convention —
+// it was the one concern in here with zero coupling to siege settlement.
 // worldsvc does not import the deterministic engine (M12); the cheap linear numeric settlement below is used at arrival time to immediately resolve
 // siege outcomes (territory transfer / home-city looting / NPC sweep); this is the design-sanctioned "non-critical / cheap numeric settlement" path (§5.3).
 // The engine-replay path for "critical battles" (real player vs. player city assault) (buildSiegeBlueprints + judgeRunner siege branch) is already
@@ -24,18 +26,26 @@ export function npcGarrison(level: number): number {
 }
 
 // ── G8 stronghold (§3.1) values (combat-power calibrated 2026-07-16, RE-calibrated 2026-07-27 for ADR-048
-// TROOP_CAP_BASE=10000 baseline, see SLG_DESIGN_LOG §21.4 follow-up + ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.5) ────
+// TROOP_CAP_BASE=10000, re-verified 2026-08-25 against TROOP_CAP_BASE=5000/step=1500 with the garrisons held
+// fixed, see SLG_DESIGN_LOG §21.4 follow-up + ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.5/.7) ────
 /**
  * Stronghold system NPC garrison strength per level. Strongholds always generate at `SLG_MAP_MAX_LEVEL` (currently
  * 10, stronghold.ts), so the garrison a player actually faces is fixed at 11800 troops, not a hypothetical 1..5 range
  * (an earlier version of this comment assumed max level 5 / 1800 — stale; the map's max level moved to 10 without
  * updating this note). Far stronger than ordinary tile garrison (GARRISON_PER_TILE=500) and sweep NPCs
  * (NPC_GARRISON_PER_LEVEL=120); "extremely hard to conquer" (§3.1). **Combat-power confirmed, not just asserted**
- * (`server/tools/econ-sim/src/strongholdCombatRun.ts`): a fresh player (troopCap=TROOP_CAP_BASE=10000) loses
- * outright; a modestly-invested one (troopCap=12000, 2 drillYard levels) reliably wins — delivering on SLG7
- * selling combat power / U7 overwhelming tier as a real, not free, gate.
+ * (`server/tools/econ-sim/src/strongholdCombatRun.ts`): a fresh player (troopCap=TROOP_CAP_BASE=5000) loses
+ * outright; an invested one (troopCap=12500, 5 drillYard levels) reliably wins — delivering on SLG7 selling
+ * combat power / U7 overwhelming tier as a real, not free, gate.
  *
- * **2026-07-27 re-calibration note (ADR-048 TROOP_CAP_BASE 2000→10000).** This garrison (11800) is comfortably
+ * **2026-08-25 note (TROOP_CAP_BASE 10000 → 5000, DRILL_TROOPCAP_STEP 1000 → 1500).** This garrison is
+ * deliberately *not* rescaled with the base. Under the old baseline it opened at drillYard L2 (12000); under
+ * the new one the same 11800 opens at **L5** (12500). Stretching the arc was the point of leaving it alone:
+ * the re-tune exists to make drillYard levels feel worth buying, and the crossing/stronghold unlocks are the
+ * clearest thing they buy. Verified by re-running strongholdCombatRun.ts, not assumed.
+ *
+ * **2026-07-27 re-calibration note (ADR-048 TROOP_CAP_BASE 2000→10000; base later moved again to 5000, see
+ * above — the reasoning below about *why* this is a linear calibration is unaffected).** This garrison (11800) is comfortably
  * above `SIEGE_SYNTH_ARMY_MAX_TROOPS` (~9,600 troops, worldsvc/src/siegeEngine.ts — the board-depth capacity of
  * `synthesizeArmy`'s round-robin placement, 10 attack lanes × 16 spawnable rows × 60 HP/unit). That matters
  * because worldsvc's `shouldUseCheapSiege` (wired into combatSiege/arrival.ts since commit 13a7af86, 2026-07-16)
@@ -43,8 +53,8 @@ export function npcGarrison(level: number): number {
  * (attacker wins iff troops > garrison) instead of the real `@nw/engine` auto-battle — and both stronghold and
  * crossing garrisons are always synthesized. So in production this gate is, and must be calibrated as, a plain
  * linear comparison against `TROOP_CAP_BASE`/`DRILL_TROOPCAP_STEP`, not a real-engine combat simulation: fresh
- * (10000) < 11800 < drillYard+2 (12000), giving comfortable several-hundred-troop margins on both sides of the
- * threshold — nothing like the "razor-thin band you must dodge the engine's board-depth cliff to find" that a
+ * (5000) < 11800 < drillYard+5 (12500), giving a comfortable several-hundred-troop margin above the
+ * threshold (and, since 2026-08-25, a much wider one below it) — nothing like the "razor-thin band you must dodge the engine's board-depth cliff to find" that a
  * naive real-engine-only simulation would suggest (and that an earlier same-day recalibration pass of this
  * constant mistakenly optimized for, before the `shouldUseCheapSiege` mirror was added to strongholdCombat.ts —
  * see that file's header and ECONOMY_VERIFICATION_LOG.md §13-SLG-STRONGHOLD.5 for the full incident writeup).
@@ -69,12 +79,14 @@ export const STRONGHOLD_LOOT_PER_LEVEL = 5000;
  * `max(2, SLG_MAP_MAX_LEVEL-1)` (currently 9, mapgen.ts), so the garrison actually faced is fixed at 10350 troops.
  * A crossing is a strategic choke — harder than an ordinary tile (NPC_GARRISON_PER_LEVEL=120) but well below a
  * stronghold (11800), so an early player can force a passage but still needs a real army: a siege-to-pass gate,
- * not a free arc. **Combat-power confirmed** (strongholdCombatRun.ts): a fresh player (troopCap=TROOP_CAP_BASE=10000)
- * loses outright; a single drillYard level (troopCap=11000) opens it — lighter investment than the stronghold's 2
- * levels, as intended. Re-calibrated 2026-07-27 alongside {@link STRONGHOLD_GARRISON_PER_LEVEL} for the same
- * ADR-048 TROOP_CAP_BASE=10000 baseline — **see that constant's doc comment for why this is a plain linear
- * calibration** (this garrison also exceeds `SIEGE_SYNTH_ARMY_MAX_TROOPS`, so `shouldUseCheapSiege` routes it to
- * the cheap path too): fresh (10000) < 10350 < drillYard+1 (11000), ~350/650-troop margins either side. Kept
+ * not a free arc. **Combat-power confirmed** (strongholdCombatRun.ts): a fresh player (troopCap=TROOP_CAP_BASE=5000)
+ * loses outright; drillYard L4 (troopCap=11000) opens it — lighter investment than the stronghold's 5 levels,
+ * as intended. Re-calibrated 2026-07-27 alongside {@link STRONGHOLD_GARRISON_PER_LEVEL} for the ADR-048
+ * TROOP_CAP_BASE=10000 baseline and deliberately left untouched by the 2026-08-25 base=5000 re-tune (which
+ * moves this unlock from drillYard L1 to L4 — the stretched arc is the intent, see that constant) — **see
+ * STRONGHOLD_GARRISON_PER_LEVEL's doc comment for why this is a plain linear calibration** (this garrison also
+ * exceeds `SIEGE_SYNTH_ARMY_MAX_TROOPS`, so `shouldUseCheapSiege` routes it to the cheap path too): fresh
+ * (5000) < 10350 < drillYard+4 (11000), a 650-troop margin above the threshold. Kept
  * below STRONGHOLD_GARRISON_PER_LEVEL (1150 < 1180) so the two buildings' per-level toughness still orders the
  * same way as their totals — see that constant's doc comment for why the ordering is asserted explicitly.
  */
@@ -149,74 +161,6 @@ export function resolveSiege(attackerTroops: number, defenseStrength: number): S
 export function nationDefenseStrength(garrison: number, inOwnNation: boolean): number {
   const g = Math.max(0, Math.floor(garrison));
   return inOwnNation ? Math.floor(g * (1 + NATION_BONUS_DEFENSE)) : g;
-}
-
-// ── Vision / fog of war (G5, §8.2 / §2.1 / §15.2) ─────────────────────────────────────
-// Decision (2026-06-21): fog model 2a — terrain layer (procedural, deterministic) is always fully visible;
-// dynamic layer (ownership / garrison / defense / protection shield / marches) is only shown within "current vision";
-// tiles outside vision revert to the base terrain from proceduralTile (not even "this tile is occupied" is leaked).
-// Vision is not persisted: computed live from vision sources at read time + short TTL cache.
-// Vision sources = own territory (radius VISION_TERRITORY) + home city (radius VISION_BASE) + own/family marches in transit
-// (radius VISION_MARCH, position linearly interpolated from departAt/arriveAt) + same-family member territories (shared, ≤30 members;
-// §8.2 decision: downgraded to family-level rather than sect-level, to avoid 900-person union making fog of war meaningless). Vision shape uses Chebyshev
-// (square) distance — simplest on a tile grid, computable on either end.
-
-/** Own territory vision radius (Chebyshev, DRAFT). */
-export const VISION_TERRITORY_RADIUS = 2;
-/** Home city vision radius (larger than territory, DRAFT). */
-export const VISION_BASE_RADIUS = 5;
-/** In-transit march vision radius (DRAFT). */
-export const VISION_MARCH_RADIUS = 2;
-/**
- * Watchtower vision radius (§18 G5 V2 remaining item, DRAFT). The largest fixed persistent vision source — farther than the home city (5);
- * building a tower on own territory upgrades that tile to a large-radius observation point, illuminating a deep area — the primary mechanism for proactively expanding vision.
- */
-export const VISION_WATCHTOWER_RADIUS = 8;
-/** Maximum radius across all vision sources (used as query pad for outward expansion; must cover the largest-radius source to avoid missing vision zone edges). */
-export const VISION_MAX_RADIUS = Math.max(
-  VISION_TERRITORY_RADIUS,
-  VISION_BASE_RADIUS,
-  VISION_MARCH_RADIUS,
-  VISION_WATCHTOWER_RADIUS,
-);
-
-/** Vision source: a center point + radius (Chebyshev). */
-export interface VisionSource {
-  x: number;
-  y: number;
-  radius: number;
-}
-
-/**
- * Whether tile (x,y) falls within the Chebyshev radius of any vision source. Pure function, computable on either end.
- * The number of sources is bounded within the view area (own/family territory + home city + marches in transit); per-tile call cost is acceptable.
- */
-export function isInVision(sources: readonly VisionSource[], x: number, y: number): boolean {
-  for (const s of sources) {
-    if (Math.abs(x - s.x) <= s.radius && Math.abs(y - s.y) <= s.radius) return true;
-  }
-  return false;
-}
-
-/**
- * Current march position (linear interpolation from fromTile to toTile; used for G5 vision — approximate since the actual path may detour around obstacles, but sufficient for vision circles).
- * frac is clamped to [0,1] from (now-departAt)/(arriveAt-departAt); degenerate case (arriveAt≤departAt) returns the destination.
- */
-export function marchInterpPos(
-  fromX: number,
-  fromY: number,
-  toX: number,
-  toY: number,
-  departAt: number,
-  arriveAt: number,
-  now: number,
-): { x: number; y: number } {
-  const span = arriveAt - departAt;
-  const frac = span > 0 ? Math.max(0, Math.min(1, (now - departAt) / span)) : 1;
-  return {
-    x: Math.round(fromX + (toX - fromX) * frac),
-    y: Math.round(fromY + (toY - fromY) * frac),
-  };
 }
 
 // ── Playable siege defense level (S8-3b / C2) ─────────────────────────────────────────────

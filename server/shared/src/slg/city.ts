@@ -6,10 +6,13 @@
 // (SLG_ECONOMY_CHECK), register figures in ECONOMY_NUMBERS §13-SLG-CITY.
 
 import {
-  RESOURCE_CAP, RESOURCE_TYPES, TROOP_CAP_BASE, TROOP_TRAIN_QUEUE_MAX,
-  TROOP_TRAIN_INK_COST, TROOP_TRAIN_PAPER_COST, TROOP_TRAIN_GRAPHITE_COST, TROOP_TRAIN_METAL_COST, TROOP_TRAIN_STICKER_COST,
+  RESOURCE_CAP, RESOURCE_TYPES, TROOP_CAP_BASE,
   type ResourceType,
 } from './core';
+import {
+  TROOP_TRAIN_QUEUE_MAX,
+  TROOP_TRAIN_INK_COST, TROOP_TRAIN_PAPER_COST, TROOP_TRAIN_GRAPHITE_COST, TROOP_TRAIN_METAL_COST, TROOP_TRAIN_STICKER_COST,
+} from './training';
 
 export type BuildingKey =
   | 'desk'         // hub: single total-level gate for every other building + base durability / build-queue slots
@@ -48,15 +51,33 @@ export const DESK_MAX_LEVEL = 10;              // hub total-level cap (Three-Kin
 export const BUILD_YIELD_STEP = 0.10;          // resource building: +10% land-resource yield per level
 export const STICKER_SELF_BASE = 400;          // stickerShop: sticker self-produced per hour per level (residential-model faucet)
 export const CABINET_CAP_STEP = 0.20;          // cabinet: +20% storage cap per level
-export const DRILL_TROOPCAP_STEP = 1000;       // drillYard: +1000 troopCap per level
+// drillYard: +1500 troopCap per level — raised from 1000 by the 2026-08-25 re-tune that halved
+// TROOP_CAP_BASE (see that constant for the full rationale). Base 5000 + 10×1500 keeps the max at 20,000
+// while turning drillYard's arc from 2× into 4×.
+export const DRILL_TROOPCAP_STEP = 1500;
 export const DRILL_TRAIN_SPEED_STEP = 0.08;    // drillYard: -8% training time per level (floored)
 export const DRILL_TRAIN_SPEED_FLOOR = 0.5;    // drillYard: training-time multiplier never below 0.5
-export const DRILL_QUEUE_PER_LEVELS = 2;       // drillYard: +1 training queue slot per this many levels
+/**
+ * drillYard levels at which a training queue slot is granted, on top of TROOP_TRAIN_QUEUE_MAX (=1): L4 and
+ * L10, i.e. 1 slot at L0–L3, 2 at L4–L9, 3 at L10.
+ *
+ * A threshold list rather than the old `floor(level / DRILL_QUEUE_PER_LEVELS)` because the useful slot count
+ * is `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)` (a batch beyond that is rejected by the troopCap check before
+ * it can occupy a slot) and that ceiling — 1 slot at L0 rising to 4 at L10 — is not a multiple of anything.
+ * These three thresholds stay at or below it at every level (equal only at L0, whose cap is exactly one
+ * batch), so no slot is ever dead and topping an empty
+ * pool off to the cap never takes more than two visits, at any level (L0 fits in one batch, so one visit;
+ * every level above needs exactly two — L10 is 4 batches over 3 slots). Keep it that way:
+ * scaling TROOP_TRAIN_BATCH_MAX up with troopCap would immediately re-create dead slots, which is the bug the
+ * 2026-08-25 re-tune existed to remove.
+ */
+export const DRILL_QUEUE_LEVEL_THRESHOLDS: readonly number[] = [4, 10];
 // DRAFT: base = TROOP_CAP_BASE (a single team can carry the whole starting pool with no satchel built) and
-// step mirrors DRILL_TROOPCAP_STEP so a maxed satchel (L10) lets one team carry the whole max troopCap (20,000) —
-// without it, surplus troops from a maxed drillYard must be split across multiple teams (D-CITY-9).
+// step *is* DRILL_TROOPCAP_STEP (not a coincidentally-equal literal — 2026-08-25) so a maxed satchel (L10)
+// lets one team carry the whole max troopCap (20,000) by construction: same base, same step, same 10 levels.
+// Without it, surplus troops from a maxed drillYard must be split across multiple teams (D-CITY-9).
 export const SATCHEL_CARRY_BASE = TROOP_CAP_BASE; // per-march troop-carry cap with no satchel built
-export const SATCHEL_CARRY_STEP = 1000;           // satchel: +1000 per-march troop-carry cap per level
+export const SATCHEL_CARRY_STEP = DRILL_TROOPCAP_STEP; // satchel: per-march troop-carry cap per level
 export const BUILD_QUEUE_SLOTS = 1;            // concurrent build-queue slots (paid 2nd slot deferred, §6)
 export const BUILD_SPEEDUP_SECS_PER_COIN = 60; // build speedup rate (aligned with TROOP_SPEEDUP_SECS_PER_COIN)
 export const BUILD_TIME_BASE_SEC = 480;        // base build time per level; time(toLevel) = base × toLevel
@@ -127,9 +148,10 @@ export function satchelCarryCapFor(buildings: Partial<Record<BuildingKey, number
 export function drillTrainMult(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
   return Math.max(DRILL_TRAIN_SPEED_FLOOR, 1 - buildingLevel(buildings, 'drillYard') * DRILL_TRAIN_SPEED_STEP);
 }
-/** Training queue slot count including drillYard bonus. */
+/** Training queue slot count including drillYard bonus (1 / 2 / 3 — see DRILL_QUEUE_LEVEL_THRESHOLDS). */
 export function trainQueueMaxFor(buildings: Partial<Record<BuildingKey, number>> | undefined): number {
-  return TROOP_TRAIN_QUEUE_MAX + Math.floor(buildingLevel(buildings, 'drillYard') / DRILL_QUEUE_PER_LEVELS);
+  const lvl = buildingLevel(buildings, 'drillYard');
+  return TROOP_TRAIN_QUEUE_MAX + DRILL_QUEUE_LEVEL_THRESHOLDS.filter((th) => lvl >= th).length;
 }
 /** Resource cost to train `qty` troops (S8-2 training queue, 2026-08-01 tune): ink is the dominant sustain
  *  cost, paper/graphite/metal are a flat per-troop building-material tax, sticker a small token cost. */

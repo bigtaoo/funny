@@ -160,7 +160,7 @@ export class EventScene implements Scene {
   }
 
   private renderTabs(top: number, tabH: number): void {
-    const { w, h } = this;
+    const { w } = this;
     const tabW = (w * 0.9) / this.events.length;
     const startX = w * 0.05;
     this.events.forEach((ev, i) => {

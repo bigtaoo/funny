@@ -58,8 +58,15 @@ function buildHudHarness(
 }
 
 function findCluster(ctx: WorldMapContext): PIXI.Container {
-  const cluster = (ctx.headerHudLayer.children as PIXI.DisplayObject[])
-    .find((c): c is PIXI.Container => c.constructor === PIXI.Container);
+  // Bare `PIXI.Container` identity alone isn't enough to single this out any more: the shop entry
+  // button's icon (`coinSack`, 2026-08-25) is now a raster glyph, which `buildRasterTabIcon` also
+  // wraps in a bare `new PIXI.Container()` — so `headerHudLayer.children` can hold TWO exact-Container
+  // matches, and `.find()` would grab whichever button icon comes first instead of the real
+  // per-resource readout. The readout is the only one of the two that ever holds PIXI.Text children
+  // (rate/total labels); an icon glyph box holds only its sprite.
+  const cluster = (ctx.headerHudLayer.children as PIXI.Container[])
+    .find((c) => c.constructor === PIXI.Container
+      && c.children.some((ch) => ch instanceof PIXI.Text));
   if (!cluster) throw new Error('production cluster not found in headerHudLayer');
   return cluster;
 }

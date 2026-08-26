@@ -28,6 +28,7 @@
 // No behavior change.
 import {
   proceduralTile,
+  isCityGroundTile,
   siegeSeedFromId,
   playerWorldId,
   resolveSiege,
@@ -50,9 +51,19 @@ import type { OccupationService } from './occupation';
 import type { SiegeCtx } from './ctx';
 import { applyBaseSiege } from './arrival/baseSiege';
 import { applyStrongholdSiege } from './arrival/strongholdSiege';
+import { applyCitySiege } from './arrival/citySiege';
+import type { CityState } from '../core/citySiege';
 import { applyCrossingSiege } from './arrival/crossingSiege';
 import { landSiege } from './arrival/landSiege';
 import { applySweep as applySweepImpl } from './arrival/sweep';
+
+/** Every cell of a city's square plot — the connectivity target for a city siege (§4.1 indivisible plot). */
+function cityFootprintCells(city: CityState): { x: number; y: number }[] {
+  const r = (city.footprint - 1) / 2;
+  const cells: { x: number; y: number }[] = [];
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) cells.push({ x: city.x + dx, y: city.y + dy });
+  return cells;
+}
 
 export class ArrivalService {
   private readonly ctx: SiegeCtx;
@@ -100,10 +111,22 @@ export class ArrivalService {
     // for such a march (nothing was ever deducted from the pool for it; see combatMarch/command.ts's matching guard).
     const hasCardArmy = !!m.army?.some((e) => !!e.cardInstanceId);
     const target = await cols.tiles.findOne({ _id: m.toTile });
+    const tx = this.core.coordX(m.toTile);
+    const ty = this.core.coordY(m.toTile);
     // ADR-039 territory connectivity: the attacker's sect territory can shift during transit (an intervening
     // loss can strand the attacker), so re-validate here before any capture branch — treat like a miss (refund).
     // Capitals check against their whole 3×3 footprint (targetFootprintCells), not just the landed cell.
-    const footprint = this.core.targetFootprintCells(target, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
+    //
+    // A wild city needs a WIDER footprint than `targetFootprintCells` knows about (3-9 cells a side, and it
+    // has no tile document at all, so that helper would degenerate to the single landed cell). Resolving the
+    // city here rather than inside the branch below is what makes connectivity match the departure-side
+    // check: the anchor of a 5x5 plot is 3 cells from the bordering land a besieger actually holds, so the
+    // single-cell fallback rejected every city siege on arrival as "stranded" — the march simply parked.
+    const proc = proceduralTile(m.worldId, tx, ty);
+    const city = isCityGroundTile(proc.type) ? await this.core.cityAt(m.worldId, tx, ty) : null;
+    const footprint = city
+      ? cityFootprintCells(city)
+      : this.core.targetFootprintCells(target, tx, ty);
     if (!(await this.core.isConnectedToSectTerritory(m.worldId, m.ownerId, footprint))) {
       // 2026-08-01 (SLG_DESIGN_LOG §46): target invalidated on arrival → park in place (team-dispatched
       // marches) rather than teleport home instantly; a teamless march has no team-slot identity to park
@@ -119,7 +142,16 @@ export class ArrivalService {
     // Stronghold PvE capture (G8 §3.1): target has no owner and procedural type is stronghold → fight the ultra-strong system NPC garrison;
     // victory captures it as territory + grants a one-time rich reward; defeat causes surviving attackers to retreat and return. Intercept before the "miss and refund" branch.
     if (!target?.ownerId) {
-      const proc = proceduralTile(m.worldId, this.core.coordX(m.toTile), this.core.coordY(m.toTile));
+      // Wild city (ADR-074 P1): city ground is never a stored, owned tile, so this branch — not the
+      // player-territory path below — is where a city siege lands. Intercepted before the stronghold /
+      // crossing checks because a city's footprint can overlap neither of those, and before the
+      // miss/refund fallthrough because city ground has no `ownerId` by construction. `city` is null for
+      // city ground with no document (a world opened before P1 and never reset) — that falls through to the
+      // miss/refund branch rather than inventing a target; `initCities` at the next season open fixes it.
+      if (city) {
+        await applyCitySiege(this.core, this.ctx, m, pw, city, t);
+        return;
+      }
       if (proc.type === 'stronghold') {
         await applyStrongholdSiege(this.core, this.ctx, m, pw, t, proc);
         return;

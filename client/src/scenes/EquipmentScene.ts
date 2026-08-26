@@ -28,7 +28,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { tearDownChildren, drawLoadingOverlay } from '../render/sketchUi';
-import { preloadTabIconTextures } from '../render/icons';
+import { preloadIconArt } from '../render/icons';
 import { drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import { EquipmentSceneCore } from './EquipmentScene/core';
 import { renderHeaderCurrency, renderMaterialsBand } from './EquipmentScene/headerRow';
@@ -81,7 +81,7 @@ export class EquipmentScene implements Scene {
     this.render();
     // Same fixup as CardScene.ts — the peer-group rail's [Cards|Equipment|Skins] icons are AI PNGs
     // that may not have decoded yet on this first render.
-    void preloadTabIconTextures().then(() => this.render());
+    void preloadIconArt().then(() => this.render());
   }
 
   update(dt: number): void {

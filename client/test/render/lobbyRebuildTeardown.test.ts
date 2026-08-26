@@ -91,10 +91,6 @@ vi.mock('pixi.js-legacy', () => {
   };
 });
 
-// ── webpack-served asset used by coinIconAtlas.ts (imported transitively via core.ts) ──
-vi.mock('../../src/assets/shop/coins.png',  () => ({ default: 'coins.png' }));
-vi.mock('../../src/assets/shop/coins.json', () => ({ default: { frames: {}, meta: {} } }));
-
 // ── jszip stub (StickmanRuntime, imported transitively via core.ts) ────────────
 vi.mock('jszip', () => ({ default: { loadAsync: () => Promise.reject(new Error('unused in this test')) } }));
 
@@ -106,8 +102,8 @@ import { tearDownChildren } from '../../src/render/sketchUi';
  * Bare-bones stand-in for LobbySceneCore — only the fields rebuild() touches, but borrows the REAL
  * `rebuild()` implementation via `Function.prototype.call` so this regression test exercises actual
  * production code rather than a hand-copied duplicate (LobbySceneCore's own constructor pulls in
- * `ILayout`/`LobbySceneCallbacks`/ the ctor's onSaveChanged+coinIconAtlas wiring, which this test
- * doesn't need — only `rebuild()`'s teardown-then-buildHook() sequence).
+ * `ILayout`/`LobbySceneCallbacks`/ the ctor's onSaveChanged+preloadTabIconTextures wiring, which
+ * this test doesn't need — only `rebuild()`'s teardown-then-buildHook() sequence).
  */
 class FakeLobbySceneCore {
   container = { removeChildren: (): unknown[] => [] as unknown[] };

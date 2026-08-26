@@ -5,7 +5,7 @@
 import { MongoClient, Db, type MongoClientOptions } from 'mongodb';
 import type { WorldCollections, WorldMongo } from './collections';
 import { type WorldDoc, type TileDoc, type MapTemplateDoc, type MapTemplateRowDoc, type MapBaselineRowDoc, ensureWorldIndexes } from './worldDocs';
-import { type PlayerWorldDoc, ensurePlayerIndexes, migratePlayerWorldTroopPool } from './playerDocs';
+import { type PlayerWorldDoc, ensurePlayerIndexes, migratePlayerWorldTroopPool, migrateTroopCapRetune } from './playerDocs';
 import {
   type MarchDoc,
   type SiegeDoc,
@@ -23,6 +23,7 @@ import {
   ensureSocialIndexes,
 } from './socialDocs';
 import { type SeasonResultDoc, type ShardAllocationDoc, type ShardTransferDoc, ensureSeasonIndexes } from './seasonDocs';
+import { type CityDoc, ensureCityIndexes } from './cityDocs';
 
 export async function createWorldMongo(
   uri: string,
@@ -55,6 +56,7 @@ export async function createWorldMongo(
     occupations: db.collection<OccupationDoc>('occupations'),
     stationed: db.collection<StationedDoc>('stationed'),
     nations: db.collection<NationDoc>('nations'),
+    cities: db.collection<CityDoc>('cities'),
     seasonResults: db.collection<SeasonResultDoc>('seasonResults'),
     shardAllocations: db.collection<ShardAllocationDoc>('shardAllocations'),
     shardTransfers: db.collection<ShardTransferDoc>('shardTransfers'),
@@ -87,11 +89,15 @@ export async function createWorldMongo(
       collections.nations,
     );
     await ensureSeasonIndexes(collections.seasonResults, collections.shardAllocations);
+    await ensureCityIndexes(collections.cities);
   }
 
   /** One-time data migrations run once at boot after ensureIndexes. See playerDocs.ts for the migration itself. */
   async function runMigrations(): Promise<void> {
     await migratePlayerWorldTroopPool(collections.playerWorld);
+    // Second: the pool-unification pass above writes troopCap from the live formula too, but only for the
+    // legacy `baseTroopStock` docs it touches. This one covers everyone (see migrateTroopCapRetune).
+    await migrateTroopCapRetune(collections.playerWorld);
   }
 
   return {

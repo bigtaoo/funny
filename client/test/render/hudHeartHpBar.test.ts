@@ -77,6 +77,7 @@ vi.mock('pixi.js-legacy', () => {
     x = 0; y = 0; visible = true; alpha = 1;
     addChild(...c: unknown[]): unknown { this.children.push(...c); return c[0]; }
     removeChild(c: unknown): void { this.children = this.children.filter(x => x !== c); }
+    removeChildren(): void { this.children = []; }
     destroy(): void { /* no-op */ }
   }
   class FakeSprite extends FakeContainer {
@@ -117,8 +118,24 @@ vi.mock('pixi.js-legacy', () => {
     add(): void {}
     remove(): void {}
   }
-  class FakeBaseTexture { on(): this { return this; } once(): this { return this; } off(): this { return this; } }
-  class FakeTexture { static from(): FakeTexture { return new FakeTexture(); } }
+  class FakeBaseTexture {
+    valid = false;
+    // `from`/`addToCache` are only here for assets/preloadTextures.ts, which HUDView now reaches
+    // through its raster ink glyph: the preload it kicks off must settle quietly under this mock
+    // rather than reject (preloadTextureList's contract is that it never rejects).
+    static from(): FakeBaseTexture { return new FakeBaseTexture(); }
+    static addToCache(): void {}
+    on(): this { return this; } once(): this { return this; } off(): this { return this; }
+  }
+  class FakeTexture {
+    // `valid: false` on purpose: `buildInkIcon`/`buildRasterTabIcon` read it to decide whether the
+    // PNG has decoded, and under this mock nothing ever loads, so HUDView's ink glyph stays an
+    // empty container — which is exactly what these HP-bar/label assertions want out of the way.
+    baseTexture = new FakeBaseTexture();
+    width = 0; height = 0;
+    static from(): FakeTexture { return new FakeTexture(); }
+    static addToCache(): void {}
+  }
   class FakeSpritesheet { textures: Record<string, unknown> = {}; async parse(): Promise<void> {} }
   class FakeRectangle { constructor(_x = 0, _y = 0, _w = 0, _h = 0) {} }
   class FakePoint { constructor(public x = 0, public y = 0) {} }
@@ -137,6 +154,9 @@ vi.mock('pixi.js-legacy', () => {
     LINE_CAP: { ROUND: 'round', SQUARE: 'square', BUTT: 'butt' },
     LINE_JOIN: { ROUND: 'round', MITER: 'miter', BEVEL: 'bevel' },
     SCALE_MODES: { NEAREST: 0, LINEAR: 1 },
+    // Needed since 2026-08-25: HUDView's ink glyph is raster AI art now (batch 7 retired the
+    // procedural `drawInk`), so importing it pulls render/cardArt's texture setup into this mock.
+    MIPMAP_MODES: { OFF: 0, POW2: 1, ON: 2 },
     WRAP_MODES: { CLAMP: 0 },
   };
 });

@@ -1,13 +1,17 @@
 // SLG open-world constants / enums / IDs / procedural map generation — single source of truth (SLG_DESIGN.md §14, S8-0).
 // Barrel re-export; split into domain modules (god-file split, [[project_godfile_split_pattern]]):
 // core (errors/enums/IDs/capacity/base-footprint/gen-knobs/numeric consts),
+// training (troop training-queue costs/caps/speed-ups, split out of core 2026-08-25),
 // tileRender (per-tile feature-art + resource-motif render geometry, split out of core 2026-08-20),
 // noise (deterministic value noise),
 // auction (guardrails + anomaly detection), city (home-city building system), province (nation/province geometry),
 // shop (SLG shop items), prosperity (prosperity/season settlement/sharding), mapgen (terrain + proceduralTile + templates),
-// march (tile yield + A* pathfinding), siege (siege settlement + vision + siege level + card troop system),
+// march (tile yield + A* pathfinding), siege (siege settlement + siege level + card troop system),
+// vision (fog of war geometry, split out of siege 2026-08-25),
+// citySiege (ADR-074 wild-city siege: wave ladder + durability/regen + yield),
 // transfer (G6 mid-season shard transfer/merge, §27).
 export * from './core';
+export * from './training';
 export * from './tileRender';
 export * from './auction';
 export * from './city';
@@ -24,5 +28,7 @@ export * from './mapEdit';
 export * from './mapRle';
 export * from './march';
 export * from './siege';
+export * from './vision';
+export * from './citySiege';
 export * from './transfer';
 export { worldSeed } from './noise';

@@ -15,11 +15,30 @@ import {
   baseFootprintCells,
   baseFootprintInBounds,
   GARRISON_PER_TILE,
+  isCityGroundTile,
   type ResourceType,
+  type TileType,
 } from '@nw/shared';
 import type { WorldCore } from '../core';
 import { SPAWN_NEAR_FAMILY_RADIUS, SPAWN_OUTER_MIN_DR } from './helpers';
 import type { TileDoc } from '../db';
+
+/**
+ * Terrain a player capital's 3×3 footprint may never cover. Four call sites in this file used to spell
+ * this list out inline, which is exactly how `familyKeep` came to be missing from all four: before
+ * ADR-074 a city was a single `familyKeep` cell, so a base could spawn right on top of a city anchor —
+ * and once ADR-074 widened city ground to the whole footprint that hole would have grown from 1 cell per
+ * city to up to 81. One predicate, so a future tile type cannot be added to three of four lists.
+ *
+ * `isCityGroundTile` covers `familyKeep` AND `center`, which is why 'center' is no longer named here.
+ */
+function isReservedBaseTerrain(type: TileType): boolean {
+  return isCityGroundTile(type)
+    || type === 'obstacle'
+    || type === 'bridge'
+    || type === 'plankway'
+    || type === 'stronghold'; // stronghold system strongpoint; cannot be used as a capital respawn location (G8)
+}
 
 export class SpawnService {
   constructor(private readonly core: WorldCore) {}
@@ -46,15 +65,7 @@ export class SpawnService {
         if (Math.sqrt(dx * dx + dy * dy) / maxDist <= minDr) continue; // too close to the center, skip
       }
       const proc = proceduralTile(worldId, x, y);
-      if (
-        proc.type === 'center' ||
-        proc.type === 'obstacle' ||
-        proc.type === 'bridge' ||
-        proc.type === 'plankway' ||
-        proc.type === 'stronghold' // stronghold system strongpoint; cannot be used as a capital respawn location (G8)
-      ) {
-        continue;
-      }
+      if (isReservedBaseTerrain(proc.type)) continue;
       // ADR-025: a candidate anchor must host the whole 3×3 footprint (in bounds + all 9 cells free).
       if (!(await this.footprintFree(worldId, x, y, mapW, mapH))) continue;
       return { x, y, level: proc.level, ...(proc.resType ? { resType: proc.resType } : {}) };
@@ -94,7 +105,7 @@ export class SpawnService {
   }
 
   /**
-   * Starting from (ox,oy), search ring by ring (Chebyshev distance 1..maxR) for the first legal empty tile (in bounds, not center/obstacle/bridge/plankway/stronghold, unoccupied).
+   * Starting from (ox,oy), search ring by ring (Chebyshev distance 1..maxR) for the first legal empty tile (in bounds, not reserved terrain per {@link isReservedBaseTerrain}, unoccupied).
    * Candidates within each ring are randomly shuffled so new family members don't line up in a fixed direction. Used by auto-spawn near family.
    */
   private async spiralFindEmpty(
@@ -114,7 +125,7 @@ export class SpawnService {
       for (const [x, y] of this.shuffled(ring)) {
         if (!this.core.inBounds(x, y)) continue;
         const proc = proceduralTile(worldId, x, y);
-        if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') {
+        if (isReservedBaseTerrain(proc.type)) {
           continue;
         }
         // ADR-025: the candidate anchor must host the whole 3×3 footprint.
@@ -225,7 +236,7 @@ export class SpawnService {
     const cells = baseFootprintCells(ax, ay);
     for (const { x, y } of cells) {
       const proc = proceduralTile(worldId, x, y);
-      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') {
+      if (isReservedBaseTerrain(proc.type)) {
         return false;
       }
     }
@@ -251,7 +262,7 @@ export class SpawnService {
     const cells = baseFootprintCells(ax, ay);
     for (const { x, y } of cells) {
       const proc = proceduralTile(worldId, x, y);
-      if (proc.type === 'center' || proc.type === 'obstacle' || proc.type === 'bridge' || proc.type === 'plankway' || proc.type === 'stronghold') {
+      if (isReservedBaseTerrain(proc.type)) {
         return false;
       }
     }

@@ -301,7 +301,7 @@ export const zh = {
   'profile.rank': '段位',
   'profile.you': '（你）',
   'profile.family': '家族：',
-  'profile.sect': '帮会：',
+  'profile.sect': '宗门：',
   'result.vs': 'vs {name}',
 
   // ── In-battle network status (S1-9) ─────────────────────────────────────────
@@ -819,6 +819,20 @@ export const zh = {
   'world.recommendTroops': '建议兵力 {n}',
   'world.buildingHp': '耐久 {hp}/{max}',
   'world.center': '世界中心',
+  'world.city': '城池',
+  'world.cityLevel': 'Lv.{lv} 城池',
+  'world.cityHint': '野外城池，须加入宗门后合力围攻；城内土地不可单独占领',
+  'world.cityUnclaimed': '未被占领（NPC 驻守）',
+  'world.cityOwnedBy': '归属：{sect}',
+  'world.cityOwnedByUs': '归属：{sect}（本宗门）',
+  'world.cityDurability': '城池耐久 {cur} / {max}',
+  'world.cityRegen': '每小时自动回复 {n} 耐久 —— 单人打不下来，须多人同时围攻',
+  'world.cityProtected': '易主保护中，{d} 后可再次围攻',
+  'world.citySiegeLog': '本轮伤害 · {sect}：{n}',
+  'world.citySiegeLogUs': '本宗门',
+  'world.cityNeedSect': '须先加入宗门才能围攻城池',
+  'world.cityOursHint': '本宗门已占领此城',
+  'world.actSiegeCity': '围攻城池',
   'world.stronghold': '险地',
   'world.strongholdHint': '系统超强守军据点，须围攻攻克；得手占为领地并获大量资源',
   'world.marchList': '行军列表',
@@ -1459,6 +1473,18 @@ export const zh = {
   // key——找得到落点就强制迁城，找不到就连主城一起没了——所以正文不能写死"已迁往何处"。
   'slg.city.durabilityBreached.subject': '主城被攻破',
   'slg.city.durabilityBreached.body': '你的主城耐久已归零，城池被摧毁，全部领地失守。请前往大地图确认主城位置并重新布防。',
+  // 野外城池易主（ADR-074 P1）：邮件只发给落下最后一击的那名玩家，公告走宗门/全服频道。
+  // 参数由 worldsvc/combatSiege/cityDamage.ts 的 body() 传入（kind/node/level/x/y/sect）。
+  // 频道那几条有长度预算，但**单位是显示宽度不是字数**：drawChatLine 单行不换行，按可用宽度截断补 `…`
+  // （ui/widgets/truncateText.ts）。上限写在 client/test/i18n-system-text.test.ts 里，用 orgNameWidth
+  // 计（全角 2、其余 1）：走 postSect 的 captured/lost 按宗门频道那一列算 48，worldCenterCaptured 走
+  // 全服整宽行算 96。数字是真浏览器实测的（最窄 landscape 设计宽 1920：宗门列正文 700px、全服行 1386px）。
+  // 改文案前先跑那个测试——超了不会再半个词被切掉，但会变成省略号，说不出「哪座城被谁打下」。
+  'slg.city.captured.subject': '城池攻占成功',
+  'slg.city.captured.mail': '你落下最后一击，攻下了 ({x}, {y}) 的 Lv.{level} 城池，现归{sect}所有。城池耐久已重置为满，并进入易主保护期。',
+  'slg.city.captured': '本宗门攻占了 ({x}, {y}) 的 Lv.{level} 城池',
+  'slg.city.lost': '({x}, {y}) 的 Lv.{level} 城池被 {sect} 攻占',
+  'slg.city.worldCenterCaptured': '{sect} 攻占了世界中心 ({x}, {y})',
 
   // ── Limited-time events (B6) ──────────────────────────────────────────────────
   'event.title': '限时活动',
@@ -1561,6 +1587,7 @@ export const zh = {
   'city.bonusAcademyDmg': '出征单位伤害 +{pct}%',
   'city.bonusSatchel': '单队出征携带兵力上限 {n}',
   'city.troopCap': '兵力 {cur}/{cap}',
+  'city.trainQueueStatus': '队列 {n}/{max} · 在训 {training} · 可训 {left}',
   'city.trainEntry': '训练中 {n} · 剩 {time}',
   'city.trainMax': '最大 +{n}',
   'city.err.noResources': '资源不足',
@@ -1643,6 +1670,9 @@ export const zh = {
   // Team management "取消指令" (2026-07-15): force a busy team back to idle
   'world.team.marching': '行军中',
   'world.team.occupying': '占领中 剩{time}',
+  // Field-stationed away from home (2026-07-23 field-stationing; city team row 2026-08-25)
+  'world.team.stationedIdle': '野外停留',
+  'world.team.garrisoned': '野外驻扎',
 };
 
 export type TranslationKey = keyof typeof zh;

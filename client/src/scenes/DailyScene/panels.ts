@@ -7,7 +7,6 @@ import { makeText } from '../../render/pixiText';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
-import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { buildRewardIcon } from '../../render/rewardIcon';
 import { FS, snapFont } from '../../render/fontScale';
 import type { SaveData } from '../../game/meta/SaveData';
@@ -143,7 +142,7 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
     // alongside (not replacing) the primary reward drawn above.
     if (reward?.bonusCoins) {
       const rc = Math.round(ch * 0.18);
-      const ic = buildCoinIcon('coin', rc, C.gold);
+      const ic = buildIcon('coin', rc, C.gold);
       const rt = txt(`+${reward.bonusCoins}`, snapFont(Math.round(ch * 0.18)), 0x8a7020);
       rt.anchor.set(0, 0);
       const groupW = rc + Math.round(ch * 0.02) + rt.width;

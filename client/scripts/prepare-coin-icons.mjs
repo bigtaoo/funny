@@ -1,5 +1,5 @@
 /**
- * Shop recharge-tier coin icon asset pipeline (AI art → game atlas)
+ * Shop recharge-tier coin icon asset pipeline (AI art → game assets)
  *
  * Usage: node client/scripts/prepare-coin-icons.mjs
  *
@@ -11,10 +11,13 @@
  *      to its background — see chat 2026-07-05).
  *   3. Trims to the opaque content's bounding box and fits it into a 128×128
  *      cell (contain, small padding, transparent).
- *   4. Packs the 5 cells into one 3×2 grid atlas PNG (manual raw-buffer
- *      compositing — avoids sharp palette/format quirks with translucent
- *      edges) + writes a PixiJS Spritesheet JSON (same format as
- *      assets/equipment/equipment.json).
+ *   4. Writes each cell as its own PNG (no spritesheet packing) — these are
+ *      full-colour finished art, not a tintable ink line like the tabicons
+ *      set, so one file per kind covers every `RasterIconVariant` (see
+ *      icons/tabIconRaster.ts's TAB_ICON_RASTER, which points all three
+ *      variant slots at the same file for these 5 kinds — 2026-08-25, folding
+ *      the coin atlas into the shared raster-icon table so `buildIcon` alone
+ *      resolves them; no more separate buildCoinIcon wrapper/atlas).
  *
  * Every intermediate step round-trips through a plain RGBA Buffer instead of
  * chaining sharp pipelines — chaining .extract()/.resize()/.extend() off a
@@ -25,7 +28,7 @@
  * Dependency: sharp (already present) under client/node_modules
  */
 import sharp from '../node_modules/sharp/lib/index.js';
-import { mkdirSync, writeFileSync, existsSync } from 'fs';
+import { mkdirSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -36,8 +39,6 @@ const DEST = resolve(ROOT, 'client/src/assets/shop');
 
 const CELL = 128;
 const PAD = 10; // px of transparent margin inside each 128×128 cell
-const COLS = 3;
-const ROWS = 2;
 const CHANNELS = 4; // RGBA throughout
 
 // Source file → tier frame name (matches IconKind in render/icons.ts).
@@ -205,49 +206,18 @@ async function buildCell(task) {
 
 async function main() {
   mkdirSync(DEST, { recursive: true });
-  console.log(`\nCoin icon atlas build\n  Source: ${SRC}\n  Output: ${DEST}\n`);
+  console.log(`\nCoin icon build\n  Source: ${SRC}\n  Output: ${DEST}\n`);
 
-  const cells = [];
   for (const task of TASKS) {
-    console.log(`  processing ${task.src} -> ${task.frame} ...`);
-    cells.push({ frame: task.frame, buf: await buildCell(task) });
+    console.log(`  processing ${task.src} -> ${task.frame}.png ...`);
+    const buf = await buildCell(task);
+    const outPath = resolve(DEST, `${task.frame}.png`);
+    await sharp(buf, { raw: { width: CELL, height: CELL, channels: CHANNELS } })
+      .png({ compressionLevel: 9 })
+      .toFile(outPath);
+    console.log(`  ✓ ${task.frame}.png`);
   }
 
-  const atlasW = COLS * CELL;
-  const atlasH = ROWS * CELL;
-  const atlasBuf = Buffer.alloc(atlasW * atlasH * CHANNELS, 0);
-  cells.forEach((c, i) => {
-    const x = (i % COLS) * CELL;
-    const y = Math.floor(i / COLS) * CELL;
-    blit(atlasBuf, atlasW, c.buf, CELL, CELL, x, y);
-  });
-
-  const atlasPath = resolve(DEST, 'coins.png');
-  await sharp(atlasBuf, { raw: { width: atlasW, height: atlasH, channels: CHANNELS } })
-    .png({ compressionLevel: 9 })
-    .toFile(atlasPath);
-
-  const frames = {};
-  cells.forEach((c, i) => {
-    const x = (i % COLS) * CELL;
-    const y = Math.floor(i / COLS) * CELL;
-    frames[c.frame] = {
-      frame: { x, y, w: CELL, h: CELL },
-      rotated: false,
-      trimmed: false,
-      spriteSourceSize: { x: 0, y: 0, w: CELL, h: CELL },
-      sourceSize: { w: CELL, h: CELL },
-    };
-  });
-  const atlasJson = {
-    frames,
-    meta: { image: 'coins.png', format: 'RGBA8888', size: { w: atlasW, h: atlasH }, scale: '1' },
-  };
-  writeFileSync(resolve(DEST, 'coins.json'), JSON.stringify(atlasJson, null, 2));
-
-  const meta = await sharp(atlasPath).metadata();
-  console.log(`\n  ✓ coins.png  ${meta.width}×${meta.height}  (${cells.length} frames)`);
-  console.log(`  ✓ coins.json`);
   console.log('\nDone.\n');
 }
 

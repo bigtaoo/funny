@@ -55,7 +55,7 @@ export class EventsPanel {
 
   // ── Event handling ─────────────────────────────────────────────────────────
 
-  handleEvent(event: GameEvent, state: GameState): void {
+  handleEvent(event: GameEvent, _state: GameState): void {
     switch (event.type) {
       case 'unit_attack_hit': {
         this.core.unitView.playHitEffect(event.targetId);

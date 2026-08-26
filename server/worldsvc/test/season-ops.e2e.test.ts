@@ -11,7 +11,7 @@ import type { AddressInfo } from 'net';
 import {
   signToken, familyId, playerWorldId, SLG_MAP_W, SLG_MAP_H,
   SETTLE_REWARDS, CENTER_CAPITAL_IDX, CENTER_CAPITAL_MULT, BP_SETTLE_EXTRA,
-  familyProsperity, type FamilyRole,
+  familyProsperity, cityDocId, cityDurabilityMax, type FamilyRole,
 } from '@nw/shared';
 import { ENGINE_VERSION } from '@nw/engine';
 import { createWorldMongo, type WorldMongo, type NationDoc, type WorldDoc } from '../src/db';
@@ -154,7 +154,7 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     await Promise.all([
       c.worlds.deleteMany({}), c.nations.deleteMany({}), c.seasonResults.deleteMany({}),
       c.tiles.deleteMany({}), c.marches.deleteMany({}), c.playerWorld.deleteMany({}),
-      c.sects.deleteMany({}), c.sectMessages.deleteMany({}),
+      c.sects.deleteMany({}), c.sectMessages.deleteMany({}), c.cities.deleteMany({}),
     ]);
     mailCalls.length = 0;
     socialsvc = new FakeSocialsvc();
@@ -331,6 +331,64 @@ describe.skipIf(!mongo)('worldsvc season ops e2e', () => {
     const [aa] = await socialsvc.getFamiliesByIds([familyId(W, 'AA')]);
     expect(aa).toMatchObject({ prosperity: 0 });
     expect(aa!.sectId).toBeUndefined();
+  });
+
+  // ADR-074 P1: the wild-city collection is season-scoped strategic state, so a reset has to wipe it AND
+  // re-init it — exactly the pair `initNations` already gets asserted for one case up. Neither half was
+  // covered when P1 landed: `cities` was added to resetSeason's delete list and `initCities` wired into
+  // openSeason/resetWorld with nothing watching either.
+  it('reset: wipes the wild-city documents and re-inits them, ownership cleared', async () => {
+    await seed('active');
+    // A captured, damaged city from "last season" — the state a recycled worldId must not inherit.
+    const cityId = cityDocId(W, 'garrison-0');
+    await m.collections.cities.insertOne({
+      _id: cityId, worldId: W, nodeId: 'garrison-0', kind: 'garrison', x: 1, y: 1, level: 3, footprint: 5,
+      ownerSectId: 'sect-old', ownerSectName: 'Old', capturedAt: 5, protectedUntil: 9e15,
+      durability: 7, durabilityMax: 100, durabilityRegenAt: 0, regenPerHour: 1,
+      siegeLog: { 'sect-old': 999 }, rev: 3,
+    } as never);
+    // A city document for a DIFFERENT world must survive — the wipe is scoped by worldId.
+    await m.collections.cities.insertOne({
+      _id: cityDocId('other-world', 'garrison-0'), worldId: 'other-world', nodeId: 'garrison-0',
+      kind: 'garrison', x: 1, y: 1, level: 3, footprint: 5,
+      durability: 1, durabilityMax: 1, durabilityRegenAt: 0, regenPerHour: 1, rev: 0,
+    } as never);
+    // An ORPHAN — a nodeId the world's node list does not contain (what a map-template change leaves
+    // behind). This is the only state the WIPE uniquely fixes: `initCities` re-stamps and clears the docs
+    // for nodes that exist, so ownership/siegeLog on `garrison-0` above would be cleaned by the re-init
+    // even with the wipe removed. Measured, not assumed — dropping 'cities' from resetSeason's delete list
+    // left the ownership assertions green and was only caught by the durability one.
+    await m.collections.cities.insertOne({
+      _id: cityDocId(W, 'garrison-9999'), worldId: W, nodeId: 'garrison-9999',
+      kind: 'garrison', x: 2, y: 2, level: 3, footprint: 5,
+      durability: 1, durabilityMax: 1, durabilityRegenAt: 0, regenPerHour: 1, rev: 0,
+    } as never);
+
+    await svc.settleSeason(W);
+    await svc.resetSeason(W);
+
+    // Re-inited from the world's node list, not left empty and not left stale.
+    const cities = await m.collections.cities.find({ worldId: W }).toArray();
+    expect(cities.length).toBeGreaterThan(60); // world center + 9 capitals + 54 graded
+    for (const c of cities) {
+      expect(c.ownerSectId, c._id).toBeUndefined();
+      expect(c.protectedUntil, c._id).toBeUndefined();
+      expect(c.siegeLog, c._id).toBeUndefined();
+      expect(c.durability, c._id).toBe(c.durabilityMax); // a fresh season starts every wall intact
+      expect(c.durabilityMax, c._id).toBe(cityDurabilityMax(c.level, c.kind));
+    }
+    expect(await m.collections.cities.countDocuments({ worldId: 'other-world' })).toBe(1);
+    expect(await m.collections.cities.countDocuments({ _id: cityDocId(W, 'garrison-9999') }), 'orphan city doc survived the reset').toBe(0);
+  });
+
+  it('open: creates the wild-city documents for a brand-new world', async () => {
+    // openSeason's own call, distinct from resetSeason's above — a world opened for the first time must get
+    // its cities too, or every siege against it fails validation with "not yet initialized in this world".
+    await seed('active');
+    await m.collections.worlds.deleteMany({});
+    await m.collections.cities.deleteMany({});
+    await svc.openSeason(W, SEASON, 5, 10000);
+    expect(await m.collections.cities.countDocuments({ worldId: W })).toBeGreaterThan(60);
   });
 
   // Regression for the 2026-07-29 audit fix: resetSeason wiped tiles/marches/occupations/stationed in

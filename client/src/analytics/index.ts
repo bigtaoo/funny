@@ -196,7 +196,7 @@ function getPlatformName(): 'web' | 'wechat' | 'crazygames' {
   return 'web';
 }
 
-function getPlatformOs(platform: IPlatform): string {
+function getPlatformOs(_platform: IPlatform): string {
   // WeChat: wx.getSystemInfoSync().system; Web: navigator.platform (deprecated but still widespread).
   const wx = (globalThis as unknown as { wx?: { getSystemInfoSync?: () => { system: string } } }).wx;
   if (wx?.getSystemInfoSync) {

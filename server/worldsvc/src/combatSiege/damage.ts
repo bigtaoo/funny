@@ -10,6 +10,7 @@ import type { SiegeDamageDoc } from '../db';
 import { WorldCore } from '../core';
 import { startReturnMarch } from '../combatShared';
 import type { SiegeHelpersService } from './helpers';
+import { settleCityDamage } from './cityDamage';
 
 export class SiegeDamageService {
   constructor(
@@ -51,6 +52,11 @@ export class SiegeDamageService {
    */
   private async settleSiegeDamage(d: SiegeDamageDoc, t: number): Promise<void> {
     const { cols } = this.core.deps;
+    // ADR-074 P1: a wild-city hit has an entirely different target (a CityDoc, sect-owned, with its own
+    // lazy regen curve) and a different capture outcome (sect ownership + announcements, no relocation and
+    // no tile hand-over), so it branches out here rather than threading a second shape through the whole
+    // tile-scale body below. See combatSiege/cityDamage.ts.
+    if (d.cityId) return settleCityDamage(this.core, d as SiegeDamageDoc & { cityId: string }, t);
     const defenderId = d.defenderId;
     const tile = await cols.tiles.findOne({ _id: d.tile });
     const attacker = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, d.attackerId) });
@@ -186,7 +192,6 @@ export class SiegeDamageService {
           { $set: { resources: this.core.settleExpr(defPwForYield.buildings, t), yieldRate: defYield, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
         ]);
       }
-      void this.core.applyNationChange(d.worldId, tile.x, tile.y, d.attackerId, attacker?.familyId);
     }
 
     const after = await cols.tiles.findOne({ _id: d.tile });

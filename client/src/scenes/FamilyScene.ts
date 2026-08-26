@@ -24,7 +24,7 @@ import { DataPanel } from './FamilyScene/data';
 import { ActionsPanel } from './FamilyScene/actions';
 import { InputPanel } from './FamilyScene/input';
 import { RenderPanel } from './FamilyScene/render';
-import { preloadTabIconTextures } from '../render/icons';
+import { preloadIconArt } from '../render/icons';
 
 export type { FamilySceneCallbacks, FamilySceneView } from './FamilyScene/core';
 
@@ -58,7 +58,7 @@ export class FamilyScene implements Scene {
     // while its texture is still decoding, and this page is reachable without passing through
     // LobbyScene (which warms them for everything entered from the lobby). It used to self-heal by
     // accident, off the per-frame scroll/caret/busy renders that ./FamilyScene/repaint.ts removed.
-    void preloadTabIconTextures().then(() => this.render());
+    void preloadIconArt().then(() => this.render());
 
     void this.data.loadData();
   }

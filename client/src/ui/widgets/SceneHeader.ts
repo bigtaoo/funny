@@ -33,8 +33,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
 import { buildIcon, buildRasterTabIcon, tabIconVariant, BACK_ARROW_ART, BACK_ARROW_ASPECT, type IconKind } from '../../render/icons';
-import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
-import { FS, snapFont } from '../../render/fontScale';
+import { FS } from '../../render/fontScale';
 import { drawGuilloche } from './SceneHeader/guilloche';
 
 /**

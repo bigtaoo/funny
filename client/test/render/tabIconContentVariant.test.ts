@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { TAB_ICON_RASTER, type RasterIconVariant } from '../../src/render/icons';
+import { TAB_ICON_RASTER, INK_ICON_ART, INK_ICON_ALIASES, type RasterIconVariant } from '../../src/render/icons';
 
 const VARIANTS: RasterIconVariant[] = ['active', 'inactive', 'content'];
 const ASSET_DIR = path.resolve(__dirname, '../../src/assets/tabicons');
@@ -29,8 +29,27 @@ const SOURCE_DIR = path.resolve(__dirname, '../../../art/ui/tabicons');
  * `backArrowArt.test.ts` for the contracts that DO apply to it.
  *   `back` — the back-button arrow (19.08.2026): inks `accent` + `active` only.
  */
-const NON_TAB_BASES = ['back'];
+const NON_TAB_BASES = [
+  'back',
+  // The batch-7 ink icons (2026-08-25): packed by the same script into the same directory, but with
+  // ONE white master each (`inks: ['active']`) because they are tinted live rather than picking a
+  // pre-baked ink — so every three-variant contract below has to skip them. Their own contracts,
+  // including that they must NOT have the other two inks, live in `inkIconArt.test.ts`. Derived from
+  // the table rather than listed, minus the 5 aliases, which have no packed art of their own at all
+  // (and one of which, `home`, shares its name with a genuine tab-icon base — listing it here by
+  // hand would quietly exempt `homeTabIcon` from the tab contracts).
+  ...Object.keys(INK_ICON_ART).filter((k) => !(INK_ICON_ALIASES as readonly string[]).includes(k)),
+];
 const INK_SUFFIX_RE = /_(active|inactive|content|accent)\.png$/;
+/**
+ * `TAB_ICON_RASTER` kinds that are NOT packed by pack_tab_icons.cjs into ASSET_DIR at all — the 5
+ * coin balance/reward tiers (folded in 2026-08-25 from the deleted coinIconAtlas.ts) source from
+ * `assets/shop/*.png` instead, and are finished full-colour AI art rather than a tintable ink line,
+ * so all three `RasterIconVariant` slots deliberately point at the SAME file (see
+ * icons/tabIconRaster.ts's import block). Both contracts below are specific to the tabicons
+ * pipeline and don't apply to these — see rewardIcon.test.ts for their own art-completeness check.
+ */
+const NON_TABICON_RASTER_KINDS = ['coin', 'coins', 'coinStack', 'coinSack', 'coinChest'];
 
 describe('tab-icon PNGs on disk (pack_tab_icons.cjs output)', () => {
   const files = fs.readdirSync(ASSET_DIR)
@@ -110,12 +129,13 @@ describe('TAB_ICON_RASTER — the code side of the same contract', () => {
   // webpack build, so only this direction needs a test. Kind name is the asset base plus the
   // `Icon`/`TabIcon` suffix — the pilot trio uses the short form, everything since uses the long one.
   it('has exactly one TAB_ICON_RASTER kind per packed icon (no orphan art)', () => {
+    const tabiconKinds = kinds.filter((k) => !NON_TABICON_RASTER_KINDS.includes(k));
     const packed = [...new Set(fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'))
       .map((f) => f.replace(INK_SUFFIX_RE, ''))
       .filter((n) => !NON_TAB_BASES.includes(n)))].sort();
-    expect(kinds.length).toBe(packed.length);
+    expect(tabiconKinds.length).toBe(packed.length);
     for (const base of packed) {
-      expect(kinds.filter((k) => k === `${base}Icon` || k === `${base}TabIcon`), base).toHaveLength(1);
+      expect(tabiconKinds.filter((k) => k === `${base}Icon` || k === `${base}TabIcon`), base).toHaveLength(1);
     }
   });
 
@@ -126,6 +146,7 @@ describe('TAB_ICON_RASTER — the code side of the same contract', () => {
     const stubbed = new Set(kinds.flatMap((k) => VARIANTS.map((v) => TAB_ICON_RASTER[k][v]))).size === 1;
     if (stubbed) return;
     for (const kind of kinds) {
+      if (NON_TABICON_RASTER_KINDS.includes(kind)) continue; // deliberately one file for all 3 slots
       const urls = VARIANTS.map((v) => TAB_ICON_RASTER[kind][v]);
       expect(new Set(urls).size, `${kind}: ${urls.join(' / ')}`).toBe(VARIANTS.length);
     }

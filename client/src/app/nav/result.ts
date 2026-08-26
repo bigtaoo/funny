@@ -1,7 +1,7 @@
 // Result screen, replay playback, state-replay share/deep-link, and the online netplay match loop.
 // Extracted from createAppCore.
 import * as analytics from '../../analytics';
-import { createGameEngine, RecordingInputSource, ENGINE_VERSION, achievementStatDelta } from '../../game';
+import { createGameEngine, RecordingInputSource, achievementStatDelta } from '../../game';
 import type { OwnerId, PlayerStats, Replay, MatchStartInfo } from '../../game';
 import { matchStateHash } from '../../net/judgeRunner';
 import { MatchMode } from '../../net/proto/transport';

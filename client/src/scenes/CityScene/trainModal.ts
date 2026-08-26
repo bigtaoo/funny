@@ -113,6 +113,25 @@ export function renderTrainModal(core: CitySceneCore): void {
   const queueFull = trainQueue.length >= queueMax;
   const capLeft = Math.max(0, tc - ts - queuedQty);
   const costPerTroop = troopTrainCost(1);
+
+  // Slots-used / in-training / trainable, on one line under the pool line (2026-08-25). Without it the panel
+  // showed only `troops/cap` and the preset buttons, so a greyed-out "Max +0" was unreadable: the headroom the
+  // pool line implies is usually already spoken for by the queue (`capLeft` subtracts queuedQty), and nothing
+  // told the player whether they were blocked by slots or by the cap — the two have different toasts and
+  // different fixes (wait vs. upgrade drillYard).
+  const queueLbl = st(
+    t('city.trainQueueStatus')
+      .replace('{n}', String(trainQueue.length))
+      .replace('{max}', String(queueMax))
+      .replace('{training}', String(queuedQty))
+      .replace('{left}', String(capLeft)),
+    FS.tiny,
+    queueFull || capLeft <= 0 ? C.red : C.mid
+  );
+  queueLbl.x = 10;
+  queueLbl.y = iy;
+  panelRoot.addChild(queueLbl);
+  iy += 20;
   for (const e of trainQueue) {
     const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
     const ql = st(

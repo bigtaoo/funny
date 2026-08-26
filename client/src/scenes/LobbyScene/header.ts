@@ -7,7 +7,6 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { palette } from '../../render/theme';
 import { buildIcon } from '../../render/icons';
-import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { BoilingSprite } from '../../render/boil';
 import { buildAvatar } from '../../render/avatar';
 import logoUrl from '../../assets/logo.png';
@@ -174,7 +173,7 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
           coinBg.x = core.coinsChipRect.x; coinBg.y = core.coinsChipRect.y;
           core.container.addChild(coinBg);
         }
-        const coinIcon = buildCoinIcon('coin', iconSz, C.gold);
+        const coinIcon = buildIcon('coin', iconSz, C.gold);
         coinIcon.x = coinChipX + chipPad; coinIcon.y = coinIconY;
         core.container.addChild(coinIcon);
         coinLbl.anchor.set(0, 0.5);
@@ -216,9 +215,9 @@ export function drawHeaderChrome(core: LobbySceneCore): void {
           coinBg.x = core.coinsChipRect.x; coinBg.y = core.coinsChipRect.y;
           core.container.addChild(coinBg);
         }
-        // Coin icon at the shared left edge — same AI atlas glyph as the shop header
-        // (falls back to the procedural buildIcon draw until coinIconAtlas loads).
-        const coinIcon = buildCoinIcon('coin', iconSz, C.gold);
+        // Coin icon at the shared left edge — same AI raster glyph as the shop header, resolved
+        // straight through `buildIcon` (TAB_ICON_RASTER carries this kind — no separate wrapper).
+        const coinIcon = buildIcon('coin', iconSz, C.gold);
         coinIcon.x = contentLeft; coinIcon.y = coinIconY;
         core.container.addChild(coinIcon);
         coinLbl.anchor.set(0, 0.5);
