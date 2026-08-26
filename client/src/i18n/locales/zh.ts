@@ -1475,11 +1475,13 @@ export const zh = {
   'slg.city.durabilityBreached.body': '你的主城耐久已归零，城池被摧毁，全部领地失守。请前往大地图确认主城位置并重新布防。',
   // 野外城池易主（ADR-074 P1）：邮件只发给落下最后一击的那名玩家，公告走宗门/全服频道。
   // 参数由 worldsvc/combatSiege/cityDamage.ts 的 body() 传入（kind/node/level/x/y/sect）。
-  // 频道那三条要短——chatRow 的 drawChatLine 到 60 字就截断。
+  // 频道那几条要短：drawChatLine 单行不换行，`maxBodyChars=60` 只是字数上限，真正卡人的是列宽。
+  // 实测（landscape 设计宽 1500）宗门频道那一列到 ~34 字（中文）就被裁掉，远早于 60；世界频道是整宽行，
+  // 所以只有走 postSect 的 captured/lost 需要压到列宽内，worldCenterCaptured 走全服频道可以长一点。
   'slg.city.captured.subject': '城池攻占成功',
   'slg.city.captured.mail': '你落下最后一击，攻下了 ({x}, {y}) 的 Lv.{level} 城池，现归{sect}所有。城池耐久已重置为满，并进入易主保护期。',
-  'slg.city.captured': '本宗门攻占了 ({x}, {y}) 的 Lv.{level} 城池',
-  'slg.city.lost': '本宗门失去了 ({x}, {y}) 的 Lv.{level} 城池，现归{sect}所有',
+  'slg.city.captured': '攻占 ({x}, {y}) 的 Lv.{level} 城池',
+  'slg.city.lost': '{sect} 攻占了 ({x}, {y}) Lv.{level}',
   'slg.city.worldCenterCaptured': '{sect} 攻占了世界中心 ({x}, {y})',
 
   // ── Limited-time events (B6) ──────────────────────────────────────────────────

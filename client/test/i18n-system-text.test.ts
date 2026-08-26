@@ -82,23 +82,37 @@ describe('ADR-074 capture copy binds every placeholder it declares', () => {
 
   const LOCALES: Array<[string, Record<string, string>]> = [['zh', zh], ['en', en], ['de', de]];
 
-  // drawChatLine truncates a row's body at 60 chars, and the sect name inside these three is
-  // player-chosen — so the headroom has to be checked against the widest name the server will
-  // accept (ORG_NAME_WIDTH_MAX = 12 display units, i.e. up to 12 ASCII chars), not against a
-  // convenient short one. At worst today this lands at 57/60; a future copy edit that adds four
-  // words would push the verb off the end of the German line, where nobody would notice it.
-  const CHANNEL_KEYS = ['slg.city.captured', 'slg.city.lost', 'slg.city.worldCenterCaptured'] as const;
-  // Widest legal name, and a level/coords pair at the top of their ranges, so the margin measured
-  // here is the real worst case rather than whatever a sample name happened to be.
+  // drawChatLine draws one unwrapped line and cuts the body at `maxBodyChars` (default 60). That
+  // cap is NOT the real constraint: the row is clipped by its column first. Measured against the
+  // live scene at landscape design width 1500, the sect channel's column (SectScene/lists.ts, a
+  // split view) clips at roughly 34 CJK / 39 latin chars, while the world channel
+  // (FriendsScene/worldChat.ts) is a full-width row and has the whole 60 to play with. The German
+  // copy originally written here rendered at 55 chars and was visibly cut mid-word in the sect
+  // column — caught by screenshot, not by the old 60-char assertion, which is why the budget below
+  // is per-channel.
+  //
+  // The sect name is player-chosen, so the budget has to be checked at the widest name the server
+  // will accept (ORG_NAME_WIDTH_MAX = 12 display units, i.e. 12 ASCII chars), not a short sample.
+  const SECT_CHANNEL = ['slg.city.captured', 'slg.city.lost'] as const;      // postSect → narrow column
+  const WORLD_CHANNEL = ['slg.city.worldCenterCaptured'] as const;           // nationMessages → full width
   const WIDEST = {
     kind: 'garrison', node: 'n7', level: 9, x: 128, y: 128,
     sect: 'W'.repeat(ORG_NAME_WIDTH_MAX),
   };
+  const render = (s: string) => s.replace(/\{(\w+)\}/g, (w, n: string) => String((WIDEST as Record<string, unknown>)[n] ?? w));
 
-  it.each(CHANNEL_KEYS)('%s fits a chat row uncut at the widest legal sect name', (key) => {
+  it.each(SECT_CHANNEL)('%s fits the sect channel column at the widest legal sect name', (key) => {
     for (const [locale, dict] of LOCALES) {
-      const rendered = dict[key]!.replace(/\{(\w+)\}/g, (w, n: string) => String((WIDEST as Record<string, unknown>)[n] ?? w));
-      expect(rendered.length, `${key} in ${locale}: "${rendered}"`).toBeLessThanOrEqual(60);
+      const budget = locale === 'zh' ? 34 : 41;
+      const out = render(dict[key]!);
+      expect(out.length, `${key} in ${locale} (budget ${budget}): "${out}"`).toBeLessThanOrEqual(budget);
+    }
+  });
+
+  it.each(WORLD_CHANNEL)('%s fits a full-width chat row at the widest legal sect name', (key) => {
+    for (const [locale, dict] of LOCALES) {
+      const out = render(dict[key]!);
+      expect(out.length, `${key} in ${locale}: "${out}"`).toBeLessThanOrEqual(60);
     }
   });
 
