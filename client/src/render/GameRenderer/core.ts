@@ -418,11 +418,28 @@ export class GameRendererCore {
     }
   }
 
+  /**
+   * Display name for one owner as the render layer knows it: the netplay profile name, else the replay
+   * player's owner-indexed name label. Returns an empty object (not `{name: undefined}`) when neither is
+   * available — PvE has no profiles, and the share site fills the sharer's own name in instead.
+   */
+  private rosterName(owner: OwnerId, profileName: string | undefined): { name?: string } {
+    const name = profileName || this.replayNames?.[owner] || '';
+    return name ? { name } : {};
+  }
+
   // ── Scene graph ────────────────────────────────────────────────────────────
 
   private buildSceneGraph(): void {
-    // New match / new replay segment start: clear the single state recorder slot (REPLAY_SHARE_DESIGN §2.1).
+    // New match / new replay segment start: clear the single state recorder slot (REPLAY_SHARE_DESIGN §2.1),
+    // then hand it the same roster UnitView is about to be built with — a shared state stream has to carry
+    // the skin ids itself, since the dumb player that replays it has no account and no engine (§2.2).
     stateRecorder.reset();
+    stateRecorder.setRoster({
+      localOwner: this.localOwner,
+      local:    { skins: this.equippedSkins, ...this.rosterName(this.localOwner, this.selfProfile?.name) },
+      opponent: { skins: this.opponentSkins, ...this.rosterName(this.localOwner === 0 ? 1 : 0, this.oppProfile?.name) },
+    });
     this.boardView    = new BoardView(this.layout);
     this.boardView.showBattleLabels(this.battleLabelCtx);
     this.boardView.markNoBuildCells(this.engine.state.board.getNoBuildCells());

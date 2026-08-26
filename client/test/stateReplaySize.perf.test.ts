@@ -142,6 +142,13 @@ function genReplay(totalTicks: number): StateReplay {
         { owner: 0, hp: quantizeHp(base0), maxHp: 100 },
         { owner: 1, hp: quantizeHp(base1), maxHp: 100 },
       ],
+      // Ink (schema v2) is the densest-changing scalar in the stream: ~2/s per side, i.e. a step every
+      // ~15 ticks, each forcing a delta frame. Modelled here (offset per side, so the two don't coincide)
+      // so the size guard covers it instead of measuring a stream that never carries HUD data.
+      res: [
+        { owner: 0, ink: Math.floor(tick / 15) % 11, upgrade: Math.min(3, Math.floor(tick / 4000)) },
+        { owner: 1, ink: Math.floor((tick + 7) / 15) % 11, upgrade: Math.min(3, Math.floor(tick / 5000)) },
+      ],
     });
   }
 
