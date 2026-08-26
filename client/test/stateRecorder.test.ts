@@ -22,17 +22,24 @@ interface FakeBuilding {
   col: number; row: number; hp_fp: Fp; maxHp_fp: Fp;
 }
 
+/** Ink / base upgrade level per side (schema v2 `StateFrame.res`), overridable per fake state. */
+interface FakeRes {
+  inkBottom?: number; inkTop?: number; upBottom?: number; upTop?: number;
+}
+
 function mkState(
   tick: number,
   units: FakeUnit[] = [],
   buildings: FakeBuilding[] = [],
   baseBottom = 100,
   baseTop = 100,
+  res: FakeRes = {},
 ): GameState {
+  const { inkBottom = 0, inkTop = 0, upBottom = 0, upTop = 0 } = res;
   return {
     elapsedTicks: tick,
-    bottomPlayer: { baseHp_fp: toFp(baseBottom) },
-    topPlayer: { baseHp_fp: toFp(baseTop) },
+    bottomPlayer: { baseHp_fp: toFp(baseBottom), ink: inkBottom, upgradeLevel: upBottom },
+    topPlayer: { baseHp_fp: toFp(baseTop), ink: inkTop, upgradeLevel: upTop },
     board: {
       units: new Map(units.map((u) => [u.id, u])),
       buildings: new Map(buildings.map((b) => [b.id, b])),
@@ -110,6 +117,46 @@ describe('StateRecorder', () => {
     expect(enc.header.players[0]).toEqual({ name: 'Tao', side: 0 });
     // override.winner takes precedence over setWinner
     expect(stateRecorder.build({ winner: 0 })!.header.winner).toBe(0);
+  });
+
+  it('records per-owner ink + base upgrade level (schema v2 HUD data)', () => {
+    stateRecorder.capture(mkState(0, [], [], 100, 100, { inkBottom: 4, inkTop: 6, upBottom: 1 }));
+    stateRecorder.capture(mkState(1, [], [], 100, 100, { inkBottom: 5, inkTop: 6, upBottom: 1 }));
+    const frames = decodeStateReplay(stateRecorder.build()!).frames;
+    expect(frames[0]!.res).toEqual([
+      { owner: 0, ink: 4, upgrade: 1 },
+      { owner: 1, ink: 6, upgrade: 0 },
+    ]);
+    expect(frames[1]!.res![0]!.ink).toBe(5);
+  });
+
+  it('roster puts each side\'s skins + names on the right owner (joiner plays owner 1)', () => {
+    stateRecorder.setRoster({
+      localOwner: 1,
+      local: { skins: ['skin_ninja'] },
+      opponent: { name: 'Anna', skins: ['skin_pirate'] },
+    });
+    stateRecorder.capture(mkState(0));
+    // The share site knows its own name but not its side — the roster decides where it lands.
+    const header = stateRecorder.build({ localName: 'Tao' })!.header;
+    expect(header.players).toEqual([
+      { name: 'Anna', side: 0, skins: ['skin_pirate'] },
+      { name: 'Tao', side: 1, skins: ['skin_ninja'] },
+    ]);
+  });
+
+  it('omits skins entirely when a side has none equipped', () => {
+    stateRecorder.setRoster({ localOwner: 0, local: {}, opponent: { skins: [] } });
+    stateRecorder.capture(mkState(0));
+    const header = stateRecorder.build({ localName: 'Tao' })!.header;
+    expect(header.players).toEqual([{ name: 'Tao', side: 0 }, { name: '', side: 1 }]);
+  });
+
+  it('reset clears the roster with the frames (next match must not inherit skins)', () => {
+    stateRecorder.setRoster({ localOwner: 0, local: { name: 'Tao', skins: ['skin_ninja'] }, opponent: {} });
+    stateRecorder.reset();
+    stateRecorder.capture(mkState(0));
+    expect(stateRecorder.build()!.header.players).toEqual([{ name: '', side: 0 }, { name: '', side: 1 }]);
   });
 
   it('build returns null when nothing captured', () => {

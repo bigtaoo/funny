@@ -167,6 +167,31 @@ describe('StateReplay keyframe-thinning encode/decode', () => {
     expect(enc.frames[0]!.u).toBeDefined();
   });
 
+  it('player resources (ink/upgrade) are step-held: recorded on change, carried forward between', () => {
+    const base = { bases: [{ owner: 0 as const, hp: 100, maxHp: 100 }, { owner: 1 as const, hp: 100, maxHp: 100 }] };
+    const frames: StateFrame[] = [
+      { tick: 0, units: [], buildings: [], ...base, res: [{ owner: 0, ink: 3, upgrade: 0 }, { owner: 1, ink: 3, upgrade: 0 }] },
+      { tick: 1, units: [], buildings: [], ...base, res: [{ owner: 0, ink: 3, upgrade: 0 }, { owner: 1, ink: 3, upgrade: 0 }] },
+      { tick: 2, units: [], buildings: [], ...base, res: [{ owner: 0, ink: 5, upgrade: 1 }, { owner: 1, ink: 3, upgrade: 0 }] },
+    ];
+    const enc = encodeStateReplay(mkReplay(frames));
+    // Unchanged tick 1 carries no rs; the change at tick 2 does.
+    expect(enc.frames.find((df) => df.tick === 1)?.rs).toBeUndefined();
+    expect(enc.frames.find((df) => df.tick === 2)?.rs?.[0]).toEqual({ owner: 0, ink: 5, upgrade: 1 });
+    const dec = decodeStateReplay(enc);
+    expect(dec.frames[0]!.res).toEqual(frames[0]!.res);
+    expect(dec.frames[dec.frames.length - 1]!.res).toEqual(frames[2]!.res);
+  });
+
+  it('a v1 stream (no resources recorded) decodes without them instead of faking zeros', () => {
+    const frames: StateFrame[] = [
+      { tick: 0, units: [], buildings: [], bases: [{ owner: 0, hp: 100, maxHp: 100 }, { owner: 1, hp: 100, maxHp: 100 }] },
+      { tick: 1, units: [], buildings: [], bases: [{ owner: 0, hp: 90, maxHp: 100 }, { owner: 1, hp: 100, maxHp: 100 }] },
+    ];
+    const dec = decodeStateReplay(encodeStateReplay(mkReplay(frames)));
+    for (const f of dec.frames) expect(f.res).toBeUndefined();
+  });
+
   it('quantizePos rounds to 2 decimals', () => {
     expect(quantizePos(3.14159)).toBe(3.14);
     expect(quantizePos(7.005)).toBeCloseTo(7.01, 5);

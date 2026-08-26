@@ -141,6 +141,8 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 - `client/playwright.config.ts`：`webServer` 拉起 `npm run start:e2e`（`webpack serve --env TARGET=web-e2e`，独立端口 9096，避免和 `npm start` 的 9090 撞车）。
 - 测试文件：`client/test/browser/*.spec.ts`。
+  - `smoke.spec.ts`：上面那两条 happy-path，**需要全套后端**。
+  - `shareReplay.spec.ts`（2026-08-26 加）：分享录像落地页（`?r=<code>`）。**不需要后端** —— 只把 `GET {api}/r/<code>` 用 `page.route` 拦下来喂一份手写状态流（`unpackReplayBlob` 接受未压缩的普通对象，fixture 可以直接内联 JSON），其余照真渲染器跑。所以它是这层里唯一能本地随手跑、也是唯一能验「皮肤/动作/HUD 真的画出来了」的：皮肤靠**差分**断言（webpack 用内容哈希命名资源，URL 里看不出是哪份 rig，但「带皮肤的流比同一条不带皮肤的流多请求 2 个 `.tao`」看得出，且不写死默认 rig 的数量），动作靠**同一 canvas 相隔 0.4s 两帧像素不同**，HUD 靠遍历真 `app.stage` 找可见的纯数字文本（= 两侧墨水读数）。通过时也把那一帧作为 Playwright attachment 附在报告里，供人眼看一遍。
 - `package.json` 新增 `test:browser`，**不进默认 `npm test`**（避免拖慢本地/CI 快路径；这条本身需要真浏览器 + 真后端）。
 - 范围红线：不做截图 diff / 视觉回归（UI 未定型部分——SLG——暂不纳入，等它定型后再补对应路径）。只保「能不能起来 + 两号能不能真联上 + 不报错」。
 

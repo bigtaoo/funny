@@ -14,8 +14,16 @@
  * in the dumb player and in round-trip unit tests.
  */
 
-/** Render schema version (not engineVersion). New fields are added incrementally without breaking old replays; on mismatch, degrade gracefully rather than hard-reject. */
-export const STATE_SCHEMA_VERSION = 1;
+/**
+ * Render schema version (not engineVersion). New fields are added incrementally without breaking old
+ * replays; on mismatch, degrade gracefully rather than hard-reject.
+ *
+ * v2 (2026-08-26): `header.players[].skins` (equipped skin ids per side, so the dumb player renders the
+ * same skinned units the participants saw) + `StateFrame.res` (per-owner ink / base upgrade level, so the
+ * dumb player can draw a HUD). Both are optional on read — a v1 stream simply renders unskinned units and
+ * a HUD without ink, exactly as before.
+ */
+export const STATE_SCHEMA_VERSION = 2;
 
 /** Coordinate quantization precision: two decimal places (sufficient for display, saves size). */
 export const STATE_POS_QUANT = 100;
@@ -54,12 +62,26 @@ export interface StateBase {
   maxHp: number;
 }
 
+/**
+ * Per-owner HUD resources (schema v2). The dumb player has no engine, so ink and the base upgrade level
+ * — the two HUD readouts that are *not* derivable from the entity snapshot — have to be recorded.
+ */
+export interface StatePlayerRes {
+  owner: 0 | 1;
+  /** Ink (integer, as the HUD shows it). */
+  ink: number;
+  /** Base upgrade level (drives the HUD label + the board's base rings). */
+  upgrade: number;
+}
+
 /** Complete entity snapshot for a single tick. */
 export interface StateFrame {
   tick: number;
   units: StateUnit[];
   buildings: StateBuilding[];
   bases: StateBase[];
+  /** Per-owner ink / upgrade level. Absent in v1 streams → the HUD hides its ink readout. */
+  res?: StatePlayerRes[];
 }
 
 /** Replay header: metadata needed to render the background, HUD, and progress bar. */
@@ -75,8 +97,12 @@ export interface StateReplayHeader {
   winner: number;
   /** Board geometry, used to render the background grid. */
   board: { cols: number; rows: number; lanes: number[] };
-  /** Display name + side for each player, used to render HUD labels. */
-  players: { name: string; side: 0 | 1 }[];
+  /**
+   * Display name + side for each player, used to render HUD labels. `skins` (schema v2) carries that
+   * side's equipped skin ids so the dumb player renders the same skinned units the participants saw;
+   * omitted when the side had nothing equipped (or when it isn't known, e.g. an AI/bot opponent).
+   */
+  players: { name: string; side: 0 | 1; skins?: string[] }[];
 }
 
 /** Full-frame replay (after decoding / consumed frame-by-frame by the dumb player). */
@@ -102,6 +128,8 @@ export interface StateDeltaFrame {
   rb?: number[];
   /** When any base HP changes, record the full base array (always 1–2 bases, so very small). */
   bs?: StateBase[];
+  /** When any player's ink / upgrade level changes, record the full per-owner array (2 entries, so very small). */
+  rs?: StatePlayerRes[];
 }
 
 /** Delta-encoded replay (wire format used for upload / DB persistence). */
@@ -138,6 +166,9 @@ function buildingSig(b: StateBuilding): string {
 }
 function basesSig(bs: StateBase[]): string {
   return bs.map((b) => `${b.owner}|${b.hp}|${b.maxHp}`).join(';');
+}
+function resSig(rs: StatePlayerRes[] | undefined): string {
+  return (rs ?? []).map((r) => `${r.owner}|${r.ink}|${r.upgrade}`).join(';');
 }
 
 /**
@@ -280,6 +311,18 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
       prevBases = sig;
     }
   }
+  // Player resources (ink / upgrade level, schema v2): same step-hold treatment as bases. Ink ticks up
+  // ~2/s per side, so this adds a handful of tiny frames per second — negligible next to unit keyframes.
+  const resChangeTicks = new Set<number>();
+  let prevRes = '';
+  for (const f of src) {
+    if (!f.res) continue;
+    const sig = resSig(f.res);
+    if (sig !== prevRes) {
+      resChangeTicks.add(f.tick);
+      prevRes = sig;
+    }
+  }
 
   // ── 3. Collect the set of ticks that need frames emitted (keyframes ∪ removals ∪ base changes ∪ first/last).
   const emit = new Set<number>([src[0]!.tick, src[src.length - 1]!.tick]);
@@ -292,6 +335,7 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
     if (p.removeAt !== null) emit.add(p.removeAt);
   }
   for (const t of basesChangeTicks) emit.add(t);
+  for (const t of resChangeTicks) emit.add(t);
   const emitTicks = [...emit].sort((a, b) => a - b);
 
   // ── 4. Assemble delta frames by tick (discard empty frames; always emit first and last).
@@ -316,6 +360,7 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
       }
       if (b.length) df.b = b;
       if (basesChangeTicks.has(tick)) df.bs = f.bases;
+      if (resChangeTicks.has(tick) && f.res) df.rs = f.res;
     }
 
     const ru: number[] = [];
@@ -325,7 +370,7 @@ export function encodeStateReplay(full: StateReplay): EncodedStateReplay {
     for (const [id, p] of buildingPlans) if (p.removeAt === tick) rb.push(id);
     if (rb.length) df.rb = rb;
 
-    const empty = !df.u && !df.ru && !df.b && !df.rb && !df.bs;
+    const empty = !df.u && !df.ru && !df.b && !df.rb && !df.bs && !df.rs;
     if (!empty || bookends.has(tick)) frames.push(df);
   }
 
@@ -360,6 +405,7 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
   const buildingKf = new Map<number, { tick: number; b: StateBuilding }[]>();
   const buildingRemoveAt = new Map<number, number>();
   const baseTimeline: { tick: number; bases: StateBase[] }[] = [];
+  const resTimeline: { tick: number; res: StatePlayerRes[] }[] = [];
   for (const df of dframes) {
     if (df.u) for (const u of df.u) {
       let arr = unitKf.get(u.id);
@@ -374,6 +420,7 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
     }
     if (df.rb) for (const id of df.rb) buildingRemoveAt.set(id, df.tick);
     if (df.bs) baseTimeline.push({ tick: df.tick, bases: df.bs });
+    if (df.rs) resTimeline.push({ tick: df.tick, res: df.rs });
   }
 
   // ── pass 2: reconstruct full state for each delta-frame tick. Ticks are monotonically increasing; advance each entity cursor in order.
@@ -381,6 +428,8 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
   const buildingPtr = new Map<number, number>();
   let basePtr = -1;
   let bases: StateBase[] = [];
+  let resPtr = -1;
+  let res: StatePlayerRes[] | null = null;
 
   const frames: StateFrame[] = dframes.map((df) => {
     const T = df.tick;
@@ -389,6 +438,11 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
     while (basePtr + 1 < baseTimeline.length && baseTimeline[basePtr + 1]!.tick <= T) {
       basePtr++;
       bases = baseTimeline[basePtr]!.bases;
+    }
+    // Player resources: same step-hold carry-forward. Stays null for a v1 stream (no `rs` frames at all).
+    while (resPtr + 1 < resTimeline.length && resTimeline[resPtr + 1]!.tick <= T) {
+      resPtr++;
+      res = resTimeline[resPtr]!.res;
     }
 
     const units: StateUnit[] = [];
@@ -423,7 +477,9 @@ export function decodeStateReplay(enc: EncodedStateReplay): StateReplay {
     }
     buildings.sort((x, y) => x.id - y.id);
 
-    return { tick: T, units, buildings, bases: bases.map((x) => ({ ...x })) };
+    const frame: StateFrame = { tick: T, units, buildings, bases: bases.map((x) => ({ ...x })) };
+    if (res) frame.res = res.map((x) => ({ ...x }));
+    return frame;
   });
 
   return { header: enc.header, frames };

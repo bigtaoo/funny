@@ -31,6 +31,7 @@ import {
   type StateUnit,
   type StateBuilding,
   type StateBase,
+  type StatePlayerRes,
 } from './StateReplay';
 
 /**
@@ -44,10 +45,36 @@ const MAX_FRAMES = 18000;
 
 export interface BuildStateReplayOverrides {
   mode?: string;
-  /** Display names for both players (HUD labels); defaults to a placeholder based on side. */
+  /** Display names for both players (HUD labels); defaults to the {@link StateRoster} names, then a side placeholder. */
   players?: { name: string; side: 0 | 1 }[];
+  /**
+   * The sharer's own display name. Placed on whichever side the sharer actually played
+   * ({@link StateRoster.localOwner}) — the share site knows the name but not the side, the roster knows
+   * the side but not always the name (PvE has no local profile).
+   */
+  localName?: string;
   /** Winning owner (0/1), -1 for draw/unknown; defaults to the value captured from game_over during recording. */
   winner?: number;
+}
+
+/** One side's cosmetics + identity as the render layer knows them (see {@link StateRecorder.setRoster}). */
+export interface StateRosterSide {
+  /** Display name, when the render layer knows it (netplay profiles / replay name labels); else omitted. */
+  name?: string;
+  /** Equipped skin ids, as passed to UnitView. Empty for AI/bot opponents and for unknown opponent cosmetics. */
+  skins?: readonly string[];
+}
+
+/**
+ * Who played this match, from the render layer's point of view (REPLAY_SHARE_DESIGN §2.2). Needed at
+ * *encode* time because the dumb player has no engine and no account: without this the shared stream
+ * carries no skin ids (every unit renders unskinned) and can't tell which side the sharer played.
+ */
+export interface StateRoster {
+  /** Owner the recording client controlled (0 = bottom host, 1 = top joiner). */
+  localOwner: 0 | 1;
+  local: StateRosterSide;
+  opponent: StateRosterSide;
 }
 
 class StateRecorder {
@@ -61,6 +88,9 @@ class StateRecorder {
   /** Raw encoded stream received from someone else's share (dumb-player adopt) — when set, sharing forwards it as-is without reading frames. */
   private adopted: EncodedStateReplay | null = null;
 
+  /** Who played, per {@link setRoster}; null until the render layer reports it. */
+  private roster: StateRoster | null = null;
+
   /** Start of a new match or new replay segment: clear the single slot. Called by GameRenderer.buildSceneGraph. */
   reset(): void {
     this.frames = [];
@@ -69,6 +99,16 @@ class StateRecorder {
     this.winner = -1;
     this.baseMaxHp = [0, 0];
     this.adopted = null;
+    this.roster = null;
+  }
+
+  /**
+   * Report who is playing this match (names + equipped skins per side). Called by
+   * `GameRenderer.buildSceneGraph` right after {@link reset}, from the same place UnitView gets its
+   * skins — so a shared stream renders exactly the units the participants saw.
+   */
+  setRoster(roster: StateRoster): void {
+    this.roster = roster;
   }
 
   /** Take ownership of a state stream received from someone else (dumb player), so that re-sharing forwards it as-is. */
@@ -119,11 +159,7 @@ class StateRecorder {
     if (this.adopted) return this.adopted;
     if (this.frames.length === 0) return null;
 
-    const players: StateReplayHeader['players'] =
-      overrides.players ?? [
-        { name: '', side: 0 },
-        { name: '', side: 1 },
-      ];
+    const players = this.buildPlayers(overrides);
 
     const header: StateReplayHeader = {
       schemaVersion: STATE_SCHEMA_VERSION,
@@ -136,6 +172,27 @@ class StateRecorder {
     };
 
     return encodeStateReplay({ header, frames: this.frames });
+  }
+
+  /**
+   * Header `players` entries, one per owner: display name (explicit override > roster > the sharer's own
+   * name on the side they played > empty, which the dumb player renders as "blue"/"red") plus that side's
+   * equipped skin ids. `skins` is omitted when empty so the payload — and the header shape a v1 reader
+   * sees — stays exactly as before.
+   */
+  private buildPlayers(overrides: BuildStateReplayOverrides): StateReplayHeader['players'] {
+    const roster = this.roster;
+    return ([0, 1] as const).map((side) => {
+      const isLocal = roster !== null && roster.localOwner === side;
+      const from: StateRosterSide | null = roster ? (isLocal ? roster.local : roster.opponent) : null;
+      const override = overrides.players?.find((p) => p.side === side);
+      const name =
+        override?.name ||
+        from?.name ||
+        (isLocal ? overrides.localName ?? '' : '');
+      const skins = from?.skins ?? [];
+      return { name, side, ...(skins.length ? { skins: [...skins] } : {}) };
+    });
   }
 
   // ── Private: capture one full-state frame ─────────────────────────────────────────────────────
@@ -173,7 +230,13 @@ class StateRecorder {
       { owner: 1, hp: quantizeHp(fromFp(state.topPlayer.baseHp_fp)), maxHp: this.baseMaxHp[1] },
     ];
 
-    return { tick, units, buildings, bases };
+    // Ink / base upgrade level (schema v2): the two HUD readouts the entity snapshot doesn't imply.
+    const res: StatePlayerRes[] = [
+      { owner: 0, ink: state.bottomPlayer.ink, upgrade: state.bottomPlayer.upgradeLevel },
+      { owner: 1, ink: state.topPlayer.ink, upgrade: state.topPlayer.upgradeLevel },
+    ];
+
+    return { tick, units, buildings, bases, res };
   }
 }
 
