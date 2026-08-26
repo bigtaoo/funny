@@ -50,7 +50,7 @@ export interface ProfileData {
   avatarId?: string;
   /** Family (家族) name, if the player is in one; omit to hide the line. See `rankKey`. */
   familyName?: string;
-  /** Sect (帮会/宗门) name, if the player's family is in one; omit to hide the line. See `rankKey`. */
+  /** Sect (宗门) name, if the player's family is in one; omit to hide the line. See `rankKey`. */
   sectName?: string;
   /** The player's family's badge, if any (family-emblem-art-prompts.md, 2026-08-14); drawn just left
    *  of the family/sect line. No sect-badge equivalent — see ProfileExtra's doc comment for why. */
@@ -258,7 +258,7 @@ export class ProfilePopup {
       yBottom = rankLine.y + rankLine.height;
     }
 
-    // Family (家族) / sect (帮会) line (optional — either or both may be present), with the family's
+    // Family (家族) / sect (宗门) line (optional — either or both may be present), with the family's
     // emblem badge (if any) prefixed — the whole [badge][text] block is centered as one unit, so the
     // badge shifts the text's anchor rather than sitting outside a still-centered line.
     if (data.familyName || data.sectName) {

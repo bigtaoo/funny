@@ -87,8 +87,8 @@ core/nation.ts:41              applyNationChange() → capitalIdxAt(x,y) ≥ 0 �
 
 - **判据**：`playerWorld.sectId` 存在。`sectId` 已在 `joinWorld` 时镜像到 `PlayerWorldDoc`（`core/vision.ts` 的 comm-audit batch F item 8b），无需跨服查询。
 - ✅ **拦截点**：`validateMarchTarget` 的 `attack` 分支，城池目标判定后的第一道检查，抛 `SlgError('NOT_IN_SECT')`（复用既有的 403 错误码，而非新造 `NO_SECT`——客户端已经有它的 i18n）。**顺序刻意在连地判定之前**，理由见 §10-P1 第 3 条。
-- **为什么是宗门而不是家族**：ADR-039 连地判定本来就是**按宗门领地**算的（`isConnectedToSectTerritory`）。如果门槛放到家族级，会出现「能打但连不上地」的割裂——同一层级才自洽。本项目 zh 文案 `profile.sect` 即「帮会」= 宗门，且 `social.sect.noFamily` 说明加宗门前必须先有家族，所以宗门门槛天然包含家族门槛。
-- ✅ **客户端**：无宗门玩家点城，面板说明「须先加入帮会才能围攻城池」且不给出征按钮（与占领按钮同一约定：不满足的前置条件隐藏按钮而不是置灰）。
+- **为什么是宗门而不是家族**：ADR-039 连地判定本来就是**按宗门领地**算的（`isConnectedToSectTerritory`）。如果门槛放到家族级，会出现「能打但连不上地」的割裂——同一层级才自洽。本项目 zh 文案 `profile.sect` 也是宗门（2026-08-26 前这条写的是「帮会」，已统一，见 §11），且 `social.sect.noFamily` 说明加宗门前必须先有家族，所以宗门门槛天然包含家族门槛。
+- ✅ **客户端**：无宗门玩家点城，面板说明「须先加入宗门才能围攻城池」且不给出征按钮（与占领按钮同一约定：不满足的前置条件隐藏按钮而不是置灰）。
 
 ---
 
@@ -360,7 +360,7 @@ interface CityDoc {
 1. ✅ **`proceduralTile` 按 footprint 判定城池地面**（§4.1）——新增 `_cityGroundNodeAt()`/`_inCityFootprint()`（`mapgen/cities.ts`），替掉旧的 `capitalIdxAt` + `node.x===x && node.y===y` 精确锚点匹配；`proceduralCityGroundTiles()` 同步改为枚举整块 footprint，§1.2 的两路径漂移消除。**城池地面不再带 `resType`**（`mapEdit.ts` 一并对齐，否则每座城的 footprint 会永久变成对基线的 diff）。
 2. ✅ **`validateMarchTarget` 给 `familyKeep` 加拦截**：`occupy`/`sweep`/`move` 全禁；`attack` 抛显式的 `City siege is not implemented yet`（不落到 ownerless 分支那句已经错了的「use occupy/sweep」）。直接占领路径 `territory.ts occupyTile` 同样补上。
 3. ✅ **`applyNationChange` 整个删除**（不只是从 occupy 路径摘掉）——两个调用点（`settleOccupation`、`settleSiegeDamage`）连 `core`/`service` 两层门面一起清掉。`initNations` 改为**同时清空既有文档的归属字段**（`ownerId`/`familyId`/`nationName`/`foundedAt`），赛季开启与世界重置都会生效。
-4. ✅ 客户端点城弹「城池 · Lv.N · 需加入帮会后合力围攻」信息框（只有关闭按钮，不给出征入口），替掉普通占领框；i18n zh/en/de 三份。
+4. ✅ 客户端点城弹「城池 · Lv.N · 需加入宗门后合力围攻」信息框（只有关闭按钮，不给出征入口），替掉普通占领框；i18n zh/en/de 三份。
 5. ✅ **P0 顺带修掉两处此前没察觉的漏洞**：①落主城/自动出生**从来没有排除城池地面**（`spawn.ts` 四处内联的 `center/obstacle/bridge/plankway/stronghold` 列表都漏了 `familyKeep`）——footprint 化后这个洞会从「每城 1 格」放大到「每城最多 81 格」，现收敛为单一谓词 `isReservedBaseTerrain()`；②手动落主城（`territory.ts` 内部/测试路径）同样没有拦截。
 6. ✅ 回归测试：新建 `server/worldsvc/test/city-ground.e2e.test.ts`（11 例）+ `client/test/ui/worldMapCityClick.ui.ts`（6 例），改写 `server/shared/test/{cities,slg}.test.ts` 的锚点断言为 footprint 断言、`review-fixes-2026-08-03.e2e.test.ts` 的 `applyNationChange` 用例换成 `initNations` 清空用例。
 
@@ -472,7 +472,7 @@ P2 的标定先于 P1 跑完，所以 P1 实现的是**已实测定案**的机�
 | 城池易主保护期时长 | ✅ 已定 `CITY_CAPTURE_PROTECTION_MS = 2 小时`，**刻意短于**主城的 `PROTECTION_SEC`(8 小时)：城池易主时耐久同时重置为满，重夺本就要再打一整场；主城没有这个重置（它是搬迁），护盾是它唯一的保护 |
 | ~~世界中心打不了~~ | ✅ 已修（补测抓出）：`attack` 分支里 ADR-074 之前的 `center` 拦截排在城池分支之前，把全图最重要的那座城变成唯一打不了的城，`settleCityDamage` 的全服公告成了死代码。现已把城池分支移到它之前 |
 | ~~四条易主公告全是原始 key~~ | ✅ 已修（2026-08-26）：五个 key 三份词典全缺 + 参数是位置式（等级/坐标丢失）+ 聊天面板从不翻译 key。详见 §10 P1 第 5 条的四条补注 |
-| **`world.city*` 那 6 条把宗门写成「帮会」（新增，未改）** | zh 词典里 `宗门` 40 处 vs `帮会` 6 处，后者全在 ADR-074 新加的 `world.city*` 块（`world.cityHint`/`cityNeedSect`/`cityOursHint` 等），与 `sect.title = 宗门` 不一致。玩家可见术语统一是产品拍板，不在本次 i18n 补漏范围内；本次新增的五条公告一律用 `宗门` |
+| ~~`world.city*` 把宗门写成「帮会」~~ | ✅ 已统一为**宗门**（2026-08-26，用户拍板）。zh 词典里原有 6 处「帮会」：5 处在 ADR-074 新加的 `world.city*` 块（`cityHint`/`cityOwnedByUs`/`citySiegeLogUs`/`cityNeedSect`/`cityOursHint`），第 6 处是更早的 `profile.sect`（`'帮会：'`）——**不是**全在 `world.city*`，本文档此前那句说法有误。改完 zh 词典与 `client/src` 全树都不再出现「帮会」；`ProfilePopup.ts` 两处注释里的旧术语一并改掉。en/de 一直是 `Sect`/`Sekte`，无需动。**刻意保留**「帮会」的地方：用户 2026-08-25 的原话引用（本文档 §1 起因、`DECISIONS_ADR-070-onward.md` ADR-074 起因）和几条历史 bug 名（`client/test/social-sect-leader-gate.test.ts` 等注释里的「族长无法创建帮会」）——引用和历史记录不改写 |
 | **公告没有「点进去看那座城」** | `body()` 已经在发 `node=<nodeId>`（`cityDamage.ts`），但 `systemText` 只做字符串插值，公告目前不可点。要做的话客户端得把 `node` 参数接到 `WorldMapInput.showCityPanel`；参数已经在线上，属于纯客户端增量 |
 | 城池血条 UI 必须显示绝对值 | §6.5：耐久是「大基数 + 小步长」，Lv.3 与 Lv.10 只差 22%，只显示百分比会被读成 bug |
 | 宗门人数上限对 §8.1 总 faucet 的影响 | 宗门 ≤900 人（`GW_PUSH_REDIS_CHANNEL` 注释口径）；满编宗门吃满上限时的全服 faucet 总量待 `SLG_ECONOMY_CHECK.md` 轨道 2（赛季资源）核算 |
