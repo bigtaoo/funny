@@ -77,7 +77,6 @@ function makeCore(opts: {
   const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 }));
   const pushTile = vi.fn(async (..._args: unknown[]) => {});
   const recomputeYield = vi.fn(async (..._args: unknown[]) => emptyResources());
-  const applyNationChange = vi.fn(async (..._args: unknown[]) => true);
   const settle = vi.fn((doc: PlayerWorldDoc) => ({ ...doc.resources }));
   let tileCallCount = 0;
 
@@ -103,7 +102,6 @@ function makeCore(opts: {
     coordY: (tid: string) => Number(tid.split(':')[2]),
     pushTile,
     recomputeYield,
-    applyNationChange,
     settle,
     // 2026-08-24: the settle these services persist is now an aggregation expression evaluated by Mongo
     // against the live document (core/yield.ts settleExpr), not a value computed here — these unit tests
@@ -114,7 +112,7 @@ function makeCore(opts: {
     marchView: (m: MarchDoc) => m as unknown as never,
   } as unknown as WorldCore;
 
-  return { core, tilesUpdateOne, pwUpdateOne, pushTile, recomputeYield, applyNationChange };
+  return { core, tilesUpdateOne, pwUpdateOne, pushTile, recomputeYield };
 }
 
 function fakeHelpers() {
@@ -364,9 +362,9 @@ describe('SiegeDamageService settleSiegeDamage — isBase edge fallbacks', () =>
 });
 
 describe('SiegeDamageService settleSiegeDamage — HP depleted (capture)', () => {
-  it('non-base, non-crossing (territory) hand-over: sets type=territory, ownerId, garrison, hp=maxHp, unsets protectedUntil; recomputes both yields + applyNationChange', async () => {
+  it('non-base, non-crossing (territory) hand-over: sets type=territory, ownerId, garrison, hp=maxHp, unsets protectedUntil; recomputes both yields', async () => {
     const maxHp = buildingMaxHp(2);
-    const { core, tilesUpdateOne, recomputeYield, applyNationChange } = makeCore({
+    const { core, tilesUpdateOne, recomputeYield } = makeCore({
       pwById: {
         [`${W}:${ATK}`]: pw({ accountId: ATK, familyId: 'fam-atk' }),
         [`${W}:${DEF}`]: pw({ accountId: DEF }),
@@ -383,7 +381,6 @@ describe('SiegeDamageService settleSiegeDamage — HP depleted (capture)', () =>
       },
     );
     expect(recomputeYield).toHaveBeenCalledTimes(2);
-    expect(applyNationChange).toHaveBeenCalledWith(W, 5, 5, ATK, 'fam-atk');
   });
 
   it('crossing (bridge) hand-over with an attacker familyId: KEEPS bridge type + sets familyId, no $unset.familyId', async () => {

@@ -325,6 +325,15 @@ describe.skipIf(!mongo)('SectService e2e', () => {
     expect(detail!.emblemColor).toBe(EMBLEM_COLORS[3]);
   });
 
+  it('setEmblem: a `worldId` argument that no longer matches the sect\'s stored worldId must not produce a false NOT_FOUND (regression — the sect lookup keys off `_id: fam.sectId` alone, same as dissolveSect/allySect/etc., since sectId() already embeds the world)', async () => {
+    await makeFamily('alice', 'A', 'AA');
+    const s = await sect.createSect(W, 'alice', 'Sky', 'SKY');
+    await sect.setEmblem('some-other-world-id', 'alice', EMBLEM_KEYS[2]!, EMBLEM_COLORS[1]!);
+    const detail = await sect.getSect(s.sectId);
+    expect(detail!.emblemKey).toBe(EMBLEM_KEYS[2]);
+    expect(detail!.emblemColor).toBe(EMBLEM_COLORS[1]);
+  });
+
   it('alliance: bidirectional + cap SECT_ALLY_CAP', async () => {
     await makeFamily('alice', 'A', 'AA');
     await makeFamily('bob', 'B', 'BB');

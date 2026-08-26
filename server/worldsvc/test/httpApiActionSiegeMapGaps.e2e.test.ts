@@ -204,6 +204,33 @@ describe.skipIf(!mongo)('worldsvc httpApi route-dispatch gaps: actionRoutes + si
       expect(ok.status).toBe(200);
       expect(Array.isArray((await jsonBody(ok)).data)).toBe(true);
     });
+
+    // ADR-074 P1. The service behind this is covered at depth by city-siege.e2e.test.ts; what this case
+    // adds is the route DISPATCH — the `if (method==='GET' && path==='/world/cities')` branch itself.
+    // Worth spelling out because this suite exists precisely to stop "the method name appears in a test"
+    // being mistaken for "the route is covered" (see claudedocs/server-audits.md's /sect/* incident).
+    it('GET /world/cities: missing worldId → 400; success (city siege-state list)', async () => {
+      const bad = await fetch(`${base}/world/cities`, { headers: auth });
+      expect(bad.status).toBe(400);
+      const ok = await fetch(`${base}/world/cities?worldId=${W}`, { headers: auth });
+      expect(ok.status).toBe(200);
+      const body = await jsonBody(ok);
+      expect(Array.isArray(body.data)).toBe(true);
+      // Not just "an array": the payload the map's durability bar and the siege panel read. A route that
+      // returned the bare node list (no siege state) would pass an Array.isArray check and render no bar.
+      const nodes = body.data as Array<Record<string, unknown>>;
+      expect(nodes.length).toBeGreaterThan(0);
+      for (const n of nodes) {
+        expect(typeof n.durability).toBe('number');
+        expect(typeof n.durabilityMax).toBe('number');
+        expect(typeof n.regenPerHour).toBe('number');
+      }
+    });
+
+    it('GET /world/cities: requires auth (401 without a bearer token)', async () => {
+      const res = await fetch(`${base}/world/cities?worldId=${W}`);
+      expect(res.status).toBe(401);
+    });
   });
 
   describe('actionRoutes.ts: abandon / relocate / watchtower', () => {

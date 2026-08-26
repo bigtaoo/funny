@@ -114,8 +114,9 @@ export class SeasonManagementService {
       },
       { upsert: true },
     );
-    // Initialize the 10 capital documents
+    // Initialize the 10 capital documents + the ~64 wild-city documents (ADR-074 P1).
     await this.core.initNations(worldId);
+    await this.core.initCities(worldId);
   }
 
   /**
@@ -361,7 +362,7 @@ export class SeasonManagementService {
     const deleted: Record<string, number> = {};
     for (const c of [
       'tiles', 'marches', 'playerWorld', 'nations', 'sieges', 'sects', 'sectMessages',
-      'siegeDamage', 'occupations', 'stationed',
+      'siegeDamage', 'occupations', 'stationed', 'cities',
     ] as const) {
       deleted[c] = await deleteInBatches(cols[c] as never, { worldId }, RESET_DELETE_BATCH);
     }
@@ -389,8 +390,9 @@ export class SeasonManagementService {
       { _id: worldId },
       { $set: { status: 'open' as const, population: 0, resetAt: now(), engineVersion: ENGINE_VERSION, mapW: this.core.deps.mapW, mapH: this.core.deps.mapH, settleAt: now() + SLG_SEASON_DURATION_MS }, $inc: { rev: 1 } },
     );
-    // Re-initialize capital documents
+    // Re-initialize capital + wild-city documents
     await this.core.initNations(worldId);
+    await this.core.initCities(worldId);
     return { deleted };
   }
 

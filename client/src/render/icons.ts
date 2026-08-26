@@ -1,168 +1,69 @@
 /**
- * icons.ts — small hand-drawn UI glyphs (book / globe / coin / trophy).
+ * icons.ts — the public entry point for every small UI glyph in the game.
  *
- * Replaces emoji placeholders in the lobby with SketchPen line-art so the icons
- * share the worn-notebook ink language (art-direction: three stationery pens,
- * flat scrawl, no gradients). Each icon is drawn once into an `s × s` box at
- * local origin (0,0) and baked to a GPU texture via `uiCache` (cache key folds
- * in kind + size + colour), so repeated lobby builds cost nothing. Headless
- * tests with no renderer transparently fall back to a live draw.
+ * Once upon a time this file WAS the icons: ~850 lines of `SketchPen` line art, one `draw*` function
+ * per glyph, dispatched through a `DRAW` record. Batches 1–7 of the AI-art programme
+ * (`design/product/tab-icon-art-prompts*.md`) replaced all of it — the last 44 procedural kinds went
+ * on 2026-08-25 — so nothing is drawn here any more and the module is a pure dispatcher over two
+ * tables of AI-drawn PNGs:
  *
- * Coordinates are normalised to the box size `s` and content is centred, so a
- * caller can position either the baked Sprite or the live Graphics by its
- * top-left corner the same way.
+ *   - {@link ./icons/tabIconRaster} — the 46 tab/title icons plus the coin art. `color` is only a
+ *     light/dark HINT there; `tabIconVariant` maps it onto one of three inks baked at pack time.
+ *   - {@link ./icons/inkIconRaster} — the 44 content glyphs (equipment affixes, UI dingbats, SLG
+ *     buildings, the title ladder). One white master each, tinted live, so `color` is taken
+ *     literally — exactly the contract the procedural glyphs had.
  *
- * The individual draw helpers live under `./icons/*` grouped by category; this
- * module keeps the public `IconKind` union + the `buildIcon` dispatcher stable.
+ * Both are re-exported below, so `render/icons` remains the single import site for callers.
  *
- * The AI-drawn RASTER tab icons (`RasterIconKind` + `TAB_ICON_RASTER`) live in `./icons/tabIconRaster`
- * and are re-exported below, so `render/icons` remains the single public entry point for callers.
+ * The positioning contract is unchanged from the SketchPen era: an icon occupies an `s × s` box at
+ * local origin (0,0) with its artwork centred, so a caller can position the returned display object
+ * by its top-left corner.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { getCachedDisplay } from '../ui/widgets/uiCache';
 import {
-  TAB_ICON_RASTER, tabIconVariant, buildRasterTabIcon,
+  TAB_ICON_RASTER, tabIconVariant, buildRasterTabIcon, preloadTabIconTextures,
   type RasterIconKind, type RasterIconVariant,
 } from './icons/tabIconRaster';
-import { drawCoin, drawCoins, drawCoinStack, drawCoinSack, drawCoinChest } from './icons/currency';
-import { drawBook, drawGlobe, drawTrophy, drawCastle, drawPencils } from './icons/motifs';
 import {
-  drawScrap, drawLead, drawBinding,
-  drawAtk, drawHp, drawArmor, drawArmorHeavy, drawSpd, drawAtkspd, drawBrush,
-} from './icons/equipment';
-import { drawFlag, drawDesk, drawCabinet, drawHammer, drawHourglassSm, drawHourglassMd, drawHourglassLg } from './icons/slg';
-import {
-  drawSwords, drawReplay, drawShare, drawHome,
-  drawTag, drawCapsule, drawCards, drawStar, drawLock, drawMedal, drawZoom, drawGift,
-  drawClose, drawCheck, drawPlay,
-} from './icons/ui';
-import {
-  drawTitleBronze, drawTitleSilver, drawTitleGold, drawTitlePlatinum, drawTitleDiamond,
-  drawTitleStar, drawTitleMaster, drawTitleGrandmaster, drawTitleKing,
-  drawTitleChampion, drawTitleTop3,
-} from './icons/titles';
+  INK_ICON_ART, buildInkIcon, preloadInkIconTextures, type InkIconKind,
+} from './icons/inkIconRaster';
 
-export { TAB_ICON_RASTER, tabIconVariant, preloadTabIconTextures, BACK_ARROW_ART, BACK_ARROW_ASPECT, buildRasterTabIcon } from './icons/tabIconRaster';
+export {
+  TAB_ICON_RASTER, tabIconVariant, preloadTabIconTextures,
+  BACK_ARROW_ART, BACK_ARROW_ASPECT, buildRasterTabIcon,
+} from './icons/tabIconRaster';
 export type { RasterIconKind, RasterIconVariant } from './icons/tabIconRaster';
+export { INK_ICON_ART, INK_ICON_ALIASES, preloadInkIconTextures, buildInkIcon } from './icons/inkIconRaster';
+export type { InkIconKind } from './icons/inkIconRaster';
 
-/** Every `IconKind` drawn procedurally through `DRAW`/SketchPen — i.e. all of them but the raster
- *  tab icons, which `buildIcon` dispatches to `./icons/tabIconRaster` instead. */
-export type DrawableIconKind =
-  | 'book' | 'globe' | 'coin' | 'trophy' | 'castle' | 'pencils'
-  // Recharge tiers (ShopScene): escalating treasure to make bigger tiers read richer.
-  | 'coins' | 'coinStack' | 'coinSack' | 'coinChest'
-  // Equipment page materials (EQUIPMENT_DESIGN): scrap / lead / binding.
-  | 'scrap' | 'lead' | 'binding'
-  // Equipment page stat icons: attack / HP / armor / move-speed / attack-speed.
-  | 'atk' | 'hp' | 'armor' | 'spd' | 'atkspd'
-  // SLG header-shop protection tiers (8h/24h): 'armor' is the base/shorter tier, this is the
-  // reinforced/longer one — same shield, extra band + rivets, no new silhouette.
-  | 'armorHeavy'
-  // Collection page skin tag: cosmetic brush (cards/units use real PNG art, see cardArt.ts).
-  | 'brush'
-  // Results page actions: rematch (crossed swords) / replay (loop arrow) / share (out-of-box arrow) / back to lobby (house).
-  | 'swords' | 'replay' | 'share' | 'home'
-  // SLG march-kind glyph (WorldMapScene HUD): occupy (planted flag).
-  // attack→swords, reinforce→armor(shield), return→replay are reused from above.
-  | 'flag'
-  // SLG city buildings (CityScene grid): HQ desk / archive cabinet + a build-queue hammer badge.
-  // Resource-producer buildings reuse the res_atlas motifs; drillYard→swords, wall→castle, academy→book.
-  | 'desk' | 'cabinet' | 'hammer'
-  // SLG header-shop training-speedup tiers (1h/8h/24h): distinct from the 'spd' move-speed stat
-  // glyph, and escalating sand/tick count per tier — see hourglassCore in icons/slg.ts.
-  | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
-  // Hub tab strip glyphs (HubTabs): shop price-tag / gacha capsule / roster card stack.
-  // Other hub tabs reuse existing glyphs — coins→coin, battlepass→trophy, equipment→armor, collection→book.
-  | 'tag' | 'capsule' | 'cards'
-  // GachaScene rarity pips + limited-pool marker (standard pool reuses capsule). Tinted per rarity.
-  | 'star'
-  // Lock badge: locked cards/equipment/deck slots + battle-pass pass-required tier.
-  | 'lock'
-  // Leaderboard top-3 rank medal (tinted gold / silver / bronze per rank).
-  | 'medal'
-  // TitlesScene title-wall fallback for dynamic (non-permanent) titles: 9 ladder ranks
-  // (bronze→king, escalating detail) + 2 SLG season titles (shield silhouette). See
-  // icons/titles.ts — distinct from 'medal' above, which stays a single undifferentiated
-  // glyph for the leaderboard's simpler 3-colour top-3 tint.
-  | 'titleBronze' | 'titleSilver' | 'titleGold' | 'titlePlatinum' | 'titleDiamond'
-  | 'titleStar' | 'titleMaster' | 'titleGrandmaster' | 'titleKing'
-  | 'titleChampion' | 'titleTop3'
-  // Zoom cycle button (WorldMapScene HUD): a magnifier lens + handle.
-  | 'zoom'
-  // Mail attachment marker (FriendsScene): a wrapped present with a bow.
-  | 'gift'
-  // Common UI dingbats replacing bare typographic glyphs so they share the ink
-  // language: close (✕) / confirm tick (✓) / replay-triangle (▶).
-  | 'close' | 'check' | 'play';
-
-/** Every icon `buildIcon` can build, procedural or raster. */
-export type IconKind = DrawableIconKind | RasterIconKind;
-
-export const DRAW: Record<DrawableIconKind, (g: PIXI.Graphics, s: number, color: number) => void> = {
-  book:    drawBook,
-  globe:   drawGlobe,
-  coin:    drawCoin,
-  coins:     drawCoins,
-  coinStack: drawCoinStack,
-  coinSack:  drawCoinSack,
-  coinChest: drawCoinChest,
-  trophy:  drawTrophy,
-  castle:  drawCastle,
-  pencils: drawPencils,
-  scrap:   drawScrap,
-  lead:    drawLead,
-  binding: drawBinding,
-  atk:     drawAtk,
-  hp:      drawHp,
-  armor:   drawArmor,
-  armorHeavy: drawArmorHeavy,
-  spd:     drawSpd,
-  atkspd:  drawAtkspd,
-  brush:   drawBrush,
-  swords:  drawSwords,
-  replay:  drawReplay,
-  share:   drawShare,
-  home:    drawHome,
-  flag:    drawFlag,
-  desk:    drawDesk,
-  cabinet: drawCabinet,
-  hammer:  drawHammer,
-  hourglassSm: drawHourglassSm,
-  hourglassMd: drawHourglassMd,
-  hourglassLg: drawHourglassLg,
-  tag:     drawTag,
-  capsule: drawCapsule,
-  cards:   drawCards,
-  star:    drawStar,
-  lock:    drawLock,
-  medal:   drawMedal,
-  titleBronze: drawTitleBronze,
-  titleSilver: drawTitleSilver,
-  titleGold: drawTitleGold,
-  titlePlatinum: drawTitlePlatinum,
-  titleDiamond: drawTitleDiamond,
-  titleStar: drawTitleStar,
-  titleMaster: drawTitleMaster,
-  titleGrandmaster: drawTitleGrandmaster,
-  titleKing: drawTitleKing,
-  titleChampion: drawTitleChampion,
-  titleTop3: drawTitleTop3,
-  zoom:    drawZoom,
-  gift:    drawGift,
-  close:   drawClose,
-  check:   drawCheck,
-  play:    drawPlay,
-};
+/** Every icon `buildIcon` can build — a tinted ink glyph or a variant-baked raster tab icon. */
+export type IconKind = InkIconKind | RasterIconKind;
 
 /**
- * A baked, reusable hand-drawn icon sized `size × size`, drawn in `color`.
- * Returns a `PIXI.Sprite` of the cached texture (or a live Graphics in headless
- * tests). Position by its top-left corner; the artwork is centred in the box.
+ * Warm BOTH icon tables into the PIXI texture cache. Call this (and re-render on the promise) from
+ * any scene that would otherwise show a blank box on its first frame — every kind is a PNG now, so
+ * unlike the SketchPen era there is nothing that can draw itself synchronously.
  *
- * `opts.variant` only affects the raster kinds ({@link RasterIconVariant}); pass `'content'` when
- * the icon is page content rather than a tab, so it gets the full-strength ink instead of the
- * de-emphasised tab grey `color` alone would select. Ignored by the procedural glyphs, which take
- * `color` literally.
+ * `preloadTabIconTextures` / `preloadInkIconTextures` stay exported for a caller that genuinely
+ * wants one half — HUDView warms only the ink table, since the battle HUD's single raster glyph is
+ * `ink` — but a scene should reach for this.
+ */
+export function preloadIconArt(): Promise<void> {
+  return Promise.all([preloadTabIconTextures(), preloadInkIconTextures()]).then(() => undefined);
+}
+
+/**
+ * A hand-drawn icon sized `size × size`, drawn in `color`. Position the returned display object by
+ * its top-left corner; the artwork is centred in the box.
+ *
+ * `color` means different things to the two tables behind this — literal ink for an
+ * {@link InkIconKind}, a light/dark surface hint for a {@link RasterIconKind} (see each module's
+ * header). `opts.variant` only affects the latter: pass `'content'` when a raster tab icon is being
+ * used as page content rather than as a tab, so it gets the full-strength ink instead of the
+ * de-emphasised tab grey `color` alone would select.
+ *
+ * Neither path is routed through `uiCache` any more — both return a sprite over an already-static
+ * texture, which `PIXI.Texture.from` caches by url, so there is nothing to bake.
  */
 export function buildIcon(
   kind: IconKind, size: number, color: number, opts?: { variant?: RasterIconVariant },
@@ -170,10 +71,5 @@ export function buildIcon(
   const s = Math.round(size);
   const raster = (TAB_ICON_RASTER as Partial<Record<IconKind, Record<RasterIconVariant, string>>>)[kind];
   if (raster) return buildRasterTabIcon(raster[opts?.variant ?? tabIconVariant(color)], s);
-  const key = `icon:${kind}:${s}:${(color >>> 0).toString(16)}`;
-  return getCachedDisplay(key, () => {
-    const g = new PIXI.Graphics();
-    DRAW[kind as DrawableIconKind](g, s, color);
-    return g;
-  }, s, s);
+  return buildInkIcon(INK_ICON_ART[kind as InkIconKind], s, color);
 }

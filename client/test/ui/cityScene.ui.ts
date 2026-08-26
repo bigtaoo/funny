@@ -126,6 +126,7 @@ function stubWorldApi(): WorldApiClient {
     getTeams: () => Promise.resolve([]),
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
+    getStationed: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
   } as unknown as WorldApiClient;
@@ -283,6 +284,7 @@ describe('CityScene header base-durability (D-CITY-8; moved into the header 2026
       getTeams: () => Promise.resolve([]),
       getMarches: () => Promise.resolve([]),
       getOccupations: () => Promise.resolve([]),
+      getStationed: () => Promise.resolve([]),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
@@ -329,12 +331,14 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
     teams?: { id: string; name: string; army: { cardInstanceId?: string; initialHp?: number }[] }[];
     marches?: { marchId: string; mine?: boolean; teamId: string; arriveAt: number }[];
     occupations?: { teamId: string; dueAt: number }[];
+    /** Own teams parked on a field tile (2026-07-23 field-stationing) — 停留 idle or 驻扎 garrison. */
+    stationed?: { tile: string; x: number; y: number; teamId: string; troops: number; sinceAt: number; mode?: 'idle' | 'garrison'; mine?: boolean }[];
     /** Owned cards; present = the scene gets a getSave callback (see buildLoaded). */
     cardInv?: Record<string, CardInstance>;
   };
 
-  /** Unlike stubWorldApi(), resolves getMe/getTeams/getMarches/getOccupations so the team
-   *  row has real data to render. */
+  /** Unlike stubWorldApi(), resolves getMe/getTeams/getMarches/getOccupations/getStationed so the
+   *  team row has real data to render. */
   function stubWorldApiWithTeams(fx: TeamsFixture): WorldApiClient {
     const me = {
       resources: {}, buildings: {}, buildQueue: [],
@@ -346,6 +350,7 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
       getTeams: () => Promise.resolve(fx.teams ?? []),
       getMarches: () => Promise.resolve(fx.marches ?? []),
       getOccupations: () => Promise.resolve(fx.occupations ?? []),
+      getStationed: () => Promise.resolve(fx.stationed ?? []),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
@@ -448,6 +453,80 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
     });
     const texts = collectTexts(scene.container);
     expect(texts.some(s => s.includes(t('world.team.occupying').split('{time}')[0]!))).toBe(true);
+    scene.destroy();
+  });
+
+  // 2026-08-25 user report ("并不是所有的队伍都驻军在家，至少有4队是站在外面的"): field-stationed
+  // teams (2026-07-23) have neither a march nor an occupation doc, and the row only fetched those
+  // two slices — so four squads parked out on the map all read 驻军在家.
+  it('shows the field-station tag, not 驻军在家, for a 停留 idle team parked on the map', async () => {
+    const { scene } = await buildLoaded({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      stationed: [{ tile: '12:34', x: 12, y: 34, teamId: 't1', troops: 400, sinceAt: Date.now() - 60_000 }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('world.team.stationedIdle'));
+    expect(texts).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('distinguishes a 驻扎 garrison station from a 停留 one', async () => {
+    const { scene } = await buildLoaded({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      stationed: [{ tile: '7:8', x: 7, y: 8, teamId: 't1', troops: 400, sinceAt: Date.now() - 60_000, mode: 'garrison' }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('world.team.garrisoned'));
+    expect(texts).not.toContain(t('world.team.stationedIdle'));
+    scene.destroy();
+  });
+
+  it('only the stationed slots leave the at-home tag — the ones actually at home keep it', async () => {
+    const { scene } = await buildLoaded({
+      teams: [
+        { id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Bravo', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't3', name: 'Cadre', army: [{ cardInstanceId: 'c1' }] },
+      ],
+      stationed: [
+        { tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() - 1000 },
+        { tile: '5:6', x: 5, y: 6, teamId: 't3', troops: 400, sinceAt: Date.now() - 1000, mode: 'garrison' },
+      ],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('world.team.stationedIdle'));
+    expect(texts).toContain(t('world.team.garrisoned'));
+    // t2 is the only filled team still at home.
+    expect(texts.filter((s) => s === t('city.military.teamIdle')).length).toBe(1);
+    scene.destroy();
+  });
+
+  it('an ENEMY team stationed within vision never claims one of my slots (teamId is blanked server-side)', async () => {
+    const { scene } = await buildLoaded({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      // ADR-051 P4: /world/stationed also returns enemy stations, flagged mine:false.
+      stationed: [{ tile: '9:9', x: 9, y: 9, teamId: 't1', troops: 400, sinceAt: Date.now(), mine: false }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('city.military.teamIdle'));
+    expect(texts).not.toContain(t('world.team.stationedIdle'));
+    scene.destroy();
+  });
+
+  it('a march outranks a station for the same slot (mid-recall, both docs briefly exist)', async () => {
+    const { scene } = await buildLoaded({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      marches: [{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }],
+      stationed: [{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() - 1000 }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('world.team.marching'));
+    expect(texts).not.toContain(t('world.team.stationedIdle'));
     scene.destroy();
   });
 
@@ -567,10 +646,13 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     let resolveMarches!: (v: unknown[]) => void;
     let resolveOccupations!: (v: unknown[]) => void;
     let rejectOccupations!: (e: Error) => void;
+    let resolveStationed!: (v: unknown[]) => void;
+    let rejectStationed!: (e: Error) => void;
     let resolveMeRaw!: (v: PlayerWorldView) => void;
     const teams = new Promise<unknown[]>((r, j) => { resolveTeams = r; rejectTeams = j; });
     const marches = new Promise<unknown[]>((r) => { resolveMarches = r; });
     const occupations = new Promise<unknown[]>((r, j) => { resolveOccupations = r; rejectOccupations = j; });
+    const stationed = new Promise<unknown[]>((r, j) => { resolveStationed = r; rejectStationed = j; });
     const me = new Promise<PlayerWorldView>((r) => { resolveMeRaw = r; });
     return {
       api: {
@@ -578,6 +660,7 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
         getTeams: () => teams,
         getMarches: () => marches,
         getOccupations: () => occupations,
+        getStationed: () => stationed,
         upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
         speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
       } as unknown as WorldApiClient,
@@ -586,7 +669,9 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
       resolveMarches,
       resolveOccupations,
       rejectOccupations,
-      resolveOrders: () => { resolveMarches([]); resolveOccupations([]); },
+      resolveStationed,
+      rejectStationed,
+      resolveOrders: () => { resolveMarches([]); resolveOccupations([]); resolveStationed([]); },
       resolveMe: (over: Partial<PlayerWorldView> = {}) => resolveMeRaw({
         resources: {}, buildings: {}, buildQueue: [],
         cardState: { c1: { currentTroops: 400 } }, teamState: {},
@@ -668,7 +753,7 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
-  it('holds a filled team\'s status on the loading label until marches AND occupations have both landed', async () => {
+  it('holds a filled team\'s status on the loading label until marches, occupations AND stationed have all landed', async () => {
     const { api, resolveTeams, resolveOrders, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
@@ -685,11 +770,11 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
-  it('one of the two order endpoints landing is not enough to settle the status', async () => {
+  it('one of the three order endpoints landing is not enough to settle the status', async () => {
     const { api, resolveTeams, resolveMarches } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
-    resolveMarches([]);       // occupations still pending
+    resolveMarches([]);       // occupations + stationed still pending
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(true);
     expect(texts()).not.toContain(t('city.military.teamIdle'));
@@ -697,12 +782,13 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
   });
 
   it('a march already known once orders land wins over both the loading and the idle label', async () => {
-    const { api, resolveTeams, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+    const { api, resolveTeams, resolveMarches, resolveOccupations, resolveStationed, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
     resolveMarches([{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }]);
     resolveOccupations([]);
+    resolveStationed([]);
     await flush();
     expect(texts()).toContain(t('world.team.marching'));
     expect(texts().some(isLoadingLabel)).toBe(false);
@@ -723,6 +809,55 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
+  it('a station landing alone is not enough to settle the status either', async () => {
+    const { api, resolveTeams, resolveStationed } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() }]);
+    await flush();
+    // A station is the LOWEST-ranked of the three sources: a recall march (mid-recall both docs
+    // exist) would outrank it, and marches hasn't answered yet — so asserting 野外停留 here would
+    // be the same self-correcting flash the loading state exists to avoid.
+    expect(texts().some(isLoadingLabel)).toBe(true);
+    expect(texts()).not.toContain(t('world.team.stationedIdle'));
+    expect(texts()).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('a station known first shows once the other two endpoints land, and loses to the march they carry', async () => {
+    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe();
+    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now() }]);
+    await flush();
+    expect(texts().some(isLoadingLabel)).toBe(true);
+
+    // The recall march the gate was waiting for: it must win, and the station must never have
+    // been shown in between.
+    resolveMarches([{ marchId: 'm1', mine: true, teamId: 't1', arriveAt: Date.now() + 30_000 }]);
+    resolveOccupations([]);
+    await flush();
+    expect(texts()).toContain(t('world.team.marching'));
+    expect(texts()).not.toContain(t('world.team.stationedIdle'));
+    scene.destroy();
+  });
+
+  it('a station shows as soon as the other two endpoints come back empty', async () => {
+    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe();
+    resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now(), mode: 'garrison' }]);
+    resolveMarches([]);
+    resolveOccupations([]);
+    await flush();
+    expect(texts()).toContain(t('world.team.garrisoned'));
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    expect(texts()).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
   // ── Failure paths: the loading state must END on rejection, not spin forever ────────────────
   // These ride on `.finally()`, which is easy to regress into `.then()` while refactoring.
 
@@ -738,12 +873,29 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
   });
 
   it('an order endpoint rejecting still settles the status (treated as no active order)', async () => {
-    const { api, resolveTeams, resolveMarches, rejectOccupations, resolveMe } = deferredApi();
+    const { api, resolveTeams, resolveMarches, rejectOccupations, resolveStationed, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
     resolveMarches([]);
     rejectOccupations(new Error('offline'));
+    resolveStationed([]);
+    await flush();
+    expect(texts().some(isLoadingLabel)).toBe(false);
+    expect(texts()).toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  it('getStationed rejecting still settles the status (treated as no field station)', async () => {
+    // ordersLoaded rides on `.finally()` for all three slices — an easy regression into `.then()`,
+    // and this one is the newest of the three (2026-08-25), so it gets its own case.
+    const { api, resolveTeams, resolveMarches, resolveOccupations, rejectStationed, resolveMe } = deferredApi();
+    const { scene, texts } = build(api);
+    resolveTeams([ALPHA]);
+    resolveMe();
+    resolveMarches([]);
+    resolveOccupations([]);
+    rejectStationed(new Error('offline'));
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(false);
     expect(texts()).toContain(t('city.military.teamIdle'));
@@ -831,6 +983,7 @@ describe('CityScene queue-completion refresh (P0-9, comm-audit-2026-07-27 findin
       getTeams: () => Promise.resolve([]),
       getMarches: () => Promise.resolve([]),
       getOccupations: () => Promise.resolve([]),
+      getStationed: () => Promise.resolve([]),
     } as unknown as WorldApiClient;
     return { api, getMeCalls: calls };
   }

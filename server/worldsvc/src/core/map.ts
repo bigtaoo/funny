@@ -236,6 +236,10 @@ export class MapService {
       ...(baseAnchor?.protectedUntil ? { baseProtectedUntil: baseAnchor.protectedUntil } : {}),
       ...(baseAnchor ? siegeHpView(baseAnchor, this.core.deps.now()) : {}),
       ...(doc.familyId ? { familyId: doc.familyId } : {}),
+      // ADR-074 P1: the client needs to know whether this account is in a sect to decide whether a wild
+      // city's info panel may offer a siege button at all (only sect members can besiege). Mirrored onto
+      // PlayerWorldDoc at joinWorld, so this is free.
+      ...(doc.sectId ? { sectId: doc.sectId } : {}),
       ...(doc.trainingQueue && doc.trainingQueue.length > 0
         ? { trainingQueue: doc.trainingQueue.map((e) => ({ qty: e.qty, startAt: e.startAt, completeAt: e.completeAt })) }
         : {}),

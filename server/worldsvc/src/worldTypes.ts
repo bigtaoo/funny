@@ -176,6 +176,12 @@ export interface PlayerWorldView {
   mainBaseTile?: string;
   territoryCount?: number;
   familyId?: string;
+  /**
+   * ADR-074 P1: the sect this account belongs to (mirrored onto PlayerWorldDoc at joinWorld). Absent when
+   * unaffiliated. The client needs it to decide whether a wild city's info panel may offer a siege button —
+   * only sect members can besiege a city (decision 1).
+   */
+  sectId?: string;
   /** Training queue (S8-2, sorted by completeAt ascending); client C4 renders countdowns based on this. */
   trainingQueue?: { qty: number; startAt: number; completeAt: number }[];
   /**

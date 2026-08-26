@@ -166,7 +166,15 @@ describe.skipIf(!mongo)('worldsvc siege engine-crash → replay still persisted 
     await setupDefender('b', tgt.x, tgt.y, { type: 'territory', garrison: 500 });
     await connect(svc, 'a', tgt);
 
-    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 5000);
+    // Top the pool up explicitly rather than relying on joinWorld's grant: TROOP_CAP_BASE is 5,000 since the
+    // 2026-08-25 re-tune and the base footprint's garrison is already drawn from it, so a bare 5,000-troop march
+    // no longer fits. The number only has to overwhelm the 500 garrison; the exact size is not the subject here.
+    const ATTACK_TROOPS = 5000;
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { troops: ATTACK_TROOPS * 2, troopCap: ATTACK_TROOPS * 2 } },
+    );
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', ATTACK_TROOPS);
     nowMs = mv.arriveAt;
     expect(await svc.processDueArrivals()).toBe(1);
 

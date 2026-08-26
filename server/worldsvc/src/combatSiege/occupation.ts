@@ -15,6 +15,7 @@ import {
   proceduralTile,
   playerWorldId,
   npcGarrison,
+  isCityGroundTile,
   OCCUPY_HOLD_SEC,
   SlgError,
   type TileType,
@@ -78,7 +79,10 @@ export class OccupationService {
     }
 
     const blocked =
-      proc.type === 'center' ||
+      // isCityGroundTile = familyKeep | center. City ground is siege-only (ADR-074); this arrival-time
+      // re-check used to name 'center' alone, so a march dispatched before the departure-side guard existed
+      // (or against a world whose template moved a city under it in flight) could still land on a city plot.
+      isCityGroundTile(proc.type) ||
       (occ?.ownerId != null && occ.ownerId !== m.ownerId) ||
       (occ?.ownerId === m.ownerId && occ.type !== 'base');
     if (blocked) {
@@ -469,8 +473,6 @@ export class OccupationService {
         }, t);
       }
     }
-    void this.core.applyNationChange(d.worldId, d.x, d.y, d.ownerId, d.familyId);
-
     const after = await cols.tiles.findOne({ _id: d.tile });
     if (after) {
       void this.core.pushTile(d.ownerId, after);

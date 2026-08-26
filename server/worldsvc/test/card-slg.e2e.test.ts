@@ -8,6 +8,7 @@ import {
   SLG_MAP_W,
   SLG_MAP_H,
   TROOP_CAP_BASE,
+  troopCapFor,
   CARD_INJURY_DURATION_MS,
   CARD_RECOVER_COIN_COST,
   strongholdGarrison,
@@ -15,6 +16,7 @@ import {
   baseFootprintCells,
   baseFootprintInBounds,
   cardTroopCap,
+  isCityGroundTile,
 } from '@nw/shared';
 import type { CardInstance } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -110,7 +112,7 @@ function findNearbyBase(sx: number, sy: number): { x: number; y: number } {
         if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
         const blocked = baseFootprintCells(x, y).some((c) => {
           const t = proceduralTile(W, c.x, c.y);
-          return t.type === 'center' || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
+          return isCityGroundTile(t.type) || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
         });
         if (!blocked) return { x, y };
       }
@@ -189,7 +191,7 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     );
     await m.runMigrations();
     const pw = await m.collections.playerWorld.findOne({ _id: pwId });
-    // desk:1, drillYard:0 → refreshed cap = TROOP_CAP_BASE (10000); folded min(10000, 2000+10000) = 10000.
+    // desk:1, drillYard:0 → refreshed cap = TROOP_CAP_BASE; folded min(cap, 2000 + 10000 stock) = cap.
     expect(pw?.troopCap).toBe(TROOP_CAP_BASE);
     expect(pw?.troops).toBe(TROOP_CAP_BASE);
     expect((pw as { baseTroopStock?: number } | null)?.baseTroopStock).toBeUndefined();
@@ -206,6 +208,69 @@ describe.skipIf(!mongo)('CC-3 card-based SLG e2e', () => {
     // min(troopCap, (troops ?? 0) + 3000) = min(TROOP_CAP_BASE, 0 + 3000) = 3000.
     expect(pw?.troops).toBe(3000);
     expect((pw as { baseTroopStock?: number } | null)?.baseTroopStock).toBeUndefined();
+  });
+
+  /**
+   * 2026-08-25 troopCap re-tune (TROOP_CAP_BASE 10000->5000, DRILL_TROOPCAP_STEP 1000->1500): `troopCap` is a
+   * PERSISTED field, refreshed only when a build completes, so changing the formula strands every existing
+   * account on its old stored cap — and the next drillYard build would then recompute it DOWNWARD (old
+   * 10000+1000L beats new 6500+1500L for every L<7), i.e. an upgrade that shrinks your army.
+   * migrateTroopCapRetune re-derives the cap for everyone at boot instead. See its doc comment.
+   */
+  it('runMigrations re-derives a stale stored troopCap from buildings and clamps troops into it', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    // A doc frozen on the pre-re-tune formula: drillYard L4 stored as 10000 + 4x1000, pool full at that cap.
+    const staleCap = 14000;
+    await m.collections.playerWorld.updateOne(
+      { _id: pwId },
+      { $set: { 'buildings.drillYard': 4, troops: staleCap, troopCap: staleCap } as never },
+    );
+    await m.runMigrations();
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    const expected = troopCapFor({ desk: 1, drillYard: 4 });
+    expect(pw?.troopCap).toBe(expected);
+    expect(expected).toBeLessThan(staleCap);   // the re-tune is a cap CUT at this level — the point of the pass
+    expect(pw?.troops).toBe(expected);         // troops clamped down, not left dangling above the cap
+  });
+
+  it('runMigrations does not hand a full army to a doc that has no `troops` field at all', async () => {
+    // `$min` skips nulls, so the clamp stage needs $ifNull: without it this doc comes back with
+    // troops === troopCap. The `troops`-less shape is real — migratePlayerWorldTroopPool has its own
+    // e2e for it two tests up.
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    await m.collections.playerWorld.updateOne({ _id: pwId }, { $unset: { troops: '' } as never, $set: { troopCap: 99999 } });
+    await m.runMigrations();
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.troopCap).toBe(troopCapFor({ desk: 1 }));
+    expect(pw?.troops).toBe(0);
+  });
+
+  it('runMigrations treats a doc with no `buildings` field as drillYard 0, not as a doc to skip', async () => {
+    // The second $ifNull in the same expression as the `troops` one above: without it, `$buildings.drillYard`
+    // is missing -> the $multiply yields null -> the derived cap is null, the $ne filter matches, and the doc
+    // gets its troopCap overwritten with null. Legacy/hand-written docs are the shape that hits this.
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    await m.collections.playerWorld.updateOne({ _id: pwId }, { $unset: { buildings: '' } as never, $set: { troopCap: 12345, troops: 12345 } });
+    await m.runMigrations();
+    const pw = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(pw?.troopCap).toBe(TROOP_CAP_BASE);  // no drillYard at all -> the bare base
+    expect(pw?.troops).toBe(TROOP_CAP_BASE);    // clamped down from 12345
+  });
+
+  it('runMigrations leaves an already-correct troopCap (and its troops) untouched — idempotent', async () => {
+    const pwId = playerWorldId(W, 'a');
+    await svc.joinWorld(W, 'a', 5, 5);
+    await m.collections.playerWorld.updateOne({ _id: pwId }, { $set: { troops: 1234 } });
+    const before = await m.collections.playerWorld.findOne({ _id: pwId });
+    await m.runMigrations();
+    await m.runMigrations(); // twice: the $expr filter must stop matching, so rev must not keep climbing
+    const after = await m.collections.playerWorld.findOne({ _id: pwId });
+    expect(after?.troopCap).toBe(troopCapFor({ desk: 1 }));
+    expect(after?.troops).toBe(1234); // NOT clamped or refilled — a below-cap pool is left exactly as it was
+    expect(after?.rev).toBe(before?.rev);
   });
 
   it('setTeams with cardInstanceId — validates uniqueness across teams', async () => {

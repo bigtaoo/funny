@@ -13,7 +13,7 @@ import type { ProceduralTile } from './types';
 import { obstacleTile } from './types';
 import { biomeAt, resTypeFor } from './biome';
 import { _branchKindAt, _crossingTile, _riverChordAt, _ringTerrainAt, RIVER_CHORD_COUNT } from './terrain';
-import { _inCityBackBands, _worldCityNodes, PROVINCE_CAPITAL_LEVEL, RESOURCE_LEVEL_CAP_NEAR_CITY, WORLD_CENTER_FOOTPRINT } from './cities';
+import { _cityGroundNodeAt, _inCityBackBands, _worldCityNodes, PROVINCE_CAPITAL_LEVEL, RESOURCE_LEVEL_CAP_NEAR_CITY, WORLD_CENTER_FOOTPRINT } from './cities';
 import { _levelFromRing } from './levelDist';
 
 /**
@@ -37,17 +37,19 @@ export function proceduralTile(world: string, x: number, y: number): ProceduralT
     return { type: 'center', level: SLG_MAP_MAX_LEVEL };
   }
 
-  const caps = provinceCapitalPositions(mapW, mapH, seed);
-  const capIdx = capitalIdxAt(x, y, caps);
-  if (capIdx >= 0) {
-    return { type: 'familyKeep', level: PROVINCE_CAPITAL_LEVEL, resType: biomeAt(x, y, seed) };
-  }
-
-  for (const node of _worldCityNodes(mapW, mapH, seed)) {
-    if (node.x === x && node.y === y) {
-      return { type: 'familyKeep', level: node.level, resType: biomeAt(x, y, seed) };
-    }
-  }
+  // Province capitals + graded cities: the whole FOOTPRINT is city ground (ADR-074). This used to be an
+  // exact anchor-cell match (`capitalIdxAt` + `node.x === x && node.y === y`), which left a Lv.8 city as
+  // one `familyKeep` cell plus 48 ordinary resource tiles hidden under its sprite — each independently
+  // occupiable — and disagreed with `rasterizeMapEdits`, which always stamped the full footprint. See
+  // `_cityGroundNodeAt` for the full writeup.
+  //
+  // No `resType`: city ground does not yield. Before ADR-074 it carried `biomeAt(x, y, seed)`, which was
+  // harmless while a city was a single cell but would otherwise hand a captured city up to 81 tiles of
+  // land yield ON TOP of the sect-wide bonus a captured city already grants
+  // (SLG_CITY_SIEGE_DESIGN §8.1) — a double payout. Nothing renders it either: the client's drawTileL1
+  // suppresses the resource-heap motif on city ground regardless (`isCityGroundTile`).
+  const cityGround = _cityGroundNodeAt(mapW, mapH, seed, x, y);
+  if (cityGround) return { type: 'familyKeep', level: cityGround.level };
 
   return proceduralTileIgnoringCities(world, x, y);
 }

@@ -1,5 +1,6 @@
 // SLG core: error type, enums, deterministic ID derivation, capacity/map dimensions, main-base footprint,
 // procedural distribution knobs, and general numeric constants — single source of truth (SLG_DESIGN.md §14, S8-0).
+// The troop TRAINING queue's own constants live in `training.ts` (split out 2026-08-25, see that file).
 // Split out of slg.ts (god-file split, [[project_godfile_split_pattern]]).
 // Pure data + pure functions; no DB / no PIXI. worldsvc uses this as the authoritative server-side source for maps/territory/marches/families.
 //
@@ -277,10 +278,28 @@ export const SLG_GEN = {
 } as const;
 
 // ── Numeric constants (U6 DRAFT; tune after launch) ────────────────────
-// Base city troop pool cap (drillYard adds +DRILL_TROOPCAP_STEP/level on top). Set to the
-// new-player join grant so a fresh capital holds its whole starting reserve (unified troop pool,
-// CHARACTER_CARDS_DESIGN §6.3/§6.5 — troops = 基地兵力池, distributed to cards from here).
-export const TROOP_CAP_BASE = 10000;
+/**
+ * Base city troop pool cap (drillYard adds +DRILL_TROOPCAP_STEP/level on top), and the new-player join
+ * grant — a fresh capital holds its whole starting reserve (unified troop pool, CHARACTER_CARDS_DESIGN
+ * §6.3/§6.5 — troops = 基地兵力池, distributed to cards from here).
+ *
+ * **2026-08-25 re-tune (ADR-048 revision, 10000 → 5000).** ADR-048's 10000 base against
+ * DRILL_TROOPCAP_STEP=1000 made drillYard's whole 10-level arc worth only a **2×** pool (10000 → 20000),
+ * and its first level worth +10% — too little to be felt, so the building read as skippable even though it
+ * is the sole source of troop-pool growth. The max is unchanged at 20000; the base is halved and the step
+ * raised to 1500 instead, making the arc **4×** and each level +30% of base. Deliberate consequences, all
+ * accepted rather than compensated for:
+ *   - **The PvE gate arc stretches.** Crossing (10350) / stronghold (11800) garrisons are NOT rescaled, so
+ *     they now open at drillYard L4 / L5 instead of L1 / L2 — see siege.ts's two garrison constants.
+ *   - **The early game is poorer.** A fresh player fields 5000 troops, and at OCCUPY_MIN_TROOPS=500 can
+ *     hold 10 tiles rather than 20. GARRISON_PER_TILE is deliberately left at 500.
+ *   - **Existing players lose troops once.** troopCap is recomputed from buildings on every read
+ *     (worldsvc/db/playerDocs.ts refreshTroopCap) and clamps `troops` down, so every account below
+ *     drillYard L10 sees its cap drop (L0 halves; L10 is unchanged). Landed mid-season knowingly — these
+ *     numbers are still DRAFT.
+ * Re-run `server/tools/econ-sim/src/strongholdCombatRun.ts` after touching this or DRILL_TROOPCAP_STEP.
+ */
+export const TROOP_CAP_BASE = 5000;
 export const MARCH_SPEED_SEC_PER_TILE = 6; // seconds of march time per tile
 export const MARCH_MIN_TROOPS = 1; // minimum troops required to send a march
 /** Morale ceiling for a fresh march (normalized to 100 points). Bound to the march instance — resets to full on every departure. */
@@ -442,38 +461,3 @@ export const ARROW_TOWER_DMG_CAP = 300;
  * This avoids O(n) direct HTTP pushes from worldsvc to sects of ≤900 players (too much traffic), and naturally supports routing across multiple gateway instances.
  */
 export const GW_PUSH_REDIS_CHANNEL = 'nw:gw:push';
-
-// ── Training queue (S8-2, §4 troop cycle) ──────────────────────────────
-/** Ink cost per troop trained (sustain resource; DRAFT, tune after launch). */
-export const TROOP_TRAIN_INK_COST = 10;
-/** Paper cost per troop trained (wood, 2026-08-01 tune — building-material tax alongside ink). */
-export const TROOP_TRAIN_PAPER_COST = 5;
-/** Graphite cost per troop trained (stone, 2026-08-01 tune). */
-export const TROOP_TRAIN_GRAPHITE_COST = 5;
-/** Metal cost per troop trained (iron ore, 2026-08-01 tune). */
-export const TROOP_TRAIN_METAL_COST = 5;
-/** Sticker cost per troop trained (copper coin, 2026-08-01 tune — small token cost, sticker faucet is the scarcest). */
-export const TROOP_TRAIN_STICKER_COST = 1;
-/** Training time per troop (seconds, DRAFT). */
-export const TROOP_TRAIN_TIME_SEC = 5;
-/** Maximum troops per training batch (single-batch queue size cap). */
-export const TROOP_TRAIN_BATCH_MAX = 5000;
-/** Maximum concurrent training batches (training queue slots). */
-export const TROOP_TRAIN_QUEUE_MAX = 2;
-/** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */
-export const TROOP_SPEEDUP_SECS_PER_COIN = 60;
-/**
- * Train-speedup shop buff multiplier (S8-8 fix, 2026-08-08): while a player's `speedupUntil` is in the
- * future, the training queue advances at this multiple of real-time speed — the shop items
- * (`slg_speedup_1h/8h/24h`) only differ in price/duration, not in how much faster training gets. Replaces
- * the earlier (incorrect) implementation that spent the whole duration as a one-time instant-skip against
- * whatever was queued at purchase time, which didn't match the item description ("speed up training for
- * N hours") — see worldsvc CityService.trainTroops/processCompletedTraining + ShopService.buySlgShopItem.
- */
-export const TRAIN_SPEEDUP_BUFF_MULT = 2;
-/**
- * Instant-return rate for a 'return' march (2026-08-01, SLG_DESIGN_LOG §46): seconds of remaining travel time
- * per coin spent. Same DRAFT rate as TROOP_SPEEDUP_SECS_PER_COIN, kept as its own constant so the two economies
- * can be tuned independently.
- */
-export const MARCH_RETURN_SPEEDUP_SECS_PER_COIN = 60;

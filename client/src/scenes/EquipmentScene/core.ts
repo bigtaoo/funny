@@ -55,7 +55,6 @@ import type { SaveData, EquipSlot, EquipRarity } from '../../game/meta/SaveData'
 import { EQUIP_MAX_LEVEL } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
-import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { buildLevelStars as buildLevelStarsRow } from '../../render/levelStars';
 import { MAT_COLOR, matIconKind } from './layout';
@@ -387,9 +386,7 @@ export class EquipmentSceneCore {
       if (kind) {
         const ic = (kind === 'scrap' || kind === 'lead' || kind === 'binding')
           ? buildMaterialIcon(kind, size, iconColor)
-          : kind === 'coin'
-            ? buildCoinIcon(kind, size, iconColor)
-            : buildIcon(kind, size, iconColor);
+          : buildIcon(kind, size, iconColor);
         ic.x = cx; ic.y = midY - size / 2;
         parent.addChild(ic);
         cx += size + 1;

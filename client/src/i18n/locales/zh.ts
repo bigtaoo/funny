@@ -819,6 +819,20 @@ export const zh = {
   'world.recommendTroops': '建议兵力 {n}',
   'world.buildingHp': '耐久 {hp}/{max}',
   'world.center': '世界中心',
+  'world.city': '城池',
+  'world.cityLevel': 'Lv.{lv} 城池',
+  'world.cityHint': '野外城池，须加入帮会后合力围攻；城内土地不可单独占领',
+  'world.cityUnclaimed': '未被占领（NPC 驻守）',
+  'world.cityOwnedBy': '归属：{sect}',
+  'world.cityOwnedByUs': '归属：{sect}（本帮会）',
+  'world.cityDurability': '城池耐久 {cur} / {max}',
+  'world.cityRegen': '每小时自动回复 {n} 耐久 —— 单人打不下来，须多人同时围攻',
+  'world.cityProtected': '易主保护中，{d} 后可再次围攻',
+  'world.citySiegeLog': '本轮伤害 · {sect}：{n}',
+  'world.citySiegeLogUs': '本帮会',
+  'world.cityNeedSect': '须先加入帮会才能围攻城池',
+  'world.cityOursHint': '本帮会已占领此城',
+  'world.actSiegeCity': '围攻城池',
   'world.stronghold': '险地',
   'world.strongholdHint': '系统超强守军据点，须围攻攻克；得手占为领地并获大量资源',
   'world.marchList': '行军列表',
@@ -1561,6 +1575,7 @@ export const zh = {
   'city.bonusAcademyDmg': '出征单位伤害 +{pct}%',
   'city.bonusSatchel': '单队出征携带兵力上限 {n}',
   'city.troopCap': '兵力 {cur}/{cap}',
+  'city.trainQueueStatus': '队列 {n}/{max} · 在训 {training} · 可训 {left}',
   'city.trainEntry': '训练中 {n} · 剩 {time}',
   'city.trainMax': '最大 +{n}',
   'city.err.noResources': '资源不足',
@@ -1643,6 +1658,9 @@ export const zh = {
   // Team management "取消指令" (2026-07-15): force a busy team back to idle
   'world.team.marching': '行军中',
   'world.team.occupying': '占领中 剩{time}',
+  // Field-stationed away from home (2026-07-23 field-stationing; city team row 2026-08-25)
+  'world.team.stationedIdle': '野外停留',
+  'world.team.garrisoned': '野外驻扎',
 };
 
 export type TranslationKey = keyof typeof zh;

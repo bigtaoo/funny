@@ -376,3 +376,10 @@ commercial 此前完全没有 Redis 依赖，本次新增：`config.ts` 补 `NW_
 
 **结论**：至此 `server/` 内 mixin 链、"继承复用转发面"两类历史模式全部清零——全仓库 grep `class \w+ extends` 只剩 7 处 `class XxxError extends Error`；`checkFileLength.mjs` 扫描 565 个源文件、0 超限、基线为空。
 
+
+**2026-08-25：ADR-074/075 让三个文件悄悄越线，CI 门禁已经红了一两天才被发现**：`npm run check:filelength` 在 `server/` 侧报 3 个新违规，全部不是本轮引入的——`shared/src/slg/siege.ts` 505、`worldsvc/src/territory.ts` 504、`shared/src/slg/core.ts` 509，都是 ADR-074 P0（城池地面 footprint 化 + 各处拦截的长注释）和 ADR-075（兵力曲线重调的说明段）留下的，且**基线文件是空的**（设计上就该保持空），所以那两轮之后这条门禁一直是红的。三个都拆掉、基线仍为空，而不是补基线条目把它按下去。
+
+- **`shared/src/slg/siege.ts`（505→439）→ 新 `slg/vision.ts`（75）**：该文件头自己列了五个关注点（攻城结算 / 视野迷雾 / 可玩防守关卡 / CC-3 卡牌兵役 / ADR-026 建筑血量）。**视野是唯一与攻城结算零耦合的那个**（`VISION_*` 半径 + `VisionSource` + `isInVision` + `marchInterpPos`，不碰守军、不碰卡、不碰耐久），所以是干净的独立函数模块切点。`index.ts` 加一行 `export * from './vision'`，`@nw/shared` 消费者零改动。
+- **`shared/src/slg/core.ts`（509→463）→ 新 `slg/training.ts`（62）**：core.ts 2026-08-20 才靠拆出 `tileRender.ts` 收到 479，ADR-075 又把它顶回 509。切「训练队列」那一段（`TROOP_TRAIN_*` / `TROOP_TRAIN_BATCH_MAX` / `TROOP_TRAIN_QUEUE_MAX` / 两个加速常量）——纯常量、对 core.ts 其余部分零依赖。唯一需要改的 import 是 `slg/city.ts`（`troopTrainCost`/`trainQueueMaxFor` 用得到），其余消费者都走 barrel。**新文件头写了一条警告**：改这里会同时作废两套标定（stronghold/crossing PvE 门槛、ADR-074 城池曲线），两个 econ-sim 脚本都得重跑。
+- **`worldsvc/src/territory.ts`（504→396）→ 新 `territory/structures.ts`（147）**：ADR-051 的三个玩家建筑方法（`buildWatchtower`/`buildStructure`/`demolishStructure`）与 join/occupy/abandon/relocate 零共享状态，只读 `core` 和 shared 的造价/血量常量，且三者是同一套 settle→校验→扣费→打标的形状——独立函数模块形态，`TerritoryService` 保留三个一行转发，调用点（service.ts 门面 / httpApi / e2e）零改动，函数体逐字搬迁。
+- **教训（记这一条比记三次拆分更重要）**：这三个文件都不是被功能代码顶过线的，是被**解释性注释**顶过线的——P0/P1 那类"为什么不能这么做"的长注释确实值得留（本轮 P1 就靠它们避免重复踩坑），但它们和功能代码一样占行数。**大段写注释的改动收尾时也要跑一次 `check:filelength`**，不能因为"我没加逻辑"就跳过。

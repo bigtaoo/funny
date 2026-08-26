@@ -11,11 +11,12 @@
 // Run: npm test — the default suite's `test/**/*.test.ts` include picks this up. There is no
 // separate render suite (vitest.render.config.ts was deleted 2026-08-15; see icons.test.ts).
 import { describe, it, expect, vi } from 'vitest';
-// The two real atlas manifests, imported for their frame *names* only (no decode). The kind strings
-// this module hands to buildCoinIcon/buildMaterialIcon have to exist in these, or the atlas lookup
-// misses and every coin/material reward silently falls back to a procedural glyph — the exact 2026-08-15
-// bug, just on the routes the faked builders below can't see.
-import coinAtlasData from '../../src/assets/shop/coins.json';
+// The material atlas manifest, imported for its frame *names* only (no decode). The kind strings
+// this module hands to buildMaterialIcon have to exist in here, or the atlas lookup misses and
+// every material reward silently falls back to a procedural glyph — the exact 2026-08-15 bug, just
+// on the route the faked builder below can't see. Coins have no manifest of their own to check
+// against any more (folded into TAB_ICON_RASTER 2026-08-25) — see the coin-tier test further down,
+// which cross-checks against the real icons module instead.
 import iconsAtlasData from '../../src/assets/icons/icons_atlas.json';
 // Type-only (erased at runtime, so no server module is loaded): the reward-kind unions of every
 // endpoint that feeds a reward row, used for the exhaustiveness table at the end of the first block.
@@ -25,38 +26,34 @@ import type { BpRewardKind } from '../../../server/shared/src/battlepass';
 import type { RechargeRewardKind } from '../../../server/shared/src/rechargeMilestone';
 import type { MailAttachmentKind } from '../../../server/shared/src/social';
 
-// All three builders share the real `(kind, size, color)` shape. Spell the params out (rather than
+// Both builders share the real `(kind, size, color)` shape. Spell the params out (rather than
 // `vi.fn(() => …)`) so vitest infers a 3-tuple for `mock.calls` — a zero-arg mock infers `[]` and
 // every `calls[0][0]` assertion below becomes a TS2493 under `npm run typecheck`. That failure is
 // invisible to `npm test` (esbuild strips types), so it only ever surfaces in CI's typecheck step,
 // which is how this file shipped red on 2026-08-15. Keep the params typed when adding a fake here.
 type BuildIconArgs = [kind: string, size: number, color: number];
 // buildIcon alone takes a 4th arg: which pre-baked ink a raster tab icon should use (added
-// 2026-08-16 along with the `content` variant). Optional, so the atlas fakes keep the 3-tuple shape.
+// 2026-08-16 along with the `content` variant). Optional, so the atlas fake keeps the 3-tuple shape.
 type BuildIconVariantArgs = [...BuildIconArgs, opts?: { variant?: string }];
 const buildIcon = vi.fn((..._a: BuildIconVariantArgs) => ({ kind: 'drawn' }));
-const buildCoinIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'coin' }));
 const buildMaterialIcon = vi.fn((..._a: BuildIconArgs) => ({ kind: 'material' }));
 
-// The three art-warming loaders are fakes too, so `preloadRewardIconArt` can be driven through its
-// failure paths without real network/decode work.
-const preloadTabIconTextures = vi.fn((): Promise<void> => Promise.resolve());
-const loadCoinIconAtlas = vi.fn((): Promise<void> => Promise.resolve());
+// The two remaining art-warming loaders are fakes too, so `preloadRewardIconArt` can be driven
+// through its failure paths without real network/decode work. There used to be a third
+// (loadCoinIconAtlas) — removed 2026-08-25 along with coinIconAtlas.ts itself, since the coin tiers
+// now warm through preloadIconArt like every other raster icon.
+const preloadIconArt = vi.fn((): Promise<void> => Promise.resolve());
 const loadMaterialAtlas = vi.fn((): Promise<void> => Promise.resolve());
 
 vi.mock('../../src/render/icons', () => ({
   buildIcon: (...a: BuildIconVariantArgs) => buildIcon(...a),
-  preloadTabIconTextures: () => preloadTabIconTextures(),
+  preloadIconArt: () => preloadIconArt(),
   // Real implementation, not a stub — which pre-baked ink a reward row asks for is decided by this
   // luma test, so faking it would hollow out the variant assertions below.
   tabIconVariant: (color: number): 'active' | 'inactive' => {
     const r = ((color >> 16) & 0xff) / 255, g = ((color >> 8) & 0xff) / 255, b = (color & 0xff) / 255;
     return 0.299 * r + 0.587 * g + 0.114 * b >= 0.70 ? 'active' : 'inactive';
   },
-}));
-vi.mock('../../src/render/atlas/coinIconAtlas', () => ({
-  buildCoinIcon: (...a: BuildIconArgs) => buildCoinIcon(...a),
-  loadCoinIconAtlas: () => loadCoinIconAtlas(),
 }));
 vi.mock('../../src/render/atlas/materialAtlas', () => ({
   buildMaterialIcon: (...a: BuildIconArgs) => buildMaterialIcon(...a),
@@ -89,24 +86,26 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
   // kind is AI art or a procedural glyph — `buildIcon` is faked here, so 'cards' and 'rosterIcon'
   // look identical to it. Someone reverting this module and its expectation table together (exactly
   // the 2026-08-15 bug, which had `card`→'cards'/`equipment`→'armor'/`skin`→'brush') would keep this
-  // file green. So check the expectation table itself against the real icons.ts: a raster tab icon
-  // is precisely one that has NO entry in the exported `DRAW` dispatch record — `DrawableIconKind`
-  // is `Exclude<IconKind, RasterIconKind>`, so a procedural kind is always a DRAW key and an AI
-  // raster kind never is. importActual bypasses the vi.mock above to read the genuine table.
+  // file green. So check the expectation table itself against the real icons.ts: a variant-baked tab
+  // icon is precisely one that has NO entry in the exported `INK_ICON_ART` table — `IconKind` is
+  // `InkIconKind | RasterIconKind` and the two never overlap (`inkIconArt.test.ts` pins that), so a
+  // kind found in the ink table is one whose `content` ink this module cannot ask for. Before
+  // 2026-08-25 the same check read the procedural `DRAW` record, which the batch-7 art retired.
+  // importActual bypasses the vi.mock above to read the genuine table.
   // 30s, not the default 5s: the `importActual` below is the only cold, un-faked load of the real
   // icons module in this file, so this one case pays the full transform/collect cost of pixi.js-legacy
   // plus the raster icon atlas graph. Alone it finishes in ~2s, but under a full `vitest run` with
   // anything else on the CPU (a sibling suite, a webpack build) that cost swings wide enough to blow
   // the 5s budget — it timed out intermittently on a busy machine, never on an idle one. Budget is
   // per-case on purpose: no other case here imports for real, so the global testTimeout stays 5s.
-  it('picks raster AI kinds for all three item rewards — never a procedural DRAW glyph', async () => {
+  it('picks variant-baked tab-icon kinds for all three item rewards — never a tinted ink glyph', async () => {
     const realIcons = await vi.importActual<typeof import('../../src/render/icons')>(
       '../../src/render/icons',
     );
-    const regressedToProcedural = Object.entries(AI_ITEM_ICON)
-      .filter(([, iconKind]) => iconKind in realIcons.DRAW)
+    const regressedToInkGlyph = Object.entries(AI_ITEM_ICON)
+      .filter(([, iconKind]) => iconKind in realIcons.INK_ICON_ART)
       .map(([rewardKind, iconKind]) => `${rewardKind} → ${iconKind}`);
-    expect(regressedToProcedural).toEqual([]);
+    expect(regressedToInkGlyph).toEqual([]);
   }, 30_000);
 
   // Which of the three pre-baked inks the raster art is drawn in (2026-08-16). The `inactive` grey
@@ -138,13 +137,13 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
   // no test would notice — reward rows would silently render at the wrong scale or in the wrong ink.
   // Distinct values per route so a cross-wired forward (coin size reaching the material call) fails.
   it('forwards the caller\'s size and ink unchanged down every art route', () => {
-    buildIcon.mockClear(); buildCoinIcon.mockClear(); buildMaterialIcon.mockClear();
+    buildIcon.mockClear(); buildMaterialIcon.mockClear();
     buildRewardIcon({ kind: 'card', count: 1 }, 41, 0x111111);
     buildRewardIcon({ kind: 'coins', count: 20 }, 42, 0x222222);
     buildRewardIcon({ kind: 'material', id: 'lead', count: 1 }, 43, 0x333333);
     buildRewardIcon({ kind: 'binding', count: 1 }, 44, 0x444444); // bare-material-as-kind route
     expect(buildIcon.mock.calls[0].slice(1)).toEqual([41, 0x111111, { variant: 'content' }]);
-    expect(buildCoinIcon.mock.calls[0].slice(1)).toEqual([42, 0x222222]);
+    expect(buildIcon.mock.calls[1].slice(1)).toEqual([42, 0x222222]);
     expect(buildMaterialIcon.mock.calls.map((c) => c.slice(1))).toEqual([[43, 0x333333], [44, 0x444444]]);
   });
 
@@ -159,24 +158,28 @@ describe('buildRewardIcon — single source of truth for reward pictures', () =>
     expect(buildMaterialIcon.mock.calls[0][0]).toBe('lead');
   });
 
-  it('routes coins through buildCoinIcon (AI coin atlas), never buildIcon', () => {
-    buildIcon.mockClear(); buildCoinIcon.mockClear();
+  // 2026-08-25: coins used to route through a standalone buildCoinIcon/coinIconAtlas wrapper (with
+  // its own procedural fallback). That wrapper is gone — the 5 coin-tier kinds are now plain
+  // TAB_ICON_RASTER entries, so `buildRewardIcon` resolves them through the same `buildIcon` every
+  // other raster kind uses.
+  it('routes coins through buildIcon, the shared raster resolver', () => {
+    buildIcon.mockClear();
     buildRewardIcon({ kind: 'coins', count: 20 }, 40, 0xd4a030);
-    expect(buildCoinIcon).toHaveBeenCalledTimes(1);
-    expect(buildIcon).not.toHaveBeenCalled();
+    expect(buildIcon).toHaveBeenCalledTimes(1);
+    expect(buildIcon.mock.calls[0][0]).toBe('coin');
   });
 
   it('lets a caller override the coin tier (RechargeScene\'s coarser payout scale)', () => {
-    buildCoinIcon.mockClear();
+    buildIcon.mockClear();
     buildRewardIcon({ kind: 'coins', count: 60 }, 40, 0xd4a030, { coinKind: 'coinChest' });
-    expect(buildCoinIcon.mock.calls[0][0]).toBe('coinChest');
+    expect(buildIcon.mock.calls[0][0]).toBe('coinChest');
   });
 
   // `count ?? 0` — a countless coin reward must still draw a picture, not crash or jump a tier.
   it('treats a coin reward with no count as the smallest pile', () => {
-    buildCoinIcon.mockClear();
+    buildIcon.mockClear();
     buildRewardIcon({ kind: 'coins' }, 40, 0xd4a030);
-    expect(buildCoinIcon.mock.calls[0][0]).toBe('coin');
+    expect(buildIcon.mock.calls[0][0]).toBe('coin');
   });
 
   it('routes materials through buildMaterialIcon (AI material atlas), by id and by bare kind', () => {
@@ -266,12 +269,19 @@ describe('coinIconTier / materialKind', () => {
     expect([0, -1].map(coinIconTier)).toEqual(['coin', 'coin']);
   });
 
-  // The DRAW cross-check above does this for the three item rewards; these two do it for the coin
-  // and material routes. buildCoinIcon/buildMaterialIcon are faked here, so a tier renamed (or a
-  // sixth tier added) without matching art would pass every other assertion in this file and then
-  // miss the atlas frame at runtime — degrading to the procedural glyph with nothing going red.
-  it('only names coin tiers the AI coin atlas has a frame for', () => {
-    const frames = Object.keys(coinAtlasData.frames);
+  // The ink-table cross-check above does this for the three item rewards; these two do it for the coin
+  // and material routes. buildMaterialIcon is faked here (and buildIcon's raster dispatch is faked
+  // for the assertions above it in this file too), so a tier renamed (or a sixth tier added)
+  // without matching art would pass every other assertion in this file and then miss the raster
+  // table at runtime — degrading to a blank icon with nothing going red. Cross-checks the real
+  // `TAB_ICON_RASTER` (importActual bypasses the vi.mock above, same technique as the ink-table
+  // cross-check) rather than a standalone atlas manifest — coins have not had one of their own
+  // since coinIconAtlas.ts was folded into the shared raster table (2026-08-25).
+  it('only names coin tiers the AI coin atlas has a frame for', async () => {
+    const realIcons = await vi.importActual<typeof import('../../src/render/icons')>(
+      '../../src/render/icons',
+    );
+    const frames = Object.keys(realIcons.TAB_ICON_RASTER);
     const tiers = [...new Set([0, 40, 80, 150, 300, 99999].map(coinIconTier))];
     expect(tiers.filter((k) => !frames.includes(k))).toEqual([]);
   });
@@ -296,18 +306,20 @@ describe('coinIconTier / materialKind', () => {
 // behaviour: scenes call it fire-and-forget as `void preloadRewardIconArt().then(() => this.render())`,
 // so if it ever propagated a rejection, a single 404 on one atlas would surface as an unhandled
 // promise rejection on six unrelated screens — while the visible result of that failure is meant to
-// be nothing worse than a procedural glyph for a frame or two. `Promise.allSettled` is what buys
-// that, and swapping it for `Promise.all` is a one-word edit no other test would notice.
+// be nothing worse than a procedural glyph (or, for the raster-only kinds, a blank frame) for a
+// moment. `Promise.allSettled` is what buys that, and swapping it for `Promise.all` is a one-word
+// edit no other test would notice. Two loaders, not three: loadCoinIconAtlas was folded into
+// preloadIconArt 2026-08-25 along with the rest of coinIconAtlas.ts.
 describe('preloadRewardIconArt', () => {
-  const loaders = [preloadTabIconTextures, loadCoinIconAtlas, loadMaterialAtlas];
+  const loaders = [preloadIconArt, loadMaterialAtlas];
 
-  it('warms all three art sources', async () => {
+  it('warms both art sources', async () => {
     loaders.forEach((l) => l.mockClear());
     await expect(preloadRewardIconArt()).resolves.toBeUndefined();
     for (const loader of loaders) expect(loader).toHaveBeenCalledTimes(1);
   });
 
-  it.each([0, 1, 2])('still resolves when art source %i fails', async (i) => {
+  it.each([0, 1])('still resolves when art source %i fails', async (i) => {
     loaders.forEach((l) => l.mockClear());
     loaders[i].mockRejectedValueOnce(new Error('decode failed'));
     await expect(preloadRewardIconArt()).resolves.toBeUndefined();

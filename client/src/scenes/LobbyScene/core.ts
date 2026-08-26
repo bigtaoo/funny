@@ -14,13 +14,15 @@
 // constructing every domain.
 //
 // One genuine two-phase-construction wrinkle: rebuild() (full teardown + relayout, needed when a
-// strip item appears/disappears, or once the coin-icon atlas finishes loading after the first draw)
-// only ever touches Core-owned fields except for the final "now redraw everything" step, which is
-// BuildPanel's build() — a method that doesn't exist yet when Core's own constructor wires up the
-// onSaveChanged/coinIconAtlas listeners that (later, async) need to call it. Resolved via the
-// established default-no-op-field two-phase-construction pattern (see client-modules.md): Core
-// declares `buildHook` defaulting to a no-op, and the outer assembly overwrites it with the real
-// `() => this.build.build()` immediately after constructing BuildPanel, before anything can fire.
+// strip item appears/disappears, or once the tab-icon raster art — including the coin balance
+// glyph, folded into the same TAB_ICON_RASTER table 2026-08-25 — finishes decoding after the first
+// draw) only ever touches Core-owned fields except for the final "now redraw everything" step,
+// which is BuildPanel's build() — a method that doesn't exist yet when Core's own constructor
+// wires up the onSaveChanged/preloadIconArt listeners that (later, async) need to call it.
+// Resolved via the established default-no-op-field two-phase-construction pattern (see
+// client-modules.md): Core declares `buildHook` defaulting to a no-op, and the outer assembly
+// overwrites it with the real `() => this.build.build()` immediately after constructing BuildPanel,
+// before anything can fire.
 //
 // One genuine bidirectional dependency surfaced during the conversion: the old build.ts's build()
 // called badges.ts's drawSocialBadge()/drawAchievementBadge()/drawShopBadge()/
@@ -29,8 +31,8 @@
 // badges.ts, tearing down Core state then calling build()) whenever the events strip item needs to
 // appear/disappear. Splitting "paint the badge dots" and "trigger a full relayout" across the same
 // two files was the wrong boundary: rebuild() itself doesn't actually belong to the badges domain at
-// all — it's a whole-scene concern (the exact same teardown+build() sequence coinIconAtlas and
-// onSaveChanged already needed from Core's own constructor), it just happened to live in badges.ts
+// all — it's a whole-scene concern (the exact same teardown+build() sequence preloadIconArt
+// and onSaveChanged already needed from Core's own constructor), it just happened to live in badges.ts
 // because that's where the first caller that needed it (events-strip visibility) was implemented.
 // Moving rebuild() here (Core) removes the back-edge entirely: badges.ts now only ever calls
 // `this.core.rebuild()` (a plain Core method, same as any other domain would), and build.ts depends
@@ -47,8 +49,7 @@ import { palette } from '../../render/theme';
 import { bake } from '../../render/bake';
 import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
-import { loadCoinIconAtlas } from '../../render/atlas/coinIconAtlas';
-import { preloadTabIconTextures } from '../../render/icons';
+import { preloadIconArt } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
 import { tearDownChildren } from '../../render/sketchUi';
 
@@ -377,26 +378,22 @@ export class LobbySceneCore {
 
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => { if (!this.destroyed) this.rebuild(); }));
 
-    // Header coin balance uses the shop's AI atlas glyph (buildCoinIcon); rebuild once it's
-    // decoded so the lobby doesn't stay stuck on the procedural fallback glyph.
-    loadCoinIconAtlas()
-      .catch((err) => console.warn('[LobbyScene] coin icon atlas load failed:', err))
-      .then(() => { if (!this.destroyed) this.rebuild(); });
-
-    // Same deal for the bottom nav's five AI tab glyphs — `buildIcon` draws nothing for a raster
-    // kind whose texture hasn't decoded (icons.ts), so on a cold first load the nav rendered
-    // label-only until some unrelated event happened to rebuild. Warming here also covers every
-    // scene entered FROM the lobby: `Texture.from` is url-keyed, so their title-bar and tab-strip
-    // glyphs (scene-title icon pass) are already decoded by the time they draw, which matters most
-    // for the ones that render exactly once and never redraw (settings / level prep / room).
-    preloadTabIconTextures()
+    // Warm every raster tab-icon PNG, including the header coin balance glyph (folded into the same
+    // TAB_ICON_RASTER table 2026-08-25) and the bottom nav's five AI tab glyphs — `buildIcon` draws
+    // nothing for a raster kind whose texture hasn't decoded (icons.ts), so on a cold first load the
+    // header/nav rendered label-only until some unrelated event happened to rebuild. Warming here
+    // also covers every scene entered FROM the lobby: `Texture.from` is url-keyed, so their
+    // title-bar and tab-strip glyphs (scene-title icon pass) are already decoded by the time they
+    // draw, which matters most for the ones that render exactly once and never redraw (settings /
+    // level prep / room).
+    preloadIconArt()
       .catch((err) => console.warn('[LobbyScene] tab icon preload failed:', err))
       .then(() => { if (!this.destroyed) this.rebuild(); });
   }
 
   /**
    * Full teardown + rebuild — needed when a layout element (strip item) appears or changes, or
-   * when the coin-icon atlas finishes loading after the first draw. titleBoil / heroFigure are
+   * when the tab-icon raster art finishes loading after the first draw. titleBoil / heroFigure are
    * Ticker.shared-driven and hold sprites that tearDownChildren() is about to destroy — destroy
    * them explicitly first, same as destroy(), so their next tick doesn't touch a dead PIXI object
    * (that used to freeze the scene's update loop — see test/render/lobbyRebuildTeardown.test.ts).

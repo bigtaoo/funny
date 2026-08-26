@@ -3,7 +3,7 @@
 // full rows (x, y, level, garrison) so the panel can offer per-tile jump/abandon actions.
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { proceduralTile, tileId, SLG_MAP_W, SLG_MAP_H, baseFootprintCells } from '@nw/shared';
+import { proceduralTile, tileId, SLG_MAP_W, SLG_MAP_H, baseFootprintCells, isCityGroundTile } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
 
@@ -30,7 +30,7 @@ const CENTER_Y = Math.floor(SLG_MAP_H / 2);
 
 const OCCUPIABLE = (t: ReturnType<typeof proceduralTile>) => t.type === 'resource' || t.type === 'neutral';
 const BLOCKS_CAPITAL = (t: ReturnType<typeof proceduralTile>) =>
-  t.type === 'center' || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
+  isCityGroundTile(t.type) || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
 
 function findCoord(
   predicate: (t: ReturnType<typeof proceduralTile>) => boolean,

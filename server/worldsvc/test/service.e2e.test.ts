@@ -184,7 +184,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     await svc2.occupyTile(W, 'a', res.x, res.y); // one extra territory tile, should be retained after relocation
 
     // §3.4 (changed): relocation only onto a 3×3 the player ALREADY fully owns. Grant ownership of the whole
-    // destination footprint directly (occupyTile would run out of troops at 4 tiles: TROOP_CAP_BASE/GARRISON_PER_TILE).
+    // destination footprint directly (occupyTile runs out of troops after TROOP_CAP_BASE/GARRISON_PER_TILE tiles).
     const dst = findBlock(80, 80);
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
@@ -307,7 +307,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
       code: 'TILE_OCCUPIED',
     });
     // Seed exactly 4 squads' worth of troops (cap-independent — the unified pool now starts at
-    // TROOP_CAP_BASE=10000, so derive the drain from GARRISON_PER_TILE instead of the base cap):
+    // TROOP_CAP_BASE (5000 since 2026-08-25, and moved before that), so derive the drain from GARRISON_PER_TILE
     // 4 × GARRISON_PER_TILE → occupy 4 tiles to drain troops, 5th → NO_TROOPS.
     await m.collections.playerWorld.updateOne(
       { _id: playerWorldId(W, 'a') },

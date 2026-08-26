@@ -53,8 +53,8 @@ export class LobbyScene implements Scene {
     this.badges = new BadgesPanel(this.core);
     this.build = new BuildPanel(this.core, this.badges, this.overlays);
     // Two-phase construction: Core's rebuild() (already wired to fire from its own constructor via
-    // onSaveChanged/coinIconAtlas) needs to call BuildPanel.build(), which didn't exist yet when
-    // Core was constructed above — wire the hook now, before anything async can fire it.
+    // onSaveChanged/preloadTabIconTextures) needs to call BuildPanel.build(), which didn't exist yet
+    // when Core was constructed above — wire the hook now, before anything async can fire it.
     this.core.buildHook = () => this.build.build();
 
     // Paint the full layout on the same frame the scene mounts (mirrors the old mixin chain's

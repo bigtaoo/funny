@@ -6,7 +6,7 @@ import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
-import { buildRasterTabIcon, BACK_ARROW_ART, BACK_ARROW_ASPECT, preloadTabIconTextures } from '../render/icons';
+import { buildRasterTabIcon, BACK_ARROW_ART, BACK_ARROW_ASPECT, preloadIconArt } from '../render/icons';
 import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type View, type Field, type Hit } from './LoginScene/types';
 import { drawLanding, drawForm, drawSubmitting, PRESS_DUR, type FormHost } from './LoginScene/forms';
 
@@ -75,7 +75,7 @@ export class LoginScene implements Scene {
     // The back arrow is an AI raster that decodes asynchronously, and this scene runs BEFORE the
     // lobby (which is what warms these textures for every other scene) — without this, the first
     // login form to draw would show a label with no arrow. `render()` is destroy-guarded.
-    void preloadTabIconTextures()
+    void preloadIconArt()
       .catch((err) => console.warn('[LoginScene] back-arrow preload failed:', err))
       .then(() => this.render());
   }

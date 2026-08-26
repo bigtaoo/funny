@@ -32,6 +32,8 @@ export class WorldMapNet {
   async refreshWorldChat(): Promise<void> { return loaders.refreshWorldChat(this.ctx); }
   async refreshMe(): Promise<void> { return loaders.refreshMe(this.ctx); }
   async refreshTerritories(): Promise<void> { return loaders.refreshTerritories(this.ctx); }
+  /** ADR-074 P1: re-fetch wild-city siege state (opened city panel; see loaders.refreshCities). */
+  async refreshCities(): Promise<void> { return loaders.refreshCities(this.ctx); }
 
   // ── Marches / teams (net/march.ts) ──────────────────────────────────────────
 

@@ -1,52 +1,38 @@
-// Guards the 2026-07-07 icons.ts split (855→123: draw fns moved into icons/*, dispatch became the
-// exported DRAW record). Asserts the DRAW table resolves a live function for every IconKind — the
-// residual risk after the split is a draw fn that fails to import (resolves to undefined at runtime,
-// which the Record<IconKind,…> type cannot catch). No pixi rendering here, so no GL/canvas needed;
-// lives in test/render only because importing icons.ts pulls pixi.js-legacy.
-// Run: npm test — the default suite's `test/**/*.test.ts` include picks this up. There is no
-// separate render suite: the never-run vitest.render.config.ts this header used to warn about
-// was deleted 2026-08-15.
+// Guards `render/icons.ts`'s dispatch. It used to guard a third thing as well — that the `DRAW`
+// record resolved a live draw function for every procedural kind — but batch 7 of the AI-art
+// programme (design/product/tab-icon-art-prompts-batch7.md, 2026-08-25) replaced the last 44
+// procedural glyphs, emptied `DRAW`, and deleted `icons/{motifs,equipment,slg,ui,titles,currency}.ts`
+// with it. What is left to protect is the two-table dispatch `buildIcon` now does, and the colour
+// threshold the tab table's variant pick hangs off.
+//
+// The per-table art/naming contracts live next door, one file per family, because their failure
+// modes and their on-disk halves are different: `tabIconContentVariant.test.ts` (three baked inks
+// per tab icon) and `inkIconArt.test.ts` (one tinted master per ink icon).
+// No pixi rendering here, so no GL/canvas needed; lives in test/render only because importing
+// icons.ts pulls pixi.js-legacy. Run: npm test.
 import { describe, it, expect } from 'vitest';
-import { DRAW, tabIconVariant, type DrawableIconKind } from '../../src/render/icons';
-// Palette values are inlined rather than imported from `render/sketchUi` (HubTabs' `ui`) and
-// `scenes/LobbyScene/core` (`C`). That began as a hard constraint under the old render config,
-// which lacked the aliases those module graphs need; under the default config both now import
-// cleanly (verified 2026-08-15), so it is kept only to hold this dispatch-table guard independent
-// of the much heavier scene/palette graphs. Each case names its source constant so a palette
-// retune is still traceable here.
+import { INK_ICON_ART, TAB_ICON_RASTER, tabIconVariant, type IconKind } from '../../src/render/icons';
+// Palette values below are inlined rather than imported from `render/sketchUi` (HubTabs' `ui`) and
+// `scenes/LobbyScene/core` (`C`), to hold this dispatch guard independent of the much heavier
+// scene/palette module graphs. Each case names its source constant so a palette retune is still
+// traceable here.
 
-// Exhaustive map of every DrawableIconKind (IconKind minus the raster-only tab icons, which skip
-// DRAW entirely — see icons.ts's TAB_ICON_RASTER). Typed Record<DrawableIconKind, true> so the
-// compiler forces it to stay in sync with the union — adding a drawable kind without updating this
-// map fails to compile.
-const ALL_KINDS: Record<DrawableIconKind, true> = {
-  book: true, globe: true, coin: true, trophy: true, castle: true, pencils: true,
-  coins: true, coinStack: true, coinSack: true, coinChest: true,
-  scrap: true, lead: true, binding: true,
-  atk: true, hp: true, armor: true, armorHeavy: true, spd: true, atkspd: true,
-  brush: true,
-  swords: true, replay: true, share: true, home: true,
-  flag: true, desk: true, cabinet: true, hammer: true,
-  hourglassSm: true, hourglassMd: true, hourglassLg: true,
-  tag: true, capsule: true, cards: true, star: true, lock: true, medal: true, zoom: true, gift: true,
-  close: true, check: true, play: true,
-  titleBronze: true, titleSilver: true, titleGold: true, titlePlatinum: true, titleDiamond: true,
-  titleStar: true, titleMaster: true, titleGrandmaster: true, titleKing: true,
-  titleChampion: true, titleTop3: true,
-};
+describe('buildIcon dispatch — every IconKind resolves to exactly one table', () => {
+  const inkKinds = Object.keys(INK_ICON_ART) as IconKind[];
+  const rasterKinds = Object.keys(TAB_ICON_RASTER) as IconKind[];
 
-describe('icons DRAW dispatch table', () => {
-  const kinds = Object.keys(ALL_KINDS) as DrawableIconKind[];
-
-  it('resolves a live draw function for every DrawableIconKind (guards icons/* import wiring)', () => {
-    for (const kind of kinds) {
-      expect(typeof DRAW[kind], kind).toBe('function');
-    }
+  it('has both tables populated (guards a table that failed to import and resolved to {})', () => {
+    expect(inkKinds.length).toBeGreaterThan(0);
+    expect(rasterKinds.length).toBeGreaterThan(0);
   });
 
-  it('has exactly the DrawableIconKind union as keys — no orphan or missing entries', () => {
-    expect(Object.keys(DRAW).sort()).toEqual(kinds.sort());
+  // `buildIcon` checks TAB_ICON_RASTER first and falls through to INK_ICON_ART, so a kind in both
+  // silently loses its ink row — and with it the literal `color` an ink kind's callers rely on. The
+  // exhaustive per-table naming contracts are in inkIconArt.test.ts; this is the dispatch half.
+  it('never lists the same kind in both tables', () => {
+    expect(inkKinds.filter((k) => rasterKinds.includes(k))).toEqual([]);
   });
+
 });
 
 // Raster tab icons (`TAB_ICON_RASTER`) are coloured at PACK time into a white `*_active.png` for dark
@@ -78,8 +64,8 @@ describe('tabIconVariant — which pre-baked ink a requested colour asks for', (
   });
 });
 
-// A real PIXI.Graphics needs the headless ADAPTER (canvas/document stubs) that only the `test:ui`
-// harness installs (see test/harness/pixiHeadless.ts) — constructing one under plain `environment:
-// 'node'` throws "document is not defined" before a single draw call runs. The actual geometry
-// smoke-check (every draw fn runs without throwing, incl. the hourglassSm/Md/Lg + armorHeavy tier
-// variants added in SLG_DESIGN_LOG.md §63) lives in test/ui/icons.ui.ts instead.
+// There used to be a companion `test/ui/icons.ui.ts` here: a geometry smoke check that ran every
+// draw function under the headless PIXI adapter, because a real `PIXI.Graphics` cannot be built
+// under plain `environment: 'node'`. It went with the draw functions in batch 7 — the escalating
+// hourglassSm/Md/Lg and armorHeavy tiers it existed to pin (SLG_DESIGN_LOG.md §63) are now a
+// property of the ART, checked by eye at 28px when the images land, not of any geometry math.

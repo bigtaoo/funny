@@ -5,19 +5,36 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import type { TeamTemplate, MarchView, OccupationView, PlayerWorldView } from '../../net/WorldApiClient';
+import type {
+  TeamTemplate,
+  MarchView,
+  OccupationView,
+  StationedView,
+  PlayerWorldView,
+} from '../../net/WorldApiClient';
 import { carriedTroops } from '../../game/meta/teamTroops';
 import { getArtTexture } from '../../render/cardArt';
 import type { Hit } from './core';
 
-/** Current order tying up a team, if any — mirrors TeamsScene.teamOrder (server's TEAM_BUSY predicate). */
+/**
+ * Where a team currently is, if it isn't sitting at home — mirrors the server's
+ * "marching, occupying, or stationed" triple (combatMarch/command.ts's TEAM_BUSY gate).
+ *
+ * `station` was missing until 2026-08-25: field-stationing (2026-07-23) parks a team on a tile
+ * with no march and no occupation doc, so the city team row called every 停留/驻扎 team "驻军在家"
+ * even with four squads standing out on the map. Note that a 停留 (mode idle) station is NOT busy
+ * — it can be re-commanded in place (see worldmap/net/march.ts) — it just isn't home either, which
+ * is exactly what this status line reports.
+ */
 export function teamOrder(
-  marches: MarchView[], occupations: OccupationView[], teamId: string,
-): { march: MarchView } | { occ: OccupationView } | null {
+  marches: MarchView[], occupations: OccupationView[], stationed: StationedView[], teamId: string,
+): { march: MarchView } | { occ: OccupationView } | { station: StationedView } | null {
   const march = marches.find((m) => m.mine !== false && m.teamId === teamId);
   if (march) return { march };
   const occ = occupations.find((o) => o.teamId === teamId);
   if (occ) return { occ };
+  const station = stationed.find((s) => s.mine !== false && s.teamId === teamId);
+  if (station) return { station };
   return null;
 }
 

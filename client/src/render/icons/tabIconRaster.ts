@@ -187,6 +187,21 @@ import worldTabIconActiveUrl from '../../assets/tabicons/world_active.png';
 import worldTabIconInactiveUrl from '../../assets/tabicons/world_inactive.png';
 import worldTabIconContentUrl from '../../assets/tabicons/world_content.png';
 
+// Coin balance/reward icons (2026-08-25): folded in from the standalone coinIconAtlas.ts, which
+// wrapped these 5 kinds in a separate `buildCoinIcon()` entry point so callers had to remember to
+// use it instead of `buildIcon` directly — LOBBY_IA_REDESIGN_LOG.md records two screens that forgot
+// and silently regressed to the procedural glyph. Registering the 5 kinds here instead lets
+// `buildIcon` resolve them on its own, same as every other raster kind, so that mistake can't
+// happen again. Unlike the tabicons above, this source art is finished full-colour AI art (a
+// rendered coin/pile/sack/chest with shading), not a tintable ink line — there is no light/dark
+// distinction to bake, so all three `RasterIconVariant` slots below point at the same file per kind
+// (see client/scripts/prepare-coin-icons.mjs, which regenerates them from art/ui/coins/).
+import coinActiveUrl from '../../assets/shop/coin.png';
+import coinsActiveUrl from '../../assets/shop/coins.png';
+import coinStackActiveUrl from '../../assets/shop/coinStack.png';
+import coinSackActiveUrl from '../../assets/shop/coinSack.png';
+import coinChestActiveUrl from '../../assets/shop/coinChest.png';
+
 /** Raster tab-icon `IconKind`s that skip `DRAW`/`SketchPen` entirely — dispatched via `TAB_ICON_RASTER` instead. */
 export type RasterIconKind =
   // [Cards|Equipment|Skins] peer-tab AI art pilot (see the import block above) — raster, not drawn
@@ -228,7 +243,14 @@ export type RasterIconKind =
   // exercise book (战役 pillar, replaces `book` — deliberately the splayed-open notebook, NOT
   // `pveTabIcon`'s rolled treasure-map scroll), and an unfolded paper map with a dotted route + pennant
   // (大世界 pillar, replaces `castle` — not `cityTabIcon`'s gatehouse, not `socialTabIcon`'s globe).
-  | 'duelTabIcon' | 'campaignTabIcon' | 'worldTabIcon';
+  | 'duelTabIcon' | 'campaignTabIcon' | 'worldTabIcon'
+  // Coin balance/reward icons, folded in from coinIconAtlas.ts (see the import block above): escalating
+  // recharge/reward-tier treasure art — single coin / three-coin cluster / six-coin stack / cinched
+  // sack / open chest. Kept as the same bare `coin`/`coins`/`coinStack`/`coinSack`/`coinChest` names
+  // ShopScene/rewardIcon.ts/etc. already used as `IconKind` (they used to hit the procedural DRAW
+  // table by default and only reach this art through the buildCoinIcon wrapper); now `buildIcon`
+  // finds this table entry directly and there is no procedural version of these 5 left at all.
+  | 'coin' | 'coins' | 'coinStack' | 'coinSack' | 'coinChest';
 
 /**
  * Which pre-baked ink a raster icon is drawn in. All three come from the same source art, recoloured
@@ -295,6 +317,12 @@ export const TAB_ICON_RASTER: Record<RasterIconKind, Record<RasterIconVariant, s
   duelTabIcon:        { active: duelTabIconActiveUrl as string, inactive: duelTabIconInactiveUrl as string, content: duelTabIconContentUrl as string },
   campaignTabIcon:    { active: campaignTabIconActiveUrl as string, inactive: campaignTabIconInactiveUrl as string, content: campaignTabIconContentUrl as string },
   worldTabIcon:       { active: worldTabIconActiveUrl as string, inactive: worldTabIconInactiveUrl as string, content: worldTabIconContentUrl as string },
+  // Full-colour finished art, not a tintable ink line — all 3 variants share one file per kind.
+  coin:      { active: coinActiveUrl as string, inactive: coinActiveUrl as string, content: coinActiveUrl as string },
+  coins:     { active: coinsActiveUrl as string, inactive: coinsActiveUrl as string, content: coinsActiveUrl as string },
+  coinStack: { active: coinStackActiveUrl as string, inactive: coinStackActiveUrl as string, content: coinStackActiveUrl as string },
+  coinSack:  { active: coinSackActiveUrl as string, inactive: coinSackActiveUrl as string, content: coinSackActiveUrl as string },
+  coinChest: { active: coinChestActiveUrl as string, inactive: coinChestActiveUrl as string, content: coinChestActiveUrl as string },
 };
 
 /** Warm the 138 tab-icon PNGs (46 kinds × 3 inks) into the PIXI texture cache — call once from a

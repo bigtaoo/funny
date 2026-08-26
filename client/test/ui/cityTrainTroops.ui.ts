@@ -19,7 +19,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
-import { TROOP_CAP_BASE } from '@nw/shared';
+import { TROOP_CAP_BASE, DRILL_QUEUE_LEVEL_THRESHOLDS, TROOP_TRAIN_QUEUE_MAX, troopCapFor } from '@nw/shared';
 import * as log from '../../src/net/log';
 
 const memStore = (() => {
@@ -118,6 +118,7 @@ function stubWorldApiWithTrain(fx: TrainFixture): { api: WorldApiClient; me: Pla
     getTeams: () => Promise.resolve([]),
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
+    getStationed: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     trainTroops,
@@ -199,10 +200,8 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     const spy = vi.spyOn(log, 'showToastMessage');
     const { scene, inner, trainTroops } = await openTrainModal({
       troops: 0, troopCap: 2000, resources: { ink: 100000 },
-      trainingQueue: [
-        { qty: 10, startAt: now, completeAt: now + 5000 },
-        { qty: 10, startAt: now, completeAt: now + 10000 },
-      ], // TROOP_TRAIN_QUEUE_MAX is 2 with no drillYard level — queue is full
+      // One batch fills the queue: TROOP_TRAIN_QUEUE_MAX is 1 with no drillYard level (2026-08-25 re-tune).
+      trainingQueue: [{ qty: 10, startAt: now, completeAt: now + 5000 }],
     });
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
@@ -212,6 +211,28 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     expect(spy).toHaveBeenCalledWith(t('city.err.trainQueueFull'), 'error');
     scene.destroy();
     spy.mockRestore();
+  });
+
+  /**
+   * The queue/in-training/room-for status line (2026-08-25). Before it, the panel showed only `troops/cap`
+   * plus the batch rows, so a greyed-out "Max +0" was unreadable — the headroom implied by the pool line is
+   * usually already claimed by queued batches, and nothing distinguished "slots full" from "cap full".
+   */
+  it('renders the queue/in-training/room-for status line, with queued batches subtracted from the room left', async () => {
+    const now = Date.now();
+    const { scene } = await openTrainModal({
+      troops: 100, resources: { ink: 100000 },
+      trainingQueue: [{ qty: 400, startAt: now, completeAt: now + 60000 }],
+      buildings: { drillYard: DRILL_QUEUE_LEVEL_THRESHOLDS[0]! }, // 2 slots, so 1 batch is not yet full
+    });
+    const cap = troopCapFor({ drillYard: DRILL_QUEUE_LEVEL_THRESHOLDS[0]! });
+    const expected = t('city.trainQueueStatus')
+      .replace('{n}', '1')
+      .replace('{max}', String(TROOP_TRAIN_QUEUE_MAX + 1))
+      .replace('{training}', '400')
+      .replace('{left}', String(cap - 100 - 400)); // room = cap - troops - queued, NOT cap - troops
+    expect(collectTexts(scene.container)).toContain(expected);
+    scene.destroy();
   });
 
   it('does not call trainTroops and shows a toast when the troop cap is already reached', async () => {
@@ -345,6 +366,9 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
       const { inner, trainTroops } = await openTrainModal({
         troops: 0, resources: { ink: 100000 }, speedupUntil: now + 1800_000,
         trainingQueue: [{ qty: 10, startAt: now, completeAt: now + 60000 }],
+        // A drillYard level buys a 2nd queue slot: the queued batch above would otherwise fill the base
+        // 1-slot cap (2026-08-25 re-tune) and grey out the +100 button this test needs to actually fire.
+        buildings: { drillYard: DRILL_QUEUE_LEVEL_THRESHOLDS[0]! },
       });
       // Same hit-order contract as the "renders a speedup button" test above: [+100, +500, Max,
       // speedup, close-catch-all] — the badge is a plain Text label, not a Hit, so it must not

@@ -20,6 +20,7 @@ import {
   TROOP_CAP_BASE,
   baseFootprintCells,
   baseFootprintInBounds,
+  isCityGroundTile,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import { WorldService } from '../src/service';
@@ -49,7 +50,7 @@ function findBaseAnchor(): { x: number; y: number } {
       if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
       const blocked = baseFootprintCells(x, y).some((c) => {
         const t = proceduralTile(W, c.x, c.y);
-        return t.type === 'center' || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
+        return isCityGroundTile(t.type) || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
       });
       if (!blocked) return { x, y };
     }
@@ -65,7 +66,7 @@ function findFarBaseAnchor(avoid: { x: number; y: number }): { x: number; y: num
       if (!baseFootprintInBounds(x, y, SLG_MAP_W, SLG_MAP_H)) continue;
       const blocked = baseFootprintCells(x, y).some((c) => {
         const t = proceduralTile(W, c.x, c.y);
-        return t.type === 'center' || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
+        return isCityGroundTile(t.type) || t.type === 'obstacle' || t.type === 'bridge' || t.type === 'plankway' || t.type === 'stronghold';
       });
       if (!blocked) return { x, y };
     }

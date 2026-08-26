@@ -11,6 +11,8 @@ import {
   CROSSING_GARRISON,
   SCENARIO_BASE,
   SCENARIO_INVESTED,
+  STRONGHOLD_OPEN_DRILL_LEVELS,
+  CROSSING_OPEN_DRILL_LEVELS,
   SIEGE_SYNTH_ARMY_MAX_TROOPS,
   shouldUseCheapSiege,
   simulateCapture,
@@ -46,12 +48,12 @@ describe('strongholdCombat: determinism (same scenario + seed → identical outc
   });
 });
 
-describe('strongholdCombat: calibration gates (SLG_DESIGN_LOG §27 — locks in the 2026-07-27 re-calibration verdict for ADR-048 TROOP_CAP_BASE=10000)', () => {
+describe('strongholdCombat: calibration gates (SLG_DESIGN_LOG §27 — 2026-07-27 re-calibration verdict, re-verified 2026-08-25 for TROOP_CAP_BASE=5000/step=1500 with the garrisons held fixed)', () => {
   it(`stronghold: a fresh player (troopCap=${TROOP_CAP_BASE}) loses outright`, () => {
     const r = winRateOver(STRONGHOLD_GARRISON, STRONGHOLD_LEVEL, SCENARIO_BASE, SEEDS);
     expect(r.winRate).toBe(0);
   });
-  it('stronghold: a modestly-invested player (2 drillYard levels) reliably wins', () => {
+  it(`stronghold: an invested player (${STRONGHOLD_OPEN_DRILL_LEVELS} drillYard levels) reliably wins`, () => {
     const r = winRateOver(STRONGHOLD_GARRISON, STRONGHOLD_LEVEL, SCENARIO_INVESTED, SEEDS);
     expect(r.winRate).toBeGreaterThanOrEqual(0.9);
     expect(r.avgAttackerSurvivors).toBeGreaterThan(0);
@@ -60,22 +62,27 @@ describe('strongholdCombat: calibration gates (SLG_DESIGN_LOG §27 — locks in 
     const r = winRateOver(CROSSING_GARRISON, CROSSING_LEVEL, SCENARIO_BASE, SEEDS);
     expect(r.winRate).toBe(0);
   });
-  it('crossing: opens with a single drillYard level — lighter investment than the stronghold (2 levels)', () => {
-    const scenario: ProgressionScenario = { label: `invested (troopCap=${TROOP_CAP_BASE + DRILL_TROOPCAP_STEP}, drillYard+1)`, troops: TROOP_CAP_BASE + DRILL_TROOPCAP_STEP };
+  it(`crossing: opens at drillYard+${CROSSING_OPEN_DRILL_LEVELS} — lighter investment than the stronghold (${STRONGHOLD_OPEN_DRILL_LEVELS} levels)`, () => {
+    const troops = TROOP_CAP_BASE + CROSSING_OPEN_DRILL_LEVELS * DRILL_TROOPCAP_STEP;
+    const scenario: ProgressionScenario = { label: `invested (troopCap=${troops}, drillYard+${CROSSING_OPEN_DRILL_LEVELS})`, troops };
     const r = winRateOver(CROSSING_GARRISON, CROSSING_LEVEL, scenario, SEEDS);
     expect(r.winRate).toBeGreaterThanOrEqual(0.9);
+    // The lighter gate must stay strictly lighter — one level below the crossing threshold still loses.
+    const below = TROOP_CAP_BASE + (CROSSING_OPEN_DRILL_LEVELS - 1) * DRILL_TROOPCAP_STEP;
+    expect(winRateOver(CROSSING_GARRISON, CROSSING_LEVEL, { label: 'below', troops: below }, SEEDS).winRate).toBe(0);
+    expect(CROSSING_OPEN_DRILL_LEVELS).toBeLessThan(STRONGHOLD_OPEN_DRILL_LEVELS);
   });
-  it('threshold sweep: stronghold win rate is 0 through drillYard+1 and reliable from drillYard+2 up', () => {
+  it(`threshold sweep: stronghold win rate is 0 through drillYard+${STRONGHOLD_OPEN_DRILL_LEVELS - 1} and reliable from drillYard+${STRONGHOLD_OPEN_DRILL_LEVELS} up`, () => {
     // 2026-07-27: replaces the pre-ADR-048 sweep (was 1500-6000 absolute troops on a 2000 baseline). Under the
     // corrected cheap-linear-dispatch model this is a comfortable, thousands-of-troops-wide calibration (see
     // STRONGHOLD_GARRISON_PER_LEVEL's doc comment in shared/slg/siege.ts) — not the razor-thin band an earlier,
     // same-day pass mistakenly found before strongholdCombat.ts was corrected to mirror shouldUseCheapSiege.
-    for (const levels of [0, 1]) {
+    for (let levels = 0; levels < STRONGHOLD_OPEN_DRILL_LEVELS; levels++) {
       const troops = TROOP_CAP_BASE + levels * DRILL_TROOPCAP_STEP;
       const r = winRateOver(STRONGHOLD_GARRISON, STRONGHOLD_LEVEL, { label: `drillYard+${levels}`, troops }, SEEDS);
       expect(r.winRate, `drillYard+${levels} (troops=${troops})`).toBe(0);
     }
-    for (const levels of [2, 3, 4]) {
+    for (const levels of [STRONGHOLD_OPEN_DRILL_LEVELS, STRONGHOLD_OPEN_DRILL_LEVELS + 1, STRONGHOLD_OPEN_DRILL_LEVELS + 2]) {
       const troops = TROOP_CAP_BASE + levels * DRILL_TROOPCAP_STEP;
       const r = winRateOver(STRONGHOLD_GARRISON, STRONGHOLD_LEVEL, { label: `drillYard+${levels}`, troops }, SEEDS);
       expect(r.winRate, `drillYard+${levels} (troops=${troops})`).toBeGreaterThanOrEqual(0.9);

@@ -4,15 +4,16 @@
  * Reward rows show up on six unrelated screens (daily check-in / daily tasks / weekly active
  * chest / battle-pass track / event点数商店 / recharge milestones / mail attachments) and each
  * one used to hand-roll its own `kind → IconKind → buildIcon(...)` table. Materials and coins
- * had already been centralised (`buildMaterialIcon` / `buildCoinIcon`), but `card` / `equipment`
- * / `skin` were still falling through to the *procedural* SketchPen glyphs (`cards` / `armor` /
- * `brush`) long after AI line art existed for exactly those three concepts — so e.g. the weekly
- * chest tab drew a thin program-drawn shield next to a real AI-drawn pencil-lead bitmap in the
- * card right above it (2026-08-15 bug report).
+ * had already been centralised (`buildMaterialIcon` / the coin tiers' `TAB_ICON_RASTER` entries),
+ * but `card` / `equipment` / `skin` were still falling through to the *procedural* SketchPen glyphs
+ * (`cards` / `armor` / `brush`) long after AI line art existed for exactly those three concepts —
+ * so e.g. the weekly chest tab drew a thin program-drawn shield next to a real AI-drawn pencil-lead
+ * bitmap in the card right above it (2026-08-15 bug report).
  *
- * This module is the one place that decides. It composes the three existing per-domain resolvers
- * rather than adding a fourth art path:
- *   coins    → `buildCoinIcon`      (AI coin atlas, escalating tier art; assets/shop/coins.png)
+ * This module is the one place that decides. It composes the existing per-domain resolvers rather
+ * than adding another art path:
+ *   coins    → `buildIcon`          (AI coin art baked straight into TAB_ICON_RASTER, escalating
+ *                                    tier bitmaps; assets/shop/*.png — see icons/tabIconRaster.ts)
  *   material → `buildMaterialIcon`  (AI material atlas; iconsAtlas)
  *   card     → `rosterIcon`  ┐
  *   equipment→ `equipIcon`   ├ AI tab-icon PNGs (assets/tabicons/*), the same art the Cards /
@@ -22,14 +23,15 @@
  *                              Drawn in the `content` ink, not the tab greys — see below.
  *   stamina / anything else → null (caller falls back to a bare "+N" label)
  *
- * Every one of those resolvers degrades to a procedural glyph on its own when its art has not
- * decoded yet, so a caller that forgets {@link preloadRewardIconArt} still renders *something* —
- * it just renders the old look for a frame or two. Scenes with reward rows should call the
- * preloader once in their constructor and re-render on resolve.
+ * `material` degrades to a procedural glyph on its own when its art has not decoded yet, so a
+ * caller that forgets {@link preloadRewardIconArt} still renders *something* for it — it just
+ * renders the old look for a frame or two. `coins`/`card`/`equipment`/`skin` are pure raster with
+ * no procedural fallback (see `buildRasterTabIcon`'s doc in icons/tabIconRaster.ts): undecoded art
+ * there draws nothing for that frame rather than a wrong picture. Either way, scenes with reward
+ * rows should call the preloader once in their constructor and re-render on resolve.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { buildIcon, preloadTabIconTextures, tabIconVariant, type IconKind } from './icons';
-import { buildCoinIcon, loadCoinIconAtlas } from './atlas/coinIconAtlas';
+import { buildIcon, preloadIconArt, tabIconVariant, type IconKind } from './icons';
 import { buildMaterialIcon, loadMaterialAtlas, type MaterialKind } from './atlas/materialAtlas';
 
 /** The shape every reward-ish payload on the wire shares (battle pass / daily / event / mail…). */
@@ -78,7 +80,7 @@ export function buildRewardIcon(
   opts?: { coinKind?: IconKind; materialFallback?: MaterialKind | null },
 ): PIXI.DisplayObject | null {
   const { kind, id, count } = reward;
-  if (kind === 'coins') return buildCoinIcon(opts?.coinKind ?? coinIconTier(count ?? 0), size, color);
+  if (kind === 'coins') return buildIcon(opts?.coinKind ?? coinIconTier(count ?? 0), size, color);
   if (kind === 'material') {
     const mat = materialKind(id) ?? (opts?.materialFallback === undefined ? 'scrap' : opts.materialFallback);
     return mat ? buildMaterialIcon(mat, size, color) : null;
@@ -100,15 +102,14 @@ export function buildRewardIcon(
 }
 
 /**
- * Warm every art source {@link buildRewardIcon} can reach (tab-icon PNGs + coin atlas + material
- * atlas). Never rejects — each source degrades to its procedural glyph on failure, and a reward
- * row is cosmetic. Call once per scene that draws reward rows and re-render on resolve:
- * `void preloadRewardIconArt().then(() => this.render())`.
+ * Warm every art source {@link buildRewardIcon} can reach (tab-icon PNGs, which as of 2026-08-25
+ * includes the coin tiers + material atlas). Never rejects — each source degrades to its procedural
+ * glyph on failure, and a reward row is cosmetic. Call once per scene that draws reward rows and
+ * re-render on resolve: `void preloadRewardIconArt().then(() => this.render())`.
  */
 export function preloadRewardIconArt(): Promise<void> {
   return Promise.allSettled([
-    preloadTabIconTextures(),
-    loadCoinIconAtlas(),
+    preloadIconArt(),
     loadMaterialAtlas(),
   ]).then(() => undefined);
 }

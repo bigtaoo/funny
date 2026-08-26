@@ -6,7 +6,7 @@
 // 形态②): the only one of the three march domains that needs `siege` (applySiege/applySweep/
 // applyOccupy/resolveFieldEncounter/applyTowerDamage) — assembled by composition in
 // ../combatMarch.ts.
-import { proceduralTile, tileId, playerWorldId, marchStepArriveAt } from '@nw/shared';
+import { proceduralTile, tileId, playerWorldId, marchStepArriveAt, isCityGroundTile } from '@nw/shared';
 import type { MarchDoc, StationedDoc, PlayerWorldDoc } from '../db';
 import { WorldCore } from '../core';
 import type { SiegeService } from '../combatSiege';
@@ -374,7 +374,8 @@ export class ArrivalService {
       ? (await this.core.friendlyAccountIds(m.worldId, m.ownerId)).has(occ!.ownerId!)
       : false;
     const blocked =
-      proc.type === 'center' ||
+      // isCityGroundTile = familyKeep | center — city ground is siege-only, never merely stood on (ADR-074).
+      isCityGroundTile(proc.type) ||
       !!stationedHere ||
       (foreignOwner && !isFriendlyGarrisonTarget) ||
       (!occ?.ownerId && isGarrison) ||

@@ -120,6 +120,10 @@ export function renderTeamCard(
   const injuredUntil = core.me?.teamState?.[id]?.injuredUntil ?? 0;
   const injured = injuredUntil > now;
   const order = core.teamOrder(id);
+  // Split the three-way order union into "parked on a tile" vs "march/occupation in flight" — the
+  // two are ranked differently against the loading label, see the status chain below.
+  const station = order && 'station' in order ? order.station : null;
+  const activeOrder = order && !('station' in order) ? order : null;
   const pad = 10;
 
   const border = injured ? C.red : order ? C.gold : filled ? C.accent : C.mid;
@@ -172,14 +176,31 @@ export function renderTeamCard(
     const timeStr = secsLeft >= 60 ? `${Math.ceil(secsLeft / 60)}m` : `${secsLeft}s`;
     statusLbl = t('roster.injured').replace('{time}', timeStr);
     statusColor = C.red as number;
-  } else if (order) {
+  } else if (station && core.ordersLoaded) {
+    // Parked on a field tile (2026-07-23 field-stationing) — 驻扎 garrison holds its 3×3 footprint,
+    // 停留 idle just stands there and can still be re-commanded. Either way it is NOT at home, so
+    // saying 驻军在家 was a plain lie. Kept to the same 4-glyph footprint as 驻军在家 (no tile
+    // coordinates): in portrait the leader portrait squeezes this text column down to its 40px
+    // floor, where even the existing label already wraps — a "(x,y)" suffix would run into the
+    // hero/troops sub-label below. The tile itself is one tap away on the world map.
+    //
+    // The `ordersLoaded` gate: a station is the LOWEST-ranked of the three order sources, so unlike
+    // a march it can still be outranked by a slice that hasn't landed yet — mid-recall the march and
+    // the station docs coexist. Ungated, a recalled team flashes 野外驻扎 and then corrects itself to
+    // 行军中, the exact self-correction that flag was introduced to prevent (§8.8); falling through
+    // to the loading label for that instant is the honest answer.
+    statusLbl = t(station.mode === 'garrison' ? 'world.team.garrisoned' : 'world.team.stationedIdle');
+    statusColor = C.gold as number;
+  } else if (activeOrder) {
     const remaining = Math.max(
       0,
-      Math.ceil((('march' in order ? order.march.arriveAt : order.occ.dueAt) - now) / 1000)
+      Math.ceil(
+        (('march' in activeOrder ? activeOrder.march.arriveAt : activeOrder.occ.dueAt) - now) / 1000
+      )
     );
     const timeStr = remaining >= 60 ? `${Math.ceil(remaining / 60)}m` : `${remaining}s`;
     statusLbl =
-      'march' in order
+      'march' in activeOrder
         ? t('world.team.marching')
         : t('world.team.occupying').replace('{time}', timeStr);
     statusColor = C.gold as number;

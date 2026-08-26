@@ -6,7 +6,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
-import { buildCoinIcon } from '../../render/atlas/coinIconAtlas';
+import { buildIcon } from '../../render/icons';
 import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { getArtTexture, containScale } from '../../render/cardArt';
 import { snapFont } from '../../render/fontScale';
@@ -77,7 +77,7 @@ export function drawCard(
   } else {
     const icon = spec.materialKind
       ? buildMaterialIcon(spec.materialKind, imgSize, spec.iconColor)
-      : buildCoinIcon(spec.icon, imgSize, spec.iconColor);
+      : buildIcon(spec.icon, imgSize, spec.iconColor);
     icon.x = imgX; icon.y = imgY;
     body.addChild(icon);
   }
@@ -124,7 +124,7 @@ export function drawCard(
     const cs = Math.round(ch * 0.11);
     const amt = txt(spec.coinAmount.toLocaleString(), snapFont(cs), C.gold, true);
     const rowW = cs + Math.round(cw * 0.02) + amt.width;
-    const ci = buildCoinIcon('coin', cs, C.gold);
+    const ci = buildIcon('coin', cs, C.gold);
     coinRow = { ci, amt, cs, rowW, h: Math.max(cs, amt.height) };
   }
   let usdRow: { price: PIXI.Text; strike?: PIXI.Text; h: number } | undefined;
