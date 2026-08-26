@@ -274,7 +274,7 @@ sprite.scale    = keyframe.scaleX × binding.scaleX
 
 `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`，上限 100 步。
 
-计入 Undo：骨骼旋转、关键帧增删改、sprite 绑定修改（含 zOrder）、挂点编辑。  
+计入 Undo：骨骼旋转、关键帧增删改（含**时间轴上拖动关键帧改时间**，2026-08-26 起真正入栈）、sprite 绑定修改（含 zOrder）、挂点编辑。  
 不计入：播放控制、预览模式切换、scrub、视图选项、编辑器模式切换。
 
 ### 3.14 导出 / 导入
