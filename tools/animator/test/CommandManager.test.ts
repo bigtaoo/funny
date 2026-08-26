@@ -113,6 +113,56 @@ describe('undo / redo', () => {
   });
 });
 
+describe('pushExecuted', () => {
+  it('records a command WITHOUT running execute() — the caller already applied the effect', () => {
+    const bus = new EventBus<AppEvents>();
+    const cm = new CommandManager(bus);
+    const holder = { v: 7 }; // a live drag already moved the value 0 -> 7
+    cm.pushExecuted(makeCommand('drag 0 -> 7', holder, 0, 7));
+    expect(holder.v).toBe(7); // NOT re-applied on top of itself
+    expect(cm.canUndo).toBe(true);
+  });
+
+  it('the recorded command still undoes and redoes normally', () => {
+    const cm = new CommandManager(new EventBus<AppEvents>());
+    const holder = { v: 7 };
+    cm.pushExecuted(makeCommand('drag 0 -> 7', holder, 0, 7));
+    cm.undo();
+    expect(holder.v).toBe(0);
+    cm.redo();
+    expect(holder.v).toBe(7);
+  });
+
+  it('clears the redo stack, like execute() does', () => {
+    const cm = new CommandManager(new EventBus<AppEvents>());
+    const holder = { v: 0 };
+    cm.execute(makeCommand('a', holder, 0, 1));
+    cm.undo();
+    expect(cm.canRedo).toBe(true);
+    holder.v = 5;
+    cm.pushExecuted(makeCommand('b', holder, 0, 5));
+    expect(cm.canRedo).toBe(false);
+  });
+
+  it('emits history:change with the new top-of-stack label', () => {
+    const bus = new EventBus<AppEvents>();
+    const cm = new CommandManager(bus);
+    const fn = vi.fn();
+    bus.on('history:change', fn);
+    cm.pushExecuted(makeCommand('move keyframe', { v: 1 }, 0, 1));
+    expect(fn).toHaveBeenCalledWith({ canUndo: true, canRedo: false, label: 'Undo: move keyframe' });
+  });
+
+  it('is subject to the same MAX_STACK eviction as execute()', () => {
+    const cm = new CommandManager(new EventBus<AppEvents>());
+    const holder = { v: 101 };
+    for (let i = 1; i <= 101; i++) cm.pushExecuted(makeCommand(`step ${i}`, holder, i - 1, i));
+    for (let i = 0; i < 100; i++) cm.undo();
+    expect(cm.canUndo).toBe(false);
+    expect(holder.v).toBe(1); // the first entry (0 -> 1) was evicted
+  });
+});
+
 describe('undoLabel / redoLabel', () => {
   it('report fallback text when their respective stack is empty', () => {
     const cm = new CommandManager(new EventBus<AppEvents>());

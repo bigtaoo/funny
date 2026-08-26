@@ -252,6 +252,10 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 **例外**：拖拽骨骼时写入 `liveDelta`（不入栈），mouseUp 时创建 `RotateBoneCommand` 一次性提交。
 
+**`pushExecuted(cmd)`（2026-08-26 新增）**：`CommandManager` 的第二个入口，**只入栈、不调 `execute()`**（同样清空 redo 栈、同样发 `history:change`、同样受 `MAX_STACK` 约束）。给「拖拽过程中已经把模型改掉了、收手时才补记一条 undo」这类交互用——此时再调 `execute()` 等于在已经移动过的状态上**再移动一次**。目前唯一使用者是时间轴的关键帧拖拽（见下）。
+
+**关键帧拖拽入栈（2026-08-26 修复）**：`TimelineView` 里的 `MoveKeyframeCommand` 此前**定义了但从未被构造**——`onMouseMove` 每一步都直接调 `animCtrl.moveKeyframe(dragKfTime, newT)` 并把 `dragKfTime` 覆写成 `newT`，等到 `onMouseUp` 时这次拖拽的**起始时间已经丢了**，那里只留了一句「commit as Command」的注释，什么也没做。症状：在时间轴上把关键帧拖到别处，`Ctrl+Z` 撤不回来（撤销栈里是上一条更早的命令，一按就跳过这次拖拽去撤别的东西）。修法：新增 `dragKfStartTime` 字段在 mousedown 时记下原始时间，收尾统一走 `endKfDrag()`——用 `pushExecuted` 补记 `MoveKeyframeCommand(startTime → 当前时间)`，时间相同（没真拖动）则不入栈。`endKfDrag()` 同时挂在 `mouseup` 和 `mouseleave` 上，因为拖出画布外同样是一次已经落盘的移动，之前那条 `mouseleave` 只把 `isDraggingKf` 置回 false、也漏了入栈。两端时间都按 `moveKeyframe` 的口径 round 到毫秒，避免 undo/redo 落在与实际存储值差一个亚阈值余数的地方。
+
 快捷键：`Ctrl+Z` undo，`Ctrl+Shift+Z` / `Ctrl+Y` redo。
 
 **拖拽角度换算（2026-08-20 修复）**：`InteractionController` 早期实现是每次 `mousemove` 都用「当前鼠标角度 - mousedown 时刻的起始角度」算增量（`Math.atan2` 返回值裁在 `(-180°,180°]`），拖拽轨迹一旦跨过 ±180° 这条裂缝，差值会突然多/少整整一圈——症状是"不想转圈却转了一大圈"或"转到一半自己弹回去"。修复后改为**逐步累加相邻两次 `mousemove` 采样之间的增量**（每步都单独做 `(-180°,180°]` 归一化，见 `unwrapAngleStep`），因为两次采样之间物理鼠标位移必然很小、不会真的接近 180°，逐步累加就不会被裂缝打断，可以连续转任意多圈。关键帧里存的仍是无界连续角度（不做 clamp/取模，多圈动画靠这个），插值（`interpolateBone`）保持纯线性 lerp 不变。`RotateBoneCommand`（拖拽结果落盘的地方，零 PIXI 依赖）随手一并导出加测试，覆盖"新建关键帧/patch 已有关键帧只改目标骨骼/大角度值原样落盘不做 wrap/undo 两种分支"，之前只被 IO 往返测试间接跑到过，没钉过自己的边界。

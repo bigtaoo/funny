@@ -97,6 +97,22 @@ cd tools/animator && npm run start   # 端口 9091
 
 前两行涨的就是这 1424 行 0% 死码退出分母；第三行不动，因为死文件全在那份 include whitelist 之外——**ADR-070 的 CI 门禁数字不受本次删除影响，别指望它变**。台账（`claudedocs/tools-testing.md`）的 animator 全包一列已同步改成 29.5%。引用覆盖率数字时务必说明是哪个口径，否则 64.28% 不动和全包涨 6 个点看起来会像自相矛盾。
 
+## 关键帧拖拽终于进 Undo 栈（2026-08-26）
+
+`TimelineView.ts` 里的 `MoveKeyframeCommand` **定义了但从未被 `new` 过**：`onMouseMove` 每一步直接 `animCtrl.moveKeyframe(dragKfTime, newT)` 改模型，再把 `dragKfTime` 覆写成 `newT`，所以走到 `onMouseUp` 时这次拖拽的**起点时间已经被自己冲掉了**，那里只剩一句 "Already mutated via moveKeyframe; commit as Command if time actually changed" 的注释，没有任何代码。用户侧症状：在时间轴上拖动关键帧改时间，`Ctrl+Z` 撤不回来——栈顶是上一条更早的命令，一按就跳过这次拖拽去撤了别的东西（比"什么都没发生"更糟）。
+
+三处改动：
+
+- **`CommandManager.pushExecuted(cmd)`**（新增入口）：只入栈、清 redo、发 `history:change`，**不调 `execute()`**。原有的 `execute()` 在这里用不了——它会先跑一遍 `cmd.execute()`，也就是在**已经移动过**的关键帧上再 `moveKeyframe(oldTime → newTime)` 一次；此时 `oldTime` 那个位置已经没有关键帧了，`moveKeyframe` 里的 `find` 落空直接 return，命令看似"成功"入栈，实际是把一条永远匹配不上的 undo 记录塞进了栈。
+- **`TimelineView.dragKfStartTime`**：mousedown 时和 `dragKfTime` 一起记下，全程不被 mousemove 覆写，就是 undo 的目标时间。
+- **`TimelineView.endKfDrag()`**：`mouseup` 和 `mouseleave` 共用的收尾——两端时间按 `moveKeyframe` 的口径 round 到毫秒后比较，真的变了才 `pushExecuted(new MoveKeyframeCommand(...))`。挂 `mouseleave` 是顺带补的第二个洞：原来那行只把 `isDraggingKf` 置回 false，拖出画布外的移动同样已经落进模型、却连补记的机会都没有。
+
+**是谁发现的**：同日早些时候给 `tools/` 五个包接 ESLint（此前一个都没有，见 [`tools-testing.md`](tools-testing.md)「ESLint」节），animator 的首跑 4 个问题里就有这条 `@typescript-eslint/no-unused-vars`。当时**刻意没有就地修**——删掉这个类等于抹掉这个功能缺口的唯一痕迹，而接上它要动 `CommandManager` 的公开面，是单独一件事——于是留了一条带完整理由的 `eslint-disable-next-line` 和一段 `NOT WIRED UP` 注释把接法写清楚。本次就是照着那段注释接完，两者一并删除（类头换成一句正常的文档注释）。
+
+**验证**：`npm run lint` / `npm run typecheck` 干净，`npm test` 345 条全绿（`CommandManager.test.ts` 12 → 17 条，新增 `pushExecuted` 一组：不重跑 execute、undo/redo 仍正常、清 redo 栈、发事件、同样受 `MAX_STACK` 约束）。dev server 起在 9191 用 DOM 事件驱动实测：把 0.130s 那帧拖到 0.060s，Undo 按钮 title 变成 `Undo: Move Keyframe 0.130s → 0.060s`；`Undo` 后整条 clip 的关键帧集合精确回到 `[0.13, 0.25, 0.35, 0.38, 0.50]`，`Redo` 后精确变成 `[0.06, 0.25, 0.35, 0.38, 0.50]`——**其余四帧全程一动不动**，这一条就是「没有被应用两次」的证据。另外单独验了 `mouseleave` 分支（拖到一半划出画布，`Undo: Move Keyframe 0.350s → 0.440s` 照样入栈、undo 照样回得去）和零距离拖拽（按下即松开，不产生新栈条目）。
+
+**探针手法**（这个环境拿不到截图、`requestAnimationFrame` 不触发所以画布根本不重绘，见下方 08-20 那条同款记录）：在距目标时间 1.8ms 的位置 mousedown——命中关键帧会把 `#time-display` **吸附**到关键帧的精确时间，没命中就只是 scrub 到点击处，于是「读数等于点击时间」与「读数被拉回某个整毫秒」的差别就是"这里有没有帧"。按 2ms 步长扫完整条 clip 就得到上面那种**完整关键帧集合**，比逐点断言强得多。**踩过一次**：第一轮只点验了拖拽的起终点两处，第二轮重跑时 `0.350s` 那点「本该是空的却命中了」——不是回归，是 animator 的 `AutoSaveController`/IndexedDB 把**上一轮验证留下的关键帧**恢复了回来。所以这类验证要么先扫一遍拿到基线，要么先清 IndexedDB；只比对两个点会把陈旧存档读成 bug。
+
 ## 参数两层模型
 
 **Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`

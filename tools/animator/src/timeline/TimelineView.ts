@@ -12,19 +12,10 @@ const RULER_H = 20;
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 /**
- * NOT WIRED UP — and deliberately kept rather than deleted, because it is the only trace of a
- * missing feature: dragging a keyframe on the timeline is not undoable. `onMouseDown` records
- * `dragKfTime`, `onMouseMove` calls `animCtrl.moveKeyframe()` directly on every move (overwriting
- * `dragKfTime` as it goes, so the drag's ORIGINAL time is already lost by mouse-up), and
- * `onMouseUp`'s comment says "commit as Command if time actually changed" — but nothing does.
- * Ctrl+Z after a drag therefore undoes whatever came before it instead.
- *
- * Wiring it needs two things this class cannot supply on its own: a `dragKfStartTime` field kept
- * across the move handler, and a `CommandManager.pushExecuted(cmd)` entry point — `execute()` would
- * re-run `moveKeyframe(oldTime, newTime)` on state that has already been mutated. Surfaced by the
- * animator's first-ever lint run (2026-08-26); tracked separately.
+ * Undo entry for a keyframe drag. The drag itself already moved the keyframe live via
+ * `animCtrl.moveKeyframe`, so this is handed to `CommandManager.pushExecuted` (never
+ * `execute`) at the end of the drag — see TimelineView.endKfDrag.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- see above: dead scaffolding kept on purpose
 class MoveKeyframeCommand implements Command {
   readonly label: string;
   constructor(
@@ -86,7 +77,10 @@ export class TimelineView {
 
   private isScrubbing  = false;
   private isDraggingKf = false;
+  /** Live-updated as the drag moves; the keyframe's current time. */
   private dragKfTime   = 0;
+  /** The keyframe's time when the drag started — the undo target. */
+  private dragKfStartTime = 0;
 
   private scrollY      = 0;
   private isDraggingScroll = false;
@@ -118,7 +112,7 @@ export class TimelineView {
     canvasEl.addEventListener('mousedown',   e => this.onMouseDown(e));
     canvasEl.addEventListener('mousemove',   e => this.onMouseMove(e));
     canvasEl.addEventListener('mouseup',     e => this.onMouseUp(e));
-    canvasEl.addEventListener('mouseleave',  () => { this.isScrubbing = false; this.isDraggingKf = false; });
+    canvasEl.addEventListener('mouseleave',  () => { this.isScrubbing = false; this.endKfDrag(); });
     canvasEl.addEventListener('contextmenu', e => this.onContextMenu(e));
     canvasEl.addEventListener('wheel',       e => this.onWheel(e), { passive: false });
 
@@ -398,8 +392,9 @@ export class TimelineView {
 
     const hit = this.findKfAt(e.clientX, e.clientY);
     if (hit) {
-      this.isDraggingKf = true;
-      this.dragKfTime   = hit.kf.time;
+      this.isDraggingKf    = true;
+      this.dragKfTime      = hit.kf.time;
+      this.dragKfStartTime = hit.kf.time;
       this.state.setSelectedKfTime(hit.kf.time);
       this.state.setCurrentTime(hit.kf.time);
       this.state.setSelectedBone(hit.boneId);
@@ -429,11 +424,26 @@ export class TimelineView {
   }
 
   private onMouseUp(_e: MouseEvent): void {
-    if (this.isDraggingKf) {
-      // Already mutated via moveKeyframe; commit as Command if time actually changed
-      this.isDraggingKf = false;
-    }
+    this.endKfDrag();
     this.isScrubbing = false;
+  }
+
+  /**
+   * Finish a keyframe drag. onMouseMove already mutated the clip via moveKeyframe, so the
+   * command is recorded with pushExecuted (no re-run) — otherwise it would move the keyframe
+   * a second time. A drag that ended where it started records nothing.
+   */
+  private endKfDrag(): void {
+    if (!this.isDraggingKf) return;
+    this.isDraggingKf = false;
+
+    // moveKeyframe stores times rounded to the millisecond; match it so undo/redo land exactly
+    // on the stored keyframe time rather than drifting by a sub-tolerance remainder.
+    const from = Math.round(this.dragKfStartTime * 1000) / 1000;
+    const to   = Math.round(this.dragKfTime      * 1000) / 1000;
+    if (from === to) return;
+
+    this.cmdManager.pushExecuted(new MoveKeyframeCommand(this.animCtrl, from, to));
   }
 
   private onContextMenu(e: MouseEvent): void {
