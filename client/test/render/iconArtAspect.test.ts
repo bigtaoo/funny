@@ -71,22 +71,18 @@ describe('packed icon art — silhouette proportions', () => {
    *
    * The value is that base's OWN ceiling, not a pass. An unconditional exemption switches the gate off
    * for the one kind most likely to need it: `atk` v5 came back at 28x128 (4.57:1) — a hair's-breadth
-   * from `brush` v2's 4.74, the failure this whole file exists to catch — and a bare allowlist would
-   * have shipped it silently, because the redraw that produced it was ordered by the very note saying
-   * `atk` is allowed to be tall. Each cap is set just above what the accepted art measures — and the
-   * number to compare against is the WIDEST-RATIO variant, not the `active` one: unthickened inks skip
-   * dilateAlpha's passes, so `weapon` is 3.28 active but 3.46 content/inactive.
+   * from `brush` v2's 4.74, the failure this whole file exists to catch — and it was a bare allowlist
+   * entry that would have shipped it silently, because the note saying "atk is allowed to be tall" is
+   * what stopped anyone measuring it. Each cap is set just above what the accepted art measures — and
+   * the number to compare against is the WIDEST-RATIO variant, not the `active` one: unthickened inks
+   * skip dilateAlpha's passes, so `weapon` is 3.28 active but 3.46 content/inactive.
    *   `weapon` (3.46, cap 3.6) — one upright sword, the equipment slot filter. Shipped since batch 5.
    *   `event`  (2.84, cap 3.0) — a horizontal string of bunting; wide rather than tall, same trade.
-   *   `atk`    (2.33, cap 2.5) — an upright dagger, and tall for good. Two redraws tried to square it
-   *                     up and each produced a different object: bolting the width onto the crossguard
-   *                     gave a hammer/anvil (v3), bolting it onto the impact sparks gave a helicopter
-   *                     (v4). A dagger is a tall subject; widening it means welding a wide part to its
-   *                     side, and whatever gets welded on becomes the thing you read. But "tall" is
-   *                     not "unbounded" — hence 2.5, which v5's 4.57 fails. All three rejects are in
-   *                     art/ui/tabicons/_rejected/; the write-up is in the batch-7 doc's last section.
+   * `atk` was the third row and is deliberately gone: its v6 redraw came in at 2.00:1 and the stale
+   * check below took the exemption away, which is the intended end state — an exemption is a debt, not
+   * a property of the kind. The batch-7 doc's last section has the four rounds it took to get there.
    */
-  const ELONGATED_ON_PURPOSE = new Map([['weapon', 3.6], ['event', 3.0], ['atk', 2.5]]);
+  const ELONGATED_ON_PURPOSE = new Map([['weapon', 3.6], ['event', 3.0]]);
 
   const files = fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'));
 

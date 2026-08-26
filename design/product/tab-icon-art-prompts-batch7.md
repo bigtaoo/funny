@@ -1,11 +1,11 @@
 # 批次 7：剩余全部程序矢量图标 — Prompt 文档
 
-> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3（另 4 条「可用但偏弱」）：**已出图并打包 2026-08-26**——`globe`/`armor`/`armorHeavy`/`scrap` 四张过，`atk` 已打回 v3（锤子）/v4（直升机）/v5（造型对了、但 4.57:1 细条），**v6 重算了比例数字**
+> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3（另 4 条「可用但偏弱」）：**已出图并打包 2026-08-26**——`globe`/`armor`/`armorHeavy`/`scrap` 四张过，`atk` 经 v3/v4/v5 三次打回后、**v6 一版过（2.00:1）**
 > 前六批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（试点/批次 2/3/4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题+剩余页签，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页主视觉，3 张）
 > 配套代码（接线后）：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（只剩两表分派，`DrawableIconKind`/`DRAW` 已删）· [`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（**本批落地处**：`InkIconKind` + `INK_ICON_ART` + `buildInkIcon` 运行时染色）· [`client/src/render/icons/tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts)（前六批的页签表，未改）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
 > 已删除的矢量画法：`client/src/render/icons/{equipment,ui,slg,motifs,titles,currency,primitives}.ts` 七个文件整体删除（`DRAW` 清零后全部变死代码）
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6
-> 状态：**接线全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind）；**剩下的只有 `atk` 一张**：v3 五张里 `globe`/`armor`/`armorHeavy`/`scrap` 已验收并打包上线，`atk` 三轮均打回（v3 锤子 / v4 直升机 / v5 造型对但 4.57:1），源图一直是 v1；v6 prompt 见文末，另 `iconArtAspect.test.ts` 的豁免已从「无条件」改成「每个 kind 自己的上限」
+> 状态：**全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind，无待办）；v3 五张中 `globe`/`armor`/`armorHeavy`/`scrap` 四张一版过，`atk` 经 v3/v4/v5 三次打回后 v6 过（2.00:1）；`iconArtAspect.test.ts` 的豁免同时从「无条件」改成「带上限」，并因 v6 变宽而删掉了 `atk` 那一行
 
 ## 背景：前六批 + 金币收口之后，还剩的就是这些
 
@@ -683,3 +683,28 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ```
 
 **三轮下来，`atk` 这一格真正的教训**：这套 prompt 里凡是写成「A 是 B 的 N 倍」的句子，都要**先把整图的长宽比乘出来再写进去**。`brush` v2、`atk` v3/v4/v5 四次返工全是同一件事的不同面——局部比例约束会算出一个整体比例，模型交付的就是那个算出来的数，而不是你脑子里的那张图。
+
+### `atk` v6 过了，批次 7 收工（2026-08-26）
+
+v6 一版过：实心宽刀身（约为自身长度的一半宽）、清晰刀尖、护手是刀身两倍宽的实心横条、短柄带一个环形柄头、三道短粗迸溅线分立在尖上方。**打包实测 64×128 = 2.00:1**——v5 是 4.57、v1 是 2.33，这一版比原图还宽，在 28px 词条行里是整行唯一有实心墨块的字形，跟旁边 `weapon`（细线剑）一眼分得开。
+
+改的只有 v5 里那三个数字，造型措辞一字未动。**四轮的完整账**：
+
+| 版本 | 改了什么 | 28px 上读成 | 长宽比 |
+|---|---|---|---|
+| v1 | —（批次 7 原图） | 一把很淡的细刀，迸溅线消失 | 2.33 |
+| v3 | 加「近正方」 | 锤子 / 铁砧（宽度焊在护手上） | 1.02 |
+| v4 | 护手改小，宽度交给迸溅线 | 直升机 / 昆虫（宽度焊在迸溅线上） | 1.08 |
+| v5 | 删掉「近正方」 | 匕首，但只有 6px 宽 | 4.57 |
+| v6 | 重算比例数字 + 双边界 | **匕首** | **2.00** |
+
+**`ELONGATED_ON_PURPOSE` 里的 `atk` 已随之删除**——2.00 低于 2.2 的通用门槛，「豁免陈旧」那条测试当场变红要求删掉它，这正是它该有的结局：**豁免是一笔债，不是这个 kind 的属性**。上一轮我把它写成「永久留在名单里」是错的（那时以为匕首天生就得细长），v6 证明了不是。名单现在只剩 `weapon` 3.6 / `event` 3.0 两条带上限的行。
+
+至此批次 7 **全部收工**：43 张自有美术 + 6 个别名 = 49 个 ink kind，无待办、无「记录在案的弱图」。
+
+**这一格留下的四条可复用规律**（按发生顺序）：
+
+1. **28px 上活下来的是实心块，死掉的是细节。** 沙漏 v1→v2、`globe`、`armor` 家族、`scrap` 全是这一条。
+2. **返工到第三轮，问的不该是「这张画得对不对」，而是「我给它的题目对不对」。** `brush` 三轮后发现**主体**选错（不该是画笔），`atk` 三轮后发现**约束**选错（不该要求近正方）。
+3. **「A 是 B 的 N 倍」这类局部比例约束会乘出一个整体长宽比，模型交付的是算出来的那个数。** 写之前先自己乘一遍——`brush` v2（4.74）和 `atk` v5（4.57）是同一个算术错误的两次发生。
+4. **给美术加自动化守卫时，豁免要带上限，且上限按最宽的那个变体定。** 无条件豁免会在最需要门禁的那个 kind 上把门禁关掉；未加粗的墨色跳过 `dilateAlpha`，所以 `active` 不是最坏情况。加之前先拿被打回的那版跑一遍，跑不红就别加。
