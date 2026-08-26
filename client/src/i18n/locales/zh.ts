@@ -315,6 +315,7 @@ export const zh = {
   'replay.pause': '暂停',
   'replay.exit': '退出',
   'replay.speed': '{n}×',
+  'replay.flipView': '切换视角',
   'replay.ended': '回放结束',
   'replay.versionError': '录像版本不兼容，无法回放',
   'replay.player1': '玩家1',

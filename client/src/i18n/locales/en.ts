@@ -310,6 +310,7 @@ export const en: Record<TranslationKey, string> = {
   'replay.pause': 'Pause',
   'replay.exit': 'Exit',
   'replay.speed': '{n}×',
+  'replay.flipView': 'Flip View',
   'replay.ended': 'Replay ended',
   'replay.versionError': 'Replay version incompatible — cannot play back',
   'replay.player1': 'Player 1',

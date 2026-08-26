@@ -25,13 +25,14 @@ import { FS, snapFont } from '../render/fontScale';
  * Re-creates a recorded match by building a fresh engine on the replay's
  * `seed` + `mode` (+ level for campaign) and driving it with a
  * {@link ReplayInputSource}. The {@link GameRenderer} runs in *spectator* mode
- * (no input wiring, surrender hidden, base/viewpoint name labels drawn), and this
- * scene draws its own transport controls on top: play/pause, speed cycle
- * (1×/2×/4×), a progress bar, and exit.
+ * (no input wiring, surrender hidden, both players' name chips drawn on their HP
+ * bars), and this scene draws its own transport controls on top: play/pause, speed
+ * cycle (1×/2×/4×), viewpoint flip, a progress bar, and exit.
  *
- * Tapping a base flips the viewpoint (mirrors the whole board): a fresh renderer
- * for the opposite side is built and fast-forwarded to the current tick, then the
- * old and new renderers cross-fade. Playback position is preserved.
+ * The flip button — or a tap on either base, same handler — flips the viewpoint
+ * (mirrors the whole board): a fresh renderer for the opposite side is built and
+ * fast-forwarded to the current tick, then the old and new renderers cross-fade.
+ * Playback position is preserved.
  *
  * Playback never stalls — `ReplayInputSource.take` always has the answer — and
  * stops when the sim reaches game-over or the recording's `endFrame`.
@@ -43,6 +44,18 @@ export interface ReplaySceneCallbacks {
 }
 
 const SPEEDS = [1, 2, 4] as const;
+
+/**
+ * Scale a transport-button label down to `maxW`, from scratch each time (the play/pause label
+ * changes text at runtime, so a leftover scale from the longer word must not stick). Needed
+ * because these buttons take their font size from the button HEIGHT — which grows with the
+ * design height on a tall portrait viewport — while their width comes off the board.
+ */
+function fitLabel(label: PIXI.Text, maxW: number): void {
+  label.scale.set(1);
+  if (label.width > maxW) label.scale.set(maxW / label.width);
+}
+
 const log = netLog('replay');
 
 export class ReplayScene implements Scene {
@@ -72,6 +85,8 @@ export class ReplayScene implements Scene {
   // Overlay widgets (rebuilt label text each frame).
   private readonly overlay = new PIXI.Container();
   private playLabel!: PIXI.Text;
+  /** Fit width for `playLabel` — it swaps between play/pause wording of different lengths. */
+  private playLabelMaxW = 0;
   private speedLabel!: PIXI.Text;
   private progressFill!: PIXI.Graphics;
   private statusLabel!: PIXI.Text;
@@ -277,13 +292,15 @@ export class ReplayScene implements Scene {
     this.progressFill = new PIXI.Graphics();
     this.overlay.addChild(track, this.progressFill);
 
-    // "REPLAY" tag. Landscape pulls it out of the design-space left edge (where the old
-    // 4%-of-width anchor stranded it, a long way from anything it labels) and right-aligns it
-    // into the paper margin beside the board: that margin is ≥330px there, so the tag lands on
-    // the top strip's band on the timer's row, 40px clear of the board edge — the timer itself
-    // sits 14px inside that edge, which keeps the two from reading as one run-on line.
-    // Portrait's margin is only 36px wide, so there's nowhere to put it: keep the old
-    // below-the-strip spot rather than clipping it or stacking it on the timer.
+    // "REPLAY" tag — on the top HUD strip's band either way, never below it on the paper (the
+    // old anchor put it there, at 4% of the design width, a long way from anything it labels).
+    // Landscape right-aligns it into the ≥330px paper margin beside the board, 40px clear of
+    // the board edge; the timer sits 14px inside that edge, so the two don't read as one line.
+    // Portrait has no such margin (36px), but the strip's RIGHT end is free — playback hides
+    // the surrender button that normally lives there — so it goes there instead, capped at 30%
+    // of the (always-1080) design width to stay clear of the board-centered enemy HP bar.
+    // Below-the-strip is not an option any more: the transport row grew a fifth button and now
+    // reaches far enough left to sit under a long tag (German 'Wiederholung').
     const tag = makeText(`● ${t('replay.title')}`, {
       fontSize: snapFont(Math.round(btnH * 0.5)),
       fill: 0xaa2222,
@@ -292,9 +309,13 @@ export class ReplayScene implements Scene {
     });
     const topR = this.layout.hudTopRect;
     const marginX = Math.round(this.layout.boardRect.x - tag.width - 40);
-    const inMargin = marginX >= 8;
-    tag.x = inMargin ? marginX : Math.round(w * 0.04);
-    tag.y = inMargin ? Math.round(topR.y + (topR.h - tag.height) / 2) : this.barY - 2;
+    if (marginX >= 8) {
+      tag.x = marginX;
+    } else {
+      fitLabel(tag, Math.round(w * 0.3));
+      tag.x = Math.round(topR.x + topR.w - 14 - tag.width);
+    }
+    tag.y = Math.round(topR.y + (topR.h - tag.height) / 2);
     this.overlay.addChild(tag);
 
     // Transport row centred under the bar, sized off the board width so it never
@@ -305,15 +326,17 @@ export class ReplayScene implements Scene {
     const hasShare = !!this.cb.onShare;
     const playW = Math.round(board.w * 0.18);
     const speedW = Math.round(board.w * 0.16);
+    const flipW = Math.round(board.w * 0.16);
     const exitW = Math.round(board.w * 0.16);
     const shareW = hasShare ? Math.round(board.w * 0.16) : 0;
-    const totalW = playW + speedW + exitW + (hasShare ? shareW + gap : 0) + gap * 2;
+    const totalW = playW + speedW + flipW + exitW + (hasShare ? shareW + gap : 0) + gap * 3;
     let x = Math.round(board.x + (board.w - totalW) / 2);
 
     this.playLabel = this.makeButton(x, rowY, playW, btnH, t('replay.pause'), () => {
       if (this.ended) return;
       this.playing = !this.playing;
     });
+    this.playLabelMaxW = playW - 16;
     x += playW + gap;
     this.speedLabel = this.makeButton(
       x,
@@ -326,6 +349,12 @@ export class ReplayScene implements Scene {
       },
     );
     x += speedW + gap;
+    // Viewpoint toggle. Tapping either base does the same thing, but nothing on screen says so
+    // — and since the over-the-base name plates went away (2026-08-26) there is no mark on the
+    // bases at all, so the gesture needs a visible control. Deliberately NOT gated on `ended`:
+    // inspecting the final frame from the loser's side is exactly when you want to flip.
+    this.makeButton(x, rowY, flipW, btnH, t('replay.flipView'), () => this.switchViewpoint());
+    x += flipW + gap;
     if (hasShare) {
       this.makeButton(x, rowY, shareW, btnH, t('share.button'), () => this.cb.onShare!());
       x += shareW + gap;
@@ -404,6 +433,7 @@ export class ReplayScene implements Scene {
       fontWeight: 'bold',
       fontFamily: 'monospace',
     });
+    fitLabel(label, w - 16);
     label.anchor.set(0.5, 0.5);
     label.x = x + w / 2;
     label.y = y + h / 2;
@@ -425,6 +455,7 @@ export class ReplayScene implements Scene {
     }
 
     this.playLabel.text = this.playing ? t('replay.pause') : t('replay.play');
+    fitLabel(this.playLabel, this.playLabelMaxW);
     this.speedLabel.text = t('replay.speed', { n: SPEEDS[this.speedIdx]! });
 
     let status: string | null = null;

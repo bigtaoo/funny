@@ -15,7 +15,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { Scene } from '../../src/scenes/SceneManager';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
-import { initI18n } from '../../src/i18n';
+import { initI18n, setLocale } from '../../src/i18n';
 
 import { GameScene } from '../../src/scenes/GameScene';
 import { ReplayScene } from '../../src/scenes/ReplayScene';
@@ -511,5 +511,112 @@ describe('ReplayScene — siege player names', () => {
     expect(topView.enemy).toBe(bottomView.enemy);
 
     scene.destroy();
+  });
+
+  // The flip used to be a tap on either base and nothing else — an invisible gesture, and fully
+  // undiscoverable once the over-the-base name plates went away. It's a transport button now
+  // (2026-08-26). Driven through a real EventBoundary hit-test, not a bare emit on a node we
+  // found ourselves: the point is that the button is actually reachable under the overlay/
+  // renderer stacking, which an emit would pass regardless (see the ResultScene note in
+  // scenes.ui.ts).
+  describe('viewpoint-flip transport button', () => {
+    function build(): ReplayScene {
+      const replay = recordReplay(30);
+      replay.meta = { ...(replay.meta ?? {}), players: { bottom: 'AtkAlice', top: 'DefBob' } };
+      const scene = new ReplayScene(createLayout(...LANDSCAPE), new InputManager(), replay, {
+        onExit() {},
+        onShare() {},
+      });
+      scene.update(1 / 30);
+      return scene;
+    }
+
+    /** Hit-test the flip button at its label's centre and fire it, then settle the cross-fade. */
+    function tapFlip(scene: ReplayScene): void {
+      const overlay = (scene as any).overlay as PIXI.Container;
+      const label = overlay.children.find(
+        (c): c is PIXI.Text => c instanceof PIXI.Text && c.text === 'Flip View',
+      );
+      expect(label).toBeDefined();
+      const b = label!.getBounds();
+      // Headless-only step: `containsPoint` maps the global point through the node's
+      // worldTransform, and nothing renders the stage here, so a node PIXI hasn't touched this
+      // frame still carries an identity transform and misses every hit. Live, the renderer
+      // updates the whole tree before each event. Without this the assertion below flips from
+      // pass to fail purely on whether the scene happened to walk that subtree.
+      scene.container.getBounds(); // (no parent, so getBounds — not updateTransform — is the way in)
+      const hit = new PIXI.EventBoundary(scene.container).hitTest(b.x + b.width / 2, b.y + b.height / 2);
+      expect(hit).not.toBeNull();
+      (hit!.emit as (e: string) => void)('pointertap');
+      for (let i = 0; i < 20; i++) scene.update(1 / 30);
+    }
+
+    const side = (scene: ReplayScene): Side => (scene as any).renderer.core.layout.localSide;
+
+    it('flips the viewpoint, and the whole row still fits inside the board', () => {
+      const scene = build();
+      const board = (scene as any).layout.boardRect;
+      const rowY = (scene as any).barY + 18;
+      const btns = ((scene as any).overlay as PIXI.Container).children.filter(
+        (c) => c instanceof PIXI.Graphics && c.eventMode === 'static' && Math.round(c.y) === rowY,
+      );
+      // play / speed / flip / share / exit — the flip button is the new fifth one.
+      expect(btns).toHaveLength(5);
+      // Hand-drawn borders jitter a couple of px past the panel rect, hence the tolerance;
+      // the point is that adding a button didn't push the row off the map edges.
+      const bounds = btns.map((b) => b.getBounds());
+      expect(Math.min(...bounds.map((r) => r.x))).toBeGreaterThanOrEqual(board.x - 6);
+      expect(Math.max(...bounds.map((r) => r.x + r.width))).toBeLessThanOrEqual(board.x + board.w + 6);
+
+      expect(side(scene)).toBe(Side.Bottom);
+      tapFlip(scene);
+      expect(side(scene)).toBe(Side.Top);
+      tapFlip(scene);
+      expect(side(scene)).toBe(Side.Bottom); // and back
+      scene.destroy();
+    });
+
+    it('still flips after playback has ended (inspecting the final frame from the other side)', () => {
+      const scene = build();
+      for (let i = 0; i < (scene as any).endFrame + 5; i++) scene.update(1 / 30);
+      expect((scene as any).ended).toBe(true);
+      tapFlip(scene);
+      expect(side(scene)).toBe(Side.Top);
+      scene.destroy();
+    });
+
+    // The fifth button widened the row, which in portrait pushed its left edge under where the
+    // "REPLAY" tag used to sit (below the top strip) — invisible in English/Chinese, obvious in
+    // German. The tag now lives ON the strip in both orientations, so it cannot reach the row at
+    // all; German is the case that proves it, hence the locale flip.
+    it('the REPLAY tag stays on the top strip in portrait, clear of the enemy HP bar (de)', () => {
+      setLocale('de');
+      try {
+        const replay = recordReplay(30);
+        const scene = new ReplayScene(createLayout(...PORTRAIT), new InputManager(), replay, {
+          onExit() {},
+          onShare() {},
+        });
+        scene.update(1 / 30);
+        const layout = (scene as any).layout;
+        const topR = layout.hudTopRect;
+        const overlay = (scene as any).overlay as PIXI.Container;
+        const tag = overlay.children.find(
+          (c): c is PIXI.Text => c instanceof PIXI.Text && c.text.includes('Wiederholung'),
+        );
+        expect(tag).toBeDefined();
+        // Inside the strip on both axes — the transport row sits below the strip, so this is
+        // what makes an overlap impossible regardless of how wide the row grows.
+        expect(tag!.y).toBeGreaterThanOrEqual(topR.y);
+        expect(tag!.y + tag!.height).toBeLessThanOrEqual(topR.y + topR.h);
+        expect(tag!.x + tag!.width).toBeLessThanOrEqual(topR.x + topR.w);
+        // …and right of the (board-centered) enemy HP bar it shares the strip with.
+        const enemyHp = (scene as any).renderer.core.hudView.getEnemyHpRect();
+        expect(tag!.x).toBeGreaterThan(enemyHp.x + enemyHp.w);
+        scene.destroy();
+      } finally {
+        setLocale('en');
+      }
+    });
   });
 });

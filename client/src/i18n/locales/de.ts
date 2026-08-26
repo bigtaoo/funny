@@ -310,6 +310,7 @@ export const de: Record<TranslationKey, string> = {
   'replay.pause': 'Pause',
   'replay.exit': 'Beenden',
   'replay.speed': '{n}×',
+  'replay.flipView': 'Ansicht',
   'replay.ended': 'Wiederholung beendet',
   'replay.versionError': 'Wiederholungsversion inkompatibel — Abspielen nicht möglich',
   'replay.player1': 'Spieler 1',

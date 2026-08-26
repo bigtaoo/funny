@@ -245,3 +245,11 @@ const rowY  = isPortrait
 **顺带核实了「基地方位/视角与真实 PvP 一致」**（用户要求确认）：一致，而且是**结构性**的而非巧合——回放切视角走的是 `layout.mirrored()`，也就是联机 joiner（`localSide = Side.Top`）真打时用的那套 layout；`playerBaseRect()` 对两个 `localSide` 都返回近侧（横屏最左）、`enemyBaseRect()` 都返回远侧，`localOwner = sideToOwner(layout.localSide)` 又驱动 HUD「己方在下条、敌方在上条」。实测（1700×850，横屏，`__nwE2E` 取 live scene）：默认视角 `side=bottom / owner=0`，翻转后 `side=top / owner=1`，两次 `playerBaseRect().x` 都是 450、`enemyBaseRect().x` 都是 1570 —— 只有「这座城是谁的」变了，城的位置没动；名字牌与手牌同步换成另一方。新增用例 `either viewpoint puts the viewed side where a live match puts it`（`test/ui/gameScenes.ui.ts`）把这条钉住，比的是 `createLayout(..., Side.Top)` 真造出来的 joiner layout，不是硬编码像素。既有 siege 名字用例相应改成每个名字**恰好出现 1 次**。
 
 **验证**：`tsc --noEmit` + `tsc -p tsconfig.test.json` 绿；`test:ui` 229 文件 / 2162 例 + `vitest run` 195 文件 / 2036 例全绿；webpack production 通过；横屏两个视角各截一张确认名牌消失、其余不变。
+
+**追加二（同日）：transport 行加「切换视角」按钮**。删掉基地名牌后，「点基地翻视角」变成一个零提示的手势（名牌本来也不是按钮提示，但至少标出了两座城），所以把它提成显式控件：`Pause | 1× | 切换视角 | Share | Exit`（`replay.flipView`，zh 切换视角 / en Flip View / de Ansicht），点基地的老手势保留，两条路走同一个 `switchViewpoint()`。**故意不受 `ended` 门控**——播放结束后从败方视角回看最后一帧，正是最想翻的时候（播放/暂停键那条 `if (this.ended) return;` 不适用于它）。
+
+顺带两处连带修复，都是「加了第五个按钮」暴露出来的：
+- **按钮标签 shrink-to-fit**（`fitLabel()`）：这排按钮的**字号按按钮高**推、而**宽按棋盘**推，竖屏设计高一拉长字号就跟着变大，宽度却没变——德语 `Abspielen`/`Beenden` 早就在竖屏溢出了（这次截图才第一次看到）。play/pause 标签每帧换词，所以 `fitLabel` 每次先复位 `scale=1` 再算，不然长词缩过之后短词会一直保持缩放。
+- **「● 回放」标签竖屏改挂顶栏右端**：行变宽后左边缘从 x=177 挪到 x=86，正好压到标签原来那个「顶栏下方」的位置（英/中文标题短看不出来，德语 `Wiederholung` 一眼就压穿整排按钮）。竖屏没有横屏那种纸页留白，但**顶栏右端是空的**（回放隐藏投降键），于是右对齐进去、宽度钳在设计宽的 30% 以内（竖屏设计宽恒为 1080，敌方血条居中占 421–658，30% 钳位保证起点 ≥742 不相撞）。两个朝向现在都在顶栏带子上，不再有「掉到纸面上」这种落点。
+
+**验证**：`tsc --noEmit` 绿；`test:ui` 230 文件 / 2177 例 + `vitest run` 2042 例全绿；webpack production 通过。新增 3 例（`test/ui/gameScenes.ui.ts`）：翻转按钮走**真 `EventBoundary.hitTest`**（不是裸 `emit`，见 scenes.ui.ts 里 ResultScene 那条注释的理由）+ 整排 5 个按钮仍在棋盘内、结束后仍能翻、竖屏德语下标签留在顶栏内且在敌方血条右侧。三个变异（删按钮 / 空 handler / flipW 撑到 0.6 / 标签退回老 y）逐个跑过确认用例真的会红。**headless 专属坑**：`containsPoint` 走 `worldTransform` 反变换，测试里没人渲染 stage，PIXI 没碰过的节点还是单位矩阵、任何 hitTest 都打空——hit 前先 `scene.container.getBounds()` 强制刷一遍变换（`updateTransform()` 不行：根节点没有 parent 会 NPE）。**像素核对**：横屏/竖屏 × zh/de 四张截图确认整排按钮不溢出、德语标签自动缩放、标签与按钮不再重叠。
