@@ -109,7 +109,16 @@ cd tools/animator && npm run start   # 端口 9091
 
 **是谁发现的**：同日早些时候给 `tools/` 五个包接 ESLint（此前一个都没有，见 [`tools-testing.md`](tools-testing.md)「ESLint」节），animator 的首跑 4 个问题里就有这条 `@typescript-eslint/no-unused-vars`。当时**刻意没有就地修**——删掉这个类等于抹掉这个功能缺口的唯一痕迹，而接上它要动 `CommandManager` 的公开面，是单独一件事——于是留了一条带完整理由的 `eslint-disable-next-line` 和一段 `NOT WIRED UP` 注释把接法写清楚。本次就是照着那段注释接完，两者一并删除（类头换成一句正常的文档注释）。
 
-**验证**：`npm run lint` / `npm run typecheck` 干净，`npm test` 345 条全绿（`CommandManager.test.ts` 12 → 17 条，新增 `pushExecuted` 一组：不重跑 execute、undo/redo 仍正常、清 redo 栈、发事件、同样受 `MAX_STACK` 约束）。dev server 起在 9191 用 DOM 事件驱动实测：把 0.130s 那帧拖到 0.060s，Undo 按钮 title 变成 `Undo: Move Keyframe 0.130s → 0.060s`；`Undo` 后整条 clip 的关键帧集合精确回到 `[0.13, 0.25, 0.35, 0.38, 0.50]`，`Redo` 后精确变成 `[0.06, 0.25, 0.35, 0.38, 0.50]`——**其余四帧全程一动不动**，这一条就是「没有被应用两次」的证据。另外单独验了 `mouseleave` 分支（拖到一半划出画布，`Undo: Move Keyframe 0.350s → 0.440s` 照样入栈、undo 照样回得去）和零距离拖拽（按下即松开，不产生新栈条目）。
+**验证**：`npm run lint` / `npm run typecheck` 干净，`npm test` 356 条全绿。测试分两批：
+
+- `CommandManager.test.ts` 12 → 17 条，新增 `pushExecuted` 一组（不重跑 execute、undo/redo 仍正常、清 redo 栈、发事件、同样受 `MAX_STACK` 约束）——这组只钉**通用栈机制**。
+- `TimelineView.test.ts` 10 → 21 条（**修复当天稍后补的第二批**，理由见下），钉**真正坏掉的那条路径**：`MoveKeyframeCommand` 和新抽出的 `getKfDragCommit(start, end)` 都加了 `export`（沿用 `getKfColors` 那个「从 DOM 重的文件里导出纯 seam」的先例，`endKfDrag` 从此只剩接线），用**真实 `AnimationController` + `CommandManager`**（都零 PIXI/DOM）跑 5 帧 clip，按 `onMouseMove` 的方式逐样本调 `moveKeyframe` 重放拖拽——就是下面那段 dev server 走查减去鼠标事件。**断言的是整条 clip 的关键帧集合而不是单点**：这样「undo 恢复了」和「其余四帧一动没动」是同一条断言，而后者才是「没有被应用两次」的证据。另含 redo、bone 数据保全、多样本只产生一条栈条目、两次拖拽 LIFO 撤销。
+
+**补测试把 `TimelineView.ts` 顶过了 500 行闸门（511 行），顺势做了一次早该做的拆分**：三个 Command 类（`MoveKeyframeCommand`/`SetEasingCommand`/`DeleteKeyframeCommand`）搬进新的 `src/timeline/commands.ts`（70 行），`TimelineView.ts` 回落到 449 行。它们本来就是「纯 `AnimationController` 调用、对 view 的 canvas/DOM/`this` 零依赖」，正是行数闸门提示的优先拆法（independent function modules > composition > chain），也正是 `vitest.config.ts` 头注释里挂了半个月的那句「Extracting them into their own modules would let them join the scope; it is not scheduled」——**这次是闸门替它排上了期**。搬完 lint 立刻抓到 `TimelineView.ts` 里残留的 `Command` 类型 import 已无人使用（三个类走了），一并删掉；`coverage.include` 没动，所以门禁数字不受影响（`src/timeline/**` 依旧在 scope 外）。
+
+**`execute()` 的对照测试写岔过一次，值得记下来**：本来想写「用 `execute()` 会静默弄坏 undo」，它红了——**因为那个后果不存在**。`execute()` 在这里不损坏数据：它重跑 `moveKeyframe(0.13 → 0.06)`，而 0.13 此时已经空了，`find` 落空直接返回。为了让它红就得去构造「两帧撞在同一时间」，那是 `moveKeyframe` 的既有行为、跟本次修复无关。改成了 spy：断言 `pushExecuted` 完全不调 `moveKeyframe`、而 `execute()` 会调一次。**结论要如实写在测试注释里——`execute()` 的无害是「状态的性质」，不是「`execute()` 的性质」**，所以 `endKfDrag` 不能依赖它。编一个不发生的失败，比不写这条测试更糟。
+
+dev server 起在 9191 用 DOM 事件驱动实测：把 0.130s 那帧拖到 0.060s，Undo 按钮 title 变成 `Undo: Move Keyframe 0.130s → 0.060s`；`Undo` 后整条 clip 的关键帧集合精确回到 `[0.13, 0.25, 0.35, 0.38, 0.50]`，`Redo` 后精确变成 `[0.06, 0.25, 0.35, 0.38, 0.50]`——**其余四帧全程一动不动**，这一条就是「没有被应用两次」的证据。另外单独验了 `mouseleave` 分支（拖到一半划出画布，`Undo: Move Keyframe 0.350s → 0.440s` 照样入栈、undo 照样回得去）和零距离拖拽（按下即松开，不产生新栈条目）。
 
 **探针手法**（这个环境拿不到截图、`requestAnimationFrame` 不触发所以画布根本不重绘，见下方 08-20 那条同款记录）：在距目标时间 1.8ms 的位置 mousedown——命中关键帧会把 `#time-display` **吸附**到关键帧的精确时间，没命中就只是 scrub 到点击处，于是「读数等于点击时间」与「读数被拉回某个整毫秒」的差别就是"这里有没有帧"。按 2ms 步长扫完整条 clip 就得到上面那种**完整关键帧集合**，比逐点断言强得多。**踩过一次**：第一轮只点验了拖拽的起终点两处，第二轮重跑时 `0.350s` 那点「本该是空的却命中了」——不是回归，是 animator 的 `AutoSaveController`/IndexedDB 把**上一轮验证留下的关键帧**恢复了回来。所以这类验证要么先扫一遍拿到基线，要么先清 IndexedDB；只比对两个点会把陈旧存档读成 bug。
 
@@ -172,4 +181,5 @@ cd tools/animator && npm run start   # 端口 9091
 | `src/ui/StatusBar.ts` | 底部低风险进度提示（`status` 事件，3s 自动清） |
 | `src/ui/ErrorToast.ts` | 顶部居中错误浮层（`error` 事件，红色卡片，可 ✕，8s 自动消） |
 | `src/timeline/TimelineView.ts` | Canvas 时间轴渲染 + 交互 |
+| `src/timeline/commands.ts` | 关键帧 Undo 命令（移动/easing/删除）——零 canvas/DOM，2026-08-26 从 TimelineView 拆出 |
 | `src/interaction/InteractionController.ts` | 鼠标拖拽 + 键盘快捷键 |

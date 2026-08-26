@@ -1,76 +1,14 @@
 import type { EventBus, AppEvents } from '../core/EventBus';
 import type { AppState } from '../core/AppState';
 import type { AnimationController } from '../animation/AnimationController';
-import type { CommandManager, Command } from '../core/CommandManager';
+import type { CommandManager } from '../core/CommandManager';
 import type { AnimationClip, BoneKeyframe, EasingType, Keyframe } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 import { ContextMenu } from './ContextMenu';
+import { MoveKeyframeCommand, SetEasingCommand, DeleteKeyframeCommand } from './commands';
 
 const ROW_H   = 26;
 const RULER_H = 20;
-
-// ── Commands ──────────────────────────────────────────────────────────────────
-
-/**
- * Undo entry for a keyframe drag. The drag itself already moved the keyframe live via
- * `animCtrl.moveKeyframe`, so this is handed to `CommandManager.pushExecuted` (never
- * `execute`) at the end of the drag — see TimelineView.endKfDrag.
- *
- * Exported for test/TimelineView.test.ts: paired with a real AnimationController it is the whole
- * fix, and asserting the undo/redo round-trip is what pins "not applied twice".
- */
-export class MoveKeyframeCommand implements Command {
-  readonly label: string;
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly oldTime: number,
-    private readonly newTime: number,
-  ) {
-    this.label = `Move Keyframe ${oldTime.toFixed(3)}s → ${newTime.toFixed(3)}s`;
-  }
-  execute(): void { this.animCtrl.moveKeyframe(this.oldTime, this.newTime); }
-  undo():    void { this.animCtrl.moveKeyframe(this.newTime, this.oldTime); }
-}
-
-class SetEasingCommand implements Command {
-  readonly label: string;
-  private old: EasingType | undefined;
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly time: number,
-    private readonly boneId: string,
-    private readonly easing: EasingType,
-  ) {
-    this.label = `Set easing ${boneId} @ ${time.toFixed(3)}s`;
-  }
-  execute(): void {
-    const kf = this.animCtrl.currentClip?.keyframes.find(k => Math.abs(k.time - this.time) < 0.001);
-    this.old = kf?.bones.get(this.boneId)?.easing;
-    this.animCtrl.updateKeyframeProp(this.time, this.boneId, { easing: this.easing });
-  }
-  undo(): void {
-    this.animCtrl.updateKeyframeProp(this.time, this.boneId, { easing: this.old });
-  }
-}
-
-class DeleteKeyframeCommand implements Command {
-  readonly label: string;
-  private deleted: Map<string, BoneKeyframe> | null = null;
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly time: number,
-  ) {
-    this.label = `Delete Keyframe @ ${time.toFixed(3)}s`;
-  }
-  execute(): void {
-    const kf = this.animCtrl.currentClip?.keyframes.find(k => Math.abs(k.time - this.time) < 0.001);
-    if (kf) this.deleted = new Map(Array.from(kf.bones.entries()).map(([id, b]) => [id, { ...b }]));
-    this.animCtrl.deleteKeyframeAt(this.time);
-  }
-  undo(): void {
-    if (this.deleted) this.animCtrl.addKeyframeAt(this.time, this.deleted);
-  }
-}
 
 // ── TimelineView ──────────────────────────────────────────────────────────────
 

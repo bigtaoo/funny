@@ -16,6 +16,12 @@ import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 // coordinates) and timeline/TimelineView.ts's `getKfColors`. The Renderer/InteractionController/
 // TimelineView CLASSES themselves (construction, `new PIXI.Application`, canvas/window listener
 // wiring) remain out of scope — still no headless-PIXI harness for this tool.
+//
+// 2026-08-26 added two more seams to TimelineView.ts on the same principle, when wiring keyframe
+// drags into the undo stack: `getKfDragCommit` (round-to-ms then compare — does this finished drag
+// deserve an undo entry, and with which times) and the `MoveKeyframeCommand` class itself, which
+// test/TimelineView.test.ts drives against a REAL AnimationController + CommandManager. Only the
+// mouse plumbing (`endKfDrag`'s three lines of wiring) stayed inside the untestable class.
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
@@ -54,8 +60,9 @@ export default defineConfig({
       // Out of scope, unchanged from the prose above: rendering/Renderer.ts, ui/*, images/*,
       // index.ts + App.ts (DOM/PIXI construction glue, no headless harness for this tool), and
       // interaction/InteractionController.ts + timeline/TimelineView.ts — those two DO hold pure
-      // exported seams (pointToSegmentDist/findBoneAt/getKfColors, tested via test/{Interaction
-      // Controller,TimelineView}.test.ts) but they are still embedded in otherwise PIXI-heavy
+      // exported seams (pointToSegmentDist/findBoneAt, and getKfColors/getKfDragCommit/
+      // MoveKeyframeCommand, tested via test/{InteractionController,TimelineView}.test.ts) but
+      // they are still embedded in otherwise PIXI-heavy
       // files, so a directory include cannot isolate them. Extracting them into their own modules
       // would let them join the scope; it is not scheduled, and ADR-070's Phase 4d turned out to be
       // the IndexedDB/AnimationController test gap above rather than that extraction.

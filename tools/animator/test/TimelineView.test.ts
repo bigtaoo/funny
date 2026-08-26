@@ -4,11 +4,15 @@
 //   - `getKfColors`  — the keyframe-colour classifier (REQUIREMENTS.md §2.6 legend: orange for
 //     translate, blue for scale, grey for rotation-only/empty; multiple colours when a keyframe
 //     touches more than one property group).
-//   - `getKfDragCommit` + `MoveKeyframeCommand` — the keyframe-drag undo path (2026-08-26). The
-//     command is exercised against a REAL AnimationController, so the round-trip these tests assert
-//     is the same one the dev-server check walked through, minus the mouse events.
+//   - `getKfDragCommit` — the keyframe-drag undo path (2026-08-26).
+// Its partner `MoveKeyframeCommand` now lives in the sibling timeline/commands.ts (TimelineView.ts
+// crossed 500 lines, so the three command classes moved out); it is covered here rather than in a
+// file of its own because the drag decision and the command it produces are one behaviour. It runs
+// against a REAL AnimationController, so the round-trip these tests assert is the same one the
+// dev-server check walked through, minus the mouse events.
 import { describe, it, expect, vi } from 'vitest';
-import { getKfColors, getKfDragCommit, MoveKeyframeCommand } from '../src/timeline/TimelineView';
+import { getKfColors, getKfDragCommit } from '../src/timeline/TimelineView';
+import { MoveKeyframeCommand } from '../src/timeline/commands';
 import { EventBus, type AppEvents } from '../src/core/EventBus';
 import { AppState } from '../src/core/AppState';
 import { CommandManager } from '../src/core/CommandManager';
