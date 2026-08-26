@@ -97,6 +97,39 @@ cd tools/animator && npm run start   # 端口 9091
 
 前两行涨的就是这 1424 行 0% 死码退出分母；第三行不动，因为死文件全在那份 include whitelist 之外——**ADR-070 的 CI 门禁数字不受本次删除影响，别指望它变**。台账（`claudedocs/tools-testing.md`）的 animator 全包一列已同步改成 29.5%。引用覆盖率数字时务必说明是哪个口径，否则 64.28% 不动和全包涨 6 个点看起来会像自相矛盾。
 
+## 关键帧拖拽终于进 Undo 栈（2026-08-26）
+
+`TimelineView.ts` 里的 `MoveKeyframeCommand` **定义了但从未被 `new` 过**：`onMouseMove` 每一步直接 `animCtrl.moveKeyframe(dragKfTime, newT)` 改模型，再把 `dragKfTime` 覆写成 `newT`，所以走到 `onMouseUp` 时这次拖拽的**起点时间已经被自己冲掉了**，那里只剩一句 "Already mutated via moveKeyframe; commit as Command if time actually changed" 的注释，没有任何代码。用户侧症状：在时间轴上拖动关键帧改时间，`Ctrl+Z` 撤不回来——栈顶是上一条更早的命令，一按就跳过这次拖拽去撤了别的东西（比"什么都没发生"更糟）。
+
+三处改动：
+
+- **`CommandManager.pushExecuted(cmd)`**（新增入口）：只入栈、清 redo、发 `history:change`，**不调 `execute()`**。原有的 `execute()` 在这里用不了——它会先跑一遍 `cmd.execute()`，也就是在**已经移动过**的关键帧上再 `moveKeyframe(oldTime → newTime)` 一次；此时 `oldTime` 那个位置已经没有关键帧了，`moveKeyframe` 里的 `find` 落空直接 return，命令看似"成功"入栈，实际是把一条永远匹配不上的 undo 记录塞进了栈。
+- **`TimelineView.dragKfStartTime`**：mousedown 时和 `dragKfTime` 一起记下，全程不被 mousemove 覆写，就是 undo 的目标时间。
+- **`TimelineView.endKfDrag()`**：`mouseup` 和 `mouseleave` 共用的收尾——两端时间按 `moveKeyframe` 的口径 round 到毫秒后比较，真的变了才 `pushExecuted(new MoveKeyframeCommand(...))`。挂 `mouseleave` 是顺带补的第二个洞：原来那行只把 `isDraggingKf` 置回 false，拖出画布外的移动同样已经落进模型、却连补记的机会都没有。
+
+**是谁发现的**：同日早些时候给 `tools/` 五个包接 ESLint（此前一个都没有，见 [`tools-testing.md`](tools-testing.md)「ESLint」节），animator 的首跑 4 个问题里就有这条 `@typescript-eslint/no-unused-vars`。当时**刻意没有就地修**——删掉这个类等于抹掉这个功能缺口的唯一痕迹，而接上它要动 `CommandManager` 的公开面，是单独一件事——于是留了一条带完整理由的 `eslint-disable-next-line` 和一段 `NOT WIRED UP` 注释把接法写清楚。本次就是照着那段注释接完，两者一并删除（类头换成一句正常的文档注释）。
+
+**验证**：`npm run lint` / `npm run typecheck` 干净，`npm test` 356 条全绿。测试分两批：
+
+- `CommandManager.test.ts` 12 → 17 条，新增 `pushExecuted` 一组（不重跑 execute、undo/redo 仍正常、清 redo 栈、发事件、同样受 `MAX_STACK` 约束）——这组只钉**通用栈机制**。
+- `TimelineView.test.ts` 10 → 21 条（**修复当天稍后补的第二批**，理由见下），钉**真正坏掉的那条路径**：`MoveKeyframeCommand` 和新抽出的 `getKfDragCommit(start, end)` 都加了 `export`（沿用 `getKfColors` 那个「从 DOM 重的文件里导出纯 seam」的先例，`endKfDrag` 从此只剩接线），用**真实 `AnimationController` + `CommandManager`**（都零 PIXI/DOM）跑 5 帧 clip，按 `onMouseMove` 的方式逐样本调 `moveKeyframe` 重放拖拽——就是下面那段 dev server 走查减去鼠标事件。**断言的是整条 clip 的关键帧集合而不是单点**：这样「undo 恢复了」和「其余四帧一动没动」是同一条断言，而后者才是「没有被应用两次」的证据。另含 redo、bone 数据保全、多样本只产生一条栈条目、两次拖拽 LIFO 撤销。
+
+**补测试把 `TimelineView.ts` 顶过了 500 行闸门（511 行），顺势做了一次早该做的拆分**：三个 Command 类（`MoveKeyframeCommand`/`SetEasingCommand`/`DeleteKeyframeCommand`）搬进新的 `src/timeline/commands.ts`（70 行），`TimelineView.ts` 回落到 449 行。它们本来就是「纯 `AnimationController` 调用、对 view 的 canvas/DOM/`this` 零依赖」，正是行数闸门提示的优先拆法（independent function modules > composition > chain），也正是 `vitest.config.ts` 头注释里挂了半个月的那句「Extracting them into their own modules would let them join the scope; it is not scheduled」——**这次是闸门替它排上了期**。搬完 lint 立刻抓到 `TimelineView.ts` 里残留的 `Command` 类型 import 已无人使用（三个类走了），一并删掉；`coverage.include` 没动，所以门禁数字不受影响（`src/timeline/**` 依旧在 scope 外）。
+
+**`execute()` 的对照测试写岔过一次，值得记下来**：本来想写「用 `execute()` 会静默弄坏 undo」，它红了——**因为那个后果不存在**。`execute()` 在这里不损坏数据：它重跑 `moveKeyframe(0.13 → 0.06)`，而 0.13 此时已经空了，`find` 落空直接返回。为了让它红就得去构造「两帧撞在同一时间」，那是 `moveKeyframe` 的既有行为、跟本次修复无关。改成了 spy：断言 `pushExecuted` 完全不调 `moveKeyframe`、而 `execute()` 会调一次。**结论要如实写在测试注释里——`execute()` 的无害是「状态的性质」，不是「`execute()` 的性质」**，所以 `endKfDrag` 不能依赖它。编一个不发生的失败，比不写这条测试更糟。
+
+dev server 起在 9191 用 DOM 事件驱动实测：把 0.130s 那帧拖到 0.060s，Undo 按钮 title 变成 `Undo: Move Keyframe 0.130s → 0.060s`；`Undo` 后整条 clip 的关键帧集合精确回到 `[0.13, 0.25, 0.35, 0.38, 0.50]`，`Redo` 后精确变成 `[0.06, 0.25, 0.35, 0.38, 0.50]`——**其余四帧全程一动不动**，这一条就是「没有被应用两次」的证据。另外单独验了 `mouseleave` 分支（拖到一半划出画布，`Undo: Move Keyframe 0.350s → 0.440s` 照样入栈、undo 照样回得去）和零距离拖拽（按下即松开，不产生新栈条目）。
+
+**探针手法**（这个环境拿不到截图、`requestAnimationFrame` 不触发所以画布根本不重绘，见下方 08-20 那条同款记录）：在距目标时间 1.8ms 的位置 mousedown——命中关键帧会把 `#time-display` **吸附**到关键帧的精确时间，没命中就只是 scrub 到点击处，于是「读数等于点击时间」与「读数被拉回某个整毫秒」的差别就是"这里有没有帧"。按 2ms 步长扫完整条 clip 就得到上面那种**完整关键帧集合**，比逐点断言强得多。**踩过一次**：第一轮只点验了拖拽的起终点两处，第二轮重跑时 `0.350s` 那点「本该是空的却命中了」——不是回归，是 animator 的 `AutoSaveController`/IndexedDB 把**上一轮验证留下的关键帧**恢复了回来。所以这类验证要么先扫一遍拿到基线，要么先清 IndexedDB；只比对两个点会把陈旧存档读成 bug。
+
+## Redo 按钮的 tooltip：不是忘了写，是没值可取（2026-08-26）
+
+改完关键帧拖拽后顺手发现：工具栏 Redo 按钮的 `title` 始终是**空串**。表面看是 `ToolbarPanel.buildUndoRedo()` 里 `btnUndo` 设了 `title` 而 `btnRedo` 没设，但补一行没用——**根因在事件 payload**：`history:change` 只带一个 `label`，值是 `canUndo ? undoLabel : redoLabel`，所以**只要还有东西可撤销，redo 侧的文案就根本不在 payload 里**。订阅方想写也拿不到值。
+
+payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`（删掉那个「看情况是哪个」的 `label`），两个消费方各取所需，细节见 `ARCHITECTURE.md` §6。两个 getter 本就自带兜底文案，所以 `ToolbarPanel` 顺带去掉了重抄一遍 `'Nothing to undo'` 的三元式。
+
+**验证**：`npm test` 357 条（`CommandManager.test.ts` 新增一条回归——**两栈同时非空**时两个 label 各自可读，这正是旧 payload 做不到的那个状态；另有四条旧断言随形状变更更新）。dev server 起在 9191 直读 `title` 属性，四个状态全对：两栈皆空 `Nothing to undo` / `Nothing to redo`；打一帧后 `Undo: Add Keyframe @ 0.000s` / `Nothing to redo`；Undo 后互换；**两栈同时非空时两边同时显示各自的命令名**。`StatusBar` 同屏复测，行为与改动前一致。
+
 ## 参数两层模型
 
 **Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`
@@ -156,4 +189,5 @@ cd tools/animator && npm run start   # 端口 9091
 | `src/ui/StatusBar.ts` | 底部低风险进度提示（`status` 事件，3s 自动清） |
 | `src/ui/ErrorToast.ts` | 顶部居中错误浮层（`error` 事件，红色卡片，可 ✕，8s 自动消） |
 | `src/timeline/TimelineView.ts` | Canvas 时间轴渲染 + 交互 |
+| `src/timeline/commands.ts` | 关键帧 Undo 命令（移动/easing/删除）——零 canvas/DOM，2026-08-26 从 TimelineView 拆出 |
 | `src/interaction/InteractionController.ts` | 鼠标拖拽 + 键盘快捷键 |

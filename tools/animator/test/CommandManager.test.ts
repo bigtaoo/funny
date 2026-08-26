@@ -45,7 +45,7 @@ describe('execute', () => {
     const fn = vi.fn();
     bus.on('history:change', fn);
     cm.execute(makeCommand('set to 5', { v: 0 }, 0, 5));
-    expect(fn).toHaveBeenCalledWith({ canUndo: true, canRedo: false, label: 'Undo: set to 5' });
+    expect(fn).toHaveBeenCalledWith({ canUndo: true, canRedo: false, undoLabel: 'Undo: set to 5', redoLabel: 'Nothing to redo' });
   });
 });
 
@@ -61,7 +61,7 @@ describe('undo / redo', () => {
     expect(holder.v).toBe(0);
     expect(cm.canUndo).toBe(false);
     expect(cm.canRedo).toBe(true);
-    expect(fn).toHaveBeenCalledWith({ canUndo: false, canRedo: true, label: 'Redo: inc' });
+    expect(fn).toHaveBeenCalledWith({ canUndo: false, canRedo: true, undoLabel: 'Nothing to undo', redoLabel: 'Redo: inc' });
   });
 
   it('redo() re-executes the command and moves it back to the undo stack', () => {
@@ -94,6 +94,25 @@ describe('undo / redo', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
+  it('emits BOTH labels, so a populated undo AND redo stack are each separately readable', () => {
+    // The payload used to carry one `label` = `canUndo ? undoLabel : redoLabel`. In exactly this
+    // state — something to undo AND something to redo — the redo label was unreachable, which is
+    // why the toolbar's Redo button had no tooltip. Regression guard for that.
+    const bus = new EventBus<AppEvents>();
+    const cm = new CommandManager(bus);
+    const holder = { v: 0 };
+    cm.execute(makeCommand('a', holder, 0, 1));
+    cm.execute(makeCommand('b', holder, 1, 2));
+    const fn = vi.fn();
+    bus.on('history:change', fn);
+
+    cm.undo(); // leaves 'a' undoable and 'b' redoable
+
+    expect(fn).toHaveBeenCalledWith({
+      canUndo: true, canRedo: true, undoLabel: 'Undo: a', redoLabel: 'Redo: b',
+    });
+  });
+
   it('multiple undo/redo cycles replay commands in the correct LIFO order', () => {
     const bus = new EventBus<AppEvents>();
     const cm = new CommandManager(bus);
@@ -110,6 +129,56 @@ describe('undo / redo', () => {
     cm.undo(); // -> 0
     expect(holder.v).toBe(0);
     expect(cm.canUndo).toBe(false);
+  });
+});
+
+describe('pushExecuted', () => {
+  it('records a command WITHOUT running execute() — the caller already applied the effect', () => {
+    const bus = new EventBus<AppEvents>();
+    const cm = new CommandManager(bus);
+    const holder = { v: 7 }; // a live drag already moved the value 0 -> 7
+    cm.pushExecuted(makeCommand('drag 0 -> 7', holder, 0, 7));
+    expect(holder.v).toBe(7); // NOT re-applied on top of itself
+    expect(cm.canUndo).toBe(true);
+  });
+
+  it('the recorded command still undoes and redoes normally', () => {
+    const cm = new CommandManager(new EventBus<AppEvents>());
+    const holder = { v: 7 };
+    cm.pushExecuted(makeCommand('drag 0 -> 7', holder, 0, 7));
+    cm.undo();
+    expect(holder.v).toBe(0);
+    cm.redo();
+    expect(holder.v).toBe(7);
+  });
+
+  it('clears the redo stack, like execute() does', () => {
+    const cm = new CommandManager(new EventBus<AppEvents>());
+    const holder = { v: 0 };
+    cm.execute(makeCommand('a', holder, 0, 1));
+    cm.undo();
+    expect(cm.canRedo).toBe(true);
+    holder.v = 5;
+    cm.pushExecuted(makeCommand('b', holder, 0, 5));
+    expect(cm.canRedo).toBe(false);
+  });
+
+  it('emits history:change with the new top-of-stack label', () => {
+    const bus = new EventBus<AppEvents>();
+    const cm = new CommandManager(bus);
+    const fn = vi.fn();
+    bus.on('history:change', fn);
+    cm.pushExecuted(makeCommand('move keyframe', { v: 1 }, 0, 1));
+    expect(fn).toHaveBeenCalledWith({ canUndo: true, canRedo: false, undoLabel: 'Undo: move keyframe', redoLabel: 'Nothing to redo' });
+  });
+
+  it('is subject to the same MAX_STACK eviction as execute()', () => {
+    const cm = new CommandManager(new EventBus<AppEvents>());
+    const holder = { v: 101 };
+    for (let i = 1; i <= 101; i++) cm.pushExecuted(makeCommand(`step ${i}`, holder, i - 1, i));
+    for (let i = 0; i < 100; i++) cm.undo();
+    expect(cm.canUndo).toBe(false);
+    expect(holder.v).toBe(1); // the first entry (0 -> 1) was evicted
   });
 });
 
@@ -141,7 +210,7 @@ describe('clear', () => {
     const fn = vi.fn();
     bus.on('history:change', fn);
     cm.clear(); // already empty
-    expect(fn).toHaveBeenCalledWith({ canUndo: false, canRedo: false, label: 'Nothing to redo' });
+    expect(fn).toHaveBeenCalledWith({ canUndo: false, canRedo: false, undoLabel: 'Nothing to undo', redoLabel: 'Nothing to redo' });
   });
 });
 

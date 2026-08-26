@@ -4,7 +4,7 @@ import type { OrderDoc } from '../db';
 import type { Result, WalletCore } from './base';
 
 export interface OrdersHandlers {
-  orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Result<{}>>;
+  orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Result<object>>;
   undeliveredOrders(accountId: string): Promise<OrderDoc[]>;
 }
 
@@ -15,7 +15,7 @@ export class OrdersService {
      * Mark an order as delivered (callback from meta after item delivery; idempotent closed loop).
      * Optional refundCoins: duplicate-item refund computed by meta (epic/legendary duplicates); credited once on delivery.
      */
-    async orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Result<{}>> {
+    async orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Result<object>> {
       const order = await this.core.cols.orders.findOne({ _id: args.orderId });
       if (!order) return { ok: false, error: 'NOT_FOUND' };
       // Idempotent: already delivered. The status flip below happens BEFORE the refund credit — heal a
@@ -52,7 +52,7 @@ export class OrdersService {
      * see no ledger entry and both credit(). The `healClaimedAt` CAS on the order doc closes that: only the
      * caller whose findOneAndUpdate matches proceeds to credit().
      */
-    private async healOrderRefund(order: OrderDoc): Promise<Result<{}>> {
+    private async healOrderRefund(order: OrderDoc): Promise<Result<object>> {
       const refund = order.refundCoins ?? 0;
       if (refund <= 0) return { ok: true };
       if (!this.core.isStaleClaim(order.deliveredAt ?? order.ts)) return { ok: true };

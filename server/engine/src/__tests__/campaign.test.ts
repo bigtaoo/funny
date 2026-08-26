@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import { buildEngineCtx } from '../engine/setup/buildCtx';
 import { spawnEnemyUnit, hasLivingEnemyUnits, hasLivingAttackerUnits } from '../engine/sim/campaign';
 import { resetUnitIds } from '../Unit';
-import { UnitType, Side } from '../types';
+import { UnitType } from '../types';
 import type { GameConfig } from '../types';
 import type { LevelDefinition } from '../campaign/LevelDefinition';
 

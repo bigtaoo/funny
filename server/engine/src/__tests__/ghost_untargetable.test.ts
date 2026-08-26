@@ -87,7 +87,6 @@ test('stacked same-side units stay targetable (no ghost in the grid)', () => {
 test('an arrow tower can damage a stacked enemy that would otherwise be a ghost', () => {
   const state    = new GameState(3);
   const combat   = new CombatSystem();
-  const movement = new MovementSystem();
 
   const COL = 5;
 

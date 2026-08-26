@@ -16,8 +16,15 @@ import { AISystem, DIFFICULTY } from '../systems/AISystem';
 import { GameState } from '../GameState';
 import { Unit } from '../Unit';
 import { Prng } from '../math/prng';
-import { AIDifficulty, CardType, Side, SpellType, UnitType } from '../types';
+import { AIDifficulty, CardType, PlayerCommand, Side, SpellType, UnitType } from '../types';
 import { CARD_DEFINITIONS } from '../config';
+/**
+ * The only PlayerCommand variant carrying handIndex/col/row. The assertions below used to
+ * read those off `cmd as any`, which also silently accepted a misspelt field name (the
+ * expected value would just compare against `undefined`); this keeps the field names checked.
+ */
+type PlayCardCommand = Extract<PlayerCommand, { type: 'play_card' }>;
+
 
 const LEVELS: AIDifficulty[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -158,7 +165,8 @@ test('L1 never reaches for meteor even when a lethal cluster is in range; L10 do
   }
 
   const isMeteorCommand = (cmds: unknown[]): boolean =>
-    cmds.some((c: any) => c.type === 'play_card' && typeof c.row === 'number');
+    cmds.some((c) => (c as PlayCardCommand).type === 'play_card'
+      && typeof (c as PlayCardCommand).row === 'number');
 
   const l1State = buildPressuredState();
   const l1 = new AISystem(new Prng(3), 1);

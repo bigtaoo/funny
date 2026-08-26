@@ -10,6 +10,8 @@
 // No Redis URL configured → returns null, real-time channel push AND cross-instance kick are both disabled
 // (single-instance deployments don't need either — the local onConnection() eviction already covers it).
 // Dynamic ioredis import: compiles even when ioredis is not installed (mirrors worldsvc/redis.ts).
+// NB gateway/package.json DOES declare ioredis (2026-08-26 check) — the pattern is inherited from
+// @nw/shared's activeMatch.ts, which genuinely cannot import it. A type-only import would work here.
 //
 // Presence tracking (2026-07-27 mid-term audit item 5/5): Gateway.presenceOf answers "is this account
 // online" purely from its own in-process `conns` map, which is correct today (single gateway instance,
@@ -80,7 +82,9 @@ export async function connectGatewaySubscriber(
   if (!url) return null;
   try {
     // Variable specifier so tsc compiles without ioredis installed (see @nw/shared's redisClient.ts for
-    // the full reasoning). Deliberately NOT routed through that module's loadIoRedisCtor(): redis-unit.test.ts
+    // the full reasoning; the local IoRedisCtor alias that used to sit above is gone — its own comment
+    // called narrowing the shared RedisLike "a separate job", and that job is now done).
+    // Deliberately NOT routed through that module's loadIoRedisCtor(): redis-unit.test.ts
     // vi.mock's 'ioredis', and Vitest can only intercept a dynamic import made from a module inside its own
     // graph — @nw/shared is externalized, so an import performed in there would load the real package.
     const spec = 'ioredis';

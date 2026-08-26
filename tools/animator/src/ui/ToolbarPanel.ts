@@ -55,10 +55,12 @@ export class ToolbarPanel {
     this.buildSkeletonToggle();
     this.bindExisting();
 
-    bus.on('history:change', ({ canUndo, canRedo, label }) => {
+    bus.on('history:change', ({ canUndo, canRedo, undoLabel, redoLabel }) => {
       this.btnUndo.disabled = !canUndo;
       this.btnRedo.disabled = !canRedo;
-      this.btnUndo.title    = canUndo ? label : 'Nothing to undo';
+      // Both labels already carry their own "Nothing to …" fallback — no need to re-spell it here.
+      this.btnUndo.title    = undoLabel;
+      this.btnRedo.title    = redoLabel;
     });
 
     bus.on('play:state', playing => {
@@ -104,6 +106,7 @@ export class ToolbarPanel {
     this.btnRedo = document.createElement('button');
     this.btnRedo.textContent = '↪ Redo';
     this.btnRedo.disabled    = true;
+    this.btnRedo.title       = 'Nothing to redo';
     this.btnRedo.addEventListener('click', () => this.cmdManager.redo());
 
     const undoSep = document.createElement('div');

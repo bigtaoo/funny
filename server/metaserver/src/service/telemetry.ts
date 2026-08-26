@@ -22,7 +22,7 @@ type TelemetryHandlers = Pick<
 /** 4 client log level flags (ordered by verbosity; for documentation/guard use only). */
 const CLIENT_LOG_KEYS = FLAG_KEYS.filter((k) => k.startsWith('client_log_'));
 
-export class TelemetryService {
+export class TelemetryService implements TelemetryHandlers {
   /** Rate limit for "full coverage" anomaly event uploads, keyed by IP: at most 30 POST /client/anomaly
    *  requests per IP per 60s (guards against Loki flooding). Redis-backed when configured (2026-07-27,
    *  precise across instances); in-process fallback otherwise — see createRateLimiter in base.ts. */

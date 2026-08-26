@@ -13,6 +13,7 @@ import { Skeleton } from '../skeleton/Skeleton';
 import { TARGET_SCREEN_PX, SUPERSAMPLE, type SizeTierKey } from './unitSize';
 import { basename, canvasToBlob, clamp01, deriveTaoPath, isDesktop, loadImageFromBlob, saveWithPicker, type WritableFileHandle } from './fileIO';
 import { serializeClip, type SerializedClip } from './clipSerialization';
+import { serializeBindings } from './bindingSerialization';
 
 // ── Serialization format (version 2) ─────────────────────────────────────────
 
@@ -140,8 +141,7 @@ export async function exportTao(host: TaoExportHost): Promise<void> {
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function buildAnimationJson(host: TaoExportHost, tier: SizeTierKey, hNat: number): SerializedProject {
-  const bindings: Record<string, SpriteBinding> = {};
-  host.state.boneBindings.forEach((b, id) => { bindings[id] = { ...b }; });
+  const bindings = serializeBindings(host.state.boneBindings);
 
   const animations: Record<string, SerializedClip> = {};
   host.animCtrl.store.forEach((clip, name) => {

@@ -6,7 +6,7 @@
 // ArrivalService's settlement side), zero cross-mixin `this.*` calls in the original chain —
 // assembled by composition in ../combatMarch.ts.
 import { tileId, marchId, playerWorldId, marchDurationFromPath, marchStepArriveAt, marchMoraleFromPath, OCCUPY_MIN_TROOPS, MARCH_MIN_TROOPS, isInVision, marchInterpPos, satchelCarryCapFor, SlgError, MARCH_RETURN_SPEEDUP_SECS_PER_COIN, type MarchKind } from '@nw/shared';
-import type { MarchDoc, ArmyEntry, StationedDoc } from '../db';
+import type { MarchDoc, ArmyEntry } from '../db';
 import { WorldCore } from '../core';
 import { MARCHABLE_KINDS } from '../core';
 import type { MarchView, PlayerWorldView } from '../worldTypes';

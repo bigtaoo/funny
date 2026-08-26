@@ -40,7 +40,6 @@ export class SlidingRateLimiter implements RateLimiter {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async allow(key: string, now: number): Promise<boolean> {
     this.maybeSweep(now);
     const win = this.windows.get(key)?.filter((t) => now - t < this.windowMs) ?? [];

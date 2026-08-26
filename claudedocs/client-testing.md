@@ -374,9 +374,23 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 **顺手修出来的真东西**：`CardScene/actions.ts` 的 `finally` 里有个 `return`（`no-unsafe-finally`）——照当时的写法无害（try 不 return、catch 吞掉），但它会静默吃掉 catch 块自己抛出的异常，而那个守卫本来也不需要待在 `finally` 里；清理归 `finally`，守卫挪到后面。另外 `HUDView/hpBar.ts` 的 `HP_CELL_H` 是血条还是矩形时代的遗留常量（心形 pip 只用 `HP_CELL_W`）。
 
-**剩 12 个 warning（`no-explicit-any`）是故意的**：全在 `render/stickman/assetLoader.ts` / `skeleton.ts` 解析第三方二进制骨骼格式那一片，手写类型是编故事；`tsc --noEmit` 才是真正的类型门。warning 不会让 `npm run lint` 非零退出，所以 CI 不会因此红。
+**`no-explicit-any` 同日从 warning 改成 error（src/ 零例外、零 disable）—— 当初定 warning 的理由是错的**：
+
+当时写的是「那 12 处全在解析第三方二进制骨骼格式，手写类型是编故事」。它不成立：`.tao` 是**我们自己的格式**，写侧就在 `tools/animator/src/io/taoExport.ts`，`SerializedProject` / `SerializedClip` / `SpritesheetJson` 一直是完整类型。JSZip 是第三方，ZIP **里面的 JSON 不是**。所以 9 处 `assetLoader.ts` 的 `JSON.parse(...) as any` 不是「无类型可写」，而是**把写侧已经存在的契约丢了**：改一个字段名，两边都不报错，client 读到 `undefined` 后默默 fallback 到默认值（一个 zOrder 0 / scale 1 的人形看上去“正常”得足以上线）。
+
+- 新增 `client/src/render/stickman/taoFormat.ts` = 读侧的那半份契约（比写侧故意更宽松：`src/assets` 里有早于几次格式修订的旧包，靠 `?? default` 才能加载）。
+- `skeleton.ts` 那 2 处 `(Skeleton as any).BONE_MAP = ...` —— 直接用 animator 同名文件**自己已经在用**的 readonly-剥除 mapped type（`MutableSkeleton`）。
+- `EventScene.ts` 那 1 处计算 i18n key 的 `as any` —— `as TranslationKey` 就是本仓库其他地方（`AuctionScene/itemLabels.ts` 等）的惯用写法。
+
+所以升 error 并不需要「堆一排 disable」：9 处真修 + 3 处换成已有惯用写法。**经验可以外推**：「这里写类型是编故事」先去查一下数据是谁写的，在本仓库里答案通常是「我们自己」。
+
+**验证方式不是看截图，是扫真包**（这轮改动除了 easing 收窄外全是类型层，截图证不了东西）：拿 `client/node_modules/jszip` 把 `src/assets` 下 18 个 `.tao` 全解了一遗，108 clips / 445 keyframes / 1968 个 bone delta。两个结论：
+1. **`easing` 字段在真包里出现 0 次** —— animator 从没写过，所以所有关键帧实际都是线性插值，`asEasing()` 在现有资产上是 no-op（行为零风险）。
+2. **扫出了一条真的格式漂移**：`binding.offsetX/offsetY` 写侧类型里**根本不存在**（animator 的 `SpriteBinding` 只有 7 个字段），但 18 个包里有 **7 个带非零值**（harpy / infantry / ironclad / medic / runner / skin_infantry / splitter，最大 ±16px 肢体偏移），`art/*.tao.editor` 里也有，而 client 真的在渲染时读并应用它。它们能活到今天完全靠每一跳都是 `{ ...b }` 这种不看类型的展开——**任何改成逐字段构造 binding 的代码会静默弄丢它们，那 7 个单位的肢体会偏**。读侧已经在 `taoFormat.ts` 里写清了现状；写侧（animator 要么把这两个 channel 声明出来、要么故意丢掉并重导 7 个包）是另一件事。
 
 **⚠️ 别报「lint 绿」当成新信息**：这条门在 2026-08-26 之前从来没跑过，所以它现在的绿是一条**新基线**，不是「一直很干净」。
+
+**同日后续：规则提到仓库根，lint 铺到了 server/ 和 tools/**。复活 client lint 最大的发现不是那 224 个 error，是 **client 当时是全仓库唯一有 linter 的包**——`server/`（13 个 workspace，包括数值权威 `@nw/engine`）和 5 个 tools 连 `lint` 脚本都没有。现在规则在仓库根 `eslint.shared.mjs`（`sharedRules({ js, tseslint, prettierConfig })` + `sharedIgnores`），client / server / 每个 tool 各自一份薄配置 import 它——共用文件**自己不 import plugin**，因为 plugin 按 import 它的文件解析，而这几个包的 `node_modules` 是分开的。server 的首跑结果见 [`server.md`](server.md)（623 文件 / 58 问题），tools 的见 [`tools-testing.md`](tools-testing.md)（6 问题，三个工具全绿）。
 
 ## 「按字数截断」这类 bug：机制在 headless 测，宽度预算只能真浏览器给（2026-08-26，聊天行按宽度截断）
 
@@ -466,7 +480,7 @@ ADR-073 首轮跟着修复落了 26 例测试，然后做变异验红，发现�
 
 ### 2. 图本身的比例会毁掉图（`test/render/iconArtAspect.test.ts`）
 
-`pack_tab_icons.cjs` 裁到内容边界后归一化**长边**，运行时两个 builder 又 contain-fit 进**正方形**盒子——所以一张细长的源图在 28px 格子里只画到宽度的一小半。`brush` v2 回来是 27×128（4.74:1），在 28px 页签格里只有约 6px 宽，读成一根头发加一个点；**而它满足 prompt 的每一个字**（笔锋确实比笔柄宽两三倍——prompt 约束了图内相对比例，没约束外轮廓）。这种错只有人盯着 contact sheet 才看得出来，于是改成门禁：长短边比 > 2.2 就红，例外走 `ELONGATED_ON_PURPOSE` 白名单+理由（`weapon` 竖剑 3.28、`event` 横向彩旗串 2.72、`atk` 竖匕首 2.33），并反向断言白名单里没有已经不需要豁免的条目——跟 `checkFileLength.mjs` 的 baseline 一个路子。全套 183 张的比例中位数 1.24。红-绿实测：用被淘汰的 v2 源图造一张 27×128 探针塞进资产目录，门禁点名报出 `brushprobe_active.png 27x128 = 4.74:1`。
+`pack_tab_icons.cjs` 裁到内容边界后归一化**长边**，运行时两个 builder 又 contain-fit 进**正方形**盒子——所以一张细长的源图在 28px 格子里只画到宽度的一小半。`brush` v2 回来是 27×128（4.74:1），在 28px 页签格里只有约 6px 宽，读成一根头发加一个点；**而它满足 prompt 的每一个字**（笔锋确实比笔柄宽两三倍——prompt 约束了图内相对比例，没约束外轮廓）。这种错只有人盯着 contact sheet 才看得出来，于是改成门禁：长短边比 > 2.2 就红，例外走 `ELONGATED_ON_PURPOSE`，并反向断言白名单里没有已经不需要豁免的条目。——**白名单后来从 `Set` 改成了 `Map<base, 该 kind 自己的上限>`**（现存 `weapon` 3.6、`event` 3.0），因为无条件豁免等于在最需要门禁的那个 kind 上把门禁关掉：`atk` 重出的 v5 回来是 28×128（4.57:1，距 `brush` v2 只差 0.17），而当时那句「`atk` 允许很长」的注释恰恰就是没人再去量它的原因。两条配套细节：①上限要按**长宽比最大的那个变体**定、不是 `active`（未加粗的墨色跳过 `dilateAlpha`，`weapon` 是 active 3.28、content/inactive **3.46**，第一版上限 3.4 当场被它自己的美术打红）；②`atk` 那一行现已**删除**——v6 重画后是 2.00:1，低于 2.2 的通用门槛，「豁免陈旧」那条断言当场变红要求删它，**豁免是一笔债、不是这个 kind 的属性**——跟 `checkFileLength.mjs` 的 baseline 一个路子。全套 183 张的比例中位数 1.24。红-绿实测：用被淘汰的 v2 源图造一张 27×128 探针塞进资产目录，门禁点名报出 `brushprobe_active.png 27x128 = 4.74:1`。
 
 ### 3. 反例：**别加那个看起来最自然的沙漏测试**
 

@@ -5,6 +5,7 @@
   "scripts": {
     "start": "webpack serve --mode development --port 9095",
     "build": "webpack --mode production",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -14,7 +15,12 @@
     "pixi.js-legacy": "^7.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.68.0",
+    "@typescript-eslint/parser": "^8.68.0",
     "@vitest/coverage-v8": "^2.1.9",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
     "html-webpack-plugin": "^5.6.6",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.3",

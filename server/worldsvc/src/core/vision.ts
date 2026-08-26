@@ -11,7 +11,6 @@
 // protected→public cost every mixin-chain-to-composition conversion pays for a method a sibling needs.
 import {
   playerWorldId,
-  isInVision,
   marchInterpPos,
   baseFootprintCells,
   VISION_MAX_RADIUS,

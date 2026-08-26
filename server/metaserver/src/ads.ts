@@ -12,7 +12,7 @@
 //   POST /ads/callback/wechat  Body: { openid, trans_id, timestamp, nonce, sign }
 //   Verified with HMAC-SHA256(sort(params_kvs).join('&'), NW_WECHAT_ADS_KEY).
 
-import { createHash, createVerify, createHmac } from 'node:crypto';
+import { createVerify, createHmac } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { Collections, RedisLike } from '@nw/shared';
 import { ADS_REWARD_COINS, ADS_DAILY_CAP, ADS_MIN_INTERVAL_MS } from '@nw/shared';

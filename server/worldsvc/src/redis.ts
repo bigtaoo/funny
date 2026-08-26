@@ -65,9 +65,13 @@ return 1
 export async function connectRedis(url: string | undefined): Promise<WorldRedis | null> {
   if (!url) return null;
   try {
-    // Variable specifier: bypasses tsc static module resolution (ioredis may not be installed in dev).
-    // Kept local rather than using @nw/shared's loadIoRedisCtor() so redis.test.ts's vi.mock('ioredis')
-    // still intercepts it — Vitest can't reach a dynamic import made inside the externalized @nw/shared.
+    // Variable specifier: bypasses tsc static module resolution. NB the reason is inherited, not
+    // local — worldsvc/package.json DOES declare ioredis; the constraint comes from @nw/shared, which
+    // does not and must still compile (see redisClient.ts). The local IoRedisClient/IoRedisCtor pair
+    // that used to live here is gone: @nw/shared's RedisConnection is the same "declare only what we
+    // call" structural type, shared by every service instead of re-derived per file.
+    // Still NOT routed through loadIoRedisCtor() though — redis.test.ts vi.mock's 'ioredis', and Vitest
+    // can't intercept a dynamic import made inside the externalized @nw/shared.
     const spec = 'ioredis';
     const mod = (await import(spec)) as { default?: RedisCtor } & RedisCtor;
     const Redis: RedisCtor = mod.default ?? mod;
