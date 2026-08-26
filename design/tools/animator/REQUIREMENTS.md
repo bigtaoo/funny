@@ -172,8 +172,7 @@ Notebook Wars 使用程序化骨骼角色（stickman）作为战斗单位，由 
 
 | 属性 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `anchorX/Y` | `number` | `0.5` | 锚点 0–1（图片内对齐骨骼 pivot 的位置） |
-| `offsetX/Y` | `number` | `0` | 世界空间像素偏移，叠加在骨骼 pivot 上（整体平移图片） |
+| `anchorX/Y` | `number` | `0.5` | 锚点（图片内对齐骨骼 pivot 的位置），**允许超出 0–1**——图片整体平移就靠它（以图片尺寸为单位，随贴图缩放），**没有** binding 级 offset 字段 |
 | `rotation` | `number` | `0` | 静态旋转修正（度），叠加在动画旋转上（修正图片朝向） |
 | `scaleX/Y` | `number` | `1` | 静态缩放修正，与动画 scaleX/Y 相乘（匹配骨骼长度） |
 | `flipX` | `boolean` | `false` | X 轴镜像（对称骨骼复用同一图） |
@@ -182,7 +181,7 @@ Notebook Wars 使用程序化骨骼角色（stickman）作为战斗单位，由 
 **渲染合成公式：**
 ```
 sprite.rotation = bone_FK_angle + keyframe.rotation + binding.rotation
-sprite.x        = bone_pivot.x  + keyframe.translateX + binding.offsetX
+sprite.x        = bone_pivot.x  + keyframe.translateX
 sprite.scale    = keyframe.scaleX × binding.scaleX
 ```
 
@@ -302,7 +301,7 @@ sprite.scale    = keyframe.scaleX × binding.scaleX
   "bindings": {
     "spine": {
       "anchorX": 0.5, "anchorY": 0.5, "flipX": false, "zOrder": 6,
-      "offsetX": 0, "offsetY": 0, "rotation": 0, "scaleX": 1, "scaleY": 1
+      "rotation": 0, "scaleX": 1, "scaleY": 1
     }
   },
   "boneLengthScales": { "spine": 1.4, "r_upper_arm": 0.9 },
