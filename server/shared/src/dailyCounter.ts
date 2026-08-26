@@ -3,8 +3,8 @@
 // guarded $inc, each a cross-WAN hop to Atlas M0) down to one, and to get free bounded storage — these 3
 // collections had never had an index or TTL at all, unlike everything else the 2026-07-27 audit fixed.
 //
-// RedisLike mirrors activeMatch.ts's convention: `any`-typed (ioredis's real types aren't worth importing
-// for the handful of methods used here), dynamic import elsewhere so tsc compiles without ioredis installed.
+// RedisLike is the structural client interface from redisClient.ts (hand-written rather than imported from
+// ioredis, which @nw/shared must compile without — see that file's header for the full reasoning).
 //
 // Unlike activeMatch/worldsvc's Redis usage (all "optional infra, degrades to a lesser
 // experience"), these counters gate real anti-abuse caps — losing them isn't a UX nicety, it's a farmable
@@ -17,7 +17,7 @@
 // pass/fail decision, which is always plain arithmetic against the caller-supplied `now`, never Redis's own
 // clock — otherwise tests driving a fake clock across an interval boundary would desync from real elapsed time).
 
-import type { RedisLike } from './activeMatch';
+import { loadIoRedisCtor, type RedisConnection, type RedisLike } from './redisClient';
 
 /** Safety-net TTL for the real-Redis backend: bounds storage even though nothing currently cleans these up
  *  proactively. Sliding (refreshed on every write) — harmless since all writes for a given accountId:dayKey
@@ -184,18 +184,16 @@ export async function bumpGuardedTimestamp(
  * Returns null when unconfigured or unreachable — see the module doc comment for what null actually means
  * here (in-process fallback, not "feature disabled").
  */
-export async function connectDailyCounterRedis(url: string | null): Promise<RedisLike | null> {
+export async function connectDailyCounterRedis(url: string | null): Promise<RedisConnection | null> {
   if (!url) return null;
   try {
-    const spec = 'ioredis';
-    const mod: any = await import(spec); // eslint-disable-line @typescript-eslint/no-explicit-any
-    const Redis = mod.default ?? mod;
+    const Redis = await loadIoRedisCtor();
     const client = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
     await new Promise<void>((resolve, reject) => {
-      client.once('ready', resolve);
-      client.once('error', reject);
+      client.once('ready', () => resolve());
+      client.once('error', (e) => reject(e));
     });
-    client.on('error', (e: Error) => console.error('[daily-counter-redis] error:', e.message));
+    client.on('error', (e) => console.error('[daily-counter-redis] error:', e.message));
     return client;
   } catch (e) {
     console.error(

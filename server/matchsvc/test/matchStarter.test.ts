@@ -3,7 +3,7 @@
 // "login-reconnect-prompt" tests (which always resolve successfully). Same fake-deps style as
 // test/matchsvc.test.ts's own redis fake (`{ set: vi.fn()... }`), just failing instead of succeeding.
 import { describe, it, expect, vi } from 'vitest';
-import { verifyTicket } from '@nw/shared';
+import { verifyTicket, type RedisLike } from '@nw/shared';
 import { MatchStarter } from '../src/matchsvc/matchStarter';
 import { GameRegistry } from '../src/GameRegistry';
 import type { PushMsg, StartMatchPlayer } from '../src/matchsvc/types';
@@ -25,7 +25,7 @@ describe('MatchStarter.start: setActiveMatch failures are caught, logged, and ne
       games,
       internalKey: KEY,
       ticketTtlSec: 30,
-      redis: redis as never,
+      redis: redis as unknown as RedisLike, // SET is the only command setActiveMatch issues
     });
 
     starter.start('friendly', player('a', 'Alice', '1'), player('b', 'Bob', '2'));

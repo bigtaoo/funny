@@ -7,6 +7,7 @@
 // Redis is optional infrastructure here (mirrors gateway/worldsvc's Redis usage): no URL configured,
 // or connection failure, degrades to "feature disabled" rather than breaking login/matchmaking.
 import { createLogger } from './logger';
+import { loadIoRedisCtor, type RedisConnection, type RedisLike } from './redisClient';
 
 const log = createLogger('shared:activeMatch');
 
@@ -27,26 +28,20 @@ export function activeMatchKey(accountId: string): string {
   return `nw:activeMatch:${accountId}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type RedisLike = any;
-
 /**
  * Connect to Redis for active-match tracking. Returns null when unconfigured or unreachable
- * (dynamic ioredis import — compiles even when ioredis isn't installed, same pattern as
- * gateway/src/redis.ts).
+ * (dynamic ioredis import — compiles even when ioredis isn't installed, see redisClient.ts).
  */
-export async function connectActiveMatchRedis(url: string | null): Promise<RedisLike | null> {
+export async function connectActiveMatchRedis(url: string | null): Promise<RedisConnection | null> {
   if (!url) return null;
   try {
-    const spec = 'ioredis';
-    const mod: any = await import(spec); // eslint-disable-line @typescript-eslint/no-explicit-any
-    const Redis = mod.default ?? mod;
+    const Redis = await loadIoRedisCtor();
     const client = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
     await new Promise<void>((resolve, reject) => {
-      client.once('ready', resolve);
-      client.once('error', reject);
+      client.once('ready', () => resolve());
+      client.once('error', (e) => reject(e));
     });
-    client.on('error', (e: Error) => log.error('redis error', { err: e.message }));
+    client.on('error', (e) => log.error('redis error', { err: e.message }));
     return client;
   } catch (e) {
     log.error('connect failed; active-match tracking disabled', { url, err: (e as Error).message });
