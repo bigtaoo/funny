@@ -119,19 +119,19 @@ interface BoneKeyframe {
 
 ```ts
 interface SpriteBinding {
-  anchorX:  number;  // 0–1，图片内 pivot X（0=左边，1=右边），默认 0.5
-  anchorY:  number;  // 0–1，图片内 pivot Y（0=上边，1=下边），默认 0.5
+  anchorX:  number;  // 图片内 pivot X（0=左边，1=右边），**允许超出 0–1**，默认 0.5
+  anchorY:  number;  // 图片内 pivot Y（0=上边，1=下边），**允许超出 0–1**，默认 0.5
   flipX:    boolean; // 水平翻转
   zOrder:   number;  // 渲染层次（数值越大越靠前），全局固定，不随动画变化
-  offsetX:  number;  // 像素偏移 X，叠加在骨骼世界坐标上，默认 0
-  offsetY:  number;  // 像素偏移 Y，叠加在骨骼世界坐标上，默认 0
   rotation: number;  // 静态旋转偏移（度），叠加在动画旋转上，默认 0
   scaleX:   number;  // 静态缩放，与动画 scaleX 相乘，默认 1
   scaleY:   number;  // 静态缩放，与动画 scaleY 相乘，默认 1
 }
 ```
 
-`offsetX`/`offsetY` 用于处理图片相对骨骼位置的整体平移（如身体很宽时胳膊图片需要向侧面偏移），与关键帧动画中的 `translateX`/`translateY` 互不干扰。旧存档缺少该字段时渲染器以 `?? 0` 安全回退。
+**就这七个字段，没有 `offsetX`/`offsetY`。** 图片相对骨骼的整体平移（如身体很宽时胳膊图片需要向侧面偏移）走 **`anchorX`/`anchorY` 超出 0–1** 这条路——偏移量以图片自身尺寸为单位，随贴图缩放，而不是固定世界像素。
+
+> ⚠ 曾经有过一个 binding 级的世界坐标偏移通道（2026-06-05 ~ 06-09），`0f438040` 连同 animator 渲染一起删除，改由放宽 anchor 取代。但那次删除没迁移数据也漏了客户端，残留值在 7 个包里活到 2026-08-26 才清掉——**不要重新引入这个通道**（同一件事两种表达方式）。来龙去脉见 [`claudedocs/file-formats.md`](../../../claudedocs/file-formats.md)「`binding` 的七个字段」。
 
 ### 编辑器模式（EditorMode）
 
@@ -283,13 +283,13 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 `.tao` = ZIP 压缩包（JSZip），内含三个文件：
 
-**animation.json**（version 2，bindings 含 zOrder / offsetX / offsetY，无 frameId）：
+**animation.json**（version 2，bindings 含 zOrder，无 offsetX/offsetY、无 frameId）：
 ```jsonc
 {
   "version": 2,
   "bindings": {
     "spine": { "anchorX": 0.5, "anchorY": 0.5, "flipX": false, "zOrder": 6,
-               "offsetX": 0, "offsetY": 0, "rotation": 0, "scaleX": 1, "scaleY": 1 }
+               "rotation": 0, "scaleX": 1, "scaleY": 1 }
   },
   "boneLengthScales": { "spine": 1.4, "r_upper_arm": 0.9 },
   "animations": {

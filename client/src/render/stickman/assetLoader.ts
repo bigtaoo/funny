@@ -51,8 +51,10 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
       rotation: b.rotation ?? 0,
       scaleX:   b.scaleX   ?? 1,
       scaleY:   b.scaleY   ?? 1,
-      offsetX:  b.offsetX  ?? 0,
-      offsetY:  b.offsetY  ?? 0,
+      // NOTE: `b.offsetX`/`b.offsetY` are deliberately NOT read. 7 bundles in
+      // src/assets still carry non-zero values from the 2026-06-05..09 window when
+      // SpriteBinding briefly had an offset channel; it was removed on 2026-06-09 in
+      // favour of out-of-range anchors. See claudedocs/file-formats.md.
     });
   }
 

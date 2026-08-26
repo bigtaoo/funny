@@ -60,17 +60,26 @@ export interface TaoBindingJson {
   scaleX?:   number;
   scaleY?:   number;
   /**
-   * World-space pixel offset, and the one field pair the writer's types do NOT mention:
-   * `SpriteBinding` in tools/animator/src/core/types.ts has seven fields, none of them an
-   * offset. Yet 7 of the 18 bundles in src/assets carry NON-ZERO values here (harpy,
-   * infantry, ironclad, medic, runner, skin_infantry, splitter — limb offsets up to ±16px,
-   * e.g. `l_upper_leg` +16 x), the matching art/*.tao.editor projects carry them too, and
-   * this loader reads and applies them. They survive a round-trip through the animator
-   * only because every hop is an untyped object spread (`{ ...b }`), which carries keys the
-   * type never declared; anything that builds a binding field-by-field drops them silently
-   * and those units shift. Declared here so the read side at least states what is on disk
-   * — the animator's writer-side type is the half that still needs deciding (declare the
-   * channel, or drop it deliberately and re-export the 7 bundles).
+   * DEAD FIELD — on disk in 7 bundles, read by nothing. Kept declared so the read side
+   * states what is actually in those files, and so nobody re-adds a reader by accident.
+   *
+   * A binding-level world-space offset existed 2026-06-05..09 and was removed by
+   * 0f438040, which in the same commit dropped the animator's application of it and
+   * widened anchorX/anchorY to "outside 0-1 allowed" as the replacement. That removal
+   * migrated neither the data nor the client: 7 of the 18 bundles in src/assets kept
+   * non-zero values (harpy, infantry, ironclad, medic, runner, skin_infantry, splitter),
+   * the matching art/*.tao.editor projects too, and assetLoader kept applying them until
+   * 2026-08-26. They lasted that long because every writer hop was an untyped `{ ...b }`
+   * spread, which carries keys the type never declared.
+   *
+   * Settled 2026-08-26: dead. The animator preview never applied them, so no artist ever
+   * saw their effect; the values are byte-identical across units whose every other binding
+   * field was retuned individually, i.e. a frozen template constant, not art. The client
+   * no longer reads them and the writer (io/bindingSerialization.ts) no longer emits them;
+   * the bundles were NOT re-exported, so these keys stay on disk as dead bytes until each
+   * project is next saved. Static shifts belong in anchorX/anchorY. Do not add a reader,
+   * and do not reintroduce the channel on the writer side.
+   * See claudedocs/file-formats.md "`binding` 的七个字段".
    */
   offsetX?:  number;
   offsetY?:  number;

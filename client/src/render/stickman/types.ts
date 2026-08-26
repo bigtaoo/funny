@@ -59,14 +59,17 @@ export interface AnimationClip {
 
 // ── Sprite binding ────────────────────────────────────────────────────────────
 
+/** Mirrors `SpriteBinding` in tools/animator/src/core/types.ts — keep the two in sync.
+ *
+ *  `anchorX/anchorY` are image-space pivots and MAY fall outside 0–1: that is how a
+ *  sprite is shifted off its own bounds. There is deliberately no offsetX/offsetY
+ *  channel — see the note on binding offsets in claudedocs/file-formats.md. */
 export interface SpriteBinding {
-  anchorX:  number;   // 0-1
-  anchorY:  number;   // 0-1
+  anchorX:  number;   // image-space pivot X (0=left, 1=right); outside 0-1 allowed
+  anchorY:  number;   // image-space pivot Y (0=top, 1=bottom); outside 0-1 allowed
   flipX:    boolean;
   zOrder:   number;
   rotation: number;   // degrees, additive
   scaleX:   number;   // multiplicative
   scaleY:   number;
-  offsetX:  number;   // world-space pixel offset
-  offsetY:  number;
 }

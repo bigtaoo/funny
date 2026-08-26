@@ -37,17 +37,19 @@ export function applyPose(host: PoseHost): void {
     }
 
     // ── Normal bone sprite — composite formula (matches animator Renderer.ts)
-    //   sprite.x        = bone_pivot.x + kf.translateX + binding.offsetX
-    //   sprite.y        = bone_pivot.y + kf.translateY + binding.offsetY
+    //   sprite.x        = bone_pivot.x + kf.translateX
+    //   sprite.y        = bone_pivot.y + kf.translateY
     //   sprite.rotation = (bone_wa + kf.rotation + binding.rotation) * PI/180
     //   sprite.scale    = kf.scale × binding.scale  (× -1 for flipX)
+    // Any static positional correction lives in binding.anchorX/anchorY, which may
+    // fall outside 0–1 for exactly that purpose.
     const pose    = worldPos.get(boneId);
     const binding = host.asset.bindings.get(boneId);
     const xform   = transforms.get(boneId);
     if (!pose || !binding) continue;
 
-    sprite.x = pose.sx + (xform?.translateX ?? 0) + binding.offsetX;
-    sprite.y = pose.sy + (xform?.translateY ?? 0) + binding.offsetY;
+    sprite.x = pose.sx + (xform?.translateX ?? 0);
+    sprite.y = pose.sy + (xform?.translateY ?? 0);
 
     sprite.rotation = (
       (pose.wa + (xform?.rotation ?? 0) + binding.rotation) * Math.PI

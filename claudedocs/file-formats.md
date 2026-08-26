@@ -24,20 +24,21 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 - 读侧比写侧**故意宽松**（字段大多 optional）：`src/assets/*.tao` 里有早于几次格式修订的包（无 `unitHeight` / 无 `boneLengthScales`），靠 `?? 默认值` 才能加载。required 只给「缺了就加不载」的字段。
 - 两份声明**故意重复**（animator 和 client 是两个包、无共享类型依赖，而 `.tao` 是磁盘/CDN 上的文件，版本真的可以不一致）：手动保同步，实在对不上就 bump `version`。
 
-### ⚠️ `binding.offsetX/offsetY`：在包里、在渲染里，但不在写侧类型里
+### `binding` 的七个字段 —— 没有 `offsetX/offsetY`（2026-08-26 定案）
 
-上面 JSON 示例的 `bindings` 列了 7 个字段，跟 animator 的 `SpriteBinding` 一致。但把 `client/src/assets` 下 **18 个 `.tao` 全解开扫一遗**发现：其中 **7 个包带非零的第 8、9 个字段 `offsetX`/`offsetY`**（世界空间像素偏移）：
+`bindings[boneId]` **只有** `anchorX/anchorY/flipX/zOrder/rotation/scaleX/scaleY` 七个字段。静态位移一律走 **`anchorX/anchorY` 允许超出 0–1** 这条路（image-space、随贴图缩放），**不存在** binding 级的世界坐标偏移通道。
 
-| 包 | 非零偏移的骸骷 |
-|---|---|
-| `units/infantry` `units/ironclad` `units/medic` `units/runner` | `l_lower_arm(-1,13)` `r_upper_leg(-12,7)` `r_lower_leg(-8,0)` `l_upper_leg(16,0)` `l_lower_leg(2,0)` |
-| `units/harpy` | `r_upper_leg(-12,7)` `r_lower_leg(-8,0)` `l_upper_leg(16,0)` `l_lower_leg(2,0)` |
-| `units/skins/skin_infantry` | `l_lower_arm(-1,13)` `r_upper_leg(-12,7)` `l_upper_leg(16,0)` |
-| `units/splitter` | `r_upper_leg(-12,7)` |
+历史与已定案的处理：
 
-对应的 `art/*.tao.editor` 里也有同一套值，运行时（`assetLoader.ts` → `SpriteBinding.offsetX/Y`）真的读并应用。但 animator 的 `SpriteBinding`（`tools/animator/src/core/types.ts`）**根本没有这两个 channel**，编辑器 UI 也没地方调它们。它们能从 editor project 活着进到导出包，全靠路上每一跳都是 `{ ...b }` 这种不看类型的展开（JS 展开会带上类型里没声明的键）。
-
-**风险**：任何把 binding 改成**逐字段构造**的修改（归一化、重置、新增一个写回 binding 的 UI）都会静默弄丢它们，那 7 个单位的肢体位置就会偏（最大 16px），而这种偏在游戏里看上去就像“动画本来就这样”。**读侧已在 `taoFormat.ts` 写清现状；写侧要么把两个 channel 正式声明出来（并给编辑器一个入口），要么故意废弃并重导那 7 个包 —— 还没拍。**
+- `SpriteBinding` 曾在 **2026-06-05 ~ 06-09** 短暂带过 `offsetX/offsetY`（世界坐标像素偏移）。**2026-06-09（`0f438040`）删除**：同一个 commit 里去掉了类型字段、去掉了 animator `Renderer.ts` 的应用（sprite 位置 + anchor gizmo 连线），并把 anchor 的注释从"0–1"改成"**允许超出 0–1**"——即以放宽 anchor 取代该通道。
+- 但那次删除**没迁移数据、也漏了客户端**：`client/src/assets` 里 18 个包中有 **7 个**仍带非零值（`harpy` / `infantry` / `ironclad` / `medic` / `runner` / `skins/skin_infantry` / `splitter`），对应 `art/**/*.tao.editor` 母版同样带；而客户端 `pose.ts` 一直在 `sprite.x/y` 上加这两个值。
+- 数据能存活十周，是因为写侧每一跳都是**无类型对象展开**（`{ ...b }`，`editorProject.ts` / `taoExport.ts`），会捎带类型从未声明的键——类型检查和画师都看不见它。
+- **它不是美术意图**：animator 预览从 2026-06-09 起就不应用这两个值，所以画师**从来没看见过它们的效果**，也没有任何 UI 能编辑；而 7 个包里的偏移值**逐字节相同**（`l_lower_arm(-1,13)` / `r_upper_leg(-12,7)` / `r_lower_leg(-8,0)` / `l_upper_leg(16,0)` / `l_lower_leg(2,0)`），而同一批 binding 的 anchor/rotation/scale 却每个单位都单独调过（`harpy` scale 0.3 vs `infantry` 0.55，rotation −40 vs −97，`splitter` 甚至 `anchorX: 1.2` 已超出 0–1）。这是模板项目里冻住的一组常量，不是逐单位调出来的美术数值。
+- **结论：判定为死字段，画面以 animator 预览（画师验收的那一版）为准。**
+  - 客户端 `assetLoader.ts` **不再读**、`pose.ts` **不再加**这两个值——`pose.ts` 那句"composite formula (matches animator Renderer.ts)"从此才真正成立（此前恰恰在这两个字段上不一致）。
+  - 写侧新增 `io/bindingSerialization.ts`，**逐字段构造** binding 取代 `{ ...b }` 展开：类型删掉的字段不再写出，加字段则会在此处编译报错。加载 `.tao.editor` 时同样过一遍，老存档打开即归一化。
+  - **不做批量重导出**：既然没人再读这两个键，包里的残留就是死字节；且 `art/**` 母版与 `client/src/assets/**` 已分叉（见下方 2026-07-17 note），重导出风险远大于收益。画师下次打开并保存对应 `.tao.editor` 时会自然清掉。
+  - 画面影响：这 7 个单位的相关肢体各移动 **1.2–2.1 屏幕像素**（偏移在 rig 空间最大 16，乘 `targetScreenPx ÷ naturalHeight` ≈ 0.074–0.130；单位屏高 54px）。方向是**回到画师在 animator 里对齐的关节位置**。
 
 ### `easing`：字段存在，但真包里一次都没出现过
 
