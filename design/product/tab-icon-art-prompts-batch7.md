@@ -422,7 +422,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 ### 28px 验收：40 张过、4 张待重出
 
-在 28px（页签/词条实际尺寸）纸底+深底两种衬底上逐张看过 contact sheet，另外用 Playwright 实拍了称号墙（11 张一屏）、结算页、装备背包+强化弹窗三处真实界面。**4 张需要重出**（v2 prompt 见下方「重出 prompt（v2）」一节，重出时只换源图、重跑 pack 脚本，代码零改动）：
+在 28px（页签/词条实际尺寸）纸底+深底两种衬底上逐张看过 contact sheet，另外用 Playwright 实拍了称号墙（11 张一屏）、结算页、装备背包+强化弹窗三处真实界面。**4 张需要重出**（v2 prompt 见下方「重出 prompt（v2）」一节，重出时只换源图、重跑 pack 脚本，代码零改动）。**v2 已回来：其中 3 条（沙漏三档 / `lead` / `titleGrandmaster`）验收通过，`brush` 还要一版 v3——见该节末尾「v2 验收结果」。**
 
 | kind | 问题 | 重出时要改的措辞 |
 |---|---|---|
@@ -487,6 +487,29 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ```
 Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the eighth rank in a nine-step medal progression — a five-pointed star medal hanging below two short ribbon tails, with a small sprig of laurel leaves (three or four simple leaf shapes on a thin stem) wrapped around one side of the star, and a plain three-pointed crown sitting on top of the star. The crown must be clearly visible at small sizes: roughly one third as wide as the star itself, with three distinct points and a filled-in solid band across its base — noticeably present, but plain and squat rather than tall or ornate. There are NO light rays anywhere behind or around the medal. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading. Must stay clearly recognizable when scaled down to 28x28 pixels, where the presence of the crown is what separates it from the same star-and-laurel medal without one. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a tiny crown that disappears at small sizes, a tall ornate crown, a cross or orb on top of the crown, radiating light rays or a burst behind the medal, a full wreath wrapping all the way around, a shield shape instead of a star, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
 ```
+
+### v2 验收结果（2026-08-25 晚）：5 张过，`brush` 还差一版
+
+v1 的源图按约定移进了 `art/ui/tabicons/_rejected/`（`tabicon_<kind>_v1_<原因>.<ext>`，与 `material`/`recharge`/`social` 那三张同一命名）。
+
+| kind | 结论 | 说明 |
+|---|---|---|
+| `hourglassSm`/`Md`/`Lg` | **过** | 实心沙堆这一招成立：28px 上三档一眼分得开（细条 / 半满 / 满到收口），外框三张一致。这一条从「三档看起来一样」到「一眼分开」，改的只有"沙子别用点阵"这一句 |
+| `lead` | **过** | 实心锥 + 外张的木质切面 + 毛糙断口，28px 上是明确的「削尖的笔尖」，跟 `play` 的实心三角并排毫无歧义 |
+| `titleGrandmaster` | **过** | 皇冠在 28px 上是一条带尖的实心暗带，跟 `titleMaster`（无皇冠）、`titleKing`（更高更繁复 + 放射光线）三张并排都拉得开。**残留小瑕疵**（不重出）：它的绶带比 `titleMaster` 短一截、星体在画框里偏大，家族里的比例不算完全统一——但区分度由皇冠承担，够用 |
+| `brush` | **还差一版** | 笔锋照要求做成了实心宽楔形、也确实比笔柄宽两三倍——**但整张图的长宽比是 27:128（1:4.74）**，见下 |
+
+**`brush` 暴露的是一条通用陷阱，值得单独记一笔**：`pack_tab_icons.cjs` 会先把源图裁到内容边界，再让**长边**等于 `LONG_EDGE`；运行时 `buildInkIcon`/`buildRasterTabIcon` 又是 contain-fit 进一个**正方形**盒子。所以**一张细长的图在 28px 格子里只占宽度的一小半**——1:4.74 的 brush 实际只画到约 6px 宽，剩下 22px 是空白，缩下去就是一根头发丝加一个小黑点，比 v1 更没存在感。**prompt 里写「笔锋比笔柄宽两三倍」是不够的**：那只约束了图内两个部件的相对比例，没约束整张图的外轮廓比例，模型完全可以画一根又细又长的杆来满足它。
+
+实测全套 44 张的长宽比，brush 的 4.74 是**唯一的离群值**（第二名 `weapon` 3.28 是一把竖立的剑、已上线可接受，`atk` 2.33、`atkspd` 2.13、`flag` 2.10 都在可用区间）。**结论：新图的外轮廓长宽比尽量不超过 2:1**；确实必须细长的（竖剑、旗杆）要有意识地知道自己在放弃一半画框。
+
+**`brush` v3 prompt**（只改一件事：把手柄砍成短柄、并显式约束整张图接近正方形）：
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the business end of a calligraphy writing brush, seen upright and CLOSE UP: a broad fanned-out bristle head filling the lower half of the picture, drawn as ONE SOLID BLACK WEDGE, above it one short metal ferrule band, and above that only a SHORT STUB of the plain round handle — the handle is cut off by the top edge of the picture rather than drawn in full. COMPOSITION IS CRITICAL: the whole drawing must roughly fill a SQUARE — its total height must be no more than about 1.5 times its total width — so the bristle head is big and dominant instead of a thin stick in a tall frame. The bristle head should be about as wide as half the picture. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the bristle head is a flat solid black area, the handle stub is bare line art, no wood-grain lines. Must stay clearly recognizable when scaled down to 28x28 pixels, where the wide dark bristle head is what separates it from a pencil. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a tall narrow composition, a long thin handle running the height of the picture, the whole brush drawn end to end, a narrow or tightly-pointed bristle tip, thin separate hair strokes instead of one solid head, an ink drop below the tip, a brush lying flat or held at an angle, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+本轮 5 张已打包接线（`brush` 暂时留 v2，比 v1 的细线稿仍强一档），`tsc --noEmit` + 图标契约测试全绿。
 
 ### 重出后的验收口径
 
