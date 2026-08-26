@@ -15,6 +15,7 @@ import {
   ROOM_TTL_SEC,
   DUEL_TTL_SEC,
 } from '../src/persist';
+import type { RedisLike } from '@nw/shared';
 import type { Room, DuelPlayer } from '../src/Matchsvc';
 import type { QueueEntry } from '../src/Matchmaking';
 
@@ -109,7 +110,12 @@ function fakeRedis() {
     return builder;
   }
 
-  return { ...ops, multi, strings, zsets, fail };
+  // persist.ts only ever issues these nine commands plus MULTI, so the fake stops there; the assertion
+  // widens it to the full client interface while keeping `strings`/`zsets`/`fail` reachable for the
+  // assertions and failure-injection below. The per-command signatures above are still hand-written to
+  // match real Redis, so any drift between them and persist.ts's call sites is a type error here.
+  const fake = { ...ops, multi, strings, zsets, fail };
+  return fake as typeof fake & RedisLike;
 }
 
 const from: DuelPlayer = { accountId: 'a', name: 'Alice', publicId: '100000001', equippedTitle: '', avatarId: '', equippedSkins: [], deck: [] };

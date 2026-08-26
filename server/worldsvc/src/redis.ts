@@ -13,6 +13,8 @@
 // ioredis is not installed (Redis is a production dependency; it need not be installed during
 // the dev skeleton phase — package.json declares it and production npm i installs it).
 
+import type { RedisCtor } from '@nw/shared';
+
 /** Minimal Redis interface used by worldsvc (extend as needed; types are independent of the concrete ioredis implementation). */
 export interface WorldRedis {
   publish(channel: string, message: string): Promise<unknown>;
@@ -37,28 +39,6 @@ export interface WorldRedis {
    */
   hmergeJsonField?(key: string, field: string, entryKey: string, entryJson: string | null): Promise<unknown>;
 }
-
-/**
- * The ioredis surface this file actually touches. ioredis's own types are not imported because the
- * module is loaded through a variable specifier (see the note above `connectRedis`), so nothing here
- * can `import type` from it; a hand-written structural type is the honest alternative to `any`, and
- * its only claim is "these are the calls below".
- */
-interface IoRedisClient {
-  on(event: 'error', handler: (err: Error) => void): void;
-  once(event: 'ready' | 'error', handler: () => void): void;
-  off(event: 'ready' | 'error', handler: () => void): void;
-  disconnect(): void;
-  publish(channel: string, message: string): Promise<unknown>;
-  hset(key: string, field: string, value: string): Promise<unknown>;
-  hget(key: string, field: string): Promise<string | null>;
-  hdel(key: string, ...fields: string[]): Promise<unknown>;
-  del(key: string): Promise<unknown>;
-  quit(): Promise<unknown>;
-  eval(script: string, numKeys: number, ...args: string[]): Promise<unknown>;
-}
-
-type IoRedisCtor = new (url: string, opts: Record<string, unknown>) => IoRedisClient;
 
 /** Bounded wait for the initial connection outcome (see doc comment on connectRedis below). */
 const INITIAL_CONNECT_TIMEOUT_MS = 5000;
@@ -86,14 +66,17 @@ export async function connectRedis(url: string | undefined): Promise<WorldRedis 
   if (!url) return null;
   try {
     // Variable specifier: bypasses tsc static module resolution. NB the reason is inherited, not
-    // local — worldsvc/package.json DOES declare ioredis; the pattern comes from @nw/shared's
-    // activeMatch.ts, which does not (2026-08-26 check). A plain `import type Redis from 'ioredis'`
-    // would work here and give the real types; the alias below is the smaller step.
+    // local — worldsvc/package.json DOES declare ioredis; the constraint comes from @nw/shared, which
+    // does not and must still compile (see redisClient.ts). The local IoRedisClient/IoRedisCtor pair
+    // that used to live here is gone: @nw/shared's RedisConnection is the same "declare only what we
+    // call" structural type, shared by every service instead of re-derived per file.
+    // Still NOT routed through loadIoRedisCtor() though — redis.test.ts vi.mock's 'ioredis', and Vitest
+    // can't intercept a dynamic import made inside the externalized @nw/shared.
     const spec = 'ioredis';
-    const mod = (await import(spec)) as { default?: IoRedisCtor };
-    const Redis = mod.default ?? (mod as unknown as IoRedisCtor);
+    const mod = (await import(spec)) as { default?: RedisCtor } & RedisCtor;
+    const Redis: RedisCtor = mod.default ?? mod;
     const client = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
-    client.on('error', (e: Error) => console.error('[world-redis] error:', e.message));
+    client.on('error', (e) => console.error('[world-redis] error:', e.message));
 
     // 2026-08-03 (worldsvc code review): this used to resolve immediately after construction without
     // waiting for the connection to actually succeed — during a real Redis outage at boot, index.ts

@@ -1,7 +1,7 @@
 // matchsvc unit tests (S1-M1): friendly room create/join/ready/start + ranked matchmaking, both producing verifiable
 // match tickets (shared roomId/seed, individual side per player). Push callbacks recorded; GameRegistry uses a static fallback URL.
 import { describe, it, expect, vi } from 'vitest';
-import { verifyTicket, FeatureFlagCache, defaultPvpDeck } from '@nw/shared';
+import { verifyTicket, FeatureFlagCache, defaultPvpDeck, type RedisLike } from '@nw/shared';
 import { Matchsvc, CODE_ALPHABET, type PushMsg } from '../src/Matchsvc';
 import { GameRegistry } from '../src/GameRegistry';
 
@@ -191,7 +191,10 @@ describe('Matchsvc friendly', () => {
   it('login-reconnect-prompt: startMatch caches each side\'s activeMatch record in Redis', async () => {
     // setActiveMatch is fire-and-forget inside startMatch (must not block/fail matchmaking on Redis
     // hiccups) — flush a microtask so the write lands before asserting.
-    const redis = { set: vi.fn().mockResolvedValue('OK') };
+    // SET is the only command setActiveMatch issues; `& RedisLike` widens the fake to the full client
+    // interface without losing the Mock type the assertions below reach into.
+    const redisFake = { set: vi.fn().mockResolvedValue('OK') };
+    const redis = redisFake as typeof redisFake & RedisLike;
     const games = new GameRegistry(() => 0, GAME_URL);
     const pushed: { acc: string; msg: PushMsg }[] = [];
     const svc = new Matchsvc((acc, msg) => pushed.push({ acc, msg }), games, KEY, { autoTick: false, redis });
@@ -207,13 +210,13 @@ describe('Matchsvc friendly', () => {
     const fa = pushed.find((p) => p.acc === 'a' && p.msg.kind === 'match_found');
     if (fa?.msg.kind !== 'match_found') throw new Error('no match_found');
 
-    expect(redis.set).toHaveBeenCalledTimes(2);
-    const [keyA, payloadA, exFlag, ttl] = redis.set.mock.calls.find((c) => c[0] === 'nw:activeMatch:a')!;
+    expect(redisFake.set).toHaveBeenCalledTimes(2);
+    const [keyA, payloadA, exFlag, ttl] = redisFake.set.mock.calls.find((c) => c[0] === 'nw:activeMatch:a')!;
     expect(keyA).toBe('nw:activeMatch:a');
     expect(exFlag).toBe('EX');
     expect(ttl).toBeGreaterThan(0);
     expect(JSON.parse(payloadA)).toMatchObject({ gameUrl: GAME_URL, ticket: fa.msg.ticket, mode: 'friendly' });
-    expect(redis.set.mock.calls.some((c) => c[0] === 'nw:activeMatch:b')).toBe(true);
+    expect(redisFake.set.mock.calls.some((c) => c[0] === 'nw:activeMatch:b')).toBe(true);
   });
 
   it('login-reconnect-prompt: no redis configured → startMatch still succeeds (feature silently disabled)', async () => {

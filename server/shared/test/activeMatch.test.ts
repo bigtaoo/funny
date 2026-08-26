@@ -9,6 +9,7 @@ import {
   connectActiveMatchRedis,
   type ActiveMatchRecord,
 } from '../src/activeMatch';
+import type { RedisLike } from '../src/redisClient';
 
 const sample: ActiveMatchRecord = {
   roomId: 'room-1',
@@ -17,9 +18,13 @@ const sample: ActiveMatchRecord = {
   mode: 'ranked',
 };
 
+// Implements only the three commands activeMatch.ts calls. The `& RedisLike` assertion widens it to the
+// full client interface so it can be passed where one is expected, while the `typeof client` half keeps the
+// vi.fn() mock types the assertions below rely on; the hand-written signatures still match real Redis, so a
+// drift between them and activeMatch.ts's call sites shows up as a type error here.
 function fakeRedisClient() {
   const store = new Map<string, string>();
-  return {
+  const client = {
     set: vi.fn(async (key: string, value: string, _mode?: string, _ex?: number) => {
       store.set(key, value);
       return 'OK';
@@ -32,6 +37,7 @@ function fakeRedisClient() {
     }),
     store,
   };
+  return client as typeof client & RedisLike;
 }
 
 describe('activeMatchKey', () => {
@@ -100,7 +106,7 @@ describe('connectActiveMatchRedis', () => {
     const REDIS_URL = process.env.NW_REDIS_URL ?? 'redis://127.0.0.1:6379';
     const client = await connectActiveMatchRedis(REDIS_URL);
     if (client) {
-      await (client as { quit(): Promise<unknown> }).quit();
+      await client.quit();
     } else {
       expect(client).toBeNull();
     }

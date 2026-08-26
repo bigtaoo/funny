@@ -19,7 +19,7 @@
 // ever scaled out. Per-account presence keys (not a single SADD/SREM set — see markOnline below for why)
 // let any instance answer the query for accounts connected elsewhere, reusing this same pub/sub connection
 // rather than opening a third Redis client.
-import { createLogger, GW_PUSH_REDIS_CHANNEL, type RedisLike } from '@nw/shared';
+import { createLogger, GW_PUSH_REDIS_CHANNEL, type RedisCtor, type RedisLike } from '@nw/shared';
 import type { PushMsg } from './matchsvcClient';
 
 const log = createLogger('gateway:redis');
@@ -68,19 +68,6 @@ export interface GatewaySubscriber {
 }
 
 /**
- * The ioredis surface this file touches. Same reasoning as worldsvc/src/redis.ts: the module is
- * loaded through a variable specifier, so its real types are unavailable here and a structural type
- * is what replaces `any`. `RedisLike` (from @nw/shared) stays the type of the *client* — narrowing
- * that one is a separate job, since it is shared by matchsvc/commercial/metaserver too.
- */
-type IoRedisCtor = new (url: string, opts: Record<string, unknown>) => RedisLike & {
-  on(event: 'error' | 'ready' | 'message', handler: (...args: never[]) => void): void;
-  subscribe(channel: string): Promise<unknown>;
-  duplicate(): RedisLike;
-  quit(): Promise<unknown>;
-};
-
-/**
  * Connect and subscribe to GW_PUSH_REDIS_CHANNEL. Push envelopes are consumed by Gateway.routeBroadcast
  * (pushes only to locally-online recipients); kick envelopes by onKick (closes a locally-held stale
  * connection for the given accountId, skipping ones this same instance just originated).
@@ -94,17 +81,23 @@ export async function connectGatewaySubscriber(
 ): Promise<GatewaySubscriber | null> {
   if (!url) return null;
   try {
+    // Variable specifier so tsc compiles without ioredis installed (see @nw/shared's redisClient.ts for
+    // the full reasoning; the local IoRedisCtor alias that used to sit above is gone — its own comment
+    // called narrowing the shared RedisLike "a separate job", and that job is now done).
+    // Deliberately NOT routed through that module's loadIoRedisCtor(): redis-unit.test.ts
+    // vi.mock's 'ioredis', and Vitest can only intercept a dynamic import made from a module inside its own
+    // graph — @nw/shared is externalized, so an import performed in there would load the real package.
     const spec = 'ioredis';
-    const mod = (await import(spec)) as { default?: IoRedisCtor };
-    const Redis = mod.default ?? (mod as unknown as IoRedisCtor);
+    const mod = (await import(spec)) as { default?: RedisCtor } & RedisCtor;
+    const Redis: RedisCtor = mod.default ?? mod;
     const subClient = new Redis(url, {
       lazyConnect: false,
       maxRetriesPerRequest: 3,
       autoResubscribe: true, // re-subscribe automatically after reconnection (ioredis default is already true; explicit for auditability)
     });
-    subClient.on('error', (e: Error) => log.error('redis error', { err: e.message }));
+    subClient.on('error', (e) => log.error('redis error', { err: e.message }));
     subClient.on('ready', () => log.info('redis ready / resubscribed', { channel: GW_PUSH_REDIS_CHANNEL }));
-    subClient.on('message', (_channel: string, payload: string) => {
+    subClient.on('message', (_channel, payload) => {
       try {
         const env = JSON.parse(payload) as BroadcastEnvelope;
         if ('kick' in env && env.kick) onKick(env.kick.accountId, env.kick.originInstanceId, env.kick.connSeq);
@@ -119,12 +112,12 @@ export async function connectGatewaySubscriber(
     // Publishing requires a connection not in subscriber mode — duplicate() shares connection
     // options but opens its own socket (an ioredis client can't issue non-pubsub commands once subscribed).
     const pubClient = subClient.duplicate();
-    pubClient.on('error', (e: Error) => log.error('redis publish-connection error', { err: e.message }));
+    pubClient.on('error', (e) => log.error('redis publish-connection error', { err: e.message }));
 
     // Dedicated connection for the rate limiter's EVAL calls — kept separate from pubClient so a bursty
     // rate-limit workload can't head-of-line block presence/kick publishes (or vice versa) on the same socket.
     const rateLimitClient = subClient.duplicate();
-    rateLimitClient.on('error', (e: Error) => log.error('redis rate-limit-connection error', { err: e.message }));
+    rateLimitClient.on('error', (e) => log.error('redis rate-limit-connection error', { err: e.message }));
 
     return {
       quit: async () => {

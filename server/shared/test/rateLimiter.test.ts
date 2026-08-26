@@ -5,6 +5,7 @@
 // metaserver/test/rateLimiter.test.ts now keeps a thin re-export smoke test only.
 import { describe, it, expect, vi, afterAll } from 'vitest';
 import { SlidingRateLimiter, RedisSlidingRateLimiter, createRateLimiter } from '../src/rateLimiter.js';
+import type { RedisLike } from '../src/redisClient.js';
 
 describe('SlidingRateLimiter', () => {
   it('allows up to the limit, denies the next one', async () => {
@@ -62,7 +63,8 @@ describe('createRateLimiter', () => {
   });
 
   it('a redis client returns a RedisSlidingRateLimiter', () => {
-    const fakeRedis = { eval: vi.fn() };
+    // EVAL is the only command the Redis-backed limiter issues; widened to the full client interface.
+    const fakeRedis = { eval: vi.fn() } as unknown as RedisLike;
     expect(createRateLimiter(fakeRedis, 'ns', 5, 1000)).toBeInstanceOf(RedisSlidingRateLimiter);
   });
 });
@@ -74,7 +76,7 @@ describe('createRateLimiter', () => {
 describe('RedisSlidingRateLimiter (fake redis client)', () => {
   it('calls eval with the namespaced key, args in order, and interprets 1/0 as allow/deny', async () => {
     const evalFn = vi.fn(async (..._args: unknown[]) => 1);
-    const fakeRedis = { eval: evalFn };
+    const fakeRedis = { eval: evalFn } as unknown as RedisLike;
     const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 60_000);
     expect(await rl.allow('user-1', 1000)).toBe(true);
     expect(evalFn).toHaveBeenCalledTimes(1);
@@ -89,14 +91,14 @@ describe('RedisSlidingRateLimiter (fake redis client)', () => {
   });
 
   it('res !== 1 (e.g. 0) denies', async () => {
-    const fakeRedis = { eval: vi.fn(async (..._args: unknown[]) => 0) };
+    const fakeRedis = { eval: vi.fn(async (..._args: unknown[]) => 0) } as unknown as RedisLike;
     const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 1000);
     expect(await rl.allow('user-1', 1000)).toBe(false);
   });
 
   it('the member argument is unique per call (avoids same-millisecond ZADD collisions)', async () => {
     const evalFn = vi.fn(async (..._args: unknown[]) => 1);
-    const fakeRedis = { eval: evalFn };
+    const fakeRedis = { eval: evalFn } as unknown as RedisLike;
     const rl = new RedisSlidingRateLimiter(fakeRedis, 'myns', 5, 1000);
     await rl.allow('user-1', 1000);
     await rl.allow('user-1', 1000); // same key, same timestamp
@@ -108,11 +110,11 @@ describe('RedisSlidingRateLimiter (fake redis client)', () => {
 
 const REDIS_URL = process.env.NW_REDIS_URL ?? 'redis://127.0.0.1:6379';
 
-async function tryConnectRedis(): Promise<unknown | null> {
+async function tryConnectRedis(): Promise<(RedisLike & { ping(): Promise<string>; quit(): Promise<unknown> }) | null> {
   try {
     const mod = await import('ioredis');
     const Redis = (mod as unknown as { default: new (url: string) => unknown }).default;
-    const client = new Redis(REDIS_URL) as { ping(): Promise<string>; quit(): Promise<unknown> };
+    const client = new Redis(REDIS_URL) as RedisLike & { ping(): Promise<string>; quit(): Promise<unknown> };
     await client.ping();
     return client;
   } catch (err) {
@@ -126,11 +128,11 @@ if (!redis) console.warn(`[rateLimiter.test] Redis unreachable (${REDIS_URL}) â€
 
 describe('RedisSlidingRateLimiter (against a real local Redis)', () => {
   afterAll(async () => {
-    await (redis as { quit(): Promise<unknown> } | null)?.quit();
+    await redis?.quit();
   });
 
   it.skipIf(!redis)('allows up to the limit, denies the next one, atomically via the Lua script', async () => {
-    const rl = new RedisSlidingRateLimiter(redis, `test-${Math.random()}`, 3, 60_000);
+    const rl = new RedisSlidingRateLimiter(redis!, `test-${Math.random()}`, 3, 60_000);
     const now = Date.now();
     expect(await rl.allow('k', now)).toBe(true);
     expect(await rl.allow('k', now + 1)).toBe(true);
@@ -139,7 +141,7 @@ describe('RedisSlidingRateLimiter (against a real local Redis)', () => {
   });
 
   it.skipIf(!redis)('the window slides on the real backend too', async () => {
-    const rl = new RedisSlidingRateLimiter(redis, `test-${Math.random()}`, 1, 1000);
+    const rl = new RedisSlidingRateLimiter(redis!, `test-${Math.random()}`, 1, 1000);
     const now = Date.now();
     expect(await rl.allow('k', now)).toBe(true);
     expect(await rl.allow('k', now + 500)).toBe(false);

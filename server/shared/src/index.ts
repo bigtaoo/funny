@@ -8,6 +8,7 @@ export * from './password';
 export * from './playerNames';
 export * from './mongo';
 export * from './replayCodec';
+export * from './redisClient';
 export * from './activeMatch';
 export * from './dailyCounter';
 export * from './ladder';
