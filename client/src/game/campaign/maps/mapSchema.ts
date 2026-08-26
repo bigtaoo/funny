@@ -51,7 +51,7 @@ function str(v: unknown, path: string): string {
 function coord(v: unknown, path: string): number {
   const n = num(v, path);
   if (n < 0 || n > 1) {
-    // eslint-disable-next-line no-console
+     
     console.warn(`[chapterMap] ${path}: coordinate ${n} outside 0..1 (renderer will clamp)`);
   }
   return n;

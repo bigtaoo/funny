@@ -2,7 +2,6 @@
 // (which builds the trails) and the base's update() loop (which advances them every frame).
 // No class state: a rounded-rect perimeter walker plus the foil-shimmer hue cycle.
 import * as PIXI from 'pixi.js-legacy';
-import { t } from '../../i18n';
 
 /**
  * Legendary-card border trail: N pooled dot sprites walking a rounded-rect
@@ -87,7 +86,7 @@ export const TRAIL_PAIR_OFFSET = 0.5;
 /** HSL (h,s,l ∈ [0,1]) → 0xRRGGBB, used for the trail's periodic foil-shimmer hue cycle. */
 export function hslToHex(h: number, s: number, l: number): number {
   const hue2rgb = (p: number, q: number, t: number): number => {
-    let tt = ((t % 1) + 1) % 1;
+    const tt = ((t % 1) + 1) % 1;
     if (tt < 1 / 6) return p + (q - p) * 6 * tt;
     if (tt < 1 / 2) return q;
     if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;

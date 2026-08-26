@@ -353,6 +353,31 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 **用起来**：`npx webpack serve --mode development --port <port> --env TARGET=web-e2e`，Playwright `waitForFunction(() => window.__nwE2E?.app)`，`page.evaluate` 里遍历 `app.stage`。别在 `newPage()` 之后再 `setViewportSize()`——场景只在构造时读一次 `ILayout`，事后改视口只会把旧布局拉变形（第一次试的时候就是这样拍出一张假的「竖屏坏了」）。
 
+## `npm run lint` 复活：一道没人跑过、也没人发现它坏了的门（2026-08-26）
+
+**发现**：`cd client && npm run lint` 直接在启动阶段失败——装的是 ESLint 10.x（只读 flat config），仓库里只有 `.eslintrc.js`。而 `.github/workflows/*.yml` 里**没有任何步骤跑 lint**，所以这条命令坏了多久没人知道，也没人需要知道。这跟 `check:cachepolicy` 那条注释说的是同一个病：**没人看着它失败过的门，不是门**。
+
+**两层腐烂，第二层比第一层值钱**：
+- ESLint v9 换配置格式，`.eslintrc.js` 不再被读 —— 这层只是让命令跑不起来。
+- 老配置里唯一有价值的东西是 `no-restricted-syntax` 那段**确定性禁令**（禁 `Math.random()` / `Date.now()` / `new Date()`），而它的 `files` 指向 `src/game/GameEngine.ts`、`src/game/systems/**`、`src/game/math/**` 等 8 个路径 —— **这些路径 2026-08-02 引擎搬到 `server/engine/src`（@nw/engine）时就全删了**。所以就算 lint 能跑，那段 override 也一个文件都匹配不上。**换配置格式和搬代码，任意一件单独发生都足以静默注销这条规则。**
+
+**落点**：
+- `client/eslint.config.mjs`（flat）替代 `.eslintrc.js`。需要新增 devDependency `@eslint/js`（ESLint 10 不再自带 `eslint:recommended`）——**合并后主检出要补一次 `cd client && npm install`**，见 `claudedocs/worktrees.md` 那条「worktree 里 `npm install` 会把 junction 换成真实目录」的陷阱。
+- **确定性门禁搬到 `client/test/engineDeterminism.test.ts`**：对 `server/engine/src` 做源码扫描。放在测试里而不是给 engine 单独立一套 ESLint，是因为 engine 那个包没有 lint 配置，新立一套等于把门放在 CI 不跑的地方；这个套件 CI 每次都跑。两个防呆：①扫描前先剥注释和字符串字面量——`math/fixed.ts` / `math/prng.ts` 的注释里**写着**这三个禁令，裸 grep 在干净的树上就能报 5 个假阳性；②一条 canary 断言「至少扫到 20 个文件且包含 GameEngine.ts」，引擎再搬家时会红，而不是静默地扫了个空。**做过变异验证**：往 `GameEngine.ts` 注入一行 `Math.random()`，测试报出 `GameEngine.ts:10`，不是摆设。
+- CI 加 `client lint` 步骤（`client-test` job，紧跟 `client file length check`）。
+- Prettier **故意不再当 lint 规则**跑：老配置 extend 了 `plugin:prettier/recommended`，但 `eslint-plugin-prettier` 锁在 4.2.5（早于 flat config），而且拿 linter 跑 formatter 又慢、Prettier 官方也不推荐。格式化归 `npm run format`，`eslint-config-prettier` 仍然应用（只为关掉会跟它吵架的风格规则）。
+
+**首跑 224 个 error，处理方式分三类**（不是「一堆错」，是一堆**待判定**）：
+1. **真死代码，删**：110 个未用 import + 十几个未用局部量。最大一坨是 `scenes/worldmap/WorldMapInput.ts` 的 **76 个未用 import**——那文件早先拆成了 `WorldMapInput/*.ts`，import 块没跟着瘦。86 个 import 名里只有 10 个还在用。这就是这道门的直接价值。
+2. **规则不懂本仓库的约定，教它**：`_dt`/`_winner`/`_accountId` 这种「存在只为满足签名」的参数有 24 个，配 `argsIgnorePattern: '^_'` 即可，而不是把一百个参数改名。
+3. **规则的前提在这里是错的，关掉并写清理由**：`no-useless-assignment` 的 13 个命中全是两种形状——**循环累加器**（`cy += rowH` 作为行循环最后一句，被判「最后一轮没人读」，而前 N-1 轮都在读，删了直接坏）和**防御性初始值**（`let seed = 0` 后在 try/catch 每个分支赋值）。`no-this-alias` 的 11 个全是 `const view = this` / `const core = this` 这种给 `this` 起可读名字的本仓库惯用写法，不是它要抓的 `var self = this` 老 hack。
+
+**顺手修出来的真东西**：`CardScene/actions.ts` 的 `finally` 里有个 `return`（`no-unsafe-finally`）——照当时的写法无害（try 不 return、catch 吞掉），但它会静默吃掉 catch 块自己抛出的异常，而那个守卫本来也不需要待在 `finally` 里；清理归 `finally`，守卫挪到后面。另外 `HUDView/hpBar.ts` 的 `HP_CELL_H` 是血条还是矩形时代的遗留常量（心形 pip 只用 `HP_CELL_W`）。
+
+**剩 12 个 warning（`no-explicit-any`）是故意的**：全在 `render/stickman/assetLoader.ts` / `skeleton.ts` 解析第三方二进制骨骼格式那一片，手写类型是编故事；`tsc --noEmit` 才是真正的类型门。warning 不会让 `npm run lint` 非零退出，所以 CI 不会因此红。
+
+**⚠️ 别报「lint 绿」当成新信息**：这条门在 2026-08-26 之前从来没跑过，所以它现在的绿是一条**新基线**，不是「一直很干净」。
+
 ## 「按字数截断」这类 bug：机制在 headless 测，宽度预算只能真浏览器给（2026-08-26，聊天行按宽度截断）
 
 `drawChatLine` 原本把消息正文切在 60 **字**，而真正裁掉文字的是所在列的**宽度**。改成按宽度截断（`ui/widgets/truncateText.ts`）之后，测试的分工正好是上面那条 `__nwE2E.app` 记录说的形状，值得再记一次落点：

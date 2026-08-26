@@ -34,7 +34,7 @@ import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
 import { t } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, buildPaperBackground, tearDownChildren } from '../../render/sketchUi';
 import { drawConfirmDialog } from '../../ui/dialogs/confirmDialog';
 import { ProfilePopup, type ProfileAction } from '../../ui/dialogs/ProfilePopup';
 import { showToastMessage } from '../../net/log';

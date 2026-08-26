@@ -107,6 +107,7 @@ export class WorldApiCore {
       });
     } catch (e) {
       // AbortError → convert to TypeError so callers see a consistent network failure.
+      // eslint-disable-next-line preserve-caught-error -- `{ cause: e }` needs the ES2022 Error lib and tsconfig targets ES2020; String(e) keeps the original in the message.
       throw new TypeError(`world api ${method} ${path} failed: ${String(e)}`);
     } finally {
       clearTimeout(timer);

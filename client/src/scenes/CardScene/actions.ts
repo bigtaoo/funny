@@ -103,11 +103,13 @@ export class ActionsPanel {
     } finally {
       core.bt.stop();
       core.fuseInProgress = false;
-      // The batch can resolve after the player backed out of the roster; onSettled would then be
-      // repainting a torn-down panel. The fuses themselves already committed server-side.
-      if (core.destroyed) return;
-      onSettled(completed);
     }
+    // The batch can resolve after the player backed out of the roster; onSettled would then be
+    // repainting a torn-down panel. The fuses themselves already committed server-side.
+    // Deliberately outside the `finally`: a `return` in there would discard anything the
+    // try/catch was still doing (no-unsafe-finally).
+    if (core.destroyed) return;
+    onSettled(completed);
   }
 
   async doSetLock(cardId: string, locked: boolean): Promise<void> {

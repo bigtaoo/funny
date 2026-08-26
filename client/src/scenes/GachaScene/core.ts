@@ -17,7 +17,7 @@ import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import type { Rarity } from '../../game/meta/SaveData';
 import type { GachaOverflow, GachaPool, GachaResultEntry } from '../../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
 import { showToastMessage } from '../../net/log';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';

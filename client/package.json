@@ -42,6 +42,7 @@
     "@bufbuild/buf": "^1.70.0",
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.0.0",
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-node-resolve": "^16.0.3",

@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../ui/widgets/SceneHeader';

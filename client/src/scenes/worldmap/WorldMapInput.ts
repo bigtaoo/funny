@@ -1,27 +1,10 @@
-import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
-import { buildIcon } from '../../render/icons';
-import { WorldApiError } from '../../net/WorldApiClient';
 import { baseFootprintCells, baseFootprintInBounds, npcGarrison } from '@nw/shared';
-import { loadResAtlas, getResTexture, isResAtlasReady } from '../../render/atlas/resAtlasLoader';
-import { loadCityAtlas, isCityAtlasReady } from '../../render/atlas/cityAtlasLoader';
-import { loadTerrainAtlas, getTerrainTexture, isTerrainAtlasReady } from '../../render/atlas/terrainAtlasLoader';
-import { loadBuildingAtlas, getBuildingTexture, isBuildingAtlasReady } from '../../render/atlas/buildingAtlasLoader';
-import { ISO_RATIO, tileToScreen, screenToTile, screenToTileF, diamondPath, diamondVertices, visibleTileBounds } from '../../render/isoGrid';
-import { DEFAULT_MAP_SIZE, HUD_H, MARGIN, CONFIRM_H, BASE_SPRITE_TILES, RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from './constants';
-import { TERRAIN_COLORS, RES_COLORS, MINE_TINT, MINE_BASE_TINT, ENEMY_TINT, ENEMY_BASE_TINT, ALLY_TINT, ALLY_BASE_TINT, FOG_COLOR, CLOUD_COLOR, ALLY_SECT_BORDER, ownerTint, terrainFill, terrainTextureName, tileColor, proceduralTileColor } from './tileStyle';
-import { makeZoomCfgs } from './zoom';
-import { drawTileL1, drawTileL2, drawResMotif, drawResMotifFallback, drawCityIcon, drawHpBar, placeBuildingSprite, drawStar } from './tileGraphics';
-import type { IconKind } from '../../render/icons';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, NationView, SeasonView, SlgShopItemView } from '../../net/WorldApiClient';
-import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult } from '../../net/proto/transport';
-import type { ProceduralTile } from '@nw/shared';
-import type { TerrainTextureName } from '../../render/atlas/terrainAtlasLoader';
-import type { ZoomCfg, PoolSlot } from './zoom';
-import type { WorldMapContext, WorldMapCallbacks, DeployKind } from './WorldMapContext';
+import { HUD_H } from './constants';
 import { hitTestHeaderButtons } from './WorldMapInput/headerButtons';
 import { showCityPanel, type CityPanelState } from './WorldMapInput/cityPanel';
+import type { WorldTileView } from '../../net/WorldApiClient';
+import type { WorldMapContext } from './WorldMapContext';
 
 export class WorldMapInput {
   /** State owned by the extracted city-siege panel (see ./WorldMapInput/cityPanel.ts). */

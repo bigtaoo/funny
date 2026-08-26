@@ -1,7 +1,7 @@
 // Building detail modal + train-troops modal + building bonus-line descriptions.
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, scaledTxt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, scaledTxt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { formatDuration } from '../worldmap/formatDuration';
 import type { BuildingKey } from '../../net/WorldApiClient';
@@ -13,7 +13,6 @@ import {
   baseDurabilityMax,
   ACADEMY_HP_STEP,
   ACADEMY_DAMAGE_STEP,
-  SATCHEL_CARRY_STEP,
   buildingLevel,
   buildCost,
   buildTimeSec,

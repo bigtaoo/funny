@@ -7,12 +7,8 @@
 //
 // Sending a channel message (submitMessage/doSendMsg) used to live here and call back into
 // input.ts's openSendInput() — see core.ts's file-header comment for why that pair moved to
-// InputPanel instead of staying split across Actions/Input.
-import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
-import { FS } from '../../render/fontScale';
-import type { FamilyView } from '../../net/WorldApiClient';
+import { ui as C } from '../../render/sketchUi';
 import { withTimeout } from '../../ui/busyTracker';
 import { EMBLEM_KEYS, EMBLEM_COLORS, loadEmblemAtlas, type EmblemKey } from '../../render/emblemIcon';
 import { drawEmblemPickerDialog, type EmblemPickerState } from '../../ui/dialogs/emblemPickerDialog';
@@ -168,7 +164,7 @@ export class ActionsPanel implements ActionsHandlers {
     }
   }
 
-  confirmKick(targetId: string, name: string): void {
+  confirmKick(targetId: string, _name: string): void {
     this.core.showConfirm(t('family.confirmKick'), () => void this.doKick(targetId));
   }
 
