@@ -64,9 +64,9 @@ function findCluster(ctx: WorldMapContext): PIXI.Container {
   // matches, and `.find()` would grab whichever button icon comes first instead of the real
   // per-resource readout. The readout is the only one of the two that ever holds PIXI.Text children
   // (rate/total labels); an icon glyph box holds only its sprite.
-  const cluster = (ctx.headerHudLayer.children as PIXI.DisplayObject[])
-    .find((c): c is PIXI.Container => c.constructor === PIXI.Container
-      && (c.children as PIXI.DisplayObject[]).some((ch) => ch instanceof PIXI.Text));
+  const cluster = (ctx.headerHudLayer.children as PIXI.Container[])
+    .find((c) => c.constructor === PIXI.Container
+      && c.children.some((ch) => ch instanceof PIXI.Text));
   if (!cluster) throw new Error('production cluster not found in headerHudLayer');
   return cluster;
 }
