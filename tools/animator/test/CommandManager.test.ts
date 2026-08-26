@@ -45,7 +45,7 @@ describe('execute', () => {
     const fn = vi.fn();
     bus.on('history:change', fn);
     cm.execute(makeCommand('set to 5', { v: 0 }, 0, 5));
-    expect(fn).toHaveBeenCalledWith({ canUndo: true, canRedo: false, label: 'Undo: set to 5' });
+    expect(fn).toHaveBeenCalledWith({ canUndo: true, canRedo: false, undoLabel: 'Undo: set to 5', redoLabel: 'Nothing to redo' });
   });
 });
 
@@ -61,7 +61,7 @@ describe('undo / redo', () => {
     expect(holder.v).toBe(0);
     expect(cm.canUndo).toBe(false);
     expect(cm.canRedo).toBe(true);
-    expect(fn).toHaveBeenCalledWith({ canUndo: false, canRedo: true, label: 'Redo: inc' });
+    expect(fn).toHaveBeenCalledWith({ canUndo: false, canRedo: true, undoLabel: 'Nothing to undo', redoLabel: 'Redo: inc' });
   });
 
   it('redo() re-executes the command and moves it back to the undo stack', () => {
@@ -92,6 +92,25 @@ describe('undo / redo', () => {
     bus.on('history:change', fn);
     cm.redo();
     expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('emits BOTH labels, so a populated undo AND redo stack are each separately readable', () => {
+    // The payload used to carry one `label` = `canUndo ? undoLabel : redoLabel`. In exactly this
+    // state — something to undo AND something to redo — the redo label was unreachable, which is
+    // why the toolbar's Redo button had no tooltip. Regression guard for that.
+    const bus = new EventBus<AppEvents>();
+    const cm = new CommandManager(bus);
+    const holder = { v: 0 };
+    cm.execute(makeCommand('a', holder, 0, 1));
+    cm.execute(makeCommand('b', holder, 1, 2));
+    const fn = vi.fn();
+    bus.on('history:change', fn);
+
+    cm.undo(); // leaves 'a' undoable and 'b' redoable
+
+    expect(fn).toHaveBeenCalledWith({
+      canUndo: true, canRedo: true, undoLabel: 'Undo: a', redoLabel: 'Redo: b',
+    });
   });
 
   it('multiple undo/redo cycles replay commands in the correct LIFO order', () => {
@@ -150,7 +169,7 @@ describe('pushExecuted', () => {
     const fn = vi.fn();
     bus.on('history:change', fn);
     cm.pushExecuted(makeCommand('move keyframe', { v: 1 }, 0, 1));
-    expect(fn).toHaveBeenCalledWith({ canUndo: true, canRedo: false, label: 'Undo: move keyframe' });
+    expect(fn).toHaveBeenCalledWith({ canUndo: true, canRedo: false, undoLabel: 'Undo: move keyframe', redoLabel: 'Nothing to redo' });
   });
 
   it('is subject to the same MAX_STACK eviction as execute()', () => {
@@ -191,7 +210,7 @@ describe('clear', () => {
     const fn = vi.fn();
     bus.on('history:change', fn);
     cm.clear(); // already empty
-    expect(fn).toHaveBeenCalledWith({ canUndo: false, canRedo: false, label: 'Nothing to redo' });
+    expect(fn).toHaveBeenCalledWith({ canUndo: false, canRedo: false, undoLabel: 'Nothing to undo', redoLabel: 'Nothing to redo' });
   });
 });
 

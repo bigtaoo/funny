@@ -80,7 +80,8 @@ export class CommandManager {
     this.bus.emit('history:change', {
       canUndo: this.canUndo,
       canRedo: this.canRedo,
-      label: this.canUndo ? this.undoLabel : this.redoLabel,
+      undoLabel: this.undoLabel,
+      redoLabel: this.redoLabel,
     });
   }
 }

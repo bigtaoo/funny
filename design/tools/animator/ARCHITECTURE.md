@@ -195,7 +195,7 @@ interface AttachmentPoint {
 | `rig:change` | void | 骨骼长度倍率变化（触发 Inspector 刷新 + 下一帧 FK 重算） |
 | `preview:mode` | `'skeleton'\|'sprite'` | 预览模式切换 |
 | `editor:mode` | `'skin'\|'animate'` | 编辑器模式切换（Inspector + 渲染流程分流） |
-| `history:change` | `{canUndo, canRedo, label}` | Undo/Redo 栈变化 |
+| `history:change` | `{canUndo, canRedo, undoLabel, redoLabel}` | Undo/Redo 栈变化（两个 label 各自自带「Nothing to …」兜底）|
 | `status` | `string` | 状态栏消息 |
 | `pose:reset` | void | 重置为 rest pose |
 
@@ -256,6 +256,8 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 **`pushExecuted(cmd)`（2026-08-26 新增）**：`CommandManager` 的第二个入口，**只入栈、不调 `execute()`**（同样清空 redo 栈、同样发 `history:change`、同样受 `MAX_STACK` 约束）。给「拖拽过程中已经把模型改掉了、收手时才补记一条 undo」这类交互用——此时再调 `execute()` 等于在已经移动过的状态上**再移动一次**。目前唯一使用者是时间轴的关键帧拖拽（见下）。
 
 **关键帧拖拽入栈（2026-08-26 修复）**：`TimelineView` 里的 `MoveKeyframeCommand` 此前**定义了但从未被构造**——`onMouseMove` 每一步都直接调 `animCtrl.moveKeyframe(dragKfTime, newT)` 并把 `dragKfTime` 覆写成 `newT`，等到 `onMouseUp` 时这次拖拽的**起始时间已经丢了**，那里只留了一句「commit as Command」的注释，什么也没做。症状：在时间轴上把关键帧拖到别处，`Ctrl+Z` 撤不回来（撤销栈里是上一条更早的命令，一按就跳过这次拖拽去撤别的东西）。修法：新增 `dragKfStartTime` 字段在 mousedown 时记下原始时间，收尾统一走 `endKfDrag()`——用 `pushExecuted` 补记 `MoveKeyframeCommand(startTime → 当前时间)`，时间相同（没真拖动）则不入栈。`endKfDrag()` 同时挂在 `mouseup` 和 `mouseleave` 上，因为拖出画布外同样是一次已经落盘的移动，之前那条 `mouseleave` 只把 `isDraggingKf` 置回 false、也漏了入栈。两端时间都按 `moveKeyframe` 的口径 round 到毫秒，避免 undo/redo 落在与实际存储值差一个亚阈值余数的地方；这个「round 后比较、相同则返回 null」的判定同日抽成了导出的纯函数 `getKfDragCommit(start, end)`（`endKfDrag()` 从此只剩三行接线），连同 `MoveKeyframeCommand` 一起可以脱离 canvas 被测——见 `test/TimelineView.test.ts`，那批测试用**真实 `AnimationController`** 重放拖拽并比对整条 clip 的关键帧集合，「其余关键帧一动没动」就是「命令没有被应用两次」的证据。补测试同时把 `TimelineView.ts` 顶过 500 行，三个 Command 类（`MoveKeyframe`/`SetEasing`/`DeleteKeyframe`）因此搬进了 `src/timeline/commands.ts`——它们对 view 的 canvas/DOM 零依赖，本来就该是独立模块。
+
+**`history:change` 的 payload（2026-08-26 改）**：原本只有**一个** `label` 字段，值是 `canUndo ? undoLabel : redoLabel`。后果是：**只要还有东西可撤销，redo 侧的文案就永远发不出去**——工具栏的 Redo 按钮因此一直没有 tooltip（`title` 是空串），而且不是「忘了写一行」，是「写了也没值可取」。现在 payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`，两个 label 总是都发、各自自带兜底文案（`CommandManager` 的两个 getter 本来就返回 `Nothing to undo` / `Nothing to redo`），消费方各取所需：`ToolbarPanel` 两个按钮各绑一个（顺带去掉了它重抄一遍兜底文案的三元式），`StatusBar` 显式写 `canUndo ? undoLabel : redoLabel`（它要的本来就是「刚发生了什么」，行为不变）。
 
 快捷键：`Ctrl+Z` undo，`Ctrl+Shift+Z` / `Ctrl+Y` redo。
 

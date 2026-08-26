@@ -122,6 +122,14 @@ dev server 起在 9191 用 DOM 事件驱动实测：把 0.130s 那帧拖到 0.06
 
 **探针手法**（这个环境拿不到截图、`requestAnimationFrame` 不触发所以画布根本不重绘，见下方 08-20 那条同款记录）：在距目标时间 1.8ms 的位置 mousedown——命中关键帧会把 `#time-display` **吸附**到关键帧的精确时间，没命中就只是 scrub 到点击处，于是「读数等于点击时间」与「读数被拉回某个整毫秒」的差别就是"这里有没有帧"。按 2ms 步长扫完整条 clip 就得到上面那种**完整关键帧集合**，比逐点断言强得多。**踩过一次**：第一轮只点验了拖拽的起终点两处，第二轮重跑时 `0.350s` 那点「本该是空的却命中了」——不是回归，是 animator 的 `AutoSaveController`/IndexedDB 把**上一轮验证留下的关键帧**恢复了回来。所以这类验证要么先扫一遍拿到基线，要么先清 IndexedDB；只比对两个点会把陈旧存档读成 bug。
 
+## Redo 按钮的 tooltip：不是忘了写，是没值可取（2026-08-26）
+
+改完关键帧拖拽后顺手发现：工具栏 Redo 按钮的 `title` 始终是**空串**。表面看是 `ToolbarPanel.buildUndoRedo()` 里 `btnUndo` 设了 `title` 而 `btnRedo` 没设，但补一行没用——**根因在事件 payload**：`history:change` 只带一个 `label`，值是 `canUndo ? undoLabel : redoLabel`，所以**只要还有东西可撤销，redo 侧的文案就根本不在 payload 里**。订阅方想写也拿不到值。
+
+payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`（删掉那个「看情况是哪个」的 `label`），两个消费方各取所需，细节见 `ARCHITECTURE.md` §6。两个 getter 本就自带兜底文案，所以 `ToolbarPanel` 顺带去掉了重抄一遍 `'Nothing to undo'` 的三元式。
+
+**验证**：`npm test` 357 条（`CommandManager.test.ts` 新增一条回归——**两栈同时非空**时两个 label 各自可读，这正是旧 payload 做不到的那个状态；另有四条旧断言随形状变更更新）。dev server 起在 9191 直读 `title` 属性，四个状态全对：两栈皆空 `Nothing to undo` / `Nothing to redo`；打一帧后 `Undo: Add Keyframe @ 0.000s` / `Nothing to redo`；Undo 后互换；**两栈同时非空时两边同时显示各自的命令名**。`StatusBar` 同屏复测，行为与改动前一致。
+
 ## 参数两层模型
 
 **Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`
