@@ -1,11 +1,11 @@
 # 批次 7：剩余全部程序矢量图标 — Prompt 文档
 
-> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地，其中 4 张待重出，见文末「出图与接线结果」）
+> 创建：2026-08-25 · 判断+prompt 定稿：2026-08-25 · 出图+接线：**已完成 2026-08-25**（44 张全部落地）· 重出：v2 5 张过、1 张（`brush`）**改成 `skinIcon` 别名、已定案**（2026-08-26）· v3：另 4 条「可用但偏弱」的 prompt 已写（**待出图**，见文末「重出 prompt（v3）」）
 > 前六批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（试点/批次 2/3/4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题+剩余页签，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页主视觉，3 张）
 > 配套代码（接线后）：[`client/src/render/icons.ts`](../../client/src/render/icons.ts)（只剩两表分派，`DrawableIconKind`/`DRAW` 已删）· [`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（**本批落地处**：`InkIconKind` + `INK_ICON_ART` + `buildInkIcon` 运行时染色）· [`client/src/render/icons/tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts)（前六批的页签表，未改）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
 > 已删除的矢量画法：`client/src/render/icons/{equipment,ui,slg,motifs,titles,currency,primitives}.ts` 七个文件整体删除（`DRAW` 清零后全部变死代码）
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6
-> 状态：**全部完成**（原始 49 个矢量 `IconKind` 中 5 个复用现成光栅图、44 个出新图；44 张已出图、打包、接线，4 张标记待重出）
+> 状态：**接线全部完成**（最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind）；**唯一剩下的是美术工作**：`atk`/`scrap`/`armor`+`armorHeavy`/`globe` 五张的 v3 prompt 已定稿，图还没出
 
 ## 背景：前六批 + 金币收口之后，还剩的就是这些
 
@@ -431,7 +431,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 | `lead` | 画成了纯锥形，28px 上读成三角形，跟 `play` 的实心三角容易混 | 要求**保留一小段方形笔杆截面**或在锥体上加一道横向断口，让它读成「一截笔芯」而不是几何三角 |
 | `titleGrandmaster` | 与 `titleMaster` 的差异只有一顶很小的皇冠，28px 上勉强 | 皇冠要**明显大一档**（但仍小于 `titleKing` 那顶）；这一档的原则「明显小于下一级」在 28px 上过头了 |
 
-其余 40 张验收通过。次弱但可用、记录在案不重出的：`atk`（匕首细、迸溅线在 28px 消失）、`scrap`（撕边糊成一块纸）、`armor`/`armorHeavy`（28px 上都是「一个忙碌的圆」，只看得出后者更重）、`globe`（读成球而不是地球，但它只是 toast 兜底图）。
+其余 40 张验收通过。次弱但可用、当时记录在案不重出的（**2026-08-26 改为重出，prompt 见文末「重出 prompt（v3）」**）：`atk`（匕首细、迸溅线在 28px 消失）、`scrap`（撕边糊成一块纸）、`armor`/`armorHeavy`（28px 上都是「一个忙碌的圆」，只看得出后者更重）、`globe`（读成球而不是地球，但它只是 toast 兜底图）。
 
 ## 重出 prompt（v2，2026-08-25 当日）
 
@@ -523,6 +523,8 @@ v3（近正方形构图，`_rejected/tabicon_brush_v3_bellshape.webp`）解决�
 
 所以 `brush` 不再有自己的美术，改成 **`skinIcon` 的别名**（第 6 个别名，与 `swords`/`home`/`capsule`/`gift`/`tag` 同一手法：`INK_ICON_ART` 里保留 kind、url 指向 `skin_active.png`）。6 个调用点一行不改，`GachaScene` 按稀有度染色照旧生效，零新资产。**批次 7 的最终账：43 张自有美术 + 6 个别名 = 49 个 ink kind**（原计划 44 + 5）。
 
+**2026-08-26 用户拍板：皮肤就是面具，不再出画笔版本。** 本文上一节那段 v3 prompt、以及 `_rejected/tabicon_brush_v{1,2,3}_*.webp` 三张落选稿，从此只作归档读（里面的“笔锋应当在金属箍处最宽、往下收窄”那句 v4 措辞不会再用上），不是待办项。
+
 这一格的教训不在画笔本身，而在**返工到第三轮时该往上一层看**：v1→v2→v3 每一轮都在修「这支画笔画得对不对」，而真正的问题是「这里不该是画笔」——这个判断三个月前就做过一次，只是没有落到这 6 个调用点上。
 
 ### 重出后的验收口径
@@ -546,3 +548,65 @@ vitest 下所有 `.png` import 会塌成同一个 data URI，所以 url 身份�
 - `client/test/render/iconArtAspect.test.ts`——长短边比 > 2.2 就红（白名单 `weapon`/`event`/`atk` + 理由）。这条是 `brush` v2 那一轮的直接产物：27×128 的图在正方形格子里只占约 6px 宽，而它满足 prompt 的每个字。
 
 **没加的那一条也记在案**：沙漏三档的"墨量逐档递增"断言抓不到 v1 的点阵沙问题（v1 的增幅 ×1.78/×1.71 反而比 v2 的 ×1.25/×1.12 大），只会放行坏的那套。给美术加守卫前先拿被打回的那版跑一遍，跑不红就别留。
+
+## 重出 prompt（v3，2026-08-26）：记录在案的那 4 条弱图
+
+「28px 验收」那一节末尾点名了 4 条**次弱但可用、当时决定不重出**的图：`atk`、`scrap`、`armor`/`armorHeavy`、`globe`（5 张）。本节给它们的重出 prompt。
+
+四条塌的是**同一件事**，跟沙漏 v1 一模一样：**28px 上活下来的是实心块，死掉的是细节**。`atk` 的迸溅线、`scrap` 的细锯齿、`armor` 家族的小铆钉环、`globe` 的两条内线——全是高频线条，缩到 28px 就平均成一片灰。所以四条 v3 的改法都是同一句：**把区分度从「线」搬到「块」**，另外顺手把 `atk` 的外轮廓从 2.33:1 压回近正方（那条已经写进 `iconArtAspect.test.ts` 的白名单，见下）。
+
+落地方式跟前两轮一样：存成 `art/ui/tabicons/tabicon_<kind>.{webp,png}`（大小写照抄 kind 名，直接覆盖现有源图），旧图按约定移进 `_rejected/`（`tabicon_<kind>_v1_<原因>.<ext>`），重跑 `node art/ui/tabicons/pack_tab_icons.cjs`。
+
+**唯一的代码改动在 `atk`**：`client/test/render/iconArtAspect.test.ts` 的 `ELONGATED_ON_PURPOSE` 白名单里有 `atk`（2.33:1，理由写的就是「已记录为批次 7 较弱的一张」）。v3 明确要求近正方构图，一旦重出成功，那条豁免就成了陈旧项——`lists nothing in ELONGATED_ON_PURPOSE that no longer needs the exemption` 会红。**重出 `atk` 时必须同时把 `atk` 连同它那行注释从白名单里删掉**（这正是那条测试存在的意义：豁免必须是被论证过的，不是历史遗留）。其余 4 张不碰代码、不碰测试。
+
+### 1 攻击（`tabicon_atk`）
+
+**v1 为什么弱**：三处叠加。①刀身是**空心线稿**且很窄，中间还有一道血槽线，28px 上整把刀只剩两条快要并到一起的细线；②五道迸溅线又细又短、而且**离刀尖有一段距离**，缩小后先于刀身消失，「打击力」这层意思整个没了；③整张图 2.33:1，在正方形格子里只画到一半宽度（跟 `brush` v2 同一个陷阱，只是没那么极端）。
+
+**v3 的改法**：刀身**填实**并加宽（宽度约为高度的三分之一）；迸溅线砍到三道、加粗、**起点几乎贴着刀尖**；靠「短刀身 + 宽护手」把整图压成近正方，而不是把刀整体缩小。
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a short, broad dagger pointing straight up. The blade is a wide leaf shape filled in as ONE SOLID BLACK MASS, roughly a third as wide as it is tall, with no fuller groove or any line drawn inside it. Below the blade sits one straight crossguard bar that is clearly WIDER than the blade, and below that a short stubby plain handle. Three short THICK spark strokes fan out from the very tip of the blade, each one starting so close to the point that it almost touches it. COMPOSITION IS CRITICAL: the whole drawing must roughly fill a SQUARE — its total height must be no more than about 1.3 times its total width — and this must be achieved by keeping the blade SHORT and the crossguard WIDE, not by shrinking the whole dagger. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the blade is a flat solid black area, the guard and handle are bare line art. Must stay clearly recognizable when scaled down to 28x28 pixels, where the heavy black blade and the three thick sparks at its point are what read. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a tall narrow composition, a long slender blade, a hollow outlined blade, a fuller or blood groove line down the blade, thin hairline spark strokes, sparks floating in empty space away from the tip, more than four sparks, a long two-handed sword, an ornate pommel, two crossed blades, a shield or crest behind it, a hand gripping it, wrapping or binding lines on the handle, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 2 旧纸片（`tabicon_scrap`）
+
+**v1 为什么弱**：四条边**全部**是高频细锯齿——28px 上一平均就还原成一条直边，于是整张图退化成「一个方框」；而内部只有两条发丝格线，墨量几乎为零，什么都撑不住。**「撕」这件事必须由低频的大缺口承担，不能由锯齿的密度承担。**
+
+**v3 的改法**：撕口**只留一条边**（底边），另外三边干净笔直；撕口画成 **4-5 个大缺口**，每个约整宽的十分之一深，而不是细锯齿；纸片整体略微倾斜（约 10°），跟界面里的方卡片拉开；两条格线加粗、横贯整页，并且下面那条**被撕口切断**——这一下让「撕」有了因果，不只是边缘装饰。
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a single torn-off piece of ruled notebook paper, roughly square, tilted about 10 degrees off upright. Three of its edges are CLEAN and STRAIGHT; only the BOTTOM edge is torn, and that tear is drawn as four or five LARGE deep notches — each notch about a tenth of the paper's width across and clearly visible on its own — not as fine sawtooth serration. Two BOLD ruled lines run horizontally right across the sheet from one side edge to the other, and the lower of the two is interrupted part-way along by one of the tear's notches. Single object, centered, filling the frame, on a plain pure-white background, no grid lines beyond the two bold ruled lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels, where the few big notches along the bottom are what say "torn". Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, fine sawtooth or hair-thin serration, ragged edges on all four sides, many small notches, a neat untilted rectangle with four straight edges, hairline faint ruled lines, more than two ruled lines, a folded or curled corner, a spiral binding, crumple or fold creases, a rolled scroll, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 3 护甲 + 护甲·加固档（`tabicon_armor` / `tabicon_armorHeavy`，2 张）
+
+**v1 为什么弱**：两张都是「一个忙碌的圆」——双层同心细圆环 + 一圈**小空心铆钉环** + 一条细横带，全是高频细节，28px 上一律糊成灰圈；而两档的差异（多一圈外环、铆钉加倍）**恰好也全在那些高频细节上**，所以只看得出后者更重一点点，看不出重在哪。另外两张现在都读成车轮/宝可梦球，还跟 `coin`（粗双环）在同一个「细环圆」形态区里挤着。
+
+**v3 的改法**：两件事分开做。①**身份**改由填充承担——圆盘用一竖一横切成四等份，**左上和右下两格填实黑**（纹章式四分），中心压一个实心黑盾钉，其余留白；这个黑白相间的圆在 28px 上跟 `coin` 的空心环、`globe` 的球一眼分得开，而且它仍然是圆盾、没有碰 `equipIcon` 的鸢形和 `armorslotTabIcon` 的胸甲。②**档位**改由一块低频墨承担——加固档在**外沿加一圈粗实心黑边**，别的一笔不改。小铆钉环全部删掉。
+
+**两张务必放在同一个请求/同一段对话里连续出**（跟沙漏三档同一个理由：家族感靠「沿用上一张、只改一处」保证，而不是靠两次独立请求碰巧一致）。
+
+**护甲（`tabicon_armor`）**
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a small round buckler shield seen face-on — one plain circle. The face inside the circle is split into four quarters by one vertical and one horizontal line through the centre; the UPPER-LEFT and LOWER-RIGHT quarters are filled in as SOLID BLACK areas, and the other two quarters are left plain white. Over the centre, where the two dividing lines cross, sits one solid black round boss about a quarter as wide as the whole shield. Nothing else is drawn on the shield at all — no rivets, no second ring, no rim band, no hatching. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the two quarters and the boss are flat solid black areas, everything else is bare line art. Must stay clearly recognizable when scaled down to 28x28 pixels, where the black-and-white quartered face is what reads. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, small open rivet circles around the rim, a second concentric ring inside the rim, a thick band around the rim, an all-white unfilled face, filling all four quarters, a plain double-ring coin, a wheel with spokes, a ball split by a single horizontal line, a kite-shaped or teardrop shield, a pointed bottom, a breastplate or torso-armor shape, a sword or crossed swords behind it, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+**护甲·加固档（`tabicon_armorHeavy`）**
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the SAME quartered round buckler shield as the previous image, drawn the same way stroke for stroke — the same circle, the same four quarters with the upper-left and lower-right filled solid black and the other two left white, the same solid black round boss at the centre. The ONE difference: a BROAD SOLID BLACK BAND now runs all the way around the rim of the circle, about a tenth of the shield's width thick, so the shield reads as edged with heavy metal and is visibly darker and heavier overall than the plain version. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the rim band, the two quarters and the boss are flat solid black areas, everything else is bare line art. Must stay clearly recognizable when scaled down to 28x28 pixels, and must read as unmistakably the heavier of the two at that size. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, changing the circle, the quarter fills or the centre boss in any way, filling the two white quarters as well, a thin outline ring instead of a broad filled band, a second ring separated by a white gap, small open rivet circles, spikes sticking outward, a kite-shaped or teardrop shield, a breastplate shape, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 4 地球（`tabicon_globe`）
+
+**v1 为什么弱**：圆 + 一条竖线 + 一条横线，28px 上就是个十字准星或一只球——图里**没有任何一处说明它是地球**。而 v1 的 Avoid 里那句 `continents or landmasses drawn on it` 恰好把唯一能救它的东西给禁掉了：当时怕海岸线太碎，结果连低频的大墨块一起挡在了门外。
+
+**v3 的改法**：把大陆放回来，但按沙漏那条规矩画——**2-3 块实心黑色大墨团**，合计约占圆面的三分之一，且**至少有一块要顶到圆边、被圆切断**（这一条是关键：贴边被切才读成球面上的陆地，浮在中间就只是几个墨点）；赤道留一条弯的，经线删掉；海岸线不要细节，就是软边大块。
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a simple globe — one plain circle outline, with two or three big rounded landmass shapes filled in as SOLID BLACK MASSES sitting on the sphere, and one gently curved horizontal equator line crossing behind and between them. The landmasses must be large soft blobs with smooth simple outlines, together covering roughly a third of the circle, and AT LEAST ONE of them must run right up to the edge of the circle and be cut off by it, so they read as continents wrapping a sphere rather than as spots floating inside a ring. There is no vertical meridian line. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no gradient shading — the landmasses are flat solid black areas, the circle and the equator are bare line art. Must stay clearly recognizable when scaled down to 28x28 pixels, where the solid black landmasses are the only thing that says "earth" rather than "ball". Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a vertical meridian line, straight lines crossing the circle like a crosshair, an empty circle with nothing drawn on it, detailed or recognisable real-world coastlines, many small scattered islands or dots, a latitude and longitude grid, a stand or axis through it, a flat unfolded paper map, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### v3 的验收口径
+
+跟前两轮同口径，逐条指定并排对象：`atk` 跟 `weapon`（竖剑）、`hp`、`spd` 一行并排看装备词条行；`scrap` 跟 `cards`/`book` 并排（都是纸）；`armor` 与 `armorHeavy` **必须并排**，另外各自跟 `coin`、`globe` 并排一次（这一轮它们要解决的正是「细环圆」的形态撞车）；`globe` 单看即可（它只是 toast 兜底图）。此外重出 `atk` 后先跑 `npm test -- iconArtAspect`：白名单没删干净会红，删对了那条测试自己会说话；`armorHeavy/armor` 的墨量比也由同一份测试兜着（下限 1.15，v3 的粗黑边预计在 1.3 以上）。
