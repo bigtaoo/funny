@@ -10,6 +10,8 @@
 // No Redis URL configured → returns null, real-time channel push AND cross-instance kick are both disabled
 // (single-instance deployments don't need either — the local onConnection() eviction already covers it).
 // Dynamic ioredis import: compiles even when ioredis is not installed (mirrors worldsvc/redis.ts).
+// NB gateway/package.json DOES declare ioredis (2026-08-26 check) — the pattern is inherited from
+// @nw/shared's activeMatch.ts, which genuinely cannot import it. A type-only import would work here.
 //
 // Presence tracking (2026-07-27 mid-term audit item 5/5): Gateway.presenceOf answers "is this account
 // online" purely from its own in-process `conns` map, which is correct today (single gateway instance,
@@ -66,13 +68,6 @@ export interface GatewaySubscriber {
 }
 
 /**
- * Connect and subscribe to GW_PUSH_REDIS_CHANNEL. Push envelopes are consumed by Gateway.routeBroadcast
- * (pushes only to locally-online recipients); kick envelopes by onKick (closes a locally-held stale
- * connection for the given accountId, skipping ones this same instance just originated).
- * On connection failure → returns null (real-time push + cross-instance kick both degraded).
- * autoResubscribe=true ensures Redis re-subscription after reconnection (B7 acceptance criterion).
- */
-/**
  * The ioredis surface this file touches. Same reasoning as worldsvc/src/redis.ts: the module is
  * loaded through a variable specifier, so its real types are unavailable here and a structural type
  * is what replaces `any`. `RedisLike` (from @nw/shared) stays the type of the *client* — narrowing
@@ -85,6 +80,13 @@ type IoRedisCtor = new (url: string, opts: Record<string, unknown>) => RedisLike
   quit(): Promise<unknown>;
 };
 
+/**
+ * Connect and subscribe to GW_PUSH_REDIS_CHANNEL. Push envelopes are consumed by Gateway.routeBroadcast
+ * (pushes only to locally-online recipients); kick envelopes by onKick (closes a locally-held stale
+ * connection for the given accountId, skipping ones this same instance just originated).
+ * On connection failure → returns null (real-time push + cross-instance kick both degraded).
+ * autoResubscribe=true ensures Redis re-subscription after reconnection (B7 acceptance criterion).
+ */
 export async function connectGatewaySubscriber(
   url: string | undefined,
   onBroadcast: (recipients: string[], msg: PushMsg, roomId?: string) => void,

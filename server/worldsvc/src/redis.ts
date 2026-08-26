@@ -85,7 +85,10 @@ return 1
 export async function connectRedis(url: string | undefined): Promise<WorldRedis | null> {
   if (!url) return null;
   try {
-    // Variable specifier: bypasses tsc static module resolution (ioredis may not be installed in dev).
+    // Variable specifier: bypasses tsc static module resolution. NB the reason is inherited, not
+    // local — worldsvc/package.json DOES declare ioredis; the pattern comes from @nw/shared's
+    // activeMatch.ts, which does not (2026-08-26 check). A plain `import type Redis from 'ioredis'`
+    // would work here and give the real types; the alias below is the smaller step.
     const spec = 'ioredis';
     const mod = (await import(spec)) as { default?: IoRedisCtor };
     const Redis = mod.default ?? (mod as unknown as IoRedisCtor);
