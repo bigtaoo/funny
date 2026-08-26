@@ -15,8 +15,11 @@ const RULER_H = 20;
  * Undo entry for a keyframe drag. The drag itself already moved the keyframe live via
  * `animCtrl.moveKeyframe`, so this is handed to `CommandManager.pushExecuted` (never
  * `execute`) at the end of the drag — see TimelineView.endKfDrag.
+ *
+ * Exported for test/TimelineView.test.ts: paired with a real AnimationController it is the whole
+ * fix, and asserting the undo/redo round-trip is what pins "not applied twice".
  */
-class MoveKeyframeCommand implements Command {
+export class MoveKeyframeCommand implements Command {
   readonly label: string;
   constructor(
     private readonly animCtrl: AnimationController,
@@ -437,13 +440,10 @@ export class TimelineView {
     if (!this.isDraggingKf) return;
     this.isDraggingKf = false;
 
-    // moveKeyframe stores times rounded to the millisecond; match it so undo/redo land exactly
-    // on the stored keyframe time rather than drifting by a sub-tolerance remainder.
-    const from = Math.round(this.dragKfStartTime * 1000) / 1000;
-    const to   = Math.round(this.dragKfTime      * 1000) / 1000;
-    if (from === to) return;
+    const commit = getKfDragCommit(this.dragKfStartTime, this.dragKfTime);
+    if (!commit) return;
 
-    this.cmdManager.pushExecuted(new MoveKeyframeCommand(this.animCtrl, from, to));
+    this.cmdManager.pushExecuted(new MoveKeyframeCommand(this.animCtrl, commit.from, commit.to));
   }
 
   private onContextMenu(e: MouseEvent): void {
@@ -467,6 +467,23 @@ export class TimelineView {
       { label: 'Delete keyframe', action: () => this.cmdManager.execute(new DeleteKeyframeCommand(this.animCtrl, kf.time)) },
     ]);
   }
+}
+
+// ── Keyframe drag helpers ─────────────────────────────────────────────────────
+
+/**
+ * Decides whether a finished keyframe drag is worth an undo entry, and with which times.
+ *
+ * Both ends are rounded to the millisecond because that is what `AnimationController.moveKeyframe`
+ * actually stores — undo/redo must address the stored value, not the raw pointer position, or they
+ * land a sub-tolerance remainder away from it. Rounding first also means a drag that never left the
+ * keyframe's own millisecond (a click, or a jitter of a few microseconds) returns null instead of
+ * pushing a command whose undo would be a visible no-op.
+ */
+export function getKfDragCommit(startTime: number, endTime: number): { from: number; to: number } | null {
+  const from = Math.round(startTime * 1000) / 1000;
+  const to   = Math.round(endTime   * 1000) / 1000;
+  return from === to ? null : { from, to };
 }
 
 // ── Keyframe colour helpers ───────────────────────────────────────────────────
