@@ -391,6 +391,10 @@ P2 的标定先于 P1 跑完，所以 P1 实现的是**已实测定案**的机�
 5. ✅ **耐久结算 + 易主**（`combatSiege/cityDamage.ts`，由 `settleSiegeDamage` 按 `SiegeDamageDoc.cityId` 分流）：惰性回复 → 扣伤害 → 累加 `siegeLog[sectId]`；归零则**最后一击那名玩家所属宗门**得城（ADR-074 决策 2），写 `capturedAt`/`protectedUntil`，耐久**重置为满**（否则刚付了整场代价的宗门拿到一座任何人下一击就能翻走的空城），清 `siegeLog`。
    - 并发用 rev CAS + 有界重试（与格子路径同款），而 CAS 顺带充当「谁先到」的裁决者：同一 `rev` 只有一次更新能匹配，所以**易主与公告都只可能发生一次**。
    - 公告三路 + 一封邮件：新主宗门频道、原主宗门频道（城池归宗门所有，没有单个 defender 可推 `under_attack`，原主频道那条**就是**通知）、世界中心易主发全服频道；邮件只发给**落下最后一击的那名玩家**。刻意不按宗门（≤900 人）扇出邮件——64 座城每次易主群发一遍是邮件水龙头，频道公告已经覆盖在线成员且有 7 天 TTL。
+   - **⚠️ 这四条公告一开始整套都是以原始 key 发出去的（2026-08-26 补）**：`slg.city.captured{,.subject,.mail}` / `slg.city.lost` / `slg.city.worldCenterCaptured` 五个 key 在三份词典里**一个都没有**，玩家收到的邮件标题就是字面的 `slg.city.captured.subject`。只有那一条字面写成 `subject: 'slg.city.captured.subject'` 的被 `client/test/i18n-server-mail-keys.test.ts` 抓红；另外三条写成 `body: body('…')` / `postSect(id, '…')`，那个扫描器只认「`subject:`/`body:` 紧跟引号」，**看不见**它们（扫描器已补第二块，见 §9）。
+   - **公告的参数必须逐个具名（`name=value`）**：客户端 `i18n/systemText.ts` 按 `=` 取参，**没有 `=` 的管道段会被静默丢弃**。`body()` 原本发的是位置参数 `key|kind|nodeId|level|x|y|sect=名`，于是等级和坐标全部消失在路上——一条说不出「打下了哪座城」的易主公告。现已改成 `kind=…|node=…|level=…|x=…|y=…|sect=…`（e2e 用的是 `toContain`，格式没被钉住，改动不破测试）。`node=` 目前不进文案，留着给以后「点公告跳到该城」用。
+   - **频道那三条要短**：`ui/widgets/chatRow.ts` 的 `drawChatLine` 到 **60 字**就截断。按最宽的合法宗门名（`ORG_NAME_WIDTH_MAX = 12`）算，现在最坏是英文 `slg.city.lost` 的 57/60——只剩 3 字余量，改文案前先看 `client/test/i18n-system-text.test.ts` 里那条上限断言。
+   - **系统公告的翻译发生在 `drawChatLine` 里**：此前**没有任何**聊天面板会翻译 i18n key（`SectScene/lists.ts` 与 `FriendsScene/worldChat.ts` 都是直接渲染 `msg.body`），所以光加词典条目对这三条公告是无效的。现在把 mail 那份解析逻辑提成公用的 `i18n/systemText.ts`，在 `drawChatLine` 这一个收口处翻译——玩家自己打的字照原样透传（key 查不到就回退原串），所以不必按发送者是否为 `system` 分流。
 6. ✅ **契约面**（直接编辑 `openapi-world.yml`；ADR-040 的 `openapi/` 分域片段只管 `openapi.yml`）：`WorldCityNodeView` 加 `ownerSectId`/`ownerSectName`/`durability`/`durabilityMax`/`regenPerHour`/`protectedUntil`/`siegeLog`；`PlayerWorldView` 加 `sectId`（客户端据此决定是否给围攻按钮）；新增 `GET /world/cities`。
    - **刻意不做推送**：一座城每小时会被命中几十次，按宗门扇出每一击是推送水龙头。城池面板打开时刷一次（`WorldMapNet.refreshCities`），地图上的血条只需大致正确；易主才走频道公告。
 7. ✅ **客户端**（`WorldMapInput.showCityPanel` + `WorldMapRenderer/city.ts`）：城池精灵上方的耐久条（只在受损时画，跟主城血条同一套克制）；面板显示**绝对值**耐久 + 每小时回复量 + 归属宗门 + 保护期倒计时 + 本轮各宗门贡献；围攻按钮仅在服务端所有前置条件都已满足时出现（无宗门/保护期内/本宗门已持有 → 隐藏并说明原因，与占领按钮 2026-08-02 的约定一致）。
@@ -398,6 +402,7 @@ P2 的标定先于 P1 跑完，所以 P1 实现的是**已实测定案**的机�
    - **⚠️ 血条锚点踩过一次（截图核对抓到的，代码审读抓不到）**：血条第一版锚在 `-sprite.height`（精灵单元格的顶边）。但 `citySpriteTiles` 是按 footprint 定精灵尺寸的，而每张城池图上方都有透明留白——一座 7×7 的 Lv.6 城，单元格顶边比屋顶高出几百像素，血条直接飘到视口外，看起来像「没做」。改用 `getCityContentTopFracForLevel(level)`（该函数的文档注释里点名的调用方就是 `WorldMapRenderer/city.ts`，而紧挨着的主城血条早在 2026-07-22 就因为矮建筑的同一症状修过一次）。**教训：这类缺陷只有真跑起来看一眼才会现形。**
 8. ✅ 赛季生命周期：`openSeason`/`resetWorld` 各调一次 `initCities`；`cities` 进重置清空集合列表（与 `siegeDamage`/`occupations`/`stationed` 同批）。
 9. ✅ 回归测试：`worldsvc/test/city-siege.e2e.test.ts`（**26** 例，真 Mongo）+ `shared/test/citySiege.test.ts`（**20** 例纯函数）+ `client/test/ui/worldMapCityClick.ui.ts`（15 例面板，P0 的 5 条保留 + P1 的 10 条）+ `client/test/ui/worldMapCityDurabilityBar.ui.ts`（**6** 例血条几何）+ `httpApiActionSiegeMapGaps.e2e.test.ts` / `season-ops.e2e.test.ts` 各 +2。P0 的 `city-ground.e2e.test.ts` 里那条 attack 用例从「未实现」改成断言宗门门槛。补测过程见下方第三刀。
+   - **公告文案（2026-08-26 补）**：`client/test/i18n-server-mail-keys.test.ts` 加第二块扫描——不再去认「承载 key 的语法」，而是直接扫**非 admin 服务端源码里所有玩家命名空间下的 key 字面量**，因此 `body: body('…')` / `postSect(id, '…')` 这两种形态也进网。排除 admin 是必须的：后台的 RBAC 权限位和审计动作 id 拼写跟 i18n key 一模一样（`slg.season.open` 等 21 个）却永不示人，而且**要按 admin 模块排除、不能只排 `admin/` 目录**——那 21 个的权威定义在 `shared/src/admin.ts`。新增 `client/test/i18n-system-text.test.ts`（14 例）钉住 `systemText` 的参数契约（具名存活 / 位置参数被丢弃）、玩家原话透传、缺 key 回退，以及上面那条 60 字上限。
 
 
 > **补测一轮（同日第三刀，用户问「有没有可以加的测试」后按 `sectService` 那次的规矩复查）**：`claudedocs/server-audits.md` 记着上一次同样一句话查出了 `/sect/*` 全部 10 条路由零 wire-level 覆盖。这次按同一套「不看方法名、看路由字符串 / 看机制的每条分支」复查，找出 4 个缺口并补齐，**其中一个缺口背后是真 bug**。
@@ -465,6 +470,9 @@ P2 的标定先于 P1 跑完，所以 P1 实现的是**已实测定案**的机�
 | **`CityDoc.defenderLock` 是空字段（P1 后新增）** | 建好了但 P1 无写入方：它是 P3 宗门驻防队的锁定期（`CITY_WAVE_RESPAWN_MS`）。NPC 波次每次行军重打，不需要锁定 |
 | 城池易主保护期时长 | ✅ 已定 `CITY_CAPTURE_PROTECTION_MS = 2 小时`，**刻意短于**主城的 `PROTECTION_SEC`(8 小时)：城池易主时耐久同时重置为满，重夺本就要再打一整场；主城没有这个重置（它是搬迁），护盾是它唯一的保护 |
 | ~~世界中心打不了~~ | ✅ 已修（补测抓出）：`attack` 分支里 ADR-074 之前的 `center` 拦截排在城池分支之前，把全图最重要的那座城变成唯一打不了的城，`settleCityDamage` 的全服公告成了死代码。现已把城池分支移到它之前 |
+| ~~四条易主公告全是原始 key~~ | ✅ 已修（2026-08-26）：五个 key 三份词典全缺 + 参数是位置式（等级/坐标丢失）+ 聊天面板从不翻译 key。详见 §10 P1 第 5 条的四条补注 |
+| **`world.city*` 那 6 条把宗门写成「帮会」（新增，未改）** | zh 词典里 `宗门` 40 处 vs `帮会` 6 处，后者全在 ADR-074 新加的 `world.city*` 块（`world.cityHint`/`cityNeedSect`/`cityOursHint` 等），与 `sect.title = 宗门` 不一致。玩家可见术语统一是产品拍板，不在本次 i18n 补漏范围内；本次新增的五条公告一律用 `宗门` |
+| **公告没有「点进去看那座城」** | `body()` 已经在发 `node=<nodeId>`（`cityDamage.ts`），但 `systemText` 只做字符串插值，公告目前不可点。要做的话客户端得把 `node` 参数接到 `WorldMapInput.showCityPanel`；参数已经在线上，属于纯客户端增量 |
 | 城池血条 UI 必须显示绝对值 | §6.5：耐久是「大基数 + 小步长」，Lv.3 与 Lv.10 只差 22%，只显示百分比会被读成 bug |
 | 宗门人数上限对 §8.1 总 faucet 的影响 | 宗门 ≤900 人（`GW_PUSH_REDIS_CHANNEL` 注释口径）；满编宗门吃满上限时的全服 faucet 总量待 `SLG_ECONOMY_CHECK.md` 轨道 2（赛季资源）核算 |
 | §8.1 城池产量 vs 训练资源消耗（新增） | 满配档 8,640 兵/时 的训练吞吐需要 86,400 墨水/时，远超单人产出上限。P2 的持续输出率因此是**乐观上界**（假设有存货可倾，对门禁而言方向安全）；P3 接产量时要在轨道 2 里连带复核 |

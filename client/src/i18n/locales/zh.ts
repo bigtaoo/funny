@@ -1473,6 +1473,14 @@ export const zh = {
   // key——找得到落点就强制迁城，找不到就连主城一起没了——所以正文不能写死"已迁往何处"。
   'slg.city.durabilityBreached.subject': '主城被攻破',
   'slg.city.durabilityBreached.body': '你的主城耐久已归零，城池被摧毁，全部领地失守。请前往大地图确认主城位置并重新布防。',
+  // 野外城池易主（ADR-074 P1）：邮件只发给落下最后一击的那名玩家，公告走宗门/全服频道。
+  // 参数由 worldsvc/combatSiege/cityDamage.ts 的 body() 传入（kind/node/level/x/y/sect）。
+  // 频道那三条要短——chatRow 的 drawChatLine 到 60 字就截断。
+  'slg.city.captured.subject': '城池攻占成功',
+  'slg.city.captured.mail': '你落下最后一击，攻下了 ({x}, {y}) 的 Lv.{level} 城池，现归{sect}所有。城池耐久已重置为满，并进入易主保护期。',
+  'slg.city.captured': '本宗门攻占了 ({x}, {y}) 的 Lv.{level} 城池',
+  'slg.city.lost': '本宗门失去了 ({x}, {y}) 的 Lv.{level} 城池，现归{sect}所有',
+  'slg.city.worldCenterCaptured': '{sect} 攻占了世界中心 ({x}, {y})',
 
   // ── Limited-time events (B6) ──────────────────────────────────────────────────
   'event.title': '限时活动',

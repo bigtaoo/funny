@@ -160,9 +160,12 @@ async function announceCapture(
   t: number,
 ): Promise<void> {
   const { cols } = core.deps;
-  // i18n-key body, same convention as the season-settlement mail (`slg.settle.body|...`): the client
-  // renders it, so the server never picks a language.
-  const cityRef = `${city.kind}|${city.nodeId}|${city.level}|${city.x}|${city.y}`;
+  // i18n-key body, same convention as the season-settlement mail (`slg.settle.body|rank=1|...`): the
+  // client renders it, so the server never picks a language.
+  // Every param must be `name=value`: the client parser (i18n/systemText.ts) keys params off the `=`
+  // and silently DROPS any pipe segment without one. These used to be positional, which meant the
+  // level and the coordinates never reached the copy — the one thing a capture notice has to say.
+  const cityRef = `kind=${city.kind}|node=${city.nodeId}|level=${city.level}|x=${city.x}|y=${city.y}`;
   const body = (key: string) => `${key}|${cityRef}|sect=${newSectName ?? newSectId}`;
 
   const postSect = async (sectId: string, key: string): Promise<void> => {

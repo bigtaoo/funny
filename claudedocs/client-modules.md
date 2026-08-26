@@ -88,6 +88,7 @@
 | `@nw/engine/math/prng` | LCG 确定性随机数生成器 |
 | `@nw/engine/math/fixed` | 定点数运算（`TICK_RATE = 30`） |
 | `i18n/index.ts` | `t()` 取词 + 插值；`initI18n`/`setLocale`/`onLocaleChange` |
+| `i18n/systemText.ts` | **服务端选 key 的那一类文案的唯一解析口**：系统邮件 + 系统频道公告都以 `key\|name=value\|…` 上线，语言在渲染时才定。`systemText(raw)` 拆参、`t()` 插值，**查不到 key 就回退原串**——正因为有这条回退，玩家自己打的字可以走同一条路（`drawChatLine` 对整条频道无差别调用，不必按发送者分流）。**参数必须具名**：没有 `=` 的管道段会被静默丢弃，服务端发位置参数等于让那几个占位符永远填不上（`worldsvc/combatSiege/cityDamage.ts` 踩过，见 `design/game/SLG_CITY_SIEGE_DESIGN.md` §10 P1 第 5 条）。加服务端选 key 的新文案时，`client/test/i18n-server-mail-keys.test.ts` 两块扫描都会兜漏译 |
 | `game/meta/SaveData.ts` | 元系统单一权威根；`makeNewSave`/`SyncPatch`/`SAVE_VERSION` |
 | `game/meta/migrate.ts` | `migrate(raw)→SaveData`：顺序升级 + fillDefaults；改字段必加迁移步 |
 | `game/meta/SaveManager.ts` | 云同步：离线优先→bootstrap→防抖 push→409 reconcile；PvE 通关/升级走 `/pve/*` API。后台 push 连续失败达阈值（3 次）触发一次 `onSyncError`（接 `showToastMessage`，提示进度可能未上云），一次成功上行即复位，不刷屏 |
