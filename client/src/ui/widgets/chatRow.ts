@@ -10,6 +10,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt } from '../../render/sketchUi';
 import { t, type TranslationKey } from '../../i18n/index';
+import { systemText } from '../../i18n/systemText';
 import { getTitleKeys, formatLadderTitle } from '../../game/meta/titles';
 
 /** Resolve a raw titleId (e.g. `event.newbie`) to its short display label (e.g. 新手). */
@@ -73,7 +74,12 @@ export function drawChatLine(
   nameTxt.y = y;
   layer.addChild(nameTxt);
 
-  const bodyTxt = txt(`: ${body.slice(0, maxBodyChars)}`, bodySize, C.dark);
+  // System announcements (sect/world channel) arrive as i18n keys the server chose —
+  // `slg.city.captured|level=3|x=12|y=34`. Player-authored lines pass through untouched, because
+  // systemText() falls back to the raw string whenever the key is not in the dictionary. Resolve
+  // *before* the truncation below, or the cut would land in the key instead of in the sentence.
+  const bodyStr = systemText(body);
+  const bodyTxt = txt(`: ${bodyStr.slice(0, maxBodyChars)}`, bodySize, C.dark);
   bodyTxt.anchor.set(0, 0.5);
   bodyTxt.x = x + tagW + padX;
   bodyTxt.y = y;

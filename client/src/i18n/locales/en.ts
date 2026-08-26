@@ -1450,6 +1450,15 @@ export const en: Record<TranslationKey, string> = {
   'slg.settle.bp.body': 'As a Battle Pass holder, here is your extra end-of-season reward.',
   'slg.city.durabilityBreached.subject': 'Capital Breached',
   'slg.city.durabilityBreached.body': 'The durability of your capital has hit zero. The city was destroyed and all of your territory is lost. Open the world map to see where your capital stands now and rebuild your defenses.',
+  // Wild-city ownership change (ADR-074 P1): the mail goes only to the player who landed the final
+  // blow; the announcements go to the sect / world channels. Params come from body() in
+  // worldsvc/combatSiege/cityDamage.ts (kind/node/level/x/y/sect). Keep the three channel lines
+  // short — drawChatLine truncates at 60 chars.
+  'slg.city.captured.subject': 'City Captured',
+  'slg.city.captured.mail': 'Your final blow took the Lv.{level} city at ({x}, {y}). It is now held by {sect}. Its durability has been reset to full and it is protected from siege for a while.',
+  'slg.city.captured': 'Our sect captured the Lv.{level} city at ({x}, {y})',
+  'slg.city.lost': 'Our sect lost the Lv.{level} city at ({x}, {y}) to {sect}',
+  'slg.city.worldCenterCaptured': '{sect} captured the world center at ({x}, {y})',
 
   // ── Limited-time events (B6) ─────────────────────────────────────────────
   'event.title': 'Events',

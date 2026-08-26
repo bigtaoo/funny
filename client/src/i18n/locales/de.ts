@@ -1450,6 +1450,15 @@ export const de: Record<TranslationKey, string> = {
   'slg.settle.bp.body': 'Als Battle-Pass-Inhaber erhältst du diese zusätzliche Saisonend-Belohnung.',
   'slg.city.durabilityBreached.subject': 'Hauptstadt gefallen',
   'slg.city.durabilityBreached.body': 'Die Haltbarkeit deiner Hauptstadt ist auf null gefallen. Die Stadt wurde zerstört und dein gesamtes Territorium ist verloren. Öffne die Weltkarte, um zu sehen, wo deine Hauptstadt jetzt steht, und baue deine Verteidigung neu auf.',
+  // Besitzerwechsel einer Wildstadt (ADR-074 P1): die Mail geht nur an den Spieler mit dem letzten
+  // Schlag, die Ankündigungen an den Sekten- bzw. Weltkanal. Parameter kommen aus body() in
+  // worldsvc/combatSiege/cityDamage.ts (kind/node/level/x/y/sect). Die drei Kanalzeilen kurz
+  // halten — drawChatLine schneidet bei 60 Zeichen ab.
+  'slg.city.captured.subject': 'Stadt erobert',
+  'slg.city.captured.mail': 'Dein letzter Schlag hat die Stadt Lv.{level} bei ({x}, {y}) eingenommen. Sie wird jetzt von {sect} gehalten. Ihre Haltbarkeit wurde vollständig zurückgesetzt und sie ist vorerst vor Belagerungen geschützt.',
+  'slg.city.captured': 'Unsere Sekte hat Stadt Lv.{level} bei ({x}, {y}) erobert',
+  'slg.city.lost': 'Stadt Lv.{level} bei ({x}, {y}) ging an {sect} verloren',
+  'slg.city.worldCenterCaptured': '{sect} hat das Weltzentrum bei ({x}, {y}) erobert',
 
   // ── Zeitlich begrenzte Events (B6) ──────────────────────────────────────
   'event.title': 'Events',
