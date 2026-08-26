@@ -353,6 +353,15 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 **用起来**：`npx webpack serve --mode development --port <port> --env TARGET=web-e2e`，Playwright `waitForFunction(() => window.__nwE2E?.app)`，`page.evaluate` 里遍历 `app.stage`。别在 `newPage()` 之后再 `setViewportSize()`——场景只在构造时读一次 `ILayout`，事后改视口只会把旧布局拉变形（第一次试的时候就是这样拍出一张假的「竖屏坏了」）。
 
+## 「按字数截断」这类 bug：机制在 headless 测，宽度预算只能真浏览器给（2026-08-26，聊天行按宽度截断）
+
+`drawChatLine` 原本把消息正文切在 60 **字**，而真正裁掉文字的是所在列的**宽度**。改成按宽度截断（`ui/widgets/truncateText.ts`）之后，测试的分工正好是上面那条 `__nwE2E.app` 记录说的形状，值得再记一次落点：
+
+- **机制归 `test/ui/chatRowTruncation.ui.ts`（headless）**：`fitToWidth` 返回的串真的塞得进 `maxW`（拿真的 `PIXI.Text` 复量一遍，顺带钉住 `TextMetrics` 与 `Text` 量出来一致——也就是 `makeText()` 的 CJK padding 不计入宽高这条前提）、截了一定补 `…`、不会把 emoji 的代理对切成半个、名字牌超宽时正文不会被挤成空。
+- **有一条断言是故意不写在这里的**：「同一宽度装得下的汉字比拉丁字母少」——这恰恰是「字数上限不可能对」的根因，但 headless 的 `measureText` 是每个 UTF-16 码元固定 7px，**不看字号也不看字种**，三种语言在这套件里量出来完全一样，写了也只是恒绿。文件里留了注释说明为什么缺这条，别当成漏测补回来。
+- **宽度预算归真浏览器**：Playwright + `npm run start:e2e` + `window.__nwE2E`，视口取 **1600x900**（`LandscapeLayout` 的设计宽下限是 1920，所以这就是最窄、最坏的一档；再宽只会更宽松）。`showSect(...)` / `showFriends(...)` 直接喂手搓的 callbacks + 假 `worldApi`，不需要后端也不需要登录。量出来：24px monospace 步进 **13.2px（拉丁）/ 24.0px（汉字）**，比值 1.82；`system` 发送者那一行的正文可用宽度 **宗门频道 700px、世界频道 1386px**。
+- **文案预算落在 `test/i18n-system-text.test.ts`**（快、无 PIXI），单位用 `@nw/shared` 的 `orgNameWidth`（全角 2、其余 1）而不是字符数——**一个数管三种语言**。上一版那对「34（中文）/ 41（拉丁）」字数上限是错的：换算到位宽差了 20 多，不可能同时描述同一列，而且两个都偏保守，把文案压过头了。
+
 ## 错误路径也是一条要钉的链：码 → 文案 → toast（2026-08-25，社交页第四轮补测）
 
 社交页那三轮补测都在钉「渲染/交互**少做事**之后还有什么能悄悄错掉」。第四轮换了一条完全不同的链：**请求失败之后，玩家读到的那句话**。结果发现两个场景的 `errorMsg()` 映射表（宗门 8 条码、家族 7 条码）一直是零覆盖，而且既有测试是**擦边而过**的三种典型形状，值得单列出来：

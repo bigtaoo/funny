@@ -12,26 +12,17 @@ import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { buildAvatar } from '../../render/avatar';
 import { caretText } from './repaint';
 import { drawChatLine } from '../../ui/widgets/chatRow';
+import { truncateToWidth } from '../../ui/widgets/truncateText';
 import { FS } from '../../render/fontScale';
 import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore } from './core';
 
+/** Left inset of a channel row, mirrored on the right as the row's truncation margin — the same
+ *  split-view column bound as SectScene's (see chatRow.ts). */
+const ROW_INSET = 12;
+
 /** Darker muted ink for secondary family-scene labels — matches RenderPanel's MUTED. */
 export const MUTED = 0x5a574f;
-
-/** Re-instantiates `txt()` with progressively shorter text (ellipsis) until it fits `maxW`. Narrow
- *  portrait widths + a long family name would otherwise run the name into the member-count label.
- *  Exported for RenderPanel's renderInfoBand, which needs the same fit-to-width truncation. */
-export function truncateToWidth(label: string, size: number, color: number, maxW: number): PIXI.Text {
-  let s = label;
-  let node = txt(s, size, color);
-  while (node.width > maxW && s.length > 1) {
-    node.destroy();
-    s = s.slice(0, -1);
-    node = txt(s + '…', size, color);
-  }
-  return node;
-}
 
 /** Narrow slice of ActionsHandlers that renderMembers needs. */
 export interface MemberActions {
@@ -260,9 +251,9 @@ export function renderChannel(
   for (const msg of ordered) {
     if (cy + R < y0 - over || cy > y0 + viewH2 + over) { cy += R; continue; }
     drawChatLine(
-      list, x0 + 12, cy + R / 2,
+      list, x0 + ROW_INSET, cy + R / 2,
       { senderName: msg.senderName ?? msg.senderId, title: msg.title, familyName: msg.familyName },
-      msg.body, FS.label, FS.label,
+      msg.body, FS.label, FS.label, colW - ROW_INSET * 2,
     );
     cy += R;
   }

@@ -11,6 +11,10 @@ import { scrollRegionLayer } from '../../ui/widgets/scrollRegionLayer';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { caretText } from './repaint';
 import { drawChatLine } from '../../ui/widgets/chatRow';
+
+/** Left inset of a channel row, mirrored on the right as the row's truncation margin. This is the
+ *  narrow half of a split view, so it is what actually bounds a message — see chatRow.ts. */
+const ROW_INSET = 12;
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore } from './core';
@@ -163,9 +167,9 @@ export function renderChannel(
   for (const msg of ordered) {
     if (cy + ROW_H < y0 - over || cy > y0 + viewH2 + over) { cy += ROW_H; continue; }
     drawChatLine(
-      list, x0 + 12, cy + ROW_H / 2,
+      list, x0 + ROW_INSET, cy + ROW_H / 2,
       { senderName: msg.senderName, title: msg.title, sectName: msg.sectName, familyName: msg.familyName },
-      msg.body, FS.label, FS.label,
+      msg.body, FS.label, FS.label, colW - ROW_INSET * 2,
     );
     cy += ROW_H;
   }
