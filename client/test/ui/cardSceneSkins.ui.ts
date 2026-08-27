@@ -340,3 +340,51 @@ describe('CardScene — wardrobe first paint after a scrolled roster', () => {
     scene.destroy();
   });
 });
+
+// The other half of the same fix, pinned on its own. The three cases above all arrive at the
+// wardrobe through setTab, which zeroes the offset — so they'd stay green even if renderSkinsTab
+// went back to clamping AFTER its draw loop. These two force a stale out-of-range offset directly
+// (what a viewport resize does to a live wardrobe: the grid gets shorter under the offset it's
+// already holding) and pin the measure → clamp → draw order itself.
+describe('CardScene — wardrobe clamps before it culls', () => {
+  /**
+   * A viewport short enough that the fixed 6-character catalogue genuinely overflows: createLayout()
+   * floors the landscape design size at 1920x1080, so a plain ILayout object is the only way in
+   * (same pattern as the scroll case above).
+   */
+  const shortScene = (): CardScene => new CardScene(
+    { designWidth: 1920, designHeight: 400, orientation: 'landscape' } as unknown as
+      ReturnType<typeof createLayout>,
+    new InputManager(),
+    {
+      onBack() {},
+      getSave: () => makeNewSave(),
+      fuseCards: async () => ({ ok: true }),
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
+      setCardLock: async () => ({ ok: true }),
+      // One owned skin per character, so each of the 6 cards carries a uniquely named tile.
+      getOwnedSkins: () => ['skin_shop_c1', 'skin_shop_r1', 'skin_shop_e1', 'skin_e1', 'skin_e2', 'skin_l1'],
+      getEquippedSkin: () => null,
+      equipSkin: () => {},
+      initialTab: 'skins',
+    },
+  );
+
+  /** Which of the 6 wardrobe cards currently have a drawn skin tile, by character. */
+  const drawnSkins = (scene: CardScene): string[] =>
+    ['skin_shop_c1', 'skin_shop_e1', 'skin_shop_r1', 'skin_l1', 'skin_e1', 'skin_e2']
+      .filter((id) => findLabelPos(scene.container, skinDisplayName(id)) !== null);
+
+  it('paints on the very first render after an out-of-range offset, not one render later', () => {
+    const scene = shortScene();
+    const core = (scene as unknown as { core: { scrollY: number; maxScroll: number; render(): void } }).core;
+    expect(core.maxScroll).toBeGreaterThan(0); // the grid really does overflow this viewport
+
+    core.scrollY = 1e6;
+    core.render();
+
+    expect(core.scrollY).toBe(core.maxScroll); // clamped, not left out of range
+    expect(drawnSkins(scene).length).toBeGreaterThan(0); // and drawn in the SAME pass
+    scene.destroy();
+  });
+});
