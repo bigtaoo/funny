@@ -62,6 +62,38 @@ describe('CardCodexScene — locked/unlocked card compendium', () => {
     expect(countText(scene.container, lenaHp)).toBeGreaterThan(0);
   });
 
+  // Same pass, the type/cost subtitle: it used to be one `type · cost N` string with no icon at all.
+  // Now it is two iconned pieces (helmet/castle/scroll + ink bottle) and the `·` is gone. Indent
+  // again, for the reason in the locked-label test below.
+  it('draws the card type and the cost behind icons of their own', () => {
+    const scene = new CardCodexScene(createLayout(1920, 1080), new InputManager(), baseCb(['lena', 'max']));
+    const wanted = new Set([
+      t('collection.cardType.unit' as never),
+      t('collection.cardType.building' as never),
+      t('collection.cardType.spell' as never),
+    ]);
+    const found: PIXI.Text[] = [];
+    const walk = (node: PIXI.Container): void => {
+      if (node instanceof PIXI.Text) {
+        if (wanted.has(node.text)) found.push(node);
+        // The cost piece keeps its own label in the same row: "<cost> <n>".
+        if (node.text.startsWith(`${t('collection.stat.cost' as never)} `)) found.push(node);
+      }
+      for (const c of node.children) walk(c as PIXI.Container);
+    };
+    walk(scene.container);
+    expect(found.length).toBeGreaterThan(0);
+    for (const lbl of found) expect(lbl.x).toBeGreaterThan(0);
+    // The separator the icons replaced must be gone — no label still carries it.
+    const withDot: string[] = [];
+    const walkDot = (node: PIXI.Container): void => {
+      if (node instanceof PIXI.Text && node.text.includes(' · ')) withDot.push(node.text);
+      for (const c of node.children) walkDot(c as PIXI.Container);
+    };
+    walkDot(scene.container);
+    expect(withDot).toEqual([]);
+  });
+
   // 2026-08-27 (user feedback on a codex screenshot): the stat row used to be half icons and half
   // words — `hp`/`atk` drew their icon only, `range` (no icon art) drew its name only. Every chip now
   // spells its stat out, so the icons read as a cue on top of the name rather than as the name itself.

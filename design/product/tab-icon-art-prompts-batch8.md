@@ -1,6 +1,6 @@
 # 批次 8：数值词条图标补齐（射程 / 攻城值 / 暴击率 / 暴击伤害）— Prompt 文档
 
-> 创建：2026-08-27 · 数值词条四张：**全部完成（同日）** · **追加 8b（卡片元信息：类型/费用/未解锁）**：`未解锁` 已复用 `lock` 落地，`费用`→`ink`、`建筑`→`castle` 判为复用，`法术`（卷轴）**已出图通过**，`士兵`（头盔 v1 读成毛线帽）**打回**、v2 改侧面科林斯盔，prompt 见文末；副标题等三种卡类型图标齐了再接：v1 四张里 `crit`/`siege` 过、`range`（4.24:1 缩成发丝）与 `critmult`（读成船舵）打回；v2 三张一版过，四张一起接线上线。最终账：43 + 4 = 47 张自有美术 + 6 个别名 = 53 个 ink kind
+> 创建：2026-08-27 · 数值词条四张：**全部完成（同日）** · **追加 8b（卡片元信息：类型/费用/未解锁）**：`未解锁` 已复用 `lock` 落地，`费用`→`ink`、`建筑`→`castle` 判为复用，**8b 也全部完成**（`法术`=卷轴一版过，`士兵` v1 读成毛线帽、v2 改侧面科林斯盔一版过；`建筑`/`费用`/`未解锁` 复用 `castle`/`ink`/`lock`）。全库 **49 张自有美术 + 6 个别名 = 55 个 ink kind**：v1 四张里 `crit`/`siege` 过、`range`（4.24:1 缩成发丝）与 `critmult`（读成船舵）打回；v2 三张一版过，四张一起接线上线。最终账：43 + 4 = 47 张自有美术 + 6 个别名 = 53 个 ink kind
 > 前七批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（批 1–4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页，3 张）· [`tab-icon-art-prompts-batch7.md`](tab-icon-art-prompts-batch7.md)（矢量清零，44 张）
 > 配套代码：[`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（本批落地处，同批次 7）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) · 调用点见文末「出图后的接线清单」
 > 相关代码改动（**已落地，不等图**）：收集册属性行每个词条都写全名，见 [`LOBBY_IA_REDESIGN_LOG.md §28`](../game/LOBBY_IA_REDESIGN_LOG.md)
@@ -257,3 +257,23 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 > 备选（v2 若读成鱼/一团）：回到正面视角，但**只画**一个下沿外扩的空心圆顶 + 一根从前沿垂下的短护鼻，不画箍带、不封底边、不画眼缝——即「钟形 + 一个小垂片」，代价是可能被读成铃铛。
 
 **资产落位**：`art/ui/tabicons/tabicon_spell.webp`；`_rejected/tabicon_unit_v1_readsasbeanie.webp`。副标题那一行仍然不接线——三种卡类型的图标必须同时到位，否则一屏里「建筑」有图标、「士兵」没有，就是这轮反馈的原样复现。
+
+### 8b v2 出图结果（2026-08-27）：`unit` 一版过，8b 收工
+
+| kind | 版本 | 内容长宽比 | 28px 实际占格 | 墨量 | 结论 |
+|---|---|---|---|---|---|
+| `unit` | v2 | 0.86:1（v1 1.27:1） | 24×28 | 39.6 | **过** |
+| `spell` | v1 | 0.84:1 | 23×28 | 49.7 | **过** |
+
+侧面科林斯盔一版过：一条连续外轮廓（圆顶 → 护鼻 → 大眼窝缺口 → 护颊下摆），底部颈口不封线。v1 那三个毛病（封死的底边 / 横箍带 / 把下半部切成两格的护鼻）全部不存在，28px 上仍然读得出是头盔。墨量 39.6 偏轻，跟 `cards`(41.1)/`book`(33.2) 同档——这类"空心大轮廓"的图本来就在这一档，可接受。
+
+**8b 最终账**：新出 2 张（`unit`/`spell`），复用 3 处（`建筑`→`castle`、`费用`→`ink`、`未解锁`→`lock`），全库 ink kind 从 47 + 6 别名变成 **49 张自有美术 + 6 个别名 = 55 个**。
+
+### 接线（已完成）
+
+1. `tabicon_unit.webp` / `tabicon_spell.webp` + `pack_tab_icons.cjs` 两行 `inks: ['active']`，跑脚本产出 2 张 PNG（其余 186 张字节不变）。
+2. `inkIconRaster.ts` 两条 import + `InkIconKind` + `INK_ICON_ART`；`inkIconArt.test.ts` 计数 47 → 49。
+3. `CardCodexScene/tile.ts`：副标题从一条 `${typeLabel} · ${cost} ${n}` 字符串改成 `drawIconTextRow` 的两段 chip，卡类型→图标映射 `unit → 'unit'` / `building → 'castle'` / `spell → 'spell'`，费用那段带 `ink`，**中间的 `·` 去掉**（两个图标已经分隔了两段，跟属性行一致）。y 从 `0.34h` 微调到 `0.33h`：行高从「一行文字」变成「图标高度」，减掉半个差值才能保持原来的视觉中心。
+4. 测试：`cardCodexScene.ui.ts` 加 1 例——三种类型标签和费用标签都必须有缩进（同上，无头环境断言几何而非图标节点），并且**没有任何标签还带 ` · `**（分隔符必须真的消失，不是只在某一种卡上消失）。红绿对照做过。
+
+**像素证据**：中文横屏（士兵蓝）+ 拖动到底部的横屏（建筑金 / 法术红，一屏同时有三种类型）+ 竖屏（副标题带图标后仍在面板内、靠 `drawIconTextRow` 的整体缩放）。三种类型的图标都跟着卡类型的强调色走（蓝/金/红），费用的墨水瓶同色。

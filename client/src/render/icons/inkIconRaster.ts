@@ -105,6 +105,13 @@ import siegeInkUrl from '../../assets/tabicons/siege_active.png';
 import critInkUrl from '../../assets/tabicons/crit_active.png';
 import critmultInkUrl from '../../assets/tabicons/critmult_active.png';
 
+// Batch 8b (same doc): the codex tile's type-and-cost subtitle, which was the last all-text line
+// in that panel. Only two of its four pieces needed art — the Building type reuses `castle` and the
+// cost reuses `ink` (in battle the cost IS ink, and the battle HUD already draws this bottle for it),
+// so no new kind was minted for either.
+import unitInkUrl from '../../assets/tabicons/unit_active.png';
+import spellInkUrl from '../../assets/tabicons/spell_active.png';
+
 // The 6 kinds that ALIAS the white master of an existing tab icon rather than getting art of their
 // own, so each concept is drawn exactly once in the game. They live here rather than as call-site
 // renames to `pvpTabIcon`/`gachaTabIcon`/... because most of them have call sites where `color`
@@ -137,6 +144,7 @@ import brushInkUrl from '../../assets/tabicons/skin_active.png';
 export type InkIconKind =
   | 'atk' | 'hp' | 'armor' | 'armorHeavy' | 'spd' | 'atkspd'
   | 'range' | 'siege' | 'crit' | 'critmult'
+  | 'unit' | 'spell'
   | 'scrap' | 'lead' | 'binding' | 'hammer' | 'ink'
   | 'replay' | 'share' | 'star' | 'lock' | 'medal' | 'close' | 'check' | 'play' | 'zoom' | 'cards'
   | 'flag' | 'desk' | 'cabinet' | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
@@ -166,6 +174,8 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   siege:             siegeInkUrl as string,
   crit:              critInkUrl as string,
   critmult:          critmultInkUrl as string,
+  unit:              unitInkUrl as string,
+  spell:             spellInkUrl as string,
   scrap:             scrapInkUrl as string,
   lead:              leadInkUrl as string,
   binding:           bindingInkUrl as string,

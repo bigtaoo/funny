@@ -233,6 +233,13 @@ const JOBS = [
   { src: 'tabicon_siege.webp',             name: 'siege', inks: ['active'] },
   { src: 'tabicon_crit.webp',              name: 'crit', inks: ['active'] },
   { src: 'tabicon_critmult.webp',          name: 'critmult', inks: ['active'] },
+
+  // Batch 8b (same doc): the codex tile's type-and-cost subtitle. `unit` is a side-profile
+  // Corinthian helmet (the front view came back as a knit beanie — see the doc), `spell` a rolled
+  // scroll; the Building type reuses `castle` and the cost reuses `ink` (in battle, cost IS ink),
+  // so those two draw no new art.
+  { src: 'tabicon_unit.webp',              name: 'unit', inks: ['active'] },
+  { src: 'tabicon_spell.webp',             name: 'spell', inks: ['active'] },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');

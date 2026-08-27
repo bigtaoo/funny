@@ -268,12 +268,19 @@ export function drawCardTile(
   if (name.width > maxNameW) name.scale.set(maxNameW / name.width);
   target.addChild(name);
 
+  // Type and cost as two iconned pieces rather than one `type · cost N` string: the `·` separator
+  // is gone because the icons already separate the two, which is also how the stat row below reads.
+  // Building reuses `castle` and cost reuses `ink` — in battle the cost IS ink, and the HUD draws
+  // this same bottle for it (design/product/tab-icon-art-prompts-batch8.md §8b).
+  const typeIcon: IconKind = card.cardType === CardType.Unit ? 'unit'
+    : card.cardType === CardType.Building ? 'castle' : 'spell';
   const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')
     : card.cardType === CardType.Building ? t('collection.cardType.building')
     : t('collection.cardType.spell');
-  const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, snapFont(Math.round(h * 0.12)), accent, true);
-  sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.34);
-  target.addChild(sub);
+  drawIconTextRow(
+    [{ icon: typeIcon, text: typeLabel }, { icon: 'ink', text: `${t('collection.stat.cost')} ${card.cost}` }],
+    textX, y + Math.round(h * 0.33), infoW - pad * 2, Math.round(h * 0.12), accent, true, target,
+  );
 
   if (locked) {
     // The padlock is drawn over the illustration too, but that half of the tile is a separate panel —
