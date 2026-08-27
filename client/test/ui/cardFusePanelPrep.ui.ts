@@ -23,7 +23,7 @@ import * as log from '../../src/net/log';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 import { FUSION_MATERIAL_COUNT } from '../../src/game/meta/cardDefs';
-import { PREP_COST_PER_CARD } from '../../src/scenes/CardScene/feedPlan';
+import { PREP_COST_PER_CARD } from '../../src/scenes/CardScene/logic/feedPlan';
 
 function freshStorage(): { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void; removeItem: (k: string) => void } {
   const m = new Map<string, string>();

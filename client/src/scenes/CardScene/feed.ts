@@ -59,7 +59,7 @@ import { drawFuseCandidateRow, type FuseGroup } from './feedList';
 import {
   MAX_PREP_DEPTH, autoFillMaterials, listFusableTargets, pickFeeder, planPrep, planPrepRounds,
   readyMaterials, type PrepRoundPlan,
-} from './feedPlan';
+} from './logic/feedPlan';
 import {
   CRUMB_U, GAP_U, STRIP_U, drawFuseFooter, drawGapNotice, drawPrepBatchBtn, drawPrepCrumb,
   drawRecommendStrip,

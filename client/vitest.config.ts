@@ -118,7 +118,6 @@ export default defineConfig({
         'src/render/vfx/sampleParam.ts',
         // scenes: the already-extracted pure modules — exactly the shape ADR-070's client half will
         // produce more of, one scene at a time (4b)
-        'src/scenes/CardScene/feedPlan.ts',
         'src/scenes/EquipmentScene/helpers.ts',
         'src/scenes/EquipmentScene/layout.ts',
         'src/scenes/LobbyScene/format.ts',
@@ -128,6 +127,13 @@ export default defineConfig({
         // whatever lands there next. `test/pureLayerBoundary.test.ts` is what keeps it a pure layer;
         // this percentage does not (see that file's header for why the 90% bar cannot guard a boundary).
         'src/scenes/worldmap/logic/**',
+        // 4b, second scene group (2026-08-27): CardScene. Three PIXI-free modules — cardSort,
+        // feedPlan, types — collapse the single `CardScene/feedPlan.ts` entry above into a directory.
+        // The two files that did NOT move, on purpose: `input.ts` is the pointer plumbing and
+        // `header.ts` the title bar; both are Core collaborators that read and write `core.*` (and
+        // header.ts draws), i.e. the same call ADR-071 4b made for WorldMapRenderer/viewport.ts.
+        // Neither is gated per-file either — unlike viewport.ts they have no fake-ctx suite to gate.
+        'src/scenes/CardScene/logic/**',
         // ...and one file that did NOT move, on purpose: WorldMapRendererViewport is a renderer
         // collaborator, not pure logic — it mutates `core.ctx` and calls into pool/panels/net. Its
         // arithmetic happens to be testable with a fake ctx (95.8% before this pass), which is why it is

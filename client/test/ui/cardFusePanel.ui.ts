@@ -20,7 +20,7 @@ import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import type { CardInstance } from '../../src/game/meta/SaveData';
 import { FUSION_MATERIAL_COUNT } from '../../src/game/meta/cardDefs';
 import { CRUMB_U, GAP_U, STRIP_U } from '../../src/scenes/CardScene/feedGap';
-import { PREP_COST_PER_CARD } from '../../src/scenes/CardScene/feedPlan';
+import { PREP_COST_PER_CARD } from '../../src/scenes/CardScene/logic/feedPlan';
 import * as log from '../../src/net/log';
 import { SaveManager } from '../../src/game/meta/SaveManager';
 import { LocalSaveStore } from '../../src/game/meta/SaveStore';

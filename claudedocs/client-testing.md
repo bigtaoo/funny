@@ -50,12 +50,16 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 | —— 而另一群 —— | | |
 | `src/game/**` 之外已 ≥90% 的模块（47 个，≥10 行的） | 2336 | **97.8%** |
 
-第二群是这次扩进来的：**已经测好、却不受任何门禁约束**的模块（`net/judgeRunner.ts`、`layout/{Portrait,Landscape}Layout.ts`、`scenes/CardScene/feedPlan.ts`、`render/vfx/parseEffectDef.ts`、`ui/busyTracker.ts` …）——它们掉到 50% 也不会有任何一个 CI 步骤变红。扩完 **scope 1924 → 4245 行，行覆盖 91.2% → 94.7%（73 文件）**。scope 翻倍而百分比**上升**，跟「缩 include 抬百分比」正好相反（后者由报表的 `Scope (files)` 列盯着）。
+第二群是这次扩进来的：**已经测好、却不受任何门禁约束**的模块（`net/judgeRunner.ts`、`layout/{Portrait,Landscape}Layout.ts`、`scenes/CardScene/logic/feedPlan.ts`（当时还在 `CardScene/feedPlan.ts`，2026-08-27 随 4b 搬进 `logic/`）、`render/vfx/parseEffectDef.ts`、`ui/busyTracker.ts` …）——它们掉到 50% 也不会有任何一个 CI 步骤变红。扩完 **scope 1924 → 4245 行，行覆盖 91.2% → 94.7%（73 文件）**。scope 翻倍而百分比**上升**，跟「缩 include 抬百分比」正好相反（后者由报表的 `Scope (files)` 列盯着）。
 
 - **≥10 可执行行才列**：barrel 和 1 行 re-export 壳（`net/anomaly.ts`、`app/nav/shop.ts`、`render/atlas/emblemAtlas.ts`、`platform/stubs/**`…）100% 覆盖但守不住任何东西，只会让清单变长。
 - **两个大 facade 明确不进**：`net/ApiClient.ts`/`WorldApiClient.ts`（~50%）是一行一个转发，覆盖率说明不了任何事（同一理由让它们在 500 行 baseline 里也是例外条目）。
 - **这份逐文件清单是过渡的**，ADR-070 那条「逐文件 include 是缺模块边界的味道」仍然成立：它针对的是逐文件项**收窄** scope（把没测的兄弟藏在好看的数字后面），这里每一项只**增加**受门禁的地盘。清单同时就是 ADR-070 客户端半边（4b）的待办——每抽出一个场景的纯逻辑目录，那个目录替掉它名下的若干逐文件项。
-- **`test/coverageScope.test.ts` 钉住它别烂掉**（48 例）：每一项必须还匹配得到真文件（**改名/删文件会让一项静默失配、scope 无声缩小，而百分比通常还会升**，因为掉出去的都是覆盖好的模块——这正是 `checkFileLength`/`checkCoverageThreshold` 两条 canary 防的那种「靠变绿退休」）、清单不许空（canary）、不许有已被目录项覆盖的冗余项。红绿两向都实测过。
+- **`test/coverageScope.test.ts` 钉住它别烂掉**（51 例）：每一项必须还匹配得到真文件（**改名/删文件会让一项静默失配、scope 无声缩小，而百分比通常还会升**，因为掉出去的都是覆盖好的模块——这正是 `checkFileLength`/`checkCoverageThreshold` 两条 canary 防的那种「靠变绿退休」）、清单不许空（canary）、不许有已被目录项覆盖的冗余项。红绿两向都实测过。
+- **已graduate的「纯逻辑目录」用目录 glob，另有专门守卫**（ADR-071 4b，进行中）。每抽完一组场景，`src/scenes/<组>/logic/**` 一条目录项替掉该组的若干逐文件项——目录项的好处正是**它也管住之后落进来的文件**，而逐文件清单会静默漏掉。已完成：`worldmap/logic`（95.83%）、`CardScene/logic`（100%）；剩 `Friends`/`Family`/`Sect` 与 `ui/dialogs`。
+  - **`test/pureLayerBoundary.test.ts` 才是守边界的那个，百分比不是**。门禁余量 = `covered/0.9 - total`，97% 的目录还能塞进几十行未覆盖代码不越线，而且**测试越好余量越大**；所以往受门禁的纯目录里丢一个 PIXI 文件，门禁照样绿。守卫走 **runtime import 图**（`import type` 豁免——编译后不存在；非相对 specifier 走白名单），判红时打完整链路。加一组只需在 `PURE_DIRS` 加一行。
+  - **哪些文件不该进 `logic/`**：判据是「**它读写 `core.*` 吗**」，不是「它的算术可测吗」。`worldmap/WorldMapRenderer/viewport.ts`（改 `core.ctx`、调 pool/panels/net）保留逐文件项；`CardScene/{input,header}.ts` 同理不进也不单列。放错会让守卫变成一句假话。
+  - **⚠️ 看到 0% 先分清两种成因**（两组都遇到过，修法完全不同）：①**测试其实在 `test/ui/`**——那个套件不报覆盖率，把纯用例搬进 `test/` 即可（`worldMapOccupyFrontier.ui.ts` 一个断言没改就解决了）；②**覆盖率套件从未加载过它**——`CardScene/logic/types.ts` 的唯一 importer `core.ts` 引 PIXI，所以谁都没 import 到它，得补真的测试。别一律当成「搬套件」。
 - **不追整包 90%**：按上表缺口要再覆盖约 3 万行，且相当大比例是 PIXI 绘制代码，测出来的是 mock 的行为。系统性渲染/场景测试仍然是 `test:ui`/`test:e2e` 的活（两者都不产覆盖率）。
 
 ## 静态类型检查（`npm run typecheck` / CI）

@@ -32,10 +32,18 @@ const CLIENT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * (worldmap > CardScene > Friends/Family/Sect > ui/dialogs); each must also appear as a directory glob
  * in vitest.config.ts's `coverage.include`, which the final case below checks.
  */
-const PURE_DIRS = ['src/scenes/worldmap/logic'] as const;
+const PURE_DIRS = ['src/scenes/worldmap/logic', 'src/scenes/CardScene/logic'] as const;
 
 /** Non-relative specifiers a pure module may import: environment-free by construction. */
-const ALLOWED_PACKAGES = new Set(['@nw/shared', '@nw/shared/cards', '@nw/engine']);
+const ALLOWED_PACKAGES = new Set([
+  '@nw/shared',
+  '@nw/shared/cards',
+  '@nw/engine',
+  // Added with CardScene/logic (2026-08-27): its two logic modules reach `game/meta/cardDefs`, whose
+  // own imports include this one. It is the engine's numeric config table (UNIT_BLUEPRINTS, tuning
+  // constants) — plain data, no global, same standing as '@nw/engine' itself, which is already here.
+  '@nw/engine/config',
+]);
 
 /** Every .ts file under `dir`, recursively, repo-relative with forward slashes. */
 function walk(dir: string): string[] {

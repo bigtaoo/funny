@@ -15,7 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   PREP_COST_PER_CARD, autoFillMaterials, countPrepRounds, listFusableTargets, pickFeeder, planPrep, planPrepRounds,
-} from '../src/scenes/CardScene/feedPlan';
+} from '../src/scenes/CardScene/logic/feedPlan';
 import { FUSION_MATERIAL_COUNT, MAX_CARD_LEVEL } from '../src/game/meta/cardDefs';
 import type { CardInstance } from '../src/game/meta/SaveData';
 

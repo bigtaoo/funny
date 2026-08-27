@@ -27,10 +27,12 @@ const SRC_ROOT = path.resolve(__dirname, '../src');
 const CORE = 'scenes/CardScene/core.ts';
 
 function cardSceneFiles(): { rel: string; text: string }[] {
-  const dir = path.join(SRC_ROOT, 'scenes/CardScene');
-  const files = fs.readdirSync(dir)
-    .filter((n) => n.endsWith('.ts'))
-    .map((n) => `scenes/CardScene/${n}`);
+  // Recursive on purpose: `logic/` arrived 2026-08-27 (ADR-071 4b) and a non-recursive readdir
+  // would have quietly stopped scanning whatever moves in there next.
+  const walk = (rel: string): string[] =>
+    fs.readdirSync(path.join(SRC_ROOT, rel), { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(`${rel}/${e.name}`) : e.name.endsWith('.ts') ? [`${rel}/${e.name}`] : []);
+  const files = walk('scenes/CardScene');
   files.push('scenes/CardScene.ts'); // the assembly shell (showTab lives here)
   return files.map((rel) => ({ rel, text: fs.readFileSync(path.join(SRC_ROOT, rel), 'utf8') }));
 }
