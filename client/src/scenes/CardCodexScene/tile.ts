@@ -102,32 +102,74 @@ export function drawTileFace(
   container.addChild(lore);
 }
 
+/** Greedy split of `chips` into `n` consecutive lines of roughly equal width; returns the widest line. */
+function widestLineOf(chips: { w: number }[], chipGap: number, n: number): number {
+  const total = chips.reduce((a, c) => a + c.w, 0) + chipGap * (chips.length - 1);
+  const target = total / n;
+  let widest = 0;
+  let lineW = 0;
+  let lines = 1;
+  for (const c of chips) {
+    const next = lineW > 0 ? lineW + chipGap + c.w : c.w;
+    if (lineW > 0 && next > target && lines < n) { widest = Math.max(widest, lineW); lineW = c.w; lines++; }
+    else lineW = next;
+  }
+  return Math.max(widest, lineW);
+}
+
 export function drawStatChips(
   stats: { icon: IconKind | null; label: string; value: number }[],
-  x: number, y: number, maxW: number, size: number, target: PIXI.Container,
+  x: number, y: number, maxW: number, maxH: number, size: number, target: PIXI.Container,
 ): void {
   const row = new PIXI.Container();
   const gap = Math.round(size * 0.28);
   const chipGap = Math.round(size * 0.75);
   const valSize = snapFont(Math.round(size * 0.74));
-  let cx = 0;
-  stats.forEach((s, i) => {
-    if (i > 0) cx += chipGap;
+
+  // Each chip is built into its own container so it stays one unbreakable unit when the row wraps.
+  const chips = stats.map((s) => {
+    const chip = new PIXI.Container();
+    let cx = 0;
     if (s.icon) {
       const ic = buildIcon(s.icon, size, C.mid);
-      ic.x = cx; ic.y = 0; row.addChild(ic);
+      ic.x = cx; ic.y = 0; chip.addChild(ic);
       cx += size + gap;
-    } else {
-      const lbl = txt(s.label, valSize, C.mid);
-      lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = size / 2; row.addChild(lbl);
-      cx += lbl.width + gap;
     }
+    // Every chip spells its stat out in words, icon or no icon: the icon is a redundant cue on top of
+    // the name, never a replacement for it. Before this, `hp`/`atk` drew icon-only while `range` (no
+    // art for it yet) drew name-only, so one row mixed two shapes of chip and the two icons had to be
+    // learned rather than read (2026-08-27 user feedback on a codex screenshot).
+    const lbl = txt(s.label, valSize, C.mid);
+    lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = size / 2; chip.addChild(lbl);
+    cx += lbl.width + gap;
     const val = txt(String(s.value), valSize, C.dark, true);
-    val.anchor.set(0, 0.5); val.x = cx; val.y = size / 2; row.addChild(val);
-    cx += val.width;
+    val.anchor.set(0, 0.5); val.x = cx; val.y = size / 2; chip.addChild(val);
+    return { chip, w: cx + val.width };
   });
+
+  // Spelling the stats out made the row ~1/3 wider, and portrait's info panel is narrow enough that
+  // the old shrink-the-whole-row-to-fit dropped the text to about half the size of the name above it.
+  // So trade width for height instead: pick the line count whose fit-scale (bounded by the panel's
+  // width AND by the space left below the row's top edge) comes out largest — one line at full size
+  // in landscape, two slightly-shrunk lines in portrait, three only if even that won't fit.
+  let best = { n: 1, scale: 0 };
+  for (let n = 1; n <= chips.length; n++) {
+    const scale = Math.min(1, maxW / widestLineOf(chips, chipGap, n), maxH / (n * size));
+    if (scale > best.scale + 1e-6) best = { n, scale };
+  }
+  const lineCap = widestLineOf(chips, chipGap, best.n) * best.scale;
+
+  let lineW = 0;
+  let lineY = 0;
+  for (const { chip, w } of chips) {
+    if (lineW > 0 && (lineW + chipGap + w) * best.scale > lineCap + 1e-6) { lineY += size; lineW = 0; }
+    chip.x = lineW > 0 ? lineW + chipGap : 0;
+    chip.y = lineY;
+    lineW = chip.x + w;
+    row.addChild(chip);
+  }
   row.x = x; row.y = y;
-  if (row.width > maxW) row.scale.set(maxW / row.width);
+  row.scale.set(best.scale);
   target.addChild(row);
 }
 
@@ -212,7 +254,10 @@ export function drawCardTile(
 
   const stats = cardStats(card);
   if (stats) {
-    drawStatChips(stats, textX, y + Math.round(h * 0.60), infoW - pad * 2, Math.round(h * 0.15), target);
+    const statsY = Math.round(h * 0.60);
+    // Height budget: from the row's top edge down to the panel's bottom padding — the row wraps
+    // onto a second line in portrait, and without a ceiling the third line would spill out of the tile.
+    drawStatChips(stats, textX, y + statsY, infoW - pad * 2, Math.round(h * 0.94) - statsY, Math.round(h * 0.15), target);
   }
   return face;
 }

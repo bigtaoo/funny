@@ -62,6 +62,16 @@ describe('CardCodexScene — locked/unlocked card compendium', () => {
     expect(countText(scene.container, lenaHp)).toBeGreaterThan(0);
   });
 
+  // 2026-08-27 (user feedback on a codex screenshot): the stat row used to be half icons and half
+  // words — `hp`/`atk` drew their icon only, `range` (no icon art) drew its name only. Every chip now
+  // spells its stat out, so the icons read as a cue on top of the name rather than as the name itself.
+  it('spells out every stat chip in words, not only the one whose icon art is missing', () => {
+    const scene = new CardCodexScene(createLayout(1920, 1080), new InputManager(), baseCb(['lena', 'max']));
+    for (const key of ['collection.stat.hp', 'collection.stat.atk', 'collection.stat.range']) {
+      expect(countText(scene.container, t(key as never))).toBeGreaterThan(0);
+    }
+  });
+
   it('never locks buildings/spells regardless of owned unit types', () => {
     const totalDistinctNames = new Set(CARD_DEFINITIONS.map((c) => c.nameKey)).size;
     const scene = new CardCodexScene(createLayout(1920, 1080), new InputManager(), baseCb([])); // owns no characters at all

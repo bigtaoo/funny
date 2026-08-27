@@ -417,3 +417,21 @@
 
 **像素证据**：`web-e2e` + Playwright（浏览器面板不合成，走 stub 挂载法：`views.showCardRoster(cb)` / `views.showShop(cb)` 直接开场景，无后端无登录）。衣柜页头读「Skins」+ 皮肤图标、右上角只剩金币；商店充值页读「Top Up」+ 金币图标。
 
+
+## 28. 收集册属性行：图标不再当标签用 + 竖屏改折行（2026-08-27）
+
+**症状**（用户圈图，横屏中文）：收集册卡片右侧那行属性 `♡ 60　⚔ 12　射程 1` 三个词条**三种读法**——生命只有一个心形图标、攻击只有一个匕首图标、射程只有两个字没有图标。图标在这里被当成了标签本身，于是「哪个是生命哪个是攻击」得先学一遍；而射程反过来又证明了这一行本来就有地方写字。
+
+**根因**：`CardCodexScene/tile.ts` 的 `drawStatChips()` 里是一个二选一分支——`s.icon ? 画图标 : 画文字标签`。`cardStats()` 给 `hp`/`atk` 填了 `IconKind`，`range` 填 `null`（`range` 这个 kind 从来没有美术，批次 7 清零矢量画法时它就不在表里）。所以不是漏了一个图标，是**排版规则**把「有没有图标」和「要不要写名字」绑成了一件事。
+
+**修法**：
+- **每个 chip 一律写全名**（`[图标] 生命 60`），图标降级成名字之上的冗余提示。`range` 这类还没有美术的词条自然退化成 `射程 1`，跟别的 chip 同构，不再是特例。
+- **竖屏改折行，不再整行缩放**。写全名让这行宽了约三分之一，而竖屏信息面板窄，原来的 `row.scale.set(maxW / row.width)` 会把字压到名字那行的一半大小（实测缩放系数 0.60）。改成：每个 chip 先各自组装成一个不可拆的容器，然后在 1..N 行里挑**拟合系数最大**的那个行数（同时受面板宽度和「行顶到卡片底部」的高度预算约束），横屏仍是一行满字号，竖屏两行、字号几乎不缩。高度预算是新加的入参 `maxH`——没有它时三行会直接溢出卡片下边框（实拍见过）。
+
+**射程等词条的图标缺口另开了一批**：全库词条盘点 + 出图 prompt 见 [`design/product/tab-icon-art-prompts-batch8.md`](../product/tab-icon-art-prompts-batch8.md)（`range`/`siege`/`crit`/`critmult` 四张，出图后只需把 `cardStats()` 里的 `icon: null` 换成 kind、`affixIconKind()` 加三行）。**本次不画占位图标**：一个看不懂的图标比没有图标更糟，而名字已经在那儿了。
+
+**回归测试**：`client/test/ui/cardCodexScene.ui.ts` 新增 1 例——三个词条的**名字**都必须出现在树里（此前只断言过数值）。红绿对照：回退 `drawStatChips` 的改动后该例红。既有 18 例（含竖屏宽度/卡名裁切那组几何断言）全绿。
+
+**像素证据**：`web-e2e` + Playwright stub 挂载（`views.showCardCodex(cb)`，无后端无登录），中英各一组、横屏 1280×720 + 竖屏 390×844 各一张。横屏与改动前逐字同位（只多了三个词），竖屏两行且落在卡片内。
+
+- **涉及文件**：`client/src/scenes/CardCodexScene/tile.ts`（`drawStatChips` 重写 + `drawCardTile` 传高度预算）、`client/test/ui/cardCodexScene.ui.ts`。
