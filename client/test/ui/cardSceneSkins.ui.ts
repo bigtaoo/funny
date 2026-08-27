@@ -263,3 +263,80 @@ describe('CardScene — header title follows the active tab', () => {
     scene.destroy();
   });
 });
+
+// Regression coverage for the 2026-08-27 report: "the Skins tab is blank when first opened; switch
+// away and back and it shows". Both tabs shared one `core.scrollY`, and renderSkinsTab drew (and
+// draw-culled) its cards BEFORE clamping that offset to the wardrobe's own much shorter extent — so
+// arriving from a scrolled roster culled all 6 cards off-screen and painted an empty page. The next
+// render() saw the clamped value and drew normally, which is exactly why a round trip "fixed" it.
+describe('CardScene — wardrobe first paint after a scrolled roster', () => {
+  function buildScene(): { scene: CardScene; core: { scrollY: number; maxScroll: number; render(): void } } {
+    const save = makeNewSave();
+    save.cardInv = {};
+    // Enough cards that the roster grid genuinely overflows a 1080-tall viewport and can hold a
+    // scroll offset far past anything the 6-card wardrobe can.
+    for (let i = 0; i < 60; i++) {
+      save.cardInv[`c${i}`] = { id: `c${i}`, defId: 'max', level: 3, gear: {}, locked: false };
+    }
+    const cb: CardCallbacks = {
+      onBack() {},
+      getSave: () => save,
+      fuseCards: async () => ({ ok: true }),
+      fuseCardsBatch: async () => ({ ok: true, completed: 0 }),
+      setCardLock: async () => ({ ok: true }),
+      getOwnedSkins: () => ['skin_e1'],
+      getEquippedSkin: () => null,
+      equipSkin: () => {},
+    };
+    const scene = new CardScene(createLayout(1920, 1080), new InputManager(), cb);
+    const core = (scene as unknown as {
+      core: { scrollY: number; maxScroll: number; render(): void };
+    }).core;
+    return { scene, core };
+  }
+
+  it('draws the wardrobe on the first paint after the roster was scrolled', () => {
+    const { scene, core } = buildScene();
+    // Park the roster at its bottom — renderList clamps this to the grid's real maxScroll, so the
+    // offset the wardrobe then inherits is a genuine one, not a synthetic out-of-range number.
+    core.scrollY = 1e6;
+    core.render();
+    expect(core.scrollY).toBeGreaterThan(0);
+
+    tap(scene, t('roster.tab.skins'));
+    expect(findLabelPos(scene.container, skinDisplayName('skin_e1'))).not.toBeNull();
+    scene.destroy();
+  });
+
+  it('keeps a per-tab scroll offset: the wardrobe opens at the top, the roster comes back where it was', () => {
+    const { scene, core } = buildScene();
+    core.scrollY = 1e6;
+    core.render();
+    const rosterScroll = core.scrollY;
+
+    tap(scene, t('roster.tab.skins'));
+    expect(core.scrollY).toBe(0); // the wardrobe is its own list; it starts at its own top
+
+    tap(scene, t('roster.title'));
+    expect(core.scrollY).toBe(rosterScroll);
+    scene.destroy();
+  });
+
+  it('showTab() — the EquipmentScene-overlay path onto the same tab state — behaves identically', () => {
+    const { scene, core } = buildScene();
+    core.scrollY = 1e6;
+    core.render();
+    const rosterScroll = core.scrollY;
+
+    scene.showTab('skins');
+    expect(core.scrollY).toBe(0);
+    expect(findLabelPos(scene.container, skinDisplayName('skin_e1'))).not.toBeNull();
+
+    scene.showTab('skins'); // idempotent — must not throw the parked offset away
+    expect(core.scrollY).toBe(0);
+
+    scene.showTab('list');
+    expect(core.scrollY).toBe(rosterScroll);
+    scene.destroy();
+  });
+});

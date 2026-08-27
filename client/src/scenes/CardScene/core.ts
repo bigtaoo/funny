@@ -28,19 +28,17 @@
 import * as PIXI from 'pixi.js-legacy';
 import type { ILayout } from '../../layout/ILayout';
 import type { InputManager } from '../../inputSystem/InputManager';
-import { t } from '../../i18n';
 import {
   ui as C, scaledTxt, buildPaperBackground, tearDownChildren,
 } from '../../render/sketchUi';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { getArtTexture, containScale } from '../../render/cardArt';
-import { drawSceneHeader, sceneHeaderHeight, headerCurrencyWidth, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker } from '../../ui/busyTracker';
 import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { subscribeInput, unsubscribeInput } from './input';
-import { CARD_INV_CAP, CARD_INV_OVERFLOW_BUFFER } from '../../game/meta/cardDefs';
+import { renderCardHeader } from './header';
 
 export type {
   CardActionResult, CardBatchResult, CardSceneTab, CardCallbacks, CardRosterView, Rect, Hit,
@@ -79,7 +77,7 @@ export class CardSceneCore {
   loadingLayer!: PIXI.Container;
   /**
    * The title bar itself, in its own layer because the title belongs to the active tab and so has
-   * to be redrawn on every render() — see {@link renderHeader}.
+   * to be redrawn on every render() — see ./header.ts's renderCardHeader.
    */
   headerLayer!: PIXI.Container;
   /** Drawn after the static header chrome so the coin balance + capacity readout sit on the same row as the title (matches EquipmentScene, EQUIPMENT_DESIGN header-alignment fix). */
@@ -145,8 +143,29 @@ export class CardSceneCore {
   scrollRedraw: (() => void) | null = null;
   /** [Cards|Equipment?|Skins] sidebar nav — always shown (Skins is always reachable, LOBBY_IA_REDESIGN §15). */
   private readonly showSidebar = true;
-  /** Active content tab: the card grid, or the skins wardrobe. */
+  /** Active content tab: the card grid, or the skins wardrobe. Switch it via {@link setTab}. */
   tab: CardSceneTab = 'list';
+  /**
+   * Per-tab scroll memory (2026-08-27). The roster grid and the wardrobe are different content
+   * lists with very different extents, and they share one {@link scrollY} — so a tab switch used to
+   * carry the roster's offset straight into the wardrobe, where it scrolled all 6 cards out of
+   * view. Each tab parks its own offset here on the way out and gets it back on the way in.
+   */
+  private readonly scrollByTab: Record<CardSceneTab, number> = { list: 0, skins: 0 };
+
+  /**
+   * Move to another content tab, swapping in that tab's own scroll offset (see {@link scrollByTab}).
+   * Returns false when already on `tab`, so a redundant switch can't park/reset anything — callers
+   * use that to skip the render too. Does NOT render: the caller does, since only the assembly owns
+   * render() (see this file's header comment).
+   */
+  setTab(tab: CardSceneTab): boolean {
+    if (this.tab === tab) return false;
+    this.scrollByTab[this.tab] = this.scrollY;
+    this.tab = tab;
+    this.scrollY = this.scrollByTab[tab];
+    return true;
+  }
   /** Detail modal portrait flip state (front = art, back = lore) — tap the portrait to flip. */
   detailFlipped = false;
   /** Detail modal: whether the skin picker popover is open. */
@@ -315,60 +334,10 @@ export class CardSceneCore {
 
     this.headerLayer = new PIXI.Container();
     this.container.addChild(this.headerLayer);
-    this.renderHeader();
+    renderCardHeader(this);
 
     this.headerOverlayLayer = new PIXI.Container();
     this.container.addChild(this.headerOverlayLayer);
-  }
-
-  /**
-   * Title bar for the tab that is on screen. Drawn per render(), not once in build(): the header
-   * used to be part of the one-shot layer scaffold, so switching to the wardrobe left "Hero Roster"
-   * (and the roster glyph) sitting above a page of skins (2026-08-26). Same shape as FriendsScene's
-   * drawHeader — title + glyph both keyed off the active tab.
-   */
-  renderHeader(): void {
-    const { w, h } = this;
-    tearDownChildren(this.headerLayer);
-    const skins = this.tab === 'skins';
-    // The title band has to know how wide the coin/capacity cluster ListPanel.renderHeaderCurrency()
-    // draws on top of it: the old fixed 20%-of-width guess was ~7 points short of the real cluster on
-    // a 430pt portrait viewport, so the centred "Hero Roster" ran straight under the coin number
-    // (2026-08-24). Measured from the same spec the draw call uses.
-    const spec = this.headerCurrencySpec();
-    const hdr = drawSceneHeader(this.headerLayer, w, h, t(skins ? 'roster.tab.skins' : 'roster.title'), {
-      variant: 'paper', accent: HEADER_ACCENT.spend, icon: skins ? 'skinIcon' : 'rosterIcon',
-      rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), spec.coins, [], spec.capacity, spec.scale),
-    });
-    this.backRect = hdr.backRect;
-    this.headerH = hdr.headerH;
-    this.titleRight = hdr.titleRight;
-  }
-
-  /**
-   * Inputs for the header's coin + capacity cluster, in one place because two callers need the same
-   * answer: renderHeader() measures it to size the title band, ListPanel.renderHeaderCurrency()
-   * draws it. Splitting the expression between them is exactly how the reserve and the cluster
-   * drift apart.
-   *
-   * The capacity readout counts CARDS, so it belongs to the roster grid only — on the wardrobe it
-   * was a card count sitting over a page of skins (2026-08-26, same report as the stale title).
-   */
-  headerCurrencySpec(): { coins: number; capacity?: { text: string; color: number }; scale: number } {
-    const save = this.cb.getSave();
-    const count = Object.keys(save.cardInv ?? {}).length;
-    const warn = count >= CARD_INV_CAP - CARD_INV_OVERFLOW_BUFFER;
-    const full = count >= CARD_INV_CAP;
-    return {
-      coins: save.wallet.coins,
-      capacity: this.tab === 'skins' ? undefined : {
-        text: t('roster.capacity').replace('{cur}', String(count)).replace('{cap}', String(CARD_INV_CAP)),
-        color: full ? C.red : warn ? C.gold : C.mid,
-      },
-      // Keep the readout at a compact absolute size (matches EquipmentScene, its [Cards|Equipment]
-      // peer) rather than scaling it up with the taller unified header.
-      scale: 100 / sceneHeaderHeight(this.h),
-    };
   }
 
   /**

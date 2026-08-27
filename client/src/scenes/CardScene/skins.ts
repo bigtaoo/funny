@@ -61,14 +61,21 @@ export class SkinsPanel {
     // full or skipped entirely, never cropped, so the cull/clamp/indicator use the naive `availH`
     // rather than a peekViewportH-shrunk value (that shrink is for masked grids; here it would just
     // exclude a card that'd otherwise render in full, see the roster-grid fix in list.ts).
+    //
+    // Packed in a measure-only pass first, then drawn — the clamp below has to land BEFORE anything
+    // is culled against scrollY. It used to run after the draw loop, so a scrollY carried in from
+    // somewhere with a taller extent (a scrolled roster, pre-2026-08-27 tab switch; a resize that
+    // shrinks the grid) culled every card and painted a blank page, correcting itself only on the
+    // NEXT render — which is exactly the "blank until you switch tabs and come back" report.
     const colY = new Array(cols).fill(listY + CELL_GAP);
-
+    const placed: Array<{ def: CardDef; x: number; y: number; h: number }> = [];
     for (const def of defs) {
       const col = colY.indexOf(Math.min(...colY));
       const x = left + col * (cellW + CELL_GAP);
       const y = colY[col];
-      const cardH = this.renderSkinCard(def, x, y, cellW, owned, listY, availH);
-      colY[col] = y + cardH + CELL_GAP;
+      const h = this.measureSkinCard(def, cellW, owned);
+      placed.push({ def, x, y, h });
+      colY[col] = y + h + CELL_GAP;
     }
 
     const totalH = Math.max(...colY) - listY;
@@ -77,39 +84,62 @@ export class SkinsPanel {
     core.scrollRegionTop = listY;
     core.scrollRegionBottom = listY + availH;
     core.maxScroll = maxScroll;
+
+    for (const p of placed) this.renderSkinCard(p.def, p.x, p.y, cellW, p.h, owned, listY, availH);
     drawScrollIndicator(core.bodyLayer, { x: left, y: listY, w: avail, h: availH }, core.scrollY, maxScroll);
   }
 
-  /** One character's wardrobe card: portrait + name on the left header, skin tiles wrapped to the right. Returns the card's height. */
-  private renderSkinCard(
-    def: CardDef,
-    x: number,
-    yUnscrolled: number,
-    cardW: number,
-    owned: string[],
-    viewTop: number,
-    viewH: number,
-  ): number {
-    const core = this.core;
+  /**
+   * One character's wardrobe-card geometry, without drawing any of it: the tile list, the tile-grid
+   * wrap and the resulting card height. Split out of renderSkinCard so the masonry can be packed
+   * (and scrollY clamped to the real extent) before the first card is drawn — see renderSkinsTab.
+   */
+  private measureSkinCard(def: CardDef, cardW: number, owned: string[]): number {
+    return this.cardMetrics(def, cardW, owned).cardH;
+  }
+
+  private cardMetrics(def: CardDef, cardW: number, owned: string[]): {
+    tiles: Array<{ id: string | null; label: string }>;
+    portraitW: number;
+    tileAreaW: number;
+    tilesPerRow: number;
+    cardH: number;
+  } {
     const unitType = def.unitType as UnitType;
-    const equipped = core.cb.getEquippedSkin(unitType);
     const skins = skinsForUnitType(unitType, owned);
     const tiles: Array<{ id: string | null; label: string }> = [
       { id: null, label: t('collection.default') },
       ...skins.map((id) => ({ id, label: skinDisplayName(id) })),
     ];
-
     const portraitW = Math.round(PORTRAIT_MAX_H * PORTRAIT_RATIO);
-    const tileAreaX = x + CARD_PAD + portraitW + PORTRAIT_TILE_GAP;
     const tileAreaW = cardW - CARD_PAD * 2 - portraitW - PORTRAIT_TILE_GAP;
     const tilesPerRow = Math.max(1, Math.floor((tileAreaW + TILE_GAP) / (TILE_W + TILE_GAP)));
     const rows = Math.ceil(tiles.length / tilesPerRow);
     const tileAreaH = rows * (TILE_H + TILE_GAP) - TILE_GAP;
     const cardH = Math.max(PORTRAIT_MAX_H, HEADER_H + tileAreaH) + CARD_PAD * 2;
+    return { tiles, portraitW, tileAreaW, tilesPerRow, cardH };
+  }
+
+  /** One character's wardrobe card: portrait + name on the left header, skin tiles wrapped to the right. */
+  private renderSkinCard(
+    def: CardDef,
+    x: number,
+    yUnscrolled: number,
+    cardW: number,
+    cardH: number,
+    owned: string[],
+    viewTop: number,
+    viewH: number,
+  ): void {
+    const core = this.core;
+    const unitType = def.unitType as UnitType;
+    const equipped = core.cb.getEquippedSkin(unitType);
+    const { tiles, portraitW, tileAreaW, tilesPerRow } = this.cardMetrics(def, cardW, owned);
+    const tileAreaX = x + CARD_PAD + portraitW + PORTRAIT_TILE_GAP;
 
     const y = yUnscrolled - core.scrollY;
     // Skip drawing entirely when scrolled fully off-screen — same "no mask, just skip" pattern as renderList.
-    if (y + cardH < viewTop || y > viewTop + viewH) return cardH;
+    if (y + cardH < viewTop || y > viewTop + viewH) return;
 
     const card = sketchPanel(cardW, cardH, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cardW) });
     card.x = x; card.y = y;
@@ -150,8 +180,6 @@ export class SkinsPanel {
         unitType,
       );
     });
-
-    return cardH;
   }
 
   private renderSkinTile(

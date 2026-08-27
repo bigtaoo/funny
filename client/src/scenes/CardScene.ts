@@ -24,6 +24,7 @@ import { t } from '../i18n';
 import { tearDownChildren, drawLoadingOverlay } from '../render/sketchUi';
 import { preloadIconArt } from '../render/icons';
 import { CardSceneCore } from './CardScene/core';
+import { renderCardHeader } from './CardScene/header';
 import type { CardCallbacks } from './CardScene/core';
 import { ListPanel } from './CardScene/list';
 import { SkinsPanel } from './CardScene/skins';
@@ -98,11 +99,13 @@ export class CardScene implements Scene {
    */
   showTab(tab: CardSceneTab): void {
     const core = this.core;
-    if (core.destroyed || core.tab === tab) return;
-    core.tab = tab;
-    // Deliberately just tab + render, byte-for-byte what the in-scene rail's own handler does
-    // (ListPanel.renderSidebar's onSelect) — including leaving scrollY and detailId alone, so
-    // arriving from the overlay's rail behaves exactly like tapping the rail here would have.
+    if (core.destroyed) return;
+    // Deliberately just setTab + render, byte-for-byte what the in-scene rail's own handler does
+    // (ListPanel.renderSidebar's onSelect) — including leaving detailId alone, so arriving from the
+    // overlay's rail behaves exactly like tapping the rail here would have. setTab is also the
+    // no-op guard for a redundant call (it swaps the per-tab scroll offset, so it must not run
+    // twice for one switch).
+    if (!core.setTab(tab)) return;
     this.render();
   }
 
@@ -131,8 +134,8 @@ export class CardScene implements Scene {
     // Drop the fast-path scroll hook; whichever grid renders below re-installs its own.
     core.scrollRedraw = null;
     // Before the back hit is registered: the header owns backRect, and its title/glyph follow the
-    // active tab (core.renderHeader).
-    core.renderHeader();
+    // active tab (./CardScene/header.ts's renderCardHeader).
+    renderCardHeader(core);
     core.hitRects.push({ rect: core.backRect, action: () => core.cb.onBack() });
 
     this.list.renderHeaderCurrency();
