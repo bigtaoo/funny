@@ -4,7 +4,7 @@ import { t } from '../../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../render/sketchUi';
 import { FS } from '../../../render/fontScale';
 import { serverNow } from '../../../net/serverClock';
-import { HUD_H } from '../constants';
+import { HUD_H } from '../logic/constants';
 import type { WorldMapPanelsCore } from './core';
 
 export interface ReplayHandlers {

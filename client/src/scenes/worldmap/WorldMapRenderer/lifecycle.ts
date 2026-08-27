@@ -13,7 +13,7 @@ import { updateLoadingErase, cancelLoadingErase } from './loadingReveal';
 import { t } from '../../../i18n';
 import { tileToScreen, ISO_RATIO } from '../../../render/isoGrid';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx } from '@nw/shared';
-import { BASE_SPRITE_TILES } from '../constants';
+import { BASE_SPRITE_TILES } from '../logic/constants';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererFog } from './fog';
 import type { WorldMapRendererVignette } from './vignette';

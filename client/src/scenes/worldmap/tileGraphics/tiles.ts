@@ -6,7 +6,7 @@ import { ISO_RATIO, diamondPath, diamondVertices } from '../../../render/isoGrid
 import { getTerrainTexture, isTerrainAtlasReady } from '../../../render/atlas/terrainAtlasLoader';
 import { getBuildingTexture, isBuildingAtlasReady } from '../../../render/atlas/buildingAtlasLoader';
 import { isCityAtlasReady } from '../../../render/atlas/cityAtlasLoader';
-import { FOG_COLOR, ALLY_SECT_BORDER, SECT_BASE_TINT, ALLY_SECT_BASE_TINT, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from '../tileStyle';
+import { FOG_COLOR, ALLY_SECT_BORDER, SECT_BASE_TINT, ALLY_SECT_BASE_TINT, TERRAIN_TEX_ALPHA, TERRAIN_TEX_ALPHA_DEFAULT, TERRAIN_TEX_TINT, TERRAIN_TEX_TINT_DEFAULT, biomeGroundTint, obstacleTextureName } from '../logic/tileStyle';
 import type { TerrainTextureName } from '../../../render/atlas/terrainAtlasLoader';
 import type { WorldTileView } from '../../../net/WorldApiClient';
 import { worldSeed, obstacleShoreAt, isCityGroundTile, tileFeatureBuilding, type ProceduralTile } from '@nw/shared';

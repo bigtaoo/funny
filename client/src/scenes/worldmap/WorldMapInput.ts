@@ -1,6 +1,6 @@
 import { t } from '../../i18n';
 import { baseFootprintCells, baseFootprintInBounds, npcGarrison } from '@nw/shared';
-import { HUD_H } from './constants';
+import { HUD_H } from './logic/constants';
 import { hitTestHeaderButtons } from './WorldMapInput/headerButtons';
 import { showCityPanel, type CityPanelState } from './WorldMapInput/cityPanel';
 import type { WorldTileView } from '../../net/WorldApiClient';

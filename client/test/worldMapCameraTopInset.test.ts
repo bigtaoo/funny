@@ -19,7 +19,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { WorldMapRendererViewport } from '../src/scenes/worldmap/WorldMapRenderer/viewport';
-import { HUD_H } from '../src/scenes/worldmap/constants';
+import { HUD_H } from '../src/scenes/worldmap/logic/constants';
 import { tileToScreen } from '../src/render/isoGrid';
 import type { WorldMapContext } from '../src/scenes/worldmap/WorldMapContext';
 import type { WorldMapRendererCore } from '../src/scenes/worldmap/WorldMapRenderer/core';

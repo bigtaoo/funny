@@ -5,8 +5,10 @@
 //   L3 overview ~96×≈50 tiles, 27px/tile — batched color-block rendering, coarsest, for situational awareness
 // TILE_PX is computed dynamically from designWidth to keep visible tile counts consistent across resolutions.
 
-import * as PIXI from 'pixi.js-legacy';
-import { visibleTileBounds } from '../../render/isoGrid';
+// No PIXI import: this file is part of worldmap's PURE layer (see logic/README-less convention —
+// test/pureLayerBoundary.test.ts enforces it). `PoolSlot`, the one thing here that needed
+// PIXI.Graphics, moved to WorldMapRenderer/pool.ts, which is the file that actually owns the pool.
+import { visibleTileBounds } from '../../../render/isoGrid';
 import { HUD_H } from './constants';
 
 export interface ZoomCfg {
@@ -36,9 +38,3 @@ export function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] 
   return [mk(Math.floor(w / 11)), mk(Math.floor(w / 31)), mk(27)];
 }
 
-/** A single pooled tile object — one PIXI.Graphics reused for many map positions. */
-export interface PoolSlot {
-  g: PIXI.Graphics;
-  tx: number; // map tile currently displayed (-1 = unassigned)
-  ty: number;
-}

@@ -2,10 +2,11 @@
 // Holds every field the Renderer / Net / Input controllers read & write, so behavior is
 // preserved verbatim from the original single-class WorldMapScene.
 import * as PIXI from 'pixi.js-legacy';
-import { makeZoomCfgs } from './zoom';
-import { DEFAULT_MAP_SIZE } from './constants';
+import { makeZoomCfgs } from './logic/zoom';
+import { DEFAULT_MAP_SIZE } from './logic/constants';
 import type { ILayout } from '../../layout/ILayout';
-import type { ZoomCfg, PoolSlot } from './zoom';
+import type { ZoomCfg } from './logic/zoom';
+import type { PoolSlot } from './WorldMapRenderer/pool';
 import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView, WorldCityNodeView } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';

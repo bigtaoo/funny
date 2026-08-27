@@ -6,7 +6,7 @@ import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
-import { formatDuration } from '../worldmap/formatDuration';
+import { formatDuration } from '../worldmap/logic/formatDuration';
 import { serverNow } from '../../net/serverClock';
 import { buildIcon } from '../../render/icons';
 import type { BuildingKey } from '../../net/WorldApiClient';

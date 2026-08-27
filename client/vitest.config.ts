@@ -123,6 +123,15 @@ export default defineConfig({
         'src/scenes/EquipmentScene/layout.ts',
         'src/scenes/LobbyScene/format.ts',
         'src/scenes/realLayerInterludeArt.ts',
+        // 4b, first scene group (2026-08-27): worldmap's pure layer is now a DIRECTORY, which is the
+        // shape ADR-070 asked for — five per-file entries collapsed into one entry that also picks up
+        // whatever lands there next. `test/pureLayerBoundary.test.ts` is what keeps it a pure layer;
+        // this percentage does not (see that file's header for why the 90% bar cannot guard a boundary).
+        'src/scenes/worldmap/logic/**',
+        // ...and one file that did NOT move, on purpose: WorldMapRendererViewport is a renderer
+        // collaborator, not pure logic — it mutates `core.ctx` and calls into pool/panels/net. Its
+        // arithmetic happens to be testable with a fake ctx (95.8% before this pass), which is why it is
+        // gated at all, but moving it into `logic/` would make the boundary guard a lie.
         'src/scenes/worldmap/WorldMapRenderer/viewport.ts',
         // ui
         'src/ui/busyTracker.ts',

@@ -5,8 +5,8 @@ import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx, cityPlotMaskPoints } 
 import { getCityTextureForLevel, getCityContentTopFracForLevel, isCityAtlasReady } from '../../../render/atlas/cityAtlasLoader';
 import { getPlayerBaseTextureForLevel, getPlayerBaseContentTopFracForLevel } from '../../../render/atlas/playerBaseAtlasLoader';
 import { tileToScreen, visibleTileBounds, ISO_RATIO } from '../../../render/isoGrid';
-import { SECT_BASE_TINT, ALLY_SECT_BASE_TINT } from '../tileStyle';
-import { HUD_H, BASE_SPRITE_TILES } from '../constants';
+import { SECT_BASE_TINT, ALLY_SECT_BASE_TINT } from '../logic/tileStyle';
+import { HUD_H, BASE_SPRITE_TILES } from '../logic/constants';
 import { t } from '../../../i18n';
 import { makeText } from '../../../render/pixiText';
 import { drawShieldDome, drawShieldGlow } from './shieldFx';
