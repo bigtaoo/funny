@@ -1,6 +1,6 @@
 # 批次 8：数值词条图标补齐（射程 / 攻城值 / 暴击率 / 暴击伤害）— Prompt 文档
 
-> 创建：2026-08-27 · 判断 + prompt：**已定稿** · 出图：**待出**（本文档就是出图输入）
+> 创建：2026-08-27 · 判断 + prompt：**已定稿** · v1 出图：**2 过 2 打回**（`crit`/`siege` 过；`range` 4.24:1 缩成发丝、`critmult` 读成船舵）· v2 prompt 见文末 · 接线：**四张齐了再一起接**
 > 前七批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（批 1–4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页，3 张）· [`tab-icon-art-prompts-batch7.md`](tab-icon-art-prompts-batch7.md)（矢量清零，44 张）
 > 配套代码：[`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（本批落地处，同批次 7）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) · 调用点见文末「出图后的接线清单」
 > 相关代码改动（**已落地，不等图**）：收集册属性行每个词条都写全名，见 [`LOBBY_IA_REDESIGN_LOG.md §28`](../game/LOBBY_IA_REDESIGN_LOG.md)
@@ -96,3 +96,64 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 - 装备详情弹窗（`views.showEquipment`）：`crit`/`critmult` 必须在一屏里同时出现且**一眼分得开**，`siege` 要跟 `castle`（大厅首页/CityScene 会同屏）不打架。
 
 **这四张的特殊验收点**：`crit` / `critmult` 是本批唯一的家族对，按沙漏三档那次的教训——**并排看，不要单张看**；单张各自都过、并排分不开，是这类家族图最常见的失败方式。
+
+## v1 出图结果（2026-08-27）：2 张过、2 张打回
+
+四张一次出齐。验收方式不是看原图——原图 1920×1920 全都好看——而是**把 pack 管线跑一遍再看 28px**：`alpha = 255 - luminance` → 按内容裁边 → 长边归一到 128（`thicken=1`，一次 dilate）→ 运行时 contain-fit 进 28×28 方格，纸底 `C.mid` / 深底白墨两种衬底，并排放已上线的 `hp`/`atk`/`spd`/`castle` 做参照。
+
+| kind | 内容长宽比 | 28px 实际占格 | 结论 |
+|---|---|---|---|
+| `crit` | 0.99:1 | 28×28 | **过**（见下保留意见） |
+| `siege` | 1.16:1 | 28×24 | **过，但偏弱**（第二弱，记录在案不重出） |
+| `range` | **4.24:1** | **28×7** | **打回**——构图问题，不是造型问题 |
+| `critmult` | 0.99:1 | 28×28 | **打回**——读成船舵 |
+
+### `range`：又踩了一次 `brush` 的 4.74:1
+
+量距线画得很漂亮，但两端只有两道**短**竖线，于是整张图的内容外框是 1735×409。长边归一 → 母版 128×32 → contain-fit 进 28px 方格只剩 **28×7**：旁边 `hp` 是 28×26 的心，这条线在同一行里就是一根发丝。
+
+这正是批次 7 `brush` 那条教训的第二次现场（当时 4.74:1，这次 4.24:1），而且**prompt 里没写这条约束**——batch 7 的结论「新图外轮廓长宽比尽量别超过 2:1」当时只落在 art-direction-map-ui.md 的叙述里，没进本文档的 prompt 骨架。v2 prompt 补上，并且不靠模型自觉：直接把构图写死（两端改成**贯穿全高**的竖杆）。
+
+### `critmult`：8 根等长等距、且贴着外环的迸溅线 = 船舵
+
+单看 1920px 原图是「靶心 + 迸溅」，缩到 28px 之后放射线和外环连成一体，读出来是**船舵/方向盘**（同一类失败已经在批次 3 的 `socialTabIcon` 上发生过一次：经纬线画直了就读成准星）。要修的是三件事：根数减到 5–6、跟外环之间留出**明显空隙**、长度和角度**不要均匀**。
+
+顺带两条保留意见：
+
+- **两张靶子不是同一只**。`crit` 是三道细环 + 大留白，`critmult` 的环更粗、间距更挤——现在还能靠迸溅线分开，所以没到打回 `crit` 的程度，但**重出 `critmult` 时必须把 `crit` 一起重出**（同一次请求），否则家族感只会更差。本文档造型表里那句「建议和 3 在同一次请求里一起出」这次没有执行。
+- **两张里的箭都在 28px 上消失了**，只剩中心一个灰点。当前 `crit` 因此实际读成「靶心」而不是「命中靶心」——语义上仍然成立（暴击率 = 打中要害的概率），所以不为它单独打回；但既然要重出这一对，v2 就把箭头改成**一个大的实心三角**、去掉细箭杆（批次 7 的老结论：28px 上活下来的是实心块，死掉的是细节）。
+
+### `siege`：可用，弱在顶部那个缺口
+
+28px 上读得出「一块被劈开的墙」，也没跟 `castle` 撞（那张有城垛+小旗+拱门）。弱点是顶部两块缺砖画成了一个又大又对称的 V 形凹槽，第一眼有点像「豁口的盒子」；砖缝三道横线在 28px 上也接近糊成一条。**记录在案不重出**——真要重出的话，改法是：缺口做成一大一小、位置不对称，砖缝减到两道。
+
+### 资产落位
+
+- `art/ui/tabicons/tabicon_crit.webp`、`tabicon_siege.webp`（原始生成文件名已按 kind 名归位）
+- `_rejected/tabicon_range_v1_sliver28x7.webp`、`_rejected/tabicon_critmult_v1_shipswheel.webp`
+
+**这一批还没有接线**：`range` 是收集册那一行的正主（用户最初圈的就是它），`critmult` 又必须和 `crit` 成对上线，所以两张打回的重出回来之前，四张一起等——避免出现「装备详情里有暴击率图标、暴击伤害没有」这种半套状态。
+
+## 重出 prompt（v2，2026-08-27）
+
+### 1 射程（`tabicon_range`）— 重构图，造型不变
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a distance-measuring dimension line drawn between two tall vertical posts — the left and right posts are bold vertical strokes running the FULL height of the image, and the horizontal gap between them is about the same as their height, so the whole drawing fills a roughly SQUARE frame; midway up, one straight horizontal line spans the gap with a large solid arrowhead at each end pointing outward at the posts. The overall outline must be roughly square — never a wide thin strip. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a wide flat composition, short end ticks, two arrows pointing the same direction, chevrons, a bow, an arrow in flight, a target or bullseye, crosshairs, ruler tick marks or graduations, a dotted or dashed line, a goal or gate with a crossbar on top, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 2 暴击率 + 暴击伤害（`tabicon_crit` / `tabicon_critmult`）— **必须同一次请求出两张**
+
+> 两张的靶子和箭要逐笔相同，唯一差别是第二张多一圈迸溅线。先出第一张，第二张在它之上加线。
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a round archery target seen face-on — exactly three plain concentric circles, evenly spaced, with a wide open center — and one large solid black triangular arrowhead planted dead in the middle, big enough to fill the innermost circle, with no shaft and no fletching. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a thin arrow shaft, fletching, a small or hollow arrowhead, a magnifying glass with a handle, crosshair lines crossing the rings, a spiral, a star, a bow, a dagger, any lines outside the outer ring, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: the SAME round archery target as the previous image — exactly three plain concentric circles with a large solid black triangular arrowhead planted dead in the middle, no shaft — and, outside the outer ring, five or six short thick impact strokes bursting outward. Each impact stroke starts a clear gap away from the outer ring and never touches it; they differ in length and are unevenly spaced around the ring, clustered rather than symmetric. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a ship's wheel or steering wheel, spokes touching or crossing the rings, evenly spaced rays, eight or more rays, a sun with rays, a gear or cog, thin hairline rays, a starburst or explosion cloud, a thin arrow shaft or fletching, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### v2 的验收口径（不要只看原图）
+
+跑一遍 pack 管线再看 28px——这四张里有两张是**只有在 28px 才暴露**的问题（一张是归一化后只剩 7px 高，一张是缩小后放射线和环连成一体）。具体要过的三关：①内容外框长宽比 ≤ 2:1（`range` 上一版 4.24:1）；②28px 纸底 + 深底两种衬底；③`crit`/`critmult` **并排**看，不并排看等于没验收。
