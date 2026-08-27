@@ -134,6 +134,26 @@ export default defineConfig({
         // header.ts draws), i.e. the same call ADR-071 4b made for WorldMapRenderer/viewport.ts.
         // Neither is gated per-file either — unlike viewport.ts they have no fake-ctx suite to gate.
         'src/scenes/CardScene/logic/**',
+        // 4b, groups THREE and FOUR (2026-08-27): FriendsScene/FamilyScene/SectScene and ui/dialogs
+        // get NO logic/ directory, and that is the finding rather than a shortcut. Measured with the
+        // pureLayerBoundary algorithm over every file in all four: `ui/dialogs` has ZERO PIXI-free
+        // modules (all 7 import pixi.js-legacy directly and call txt/sketchPanel — it is drawing code
+        // wall to wall), and in the three social scenes the only PIXI-free files are two type-only
+        // `types.ts` (below this list's ~10-executable-line floor) plus the pointer/input modules,
+        // which are Core collaborators, not pure logic. 4b's priority list was built from lines x bug
+        // frequency, which says nothing about whether a pure layer EXISTS to extract; worldmap and
+        // CardScene had one because earlier 500-line splits had already produced it, and these two
+        // groups' splits went along a different axis. See ADR-071's 4b progress entry.
+        //
+        // What the survey did find worth fixing: these two carry the tap-vs-drag routing, the modal
+        // interception order and the per-column scroll clamp for two whole scenes — 140 and 136 lines,
+        // three documented past bugs between them — with no direct test of ANY kind (test/ui's
+        // socialScrollTranslate.ui.ts drives FriendsScene, a different file). Gated per-file with a
+        // fake-core suite, exactly the treatment WorldMapRenderer/viewport.ts got, and for the same
+        // reason: testable arithmetic on a collaborator, so gate it where it lives instead of moving it
+        // somewhere that would make the boundary guard a lie.
+        'src/scenes/FamilyScene/pointer.ts',
+        'src/scenes/SectScene/pointer.ts',
         // ...and one file that did NOT move, on purpose: WorldMapRendererViewport is a renderer
         // collaborator, not pure logic — it mutates `core.ctx` and calls into pool/panels/net. Its
         // arithmetic happens to be testable with a fake ctx (95.8% before this pass), which is why it is

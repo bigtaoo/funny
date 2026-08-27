@@ -8,7 +8,13 @@
 // tools when they graduated: map-editor had 13 lines of slack, level-editor 10. That is the whole reason
 // every graduating package needs a copy of this file rather than trusting its percentage.
 //
-// What "pure" means here, operationally: **no runtime import may reach a module that touches a global.**
+// What "pure" means here, operationally, has TWO halves, and the second was missing until 2026-08-27:
+// **(a) no runtime import may reach a module that touches a global, and (b) the file may not touch one
+// itself.** (a) alone is a hole you can drive through — a module needs no imports at all to call
+// `document.createElement`, and the motivating example was real: `SectScene/input.ts` builds hidden DOM
+// `<input>` overlays and imports nothing but `@nw/shared` plus a type, so the import-graph check alone
+// called it pure. It is not, and dropping it into a gated directory would have made this guard a lie in
+// exactly the way it exists to prevent. See the browser-globals case below.
 // Type-only imports are exempt — they are erased before the bundle exists, so a `import type { Foo } from
 // '../pixiThing'` costs nothing and is genuinely common in these files. The check therefore parses import
 // forms rather than grepping for the word "pixi": a `import type` of pixi is fine, a bare `import * as
@@ -44,6 +50,52 @@ const ALLOWED_PACKAGES = new Set([
   // constants) — plain data, no global, same standing as '@nw/engine' itself, which is already here.
   '@nw/engine/config',
 ]);
+
+/**
+ * Runtime globals whose presence means the file needs a browser (or WeChat) to run — the (b) half of
+ * "pure" above. Deliberately NOT a list of everything ambient: `setTimeout`, `performance` and
+ * `console` all exist in node too, so a pure module using them still loads and still tests, and
+ * banning them would buy noise instead of safety. `Math.random`/`Date.now` are nondeterminism rather
+ * than environment dependence — a different problem, handled per-test where it matters (see
+ * worldmapZoom.test.ts). What is listed is what makes a module unloadable or untestable off a page.
+ */
+const BROWSER_GLOBALS = [
+  'document', 'window', 'navigator', 'localStorage', 'sessionStorage', 'location', 'history',
+  'fetch', 'XMLHttpRequest', 'WebSocket', 'requestAnimationFrame', 'cancelAnimationFrame',
+  'Image', 'Audio', 'alert', 'wx',
+] as const;
+
+/**
+ * Source with comments and string/template literals blanked out, so a global's NAME appearing in prose
+ * ("...the document is torn down...") or in a message string does not fail the check. Blanks rather
+ * than deletes, to keep byte offsets — and therefore reported line numbers — honest.
+ */
+function stripCommentsAndStrings(src: string): string {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i]!;
+    const c2 = src.slice(i, i + 2);
+    if (c2 === '//') {
+      while (i < n && src[i] !== '\n') { out += ' '; i++; }
+    } else if (c2 === '/*') {
+      while (i < n && src.slice(i, i + 2) !== '*/') { out += src[i] === '\n' ? '\n' : ' '; i++; }
+      out += '  '; i += 2;
+    } else if (c === '"' || c === "'" || c === '`') {
+      const quote = c;
+      out += ' '; i++;
+      while (i < n && src[i] !== quote) {
+        if (src[i] === '\\') { out += '  '; i += 2; continue; }
+        out += src[i] === '\n' ? '\n' : ' '; i++;
+      }
+      out += ' '; i++;
+    } else {
+      out += c; i++;
+    }
+  }
+  return out;
+}
 
 /** Every .ts file under `dir`, recursively, repo-relative with forward slashes. */
 function walk(dir: string): string[] {
@@ -141,6 +193,39 @@ describe('pure-layer boundary', () => {
     expect(
       offences,
       'a gated pure directory must stay pure — the 90% bar has headroom and cannot catch this:\n  ' + offences.join('\n  '),
+    ).toEqual([]);
+  });
+
+  it('no pure module touches a browser/WeChat global DIRECTLY (the half the import graph cannot see)', () => {
+    // The check above walks imports, and a file needs no import at all to reach `document`. Verified
+    // by mutation when this was added: appending `export const probe = () => document.title;` to a
+    // gated file passed every other case in this file and failed only this one.
+    const offences: string[] = [];
+    for (const dir of PURE_DIRS) {
+      for (const file of walk(dir)) {
+        const code = stripCommentsAndStrings(readFileSync(join(CLIENT_ROOT, file), 'utf8'));
+        for (const g of BROWSER_GLOBALS) {
+          // Two exclusions, both marking a PROPERTY position rather than a global read:
+          //  * a leading dot — `core.window`, `opts.location` is somebody else's field;
+          //  * a trailing colon — `{ location: string }` in a type, or an object-literal KEY.
+          //    `location`/`history`/`document` are ordinary field names, so without this the guard
+          //    fires on a plain interface. A real read never has a colon after it (`document.title`,
+          //    `typeof window`, `{ window }` shorthand — all still caught, mutation-verified).
+          // Residual over-reporting, accepted deliberately per this file's header: destructuring a
+          // field that shares a global's name (`const { location } = props`) still fires. If that ever
+          // bites, rename the local — the alternative is a parser dependency, and under-reporting is
+          // the failure mode that actually costs something here.
+          const re = new RegExp(`(^|[^.\\w$])${g}(?![\\w$])(?!\\s*:)`, 'm');
+          const m = re.exec(code);
+          if (!m) continue;
+          const line = code.slice(0, m.index).split('\n').length;
+          offences.push(`${file}:${line} touches the global \`${g}\``);
+        }
+      }
+    }
+    expect(
+      offences,
+      'a gated pure directory must not need a browser to run:\n  ' + offences.join('\n  '),
     ).toEqual([]);
   });
 
