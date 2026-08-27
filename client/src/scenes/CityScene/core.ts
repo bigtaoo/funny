@@ -76,7 +76,7 @@ export interface CitySceneCallbacks {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-export { RES_COLORS, bldAccentColor } from './icons';
+export { RES_COLORS, bldAccentColor, chipped, producerResource } from './icons';
 
 // Card-grid sizing — matches the CardScene/Skins wardrobe language (dynamic
 // column count from a target width, rather than CityScene's old fixed 4-col table).

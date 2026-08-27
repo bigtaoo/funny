@@ -4,7 +4,10 @@
 // composition): zero dependencies on any other layer, only `deps`.
 import type { AuctionListingAdminView, AuctionListingQuery } from '@nw/shared';
 import type { AuctionServiceDeps } from './base';
-import { docToAdminView, docToView, type AuctionView, AUCTION_CLOSED_RETENTION_SEC, MY_LISTINGS_FETCH_LIMIT, QUERY_FETCH_CAP } from './base';
+import {
+  docToAdminView, docToView, bidOutcome, type AuctionBidView, type AuctionView,
+  AUCTION_CLOSED_RETENTION_SEC, MY_BIDS_FETCH_LIMIT, MY_LISTINGS_FETCH_LIMIT, QUERY_FETCH_CAP,
+} from './base';
 
 export class AuctionServiceListing {
   constructor(private readonly deps: AuctionServiceDeps) {}
@@ -71,6 +74,67 @@ export class AuctionServiceListing {
       .limit(MY_LISTINGS_FETCH_LIMIT)
       .toArray();
     return docs.map(docToView);
+  }
+
+  /**
+   * My Bids: every listing this account has bid on, live or already settled (2026-08-27).
+   *
+   * Two reads, not an aggregation `$lookup`: the bid rows live in their own collection precisely so the
+   * bidding write path never touches them, and a `$lookup` would put the join on the server side of a
+   * cross-collection query for at most MY_BIDS_FETCH_LIMIT ids — a batched `_id: {$in}` is both cheaper
+   * and keeps the outcome derivation in one readable place.
+   *
+   * A bid row whose listing is gone is dropped rather than surfaced as a stub: `purgeClosedListings`
+   * removes listings on the same retention window the bid rows' TTL uses, so this only happens in the
+   * short overlap where one has already been collected and the other has not.
+   *
+   * Ordering is live-first (soonest to end first — those are the ones still worth acting on), then closed
+   * history newest-first.
+   *
+   * The FETCH sorts by `purgeAt`, not by my bid time, purely so the MY_BIDS_FETCH_LIMIT cap cannot drop a
+   * listing I am still bidding on. `purgeAt` is the listing's own expiry plus a constant, so "purgeAt in
+   * the future" is exactly "this listing has not run out yet" — sorting by it desc puts every live row
+   * ahead of every closed one, whatever their bid times. Sorting by `ts` looked equivalent and is not: my
+   * last bid on a live listing can be arbitrarily old (I bid once at the start; anti-snipe then keeps the
+   * listing open while other people fight over it), so an active trader with a page of newer closed rows
+   * would have lost the live one — the same "a bid you're losing becomes invisible" failure this endpoint
+   * exists to fix. Which CLOSED rows survive the cap therefore ranks by listing expiry rather than by bid
+   * time; the two orderings only differ within a single listing's window, and the returned closed group is
+   * still sorted by `myBidTs` below.
+   */
+  async getMyBids(accountId: string): Promise<AuctionBidView[]> {
+    const rows = await this.deps.cols.auctionBids
+      .find({ bidderId: accountId })
+      .sort({ purgeAt: -1 })
+      .limit(MY_BIDS_FETCH_LIMIT)
+      .toArray();
+    if (rows.length === 0) return [];
+
+    const docs = await this.deps.cols.auctions
+      .find({ _id: { $in: rows.map((r) => r.auctionId) } })
+      .toArray();
+    const byId = new Map(docs.map((d) => [d._id, d]));
+
+    const views: AuctionBidView[] = [];
+    for (const row of rows) {
+      const doc = byId.get(row.auctionId);
+      if (!doc) continue; // listing already purged — its bid row is on its way out too
+      views.push({
+        auction: docToView(doc),
+        myBid: row.amount,
+        myTotal: row.total,
+        myBidCount: row.bids,
+        myBidTs: row.ts,
+        outcome: bidOutcome(doc, accountId),
+      });
+    }
+    views.sort((a, b) => {
+      const aOpen = a.auction.status === 'open' ? 0 : 1;
+      const bOpen = b.auction.status === 'open' ? 0 : 1;
+      if (aOpen !== bOpen) return aOpen - bOpen;
+      return aOpen === 0 ? a.auction.expireAt - b.auction.expireAt : b.myBidTs - a.myBidTs;
+    });
+    return views;
   }
 
   /**

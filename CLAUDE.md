@@ -52,6 +52,7 @@ claudedocs/      模块级快查文档（按需加载）
 - **工作目录**：仓库根目录（本机为 `D:\funny`）；用 Bash 工具，不要绕道 `wsl -d ubuntu`。
 - **权限**：所有命令直接执行，无需确认。
 - **验证**：`tsc --noEmit` + webpack 构建；涉及可见改动时，启动游戏（dev server）并截图核对效果。
+- **看画面用哪个浏览器**：dev server 仍用 `preview_start`（它只是进程启动器）启，但**看和截图一律去用户本机的真实 Chrome**——`mcp__claude-in-chrome__*`：`list_connected_browsers` → `tabs_context_mcp{createIfEmpty:true}` → `navigate` 到 `localhost:<端口>` → `computer{screenshot}` / `zoom`；插件会把这些标签页收进它自己的 **Chrome 标签组**，**看完用 `tabs_close_mcp` 关掉**，别留着。**不要用 in-app Browser 面板**（`mcp__Claude_Browser__*` 的 `computer{screenshot}`）：它会另开一个 Firefox 式窗口要用户手动收拾，而且在本项目的 PIXI/WebGL 画布上截图历来直接超时。只有 `list_connected_browsers` 连不上 Chrome 时才退回面板，并在回复里说明。
 - **记录改动**：先更新 `design/` 对应文档，再提交代码。
 - **结束任务流程**（收尾前完整走一遍）：①更新 `design/` 相关文档 → ②更新记忆（`MEMORY.md` + 任务笔记）→ ③提交任务改动并合并进当日分支（`DD.MM.YYYY`，分支不存在则创建）→ ④先停掉该 worktree 里起的 dev server（否则目录会因进程占用删不掉、变孤儿残留，见 worktrees.md 陷阱），再删除任务分支 + worktree（先确认当前在 `.claude/worktrees/` 下，**绝不删主检出**）。合并后 `cat .claude/launch.json` 确认端口/路径没被指向已删的 worktree。共享检出（主目录）里只提交自己改的文件路径，别 `git add -A` 卷入其它会话的 WIP。若任务直接在主目录当日分支上做（无独立 worktree），③退化为一次普通提交、④不适用。竞态细节见 [`claudedocs/worktrees.md`](claudedocs/worktrees.md)。
 - **上下文**：会话接近 200k token 时提醒切换。

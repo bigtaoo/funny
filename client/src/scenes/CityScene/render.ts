@@ -28,6 +28,8 @@ import {
   GRID_PAD,
   MAX_GRID_COLS,
   bldAccentColor,
+  chipped,
+  producerResource,
 } from './core';
 import type { CitySceneCore } from './core';
 import {
@@ -151,7 +153,7 @@ export class RenderPanel implements RenderHandlers {
       ab.endFill();
       this.core.container.addChild(ab);
 
-      const icon = this.core.resIcon(rt, 33);
+      const icon = chipped(33, RES_COLORS[rt], (n) => this.core.resIcon(rt, n));
       icon.x = cx + 12;
       icon.y = startY + 24;
       this.core.container.addChild(icon);
@@ -356,13 +358,20 @@ export class RenderPanel implements RenderHandlers {
       barFill.endFill();
       gridLayer.addChild(barFill);
 
-      const icon =
-        tile.kind === 'bld'
-          ? this.core.bldIcon(tile.key, 60, C.dark)
-          : buildIcon('armor', 60, C.dark);
+      // Chip only the five producer cards — their glyph IS a resource motif, an open outline that
+      // needs a ground, and the tint says which resource. The hand-drawn bld_* art is dense enough to
+      // read on bare paper and a chip behind it only crops and muddies it (see icons.ts CHIP_INSET).
+      const producer = tile.kind === 'bld' ? producerResource(tile.key) : undefined;
+      const drawGlyph = (n: number): PIXI.DisplayObject =>
+        tile.kind === 'bld' ? this.core.bldIcon(tile.key, n, C.dark) : buildIcon('armor', n, C.dark);
+      const icon = producer ? chipped(60, accent, drawGlyph) : drawGlyph(60);
       icon.x = cx + (cellW - 60) / 2;
       icon.y = cy + 18;
-      icon.alpha = dim ? 0.4 : 1;
+      // Unbuilt used to sit at 0.4, which was set when every glyph read strongly. On the two producer
+      // cards whose motif was already the faintest on the page (paper, graphite — the ones circled in
+      // the report) it multiplied out to nothing at all: a Lv.0 石墨坊 was a blank card. 0.65 still
+      // reads as "not yet", and the "+" badge and the greyed name carry that message anyway.
+      icon.alpha = dim ? 0.65 : 1;
       gridLayer.addChild(icon);
 
       const name =

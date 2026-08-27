@@ -222,6 +222,24 @@ const JOBS = [
   { src: 'tabicon_titleKing.png',          name: 'titleKing', inks: ['active'] },
   { src: 'tabicon_titleChampion.png',      name: 'titleChampion', inks: ['active'] },
   { src: 'tabicon_titleTop3.png',          name: 'titleTop3', inks: ['active'] },
+
+  // Batch 8 (design/product/tab-icon-art-prompts-batch8.md): the four stat words that never had a
+  // glyph of any kind, procedural or otherwise — the codex's `range` and the three affix rows
+  // (`siege`/`crit`/`critmult`). Same `inks: ['active']` contract as the block above: an affix line
+  // tints its icon with the line's own colour (blue for a main affix, ink for a sub).
+  // `crit` and `critmult` are ONE family — the same target and arrowhead, `critmult` adding the
+  // impact strokes — so they are drawn in one request and reviewed side by side, never one at a time.
+  { src: 'tabicon_range.webp',             name: 'range', inks: ['active'] },
+  { src: 'tabicon_siege.webp',             name: 'siege', inks: ['active'] },
+  { src: 'tabicon_crit.webp',              name: 'crit', inks: ['active'] },
+  { src: 'tabicon_critmult.webp',          name: 'critmult', inks: ['active'] },
+
+  // Batch 8b (same doc): the codex tile's type-and-cost subtitle. `unit` is a side-profile
+  // Corinthian helmet (the front view came back as a knit beanie — see the doc), `spell` a rolled
+  // scroll; the Building type reuses `castle` and the cost reuses `ink` (in battle, cost IS ink),
+  // so those two draw no new art.
+  { src: 'tabicon_unit.webp',              name: 'unit', inks: ['active'] },
+  { src: 'tabicon_spell.webp',             name: 'spell', inks: ['active'] },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');

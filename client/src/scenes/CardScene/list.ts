@@ -22,6 +22,7 @@ import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTa
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import type { SaveData, CardInstance } from '../../game/meta/SaveData';
 import type { CardSLGState } from '../../net/WorldApiClient';
+import { headerCurrencySpec } from './header';
 import { CardSceneCore, CARD_CELL_H, CARD_CELL_W_TARGET, sortCards } from './core';
 import { renderCardCell, cellSignature, type LocalHit } from './rosterCell';
 import type { DetailPanel } from './detail';
@@ -118,10 +119,13 @@ export class ListPanel {
       ...(hasEquip ? [{ label: t('equip.title'), active: false, icon: 'equipIcon' as const }] : []),
       { label: t('roster.tab.skins'), active: core.tab === 'skins', icon: 'skinIcon' },
     ];
+    // Tab switches go through core.setTab (never a bare `core.tab =`): it swaps in the target tab's
+    // own scroll offset, which is what keeps the wardrobe from inheriting a roster offset that
+    // scrolls its whole 6-card grid off-screen (2026-08-27 blank-wardrobe fix).
     const onSelect = (i: number): void => {
-      if (i === 0) { core.tab = 'list'; core.render(); return; }
+      if (i === 0) { if (core.setTab('list')) core.render(); return; }
       if (hasEquip && i === 1) { core.cb.openEquipmentBag?.(); return; }
-      core.tab = 'skins'; core.render();
+      if (core.setTab('skins')) core.render();
     };
     if (!landscape) {
       const barH = bottomNavH(h);
@@ -144,7 +148,7 @@ export class ListPanel {
     tearDownChildren(core.headerOverlayLayer);
     // Spec (and therefore size) comes from core so build()'s title-band reserve and this draw call
     // can't disagree; core.titleRight is the backstop for a balance that gains a digit mid-scene.
-    const spec = core.headerCurrencySpec();
+    const spec = headerCurrencySpec(core);
     drawHeaderCurrency(
       core.headerOverlayLayer, core.w, core.headerH, spec.coins, [], spec.capacity, spec.scale,
       core.titleRight,

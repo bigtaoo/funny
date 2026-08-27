@@ -52,6 +52,42 @@ export interface AuctionPriceDoc {
   prices: number[]; // last N transaction unit prices (newest at tail, length ≤ AUCTION_PRICE_WINDOW_N)
 }
 
+/**
+ * One account's participation in one auction listing ("My Bids" history, 2026-08-27).
+ *
+ * Why a separate collection rather than a `bidders` array on `AuctionDoc`: the listing document is the
+ * hot doc every bid CASes on (`rev` guard), and an unbounded array on it would grow the very document
+ * whose size and contention decide how fast bidding goes. Keeping participation out of it also means a
+ * history read never touches the bidding write path.
+ *
+ * Why it exists at all: `AuctionDoc.topBid` only ever remembers the CURRENT leader, so the moment a
+ * bidder is outbid the listing keeps no trace that they ever bid. "My Bids" derived from `topBid` alone
+ * therefore silently dropped every listing the player was losing — the one case they most need to see.
+ *
+ * `_id` is `${auctionId}|${bidderId}`: one row per (listing, bidder) pair, upserted on every bid, so a
+ * bidder who raises their own bid five times still occupies one row and `amount` is always their best.
+ */
+export interface AuctionBidDoc {
+  _id: string; // `${auctionId}|${bidderId}`
+  auctionId: string;
+  bidderId: string;
+  /** Highest unit price this account has bid on this listing (their own best, not the listing's). */
+  amount: number;
+  /** Coins escrowed by that bid (amount × qty at the time it was placed). */
+  total: number;
+  /** How many bids this account has placed on this listing. */
+  bids: number;
+  /** Ms of this account's latest bid on this listing. */
+  ts: number;
+  /**
+   * TTL anchor. Set to the listing's expiry + AUCTION_CLOSED_RETENTION_SEC — deliberately anchored to the
+   * LISTING's lifetime, not the bid's: anchoring it to the bid would let the row expire up to a full
+   * listing duration before `purgeClosedListings` drops the listing itself, blanking rows out of My Bids
+   * while the same trade is still visible in the seller's My Listings.
+   */
+  purgeAt: Date;
+}
+
 // ── Cross-service settlement journal (U13 close-out, 2026-08-24) ──────────────────────────────────
 //
 // Why a journal and not a transaction: an auction settlement moves assets in THREE processes and FOUR
@@ -178,6 +214,7 @@ export interface AuctionCollections {
   auctionDaily: Collection<AuctionDailyDoc>;
   auctionPrices: Collection<AuctionPriceDoc>;
   auctionOrders: Collection<AuctionOrderDoc>;
+  auctionBids: Collection<AuctionBidDoc>;
 }
 
 export interface AuctionMongo {
@@ -210,6 +247,7 @@ export async function createAuctionMongo(
     auctionDaily: db.collection<AuctionDailyDoc>('auctionDaily'),
     auctionPrices: db.collection<AuctionPriceDoc>('auctionPrices'),
     auctionOrders: db.collection<AuctionOrderDoc>('auctionOrders'),
+    auctionBids: db.collection<AuctionBidDoc>('auctionBids'),
   };
 
   async function ensureIndexes(): Promise<void> {
@@ -242,6 +280,13 @@ export async function createAuctionMongo(
     // and must outlive every retention window until it is settled.
     await collections.auctionOrders.createIndex({ purgeAt: 1 }, { expireAfterSeconds: 0 });
     await collections.auctions.createIndex({ status: 1, settledAt: 1 });
+    // My Bids: the only query shape is "this bidder's rows, live listings first" (getMyBids), then a
+    // batched _id lookup of the listings themselves. Sorted on purgeAt rather than the bid time so the
+    // fetch cap can never drop a still-open listing — see getMyBids for why those are not the same order.
+    await collections.auctionBids.createIndex({ bidderId: 1, purgeAt: -1 });
+    // TTL: unlike auctionOrders' purgeAt, this one is written on every upsert — a bid row owes nobody
+    // anything, it is pure history, so letting it expire on schedule is correct.
+    await collections.auctionBids.createIndex({ purgeAt: 1 }, { expireAfterSeconds: 0 });
   }
 
   /**

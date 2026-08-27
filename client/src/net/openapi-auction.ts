@@ -36,6 +36,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auction/myBids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Every listing this account has bid on — including ones it is currently losing and ones already settled. Live listings first (soonest to end first), then closed history newest-first. Bid rows expire on the same retention window that purges closed listings. */
+        get: operations["getMyAuctionBids"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auction/refprice": {
         parameters: {
             query?: never;
@@ -159,6 +176,23 @@ export interface components {
                 ts: number;
             };
         };
+        /** @description One listing this account has bid on, live or already settled. Exists because AuctionView.topBid only ever names the CURRENT leader — once a bidder is outbid the listing keeps no trace they bid at all, so "My Bids" cannot be derived from the market list. */
+        AuctionBidView: {
+            auction: components["schemas"]["AuctionView"];
+            /** @description My highest bid unit price on this listing (differs from auction.price once I am outbid) */
+            myBid: number;
+            /** @description Coins I escrowed with that bid (myBid × qty); refunded by mail as soon as someone outbids me */
+            myTotal: number;
+            /** @description How many bids I have placed on this listing */
+            myBidCount: number;
+            /** @description Ms of my latest bid */
+            myBidTs: number;
+            /**
+             * @description leading/outbid = listing still open; won/lost = settled
+             * @enum {string}
+             */
+            outcome: "leading" | "outbid" | "won" | "lost";
+        };
         OkResponse: {
             /** @enum {boolean} */
             ok: true;
@@ -234,6 +268,30 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OkResponse"] & {
                         data?: components["schemas"]["AuctionView"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+        };
+    };
+    getMyAuctionBids: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My bids */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["AuctionBidView"][];
                     };
                 };
             };

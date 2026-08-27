@@ -232,12 +232,19 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 
 另一个集合 **`auctionOrders`**（跨集合结算账本，§2.4；字段权威在 `auctionsvc/src/db.ts` 的 `AuctionOrderDoc`）：`{status, nextAttemptAt}` 驱动续跑扫描，`{auctionId}` 反查，`{purgeAt}` TTL（**只在行终结时才写 `purgeAt`**——pending 行是未结的欠账，绝不能被 TTL 清掉）。
 
+第三个集合 **`auctionBids`**（出价参与记录，2026-08-27；字段权威 `AuctionBidDoc`）：`_id = ${auctionId}|${bidderId}`，一个（挂单，出价人）一行、每次出价 upsert，`amount` 存**我自己出过的最高价**（不是挂单当前价）、`total` 存对应托管金额、`bids` 计次。索引 `{bidderId, purgeAt:-1}`（唯一查询形状：我的出价）+ `{purgeAt}` TTL。
+- **为什么不挂在 `auctions` 上**：挂单文档是每次出价都要 CAS 的热文档（`rev` 守卫），往上加不封顶的 `bidders` 数组等于把出价吞吐押在同一个文档的体积和竞争上；分开存也让历史读完全不碰出价写路径。
+- **为什么要有**：`topBid` 只记**当前领跑者**，被反超的瞬间挂单上就再没有那个人的痕迹了。所以「我的竞拍」不可能从市场档数据推出来——旧实现按 `topBid.bidderId===me` 客户端过滤，结果只能显示我正在赢的单子，一被反超就整条消失（这正是玩家最需要看见的时候）。
+- **取数按 `purgeAt` 倒序而不是按出价时间倒序**：`purgeAt` = 挂单 `expireAt` + 常量，所以「purgeAt 在未来」正好等价于「这个挂单还没到期」，按它倒序能保证未结束的行永远排在已结束的行前面，`MY_BIDS_FETCH_LIMIT` 截断不可能把我正在竞的单子截掉。按 `ts` 排看着等价其实不是：我在一个仍然开着的单子上最后一次出价可以很久以前（开局出一次，之后防狙击让别人一路续着），活跃玩家攒够一页更新的已结束记录就会把那条活的挤掉——正是本端点要解决的「正在输的出价看不见」。代价是**哪些已结束的行**能进这一页按挂单到期时间排（返回时仍按 `myBidTs` 倒序），两者只在单个挂单的时间窗内有差别。
+- **TTL 锚点是挂单的 `expireAt` + `AUCTION_CLOSED_RETENTION_SEC`，不是出价时间**：锚在出价上会让记录比 `purgeClosedListings` 清挂单早最多一整个挂单时长过期，出现「我的拍卖」还看得到这笔交易、「我的竞拍」已经空了的裂缝。
+
 ### 5.2 REST 端点（独立服务 `auctionsvc` `/auction/*`，端口 18086，✅ 已落地；Caddy/compose 已切 `/auction*` → `auctionsvc:18086`（§9 任务5）；worldsvc 侧的旧 `auctionService.ts` 及 `/auction/*` 路由已删（§9 任务6））
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | GET | `/auction/list?itemType&limit` | 浏览 open 挂单（按 price 升序，limit ≤50）；鉴权 accountId 隐式传入 `listAuctions(itemType, limit, accountId)`：过滤掉别人的 `designatedBuyerId` 定向挂单（卖家自己和被指定买家除外），并把当前账号被指定的挂单排到本页最前（2026-07-18） |
 | GET | `/auction/mine` | 我的挂单（全状态，≤20） |
+| GET | `/auction/myBids` | **我的竞拍**（2026-08-27）：我出过价的全部挂单——正在领跑的、已被反超的、已中拍的、已落败的。返回 `AuctionBidView[]`（挂单快照 + 我自己的 `myBid`/`myTotal`/`myBidCount`/`myBidTs` + `outcome: leading\|outbid\|won\|lost`）。排序：未结束的在前（按 `expireAt` 升序，快结束的先看），然后已结束的按我最后一次出价倒序。出价记录先于挂单被清掉时那一行直接丢弃，不返回残缺占位。 |
 | GET | `/auction/refprice?category` | **G 参考价带**：返回该品类（`material:{mat}`/`equip:{defId}:{level}`）的 `{ ref, floor, ceil }`（floor/ceil = ref×0.5/×2.0，与 checkPriceGuard 同界），无护栏/冷启动放行时返回 `null`。挂单界面据此在提交前展示允许区间，避免只在提交后撞 `PRICE_OUT_OF_RANGE`。 |
 | POST | `/auction/create` | 挂单（material；equipment 待 A；`saleMode=fixed`→price / `auction`→startPrice+可选 buyoutPrice；可带 designatedBuyerId） |
 | POST | `/auction/{id}/buy` | 一口价购买（仅 fixed 单） |
@@ -250,7 +257,7 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 
 - 常量（DRAFT，均已落 `shared/slg.ts`）：`AUCTION_TAX_RATE=0.1`、`AUCTION_MAX_LISTINGS=20`、`AUCTION_DURATIONS_SEC=[72h]`（2026-07-05 起固定，客户端不再提供时长选择）；**C** `AUCTION_DAILY_LIST_CAP=30`/`AUCTION_DAILY_BUY_CAP=30`/`AUCTION_DAILY_TTL_SEC`；**E** `AUCTION_BANNED_MATERIALS`（空集）；**B** `AUCTION_MIN_INCREMENT_RATIO=0.05`/`AUCTION_ANTI_SNIPE_WINDOW_SEC=5min`；**G** `AUCTION_PRICE_WINDOW_N=20`/`AUCTION_PRICE_WINDOW_MIN_SAMPLES=5`/`AUCTION_PRICE_FLOOR_RATIO=0.5`/`AUCTION_PRICE_CEIL_RATIO=2.0`/`AUCTION_STATIC_REF_PRICE`。
 - 错误码（均已落 `shared/api.ts`）：`AUCTION_NOT_FOUND`、`AUCTION_CLOSED`、`NOT_DESIGNATED_BUYER`、`AUCTION_LIMIT_REACHED`、`NO_PERMISSION`、`INSUFFICIENT_RESOURCES`、`NOT_IMPLEMENTED`、`BAD_REQUEST`、`PRICE_OUT_OF_RANGE`（G）、`MATERIAL_NOT_TRADEABLE`（E）、`BID_TOO_LOW`（B）。`WORLD_CLOSED` 随 F 废弃已不再用于拍卖行（2026-07-06）。
-- 新增集合：`auctionDaily`（C，TTL `{expiresAt}`，`_id`/key 为 `${accountId}:${dayKey}`，不带 worldId）、`auctionPrices`（G，`_id=category`，大区全局，不按 worldId 拆分）；`auctions` 加 `saleMode/startPrice/buyoutPrice/topBid`（B）。
+- 新增集合：`auctionDaily`（C，TTL `{expiresAt}`，`_id`/key 为 `${accountId}:${dayKey}`，不带 worldId）、`auctionPrices`（G，`_id=category`，大区全局，不按 worldId 拆分）、`auctionBids`（B，出价参与记录，§5.1）；`auctions` 加 `saleMode/startPrice/buyoutPrice/topBid`（B）。
 
 ---
 
@@ -298,10 +305,10 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 - i18n 三语删 `itemClass`/`class*`/`duration`/`dur6h/12h/24h`/`pickEquip`/`pickCard`/`noEquip`/`noCards`，新增 `pickItem`/`noItems`。
 - **入口接线**：`createAppCore.goAuctionFromLobby` + `goAuctionHouse` 两处 `showAuction` 均注入 `getSave`/`reloadSave`。验证：client `tsc --noEmit`（含 tsconfig.test）+ webpack 生产构建全绿。
 
-**客户端布局重排 + 我的收购 ✅（2026-07-05）**：`AuctionScene` 顶部横条 [市场|我的拍卖] 原满宽跨过页边线红线（notebook 装饰线），改走 `HubTabs.drawSidebarTabs` 竖排进 `marginLineX` 页边线内的左侧栏（复用 StatsScene/EquipmentScene 既定模式），列表/筛选条/发布按钮起始 x 让到页边线外侧；顺带把行高（56→76）、图标（22→30）、字号（12/13→15/17）整体放大，信息更易读。
-- **新增「我的收购」第三档**：无独立后端端点——client 侧从已拉取的 `/auction/list`（市场档数据）按 `saleMode==='auction' && topBid.bidderId===myAccountId` 过滤，展示当前正在领跑的竞拍（该档只读，无操作按钮，仅「领先中」徽标；成交/流拍后随之从开放列表消失，无历史留存）。
+**客户端布局重排 + 我的竞拍 ✅（2026-07-05）**：`AuctionScene` 顶部横条 [市场|我的拍卖] 原满宽跨过页边线红线（notebook 装饰线），改走 `HubTabs.drawSidebarTabs` 竖排进 `marginLineX` 页边线内的左侧栏（复用 StatsScene/EquipmentScene 既定模式），列表/筛选条/发布按钮起始 x 让到页边线外侧；顺带把行高（56→76）、图标（22→30）、字号（12/13→15/17）整体放大，信息更易读。
+- **新增「我的竞拍」第三档**：无独立后端端点——client 侧从已拉取的 `/auction/list`（市场档数据）按 `saleMode==='auction' && topBid.bidderId===myAccountId` 过滤，展示当前正在领跑的竞拍（该档只读，无操作按钮，仅「领先中」徽标；成交/流拍后随之从开放列表消失，无历史留存）。
 - **`myAccountId` 接入**：`AuctionSceneCallbacks` 新增可选 `myAccountId`；`goAuctionFromLobby`/`goAuctionHouse` 均从 `platform.storage.getItem('nw_account_id')` 注入（复用 FamilyHub/SectHub 既有取法）。
-- **遗留**：「我的收购」无落地/流拍历史（仅展示仍开放且我在领跑的单子）；如需完整出价历史需后端补 `/auction/myBids` 端点。i18n 三语补 `tabBids`/`bidsEmpty`/`leading`。验证：client `tsc --noEmit`（含 tsconfig.test）+ webpack 生产构建全绿。
+- ~~**遗留**：「我的竞拍」无落地/流拍历史（仅展示仍开放且我在领跑的单子）；如需完整出价历史需后端补 `/auction/myBids` 端点。~~ ✅ 已补齐（2026-08-27，见本文末条）。i18n 三语补 `tabBids`/`bidsEmpty`/`leading`。验证：client `tsc --noEmit`（含 tsconfig.test）+ webpack 生产构建全绿。
 
 **统一选品器改图标卡网格（2026-07-06）**：`renderItemPicker`（`picker.ts`）按用户反馈从满宽行列表改为响应式图标卡网格——列数按 `CARD_W_TARGET=130` 目标宽自适应（`EquipmentScene/inventory.ts` 既定的 gridMetrics 模式），每卡 `CARD_H=104`：图标居中顶部、名称居中于下（超宽自动缩放）、锁徽标右上角、整卡可点。移除不再使用的 `ROW_H` 导入。验证：client `tsc --noEmit` + webpack 生产构建全绿。
 
@@ -312,7 +319,7 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 - **标题栏统一**：拍卖行标题栏原用 `headerH: HUD_H(50) + titleSize:18`，比多数二级界面（`sceneHeaderHeight`=设计高 12%）矮一截、显得局促。改为不再覆写 `headerH`/`titleSize`，走 `drawSceneHeader` 标准高度与标题字号（仅保留 SLG 红 accent），与 Shop/Gacha/成就/排行榜等一致。`HUD_H` 常量降为默认占位，实际布局锚点改用实例字段 `this.headerH = sceneHeaderHeight(this.h)`（构造时取，`build()` 用返回值回填），`list.ts`/`picker.ts` 内所有 `HUD_H` 引用改 `this.headerH`。验证：client `tsc --noEmit` + webpack 生产构建全绿；auctionsvc e2e 41 例全绿（含 2 例新增 `getRefBand`）。
 
 **市场列表改卡片网格 + 发布按钮 2x（2026-07-15）**：按用户反馈修两处——
-- **市场/我的拍卖/我的收购列表改卡片式**：`list.ts` 的 `renderList` 从单列文字行（`ROW_H=76`）改成响应式卡片网格（`AUC_CELL_GAP=14`/`AUC_CELL_H=190`/`AUC_CELL_W_TARGET=340`，`base.ts`；列数按目标宽自适应，同 `CardScene`/`EquipmentScene` 既定的 gridMetrics 模式），新拆出 `renderAuctionCell` 渲染单张卡：左侧方形图标框（品类图标居中，右上角售卖方式徽标 tag/gavel）、右侧信息列（品名/价格/买断价/倒计时），卡片右下角固定操作按钮或状态徽标（原三档 all/mine/bids 的按钮·徽标逻辑原样迁入，未改变行为）。`ROW_H` 常量随之移除（仅 `list.ts` 引用，已确认无其他调用点）。
+- **市场/我的拍卖/我的竞拍列表改卡片式**：`list.ts` 的 `renderList` 从单列文字行（`ROW_H=76`）改成响应式卡片网格（`AUC_CELL_GAP=14`/`AUC_CELL_H=190`/`AUC_CELL_W_TARGET=340`，`base.ts`；列数按目标宽自适应，同 `CardScene`/`EquipmentScene` 既定的 gridMetrics 模式），新拆出 `renderAuctionCell` 渲染单张卡：左侧方形图标框（品类图标居中，右上角售卖方式徽标 tag/gavel）、右侧信息列（品名/价格/买断价/倒计时），卡片右下角固定操作按钮或状态徽标（原三档 all/mine/bids 的按钮·徽标逻辑原样迁入，未改变行为）。`ROW_H` 常量随之移除（仅 `list.ts` 引用，已确认无其他调用点）。
 - **「+ 发布」按钮放大 2x**：`renderCreateButton` 尺寸 200×44→400×88，字号 16→32；`renderList` 预留高度相应从 52 调到 100。
 - 验证：client `tsc --noEmit` 全绿。本机浏览器预览环境当次未能启动（应用停在启动画面，`document.title`/`globalThis` 探针均未执行，与本次改动无关的既有环境问题，未继续深挖），未能截图肉眼核对；改动仅限渲染层坐标/尺寸计算，逻辑迁移未改变。
 
@@ -335,6 +342,15 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 - **加价步进按钮 +1/+5/+10**：数字步进器（`addNumInput`，仅有 -1/+1）下方新增一排三个快捷加价按钮，点击在当前出价基础上 `+1`/`+5`/`+10`（仍夹在 `minBidFor` 算出的最低出价之上）。
 - **统一弹窗 + 放大一倍**：`bid.ts` 里手写的确认弹窗调用（`confirmBid`→`showConfirmModal`）此前是 `base.ts` 里一份独立手绘实现（尺寸/按钮与其他场景已迁移的共享 `confirmDialog.ts` 不一致），本次把 `AuctionSceneBase.showConfirmModal` 改为直接调用 `drawConfirmDialog`（`FamilyScene`/`SectScene`/`EquipmentScene` 同款，OK/Cancel 文字按钮），消除又一处重复弹窗实现。出价弹层本身（`openBidForm`）保留自绘（内容是表单，非纯确认对话，`drawConfirmDialog` 不适用），尺寸整体翻倍（`mw` 300→600、`mh` 184→276/356，随 buyoutPrice 是否存在浮动）以容纳新增的买断按钮 + 加价步进行；Bid/Cancel 按钮尺寸与统一弹窗的 126×42 对齐（原 80×28），Cancel 从 ✕ 图标改文字，与 `drawConfirmDialog` 视觉统一。
 - 验证：client `tsc --noEmit` 全绿；沿用「临时挂 `__NW_APP`/`__NW_AuctionScene` 钩子（已移除）+ 手造 fixture + 直接 `new AuctionScene(...)` 挂载」路线截图核对：买断按钮/加价步进渲染正确，点击 `+10`×3 出价从 600→630（模拟 `handleDown`/`handleUp` 命中对应 hit rect 验证），点击买断按钮出价直跳 2400（=`buyoutPrice`）并弹出统一确认对话框「Place bid of 2400 coins?」。
+
+**「我的收购」改名「我的竞拍」（2026-08-27）**：按用户截图反馈——zh 侧 `auction.tabBids` 原文案「我的收购」易被读成"我买到的东西"，与该档实际内容（我参与出价、当前领跑的竞拍单）不符；改为「我的竞拍」。en/de 侧原本就是 `My Bids`/`Meine Gebote`，无需改动。纯文案改动，无逻辑变更。上面 2026-07-05 条的**遗留**仍成立：被反超后该单会从本档消失（客户端只按 `topBid.bidderId===me` 过滤，`auctionsvc` 的 `db.ts` 只存 `topBid`、无出价历史），要做成"所有我出过价的单子"需后端补出价记录 + `/auction/myBids`。
+
+**出价记录 + `/auction/myBids`：「我的竞拍」终于名副其实（2026-08-27）**：接着上一条——改完名字后这一档的**内容**仍然对不上名字：它只列我正在领跑的单子，被反超就整条消失。根因是 `topBid` 只记当前领跑者，挂单文档上不留任何"谁出过价"的痕迹，客户端再怎么过滤市场档也变不出来。
+- **服务端**：新集合 `auctionBids`（§5.1，`AuctionBidDoc`），`placeBid` 在 topBid 写入落地之后 upsert 一行——**只在托管真的发生之后写**，所以 CAS 输掉、escrow 被补偿退回的那种出价不会留下记录（e2e 用 `findOneAndUpdate` 代理插入一次竞态出价来钉这条）。写入用聚合管道而非 `$max`+`$set`：`amount` 和 `total` 必须一起动，否则会出现"金额是高价、托管数是低价"的自相矛盾行。这行是纯历史、背后没有资产，所以写失败只记日志不抛——出价本身已经成功、金币已经托管，为一行历史报错等于谎报失败。
+- **读**：`AuctionServiceListing.getMyBids(accountId)`，两次查询（出价行 → 批量 `_id: {$in}` 取挂单）而不是 `$lookup`；`outcome` 由挂单状态推导（open → 我是否领跑；sold → 我是否买家；cancelled/expired → `lost`，虽然带出价的单子按流程走不到这两个终态）。
+- **契约/客户端**：`openapi-auction.yml` 加 `AuctionBidView` schema + `GET /auction/myBids`，`npm run rest:gen` 重生成；`WorldApiClient.getMyBids()`；`AuctionSceneCore.myBids`/`myBidIndex` 随 loadData/pollRefresh 一起拉（poll 的变更签名加 `bidSig`——`outcome` 会在结拍时 won→lost 翻转，光看挂单签名看不出来）；`ListPanel.myBids()` 从"过滤 allAuctions"改成"直接用服务端结果"；卡片右下角徽标按 outcome 分四态（`auction.leading`/`outbid`/`bidWon`/`bidLost`，领先/中拍用 accent、被超越/落败用灰），价格下方在**我的出价与当前价不同时**多一行「我的出价: N」（领先时两者相等，重复印一遍看着像渲染 bug）。i18n 三语补 `outbid`/`bidWon`/`bidLost`/`myBid`，`bidsEmpty` 从"暂无在拍的出价"改成"你还没有参与过竞拍"（这一档现在含历史）。
+- **补测（同日稍后）**：写「取数上限」这条测试时发现原来的 `sort({ts:-1})` 有真缺口（见上一条），改成 `sort({purgeAt:-1})` + 换索引；客户端补一条「只有 outcome 翻转」的轮询测试（挂单不在当前市场档那一页 → `auctionSig` 一字不变，全靠 `bidSig`）。两条都做过变异校验：把被测的那行改回去会变红。
+- **验证**：auctionsvc 254 例全绿（新增 `auction-mybids.e2e.test.ts` 13 例 + `auction-fulllink.e2e.test.ts` 走真实 `WorldApiClient` 过 HTTP 断言 leading→lost/won）；client UI `auctionScene.ui.ts` 87 例全绿（「我的竞拍」一组重写为服务端数据驱动）；client `tsc --noEmit`（含 tsconfig.test / fulllink）+ webpack 生产构建全绿。
 
 ---
 

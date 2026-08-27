@@ -38,7 +38,7 @@ export function cardStats(card: CardDefinition): { icon: IconKind | null; label:
     return [
       { icon: 'hp', label: t('collection.stat.hp'), value: fromFp(b.hp_fp) },
       { icon: 'atk', label: t('collection.stat.atk'), value: fromFp(b.attack_fp) },
-      { icon: null, label: t('collection.stat.range'), value: b.range },
+      { icon: 'range', label: t('collection.stat.range'), value: b.range },
     ];
   }
   if (card.cardType === CardType.Building && card.buildingType !== undefined) {
@@ -48,7 +48,7 @@ export function cardStats(card: CardDefinition): { icon: IconKind | null; label:
     ];
     if (b.attack_fp !== undefined) {
       out.push({ icon: 'atk', label: t('collection.stat.atk'), value: fromFp(b.attack_fp) });
-      if (b.attackRange !== undefined) out.push({ icon: null, label: t('collection.stat.range'), value: b.attackRange });
+      if (b.attackRange !== undefined) out.push({ icon: 'range', label: t('collection.stat.range'), value: b.attackRange });
     }
     return out;
   }
@@ -102,32 +102,104 @@ export function drawTileFace(
   container.addChild(lore);
 }
 
+/**
+ * One line of `[icon] text` pieces at `size`, shrunk as a whole if it outruns `maxW`. The icon is
+ * always a cue in FRONT of the word, never instead of it (same rule as {@link drawStatChips}), so a
+ * piece whose art doesn't exist yet degrades to bare text and still lines up with its neighbours.
+ */
+function drawIconTextRow(
+  pieces: { icon: IconKind | null; text: string }[],
+  x: number, y: number, maxW: number, size: number, color: number, bold: boolean, target: PIXI.Container,
+): void {
+  const row = new PIXI.Container();
+  const iconSize = Math.round(size * 1.35); // matches the stat row's icon-to-text ratio
+  const gap = Math.round(size * 0.38);
+  const pieceGap = Math.round(size * 0.9);
+  let cx = 0;
+  pieces.forEach((p, i) => {
+    if (i > 0) cx += pieceGap;
+    if (p.icon) {
+      const ic = buildIcon(p.icon, iconSize, color);
+      ic.x = cx; ic.y = 0; row.addChild(ic);
+      cx += iconSize + gap;
+    }
+    const lbl = txt(p.text, snapFont(size), color, bold);
+    lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = iconSize / 2; row.addChild(lbl);
+    cx += lbl.width;
+  });
+  row.x = x; row.y = y;
+  if (row.width > maxW) row.scale.set(maxW / row.width);
+  target.addChild(row);
+}
+
+/** Greedy split of `chips` into `n` consecutive lines of roughly equal width; returns the widest line. */
+function widestLineOf(chips: { w: number }[], chipGap: number, n: number): number {
+  const total = chips.reduce((a, c) => a + c.w, 0) + chipGap * (chips.length - 1);
+  const target = total / n;
+  let widest = 0;
+  let lineW = 0;
+  let lines = 1;
+  for (const c of chips) {
+    const next = lineW > 0 ? lineW + chipGap + c.w : c.w;
+    if (lineW > 0 && next > target && lines < n) { widest = Math.max(widest, lineW); lineW = c.w; lines++; }
+    else lineW = next;
+  }
+  return Math.max(widest, lineW);
+}
+
 export function drawStatChips(
   stats: { icon: IconKind | null; label: string; value: number }[],
-  x: number, y: number, maxW: number, size: number, target: PIXI.Container,
+  x: number, y: number, maxW: number, maxH: number, size: number, target: PIXI.Container,
 ): void {
   const row = new PIXI.Container();
   const gap = Math.round(size * 0.28);
   const chipGap = Math.round(size * 0.75);
   const valSize = snapFont(Math.round(size * 0.74));
-  let cx = 0;
-  stats.forEach((s, i) => {
-    if (i > 0) cx += chipGap;
+
+  // Each chip is built into its own container so it stays one unbreakable unit when the row wraps.
+  const chips = stats.map((s) => {
+    const chip = new PIXI.Container();
+    let cx = 0;
     if (s.icon) {
       const ic = buildIcon(s.icon, size, C.mid);
-      ic.x = cx; ic.y = 0; row.addChild(ic);
+      ic.x = cx; ic.y = 0; chip.addChild(ic);
       cx += size + gap;
-    } else {
-      const lbl = txt(s.label, valSize, C.mid);
-      lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = size / 2; row.addChild(lbl);
-      cx += lbl.width + gap;
     }
+    // Every chip spells its stat out in words, icon or no icon: the icon is a redundant cue on top of
+    // the name, never a replacement for it. Before this, `hp`/`atk` drew icon-only while `range` (no
+    // art for it yet) drew name-only, so one row mixed two shapes of chip and the two icons had to be
+    // learned rather than read (2026-08-27 user feedback on a codex screenshot).
+    const lbl = txt(s.label, valSize, C.mid);
+    lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = size / 2; chip.addChild(lbl);
+    cx += lbl.width + gap;
     const val = txt(String(s.value), valSize, C.dark, true);
-    val.anchor.set(0, 0.5); val.x = cx; val.y = size / 2; row.addChild(val);
-    cx += val.width;
+    val.anchor.set(0, 0.5); val.x = cx; val.y = size / 2; chip.addChild(val);
+    return { chip, w: cx + val.width };
   });
+
+  // Spelling the stats out made the row ~1/3 wider, and portrait's info panel is narrow enough that
+  // the old shrink-the-whole-row-to-fit dropped the text to about half the size of the name above it.
+  // So trade width for height instead: pick the line count whose fit-scale (bounded by the panel's
+  // width AND by the space left below the row's top edge) comes out largest — one line at full size
+  // in landscape, two slightly-shrunk lines in portrait, three only if even that won't fit.
+  let best = { n: 1, scale: 0 };
+  for (let n = 1; n <= chips.length; n++) {
+    const scale = Math.min(1, maxW / widestLineOf(chips, chipGap, n), maxH / (n * size));
+    if (scale > best.scale + 1e-6) best = { n, scale };
+  }
+  const lineCap = widestLineOf(chips, chipGap, best.n) * best.scale;
+
+  let lineW = 0;
+  let lineY = 0;
+  for (const { chip, w } of chips) {
+    if (lineW > 0 && (lineW + chipGap + w) * best.scale > lineCap + 1e-6) { lineY += size; lineW = 0; }
+    chip.x = lineW > 0 ? lineW + chipGap : 0;
+    chip.y = lineY;
+    lineW = chip.x + w;
+    row.addChild(chip);
+  }
   row.x = x; row.y = y;
-  if (row.width > maxW) row.scale.set(maxW / row.width);
+  row.scale.set(best.scale);
   target.addChild(row);
 }
 
@@ -196,23 +268,36 @@ export function drawCardTile(
   if (name.width > maxNameW) name.scale.set(maxNameW / name.width);
   target.addChild(name);
 
+  // Type and cost as two iconned pieces rather than one `type · cost N` string: the `·` separator
+  // is gone because the icons already separate the two, which is also how the stat row below reads.
+  // Building reuses `castle` and cost reuses `ink` — in battle the cost IS ink, and the HUD draws
+  // this same bottle for it (design/product/tab-icon-art-prompts-batch8.md §8b).
+  const typeIcon: IconKind = card.cardType === CardType.Unit ? 'unit'
+    : card.cardType === CardType.Building ? 'castle' : 'spell';
   const typeLabel = card.cardType === CardType.Unit ? t('collection.cardType.unit')
     : card.cardType === CardType.Building ? t('collection.cardType.building')
     : t('collection.cardType.spell');
-  const sub = txt(`${typeLabel} · ${t('collection.stat.cost')} ${card.cost}`, snapFont(Math.round(h * 0.12)), accent, true);
-  sub.anchor.set(0, 0); sub.x = textX; sub.y = y + Math.round(h * 0.34);
-  target.addChild(sub);
+  drawIconTextRow(
+    [{ icon: typeIcon, text: typeLabel }, { icon: 'ink', text: `${t('collection.stat.cost')} ${card.cost}` }],
+    textX, y + Math.round(h * 0.33), infoW - pad * 2, Math.round(h * 0.12), accent, true, target,
+  );
 
   if (locked) {
-    const lockedLbl = txt(t('collection.locked'), snapFont(Math.round(h * 0.11)), C.mid, true);
-    lockedLbl.anchor.set(0, 0); lockedLbl.x = textX; lockedLbl.y = y + Math.round(h * 0.62);
-    target.addChild(lockedLbl);
+    // The padlock is drawn over the illustration too, but that half of the tile is a separate panel —
+    // this line has to carry its own icon like every other labelled line in the info panel.
+    drawIconTextRow(
+      [{ icon: 'lock', text: t('collection.locked') }],
+      textX, y + Math.round(h * 0.60), infoW - pad * 2, Math.round(h * 0.11), C.mid, true, target,
+    );
     return null;
   }
 
   const stats = cardStats(card);
   if (stats) {
-    drawStatChips(stats, textX, y + Math.round(h * 0.60), infoW - pad * 2, Math.round(h * 0.15), target);
+    const statsY = Math.round(h * 0.60);
+    // Height budget: from the row's top edge down to the panel's bottom padding — the row wraps
+    // onto a second line in portrait, and without a ceiling the third line would spill out of the tile.
+    drawStatChips(stats, textX, y + statsY, infoW - pad * 2, Math.round(h * 0.94) - statsY, Math.round(h * 0.15), target);
   }
   return face;
 }

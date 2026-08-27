@@ -340,6 +340,24 @@ jobs:
       - name: client install
         working-directory: client
         run: npm ci
+      # Client REST codegen staleness check, the counterpart to the six server codegen gates in
+      # server-checks above. Added 2026-08-27 after src/net/openapi.ts was found 18 lines behind
+      # server/contracts/openapi.yml (the anomaly-report endpoint's device-context and orientation
+      # fields) — the spec had them, the bundled openapi.yml had them, nobody re-ran the codegen.
+      # gen-openapi.mjs's header says the point of committing the generated file is that drift is
+      # "caught at tsc time", and that holds only for endpoints whose types something imports:
+      # nothing on the client references operations['reportAnomaly'], so tsc stayed green and no
+      # gate anywhere could have noticed. This step is that gate, and it covers all four specs,
+      # not just the one that drifted, plus proto (src/net/proto, same exposure — it happened to be
+      # in sync). Only half the fix, and deliberately so: ADR-023's 2026-08-08
+      # patch hung pre<script> regen hooks on all six SERVER packages and skipped client/, so on the
+      # client there was neither an auto-regen nor a check. That gap is the actual root cause.
+      - name: client codegen check (openapi*.yml + *.proto -> src/net)
+        working-directory: client
+        run: |
+          npm run rest:gen
+          npm run proto:gen
+          git diff --exit-code src/net/openapi.ts src/net/openapi-world.ts src/net/openapi-social.ts src/net/openapi-auction.ts src/net/proto
       # claudedocs/client-modules.md "单文件 500 行收敛": same baseline-drift check as the server
       # step above (client/scripts/file-length-baseline.json) — only fails on a NEW file crossing
       # 500 lines or a known baseline file growing past its recorded count. 2026-08-13: schema now

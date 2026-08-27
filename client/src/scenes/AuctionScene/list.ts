@@ -54,12 +54,18 @@ export class ListPanel {
     private readonly createListing: CreateFormOpener,
   ) {}
 
-  /** Auctions where I'm currently the top bidder ("My Bids") — derived client-side from the open market list (no dedicated endpoint). */
+  /**
+   * Listings for the "My Bids" tab: every auction I have bid on, in the order the server ranked them
+   * (live first, soonest to end first; then closed history newest-first).
+   *
+   * Was a client-side filter over `allAuctions` on `topBid.bidderId === myAccountId`, which could only
+   * ever surface listings I was LEADING — being outbid made the listing disappear from the tab entirely,
+   * exactly when the player most needs to see it. Now server data (GET /auction/myBids, backed by bid
+   * records), so being outbid, winning and losing are all still listed; the per-cell badge below reads
+   * `core.myBidIndex` for which of those it is.
+   */
   myBids(): AuctionView[] {
-    const core = this.core;
-    const me = core.cb.myAccountId;
-    if (!me) return [];
-    return core.allAuctions.filter((a) => a.saleMode === 'auction' && a.topBid?.bidderId === me);
+    return this.core.myBids.map((b) => b.auction);
   }
 
   /**
@@ -273,15 +279,35 @@ export class ListPanel {
       ay += Math.max(20, stars.height + 6);
     }
 
-    // Fixed-price: show the unit sale price; auction: show the current bid (or the starting price when no bids).
+    // Fixed-price: show the unit sale price; auction: the current bid (or the starting price when no bids
+    // yet), except on a settled one where that bid is no longer "current" — it's what the item went for.
+    // Closed auction rows were rare before My Bids became server-backed (My Listings only ever shows the
+    // seller's own); now every won/lost row is one, and "current bid" on a finished sale reads wrong.
+    const auctionPriceKey = auc.status === 'sold'
+      ? 'auction.finalPrice'
+      : auc.topBid ? 'auction.currentBid' : 'auction.startPrice';
     const priceText = isAuction
-      ? `${t(auc.topBid ? 'auction.currentBid' : 'auction.startPrice')}: ${auc.price}`
+      ? `${t(auctionPriceKey)}: ${auc.price}`
       : `${t('auction.price')}: ${auc.price}`;
     const priceLbl = txt(priceText, FS.body, C.accent, true);
     priceLbl.x = ax; priceLbl.y = ay;
     priceLbl.style.wordWrap = true; priceLbl.style.wordWrapWidth = Math.max(20, rightW);
     core.bodyLayer.addChild(priceLbl);
     ay += Math.max(26, priceLbl.height + 8);
+
+    // My Bids tab: my own bid, but only when it differs from the listing's current price — while I'm
+    // leading the two are the same number and printing it twice reads as a rendering bug. When I've been
+    // outbid (or lost) they diverge, and that gap is the whole point of the tab.
+    if (core.activeTab === 'bids') {
+      const mine = core.myBidIndex.get(auc.auctionId);
+      if (mine && mine.myBid !== auc.price) {
+        const myLbl = txt(`${t('auction.myBid')}: ${mine.myBid}`, FS.tiny, C.mid);
+        myLbl.x = ax; myLbl.y = ay;
+        myLbl.style.wordWrap = true; myLbl.style.wordWrapWidth = Math.max(20, rightW);
+        core.bodyLayer.addChild(myLbl);
+        ay += Math.max(20, myLbl.height + 6);
+      }
+    }
 
     if (isAuction && auc.buyoutPrice) {
       const boLbl = txt(t('auction.buyoutAt').replace('{price}', String(auc.buyoutPrice)), FS.tiny, C.mid);
@@ -363,8 +389,15 @@ export class ListPanel {
         core.bodyLayer.addChild(badge);
       }
     } else {
-      // My Bids: informational only (leading bidder, not the owner) — no action button, just a status badge.
-      const badge = txt(t('auction.leading'), FS.small, C.accent, true);
+      // My Bids: informational only (I'm a bidder, not the owner) — no action button, just an outcome
+      // badge. Accent for the two states where the item is still mine or still winnable, muted for the
+      // two where it isn't.
+      const mine = core.myBidIndex.get(auc.auctionId);
+      const outcome = mine?.outcome ?? 'leading';
+      const badgeKeys = {
+        leading: 'auction.leading', outbid: 'auction.outbid', won: 'auction.bidWon', lost: 'auction.bidLost',
+      } as const;
+      const badge = txt(t(badgeKeys[outcome]), FS.small, outcome === 'leading' || outcome === 'won' ? C.accent : C.mid, true);
       badge.anchor.set(1, 0.5); badge.x = x + cellW - pad; badge.y = btnY + btnH / 2;
       core.bodyLayer.addChild(badge);
     }

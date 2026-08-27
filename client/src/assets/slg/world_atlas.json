@@ -486,8 +486,8 @@
         "h": 128
       },
       "nw": {
-        "inkMass": 657,
-        "density": 0.0484,
+        "inkMass": 1133,
+        "density": 0.08347,
         "equivEdge": 116.48,
         "sizeMul": 0.008585,
         "alphaMul": 1
@@ -1377,8 +1377,8 @@
         "h": 128
       },
       "nw": {
-        "inkMass": 350,
-        "density": 0.02627,
+        "inkMass": 1282,
+        "density": 0.09631,
         "equivEdge": 115.38,
         "sizeMul": 0.008667,
         "alphaMul": 1
@@ -1674,8 +1674,8 @@
         "h": 128
       },
       "nw": {
-        "inkMass": 677,
-        "density": 0.04231,
+        "inkMass": 1220,
+        "density": 0.07627,
         "equivEdge": 126.49,
         "sizeMul": 0.007906,
         "alphaMul": 1

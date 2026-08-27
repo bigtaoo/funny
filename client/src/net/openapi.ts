@@ -5104,6 +5104,15 @@ export interface operations {
                     platform?: "web" | "wechat" | "crazygames";
                     /** @description Client build version (__NW_BUILD_VERSION__, short commit hash; '0.0.0' if unbaked). Lets a recurring anomaly be attributed to a specific deploy, e.g. to rule out a long-open tab still running pre-fix code. */
                     buildVersion?: string;
+                    /**
+                     * @description Coarse hardware bucket, derived client-side (net/anomaly/deviceContext.ts). Distinct from `platform`, which is the BUILD TARGET — a phone browser and a desktop browser both report platform=web, so before this field existed "it only crashes on mobile" could not be confirmed or counted from Loki at all. Deliberately a 4-value bucket rather than the raw UA: this lands inline on every Loki line, where a free-form string would be both high-cardinality and a privacy liability. Server allowlists the value.
+                     * @enum {string}
+                     */
+                    device?: "phone" | "tablet" | "desktop" | "unknown";
+                    /** @description Physical pixels per CSS px, rounded to 2dp (server clamps to 0..16) */
+                    dpr?: number;
+                    /** @description Approximate device RAM in GB (navigator.deviceMemory; Chromium-only, absent elsewhere). Separates "only ever on low-memory hardware" from "everywhere" for OOM-class reports. Server clamps to 0..1024. */
+                    mem?: number;
                     /** @description A batch of anomaly events; server takes at most the first 200 */
                     events: {
                         /** @description Anomaly type (mem/cpu/webgl_lost/anr/jserror/crash; unknown falls back to other) */
@@ -5113,6 +5122,15 @@ export interface operations {
                         ts: number;
                         /** @description Structured supplement (already compressed into a single string and truncated on the client) */
                         detail?: string;
+                        /**
+                         * @description Orientation when this event was reported. Per-event, not per-batch: a `crash` event describes the orientation of the session that DIED (restored from the sentinel), while events queued alongside it describe the live one. Server allowlists the value.
+                         * @enum {string}
+                         */
+                        orient?: "portrait" | "landscape";
+                        /** @description Viewport as `WxH` in CSS px at report time (the box the game lays out against — not `screen.*`, which does not shrink for the keyboard or browser chrome) */
+                        vp?: string;
+                        /** @description ms between the last orientation flip and this event; absent when the session never rotated. The signal that makes rotation-time failures distinguishable rather than merely suspected — such reports cluster at sinceRot≈0 while ordinary ones carry no sinceRot at all. Server clamps to 0..86400000. */
+                        sinceRot?: number;
                     }[];
                 };
             };

@@ -17,7 +17,7 @@ import { itemKind, auctionLabel, auctionItemLevel, auctionLabelText, equipName, 
 import { listableEquipment, listableCards, selectedItemLabel } from '../../src/scenes/AuctionScene/itemPickerRender';
 import * as itemPickerRenderModule from '../../src/scenes/AuctionScene/itemPickerRender';
 import { openNumInput } from '../../src/scenes/AuctionScene/numInput';
-import { WorldApiError, type AuctionView, type WorldApiClient } from '../../src/net/WorldApiClient';
+import { WorldApiError, type AuctionBidView, type AuctionView, type WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
 import { setToastSink } from '../../src/net/log';
@@ -59,6 +59,7 @@ function stubWorldApi(overrides: Partial<WorldApiClient> = {}): WorldApiClient {
   return {
     listAuctions: vi.fn(async () => [] as AuctionView[]),
     getMyListings: vi.fn(async () => [] as AuctionView[]),
+    getMyBids: vi.fn(async () => [] as AuctionBidView[]),
     getAuctionRefBand: vi.fn(async () => ({ ref: 10, floor: 5, ceil: 20 })),
     createAuction: vi.fn(async () => makeAuction()),
     buyAuction: vi.fn(async () => ({ ok: true as const })),
@@ -66,6 +67,20 @@ function stubWorldApi(overrides: Partial<WorldApiClient> = {}): WorldApiClient {
     placeBid: vi.fn(async () => makeAuction()),
     ...overrides,
   } as unknown as WorldApiClient;
+}
+
+/** One My-Bids row: a listing I bid on plus my own bid, as GET /auction/myBids reports it. */
+function makeBid(auction: Partial<AuctionView> = {}, overrides: Partial<AuctionBidView> = {}): AuctionBidView {
+  const auc = makeAuction({ saleMode: 'auction', ...auction });
+  return {
+    auction: auc,
+    myBid: auc.price,
+    myTotal: auc.price * auc.qty,
+    myBidCount: 1,
+    myBidTs: Date.now(),
+    outcome: 'leading',
+    ...overrides,
+  } as AuctionBidView;
 }
 
 function makeAuction(overrides: Partial<AuctionView> = {}): AuctionView {
@@ -719,25 +734,110 @@ describe('AuctionScene — create form item field (doubled height + emphasis)', 
   });
 });
 
-// ── myBids() — "My Bids" tab: auctions where I'm currently the top bidder ─────────────────────
+// ── "My Bids" tab — server-backed bid records (GET /auction/myBids) ───────────────────────────
+//
+// This used to be a client-side filter over the market list (`topBid.bidderId === myAccountId`), which
+// by construction could only ever show listings I was LEADING: `topBid` names the current leader only,
+// so being outbid removed the listing from the tab entirely. These pin the replacement — the tab renders
+// whatever the server sent, in the server's order, and the badge reflects each row's outcome.
 
-describe('AuctionScene — myBids()', () => {
-  it('keeps only auction-mode listings where I am the current top bidder', () => {
-    const scene = buildScene({ myAccountId: 'acc_me' });
-    scene.core.allAuctions = [
-      makeAuction({ auctionId: 'a1', saleMode: 'auction', topBid: { bidderId: 'acc_me', amount: 10, ts: 0 } }),
-      makeAuction({ auctionId: 'a2', saleMode: 'auction', topBid: { bidderId: 'acc_other', amount: 20, ts: 0 } }),
-      makeAuction({ auctionId: 'a3', saleMode: 'fixed' }), // fixed-price listings never have a topBid
-      makeAuction({ auctionId: 'a4', saleMode: 'auction' }), // no bids yet
-    ];
-    expect(scene.list.myBids().map((a: AuctionView) => a.auctionId)).toEqual(['a1']);
+describe('AuctionScene — My Bids tab', () => {
+  it('loads the tab from /auction/myBids rather than filtering the market list', async () => {
+    const worldApi = stubWorldApi({
+      // A listing I bid on that is NOT in the market list at all (already sold) — unreachable by any
+      // filter over allAuctions, which is exactly the case the old derivation lost.
+      getMyBids: vi.fn(async () => [makeBid({ auctionId: 'gone', status: 'sold' }, { outcome: 'lost' })]),
+    });
+    const scene = buildScene({ worldApi, myAccountId: 'acc_me' });
+    await scene.core.loadData();
+
+    expect(worldApi.getMyBids).toHaveBeenCalled();
+    expect(scene.list.myBids().map((a: AuctionView) => a.auctionId)).toEqual(['gone']);
     scene.destroy();
   });
 
-  it('returns an empty list when myAccountId is not wired', () => {
-    const scene = buildScene();
-    scene.core.allAuctions = [makeAuction({ saleMode: 'auction', topBid: { bidderId: 'acc_other', amount: 20, ts: 0 } })];
+  it('renders in the order the server sent, without re-sorting client-side', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.core.applyMyBids([
+      makeBid({ auctionId: 'b2' }),
+      makeBid({ auctionId: 'b1' }),
+    ]);
+    expect(scene.list.myBids().map((a: AuctionView) => a.auctionId)).toEqual(['b2', 'b1']);
+    scene.destroy();
+  });
+
+  it('is empty until the server answers (no client-side derivation from the market list)', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.core.allAuctions = [makeAuction({ saleMode: 'auction', topBid: { bidderId: 'acc_me', amount: 10, ts: 0 } })];
     expect(scene.list.myBids()).toEqual([]);
+    scene.destroy();
+  });
+
+  it('badges each row by outcome: leading / outbid / won / lost', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.core.applyMyBids([
+      makeBid({ auctionId: 'b1' }, { outcome: 'leading' }),
+      makeBid({ auctionId: 'b2', price: 200 }, { outcome: 'outbid', myBid: 120 }),
+      makeBid({ auctionId: 'b3', status: 'sold' }, { outcome: 'won' }),
+      makeBid({ auctionId: 'b4', status: 'sold' }, { outcome: 'lost' }),
+    ]);
+    scene.core.activeTab = 'bids';
+    scene.core.loading = false;
+    scene.render();
+
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('auction.leading'));
+    expect(texts).toContain(t('auction.outbid'));
+    expect(texts).toContain(t('auction.bidWon'));
+    expect(texts).toContain(t('auction.bidLost'));
+    scene.destroy();
+  });
+
+  it('shows my own bid only when it differs from the listing price (the outbid gap)', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.core.applyMyBids([makeBid({ auctionId: 'b1', price: 200 }, { outcome: 'outbid', myBid: 120 })]);
+    scene.core.activeTab = 'bids';
+    scene.core.loading = false;
+    scene.render();
+    expect(collectTexts(scene.container)).toContain(`${t('auction.myBid')}: 120`);
+    scene.destroy();
+  });
+
+  it('while leading, my bid IS the listing price and is not printed twice', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.core.applyMyBids([makeBid({ auctionId: 'b1', price: 120 }, { outcome: 'leading', myBid: 120 })]);
+    scene.core.activeTab = 'bids';
+    scene.core.loading = false;
+    scene.render();
+    expect(collectTexts(scene.container).some((x: string) => x.startsWith(t('auction.myBid')))).toBe(false);
+    scene.destroy();
+  });
+
+  it('a settled auction row is labelled with the final price, not the "current bid"', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.core.applyMyBids([
+      makeBid({ auctionId: 'live', price: 120, topBid: { bidderId: 'acc_me', amount: 120, ts: 0 } }, { outcome: 'leading' }),
+      makeBid({ auctionId: 'done', price: 300, status: 'sold', topBid: { bidderId: 'acc_me', amount: 300, ts: 0 } }, { outcome: 'won', myBid: 300 }),
+    ]);
+    scene.core.activeTab = 'bids';
+    scene.core.loading = false;
+    scene.render();
+
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(`${t('auction.currentBid')}: 120`); // still running
+    expect(texts).toContain(`${t('auction.finalPrice')}: 300`); // settled — that bid is what it went for
+    scene.destroy();
+  });
+
+  it('exposes no action hit rect — the tab is informational', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.core.applyMyBids([makeBid({ auctionId: 'b1' }, { outcome: 'outbid' })]);
+    scene.core.activeTab = 'bids';
+    scene.core.loading = false;
+    scene.render();
+    const texts = collectTexts(scene.container);
+    expect(texts).not.toContain(t('auction.bid'));
+    expect(texts).not.toContain(t('auction.cancel'));
     scene.destroy();
   });
 });
@@ -1162,6 +1262,35 @@ describe('AuctionScene — background poll', () => {
     await flush();
     expect(renderSpy).toHaveBeenCalled();
     expect(scene.core.allAuctions[0].price).toBe(120);
+    scene.destroy();
+  });
+
+  it('re-renders when only a bid outcome flipped — the market list alone cannot see it', async () => {
+    // The listing I'm bidding on is NOT on the market page being polled: /auction/list returns one page
+    // (price-sorted, capped) and can be category-filtered, so most listings a player has bid on are absent
+    // from it — and a settled one has left the open market entirely. auctionSig therefore stays byte-identical
+    // across the poll while my standing in that auction changes from winning to lost. Without bidSig in the
+    // signature the tab would keep painting "leading" over an auction someone else has already won.
+    const market = makeAuction({ auctionId: 'unrelated', price: 100, expireAt: 9_999_999_999 });
+    const mine = { auctionId: 'b1', price: 300, expireAt: 9_999_999_999, saleMode: 'auction' as const };
+    let call = 0;
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(async () => [{ ...market }]),
+      getMyBids: vi.fn(async () => (call++ === 0
+        ? [makeBid(mine, { outcome: 'leading', myBid: 300 })]
+        : [makeBid({ ...mine, status: 'sold' }, { outcome: 'lost', myBid: 300 })])),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    scene.core.activeTab = 'bids';
+    scene.render();
+    expect(collectTexts(scene.container)).toContain(t('auction.leading'));
+
+    scene.update(AUCTION_POLL_SEC + 1);
+    await flush();
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('auction.bidLost'));   // the badge followed the flip…
+    expect(texts).not.toContain(t('auction.leading'));
     scene.destroy();
   });
 
