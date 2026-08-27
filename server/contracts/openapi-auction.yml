@@ -83,6 +83,33 @@ components:
             amount: { type: number }
             ts: { type: number }
 
+    AuctionBidView:
+      type: object
+      description: >
+        One listing this account has bid on, live or already settled. Exists because AuctionView.topBid
+        only ever names the CURRENT leader — once a bidder is outbid the listing keeps no trace they
+        bid at all, so "My Bids" cannot be derived from the market list.
+      required: [auction, myBid, myTotal, myBidCount, myBidTs, outcome]
+      properties:
+        auction:
+          $ref: '#/components/schemas/AuctionView'
+        myBid:
+          type: number
+          description: My highest bid unit price on this listing (differs from auction.price once I am outbid)
+        myTotal:
+          type: number
+          description: Coins I escrowed with that bid (myBid × qty); refunded by mail as soon as someone outbids me
+        myBidCount:
+          type: integer
+          description: How many bids I have placed on this listing
+        myBidTs:
+          type: number
+          description: Ms of my latest bid
+        outcome:
+          type: string
+          enum: [leading, outbid, won, lost]
+          description: "leading/outbid = listing still open; won/lost = settled"
+
     OkResponse:
       type: object
       required: [ok]
@@ -154,6 +181,30 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/AuctionView' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
+
+  /auction/myBids:
+    get:
+      operationId: getMyAuctionBids
+      security: [{ bearerAuth: [] }]
+      description: >
+        Every listing this account has bid on — including ones it is currently losing and ones already
+        settled. Live listings first (soonest to end first), then closed history newest-first. Bid rows
+        expire on the same retention window that purges closed listings.
+      responses:
+        '200':
+          description: My bids
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuctionBidView' }
         '401': { $ref: '#/components/responses/ErrorResp' }
         '500': { $ref: '#/components/responses/ErrorResp' }
 

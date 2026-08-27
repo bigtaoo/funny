@@ -32,6 +32,29 @@ export interface AuctionView {
   topBid?: { bidderId: string; amount: number; ts: number }; // Current top bid (unit price)
 }
 
+/**
+ * How one listing I bid on turned out for me ("My Bids", 2026-08-27).
+ * `leading`/`outbid` are the two live states; `won`/`lost` the two closed ones. A bid row can only
+ * exist on an auction-mode listing, and a listing carrying a bid can never be cancelled or expired
+ * without settling (see trade.ts), so in practice a closed one is always `sold` — `lost` still covers
+ * the cancelled/expired shapes rather than inventing a fifth state for a case the flows forbid.
+ */
+export type AuctionBidOutcome = 'leading' | 'outbid' | 'won' | 'lost';
+
+/** One listing I have bid on, with my own bid alongside the listing's current state. */
+export interface AuctionBidView {
+  auction: AuctionView;
+  /** My highest bid unit price on this listing (NOT the listing's current price — those differ once I'm outbid). */
+  myBid: number;
+  /** Coins I escrowed with that bid (myBid × qty). Refunded by mail the moment someone outbids me. */
+  myTotal: number;
+  /** How many bids I have placed on this listing. */
+  myBidCount: number;
+  /** Ms of my latest bid. */
+  myBidTs: number;
+  outcome: AuctionBidOutcome;
+}
+
 export interface AuctionServiceDeps {
   cols: AuctionCollections;
   now: () => number;
@@ -52,6 +75,9 @@ export const AUCTION_CLOSED_RETENTION_SEC = 30 * 24 * 3600;
 
 /** Fetch cap for getMyListings — larger than AUCTION_MAX_LISTINGS (open cap) to leave room for retained closed history. */
 export const MY_LISTINGS_FETCH_LIMIT = 100;
+
+/** Fetch cap for getMyBids — same order of magnitude as MY_LISTINGS_FETCH_LIMIT (the two tabs face the same wall of history). */
+export const MY_BIDS_FETCH_LIMIT = 100;
 
 /** Fetch cap for queryListings when an itemName filter is applied (filtered in memory, see queryListings). */
 export const QUERY_FETCH_CAP = 500;
@@ -160,3 +186,13 @@ export function docToView(doc: AuctionDoc): AuctionView {
   };
 }
 
+/** Bid-participation row id: one row per (listing, bidder) pair, so repeated bids upsert rather than accumulate. */
+export function bidRowId(auctionId: string, bidderId: string): string {
+  return `${auctionId}|${bidderId}`;
+}
+
+/** How a listing turned out for one bidder — see AuctionBidOutcome for why closed ≠ sold maps to `lost`. */
+export function bidOutcome(doc: Pick<AuctionDoc, 'status' | 'buyerId' | 'topBid'>, bidderId: string): AuctionBidOutcome {
+  if (doc.status === 'open') return doc.topBid?.bidderId === bidderId ? 'leading' : 'outbid';
+  return doc.status === 'sold' && doc.buyerId === bidderId ? 'won' : 'lost';
+}

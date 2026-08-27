@@ -43,6 +43,7 @@ export type FamilyJoinRequestView = socialComponents['schemas']['FamilyJoinReque
 export type FamilyMessageView = socialComponents['schemas']['FamilyMessageView'];
 
 export type AuctionView = auctionComponents['schemas']['AuctionView'];
+export type AuctionBidView = auctionComponents['schemas']['AuctionBidView'];
 export type NationView = components['schemas']['NationView'];
 export type SeasonView = components['schemas']['SeasonView'];
 /**

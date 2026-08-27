@@ -1,7 +1,7 @@
 // Auction (auctionsvc's own contract, AUCTION_DESIGN §9).
 import { getAuctionBaseUrl } from '../config';
 import type { WorldApiCore } from './core';
-import type { AuctionView } from './types';
+import type { AuctionBidView, AuctionView } from './types';
 
 /** Auction domain (see ../WorldApiClient.ts assembly + ./core.ts for the shared transport). */
 export class AuctionApiService {
@@ -17,6 +17,15 @@ export class AuctionApiService {
 
   async getMyListings(): Promise<AuctionView[]> {
     return this.core.req('GET', '/auction/mine', undefined, 10_000, getAuctionBaseUrl());
+  }
+
+  /**
+   * Every listing I have bid on — including the ones I'm currently losing and the ones already settled.
+   * Cannot be derived from the market list: `AuctionView.topBid` only ever names the current leader, so a
+   * bidder who has been outbid leaves no trace on the listing at all.
+   */
+  async getMyBids(): Promise<AuctionBidView[]> {
+    return this.core.req('GET', '/auction/myBids', undefined, 10_000, getAuctionBaseUrl());
   }
 
   /**

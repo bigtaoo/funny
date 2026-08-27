@@ -16,13 +16,15 @@
 //     bidder (who had already been refunded) and the new top bidder's escrow was orphaned.
 //   • Two concurrent same-amount bids from one bidder collide on the journal row instead of sharing a
 //     `spend` orderId, which used to mail a full refund against a single charge.
-import { AUCTION_TAX_RATE, AUCTION_DAILY_BUY_CAP, AUCTION_MIN_INCREMENT_RATIO, AUCTION_ANTI_SNIPE_WINDOW_SEC, SlgError } from '@nw/shared';
+import { AUCTION_TAX_RATE, AUCTION_DAILY_BUY_CAP, AUCTION_MIN_INCREMENT_RATIO, AUCTION_ANTI_SNIPE_WINDOW_SEC, SlgError, createLogger } from '@nw/shared';
 import type { AuctionDoc } from '../db';
 import type { AuctionServiceDeps } from './base';
-import { docToView, categoryOf, type AuctionView } from './base';
+import { docToView, categoryOf, bidRowId, AUCTION_CLOSED_RETENTION_SEC, type AuctionView } from './base';
 import type { AuctionServicePricing } from './pricing';
 import type { AuctionOrderJournal } from './journal';
 import { flowKey, outbidRefundStep, planForBid, planForBuy, planForReturn, planForSettle, snapshotOf } from './journalPlans';
+
+const log = createLogger('auctionsvc');
 
 export class AuctionServiceTrade {
   constructor(
@@ -217,11 +219,52 @@ export class AuctionServiceTrade {
     await this.journal.decide(row, prevBid ? [outbidRefundStep(auctionId, prevBid.bidderId, prevBid.amount, doc.qty)] : []);
     await this.journal.finalize(row);
 
+    // 4b. Remember that this account bid on this listing, so My Bids can still show it after someone
+    // outbids them (`topBid` only ever remembers the current leader).
+    await this.recordBidParticipation(updated, bidderId, amount, escrowTotal);
+
     // 5. Buyout: bid reaches/exceeds buyoutPrice → immediate settlement
     if (doc.buyoutPrice != null && amount >= doc.buyoutPrice) {
       return this.settleAuctionWin(updated);
     }
     return docToView(updated);
+  }
+
+  /**
+   * Remember that `bidderId` bid on this listing ("My Bids", 2026-08-27).
+   *
+   * Called only once the topBid write has landed, so a row exists exactly when coins were really
+   * escrowed against this listing — never for a bid that lost its CAS and got refunded.
+   *
+   * The update is a pipeline rather than `$max`/`$set` operators because `amount` and `total` have to move
+   * together: `$max` alone could keep an earlier, higher `amount` while `$set` overwrote `total` with the
+   * lower bid's escrow, leaving a row claiming a coin figure that never matched its own price.
+   *
+   * Failures are logged and swallowed. This is history with no asset behind it: the bid has already
+   * succeeded and the coins are already escrowed, so throwing here would report a failure for a bid that
+   * went through — strictly worse than a missing history row.
+   */
+  private async recordBidParticipation(doc: AuctionDoc, bidderId: string, amount: number, escrowTotal: number): Promise<void> {
+    try {
+      await this.deps.cols.auctionBids.updateOne(
+        { _id: bidRowId(doc._id, bidderId) },
+        [{
+          $set: {
+            auctionId: doc._id,
+            bidderId,
+            ts: this.deps.now(),
+            // Anchored to the LISTING's expiry, not this bid's timestamp — see AuctionBidDoc.purgeAt.
+            purgeAt: new Date(doc.expireAt + AUCTION_CLOSED_RETENTION_SEC * 1000),
+            amount: { $max: [{ $ifNull: ['$amount', 0] }, amount] },
+            total: { $cond: [{ $gt: [amount, { $ifNull: ['$amount', 0] }] }, escrowTotal, { $ifNull: ['$total', escrowTotal] }] },
+            bids: { $add: [{ $ifNull: ['$bids', 0] }, 1] },
+          },
+        }],
+        { upsert: true },
+      );
+    } catch (e) {
+      log.error('failed to record bid participation', { auctionId: doc._id, bidderId, err: e instanceof Error ? e : String(e) });
+    }
   }
 
   /**

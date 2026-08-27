@@ -11,7 +11,7 @@
 //   • JWT auth (client Bearer header → auctionsvc verifyToken → accountId)
 //   • the ApiResp { ok, data } envelope (client unwraps data / maps { ok:false } → WorldApiError)
 //   • the generated openapi-auction DTO contract (AuctionView shape survives the wire)
-//   • create / list / mine / buy / bid+buyout / cancel + a couple of error-code mappings
+//   • create / list / mine / myBids / buy / bid+buyout / cancel + a couple of error-code mappings
 //
 // Requires Mongo (globalSetup spins up a standalone mongod; falls back + skips if down).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -152,6 +152,7 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     await mongo!.collections.auctions.deleteMany({});
     await mongo!.collections.auctionDaily.deleteMany({});
     await mongo!.collections.auctionPrices.deleteMany({});
+    await mongo!.collections.auctionBids.deleteMany({});
     spends.length = 0;
     materialDeducts.length = 0;
     mails.length = 0;
@@ -206,12 +207,25 @@ describe.skipIf(!mongo)('Auction full-link E2E (real WorldApiClient → real auc
     expect(afterBid.topBid).toMatchObject({ bidderId: 'buyer1', amount: 12 });
     expect(spends).toContainEqual(expect.objectContaining({ account: 'buyer1', amount: 12 })); // escrowed
 
+    // My Bids over the wire: the bidder sees their own listing while they're still leading.
+    const leading = await bidder.getMyBids();
+    expect(leading).toHaveLength(1);
+    expect(leading[0]).toMatchObject({ myBid: 12, myTotal: 12, myBidCount: 1, outcome: 'leading' });
+    expect(leading[0]!.auction.auctionId).toBe(view.auctionId);
+
     // reaching buyoutPrice closes the auction to the sniper; the prior bidder is refunded
     const closed = await sniper.placeBid(view.auctionId, 18);
     expect(closed.status).toBe('sold');
     expect(closed.buyerId).toBe('buyer2');
     expect(mailAtt('buyer1', 'auction_bid_refund:')).toMatchObject({ kind: 'coins', count: 12 }); // refund
     expect(mails.some((m) => m.account === 'buyer2' && m.dispatchKey.startsWith('auction_settle:'))).toBe(true);
+
+    // …and still sees it after losing — the whole point of the endpoint. The listing itself has been
+    // sold to buyer2 and no longer names buyer1 anywhere, so nothing on the market list could show this.
+    expect((await bidder.getMyBids())[0]).toMatchObject({ myBid: 12, outcome: 'lost' });
+    expect((await sniper.getMyBids())[0]).toMatchObject({ myBid: 18, outcome: 'won' });
+    // A player who never bid gets an empty list rather than someone else's history.
+    expect(await seller.getMyBids()).toEqual([]);
   });
 
   it('seller cancels a fixed listing → item mailed back over the wire', async () => {
