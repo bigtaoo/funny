@@ -154,6 +154,13 @@ export default defineConfig({
         // somewhere that would make the boundary guard a lie.
         'src/scenes/FamilyScene/pointer.ts',
         'src/scenes/SectScene/pointer.ts',
+        // ...and FriendsScene's equivalent, added when the third scene of that group got its own
+        // suite (test/friendsSceneInputRouting.test.ts). NOT the same code as the other two: own drag
+        // tracking instead of ScrollTapGesture, a 2D hypot threshold of 8 rather than the gesture's 6,
+        // modal taps firing on up with no drag-cancel, and both scroll clamps in the file. Unlike them
+        // it does import PIXI transitively (via ./core, for clamp/DRAG_THRESHOLD), which is why it is
+        // gated per-file here and not a candidate for any logic/ directory.
+        'src/scenes/FriendsScene/input.ts',
         // ...and one file that did NOT move, on purpose: WorldMapRendererViewport is a renderer
         // collaborator, not pure logic — it mutates `core.ctx` and calls into pool/panels/net. Its
         // arithmetic happens to be testable with a fake ctx (95.8% before this pass), which is why it is

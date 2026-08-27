@@ -55,7 +55,7 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 - **≥10 可执行行才列**：barrel 和 1 行 re-export 壳（`net/anomaly.ts`、`app/nav/shop.ts`、`render/atlas/emblemAtlas.ts`、`platform/stubs/**`…）100% 覆盖但守不住任何东西，只会让清单变长。
 - **两个大 facade 明确不进**：`net/ApiClient.ts`/`WorldApiClient.ts`（~50%）是一行一个转发，覆盖率说明不了任何事（同一理由让它们在 500 行 baseline 里也是例外条目）。
 - **这份逐文件清单是过渡的**，ADR-070 那条「逐文件 include 是缺模块边界的味道」仍然成立：它针对的是逐文件项**收窄** scope（把没测的兄弟藏在好看的数字后面），这里每一项只**增加**受门禁的地盘。清单同时就是 ADR-070 客户端半边（4b）的待办——每抽出一个场景的纯逻辑目录，那个目录替掉它名下的若干逐文件项。
-- **`test/coverageScope.test.ts` 钉住它别烂掉**（51 例）：每一项必须还匹配得到真文件（**改名/删文件会让一项静默失配、scope 无声缩小，而百分比通常还会升**，因为掉出去的都是覆盖好的模块——这正是 `checkFileLength`/`checkCoverageThreshold` 两条 canary 防的那种「靠变绿退休」）、清单不许空（canary）、不许有已被目录项覆盖的冗余项。红绿两向都实测过。
+- **`test/coverageScope.test.ts` 钉住它别烂掉**（54 例）：每一项必须还匹配得到真文件（**改名/删文件会让一项静默失配、scope 无声缩小，而百分比通常还会升**，因为掉出去的都是覆盖好的模块——这正是 `checkFileLength`/`checkCoverageThreshold` 两条 canary 防的那种「靠变绿退休」）、清单不许空（canary）、不许有已被目录项覆盖的冗余项。红绿两向都实测过。
 - **已graduate的「纯逻辑目录」用目录 glob，另有专门守卫**（ADR-071 4b，进行中）。每抽完一组场景，`src/scenes/<组>/logic/**` 一条目录项替掉该组的若干逐文件项——目录项的好处正是**它也管住之后落进来的文件**，而逐文件清单会静默漏掉。已完成：`worldmap/logic`（95.83%）、`CardScene/logic`（100%）。**`Friends`/`Family`/`Sect` 与 `ui/dialogs` 量过之后明确不建目录**——`ui/dialogs` 7 个文件全是绘制代码、零个 PIXI-free 模块；三个社交场景里真纯的只有两个纯类型 `types.ts`，其余不带 PIXI 的（`pointer.ts`/`input.ts`/`data.ts`/`network.ts`）全是 Core 协作者。**教训：「行数 × 出 bug 频次」排不出「有没有纯逻辑可抽」**，排计划要另量一列「PIXI-free 模块数」。那两组改为逐文件受门禁（`FamilyScene/pointer.ts`、`SectScene/pointer.ts`，各 100%，见 `test/socialPointerRouting.test.ts` 46 例 fake-core）。
   - **`test/pureLayerBoundary.test.ts` 才是守边界的那个，百分比不是**。门禁余量 = `covered/0.9 - total`，97% 的目录还能塞进几十行未覆盖代码不越线，而且**测试越好余量越大**；所以往受门禁的纯目录里丢一个 PIXI 文件，门禁照样绿。加一组只需在 `PURE_DIRS` 加一行。守卫查**两件事**：
     1. **runtime import 图**（`import type` 豁免——编译后不存在；非相对 specifier 走白名单），判红时打完整链路。
@@ -77,7 +77,10 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
   1. 模拟加载必须**先置 `valid = true` 再调 `setRealSize()`**（`setRealSize` 只在 valid 时才跑 `BaseTexture.update()`，而那个 update 才会触发常驻的 `'update'` 监听器去同步 frame）；只有 `emit('loaded')` 是不够的。
   2. `beforeEach(resetSharedStubTexture)`（`test/harness/sharedStubTexture.ts`）把共享纹理还原成冷态（frame 1×1、`valid=false`）。
 - **验证**：修前 shuffle 6 次 5 红；修后**全量 shuffle 连跑 6 次 235/235 全绿**，两个文件单独 shuffle 各 10 次全绿。
+- **第三个同类文件是新建的守卫自己扫出来的**：`test/ui/shopScene.ui.ts` 也翻共享纹理的 `valid`（作者当时已经意识到一半，注释里写了「全局纹理缓存在本文件内共享」，但只重置了 `valid`、没重置尺寸/frame）。它用的是 `PIXI.Texture.from(url)`而不是 `getArtTexture`——**同一个对象**，`cardArt.ts` 自己就写着「shared with the `PIXI.Texture.from` global cache」。已一并加上 `beforeEach`，shuffle 8 次全绢。
+- **新增 `test/sharedStubTextureCallSites.test.ts`（静态守卫，4 例）**，钉住两条规则：①凡翻 `baseTexture.valid = true` 的 `test/ui/**` 文件必须有 `beforeEach` + `resetSharedStubTexture`；②`valid = true` 必须在 `setRealSize()` **之前**。第②条尤其需要机器盯——**写错顺序单跑也是绿的**，只有等同一轮里另一个测试先 emit 过 'loaded' 之后才会红。两条规则都做了变异验证（删 `beforeEach` / 把两行调回去，各判红一次），并带 canary（UI 文件数 >100 且至少有一个 load-faker，否则守卫自己在空跑）。
 - **以后写这一层的测试**：只要用例依赖「加载完 / 没加载完」，就 `beforeEach(resetSharedStubTexture)`，别假设「桩 Image 永不 fire loaded，所以整个文件里它一直 invalid」——那句话对单条用例成立，对文件不成立。
+- **⚠️ 别把另一种红当成这条**：`test/ui/cityBldIcon.ui.ts` 与 `composition-hooks.ui.ts` 在**机器负载高时**会报 `Test timed out in 5000ms`。那是**负载假阳性**，不是顺序依赖——机器空闲时这两个文件单跑 13/13 绿、最慢用例仅 ~740ms（离 5000ms 很远），而复现时本机同时在跑 Chrome + 多个套件。症状也不同：超时 vs 断言值错。判别法：单文件安静复跑一次，绿就是负载。
 
 ## 静态类型检查（`npm run typecheck` / CI）
 

@@ -1,9 +1,16 @@
 /**
  * decorCLayer.ts — C-group UI large background decoration layer (art-direction §6.2 C-group).
  *
- * Scatters C-group hand-drawn assets (castle / catapult / paper-plane / ink blot …) at very
- * low alpha randomly across the paper background of UI scenes (lobby / menus etc.), creating a
- * "notebook-margin doodle" atmosphere.
+ * Scatters C-group hand-drawn assets (castle / catapult / paper-plane / ink blot …) at low alpha
+ * (the exact range is tagged below, and is lower than the foreground but not negligible) randomly
+ * across the paper background of UI scenes (lobby / menus etc.), creating a "notebook-margin
+ * doodle" atmosphere.
+ *
+ * @alpha-range 0.25-0.38   <- MUST equal ALPHA_MIN .. ALPHA_MIN+ALPHA_RANGE below.
+ *   Machine-checked by test/decorCLayerContract.test.ts. It is a tag rather than a sentence because
+ *   the prose beneath legitimately quotes the OLD values as history, and a checker that just looked
+ *   for "the right numbers somewhere in the header" passed even with the stale claim still in it
+ *   (verified — that was this guard's first draft). Retune the alpha, retype this line.
  *
  * Design constraints (same as A-group decorLayer.ts):
  * - Original ink colour, no tint. **The alpha is 0.25–0.38, NOT the 0.06–0.15 this line claimed
