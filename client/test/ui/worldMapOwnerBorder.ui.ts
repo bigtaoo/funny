@@ -12,7 +12,7 @@ import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import { drawTileL1, drawTileL2 } from '../../src/scenes/worldmap/tileGraphics';
-import { MINE_TINT, MINE_BASE_TINT, ownerTint, SECT_TINT, ALLY_SECT_TINT, ALLY_SECT_BORDER } from '../../src/scenes/worldmap/tileStyle';
+import { MINE_TINT, MINE_BASE_TINT, ownerTint, SECT_TINT, ALLY_SECT_TINT, ALLY_SECT_BORDER } from '../../src/scenes/worldmap/logic/tileStyle';
 import type { ILayout } from '../../src/layout/ILayout';
 import type { WorldTileView } from '../../src/net/WorldApiClient';
 

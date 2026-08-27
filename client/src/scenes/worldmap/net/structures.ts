@@ -5,7 +5,7 @@
 import { t } from '../../../i18n';
 import { ui as C } from '../../../render/sketchUi';
 import { ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
-import { RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from '../constants';
+import { RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from '../logic/constants';
 import type { WorldMapContext } from '../WorldMapContext';
 import { loadMapViewport, refreshTerritories } from './loaders';
 import { errorMsg } from './errors';

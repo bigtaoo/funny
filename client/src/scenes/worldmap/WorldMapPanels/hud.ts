@@ -14,9 +14,9 @@ import {
 import { buildIcon } from '../../../render/icons';
 import { FS } from '../../../render/fontScale';
 import { serverNow } from '../../../net/serverClock';
-import { dhmsFromMs } from '../formatDuration';
+import { dhmsFromMs } from '../logic/formatDuration';
 import { MARCH_RETURN_SPEEDUP_SECS_PER_COIN } from '@nw/shared';
-import { HUD_H } from '../constants';
+import { HUD_H } from '../logic/constants';
 import type { IconKind } from '../../../render/icons';
 import type { WorldMapPanelsCore } from './core';
 import { renderHeaderHud } from './headerHud';

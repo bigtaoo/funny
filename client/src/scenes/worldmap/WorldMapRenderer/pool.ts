@@ -13,10 +13,22 @@
 import * as PIXI from 'pixi.js-legacy';
 import { proceduralTile, type ProceduralTile } from '@nw/shared';
 import { tileToScreen, visibleTileBounds } from '../../../render/isoGrid';
-import { HUD_H } from '../constants';
-import { ownerTint, terrainFill, terrainTextureName, proceduralTileColor } from '../tileStyle';
+import { HUD_H } from '../logic/constants';
+import { ownerTint, terrainFill, terrainTextureName, proceduralTileColor } from '../logic/tileStyle';
 import { drawTileL1, drawTileL2 } from '../tileGraphics';
-import type { PoolSlot } from '../zoom';
+
+/**
+ * A single pooled tile object — one PIXI.Graphics reused for many map positions.
+ *
+ * Lived in `zoom.ts` next to `ZoomCfg` until ADR-071 4b (2026-08-27): it was that file's ONLY reason
+ * to import PIXI, and it kept the zoom arithmetic out of the gated pure layer. It belongs here anyway
+ * — this is the file that builds and draws the pool.
+ */
+export interface PoolSlot {
+  g: PIXI.Graphics;
+  tx: number; // map tile currently displayed (-1 = unassigned)
+  ty: number;
+}
 import type { WorldTileView } from '../../../net/WorldApiClient';
 import type { WorldMapRendererCore } from './core';
 

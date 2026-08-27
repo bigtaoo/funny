@@ -16,7 +16,7 @@ import { BASE_FOOTPRINT } from '@nw/shared';
 import { getCityContentTopFracForLevel } from '../../src/render/atlas/cityAtlasLoader';
 import { getPlayerBaseContentTopFracForLevel, getPlayerBaseContentWidthFracForLevel } from '../../src/render/atlas/playerBaseAtlasLoader';
 import { ISO_RATIO } from '../../src/render/isoGrid';
-import { BASE_SPRITE_TILES } from '../../src/scenes/worldmap/constants';
+import { BASE_SPRITE_TILES } from '../../src/scenes/worldmap/logic/constants';
 import worldAtlasData from '../../src/assets/slg/world_atlas.json';
 
 type FrameMap = Record<string, { contentTop?: number }>;

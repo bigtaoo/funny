@@ -1,3 +1,11 @@
+// Unit coverage for occupyFrontierCells.
+//
+// Moved out of test/ui/ by ADR-071 4b (2026-08-27) without a single assertion changing: it never needed
+// the UI harness (its only imports are vitest, @nw/shared and the module under test), and test/ui/ is the
+// suite that reports NO coverage — so this file's ~70 lines of pure logic read as 0% covered for as long
+// as it sat there. That is the shape 4b is looking for: a pure module tested by a pure test, inside the
+// measured suite. Nothing else about it moved.
+//
 // Unit coverage for occupyFrontierCells — the ADR-039 "连地" frontier the world map outlines (三战-style).
 // Pins the rule that matters: a target counts only if it shares an EDGE (4-directional) with owned land —
 // a corner-touching diagonal tile is NOT a frontier target, even though the isometric projection makes it
@@ -5,7 +13,7 @@
 // tiles are excluded; a captured (mine) or family (ally) tile extends the frontier.
 import { describe, it, expect } from 'vitest';
 import { proceduralTile } from '@nw/shared';
-import { occupyFrontierCells, type FrontierTile } from '../../src/scenes/worldmap/occupyFrontier';
+import { occupyFrontierCells, type FrontierTile } from '../src/scenes/worldmap/logic/occupyFrontier';
 
 const W = 's1-frontier';
 const MAP = 500;

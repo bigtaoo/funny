@@ -12,7 +12,7 @@ import {
 } from '../../../render/sketchUi';
 import { buildIcon } from '../../../render/icons';
 import { FS } from '../../../render/fontScale';
-import { HUD_H } from '../constants';
+import { HUD_H } from '../logic/constants';
 import type { SlgShopItemView } from '../../../net/WorldApiClient';
 import type { IconKind } from '../../../render/icons';
 import type { WorldMapPanelsCore } from './core';

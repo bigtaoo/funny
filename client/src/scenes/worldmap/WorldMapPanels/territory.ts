@@ -7,7 +7,7 @@ import { buildIcon } from '../../../render/icons';
 import type { IconKind } from '../../../render/icons';
 import { FS, snapFont } from '../../../render/fontScale';
 import { getResTexture } from '../../../render/atlas/resAtlasLoader';
-import { HUD_H, MARGIN } from '../constants';
+import { HUD_H, MARGIN } from '../logic/constants';
 import type { WorldMapPanelsCore } from './core';
 import { renderWorldTabBody as renderWorldTabBodyImpl } from './territoryWorldTab';
 
