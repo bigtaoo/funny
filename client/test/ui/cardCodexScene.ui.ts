@@ -72,6 +72,23 @@ describe('CardCodexScene — locked/unlocked card compendium', () => {
     }
   });
 
+  // The locked line got the same treatment (2026-08-27): a padlock in front of the words, not just
+  // the big one over the illustration next to it. Asserted as an INDENT rather than by looking for
+  // the icon node — a headless ink icon never decodes, so `buildIcon` hands back an empty container
+  // and its presence is unobservable; `drawIconTextRow` offsets the label by the icon's width, and
+  // that offset is 0 when no icon is drawn.
+  it('puts a padlock in front of the locked label, not only over the art', () => {
+    const scene = new CardCodexScene(createLayout(1920, 1080), new InputManager(), baseCb([]));
+    const labels: PIXI.Text[] = [];
+    const walk = (node: PIXI.Container): void => {
+      if (node instanceof PIXI.Text && node.text === t('collection.locked' as never)) labels.push(node);
+      for (const c of node.children) walk(c as PIXI.Container);
+    };
+    walk(scene.container);
+    expect(labels.length).toBeGreaterThan(0);
+    for (const lbl of labels) expect(lbl.x).toBeGreaterThan(0);
+  });
+
   it('never locks buildings/spells regardless of owned unit types', () => {
     const totalDistinctNames = new Set(CARD_DEFINITIONS.map((c) => c.nameKey)).size;
     const scene = new CardCodexScene(createLayout(1920, 1080), new InputManager(), baseCb([])); // owns no characters at all

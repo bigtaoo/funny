@@ -1,6 +1,6 @@
 # 批次 8：数值词条图标补齐（射程 / 攻城值 / 暴击率 / 暴击伤害）— Prompt 文档
 
-> 创建：2026-08-27 · **全部完成（同日）**：v1 四张里 `crit`/`siege` 过、`range`（4.24:1 缩成发丝）与 `critmult`（读成船舵）打回；v2 三张一版过，四张一起接线上线。最终账：43 + 4 = 47 张自有美术 + 6 个别名 = 53 个 ink kind
+> 创建：2026-08-27 · 数值词条四张：**全部完成（同日）** · **追加 8b（卡片元信息：类型/费用/未解锁）**：`未解锁` 已复用 `lock` 落地，`费用`→`ink`、`建筑`→`castle` 判为复用，`士兵`（头盔）/`法术`（卷轴）两张待出图，prompt 见文末：v1 四张里 `crit`/`siege` 过、`range`（4.24:1 缩成发丝）与 `critmult`（读成船舵）打回；v2 三张一版过，四张一起接线上线。最终账：43 + 4 = 47 张自有美术 + 6 个别名 = 53 个 ink kind
 > 前七批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（批 1–4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页，3 张）· [`tab-icon-art-prompts-batch7.md`](tab-icon-art-prompts-batch7.md)（矢量清零，44 张）
 > 配套代码：[`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（本批落地处，同批次 7）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) · 调用点见文末「出图后的接线清单」
 > 相关代码改动（**已落地，不等图**）：收集册属性行每个词条都写全名，见 [`LOBBY_IA_REDESIGN_LOG.md §28`](../game/LOBBY_IA_REDESIGN_LOG.md)
@@ -182,3 +182,49 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 5. 新增 `client/test/ui/equipmentAffixIcons.ui.ts`：装备详情弹窗里这三条词条行必须跟已有图标的词条**缩进相同**。**为什么不断言「有没有图标节点」**——无头 PIXI 里 ink 图标的贴图永远不解码，`buildIcon` 返回空容器，「有没有图标」在树里根本不可观测；可观测的是它对布局的影响（有图标时文字右移 19px），而那一位正是跟着 `affixIconKind` 走的。红绿对照做过。
 
 **验证**：`tsc --noEmit` 绿；`test/render` 全绿（含长宽比门禁、磁盘↔表对账、三墨色契约）；`test/ui` 的 equipment + cardCodex 18 文件 70 例绿；收集册中文横竖屏实拍确认 `射程` 前面的图标就位、整行三个词条同构。
+
+## 追加（8b）：卡片元信息那两行（类型 / 费用 / 未解锁）
+
+2026-08-27，同一轮反馈的下半段：属性行修完之后，收集册卡片上还剩两行**纯文字**——副标题 `士兵 · 费用 4` 和锁定态的 `未解锁`。判据跟上面那条通用判据一致：一张卡片里既然已经有一行是「图标 + 名字」，同一块信息面板里其它行就不能只有名字。
+
+| 词 | i18n key | 现状 | 结论 |
+|---|---|---|---|
+| 未解锁 | `collection.locked` | ❌ | **复用 `lock`**（批次 7 已有）——**已落地** |
+| 费用 | `collection.stat.cost` | ❌ | **复用 `ink`**（墨水瓶）：战斗里费用付的就是墨水，`HUDView` 的战斗内货币用的就是这张图。本文档开头的盘点表早就判过这条复用，这次执行 |
+| 建筑 | `collection.cardType.building` | ❌ | **复用 `castle`**（批次 7 已有，带城垛和小旗的城堡）——建筑卡就是兵营/箭塔 |
+| 士兵 | `collection.cardType.unit` | ❌ | **出新图 `unit`**（头盔），见下 |
+| 法术 | `collection.cardType.spell` | ❌ | **出新图 `spell`**（卷轴），见下 |
+
+**为什么 `士兵` 不复用现成图**：三个候选都撞了——`rosterIcon`（卡框里的小人）跟本页页头的 `collectionTabIcon` 是同一路造型，画在卡片里会跟页头重影；`swords`（交叉双剑）的既有语义是「对战/PVP」（结算页重开按钮、战绩胜负），再兼一个「这张卡是士兵」等于一图三义；`atk` 是同一块面板下一行的匕首，并排两把刀。头盔是这套语言里还空着的位置。
+
+**这两行的排版**：副标题会从 `士兵 · 费用 4` 变成 `[头盔] 士兵　[墨水瓶] 费用 4`——**中间那个 `·` 去掉**，两个图标已经把两段分开了，跟属性行（本来就没有分隔符）对齐。整行沿用 `drawIconTextRow` 的「装不下就整体等比缩小」，因为副标题此前**根本没有宽度守卫**（卡名有，副标题没有），加图标之后竖屏会更贴边。
+
+**`未解锁` 那行已经落地**（不等图，`lock` 是现成的）：锁定卡的插画上本来就压着一个大锁，但那是左边另一块面板；信息面板这一行得有自己的图标。
+
+## 新图 prompt（8b，2 张）
+
+| # | kind | 造型 | 必须避让 |
+|---|---|---|---|
+| 1 | `unit` | 正面的简易头盔：圆顶 + 一条横向眉带 + 中间一道竖直护鼻，盔口下沿平直 | 不是 `armorslotTabIcon` 的胸甲；不要画脸/眼睛（里面是空的）；不要维京双角、不要高羽毛盔缨（28px 上只会变成一团）；不是整个骑士头像 |
+| 2 | `spell` | 摊开的卷轴：上下两端各一个**卷紧的圆柱卷**，中间是平整的一段纸面，卷比纸面明显更宽更圆 | 不是 `book`（摊开的线圈本，有中缝和两页）；不是 `cards`（叠起来的方卡）；纸面上**不要**画任何符号/线条（会被判成文字）；不要星星、魔杖、闪电（`star`/`atkspd` 已占） |
+
+### 1 士兵（`tabicon_unit`）
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a simple soldier's helmet seen straight from the front — a rounded dome, one horizontal brow band across it, and one short vertical nose guard hanging down from the band, with a plain straight bottom rim; the space under the dome is empty. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a face or eyes inside the helmet, a head or neck, horns, a tall plume or crest, a full knight bust, a breastplate or torso armor, a shield or sword beside it, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 2 法术（`tabicon_spell`）
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: an unrolled paper scroll seen face-on — one tightly rolled cylinder across the top and another across the bottom, each clearly rounder and wider than the flat blank sheet stretched between them. The sheet is completely blank. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, an open book with a center spine and two pages, a spiral notebook, a stack of cards, any writing, runes, symbols or squiggles on the sheet, a wax seal, a ribbon, sparkles or stars, a magic wand, a lightning bolt, a hand, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+> 备选（`spell` 若第一版读成书/卡）：改画**陨石**——一颗实心圆石 + 三道向后的拖尾线（游戏里的法术本来就是陨石/落石/加速）。实心块在 28px 上比空心纸面更抗缩小，代价是「陨石 = 法术」不如卷轴通用。
+
+### 接线（图回来之后）
+
+1. `tabicon_unit.*` / `tabicon_spell.*` 归位，`pack_tab_icons.cjs` 加两行 `inks: ['active']`，跑脚本。
+2. `inkIconRaster.ts`：两条 import + `InkIconKind` 两个成员 + `INK_ICON_ART` 两行；`inkIconArt.test.ts` 的计数 47 → 49。
+3. `CardCodexScene/tile.ts`：副标题改走 `drawIconTextRow`，卡类型 → 图标的映射是 `unit → 'unit'` / `building → 'castle'` / `spell → 'spell'`，费用那段带 `ink`，去掉中间的 `·`。
+4. 验收照旧：28px contact sheet（`unit` 要跟 `atk`/`armor` 并排看，`spell` 要跟 `book`/`cards` 并排看）+ 收集册中文横竖屏实拍（一屏里同时有士兵/建筑/法术三种卡）。

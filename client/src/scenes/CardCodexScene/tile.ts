@@ -102,6 +102,36 @@ export function drawTileFace(
   container.addChild(lore);
 }
 
+/**
+ * One line of `[icon] text` pieces at `size`, shrunk as a whole if it outruns `maxW`. The icon is
+ * always a cue in FRONT of the word, never instead of it (same rule as {@link drawStatChips}), so a
+ * piece whose art doesn't exist yet degrades to bare text and still lines up with its neighbours.
+ */
+function drawIconTextRow(
+  pieces: { icon: IconKind | null; text: string }[],
+  x: number, y: number, maxW: number, size: number, color: number, bold: boolean, target: PIXI.Container,
+): void {
+  const row = new PIXI.Container();
+  const iconSize = Math.round(size * 1.35); // matches the stat row's icon-to-text ratio
+  const gap = Math.round(size * 0.38);
+  const pieceGap = Math.round(size * 0.9);
+  let cx = 0;
+  pieces.forEach((p, i) => {
+    if (i > 0) cx += pieceGap;
+    if (p.icon) {
+      const ic = buildIcon(p.icon, iconSize, color);
+      ic.x = cx; ic.y = 0; row.addChild(ic);
+      cx += iconSize + gap;
+    }
+    const lbl = txt(p.text, snapFont(size), color, bold);
+    lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = iconSize / 2; row.addChild(lbl);
+    cx += lbl.width;
+  });
+  row.x = x; row.y = y;
+  if (row.width > maxW) row.scale.set(maxW / row.width);
+  target.addChild(row);
+}
+
 /** Greedy split of `chips` into `n` consecutive lines of roughly equal width; returns the widest line. */
 function widestLineOf(chips: { w: number }[], chipGap: number, n: number): number {
   const total = chips.reduce((a, c) => a + c.w, 0) + chipGap * (chips.length - 1);
@@ -246,9 +276,12 @@ export function drawCardTile(
   target.addChild(sub);
 
   if (locked) {
-    const lockedLbl = txt(t('collection.locked'), snapFont(Math.round(h * 0.11)), C.mid, true);
-    lockedLbl.anchor.set(0, 0); lockedLbl.x = textX; lockedLbl.y = y + Math.round(h * 0.62);
-    target.addChild(lockedLbl);
+    // The padlock is drawn over the illustration too, but that half of the tile is a separate panel —
+    // this line has to carry its own icon like every other labelled line in the info panel.
+    drawIconTextRow(
+      [{ icon: 'lock', text: t('collection.locked') }],
+      textX, y + Math.round(h * 0.60), infoW - pad * 2, Math.round(h * 0.11), C.mid, true, target,
+    );
     return null;
   }
 
