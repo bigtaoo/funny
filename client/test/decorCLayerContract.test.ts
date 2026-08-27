@@ -7,6 +7,11 @@
 // 0.06–0.15). Nothing noticed for two months, across 27 scenes, and the visible cost was the
 // Leaderboard's "My rank" readout sitting on an ink blot.
 //
+// Resolved the same day (UI_DESIGN_LOG_2026-08.md §40): the alpha went back to 0.10–0.22 globally —
+// the value 2026-06-28 had replaced — and the doubled doodle COUNT from that commit was kept, since
+// density and not opacity is what "this scene looks under-decorated" asks for. So this guard's job
+// now is to keep the constants and the tag from drifting apart again, in either direction.
+//
 // That was the SECOND prose-drift defect found the same day — CardScene/logic/types.ts claimed its
 // roster cell was "deliberately taller" than the equipment cell when both had been 266 since
 // 2026-07-16 (see cardSceneCellGeometry.test.ts). Both are the same failure: a cross-cutting design

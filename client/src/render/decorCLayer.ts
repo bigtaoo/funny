@@ -6,27 +6,38 @@
  * across the paper background of UI scenes (lobby / menus etc.), creating a "notebook-margin
  * doodle" atmosphere.
  *
- * @alpha-range 0.25-0.38   <- MUST equal ALPHA_MIN .. ALPHA_MIN+ALPHA_RANGE below.
+ * @alpha-range 0.10-0.22   <- MUST equal ALPHA_MIN .. ALPHA_MIN+ALPHA_RANGE below.
  *   Machine-checked by test/decorCLayerContract.test.ts. It is a tag rather than a sentence because
  *   the prose beneath legitimately quotes the OLD values as history, and a checker that just looked
  *   for "the right numbers somewhere in the header" passed even with the stale claim still in it
  *   (verified — that was this guard's first draft). Retune the alpha, retype this line.
  *
  * Design constraints (same as A-group decorLayer.ts):
- * - Original ink colour, no tint. **The alpha is 0.25–0.38, NOT the 0.06–0.15 this line claimed
- *   until 2026-08-27, and at that strength it demonstrably DOES compete with foreground text.** The
- *   number was raised to 0.25–0.38 on 2026-06-28 ("大厅背景装饰数量翻倍") for the lobby's look, and
- *   the comment was already stale before that (it said 0.06–0.15 while the code said 0.10–0.22). The
- *   layer is used by 27 scenes, not just the lobby, so the raise applied everywhere. Verified in real
- *   Chrome 2026-08-27: LeaderboardScene's "My rank: #42 1830" readout sits on an ink blot in both
- *   orientations, and ResultScene's "102 dmg" secondary-badge value sits under a gold star in
- *   landscape while portrait puts stars across the badge row and the FIGHT AGAIN button.
- * - Note the placement model behind that: EDGE_SKIP/CENTER_SKIP below deliberately push doodles
- *   AWAY from the centre "because the main UI content occupies the central vertical band". That is
- *   true of the lobby and false of a list scene, whose header, season label and my-rank readout all
- *   live at the top edge — i.e. exactly where this layer is densest.
- * - Retuning the alpha (or teaching the layer a keep-out rect for scene chrome) is an open
- *   art-direction call, deliberately NOT made here; see UI_DESIGN_LOG_2026-08.md §39.
+ * - Original ink colour, no tint, and faint enough that it never competes with foreground text.
+ *   0.10–0.22 is not a fresh guess: it is the value 2026-06-28 replaced, chosen back then against
+ *   exactly this criterion ("明显可见但不抢前景", itself a deliberate raise from an all-but-invisible
+ *   0.06–0.15). It was restored on 2026-08-27 after real-Chrome screenshots showed the interim
+ *   0.25–0.38 demonstrably DID compete: LeaderboardScene's "My rank: #42 1830" readout sat on an
+ *   ink blot in both orientations, and ResultScene's "102 dmg" badge value sat under a gold star in
+ *   landscape while portrait put stars across the badge row and the FIGHT AGAIN button.
+ * - **Density, not opacity, is the knob for "this scene looks under-decorated."** 7317c960
+ *   (2026-06-28) did two things under a title that claimed only one ("大厅背景装饰数量翻倍"):
+ *   it doubled the doodle count (GRID 4×6 → 6×9, EDGE_SKIP 0.28 → 0.20) AND rode an unlabelled
+ *   alpha raise along with it. The count is what answered "装饰太少"; the alpha was collateral, and
+ *   it applied to all 27 calling scenes rather than the lobby it was tuned for. The count change is
+ *   kept. If the lobby ever reads thin again, raise the density again — not this constant.
+ * - **Why the alpha is one global number and not per-scene.** ~21 of the 27 calling scenes are
+ *   list/readout screens whose chrome sits at the top edge, i.e. where EDGE_SKIP/CENTER_SKIP is
+ *   densest (that placement model assumes "main content occupies the central vertical band" — true
+ *   of the lobby, false of a list). So the safe value must be the DEFAULT. Splitting it per scene,
+ *   or teaching the layer keep-out rects for scene chrome, is not free: `bake()` caches on the
+ *   caller-supplied key and this layer passes `decorc:${w}x${h}` — SIZE ONLY. Any per-scene variant
+ *   must enter that key, or the first scene to bake at a given size silently hands its layer to the
+ *   other 26; and once in the key it costs another resident PAGE-SIZED texture, the class ADR-073
+ *   nearly died on, in a cache that still has no byte-budget evictor. Keep-out rects would also make
+ *   27 scenes restate chrome geometry that varies by orientation and device height — a second copy
+ *   of the layout, which is the very failure mode that let this constant drift from its comment for
+ *   two months. Decision + full trade-off in UI_DESIGN_LOG_2026-08.md §39/§40.
  * - Deterministic PRNG (fixed seed) — identical layout on every build
  * - Statically baked (`bake()`), zero runtime cost; falls back to live Graphics in headless mode
  * - interactiveChildren = false — does not consume pointer events
@@ -48,8 +59,8 @@ const GRID_ROWS     = 9;     // divide height into N rows
 const EDGE_SKIP     = 0.20;  // edge columns / top+bottom rows — denser frame
 const CENTER_SKIP   = 0.80;  // interior cells behind content — kept sparse
 const ROT_MAX       = 0.45;  // ± radians; more relaxed than A-group edge doodles
-const ALPHA_MIN     = 0.25;  // random alpha 0.25–0.38
-const ALPHA_RANGE   = 0.13;
+const ALPHA_MIN     = 0.10;  // random alpha 0.10–0.22 — keep in sync with the @alpha-range tag above
+const ALPHA_RANGE   = 0.12;
 const SEED          = 0xC09C_0FFE;  // "c coffee" — stable across UI redraws
 
 function frand(p: Prng): number { return p.nextInt(1_000_000) / 1_000_000; }
