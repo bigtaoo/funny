@@ -295,6 +295,18 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - 覆盖测试：`client/test/ui/cityScene.ui.ts` **+5 例**——停留队伍显示「野外停留」且不再出现「驻军在家」、驻扎与停留两态文案可区分、混合场景下只有真在家的那一队保留「驻军在家」、视野内敌方驻军（`mine:false`）不抢我方槽位、撤军途中 march 压过 station。既有「只落一个 order 端点不算数」用例改成三端点口径。另有 9 个测试文件的 `WorldApiClient` stub 补 `getStationed`（拆栅栏后缺方法会真的抛，同 §8.8 那笔）。
 - 验证：`tsc --noEmit` 全绿、`test:ui` 226 文件 / 2109 例全绿、`npm test` 190 文件 / 1950 例全绿、`build:web` 构建成功。**未做真机截图**：复现需要一个野外驻扎中的账号，本地 docker 栈里 `stationed` 集合为空、用户报的状态在部署后端上；Browser 面板本次仍取不到画面（同 §8.7 的老问题），按用户指示叫停，视觉侧以 headless UI 用例（真 `PIXI.Text` 节点文本）为准。
 
+### 8.10 建筑详情弹窗内直接加速（2026-08-27）
+
+用户报：打开在建建筑的详情弹窗只能看到一行「建造中」，要加速得先关掉弹窗、去建造队列条点「加速」、再重新打开弹窗看进度——为一个纯确认动作走了三步。
+
+- **根因（不是漏做，是遮挡）**：加速按钮一直只有一个，画在建造队列条上（`CityScene/render.ts` 的 `renderBuildQueue`），而它位于详情弹窗的 dim 层**之下**；弹窗最后压了一条覆盖全屏的 tap-outside 命中（`modals.ts` 末尾）来吃掉一切面板外点击，队列条那颗按钮因此在弹窗打开期间完全不可点。
+- **改法**：`renderDetailModal` 的 `inQueue` 分支（原先只有一行 `city.upgrading` 文本）在**同一行右侧**补一颗加速按钮，与「升级」按钮共用那一行本就预留的 36px（`contentH` 不用改）：
+  - 复用 `city.speedup` 文案与 `core.doSpeedup(key)`，即与队列条按钮同一条链路、同一套 `BUILD_SPEEDUP_SECS_PER_COIN` 定价；`serverNow()` 而非 `Date.now()` 算剩余秒，与 `actions.ts` 的 `doSpeedup` 口径一致（客户端本地时钟偏了会让展示价与实收价打架，comm-audit-2026-07-27 那笔）。
+  - 按钮宽度按 `lbl.width + 16` 量出来后右对齐（`scaledTxt()` 只提 raster 分辨率、不改 fontSize，所以 `lbl.width` 已是面板局部坐标），德文最长的「Beschleunigen (1440 Münzen)」与左侧「Im Bau…」之间仍有明显留白。
+  - `secsLeft <= 0` 时不画（队列条同规则）——那一瞬间条目正要被服务端清掉，画一颗 1 金币的按钮只会白扣。
+- 覆盖测试：`client/test/ui/cityModalSpeedup.ui.ts`（新文件 3 例）——在建时同行出现按钮且点击带着「该建筑 key + 按剩余时间算出的金币数」调 `speedupBuild`、剩余 0 秒不画、未排队建筑仍是普通「升级」按钮且不漏出加速命中。
+- 验证：`tsc --noEmit` 全绿、city 相关 4 个既有 UI 测试文件 96 例全绿；视觉核对走 Playwright stub-mount 路径（`web-e2e` + `views.showCity()` 喂一个带 `buildQueue` 的假 `worldApi`，无需后端/登录），中德两语各截一张，并用真实鼠标点击（scene 坐标 → CSS px）确认命中矩形落在按钮上：`speedupBuild('graphiteMill', 1440)`。
+
 ---
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）

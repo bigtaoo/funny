@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { ui as C, scaledTxt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { formatDuration } from '../worldmap/formatDuration';
+import { serverNow } from '../../net/serverClock';
 import type { BuildingKey } from '../../net/WorldApiClient';
 import {
   DESK_MAX_LEVEL,
@@ -20,6 +21,7 @@ import {
   buildingYieldMult,
   buildingSelfYield,
   trainQueueMaxFor,
+  BUILD_SPEEDUP_SECS_PER_COIN,
   satchelCarryCapFor,
   RESOURCE_TYPES,
   type ResourceType,
@@ -51,7 +53,8 @@ export class ModalsPanel implements ModalsHandlers {
     const gateReason = buildGateReason(bld, key, toLevel);
     const cost = buildCost(key, toLevel);
     const timeSec = buildTimeSec(key, toLevel);
-    const inQueue = (this.core.me?.buildQueue ?? []).some((q) => q.key === key);
+    const queueEntry = (this.core.me?.buildQueue ?? []).find((q) => q.key === key);
+    const inQueue = !!queueEntry;
     const canAfford =
       !gateReason &&
       Object.entries(cost).every(
@@ -176,11 +179,51 @@ export class ModalsPanel implements ModalsHandlers {
         gl.x = 10;
         gl.y = iy;
         panelRoot.addChild(gl);
-      } else if (inQueue) {
+      } else if (queueEntry) {
         const ql = st(t('city.upgrading'), FS.tiny, C.gold, true);
         ql.x = 10;
         ql.y = iy;
         panelRoot.addChild(ql);
+
+        // Speed-up right here in the modal, on the same row as "建造中" — before this the only
+        // speed-up button lived in the build-queue bar behind the modal, so the player had to
+        // close the modal, tap it, and reopen. serverNow() for the same reason as actions.ts's
+        // doSpeedup: the price shown must come off the server-corrected clock it charges against.
+        const secsLeft = Math.max(0, Math.ceil((queueEntry.completeAt - serverNow()) / 1000));
+        if (secsLeft > 0) {
+          const coins = Math.max(1, Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN));
+          const lbl = st(
+            t('city.speedup').replace('{coins}', String(coins)),
+            FS.tiny,
+            C.dark,
+            true
+          );
+          // scaledTxt() only raises the raster resolution — the Text keeps its unscaled
+          // fontSize, so lbl.width is already in the panel's local frame.
+          const btnW = Math.min(mw - 20, lbl.width + 16);
+          const btnRectLocal = { x: mw - 10 - btnW, y: iy - 6, w: btnW, h: 28 };
+          const g = sketchPanel(btnRectLocal.w, btnRectLocal.h, {
+            fill: C.paper,
+            border: C.gold,
+            width: 1,
+            seed: seedFor(btnRectLocal.x, btnRectLocal.y, btnRectLocal.w),
+          });
+          g.x = btnRectLocal.x;
+          g.y = btnRectLocal.y;
+          panelRoot.addChild(g);
+          lbl.x = btnRectLocal.x + 8;
+          lbl.y = btnRectLocal.y + (btnRectLocal.h - 16) / 2;
+          panelRoot.addChild(lbl);
+
+          const screenRect = this.core.toScreen(btnRectLocal, screenX, screenY, scale);
+          this.core.hits.push({
+            x: screenRect.x,
+            y: screenRect.y,
+            w: screenRect.w,
+            h: screenRect.h,
+            fn: () => void this.core.doSpeedup(key),
+          });
+        }
       } else {
         const btnRectLocal = { x: 10, y: iy, w: mw - 20, h: 32 };
         const g = sketchPanel(btnRectLocal.w, btnRectLocal.h, {
