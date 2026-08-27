@@ -128,7 +128,10 @@ export class TerritoryService {
       mainBaseTile: tid,
       buildings,
       ...(familyId ? { familyId } : {}),
-      ...(sectId ? { sectId } : {}),
+      // ADR-074 P3: `sectSince` starts §8.5's clock here too, not only at the sect transitions — otherwise
+      // an account that joins the world while its family is ALREADY in a sect would collect the city yield
+      // bonus from its first second, which is the same hop this delay exists to price.
+      ...(sectId ? { sectId, sectSince: t } : {}),
       rev: 0,
     };
     await cols.playerWorld.insertOne(pw);

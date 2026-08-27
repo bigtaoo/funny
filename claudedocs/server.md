@@ -173,6 +173,12 @@ cp .env.example .env        # 填 NW_JWT_SECRET / NW_DOMAIN
   - **归因纠正（值得记住的教训）**：第一版注释和测试把 `damage.ts` 的病因写成"同一 tick 内多个攻击者互相覆盖"，测试在**修复前的代码上也通过**——因为 `processDueSiegeDamage` 是 `for … await` 顺序循环、每次迭代自己重读，同跳内本来就正确叠加。真实对手是 `scheduler.ts` 用 `Promise.allSettled` **并发**跑的五个 tick 任务（`processCompletedBuilds` 的墙升级重设 durability）以及多实例部署。修复本身是对的，错的是理由；测试改成在读写窗口内注入交错后才真正会咬人。**写并发回归测试时，"顺序调用两次"几乎从不等于"并发"。**
   - **U13 的最后一条已另开一轮收口**：拍卖成交的跨集合幂等与回滚不属于这套单文档手法（原子性边界跨三个进程、四个库），见本文「拍卖行成交原子性」。
 
+- **ADR-074 P3 落地要点（2026-08-27，野外城池收益 + 守方）**：完整叙述在 [`design/game/SLG_CITY_SIEGE_DESIGN.md`](../design/game/SLG_CITY_SIEGE_DESIGN.md) §10-P3 与 ADR-076，这里只留改动服务端约定的四条。
+  - **`recomputeYield` 的出口顺序变了**：地块 → 建筑乘数 + 自产 → 战令 → **城池 flat（最后一步，加法）**。往里加任何新加成前先问它该在乘法段还是加法段——加法段的存在理由是 §8.1 的上限，放进乘法段等于取消那个上限。同时**删掉了这个函数里的 `nations` 读**与 `NATION_BONUS_PRODUCTION`。
+  - **`PlayerWorldDoc.sectId` 不再只在 joinWorld 写一次**：worldsvc 自己拥有的四个宗门转换（create/join/leave/dissolve）都会回写镜像并盖 `sectSince`。仍**不覆盖**「加入一个已在宗门里的家族」（那发生在 socialsvc），方向是少给不是多给。
+  - **`MarchDoc.speedMult`**：行军时长倍率**快照在文档上**，`marchStepArriveAt` 必须吃同一个值。任何新的行军速度修正都要走这个字段，只改 `arriveAt` 会让 ADR-051 的步进扫描与到达时刻脱钩。
+  - **守方队伍的锁定统一走 `teamState[id].injuredUntil`**（`CityDoc.defenderLock` 未使用即退役）。城池守方梯级与 `applyBaseSiege` 现在是同一套：非受伤队伍按确定顺序排、被打败者盖 `SLG_TEAM_INJURY_MS`。**引擎象征性基地的 `defenderBaseHp` 在城池路径上不是可选项**——不传就等于那一级免费。
+
 ## 经济核验工具（econ-sim，A 轨）
 
 - `server/tools/econ-sim/`（纯 TS，`import @nw/shared`，**不连库**，经济侧的 difficultySim 对应物）。跑法 `cd server/tools/econ-sim && npx tsx src/index.ts`（或带场景文件参数）；`npx tsc --noEmit` 自检。

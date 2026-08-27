@@ -30,7 +30,23 @@ import {
   SLG_TEAM_INJURY_MS,
   PROTECTION_SEC,
   OUTER_GRADED_CITY_TIERS,
+  CITY_YIELD_FLAT_PER_LEVEL,
+  CITY_STICKER_FLAT_PER_LEVEL,
+  CITY_YIELD_LEVEL_CAP,
+  CITY_YIELD_FLAT_CAP,
+  CITY_STICKER_FLAT_CAP,
+  CITY_CAPITAL_SIEGE_BONUS,
+  CITY_WORLD_CENTER_SIEGE_BONUS,
+  CITY_WORLD_CENTER_MARCH_DISCOUNT,
+  CITY_BONUS_MEMBERSHIP_DELAY_MS,
+  RESOURCE_TYPES,
+  cityYieldLevels,
+  cityYieldBonus,
+  citySiegeBonus,
+  cityMarchMult,
+  isCityMarchAnchor,
   type CityFootprintNode,
+  type CityPayoffNode,
 } from '../src/index';
 
 describe('citySiege: level range', () => {
@@ -247,5 +263,122 @@ describe('citySiege: document identity', () => {
   it('cityDocId is stable and namespaced per world', () => {
     expect(cityDocId('w1', 'garrison-3')).toBe('city:w1:garrison-3');
     expect(cityDocId('w1', 'worldCenter')).not.toBe(cityDocId('w2', 'worldCenter'));
+  });
+});
+
+// ── P3: occupation payoff (§8) ────────────────────────────────────────────────────────────────────
+//
+// The assertions below deliberately RE-DERIVE the design doc's §8.1 table and §8.2 arithmetic from the
+// two rate constants instead of restating the table's cells. Restating them would only prove that
+// someone can copy a table; deriving them catches a rate change that quietly stops matching the doc the
+// balance argument lives in — which is the actual failure mode for a numbers file.
+describe('citySiege: occupation payoff (§8)', () => {
+  /** The whole map, from the design doc's own census: 12 cities each at L3/L4/L5, 6 each at L6/L7/L8, 9 capitals, 1 world center. */
+  const WHOLE_MAP: CityPayoffNode[] = [
+    ...([3, 4, 5] as const).flatMap((level) => Array.from({ length: 12 }, () => ({ kind: 'garrison' as const, level }))),
+    ...([6, 7, 8] as const).flatMap((level) => Array.from({ length: 6 }, () => ({ kind: 'garrison' as const, level }))),
+    ...Array.from({ length: 9 }, () => ({ kind: 'capital' as const, level: 10 })),
+    { kind: 'worldCenter', level: 10 },
+  ];
+  /** One province, per §8.2: its 9 graded cities (3,3,4,4,5,5,6,7,8) plus its capital. */
+  const OWN_PROVINCE: CityPayoffNode[] = [
+    ...([3, 3, 4, 4, 5, 5, 6, 7, 8] as const).map((level) => ({ kind: 'garrison' as const, level })),
+    { kind: 'capital', level: 10 },
+  ];
+
+  it('the world center is worth two cities in payoff, for the same reason it is in durability', () => {
+    // §8.1 writes it as "10 (x2)". Sharing `cityKindMult` is what keeps that one statement, not three.
+    expect(cityYieldLevels({ kind: 'worldCenter', level: 10 })).toBe(10 * CITY_WORLD_CENTER_MULT);
+    expect(cityYieldLevels({ kind: 'capital', level: 10 })).toBe(10);
+    expect(cityYieldLevels({ kind: 'garrison', level: 3 })).toBe(3);
+  });
+
+  it('level degrees reproduce the design doc census: 270 graded + 90 capitals + 20 world center = 380', () => {
+    const degreesOf = (cs: CityPayoffNode[]) => cs.reduce((n, c) => n + cityYieldLevels(c), 0);
+    expect(degreesOf(WHOLE_MAP.filter((c) => c.kind === 'garrison'))).toBe(270);
+    expect(degreesOf(WHOLE_MAP.filter((c) => c.kind === 'capital'))).toBe(90);
+    expect(degreesOf(WHOLE_MAP.filter((c) => c.kind === 'worldCenter'))).toBe(20);
+    expect(degreesOf(WHOLE_MAP)).toBe(380);
+  });
+
+  it('reproduces §8.1 row by row from the rate constants alone', () => {
+    const rows: Array<[CityPayoffNode, number, number]> = [
+      [{ kind: 'garrison', level: 3 }, 150, 60],
+      [{ kind: 'garrison', level: 8 }, 400, 160],
+      [{ kind: 'capital', level: 10 }, 500, 200],
+      [{ kind: 'worldCenter', level: 10 }, 1000, 400],
+    ];
+    for (const [node, land, sticker] of rows) {
+      const y = cityYieldBonus([node]);
+      expect(y.ink, `${node.kind} L${node.level} land`).toBe(land);
+      expect(y.sticker, `${node.kind} L${node.level} sticker`).toBe(sticker);
+    }
+  });
+
+  it('pays all four land resources equally — that evenness IS the feature (§8.2 anti-lopsidedness)', () => {
+    const y = cityYieldBonus(OWN_PROVINCE);
+    const land = RESOURCE_TYPES.filter((rt) => rt !== 'sticker');
+    expect(new Set(land.map((rt) => y[rt])).size, 'land resources must all pay the same').toBe(1);
+    // §8.2's headline figure for holding your own province: +2,750 per resource, +1,100 sticker.
+    expect(y.ink).toBe(2750);
+    expect(y.sticker).toBe(1100);
+  });
+
+  it('caps in LEVEL DEGREES, so the land:sticker ratio survives a cap change', () => {
+    const capped = cityYieldBonus(WHOLE_MAP); // 380 degrees, well past the 120 cap
+    expect(capped.ink).toBe(CITY_YIELD_FLAT_CAP);
+    expect(capped.sticker).toBe(CITY_STICKER_FLAT_CAP);
+    // Both ceilings derive from the same degree cap — the property that makes the cap safe to retune.
+    expect(CITY_YIELD_FLAT_CAP).toBe(CITY_YIELD_FLAT_PER_LEVEL * CITY_YIELD_LEVEL_CAP);
+    expect(CITY_STICKER_FLAT_CAP).toBe(CITY_STICKER_FLAT_PER_LEVEL * CITY_YIELD_LEVEL_CAP);
+    expect(capped.ink / capped.sticker).toBe(CITY_YIELD_FLAT_PER_LEVEL / CITY_STICKER_FLAT_PER_LEVEL);
+  });
+
+  it('the cap binds just past "own province + a neighbour + a capital", not before', () => {
+    // §8.2's stated intent for 120. One province is 55 degrees, so two provinces plus a capital is 120 —
+    // an assertion that the cap is not accidentally reachable by a single province.
+    const oneProvince = OWN_PROVINCE.reduce((n, c) => n + cityYieldLevels(c), 0);
+    expect(oneProvince).toBe(55);
+    expect(oneProvince).toBeLessThan(CITY_YIELD_LEVEL_CAP);
+    expect(oneProvince * 2 + 10).toBe(CITY_YIELD_LEVEL_CAP);
+    expect(cityYieldBonus(OWN_PROVINCE).ink).toBeLessThan(CITY_YIELD_FLAT_CAP);
+  });
+
+  it('graded cities give no combat bonus; capitals and the world center do (§8.3)', () => {
+    expect(citySiegeBonus(WHOLE_MAP.filter((c) => c.kind === 'garrison'))).toBe(0);
+    expect(citySiegeBonus([{ kind: 'capital', level: 10 }])).toBe(CITY_CAPITAL_SIEGE_BONUS);
+    // Whole-map control: 9 capitals + the world center = the x1.32 §8.3 warns about and P2 measured against.
+    const full = citySiegeBonus(WHOLE_MAP);
+    expect(full).toBeCloseTo(9 * CITY_CAPITAL_SIEGE_BONUS + CITY_WORLD_CENTER_SIEGE_BONUS, 10);
+    expect(1 + full).toBeCloseTo(1.32, 10);
+  });
+
+  it('the march discount is the world center or nothing — it does not stack with capitals', () => {
+    expect(cityMarchMult([])).toBe(1);
+    expect(cityMarchMult(WHOLE_MAP.filter((c) => c.kind !== 'worldCenter'))).toBe(1);
+    expect(cityMarchMult(WHOLE_MAP)).toBeCloseTo(1 - CITY_WORLD_CENTER_MARCH_DISCOUNT, 10);
+    // Two world centers cannot exist, but the function must not compound if the node list ever repeats one.
+    expect(cityMarchMult([{ kind: 'worldCenter', level: 10 }, { kind: 'worldCenter', level: 10 }]))
+      .toBeCloseTo(1 - CITY_WORLD_CENTER_MARCH_DISCOUNT, 10);
+  });
+
+  it('only capitals and the world center anchor marches — 10 of 64 cities, not all of them (§8.4)', () => {
+    expect(isCityMarchAnchor('capital')).toBe(true);
+    expect(isCityMarchAnchor('worldCenter')).toBe(true);
+    expect(isCityMarchAnchor('garrison')).toBe(false);
+    expect(WHOLE_MAP.filter((c) => isCityMarchAnchor(c.kind))).toHaveLength(10);
+  });
+
+  it('the anti-hop delay is a day, and long enough to outlast a staged assault', () => {
+    expect(CITY_BONUS_MEMBERSHIP_DELAY_MS).toBe(24 * 60 * 60 * 1000);
+    // The point of the number: it must exceed the post-capture protection window, or "hop in, wait out the
+    // shield, collect" is still the same play with one extra step.
+    expect(CITY_BONUS_MEMBERSHIP_DELAY_MS).toBeGreaterThan(CITY_CAPTURE_PROTECTION_MS);
+  });
+
+  it('an empty holding pays nothing (the NPC-held default every city starts at)', () => {
+    const y = cityYieldBonus([]);
+    for (const rt of RESOURCE_TYPES) expect(y[rt], rt).toBe(0);
+    expect(citySiegeBonus([])).toBe(0);
   });
 });

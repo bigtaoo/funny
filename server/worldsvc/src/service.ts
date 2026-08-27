@@ -74,6 +74,12 @@ export class WorldService {
   initCities(worldId: string): Promise<void> { return this.core.initCities(worldId); }
   /** ADR-074 P1: the city whose footprint covers (x,y), durability brought up to date, or null. */
   cityAt(worldId: string, x: number, y: number): ReturnType<WorldCore['cityAt']> { return this.core.cityAt(worldId, x, y); }
+  /** ADR-074 P3 (§8): recompute one sect's cached city payoff from the cities it currently holds. */
+  recomputeSectPayoff(worldId: string, sectId: string): ReturnType<WorldCore['recomputeSectPayoff']> { return this.core.recomputeSectPayoff(worldId, sectId); }
+  /** ADR-074 P3 (§8): the cached payoff of a sect's held cities (yield / siege bonus / march multiplier). */
+  sectPayoff(sectId: string | undefined): ReturnType<WorldCore['sectPayoff']> { return this.core.sectPayoff(sectId); }
+  /** ADR-074 P3 (§9): whether this account's sect holds the capital city of the province containing (x,y). */
+  inOwnSectProvince(...args: Parameters<WorldCore['inOwnSectProvince']>): Promise<boolean> { return this.core.inOwnSectProvince(...args); }
   getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     return this.core.getTile(worldId, accountId, x, y);
   }

@@ -153,9 +153,16 @@ export function findMarchPath(
   return null;
 }
 
-/** March path → duration (seconds): (path.length-1) steps × MARCH_SPEED_SEC_PER_TILE. */
-export function marchDurationFromPath(path: PathCell[]): number {
-  return Math.max(0, path.length - 1) * MARCH_SPEED_SEC_PER_TILE;
+/**
+ * March path → duration (seconds): (path.length-1) steps × MARCH_SPEED_SEC_PER_TILE × `speedMult`.
+ *
+ * `speedMult` is ADR-074 §8.3's world-center discount (0.9). It multiplies TIME, not speed, so a value
+ * below 1 makes the march faster — named for the shape it has on the wire (`MarchDoc.speedMult`), where it
+ * is a multiplier applied to a duration. Absent/1 = the plain rate, which is what every march was before
+ * P3 and what every march still is unless its owner's sect holds the world center.
+ */
+export function marchDurationFromPath(path: PathCell[], speedMult = 1): number {
+  return Math.max(0, path.length - 1) * MARCH_SPEED_SEC_PER_TILE * speedMult;
 }
 
 /**
@@ -163,9 +170,14 @@ export function marchDurationFromPath(path: PathCell[]): number {
  * Per-tile time is uniform (MARCH_SPEED_SEC_PER_TILE), so cell i is reached at departAt + i·speed·1000. Note
  * path[0] is reached at departAt and path[last] at departAt + (len-1)·speed·1000 == arriveAt
  * (consistent with marchDurationFromPath). Pure; used by both dispatch and the scheduler's step scan.
+ *
+ * ⚠️ `speedMult` MUST be the same value `marchDurationFromPath` was given for this march — which is why it
+ * is persisted on the document rather than re-derived. Discounting `arriveAt` alone would leave the step
+ * cursor running at the undiscounted cadence, so the march would "arrive" while the scan still had cells to
+ * walk: encounters on the tail of the path would fire after settlement, or not at all.
  */
-export function marchStepArriveAt(departAt: number, stepIndex: number): number {
-  return departAt + Math.max(0, stepIndex) * MARCH_SPEED_SEC_PER_TILE * 1000;
+export function marchStepArriveAt(departAt: number, stepIndex: number, speedMult = 1): number {
+  return departAt + Math.max(0, stepIndex) * MARCH_SPEED_SEC_PER_TILE * speedMult * 1000;
 }
 
 /**
