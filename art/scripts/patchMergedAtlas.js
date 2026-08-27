@@ -25,7 +25,22 @@
 //   its internal slack (world_atlas was 32.9% used at 2048x4550, over the 4096 texture limit some
 //   GPUs enforce).
 //
-// Run: node art/scripts/patchMergedAtlas.js <source-atlas.json> <merged-atlas.json>
+// `--reflow` forces the second mode when the first would otherwise be picked. The size comparison
+// cannot see the one other thing that invalidates the existing coordinates: a change to the page's
+// frame SET. Deleting a dead frame from the merged JSON leaves every surviving frame the same size,
+// so the automatic choice is IN-PLACE — which keeps the old canvas and simply orphans the deleted
+// frame's pixels, i.e. the page never actually shrinks. Reflow is what drops them. (Used 2026-08-27
+// to evict the 8 avatar frames from icons_atlas after presetAvatarArt.ts replaced them.)
+//
+// `--max-width=<n>` caps the reflow canvas (default 2048, the `world` group's value). The cap is not
+// a target — the shelf packer wraps to a new row only when the next block would exceed it, so a cap
+// far wider than the content produces one long row and a tall, mostly-empty canvas. Lowering it is
+// how you trade an unused-pixel canvas for a tight one: icons_atlas at the 2048 default packs 17
+// frames into 1946x388 (49.9% used, 2.88 MB of VRAM once decoded); at 520 the same frames pack into
+// 520x778 (93.1%, 1.54 MB). Sweep it when reflowing a page — the optimum has nothing to do with the
+// group's original merge width, and decoded texture bytes are what ADR-073 made a budgeted resource.
+//
+// Run: node art/scripts/patchMergedAtlas.js [--reflow] [--max-width=<n>] <source-atlas.json> <merged-atlas.json>
 // e.g. node art/scripts/patchMergedAtlas.js art/slg/slg-map/res_atlas.json client/src/assets/slg/world_atlas.json
 //      (the source atlas is a pipeline intermediate under art/, NOT a shipped asset — see pack_resources.cjs OUT_DIRS)
 const fs = require('fs');
@@ -35,8 +50,8 @@ let sharp;
 try { sharp = require('sharp'); }
 catch { sharp = require(path.resolve(__dirname, '../../client/node_modules/sharp')); }
 
-const PAD = 2;          // transparent gutter between frames when reflowing (matches pack_resources.cjs)
-const MAX_WIDTH = 2048; // reflow canvas width cap (matches the `world` group in mergeAssetAtlases.js)
+const PAD = 2;                  // transparent gutter between frames when reflowing (matches pack_resources.cjs)
+const DEFAULT_MAX_WIDTH = 2048; // reflow canvas width cap (matches the `world` group in mergeAssetAtlases.js)
 
 /** Resolve an atlas JSON path to its {json, jsonPath, pngPath} triple (PNG name comes from meta.image). */
 function loadAtlas(jsonPath) {
@@ -46,13 +61,26 @@ function loadAtlas(jsonPath) {
 }
 
 async function main() {
-  const [srcArg, dstArg] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const forceReflow = args.includes('--reflow');
+  const widthArg = args.find(a => a.startsWith('--max-width='));
+  const maxWidth = widthArg ? Number(widthArg.slice('--max-width='.length)) : DEFAULT_MAX_WIDTH;
+  if (!Number.isInteger(maxWidth) || maxWidth <= 0) {
+    console.error(`--max-width must be a positive integer, got ${JSON.stringify(widthArg)}`);
+    process.exit(1);
+  }
+  const [srcArg, dstArg] = args.filter(a => !a.startsWith('--'));
   if (!srcArg || !dstArg) {
-    console.error('usage: node art/scripts/patchMergedAtlas.js <source-atlas.json> <merged-atlas.json>');
+    console.error('usage: node art/scripts/patchMergedAtlas.js [--reflow] [--max-width=<n>] <source-atlas.json> <merged-atlas.json>');
     process.exit(1);
   }
   const src = loadAtlas(path.resolve(srcArg));
   const dst = loadAtlas(path.resolve(dstArg));
+
+  if (forceReflow) {
+    console.log('--reflow given → repacking the whole page regardless of frame sizes.');
+    return reflow(src, dst, maxWidth);
+  }
 
   const resized = Object.entries(src.json.frames)
     .filter(([name, sf]) => dst.json.frames[name]
@@ -61,7 +89,7 @@ async function main() {
     console.log(`${resized.length} frame(s) changed size (e.g. ${resized[0][0]}: `
       + `${dst.json.frames[resized[0][0]].frame.w}×${dst.json.frames[resized[0][0]].frame.h} → `
       + `${resized[0][1].frame.w}×${resized[0][1].frame.h}) → reflowing the whole page.`);
-    return reflow(src, dst);
+    return reflow(src, dst, maxWidth);
   }
 
   const patched = [];
@@ -126,7 +154,7 @@ async function main() {
  * `trimmed:false` with a (0,0) spriteSourceSize origin — the same precondition mergeAtlasPages.js
  * verified before blitting whole source atlases (which is the only reason IT could work in blocks).
  */
-async function reflow(src, dst) {
+async function reflow(src, dst, maxWidth = DEFAULT_MAX_WIDTH) {
   const added = [];
   const entries = [];
   for (const [name, df] of Object.entries(dst.json.frames)) {
@@ -146,7 +174,7 @@ async function reflow(src, dst) {
   // Pad each block on its right/bottom edge so no two frames touch; bilinear sampling at fractional
   // atlas scales otherwise bleeds a neighbour's ink into a sprite's border.
   const { placements, canvasW, canvasH } = shelfPack(
-    entries.map(e => ({ w: e.rect.w + PAD, h: e.rect.h + PAD })), MAX_WIDTH);
+    entries.map(e => ({ w: e.rect.w + PAD, h: e.rect.h + PAD })), maxWidth);
 
   // Raw row blits, not sharp's `composite`: `composite` premultiplies to blend, and rounding back out
   // shifts every anti-aliased (semi-transparent) edge pixel by a unit or two. Nothing here needs

@@ -55,8 +55,8 @@ interface BootStep {
 
 /**
  * Blocking tier: card art the lobby's deck/roster rows draw, the header logo, and the
- * equipment/material/faction/avatar icon atlas (iconsAtlas.ts — one merged decode
- * shared by four modules, hence one step). ~1.1 MB.
+ * equipment/material/faction icon atlas (iconsAtlas.ts — one merged decode shared by
+ * three modules, hence one step). ~1.1 MB.
  */
 const STEPS: BootStep[] = [
   { id: 'art:infantry',     run: () => preloadTexture(infantryArtUrl     as string) },

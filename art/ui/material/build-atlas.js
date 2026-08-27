@@ -40,16 +40,18 @@ const ATLAS_PNG  = path.join(OUT_DIR, 'material.png');
 const ATLAS_JSON = path.join(OUT_DIR, 'material.json');
 
 function requireSharp() {
+  // Package ROOT, not a file inside it — see the same note in art/ui/equipment/build-atlas.js:
+  // `dist/index.cjs` is not sharp 0.32's entry point, so both candidates always missed here too.
   const candidates = [
-    path.join(ROOT_DIR, 'client', 'node_modules', 'sharp', 'dist', 'index.cjs'),
-    path.join(ROOT_DIR, 'node_modules', 'sharp', 'dist', 'index.cjs'),
+    path.join(ROOT_DIR, 'client', 'node_modules', 'sharp'),
+    path.join(ROOT_DIR, 'node_modules', 'sharp'),
   ];
   for (const p of candidates) {
-    if (fs.existsSync(p)) return require(p);
+    if (fs.existsSync(path.join(p, 'package.json'))) return require(p);
   }
-  console.log('sharp not found — installing at project root...');
-  execSync('npm install --no-save sharp', { cwd: ROOT_DIR, stdio: 'inherit' });
-  return require(path.join(ROOT_DIR, 'node_modules', 'sharp', 'dist', 'index.cjs'));
+  console.log('sharp not found — installing under client/...');
+  execSync('npm install --no-save sharp', { cwd: path.join(ROOT_DIR, 'client'), stdio: 'inherit' });
+  return require(path.join(ROOT_DIR, 'client', 'node_modules', 'sharp'));
 }
 
 async function main() {

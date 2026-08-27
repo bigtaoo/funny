@@ -46,17 +46,21 @@ const ATLAS_PNG  = path.join(OUT_DIR, 'equipment.png');
 const ATLAS_JSON = path.join(OUT_DIR, 'equipment.json');
 
 function requireSharp() {
-  // sharp uses package exports — require its CJS entry directly
+  // Require the package ROOT and let node read its `main`, rather than naming a file inside it:
+  // the hardcoded `dist/index.cjs` these candidates used until 2026-08-27 has never existed in the
+  // sharp this repo actually installs (0.32's entry is `lib/index.js`), so every candidate missed and
+  // the script fell through to `npm install --no-save sharp` at a ROOT_DIR that has no package.json —
+  // i.e. this builder could not run at all. Same resolution order as art/scripts/patchMergedAtlas.js.
   const candidates = [
-    path.join(ROOT_DIR, 'node_modules', 'sharp', 'dist', 'index.cjs'),
-    path.join(__dirname, 'node_modules', 'sharp', 'dist', 'index.cjs'),
+    path.join(ROOT_DIR, 'client', 'node_modules', 'sharp'),
+    path.join(ROOT_DIR, 'node_modules', 'sharp'),
   ];
   for (const p of candidates) {
-    if (fs.existsSync(p)) return require(p);
+    if (fs.existsSync(path.join(p, 'package.json'))) return require(p);
   }
-  console.log('sharp not found — installing at project root...');
-  execSync('npm install --no-save sharp', { cwd: ROOT_DIR, stdio: 'inherit' });
-  return require(path.join(ROOT_DIR, 'node_modules', 'sharp', 'dist', 'index.cjs'));
+  console.log('sharp not found — installing under client/...');
+  execSync('npm install --no-save sharp', { cwd: path.join(ROOT_DIR, 'client'), stdio: 'inherit' });
+  return require(path.join(ROOT_DIR, 'client', 'node_modules', 'sharp'));
 }
 
 async function main() {
