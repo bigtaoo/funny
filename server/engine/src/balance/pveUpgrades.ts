@@ -211,6 +211,85 @@ export function buildSiegeGarrisonBlueprints(): Record<UnitType, UnitBlueprint> 
   return cloneBlueprints();
 }
 
+/** Per-unit-type progression ratios of a player-owned garrison — see {@link garrisonProgressionRatios}. */
+export interface GarrisonProgressionRatios {
+  /** `hp_fp` multiple of the plain baseline, keyed by the unit types the roster actually fields. */
+  hp: Partial<Record<UnitType, number>>;
+  /** `attack_fp` multiple of the plain baseline, same keys. */
+  attack: Partial<Record<UnitType, number>>;
+}
+
+/**
+ * What a PLAYER-owned garrison's own cards and gear WOULD have multiplied its per-unit stats by,
+ * as read-only ratios against the plain baseline table (ADR-077, SLG_CITY_SIEGE_DESIGN §12).
+ *
+ * Read this together with {@link buildSiegeGarrisonBlueprints} directly above. That function exists
+ * because a *tile's NPC* garrison must never read the attacker's buffed table (the 2026-08-12
+ * incident). ADR-074 P3 then put REAL players on the defending side — sect members parking garrison
+ * teams inside a held city — and they silently inherited the same plain baseline, so a defending
+ * team's own card levels and equipment counted for nothing. Correct default for an NPC, wrong one
+ * for a player: a high-progression 12-card assault walks through a garrison carrying vastly more
+ * troops, because troop count is the only axis the defender has and per-unit quality is the axis
+ * that decides the fight.
+ *
+ * This deliberately does NOT hand the defender its own blueprint table. `GameConfig.cardInstances`
+ * /`equipmentInv` are single-sided by construction (see buildCampaignBlueprints — "no concept of
+ * which side"), so a genuine two-sided injection means a new side-scoped config input, an
+ * ENGINE_VERSION bump, regenerated golden replays and a defender-carrying `SiegeReplayInputs`. That
+ * is a separate ADR, to be opened only if the coarse route below proves insufficient.
+ *
+ * The coarse route: worldsvc folds these ratios into ONE fortification factor (`cityDefenderFortifyMult`
+ * + `cityDefenderTeamFortify` in @nw/shared, which own the balance side of the conversion) and spends it
+ * on the rung's symbolic `defenderBaseHp` — a level-schema parameter the caller already builds, so no
+ * engine change is needed. **Which lever was decided by measurement and the obvious answer lost**:
+ * scaling the garrison entries' own `initialHp` was implemented first and econ-sim gate ⑦ measured it as
+ * worth nothing (a garrison fielding 32,508 effective HP cost the reference attacker 1,209 troops against
+ * 1,245 on bare blueprints). The objective is `destroy_base` against a deliberately small per-wave base
+ * HP, so ONE attacker unit slipping past the garrison ends the rung however much HP it still has, and a
+ * garrison has ten lanes to cover. Base HP instead measured a graded curve — undefended 1,073 -> bare
+ * garrison 1,321 -> geared 2,975 -> maxed repels that attacker tier entirely, while a veteran tier still
+ * clears it.
+ *
+ * Applying it before the battle starts is what makes the whole thing replay-safe for free: the fortified
+ * `defenderBaseHp` is what gets stored in `SiegeReplayInputs.defenderConfig`, so a client reconstructs
+ * the identical battle from inputs it already receives, with no payload or version change.
+ *
+ * Cannot contaminate PvP: it returns numbers, never a blueprint table, and `buildPvpBlueprints` has
+ * no card parameter to feed it into (pvp_hardwall.test.ts).
+ *
+ * The academy buff is deliberately absent. `buildSiegeBlueprints`' third argument is the ATTACKER's
+ * seasonal academy, resolved on the attacker's path; a defender-side academy channel would be both a
+ * separate lookup and a separate balance decision.
+ *
+ * @param cardInstances The DEFENDER's own card snapshot (never the attacker's).
+ * @param equipmentInv  The defender's equipment inventory; omit for a bare roster.
+ */
+export function garrisonProgressionRatios(
+  cardInstances: EngineCardInstance[],
+  equipmentInv?: EngineEquipInv,
+): GarrisonProgressionRatios {
+  const hp: Partial<Record<UnitType, number>> = {};
+  const attack: Partial<Record<UnitType, number>> = {};
+  if (cardInstances.length === 0) return { hp, attack };
+  const base = cloneBlueprints();
+  const buffed = buildSiegeBlueprints(cardInstances, equipmentInv);
+  for (const card of cardInstances) {
+    const ut = card.unitType;
+    if (hp[ut] !== undefined) continue;               // one entry per unit type; the table is already best-per-type
+    const b = base[ut];
+    const d = buffed[ut];
+    if (!b || !d) continue;                            // unknown / non-progressable type
+    // ADR-065 boundary: both sides are fp, but the RATIO is a plain one-off decimal that is never
+    // persisted and never re-enters a blueprint — the same treatment `engine/setup/blueprints.ts`
+    // gives its `enemyScale` hp/damage factors.
+    const baseHp = fromFp(b.hp_fp);
+    const baseAtk = fromFp(b.attack_fp);
+    hp[ut] = baseHp > 0 ? fromFp(d.hp_fp) / baseHp : 1;
+    attack[ut] = baseAtk > 0 ? fromFp(d.attack_fp) / baseAtk : 1;
+  }
+  return { hp, attack };
+}
+
 /**
  * Applies upgrade levels as multiplicative modifiers to blueprints (in-place mutation). Unknown id / level 0 / above maxLevel are all safely clamped.
  * The single SaveData→blueprint injection point (§5.2).

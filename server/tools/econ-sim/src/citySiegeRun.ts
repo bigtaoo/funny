@@ -36,6 +36,11 @@ import {
   damageProfile,
   shippedLadder,
   attackersFor,
+  defenderRung,
+  rungFieldedHp,
+  TIER_STARTER,
+  TIER_MID,
+  TIER_VETERAN,
   type RosterTier,
 } from './citySiege';
 import {
@@ -54,6 +59,8 @@ import {
   cityWaveGarrison,
   cityWaveBaseHp,
   cityLadderGarrison,
+  CITY_DEFENDER_ATK_AS_HP,
+  CITY_DEFENDER_FORTIFY_MAX,
   TROOP_TRAIN_INK_COST,
   TROOP_SPEEDUP_SECS_PER_COIN,
   TROOP_TRAIN_TIME_SEC,
@@ -260,11 +267,85 @@ for (const rBase of [8_000, 10_000, 12_000, 14_000]) {
 }
 
 // ── Verdict ─────────────────────────────────────────────────────────────────────────────────────
+// -- (7) ADR-077: which lever a defender rung's progression can actually be spent on --------------
+bar('(7) ADR-077 - a sect garrison rung: three ways to spend its progression, measured');
+console.log('ADR-074 P3 put real players on the defending side but could not give them their own per-unit');
+console.log('stats: a garrison fights on the plain baseline blueprint, exactly like the NPC waves beside it.');
+console.log(`ADR-077 derives a factor from the team's own level+gear (hp ratio x attack ratio^${CITY_DEFENDER_ATK_AS_HP}, ceiling ${CITY_DEFENDER_FORTIFY_MAX}).`);
+console.log('The open question is WHERE to spend it, and the answer is not the obvious one, so all three are');
+console.log('measured here against the reference attacker at the weakest city level:');
+console.log('');
+console.log('  none    the pre-ADR baseline - the factor is not spent at all');
+console.log('  hp      the factor scales the garrison entries\' initialHp (more troops to chew through)');
+console.log('  baseHp  the factor scales the rung\'s symbolic defenderBaseHp (the position is dug in)');
+console.log('');
+console.log('defender roster                          | troops | factor | cost: none |     hp |  baseHp | clear(baseHp)');
+console.log('-'.repeat(100));
+const defenderTiers = [TIER_STARTER, TIER_MID, TIER_RAIDER, TIER_VETERAN, TIER_WHALE];
+const gate7Rows: Array<{ name: string; factor: number; none: number; hp: number; baseHp: number }> = [];
+let additiveOk = true;
+const npcOnly = measureSiege(TIER_RAIDER, shippedLadder(WILD_CITY_MIN_LEVEL), SEEDS);
+for (const dt of defenderTiers) {
+  const rung = defenderRung(dt);
+  const troops = rung.army.reduce((a, e) => a + (e.initialHp ?? 0), 0);
+  const factor = rung.fortify;
+  const base = shippedLadder(WILD_CITY_MIN_LEVEL);
+  const cNone = measureSiege(TIER_RAIDER, { ...base, defenders: [rung], defenderLever: 'none' }, SEEDS);
+  const cHp = measureSiege(TIER_RAIDER, { ...base, defenders: [rung], defenderLever: 'hp' }, SEEDS);
+  const cBase = measureSiege(TIER_RAIDER, { ...base, defenders: [rung], defenderLever: 'baseHp' }, SEEDS);
+  // P3's rule, re-checked per row and per lever: a defended city must never be CHEAPER for the attacker
+  // than the same city with no garrison at all, or parking a team would be a way to help your attacker.
+  for (const c of [cNone, cHp, cBase]) {
+    if (Number.isFinite(c.troopCost) && c.troopCost < npcOnly.troopCost - 1) additiveOk = false;
+  }
+  gate7Rows.push({ name: dt.name.trim(), factor, none: cNone.troopCost, hp: cHp.troopCost, baseHp: cBase.troopCost });
+  console.log(
+    `${dt.name.trim().slice(0, 40).padEnd(40)} | ${n0(troops).padStart(6)} | ` +
+    `${factor.toFixed(2)}x`.padStart(6) + ` | ${n0(cNone.troopCost).padStart(10)} | ${n0(cHp.troopCost).padStart(6)} | ` +
+    `${n0(cBase.troopCost).padStart(7)} | ${pct(cBase.clearRate).padStart(13)}`,
+  );
+}
+console.log(`\n  Reference point: the same city with NO garrison at all costs ${n0(npcOnly.troopCost)} troops per cleared assault.`);
+console.log(`  [${additiveOk ? 'PASS' : 'FAIL'}] no lever ever makes a garrisoned city cheaper than an ungarrisoned one - P3's`);
+console.log('  "additive, never substitutive" rule survives.');
+console.log('');
+console.log('  WHY the "hp" column barely moves, which is the finding this gate exists to record: the objective');
+console.log('  is destroy_base against a deliberately small cityWaveBaseHp, and a timeout is a DEFENDER win. One');
+console.log('  attacker unit slipping past the garrison ends the battle at once, however much HP that garrison');
+console.log('  still has - so garrison HP is a blocking lever with ten lanes to cover and it cannot cover them.');
+console.log('  simulateLadder\'s own baseHp=100-vs-600 note is the same observation from the NPC-wave side, and');
+console.log('  citySiege.ts already calls waveBaseHp "the dominant attrition lever, not the garrison".');
+console.log('');
+console.log('');
+console.log('  SAFETY CHECK - a maxed garrison repels the REFERENCE tier, so the city must still be takeable by');
+console.log('  someone, or a well-parked team makes a city permanently untakeable and the capture loop dies.');
+console.log('');
+console.log('  attacker tier                            | vs MAXED garrison (baseHp) | clear | vs no garrison');
+console.log('  ' + '-'.repeat(96));
+const maxedRung = defenderRung(TIER_WHALE);
+let takeableOk = false;
+for (const at of TIERS) {
+  const defended = measureSiege(at, { ...shippedLadder(WILD_CITY_MIN_LEVEL), defenders: [maxedRung], defenderLever: 'baseHp' }, SEEDS);
+  const plain = measureSiege(at, shippedLadder(WILD_CITY_MIN_LEVEL), SEEDS);
+  if (defended.clearRate > 0) takeableOk = true;
+  console.log(
+    `  ${at.name.trim().slice(0, 40).padEnd(40)} | ${n0(defended.troopCost).padStart(26)} | ${pct(defended.clearRate).padStart(5)} | ${n0(plain.troopCost).padStart(14)}`,
+  );
+}
+console.log(`\n  [${takeableOk ? 'PASS' : 'FAIL'}] at least one attacker tier can still break a maxed garrison single-handed - and a`);
+console.log('  sect raid stacks many of them, so the wall is a real threshold rather than an absolute one.');
+console.log('  What NO lever here buys: attack, armor, attack speed, crit, lifesteal and the T3/T6/T9 traits all');
+console.log('  stay at baseline, because the engine has ONE cardInstances slot with no side concept. A defender');
+console.log('  that genuinely fights back needs a side-scoped blueprint input, an ENGINE_VERSION bump, regenerated');
+console.log('  golden replays and a defender-carrying SiegeReplayInputs - deliberately out of scope here.');
+
 bar('VERDICT');
-const allOk = gate3 && ceilingOk && monoOk && reachOk && gate5;
+const allOk = gate3 && ceilingOk && monoOk && reachOk && gate5 && additiveOk && takeableOk;
 console.log(`  ③ solo-proof at the weakest wild city   ${gate3 ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`  ④ cheap-path ceiling / monotone / reach ${ceilingOk && monoOk && reachOk ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`  ⑤ attackers-needed matches the doc      ${gate5 ? '✅ PASS' : '❌ FAIL'}`);
+console.log(`  ⑦ a garrison is never cheaper than none ${additiveOk ? '✅ PASS' : '❌ FAIL'}`);
+console.log(`  ⑦ a maxed garrison is still breakable  ${takeableOk ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`\n${allOk ? '✅ CONSTANTS CONFIRMED' : '❌ NEEDS TUNING'} for TROOP_CAP_BASE/DRILL_TROOPCAP_STEP/card caps as they stand today.`);
 console.log('\n⚠️  TWO CODE FACTS about the hypothetical channels gate ③ is measured WITH (both are stacked into');
 console.log('   the worst case above, which is why wiring either one cannot move that verdict):');
@@ -278,6 +359,6 @@ console.log('      own channel, never summed into the capped equipment accumulat
 console.log('\nRegister conclusions -> design/game/ECONOMY_VERIFICATION_LOG.md §13-SLG-CITYSIEGE');
 
 /** Exported so citySiege.test.ts can assert the same conclusions without re-printing the report. */
-export const RUN_SUMMARY = { gate3, ceilingOk, monoOk, reachOk, gate5, measuredAttackers };
+export const RUN_SUMMARY = { gate3, ceilingOk, monoOk, reachOk, gate5, additiveOk, takeableOk, measuredAttackers, gate7Rows };
 export const DOC_TABLE = { attackers: DOC_ATTACKERS, worldCenter: DOC_ATTACKERS_WORLD_CENTER, tolerance: DOC_TOLERANCE };
 export type { RosterTier };

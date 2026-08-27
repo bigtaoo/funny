@@ -36,6 +36,7 @@ import {
   UNIT_BLUEPRINTS,
   parseLevelDefinition,
   fromFp,
+  garrisonProgressionRatios,
   type GarrisonEntry,
   type EngineCardInstance,
   type EngineEquipInv,
@@ -49,6 +50,9 @@ import {
   cityWaveBaseHp,
   cityDurabilityMax,
   cityRegenPerHour,
+  cityDefenderFortifyMult,
+  cityDefenderTeamFortify,
+  cityDefenderBaseHp,
   CARD_TEAM_MAX_SIZE,
   CARD_DEFS,
   MAX_CARD_LEVEL,
@@ -239,9 +243,13 @@ export function trainPerHour(tier: RosterTier): number {
  * WARNING: `teamSiegeValue` — the function worldsvc actually calls to size the durability hit — reads
  * only each card's `defId` + `level`. **Equipment does not enter it**: the +60% `EFFECT_CAPS.siegePct_fp`
  * channel is applied by `applyEquipment` to the engine blueprint's `siegeValue_fp`, which only affects
- * in-battle damage against a symbolic base, never the persistent durability hit. Same for the §8.3 sect
- * bonus (not implemented yet). So both multipliers below are HYPOTHETICAL headroom, carried explicitly
- * so the calibration survives someone wiring them up later.
+ * in-battle damage against a symbolic base, never the persistent durability hit. So `equipment` below is
+ * HYPOTHETICAL headroom, carried explicitly so the calibration survives someone wiring it up later.
+ *
+ * `sect` is NOT hypothetical any more (2026-08-27, ADR-074 P3): `applyCitySiege` multiplies
+ * teamSiegeValue by `(1 + sectPayoff.siegeBonus)` on its own channel, never summed into the capped
+ * equipment accumulator. It stays a switch here because the calibration needs to see both a bare and a
+ * full-map-control sect, and because gate ③ has to be measured with every channel stacked.
  */
 export interface DamageMults {
   /** EFFECT_CAPS.siegePct_fp saturated (+60%) — if `teamSiegeValue` is ever made gear-aware. */
@@ -264,10 +272,14 @@ export function damagePerSiege(tier: RosterTier, mults: DamageMults = MULTS_NONE
 
 // -- One siege: the whole wave ladder ------------------------------------------------------------
 export interface LadderResult {
-  /** All waves defeated -> the durability hit is scheduled (mirrors applyBaseSiege's `cleared`). */
+  /** All rungs defeated -> the durability hit is scheduled (mirrors applyBaseSiege's `cleared`). */
   cleared: boolean;
   wavesCleared: number;
   waves: number;
+  /** ADR-077: player-garrison rungs beaten before the NPC ladder was reached. */
+  defendersCleared: number;
+  /** How many player-garrison rungs the city had. */
+  defenders: number;
   /** Nominal troops the march left home with. */
   deployed: number;
   /** Troops that did not come back (`deployed x (1 - product of wave survival ratios)`). */
@@ -300,7 +312,93 @@ export interface CityLadder {
    * garrison: it decides how long the attacker has to stand in the garrison's fire before the wave ends.
    */
   waveBaseHp: number;
+  /**
+   * ADR-074 P3 / ADR-077: sect garrison teams parked inside the city, fought AHEAD of the NPC waves and
+   * never in place of them (P3's rule — a city defended by weak teams must not be EASIER than an NPC-held
+   * one). Empty/omitted = every NPC-held city, which is the overwhelmingly common case and the one gates
+   * ③-⑤ are calibrated on.
+   */
+  defenders?: readonly DefenderRung[];
+  /** Which lever the defender rungs' progression factor is spent on (measurement harness — see {@link DefenderLever}). */
+  defenderLever?: DefenderLever;
 }
+
+/** One player-owned garrison team standing in the city (ADR-077). */
+export interface DefenderRung {
+  label: string;
+  /** The rung's army as the engine fields it: one entry per card, `initialHp` = that card's troops. */
+  army: GarrisonEntry[];
+  /** Per-unit-type factor from `cityDefenderFortifyMult` (all 1.0 for a bare level-1 roster). */
+  perUnit: Partial<Record<UnitType, number>>;
+  /** The team's single troop-weighted factor from `cityDefenderTeamFortify` — what worldsvc actually spends. */
+  fortify: number;
+}
+
+/** Mirrors worldsvc `toDefenderFormation`: an attack-authored team re-placed onto DEFENDER spawn rows. */
+function toDefenderFormation(army: readonly GarrisonEntry[]): GarrisonEntry[] {
+  return army.map((e, i) => ({
+    unitType: e.unitType,
+    col: ATTACK_LANES[i % ATTACK_LANES.length]!,
+    row: Math.max(BOTTOM_SPAWN_ROW, TOP_SPAWN_ROW - Math.floor(i / ATTACK_LANES.length)),
+    ...(e.initialHp != null ? { initialHp: e.initialHp } : {}),
+  }));
+}
+
+/**
+ * A garrison team the given roster tier can park in a city — the same 12-card team it would attack with,
+ * re-placed on the defender side, plus the ADR-077 effective-HP factors its own level/gear earn it.
+ *
+ * Mirrors `cityDefenders.ts` `eligibleDefenders` exactly: the army is the REAL troop truth and the factor
+ * is carried separately, because worldsvc settles troop losses against the unscaled figure and only the
+ * battle sees the scaled one.
+ */
+export function defenderRung(tier: RosterTier, label = tier.name): DefenderRung {
+  const ratios = garrisonProgressionRatios(engineCards(tier), gearInv(tier));
+  const perUnit: Partial<Record<UnitType, number>> = {};
+  for (const ut of Object.keys(ratios.hp) as UnitType[]) {
+    perUnit[ut] = cityDefenderFortifyMult(ratios.hp[ut] ?? 1, ratios.attack[ut] ?? 1);
+  }
+  const army = toDefenderFormation(teamArmy(tier));
+  // Troop-weighted over the real per-card allotments, exactly as `eligibleDefenders` does it.
+  const fortify = cityDefenderTeamFortify(
+    army.map((e) => ({ troops: e.initialHp ?? 0, mult: perUnit[e.unitType] ?? 1 })),
+  );
+  return { label, army, perUnit, fortify };
+}
+
+/**
+ * The REJECTED 'hp' lever, kept only so gate ⑦ can keep printing why it was rejected: scale each garrison
+ * entry by its own unit type's factor. Never what worldsvc does.
+ */
+function scaleRungHp(rung: DefenderRung): GarrisonEntry[] {
+  return rung.army.map((e) => {
+    const own = rung.perUnit[e.unitType];
+    const mult = own !== undefined && own > 1 ? own : 1;
+    if (mult <= 1) return { ...e };
+    return { ...e, initialHp: Math.max(1, Math.floor((e.initialHp ?? 0) * mult)) };
+  });
+}
+
+/** Total HP the REJECTED 'hp' lever would have made a rung field. Printed by gate ⑦ as the counter-example. */
+export function rungFieldedHp(rung: DefenderRung): number {
+  return scaleRungHp(rung).reduce((a, e) => a + (e.initialHp ?? 0), 0);
+}
+
+/**
+ * Which lever a defender rung's progression factor is spent on. Not a shipped switch — a measurement
+ * harness, so `citySiegeRun.ts` can print all three side by side and the ADR can be decided on numbers
+ * rather than on the plausibility of the mechanism.
+ *
+ *   'none'    the pre-ADR-077 baseline: a player garrison fights on plain baseline blueprints.
+ *   'hp'      the factor scales each garrison entry's `initialHp`.
+ *   'baseHp'  the factor scales the rung's symbolic `defenderBaseHp` — WHAT SHIPS.
+ *
+ * The distinction matters far more than it looks: the objective is `destroy_base` against a
+ * deliberately small {@link cityWaveBaseHp}, so a single attacker unit slipping past the garrison ends
+ * the battle regardless of how much HP that garrison still has. `simulateLadder`'s own comment about
+ * baseHp=100 vs 600 is the same observation from the NPC-wave side.
+ */
+export type DefenderLever = 'none' | 'hp' | 'baseHp';
 
 /** The shipped ladder for a city level, from the @nw/shared constants. */
 export function shippedLadder(cityLevel: number): CityLadder {
@@ -312,8 +410,54 @@ export function shippedLadder(cityLevel: number): CityLadder {
   };
 }
 
+/** One rung of the ladder - a defender team or an NPC wave - resolved exactly as worldsvc resolves it. */
+function fightRung(opts: {
+  survivorArmy: GarrisonEntry[];
+  /** The rung's army as it will actually be fielded (defender rungs arrive already scaled). */
+  defArmy: GarrisonEntry[];
+  /** Synthesized-from-a-flat-count (NPC waves) vs a real level-schema-validated team (player garrisons). */
+  defenderSynthesized: boolean;
+  baseHp: number;
+  cityLevel: number;
+  seed: number;
+  cards: EngineCardInstance[];
+  equipmentInv: EngineEquipInv | undefined;
+}): { attackerWin: boolean; ratio: number; usedCheapPath: boolean } {
+  const { survivorArmy, defArmy, defenderSynthesized, baseHp, cityLevel, seed, cards, equipmentInv } = opts;
+  const deployedHp = survivorArmy.reduce((a, e) => a + (e.initialHp ?? 0), 0);
+  const defenderTroops = defArmy.reduce((a, e) => a + (e.initialHp ?? 0), 0);
+  if (shouldUseCheapSiege({ attackerTroops: deployedHp, defenderTroops, attackerSynthesized: false, defenderSynthesized })) {
+    const res = resolveSiege(deployedHp, defenderTroops);
+    const ratio = deployedHp > 0 ? Math.min(1, res.attackerSurvivors / deployedHp) : 0;
+    return { attackerWin: res.outcome === 'attacker_win', ratio, usedCheapPath: true };
+  }
+  // An explicit `defenderBaseHp` is NOT optional here. `applyBaseSiege`'s main-base waves leave it out,
+  // which falls back to the engine's flat BASE_HP=100 - and under ADR-069 (a unit's siege value scales
+  // with the troops it carries) a single 300-troop shieldbearer one-shots a 100-HP base, so the wave ends
+  // the moment one attacker unit reaches it and the garrison never gets to fight. Measured: a maxed team
+  // clears a 4,500-troop wave losing ~99 troops at baseHp=100 vs ~730 at baseHp=600. Without a real base
+  // the whole ladder is free and the troop-cost bound this file exists to measure does not exist.
+  const levelObj = buildSiegeBattle({ army: survivorArmy }, { garrison: defArmy, defenderBaseLevel: 0, defenderBaseHp: baseHp }, cityLevel, seed);
+  const level = parseLevelDefinition(levelObj);
+  const timeout = level.battleTimeoutTicks ?? 18000;
+  const input = new ReplayInputSource({ engineVersion: ENGINE_VERSION, mode: 'siege', seed, frames: [], endFrame: 0 });
+  const { engine } = runHeadless(
+    { seed, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level, cardInstances: cards, equipmentInv },
+    input, timeout + TICK_MARGIN,
+  );
+  let atkHp = 0;
+  for (const unit of engine.state.board.units.values()) {
+    if (unit.isDead) continue;
+    if (unit.side === Side.Bottom) atkHp += fromFp(unit.hp_fp);
+  }
+  const measured = Math.floor(fromFp(engine.state.preplacedAttackerHp_fp));
+  const deployedMeasured = measured > 0 ? measured : deployedHp;
+  const ratio = deployedMeasured > 0 ? Math.min(1, Math.floor(atkHp) / deployedMeasured) : 0;
+  return { attackerWin: engine.state.winner === Side.Bottom, ratio, usedCheapPath: false };
+}
+
 export function simulateLadder(tier: RosterTier, ladder: CityLadder, seed: number): LadderResult {
-  const { cityLevel, waves, waveGarrison, waveBaseHp } = ladder;
+  const { cityLevel, waves, waveGarrison, waveBaseHp, defenders = [], defenderLever = 'baseHp' } = ladder;
   const cards = engineCards(tier);
   const equipmentInv = gearInv(tier);
   let survivorArmy = teamArmy(tier).map((e) => ({ ...e }));
@@ -321,57 +465,43 @@ export function simulateLadder(tier: RosterTier, ladder: CityLadder, seed: numbe
   let cumSurvival = 1;
   let cleared = true;
   let wavesCleared = 0;
+  let defendersCleared = 0;
   let usedCheapPath = false;
 
-  for (let i = 0; i < waves; i++) {
+  // ADR-074 P3: sect garrison rungs come FIRST and the NPC ladder behind them is untouched - additive,
+  // never substitutive. worldsvc offsets its per-rung seeds by the defender count for the same reason the
+  // offset below exists: no two rungs of one assault may share a seed.
+  const rungs: Array<{ defArmy: GarrisonEntry[]; defenderSynthesized: boolean; isDefender: boolean; baseHp: number }> = [
+    ...defenders.map((d) => ({
+      defArmy: defenderLever === 'hp' ? scaleRungHp(d) : d.army.map((e) => ({ ...e })),
+      defenderSynthesized: false,
+      isDefender: true,
+      baseHp: defenderLever === 'baseHp' ? cityDefenderBaseHp(cityLevel, d.fortify) : waveBaseHp,
+    })),
+    ...Array.from({ length: waves }, () => ({
+      defArmy: synthesizeDefender(waveGarrison), defenderSynthesized: true, isDefender: false, baseHp: waveBaseHp,
+    })),
+  ];
+
+  for (let i = 0; i < rungs.length; i++) {
     const deployedHp = survivorArmy.reduce((a, e) => a + (e.initialHp ?? 0), 0);
     if (survivorArmy.length === 0 || deployedHp <= 0) { cleared = false; break; }
-    const waveSeed = seed + i * 7919;
-    let attackerSurvivors: number;
-    let attackerWin: boolean;
-    let deployedMeasured = deployedHp;
-    if (shouldUseCheapSiege({ attackerTroops: deployedHp, defenderTroops: waveGarrison, attackerSynthesized: false, defenderSynthesized: true })) {
-      usedCheapPath = true;
-      const res = resolveSiege(deployedHp, waveGarrison);
-      attackerSurvivors = res.attackerSurvivors;
-      attackerWin = res.outcome === 'attacker_win';
-    } else {
-      const defArmy = synthesizeDefender(waveGarrison);
-      // An explicit `defenderBaseHp` is NOT optional here. `applyBaseSiege`'s main-base waves leave it out,
-      // which falls back to the engine's flat BASE_HP=100 — and under ADR-069 (a unit's siege value scales
-      // with the troops it carries) a single 300-troop shieldbearer one-shots a 100-HP base, so the wave ends
-      // the moment one attacker unit reaches it and the garrison never gets to fight. Measured: a maxed team
-      // clears a 4,500-troop wave losing ~99 troops at baseHp=100 vs ~730 at baseHp=600. Without a real base
-      // the whole ladder is free and the troop-cost bound this file exists to measure does not exist.
-      const levelObj = buildSiegeBattle({ army: survivorArmy }, { garrison: defArmy, defenderBaseLevel: 0, defenderBaseHp: waveBaseHp }, cityLevel, waveSeed);
-      const level = parseLevelDefinition(levelObj);
-      const timeout = level.battleTimeoutTicks ?? 18000;
-      const input = new ReplayInputSource({ engineVersion: ENGINE_VERSION, mode: 'siege', seed: waveSeed, frames: [], endFrame: 0 });
-      const { engine } = runHeadless(
-        { seed: waveSeed, players: [{ id: 0 }, { id: 1 }], mode: 'siege', level, cardInstances: cards, equipmentInv },
-        input, timeout + TICK_MARGIN,
-      );
-      let atkHp = 0;
-      for (const unit of engine.state.board.units.values()) {
-        if (unit.isDead) continue;
-        if (unit.side === Side.Bottom) atkHp += fromFp(unit.hp_fp);
-      }
-      attackerSurvivors = Math.floor(atkHp);
-      attackerWin = engine.state.winner === Side.Bottom;
-      const measured = Math.floor(fromFp(engine.state.preplacedAttackerHp_fp));
-      if (measured > 0) deployedMeasured = measured;
-    }
-    const ratio = deployedMeasured > 0 ? Math.min(1, attackerSurvivors / deployedMeasured) : 0;
-    cumSurvival *= ratio;
-    if (!attackerWin) { cleared = false; break; }
-    wavesCleared++;
+    const rung = rungs[i]!;
+    const res = fightRung({
+      survivorArmy, defArmy: rung.defArmy, defenderSynthesized: rung.defenderSynthesized,
+      baseHp: rung.baseHp, cityLevel, seed: seed + i * 7919, cards, equipmentInv,
+    });
+    usedCheapPath = usedCheapPath || res.usedCheapPath;
+    cumSurvival *= res.ratio;
+    if (!res.attackerWin) { cleared = false; break; }
+    if (rung.isDefender) defendersCleared++; else wavesCleared++;
     survivorArmy = survivorArmy
-      .map((e) => ({ ...e, initialHp: Math.floor((e.initialHp ?? 0) * ratio) }))
+      .map((e) => ({ ...e, initialHp: Math.floor((e.initialHp ?? 0) * res.ratio) }))
       .filter((e) => (e.initialHp ?? 0) > 0);
   }
 
   const lost = Math.max(0, Math.round(nominal * (1 - cumSurvival)));
-  return { cleared, wavesCleared, waves, deployed: nominal, lost, usedCheapPath };
+  return { cleared, wavesCleared, waves, deployed: nominal, lost, usedCheapPath, defendersCleared, defenders: defenders.length };
 }
 
 export interface SiegeCost {

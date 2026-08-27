@@ -25,7 +25,8 @@ import { test } from 'node:test';
 
 import { createGameEngine } from '../GameEngine';
 import { resolveBlueprints } from '../engine/setup/blueprints';
-import { buildSiegeGarrisonBlueprints } from '../balance/pveUpgrades';
+import { buildSiegeGarrisonBlueprints, garrisonProgressionRatios } from '../balance/pveUpgrades';
+import { buildPvpBlueprints } from '../balance/pveUpgrades';
 import { UNIT_MAX_LEVEL } from '../balance/progression';
 import { UNIT_BLUEPRINTS, ATTACK_LANES, TOP_SPAWN_ROW } from '../config';
 import { toFp } from '../math/fixed';
@@ -140,4 +141,40 @@ test('siege battle: garrison Unit of the same unitType as a leveled attacker car
     garrisonUnit!.attack_fp, UNIT_BLUEPRINTS[UnitType.Infantry].attack_fp,
     'garrison infantry attack must stay at baseline',
   );
+});
+
+// ── ADR-077 companion: `garrisonProgressionRatios` reintroduces the defender's OWN progression on
+//    purpose, and must do it WITHOUT reopening either of the two things this file guards. ──
+
+test('garrisonProgressionRatios: the engine-side isolation above is untouched — it only reports numbers', () => {
+  // The whole reason the ratios are exported as plain numbers instead of a blueprint table. Even with a
+  // max-level card in hand, nothing here can hand a table to a side: `buildSiegeGarrisonBlueprints` still
+  // returns the pristine baseline, and `buildPvpBlueprints` has no card parameter to feed at all
+  // (pvp_hardwall.test.ts owns that half). So a caller can read "this garrison is worth 3.5x" and spend it
+  // on a level parameter it controls -- worldsvc spends it on the rung's symbolic defenderBaseHp -- but it
+  // cannot leak a stat into the engine's own per-side blueprint resolution.
+  const ratios = garrisonProgressionRatios(LEVELED_INFANTRY_CARD);
+  assert.ok(ratios.hp[UnitType.Infantry]! > 1, 'a max-level card must report a ratio above 1');
+  assert.ok(ratios.attack[UnitType.Infantry]! > 1, 'a max-level card must report an attack ratio above 1');
+
+  const garrisonTable = buildSiegeGarrisonBlueprints();
+  assert.equal(
+    garrisonTable[UnitType.Infantry].hp_fp, UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp,
+    'reading the ratios must not have perturbed the NPC garrison table',
+  );
+  assert.equal(
+    buildPvpBlueprints()[UnitType.Infantry].hp_fp, UNIT_BLUEPRINTS[UnitType.Infantry].hp_fp,
+    'and the PvP table stays byte-identical to the constants',
+  );
+});
+
+test('garrisonProgressionRatios: an unprogressed roster reports exactly 1, so the NPC and player paths coincide', () => {
+  // The continuity requirement. A level-1 bare garrison must be indistinguishable from the NPC waves it
+  // stands alongside — otherwise ADR-074 P3's "garrisoning is a strict upside, never a substitution" would
+  // start being false at the bottom of the progression curve.
+  const ratios = garrisonProgressionRatios([
+    { id: 'c', defId: UnitType.Infantry, unitType: UnitType.Infantry, level: 1, gear: {} },
+  ]);
+  assert.equal(ratios.hp[UnitType.Infantry], 1);
+  assert.equal(ratios.attack[UnitType.Infantry], 1);
 });

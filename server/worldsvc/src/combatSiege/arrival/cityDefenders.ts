@@ -29,12 +29,17 @@ import {
   SLG_TEAM_INJURY_MS,
   NATION_BONUS_DEFENSE,
   cityWaveBaseHp,
+  cityDefenderFortifyMult,
+  cityDefenderTeamFortify,
+  cityDefenderBaseHp,
   type SiegeResolution,
 } from '@nw/shared';
 import {
-  runSiegeBattle, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy, shouldUseCheapSiege,
+  runSiegeBattle, scaleArmyHp, scaleArmyByRatio, sumArmyHp, toDefenderFormation, resolveCardArmy,
+  toEngineCardInstances, shouldUseCheapSiege,
 } from '../../siegeEngine';
 import { computeCardStateUpdates, cardStateDeltaPipeline } from '../../cardStateSettlement';
+import { garrisonProgressionRatios } from '@nw/engine';
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import type { MarchDoc, StationedDoc, PlayerWorldDoc } from '../../db';
 import type { WorldCore } from '../../core';
@@ -45,7 +50,26 @@ import type { SiegeReplayInputs } from '../../worldTypes';
 interface CityDefender {
   stationed: StationedDoc;
   owner: PlayerWorldDoc;
+  /**
+   * The team's REAL army — one entry per card, `initialHp` = the troops that card actually carries.
+   * Deliberately unscaled: this is the troop truth the post-battle loss bookkeeping settles against
+   * (`computeCardStateUpdates(..., sumArmyHp(d.army))` at the bottom of this file). The progression
+   * bonus below is a combat-only buff and must never be written back as troops the player owns.
+   */
   army: GarrisonEntry[];
+  /**
+   * ADR-077 §12: how much this team's OWNER's card levels and gear fortify the position it holds, as a
+   * multiplier on the rung's symbolic base HP. Exactly 1 for a bare level-1 roster, and for a team whose
+   * save could not be read — both of which reproduce the pre-P4 battle to the unit.
+   *
+   * Base HP rather than the garrison's own HP, and that was decided by measurement, not taste: scaling
+   * garrison HP was implemented first and econ-sim gate ⑦ measured it as worth nothing at all (a garrison
+   * fielding 32,508 effective HP cost the reference attacker 1,209 troops against 1,245 on bare
+   * blueprints). The objective is `destroy_base` against a deliberately small `cityWaveBaseHp`, so one
+   * attacker unit slipping past ends the rung however fat the garrison is. See @nw/shared's
+   * `cityDefenderBaseHp` for the full measured curve.
+   */
+  fortify: number;
 }
 
 /** Outcome of the defender-team half of the ladder, in the shape the NPC half needs to continue from. */
@@ -107,7 +131,21 @@ async function eligibleDefenders(core: WorldCore, city: CityState, t: number): P
     const resolved = resolveCardArmy(st.army, owner.cardState ?? {}, save?.cardInv ?? {});
     const army = toDefenderFormation(resolved);
     if (army.length === 0 || sumArmyHp(army) <= 0) continue;                           // empty/stale park
-    out.push({ stationed: st, owner, army });
+    // ADR-077: the defending team's own progression, spent as effective HP. `getSaveFields` with no
+    // field list already returns BOTH cardInv and equipmentInv, so this costs no extra round trip —
+    // the equipment half of that response was simply being discarded before. A save that failed to
+    // load leaves `hpMult` empty, i.e. the plain baseline, which is exactly the pre-P4 behaviour.
+    const { cardInstances, engEquipInv } = toEngineCardInstances(st.army, save?.cardInv ?? {}, save?.equipmentInv ?? {});
+    const ratios = garrisonProgressionRatios(cardInstances, engEquipInv);
+    // Troop-weighted over the RESOLVED army, so eleven empty level-9 cards behind one full level-1 card
+    // cannot buy the maximum factor — `resolved` carries each card's real troop allotment.
+    const fortify = cityDefenderTeamFortify(
+      resolved.map((e) => ({
+        troops: e.initialHp ?? 0,
+        mult: cityDefenderFortifyMult(ratios.hp[e.unitType] ?? 1, ratios.attack[e.unitType] ?? 1),
+      })),
+    );
+    out.push({ stationed: st, owner, army, fortify });
   }
   return out;
 }
@@ -160,7 +198,12 @@ export async function fightCityDefenders(
     // one-shots — the battle then ends before the defender team ever engages, so the rung is FREE regardless
     // of how strong the garrison is. Written without it first, and the "a strong defender team repels the
     // assault" case failed with the strong team beaten by a token attacker: 480 HP through 4,800.
-    const defenderConfig = { garrison: defArmy, defenderBaseLevel: 0, defenderBaseHp: cityWaveBaseHp(city.level) };
+    // ADR-077: the garrison's own progression fortifies the position it holds. `cityDefenderBaseHp`
+    // returns exactly `cityWaveBaseHp(level)` for an unfortified team, so an ungeared level-1 garrison
+    // reproduces the pre-P4 battle to the unit. Applied here, BEFORE `lastReplay` is written a few lines
+    // down, which is what makes the feature replay-safe with no engine change and no payload field: the
+    // fortified figure is literally what a client reconstructs the battle from.
+    const defenderConfig = { garrison: defArmy, defenderBaseLevel: 0, defenderBaseHp: cityDefenderBaseHp(city.level, d.fortify) };
     // Seeds continue the SAME sequence the NPC ladder uses (`waveSeed(marchId, index)`), offset by however
     // many defender rungs came first — so no two rungs of one assault can share a seed, and the whole
     // ladder still reconstructs from the march id.

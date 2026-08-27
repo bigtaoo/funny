@@ -354,3 +354,109 @@ export function cityMarchMult(cities: readonly CityPayoffNode[]): number {
 export function isCityMarchAnchor(kind: CityKind): boolean {
   return kind === 'capital' || kind === 'worldCenter';
 }
+
+// ── P4: player-garrison fortification (§12, ADR-077) ────────────────────────────────
+//
+// ADR-074 P3 let sect members park garrison teams inside a held city, and an assault has to fight
+// through them. What it could NOT give them is their own per-unit combat stats: the engine's
+// `cardInstances`/`equipmentInv` are single-sided by construction, so both the tile's NPC waves and a
+// real player's garrison field the plain baseline blueprint (see `garrisonProgressionRatios` in
+// @nw/engine for why fixing that properly is its own ADR). A defending team's card levels and gear
+// therefore counted for nothing, and a high-progression 12-card assault walked through a garrison
+// carrying far more troops.
+//
+// **Where that progression gets spent was decided by measurement, and the obvious answer was wrong.**
+// The first implementation scaled the garrison entries' own HP, and econ-sim measured it as worth
+// almost exactly nothing: against the reference attacker at the weakest city level, a garrison fielding
+// 32,508 effective HP cost 1,209 troops versus 1,245 for the same team on bare blueprints — inside the
+// noise. The reason is structural: the battle's objective is `destroy_base` against a deliberately small
+// {@link cityWaveBaseHp}, so ONE attacker unit slipping past the garrison ends it however much HP that
+// garrison still has, and a garrison has ten lanes to cover and cannot cover them. `citySiege.ts` in
+// econ-sim already said as much about the NPC waves — "this is the dominant attrition lever, not the
+// garrison" — about `waveBaseHp`, which is the lever actually used below.
+//
+// So a garrison's progression FORTIFIES THE POSITION: it multiplies the symbolic base HP of the rung it
+// defends, i.e. how long the attacker has to stand in its fire before the rung ends. Measured effect at
+// the weakest city level, reference attacker, cost per cleared assault: no garrison 1,073 -> bare L1
+// garrison 1,321 -> geared L6 garrison 2,975 -> maxed garrison repels that tier outright (a veteran-tier
+// attacker still clears it, at 3,019 against 1,015 undefended). Graded, and never an absolute wall.
+//
+// Applying it before the battle is also what keeps the whole feature replay-safe for free: the scaled
+// `defenderBaseHp` is what goes into the stored `SiegeReplayInputs.defenderConfig`, so a client
+// reconstructs the identical battle from inputs it already receives — no engine change, no
+// ENGINE_VERSION bump, no payload field.
+
+/**
+ * How much of a defending team's ATTACK progression counts towards its fortification, as a weight on
+ * the attack ratio (0 = HP progression only; 1 = an attack multiple is worth the same as an HP multiple).
+ *
+ * Both ratios end up on the same lever (base HP), so this is not a mechanical conversion but a statement
+ * about how much of a card's investment should read as "this position is dug in". 1 means all of it.
+ * Set by measurement (`npm run city-siege` in server/tools/econ-sim, gate ⑦ prints every lever and the
+ * takeability safety check) — the design doc's own paper derivations of this fight were wrong twice.
+ */
+export const CITY_DEFENDER_ATK_AS_HP = 1;
+
+/**
+ * Hard ceiling on the fortification factor one defending team can earn.
+ *
+ * The inputs are already intrinsically bounded — card level 9 gives hp x1.96 / attack x1.80
+ * (STAT_GROWTH_PER_LEVEL), equipment adds at most +60% to each (EFFECT_CAPS) — so at
+ * {@link CITY_DEFENDER_ATK_AS_HP} = 1 the product cannot exceed ~9.03 anyway. This constant is not there
+ * to bind today; it is there so that raising a growth rate or an effect cap somewhere else cannot
+ * silently move a number that was signed off by measurement. `shared/test/citySiege.test.ts` asserts the
+ * saturated product still lands under it, so such a raise fails loudly instead.
+ */
+export const CITY_DEFENDER_FORTIFY_MAX = 9.5;
+
+/**
+ * One card's fortification factor, from the progression ratios its unit type earned.
+ *
+ * `hpRatio`/`atkRatio` come from `garrisonProgressionRatios()` in @nw/engine — what the defender's cards
+ * and gear WOULD have multiplied that unit type's hp/attack by. A bare level-1 card gives 1.0 for both,
+ * hence a factor of exactly 1 and a byte-identical battle to the pre-P4 one.
+ *
+ * Clamped below at 1: this channel only ever helps the defender. A card whose ratios came back under 1
+ * (impossible today — growth is monotonic — but cheap to guarantee) must not make the position WEAKER
+ * than the NPC baseline standing beside it, or garrisoning your own city would become a downside, the
+ * same trap P3 avoided by making defender rungs additive rather than substitutive.
+ */
+export function cityDefenderFortifyMult(hpRatio: number, atkRatio: number): number {
+  const hp = Number.isFinite(hpRatio) && hpRatio > 1 ? hpRatio : 1;
+  const atk = Number.isFinite(atkRatio) && atkRatio > 1 ? atkRatio : 1;
+  const raw = hp * Math.pow(atk, CITY_DEFENDER_ATK_AS_HP);
+  return Math.min(CITY_DEFENDER_FORTIFY_MAX, Math.max(1, raw));
+}
+
+/**
+ * A team's single fortification factor: the troop-weighted mean of its cards' factors.
+ *
+ * Troop-weighted rather than a plain mean because a team whose progression sits on the cards carrying
+ * most of its troops genuinely holds the position better than one whose good cards are nearly empty —
+ * and because a plain mean would let a player park eleven empty level-9 cards behind one full level-1
+ * card and collect the maximum factor. An empty team (no troops at all) returns 1; such a team is
+ * filtered out as a stale park before it ever gets here, so this is a guard, not a case.
+ */
+export function cityDefenderTeamFortify(cards: readonly { troops: number; mult: number }[]): number {
+  let weighted = 0;
+  let troops = 0;
+  for (const c of cards) {
+    const t = Number.isFinite(c.troops) && c.troops > 0 ? c.troops : 0;
+    if (t === 0) continue;
+    const m = Number.isFinite(c.mult) && c.mult > 1 ? Math.min(c.mult, CITY_DEFENDER_FORTIFY_MAX) : 1;
+    weighted += t * m;
+    troops += t;
+  }
+  return troops > 0 ? weighted / troops : 1;
+}
+
+/**
+ * The symbolic base HP a player-garrison rung defends: the city's own per-wave figure, fortified by the
+ * garrison team's factor. An unfortified team (factor 1) gets exactly {@link cityWaveBaseHp}, which is
+ * what the NPC waves behind it use — so the pre-P4 battle is reproduced to the unit.
+ */
+export function cityDefenderBaseHp(cityLevel: number, teamFortify: number): number {
+  const base = cityWaveBaseHp(cityLevel);
+  const f = Number.isFinite(teamFortify) && teamFortify > 1 ? Math.min(teamFortify, CITY_DEFENDER_FORTIFY_MAX) : 1;
+  return Math.max(1, Math.floor(base * f));
+}

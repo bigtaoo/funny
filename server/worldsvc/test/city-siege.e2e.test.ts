@@ -42,10 +42,14 @@ import {
   waveSeed,
   SLG_TEAM_INJURY_MS,
   NATION_BONUS_DEFENSE,
+  cityDefenderFortifyMult,
+  cityDefenderTeamFortify,
+  cityDefenderBaseHp,
+  CARD_DEFS,
   type CardInstance,
   type MapEditorCityNode,
 } from '@nw/shared';
-import { ATTACK_LANES } from '@nw/engine';
+import { ATTACK_LANES, garrisonProgressionRatios, UnitType } from '@nw/engine';
 import { createWorldMongo, type WorldMongo, type TeamTemplate, type CardSLGState, type SectDoc } from '../src/db';
 import { WorldService } from '../src/service';
 import type { WorldGatewayClient } from '../src/gatewayClient';
@@ -819,10 +823,12 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     const bBase = findNearbyBase(outside.x + 10, outside.y + 10);
     await svc.joinWorld(W, B, bBase.x, bBase.y);
     await m.collections.cities.updateOne({ _id: CITY_ID }, { $set: { ownerSectId: SECT_B } });
-    // 3,000 troops per card, against an attacker on 40. The gap has to be this wide because the ATTACKER's
-    // cards get blueprint injection from their level (the fake meta hands out level-9 cards) while a
-    // DEFENDER's cards deliberately fight on base blueprints — see applyBaseSiege's doc comment. Troop count
-    // alone is not the whole story on either side.
+    // 3,000 troops per card, against an attacker on 40. The gap has to be this wide because per-unit
+    // blueprint quality, not troop count, is what decides this fight: the ATTACKER's cards get the full
+    // level/equipment injection while a DEFENDER's fight on base blueprints (see applyBaseSiege's doc
+    // comment). ADR-077 gives the defender back a FORTIFICATION factor for its own progression —
+    // asserted explicitly at the bottom of this case — but not the attack/armor/trait half, so the
+    // asymmetry the number above compensates for is reduced, not gone.
     await garrisonCity(B, 'def1', { x: city.x, y: city.y }, 3000);
 
     const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
@@ -839,9 +845,28 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     // fought", and this attacker is weak enough to fail that ladder too — so pin which rung was last fought.
     // The recorded replay's garrison carries the defender's own 3,000-troop cards, a figure no NPC wave has;
     // if the defender rung had been skipped or lost, the stored replay would be an NPC wave's instead.
-    const garrison = (siege?.defenderConfig as { garrison?: { initialHp?: number }[] } | null)?.garrison;
-    expect(garrison, 'the siege record must carry the rung that decided it').toBeDefined();
-    expect(garrison!.some((u) => u.initialHp === 3000), 'the deciding rung must be the defender TEAM').toBe(true);
+    const cfg = siege?.defenderConfig as { garrison?: { initialHp?: number }[]; defenderBaseHp?: number } | null;
+    expect(cfg?.garrison, 'the siege record must carry the rung that decided it').toBeDefined();
+    // The garrison's own troop counts are recorded UNSCALED — the ADR-077 factor is deliberately not spent
+    // here (measured worthless: see cityDefenderProgression.test.ts's header), so 3,000 is still a figure
+    // no NPC wave has and still identifies the rung.
+    expect(cfg!.garrison!.some((u) => u.initialHp === 3000), 'the deciding rung must be the defender TEAM').toBe(true);
+    // ADR-077 proper: the rung's symbolic base HP carries the garrison's fortification factor, derived
+    // from the same three functions worldsvc calls rather than hardcoded. The fake meta hands every card
+    // out as a level-9 `chenshou` with no gear, so the factor is whatever hp-growth x attack-growth at
+    // level 9 produces. Asserting it on the STORED config is the point: that is the replay input, so this
+    // doubles as the proof a client reconstructs the identical battle from the payload it already
+    // receives — no engine change, no ENGINE_VERSION bump, no new field.
+    const defUnit = CARD_DEFS['chenshou']!.unitType as UnitType;
+    const ratios = garrisonProgressionRatios(
+      [{ id: 'probe', defId: 'chenshou', unitType: defUnit, level: 9, gear: {} }],
+      {},
+    );
+    const perCard = cityDefenderFortifyMult(ratios.hp[defUnit] ?? 1, ratios.attack[defUnit] ?? 1);
+    expect(perCard, 'a level-9 defender must actually earn a factor above 1, or this case proves nothing').toBeGreaterThan(1);
+    const fortify = cityDefenderTeamFortify(CARDS.map(() => ({ troops: 3000, mult: perCard })));
+    expect(cfg!.defenderBaseHp).toBe(cityDefenderBaseHp(city.level, fortify));
+    expect(cfg!.defenderBaseHp!, 'the fortified base HP must exceed the plain per-wave figure').toBeGreaterThan(cityWaveBaseHp(city.level));
   });
 
   it('a beaten defender team is injured for SLG_TEAM_INJURY_MS and loses its troops, and the NPC ladder still runs', async () => {

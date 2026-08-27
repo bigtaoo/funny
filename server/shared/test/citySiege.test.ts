@@ -12,6 +12,11 @@ import {
   CITY_KIND_RANK,
   cityDocId,
   cityNodeCovering,
+  cityDefenderFortifyMult,
+  cityDefenderTeamFortify,
+  cityDefenderBaseHp,
+  CITY_DEFENDER_ATK_AS_HP,
+  CITY_DEFENDER_FORTIFY_MAX,
   cityWaveCount,
   cityWaveGarrison,
   cityWaveBaseHp,
@@ -380,5 +385,77 @@ describe('citySiege: occupation payoff (§8)', () => {
     const y = cityYieldBonus([]);
     for (const rt of RESOURCE_TYPES) expect(y[rt], rt).toBe(0);
     expect(citySiegeBonus([])).toBe(0);
+  });
+});
+
+describe('player-garrison fortification — P4/ADR-077 (§12)', () => {
+  // The balance-owned half of the chain. The engine half (garrisonProgressionRatios, which produces the
+  // two ratios fed in here) is pinned in @nw/engine's siege-npc-blueprint-isolation.test.ts, and the two
+  // are exercised together against a real battle in worldsvc's cityDefenderProgression.test.ts.
+  //
+  // Note which lever this feeds: the rung's symbolic BASE HP, not the garrison's own HP. Scaling garrison
+  // HP was implemented first and econ-sim gate ⑦ measured it as worth nothing, because the objective is
+  // destroy_base against a deliberately small cityWaveBaseHp and one attacker unit slipping past the
+  // garrison ends the rung however fat it is.
+
+  it('an unprogressed team earns exactly 1 — the pre-ADR battle, unchanged', () => {
+    // Load-bearing for ADR-074 P3's rule that garrisoning is additive and never substitutive: a level-1
+    // bare team must leave the rung exactly as hard as the NPC waves behind it.
+    expect(cityDefenderFortifyMult(1, 1)).toBe(1);
+    expect(cityDefenderTeamFortify([{ troops: 300, mult: 1 }])).toBe(1);
+    for (const level of [WILD_CITY_MIN_LEVEL, 5, WILD_CITY_MAX_LEVEL]) {
+      expect(cityDefenderBaseHp(level, 1)).toBe(cityWaveBaseHp(level));
+    }
+  });
+
+  it('is monotone in both inputs — more progression is never worth less', () => {
+    expect(cityDefenderFortifyMult(1.5, 1)).toBeGreaterThan(cityDefenderFortifyMult(1, 1));
+    expect(cityDefenderFortifyMult(1, 1.5)).toBeGreaterThan(cityDefenderFortifyMult(1, 1));
+    expect(cityDefenderFortifyMult(2, 2)).toBeGreaterThan(cityDefenderFortifyMult(2, 1.5));
+    expect(cityDefenderBaseHp(3, 4)).toBeGreaterThan(cityDefenderBaseHp(3, 2));
+  });
+
+  it('folds the attack ratio in at the CITY_DEFENDER_ATK_AS_HP weight, the single balance lever', () => {
+    expect(cityDefenderFortifyMult(2, 3)).toBeCloseTo(2 * Math.pow(3, CITY_DEFENDER_ATK_AS_HP), 6);
+    // Both ratios land on the same lever, so the weight is a statement about how much of a card's
+    // investment reads as "this position is dug in" rather than a mechanical conversion. Pinned so a
+    // retune has to be a deliberate edit, measured by `npm run city-siege`.
+    expect(CITY_DEFENDER_ATK_AS_HP).toBeGreaterThanOrEqual(0);
+    expect(CITY_DEFENDER_ATK_AS_HP).toBeLessThanOrEqual(1);
+  });
+
+  it('floors at 1 for degenerate or sub-baseline input — the channel only ever helps the defender', () => {
+    // Unreachable while growth stays monotone, but a factor under 1 would make garrisoning your own city a
+    // DOWNSIDE relative to leaving it to the NPC waves.
+    expect(cityDefenderFortifyMult(0.4, 0.4)).toBe(1);
+    expect(cityDefenderFortifyMult(0, 0)).toBe(1);
+    expect(cityDefenderFortifyMult(Number.NaN, 2)).toBeCloseTo(Math.pow(2, CITY_DEFENDER_ATK_AS_HP), 6);
+    expect(cityDefenderFortifyMult(Number.POSITIVE_INFINITY, Number.NaN)).toBe(1);
+    expect(cityDefenderBaseHp(3, 0.2)).toBe(cityWaveBaseHp(3));
+  });
+
+  it('clamps at CITY_DEFENDER_FORTIFY_MAX, and the ceiling sits ABOVE what the game can produce', () => {
+    expect(cityDefenderFortifyMult(1e6, 1e6)).toBe(CITY_DEFENDER_FORTIFY_MAX);
+    expect(cityDefenderBaseHp(3, 1e6)).toBe(Math.floor(cityWaveBaseHp(3) * CITY_DEFENDER_FORTIFY_MAX));
+    // Saturated real inputs: card level 9 gives hp x1.96 / attack x1.80 (STAT_GROWTH_PER_LEVEL), equipment
+    // adds at most +60% to each (EFFECT_CAPS). Restated here in plain arithmetic rather than imported from
+    // @nw/engine (which @nw/shared must not depend on) — worldsvc's test asserts the same bound against
+    // the real engine tables, so the two cannot drift apart unnoticed.
+    const saturated = (1.96 * 1.6) * Math.pow(1.80 * 1.6, CITY_DEFENDER_ATK_AS_HP);
+    expect(saturated).toBeLessThan(CITY_DEFENDER_FORTIFY_MAX);
+    expect(cityDefenderFortifyMult(1.96 * 1.6, 1.80 * 1.6)).toBeCloseTo(saturated, 6);
+  });
+
+  it('aggregates a team by TROOPS carried, which is what stops the obvious gaming', () => {
+    // Eleven empty level-9 cards behind one full level-1 card must be worth 1, not the maximum.
+    expect(cityDefenderTeamFortify([
+      { troops: 3000, mult: 1 },
+      ...Array.from({ length: 11 }, () => ({ troops: 0, mult: 9 })),
+    ])).toBe(1);
+    expect(cityDefenderTeamFortify([{ troops: 100, mult: 5 }, { troops: 100, mult: 1 }])).toBeCloseTo(3, 6);
+    expect(cityDefenderTeamFortify([])).toBe(1);
+    // Per-card clamping happens BEFORE weighting, so the team factor is never a number the ceiling
+    // would have refused.
+    expect(cityDefenderTeamFortify([{ troops: 100, mult: 1e6 }])).toBe(CITY_DEFENDER_FORTIFY_MAX);
   });
 });
