@@ -84,6 +84,82 @@ export function bldAccentColor(key: BuildingKey): number {
   return C.accent as number;
 }
 
+// ── Icon chip (2026-08-27) ─────────────────────────────────────────────────────────────────────
+// A tinted rounded square behind the motif, in the same accent the card's level stripe and the
+// resource bar's band already use.
+//
+// Half of the "主城图标太淡" report is the art (fixed at the source — see pack_resources.cjs
+// UI_INK_FLOOR), but the other half is structural and no amount of ink fixes it: every one of these
+// motifs is an OUTLINE with a transparent middle, sitting on a paper background. There is no
+// silhouette to catch the eye — only strokes — so the icons read as smudges on the page rather than
+// as objects, and the eye has to resolve the drawing before it can tell one card from another.
+// The chip gives each motif a ground: the tint shows through the open middle, which is exactly where
+// an outline drawing has nothing of its own, and the shape reads at a glance before the lines do.
+//
+// Deliberately NOT folded into resIcon/bldIcon themselves — the same two functions also draw the
+// 15px cost icons inside the upgrade modal and the wall glyph in the header, where a chip behind
+// every inline number would be noise. Call sites opt in.
+//
+// And it goes on the RESOURCE MOTIFS only — the resource bar, and the five producer cards that reuse
+// a resource motif as their glyph. Screenshotted on both, 2026-08-27: behind the hand-drawn bld_*
+// art (desk / cabinet / drillYard / wall / satchel / academy, and the train tile's armour glyph) it
+// actively hurts. Those drawings already fill their box edge to edge and are dense and dark, so the
+// chip has no open middle to fill; it just crops their corners on its own rounded edge and lays a
+// tint under fine hatching that was reading perfectly well on bare paper. Wall came out a salmon
+// blob and Drill Yard lost its hatch.
+//
+// The split is not a compromise — it says something true. A chip means "this card produces that
+// resource", in the same colour the bar above it uses for that resource, which is exactly the line
+// BLD_RES already draws. The seven cards without one are the seven that produce nothing.
+const CHIP_INSET = 0.86;    // motif edge-to-edge inside the chip; leaves a ground visible around it without shrinking the drawing enough to cost detail
+const CHIP_ALPHA = 0.34;    // enough ground to read against C.paper, light enough that the black pen stays the darkest thing in the cell
+const CHIP_RADIUS = 0.26;   // matches the card corner rounding
+/** Node name on every chip container. Which cards got one is the whole design decision above, so the test that pins it needs to find them without guessing at positions in the display list. */
+export const CHIP_NODE_NAME = 'cityIconChip';
+
+/** The resource a building produces, or undefined — the five cards whose glyph IS a resource motif, and therefore the five that take a chip. */
+export function producerResource(key: BuildingKey): ResourceType | undefined {
+  return BLD_RES[key];
+}
+
+// Chip tint = the accent, except graphite. Its accent is a near-neutral pencil grey (0xb0b0a8) which
+// at chip alpha lands within a couple of percent of the paper under it — i.e. no chip at all. Darkened
+// here only: the accent bar and the level stripe draw the same colour as a solid band where its
+// lightness reads fine, and changing it there would recolour the whole graphite column for no reason.
+const CHIP_TINT: Partial<Record<ResourceType, number>> = { graphite: 0x8f8f86 };
+export function chipTint(color: number): number {
+  for (const [rt, tint] of Object.entries(CHIP_TINT)) {
+    if (RES_COLORS[rt as ResourceType] === color) return tint;
+  }
+  return color;
+}
+
+/**
+ * Wrap a motif in a tinted chip. The returned container occupies exactly `size`×`size`, so a call
+ * site can swap `bldIcon(k, 60, …)` for `chipped(60, …, (n) => bldIcon(k, n, …))` without touching
+ * its own layout; the motif shrinks to CHIP_INSET inside instead.
+ */
+export function chipped(
+  size: number,
+  color: number,
+  make: (inner: number) => PIXI.DisplayObject
+): PIXI.Container {
+  const box = new PIXI.Container();
+  box.name = CHIP_NODE_NAME;
+  const chip = new PIXI.Graphics();
+  chip.beginFill(chipTint(color), CHIP_ALPHA);
+  chip.drawRoundedRect(0, 0, size, size, size * CHIP_RADIUS);
+  chip.endFill();
+  box.addChild(chip);
+
+  const inner = Math.round(size * CHIP_INSET);
+  const motif = make(inner);
+  motif.x = (size - inner) / 2;
+  motif.y = (size - inner) / 2;
+  box.addChild(motif);
+  return box;
+}
+
 /** Resource glyph: res_atlas motif sprite when decoded, else the emoji fallback. */
 export function resIcon(rt: ResourceType, size: number): PIXI.DisplayObject {
   const tex = getResTexture(rt);

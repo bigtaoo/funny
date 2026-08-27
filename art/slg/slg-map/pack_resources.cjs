@@ -29,6 +29,40 @@ const PAD = 2;          // per-frame spacing inside the atlas
 const ATLAS_W = 512;    // atlas width (fixed)
 const ALPHA_TRIM = 16;  // alpha threshold for considering a pixel "has content" during crop
 
+// ── UI ink floor for the 5 generic motif frames (2026-08-27) ───────────────────────────────────
+// The generic `res_<type>` frames carry no tier (the level read below only ever looks at `_lN`), and
+// on the map they are a fallback that effectively never fires — every level of every resource that
+// can spawn has bespoke art. What they ARE is the game's resource ICON: CityScene's resource bar
+// (33px) and producer building cards (60px), WorldMapScene's header HUD and territory panel. That is
+// a very different job from a tile motif, and it is the one they were failing at.
+//
+// Measured 2026-08-27, perceptual ink (Σ alpha·(1−luma), per pixel of frame) as stored:
+//   ink 0.165 · metal 0.093 · sticker 0.038 · graphite 0.040 · paper 0.019
+// i.e. paper carried EIGHT TIMES less ink than the bottle sitting next to it in the same bar. The
+// player's report was "主城的图标看起来非常淡", with paper and graphite circled — exactly the bottom
+// two, and the only two the eye picks out of the five.
+//
+// The cause is not a light pen: measured at the 2nd percentile, paper's stroke core is luma 49 and
+// graphite's is 21, both plenty dark. It is COVERAGE. These are hairline outline drawings, and the
+// resize to LONG_EDGE below is area-correct — a 1px stroke landing on a quarter of a pixel keeps its
+// colour and drops to a quarter of the alpha. That reads as a pale grey line, not a thin black one.
+// The client then scales 128px down again to 33px, and the same loss compounds. A drawing with large
+// filled areas (the ink bottle) never notices; an empty sheet of paper is nothing BUT hairlines.
+//
+// So the frame is lifted back to a floor, by the two operations that put coverage back without
+// touching the pen: raise alpha toward opaque (a gamma), and, when that alone cannot reach the floor,
+// thicken the stroke by one pixel (a 3×3 dilation) and re-solve. Both are measured against the floor
+// rather than dialled in by hand, so a redrawn motif re-levels itself on the next pack.
+//
+// Deliberately NOT applied to the `_lN` level frames: their ink mass IS the level read (§6.3), a
+// floor would flatten exactly the differences that gate is built to preserve, and on a tile — small,
+// clustered, seen forty at a time — the lighter weight is correct.
+const UI_INK_FLOOR = 0.070;   // target perceptual ink for a generic motif; sits just under metal's 0.093, so the two frames that already read are left alone
+const UI_ALPHA_GAMMA_MIN = 0.40;  // strongest single lift allowed before thickening instead (below this the alpha ramp posterises)
+const UI_ALPHA_GAMMA_MAX = 3;     // a dilation overshoots the floor; the solve is allowed back above 1 to land on it rather than sail past
+const UI_MAX_DILATE = 2;          // paper needs 2, graphite and sticker 1, ink and metal 0
+const UI_ALPHA_TOE = ALPHA_TRIM;  // below this an "edge" is the white of the page, not ink — see the toe note in liftAlpha()
+
 // ── Level-read contract (design/product/slg-resource-art.md §6, 2026-08-19) ────────────────────
 // The level read is SOLVED HERE and baked into the atlas as per-frame `nw.sizeMul` / `nw.alphaMul`,
 // so both renderers (client drawResMotif + map-editor's copy) carry zero level->size/alpha logic.
@@ -200,6 +234,79 @@ function stripBorderRing(data, W, H, ch, name) {
   return cut;
 }
 
+/** Perceptual ink per pixel of frame: Σ alpha·(1−luma) / area. What the eye reads, as stored. */
+function uiInk(d, w, h) {
+  let m = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3] / 255;
+    const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+    m += a * (1 - l);
+  }
+  return m / (w * h);
+}
+
+/**
+ * Raise alpha by a gamma, with a toe at UI_ALPHA_TOE.
+ *
+ * The toe is not a detail. These frames are a white-knockout, so the page inside a drawn outline is
+ * not empty — it is a haze of alpha 2–20 left by the source's off-white paper. A bare `a^0.5` lifts
+ * alpha 10 to 42, and the first version of this did exactly that: paper and sticker came out with a
+ * visible grey box filling the shape, which is worse than the faintness it was fixing. Clamping that
+ * haze to zero first costs nothing real (6% alpha is below notice on a stroke's outer fringe) and it
+ * is the same threshold the crop above already uses to decide what counts as content.
+ */
+function liftAlpha(d, g) {
+  for (let i = 3; i < d.length; i += 4) {
+    const a = d[i];
+    d[i] = a <= UI_ALPHA_TOE ? 0 : Math.round(255 * Math.pow((a - UI_ALPHA_TOE) / (255 - UI_ALPHA_TOE), g));
+  }
+  return d;
+}
+
+/** 3×3 alpha dilation: every pixel takes the RGBA of its most opaque neighbour, so a hairline gains a pixel of width without gaining a second colour. Box size is unchanged (the frames are cropped with the stroke inside, and a dilation into the 1px margin would only round a corner). */
+function dilateStroke(d, w, h) {
+  const src = Buffer.from(d);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let best = -1, bi = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const i = (ny * w + nx) * 4;
+          if (src[i + 3] > best) { best = src[i + 3]; bi = i; }
+        }
+      }
+      const di = (y * w + x) * 4;
+      d[di] = src[bi]; d[di + 1] = src[bi + 1]; d[di + 2] = src[bi + 2]; d[di + 3] = src[bi + 3];
+    }
+  }
+}
+
+/** uiInk falls monotonically as the gamma rises, so bisect for the exponent landing on `floor`. Null when even the strongest allowed lift cannot reach it — the caller thickens and asks again. */
+function solveAlphaGamma(d, w, h, floor) {
+  if (uiInk(liftAlpha(Buffer.from(d), UI_ALPHA_GAMMA_MIN), w, h) < floor) return null;
+  let lo = UI_ALPHA_GAMMA_MIN, hi = UI_ALPHA_GAMMA_MAX;
+  for (let k = 0; k < 24; k++) {
+    const mid = (lo + hi) / 2;
+    if (uiInk(liftAlpha(Buffer.from(d), mid), w, h) >= floor) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
+/** Lift one generic motif to UI_INK_FLOOR in place; see the block comment on the constants for why. Returns what it had to do, for the build log. */
+function restoreUiInk(d, w, h) {
+  const before = uiInk(d, w, h);
+  if (before >= UI_INK_FLOOR) return { before, after: before, gamma: 1, dilate: 0 };
+  for (let dil = 0; dil <= UI_MAX_DILATE; dil++) {
+    if (dil) dilateStroke(d, w, h);
+    const gamma = solveAlphaGamma(d, w, h, UI_INK_FLOOR);
+    if (gamma !== null) { liftAlpha(d, gamma); return { before, after: uiInk(d, w, h), gamma, dilate: dil }; }
+  }
+  liftAlpha(d, UI_ALPHA_GAMMA_MIN);
+  return { before, after: uiInk(d, w, h), gamma: UI_ALPHA_GAMMA_MIN, dilate: UI_MAX_DILATE, short: true };
+}
+
 async function processImage(file, longEdge) {
   const name = path.basename(file).replace(/\.(webp|png)$/i, '');
   const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -254,6 +361,10 @@ async function processImage(file, longEdge) {
   const resized = await sharp(cropBuf, { raw: { width: cropW, height: cropH, channels: 4 } })
     .resize(newW, newH, { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true });
 
+  // The 5 tierless `res_<type>` frames are the game's resource ICON, and the resize above is where a
+  // hairline drawing loses the coverage that made it read. Put it back, on them only — see UI_INK_FLOOR.
+  const uiLift = /^res_[a-z]+$/.test(name) ? restoreUiInk(resized.data, newW, newH) : null;
+
   // Ink mass = integral of alpha over the frame, measured on the STORED pixels (what actually gets
   // scaled onto a tile). `density` divides it out by frame area, so it is independent of how big the
   // frame happens to be drawn — it is purely "how full / how black is this drawing", which is the
@@ -263,24 +374,50 @@ async function processImage(file, longEdge) {
   mass /= 255;
 
   const buf = await sharp(resized.data, { raw: { width: newW, height: newH, channels: 4 } }).png().toBuffer();
-  return { name, buf, w: newW, h: newH, inkMass: mass, density: mass / (newW * newH) };
+  return { name, buf, w: newW, h: newH, inkMass: mass, density: mass / (newW * newH), uiLift };
 }
 
 const loadSprite = (file) => processImage(file, LONG_EDGE);
 
 async function main() {
-  // `res_contact_sheet.png` is this pipeline's own OUTPUT (art/scripts/resContactSheet.js writes it
-  // here, slg-resource-art.md §6.11) and it matches the source pattern, so the second run after a
-  // sheet exists silently packs the sheet as a 51st frame — 5 KB of atlas spent on a picture of the
-  // atlas, and the frame count check stops meaning anything. Exclude it by name rather than renaming
-  // the sheet: the sheet's path is referenced from the doc and from the verification habit.
+  // Three files in this directory match the source pattern but are this pipeline's own OUTPUT, and
+  // packing an output back in as a frame is silent — the atlas just grows one entry nobody asked for
+  // and the frame count stops meaning anything:
+  //   · `res_contact_sheet.png` — art/scripts/resContactSheet.js writes it here (§6.11); 5 KB of atlas
+  //     spent on a picture of the atlas.
+  //   · `res_atlas.png` / `res_atlas.json` — OUT_DIRS[0] is this very directory, so the atlas is always
+  //     sitting next to its own sources from the second run onward. Missed when the sheet was excluded
+  //     in isolation, and found on 2026-08-27 the first time anyone re-ran the packer since: it packed
+  //     `res_atlas` as a 51st frame, a 512×2048 picture of all 50 motifs, whose drawn edge even tripped
+  //     stripBorderRing. The committed atlas has 50 frames, so no shipped build ever carried it — but
+  //     nothing would have caught it either.
+  // Exclude by name rather than renaming the outputs: both paths are referenced from the design doc
+  // (§5.8, §6.11) and from the map-editor's import.
+  const OWN_OUTPUT = new Set(['res_contact_sheet.png', 'res_atlas.png', 'res_atlas.json']);
   const files = fs.readdirSync(__dirname)
-    .filter((f) => /^res_.*\.(webp|png)$/i.test(f) && f !== 'res_contact_sheet.png')
+    .filter((f) => /^res_.*\.(webp|png)$/i.test(f) && !OWN_OUTPUT.has(f))
     .sort();
   if (!files.length) { console.error('No res_*.{webp,png} files found'); process.exit(1); }
 
   const sprites = [];
   for (const f of files) sprites.push(await loadSprite(path.join(__dirname, f)));
+
+  // ── UI ink floor report, generic frames only (§6.13) ────────────────────────────────────────
+  const lifted = sprites.filter((s) => s.uiLift);
+  console.log(`
+  generic motif frames — UI ink floor ${UI_INK_FLOOR}:`);
+  console.table(lifted.map((s) => ({
+    frame: s.name,
+    ink: s.uiLift.before.toFixed(4),
+    lifted: s.uiLift.after.toFixed(4),
+    alphaGamma: s.uiLift.gamma.toFixed(2),
+    dilate: s.uiLift.dilate,
+    verdict: s.uiLift.short ? 'STILL UNDER FLOOR' : s.uiLift.dilate || s.uiLift.gamma !== 1 ? 'lifted' : 'already reads',
+  })));
+  for (const s of lifted.filter((x) => x.uiLift.short)) {
+    console.warn(`  ⚠ ${s.name}: ${s.uiLift.after.toFixed(4)} ink after the strongest lift (floor ${UI_INK_FLOOR}) — the drawing is too sparse to`);
+    console.warn(`    carry an icon at 33px. Redraw it with more of the subject on the page, or with a heavier pen.`);
+  }
 
   // ── Solve + gate the level read, per resource type (§6.3) ───────────────────────────────────
   const byType = new Map();
