@@ -25,8 +25,13 @@ async function main() {
     ],
   });
 
-  // L0 boot icon group: equipment/material/faction/avatar icon atlases — all
-  // small, all loaded together at app boot.
+  // L0 boot icon group: equipment/material/faction icon atlases — all small, all loaded
+  // together at app boot. The avatars/ source that used to be a fourth entry here is gone:
+  // presetAvatarArt.ts replaced those 8 white-line frames with standalone bust PNGs, and the
+  // 2026-08-27 repack evicted them from the page (ASSET_PACKAGING.md §16.2). `maxWidth: 2048`
+  // is kept for the record but is NOT what the shipped page uses — at 2048 these 17 frames
+  // shelf-pack into one long row at 49.9% utilisation; the page was reflowed at 520
+  // (93.1%, 1.54 MB of texture instead of 2.88).
   await mergeGroup({
     name: 'icons',
     outDir: path.join(ASSETS, 'icons'),
@@ -36,7 +41,6 @@ async function main() {
       { png: path.join(ASSETS, 'equipment/equipment.png'), json: path.join(ASSETS, 'equipment/equipment.json') },
       { png: path.join(ASSETS, 'material/material.png'), json: path.join(ASSETS, 'material/material.json') },
       { png: path.join(ASSETS, 'factions/factions.png'), json: path.join(ASSETS, 'factions/factions.json') },
-      { png: path.join(ASSETS, 'avatars/avatars.png'), json: path.join(ASSETS, 'avatars/avatars.json') },
     ],
   });
 

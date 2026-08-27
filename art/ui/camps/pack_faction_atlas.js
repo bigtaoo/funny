@@ -81,11 +81,19 @@ async function whiteLineFrame(file) {
   }
   const atlasW = FRAME * SOURCES.length, atlasH = FRAME;
   fs.mkdirSync(OUT_DIR, { recursive: true }); // OUT_DIR was deleted by the 072131d8 asset merge (art already landed in icons_atlas; see header)
-  // Quantized palette PNG (client/src/assets publish-bytes convention — see
-  // art/scripts/exportUnitCardArt.mjs and claudedocs/file-formats.md): trivially safe, the whole
-  // atlas is pure white lines at varying alpha (tinted per-faction at runtime, see header note).
+  // `compressionLevel` ONLY — deliberately NOT the quantized-palette publish convention the rest of
+  // client/src/assets uses (art/scripts/exportUnitCardArt.mjs, claudedocs/file-formats.md). That
+  // convention is about SHIPPED bytes, and this file has not been shipped since 072131d8: it is a
+  // throwaway intermediate whose only consumer is patchMergedAtlas.js, which memcpy's these pixels
+  // into icons_atlas.png. Quantising here would therefore bake the loss into the page the client
+  // DOES load, for zero byte saving there — the exact mistake that left icons_atlas palette-8 until
+  // 2026-08-27. The old comment here called quantising "trivially safe, the whole atlas is pure white
+  // lines at varying alpha" — measured, it is not: quantised vs lossless differ on 92.8% of pixels
+  // (35,851 of them with alpha>0), up to 8/255 on ALPHA and up to 255 on a channel, because the
+  // quantiser is free to pick a black palette entry for a near-transparent white one. "Would fit in
+  // 256 entries" is not the same claim as "sharp's quantiser will pick those 256 entries".
   await sharp({ create: { width: atlasW, height: atlasH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite(composites).png({ palette: true, quality: 90, effort: 10, compressionLevel: 9 }).toFile(path.join(OUT_DIR, 'factions.png'));
+    .composite(composites).png({ compressionLevel: 9 }).toFile(path.join(OUT_DIR, 'factions.png'));
 
   const json = { frames, meta: { image: 'factions.png', format: 'RGBA8888', size: { w: atlasW, h: atlasH }, scale: '1' } };
   fs.writeFileSync(path.join(OUT_DIR, 'factions.json'), JSON.stringify(json, null, 2));
