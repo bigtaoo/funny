@@ -1,6 +1,6 @@
 # 批次 8：数值词条图标补齐（射程 / 攻城值 / 暴击率 / 暴击伤害）— Prompt 文档
 
-> 创建：2026-08-27 · 数值词条四张：**全部完成（同日）** · **追加 8b（卡片元信息：类型/费用/未解锁）**：`未解锁` 已复用 `lock` 落地，`费用`→`ink`、`建筑`→`castle` 判为复用，`士兵`（头盔）/`法术`（卷轴）两张待出图，prompt 见文末：v1 四张里 `crit`/`siege` 过、`range`（4.24:1 缩成发丝）与 `critmult`（读成船舵）打回；v2 三张一版过，四张一起接线上线。最终账：43 + 4 = 47 张自有美术 + 6 个别名 = 53 个 ink kind
+> 创建：2026-08-27 · 数值词条四张：**全部完成（同日）** · **追加 8b（卡片元信息：类型/费用/未解锁）**：`未解锁` 已复用 `lock` 落地，`费用`→`ink`、`建筑`→`castle` 判为复用，`法术`（卷轴）**已出图通过**，`士兵`（头盔 v1 读成毛线帽）**打回**、v2 改侧面科林斯盔，prompt 见文末；副标题等三种卡类型图标齐了再接：v1 四张里 `crit`/`siege` 过、`range`（4.24:1 缩成发丝）与 `critmult`（读成船舵）打回；v2 三张一版过，四张一起接线上线。最终账：43 + 4 = 47 张自有美术 + 6 个别名 = 53 个 ink kind
 > 前七批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（批 1–4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页，3 张）· [`tab-icon-art-prompts-batch7.md`](tab-icon-art-prompts-batch7.md)（矢量清零，44 张）
 > 配套代码：[`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（本批落地处，同批次 7）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) · 调用点见文末「出图后的接线清单」
 > 相关代码改动（**已落地，不等图**）：收集册属性行每个词条都写全名，见 [`LOBBY_IA_REDESIGN_LOG.md §28`](../game/LOBBY_IA_REDESIGN_LOG.md)
@@ -228,3 +228,32 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 2. `inkIconRaster.ts`：两条 import + `InkIconKind` 两个成员 + `INK_ICON_ART` 两行；`inkIconArt.test.ts` 的计数 47 → 49。
 3. `CardCodexScene/tile.ts`：副标题改走 `drawIconTextRow`，卡类型 → 图标的映射是 `unit → 'unit'` / `building → 'castle'` / `spell → 'spell'`，费用那段带 `ink`，去掉中间的 `·`。
 4. 验收照旧：28px contact sheet（`unit` 要跟 `atk`/`armor` 并排看，`spell` 要跟 `book`/`cards` 并排看）+ 收集册中文横竖屏实拍（一屏里同时有士兵/建筑/法术三种卡）。
+
+### 8b v1 出图结果（2026-08-27）：`spell` 过，`unit` 打回
+
+| kind | 内容长宽比 | 28px 实际占格 | 墨量 | 结论 |
+|---|---|---|---|---|
+| `spell` | 0.84:1 | 23×28 | 49.7 | **过** |
+| `unit` | 1.27:1 | 28×22 | 60.7 | **打回**——读成毛线帽 |
+
+**`spell`（卷轴）过**：上下两个卷筒（端头带小螺旋）+ 中间空白纸面，28px 上卷筒仍然读得出来。跟两个最容易撞的邻居并排比过——`book` 是有中缝的两页摊开本、`cards` 是带折角的叠卡——三者在 28px 上互不混淆。墨量 49.7，跟 `castle`(47.5)/`ink`(48.2) 同档。
+
+**`unit`（头盔）打回**：造型出成了「圆顶 + 一条横向箍带 + 一个 T 形小凸起 + **一条封死的平直底边**」。那条底边加上箍带，整体读成**一顶毛线帽**（箍带 = 翻边罗口），完全没有头盔感；缩到 28px 更明显——圆顶下面是一个被竖线一分为二的方框，像个带两格窗棂的拱窗。
+
+三条根因，v2 逐条堵：
+
+1. **底边不能封死**。头盔是空心的、颈口是开的；一条横贯的直线立刻把它变成帽子/盒子。
+2. **不要横向箍带**。prompt 里那句「one horizontal brow band across it」被理解成一条贯穿全宽的带子，正是罗口的来源。
+3. **护鼻不能画成分隔线**。它在 v1 里从箍带一直连到底边，把下半部切成两格；护鼻应该是**悬在轮廓里**的一根短竖条。
+
+v2 换成**侧面的科林斯式头盔**：正面视角失败的关键是它的辨识全靠细缝，而细缝在 28px 上必然消失；侧面轮廓的眼窝是一个**大缺口**（不是缝），护鼻和护颊是轮廓本身的一部分，缩小后仍然成立——这正是批次 7 那条「28px 上活下来的是实心块、死掉的是细节」的另一面用法。
+
+### `unit` 重出 prompt（v2）
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a Corinthian Greek helmet seen from the SIDE, drawn as one continuous outline — a rounded dome, a straight vertical nose bar running down the front, one LARGE angular eye opening cut out just behind the nose bar (a big empty notch, not a thin slit), and a cheek plate sweeping down behind it; the neck opening at the bottom is open, with no line closing it. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, a knitted beanie or winter hat, a horizontal band or cuff across the helmet, a straight line closing the bottom, a dome sitting on top of a rectangle, thin slits, a face, eyes or skin inside the opening, a head or neck, a tall plume or crest, horns, a breastplate, a shield or sword beside it, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+> 备选（v2 若读成鱼/一团）：回到正面视角，但**只画**一个下沿外扩的空心圆顶 + 一根从前沿垂下的短护鼻，不画箍带、不封底边、不画眼缝——即「钟形 + 一个小垂片」，代价是可能被读成铃铛。
+
+**资产落位**：`art/ui/tabicons/tabicon_spell.webp`；`_rejected/tabicon_unit_v1_readsasbeanie.webp`。副标题那一行仍然不接线——三种卡类型的图标必须同时到位，否则一屏里「建筑」有图标、「士兵」没有，就是这轮反馈的原样复现。
