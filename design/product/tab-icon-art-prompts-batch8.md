@@ -277,3 +277,5 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 4. 测试：`cardCodexScene.ui.ts` 加 1 例——三种类型标签和费用标签都必须有缩进（同上，无头环境断言几何而非图标节点），并且**没有任何标签还带 ` · `**（分隔符必须真的消失，不是只在某一种卡上消失）。红绿对照做过。
 
 **像素证据**：中文横屏（士兵蓝）+ 拖动到底部的横屏（建筑金 / 法术红，一屏同时有三种类型）+ 竖屏（副标题带图标后仍在面板内、靠 `drawIconTextRow` 的整体缩放）。三种类型的图标都跟着卡类型的强调色走（蓝/金/红），费用的墨水瓶同色。
+
+**收尾补的两条正向门禁**（2026-08-27，手法与踩坑见 [`claudedocs/client-testing.md`](../../claudedocs/client-testing.md) 末两节）：①`equipmentAffixIcons.ui.ts` 从 i18n 表推出「玩家能看见的词条」全集，逐条断言有图标缩进，基线用一个永远不可能有图标的合成 id 锚定；②`codexStatChips.ui.ts` 遍历 `CARD_DEFINITIONS` 断言 `cardStats()` 没有 `icon === null`，外加折行的高度预算不变量。**这两条盯的是下一次的缺口**——批次 7 结构上不可能发现「从来没画过」的 `range`，所以它漏了五个批次；现在新增一个词条或一种卡类型而没出图会直接红。

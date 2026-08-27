@@ -192,3 +192,100 @@ describe('CardCodexScene (Collection) landscape — sidebar-margin layout unchan
     scene.destroy();
   });
 });
+
+// ── The info panel's four lines, as geometry (2026-08-27) ──────────────────────────────────────────
+//
+// The panel went from "name + one plain subtitle + a chip row" to four lines that each carry an icon,
+// which moved every y in it: a row of icons is taller than a line of text, so the subtitle's origin
+// had to come up by half that difference. This pins the resulting ORDER (name above subtitle above
+// the stat/locked line) and that nothing sticks out of its own tile.
+//
+// It does NOT cover the wrap's height budget: the headless measureText mock is a flat 7px/char, so at
+// portrait's tile width these labels fit on one line here and the two-line case real CJK text hits
+// never arises. That invariant is pinned directly instead, by calling drawStatChips with exaggerated
+// maxW/maxH — see test/ui/codexStatChips.ui.ts, and claudedocs/client-testing.md on why forcing the
+// geometry beats trying to reproduce a real-browser width in headless.
+//
+// `getBounds()` is what makes this checkable at all: the labels now live inside per-row containers
+// that carry their own scale, so a local `.x`/`.width` (what assertNamesFitInsideTiles reads for the
+// names, which are direct children) would silently measure the wrong frame.
+function textNodes(container: PIXI.Container): PIXI.Text[] {
+  const out: PIXI.Text[] = [];
+  const walk = (node: PIXI.Container): void => {
+    if (node instanceof PIXI.Text && node.text.length > 0) out.push(node);
+    for (const c of node.children) walk(c as PIXI.Container);
+  };
+  walk(container);
+  return out;
+}
+
+describe('CardCodexScene (Collection) portrait — every info-panel line stays in its lane', () => {
+  const W = 1080;
+
+  /** Tile rects come from the illustration hit rects, which are square and share the tile's y band. */
+  function tilesOf(scene: CardCodexScene, tileW: number): Array<{ x: number; y: number; w: number; h: number }> {
+    return imageHits(scene).map((r) => ({ x: r.x, y: r.y, w: tileW, h: r.h }));
+  }
+
+  it('keeps every line of every tile inside that tile, name → subtitle → stats, in that order', () => {
+    const avail = Math.round(W * 0.9);
+    const contentX = Math.round((W - avail) / 2);
+    const gap = Math.round(avail * 0.045);
+    const tileW = Math.round((avail - gap) / 2);
+    const scene = new CardCodexScene(createLayout(W, 1920), new InputManager(), baseCb(true, ALL_UNIT_TYPES.slice(0, 2)));
+
+    const names = new Set(CARD_DEFINITIONS.map((c) => t(c.nameKey as never)));
+    const types = new Set([
+      t('collection.cardType.unit' as never),
+      t('collection.cardType.building' as never),
+      t('collection.cardType.spell' as never),
+    ]);
+    const costPrefix = `${t('collection.stat.cost' as never)} `;
+    const thirdLine = new Set([
+      t('collection.stat.hp' as never),
+      t('collection.stat.atk' as never),
+      t('collection.stat.range' as never),
+      t('collection.locked' as never),
+    ]);
+
+    const tiles = tilesOf(scene, tileW);
+    expect(tiles.length).toBeGreaterThan(0);
+    const nodes = textNodes(scene.container).map((n) => ({ text: n.text, b: n.getBounds() }));
+
+    let checked = 0;
+    for (const tile of tiles) {
+      const mine = nodes.filter(({ b }) => {
+        const cx = b.x + b.width / 2;
+        const cy = b.y + b.height / 2;
+        return cx >= tile.x && cx <= tile.x + tile.w && cy >= tile.y && cy <= tile.y + tile.h;
+      });
+      if (mine.length === 0) continue; // a tile scrolled out of the virtualized window
+
+      // Nothing may spill out of the tile — the failure the height budget exists to prevent.
+      for (const { text, b } of mine) {
+        expect(b.x + b.width, `"${text}" right edge`).toBeLessThanOrEqual(tile.x + tile.w + 1);
+        expect(b.y + b.height, `"${text}" bottom edge`).toBeLessThanOrEqual(tile.y + tile.h + 1);
+        expect(b.y, `"${text}" top edge`).toBeGreaterThanOrEqual(tile.y - 1);
+      }
+
+      const band = (pick: (t: string) => boolean): { top: number; bottom: number } | null => {
+        const sel = mine.filter(({ text }) => pick(text));
+        if (sel.length === 0) return null;
+        return {
+          top: Math.min(...sel.map(({ b }) => b.y)),
+          bottom: Math.max(...sel.map(({ b }) => b.y + b.height)),
+        };
+      };
+      const nameBand = band((x) => names.has(x));
+      const subBand = band((x) => types.has(x) || x.startsWith(costPrefix));
+      const lastBand = band((x) => thirdLine.has(x));
+      expect(nameBand, 'every tile draws a name').not.toBeNull();
+      expect(subBand, 'every tile draws its type and cost').not.toBeNull();
+      if (nameBand && subBand) expect(nameBand.bottom).toBeLessThanOrEqual(subBand.top);
+      if (subBand && lastBand) expect(subBand.bottom).toBeLessThanOrEqual(lastBand.top);
+      checked++;
+    }
+    expect(checked, 'no tile was actually measured — the filter is wrong, not the layout').toBeGreaterThan(1);
+    scene.destroy();
+  });
+});
