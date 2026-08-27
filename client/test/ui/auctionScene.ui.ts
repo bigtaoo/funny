@@ -1265,6 +1265,35 @@ describe('AuctionScene — background poll', () => {
     scene.destroy();
   });
 
+  it('re-renders when only a bid outcome flipped — the market list alone cannot see it', async () => {
+    // The listing I'm bidding on is NOT on the market page being polled: /auction/list returns one page
+    // (price-sorted, capped) and can be category-filtered, so most listings a player has bid on are absent
+    // from it — and a settled one has left the open market entirely. auctionSig therefore stays byte-identical
+    // across the poll while my standing in that auction changes from winning to lost. Without bidSig in the
+    // signature the tab would keep painting "leading" over an auction someone else has already won.
+    const market = makeAuction({ auctionId: 'unrelated', price: 100, expireAt: 9_999_999_999 });
+    const mine = { auctionId: 'b1', price: 300, expireAt: 9_999_999_999, saleMode: 'auction' as const };
+    let call = 0;
+    const worldApi = stubWorldApi({
+      listAuctions: vi.fn(async () => [{ ...market }]),
+      getMyBids: vi.fn(async () => (call++ === 0
+        ? [makeBid(mine, { outcome: 'leading', myBid: 300 })]
+        : [makeBid({ ...mine, status: 'sold' }, { outcome: 'lost', myBid: 300 })])),
+    });
+    const scene = buildScene({ worldApi });
+    await flush();
+    scene.core.activeTab = 'bids';
+    scene.render();
+    expect(collectTexts(scene.container)).toContain(t('auction.leading'));
+
+    scene.update(AUCTION_POLL_SEC + 1);
+    await flush();
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('auction.bidLost'));   // the badge followed the flip…
+    expect(texts).not.toContain(t('auction.leading'));
+    scene.destroy();
+  });
+
   it('drops a poll result if a modal opened during the in-flight fetch (no stomp)', async () => {
     let resolveList: (v: AuctionView[]) => void = () => {};
     const worldApi = stubWorldApi({

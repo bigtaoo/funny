@@ -280,9 +280,10 @@ export async function createAuctionMongo(
     // and must outlive every retention window until it is settled.
     await collections.auctionOrders.createIndex({ purgeAt: 1 }, { expireAfterSeconds: 0 });
     await collections.auctions.createIndex({ status: 1, settledAt: 1 });
-    // My Bids: the only query shape is "this bidder's rows, newest first" (getMyBids), then a
-    // batched _id lookup of the listings themselves.
-    await collections.auctionBids.createIndex({ bidderId: 1, ts: -1 });
+    // My Bids: the only query shape is "this bidder's rows, live listings first" (getMyBids), then a
+    // batched _id lookup of the listings themselves. Sorted on purgeAt rather than the bid time so the
+    // fetch cap can never drop a still-open listing — see getMyBids for why those are not the same order.
+    await collections.auctionBids.createIndex({ bidderId: 1, purgeAt: -1 });
     // TTL: unlike auctionOrders' purgeAt, this one is written on every upsert — a bid row owes nobody
     // anything, it is pure history, so letting it expire on schedule is correct.
     await collections.auctionBids.createIndex({ purgeAt: 1 }, { expireAfterSeconds: 0 });

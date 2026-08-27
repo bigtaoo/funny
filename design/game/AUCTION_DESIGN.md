@@ -232,9 +232,10 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 
 另一个集合 **`auctionOrders`**（跨集合结算账本，§2.4；字段权威在 `auctionsvc/src/db.ts` 的 `AuctionOrderDoc`）：`{status, nextAttemptAt}` 驱动续跑扫描，`{auctionId}` 反查，`{purgeAt}` TTL（**只在行终结时才写 `purgeAt`**——pending 行是未结的欠账，绝不能被 TTL 清掉）。
 
-第三个集合 **`auctionBids`**（出价参与记录，2026-08-27；字段权威 `AuctionBidDoc`）：`_id = ${auctionId}|${bidderId}`，一个（挂单，出价人）一行、每次出价 upsert，`amount` 存**我自己出过的最高价**（不是挂单当前价）、`total` 存对应托管金额、`bids` 计次。索引 `{bidderId, ts:-1}`（唯一查询形状：我的出价，最新在前）+ `{purgeAt}` TTL。
+第三个集合 **`auctionBids`**（出价参与记录，2026-08-27；字段权威 `AuctionBidDoc`）：`_id = ${auctionId}|${bidderId}`，一个（挂单，出价人）一行、每次出价 upsert，`amount` 存**我自己出过的最高价**（不是挂单当前价）、`total` 存对应托管金额、`bids` 计次。索引 `{bidderId, purgeAt:-1}`（唯一查询形状：我的出价）+ `{purgeAt}` TTL。
 - **为什么不挂在 `auctions` 上**：挂单文档是每次出价都要 CAS 的热文档（`rev` 守卫），往上加不封顶的 `bidders` 数组等于把出价吞吐押在同一个文档的体积和竞争上；分开存也让历史读完全不碰出价写路径。
 - **为什么要有**：`topBid` 只记**当前领跑者**，被反超的瞬间挂单上就再没有那个人的痕迹了。所以「我的竞拍」不可能从市场档数据推出来——旧实现按 `topBid.bidderId===me` 客户端过滤，结果只能显示我正在赢的单子，一被反超就整条消失（这正是玩家最需要看见的时候）。
+- **取数按 `purgeAt` 倒序而不是按出价时间倒序**：`purgeAt` = 挂单 `expireAt` + 常量，所以「purgeAt 在未来」正好等价于「这个挂单还没到期」，按它倒序能保证未结束的行永远排在已结束的行前面，`MY_BIDS_FETCH_LIMIT` 截断不可能把我正在竞的单子截掉。按 `ts` 排看着等价其实不是：我在一个仍然开着的单子上最后一次出价可以很久以前（开局出一次，之后防狙击让别人一路续着），活跃玩家攒够一页更新的已结束记录就会把那条活的挤掉——正是本端点要解决的「正在输的出价看不见」。代价是**哪些已结束的行**能进这一页按挂单到期时间排（返回时仍按 `myBidTs` 倒序），两者只在单个挂单的时间窗内有差别。
 - **TTL 锚点是挂单的 `expireAt` + `AUCTION_CLOSED_RETENTION_SEC`，不是出价时间**：锚在出价上会让记录比 `purgeClosedListings` 清挂单早最多一整个挂单时长过期，出现「我的拍卖」还看得到这笔交易、「我的竞拍」已经空了的裂缝。
 
 ### 5.2 REST 端点（独立服务 `auctionsvc` `/auction/*`，端口 18086，✅ 已落地；Caddy/compose 已切 `/auction*` → `auctionsvc:18086`（§9 任务5）；worldsvc 侧的旧 `auctionService.ts` 及 `/auction/*` 路由已删（§9 任务6））
@@ -348,7 +349,8 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 - **服务端**：新集合 `auctionBids`（§5.1，`AuctionBidDoc`），`placeBid` 在 topBid 写入落地之后 upsert 一行——**只在托管真的发生之后写**，所以 CAS 输掉、escrow 被补偿退回的那种出价不会留下记录（e2e 用 `findOneAndUpdate` 代理插入一次竞态出价来钉这条）。写入用聚合管道而非 `$max`+`$set`：`amount` 和 `total` 必须一起动，否则会出现"金额是高价、托管数是低价"的自相矛盾行。这行是纯历史、背后没有资产，所以写失败只记日志不抛——出价本身已经成功、金币已经托管，为一行历史报错等于谎报失败。
 - **读**：`AuctionServiceListing.getMyBids(accountId)`，两次查询（出价行 → 批量 `_id: {$in}` 取挂单）而不是 `$lookup`；`outcome` 由挂单状态推导（open → 我是否领跑；sold → 我是否买家；cancelled/expired → `lost`，虽然带出价的单子按流程走不到这两个终态）。
 - **契约/客户端**：`openapi-auction.yml` 加 `AuctionBidView` schema + `GET /auction/myBids`，`npm run rest:gen` 重生成；`WorldApiClient.getMyBids()`；`AuctionSceneCore.myBids`/`myBidIndex` 随 loadData/pollRefresh 一起拉（poll 的变更签名加 `bidSig`——`outcome` 会在结拍时 won→lost 翻转，光看挂单签名看不出来）；`ListPanel.myBids()` 从"过滤 allAuctions"改成"直接用服务端结果"；卡片右下角徽标按 outcome 分四态（`auction.leading`/`outbid`/`bidWon`/`bidLost`，领先/中拍用 accent、被超越/落败用灰），价格下方在**我的出价与当前价不同时**多一行「我的出价: N」（领先时两者相等，重复印一遍看着像渲染 bug）。i18n 三语补 `outbid`/`bidWon`/`bidLost`/`myBid`，`bidsEmpty` 从"暂无在拍的出价"改成"你还没有参与过竞拍"（这一档现在含历史）。
-- **验证**：auctionsvc 253 例全绿（新增 `auction-mybids.e2e.test.ts` 12 例 + `auction-fulllink.e2e.test.ts` 走真实 `WorldApiClient` 过 HTTP 断言 leading→lost/won）；client UI `auctionScene.ui.ts` 85 例全绿（「我的竞拍」一组重写为服务端数据驱动）；client `tsc --noEmit`（含 tsconfig.test / fulllink）+ webpack 生产构建全绿。
+- **补测（同日稍后）**：写「取数上限」这条测试时发现原来的 `sort({ts:-1})` 有真缺口（见上一条），改成 `sort({purgeAt:-1})` + 换索引；客户端补一条「只有 outcome 翻转」的轮询测试（挂单不在当前市场档那一页 → `auctionSig` 一字不变，全靠 `bidSig`）。两条都做过变异校验：把被测的那行改回去会变红。
+- **验证**：auctionsvc 254 例全绿（新增 `auction-mybids.e2e.test.ts` 13 例 + `auction-fulllink.e2e.test.ts` 走真实 `WorldApiClient` 过 HTTP 断言 leading→lost/won）；client UI `auctionScene.ui.ts` 87 例全绿（「我的竞拍」一组重写为服务端数据驱动）；client `tsc --noEmit`（含 tsconfig.test / fulllink）+ webpack 生产构建全绿。
 
 ---
 

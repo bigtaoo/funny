@@ -13,7 +13,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { AUCTION_DURATIONS_SEC, SlgError } from '@nw/shared';
 import { createAuctionMongo, type AuctionMongo } from '../src/db';
 import { AuctionService } from '../src/auctionService';
-import { AUCTION_CLOSED_RETENTION_SEC, bidRowId } from '../src/auctionService/base';
+import { AUCTION_CLOSED_RETENTION_SEC, MY_BIDS_FETCH_LIMIT, bidRowId } from '../src/auctionService/base';
 import type { AuctionCommercialClient } from '../src/commercialClient';
 import type { AuctionMetaClient } from '../src/metaClient';
 import type { AuctionMailClient } from '../src/mailClient';
@@ -229,6 +229,40 @@ describe.skipIf(!mongo)('AuctionService.getMyBids e2e', () => {
 
     expect(await svc.getMyBids('bob')).toEqual([]);
     expect((await svc.getMyBids('carol'))[0]).toMatchObject({ outcome: 'leading', myBid: 20 });
+  });
+
+  it('the fetch cap never drops a live listing in favour of newer closed history', async () => {
+    // An active trader can bid on more listings within the retention window than the cap returns
+    // (AUCTION_DAILY_BUY_CAP × 30 days ≫ MY_BIDS_FETCH_LIMIT), and my last bid on a listing I'm still in
+    // can be old — I bid once at the start and anti-snipe keeps it open while others fight over it. A
+    // fetch ordered by bid time would then hand back a full page of closed history and silently omit the
+    // one listing still worth acting on, which is the exact failure this endpoint exists to fix.
+    const live = await listAuction(10);
+    await svc.placeBid('bob', live.auctionId, 12);
+
+    // …then MY_BIDS_FETCH_LIMIT closed listings, every one of them bid on LATER than the live one.
+    const closedDocs = [];
+    const closedRows = [];
+    for (let i = 0; i < MY_BIDS_FETCH_LIMIT; i++) {
+      const id = `a:filler:${i}`;
+      closedDocs.push({
+        _id: id, sellerId: 'alice', itemType: 'material', item: { material: 'scrap' }, qty: 1,
+        price: 10, currency: 'coins', expireAt: nowMs - 1000, status: 'sold' as const, buyerId: 'zoe',
+        saleMode: 'auction' as const, startPrice: 10, closedAt: nowMs - 1000, settledAt: nowMs - 1000, rev: 1,
+      });
+      closedRows.push({
+        _id: bidRowId(id, 'bob'), auctionId: id, bidderId: 'bob', amount: 10, total: 10, bids: 1,
+        ts: nowMs + 1000 + i, // newer than the live listing's bid
+        purgeAt: new Date(nowMs - 1000 + AUCTION_CLOSED_RETENTION_SEC * 1000),
+      });
+    }
+    await mongo!.collections.auctions.insertMany(closedDocs);
+    await mongo!.collections.auctionBids.insertMany(closedRows);
+
+    const bids = await svc.getMyBids('bob');
+    expect(bids).toHaveLength(MY_BIDS_FETCH_LIMIT);
+    expect(bids[0]!.auction.auctionId).toBe(live.auctionId);
+    expect(bids[0]!.outcome).toBe('leading');
   });
 
   it('bidders only ever see their own rows', async () => {

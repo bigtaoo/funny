@@ -90,11 +90,22 @@ export class AuctionServiceListing {
    *
    * Ordering is live-first (soonest to end first — those are the ones still worth acting on), then closed
    * history newest-first.
+   *
+   * The FETCH sorts by `purgeAt`, not by my bid time, purely so the MY_BIDS_FETCH_LIMIT cap cannot drop a
+   * listing I am still bidding on. `purgeAt` is the listing's own expiry plus a constant, so "purgeAt in
+   * the future" is exactly "this listing has not run out yet" — sorting by it desc puts every live row
+   * ahead of every closed one, whatever their bid times. Sorting by `ts` looked equivalent and is not: my
+   * last bid on a live listing can be arbitrarily old (I bid once at the start; anti-snipe then keeps the
+   * listing open while other people fight over it), so an active trader with a page of newer closed rows
+   * would have lost the live one — the same "a bid you're losing becomes invisible" failure this endpoint
+   * exists to fix. Which CLOSED rows survive the cap therefore ranks by listing expiry rather than by bid
+   * time; the two orderings only differ within a single listing's window, and the returned closed group is
+   * still sorted by `myBidTs` below.
    */
   async getMyBids(accountId: string): Promise<AuctionBidView[]> {
     const rows = await this.deps.cols.auctionBids
       .find({ bidderId: accountId })
-      .sort({ ts: -1 })
+      .sort({ purgeAt: -1 })
       .limit(MY_BIDS_FETCH_LIMIT)
       .toArray();
     if (rows.length === 0) return [];
