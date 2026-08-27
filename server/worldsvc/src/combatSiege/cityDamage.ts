@@ -117,6 +117,14 @@ export async function settleCityDamage(core: WorldCore, d: SiegeDamageDoc & { ci
       );
       if (res.matchedCount > 0) {
         await returnSurvivors();
+        // ADR-074 P3 (§8): a capture is simultaneously a loss, so BOTH sects' cached payoffs are stale.
+        // Recomputed here — after the CAS committed, so exactly one of several concurrent hits does it —
+        // and awaited rather than fired off, because the yield path reads this cache and a member who
+        // recomputes their yield in the next second must not be paid for a city their sect no longer holds
+        // (or go unpaid for one it just took). Both are `updateOne`s on a sect document; the announcements
+        // below are the expensive part and they are already best-effort.
+        await core.recomputeSectPayoff(cur.worldId, attackerSectId);
+        if (previousOwner && previousOwner !== attackerSectId) await core.recomputeSectPayoff(cur.worldId, previousOwner);
         await announceCapture(core, cur, attackerSectId, sectName, previousOwner, d.attackerId, t);
         return;
       }

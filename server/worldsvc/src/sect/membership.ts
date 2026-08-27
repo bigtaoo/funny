@@ -21,6 +21,7 @@ import {
 import type { SectDoc } from '../db';
 import { nullWorldCommercialClient, type WorldCommercialClient } from '../commercialClient';
 import { nullWorldSocialsvcClient, type WorldSocialsvcClient, type FamilyMembership } from '../socialsvcClient';
+import { mirrorSectMembership } from '../core/citySiege';
 import { docToView } from './shared';
 import type { SectDetailView, SectServiceDeps } from './types';
 
@@ -95,6 +96,7 @@ export class SectMembershipService {
       throw e;
     }
     await this.socialsvc.setSect(fam.familyId, sid, name);
+    await mirrorSectMembership(this.deps.cols, worldId, fam.familyId, sid, this.deps.now());
 
     return { ...docToView(doc), memberFamilies: [{
       familyId: fam.familyId, name: fam.name, tag: fam.tag, leaderId: fam.leaderId,
@@ -122,6 +124,11 @@ export class SectMembershipService {
       throw new SlgError('SECT_FULL');
     }
     await this.socialsvc.setSect(fam.familyId, sectId, res.name);
+    // ADR-074 P3: refresh the `playerWorld.sectId` mirror + start §8.5's membership clock for every member
+    // of this family. Without it, a family that joins a sect keeps whatever mirror joinWorld happened to
+    // capture, so the city yield bonus (§8.1) would never reach them — and, worse the other way, a family
+    // that LEAVES would keep collecting.
+    await mirrorSectMembership(this.deps.cols, worldId, fam.familyId, sectId, this.deps.now());
   }
 
   /** Family leaves a sect (family leader operation). The leader family cannot leave directly — must dissolve the sect or go through a leadership vote first. */
@@ -135,6 +142,7 @@ export class SectMembershipService {
     }
     await this.socialsvc.setSect(fam.familyId, null);
     await cols.sects.updateOne({ _id: fam.sectId }, { $inc: { memberFamilyCount: -1 } });
+    await mirrorSectMembership(this.deps.cols, worldId, fam.familyId, null, this.deps.now());
   }
 
   /** Dissolve the sect (sect leader only). Clears sectId on all member families, removes all alliances bidirectionally, deletes the sect and its channel. */
@@ -149,6 +157,9 @@ export class SectMembershipService {
     const sid = sect._id;
     const memberFams = await this.socialsvc.getFamiliesBySect(sid);
     await Promise.all(memberFams.map((f) => this.socialsvc.setSect(f.familyId, null)));
+    // Every member family loses the sect at once, so every mirror has to go with it (ADR-074 P3).
+    const dissolvedAt = this.deps.now();
+    await Promise.all(memberFams.map((f) => mirrorSectMembership(this.deps.cols, worldId, f.familyId, null, dissolvedAt)));
     // Remove this sect from all allies' allySectIds.
     for (const ally of sect.allySectIds) {
       await cols.sects.updateOne({ _id: ally }, { $pull: { allySectIds: sid } });

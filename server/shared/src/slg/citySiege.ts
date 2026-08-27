@@ -15,7 +15,7 @@
 // TRAIN_SPEEDUP_BUFF_MULT / card `troopCapBase`-`troopCapGrowth`-`siegeValueBase` / EFFECT_CAPS /
 // SIEGE_SYNTH_ARMY_MAX_TROOPS — the whole model hangs off those.
 
-import { SLG_MAP_MAX_LEVEL } from './core';
+import { SLG_MAP_MAX_LEVEL, RESOURCE_TYPES, type ResourceType } from './core';
 import { OUTER_GRADED_CITY_TIERS } from './mapgen/cities';
 
 /** The three city node kinds that can be besieged (mirrors `MapEditorCityNode['kind']`). */
@@ -233,4 +233,124 @@ export function cityNodeCovering<T extends CityFootprintNode>(nodes: readonly T[
     if (!best || CITY_KIND_RANK[node.kind] < CITY_KIND_RANK[best.kind]) best = node;
   }
   return best;
+}
+
+// ── P3: occupation payoff (§8) ────────────────────────────────────────────────────────────────────
+//
+// Everything below is a pure function of "which cities does this sect hold". P1 shipped the fight and the
+// ownership record and NOTHING else, so until P3 a captured city paid literally nothing (§10-P1's parting
+// note calls that out as staged, not forgotten).
+//
+// The whole payoff is expressed in ONE unit — a city's **level degrees**, `level x cityKindMult(kind)` —
+// so the resource table, the cap, and the design doc's own arithmetic cannot drift apart. Reproducing
+// §8.1's table from `CITY_YIELD_FLAT_PER_LEVEL` alone is what `citySiege.test.ts` asserts, rather than
+// re-typing the table's cells as expected values (which would only prove someone can copy).
+
+/**
+ * Hourly yield a held city adds **per level degree**, for each of the four LAND resources (§8.1).
+ *
+ * Flat, not a percentage, and that is the load-bearing decision (§8.2): flat turns a sect's cities into a
+ * recruiting pitch — +86% for a newcomer, +11% for a whale — where a percentage would have paid the
+ * already-rich most. It also fixes a structural problem a percentage cannot: tile yield is lopsided (one
+ * resource per tile, plus `biomeAt`'s province bias), while a city pays all four equally, so cities answer
+ * "my province has no metal" instead of merely amplifying it.
+ */
+export const CITY_YIELD_FLAT_PER_LEVEL = 50;
+
+/** Hourly sticker (铜币) a held city adds per level degree (§8.1). Deliberately below the land rate. */
+export const CITY_STICKER_FLAT_PER_LEVEL = 20;
+
+/**
+ * Cap on the payoff, expressed in **level degrees** rather than in resources.
+ *
+ * 120 degrees is about "one province plus a neighbouring one plus a capital". The whole map is 380
+ * (270 graded + 90 capitals + 20 for the double-weighted world center), which uncapped would hand every
+ * member of a dominant sect +19,000/resource — 2.5x a mid-game player's ENTIRE own production, i.e. "once
+ * the map is yours, stop occupying tiles". Capping here is what keeps further conquest a STRATEGIC gain
+ * rather than an economic one, which is the point SLG_DESIGN §3 wants cities to make.
+ *
+ * The two resource caps are derived from this rather than written out, so raising the cap cannot silently
+ * change the land:sticker ratio the table above is built on.
+ */
+export const CITY_YIELD_LEVEL_CAP = 120;
+/** Per-land-resource ceiling on the city payoff (§8.1) — derived, never hand-written. */
+export const CITY_YIELD_FLAT_CAP = CITY_YIELD_FLAT_PER_LEVEL * CITY_YIELD_LEVEL_CAP;
+/** Sticker ceiling on the city payoff (§8.1) — derived from the same level cap. */
+export const CITY_STICKER_FLAT_CAP = CITY_STICKER_FLAT_PER_LEVEL * CITY_YIELD_LEVEL_CAP;
+
+/**
+ * How long an account must have been in the sect before the city payoff applies to it (§8.5).
+ *
+ * Without this, "everyone pile into the winning sect an hour before the capture, collect, leave" is not a
+ * risk, it is the obvious play. Note what it does NOT gate: the siege-value and march bonuses (§8.3) are
+ * properties of the sect's assault, not a per-member faucet, so delaying them would only punish a sect for
+ * recruiting before a fight.
+ */
+export const CITY_BONUS_MEMBERSHIP_DELAY_MS = 24 * 60 * 60 * 1000;
+
+/** Siege-value bonus per province capital held (§8.3) — 9 capitals exist, so this tops out at +27%. */
+export const CITY_CAPITAL_SIEGE_BONUS = 0.03;
+/** Siege-value bonus for holding the world center (§8.3). */
+export const CITY_WORLD_CENTER_SIEGE_BONUS = 0.05;
+/** March-duration discount for the sect holding the world center (§8.3). */
+export const CITY_WORLD_CENTER_MARCH_DISCOUNT = 0.1;
+
+/** The minimal held-city shape the payoff functions need (structurally satisfied by worldsvc's `CityDoc`). */
+export interface CityPayoffNode {
+  kind: CityKind;
+  level: number;
+}
+
+/**
+ * A city's contribution in level degrees: its level, doubled for the world center.
+ *
+ * Reusing `cityKindMult` rather than a second world-center constant is deliberate — the world center is
+ * "worth two cities" in durability, in regen and in payoff, and one multiplier is what keeps that true.
+ * §8.1's table writes the world center as "10 (x2)" for exactly this reason.
+ */
+export function cityYieldLevels(node: CityPayoffNode): number {
+  return Math.max(1, Math.floor(node.level)) * cityKindMult(node.kind);
+}
+
+/**
+ * The hourly flat yield a sect's held cities add to EACH of its (long-standing) members, capped.
+ *
+ * Returns a full `ResourceType` record so callers can add it without knowing which resources are "land":
+ * sticker simply carries its own rate and its own cap.
+ */
+export function cityYieldBonus(cities: readonly CityPayoffNode[]): Record<ResourceType, number> {
+  const degrees = Math.min(CITY_YIELD_LEVEL_CAP, cities.reduce((n, c) => n + cityYieldLevels(c), 0));
+  const out = {} as Record<ResourceType, number>;
+  for (const rt of RESOURCE_TYPES) {
+    out[rt] = degrees * (rt === 'sticker' ? CITY_STICKER_FLAT_PER_LEVEL : CITY_YIELD_FLAT_PER_LEVEL);
+  }
+  return out;
+}
+
+/**
+ * Siege-value multiplier bonus from a sect's held cities (§8.3) — capitals and the world center only.
+ *
+ * Graded cities contribute nothing on purpose: they are the "quantity" economic asset, and giving all 64
+ * cities a combat bonus would compound into the single-player-proof margin P2 measured. Returned as a
+ * fraction (0.27 = +27%) and applied as its OWN channel, never summed into equipment's
+ * `EFFECT_CAPS.siegePct_fp` accumulator — a shared accumulator would mean a well-equipped attacker gets
+ * nothing from their sect's conquests because the cap was already reached.
+ */
+export function citySiegeBonus(cities: readonly CityPayoffNode[]): number {
+  let bonus = 0;
+  for (const c of cities) {
+    if (c.kind === 'capital') bonus += CITY_CAPITAL_SIEGE_BONUS;
+    else if (c.kind === 'worldCenter') bonus += CITY_WORLD_CENTER_SIEGE_BONUS;
+  }
+  return bonus;
+}
+
+/** March-duration multiplier for a sect's marches (§8.3): 0.9 while it holds the world center, else 1. */
+export function cityMarchMult(cities: readonly CityPayoffNode[]): number {
+  return cities.some((c) => c.kind === 'worldCenter') ? 1 - CITY_WORLD_CENTER_MARCH_DISCOUNT : 1;
+}
+
+/** Whether a city kind can serve as a march launch anchor (§8.4): capitals and the world center only. */
+export function isCityMarchAnchor(kind: CityKind): boolean {
+  return kind === 'capital' || kind === 'worldCenter';
 }

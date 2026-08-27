@@ -3,7 +3,7 @@
 // shapes (family/sect/nation) + the per-capital nation record. Family identity/roster itself lives in
 // socialsvc (see the removed-mirror note this file inherited from db.ts's header history).
 import type { Collection } from 'mongodb';
-import { FAMILY_MSG_RETENTION_SEC, type EmblemKey } from '@nw/shared';
+import { FAMILY_MSG_RETENTION_SEC, type EmblemKey, type ResourceType } from '@nw/shared';
 
 /** Sect (S8-4b, §2.1/§8.2): a faction organisation composed of families within a region. Members = families whose sectId (mirrored on socialsvc's FamilyDoc) points to this sect. */
 export interface SectDoc {
@@ -25,6 +25,30 @@ export interface SectDoc {
   emblemKey?: EmblemKey;
   /** Accent colour (one of EMBLEM_COLORS) the emblem art is tinted with; absent while emblemKey is absent. */
   emblemColor?: number;
+  /**
+   * ADR-074 P3: everything this sect's held wild cities pay out (SLG_CITY_SIEGE_DESIGN §8), cached here as
+   * ONE object.
+   *
+   * Cached rather than derived per read because the consumers are hot relative to the input: `recomputeYield`
+   * runs on every occupy / abandon / building completion, and a march computes its duration on dispatch,
+   * while the input only moves when a city changes hands (~64 cities per season). Recomputed by
+   * `CitySiegeService.recomputeSectPayoff` on capture — for BOTH sects involved, since a capture is
+   * simultaneously a loss.
+   *
+   * One field, not three, so the three derived numbers can never be half-updated: a reader that sees a
+   * `yield` from the new holding and a `siegeBonus` from the old one would be reporting a state that never
+   * existed. Absent = holds nothing (the state every sect starts a season in).
+   */
+  cityPayoff?: {
+    /** Hourly flat resource bonus per long-standing member (§8.1), already capped. */
+    yield: Record<ResourceType, number>;
+    /** Siege-value bonus as a fraction, e.g. 0.27 (§8.3). Its own channel — never summed with equipment's. */
+    siegeBonus: number;
+    /** March-duration multiplier, 0.9 while this sect holds the world center (§8.3). */
+    marchMult: number;
+    /** Epoch ms this snapshot was computed — diagnostics only; correctness rides on recompute-on-capture. */
+    at: number;
+  };
   rev: number;
 }
 

@@ -173,12 +173,20 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
 
   // ── Production bonus ──
 
-  it('production bonus: occupy tile in own capital Voronoi region → yield ×(1+NATION_BONUS_PRODUCTION)', async () => {
+  // ADR-074 P3 / §9 RETIRED this bonus (this case asserted it until 2026-08-27). A province capital's
+  // economic value is now paid by SLG_CITY_SIEGE_DESIGN §8.1's flat city table, so leaving the +10% here
+  // would pay twice for the same conquest — and P0 had already made it unreachable in production by
+  // deleting `applyNationChange` and unsetting `nations` ownership at season open, so the only thing still
+  // exercising it was this test. Inverted rather than deleted: the removal is the property worth pinning,
+  // because a well-meaning re-add is exactly how a double-count comes back.
+  it('production bonus is GONE (§9): owning the capital region no longer amplifies tile yield', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const r = findCoord((t) => t.type === 'resource', 8, 8);
+    const r = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 8, 8);
     const proc = proceduralTile(W, r.x, r.y);
     const rt = proc.resType as ResourceType;
-    // a occupies the (5,5) main base and the capital region containing (r).
+    // a owns the (5,5) main base AND the capital region containing (r) — the exact precondition that used
+    // to grant the bonus. `nations` ownership is written directly here, since no production path writes it
+    // any more (see `applyNationChange`'s obituary in core/nation.ts).
     const baseCap = provinceIdxAt(5, 5);
     const rCap = provinceIdxAt(r.x, r.y);
     await ownNation(baseCap, 'a');
@@ -186,19 +194,14 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await svc.occupyTile(W, 'a', r.x, r.y);
 
     const rate = (await svc.getMe(W, 'a')).yieldRate!;
-    // Resource tile yield gets the bonus: floor(base*level * 1.1).
     const rawResource = RESOURCE_YIELD_BASE * Math.max(1, proc.level);
-    const expectedResource = Math.floor(rawResource * (1 + NATION_BONUS_PRODUCTION));
-    // This resource type's yield comes only from this tile (main base produces ink and does not pollute non-ink resources). When rt==='ink' the main base contribution stacks.
-    if (rt !== 'ink') {
-      expect(rate[rt]).toBe(expectedResource);
-      expect(rate[rt]).toBeGreaterThan(rawResource); // bonus is definitely applied
-    } else {
-      expect(rate.ink).toBeGreaterThan(rawResource); // at least amplified
-    }
+    expect(rate[rt]).toBe(rawResource);
+    // Spelled out so a re-add fails loudly rather than by an off-by-10%: the old expectation, now wrong.
+    expect(rate[rt]).not.toBe(Math.floor(rawResource * (1 + NATION_BONUS_PRODUCTION)));
+    // ...and the control case below must now be indistinguishable from this one.
   });
 
-  it('control — no national affiliation: occupying the same tile yields the raw value (no bonus)', async () => {
+  it('control — no national affiliation: the same raw value, i.e. nationality now changes nothing', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const r = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 8, 8);
     const proc = proceduralTile(W, r.x, r.y);
