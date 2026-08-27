@@ -38,7 +38,7 @@ export function cardStats(card: CardDefinition): { icon: IconKind | null; label:
     return [
       { icon: 'hp', label: t('collection.stat.hp'), value: fromFp(b.hp_fp) },
       { icon: 'atk', label: t('collection.stat.atk'), value: fromFp(b.attack_fp) },
-      { icon: null, label: t('collection.stat.range'), value: b.range },
+      { icon: 'range', label: t('collection.stat.range'), value: b.range },
     ];
   }
   if (card.cardType === CardType.Building && card.buildingType !== undefined) {
@@ -48,7 +48,7 @@ export function cardStats(card: CardDefinition): { icon: IconKind | null; label:
     ];
     if (b.attack_fp !== undefined) {
       out.push({ icon: 'atk', label: t('collection.stat.atk'), value: fromFp(b.attack_fp) });
-      if (b.attackRange !== undefined) out.push({ icon: null, label: t('collection.stat.range'), value: b.attackRange });
+      if (b.attackRange !== undefined) out.push({ icon: 'range', label: t('collection.stat.range'), value: b.attackRange });
     }
     return out;
   }

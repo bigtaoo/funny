@@ -1,6 +1,6 @@
 # 批次 8：数值词条图标补齐（射程 / 攻城值 / 暴击率 / 暴击伤害）— Prompt 文档
 
-> 创建：2026-08-27 · 判断 + prompt：**已定稿** · v1 出图：**2 过 2 打回**（`crit`/`siege` 过；`range` 4.24:1 缩成发丝、`critmult` 读成船舵）· v2 prompt 见文末 · 接线：**四张齐了再一起接**
+> 创建：2026-08-27 · **全部完成（同日）**：v1 四张里 `crit`/`siege` 过、`range`（4.24:1 缩成发丝）与 `critmult`（读成船舵）打回；v2 三张一版过，四张一起接线上线。最终账：43 + 4 = 47 张自有美术 + 6 个别名 = 53 个 ink kind
 > 前七批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（批 1–4，19 张）· [`tab-icon-art-prompts-batch5.md`](tab-icon-art-prompts-batch5.md)（页面标题，24 张）· [`tab-icon-art-prompts-batch6.md`](tab-icon-art-prompts-batch6.md)（大厅首页，3 张）· [`tab-icon-art-prompts-batch7.md`](tab-icon-art-prompts-batch7.md)（矢量清零，44 张）
 > 配套代码：[`client/src/render/icons/inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts)（本批落地处，同批次 7）· [`art/ui/tabicons/pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) · 调用点见文末「出图后的接线清单」
 > 相关代码改动（**已落地，不等图**）：收集册属性行每个词条都写全名，见 [`LOBBY_IA_REDESIGN_LOG.md §28`](../game/LOBBY_IA_REDESIGN_LOG.md)
@@ -157,3 +157,28 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ### v2 的验收口径（不要只看原图）
 
 跑一遍 pack 管线再看 28px——这四张里有两张是**只有在 28px 才暴露**的问题（一张是归一化后只剩 7px 高，一张是缩小后放射线和环连成一体）。具体要过的三关：①内容外框长宽比 ≤ 2:1（`range` 上一版 4.24:1）；②28px 纸底 + 深底两种衬底；③`crit`/`critmult` **并排**看，不并排看等于没验收。
+
+## v2 出图结果（2026-08-27）：三张全过，四张一起接线完成
+
+| kind | 版本 | 内容长宽比 | 28px 实际占格 | 结论 |
+|---|---|---|---|---|
+| `range` | v2 | 0.96:1（v1 是 4.24:1） | **27×28**（v1 是 28×7） | **过** |
+| `crit` | v2 | 0.99:1 | 28×28 | **过** |
+| `critmult` | v2 | 0.94:1 | 26×28 | **过** |
+| `siege` | v1 | 1.16:1 | 28×24 | 沿用（v1 就过了，偏弱那条保留意见不变） |
+
+- **`range`**：两端换成贯穿全高的竖杆之后，内容外框从 1735×409 变成近正方，28px 上占满整格，跟同一行的 `hp`（28×26）体量一致。构图约束写进 prompt 就解决了，造型一个字没改。
+- **`crit` / `critmult`**：一次请求出的两张，靶子和实心三角箭头逐笔相同，`critmult` 只多外圈那 5–6 道迸溅线——且**不再读成船舵**：线短、跟外环之间有空隙、长短不齐。并排看能一眼分开，单看也各自成立。墨量 95.2 / 78.9，在已上线那批的中上位（`armor` 123.9、`atk` 88.9、`spd` 54.3）。
+- v1 的 `crit` 一并作废（箭头是细杆+小箭头，28px 上只剩中心一个灰点），归档为 `_rejected/tabicon_crit_v1_arrowsmudge.webp`。
+
+**`iconArtAspect.test.ts` 的门禁这次是有效的**：`range` v1 的 4.24:1 会被它拦下（上限 2.2），也就是说即使人眼没看出来，`node pack_tab_icons.cjs` 之后的第一次 `npm test` 也会红。四张 v2/v1 全部 ≤1.16，无需进 `ELONGATED_ON_PURPOSE`。
+
+### 接线（已完成，四张一起）
+
+1. `art/ui/tabicons/tabicon_{range,siege,crit,critmult}.webp` + `pack_tab_icons.cjs` 的 `JOBS` 四行（`inks: ['active']`），跑脚本产出四张 `<kind>_active.png`。**只新增这四个文件，其余 182 张字节不变**（脚本是确定性的）。
+2. `client/src/render/icons/inkIconRaster.ts`：四条 import + `InkIconKind` 四个成员 + `INK_ICON_ART` 四行。
+3. 调用点：`CardCodexScene/tile.ts` 的 `cardStats()` 两处 `icon: null` → `icon: 'range'`；`EquipmentScene/detail.ts` 的 `affixIconKind()` 加一行白名单（`siege`/`crit`/`critmult`，`s_critmult` 剥前缀后正好是 `critmult`）。
+4. `inkIconArt.test.ts` 的硬编码计数 43 → 47。
+5. 新增 `client/test/ui/equipmentAffixIcons.ui.ts`：装备详情弹窗里这三条词条行必须跟已有图标的词条**缩进相同**。**为什么不断言「有没有图标节点」**——无头 PIXI 里 ink 图标的贴图永远不解码，`buildIcon` 返回空容器，「有没有图标」在树里根本不可观测；可观测的是它对布局的影响（有图标时文字右移 19px），而那一位正是跟着 `affixIconKind` 走的。红绿对照做过。
+
+**验证**：`tsc --noEmit` 绿；`test/render` 全绿（含长宽比门禁、磁盘↔表对账、三墨色契约）；`test/ui` 的 equipment + cardCodex 18 文件 70 例绿；收集册中文横竖屏实拍确认 `射程` 前面的图标就位、整行三个词条同构。

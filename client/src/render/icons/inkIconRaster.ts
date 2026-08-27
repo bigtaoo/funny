@@ -94,6 +94,17 @@ import titleKingInkUrl from '../../assets/tabicons/titleKing_active.png';
 import titleChampionInkUrl from '../../assets/tabicons/titleChampion_active.png';
 import titleTop3InkUrl from '../../assets/tabicons/titleTop3_active.png';
 
+// Batch 8 (design/product/tab-icon-art-prompts-batch8.md): the four stat words that never had a
+// glyph at all — not even a procedural one, so batch 7's "replace every DRAW row" sweep could not
+// have reached them. `range` is the codex tile's third stat chip; the other three are affix lines
+// (`siege`/`crit` main-or-sub, `critmult` sub-only) that used to render as text with a blank where
+// their neighbours had an icon. `crit`/`critmult` are one family: the same target and solid
+// arrowhead, `critmult` adding the impact strokes outside the ring.
+import rangeInkUrl from '../../assets/tabicons/range_active.png';
+import siegeInkUrl from '../../assets/tabicons/siege_active.png';
+import critInkUrl from '../../assets/tabicons/crit_active.png';
+import critmultInkUrl from '../../assets/tabicons/critmult_active.png';
+
 // The 6 kinds that ALIAS the white master of an existing tab icon rather than getting art of their
 // own, so each concept is drawn exactly once in the game. They live here rather than as call-site
 // renames to `pvpTabIcon`/`gachaTabIcon`/... because most of them have call sites where `color`
@@ -125,6 +136,7 @@ import brushInkUrl from '../../assets/tabicons/skin_active.png';
  */
 export type InkIconKind =
   | 'atk' | 'hp' | 'armor' | 'armorHeavy' | 'spd' | 'atkspd'
+  | 'range' | 'siege' | 'crit' | 'critmult'
   | 'scrap' | 'lead' | 'binding' | 'hammer' | 'ink'
   | 'replay' | 'share' | 'star' | 'lock' | 'medal' | 'close' | 'check' | 'play' | 'zoom' | 'cards'
   | 'flag' | 'desk' | 'cabinet' | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
@@ -150,6 +162,10 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   armorHeavy:        armorHeavyInkUrl as string,
   spd:               spdInkUrl as string,
   atkspd:            atkspdInkUrl as string,
+  range:             rangeInkUrl as string,
+  siege:             siegeInkUrl as string,
+  crit:              critInkUrl as string,
+  critmult:          critmultInkUrl as string,
   scrap:             scrapInkUrl as string,
   lead:              leadInkUrl as string,
   binding:           bindingInkUrl as string,

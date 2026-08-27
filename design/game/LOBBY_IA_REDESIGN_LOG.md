@@ -428,7 +428,7 @@
 - **每个 chip 一律写全名**（`[图标] 生命 60`），图标降级成名字之上的冗余提示。`range` 这类还没有美术的词条自然退化成 `射程 1`，跟别的 chip 同构，不再是特例。
 - **竖屏改折行，不再整行缩放**。写全名让这行宽了约三分之一，而竖屏信息面板窄，原来的 `row.scale.set(maxW / row.width)` 会把字压到名字那行的一半大小（实测缩放系数 0.60）。改成：每个 chip 先各自组装成一个不可拆的容器，然后在 1..N 行里挑**拟合系数最大**的那个行数（同时受面板宽度和「行顶到卡片底部」的高度预算约束），横屏仍是一行满字号，竖屏两行、字号几乎不缩。高度预算是新加的入参 `maxH`——没有它时三行会直接溢出卡片下边框（实拍见过）。
 
-**射程等词条的图标缺口另开了一批**：全库词条盘点 + 出图 prompt 见 [`design/product/tab-icon-art-prompts-batch8.md`](../product/tab-icon-art-prompts-batch8.md)（`range`/`siege`/`crit`/`critmult` 四张，出图后只需把 `cardStats()` 里的 `icon: null` 换成 kind、`affixIconKind()` 加三行）。**本次不画占位图标**：一个看不懂的图标比没有图标更糟，而名字已经在那儿了。
+**射程等词条的图标缺口另开了一批**：全库词条盘点 + 出图 prompt 见 [`design/product/tab-icon-art-prompts-batch8.md`](../product/tab-icon-art-prompts-batch8.md)（`range`/`siege`/`crit`/`critmult` 四张，出图后只需把 `cardStats()` 里的 `icon: null` 换成 kind、`affixIconKind()` 加三行）。**本次不画占位图标**：一个看不懂的图标比没有图标更糟，而名字已经在那儿了。**（同日追加：四张图已出并接线，`射程` 现在有图标了；`range` 第一版 4.24:1 在 28px 上缩成一条发丝、被打回重构图。）**
 
 **回归测试**：`client/test/ui/cardCodexScene.ui.ts` 新增 1 例——三个词条的**名字**都必须出现在树里（此前只断言过数值）。红绿对照：回退 `drawStatChips` 的改动后该例红。既有 18 例（含竖屏宽度/卡名裁切那组几何断言）全绿。
 

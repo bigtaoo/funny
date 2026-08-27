@@ -34,6 +34,10 @@ import type { ReforgePanel } from './reforge';
 function affixIconKind(affixId: string): IconKind | null {
   const stat = affixId.replace(/^[a-z]_/, '');
   if (stat === 'atk' || stat === 'hp' || stat === 'armor' || stat === 'spd' || stat === 'atkspd') return stat;
+  // Batch 8: the three that used to fall through to null and draw a bare text line next to five
+  // iconned ones (design/product/tab-icon-art-prompts-batch8.md). `s_critmult` strips to
+  // `critmult`, matching its art's kind name.
+  if (stat === 'siege' || stat === 'crit' || stat === 'critmult') return stat;
   return null;
 }
 
