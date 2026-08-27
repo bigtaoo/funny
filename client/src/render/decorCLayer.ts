@@ -6,7 +6,20 @@
  * "notebook-margin doodle" atmosphere.
  *
  * Design constraints (same as A-group decorLayer.ts):
- * - Original ink colour, no tint; faint alpha (0.06–0.15) never competes with foreground
+ * - Original ink colour, no tint. **The alpha is 0.25–0.38, NOT the 0.06–0.15 this line claimed
+ *   until 2026-08-27, and at that strength it demonstrably DOES compete with foreground text.** The
+ *   number was raised to 0.25–0.38 on 2026-06-28 ("大厅背景装饰数量翻倍") for the lobby's look, and
+ *   the comment was already stale before that (it said 0.06–0.15 while the code said 0.10–0.22). The
+ *   layer is used by 27 scenes, not just the lobby, so the raise applied everywhere. Verified in real
+ *   Chrome 2026-08-27: LeaderboardScene's "My rank: #42 1830" readout sits on an ink blot in both
+ *   orientations, and ResultScene's "102 dmg" secondary-badge value sits under a gold star in
+ *   landscape while portrait puts stars across the badge row and the FIGHT AGAIN button.
+ * - Note the placement model behind that: EDGE_SKIP/CENTER_SKIP below deliberately push doodles
+ *   AWAY from the centre "because the main UI content occupies the central vertical band". That is
+ *   true of the lobby and false of a list scene, whose header, season label and my-rank readout all
+ *   live at the top edge — i.e. exactly where this layer is densest.
+ * - Retuning the alpha (or teaching the layer a keep-out rect for scene chrome) is an open
+ *   art-direction call, deliberately NOT made here; see UI_DESIGN_LOG_2026-08.md §39.
  * - Deterministic PRNG (fixed seed) — identical layout on every build
  * - Statically baked (`bake()`), zero runtime cost; falls back to live Graphics in headless mode
  * - interactiveChildren = false — does not consume pointer events

@@ -64,6 +64,21 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
   - **⚠️ 看到 0% 先分清两种成因**（两组都遇到过，修法完全不同）：①**测试其实在 `test/ui/`**——那个套件不报覆盖率，把纯用例搬进 `test/` 即可（`worldMapOccupyFrontier.ui.ts` 一个断言没改就解决了）；②**覆盖率套件从未加载过它**——`CardScene/logic/types.ts` 的唯一 importer `core.ts` 引 PIXI，所以谁都没 import 到它，得补真的测试。别一律当成「搬套件」。
 - **不追整包 90%**：按上表缺口要再覆盖约 3 万行，且相当大比例是 PIXI 绘制代码，测出来的是 mock 的行为。系统性渲染/场景测试仍然是 `test:ui`/`test:e2e` 的活（两者都不产覆盖率）。
 
+## ⚠️ `test:ui` 的共享桩纹理陷阱（2026-08-27 定位并修掉一条 flaky）
+
+`vitest.ui.config.ts` 的 `stubBinaryAssets` 把**每一个** `*.png` import 都解析成同一个 1×1 data URI，而 `render/cardArt.ts` 的 `getArtTexture(url)` 按 url 缓存——所以在这一层里，**所有角色立绘、所有头像胸像、所有皮肤胸像是同一个 `PIXI.Texture` 对象**。而「美术加载完了」这件事，测试是靠**原地改这个共享 BaseTexture** 来模拟的（`valid = true` / `setRealSize(...)` / `emit('loaded')`），改完没人还原。
+
+于是任何前提是「这张图还没加载」的用例（画了 spinner、还在用预加载尺寸猜测）**只是因为它被声明在翻标志位那条之前才通过**。vitest 的按文件隔离救不了——泄漏发生在**同一个文件内，`it()` 到 `it()` 之间**。
+
+- **症状**：`npm run test:ui` 偶发一条红，重跑就绿。默认顺序连跑 6 次全绿，`--sequence.shuffle` **6 次里 5 次红**。
+- **真正的两个文件**：`test/ui/avatarPortraitFit.ui.ts`（单文件 shuffle 8 次红 5 次）与 `test/ui/cardArtLoadingSpinner.ui.ts`（一次最多 4 条红）。**跟 `FamilyScene — emblem badge visual presence` 无关**——当时的归因是错的，那条用例根本不碰这张纹理。
+- **比 `valid` 更隐蔽的第二条通道，也是真凶：`PIXI.Texture.frame` 和维护它的监听器**。Texture 构造器里 `baseTexture.once('loaded', this.onBaseTextureUpdated, this)` 是**一次性**的，`this.noFrame && baseTexture.on('update', ...)` 是**常驻**的。第一个 `emit('loaded')` 的测试把那个一次性监听器永久消耗掉，之后每个同样靠 `emit('loaded')` 假装加载完的测试就**不会再同步 frame**，于是读 `tex.width` 的业务代码（`avatar.ts` 的 fit 正是如此）拿到的是**上一条用例的尺寸**。实测：baseTexture 说 683，frame 还是 768，scale 算出 0.2258 而不是 0.2333。
+- **修法两半，缺一不可**：
+  1. 模拟加载必须**先置 `valid = true` 再调 `setRealSize()`**（`setRealSize` 只在 valid 时才跑 `BaseTexture.update()`，而那个 update 才会触发常驻的 `'update'` 监听器去同步 frame）；只有 `emit('loaded')` 是不够的。
+  2. `beforeEach(resetSharedStubTexture)`（`test/harness/sharedStubTexture.ts`）把共享纹理还原成冷态（frame 1×1、`valid=false`）。
+- **验证**：修前 shuffle 6 次 5 红；修后**全量 shuffle 连跑 6 次 235/235 全绿**，两个文件单独 shuffle 各 10 次全绿。
+- **以后写这一层的测试**：只要用例依赖「加载完 / 没加载完」，就 `beforeEach(resetSharedStubTexture)`，别假设「桩 Image 永不 fire loaded，所以整个文件里它一直 invalid」——那句话对单条用例成立，对文件不成立。
+
 ## 静态类型检查（`npm run typecheck` / CI）
 
 vitest 走 esbuild、webpack 也不做类型检查，且 `client/tsconfig.json` 的 `include` 只有 `src/**`——**`test/**` 从不被类型检查**。历史上这让 test 里对 `GameConfig` / DTO / proto 形状的引用可以运行期侥幸通过（esbuild 擦掉类型），却是潜伏 bug（典型：CC-1 把 `GameConfig.unitLevels` 换成 `cardInstances`、`JudgeRequest` 新增必填 `unitLevels` 后，多个 test 仍用旧形状）。

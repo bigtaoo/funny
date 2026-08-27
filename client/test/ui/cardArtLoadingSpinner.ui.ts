@@ -3,7 +3,7 @@
 // sketchPanel frame behind it) until the texture streamed in. It now draws a hand-drawn spinning
 // ink ring in place, rotated every frame via update() — same visual language as the WorldMap
 // first-paint loading cover (WorldMapRenderer/build.ts buildLoadingOverlay).
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -14,6 +14,7 @@ import type { CardInstance } from '../../src/game/meta/SaveData';
 import { CARD_DEFS } from '../../src/game/meta/cardDefs';
 import { getArtTexture, unitPortraitUrl } from '../../src/render/cardArt';
 import type { UnitType } from '@nw/engine/types';
+import { resetSharedStubTexture } from '../harness/sharedStubTexture';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -50,11 +51,18 @@ function buildSkinsScene(): SceneInternals {
   return new CardScene(createLayout(1920, 1080), new InputManager(), cb) as unknown as SceneInternals;
 }
 
+// The last test in this file flips the shared stub texture to `valid` to prove the spinners clear.
+// Every test before it needs the opposite state, so the reset has to happen per test rather than
+// once — see harness/sharedStubTexture.ts. Without it this file passes only in declaration order.
+beforeEach(resetSharedStubTexture);
+
 describe('CardScene — portrait art loading spinner', () => {
   it('draws a spinner in place of a not-yet-loaded portrait, and spins it every frame', () => {
     // pixiHeadless's stubbed Image never fires 'loaded' (client/test/harness/pixiHeadless.ts), so
-    // every portrait's baseTexture stays invalid for the life of the test — exactly the "still
-    // streaming in" state drawArtFit now covers, for every card in the (skins-tab) grid.
+    // no portrait's baseTexture becomes valid on its own — exactly the "still streaming in" state
+    // drawArtFit now covers, for every card in the (skins-tab) grid. It stays invalid for the life
+    // of THIS test but not of the file: the last test below marks it valid deliberately, which is
+    // what the beforeEach reset above undoes.
     const scene = buildSkinsScene();
     expect(scene.core.activeSpinners.length).toBeGreaterThan(0);
 
@@ -121,6 +129,7 @@ describe('CardScene — portrait art loading spinner', () => {
     // Simulate the (real, async, network-bound) texture finishing its load — drawArtFit hooked a
     // one-shot 'loaded' listener on first draw, which triggers a re-render.
     tex.baseTexture.valid = true;
+    tex.baseTexture.update(); // resync Texture.frame via the persistent 'update' listener
     tex.baseTexture.emit('loaded', tex.baseTexture);
 
     // Every spinner is gone now that the (shared) texture is valid — none left "loading".

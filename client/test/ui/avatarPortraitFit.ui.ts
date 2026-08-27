@@ -9,7 +9,7 @@
 //     which is what the per-portrait head boxes in portraitHeadBox.ts buy over a global constant.
 //     This is the test that catches a new/repainted portrait whose head box was never measured.
 // Run: npm run test:ui
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { buildAvatar, makeAvatarId } from '../../src/render/avatar';
 import { getArtTexture } from '../../src/render/cardArt';
@@ -17,6 +17,12 @@ import { PRESET_AVATAR_KEYS, PRESET_AVATAR_ART_URLS } from '../../src/render/pre
 import { HERO_AVATAR_KEYS } from '../../src/render/heroAvatarArt';
 import { SKIN_AVATAR_KEYS } from '../../src/render/skinAvatarArt';
 import { PRESET_HEAD_BOX, HERO_HEAD_BOX, SKIN_HEAD_BOX, type HeadBox } from '../../src/render/portraitHeadBox';
+import { resetSharedStubTexture } from '../harness/sharedStubTexture';
+
+// Every test here shares ONE stub texture (see sharedStubTexture.ts for why), and most of them
+// mutate it to fake a finished load. Without this reset the file passes only in declaration order:
+// `--sequence.shuffle` failed 5 runs in 8 before it was added.
+beforeEach(resetSharedStubTexture);
 
 /** Every bust portrait is 512×768; the harness stubs all *.png imports to one 1×1 data URI. */
 const SRC_W = 512, SRC_H = 768;
@@ -38,8 +44,12 @@ function portraitSprite(avatar: PIXI.Container): PIXI.Sprite {
 /** Pretend the shared stub texture is a real 512×768 portrait that just finished downloading. */
 function completeLoad(): PIXI.Texture {
   const tex = getArtTexture(PRESET_AVATAR_ART_URLS.gogetter);
-  tex.baseTexture.setRealSize(SRC_W, SRC_H);
+  // `valid` BEFORE `setRealSize`, not after: setRealSize only calls BaseTexture.update() while
+  // valid, and that update is what resyncs Texture.frame (PIXI's own 'loaded' hook for that is a
+  // one-shot and is already spent by the second test to come through here). Emitting 'loaded' with a
+  // stale frame is what made this file order-dependent — see harness/sharedStubTexture.ts.
   tex.baseTexture.valid = true;
+  tex.baseTexture.setRealSize(SRC_W, SRC_H);
   tex.baseTexture.emit('loaded', tex.baseTexture);
   return tex;
 }
@@ -53,13 +63,16 @@ describe('buildAvatar — portrait fit', () => {
     // busts are exactly 512×768 — identical to the guess — so they can't show this on their own; the
     // exhaustive framing test below covers their geometry instead.
     const tex = getArtTexture(PRESET_AVATAR_ART_URLS.gogetter); // same stub texture for every png here
-    tex.baseTexture.valid = false; // cold-load state, whatever earlier tests left behind
+    // Cold-load state comes from the beforeEach above. Clearing `valid` alone (what this line used
+    // to do) was not enough: a previous test's setRealSize() survived, so `beforeLoad` below was
+    // already computed from a real size instead of avatar.ts's BUST_W/BUST_H guess, and the
+    // "the fit actually changed" assertion at the end compared two nearly-equal numbers.
 
     const sprite = portraitSprite(buildAvatar(100, '', 7, makeAvatarId('skin', 'skin_shop_e1')));
     const beforeLoad = sprite.scale.x;
 
-    tex.baseTexture.setRealSize(512, 683); // avatar_skin_shop_e1.png's real dimensions
-    tex.baseTexture.valid = true;
+    tex.baseTexture.valid = true;           // before setRealSize — see completeLoad() above
+    tex.baseTexture.setRealSize(512, 683);  // avatar_skin_shop_e1.png's real dimensions
     tex.baseTexture.emit('loaded', tex.baseTexture);
 
     // Disc diameter 96 (size - 4) × 0.92 = an 88px circle; head span/width-cap fractions of 0.90/0.88
