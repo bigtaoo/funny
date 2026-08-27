@@ -311,6 +311,48 @@ describe('the shipped atlas artifacts', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('every generic motif frame clears the UI ink floor, and no level frame is levelled to it', async () => {
+    // The five tierless res_<type> frames are the game's resource ICON — CityScene's resource bar at
+    // 33px and its five producer cards at 60px, plus WorldMapScene's header HUD and territory panel —
+    // and they were failing at it. Measured 2026-08-27: paper carried 0.019 perceptual ink against the
+    // ink bottle's 0.165 beside it in the same bar, i.e. eight times less, and the player reported
+    // exactly those two as invisible. The cause is coverage, not a light pen (paper's stroke core is
+    // luma 49, graphite's is 21): these are hairline outlines, and an area-correct resize keeps a
+    // stroke's colour while dropping its alpha. pack_resources.cjs lifts them back to UI_INK_FLOOR.
+    //
+    // Asserted on the artifact rather than on the packer's logs because the lift is easy to lose by
+    // accident and impossible to notice: drop it and nothing fails, no number anyone reads moves, and
+    // the icons quietly go pale again. The `_lN` half of the assertion is the other guard — a well
+    // meaning "why not level everything" would flatten the ink differences that ARE the level read
+    // (§6.3), so at least one level frame must stay measurably under the floor. res_paper_l1 sits far
+    // below it by design, and if it ever does not, the floor has spread where it must not go.
+    //
+    // Measured on the MERGED page with FRAMES' own coordinates, i.e. the exact pixels the client
+    // samples — not on res_atlas.png, which the game never loads and whose frames sit at completely
+    // different coordinates (reading one with the other's rectangles is how the first draft of this
+    // test "found" res_sticker at 0.009: it was measuring empty atlas somewhere else entirely).
+    const UI_INK_FLOOR = 0.070;
+    const sharp = (await import('sharp')).default;
+    const { data, info } = await sharp(`${MERGED_DIR}/world_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const ink = (name: string): number => {
+      const f = (FRAMES[name] as unknown as { frame: { x: number; y: number; w: number; h: number } }).frame;
+      let m = 0;
+      for (let y = f.y; y < f.y + f.h; y++) {
+        for (let x = f.x; x < f.x + f.w; x++) {
+          const i = (y * info.width + x) * 4;
+          const luma = (0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!) / 255;
+          m += (data[i + 3]! / 255) * (1 - luma);
+        }
+      }
+      return m / (f.w * f.h);
+    };
+    const under = ['ink', 'paper', 'graphite', 'metal', 'sticker']
+      .map((t) => ({ frame: `res_${t}`, ink: Number(ink(`res_${t}`).toFixed(4)) }))
+      .filter((r) => r.ink < UI_INK_FLOOR);
+    expect(under).toEqual([]);
+    expect(ink('res_paper_l1')).toBeLessThan(UI_INK_FLOOR);
+  });
+
   it('neither atlas PNG is palette-quantised, and the frames keep their alpha resolution', async () => {
     // Both PNGs in this pipeline were written with sharp's `palette: true` at some point, and in sharp
     // 0.32 ANY of palette/quality/colours/dither/effort silently switches on 8-bit quantisation. It was
