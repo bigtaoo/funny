@@ -19,6 +19,7 @@ import {
   cityYieldBonus,
   citySiegeBonus,
   cityMarchMult,
+  isCityMarchAnchor,
   CITY_BONUS_MEMBERSHIP_DELAY_MS,
   type CityKind,
   type MapEditorCityNode,
@@ -201,6 +202,42 @@ export class CitySiegeService {
   /** Drop every sect's cached payoff in a world — the counterpart of `initCities` unsetting ownership. */
   async clearSectPayoffs(worldId: string): Promise<void> {
     await this.core.deps.cols.sects.updateMany({ worldId }, { $unset: { cityPayoff: '' } });
+  }
+
+  /**
+   * The city at (x,y) that `accountId` may park a team on with this intent, or null.
+   *
+   * ONE function for the two places that decide it — `validateMarchTarget`'s `move` branch at departure and
+   * `tryParkTeam`'s guard at arrival — because those two disagreeing is the exact failure this subsystem
+   * has already produced once (the P0 bug where three copies of the footprint ranking drifted). Before P3
+   * both simply refused all city ground; the asymmetric version of this rule would let a march depart and
+   * then silently bounce off its own target.
+   *
+   * The two intents are deliberately different (SLG_CITY_SIEGE_DESIGN §8.4 and P3's defender teams):
+   *  · **garrison** (驻扎) — any city the account's OWN sect holds. This is a defender team: it is locked in
+   *    place (`idleRedispatch` refuses garrison), and it is what the wave ladder fights.
+   *  · **idle** (停留) — only an ANCHOR city, i.e. a capital or the world center. An idle team can be
+   *    re-commanded from where it stands, which IS the launch anchor, so allowing idle parking at all 64
+   *    cities would hand out 64 anchors and, as §8.4 puts it, leave no front line at all.
+   *
+   * Never a city held by someone else or by nobody: those are siege targets, not parking spots.
+   */
+  async stationableCityAt(
+    worldId: string,
+    accountId: string,
+    x: number,
+    y: number,
+    mode: 'idle' | 'garrison',
+  ): Promise<CityState | null> {
+    const city = await this.cityAt(worldId, x, y);
+    if (!city?.ownerSectId) return null;
+    const pw = await this.core.deps.cols.playerWorld.findOne(
+      { _id: playerWorldId(worldId, accountId) },
+      { projection: { sectId: 1 } },
+    );
+    if (!pw?.sectId || pw.sectId !== city.ownerSectId) return null;
+    if (mode === 'idle' && !isCityMarchAnchor(city.kind as CityKind)) return null;
+    return city;
   }
 
   /**

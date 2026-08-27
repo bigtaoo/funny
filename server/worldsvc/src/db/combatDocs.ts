@@ -43,6 +43,15 @@ export interface MarchDoc {
   stepIndex?: number;
   /** ADR-051 (P1): timestamp (ms) at which the march next advances one cell (reaches path[stepIndex+1]). The scheduler's step scan is keyed on this. Absent → legacy single-arrival march (driven by arriveAt). */
   nextStepAt?: number;
+  /**
+   * ADR-074 P3 (§8.3): duration multiplier this march was dispatched with — 0.9 while its owner's sect holds
+   * the world center, absent (= 1) otherwise.
+   *
+   * Persisted rather than re-derived on each step scan, for two reasons: the scan must use the SAME value
+   * `arriveAt` was computed from (see `marchStepArriveAt`), and a sect losing the world center mid-flight
+   * must not retime a march already in the air. Snapshot-at-dispatch, like `morale`.
+   */
+  speedMult?: number;
   status: 'marching' | 'arrived' | 'recalled';
   /**
    * ADR-051 (P3a): dispatch intent for a 'move' order — whether the team parks as idle (停留) or garrison (驻扎)

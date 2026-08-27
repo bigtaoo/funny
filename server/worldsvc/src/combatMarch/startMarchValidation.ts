@@ -138,10 +138,33 @@ export async function validateMarchTarget(
     // tile (there is nothing there to defend). Either way: not the world center, not a PvE-only choke
     // (stronghold/bridge/plankway — captured via attack, never merely stood on), and not a tile that already
     // holds a stationed team (anyone's) — one park per tile.
+    // City ground (ADR-074). NOTE the ordering, for the same reason the attack branch above spells out:
+    // `isCityGroundTile` covers `center` as well as `familyKeep`, so this has to run BEFORE the world-center
+    // refusal below or the world center would be the one city a sect could never station at — and it is the
+    // most valuable anchor on the map (§8.3/§8.4).
+    //
+    // P1 refused all city ground outright ("captured by siege, never merely stood on"), which was right when
+    // a held city did nothing. P3 gives a sect two reasons to put a team inside its OWN city: a garrison team
+    // defends it (replacing the NPC wave ladder), and an idle team on a capital / the world center is §8.4's
+    // launch anchor. Everything else about city ground is unchanged — an enemy's or an NPC's city is still
+    // siege-only. The rule itself lives in `stationableCityAt` so this and the arrival-side guard cannot
+    // drift apart.
+    if (isCityGroundTile(proc.type)) {
+      const mode: 'idle' | 'garrison' = stationMode === 'garrison' ? 'garrison' : 'idle';
+      const city = await core.stationableCityAt(worldId, accountId, toX, toY, mode);
+      if (!city) {
+        throw new SlgError(
+          'TILE_OCCUPIED',
+          mode === 'idle'
+            ? "Only a province capital or the world center held by your sect can host a stationed team; capture a city by siege"
+            : "Only a city your own sect holds can be garrisoned; capture it by siege first",
+        );
+      }
+      const occupiedCell = await cols.stationed.findOne({ _id: toTid });
+      if (occupiedCell) throw new SlgError('TILE_OCCUPIED', 'A team is already stationed on this cell');
+      return undefined; // no defender, no connectivity check: this is our own city
+    }
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot move onto the world center');
-    // City ground (ADR-074): captured by siege, never merely stood on — same rule as the world center and
-    // the PvE-only chokes (stronghold/bridge/plankway) checked further down this branch.
-    if (proc.type === 'familyKeep') throw new SlgError('TILE_OCCUPIED', 'Cannot move onto a city; capture it by siege');
     const stationedHere = await cols.stationed.findOne({ _id: toTid });
     if (stationedHere) throw new SlgError('TILE_OCCUPIED', 'A team is already stationed on this tile');
     const isGarrison = stationMode === 'garrison';

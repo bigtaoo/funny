@@ -182,6 +182,7 @@ export class WorldCore {
   recomputeSectPayoff(worldId: string, sectId: string): ReturnType<CitySiegeService['recomputeSectPayoff']> { return this.citySvc.recomputeSectPayoff(worldId, sectId); }
   clearSectPayoffs(worldId: string): Promise<void> { return this.citySvc.clearSectPayoffs(worldId); }
   sectPayoff(sectId: string | undefined): ReturnType<CitySiegeService['sectPayoff']> { return this.citySvc.sectPayoff(sectId); }
+  stationableCityAt(...args: Parameters<CitySiegeService['stationableCityAt']>): ReturnType<CitySiegeService['stationableCityAt']> { return this.citySvc.stationableCityAt(...args); }
 
   // ── spawn (core/spawn.ts) ─────────────────────────────────────────
   pickRandomEmptyTile(...args: Parameters<SpawnService['pickRandomEmptyTile']>): ReturnType<SpawnService['pickRandomEmptyTile']> { return this.spawnSvc.pickRandomEmptyTile(...args); }

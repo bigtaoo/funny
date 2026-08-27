@@ -153,7 +153,11 @@ export class CommandService {
 
     const path = await computeMarchPath(this.core, worldId, fromX, fromY, toX, toY, accountId);
     const departAt = t;
-    const arriveAt = departAt + marchDurationFromPath(path) * 1000;
+    // ADR-074 §8.3: -10% march time while the owner's sect holds the world center. Snapshotted onto the
+    // document (see MarchDoc.speedMult) so the step scan uses the same figure `arriveAt` came from, and so
+    // losing the world center mid-flight does not retime a march already in the air.
+    const speedMult = (await this.core.sectPayoff(pw.sectId)).marchMult;
+    const arriveAt = departAt + marchDurationFromPath(path, speedMult) * 1000;
     // Morale (行军疲劳 — see SLG_DESIGN.md §4.4; distinct from the card "士气加成" bonus): 1 point lost per tile moved, computed once from the full path since marches don't tick
     // live in transit (single scheduled arrival event). Scales combat power on arrival — see moraleCombatMultiplier.
     const morale = marchMoraleFromPath(path);
@@ -163,7 +167,7 @@ export class CommandService {
     // A same-tile path (length 1, e.g. reinforce on self) has no next step → nextStepAt = arriveAt so it still
     // settles. These fields are additive in P1 (the scheduler still drives arrival off arriveAt); the step scan
     // is wired in P2.
-    const nextStepAt = path.length > 1 ? marchStepArriveAt(departAt, 1) : arriveAt;
+    const nextStepAt = path.length > 1 ? marchStepArriveAt(departAt, 1, speedMult) : arriveAt;
     const doc: MarchDoc = {
       _id: mid,
       worldId,
@@ -186,6 +190,9 @@ export class CommandService {
       path,
       stepIndex: 0,
       nextStepAt,
+      // Omitted when 1 so the overwhelming majority of documents keep their pre-P3 shape (and every
+      // `?? 1` reader stays honest about "no discount" rather than storing a redundant field).
+      ...(speedMult !== 1 ? { speedMult } : {}),
       status: 'marching',
       ...legBox(fromX, fromY, toX, toY),
       rev: 0,

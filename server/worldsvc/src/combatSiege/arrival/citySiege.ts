@@ -192,7 +192,16 @@ export async function applyCitySiege(
     // Ladder cleared → schedule the delayed durability hit (§5: 5-minute settlement delay, the same
     // `siegeDamage` pipeline the main-base path uses). Survivors keep besieging and are returned at
     // settlement, exactly like `applyBaseSiege`.
-    const damage = teamSiegeValue(rawArmy, attackerSave?.cardInv ?? {});
+    //
+    // ADR-074 P3 (§8.3): the attacker's sect adds a siege-value bonus from the capitals and world center it
+    // holds (+3% each, +5%). Applied HERE, on the durability hit, and as its OWN multiplier — deliberately
+    // not summed into `EFFECT_CAPS.siegePct_fp`, which is equipment's accumulator and is capped: sharing one
+    // accumulator would mean a well-equipped attacker gets nothing from their sect's conquests because the
+    // cap was already reached. Whole-map control is x1.32, which P2's single-player-proof gate was measured
+    // with (ECONOMY_VERIFICATION_LOG §13-SLG-CITYSIEGE ③ carried both this and equipment's +60% as
+    // hypothetical channels, leaving 1.43x-1.56x of margin), so wiring it does not move that verdict.
+    const sectSiegeBonus = (await core.sectPayoff(sectId)).siegeBonus;
+    const damage = Math.floor(teamSiegeValue(rawArmy, attackerSave?.cardInv ?? {}) * (1 + sectSiegeBonus));
     const dmg: SiegeDamageDoc = {
       _id: siege._id,
       worldId: m.worldId,

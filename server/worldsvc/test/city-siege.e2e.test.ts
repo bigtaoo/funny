@@ -34,6 +34,11 @@ import {
   baseFootprintCells,
   baseFootprintInBounds,
   teamSiegeValue,
+  marchDurationFromPath,
+  marchStepArriveAt,
+  CITY_CAPITAL_SIEGE_BONUS,
+  CITY_WORLD_CENTER_SIEGE_BONUS,
+  CITY_WORLD_CENTER_MARCH_DISCOUNT,
   type CardInstance,
   type MapEditorCityNode,
 } from '@nw/shared';
@@ -634,5 +639,132 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     const doc = (await m.collections.cities.findOne({ _id: CITY_ID }))!;
     expect(doc.siegeLog?.[SECT_A]).toBe(afterA.siegeLog?.[SECT_A]);
     expect(doc.siegeLog?.[SECT_B]).toBeGreaterThan(0);
+  });
+  // ── ADR-074 P3 (§8.3/§8.4): what holding cities does to the sect's own marches ────────────────────
+
+  it('§8.3: the attacking sect\'s held capitals scale the durability hit, on their own channel', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    await claimBeachhead(A);
+    // Two capitals plus the world center — a bonus big enough that a rounding coincidence cannot make an
+    // unscaled hit look scaled.
+    const caps = (await m.collections.cities.find({ worldId: W, kind: 'capital' }).limit(2).toArray()).map((c) => c._id);
+    await m.collections.cities.updateMany(
+      { _id: { $in: [...caps, cityDocId(W, 'worldCenter')] } },
+      { $set: { ownerSectId: SECT_A } },
+    );
+    await svc.recomputeSectPayoff(W, SECT_A);
+    const bonus = 2 * CITY_CAPITAL_SIEGE_BONUS + CITY_WORLD_CENTER_SIEGE_BONUS;
+    expect((await svc.sectPayoff(SECT_A)).siegeBonus).toBeCloseTo(bonus, 10);
+
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+
+    const inv: Record<string, CardInstance> = {};
+    for (const id of CARDS) inv[id] = CARD_INV_ANY[id]!;
+    const bare = teamSiegeValue(CARDS.map((id) => ({ cardInstanceId: id })), inv);
+    const pending = await m.collections.siegeDamage.find({ worldId: W, cityId: CITY_ID }).toArray();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.damage).toBe(Math.floor(bare * (1 + bonus)));
+    expect(pending[0]!.damage).toBeGreaterThan(bare); // the bonus is definitely doing something
+  });
+
+  it('§8.3: holding the world center shortens the march, and the STEP cadence moves with it', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    await claimBeachhead(A);
+    const plain = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    const plainDoc = (await m.collections.marches.findOne({ _id: plain.marchId }))!;
+    expect(plainDoc.speedMult).toBeUndefined(); // omitted at 1 — pre-P3 document shape
+    const plainDuration = plain.arriveAt - plainDoc.departAt;
+
+    // The same march again, now with the world center held.
+    await m.collections.marches.deleteMany({ worldId: W });
+    await m.collections.cities.updateOne({ _id: cityDocId(W, 'worldCenter') }, { $set: { ownerSectId: SECT_A } });
+    await svc.recomputeSectPayoff(W, SECT_A);
+    const fast = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    const fastDoc = (await m.collections.marches.findOne({ _id: fast.marchId }))!;
+
+    expect(fastDoc.speedMult).toBeCloseTo(1 - CITY_WORLD_CENTER_MARCH_DISCOUNT, 10);
+    expect(fast.arriveAt - fastDoc.departAt).toBe(plainDuration * (1 - CITY_WORLD_CENTER_MARCH_DISCOUNT));
+    // The load-bearing half: the step cursor must run at the SAME discounted cadence, or the march
+    // "arrives" while the encounter scan still has cells to walk (see marchStepArriveAt's note).
+    expect(fastDoc.path!.length).toBeGreaterThan(1);
+    expect(fastDoc.nextStepAt).toBe(marchStepArriveAt(fastDoc.departAt, 1, fastDoc.speedMult));
+    expect(marchStepArriveAt(fastDoc.departAt, fastDoc.path!.length - 1, fastDoc.speedMult)).toBe(fast.arriveAt);
+    // ...and the undiscounted cadence would NOT land on arriveAt, which is what makes that check bite.
+    expect(marchStepArriveAt(fastDoc.departAt, fastDoc.path!.length - 1)).not.toBe(fast.arriveAt);
+    expect(marchDurationFromPath(fastDoc.path!, fastDoc.speedMult) * 1000).toBe(fast.arriveAt - fastDoc.departAt);
+  });
+
+  it('§8.4: an idle team may park on a capital its own sect holds, and then march from there', async () => {
+    const capital = (await m.collections.cities.findOne({ worldId: W, kind: 'capital' }))!;
+    const capBase = findNearbyBase(capital.x + (capital.footprint - 1) / 2 + 3, capital.y);
+    await moveBase(A, capBase.x, capBase.y);
+    await armSiegeTeam(A, SECT_A, 300);
+    await m.collections.cities.updateOne({ _id: capital._id }, { $set: { ownerSectId: SECT_A } });
+    await svc.recomputeSectPayoff(W, SECT_A);
+
+    const moveView = await svc.startMarch(W, A, capBase.x, capBase.y, capital.x, capital.y, 'move', 1, TEAM, 'idle');
+    nowMs = moveView.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+    const parked = await m.collections.stationed.findOne({ worldId: W, ownerId: A, teamId: TEAM });
+    expect(parked, 'the team must actually be standing in the city').not.toBeNull();
+    expect({ x: parked!.x, y: parked!.y }).toEqual({ x: capital.x, y: capital.y });
+    expect(parked!.mode).toBe('idle');
+
+    // The anchor itself: a re-dispatch departs from the CITY, not from home (ADR-051 P3c's idle
+    // re-dispatch is what §8.4 rides on — "not a teleport, just a shorter first leg").
+    const out = await svc.startMarch(W, A, capBase.x, capBase.y, capital.x + 1, capital.y + 1, 'move', 1, TEAM, 'idle');
+    expect(out.fromTile).toBe(tileId(W, capital.x, capital.y));
+  });
+
+  it('§8.4: only capitals and the world center are anchors — an idle park on a graded city is refused', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    await m.collections.cities.updateOne({ _id: CITY_ID }, { $set: { ownerSectId: SECT_A } });
+    await svc.recomputeSectPayoff(W, SECT_A);
+    // Own sect holds it, but it is a graded city: idle parking there would make all 64 cities launch
+    // anchors, and §8.4 is explicit that then there is no front line.
+    await expect(svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'move', 1, TEAM, 'idle'))
+      .rejects.toMatchObject({ code: 'TILE_OCCUPIED' });
+    // Garrison intent on the same city IS allowed — that is a defender team, and it stays locked in place.
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'move', 1, TEAM, 'garrison');
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+    const parked = await m.collections.stationed.findOne({ worldId: W, ownerId: A, teamId: TEAM });
+    expect(parked?.mode).toBe('garrison');
+    // Locked: a garrison team cannot be re-commanded from where it stands.
+    await expect(svc.startMarch(W, A, base.x, base.y, city.x + 1, city.y, 'move', 1, TEAM, 'idle'))
+      .rejects.toMatchObject({ code: 'TEAM_BUSY' });
+  });
+
+  it('§8.4: a city held by another sect (or nobody) is still siege-only, both intents', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    for (const mode of ['idle', 'garrison'] as const) {
+      await m.collections.cities.updateOne({ _id: CITY_ID }, { $unset: { ownerSectId: '' } });
+      await expect(svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'move', 1, TEAM, mode), 'npc/' + mode)
+        .rejects.toMatchObject({ code: 'TILE_OCCUPIED' });
+      await m.collections.cities.updateOne({ _id: CITY_ID }, { $set: { ownerSectId: SECT_B } });
+      await expect(svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'move', 1, TEAM, mode), 'enemy/' + mode)
+        .rejects.toMatchObject({ code: 'TILE_OCCUPIED' });
+    }
+  });
+
+  it('§8.4: a city that changes hands mid-flight bounces the arriving team instead of parking it', async () => {
+    // Why the arrival guard re-checks instead of trusting dispatch: landing anyway would park a team inside
+    // someone else's fortress.
+    const capital = (await m.collections.cities.findOne({ worldId: W, kind: 'capital' }))!;
+    const capBase = findNearbyBase(capital.x + (capital.footprint - 1) / 2 + 3, capital.y);
+    await moveBase(A, capBase.x, capBase.y);
+    await armSiegeTeam(A, SECT_A, 300);
+    await m.collections.cities.updateOne({ _id: capital._id }, { $set: { ownerSectId: SECT_A } });
+    await svc.recomputeSectPayoff(W, SECT_A);
+
+    const view = await svc.startMarch(W, A, capBase.x, capBase.y, capital.x, capital.y, 'move', 1, TEAM, 'idle');
+    // Taken by SECT_B while the team is in the air.
+    await m.collections.cities.updateOne({ _id: capital._id }, { $set: { ownerSectId: SECT_B } });
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+
+    expect(await m.collections.stationed.findOne({ _id: tileId(W, capital.x, capital.y) })).toBeNull();
   });
 });

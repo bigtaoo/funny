@@ -96,7 +96,9 @@ export class ArrivalService {
     // Step through every cell whose arrival time has already elapsed by t. Each hop vacates the cell just left
     // (match-guarded clear) and occupies the new one, so the index holds exactly the march's CURRENT cell — never
     // a trail of stale entries.
-    while (idx < last && marchStepArriveAt(m.departAt, idx + 1) <= t) {
+    // `m.speedMult` and not a fresh lookup: the cadence has to match the one `arriveAt` was computed from
+    // at dispatch (ADR-074 §8.3, MarchDoc.speedMult).
+    while (idx < last && marchStepArriveAt(m.departAt, idx + 1, m.speedMult) <= t) {
       const left = path[idx]!;
       idx++;
       const cell = path[idx]!;
@@ -215,7 +217,7 @@ export class ArrivalService {
       }
 
       if (!skipOwnOcc) {
-        const leaveAt = idx < last ? marchStepArriveAt(m.departAt, idx + 1) : Number.MAX_SAFE_INTEGER;
+        const leaveAt = idx < last ? marchStepArriveAt(m.departAt, idx + 1, m.speedMult) : Number.MAX_SAFE_INTEGER;
         await this.core.setOccupancy(m.worldId, tid, {
           kind: 'march',
           id: m._id,
@@ -239,7 +241,7 @@ export class ArrivalService {
     // Mid-route: persist the new cursor. Guard on status:'marching' AND kind≠return so a concurrent recall
     // (which flips to a return leg and $unsets the cursor) is never clobbered back. The next processDueArrivals
     // scan (Mongo nextStepAt) picks up the advance from here.
-    const nextStepAt = marchStepArriveAt(m.departAt, idx + 1);
+    const nextStepAt = marchStepArriveAt(m.departAt, idx + 1, m.speedMult);
     await cols.marches.updateOne(
       { _id: m._id, status: 'marching', kind: { $ne: 'return' } },
       { $set: { stepIndex: idx, nextStepAt }, $inc: { rev: 1 } },
@@ -373,9 +375,16 @@ export class ArrivalService {
     const isFriendlyGarrisonTarget = isGarrison && foreignOwner
       ? (await this.core.friendlyAccountIds(m.worldId, m.ownerId)).has(occ!.ownerId!)
       : false;
+    // ADR-074 P3: city ground is no longer flatly off-limits — a sect may station inside its OWN city (a
+    // garrison team defends it; an idle team on a capital / the world center is §8.4's launch anchor). Every
+    // other city is still siege-only. Re-checked here and not merely trusted from dispatch because the city
+    // can change hands mid-flight, which is exactly when a team must NOT land: it would be parking inside
+    // someone else's fortress. Same helper as the departure check so the two cannot drift.
+    const cityHere = isCityGroundTile(proc.type)
+      ? await this.core.stationableCityAt(m.worldId, m.ownerId, x, y, isGarrison ? 'garrison' : 'idle')
+      : null;
     const blocked =
-      // isCityGroundTile = familyKeep | center — city ground is siege-only, never merely stood on (ADR-074).
-      isCityGroundTile(proc.type) ||
+      (isCityGroundTile(proc.type) && !cityHere) ||
       !!stationedHere ||
       (foreignOwner && !isFriendlyGarrisonTarget) ||
       (!occ?.ownerId && isGarrison) ||
