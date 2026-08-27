@@ -206,3 +206,27 @@
 - **UI 联动**：训练面板（`client/src/scenes/CityScene/trainModal.ts`）此前只有「兵力 {cur}/{cap}」+ 批次行，玩家看到置灰的「最大 +0」时既看不出槽位占用、也看不出兵力上限的余量早已被在训批次预定（`capLeft = cap - troops - 已排队`），更分不清是「槽位满」还是「兵力满」——两者 toast 不同、解法不同（等 vs 升练兵场）。新增一行 `city.trainQueueStatus`（三语）：`队列 {n}/{max} · 在训 {training} · 可训 {left}`，槽位满或可训为 0 时转红。
 - **影响**：`server/shared/src/slg/core.ts`（`TROOP_CAP_BASE`/`TROOP_TRAIN_QUEUE_MAX`）、`slg/city.ts`（`DRILL_TROOPCAP_STEP`/`DRILL_QUEUE_LEVEL_THRESHOLDS`/`SATCHEL_CARRY_STEP`/`trainQueueMaxFor`）、`slg/siege.ts`（两个守军常量的校准注释，值不变）、`worldsvc/src/db/{playerDocs,client}.ts`（新迁移）、`server/tools/econ-sim`（`strongholdCombat*` 的门槛等级改为派生常量 `STRONGHOLD_OPEN_DRILL_LEVELS`/`CROSSING_OPEN_DRILL_LEVELS`，扫描范围放宽到 `DESK_MAX_LEVEL`）、客户端训练面板 + 三语 i18n。
 - **验证**：`strongholdCombatRun.ts` 实跑 **两门均 PASS**（新号 5,000 双双 0%；关隘 L4=11,000 起 100%、险地 L5=12,500 起 100%）；`econ-sim` 18 例、`@nw/shared` city-buildings 15 例（新增「任何等级都不发放 troopCap 填不满的槽位」全区间断言 + 「满级书包 == 满级 troopCap」不变式断言）、`worldsvc` 全量 e2e（含新增 2 例迁移用例：陈旧 cap 重算并夹兵 / 已正确时幂等不改 rev）、client `tsc --noEmit` + UI 16 例（新增状态行断言）+ i18n 6 文件全绿。
+
+---
+
+## ADR-076 宗门驻防队加在 NPC 波次「前面」而不是替代它 + 州府防御加成改按城池归属判定 — Accepted — 2026-08-27
+
+ADR-074 P3 落地时冒出的两个拍板；都不是新玩法，而是「同一份设计文档自己内部矛盾」的收口。
+
+- **问题 ①（驻防队 vs NPC 波次）**：`SLG_CITY_SIEGE_DESIGN.md` §10-P3 写的是「拥有方的 `stationed` 队伍**替代** NPC 波次」，但同一份文档的 §5 与 P2 实测又把「每次攻城必须真打完 `CITY_WAVE_COUNT` 波 NPC」当成**单人每小时输出的唯一闸门**（§5 记的三条被否掉的原案里，「守军共享 + 10 分钟重生」就是因为它在重生窗口里造出零成本命中而被否）。纯替代把这个闸门交给玩家自己：**一支弱驻防队会让城池比无人守时更好打**——既是对一个实测门禁的平衡回退，也是对那个花了兵去驻防的玩家的陷阱（「我守了，结果城更容易掉」）。
+- **决策 ①（用户拍板）**：**加在前面，不替代**。梯子 = N 支驻防队 + **未改动**的 `CITY_WAVE_COUNT` 波 NPC。
+  - 驻防是**纯上收益**，不存在「守错了更糟」的形状；P2 的兵耗下限一个单位不动，所以那份门禁结论继续有效、不需要重跑。
+  - 代价（明确接受）：大宗门的城会很硬。这正是「城池归宗门所有」该有的意思；真出问题时的调节旋钮是驻防队的**数量上限**，不是把 NPC 梯改短。
+  - 被否的两个备选：**替代 + 按 HP 取较强者**（不会变弱，但规则要多解释一句，且弱队实际上等于没作用——花了兵却零效果，仍是个小陷阱）；**严格按文档替代**（最简单，但要么接受上面那个平衡回退，要么另给驻防队一个下限，等于把「取较强者」换个写法）。
+  - **怎么钉住的**：所有梯级共用一条 `waveSeed(marchId, index)` 序列，所以 `SiegeDoc.seed` 记下的最后一个种子就说明打了几级——1 支驻防队 + `CITY_WAVE_COUNT` 波 NPC ⟹ 最后 index 是 `CITY_WAVE_COUNT`；替代实现下会是 `CITY_WAVE_COUNT - 1`。用例两条都断言（`toBe` + `not.toBe`）。
+- **顺带退役 `CityDoc.defenderLock`（未使用即退役）**：P1 为这个功能预留了它，但机制早就存在——`applyBaseSiege` 用 `PlayerWorldDoc.teamState[id].injuredUntil` 锁被打败的守队，而 `CITY_WAVE_RESPAWN_MS === SLG_TEAM_INJURY_MS` 在 `shared/test/citySiege.test.ts` 里本来就有断言，两个常量一直是同一个窗口。**按城加锁还会是错的**：一支在 X 城打空的队伍可以立刻去守 Y 城，因为「这支队伍打过了」没有被记在队伍身上。一支队伍，一个受伤时钟。
+
+- **问题 ②（州府防御加成）**：ADR-074 §9 拍的是「删 `NATION_BONUS_PRODUCTION`（与 §8.1 双计）、**保留** `NATION_BONUS_DEFENSE` 作为州府的军事身份」。但那条保留下来的加成读的是 `nations.ownerId`，而 P0 删掉了 `applyNationChange`、`initNations` 又 `$unset` 归属——**那个字段没有任何写入方**，于是「保留」的实际效果是对谁都不生效。§9 自己也把「`nations` 集合是否整体删除」挂着留给 P3 判。
+- **决策 ②（用户拍板）**：**改按 `CityDoc.ownerSectId` 判定，`nations` 集合不删**。
+  - 判据从「拥有这座州府的**账号**」放宽到「持有这座州府城池的**宗门**」——ADR-074 之后已经不存在前者（州府是被宗门打下来的）。
+  - `nations` 只保留它仍然权威的东西：**首府坐标与名字**。归属语义整体迁到 `cities`。
+  - 新的读点是 `CitySiegeService.inOwnSectProvince(worldId, accountId, x, y)`，`applySiege` 的主城分支与 P3 的驻防队梯级共用它。
+
+- **影响**：`worldsvc/src/core/citySiege.ts`（新 `inOwnSectProvince`）、`combatSiege/arrival.ts`（`inOwnNation` 的推导整段换掉，删掉 `nations` 读）、`combatSiege/arrival/cityDefenders.ts`（新文件：驻防队梯级）、`combatSiege/arrival/citySiege.ts`（梯级串联 + 种子偏移）、`db/cityDocs.ts`（`defenderLock` 退役）、`design/game/SLG_CITY_SIEGE_DESIGN.md` §10-P3 + §11。
+- **验证**：`worldsvc/test/city-siege.e2e.test.ts` 22 → 38 例（其中 6 例是驻防队与 §9 的新判据）、`city-payoff.e2e.test.ts` 13 例、`shared/test/citySiege.test.ts` +13 例；四条变异各自打红它自己那条用例。落地时被用例抓到一个真坑：守方梯级第一版漏了 `defenderBaseHp`，于是引擎的象征性基地按默认 `BASE_HP=100` 被一下打掉、战斗在守军参战前就结束——那一级**免费**，正是 citySiege.ts「差异①」实测记过的形状。
+- **P3 后新登记的开放项**：守方卡走**基础蓝图**（无等级/装备注入，`applyBaseSiege` 的 v1 限制，驻防队沿用同一条路），所以驻防队对高练度进攻方几乎不构成门槛。要不要给守方也做注入是一个独立待拍板项，登记在 `SLG_CITY_SIEGE_DESIGN.md` §11。

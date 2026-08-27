@@ -55,13 +55,13 @@ export interface CityDoc {
    */
   siegeLog?: Record<string, number>;
 
-  /**
-   * P3: `teamId` → epoch ms a defeated owner-stationed defender team is locked out of the wave ladder
-   * (`CITY_WAVE_RESPAWN_MS`). The NPC ladder is per-march and never respawns mid-assault, so this is
-   * empty for an NPC-held city — see `CITY_WAVE_COUNT`'s doc comment for why a shared, respawning NPC
-   * ladder cannot work.
-   */
-  defenderLock?: Record<string, number>;
+  // P1 reserved a `defenderLock?: Record<string, number>` here for P3's owner-stationed defender teams.
+  // P3 (2026-08-27) did NOT use it and it is retired unwritten, because the mechanism already existed:
+  // `applyBaseSiege` locks a beaten defender team through `PlayerWorldDoc.teamState[id].injuredUntil`, and
+  // `CITY_WAVE_RESPAWN_MS` is asserted equal to `SLG_TEAM_INJURY_MS` in shared/test/citySiege.test.ts — the
+  // two constants were always the same window. A per-CITY lock would have been worse than redundant: a team
+  // spent defending city X could immediately defend city Y, since nothing about the TEAM recorded that it
+  // had fought. One team, one injury clock. See combatSiege/arrival/cityDefenders.ts.
 
   rev: number;
 }

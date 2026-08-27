@@ -11,6 +11,7 @@
 import {
   SlgError,
   playerWorldId,
+  provinceIdxAt,
   cityDocId,
   cityNodeCovering,
   cityDurabilityMax,
@@ -89,7 +90,7 @@ export class CitySiegeService {
           },
           // A reopened world (same worldId, no reset) must not inherit last season's conquests or a
           // half-finished siege round — the same staleness `initNations` closes for nation ownership.
-          $unset: { ownerSectId: '', ownerSectName: '', capturedAt: '', protectedUntil: '', siegeLog: '', defenderLock: '' },
+          $unset: { ownerSectId: '', ownerSectName: '', capturedAt: '', protectedUntil: '', siegeLog: '' },
         },
         { upsert: true },
       );
@@ -202,6 +203,35 @@ export class CitySiegeService {
   /** Drop every sect's cached payoff in a world — the counterpart of `initCities` unsetting ownership. */
   async clearSectPayoffs(worldId: string): Promise<void> {
     await this.core.deps.cols.sects.updateMany({ worldId }, { $unset: { cityPayoff: '' } });
+  }
+
+  /**
+   * §9 (2026-08-27): whether `accountId`'s sect holds the province capital covering (x,y)'s province — the
+   * replacement for the old `nations.ownerId === accountId` test behind `NATION_BONUS_DEFENSE` (+15%).
+   *
+   * ADR-074 §9 decided to KEEP that bonus as the capital's military identity while deleting its production
+   * twin, but P0 had already deleted `applyNationChange` and made `initNations` unset ownership — so the
+   * surviving read was against a field with no writer, i.e. the bonus silently never applied to anyone. It
+   * now hangs off the same `CityDoc.ownerSectId` everything else about a capital hangs off.
+   *
+   * Sect-scoped, not account-scoped, and that is a deliberate widening: a capital is captured by a sect
+   * (there is no "the account that owns this capital" any more), so the province bonus reaches every member
+   * who defends inside it. The `nations` collection keeps only what it is still the authority for —
+   * capital coordinates and names.
+   */
+  async inOwnSectProvince(worldId: string, accountId: string, x: number, y: number): Promise<boolean> {
+    const capIdx = provinceIdxAt(x, y);
+    const [capital, pw] = await Promise.all([
+      this.core.deps.cols.cities.findOne(
+        { worldId, kind: 'capital', provinceIdx: capIdx },
+        { projection: { ownerSectId: 1 } },
+      ),
+      this.core.deps.cols.playerWorld.findOne(
+        { _id: playerWorldId(worldId, accountId) },
+        { projection: { sectId: 1 } },
+      ),
+    ]);
+    return !!capital?.ownerSectId && !!pw?.sectId && capital.ownerSectId === pw.sectId;
   }
 
   /**

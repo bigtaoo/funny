@@ -266,14 +266,15 @@ console.log(`  ③ solo-proof at the weakest wild city   ${gate3 ? '✅ PASS' : 
 console.log(`  ④ cheap-path ceiling / monotone / reach ${ceilingOk && monoOk && reachOk ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`  ⑤ attackers-needed matches the doc      ${gate5 ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`\n${allOk ? '✅ CONSTANTS CONFIRMED' : '❌ NEEDS TUNING'} for TROOP_CAP_BASE/DRILL_TROOPCAP_STEP/card caps as they stand today.`);
-console.log('\n⚠️  TWO CODE FACTS the design doc assumed otherwise (both benign for the gates above, both worth');
-console.log('   knowing before anyone "fixes" them):');
+console.log('\n⚠️  TWO CODE FACTS about the hypothetical channels gate ③ is measured WITH (both are stacked into');
+console.log('   the worst case above, which is why wiring either one cannot move that verdict):');
 console.log(`   1. teamSiegeValue() reads ONLY card defId+level. The +${pct(EQUIP_SIEGE_MULT - 1)} EFFECT_CAPS.siegePct_fp equipment`);
 console.log('      channel is applied by applyEquipment to the engine blueprint\'s siegeValue_fp — that affects');
-console.log('      in-battle damage against a symbolic base, never the persistent durability hit. So gear does');
-console.log('      NOT raise durability damage today; gate ③ passes even if someone wires it up later.');
-console.log(`   2. The §8.3 sect city bonus (x${SECT_SIEGE_MULT.toFixed(2)} at full map control) is not implemented at all yet, and`);
-console.log('      would land on the same channel. Gate ③ is measured with both stacked, so P3 can wire them.');
+console.log('      in-battle damage against a symbolic base, never the persistent durability hit. So gear STILL');
+console.log('      does not raise durability damage; whether it should is an open design question (§11).');
+console.log(`   2. The §8.3 sect city bonus (x${SECT_SIEGE_MULT.toFixed(2)} at full map control) IS implemented as of ADR-074 P3`);
+console.log('      (2026-08-27): applyCitySiege multiplies teamSiegeValue by (1 + sectPayoff.siegeBonus), on its');
+console.log('      own channel, never summed into the capped equipment accumulator. Re-run confirmed PASS.');
 console.log('\nRegister conclusions -> design/game/ECONOMY_VERIFICATION_LOG.md §13-SLG-CITYSIEGE');
 
 /** Exported so citySiege.test.ts can assert the same conclusions without re-printing the report. */

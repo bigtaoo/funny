@@ -111,7 +111,7 @@ export async function settleCityDamage(core: WorldCore, d: SiegeDamageDoc & { ci
             regenPerHour,
           },
           // The siege round is over: contribution history resets with ownership (§7).
-          $unset: { siegeLog: '', defenderLock: '' },
+          $unset: { siegeLog: '' },
           $inc: { rev: 1 },
         },
       );

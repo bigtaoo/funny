@@ -39,6 +39,9 @@ import {
   CITY_CAPITAL_SIEGE_BONUS,
   CITY_WORLD_CENTER_SIEGE_BONUS,
   CITY_WORLD_CENTER_MARCH_DISCOUNT,
+  waveSeed,
+  SLG_TEAM_INJURY_MS,
+  NATION_BONUS_DEFENSE,
   type CardInstance,
   type MapEditorCityNode,
 } from '@nw/shared';
@@ -766,5 +769,174 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     await svc.processDueArrivals(nowMs);
 
     expect(await m.collections.stationed.findOne({ _id: tileId(W, capital.x, capital.y) })).toBeNull();
+  });
+  // ── ADR-074 P3: sect defender teams (additive, ahead of the NPC ladder) ──────────────────────────
+
+  /**
+   * Park one of `acct`'s teams inside the city as a garrison defender, by writing the StationedDoc directly.
+   * Going through a real `move` march would work (that path has its own cases above) but would also consume
+   * the account's single team slot and its troops, which these cases need for the attacker.
+   */
+  async function garrisonCity(acct: string, teamId: string, cell: { x: number; y: number }, troopsPerCard: number): Promise<void> {
+    const cards = Array.from({ length: 12 }, (_, i) => `def-${acct}-${teamId}-${i}`);
+    const set: Record<string, unknown> = {};
+    for (const id of cards) set[`cardState.${id}`] = { currentTroops: troopsPerCard, teamId } as CardSLGState;
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, acct) }, { $set: set });
+    await m.collections.stationed.insertOne({
+      _id: tileId(W, cell.x, cell.y),
+      worldId: W,
+      ownerId: acct,
+      tile: tileId(W, cell.x, cell.y),
+      x: cell.x,
+      y: cell.y,
+      teamId,
+      army: cards.map((id, i) => ({ cardInstanceId: id, col: ATTACK_LANES[i % ATTACK_LANES.length]!, row: 3 + Math.floor(i / ATTACK_LANES.length) })),
+      troops: troopsPerCard * cards.length,
+      sinceAt: nowMs,
+      mode: 'garrison',
+    } as never);
+  }
+
+  it('an NPC-held city fights no defender rung at all — the pre-P3 path, unchanged', async () => {
+    // The guard against the additive ladder quietly costing something on the common path: no ownership, no
+    // stationed teams, so `fightCityDefenders` must return without a battle and the hit must be the plain one.
+    await armSiegeTeam(A, SECT_A, 300);
+    await claimBeachhead(A);
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+    const inv: Record<string, CardInstance> = {};
+    for (const id of CARDS) inv[id] = CARD_INV_ANY[id]!;
+    const pending = await m.collections.siegeDamage.find({ worldId: W, cityId: CITY_ID }).toArray();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.damage).toBe(teamSiegeValue(CARDS.map((id) => ({ cardInstanceId: id })), inv));
+  });
+
+  it('a strong defender team repels the assault before the NPC ladder, and no damage is scheduled', async () => {
+    await armSiegeTeam(A, SECT_A, 20); // deliberately weak
+    await claimBeachhead(A);
+    // B holds the city and garrisons it heavily.
+    const bBase = findNearbyBase(outside.x + 10, outside.y + 10);
+    await svc.joinWorld(W, B, bBase.x, bBase.y);
+    await m.collections.cities.updateOne({ _id: CITY_ID }, { $set: { ownerSectId: SECT_B } });
+    // 3,000 troops per card, against an attacker on 40. The gap has to be this wide because the ATTACKER's
+    // cards get blueprint injection from their level (the fake meta hands out level-9 cards) while a
+    // DEFENDER's cards deliberately fight on base blueprints — see applyBaseSiege's doc comment. Troop count
+    // alone is not the whole story on either side.
+    await garrisonCity(B, 'def1', { x: city.x, y: city.y }, 3000);
+
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+
+    expect(await m.collections.siegeDamage.countDocuments({ worldId: W, cityId: CITY_ID })).toBe(0);
+    const siege = await m.collections.sieges.findOne({ worldId: W }, { sort: { _id: -1 } });
+    expect(siege?.outcome).toBe('defender_win');
+    // The defender WON, so it is not injured — same rule as a base siege.
+    const bPw = (await m.collections.playerWorld.findOne({ _id: playerWorldId(W, B) }))!;
+    expect(bPw.teamState?.def1?.injuredUntil ?? 0).toBe(0);
+    // "No damage + no injury" alone would ALSO describe "the NPC ladder repelled it and the defender never
+    // fought", and this attacker is weak enough to fail that ladder too — so pin which rung was last fought.
+    // The recorded replay's garrison carries the defender's own 3,000-troop cards, a figure no NPC wave has;
+    // if the defender rung had been skipped or lost, the stored replay would be an NPC wave's instead.
+    const garrison = (siege?.defenderConfig as { garrison?: { initialHp?: number }[] } | null)?.garrison;
+    expect(garrison, 'the siege record must carry the rung that decided it').toBeDefined();
+    expect(garrison!.some((u) => u.initialHp === 3000), 'the deciding rung must be the defender TEAM').toBe(true);
+  });
+
+  it('a beaten defender team is injured for SLG_TEAM_INJURY_MS and loses its troops, and the NPC ladder still runs', async () => {
+    await armSiegeTeam(A, SECT_A, 300);
+    await claimBeachhead(A);
+    const bBase = findNearbyBase(outside.x + 10, outside.y + 10);
+    await svc.joinWorld(W, B, bBase.x, bBase.y);
+    await m.collections.cities.updateOne({ _id: CITY_ID }, { $set: { ownerSectId: SECT_B } });
+    await garrisonCity(B, 'def1', { x: city.x, y: city.y }, 5); // token defence — beaten, but not free
+
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+
+    const bPw = (await m.collections.playerWorld.findOne({ _id: playerWorldId(W, B) }))!;
+    expect(bPw.teamState?.def1?.injuredUntil).toBe(nowMs + SLG_TEAM_INJURY_MS);
+    // Wiped out, so its cards must not still be standing at full strength once the injury heals. Asserted as
+    // "lost nearly everything" rather than "exactly 0": `computeCardStateUpdates` distributes survivors and
+    // floors, so a wiped team can land on 1 rather than 0 — the property that matters is that it was spent.
+    const anyCard = Object.entries(bPw.cardState ?? {}).find(([k]) => k.startsWith('def-'));
+    expect(anyCard, 'the fixture must have written defender cardState').toBeDefined();
+    expect(anyCard![1].currentTroops).toBeLessThan(5);
+    // Additive, not substitutive: the attacker went on to clear the NPC ladder and scheduled its hit.
+    expect(await m.collections.siegeDamage.countDocuments({ worldId: W, cityId: CITY_ID })).toBe(1);
+    // And the NPC ladder was not SHORTENED by the defender rung, which is the whole 2026-08-27 decision.
+    // Rungs are seeded `waveSeed(marchId, index)` over one continuous sequence, so the seed recorded for
+    // the last rung fought says how many there were: 1 defender + CITY_WAVE_COUNT NPC waves means the last
+    // index is CITY_WAVE_COUNT. Had the defender REPLACED a wave, it would be CITY_WAVE_COUNT - 1.
+    const siege = await m.collections.sieges.findOne({ worldId: W }, { sort: { _id: -1 } });
+    expect(siege?.seed).toBe(waveSeed(view.marchId, CITY_WAVE_COUNT));
+    expect(siege?.seed).not.toBe(waveSeed(view.marchId, CITY_WAVE_COUNT - 1));
+  });
+
+  it('an injured defender team does not defend again until it heals', async () => {
+    await armSiegeTeam(A, SECT_A, 40); // weak: only a live defender can stop it
+    await claimBeachhead(A);
+    const bBase = findNearbyBase(outside.x + 10, outside.y + 10);
+    await svc.joinWorld(W, B, bBase.x, bBase.y);
+    await m.collections.cities.updateOne({ _id: CITY_ID }, { $set: { ownerSectId: SECT_B } });
+    await garrisonCity(B, 'def1', { x: city.x, y: city.y }, 400);
+    // Pre-injured — the state a previous assault would have left.
+    const injuredUntil = nowMs + SLG_TEAM_INJURY_MS;
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, B) },
+      { $set: { 'teamState.def1.injuredUntil': injuredUntil } },
+    );
+
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+
+    // It sat out: the injury stamp is untouched (not pushed to a later one, which is what fighting and
+    // losing again would do) and its troops are intact.
+    const bPw = (await m.collections.playerWorld.findOne({ _id: playerWorldId(W, B) }))!;
+    expect(bPw.teamState?.def1?.injuredUntil, 'an injured team must not have fought').toBe(injuredUntil);
+    const anyCard = Object.entries(bPw.cardState ?? {}).find(([k]) => k.startsWith('def-'));
+    expect(anyCard![1].currentTroops, 'a team that sat out keeps its troops').toBe(400);
+  });
+
+  it('a garrison team whose owner left the sect stops defending the city', async () => {
+    await armSiegeTeam(A, SECT_A, 40);
+    await claimBeachhead(A);
+    const bBase = findNearbyBase(outside.x + 10, outside.y + 10);
+    await svc.joinWorld(W, B, bBase.x, bBase.y);
+    await m.collections.cities.updateOne({ _id: CITY_ID }, { $set: { ownerSectId: SECT_B } });
+    await garrisonCity(B, 'def1', { x: city.x, y: city.y }, 400);
+    // B leaves SECT_B — its team is now a stranger standing in someone else's city.
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, B) }, { $unset: { sectId: '' } });
+
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+
+    const bPw = (await m.collections.playerWorld.findOne({ _id: playerWorldId(W, B) }))!;
+    expect(bPw.teamState?.def1?.injuredUntil ?? 0, 'it must not have fought').toBe(0);
+  });
+
+  it('§9: the province defence bonus follows CITY ownership now, not the dead nations.ownerId', async () => {
+    // Pure-unit assertion of the re-pointed predicate — the battle-side effect is already covered by
+    // nation-bonus.e2e.test.ts's defence case, which this must not silently stop feeding.
+    const capital = (await m.collections.cities.findOne({ worldId: W, kind: 'capital' }))!;
+    expect(capital.provinceIdx, 'capitals must carry provinceIdx for the lookup to work').toBeGreaterThanOrEqual(0);
+    // Nobody holds it → no bonus, even with a nations document that says otherwise.
+    await m.collections.nations.updateOne(
+      { _id: `nation:${W}:${capital.provinceIdx}` },
+      { $set: { worldId: W, capitalIdx: capital.provinceIdx, ownerId: A } },
+      { upsert: true },
+    );
+    expect(await svc.inOwnSectProvince(W, A, capital.x, capital.y)).toBe(false);
+    // Own sect holds the capital city → bonus.
+    await m.collections.cities.updateOne({ _id: capital._id }, { $set: { ownerSectId: SECT_A } });
+    expect(await svc.inOwnSectProvince(W, A, capital.x, capital.y)).toBe(true);
+    // Another sect holds it → no bonus.
+    await m.collections.cities.updateOne({ _id: capital._id }, { $set: { ownerSectId: SECT_B } });
+    expect(await svc.inOwnSectProvince(W, A, capital.x, capital.y)).toBe(false);
+    expect(NATION_BONUS_DEFENSE).toBeGreaterThan(0); // the constant survives §9; only its key changed
   });
 });

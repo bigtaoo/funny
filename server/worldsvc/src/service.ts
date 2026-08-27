@@ -78,6 +78,8 @@ export class WorldService {
   recomputeSectPayoff(worldId: string, sectId: string): ReturnType<WorldCore['recomputeSectPayoff']> { return this.core.recomputeSectPayoff(worldId, sectId); }
   /** ADR-074 P3 (§8): the cached payoff of a sect's held cities (yield / siege bonus / march multiplier). */
   sectPayoff(sectId: string | undefined): ReturnType<WorldCore['sectPayoff']> { return this.core.sectPayoff(sectId); }
+  /** ADR-074 P3 (§9): whether this account's sect holds the capital city of the province containing (x,y). */
+  inOwnSectProvince(...args: Parameters<WorldCore['inOwnSectProvince']>): Promise<boolean> { return this.core.inOwnSectProvince(...args); }
   getTile(worldId: string, accountId: string, x: number, y: number): Promise<WorldTileView> {
     return this.core.getTile(worldId, accountId, x, y);
   }
