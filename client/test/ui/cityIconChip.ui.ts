@@ -1,4 +1,4 @@
-// Coverage for the 2026-08-27 "主城图标太淡" fix (design/game/SLG_CITY_DESIGN.md §8.10).
+// Coverage for the 2026-08-27 "主城图标太淡" fix (design/game/SLG_CITY_DESIGN.md §8.11).
 //
 // Two of the three parts of that fix live here; the third is in the atlas itself and is pinned by
 // worldMapResMotifLevelRead.ui.ts ("every generic motif frame clears the UI ink floor").
@@ -13,6 +13,13 @@
 //   · The Lv.0 dim. 0.4 was set in the 2026-08-01 card redesign when every glyph read strongly;
 //     multiplied into the faintest motifs it rendered an unbuilt 石墨坊 as a blank card. Anyone
 //     "restoring" it to 0.4 would undo half the fix for the exact cards the report was about.
+//
+// What this file does NOT cover: the res_atlas never decodes under the headless adapter, so
+// resIcon()/bldIcon() fall through to their emoji/line-art branch here and these assertions see chip
+// STRUCTURE, not final art. That is the right split — which cards get a chip and how big the motif
+// sits inside it are decisions, and decisions are what a test can hold; whether the result reads on
+// screen was settled by screenshotting the running client, and would be a pixel-diff suite to keep.
+// It does mean a mutation confined to the  branch of resIcon() is invisible to this file.
 //
 // Runs under the headless PIXI adapter (test/harness/pixiHeadless.ts via vitest.ui.config.ts).
 // Run: npm run test:ui
@@ -49,6 +56,9 @@ function chips(root: PIXI.Container): PIXI.Container[] {
   return found;
 }
 
+type Internals = { selectedBuilding: string | null; render(): void };
+const internals = (scene: CityScene): Internals => (scene as unknown as { core: Internals }).core;
+
 /** A city with `levels` applied over an otherwise Lv.0 base, rendered and settled. */
 async function city(levels: Partial<Record<BuildingKey, number>>): Promise<CityScene> {
   const buildings = Object.fromEntries(BUILDING_KEYS.map((k) => [k, levels[k] ?? 0]));
@@ -74,7 +84,7 @@ async function city(levels: Partial<Record<BuildingKey, number>>): Promise<CityS
   return scene;
 }
 
-describe('CityScene icon chips (2026-08-27 §8.10)', () => {
+describe('CityScene icon chips (2026-08-27 §8.11)', () => {
   it('producerResource() splits the grid exactly along "does this card produce a resource"', () => {
     expect(PRODUCERS.map(producerResource)).toEqual(['ink', 'paper', 'graphite', 'metal', 'sticker']);
     const rest = BUILDING_KEYS.filter((k) => !PRODUCERS.includes(k));
@@ -115,6 +125,25 @@ describe('CityScene icon chips (2026-08-27 §8.10)', () => {
     // draw their glyph bare; all 12 grid tiles fit on screen in landscape at this size, so a chip
     // creeping onto one of them would land in this count rather than scrolling out of the assertion.
     expect(chips(scene.container)).toHaveLength(10);
+  });
+
+  it('leaves the upgrade modal and the header wall glyph bare', async () => {
+    // resIcon/bldIcon deliberately do NOT chip themselves — the same two functions draw the 15px cost
+    // icons inside the upgrade modal and the wall glyph in the header bar, and a tinted square behind
+    // every inline number is noise, not legibility. That is a comment in icons.ts and nothing else,
+    // so folding the chip down into those two functions (the "obvious" simplification of the two
+    // call sites) would ship it into both places with nothing failing.
+    //
+    // Counted rather than asserted absent: the page still legitimately holds its 10 chips while a
+    // modal is open, so "no chips anywhere" would be wrong. What must not move is the number.
+    const scene = await city({ desk: 10, inkPot: 6, paperTray: 10, cabinet: 9, drillYard: 10, wall: 9, academy: 9, satchel: 9 });
+    const closed = chips(scene.container).length;
+    const inner = internals(scene);
+    // paperTray, so the modal's own header glyph is a resource motif too — the case most likely to
+    // pick up a chip by accident, and its cost rows carry several more resource icons besides.
+    inner.selectedBuilding = 'paperTray';
+    inner.render();
+    expect(chips(scene.container)).toHaveLength(closed);
   });
 
   it('dims an unbuilt producer card to 0.65, not the old 0.4', async () => {

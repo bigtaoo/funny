@@ -353,6 +353,66 @@ describe('the shipped atlas artifacts', () => {
     expect(ink('res_paper_l1')).toBeLessThan(UI_INK_FLOOR);
   });
 
+  it('a frame lifted to the ink floor got there by thickening its strokes, not by fogging its middle', async () => {
+    // The guard on the lift's one real failure mode, and the reason the floor assertion above cannot
+    // stand alone: a version of liftAlpha() WITHOUT its toe passes that assertion more easily, not
+    // less. These frames are a white-knockout, so the page inside a drawn outline is not empty — it
+    // is a haze of alpha 2-20 left by the source's off-white paper. A bare `a^g` amplifies that haze
+    // into a visible grey box filling the shape (the first version of this shipped exactly that, and
+    // it looks worse than the faintness it was fixing) while ALSO counting as ink, so the solver
+    // reaches the floor with a weaker gamma and no dilation at all and calls it done.
+    //
+    // Reproduced 2026-08-27 by re-running the packer with UI_ALPHA_TOE = 0, haze as a share of frame:
+    //   res_paper 1.3% -> 87.1%   res_sticker 6.3% -> 75.4%   res_graphite 18.3% -> 68.0%
+    // The bound below sits between those two clusters with room on both sides.
+    //
+    // Scoped by measurement rather than by a hard-coded list of "the lifted ones": a frame the solver
+    // lifted lands ON the floor, an untouched one sits above it. res_ink (46%) and res_metal (64%)
+    // carry their haze untouched and are legitimately over the bound — they were never lifted, and
+    // hard-coding them as exempt would silently mis-scope the day someone redraws paper heavier.
+    const UI_INK_FLOOR = 0.070;
+    const HAZE_MAX_FRAC = 0.40;   // share of the frame allowed at 1..40 alpha, once lifted
+    const sharp = (await import('sharp')).default;
+    const { data, info } = await sharp(`${MERGED_DIR}/world_atlas.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const offenders: string[] = [];
+    let lifted = 0;
+    for (const t of ['ink', 'paper', 'graphite', 'metal', 'sticker']) {
+      const f = (FRAMES[`res_${t}`] as unknown as { frame: { x: number; y: number; w: number; h: number } }).frame;
+      let m = 0, haze = 0;
+      for (let y = f.y; y < f.y + f.h; y++) {
+        for (let x = f.x; x < f.x + f.w; x++) {
+          const i = (y * info.width + x) * 4;
+          const a = data[i + 3]!;
+          const luma = (0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!) / 255;
+          m += (a / 255) * (1 - luma);
+          if (a > 0 && a <= 40) haze++;
+        }
+      }
+      // Landing within 5% of the floor is the solver's signature; anything higher was never touched.
+      if (m / (f.w * f.h) > UI_INK_FLOOR * 1.05) continue;
+      lifted++;
+      const frac = haze / (f.w * f.h);
+      if (frac > HAZE_MAX_FRAC) offenders.push(`res_${t} (${(frac * 100).toFixed(1)}% of the frame is 1..40 alpha)`);
+    }
+    expect(offenders).toEqual([]);
+    // If the lift ever stops firing at all, the loop above tests nothing and passes in silence.
+    expect(lifted).toBeGreaterThan(0);
+  });
+
+  it('keeps the map-editor copy of res_atlas byte-identical to the art/ one', async () => {
+    // pack_resources.cjs writes the same bytes to two places (OUT_DIRS): art/slg/slg-map/, a pipeline
+    // intermediate that only patchMergedAtlas.js reads, and tools/map-editor/src/assets/slg/, which
+    // map-editor imports directly as a shipped asset. Nothing checked they agree. They drift the
+    // moment anyone hand-edits one, re-runs an older packer, or trims a copy as "unused" — and the
+    // symptom is map-editor rendering different art from the game with both files looking fine.
+    const fs = await import('node:fs');
+    const A = `${__dirname}/../../../art/slg/slg-map`;
+    const B = `${__dirname}/../../../tools/map-editor/src/assets/slg`;
+    for (const f of ['res_atlas.png', 'res_atlas.json']) {
+      expect({ f, same: fs.readFileSync(`${A}/${f}`).equals(fs.readFileSync(`${B}/${f}`)) }).toEqual({ f, same: true });
+    }
+  });
+
   it('neither atlas PNG is palette-quantised, and the frames keep their alpha resolution', async () => {
     // Both PNGs in this pipeline were written with sharp's `palette: true` at some point, and in sharp
     // 0.32 ANY of palette/quality/colours/dither/effort silently switches on 8-bit quantisation. It was
