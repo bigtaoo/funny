@@ -53,8 +53,15 @@ export class ModalsPanel implements ModalsHandlers {
     const gateReason = buildGateReason(bld, key, toLevel);
     const cost = buildCost(key, toLevel);
     const timeSec = buildTimeSec(key, toLevel);
-    const queueEntry = (this.core.me?.buildQueue ?? []).find((q) => q.key === key);
-    const inQueue = !!queueEntry;
+    const queue = this.core.me?.buildQueue ?? [];
+    const inQueue = queue.some((q) => q.key === key);
+    // Only the HEAD entry gets a speed-up button (below), matching the build-queue bar. Deliberate,
+    // not an oversight: `POST /world/build/speedup` takes only `{coins}` — the server ignores `key`
+    // and burns coins × BUILD_SPEEDUP_SECS_PER_COIN off the queue **from the front**, spilling into
+    // later entries. Pricing a tail entry by its own remaining time would charge for time the
+    // server spends shortening a different build. Moot today (BUILD_QUEUE_SLOTS === 1), but this is
+    // the spot to revisit if the paid 2nd slot (§6) ever ships.
+    const headEntry = queue[0]?.key === key ? queue[0] : undefined;
     const canAfford =
       !gateReason &&
       Object.entries(cost).every(
@@ -179,7 +186,7 @@ export class ModalsPanel implements ModalsHandlers {
         gl.x = 10;
         gl.y = iy;
         panelRoot.addChild(gl);
-      } else if (queueEntry) {
+      } else if (inQueue) {
         const ql = st(t('city.upgrading'), FS.tiny, C.gold, true);
         ql.x = 10;
         ql.y = iy;
@@ -189,9 +196,12 @@ export class ModalsPanel implements ModalsHandlers {
         // speed-up button lived in the build-queue bar behind the modal, so the player had to
         // close the modal, tap it, and reopen. serverNow() for the same reason as actions.ts's
         // doSpeedup: the price shown must come off the server-corrected clock it charges against.
-        const secsLeft = Math.max(0, Math.ceil((queueEntry.completeAt - serverNow()) / 1000));
+        const secsLeft = headEntry
+          ? Math.max(0, Math.ceil((headEntry.completeAt - serverNow()) / 1000))
+          : 0;
         if (secsLeft > 0) {
-          const coins = Math.max(1, Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN));
+          // Same expression as renderBuildQueue's, deliberately: the two prices must agree.
+          const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
           const lbl = st(
             t('city.speedup').replace('{coins}', String(coins)),
             FS.tiny,

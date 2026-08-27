@@ -304,8 +304,11 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
   - 复用 `city.speedup` 文案与 `core.doSpeedup(key)`，即与队列条按钮同一条链路、同一套 `BUILD_SPEEDUP_SECS_PER_COIN` 定价；`serverNow()` 而非 `Date.now()` 算剩余秒，与 `actions.ts` 的 `doSpeedup` 口径一致（客户端本地时钟偏了会让展示价与实收价打架，comm-audit-2026-07-27 那笔）。
   - 按钮宽度按 `lbl.width + 16` 量出来后右对齐（`scaledTxt()` 只提 raster 分辨率、不改 fontSize，所以 `lbl.width` 已是面板局部坐标），德文最长的「Beschleunigen (1440 Münzen)」与左侧「Im Bau…」之间仍有明显留白。
   - `secsLeft <= 0` 时不画（队列条同规则）——那一瞬间条目正要被服务端清掉，画一颗 1 金币的按钮只会白扣。
-- 覆盖测试：`client/test/ui/cityModalSpeedup.ui.ts`（新文件 3 例）——在建时同行出现按钮且点击带着「该建筑 key + 按剩余时间算出的金币数」调 `speedupBuild`、剩余 0 秒不画、未排队建筑仍是普通「升级」按钮且不漏出加速命中。
-- 验证：`tsc --noEmit` 全绿、city 相关 4 个既有 UI 测试文件 96 例全绿；视觉核对走 Playwright stub-mount 路径（`web-e2e` + `views.showCity()` 喂一个带 `buildQueue` 的假 `worldApi`，无需后端/登录），中德两语各截一张，并用真实鼠标点击（scene 坐标 → CSS px）确认命中矩形落在按钮上：`speedupBuild('graphiteMill', 1440)`。
+  - **只给队首（head）**：`POST /world/build/speedup` 的请求体只有 `{coins}`——服务端**完全忽略 `key`**，把 `coins × 60s` 从队列**最前面**开始烧，烧不完才溢出到后面的条目（`worldsvc/src/city/buildings.ts`）。所以按队尾条目自己的剩余时间报价 = 收了钱去缩短另一座建筑。`BUILD_QUEUE_SLOTS === 1` 的今天不可达（队列里最多一条），但加速按钮是第一个能让非队首条目被点到的地方，故显式限定 `queue[0]?.key === key`；付费第二格（§6）真上线时回到这里重新设计（大概是「加速整条队列」而非「加速这一座」）。
+- 覆盖测试：`client/test/ui/cityModalSpeedup.ui.ts`（新文件 9 例）——同行出现按钮且点击带着「该建筑 key + 金币数」调 `speedupBuild`、**与建造队列条同价**（同一字符串在树里出现两次，两处报价不可能分叉）、**弹窗打开期间它是唯一可点的加速**（队列条那颗被 `hits = [backHit]` 丢掉，且新按钮不在队列条那一带）、**同行不重叠且命中矩形罩住自己的文字**、**连点两次只扣一次**（`bt.busy` 在途门；金币是真钱）、不足 1 分钟向上取整成 1 金币（不给白送）、剩余 0 秒不画、未排队建筑仍是普通「升级」按钮、队尾条目不给按钮（上一条）。
+- **变异验证**（逐个改坏源码确认用例会挂）：队首限定改回 `find()` → 队尾用例挂；`secsLeft > 0` 放宽成 `>= 0` → 2 例挂；按钮改左对齐 / 宽度写死 40 → 几何用例挂；删掉 `doSpeedup` 的 `bt.busy` 门 → 连点用例挂；弹窗价改成 `÷120` → 同价用例挂；删掉 `CityScene.render()` 里 `core.hits = [backHit]`（旧的命中泄漏 bug）→ 5 例挂。
+- **测试环境的量字限制**：headless `measureText` 是每字 7px 的平铺假值，所以几何断言钉的是**规则**（同行、不重叠、命中罩住文字），不是真实字宽；真实字宽靠中/德两语截图核对（德语 `Beschleunigen (1440 Münzen)` 是最长态）。
+- 验证：`tsc --noEmit -p tsconfig.test.json` 全绿、`test:ui` 232 文件 / 2197 例全绿；视觉核对走 Playwright stub-mount 路径（`web-e2e` + `views.showCity()` 喂一个带 `buildQueue` 的假 `worldApi`，无需后端/登录），中德两语各截一张，并用真实鼠标点击（scene 坐标 → CSS px）确认命中矩形落在按钮上：`speedupBuild('graphiteMill', 1440)`。
 
 ---
 
