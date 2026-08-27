@@ -79,6 +79,7 @@ export class AuctionService {
   listAuctions(...args: Parameters<AuctionServiceListing['listAuctions']>) { return this.listing.listAuctions(...args); }
   queryListings(...args: Parameters<AuctionServiceListing['queryListings']>) { return this.listing.queryListings(...args); }
   getMyListings(...args: Parameters<AuctionServiceListing['getMyListings']>) { return this.listing.getMyListings(...args); }
+  getMyBids(...args: Parameters<AuctionServiceListing['getMyBids']>) { return this.listing.getMyBids(...args); }
   purgeClosedListings(...args: Parameters<AuctionServiceListing['purgeClosedListings']>) { return this.listing.purgeClosedListings(...args); }
 
   // ── create ──

@@ -9,7 +9,7 @@
     "reason": "Thin one-line-per-endpoint forwarding facade over a composition split (2026-08-11). Every line exists because dozens of call sites across the codebase already call `apiClient.methodName(...)` directly; no shared/tangled state to separate, splitting the facade further would just fragment the forward list."
   },
   "net/WorldApiClient.ts": {
-    "lines": 546,
-    "reason": "Same thin-forwarding-facade shape as ApiClient.ts above (shrunk 712→534 by the 2026-08-11 composition conversion; 534→542 on 2026-08-14 adding setFamilyEmblem/setSectEmblem, two more one-line forwards for the new emblem-picker endpoints; 542→544 on 2026-08-19 re-exporting the WorldCityNodeView type for the published-city-node rendering fix; 544→546 on 2026-08-25 adding getCities, one one-line forward + its doc comment for the ADR-074 P1 wild-city siege-state refresh) — dozens of call sites already call `worldApi.methodName(...)` directly, so splitting the facade further would only fragment the forward list."
+    "lines": 553,
+    "reason": "Same thin-forwarding-facade shape as ApiClient.ts above (shrunk 712→534 by the 2026-08-11 composition conversion; 534→542 on 2026-08-14 adding setFamilyEmblem/setSectEmblem, two more one-line forwards for the new emblem-picker endpoints; 542→544 on 2026-08-19 re-exporting the WorldCityNodeView type for the published-city-node rendering fix; 544→546 on 2026-08-25 adding getCities, one one-line forward + its doc comment for the ADR-074 P1 wild-city siege-state refresh; 546→553 on 2026-08-27 adding getMyBids, one one-line forward + its doc comment plus the AuctionBidView type in both re-export lists, for the server-backed My-Bids tab) — dozens of call sites already call `worldApi.methodName(...)` directly, so splitting the facade further would only fragment the forward list."
   }
 }

@@ -3,7 +3,7 @@
 // claudedocs/client-modules.md's split-form priority note. core.ts re-exports everything from here
 // (`export * from './types'`) so existing `from './core'` import paths (and the legacy `from './base'`
 // callers, now updated to './core') keep resolving unchanged.
-import type { WorldApiClient, AuctionView } from '../../net/WorldApiClient';
+import type { WorldApiClient, AuctionBidView, AuctionView } from '../../net/WorldApiClient';
 import type { SaveData } from '../../game/meta/SaveData';
 
 export interface AuctionSceneCallbacks {
@@ -22,8 +22,13 @@ export interface AuctionSceneCallbacks {
    */
   reloadSave?(): Promise<void>;
   /**
-   * Current account id — used to derive "My Bids" (auctions I'm the current top bidder on)
-   * client-side from the already-loaded market list. Optional; without it the tab is empty.
+   * Current account id — marks my own listings in the Market tab (passive "your listing" marker instead
+   * of a dead Buy/Bid button) and flags a designated-buyer listing as exclusive to me. Optional.
+   *
+   * NOT what drives the My Bids tab any more: that used to be derived client-side by filtering the market
+   * list on `topBid.bidderId === myAccountId`, which by construction could only ever show listings I was
+   * LEADING — the moment someone outbid me the listing vanished from the tab. It now comes from
+   * `/auction/myBids` (server-side bid records), see core.myBids.
    */
   myAccountId?: string;
 }
@@ -64,4 +69,12 @@ export const AUCTION_POLL_SEC = 5;
 // market doesn't tear down and rebuild the body (which would fight scrolling) every 5s.
 export function auctionSig(list: AuctionView[]): string {
   return list.map((a) => `${a.auctionId}:${a.price}:${a.status}:${a.expireAt}:${a.buyerId ?? ''}`).join(',');
+}
+
+// Same idea for My Bids. The listing half alone isn't enough: `outcome` flips leading→outbid on someone
+// else's bid (which does move `price`, so that part is covered) but also won→lost at settlement, and my
+// own `myBid` changes when I raise — neither of which auctionSig would see, since a bid row's listing may
+// not even be in the market list any more once it closes.
+export function bidSig(list: AuctionBidView[]): string {
+  return list.map((b) => `${b.auction.auctionId}:${b.auction.price}:${b.auction.status}:${b.auction.expireAt}:${b.myBid}:${b.outcome}`).join(',');
 }

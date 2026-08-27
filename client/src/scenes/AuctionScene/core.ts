@@ -48,14 +48,14 @@ import { showToastMessage } from '../../net/log';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT, drawHeaderCurrency, headerCurrencyWidth } from '../../ui/widgets/SceneHeader';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
-import type { AuctionView } from '../../net/WorldApiClient';
+import type { AuctionBidView, AuctionView } from '../../net/WorldApiClient';
 import { WorldApiError } from '../../net/WorldApiClient';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
 import {
   type AuctionSceneCallbacks, type AucTab, type ItemClass, type AucFilter,
-  HUD_H, MATERIALS, AUCTION_POLL_SEC, auctionSig,
+  HUD_H, MATERIALS, AUCTION_POLL_SEC, auctionSig, bidSig,
 } from './types';
 
 export * from './types';
@@ -88,6 +88,14 @@ export class AuctionSceneCore {
   allFilter: AucFilter = '';
   allAuctions: AuctionView[] = [];
   myListings: AuctionView[] = [];
+  /**
+   * My Bids (GET /auction/myBids): every listing I have bid on, leading or not, live or settled. Server
+   * data rather than a filter over `allAuctions` — see AuctionSceneCallbacks.myAccountId for why the old
+   * client-side derivation could only ever show the ones I was winning.
+   */
+  myBids: AuctionBidView[] = [];
+  /** auctionId → my bid row; kept in sync with `myBids` by applyMyBids so renderAuctionCell can look one up per cell. */
+  myBidIndex = new Map<string, AuctionBidView>();
   loading = true;
   /** Seconds since the last background poll (accumulated in update()); fires pollRefresh() every AUCTION_POLL_SEC. */
   pollTimer = 0;
@@ -250,13 +258,15 @@ export class AuctionSceneCore {
     this.loading = true;
     this.render();
     try {
-      const [all, mine] = await Promise.all([
+      const [all, mine, bids] = await Promise.all([
         this.cb.worldApi.listAuctions(this.allFilter ? { itemType: this.allFilter } : undefined),
         this.cb.worldApi.getMyListings(),
+        this.cb.worldApi.getMyBids(),
       ]);
       this.allAuctions = all;
       this.myListings = mine;
-      this.lastSig = auctionSig(all) + '|' + auctionSig(mine);
+      this.applyMyBids(bids);
+      this.lastSig = auctionSig(all) + '|' + auctionSig(mine) + '|' + bidSig(bids);
     } catch { /* offline */ }
     this.loading = false;
     this.pollTimer = 0; // just refreshed — restart the background-poll clock
@@ -274,19 +284,28 @@ export class AuctionSceneCore {
     if (this.destroyed) return;
     let all: AuctionView[];
     let mine: AuctionView[];
+    let bids: AuctionBidView[];
     try {
-      [all, mine] = await Promise.all([
+      [all, mine, bids] = await Promise.all([
         this.cb.worldApi.listAuctions(this.allFilter ? { itemType: this.allFilter } : undefined),
         this.cb.worldApi.getMyListings(),
+        this.cb.worldApi.getMyBids(),
       ]);
     } catch { return; /* offline — keep last snapshot */ }
     if (this.destroyed || this.modalOpen || this.itemPickerOpen) return;
-    const sig = auctionSig(all) + '|' + auctionSig(mine);
+    const sig = auctionSig(all) + '|' + auctionSig(mine) + '|' + bidSig(bids);
     if (sig === this.lastSig) return; // nothing changed → skip the teardown/re-render
     this.allAuctions = all;
     this.myListings = mine;
+    this.applyMyBids(bids);
     this.lastSig = sig;
     this.render();
+  }
+
+  /** Store a fresh My-Bids snapshot and rebuild the per-auction lookup the cell renderer reads. */
+  private applyMyBids(bids: AuctionBidView[]): void {
+    this.myBids = bids;
+    this.myBidIndex = new Map(bids.map((b) => [b.auction.auctionId, b]));
   }
 
   // ── Price guardrail band (create-form reference price) ───────────────────────

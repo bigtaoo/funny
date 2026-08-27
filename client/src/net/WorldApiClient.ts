@@ -64,6 +64,7 @@ import type {
   PlayerProfileExtra,
   FamilyRole,
   AuctionView,
+  AuctionBidView,
   SectView,
   SectDetailView,
   SectVoteResult,
@@ -88,6 +89,7 @@ export type {
   FamilyJoinRequestView,
   FamilyMessageView,
   AuctionView,
+  AuctionBidView,
   NationView,
   SeasonView,
   WorldCityNodeView,
@@ -440,6 +442,11 @@ export class WorldApiClient {
 
   getMyListings(): Promise<AuctionView[]> {
     return this.auction.getMyListings();
+  }
+
+  /** Every listing I have bid on (leading, outbid, won or lost) — see ./WorldApiClient/auction.ts. */
+  getMyBids(): Promise<AuctionBidView[]> {
+    return this.auction.getMyBids();
   }
 
   getAuctionRefBand(
