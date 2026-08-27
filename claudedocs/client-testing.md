@@ -539,3 +539,19 @@ v1 的递增**比 v2 还猛**——它的毛病从来不是墨少，而是墨**�
 所以分成两半：
 - **不变量直接钉**：`codexStatChips.ui.ts` 直接调 `drawStatChips`，喂**夸张的** `maxW`/`maxH` 组合（自然宽度的 100%/60%/35%、以及只够一行的高度），断言 `row.height <= maxH` 且 `row.width <= maxW` 恒成立。把 `maxH` 从拟合公式里摘掉、或把行数搜索锁成 `n<=1`，这两条分别变红——即「高度预算」和「折行而不是压扁」各有一条守。
 - **真实几何只钉能钉的**：`cardCodexPortraitWidthAndText.ui.ts` 新增一例用 `getBounds()`（**不能用局部 `.x`/`.width`**——文字现在住在各自带缩放的行容器里）断言「名字 → 副标题 → 属性/未解锁」三段的上下顺序、且每段都在自己那张卡片的矩形内。它**不**声称覆盖折行溢出，文件注释里写明了原因并指向上面那半。
+
+## ⚠️ 静态扫描守卫：`split('\n')` + `$` 锚定 = 在 Windows 检出上恒假（2026-08-27，`icons_atlas` 重打包时顺手撞到）
+
+`client/test/cardSceneTabSwitchGuard.test.ts`（当天早些时候刚落地的守卫，逐行扫 `CardScene/*.ts` 里有没有裸 `core.tab =`）在本机 `npx vitest run` 直接红——而报出来的「违规行」正是 `list.ts` 里那句**解释这个守卫的注释**（注释文本里字面写着 `never a bare \`core.tab =\``）。守卫本来是防这个的：匹配前先 `line.replace(/\/\/.*$/, '')` 把行尾注释剥掉。
+
+**根因**：`text.split('\n')` 在 CRLF 检出上让每行都留着尾部 `\r`，而 `\r` 在 ECMAScript 里**是** LineTerminator——于是 `.` 不肯跨过它、不带 `m` 的 `$` 也不在它前面匹配，**整个剥注释的 replace 一个字符都没剥掉**。实测：
+
+```js
+"    // ... `core.tab =` ...\r".replace(/\/\/.*$/, '')  // → 原样返回，什么都没剥
+```
+
+**后果的形状值得记**：这个守卫在 CI（Linux，LF）永远绿，在每一个 Windows 检出上永远红。也就是说它既没有保护 CI，也把本地 `npm test` 变成了噪音——两头都失效，而且失效方向相反，看 CI 的人和跑本地的人不会得出同一个结论。
+
+**修法**：`text.split(/\r?\n/)`。改完做了双向验证：①守卫变绿；②往 `list.ts` 真塞一句 `core.tab = 'skins'`，守卫照样抓到并报对行号（说明修的是切分，不是把匹配放宽了）。
+
+**推广**：仓库里 `split('\n')` 有十几处，但只有**同时**做「逐行 + `$` 锚定 / 行尾注释剥离」的才会中招——只用来数行号（`src.slice(0, m.index).split('\n').length`）或只做 `includes` 的不受影响。审计过同类的 `no-debug-hooks-in-src` / `input-subscription-cleanup` / `sceneTitleIconCoverage` / `socialErrorWiring`，都不带 `$` 逐行正则，无需改。**写这类守卫时的判据一句话：一条以 `$` 结尾的逐行正则，正确性上限等于喂给它的那个 split。**
