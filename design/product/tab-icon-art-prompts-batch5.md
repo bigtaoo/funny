@@ -39,7 +39,7 @@
 
 | # | 位置 | i18n | 造型 | 避让 |
 |---|---|---|---|---|
-| 1 | 拍卖场 | `auction.title` | 竞价号牌（圆角牌+短柄，牌面空白） | 不是价签(`shopTabIcon`，有孔+绳)，不是拍卖锤(`bidTabIcon`，同屏还有"我的收购"tab) |
+| 1 | 拍卖场 | `auction.title` | 竞价号牌（圆角牌+短柄，牌面空白） | 不是价签(`shopTabIcon`，有孔+绳)，不是拍卖锤(`bidTabIcon`，同屏还有"我的竞拍"tab) |
 | 2 | 主城 | `city.title` | 城门楼（两侧塔楼+中间拱门+雉堞） | 不是房子(`homeTabIcon` 三角顶方屋) |
 | 3 | 全服排行榜 | `leaderboard.title` | 领奖台（三块，**中间最高、两侧等高**） | 不是递增柱状图(`statsTabIcon`)——这是本批最容易撞的一对 |
 | 4 | 个人设置 | `settings.title` | 齿轮 | — |

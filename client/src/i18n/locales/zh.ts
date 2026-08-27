@@ -1126,7 +1126,7 @@ export const zh = {
   'equipment.mail.invFull.body': '装备背包已满，本次抽到的装备在附件中，请先腾出背包空间再领取。',
   'auction.tabAll': '市场',
   'auction.tabMine': '我的拍卖',
-  'auction.tabBids': '我的收购',
+  'auction.tabBids': '我的竞拍',
   'auction.bidsEmpty': '暂无在拍的出价',
   'auction.leading': '领先中',
   'auction.create': '发布拍卖',
