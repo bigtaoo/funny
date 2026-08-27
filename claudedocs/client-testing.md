@@ -508,3 +508,13 @@ v1 的递增**比 v2 还猛**——它的毛病从来不是墨少，而是墨**�
 要命的是它「时好时坏」：同一个按钮，回放**播放中**能命中、**播完之后**就命中不了——因为 `ReplayScene.update()` 在 `ended` 之后不再调 `renderer.update()`，那条顺带刷到这棵子树的路径断了。读起来完全像产品 bug（「播完之后按钮就废了」），实际是测试环境。
 
 **做法**：hit 之前先 `scene.container.getBounds()` 强刷一遍变换（`Container.getBounds()` 在无 parent 时会走 `_tempDisplayObjectParent` + 递归 `updateTransform()`）。**别直接调 `container.updateTransform()`**——根节点没有 parent，它会在 `this.parent.transform` 上抛 NPE。
+
+## ⚠️ 两段式修复：从"会重置状态的那条入口"进去的测试，钉不住另一半（2026-08-27，皮肤页首屏空白）
+
+`CardScene` 皮肤页空白是两个原因叠加的（见 `design/game/CHARACTER_CARDS_DESIGN_IMPL.md` §10）：①两个页签共用一个 `scrollY`，切页签原样带过去；②`renderSkinsTab()` 的 clamp 写在绘制循环之后（先画再夹），所以那一帧全被 draw-cull 干掉。
+
+先写的 3 个回归用例都是**点侧栏页签**进衣柜的——而修复①里的 `setTab()` 会把偏移归零，于是**把 `skins.ts` 改回"先画再夹"，这 3 例照样全绿**：它们只钉住了①。补了一例直接塞越界 `scrollY` 再 render 一次（模拟"窗口缩放让网格在活着的偏移下变矮"）才真正钉住②，且实测在旧顺序下变红。
+
+同一轮里还删掉一个**空转**用例：本想用「没有角色被落在 `maxScroll` 之外」守 measure pass，把 `measureSkinCard` 故意低估 40% 它依然绿——留着只会给人虚假的安全感。
+
+**可复用的判断**：一个修复有 N 处改动，就要问「每一处单独回退，是否至少有一例会红」。用例走的入口如果顺手把状态复位了，它对下游那一段就是瞎的；照老规矩用 mutation 逐处验一遍（同本文档「拿重绘次数当断言」「跑不红的指标不要留在测试里」两条）。另外，源码级不变量（本例：切页签只能走 `setTab`，第三个裸 `core.tab =` 赋值不会让任何渲染测试红）适合单独一个静态扫描守卫——`test/cardSceneTabSwitchGuard.test.ts`，同 `headerCurrencyReserve.test.ts`/`sceneTitleIconCoverage.test.ts` 的手法，同样要用"把反例塞回去"验证它会报出准确行号。
