@@ -32,7 +32,6 @@ import {
   siegeSeedFromId,
   playerWorldId,
   resolveSiege,
-  provinceIdxAt,
   nationDefenseStrength,
   academyBuff,
   MARCH_MORALE_MAX,

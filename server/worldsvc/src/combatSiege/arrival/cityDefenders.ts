@@ -28,7 +28,6 @@ import {
   waveSeed,
   SLG_TEAM_INJURY_MS,
   NATION_BONUS_DEFENSE,
-  cityWaveBaseHp,
   cityDefenderFortifyMult,
   cityDefenderTeamFortify,
   cityDefenderBaseHp,
