@@ -247,3 +247,24 @@ ADR-074 P3 落地时冒出的两个拍板；都不是新玩法，而是「同一
 - **影响**：`worldsvc/src/core/citySiege.ts`（新 `inOwnSectProvince`）、`combatSiege/arrival.ts`（`inOwnNation` 的推导整段换掉，删掉 `nations` 读）、`combatSiege/arrival/cityDefenders.ts`（新文件：驻防队梯级）、`combatSiege/arrival/citySiege.ts`（梯级串联 + 种子偏移）、`db/cityDocs.ts`（`defenderLock` 退役）、`design/game/SLG_CITY_SIEGE_DESIGN.md` §10-P3 + §11。
 - **验证**：`worldsvc/test/city-siege.e2e.test.ts` 22 → 38 例（其中 6 例是驻防队与 §9 的新判据）、`city-payoff.e2e.test.ts` 13 例、`shared/test/citySiege.test.ts` +13 例；四条变异各自打红它自己那条用例。落地时被用例抓到一个真坑：守方梯级第一版漏了 `defenderBaseHp`，于是引擎的象征性基地按默认 `BASE_HP=100` 被一下打掉、战斗在守军参战前就结束——那一级**免费**，正是 citySiege.ts「差异①」实测记过的形状。
 - **P3 后新登记的开放项**：守方卡走**基础蓝图**（无等级/装备注入，`applyBaseSiege` 的 v1 限制，驻防队沿用同一条路），所以驻防队对高练度进攻方几乎不构成门槛。要不要给守方也做注入是一个独立待拍板项，登记在 `SLG_CITY_SIEGE_DESIGN.md` §11。
+
+## ADR-077 驻防队的练度花在「阵地基地 HP」上，不是花在守军自己的 HP 上 — Accepted — 2026-08-27
+
+ADR-076 结尾登记的那条开放项的收口：**守方卡走基础蓝图，驻防队对高练度进攻方几乎不构成门槛。**
+
+- **为什么真版（给守方做等级/装备注入）不做**：引擎的 `GameConfig.cardInstances`/`equipmentInv` **只有一份，没有 side 概念**（`buildCampaignBlueprints` 的注释原话就是 "no concept of which side"）。而这正是 2026-08-12 那次线上事故（zihao1 occupy-loss）修好的缝——`buildSiegeGarrisonBlueprints()` 现在是**无条件**的裸克隆，因为共享一份表意味着「你把步兵卡练高，同类型的守军跟着变强」。真做两侧注入的成本链条是：引擎新增 side-scoped 输入 → `ENGINE_VERSION` 抬版 → `ReplayInputSource` 版本校验 → 11 份 golden replay fixture 重生成 → `SiegeReplayInputs` 必须携带守方 cardInstances+equipInv（回放是**客户端本地重建**的）→ 存量 payload 变更 + Mongo 里已有回放的迁移。**这是一个独立 ADR，只在下面这条便宜路线被证明不够时才开。**
+- **便宜路线**：从守方自己的卡/装备算出一个**只读比值**，折成一个因子，花在「不用改引擎就能碰到」的那个数上。数据是白给的——`eligibleDefenders` 本来就 `getSaveFields(ownerId)` 无参数调用，返回的**同时**是 `cardInv` 和 `equipmentInv`，装备那一半此前被直接丢掉。
+- **决策（关键、也是本条最值得记的部分）：花在哪个数上是用 econ-sim 量出来的，而「显然的那个答案」量出来是错的。**
+  - **第一版实现花在守军自己的 `initialHp` 上**（更多兵可砍）。gate ⑦ 实测：一支有效 HP **32,508** 的满配驻防队让参考进攻方付 **1,209** 兵，而同一支队伍走裸蓝图是 **1,245**——**在噪声里，等于零**。
+  - **原因是结构性的**：战斗目标是 `destroy_base`，打的是一个刻意很小的 `cityWaveBaseHp`（L3 只有 135），而超时判**守方胜**。所以只要有**一个**进攻单位溜过守军摸到基地，这一级就结束了，守军还剩多少 HP 都无所谓——守军是个「拦」的杠杆，却有 10 条通道要拦，拦不住。econ-sim 的 `citySiege.ts` 早就写着 `waveBaseHp` 才是 "the dominant attrition lever, not the garrison"，只是那句话是站在 NPC 波次那边说的。
+  - **改花在这一级的象征性 `defenderBaseHp` 上**（语义：阵地被守方**加固**了，进攻方得在守军的火力里多站一会儿）。实测出一条真曲线（L3，参考进攻档，每次打通的兵耗）：**空城 1,073 → 裸 L1 驻防队 1,321 → 带装 L6 驻防队 2,975 → 满配驻防队直接把该档打回（0% 打通）**。
+  - **安全性也量了**（否则一支停好的队伍会让城池永久打不动、整个易主循环死掉）：满配驻防队把入场线从 raider 档抬到 **veteran 档**——veteran 仍能单人打通，付 3,019（空城 1,015）；满配进攻档付 2,503（空城 631）。**是门槛，不是墙。**
+- **形状**：`hp 比值 × attack 比值^CITY_DEFENDER_ATK_AS_HP`，逐卡算、按**兵数加权**成一支队伍一个因子，上限 `CITY_DEFENDER_FORTIFY_MAX`。
+  - **按兵数加权是防钻的**：不加权的话，「11 张空的 Lv.9 卡 + 1 张满的 Lv.1 卡」就能拿满因子。worldsvc 喂进去的是 `resolved`（每张卡的真实兵额）。
+  - 两个比值都落在同一根杠杆上，所以 `CITY_DEFENDER_ATK_AS_HP` 不是力学换算，而是「一张卡的投入里有多少该读成『这个阵地扎稳了』」的一句声明。取 1（全算）。
+  - 上限**今天不起作用**（满配也只到 ~9.03）。它存在的意义是：别处抬了成长率或 `EFFECT_CAPS` 时，一个由实测签过字的数不能被静默改掉——`shared/test/citySiege.test.ts` 断言饱和乘积仍在上限内，抬了就当场判红。
+- **replay 安全是白给的**：因子在开打**之前**折进 `defenderConfig.defenderBaseHp`，而那正是写进 `SiegeReplayInputs` 的东西。客户端用它**已经收到**的 payload 就能重建出一模一样的战斗——不动引擎、不抬 `ENGINE_VERSION`、不加字段、不迁移存量回放。
+- **明确没有买到的**：攻击、护甲、攻速、暴击、吸血、T3/T6/T9 特质全部仍是基线。**守方仍然「不太会打」，只是「不好啃」**。这就是便宜路线的诚实上限，写进了三处代码注释，免得下一个人以为是漏了。
+- **影响**：`engine/src/balance/pveUpgrades.ts`（新 `garrisonProgressionRatios`，只读比值）、`engine/src/index.ts`（导出面新增两项——**故意只导出数字、不导出蓝图表**，`buildPvpBlueprints` 连卡参数都没有，PvP 硬墙形状不变）、`shared/src/slg/citySiege.ts`（新 §P4 段：`cityDefenderFortifyMult` / `cityDefenderTeamFortify` / `cityDefenderBaseHp` + 两个常量）、`worldsvc/src/combatSiege/arrival/cityDefenders.ts`（`CityDefender.fortify`，`defenderConfig` 改用 `cityDefenderBaseHp`）、`econ-sim/src/citySiege.ts` + `citySiegeRun.ts`（驻防队梯级模型 + gate ⑦，三种杠杆并排打印）、`design/game/SLG_CITY_SIEGE_DESIGN.md` §11 + 新 §12、`ECONOMY_VERIFICATION_LOG.md` §13-SLG-CITYSIEGE。
+- **验证**：engine 335/335（含 2 条新守卫：只读比值不扰动 NPC 表与 PvP 表；裸 Lv.1 报 1.0 使 NPC 与玩家路径重合）、shared `citySiege.test.ts` 37 例、worldsvc 新 `cityDefenderProgression.test.ts` 15 例 + `city-siege.e2e.test.ts` 38 例、econ-sim `citySiege.test.ts` 35 例（其中 6 例把 gate ⑦ 的**测量结论**钉成 CI 回归，**包括「hp 杠杆不值钱」这一条**——不钉住的话，下一个读到 `cityDefenderBaseHp` 的人会很合理地觉得因子该放在守军身上，然后「修」回去）。`npm run city-siege` 五个门禁全 PASS。
+- **中途删掉的东西**：`worldsvc/src/siegeEngine.ts` 里的 `scaleArmyHpPerUnit` 是第一版（hp 杠杆）加的，换杠杆后成了死代码，已连同它的用例一起删除。

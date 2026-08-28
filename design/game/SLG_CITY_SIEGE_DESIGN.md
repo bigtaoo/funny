@@ -514,5 +514,78 @@ P1 只做「打得下来、守得住、看得见」，一座打下来的城**除
 | **公告没有「点进去看那座城」** | `body()` 已经在发 `node=<nodeId>`（`cityDamage.ts`），但 `systemText` 只做字符串插值，公告目前不可点。要做的话客户端得把 `node` 参数接到 `WorldMapInput.showCityPanel`；参数已经在线上，属于纯客户端增量 |
 | 城池血条 UI 必须显示绝对值 | §6.5：耐久是「大基数 + 小步长」，Lv.3 与 Lv.10 只差 22%，只显示百分比会被读成 bug |
 | 宗门人数上限对 §8.1 总 faucet 的影响 | 宗门 ≤900 人（`GW_PUSH_REDIS_CHANNEL` 注释口径）；满编宗门吃满上限时的全服 faucet 总量待 `SLG_ECONOMY_CHECK.md` 轨道 2（赛季资源）核算 |
-| **守方卡走基础蓝图（P3 后登记）** | 代码事实，且不是 P3 引入的：`applyBaseSiege` 的注释早就写着「v1: defender cards use base blueprints on defence（无等级/装备加成）」，驻防队沿用了同一条路。后果是一支练度高的 12 卡进攻队能打穿兵数高出两个数量级的驻防队——即 §P3 的驻防队对高练度进攻方**几乎不构成门槛**。要不要给守方也做等级/装备注入，是一个独立的待拍板项 |
+| ~~**守方卡走基础蓝图（P3 后登记）**~~ | ✅ **已拍板并落地（2026-08-27，ADR-077，见 §12）**：守方**仍然**走基础蓝图（真两侧注入要抬 `ENGINE_VERSION` + 重生成 golden replay + 改回放 payload，是独立 ADR），但驻防队的练度折成一个因子花在**这一级的象征性基地 HP** 上。实测：空城 1,073 → 裸 L1 驻防队 1,321 → 带装 L6 驻防队 2,975 兵。**注意**：第一版把因子花在守军自己的 HP 上，实测**等于零效果**，见 §12 |
 | §8.1 城池产量 vs 训练资源消耗（新增） | 满配档 8,640 兵/时 的训练吞吐需要 86,400 墨水/时，远超单人产出上限。P2 的持续输出率因此是**乐观上界**（假设有存货可倾，对门禁而言方向安全）；P3 接产量时要在轨道 2 里连带复核 |
+
+## 12. P4：驻防队练度 → 阵地加固（ADR-077，2026-08-27）
+
+§11 登记的「守方卡走基础蓝图、驻防队对高练度进攻方几乎不构成门槛」的收口。
+
+### 12.1 为什么不做「给守方也注入等级/装备」
+
+引擎的 `GameConfig.cardInstances`/`equipmentInv` **只有一份，没有 side 概念**（`buildCampaignBlueprints` 注释原话："no concept of which side"）。而这正是 **2026-08-12 那次线上事故**（zihao1 occupy-loss）修好的缝：`buildSiegeGarrisonBlueprints()` 现在是**无条件**裸克隆，因为共享一份表意味着「你把步兵卡练高，同类型的 NPC 守军跟着变强」。
+
+真做两侧注入的成本链条：
+
+引擎新增 side-scoped 输入 → `ENGINE_VERSION` 抬版 → `ReplayInputSource` 版本校验 → 11 份 golden replay fixture 重生成 → `SiegeReplayInputs` 必须携带守方 `cardInstances`+`equipInv`（**回放是客户端本地重建的**）→ 存量 payload 变更 + Mongo 里已有回放的迁移。
+
+这是一个**独立 ADR**，只在下面这条便宜路线被证明不够时才开。
+
+### 12.2 便宜路线，以及它的杠杆是量出来的（不是想出来的）
+
+从守方自己的卡/装备算一个**只读比值**（`garrisonProgressionRatios`，`@nw/engine`），折成一个因子，花在「不用改引擎就能碰到」的数上。数据白给：`eligibleDefenders` 本来就无参数调 `getSaveFields(ownerId)`，返回的**同时**是 `cardInv` 和 `equipmentInv`，装备那一半此前直接被丢掉。
+
+**第一版花在守军自己的 `initialHp` 上，实测等于零效果。** econ-sim gate ⑦（L3，参考进攻档，每次打通的兵耗）：
+
+| 守方 | 因子 | 不花（P3 现状） | 花在守军 HP | **花在基地 HP** | baseHp 下打通率 |
+|---|---|---|---|---|---|
+| starter（练兵 L0 / 卡 Lv.1 / 裸装） | 1.00× | 1,321 | 1,321 | 1,321 | 100% |
+| mid（L4 / Lv.4 / 裸装） | 1.77× | 1,260 | 1,245 | 1,604 | 100% |
+| raider（L6 / Lv.6 / 带装） | 6.14× | 1,247 | 1,245 | **2,975** | 100% |
+| veteran（L8 / Lv.8 / 带装） | 8.01× | 1,245 | 1,245 | **3,515** | 100% |
+| MAXED（L10 / Lv.9 / 带装 / 加速 / 攻城值最高卡组） | 9.03× | 1,209 | 1,209 | **∞** | **0%** |
+
+> 空城对照：同一座城无人驻防时每次打通付 **1,073** 兵。
+
+**「花在守军 HP」那一列为什么不动——这是本节最值得记的一条**：战斗目标是 `destroy_base`，打的是一个刻意很小的 `cityWaveBaseHp`（L3 只有 **135**），而**超时判守方胜**。所以只要有**一个**进攻单位溜过守军摸到基地，这一级立刻结束，守军还剩多少 HP 都无所谓——守军是个「拦」的杠杆，却有 10 条通道要拦，拦不住。一支有效 HP **32,508** 的满配驻防队和一支走裸蓝图的同一支队伍，让进攻方付的兵**在噪声里**（1,209 vs 1,245）。
+
+econ-sim 的 `citySiege.ts` 早就写着 `waveBaseHp` 才是 "the dominant attrition lever, not the garrison"——只是那句话是站在 NPC 波次那边说的，没人把它读到守方这边。
+
+**改花在这一级的象征性 `defenderBaseHp` 上**（语义：阵地被守方**加固**了，进攻方得在守军的火力里多站一会儿），当场量出一条真曲线，见上表。
+
+### 12.3 安全性：门槛而不是墙
+
+满配驻防队把参考进攻档（raider）整档打回，这**正是**这个功能想要的效果；但必须确认城池没有变成永久打不动，否则一支停好的队伍就能让整个易主循环死掉。同一次 gate ⑦（vs 满配驻防队，L3）：
+
+| 进攻档 | 有满配驻防队 | 打通率 | 空城对照 |
+|---|---|---|---|
+| starter / mid / mid+gear / raider | ∞ | 0% | ∞ / 2,513 / 1,698 / 1,073 |
+| veteran（L8 / Lv.8 / 带装） | **3,019** | 100% | 1,015 |
+| MAXED | **2,503** | 100% | 631 |
+
+结论：满配驻防队把**入场线从 raider 档抬到 veteran 档**，并让能打的那两档付 ~3–4 倍的兵。曲线是分档递进的（带装 L6 守方只把成本从 1,073 抬到 2,975，仍在 raider 档能力内），只有顶端才有硬墙。
+
+### 12.4 形状与常量
+
+真源 `server/shared/src/slg/citySiege.ts`：
+
+- `cityDefenderFortifyMult(hpRatio, atkRatio)` = `hpRatio × atkRatio^CITY_DEFENDER_ATK_AS_HP`，下钳 1、上钳 `CITY_DEFENDER_FORTIFY_MAX`。
+- `cityDefenderTeamFortify(cards)` = 按**兵数加权**的队伍因子。**加权是防钻的**：不加权的话「11 张空的 Lv.9 卡 + 1 张满的 Lv.1 卡」就能拿满因子；worldsvc 喂进去的是 `resolved`（每张卡的真实兵额）。
+- `cityDefenderBaseHp(level, fortify)` = `floor(cityWaveBaseHp(level) × fortify)`。**因子为 1 时逐单位等于 `cityWaveBaseHp`**，所以裸 Lv.1 驻防队复现 P4 之前的战斗。
+- `CITY_DEFENDER_ATK_AS_HP = 1`。两个比值都落在同一根杠杆上，所以它不是力学换算，而是「一张卡的投入里有多少该读成『这个阵地扎稳了』」的一句声明。
+- `CITY_DEFENDER_FORTIFY_MAX = 9.5`。**今天不起作用**（满配也只到 ~9.03）。它的意义是：别处抬了 `STAT_GROWTH_PER_LEVEL` 或 `EFFECT_CAPS` 时，一个由实测签过字的数不能被静默改掉——`shared/test/citySiege.test.ts` 断言饱和乘积仍在上限内，抬了就当场判红。
+
+### 12.5 replay 安全是白给的
+
+因子在开打**之前**折进 `defenderConfig.defenderBaseHp`，而那正是写进 `SiegeReplayInputs` 的东西。客户端用它**已经收到**的 payload 就能重建出一模一样的战斗——**不动引擎、不抬 `ENGINE_VERSION`、不加字段、不迁移存量回放**。`city-siege.e2e.test.ts` 直接断言存下来的 `defenderConfig.defenderBaseHp` 等于 `cityDefenderBaseHp(...)` 重算的值，所以这条性质是被钉住的而不是口头的。
+
+### 12.6 明确没有买到的
+
+攻击、护甲、攻速、暴击、吸血、T3/T6/T9 特质**全部仍是基线**，因为引擎只有一份 `cardInstances`。**守方仍然「不太会打」，只是「不好啃」。** 这是便宜路线的诚实上限，写进了 `pveUpgrades.ts` / `citySiege.ts` / gate ⑦ 三处，免得下一个人以为是漏了。
+
+真要让守方**会打**，走 §12.1 那条独立 ADR。
+
+### 12.7 仍然开放
+
+- **`teamSiegeValue` 不读装备**（§11 同名行）：**本轮刻意没动**，而且我最初把它和本条绑在一起是判断错的——两者是独立的。gate ③ 的 solo 封死本来就是**带着**装备通道量的（1.56× / 1.43× 那一行就是「假想通道」行），所以接上它**不会**破门禁；但它会把每个人的耐久伤害抬最多 1.6×，也就是把 §6.2 的「需要几十人」整张表往下拉最多 ~38%，而那张表是 §8.2「城池收益是宗门招人筹码」赖以成立的数字。**方向与本条相反**，是一个纯内容取向的独立拍板项。
+- gate ⑤ 的「需要几十人」表是按**无人驻防**的城算的（NPC 持有是绝大多数情形）。有驻防队时该表整体上移，量级见 §12.2/§12.3。
