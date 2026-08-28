@@ -26,6 +26,9 @@ import {
   shouldUseCheapSiege,
   shippedLadder,
   attackersFor,
+  defenderRung,
+  rungFieldedHp,
+  TIER_VETERAN,
 } from './citySiege';
 import {
   WILD_CITY_MIN_LEVEL,
@@ -41,6 +44,9 @@ import {
   SLG_TEAM_INJURY_MS,
   TROOP_CAP_BASE,
   cardTroopCap,
+  cityWaveBaseHp,
+  cityDefenderBaseHp,
+  CITY_DEFENDER_FORTIFY_MAX,
 } from '@nw/shared';
 
 const SEEDS = [1, 2, 3];
@@ -231,5 +237,86 @@ describe('citySiege: code facts the design doc assumed otherwise', () => {
     const small = { ...TIER_RAIDER, drillYard: 0, satchel: 0 };
     expect(damagePerSiege(small)).toBe(damagePerSiege(TIER_RAIDER));
     expect(marchTroops(small)).toBe(marchTroops(TIER_RAIDER)); // card caps bind, so troops do not even move
+  });
+});
+
+describe('citySiege: gate ⑦ — ADR-077 player-garrison fortification (§12)', () => {
+  // Locks in the MEASUREMENT that chose the lever, not just the shipped behaviour. The obvious
+  // implementation (scale the garrison's own HP) was built first and measured worthless; without a test
+  // saying so, the next person to read `cityDefenderBaseHp` will reasonably wonder why the factor is not
+  // on the garrison and "fix" it back.
+  const weakest = shippedLadder(WILD_CITY_MIN_LEVEL);
+  const bareRung = defenderRung(TIER_STARTER);
+  const gearedRung = defenderRung(TIER_RAIDER);
+  const maxedRung = defenderRung(TIER_WHALE);
+
+  it('an unprogressed garrison earns a factor of exactly 1 and leaves the rung as the NPC waves have it', () => {
+    expect(bareRung.fortify).toBe(1);
+    expect(cityDefenderBaseHp(WILD_CITY_MIN_LEVEL, bareRung.fortify)).toBe(cityWaveBaseHp(WILD_CITY_MIN_LEVEL));
+  });
+
+  it('a geared roster earns a real factor, bounded by the ceiling', () => {
+    expect(gearedRung.fortify).toBeGreaterThan(2);
+    expect(maxedRung.fortify).toBeGreaterThan(gearedRung.fortify);
+    expect(maxedRung.fortify).toBeLessThanOrEqual(CITY_DEFENDER_FORTIFY_MAX);
+  });
+
+  it('the REJECTED hp lever is worth nothing — this is why base HP is the shipped lever', () => {
+    // The finding, pinned. A maxed garrison fielding several times its own troop count in effective HP
+    // costs the reference attacker the same as the same team on bare blueprints, because the objective is
+    // destroy_base against a small cityWaveBaseHp and one attacker unit slipping past ends the rung.
+    expect(rungFieldedHp(maxedRung)).toBeGreaterThan(3 * maxedRung.army.reduce((a, e) => a + (e.initialHp ?? 0), 0));
+    const none = measureSiege(TIER_RAIDER, { ...weakest, defenders: [maxedRung], defenderLever: 'none' }, SEEDS);
+    const hp = measureSiege(TIER_RAIDER, { ...weakest, defenders: [maxedRung], defenderLever: 'hp' }, SEEDS);
+    expect(hp.clearRate).toBe(none.clearRate);
+    expect(Math.abs(hp.troopCost - none.troopCost) / none.troopCost).toBeLessThan(0.05);
+  });
+
+  it('the SHIPPED baseHp lever produces a real, monotone cost curve', () => {
+    const undefended = measureSiege(TIER_RAIDER, weakest, SEEDS);
+    const vsBare = measureSiege(TIER_RAIDER, { ...weakest, defenders: [bareRung] }, SEEDS);
+    const vsGeared = measureSiege(TIER_RAIDER, { ...weakest, defenders: [gearedRung] }, SEEDS);
+    // Default lever is 'baseHp' — the shipped one — so these three are the real curve.
+    expect(vsBare.troopCost).toBeGreaterThan(undefended.troopCost);
+    expect(vsGeared.troopCost).toBeGreaterThan(vsBare.troopCost);
+    // Worth stating in numbers: a geared garrison roughly doubles the price of an assault. If a retune
+    // ever flattens this below 1.5x, the feature has quietly stopped being a threshold again.
+    expect(vsGeared.troopCost / undefended.troopCost).toBeGreaterThan(1.5);
+  });
+
+  it("P3's rule survives: no garrison, at any tier, is cheaper for the attacker than no garrison at all", () => {
+    // A city defended by weak teams must never be EASIER to break than an NPC-held one — otherwise
+    // parking a team is a way to help your attacker, and ADR-074 P3's additive ladder was pointless.
+    const undefended = measureSiege(TIER_RAIDER, weakest, SEEDS);
+    for (const dt of TIERS) {
+      const rung = defenderRung(dt);
+      for (const lever of ['none', 'hp', 'baseHp'] as const) {
+        const c = measureSiege(TIER_RAIDER, { ...weakest, defenders: [rung], defenderLever: lever }, SEEDS);
+        if (!Number.isFinite(c.troopCost)) continue;      // repelled outright: strictly harder, not cheaper
+        expect(c.troopCost, `${dt.name} / ${lever}`).toBeGreaterThanOrEqual(undefended.troopCost - 1);
+      }
+    }
+  });
+
+  it('a maxed garrison raises the entry bar without making the city untakeable', () => {
+    // The safety property. A maxed garrison repels the reference raider tier outright — that is the point
+    // of the feature — but a veteran-tier attacker must still get through, or one well-parked team makes a
+    // city permanently unbreakable and the whole capture loop dies.
+    const vsRaider = measureSiege(TIER_RAIDER, { ...weakest, defenders: [maxedRung] }, SEEDS);
+    const vsVeteran = measureSiege(TIER_VETERAN, { ...weakest, defenders: [maxedRung] }, SEEDS);
+    expect(vsRaider.clearRate).toBe(0);
+    expect(vsVeteran.clearRate).toBeGreaterThan(0);
+    expect(vsVeteran.troopCost).toBeGreaterThan(measureSiege(TIER_VETERAN, weakest, SEEDS).troopCost);
+  });
+
+  it('defender rungs run AHEAD of the NPC ladder and never replace a wave', () => {
+    // P3's structural rule, checked through the simulator rather than by reading it: the NPC wave count is
+    // untouched by the presence of a garrison, so the troop-cost floor gate ③ is calibrated on survives.
+    const withGarrison = simulateLadder(TIER_VETERAN, { ...weakest, defenders: [bareRung] }, 1);
+    const without = simulateLadder(TIER_VETERAN, weakest, 1);
+    expect(withGarrison.waves).toBe(without.waves);
+    expect(withGarrison.wavesCleared).toBe(without.wavesCleared);
+    expect(withGarrison.defendersCleared).toBe(1);
+    expect(without.defendersCleared).toBe(0);
   });
 });

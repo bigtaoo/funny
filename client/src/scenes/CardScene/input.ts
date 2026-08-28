@@ -8,7 +8,7 @@
 // so nothing here is part of the scene's outward surface.
 import type { InputManager } from '../../inputSystem/InputManager';
 import { wheelScrollY } from '../../ui/wheelScroll';
-import type { Rect } from './types';
+import type { Rect } from './logic/types';
 import type { CardSceneCore } from './core';
 
 function inRect(x: number, y: number, r: Rect): boolean {

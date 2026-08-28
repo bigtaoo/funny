@@ -118,11 +118,53 @@ export default defineConfig({
         'src/render/vfx/sampleParam.ts',
         // scenes: the already-extracted pure modules — exactly the shape ADR-070's client half will
         // produce more of, one scene at a time (4b)
-        'src/scenes/CardScene/feedPlan.ts',
         'src/scenes/EquipmentScene/helpers.ts',
         'src/scenes/EquipmentScene/layout.ts',
         'src/scenes/LobbyScene/format.ts',
         'src/scenes/realLayerInterludeArt.ts',
+        // 4b, first scene group (2026-08-27): worldmap's pure layer is now a DIRECTORY, which is the
+        // shape ADR-070 asked for — five per-file entries collapsed into one entry that also picks up
+        // whatever lands there next. `test/pureLayerBoundary.test.ts` is what keeps it a pure layer;
+        // this percentage does not (see that file's header for why the 90% bar cannot guard a boundary).
+        'src/scenes/worldmap/logic/**',
+        // 4b, second scene group (2026-08-27): CardScene. Three PIXI-free modules — cardSort,
+        // feedPlan, types — collapse the single `CardScene/feedPlan.ts` entry above into a directory.
+        // The two files that did NOT move, on purpose: `input.ts` is the pointer plumbing and
+        // `header.ts` the title bar; both are Core collaborators that read and write `core.*` (and
+        // header.ts draws), i.e. the same call ADR-071 4b made for WorldMapRenderer/viewport.ts.
+        // Neither is gated per-file either — unlike viewport.ts they have no fake-ctx suite to gate.
+        'src/scenes/CardScene/logic/**',
+        // 4b, groups THREE and FOUR (2026-08-27): FriendsScene/FamilyScene/SectScene and ui/dialogs
+        // get NO logic/ directory, and that is the finding rather than a shortcut. Measured with the
+        // pureLayerBoundary algorithm over every file in all four: `ui/dialogs` has ZERO PIXI-free
+        // modules (all 7 import pixi.js-legacy directly and call txt/sketchPanel — it is drawing code
+        // wall to wall), and in the three social scenes the only PIXI-free files are two type-only
+        // `types.ts` (below this list's ~10-executable-line floor) plus the pointer/input modules,
+        // which are Core collaborators, not pure logic. 4b's priority list was built from lines x bug
+        // frequency, which says nothing about whether a pure layer EXISTS to extract; worldmap and
+        // CardScene had one because earlier 500-line splits had already produced it, and these two
+        // groups' splits went along a different axis. See ADR-071's 4b progress entry.
+        //
+        // What the survey did find worth fixing: these two carry the tap-vs-drag routing, the modal
+        // interception order and the per-column scroll clamp for two whole scenes — 140 and 136 lines,
+        // three documented past bugs between them — with no direct test of ANY kind (test/ui's
+        // socialScrollTranslate.ui.ts drives FriendsScene, a different file). Gated per-file with a
+        // fake-core suite, exactly the treatment WorldMapRenderer/viewport.ts got, and for the same
+        // reason: testable arithmetic on a collaborator, so gate it where it lives instead of moving it
+        // somewhere that would make the boundary guard a lie.
+        'src/scenes/FamilyScene/pointer.ts',
+        'src/scenes/SectScene/pointer.ts',
+        // ...and FriendsScene's equivalent, added when the third scene of that group got its own
+        // suite (test/friendsSceneInputRouting.test.ts). NOT the same code as the other two: own drag
+        // tracking instead of ScrollTapGesture, a 2D hypot threshold of 8 rather than the gesture's 6,
+        // modal taps firing on up with no drag-cancel, and both scroll clamps in the file. Unlike them
+        // it does import PIXI transitively (via ./core, for clamp/DRAG_THRESHOLD), which is why it is
+        // gated per-file here and not a candidate for any logic/ directory.
+        'src/scenes/FriendsScene/input.ts',
+        // ...and one file that did NOT move, on purpose: WorldMapRendererViewport is a renderer
+        // collaborator, not pure logic — it mutates `core.ctx` and calls into pool/panels/net. Its
+        // arithmetic happens to be testable with a fake ctx (95.8% before this pass), which is why it is
+        // gated at all, but moving it into `logic/` would make the boundary guard a lie.
         'src/scenes/worldmap/WorldMapRenderer/viewport.ts',
         // ui
         'src/ui/busyTracker.ts',

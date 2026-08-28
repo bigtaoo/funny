@@ -200,7 +200,10 @@ export async function startReturnMarch(
   const by = core.coordY(pw.mainBaseTile);
   try {
     const path = await computeMarchPath(core, worldId, x, y, bx, by, ownerId);
-    const arriveAt = t + marchDurationFromPath(path) * 1000;
+    // ADR-074 §8.3 applies to the walk home too — it is the same march clock, and exempting return legs
+    // would make the discount depend on which direction a team is facing.
+    const speedMult = (await core.sectPayoff(pw.sectId)).marchMult;
+    const arriveAt = t + marchDurationFromPath(path, speedMult) * 1000;
     const back: MarchDoc = {
       _id: marchId(worldId, ownerId, t, ++core.marchSeq),
       worldId,
@@ -214,6 +217,7 @@ export async function startReturnMarch(
       ...(leaderUnitType ? { leaderUnitType } : {}),
       departAt: t,
       arriveAt,
+      ...(speedMult !== 1 ? { speedMult } : {}),
       status: 'marching',
       ...legBox(x, y, bx, by),
       rev: 0,

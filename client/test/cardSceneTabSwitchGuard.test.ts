@@ -27,10 +27,12 @@ const SRC_ROOT = path.resolve(__dirname, '../src');
 const CORE = 'scenes/CardScene/core.ts';
 
 function cardSceneFiles(): { rel: string; text: string }[] {
-  const dir = path.join(SRC_ROOT, 'scenes/CardScene');
-  const files = fs.readdirSync(dir)
-    .filter((n) => n.endsWith('.ts'))
-    .map((n) => `scenes/CardScene/${n}`);
+  // Recursive on purpose: `logic/` arrived 2026-08-27 (ADR-071 4b) and a non-recursive readdir
+  // would have quietly stopped scanning whatever moves in there next.
+  const walk = (rel: string): string[] =>
+    fs.readdirSync(path.join(SRC_ROOT, rel), { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(`${rel}/${e.name}`) : e.name.endsWith('.ts') ? [`${rel}/${e.name}`] : []);
+  const files = walk('scenes/CardScene');
   files.push('scenes/CardScene.ts'); // the assembly shell (showTab lives here)
   return files.map((rel) => ({ rel, text: fs.readFileSync(path.join(SRC_ROOT, rel), 'utf8') }));
 }
@@ -57,7 +59,13 @@ describe('CardScene tab switches go through setTab (2026-08-27 blank-wardrobe fi
     const offenders: string[] = [];
     for (const { rel, text } of files) {
       if (rel === CORE) continue; // setTab + the initialTab default in the constructor
-      text.split('\n').forEach((line, i) => {
+      // `/\r?\n/`, not `'\n'`: on a CRLF checkout every line keeps a trailing `\r`, and `\r` IS an
+      // ECMAScript LineTerminator — so `.` refuses to cross it and the `$`-anchored comment strip
+      // below matched nothing at all. The line that then got flagged as an offender was list.ts's own
+      // explanatory comment — the prose this guard exists NOT to match — so the suite was red on
+      // every Windows checkout while staying green in CI. A per-line regex ending in `$` is only as
+      // correct as the split that fed it.
+      text.split(/\r?\n/).forEach((line, i) => {
         // Comments legitimately spell the anti-pattern out (list.ts says "never a bare `core.tab =`"),
         // so strip them before matching instead of matching the prose.
         const code = line.replace(/\/\/.*$/, '').replace(/^\s*\*.*$/, '');

@@ -21,7 +21,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { initI18n } from '../../src/i18n';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
-import { HUD_H } from '../../src/scenes/worldmap/constants';
+import { HUD_H } from '../../src/scenes/worldmap/logic/constants';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 
 const memStore = (() => {

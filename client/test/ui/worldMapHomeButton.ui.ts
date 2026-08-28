@@ -15,7 +15,7 @@ import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import { WorldMapContext, type WorldMapCallbacks } from '../../src/scenes/worldmap/WorldMapContext';
 import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
-import { HUD_H } from '../../src/scenes/worldmap/constants';
+import { HUD_H } from '../../src/scenes/worldmap/logic/constants';
 import type { ILayout } from '../../src/layout/ILayout';
 
 const memStore = (() => {

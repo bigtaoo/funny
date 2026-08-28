@@ -13,8 +13,9 @@
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles); tabs/fields are located by
 // their rendered label text, not by hit-array index, so a reorder doesn't mask a real regression.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
+import { resetSharedStubTexture } from '../harness/sharedStubTexture';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
@@ -128,6 +129,11 @@ function buildShop(cb: Partial<ShopSceneCallbacks>): ShopScene {
     ...cb,
   });
 }
+
+// Every *.png in this suite stubs to ONE data URI, so `getArtTexture`/`PIXI.Texture.from` hand back a
+// single shared BaseTexture and the skin-art test below flips it valid for good. Reset per test so no
+// later test inherits a 'already loaded' texture — see harness/sharedStubTexture.ts.
+beforeEach(resetSharedStubTexture);
 
 describe('ShopScene — group nav is a bottom bar in portrait, not a horizontal header strip', () => {
   it('lays [Shop|Coins|Gacha|BattlePass] out left-to-right in one bottom bar (portrait)', () => {
@@ -704,8 +710,10 @@ describe('ShopScene — skin card art waits for texture load, then re-renders it
 
   it('draws no art sprite while the texture is loading, then a correctly-sized one once it loads', async () => {
     const tex = PIXI.Texture.from(infantryArtUrl as string);
-    // Pin the pre-load state deterministically: the headless Image never fires onload, but the global
-    // texture cache is shared across tests in this file, so an earlier render may have left it valid.
+    // Pin the pre-load state deterministically. The beforeEach above already resets the shared stub
+    // texture (this file's `.valid = true` below outlives its own test otherwise — every *.png stubs
+    // to ONE data URI and getArtTexture shares PIXI's global cache, so this is the same BaseTexture
+    // every other portrait uses); this line stays as a local, explicit statement of the premise.
     tex.baseTexture.valid = false;
 
     const scene = buildShop({
@@ -719,8 +727,11 @@ describe('ShopScene — skin card art waits for texture load, then re-renders it
     expect(artSprites(scene.container, tex.baseTexture)).toHaveLength(0);
 
     // Texture finishes decoding: give it a real size, mark valid, and fire the events drawCard's
-    // once('loaded') hook is waiting on. 'update' refreshes the Texture frame (so orig size > 0);
-    // 'loaded' triggers the scene's re-render.
+    // once('loaded') hook is waiting on. The 'update' emit BEFORE 'loaded' is load-bearing, not
+    // belt-and-braces: it is what resyncs Texture.frame, because PIXI's own hook for that
+    // (`baseTexture.once('loaded', onBaseTextureUpdated)` in Texture's constructor) is a ONE-SHOT and
+    // is spent by the first test in the run that emits it — see harness/sharedStubTexture.ts for the
+    // flake this caused in two other files on 2026-08-27.
     tex.baseTexture.valid = true;
     tex.baseTexture.width = 64;
     tex.baseTexture.height = 64;

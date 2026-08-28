@@ -1,5 +1,11 @@
-// worldsvc nation-bonus end-to-end (S8-6.5 / G1, §2.4, ADR-034): real Mongo + fake clock.
-//   Ownership determination v1: a tile falls within the province (angle-sector+ring) of a capital occupied by the tile's owner → bonus applies.
+// worldsvc province-bonus end-to-end (S8-6.5 / G1, §2.4, ADR-034; re-keyed by ADR-074 §9 / ADR-076): real
+// Mongo + fake clock.
+//   Ownership determination: a tile falls within the province of a capital whose CITY the tile owner's SECT
+//   holds → the defence bonus applies. Until 2026-08-27 the predicate was `nations.ownerId === owner`, an
+//   account-level field that had had no writer since ADR-074 P0 deleted `applyNationChange` — so the bonus
+//   this file exists to isolate was, in production, reaching nobody. `ownProvince` below therefore sets
+//   `CityDoc.ownerSectId`, and `ownNationLegacy` still writes the old field so one case can prove it is
+//   ignored. The PRODUCTION half of the pair was retired outright (double-counts §8.1's city table).
 //   ① Production bonus: tiles in own capital region yield ×(1+NATION_BONUS_PRODUCTION); no national affiliation → raw yield (control case).
 //   ② Defense bonus: garrison in own capital region → effective garrison ×(1+NATION_BONUS_DEFENSE), raising the conquest threshold (defender wins with equal attack);
 //      no national affiliation → same attack breaks through (control case, confirming the bonus comes from nationality).
@@ -101,7 +107,37 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
   };
 
   /** Makes an account own a capital (writes NationDoc directly, bypassing the siege nation-founding flow). */
-  async function ownNation(capitalIdx: number, accountId: string): Promise<void> {
+  /**
+   * Give `accountId`'s sect the province capital's CITY — the predicate the bonus reads since ADR-076.
+   * Creates the sect on the fly (these fixtures have no social setup of their own) and mirrors it onto
+   * playerWorld, which is where `inOwnSectProvince` looks.
+   */
+  async function ownProvince(capitalIdx: number, accountId: string): Promise<void> {
+    const sectId = `sect-${accountId}`;
+    await m.collections.sects.updateOne(
+      { _id: sectId },
+      { $set: { _id: sectId, worldId: W, name: sectId, tag: 'TG', memberFamilyCount: 1, allySectIds: [], prosperity: 0, rev: 0 } },
+      { upsert: true },
+    );
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, accountId) }, { $set: { sectId } });
+    // The capital city document for this province. `initCities` is not run by this file's fixtures (they
+    // predate ADR-074), so the doc is written directly — only `kind`/`provinceIdx`/`ownerSectId` matter here.
+    const [cx, cy] = CAPS[capitalIdx]!;
+    await m.collections.cities.updateOne(
+      { _id: `city:${W}:capital-${capitalIdx}` },
+      {
+        $set: {
+          worldId: W, nodeId: `capital-${capitalIdx}`, kind: 'capital', provinceIdx: capitalIdx,
+          x: cx, y: cy, footprint: 9, level: 10, ownerSectId: sectId,
+          durability: 1, durabilityMax: 1, durabilityRegenAt: nowMs, regenPerHour: 0, rev: 0,
+        },
+      },
+      { upsert: true },
+    );
+  }
+
+  /** Writes the PRE-ADR-076 `nations.ownerId` field. Kept only to prove nothing reads it any more. */
+  async function ownNationLegacy(capitalIdx: number, accountId: string): Promise<void> {
     const [cx, cy] = CAPS[capitalIdx]!;
     const doc: NationDoc = {
       _id: `nation:${W}:${capitalIdx}`,
@@ -173,32 +209,36 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
 
   // ── Production bonus ──
 
-  it('production bonus: occupy tile in own capital Voronoi region → yield ×(1+NATION_BONUS_PRODUCTION)', async () => {
+  // ADR-074 P3 / §9 RETIRED this bonus (this case asserted it until 2026-08-27). A province capital's
+  // economic value is now paid by SLG_CITY_SIEGE_DESIGN §8.1's flat city table, so leaving the +10% here
+  // would pay twice for the same conquest — and P0 had already made it unreachable in production by
+  // deleting `applyNationChange` and unsetting `nations` ownership at season open, so the only thing still
+  // exercising it was this test. Inverted rather than deleted: the removal is the property worth pinning,
+  // because a well-meaning re-add is exactly how a double-count comes back.
+  it('production bonus is GONE (§9): owning the capital region no longer amplifies tile yield', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const r = findCoord((t) => t.type === 'resource', 8, 8);
+    const r = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 8, 8);
     const proc = proceduralTile(W, r.x, r.y);
     const rt = proc.resType as ResourceType;
-    // a occupies the (5,5) main base and the capital region containing (r).
+    // a owns the (5,5) main base AND the capital region containing (r) — the exact precondition that used to
+    // grant the bonus, asserted through BOTH spellings of it so the removal cannot be mistaken for "the new
+    // predicate just isn't set up": the legacy `nations.ownerId` field AND ADR-076's `CityDoc.ownerSectId`.
     const baseCap = provinceIdxAt(5, 5);
     const rCap = provinceIdxAt(r.x, r.y);
-    await ownNation(baseCap, 'a');
-    if (rCap !== baseCap) await ownNation(rCap, 'a');
+    await ownNationLegacy(baseCap, 'a');
+    await ownProvince(baseCap, 'a');
+    if (rCap !== baseCap) { await ownNationLegacy(rCap, 'a'); await ownProvince(rCap, 'a'); }
     await svc.occupyTile(W, 'a', r.x, r.y);
 
     const rate = (await svc.getMe(W, 'a')).yieldRate!;
-    // Resource tile yield gets the bonus: floor(base*level * 1.1).
     const rawResource = RESOURCE_YIELD_BASE * Math.max(1, proc.level);
-    const expectedResource = Math.floor(rawResource * (1 + NATION_BONUS_PRODUCTION));
-    // This resource type's yield comes only from this tile (main base produces ink and does not pollute non-ink resources). When rt==='ink' the main base contribution stacks.
-    if (rt !== 'ink') {
-      expect(rate[rt]).toBe(expectedResource);
-      expect(rate[rt]).toBeGreaterThan(rawResource); // bonus is definitely applied
-    } else {
-      expect(rate.ink).toBeGreaterThan(rawResource); // at least amplified
-    }
+    expect(rate[rt]).toBe(rawResource);
+    // Spelled out so a re-add fails loudly rather than by an off-by-10%: the old expectation, now wrong.
+    expect(rate[rt]).not.toBe(Math.floor(rawResource * (1 + NATION_BONUS_PRODUCTION)));
+    // ...and the control case below must now be indistinguishable from this one.
   });
 
-  it('control — no national affiliation: occupying the same tile yields the raw value (no bonus)', async () => {
+  it('control — no national affiliation: the same raw value, i.e. nationality now changes nothing', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const r = findCoord((t) => t.type === 'resource' && t.resType !== 'ink', 8, 8);
     const proc = proceduralTile(W, r.x, r.y);
@@ -215,7 +255,7 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, 500);
-    await ownNation(provinceIdxAt(tgt.x, tgt.y), 'b');
+    await ownProvince(provinceIdxAt(tgt.x, tgt.y), 'b'); // ADR-076: b's SECT holds the province capital's CITY
     await connect(svc, 'a', tgt); // ADR-039: border the target before attacking
 
     // Authoritative engine (G3-2b, §16 / ADR-026 siege-value tuning): 660 troops can defeat 500 defenders
@@ -233,7 +273,25 @@ describe.skipIf(!mongo)('worldsvc nation-bonus e2e', () => {
     expect(siege?.outcome).toBe('defender_win');
   });
 
-  it('control — defender has no national affiliation: same attack conquers the tile (confirms bonus comes from nationality)', async () => {
+  it('the LEGACY nations.ownerId alone grants nothing — the same attack conquers (ADR-076 re-key)', async () => {
+    // The other half of the re-key, and the one that would have gone unnoticed: before ADR-076 this exact
+    // fixture was what the defence case above used, and it was already reaching nobody in production because
+    // no code path writes `nations.ownerId` any more. Pinning it means a revert to the account-level
+    // predicate fails here rather than silently restoring a dead bonus.
+    await svc.joinWorld(W, 'a', 5, 5);
+    const tgt = findCoord(NON_BLOCKING, 10, 5);
+    await setupDefender('b', tgt.x, tgt.y, 500);
+    await ownNationLegacy(provinceIdxAt(tgt.x, tgt.y), 'b'); // legacy field only — no city, no sect
+    await connect(svc, 'a', tgt);
+
+    const mv = await svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 660);
+    nowMs = mv.arriveAt;
+    expect(await svc.processDueArrivals()).toBe(1);
+    const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
+    expect(siege?.outcome).toBe('attacker_win');
+  });
+
+  it('control — defender has no province affiliation: same attack conquers the tile (confirms bonus comes from the capital city)', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     const tgt = findCoord(NON_BLOCKING, 10, 5);
     await setupDefender('b', tgt.x, tgt.y, 500); // b is given no capital

@@ -92,7 +92,13 @@ async function mergeGroup({ name, outDir, outBase, maxWidth, sources }) {
 
   await sharp({ create: { width: canvasW, height: canvasH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .composite(composites)
-    .png({ compressionLevel: 9, effort: 10 })
+    // `compressionLevel` ONLY. This line is the ROOT CAUSE of the palette-8 merged pages
+    // (claudedocs/file-formats.md): in sharp 0.32 any of `palette`/`quality`/`colours`/`dither`/
+    // `effort` silently switches pngsave to 8-bit quantisation, and `effort: 10` alone was enough.
+    // All three pages it produced (world_atlas, decor_merged_atlas, icons_atlas) had to be re-encoded
+    // one at a time via patchMergedAtlas.js between 2026-08-19 and 2026-08-27 — fixing it HERE too so
+    // reviving mergeAssetAtlases.js (or adding a new group) cannot mint a fourth.
+    .png({ compressionLevel: 9 })
     .toFile(outPng);
 
   const atlasJson = {

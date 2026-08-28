@@ -6,7 +6,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, scaledTxt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { formatDuration, dhmsFromMs } from '../worldmap/formatDuration';
+import { formatDuration, dhmsFromMs } from '../worldmap/logic/formatDuration';
 import { serverNow } from '../../net/serverClock';
 import { buildIcon } from '../../render/icons';
 import {

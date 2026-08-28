@@ -5,7 +5,7 @@
 // (which city's panel is showing, so a late refresh cannot resurrect a dismissed panel).
 import { t } from '../../../i18n';
 import { cityNodeCovering } from '@nw/shared';
-import { formatDuration } from '../formatDuration';
+import { formatDuration } from '../logic/formatDuration';
 import type { WorldMapContext } from '../WorldMapContext';
 
 /**

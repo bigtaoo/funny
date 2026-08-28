@@ -9,8 +9,11 @@
 // demoted from a decision-maker to the display order of a recommendation strip the player taps
 // himself. Everything here is a pure function of its arguments (form ① per
 // claudedocs/client-modules.md) — no CardSceneCore dependency, directly unit-testable.
-import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates } from '../../game/meta/cardDefs';
-import type { CardInstance } from '../../game/meta/SaveData';
+//
+// Moved into ./logic/ 2026-08-27 (ADR-071 4b): that directory is gated as a whole by
+// vitest.config.ts and kept PIXI-free by test/pureLayerBoundary.test.ts.
+import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates } from '../../../game/meta/cardDefs';
+import type { CardInstance } from '../../../game/meta/SaveData';
 
 /**
  * Cards spent at level L to add ONE card at level L+1 to the material pool: FUSION_MATERIAL_COUNT

@@ -81,6 +81,14 @@
 1. **不许依赖没注入的随机源**。业务代码里的 `Math.random()` 要么走注入（如本轮的 `WorldServiceDeps.rng`），要么测试绕开它（显式坐标/显式 id）。
 2. **不许"写完立刻读" fire-and-forget**。正确姿势是 `vi.waitFor` 轮询（先例：`metaserver/test/pvp-card-stats.e2e.test.ts`、`gameserver/test/lifecycle.test.ts`）。
 3. **并发用例不许断言具体的交错**。断言要对所有合法交错都成立（先例：`worldsvc/test/review-fixes-2026-08-03.e2e.test.ts` 的 coin conservation 写法）；确实要覆盖某条竞态分支时，注入钩子把那个交错**制造出来**（同文件的 `onSpend`），别指望调度器碰巧给你。
+
+> **规则 3 又被违反过一次（2026-08-27 抓到）**：`auctionsvc/test/journal-atomicity.e2e.test.ts` 的「同一竞拍者同一金额两次出价」那例写的是 `Promise.allSettled([placeBid, placeBid])` + `expect(fulfilled).toHaveLength(1)`——**这个文件自己的头注释就写着「并发一律在读写窗口内注入，绝不用顺序调两次代替」，而这一例恰好是被禁的那种写法**。
+>
+> 两种交错都合法：输家在 `journal.begin` 撞上一行还在 `CLAIM_GRACE_MS` 内的 `pending` 行 → `REV_CONFLICT`（被拒）；但若输家先取完快照、赢家整条跑到 `done`，输家再进 `begin` 拿到的是 `state:'replay'` → **它也 fulfil**（无害，replay 什么都不动）。于是那条 `toHaveLength(1)` 大约二十跑一挂，被 `retry: 1` 糊了过去。**钱的不变量（只扣一次 / 零退款 / 余额 990）在两种交错下一直都成立**——不确定的只有那个计数，所以它一分钱都没多守住，只产出噪声。
+>
+> 修法：拆成两例，两个交错**各自注入**。①第二次出价注入进第一次的「领账本行 → topBid CAS」窗口（`svcWithHook`），必然被 `begin` 拦下——这才是修复前真会出钱的那条分支。②另一例钉 replay 那个顺序，而它**写不成顺序调用**：第一笔落完 `topBid` 就是 10，同额重提会死在**最小加价检查**（`BID_TOO_LOW`）、永远到不了 `begin`；replay 分支只对「取快照时 `topBid` 还是 null」的调用方可达，所以注入点是输家**自己的快照读**——`svcWithHook` 表达不了（它的 hook 永远跑在真调用**之前**，而这里要读先发生），用了一个局部 proxy。两例都做了变异验证（拆掉 `begin` 的 in-flight 守卫 / 把 `done` 当成可重开的 `aborted`），全量套件 `--retry=0` 连跑 5 次 255/255。
+>
+> **两条可复用的判据**：①**一份把规则写在头注释里的文件，不等于它每一例都遵守**——审查并发用例要看代码，不要看文件声称的纪律。②看到 flakyReporter 报「重试才过」时，先问的不是「哪里有竞态」，而是「**这条断言对所有合法交错都成立吗**」；本例里产品代码一点问题都没有，红的是断言。
 ---
 
 ## 守卫脚本自己接入测试 + 两条 canary（2026-08-20，worktree `feat/guard-script-tests`）

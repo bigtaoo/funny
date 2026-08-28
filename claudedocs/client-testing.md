@@ -50,13 +50,37 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 | —— 而另一群 —— | | |
 | `src/game/**` 之外已 ≥90% 的模块（47 个，≥10 行的） | 2336 | **97.8%** |
 
-第二群是这次扩进来的：**已经测好、却不受任何门禁约束**的模块（`net/judgeRunner.ts`、`layout/{Portrait,Landscape}Layout.ts`、`scenes/CardScene/feedPlan.ts`、`render/vfx/parseEffectDef.ts`、`ui/busyTracker.ts` …）——它们掉到 50% 也不会有任何一个 CI 步骤变红。扩完 **scope 1924 → 4245 行，行覆盖 91.2% → 94.7%（73 文件）**。scope 翻倍而百分比**上升**，跟「缩 include 抬百分比」正好相反（后者由报表的 `Scope (files)` 列盯着）。
+第二群是这次扩进来的：**已经测好、却不受任何门禁约束**的模块（`net/judgeRunner.ts`、`layout/{Portrait,Landscape}Layout.ts`、`scenes/CardScene/logic/feedPlan.ts`（当时还在 `CardScene/feedPlan.ts`，2026-08-27 随 4b 搬进 `logic/`）、`render/vfx/parseEffectDef.ts`、`ui/busyTracker.ts` …）——它们掉到 50% 也不会有任何一个 CI 步骤变红。扩完 **scope 1924 → 4245 行，行覆盖 91.2% → 94.7%（73 文件）**。scope 翻倍而百分比**上升**，跟「缩 include 抬百分比」正好相反（后者由报表的 `Scope (files)` 列盯着）。
 
 - **≥10 可执行行才列**：barrel 和 1 行 re-export 壳（`net/anomaly.ts`、`app/nav/shop.ts`、`render/atlas/emblemAtlas.ts`、`platform/stubs/**`…）100% 覆盖但守不住任何东西，只会让清单变长。
 - **两个大 facade 明确不进**：`net/ApiClient.ts`/`WorldApiClient.ts`（~50%）是一行一个转发，覆盖率说明不了任何事（同一理由让它们在 500 行 baseline 里也是例外条目）。
 - **这份逐文件清单是过渡的**，ADR-070 那条「逐文件 include 是缺模块边界的味道」仍然成立：它针对的是逐文件项**收窄** scope（把没测的兄弟藏在好看的数字后面），这里每一项只**增加**受门禁的地盘。清单同时就是 ADR-070 客户端半边（4b）的待办——每抽出一个场景的纯逻辑目录，那个目录替掉它名下的若干逐文件项。
-- **`test/coverageScope.test.ts` 钉住它别烂掉**（48 例）：每一项必须还匹配得到真文件（**改名/删文件会让一项静默失配、scope 无声缩小，而百分比通常还会升**，因为掉出去的都是覆盖好的模块——这正是 `checkFileLength`/`checkCoverageThreshold` 两条 canary 防的那种「靠变绿退休」）、清单不许空（canary）、不许有已被目录项覆盖的冗余项。红绿两向都实测过。
+- **`test/coverageScope.test.ts` 钉住它别烂掉**（54 例）：每一项必须还匹配得到真文件（**改名/删文件会让一项静默失配、scope 无声缩小，而百分比通常还会升**，因为掉出去的都是覆盖好的模块——这正是 `checkFileLength`/`checkCoverageThreshold` 两条 canary 防的那种「靠变绿退休」）、清单不许空（canary）、不许有已被目录项覆盖的冗余项。红绿两向都实测过。
+- **已graduate的「纯逻辑目录」用目录 glob，另有专门守卫**（ADR-071 4b，进行中）。每抽完一组场景，`src/scenes/<组>/logic/**` 一条目录项替掉该组的若干逐文件项——目录项的好处正是**它也管住之后落进来的文件**，而逐文件清单会静默漏掉。已完成：`worldmap/logic`（95.83%）、`CardScene/logic`（100%）。**`Friends`/`Family`/`Sect` 与 `ui/dialogs` 量过之后明确不建目录**——`ui/dialogs` 7 个文件全是绘制代码、零个 PIXI-free 模块；三个社交场景里真纯的只有两个纯类型 `types.ts`，其余不带 PIXI 的（`pointer.ts`/`input.ts`/`data.ts`/`network.ts`）全是 Core 协作者。**教训：「行数 × 出 bug 频次」排不出「有没有纯逻辑可抽」**，排计划要另量一列「PIXI-free 模块数」。那两组改为逐文件受门禁（`FamilyScene/pointer.ts`、`SectScene/pointer.ts`，各 100%，见 `test/socialPointerRouting.test.ts` 46 例 fake-core）。
+  - **`test/pureLayerBoundary.test.ts` 才是守边界的那个，百分比不是**。门禁余量 = `covered/0.9 - total`，97% 的目录还能塞进几十行未覆盖代码不越线，而且**测试越好余量越大**；所以往受门禁的纯目录里丢一个 PIXI 文件，门禁照样绿。加一组只需在 `PURE_DIRS` 加一行。守卫查**两件事**：
+    1. **runtime import 图**（`import type` 豁免——编译后不存在；非相对 specifier 走白名单），判红时打完整链路。
+    2. **文件自己有没有直接摸全局**（2026-08-27 补上）。缺了这一半就是个能开车过去的洞：一个模块**不需要任何 import** 就能调 `document.createElement`。发现它的是 `SectScene/input.ts`——建隐藏 DOM `<input>` 浮层，却只 import `@nw/shared` 加一个类型，import 图判它「纯」。现在 `document`/`window`/`localStorage`/`wx` 等 16 个会判红；`setTimeout`/`performance`/`console` 刻意不列（node 里也有，不影响加载与测试）。匹配前先剥注释与字符串，并排除前导 `.` 和后随 `:`（属性位而非全局读）。
+  - **哪些文件不该进 `logic/`**：判据是「**它读写 `core.*` 吗**」，不是「它的算术可测吗」。`worldmap/WorldMapRenderer/viewport.ts`（改 `core.ctx`、调 pool/panels/net）保留逐文件项；`CardScene/{input,header}.ts` 同理不进也不单列。放错会让守卫变成一句假话。
+  - **⚠️ 看到 0% 先分清两种成因**（两组都遇到过，修法完全不同）：①**测试其实在 `test/ui/`**——那个套件不报覆盖率，把纯用例搬进 `test/` 即可（`worldMapOccupyFrontier.ui.ts` 一个断言没改就解决了）；②**覆盖率套件从未加载过它**——`CardScene/logic/types.ts` 的唯一 importer `core.ts` 引 PIXI，所以谁都没 import 到它，得补真的测试。别一律当成「搬套件」。
 - **不追整包 90%**：按上表缺口要再覆盖约 3 万行，且相当大比例是 PIXI 绘制代码，测出来的是 mock 的行为。系统性渲染/场景测试仍然是 `test:ui`/`test:e2e` 的活（两者都不产覆盖率）。
+
+## ⚠️ `test:ui` 的共享桩纹理陷阱（2026-08-27 定位并修掉一条 flaky）
+
+`vitest.ui.config.ts` 的 `stubBinaryAssets` 把**每一个** `*.png` import 都解析成同一个 1×1 data URI，而 `render/cardArt.ts` 的 `getArtTexture(url)` 按 url 缓存——所以在这一层里，**所有角色立绘、所有头像胸像、所有皮肤胸像是同一个 `PIXI.Texture` 对象**。而「美术加载完了」这件事，测试是靠**原地改这个共享 BaseTexture** 来模拟的（`valid = true` / `setRealSize(...)` / `emit('loaded')`），改完没人还原。
+
+于是任何前提是「这张图还没加载」的用例（画了 spinner、还在用预加载尺寸猜测）**只是因为它被声明在翻标志位那条之前才通过**。vitest 的按文件隔离救不了——泄漏发生在**同一个文件内，`it()` 到 `it()` 之间**。
+
+- **症状**：`npm run test:ui` 偶发一条红，重跑就绿。默认顺序连跑 6 次全绿，`--sequence.shuffle` **6 次里 5 次红**。
+- **真正的两个文件**：`test/ui/avatarPortraitFit.ui.ts`（单文件 shuffle 8 次红 5 次）与 `test/ui/cardArtLoadingSpinner.ui.ts`（一次最多 4 条红）。**跟 `FamilyScene — emblem badge visual presence` 无关**——当时的归因是错的，那条用例根本不碰这张纹理。
+- **比 `valid` 更隐蔽的第二条通道，也是真凶：`PIXI.Texture.frame` 和维护它的监听器**。Texture 构造器里 `baseTexture.once('loaded', this.onBaseTextureUpdated, this)` 是**一次性**的，`this.noFrame && baseTexture.on('update', ...)` 是**常驻**的。第一个 `emit('loaded')` 的测试把那个一次性监听器永久消耗掉，之后每个同样靠 `emit('loaded')` 假装加载完的测试就**不会再同步 frame**，于是读 `tex.width` 的业务代码（`avatar.ts` 的 fit 正是如此）拿到的是**上一条用例的尺寸**。实测：baseTexture 说 683，frame 还是 768，scale 算出 0.2258 而不是 0.2333。
+- **修法两半，缺一不可**：
+  1. 模拟加载必须**先置 `valid = true` 再调 `setRealSize()`**（`setRealSize` 只在 valid 时才跑 `BaseTexture.update()`，而那个 update 才会触发常驻的 `'update'` 监听器去同步 frame）；只有 `emit('loaded')` 是不够的。
+  2. `beforeEach(resetSharedStubTexture)`（`test/harness/sharedStubTexture.ts`）把共享纹理还原成冷态（frame 1×1、`valid=false`）。
+- **验证**：修前 shuffle 6 次 5 红；修后**全量 shuffle 连跑 6 次 235/235 全绿**，两个文件单独 shuffle 各 10 次全绿。
+- **第三个同类文件是新建的守卫自己扫出来的**：`test/ui/shopScene.ui.ts` 也翻共享纹理的 `valid`（作者当时已经意识到一半，注释里写了「全局纹理缓存在本文件内共享」，但只重置了 `valid`、没重置尺寸/frame）。它用的是 `PIXI.Texture.from(url)`而不是 `getArtTexture`——**同一个对象**，`cardArt.ts` 自己就写着「shared with the `PIXI.Texture.from` global cache」。已一并加上 `beforeEach`，shuffle 8 次全绢。
+- **新增 `test/sharedStubTextureCallSites.test.ts`（静态守卫，4 例）**，钉住两条规则：①凡翻 `baseTexture.valid = true` 的 `test/ui/**` 文件必须有 `beforeEach` + `resetSharedStubTexture`；②`valid = true` 必须在 `setRealSize()` **之前**。第②条尤其需要机器盯——**写错顺序单跑也是绿的**，只有等同一轮里另一个测试先 emit 过 'loaded' 之后才会红。两条规则都做了变异验证（删 `beforeEach` / 把两行调回去，各判红一次），并带 canary（UI 文件数 >100 且至少有一个 load-faker，否则守卫自己在空跑）。
+- **以后写这一层的测试**：只要用例依赖「加载完 / 没加载完」，就 `beforeEach(resetSharedStubTexture)`，别假设「桩 Image 永不 fire loaded，所以整个文件里它一直 invalid」——那句话对单条用例成立，对文件不成立。
+- **⚠️ 别把另一种红当成这条**：`test/ui/cityBldIcon.ui.ts` 与 `composition-hooks.ui.ts` 在**机器负载高时**会报 `Test timed out in 5000ms`。那是**负载假阳性**，不是顺序依赖——机器空闲时这两个文件单跑 13/13 绿、最慢用例仅 ~740ms（离 5000ms 很远），而复现时本机同时在跑 Chrome + 多个套件。症状也不同：超时 vs 断言值错。判别法：单文件安静复跑一次，绿就是负载。
 
 ## 静态类型检查（`npm run typecheck` / CI）
 
@@ -539,3 +563,19 @@ v1 的递增**比 v2 还猛**——它的毛病从来不是墨少，而是墨**�
 所以分成两半：
 - **不变量直接钉**：`codexStatChips.ui.ts` 直接调 `drawStatChips`，喂**夸张的** `maxW`/`maxH` 组合（自然宽度的 100%/60%/35%、以及只够一行的高度），断言 `row.height <= maxH` 且 `row.width <= maxW` 恒成立。把 `maxH` 从拟合公式里摘掉、或把行数搜索锁成 `n<=1`，这两条分别变红——即「高度预算」和「折行而不是压扁」各有一条守。
 - **真实几何只钉能钉的**：`cardCodexPortraitWidthAndText.ui.ts` 新增一例用 `getBounds()`（**不能用局部 `.x`/`.width`**——文字现在住在各自带缩放的行容器里）断言「名字 → 副标题 → 属性/未解锁」三段的上下顺序、且每段都在自己那张卡片的矩形内。它**不**声称覆盖折行溢出，文件注释里写明了原因并指向上面那半。
+
+## ⚠️ 静态扫描守卫：`split('\n')` + `$` 锚定 = 在 Windows 检出上恒假（2026-08-27，`icons_atlas` 重打包时顺手撞到）
+
+`client/test/cardSceneTabSwitchGuard.test.ts`（当天早些时候刚落地的守卫，逐行扫 `CardScene/*.ts` 里有没有裸 `core.tab =`）在本机 `npx vitest run` 直接红——而报出来的「违规行」正是 `list.ts` 里那句**解释这个守卫的注释**（注释文本里字面写着 `never a bare \`core.tab =\``）。守卫本来是防这个的：匹配前先 `line.replace(/\/\/.*$/, '')` 把行尾注释剥掉。
+
+**根因**：`text.split('\n')` 在 CRLF 检出上让每行都留着尾部 `\r`，而 `\r` 在 ECMAScript 里**是** LineTerminator——于是 `.` 不肯跨过它、不带 `m` 的 `$` 也不在它前面匹配，**整个剥注释的 replace 一个字符都没剥掉**。实测：
+
+```js
+"    // ... `core.tab =` ...\r".replace(/\/\/.*$/, '')  // → 原样返回，什么都没剥
+```
+
+**后果的形状值得记**：这个守卫在 CI（Linux，LF）永远绿，在每一个 Windows 检出上永远红。也就是说它既没有保护 CI，也把本地 `npm test` 变成了噪音——两头都失效，而且失效方向相反，看 CI 的人和跑本地的人不会得出同一个结论。
+
+**修法**：`text.split(/\r?\n/)`。改完做了双向验证：①守卫变绿；②往 `list.ts` 真塞一句 `core.tab = 'skins'`，守卫照样抓到并报对行号（说明修的是切分，不是把匹配放宽了）。
+
+**推广**：仓库里 `split('\n')` 有十几处，但只有**同时**做「逐行 + `$` 锚定 / 行尾注释剥离」的才会中招——只用来数行号（`src.slice(0, m.index).split('\n').length`）或只做 `includes` 的不受影响。审计过同类的 `no-debug-hooks-in-src` / `input-subscription-cleanup` / `sceneTitleIconCoverage` / `socialErrorWiring`，都不带 `$` 逐行正则，无需改。**写这类守卫时的判据一句话：一条以 `$` 结尾的逐行正则，正确性上限等于喂给它的那个 split。**

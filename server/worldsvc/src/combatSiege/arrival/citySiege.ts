@@ -20,8 +20,8 @@
 //  2. **The ladder is per-march, never shared city state.** A shared ladder with a respawn timer means
 //     every march arriving while it is empty clears "no defenders" and still collects the full durability
 //     hit — one player with SIEGE_TEAM_CAP=5 teams and a ~24-second round trip to an adjacent city lands
-//     dozens of zero-cost hits per respawn window. `CityDoc.defenderLock` exists for P3's owner-stationed
-//     defender teams, which DO get a lockout; the NPC ladder does not.
+//     dozens of zero-cost hits per respawn window. P3's owner-stationed defender teams DO get a lockout
+//     (through `teamState[id].injuredUntil`, see cityDefenders.ts); the NPC ladder does not.
 import {
   resolveSiege,
   teamSiegeValue,
@@ -46,6 +46,7 @@ import type { CityState } from '../../core/citySiege';
 import type { SiegeReplayInputs } from '../../worldTypes';
 import { startReturnMarch, parkMarchInPlace, refundTroops } from '../../combatShared';
 import type { SiegeCtx } from '../ctx';
+import { fightCityDefenders } from './cityDefenders';
 
 /**
  * Fight one city's wave ladder. Returns the outcome plus the honest survival bookkeeping the caller needs
@@ -62,6 +63,12 @@ async function fightWaveLadder(
   attackerSynthesized: boolean,
   cardInstances: EngineCardInstance[] | undefined,
   cardEquipInv: EngineEquipInv | undefined,
+  /**
+   * How many rungs were already fought before this ladder (P3's defender teams). Folded into every
+   * `waveSeed` here so no two rungs of one assault share a seed — the whole ladder still reconstructs from
+   * the march id alone, which is what the replay viewer depends on.
+   */
+  seedOffset = 0,
 ): Promise<{ cleared: boolean; wavesCleared: number; survivors: number; cumSurvivalRatio: number; replay: SiegeReplayInputs | null }> {
   const waves = cityWaveCount(city.level);
   const waveGarrison = cityWaveGarrison(city.level);
@@ -80,7 +87,7 @@ async function fightWaveLadder(
     const defenderConfig = { garrison: synthesizeArmy(waveGarrison, 'defender'), defenderBaseLevel: 0, defenderBaseHp: waveBaseHp };
     // `waveSeed(marchId, i)` folds the wave index into the march's own siege seed, so the whole ladder is
     // reproducible from the march id alone — the property the replay viewer depends on.
-    const seed = waveSeed(m._id, i);
+    const seed = waveSeed(m._id, seedOffset + i);
     lastReplay = {
       seed, attackerArmy: survivorArmy, defenderConfig, tileLevel: city.level,
       ...(cardInstances ? { cardInstances } : {}),
@@ -169,14 +176,28 @@ export async function applyCitySiege(
   }
   const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
 
-  const ladder = await fightWaveLadder(
-    core, m, city, attackerArmy, nominalDeployed, attackerSynthesized, cardInstances, cardEquipInv,
+  // ADR-074 P3: the owning sect's garrison teams fight FIRST, ahead of the untouched NPC ladder (see
+  // cityDefenders.ts for why additive rather than substitutive). An NPC-held city has none, so this returns
+  // without a single battle call and the pre-P3 path is reached unchanged.
+  const guard = await fightCityDefenders(
+    core, m, city, attackerArmy, nominalDeployed, attackerSynthesized, cardInstances, cardEquipInv, t,
   );
+  // Repelled by a defender team → the NPC ladder is never reached and nothing is scheduled. The attacker
+  // still paid for the attempt (its card losses are written below from the combined ratio).
+  const ladder = guard.cleared
+    ? await fightWaveLadder(
+        core, m, city, guard.survivorArmy, Math.round(nominalDeployed * guard.cumSurvivalRatio),
+        attackerSynthesized, cardInstances, cardEquipInv, guard.teamsCleared,
+      )
+    : { cleared: false, wavesCleared: 0, survivors: 0, cumSurvivalRatio: 1, replay: guard.replay };
+  // ONE survival fraction over the whole assault, defender rungs and NPC waves together — multiplying the
+  // two ladders' ratios rather than letting the second overwrite the first (the ADR-069 mistake).
+  const cumSurvivalRatio = guard.cumSurvivalRatio * ladder.cumSurvivalRatio;
 
   // Attacker card bookkeeping: one honest survival fraction over the whole multi-wave assault (ADR-069).
   if (hasCardArmy) {
     const cardUpdates = computeCardStateUpdates(
-      rawArmy, pw.cardState ?? {}, Math.round(nominalDeployed * ladder.cumSurvivalRatio), t, nominalDeployed,
+      rawArmy, pw.cardState ?? {}, Math.round(nominalDeployed * cumSurvivalRatio), t, nominalDeployed,
     );
     const pipeline = cardStateDeltaPipeline(cardUpdates);
     if (pipeline.length > 0) await cols.playerWorld.updateOne({ _id: pw._id }, pipeline);
@@ -186,13 +207,22 @@ export async function applyCitySiege(
   // `defenderId` stays undefined: a city is held by a SECT, not an account, so there is no single
   // defender to record or to push an under_attack warning at. The owning sect learns about it from the
   // sect-channel announcement `settleCityDamage` posts on capture.
-  const siege = await ctx.recordSiege(m, undefined, outcome, t, ladder.replay);
+  const siege = await ctx.recordSiege(m, undefined, outcome, t, ladder.replay ?? guard.replay);
 
   if (ladder.cleared) {
     // Ladder cleared → schedule the delayed durability hit (§5: 5-minute settlement delay, the same
     // `siegeDamage` pipeline the main-base path uses). Survivors keep besieging and are returned at
     // settlement, exactly like `applyBaseSiege`.
-    const damage = teamSiegeValue(rawArmy, attackerSave?.cardInv ?? {});
+    //
+    // ADR-074 P3 (§8.3): the attacker's sect adds a siege-value bonus from the capitals and world center it
+    // holds (+3% each, +5%). Applied HERE, on the durability hit, and as its OWN multiplier — deliberately
+    // not summed into `EFFECT_CAPS.siegePct_fp`, which is equipment's accumulator and is capped: sharing one
+    // accumulator would mean a well-equipped attacker gets nothing from their sect's conquests because the
+    // cap was already reached. Whole-map control is x1.32, which P2's single-player-proof gate was measured
+    // with (ECONOMY_VERIFICATION_LOG §13-SLG-CITYSIEGE ③ carried both this and equipment's +60% as
+    // hypothetical channels, leaving 1.43x-1.56x of margin), so wiring it does not move that verdict.
+    const sectSiegeBonus = (await core.sectPayoff(sectId)).siegeBonus;
+    const damage = Math.floor(teamSiegeValue(rawArmy, attackerSave?.cardInv ?? {}) * (1 + sectSiegeBonus));
     const dmg: SiegeDamageDoc = {
       _id: siege._id,
       worldId: m.worldId,

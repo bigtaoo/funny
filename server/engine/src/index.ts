@@ -102,6 +102,15 @@ export type { EngineEquipmentInput, EngineCardInstance, EngineEquipInv } from '.
 // Player unit types that can receive card-based equipment bonuses (CC-1: expanded to 6 unit types).
 export { PLAYER_EQUIPPABLE_UNITS } from './balance/equipment';
 
+// ── Player-garrison progression ratios (ADR-077) ─────────────────────────────────────────────────
+// Read-only per-unit-type hp/attack multiples of the plain baseline, for the ONE case where a
+// defending side is a real player rather than an NPC (a sect garrison team inside a held city).
+// Deliberately exported as NUMBERS, not a blueprint table: nothing here can reach
+// buildPvpBlueprints (which takes no card parameter at all — pvp_hardwall.test.ts), and the
+// blueprint builders themselves stay unexported so the PvE/PvP hard wall keeps its shape.
+export { garrisonProgressionRatios } from './balance/pveUpgrades';
+export type { GarrisonProgressionRatios } from './balance/pveUpgrades';
+
 // ── Campaign / level data model + validator ───────────────────────────────────
 export type {
   LevelDefinition,

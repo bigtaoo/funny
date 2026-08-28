@@ -148,11 +148,27 @@ export interface PlayerWorldDoc {
   familyId?: string;
   /**
    * Sect the family belonged to at joinWorld time (comm-audit batch F item 8b) — same SS7 read-only-mirror
-   * tradeoff as familyId above (resolved once up front, subsequent sect changes are not written back; live
-   * value lives in socialsvc's FamilyDoc.sectId). Lets vision/penalty code read sectId locally instead of an
-   * extra getFamiliesByIds([familyId]) round trip.
+   * tradeoff as familyId above (resolved once up front). Lets vision/penalty code read sectId locally
+   * instead of an extra getFamiliesByIds([familyId]) round trip.
+   *
+   * ADR-074 P3 narrowed the staleness: the four sect transitions worldsvc itself owns (create / join /
+   * leave / dissolve) now write this mirror back for every member of the family, because the city payoff
+   * (§8.1) reads it and "I joined a sect and my yield never changed" is a support ticket, unlike the
+   * vision-radius drift it was tolerable for. Still NOT refreshed when a player joins a FAMILY that is
+   * already in a sect — that transition happens in socialsvc, which does not know about worlds. That
+   * direction is safe (the member is under-credited, never over-credited); `sectMembershipQualifies`
+   * documents the resulting hole in §8.5's anti-hop guard.
    */
   sectId?: string;
+  /**
+   * Epoch ms this account's `sectId` mirror was last set — the clock §8.5's `CITY_BONUS_MEMBERSHIP_DELAY_MS`
+   * runs against, so "everyone pile into the winning sect an hour before the capture" collects nothing.
+   *
+   * Stamped at joinWorld (so a brand-new member of an established sect also waits) and at each of the four
+   * transitions above. Absent on documents written before P3 — treated as "long-standing", which is the
+   * safe direction: it can only under-punish an account that was already in the sect before this shipped.
+   */
+  sectSince?: number;
   trainingQueue?: TrainingEntry[]; // training queue (S8-2, ≤ TROOP_TRAIN_QUEUE_MAX entries)
   /** Mirror of `trainingQueue[0].completeAt`, absent when the queue is empty — see `trainingQueueOps`. Indexed; scheduler-only, never read by clients. */
   nextTrainingCompleteAt?: number;

@@ -15,7 +15,7 @@
 // TRAIN_SPEEDUP_BUFF_MULT / card `troopCapBase`-`troopCapGrowth`-`siegeValueBase` / EFFECT_CAPS /
 // SIEGE_SYNTH_ARMY_MAX_TROOPS — the whole model hangs off those.
 
-import { SLG_MAP_MAX_LEVEL } from './core';
+import { SLG_MAP_MAX_LEVEL, RESOURCE_TYPES, type ResourceType } from './core';
 import { OUTER_GRADED_CITY_TIERS } from './mapgen/cities';
 
 /** The three city node kinds that can be besieged (mirrors `MapEditorCityNode['kind']`). */
@@ -233,4 +233,230 @@ export function cityNodeCovering<T extends CityFootprintNode>(nodes: readonly T[
     if (!best || CITY_KIND_RANK[node.kind] < CITY_KIND_RANK[best.kind]) best = node;
   }
   return best;
+}
+
+// ── P3: occupation payoff (§8) ────────────────────────────────────────────────────────────────────
+//
+// Everything below is a pure function of "which cities does this sect hold". P1 shipped the fight and the
+// ownership record and NOTHING else, so until P3 a captured city paid literally nothing (§10-P1's parting
+// note calls that out as staged, not forgotten).
+//
+// The whole payoff is expressed in ONE unit — a city's **level degrees**, `level x cityKindMult(kind)` —
+// so the resource table, the cap, and the design doc's own arithmetic cannot drift apart. Reproducing
+// §8.1's table from `CITY_YIELD_FLAT_PER_LEVEL` alone is what `citySiege.test.ts` asserts, rather than
+// re-typing the table's cells as expected values (which would only prove someone can copy).
+
+/**
+ * Hourly yield a held city adds **per level degree**, for each of the four LAND resources (§8.1).
+ *
+ * Flat, not a percentage, and that is the load-bearing decision (§8.2): flat turns a sect's cities into a
+ * recruiting pitch — +86% for a newcomer, +11% for a whale — where a percentage would have paid the
+ * already-rich most. It also fixes a structural problem a percentage cannot: tile yield is lopsided (one
+ * resource per tile, plus `biomeAt`'s province bias), while a city pays all four equally, so cities answer
+ * "my province has no metal" instead of merely amplifying it.
+ */
+export const CITY_YIELD_FLAT_PER_LEVEL = 50;
+
+/** Hourly sticker (铜币) a held city adds per level degree (§8.1). Deliberately below the land rate. */
+export const CITY_STICKER_FLAT_PER_LEVEL = 20;
+
+/**
+ * Cap on the payoff, expressed in **level degrees** rather than in resources.
+ *
+ * 120 degrees is about "one province plus a neighbouring one plus a capital". The whole map is 380
+ * (270 graded + 90 capitals + 20 for the double-weighted world center), which uncapped would hand every
+ * member of a dominant sect +19,000/resource — 2.5x a mid-game player's ENTIRE own production, i.e. "once
+ * the map is yours, stop occupying tiles". Capping here is what keeps further conquest a STRATEGIC gain
+ * rather than an economic one, which is the point SLG_DESIGN §3 wants cities to make.
+ *
+ * The two resource caps are derived from this rather than written out, so raising the cap cannot silently
+ * change the land:sticker ratio the table above is built on.
+ */
+export const CITY_YIELD_LEVEL_CAP = 120;
+/** Per-land-resource ceiling on the city payoff (§8.1) — derived, never hand-written. */
+export const CITY_YIELD_FLAT_CAP = CITY_YIELD_FLAT_PER_LEVEL * CITY_YIELD_LEVEL_CAP;
+/** Sticker ceiling on the city payoff (§8.1) — derived from the same level cap. */
+export const CITY_STICKER_FLAT_CAP = CITY_STICKER_FLAT_PER_LEVEL * CITY_YIELD_LEVEL_CAP;
+
+/**
+ * How long an account must have been in the sect before the city payoff applies to it (§8.5).
+ *
+ * Without this, "everyone pile into the winning sect an hour before the capture, collect, leave" is not a
+ * risk, it is the obvious play. Note what it does NOT gate: the siege-value and march bonuses (§8.3) are
+ * properties of the sect's assault, not a per-member faucet, so delaying them would only punish a sect for
+ * recruiting before a fight.
+ */
+export const CITY_BONUS_MEMBERSHIP_DELAY_MS = 24 * 60 * 60 * 1000;
+
+/** Siege-value bonus per province capital held (§8.3) — 9 capitals exist, so this tops out at +27%. */
+export const CITY_CAPITAL_SIEGE_BONUS = 0.03;
+/** Siege-value bonus for holding the world center (§8.3). */
+export const CITY_WORLD_CENTER_SIEGE_BONUS = 0.05;
+/** March-duration discount for the sect holding the world center (§8.3). */
+export const CITY_WORLD_CENTER_MARCH_DISCOUNT = 0.1;
+
+/** The minimal held-city shape the payoff functions need (structurally satisfied by worldsvc's `CityDoc`). */
+export interface CityPayoffNode {
+  kind: CityKind;
+  level: number;
+}
+
+/**
+ * A city's contribution in level degrees: its level, doubled for the world center.
+ *
+ * Reusing `cityKindMult` rather than a second world-center constant is deliberate — the world center is
+ * "worth two cities" in durability, in regen and in payoff, and one multiplier is what keeps that true.
+ * §8.1's table writes the world center as "10 (x2)" for exactly this reason.
+ */
+export function cityYieldLevels(node: CityPayoffNode): number {
+  return Math.max(1, Math.floor(node.level)) * cityKindMult(node.kind);
+}
+
+/**
+ * The hourly flat yield a sect's held cities add to EACH of its (long-standing) members, capped.
+ *
+ * Returns a full `ResourceType` record so callers can add it without knowing which resources are "land":
+ * sticker simply carries its own rate and its own cap.
+ */
+export function cityYieldBonus(cities: readonly CityPayoffNode[]): Record<ResourceType, number> {
+  const degrees = Math.min(CITY_YIELD_LEVEL_CAP, cities.reduce((n, c) => n + cityYieldLevels(c), 0));
+  const out = {} as Record<ResourceType, number>;
+  for (const rt of RESOURCE_TYPES) {
+    out[rt] = degrees * (rt === 'sticker' ? CITY_STICKER_FLAT_PER_LEVEL : CITY_YIELD_FLAT_PER_LEVEL);
+  }
+  return out;
+}
+
+/**
+ * Siege-value multiplier bonus from a sect's held cities (§8.3) — capitals and the world center only.
+ *
+ * Graded cities contribute nothing on purpose: they are the "quantity" economic asset, and giving all 64
+ * cities a combat bonus would compound into the single-player-proof margin P2 measured. Returned as a
+ * fraction (0.27 = +27%) and applied as its OWN channel, never summed into equipment's
+ * `EFFECT_CAPS.siegePct_fp` accumulator — a shared accumulator would mean a well-equipped attacker gets
+ * nothing from their sect's conquests because the cap was already reached.
+ */
+export function citySiegeBonus(cities: readonly CityPayoffNode[]): number {
+  let bonus = 0;
+  for (const c of cities) {
+    if (c.kind === 'capital') bonus += CITY_CAPITAL_SIEGE_BONUS;
+    else if (c.kind === 'worldCenter') bonus += CITY_WORLD_CENTER_SIEGE_BONUS;
+  }
+  return bonus;
+}
+
+/** March-duration multiplier for a sect's marches (§8.3): 0.9 while it holds the world center, else 1. */
+export function cityMarchMult(cities: readonly CityPayoffNode[]): number {
+  return cities.some((c) => c.kind === 'worldCenter') ? 1 - CITY_WORLD_CENTER_MARCH_DISCOUNT : 1;
+}
+
+/** Whether a city kind can serve as a march launch anchor (§8.4): capitals and the world center only. */
+export function isCityMarchAnchor(kind: CityKind): boolean {
+  return kind === 'capital' || kind === 'worldCenter';
+}
+
+// ── P4: player-garrison fortification (§12, ADR-077) ────────────────────────────────
+//
+// ADR-074 P3 let sect members park garrison teams inside a held city, and an assault has to fight
+// through them. What it could NOT give them is their own per-unit combat stats: the engine's
+// `cardInstances`/`equipmentInv` are single-sided by construction, so both the tile's NPC waves and a
+// real player's garrison field the plain baseline blueprint (see `garrisonProgressionRatios` in
+// @nw/engine for why fixing that properly is its own ADR). A defending team's card levels and gear
+// therefore counted for nothing, and a high-progression 12-card assault walked through a garrison
+// carrying far more troops.
+//
+// **Where that progression gets spent was decided by measurement, and the obvious answer was wrong.**
+// The first implementation scaled the garrison entries' own HP, and econ-sim measured it as worth
+// almost exactly nothing: against the reference attacker at the weakest city level, a garrison fielding
+// 32,508 effective HP cost 1,209 troops versus 1,245 for the same team on bare blueprints — inside the
+// noise. The reason is structural: the battle's objective is `destroy_base` against a deliberately small
+// {@link cityWaveBaseHp}, so ONE attacker unit slipping past the garrison ends it however much HP that
+// garrison still has, and a garrison has ten lanes to cover and cannot cover them. `citySiege.ts` in
+// econ-sim already said as much about the NPC waves — "this is the dominant attrition lever, not the
+// garrison" — about `waveBaseHp`, which is the lever actually used below.
+//
+// So a garrison's progression FORTIFIES THE POSITION: it multiplies the symbolic base HP of the rung it
+// defends, i.e. how long the attacker has to stand in its fire before the rung ends. Measured effect at
+// the weakest city level, reference attacker, cost per cleared assault: no garrison 1,073 -> bare L1
+// garrison 1,321 -> geared L6 garrison 2,975 -> maxed garrison repels that tier outright (a veteran-tier
+// attacker still clears it, at 3,019 against 1,015 undefended). Graded, and never an absolute wall.
+//
+// Applying it before the battle is also what keeps the whole feature replay-safe for free: the scaled
+// `defenderBaseHp` is what goes into the stored `SiegeReplayInputs.defenderConfig`, so a client
+// reconstructs the identical battle from inputs it already receives — no engine change, no
+// ENGINE_VERSION bump, no payload field.
+
+/**
+ * How much of a defending team's ATTACK progression counts towards its fortification, as a weight on
+ * the attack ratio (0 = HP progression only; 1 = an attack multiple is worth the same as an HP multiple).
+ *
+ * Both ratios end up on the same lever (base HP), so this is not a mechanical conversion but a statement
+ * about how much of a card's investment should read as "this position is dug in". 1 means all of it.
+ * Set by measurement (`npm run city-siege` in server/tools/econ-sim, gate ⑦ prints every lever and the
+ * takeability safety check) — the design doc's own paper derivations of this fight were wrong twice.
+ */
+export const CITY_DEFENDER_ATK_AS_HP = 1;
+
+/**
+ * Hard ceiling on the fortification factor one defending team can earn.
+ *
+ * The inputs are already intrinsically bounded — card level 9 gives hp x1.96 / attack x1.80
+ * (STAT_GROWTH_PER_LEVEL), equipment adds at most +60% to each (EFFECT_CAPS) — so at
+ * {@link CITY_DEFENDER_ATK_AS_HP} = 1 the product cannot exceed ~9.03 anyway. This constant is not there
+ * to bind today; it is there so that raising a growth rate or an effect cap somewhere else cannot
+ * silently move a number that was signed off by measurement. `shared/test/citySiege.test.ts` asserts the
+ * saturated product still lands under it, so such a raise fails loudly instead.
+ */
+export const CITY_DEFENDER_FORTIFY_MAX = 9.5;
+
+/**
+ * One card's fortification factor, from the progression ratios its unit type earned.
+ *
+ * `hpRatio`/`atkRatio` come from `garrisonProgressionRatios()` in @nw/engine — what the defender's cards
+ * and gear WOULD have multiplied that unit type's hp/attack by. A bare level-1 card gives 1.0 for both,
+ * hence a factor of exactly 1 and a byte-identical battle to the pre-P4 one.
+ *
+ * Clamped below at 1: this channel only ever helps the defender. A card whose ratios came back under 1
+ * (impossible today — growth is monotonic — but cheap to guarantee) must not make the position WEAKER
+ * than the NPC baseline standing beside it, or garrisoning your own city would become a downside, the
+ * same trap P3 avoided by making defender rungs additive rather than substitutive.
+ */
+export function cityDefenderFortifyMult(hpRatio: number, atkRatio: number): number {
+  const hp = Number.isFinite(hpRatio) && hpRatio > 1 ? hpRatio : 1;
+  const atk = Number.isFinite(atkRatio) && atkRatio > 1 ? atkRatio : 1;
+  const raw = hp * Math.pow(atk, CITY_DEFENDER_ATK_AS_HP);
+  return Math.min(CITY_DEFENDER_FORTIFY_MAX, Math.max(1, raw));
+}
+
+/**
+ * A team's single fortification factor: the troop-weighted mean of its cards' factors.
+ *
+ * Troop-weighted rather than a plain mean because a team whose progression sits on the cards carrying
+ * most of its troops genuinely holds the position better than one whose good cards are nearly empty —
+ * and because a plain mean would let a player park eleven empty level-9 cards behind one full level-1
+ * card and collect the maximum factor. An empty team (no troops at all) returns 1; such a team is
+ * filtered out as a stale park before it ever gets here, so this is a guard, not a case.
+ */
+export function cityDefenderTeamFortify(cards: readonly { troops: number; mult: number }[]): number {
+  let weighted = 0;
+  let troops = 0;
+  for (const c of cards) {
+    const t = Number.isFinite(c.troops) && c.troops > 0 ? c.troops : 0;
+    if (t === 0) continue;
+    const m = Number.isFinite(c.mult) && c.mult > 1 ? Math.min(c.mult, CITY_DEFENDER_FORTIFY_MAX) : 1;
+    weighted += t * m;
+    troops += t;
+  }
+  return troops > 0 ? weighted / troops : 1;
+}
+
+/**
+ * The symbolic base HP a player-garrison rung defends: the city's own per-wave figure, fortified by the
+ * garrison team's factor. An unfortified team (factor 1) gets exactly {@link cityWaveBaseHp}, which is
+ * what the NPC waves behind it use — so the pre-P4 battle is reproduced to the unit.
+ */
+export function cityDefenderBaseHp(cityLevel: number, teamFortify: number): number {
+  const base = cityWaveBaseHp(cityLevel);
+  const f = Number.isFinite(teamFortify) && teamFortify > 1 ? Math.min(teamFortify, CITY_DEFENDER_FORTIFY_MAX) : 1;
+  return Math.max(1, Math.floor(base * f));
 }

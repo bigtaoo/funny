@@ -32,7 +32,6 @@ import {
   siegeSeedFromId,
   playerWorldId,
   resolveSiege,
-  provinceIdxAt,
   nationDefenseStrength,
   academyBuff,
   MARCH_MORALE_MAX,
@@ -192,10 +191,14 @@ export class ArrivalService {
     const baseTile = target.baseRing
       ? ((await cols.tiles.findOne({ _id: target.baseAnchor })) ?? target)
       : target;
-    // Nation defense bonus (§2.4 / G1, ADR-034): if the garrison tile is within the province of a capital the defender occupies → effective garrison strength is increased.
-    const capIdx = provinceIdxAt(baseTile.x, baseTile.y);
-    const nation = await cols.nations.findOne({ _id: `nation:${m.worldId}:${capIdx}` });
-    const inOwnNation = !!nation?.ownerId && nation.ownerId === defenderId;
+    // Province defence bonus (§2.4 / G1, ADR-034; re-pointed by ADR-074 §9, 2026-08-27): the garrison tile
+    // is inside a province whose CAPITAL CITY the defender's sect holds → effective garrison strength rises.
+    //
+    // It used to read `nations.ownerId === defenderId`, and had been dead since P0: `applyNationChange` was
+    // deleted and `initNations` unsets ownership, so the field had no writer and the bonus reached nobody.
+    // §9 kept the bonus and dropped its production twin, which only means anything once it is keyed on
+    // something that still moves — `CityDoc.ownerSectId`, the same handle §7's capture writes.
+    const inOwnNation = defenderId ? await this.core.inOwnSectProvince(m.worldId, defenderId, baseTile.x, baseTile.y) : false;
     const effGarrison = nationDefenseStrength(baseTile.garrison ?? 0, inOwnNation);
 
     // E8/CC-3: fetch attacker's progression snapshot early (needed for card army resolution + blueprint injection).

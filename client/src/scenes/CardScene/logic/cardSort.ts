@@ -2,9 +2,12 @@
 // shared-state root stays under the 500-line convention while the batch-prep hook lands there.
 // Both are pure functions of their arguments with no CardSceneCore dependency (form ① per
 // claudedocs/client-modules.md) — core.ts re-exports them, so importers are unchanged.
-import type { SaveData, CardInstance } from '../../game/meta/SaveData';
-import type { CardSLGState } from '../../net/WorldApiClient';
-import { CARD_DEFS, cardPower } from '../../game/meta/cardDefs';
+//
+// Moved into ./logic/ 2026-08-27 (ADR-071 4b): that directory is gated as a whole by
+// vitest.config.ts and kept PIXI-free by test/pureLayerBoundary.test.ts.
+import type { SaveData, CardInstance } from '../../../game/meta/SaveData';
+import type { CardSLGState } from '../../../net/WorldApiClient';
+import { CARD_DEFS, cardPower } from '../../../game/meta/cardDefs';
 
 const DEF_ORDER = Object.keys(CARD_DEFS);
 

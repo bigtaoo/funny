@@ -14,7 +14,7 @@ import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../r
 import { drawScrollIndicator } from '../../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../../render/icons';
 import { FS, snapFont } from '../../../render/fontScale';
-import { HUD_H, MARGIN, CONFIRM_H } from '../constants';
+import { HUD_H, MARGIN, CONFIRM_H } from '../logic/constants';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 
 export class WorldMapPanelsCore {

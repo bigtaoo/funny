@@ -9,7 +9,7 @@
 // as an explicit parameter (`core`) instead of leaving a delegating method on Fog.
 import * as PIXI from 'pixi.js-legacy';
 import { tileToScreen } from '../../../render/isoGrid';
-import { ENEMY_BASE_TINT } from '../tileStyle';
+import { ENEMY_BASE_TINT } from '../logic/tileStyle';
 import { StickmanRuntime } from '../../../render/stickman/StickmanRuntime';
 import { UnitType } from '@nw/engine/types';
 import { targetScreenHeight } from '../../../render/unitSize';

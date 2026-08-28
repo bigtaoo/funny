@@ -13,9 +13,7 @@ import {
   resourceCapFor,
   buildingYieldMult,
   buildingSelfYield,
-  provinceIdxAt,
   RESOURCE_TYPES,
-  NATION_BONUS_PRODUCTION,
   BP_YIELD_MULT,
   type BuildingKey,
   type ResourceType,
@@ -23,6 +21,7 @@ import {
 } from '@nw/shared';
 import type { WorldCore } from '../core';
 import { emptyResources } from './helpers';
+import { sectMembershipQualifies } from './citySiege';
 import type { PlayerWorldDoc } from '../db';
 
 export class YieldService {
@@ -90,7 +89,21 @@ export class YieldService {
 
   /**
    * Recompute the aggregated yield from all currently owned tiles in the DB (called after occupy / abandon / build completion).
-   * Single exit for yield (SLG_CITY_DESIGN §5): tile yields → nation production bonus → home-city building multipliers + sticker self-production.
+   *
+   * Single exit for yield (SLG_CITY_DESIGN §5): tile yields → home-city building multipliers + sticker
+   * self-production → battle pass → **wild-city flat bonus** (ADR-074 §8.1).
+   *
+   * The city bonus is the LAST step and it is ADDITIVE, and the order is load-bearing (§8.6): folded in
+   * any earlier it would be re-multiplied by the resource buildings (+10%/level) and the battle pass
+   * (+10%), so §8.1's cap — the thing that keeps conquest a strategic rather than an economic reward —
+   * would not actually cap anything.
+   *
+   * What used to sit at the FRONT of this function and no longer does: the nation production bonus
+   * (`NATION_BONUS_PRODUCTION`, +10% to own tiles inside an occupied capital's province). ADR-074 folded a
+   * capital's economic value into §8.1's table, so keeping it would double-count the same conquest — and
+   * P0 had already made it dead in practice by deleting `applyNationChange` and unsetting `nations`
+   * ownership at season open, leaving a bonus with no writer. Removed here, and with it this function's
+   * `nations` read (§9).
    */
   async recomputeYield(
     worldId: string,
@@ -99,28 +112,21 @@ export class YieldService {
     hasBattlePassOverride?: boolean,
   ): Promise<Record<ResourceType, number>> {
     const owned = await this.core.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
-    // Nation production bonus (§2.4 / G1, ADR-034): capitals occupied by this player → own tiles within those capitals' provinces (angle-sector + ring) receive +NATION_BONUS_PRODUCTION.
-    const ownedNations = await this.core.deps.cols.nations.find({ worldId, ownerId: accountId }).toArray();
-    const ownedCapIdx = new Set(ownedNations.map((n) => n.capitalIdx));
     // Building levels (SLG_CITY_DESIGN): land resources get a global yield multiplier; sticker is self-produced by the stickerShop (residential-model).
     // buildingsOverride lets a build-completion path compute the post-upgrade rate before the new levels are persisted (avoids a write-then-read ordering hazard).
-    let buildings: Partial<Record<BuildingKey, number>> | undefined = buildingsOverride;
-    let hasBattlePass = hasBattlePassOverride ?? false;
-    if (!buildingsOverride) {
-      const doc = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
-      buildings = doc?.buildings;
-      hasBattlePass = doc?.hasBattlePass ?? false;
-    }
+    // The document is read either way from P3 on: the sect mirror it carries is unaffected by that ordering
+    // hazard (a building upgrade cannot change it), and the city bonus needs it.
+    const doc = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    const buildings: Partial<Record<BuildingKey, number>> | undefined = buildingsOverride ?? doc?.buildings;
+    const hasBattlePass = hasBattlePassOverride ?? doc?.hasBattlePass ?? false;
 
     const acc = emptyResources();
     for (const tl of owned) {
       // ADR-025: only the base anchor contributes yield; the 8 ring cells are type:'base' too and would
       // otherwise each add the base ink trickle (9× inflation), so skip them.
       if (tl.baseRing) continue;
-      const nationMult = ownedCapIdx.size > 0 && ownedCapIdx.has(provinceIdxAt(tl.x, tl.y))
-        ? 1 + NATION_BONUS_PRODUCTION : 1;
       const y = tileYield(tl.type, tl.level, tl.resType);
-      for (const rt of RESOURCE_TYPES) acc[rt] += (y[rt] ?? 0) * nationMult;
+      for (const rt of RESOURCE_TYPES) acc[rt] += y[rt] ?? 0;
     }
     for (const rt of RESOURCE_TYPES) {
       acc[rt] = Math.floor(acc[rt] * buildingYieldMult(buildings, rt) + buildingSelfYield(buildings, rt));
@@ -128,6 +134,12 @@ export class YieldService {
     // Battle pass production bonus (S8-8 yield-bonus tier): +10% resource yield for holders.
     if (hasBattlePass) {
       for (const rt of RESOURCE_TYPES) acc[rt] = Math.floor(acc[rt] * BP_YIELD_MULT);
+    }
+    // ADR-074 §8.1: flat hourly bonus from the cities this account's sect holds. Gated on §8.5's membership
+    // delay so a mass hop into the winning sect right before a capture collects nothing.
+    if (doc && sectMembershipQualifies(doc, this.core.deps.now())) {
+      const payoff = await this.core.sectPayoff(doc.sectId);
+      for (const rt of RESOURCE_TYPES) acc[rt] += payoff.yield[rt] ?? 0;
     }
     return acc;
   }

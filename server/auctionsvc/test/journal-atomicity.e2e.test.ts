@@ -263,13 +263,28 @@ describe.skipIf(!mongo)('auction settlement journal e2e', () => {
     balances.set('bob', 1000);
     const view = await listAuctionMode();
 
-    // Both bids read the same doc, so exactly one can win the rev-guarded topBid CAS.
-    const [first, second] = await Promise.allSettled([
-      new AuctionService(deps()).placeBid('bob', view.auctionId, 10),
-      new AuctionService(deps()).placeBid('bob', view.auctionId, 10),
-    ]);
-    const outcomes = [first, second];
-    expect(outcomes.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    // The second attempt is injected INSIDE the first one's journal-claim -> topBid-CAS window, not run
+    // beside it via Promise.all. This file's own header says why, and this case learned it the hard way:
+    // it used to be `Promise.allSettled([placeBid, placeBid])` asserting exactly one fulfilled, which is an
+    // assertion about a specific interleaving. Both orderings are legal — if the first attempt finishes
+    // before the second calls `begin`, the second finds a `done` row and returns `state:'replay'`, i.e. it
+    // ALSO fulfils (harmlessly: replay moves nothing). So the old assertion was a coin flip that failed
+    // roughly one run in twenty and got papered over by `retry: 1`. The money invariants below held in
+    // both orderings the whole time; only the outcome count was nondeterministic. See the sibling case
+    // below for the replay ordering, pinned separately.
+    let raced = false;
+    let secondOutcome: PromiseSettledResult<unknown> | null = null;
+    const bidSvc = svcWithHook('auctions', 'findOneAndUpdate', async () => {
+      if (raced) return;
+      raced = true;
+      [secondOutcome] = await Promise.allSettled([new AuctionService(deps()).placeBid('bob', view.auctionId, 10)]);
+    });
+
+    await expect(bidSvc.placeBid('bob', view.auctionId, 10)).resolves.toMatchObject({ auctionId: view.auctionId });
+    expect(raced).toBe(true);
+    // The first attempt still holds a `pending` row well inside CLAIM_GRACE_MS, so the second is turned away
+    // at `begin` before it can charge anything — the one branch that actually mattered pre-fix.
+    expect(secondOutcome).toMatchObject({ status: 'rejected', reason: { code: 'REV_CONFLICT' } });
 
     // Pre-fix both attempts shared `auction_bid:{id}:bob:100`, so commercial charged once while the CAS
     // loser mailed bob a full refund against it — 100 coins created from nothing.
@@ -277,6 +292,49 @@ describe.skipIf(!mongo)('auction settlement journal e2e', () => {
     const refunded = coinMailTo('bob').reduce((n, m) => n + (m.content.attachments![0]!.count ?? 0), 0);
     expect(refunded).toBe(0);
     expect(balances.get('bob')).toBe(990);
+  });
+
+  it('the other ordering of those two bids — snapshot read first, journal claim after the winner finished — replays for free', async () => {
+    // This is the interleaving that made the case above flaky, pinned instead of left to the scheduler.
+    // It cannot be written sequentially: once the first bid lands, `topBid` is 10, so a resubmitted 10
+    // dies at the minimum-increment check long before `journal.begin` — the replay branch is only
+    // reachable by a caller that took its snapshot while `topBid` was still null. So the injection point
+    // is the loser's OWN snapshot read: take it, then let the winner run to completion, then hand the
+    // stale doc back and let the loser walk into `begin` against a row that is already `done`.
+    //
+    // `svcWithHook` cannot express this — its hook always runs BEFORE the real call, and here the read has
+    // to happen first — hence the local proxy.
+    balances.set('bob', 1000);
+    const view = await listAuctionMode();
+
+    let interleaved = false;
+    const auctions = new Proxy(mongo!.collections.auctions, {
+      get(target, prop, receiver) {
+        if (prop !== 'findOne') return Reflect.get(target, prop, receiver);
+        return async (...args: unknown[]) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const stale = await (target as any).findOne(...args);
+          if (!interleaved) {
+            interleaved = true;
+            await new AuctionService(deps()).placeBid('bob', view.auctionId, 10); // the winner, start to finish
+          }
+          return stale;
+        };
+      },
+    });
+    const loserSvc = new AuctionService({ ...deps(), cols: { ...mongo!.collections, auctions } });
+
+    // Resolves rather than throwing: `begin` reports `state:'replay'` for a row that already reached `done`.
+    await expect(loserSvc.placeBid('bob', view.auctionId, 10)).resolves.toMatchObject({ auctionId: view.auctionId });
+    expect(interleaved).toBe(true);
+
+    // The whole point: a replay must move nothing. One charge, no refund mail, and the listing still shows
+    // the single bid the winner recorded.
+    expect(debits.filter((d) => d.account === 'bob')).toHaveLength(1);
+    expect(coinMailTo('bob')).toHaveLength(0);
+    expect(balances.get('bob')).toBe(990);
+    const doc = await mongo!.collections.auctions.findOne({ _id: view.auctionId });
+    expect(doc?.topBid).toMatchObject({ bidderId: 'bob', amount: 10 });
   });
 
   // ── 2. The missing rev guard on auction-win settlement ──────────────────────────────────────────

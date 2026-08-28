@@ -1,7 +1,7 @@
 // View transforms: viewport tile bounds, zoom level switching (center-stable), camera centering,
 // isometric pan clamping, and screen→tile hit conversion.
 import { tileToScreen, screenToTile, screenToTileF, visibleTileBounds } from '../../../render/isoGrid';
-import { HUD_H } from '../constants';
+import { HUD_H } from '../logic/constants';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererPool } from './pool';
 

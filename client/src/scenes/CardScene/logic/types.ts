@@ -5,9 +5,12 @@
 // every *caller* of the scene needs, not behaviour.
 //
 // core.ts re-exports all of it, so importers keep using `from './core'` unchanged.
-import type { TranslationKey } from '../../i18n';
-import type { SaveData, EquipSlot } from '../../game/meta/SaveData';
-import type { CardSLGState } from '../../net/WorldApiClient';
+//
+// Moved into ./logic/ 2026-08-27 (ADR-071 4b). It has ZERO runtime imports — every specifier below is
+// `import type`, so nothing here survives into the bundle except the four constants at the bottom.
+import type { TranslationKey } from '../../../i18n';
+import type { SaveData, EquipSlot } from '../../../game/meta/SaveData';
+import type { CardSLGState } from '../../../net/WorldApiClient';
 import type { UnitType } from '@nw/engine/types';
 export type CardActionResult = { ok: true } | { ok: false; key: TranslationKey };
 
@@ -81,12 +84,20 @@ export const MODAL_DIM = 0x000000;
 
 // Roster grid: icon-card cells — a full-height portrait on the left with all the
 // hero info (name / level / power / troops / gear) stacked immediately to its right.
-// Narrower than the equipment cells so hero cards pack denser and don't read as empty.
+//
+// NOT EquipmentScene/layout.ts's same-named CELL_GAP (36, and CELL_GAP_X = 72 horizontally). Two
+// sibling scenes exporting `CELL_GAP` with a 3x difference is a live import-the-wrong-one hazard, so
+// neither imports the other's and the gap between them is pinned in test/cardSceneCellGeometry.test.ts.
 export const CELL_GAP = 12;
-// Taller than EquipmentScene's EQUIP_CELL_H (they used to be unified at 177): hero cards carry a
-// full-height character portrait that reads better with more vertical room, so the roster grid is
-// deliberately taller. Width is still deliberately narrower so hero cards pack denser.
+// HEIGHT is the same 266 as EquipmentScene's EQUIP_CELL_H, not taller — the comment here claimed
+// "deliberately taller" until 2026-08-27, and that was true for exactly two days: the roster went
+// 177 -> 266 on 2026-07-14 (1.5x, taller hero cards) and the equipment inventory independently went
+// 177 -> 266 on 2026-07-16 in its own legibility pass (+50%), so the two re-converged by coincidence
+// and nobody noticed the prose had gone stale. What survived is the WIDTH divergence below, which is
+// deliberate. Both facts are pinned in test/cardSceneCellGeometry.test.ts rather than left as prose.
 export const CARD_CELL_H = 266; // 1.5x the previous 177 (taller hero cards)
+// Narrower than EquipmentScene's EQUIP_CELL_W_TARGET (360) so hero cards pack denser: an equipment
+// cell has a craft/level column beside its glyph, a hero cell just the portrait + a stat stack.
 export const CARD_CELL_W_TARGET = 300;
 
 export interface Rect { x: number; y: number; w: number; h: number; }

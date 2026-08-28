@@ -43,15 +43,15 @@ import { renderCardHeader } from './header';
 export type {
   CardActionResult, CardBatchResult, CardSceneTab, CardCallbacks, CardRosterView, Rect, Hit,
   DoFuseFn, PrepRound, DoPrepBatchFn,
-} from './types';
-export { MODAL_DIM, CELL_GAP, CARD_CELL_H, CARD_CELL_W_TARGET } from './types';
+} from './logic/types';
+export { MODAL_DIM, CELL_GAP, CARD_CELL_H, CARD_CELL_W_TARGET } from './logic/types';
 import type {
   CardCallbacks, CardSceneTab, Rect, Hit, DoFuseFn, DoPrepBatchFn,
-} from './types';
+} from './logic/types';
 
 // Roster ordering + injury countdown moved to ./cardSort.ts (2026-08-18) — pure functions with
 // no dependency on this class's state; re-exported so importers keep the same module path.
-export { sortCards, injuryCountdown } from './cardSort';
+export { sortCards, injuryCountdown } from './logic/cardSort';
 
 export class CardSceneCore {
   readonly container: PIXI.Container;

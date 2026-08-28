@@ -8,7 +8,7 @@ import { makeText } from '../../../render/pixiText';
 import { FS } from '../../../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../../../ui/widgets/SceneHeader';
 import { GuideOverlay } from '../../../render/GuideOverlay';
-import { HUD_H } from '../constants';
+import { HUD_H } from '../logic/constants';
 import { beginLoadingErase } from './loadingReveal';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapRendererPool } from './pool';

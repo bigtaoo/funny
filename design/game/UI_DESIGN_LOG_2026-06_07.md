@@ -20,7 +20,7 @@
 
 - **改用标准顶栏，不再是浮动返回胶囊（2026-07-12）**：产品反馈胜利/失败页「缺标准顶栏，类似商店的顶部」——2026-07-06 那版只画了浮动返回胶囊，没有纸质顶栏本体（无标题条底、无分类强调线），与 Shop/Gacha/Equipment 等其余场景观感不一致。改为 `drawSceneHeader(this.container, w, h, null)`（`title=null`，因为页面中央已有大号 VICTORY/DEFEAT 大字当标题，复用 CampaignMapScene 的同一模式），拿到的 `hdr.headerH` 用于把大字标题下移（`hdr.headerH + h*0.02`，原来固定 `h*0.07` 会被新顶栏压住）。返回胶囊换成嵌在顶栏里的 back pill（原来悬浮胶囊的透明命中区叠加手法保留，`resultBackChip` 测试钩子不变）。
 结算页引入与大厅/对战一致的手绘涂鸦层，解决页面太空旷的问题：
-- **C-group 背景散点**（`buildDecorCLayer`）：与大厅 LobbyScene 完全相同的城堡/弹射器/纸飞机/墨迹图集，铺满全屏（alpha 0.25–0.38，bake 静态纹理）。
+- **C-group 背景散点**（`buildDecorCLayer`）：与大厅 LobbyScene 完全相同的城堡/弹射器/纸飞机/墨迹图集，铺满全屏（alpha 0.25–0.38，bake 静态纹理）。 ⚠️ 当时的记录：alpha 已于 2026-08-27 退回 **0.10–0.22**（它会压前景文字），见 `UI_DESIGN_LOG_2026-08.md` §39/§40。
 - **A-group 边距涂鸦**（`buildMarginDeco`，新增私有方法）：左右各 11% 纸边放置对战同款小涂鸦（太阳/星/心等，alpha 0.30–0.50），seed `0xDEADBEEF`，bake key `result-margin:WxH`。
 - **战败 mood deco 增强**：原 2 个红叉扩充为 5 个，分布到左上/左下/右下三角，强化「红笔批改」美术母题。
 - 两层 deco 均 `interactiveChildren = false`，不干扰按钮点击。

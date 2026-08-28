@@ -12,6 +12,11 @@ import {
   CITY_KIND_RANK,
   cityDocId,
   cityNodeCovering,
+  cityDefenderFortifyMult,
+  cityDefenderTeamFortify,
+  cityDefenderBaseHp,
+  CITY_DEFENDER_ATK_AS_HP,
+  CITY_DEFENDER_FORTIFY_MAX,
   cityWaveCount,
   cityWaveGarrison,
   cityWaveBaseHp,
@@ -30,7 +35,23 @@ import {
   SLG_TEAM_INJURY_MS,
   PROTECTION_SEC,
   OUTER_GRADED_CITY_TIERS,
+  CITY_YIELD_FLAT_PER_LEVEL,
+  CITY_STICKER_FLAT_PER_LEVEL,
+  CITY_YIELD_LEVEL_CAP,
+  CITY_YIELD_FLAT_CAP,
+  CITY_STICKER_FLAT_CAP,
+  CITY_CAPITAL_SIEGE_BONUS,
+  CITY_WORLD_CENTER_SIEGE_BONUS,
+  CITY_WORLD_CENTER_MARCH_DISCOUNT,
+  CITY_BONUS_MEMBERSHIP_DELAY_MS,
+  RESOURCE_TYPES,
+  cityYieldLevels,
+  cityYieldBonus,
+  citySiegeBonus,
+  cityMarchMult,
+  isCityMarchAnchor,
   type CityFootprintNode,
+  type CityPayoffNode,
 } from '../src/index';
 
 describe('citySiege: level range', () => {
@@ -247,5 +268,194 @@ describe('citySiege: document identity', () => {
   it('cityDocId is stable and namespaced per world', () => {
     expect(cityDocId('w1', 'garrison-3')).toBe('city:w1:garrison-3');
     expect(cityDocId('w1', 'worldCenter')).not.toBe(cityDocId('w2', 'worldCenter'));
+  });
+});
+
+// ── P3: occupation payoff (§8) ────────────────────────────────────────────────────────────────────
+//
+// The assertions below deliberately RE-DERIVE the design doc's §8.1 table and §8.2 arithmetic from the
+// two rate constants instead of restating the table's cells. Restating them would only prove that
+// someone can copy a table; deriving them catches a rate change that quietly stops matching the doc the
+// balance argument lives in — which is the actual failure mode for a numbers file.
+describe('citySiege: occupation payoff (§8)', () => {
+  /** The whole map, from the design doc's own census: 12 cities each at L3/L4/L5, 6 each at L6/L7/L8, 9 capitals, 1 world center. */
+  const WHOLE_MAP: CityPayoffNode[] = [
+    ...([3, 4, 5] as const).flatMap((level) => Array.from({ length: 12 }, () => ({ kind: 'garrison' as const, level }))),
+    ...([6, 7, 8] as const).flatMap((level) => Array.from({ length: 6 }, () => ({ kind: 'garrison' as const, level }))),
+    ...Array.from({ length: 9 }, () => ({ kind: 'capital' as const, level: 10 })),
+    { kind: 'worldCenter', level: 10 },
+  ];
+  /** One province, per §8.2: its 9 graded cities (3,3,4,4,5,5,6,7,8) plus its capital. */
+  const OWN_PROVINCE: CityPayoffNode[] = [
+    ...([3, 3, 4, 4, 5, 5, 6, 7, 8] as const).map((level) => ({ kind: 'garrison' as const, level })),
+    { kind: 'capital', level: 10 },
+  ];
+
+  it('the world center is worth two cities in payoff, for the same reason it is in durability', () => {
+    // §8.1 writes it as "10 (x2)". Sharing `cityKindMult` is what keeps that one statement, not three.
+    expect(cityYieldLevels({ kind: 'worldCenter', level: 10 })).toBe(10 * CITY_WORLD_CENTER_MULT);
+    expect(cityYieldLevels({ kind: 'capital', level: 10 })).toBe(10);
+    expect(cityYieldLevels({ kind: 'garrison', level: 3 })).toBe(3);
+  });
+
+  it('level degrees reproduce the design doc census: 270 graded + 90 capitals + 20 world center = 380', () => {
+    const degreesOf = (cs: CityPayoffNode[]) => cs.reduce((n, c) => n + cityYieldLevels(c), 0);
+    expect(degreesOf(WHOLE_MAP.filter((c) => c.kind === 'garrison'))).toBe(270);
+    expect(degreesOf(WHOLE_MAP.filter((c) => c.kind === 'capital'))).toBe(90);
+    expect(degreesOf(WHOLE_MAP.filter((c) => c.kind === 'worldCenter'))).toBe(20);
+    expect(degreesOf(WHOLE_MAP)).toBe(380);
+  });
+
+  it('reproduces §8.1 row by row from the rate constants alone', () => {
+    const rows: Array<[CityPayoffNode, number, number]> = [
+      [{ kind: 'garrison', level: 3 }, 150, 60],
+      [{ kind: 'garrison', level: 8 }, 400, 160],
+      [{ kind: 'capital', level: 10 }, 500, 200],
+      [{ kind: 'worldCenter', level: 10 }, 1000, 400],
+    ];
+    for (const [node, land, sticker] of rows) {
+      const y = cityYieldBonus([node]);
+      expect(y.ink, `${node.kind} L${node.level} land`).toBe(land);
+      expect(y.sticker, `${node.kind} L${node.level} sticker`).toBe(sticker);
+    }
+  });
+
+  it('pays all four land resources equally — that evenness IS the feature (§8.2 anti-lopsidedness)', () => {
+    const y = cityYieldBonus(OWN_PROVINCE);
+    const land = RESOURCE_TYPES.filter((rt) => rt !== 'sticker');
+    expect(new Set(land.map((rt) => y[rt])).size, 'land resources must all pay the same').toBe(1);
+    // §8.2's headline figure for holding your own province: +2,750 per resource, +1,100 sticker.
+    expect(y.ink).toBe(2750);
+    expect(y.sticker).toBe(1100);
+  });
+
+  it('caps in LEVEL DEGREES, so the land:sticker ratio survives a cap change', () => {
+    const capped = cityYieldBonus(WHOLE_MAP); // 380 degrees, well past the 120 cap
+    expect(capped.ink).toBe(CITY_YIELD_FLAT_CAP);
+    expect(capped.sticker).toBe(CITY_STICKER_FLAT_CAP);
+    // Both ceilings derive from the same degree cap — the property that makes the cap safe to retune.
+    expect(CITY_YIELD_FLAT_CAP).toBe(CITY_YIELD_FLAT_PER_LEVEL * CITY_YIELD_LEVEL_CAP);
+    expect(CITY_STICKER_FLAT_CAP).toBe(CITY_STICKER_FLAT_PER_LEVEL * CITY_YIELD_LEVEL_CAP);
+    expect(capped.ink / capped.sticker).toBe(CITY_YIELD_FLAT_PER_LEVEL / CITY_STICKER_FLAT_PER_LEVEL);
+  });
+
+  it('the cap binds just past "own province + a neighbour + a capital", not before', () => {
+    // §8.2's stated intent for 120. One province is 55 degrees, so two provinces plus a capital is 120 —
+    // an assertion that the cap is not accidentally reachable by a single province.
+    const oneProvince = OWN_PROVINCE.reduce((n, c) => n + cityYieldLevels(c), 0);
+    expect(oneProvince).toBe(55);
+    expect(oneProvince).toBeLessThan(CITY_YIELD_LEVEL_CAP);
+    expect(oneProvince * 2 + 10).toBe(CITY_YIELD_LEVEL_CAP);
+    expect(cityYieldBonus(OWN_PROVINCE).ink).toBeLessThan(CITY_YIELD_FLAT_CAP);
+  });
+
+  it('graded cities give no combat bonus; capitals and the world center do (§8.3)', () => {
+    expect(citySiegeBonus(WHOLE_MAP.filter((c) => c.kind === 'garrison'))).toBe(0);
+    expect(citySiegeBonus([{ kind: 'capital', level: 10 }])).toBe(CITY_CAPITAL_SIEGE_BONUS);
+    // Whole-map control: 9 capitals + the world center = the x1.32 §8.3 warns about and P2 measured against.
+    const full = citySiegeBonus(WHOLE_MAP);
+    expect(full).toBeCloseTo(9 * CITY_CAPITAL_SIEGE_BONUS + CITY_WORLD_CENTER_SIEGE_BONUS, 10);
+    expect(1 + full).toBeCloseTo(1.32, 10);
+  });
+
+  it('the march discount is the world center or nothing — it does not stack with capitals', () => {
+    expect(cityMarchMult([])).toBe(1);
+    expect(cityMarchMult(WHOLE_MAP.filter((c) => c.kind !== 'worldCenter'))).toBe(1);
+    expect(cityMarchMult(WHOLE_MAP)).toBeCloseTo(1 - CITY_WORLD_CENTER_MARCH_DISCOUNT, 10);
+    // Two world centers cannot exist, but the function must not compound if the node list ever repeats one.
+    expect(cityMarchMult([{ kind: 'worldCenter', level: 10 }, { kind: 'worldCenter', level: 10 }]))
+      .toBeCloseTo(1 - CITY_WORLD_CENTER_MARCH_DISCOUNT, 10);
+  });
+
+  it('only capitals and the world center anchor marches — 10 of 64 cities, not all of them (§8.4)', () => {
+    expect(isCityMarchAnchor('capital')).toBe(true);
+    expect(isCityMarchAnchor('worldCenter')).toBe(true);
+    expect(isCityMarchAnchor('garrison')).toBe(false);
+    expect(WHOLE_MAP.filter((c) => isCityMarchAnchor(c.kind))).toHaveLength(10);
+  });
+
+  it('the anti-hop delay is a day, and long enough to outlast a staged assault', () => {
+    expect(CITY_BONUS_MEMBERSHIP_DELAY_MS).toBe(24 * 60 * 60 * 1000);
+    // The point of the number: it must exceed the post-capture protection window, or "hop in, wait out the
+    // shield, collect" is still the same play with one extra step.
+    expect(CITY_BONUS_MEMBERSHIP_DELAY_MS).toBeGreaterThan(CITY_CAPTURE_PROTECTION_MS);
+  });
+
+  it('an empty holding pays nothing (the NPC-held default every city starts at)', () => {
+    const y = cityYieldBonus([]);
+    for (const rt of RESOURCE_TYPES) expect(y[rt], rt).toBe(0);
+    expect(citySiegeBonus([])).toBe(0);
+  });
+});
+
+describe('player-garrison fortification — P4/ADR-077 (§12)', () => {
+  // The balance-owned half of the chain. The engine half (garrisonProgressionRatios, which produces the
+  // two ratios fed in here) is pinned in @nw/engine's siege-npc-blueprint-isolation.test.ts, and the two
+  // are exercised together against a real battle in worldsvc's cityDefenderProgression.test.ts.
+  //
+  // Note which lever this feeds: the rung's symbolic BASE HP, not the garrison's own HP. Scaling garrison
+  // HP was implemented first and econ-sim gate ⑦ measured it as worth nothing, because the objective is
+  // destroy_base against a deliberately small cityWaveBaseHp and one attacker unit slipping past the
+  // garrison ends the rung however fat it is.
+
+  it('an unprogressed team earns exactly 1 — the pre-ADR battle, unchanged', () => {
+    // Load-bearing for ADR-074 P3's rule that garrisoning is additive and never substitutive: a level-1
+    // bare team must leave the rung exactly as hard as the NPC waves behind it.
+    expect(cityDefenderFortifyMult(1, 1)).toBe(1);
+    expect(cityDefenderTeamFortify([{ troops: 300, mult: 1 }])).toBe(1);
+    for (const level of [WILD_CITY_MIN_LEVEL, 5, WILD_CITY_MAX_LEVEL]) {
+      expect(cityDefenderBaseHp(level, 1)).toBe(cityWaveBaseHp(level));
+    }
+  });
+
+  it('is monotone in both inputs — more progression is never worth less', () => {
+    expect(cityDefenderFortifyMult(1.5, 1)).toBeGreaterThan(cityDefenderFortifyMult(1, 1));
+    expect(cityDefenderFortifyMult(1, 1.5)).toBeGreaterThan(cityDefenderFortifyMult(1, 1));
+    expect(cityDefenderFortifyMult(2, 2)).toBeGreaterThan(cityDefenderFortifyMult(2, 1.5));
+    expect(cityDefenderBaseHp(3, 4)).toBeGreaterThan(cityDefenderBaseHp(3, 2));
+  });
+
+  it('folds the attack ratio in at the CITY_DEFENDER_ATK_AS_HP weight, the single balance lever', () => {
+    expect(cityDefenderFortifyMult(2, 3)).toBeCloseTo(2 * Math.pow(3, CITY_DEFENDER_ATK_AS_HP), 6);
+    // Both ratios land on the same lever, so the weight is a statement about how much of a card's
+    // investment reads as "this position is dug in" rather than a mechanical conversion. Pinned so a
+    // retune has to be a deliberate edit, measured by `npm run city-siege`.
+    expect(CITY_DEFENDER_ATK_AS_HP).toBeGreaterThanOrEqual(0);
+    expect(CITY_DEFENDER_ATK_AS_HP).toBeLessThanOrEqual(1);
+  });
+
+  it('floors at 1 for degenerate or sub-baseline input — the channel only ever helps the defender', () => {
+    // Unreachable while growth stays monotone, but a factor under 1 would make garrisoning your own city a
+    // DOWNSIDE relative to leaving it to the NPC waves.
+    expect(cityDefenderFortifyMult(0.4, 0.4)).toBe(1);
+    expect(cityDefenderFortifyMult(0, 0)).toBe(1);
+    expect(cityDefenderFortifyMult(Number.NaN, 2)).toBeCloseTo(Math.pow(2, CITY_DEFENDER_ATK_AS_HP), 6);
+    expect(cityDefenderFortifyMult(Number.POSITIVE_INFINITY, Number.NaN)).toBe(1);
+    expect(cityDefenderBaseHp(3, 0.2)).toBe(cityWaveBaseHp(3));
+  });
+
+  it('clamps at CITY_DEFENDER_FORTIFY_MAX, and the ceiling sits ABOVE what the game can produce', () => {
+    expect(cityDefenderFortifyMult(1e6, 1e6)).toBe(CITY_DEFENDER_FORTIFY_MAX);
+    expect(cityDefenderBaseHp(3, 1e6)).toBe(Math.floor(cityWaveBaseHp(3) * CITY_DEFENDER_FORTIFY_MAX));
+    // Saturated real inputs: card level 9 gives hp x1.96 / attack x1.80 (STAT_GROWTH_PER_LEVEL), equipment
+    // adds at most +60% to each (EFFECT_CAPS). Restated here in plain arithmetic rather than imported from
+    // @nw/engine (which @nw/shared must not depend on) — worldsvc's test asserts the same bound against
+    // the real engine tables, so the two cannot drift apart unnoticed.
+    const saturated = (1.96 * 1.6) * Math.pow(1.80 * 1.6, CITY_DEFENDER_ATK_AS_HP);
+    expect(saturated).toBeLessThan(CITY_DEFENDER_FORTIFY_MAX);
+    expect(cityDefenderFortifyMult(1.96 * 1.6, 1.80 * 1.6)).toBeCloseTo(saturated, 6);
+  });
+
+  it('aggregates a team by TROOPS carried, which is what stops the obvious gaming', () => {
+    // Eleven empty level-9 cards behind one full level-1 card must be worth 1, not the maximum.
+    expect(cityDefenderTeamFortify([
+      { troops: 3000, mult: 1 },
+      ...Array.from({ length: 11 }, () => ({ troops: 0, mult: 9 })),
+    ])).toBe(1);
+    expect(cityDefenderTeamFortify([{ troops: 100, mult: 5 }, { troops: 100, mult: 1 }])).toBeCloseTo(3, 6);
+    expect(cityDefenderTeamFortify([])).toBe(1);
+    // Per-card clamping happens BEFORE weighting, so the team factor is never a number the ceiling
+    // would have refused.
+    expect(cityDefenderTeamFortify([{ troops: 100, mult: 1e6 }])).toBe(CITY_DEFENDER_FORTIFY_MAX);
   });
 });

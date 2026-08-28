@@ -9,9 +9,9 @@
 // class no longer references pool at all. The march/occupy/stationed token helpers (previously
 // the back half of this file) also moved out, to ./tokens.ts — see that file's header for why.
 import { ISO_RATIO, tileToScreen, diamondPath, visibleTileBounds, clipConvexToRect } from '../../../render/isoGrid';
-import { occupyFrontierCells } from '../occupyFrontier';
-import { HUD_H } from '../constants';
-import { ENEMY_BASE_TINT, MINE_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../tileStyle';
+import { occupyFrontierCells } from '../logic/occupyFrontier';
+import { HUD_H } from '../logic/constants';
+import { ENEMY_BASE_TINT, MINE_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../logic/tileStyle';
 import { baseFootprintCells } from '@nw/shared';
 import { drawStar, drawDashedPolygon, drawPolygonCornerTicks, drawFadedLine } from '../tileGraphics';
 import type { WorldMapRendererCore } from './core';

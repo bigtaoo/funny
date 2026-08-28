@@ -17,7 +17,7 @@ import { buildLevelStars } from '../../render/levelStars';
 import type { Rect } from '../../layout/ILayout';
 import { CARD_DEFS, FUSION_MATERIAL_COUNT } from '../../game/meta/cardDefs';
 import type { CardInstance } from '../../game/meta/SaveData';
-import type { PrepPlan } from './feedPlan';
+import type { PrepPlan } from './logic/feedPlan';
 
 /** One level of "I am fusing X only so it can become material for Y" — see feed.ts's prep stack. */
 export interface PrepFrame {

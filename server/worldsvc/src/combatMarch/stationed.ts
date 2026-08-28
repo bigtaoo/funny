@@ -34,7 +34,8 @@ export class StationedService {
     const hasCardArmy = (claimed.army ?? []).some((e) => !!e.cardInstanceId);
     const t = now();
     const path = await computeMarchPath(this.core, worldId, claimed.x, claimed.y, bx, by, accountId);
-    const arriveAt = t + marchDurationFromPath(path) * 1000;
+    const speedMult = (await this.core.sectPayoff(pw.sectId)).marchMult; // ADR-074 §8.3
+    const arriveAt = t + marchDurationFromPath(path, speedMult) * 1000;
     const back: MarchDoc = {
       _id: marchId(worldId, accountId, t, ++this.core.marchSeq),
       worldId,
@@ -48,6 +49,7 @@ export class StationedService {
       ...(claimed.leaderUnitType ? { leaderUnitType: claimed.leaderUnitType } : {}),
       departAt: t,
       arriveAt,
+      ...(speedMult !== 1 ? { speedMult } : {}),
       status: 'marching',
       ...legBox(claimed.x, claimed.y, bx, by),
       rev: 0,

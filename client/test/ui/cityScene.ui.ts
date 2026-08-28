@@ -25,7 +25,7 @@ import { initI18n, t } from '../../src/i18n';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
 import { marginLineX } from '../../src/render/sketchUi';
 import { teamSlotId, teamSlotName, TEAM_CAP } from '../../src/game/meta/teamTroops';
-import { formatDuration } from '../../src/scenes/worldmap/formatDuration';
+import { formatDuration } from '../../src/scenes/worldmap/logic/formatDuration';
 import type { WorldApiClient, PlayerWorldView } from '../../src/net/WorldApiClient';
 import type { SaveData, CardInstance } from '../../src/game/meta/SaveData';
 
