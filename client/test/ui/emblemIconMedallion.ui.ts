@@ -66,6 +66,28 @@ describe('buildEmblemIcon — size-gated plain sprite vs solid colour dot', () =
     expect(node.height).toBeGreaterThan(0);
   });
 
+  it('the dot is actually filled with the requested accent colour, not a fixed/default one', () => {
+    const draw = (node: unknown) => (node as PIXI.Graphics).geometry.graphicsData[0]!;
+    const blue = draw(buildEmblemIcon(KEY, 30, EMBLEM_COLORS[3]!)).fillStyle.color;
+    const red = draw(buildEmblemIcon(KEY, 30, EMBLEM_COLORS[0]!)).fillStyle.color;
+    expect(blue).toBe(EMBLEM_COLORS[3]);
+    expect(red).toBe(EMBLEM_COLORS[0]);
+    // Different swatches must actually produce different fills — guards against the colour arg
+    // being ignored/hardcoded (the two constants would have to coincidentally collide otherwise).
+    expect(blue).not.toBe(red);
+  });
+
+  it('the ring stays a fixed ink tone regardless of which accent colour is picked', () => {
+    // EMBLEM_COLORS[0] ("ink") is deliberately the same tone as the ring, so compare two swatches
+    // that are neither the ring colour itself to avoid a coincidental pass.
+    const draw = (node: unknown) => (node as PIXI.Graphics).geometry.graphicsData[0]!;
+    const ringWithBlue = draw(buildEmblemIcon(KEY, 30, EMBLEM_COLORS[3]!)).lineStyle.color;
+    const ringWithGreen = draw(buildEmblemIcon(KEY, 30, EMBLEM_COLORS[4]!)).lineStyle.color;
+    expect(ringWithBlue).toBe(ringWithGreen);
+    expect(ringWithBlue).not.toBe(EMBLEM_COLORS[3]);
+    expect(ringWithBlue).not.toBe(EMBLEM_COLORS[4]);
+  });
+
   it('returns null when the atlas has no texture for the key (not loaded yet), at any size', () => {
     expect(buildEmblemIcon('emblem_bear' as never, 30, TINT)).toBeNull();
     expect(buildEmblemIcon('emblem_bear' as never, 60, TINT)).toBeNull();
