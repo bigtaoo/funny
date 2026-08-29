@@ -40,7 +40,7 @@ export class App {
     // ── 3. Controllers ──────────────────────────────────────────────────────
     const imageCtrl  = new ImageController(bus);
     const animCtrl   = new AnimationController(bus, state);
-    new InteractionController(renderer, bus, state, animCtrl, cmdManager);
+    new InteractionController(renderer, bus, state, animCtrl, cmdManager, imageCtrl);
 
     // ── 4. Timeline ─────────────────────────────────────────────────────────
     const tlCanvas    = rootEl.querySelector<HTMLCanvasElement>('#timeline-canvas')!;
@@ -132,6 +132,7 @@ export class App {
         getTexture:          (boneId: string) => imageCtrl.getTexture(boneId),
         attachmentPoints:    state.attachmentPoints,
         previewMode:         state.previewMode,
+        editorMode:          state.editorMode,
         selectedBone:        state.selectedBone,
         showJoints:          state.showJoints,
         showSkeletonOverlay: state.showSkeletonOverlay,

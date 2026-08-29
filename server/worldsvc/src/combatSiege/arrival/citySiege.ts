@@ -222,7 +222,9 @@ export async function applyCitySiege(
     // with (ECONOMY_VERIFICATION_LOG §13-SLG-CITYSIEGE ③ carried both this and equipment's +60% as
     // hypothetical channels, leaving 1.43x-1.56x of margin), so wiring it does not move that verdict.
     const sectSiegeBonus = (await core.sectPayoff(sectId)).siegeBonus;
-    const damage = Math.floor(teamSiegeValue(rawArmy, attackerSave?.cardInv ?? {}) * (1 + sectSiegeBonus));
+    // SLG_CITY_SIEGE_DESIGN §12.7 twin item (wired 2026-08-29): the attacker's equipped gear now feeds the
+    // same m_siege/s_siege channel the in-battle engine already reads, saturating at +60% like everything else.
+    const damage = Math.floor(teamSiegeValue(rawArmy, attackerSave?.cardInv ?? {}, attackerSave?.equipmentInv ?? {}) * (1 + sectSiegeBonus));
     const dmg: SiegeDamageDoc = {
       _id: siege._id,
       worldId: m.worldId,

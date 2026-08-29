@@ -12,6 +12,7 @@ import { cardPower } from '../../../game/meta/cardDefs';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 import { loadMapViewport } from './loaders';
 import { errorMsg } from './errors';
+import { territoryConnected, attackFootprintCells } from '../logic/attackConnectivity';
 
 /**
  * Team picker for a team-based march. kind='attack' (siege a real player / stronghold) or 'occupy'
@@ -27,6 +28,16 @@ export async function showTeamPicker(
 ): Promise<void> {
   const me = ctx.me;
   if (!me?.joined || !me.mainBaseTile) { ctx.panels.showToast(t('world.needBase'), C.red); return; }
+  // ADR-039 连地 pre-check for attack/siege (2026-08-29 user report): without this, an unreachable target
+  // with zero USABLE teams (all busy elsewhere) fell straight through to the generic "no teams, go edit a
+  // formation" toast below — misleading, since the real (and here the only) blocker is that the target
+  // doesn't border the player's own territory. Checking it up front surfaces the actual reason regardless
+  // of team availability. Solo-only precision (territoryConnected defers to true for family members, same
+  // as WorldMapInput.occupyConnected) — the server re-validates on departure either way.
+  if (kind === 'attack' && !territoryConnected(ctx, attackFootprintCells(ctx, tx, ty))) {
+    ctx.panels.showToast(t('world.err.notConnected'), C.red);
+    return;
+  }
   let teams: TeamTemplate[] = [];
   try {
     teams = await ctx.cb.worldApi.getTeams(ctx.cb.worldId);

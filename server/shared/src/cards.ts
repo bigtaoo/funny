@@ -291,13 +291,68 @@ export function cardTroopCap(card: { defId: string; level: number }): number {
   return def.troopCapBase + def.troopCapGrowth * (lv - 1);
 }
 
+// ── Gear siege-value channel (SLG_CITY_SIEGE_DESIGN §12.7 twin item, wired 2026-08-29) ──────────
+//
+// Mirrors @nw/engine/balance/equipment.ts's `mult_siege` affix handling: `m_siege` (primary, scales
+// with enhancement level) + `s_siege` (secondary, fixed rolled value) summed then clamped to
+// EFFECT_CAPS.siegePct_fp (+60%) — same shape as that file's `applyEquipment` accumulator. This
+// package can't import @nw/engine (zero-dependency hard line, see that file's own header comment),
+// so the affix ids, the enhancement multiplier table, and the cap are duplicated here in plain
+// decimal (no Fp — this package's economy math has never needed fixed-point precision). Same
+// convention `cityDefenderProgression.test.ts` and econ-sim's `MAXED_GEAR_INV` already use: no
+// automated cross-check import exists (EFFECT_CAPS/ENHANCE_LEVEL_MULTIPLIER aren't part of
+// @nw/engine's public index), so keep the two tables in sync by hand if either changes.
+
+/** Mirrors ENHANCE_LEVEL_MULTIPLIER in @nw/engine/balance/equipment.ts. */
+const SIEGE_ENHANCE_MULTIPLIER: readonly number[] = [1.00, 1.08, 1.17, 1.28, 1.41, 1.56, 1.76, 2.11, 2.76, 5.00];
+
+/** Mirrors EFFECT_CAPS.siegePct_fp in @nw/engine/balance/equipment.ts. */
+export const SIEGE_GEAR_PCT_CAP = 0.6;
+
 /**
- * A single card's siege value at its current level: `round(siegeValueBase × (1 + 0.1 × (level − 1)))`.
- * Unknown defId → 0 (defensive; a real card always resolves). Level clamped to 1..9.
+ * Minimal structural shape `cardSiegeValue`'s gear reading needs — compatible with both shared's real
+ * `EquipmentInstance` and @nw/engine's `EngineEquipInstance` (either side's extra fields are harmless,
+ * same "structurally equivalent local type" convention equipment.ts itself uses for the reverse direction).
  */
-export function cardSiegeValue(card: CardInstance): number {
+export interface SiegeGearInstance {
+  readonly level: number;
+  readonly affixes: ReadonlyArray<{ readonly id: string; readonly value: number }>;
+}
+
+/**
+ * A card's gear-driven siege-value bonus as a fraction (e.g. 0.6 = +60%): sums `m_siege`/`s_siege`
+ * affixes across its 3 gear slots and clamps to {@link SIEGE_GEAR_PCT_CAP} — the same arithmetic
+ * `applyEquipment` uses for the engine's `siegeValue_fp`. Missing slot/instance → 0 for that slot.
+ */
+function cardGearSiegePct(card: CardInstance, equipmentInv: Readonly<Record<string, SiegeGearInstance>>): number {
+  let pct = 0;
+  for (const instId of Object.values(card.gear)) {
+    if (!instId) continue;
+    const inst = equipmentInv[instId];
+    if (!inst) continue;
+    for (const affix of inst.affixes) {
+      if (affix.id === 'm_siege') {
+        const lv = Math.max(0, Math.min(Math.round(inst.level), SIEGE_ENHANCE_MULTIPLIER.length - 1));
+        pct += (affix.value / 100) * SIEGE_ENHANCE_MULTIPLIER[lv]!;
+      } else if (affix.id === 's_siege') {
+        pct += affix.value / 100;
+      }
+    }
+  }
+  return Math.min(SIEGE_GEAR_PCT_CAP, pct);
+}
+
+/**
+ * A single card's siege value at its current level: `round(siegeValueBase × (1 + 0.1 × (level − 1)) × (1 + gearPct))`.
+ * Unknown defId → 0 (defensive; a real card always resolves). Level clamped to 1..9. `equipmentInv`
+ * is optional and omitted defaults to no gear bonus (0%) — every existing caller that doesn't pass it
+ * keeps its old number unchanged, see `cardGearSiegePct`.
+ */
+export function cardSiegeValue(card: CardInstance, equipmentInv?: Readonly<Record<string, SiegeGearInstance>>): number {
   const def = CARD_DEFS[card.defId];
   if (!def) return 0;
   const lv = Math.max(1, Math.min(Math.floor(card.level), MAX_CARD_LEVEL));
-  return Math.round(def.siegeValueBase * (1 + SIEGE_VALUE_GROWTH_PER_LEVEL * (lv - 1)));
+  const base = def.siegeValueBase * (1 + SIEGE_VALUE_GROWTH_PER_LEVEL * (lv - 1));
+  const gearPct = equipmentInv ? cardGearSiegePct(card, equipmentInv) : 0;
+  return Math.round(base * (1 + gearPct));
 }

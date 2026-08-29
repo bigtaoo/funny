@@ -23,8 +23,10 @@ import {
   SLG_SIEGE_DAMAGE_DELAY_MS,
   SLG_TEAM_INJURY_MS,
   BASE_DURABILITY_REGEN_PER_HOUR,
+  SIEGE_GEAR_PCT_CAP,
   type CardInstance,
   type BuildingKey,
+  type EquipmentInstance,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
 import type { TileDoc, PlayerWorldDoc, MarchDoc, TeamTemplate, CardSLGState } from '../src/db';
@@ -79,6 +81,9 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
   let pushes: { accountId: string; msg: SlgPushMsg }[];
   /** cardInv exposed by the fake meta, keyed by accountId (mutated per test before the battle runs). */
   let cardInvByAccount: Record<string, Record<string, CardInstance>>;
+  /** equipmentInv exposed by the fake meta, keyed by accountId — empty by default (SLG_CITY_SIEGE_DESIGN §12.7's
+   *  gear channel needs a real end-to-end case, not just the unit-level teamSiegeValue tests). */
+  let equipmentInvByAccount: Record<string, Record<string, EquipmentInstance>>;
   const mailCalls: MailCall[] = [];
 
   const fakeGateway: WorldGatewayClient = {
@@ -97,7 +102,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     async grantMaterial() { /* n/a */ },
     async getProfile(): Promise<PlayerProfile | null> { return null; },
     async getSaveFields(accountId): Promise<SaveFields | null> {
-      return { equipmentInv: {}, cardInv: cardInvByAccount[accountId] ?? {} };
+      return { equipmentInv: equipmentInvByAccount[accountId] ?? {}, cardInv: cardInvByAccount[accountId] ?? {} };
     },
     async grantTitle() { /* n/a */ },
   batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
@@ -200,6 +205,7 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     nowMs = 1_000_000;
     pushes = [];
     cardInvByAccount = {};
+    equipmentInvByAccount = {};
     mailCalls.length = 0;
     svc = new WorldService({ cols: m.collections, redis: null, gateway: fakeGateway, meta: fakeMeta, mail: fakeMail, mapW: SLG_MAP_W, mapH: SLG_MAP_H, now });
   });
@@ -271,6 +277,39 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     // And the per-card helper scales with level.
     expect(cardSiegeValue({ id: 'z', defId: 'chenshou', level: 5, gear: {}, locked: false }))
       .toBeGreaterThan(cardSiegeValue({ id: 'z', defId: 'chenshou', level: 1, gear: {}, locked: false }));
+  });
+
+  it('equipped siege-value gear raises the scheduled durability hit (SLG_CITY_SIEGE_DESIGN §12.7, end-to-end)', async () => {
+    // Every other test in this file (and city-siege.e2e.test.ts) fakes getSaveFields with an empty
+    // equipmentInv, so the gear channel wired into teamSiegeValue (worldsvc's arrival.ts →
+    // baseSiege.ts → teamSiegeValue) had never actually been exercised through the real pipeline —
+    // only the isolated function was unit-tested (shared/test/siege.test.ts). This proves the whole
+    // chain: an attacker's real equipped gear changes the persisted SiegeDamageDoc.damage.
+    const tgt = findCoord(20, 5);
+    await setupBase(tgt.x, tgt.y, { durability: 100 });
+    const army = await setupAttacker(3);
+    // Equip one card's weapon slot with a saturated s_siege affix (+60%, the same cap
+    // SIEGE_GEAR_PCT_CAP encodes) — fixed value, no enhancement scaling needed to hit the cap.
+    const equippedCardId = army[0]!.cardInstanceId!;
+    const gearInstanceId = 'eq_siege_test';
+    cardInvByAccount['a']![equippedCardId]!.gear.weapon = gearInstanceId;
+    const equipmentInv: Record<string, EquipmentInstance> = {
+      [gearInstanceId]: { id: gearInstanceId, defId: 'sim_test', rarity: 'rare', level: 0, affixes: [{ id: 's_siege', value: 60 }] },
+    };
+    equipmentInvByAccount['a'] = equipmentInv;
+    await connectAttacker(tgt.x, tgt.y);
+    const bare = teamSiegeValue(army, cardInvByAccount['a']); // no equipmentInv passed → old gear-blind number
+    const geared = teamSiegeValue(army, cardInvByAccount['a'], equipmentInv);
+    expect(geared).toBeGreaterThan(bare); // sanity: the fixture actually moves the number
+
+    await arriveAttack(tgt.x, tgt.y, army);
+
+    const pending = await m.collections.siegeDamage.findOne({ tile: tileId(W, tgt.x, tgt.y) });
+    // This is the real assertion: worldsvc's actual pipeline used the attacker's real equipmentInv,
+    // not just the bare card levels.
+    expect(pending!.damage).toBe(geared);
+    expect(pending!.damage).not.toBe(bare);
+    expect(pending!.damage).toBeLessThanOrEqual(Math.round(bare * (1 + SIEGE_GEAR_PCT_CAP)) + 1); // sanity vs the documented cap
   });
 
   it('durability depleted → forced relocation (old base gone, territory lost, new base + protection shield + mail)', async () => {

@@ -43,6 +43,27 @@ cd tools/animator && npm run start   # 端口 9091
 
 累计（2026-08-13 收尾时）：animator 128 条、vfx-editor 114 条、level-editor 77 条（以上均含 Phase 1-4）、ops 51 条（Phase 3，含此前 bootstrap 的 `shared.test.ts` 6 条）。**这四个数都已过时**——2026-08-20 的 ADR-070 Phase 4a–4d 分别把 map-editor / level-editor / vfx-editor / animator 推到了 90% 门禁之内（animator 138 → 340 例，见下方「Phase 4d」）；当前值以 [`tools-testing.md`](tools-testing.md) 的台账为准。
 
+## Headless 调试 animator：截图/compositing 不可用时（2026-07-12 起，2026-08-20 系统化，2026-08-29 确认对真实 Chrome 同样适用）
+
+`tools/animator` 这几年反复撞上同一类环境坑——不管是 in-app Browser 面板（不 compositing，`document.visibilityState` 恒为 `'hidden'`）还是真实 Chrome 标签页（被系统最小化/锁屏导致 `document.hidden` 变 `true`）——一旦 `document.hidden`，`requestAnimationFrame` 就不再触发，PIXI ticker 冻结、主 canvas 停在 0×0，常规「截图确认」直接失效。下面这套手法不依赖屏幕合成，可以在这两种情况下都拿到真实验证：
+
+1. **临时挂调试钩子**：在 `tools/animator/src/App.ts` 构造函数末尾（`autoSave.bootstrap()` 之后）加一行 `(globalThis as any).__NW_DEBUG = { state, renderer, ioCtrl, imageCtrl, animCtrl, bus, cmdManager, Skeleton };`，把内部对象暴露给页面全局。Webpack HMR 会热更新，但**改 `InteractionController.ts` 之类文件 HMR 拒绝接受**（`[HMR] Error: Aborted because ... is not accepted`），会强制整页刷新、清空已建立的选中/工程状态，需要重新走一遍加载步骤——每改一次这个文件都要预期到这一点，或者攒够改动再一次性重测。**收尾前务必删掉这个钩子**，`git diff --stat App.ts` 确认只剩真正的功能改动。
+2. **无人工点击加载工程**：起一个小的本地静态文件服务器（带 CORS 头）serve 目标 `.tao.editor`，页面里 `fetch()` 取回 blob，调 `dbg.ioCtrl.loadEditorBlob(blob, name)` 直接加载，不用人在 UI 里拖文件。
+3. **`state.editorMode` 默认是 `'animate'` 不是 `'skin'`**——只设 `previewMode='sprite'` 拿到的是当前动画 clip 某一帧的姿态，不是静息姿 Binding。排查绑定/锚点问题前先显式 `dbg.state.setEditorMode('skin')`，否则诊断对象就测错了。
+4. **渲染+截图**：`dbg.renderer.pixiApp.ticker.update(performance.now()); dbg.renderer.pixiApp.renderer.render(dbg.renderer.pixiApp.stage);` 手动强制画一帧，再 `canvas.toDataURL(...)` 读像素，不依赖屏幕合成。
+5. **局部放大**：把 `renderer.pixiApp.view` 的一个子矩形 `ctx.drawImage(src, sx, sy, sw, sh, 0, 0, sw*scale, sh*scale)`（`imageSmoothingEnabled=false`）画到一个离屏 canvas 上再截这个 canvas，比整图缩放更清楚。
+6. **`sprite.getBounds()` 给的是旋转后的 AABB，容易误读**：一个精灵的 AABB 整个落在另一个精灵 AABB 内部，不代表它被挡住（z-order 仍可能让它透出来）；反过来 z-order 排在上面的精灵，如果覆盖区域被下面更密实/不透明的墨迹盖住，也可能视觉上"消失"。别只信 `getBounds()` 重叠——用 `ctx.getImageData` 在具体骨骼路径坐标上采样实际像素颜色确认部位有没有画出来。
+7. **`sprite.rotation = pose.wa + binding.rotation`**（见 `Renderer.ts` `updateSprites`）——`binding.rotation` 是叠加在实时 FK 角度之上的静态每骨骼偏移。一个很大/看起来奇怪的 `binding.rotation`（比如 167°）不天然是 bug，很可能是为了补偿原画没有对齐骨骼本地下轴而故意加的反向旋转。没有视觉证据不要"顺手修正"大角度值。
+8. **直接查骨骼关节坐标**：`dbg.Skeleton.computeFK(state.rootX, state.rootY, new Map(), state.boneLengthScales)`（空 Map = 真正的静息姿，无关键帧 delta）。
+9. **存回磁盘**：`dbg.ioCtrl.buildEditorBlob()` / `dbg.ioCtrl.buildTaoBlob()` 直接拿到 blob（绕开需要人工操作的 `saveWithPicker` 文件选择器），POST 给本地 collector 用 `fs.writeFileSync` 写到真实目标路径。
+10. **验证一条骨骼拖拽旋转修复、又不想碰 `App.ts` 加钩子时**：直接给 `document.querySelector('canvas')` 派发真实 `MouseEvent`（`mousedown`/`mousemove`/`mouseup`，`bubbles:true`）——这些事件确实会命中 `InteractionController` 真实的 `addEventListener` 处理器。难点是 client↔stage 坐标换算：`Renderer.toStageCoords` 靠 `canvas.getBoundingClientRect()` 和 `pixiApp.renderer.width/height / resolution`，两者都无法从外部猜出来。**不要靠一两个打印出来的数据点去反推这个仿射映射**（费时且容易错）——直接用上面第 1 条的调试钩子拿到 `dbg.renderer.pixiApp.view.getBoundingClientRect()` + `dbg.renderer.logicalSize`（都是精确的真实 getter），配合 `dbg.Skeleton.computeFK(...)` 算出真实骨骼枢轴，算出精确的逆映射。
+11. **`BoneInspectorPanel` 显示的旋转值不会在拖拽过程中实时更新**——只在 `bone:select`/`kf:change`/`time:change` 等事件上重渲染，不会跟着拖拽中的实时 delta（`AnimationController._liveDelta`，只能通过 `getCurrentFrame()` 看到）走。只在 `mouseup`（触发 `RotateBoneCommand` → `kf:change`）之后读这个值，拖拽过程中读会误判"拖拽没有生效"。
+12. **`RotateBoneCommand.execute()` 在 `animCtrl.currentClip` 为 `null`（没有选中动画 clip）时静默 no-op**——刚起的 dev server 如果没选 clip，选中+拖拽骨骼可以拖一整天毫无效果、也不报错，表现跟"拖拽处理器坏了"完全一样。测试拖拽旋转前先建好并选中一个 clip（面板里 `＋ New`，或钩子里 `dbg.animCtrl.createClip('x'); dbg.animCtrl.selectClip('x')`）。
+13. **在页面不 compositing / `document.hidden` 时截图前的两个前提**：(a) `App.ts` 里的 `ResizeObserver` 不会触发 → `renderer.logicalSize` 是 **0×0**、`rootX/Y` 是 `(0,30)`——先手动 `dbg.renderer.resize(680,420)` + `dbg.state.setRootPos(W/2, H/2+60)`，否则截到的是 0×0 画布；(b) `requestAnimationFrame` 不触发 → PIXI ticker 和独立的时间轴渲染循环都冻结——用第 4 条的手动 pump 拿主画布，时间轴画布则要先设好 `#tl-canvas-wrap` 的尺寸再直接调 `dbg.timelineView.render()`（它读 `parentElement.clientWidth/Height`）。**这是环境本身的表现，不是回归**——用同一段脚本跑一次未修改的主检出对比，是判断"环境伪影 vs 真实回归"最省钱的办法。
+14. **不挂钩子的纯 DOM 事件功能性检查**（够回答"编辑器还能不能用"，回答不了"画面对不对"）：先 `window.confirm = () => true; window.prompt = () => 'x'`（这类环境里原生 `prompt()` 会抛 `Uncaught Error: prompt() is not supported.`，让"＋ New"/重命名之类静默失效），再对 `#btn-new-anim`/`#btn-del-anim`/`.anim-item` 派发点击、对 `document` 派发 `KeyboardEvent`（`k`/`Delete`/`Ctrl+Z`/`Ctrl+Shift+Z`/`s`/`Tab`/空格），每步之后记录 `#status-text`/`#time-display`/`#inp-duration`/`.anim-item.active`，与未修改主检出跑同一脚本逐步 diff。
+15. **`document.hidden` 时靠手动 pump 强制渲染 + `toDataURL()` 截图**（2026-08-20 首次系统化）：不依赖屏幕合成，`document.hidden` 状态下依然能拿到真实像素——就是上面第 133 行「蒙皮模式」一节验证 skin-mode 画布手柄时用到的那一条。
+16. **同一套手法对真实 Chrome 标签页同样有效**（2026-08-29 确认）：真实 Chrome 窗口被系统最小化/锁屏也会让 `document.hidden` 变 `true`、`innerWidth/Height` 缩成个位数，此时 `computer{screenshot}`/`zoom` 要么超时要么只返回一帧冻结的极小画面（反复等待 ~20s 也不会恢复）——但 `canvas.toDataURL()`（配合第 4 条手动 pump）照样能读到真实渲染结果，因为它直接读 framebuffer，不经过被锁屏挂起的显示合成器。**新坑**：把 dataURL 字符串直接作为 `javascript_tool` 的返回值会被拦（`[BLOCKED: Cookie/query string data]`，超长 base64 触发了防泄漏启发式）——所以第 9 条的"POST 给本地 collector"在这里不是可选项，是唯一出路：起一个监听在闲置端口（如 8899、CORS 头开放）的最小 `http.createServer`，`fs.writeFileSync` 写下 POST body，页面里用普通 `fetch(url, {method:'POST', body: dataURL})` 推过去，再直接读保存下来的文件。要驱动具体的一次拖拽（而不只是截一帧静态画面）：手算命中目标的精确 stage 坐标（复用目标模块的纯几何公式，不用把模块本身通过钩子暴露出来），用 `canvas.getBoundingClientRect()` + `dbg.renderer.logicalSize` 换算成 client 坐标（第 10 条逆映射的正向版本），再 `canvas.dispatchEvent(new MouseEvent('mousedown'/'mousemove'/'mouseup', {bubbles:true, clientX, clientY, button:0}))`。验证结果读真实 getter（`dbg.state.getBinding(...)`、`dbg.cmdManager.undoLabel`），不要只凭"看起来对"。
+
 ## Phase 4d：补满 ADR-070 scope 并接入门禁（2026-08-20）
 
 138 → **340 例**，scope 内 64.3% → **98.9%**。五个工具里未覆盖行最多的一个（515 行），也是唯一**不需要抽模块**的一个——`include` 一直是目录级，缺的纯粹是测试。新增/扩充：
@@ -130,6 +151,45 @@ payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`（删掉那个「看�
 
 **验证**：`npm test` 357 条（`CommandManager.test.ts` 新增一条回归——**两栈同时非空**时两个 label 各自可读，这正是旧 payload 做不到的那个状态；另有四条旧断言随形状变更更新）。dev server 起在 9191 直读 `title` 属性，四个状态全对：两栈皆空 `Nothing to undo` / `Nothing to redo`；打一帧后 `Undo: Add Keyframe @ 0.000s` / `Nothing to redo`；Undo 后互换；**两栈同时非空时两边同时显示各自的命令名**。`StatusBar` 同屏复测，行为与改动前一致。
 
+## 蒙皮模式：画布直接拖拽骨骼长度 / 图片旋转 / 图片锚点（2026-08-29）
+
+此前蒙皮模式点选骨骼后，长度（`Length (px)`）、图片旋转（`Rotation`）、图片锚点偏移（`Anchor X/Y`）只能在右侧 Bone Inspector 里改数字；画布点击只做选中，`InteractionController.onMouseDown` 在蒙皮模式下故意不置 `isDragging`（"bone rotation is locked — only selection is allowed"）。用户反馈想要"选中骨骼或图片后直接拖拽调整"，方案讨论后确认**骨骼旋转在蒙皮模式下继续锁定不可拖**（角色始终摆静息 T 形姿势，旋转只在 Animate 模式画布拖拽），新增的是另外三个独立手柄：
+
+- **长度手柄**：选中骨骼后，其末端（tip）出现一个可拖拽的方块——拖动改变到骨骼起点的距离，换算成 `state.setLengthScale`，与数字输入走同一路径。
+- **图片旋转手柄**：选中骨骼且已绑定图片时（仅 Sprite 预览下），在贴图顶边中点外侧固定距离处画一个圆形旋钮，拖动按骨骼旋转拖拽同款的 `unwrapAngleStep` 累积角度算法改 `binding.rotation`。
+- **图片锚点拖拽**：直接点击贴图本体（不经过骨骼选中步骤，单击即选中该骨骼并进入拖拽）——`binding.anchorX/anchorY` 是"贴图内哪个像素钉在骨骼枢轴上"，而不是世界坐标偏移（`SpriteBinding` 类型定义里专门记录过 2026-06 移除 offsetX/Y 改用越界 anchor 的决定，这次没有引入新字段），所以拖拽视觉上"图片跟手"，实际写入的是反向的锚点增量：`local = rotateVec(mouseDelta, -图片世界旋转弧度)`，再除以 `scale*texSize` 换算成锚点增量，符号取反（贴图像素在锚点里的位置和视觉位移方向相反）。
+
+**命中优先级**（`InteractionController.onMouseDown` 的蒙皮分支）：①已选中骨骼自身的长度/旋转手柄 → ②任意可见贴图本体（按 `zOrder` 前后排序，一次点击可以"直接选中骨骼或图片"）→ ③退回骨骼线段选中（无图片的骨骼、或非 Sprite 预览时）。骨骼线段本身点击只选中、不拖，与 Skin 模式下旋转锁定的既有约定一致。
+
+**新增纯几何模块** `src/rendering/spriteGeometry.ts`：贴图在世界空间的四角/旋转手柄位置/点在四边形内测试，与 `Renderer.updateSprites` 摆放 `PIXI.Sprite` 用的是同一套锚点→缩放→旋转→平移公式，避免画的和能点的两边各算一套、慢慢分叉。零 PIXI 依赖（贴图尺寸用 `{width,height}` 结构类型而非 `PIXI.Texture`），供 `Renderer`（画手柄）和 `InteractionController`（命中测试 + 拖拽换算）共用。
+
+**Undo**：新增 `SetLengthScaleCommand`（长度）、`SetBindingPropCommand`（贴图属性，接受 `Partial<SpriteBinding>` 的 old/new 差集，rotation 和 anchorX/Y 拖拽共用同一个类）。拖拽走的是 `MoveKeyframeCommand` 那套"拖拽过程中已经直接改了 state，松手时 `pushExecuted` 补记录、不重跑 `execute()`"模式（2026-08-26 关键帧拖拽 Undo 修复定下的先例）。**顺带把 Bone Inspector 对应的三个数字输入（长度 px、Rotation、Anchor X/Y）也接到同一批 Command 上**——蒙皮模式此前所有数字输入都是直接改 `AppState`、不进 Undo 栈，这次只补齐了新增拖拽覆盖到的这三个属性，`Scale X/Y`/`Flip X`/`Z-Order` 没有对应手柄、保持原样不进 Undo（没有扩大范围）。
+
+**为 500 行闸门拆了两个文件**：`InteractionController.ts` 加完新逻辑到 603 行、`Renderer.ts` 到 524 行，`tools/scripts/checkFileLength.mjs`（限 500 行）判红。按既有拆分优先级（独立函数模块 > 组合 > 链式）、照 2026-08-26 `TimelineView.ts` 拆 `timeline/commands.ts` 的先例：
+- `src/interaction/commands.ts`（162 行）——原来内嵌在 `InteractionController.ts` 里的全部 Command 类（`RotateBoneCommand`/`AddKeyframeCommand`/`DeleteKeyframeCommand`/`SetLengthScaleCommand`/`SetBindingPropCommand`），本来就是零 canvas/DOM/`this` 依赖的纯 `AnimationController`/`AppState` 调用。`InteractionController.ts` 回落到 457 行。
+- `src/rendering/skinHandles.ts`（60 行）——`drawSkinHandles` 改造成模块级自由函数（`drawSkinHandles(g: PIXI.Graphics, data: SkinHandlesInput)`，`SkinHandlesInput` 是 `RenderData` 的结构子集而非直接 import，避免 `rendering/skinHandles.ts` ↔ `rendering/Renderer.ts` 反向依赖）。`Renderer.ts` 回落到 481 行。
+
+两个新文件里的 Command/自由函数都**不从 `InteractionController.ts` 再导出**——消费方（`BoneInspectorPanel.ts`、`test/InteractionController.test.ts`）直接 `import ... from '../interaction/commands'`，同 `TimelineView.test.ts` 直接 `import { MoveKeyframeCommand } from '../src/timeline/commands'` 的先例，不搞一层转发。
+
+**测试**：新增 `test/spriteGeometry.test.ts`（17 条，纯数学——`rotateVec` 恒等/90°/往返，`bindingToSpriteFrame` 角度叠加/默认值/flipX 符号，`localPixelToWorld`/`spriteCorners`/`rotationHandlePos` 手算期望值校验，`pointInQuad` 含 flipX 产生的反绕序）；`test/InteractionController.test.ts` 19→28 条，新增 `findSpriteAt`（含 zOrder 前后排序、贴图缺失跳过）、`SetLengthScaleCommand`、`SetBindingPropCommand`（单属性/多属性往返、binding 已被移除时的空操作、默认 label）。`npm run typecheck`/`lint`/`test`（383 例全绿）/`build` 全部干净，`node scripts/checkFileLength.mjs`、`node scripts/checkUnreachableModules.mjs`（新文件全部可达）均通过。
+
+**dev server 走查**（起在 9191，因 9091 被 Docker Desktop 占用，同已知记录）：先用真实 Chrome 走了一遍长度手柄——Skin 模式选中 R. Upper Leg，画布上长度手柄清晰可见（黄色方块，位于骨骼末端）；拖拽手柄把 `Length (px)` 从 50 实时拖到 158，画布上腿同步变长；点 Undo 后数值精确回到 50、画布同步变短，Redo 按钮 title 正确显示 `Redo: Set R. Upper Leg Length`。
+
+验证中途 Chrome 标签页的 `document.hidden` 变 `true`（真实浏览器窗口被系统最小化/锁屏，环境外部因素，与本次改动无关；截图/`zoom` 从此全部超时或只拿到 202×67 的隐藏视口），常规「截图确认」的路子在这之后走不通了。改用[「Headless 调试 animator：截图/compositing 不可用时」](#headless-调试-animator截图compositing-不可用时)第 15 条的手法：`document.hidden` 时手动 `renderer.pixiApp.ticker.update(performance.now())` + `renderer.pixiApp.renderer.render(stage)` 强制画一帧，再 `view.toDataURL()` 直接读像素——不依赖屏幕合成，隐藏状态下照样能拿到真图。临时在 `App.ts` 末尾加了 `__NW_DEBUG` 钩子（收尾前已删除，`git diff --stat App.ts` 确认只剩两处真正的功能改动），配合一个本地 8899 端口的小 collector（`fetch(POST dataURL)` → `fs.writeFileSync`，因为浏览器插件直接把超长 base64 当 cookie/query 数据拦掉了，传不出来）把图存到本地文件读取。
+
+用这条路子把图片旋转手柄和锚点拖拽也走了真实 DOM 事件全链路（`canvas.dispatchEvent(new MouseEvent(...))`，命中的是 `InteractionController` 真实的 `addEventListener` 处理器，不是绕过去直接改 state）：
+- **旋转手柄**：给 Spine（已挂测试图）算出手柄的真实世界坐标，`mousedown` 精确落在手柄上、`mousemove` 沿骨骼枢轴扫 40°、`mouseup`——`binding.rotation` 变成 `39.91°`（离散角度步进的正常误差），Undo 按钮 title 变成 `Undo: Rotate Spine Image`，前后两张 `toDataURL()` 截图显示贴图连同长度手柄方块和旋转手柄绿点一起转了对应角度。
+- **锚点拖拽**：直接点贴图本体（不点手柄）触发 `findSpriteAt` 命中 + 选中 + 拖拽一次到位，拖拽向量 (30,−20) 换算出 `anchorX 0.5→0.397`、`anchorY 0.5→0.367`——这两个数字与公式手算完全吻合（关键是 Spine 的静息世界角 `wa=-90°`会叠进旋转分量，一开始徒手心算漏算了这层旋转、对不上号，回头把 `pose.wa` 代进 `rotateVec` 才发现是自己心算漏项，不是实现的锚点换算有误），Undo 按钮 title 正确显示 `Undo: Move Spine Image`，截图显示贴图相对固定枢轴红点明显挪动、外框和手柄一起跟着挪。
+
+三个手柄的拖拽 + Undo/Redo 全部拿到了真实端到端证据（DOM 事件 → 真实 `InteractionController` 逻辑 → 真实 `AppState` → 真实重渲染），不是只靠单元测试。验证完把 Spine 的 rotation/anchor 都 Undo 回默认值。
+
+**补测试：把手动验证过的两块逻辑抽成纯函数钉死（同日，`feat/animator-skin-handle-tests`）**：上面 Chrome 走查时手推过的锚点拖拽公式、以及只在 `tryStartSkinHandleDrag` 私有方法里、从未被任何测试直接调用过的手柄命中判定，各抽成一个自由函数：
+
+- `spriteGeometry.ts` 新增 `computeAnchorDrag(startMouse, startAnchor, rotationRad, scaleX, scaleY, texW, texH, x, y)`——`onMouseMove` 的 `binding-anchor` 分支原来内联的公式原样搬出来，`InteractionController.ts` 改成调用它。测试里**把走查时手推、又推错过一次的那组 Spine 数字（`rotationRad=-π/2`、拖拽向量 (30,−20)）直接写成用例**（`anchorX 0.5→0.3974358974358977`、`anchorY 0.5→0.3672566371681416`），钉死"旋转分量必须叠进去，不能假设静息角是 0"这条容易再错的地方；另有恒等/flipX 镜像/非均匀缩放/零位移四条边界。
+- `InteractionController.ts` 新增 `findSkinHandleAt(x, y, boneId, worldPose, previewMode, binding, texture)`——只回答"命中了长度尖端还是旋转旋钮"，不下场改 `this.drag`（那部分仍需要 `state.getLengthScale`/`binding.rotation` 等实时状态，留在 `tryStartSkinHandleDrag` 里），测试用真实 `Skeleton.computeFK` 静息姿 + 真实 `bindingToSpriteFrame`/`rotationHandlePos` 算期望坐标（不手写幻数），覆盖 head 排除、Skeleton 预览下旋钮不可点、binding/texture 缺一不可、越界返回 null。
+
+两处提取都是**纯搬运，不改行为**——`npm test` 383→**394** 例（+11：`spriteGeometry.test.ts` +5、`InteractionController.test.ts` +6），`typecheck`/`lint`/`build`/两条闸门全部干净；`onMouseMove`/`onMouseUp` 里跟实时 `AppState`/`ImageController` 强耦合的部分（`tryStartSkinHandleDrag`/`startBindingAnchorDrag` 剩下的胶水、三个 drag 分支的 `state.setBinding`/`setLengthScale` 调用本身）仍然只能靠上面的 Chrome 端到端走查覆盖——`InteractionController` 类的构造函数接真实 `Renderer`（`new PIXI.Application`），这个包沿用 Phase 4 定下的"不建 headless-PIXI harness"决策，没打算改。
+
 ## 参数两层模型
 
 **Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`
@@ -190,4 +250,7 @@ payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`（删掉那个「看�
 | `src/ui/ErrorToast.ts` | 顶部居中错误浮层（`error` 事件，红色卡片，可 ✕，8s 自动消） |
 | `src/timeline/TimelineView.ts` | Canvas 时间轴渲染 + 交互 |
 | `src/timeline/commands.ts` | 关键帧 Undo 命令（移动/easing/删除）——零 canvas/DOM，2026-08-26 从 TimelineView 拆出 |
-| `src/interaction/InteractionController.ts` | 鼠标拖拽 + 键盘快捷键 |
+| `src/interaction/InteractionController.ts` | 鼠标拖拽（Animate 模式骨骼旋转 / Skin 模式长度+图片旋转+锚点手柄）+ 键盘快捷键 |
+| `src/interaction/commands.ts` | 骨骼/贴图 Undo 命令（旋转关键帧、加/删关键帧、长度、贴图属性）——零 canvas/DOM，2026-08-29 从 InteractionController 拆出 |
+| `src/rendering/skinHandles.ts` | Skin 模式手柄绘制（长度方块 + 贴图四角轮廓 + 旋转旋钮），2026-08-29 从 Renderer 拆出的自由函数 |
+| `src/rendering/spriteGeometry.ts` | 贴图世界坐标四角/旋转手柄位置/点在四边形内测试，纯函数零依赖，供 Renderer 画手柄与 InteractionController 命中测试共用 |

@@ -26,7 +26,6 @@ import {
   SIEGE_SYNTH_ARMY_MAX_TROOPS,
   MULTS_NONE,
   MULTS_MAX,
-  EQUIP_SIEGE_MULT,
   SECT_SIEGE_MULT,
   marchTroops,
   poolTroops,
@@ -66,6 +65,7 @@ import {
   TROOP_TRAIN_TIME_SEC,
   CARD_TEAM_MAX_SIZE,
   SIEGE_TEAM_CAP,
+  SIEGE_GEAR_PCT_CAP,
 } from '@nw/shared';
 
 const SEEDS = [1, 2, 3];
@@ -113,8 +113,8 @@ for (const t of TIERS) {
 }
 console.log(`\n  "march" is Σ cardTroopCap over the ${CARD_TEAM_MAX_SIZE} cards, clamped by satchel/troopCap — the card caps bind at every`);
 console.log('  tier, so a maxed account deploys ~4,800 troops per siege, not 20,000. "dmg/siege" = teamSiegeValue');
-console.log(`  (card defId+level only). "+gear+sect" applies the HYPOTHETICAL x${EQUIP_SIEGE_MULT} equipment siege channel and`);
-console.log(`  x${SECT_SIEGE_MULT.toFixed(2)} §8.3 sect-city channel — see the note under gate ③: NEITHER is wired into teamSiegeValue today.\n`);
+console.log(`  bare (no gear). "+gear+sect" saturates the gear channel to +${pct(SIEGE_GEAR_PCT_CAP)} (SLG_CITY_SIEGE_DESIGN §12.7,`);
+console.log(`  wired 2026-08-29) and stacks the x${SECT_SIEGE_MULT.toFixed(2)} §8.3 sect-city channel on top — see the note under gate ③.\n`);
 
 // ── ② Per-siege troop cost, measured ───────────────────────────────────────────────────────────
 bar('② ONE SIEGE — measured clear rate and troop cost of the wave ladder');
@@ -144,7 +144,7 @@ const R_weak = cityRegenPerHour(WILD_CITY_MIN_LEVEL, 'garrison');
 const soloBare = damageProfile(TIER_WHALE, weakest, SEEDS, MULTS_NONE);
 const soloMax = damageProfile(TIER_WHALE, weakest, SEEDS, MULTS_MAX);
 console.log(`City: durability ${n0(H_weak)}, regen ${n0(R_weak)}/h, ladder ${CITY_WAVE_COUNT}x${n0(cityWaveGarrison(WILD_CITY_MIN_LEVEL))} troops (${n0(cityLadderGarrison(WILD_CITY_MIN_LEVEL))} total)`);
-for (const [label, p] of [['as shipped (teamSiegeValue only)', soloBare], [`with the hypothetical gear+sect channels`, soloMax]] as const) {
+for (const [label, p] of [['bare (no gear, no sect)', soloBare], [`gear (+${pct(SIEGE_GEAR_PCT_CAP)} cap) + sect channels saturated`, soloMax]] as const) {
   console.log(`\n  ${label}:`);
   console.log(`    troop cost / siege   ${n0(p.troopCost)}   sieges in hour 1: ${n1(p.siegesFirstHour)}   damage/siege: ${n0(p.damagePerSiege)}`);
   console.log(`    sustained damage/h   ${n0(p.sustained)}  vs regen ${n0(R_weak)}/h   -> ${p.sustained < R_weak ? `PASS (regen is ${(R_weak / p.sustained).toFixed(2)}x)` : `FAIL (solo out-damages regen by ${(p.sustained / R_weak).toFixed(2)}x)`}`);
@@ -242,6 +242,18 @@ console.log('  A raid that does not finish inside the hour falls back to the "st
 console.log('  below which sustained damage never beats regen, i.e. the assault can never finish however long it');
 console.log(`  runs. Both columns matter: a city siege is decided by the opening pool dump. With ${SIEGE_TEAM_CAP} teams and a`);
 console.log('  ~1-minute round trip to an adjacent tile, march cycling is never the binding constraint — troops are.');
+
+// The table above is BARE (MULTS_NONE) — matching how §6.2 was originally published, before the gear
+// channel was real. Now that it is (§12.7), a raider whose gear happens to roll siege affixes needs
+// fewer attackers than the doc table says. Printed informationally, not part of the PASS/FAIL gate —
+// §6.2 itself is the design content decision, not something this script re-derives on its own.
+console.log(`\n  Informational — same reference roster, gear saturated at +${pct(SIEGE_GEAR_PCT_CAP)} siege value (SLG_CITY_SIEGE_DESIGN §12.7):`);
+for (const L of [WILD_CITY_MIN_LEVEL, WILD_CITY_MAX_LEVEL]) {
+  const bareN = measuredAttackers[`L${L}`]!;
+  const p = damageProfile(TIER_RAIDER, shippedLadder(L), SEEDS, { equipment: true, sect: false });
+  const N = attackersFor(L, 'garrison', p.firstHour, 1);
+  console.log(`    L${L}: ${n1(bareN)} bare -> ${n1(N)} geared (${pct((N - bareN) / bareN)})`);
+}
 
 // ── ⑥ Neighbourhood — what the two durability constants buy ─────────────────────────────────────
 bar('⑥ SENSITIVITY — the neighbourhood of the two durability constants');
@@ -347,12 +359,12 @@ console.log(`  ⑤ attackers-needed matches the doc      ${gate5 ? '✅ PASS' : 
 console.log(`  ⑦ a garrison is never cheaper than none ${additiveOk ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`  ⑦ a maxed garrison is still breakable  ${takeableOk ? '✅ PASS' : '❌ FAIL'}`);
 console.log(`\n${allOk ? '✅ CONSTANTS CONFIRMED' : '❌ NEEDS TUNING'} for TROOP_CAP_BASE/DRILL_TROOPCAP_STEP/card caps as they stand today.`);
-console.log('\n⚠️  TWO CODE FACTS about the hypothetical channels gate ③ is measured WITH (both are stacked into');
-console.log('   the worst case above, which is why wiring either one cannot move that verdict):');
-console.log(`   1. teamSiegeValue() reads ONLY card defId+level. The +${pct(EQUIP_SIEGE_MULT - 1)} EFFECT_CAPS.siegePct_fp equipment`);
-console.log('      channel is applied by applyEquipment to the engine blueprint\'s siegeValue_fp — that affects');
-console.log('      in-battle damage against a symbolic base, never the persistent durability hit. So gear STILL');
-console.log('      does not raise durability damage; whether it should is an open design question (§11).');
+console.log('\n⚠️  TWO CODE FACTS about the channels gate ③ is measured WITH (both are stacked into the worst case');
+console.log('   above, which is why either one being real cannot move that verdict):');
+console.log(`   1. teamSiegeValue() reads each card's equipped gear (SLG_CITY_SIEGE_DESIGN §12.7, wired 2026-08-29):`);
+console.log(`      m_siege/s_siege affixes, summed then clamped to +${pct(SIEGE_GEAR_PCT_CAP)} — the same EFFECT_CAPS.siegePct_fp`);
+console.log('      ceiling applyEquipment enforces on the engine blueprint\'s siegeValue_fp (in-battle damage). Both');
+console.log('      channels now raise the SAME durability hit; gate ③ above is the real, not hypothetical, number.');
 console.log(`   2. The §8.3 sect city bonus (x${SECT_SIEGE_MULT.toFixed(2)} at full map control) IS implemented as of ADR-074 P3`);
 console.log('      (2026-08-27): applyCitySiege multiplies teamSiegeValue by (1 + sectPayoff.siegeBonus), on its');
 console.log('      own channel, never summed into the capped equipment accumulator. Re-run confirmed PASS.');

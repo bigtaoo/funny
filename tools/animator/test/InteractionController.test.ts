@@ -7,11 +7,14 @@
 // rather than hand-rolled coordinates, so it doesn't hardcode bone-geometry constants that
 // belong to Skeleton.ts.
 import { describe, it, expect } from 'vitest';
-import { pointToSegmentDist, findBoneAt, unwrapAngleStep, RotateBoneCommand } from '../src/interaction/InteractionController';
+import { pointToSegmentDist, findBoneAt, findSpriteAt, findSkinHandleAt, unwrapAngleStep } from '../src/interaction/InteractionController';
+import { RotateBoneCommand, SetLengthScaleCommand, SetBindingPropCommand } from '../src/interaction/commands';
 import { Skeleton } from '../src/skeleton/Skeleton';
+import { bindingToSpriteFrame, rotationHandlePos } from '../src/rendering/spriteGeometry';
 import { EventBus, type AppEvents } from '../src/core/EventBus';
 import { AppState } from '../src/core/AppState';
 import { AnimationController } from '../src/animation/AnimationController';
+import type { SpriteBinding } from '../src/core/types';
 
 const DEG = Math.PI / 180;
 
@@ -180,5 +183,168 @@ describe('findBoneAt', () => {
   it('never returns "root" (excluded from SELECTABLE_BONES, zero-length anyway)', () => {
     const root = restPose.get('root')!;
     expect(findBoneAt(root.sx, root.sy, restPose)).not.toBe('root');
+  });
+});
+
+// findSkinHandleAt: skin mode's per-bone handle hit-test (length tip / rotation knob
+// for the CURRENTLY selected bone). Uses the real rest-pose geometry (same rationale
+// as findBoneAt above); the rotation-handle expectation is computed via the real
+// bindingToSpriteFrame/rotationHandlePos rather than a hand-derived coordinate, so
+// this doesn't duplicate spriteGeometry's own math as a second, driftable copy.
+describe('findSkinHandleAt', () => {
+  const restPose = Skeleton.computeFK(0, 0, new Map());
+  const binding: SpriteBinding = {
+    anchorX: 0.5, anchorY: 0.5, flipX: false, zOrder: 0, rotation: 0, scaleX: 1, scaleY: 1,
+  };
+  const texture = { width: 40, height: 100 };
+
+  it('hits "length" exactly at the bone tip, regardless of preview mode', () => {
+    const spine = restPose.get('spine')!;
+    expect(findSkinHandleAt(spine.ex, spine.ey, 'spine', restPose, 'skeleton', undefined, undefined)).toBe('length');
+    expect(findSkinHandleAt(spine.ex, spine.ey, 'spine', restPose, 'sprite', undefined, undefined)).toBe('length');
+  });
+
+  it('never hits "length" for the head (isHead, no length handle drawn)', () => {
+    const head = restPose.get('head')!;
+    expect(findSkinHandleAt(head.ex, head.ey, 'head', restPose, 'skeleton', undefined, undefined)).toBeNull();
+  });
+
+  it('hits "rotate" exactly at the real rotation-handle position, only in Sprite preview', () => {
+    const spine = restPose.get('spine')!;
+    const frame  = bindingToSpriteFrame(spine.sx, spine.sy, spine.wa, binding, texture.width, texture.height);
+    const handle = rotationHandlePos(frame);
+
+    expect(findSkinHandleAt(handle.x, handle.y, 'spine', restPose, 'sprite', binding, texture)).toBe('rotate');
+    // Same point, Skeleton preview mode: the rotation knob isn't drawn/clickable there.
+    expect(findSkinHandleAt(handle.x, handle.y, 'spine', restPose, 'skeleton', binding, texture)).toBeNull();
+  });
+
+  it('never hits "rotate" without a binding or a loaded texture, even in Sprite preview', () => {
+    const spine = restPose.get('spine')!;
+    const frame  = bindingToSpriteFrame(spine.sx, spine.sy, spine.wa, binding, texture.width, texture.height);
+    const handle = rotationHandlePos(frame);
+
+    expect(findSkinHandleAt(handle.x, handle.y, 'spine', restPose, 'sprite', undefined, texture)).toBeNull();
+    expect(findSkinHandleAt(handle.x, handle.y, 'spine', restPose, 'sprite', binding, undefined)).toBeNull();
+  });
+
+  it('returns null far from every handle', () => {
+    expect(findSkinHandleAt(100000, 100000, 'spine', restPose, 'sprite', binding, texture)).toBeNull();
+  });
+
+  it('returns null for a bone id absent from the world pose', () => {
+    expect(findSkinHandleAt(0, 0, 'not_a_bone', restPose, 'skeleton', undefined, undefined)).toBeNull();
+  });
+});
+
+// findSpriteAt: skin mode's "click the image directly" hit-test. Uses the real rest-pose
+// geometry (same rationale as findBoneAt above) with hand-built bindings/textures.
+describe('findSpriteAt', () => {
+  const restPose = Skeleton.computeFK(0, 0, new Map());
+
+  const binding = (zOrder: number): SpriteBinding => ({
+    anchorX: 0.5, anchorY: 0.5, flipX: false, zOrder, rotation: 0, scaleX: 1, scaleY: 1,
+  });
+
+  it('hits a bone whose sprite quad (centered anchor) covers its pivot point', () => {
+    const spine = restPose.get('spine')!;
+    const bindings = new Map([['spine', binding(0)]]);
+    const getTexture = () => ({ width: 40, height: 100 });
+    expect(findSpriteAt(spine.sx, spine.sy, restPose, bindings, getTexture)).toBe('spine');
+  });
+
+  it('returns null when the point is nowhere near any bound sprite', () => {
+    const bindings = new Map([['spine', binding(0)]]);
+    const getTexture = () => ({ width: 40, height: 100 });
+    expect(findSpriteAt(100000, 100000, restPose, bindings, getTexture)).toBeNull();
+  });
+
+  it('skips a bone with a binding but no loaded texture', () => {
+    const spine = restPose.get('spine')!;
+    const bindings = new Map([['spine', binding(0)]]);
+    expect(findSpriteAt(spine.sx, spine.sy, restPose, bindings, () => undefined)).toBeNull();
+  });
+
+  it('prefers the frontmost (highest zOrder) sprite when quads overlap at the same pivot', () => {
+    const spine = restPose.get('spine')!;
+    // Two bindings both centered on spine's own pivot (fabricated overlap — real
+    // rigs never share a pivot, but the hit-test only cares about quad geometry).
+    const bindings = new Map<string, SpriteBinding>([
+      ['spine', binding(0)],
+      ['head',  { ...binding(5), anchorX: 0.5, anchorY: 0.5 }],
+    ]);
+    // Force head's quad onto spine's pivot by using head's own pose is wrong for a
+    // real overlap test — instead assert ordering directly via a same-pivot pair.
+    const samePivot = new Map(restPose);
+    samePivot.set('head', { ...spine });
+    const getTexture = () => ({ width: 40, height: 100 });
+    expect(findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture)).toBe('head');
+  });
+});
+
+describe('SetLengthScaleCommand', () => {
+  it('execute sets the new scale, undo restores the old one', () => {
+    const bus   = new EventBus<AppEvents>();
+    const state = new AppState(bus);
+    state.setLengthScale('spine', 1.5);
+
+    const cmd = new SetLengthScaleCommand(state, 'spine', 1.5, 2.0);
+    cmd.execute();
+    expect(state.getLengthScale('spine')).toBe(2.0);
+
+    cmd.undo();
+    expect(state.getLengthScale('spine')).toBe(1.5);
+  });
+});
+
+describe('SetBindingPropCommand', () => {
+  function makeBoundState() {
+    const bus = new EventBus<AppEvents>();
+    const state = new AppState(bus);
+    state.setBinding('spine', {
+      anchorX: 0.5, anchorY: 0.5, flipX: false, zOrder: 0, rotation: 0, scaleX: 1, scaleY: 1,
+    });
+    return state;
+  }
+
+  it('execute/undo round-trip a single prop without touching the rest of the binding', () => {
+    const state = makeBoundState();
+    const cmd = new SetBindingPropCommand(state, 'spine', { rotation: 0 }, { rotation: 30 });
+    cmd.execute();
+    expect(state.getBinding('spine')?.rotation).toBe(30);
+    expect(state.getBinding('spine')?.anchorX).toBe(0.5);   // untouched
+
+    cmd.undo();
+    expect(state.getBinding('spine')?.rotation).toBe(0);
+  });
+
+  it('round-trips a multi-prop change (anchorX + anchorY together)', () => {
+    const state = makeBoundState();
+    const cmd = new SetBindingPropCommand(
+      state, 'spine',
+      { anchorX: 0.5, anchorY: 0.5 },
+      { anchorX: 0.8, anchorY: 0.2 },
+    );
+    cmd.execute();
+    expect(state.getBinding('spine')?.anchorX).toBe(0.8);
+    expect(state.getBinding('spine')?.anchorY).toBe(0.2);
+
+    cmd.undo();
+    expect(state.getBinding('spine')?.anchorX).toBe(0.5);
+    expect(state.getBinding('spine')?.anchorY).toBe(0.5);
+  });
+
+  it('is a no-op when the binding has since been removed', () => {
+    const state = makeBoundState();
+    state.removeBinding('spine');
+    const cmd = new SetBindingPropCommand(state, 'spine', { rotation: 0 }, { rotation: 30 });
+    expect(() => cmd.execute()).not.toThrow();
+    expect(state.getBinding('spine')).toBeUndefined();
+  });
+
+  it('defaults its label to the bone label when none is given', () => {
+    const state = makeBoundState();
+    const cmd = new SetBindingPropCommand(state, 'spine', {}, {});
+    expect(cmd.label).toContain('Spine');
   });
 });
