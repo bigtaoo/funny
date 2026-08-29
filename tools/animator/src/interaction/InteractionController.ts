@@ -2,9 +2,18 @@ import type { Renderer } from '../rendering/Renderer';
 import type { EventBus, AppEvents } from '../core/EventBus';
 import type { AppState } from '../core/AppState';
 import type { AnimationController } from '../animation/AnimationController';
-import type { CommandManager, Command } from '../core/CommandManager';
-import type { BoneKeyframe } from '../core/types';
+import type { ImageController } from '../images/ImageController';
+import type { CommandManager } from '../core/CommandManager';
+import type { WorldPose, WorldPositions, SpriteBinding } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
+import {
+  bindingToSpriteFrame, rotationHandlePos, spriteCorners, pointInQuad, rotateVec,
+  type Vec2,
+} from '../rendering/spriteGeometry';
+import {
+  RotateBoneCommand, AddKeyframeCommand, DeleteKeyframeCommand,
+  SetLengthScaleCommand, SetBindingPropCommand,
+} from './commands';
 
 // ── Angle math ────────────────────────────────────────────────────────────────
 
@@ -29,7 +38,8 @@ export function unwrapAngleStep(fromRad: number, toRad: number): number {
 
 // ── Hit-test ──────────────────────────────────────────────────────────────────
 
-const HIT_RADIUS = 10;
+const HIT_RADIUS        = 10;  // bone-segment hit radius (animate-mode rotate drag)
+const HANDLE_HIT_RADIUS = 9;   // skin-mode handle hit radius (length tip / rotation knob)
 
 // Pre-computed reversed draw order for front-first hit testing (computed lazily
 // after Skeleton static init runs).
@@ -39,118 +49,28 @@ function getDrawOrderReversed(): readonly string[] {
   return _drawOrderReversed;
 }
 
-// ── Commands ──────────────────────────────────────────────────────────────────
+// ── Drag state ────────────────────────────────────────────────────────────────
 
-export class RotateBoneCommand implements Command {
-  readonly label: string;
-
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly boneId: string,
-    private readonly oldRotation: number,
-    private readonly newRotation: number,
-    private readonly time: number,
-    private readonly hadKeyframe: boolean,
-  ) {
-    this.label = `Rotate ${boneId} @ ${time.toFixed(3)}s`;
-  }
-
-  execute(): void {
-    // Ensure a keyframe exists at this time, then update rotation
-    const clip = this.animCtrl.currentClip;
-    if (!clip) return;
-    const existing = clip.keyframes.find(k => Math.abs(k.time - this.time) < 0.001);
-    if (!existing) {
-      // Create a keyframe with the current interpolated pose, patching this bone's rotation
-      const frame = this.animCtrl.getCurrentFrame();
-      const bones = new Map<string, BoneKeyframe>();
-      frame.forEach((t, id) => {
-        bones.set(id, {
-          rotation:   id === this.boneId ? this.newRotation : t.rotation,
-          scaleX:     t.scaleX,
-          scaleY:     t.scaleY,
-          translateX: t.translateX,
-          translateY: t.translateY,
-          alpha:      t.alpha,
-        });
-      });
-      if (!bones.has(this.boneId)) bones.set(this.boneId, { rotation: this.newRotation });
-      this.animCtrl.addKeyframeAt(this.time, bones);
-    } else {
-      this.animCtrl.updateKeyframeProp(this.time, this.boneId, { rotation: this.newRotation });
-    }
-  }
-
-  undo(): void {
-    if (!this.hadKeyframe) {
-      // Remove the keyframe we created
-      this.animCtrl.deleteKeyframeAt(this.time);
-    } else {
-      this.animCtrl.updateKeyframeProp(this.time, this.boneId, { rotation: this.oldRotation });
-    }
-  }
-}
-
-class AddKeyframeCommand implements Command {
-  readonly label: string;
-  private snapshot: Map<string, BoneKeyframe> | null = null;
-
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly time: number,
-  ) {
-    this.label = `Add Keyframe @ ${time.toFixed(3)}s`;
-  }
-
-  execute(): void {
-    // Capture current interpolated pose on first execute
-    if (!this.snapshot) {
-      const frame = this.animCtrl.getCurrentFrame();
-      this.snapshot = new Map(Array.from(frame.entries()).map(([id, t]) => [id, {
-        rotation: t.rotation, scaleX: t.scaleX, scaleY: t.scaleY,
-        translateX: t.translateX, translateY: t.translateY,
-        alpha: t.alpha,
-      }]));
-    }
-    this.animCtrl.addKeyframeAt(this.time, this.snapshot);
-  }
-
-  undo(): void {
-    this.animCtrl.deleteKeyframeAt(this.time);
-  }
-}
-
-class DeleteKeyframeCommand implements Command {
-  readonly label: string;
-  private deleted: Map<string, BoneKeyframe> | null = null;
-
-  constructor(
-    private readonly animCtrl: AnimationController,
-    private readonly time: number,
-  ) {
-    this.label = `Delete Keyframe @ ${time.toFixed(3)}s`;
-  }
-
-  execute(): void {
-    const kf = this.animCtrl.currentClip?.keyframes.find(k => Math.abs(k.time - this.time) < 0.001);
-    if (kf) this.deleted = new Map(Array.from(kf.bones.entries()).map(([id, b]) => [id, { ...b }]));
-    this.animCtrl.deleteKeyframeAt(this.time);
-  }
-
-  undo(): void {
-    if (this.deleted) this.animCtrl.addKeyframeAt(this.time, this.deleted);
-  }
-}
+type DragState =
+  | { mode: 'bone-rotate'; boneId: string; lastAngle: number; accumDeg: number; oldRotation: number }
+  | { mode: 'bone-length'; boneId: string; boneLen: number; oldScale: number }
+  | { mode: 'binding-rotate'; boneId: string; lastAngle: number; accumDeg: number; oldRotation: number }
+  | {
+      mode: 'binding-anchor';
+      boneId: string;
+      startMouse: Vec2;
+      startAnchor: Vec2;
+      rotationRad: number;
+      scaleX: number;
+      scaleY: number;
+      texW: number;
+      texH: number;
+    };
 
 // ── InteractionController ─────────────────────────────────────────────────────
 
 export class InteractionController {
-  private isDragging     = false;
-  private dragBoneId:    string | null = null;
-  private dragStartX     = 0;
-  private dragLastAngle  = 0;  // mouse angle at the previous sample (for incremental unwrap)
-  private dragAccumDeg   = 0;  // continuous rotation delta accumulated since drag start
-  private dragOldRotation = 0; // rotation delta before drag
+  private drag: DragState | null = null;
 
   constructor(
     private readonly renderer: Renderer,
@@ -158,6 +78,7 @@ export class InteractionController {
     private readonly state: AppState,
     private readonly animCtrl: AnimationController,
     private readonly cmdManager: CommandManager,
+    private readonly imageCtrl: ImageController,
   ) {
     const canvas = renderer.pixiApp.view as HTMLCanvasElement;
     canvas.addEventListener('mousedown',  e => this.onMouseDown(e));
@@ -173,80 +94,224 @@ export class InteractionController {
   private onMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
 
-    // In Skin mode the pose is fixed at rest; hit-test against the rest pose.
     const skinMode = this.state.editorMode === 'skin';
-    const wp = skinMode
+    // In Skin mode the pose is fixed at rest; hit-test against the rest pose.
+    const frame = skinMode
       ? new Map<string, import('../core/types').ResolvedBoneTransform>()
       : this.animCtrl.getCurrentFrame();
     const { x, y } = this.renderer.toStageCoords(e.clientX, e.clientY);
-    const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, wp, this.state.boneLengthScales);
+    const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, frame, this.state.boneLengthScales);
 
-    const boneId = this.findBoneAt(x, y, worldPose);
+    if (skinMode) {
+      // Priority 1: a handle on the already-selected bone (length tip / rotation knob).
+      if (this.tryStartSkinHandleDrag(x, y, worldPose)) return;
 
+      // Priority 2: click directly on a sprite (front-to-back by zOrder) — selects
+      // its bone and arms an anchor drag in the same gesture, only when the sprite
+      // is actually visible on screen (Sprite preview mode).
+      if (this.state.previewMode === 'sprite') {
+        const spriteHit = findSpriteAt(x, y, worldPose, this.state.boneBindings, id => this.imageCtrl.getTexture(id));
+        if (spriteHit) {
+          this.state.setSelectedBone(spriteHit);
+          this.startBindingAnchorDrag(spriteHit, worldPose, x, y);
+          return;
+        }
+      }
+
+      // Priority 3: fall back to selecting a bone by its (invisible, in Sprite
+      // preview) segment — bone rotation is locked in Skin mode, selection only.
+      this.state.setSelectedBone(findBoneAt(x, y, worldPose));
+      return;
+    }
+
+    // Animate mode: canvas-drag rotates the selected bone (unchanged behaviour).
+    const boneId = findBoneAt(x, y, worldPose);
     if (boneId) {
       this.state.setSelectedBone(boneId);
-      // In Skin mode bone rotation is locked — only selection is allowed.
-      if (!skinMode) {
-        this.isDragging      = true;
-        this.dragBoneId      = boneId;
-        this.dragStartX      = e.clientX;
-
-        // Bone's pivot position for angle calculation
-        const pivot = worldPose.get(boneId)!;
-        this.dragLastAngle   = Math.atan2(y - pivot.sy, x - pivot.sx);
-        this.dragAccumDeg    = 0;
-        this.dragOldRotation = wp.get(boneId)?.rotation ?? 0;
-      }
+      const pivot = worldPose.get(boneId)!;
+      this.drag = {
+        mode:        'bone-rotate',
+        boneId,
+        lastAngle:   Math.atan2(y - pivot.sy, x - pivot.sx),
+        accumDeg:    0,
+        oldRotation: frame.get(boneId)?.rotation ?? 0,
+      };
     } else {
       this.state.setSelectedBone(null);
     }
   }
 
+  /** Skin-mode handle hit-test for the CURRENTLY selected bone (length tip, and —
+   *  only in Sprite preview — its binding's rotation knob). Arms the matching drag
+   *  and returns true on hit. */
+  private tryStartSkinHandleDrag(x: number, y: number, worldPose: WorldPositions): boolean {
+    const boneId = this.state.selectedBone;
+    if (!boneId) return false;
+    const bone = Skeleton.BONE_MAP.get(boneId);
+    const pos  = worldPose.get(boneId);
+    if (!bone || !pos) return false;
+
+    if (bone.len > 0 && !bone.isHead && Math.hypot(x - pos.ex, y - pos.ey) <= HANDLE_HIT_RADIUS) {
+      this.drag = { mode: 'bone-length', boneId, boneLen: bone.len, oldScale: this.state.getLengthScale(boneId) };
+      return true;
+    }
+
+    if (this.state.previewMode === 'sprite') {
+      const binding = this.state.getBinding(boneId);
+      const texture = this.imageCtrl.getTexture(boneId);
+      if (binding && texture) {
+        const spriteFrame = bindingToSpriteFrame(pos.sx, pos.sy, pos.wa, binding, texture.width, texture.height);
+        const handle       = rotationHandlePos(spriteFrame);
+        if (Math.hypot(x - handle.x, y - handle.y) <= HANDLE_HIT_RADIUS) {
+          this.drag = {
+            mode:        'binding-rotate',
+            boneId,
+            lastAngle:   Math.atan2(y - pos.sy, x - pos.sx),
+            accumDeg:    0,
+            oldRotation: binding.rotation ?? 0,
+          };
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private startBindingAnchorDrag(boneId: string, worldPose: WorldPositions, x: number, y: number): void {
+    const binding = this.state.getBinding(boneId);
+    const pos     = worldPose.get(boneId);
+    const texture = this.imageCtrl.getTexture(boneId);
+    if (!binding || !pos || !texture) return;
+
+    this.drag = {
+      mode:        'binding-anchor',
+      boneId,
+      startMouse:  { x, y },
+      startAnchor: { x: binding.anchorX, y: binding.anchorY },
+      rotationRad: ((pos.wa + (binding.rotation ?? 0)) * Math.PI) / 180,
+      scaleX:      (binding.flipX ? -1 : 1) * (binding.scaleX ?? 1),
+      scaleY:      binding.scaleY ?? 1,
+      texW:        texture.width,
+      texH:        texture.height,
+    };
+  }
+
   private onMouseMove(e: MouseEvent): void {
-    if (!this.isDragging || !this.dragBoneId || this.state.isPlaying) return;
-    if (this.state.editorMode === 'skin') return;  // should not happen, but guard
-
+    if (!this.drag || this.state.isPlaying) return;
     const { x, y } = this.renderer.toStageCoords(e.clientX, e.clientY);
-    const frame = this.animCtrl.getCurrentFrame();
-    const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, frame, this.state.boneLengthScales);
-    const pivot = worldPose.get(this.dragBoneId);
-    if (!pivot) return;
 
-    const angle = Math.atan2(y - pivot.sy, x - pivot.sx);
-    this.dragAccumDeg += (unwrapAngleStep(this.dragLastAngle, angle) * 180) / Math.PI;
-    this.dragLastAngle = angle;
-    this.animCtrl.setBoneDelta(this.dragBoneId, this.dragAccumDeg);
+    switch (this.drag.mode) {
+      case 'bone-rotate': {
+        const frame     = this.animCtrl.getCurrentFrame();
+        const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, frame, this.state.boneLengthScales);
+        const pivot     = worldPose.get(this.drag.boneId);
+        if (!pivot) return;
+        const angle = Math.atan2(y - pivot.sy, x - pivot.sx);
+        this.drag.accumDeg += (unwrapAngleStep(this.drag.lastAngle, angle) * 180) / Math.PI;
+        this.drag.lastAngle = angle;
+        this.animCtrl.setBoneDelta(this.drag.boneId, this.drag.accumDeg);
+        break;
+      }
+
+      case 'bone-length': {
+        const pos = this.restPos(this.drag.boneId);
+        if (!pos) return;
+        const newLen = Math.hypot(x - pos.sx, y - pos.sy);
+        const scale  = Math.max(0.05, newLen / this.drag.boneLen);
+        this.state.setLengthScale(this.drag.boneId, scale);
+        break;
+      }
+
+      case 'binding-rotate': {
+        const pos = this.restPos(this.drag.boneId);
+        if (!pos) return;
+        const angle = Math.atan2(y - pos.sy, x - pos.sx);
+        this.drag.accumDeg += (unwrapAngleStep(this.drag.lastAngle, angle) * 180) / Math.PI;
+        this.drag.lastAngle = angle;
+        const binding = this.state.getBinding(this.drag.boneId);
+        if (binding) {
+          this.state.setBinding(this.drag.boneId, { ...binding, rotation: this.drag.oldRotation + this.drag.accumDeg });
+        }
+        break;
+      }
+
+      case 'binding-anchor': {
+        const binding = this.state.getBinding(this.drag.boneId);
+        if (!binding) return;
+        const worldDx = x - this.drag.startMouse.x;
+        const worldDy = y - this.drag.startMouse.y;
+        // Undo rotation only (anchor lives in unscaled texture-pixel space); the
+        // sign flip is because the anchor is "which pixel sits at the fixed pivot"
+        // — dragging the image toward the cursor means that pixel moves away from
+        // the pivot, i.e. the anchor moves the opposite way.
+        const local = rotateVec(worldDx, worldDy, -this.drag.rotationRad);
+        const anchorX = this.drag.startAnchor.x - local.x / (this.drag.scaleX * this.drag.texW);
+        const anchorY = this.drag.startAnchor.y - local.y / (this.drag.scaleY * this.drag.texH);
+        this.state.setBinding(this.drag.boneId, { ...binding, anchorX, anchorY });
+        break;
+      }
+    }
   }
 
   private onMouseUp(): void {
-    if (!this.isDragging || !this.dragBoneId) {
-      this.isDragging = false;
-      return;
+    if (!this.drag) return;
+    const drag = this.drag;
+    this.drag = null;
+
+    switch (drag.mode) {
+      case 'bone-rotate': {
+        const frame        = this.animCtrl.getCurrentFrame();
+        const newRotation  = frame.get(drag.boneId)?.rotation ?? 0;
+        if (Math.abs(newRotation - drag.oldRotation) > 0.01) {
+          const t     = this.state.currentTime;
+          const clip  = this.animCtrl.currentClip;
+          const hadKf = clip?.keyframes.some(k => Math.abs(k.time - t) < 0.001) ?? false;
+          this.animCtrl.clearLiveDelta();
+          this.cmdManager.execute(new RotateBoneCommand(this.animCtrl, drag.boneId, drag.oldRotation, newRotation, t, hadKf));
+        } else {
+          this.animCtrl.clearLiveDelta();
+        }
+        break;
+      }
+
+      case 'bone-length': {
+        const newScale = this.state.getLengthScale(drag.boneId);
+        if (Math.abs(newScale - drag.oldScale) > 1e-4) {
+          this.cmdManager.pushExecuted(new SetLengthScaleCommand(this.state, drag.boneId, drag.oldScale, newScale));
+        }
+        break;
+      }
+
+      case 'binding-rotate': {
+        const newRotation = this.state.getBinding(drag.boneId)?.rotation ?? drag.oldRotation;
+        if (Math.abs(newRotation - drag.oldRotation) > 0.01) {
+          const label = `Rotate ${Skeleton.BONE_MAP.get(drag.boneId)?.label ?? drag.boneId} Image`;
+          this.cmdManager.pushExecuted(new SetBindingPropCommand(
+            this.state, drag.boneId, { rotation: drag.oldRotation }, { rotation: newRotation }, label,
+          ));
+        }
+        break;
+      }
+
+      case 'binding-anchor': {
+        const b         = this.state.getBinding(drag.boneId);
+        const newAnchor = { anchorX: b?.anchorX ?? drag.startAnchor.x, anchorY: b?.anchorY ?? drag.startAnchor.y };
+        const oldAnchor = { anchorX: drag.startAnchor.x, anchorY: drag.startAnchor.y };
+        if (Math.hypot(newAnchor.anchorX - oldAnchor.anchorX, newAnchor.anchorY - oldAnchor.anchorY) > 1e-4) {
+          const label = `Move ${Skeleton.BONE_MAP.get(drag.boneId)?.label ?? drag.boneId} Image`;
+          this.cmdManager.pushExecuted(new SetBindingPropCommand(this.state, drag.boneId, oldAnchor, newAnchor, label));
+        }
+        break;
+      }
     }
+  }
 
-    const frame = this.animCtrl.getCurrentFrame();
-    const newRotation = frame.get(this.dragBoneId)?.rotation ?? 0;
-
-    if (Math.abs(newRotation - this.dragOldRotation) > 0.01) {
-      const t = this.state.currentTime;
-      const clip = this.animCtrl.currentClip;
-      const hadKf = clip?.keyframes.some(k => Math.abs(k.time - t) < 0.001) ?? false;
-      const cmd = new RotateBoneCommand(
-        this.animCtrl,
-        this.dragBoneId,
-        this.dragOldRotation,
-        newRotation,
-        t,
-        hadKf,
-      );
-      this.animCtrl.clearLiveDelta();
-      this.cmdManager.execute(cmd);
-    } else {
-      this.animCtrl.clearLiveDelta();
-    }
-
-    this.isDragging = false;
-    this.dragBoneId = null;
+  /** Rest-pose (all keyframe rotations = 0) world pose for one bone — the frame
+   *  every Skin-mode handle drags against, regardless of Animate-mode playback state. */
+  private restPos(boneId: string): WorldPose | undefined {
+    const worldPose = Skeleton.computeFK(this.state.rootX, this.state.rootY, new Map(), this.state.boneLengthScales);
+    return worldPose.get(boneId);
   }
 
   private onRightDown(e: MouseEvent): void {
@@ -312,16 +377,6 @@ export class InteractionController {
         break;
     }
   }
-
-  // ── Hit-test ──────────────────────────────────────────────────────────────
-
-  private findBoneAt(
-    x: number,
-    y: number,
-    worldPose: ReturnType<typeof Skeleton.computeFK>,
-  ): string | null {
-    return findBoneAt(x, y, worldPose);
-  }
 }
 
 // ── Geometry helper ───────────────────────────────────────────────────────────
@@ -345,7 +400,7 @@ export function pointToSegmentDist(
 export function findBoneAt(
   x: number,
   y: number,
-  worldPose: ReturnType<typeof Skeleton.computeFK>,
+  worldPose: WorldPositions,
 ): string | null {
   // Check head first (circle)
   const head = worldPose.get('head');
@@ -372,4 +427,31 @@ export function findBoneAt(
   }
 
   return best;
+}
+
+/** Nearest sprite (front-to-back by zOrder) whose quad contains a stage point —
+ *  Skin-mode's "click the image directly" hit-test. Doesn't depend on controller
+ *  state — free function so it's testable without wiring up canvas listeners.
+ *  `getTexture` is typed structurally (not PIXI.Texture) to keep this module
+ *  PIXI-free. */
+export function findSpriteAt(
+  x: number,
+  y: number,
+  worldPose: WorldPositions,
+  bindings: ReadonlyMap<string, SpriteBinding>,
+  getTexture: (boneId: string) => { width: number; height: number } | undefined,
+): string | null {
+  const candidates = [...bindings.entries()]
+    .filter(([boneId]) => getTexture(boneId))
+    .sort((a, b) => b[1].zOrder - a[1].zOrder);   // highest zOrder (frontmost) first
+
+  for (const [boneId, binding] of candidates) {
+    const pose    = worldPose.get(boneId);
+    const texture = getTexture(boneId);
+    if (!pose || !texture) continue;
+    const frame = bindingToSpriteFrame(pose.sx, pose.sy, pose.wa, binding, texture.width, texture.height);
+    if (pointInQuad(x, y, spriteCorners(frame))) return boneId;
+  }
+
+  return null;
 }

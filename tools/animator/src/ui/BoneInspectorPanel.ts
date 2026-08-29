@@ -5,6 +5,7 @@ import type { ImageController } from '../images/ImageController';
 import type { CommandManager, Command } from '../core/CommandManager';
 import type { SpriteBinding, BoneKeyframe } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
+import { SetLengthScaleCommand, SetBindingPropCommand } from '../interaction/commands';
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
@@ -190,7 +191,11 @@ export class BoneInspectorPanel {
     if (bone && bone.len > 0 && !bone.isHead) {
       document.getElementById('inp-bone-len')?.addEventListener('change', e => {
         const px = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(px) && px > 0) this.state.setLengthScale(boneId, px / bone.len);
+        if (isNaN(px) || px <= 0) return;
+        const oldScale = this.state.getLengthScale(boneId);
+        const newScale = px / bone.len;
+        if (Math.abs(newScale - oldScale) < 1e-4) return;
+        this.cmdManager.execute(new SetLengthScaleCommand(this.state, boneId, oldScale, newScale));
       });
     }
 
@@ -199,15 +204,26 @@ export class BoneInspectorPanel {
       if (binding) {
         document.getElementById('inp-anchorX')?.addEventListener('change', e => {
           const v = parseFloat((e.target as HTMLInputElement).value);
-          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorX: v });
+          if (isNaN(v) || Math.abs(v - binding.anchorX) < 1e-4) return;
+          this.cmdManager.execute(new SetBindingPropCommand(
+            this.state, boneId, { anchorX: binding.anchorX }, { anchorX: v },
+          ));
         });
         document.getElementById('inp-anchorY')?.addEventListener('change', e => {
           const v = parseFloat((e.target as HTMLInputElement).value);
-          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, anchorY: v });
+          if (isNaN(v) || Math.abs(v - binding.anchorY) < 1e-4) return;
+          this.cmdManager.execute(new SetBindingPropCommand(
+            this.state, boneId, { anchorY: binding.anchorY }, { anchorY: v },
+          ));
         });
         document.getElementById('inp-bind-rot')?.addEventListener('change', e => {
           const v = parseFloat((e.target as HTMLInputElement).value);
-          if (!isNaN(v)) this.state.setBinding(boneId, { ...binding, rotation: v });
+          const old = binding.rotation ?? 0;
+          if (isNaN(v) || Math.abs(v - old) < 1e-4) return;
+          this.cmdManager.execute(new SetBindingPropCommand(
+            this.state, boneId, { rotation: old }, { rotation: v },
+            `Rotate ${Skeleton.BONE_MAP.get(boneId)?.label ?? boneId} Image`,
+          ));
         });
         document.getElementById('inp-bind-sx')?.addEventListener('change', e => {
           const v = parseFloat((e.target as HTMLInputElement).value);

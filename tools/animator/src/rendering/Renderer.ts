@@ -6,6 +6,7 @@ import type {
   AttachmentPoint,
 } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
+import { drawSkinHandles } from './skinHandles';
 
 // Cache default shadow size (computed once from rest pose)
 let _defaultShadow: { w: number; h: number } | null = null;
@@ -52,6 +53,7 @@ export interface RenderData {
 
   // Render options
   previewMode:         'skeleton' | 'sprite';
+  editorMode:          'skin' | 'animate';
   selectedBone:        string | null;
   showJoints:          boolean;
   showSkeletonOverlay: boolean;
@@ -185,6 +187,7 @@ export class Renderer {
     if (data.showPivots) this.drawPivots(data.worldPose, data.selectedBone);
     if (data.previewMode === 'sprite') this.drawAnchorPoints(data);
     this.drawAttachmentPoints(data.rootX, data.rootY, data.worldPose, data.attachmentPoints);
+    if (data.editorMode === 'skin') drawSkinHandles(this.selGfx, data);
   }
 
   // ── Sprite layer ──────────────────────────────────────────────────────────
