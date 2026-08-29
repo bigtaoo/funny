@@ -162,6 +162,13 @@ payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`（删掉那个「看�
 
 三个手柄的拖拽 + Undo/Redo 全部拿到了真实端到端证据（DOM 事件 → 真实 `InteractionController` 逻辑 → 真实 `AppState` → 真实重渲染），不是只靠单元测试。验证完把 Spine 的 rotation/anchor 都 Undo 回默认值。
 
+**补测试：把手动验证过的两块逻辑抽成纯函数钉死（同日，`feat/animator-skin-handle-tests`）**：上面 Chrome 走查时手推过的锚点拖拽公式、以及只在 `tryStartSkinHandleDrag` 私有方法里、从未被任何测试直接调用过的手柄命中判定，各抽成一个自由函数：
+
+- `spriteGeometry.ts` 新增 `computeAnchorDrag(startMouse, startAnchor, rotationRad, scaleX, scaleY, texW, texH, x, y)`——`onMouseMove` 的 `binding-anchor` 分支原来内联的公式原样搬出来，`InteractionController.ts` 改成调用它。测试里**把走查时手推、又推错过一次的那组 Spine 数字（`rotationRad=-π/2`、拖拽向量 (30,−20)）直接写成用例**（`anchorX 0.5→0.3974358974358977`、`anchorY 0.5→0.3672566371681416`），钉死"旋转分量必须叠进去，不能假设静息角是 0"这条容易再错的地方；另有恒等/flipX 镜像/非均匀缩放/零位移四条边界。
+- `InteractionController.ts` 新增 `findSkinHandleAt(x, y, boneId, worldPose, previewMode, binding, texture)`——只回答"命中了长度尖端还是旋转旋钮"，不下场改 `this.drag`（那部分仍需要 `state.getLengthScale`/`binding.rotation` 等实时状态，留在 `tryStartSkinHandleDrag` 里），测试用真实 `Skeleton.computeFK` 静息姿 + 真实 `bindingToSpriteFrame`/`rotationHandlePos` 算期望坐标（不手写幻数），覆盖 head 排除、Skeleton 预览下旋钮不可点、binding/texture 缺一不可、越界返回 null。
+
+两处提取都是**纯搬运，不改行为**——`npm test` 383→**394** 例（+11：`spriteGeometry.test.ts` +5、`InteractionController.test.ts` +6），`typecheck`/`lint`/`build`/两条闸门全部干净；`onMouseMove`/`onMouseUp` 里跟实时 `AppState`/`ImageController` 强耦合的部分（`tryStartSkinHandleDrag`/`startBindingAnchorDrag` 剩下的胶水、三个 drag 分支的 `state.setBinding`/`setLengthScale` 调用本身）仍然只能靠上面的 Chrome 端到端走查覆盖——`InteractionController` 类的构造函数接真实 `Renderer`（`new PIXI.Application`），这个包沿用 Phase 4 定下的"不建 headless-PIXI harness"决策，没打算改。
+
 ## 参数两层模型
 
 **Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`

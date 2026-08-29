@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   rotateVec, bindingToSpriteFrame, localPixelToWorld, spriteCorners, rotationHandlePos, pointInQuad,
+  computeAnchorDrag,
   type SpriteFrame,
 } from '../src/rendering/spriteGeometry';
 
@@ -142,5 +143,58 @@ describe('pointInQuad', () => {
     const reversed = [...square].reverse();
     expect(pointInQuad(5, 5, reversed)).toBe(true);
     expect(pointInQuad(50, 50, reversed)).toBe(false);
+  });
+});
+
+describe('computeAnchorDrag', () => {
+  it('moving the mouse toward +X/+Y with no rotation decreases the anchor (image follows the cursor)', () => {
+    const anchor = computeAnchorDrag(
+      { x: 0, y: 0 }, { x: 0.5, y: 0.5 }, 0,
+      1, 1, 100, 50,
+      30, 10,
+    );
+    // unrotated, unscaled: delta (30,10) in texture-pixel units = (30/100, 10/50) of anchor,
+    // subtracted (dragging the image toward the cursor moves the anchor the OTHER way).
+    expect(anchor.x).toBeCloseTo(0.5 - 0.3, 10);
+    expect(anchor.y).toBeCloseTo(0.5 - 0.2, 10);
+  });
+
+  it('reproduces the exact Spine rig numbers hand-verified live in Chrome (2026-08-29) — a real regression guard', () => {
+    // Spine's rest world angle is -90° (RAW_DEFS), binding.rotation was 0 at drag
+    // start, so rotationRad = -π/2 — NOT 0. This is what an unrotated-looking drag
+    // (mousedown mid-canvas, no visible spin) actually drags against, and is exactly
+    // the thing a naive hand-calculation forgets (see claudedocs/animator.md's
+    // 2026-08-29 section: the live-verification session got this wrong the first
+    // time for the same reason).
+    const anchor = computeAnchorDrag(
+      { x: 400, y: 480 }, { x: 0.5, y: 0.5 }, -Math.PI / 2,
+      1, 1, 195, 226,
+      430, 460, // dragged (+30, -20)
+    );
+    expect(anchor.x).toBeCloseTo(0.3974358974358977, 10);
+    expect(anchor.y).toBeCloseTo(0.3672566371681416, 10);
+  });
+
+  it('a negative scaleX (flipX) flips which way the X anchor moves', () => {
+    const normal  = computeAnchorDrag({ x: 0, y: 0 }, { x: 0.5, y: 0.5 }, 0, 1, 1, 100, 100, 20, 0);
+    const flipped = computeAnchorDrag({ x: 0, y: 0 }, { x: 0.5, y: 0.5 }, 0, -1, 1, 100, 100, 20, 0);
+    expect(flipped.x).toBeCloseTo(1 - normal.x, 10); // mirrored around the 0.5 center
+    expect(flipped.y).toBeCloseTo(normal.y, 10);      // Y untouched by an X-only flip
+  });
+
+  it('non-uniform scale divides each axis independently', () => {
+    const anchor = computeAnchorDrag(
+      { x: 0, y: 0 }, { x: 0.5, y: 0.5 }, 0,
+      2, 4, 100, 100,
+      20, 20,
+    );
+    // scaled texture-pixel delta = worldDelta / scale = (10, 5); anchor units = /100
+    expect(anchor.x).toBeCloseTo(0.5 - 0.1, 10);
+    expect(anchor.y).toBeCloseTo(0.5 - 0.05, 10);
+  });
+
+  it('zero mouse movement leaves the anchor unchanged', () => {
+    const anchor = computeAnchorDrag({ x: 50, y: 60 }, { x: 0.3, y: 0.7 }, 1.234, 1.5, 0.8, 80, 40, 50, 60);
+    expect(anchor).toEqual({ x: 0.3, y: 0.7 });
   });
 });

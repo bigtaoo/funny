@@ -77,6 +77,34 @@ export function rotationHandlePos(f: SpriteFrame, distance = 22): Vec2 {
   return { x: midX + up.x * distance, y: midY + up.y * distance };
 }
 
+/**
+ * Anchor-drag math: given the sprite frame captured at drag-start (rotation/scale/
+ * texture size are all fixed for the duration — only the binding's rotation-drag
+ * changes rotation, never concurrently with an anchor-drag) plus the mouse's start
+ * and current stage position, returns the new anchor.
+ *
+ * The anchor is "which texture pixel sits at the fixed world pivot" (see
+ * `SpriteBinding`'s doc comment — deliberately no separate offset field), so
+ * dragging the image toward the cursor means that pixel moves AWAY from the pivot:
+ * the anchor moves the opposite way from the visual drag. The mouse delta is first
+ * un-rotated (anchor lives in unscaled texture-pixel space, which doesn't rotate
+ * with the sprite) then un-scaled, hence the extra `rotateVec(..., -rotationRad)`
+ * and the `/ (scale * texSize)` division below.
+ */
+export function computeAnchorDrag(
+  startMouse: Vec2, startAnchor: Vec2, rotationRad: number,
+  scaleX: number, scaleY: number, texW: number, texH: number,
+  x: number, y: number,
+): Vec2 {
+  const worldDx = x - startMouse.x;
+  const worldDy = y - startMouse.y;
+  const local = rotateVec(worldDx, worldDy, -rotationRad);
+  return {
+    x: startAnchor.x - local.x / (scaleX * texW),
+    y: startAnchor.y - local.y / (scaleY * texH),
+  };
+}
+
 /** Point-in-convex-quad test via cross-product sign consistency (works for either
  *  winding order, which flipX can produce). */
 export function pointInQuad(px: number, py: number, quad: readonly Vec2[]): boolean {
