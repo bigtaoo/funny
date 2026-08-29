@@ -95,9 +95,15 @@ export const TIERS: readonly RosterTier[] = [TIER_STARTER, TIER_MID, TIER_MID_GE
 
 const buildingsOf = (t: RosterTier) => ({ drillYard: t.drillYard, satchel: t.satchel });
 
-/** Saturated-gear item: one instance carrying every combat affix at its EFFECT_CAPS ceiling. */
-const MAXED_GEAR_ID = 'sim_maxed_gear';
-const MAXED_GEAR_INV: EngineEquipInv = {
+/**
+ * Saturated-gear item: one instance carrying every combat affix at its EFFECT_CAPS ceiling. Exported so
+ * `citySiege.ts`'s `damagePerSiege` can equip it onto the SHARED-side cards too (SLG_CITY_SIEGE_DESIGN
+ * §12.7 twin item, wired 2026-08-29) — same instance, same affixes, so the in-battle stat bonus
+ * (`engineCards`/`gearInv`, read by the real engine) and the durability-damage bonus
+ * (`teamSiegeValue`'s equipmentInv, read by `@nw/shared`) are measured off one saturated loadout, not two.
+ */
+export const MAXED_GEAR_ID = 'sim_maxed_gear';
+export const MAXED_GEAR_INV: EngineEquipInv = {
   [MAXED_GEAR_ID]: {
     defId: 'sim_maxed', level: 0,
     // Secondary affixes take their rolled value verbatim (no enhancement scaling), so 60/60/60/40
@@ -118,7 +124,13 @@ export function engineCards(tier: RosterTier): EngineCardInstance[] {
 }
 export const gearInv = (tier: RosterTier): EngineEquipInv | undefined => (tier.geared ? MAXED_GEAR_INV : undefined);
 
-/** The tier's cards as shared `CardInstance`s (what `teamSiegeValue` consumes). */
+/**
+ * The tier's cards as shared `CardInstance`s (what `teamSiegeValue` consumes). Deliberately always
+ * `gear: {}`, regardless of `tier.geared` — since `teamSiegeValue` became gear-aware (SLG_CITY_SIEGE_DESIGN
+ * §12.7, wired 2026-08-29), `citySiege.ts`'s `damagePerSiege` is what decides whether to equip these cards
+ * (via its own `mults.equipment` switch, independent of `tier.geared`), so both a bare and a saturated
+ * number can still be measured off the SAME tier — see that function's doc comment.
+ */
 export function sharedCards(tier: RosterTier): Record<string, CardInstance> {
   const inv: Record<string, CardInstance> = {};
   tier.team.forEach((defId, i) => {

@@ -47,6 +47,7 @@ import {
   cityWaveBaseHp,
   cityDefenderBaseHp,
   CITY_DEFENDER_FORTIFY_MAX,
+  SIEGE_GEAR_PCT_CAP,
 } from '@nw/shared';
 
 const SEEDS = [1, 2, 3];
@@ -167,8 +168,8 @@ describe('citySiege: gate ③ — a fully maxed SOLO attacker can never take the
   it('sustained solo damage stays below the regen rate, with every purchasable multiplier stacked', () => {
     // TIER_WHALE = maxed drillYard/satchel, Lv.9 cards, saturated gear, the shop train-speedup buff, and
     // the highest-siege-value roster in the catalogue. MULTS_MAX additionally stacks the +60% equipment
-    // siege channel and the §8.3 sect-city channel — NEITHER of which teamSiegeValue reads today, so this
-    // is deliberately harsher than production.
+    // siege channel (SLG_CITY_SIEGE_DESIGN §12.7, wired 2026-08-29) and the §8.3 sect-city channel — both
+    // real production channels now, so this is the actual worst case, not a hypothetical one.
     const p = damageProfile(TIER_WHALE, ladder, SEEDS, MULTS_MAX);
     expect(p.sustained).toBeLessThan(R);
     expect(R / p.sustained).toBeGreaterThan(1.4); // margin, so a small retune elsewhere cannot flip it silently
@@ -224,12 +225,28 @@ describe('citySiege: gate ⑤ — attackers-needed matches the published design 
 });
 
 describe('citySiege: code facts the design doc assumed otherwise', () => {
-  it('teamSiegeValue ignores equipment — the +60% siege channel never reaches the durability hit', () => {
-    // Not a bug to fix blind: gate ③ is measured WITH the hypothetical multiplier, so wiring it up later
-    // stays inside the margin. This test exists so the assumption is stated, not silently discovered.
+  it('a tier\'s own .geared flag has no effect on damagePerSiege — only the mults.equipment switch does', () => {
+    // SLG_CITY_SIEGE_DESIGN §12.7 (wired 2026-08-29): teamSiegeValue is gear-aware now, but sharedCards()
+    // deliberately never equips a tier's own gear (see its doc comment) — damagePerSiege only attaches the
+    // saturated MAXED_GEAR_ID loadout when mults.equipment asks for it, decoupled from tier.geared (which
+    // still only drives the in-battle stat bonus, via engineCards/gearInv). This pins that decoupling so a
+    // future edit can't silently make the durability hit depend on the wrong flag.
     const geared = { ...TIER_RAIDER, geared: true };
     const bare = { ...TIER_RAIDER, geared: false };
     expect(damagePerSiege(geared, MULTS_NONE)).toBe(damagePerSiege(bare, MULTS_NONE));
+    expect(damagePerSiege(geared, MULTS_MAX)).toBe(damagePerSiege(bare, MULTS_MAX));
+  });
+
+  it('mults.equipment raises damagePerSiege by the real, saturated gear ratio — not a hardcoded multiplier', () => {
+    // Regression guard for the twin item's actual wiring: this used to be `base * 1.6` (a constant); now
+    // it's teamSiegeValue really reading MAXED_GEAR_INV's m_siege/s_siege affixes through each card's gear
+    // slot. Per-card rounding (cardSiegeValue rounds before summing) keeps the aggregate ratio a hair off
+    // an exact 1.6x, hence the tolerance rather than an exact equality.
+    const bare = damagePerSiege(TIER_RAIDER, MULTS_NONE);
+    const geared = damagePerSiege(TIER_RAIDER, { equipment: true, sect: false });
+    const ratio = geared / bare;
+    expect(ratio).toBeGreaterThan(1 + SIEGE_GEAR_PCT_CAP - 0.02);
+    expect(ratio).toBeLessThanOrEqual(1 + SIEGE_GEAR_PCT_CAP + 0.001);
   });
 
   it('damage per siege depends only on card level and composition, never on troops carried', () => {

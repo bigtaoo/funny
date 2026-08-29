@@ -266,7 +266,8 @@ export class ArrivalService {
       const attackerSynthesized = !hasCardArmy && rawArmy.length === 0;
       await applyBaseSiege(
         this.core, this.ctx, m, pw, baseTile, defenderId, defender, inOwnNation,
-        attackerArmy, cardInstances, cardEquipInv, siegeAcademy, attackerSave?.cardInv ?? {}, attackerSynthesized, t,
+        attackerArmy, cardInstances, cardEquipInv, siegeAcademy,
+        attackerSave?.cardInv ?? {}, attackerSave?.equipmentInv ?? {}, attackerSynthesized, t,
         defenderSaveForBase,
       );
       return;

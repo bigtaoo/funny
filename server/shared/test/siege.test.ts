@@ -31,7 +31,8 @@ import {
   waveSeed,
   type VisionSource,
 } from '../src/slg';
-import type { CardInstance } from '../src/types';
+import { cardSiegeValue, SIEGE_GEAR_PCT_CAP } from '../src/cards';
+import type { CardInstance, EquipmentInstance } from '../src/types';
 
 describe('resolveSiege', () => {
   // The cheap linear path deals in raw troops on both sides, so the ADR-069 `*Deployed` denominators
@@ -255,6 +256,52 @@ describe('teamSiegeValue', () => {
 
   it('skips entries without a cardInstanceId', () => {
     expect(teamSiegeValue([{}, { cardInstanceId: undefined }])).toBe(0);
+  });
+
+  it('threads equipmentInv through to each card\'s gear-driven siege bonus (SLG_CITY_SIEGE_DESIGN §12.7)', () => {
+    const geared: CardInstance = { id: 'c2', defId: 'lichuang', level: 1, gear: { weapon: 'eq1' }, locked: false };
+    const equipmentInv: Record<string, EquipmentInstance> = {
+      eq1: { id: 'eq1', defId: 'sim', rarity: 'rare', level: 0, affixes: [{ id: 's_siege', value: 20 }] },
+    };
+    // lichuang siegeValueBase(11) x (1 + 0.20) = 13.2 → 13, same number cardSiegeValue would give alone.
+    expect(teamSiegeValue([{ cardInstanceId: 'inst1' }], { inst1: geared }, equipmentInv)).toBe(13);
+  });
+});
+
+describe('cardSiegeValue gear channel (SLG_CITY_SIEGE_DESIGN §12.7 twin item, wired 2026-08-29)', () => {
+  const bare: CardInstance = { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false }; // siegeValueBase 11
+  const gearedCard = (instId: string): CardInstance => ({ id: 'c1', defId: 'lichuang', level: 1, gear: { weapon: instId }, locked: false });
+
+  it('omitted equipmentInv leaves the number exactly as before (every pre-existing caller)', () => {
+    expect(cardSiegeValue(bare)).toBe(11);
+    expect(cardSiegeValue(gearedCard('eq1'))).toBe(11); // equipped but no inv passed → gear unresolved
+  });
+
+  it('a secondary siege affix (s_siege) applies its rolled value directly, no enhancement scaling', () => {
+    const inv = { eq1: { level: 0, affixes: [{ id: 's_siege', value: 20 }] } };
+    expect(cardSiegeValue(gearedCard('eq1'), inv)).toBe(13); // 11 x 1.20 = 13.2 → 13
+  });
+
+  it('a primary siege affix (m_siege) scales with enhancement level', () => {
+    const invLv0 = { eq1: { level: 0, affixes: [{ id: 'm_siege', value: 10 }] } };
+    const invLv5 = { eq1: { level: 5, affixes: [{ id: 'm_siege', value: 10 }] } };
+    expect(cardSiegeValue(gearedCard('eq1'), invLv0)).toBe(12); // 11 x (1 + 0.10x1.00) = 12.1 → 12
+    expect(cardSiegeValue(gearedCard('eq1'), invLv5)).toBe(13); // 11 x (1 + 0.10x1.56) = 12.716 → 13
+  });
+
+  it('saturates at SIEGE_GEAR_PCT_CAP (+60%) instead of summing past it', () => {
+    expect(SIEGE_GEAR_PCT_CAP).toBe(0.6);
+    const inv = { eq1: { level: 9, affixes: [{ id: 's_siege', value: 40 }, { id: 'm_siege', value: 30 }] } }; // 0.40 + 0.30x5.00 = 1.90, uncapped
+    expect(cardSiegeValue(gearedCard('eq1'), inv)).toBe(18); // 11 x 1.60 = 17.6 → 18, not 11 x 2.90
+  });
+
+  it('ignores affixes that are not the siege channel', () => {
+    const inv = { eq1: { level: 0, affixes: [{ id: 'm_atk', value: 60 }, { id: 's_hp', value: 60 }] } };
+    expect(cardSiegeValue(gearedCard('eq1'), inv)).toBe(11); // neither affix targets siege
+  });
+
+  it('gear pointing at an instance missing from equipmentInv contributes nothing (defensive)', () => {
+    expect(cardSiegeValue(gearedCard('missing'), { eq1: { level: 0, affixes: [{ id: 's_siege', value: 60 }] } })).toBe(11);
   });
 });
 

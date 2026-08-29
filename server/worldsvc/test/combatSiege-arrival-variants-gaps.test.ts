@@ -588,7 +588,7 @@ describe('applyBaseSiege', () => {
     await applyBaseSiege(
       core, ctx, march({ troops: 100 }), pw(), baseTile(), DEF, defender, false,
       [{ unitType: 0, col: 0, row: 1, initialHp: 100 }] as never,
-      undefined, undefined, undefined, {}, true, 1_000, null,
+      undefined, undefined, undefined, {}, {}, true, 1_000, null,
     );
     expect(siegeDamageUpdateOne).toHaveBeenCalledTimes(1);
     const [, args] = siegeDamageUpdateOne.mock.calls[0]!;
@@ -604,7 +604,7 @@ describe('applyBaseSiege', () => {
     await applyBaseSiege(
       core, ctx, march({ troops: 100 }), pw(), baseTile(), DEF, defender, false,
       [{ unitType: 0, col: 0, row: 1, initialHp: 100 }] as never,
-      undefined, undefined, undefined, {}, true, 1_000, null,
+      undefined, undefined, undefined, {}, {}, true, 1_000, null,
     );
     expect(marchesToArray).toHaveBeenCalled();
     expect(siegeDamageUpdateOne).toHaveBeenCalledTimes(1); // t1 excluded → no live defenders → cleared
@@ -621,7 +621,7 @@ describe('applyBaseSiege', () => {
     await applyBaseSiege(
       core, ctx, march({ troops: 100 }), pw(), baseTile(), DEF, defender, false,
       [{ unitType: 0, col: 0, row: 1, initialHp: 100 }] as never,
-      undefined, undefined, undefined, {}, true, 1_000, null,
+      undefined, undefined, undefined, {}, {}, true, 1_000, null,
     );
     expect(siegeDamageUpdateOne).toHaveBeenCalledTimes(1); // injured team excluded → cleared
   });
@@ -637,7 +637,7 @@ describe('applyBaseSiege', () => {
     await applyBaseSiege(
       core, ctx, march({ troops: 100 }), pw(), baseTile(), DEF, defender, false,
       [{ unitType: 0, col: 0, row: 1, initialHp: 100 }] as never,
-      undefined, undefined, undefined, {}, true, 1_000, null,
+      undefined, undefined, undefined, {}, {}, true, 1_000, null,
     );
     expect(siegeDamageUpdateOne).toHaveBeenCalledTimes(1);
     // Team injury bookkeeping still runs for the "cleared" (defeated) empty team.
@@ -656,7 +656,7 @@ describe('applyBaseSiege', () => {
     const attackerArmy = [{ unitType: 0, col: 0, row: 1, initialHp: 5000 }] as never;
     await applyBaseSiege(
       core, ctx, march({ troops: 5000 }), pw(), baseTile(), DEF, defender, false,
-      attackerArmy, undefined, undefined, undefined, {}, true, 1_000, saveFieldsWithCard('card-t1'),
+      attackerArmy, undefined, undefined, undefined, {}, {}, true, 1_000, saveFieldsWithCard('card-t1'),
     );
     expect(siegeDamageUpdateOne).toHaveBeenCalledTimes(1);
     const injuryCall = pwUpdateOne.mock.calls.find(([, args]) =>
@@ -678,7 +678,7 @@ describe('applyBaseSiege', () => {
     const attackerArmy = [{ unitType: 0, col: 0, row: 1, initialHp: 20_000 }] as never;
     await applyBaseSiege(
       core, ctx, march({ troops: 20_000 }), pw(), baseTile(), DEF, defender, true,
-      attackerArmy, undefined, undefined, undefined, {}, true, 1_000, saveFieldsWithCard('card-t1'),
+      attackerArmy, undefined, undefined, undefined, {}, {}, true, 1_000, saveFieldsWithCard('card-t1'),
     );
     // Overwhelming attacker (20000) still clears the (nation-boosted) 5000-troop team.
     expect(siegeDamageUpdateOne).toHaveBeenCalledTimes(1);
@@ -697,7 +697,7 @@ describe('applyBaseSiege', () => {
     const attackerArmy = [{ unitType: 0, col: 0, row: 1, initialHp: 10_000 }] as never;
     await applyBaseSiege(
       core, ctx, march({ troops: 10_000 }), pw(), baseTile(), DEF, defender, false,
-      attackerArmy, undefined, undefined, undefined, {}, true, 1_000, saveFieldsWithCard('card-t1'),
+      attackerArmy, undefined, undefined, undefined, {}, {}, true, 1_000, saveFieldsWithCard('card-t1'),
     );
     expect(siegeDamageUpdateOne).not.toHaveBeenCalled(); // defender_win → not cleared → no delayed-damage doc
   });
@@ -711,7 +711,7 @@ describe('applyBaseSiege', () => {
     await expect(applyBaseSiege(
       core, ctx, m, attacker, baseTile(), DEF, defender, false,
       [{ unitType: 0, col: 0, row: 1, initialHp: 100 }] as never,
-      undefined, undefined, undefined, {}, true, 1_000, null,
+      undefined, undefined, undefined, {}, {}, true, 1_000, null,
     )).resolves.toBeUndefined();
   });
 });

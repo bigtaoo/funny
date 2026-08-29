@@ -14,6 +14,7 @@ import {
   SLG_SIEGE_DAMAGE_DELAY_MS,
   SLG_TEAM_INJURY_MS,
   type CardInstance,
+  type EquipmentInstance,
   type SiegeOutcome,
   type SiegeResolution,
 } from '@nw/shared';
@@ -50,6 +51,7 @@ export async function applyBaseSiege(
   cardEquipInv: EngineEquipInv | undefined,
   siegeAcademy: { hp: number; damage: number; siege: number } | undefined,
   attackerCardInv: Record<string, CardInstance>,
+  attackerEquipInv: Record<string, EquipmentInstance>,
   attackerSynthesized: boolean,
   t: number,
   defenderSave: SaveFields | null,
@@ -176,7 +178,8 @@ export async function applyBaseSiege(
   if (cleared) {
     // Garrison cleared (or no defenders present): schedule the delayed building-HP hit = attacking team's siege value
     // (sum of the team's per-card siege value; a real card team is always > 0). Attacker keeps besieging; survivors are refunded at settlement.
-    const damage = teamSiegeValue(m.army ?? [], attackerCardInv);
+    // SLG_CITY_SIEGE_DESIGN §12.7 twin item (wired 2026-08-29): reads the attacker's equipped gear too.
+    const damage = teamSiegeValue(m.army ?? [], attackerCardInv, attackerEquipInv);
     const dmg: SiegeDamageDoc = {
       _id: siege._id,
       worldId: m.worldId,

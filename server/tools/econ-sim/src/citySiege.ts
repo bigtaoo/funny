@@ -56,6 +56,7 @@ import {
   SIEGE_CHEAP_RATIO,
   cardTroopCap,
   type CityKind,
+  type CardInstance,
 } from '@nw/shared';
 import {
   TIERS,
@@ -70,6 +71,8 @@ import {
   engineCards,
   gearInv,
   sharedCards,
+  MAXED_GEAR_ID,
+  MAXED_GEAR_INV,
   marchTroops,
   perCardTroops,
   teamArmy,
@@ -121,34 +124,39 @@ function synthesizeDefender(troops: number): GarrisonEntry[] {
 
 // -- Damage per siege ----------------------------------------------------------------------------
 /**
- * WARNING: `teamSiegeValue` — the function worldsvc actually calls to size the durability hit — reads
- * only each card's `defId` + `level`. **Equipment does not enter it**: the +60% `EFFECT_CAPS.siegePct_fp`
- * channel is applied by `applyEquipment` to the engine blueprint's `siegeValue_fp`, which only affects
- * in-battle damage against a symbolic base, never the persistent durability hit. So `equipment` below is
- * HYPOTHETICAL headroom, carried explicitly so the calibration survives someone wiring it up later.
+ * `teamSiegeValue` — the function worldsvc actually calls to size the durability hit — is gear-aware
+ * as of 2026-08-29 (SLG_CITY_SIEGE_DESIGN §12.7 twin item): it reads each card's equipped gear's
+ * `m_siege`/`s_siege` affixes through `equipmentInv`, the same +60% `EFFECT_CAPS.siegePct_fp` ceiling
+ * `applyEquipment` enforces on the engine blueprint's `siegeValue_fp` (in-battle damage). `equipment`
+ * below stays a switch, decoupled from `tier.geared`, so the calibration can still show a bare number
+ * next to the saturated one on the SAME tier (`sharedCards`'s cards never carry gear on their own —
+ * `mults.equipment` is what equips {@link MAXED_GEAR_ID} onto them here).
  *
- * `sect` is NOT hypothetical any more (2026-08-27, ADR-074 P3): `applyCitySiege` multiplies
- * teamSiegeValue by `(1 + sectPayoff.siegeBonus)` on its own channel, never summed into the capped
- * equipment accumulator. It stays a switch here because the calibration needs to see both a bare and a
- * full-map-control sect, and because gate ③ has to be measured with every channel stacked.
+ * `sect` (2026-08-27, ADR-074 P3): `applyCitySiege` multiplies teamSiegeValue by
+ * `(1 + sectPayoff.siegeBonus)` on its own channel, never summed into the capped equipment
+ * accumulator. It stays a switch here for the same before/after-channel comparison.
  */
 export interface DamageMults {
-  /** EFFECT_CAPS.siegePct_fp saturated (+60%) — if `teamSiegeValue` is ever made gear-aware. */
+  /** Equips {@link MAXED_GEAR_ID} (EFFECT_CAPS.siegePct_fp saturated, +60%) before calling teamSiegeValue. */
   equipment: boolean;
   /** SLG_CITY_SIEGE_DESIGN §8.3 sect city bonus, saturated: 9 capitals x +3% + world center +5%. */
   sect: boolean;
 }
-export const EQUIP_SIEGE_MULT = 1.6;
 export const SECT_SIEGE_MULT = 1 + 9 * 0.03 + 0.05;
 export const MULTS_NONE: DamageMults = { equipment: false, sect: false };
 export const MULTS_MAX: DamageMults = { equipment: true, sect: true };
 
 /** Durability damage one cleared siege deals. */
 export function damagePerSiege(tier: RosterTier, mults: DamageMults = MULTS_NONE): number {
-  const inv = sharedCards(tier);
+  const bareInv = sharedCards(tier);
+  let inv: Record<string, CardInstance> = bareInv;
+  if (mults.equipment) {
+    inv = {};
+    for (const [id, c] of Object.entries(bareInv)) inv[id] = { ...c, gear: { weapon: MAXED_GEAR_ID } };
+  }
   const army = Object.keys(inv).map((id) => ({ cardInstanceId: id }));
-  const base = teamSiegeValue(army, inv);
-  return base * (mults.equipment ? EQUIP_SIEGE_MULT : 1) * (mults.sect ? SECT_SIEGE_MULT : 1);
+  const base = teamSiegeValue(army, inv, mults.equipment ? MAXED_GEAR_INV : undefined);
+  return base * (mults.sect ? SECT_SIEGE_MULT : 1);
 }
 
 // -- One siege: the whole wave ladder ------------------------------------------------------------

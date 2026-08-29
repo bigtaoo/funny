@@ -8,7 +8,7 @@
 // The engine-replay path for "critical battles" (real player vs. player city assault) (buildSiegeBlueprints + judgeRunner siege branch) is already
 // implemented and unit-tested on the client; S8-3b wires this in via worldsvc→gateway /gw/judge to replace the cheap settlement.
 
-import { cardSiegeValue } from '../cards';
+import { cardSiegeValue, type SiegeGearInstance } from '../cards';
 import type { CardInstance } from '../types';
 import type { SiegeOutcome } from './core';
 import { NATION_BONUS_DEFENSE } from './province';
@@ -350,16 +350,21 @@ export function regenDurability(current: number, max: number, regenAt: number, n
  * Only entries with a cardInstanceId count. When `cardInv` is provided, each card's value is resolved per-card/per-level
  * via {@link cardSiegeValue}; a card whose instance is missing from `cardInv` (and any call omitting `cardInv`, e.g. legacy
  * tests) falls back to the uniform SLG_SIEGE_VALUE_PER_CARD. Real teams always contain cards → value is always > 0.
+ *
+ * `equipmentInv` (optional, SLG_CITY_SIEGE_DESIGN §12.7 twin item, wired 2026-08-29) resolves each card's equipped gear's
+ * `m_siege`/`s_siege` affixes into the same durability hit — see {@link cardSiegeValue}'s gear channel. Omitted (as every
+ * pre-existing caller does) keeps the old gear-blind number.
  */
 export function teamSiegeValue(
   army: ReadonlyArray<{ cardInstanceId?: string }>,
   cardInv?: Record<string, CardInstance>,
+  equipmentInv?: Readonly<Record<string, SiegeGearInstance>>,
 ): number {
   let total = 0;
   for (const e of army) {
     if (!e.cardInstanceId) continue;
     const card = cardInv?.[e.cardInstanceId];
-    total += card ? cardSiegeValue(card) : SLG_SIEGE_VALUE_PER_CARD;
+    total += card ? cardSiegeValue(card, equipmentInv) : SLG_SIEGE_VALUE_PER_CARD;
   }
   return total;
 }
