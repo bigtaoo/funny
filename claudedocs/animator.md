@@ -130,6 +130,38 @@ payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`（删掉那个「看�
 
 **验证**：`npm test` 357 条（`CommandManager.test.ts` 新增一条回归——**两栈同时非空**时两个 label 各自可读，这正是旧 payload 做不到的那个状态；另有四条旧断言随形状变更更新）。dev server 起在 9191 直读 `title` 属性，四个状态全对：两栈皆空 `Nothing to undo` / `Nothing to redo`；打一帧后 `Undo: Add Keyframe @ 0.000s` / `Nothing to redo`；Undo 后互换；**两栈同时非空时两边同时显示各自的命令名**。`StatusBar` 同屏复测，行为与改动前一致。
 
+## 蒙皮模式：画布直接拖拽骨骼长度 / 图片旋转 / 图片锚点（2026-08-29）
+
+此前蒙皮模式点选骨骼后，长度（`Length (px)`）、图片旋转（`Rotation`）、图片锚点偏移（`Anchor X/Y`）只能在右侧 Bone Inspector 里改数字；画布点击只做选中，`InteractionController.onMouseDown` 在蒙皮模式下故意不置 `isDragging`（"bone rotation is locked — only selection is allowed"）。用户反馈想要"选中骨骼或图片后直接拖拽调整"，方案讨论后确认**骨骼旋转在蒙皮模式下继续锁定不可拖**（角色始终摆静息 T 形姿势，旋转只在 Animate 模式画布拖拽），新增的是另外三个独立手柄：
+
+- **长度手柄**：选中骨骼后，其末端（tip）出现一个可拖拽的方块——拖动改变到骨骼起点的距离，换算成 `state.setLengthScale`，与数字输入走同一路径。
+- **图片旋转手柄**：选中骨骼且已绑定图片时（仅 Sprite 预览下），在贴图顶边中点外侧固定距离处画一个圆形旋钮，拖动按骨骼旋转拖拽同款的 `unwrapAngleStep` 累积角度算法改 `binding.rotation`。
+- **图片锚点拖拽**：直接点击贴图本体（不经过骨骼选中步骤，单击即选中该骨骼并进入拖拽）——`binding.anchorX/anchorY` 是"贴图内哪个像素钉在骨骼枢轴上"，而不是世界坐标偏移（`SpriteBinding` 类型定义里专门记录过 2026-06 移除 offsetX/Y 改用越界 anchor 的决定，这次没有引入新字段），所以拖拽视觉上"图片跟手"，实际写入的是反向的锚点增量：`local = rotateVec(mouseDelta, -图片世界旋转弧度)`，再除以 `scale*texSize` 换算成锚点增量，符号取反（贴图像素在锚点里的位置和视觉位移方向相反）。
+
+**命中优先级**（`InteractionController.onMouseDown` 的蒙皮分支）：①已选中骨骼自身的长度/旋转手柄 → ②任意可见贴图本体（按 `zOrder` 前后排序，一次点击可以"直接选中骨骼或图片"）→ ③退回骨骼线段选中（无图片的骨骼、或非 Sprite 预览时）。骨骼线段本身点击只选中、不拖，与 Skin 模式下旋转锁定的既有约定一致。
+
+**新增纯几何模块** `src/rendering/spriteGeometry.ts`：贴图在世界空间的四角/旋转手柄位置/点在四边形内测试，与 `Renderer.updateSprites` 摆放 `PIXI.Sprite` 用的是同一套锚点→缩放→旋转→平移公式，避免画的和能点的两边各算一套、慢慢分叉。零 PIXI 依赖（贴图尺寸用 `{width,height}` 结构类型而非 `PIXI.Texture`），供 `Renderer`（画手柄）和 `InteractionController`（命中测试 + 拖拽换算）共用。
+
+**Undo**：新增 `SetLengthScaleCommand`（长度）、`SetBindingPropCommand`（贴图属性，接受 `Partial<SpriteBinding>` 的 old/new 差集，rotation 和 anchorX/Y 拖拽共用同一个类）。拖拽走的是 `MoveKeyframeCommand` 那套"拖拽过程中已经直接改了 state，松手时 `pushExecuted` 补记录、不重跑 `execute()`"模式（2026-08-26 关键帧拖拽 Undo 修复定下的先例）。**顺带把 Bone Inspector 对应的三个数字输入（长度 px、Rotation、Anchor X/Y）也接到同一批 Command 上**——蒙皮模式此前所有数字输入都是直接改 `AppState`、不进 Undo 栈，这次只补齐了新增拖拽覆盖到的这三个属性，`Scale X/Y`/`Flip X`/`Z-Order` 没有对应手柄、保持原样不进 Undo（没有扩大范围）。
+
+**为 500 行闸门拆了两个文件**：`InteractionController.ts` 加完新逻辑到 603 行、`Renderer.ts` 到 524 行，`tools/scripts/checkFileLength.mjs`（限 500 行）判红。按既有拆分优先级（独立函数模块 > 组合 > 链式）、照 2026-08-26 `TimelineView.ts` 拆 `timeline/commands.ts` 的先例：
+- `src/interaction/commands.ts`（162 行）——原来内嵌在 `InteractionController.ts` 里的全部 Command 类（`RotateBoneCommand`/`AddKeyframeCommand`/`DeleteKeyframeCommand`/`SetLengthScaleCommand`/`SetBindingPropCommand`），本来就是零 canvas/DOM/`this` 依赖的纯 `AnimationController`/`AppState` 调用。`InteractionController.ts` 回落到 457 行。
+- `src/rendering/skinHandles.ts`（60 行）——`drawSkinHandles` 改造成模块级自由函数（`drawSkinHandles(g: PIXI.Graphics, data: SkinHandlesInput)`，`SkinHandlesInput` 是 `RenderData` 的结构子集而非直接 import，避免 `rendering/skinHandles.ts` ↔ `rendering/Renderer.ts` 反向依赖）。`Renderer.ts` 回落到 481 行。
+
+两个新文件里的 Command/自由函数都**不从 `InteractionController.ts` 再导出**——消费方（`BoneInspectorPanel.ts`、`test/InteractionController.test.ts`）直接 `import ... from '../interaction/commands'`，同 `TimelineView.test.ts` 直接 `import { MoveKeyframeCommand } from '../src/timeline/commands'` 的先例，不搞一层转发。
+
+**测试**：新增 `test/spriteGeometry.test.ts`（17 条，纯数学——`rotateVec` 恒等/90°/往返，`bindingToSpriteFrame` 角度叠加/默认值/flipX 符号，`localPixelToWorld`/`spriteCorners`/`rotationHandlePos` 手算期望值校验，`pointInQuad` 含 flipX 产生的反绕序）；`test/InteractionController.test.ts` 19→28 条，新增 `findSpriteAt`（含 zOrder 前后排序、贴图缺失跳过）、`SetLengthScaleCommand`、`SetBindingPropCommand`（单属性/多属性往返、binding 已被移除时的空操作、默认 label）。`npm run typecheck`/`lint`/`test`（383 例全绿）/`build` 全部干净，`node scripts/checkFileLength.mjs`、`node scripts/checkUnreachableModules.mjs`（新文件全部可达）均通过。
+
+**dev server 走查**（起在 9191，因 9091 被 Docker Desktop 占用，同已知记录）：先用真实 Chrome 走了一遍长度手柄——Skin 模式选中 R. Upper Leg，画布上长度手柄清晰可见（黄色方块，位于骨骼末端）；拖拽手柄把 `Length (px)` 从 50 实时拖到 158，画布上腿同步变长；点 Undo 后数值精确回到 50、画布同步变短，Redo 按钮 title 正确显示 `Redo: Set R. Upper Leg Length`。
+
+验证中途 Chrome 标签页的 `document.hidden` 变 `true`（真实浏览器窗口被系统最小化/锁屏，环境外部因素，与本次改动无关；截图/`zoom` 从此全部超时或只拿到 202×67 的隐藏视口），常规「截图确认」的路子在这之后走不通了。改用 [`animator-headless-skin-debug-technique`](../../../.claude/projects/D--funny/memory/animator-headless-skin-debug-technique.md)（2026-08-20 记的、专治这个环境坑的技巧）第 15 条：`document.hidden` 时手动 `renderer.pixiApp.ticker.update(performance.now())` + `renderer.pixiApp.renderer.render(stage)` 强制画一帧，再 `view.toDataURL()` 直接读像素——不依赖屏幕合成，隐藏状态下照样能拿到真图。临时在 `App.ts` 末尾加了 `__NW_DEBUG` 钩子（收尾前已删除，`git diff --stat App.ts` 确认只剩两处真正的功能改动），配合一个本地 8899 端口的小 collector（`fetch(POST dataURL)` → `fs.writeFileSync`，因为浏览器插件直接把超长 base64 当 cookie/query 数据拦掉了，传不出来）把图存到本地文件读取。
+
+用这条路子把图片旋转手柄和锚点拖拽也走了真实 DOM 事件全链路（`canvas.dispatchEvent(new MouseEvent(...))`，命中的是 `InteractionController` 真实的 `addEventListener` 处理器，不是绕过去直接改 state）：
+- **旋转手柄**：给 Spine（已挂测试图）算出手柄的真实世界坐标，`mousedown` 精确落在手柄上、`mousemove` 沿骨骼枢轴扫 40°、`mouseup`——`binding.rotation` 变成 `39.91°`（离散角度步进的正常误差），Undo 按钮 title 变成 `Undo: Rotate Spine Image`，前后两张 `toDataURL()` 截图显示贴图连同长度手柄方块和旋转手柄绿点一起转了对应角度。
+- **锚点拖拽**：直接点贴图本体（不点手柄）触发 `findSpriteAt` 命中 + 选中 + 拖拽一次到位，拖拽向量 (30,−20) 换算出 `anchorX 0.5→0.397`、`anchorY 0.5→0.367`——这两个数字与公式手算完全吻合（关键是 Spine 的静息世界角 `wa=-90°`会叠进旋转分量，一开始徒手心算漏算了这层旋转、对不上号，回头把 `pose.wa` 代进 `rotateVec` 才发现是自己心算漏项，不是实现的锚点换算有误），Undo 按钮 title 正确显示 `Undo: Move Spine Image`，截图显示贴图相对固定枢轴红点明显挪动、外框和手柄一起跟着挪。
+
+三个手柄的拖拽 + Undo/Redo 全部拿到了真实端到端证据（DOM 事件 → 真实 `InteractionController` 逻辑 → 真实 `AppState` → 真实重渲染），不是只靠单元测试。验证完把 Spine 的 rotation/anchor 都 Undo 回默认值。
+
 ## 参数两层模型
 
 **Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`
@@ -190,4 +222,7 @@ payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`（删掉那个「看�
 | `src/ui/ErrorToast.ts` | 顶部居中错误浮层（`error` 事件，红色卡片，可 ✕，8s 自动消） |
 | `src/timeline/TimelineView.ts` | Canvas 时间轴渲染 + 交互 |
 | `src/timeline/commands.ts` | 关键帧 Undo 命令（移动/easing/删除）——零 canvas/DOM，2026-08-26 从 TimelineView 拆出 |
-| `src/interaction/InteractionController.ts` | 鼠标拖拽 + 键盘快捷键 |
+| `src/interaction/InteractionController.ts` | 鼠标拖拽（Animate 模式骨骼旋转 / Skin 模式长度+图片旋转+锚点手柄）+ 键盘快捷键 |
+| `src/interaction/commands.ts` | 骨骼/贴图 Undo 命令（旋转关键帧、加/删关键帧、长度、贴图属性）——零 canvas/DOM，2026-08-29 从 InteractionController 拆出 |
+| `src/rendering/skinHandles.ts` | Skin 模式手柄绘制（长度方块 + 贴图四角轮廓 + 旋转旋钮），2026-08-29 从 Renderer 拆出的自由函数 |
+| `src/rendering/spriteGeometry.ts` | 贴图世界坐标四角/旋转手柄位置/点在四边形内测试，纯函数零依赖，供 Renderer 画手柄与 InteractionController 命中测试共用 |
