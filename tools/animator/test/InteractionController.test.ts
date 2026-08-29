@@ -7,9 +7,10 @@
 // rather than hand-rolled coordinates, so it doesn't hardcode bone-geometry constants that
 // belong to Skeleton.ts.
 import { describe, it, expect } from 'vitest';
-import { pointToSegmentDist, findBoneAt, findSpriteAt, unwrapAngleStep } from '../src/interaction/InteractionController';
+import { pointToSegmentDist, findBoneAt, findSpriteAt, findSkinHandleAt, unwrapAngleStep } from '../src/interaction/InteractionController';
 import { RotateBoneCommand, SetLengthScaleCommand, SetBindingPropCommand } from '../src/interaction/commands';
 import { Skeleton } from '../src/skeleton/Skeleton';
+import { bindingToSpriteFrame, rotationHandlePos } from '../src/rendering/spriteGeometry';
 import { EventBus, type AppEvents } from '../src/core/EventBus';
 import { AppState } from '../src/core/AppState';
 import { AnimationController } from '../src/animation/AnimationController';
@@ -182,6 +183,57 @@ describe('findBoneAt', () => {
   it('never returns "root" (excluded from SELECTABLE_BONES, zero-length anyway)', () => {
     const root = restPose.get('root')!;
     expect(findBoneAt(root.sx, root.sy, restPose)).not.toBe('root');
+  });
+});
+
+// findSkinHandleAt: skin mode's per-bone handle hit-test (length tip / rotation knob
+// for the CURRENTLY selected bone). Uses the real rest-pose geometry (same rationale
+// as findBoneAt above); the rotation-handle expectation is computed via the real
+// bindingToSpriteFrame/rotationHandlePos rather than a hand-derived coordinate, so
+// this doesn't duplicate spriteGeometry's own math as a second, driftable copy.
+describe('findSkinHandleAt', () => {
+  const restPose = Skeleton.computeFK(0, 0, new Map());
+  const binding: SpriteBinding = {
+    anchorX: 0.5, anchorY: 0.5, flipX: false, zOrder: 0, rotation: 0, scaleX: 1, scaleY: 1,
+  };
+  const texture = { width: 40, height: 100 };
+
+  it('hits "length" exactly at the bone tip, regardless of preview mode', () => {
+    const spine = restPose.get('spine')!;
+    expect(findSkinHandleAt(spine.ex, spine.ey, 'spine', restPose, 'skeleton', undefined, undefined)).toBe('length');
+    expect(findSkinHandleAt(spine.ex, spine.ey, 'spine', restPose, 'sprite', undefined, undefined)).toBe('length');
+  });
+
+  it('never hits "length" for the head (isHead, no length handle drawn)', () => {
+    const head = restPose.get('head')!;
+    expect(findSkinHandleAt(head.ex, head.ey, 'head', restPose, 'skeleton', undefined, undefined)).toBeNull();
+  });
+
+  it('hits "rotate" exactly at the real rotation-handle position, only in Sprite preview', () => {
+    const spine = restPose.get('spine')!;
+    const frame  = bindingToSpriteFrame(spine.sx, spine.sy, spine.wa, binding, texture.width, texture.height);
+    const handle = rotationHandlePos(frame);
+
+    expect(findSkinHandleAt(handle.x, handle.y, 'spine', restPose, 'sprite', binding, texture)).toBe('rotate');
+    // Same point, Skeleton preview mode: the rotation knob isn't drawn/clickable there.
+    expect(findSkinHandleAt(handle.x, handle.y, 'spine', restPose, 'skeleton', binding, texture)).toBeNull();
+  });
+
+  it('never hits "rotate" without a binding or a loaded texture, even in Sprite preview', () => {
+    const spine = restPose.get('spine')!;
+    const frame  = bindingToSpriteFrame(spine.sx, spine.sy, spine.wa, binding, texture.width, texture.height);
+    const handle = rotationHandlePos(frame);
+
+    expect(findSkinHandleAt(handle.x, handle.y, 'spine', restPose, 'sprite', undefined, texture)).toBeNull();
+    expect(findSkinHandleAt(handle.x, handle.y, 'spine', restPose, 'sprite', binding, undefined)).toBeNull();
+  });
+
+  it('returns null far from every handle', () => {
+    expect(findSkinHandleAt(100000, 100000, 'spine', restPose, 'sprite', binding, texture)).toBeNull();
+  });
+
+  it('returns null for a bone id absent from the world pose', () => {
+    expect(findSkinHandleAt(0, 0, 'not_a_bone', restPose, 'skeleton', undefined, undefined)).toBeNull();
   });
 });
 

@@ -7,7 +7,7 @@ import type { CommandManager } from '../core/CommandManager';
 import type { WorldPose, WorldPositions, SpriteBinding } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 import {
-  bindingToSpriteFrame, rotationHandlePos, spriteCorners, pointInQuad, rotateVec,
+  bindingToSpriteFrame, rotationHandlePos, spriteCorners, pointInQuad, computeAnchorDrag,
   type Vec2,
 } from '../rendering/spriteGeometry';
 import {
@@ -143,39 +143,31 @@ export class InteractionController {
 
   /** Skin-mode handle hit-test for the CURRENTLY selected bone (length tip, and —
    *  only in Sprite preview — its binding's rotation knob). Arms the matching drag
-   *  and returns true on hit. */
+   *  and returns true on hit. Geometry lives in the free `findSkinHandleAt` below;
+   *  this just fetches the live state it needs and builds the resulting DragState. */
   private tryStartSkinHandleDrag(x: number, y: number, worldPose: WorldPositions): boolean {
     const boneId = this.state.selectedBone;
     if (!boneId) return false;
-    const bone = Skeleton.BONE_MAP.get(boneId);
-    const pos  = worldPose.get(boneId);
-    if (!bone || !pos) return false;
+    const pos     = worldPose.get(boneId);
+    const binding = this.state.previewMode === 'sprite' ? this.state.getBinding(boneId) : undefined;
+    const texture = binding ? this.imageCtrl.getTexture(boneId) : undefined;
 
-    if (bone.len > 0 && !bone.isHead && Math.hypot(x - pos.ex, y - pos.ey) <= HANDLE_HIT_RADIUS) {
+    const hit = findSkinHandleAt(x, y, boneId, worldPose, this.state.previewMode, binding, texture);
+    if (!hit || !pos) return false;
+
+    if (hit === 'length') {
+      const bone = Skeleton.BONE_MAP.get(boneId)!;
       this.drag = { mode: 'bone-length', boneId, boneLen: bone.len, oldScale: this.state.getLengthScale(boneId) };
-      return true;
+    } else {
+      this.drag = {
+        mode:        'binding-rotate',
+        boneId,
+        lastAngle:   Math.atan2(y - pos.sy, x - pos.sx),
+        accumDeg:    0,
+        oldRotation: binding!.rotation ?? 0,
+      };
     }
-
-    if (this.state.previewMode === 'sprite') {
-      const binding = this.state.getBinding(boneId);
-      const texture = this.imageCtrl.getTexture(boneId);
-      if (binding && texture) {
-        const spriteFrame = bindingToSpriteFrame(pos.sx, pos.sy, pos.wa, binding, texture.width, texture.height);
-        const handle       = rotationHandlePos(spriteFrame);
-        if (Math.hypot(x - handle.x, y - handle.y) <= HANDLE_HIT_RADIUS) {
-          this.drag = {
-            mode:        'binding-rotate',
-            boneId,
-            lastAngle:   Math.atan2(y - pos.sy, x - pos.sx),
-            accumDeg:    0,
-            oldRotation: binding.rotation ?? 0,
-          };
-          return true;
-        }
-      }
-    }
-
-    return false;
+    return true;
   }
 
   private startBindingAnchorDrag(boneId: string, worldPose: WorldPositions, x: number, y: number): void {
@@ -239,16 +231,12 @@ export class InteractionController {
       case 'binding-anchor': {
         const binding = this.state.getBinding(this.drag.boneId);
         if (!binding) return;
-        const worldDx = x - this.drag.startMouse.x;
-        const worldDy = y - this.drag.startMouse.y;
-        // Undo rotation only (anchor lives in unscaled texture-pixel space); the
-        // sign flip is because the anchor is "which pixel sits at the fixed pivot"
-        // — dragging the image toward the cursor means that pixel moves away from
-        // the pivot, i.e. the anchor moves the opposite way.
-        const local = rotateVec(worldDx, worldDy, -this.drag.rotationRad);
-        const anchorX = this.drag.startAnchor.x - local.x / (this.drag.scaleX * this.drag.texW);
-        const anchorY = this.drag.startAnchor.y - local.y / (this.drag.scaleY * this.drag.texH);
-        this.state.setBinding(this.drag.boneId, { ...binding, anchorX, anchorY });
+        const anchor = computeAnchorDrag(
+          this.drag.startMouse, this.drag.startAnchor, this.drag.rotationRad,
+          this.drag.scaleX, this.drag.scaleY, this.drag.texW, this.drag.texH,
+          x, y,
+        );
+        this.state.setBinding(this.drag.boneId, { ...binding, anchorX: anchor.x, anchorY: anchor.y });
         break;
       }
     }
@@ -427,6 +415,41 @@ export function findBoneAt(
   }
 
   return best;
+}
+
+export type SkinHandleKind = 'length' | 'rotate';
+
+/** Which skin-mode handle (if any) sits under a stage point, for the CURRENTLY
+ *  selected bone — its length tip (always, when the bone has length and isn't the
+ *  head), or its binding's rotation knob (only in Sprite preview, when it has a
+ *  binding + loaded texture). Doesn't build the resulting drag state (the caller
+ *  still needs live state — `AppState.getLengthScale`, the binding's own
+ *  `rotation` — to do that) or depend on controller state itself — free function
+ *  so it's testable without wiring up canvas listeners. */
+export function findSkinHandleAt(
+  x: number,
+  y: number,
+  boneId: string,
+  worldPose: WorldPositions,
+  previewMode: 'skeleton' | 'sprite',
+  binding: SpriteBinding | undefined,
+  texture: { width: number; height: number } | undefined,
+): SkinHandleKind | null {
+  const bone = Skeleton.BONE_MAP.get(boneId);
+  const pos  = worldPose.get(boneId);
+  if (!bone || !pos) return null;
+
+  if (bone.len > 0 && !bone.isHead && Math.hypot(x - pos.ex, y - pos.ey) <= HANDLE_HIT_RADIUS) {
+    return 'length';
+  }
+
+  if (previewMode === 'sprite' && binding && texture) {
+    const frame  = bindingToSpriteFrame(pos.sx, pos.sy, pos.wa, binding, texture.width, texture.height);
+    const handle = rotationHandlePos(frame);
+    if (Math.hypot(x - handle.x, y - handle.y) <= HANDLE_HIT_RADIUS) return 'rotate';
+  }
+
+  return null;
 }
 
 /** Nearest sprite (front-to-back by zOrder) whose quad contains a stage point —
