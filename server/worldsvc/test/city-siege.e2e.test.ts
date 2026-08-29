@@ -48,6 +48,7 @@ import {
   CARD_DEFS,
   type CardInstance,
   type MapEditorCityNode,
+  type EquipmentInstance,
 } from '@nw/shared';
 import { ATTACK_LANES, garrisonProgressionRatios, UnitType } from '@nw/engine';
 import { createWorldMongo, type WorldMongo, type TeamTemplate, type CardSLGState, type SectDoc } from '../src/db';
@@ -137,13 +138,19 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     async push() { /* pushes are irrelevant to these assertions */ },
     async broadcast() { /* ditto */ },
   };
+  // Per-card weapon-slot override (cardId -> equipment instance id) — empty by default. Lets one test
+  // equip a single card's gear without the Proxy having to fabricate stateful per-id storage.
+  let cardGearOverride: Record<string, string>;
+  // equipmentInv exposed by the fake meta — empty by default (SLG_CITY_SIEGE_DESIGN §12.7's gear channel
+  // needs a real end-to-end case through THIS call site too, not just baseSiege.e2e.test.ts's).
+  let equipmentInvOverride: Record<string, EquipmentInstance>;
   const CARD_INV_ANY: Record<string, CardInstance> = new Proxy({} as Record<string, CardInstance>, {
-    get: (_t, prop: string) => ({ id: prop, defId: 'chenshou', level: 9, gear: {}, locked: false }),
+    get: (_t, prop: string) => ({ id: prop, defId: 'chenshou', level: 9, gear: cardGearOverride[prop] ? { weapon: cardGearOverride[prop] } : {}, locked: false }),
   });
   const fakeMeta: WorldMetaClient = {
     available: true,
     async getProfile() { return null; },
-    async getSaveFields() { return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: {}, cardInv: CARD_INV_ANY }; },
+    async getSaveFields() { return { pveUpgrades: {}, unitLevels: {}, gear: {}, equipmentInv: equipmentInvOverride, cardInv: CARD_INV_ANY }; },
     grantMaterial: async () => { /* unused */ },
     batchProfiles: () => { throw new Error('fake WorldMetaClient.batchProfiles() is not stubbed in this test'); },
     grantTitle: () => { throw new Error('fake WorldMetaClient.grantTitle() is not stubbed in this test'); },
@@ -261,6 +268,8 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     await m.ensureIndexes();
     nowMs = 1_000_000;
     mailCalls.length = 0;
+    cardGearOverride = {};
+    equipmentInvOverride = {};
     membership.clear();
     membership.set(A, { familyId: `fam-of-${SECT_A}`, sectId: SECT_A });
     membership.set(B, { familyId: `fam-of-${SECT_B}`, sectId: SECT_B });
@@ -420,6 +429,35 @@ describe.skipIf(!mongo)('worldsvc wild-city siege e2e (ADR-074 P1)', () => {
     expect(pending[0]!.damage).toBe(teamSiegeValue(CARDS.map((id) => ({ cardInstanceId: id })), inv));
     // Durability is untouched until the hit settles (the 5-minute delayed pipeline).
     expect((await m.collections.cities.findOne({ _id: CITY_ID }))!.durability).toBe(cityDurabilityMax(city.level, 'garrison'));
+  });
+
+  it('equipped siege-value gear raises the scheduled durability hit (SLG_CITY_SIEGE_DESIGN §12.7, end-to-end)', async () => {
+    // Every other test in this file fakes equipmentInv as {}, so this call site's gear channel
+    // (applyCitySiege reading attackerSave?.equipmentInv straight off scope) had never actually been
+    // exercised through the real pipeline — only baseSiege.e2e.test.ts's sibling call site and the
+    // isolated teamSiegeValue unit tests. This proves this chain too.
+    await armSiegeTeam(A, SECT_A, 300);
+    const gearInstanceId = 'eq_siege_test';
+    cardGearOverride[CARDS[0]!] = gearInstanceId;
+    equipmentInvOverride = {
+      [gearInstanceId]: { id: gearInstanceId, defId: 'sim_test', rarity: 'rare', level: 0, affixes: [{ id: 's_siege', value: 60 }] },
+    };
+    await claimBeachhead(A);
+    const view = await svc.startMarch(W, A, base.x, base.y, city.x, city.y, 'attack', 1, TEAM);
+    nowMs = view.arriveAt + 1;
+    await svc.processDueArrivals(nowMs);
+
+    const inv: Record<string, CardInstance> = {};
+    for (const id of CARDS) inv[id] = CARD_INV_ANY[id]!;
+    const bare = teamSiegeValue(CARDS.map((id) => ({ cardInstanceId: id })), inv); // no equipmentInv → old gear-blind number
+    const geared = teamSiegeValue(CARDS.map((id) => ({ cardInstanceId: id })), inv, equipmentInvOverride);
+    expect(geared).toBeGreaterThan(bare); // sanity: the fixture actually moves the number
+
+    const pending = await m.collections.siegeDamage.find({ worldId: W }).toArray();
+    expect(pending).toHaveLength(1);
+    // This is the real assertion: worldsvc's actual pipeline used the attacker's real equipmentInv.
+    expect(pending[0]!.damage).toBe(geared);
+    expect(pending[0]!.damage).not.toBe(bare);
   });
 
   it('a team too weak to clear the ladder schedules NO damage and still loses troops', async () => {
