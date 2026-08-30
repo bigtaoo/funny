@@ -7,7 +7,7 @@ import { DEFAULT_MAP_SIZE } from './logic/constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg } from './logic/zoom';
 import type { PoolSlot } from './WorldMapRenderer/pool';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView, WorldCityNodeView } from '../../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView, WorldCityNodeView, TeamTemplate } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
@@ -136,6 +136,13 @@ export class WorldMapContext {
   territoryTab: 'overview' | 'list' | 'world' = 'overview';
   /** Full list of owned tiles — fetched lazily (WorldMapNet.refreshTerritories) when the list tab is opened, not on every ~5s poll (can be 200-300 rows). */
   territories: WorldTileView[] = [];
+  /** Attack-formation templates (`GET /world/teams`) — the team panel lists every one of them, including
+   *  the ones sitting at home, which no march/occupation/station row can represent. Fetched lazily
+   *  (WorldMapNet.refreshTeams) when the panel is opened, since nothing else on the map needs them. */
+  teams: TeamTemplate[] = [];
+  /** Whether {@link teams} has landed at least once — distinguishes "no teams yet" from "not fetched yet",
+   *  which the panel must not confuse (asserting 尚无队伍 at a player who has five is a lie, not a wait). */
+  teamsLoaded = false;
   /** Levels unchecked in the list-tab filter grid; empty = show all levels. */
   territoryHiddenLevels: Set<number> = new Set();
   /** Set while the list tab's Abandon confirm dialog is showing (which tile is pending). */
@@ -227,8 +234,8 @@ export class WorldMapContext {
   hudTickTimer = 0;
   destroyed = false;
   readonly unsubs: (() => void)[] = [];
-  /** Marches badge (top-right stack) toggles between collapsed count and the full expanded list (§25). */
-  marchesExpanded = false;
+  /** Team-info badge (top-right stack) toggles between the collapsed badge and the full expanded list. */
+  teamPanelExpanded = false;
   backRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   aucBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Header-bar "Shop" entry (left of the auction button) — opens the standalone shop panel. */
@@ -236,8 +243,8 @@ export class WorldMapContext {
   /** Header-bar "Home" entry (left of the shop button) — recenters the camera on the player's own base. */
   homeBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   zoomBtnRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
-  marchBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
-  /** Top-right "battle replays" badge (below the marches badge) — tapping it opens the last-100 replay browser. */
+  teamBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+  /** Top-right "battle replays" badge (below the team badge) — tapping it opens the last-100 replay browser. */
   replayBadgeRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Whether the replay-browser list modal is open. */
   replayPanelOpen = false;
@@ -252,12 +259,25 @@ export class WorldMapContext {
   worldChatLatest: WorldChatMessage | null = null;
   /** Count of fetched messages newer than the local "last seen" mark; capped by refreshWorldChat's page size. */
   worldChatUnread = 0;
-  marchRowRects: {
-    marchId: string; worldId: string; destX: number; destY: number;
+  /**
+   * Hit rects for the expanded team panel (2026-08-30, was the march list): one entry per row, in
+   * render order. A row tap centres the camera on (jumpX, jumpY) — the team's current whereabouts,
+   * or its home base when it is idle at home — and each row carries whichever recall-style button
+   * its own status affords (at most one is non-null).
+   */
+  teamRowRects: {
+    /** March backing this row's recall / instant-return button; null when the row has no march. */
+    marchId: string | null;
+    /** Field-stationed team this row's recall button sends home; null when the row isn't a station. */
+    stationedTeamId: string | null;
+    worldId: string;
+    jumpX: number; jumpY: number;
     rowRect: { x: number; y: number; w: number; h: number };
     recallRect: { x: number; y: number; w: number; h: number } | null;
     /** 2026-08-01 (SLG_DESIGN_LOG §46): "pay coins, instantly complete" button — only present on kind==='return' rows. */
     instantReturnRect: { x: number; y: number; w: number; h: number } | null;
+    /** ADR-051 recall of a 停留/驻扎 field station (dispatches a return leg). */
+    recallStationRect: { x: number; y: number; w: number; h: number } | null;
   }[] = [];
 
   // ── Modal ──────────────────────────────────────────────────────────────────

@@ -77,6 +77,9 @@ export async function loadData(ctx: WorldMapContext): Promise<void> {
     const seenTs = ctx.getWorldChatSeenTs();
     ctx.worldChatUnread = entry.worldChannel.filter((m) => m.ts > seenTs).length;
   } catch { /* offline OK */ }
+  // Deliberately not awaited and deliberately not folded into `/world/enter`: the team panel is the
+  // only consumer, and blocking first paint on it would undo the point of the single-round-trip entry.
+  void refreshTeams(ctx);
   if (!ctx.destroyed) { ctx.view.renderMap(); ctx.panels.renderHud(); }
 }
 
@@ -143,6 +146,9 @@ export async function refreshMe(ctx: WorldMapContext): Promise<void> {
   try {
     ctx.me = await ctx.cb.worldApi.getMe(ctx.cb.worldId);
     if (!ctx.destroyed) ctx.panels.renderHud();
+    // The overlays that make refreshMe worth calling (city, formation editor, defense editor) are the
+    // same ones that can have re-armed or re-crewed a team, so pick the new rosters up here too.
+    void refreshTeams(ctx);
   } catch { /* offline */ }
 }
 
@@ -159,6 +165,25 @@ export async function refreshCities(ctx: WorldMapContext): Promise<void> {
   try {
     ctx.cityNodes = await ctx.cb.worldApi.getCities(ctx.cb.worldId);
   } catch { /* offline — keep the entry-payload snapshot */ }
+}
+
+/**
+ * Attack-formation templates for the team panel (WorldMapPanels/hud.ts). Separate from the entry
+ * payload on purpose: the map itself never needs a team's ROSTER — only the marches/occupations/
+ * stationed rows, which `/world/enter` already carries — so this is fetched once right after entry
+ * (so the collapsed badge can show an honest away/total from the first frame) and again whenever the
+ * panel is opened or the player comes back from a screen that can have re-armed a team.
+ *
+ * `teamsLoaded` latches on the first success and is never cleared: an offline blip must not make the
+ * panel claim the player has no teams, it should keep showing the last set it knows about.
+ */
+export async function refreshTeams(ctx: WorldMapContext): Promise<void> {
+  if (ctx.destroyed) return;
+  try {
+    ctx.teams = await ctx.cb.worldApi.getTeams(ctx.cb.worldId);
+    ctx.teamsLoaded = true;
+    if (!ctx.destroyed) ctx.panels.renderHud();
+  } catch { /* offline — keep whatever we already had */ }
 }
 
 export async function refreshTerritories(ctx: WorldMapContext): Promise<void> {

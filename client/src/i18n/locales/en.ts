@@ -820,10 +820,12 @@ export const en: Record<TranslationKey, string> = {
   'world.actSiegeCity': 'Besiege',
   'world.stronghold': 'Stronghold',
   'world.strongholdHint': 'Heavily-defended NPC bastion — take it by siege; capturing claims it as territory and grants a large resource reward',
-  'world.marchList': 'Marches',
-  'world.marchMore': '+{n} more',
+  'world.teamPanel': 'Teams',
+  'world.teamMore': '+{n} more',
   'world.recall': 'Recall',
-  'world.instantReturn': 'Instant return ({coins} coins)',
+  // Shortened 2026-08-30 (was 'Instant return ({coins} coins)'): this is a per-row action button in
+  // the team panel now, sharing its line with the status text, so it has to stay inside ~150px.
+  'world.instantReturn': 'Rush home ({coins})',
   'world.instantReturnDone': 'Troops have returned instantly',
   'world.enemyTile': 'Enemy Territory',
   'world.allyTile': 'Ally Territory',
@@ -1655,4 +1657,8 @@ export const en: Record<TranslationKey, string> = {
   'world.team.occupying': 'Occupying, {time} left',
   'world.team.stationedIdle': 'In the field',
   'world.team.garrisoned': 'Field garrison',
+  // Team-panel status vocabulary (2026-08-30)
+  'world.team.returning': 'Returning',
+  'world.team.moving': 'Moving',
+  'world.team.flatArmy': 'Militia force',
 };

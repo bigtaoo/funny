@@ -835,10 +835,12 @@ export const zh = {
   'world.actSiegeCity': '围攻城池',
   'world.stronghold': '险地',
   'world.strongholdHint': '系统超强守军据点，须围攻攻克；得手占为领地并获大量资源',
-  'world.marchList': '行军列表',
-  'world.marchMore': '还有 {n} 条',
+  'world.teamPanel': '队伍信息',
+  'world.teamMore': '还有 {n} 支',
   'world.recall': '撤军',
-  'world.instantReturn': '花{coins}金币立即回城',
+  // Shortened 2026-08-30 (was '花{coins}金币立即回城'): this is a per-row action button in the team
+  // panel now, sharing its line with the status text, so the label has to stay inside ~150px.
+  'world.instantReturn': '立即回城({coins}金)',
   'world.instantReturnDone': '部队已立即回城',
   'world.enemyTile': '他人领地',
   'world.allyTile': '盟友领地',
@@ -1678,6 +1680,10 @@ export const zh = {
   // Field-stationed away from home (2026-07-23 field-stationing; city team row 2026-08-25)
   'world.team.stationedIdle': '野外停留',
   'world.team.garrisoned': '野外驻扎',
+  // Team-panel status vocabulary (2026-08-30)
+  'world.team.returning': '返回中',
+  'world.team.moving': '移动中',
+  'world.team.flatArmy': '散兵部队',
 };
 
 export type TranslationKey = keyof typeof zh;
