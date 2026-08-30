@@ -13,19 +13,26 @@ import { describe, it, expect, vi } from 'vitest';
 import { createWorldNav } from '../src/app/nav/world';
 import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { AppViews } from '../src/app/AppViews';
-import type { FamilySceneCallbacks } from '../src/scenes/FamilyScene';
-import type { SectSceneCallbacks } from '../src/scenes/SectScene';
-import { WorldApiClient } from '../src/net/WorldApiClient';
+import type { FamilySceneCallbacks, FamilySceneView } from '../src/scenes/FamilyScene';
+import type { SectSceneCallbacks, SectSceneView } from '../src/scenes/SectScene';
+import type { FamilyDetailView, SectDetailView, WorldApiClient } from '../src/net/WorldApiClient';
 
 function buildCtx(navOverrides: Partial<Nav>): {
   ctx: AppCtx;
   getFamilyCb: () => FamilySceneCallbacks;
   getSectCb: () => SectSceneCallbacks;
   getWorldMapOpened: () => boolean;
+  /** What the mounted FamilyScene/SectScene report as already-loaded (see FamilySceneView/
+   *  SectSceneView.getFamily/getSect) — set these before a cross-hub onNavTab call to assert what
+   *  goFamilyHub/goSectHub hand the sibling hub as preloadedFamily/preloadedSect. */
+  setFamilyDetail: (fam: FamilyDetailView | null) => void;
+  setSectDetail: (sect: SectDetailView | null) => void;
 } {
   let familyCb: FamilySceneCallbacks | null = null;
   let sectCb: SectSceneCallbacks | null = null;
   let worldMapOpened = false;
+  let familyDetail: FamilyDetailView | null = null;
+  let sectDetail: SectDetailView | null = null;
 
   const storage = {
     getItem: (): string | null => 'acc_test',
@@ -34,8 +41,14 @@ function buildCtx(navOverrides: Partial<Nav>): {
   };
 
   const views = {
-    showFamily: (cb: FamilySceneCallbacks) => { familyCb = cb; },
-    showSect: (cb: SectSceneCallbacks) => { sectCb = cb; return { applySectMsg() {} }; },
+    showFamily: (cb: FamilySceneCallbacks): FamilySceneView => {
+      familyCb = cb;
+      return { applyFamilyMsg() {}, getFamily: () => familyDetail };
+    },
+    showSect: (cb: SectSceneCallbacks): SectSceneView => {
+      sectCb = cb;
+      return { applySectMsg() {}, getFamily: () => familyDetail, getSect: () => sectDetail };
+    },
     showWorldMap: () => {
       worldMapOpened = true;
       return { applyMarchUpdate() {}, applyTileUpdate() {}, applyUnderAttack() {}, applySiegeResult() {} };
@@ -72,6 +85,8 @@ function buildCtx(navOverrides: Partial<Nav>): {
     getFamilyCb: () => { if (!familyCb) throw new Error('views.showFamily was not called'); return familyCb; },
     getSectCb: () => { if (!sectCb) throw new Error('views.showSect was not called'); return sectCb; },
     getWorldMapOpened: () => worldMapOpened,
+    setFamilyDetail: (fam) => { familyDetail = fam; },
+    setSectDetail: (sect) => { sectDetail = sect; },
   };
 }
 
@@ -89,6 +104,56 @@ describe('goFamilyHub — onNavTab', () => {
     const sectCb = getSectCb();
     sectCb.onBack();
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('clicking "sect" hands SectScene the family FamilyScene already loaded, as preloadedFamily (social-tab-switch-cost)', () => {
+    // Regression for the flicker report (30.08.2026): the cross-hub hop used to open SectScene with
+    // no preload at all, forcing it through a full getMyFamily() (+ getSect()) round-trip and a
+    // visible 'loading' skeleton before painting real content — unlike Friends<->Mail, which never
+    // leave FriendsScene and never show a loading flash. SectScene should get the family for free.
+    const { ctx, getFamilyCb, getSectCb, setFamilyDetail } = buildCtx({});
+    const fam = { familyId: 'f1', sectId: 's1' } as unknown as FamilyDetailView;
+    setFamilyDetail(fam);
+    const { goFamilyHub } = createWorldNav(ctx);
+
+    goFamilyHub(worldApi, 'world:1:0', vi.fn());
+    getFamilyCb().onNavTab('sect');
+
+    expect(getSectCb().preloadedFamily).toBe(fam);
+  });
+
+  it('tapping "查看宗门" (onOpenSect) gets the same preloadedFamily hand-off as the rail tab', () => {
+    const { ctx, getFamilyCb, getSectCb, setFamilyDetail } = buildCtx({});
+    const fam = { familyId: 'f1', sectId: 's1' } as unknown as FamilyDetailView;
+    setFamilyDetail(fam);
+    const { goFamilyHub } = createWorldNav(ctx);
+
+    goFamilyHub(worldApi, 'world:1:0', vi.fn());
+    getFamilyCb().onOpenSect();
+
+    expect(getSectCb().preloadedFamily).toBe(fam);
+  });
+
+  it('a sect this session already saw (via SectSceneCallbacks.onSectLoaded) is handed back as preloadedSect on a later Family->Sect hop', () => {
+    const { ctx, getFamilyCb, getSectCb, setFamilyDetail, setSectDetail } = buildCtx({});
+    const fam = { familyId: 'f1', sectId: 's1' } as unknown as FamilyDetailView;
+    const sect = { sectId: 's1' } as unknown as SectDetailView;
+    setFamilyDetail(fam);
+    const { goFamilyHub } = createWorldNav(ctx);
+
+    // First hop: no sect known yet, so preloadedSect is absent.
+    goFamilyHub(worldApi, 'world:1:0', vi.fn());
+    getFamilyCb().onNavTab('sect');
+    expect(getSectCb().preloadedSect).toBeUndefined();
+
+    // SectScene "loads" (via preloadedFamily above) and reports the sect back.
+    getSectCb().onSectLoaded?.(sect);
+    setSectDetail(sect);
+
+    // Second hop (as if the player bounced back to Family and tapped Sect again): now cached.
+    goFamilyHub(worldApi, 'world:1:0', vi.fn());
+    getFamilyCb().onNavTab('sect');
+    expect(getSectCb().preloadedSect).toBe(sect);
   });
 
   it('clicking "family" (its own tab) is a no-op', () => {
@@ -143,6 +208,21 @@ describe('goSectHub — onNavTab', () => {
     const familyCb = getFamilyCb();
     familyCb.onBack();
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('clicking "family" hands FamilyScene the family SectScene already loaded, as preloadedFamily — zero re-fetch (social-tab-switch-cost)', () => {
+    // SectScene already holds the full FamilyDetailView (SectSceneCore.family) since sect
+    // membership hangs off family, so this direction needs no network round-trip at all, unlike
+    // Family->Sect (which still needs one getSect() the very first time — see the mirror test above).
+    const { ctx, getSectCb, getFamilyCb, setFamilyDetail } = buildCtx({});
+    const fam = { familyId: 'f1', sectId: 's1' } as unknown as FamilyDetailView;
+    setFamilyDetail(fam);
+    const { goSectHub } = createWorldNav(ctx);
+
+    goSectHub(worldApi, 'world:1:0', vi.fn());
+    getSectCb().onNavTab('family');
+
+    expect(getFamilyCb().preloadedFamily).toBe(fam);
   });
 
   it('clicking "sect" (its own tab) is a no-op', () => {

@@ -27,6 +27,7 @@ export class DataPanel implements DataHandlers {
       // The social hub hands its own just-fetched copy over on the way in (preloadedFamily /
       // preloadedSect below) — see SectSceneCallbacks for why.
       const fam = core.cb.preloadedFamily ?? await core.cb.worldApi.getMyFamily();
+      core.family = fam ?? null;
       if (!fam) {
         core.inFamily = false;
         core.mode = 'noSect';
@@ -59,6 +60,7 @@ export class DataPanel implements DataHandlers {
     const core = this.core;
     core.sect = sect;
     core.mode = 'mySect';
+    core.cb.onSectLoaded?.(sect);
     // Paint the roster/identity as soon as the sect is known — the channel is a second round-trip,
     // so don't hold the whole page blank on it (mirrors FamilyScene/data.ts's applyFamily). The
     // caller renders again once loadChannel() lands, filling the message list in.
