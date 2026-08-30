@@ -190,6 +190,18 @@ payload 改成 `{canUndo, canRedo, undoLabel, redoLabel}`（删掉那个「看�
 
 两处提取都是**纯搬运，不改行为**——`npm test` 383→**394** 例（+11：`spriteGeometry.test.ts` +5、`InteractionController.test.ts` +6），`typecheck`/`lint`/`build`/两条闸门全部干净；`onMouseMove`/`onMouseUp` 里跟实时 `AppState`/`ImageController` 强耦合的部分（`tryStartSkinHandleDrag`/`startBindingAnchorDrag` 剩下的胶水、三个 drag 分支的 `state.setBinding`/`setLengthScale` 调用本身）仍然只能靠上面的 Chrome 端到端走查覆盖——`InteractionController` 类的构造函数接真实 `Renderer`（`new PIXI.Application`），这个包沿用 Phase 4 定下的"不建 headless-PIXI harness"决策，没打算改。
 
+## 点选测试：一条纯函数测不到的接线，和一句被推翻的旧结论（2026-08-30）
+
+alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新增 10 例、`InteractionController.test.ts` 43 → 49 例、`spriteGeometry.test.ts` +9，共 413 → **429**）。两件值得记的事：
+
+**① 纯函数全绿也挡不住接线错**。`findSpriteAt` 的 9 条重叠用例（透明穿透 / 掩码缺失退回矩形 / sticky 命中与不命中）全部是自由函数直测——但把 `onMouseDown` 里那两行 `getAlphaMask: …` / `preferBone: …` 随便删一行，**这 9 条一条都不会红**，编辑器却当场退回"永远选中身体"。所以新增了一个 `describe('InteractionController skin-mode click wiring')`，构造**真实的** `InteractionController` 并调它真实注册的 `mousedown` 处理器；两条接线各有专测，另有一条"sticky 选中之后拖拽动的是被选中那根的图，不是最前面那张"（选中和 drag target 不能各说各话）。删任一行都判红，已实测。
+
+**② "这个类没法测"是错的，前一节末尾那句话要作废**。上一节（2026-08-29）写着「`InteractionController` 类的构造函数接真实 `Renderer`（`new PIXI.Application`）……没打算改」——**构造函数其实只碰 `renderer.pixiApp.view.addEventListener`**，它自己不建任何 PIXI 对象。所以一个 `{ pixiApp: { view: { addEventListener } }, toStageCoords }` 的普通对象就够了，`window` 用 `vi.stubGlobal` 塞一个空 `addEventListener`，`AppState`/`AnimationController`/`CommandManager`/`EventBus` 全用真类。**教训不是"当时判断错了"，而是"没打算改"这四个字把一句关于某个构造函数的具体事实，升级成了一条关于整个类的政策**——「不建 headless-PIXI harness」这个决策仍然成立（`Renderer`/`PreviewRenderer` 那种真的 `new PIXI.Application` 的地方照旧不测），但它不该被引申成"凡是签名里出现 PIXI 类型的类都碰不得"：先读一遍构造函数实际碰了什么，再决定。
+
+**踩坑（写的时候连撞两次）**：`InteractionController` 计算命中用的是**它自己**调 `Skeleton.computeFK` 得到的 pose，测试里手改一份 pose map 塞给它是没用的——重叠必须靠 binding/贴图尺寸造出来（这里用 400×400 的贴图让 head 的矩形罩住 spine 的 pivot，正是真实 rig 的形状）。另外锚点拖拽走的是**贴图本地坐标**：spine 静息朝上，水平方向拖动改的是 `anchorY` 而不是 `anchorX`，断言"锚点动了没有"要按距离判，别钉某一个轴。
+
+`buildAlphaMask` 那 10 例用 `vi.stubGlobal` 桩 `createImageBitmap`/`document`（同 `fileIO.test.ts` 的手法，驱动真实函数体而不是 mock 掉函数本身），覆盖降采样到 512 上限、RGBA→单字节 alpha 的行序、极端长宽比不许出零尺寸掩码、以及三条"解码/取上下文/读像素失败都必须返回 null 而不是抛"——最后这条不是防御性洁癖：`setBlob` 会 `await` 它，异常逃出去就不只是没有掩码，而是整张图都载不进来。
+
 ## 参数两层模型
 
 **Binding（静态，所有帧共用）**：`anchorX/Y`（挂点比例，允许超出 0–1）、`rotation`（静态偏移）、`scaleX/Y`、`flipX`、`zOrder`
