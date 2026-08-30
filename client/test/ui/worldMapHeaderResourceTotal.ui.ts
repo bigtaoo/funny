@@ -48,7 +48,11 @@ function buildHudHarness(
     zoom: 1 as const,
     me: { joined: true, mainBaseTile: dims.mainBaseTile, troops: 10, troopCap: 100, territoryCount: 1, resources, yieldRate },
     marches: [],
-    marchesExpanded: false,
+    teamPanelExpanded: false,
+    teams: [],
+    teamsLoaded: false,
+    occupations: [],
+    stationed: [],
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[p.length - 2]), Number(p[p.length - 1])]; },
     cb: { accountId: 'me', getCoins: () => 0 },
   } as unknown as WorldMapContext;

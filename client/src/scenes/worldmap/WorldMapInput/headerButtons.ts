@@ -54,10 +54,14 @@ export function hitTestHeaderButtons(ctx: WorldMapContext, x: number, y: number)
     return true;
   }
 
-  // Marches badge (right column) — toggles the expanded list
-  const mb = ctx.marchBadgeRect;
+  // Team badge (right column) — toggles the expanded team panel. Opening it re-fetches the formation
+  // templates: unlike the march/station state (kept live by the gateway push channel) a team's ROSTER
+  // only changes in the city/formation editor, which the map never hears about, so the panel would
+  // otherwise show a stale set of teams until the next world entry.
+  const mb = ctx.teamBadgeRect;
   if (mb.w > 0 && x >= mb.x && x <= mb.x + mb.w && y >= mb.y && y <= mb.y + mb.h) {
-    ctx.marchesExpanded = !ctx.marchesExpanded;
+    ctx.teamPanelExpanded = !ctx.teamPanelExpanded;
+    if (ctx.teamPanelExpanded) void ctx.net.refreshTeams();
     ctx.panels.renderHud();
     return true;
   }

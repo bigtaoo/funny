@@ -58,7 +58,11 @@ function buildHarness(
       yieldRate: { ink: 100, paper: 60, graphite: 45, metal: 30, sticker: 12 },
     },
     marches: [],
-    marchesExpanded: false,
+    teamPanelExpanded: false,
+    teams: [],
+    teamsLoaded: false,
+    occupations: [],
+    stationed: [],
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[p.length - 2]), Number(p[p.length - 1])]; },
     cb: { accountId: 'me', getCoins: () => 0 },
   } as unknown as WorldMapContext;

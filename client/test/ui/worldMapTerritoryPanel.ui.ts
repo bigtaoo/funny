@@ -89,10 +89,10 @@ function buildHarness(opts: {
     aucBtnRect: { x: 0, y: 0, w: 0, h: 0 },
     shopBtnRect: { x: 0, y: 0, w: 0, h: 0 },
     homeBtnRect: { x: 0, y: 0, w: 0, h: 0 },
-    marchBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
+    teamBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
     replayBadgeRect: { x: 0, y: 0, w: 0, h: 0 },
     chatBarRect: { x: 0, y: 0, w: 0, h: 0 },
-    marchRowRects: [],
+    teamRowRects: [],
   } as unknown as WorldMapContext;
 
   const panels = new WorldMapPanels(ctx);

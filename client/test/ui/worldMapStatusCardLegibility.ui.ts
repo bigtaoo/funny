@@ -59,7 +59,11 @@ function buildHudHarness(me: Partial<PlayerWorldView> = {}, dims: { w?: number; 
       resources: {}, yieldRate: {}, ...me,
     },
     marches: [],
-    marchesExpanded: false,
+    teamPanelExpanded: false,
+    teams: [],
+    teamsLoaded: false,
+    occupations: [],
+    stationed: [],
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },
     cb: { accountId: 'me', getCoins: () => 0 },
   } as unknown as WorldMapContext;
@@ -108,10 +112,10 @@ describe('WorldMapPanels status card — split into two stat chips (2026-08-11)'
     expect(captionLbl!.y).toBeGreaterThan(valueLbl!.y);
   });
 
-  it('Battle Replays badge text is drawn in the light/contrast color, matching the Marches badge above it (was dark-on-paper)', () => {
+  it('Battle Replays badge text is drawn in the light/contrast color, matching the Teams badge above it (was dark-on-paper)', () => {
     const { ctx, panels } = buildHudHarness();
     panels.renderHud();
-    const marchesLbl = allTexts(ctx.hudLayer).find((t) => t.text.includes('Marches'));
+    const marchesLbl = allTexts(ctx.hudLayer).find((t) => t.text.includes('Teams'));
     const replaysLbl = allTexts(ctx.hudLayer).find((t) => t.text === 'Battle replays');
     expect(marchesLbl).toBeTruthy();
     expect(replaysLbl).toBeTruthy();
@@ -123,14 +127,14 @@ describe('WorldMapPanels status card — split into two stat chips (2026-08-11)'
   // 2026-08-11 follow-up (user: "确保横屏不受影响" — make sure landscape is unaffected). The
   // status card grew from 56px to 88px tall; landscape's fixed, comparatively short design
   // height (1080, vs portrait's ≥1920) is the tightest-fit case for that +32px to matter — if it
-  // ever pushed the marches/replay badges past the visible band, landscape would regress even
+  // ever pushed the team/replay badges past the visible band, landscape would regress even
   // though the change was aimed at portrait.
   describe('landscape unaffected (fixed 1080 design height)', () => {
     it('the right-column stack (status card → marches badge → replay badge) still fits within the screen, nothing pushed off-screen', () => {
       const { ctx, panels } = buildHudHarness({}, { w: LANDSCAPE_W, h: LANDSCAPE_H, topInset: LANDSCAPE_TOP_INSET });
       panels.renderHud();
-      expect(ctx.marchBadgeRect.y).toBeGreaterThan(ctx.topInset);
-      expect(ctx.replayBadgeRect.y).toBeGreaterThan(ctx.marchBadgeRect.y + ctx.marchBadgeRect.h);
+      expect(ctx.teamBadgeRect.y).toBeGreaterThan(ctx.topInset);
+      expect(ctx.replayBadgeRect.y).toBeGreaterThan(ctx.teamBadgeRect.y + ctx.teamBadgeRect.h);
       expect(ctx.replayBadgeRect.y + ctx.replayBadgeRect.h).toBeLessThan(LANDSCAPE_H);
     });
 

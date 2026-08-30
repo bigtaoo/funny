@@ -15,6 +15,7 @@ import { buildIcon } from '../../../render/icons';
 import { FS } from '../../../render/fontScale';
 import { serverNow } from '../../../net/serverClock';
 import { dhmsFromMs } from '../logic/formatDuration';
+import { awayCount, buildTeamRows, teamRowIcon } from '../logic/teamStatus';
 import { MARCH_RETURN_SPEEDUP_SECS_PER_COIN } from '@nw/shared';
 import { HUD_H } from '../logic/constants';
 import type { IconKind } from '../../../render/icons';
@@ -234,25 +235,32 @@ export class HudPanel implements HudHandlers {
       }
     }
 
-    // Marches badge — collapsed by default (flag glyph + count); tap toggles the expanded
-    // list (own marches only; G5: this.marches may also hold in-vision enemy marches, which
-    // can't be recalled, hence the `mine !== false` filter).
-    this.core.ctx.marchRowRects = [];
-    const myMarches = this.core.ctx.marches.filter((m) => m.mine !== false);
+    // Team-info badge — collapsed by default; tap toggles the expanded team panel. Was the "march
+    // list" until 2026-08-30: that list could only show teams currently IN TRANSIT, so a team holding
+    // an occupation, parked in the field, injured, or simply idle at home had no row anywhere on the
+    // map. Rows now come from logic/teamStatus.ts (one per formation template + one per flat-troop
+    // march), and tapping one flies the camera to wherever that team actually is — its base, if home.
+    this.core.ctx.teamRowRects = [];
+    const now = serverNow();
+    const rows = buildTeamRows(this.core.ctx, now);
     if (this.core.ctx.me?.joined) {
       const badgeH = 64;
       const badge = sketchButton(rightW, badgeH, seedFor(6, 1, rightW));
       badge.x = rx;
       badge.y = ry;
       hud.addChild(badge);
-      const bIcon = buildIcon('flag', 28, C.light);
+      const bIcon = buildIcon('swords', 28, C.light);
       bIcon.x = rx + 20;
       bIcon.y = ry + (badgeH - 28) / 2;
       hud.addChild(bIcon);
+      // "away/total" rather than a bare count: the number that decides whether the panel is worth
+      // opening is how many teams are OUT, and the total is the context that makes it mean something.
+      // Suppressed until the teams fetch has landed — a count derived from marches alone would read
+      // as "you have 1 team" to a player who has five (teamsLoaded, WorldMapNet.refreshTeams).
       const bTxt = txt(
-        myMarches.length > 0
-          ? `${t('world.marchList')} (${myMarches.length})`
-          : t('world.marchList'),
+        this.core.ctx.teamsLoaded && rows.length > 0
+          ? `${t('world.teamPanel')} (${awayCount(rows)}/${rows.length})`
+          : t('world.teamPanel'),
         FS.label,
         C.light
       );
@@ -260,24 +268,70 @@ export class HudPanel implements HudHandlers {
       bTxt.x = rx + 60;
       bTxt.y = ry + badgeH / 2;
       hud.addChild(bTxt);
-      this.core.ctx.marchBadgeRect = { x: badge.x, y: badge.y, w: rightW, h: badgeH };
+      this.core.ctx.teamBadgeRect = { x: badge.x, y: badge.y, w: rightW, h: badgeH };
       ry += badgeH + 12;
 
-      if (this.core.ctx.marchesExpanded && myMarches.length > 0) {
-        const MARCH_ROW_H = 44;
-        const RECALL_W = 100;
-        const MAX_VISIBLE_MARCHES = 5;
-        const visibleMarches = myMarches.slice(0, MAX_VISIBLE_MARCHES);
-        const overflowCount = myMarches.length - visibleMarches.length;
-        const now = serverNow();
-        const MARCH_KIND_ICON: Record<string, IconKind> = {
-          attack: 'swords',
-          reinforce: 'armor',
-          return: 'replay',
-          occupy: 'flag',
-        };
+      if (this.core.ctx.teamPanelExpanded) {
+        const MIN_ROW_H = 56;
+        const MAX_VISIBLE_ROWS = 5;
+        const visibleRows = rows.slice(0, MAX_VISIBLE_ROWS);
+        const overflowCount = rows.length - visibleRows.length;
+        // An empty panel still needs to say something, and "not fetched yet" vs "you genuinely have no
+        // formations" are different answers the player acts on differently.
+        const emptyLine = rows.length === 0
+          ? (this.core.ctx.teamsLoaded ? t('world.team.noTeams') : t('city.military.teamLoading'))
+          : null;
+
+        // Measure-then-place (same shape as the buff rows above): a row's action button is sized to
+        // its OWN label rather than to a per-kind constant, and the status text gets whatever width
+        // the button leaves. Both are needed because the labels are localized — a fixed 118px
+        // "recall station" button fits 召回驻军 and clips German's "Besatzung zurückrufen", and a
+        // status line squeezed beside a wide button wraps to two lines, which a fixed row height then
+        // laps over. So: button width follows the label (within a clamp), and row height follows the
+        // wrapped status. Guarded per locale by test/ui/worldMapTeamPanelFit.ui.ts.
+        const ACTION_MIN_W = 80;
+        const ACTION_MAX_W = 168;
+        const ACTION_H = 26;
+        const rendered = visibleRows.map((row, i) => {
+          const march = row.march;
+          let actionLabel: string | null = null;
+          let actionBorder: number = C.mid;
+          if (march && march.kind !== 'return') {
+            actionLabel = t('world.recall');
+            actionBorder = C.red;
+          } else if (march) {
+            // 2026-08-01 (SLG_DESIGN_LOG §46): "pay coins, instantly complete" — the server computes the
+            // authoritative cost from the remaining travel time; this is only a display estimate.
+            const remaining = Math.max(0, Math.ceil((march.arriveAt - now) / 1000));
+            actionLabel = t('world.instantReturn', {
+              coins: Math.max(1, Math.ceil(remaining / MARCH_RETURN_SPEEDUP_SECS_PER_COIN)),
+            });
+          } else if (row.stationedTeamId) {
+            // Deliberately the same verb as a march recall rather than world.actRecallStation's longer
+            // tile-menu wording: the row's own status line already says this team is in the field.
+            actionLabel = t('world.recall');
+          }
+          const btnLbl = actionLabel ? txt(actionLabel, FS.tiny, C.light) : null;
+          const actionW = btnLbl
+            ? Math.min(ACTION_MAX_W, Math.max(ACTION_MIN_W, Math.ceil(btnLbl.width) + 20))
+            : 0;
+          if (btnLbl && btnLbl.width > actionW - 12) btnLbl.scale.set((actionW - 12) / btnLbl.width);
+          const statusLbl = txt(
+            row.status,
+            FS.tiny,
+            row.state === 'home' ? C.mid : row.state === 'injured' ? C.red : C.dark,
+            false,
+            rightW - 24 - (actionW > 0 ? actionW + 8 : 0)
+          );
+          return {
+            row, i, march, btnLbl, actionW, actionBorder, statusLbl,
+            rowH: Math.max(MIN_ROW_H, 30 + statusLbl.height + 8),
+          };
+        });
+
         const listH =
-          visibleMarches.length * MARCH_ROW_H + 12 + (overflowCount > 0 ? MARCH_ROW_H : 0);
+          (emptyLine ? 40 : rendered.reduce((sum, r) => sum + r.rowH, 0)) + 12 +
+          (overflowCount > 0 ? 30 : 0);
         const listPanel = sketchPanel(rightW, listH, {
           fill: C.paper,
           border: C.mid,
@@ -286,87 +340,80 @@ export class HudPanel implements HudHandlers {
         listPanel.x = rx;
         listPanel.y = ry;
         hud.addChild(listPanel);
-        for (let i = 0; i < visibleMarches.length; i++) {
-          const m = visibleMarches[i];
-          const [tx, ty] = this.core.ctx.parseTileId(m.toTile);
-          const remaining = Math.max(0, Math.ceil((m.arriveAt - now) / 1000));
-          const rowY = listPanel.y + 6 + i * MARCH_ROW_H;
-          const kindIc = buildIcon(MARCH_KIND_ICON[m.kind] ?? 'flag', 26, C.dark);
-          kindIc.x = rx + 12;
-          kindIc.y = rowY + 2;
-          hud.addChild(kindIc);
-          const rowLbl = txt(`(${tx},${ty})  ${remaining}s`, FS.bodyLg, C.dark);
-          rowLbl.x = rx + 44;
-          rowLbl.y = rowY + 4;
-          hud.addChild(rowLbl);
 
-          if (m.kind !== 'return') {
-            const recallBtn = sketchPanel(RECALL_W, 36, {
+        if (emptyLine) {
+          const lbl = txt(emptyLine, FS.tiny, C.mid, false, rightW - 24);
+          lbl.x = rx + 12;
+          lbl.y = listPanel.y + 12;
+          hud.addChild(lbl);
+        }
+
+        let rowY = listPanel.y + 6;
+        for (const r of rendered) {
+          const { row, march, actionW } = r;
+          const kindIc = buildIcon(teamRowIcon(row.state), 24, C.dark);
+          kindIc.x = rx + 12;
+          kindIc.y = rowY + 3;
+          hud.addChild(kindIc);
+          const nameLbl = txt(row.title, FS.body, C.dark, true);
+          nameLbl.x = rx + 44;
+          nameLbl.y = rowY + 3;
+          hud.addChild(nameLbl);
+          const troopsLbl = txt(t('world.team.committed').replace('{n}', String(row.troops)), FS.tiny, C.mid);
+          troopsLbl.anchor.set(1, 0);
+          troopsLbl.x = rx + rightW - 12;
+          troopsLbl.y = rowY + 7;
+          hud.addChild(troopsLbl);
+
+          r.statusLbl.x = rx + 12;
+          r.statusLbl.y = rowY + 30;
+          hud.addChild(r.statusLbl);
+
+          let actionRect: { x: number; y: number; w: number; h: number } | null = null;
+          if (r.btnLbl) {
+            const btn = sketchPanel(actionW, ACTION_H, {
               fill: C.accent,
-              border: C.red,
-              seed: seedFor(i, 99, RECALL_W),
+              border: r.actionBorder,
+              seed: seedFor(r.i, 99, actionW),
             });
-            recallBtn.x = rx + rightW - RECALL_W - 8;
-            recallBtn.y = rowY;
-            hud.addChild(recallBtn);
-            const recallLbl = txt(t('world.recall'), FS.body, C.light);
-            recallLbl.anchor.set(0.5, 0.5);
-            recallLbl.x = recallBtn.x + RECALL_W / 2;
-            recallLbl.y = recallBtn.y + 18;
-            hud.addChild(recallLbl);
-            this.core.ctx.marchRowRects.push({
-              marchId: m.marchId,
-              worldId: this.core.ctx.cb.worldId,
-              destX: tx,
-              destY: ty,
-              rowRect: { x: rx, y: rowY, w: rightW - RECALL_W - 16, h: MARCH_ROW_H },
-              recallRect: { x: recallBtn.x, y: recallBtn.y, w: RECALL_W, h: 36 },
-              instantReturnRect: null,
-            });
-          } else {
-            // 2026-08-01 (SLG_DESIGN_LOG §46): "pay coins, instantly complete" button — server computes the
-            // authoritative cost from remaining travel time; this is only a display estimate (same client-side
-            // serverNow() clock CityScene's speedup buttons already use).
-            const INSTANT_RETURN_W = 190;
-            const coins = Math.max(1, Math.ceil(remaining / MARCH_RETURN_SPEEDUP_SECS_PER_COIN));
-            const instantBtn = sketchPanel(INSTANT_RETURN_W, 36, {
-              fill: C.accent,
-              border: C.mid,
-              seed: seedFor(i, 98, INSTANT_RETURN_W),
-            });
-            instantBtn.x = rx + rightW - INSTANT_RETURN_W - 8;
-            instantBtn.y = rowY;
-            hud.addChild(instantBtn);
-            const instantLbl = txt(t('world.instantReturn', { coins }), FS.body, C.light);
-            instantLbl.anchor.set(0.5, 0.5);
-            instantLbl.x = instantBtn.x + INSTANT_RETURN_W / 2;
-            instantLbl.y = instantBtn.y + 18;
-            hud.addChild(instantLbl);
-            this.core.ctx.marchRowRects.push({
-              marchId: m.marchId,
-              worldId: this.core.ctx.cb.worldId,
-              destX: tx,
-              destY: ty,
-              rowRect: { x: rx, y: rowY, w: rightW - INSTANT_RETURN_W - 16, h: MARCH_ROW_H },
-              recallRect: null,
-              instantReturnRect: { x: instantBtn.x, y: instantBtn.y, w: INSTANT_RETURN_W, h: 36 },
-            });
+            btn.x = rx + rightW - actionW - 8;
+            btn.y = rowY + 26;
+            hud.addChild(btn);
+            r.btnLbl.anchor.set(0.5, 0.5);
+            r.btnLbl.x = btn.x + actionW / 2;
+            r.btnLbl.y = btn.y + ACTION_H / 2;
+            hud.addChild(r.btnLbl);
+            actionRect = { x: btn.x, y: btn.y, w: actionW, h: ACTION_H };
           }
+
+          this.core.ctx.teamRowRects.push({
+            marchId: march?.marchId ?? null,
+            stationedTeamId: row.stationedTeamId,
+            worldId: this.core.ctx.cb.worldId,
+            jumpX: row.jumpX,
+            jumpY: row.jumpY,
+            // The row's own tap target stops where the action button starts, so "fly there" and
+            // "recall" never fight over the same pixels.
+            rowRect: { x: rx, y: rowY, w: rightW - (actionW > 0 ? actionW + 16 : 0), h: r.rowH },
+            recallRect: march && march.kind !== 'return' ? actionRect : null,
+            instantReturnRect: march && march.kind === 'return' ? actionRect : null,
+            recallStationRect: !march && row.stationedTeamId ? actionRect : null,
+          });
+          rowY += r.rowH;
         }
         if (overflowCount > 0) {
-          const overflowY = listPanel.y + 6 + visibleMarches.length * MARCH_ROW_H;
-          const overflowLbl = txt(t('world.marchMore', { n: overflowCount }), FS.bodyLg, C.mid);
+          const overflowLbl = txt(t('world.teamMore', { n: overflowCount }), FS.tiny, C.mid);
           overflowLbl.x = rx + 12;
-          overflowLbl.y = overflowY + 4;
+          overflowLbl.y = rowY + 4;
           hud.addChild(overflowLbl);
         }
         ry = listPanel.y + listH + 12;
       }
 
-      // Battle-replays badge — sits directly below the marches badge; tapping opens the last-100
+      // Battle-replays badge — sits directly below the team badge; tapping opens the last-100
       // replay browser. 2026-08-11 legibility pass: was the one badge in this stack still on the
       // low-contrast paper `sketchPanel` (dark text on light paper, easy to lose against the pale
-      // map underneath) while its sibling above it (Marches) already used the higher-contrast
+      // map underneath) while its sibling above it (the team badge) already used the higher-contrast
       // `sketchButton` fill + light text — switched to match, so the two feel like one action group.
       const repH = 64;
       const repBadge = sketchButton(rightW, repH, seedFor(6, 3, rightW));
@@ -385,7 +432,7 @@ export class HudPanel implements HudHandlers {
       this.core.ctx.replayBadgeRect = { x: repBadge.x, y: repBadge.y, w: rightW, h: repH };
       ry += repH + 12;
     } else {
-      this.core.ctx.marchBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
+      this.core.ctx.teamBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
       this.core.ctx.replayBadgeRect = { x: 0, y: 0, w: 0, h: 0 };
     }
   }

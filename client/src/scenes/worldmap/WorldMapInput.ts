@@ -341,25 +341,34 @@ export class WorldMapInput {
     // chat-bar hit-tests — see headerButtons.ts.
     if (hitTestHeaderButtons(this.ctx, x, y)) return;
 
-    // March row hit detection (recall / instant-return button, or click-to-center)
-    for (const entry of this.ctx.marchRowRects) {
-      if (entry.recallRect) {
+    // Team-panel row hit detection: the row's action button first (recall / instant-return / recall a
+    // field station), then the rest of the row, which flies the camera to wherever that team is —
+    // its own base for a team sitting at home (2026-08-30).
+    for (const entry of this.ctx.teamRowRects) {
+      if (entry.recallRect && entry.marchId) {
         const r = entry.recallRect;
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
           void this.ctx.net.doRecall(entry.marchId, entry.worldId);
           return;
         }
       }
-      if (entry.instantReturnRect) {
+      if (entry.instantReturnRect && entry.marchId) {
         const r = entry.instantReturnRect;
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
           void this.ctx.net.doInstantReturn(entry.marchId, entry.worldId);
           return;
         }
       }
+      if (entry.recallStationRect && entry.stationedTeamId) {
+        const r = entry.recallStationRect;
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          void this.ctx.net.doRecallStationed(entry.stationedTeamId);
+          return;
+        }
+      }
       const row = entry.rowRect;
       if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) {
-        this.ctx.view.centerAt(entry.destX, entry.destY);
+        this.ctx.view.centerAt(entry.jumpX, entry.jumpY);
         this.ctx.view.renderMap();
         return;
       }
