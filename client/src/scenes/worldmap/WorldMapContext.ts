@@ -18,6 +18,7 @@ import type { IStorage } from '../../platform/IPlatform';
 import type { SaveData } from '../../game/meta/SaveData';
 import type { EraseCrumb } from './WorldMapRenderer/loadingReveal';
 import { GuideOverlay } from '../../render/GuideOverlay';
+import { BusyTracker } from '../../ui/busyTracker';
 
 /**
  * A live march/occupy/stationed token (fog.ts syncMarchTokens/syncOccupyTokens/syncStationedTokens).
@@ -70,6 +71,16 @@ export interface WorldMapCallbacks {
   accountId: string;
   /** live coin balance getter (SaveData.wallet mirror) — shown in the SLG shop. */
   getCoins?: () => number;
+  /**
+   * Re-syncs the local wallet cache (SaveManager.refresh) after a spend the commercial service
+   * applied server-side. Every SLG coin sink — shop purchase, build/training speed-up, relocation —
+   * is charged by worldsvc → commercial, whose responses carry the *world* state back but never the
+   * SaveData wallet; without this the header coin readout keeps showing the pre-spend balance until
+   * something else happens to re-pull the save. Same contract as SectScene/FriendsScene's
+   * `refreshWallet` (see app/nav/world.ts's wiring). Optional so the many WorldMapScene UI fixtures
+   * that predate it don't all need updating; production wiring always provides it.
+   */
+  refreshWallet?: () => Promise<void>;
   /** Full save snapshot (cardInv/equipmentInv) — the team picker uses it to rank teams by combat power (§ team-picker sort). */
   getSave?: () => SaveData;
   /** Platform storage (IPlatform.storage) — world-chat read-marker persistence must go through this,
@@ -206,6 +217,17 @@ export class WorldMapContext {
   resStripH = 0;
   modalLayer!: PIXI.Container;
   toastLayer!: PIXI.Container;
+  /** Above modal + toast: hosts the in-flight `drawLoadingOverlay` cover (see {@link bt}). Its own
+   *  layer rather than a child of modalLayer because every panel re-render tears that one down. */
+  busyLayer!: PIXI.Container;
+  /**
+   * In-flight guard for the map's own mutating requests (currently the shop purchase). Same
+   * contract as every other scene's `bt` (ui/busyTracker.ts): `busy` blocks input (WorldMapInput
+   * .handleDown), `loadingVisible`/`dots` drive the overlay drawn into {@link busyLayer}, and
+   * lifecycle.update() ticks it. The tile/march actions predate this and still rely on the modal
+   * closing immediately as their own double-tap guard.
+   */
+  readonly bt = new BusyTracker();
   loadingLayer: PIXI.Container | null = null;
   loadingSpinner: PIXI.Graphics | null = null;
   loadingAngle = 0;

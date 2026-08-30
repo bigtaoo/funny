@@ -987,7 +987,6 @@ export const en: Record<TranslationKey, string> = {
   'world.season.closed': 'Closed',
   'world.shopBuy': 'Buy',
   'world.shopBought': 'Purchased',
-  'world.shopCost': '{coins} coins',
   'world.shopActive': 'Active',
   'world.shopAlreadyActive': 'Already active this season — no need to buy again',
   'world.shop.speedup': 'Train speedup {h}h',

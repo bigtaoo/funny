@@ -435,3 +435,49 @@ feat(lobby): 大厅背景装饰数量翻倍，alpha 调整为 0.25-0.38
 **这次做了像素核对**（§41 因账号进不去 SLG 而没做）。路子是 §41 提过、`cityModalSpeedup.ui.ts` 文件头也写着的 **stub-mount**：起 `--env TARGET=web-e2e`（`entries/web-e2e.ts` 把 `AppViews` 挂到 `window.__nwE2E`），在真 Chrome 里直接 `views.showWorldMap(cb)` / `views.showCity(cb)` 喂一个 Proxy 假 `worldApi`，绕过登录和第一章解锁。**两个坑记一下**：①标签页不在前台时 rAF 被节流，PIXI ticker 卡在 `lastTime≈420ms`，`SceneManager` 的淡入淡出永远走不完、`manager.current` 一直是上一个场景——手动 `app.ticker.update(t += 16.7)` 推几十帧即可；②`manager`/`ctx`/`panels` 都是 TS `private`，运行时被擦除，JS 里直接取就行。
 
 核对到的：领地面板三个 Tab 已是 HubTabs 语汇（active 墨底白字 + accent 边，inactive 纸底 mid 字）；领地列表的切割线确实落在第 9 行中间（露出半截 Jump/Abandon）；放弃确认就是那个共享 OK/取消框；部署弹窗末位按钮显示为文本 **Close**；城市页的 `Speed Up (60 coins)`、`Fill All Teams`、建筑详情的 `Upgrade`、练兵的 `+100/+500/Max +500` 全部水平垂直居中。
+
+## 43. SLG 商城对齐大厅卡片语汇，并补上购买流程缺的三道闸（2026-08-30，批 3）
+
+§41（批 1）统一了大世界四个面板的**尺度**，§42（批 2）把它们接回了手搓掉的共享部件。两节都把商城卡片的**语汇**（配色/描边/按钮/价格）和购买流程明确留给了下一批——就是本节。范围只有商城一处，但它同时跨了两层：看得见的四项配色/描边差异，和看不见的四项流程缺陷——后者是审这四项时顺带查出来的真 bug，不是观感问题。
+
+### 语汇：四项，全部对齐 [`ShopScene/card.ts`](../../client/src/scenes/ShopScene/card.ts)
+
+大厅的商品卡是 `drawCard`/`drawButton`；世界地图的是 `WorldMapPanels/shop.ts` 的 `renderShopItemCard`。两边独立写成，于是同一个"商品卡"概念长出了两套配色：
+
+| | 大厅 `drawCard` | SLG（改前） | 改后 |
+|---|---|---|---|
+| 卡片描边 | `C.line` 细框 + 左侧 `sketchAccentBar` 竖条 | 整圈 `C.accent` 蓝框 | 同大厅 |
+| 图标 | 直接画在卡纸上 | 外面再套一层 `sketchPanel` 蓝框 | 去掉这层框 |
+| 购买按钮 | `fill C.dark` 墨底 + 绿/蓝描边 + 白字 | `panelButtonIn(..., C.accent)` 整条蓝底 | 墨底 + 绿描边（primary） |
+| 价格 | 金币图标 + `C.gold` 加粗数字 | 灰色纯文字「200 金币」 | 同大厅 |
+
+价格那条不只是"跟大厅一样"：**全游戏的惯例是金币图标即单位**（`ui/widgets/SceneHeader/currency.ts` 的 `buildCluster` 注释原话 "the glyph is the unit"）。§41 已经按这条把面板顶部的**余额**从整句改成读数了，卡片价格是同一个面板里最后一处还把单位写成汉字的地方——两处并排放着一个有图标一个没有，比两处都没有更显眼。`world.shopCost` 三语键随之删除。
+
+`panelButtonIn` 多了一个可选的 `border` 参数（默认仍是 `C.accent`），因为 `drawButton` 对 primary 动作用的是绿描边，而这是全游戏唯一保留的另一种按钮描边色。
+
+**横版布局（左图右文）刻意保留**，没有跟着大厅改成竖版图片主导的 tile：这个网格开在盖住地图的模态面板里，横版单元格省下的高度是实打实的；语汇统一不等于布局统一。
+
+### 流程：四项缺陷
+
+审语汇时打开 [`net/structures.ts`](../../client/src/scenes/worldmap/net/structures.ts) 的 `doBuyShopItem`，发现它就是一句 `me = await buyShopItem(...)`，大厅 `ShopScene/actions.ts` 的 `onBuy` 有的三道闸一道都没有：
+
+1. **无 busy 锁 → 连点重复扣款**。补 `ctx.bt`（新增到 `WorldMapContext`，同每个场景的 `bt` 契约）：`WorldMapInput.handleDown` 顶部 `if (bt.busy) return` 吞掉在途期间的所有点击。
+2. **无超时** → 请求不落地就永远卡着。补 `withTimeout`（`ui/busyTracker.ts`，10s），超时走 `common.networkTimeout` 提示。
+3. **无 loading 遮罩**。新增 `ctx.busyLayer`（层序在 modal + toast 之上）+ `WorldMapPanelsCore.renderBusyOverlay()`，由 `WorldMapRenderer/lifecycle.ts` 的 `if (bt.tick(dt))` 驱动——即每个场景 `render()` 尾巴上那句 `if (bt.loadingVisible) drawLoadingOverlay(...)` 的等价物。它必须是独立一层：`renderShopPanel`/`showModal` 每次重绘都会整层 `tearDownChildren(modalLayer)`。
+4. **买完不重绘商城面板**。原来只有 `if (territoryPanelOpen && territoryTab === 'world')` 一个分支——那是 2026-08-02 把商城从领地面板拆成独立面板时漏改的。于是从商城面板买完，面板上的余额不动、战令卡片还写着「购买」。补 `if (shopPanelOpen) renderShopPanel()` + 一次 `renderHud()`。
+
+另外两项跟钱包相关，不止商城一处：
+
+5. **花完币本地钱包不同步**。SLG 的每个金币出口（商城购买 / 建筑加速 / 练兵加速 / 迁城）都是 worldsvc → commercial 服务端扣的，而这些接口的响应只带**世界**状态、不带 SaveData 钱包——于是顶栏金币读数一直显示花之前的数，直到别的事情碰巧重新拉了存档。`WorldMapCallbacks` 和 `CitySceneCallbacks` 各补一个 `refreshWallet?()`（同 `SectScene`/`FriendsScene` 早就有的那个契约，`app/nav/world.ts` 注入 `saveManager.refresh()`），在四个花币点后 `await`。两边都是**可选**的，纯粹是为了不用改动几十个早于它的 UI 测试 fixture。
+6. **没有"买不起置灰"**。改前只有 `battle_pass` 做了 owned 置灰，金币不够时唯一的反馈是服务端 `INSUFFICIENT_FUNDS`——一整个失败往返，只为告诉客户端一件它自己已经知道的事。照大厅 `canBuy` 的惯例（`ShopScene/shop.ts`）加上；`getCoins` 是可选回调，拿不到余额时闸门放行、服务端仍是最终裁决。置灰的按钮**照旧注册点击**（`panelButtonIn` 的既有约定），点了弹 `shop.insufficient`，而不是变成一个死区。
+
+### 验证
+
+`tsc --noEmit` 绿；`test:ui` 242 文件 2271 例全绿；`webpack --mode production` 通过。测试改两处、新增一个文件：
+
+- `worldMapShopPanel.ui.ts`：价格断言从 `'200 coins'` 改成裸数字 `'200'`，并加一条"面板里不该再出现 `coins` 字样"的反向断言；harness 的余额改成可配（`coins`），战令那两条用例得付得起 9800；新增「买不起置灰」描述块三条（买得起照常买 / 买不起弹提示且不发请求 / `getCoins` 缺席时闸门放行）。
+- 新增 `worldMapShopBuyFlow.ui.ts`（7 条）：直接测 `doBuyShopItem`——连点只发一次请求、失败也释放锁、超时提示且**不**同步钱包、买完重绘的是商城面板而不是领地面板、面板关着时不重绘、没接 `refreshWallet` 的旧 fixture 照样跑完。
+
+**像素级核对做了**（§41 当时没做成，原因是账号会话过期 + SLG 入口锁在第一章后）。这次绕开登录：用 `start:e2e` 靶子的 `window.__nwE2E.views.showWorldMap(桩)` 直接挂一个世界地图，`worldApi` 全是本地桩，一个后端都不用起（见记忆 `worktree-session-cannot-start-dev-server`）。核对到：卡片纸底 + 左侧蓝竖条 + 细框、图标外无框、价格是金币图标 + 金色数字、购买按钮墨底绿框白字；1000 金币时 200/300/500 三张可买、1400/3600/1200 三张置灰；连点三次 Buy 只扣一次款（1000 → 800）、`refreshWallet` 只调一次；12s 的桩请求在 10s 时按预期弹「网络超时，请重试」；买下战令后余额从 20000 → 10200 且该卡片当场翻成「已生效」。**踩坑**：插件里的 Chrome 标签页 `document.hidden === true`，rAF 被节流到几乎不动，场景转场会永远卡在 `transition` 里——`setInterval(() => app.ticker.update(performance.now()), 16)` 手动泵一下就过去了；但泵出来的时钟比真实慢约 5×，所以 `BusyTracker` 那个 1 秒阈值在桩请求落地前根本到不了，遮罩是把 `bt` 手动摆到"在途且已过阈值"再截的。
+
+**顺带发现、本批没修**：战令卡片**没有图标**。`buildInkIcon`（`render/icons/inkIconRaster.ts:246`）在纹理还没解码时返回一个空 `Container`，而商城面板没有大厅 `drawCard` 那种 `tex.baseTexture.once('loaded', rerender)` 的钩子，于是 `trophy` 这张图始终没画上去。改前它藏在图标外那圈蓝框里（看着像"一个空框"），去掉框之后就成了明显的空白。跟本批四项语汇改动无关（`buildIcon` 那行一个字没动），是既有缺陷。

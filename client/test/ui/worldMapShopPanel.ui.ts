@@ -59,9 +59,10 @@ function allModalTextNodes(ctx: WorldMapContext): PIXI.Text[] {
 
 const allModalTexts = (ctx: WorldMapContext): string[] => allModalTextNodes(ctx).map((t) => t.text);
 
-function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boolean; joined?: boolean } = {}) {
+function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boolean; joined?: boolean; coins?: number } = {}) {
   const doBuyShopItem = vi.fn();
   const getShopItems = vi.fn(async () => opts.shopItems ?? []);
+  const coins = opts.coins ?? 999;
 
   const ctx = {
     w: W, h: H,
@@ -85,7 +86,7 @@ function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boo
     territoryPanelOpen: false,
     replayPanelOpen: false,
     me: opts.joined === false ? { joined: false } : { joined: true, ...(opts.hasBattlePass ? { hasBattlePass: true } : {}) },
-    cb: { accountId: 'me', getCoins: () => 999, worldApi: { getShopItems } },
+    cb: { accountId: 'me', getCoins: () => coins, worldApi: { getShopItems } },
     net: { doBuyShopItem },
     view: { renderMap: () => {} },
   } as unknown as WorldMapContext;
@@ -165,21 +166,28 @@ describe('WorldMapPanels.renderShopPanel — item cards', () => {
     expect(ctx.infoScrollRect).toBeNull();
   });
 
-  it('each card shows its localized name and coin cost', () => {
+  // 2026-08-30 (batch 3): a card's price is the game's shared coin cluster — glyph + gold bold
+  // number, no "coins" word — matching the panel balance above it and every ShopScene card
+  // (ui/widgets/SceneHeader/currency.ts's buildCluster). It used to be a grey `{cost} coins`
+  // sentence, the last place in the shop that spelled the unit out in words, which is why the
+  // assertions below are on the bare formatted number.
+  it('each card shows its localized name and coin price as a bare number', () => {
     const items: SlgShopItemView[] = [
       { id: 'sp1', cost: 200, kind: 'troop_speedup', effect: { duration_sec: 3600 }, description: '' },
       { id: 'rp1', cost: 300, kind: 'resource_pack', effect: { each: 20000 }, description: '' },
       { id: 'sh1', cost: 400, kind: 'protection', effect: { duration_sec: 28800 }, description: '' },
     ];
-    const { ctx, panels } = buildHarness({ shopItems: items });
+    const { ctx, panels } = buildHarness({ shopItems: items, coins: 99999 });
     panels.renderShopPanel();
     const texts = allModalTexts(ctx);
     expect(texts).toContain('Train speedup 1h');
-    expect(texts).toContain('200 coins');
+    expect(texts).toContain('200');
     expect(texts).toContain('Resource pack (20000 each)');
-    expect(texts).toContain('300 coins');
+    expect(texts).toContain('300');
     expect(texts).toContain('Shield 8h');
-    expect(texts).toContain('400 coins');
+    expect(texts).toContain('400');
+    // …and the unit is carried by the glyph, never spelled out beside the number.
+    expect(texts.some((x) => x.includes('coins'))).toBe(false);
   });
 
   // 2026-08-30: the balance is drawn as the game's shared coin readout (coin glyph + gold bold
@@ -262,7 +270,7 @@ describe('WorldMapInput — in-list Buy button tap-vs-drag (infoScrollPendingTap
 // doBuyShopItem once ctx.me.hasBattlePass is already true.
 describe('WorldMapPanels — shop battle-pass card once already owned', () => {
   it('not yet owned: tapping the card fires doBuyShopItem as normal', () => {
-    const { ctx, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()] });
+    const { ctx, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()], coins: 99999 });
     ctx.panels.renderShopPanel();
     const btn = ctx.modalBtnRects[0]!;
     const cx = btn.rect.x + btn.rect.w / 2, cy = btn.rect.y + btn.rect.h / 2;
@@ -272,7 +280,7 @@ describe('WorldMapPanels — shop battle-pass card once already owned', () => {
   });
 
   it('already owned (ctx.me.hasBattlePass): tapping the card shows a toast instead of buying again', () => {
-    const { ctx, panels, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()], hasBattlePass: true });
+    const { ctx, panels, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()], hasBattlePass: true, coins: 99999 });
     // ShopPanel calls `this.core.showToast(...)` directly (2026-08-11 composition conversion — see
     // shopIconApi's doc comment above), not `panels.showToast(...)`, so the spy must sit on the
     // shared `core` instance the domain classes actually hold, not on the outer forwarding facade.
@@ -285,6 +293,48 @@ describe('WorldMapPanels — shop battle-pass card once already owned', () => {
     input.handleUp(cx, cy);
     expect(doBuyShopItem).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 2026-08-30 (batch 3): the SLG shop had no "can't afford" state at all — every card's Buy band was
+// live regardless of balance, and the only feedback was the server's INSUFFICIENT_FUNDS error after a
+// full round-trip. It now applies the lobby shop's `canBuy` convention (ShopScene/shop.ts): grey the
+// band out client-side, and let the (still-registered) tap explain itself with a toast.
+describe('WorldMapPanels — shop affordability gate', () => {
+  const pricey: SlgShopItemView[] = [
+    { id: 'cheap', cost: 100, kind: 'resource_pack', effect: { each: 100 }, description: '' },
+    { id: 'dear', cost: 5000, kind: 'resource_pack', effect: { each: 9000 }, description: '' },
+  ];
+
+  it('an affordable card still buys', () => {
+    const { ctx, input, doBuyShopItem } = buildHarness({ shopItems: pricey, coins: 200 });
+    ctx.panels.renderShopPanel();
+    const btn = ctx.modalBtnRects[0]!; // 'cheap'
+    input.handleDown(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    input.handleUp(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    expect(doBuyShopItem).toHaveBeenCalledWith('cheap');
+  });
+
+  it('a card the player cannot afford toasts instead of dispatching a doomed purchase', () => {
+    const { ctx, panels, input, doBuyShopItem } = buildHarness({ shopItems: pricey, coins: 200 });
+    const core = (panels as unknown as { core: { showToast: () => void } }).core;
+    const showToast = vi.spyOn(core, 'showToast').mockImplementation(() => {});
+    panels.renderShopPanel();
+    const btn = ctx.modalBtnRects[1]!; // 'dear', 5000 > 200
+    input.handleDown(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    input.handleUp(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    expect(doBuyShopItem).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('with no balance in hand (getCoins absent) the gate stays open — the server keeps the last word', () => {
+    const { ctx, input, doBuyShopItem } = buildHarness({ shopItems: pricey, coins: 0 });
+    (ctx.cb as { getCoins?: () => number }).getCoins = undefined;
+    ctx.panels.renderShopPanel();
+    const btn = ctx.modalBtnRects[1]!;
+    input.handleDown(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    input.handleUp(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    expect(doBuyShopItem).toHaveBeenCalledWith('dear');
   });
 });
 
