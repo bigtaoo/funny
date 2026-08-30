@@ -299,7 +299,8 @@ export class ShopPanel implements ShopHandlers {
         gridW,
         bodyBottom - ly,
         rows * (cellH + gap) - gap,
-        () => this.renderShopPanel()
+        () => this.renderShopPanel(),
+        cellH + gap
       );
       const ry0 = ly - this.core.ctx.infoScrollY;
       items.forEach((it, i) => {
@@ -313,7 +314,7 @@ export class ShopPanel implements ShopHandlers {
     }
 
     this.core.panelButton(
-      t('world.close'),
+      t('common.close'),
       px + (pw - PANEL_CLOSE_W) / 2,
       py + ph - PANEL_BTN_H - PANEL_PAD / 2,
       PANEL_CLOSE_W,

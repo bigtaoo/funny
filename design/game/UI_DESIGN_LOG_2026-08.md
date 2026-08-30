@@ -358,3 +358,49 @@ feat(lobby): 大厅背景装饰数量翻倍，alpha 调整为 0.25-0.38
 **本节不动的**：商城卡片的横版布局、整圈蓝框、蓝底购买按钮、灰字价格——那是"语汇"类，跟大厅 `ShopScene/card.ts` 的对齐另批处理；CityScene 弹窗那套"局部帧画完再整体放大 2.5×"的独立范式也不动（改它要连 `toScreen` 命中区换算和两个弹窗的全部布局常量一起重写，收益只是内部一致）。
 
 **验证**：`tsc --noEmit` 绿；UI 2244 例 + 单测 2216 例全绿；`webpack --mode production` 通过。两处测试跟着改：①`worldMapShopPanel` 的余额断言从整句改成格式化数字；②`worldMapInfoScroll` 的 harness 从 `800×600` 改成 `1080×1920`——800×600 是游戏根本不会渲染的尺寸（`ctx.w/h` 就是 `layout.designWidth/Height`），行高变大后"短列表不该有滚动余量"那条在这个假尺寸下失效，属于只存在于 harness 里的失败；同文件的拖拽用例相应把 15 个首都改成 30 个，让列表真的溢出 40px 以上。**像素级核对未做**：本机 Chrome 的会话已过期，且该账号的「世界」入口还锁在通关第一章后面，进不去 SLG 商城；几何数字用无头 harness 打印核对过（标题 28px、余额 28px 金色、名字 20px、价格 18px、购买按钮 382×56、关闭 200×56、卡片 204 高，均落在面板内无溢出）。
+
+## 42. 大世界/城市面板接回共享部件（2026-08-30，批 2）
+
+承 §41。批 1 修的是**尺度**（字号 / 命中区 / 宽度栅格），批 2 修的是另一条同源病因：**这些面板手搓了一批全局早已收敛掉的部件**。五项，逐条列改动与判据。
+
+### 42.1 领地面板的三个 Tab 改用 `HubTabs`
+
+原来是三个 `core.panelButton` 手搓的实心方块——active 红底、inactive 深墨底，全是白字。这套"实心块"tab 语汇**全游戏只有这一处**；其余每个分区条走的都是 [`ui/widgets/HubTabs.ts`](../../client/src/ui/widgets/HubTabs.ts) 的 `drawHubTabs`：active = 墨底 + accent 边 + 白粗体，inactive = **纸底** + line 边 + mid 字。差别不是配色偏好——inactive 用纸底才读得出"这几格是可切换的同级页"，三块都填实色只读作"三个按钮"。
+
+`drawHubTabs` 是照"全宽标题栏下方条带"写的（`pad = w*0.04`，从 `x=0` 起画），弹窗里用不了。给它加了**可选第 7 参** `opts?: { x?: number; pad?: number; gap?: number }`，默认值逐个复现原行为，所以既有 30 多个全宽调用点**零改动**。领地面板传 `{ x: px, pad: PANEL_PAD, gap: MARGIN }`。
+
+**一个行为差异要记一下**：`drawHubTabs` **不给当前 active 的那一格发命中矩形**（重点全游戏一致：重复点当前 tab 是 no-op）。所以 `ctx.modalBtnRects` 少一项，索引整体前移一位——`worldMapTerritoryPanel.ui.ts` 里所有按序号取按钮的断言（12→11、4→3、8→7，checkbox 从 index 3→2，Jump 从 4→3）跟着改，注释里写清了"少的那一项是 active tab"，免得下次被当成漏画。
+
+### 42.2 「放弃领地」确认改用 `confirmDialog`
+
+原来是在面板体内自绘的一段 OK/取消：`180×56` 的两颗 `panelButton`，跟共享 `drawConfirmDialog` 的 `126×42` 不是一个尺寸，文案位置也自己拍。现在照 FamilyScene/SectScene/EquipmentScene/FriendsScene/AuctionScene 的接法——`drawConfirmDialog` 只画、返回 hit rects，调用方自管 `modalLayer`/`modalBtnRects`/`modalDimRect`。
+
+**顺手修掉一个真 bug**：旧写法是"先画面板、再在面板体上画确认、然后 early return"，于是 `this.core.ctx.infoScrollRect = null` 那行（在 early return **之后**）永远执行不到——上一次列表渲染留下的滚动矩形还活着，覆盖了确认框所在区域。`WorldMapInput.handleDown` 对落在 `infoScrollRect` 内的按下**先当拖拽手势处理**、把点击推迟到 pointer-up，所以 OK/取消这两颗按钮是绕着"拖动滚动列表"那条分支走的。新写法把确认框提到画面板**之前**（整个面板压根不画），并显式清掉 `infoScrollRect`/`infoScrollRerender`。测试里加了 `expect(ctx.infoScrollRect).toBeNull()` 钉住。
+
+### 42.3 四个滚动面板接上 `scrollPeek`
+
+全游戏 21 处列表页都接了 [`peekViewportH`](../../client/src/ui/widgets/scrollPeek.ts)，只剩大世界这几个。接法是**给 `core.beginScrollList` 加可选 `unit` 参数**（行距：列表 `rowH`、商城网格 `cellH + gap`），在里面统一算 `peekViewportH(hAvail, unit, contentH)`，而不是四个调用点各算一遍——这样以后新增面板默认就带上。四处都传了：territory 列表 / 世界 Tab 国家列表 / 战报列表 / 商城网格（用户点名的是三处，第四处 `territoryWorldTab.ts` 是同一份 `beginScrollList` 的第四个调用点，一并带上）。
+
+调用方**仍然按自己的 `bodyBottom` 剔行**，没改：`bodyBottom >= peek 后的底边`，多画的那一行落在 mask 里被裁掉，比让四个调用点各自持有一份收缩后的高度简单。`peekViewportH` 只在自然余量 < 12px 时才介入，所以多数情况下视口一像素不变。
+
+### 42.4 CityScene 按钮标签一律居中
+
+`helpers.ts` 的 `addBtn` 把标签钉在 `x + 12`、垂直方向按**写死的 22** 而不是实测行高居中；`modals.ts`（加速 / 升级）和 `trainModal.ts`（三颗预设 / 加速）四处同款，偏移量还各不相同（+6 / +8）。全局约定是 `anchor(0.5, 0.5)` 居中（`confirmDialog`、`ShopScene/card.ts` 的 `drawButton`、`HubTabs`）。五处统一改成 `anchor.set(0.5,0.5)` + `x + w/2` / `y + h/2`。
+
+写死 22 那半边比左对齐更值得修：它对 CJK 和拉丁字形的实际行高不同，同一颗按钮在中德文下会差几像素。
+
+**测试要跟着改一处**：`cityModalSpeedup.ui.ts` 自己的 `screenRect()` 助手用 `getGlobalPosition()` 当左上角——那只对默认 anchor(0,0) 成立。标签变居中后它把**中心**当成了左上角，于是"同一行"断言差了半个行高（20.3 > 16）而报红，**不是布局回归**。助手改成扣掉 anchor（`x - anchor.x * w`），两种 anchor 都对。
+
+### 42.5 关闭按钮统一成 `common.close` 文本
+
+原来两套并存：15 处 `showModal` 传 `label: '✕'`（`showModal` 内部再把这个字形特判换成手绘 close 图标），另有商城/领地/战报三个面板底部用 `t('world.close')` 文本按钮。同一个大世界里，点开地块菜单看到的是图标、点开商城看到的是文字。
+
+统一成**文本按钮**（图标那套只在 `showModal` 里存在，且那 15 处的按钮本来就是和"增援/进攻/迁城"这些文本按钮并排的一格，混一个图标进去反而是它显得像异类）。`showModal` 里那段 `if (btn.label === '✕')` 特判整段删掉，`buildIcon` 随之成为未用 import 也删掉。`t('world.close')` 三处改 `t('common.close')`，`world.close` 键从 zh/en/de 三份词表删除（`i18n-no-dead-keys` 会卡死键）。四个 UI 测试文件里的 `'✕'` 断言改成 `t('common.close')`。
+
+### 验证
+
+`tsc --noEmit` 绿；`test:ui` 241 文件 / 2261 例全绿；`i18n` + `i18n-no-dead-keys` 绿；`webpack --mode production` 通过。
+
+**这次做了像素核对**（§41 因账号进不去 SLG 而没做）。路子是 §41 提过、`cityModalSpeedup.ui.ts` 文件头也写着的 **stub-mount**：起 `--env TARGET=web-e2e`（`entries/web-e2e.ts` 把 `AppViews` 挂到 `window.__nwE2E`），在真 Chrome 里直接 `views.showWorldMap(cb)` / `views.showCity(cb)` 喂一个 Proxy 假 `worldApi`，绕过登录和第一章解锁。**两个坑记一下**：①标签页不在前台时 rAF 被节流，PIXI ticker 卡在 `lastTime≈420ms`，`SceneManager` 的淡入淡出永远走不完、`manager.current` 一直是上一个场景——手动 `app.ticker.update(t += 16.7)` 推几十帧即可；②`manager`/`ctx`/`panels` 都是 TS `private`，运行时被擦除，JS 里直接取就行。
+
+核对到的：领地面板三个 Tab 已是 HubTabs 语汇（active 墨底白字 + accent 边，inactive 纸底 mid 字）；领地列表的切割线确实落在第 9 行中间（露出半截 Jump/Abandon）；放弃确认就是那个共享 OK/取消框；部署弹窗末位按钮显示为文本 **Close**；城市页的 `Speed Up (60 coins)`、`Fill All Teams`、建筑详情的 `Upgrade`、练兵的 `+100/+500/Max +500` 全部水平垂直居中。

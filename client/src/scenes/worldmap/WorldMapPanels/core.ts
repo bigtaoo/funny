@@ -12,7 +12,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../../i18n';
 import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../render/sketchUi';
 import { drawScrollIndicator } from '../../../ui/widgets/ScrollIndicator';
-import { buildIcon } from '../../../render/icons';
+import { peekViewportH } from '../../../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../../../render/fontScale';
 import { HUD_H, MARGIN, CONFIRM_H } from '../logic/constants';
 import { PANEL_W, PANEL_MARGIN, PANEL_BTN_FONT } from './spec';
@@ -44,7 +44,7 @@ export class WorldMapPanelsCore {
     const mx = (w - mw) / 2;
 
     // Wrap into multiple rows once buttons would otherwise be squeezed below a legible width
-    // (e.g. the 6-button owned-tile menu: Reinforce/Defense/Watchtower/Relocate/Abandon/✕) —
+    // (e.g. the 6-button owned-tile menu: Reinforce/Defense/Watchtower/Relocate/Abandon/Close) —
     // a single row at that count left labels overlapping their neighbors.
     const minBtnW = 150;
     const maxCols = Math.max(1, Math.floor((mw + modalMargin) / (minBtnW + modalMargin)));
@@ -108,20 +108,17 @@ export class WorldMapPanelsCore {
       bp.x = bx;
       bp.y = by;
       ml.addChild(bp);
-      // '✕' cancel buttons render the hand-drawn close glyph instead of the bare dingbat.
-      if (btn.label === '✕') {
-        const ic = buildIcon('close', 48, C.light);
-        ic.x = bx + btnW / 2 - 24;
-        ic.y = by + btnH / 2 - 24;
-        ml.addChild(ic);
-      } else {
-        // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
-        const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16);
-        bl.anchor.set(0.5, 0.5);
-        bl.x = bx + btnW / 2;
-        bl.y = by + btnH / 2;
-        ml.addChild(bl);
-      }
+      // Every button is a plain text label — including the dismiss one, which used to be a bare
+      // '✕' dingbat swapped at draw time for the hand-drawn close glyph. That left the world map
+      // with two close affordances side by side (a glyph button in the tile-action modals, a
+      // `t('world.close')` text button in the shop/territory/replay panels); both are now
+      // `t('common.close')` text (2026-08-30 SLG widget pass).
+      // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
+      const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16);
+      bl.anchor.set(0.5, 0.5);
+      bl.x = bx + btnW / 2;
+      bl.y = by + btnH / 2;
+      ml.addChild(bl);
       this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, action: btn.action });
     }
 
@@ -195,7 +192,7 @@ export class WorldMapPanelsCore {
         { label: t('world.deployQuarter'), action: () => send(Math.floor(avail / 4)) },
         { label: t('world.deployHalf'), action: () => send(Math.floor(avail / 2)) },
         { label: t('world.deployAll'), action: () => send(avail) },
-        { label: '✕', action: () => this.closeModal() },
+        { label: t('common.close'), action: () => this.closeModal() },
       ]
     );
   }
@@ -227,15 +224,26 @@ export class WorldMapPanelsCore {
    * `rerender` is required (no default) — the four call sites (hud/shop/territory/replay's own
    * panels) always pass their own re-render closure. There is no cross-domain default to fall
    * back to here: this class has no visibility into which panel is currently open.
+   *
+   * `unit` is the row/card pitch (`rowH`, or `cellH + gap` for the shop grid) and opts these lists
+   * into the shared scroll-peek affordance every other list page in the game already uses
+   * (ui/widgets/scrollPeek). Without it the mask ended flush against the panel's footer band, so a
+   * list whose row height happened to divide the body height evenly looked complete — the only cue
+   * that more existed was the slim ScrollIndicator thumb. `peekViewportH` only intervenes when the
+   * naive cut lands within 12px of a row boundary, so in every other case the viewport is unchanged.
+   * Callers keep culling against their own `bodyBottom`, which is >= the peeked bottom: the extra
+   * row that buys is drawn inside the mask and simply clipped. (2026-08-30 SLG widget pass.)
    */
   beginScrollList(
     x: number,
     y: number,
     w: number,
-    h: number,
+    hAvail: number,
     contentH: number,
-    rerender: () => void
+    rerender: () => void,
+    unit = 0
   ): PIXI.Container {
+    const h = peekViewportH(hAvail, unit, contentH);
     this.ctx.infoScrollRect = { x, y, w, h };
     this.ctx.infoMaxScroll = Math.max(0, contentH - h);
     this.ctx.infoScrollY = Math.max(0, Math.min(this.ctx.infoScrollY, this.ctx.infoMaxScroll));

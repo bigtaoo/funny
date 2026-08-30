@@ -65,7 +65,7 @@ export class WorldMapInput {
         [t('world.joinTitle'), t('world.confirmJoin')],
         [
           { label: t('world.confirmJoinBtn'), action: () => void this.ctx.net.doJoin() },
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
+          { label: t('common.close'), action: () => this.ctx.panels.closeModal() },
         ],
       );
       return;
@@ -129,7 +129,7 @@ export class WorldMapInput {
         myButtons.push({ label: t('world.actRelocate'), action: () => this.ctx.net.confirmRelocate(tx, ty) });
       }
       myButtons.push({ label: t('world.actAbandon'), action: () => this.ctx.net.doAbandon(tx, ty) });
-      myButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+      myButtons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal() });
       const head = [t('world.mine')];
       if (tile.watchtower) head.push(t('world.hasWatchtower'));
       if (tile.structure) head.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
@@ -158,7 +158,7 @@ export class WorldMapInput {
       } else {
         allyButtons.push({ label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison') });
       }
-      allyButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+      allyButtons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal() });
       const allyHead = [t('world.allyTile'), ownerLine, `(${tx}, ${ty})`];
       if (tile.structure) allyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
       if (tile.maxHp && tile.hp != null) allyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
@@ -178,7 +178,7 @@ export class WorldMapInput {
       if (!protectedNow) {
         buttons.push({ label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') });
       }
-      buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+      buttons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal() });
       const enemyHead = [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`];
       // ADR-051 (P5): flag an enemy structure so the player knows attacking this tile razes it.
       if (tile.structure) enemyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
@@ -201,7 +201,7 @@ export class WorldMapInput {
       if (tile.contestedByMe) {
         // My own pending hold — nothing to do but watch the countdown (no reinforcement in v1).
         this.ctx.panels.showModal([t('world.occupyingMine').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], [
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
+          { label: t('common.close'), action: () => this.ctx.panels.closeModal() },
         ]);
         return;
       }
@@ -209,7 +209,7 @@ export class WorldMapInput {
       // would just bounce off the pending holder's contestedBy at arrival; use attack to fight their held garrison).
       const holdButtons: { label: string; action: () => void }[] = [
         { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
-        { label: '✕', action: () => this.ctx.panels.closeModal() },
+        { label: t('common.close'), action: () => this.ctx.panels.closeModal() },
       ];
       this.ctx.panels.showModal([t('world.occupying').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], holdButtons);
       return;
@@ -236,7 +236,7 @@ export class WorldMapInput {
         [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
         [
           { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
+          { label: t('common.close'), action: () => this.ctx.panels.closeModal() },
         ],
       );
       return;
@@ -277,7 +277,7 @@ export class WorldMapInput {
     }
     // (Relocate moved to the owned-tile branch: §3.4 now requires the target 3×3 to be already fully owned,
     // so relocation is initiated by clicking your own centre tile, not a neutral one.)
-    buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+    buttons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal() });
     const head = garrison > 0 ? t('world.garrison').replace('{n}', String(garrison)) : t('world.actOccupy');
     const headLines = [head, `(${tx}, ${ty})`];
     // Resource type + level (§ resourceDensity=1.0 — nearly every neutral tile is a resTyped resource tile)

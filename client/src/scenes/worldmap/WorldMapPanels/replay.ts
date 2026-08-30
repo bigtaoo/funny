@@ -92,7 +92,8 @@ export class ReplayPanel implements ReplayHandlers {
         pw,
         bodyBottom - ly,
         rows.length * rowH,
-        () => this.renderReplayPanel()
+        () => this.renderReplayPanel(),
+        rowH
       );
       let ry = ly - this.core.ctx.infoScrollY;
       for (const s of rows) {
@@ -158,7 +159,7 @@ export class ReplayPanel implements ReplayHandlers {
     }
 
     this.core.panelButton(
-      t('world.close'),
+      t('common.close'),
       px + (pw - PANEL_CLOSE_W) / 2,
       py + ph - PANEL_BTN_H - PANEL_PAD / 2,
       PANEL_CLOSE_W,

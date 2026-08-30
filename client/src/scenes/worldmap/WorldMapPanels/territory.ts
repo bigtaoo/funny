@@ -6,6 +6,8 @@ import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../r
 import { buildIcon } from '../../../render/icons';
 import type { IconKind } from '../../../render/icons';
 import { FS, snapFont } from '../../../render/fontScale';
+import { drawHubTabs } from '../../../ui/widgets/HubTabs';
+import { drawConfirmDialog } from '../../../ui/dialogs/confirmDialog';
 import { getResTexture } from '../../../render/atlas/resAtlasLoader';
 import { HUD_H, MARGIN } from '../logic/constants';
 import {
@@ -79,6 +81,38 @@ export class TerritoryPanel implements TerritoryHandlers {
     this.core.ctx.modalBtnRects = [];
 
     const { w, h } = this.core.ctx;
+
+    // Abandon confirm — the shared OK/Cancel dialog (ui/dialogs/confirmDialog), wired the same way
+    // FamilyScene/SectScene wire it: it only draws and hands back hit rects, we keep owning the
+    // modal layer / hit list / dim rect. It replaces the whole panel (drawn instead of it, not over
+    // it) so the list's Jump/Abandon buttons underneath can't be clicked through the dialog — the
+    // hand-rolled version this supersedes achieved that by returning early after painting itself
+    // onto the panel body, but drew its own drifted 180x56 buttons and left the previous render's
+    // `infoScrollRect` live, so a tap on OK/Cancel was still routed through the list's
+    // drag-to-scroll gesture path. (2026-08-30 SLG widget pass.)
+    if (this.core.ctx.territoryAbandonConfirm) {
+      const { x: tx1, y: ty1 } = this.core.ctx.territoryAbandonConfirm;
+      const msg = t('world.abandonConfirm').replace('{x}', String(tx1)).replace('{y}', String(ty1));
+      this.core.ctx.infoScrollRect = null;
+      this.core.ctx.infoScrollRerender = null;
+      this.core.ctx.modalDimRect = { x: 0, y: 0, w, h };
+      this.core.ctx.modalBtnRects = drawConfirmDialog(
+        ml,
+        w,
+        h,
+        msg,
+        () => {
+          this.core.ctx.territoryAbandonConfirm = null;
+          void this.core.ctx.net.doAbandonFromList(tx1, ty1);
+        },
+        () => {
+          this.core.ctx.territoryAbandonConfirm = null;
+          this.renderTerritoryPanel();
+        }
+      );
+      return;
+    }
+
     // Width doubled (420→840, still clamped to the viewport) so the enlarged
     // overview text has room to breathe; 2026-08-30 it moved onto the shared width grid
     // (840→PANEL_W.lg), the widest tier since this is the one tabbed, data-dense panel.
@@ -97,48 +131,6 @@ export class TerritoryPanel implements TerritoryHandlers {
     panel.x = px;
     panel.y = py;
     ml.addChild(panel);
-
-    // Abandon confirm — replaces the whole panel body so the underlying list buttons can't be
-    // clicked through the dialog (this branch draws nothing else and returns early).
-    if (this.core.ctx.territoryAbandonConfirm) {
-      const { x: tx1, y: ty1 } = this.core.ctx.territoryAbandonConfirm;
-      const msg = t('world.abandonConfirm').replace('{x}', String(tx1)).replace('{y}', String(ty1));
-      const mLbl = txt(msg, FS.label, C.dark);
-      mLbl.anchor.set(0.5, 0);
-      mLbl.x = px + pw / 2;
-      mLbl.y = py + ph / 2 - 50;
-      mLbl.style.wordWrap = true;
-      mLbl.style.wordWrapWidth = pw - 60;
-      mLbl.style.align = 'center';
-      ml.addChild(mLbl);
-      const btnW = 180,
-        btnH = PANEL_BTN_H;
-      this.core.panelButton(
-        t('common.ok'),
-        px + pw / 2 - btnW - 10,
-        py + ph / 2 + 10,
-        btnW,
-        btnH,
-        C.red,
-        () => {
-          this.core.ctx.territoryAbandonConfirm = null;
-          void this.core.ctx.net.doAbandonFromList(tx1, ty1);
-        }
-      );
-      this.core.panelButton(
-        t('common.cancel'),
-        px + pw / 2 + 10,
-        py + ph / 2 + 10,
-        btnW,
-        btnH,
-        C.dark,
-        () => {
-          this.core.ctx.territoryAbandonConfirm = null;
-          this.renderTerritoryPanel();
-        }
-      );
-      return;
-    }
 
     const addText = (
       s: string,
@@ -161,15 +153,21 @@ export class TerritoryPanel implements TerritoryHandlers {
       { id: 'list', label: t('world.territoryTabList') },
       { id: 'world', label: t('world.info') },
     ];
-    const tabW = (pw - PANEL_PAD * 2 - MARGIN * 2) / 3;
-    let tabX = px + PANEL_PAD;
-    for (const tab of tabs) {
-      const active = this.core.ctx.territoryTab === tab.id;
-      this.core.panelButton(tab.label, tabX, tabY, tabW, PANEL_TAB_H, active ? C.red : C.dark, () =>
-        this.switchTerritoryTab(tab.id)
-      );
-      tabX += tabW + MARGIN;
-    }
+    // The shared hub-tab strip (ui/widgets/HubTabs), not three hand-rolled solid `panelButton`
+    // blocks: those drew the active tab as a red-filled slab and the inactive ones as dark slabs,
+    // a tab language used nowhere else in the game. `drawHubTabs`'s `x`/`pad`/`gap` overrides let
+    // the full-width strip sit inside this modal panel (2026-08-30 SLG widget pass).
+    const tabHits = drawHubTabs(
+      ml,
+      pw,
+      tabY,
+      PANEL_TAB_H,
+      tabs.map((tab) => ({ label: tab.label, active: this.core.ctx.territoryTab === tab.id })),
+      (i) => this.switchTerritoryTab(tabs[i]!.id),
+      { x: px, pad: PANEL_PAD, gap: MARGIN }
+    );
+    for (const hit of tabHits)
+      this.core.ctx.modalBtnRects.push({ rect: hit.rect, action: hit.fn });
 
     let ly = tabY + PANEL_TAB_H + PANEL_PAD;
     const bodyBottom = py + ph - PANEL_FOOTER_H;
@@ -336,7 +334,8 @@ export class TerritoryPanel implements TerritoryHandlers {
           pw,
           bodyBottom - ly,
           filtered.length * rowH,
-          () => this.renderTerritoryPanel()
+          () => this.renderTerritoryPanel(),
+          rowH
         );
         let ry = ly - this.core.ctx.infoScrollY;
         for (const tv of filtered) {
@@ -387,7 +386,7 @@ export class TerritoryPanel implements TerritoryHandlers {
 
     // Close
     this.core.panelButton(
-      t('world.close'),
+      t('common.close'),
       px + (pw - PANEL_CLOSE_W) / 2,
       py + ph - PANEL_BTN_H - PANEL_PAD / 2,
       PANEL_CLOSE_W,

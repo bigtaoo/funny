@@ -115,7 +115,7 @@ export async function applySiegeResult(ctx: WorldMapContext, s: SiegeResult): Pr
         [line],
         [
           { label: t('world.replaySiege'), action: () => { ctx.panels.closeModal(); ctx.cb.onReplaySiege(s.siegeId); } },
-          { label: '✕', action: () => ctx.panels.closeModal() },
+          { label: t('common.close'), action: () => ctx.panels.closeModal() },
         ],
       );
     }

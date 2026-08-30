@@ -975,7 +975,6 @@ export const zh = {
   'world.replay.def': '守',
   'world.replay.none': '无录像',
   'world.resYield': '产出',
-  'world.close': '关闭',
   // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26) ─────────────
   'world.territoryTitle': '领地总览',
   'world.territoryTabOverview': '总览',

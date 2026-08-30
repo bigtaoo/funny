@@ -80,9 +80,14 @@ export function addBtn(
   g.x = x;
   g.y = y;
   host.container.addChild(g);
+  // Centred, like every other button label in the game (ui/dialogs/confirmDialog, ShopScene/card's
+  // drawButton, HubTabs): this used to left-align at `x + 12` and centre vertically against a
+  // hardcoded 22px line height rather than the label's measured one, so a short label sat pinned to
+  // the left edge of a wide button and a CJK/Latin height difference nudged it off centre.
   const lbl = txt(label, FS.body, textColor, true);
-  lbl.x = x + 12;
-  lbl.y = y + (h - 22) / 2;
+  lbl.anchor.set(0.5, 0.5);
+  lbl.x = x + w / 2;
+  lbl.y = y + h / 2;
   host.container.addChild(lbl);
   host.hits.push({ x, y, w, h, fn });
 }

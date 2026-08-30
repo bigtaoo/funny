@@ -105,7 +105,7 @@ export async function showTeamPicker(
       action: () => void doMarchTeam(ctx, pendingTeamIds, tx, ty, tm.id, kind, stationMode),
     });
   }
-  buttons.push({ label: '✕', action: () => ctx.panels.closeModal() });
+  buttons.push({ label: t('common.close'), action: () => ctx.panels.closeModal() });
   // 移动并驻扎 (stationMode==='garrison') gets its own picker title so the intent is unmistakable at team-select time.
   const moveTitle = stationMode === 'garrison' ? t('world.team.pickTitleGarrison') : t('world.team.pickTitleMove');
   const head = usable.length > 0
