@@ -8,7 +8,8 @@ import type { WorldPose, WorldPositions, SpriteBinding } from '../core/types';
 import { Skeleton } from '../skeleton/Skeleton';
 import {
   bindingToSpriteFrame, rotationHandlePos, spriteCorners, pointInQuad, computeAnchorDrag,
-  type Vec2,
+  worldToLocalPixel, alphaAt, MIN_HIT_ALPHA,
+  type Vec2, type AlphaMask,
 } from '../rendering/spriteGeometry';
 import {
   RotateBoneCommand, AddKeyframeCommand, DeleteKeyframeCommand,
@@ -110,7 +111,10 @@ export class InteractionController {
       // its bone and arms an anchor drag in the same gesture, only when the sprite
       // is actually visible on screen (Sprite preview mode).
       if (this.state.previewMode === 'sprite') {
-        const spriteHit = findSpriteAt(x, y, worldPose, this.state.boneBindings, id => this.imageCtrl.getTexture(id));
+        const spriteHit = findSpriteAt(x, y, worldPose, this.state.boneBindings, id => this.imageCtrl.getTexture(id), {
+          getAlphaMask: id => this.imageCtrl.getAlphaMask(id),
+          preferBone:   this.state.selectedBone,
+        });
         if (spriteHit) {
           this.state.setSelectedBone(spriteHit);
           this.startBindingAnchorDrag(spriteHit, worldPose, x, y);
@@ -452,29 +456,54 @@ export function findSkinHandleAt(
   return null;
 }
 
-/** Nearest sprite (front-to-back by zOrder) whose quad contains a stage point —
- *  Skin-mode's "click the image directly" hit-test. Doesn't depend on controller
- *  state — free function so it's testable without wiring up canvas listeners.
- *  `getTexture` is typed structurally (not PIXI.Texture) to keep this module
- *  PIXI-free. */
+export interface SpriteHitOptions {
+  /** Per-slot alpha mask lookup. A sprite that has one is hit only where its pixels are
+   *  actually painted; one that doesn't (mask still decoding, or undecodable) falls back
+   *  to its plain quad, i.e. the pre-alpha behaviour. */
+  getAlphaMask?: (boneId: string) => AlphaMask | undefined;
+  /** The currently selected bone. When the click lands on it, it keeps the selection even
+   *  if a higher-zOrder sprite also covers that point — picking a part from the bone list
+   *  and then clicking it on canvas must not hand the selection to whatever is in front. */
+  preferBone?: string | null;
+}
+
+/** Nearest sprite (front-to-back by zOrder) whose *painted pixels* contain a stage point —
+ *  Skin-mode's "click the image directly" hit-test. The quad is only the first pass: the
+ *  spine's texture rectangle swallows both shoulders, so a quad-only test made every part
+ *  under it unclickable however the bone list was used. Doesn't depend on controller state —
+ *  free function so it's testable without wiring up canvas listeners. `getTexture` is typed
+ *  structurally (not PIXI.Texture) to keep this module PIXI-free. */
 export function findSpriteAt(
   x: number,
   y: number,
   worldPose: WorldPositions,
   bindings: ReadonlyMap<string, SpriteBinding>,
   getTexture: (boneId: string) => { width: number; height: number } | undefined,
+  opts: SpriteHitOptions = {},
 ): string | null {
   const candidates = [...bindings.entries()]
     .filter(([boneId]) => getTexture(boneId))
     .sort((a, b) => b[1].zOrder - a[1].zOrder);   // highest zOrder (frontmost) first
+
+  let frontmost: string | null = null;
 
   for (const [boneId, binding] of candidates) {
     const pose    = worldPose.get(boneId);
     const texture = getTexture(boneId);
     if (!pose || !texture) continue;
     const frame = bindingToSpriteFrame(pose.sx, pose.sy, pose.wa, binding, texture.width, texture.height);
-    if (pointInQuad(x, y, spriteCorners(frame))) return boneId;
+    if (!pointInQuad(x, y, spriteCorners(frame))) continue;
+
+    const mask = opts.getAlphaMask?.(boneId);
+    if (mask) {
+      const local = worldToLocalPixel(frame, x, y);
+      if (!local) continue;
+      if (alphaAt(mask, frame.texW, frame.texH, local.x, local.y) < MIN_HIT_ALPHA) continue;
+    }
+
+    if (boneId === opts.preferBone) return boneId;   // sticky selection beats zOrder
+    if (frontmost === null) frontmost = boneId;
   }
 
-  return null;
+  return frontmost;
 }

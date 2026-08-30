@@ -10,7 +10,9 @@ import { describe, it, expect } from 'vitest';
 import { pointToSegmentDist, findBoneAt, findSpriteAt, findSkinHandleAt, unwrapAngleStep } from '../src/interaction/InteractionController';
 import { RotateBoneCommand, SetLengthScaleCommand, SetBindingPropCommand } from '../src/interaction/commands';
 import { Skeleton } from '../src/skeleton/Skeleton';
-import { bindingToSpriteFrame, rotationHandlePos } from '../src/rendering/spriteGeometry';
+import {
+  bindingToSpriteFrame, rotationHandlePos, localPixelToWorld, MIN_HIT_ALPHA, type AlphaMask,
+} from '../src/rendering/spriteGeometry';
 import { EventBus, type AppEvents } from '../src/core/EventBus';
 import { AppState } from '../src/core/AppState';
 import { AnimationController } from '../src/animation/AnimationController';
@@ -279,6 +281,105 @@ describe('findSpriteAt', () => {
     samePivot.set('head', { ...spine });
     const getTexture = () => ({ width: 40, height: 100 });
     expect(findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture)).toBe('head');
+  });
+
+  // The two overlap rules that make a real rig clickable. The spine's texture rectangle
+  // covers both shoulders, and it outranks the arms on zOrder, so a quad-only front-first
+  // test made every part under it unreachable — from the canvas AND after picking it in the
+  // bone list, since selection played no part in the hit-test at all.
+  describe('overlapping sprites', () => {
+    // spine and head forced onto the same pivot, same texture size: a total overlap where
+    // head (zOrder 5) is in front of spine (zOrder 0) everywhere.
+    const spine     = restPose.get('spine')!;
+    const samePivot = new Map(restPose);
+    samePivot.set('head', { ...spine });
+    const bindings = new Map<string, SpriteBinding>([
+      ['spine', binding(0)],
+      ['head',  binding(5)],
+    ]);
+    const getTexture = () => ({ width: 40, height: 100 });
+
+    /** A mask that is uniformly `alpha` everywhere — 1x1 is enough, since alphaAt scales
+     *  mask resolution through the texture size. */
+    const uniform = (alpha: number): AlphaMask => ({ w: 1, h: 1, data: new Uint8Array([alpha]) });
+
+    it('sees through a frontmost sprite that is transparent at the click point', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: id => (id === 'head' ? uniform(0) : uniform(255)),
+      });
+      expect(hit).toBe('spine');
+    });
+
+    it('still takes the frontmost sprite where its pixels are actually painted', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: () => uniform(255),
+      });
+      expect(hit).toBe('head');
+    });
+
+    it('treats near-zero alpha (anti-aliasing halo) as transparent', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: id => (id === 'head' ? uniform(MIN_HIT_ALPHA - 1) : uniform(255)),
+      });
+      expect(hit).toBe('spine');
+    });
+
+    it('returns null when every sprite covering the point is transparent there', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: () => uniform(0),
+      });
+      expect(hit).toBeNull();
+    });
+
+    it('falls back to the plain quad for a sprite whose mask is missing', () => {
+      // head's mask hasn't been built (or failed to decode) — it keeps its old
+      // quad-shaped, zOrder-ranked behaviour rather than becoming unclickable.
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: id => (id === 'head' ? undefined : uniform(255)),
+      });
+      expect(hit).toBe('head');
+    });
+
+    it('keeps the already-selected bone when the click also lands on a frontmost one', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: () => uniform(255),
+        preferBone:   'spine',
+      });
+      expect(hit).toBe('spine');
+    });
+
+    it('does NOT keep the selected bone where the click misses its painted pixels', () => {
+      // Sticky selection is a tie-break between sprites the click actually hits, not a
+      // lock: clicking a part the selected bone doesn't cover must still move on.
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: id => (id === 'spine' ? uniform(0) : uniform(255)),
+        preferBone:   'spine',
+      });
+      expect(hit).toBe('head');
+    });
+
+    it('ignores a preferBone that no sprite under the point belongs to', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: () => uniform(255),
+        preferBone:   'r_lower_leg',
+      });
+      expect(hit).toBe('head');
+    });
+
+    it('samples the mask at the clicked pixel, not just per-sprite', () => {
+      // 2x1 mask on head: left half transparent, right half solid. Clicking left of the
+      // pivot falls through to spine; clicking right of it stays on head.
+      const halfMask: AlphaMask = { w: 2, h: 1, data: new Uint8Array([0, 255]) };
+      const opts = { getAlphaMask: (id: string) => (id === 'head' ? halfMask : uniform(255)) };
+      // The two probe points are derived through the sprite's own frame rather than
+      // written as pivot±10: the sprite inherits the bone's world angle, so texture-left
+      // is not world-left.
+      const frame = bindingToSpriteFrame(spine.sx, spine.sy, spine.wa, binding(5), 40, 100);
+      const inTransparentHalf = localPixelToWorld(frame, 10, 50);
+      const inPaintedHalf     = localPixelToWorld(frame, 30, 50);
+      expect(findSpriteAt(inTransparentHalf.x, inTransparentHalf.y, samePivot, bindings, getTexture, opts)).toBe('spine');
+      expect(findSpriteAt(inPaintedHalf.x,     inPaintedHalf.y,     samePivot, bindings, getTexture, opts)).toBe('head');
+    });
   });
 });
 
