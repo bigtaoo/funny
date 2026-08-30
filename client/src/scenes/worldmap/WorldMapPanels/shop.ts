@@ -13,6 +13,16 @@ import {
 import { buildIcon } from '../../../render/icons';
 import { FS } from '../../../render/fontScale';
 import { HUD_H } from '../logic/constants';
+import {
+  PANEL_W,
+  PANEL_MARGIN,
+  PANEL_PAD,
+  PANEL_BTN_H,
+  PANEL_BTN_FONT,
+  PANEL_CLOSE_W,
+  PANEL_FOOTER_H,
+  drawPanelTitle,
+} from './spec';
 import type { SlgShopItemView } from '../../../net/WorldApiClient';
 import type { IconKind } from '../../../render/icons';
 import type { WorldMapPanelsCore } from './core';
@@ -140,7 +150,7 @@ export class ShopPanel implements ShopHandlers {
     cellW: number,
     cellH: number
   ): void {
-    const pad = 8;
+    const pad = PANEL_PAD;
     const cell = sketchPanel(cellW, cellH, {
       fill: 0xfaf9f5,
       border: C.accent,
@@ -150,7 +160,7 @@ export class ShopPanel implements ShopHandlers {
     cell.y = y;
     layer.addChild(cell);
 
-    const btnBandH = 26;
+    const btnBandH = PANEL_BTN_H;
     const imgBox = cellH - pad * 2 - btnBandH - 8;
     const imgX = x + pad,
       imgY = y + pad;
@@ -165,7 +175,7 @@ export class ShopPanel implements ShopHandlers {
     frame.x = imgX;
     frame.y = imgY;
     layer.addChild(frame);
-    const iconSize = imgBox - 12;
+    const iconSize = imgBox - 16;
     const icon = buildIcon(this.shopIcon(it), iconSize, C.accent);
     icon.x = imgX + (imgBox - iconSize) / 2;
     icon.y = imgY + (imgBox - iconSize) / 2;
@@ -175,22 +185,28 @@ export class ShopPanel implements ShopHandlers {
     // 8h/24h shield) read apart by icon alone, not just by the name text beside it.
     const badgeLabel = this.shopBadgeLabel(it);
     if (badgeLabel) {
-      const badge = txtOutlined(badgeLabel, FS.micro, C.accent, 0xfaf9f5, 3, true);
+      const badge = txtOutlined(badgeLabel, FS.small, C.accent, 0xfaf9f5, 3, true);
       badge.anchor.set(1, 0);
-      badge.x = imgX + imgBox + 2;
-      badge.y = imgY - 4;
+      badge.x = imgX + imgBox + 4;
+      badge.y = imgY - 8;
       layer.addChild(badge);
     }
 
-    const ax = imgX + imgBox + 10;
+    const ax = imgX + imgBox + 14;
     const colW = x + cellW - pad - ax;
-    const name = txt(this.shopLabel(it), FS.tiny, C.dark, true, colW);
+    const name = txt(this.shopLabel(it), FS.bodyLg, C.dark, true, colW);
     name.x = ax;
     name.y = imgY;
     layer.addChild(name);
-    const costLbl = txt(t('world.shopCost').replace('{coins}', String(it.cost)), FS.micro, C.mid);
+    const costLbl = txt(t('world.shopCost').replace('{coins}', String(it.cost)), FS.body, C.mid);
+    // German's item names ("Truppen-Beschleunigung 24 Std") wrap to 3 lines in this column and
+    // would otherwise run into the cost line pinned to the icon box's bottom edge — shrink the
+    // wrapped block to whatever room is left above it (same shrink-to-fit idiom the header
+    // production readout and the HUD stat chips use).
+    const nameMaxH = imgBox - costLbl.height - 6;
+    if (name.height > nameMaxH) name.scale.set(nameMaxH / name.height);
     costLbl.x = ax;
-    costLbl.y = imgY + imgBox - 16;
+    costLbl.y = imgY + imgBox - costLbl.height;
     layer.addChild(costLbl);
 
     // battle_pass single-slot gate (2026-08-01 fix): server rejects a repeat buy with ALREADY_ACTIVE
@@ -224,7 +240,7 @@ export class ShopPanel implements ShopHandlers {
     this.core.ctx.modalBtnRects = [];
 
     const { w, h } = this.core.ctx;
-    const pw = Math.min(560, w - 20);
+    const pw = Math.min(PANEL_W.md, w - PANEL_MARGIN * 2);
     const ph = Math.min(h * 0.8, h - HUD_H - 16);
     const px = (w - pw) / 2;
     const py = (h - HUD_H - ph) / 2;
@@ -239,37 +255,43 @@ export class ShopPanel implements ShopHandlers {
     panel.y = py;
     ml.addChild(panel);
 
-    const title = txt(t('world.shopTitle'), FS.tiny, C.accent);
-    title.anchor.set(0.5, 0);
-    title.x = px + pw / 2;
-    title.y = py + 10;
-    ml.addChild(title);
+    let ly = drawPanelTitle(ml, t('world.shopTitle'), px, py, pw);
 
-    let ly = py + 40;
+    // Coin balance as the game's one coin readout: glyph + gold bold number, no "coins" word —
+    // the same cluster `drawHeaderCurrency` draws in every spend scene (see
+    // ui/widgets/SceneHeader/currency.ts `buildCluster`: "the glyph is the unit"). It used to be
+    // a grey `t('world.shopBalance')` sentence, which was the only place in the game a balance
+    // was spelled out in words. Hand-built rather than calling drawHeaderCurrency because that
+    // one right-anchors itself to a full-width header bar; here it is centred inside a panel.
     if (this.core.ctx.cb.getCoins) {
-      const balance = txt(
-        t('world.shopBalance').replace('{coins}', String(this.core.ctx.cb.getCoins())),
-        FS.tiny,
-        C.accent
-      );
-      balance.anchor.set(0.5, 0);
-      balance.x = px + pw / 2;
-      balance.y = ly;
-      ml.addChild(balance);
-      ly += 26;
+      const coinSize = 32;
+      const amount = txt(this.core.ctx.cb.getCoins().toLocaleString(), FS.heading, C.gold, true);
+      const rowW = coinSize + 8 + amount.width;
+      const rowX = px + (pw - rowW) / 2;
+      const coin = buildIcon('coin', coinSize, C.gold);
+      coin.x = rowX;
+      coin.y = ly;
+      ml.addChild(coin);
+      amount.anchor.set(0, 0.5);
+      amount.x = rowX + coinSize + 8;
+      amount.y = ly + coinSize / 2;
+      ml.addChild(amount);
+      ly += coinSize + PANEL_PAD;
     }
 
-    const bodyBottom = py + ph - 42;
+    const bodyBottom = py + ph - PANEL_FOOTER_H;
     this.core.ctx.infoScrollRect = null;
 
     const items = this.core.ctx.shopItems;
     if (items.length > 0) {
       const cols = 2,
-        gap = 12;
-      const gridX = px + 14,
-        gridW = pw - 28;
+        gap = 16;
+      const gridX = px + PANEL_PAD,
+        gridW = pw - PANEL_PAD * 2;
       const cellW = (gridW - gap) / cols;
-      const cellH = 116;
+      // pad*2 + icon box + 8 + the button band: sized off PANEL_BTN_H so the Buy band and the
+      // icon square stay in proportion if the shared button height is ever re-tuned.
+      const cellH = PANEL_PAD * 2 + 100 + 8 + PANEL_BTN_H;
       const rows = Math.ceil(items.length / cols);
       const listLayer = this.core.beginScrollList(
         gridX,
@@ -290,8 +312,14 @@ export class ShopPanel implements ShopHandlers {
       });
     }
 
-    this.core.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () =>
-      this.core.closeModal()
+    this.core.panelButton(
+      t('world.close'),
+      px + (pw - PANEL_CLOSE_W) / 2,
+      py + ph - PANEL_BTN_H - PANEL_PAD / 2,
+      PANEL_CLOSE_W,
+      PANEL_BTN_H,
+      C.dark,
+      () => this.core.closeModal()
     );
   }
 }

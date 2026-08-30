@@ -179,10 +179,13 @@ describe('WorldMapPanels.renderShopPanel — item cards', () => {
     expect(texts).toContain('400 coins');
   });
 
+  // 2026-08-30: the balance is drawn as the game's shared coin readout (coin glyph + gold bold
+  // number, no "coins" word — see SceneHeader/currency.ts's buildCluster), not the former
+  // `world.shopBalance` sentence, so the assertion is on the formatted number alone.
   it('shows the live coin balance above the catalog', () => {
     const { ctx, panels } = buildHarness({ shopItems: makeShopItems(1) });
     panels.renderShopPanel();
-    expect(allModalTexts(ctx)).toContain('Balance: 999 coins');
+    expect(allModalTexts(ctx)).toContain('999');
   });
 
   it('the Close button closes the modal', () => {

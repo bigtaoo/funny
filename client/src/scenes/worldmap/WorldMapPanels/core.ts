@@ -15,6 +15,7 @@ import { drawScrollIndicator } from '../../../ui/widgets/ScrollIndicator';
 import { buildIcon } from '../../../render/icons';
 import { FS, snapFont } from '../../../render/fontScale';
 import { HUD_H, MARGIN, CONFIRM_H } from '../logic/constants';
+import { PANEL_W, PANEL_MARGIN, PANEL_BTN_FONT } from './spec';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 
 export class WorldMapPanelsCore {
@@ -30,7 +31,9 @@ export class WorldMapPanelsCore {
     const { w, h } = this.ctx;
     // 1.5× the original footprint (600×280 panel, 26/24px text, 56px buttons) — the old fixed
     // size clipped longer confirm copy (e.g. relocate cost text) since lines never wrapped.
-    const mw = Math.min(900, w - 32);
+    // The 900 is now `PANEL_W.md` (same value, so this modal's footprint is unchanged) — see
+    // ./spec.ts for why the four panels share one width grid.
+    const mw = Math.min(PANEL_W.md, w - PANEL_MARGIN * 2);
     const textPad = 48;
     const textW = mw - textPad * 2;
     const topPad = 42;
@@ -205,7 +208,7 @@ export class WorldMapPanelsCore {
     bh: number,
     fill: number,
     action: () => void,
-    fontSize = 11
+    fontSize: number = PANEL_BTN_FONT
   ): void {
     const ml = this.ctx.modalLayer;
     const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
@@ -274,7 +277,7 @@ export class WorldMapPanelsCore {
     bp.x = x;
     bp.y = y;
     layer.addChild(bp);
-    const bl = txt(label, FS.micro, disabled ? C.mid : C.light);
+    const bl = txt(label, PANEL_BTN_FONT, disabled ? C.mid : C.light);
     bl.anchor.set(0.5, 0.5);
     bl.x = x + bw / 2;
     bl.y = y + bh / 2;
