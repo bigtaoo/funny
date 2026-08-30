@@ -154,7 +154,7 @@ export class FeedbackDialog implements Scene {
 
     const body = makeText(t('feedback.body'), {
       fontSize: snapFont(Math.round(unit * 0.04)), fill: C.dark, fontFamily: 'monospace',
-      wordWrap: true, wordWrapWidth: cardW * 0.84, lineHeight: Math.round(unit * 0.055),
+      wordWrap: true, wordWrapWidth: cardW * 0.84, breakWords: true, lineHeight: Math.round(unit * 0.055),
     });
     body.anchor.set(0.5, 0);
 
@@ -210,6 +210,7 @@ export class FeedbackDialog implements Scene {
     this.feedbackLabel.y = inputY + inputPadY;
     this.feedbackLabel.style.wordWrap = true;
     this.feedbackLabel.style.wordWrapWidth = inputW * 0.94;
+    this.feedbackLabel.style.breakWords = true;
     this.feedbackLabel.style.lineHeight = feedbackLineH;
     this.container.addChild(this.feedbackLabel);
 
