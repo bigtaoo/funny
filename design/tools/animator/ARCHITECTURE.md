@@ -358,6 +358,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 - **AttachmentPanel**：DOM 建一次，`attachment:change` 只更新 input value，跳过 focused 元素
 - **sampleClip**：两次线性 pass，keyframes 有序，pass 1 提前 break
 - **hit-test**：`DRAW_ORDER_REVERSED` 懒初始化缓存
+- **alpha 掩码**（sprite 点选，2026-08-30）：每张贴图在载入时解码成一份「一像素一字节」的 alpha 掩码（`ImageController.buildAlphaMask`），长边上限 512（`ALPHA_MASK_MAX`）——点选是最近邻采样，再高的分辨率买不到任何精度，但一张 2k 贴图的全分辨率掩码要 4MB、十个槽位就是 40MB。掩码只在载图/换图时建一次，随槽位一起清；命中测试本身仍是每帧零分配的纯算术（`findSpriteAt` → `worldToLocalPixel` → `alphaAt`）
 
 ---
 

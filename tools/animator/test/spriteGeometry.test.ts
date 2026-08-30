@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   rotateVec, bindingToSpriteFrame, localPixelToWorld, spriteCorners, rotationHandlePos, pointInQuad,
-  computeAnchorDrag,
-  type SpriteFrame,
+  computeAnchorDrag, worldToLocalPixel, alphaAt, MIN_HIT_ALPHA,
+  type SpriteFrame, type AlphaMask,
 } from '../src/rendering/spriteGeometry';
 
 describe('rotateVec', () => {
@@ -196,5 +196,92 @@ describe('computeAnchorDrag', () => {
   it('zero mouse movement leaves the anchor unchanged', () => {
     const anchor = computeAnchorDrag({ x: 50, y: 60 }, { x: 0.3, y: 0.7 }, 1.234, 1.5, 0.8, 80, 40, 50, 60);
     expect(anchor).toEqual({ x: 0.3, y: 0.7 });
+  });
+});
+
+// worldToLocalPixel — the inverse used by the alpha-aware sprite hit-test. Asserted as a
+// round-trip against localPixelToWorld rather than against hand-worked numbers, since
+// "these two are exact inverses" is the property the hit-test actually relies on.
+describe('worldToLocalPixel', () => {
+  const frame = (over: Partial<SpriteFrame> = {}): SpriteFrame => ({
+    pivotX: 120, pivotY: -40, rotationRad: 0, scaleX: 1, scaleY: 1,
+    anchorX: 0.5, anchorY: 0.5, texW: 80, texH: 200, ...over,
+  });
+
+  it('round-trips localPixelToWorld for an untransformed sprite', () => {
+    const f = frame();
+    const w = localPixelToWorld(f, 17, 133);
+    const back = worldToLocalPixel(f, w.x, w.y)!;
+    expect(back.x).toBeCloseTo(17, 8);
+    expect(back.y).toBeCloseTo(133, 8);
+  });
+
+  it('round-trips through rotation, non-uniform scale and an off-centre anchor', () => {
+    const f = frame({ rotationRad: 0.87, scaleX: 1.4, scaleY: 0.6, anchorX: 0.2, anchorY: 0.75 });
+    for (const [px, py] of [[0, 0], [80, 0], [80, 200], [0, 200], [31, 97]]) {
+      const w = localPixelToWorld(f, px, py);
+      const back = worldToLocalPixel(f, w.x, w.y)!;
+      expect(back.x).toBeCloseTo(px, 8);
+      expect(back.y).toBeCloseTo(py, 8);
+    }
+  });
+
+  it('round-trips a flipped sprite (negative scaleX)', () => {
+    const f = frame({ scaleX: -1 });
+    const w = localPixelToWorld(f, 10, 20);
+    const back = worldToLocalPixel(f, w.x, w.y)!;
+    expect(back.x).toBeCloseTo(10, 8);
+    expect(back.y).toBeCloseTo(20, 8);
+  });
+
+  it('maps the pivot itself back to the anchor pixel', () => {
+    const f = frame({ rotationRad: 2.1, anchorX: 0.25, anchorY: 0.8 });
+    const back = worldToLocalPixel(f, f.pivotX, f.pivotY)!;
+    expect(back.x).toBeCloseTo(0.25 * 80, 8);
+    expect(back.y).toBeCloseTo(0.8 * 200, 8);
+  });
+
+  it('returns null for a degenerate sprite (zero scale on either axis)', () => {
+    expect(worldToLocalPixel(frame({ scaleX: 0 }), 0, 0)).toBeNull();
+    expect(worldToLocalPixel(frame({ scaleY: 0 }), 0, 0)).toBeNull();
+  });
+});
+
+// alphaAt — nearest-neighbour sampling through a mask whose resolution is independent of
+// the texture's, which is the part that's easy to get wrong (masks are capped at
+// ALPHA_MASK_MAX, so mask size == texture size is the exception, not the rule).
+describe('alphaAt', () => {
+  // 2x2 mask: TL opaque, TR half, BL transparent, BR opaque.
+  const mask: AlphaMask = { w: 2, h: 2, data: new Uint8Array([255, 128, 0, 255]) };
+
+  it('samples the matching cell when mask and texture sizes agree', () => {
+    expect(alphaAt(mask, 2, 2, 0.5, 0.5)).toBe(255);
+    expect(alphaAt(mask, 2, 2, 1.5, 0.5)).toBe(128);
+    expect(alphaAt(mask, 2, 2, 0.5, 1.5)).toBe(0);
+    expect(alphaAt(mask, 2, 2, 1.5, 1.5)).toBe(255);
+  });
+
+  it('scales texture pixels through the mask resolution', () => {
+    // Same mask, but the texture it describes is 400x400 — each cell covers 200px.
+    expect(alphaAt(mask, 400, 400, 10, 10)).toBe(255);
+    expect(alphaAt(mask, 400, 400, 390, 10)).toBe(128);
+    expect(alphaAt(mask, 400, 400, 10, 390)).toBe(0);
+  });
+
+  it('reads out-of-range coordinates as fully transparent', () => {
+    expect(alphaAt(mask, 2, 2, -0.1, 0.5)).toBe(0);
+    expect(alphaAt(mask, 2, 2, 0.5, -0.1)).toBe(0);
+    expect(alphaAt(mask, 2, 2, 2.0, 0.5)).toBe(0);   // exactly at the right edge is past the last cell
+    expect(alphaAt(mask, 2, 2, 0.5, 2.0)).toBe(0);
+  });
+
+  it('reads a degenerate texture size as fully transparent instead of dividing by zero', () => {
+    expect(alphaAt(mask, 0, 2, 0, 0)).toBe(0);
+    expect(alphaAt(mask, 2, 0, 0, 0)).toBe(0);
+  });
+
+  it('MIN_HIT_ALPHA sits above the anti-aliasing halo a paint tool leaves, but below any real ink', () => {
+    expect(MIN_HIT_ALPHA).toBeGreaterThan(0);
+    expect(MIN_HIT_ALPHA).toBeLessThan(32);
   });
 });

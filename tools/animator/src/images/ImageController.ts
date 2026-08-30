@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js';
 import type { EventBus, AppEvents } from '../core/EventBus';
+import type { AlphaMask } from '../rendering/spriteGeometry';
 
 // ── Slot definitions ──────────────────────────────────────────────────────────
 
@@ -45,6 +46,44 @@ function guessSlot(filename: string): string | null {
   return null;
 }
 
+// ── Alpha masks ───────────────────────────────────────────────────────────────
+
+/** Longest-side cap for a hit-test alpha mask. Hit-testing samples nearest-neighbour
+ *  through the mask's own resolution, so half a millimetre of precision buys nothing —
+ *  but a full-resolution mask on a 2k-wide source would cost 4MB per slot, ten slots
+ *  deep. 512 keeps every real rig's mask under 256KB while staying finer than the
+ *  on-screen size a part is ever drawn at. */
+export const ALPHA_MASK_MAX = 512;
+
+/** Decode a blob into a one-byte-per-pixel alpha mask, downsampled to fit
+ *  ALPHA_MASK_MAX. Returns null when the environment can't decode/rasterise
+ *  (no `createImageBitmap`, no 2D context, a corrupt file) — callers treat a
+ *  missing mask as "fall back to the plain quad", never as an error. */
+export async function buildAlphaMask(blob: Blob): Promise<AlphaMask | null> {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const scale  = Math.min(1, ALPHA_MASK_MAX / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width  * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) { bitmap.close(); return null; }
+
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+
+    const rgba = ctx.getImageData(0, 0, w, h).data;
+    const data = new Uint8Array(w * h);
+    for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4 + 3];
+    return { w, h, data };
+  } catch {
+    return null;
+  }
+}
+
 // ── ImageController ───────────────────────────────────────────────────────────
 
 export class ImageController {
@@ -52,6 +91,7 @@ export class ImageController {
   private readonly _baseTextures = new Map<string, PIXI.BaseTexture>();
   private readonly _blobs        = new Map<string, Blob>();    // for export
   private readonly _names        = new Map<string, string>();  // display filename
+  private readonly _alphaMasks   = new Map<string, AlphaMask>(); // for alpha-aware hit-testing
 
   constructor(private readonly bus: EventBus<AppEvents>) {}
 
@@ -67,6 +107,12 @@ export class ImageController {
 
   getBlob(slotId: string): Blob | undefined {
     return this._blobs.get(slotId);
+  }
+
+  /** This slot's alpha mask, or undefined when one couldn't be built (see
+   *  `buildAlphaMask`). Hit-testing degrades to the sprite's plain quad without it. */
+  getAlphaMask(slotId: string): AlphaMask | undefined {
+    return this._alphaMasks.get(slotId);
   }
 
   /** True when all 10 bone slots have a texture loaded. */
@@ -99,6 +145,9 @@ export class ImageController {
       base.on('loaded', () => resolve());
       base.on('error',  () => resolve()); // resolve anyway, export will skip
     });
+
+    const mask = await buildAlphaMask(blob);
+    if (mask) this._alphaMasks.set(slotId, mask);
 
     this.bus.emit('images:change', slotId);
     this.bus.emit('status', `Loaded ${displayName} → ${slotId}`);
@@ -149,6 +198,7 @@ export class ImageController {
       this._blobs.delete(slotId);
     }
     this._names.delete(slotId);
+    this._alphaMasks.delete(slotId);
   }
 
   destroy(): void {
