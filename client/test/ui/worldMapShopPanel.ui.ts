@@ -17,6 +17,7 @@ import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { SlgShopItemView } from '../../src/net/WorldApiClient';
+import { ui as C } from '../../src/render/sketchUi';
 import type { IconKind } from '../../src/render/icons';
 
 const memStore = (() => {
@@ -44,17 +45,19 @@ function makeBattlePassItem(): SlgShopItemView {
 /** Every PIXI.Text string under the modal layer, recursing into masked scroll-list child
  *  containers — item-card name/cost labels live a level deeper than the panel's own title/balance
  *  text, unlike the flat rows the old plain-text shop tab used. */
-function allModalTexts(ctx: WorldMapContext): string[] {
-  const out: string[] = [];
+function allModalTextNodes(ctx: WorldMapContext): PIXI.Text[] {
+  const out: PIXI.Text[] = [];
   const walk = (c: PIXI.Container): void => {
     for (const child of c.children as PIXI.DisplayObject[]) {
-      if (child instanceof PIXI.Text) out.push(child.text);
+      if (child instanceof PIXI.Text) out.push(child);
       else if (child instanceof PIXI.Container) walk(child);
     }
   };
   walk(ctx.modalLayer);
   return out;
 }
+
+const allModalTexts = (ctx: WorldMapContext): string[] => allModalTextNodes(ctx).map((t) => t.text);
 
 function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boolean; joined?: boolean } = {}) {
   const doBuyShopItem = vi.fn();
@@ -186,6 +189,22 @@ describe('WorldMapPanels.renderShopPanel — item cards', () => {
     const { ctx, panels } = buildHarness({ shopItems: makeShopItems(1) });
     panels.renderShopPanel();
     expect(allModalTexts(ctx)).toContain('999');
+  });
+
+  // The number is only half of it: what makes this "the game's coin readout" rather than a number
+  // that happens to be a balance is the gold bold styling next to a coin glyph, with no unit word
+  // (SceneHeader/currency.ts's buildCluster — "the glyph is the unit"). Without this the panel
+  // could silently drift back to a plain grey line and still pass the assertion above.
+  it('styles the balance as the shared coin readout — gold, bold, no unit word', () => {
+    const { ctx, panels } = buildHarness({ shopItems: makeShopItems(1) });
+    panels.renderShopPanel();
+    const amount = allModalTextNodes(ctx).find((t) => t.text === '999');
+    expect(amount, 'no balance amount drawn').toBeTruthy();
+    const fill = amount!.style.fill as number | string;
+    expect(typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill).toBe(C.gold);
+    expect(amount!.style.fontWeight).toBe('bold');
+    // Finding the node by `text === '999'` above is itself the "no unit word" check: the old
+    // `world.shopBalance` line read "Balance: 999 coins", so it would not have matched.
   });
 
   it('the Close button closes the modal', () => {
