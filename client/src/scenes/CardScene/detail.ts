@@ -471,6 +471,7 @@ export class DetailPanel {
       // as a low-rarity equipped item at a glance).
       const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', iconSize, seedFor(i, 8, cellW));
       icon.position.set(iconCx, iconCy);
+      icon.name = `detailGearIcon:${slot}`; // test hook: see cardDetailGearSlotStars.ui.ts
       root.addChild(icon);
 
       const slotLbl = core.stxt(t(`equip.slot.${slot}` as TranslationKey), FS.micro, inst ? C.mid : C.light);
@@ -480,6 +481,7 @@ export class DetailPanel {
       if (inst && inst.level > 0) {
         const { container: stars } = buildLevelStars(inst.level, cellW - 8, starSize, 1);
         stars.x = iconCx - stars.width / 2; stars.y = cy + starTopPad;
+        stars.name = `gearLevelStars:${slot}`; // test hook: see cardDetailGearSlotStars.ui.ts
         root.addChild(stars);
       }
 
