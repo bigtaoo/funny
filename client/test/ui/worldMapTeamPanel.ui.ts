@@ -82,6 +82,8 @@ function buildInputHarness(ctx: WorldMapContext) {
   const centerAt = vi.fn();
   const doRecallStationed = vi.fn();
   const doRecall = vi.fn();
+  const doInstantReturn = vi.fn();
+  const refreshTeams = vi.fn().mockResolvedValue(undefined);
   Object.assign(ctx as unknown as Record<string, unknown>, {
     panX: 0, panY: 0, dragging: false, dragMoved: false, dragStartX: 0, dragStartY: 0,
     modalDimRect: null, modalBtnRects: [], infoScrollRect: null,
@@ -90,11 +92,22 @@ function buildInputHarness(ctx: WorldMapContext) {
     resClusterRect: zeroRect(), mapW: 500, mapH: 500,
     tileCache: new Map(), selectedTile: null,
     view: { renderMap: vi.fn(), screenToTile: () => ({ x: 0, y: 0 }), centerAt },
-    net: { doRecallStationed, doRecall, refreshTeams: vi.fn().mockResolvedValue(undefined) },
+    net: { doRecallStationed, doRecall, doInstantReturn, refreshTeams },
     panels: { showModal: vi.fn(), closeModal: vi.fn(), renderHud: vi.fn() },
   });
-  return { input: new WorldMapInput(ctx), centerAt, doRecallStationed, doRecall };
+  return { input: new WorldMapInput(ctx), centerAt, doRecallStationed, doRecall, doInstantReturn, refreshTeams };
 }
+
+/** Centre of a hit rect, for a tap that unambiguously lands on it. */
+function mid(r: { x: number; y: number; w: number; h: number }): [number, number] {
+  return [r.x + r.w / 2, r.y + r.h / 2];
+}
+
+const marching = (over: Partial<MarchView> = {}): MarchView => ({
+  marchId: 'm1', kind: 'attack', fromTile: `${WORLD_ID}:${BASE.x}:${BASE.y}`,
+  toTile: `${WORLD_ID}:60:70`, troops: 500, departAt: 0, arriveAt: Number.MAX_SAFE_INTEGER,
+  status: 'marching', mine: true, teamId: 't1', ...over,
+});
 
 /** Every Text under a container, flattened — the badge label lives several children deep. */
 function allTexts(root: PIXI.Container): PIXI.Text[] {
@@ -194,5 +207,121 @@ describe('WorldMapPanels.renderHud — team badge label', () => {
     const { ctx, panels } = buildHudHarness({ teams: [], teamsLoaded: false, expanded: false });
     panels.renderHud();
     expect(allTexts(ctx.hudLayer).some((t) => t.text === 'Teams')).toBe(true);
+  });
+});
+
+describe('WorldMapPanels.renderHud — team badge toggle', () => {
+  it('tapping the badge opens the panel AND re-fetches the roster', () => {
+    // The formation editor lives in the city scene, which the map never hears about — the gateway
+    // push channel carries march/station state, never a team's crew. Opening the panel is the only
+    // moment the roster can be refreshed, so this call is the whole freshness story.
+    const { ctx, panels } = buildHudHarness({ teams: [tmpl('t1')], expanded: false });
+    panels.renderHud();
+    const { input, refreshTeams } = buildInputHarness(ctx);
+
+    input.handleDown(...mid(ctx.teamBadgeRect));
+    expect(ctx.teamPanelExpanded).toBe(true);
+    expect(refreshTeams).toHaveBeenCalledTimes(1);
+  });
+
+  it('tapping it again collapses without re-fetching — closing a panel is not a reason to hit the API', () => {
+    const { ctx, panels } = buildHudHarness({ teams: [tmpl('t1')], expanded: true });
+    panels.renderHud();
+    const { input, refreshTeams } = buildInputHarness(ctx);
+
+    input.handleDown(...mid(ctx.teamBadgeRect));
+    expect(ctx.teamPanelExpanded).toBe(false);
+    expect(refreshTeams).not.toHaveBeenCalled();
+  });
+});
+
+describe('WorldMapPanels.renderHud — team panel action routing', () => {
+  it('the recall button sends this row\'s marchId and the CURRENT world id', () => {
+    const { ctx, panels } = buildHudHarness({ teams: [tmpl('t1')], marches: [marching({ marchId: 'm7' })] });
+    panels.renderHud();
+    const row = ctx.teamRowRects[0]!;
+    const { input, doRecall, centerAt } = buildInputHarness(ctx);
+
+    input.handleDown(...mid(row.recallRect!));
+    expect(doRecall).toHaveBeenCalledWith('m7', WORLD_ID);
+    expect(centerAt).not.toHaveBeenCalled(); // the button wins over the row's jump
+  });
+
+  it('the instant-return button routes to doInstantReturn, not to a recall', () => {
+    const { ctx, panels } = buildHudHarness({
+      teams: [tmpl('t1')], marches: [marching({ marchId: 'm8', kind: 'return' })],
+    });
+    panels.renderHud();
+    const row = ctx.teamRowRects[0]!;
+    const { input, doInstantReturn, doRecall } = buildInputHarness(ctx);
+
+    input.handleDown(...mid(row.instantReturnRect!));
+    expect(doInstantReturn).toHaveBeenCalledWith('m8', WORLD_ID);
+    expect(doRecall).not.toHaveBeenCalled();
+  });
+
+  it('a row with no march offers no recall — an at-home team has nothing to recall from', () => {
+    const { ctx, panels } = buildHudHarness({ teams: [tmpl('t1')] });
+    panels.renderHud();
+    const row = ctx.teamRowRects[0]!;
+    expect(row.marchId).toBeNull();
+    expect(row.recallRect).toBeNull();
+    expect(row.instantReturnRect).toBeNull();
+    expect(row.recallStationRect).toBeNull();
+  });
+});
+
+describe('WorldMapPanels.renderHud — team panel overflow and empty states', () => {
+  it('caps the visible rows and SAYS how many it dropped, rather than truncating silently', () => {
+    // 5 formation slots + 3 flat-troop marches = 8 rows against a 5-row cap.
+    const teams = ['t1', 't2', 't3', 't4', 't5'].map(tmpl);
+    const flat = [1, 2, 3].map((n) => marching({ marchId: `flat${n}`, teamId: undefined }));
+    const { ctx, panels } = buildHudHarness({ teams, marches: flat });
+    panels.renderHud();
+
+    expect(ctx.teamRowRects).toHaveLength(5);
+    expect(allTexts(ctx.hudLayer).some((t) => t.text === '+3 more')).toBe(true);
+  });
+
+  it('an unfetched roster reads as loading, not as "you have no teams"', () => {
+    const { ctx, panels } = buildHudHarness({ teams: [], teamsLoaded: false });
+    panels.renderHud();
+    const texts = allTexts(ctx.hudLayer).map((t) => t.text);
+    expect(texts.some((t) => t.startsWith('Loading'))).toBe(true);
+    expect(texts).not.toContain('No teams yet — set up a formation first');
+  });
+
+  it('a fetched-and-genuinely-empty roster tells the player what to do about it', () => {
+    const { ctx, panels } = buildHudHarness({ teams: [], teamsLoaded: true });
+    panels.renderHud();
+    expect(allTexts(ctx.hudLayer).some((t) => t.text.includes('formation'))).toBe(true);
+  });
+});
+
+describe('WorldMapPanels.renderHud — team panel row stacking', () => {
+  it('rows never overlap, whatever height each one wrapped to', () => {
+    // Row height is derived from the wrapped status label (a long status can take two lines), so
+    // stacking is arithmetic that can drift — the horizontal counterpart is worldMapTeamPanelFit.
+    const teams = ['t1', 't2', 't3', 't4', 't5'].map(tmpl);
+    const { ctx, panels } = buildHudHarness({
+      teams,
+      marches: [marching({ teamId: 't2' }), marching({ marchId: 'm2', kind: 'return', teamId: 't3' })],
+      stationed: [{ tile: `${WORLD_ID}:20:21`, x: 20, y: 21, teamId: 't4', troops: 500, sinceAt: 0, mode: 'garrison', mine: true }],
+    });
+    panels.renderHud();
+
+    const rects = ctx.teamRowRects.map((r) => r.rowRect);
+    for (let i = 1; i < rects.length; i++) {
+      expect(rects[i]!.y).toBeGreaterThanOrEqual(rects[i - 1]!.y + rects[i - 1]!.h);
+    }
+  });
+
+  it('the last row stays inside the panel, and the replay badge below it stays clear', () => {
+    const teams = ['t1', 't2', 't3', 't4', 't5'].map(tmpl);
+    const { ctx, panels } = buildHudHarness({ teams });
+    panels.renderHud();
+
+    const last = ctx.teamRowRects[ctx.teamRowRects.length - 1]!.rowRect;
+    expect(ctx.replayBadgeRect.y).toBeGreaterThanOrEqual(last.y + last.h);
   });
 });
