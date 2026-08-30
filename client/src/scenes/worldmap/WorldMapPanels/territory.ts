@@ -8,6 +8,19 @@ import type { IconKind } from '../../../render/icons';
 import { FS, snapFont } from '../../../render/fontScale';
 import { getResTexture } from '../../../render/atlas/resAtlasLoader';
 import { HUD_H, MARGIN } from '../logic/constants';
+import {
+  PANEL_W,
+  PANEL_MARGIN,
+  PANEL_PAD,
+  PANEL_BTN_H,
+  PANEL_CLOSE_W,
+  PANEL_FOOTER_H,
+  PANEL_TAB_H,
+  PANEL_ROW_H,
+  PANEL_ROW_BTN_W,
+  PANEL_ROW_BTN_H,
+  drawPanelTitle,
+} from './spec';
 import type { WorldMapPanelsCore } from './core';
 import { renderWorldTabBody as renderWorldTabBodyImpl } from './territoryWorldTab';
 
@@ -67,8 +80,9 @@ export class TerritoryPanel implements TerritoryHandlers {
 
     const { w, h } = this.core.ctx;
     // Width doubled (420→840, still clamped to the viewport) so the enlarged
-    // overview text has room to breathe.
-    const pw = Math.min(840, w - 20);
+    // overview text has room to breathe; 2026-08-30 it moved onto the shared width grid
+    // (840→PANEL_W.lg), the widest tier since this is the one tabbed, data-dense panel.
+    const pw = Math.min(PANEL_W.lg, w - PANEL_MARGIN * 2);
     // Panel height is 80% of the page height (capped so it never overlaps the HUD).
     const ph = Math.min(h * 0.8, h - HUD_H - 16);
     const px = (w - pw) / 2;
@@ -97,8 +111,8 @@ export class TerritoryPanel implements TerritoryHandlers {
       mLbl.style.wordWrapWidth = pw - 60;
       mLbl.style.align = 'center';
       ml.addChild(mLbl);
-      const btnW = 120,
-        btnH = 42;
+      const btnW = 180,
+        btnH = PANEL_BTN_H;
       this.core.panelButton(
         t('common.ok'),
         px + pw / 2 - btnW - 10,
@@ -139,11 +153,7 @@ export class TerritoryPanel implements TerritoryHandlers {
       ml.addChild(lbl);
     };
 
-    const title = txt(t('world.territoryTitle'), FS.tiny, C.accent);
-    title.anchor.set(0.5, 0);
-    title.x = px + pw / 2;
-    title.y = py + 10;
-    ml.addChild(title);
+    const tabY = drawPanelTitle(ml, t('world.territoryTitle'), px, py, pw);
 
     // Tabs
     const tabs: { id: 'overview' | 'list' | 'world'; label: string }[] = [
@@ -151,19 +161,18 @@ export class TerritoryPanel implements TerritoryHandlers {
       { id: 'list', label: t('world.territoryTabList') },
       { id: 'world', label: t('world.info') },
     ];
-    const tabW = (pw - 28 - MARGIN * 2) / 3;
-    let tabX = px + 14;
-    const tabY = py + 34;
+    const tabW = (pw - PANEL_PAD * 2 - MARGIN * 2) / 3;
+    let tabX = px + PANEL_PAD;
     for (const tab of tabs) {
       const active = this.core.ctx.territoryTab === tab.id;
-      this.core.panelButton(tab.label, tabX, tabY, tabW, 26, active ? C.red : C.dark, () =>
+      this.core.panelButton(tab.label, tabX, tabY, tabW, PANEL_TAB_H, active ? C.red : C.dark, () =>
         this.switchTerritoryTab(tab.id)
       );
       tabX += tabW + MARGIN;
     }
 
-    let ly = tabY + 38;
-    const bodyBottom = py + ph - 42;
+    let ly = tabY + PANEL_TAB_H + PANEL_PAD;
+    const bodyBottom = py + ph - PANEL_FOOTER_H;
     this.core.ctx.infoScrollRect = null;
 
     if (this.core.ctx.territoryTab === 'overview') {
@@ -179,8 +188,8 @@ export class TerritoryPanel implements TerritoryHandlers {
 
       // Resource table: icon | label | amount (right-aligned) | yield (right-aligned), with
       // a hairline under each row — reads as a table instead of five loose stacked lines.
-      const tableX = px + 14;
-      const tableRight = px + pw - 14;
+      const tableX = px + PANEL_PAD;
+      const tableRight = px + pw - PANEL_PAD;
       const iconSize = 26;
       const amountColX = px + pw * 0.62;
       const rowH = 40;
@@ -218,7 +227,7 @@ export class TerritoryPanel implements TerritoryHandlers {
       // bare red text lines — gives the two "headline" numbers visual weight of their own
       // rather than just being bigger text in the same stack.
       const cardGap = MARGIN;
-      const cardW = (pw - 28 - cardGap) / 2;
+      const cardW = (pw - PANEL_PAD * 2 - cardGap) / 2;
       const cardH = 60;
       const troops = Math.floor(me.troops ?? 0);
       const troopCap = Math.floor(me.troopCap ?? 0);
@@ -226,7 +235,7 @@ export class TerritoryPanel implements TerritoryHandlers {
         { icon: 'swords', label: t('world.troops'), value: `${troops}/${troopCap}` },
         { icon: 'castle', label: t('world.territory'), value: String(me.territoryCount ?? 0) },
       ];
-      let cardX = px + 14;
+      let cardX = px + PANEL_PAD;
       for (const card of STAT_CARDS) {
         const cardPanel = sketchPanel(cardW, cardH, {
           fill: C.paper,
@@ -261,7 +270,7 @@ export class TerritoryPanel implements TerritoryHandlers {
         )
           .replace('{pop}', String(s.population))
           .replace('{cap}', String(s.capacity))}`;
-        addText(seasonLine, px + 14, ly, FS.tiny, C.mid);
+        addText(seasonLine, px + PANEL_PAD, ly, FS.tiny, C.mid);
         ly += 24;
       }
     } else if (this.core.ctx.territoryTab === 'world') {
@@ -279,30 +288,29 @@ export class TerritoryPanel implements TerritoryHandlers {
         // across the whole panel width — wraps to more rows only once levels exceed 5.
         const perRow = Math.min(5, levels.length);
         const rows = Math.ceil(levels.length / perRow);
-        const chkW = (pw - 28 - MARGIN * (perRow - 1)) / perRow;
+        const chkW = (pw - PANEL_PAD * 2 - MARGIN * (perRow - 1)) / perRow;
         for (let i = 0; i < levels.length; i++) {
           const lvl = levels[i]!;
           const row = Math.floor(i / perRow);
           const col = i % perRow;
           const hidden = this.core.ctx.territoryHiddenLevels.has(lvl);
-          const cx3 = px + 14 + col * (chkW + MARGIN);
-          const cy3 = ly + row * 28;
+          const cx3 = px + PANEL_PAD + col * (chkW + MARGIN);
+          const cy3 = ly + row * (PANEL_ROW_BTN_H + MARGIN);
           this.core.panelButton(
             `Lv.${lvl} (${levelCounts.get(lvl)})`,
             cx3,
             cy3,
             chkW,
-            24,
+            PANEL_ROW_BTN_H,
             hidden ? C.mid : C.red,
             () => {
               if (hidden) this.core.ctx.territoryHiddenLevels.delete(lvl);
               else this.core.ctx.territoryHiddenLevels.add(lvl);
               this.renderTerritoryPanel();
-            },
-            10
+            }
           );
         }
-        ly += rows * 28 + 8;
+        ly += rows * (PANEL_ROW_BTN_H + MARGIN) + 8;
       }
 
       // Sorted by level then coords so the level chips above actually correspond to contiguous
@@ -312,16 +320,16 @@ export class TerritoryPanel implements TerritoryHandlers {
         .filter((tv) => !this.core.ctx.territoryHiddenLevels.has(tv.level))
         .sort((a, b) => a.level - b.level || a.x - b.x || a.y - b.y);
       if (filtered.length === 0) {
-        addText(t('world.territoryEmpty'), px + 14, ly, 11, C.mid);
+        addText(t('world.territoryEmpty'), px + PANEL_PAD, ly, FS.body, C.mid);
       } else {
         // Garrisons below half the fleet's median read as under-defended — flagged in red so a
         // thin tile stands out without needing a fixed absolute threshold.
         const sortedGarrisons = filtered.map((tv) => tv.garrison ?? 0).sort((a, b) => a - b);
         const medianGarrison = sortedGarrisons[Math.floor(sortedGarrisons.length / 2)] ?? 0;
         const weakThreshold = medianGarrison * 0.5;
-        addText(t('world.weakGarrisonHint'), px + 14, ly, FS.tiny, C.mid);
-        ly += 20;
-        const rowH = 34;
+        addText(t('world.weakGarrisonHint'), px + PANEL_PAD, ly, FS.small, C.mid);
+        ly += 30;
+        const rowH = PANEL_ROW_H;
         const listLayer = this.core.beginScrollList(
           px,
           ly,
@@ -338,18 +346,19 @@ export class TerritoryPanel implements TerritoryHandlers {
               '{n}',
               String(garrison)
             )}`;
-            const nameLbl = txt(label, FS.micro, garrison < weakThreshold ? C.red : C.dark);
-            nameLbl.x = px + 14;
-            nameLbl.y = ry + 8;
+            const nameLbl = txt(label, FS.body, garrison < weakThreshold ? C.red : C.dark);
+            nameLbl.x = px + PANEL_PAD;
+            nameLbl.y = ry + (rowH - nameLbl.height) / 2;
             listLayer.addChild(nameLbl);
-            const btnW = 56;
+            const btnW = PANEL_ROW_BTN_W;
+            const btnY = ry + (rowH - PANEL_ROW_BTN_H) / 2;
             this.core.panelButtonIn(
               listLayer,
               t('world.territoryJump'),
-              px + pw - btnW * 2 - 22,
-              ry + 2,
+              px + pw - btnW * 2 - PANEL_PAD - MARGIN,
+              btnY,
               btnW,
-              26,
+              PANEL_ROW_BTN_H,
               C.accent,
               () => {
                 this.core.ctx.view.centerAt(tv.x, tv.y);
@@ -360,10 +369,10 @@ export class TerritoryPanel implements TerritoryHandlers {
             this.core.panelButtonIn(
               listLayer,
               t('world.actAbandon'),
-              px + pw - btnW - 14,
-              ry + 2,
+              px + pw - btnW - PANEL_PAD,
+              btnY,
               btnW,
-              26,
+              PANEL_ROW_BTN_H,
               C.red,
               () => {
                 this.core.ctx.territoryAbandonConfirm = { x: tv.x, y: tv.y };
@@ -377,8 +386,14 @@ export class TerritoryPanel implements TerritoryHandlers {
     }
 
     // Close
-    this.core.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () =>
-      this.core.closeModal()
+    this.core.panelButton(
+      t('world.close'),
+      px + (pw - PANEL_CLOSE_W) / 2,
+      py + ph - PANEL_BTN_H - PANEL_PAD / 2,
+      PANEL_CLOSE_W,
+      PANEL_BTN_H,
+      C.dark,
+      () => this.core.closeModal()
     );
   }
 

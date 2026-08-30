@@ -328,3 +328,33 @@ feat(lobby): 大厅背景装饰数量翻倍，alpha 调整为 0.25-0.38
 **改动**：`ALPHA_MIN` 0.25 → 0.10、`ALPHA_RANGE` 0.13 → 0.12（[`decorCLayer.ts`](../../client/src/render/decorCLayer.ts)），两行。文件头 `@alpha-range` 标记同步改成 `0.10-0.22`，并把 §39 那段「实际是 0.25–0.38」的散文整段重写——它描述的已经是历史，留着就会变成第三代过时注释。新头部另记两条判据供后人查：**密度而非透明度才是「装饰太少」的旋钮**，以及**为什么 alpha 是一个全局数字而不是按场景分档**（bake 键那两笔代价）。
 
 **验证**：`decorCLayerContract.test.ts` 7 例全绿；双向变异各判红一次（改常量不改标记 → `@alpha-range says 0.10-0.22 but ALPHA_MIN/ALPHA_RANGE produce 0.3-0.42`；改标记不改常量 → 反向同一条），备份用 `cp` 不用 `git checkout`。`tsc --noEmit` 双 config 绿。
+
+## 41. 大世界四个弹窗补上其它组件早就做过的放大 pass（2026-08-30）
+
+**起因**：用户看 SLG 商城截图问「商城的界面风格和大厅完全不一样了，这是有意为之吗」。不是——审下来是 13 项不一致，分四类（尺度 / 共享组件没接 / 卡片按钮语汇 / 购买流程缺陷）。本节只记第一类（批 1），后两类另行处理。
+
+**根因不是"另立视觉体系"**。这几个面板用的还是同一套 `sketchUi` 调色板、`sketchPanel` 手绘纸风、`FS` 字号表、`ScrollIndicator`。真正的问题是：**其它每个共享部件都在某个时点被放大过一轮，这四个面板一轮都没赶上**——
+
+| 部件 | 放大记录 |
+|---|---|
+| `confirmDialog` | "1.5x the original hand-tuned sizes"（300×130 → 450×195） |
+| `WorldMapPanels.showModal` | "1.5× the original footprint"（600×280 → 900×420） |
+| 世界地图 HUD 的缩放/行军 chip | "2x the original 88x34 footprint" |
+| `SceneHeader.backSize` | "1.5x the original 0.026"，且下限抬到 `FS.headline` |
+| **商城 / 领地 / 战报 / 世界 Tab** | **无** |
+
+于是它们还带着初版数字：`FS.tiny`(13px) 的面板标题（同一设计空间里场景标题是 ≥42px）、11px 的按钮文案配 26px 高的按钮条（UI_DESIGN.md §1 的触屏命中区约定是 ≥80px）、以及各自独立拍的四个面板宽度（440 / 560 / 840 / 900，没有共同栅格）。用户截图里"商城看着不像这个游戏"的观感，主要就是这两条。
+
+**改动**：新增 [`WorldMapPanels/spec.ts`](../../client/src/scenes/worldmap/WorldMapPanels/spec.ts)，把这一轮的数字集中成一份，四个面板一起引用，避免再次各自漂移。
+
+- **宽度栅格三档**：`PANEL_W.sm/md/lg = 720/900/1000`。战报 440→sm、商城 560→md、领地 840→lg；`showModal` 的 900 原样落在 md 上（**footprint 不变**，只是不再是私有常量）。
+- **标题**：`drawPanelTitle()` 统一画——`FS.heading` 深墨 + 底下一条 2px accent 手绘细线，即 `SceneHeader` 纸面 variant 那套「底色一律纸面、分区靠 accent 细线」（§3.1 顶栏统一）。原来是 `FS.tiny` 的蓝字，跟场景标题栏完全不是一个家族。
+- **按钮**：`panelButton`/`panelButtonIn` 的默认字号 `11 → FS.body(18)`；面板内按钮高统一 `PANEL_BTN_H=56`，行内按钮 `PANEL_ROW_BTN_*=120×48`，Tab 条 `PANEL_TAB_H=56`（原 26），关闭按钮 `100×28 → 200×56`。
+- **列表行**：`PANEL_ROW_H=64`（原 24/34/40 三种），行内文字从 `FS.micro/FS.tiny` 提到 `FS.body`，图标 12→26，全部改成按行高垂直居中而不是写死的 `ry + 6` / `ry + 2`。
+- **内边距**：散落的 `px + 14` / `pw - 28` 收敛成 `PANEL_PAD=20`。
+- **商城余额**：原来是灰色的 `world.shopBalance` 整句（"余额：N 金币"），是全游戏唯一一处把余额写成句子的地方。改成共享的金币读数——金币图标 + `C.gold` 加粗数字、不带"金币"二字，即 `SceneHeader/currency.ts` 的 `buildCluster` 那条"the glyph is the unit"。`world.shopBalance` 三语键随之删除（`i18n-no-dead-keys` 会卡）。没有直接调 `drawHeaderCurrency`，因为它把自己右对齐到整条标题栏，这里要的是面板内居中。
+- 商城卡片同步长大：`cellH 116 → 204`（`PANEL_PAD*2 + 100 图标框 + 8 + PANEL_BTN_H`），名字 `FS.tiny → FS.bodyLg`，价格 `FS.micro → FS.body`，购买条 26 → 56 高。德语的长名字会绕到三行，用既有的 shrink-to-fit 惯例（`scale.set(可用高/实际高)`，同 headerHud 的资源读数）压住，不让它压到价格行上。
+
+**本节不动的**：商城卡片的横版布局、整圈蓝框、蓝底购买按钮、灰字价格——那是"语汇"类，跟大厅 `ShopScene/card.ts` 的对齐另批处理；CityScene 弹窗那套"局部帧画完再整体放大 2.5×"的独立范式也不动（改它要连 `toScreen` 命中区换算和两个弹窗的全部布局常量一起重写，收益只是内部一致）。
+
+**验证**：`tsc --noEmit` 绿；UI 2244 例 + 单测 2216 例全绿；`webpack --mode production` 通过。两处测试跟着改：①`worldMapShopPanel` 的余额断言从整句改成格式化数字；②`worldMapInfoScroll` 的 harness 从 `800×600` 改成 `1080×1920`——800×600 是游戏根本不会渲染的尺寸（`ctx.w/h` 就是 `layout.designWidth/Height`），行高变大后"短列表不该有滚动余量"那条在这个假尺寸下失效，属于只存在于 harness 里的失败；同文件的拖拽用例相应把 15 个首都改成 30 个，让列表真的溢出 40px 以上。**像素级核对未做**：本机 Chrome 的会话已过期，且该账号的「世界」入口还锁在通关第一章后面，进不去 SLG 商城；几何数字用无头 harness 打印核对过（标题 28px、余额 28px 金色、名字 20px、价格 18px、购买按钮 382×56、关闭 200×56、卡片 204 高，均落在面板内无溢出）。

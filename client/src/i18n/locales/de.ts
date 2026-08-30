@@ -987,7 +987,6 @@ export const de: Record<TranslationKey, string> = {
   'world.shopBuy': 'Kaufen',
   'world.shopBought': 'Gekauft',
   'world.shopCost': '{coins} Münzen',
-  'world.shopBalance': 'Guthaben: {coins} Münzen',
   'world.shopActive': 'Aktiv',
   'world.shopAlreadyActive': 'Diese Saison bereits aktiv — kein erneuter Kauf nötig',
   'world.shop.speedup': 'Ausbildung +{h}h',

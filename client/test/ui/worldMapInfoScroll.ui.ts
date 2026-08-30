@@ -38,7 +38,13 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
-const [W, H] = [800, 600];
+// Portrait design space (layout.designWidth/Height, which is what ctx.w/h actually hold) rather
+// than the former 800×600 — a size the game never renders at. The 2026-08-30 panel scale pass put
+// the nations rows on the shared PANEL_ROW_H, and at 800×600 two rows no longer fit the clamped
+// viewport, which made the "a short list needs no scroll room" case fail for a reason that only
+// existed in the harness. Every pointer coordinate below is derived from ctx.infoScrollRect, so
+// the drag/wheel cases are unaffected by the resize.
+const [W, H] = [1080, 1920];
 
 function makeNations(n: number): NationView[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -293,7 +299,10 @@ describe('WorldMapInput — in-list button tap-vs-drag (infoScrollPendingTap)', 
    *  it's stubbed so this suite doesn't need a DOM global — only whether the tap/drag gesture
    *  routes to it at all. */
   function nationsHarness() {
-    const { ctx, panels, input } = buildHarness({ nations: makeNationsOneMine(15) });
+    // 30, not 15: the drag case below asserts the gesture actually scrolled, which needs the list
+    // to overflow its viewport by more than the 40px it drags. At the portrait design height the
+    // suite now uses (see W/H), 15 rows at PANEL_ROW_H still fit and the scroll clamps to 0.
+    const { ctx, panels, input } = buildHarness({ nations: makeNationsOneMine(30) });
     panels.renderTerritoryPanel();
     // TerritoryPanel's own rename button callback calls `this.openRenameInput(...)` on itself
     // (2026-08-11 composition conversion — see shopIconApi's doc comment in
