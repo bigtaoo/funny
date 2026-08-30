@@ -108,6 +108,12 @@ export class WorldMapRendererBuild implements BuildHandlers {
     ctx.toastLayer = new PIXI.Container();
     ctx.container.addChild(ctx.toastLayer);
 
+    // Busy cover for an in-flight mutating request (ctx.bt) — above modal + toast so it visibly
+    // freezes whichever panel dispatched it, and its own layer because renderShopPanel/showModal
+    // tear modalLayer down wholesale on every re-render.
+    ctx.busyLayer = new PIXI.Container();
+    ctx.container.addChild(ctx.busyLayer);
+
     // Base-damage vignette (D-CITY-8) — screen-edge red flash, above every other layer
     // (including HUD/modals) so a siege hit reads even while a panel is open.
     ctx.vignetteGfx = new PIXI.Graphics();

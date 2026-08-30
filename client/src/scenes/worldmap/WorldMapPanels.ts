@@ -63,6 +63,10 @@ export class WorldMapPanels {
     this.core.showDeployDialog(tx, ty, kind);
   }
 
+  renderBusyOverlay(): void {
+    this.core.renderBusyOverlay();
+  }
+
   // ── hud (./WorldMapPanels/hud.ts) ─────────────────────────────────────────
   renderHud(): void {
     this.hud.renderHud();

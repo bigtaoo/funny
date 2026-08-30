@@ -1007,7 +1007,6 @@ export const zh = {
   'world.season.closed': '已结束',
   'world.shopBuy': '购买',
   'world.shopBought': '购买成功',
-  'world.shopCost': '{coins} 金币',
   'world.shopActive': '已生效',
   'world.shopAlreadyActive': '本赛季已生效，无需重复购买',
   'world.shop.speedup': '训练加速 {h} 时',

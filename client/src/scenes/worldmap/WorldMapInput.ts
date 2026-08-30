@@ -298,6 +298,10 @@ export class WorldMapInput {
   // per-kind minimums (occupy/attack need OCCUPY_MIN_TROOPS) → toast on reject.
 
   handleDown(x: number, y: number): void {
+    // A mutating request is in flight (ctx.bt) — swallow every tap until it settles, so a double-tap
+    // on the shop's Buy band cannot dispatch (and be charged for) the same purchase twice. Same
+    // guard the busyTracker doc prescribes and every other scene applies at the top of handleDown.
+    if (this.ctx.bt?.busy) return;
     // SLG opening guide chain (ONBOARDING_DESIGN §4.2) — its skip glyph / card button must win
     // before any other hit-test, mirroring the modal-button priority right below. `ctx.guide` is
     // only assigned by WorldMapRendererBuild.build() (real scene construction) — optional-chained

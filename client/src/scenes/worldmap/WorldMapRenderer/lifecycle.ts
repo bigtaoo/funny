@@ -56,6 +56,9 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
       ctx.hudTickTimer = 0;
       ctx.panels.renderHud();
     }
+    // Busy cover for an in-flight mutating request (ctx.bt) — same `if (bt.tick(dt)) render()`
+    // contract every other scene's update() uses; here it repaints only its own layer.
+    if (ctx.bt.tick(dt)) ctx.panels.renderBusyOverlay();
     if (ctx.toastTimer > 0) {
       ctx.toastTimer -= dt * 1000;
       if (ctx.toastTimer <= 0) tearDownChildren(ctx.toastLayer);

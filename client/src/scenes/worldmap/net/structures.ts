@@ -4,6 +4,7 @@
 // dependency, so this is a near-mechanical `this.ctx` -> `ctx` port.
 import { t } from '../../../i18n';
 import { ui as C } from '../../../render/sketchUi';
+import { withTimeout, TimeoutError } from '../../../ui/busyTracker';
 import { ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
 import { RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from '../logic/constants';
 import type { WorldMapContext } from '../WorldMapContext';
@@ -31,6 +32,10 @@ export async function doRelocate(ctx: WorldMapContext, tx: number, ty: number): 
       ctx.view.centerAt(bx, by);
     }
     await loadMapViewport(ctx);
+    // RELOCATE_COST coins were spent server-side (worldsvc -> commercial); the relocate response
+    // carries the new world state but not the SaveData wallet, so pull the deducted balance back
+    // into the local cache or the header keeps reading the pre-spend number.
+    await ctx.cb.refreshWallet?.();
     ctx.panels.showToast(t('world.relocated'));
     ctx.view.renderMap(); ctx.panels.renderHud();
   } catch (e) {
@@ -152,15 +157,35 @@ export async function doAbandonFromList(ctx: WorldMapContext, tx: number, ty: nu
 // buys via worldApi.buyShopItem → commercial.spend (server-authoritative, toast on
 // INSUFFICIENT_FUNDS) and shows the SaveData coin balance via the getCoins callback.
 
+/**
+ * Buy one SLG shop item. Guarded exactly like the lobby shop's `onBuy` (ShopScene/actions.ts): a
+ * BusyTracker lock so a double-tap on the Buy band cannot be charged twice, `withTimeout` so a
+ * request that never settles still releases the lock, and a re-render of whatever is on screen
+ * afterwards. Before 2026-08-30 it had none of the three, and only re-rendered the *territory*
+ * panel's World tab — the shop's old home before it was pulled into a panel of its own on
+ * 2026-08-02 — so a purchase made from the shop panel left the panel showing the pre-buy balance
+ * and a battle-pass card still reading "Buy".
+ */
 export async function doBuyShopItem(ctx: WorldMapContext, itemId: string): Promise<void> {
+  if (ctx.bt?.busy) return;
+  ctx.bt?.start();
   try {
     // P1-3: buyShopItem already returns the full updated player world state — adopt it directly
     // instead of a separate refreshMe() round-trip.
-    ctx.me = await ctx.cb.worldApi.buyShopItem(ctx.cb.worldId, itemId);
+    ctx.me = await withTimeout(ctx.cb.worldApi.buyShopItem(ctx.cb.worldId, itemId));
+    // Coins were spent server-side (worldsvc -> commercial) and the response above carries only the
+    // world state — re-pull the save so the panel's coin readout (and the HUD behind it) show the
+    // deducted balance. Mirrors SectScene's post-createSect refreshWallet.
+    await ctx.cb.refreshWallet?.();
     ctx.panels.showToast(t('world.shopBought'));
+    if (ctx.shopPanelOpen) ctx.panels.renderShopPanel();
     if (ctx.territoryPanelOpen && ctx.territoryTab === 'world') ctx.panels.renderTerritoryPanel();
+    ctx.panels.renderHud();
   } catch (e) {
-    ctx.panels.showToast(errorMsg(e), C.red);
+    ctx.panels.showToast(e instanceof TimeoutError ? t('common.networkTimeout') : errorMsg(e), C.red);
+  } finally {
+    ctx.bt?.stop();
+    ctx.panels.renderBusyOverlay();
   }
 }
 
