@@ -144,7 +144,7 @@ describe('WorldMapInput.onTileClick — wild city ground (ADR-074 P0 guarantees)
     const [lines, buttons] = lastModal(h.showModal);
     expect(lines).toContain(t('world.cityHint'));
     expect(buttons).toHaveLength(1);
-    expect(buttons[0]!.label).toBe('✕');
+    expect(buttons[0]!.label).toBe(t('common.close'));
   });
 });
 

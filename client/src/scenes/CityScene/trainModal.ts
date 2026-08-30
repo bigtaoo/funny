@@ -174,8 +174,9 @@ export function renderTrainModal(core: CitySceneCore): void {
     g.y = rectLocal.y;
     panelRoot.addChild(g);
     const lbl = st(p.label, FS.tiny, ok ? C.dark : C.mid, true);
-    lbl.x = rectLocal.x + 6;
-    lbl.y = rectLocal.y + (rectLocal.h - 16) / 2;
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = rectLocal.x + rectLocal.w / 2;
+    lbl.y = rectLocal.y + rectLocal.h / 2;
     panelRoot.addChild(lbl);
     const screenRect = core.toScreen(rectLocal, screenX, screenY, scale);
     core.hits.push({
@@ -217,8 +218,9 @@ export function renderTrainModal(core: CitySceneCore): void {
     g.y = rectLocal.y;
     panelRoot.addChild(g);
     const lbl = st(t('city.speedup').replace('{coins}', String(coins)), FS.tiny, C.dark, true);
-    lbl.x = rectLocal.x + 8;
-    lbl.y = rectLocal.y + (rectLocal.h - 16) / 2;
+    lbl.anchor.set(0.5, 0.5);
+    lbl.x = rectLocal.x + rectLocal.w / 2;
+    lbl.y = rectLocal.y + rectLocal.h / 2;
     panelRoot.addChild(lbl);
     const screenRect = core.toScreen(rectLocal, screenX, screenY, scale);
     core.hits.push({

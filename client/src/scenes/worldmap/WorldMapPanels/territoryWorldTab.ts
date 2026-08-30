@@ -88,7 +88,8 @@ export function renderWorldTabBody(
     pw,
     bodyBottom - cy,
     core.ctx.nations.length * rowH,
-    rerender
+    rerender,
+    rowH
   );
   let ry = cy - core.ctx.infoScrollY;
   for (const n of core.ctx.nations) {

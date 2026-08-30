@@ -54,7 +54,7 @@ export function showCityPanel(
     // No node state (entry payload not landed yet, or a world opened before P1 and never reset) — show
     // what the tile knows and nothing more, rather than a siege button that would 400 on departure.
     lines.push(t('world.cityHint'));
-    ctx.panels.showModal(lines, [{ label: '✕', action: () => { state.openAt = null; ctx.panels.closeModal(); } }]);
+    ctx.panels.showModal(lines, [{ label: t('common.close'), action: () => { state.openAt = null; ctx.panels.closeModal(); } }]);
     return;
   }
 
@@ -101,6 +101,6 @@ export function showCityPanel(
   } else {
     buttons.push({ label: t('world.actSiegeCity'), action: () => void ctx.net.showTeamPicker(tx, ty, 'attack') });
   }
-  buttons.push({ label: '✕', action: () => { state.openAt = null; ctx.panels.closeModal(); } });
+  buttons.push({ label: t('common.close'), action: () => { state.openAt = null; ctx.panels.closeModal(); } });
   ctx.panels.showModal(lines, buttons);
 }

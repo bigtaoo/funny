@@ -16,7 +16,7 @@ export function confirmRelocate(ctx: WorldMapContext, tx: number, ty: number): v
     [t('world.relocateTitle'), t('world.relocateConfirm').replace('{n}', String(RELOCATE_COST))],
     [
       { label: t('world.relocateBtn'), action: () => void doRelocate(ctx, tx, ty) },
-      { label: '✕', action: () => ctx.panels.closeModal() },
+      { label: t('common.close'), action: () => ctx.panels.closeModal() },
     ],
   );
 }
@@ -49,7 +49,7 @@ export function confirmWatchtower(ctx: WorldMapContext, tx: number, ty: number):
     ],
     [
       { label: t('world.watchtowerBtn'), action: () => void doWatchtower(ctx, tx, ty) },
-      { label: '✕', action: () => ctx.panels.closeModal() },
+      { label: t('common.close'), action: () => ctx.panels.closeModal() },
     ],
   );
 }
@@ -82,7 +82,7 @@ export function confirmBuildStructure(ctx: WorldMapContext, tx: number, ty: numb
     ],
     [
       { label: t('world.buildBtn'), action: () => void doBuildStructure(ctx, tx, ty, kind) },
-      { label: '✕', action: () => ctx.panels.closeModal() },
+      { label: t('common.close'), action: () => ctx.panels.closeModal() },
     ],
   );
 }

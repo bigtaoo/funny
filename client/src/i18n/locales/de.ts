@@ -956,7 +956,6 @@ export const de: Record<TranslationKey, string> = {
   'world.replay.def': 'Vert.',
   'world.replay.none': 'Keine Aufz.',
   'world.resYield': 'Ertrag',
-  'world.close': 'Schließen',
   // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26) ─────────────
   'world.territoryTitle': 'Gebietsübersicht',
   'world.territoryTabOverview': 'Übersicht',

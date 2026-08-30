@@ -93,7 +93,7 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     const buttons = showModal.mock.calls[0][1] as { label: string; action: () => void }[];
     const labels = buttons.map((b) => b.label);
     expect(labels.some((l) => l.startsWith('Alpha'))).toBe(true);
-    expect(labels).toContain('✕');
+    expect(labels).toContain(t('common.close'));
     // No occupy path opens the flat pool-troop deploy dialog any more.
     for (const b of buttons) b.action();
     expect(showDeployDialog).not.toHaveBeenCalled();
@@ -186,7 +186,7 @@ describe('WorldMapNet.showTeamPicker — sort order (nearest, then troops, then 
     });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
-    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    const order = labels.filter((l) => l !== t('common.close')).map((l) => l.split(' ·')[0]);
     expect(order).toEqual(['Near', 'Far']);
   });
 
@@ -201,7 +201,7 @@ describe('WorldMapNet.showTeamPicker — sort order (nearest, then troops, then 
     });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
-    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    const order = labels.filter((l) => l !== t('common.close')).map((l) => l.split(' ·')[0]);
     expect(order).toEqual(['Heavy', 'Light']);
   });
 
@@ -222,7 +222,7 @@ describe('WorldMapNet.showTeamPicker — sort order (nearest, then troops, then 
     });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
-    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    const order = labels.filter((l) => l !== t('common.close')).map((l) => l.split(' ·')[0]);
     expect(order).toEqual(['Strong', 'Weak']);
   });
 
@@ -265,7 +265,7 @@ describe('WorldMapNet.showTeamPicker — sort order (nearest, then troops, then 
     // decoy sitting right next to (500,500) and wrongly read as distance ~1, beating "ActuallyCloser".
     await net.showTeamPicker(500, 500, 'occupy');
     const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
-    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    const order = labels.filter((l) => l !== t('common.close')).map((l) => l.split(' ·')[0]);
     expect(order).toEqual(['ActuallyCloser', 'Mine']);
   });
 
@@ -314,7 +314,7 @@ describe('WorldMapNet.showTeamPicker — sort order (nearest, then troops, then 
     });
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const labels = (showModal.mock.calls[0][1] as { label: string }[]).map((b) => b.label);
-    const order = labels.filter((l) => l !== '✕').map((l) => l.split(' ·')[0]);
+    const order = labels.filter((l) => l !== t('common.close')).map((l) => l.split(' ·')[0]);
     expect(order).toEqual(['D_NearHeaviestStrong', 'C_NearHeavy', 'B_NearLight', 'A_Far']);
   });
 });

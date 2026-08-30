@@ -221,8 +221,9 @@ export class ModalsPanel implements ModalsHandlers {
           g.x = btnRectLocal.x;
           g.y = btnRectLocal.y;
           panelRoot.addChild(g);
-          lbl.x = btnRectLocal.x + 8;
-          lbl.y = btnRectLocal.y + (btnRectLocal.h - 16) / 2;
+          lbl.anchor.set(0.5, 0.5);
+          lbl.x = btnRectLocal.x + btnRectLocal.w / 2;
+          lbl.y = btnRectLocal.y + btnRectLocal.h / 2;
           panelRoot.addChild(lbl);
 
           const screenRect = this.core.toScreen(btnRectLocal, screenX, screenY, scale);
@@ -246,8 +247,9 @@ export class ModalsPanel implements ModalsHandlers {
         g.y = btnRectLocal.y;
         panelRoot.addChild(g);
         const lbl = st(t('city.upgrade'), FS.tiny, canAfford ? C.dark : C.mid, true);
-        lbl.x = btnRectLocal.x + 8;
-        lbl.y = btnRectLocal.y + (btnRectLocal.h - 16) / 2;
+        lbl.anchor.set(0.5, 0.5);
+        lbl.x = btnRectLocal.x + btnRectLocal.w / 2;
+        lbl.y = btnRectLocal.y + btnRectLocal.h / 2;
         panelRoot.addChild(lbl);
 
         const screenRect = this.core.toScreen(btnRectLocal, screenX, screenY, scale);

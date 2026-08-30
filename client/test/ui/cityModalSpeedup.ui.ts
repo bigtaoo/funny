@@ -67,11 +67,19 @@ function collectTexts(root: PIXI.Container): string[] {
   return textNodes(root).map((n) => n.text);
 }
 
-/** A text node's on-screen rect — the modal lays out in a local frame that panelRoot scales up. */
+/**
+ * A text node's on-screen rect — the modal lays out in a local frame that panelRoot scales up.
+ *
+ * `getGlobalPosition` returns the node's transform origin, which is its top-left only for the
+ * default anchor (0,0); button labels are anchor(0.5,0.5)-centred since the 2026-08-30 widget
+ * pass, so back the anchor out to get a real top-left either way.
+ */
 function screenRect(n: PIXI.Text): Rect {
   const p = n.getGlobalPosition(new PIXI.Point(), false);
   const s = n.worldTransform.a;
-  return { x: p.x, y: p.y, w: n.width * s, h: n.height * s };
+  const w = n.width * s;
+  const h = n.height * s;
+  return { x: p.x - n.anchor.x * w, y: p.y - n.anchor.y * h, w, h };
 }
 
 type QueueEntry = { key: BuildingKey; toLevel: number; secsLeft: number };
