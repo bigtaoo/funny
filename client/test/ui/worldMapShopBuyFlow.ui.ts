@@ -16,7 +16,10 @@
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as PIXI from 'pixi.js-legacy';
 import { initI18n } from '../../src/i18n';
+import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
+import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import { doBuyShopItem } from '../../src/scenes/worldmap/net/structures';
 import { BusyTracker, BUSY_TIMEOUT_MS } from '../../src/ui/busyTracker';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
@@ -126,5 +129,126 @@ describe('doBuyShopItem — post-purchase refresh', () => {
     (ctx.cb as { refreshWallet?: unknown }).refreshWallet = undefined;
     await doBuyShopItem(ctx, 'sp1');
     expect(panels.renderShopPanel).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The lock above only stops a second dispatch of the SAME action. What stops a tap reaching
+// anything else mid-flight — Close, another card's Buy, a tile underneath — is the gate at the top
+// of WorldMapInput.handleDown, which is a separate line of code and needs its own coverage.
+describe('WorldMapInput — every tap is swallowed while a request is in flight', () => {
+  function inputHarness() {
+    const action = vi.fn();
+    const closeModal = vi.fn();
+    const ctx = {
+      w: 1080, h: 1920,
+      bt: new BusyTracker(),
+      modalLayer: new PIXI.Container(),
+      toastLayer: new PIXI.Container(),
+      modalDimRect: { x: 0, y: 0, w: 1080, h: 1920 },
+      modalBtnRects: [{ rect: { x: 100, y: 100, w: 200, h: 56 }, action }],
+      infoScrollRect: null,
+      infoScrollPendingTap: null,
+      shopPanelOpen: true,
+      me: { joined: true },
+      cb: { accountId: 'me', worldApi: {} },
+      panels: { closeModal },
+      view: { renderMap: vi.fn() },
+    } as unknown as WorldMapContext;
+    return { ctx, input: new WorldMapInput(ctx), action, closeModal };
+  }
+
+  it('fires a modal button normally when idle', () => {
+    const { input, action } = inputHarness();
+    input.handleDown(200, 128);
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire that button while bt.busy', () => {
+    const { ctx, input, action } = inputHarness();
+    ctx.bt.start();
+    input.handleDown(200, 128);
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it('does not close the modal on a tap outside it either — the whole panel is frozen', () => {
+    const { ctx, input, closeModal } = inputHarness();
+    ctx.bt.start();
+    input.handleDown(900, 1800); // on the dim, which normally closes
+    expect(closeModal).not.toHaveBeenCalled();
+  });
+
+  it('accepts taps again once the request settles', () => {
+    const { ctx, input, action } = inputHarness();
+    ctx.bt.start();
+    input.handleDown(200, 128);
+    ctx.bt.stop();
+    input.handleDown(200, 128);
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The cover itself. It lives on its own layer (ctx.busyLayer) precisely because renderShopPanel /
+// showModal tear modalLayer down wholesale on every re-render, so a cover parented there would be
+// wiped by the very re-render a settling request triggers.
+describe('WorldMapPanelsCore.renderBusyOverlay', () => {
+  function overlayHarness() {
+    const ctx = {
+      w: 1080, h: 1920,
+      bt: new BusyTracker(),
+      modalLayer: new PIXI.Container(),
+      toastLayer: new PIXI.Container(),
+      busyLayer: new PIXI.Container(),
+      modalBtnRects: [],
+      cb: { accountId: 'me', worldApi: {} },
+      view: { renderMap: vi.fn() },
+    } as unknown as WorldMapContext;
+    const panels = new WorldMapPanels(ctx);
+    (ctx as unknown as { panels: WorldMapPanels }).panels = panels;
+    return { ctx, panels };
+  }
+
+  it('draws nothing until the tracker has been in flight past its 1 s threshold', () => {
+    const { ctx, panels } = overlayHarness();
+    ctx.bt.start();
+    panels.renderBusyOverlay();
+    expect(ctx.busyLayer.children).toHaveLength(0);
+  });
+
+  it('draws the cover once loadingVisible flips', () => {
+    const { ctx, panels } = overlayHarness();
+    ctx.bt.start();
+    ctx.bt.tick(1.5); // past BusyTracker's threshold
+    expect(ctx.bt.loadingVisible).toBe(true);
+    panels.renderBusyOverlay();
+    expect(ctx.busyLayer.children.length).toBeGreaterThan(0);
+  });
+
+  it('clears the cover when the request settles', () => {
+    const { ctx, panels } = overlayHarness();
+    ctx.bt.start();
+    ctx.bt.tick(1.5);
+    panels.renderBusyOverlay();
+    ctx.bt.stop();
+    panels.renderBusyOverlay();
+    expect(ctx.busyLayer.children).toHaveLength(0);
+  });
+
+  it('repaints in place rather than stacking a second cover per tick', () => {
+    const { ctx, panels } = overlayHarness();
+    ctx.bt.start();
+    ctx.bt.tick(1.5);
+    panels.renderBusyOverlay();
+    const n = ctx.busyLayer.children.length;
+    ctx.bt.tick(0.4); // dots advance -> lifecycle repaints
+    panels.renderBusyOverlay();
+    expect(ctx.busyLayer.children).toHaveLength(n);
+  });
+
+  it('no-ops on a context that never built the layer (the pre-existing UI fixtures)', () => {
+    const { ctx, panels } = overlayHarness();
+    (ctx as unknown as { busyLayer?: PIXI.Container }).busyLayer = undefined;
+    ctx.bt.start();
+    ctx.bt.tick(1.5);
+    expect(() => panels.renderBusyOverlay()).not.toThrow();
   });
 });
