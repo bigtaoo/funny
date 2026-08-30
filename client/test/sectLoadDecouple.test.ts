@@ -71,6 +71,16 @@ describe('SectScene loadData() — hub hand-off', () => {
     expect(api(core).getSectChannel).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the full family detail on core.family (not just the derived myFamilyId/myFamilyRole fields) — a preloaded family too', async () => {
+    // Regression for the family-sect-tab-switch-flicker fix (30.08.2026): nav/world.ts's
+    // Sect->Family hop reads SectSceneCore.family directly to hand it to FamilyScene as
+    // preloadedFamily. That only works if loadData() actually keeps the object around, not just
+    // the three fields it derives from it (inFamily/myFamilyId/myFamilyRole).
+    const core = fakeCore({ preloadedFamily: FAM, preloadedSect: SECT });
+    await new DataPanel(core).loadData();
+    expect(core.family).toBe(FAM);
+  });
+
   it('ignores a handed-over sect that is not the family\'s current one', async () => {
     // e.g. the player left/joined between the hub's status load and this entry — replaying that
     // payload would paint a roster the player is no longer part of.
@@ -88,6 +98,51 @@ describe('SectScene loadData() — hub hand-off', () => {
     expect(api(core).getMyFamily).toHaveBeenCalledTimes(1);
     expect(api(core).getSect).toHaveBeenCalledTimes(1);
     expect(core.mode).toBe('mySect');
+    // Freshly fetched, not just preloaded — core.family must still end up holding it.
+    expect(core.family).toEqual(FAM);
+  });
+
+  it('sets core.family to null (not left over from a previous load) when the player has no family', async () => {
+    const core = fakeCore();
+    api(core).getMyFamily.mockResolvedValueOnce(null);
+    await new DataPanel(core).loadData();
+
+    expect(core.mode).toBe('noSect');
+    expect(core.family).toBeNull();
+  });
+});
+
+describe('SectScene loadData() — onSectLoaded callback', () => {
+  // nav/world.ts's Family->Sect hop caches whatever SectScene last reports through this hook
+  // (`lastSect`) so a later hop in the same session can skip getSect() too — see
+  // family-sect-tab-switch-flicker-fix-2026-08-30. It has to fire regardless of HOW the sect was
+  // learned (fresh fetch vs. handed-over preload), or the cache would just never warm up on the
+  // world-map entry point (the only one that doesn't already have a preload to give).
+  it('fires with the freshly-fetched sect', async () => {
+    const onSectLoaded = vi.fn();
+    const core = fakeCore({ onSectLoaded });
+    await new DataPanel(core).loadData();
+
+    expect(onSectLoaded).toHaveBeenCalledTimes(1);
+    expect(onSectLoaded).toHaveBeenCalledWith(SECT);
+  });
+
+  it('fires with the handed-over sect too (preload path)', async () => {
+    const onSectLoaded = vi.fn();
+    const core = fakeCore({ preloadedFamily: FAM, preloadedSect: SECT, onSectLoaded });
+    await new DataPanel(core).loadData();
+
+    expect(onSectLoaded).toHaveBeenCalledTimes(1);
+    expect(onSectLoaded).toHaveBeenCalledWith(SECT);
+  });
+
+  it('does not fire when the player has no sect', async () => {
+    const onSectLoaded = vi.fn();
+    const core = fakeCore({ preloadedFamily: { ...FAM, sectId: undefined }, onSectLoaded });
+    await new DataPanel(core).loadData();
+
+    expect(core.mode).toBe('noSect');
+    expect(onSectLoaded).not.toHaveBeenCalled();
   });
 });
 
