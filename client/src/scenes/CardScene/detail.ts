@@ -439,13 +439,21 @@ export class DetailPanel {
   }
 
 
-  /** Render 3 gear slot boxes (icon + level badge) inside the detail modal. */
+  /** Render 3 gear slot boxes (icon + level stars) inside the detail modal. */
   renderDetailGearSlots(card: CardInstance, mx: number, cy: number, mw: number, save: SaveData): void {
     const core = this.core;
     const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'armor', 'trinket'];
     const cellW = (mw - 24 - 8 * 2) / 3;
     const cellH = 74;
-    const iconSize = Math.min(cellW, cellH) - 26;
+    // Level used to show as a "+N" text badge in the corner; now a row of gold stars
+    // (roster feedback 2026-08-30) — matches the roster grid / this modal's own header /
+    // fuse-ring convention (list.ts / this file's stat-column stars / feedRing.ts). The
+    // star row takes the top band the badge used to occupy, so the icon shifts down by
+    // the same amount it shrinks by, keeping its bottom edge flush with the old layout.
+    const starSize = 8;
+    const starTopPad = 6;
+    const iconTopPad = starTopPad + starSize + 2;
+    const iconSize = Math.min(cellW, cellH) - 26 - (starSize + 2);
     const root = core.modalPanelRoot;
 
     EQUIP_SLOTS.forEach((slot, i) => {
@@ -457,7 +465,7 @@ export class DetailPanel {
       root.addChild(cell);
 
       const iconCx = x + cellW / 2;
-      const iconCy = cy + 6 + iconSize / 2;
+      const iconCy = cy + iconTopPad + iconSize / 2;
       // buildEquipIcon already renders the hollow "+" placeholder for an empty
       // slot, so it doesn't need dimming (a dimmed real-item glyph used to read
       // as a low-rarity equipped item at a glance).
@@ -469,10 +477,10 @@ export class DetailPanel {
       slotLbl.anchor.set(0.5, 0); slotLbl.x = iconCx; slotLbl.y = cy + cellH - 16;
       root.addChild(slotLbl);
 
-      if (inst) {
-        const badge = core.stxt(`+${inst.level}`, FS.micro, C.dark, true);
-        badge.anchor.set(1, 0); badge.x = x + cellW - 4; badge.y = cy + 4;
-        root.addChild(badge);
+      if (inst && inst.level > 0) {
+        const { container: stars } = buildLevelStars(inst.level, cellW - 8, starSize, 1);
+        stars.x = iconCx - stars.width / 2; stars.y = cy + starTopPad;
+        root.addChild(stars);
       }
 
       if (core.cb.openEquipment && !core.bt.busy) {
