@@ -47,7 +47,10 @@ describe('cue catalogue', () => {
   it('result stingers outrank everything — one per match, nothing may steal them', () => {
     const worstResult = Math.min(...RESULT_CUES.map((c) => CUE_CATALOGUE[c].priority));
     const others = ALL_CUES.filter((c) => !RESULT_CUES.includes(c));
-    expect(RESULT_CUES).toHaveLength(2);
+    // Three since 2026-08-31: a draw got its own stinger (AUDIO_DESIGN.md §7 step 6). The count is
+    // pinned rather than derived so that adding a fourth "outcome" is a deliberate edit here — this
+    // is the one priority tier that must stay unstealable, so it should not grow by accident.
+    expect(RESULT_CUES).toHaveLength(3);
     for (const cue of others) {
       expect(CUE_CATALOGUE[cue].priority, cue).toBeLessThan(worstResult);
     }

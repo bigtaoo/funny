@@ -60,6 +60,11 @@ const DIRECT_UI_CUE_ALLOWLIST: Record<string, string> = {
     'passes through.',
   'scenes/GachaScene/core.ts':
     'sfx.ui.gacha.reveal.* is raised on the draw RESPONSE, not on a tap, and is tiered per pull.',
+  'scenes/SettingsScene/audioPanel.ts':
+    'The volume sliders audition sfx.ui.tap on RELEASE, and a slider is deliberately not a hit ' +
+    '(it has to track the finger, so it lives in `audioSliders`, not in the hit table). Without ' +
+    'this the SFX slider is a blind control: a real-browser drag measured 0 cues and a 0.0000 bus ' +
+    'peak over 240 pointer-moves (AUDIO_DESIGN.md §0.2).',
 };
 
 /**

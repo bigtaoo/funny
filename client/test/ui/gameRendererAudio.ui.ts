@@ -212,10 +212,23 @@ describe('battle audio — result stinger one-shot gate', () => {
     renderer.destroy();
   });
 
-  it('leaves a draw silent — the vocabulary has no sfx.result.draw', () => {
+  it('plays the draw stinger — its own outcome, not a quieter win', () => {
+    // Was asserted SILENT until 2026-08-31: the vocabulary had only victory/defeat, and either one
+    // would have reported the wrong result, so a draw ended the match with no sound at all.
     const { engine, renderer, r } = buildRenderer();
     frame(r, engine, [{ type: 'game_draw' }]);
-    expect(bus.calls).toEqual([]);
+    expect(bus.calls).toEqual([['sfx.result.draw', 1]]);
+    renderer.destroy();
+  });
+
+  it('a re-drained draw does not machine-gun the stinger', () => {
+    // Same hazard as game_over: after the match ends the engine's step() returns early WITHOUT
+    // clearing the queue, so a stalled driver hands the final frame's whole batch back every frame.
+    // The draw branch's stinger therefore has to sit inside the `gameEnded` one-shot gate, not in
+    // collectCue() — at 60 fps a naive trigger is 60 stingers a second.
+    const { engine, renderer, r } = buildRenderer();
+    for (let i = 0; i < 5; i++) frame(r, engine, [{ type: 'game_draw' }]);
+    expect(bus.calls).toEqual([['sfx.result.draw', 1]]);
     renderer.destroy();
   });
 

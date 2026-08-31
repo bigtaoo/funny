@@ -38,6 +38,10 @@ export type AudioCue =
   // ── 结算 stinger（AUDIO_DESIGN.md §2.3 尾注：走 SFX 管线，不占 BGM 槽）──────
   | 'sfx.result.victory'
   | 'sfx.result.defeat'
+  // A draw is its own outcome, not a quieter win or a gentler loss. Playing either of the two above
+  // would report the wrong result — which is why `game_draw` was silent until this cue existed
+  // (AUDIO_DESIGN.md §7 step 6).
+  | 'sfx.result.draw'
 
   // ── UI（**不由引擎事件驱动**，AUDIO_DESIGN.md §2.2）─────────────────────────
   //
