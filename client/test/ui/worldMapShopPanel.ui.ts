@@ -419,3 +419,62 @@ describe('WorldMapPanels.shopBadgeLabel — corner duration tag', () => {
     expect(api.shopBadgeLabel(makeBattlePassItem())).toBeNull();
   });
 });
+
+// 2026-08-30: `shopIcon()` resolved 'trophy' for the battle-pass card the whole time, and every test
+// above passes on a panel whose cards draw NO icon at all — the resolver was covered, the drawing
+// was not. What actually broke was one layer down (`buildIcon` skipped the sprite while the PNG was
+// still decoding, and this panel renders once when the modal opens, so it never came back), but the
+// gap that let it ship unnoticed is here: nothing asserted the icon reaches the display tree.
+//
+// Deliberately counts SPRITES, not "the container buildIcon returned": under this harness every
+// `.png` stubs to a data URI that never decodes, so the icon is a real sprite that is simply never
+// shown (see buildFittedSprite) — and an assertion on the container alone would have passed even
+// against the broken build, which returned an empty one.
+describe('WorldMapPanels.renderShopPanel — every card actually draws its icon', () => {
+  /** Art sprites (Text is a Sprite subclass — excluded) under the modal layer, at absolute position. */
+  function iconSprites(ctx: WorldMapContext): { x: number; y: number }[] {
+    const out: { x: number; y: number }[] = [];
+    const walk = (c: PIXI.Container, ox: number, oy: number): void => {
+      for (const child of c.children as PIXI.Container[]) {
+        const x = ox + child.x, y = oy + child.y;
+        if (child instanceof PIXI.Sprite && !(child instanceof PIXI.Text)) out.push({ x, y });
+        else if (child instanceof PIXI.Container) walk(child, x, y);
+      }
+    };
+    walk(ctx.modalLayer, 0, 0);
+    return out;
+  }
+
+  it('draws exactly one icon per item card', () => {
+    const { ctx, panels } = buildHarness({ shopItems: makeShopItems(4) });
+    panels.renderShopPanel();
+    expect(iconSprites(ctx)).toHaveLength(4);
+  });
+
+  it('the battle-pass card is not the odd one out — a one-item catalog still draws its trophy', () => {
+    const { ctx, panels } = buildHarness({ shopItems: [makeBattlePassItem()] });
+    panels.renderShopPanel();
+    expect(iconSprites(ctx)).toHaveLength(1);
+  });
+
+  it('an already-owned battle pass (greyed Buy band) keeps its icon', () => {
+    const { ctx, panels } = buildHarness({ shopItems: [makeBattlePassItem()], hasBattlePass: true });
+    panels.renderShopPanel();
+    expect(iconSprites(ctx)).toHaveLength(1);
+  });
+
+  it('each icon sits in its card\'s art frame — left of the name column, above the Buy band', () => {
+    const { ctx, panels } = buildHarness({ shopItems: makeShopItems(2) });
+    panels.renderShopPanel();
+    const icons = iconSprites(ctx).sort((a, b) => a.y - b.y || a.x - b.x);
+    // One Buy button per card, in card order, plus the panel's own Close button last.
+    const bands = ctx.modalBtnRects.slice(0, 2).map((b) => b.rect);
+    expect(icons, 'without this the loop below asserts nothing').toHaveLength(bands.length);
+    icons.forEach((icon, i) => {
+      const band = bands[i]!;
+      expect(icon.x, 'icon is in the card\'s left-hand art frame').toBeGreaterThanOrEqual(band.x);
+      expect(icon.y, 'icon is above the full-width Buy band').toBeLessThan(band.y);
+      expect(icon.x, 'icon does not run into the name/cost column').toBeLessThan(band.x + band.w / 2);
+    });
+  });
+});

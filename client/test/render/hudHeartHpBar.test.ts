@@ -79,6 +79,11 @@ vi.mock('pixi.js-legacy', () => {
     removeChild(c: unknown): void { this.children = this.children.filter(x => x !== c); }
     removeChildren(): void { this.children = []; }
     destroy(): void { /* no-op */ }
+    // A real DisplayObject is an EventEmitter. Needed since 2026-08-30: `buildFittedSprite` parks a
+    // `once('destroyed')` on the sprite it hands back, to unhook itself from the (globally cached)
+    // baseTexture if the art lands after the scene is gone.
+    on(): this { return this; } once(): this { return this; } off(): this { return this; }
+    get destroyed(): boolean { return false; }
   }
   class FakeSprite extends FakeContainer {
     anchor = { set(): void {} };
@@ -128,9 +133,9 @@ vi.mock('pixi.js-legacy', () => {
     on(): this { return this; } once(): this { return this; } off(): this { return this; }
   }
   class FakeTexture {
-    // `valid: false` on purpose: `buildInkIcon`/`buildRasterTabIcon` read it to decide whether the
-    // PNG has decoded, and under this mock nothing ever loads, so HUDView's ink glyph stays an
-    // empty container — which is exactly what these HP-bar/label assertions want out of the way.
+    // `valid: false` on purpose: `buildFittedSprite` reads it to decide whether the PNG has decoded,
+    // and under this mock nothing ever loads, so HUDView's ink glyph stays a never-shown sprite that
+    // draws nothing — which is exactly what these HP-bar/label assertions want out of the way.
     baseTexture = new FakeBaseTexture();
     width = 0; height = 0;
     static from(): FakeTexture { return new FakeTexture(); }
