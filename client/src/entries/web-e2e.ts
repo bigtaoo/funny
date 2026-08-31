@@ -3,6 +3,7 @@ import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import type { AppViews } from '../app/AppViews';
 import { setAudioBus, audioBus } from '../audio/audioBus';
+import type { AudioBus } from '../audio/types';
 import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
 
@@ -91,13 +92,37 @@ function instrumentViews(views: AppViews): AppViews {
 // test/no-debug-hooks-in-src.test.ts scans src/ for. (That guard matches the offending token as a
 // literal, so this comment deliberately does not spell it out.)
 const audio = new WebAudioBus();
-setAudioBus(audio);
+
+// Cue log. An `AnalyserNode` on the SFX bus can tell you *something played* and how loud, but not
+// *which cue* — and once the battle triggers are wired (AUDIO_DESIGN.md §7 step 3) a real match
+// fires them faster than any human can attribute a peak to an event. Wrapping the bus here is the
+// only way to answer "did `card_played` reach `sfx.card.play`, once?" against the real game rather
+// than against a fake bus in vitest. It also makes the game-over hazard measurable: a stinger
+// re-firing every frame shows up as hundreds of entries, not one.
+interface CueLogEntry { cue: string; count: number; t: number }
+const CUE_LOG_CAP = 4000;
+const cueLog: CueLogEntry[] = [];
+const recordingBus: AudioBus = {
+  preload: () => audio.preload(),
+  play: (cue, count = 1) => {
+    if (cueLog.length >= CUE_LOG_CAP) cueLog.shift();
+    cueLog.push({ cue, count, t: Math.round(performance.now()) });
+    audio.play(cue, count);
+  },
+  setSfxVolume: (v) => audio.setSfxVolume(v),
+  setMusicVolume: (v) => audio.setMusicVolume(v),
+  resume: () => audio.resume(),
+};
+setAudioBus(recordingBus);
 (window as unknown as { __nwAudio: unknown }).__nwAudio = {
   play: (cue: string, count?: number) => audioBus().play(cue as never, count),
   resume: () => audioBus().resume(),
   cues: ALL_CUES,
   /** How much of the shipped sample set actually decoded (0/0 until cueAssets.ts is filled). */
   loaded: () => audio.loaded,
+  /** Every cue the trigger layer has asked for, newest last. */
+  log: (): CueLogEntry[] => cueLog.slice(),
+  clearLog: (): void => { cueLog.length = 0; },
 };
 
 startApp(new WebPlatform('game-canvas'), instrumentViews).catch(console.error);
