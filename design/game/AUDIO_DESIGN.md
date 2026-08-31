@@ -32,7 +32,24 @@
 - `test/audio/**` **79 个用例**，`src/audio/**` 行覆盖 **99.4%**；该目录已加进 `vitest.config.ts` 的覆盖率门禁（客户端整体 94.8% → **95.77%**，scope 变大而百分比上升）。
 - `tsc --noEmit`（`tsconfig.test.json`）、`eslint src`、500 行门禁、`web` + `wechat` 两个 production 构建全通。
 - **微信主包为此多付 0 字节**：`entries/wechat.ts` 不 import `WebAudioBus`，整条管线被 tree-shake 掉——实测 `grep 'sfx.card.play' wechatgame/pixigame.js` 命中 0 次，而 web bundle 命中 1 次。
-- **没有人听过任何一个合成音。** 它们按 §1 的文具拟音方向和"发射越频繁越短越轻"的规则写出来，用例断言的是节点图、峰值上限、时长排序、UI 低于战斗——这些能排除缺陷和混音失衡，**不能判断一个声音是否好听**。那个签收要等触发点接上之后由人来做。
+- **真浏览器实测，不是推断**（Chrome，`entries/web-e2e.ts` 的 `window.__nwAudio` + 在 SFX 总线上挂一个 `AnalyserNode` 读 PCM 峰值）：`AudioContext` 在第一次真实点击后 `running`（48 kHz），总线增益 0.8（§4 的 SFX 默认值），**17 个 cue 全部出声**，`loaded()` 诚实地报 `{cues:0, variants:0}`。游戏本身跑着时**连续 2 秒静默量到 0.000**——既确认总线没有本底噪声/直流偏移，也确认目前确实没有任何代码在触发 cue。交付峰值：
+
+  | cue | 峰值 | | cue | 峰值 |
+  |---|---|---|---|---|
+  | `sfx.base.hit` | 0.151 | | `sfx.ui.gacha.reveal.epic` | 0.101 |
+  | `sfx.card.play` | 0.146 | | `sfx.unit.death` | 0.099 |
+  | `sfx.result.victory` | 0.132 | | `sfx.unit.hit` | 0.098 |
+  | `sfx.spell.cast` | 0.129 | | `sfx.ui.tap` | 0.090 |
+  | `sfx.result.defeat` | 0.117 | | `sfx.ui.reward` | 0.089 |
+  | `sfx.card.invalid` | 0.105 | | `sfx.ui.error` | 0.078 |
+  | | | | `sfx.unit.attack` | 0.058 |
+  | | | | `sfx.ink.tick` | 0.028 |
+
+  UI 那一族（0.067–0.101）整体坐在响的战斗音之下、`sfx.ink.tick` 是全表最轻——正是 §4 要的"安静的底、有冲击力的战斗"。
+
+- **⚠️ 实测抓出一条用例看不见的规律：授权峰值 ≠ 交付峰值。** `tone`/`noise` 的 `gain` 是**滤波器之前**的振幅，而白噪声过一道低通之后损失的能量取决于截止频率。`sfx.unit.hit` 最初写成 `gain 0.15 / cutoff 1400`，授权峰值排第二，**交付到总线只有 0.063**，与本该全表最轻的 `sfx.unit.attack`（0.065，只过 900 Hz 高通 + 4500 低通，损失小得多）齐平，正好和 catalogue 里"受击(0.9/60) 明显高于攻击(0.7/20)"的意图相反。改成 `gain 0.17 / cutoff 2400` 后交付 0.098 vs 0.058，意图恢复。**单元测试量的是节点图上的 gain，永远看不到这一层**；只有真 `AudioContext` + AnalyserNode 量得出来。以后新增/调整任何以噪声为主体的 cue，都要按这条重新实测一次，不能只看 `gain` 排序。
+
+- **没有人听过任何一个合成音。** 上面那张表能排除缺陷、能证明混音的相对关系符合意图，**不能判断一个声音是否好听**——那个签收要等触发点接上之后由人来做。
 
 ---
 
