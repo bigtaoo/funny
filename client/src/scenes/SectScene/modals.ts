@@ -63,7 +63,7 @@ export class ModalsPanel implements ModalsHandlers {
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
     ml.addChild(dim);
-    core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => core.closeModal() });
+    core.modalHits.push({ rect: { x: 0, y: 0, w, h }, sound: 'sfx.ui.back', fn: () => core.closeModal() });
 
     const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.dark, seed: seedFor(0, 0, mw) });
     panel.x = mx; panel.y = my;
@@ -104,7 +104,7 @@ export class ModalsPanel implements ModalsHandlers {
         const sid = s.sectId;
         // Read-only view (member-facing allies list) registers no row hit — rows are display-only.
         if (!readOnly) {
-          core.modalHits.push({ rect: { x: mx + 8, y: cy, w: mw - 16, h: PICK_ROW_H }, action: () => onPick(sid), scroll: 'modal' });
+          core.modalHits.push({ rect: { x: mx + 8, y: cy, w: mw - 16, h: PICK_ROW_H }, fn: () => onPick(sid), scroll: 'modal' });
         }
       }
       cy += PICK_ROW;

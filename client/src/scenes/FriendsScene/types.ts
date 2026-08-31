@@ -3,7 +3,7 @@
 // 500-line convention. No logic here, just the shared callback/status/tab shapes every domain class
 // (and the outer ../FriendsScene.ts assembly) imports.
 import type { ProfileExtra } from '../../ui/dialogs/ProfilePopup';
-import type { Rect } from '../../layout/ILayout';
+import type { Hit as BaseHit } from '../../ui/hits';
 import type { SocialTab } from '../../ui/widgets/socialTabRail';
 import type {
   FriendView,
@@ -94,4 +94,6 @@ export interface FriendsSceneCallbacks {
 export type Tab = SocialTab;
 export type View = 'list' | 'search';
 
-export interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
+
+/** This scene has a single scrollable region, so `scroll` degrades to a boolean (see ui/hits.ts). */
+export type Hit = BaseHit<boolean>;

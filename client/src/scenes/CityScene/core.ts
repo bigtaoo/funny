@@ -52,6 +52,7 @@ import * as actions from './actions';
 import * as helpers from './helpers';
 import * as icons from './icons';
 import * as data from './data';
+import { hitAction, type Hit } from '../../ui/hits';
 
 // ── Public interface ─────────────────────────────────────────────────────────
 
@@ -107,14 +108,6 @@ export const GRID_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS;
 // the scene; tapping a card opens that team's formation editor.
 export const TEAM_ROW_CARD_H = 128;
 export const TEAM_ROW_LABEL_H = 26;
-
-export interface Hit {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  fn: () => void;
-}
 
 export class CitySceneCore {
   readonly container: PIXI.Container;
@@ -410,14 +403,7 @@ export class CitySceneCore {
     if (this.bt.busy) return;
     // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
     // scroll and the tap is dropped, so a drag starting on a building cell scrolls instead of firing it.
-    let hit: (() => void) | null = null;
-    for (const h of this.hits) {
-      if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) {
-        hit = h.fn;
-        break;
-      }
-    }
-    this.gesture.down(this.scrollY, py, hit);
+    this.gesture.down(this.scrollY, py, hitAction(this.hits, px, py));
   }
 
   private handleMove(py: number): void {

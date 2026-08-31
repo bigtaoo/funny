@@ -11,6 +11,7 @@
 import { wheelScrollY } from '../../ui/wheelScroll';
 import type { SectSceneCore } from './core';
 import type { ScrollCol } from './repaint';
+import { runHit } from '../../ui/hits';
 
 /**
  * Which column a pointer at screen `x` scrolls. The landscape split view shows both columns side
@@ -55,11 +56,12 @@ export function onPointerDown(core: SectSceneCore, x: number, y: number): void {
     // the applied translate, exactly like the page columns.
     let modalHit: (() => void) | null = null;
     for (let i = core.modalHits.length - 1; i >= 0; i--) {
-      const { rect, action, scroll } = core.modalHits[i]!;
+      const h = core.modalHits[i]!;
+      const { rect, scroll } = h;
       const py = scroll ? y + core.repaint.appliedDelta(scroll) : y;
       if (x < rect.x || x > rect.x + rect.w || py < rect.y || py > rect.y + rect.h) continue;
       if (scroll && !inViewport(core, scroll, y)) continue;
-      modalHit = action; break;
+      modalHit = (): void => runHit(h); break;
     }
     core.dragCol = 'modal';
     core.gesture.down(core.modalScrollY, y, modalHit);
@@ -72,13 +74,14 @@ export function onPointerDown(core: SectSceneCore, x: number, y: number): void {
   // been translated by a cheap scroll — so map the tap into the same space, deliberately by the
   // APPLIED delta rather than the pending one (see SectRepaint.appliedDelta).
   let hit: (() => void) | null = null;
-  for (const { rect, action, scroll } of core.hitRects) {
+  for (const h of core.hitRects) {
+    const { rect, scroll } = h;
     const py = scroll ? y + core.repaint.appliedDelta(scroll) : y;
     if (x < rect.x || x > rect.x + rect.w || py < rect.y || py > rect.y + rect.h) continue;
     // Rows are built one viewport beyond the region in each direction, so a hit rect alone no
     // longer implies "on screen" — a tap outside the column's viewport must miss.
     if (scroll && !inViewport(core, scroll, y)) continue;
-    hit = action; break;
+    hit = (): void => runHit(h); break;
   }
   core.dragCol = scrollColAt(core, x);
   core.gesture.down(core[scrollKeyFor(core, core.dragCol)], y, hit);

@@ -25,7 +25,7 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 function findLabelPos(container: PIXI.Container, label: string): { x: number; y: number } | null {
   let found: { x: number; y: number } | null = null;
@@ -45,7 +45,7 @@ function tap(scene: { container: PIXI.Container }, label: string): void {
   const hit = hits.find(({ rect: r }) =>
     pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, `no hit rect under label "${label}"`).toBeDefined();
-  hit!.action();
+  hit!.fn();
 }
 
 describe('CardScene — Skins tab (folded in from the retired CollectionScene)', () => {

@@ -11,7 +11,8 @@ import { t, TranslationKey } from '../../i18n';
 import type { RoomState, PlayerSlot } from '../../net/proto/transport';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
-import { CODE_ALPHABET, CODE_LEN, type RoomSceneCallbacks, type Hit } from './types';
+import { CODE_ALPHABET, CODE_LEN, type RoomSceneCallbacks } from './types';
+import type { Hit } from '../../ui/hits';
 
 export interface RoomViewHost {
   readonly container: PIXI.Container;

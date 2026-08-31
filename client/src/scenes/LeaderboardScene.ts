@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
-import { ILayout, Rect } from '../layout/ILayout';
+import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
@@ -11,6 +11,7 @@ import { buildIcon } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { formatLadderTitle, getTitleKeys } from '../game/meta/titles';
 import { wheelScrollY } from '../ui/wheelScroll';
+import { dispatchHit, type Hit } from '../ui/hits';
 
 // ── LeaderboardScene — global ladder leaderboard (SE-6) ─────────────────────────
 //
@@ -133,7 +134,6 @@ export interface LeaderboardCallbacks {
   onOpenProfile?(publicId: string): void;
 }
 
-interface Hit { rect: Rect; fn: () => void; }
 
 /** Pointer travel (design px) beyond which a press becomes a drag rather than a tap. */
 const DRAG_THRESHOLD = 8;
@@ -294,10 +294,7 @@ export class LeaderboardScene implements Scene {
     if (!this.pointerActive) return;
     this.pointerActive = false;
     if (this.dragging) { this.dragging = false; return; }
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   private render(): void {
@@ -317,7 +314,7 @@ export class LeaderboardScene implements Scene {
     // ── Title bar ────────────────────────────────────────────────────────────
     const hdr = drawSceneHeader(this.container, w, h, t('leaderboard.title'), { icon: 'leaderboardTabIcon' });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     // Season subtitle
     if (this.data && this.data.seasonNo > 0) {

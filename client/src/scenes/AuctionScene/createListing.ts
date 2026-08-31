@@ -107,7 +107,7 @@ export class CreateListingPanel {
     fl.anchor.set(0, 0.5);
     fl.x = mx + 16 * SCALE + itemIconSize + 10 * SCALE; fl.y = field.y + itemFieldH / 2;
     ml.addChild(fl);
-    core.modalHits.push({ rect: { x: mx + 10 * SCALE, y: field.y, w: mw - 20 * SCALE, h: itemFieldH }, action: () => openItemPicker(core) });
+    core.modalHits.push({ rect: { x: mx + 10 * SCALE, y: field.y, w: mw - 20 * SCALE, h: itemFieldH }, fn: () => openItemPicker(core) });
     cy += 48 * VA + 30 * SCALE;
 
     // Qty (material only; equipment/card are unique instances, qty forced to 1 server-side).
@@ -138,7 +138,7 @@ export class CreateListingPanel {
       const bl = txt(md.label, snapFont(12 * SCALE), active ? C.light : C.dark);
       bl.anchor.set(0.5, 0.5); bl.x = sx + 46 * SCALE; bl.y = cy + 11 * SCALE;
       ml.addChild(bl);
-      core.modalHits.push({ rect: { x: sx, y: cy - 2 * SCALE, w: btnW, h: btnH }, action: () => { core.createSaleMode = md.key; this.openCreateForm(); } });
+      core.modalHits.push({ rect: { x: sx, y: cy - 2 * SCALE, w: btnW, h: btnH }, fn: () => { core.createSaleMode = md.key; this.openCreateForm(); } });
       sx += 84 * SCALE;
     }
     cy += ROW;
@@ -188,7 +188,7 @@ export class CreateListingPanel {
     const bfl = txt(caretDisplay(core.createBuyer, core.buyerActive && core.caretOn, t('auction.buyerPlaceholder')), snapFont(12 * SCALE), core.createBuyer ? C.dark : C.mid);
     bfl.x = mx + 16 * SCALE; bfl.y = cy + 25 * SCALE;
     ml.addChild(bfl);
-    core.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 28 * SCALE }, action: () => this.openBuyerInput() });
+    core.modalHits.push({ rect: { x: mx + 10 * SCALE, y: cy + 18 * SCALE, w: mw - 20 * SCALE, h: 28 * SCALE }, fn: () => this.openBuyerInput() });
     cy += 60 * VA;
 
     // Tax info — estimate seller proceeds at the floor price (start/buy-now).
@@ -207,7 +207,7 @@ export class CreateListingPanel {
     const ol = txt(t('auction.create'), snapFont(13 * SCALE), C.light);
     ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 53 * SCALE; ol.y = cy + 16 * SCALE;
     ml.addChild(ol);
-    core.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: btnW, h: btnH }, action: () => void this.doCreate() });
+    core.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: btnW, h: btnH }, fn: () => void this.doCreate() });
 
     const caBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 1, btnW) });
     caBtn.x = mx + mw / 2 + 8 * SCALE; caBtn.y = cy;
@@ -215,7 +215,7 @@ export class CreateListingPanel {
     const cl = buildIcon('close', 15 * SCALE, C.dark);
     cl.x = mx + mw / 2 + 53 * SCALE - 7 * SCALE; cl.y = cy + 16 * SCALE - 7 * SCALE;
     ml.addChild(cl);
-    core.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: btnW, h: btnH }, action: () => core.closeModal() });
+    core.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: btnW, h: btnH }, sound: 'sfx.ui.back', fn: () => core.closeModal() });
   }
 
   // Snap a typed price into the item's allowed guardrail band: below floor → floor, above ceil → ceil.

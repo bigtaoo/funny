@@ -127,7 +127,7 @@ describe('FamilyScene — pending join-request approval', () => {
     const btnHit = scene.core.hitRects.find((h: any) => h.rect.y === contentY + 2);
     expect(btnHit).toBeTruthy();
     expect(scene.core.modalOpen).toBe(false);
-    btnHit.action();
+    btnHit.fn();
 
     expect(scene.core.modalOpen).toBe(true);
     const modalTexts = modalTextsOf(scene);

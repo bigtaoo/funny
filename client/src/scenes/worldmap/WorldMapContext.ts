@@ -19,6 +19,7 @@ import type { SaveData } from '../../game/meta/SaveData';
 import type { EraseCrumb } from './WorldMapRenderer/loadingReveal';
 import { GuideOverlay } from '../../render/GuideOverlay';
 import { BusyTracker } from '../../ui/busyTracker';
+import type { Hit } from '../../ui/hits';
 
 /**
  * A live march/occupy/stationed token (fog.ts syncMarchTokens/syncOccupyTokens/syncStationedTokens).
@@ -303,7 +304,7 @@ export class WorldMapContext {
   }[] = [];
 
   // ── Modal ──────────────────────────────────────────────────────────────────
-  modalBtnRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  modalBtnRects: Hit[] = [];
   modalDimRect: { x: number; y: number; w: number; h: number } | null = null;
 
   // ── Info-panel list scroll (Territory Overview list/world tabs — see WorldMapPanels.renderTerritoryPanel) ──

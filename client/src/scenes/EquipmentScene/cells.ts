@@ -56,7 +56,7 @@ export function renderLoadout(core: EquipmentSceneCore, detail: DetailPanel, sav
         stars.x = x + cellW / 2 - stars.width / 2; stars.y = cy + cellH - starSize - 4;
         core.bodyLayer.addChild(stars);
       }
-      core.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, action: () => detail.openDetail(inst.id) });
+      core.hitRects.push({ rect: { x, y: cy, w: cellW, h: cellH }, fn: () => detail.openDetail(inst.id) });
     } else {
       // Empty slot: addGlyph renders the hollow "+" placeholder (no defId), paired
       // with the "empty" label so the player can clearly identify open positions.
@@ -192,10 +192,10 @@ export function renderInstanceCell(
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + btnBandH - 10;
       if (lbl.width > bw - 4) lbl.scale.set(Math.max(0.35, (bw - 4) / lbl.width));
       core.bodyLayer.addChild(lbl);
-      if (!a.disabled) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: btnBandH }, owner: inst.id, action: a.fn });
+      if (!a.disabled) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: btnBandH }, owner: inst.id, fn: a.fn });
     });
   }
 
   // Card body (outside the buttons) opens the info modal — affixes, enhance rate/cost, protect toggle.
-  core.hitRects.push({ rect: { x, y, w: cellW, h: EQUIP_CELL_H }, owner: inst.id, action: () => detail.openDetail(inst.id) });
+  core.hitRects.push({ rect: { x, y, w: cellW, h: EQUIP_CELL_H }, owner: inst.id, fn: () => detail.openDetail(inst.id) });
 }

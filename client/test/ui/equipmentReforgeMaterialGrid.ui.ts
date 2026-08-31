@@ -28,7 +28,7 @@ const LANDSCAPE: [number, number] = [1280, 800];
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
-  core: { modalHits: { rect: Rect; action: () => void }[] };
+  core: { modalHits: { rect: Rect; fn: () => void }[] };
   reforge: { openReforgeSelect(target: EquipmentInstance): void };
 }
 
@@ -92,9 +92,9 @@ describe('EquipmentScene — reforge material picker is an icon-card grid, never
     internals.reforge.openReforgeSelect(save.equipmentInv.target);
 
     const cardHit = internals.core.modalHits[0];
-    cardHit.action(); // opens the OK/Cancel confirm dialog
+    cardHit.fn(); // opens the OK/Cancel confirm dialog
     const confirmOk = internals.core.modalHits[0];
-    confirmOk.action(); // confirms → doReforge
+    confirmOk.fn(); // confirms → doReforge
     await Promise.resolve();
     await Promise.resolve();
 

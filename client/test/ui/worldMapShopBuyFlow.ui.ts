@@ -145,7 +145,7 @@ describe('WorldMapInput — every tap is swallowed while a request is in flight'
       modalLayer: new PIXI.Container(),
       toastLayer: new PIXI.Container(),
       modalDimRect: { x: 0, y: 0, w: 1080, h: 1920 },
-      modalBtnRects: [{ rect: { x: 100, y: 100, w: 200, h: 56 }, action }],
+      modalBtnRects: [{ rect: { x: 100, y: 100, w: 200, h: 56 }, fn: action }],
       infoScrollRect: null,
       infoScrollPendingTap: null,
       shopPanelOpen: true,

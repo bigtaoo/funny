@@ -38,7 +38,7 @@ export function addNumInput(
   const ml = txt('−', snapFont(14 * scale), C.dark);
   ml.anchor.set(0.5, 0.5); ml.x = minusBtn.x + half; ml.y = y + 10 * scale;
   layer.addChild(ml);
-  core.modalHits.push({ rect: { x: minusBtn.x, y: minusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value - 1) });
+  core.modalHits.push({ rect: { x: minusBtn.x, y: minusBtn.y, w: btnSize, h: btnSize }, fn: () => onChange(value - 1) });
 
   const editing = opts?.editKey != null && core.numEditKey === opts.editKey;
   if (opts?.editKey != null) {
@@ -52,7 +52,7 @@ export function addNumInput(
     const valLbl = txt(caretDisplay(String(value), editing && core.caretOn, String(value)), snapFont(13 * scale), C.dark);
     valLbl.anchor.set(0.5, 0.5); valLbl.x = fieldX + fieldW / 2; valLbl.y = y + 10 * scale;
     layer.addChild(valLbl);
-    core.modalHits.push({ rect: { x: fieldX, y: field.y, w: fieldW, h: fieldH }, action: () => openNumInput(core, opts.editKey!, value, onChange, opts.clamp) });
+    core.modalHits.push({ rect: { x: fieldX, y: field.y, w: fieldW, h: fieldH }, fn: () => openNumInput(core, opts.editKey!, value, onChange, opts.clamp) });
 
     const plusBtn = sketchPanel(btnSize, btnSize, { fill: 0xeeeeee, border: C.mid, seed: seedFor(y, 1, btnSize) });
     plusBtn.x = fieldX + fieldW + gap; plusBtn.y = y - 2 * scale;
@@ -60,7 +60,7 @@ export function addNumInput(
     const pl = txt('+', snapFont(14 * scale), C.dark);
     pl.anchor.set(0.5, 0.5); pl.x = plusBtn.x + half; pl.y = y + 10 * scale;
     layer.addChild(pl);
-    core.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value + 1) });
+    core.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, fn: () => onChange(value + 1) });
     return;
   }
 
@@ -75,7 +75,7 @@ export function addNumInput(
   const pl = txt('+', snapFont(14 * scale), C.dark);
   pl.anchor.set(0.5, 0.5); pl.x = plusBtn.x + half; pl.y = y + 10 * scale;
   layer.addChild(pl);
-  core.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, action: () => onChange(value + 1) });
+  core.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, fn: () => onChange(value + 1) });
 }
 
 // Hidden-input driver for a tappable numeric field: live-updates the value as digits are typed and, on

@@ -97,7 +97,7 @@ export function drawHeaderTitle(core: SectSceneCore, headerH: number): void {
     x += gap;
     if (emblemNode) {
       emblemNode.x = x; emblemNode.y = midY - emblemSize / 2;
-      if (isSectLeader) core.hitRects.push({ rect: { x, y: midY - emblemSize / 2, w: emblemSize, h: emblemSize }, action: () => core.emblemHooks.openEmblemPicker() });
+      if (isSectLeader) core.hitRects.push({ rect: { x, y: midY - emblemSize / 2, w: emblemSize, h: emblemSize }, fn: () => core.emblemHooks.openEmblemPicker() });
       x += emblemSize + 8;
     }
     nameNode.anchor.set(0, 0.5); nameNode.x = x; nameNode.y = midY;
@@ -145,7 +145,7 @@ function drawHeaderAllianceButtons(
     btn.x = bx; btn.y = by;
     add(lbl);
     lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-    if (!busy) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
+    if (!busy) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: action });
     x = bx - 8;
   };
 

@@ -108,7 +108,7 @@ export class DefenseEditorScene implements Scene {
       accent: HEADER_ACCENT.slg,
       icon: 'defenseTabIcon',
     });
-    core.hits.push({ rect: hdr.backRect, action: () => core.cb.onBack() });
+    core.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => core.cb.onBack() });
 
     // Base-level stepper (defense only — attacker has no base/buildings)
     if (core.hasBuildingRow) this.renderPanel.renderBaseStepper(w - PAD, 8);

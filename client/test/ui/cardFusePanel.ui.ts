@@ -49,7 +49,7 @@ initI18n('en', freshStorage(), ['zh', 'en', 'de']);
 const W = 1920;
 const H = 1080;
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 function findLabelPos(container: PIXI.Container, label: string): { x: number; y: number } | null {
   let found: { x: number; y: number } | null = null;
@@ -259,7 +259,7 @@ function mutatingFuseBatch(
 
 /** Tap a full ring's Confirm and let the doFuse chain settle. */
 async function confirmFuse(scene: CardScene): Promise<void> {
-  hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+  hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
   await flushAsync();
 }
 
@@ -363,7 +363,7 @@ describe('CardScene fuse panel — candidate grouping + filtering', () => {
     expect(findLabelPos(modalLayerOf(scene), t('roster.fuseEmpty'))).not.toBeNull();
     const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (0/${FUSION_MATERIAL_COUNT})`);
     expect(confirmPos).not.toBeNull();
-    hitUnder(modalHitsOf(scene), confirmPos!)?.action();
+    hitUnder(modalHitsOf(scene), confirmPos!)?.fn();
     expect(fused).toBe(false);
   });
 });
@@ -384,13 +384,13 @@ describe('CardScene fuse panel — filling the ring', () => {
     expect(findLabelPos(modalLayerOf(scene), MAX_NAME)).toBeNull();
 
     // Put slot 0's card back: Confirm drops to 4/5 and the row reappears with that one card.
-    hitUnder(modalHitsOf(scene), slotZeroPos(scene, 1, { action: false }))!.action();
+    hitUnder(modalHitsOf(scene), slotZeroPos(scene, 1, { action: false }))!.fn();
     expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT - 1}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
     const rowPos = findLabelPos(modalLayerOf(scene), MAX_NAME);
     expect(rowPos, 'returned card must show up as a candidate row again').not.toBeNull();
 
     // Picking it puts it straight back into the free slot.
-    hitUnder(modalHitsOf(scene), rowPos!)!.action();
+    hitUnder(modalHitsOf(scene), rowPos!)!.fn();
     expect(findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)).not.toBeNull();
   });
 
@@ -408,7 +408,7 @@ describe('CardScene fuse panel — filling the ring', () => {
     expect(confirmPos).not.toBeNull();
     // At this position there's only the panel's whole-area no-op backdrop hit (Confirm itself
     // registers no hit while disabled) — tapping it must not trigger a fuse.
-    hitUnder(modalHitsOf(scene), confirmPos!)?.action();
+    hitUnder(modalHitsOf(scene), confirmPos!)?.fn();
     expect(fused).toBe(false);
   });
 
@@ -426,7 +426,7 @@ describe('CardScene fuse panel — filling the ring', () => {
 
     const confirmPos = findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
     expect(confirmPos).not.toBeNull();
-    hitUnder(modalHitsOf(scene), confirmPos!)!.action();
+    hitUnder(modalHitsOf(scene), confirmPos!)!.fn();
     await Promise.resolve();
     await Promise.resolve(); // let the async doFuse chain (fuseCards → playFusionAnim) settle
 
@@ -452,7 +452,7 @@ describe('CardScene fuse panel — filling the ring', () => {
     const slotPos = slotZeroPos(scene, 1, { action: true });
     const slotHit = hitUnder(modalHitsOf(scene), slotPos);
     expect(slotHit, 'no hit rect at the filled ring slot').toBeDefined();
-    slotHit!.action();
+    slotHit!.fn();
 
     expect(findLabelPos(modalLayerOf(scene), 'x1')).not.toBeNull();
   });
@@ -524,7 +524,7 @@ describe('CardScene fuse panel — the target only changes when the player taps'
     // The Lv.3 mara leads the strip (highest level among the fusable cards), so chip 0 is it.
     const chipHit = hitUnder(modalHitsOf(scene), stripChipPos(scene, 1, { action: true, strip: true }, 0));
     expect(chipHit, 'no hit rect on the first recommendation chip').toBeDefined();
-    chipHit!.action();
+    chipHit!.fn();
 
     expect(ringStarCount(modalLayerOf(scene)), 'tapping a chip is the ONLY way the target moves').toBe(3);
   });
@@ -539,7 +539,7 @@ describe('CardScene fuse panel — the target only changes when the player taps'
     openFuse(scene, target);
     expect(findLabelPos(modalLayerOf(scene), t('roster.fuseReadyList')), 'strip is on before prep').not.toBeNull();
 
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))!)!.fn();
     expect(findLabelPos(modalLayerOf(scene), t('roster.fuseReadyList'))).toBeNull();
     expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))).not.toBeNull();
   });
@@ -608,7 +608,7 @@ describe('CardScene fuse panel — prep: making the missing materials as an expl
   }
 
   const startPrep = (scene: CardScene): void => {
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))!)!.fn();
   };
 
   it('offers prep, with its cost stated, when the cards one level down cover it', () => {
@@ -667,7 +667,7 @@ describe('CardScene fuse panel — prep: making the missing materials as an expl
     startPrep(scene);
     expect(ringStarCount(modalLayerOf(scene))).toBe(1);
 
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))!)!.fn();
     expect(ringStarCount(modalLayerOf(scene))).toBe(2);
     expect(findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'))).toBeNull();
   });
@@ -689,7 +689,7 @@ describe('CardScene fuse panel — prep: making the missing materials as an expl
 
     const batchPos = findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }));
     expect(batchPos, 'batch button must state how many rounds are left').not.toBeNull();
-    hitUnder(modalHitsOf(scene), batchPos!)!.action();
+    hitUnder(modalHitsOf(scene), batchPos!)!.fn();
     await flushAsync();
 
     expect(calls, 'both rounds ran from the single tap').toHaveLength(2);
@@ -712,7 +712,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     let releaseAnim: () => void = () => {};
     priv(scene).feed.playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
 
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
     await flushAsync(); // doFuse → fuseCards resolves → parks on the awaited playFusionAnim
 
     expect(priv(scene).core.fuseInProgress).toBe(true);
@@ -761,7 +761,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     let releaseAnim: () => void = () => {};
     priv(scene).feed.playFusionAnim = () => new Promise<void>((r) => { releaseAnim = r; });
 
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
     await flushAsync(); // doFuse → fuseCards fires the listener and resolves → parks on playFusionAnim
 
     // Still standing: the OLD bug replaced this with an ordinary detail panel (no fuseTitle) here.
@@ -817,7 +817,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
       priv(scene).feed.openFuseSelect(target); // REAL playFusionAnim, driven by the controllable rAF + clock
       priv(scene).core.detailId = target.id;
 
-      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+      hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
       await flushAsync(); // fuseCards resolves; playFusionAnim registers its first (converge) frame
       expect(rafQueue.length).toBeGreaterThan(0);
 
@@ -858,7 +858,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     openFuse(scene, target);
     priv(scene).core.detailId = target.id;
 
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
     await flushAsync();
 
     expect(priv(scene).core.fuseInProgress).toBe(false); // finally cleared it even though the fuse failed
@@ -935,7 +935,7 @@ describe('CardScene fuse panel — animation is not torn down by the busy re-ren
     priv(scene).core.detailId = target.id;
     priv(scene).feed.playFusionAnim = async () => {}; // no rAF driving in this test
 
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
     await flushAsync();
 
     expect(priv(scene).core.fuseInProgress).toBe(false); // fuse settled, guard released
@@ -1105,8 +1105,8 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
     expect(cancelPos, 'Cancel label must still render (just not be tappable) while busy').not.toBeNull();
     expect(hitUnder(modalHitsOf(scene), cancelPos!)).toBeDefined(); // tappable before Confirm is pressed
 
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
-    // doFuse's synchronous prelude (bt.start() + feedRedraw()) has already run by the time .action()
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
+    // doFuse's synchronous prelude (bt.start() + feedRedraw()) has already run by the time .fn()
     // returns — fuseCards itself is still pending (we control its resolution above).
     expect(priv(scene).core.bt.busy).toBe(true);
     const cancelPosBusy = findLabelPos(modalLayerOf(scene), t('equip.cancel'));
@@ -1114,7 +1114,7 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
     // Whatever hit (if any) now covers that pixel — the panel's own inert backdrop no-op legitimately
     // sits there too — tapping it must NOT close the panel while busy (the real regression: it used
     // to be Cancel's own live hit, closing the modal and abandoning the in-flight request).
-    hitUnder(modalHitsOf(scene), cancelPosBusy!)?.action();
+    hitUnder(modalHitsOf(scene), cancelPosBusy!)?.fn();
     expect(modalOpenOf(scene)).toBe(true);
 
     releaseFuse({ ok: true });
@@ -1133,13 +1133,13 @@ describe('CardScene fuse panel — Cancel/backdrop do not abort an in-flight fus
       fuseCards: () => new Promise((r) => { releaseFuse = r; }),
     }));
     openFuse(scene, target);
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
 
     expect(priv(scene).core.bt.busy).toBe(true);
     // Simulate the player tapping a screen corner (would hit the full-backdrop dismiss if it were
     // still registered) — must be a no-op: the ring stays open, nothing closes.
     const cornerHit = hitUnder(modalHitsOf(scene), { x: 1, y: 1 });
-    cornerHit?.action();
+    cornerHit?.fn();
     expect(modalOpenOf(scene)).toBe(true); // still open — the request is still in flight
 
     releaseFuse({ ok: true });
@@ -1162,7 +1162,7 @@ describe('CardScene fuse panel — onFuseSettled destroyed-guard (2026-08-03 fix
       fuseCards: () => new Promise((r) => { releaseFuse = r; }),
     }));
     openFuse(scene, target);
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`)!)!.fn();
     expect(priv(scene).core.bt.busy).toBe(true);
 
     // Player backs out of the roster while the request is still in flight.
@@ -1219,7 +1219,7 @@ describe('CardScene fuse panel — fuseRingOpen blocks external re-render from s
     priv(scene).feed.openFuseSelect(target);
     expect(priv(scene).core.fuseRingOpen).toBe(true);
 
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('equip.cancel')) ?? { x: -1, y: -1 })?.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('equip.cancel')) ?? { x: -1, y: -1 })?.fn();
     // (Cancel's label key in CardScene reuses 'equip.cancel', same shared string as EquipmentScene.)
     expect(priv(scene).core.fuseRingOpen).toBe(false);
     expect(modalOpenOf(scene)).toBe(false);

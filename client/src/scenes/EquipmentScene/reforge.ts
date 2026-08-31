@@ -124,9 +124,9 @@ export class ReforgePanel {
     const closeLbl = core.stxt(t('equip.cancel'), FS.tiny, C.dark);
     closeLbl.anchor.set(0.5, 0.5); closeLbl.x = closeBtn.x + 30; closeLbl.y = closeBtn.y + 13;
     panelRoot.addChild(closeLbl);
-    core.modalHits.push({ rect: core.toModalScreen({ x: closeBtn.x, y: closeBtn.y, w: 60, h: 26 }), action: () => { core.closeModal(); core.render(); } });
-    core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
-    core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { core.closeModal(); core.render(); } });
+    core.modalHits.push({ rect: core.toModalScreen({ x: closeBtn.x, y: closeBtn.y, w: 60, h: 26 }), sound: 'sfx.ui.back', fn: () => { core.closeModal(); core.render(); } });
+    core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), fn: () => {} });
+    core.modalHits.push({ rect: { x: 0, y: 0, w, h }, sound: 'sfx.ui.back', fn: () => { core.closeModal(); core.render(); } });
   }
 
   /**
@@ -163,7 +163,7 @@ export class ReforgePanel {
     }
 
     const matId = stack.repId;
-    core.modalHits.push({ rect: core.toModalScreen({ x, y, w: cardW, h: cardH }), action: () => this.confirmReforge(target, matId) });
+    core.modalHits.push({ rect: core.toModalScreen({ x, y, w: cardW, h: cardH }), fn: () => this.confirmReforge(target, matId) });
   }
 
   private confirmReforge(target: EquipmentInstance, materialId: string): void {

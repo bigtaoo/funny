@@ -8,12 +8,8 @@
 // so nothing here is part of the scene's outward surface.
 import type { InputManager } from '../../inputSystem/InputManager';
 import { wheelScrollY } from '../../ui/wheelScroll';
-import type { Rect } from './logic/types';
 import type { CardSceneCore } from './core';
-
-function inRect(x: number, y: number, r: Rect): boolean {
-  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-}
+import { hitAction, inRect } from '../../ui/hits';
 
 /** Subscribe the four pointer streams, pushing each unsub onto {@link CardSceneCore.inputUnsubs}. */
 export function subscribeInput(core: CardSceneCore, input: InputManager): void {
@@ -50,10 +46,7 @@ function handleDown(core: CardSceneCore, x: number, y: number): void {
     // Defer the modal hit to pointer-UP and drop it if the pointer drags past the threshold, same
     // as the grid behind it — so a press-drag-release on a feed-select row (or any modal row) only
     // toggles on release, and a drag away doesn't accidentally toggle it (2026-07-17).
-    let modalHit: (() => void) | null = null;
-    for (const { rect, action } of core.modalHits) {
-      if (inRect(x, y, rect)) { modalHit = action; break; }
-    }
+    const modalHit = hitAction(core.modalHits, x, y);
     // The feed modal is drag-scrollable: track from its own scroll base so a drag pans the list
     // (see handleMove). Other modals don't scroll — feedRedraw is null and the returned delta is ignored.
     core.gesture.down(core.feedScrollPx, y, modalHit);
@@ -63,11 +56,7 @@ function handleDown(core: CardSceneCore, x: number, y: number): void {
   // drags past the threshold it becomes a scroll and the tap is dropped on up; otherwise the tap
   // fires on up. This lets a drag that starts *on a card cell* scroll the grid instead of instantly
   // opening that card's detail.
-  let hit: (() => void) | null = null;
-  for (const { rect, action } of core.hitRects) {
-    if (inRect(x, y, rect)) { hit = action; break; }
-  }
-  core.gesture.down(core.scrollY, y, hit);
+  core.gesture.down(core.scrollY, y, hitAction(core.hitRects, x, y));
 }
 
 function handleMove(core: CardSceneCore, x: number, y: number): void {

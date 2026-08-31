@@ -48,7 +48,7 @@ const LANDSCAPE: [number, number] = [1280, 800];
 const GRID_TILE_COUNT = 12;
 
 type Rect = { x: number; y: number; w: number; h: number };
-type Hit = Rect & { fn: () => void };
+type Hit = { rect: Rect; fn: () => void };
 
 type CitySceneInternals = {
   w: number; h: number;
@@ -92,13 +92,15 @@ function isFillAllTeamsHit(h: Hit): boolean {
 }
 
 function contentHits(inner: CitySceneInternals): Hit[] {
-  return inner.hits.slice(1).filter((h) => h.x >= inner.contentX);
+  return inner.hits.slice(1).filter((h) => h.rect.x >= inner.contentX);
 }
-function gridHits(inner: CitySceneInternals): Hit[] {
-  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.y <= inner.h - TEAM_BAND_Y_THRESHOLD);
+// The three selectors below return the hits' RECTS: the shared hit table (src/ui/hits.ts) nests
+// geometry under `rect`, and every assertion here is about geometry.
+function gridHits(inner: CitySceneInternals): Rect[] {
+  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.y <= inner.h - TEAM_BAND_Y_THRESHOLD).map((h) => h.rect);
 }
-function teamHits(inner: CitySceneInternals): Hit[] {
-  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.y > inner.h - TEAM_BAND_Y_THRESHOLD);
+function teamHits(inner: CitySceneInternals): Rect[] {
+  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.y > inner.h - TEAM_BAND_Y_THRESHOLD).map((h) => h.rect);
 }
 
 /** All PIXI.Text content currently in the display tree, recursing sub-containers. */
@@ -179,7 +181,7 @@ for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]]
       const { scene } = buildScene(w, h);
       const inner = internals(scene);
       expect(inner.contentX).toBe(marginLineX(inner.w));
-      for (const c of contentHits(inner)) {
+      for (const { rect: c } of contentHits(inner)) {
         expect(c.x).toBeGreaterThanOrEqual(inner.contentX);
       }
       scene.destroy();
@@ -234,7 +236,7 @@ describe('CityScene detail modal — hit gating (2026-07-15 modal-hit-leak fix)'
   it('the header Back button stays reachable while the modal is open', () => {
     const { scene, calls } = buildScene(...PORTRAIT);
     const inner = internals(scene);
-    const backHit = inner.hits[0]!;
+    const backHit = inner.hits[0]!.rect;
 
     const card = gridHits(inner)[0]!;
     tap(inner, card.x + card.w / 2, card.y + card.h / 2);

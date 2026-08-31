@@ -50,7 +50,7 @@ export function drawPrepCrumb(
   w: number,
   S: number,
   busy: boolean,
-  pushHit: (rect: Rect, action: () => void) => void,
+  pushHit: (rect: Rect, fn: () => void) => void,
   onCancel: () => void,
 ): void {
   const root = stack[0];
@@ -118,7 +118,7 @@ export function drawGapNotice(
    * is observable on its own — they must still agree if the pricing depth ever changes.
    */
   canNest: boolean,
-  pushHit: (rect: Rect, action: () => void) => void,
+  pushHit: (rect: Rect, fn: () => void) => void,
   onPrep: () => void,
 ): void {
   const need = txt(t('roster.fuseNeedMore', { n: shortfall, lv: targetLevel }), snapFont(10 * S), C.dark, true);
@@ -194,7 +194,7 @@ export function drawFuseFooter(
   colW: number,
   S: number,
   busy: boolean,
-  pushHit: (rect: Rect, action: () => void) => void,
+  pushHit: (rect: Rect, fn: () => void) => void,
   onConfirm: () => void,
   onCancel: () => void,
 ): void {
@@ -246,7 +246,7 @@ export function drawPrepBatchBtn(
   w: number,
   S: number,
   busy: boolean,
-  pushHit: (rect: Rect, action: () => void) => void,
+  pushHit: (rect: Rect, fn: () => void) => void,
   onRun: () => void,
 ): void {
   const btnH = 17 * S;
@@ -282,7 +282,7 @@ export function drawRecommendStrip(
   w: number,
   S: number,
   artHooked: Set<string>,
-  pushHit: (rect: Rect, action: () => void) => void,
+  pushHit: (rect: Rect, fn: () => void) => void,
   onPick: (card: CardInstance) => void,
   onArtLoaded: () => void,
 ): void {

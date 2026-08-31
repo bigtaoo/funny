@@ -1,6 +1,5 @@
 // Pure types + constants shared by RoomScene.ts and views.ts (claudedocs/client-modules.md
 // "单文件 500 行收敛") — split out so views.ts doesn't need to import RoomScene.ts itself.
-import { Rect } from '../../layout/ILayout';
 import { ProfileExtra } from '../../ui/dialogs/ProfilePopup';
 
 /**
@@ -36,4 +35,3 @@ export interface RoomSceneCallbacks {
 
 export type View = 'idle' | 'codeEntry' | 'connecting' | 'searching' | 'inRoom';
 
-export interface Hit { rect: Rect; fn: () => void; }

@@ -70,7 +70,7 @@ export function renderDetailGearSlots(
         // gear screen lands the player right back on the same card — with the new piece already
         // shown, since the roster stayed subscribed to the save through the detour. Closing it here
         // (as this used to) would have made "equip three pieces" three round trips through the grid.
-        action: () => core.cb.openEquipment!(card.id, slot),
+        fn: () => core.cb.openEquipment!(card.id, slot),
       });
     }
   });

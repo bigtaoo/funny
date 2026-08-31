@@ -35,7 +35,7 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 function hasText(container: PIXI.Container, text: string): boolean {
   let found = false;
@@ -89,7 +89,7 @@ function openDetail(scene: CardScene, cardName: string): void {
   const hit = hits.find(({ rect: r }) =>
     pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, `no roster-grid hit under "${cardName}"`).toBeDefined();
-  hit!.action();
+  hit!.fn();
 }
 
 /** Advance the real PIXI.Ticker.shared by `ms`, firing any listeners added via `.add()` (e.g. the flip). */
@@ -129,7 +129,7 @@ describe('CardScene detail modal — portrait flip (art ⇄ lore)', () => {
     const flipHit = bySize(modalHits, 96, modalScaleOf(scene));
     expect(flipHit, 'no 96×96 (scaled) portrait-flip hit in the detail modal').toBeDefined();
 
-    flipHit!.action();
+    flipHit!.fn();
     // Before the midpoint, content hasn't swapped yet.
     tick(100);
     expect(hasText(scene.container, LENA_LORE)).toBe(false);
@@ -141,7 +141,7 @@ describe('CardScene detail modal — portrait flip (art ⇄ lore)', () => {
     expect(hasText(scene.container, LENA_LORE)).toBe(true);
 
     // Tap again to flip back to the front.
-    flipHit!.action();
+    flipHit!.fn();
     tick(150);
     tick(150);
     expect(hasText(scene.container, LENA_LORE)).toBe(false);
@@ -168,7 +168,7 @@ describe('CardScene detail modal — change-skin picker', () => {
 
     const badgeHit = bySize((scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits, 22, modalScaleOf(scene));
     expect(badgeHit, 'no 22×22 (scaled) change-skin badge in the detail modal').toBeDefined();
-    badgeHit!.action(); // toggles skinPickerOpen + re-renders the modal
+    badgeHit!.fn(); // toggles skinPickerOpen + re-renders the modal
 
     expect((scene as unknown as { core: { skinPickerOpen: boolean } }).core.skinPickerOpen).toBe(true);
     const skinLabel = skinDisplayName('skin_e1');
@@ -179,7 +179,7 @@ describe('CardScene detail modal — change-skin picker', () => {
     const rowHit = (scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits.find(({ rect: r }) =>
       rowPos!.x >= r.x && rowPos!.x <= r.x + r.w && rowPos!.y >= r.y && rowPos!.y <= r.y + r.h);
     expect(rowHit, `no hit rect under the "${skinLabel}" picker row`).toBeDefined();
-    rowHit!.action();
+    rowHit!.fn();
 
     expect(equipCalls).toEqual([{ unitType: 'lena', skinId: 'skin_e1' }]);
     expect((scene as unknown as { core: { skinPickerOpen: boolean } }).core.skinPickerOpen).toBe(false);
@@ -197,7 +197,7 @@ describe('CardScene detail modal — change-skin picker', () => {
     expect(bySize((scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits, 96, modalScaleOf(scene))).toBeDefined();
 
     const badgeHit = bySize((scene as unknown as { core: { modalHits: Hit[] } }).core.modalHits, 22, modalScaleOf(scene));
-    badgeHit!.action(); // opens the skin picker
+    badgeHit!.fn(); // opens the skin picker
     expect((scene as unknown as { core: { skinPickerOpen: boolean } }).core.skinPickerOpen).toBe(true);
 
     // The flip hit must be gone entirely while the picker is showing.

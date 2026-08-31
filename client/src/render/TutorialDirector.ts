@@ -6,6 +6,7 @@ import { ILayout, Rect } from '../layout/ILayout';
 import { t, type TranslationKey } from '../i18n';
 import type { Phase } from './TutorialDirector/types';
 import { buildLayers, drawPanel, clearPanel, type PanelHost } from './TutorialDirector/panels';
+import { dispatchHit } from '../ui/hits';
 
 /**
  * TutorialDirector — presentation-layer orchestrator for the tutorial level `ch0_tutorial` (ONBOARDING_DESIGN §3.4).
@@ -175,13 +176,15 @@ export class TutorialDirector {
   // ── Input gating (GameRenderer.handleDown asks the director first, avoiding PIXI interactive) ─────────────
   /** Returns true when this tap is consumed by the director; GameRenderer will not process it further. */
   handleDown(x: number, y: number): boolean {
-    if (this.hit(this.skipBtnRect, x, y)) { this.host.onSkip(); return true; }
+    // The director's three buttons (skip / next / graduate) go through the shared table like every
+    // other button, which is also where their tap cue comes from (AUDIO_DESIGN.md §2.2).
+    if (dispatchHit([{ rect: this.skipBtnRect, sound: 'sfx.ui.back', fn: () => this.host.onSkip() }], x, y)) return true;
     if (this.phase === 'orientation') {
-      if (this.nextBtnRect && this.hit(this.nextBtnRect, x, y)) { this.advanceOrientation(); }
+      if (this.nextBtnRect) dispatchHit([{ rect: this.nextBtnRect, fn: () => this.advanceOrientation() }], x, y);
       return true; // orientation phase swallows all input (no board interaction needed)
     }
     if (this.phase === 'freeplay') {
-      if (this.actionBtnRect && this.hit(this.actionBtnRect, x, y)) { this.graduate(); return true; }
+      if (this.actionBtnRect && dispatchHit([{ rect: this.actionBtnRect, fn: () => this.graduate() }], x, y)) return true;
       return false; // free play: pass through board/hand interactions
     }
     if (this.phase === 'done') return true;
@@ -407,9 +410,6 @@ export class TutorialDirector {
     this.lastSlotIndex = state.bottomPlayer.hand.slots.findIndex((s) => s?.card.id === beat.cardId);
   }
 
-  private hit(r: Rect, x: number, y: number): boolean {
-    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-  }
 }
 
 /** Small helper to narrow to TranslationKey (tutorial keys are fully populated per §3.4; missing keys fall back to the key name at runtime). */

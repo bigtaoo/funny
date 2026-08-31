@@ -9,6 +9,7 @@ import { fromFp } from '@nw/engine/math/fixed';
 import { CARD_TEAM_MAX_SIZE } from '@nw/shared';
 import { MAX_GARRISON } from './core';
 import type { DefenseEditorSceneCore } from './core';
+import { hitAction } from '../../ui/hits';
 
 export interface InputHandlers {
   onGridTap(sx: number, sy: number): void;
@@ -96,13 +97,7 @@ export class InputPanel implements InputHandlers {
 
   handleDown(x: number, y: number): void {
     const core = this.core;
-    let hit: (() => void) | null = null;
-    for (const { rect, action } of core.hits) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-        hit = action;
-        break;
-      }
-    }
+    const hit = hitAction(core.hits, x, y);
     // The card roster (attack mode, right half) scrolls — defer its hit to pointer-up so a drag that
     // starts on a card scrolls instead of selecting it (see scroll-drag-throttle-pattern memory).
     const inRoster =

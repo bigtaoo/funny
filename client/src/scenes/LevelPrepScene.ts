@@ -11,6 +11,7 @@ import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAtlas';
 import { FS, snapFont } from '../render/fontScale';
+import { dispatchHit, type Hit } from '../ui/hits';
 
 // ── LevelPrepScene — objective / brief / stamina + Start ────────────────────
 //
@@ -41,7 +42,6 @@ export interface LevelPrepCallbacks {
   onBuyStamina(): void;
 }
 
-interface Hit { rect: Rect; fn: () => void; }
 
 export class LevelPrepScene implements Scene {
   readonly container: PIXI.Container;
@@ -90,10 +90,9 @@ export class LevelPrepScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.showingIntro) {
-      const sr = this.introSkipRect;
-      if (x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
-        this.finishIntro(); return;
-      }
+      // The Skip button is the only BUTTON on the intro overlay; the bare tap below advances the
+      // story and stays silent, same call as IntroScene/ResultScene's outro (AUDIO_DESIGN.md §2.2).
+      if (dispatchHit([{ rect: this.introSkipRect, sound: 'sfx.ui.back', fn: () => this.finishIntro() }], x, y)) return;
       const current = this.introLineTexts[this.introShownCount - 1];
       if (current && current.alpha < 1) {
         current.alpha = 1;
@@ -105,10 +104,7 @@ export class LevelPrepScene implements Scene {
       }
       return;
     }
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   private finishIntro(): void {
@@ -138,7 +134,7 @@ export class LevelPrepScene implements Scene {
     // level" concept, so a level's prep page shows the picture that already means PvE elsewhere.
     const hdr = drawSceneHeader(this.container, w, h, t('campaign.levelLabel', { n: this.cb.levelNumber }), { icon: 'pveTabIcon' });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     let y = tbH + Math.round(h * 0.02);
 

@@ -78,7 +78,7 @@ export function renderAttackToolbar(
   core.bodyLayer.addChild(arLbl);
   core.hits.push({
     rect: { x: arBox.x, y: arBox.y, w: arW, h: arH },
-    action: () => {
+    fn: () => {
       core.autoReturn = !core.autoReturn;
       core.render();
     },
@@ -108,7 +108,7 @@ export function renderAttackToolbar(
   core.bodyLayer.addChild(ldLbl);
   core.hits.push({
     rect: { x: ldBox.x, y: ldBox.y, w: ldW, h: ldH },
-    action: () => {
+    fn: () => {
       core.tool = ldActive ? { kind: 'erase' } : { kind: 'leader' };
       core.render();
     },
@@ -143,7 +143,7 @@ export function renderAttackToolbar(
   core.bodyLayer.addChild(lbl);
   core.hits.push({
     rect: { x: box.x, y: box.y, w: eraseW, h: eraseH },
-    action: () => {
+    fn: () => {
       core.tool = { kind: 'erase' };
       core.render();
     },
@@ -274,7 +274,7 @@ export function renderRosterCell(
   const rect = { x, y, w: cellW, h: cellH };
   core.hits.push({
     rect,
-    action: () => {
+    fn: () => {
       core.tool = { kind: 'card', cardInstanceId: c.card.id, unitType: c.unitType };
       core.render();
     },

@@ -39,7 +39,7 @@ export function drawFuseCandidateRow(
   S: number,
   artHooked: Set<string>,
   canAssign: boolean,
-  pushHit: (rect: Rect, action: () => void) => void,
+  pushHit: (rect: Rect, fn: () => void) => void,
   onPick: () => void,
   onArtLoaded: () => void,
 ): void {

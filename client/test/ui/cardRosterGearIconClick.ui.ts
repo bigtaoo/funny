@@ -34,7 +34,7 @@ function makeCard(id: string, defId: string, level: number): CardInstance {
 }
 
 interface Rect { x: number; y: number; w: number; h: number; }
-interface HitRect { rect: Rect; action: () => void; owner?: string; }
+interface HitRect { rect: Rect; fn: () => void; owner?: string; }
 interface SceneInternals { core: { hitRects: HitRect[] }; }
 
 /** Named nodes anywhere in the tree, in scene-graph order. */
@@ -99,7 +99,7 @@ describe('CardScene roster list — gear icons are individually clickable, strai
       const { hit } = hitRectAt(internals.core.hitRects, icon);
       expect(hit, `no hit rect covers the "${slot}" icon`).toBeDefined();
 
-      hit!.action();
+      hit!.fn();
       expect(openEquipment).toHaveBeenCalledWith('a', slot);
 
       scene.destroy();

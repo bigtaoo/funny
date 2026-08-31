@@ -217,7 +217,7 @@ export class SkinsPanel {
     if (!isEquipped) {
       core.hitRects.push({
         rect: { x, y, w, h },
-        action: () => { core.cb.equipSkin(unitType, tile.id); core.render(); },
+        fn: () => { core.cb.equipSkin(unitType, tile.id); core.render(); },
       });
     }
   }

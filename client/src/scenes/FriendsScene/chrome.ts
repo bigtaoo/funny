@@ -90,7 +90,7 @@ export function drawHeader(core: FriendsSceneCore): void {
     variant: 'paper', icon: SOCIAL_TAB_ICON[core.tab],
     ...(coins === null ? {} : { rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins) }),
   });
-  core.hits.push({ rect: hdr.backRect, fn: () => core.onBack() });
+  core.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => core.onBack() });
   if (coins !== null) {
     drawHeaderCurrency(core.container, w, hdr.headerH, coins, [], undefined, 1, hdr.titleRight);
   }

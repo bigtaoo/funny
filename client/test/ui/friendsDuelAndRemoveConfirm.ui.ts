@@ -93,9 +93,9 @@ describe('FriendsScene — remove-friend confirm dialog', () => {
     await flush();
 
     (scene as unknown as { friendsList: { confirmRemove(id: string, name: string): void } }).friendsList.confirmRemove('100000001', 'Alice');
-    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
+    const modalHits = (scene as any).core.modalHits as Array<{ fn: () => void }>;
     expect(modalHits).toHaveLength(2); // drawConfirmDialog returns [OK, Cancel]
-    modalHits[1].action(); // Cancel
+    modalHits[1].fn(); // Cancel
 
     expect((scene as any).core.modalOpen).toBe(false);
     expect(spies.removeFriend).not.toHaveBeenCalled();
@@ -108,8 +108,8 @@ describe('FriendsScene — remove-friend confirm dialog', () => {
     await flush();
 
     (scene as unknown as { friendsList: { confirmRemove(id: string, name: string): void } }).friendsList.confirmRemove('100000001', 'Alice');
-    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
-    modalHits[0].action(); // OK
+    const modalHits = (scene as any).core.modalHits as Array<{ fn: () => void }>;
+    modalHits[0].fn(); // OK
     await flush();
 
     expect(spies.removeFriend).toHaveBeenCalledWith('100000001');

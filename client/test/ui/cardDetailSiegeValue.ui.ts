@@ -26,7 +26,7 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 const LENA: CardInstance = { id: 'c1', defId: 'lena', level: 3, xp: 10, gear: {}, locked: false } as CardInstance;
 
@@ -82,7 +82,7 @@ function openLenaDetail(troops: number | undefined): CardScene {
   const hits = (scene as unknown as { core: { hitRects: Hit[] } }).core.hitRects;
   const hit = hits.find(({ rect: r }) => pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, 'no roster-grid hit under "Lena"').toBeDefined();
-  hit!.action();
+  hit!.fn();
   return scene;
 }
 

@@ -44,7 +44,7 @@ interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
   core: {
     bodyLayer: PIXI.Container;
-    hitRects: { rect: Rect; action: () => void; owner?: string }[];
+    hitRects: { rect: Rect; fn: () => void; owner?: string }[];
   };
   applyCardState(): void;
 }

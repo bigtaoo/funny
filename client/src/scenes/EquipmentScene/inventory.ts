@@ -152,7 +152,7 @@ export class InventoryPanel {
       }
       const barH = bottomNavH(h);
       const { hits } = drawBottomNavTabs(core.bodyLayer, w, h - barH, barH, peers, (i) => actions[i]?.());
-      for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+      core.hitRects.push(...hits);
       return;
     }
 
@@ -167,7 +167,7 @@ export class InventoryPanel {
       const group = drawSidebarTabs(core.bodyLayer, sidebarW, y, h, groupTabs, (i) => {
         if (i === 0) core.cb.peerTab?.onSelect();
       });
-      for (const hit of group.hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+      core.hitRects.push(...group.hits);
       y = group.bottom + Math.round(h * 0.03);
     }
 
@@ -180,7 +180,7 @@ export class InventoryPanel {
       },
       { sub: true },
     );
-    for (const hit of sub.hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+    core.hitRects.push(...sub.hits);
 
     // Peers after Equipment in the growth group ([Cards | Equipment | Skins]) render *below* the
     // Inventory/Craft sub-tabs, so the sub-tabs stay nested under Equipment and the trailing peer
@@ -190,7 +190,7 @@ export class InventoryPanel {
       const ty = sub.bottom + Math.round(h * 0.03);
       const peerTabs: HubTab[] = trailing.map((p) => ({ label: t(p.labelKey), active: false, icon: p.icon }));
       const after = drawSidebarTabs(core.bodyLayer, sidebarW, ty, h, peerTabs, (i) => trailing[i]?.onSelect());
-      for (const hit of after.hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+      core.hitRects.push(...after.hits);
     }
   }
 
@@ -343,7 +343,7 @@ export class InventoryPanel {
       core.bodyLayer.addChild(lbl);
       core.hitRects.push({
         rect: { x: fx, y, w: fw, h: FILTER_H },
-        action: () => {
+        fn: () => {
           if (core.filterSlot !== f.key) { core.filterSlot = f.key; core.scrollY = 0; core.render(); }
         },
       });
@@ -371,7 +371,7 @@ export class InventoryPanel {
     core.bodyLayer.addChild(line);
     core.hitRects.push({
       rect: { x: 0, y: cy, w, h: SECTION_H },
-      action: () => {
+      fn: () => {
         if (collapsed) core.collapsedSections.delete(key);
         else core.collapsedSections.add(key);
         core.render();

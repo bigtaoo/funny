@@ -13,6 +13,7 @@ import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
+import { tapHandler } from '../hits';
 
 export interface ReconnectPromptCallbacks {
   /** Player chose to resume — caller reconnects into the cached match. */
@@ -111,7 +112,7 @@ export class ReconnectPromptDialog implements Scene {
     resumeBtn.x = bx1; resumeBtn.y = bY;
     resumeBtn.eventMode = 'static';
     resumeBtn.cursor = 'pointer';
-    resumeBtn.on('pointertap', () => this.cb.onReconnect());
+    resumeBtn.on('pointertap', tapHandler(() => this.cb.onReconnect()));
     this.container.addChild(resumeBtn);
     const resumeLabel = txt(t('reconnect.accept'), snapFont(Math.round(bH * 0.36)), 0xffffff, true);
     resumeLabel.anchor.set(0.5, 0.5); resumeLabel.x = bx1 + bW / 2; resumeLabel.y = bY + bH / 2;
@@ -121,7 +122,7 @@ export class ReconnectPromptDialog implements Scene {
     declineBtn.x = bx2; declineBtn.y = bY;
     declineBtn.eventMode = 'static';
     declineBtn.cursor = 'pointer';
-    declineBtn.on('pointertap', () => this.cb.onDecline());
+    declineBtn.on('pointertap', tapHandler(() => this.cb.onDecline(), 'sfx.ui.back'));
     this.container.addChild(declineBtn);
     const declineLabel = txt(t('reconnect.decline'), snapFont(Math.round(bH * 0.36)), C.dark, true);
     declineLabel.anchor.set(0.5, 0.5); declineLabel.x = bx2 + bW / 2; declineLabel.y = bY + bH / 2;

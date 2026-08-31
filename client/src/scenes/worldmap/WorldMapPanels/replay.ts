@@ -120,7 +120,7 @@ export class ReplayPanel implements ReplayHandlers {
           listLayer.addChild(coordLbl);
           this.core.ctx.modalBtnRects.push({
             rect: { x: coordLbl.x, y: ry, w: coordLbl.width, h: rowH },
-            action: () => {
+            fn: () => {
               this.core.ctx.view.centerAt(tx, ty);
               this.core.ctx.view.renderMap();
               this.core.closeModal();

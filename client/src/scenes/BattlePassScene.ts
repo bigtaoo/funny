@@ -24,6 +24,7 @@ import { cellState } from './BattlePassScene/cell';
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import { RewardRowVirtualizer, type RowVizContext } from './BattlePassScene/rows';
 import { drawSidebar, contentBounds, type NavHost } from './BattlePassScene/nav';
+import { hitAction, type Hit } from '../ui/hits';
 
 // ── BattlePassScene — Battle Pass panel (SE-9) ────────────────────────────────
 //
@@ -64,7 +65,6 @@ export interface BattlePassCallbacks {
   getRechargeBadge?(): boolean;
 }
 
-interface Hit { rect: Rect; fn: () => void; }
 
 export class BattlePassScene implements Scene {
   readonly container: PIXI.Container;
@@ -107,7 +107,7 @@ export class BattlePassScene implements Scene {
    * the rail is drawn early and folds into `staticHits` as before.
    */
   private navHits: Hit[] = [];
-  private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void }> = [];
+  private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void; sound?: Hit['sound'] }> = [];
   /** Scroll viewport rect (mask bounds), cached so the drag fast-path can redraw the indicator. */
   private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private scrollbar: PIXI.Graphics | null = null;
@@ -154,12 +154,7 @@ export class BattlePassScene implements Scene {
     if (this.bt.busy) return;
     // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
     // scroll and the tap is dropped, so a drag starting on a reward cell scrolls instead of firing it.
-    let hit: (() => void) | null = null;
-    for (const h of this.hits) {
-      const r = h.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit = h.fn; break; }
-    }
-    this.gesture.down(this.scrollY, y, hit);
+    this.gesture.down(this.scrollY, y, hitAction(this.hits, x, y));
   }
 
   private handleMove(_x: number, y: number): void {
@@ -183,7 +178,7 @@ export class BattlePassScene implements Scene {
     this.hits = this.navHits.concat(
       this.staticHits,
       this.scrollCellDefs
-        .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn }))
+        .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn, sound: d.sound }))
         .filter((hit) => hit.rect.y + hit.rect.h > vTop && hit.rect.y < vBot),
     );
     if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
@@ -251,7 +246,7 @@ export class BattlePassScene implements Scene {
       rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
     });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     // Coin balance (top-right): shared header readout — identical across every scene.
     drawHeaderCurrency(this.container, w, tbH, coins, [], undefined, 1, hdr.titleRight);
@@ -425,12 +420,12 @@ export class BattlePassScene implements Scene {
 
       const freeState = cellState('free', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.free);
       if (this.cb.onClaim && freeState === 'claimable') {
-        this.scrollCellDefs.push({ x: freeX, cellY, w: halfW, h: cellH, fn: () => this.doClaim('free', lvl) });
+        this.scrollCellDefs.push({ x: freeX, cellY, w: halfW, h: cellH, sound: 'sfx.ui.reward', fn: () => this.doClaim('free', lvl) });
       }
 
       const paidState = cellState('paid', lvl, currentLevel, claimedFree, claimedPaid, hasPass, !!def.paid);
       if (this.cb.onClaim && paidState === 'claimable') {
-        this.scrollCellDefs.push({ x: paidX, cellY, w: halfW, h: cellH, fn: () => this.doClaim('paid', lvl) });
+        this.scrollCellDefs.push({ x: paidX, cellY, w: halfW, h: cellH, sound: 'sfx.ui.reward', fn: () => this.doClaim('paid', lvl) });
       }
     }
 

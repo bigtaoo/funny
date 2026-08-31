@@ -219,7 +219,7 @@ describe('WorldMapPanels.renderShopPanel — item cards', () => {
     const { ctx, panels } = buildHarness({ shopItems: makeShopItems(2) });
     panels.renderShopPanel();
     const closeBtn = ctx.modalBtnRects[ctx.modalBtnRects.length - 1]!;
-    closeBtn.action();
+    closeBtn.fn();
     expect(ctx.modalDimRect).toBeNull();
     expect(ctx.shopPanelOpen).toBe(false);
   });

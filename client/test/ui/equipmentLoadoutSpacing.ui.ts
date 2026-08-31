@@ -37,7 +37,7 @@ interface SceneInternals {
   core: {
     headerH: number;
     w: number;
-    hitRects: { rect: Rect; action: () => void }[];
+    hitRects: { rect: Rect; fn: () => void }[];
   };
 }
 

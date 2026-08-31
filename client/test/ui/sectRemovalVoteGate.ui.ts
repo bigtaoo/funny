@@ -113,7 +113,7 @@ describe('SectScene — removal-vote button gating', () => {
     // Rows render in memberFamilies order (fam:LEAD skipped, fam:OTHER, then fam:THIRD) — hits are
     // pushed in that same order, so the second surviving hit is fam:THIRD's.
     const hits = voteHits(scene);
-    hits[1]!.action();
+    hits[1]!.fn();
 
     expect(confirmVoteSpy).toHaveBeenCalledWith('fam:THIRD', '[G2] Guild Two');
   });

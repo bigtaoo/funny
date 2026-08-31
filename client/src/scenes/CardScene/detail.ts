@@ -211,7 +211,7 @@ export class DetailPanel {
     if (!core.skinPickerOpen) {
       core.modalHits.push({
         rect: core.toModalScreen({ x: portraitX, y: portraitY, w: portraitBox, h: portraitBox }),
-        action: () => flipDetailPortrait(core, faceLayer, portraitBox, artUrl, loreText),
+        fn: () => flipDetailPortrait(core, faceLayer, portraitBox, artUrl, loreText),
       });
     }
 
@@ -230,7 +230,7 @@ export class DetailPanel {
       panelRoot.addChild(ic);
       core.modalHits.push({
         rect: core.toModalScreen({ x: badgeX, y: badgeY, w: badgeSize, h: badgeSize }),
-        action: () => { core.skinPickerOpen = !core.skinPickerOpen; core.render(); },
+        fn: () => { core.skinPickerOpen = !core.skinPickerOpen; core.render(); },
       });
     }
 
@@ -322,7 +322,7 @@ export class DetailPanel {
         panelRoot.addChild(recLbl);
         core.modalHits.push({
           rect: core.toModalScreen({ x: recBtn.x, y: recBtn.y, w: recBtnW, h: 22 }),
-          action: () => void this.actions.doRecover(card.id),
+          fn: () => void this.actions.doRecover(card.id),
         });
       }
       cy += 22;
@@ -392,7 +392,7 @@ export class DetailPanel {
       const lbl = core.stxt(b.label, FS.micro, b.on ? (b.fill === 0xeeeedd || b.fill === 0xf5f0e8 ? C.dark : C.light) : C.mid);
       lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = btnY + btnH / 2;
       panelRoot.addChild(lbl);
-      if (b.on) core.modalHits.push({ rect: core.toModalScreen({ x, y: btnY, w: bw, h: btnH }), action: b.fn });
+      if (b.on) core.modalHits.push({ rect: core.toModalScreen({ x, y: btnY, w: bw, h: btnH }), fn: b.fn });
     });
 
     // Skin picker popover (change-skin badge tapped) — floats over the rest of the modal; a tap
@@ -425,15 +425,15 @@ export class DetailPanel {
         if (!isEq) {
           core.modalHits.push({
             rect: core.toModalScreen({ x: pX + 4, y: ry, w: pW - 8, h: rowH }),
-            action: () => { core.cb.equipSkin(unitType, opt.id); core.skinPickerOpen = false; core.render(); },
+            fn: () => { core.cb.equipSkin(unitType, opt.id); core.skinPickerOpen = false; core.render(); },
           });
         }
       });
-      core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { core.skinPickerOpen = false; core.render(); } });
+      core.modalHits.push({ rect: { x: 0, y: 0, w, h }, fn: () => { core.skinPickerOpen = false; core.render(); } });
     }
 
     // Tap outside to close
-    core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
-    core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => core.closeDetail() });
+    core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), fn: () => {} });
+    core.modalHits.push({ rect: { x: 0, y: 0, w, h }, fn: () => core.closeDetail() });
   }
 }

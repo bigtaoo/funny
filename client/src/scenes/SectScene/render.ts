@@ -140,7 +140,7 @@ export class RenderPanel {
     });
     nl.anchor.set(0, 0.5); nl.x = inX + 12 * S; nl.y = y + fieldH / 2;
     core.bodyLayer.addChild(nl);
-    core.hitRects.push({ rect: { x: inX, y, w: inW, h: fieldH }, action: () => this.input.openInputFor('name') });
+    core.hitRects.push({ rect: { x: inX, y, w: inW, h: fieldH }, fn: () => this.input.openInputFor('name') });
     y += fieldH + gapAfterName;
 
     // ── Tag (short label + hint line underneath) ──
@@ -162,7 +162,7 @@ export class RenderPanel {
     });
     tl.anchor.set(0, 0.5); tl.x = inX + 12 * S; tl.y = y + fieldH / 2;
     core.bodyLayer.addChild(tl);
-    core.hitRects.push({ rect: { x: inX, y, w: tagFieldW, h: fieldH }, action: () => this.input.openInputFor('tag') });
+    core.hitRects.push({ rect: { x: inX, y, w: tagFieldW, h: fieldH }, fn: () => this.input.openInputFor('tag') });
     y += fieldH + gapAfterTag;
 
     // ── Buttons (create + cancel, side by side, centered under the fields) ──
@@ -179,7 +179,7 @@ export class RenderPanel {
     const ok = txt(t('sect.create'), FS.body * S, createBusy ? C.mid : C.light);
     ok.anchor.set(0.5, 0.5); ok.x = okX + btnW / 2; ok.y = y + btnH / 2;
     core.bodyLayer.addChild(ok);
-    if (!createBusy) core.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, action: () => void this.actions.doCreate() });
+    if (!createBusy) core.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, fn: () => void this.actions.doCreate() });
 
     const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 1, btnW) });
     cancelBtn.x = cancelX; cancelBtn.y = y;
@@ -187,7 +187,7 @@ export class RenderPanel {
     const ca = txt(t('social.sect.cancel'), FS.body * S, C.dark);
     ca.anchor.set(0.5, 0.5); ca.x = cancelX + btnW / 2; ca.y = y + btnH / 2;
     core.bodyLayer.addChild(ca);
-    core.hitRects.push({ rect: { x: cancelX, y, w: btnW, h: btnH }, action: () => { core.mode = 'noSect'; core.render(); } });
+    core.hitRects.push({ rect: { x: cancelX, y, w: btnW, h: btnH }, fn: () => { core.mode = 'noSect'; core.render(); } });
   }
 
   renderMySect(): void {
@@ -232,7 +232,7 @@ export class RenderPanel {
       core.bodyLayer.addChild(icon);
       tl.anchor.set(0, 0.5); tl.x = groupX + iconSize + gapIL; tl.y = core.headerH + tabH / 2;
       core.bodyLayer.addChild(tl);
-      core.hitRects.push({ rect: { x: tx, y: core.headerH, w: tabW, h: tabH }, action: () => { core.activeTab = tab; core.scrollY = 0; core.channelStick = true; core.render(); } });
+      core.hitRects.push({ rect: { x: tx, y: core.headerH, w: tabW, h: tabH }, fn: () => { core.activeTab = tab; core.scrollY = 0; core.channelStick = true; core.render(); } });
     }
 
     const contentY = core.headerH + 48;
@@ -348,7 +348,7 @@ export class RenderPanel {
       badge.x = summaryX; badge.y = y0 + (summaryH - emblemSize) / 2;
       core.bodyLayer.addChild(badge);
       if (core.isSectLeader) {
-        core.hitRects.push({ rect: { x: badge.x, y: badge.y, w: emblemSize, h: emblemSize }, action: () => core.emblemHooks.openEmblemPicker() });
+        core.hitRects.push({ rect: { x: badge.x, y: badge.y, w: emblemSize, h: emblemSize }, fn: () => core.emblemHooks.openEmblemPicker() });
       }
       summaryX += emblemSize + 8;
     }
@@ -434,7 +434,7 @@ export class RenderPanel {
       core.bodyLayer.addChild(btn);
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
       core.bodyLayer.addChild(lbl);
-      if (!busy) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, action });
+      if (!busy) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: action });
       x = bx - 8;
     };
 
@@ -473,7 +473,7 @@ export class RenderPanel {
     const lbl = txt(label, FS.heading, enabled ? C.light : C.mid);
     lbl.anchor.set(0.5, 0.5); lbl.x = x + 120; lbl.y = y + 36;
     core.bodyLayer.addChild(lbl);
-    if (enabled) core.hitRects.push({ rect: { x, y, w: 240, h: 72 }, action });
+    if (enabled) core.hitRects.push({ rect: { x, y, w: 240, h: 72 }, fn: action });
   }
 
   addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number, enabled = true): void {
@@ -486,6 +486,6 @@ export class RenderPanel {
     const lbl = txt(label, FS.body, c);
     lbl.anchor.set(0.5, 0.5); lbl.x = x + bw / 2; lbl.y = y + bh / 2;
     core.bodyLayer.addChild(lbl);
-    if (enabled) core.hitRects.push({ rect: { x, y, w: bw, h: bh }, action });
+    if (enabled) core.hitRects.push({ rect: { x, y, w: bw, h: bh }, fn: action });
   }
 }

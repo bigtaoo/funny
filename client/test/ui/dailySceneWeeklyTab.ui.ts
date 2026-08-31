@@ -63,7 +63,7 @@ function retentionWithTiers(): RetentionView {
 type Internals = {
   activeTab: string;
   render(): void;
-  hits: Array<{ x: number; y: number; w: number; h: number; fn: () => void }>;
+  hits: Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
   bt: { busy: boolean };
   update(dt: number): void;
 };
@@ -318,7 +318,7 @@ describe('DailyScene — weekly tab progress label leaves room for the Claim but
     await flush();
     const label = labelFor(scene, 9, 9);
     const s = scene as unknown as Internals;
-    const btnX = s.hits[s.hits.length - 1]!.x;
+    const btnX = s.hits[s.hits.length - 1]!.rect.x;
 
     expect(label.style.wordWrap).toBe(true);
     expect(typeof label.style.wordWrapWidth).toBe('number');
@@ -336,7 +336,7 @@ describe('DailyScene — weekly tab progress label leaves room for the Claim but
     await flush();
     const label = labelFor(scene, 9, 9);
     const s = scene as unknown as Internals;
-    const btnX = s.hits[s.hits.length - 1]!.x;
+    const btnX = s.hits[s.hits.length - 1]!.rect.x;
 
     expect(label.style.wordWrap).toBe(true);
     expect(label.x + (label.style.wordWrapWidth as number)).toBeLessThan(btnX);
@@ -358,7 +358,7 @@ describe('DailyScene — weekly tab progress label leaves room for the Claim but
     thresholds.forEach((threshold, i) => {
       const label = findText(scene.container, (txt) => txt === t('daily.weekly.pointsProgress', { n: threshold, threshold }));
       expect(label).not.toBeNull();
-      const btnX = s.hits[3 + i]!.x;
+      const btnX = s.hits[3 + i]!.rect.x;
       expect(label!.style.wordWrap).toBe(true);
       expect(label!.x + (label!.style.wordWrapWidth as number)).toBeLessThan(btnX);
     });

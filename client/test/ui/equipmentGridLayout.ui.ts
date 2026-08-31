@@ -34,7 +34,7 @@ const PORTRAIT: [number, number] = [375, 812];
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
   core: {
-    hitRects: { rect: Rect; action: () => void }[];
+    hitRects: { rect: Rect; fn: () => void }[];
     headerH: number;
     scrollY: number;
     activeTab: 'inv' | 'craft';

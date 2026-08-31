@@ -26,7 +26,8 @@ import { FS } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { GuideOverlay } from '../render/GuideOverlay';
 import { CitySceneCore } from './CityScene/core';
-import type { CitySceneCallbacks, Hit } from './CityScene/core';
+import type { CitySceneCallbacks } from './CityScene/core';
+import type { Hit } from '../ui/hits';
 import { RenderPanel } from './CityScene/render';
 import { ModalsPanel } from './CityScene/modals';
 
@@ -92,10 +93,8 @@ export class CityScene implements Scene {
       icon: 'cityTabIcon',
     });
     const backHit: Hit = {
-      x: hdr.backRect.x,
-      y: hdr.backRect.y,
-      w: hdr.backRect.w,
-      h: hdr.backRect.h,
+      rect: hdr.backRect,
+      sound: 'sfx.ui.back',
       fn: () => {
         core.cb.setFlag?.('guide.world.step3', true);
         core.cb.onBack();
@@ -174,6 +173,6 @@ export class CityScene implements Scene {
     // another hit — appending preserves the long-standing `hits[0] === backHit` assumption several
     // existing tests rely on (see cityScene.ui.ts's modal-hit-gating describe block).
     const guideHit = core.guide.currentAction();
-    if (guideHit) core.hits.push({ ...guideHit.rect, fn: guideHit.fn });
+    if (guideHit) core.hits.push(guideHit);
   }
 }

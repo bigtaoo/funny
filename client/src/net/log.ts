@@ -6,6 +6,7 @@
 // Enabled by default; to silence it, call localStorage.setItem('nw_net_log', 'off').
 
 import { uncaughtErrorMessage } from './apiErrorMessage';
+import { playSfx } from '../audio/audioBus';
 
 export interface NetLogger {
   debug(msg: string, data?: unknown): void;
@@ -119,6 +120,17 @@ export function setToastSink(fn: (text: string, kind: ToastKind) => void): void 
 /** Show a localized player toast (used as a targeted fallback for events such as SaveManager cloud sync failure). Silently no-ops if no sink is registered. */
 export function showToastMessage(text: string, kind: ToastKind = 'error'): void {
   if (!toastSink) return;
+  // `sfx.ui.error` (AUDIO_DESIGN.md §2.2) is raised HERE rather than at a hit, and it is the one
+  // UI cue that does not come out of ui/hits.ts's dispatcher. The reason is that a failure is not
+  // a tap: "not enough coins" / "network timeout" / "already claimed" all arrive from an async
+  // result, often seconds after the button that started it. This function is the single choke
+  // point every one of them already passes through — a cue per call site would be a few dozen
+  // duplicated lines that still miss whichever path is added next.
+  //
+  // Only the error kind sounds. A success toast is far more common (and often incidental, e.g.
+  // "settings saved"), and `sfx.ui.reward` is deliberately spent on the claim buttons instead,
+  // where it means "you got something".
+  if (kind === 'error') playSfx('sfx.ui.error');
   // The sink must not throw — otherwise it could trigger another unhandledrejection and form a cycle.
   try { toastSink(text, kind); } catch { /* swallow */ }
 }

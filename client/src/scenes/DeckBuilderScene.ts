@@ -7,7 +7,7 @@
 
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
-import { ILayout, Rect } from '../layout/ILayout';
+import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import {
@@ -22,6 +22,7 @@ import { FS } from '../render/fontScale';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { CARD_DEFINITIONS } from '@nw/engine/config';
+import { hitAction, type Hit } from '../ui/hits';
 import {
   PVP_DECK_SIZE,
   PVP_BASE_CARDS,
@@ -40,7 +41,6 @@ export interface DeckBuilderCallbacks {
   getCurrentElo(): number;
 }
 
-interface Hit { rect: Rect; fn: () => void; }
 
 // All displayable card ids in tier order (base first, then unlock tiers).
 const ALL_PVP_CARDS: string[] = [
@@ -116,12 +116,7 @@ export class DeckBuilderScene implements Scene {
     // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
     // scroll and the tap is dropped, so a drag starting on a card cell scrolls the grid instead of
     // toggling that card (and a genuine tap still toggles it, unlike the old list-area early-return).
-    let hit: (() => void) | null = null;
-    for (const h of this.hits) {
-      const r = h.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit = h.fn; break; }
-    }
-    this.gesture.down(this.scrollY, y, hit);
+    this.gesture.down(this.scrollY, y, hitAction(this.hits, x, y));
   }
 
   private handleMove(_x: number, y: number): void {
@@ -179,7 +174,7 @@ export class DeckBuilderScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     const hdr = drawSceneHeader(this.container, w, h, t('pvp.deckBuilder' as TranslationKey), { icon: 'deckTabIcon' });
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
     const tbH = hdr.headerH;
 
     const elo = this.cb.getCurrentElo();

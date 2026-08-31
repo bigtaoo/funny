@@ -16,6 +16,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { caretDisplay } from '../inputDisplay';
+import { tapHandler } from '../hits';
 
 // Mirrors server/shared/src/social.ts FEEDBACK_TEXT_MAX (1000) — not imported: '@nw/shared' resolves to a
 // curated browser-safe subset (see client/webpack.config.js), same reason AppealDialog hardcodes its own max.
@@ -199,7 +200,7 @@ export class FeedbackDialog implements Scene {
     inputBox.x = inputX; inputBox.y = inputY;
     inputBox.eventMode = 'static';
     inputBox.cursor = 'text';
-    inputBox.on('pointertap', () => this.openInput());
+    inputBox.on('pointertap', tapHandler(() => this.openInput()));
     this.container.addChild(inputBox);
 
     // Top-anchored (not vertically centered) so a growing multi-line note fills the box downward,
@@ -230,7 +231,7 @@ export class FeedbackDialog implements Scene {
     this.submitBtn.x = bx1; this.submitBtn.y = bY;
     this.submitBtn.eventMode = 'static';
     this.submitBtn.cursor = 'pointer';
-    this.submitBtn.on('pointertap', () => void this.submit());
+    this.submitBtn.on('pointertap', tapHandler(() => void this.submit()));
     this.container.addChild(this.submitBtn);
     const submitLabel = txt(t('feedback.submit'), snapFont(Math.round(bH * 0.36)), 0xffffff, true);
     submitLabel.anchor.set(0.5, 0.5); submitLabel.x = bx1 + bW / 2; submitLabel.y = bY + bH / 2;
@@ -240,7 +241,7 @@ export class FeedbackDialog implements Scene {
     closeBtn.x = bx2; closeBtn.y = bY;
     closeBtn.eventMode = 'static';
     closeBtn.cursor = 'pointer';
-    closeBtn.on('pointertap', () => { this.removeHiddenInput(); this.cb.onClose(); });
+    closeBtn.on('pointertap', tapHandler(() => { this.removeHiddenInput(); this.cb.onClose(); }, 'sfx.ui.back'));
     this.container.addChild(closeBtn);
     const closeLabel = txt(t('feedback.close'), snapFont(Math.round(bH * 0.36)), C.dark, true);
     closeLabel.anchor.set(0.5, 0.5); closeLabel.x = bx2 + bW / 2; closeLabel.y = bY + bH / 2;

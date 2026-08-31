@@ -122,6 +122,11 @@ export default defineConfig({
         'src/render/vfx/parseEffectDef.ts',
         'src/render/vfx/registry.ts',
         'src/render/vfx/sampleParam.ts',
+        // ui: the PIXI-free half. `ui/hits.ts` (2026-08-31, AUDIO_DESIGN.md §7 step 4) is the
+        // client's single hit table + dispatcher — pure geometry plus the one place a UI cue is
+        // emitted, no PIXI import, and what 40 scenes' tap handling now runs through, so a
+        // regression here is a regression everywhere at once. Gated from the day it landed.
+        'src/ui/hits.ts',
         // scenes: the already-extracted pure modules — exactly the shape ADR-070's client half will
         // produce more of, one scene at a time (4b)
         'src/scenes/EquipmentScene/helpers.ts',

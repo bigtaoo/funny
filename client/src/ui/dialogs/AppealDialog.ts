@@ -14,6 +14,7 @@ import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
+import { tapHandler } from '../hits';
 
 // Mirrors server/shared/src/social.ts APPEAL_REASON_MAX (500) — not imported: '@nw/shared' resolves to a
 // curated browser-safe subset (see client/webpack.config.js) that does not re-export server/shared/src/social.ts,
@@ -166,7 +167,7 @@ export class AppealDialog implements Scene {
     inputBox.x = inputX; inputBox.y = inputY;
     inputBox.eventMode = 'static';
     inputBox.cursor = 'text';
-    inputBox.on('pointertap', () => this.openInput());
+    inputBox.on('pointertap', tapHandler(() => this.openInput()));
     this.container.addChild(inputBox);
 
     this.reasonLabel = txt(t('appeal.placeholder'), snapFont(Math.round(unit * 0.038)), C.mid);
@@ -193,7 +194,7 @@ export class AppealDialog implements Scene {
     this.submitBtn.x = bx1; this.submitBtn.y = bY;
     this.submitBtn.eventMode = 'static';
     this.submitBtn.cursor = 'pointer';
-    this.submitBtn.on('pointertap', () => void this.submit());
+    this.submitBtn.on('pointertap', tapHandler(() => void this.submit()));
     this.container.addChild(this.submitBtn);
     const submitLabel = txt(t('appeal.submit'), snapFont(Math.round(bH * 0.36)), 0xffffff, true);
     submitLabel.anchor.set(0.5, 0.5); submitLabel.x = bx1 + bW / 2; submitLabel.y = bY + bH / 2;
@@ -203,7 +204,7 @@ export class AppealDialog implements Scene {
     cancelBtn.x = bx2; cancelBtn.y = bY;
     cancelBtn.eventMode = 'static';
     cancelBtn.cursor = 'pointer';
-    cancelBtn.on('pointertap', () => { this.removeHiddenInput(); this.cb.onClose(); });
+    cancelBtn.on('pointertap', tapHandler(() => { this.removeHiddenInput(); this.cb.onClose(); }, 'sfx.ui.back'));
     this.container.addChild(cancelBtn);
     const cancelLabel = txt(t('appeal.cancel'), snapFont(Math.round(bH * 0.36)), C.dark, true);
     cancelLabel.anchor.set(0.5, 0.5); cancelLabel.x = bx2 + bW / 2; cancelLabel.y = bY + bH / 2;

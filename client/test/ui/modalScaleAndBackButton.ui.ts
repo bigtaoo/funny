@@ -44,7 +44,7 @@ const LANDSCAPE: [number, number] = [1920, 1080];
 const PORTRAIT: [number, number] = [1080, 1920];
 
 type Rect = { x: number; y: number; w: number; h: number };
-type Hit = { rect: Rect; action: () => void };
+type Hit = { rect: Rect; fn: () => void };
 
 type SceneInternals = {
   w: number; h: number; landscape: boolean;

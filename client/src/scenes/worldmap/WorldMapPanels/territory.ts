@@ -167,7 +167,7 @@ export class TerritoryPanel implements TerritoryHandlers {
       { x: px, pad: PANEL_PAD, gap: MARGIN }
     );
     for (const hit of tabHits)
-      this.core.ctx.modalBtnRects.push({ rect: hit.rect, action: hit.fn });
+      this.core.ctx.modalBtnRects.push(hit);
 
     let ly = tabY + PANEL_TAB_H + PANEL_PAD;
     const bodyBottom = py + ph - PANEL_FOOTER_H;

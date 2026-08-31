@@ -8,7 +8,8 @@ import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
 import { FS, snapFont } from '../../render/fontScale';
-import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type Field, type View, type Hit } from './types';
+import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type Field, type View } from './types';
+import type { Hit } from '../../ui/hits';
 
 /** Quick tap-grow-then-fire press animation, shared by every button this scene draws.
  *  PRESS_DUR is also read by LoginScene.update() to know when to fire the deferred action. */

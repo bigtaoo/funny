@@ -18,8 +18,7 @@ import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { addBtn, type ArtHost } from '../../src/scenes/CityScene/helpers';
 import { ui as C } from '../../src/render/sketchUi';
-
-type Hit = { x: number; y: number; w: number; h: number; fn: () => void };
+import type { Hit } from '../../src/ui/hits';
 
 function host(): ArtHost & { hits: Hit[] } {
   return {
@@ -109,6 +108,6 @@ describe('CityScene addBtn centres its label', () => {
     const h = host();
     const fn = (): void => {};
     addBtn(h, 12, 34, 210, 48, 'Tap', C.dark, C.paper, fn);
-    expect(h.hits).toEqual([{ x: 12, y: 34, w: 210, h: 48, fn }]);
+    expect(h.hits).toEqual([{ rect: { x: 12, y: 34, w: 210, h: 48 }, fn }]);
   });
 });

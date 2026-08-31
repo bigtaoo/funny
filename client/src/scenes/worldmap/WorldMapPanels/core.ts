@@ -119,7 +119,7 @@ export class WorldMapPanelsCore {
       bl.x = bx + btnW / 2;
       bl.y = by + btnH / 2;
       ml.addChild(bl);
-      this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, action: btn.action });
+      this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, fn: btn.action });
     }
 
     // Close on dim
@@ -233,7 +233,7 @@ export class WorldMapPanelsCore {
     bl.x = x + bw / 2;
     bl.y = y + bh / 2;
     ml.addChild(bl);
-    this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, action });
+    this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, fn: action });
   }
 
   /**
@@ -309,7 +309,7 @@ export class WorldMapPanelsCore {
     bl.x = x + bw / 2;
     bl.y = y + bh / 2;
     layer.addChild(bl);
-    this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, action });
+    this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, fn: action });
   }
 
   /** Compact "how long ago" label from a millisecond delta (m/h/d), for battle-report rows. */

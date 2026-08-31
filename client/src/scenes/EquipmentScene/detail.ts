@@ -194,7 +194,7 @@ export class DetailPanel {
       if (canToggle && !core.bt.busy) {
         core.modalHits.push({
           rect: core.toModalScreen({ x: mx + 10, y: cy - 2, w: mw - 20, h: 18 }),
-          action: () => { core.useProtectEnhance = !core.useProtectEnhance; core.render(); },
+          fn: () => { core.useProtectEnhance = !core.useProtectEnhance; core.render(); },
         });
       }
       cy += 22;
@@ -215,7 +215,7 @@ export class DetailPanel {
       if (enabled) {
         core.modalHits.push({
           rect: core.toModalScreen({ x: mx + 12, y: cy, w: mw - 24, h: btnH }),
-          action: () => void this.doEnhance(inst.id),
+          fn: () => void this.doEnhance(inst.id),
         });
       }
       cy += btnH;
@@ -224,8 +224,8 @@ export class DetailPanel {
     // Hit priority is first-match: the confirm button / protect toggle (above) win, then the
     // panel area is inert, then a tap anywhere outside the panel closes the detail (added last =
     // lowest). The remaining actions (equip / reforge / salvage) still live on the grid cell.
-    core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
-    core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => this.closeDetail() });
+    core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), fn: () => {} });
+    core.modalHits.push({ rect: { x: 0, y: 0, w, h }, fn: () => this.closeDetail() });
   }
 
   /**

@@ -40,6 +40,7 @@ import type { SaveData, CardInstance } from '../../game/meta/SaveData';
 import { CARD_DEFS, troopCap, cardPower } from '../../game/meta/cardDefs';
 import { teamTroopCap, teamLeaderCard } from '../../game/meta/teamTroops';
 import type { TranslationKey } from '../../i18n';
+import type { Hit } from '../../ui/hits';
 
 /** Max defender base upgrade level the engine schema accepts (0..BASE_UPGRADE_COSTS.length). */
 export const MAX_BASE_LEVEL = BASE_UPGRADE_COSTS.length;
@@ -197,7 +198,7 @@ export class DefenseEditorSceneCore {
   bodyLayer!: PIXI.Container;
 
   // Hit rects (rebuilt each render)
-  hits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  hits: Hit[] = [];
 
   // Grid geometry (computed in render)
   gridX = 0;

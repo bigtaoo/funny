@@ -35,7 +35,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const PORTRAIT: [number, number] = [800, 1280];
 
 type Rect = { x: number; y: number; w: number; h: number };
-type Hit = Rect & { fn: () => void };
+type Hit = { rect: Rect; fn: () => void };
 type CitySceneInternals = {
   w: number; h: number;
   hits: Hit[];
@@ -59,7 +59,7 @@ function tap(inner: CitySceneInternals, x: number, y: number): void {
 }
 
 function contentHits(inner: CitySceneInternals): Hit[] {
-  return inner.hits.slice(1).filter((h) => h.x >= inner.contentX);
+  return inner.hits.slice(1).filter((h) => h.rect.x >= inner.contentX);
 }
 
 /** While the train modal is open, render() replaces `this.hits` with just [backHit, ...modal hits]
@@ -140,7 +140,7 @@ async function openTrainModal(fx: TrainFixture): Promise<{ scene: CityScene; inn
   await new Promise((r) => setTimeout(r, 0));
   const inner = internals(scene);
   const trainCard = contentHits(inner)[9]!;
-  tap(inner, trainCard.x + trainCard.w / 2, trainCard.y + trainCard.h / 2);
+  tap(inner, trainCard.rect.x + trainCard.rect.w / 2, trainCard.rect.y + trainCard.rect.h / 2);
   expect(inner.selectedTrain).toBe(true);
   return { scene, inner, me, trainTroops, speedupTraining };
 }
@@ -151,7 +151,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     // [+100, +500, Max, close-catch-all] — no Upgrade button; see trainModalHits() doc comment.
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
-    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).toHaveBeenCalledWith('world:1:0', 100);
     scene.destroy();
@@ -164,7 +164,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, resources: { ink: 200 } });
     const modalHits = trainModalHits(inner);
     const presetMax = modalHits[2]!;
-    tap(inner, presetMax.x + presetMax.w / 2, presetMax.y + presetMax.h / 2);
+    tap(inner, presetMax.rect.x + presetMax.rect.w / 2, presetMax.rect.y + presetMax.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).toHaveBeenCalledWith('world:1:0', 20);
     scene.destroy();
@@ -175,7 +175,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, resources: { paper: 30 } });
     const modalHits = trainModalHits(inner);
     const presetMax = modalHits[2]!;
-    tap(inner, presetMax.x + presetMax.w / 2, presetMax.y + presetMax.h / 2);
+    tap(inner, presetMax.rect.x + presetMax.rect.w / 2, presetMax.rect.y + presetMax.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).toHaveBeenCalledWith('world:1:0', 6);
     scene.destroy();
@@ -187,7 +187,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, troopCap: 2000, resources: { paper: 10 } });
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
-    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).not.toHaveBeenCalled();
     expect(spy).toHaveBeenCalledWith(t('city.err.noResources'), 'error');
@@ -205,7 +205,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     });
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
-    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).not.toHaveBeenCalled();
     expect(spy).toHaveBeenCalledWith(t('city.err.trainQueueFull'), 'error');
@@ -242,7 +242,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     const { scene, inner, trainTroops } = await openTrainModal({ troops: TROOP_CAP_BASE, resources: { ink: 100000 } });
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
-    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).not.toHaveBeenCalled();
     expect(spy).toHaveBeenCalledWith(t('city.err.troopCap'), 'error');
@@ -256,7 +256,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     const { scene, inner, trainTroops } = await openTrainModal({ troops: 0, troopCap: 2000, resources: { ink: 5 } });
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
-    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).not.toHaveBeenCalled();
     expect(spy).toHaveBeenCalledWith(t('city.err.noResources'), 'error');
@@ -287,8 +287,8 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     });
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
-    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
-    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
+    tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(trainTroops).toHaveBeenCalledTimes(1);
     resolveFirst({ joined: true, resources: {}, buildings: {}, buildQueue: [], trainingQueue: [], troops: 10, troopCap: 2000 } as unknown as PlayerWorldView);
@@ -305,7 +305,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     });
     const modalHits = trainModalHits(inner);
     const preset100 = modalHits[0]!;
-    tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+    tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(spy).toHaveBeenCalledWith(t('city.err.noResources'), 'error');
     scene.destroy();
@@ -322,7 +322,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     // pushed after the drillYard block finishes (see trainModalHits() doc comment).
     const modalHits = trainModalHits(inner);
     const speedupHit = modalHits[modalHits.length - 2]!;
-    tap(inner, speedupHit.x + speedupHit.w / 2, speedupHit.y + speedupHit.h / 2);
+    tap(inner, speedupHit.rect.x + speedupHit.rect.w / 2, speedupHit.rect.y + speedupHit.rect.h / 2);
     await new Promise((r) => setTimeout(r, 0));
     expect(speedupTraining).toHaveBeenCalledTimes(1);
     expect(speedupTraining.mock.calls[0]![0]).toBe('world:1:0');
@@ -375,7 +375,7 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
       // have inserted itself into `hits` and shifted these indices.
       const modalHits = trainModalHits(inner);
       const preset100 = modalHits[0]!;
-      tap(inner, preset100.x + preset100.w / 2, preset100.y + preset100.h / 2);
+      tap(inner, preset100.rect.x + preset100.rect.w / 2, preset100.rect.y + preset100.rect.h / 2);
       await new Promise((r) => setTimeout(r, 0));
       expect(trainTroops).toHaveBeenCalledWith('world:1:0', 100);
     });

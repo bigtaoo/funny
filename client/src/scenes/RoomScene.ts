@@ -10,7 +10,8 @@ import { buildPaperBackground, tearDownChildren } from '../render/sketchUi';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
-import { CODE_LEN, type RoomSceneCallbacks, type View, type Hit } from './RoomScene/types';
+import { CODE_LEN, type RoomSceneCallbacks, type View } from './RoomScene/types';
+import { dispatchHit, type Hit } from '../ui/hits';
 import { drawIdle, drawSearching, drawConnecting, drawCodeEntry, drawInRoom, type RoomViewHost } from './RoomScene/views';
 
 export { CODE_ALPHABET } from './RoomScene/types';
@@ -149,13 +150,7 @@ export class RoomScene implements Scene {
     // Profile overlay open → its own dim backdrop (PIXI interactive) handles the
     // close tap; ignore the scene hit-list so nothing behind it fires.
     if (this.popup.isOpen) return;
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-        hit.fn();
-        return;
-      }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   // ── Actions ──────────────────────────────────────────────────────────────────
@@ -305,7 +300,7 @@ export class RoomScene implements Scene {
     // rather than borrowing a picture that means something else.
     const ranked = this.view === 'searching';
     const hdr = drawSceneHeader(this.container, w, h, t(ranked ? 'room.rankedTitle' : 'room.title'), { icon: ranked ? 'pvpTabIcon' : 'roomTabIcon' });
-    this.hits.push({ rect: hdr.backRect, fn: () => this.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.onBack() });
   }
 }
 

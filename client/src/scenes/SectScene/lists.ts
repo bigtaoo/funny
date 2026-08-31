@@ -103,7 +103,7 @@ export function renderFamiliesList(
         list.addChild(vl);
         const nomId = fam.familyId;
         const nomLabel = `[${fam.tag}] ${fam.name}`;
-        if (!busy) core.hitRects.push({ rect: { x: voteBtnX, y: cy + (ROW_H - 34) / 2, w: voteW, h: 34 }, action: () => actions.confirmVote(nomId, nomLabel), scroll: 'families' });
+        if (!busy) core.hitRects.push({ rect: { x: voteBtnX, y: cy + (ROW_H - 34) / 2, w: voteW, h: 34 }, fn: () => actions.confirmVote(nomId, nomLabel), scroll: 'families' });
       }
     }
     cy += ROW_H;
@@ -196,7 +196,7 @@ export function renderChannel(
   });
   fl.anchor.set(0, 0.5); fl.x = x0 + 12; fl.y = inputY + inputH / 2;
   core.bodyLayer.addChild(fl);
-  core.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => input.openSendInput() });
+  core.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, fn: () => input.openSendInput() });
 
   const sendLabel = core.channelSending ? t('sect.sending') : t('sect.send');
   const sendBtn = sketchButton(sendW, inputH, seedFor(1, 0, sendW));
@@ -207,6 +207,6 @@ export function renderChannel(
   core.bodyLayer.addChild(sl);
   core.hitRects.push({
     rect: { x: right - sendW, y: inputY, w: sendW, h: inputH },
-    action: () => { if (!core.channelSending) void actions.doSendChannelMessage(); },
+    fn: () => { if (!core.channelSending) void actions.doSendChannelMessage(); },
   });
 }
