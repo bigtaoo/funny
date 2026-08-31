@@ -1,5 +1,11 @@
 import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
+import { setAudioBus } from '../audio/audioBus';
+import { WebAudioBus } from '../platform/web/WebAudioBus';
+
+// Audio device (AUDIO_DESIGN.md §3). Installed the same way as setAssetIO in entries/wechat.ts:
+// a module-level seam rather than an IPlatform member — see audio/audioBus.ts for why.
+setAudioBus(new WebAudioBus());
 
 // Version check: when the player returns to the foreground, compare against /version.json and
 // reload immediately if a newer version is detected.
