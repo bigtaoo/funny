@@ -10,6 +10,7 @@
 // the back half of this file) also moved out, to ./tokens.ts — see that file's header for why.
 import { ISO_RATIO, tileToScreen, diamondPath, visibleTileBounds, clipConvexToRect } from '../../../render/isoGrid';
 import { occupyFrontierCells } from '../logic/occupyFrontier';
+import { selectedPlot } from '../logic/selectionFootprint';
 import { HUD_H } from '../logic/constants';
 import { ENEMY_BASE_TINT, MINE_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTileColor } from '../logic/tileStyle';
 import { baseFootprintCells } from '@nw/shared';
@@ -264,16 +265,24 @@ export class WorldMapRendererFog implements FogHandlers {
 
     // Selected tile highlight — diamond outline centered on the tile (was a square
     // anchored at its top-left corner; tileToScreen gives the diamond center instead).
+    //
+    // 2026-08-30: a base / wild city is highlighted across its WHOLE plot, not the one cell that was
+    // tapped — see logic/selectionFootprint.ts for why (and for why an N×N block needs only this one
+    // N-wide diamond). The fill is dropped for a multi-tile plot: the overlay draws above cityLayer,
+    // so a yellow wash that is barely noticeable over one tile of ground turns into a tint over the
+    // whole building on a 9×9 capital. The outline alone is what carries the meaning there, and it
+    // lands exactly on the plot edge.
     if (ctx.selectedTile) {
       const { x: tx, y: ty } = ctx.selectedTile;
-      const s = tileToScreen(tx, ty, tp);
+      const plot = selectedPlot(ctx, tx, ty, this.core.cityNodes());
+      const s = tileToScreen(plot.ax, plot.ay, tp);
       const cx = ctx.panX + s.x;
       const cy = ctx.panY + s.y;
-      const pts = diamondPath(tp).map((v, i) => v + (i % 2 === 0 ? cx : cy));
-      g.lineStyle(2, 0xffcc00, 1);
-      g.beginFill(0xffff00, 0.15);
+      const pts = diamondPath(tp * plot.size).map((v, i) => v + (i % 2 === 0 ? cx : cy));
+      g.lineStyle(plot.size > 1 ? 3 : 2, 0xffcc00, 1);
+      if (plot.size === 1) g.beginFill(0xffff00, 0.15);
       g.drawPolygon(pts);
-      g.endFill();
+      if (plot.size === 1) g.endFill();
     }
 
     // Capital star markers (10 nations).

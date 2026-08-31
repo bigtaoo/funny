@@ -8,7 +8,7 @@
  * Everything here is re-exported from ../icons.ts, which stays the single public entry point.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { getArtTexture, containScale } from '../cardArt';
+import { buildFittedSprite } from '../cardArt';
 import { preloadTextureList } from '../../assets/preloadTextures';
 
 // Tab-icon AI art pilot (design/product/tab-icon-art-prompts.md, 2026-08-14): the [Cards|Equipment|Skins]
@@ -365,18 +365,12 @@ export function tabIconVariant(color: number): 'active' | 'inactive' {
  * Not routed through `getCachedDisplay`/`uiCache` (that bakes a *drawn* Graphics to a texture; these
  * are already static textures) — `PIXI.Texture.from` has its own url-keyed cache, so repeat calls are
  * cheap. If the texture hasn't decoded yet (see `preloadTabIconTextures`), this draws nothing for that
- * one frame rather than a garbage 0/1px-scaled sprite; the caller's next render (post-preload) fixes it.
+ * one frame rather than a garbage 0/1px-scaled sprite — but `buildFittedSprite` then fits and shows
+ * itself on the decode, so a caller that never renders a second time doesn't end up permanently blank.
  */
 export function buildRasterTabIcon(url: string, w: number, h: number = w): PIXI.DisplayObject {
-  const tex = getArtTexture(url);
   const box = new PIXI.Container();
-  if (!tex.baseTexture.valid) return box;
-  const sprite = new PIXI.Sprite(tex);
-  const scale = containScale(tex.width, tex.height, w, h);
-  sprite.scale.set(scale);
-  sprite.x = (w - tex.width * scale) / 2;
-  sprite.y = (h - tex.height * scale) / 2;
-  box.addChild(sprite);
+  box.addChild(buildFittedSprite(url, w, h));
   return box;
 }
 

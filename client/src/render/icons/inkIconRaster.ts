@@ -22,7 +22,7 @@
  * (the coin bitmaps), which has no single ink to multiply.
  */
 import * as PIXI from 'pixi.js-legacy';
-import { getArtTexture, containScale } from '../cardArt';
+import { buildFittedSprite } from '../cardArt';
 import { preloadTextureList } from '../../assets/preloadTextures';
 
 // Equipment affix values (EquipmentScene/detail.ts's `affixIconKind`) - the smallest icons in the
@@ -240,19 +240,13 @@ export function preloadInkIconTextures(): Promise<void> {
  * line drawing on transparent, so `sprite.tint = color` multiplies straight to `color`.
  *
  * Like the raster tab icons this draws NOTHING until the texture has decoded, rather than a garbage
- * 0/1px-scaled sprite - callers that can't tolerate a blank first frame preload via
- * {@link preloadInkIconTextures} (or `preloadRewardIconArt`, which chains it) and re-render.
+ * 0/1px-scaled sprite - but it does not stay blank: `buildFittedSprite` fits and shows itself on the
+ * decode, so a caller that renders once and never again (the world-map shop panel, 2026-08-30) still
+ * gets its icon. {@link preloadInkIconTextures} (or `preloadRewardIconArt`, which chains it) remains
+ * the way to avoid the blank FIRST FRAME for a scene that can't tolerate one.
  */
 export function buildInkIcon(url: string, s: number, color: number): PIXI.DisplayObject {
-  const tex = getArtTexture(url);
   const box = new PIXI.Container();
-  if (!tex.baseTexture.valid) return box;
-  const sprite = new PIXI.Sprite(tex);
-  sprite.tint = color;
-  const scale = containScale(tex.width, tex.height, s, s);
-  sprite.scale.set(scale);
-  sprite.x = (s - tex.width * scale) / 2;
-  sprite.y = (s - tex.height * scale) / 2;
-  box.addChild(sprite);
+  box.addChild(buildFittedSprite(url, s, s, color));
   return box;
 }

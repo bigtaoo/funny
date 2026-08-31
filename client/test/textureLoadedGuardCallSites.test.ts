@@ -64,6 +64,8 @@ const REVIEWED_NAMED_CALLBACKS: Record<string, string> = {
     'Same as feedRing.ts: the recommendation strip is drawn with the same `() => core.feedRedraw?.()` from feed.ts.',
   'scenes/CardCodexScene/tile.ts':
     'onArtLoaded is `() => this.render()` from CardCodexScene.ts, whose render() opens with `if (this.destroyed) return`.',
+  'render/cardArt.ts':
+    'buildFittedSprite\'s fit() opens with `if (sprite.destroyed) return`, and the sprite\'s own `once(\'destroyed\')` base.off()s the hook — the same two halves IntroScene has, minus a scene to hang the unsub on.',
   'render/stickman/assetLoader.ts':
     'Bare `resolve` — settles a Promise, touches no display object.',
   'render/HandView/cellDraw.ts':

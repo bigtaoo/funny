@@ -119,3 +119,41 @@ export function pointInQuad(px: number, py: number, quad: readonly Vec2[]): bool
   }
   return true;
 }
+
+/** Inverse of `localPixelToWorld`: which texture pixel sits under a world-space point.
+ *  Returns null for a degenerate sprite (zero scale on either axis), where the mapping
+ *  isn't invertible. */
+export function worldToLocalPixel(f: SpriteFrame, x: number, y: number): Vec2 | null {
+  if (f.scaleX === 0 || f.scaleY === 0) return null;
+  const r = rotateVec(x - f.pivotX, y - f.pivotY, -f.rotationRad);
+  return {
+    x: r.x / f.scaleX + f.anchorX * f.texW,
+    y: r.y / f.scaleY + f.anchorY * f.texH,
+  };
+}
+
+/** One texture's alpha channel, flattened to a single byte per pixel and possibly
+ *  downsampled (see ImageController.ALPHA_MASK_MAX) — `w`/`h` are the MASK's own size,
+ *  not the texture's, so every reader has to scale through the texture size it's testing
+ *  against. Built by ImageController; consumed by `findSpriteAt`'s hit-test. */
+export interface AlphaMask {
+  w: number;
+  h: number;
+  data: Uint8Array;   // length w*h, alpha 0–255, row-major
+}
+
+/** Minimum alpha (0–255) a pixel needs for a click on it to count as hitting that sprite.
+ *  Low rather than zero: a PNG exported from a paint tool carries a halo of near-zero
+ *  alpha around every stroke, and treating that as solid would hand back most of the
+ *  quad we're trying to see through. */
+export const MIN_HIT_ALPHA = 8;
+
+/** Alpha (0–255) at a texture-pixel coordinate, nearest-neighbour through the mask's own
+ *  (possibly smaller) resolution. Out-of-range coordinates read as fully transparent. */
+export function alphaAt(mask: AlphaMask, texW: number, texH: number, px: number, py: number): number {
+  if (texW <= 0 || texH <= 0) return 0;
+  const mx = Math.floor((px / texW) * mask.w);
+  const my = Math.floor((py / texH) * mask.h);
+  if (mx < 0 || my < 0 || mx >= mask.w || my >= mask.h) return 0;
+  return mask.data[my * mask.w + mx];
+}

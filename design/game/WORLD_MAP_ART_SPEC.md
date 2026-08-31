@@ -153,6 +153,9 @@
 > attack→`swords`、reinforce→`armor`(盾)、return→`replay`(环箭)、scout→`scope`(望远镜，新增)、
 > occupy→`flag`(旗，新增)。`scope`/`flag` 为本次新增的 SketchPen 图标。
 > 注：这只替换 HUD **列表内**的兵种字形；地图上的**行军连线 `arrow_*`** 仍为程序矢量（见上表，属可选 PNG 升级）。
+> **2026-08-30 更新**：该列表已重做为「队伍信息」面板，行不再按行军 kind 而按**队伍状态**编排，图标随之改为按状态取
+> （行军中→`flag`、返回中→`replay`、占领中→`siege`、野外停留→`armor`、野外驻扎→`armorHeavy`、受伤→`hp`、驻军在家→`home`），
+> 映射表在 `worldmap/logic/teamStatus.ts::teamRowIcon()`。仍是既有 `buildIcon()` 手绘图标，未新增出图需求。
 
 > **§五 复核与程序 polish（2026-07-03 拍板：三项全部保持程序绘制，不出图）**：
 > `overlay_*` 占领水洗 / `arrow_*` 行军连线 / `marker_capital_*` 首府星标经评估**均维持程序绘制**——

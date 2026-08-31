@@ -7,12 +7,22 @@ import {
   txt,
   txtOutlined,
   sketchPanel,
+  sketchAccentBar,
   seedFor,
   tearDownChildren,
 } from '../../../render/sketchUi';
 import { buildIcon } from '../../../render/icons';
 import { FS } from '../../../render/fontScale';
 import { HUD_H } from '../logic/constants';
+import {
+  PANEL_W,
+  PANEL_MARGIN,
+  PANEL_PAD,
+  PANEL_BTN_H,
+  PANEL_CLOSE_W,
+  PANEL_FOOTER_H,
+  drawPanelTitle,
+} from './spec';
 import type { SlgShopItemView } from '../../../net/WorldApiClient';
 import type { IconKind } from '../../../render/icons';
 import type { WorldMapPanelsCore } from './core';
@@ -130,8 +140,17 @@ export class ShopPanel implements ShopHandlers {
     this.loadShopItems();
   }
 
-  /** A single shop item as a bordered card: icon frame on the left, name + cost on the right,
-   * a full-width Buy/Active band along the bottom. */
+  /**
+   * A single shop item as a product card: icon on the left, name + coin price on the right, a
+   * full-width Buy/Active band along the bottom.
+   *
+   * Drawn in the same visual language as the lobby shop's `drawCard`/`drawButton`
+   * (ShopScene/card.ts) — paper fill, thin `C.line` border with an ink accent bar down the left,
+   * a bare icon (no second frame around it), coin glyph + gold amount for the price, and an
+   * ink-dark button band with a coloured stroke. The *layout* deliberately stays horizontal (icon
+   * left, text right) where the lobby stacks vertically: this grid lives inside a modal panel over
+   * the map, and the landscape cell buys back the height a tall image-dominant tile would cost.
+   */
   private renderShopItemCard(
     layer: PIXI.Container,
     it: SlgShopItemView,
@@ -140,63 +159,82 @@ export class ShopPanel implements ShopHandlers {
     cellW: number,
     cellH: number
   ): void {
-    const pad = 8;
+    const pad = PANEL_PAD;
     const cell = sketchPanel(cellW, cellH, {
-      fill: 0xfaf9f5,
-      border: C.accent,
+      fill: C.paper,
+      border: C.line,
+      width: 1.6,
       seed: seedFor(x, y, cellW),
     });
     cell.x = x;
     cell.y = y;
+    sketchAccentBar(cell, cellH, C.accent, seedFor(x, cellH, 3));
     layer.addChild(cell);
 
-    const btnBandH = 26;
+    const btnBandH = PANEL_BTN_H;
     const imgBox = cellH - pad * 2 - btnBandH - 8;
     const imgX = x + pad,
       imgY = y + pad;
-    // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind already
-    // fills+borders in this same accent color, so this frame's own fill only duplicated it.
-    const frame = sketchPanel(imgBox, imgBox, {
-      fill: 0xf0eee7,
-      fillAlpha: 0,
-      border: C.accent,
-      seed: seedFor(x, y, imgBox),
-    });
-    frame.x = imgX;
-    frame.y = imgY;
-    layer.addChild(frame);
-    const iconSize = imgBox - 12;
+    // No frame around the icon: the lobby cards let the glyph sit straight on the card stock, and
+    // the box this one used to draw was a second border inside an already-bordered cell.
+    const iconSize = imgBox - 16;
     const icon = buildIcon(this.shopIcon(it), iconSize, C.accent);
     icon.x = imgX + (imgBox - iconSize) / 2;
     icon.y = imgY + (imgBox - iconSize) / 2;
     layer.addChild(icon);
 
-    // Duration badge — a corner tag over the frame so same-kind tiers (1h/8h/24h speedup,
+    // Duration badge — a corner tag over the icon so same-kind tiers (1h/8h/24h speedup,
     // 8h/24h shield) read apart by icon alone, not just by the name text beside it.
     const badgeLabel = this.shopBadgeLabel(it);
     if (badgeLabel) {
-      const badge = txtOutlined(badgeLabel, FS.micro, C.accent, 0xfaf9f5, 3, true);
+      const badge = txtOutlined(badgeLabel, FS.small, C.accent, C.paper, 3, true);
       badge.anchor.set(1, 0);
-      badge.x = imgX + imgBox + 2;
-      badge.y = imgY - 4;
+      badge.x = imgX + imgBox + 4;
+      badge.y = imgY - 8;
       layer.addChild(badge);
     }
 
-    const ax = imgX + imgBox + 10;
+    const ax = imgX + imgBox + 14;
     const colW = x + cellW - pad - ax;
-    const name = txt(this.shopLabel(it), FS.tiny, C.dark, true, colW);
+    const name = txt(this.shopLabel(it), FS.bodyLg, C.dark, true, colW);
     name.x = ax;
     name.y = imgY;
     layer.addChild(name);
-    const costLbl = txt(t('world.shopCost').replace('{coins}', String(it.cost)), FS.micro, C.mid);
-    costLbl.x = ax;
-    costLbl.y = imgY + imgBox - 16;
-    layer.addChild(costLbl);
 
-    // battle_pass single-slot gate (2026-08-01 fix): server rejects a repeat buy with ALREADY_ACTIVE
-    // (worldsvc/src/shop.ts); grey the band out client-side too instead of letting the player burn
-    // coins on a purchase that has no additional effect.
+    // Price as the game's one coin readout — glyph + gold bold number, no "coins" word, the same
+    // cluster the panel balance above it and every ShopScene card already draw (see
+    // ui/widgets/SceneHeader/currency.ts's buildCluster: "the glyph is the unit"). It used to be a
+    // grey `{cost} 金币` sentence, the last place in the shop that spelled the unit out in words.
+    const coinSize = Math.round(FS.body * 1.2);
+    const amount = txt(it.cost.toLocaleString(), FS.body, C.gold, true);
+    const coin = buildIcon('coin', coinSize, C.gold);
+    const priceH = Math.max(coinSize, amount.height);
+    // German's item names ("Truppen-Beschleunigung 24 Std") wrap to 3 lines in this column and
+    // would otherwise run into the price row pinned to the icon box's bottom edge — shrink the
+    // wrapped block to whatever room is left above it (same shrink-to-fit idiom the header
+    // production readout and the HUD stat chips use).
+    const nameMaxH = imgBox - priceH - 6;
+    if (name.height > nameMaxH) name.scale.set(nameMaxH / name.height);
+    const priceY = imgY + imgBox - priceH;
+    coin.x = ax;
+    coin.y = priceY + (priceH - coinSize) / 2;
+    layer.addChild(coin);
+    amount.anchor.set(0, 0.5);
+    amount.x = ax + coinSize + 6;
+    amount.y = priceY + priceH / 2;
+    layer.addChild(amount);
+
+    // Two client-side gates on the Buy band, both following the lobby shop's `canBuy` convention
+    // (ShopScene/shop.ts). A disabled band still registers its tap so it can explain itself with a
+    // toast rather than reading as a dead click (see panelButtonIn):
+    //  - battle_pass is single-slot (2026-08-01 fix): the server rejects a repeat buy with
+    //    ALREADY_ACTIVE (worldsvc/src/shop.ts), so don't let the player burn coins on a no-op.
+    //  - too few coins: the server would answer INSUFFICIENT_FUNDS, i.e. a whole failed round-trip
+    //    to learn something the client already knows. `getCoins` is optional — with no balance in
+    //    hand the gate stays open and the server keeps the last word.
     const owned = it.kind === 'battle_pass' && !!this.core.ctx.me?.hasBattlePass;
+    const coins = this.core.ctx.cb.getCoins?.();
+    const tooPoor = !owned && coins !== undefined && coins < it.cost;
     this.core.panelButtonIn(
       layer,
       owned ? t('world.shopActive') : t('world.shopBuy'),
@@ -204,12 +242,15 @@ export class ShopPanel implements ShopHandlers {
       y + cellH - pad - btnBandH,
       cellW - pad * 2,
       btnBandH,
-      C.accent,
-      () =>
-        owned
-          ? this.core.showToast(t('world.shopAlreadyActive'), C.mid)
-          : void this.core.ctx.net.doBuyShopItem(it.id),
-      owned
+      C.dark,
+      () => {
+        if (owned) this.core.showToast(t('world.shopAlreadyActive'), C.mid);
+        else if (tooPoor) this.core.showToast(t('shop.insufficient'), C.red);
+        else void this.core.ctx.net.doBuyShopItem(it.id);
+      },
+      owned || tooPoor,
+      // Green stroke = the card's primary action, matching drawButton's `primary` branch.
+      C.green
     );
   }
 
@@ -224,7 +265,7 @@ export class ShopPanel implements ShopHandlers {
     this.core.ctx.modalBtnRects = [];
 
     const { w, h } = this.core.ctx;
-    const pw = Math.min(560, w - 20);
+    const pw = Math.min(PANEL_W.md, w - PANEL_MARGIN * 2);
     const ph = Math.min(h * 0.8, h - HUD_H - 16);
     const px = (w - pw) / 2;
     const py = (h - HUD_H - ph) / 2;
@@ -239,37 +280,43 @@ export class ShopPanel implements ShopHandlers {
     panel.y = py;
     ml.addChild(panel);
 
-    const title = txt(t('world.shopTitle'), FS.tiny, C.accent);
-    title.anchor.set(0.5, 0);
-    title.x = px + pw / 2;
-    title.y = py + 10;
-    ml.addChild(title);
+    let ly = drawPanelTitle(ml, t('world.shopTitle'), px, py, pw);
 
-    let ly = py + 40;
+    // Coin balance as the game's one coin readout: glyph + gold bold number, no "coins" word —
+    // the same cluster `drawHeaderCurrency` draws in every spend scene (see
+    // ui/widgets/SceneHeader/currency.ts `buildCluster`: "the glyph is the unit"). It used to be
+    // a grey `t('world.shopBalance')` sentence, which was the only place in the game a balance
+    // was spelled out in words. Hand-built rather than calling drawHeaderCurrency because that
+    // one right-anchors itself to a full-width header bar; here it is centred inside a panel.
     if (this.core.ctx.cb.getCoins) {
-      const balance = txt(
-        t('world.shopBalance').replace('{coins}', String(this.core.ctx.cb.getCoins())),
-        FS.tiny,
-        C.accent
-      );
-      balance.anchor.set(0.5, 0);
-      balance.x = px + pw / 2;
-      balance.y = ly;
-      ml.addChild(balance);
-      ly += 26;
+      const coinSize = 32;
+      const amount = txt(this.core.ctx.cb.getCoins().toLocaleString(), FS.heading, C.gold, true);
+      const rowW = coinSize + 8 + amount.width;
+      const rowX = px + (pw - rowW) / 2;
+      const coin = buildIcon('coin', coinSize, C.gold);
+      coin.x = rowX;
+      coin.y = ly;
+      ml.addChild(coin);
+      amount.anchor.set(0, 0.5);
+      amount.x = rowX + coinSize + 8;
+      amount.y = ly + coinSize / 2;
+      ml.addChild(amount);
+      ly += coinSize + PANEL_PAD;
     }
 
-    const bodyBottom = py + ph - 42;
+    const bodyBottom = py + ph - PANEL_FOOTER_H;
     this.core.ctx.infoScrollRect = null;
 
     const items = this.core.ctx.shopItems;
     if (items.length > 0) {
       const cols = 2,
-        gap = 12;
-      const gridX = px + 14,
-        gridW = pw - 28;
+        gap = 16;
+      const gridX = px + PANEL_PAD,
+        gridW = pw - PANEL_PAD * 2;
       const cellW = (gridW - gap) / cols;
-      const cellH = 116;
+      // pad*2 + icon box + 8 + the button band: sized off PANEL_BTN_H so the Buy band and the
+      // icon square stay in proportion if the shared button height is ever re-tuned.
+      const cellH = PANEL_PAD * 2 + 100 + 8 + PANEL_BTN_H;
       const rows = Math.ceil(items.length / cols);
       const listLayer = this.core.beginScrollList(
         gridX,
@@ -277,7 +324,8 @@ export class ShopPanel implements ShopHandlers {
         gridW,
         bodyBottom - ly,
         rows * (cellH + gap) - gap,
-        () => this.renderShopPanel()
+        () => this.renderShopPanel(),
+        cellH + gap
       );
       const ry0 = ly - this.core.ctx.infoScrollY;
       items.forEach((it, i) => {
@@ -290,8 +338,14 @@ export class ShopPanel implements ShopHandlers {
       });
     }
 
-    this.core.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () =>
-      this.core.closeModal()
+    this.core.panelButton(
+      t('common.close'),
+      px + (pw - PANEL_CLOSE_W) / 2,
+      py + ph - PANEL_BTN_H - PANEL_PAD / 2,
+      PANEL_CLOSE_W,
+      PANEL_BTN_H,
+      C.dark,
+      () => this.core.closeModal()
     );
   }
 }

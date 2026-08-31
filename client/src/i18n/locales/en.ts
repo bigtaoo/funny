@@ -820,10 +820,12 @@ export const en: Record<TranslationKey, string> = {
   'world.actSiegeCity': 'Besiege',
   'world.stronghold': 'Stronghold',
   'world.strongholdHint': 'Heavily-defended NPC bastion — take it by siege; capturing claims it as territory and grants a large resource reward',
-  'world.marchList': 'Marches',
-  'world.marchMore': '+{n} more',
+  'world.teamPanel': 'Teams',
+  'world.teamMore': '+{n} more',
   'world.recall': 'Recall',
-  'world.instantReturn': 'Instant return ({coins} coins)',
+  // Shortened 2026-08-30 (was 'Instant return ({coins} coins)'): this is a per-row action button in
+  // the team panel now, sharing its line with the status text, so it has to stay inside ~150px.
+  'world.instantReturn': 'Rush home ({coins})',
   'world.instantReturnDone': 'Troops have returned instantly',
   'world.enemyTile': 'Enemy Territory',
   'world.allyTile': 'Ally Territory',
@@ -954,7 +956,6 @@ export const en: Record<TranslationKey, string> = {
   'world.replay.def': 'Def',
   'world.replay.none': 'No replay',
   'world.resYield': 'Yield',
-  'world.close': 'Close',
   // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26) ─────────────
   'world.territoryTitle': 'Territory Overview',
   'world.territoryTabOverview': 'Overview',
@@ -986,8 +987,6 @@ export const en: Record<TranslationKey, string> = {
   'world.season.closed': 'Closed',
   'world.shopBuy': 'Buy',
   'world.shopBought': 'Purchased',
-  'world.shopCost': '{coins} coins',
-  'world.shopBalance': 'Balance: {coins} coins',
   'world.shopActive': 'Active',
   'world.shopAlreadyActive': 'Already active this season — no need to buy again',
   'world.shop.speedup': 'Train speedup {h}h',
@@ -1655,4 +1654,8 @@ export const en: Record<TranslationKey, string> = {
   'world.team.occupying': 'Occupying, {time} left',
   'world.team.stationedIdle': 'In the field',
   'world.team.garrisoned': 'Field garrison',
+  // Team-panel status vocabulary (2026-08-30)
+  'world.team.returning': 'Returning',
+  'world.team.moving': 'Moving',
+  'world.team.flatArmy': 'Militia force',
 };

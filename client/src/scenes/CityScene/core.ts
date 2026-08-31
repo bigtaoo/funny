@@ -60,6 +60,14 @@ export interface CitySceneCallbacks {
   worldApi: WorldApiClient;
   worldId: string;
   getCoins?(): number;
+  /**
+   * Re-syncs the local wallet cache after a spend the commercial service applied server-side
+   * (build speed-up / training speed-up). worldsvc's responses carry the updated *world* state but
+   * never the SaveData wallet, so without this the coin readout keeps showing the pre-spend
+   * balance. Same contract as SectScene's `refreshWallet` and WorldMapCallbacks'. Optional so the
+   * CityScene UI fixtures that predate it don't all need updating.
+   */
+  refreshWallet?(): Promise<void>;
   /** Tapping a team card on the military page opens that team's formation editor (D-CITY-10). */
   onEditTeam?(teamId: string, teamName: string): void;
   /** Current authoritative save — the team row needs cardInv for each team's troop cap + leader portrait. */

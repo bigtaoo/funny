@@ -697,11 +697,19 @@ describe('ShopScene — skin card art waits for texture load, then re-renders it
   const flush = () => new Promise((r) => setTimeout(r, 0));
   const SKIN_TITLE = skinDisplayName('skin_shop_c1');
 
-  /** Every Sprite in the tree backed by the given base texture (the skin's placeholder art). */
+  /**
+   * Every Sprite in the tree DRAWN from the given base texture (the skin's placeholder art).
+   *
+   * `visible` is part of the filter because every `.png` stubs to one data URI here, so the card's
+   * kind icon shares this exact BaseTexture: since 2026-08-30 `buildIcon` always adds its sprite and
+   * only *shows* it once the texture decodes (`buildFittedSprite`), and those hidden icon sprites
+   * would otherwise be counted as the card art this test is about. Hidden is what "drew no art"
+   * means on screen either way, which is the property being asserted.
+   */
   function artSprites(container: PIXI.Container, base: PIXI.BaseTexture): PIXI.Sprite[] {
     const out: PIXI.Sprite[] = [];
     const walk = (node: PIXI.Container): void => {
-      if (node instanceof PIXI.Sprite && node.texture?.baseTexture === base) out.push(node);
+      if (node instanceof PIXI.Sprite && node.visible && node.texture?.baseTexture === base) out.push(node);
       for (const c of node.children) walk(c as PIXI.Container);
     };
     walk(container);

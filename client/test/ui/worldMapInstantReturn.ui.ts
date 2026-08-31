@@ -1,6 +1,11 @@
 // Regression coverage for the 2026-08-01 "pay coins, instantly complete a return march" feature
-// (SLG_DESIGN_LOG §46): the march list's kind==='return' rows get an instantReturnRect button
-// instead of a recall button, with a coin cost computed from remaining travel time.
+// (SLG_DESIGN_LOG §46): a kind==='return' row gets an instantReturnRect button instead of a recall
+// button, with a coin cost computed from remaining travel time.
+//
+// The rows live in the team panel since 2026-08-30 (was the march list). These fixtures carry no
+// formation templates, so every row here is a FLAT-TROOP march row — which is exactly the case that
+// would otherwise have quietly disappeared when the panel switched to being team-driven, so this file
+// doubles as the coverage that flat armies still get their own recallable row.
 //
 // Mirrors the minimal-harness pattern used by worldMapHeaderProduction.ui.ts (renderHud) — runs
 // under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
@@ -39,7 +44,11 @@ function buildHarness(marches: MarchView[]): { ctx: WorldMapContext; panels: Wor
     zoom: 1 as const,
     me: { joined: true, troops: 10, troopCap: 100, territoryCount: 1, resources: {}, yieldRate: {} },
     marches,
-    marchesExpanded: true,
+    teams: [],
+    teamsLoaded: true,
+    occupations: [],
+    stationed: [],
+    teamPanelExpanded: true,
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },
     cb: { accountId: 'me', getCoins: () => 0, worldId: 'w1' },
   } as unknown as WorldMapContext;
@@ -48,7 +57,7 @@ function buildHarness(marches: MarchView[]): { ctx: WorldMapContext; panels: Wor
   return { ctx, panels };
 }
 
-describe('WorldMapPanels march list — instant-return button (SLG_DESIGN_LOG §46)', () => {
+describe('WorldMapPanels team panel — instant-return button (SLG_DESIGN_LOG §46)', () => {
   it('a kind:"attack" row gets a recallRect and no instantReturnRect', () => {
     const marches: MarchView[] = [
       { marchId: 'm1', kind: 'attack', fromTile: 'w1:5:5', toTile: 'w1:10:5', troops: 50, departAt: NOW, arriveAt: NOW + 60_000, status: 'marching', mine: true },
@@ -56,9 +65,9 @@ describe('WorldMapPanels march list — instant-return button (SLG_DESIGN_LOG §
     const { ctx, panels } = buildHarness(marches);
     panels.renderHud();
 
-    expect(ctx.marchRowRects).toHaveLength(1);
-    expect(ctx.marchRowRects[0]!.recallRect).not.toBeNull();
-    expect(ctx.marchRowRects[0]!.instantReturnRect).toBeNull();
+    expect(ctx.teamRowRects).toHaveLength(1);
+    expect(ctx.teamRowRects[0]!.recallRect).not.toBeNull();
+    expect(ctx.teamRowRects[0]!.instantReturnRect).toBeNull();
   });
 
   it('a kind:"return" row gets an instantReturnRect and no recallRect', () => {
@@ -70,8 +79,8 @@ describe('WorldMapPanels march list — instant-return button (SLG_DESIGN_LOG §
     const { ctx, panels } = buildHarness(marches);
     panels.renderHud();
 
-    expect(ctx.marchRowRects).toHaveLength(1);
-    const row = ctx.marchRowRects[0]!;
+    expect(ctx.teamRowRects).toHaveLength(1);
+    const row = ctx.teamRowRects[0]!;
     expect(row.recallRect).toBeNull();
     expect(row.instantReturnRect).not.toBeNull();
   });
@@ -84,17 +93,17 @@ describe('WorldMapPanels march list — instant-return button (SLG_DESIGN_LOG §
     const { ctx, panels } = buildHarness(marches);
     panels.renderHud();
 
-    expect(ctx.marchRowRects).toHaveLength(2);
-    expect(ctx.marchRowRects[0]!.marchId).toBe('m3');
-    expect(ctx.marchRowRects[0]!.recallRect).not.toBeNull();
-    expect(ctx.marchRowRects[0]!.instantReturnRect).toBeNull();
-    expect(ctx.marchRowRects[1]!.marchId).toBe('m4');
-    expect(ctx.marchRowRects[1]!.recallRect).toBeNull();
-    expect(ctx.marchRowRects[1]!.instantReturnRect).not.toBeNull();
+    expect(ctx.teamRowRects).toHaveLength(2);
+    expect(ctx.teamRowRects[0]!.marchId).toBe('m3');
+    expect(ctx.teamRowRects[0]!.recallRect).not.toBeNull();
+    expect(ctx.teamRowRects[0]!.instantReturnRect).toBeNull();
+    expect(ctx.teamRowRects[1]!.marchId).toBe('m4');
+    expect(ctx.teamRowRects[1]!.recallRect).toBeNull();
+    expect(ctx.teamRowRects[1]!.instantReturnRect).not.toBeNull();
   });
 });
 
-// Regression coverage (2026-08-03 fix): each march row's `worldId` used to be parsed from the wrong
+// Regression coverage (2026-08-03 fix): each row's `worldId` used to be parsed from the wrong
 // toTile segment (`m.toTile.split(':')[2]`, the tile's Y-coordinate, not the world id — `toTile` is
 // `{worldId}:{x}:{y}` everywhere else in this codebase). That worldId feeds straight into
 // WorldMapInput → WorldMapNet.doRecall/doInstantReturn → worldApi.recallMarch/instantReturnMarch's
@@ -102,7 +111,7 @@ describe('WorldMapPanels march list — instant-return button (SLG_DESIGN_LOG §
 // essentially never matches the real worldId, so the lookup missed and every Recall/Instant-Return
 // tap failed with MARCH_NOT_FOUND. Fixed by reading `ctx.cb.worldId` (the authoritative current world
 // id already available in scope) instead of re-parsing it out of the destination tile.
-describe('WorldMapPanels march list — row worldId (2026-08-03 fix)', () => {
+describe('WorldMapPanels team panel — row worldId (2026-08-03 fix)', () => {
   it('an attack-row worldId is the current world id, not the destination tile\'s y-coordinate', () => {
     // toTile's y-coordinate ('5') deliberately differs from the world id ('w1') so a regression to
     // the old parsing bug would be caught, not accidentally masked by a coincidental match.
@@ -112,8 +121,8 @@ describe('WorldMapPanels march list — row worldId (2026-08-03 fix)', () => {
     const { ctx, panels } = buildHarness(marches);
     panels.renderHud();
 
-    expect(ctx.marchRowRects[0]!.worldId).toBe('w1');
-    expect(ctx.marchRowRects[0]!.worldId).not.toBe('5'); // the old (buggy) toTile-segment-2 value
+    expect(ctx.teamRowRects[0]!.worldId).toBe('w1');
+    expect(ctx.teamRowRects[0]!.worldId).not.toBe('5'); // the old (buggy) toTile-segment-2 value
   });
 
   it('a return-row (instant-return) worldId is also the current world id, not the tile\'s y-coordinate', () => {
@@ -123,7 +132,7 @@ describe('WorldMapPanels march list — row worldId (2026-08-03 fix)', () => {
     const { ctx, panels } = buildHarness(marches);
     panels.renderHud();
 
-    expect(ctx.marchRowRects[0]!.worldId).toBe('w1');
-    expect(ctx.marchRowRects[0]!.worldId).not.toBe('5');
+    expect(ctx.teamRowRects[0]!.worldId).toBe('w1');
+    expect(ctx.teamRowRects[0]!.worldId).not.toBe('5');
   });
 });

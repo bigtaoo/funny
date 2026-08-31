@@ -17,6 +17,7 @@ import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { SlgShopItemView } from '../../src/net/WorldApiClient';
+import { ui as C } from '../../src/render/sketchUi';
 import type { IconKind } from '../../src/render/icons';
 
 const memStore = (() => {
@@ -44,11 +45,11 @@ function makeBattlePassItem(): SlgShopItemView {
 /** Every PIXI.Text string under the modal layer, recursing into masked scroll-list child
  *  containers — item-card name/cost labels live a level deeper than the panel's own title/balance
  *  text, unlike the flat rows the old plain-text shop tab used. */
-function allModalTexts(ctx: WorldMapContext): string[] {
-  const out: string[] = [];
+function allModalTextNodes(ctx: WorldMapContext): PIXI.Text[] {
+  const out: PIXI.Text[] = [];
   const walk = (c: PIXI.Container): void => {
     for (const child of c.children as PIXI.DisplayObject[]) {
-      if (child instanceof PIXI.Text) out.push(child.text);
+      if (child instanceof PIXI.Text) out.push(child);
       else if (child instanceof PIXI.Container) walk(child);
     }
   };
@@ -56,9 +57,12 @@ function allModalTexts(ctx: WorldMapContext): string[] {
   return out;
 }
 
-function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boolean; joined?: boolean } = {}) {
+const allModalTexts = (ctx: WorldMapContext): string[] => allModalTextNodes(ctx).map((t) => t.text);
+
+function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boolean; joined?: boolean; coins?: number } = {}) {
   const doBuyShopItem = vi.fn();
   const getShopItems = vi.fn(async () => opts.shopItems ?? []);
+  const coins = opts.coins ?? 999;
 
   const ctx = {
     w: W, h: H,
@@ -82,7 +86,7 @@ function buildHarness(opts: { shopItems?: SlgShopItemView[]; hasBattlePass?: boo
     territoryPanelOpen: false,
     replayPanelOpen: false,
     me: opts.joined === false ? { joined: false } : { joined: true, ...(opts.hasBattlePass ? { hasBattlePass: true } : {}) },
-    cb: { accountId: 'me', getCoins: () => 999, worldApi: { getShopItems } },
+    cb: { accountId: 'me', getCoins: () => coins, worldApi: { getShopItems } },
     net: { doBuyShopItem },
     view: { renderMap: () => {} },
   } as unknown as WorldMapContext;
@@ -162,27 +166,53 @@ describe('WorldMapPanels.renderShopPanel — item cards', () => {
     expect(ctx.infoScrollRect).toBeNull();
   });
 
-  it('each card shows its localized name and coin cost', () => {
+  // 2026-08-30 (batch 3): a card's price is the game's shared coin cluster — glyph + gold bold
+  // number, no "coins" word — matching the panel balance above it and every ShopScene card
+  // (ui/widgets/SceneHeader/currency.ts's buildCluster). It used to be a grey `{cost} coins`
+  // sentence, the last place in the shop that spelled the unit out in words, which is why the
+  // assertions below are on the bare formatted number.
+  it('each card shows its localized name and coin price as a bare number', () => {
     const items: SlgShopItemView[] = [
       { id: 'sp1', cost: 200, kind: 'troop_speedup', effect: { duration_sec: 3600 }, description: '' },
       { id: 'rp1', cost: 300, kind: 'resource_pack', effect: { each: 20000 }, description: '' },
       { id: 'sh1', cost: 400, kind: 'protection', effect: { duration_sec: 28800 }, description: '' },
     ];
-    const { ctx, panels } = buildHarness({ shopItems: items });
+    const { ctx, panels } = buildHarness({ shopItems: items, coins: 99999 });
     panels.renderShopPanel();
     const texts = allModalTexts(ctx);
     expect(texts).toContain('Train speedup 1h');
-    expect(texts).toContain('200 coins');
+    expect(texts).toContain('200');
     expect(texts).toContain('Resource pack (20000 each)');
-    expect(texts).toContain('300 coins');
+    expect(texts).toContain('300');
     expect(texts).toContain('Shield 8h');
-    expect(texts).toContain('400 coins');
+    expect(texts).toContain('400');
+    // …and the unit is carried by the glyph, never spelled out beside the number.
+    expect(texts.some((x) => x.includes('coins'))).toBe(false);
   });
 
+  // 2026-08-30: the balance is drawn as the game's shared coin readout (coin glyph + gold bold
+  // number, no "coins" word — see SceneHeader/currency.ts's buildCluster), not the former
+  // `world.shopBalance` sentence, so the assertion is on the formatted number alone.
   it('shows the live coin balance above the catalog', () => {
     const { ctx, panels } = buildHarness({ shopItems: makeShopItems(1) });
     panels.renderShopPanel();
-    expect(allModalTexts(ctx)).toContain('Balance: 999 coins');
+    expect(allModalTexts(ctx)).toContain('999');
+  });
+
+  // The number is only half of it: what makes this "the game's coin readout" rather than a number
+  // that happens to be a balance is the gold bold styling next to a coin glyph, with no unit word
+  // (SceneHeader/currency.ts's buildCluster — "the glyph is the unit"). Without this the panel
+  // could silently drift back to a plain grey line and still pass the assertion above.
+  it('styles the balance as the shared coin readout — gold, bold, no unit word', () => {
+    const { ctx, panels } = buildHarness({ shopItems: makeShopItems(1) });
+    panels.renderShopPanel();
+    const amount = allModalTextNodes(ctx).find((t) => t.text === '999');
+    expect(amount, 'no balance amount drawn').toBeTruthy();
+    const fill = amount!.style.fill as number | string;
+    expect(typeof fill === 'string' ? parseInt(fill.replace('#', ''), 16) : fill).toBe(C.gold);
+    expect(amount!.style.fontWeight).toBe('bold');
+    // Finding the node by `text === '999'` above is itself the "no unit word" check: the old
+    // `world.shopBalance` line read "Balance: 999 coins", so it would not have matched.
   });
 
   it('the Close button closes the modal', () => {
@@ -240,7 +270,7 @@ describe('WorldMapInput — in-list Buy button tap-vs-drag (infoScrollPendingTap
 // doBuyShopItem once ctx.me.hasBattlePass is already true.
 describe('WorldMapPanels — shop battle-pass card once already owned', () => {
   it('not yet owned: tapping the card fires doBuyShopItem as normal', () => {
-    const { ctx, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()] });
+    const { ctx, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()], coins: 99999 });
     ctx.panels.renderShopPanel();
     const btn = ctx.modalBtnRects[0]!;
     const cx = btn.rect.x + btn.rect.w / 2, cy = btn.rect.y + btn.rect.h / 2;
@@ -250,7 +280,7 @@ describe('WorldMapPanels — shop battle-pass card once already owned', () => {
   });
 
   it('already owned (ctx.me.hasBattlePass): tapping the card shows a toast instead of buying again', () => {
-    const { ctx, panels, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()], hasBattlePass: true });
+    const { ctx, panels, input, doBuyShopItem } = buildHarness({ shopItems: [makeBattlePassItem()], hasBattlePass: true, coins: 99999 });
     // ShopPanel calls `this.core.showToast(...)` directly (2026-08-11 composition conversion — see
     // shopIconApi's doc comment above), not `panels.showToast(...)`, so the spy must sit on the
     // shared `core` instance the domain classes actually hold, not on the outer forwarding facade.
@@ -263,6 +293,48 @@ describe('WorldMapPanels — shop battle-pass card once already owned', () => {
     input.handleUp(cx, cy);
     expect(doBuyShopItem).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 2026-08-30 (batch 3): the SLG shop had no "can't afford" state at all — every card's Buy band was
+// live regardless of balance, and the only feedback was the server's INSUFFICIENT_FUNDS error after a
+// full round-trip. It now applies the lobby shop's `canBuy` convention (ShopScene/shop.ts): grey the
+// band out client-side, and let the (still-registered) tap explain itself with a toast.
+describe('WorldMapPanels — shop affordability gate', () => {
+  const pricey: SlgShopItemView[] = [
+    { id: 'cheap', cost: 100, kind: 'resource_pack', effect: { each: 100 }, description: '' },
+    { id: 'dear', cost: 5000, kind: 'resource_pack', effect: { each: 9000 }, description: '' },
+  ];
+
+  it('an affordable card still buys', () => {
+    const { ctx, input, doBuyShopItem } = buildHarness({ shopItems: pricey, coins: 200 });
+    ctx.panels.renderShopPanel();
+    const btn = ctx.modalBtnRects[0]!; // 'cheap'
+    input.handleDown(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    input.handleUp(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    expect(doBuyShopItem).toHaveBeenCalledWith('cheap');
+  });
+
+  it('a card the player cannot afford toasts instead of dispatching a doomed purchase', () => {
+    const { ctx, panels, input, doBuyShopItem } = buildHarness({ shopItems: pricey, coins: 200 });
+    const core = (panels as unknown as { core: { showToast: () => void } }).core;
+    const showToast = vi.spyOn(core, 'showToast').mockImplementation(() => {});
+    panels.renderShopPanel();
+    const btn = ctx.modalBtnRects[1]!; // 'dear', 5000 > 200
+    input.handleDown(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    input.handleUp(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    expect(doBuyShopItem).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('with no balance in hand (getCoins absent) the gate stays open — the server keeps the last word', () => {
+    const { ctx, input, doBuyShopItem } = buildHarness({ shopItems: pricey, coins: 0 });
+    (ctx.cb as { getCoins?: () => number }).getCoins = undefined;
+    ctx.panels.renderShopPanel();
+    const btn = ctx.modalBtnRects[1]!;
+    input.handleDown(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    input.handleUp(btn.rect.x + btn.rect.w / 2, btn.rect.y + btn.rect.h / 2);
+    expect(doBuyShopItem).toHaveBeenCalledWith('dear');
   });
 });
 
@@ -345,5 +417,77 @@ describe('WorldMapPanels.shopBadgeLabel — corner duration tag', () => {
     const api = shopIconApi(panels);
     expect(api.shopBadgeLabel({ id: 'rp', cost: 1, kind: 'resource_pack', effect: { each: 100 }, description: '' })).toBeNull();
     expect(api.shopBadgeLabel(makeBattlePassItem())).toBeNull();
+  });
+});
+
+// 2026-08-30: `shopIcon()` resolved 'trophy' for the battle-pass card the whole time, and every test
+// above passes on a panel whose cards draw NO icon at all — the resolver was covered, the drawing
+// was not. What actually broke was one layer down (`buildIcon` skipped the sprite while the PNG was
+// still decoding, and this panel renders once when the modal opens, so it never came back), but the
+// gap that let it ship unnoticed is here: nothing asserted the icon reaches the display tree.
+//
+// Deliberately counts SPRITES, not "the container buildIcon returned": under this harness every
+// `.png` stubs to a data URI that never decodes, so the icon is a real sprite that is simply never
+// shown (see buildFittedSprite) — and an assertion on the container alone would have passed even
+// against the broken build, which returned an empty one.
+describe('WorldMapPanels.renderShopPanel — every card actually draws its art', () => {
+  /**
+   * Art sprites under the modal layer (`PIXI.Text` is a Sprite subclass — excluded), at absolute
+   * position. Sizes are deliberately not used to tell one glyph from another: nothing decodes here,
+   * so no sprite is ever fitted and they all measure 1x1 — position is the only discriminator.
+   */
+  function artSprites(ctx: WorldMapContext): { x: number; y: number }[] {
+    const out: { x: number; y: number }[] = [];
+    const walk = (c: PIXI.Container, ox: number, oy: number): void => {
+      for (const child of c.children as PIXI.Container[]) {
+        const x = ox + child.x, y = oy + child.y;
+        if (child instanceof PIXI.Sprite && !(child instanceof PIXI.Text)) out.push({ x, y });
+        else if (child instanceof PIXI.Container) walk(child, x, y);
+      }
+    };
+    walk(ctx.modalLayer, 0, 0);
+    return out;
+  }
+
+  // Two glyphs per card since §43 gave the price its coin cluster (kind icon + coin), plus the one
+  // in the panel's own balance readout above the grid.
+  const expectedArt = (cards: number): number => cards * 2 + 1;
+
+  it('draws the kind icon and price coin of every card, plus the panel balance coin', () => {
+    const { ctx, panels } = buildHarness({ shopItems: makeShopItems(4) });
+    panels.renderShopPanel();
+    expect(artSprites(ctx)).toHaveLength(expectedArt(4));
+  });
+
+  it('the battle-pass card is not the odd one out — a one-item catalog still draws its trophy', () => {
+    const { ctx, panels } = buildHarness({ shopItems: [makeBattlePassItem()] });
+    panels.renderShopPanel();
+    expect(artSprites(ctx)).toHaveLength(expectedArt(1));
+  });
+
+  it('an already-owned battle pass (greyed Buy band) keeps its icon', () => {
+    const { ctx, panels } = buildHarness({ shopItems: [makeBattlePassItem()], hasBattlePass: true });
+    panels.renderShopPanel();
+    expect(artSprites(ctx)).toHaveLength(expectedArt(1));
+  });
+
+  it('the kind icon sits in the left art slot of its card, above and left of the price coin', () => {
+    const { ctx, panels } = buildHarness({ shopItems: makeShopItems(2) });
+    panels.renderShopPanel();
+    // `infoScrollRect` is the card list; anything above it is the panel's own balance coin.
+    const inList = artSprites(ctx).filter((s) => s.y >= ctx.infoScrollRect!.y);
+    // One Buy button per card, in card order, plus the panel's own Close button last.
+    const bands = ctx.modalBtnRects.slice(0, 2).map((b) => b.rect);
+    expect(inList, 'without this the loop below asserts nothing').toHaveLength(bands.length * 2);
+    for (const band of bands) {
+      const inCard = inList
+        .filter((s) => s.x >= band.x && s.x < band.x + band.w)
+        .sort((a, b) => a.y - b.y);
+      expect(inCard, `card at x=${band.x} draws a kind icon and a price coin`).toHaveLength(2);
+      const [kind, coin] = inCard as [{ x: number; y: number }, { x: number; y: number }];
+      expect(kind.y, 'kind icon is above the full-width Buy band').toBeLessThan(band.y);
+      expect(kind.x, 'kind icon is in the left art slot, the coin in the text column').toBeLessThan(coin.x);
+      expect(kind.y, 'the coin sits lower, on the price row').toBeLessThan(coin.y);
+    }
   });
 });

@@ -328,3 +328,255 @@ feat(lobby): 大厅背景装饰数量翻倍，alpha 调整为 0.25-0.38
 **改动**：`ALPHA_MIN` 0.25 → 0.10、`ALPHA_RANGE` 0.13 → 0.12（[`decorCLayer.ts`](../../client/src/render/decorCLayer.ts)），两行。文件头 `@alpha-range` 标记同步改成 `0.10-0.22`，并把 §39 那段「实际是 0.25–0.38」的散文整段重写——它描述的已经是历史，留着就会变成第三代过时注释。新头部另记两条判据供后人查：**密度而非透明度才是「装饰太少」的旋钮**，以及**为什么 alpha 是一个全局数字而不是按场景分档**（bake 键那两笔代价）。
 
 **验证**：`decorCLayerContract.test.ts` 7 例全绿；双向变异各判红一次（改常量不改标记 → `@alpha-range says 0.10-0.22 but ALPHA_MIN/ALPHA_RANGE produce 0.3-0.42`；改标记不改常量 → 反向同一条），备份用 `cp` 不用 `git checkout`。`tsc --noEmit` 双 config 绿。
+
+## 41. 大世界四个弹窗补上其它组件早就做过的放大 pass（2026-08-30）
+
+**起因**：用户看 SLG 商城截图问「商城的界面风格和大厅完全不一样了，这是有意为之吗」。不是——审下来是 13 项不一致，分四类（尺度 / 共享组件没接 / 卡片按钮语汇 / 购买流程缺陷）。本节只记第一类（批 1），后两类另行处理。
+
+**根因不是"另立视觉体系"**。这几个面板用的还是同一套 `sketchUi` 调色板、`sketchPanel` 手绘纸风、`FS` 字号表、`ScrollIndicator`。真正的问题是：**其它每个共享部件都在某个时点被放大过一轮，这四个面板一轮都没赶上**——
+
+| 部件 | 放大记录 |
+|---|---|
+| `confirmDialog` | "1.5x the original hand-tuned sizes"（300×130 → 450×195） |
+| `WorldMapPanels.showModal` | "1.5× the original footprint"（600×280 → 900×420） |
+| 世界地图 HUD 的缩放/行军 chip | "2x the original 88x34 footprint" |
+| `SceneHeader.backSize` | "1.5x the original 0.026"，且下限抬到 `FS.headline` |
+| **商城 / 领地 / 战报 / 世界 Tab** | **无** |
+
+于是它们还带着初版数字：`FS.tiny`(13px) 的面板标题（同一设计空间里场景标题是 ≥42px）、11px 的按钮文案配 26px 高的按钮条（UI_DESIGN.md §1 的触屏命中区约定是 ≥80px）、以及各自独立拍的四个面板宽度（440 / 560 / 840 / 900，没有共同栅格）。用户截图里"商城看着不像这个游戏"的观感，主要就是这两条。
+
+**改动**：新增 [`WorldMapPanels/spec.ts`](../../client/src/scenes/worldmap/WorldMapPanels/spec.ts)，把这一轮的数字集中成一份，四个面板一起引用，避免再次各自漂移。
+
+- **宽度栅格三档**：`PANEL_W.sm/md/lg = 720/900/1000`。战报 440→sm、商城 560→md、领地 840→lg；`showModal` 的 900 原样落在 md 上（**footprint 不变**，只是不再是私有常量）。
+- **标题**：`drawPanelTitle()` 统一画——`FS.heading` 深墨 + 底下一条 2px accent 手绘细线，即 `SceneHeader` 纸面 variant 那套「底色一律纸面、分区靠 accent 细线」（§3.1 顶栏统一）。原来是 `FS.tiny` 的蓝字，跟场景标题栏完全不是一个家族。
+- **按钮**：`panelButton`/`panelButtonIn` 的默认字号 `11 → FS.body(18)`；面板内按钮高统一 `PANEL_BTN_H=56`，行内按钮 `PANEL_ROW_BTN_*=120×48`，Tab 条 `PANEL_TAB_H=56`（原 26），关闭按钮 `100×28 → 200×56`。
+- **列表行**：`PANEL_ROW_H=64`（原 24/34/40 三种），行内文字从 `FS.micro/FS.tiny` 提到 `FS.body`，图标 12→26，全部改成按行高垂直居中而不是写死的 `ry + 6` / `ry + 2`。
+- **内边距**：散落的 `px + 14` / `pw - 28` 收敛成 `PANEL_PAD=20`。
+- **商城余额**：原来是灰色的 `world.shopBalance` 整句（"余额：N 金币"），是全游戏唯一一处把余额写成句子的地方。改成共享的金币读数——金币图标 + `C.gold` 加粗数字、不带"金币"二字，即 `SceneHeader/currency.ts` 的 `buildCluster` 那条"the glyph is the unit"。`world.shopBalance` 三语键随之删除（`i18n-no-dead-keys` 会卡）。没有直接调 `drawHeaderCurrency`，因为它把自己右对齐到整条标题栏，这里要的是面板内居中。
+- 商城卡片同步长大：`cellH 116 → 204`（`PANEL_PAD*2 + 100 图标框 + 8 + PANEL_BTN_H`），名字 `FS.tiny → FS.bodyLg`，价格 `FS.micro → FS.body`，购买条 26 → 56 高。德语的长名字会绕到三行，用既有的 shrink-to-fit 惯例（`scale.set(可用高/实际高)`，同 headerHud 的资源读数）压住，不让它压到价格行上。
+
+**本节不动的**：商城卡片的横版布局、整圈蓝框、蓝底购买按钮、灰字价格——那是"语汇"类，跟大厅 `ShopScene/card.ts` 的对齐另批处理；CityScene 弹窗那套"局部帧画完再整体放大 2.5×"的独立范式也不动（改它要连 `toScreen` 命中区换算和两个弹窗的全部布局常量一起重写，收益只是内部一致）。
+
+**验证**：`tsc --noEmit` 绿；UI 2244 例 + 单测 2216 例全绿；`webpack --mode production` 通过。两处测试跟着改：①`worldMapShopPanel` 的余额断言从整句改成格式化数字；②`worldMapInfoScroll` 的 harness 从 `800×600` 改成 `1080×1920`——800×600 是游戏根本不会渲染的尺寸（`ctx.w/h` 就是 `layout.designWidth/Height`），行高变大后"短列表不该有滚动余量"那条在这个假尺寸下失效，属于只存在于 harness 里的失败；同文件的拖拽用例相应把 15 个首都改成 30 个，让列表真的溢出 40px 以上。**像素级核对未做**：本机 Chrome 的会话已过期，且该账号的「世界」入口还锁在通关第一章后面，进不去 SLG 商城；几何数字用无头 harness 打印核对过（标题 28px、余额 28px 金色、名字 20px、价格 18px、购买按钮 382×56、关闭 200×56、卡片 204 高，均落在面板内无溢出）。
+
+### 41.1 补回归测试：为什么这类退化两个月没人发现（2026-08-30 同日追加）
+
+**先回答"为什么之前没测出来"**：这几个面板的现有用例（`worldMapShopPanel` / `worldMapTerritoryPanel` / `worldMapReplayPanel` / `worldMapInfoScroll`，合计 60+ 例）断言的全是**行为**——哪个 icon、哪个 gate、点了调哪个回调、滚动余量对不对。**面板画成一半大小，这些断言一条都不会红**。所以这次的退化对测试套件完全不可见，只对看截图的人可见。
+
+新增 [`worldMapPanelScale.ui.ts`](../../client/test/ui/worldMapPanelScale.ui.ts)（30 例），断言"人会注意到的那些性质"，横扫 6 个面板/页签（商城、领地×3 页签、战报、图块动作弹窗）：
+
+1. **没有任何文字小于 `FS.tiny`**——`FS.micro` 在这几个面板里曾是整行列表、状态列和按钮文案的字号，那不是"小字注释"该待的地方。
+2. **每个可点矩形高 ≥ 44**（`MIN_TAP_H`）。
+3. **按钮文案 ≥ `FS.body`**——按 modalBtnRects 的矩形几何反查落在里面的 `PIXI.Text`。
+4. **可点矩形不越出面板左右边界**——宽度栅格换档时内容没跟上，会从这里露出来。
+5. **三个独立面板的标题 ≥ `FS.heading` 且是深墨色**（不是原来的 `FS.tiny` 蓝字）。
+6. **三档宽度的归属**（商城→md、领地→lg、战报→sm）。
+
+**门槛值刻意写成字面量和 `FS` token，不用 `spec.ts` 自己的常量**：`expect(rect.h >= PANEL_ROW_BTN_H)` 这种写法在有人把 `PANEL_ROW_BTN_H` 调回 26 时照样绿——那正是本文件要防的漂移。只有第 6 条读 `spec`，且它钉的是**归属关系**而不是档位数值。
+
+**变异测试（`cp` 备份，不用 `git checkout`——见 §38 那条教训）**，7 次逐一确认判红后还原：
+
+| 变异 | 结果 |
+|---|---|
+| M1 `PANEL_BTN_FONT` → `FS.micro` | 10 失败 |
+| M2 按钮高 → 28 / 26 / 26 | 5 失败 |
+| M3 `PANEL_TITLE_FONT` → `FS.tiny` | 3 失败 |
+| M4 `PANEL_W.lg` 1000 → 840 | **30 全绿**（预期内：档位数值本就不钉，见上） |
+| M5 领地面板改用 `sm` 档（归属漂移） | 1 失败 |
+| M6 单个国家行标签 → `FS.micro` | 1 失败 |
+| M7 商城余额改回灰色非粗体 | 1 失败（`worldMapShopPanel`） |
+
+另在 `worldMapShopPanel.ui.ts` 补了一例：余额必须是**金色加粗**的裸数字。原来那条只断言 `'999'` 出现过，面板悄悄退回成一行灰字它照样绿（M7 证实）。
+
+**总计**：UI 240 文件 / **2275** 例全绿（改动前 239 / 2244），`tsc --noEmit` 绿。
+
+## 42. 大世界/城市面板接回共享部件（2026-08-30，批 2）
+
+承 §41。批 1 修的是**尺度**（字号 / 命中区 / 宽度栅格），批 2 修的是另一条同源病因：**这些面板手搓了一批全局早已收敛掉的部件**。五项，逐条列改动与判据。
+
+### 42.1 领地面板的三个 Tab 改用 `HubTabs`
+
+原来是三个 `core.panelButton` 手搓的实心方块——active 红底、inactive 深墨底，全是白字。这套"实心块"tab 语汇**全游戏只有这一处**；其余每个分区条走的都是 [`ui/widgets/HubTabs.ts`](../../client/src/ui/widgets/HubTabs.ts) 的 `drawHubTabs`：active = 墨底 + accent 边 + 白粗体，inactive = **纸底** + line 边 + mid 字。差别不是配色偏好——inactive 用纸底才读得出"这几格是可切换的同级页"，三块都填实色只读作"三个按钮"。
+
+`drawHubTabs` 是照"全宽标题栏下方条带"写的（`pad = w*0.04`，从 `x=0` 起画），弹窗里用不了。给它加了**可选第 7 参** `opts?: { x?: number; pad?: number; gap?: number }`，默认值逐个复现原行为，所以既有 30 多个全宽调用点**零改动**。领地面板传 `{ x: px, pad: PANEL_PAD, gap: MARGIN }`。
+
+**一个行为差异要记一下**：`drawHubTabs` **不给当前 active 的那一格发命中矩形**（重点全游戏一致：重复点当前 tab 是 no-op）。所以 `ctx.modalBtnRects` 少一项，索引整体前移一位——`worldMapTerritoryPanel.ui.ts` 里所有按序号取按钮的断言（12→11、4→3、8→7，checkbox 从 index 3→2，Jump 从 4→3）跟着改，注释里写清了"少的那一项是 active tab"，免得下次被当成漏画。
+
+### 42.2 「放弃领地」确认改用 `confirmDialog`
+
+原来是在面板体内自绘的一段 OK/取消：`180×56` 的两颗 `panelButton`，跟共享 `drawConfirmDialog` 的 `126×42` 不是一个尺寸，文案位置也自己拍。现在照 FamilyScene/SectScene/EquipmentScene/FriendsScene/AuctionScene 的接法——`drawConfirmDialog` 只画、返回 hit rects，调用方自管 `modalLayer`/`modalBtnRects`/`modalDimRect`。
+
+**顺手修掉一个真 bug**：旧写法是"先画面板、再在面板体上画确认、然后 early return"，于是 `this.core.ctx.infoScrollRect = null` 那行（在 early return **之后**）永远执行不到——上一次列表渲染留下的滚动矩形还活着，覆盖了确认框所在区域。`WorldMapInput.handleDown` 对落在 `infoScrollRect` 内的按下**先当拖拽手势处理**、把点击推迟到 pointer-up，所以 OK/取消这两颗按钮是绕着"拖动滚动列表"那条分支走的。新写法把确认框提到画面板**之前**（整个面板压根不画），并显式清掉 `infoScrollRect`/`infoScrollRerender`。测试里加了 `expect(ctx.infoScrollRect).toBeNull()` 钉住。
+
+### 42.3 四个滚动面板接上 `scrollPeek`
+
+全游戏 21 处列表页都接了 [`peekViewportH`](../../client/src/ui/widgets/scrollPeek.ts)，只剩大世界这几个。接法是**给 `core.beginScrollList` 加可选 `unit` 参数**（行距：列表 `rowH`、商城网格 `cellH + gap`），在里面统一算 `peekViewportH(hAvail, unit, contentH)`，而不是四个调用点各算一遍——这样以后新增面板默认就带上。四处都传了：territory 列表 / 世界 Tab 国家列表 / 战报列表 / 商城网格（用户点名的是三处，第四处 `territoryWorldTab.ts` 是同一份 `beginScrollList` 的第四个调用点，一并带上）。
+
+调用方**仍然按自己的 `bodyBottom` 剔行**，没改：`bodyBottom >= peek 后的底边`，多画的那一行落在 mask 里被裁掉，比让四个调用点各自持有一份收缩后的高度简单。`peekViewportH` 只在自然余量 < 12px 时才介入，所以多数情况下视口一像素不变。
+
+### 42.4 CityScene 按钮标签一律居中
+
+`helpers.ts` 的 `addBtn` 把标签钉在 `x + 12`、垂直方向按**写死的 22** 而不是实测行高居中；`modals.ts`（加速 / 升级）和 `trainModal.ts`（三颗预设 / 加速）四处同款，偏移量还各不相同（+6 / +8）。全局约定是 `anchor(0.5, 0.5)` 居中（`confirmDialog`、`ShopScene/card.ts` 的 `drawButton`、`HubTabs`）。五处统一改成 `anchor.set(0.5,0.5)` + `x + w/2` / `y + h/2`。
+
+写死 22 那半边比左对齐更值得修：它对 CJK 和拉丁字形的实际行高不同，同一颗按钮在中德文下会差几像素。
+
+**测试要跟着改一处**：`cityModalSpeedup.ui.ts` 自己的 `screenRect()` 助手用 `getGlobalPosition()` 当左上角——那只对默认 anchor(0,0) 成立。标签变居中后它把**中心**当成了左上角，于是"同一行"断言差了半个行高（20.3 > 16）而报红，**不是布局回归**。助手改成扣掉 anchor（`x - anchor.x * w`），两种 anchor 都对。
+
+### 42.5 关闭按钮统一成 `common.close` 文本
+
+原来两套并存：15 处 `showModal` 传 `label: '✕'`（`showModal` 内部再把这个字形特判换成手绘 close 图标），另有商城/领地/战报三个面板底部用 `t('world.close')` 文本按钮。同一个大世界里，点开地块菜单看到的是图标、点开商城看到的是文字。
+
+统一成**文本按钮**（图标那套只在 `showModal` 里存在，且那 15 处的按钮本来就是和"增援/进攻/迁城"这些文本按钮并排的一格，混一个图标进去反而是它显得像异类）。`showModal` 里那段 `if (btn.label === '✕')` 特判整段删掉，`buildIcon` 随之成为未用 import 也删掉。`t('world.close')` 三处改 `t('common.close')`，`world.close` 键从 zh/en/de 三份词表删除（`i18n-no-dead-keys` 会卡死键）。四个 UI 测试文件里的 `'✕'` 断言改成 `t('common.close')`。
+
+### 验证
+
+`tsc --noEmit` 绿；`test:ui` 241 文件 / 2261 例全绿；`i18n` + `i18n-no-dead-keys` 绿；`webpack --mode production` 通过。
+
+**这次做了像素核对**（§41 因账号进不去 SLG 而没做）。路子是 §41 提过、`cityModalSpeedup.ui.ts` 文件头也写着的 **stub-mount**：起 `--env TARGET=web-e2e`（`entries/web-e2e.ts` 把 `AppViews` 挂到 `window.__nwE2E`），在真 Chrome 里直接 `views.showWorldMap(cb)` / `views.showCity(cb)` 喂一个 Proxy 假 `worldApi`，绕过登录和第一章解锁。**两个坑记一下**：①标签页不在前台时 rAF 被节流，PIXI ticker 卡在 `lastTime≈420ms`，`SceneManager` 的淡入淡出永远走不完、`manager.current` 一直是上一个场景——手动 `app.ticker.update(t += 16.7)` 推几十帧即可；②`manager`/`ctx`/`panels` 都是 TS `private`，运行时被擦除，JS 里直接取就行。
+
+核对到的：领地面板三个 Tab 已是 HubTabs 语汇（active 墨底白字 + accent 边，inactive 纸底 mid 字）；领地列表的切割线确实落在第 9 行中间（露出半截 Jump/Abandon）；放弃确认就是那个共享 OK/取消框；部署弹窗末位按钮显示为文本 **Close**；城市页的 `Speed Up (60 coins)`、`Fill All Teams`、建筑详情的 `Upgrade`、练兵的 `+100/+500/Max +500` 全部水平垂直居中。
+
+### 42.6 补回归测试：把"接的是共享件"本身钉住（2026-08-30 同日追加）
+
+§42 落地时只**改**了既有断言跟上新形状，一条新用例都没加——而改后的断言钉的是"新形状"，不是"为什么是这个形状"。有人把 `drawHubTabs` 换回 `panelButton`，只要按钮数对得上，套件照样绿。这是 §41.1 那条教训的同一个坑，换了个轴。
+
+两个新文件，15 例，每一条都挑"手搓替代品**不会**有的性质"下断言：
+
+**[`worldMapPanelWidgets.ui.ts`](../../client/test/ui/worldMapPanelWidgets.ui.ts)（10 例）**
+
+- **Tab 条**：三个标签里恰好一个白色加粗（当前页），其余是 `C.mid`，且**没有任何一个是 `C.light`**——旧的 `panelButton` 版本把三个标签全画成 `C.light`，这一条就是两套语汇的分水岭。另加：当前页不发命中矩形（三个 tab 各验一遍）、点了确实换页。
+- **Tab 条位置**：strip 的左右边缘都要贴着**面板**的内边距。只断言"在面板内"是不够的——`drawHubTabs` 默认从 `x=0` 起画、pad 取 `w*0.04`，在本视口下左边缘恰好和 `px` 撞上（都是 40），只有右边缘能分辨（959 vs 1020）。
+- **确认框**：断言 `modalBtnRects` 的矩形和**现场调一次 `drawConfirmDialog`** 得到的完全相等。这是"确实走了共享件"能拿到的最强断言——重新手搓一个（旧版 180×56 vs 共享的 126×42）即使回调全对也判红。
+- **滚动视口**：`availH` 取行距整数倍时 `infoScrollRect.h` 必须小于它，且让出的高度要如数加进 `infoMaxScroll`。（`peekViewportH` 自己的算术已由 `test/scrollPeek.test.ts` 覆盖，这里钉的只是"它在链路上"。）
+- **每个调用点都传了行距**——见下。
+
+**[`cityButtonLabelCentred.ui.ts`](../../client/test/ui/cityButtonLabelCentred.ui.ts)（5 例）**：`addBtn` 是 CityScene 页面级按钮的唯一漏斗，直接单测这个自由函数，**当前和将来的调用点一并覆盖**。断言标签绘制中心与按钮矩形中心重合（容差 1px），并扫过 CityScene 实际用到的六种按钮高（28/30/32/45/60/84）——旧的 `y + (h-22)/2` + 顶对齐会在**任何**高度上偏一个固定量。两个弹窗的按钮是内联画的、不走这个漏斗，钉在各自已有的文件里。
+
+**最有价值的一条是源码扫描**：`beginScrollList` 的 `unit` 参数默认 0（惰性），所以**调用点漏传能编译、能跑、能滚，只是静悄悄丢掉切割线**。实测：把领地列表那处的 `rowH` 删掉，**全套 2330 例一条不红**。这正是全游戏 21 处列表接了、这四处漏了好几个月的成因。所以扫 `client/src/**` 里所有 `.beginScrollList(` 调用（前导的 `.` 用来把 core.ts 里的方法**声明**排除掉），按括号深度数顶层逗号，要求一律 7 个实参；并加一条"至少找到 4 处"的下限，防止将来改名让扫描静默匹配为空、变成一条永远绿的假保险。
+
+**变异测试**（`cp` 备份，不用 `git checkout`——§38 的教训），逐一确认判红后还原：
+
+| 变异 | 结果 |
+|---|---|
+| M1 Tab 条改回手搓 `panelButton` | 3 失败 |
+| M2 去掉 `{x, pad, gap}` 位置覆盖 | 1 失败（正是位置那条） |
+| M3 确认框改回手搓 180×56 | 1 失败（矩形等价那条） |
+| M3b 确认框改回画在面板**之上** | **未判红**，见下 |
+| M3c 删掉显式 `infoScrollRect = null`（原 bug 本体） | 1 失败（`worldMapTerritoryPanel`） |
+| M4 `beginScrollList` 内绕过 `peekViewportH` | 1 失败 |
+| M5 领地列表调用点漏传行距 | 1 失败（**加扫描前是 0 失败**） |
+| M6 把方法整体改名（空扫描） | 4 失败，含下限那条 |
+
+**两条如实记下的局限**，免得下一个人高估这批用例的覆盖：
+
+1. **M3b 未判红**，因为 `drawConfirmDialog` **自己**会 `tearDownChildren(ml)`——"确认框替换而不是盖在面板上"这条性质是共享件白送的，不由摆放位置决定。用例保留（手搓一个画在活面板上的版本仍会判红），但注释里写清了是谁在保证它。
+2. **CJK/拉丁的行高差在无头 harness 里观测不到**：它的 `measureText` 是平的 7px/字符、与字号和字形都无关，`txt('Upgrade')` 和 `txt('升级')` 实测都是 14px 高。所以那一例钉的是"两种字形都落在中线上"这条**规则**，不是催生这次修改的真实字体差异——只坏 CJK 的变异在这个 harness 里抓不住。真实字体是靠浏览器截图核对的（§42 验证段）。
+
+**没写的一条**：`'✕'` 的源码扫描。`FriendsScene` 的删好友按钮（有自己的字形特判）和 `DefenseEditorScene` 的 ✓/✕ 状态标记都是正当用法，一刀切的禁令要配一张豁免表，而豁免表本身会过期——收益不抵维护成本。既有那四个 UI 测试文件已经钉住了现有调用点。
+
+**总计**：UI 246 文件 / **2331** 例全绿（本节前 244 / 2316），`tsc --noEmit` 双 config 绿。
+
+## 43. SLG 商城对齐大厅卡片语汇，并补上购买流程缺的三道闸（2026-08-30，批 3）
+
+§41（批 1）统一了大世界四个面板的**尺度**，§42（批 2）把它们接回了手搓掉的共享部件。两节都把商城卡片的**语汇**（配色/描边/按钮/价格）和购买流程明确留给了下一批——就是本节。范围只有商城一处，但它同时跨了两层：看得见的四项配色/描边差异，和看不见的四项流程缺陷——后者是审这四项时顺带查出来的真 bug，不是观感问题。
+
+### 语汇：四项，全部对齐 [`ShopScene/card.ts`](../../client/src/scenes/ShopScene/card.ts)
+
+大厅的商品卡是 `drawCard`/`drawButton`；世界地图的是 `WorldMapPanels/shop.ts` 的 `renderShopItemCard`。两边独立写成，于是同一个"商品卡"概念长出了两套配色：
+
+| | 大厅 `drawCard` | SLG（改前） | 改后 |
+|---|---|---|---|
+| 卡片描边 | `C.line` 细框 + 左侧 `sketchAccentBar` 竖条 | 整圈 `C.accent` 蓝框 | 同大厅 |
+| 图标 | 直接画在卡纸上 | 外面再套一层 `sketchPanel` 蓝框 | 去掉这层框 |
+| 购买按钮 | `fill C.dark` 墨底 + 绿/蓝描边 + 白字 | `panelButtonIn(..., C.accent)` 整条蓝底 | 墨底 + 绿描边（primary） |
+| 价格 | 金币图标 + `C.gold` 加粗数字 | 灰色纯文字「200 金币」 | 同大厅 |
+
+价格那条不只是"跟大厅一样"：**全游戏的惯例是金币图标即单位**（`ui/widgets/SceneHeader/currency.ts` 的 `buildCluster` 注释原话 "the glyph is the unit"）。§41 已经按这条把面板顶部的**余额**从整句改成读数了，卡片价格是同一个面板里最后一处还把单位写成汉字的地方——两处并排放着一个有图标一个没有，比两处都没有更显眼。`world.shopCost` 三语键随之删除。
+
+`panelButtonIn` 多了一个可选的 `border` 参数（默认仍是 `C.accent`），因为 `drawButton` 对 primary 动作用的是绿描边，而这是全游戏唯一保留的另一种按钮描边色。
+
+**横版布局（左图右文）刻意保留**，没有跟着大厅改成竖版图片主导的 tile：这个网格开在盖住地图的模态面板里，横版单元格省下的高度是实打实的；语汇统一不等于布局统一。
+
+### 流程：四项缺陷
+
+审语汇时打开 [`net/structures.ts`](../../client/src/scenes/worldmap/net/structures.ts) 的 `doBuyShopItem`，发现它就是一句 `me = await buyShopItem(...)`，大厅 `ShopScene/actions.ts` 的 `onBuy` 有的三道闸一道都没有：
+
+1. **无 busy 锁 → 连点重复扣款**。补 `ctx.bt`（新增到 `WorldMapContext`，同每个场景的 `bt` 契约）：`WorldMapInput.handleDown` 顶部 `if (bt.busy) return` 吞掉在途期间的所有点击。
+2. **无超时** → 请求不落地就永远卡着。补 `withTimeout`（`ui/busyTracker.ts`，10s），超时走 `common.networkTimeout` 提示。
+3. **无 loading 遮罩**。新增 `ctx.busyLayer`（层序在 modal + toast 之上）+ `WorldMapPanelsCore.renderBusyOverlay()`，由 `WorldMapRenderer/lifecycle.ts` 的 `if (bt.tick(dt))` 驱动——即每个场景 `render()` 尾巴上那句 `if (bt.loadingVisible) drawLoadingOverlay(...)` 的等价物。它必须是独立一层：`renderShopPanel`/`showModal` 每次重绘都会整层 `tearDownChildren(modalLayer)`。
+4. **买完不重绘商城面板**。原来只有 `if (territoryPanelOpen && territoryTab === 'world')` 一个分支——那是 2026-08-02 把商城从领地面板拆成独立面板时漏改的。于是从商城面板买完，面板上的余额不动、战令卡片还写着「购买」。补 `if (shopPanelOpen) renderShopPanel()` + 一次 `renderHud()`。
+
+另外两项跟钱包相关，不止商城一处：
+
+5. **花完币本地钱包不同步**。SLG 的每个金币出口（商城购买 / 建筑加速 / 练兵加速 / 迁城）都是 worldsvc → commercial 服务端扣的，而这些接口的响应只带**世界**状态、不带 SaveData 钱包——于是顶栏金币读数一直显示花之前的数，直到别的事情碰巧重新拉了存档。`WorldMapCallbacks` 和 `CitySceneCallbacks` 各补一个 `refreshWallet?()`（同 `SectScene`/`FriendsScene` 早就有的那个契约，`app/nav/world.ts` 注入 `saveManager.refresh()`），在四个花币点后 `await`。两边都是**可选**的，纯粹是为了不用改动几十个早于它的 UI 测试 fixture。
+6. **没有"买不起置灰"**。改前只有 `battle_pass` 做了 owned 置灰，金币不够时唯一的反馈是服务端 `INSUFFICIENT_FUNDS`——一整个失败往返，只为告诉客户端一件它自己已经知道的事。照大厅 `canBuy` 的惯例（`ShopScene/shop.ts`）加上；`getCoins` 是可选回调，拿不到余额时闸门放行、服务端仍是最终裁决。置灰的按钮**照旧注册点击**（`panelButtonIn` 的既有约定），点了弹 `shop.insufficient`，而不是变成一个死区。
+
+### 验证
+
+`tsc --noEmit` 绿；`test:ui` 242 文件 2271 例全绿；`webpack --mode production` 通过。测试改两处、新增一个文件：
+
+- `worldMapShopPanel.ui.ts`：价格断言从 `'200 coins'` 改成裸数字 `'200'`，并加一条"面板里不该再出现 `coins` 字样"的反向断言；harness 的余额改成可配（`coins`），战令那两条用例得付得起 9800；新增「买不起置灰」描述块三条（买得起照常买 / 买不起弹提示且不发请求 / `getCoins` 缺席时闸门放行）。
+- 新增 `worldMapShopBuyFlow.ui.ts`（7 条）：直接测 `doBuyShopItem`——连点只发一次请求、失败也释放锁、超时提示且**不**同步钱包、买完重绘的是商城面板而不是领地面板、面板关着时不重绘、没接 `refreshWallet` 的旧 fixture 照样跑完。
+
+**像素级核对做了**（§41 当时没做成，原因是账号会话过期 + SLG 入口锁在第一章后）。这次绕开登录：用 `start:e2e` 靶子的 `window.__nwE2E.views.showWorldMap(桩)` 直接挂一个世界地图，`worldApi` 全是本地桩，一个后端都不用起（见记忆 `worktree-session-cannot-start-dev-server`）。核对到：卡片纸底 + 左侧蓝竖条 + 细框、图标外无框、价格是金币图标 + 金色数字、购买按钮墨底绿框白字；1000 金币时 200/300/500 三张可买、1400/3600/1200 三张置灰；连点三次 Buy 只扣一次款（1000 → 800）、`refreshWallet` 只调一次；12s 的桩请求在 10s 时按预期弹「网络超时，请重试」；买下战令后余额从 20000 → 10200 且该卡片当场翻成「已生效」。**踩坑**：插件里的 Chrome 标签页 `document.hidden === true`，rAF 被节流到几乎不动，场景转场会永远卡在 `transition` 里——`setInterval(() => app.ticker.update(performance.now()), 16)` 手动泵一下就过去了；但泵出来的时钟比真实慢约 5×，所以 `BusyTracker` 那个 1 秒阈值在桩请求落地前根本到不了，遮罩是把 `bt` 手动摆到"在途且已过阈值"再截的。
+
+**顺带发现、本批没修**：战令卡片**没有图标**。`buildInkIcon`（`render/icons/inkIconRaster.ts:246`）在纹理还没解码时返回一个空 `Container`，而商城面板没有大厅 `drawCard` 那种 `tex.baseTexture.once('loaded', rerender)` 的钩子，于是 `trophy` 这张图始终没画上去。改前它藏在图标外那圈蓝框里（看着像"一个空框"），去掉框之后就成了明显的空白。跟本批四项语汇改动无关（`buildIcon` 那行一个字没动），是既有缺陷。
+
+### 43.1 补回归测试：语汇这一层原本一条断言都没有（2026-08-30 同日追加）
+
+§43 落地时新增的 7 条用例全在**流程**那一半（busy 锁 / 超时 / 重绘 / 钱包同步）。**语汇那四项改动，一条断言都没有**——这正是 §41.1 写过的失效模式再来一次：现有的 27 条商城用例断言的是哪个 icon、哪个 gate、点了调哪个回调，把整圈蓝框换成细框 + 竖条、把墨底按钮换回蓝底，它们一条都不会红。
+
+新增 [`worldMapShopCardLanguage.ui.ts`](../../client/test/ui/worldMapShopCardLanguage.ui.ts)（12 例）、[`slgCoinSinkWalletResync.ui.ts`](../../client/test/ui/slgCoinSinkWalletResync.ui.ts)（8 例），并给 `worldMapShopBuyFlow.ui.ts` 补了 9 例。
+
+**颜色怎么读出来的**：无渲染器无图集时 `sketchPanel` 走它自己文档里那条 fallback，返回**裸 `PIXI.Graphics`**，`geometry.graphicsData` 里第一条是填充矩形、其后每条是一笔 SketchPen 描边，各自带 `lineStyle.color` 和 points。于是「整圈框」和「左侧竖条」可以靠**描边的 x 跨度**区分——实测细框那色跨 0→400（面板全宽），accent 那色只跨 2.4→5.5。断言就写成这个形状：`C.line` 的跨度 > 0.9×卡宽、`C.accent` 的 maxX < 0.1×卡宽。把旧的整圈蓝框加回来，第二条立刻红。
+
+**最要紧的一条是跨实现对拍**：光断言 token 的话，哪天有人重做大厅、SLG 留在原地，测试照样绿——那恰好就是本批要修的那个 bug。所以另有三例把 SLG 卡片和 `ShopScene/card.ts` 的 `drawCard` 用等价 spec 各画一张，断言**卡片填充色 / 描边色集合 / 按钮填充 / 主按钮描边 / 价格文字颜色与字重逐项相等**。token 断言钉「它们现在长这样」，对拍钉「它们是一起动的」，两者都留着，于是同时改两边仍然要是个有意识的决定。
+
+**`slgCoinSinkWalletResync.ui.ts` 是一次扫描而不是四个独立用例**：`refreshWallet?()` 在两个回调接口上都是**可选**的（为了不动几十个早于它的 fixture），意味着漏掉一处**类型检查也不会报**。这个文件是那个 `?.` 背后唯一的东西，所以它显式枚举四个金币出口（商城购买 / 建筑加速 / 练兵加速 / 迁城），每个两条：成功要同步、**失败不能同步**（没花钱就重拉存档是一次白跑的往返，更糟的是会让"失败的扣款"在读代码的人眼里长得跟成功的一样）。新增第五个出口不会被自动抓到——加出口时要往 `SINKS` 里补一行，文件头写了这句。
+
+**13 条变异逐条 red-then-green 实测**（改坏源码 → 跑对应用例 → 确认变红 → `cp` 还原，不用 `git checkout`）：卡片描边改回 accent / 去掉竖条 / 把图标外框加回来 / 按钮改回蓝底 / 去掉绿描边 / 价格改灰 / 去掉买不起闸门 / `panelButtonIn` 默认描边改绿 / 去掉输入层 busy 闸 / 遮罩永不清除 / 迁城漏掉 `refreshWallet` / 建筑加速漏掉 / 失败也同步钱包——全部被抓到。
+
+**这轮自己踩的坑**：仓库是 CRLF，`perl -0` 的多行模式里 `\n` 匹配不上 `\r\n`，于是 6 条变异**根本没打上**——而「模式没匹配」和「变异没被抓到」的输出**一模一样**（都是"测试仍然全绿"），差点得出"这几条断言是废的"的反结论。修法是模式里一律写 `\r?\n`，并且在跑测试之前先 `git diff --numstat` 断言**文件确实变了**，否则这一轮结果不作数。同类陷阱见 `claudedocs/worktrees.md` 里 08-27 那条（变异测试用 `git checkout` 还原会冲掉本轮未提交的改动）。
+
+**总计**：UI 247 文件 / **2355** 例全绿（本节前 245 / 2326），`tsc --noEmit` 绿。
+## 44. 图标纹理解码前是空盒子 → 只渲染一次的面板永远缺图标（2026-08-30 定位，08-31 落地）
+
+**问题（用户报告）**：世界地图商店面板（[`WorldMapPanels/shop.ts`](../../client/src/scenes/worldmap/WorldMapPanels/shop.ts) `renderShopItemCard`）的 battle_pass 卡片图标位是空白，反复 `renderShopPanel()` 也不出现。报告里的推断是「trophy 资源可能压根没加载」。
+
+**实测把诊断改了（真实浏览器 + `start:e2e` 挂桩世界地图）**：
+
+| 报告里的观察 | 实测结论 |
+|---|---|
+| trophy 资源可能没加载 | `trophy_active.png` 完好（128×123 调色板 PNG），`new Image()` 能解码；`Texture.from` 也确实发请求：冷启动 `valid=false`/1×1，约 1s 后 `valid=true`/128×123，`loaded` 事件正常触发且触发时 `Texture.frame` 已同步 |
+| 面板里有 4 个 84×84 图标 sprite，battle_pass 没有 | **测量假象**：`buildInkIcon` 是 contain-fit，非正方形的 trophy 实际是 84×81，被 84×84 的过滤条件筛掉了 |
+| 只有 battle_pass 缺图标 | **冷纹理缓存下这个面板 9 个图标一个都不出现**（实测 `modalLayer` 里 0 个 art sprite）。报告那次看到 4 个，是因为 hourglass/armor/coinChest 已被装备页等先经过的场景暖过；trophy 只在排行榜奖章位用到，通常没被暖过，所以它是最常见的那个"幸存"症状 |
+
+**根因**：`PIXI.Texture.from` 是懒加载的。两个 icon builder（[`inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts) `buildInkIcon` / [`tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts) `buildRasterTabIcon`）对此的回答是 `if (!tex.baseTexture.valid) return box;`——返回空容器，注释里写明「靠调用方的下一次渲染补上」。**这个前提对按 ticker 重画的场景成立，对模态面板不成立**：商店面板在打开时渲染一次就不再重画，于是解码前建的图标永远是空盒子。§43（商城对齐大厅卡片语汇，批 3）没碰 `buildIcon`，只是把图标外面那圈蓝框去掉之后，空白变得显眼了——所以这是个一直都在的洞，不是那批改动引入的。
+
+**修法：让 sprite 自己补上，而不是给 shop.ts 挂一个再渲染钩子。**
+
+[`cardArt.ts`](../../client/src/render/cardArt.ts) 新增 `buildFittedSprite(url, boxW, boxH, tint?)`：sprite **总是**创建，未解码时 `visible = false`，在 baseTexture 的 `loaded` 上把 contain-fit 的 scale/position 补齐并显示；两个 builder 都改成走它。三条判据：
+
+1. **不做成 shop.ts 里的一次性钩子**（lobby 商店 [`ShopScene/card.ts`](../../client/src/scenes/ShopScene/card.ts) 的 `artHooked` 就是那个形态），因为 `buildIcon` 有 ~40 个调用点，`buildInkIcon` 的空容器兜底是全局的——同一个洞在任何「渲染一次的面板」里都在，逐个挂钩子等于把这条契约抄 40 份。
+2. **`visible = false` 而不是「先不建 sprite」**：不可见子节点会被 `Container.calculateBounds` 跳过，所以「未解码 = 空盒子」的**测量**语义与旧行为完全一致——`BACK_ARROW_ASPECT` 那类「解码前先预留宽度」的调用方不受影响。反过来若直接建可见 sprite，1×1 的 frame 会被缩放成整个图标框的一坨糊。
+3. **`fit()` 开头的 `sprite.destroyed` 守卫 + sprite 自己的 `once('destroyed')` 摘钩**是必需的，不是防御性噪音：纹理可能在场景销毁后才到，碰已销毁的 Sprite 会从 PIXI Runner 里抛进 `Ticker.shared`，画布永久冻结直到刷新页面（`菜单场景生命周期契约`，见 [`claudedocs/client-modules.md`](../../claudedocs/client-modules.md)）。这与 `IntroScene.fitIllustration` 是同一套两半结构，区别只是这里没有场景可挂 unsub，所以摘钩挂在 sprite 的 `destroyed` 事件上（PIXI 先 `emit('destroyed')` 再 `removeAllListeners()`，所以一定跑得到）。
+
+**测试**
+
+- 新增 [`iconTextureSelfHeal.ui.ts`](../../client/test/ui/iconTextureSelfHeal.ui.ts)（5 例）：解码前不画且盒子仍为空 → 同一个 sprite 在解码后自己 fit 并显示（无人重建它）→ 销毁后才到的纹理不抛且已摘钩 → 已解码时建的图标当帧就显示（preload 路径）→ 光栅那半边同样自愈。
+- 新增 [`worldMapShopPanel.ui.ts`](../../client/test/ui/worldMapShopPanel.ui.ts) 的「每张卡真的画了图标」一组（4 例）。**这是本轮真正值得记的测试缺口**：该文件此前已经把 `shopIcon()` 解析器测得很细（3 档沙漏 / 2 档护盾 / 越界钳制 / 未知 kind 兜底 / battle_pass → `trophy`），而 `shopIcon()` 从头到尾都返回得对——坏的是下一层的绘制，而**没有任何一条断言检查图标进了显示树**，所以上面那些用例在「所有卡片都不画图标」的面板上照样全绿。新用例刻意数 **sprite** 而不是「`buildIcon` 返回的容器」：harness 里每个 `.png` 都桩成永不解码的 data URI，图标是一个真实但永不显示的 sprite，而断言容器本身在旧的坏实现下（返回空容器）也会通过。
+- 两组新用例都做了变异验证（备份用 `cp`，不用 `git checkout`——见 [`claudedocs/worktrees.md`](../../claudedocs/worktrees.md) 那条陷阱）：摘掉自愈钩子后 5 例判红 3 例；把 `box.addChild(...)` 改成不加后 4 例判红 3 例，据此给位置那一例补了一条长度断言（否则 `forEach` 在空数组上什么都不断言，静默变成永绿用例）。
+
+**4 处既有测试的适配**，都是本次改动使其**前提**失效、不是放宽断言：
+
+- `hudHeartHpBar` / `hudSurrenderLabel` 的手写 PIXI mock：`FakeSprite` 缺 `once`（真 `DisplayObject` 是 EventEmitter），给 `FakeContainer` 补上 `on/once/off` + `destroyed`。这两个文件的 `FakeBaseTexture` 早就为同一个原因补过 `on/once/off`。
+- `textureLoadedGuardCallSites`：新的 `base.once('loaded', fit)` 是具名回调，扫描器跟不进去，按它自己的规矩加进人工复核表（守卫在 `fit()` 第一行）。
+- `orgHeaderTitleIcon` 用「非 Text 的空容器」识别图标 → 改成「自身不含文字（所有子节点都是 Sprite）」；`shopScene` 按 baseTexture 数 sprite（harness 里所有 png 共用一个纹理）→ 加 `visible` 过滤，「没画出美术」在屏幕上本来就等于不可见。顺手把两处已经过时的注释（「buildIcon 返回空容器」）改掉——这正是 §39/§40 那条「过时注释会活两个月」的同一失效模式。
+
+**合并进当日分支时踩到的一件事（值得记，因为它正是新用例存在的理由）**：§43 给价格加了 coin 图标簇，于是「每张卡恰好一个 art sprite」当场失效——特性分支上 4 例全绿，合并后 4 例全红（1 卡 3 个 sprite、2 卡 5 个、4 卡 9 个 = 卡数×2 + 面板余额那一个）。改成按**位置**区分：kind glyph 在卡片左侧美术位，price coin 在右侧文字列的价格行，断言两者成对且 `kind.x < coin.x`、`kind.y < coin.y`。**不用尺寸区分**：harness 里纹理永不解码，所以没有 sprite 被 fit 过，全都量出 1×1，位置是唯一的判据。改完在合并状态下重做变异（把 `layer.addChild(icon)` 摘掉）——4 例全红，成立。顺带这组用例现在也守着 §43 的 coin 簇。
+
+**验证**：`tsc --noEmit` 干净；eslint 干净。特性分支上：`vitest run` 2207 例、`test:ui` 2240 例全绿。**合并进 `30.08.2026` 后在主检出重跑**（这一步不能省，见上一段）：`tsc --noEmit` 干净、`vitest run` 2237 例全绿、`test:ui` 2379 例全绿。真实浏览器侧证据：修复后同一个挂桩面板里 9 个图标 sprite 全部 `visible=true`，trophy 量得 54×52（符合 128:123）。**真机截图（真实 Chrome，1920×911）已核对**：9 张卡片全部画出图标，battle_pass 的奖杯在位。
+
+两条截图过程中的坑值得记：① in-app Browser 面板不能用来看这个——它的画布 `renderer.width/height` 是 0×0，截出来永远是纯白纸（CLAUDE.md 已有的「一律用真实 Chrome」那条，这轮又踩实一次）。② 离线挂桩时 `SceneManager` 的淡入淡出会卡在 `phase='out'`（`/bootstrap` 连不上 metaserver，没有东西驱动它），`mgr.current` 一直是 `IntroScene`；要手动把场景顶到前台，**必须操作 `mgr.targetStage` 而不是 `app.stage` 的直接子节点**——场景挂在 `targetStage` 底下，按「隐藏除 sc.container 以外的 stage 子节点」写会把 `targetStage` 自己隐藏掉，于是截图仍是白纸，看起来像修复没生效。
+
+**顺带一条观感观察（不属于本次修复）**：奖杯是**描边**线稿，而同屏的护盾/宝箱是实心块面，所以整页缩放下看它几乎像空的——放大才看清。若用户觉得对比不够，那是美术档的事（`trophy_active.png` 的线宽），不是绘制路径的问题。

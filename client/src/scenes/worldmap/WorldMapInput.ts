@@ -65,7 +65,7 @@ export class WorldMapInput {
         [t('world.joinTitle'), t('world.confirmJoin')],
         [
           { label: t('world.confirmJoinBtn'), action: () => void this.ctx.net.doJoin() },
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
+          { label: t('common.close'), action: () => this.ctx.panels.closeModal() },
         ],
       );
       return;
@@ -129,7 +129,7 @@ export class WorldMapInput {
         myButtons.push({ label: t('world.actRelocate'), action: () => this.ctx.net.confirmRelocate(tx, ty) });
       }
       myButtons.push({ label: t('world.actAbandon'), action: () => this.ctx.net.doAbandon(tx, ty) });
-      myButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+      myButtons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal() });
       const head = [t('world.mine')];
       if (tile.watchtower) head.push(t('world.hasWatchtower'));
       if (tile.structure) head.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
@@ -158,7 +158,7 @@ export class WorldMapInput {
       } else {
         allyButtons.push({ label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison') });
       }
-      allyButtons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+      allyButtons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal() });
       const allyHead = [t('world.allyTile'), ownerLine, `(${tx}, ${ty})`];
       if (tile.structure) allyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
       if (tile.maxHp && tile.hp != null) allyHead.push(t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)));
@@ -178,7 +178,7 @@ export class WorldMapInput {
       if (!protectedNow) {
         buttons.push({ label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') });
       }
-      buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+      buttons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal() });
       const enemyHead = [t('world.enemyTile'), ownerLine, `(${tx}, ${ty})`];
       // ADR-051 (P5): flag an enemy structure so the player knows attacking this tile razes it.
       if (tile.structure) enemyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
@@ -201,7 +201,7 @@ export class WorldMapInput {
       if (tile.contestedByMe) {
         // My own pending hold — nothing to do but watch the countdown (no reinforcement in v1).
         this.ctx.panels.showModal([t('world.occupyingMine').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], [
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
+          { label: t('common.close'), action: () => this.ctx.panels.closeModal() },
         ]);
         return;
       }
@@ -209,7 +209,7 @@ export class WorldMapInput {
       // would just bounce off the pending holder's contestedBy at arrival; use attack to fight their held garrison).
       const holdButtons: { label: string; action: () => void }[] = [
         { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
-        { label: '✕', action: () => this.ctx.panels.closeModal() },
+        { label: t('common.close'), action: () => this.ctx.panels.closeModal() },
       ];
       this.ctx.panels.showModal([t('world.occupying').replace('{sec}', String(secLeft)), `(${tx}, ${ty})`], holdButtons);
       return;
@@ -236,7 +236,7 @@ export class WorldMapInput {
         [t('world.stronghold'), t('world.strongholdHint'), `(${tx}, ${ty})`],
         [
           { label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack') },
-          { label: '✕', action: () => this.ctx.panels.closeModal() },
+          { label: t('common.close'), action: () => this.ctx.panels.closeModal() },
         ],
       );
       return;
@@ -277,7 +277,7 @@ export class WorldMapInput {
     }
     // (Relocate moved to the owned-tile branch: §3.4 now requires the target 3×3 to be already fully owned,
     // so relocation is initiated by clicking your own centre tile, not a neutral one.)
-    buttons.push({ label: '✕', action: () => this.ctx.panels.closeModal() });
+    buttons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal() });
     const head = garrison > 0 ? t('world.garrison').replace('{n}', String(garrison)) : t('world.actOccupy');
     const headLines = [head, `(${tx}, ${ty})`];
     // Resource type + level (§ resourceDensity=1.0 — nearly every neutral tile is a resTyped resource tile)
@@ -298,6 +298,10 @@ export class WorldMapInput {
   // per-kind minimums (occupy/attack need OCCUPY_MIN_TROOPS) → toast on reject.
 
   handleDown(x: number, y: number): void {
+    // A mutating request is in flight (ctx.bt) — swallow every tap until it settles, so a double-tap
+    // on the shop's Buy band cannot dispatch (and be charged for) the same purchase twice. Same
+    // guard the busyTracker doc prescribes and every other scene applies at the top of handleDown.
+    if (this.ctx.bt?.busy) return;
     // SLG opening guide chain (ONBOARDING_DESIGN §4.2) — its skip glyph / card button must win
     // before any other hit-test, mirroring the modal-button priority right below. `ctx.guide` is
     // only assigned by WorldMapRendererBuild.build() (real scene construction) — optional-chained
@@ -341,25 +345,34 @@ export class WorldMapInput {
     // chat-bar hit-tests — see headerButtons.ts.
     if (hitTestHeaderButtons(this.ctx, x, y)) return;
 
-    // March row hit detection (recall / instant-return button, or click-to-center)
-    for (const entry of this.ctx.marchRowRects) {
-      if (entry.recallRect) {
+    // Team-panel row hit detection: the row's action button first (recall / instant-return / recall a
+    // field station), then the rest of the row, which flies the camera to wherever that team is —
+    // its own base for a team sitting at home (2026-08-30).
+    for (const entry of this.ctx.teamRowRects) {
+      if (entry.recallRect && entry.marchId) {
         const r = entry.recallRect;
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
           void this.ctx.net.doRecall(entry.marchId, entry.worldId);
           return;
         }
       }
-      if (entry.instantReturnRect) {
+      if (entry.instantReturnRect && entry.marchId) {
         const r = entry.instantReturnRect;
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
           void this.ctx.net.doInstantReturn(entry.marchId, entry.worldId);
           return;
         }
       }
+      if (entry.recallStationRect && entry.stationedTeamId) {
+        const r = entry.recallStationRect;
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          void this.ctx.net.doRecallStationed(entry.stationedTeamId);
+          return;
+        }
+      }
       const row = entry.rowRect;
       if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) {
-        this.ctx.view.centerAt(entry.destX, entry.destY);
+        this.ctx.view.centerAt(entry.jumpX, entry.jumpY);
         this.ctx.view.renderMap();
         return;
       }

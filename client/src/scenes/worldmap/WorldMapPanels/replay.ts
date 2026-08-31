@@ -5,6 +5,18 @@ import { ui as C, txt, sketchPanel, seedFor, tearDownChildren } from '../../../r
 import { FS } from '../../../render/fontScale';
 import { serverNow } from '../../../net/serverClock';
 import { HUD_H } from '../logic/constants';
+import {
+  PANEL_W,
+  PANEL_MARGIN,
+  PANEL_PAD,
+  PANEL_BTN_H,
+  PANEL_CLOSE_W,
+  PANEL_FOOTER_H,
+  PANEL_ROW_H,
+  PANEL_ROW_BTN_W,
+  PANEL_ROW_BTN_H,
+  drawPanelTitle,
+} from './spec';
 import type { WorldMapPanelsCore } from './core';
 
 export interface ReplayHandlers {
@@ -46,7 +58,7 @@ export class ReplayPanel implements ReplayHandlers {
     this.core.ctx.modalBtnRects = [];
 
     const { w, h } = this.core.ctx;
-    const pw = Math.min(440, w - 20);
+    const pw = Math.min(PANEL_W.sm, w - PANEL_MARGIN * 2);
     const ph = Math.min(h * 0.8, h - HUD_H - 16);
     const px = (w - pw) / 2;
     const py = (h - HUD_H - ph) / 2;
@@ -61,24 +73,18 @@ export class ReplayPanel implements ReplayHandlers {
     panel.y = py;
     ml.addChild(panel);
 
-    const title = txt(t('world.replaysTitle'), FS.tiny, C.accent);
-    title.anchor.set(0.5, 0);
-    title.x = px + pw / 2;
-    title.y = py + 10;
-    ml.addChild(title);
-
-    const ly = py + 44;
-    const bodyBottom = py + ph - 42;
+    const ly = drawPanelTitle(ml, t('world.replaysTitle'), px, py, pw);
+    const bodyBottom = py + ph - PANEL_FOOTER_H;
     this.core.ctx.infoScrollRect = null;
 
     const rows = this.core.ctx.sieges;
     if (rows.length === 0) {
-      const empty = txt(t('world.replaysEmpty'), FS.tiny, C.mid);
-      empty.x = px + 16;
+      const empty = txt(t('world.replaysEmpty'), FS.body, C.mid);
+      empty.x = px + PANEL_PAD;
       empty.y = ly;
       ml.addChild(empty);
     } else {
-      const rowH = 40;
+      const rowH = PANEL_ROW_H;
       const now = serverNow();
       const listLayer = this.core.beginScrollList(
         px,
@@ -86,7 +92,8 @@ export class ReplayPanel implements ReplayHandlers {
         pw,
         bodyBottom - ly,
         rows.length * rowH,
-        () => this.renderReplayPanel()
+        () => this.renderReplayPanel(),
+        rowH
       );
       let ry = ly - this.core.ctx.infoScrollY;
       for (const s of rows) {
@@ -107,9 +114,9 @@ export class ReplayPanel implements ReplayHandlers {
           // Coordinate is its own clickable label (jumps the camera to that tile), same pattern as the
           // territory list's territoryJump button / marches list (WorldMapInput.ts) — separate from the
           // rest of the row so its accent color reads as a link without recoloring the win/loss text.
-          const coordLbl = txt(`(${sx},${sy})`, FS.tiny, C.accent, true);
-          coordLbl.x = px + 14;
-          coordLbl.y = ry + 6;
+          const coordLbl = txt(`(${sx},${sy})`, FS.body, C.accent, true);
+          coordLbl.x = px + PANEL_PAD;
+          coordLbl.y = ry + (rowH - coordLbl.height) / 2;
           listLayer.addChild(coordLbl);
           this.core.ctx.modalBtnRects.push({
             rect: { x: coordLbl.x, y: ry, w: coordLbl.width, h: rowH },
@@ -120,19 +127,19 @@ export class ReplayPanel implements ReplayHandlers {
             },
           });
           const restTxt = ` ${lvlTxt}  ${roleTxt}·${outTxt}  ${this.core.agoText(now - s.ts)}`;
-          const restLbl = txt(restTxt, FS.tiny, won ? C.dark : C.red);
+          const restLbl = txt(restTxt, FS.body, won ? C.dark : C.red);
           restLbl.x = coordLbl.x + coordLbl.width;
-          restLbl.y = ry + 6;
+          restLbl.y = ry + (rowH - restLbl.height) / 2;
           listLayer.addChild(restLbl);
-          const btnW = 72;
+          const btnW = PANEL_ROW_BTN_W;
           if (s.hasReplay) {
             this.core.panelButtonIn(
               listLayer,
               t('world.replaySiege'),
-              px + pw - btnW - 14,
-              ry + 2,
+              px + pw - btnW - PANEL_PAD,
+              ry + (rowH - PANEL_ROW_BTN_H) / 2,
               btnW,
-              28,
+              PANEL_ROW_BTN_H,
               C.accent,
               () => {
                 this.core.closeModal();
@@ -140,9 +147,10 @@ export class ReplayPanel implements ReplayHandlers {
               }
             );
           } else {
-            const noRep = txt(t('world.replay.none'), FS.micro, C.mid);
-            noRep.x = px + pw - btnW - 8;
-            noRep.y = ry + 8;
+            const noRep = txt(t('world.replay.none'), FS.small, C.mid);
+            noRep.anchor.set(1, 0.5);
+            noRep.x = px + pw - PANEL_PAD;
+            noRep.y = ry + rowH / 2;
             listLayer.addChild(noRep);
           }
         }
@@ -150,8 +158,14 @@ export class ReplayPanel implements ReplayHandlers {
       }
     }
 
-    this.core.panelButton(t('world.close'), px + pw / 2 - 50, py + ph - 34, 100, 28, C.dark, () =>
-      this.core.closeModal()
+    this.core.panelButton(
+      t('common.close'),
+      px + (pw - PANEL_CLOSE_W) / 2,
+      py + ph - PANEL_BTN_H - PANEL_PAD / 2,
+      PANEL_CLOSE_W,
+      PANEL_BTN_H,
+      C.dark,
+      () => this.core.closeModal()
     );
   }
 }

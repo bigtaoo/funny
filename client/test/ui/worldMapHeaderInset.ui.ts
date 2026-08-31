@@ -57,11 +57,11 @@ function buildInputHarness(topInset = TOP_INSET) {
     aucBtnRect: zeroRect(),
     shopBtnRect: zeroRect(),
     homeBtnRect: zeroRect(),
-    marchBadgeRect: zeroRect(),
+    teamBadgeRect: zeroRect(),
     replayBadgeRect: zeroRect(),
     chatBarRect: zeroRect(),
     resClusterRect: zeroRect(),
-    marchRowRects: [],
+    teamRowRects: [],
     mapW: 500, mapH: 500,
     me: { joined: true, mainBaseTile: undefined },
     tileCache: new Map(),
@@ -90,7 +90,11 @@ function buildHudHarness(topInset: number) {
     zoom: 1 as const,
     me: { joined: true, troops: 10, troopCap: 100, territoryCount: 1, resources: {} },
     marches: [],
-    marchesExpanded: false,
+    teamPanelExpanded: false,
+    teams: [],
+    teamsLoaded: false,
+    occupations: [],
+    stationed: [],
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },
     cb: { accountId: 'me', getCoins: () => 0 },
   } as unknown as WorldMapContext;
@@ -146,7 +150,7 @@ describe('WorldMapPanels.renderHud — right column HUD moves with topInset', ()
   it('the first right-column badge (marches) sits below the header bar, not at the old fixed y=8', () => {
     const { ctx, panels } = buildHudHarness(TOP_INSET);
     panels.renderHud();
-    expect(ctx.marchBadgeRect.y).toBeGreaterThan(TOP_INSET);
+    expect(ctx.teamBadgeRect.y).toBeGreaterThan(TOP_INSET);
   });
 
   it('a taller header pushes the whole right column down by exactly the difference', () => {
@@ -154,6 +158,6 @@ describe('WorldMapPanels.renderHud — right column HUD moves with topInset', ()
     short.panels.renderHud();
     const tall = buildHudHarness(120);
     tall.panels.renderHud();
-    expect(tall.ctx.marchBadgeRect.y - short.ctx.marchBadgeRect.y).toBe(60);
+    expect(tall.ctx.teamBadgeRect.y - short.ctx.teamBadgeRect.y).toBe(60);
   });
 });

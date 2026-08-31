@@ -274,8 +274,14 @@ export class HeadlessAppViews implements AppViews {
     this.screen = 'worldMap';
     return { applyMarchUpdate: () => {}, applyTileUpdate: () => {}, applyUnderAttack: () => {}, applySiegeResult: () => {}, applyNationMsg: () => {}, refreshMe: () => {} };
   }
-  showFamily(_cb: FamilySceneCallbacks, _opts?: MountOpts): FamilySceneView { this.screen = 'family'; return { applyFamilyMsg() {} }; }
-  showSect(_cb: SectSceneCallbacks, _opts?: MountOpts): SectSceneView { this.screen = 'sect'; return { applySectMsg() {} }; }
+  showFamily(_cb: FamilySceneCallbacks, _opts?: MountOpts): FamilySceneView {
+    this.screen = 'family';
+    return { applyFamilyMsg() {}, getFamily: () => _cb.preloadedFamily ?? null };
+  }
+  showSect(_cb: SectSceneCallbacks, _opts?: MountOpts): SectSceneView {
+    this.screen = 'sect';
+    return { applySectMsg() {}, getFamily: () => _cb.preloadedFamily ?? null, getSect: () => _cb.preloadedSect ?? null };
+  }
   // Capture the auction callbacks so a test can drive the real auction flow the way the
   // AuctionScene would: cb.worldApi is the REAL WorldApiClient the app core built from the
   // signed-in platform.storage token (full-link E2E hits the live auctionsvc through it).

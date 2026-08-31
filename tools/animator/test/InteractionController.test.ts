@@ -6,14 +6,20 @@
 // geometry from Skeleton.computeFK (itself pure, already used this way by computeDefaultShadowSize)
 // rather than hand-rolled coordinates, so it doesn't hardcode bone-geometry constants that
 // belong to Skeleton.ts.
-import { describe, it, expect } from 'vitest';
-import { pointToSegmentDist, findBoneAt, findSpriteAt, findSkinHandleAt, unwrapAngleStep } from '../src/interaction/InteractionController';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import {
+  pointToSegmentDist, findBoneAt, findSpriteAt, findSkinHandleAt, unwrapAngleStep,
+  InteractionController,
+} from '../src/interaction/InteractionController';
 import { RotateBoneCommand, SetLengthScaleCommand, SetBindingPropCommand } from '../src/interaction/commands';
 import { Skeleton } from '../src/skeleton/Skeleton';
-import { bindingToSpriteFrame, rotationHandlePos } from '../src/rendering/spriteGeometry';
+import {
+  bindingToSpriteFrame, rotationHandlePos, localPixelToWorld, MIN_HIT_ALPHA, type AlphaMask,
+} from '../src/rendering/spriteGeometry';
 import { EventBus, type AppEvents } from '../src/core/EventBus';
 import { AppState } from '../src/core/AppState';
 import { AnimationController } from '../src/animation/AnimationController';
+import { CommandManager } from '../src/core/CommandManager';
 import type { SpriteBinding } from '../src/core/types';
 
 const DEG = Math.PI / 180;
@@ -280,6 +286,105 @@ describe('findSpriteAt', () => {
     const getTexture = () => ({ width: 40, height: 100 });
     expect(findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture)).toBe('head');
   });
+
+  // The two overlap rules that make a real rig clickable. The spine's texture rectangle
+  // covers both shoulders, and it outranks the arms on zOrder, so a quad-only front-first
+  // test made every part under it unreachable — from the canvas AND after picking it in the
+  // bone list, since selection played no part in the hit-test at all.
+  describe('overlapping sprites', () => {
+    // spine and head forced onto the same pivot, same texture size: a total overlap where
+    // head (zOrder 5) is in front of spine (zOrder 0) everywhere.
+    const spine     = restPose.get('spine')!;
+    const samePivot = new Map(restPose);
+    samePivot.set('head', { ...spine });
+    const bindings = new Map<string, SpriteBinding>([
+      ['spine', binding(0)],
+      ['head',  binding(5)],
+    ]);
+    const getTexture = () => ({ width: 40, height: 100 });
+
+    /** A mask that is uniformly `alpha` everywhere — 1x1 is enough, since alphaAt scales
+     *  mask resolution through the texture size. */
+    const uniform = (alpha: number): AlphaMask => ({ w: 1, h: 1, data: new Uint8Array([alpha]) });
+
+    it('sees through a frontmost sprite that is transparent at the click point', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: id => (id === 'head' ? uniform(0) : uniform(255)),
+      });
+      expect(hit).toBe('spine');
+    });
+
+    it('still takes the frontmost sprite where its pixels are actually painted', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: () => uniform(255),
+      });
+      expect(hit).toBe('head');
+    });
+
+    it('treats near-zero alpha (anti-aliasing halo) as transparent', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: id => (id === 'head' ? uniform(MIN_HIT_ALPHA - 1) : uniform(255)),
+      });
+      expect(hit).toBe('spine');
+    });
+
+    it('returns null when every sprite covering the point is transparent there', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: () => uniform(0),
+      });
+      expect(hit).toBeNull();
+    });
+
+    it('falls back to the plain quad for a sprite whose mask is missing', () => {
+      // head's mask hasn't been built (or failed to decode) — it keeps its old
+      // quad-shaped, zOrder-ranked behaviour rather than becoming unclickable.
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: id => (id === 'head' ? undefined : uniform(255)),
+      });
+      expect(hit).toBe('head');
+    });
+
+    it('keeps the already-selected bone when the click also lands on a frontmost one', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: () => uniform(255),
+        preferBone:   'spine',
+      });
+      expect(hit).toBe('spine');
+    });
+
+    it('does NOT keep the selected bone where the click misses its painted pixels', () => {
+      // Sticky selection is a tie-break between sprites the click actually hits, not a
+      // lock: clicking a part the selected bone doesn't cover must still move on.
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: id => (id === 'spine' ? uniform(0) : uniform(255)),
+        preferBone:   'spine',
+      });
+      expect(hit).toBe('head');
+    });
+
+    it('ignores a preferBone that no sprite under the point belongs to', () => {
+      const hit = findSpriteAt(spine.sx, spine.sy, samePivot, bindings, getTexture, {
+        getAlphaMask: () => uniform(255),
+        preferBone:   'r_lower_leg',
+      });
+      expect(hit).toBe('head');
+    });
+
+    it('samples the mask at the clicked pixel, not just per-sprite', () => {
+      // 2x1 mask on head: left half transparent, right half solid. Clicking left of the
+      // pivot falls through to spine; clicking right of it stays on head.
+      const halfMask: AlphaMask = { w: 2, h: 1, data: new Uint8Array([0, 255]) };
+      const opts = { getAlphaMask: (id: string) => (id === 'head' ? halfMask : uniform(255)) };
+      // The two probe points are derived through the sprite's own frame rather than
+      // written as pivot±10: the sprite inherits the bone's world angle, so texture-left
+      // is not world-left.
+      const frame = bindingToSpriteFrame(spine.sx, spine.sy, spine.wa, binding(5), 40, 100);
+      const inTransparentHalf = localPixelToWorld(frame, 10, 50);
+      const inPaintedHalf     = localPixelToWorld(frame, 30, 50);
+      expect(findSpriteAt(inTransparentHalf.x, inTransparentHalf.y, samePivot, bindings, getTexture, opts)).toBe('spine');
+      expect(findSpriteAt(inPaintedHalf.x,     inPaintedHalf.y,     samePivot, bindings, getTexture, opts)).toBe('head');
+    });
+  });
 });
 
 describe('SetLengthScaleCommand', () => {
@@ -346,5 +451,129 @@ describe('SetBindingPropCommand', () => {
     const state = makeBoundState();
     const cmd = new SetBindingPropCommand(state, 'spine', {}, {});
     expect(cmd.label).toContain('Spine');
+  });
+});
+
+// ── The class itself, driven through its real mousedown handler ───────────────────────────
+//
+// Everything above tests the hit-test as a free function. That leaves one thing untested and
+// it is precisely where this feature can break silently: the WIRING in `onMouseDown` — whether
+// the alpha masks and the current selection are actually handed to `findSpriteAt`. Drop either
+// argument and every pure test above still passes while the editor goes back to picking the
+// spine every time. So this block builds the real controller and calls the real handler.
+//
+// Only the two PIXI-backed collaborators get stand-ins (Renderer, ImageController — the same
+// surface this package has no headless harness for); AppState / AnimationController /
+// CommandManager / EventBus are the real classes.
+describe('InteractionController skin-mode click wiring', () => {
+  const restPose = Skeleton.computeFK(0, 0, new Map());
+
+  const binding = (zOrder: number): SpriteBinding => ({
+    anchorX: 0.5, anchorY: 0.5, flipX: false, zOrder, rotation: 0, scaleX: 1, scaleY: 1,
+  });
+  const uniform = (alpha: number): AlphaMask => ({ w: 1, h: 1, data: new Uint8Array([alpha]) });
+
+  /** Build the controller over fake canvas/window listeners and return the handlers it
+   *  registered, so a test can invoke `mousedown` the way the browser would. Stage coords are
+   *  passed through 1:1, so a test can hand the handler stage-space numbers directly. */
+  function makeController(masks: Record<string, AlphaMask | undefined>) {
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const canvas = { addEventListener: (type: string, fn: (e: unknown) => void) => { handlers[type] = fn; } };
+    vi.stubGlobal('window', { addEventListener: () => {} });
+
+    const bus       = new EventBus<AppEvents>();
+    const state     = new AppState(bus);
+    const animCtrl  = new AnimationController(bus, state);
+    const cmdManager = new CommandManager(bus);
+
+    const renderer = {
+      pixiApp:       { view: canvas },
+      toStageCoords: (clientX: number, clientY: number) => ({ x: clientX, y: clientY }),
+    };
+    // A 400x400 texture on every slot: head's quad then reaches well past its own pivot and
+    // covers spine's, while head (zOrder 5) is drawn in front of spine (zOrder 0) — the shape
+    // the real rig has, where spine.png's rectangle swallows the bones beside it.
+    const imageCtrl = {
+      getTexture:   (id: string) => (id in masks ? { width: 400, height: 400 } : undefined),
+      getAlphaMask: (id: string) => masks[id],
+    };
+
+    const spine = restPose.get('spine')!;
+    state.setRootPos(0, 0);
+    state.setBinding('spine', binding(0));
+    state.setBinding('head',  binding(5));
+    state.setEditorMode('skin');
+    state.setPreviewMode('sprite');
+
+    // The two casts are the PIXI-backed collaborators: the fakes above implement exactly the
+    // members onMouseDown reaches for, which the real types can't express structurally.
+    new InteractionController(renderer as any, bus, state, animCtrl, cmdManager, imageCtrl as any);
+
+    const click = (x: number, y: number) => handlers.mousedown({ button: 0, clientX: x, clientY: y });
+    return { state, cmdManager, handlers, click, at: { x: spine.sx, y: spine.sy } };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('passes the alpha masks through, so a transparent front sprite is clicked past', () => {
+    const c = makeController({ head: uniform(0), spine: uniform(255) });
+    c.state.setSelectedBone(null);
+    c.click(c.at.x, c.at.y);
+    expect(c.state.selectedBone).toBe('spine');
+  });
+
+  it('still selects the frontmost sprite where its pixels are painted', () => {
+    const c = makeController({ head: uniform(255), spine: uniform(255) });
+    c.state.setSelectedBone(null);
+    c.click(c.at.x, c.at.y);
+    expect(c.state.selectedBone).toBe('head');
+  });
+
+  it('passes the current selection through, so a click on it does not jump to the front sprite', () => {
+    const c = makeController({ head: uniform(255), spine: uniform(255) });
+    c.state.setSelectedBone('spine');
+    c.click(c.at.x, c.at.y);
+    expect(c.state.selectedBone).toBe('spine');
+  });
+
+  it('arms the anchor drag on the bone it actually selected, not on the frontmost one', () => {
+    // The selection and the drag target must not disagree: dragging after a sticky click has
+    // to move the selected bone's image, or the click looks right and the drag edits the
+    // wrong sprite.
+    const c = makeController({ head: uniform(255), spine: uniform(255) });
+    c.state.setSelectedBone('spine');
+    c.click(c.at.x, c.at.y);
+    c.handlers.mousemove({ clientX: c.at.x + 20, clientY: c.at.y });
+    c.handlers.mouseup({});
+    expect(c.state.selectedBone).toBe('spine');
+    // Which anchor axis moves depends on the bone's world angle (spine rests pointing up, so a
+    // horizontal drag lands on anchorY) — assert the anchor moved at all, not a chosen axis.
+    const spineB = c.state.getBinding('spine')!;
+    const headB  = c.state.getBinding('head')!;
+    expect(Math.hypot(spineB.anchorX - 0.5, spineB.anchorY - 0.5)).toBeGreaterThan(0);
+    expect([headB.anchorX, headB.anchorY]).toEqual([0.5, 0.5]);
+    expect(c.cmdManager.undoLabel).toContain('Spine');
+  });
+
+  it('leaves the sprite path alone in Skeleton preview, falling back to bone-segment picking', () => {
+    // The sprites aren't on screen in Skeleton preview, so the click must go through the bone
+    // SEGMENTS instead — and the two paths genuinely disagree at this point, which is what
+    // makes the assertion mean something: by sprite it is 'head', by segment it is not.
+    const c = makeController({ head: uniform(255), spine: uniform(255) });
+    c.state.setPreviewMode('skeleton');
+    c.state.setSelectedBone(null);
+    c.click(c.at.x, c.at.y);
+    const bySegment = findBoneAt(c.at.x, c.at.y, Skeleton.computeFK(0, 0, new Map()));
+    expect(bySegment).not.toBe('head');
+    expect(c.state.selectedBone).toBe(bySegment);
+  });
+
+  it('clears the selection when the click lands on nothing at all', () => {
+    const c = makeController({ head: uniform(255), spine: uniform(255) });
+    c.state.setSelectedBone('spine');
+    c.click(100000, 100000);
+    expect(c.state.selectedBone).toBeNull();
   });
 });

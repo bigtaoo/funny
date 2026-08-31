@@ -37,7 +37,11 @@ function buildHudHarness(topInset: number, yieldRate: Record<string, number> = {
     zoom: 1 as const,
     me: { joined: true, troops: 10, troopCap: 100, territoryCount: 1, resources: {}, yieldRate },
     marches: [],
-    marchesExpanded: false,
+    teamPanelExpanded: false,
+    teams: [],
+    teamsLoaded: false,
+    occupations: [],
+    stationed: [],
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },
     cb: { accountId: 'me', getCoins: () => 0 },
   } as unknown as WorldMapContext;

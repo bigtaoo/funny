@@ -820,10 +820,12 @@ export const de: Record<TranslationKey, string> = {
   'world.actSiegeCity': 'Belagern',
   'world.stronghold': 'Feste',
   'world.strongholdHint': 'Stark verteidigte NPC-Bastion – nur durch Belagerung einnehmbar; bei Erfolg wird sie dein Gebiet und bringt eine große Ressourcenbelohnung',
-  'world.marchList': 'Märsche',
-  'world.marchMore': '+{n} weitere',
+  'world.teamPanel': 'Truppen',
+  'world.teamMore': '+{n} weitere',
   'world.recall': 'Zurückrufen',
-  'world.instantReturn': 'Sofort zurück ({coins} Münzen)',
+  // 2026-08-30 gekürzt (war 'Sofort zurück ({coins} Münzen)'): der Knopf sitzt jetzt pro Zeile im
+  // Truppen-Panel neben dem Statustext und muss unter ~150px bleiben.
+  'world.instantReturn': 'Sofort ({coins})',
   'world.instantReturnDone': 'Truppen sind sofort zurückgekehrt',
   'world.enemyTile': 'Feindliches Gebiet',
   'world.allyTile': 'Verbündetes Gebiet',
@@ -954,7 +956,6 @@ export const de: Record<TranslationKey, string> = {
   'world.replay.def': 'Vert.',
   'world.replay.none': 'Keine Aufz.',
   'world.resYield': 'Ertrag',
-  'world.close': 'Schließen',
   // ── Territory Overview panel (2026-07-16, SLG_DESIGN_LOG.md §26) ─────────────
   'world.territoryTitle': 'Gebietsübersicht',
   'world.territoryTabOverview': 'Übersicht',
@@ -986,8 +987,6 @@ export const de: Record<TranslationKey, string> = {
   'world.season.closed': 'Beendet',
   'world.shopBuy': 'Kaufen',
   'world.shopBought': 'Gekauft',
-  'world.shopCost': '{coins} Münzen',
-  'world.shopBalance': 'Guthaben: {coins} Münzen',
   'world.shopActive': 'Aktiv',
   'world.shopAlreadyActive': 'Diese Saison bereits aktiv — kein erneuter Kauf nötig',
   'world.shop.speedup': 'Ausbildung +{h}h',
@@ -1656,4 +1655,8 @@ export const de: Record<TranslationKey, string> = {
   'world.team.occupying': 'Besetzt, noch {time}',
   'world.team.stationedIdle': 'Im Feld',
   'world.team.garrisoned': 'Stationiert',
+  // Team-panel status vocabulary (2026-08-30)
+  'world.team.returning': 'Rückmarsch',
+  'world.team.moving': 'Verlegung',
+  'world.team.flatArmy': 'Freitruppe',
 };

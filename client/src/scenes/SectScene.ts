@@ -83,6 +83,15 @@ export class SectScene implements Scene {
     this.data.applySectMsg(msg);
   }
 
+  /** See SectSceneView.getFamily/getSect — read by nav/world.ts's onNavTab hand-off. */
+  getFamily(): SectSceneCore['family'] {
+    return this.core.family;
+  }
+
+  getSect(): SectSceneCore['sect'] {
+    return this.core.sect;
+  }
+
   private render(): void {
     const core = this.core;
     // The single throttle point for every redraw entry (菜单场景生命周期契约) — core's

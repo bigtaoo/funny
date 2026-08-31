@@ -9,15 +9,14 @@ import { FS } from '../../render/fontScale';
 import { unitPortraitUrl, getArtTexture } from '../../render/cardArt';
 import { buildIcon } from '../../render/icons';
 import { buildLevelStars } from '../../render/levelStars';
-import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { buildFactionIcon, FACTION_COLOR } from '../../render/factionIcon';
-import { RARITY_COLOR } from '../EquipmentScene/layout';
-import type { SaveData, CardInstance, EquipSlot } from '../../game/meta/SaveData';
+import type { EquipSlot } from '../../game/meta/SaveData';
 import { CARD_DEFS, MAX_CARD_LEVEL, FUSION_MATERIAL_COUNT, fusionMaterialCandidates, troopCap, cardPower, cardHp, cardSiegeValue, cardSiegeValueEffective } from '../../game/meta/cardDefs';
 import { skinsForUnitType, skinDisplayName } from '../../game/meta/skinDefs';
 import type { UnitType } from '@nw/engine/types';
 import { CardSceneCore, MODAL_DIM, injuryCountdown } from './core';
 import { drawDetailFace, flipDetailPortrait } from './detailPortrait';
+import { renderDetailGearSlots } from './detailGearSlots';
 import type { ActionsPanel } from './actions';
 import type { FeedPanel } from './feed';
 
@@ -359,7 +358,7 @@ export class DetailPanel {
     cy += 26;
 
     // Gear slots (3 slots; tap each to open equipment scene)
-    this.renderDetailGearSlots(card, mx, cy, mw, save);
+    renderDetailGearSlots(core, card, mx, cy, mw, save);
     cy += 82;
 
     // Action buttons
@@ -436,56 +435,5 @@ export class DetailPanel {
     // Tap outside to close
     core.modalHits.push({ rect: core.toModalScreen({ x: mx, y: my, w: mw, h: mh }), action: () => {} });
     core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => core.closeDetail() });
-  }
-
-
-  /** Render 3 gear slot boxes (icon + level badge) inside the detail modal. */
-  renderDetailGearSlots(card: CardInstance, mx: number, cy: number, mw: number, save: SaveData): void {
-    const core = this.core;
-    const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'armor', 'trinket'];
-    const cellW = (mw - 24 - 8 * 2) / 3;
-    const cellH = 74;
-    const iconSize = Math.min(cellW, cellH) - 26;
-    const root = core.modalPanelRoot;
-
-    EQUIP_SLOTS.forEach((slot, i) => {
-      const x = mx + 12 + i * (cellW + 8);
-      const instId = card.gear[slot];
-      const inst = instId ? save.equipmentInv?.[instId] : undefined;
-      const cell = sketchPanel(cellW, cellH, { fill: 0xf0eeea, border: inst ? RARITY_COLOR[inst.rarity] : C.mid, seed: seedFor(i, 8, cellW) });
-      cell.x = x; cell.y = cy;
-      root.addChild(cell);
-
-      const iconCx = x + cellW / 2;
-      const iconCy = cy + 6 + iconSize / 2;
-      // buildEquipIcon already renders the hollow "+" placeholder for an empty
-      // slot, so it doesn't need dimming (a dimmed real-item glyph used to read
-      // as a low-rarity equipped item at a glance).
-      const icon = buildEquipIcon(inst?.defId, slot, inst?.rarity ?? 'common', iconSize, seedFor(i, 8, cellW));
-      icon.position.set(iconCx, iconCy);
-      root.addChild(icon);
-
-      const slotLbl = core.stxt(t(`equip.slot.${slot}` as TranslationKey), FS.micro, inst ? C.mid : C.light);
-      slotLbl.anchor.set(0.5, 0); slotLbl.x = iconCx; slotLbl.y = cy + cellH - 16;
-      root.addChild(slotLbl);
-
-      if (inst) {
-        const badge = core.stxt(`+${inst.level}`, FS.micro, C.dark, true);
-        badge.anchor.set(1, 0); badge.x = x + cellW - 4; badge.y = cy + 4;
-        root.addChild(badge);
-      }
-
-      if (core.cb.openEquipment && !core.bt.busy) {
-        core.modalHits.push({
-          rect: core.toModalScreen({ x, y: cy, w: cellW, h: cellH }),
-          // Deliberately does NOT close the modal first (ADR-072): EquipmentScene now mounts as an
-          // overlay over this still-live roster, so leaving the detail open means backing out of the
-          // gear screen lands the player right back on the same card — with the new piece already
-          // shown, since the roster stayed subscribed to the save through the detour. Closing it here
-          // (as this used to) would have made "equip three pieces" three round trips through the grid.
-          action: () => core.cb.openEquipment!(card.id, slot),
-        });
-      }
-    });
   }
 }

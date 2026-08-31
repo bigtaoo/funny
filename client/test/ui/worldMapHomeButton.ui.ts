@@ -49,7 +49,11 @@ function buildHudHarness(mainBaseTile: string | undefined) {
     zoom: 1 as const,
     me: { joined: true, mainBaseTile, troops: 10, troopCap: 100, territoryCount: 1, resources: {}, yieldRate: {} },
     marches: [],
-    marchesExpanded: false,
+    teamPanelExpanded: false,
+    teams: [],
+    teamsLoaded: false,
+    occupations: [],
+    stationed: [],
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[p.length - 2]), Number(p[p.length - 1])]; },
     cb: { accountId: 'me', getCoins: () => 0 },
   } as unknown as WorldMapContext;
@@ -74,11 +78,11 @@ function buildInputHarness(opts: { mainBaseTile?: string; homeBtnRect?: { x: num
     aucBtnRect: zeroRect(),
     shopBtnRect: zeroRect(),
     homeBtnRect: opts.homeBtnRect ?? { x: 300, y: 10, w: 100, h: 40 },
-    marchBadgeRect: zeroRect(),
+    teamBadgeRect: zeroRect(),
     replayBadgeRect: zeroRect(),
     chatBarRect: zeroRect(),
     resClusterRect: zeroRect(),
-    marchRowRects: [],
+    teamRowRects: [],
     mapW: 500, mapH: 500,
     me: { joined: true, mainBaseTile: opts.mainBaseTile },
     tileCache: new Map(),
@@ -182,12 +186,12 @@ describe('WorldMapInput.handleDown — home button recenters the camera on the p
 
   // The header-button hit-tests were pulled into headerButtons.ts (hitTestHeaderButtons) so
   // WorldMapInput.ts would fit back under the 500-line convention; guard that the extraction
-  // didn't disturb handleDown's fallthrough to the march-row loop that runs right after it.
-  it('a tap that misses every header button still falls through to march-row click-to-center', () => {
+  // didn't disturb handleDown's fallthrough to the team-row loop that runs right after it.
+  it('a tap that misses every header button still falls through to team-row click-to-center', () => {
     const { ctx, input, centerAt: homeCenterAt } = buildInputHarness({ mainBaseTile: `${WORLD_ID}:${BASE.x}:${BASE.y}` });
     const rowRect = { x: 10, y: TOP_INSET + 5, w: 50, h: 20 };
-    (ctx as unknown as { marchRowRects: unknown[] }).marchRowRects = [
-      { marchId: 'm1', worldId: WORLD_ID, destX: 77, destY: 88, rowRect, recallRect: null, instantReturnRect: null },
+    (ctx as unknown as { teamRowRects: unknown[] }).teamRowRects = [
+      { marchId: 'm1', stationedTeamId: null, worldId: WORLD_ID, jumpX: 77, jumpY: 88, rowRect, recallRect: null, instantReturnRect: null, recallStationRect: null },
     ];
     input.handleDown(rowRect.x + 5, rowRect.y + 5);
     expect(homeCenterAt).toHaveBeenCalledWith(77, 88);

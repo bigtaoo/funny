@@ -53,7 +53,8 @@ export function hubTabsHeight(h: number): number {
 }
 
 /**
- * Draw the group tab strip at (0, y) spanning the full width, height stripH.
+ * Draw the group tab strip at (0, y) spanning the full width, height stripH — or, with `opts`,
+ * inside an arbitrary x-range (see the parameter's own note).
  * Returns hit rects for the inactive (tappable) cells; the active cell is a
  * no-op and gets no rect. The caller owns hit testing and y-layout below.
  */
@@ -64,16 +65,27 @@ export function drawHubTabs(
   stripH: number,
   tabs: HubTab[],
   onSelect: (index: number) => void,
+  /**
+   * Optional placement overrides for callers that are NOT the full-width, below-the-header case
+   * this strip was written for. The world-map territory panel draws the same strip inside a
+   * centred modal panel (2026-08-30 SLG widget pass), where the strip has to start at the panel's
+   * left edge and use the panel's own inner padding rather than a fraction of the screen width:
+   * `drawHubTabs(ml, pw, tabY, PANEL_TAB_H, tabs, cb, { x: px, pad: PANEL_PAD, gap: MARGIN })`.
+   * All defaults reproduce the previous behaviour exactly, so the ~30 existing full-width call
+   * sites are unaffected.
+   */
+  opts?: { x?: number; pad?: number; gap?: number },
 ): Array<{ rect: Rect; fn: () => void }> {
   const hits: Array<{ rect: Rect; fn: () => void }> = [];
   if (tabs.length === 0) return hits;
 
-  const pad = Math.round(w * 0.04);
-  const gap = Math.round(w * 0.02);
+  const originX = opts?.x ?? 0;
+  const pad = opts?.pad ?? Math.round(w * 0.04);
+  const gap = opts?.gap ?? Math.round(w * 0.02);
   const cellW = Math.round((w - pad * 2 - gap * (tabs.length - 1)) / tabs.length);
 
   tabs.forEach((tab, i) => {
-    const x = pad + i * (cellW + gap);
+    const x = originX + pad + i * (cellW + gap);
     const box = sketchPanel(cellW, stripH, {
       fill: tab.active ? C.dark : C.paper,
       border: tab.active ? C.accent : C.line,

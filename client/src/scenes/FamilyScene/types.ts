@@ -38,6 +38,10 @@ export interface FamilySceneCallbacks {
 /** Handle returned by showFamily so the core can push live family-channel messages in. */
 export interface FamilySceneView {
   applyFamilyMsg(msg: FamilyMessageView): void;
+  /** Live family detail this scene has loaded (null while still loading) — read by nav/world.ts's
+   *  onNavTab hand-off so switching to the Sect tab doesn't re-fetch membership already in hand
+   *  (see social-tab-switch-cost). */
+  getFamily(): FamilyDetailView | null;
 }
 
 export type FamilyTab = 'members' | 'channel';

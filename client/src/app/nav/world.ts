@@ -7,6 +7,8 @@ import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { WorldApiClient, type FamilyDetailView, type SectDetailView } from '../../net/WorldApiClient';
 import { allEquippedSkins } from '../../game/meta/skinDefs';
 import type { WorldMapView } from '../../scenes/WorldMapScene';
+import type { FamilySceneView } from '../../scenes/FamilyScene';
+import type { SectSceneView } from '../../scenes/SectScene';
 import type { AppCtx, Nav } from '../appCtx';
 import { TOKEN_KEY } from '../appConstants';
 
@@ -16,6 +18,15 @@ type WorldNav = Pick<Nav,
 
 export function createWorldNav(ctx: AppCtx): WorldNav {
   const { api, saveManager, platform, state, views, nav, getNetSession, playerName, resolveWorldShard } = ctx;
+
+  // Session-lifetime cache of the last sect detail SectScene loaded (fresh fetch or preload) — used
+  // ONLY as an opportunistic preload for a Family→Sect tab hand-off (see goFamilyHub's onNavTab).
+  // FamilyScene never fetches full sect detail itself (it only knows the family's sectId), so that
+  // direction still pays one getSect() round-trip on the very first hop; this cache makes every
+  // later hop in the same session instant instead. Trust is re-checked by SectScene's own
+  // `pre.sectId === fam.sectId` guard in DataPanel.loadData, so a stale entry (sect left/changed)
+  // is simply ignored rather than shown wrong — see social-tab-switch-cost.
+  let lastSect: SectDetailView | null = null;
 
   function goWorldEntry(): void {
     // Note: getWorldBaseUrl() returns '' in Docker/production (same-origin nginx proxy,
@@ -108,6 +119,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
         worldApi,
         worldId,
         getCoins: () => saveManager.get().wallet.coins,
+        refreshWallet: async () => { await saveManager.refresh(); },
         getSave: () => saveManager.get(),
         onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
         getFlag: (key: string) => saveManager.getFlag(key),
@@ -130,6 +142,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       playerName: playerName(),
       accountId: saveManager.get().accountId,
       getCoins: () => saveManager.get().wallet.coins,
+      refreshWallet: async () => { await saveManager.refresh(); },
       getSave: () => saveManager.get(),
       storage: platform.storage,
       getFlag: (key: string) => saveManager.getFlag(key),
@@ -228,12 +241,27 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     preloadedFamily?: FamilyDetailView | null,
   ): void {
     const myAccountId = saveManager.get().accountId;
-    const view = views.showFamily({
+    // Hoisted + explicitly typed (not `const view = views.showFamily(...)`) so onOpenSect/onNavTab
+    // below — defined inside the very same call — can read it once a tap actually fires, well after
+    // assignment; typing it breaks the circular inference that self-reference would otherwise create
+    // (same reason goWorldMap's `view` is hoisted).
+    // eslint-disable-next-line prefer-const -- assigned by showFamily immediately below.
+    let view: FamilySceneView;
+    // Family→Sect hop: hand the family this scene already loaded straight to SectScene as
+    // preloadedFamily (skips its getMyFamily() round-trip), plus whichever sect this session last
+    // saw (lastSect — re-validated by SectScene's own sectId guard) so a repeat hop in the same
+    // session skips the sect fetch too, instead of flashing SectScene's 'loading' skeleton before
+    // painting real content (social-tab-switch-cost — the reason Family/Sect tab switches used to
+    // visibly repaint while Friends/Mail, which never leave FriendsScene, never did).
+    const toSect = (): void => {
+      goSectHub(worldApi, worldId, onExit, overlay, { family: view.getFamily() ?? undefined, sect: lastSect ?? undefined });
+    };
+    view = views.showFamily({
       onBack: onExit,
-      onOpenSect() { goSectHub(worldApi, worldId, onExit, overlay); },
+      onOpenSect: toSect,
       onNavTab(tab) {
         if (tab === 'family') return;
-        if (tab === 'sect') { goSectHub(worldApi, worldId, onExit, overlay); return; }
+        if (tab === 'sect') { toSect(); return; }
         nav.goFriends({ defaultTab: tab, onBack: onExit, overlay });
       },
       worldApi,
@@ -269,11 +297,20 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     preload?: { family?: FamilyDetailView | null; sect?: SectDetailView | null },
   ): void {
     const myAccountId = saveManager.get().accountId;
-    const view = views.showSect({
+    // Explicitly typed (not inferred) so onNavTab below — defined in the same call, reading it on a
+    // later Sect→Family tap — doesn't create the circular inference goFamilyHub's `view` comment
+    // describes; unlike that one there's nothing between declaration and initializer that reads
+    // `view` first, so this can stay a single `const` (goFamilyHub's own onNavTab, by contrast,
+    // isn't defined until after its `toSect` closure already reads `view`, which is why that one
+    // still needs the hoisted `let`).
+    const view: SectSceneView = views.showSect({
       onBack: onExit,
       onNavTab(tab) {
         if (tab === 'sect') return;
-        if (tab === 'family') { goFamilyHub(worldApi, worldId, onExit, overlay); return; }
+        // Sect→Family hop: SectScene already has the full family detail (see SectSceneCore.family),
+        // so this hands it straight to FamilyScene as preloadedFamily — no re-fetch, no 'loading'
+        // flash (see goFamilyHub's toSect for the mirror-image Family→Sect hop).
+        if (tab === 'family') { goFamilyHub(worldApi, worldId, onExit, overlay, view.getFamily() ?? undefined); return; }
         nav.goFriends({ defaultTab: tab, onBack: onExit, overlay });
       },
       worldApi,
@@ -285,6 +322,9 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
       getCoins: () => saveManager.get().wallet.coins,
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
       refreshWallet: async () => { await saveManager.refresh(); },
+      // Cache the freshest sect this session has seen so a later Family→Sect hop (toSect above) can
+      // skip the getSect() round-trip too, not just the family one.
+      onSectLoaded: (sect) => { lastSect = sect; },
     }, { overlay });
     // Keep the gateway connected + forward live sect-channel messages into the scene
     // (S8-4b: worldsvc → Redis pub/sub → gateway → here). Offline → REST history poll.

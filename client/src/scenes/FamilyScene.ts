@@ -76,6 +76,11 @@ export class FamilyScene implements Scene {
     this.data.applyFamilyMsg(msg);
   }
 
+  /** See FamilySceneView.getFamily — read by nav/world.ts's onNavTab hand-off. */
+  getFamily(): FamilySceneCore['family'] {
+    return this.core.family;
+  }
+
   private render(): void {
     const core = this.core;
     if (core.destroyed) return;

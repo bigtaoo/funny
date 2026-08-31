@@ -56,6 +56,10 @@ export interface SectSceneCallbacks {
    */
   preloadedFamily?: FamilyDetailView | null;
   preloadedSect?: SectDetailView | null;
+  /** Fired once loadData() lands a sect detail (fresh fetch or preload) — lets nav/world.ts's
+   *  onNavTab cache the most-recently-seen sect so a later Family→Sect hand-off can hand it
+   *  straight to `preloadedSect` instead of re-fetching (see SectSceneView.getFamily/getSect). */
+  onSectLoaded?(sect: SectDetailView): void;
   /** current player's accountId */
   myAccountId: string;
   /** display name used as senderName for channel messages */
@@ -71,6 +75,11 @@ export interface SectSceneCallbacks {
 /** Handle returned by showSect so the core can push live sect-channel messages in. */
 export interface SectSceneView {
   applySectMsg(msg: SectMessageView): void;
+  /** Live family detail this scene has loaded (null while still loading) — read by nav/world.ts's
+   *  onNavTab hand-off so switching to the Family tab doesn't re-fetch membership already in hand. */
+  getFamily(): FamilyDetailView | null;
+  /** Live sect detail this scene has loaded (null while still loading). */
+  getSect(): SectDetailView | null;
 }
 
 export type SectTab = 'families' | 'channel';
@@ -95,6 +104,11 @@ export class SectSceneCore {
   myFamilyId: string | null = null;
   myFamilyRole: 'leader' | 'elder' | 'member' | null = null;
   inFamily = false;
+  /** Full family detail DataPanel fetched (or was handed via preloadedFamily) — kept around (not
+   *  just the derived fields above) so nav/world.ts's onNavTab hand-off to FamilyScene can pass it
+   *  straight through as that scene's preloadedFamily, skipping a redundant getMyFamily() call on
+   *  the way back (see SectSceneView.getFamily / social-tab-switch-cost). */
+  family: FamilyDetailView | null = null;
 
   sect: SectDetailView | null = null;
   messages: SectMessageView[] = [];

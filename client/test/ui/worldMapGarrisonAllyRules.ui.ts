@@ -76,7 +76,7 @@ describe('WorldMapInput garrison targeting rule (own + ally only, 2026-08-02)', 
     h.ctx.tileCache.set(`${FAR.x}:${FAR.y}`, { occupied: true, ownerName: 'Rival' } as WorldTileView);
     h.input.onTileClick(FAR.x, FAR.y);
     const labels = (h.showModal.mock.calls[0][1] as Btn[]).map((b) => b.label);
-    expect(labels).toEqual([t('world.actAttack'), '✕']);
+    expect(labels).toEqual([t('world.actAttack'), t('common.close')]);
   });
 
   it('a family-ally tile (tile.ally) offers Garrison, not Attack or Move, and never routes through the enemy branch', () => {
@@ -84,7 +84,7 @@ describe('WorldMapInput garrison targeting rule (own + ally only, 2026-08-02)', 
     h.ctx.tileCache.set(`${FAR.x}:${FAR.y}`, { occupied: true, ally: true, ownerName: 'Ally' } as WorldTileView);
     h.input.onTileClick(FAR.x, FAR.y);
     const labels = (h.showModal.mock.calls[0][1] as Btn[]).map((b) => b.label);
-    expect(labels).toEqual([t('world.actGarrison'), '✕']);
+    expect(labels).toEqual([t('world.actGarrison'), t('common.close')]);
     const headLines = h.showModal.mock.calls[0][0] as string[];
     expect(headLines[0]).toBe(t('world.allyTile'));
     expect(headLines).toContain('Ally');
@@ -95,7 +95,7 @@ describe('WorldMapInput garrison targeting rule (own + ally only, 2026-08-02)', 
     h.ctx.tileCache.set(`${FAR.x}:${FAR.y}`, { occupied: true, allySect: true, ownerName: 'SectMate' } as WorldTileView);
     h.input.onTileClick(FAR.x, FAR.y);
     const labels = (h.showModal.mock.calls[0][1] as Btn[]).map((b) => b.label);
-    expect(labels).toEqual([t('world.actGarrison'), '✕']);
+    expect(labels).toEqual([t('world.actGarrison'), t('common.close')]);
   });
 
   it('a sect-mate tile (tile.sectmate, own sect different family — 2026-08-08 ADR-060) also offers Garrison, never Attack', () => {
@@ -105,7 +105,7 @@ describe('WorldMapInput garrison targeting rule (own + ally only, 2026-08-02)', 
     const labels = (h.showModal.mock.calls[0][1] as Btn[]).map((b) => b.label);
     // Before this branch included `sectmate`, this tile fell through to the generic enemy branch and
     // offered Attack — which the server's friendlyAccountIds would reject with ALLY_TILE.
-    expect(labels).toEqual([t('world.actGarrison'), '✕']);
+    expect(labels).toEqual([t('world.actGarrison'), t('common.close')]);
     expect(labels).not.toContain(t('world.actAttack'));
   });
 
@@ -133,7 +133,7 @@ describe('WorldMapInput garrison targeting rule (own + ally only, 2026-08-02)', 
     } as StationedView);
     h.input.onTileClick(FAR.x, FAR.y);
     const labels = (h.showModal.mock.calls[0][1] as Btn[]).map((b) => b.label);
-    expect(labels).toEqual([t('world.actRecallStation'), '✕']);
+    expect(labels).toEqual([t('world.actRecallStation'), t('common.close')]);
     const recallBtn = (h.showModal.mock.calls[0][1] as Btn[]).find((b) => b.label === t('world.actRecallStation'))!;
     recallBtn.action();
     expect(h.doRecallStationed).toHaveBeenCalledWith('t3');

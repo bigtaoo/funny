@@ -62,6 +62,9 @@ export async function doSpeedup(host: ActionsHost, key: BuildingKey): Promise<vo
   host.render();
   try {
     host.setMe(await host.cb.worldApi.speedupBuild(host.cb.worldId, key, coins));
+    // The coins were charged server-side and the response above carries only the world state —
+    // pull the deducted balance back into the local wallet cache (see CitySceneCallbacks.refreshWallet).
+    await host.cb.refreshWallet?.();
     host.showToast(t('city.speedupDone'), C.green as number);
   } catch {
     host.showToast(t('city.err.generic'), C.red as number);
@@ -96,6 +99,8 @@ export async function doSpeedupTraining(host: ActionsHost, coins: number): Promi
   host.render();
   try {
     host.setMe(await host.cb.worldApi.speedupTraining(host.cb.worldId, coins));
+    // Same as doSpeedup above — resync the wallet after the server-side charge.
+    await host.cb.refreshWallet?.();
     host.showToast(t('city.speedupDone'), C.green as number);
   } catch {
     host.showToast(t('city.err.generic'), C.red as number);
