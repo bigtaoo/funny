@@ -59,6 +59,9 @@ export const CUE_CATALOGUE: Record<AudioCue, CueDef> = {
   // ── 结算 stinger：一局一次，谁都不许抢 ─────────────────────────────────────
   'sfx.result.victory': { gain: 1.0, priority: 120 },
   'sfx.result.defeat':  { gain: 1.0, priority: 120 },
+  // Same weight as the other two: a draw settles the match just as finally, and the three are
+  // mutually exclusive (one match ends exactly one way), so there is nothing here to rank.
+  'sfx.result.draw':    { gain: 1.0, priority: 120 },
 
   // ── UI ───────────────────────────────────────────────────────────────────
   'sfx.ui.tap':    { gain: 1.0, priority: 110 },

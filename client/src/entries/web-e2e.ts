@@ -123,6 +123,22 @@ setAudioBus(recordingBus);
   /** Every cue the trigger layer has asked for, newest last. */
   log: (): CueLogEntry[] => cueLog.slice(),
   clearLog: (): void => { cueLog.length = 0; },
+  /**
+   * The live `AudioContext` and the SFX bus `GainNode`, so a browser smoke can hang an
+   * `AnalyserNode` off the bus and read the **delivered** PCM peak. That distinction is the whole
+   * point: `audioSynth.ts` authors a gain *before* the per-cue filters, and how much of it
+   * survives depends on the cutoff — AUDIO_DESIGN.md §0 records `sfx.unit.hit` authoring 0.15 and
+   * delivering 0.063, i.e. the mix reading backwards from the catalogue's intent. No unit test can
+   * see that layer; only a real context can.
+   *
+   * Reaches through TS privacy exactly like `views.app` above, and for the same reason: a
+   * production seam (`WebAudioBus.busNode`) existing solely for a test would be the worse trade.
+   * Both are null until `ensure()` has run — in practice `preload()` runs it during startup.
+   */
+  nodes: (): { ctx: AudioContext | null; sfx: GainNode | null } => {
+    const priv = audio as unknown as { ctx: AudioContext | null; sfx: GainNode | null };
+    return { ctx: priv.ctx, sfx: priv.sfx };
+  },
 };
 
 startApp(new WebPlatform('game-canvas'), instrumentViews).catch(console.error);

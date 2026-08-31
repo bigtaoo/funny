@@ -72,7 +72,7 @@ export class SettingsScene implements Scene {
    */
   audioSliders: AudioSlider[] = [];
   /** The slider currently being dragged (set on a press inside one of the rects above), or null. */
-  private activeAudioSlider: ((x: number) => void) | null = null;
+  private activeAudioSlider: AudioSlider | null = null;
   /** Set by a slider drag; update() turns it into at most ONE render per frame (a render() per
    *  pointer-move rebuilds the whole scene tree and janks — the scroll-drag-throttle pattern). */
   private audioDirty = false;
@@ -97,7 +97,13 @@ export class SettingsScene implements Scene {
     this.currentAvatarId = cb.avatarId;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => { this.handleAudioMove(x); this.handlePickerMove(y); }));
-    this.unsubs.push(input.onUp(() => { this.activeAudioSlider = null; this.handlePickerUp(); }));
+    this.unsubs.push(input.onUp(() => {
+      // Release the slider BEFORE clearing it: the panel hangs its audition cue off onRelease so
+      // that "does letting go make a sound" stays a decision in audioPanel.ts (see there).
+      this.activeAudioSlider?.onRelease?.();
+      this.activeAudioSlider = null;
+      this.handlePickerUp();
+    }));
     // Avatar picker grid mouse-wheel scroll (browser/PC only — see wheelScroll.ts); only live while
     // the picker overlay is open, same viewport rect handleDown's inRect gate uses.
     this.unsubs.push(input.onWheel((x, y, deltaY) => {
@@ -137,7 +143,7 @@ export class SettingsScene implements Scene {
     // Volume sliders track the pointer live, so they are checked before (and instead of) the hit
     // table and jump to the press point immediately — see audioPanel.ts.
     const slider = hitTest(this.audioSliders, x, y);
-    if (slider) { this.activeAudioSlider = slider.onDrag; slider.onDrag(x); return; }
+    if (slider) { this.activeAudioSlider = slider; slider.onDrag(x); return; }
     // The picker grid is drag-scrollable: a down inside its viewport starts a tap-vs-drag gesture
     // (ScrollTapGesture) instead of firing immediately, so a drag that starts on a cell scrolls the
     // grid rather than instantly selecting/toasting that cell.
@@ -158,7 +164,7 @@ export class SettingsScene implements Scene {
   }
 
   private handleAudioMove(x: number): void {
-    this.activeAudioSlider?.(x);
+    this.activeAudioSlider?.onDrag(x);
   }
 
   private handlePickerUp(): void {

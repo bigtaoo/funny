@@ -217,9 +217,11 @@ export class EventsPanel {
         if (this.core.tutorial && !this.core.tutorial.isFinished) break;
         if (this.core.gameEnded) break;
         this.core.gameEnded = true;
-        // No stinger: a 17-minute draw is neither a win nor a loss, and the cue vocabulary only has
-        // `sfx.result.victory`/`.defeat` — either one would report the wrong outcome. Adding a third
-        // `sfx.result.draw` is a vocabulary + asset decision (AUDIO_DESIGN §7 step 6), not this step's.
+        // Stinger inside the one-shot gate, for the same 60 fps reason spelled out in `game_over`
+        // above. `sfx.result.draw` exists precisely because neither of the other two may stand in
+        // for it: a draw is its own outcome, and victory/defeat would each report the wrong one
+        // (AUDIO_DESIGN.md §7 step 6 — the gap left open by steps 3 and 4).
+        this.cue('sfx.result.draw');
         stateRecorder.setWinner(-1);
         this.core.input.cancelDrag(); this.core.input.cancelTapSelect();
         this.core.netStatus.clear();

@@ -129,12 +129,51 @@ describe('SettingsScene volume block (AUDIO_DESIGN §4)', () => {
     scene.destroy();
   });
 
-  it('a slider press is silent — it is a drag zone, not a button', () => {
+  it('a slider press and the whole drag are silent — it is a drag zone, not a button', () => {
+    // The original shape of this assertion covered down+up together. It was split when the release
+    // audition was added (AUDIO_DESIGN.md §0.2): what must stay true is that a slider never sounds
+    // like a BUTTON on press, and never once per pointer-move — one cue per move is exactly the
+    // machine-gun §0.1 caught `sfx.ink.tick` being, and a real drag is ~120 moves.
     installAudioSettings({ storage: memStorage() });
     const { scene, input, inner } = buildSettings();
     const sfx = inner.audioSliders[2]!.rect;
-    input._emitDown(sfx.x + 10, sfx.y + sfx.h / 2);
-    input._emitUp(sfx.x + 10, sfx.y + sfx.h / 2);
+    const y = sfx.y + sfx.h / 2;
+    input._emitDown(sfx.x + 10, y);
+    for (let i = 1; i <= 40; i++) input._emitMove(sfx.x + 10 + i * 3, y);
+    expect(bus.cues).toEqual([]);
+    scene.destroy();
+  });
+
+  it('letting go of the sfx slider auditions the new level exactly once', () => {
+    // Without this the SFX slider is a blind control: there is no BGM yet and nothing fires during
+    // a drag, so a real-browser drag of 240 pointer-moves measured 0 cues and a 0.0000 bus peak
+    // (AUDIO_DESIGN.md §0.2) — the player had no way to hear what they were choosing.
+    installAudioSettings({ storage: memStorage() });
+    const { scene, input, inner } = buildSettings();
+    const sfx = inner.audioSliders[2]!.rect;
+    const y = sfx.y + sfx.h / 2;
+    input._emitDown(sfx.x + 10, y);
+    input._emitMove(sfx.x + sfx.w / 2, y);
+    expect(bus.cues).toEqual([]);
+    input._emitUp(sfx.x + sfx.w / 2, y);
+    expect(bus.cues).toEqual(['sfx.ui.tap']);
+    // A pointer-up with no slider held must not audition — otherwise every tap anywhere on the
+    // scene would sound twice (once from the hit on down, once from this on up).
+    input._emitUp(sfx.x + sfx.w / 2, y);
+    expect(bus.cues).toEqual(['sfx.ui.tap']);
+    scene.destroy();
+  });
+
+  it('the bgm slider stays silent — its channel drives nothing yet', () => {
+    // Auditioning an SFX cue for the music slider would be a lie about what the slider controls:
+    // setMusicVolume accepts and ignores until §7 step 7 lands.
+    installAudioSettings({ storage: memStorage() });
+    const { scene, input, inner } = buildSettings();
+    const bgm = inner.audioSliders[1]!.rect;
+    const y = bgm.y + bgm.h / 2;
+    input._emitDown(bgm.x + 10, y);
+    input._emitMove(bgm.x + bgm.w / 2, y);
+    input._emitUp(bgm.x + bgm.w / 2, y);
     expect(bus.cues).toEqual([]);
     scene.destroy();
   });
