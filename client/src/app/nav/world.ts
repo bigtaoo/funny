@@ -297,11 +297,13 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     preload?: { family?: FamilyDetailView | null; sect?: SectDetailView | null },
   ): void {
     const myAccountId = saveManager.get().accountId;
-    // Hoisted + explicitly typed — same reason as goFamilyHub's `view` above: onNavTab (defined in
-    // the same call) reads it on a later Sect→Family tap.
-    // eslint-disable-next-line prefer-const -- assigned by showSect immediately below.
-    let view: SectSceneView;
-    view = views.showSect({
+    // Explicitly typed (not inferred) so onNavTab below — defined in the same call, reading it on a
+    // later Sect→Family tap — doesn't create the circular inference goFamilyHub's `view` comment
+    // describes; unlike that one there's nothing between declaration and initializer that reads
+    // `view` first, so this can stay a single `const` (goFamilyHub's own onNavTab, by contrast,
+    // isn't defined until after its `toSect` closure already reads `view`, which is why that one
+    // still needs the hoisted `let`).
+    const view: SectSceneView = views.showSect({
       onBack: onExit,
       onNavTab(tab) {
         if (tab === 'sect') return;
