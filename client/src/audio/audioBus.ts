@@ -19,13 +19,17 @@ import type { AudioBus, AudioCue } from './types';
  * 什么都不做的音频设备。**不是**降级路径的一部分——降级是"样本没有就用合成音"
  * （见 `CueMixer`）；这个是"这个宿主上没有音频设备"。
  *
- * 现在有两个真实使用者：
- *  1. **测试 / headless**（默认值，没人安装过任何东西）。
- *  2. **微信小游戏**：`wx.d.ts` 只声明了 `createInnerAudioContext`，那是一个按 URL 播放的
- *     播放器，**没有振荡器、没有 GainNode**——所以上面整条管线（合成音、`AudioBuffer` 样本、
- *     总线增益）在那个运行时上一行都跑不起来。微信侧要的是 AUDIO_DESIGN.md §3 说的
- *     `InnerAudioContext` 对象池，是一套形状不同的后端，属于后续独立一步；在它落地之前
- *     微信静音，而不是假装有声。
+ * 现在只有一个真实使用者：**测试 / headless**（默认值，没人安装过任何东西）。
+ *
+ * > **这里原先记着第二个使用者——微信小游戏——那条注释是错的，2026-08-31 删除。** 它写的是
+ * > "`wx.d.ts` 只声明了 `createInnerAudioContext`，没有振荡器、没有 GainNode，所以整条管线在
+ * > 那个运行时上一行都跑不起来"。**前半句是真的、后半句不是**：`wx.d.ts` 是我们自己写的声明
+ * > 文件，它没写的东西不等于运行时没有。小游戏从基础库 2.19.0 起提供
+ * > `wx.createWebAudioContext()`（标准 WebAudio 表面），微信现在装的是
+ * > `platform/wechat/WechatAudioBus.ts`，与 web 共用同一条管线。
+ * >
+ * > 留着这段是因为它是本仓库里"**把自己的类型声明当成外部世界的事实**"的一个现成样本，而这类
+ * > 错误在别处一样会犯：一个平台 API 在 `.d.ts` 里缺席，唯一的症状就是没人去用它。
  */
 export class NullAudioBus implements AudioBus {
   async preload(): Promise<void> {}
