@@ -34,7 +34,7 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 function findLabelPos(container: PIXI.Container, label: string): { x: number; y: number } | null {
   let found: { x: number; y: number } | null = null;
@@ -101,7 +101,7 @@ describe('EquipmentScene — Skins trailing peer (growth group [Cards | Equipmen
     const onSkins = vi.fn();
     const scene = buildEquipmentScene(onSkins);
 
-    hitForLabel(scene, t('roster.tab.skins')).action();
+    hitForLabel(scene, t('roster.tab.skins')).fn();
 
     expect(onSkins).toHaveBeenCalledTimes(1);
     scene.destroy();

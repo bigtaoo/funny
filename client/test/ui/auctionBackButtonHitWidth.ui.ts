@@ -31,7 +31,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const LANDSCAPE: [number, number] = [1920, 1080];
 
 type Rect = { x: number; y: number; w: number; h: number };
-type Hit = { rect: Rect; action: () => void };
+type Hit = { rect: Rect; fn: () => void };
 type CoreInternals = {
   backRect: Rect;
   hitRects: Hit[];

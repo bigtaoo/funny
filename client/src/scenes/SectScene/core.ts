@@ -40,6 +40,10 @@ import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
 import { drawHeaderTitle } from './header';
 import { SectRepaint, type ScrollCol } from './repaint';
 import { onPointerDown, onPointerMove, onPointerUp, onWheel } from './pointer';
+import { type Hit as BaseHit } from '../../ui/hits';
+
+/** Scroll-column-tagged hit for this scene's two (three with the modal) independent lists. */
+type Hit = BaseHit<ScrollCol>;
 
 export interface SectSceneCallbacks {
   onBack(): void;
@@ -191,8 +195,8 @@ export class SectSceneCore {
   // Hit rects. `scroll` marks a rect recorded in a scroll layer's build space (see ./repaint.ts):
   // handleDown maps the tap into that space and drops it when the tap landed outside the column's
   // viewport, where the overscan band's pre-built rows live.
-  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void; scroll?: ScrollCol }[] = [];
-  modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void; scroll?: ScrollCol }[] = [];
+  hitRects: Hit[] = [];
+  modalHits: Hit[] = [];
   modalOpen = false;
 
   destroyed = false;
@@ -263,7 +267,7 @@ export class SectSceneCore {
       variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     this.headerH = hdr.headerH;
-    this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
+    this.hitRects.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
     drawHeaderTitle(this, hdr.headerH);
   }
 
@@ -316,7 +320,7 @@ export class SectSceneCore {
   drawRail(): void {
     const hidden: SocialTab[] = !this.isFamilyLeader && !this.sect ? ['sect'] : [];
     const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'sect', {}, (tab) => this.cb.onNavTab(tab), hidden);
-    this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
+    this.hitRects.push(...railHits);
   }
 
   // ── Modals ──────────────────────────────────────────────────────────────────

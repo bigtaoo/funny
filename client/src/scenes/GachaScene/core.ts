@@ -12,7 +12,7 @@
 // interface declaration merging are now explicit constructor params/callbacks instead, see
 // claudedocs/client-modules.md's split-form priority note).
 import * as PIXI from 'pixi.js-legacy';
-import { ILayout, Rect } from '../../layout/ILayout';
+import { ILayout } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import type { Rarity } from '../../game/meta/SaveData';
@@ -28,6 +28,9 @@ import { SKIN_TARGET_UNIT, skinDisplayName } from '../../game/meta/skinDefs';
 import { snapFont } from '../../render/fontScale';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { LegendaryTrail, pointOnPerim, TRAIL_SPEED, TRAIL_SPAN, hslToHex, trailHue } from './trail';
+import { dispatchHit, type Hit } from '../../ui/hits';
+import { playSfx } from '../../audio/audioBus';
+import type { AudioCue } from '../../audio/types';
 
 /** itemId prefix → material icon glyph (mat_scrap/mat_lead/mat_binding). */
 export const MATERIAL_ICON: Record<string, 'scrap' | 'lead' | 'binding'> = {
@@ -95,14 +98,23 @@ export interface GachaSceneCallbacks {
   getRechargeBadge?(): boolean;
 }
 
-export interface Hit {
-  rect: Rect;
-  fn: () => void;
-}
-
 /** Was a `private static readonly` on GachaScene. A class expression this deep in a composition
  *  doesn't get its own name reserved for statics either, so module scope stays the equivalent. */
 export const FATE_COST = 30;
+
+/**
+ * One cue per pull, keyed on the BEST rarity in it (AUDIO_DESIGN.md §2.2 "盲盒揭示，按稀有度分层").
+ *
+ * Per pull, not per card: a ten-pull reveals its ten cards as one fan in one frame, so ten cues
+ * would collapse into a single smear whose loudest component is whatever came last — the opposite
+ * of the tiering. `legendary` folds into the epic cue because the vocabulary tops out at
+ * `.epic` ("史诗+"), and a legendary already has the trail VFX carrying its own emphasis.
+ */
+export function revealCue(results: readonly GachaResultEntry[]): AudioCue {
+  if (results.some((r) => r.rarity === 'epic' || r.rarity === 'legendary')) return 'sfx.ui.gacha.reveal.epic';
+  if (results.some((r) => r.rarity === 'rare')) return 'sfx.ui.gacha.reveal.rare';
+  return 'sfx.ui.gacha.reveal.common';
+}
 
 export class GachaSceneCore {
   readonly container: PIXI.Container;
@@ -209,6 +221,7 @@ export class GachaSceneCore {
       if (res.ok) {
         this.reveal = res.results;
         this.revealOverflow = res.overflow;
+        playSfx(revealCue(res.results));
       } else {
         showToastMessage(t(res.key), 'error');
       }
@@ -278,13 +291,7 @@ export class GachaSceneCore {
       this.oddsDragStart = { x, y, scroll: this.oddsScrollY, moved: false };
       return;
     }
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-        hit.fn();
-        return;
-      }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   handleOddsMove(y: number): void {

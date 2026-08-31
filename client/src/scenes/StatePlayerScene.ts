@@ -13,6 +13,7 @@ import { buildIcon } from '../render/icons';
 import { FS, snapFont } from '../render/fontScale';
 import { stateRecorder } from '../game/replay/StateRecorder';
 import { StatePlayerHud } from './StatePlayerScene/hud';
+import { tapHandler } from '../ui/hits';
 import type {
   StateReplay,
   StateFrame,
@@ -422,7 +423,7 @@ export class StatePlayerScene implements Scene {
     bg.y = y;
     bg.eventMode = 'static';
     bg.cursor = 'pointer';
-    bg.on('pointertap', onTap);
+    bg.on('pointertap', tapHandler(onTap));
 
     const label = makeText(text, {
       fontSize: snapFont(Math.round(h * 0.42)),

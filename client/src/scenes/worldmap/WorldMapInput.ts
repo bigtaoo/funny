@@ -6,6 +6,7 @@ import { showCityPanel, type CityPanelState } from './WorldMapInput/cityPanel';
 import { territoryConnected } from './logic/attackConnectivity';
 import type { WorldTileView } from '../../net/WorldApiClient';
 import type { WorldMapContext } from './WorldMapContext';
+import { dispatchHit, hitAction, inRect, runHit, type Hit } from '../../ui/hits';
 
 export class WorldMapInput {
   /** State owned by the extracted city-siege panel (see ./WorldMapInput/cityPanel.ts). */
@@ -307,8 +308,8 @@ export class WorldMapInput {
     // only assigned by WorldMapRendererBuild.build() (real scene construction) — optional-chained
     // since a number of UI tests construct WorldMapContext/WorldMapInput directly without it.
     const guideHit = this.ctx.guide?.currentAction();
-    if (guideHit && x >= guideHit.rect.x && x <= guideHit.rect.x + guideHit.rect.w && y >= guideHit.rect.y && y <= guideHit.rect.y + guideHit.rect.h) {
-      guideHit.fn();
+    if (guideHit && inRect(x, y, guideHit.rect)) {
+      runHit(guideHit);
       return;
     }
     // Modal buttons
@@ -319,10 +320,7 @@ export class WorldMapInput {
       // on one of those buttons would fire it instead of scrolling the list.
       const sr = this.ctx.infoScrollRect;
       if (sr && x >= sr.x && x <= sr.x + sr.w && y >= sr.y && y <= sr.y + sr.h) {
-        let pending: (() => void) | null = null;
-        for (const { rect, action } of this.ctx.modalBtnRects) {
-          if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { pending = action; break; }
-        }
+        const pending = hitAction(this.ctx.modalBtnRects, x, y);
         this.ctx.infoScrollDragging = true;
         this.ctx.infoScrollDragMoved = false;
         this.ctx.infoScrollDragStartY = y;
@@ -331,12 +329,7 @@ export class WorldMapInput {
         return;
       }
       // Outside the scroll list, modal buttons (tabs, close, action row) fire on down.
-      for (const { rect, action } of this.ctx.modalBtnRects) {
-        if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-          action();
-          return;
-        }
-      }
+      if (dispatchHit(this.ctx.modalBtnRects, x, y)) return;
       this.ctx.panels.closeModal();
       return;
     }
@@ -349,33 +342,24 @@ export class WorldMapInput {
     // field station), then the rest of the row, which flies the camera to wherever that team is —
     // its own base for a team sitting at home (2026-08-30).
     for (const entry of this.ctx.teamRowRects) {
-      if (entry.recallRect && entry.marchId) {
-        const r = entry.recallRect;
-        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-          void this.ctx.net.doRecall(entry.marchId, entry.worldId);
-          return;
-        }
+      // One table per row, in the old chain's order: the three action buttons win over the row
+      // body behind them (hitTest is first-pushed-wins, same as the `return`s used to be).
+      const rowHits: Hit[] = [];
+      const { marchId, stationedTeamId } = entry;
+      if (entry.recallRect && marchId) {
+        rowHits.push({ rect: entry.recallRect, fn: () => void this.ctx.net.doRecall(marchId, entry.worldId) });
       }
-      if (entry.instantReturnRect && entry.marchId) {
-        const r = entry.instantReturnRect;
-        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-          void this.ctx.net.doInstantReturn(entry.marchId, entry.worldId);
-          return;
-        }
+      if (entry.instantReturnRect && marchId) {
+        rowHits.push({ rect: entry.instantReturnRect, fn: () => void this.ctx.net.doInstantReturn(marchId, entry.worldId) });
       }
-      if (entry.recallStationRect && entry.stationedTeamId) {
-        const r = entry.recallStationRect;
-        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-          void this.ctx.net.doRecallStationed(entry.stationedTeamId);
-          return;
-        }
+      if (entry.recallStationRect && stationedTeamId) {
+        rowHits.push({ rect: entry.recallStationRect, fn: () => void this.ctx.net.doRecallStationed(stationedTeamId) });
       }
-      const row = entry.rowRect;
-      if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) {
-        this.ctx.view.centerAt(entry.jumpX, entry.jumpY);
-        this.ctx.view.renderMap();
-        return;
-      }
+      rowHits.push({
+        rect: entry.rowRect,
+        fn: () => { this.ctx.view.centerAt(entry.jumpX, entry.jumpY); this.ctx.view.renderMap(); },
+      });
+      if (dispatchHit(rowHits, x, y)) return;
     }
 
     // Begin drag (only inside the map band — below the header bar, above the chat HUD)

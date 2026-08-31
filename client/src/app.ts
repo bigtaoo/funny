@@ -28,6 +28,7 @@ import { startIdlePrefetch } from './assets/idlePrefetch';
 import { installPrefetchPolicy } from './assets/prefetchPolicy';
 import { LoadingOverlay } from './ui/LoadingOverlay';
 import { audioBus } from './audio/audioBus';
+import { installAudioSettings } from './audio/audioSettings';
 import { createAppCore } from './app/createAppCore';
 import { PixiAppViews } from './app/PixiAppViews';
 import type { AppViews } from './app/AppViews';
@@ -133,6 +134,11 @@ export async function startApp(
   const loading = new LoadingOverlay(app);
   await preloadBoot((done, total) => loading.setProgress(total ? done / total : 1));
   loading.destroy();
+
+  // Audio volume/mute (AUDIO_DESIGN.md §4). Must run before the first cue can fire and AFTER the
+  // entry installed its bus, or the saved gains would land on the NullAudioBus and the real one
+  // would start at its own defaults instead of the player's.
+  installAudioSettings({ storage: platform.storage });
 
   // Audio preload (AUDIO_DESIGN.md §5 "进场景前 preload"). Fire-and-forget, and deliberately
   // NOT part of the L0 gate above: a suspended AudioContext decodes fine, so this needs neither

@@ -22,7 +22,7 @@ import * as sectPointer from '../src/scenes/SectScene/pointer';
 import type { FamilySceneCore } from '../src/scenes/FamilyScene/core';
 import type { SectSceneCore } from '../src/scenes/SectScene/core';
 
-interface Hit { rect: { x: number; y: number; w: number; h: number }; action: () => void; scroll?: string }
+interface Hit { rect: { x: number; y: number; w: number; h: number }; fn: () => void; scroll?: string }
 
 /**
  * The fields the two pointer modules touch, and nothing else. `listCol` names the roster column,
@@ -136,8 +136,8 @@ describe('modal interception order — the dim-to-close rect must LOSE to button
       const core = makeCore(listCol, {
         modalOpen: true,
         modalHits: [
-          { rect: { x: 0, y: 0, w: 1920, h: 1080 }, action: dimClose },   // pushed first, on the bottom
-          { rect: { x: 400, y: 400, w: 200, h: 60 }, action: approve },   // drawn on top
+          { rect: { x: 0, y: 0, w: 1920, h: 1080 }, fn: dimClose },   // pushed first, on the bottom
+          { rect: { x: 400, y: 400, w: 200, h: 60 }, fn: approve },   // drawn on top
         ],
       });
       // A tap (no drag) inside the approve button, which also lies inside the dim rect.
@@ -153,8 +153,8 @@ describe('modal interception order — the dim-to-close rect must LOSE to button
       const core = makeCore(listCol, {
         modalOpen: true,
         modalHits: [
-          { rect: { x: 0, y: 0, w: 1920, h: 1080 }, action: dimClose },
-          { rect: { x: 400, y: 400, w: 200, h: 60 }, action: approve },
+          { rect: { x: 0, y: 0, w: 1920, h: 1080 }, fn: dimClose },
+          { rect: { x: 400, y: 400, w: 200, h: 60 }, fn: approve },
         ],
       });
       mod.onPointerDown(core as never, 50, 50);
@@ -167,7 +167,7 @@ describe('modal interception order — the dim-to-close rect must LOSE to button
       const approve = vi.fn();
       const core = makeCore(listCol, {
         modalOpen: true,
-        modalHits: [{ rect: { x: 400, y: 400, w: 200, h: 60 }, action: approve }],
+        modalHits: [{ rect: { x: 400, y: 400, w: 200, h: 60 }, fn: approve }],
       });
       drag(mod, core, 450, 420, -(DRAG_THRESHOLD + 20));
       expect(approve).not.toHaveBeenCalled();
@@ -185,7 +185,7 @@ describe('overscan rows: a hit rect no longer implies "on screen"', () => {
       const action = vi.fn();
       const core = makeCore(listCol, {
         // Region is 100..800; this row sits at y=850, i.e. built into the overscan below it.
-        hitRects: [{ rect: { x: 0, y: 840, w: 500, h: 60 }, action, scroll: listCol }],
+        hitRects: [{ rect: { x: 0, y: 840, w: 500, h: 60 }, fn: action, scroll: listCol }],
       });
       mod.onPointerDown(core as never, 100, 850);
       mod.onPointerUp(core as never, 100, 850);
@@ -197,7 +197,7 @@ describe('overscan rows: a hit rect no longer implies "on screen"', () => {
       // there; tagging is what distinguishes the two.
       const action = vi.fn();
       const core = makeCore(listCol, {
-        hitRects: [{ rect: { x: 0, y: 840, w: 500, h: 60 }, action }],
+        hitRects: [{ rect: { x: 0, y: 840, w: 500, h: 60 }, fn: action }],
       });
       mod.onPointerDown(core as never, 100, 850);
       mod.onPointerUp(core as never, 100, 850);
@@ -215,7 +215,7 @@ describe('overscan rows: a hit rect no longer implies "on screen"', () => {
         channelRegionBottom: 600,
         // x spans the channel column, which lives RIGHT of chatColX (1000) in the landscape split —
         // a rect at x 0..500 would miss on x and make this pass for the wrong reason.
-        hitRects: [{ rect: { x: 1000, y: 640, w: 500, h: 60 }, action, scroll: 'channel' }],
+        hitRects: [{ rect: { x: 1000, y: 640, w: 500, h: 60 }, fn: action, scroll: 'channel' }],
       });
       mod.onPointerDown(core as never, 1500, 650);           // below channelRegionBottom
       mod.onPointerUp(core as never, 1500, 650);
@@ -224,7 +224,7 @@ describe('overscan rows: a hit rect no longer implies "on screen"', () => {
       const core2 = makeCore(listCol, {
         channelRegionTop: 200,
         channelRegionBottom: 600,
-        hitRects: [{ rect: { x: 1000, y: 400, w: 500, h: 60 }, action, scroll: 'channel' }],
+        hitRects: [{ rect: { x: 1000, y: 400, w: 500, h: 60 }, fn: action, scroll: 'channel' }],
       });
       mod.onPointerDown(core2 as never, 1500, 420);          // inside it
       mod.onPointerUp(core2 as never, 1500, 420);
@@ -239,7 +239,7 @@ describe('overscan rows: a hit rect no longer implies "on screen"', () => {
         modalOpen: true,
         modalRegionTop: 300,
         modalRegionBottom: 500,
-        modalHits: [{ rect: { x: 0, y: 550, w: 500, h: 60 }, action: outside, scroll: 'modal' }],
+        modalHits: [{ rect: { x: 0, y: 550, w: 500, h: 60 }, fn: outside, scroll: 'modal' }],
       });
       mod.onPointerDown(core as never, 100, 560);
       mod.onPointerUp(core as never, 100, 560);
@@ -249,7 +249,7 @@ describe('overscan rows: a hit rect no longer implies "on screen"', () => {
         modalOpen: true,
         modalRegionTop: 300,
         modalRegionBottom: 500,
-        modalHits: [{ rect: { x: 0, y: 400, w: 500, h: 60 }, action: inside, scroll: 'modal' }],
+        modalHits: [{ rect: { x: 0, y: 400, w: 500, h: 60 }, fn: inside, scroll: 'modal' }],
       });
       mod.onPointerDown(core2 as never, 100, 420);
       mod.onPointerUp(core2 as never, 100, 420);
@@ -261,7 +261,7 @@ describe('overscan rows: a hit rect no longer implies "on screen"', () => {
       // cheap scroll, so the row is physically at y=300. A tap at 300 must hit it.
       const action = vi.fn();
       const core = makeCore(listCol, {
-        hitRects: [{ rect: { x: 0, y: 500, w: 500, h: 60 }, action, scroll: listCol }],
+        hitRects: [{ rect: { x: 0, y: 500, w: 500, h: 60 }, fn: action, scroll: listCol }],
         repaint: { appliedDelta: () => 200 },
       });
       mod.onPointerDown(core as never, 100, 300);
@@ -382,7 +382,7 @@ describe('FamilyScene only: the profile popup swallows pointer input', () => {
     const action = vi.fn();
     const core = makeCore('members', {
       profilePopup: { isOpen: true, handleTap: vi.fn() },
-      hitRects: [{ rect: { x: 0, y: 0, w: 1920, h: 1080 }, action }],
+      hitRects: [{ rect: { x: 0, y: 0, w: 1920, h: 1080 }, fn: action }],
     });
     familyPointer.onPointerDown(asFamily(core), 100, 400);
     expect((core.gesture as ScrollTapGesture).active).toBe(false);

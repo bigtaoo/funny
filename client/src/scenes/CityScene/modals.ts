@@ -227,13 +227,7 @@ export class ModalsPanel implements ModalsHandlers {
           panelRoot.addChild(lbl);
 
           const screenRect = this.core.toScreen(btnRectLocal, screenX, screenY, scale);
-          this.core.hits.push({
-            x: screenRect.x,
-            y: screenRect.y,
-            w: screenRect.w,
-            h: screenRect.h,
-            fn: () => void this.core.doSpeedup(key),
-          });
+          this.core.hits.push({ rect: screenRect, fn: () => void this.core.doSpeedup(key) });
         }
       } else {
         const btnRectLocal = { x: 10, y: iy, w: mw - 20, h: 32 };
@@ -254,10 +248,7 @@ export class ModalsPanel implements ModalsHandlers {
 
         const screenRect = this.core.toScreen(btnRectLocal, screenX, screenY, scale);
         this.core.hits.push({
-          x: screenRect.x,
-          y: screenRect.y,
-          w: screenRect.w,
-          h: screenRect.h,
+          rect: screenRect,
           fn: canAfford
             ? () => void this.core.doUpgrade(key)
             : () => this.core.showToast(t('city.err.noResources'), C.red),
@@ -268,10 +259,7 @@ export class ModalsPanel implements ModalsHandlers {
 
     // Close on tap-outside — pushed LAST so panel buttons above take priority.
     this.core.hits.push({
-      x: 0,
-      y: 0,
-      w,
-      h,
+      rect: { x: 0, y: 0, w, h },
       fn: () => {
         this.core.selectedBuilding = null;
         this.core.render();

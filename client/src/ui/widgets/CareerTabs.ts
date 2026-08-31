@@ -9,9 +9,9 @@
  * titles/achievements, not an operation on my roster (that stays in CardScene/"Develop").
  */
 import * as PIXI from 'pixi.js-legacy';
-import type { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from './HubTabs';
+import type { Hit } from '../hits';
 
 export type CareerTabKey = 'stats' | 'titles' | 'achievements' | 'codex';
 
@@ -39,7 +39,7 @@ export function drawCareerTabs(
   y: number,
   active: CareerTabKey,
   cb: CareerNavCallbacks,
-): { hits: Array<{ rect: Rect; fn: () => void }>; bottom: number } {
+): { hits: Hit[]; bottom: number } {
   // Order note: Achievements sits LAST so its own category sub-tabs (pve/pvp/collection/progression,
   // drawn by AchievementScene directly beneath this strip in landscape / in a header strip in
   // portrait) read as nested under the Achievements cell. When Achievements was 3rd and Collection

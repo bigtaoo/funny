@@ -21,7 +21,7 @@ const memStore = (() => {
 })();
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 function makeCard(id: string, defId: string, o: Partial<CardInstance> = {}): CardInstance {
   return { id, defId, level: 1, gear: {}, locked: false, ...o } as CardInstance;

@@ -1,6 +1,5 @@
 // Pure types + constants shared by LoginScene.ts and forms.ts (claudedocs/client-modules.md
 // "单文件 500 行收敛") — split out so forms.ts doesn't need to import LoginScene.ts itself.
-import { Rect } from '../../layout/ILayout';
 import { TranslationKey } from '../../i18n';
 
 export type AuthOutcome =
@@ -22,4 +21,3 @@ export const MIN_LOGIN_ID_LEN = 3;
 export type View = 'landing' | 'password' | 'register' | 'submitting';
 export type Field = 'loginId' | 'password' | 'confirmPassword' | 'displayName';
 
-export interface Hit { rect: Rect; fn: () => void; }

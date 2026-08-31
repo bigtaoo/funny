@@ -12,9 +12,11 @@ import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { t } from '../../i18n/index';
+import { type Hit, type Rect } from '../hits';
 
-export interface Rect { x: number; y: number; w: number; h: number; }
-export interface ModalHit { rect: Rect; action: () => void; }
+export type { Rect };
+/** Kept as a named alias: these dialogs return their button hits to a host scene's modal layer. */
+export type ModalHit = Hit;
 
 // 1.5x the original hand-tuned sizes (mw 300 / mh 130 / buttons 84×28).
 const MW = 450;
@@ -73,7 +75,7 @@ export function drawConfirmDialog(
   ml.addChild(cl);
 
   return [
-    { rect: { x: okBtn.x, y: okBtn.y, w: BTN_W, h: BTN_H }, action: onOk },
-    { rect: { x: caBtn.x, y: caBtn.y, w: BTN_W, h: BTN_H }, action: onCancel },
+    { rect: { x: okBtn.x, y: okBtn.y, w: BTN_W, h: BTN_H }, fn: onOk },
+    { rect: { x: caBtn.x, y: caBtn.y, w: BTN_W, h: BTN_H }, sound: 'sfx.ui.back', fn: onCancel },
   ];
 }

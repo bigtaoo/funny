@@ -75,12 +75,12 @@ export class AuctionScene implements Scene {
 
     // Item picker overlay: back button cancels the picker and returns to the create form.
     if (core.itemPickerOpen) {
-      core.hitRects.push({ rect: core.backRect, action: () => cancelItemPicker(core) });
+      core.hitRects.push({ rect: core.backRect, sound: 'sfx.ui.back', fn: () => cancelItemPicker(core) });
       renderItemPicker(core);
       return;
     }
 
-    core.hitRects.push({ rect: core.backRect, action: () => core.cb.onBack() });
+    core.hitRects.push({ rect: core.backRect, sound: 'sfx.ui.back', fn: () => core.cb.onBack() });
 
     const contentX = this.list.renderSidebar();
     const filterH = core.activeTab === 'all' ? this.list.renderFilterBar(contentX) : 0;

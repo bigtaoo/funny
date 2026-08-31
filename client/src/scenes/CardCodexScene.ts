@@ -14,6 +14,10 @@ import { wheelScrollY } from '../ui/wheelScroll';
 import { CARD_DEFINITIONS } from '@nw/engine/config';
 import { CardType, type CardDefinition } from '@nw/engine/types';
 import { type CodexEntry, codexFaceBox, storyText, drawTileFace, drawCardTile } from './CardCodexScene/tile';
+import { runHit, type Hit as BaseHit } from '../ui/hits';
+
+/** This scene has a single scrollable region, so `scroll` degrades to a boolean (see ui/hits.ts). */
+type Hit = BaseHit<boolean>;
 
 // ── CardCodexScene — read-only full card compendium ─────────────────────────────
 //
@@ -41,7 +45,6 @@ export interface CardCodexCallbacks {
   hasClaimableAchievement?: boolean;
 }
 
-interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
 
 export class CardCodexScene implements Scene {
   readonly container: PIXI.Container;
@@ -157,7 +160,7 @@ export class CardCodexScene implements Scene {
       const r = hit.rect;
       if (hit.scroll && y < this.regionTop) continue;
       const py = hit.scroll ? y + this.scrollY : y;
-      if (x >= r.x && x <= r.x + r.w && py >= r.y && py <= r.y + r.h) { hit.fn(); return; }
+      if (x >= r.x && x <= r.x + r.w && py >= r.y && py <= r.y + r.h) { runHit(hit); return; }
     }
   }
 
@@ -181,7 +184,7 @@ export class CardCodexScene implements Scene {
     // compendium, so the page title and the tab that opens it show the same picture.
     const hdr = drawSceneHeader(this.container, w, h, t('collection.title'), { icon: 'rosterIcon' });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     if (hasSidebar) {
       const sidebarTop = tbH + Math.round(h * 0.02);

@@ -38,7 +38,7 @@ const PICK_CELL_H = 266;
 
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
-  core: { hitRects: { rect: Rect; action: () => void }[] };
+  core: { hitRects: { rect: Rect; fn: () => void }[] };
   assign: { beginAssign(instId: string, slot: 'weapon' | 'armor' | 'trinket'): void };
 }
 
@@ -124,7 +124,7 @@ describe('EquipmentScene — assign picker renders as an icon-card grid', () => 
     int2.assign.beginAssign('inst_wp', 'weapon');
     const cellHit = int2.core.hitRects.find((h) => h.rect.h === PICK_CELL_H);
     expect(cellHit).toBeTruthy();
-    cellHit!.action();
+    cellHit!.fn();
     await Promise.resolve();
     expect(equippedTo).not.toBeNull();
     scene.destroy();

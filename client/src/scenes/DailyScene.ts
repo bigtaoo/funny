@@ -17,6 +17,7 @@ import type { DailyCallbacks } from './DailyScene/types';
 import { renderCheckin, renderDailyTasks, renderWeekly, renderAds, type DailyPanelCtx, type Hit } from './DailyScene/panels';
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import type { IconKind } from '../render/icons';
+import { dispatchHit } from '../ui/hits';
 
 export type { DailyCallbacks } from './DailyScene/types';
 
@@ -138,12 +139,7 @@ export class DailyScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
-    for (const h of this.hits) {
-      if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
-        h.fn();
-        return;
-      }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   private showToast(msg: string, kind: ToastKind = 'success'): void {
@@ -180,7 +176,7 @@ export class DailyScene implements Scene {
 
     // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN §3.1/§2.1).
     const hdr = drawSceneHeader(this.container, w, h, t(TAB_TITLE_KEY[this.activeTab]), { icon: TAB_ICON[this.activeTab] });
-    this.hits.push({ x: hdr.backRect.x, y: hdr.backRect.y, w: hdr.backRect.w, h: hdr.backRect.h, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     const save = this.cb.getSave?.();
     if (!save) {
@@ -246,13 +242,11 @@ export class DailyScene implements Scene {
     if (!this.landscape) {
       const barH = bottomNavH(h);
       const { hits } = drawBottomNavTabs(this.container, w, h - barH, barH, tabs, onSelect);
-      for (const hit of hits) this.hits.push({ x: hit.rect.x, y: hit.rect.y, w: hit.rect.w, h: hit.rect.h, fn: hit.fn });
+      this.hits.push(...hits);
       return;
     }
     const { hits } = drawSidebarTabsShared(this.container, sidebarNavW(w, h, true), top, h, tabs, onSelect);
-    for (const hit of hits) {
-      this.hits.push({ x: hit.rect.x, y: hit.rect.y, w: hit.rect.w, h: hit.rect.h, fn: hit.fn });
-    }
+    this.hits.push(...hits);
   }
 
   private async doCheckin(): Promise<void> {

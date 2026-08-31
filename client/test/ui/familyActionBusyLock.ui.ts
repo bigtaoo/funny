@@ -75,7 +75,7 @@ function findLabelPos(container: PIXI.Container, label: string): { x: number; y:
   return found;
 }
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 function hitUnder(hits: Hit[], pos: { x: number; y: number }): Hit | undefined {
   return hits.find(({ rect: r }) => pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h);
 }

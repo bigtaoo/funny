@@ -39,14 +39,15 @@ import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { subscribeInput, unsubscribeInput } from './input';
 import { renderCardHeader } from './header';
+import type { Hit } from '../../ui/hits';
 
 export type {
-  CardActionResult, CardBatchResult, CardSceneTab, CardCallbacks, CardRosterView, Rect, Hit,
+  CardActionResult, CardBatchResult, CardSceneTab, CardCallbacks, CardRosterView, Rect,
   DoFuseFn, PrepRound, DoPrepBatchFn,
 } from './logic/types';
 export { MODAL_DIM, CELL_GAP, CARD_CELL_H, CARD_CELL_W_TARGET } from './logic/types';
 import type {
-  CardCallbacks, CardSceneTab, Rect, Hit, DoFuseFn, DoPrepBatchFn,
+  CardCallbacks, CardSceneTab, Rect, DoFuseFn, DoPrepBatchFn,
 } from './logic/types';
 
 // Roster ordering + injury countdown moved to ./cardSort.ts (2026-08-18) — pure functions with
@@ -91,7 +92,7 @@ export class CardSceneCore {
   /** `owner` (card instance id) tags a roster-cell hit so applyCardState()'s refresh can drop and
    *  re-add just that cell's hit without touching the rest of the list — see ListPanel.refreshCardCell. */
   hitRects: Hit[] = [];
-  modalHits: { rect: Rect; action: () => void }[] = [];
+  modalHits: Hit[] = [];
   /**
    * Drag-slider hit zones for the modal layer (feed quantity slider, 2026-07-18): unlike modalHits
    * (tap-vs-drag deferred to pointer-up via ScrollTapGesture), a slider must track the pointer live

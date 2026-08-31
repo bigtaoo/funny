@@ -53,6 +53,7 @@ import { WorldApiError } from '../../net/WorldApiClient';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { BusyTracker, TimeoutError } from '../../ui/busyTracker';
+import { dispatchHit, hitAction, type Hit } from '../../ui/hits';
 import {
   type AuctionSceneCallbacks, type AucTab, type ItemClass, type AucFilter,
   HUD_H, MATERIALS, AUCTION_POLL_SEC, auctionSig, bidSig,
@@ -169,8 +170,8 @@ export class AuctionSceneCore {
   private scrollDirty = false;
 
   // Hit rects
-  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
-  modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void }[] = [];
+  hitRects: Hit[] = [];
+  modalHits: Hit[] = [];
   modalOpen = false;
 
   destroyed = false;
@@ -237,7 +238,7 @@ export class AuctionSceneCore {
     this.headerH = hdr.headerH;
     this.backRect = hdr.backRect;
     this.titleRight = hdr.titleRight;
-    this.hitRects.push({ rect: this.backRect, action: () => this.cb.onBack() });
+    this.hitRects.push({ rect: this.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     this.headerOverlayLayer = new PIXI.Container();
     this.container.addChild(this.headerOverlayLayer);
@@ -387,20 +388,12 @@ export class AuctionSceneCore {
 
   handleDown(x: number, y: number): void {
     if (this.modalOpen) {
-      for (const { rect, action } of this.modalHits) {
-        if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
-          action(); return;
-        }
-      }
+      dispatchHit(this.modalHits, x, y);
       return;
     }
     // Defer the hit action to pointer-up — if the pointer drags past the threshold it becomes a
     // scroll and the tap is dropped, so a drag starting on a listing card scrolls instead of firing it.
-    let hit: (() => void) | null = null;
-    for (const { rect, action } of this.hitRects) {
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { hit = action; break; }
-    }
-    this.gesture.down(this.scrollY, y, hit);
+    this.gesture.down(this.scrollY, y, hitAction(this.hitRects, x, y));
   }
 
   handleMove(_x: number, y: number): void {

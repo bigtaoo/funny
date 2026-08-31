@@ -38,7 +38,7 @@ initI18n('en', freshStorage(), ['zh', 'en', 'de']);
 const W = 1920;
 const H = 1080;
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 function findLabelPos(container: PIXI.Container, label: string): { x: number; y: number } | null {
   let found: { x: number; y: number } | null = null;
@@ -174,7 +174,7 @@ function prepInv(shortfall: number, lowN: number, gearedLow = false): { target: 
 }
 
 const startPrep = (scene: CardScene): void => {
-  hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))!)!.action();
+  hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepBtn'))!)!.fn();
 };
 const confirmPos = (scene: CardScene): { x: number; y: number } | null =>
   findLabelPos(modalLayerOf(scene), `${t('roster.fuseBtn')} (${FUSION_MATERIAL_COUNT}/${FUSION_MATERIAL_COUNT})`);
@@ -216,7 +216,7 @@ describe('CardScene fuse panel — prep progress tracks what actually landed', (
     startPrep(scene);
     expect(crumb(scene, 0, 2), 'run starts at 0/2').not.toBeNull();
 
-    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.action();
+    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.fn();
     await flushAsync();
 
     expect(crumb(scene, 0, 2), 'a rejected fuse must not be credited').not.toBeNull();
@@ -231,7 +231,7 @@ describe('CardScene fuse panel — prep progress tracks what actually landed', (
     openFuse(scene, target);
     startPrep(scene);
 
-    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.action();
+    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.fn();
     await flushAsync();
 
     expect(calls).toHaveLength(1);
@@ -246,14 +246,14 @@ describe('CardScene fuse panel — prep progress tracks what actually landed', (
     const scene = buildScene(baseCb(cardInv, { fuseCards: () => new Promise((r) => { release = r; }) }));
     openFuse(scene, target);
     startPrep(scene);
-    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.action();
+    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.fn();
 
     expect(priv(scene).core.bt.busy).toBe(true);
     const stopPos = findLabelPos(modalLayerOf(scene), t('roster.fusePrepCancel'));
     expect(stopPos, 'the label stays drawn, just not tappable').not.toBeNull();
     // The crumb registers no hit of its own while busy, so the only thing under that point is the
     // panel's whole-area swallow rect — tapping it must leave the run exactly where it was.
-    hitUnder(modalHitsOf(scene), stopPos!)?.action();
+    hitUnder(modalHitsOf(scene), stopPos!)?.fn();
     expect(crumb(scene, 0, 2), 'run untouched').not.toBeNull();
     expect(ringStarCount(modalLayerOf(scene)), 'still on the feeder, not popped back to the goal').toBe(1);
 
@@ -274,7 +274,7 @@ describe('CardScene fuse panel — batch prep', () => {
 
     const batchPos = findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 3 }));
     expect(batchPos).not.toBeNull();
-    hitUnder(modalHitsOf(scene), batchPos!)!.action();
+    hitUnder(modalHitsOf(scene), batchPos!)!.fn();
     await flushAsync();
 
     expect(calls, 'the run halted rather than spending cards against untrusted state').toHaveLength(1);
@@ -289,7 +289,7 @@ describe('CardScene fuse panel — batch prep', () => {
     const scene = buildScene(baseCb(cardInv, { fuseCardsBatch: mutatingFuseBatch(cardInv, calls, 0) }));
     openFuse(scene, target);
     startPrep(scene);
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.fn();
     await flushAsync();
 
     expect(calls).toHaveLength(0);
@@ -331,7 +331,7 @@ describe('CardScene fuse panel — batch prep', () => {
     const scene = buildScene(baseCb(cardInv, { fuseCardsBatch: async () => { throw new Error('boom'); } }));
     openFuse(scene, target);
     startPrep(scene);
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.fn();
     await flushAsync();
 
     expect(priv(scene).core.bt.busy).toBe(false);
@@ -379,7 +379,7 @@ describe('CardScene fuse panel — batch prep', () => {
     }));
     openFuse(scene, target);
     startPrep(scene);
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 3 }))!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 3 }))!)!.fn();
     await flushAsync();
 
     expect(requests, 'one tap ⇒ one request').toHaveLength(1);
@@ -399,7 +399,7 @@ describe('CardScene fuse panel — batch prep', () => {
     const scene = buildScene(baseCb(cardInv, { fuseCardsBatch: mutatingFuseBatch(cardInv, calls, 1) }));
     openFuse(scene, target);
     startPrep(scene);
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 3 }))!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 3 }))!)!.fn();
     await flushAsync();
 
     expect(toastSpy).toHaveBeenCalledWith(t('roster.fuseErr'), 'error');
@@ -436,7 +436,7 @@ describe('CardScene fuse panel — a completed prep hands the goal back ready to
     }));
     openFuse(scene, target);
     startPrep(scene);
-    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.action();
+    hitUnder(modalHitsOf(scene), findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }))!)!.fn();
     await flushAsync();
 
     expect(calls).toHaveLength(2);
@@ -445,7 +445,7 @@ describe('CardScene fuse panel — a completed prep hands the goal back ready to
     expect(confirmPos(scene), 'the goal is now fusable in one more tap').not.toBeNull();
 
     // ...and that tap fuses the GOAL, not a feeder.
-    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.action();
+    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.fn();
     await flushAsync();
     expect(calls).toHaveLength(3);
     expect(calls[2].targetId).toBe('target');
@@ -535,7 +535,7 @@ describe('CardScene fuse panel — two-level prep (chain-funded)', () => {
     // 12 Lv.1 ⇒ exactly 2 rounds, which is what frame 2 owes.
     const batchPos = findLabelPos(modalLayerOf(scene), t('roster.fusePrepAll', { n: 2 }));
     expect(batchPos).not.toBeNull();
-    hitUnder(modalHitsOf(scene), batchPos!)!.action();
+    hitUnder(modalHitsOf(scene), batchPos!)!.fn();
     await flushAsync();
 
     // Frame 2 done ⇒ popped back to the Lv.2 working card, now with its five Lv.2 materials.
@@ -545,7 +545,7 @@ describe('CardScene fuse panel — two-level prep (chain-funded)', () => {
     expect(confirmPos(scene), 'the Lv.2 is fusable now').not.toBeNull();
 
     // Fusing it produces the Lv.3 frame 1 owed ⇒ frame 1 completes ⇒ back on the goal, 5/5.
-    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.action();
+    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.fn();
     await flushAsync();
 
     expect(calls).toHaveLength(3);
@@ -553,7 +553,7 @@ describe('CardScene fuse panel — two-level prep (chain-funded)', () => {
     expect(ringStarCount(modalLayerOf(scene)), 'back on the Lv.3 goal').toBe(3);
     expect(confirmPos(scene)).not.toBeNull();
 
-    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.action();
+    hitUnder(modalHitsOf(scene), confirmPos(scene)!)!.fn();
     await flushAsync();
     expect(calls[3].targetId, 'and that last fuse is the goal itself').toBe('target');
     expect(ringStarCount(modalLayerOf(scene))).toBe(4);

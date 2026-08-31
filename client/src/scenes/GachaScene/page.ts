@@ -34,7 +34,7 @@ export class PagePanel implements PageHandlers {
       rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
     });
     const tbH = hdr.headerH;
-    this.core.hits.push({ rect: hdr.backRect, fn: () => this.core.cb.onBack() });
+    this.core.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.core.cb.onBack() });
 
     // Coin balance (top-right): shared header readout — identical across every scene.
     drawHeaderCurrency(this.core.container, w, tbH, coins, [], undefined, 1, hdr.titleRight);

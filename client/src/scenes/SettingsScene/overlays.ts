@@ -9,7 +9,7 @@ import { ui as C, sketchPanel } from '../../render/sketchUi';
 import { SketchPen } from '../../render/sketch';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { FS, snapFont } from '../../render/fontScale';
-import type { Hit } from './types';
+import type { Hit } from '../../ui/hits';
 
 function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
   return makeText(label, {

@@ -180,10 +180,7 @@ export function renderTrainModal(core: CitySceneCore): void {
     panelRoot.addChild(lbl);
     const screenRect = core.toScreen(rectLocal, screenX, screenY, scale);
     core.hits.push({
-      x: screenRect.x,
-      y: screenRect.y,
-      w: screenRect.w,
-      h: screenRect.h,
+      rect: screenRect,
       fn: () => {
         if (ok) {
           void core.doTrain(p.qty);
@@ -223,21 +220,12 @@ export function renderTrainModal(core: CitySceneCore): void {
     lbl.y = rectLocal.y + rectLocal.h / 2;
     panelRoot.addChild(lbl);
     const screenRect = core.toScreen(rectLocal, screenX, screenY, scale);
-    core.hits.push({
-      x: screenRect.x,
-      y: screenRect.y,
-      w: screenRect.w,
-      h: screenRect.h,
-      fn: () => void core.doSpeedupTraining(coins),
-    });
+    core.hits.push({ rect: screenRect, fn: () => void core.doSpeedupTraining(coins) });
   }
 
   // Close on tap-outside — pushed LAST so panel buttons above take priority.
   core.hits.push({
-    x: 0,
-    y: 0,
-    w,
-    h,
+    rect: { x: 0, y: 0, w, h },
     fn: () => {
       core.selectedTrain = false;
       core.render();

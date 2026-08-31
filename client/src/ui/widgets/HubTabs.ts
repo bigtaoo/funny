@@ -28,10 +28,10 @@
  *   // lay body out below barH + stripH
  */
 import * as PIXI from 'pixi.js-legacy';
-import type { Rect } from '../../layout/ILayout';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { snapFont } from '../../render/fontScale';
+import type { Hit } from '../hits';
 
 export interface HubTab {
   label: string;
@@ -75,8 +75,8 @@ export function drawHubTabs(
    * sites are unaffected.
    */
   opts?: { x?: number; pad?: number; gap?: number },
-): Array<{ rect: Rect; fn: () => void }> {
-  const hits: Array<{ rect: Rect; fn: () => void }> = [];
+): Hit[] {
+  const hits: Hit[] = [];
   if (tabs.length === 0) return hits;
 
   const originX = opts?.x ?? 0;
@@ -205,8 +205,8 @@ export function drawSidebarTabs(
    * e.g. the social rail backs out of a drilled-in detail view (an open mail) to that tab's list.
    */
   opts?: { sub?: boolean; activeTappable?: boolean },
-): { hits: Array<{ rect: Rect; fn: () => void }>; bottom: number } {
-  const hits: Array<{ rect: Rect; fn: () => void }> = [];
+): { hits: Hit[]; bottom: number } {
+  const hits: Hit[] = [];
   if (tabs.length === 0) return { hits, bottom: y };
 
   const sub = opts?.sub ?? false;
@@ -289,8 +289,8 @@ export function drawBottomNavTabs(
   tabs: HubTab[],
   onSelect: (index: number) => void,
   opts?: { activeTappable?: boolean },
-): { hits: Array<{ rect: Rect; fn: () => void }> } {
-  const hits: Array<{ rect: Rect; fn: () => void }> = [];
+): { hits: Hit[] } {
+  const hits: Hit[] = [];
   if (tabs.length === 0) return { hits };
 
   // Full-width backing strip drawn first: without it the pad/gap slivers around and between the

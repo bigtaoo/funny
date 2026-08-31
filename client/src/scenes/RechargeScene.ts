@@ -17,6 +17,7 @@ import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { RECHARGE_TIERS, type RechargeTierDef, type RechargeReward } from '../game/balance/rechargeTierDefs';
+import { hitAction, type Hit } from '../ui/hits';
 
 // ── RechargeScene — Cumulative recharge milestone panel (GACHA_DESIGN §13, ADR-045) ──────────────
 //
@@ -43,7 +44,6 @@ export interface RechargeCallbacks {
   getBattlePassBadge?(): boolean;
 }
 
-interface Hit { rect: Rect; fn: () => void; }
 
 type CellState = 'claimable' | 'claimed' | 'locked';
 
@@ -88,7 +88,7 @@ export class RechargeScene implements Scene {
    * the rail is drawn early and folds into `staticHits` as before.
    */
   private navHits: Hit[] = [];
-  private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void }> = [];
+  private scrollCellDefs: Array<{ x: number; cellY: number; w: number; h: number; fn: () => void; sound?: Hit['sound'] }> = [];
   /** Scroll viewport rect (mask bounds), cached so the drag fast-path can redraw the indicator. */
   private scrollView: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private scrollbar: PIXI.Graphics | null = null;
@@ -131,12 +131,7 @@ export class RechargeScene implements Scene {
     if (this.bt.busy) return;
     // Defer the hit action to pointer-up — a drag past the threshold becomes a scroll and drops the tap,
     // so a drag starting on a card scrolls instead of firing its claim (see BattlePassScene).
-    let hit: (() => void) | null = null;
-    for (const h of this.hits) {
-      const r = h.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit = h.fn; break; }
-    }
-    this.gesture.down(this.scrollY, y, hit);
+    this.gesture.down(this.scrollY, y, hitAction(this.hits, x, y));
   }
 
   private handleMove(_x: number, y: number): void {
@@ -165,7 +160,7 @@ export class RechargeScene implements Scene {
     this.hits = this.navHits.concat(
       this.staticHits,
       this.scrollCellDefs
-        .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn }))
+        .map((d) => ({ rect: { x: d.x, y: this.bodyTopY - sy + d.cellY, w: d.w, h: d.h }, fn: d.fn, sound: d.sound }))
         .filter((hit) => hit.rect.y + hit.rect.h > vTop && hit.rect.y < vBot),
     );
     if (this.scrollbar) { this.scrollbar.destroy(); this.scrollbar = null; }
@@ -206,7 +201,7 @@ export class RechargeScene implements Scene {
       // scroll-content render path rebuilds `this.hits` via updateScrollPosition() right after this
       // call, which folds navHits back in; the no-scroll early-return path never calls
       // updateScrollPosition(), so it also unshifts directly here to take effect immediately.
-      this.navHits = hits.map((hit) => ({ rect: hit.rect, fn: hit.fn }));
+      this.navHits = [...hits];
       this.hits.unshift(...hits);
       return;
     }
@@ -246,7 +241,7 @@ export class RechargeScene implements Scene {
       rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
     });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
     drawHeaderCurrency(this.container, w, tbH, coins, [], undefined, 1, hdr.titleRight);
     // Landscape draws the rail now (disjoint region); portrait defers to after the body so the
     // bottom bar paints on top of the scroll track (see the ends of this method).
@@ -320,7 +315,7 @@ export class RechargeScene implements Scene {
       // Whole card is the claim target when claimable (bigger tap target than the button glyph, and
       // matches BattlePassScene's whole-cell hit). updateScrollPosition() derives the absolute rect.
       if (this.cb.onClaim && state === 'claimable') {
-        this.scrollCellDefs.push({ x: pad, cellY, w: cw, h: cellH, fn: () => this.doClaim(def.id) });
+        this.scrollCellDefs.push({ x: pad, cellY, w: cw, h: cellH, sound: 'sfx.ui.reward', fn: () => this.doClaim(def.id) });
       }
     }
 

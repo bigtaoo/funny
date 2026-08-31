@@ -162,7 +162,7 @@ describe('SectScene — portrait keeps the tab switch', () => {
     const channelTabHit = scene.core.hitRects.find((h: any) =>
       h.rect.y === scene.core.headerH && h.rect.x > scene.core.railW + (scene.core.w - scene.core.railW) / 2 - 1);
     expect(channelTabHit).toBeTruthy();
-    channelTabHit.action();
+    channelTabHit.fn();
 
     expect(scene.core.activeTab).toBe('channel');
     texts = textsOf(scene);

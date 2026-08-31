@@ -21,7 +21,7 @@
  * Usage (each scene keeps its own hit-testing array):
  *
  *   const hdr = drawSceneHeader(this.container, w, h, t('achievement.title'));
- *   this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+ *   this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
  *   // lay out content below hdr.headerH
  *
  * Scenes that exempt themselves from the back-button convention (LobbyScene uses

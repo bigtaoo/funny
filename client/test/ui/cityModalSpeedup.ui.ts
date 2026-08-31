@@ -38,7 +38,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const PORTRAIT: [number, number] = [800, 1280];
 
 type Rect = { x: number; y: number; w: number; h: number };
-type Hit = Rect & { fn: () => void };
+type Hit = { rect: Rect; fn: () => void };
 type CitySceneInternals = {
   w: number; h: number;
   hits: Hit[];
@@ -178,7 +178,7 @@ describe('CityScene build-detail modal speed-up button', () => {
     expect(hits.length).toBe(1);
     // The surviving one is the modal's: it sits over the panel, not over the queue-bar strip, which
     // is where the pre-fix hit was — a tap at the old spot must now do nothing but close the modal.
-    expect(hits[0]!.y).toBeGreaterThan(beforeOpen[0]!.y + beforeOpen[0]!.h);
+    expect(hits[0]!.rect.y).toBeGreaterThan(beforeOpen[0]!.rect.y + beforeOpen[0]!.rect.h);
     expect(calls).toEqual([]);
     scene.destroy();
   });
@@ -198,10 +198,10 @@ describe('CityScene build-detail modal speed-up button', () => {
     expect(Math.abs((btnLblR.y + btnLblR.h / 2) - (statusR.y + statusR.h / 2))).toBeLessThan(16);
     // The hit rect actually covers the label it was sized from (a right-aligned button whose text
     // spilled outside its own border would read as "the button doesn't work" where it spilled).
-    expect(hit.x).toBeLessThanOrEqual(btnLblR.x + 1);
-    expect(hit.x + hit.w).toBeGreaterThanOrEqual(btnLblR.x + btnLblR.w - 1);
-    expect(hit.y).toBeLessThanOrEqual(btnLblR.y + 1);
-    expect(hit.y + hit.h).toBeGreaterThanOrEqual(btnLblR.y + btnLblR.h - 1);
+    expect(hit.rect.x).toBeLessThanOrEqual(btnLblR.x + 1);
+    expect(hit.rect.x + hit.rect.w).toBeGreaterThanOrEqual(btnLblR.x + btnLblR.w - 1);
+    expect(hit.rect.y).toBeLessThanOrEqual(btnLblR.y + 1);
+    expect(hit.rect.y + hit.rect.h).toBeGreaterThanOrEqual(btnLblR.y + btnLblR.h - 1);
     scene.destroy();
   });
 

@@ -136,7 +136,7 @@ export class CardScene implements Scene {
     // Before the back hit is registered: the header owns backRect, and its title/glyph follow the
     // active tab (./CardScene/header.ts's renderCardHeader).
     renderCardHeader(core);
-    core.hitRects.push({ rect: core.backRect, action: () => core.cb.onBack() });
+    core.hitRects.push({ rect: core.backRect, sound: 'sfx.ui.back', fn: () => core.cb.onBack() });
 
     this.list.renderHeaderCurrency();
     this.list.renderSidebar();

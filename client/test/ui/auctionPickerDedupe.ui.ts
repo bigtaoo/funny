@@ -188,10 +188,10 @@ describe('AuctionScene picker — real per-item icon wiring (defId carried throu
     scene.core.pickerFilter = 'equipment';
     scene.render();
     // One rendered card == one hit rect beyond the fixed chrome (back button + sidebar tab rail).
-    const pickHits = scene.core.hitRects.filter((h: { action: () => void }) => {
+    const pickHits = scene.core.hitRects.filter((h: { fn: () => void }) => {
       // Sidebar-tab/back actions don't touch createEquipId; the picker card's onPick does.
       const before = scene.core.createEquipId;
-      h.action();
+      h.fn();
       const touched = scene.core.createEquipId !== before || (before === null && scene.core.createEquipId !== null);
       scene.core.createEquipId = before; // restore, since some other hits might also be pressed by this loop
       return touched;

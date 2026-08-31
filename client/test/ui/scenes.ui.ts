@@ -1283,7 +1283,7 @@ describe('EquipmentScene — domain wiring', () => {
     (scene as any).core.activeTab = 'craft';
     (scene as any).render();
     // renderCraft must have populated hitRects with a Craft button for every affordable def.
-    const hits = (scene as any).core.hitRects as Array<{ action: () => void }>;
+    const hits = (scene as any).core.hitRects as Array<{ fn: () => void }>;
     expect(hits.length).toBeGreaterThan(1);
     await (scene as any).craft.doCraft('wp_pencil');
     expect(calls.craft).toEqual(['wp_pencil']);
@@ -1300,11 +1300,11 @@ describe('EquipmentScene — domain wiring', () => {
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
     (scene as any).core.activeTab = 'craft';
     (scene as any).render();
-    const hits = (scene as any).core.hitRects as Array<{ owner?: string; action: () => void }>;
+    const hits = (scene as any).core.hitRects as Array<{ owner?: string; fn: () => void }>;
     const pencilHit = hits.find((hh) => hh.owner === 'wp_pencil');
     expect(pencilHit).toBeDefined();
     const spy = vi.spyOn(log, 'showToastMessage');
-    pencilHit!.action();
+    pencilHit!.fn();
     expect(calls.craft).toEqual([]); // full bag → tapping must NOT fire the craft request
     expect(spy).toHaveBeenCalledWith(expect.any(String), 'error'); // ...but must explain why (equip.err.full)
     scene.destroy();
@@ -1336,8 +1336,8 @@ describe('EquipmentScene — domain wiring', () => {
     expect((scene as any).core.modalOpen).toBe(true);
     expect(calls.enhance).toEqual([]); // opening the modal must not fire the request itself
     // No protect stones in the fixture → the toggle hit is omitted, so modalHits[0] is the confirm button.
-    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
-    modalHits[0].action();
+    const modalHits = (scene as any).core.modalHits as Array<{ fn: () => void }>;
+    modalHits[0].fn();
     await Promise.resolve();
     expect(calls.enhance).toEqual([['eqEquippedFine', undefined]]);
     scene.destroy();
@@ -1355,9 +1355,9 @@ describe('EquipmentScene — domain wiring', () => {
     // render() dispatched to AssignPanel.renderAssign, which laid out one row per card (only card1).
     // renderSidebar() also always runs (even in assign mode) and only pushes a hit for the
     // INACTIVE sub-tab (drawSidebarTabs skips the active one) — so [back, Craft tab, card1 row].
-    const hits = (scene as any).core.hitRects as Array<{ action: () => void }>;
+    const hits = (scene as any).core.hitRects as Array<{ fn: () => void }>;
     expect(hits.length).toBe(3);
-    hits[2].action(); // → doEquipTo('card1') → doEquip('weapon', 'eqBagCommon', 'card1')
+    hits[2].fn(); // → doEquipTo('card1') → doEquip('weapon', 'eqBagCommon', 'card1')
     await Promise.resolve();
     expect(calls.equip).toEqual([['weapon', 'eqBagCommon', 'card1']]);
     expect((scene as any).core.assign).toBeNull();
@@ -1373,11 +1373,11 @@ describe('EquipmentScene — domain wiring', () => {
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'reforge', 'salvage']);
     actions.find((a) => a.key === 'reforge')!.fn(); // Reforge → openReforgeSelect(eqBagFine)
     expect((scene as any).core.modalOpen).toBe(true);
-    let modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
-    modalHits[0].action(); // material row (eqBagCommon) → confirmReforge → showConfirm
+    let modalHits = (scene as any).core.modalHits as Array<{ fn: () => void }>;
+    modalHits[0].fn(); // material row (eqBagCommon) → confirmReforge → showConfirm
     modalHits = (scene as any).core.modalHits;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
-    modalHits[0].action(); // OK → doReforge
+    modalHits[0].fn(); // OK → doReforge
     await Promise.resolve();
     expect(calls.reforge).toEqual([['eqBagFine', 'eqBagCommon']]);
     scene.destroy();
@@ -1402,8 +1402,8 @@ describe('EquipmentScene — domain wiring', () => {
     const scene = new EquipmentScene(createLayout(...LANDSCAPE), new InputManager(), cb);
     const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagFine) as Array<{ key: string; fn: () => void }>;
     actions.find((a) => a.key === 'reforge')!.fn(); // → openReforgeSelect(eqBagFine)
-    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
-    modalHits[0].action(); // material row (eqBagCommon) → confirmReforge → showConfirm
+    const modalHits = (scene as any).core.modalHits as Array<{ fn: () => void }>;
+    modalHits[0].fn(); // material row (eqBagCommon) → confirmReforge → showConfirm
     const modalLayer = (scene as any).core.modalLayer as PIXI.Container;
     let sawCost = false;
     const walk = (c: PIXI.Container): void => {
@@ -1425,9 +1425,9 @@ describe('EquipmentScene — domain wiring', () => {
     const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'salvage']);
     actions.find((a) => a.key === 'salvage')!.fn(); // Salvage → confirmSalvage → showConfirm
-    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
+    const modalHits = (scene as any).core.modalHits as Array<{ fn: () => void }>;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
-    modalHits[0].action(); // OK → doSalvage
+    modalHits[0].fn(); // OK → doSalvage
     await Promise.resolve();
     expect(calls.salvage).toEqual([['eqBagCommon']]);
     scene.destroy();
@@ -1443,9 +1443,9 @@ describe('EquipmentScene — domain wiring', () => {
     const actions = (scene as any).detail.instanceActions(save, save.equipmentInv.eqBagCommon) as Array<{ key: string; fn: () => void }>;
     expect(actions.map((a) => a.key)).toEqual(['enhance', 'equip', 'salvage', 'salvageAll']);
     actions.find((a) => a.key === 'salvageAll')!.fn(); // Salvage All → confirmSalvageAll → showConfirm
-    const modalHits = (scene as any).core.modalHits as Array<{ action: () => void }>;
+    const modalHits = (scene as any).core.modalHits as Array<{ fn: () => void }>;
     expect(modalHits.length).toBe(2); // showConfirm's [OK, Cancel]
-    modalHits[0].action(); // OK → doSalvageAll
+    modalHits[0].fn(); // OK → doSalvageAll
     await Promise.resolve();
     expect(calls.salvage).toEqual([['eqBagCommon', 'eqBagCommon2', 'eqBagCommon3']]);
     scene.destroy();

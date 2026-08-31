@@ -1,7 +1,6 @@
 // Pure types shared by SettingsScene.ts and its form① sibling modules (panels.ts/avatarPicker.ts/
 // overlays.ts) — split out so none of them needs to import SettingsScene.ts itself (claudedocs/
 // client-modules.md "单文件 500 行收敛").
-import { Rect } from '../../layout/ILayout';
 import { TranslationKey } from '../../i18n';
 import type { AvatarCategory } from '../../render/avatar';
 import type { IconKind } from '../../render/icons';
@@ -63,7 +62,6 @@ export interface SettingsSceneCallbacks {
   onRename?(name: string): Promise<RenameOutcome>;
 }
 
-export interface Hit { rect: Rect; fn: () => void; }
 
 /** One selectable item in the avatar picker grid, regardless of category. */
 export interface AvatarPickerItem {

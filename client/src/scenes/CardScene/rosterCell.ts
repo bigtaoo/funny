@@ -24,12 +24,16 @@ import type { CardSLGState } from '../../net/WorldApiClient';
 import { CARD_DEFS, MAX_CARD_LEVEL, troopCap, cardPower, cardAttack, cardHp } from '../../game/meta/cardDefs';
 import type { CardSceneCore } from './core';
 import { CARD_CELL_H, injuryCountdown } from './core';
+import type { Hit } from '../../ui/hits';
+
+/** A cell-local hit: same shape as {@link Hit}, but its rect is relative to the cell's origin —
+ *  list.ts translates it into scene space when it copies these onto the scene's own table. */
+export type LocalHit = Hit;
 
 /** The three gear slots, in the order the cell lays their icons out. */
 export const GEAR_SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 
 /** A hit rect in cell-local coordinates; ListPanel.syncCells offsets it by the cell's screen origin. */
-export interface LocalHit { rect: { x: number; y: number; w: number; h: number }; action: () => void }
 
 /**
  * Everything {@link renderCardCell} reads, flattened into one string. **Add to this whenever the
@@ -211,14 +215,14 @@ export function renderCardCell(
     if (core.cb.openEquipment && !core.bt.busy) {
       hits.push({
         rect: { x: iconCx - gearIconSize / 2, y: gearCenterY - gearIconSize / 2, w: gearIconSize, h: gearIconSize },
-        action: () => core.cb.openEquipment!(card.id, slot),
+        fn: () => core.cb.openEquipment!(card.id, slot),
       });
     }
   });
 
   hits.push({
     rect: { x: 0, y: 0, w: cellW, h: CARD_CELL_H },
-    action: () => onOpenDetail(card.id),
+    fn: () => onOpenDetail(card.id),
   });
   return hits;
 }

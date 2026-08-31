@@ -432,7 +432,7 @@ export class RenderPanel implements RenderHandlers {
           });
         }
         this.core.hits.push({
-          ...cardRect,
+          rect: cardRect,
           fn:
             tile.kind === 'bld'
               ? () => {

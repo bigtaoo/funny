@@ -135,7 +135,7 @@ function collectTexts(root: PIXI.Container): string[] {
   return out;
 }
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 /** Find the (first) PIXI.Text node whose text matches `label` and return its render position
  *  (labels here are all anchored (0.5,0.5), so .x/.y IS the center). */
@@ -170,7 +170,7 @@ function tapLabel(scene: any, container: PIXI.Container, label: string, hitsFiel
   const hits: Hit[] = scene.core[hitsField];
   const hit = hits.find(({ rect: r }) => pos!.x >= r.x && pos!.x <= r.x + r.w && pos!.y >= r.y && pos!.y <= r.y + r.h);
   expect(hit, `no hit rect under "${label}"`).toBeDefined();
-  hit!.action();
+  hit!.fn();
 }
 
 /** Capturing hidden-input stub. The headless UI harness (plain Node) has no DOM, so the numeric-field
@@ -679,7 +679,7 @@ describe('AuctionScene — create form item field (doubled height + emphasis)', 
     expect(itemHit.rect.h).toBe(60 * FORM_SCALE); // was 30*SCALE pre-2026-08-08
 
     const openItemPickerSpy = vi.spyOn(itemPickerRenderModule, 'openItemPicker');
-    itemHit.action();
+    itemHit.fn();
     expect(openItemPickerSpy).toHaveBeenCalledTimes(1);
     scene.destroy();
   });

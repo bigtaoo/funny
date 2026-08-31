@@ -14,7 +14,7 @@ import type {
 } from '../../net/WorldApiClient';
 import { carriedTroops } from '../../game/meta/teamTroops';
 import { getArtTexture } from '../../render/cardArt';
-import type { Hit } from './core';
+import type { Hit } from '../../ui/hits';
 
 /**
  * Where a team currently is, if it isn't sitting at home — mirrors the server's
@@ -89,7 +89,7 @@ export function addBtn(
   lbl.x = x + w / 2;
   lbl.y = y + h / 2;
   host.container.addChild(lbl);
-  host.hits.push({ x, y, w, h, fn });
+  host.hits.push({ rect: { x, y, w, h }, fn });
 }
 
 export function fmtNum(n: number): string {

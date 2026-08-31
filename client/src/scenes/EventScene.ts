@@ -10,6 +10,7 @@ import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage, type ToastKind } from '../net/log';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { FS, snapFont } from '../render/fontScale';
+import { dispatchHit, type Hit } from '../ui/hits';
 
 // ── EventScene — limited-time events (B6, ADR-014) ────────────────────────────
 //
@@ -54,8 +55,6 @@ export interface EventCallbacks {
   getEvents?(): Promise<EventView[]>;
   onClaimReward?(eventId: string, rewardId: string): Promise<{ pointsLeft: number }>;
 }
-
-interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
 
 export class EventScene implements Scene {
   readonly container: PIXI.Container;
@@ -107,12 +106,7 @@ export class EventScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
-    for (const h of this.hits) {
-      if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
-        h.fn();
-        return;
-      }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   private showToast(msg: string, kind: ToastKind = 'success'): void {
@@ -130,7 +124,7 @@ export class EventScene implements Scene {
     if (decoC) this.container.addChild(decoC);
 
     const hdr = drawSceneHeader(this.container, w, h, t('event.title'), { icon: 'eventTabIcon' });
-    this.hits.push({ ...hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     if (this.events.length === 0) {
       const empty = txt(t('event.noEvents'), FS.headline, C.mid);
@@ -180,7 +174,7 @@ export class EventScene implements Scene {
       label.y = top + tabH / 2;
       this.container.addChild(label);
       const idx = i;
-      this.hits.push({ x, y: top, w: tabW - w * 0.01, h: tabH, fn: () => { this.selectedIdx = idx; this.render(); } });
+      this.hits.push({ rect: { x, y: top, w: tabW - w * 0.01, h: tabH }, fn: () => { this.selectedIdx = idx; this.render(); } });
     });
   }
 
@@ -335,7 +329,7 @@ export class EventScene implements Scene {
         this.container.addChild(claimLabel);
         const { eventId } = event;
         const { rewardId } = reward;
-        this.hits.push({ x: PAD, y: cy, w: cardW, h: cardH, fn: () => void this.doClaim(eventId, rewardId) });
+        this.hits.push({ rect: { x: PAD, y: cy, w: cardW, h: cardH }, sound: 'sfx.ui.reward', fn: () => void this.doClaim(eventId, rewardId) });
       }
     });
   }

@@ -9,7 +9,8 @@ import { ui as C } from '../../render/sketchUi';
 import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../../i18n';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildAvatar } from '../../render/avatar';
-import type { SettingsSceneCallbacks, Hit } from './types';
+import type { SettingsSceneCallbacks } from './types';
+import type { Hit } from '../../ui/hits';
 import { isDataSaverEnabled, setDataSaverEnabled } from '../../assets/prefetchPolicy';
 
 const LOCALE_LABEL: Record<Locale, string> = { zh: '中文', en: 'English', de: 'Deutsch' };

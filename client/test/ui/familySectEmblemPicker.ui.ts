@@ -104,12 +104,12 @@ describe('FamilyScene — emblem picker open/pick/confirm flow', () => {
     scene.core.openEmblemPicker();
 
     const gridHit = scene.core.modalHits[3]; // hits[0]=dim, hits[1]=grid[0], hits[2]=grid[1], hits[3]=grid[2]
-    gridHit.action(); // pick EMBLEM_KEYS[2] — redraws modalHits in place
+    gridHit.fn(); // pick EMBLEM_KEYS[2] — redraws modalHits in place
     const swatchStart = 1 + EMBLEM_KEYS.length;
     const swatchHit = scene.core.modalHits[swatchStart + 5]; // EMBLEM_COLORS[5]
-    swatchHit.action();
+    swatchHit.fn();
     const confirmHit = scene.core.modalHits[scene.core.modalHits.length - 2];
-    confirmHit.action();
+    confirmHit.fn();
     await flushAsync(); await flushAsync(); await flushAsync(); await flushAsync(); // let withTimeout (Promise.race+finally) + doSetEmblem's own await settle
 
     expect(scene.core.cb.worldApi.setFamilyEmblem).toHaveBeenCalledWith(EMBLEM_KEYS[2], EMBLEM_COLORS[5]);
@@ -122,9 +122,9 @@ describe('FamilyScene — emblem picker open/pick/confirm flow', () => {
     const scene = buildFamilyScene(makeFamily('leader'));
     await flushFamily(scene);
     scene.core.openEmblemPicker();
-    scene.core.modalHits[3].action(); // pick something
+    scene.core.modalHits[3].fn(); // pick something
     const cancelHit = scene.core.modalHits[scene.core.modalHits.length - 1];
-    cancelHit.action();
+    cancelHit.fn();
 
     expect(scene.core.modalOpen).toBe(false);
     expect(scene.core.cb.worldApi.setFamilyEmblem).not.toHaveBeenCalled();
@@ -137,7 +137,7 @@ describe('FamilyScene — emblem picker open/pick/confirm flow', () => {
     await flushFamily(scene);
     scene.core.openEmblemPicker();
     const confirmHit = scene.core.modalHits[scene.core.modalHits.length - 2];
-    confirmHit.action();
+    confirmHit.fn();
     await flushAsync(); await flushAsync(); await flushAsync(); 
 
     expect(scene.core.modalOpen).toBe(true);
@@ -152,7 +152,7 @@ describe('FamilyScene — emblem picker open/pick/confirm flow', () => {
     // The seeded cell (EMBLEM_KEYS[7]) is hits[1+7]=hits[8]; confirm without picking anything new
     // should round-trip the SAME key/colour it was seeded with.
     const confirmHit = scene.core.modalHits[scene.core.modalHits.length - 2];
-    confirmHit.action();
+    confirmHit.fn();
     await flushAsync(); await flushAsync(); await flushAsync(); await flushAsync(); 
     expect(scene.core.cb.worldApi.setFamilyEmblem).toHaveBeenCalledWith(EMBLEM_KEYS[7], EMBLEM_COLORS[4]);
   });
@@ -223,9 +223,9 @@ describe('SectScene — emblem picker open/pick/confirm flow (sect-leader-only, 
     await flushSect(scene);
     scene.core.emblemHooks.openEmblemPicker();
 
-    scene.core.modalHits[5].action(); // pick EMBLEM_KEYS[4]
+    scene.core.modalHits[5].fn(); // pick EMBLEM_KEYS[4]
     const confirmHit = scene.core.modalHits[scene.core.modalHits.length - 2];
-    confirmHit.action();
+    confirmHit.fn();
     await flushAsync(); await flushAsync(); await flushAsync(); await flushAsync(); 
 
     expect(scene.core.cb.worldApi.setSectEmblem).toHaveBeenCalledWith('w1', EMBLEM_KEYS[4], EMBLEM_COLORS[0]);

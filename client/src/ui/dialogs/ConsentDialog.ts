@@ -16,6 +16,7 @@ import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
+import { tapHandler } from '../hits';
 
 export interface ConsentCallbacks {
   /** Player accepted — the core records consent (local flag + server) and proceeds. */
@@ -124,7 +125,7 @@ export class ConsentDialog implements Scene {
     btn.x = bX; btn.y = bY;
     btn.eventMode = 'static';
     btn.cursor = 'pointer';
-    btn.on('pointertap', () => this.cb.onAccept());
+    btn.on('pointertap', tapHandler(() => this.cb.onAccept()));
     this.container.addChild(btn);
 
     const btnLabel = txt(t('consent.accept'), snapFont(Math.round(bH * 0.4)), 0xffffff, true);
@@ -138,9 +139,9 @@ export class ConsentDialog implements Scene {
     link.anchor.set(0.5, 0); link.x = cx; link.y = y;
     link.eventMode = 'static';
     link.cursor = 'pointer';
-    link.on('pointertap', () => {
+    link.on('pointertap', tapHandler(() => {
       if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener');
-    });
+    }));
     this.container.addChild(link);
   }
 }

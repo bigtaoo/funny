@@ -252,12 +252,12 @@ function renderPickerSidebar(core: AuctionSceneCore): number {
   if (!landscape) {
     const barH = bottomNavH(h);
     const { hits } = drawBottomNavTabs(core.bodyLayer, w, h - barH, barH, hubTabs, onSelect);
-    for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+    core.hitRects.push(...hits);
     return 0;
   }
   const sidebarW = sidebarNavW(w, h, true);
   const { hits } = drawSidebarTabs(core.bodyLayer, sidebarW, y, h, hubTabs, onSelect);
-  for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+  core.hitRects.push(...hits);
   return sidebarW;
 }
 
@@ -352,7 +352,7 @@ function renderPickCard(core: AuctionSceneCore, entry: PickEntry, x: number, y: 
   hint.anchor.set(0.5, 1); hint.x = x + cardW / 2; hint.y = y + CARD_H - 8;
   core.bodyLayer.addChild(hint);
 
-  core.hitRects.push({ rect: { x, y, w: cardW, h: CARD_H }, action: entry.onPick });
+  core.hitRects.push({ rect: { x, y, w: cardW, h: CARD_H }, fn: entry.onPick });
 }
 
 export function renderItemPicker(core: AuctionSceneCore): void {

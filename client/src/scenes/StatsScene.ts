@@ -12,7 +12,8 @@ import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { MATERIAL_ORDER } from '@nw/engine/balance/pveUpgrades';
 import type { MatchHistoryEntry } from '../net/ApiClient';
-import { type Hit, type Row, sectionHeight, historyHeight, drawHistorySection, drawSection } from './StatsScene/panels';
+import { type Row, sectionHeight, historyHeight, drawHistorySection, drawSection } from './StatsScene/panels';
+import { dispatchHit, type Hit } from '../ui/hits';
 
 // ── StatsScene — match record / stats page (lobby "stats" nav) ───────────────────
 //
@@ -145,10 +146,7 @@ export class StatsScene implements Scene {
     // Landscape's single static layout keeps the old immediate tap-on-down dispatch —
     // there's nothing to scroll, so deferring to onUp would only add latency.
     if (this.landscape) {
-      for (const hit of this.hits) {
-        const r = hit.rect;
-        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
-      }
+      dispatchHit(this.hits, x, y);
       return;
     }
     this.dragStart = { x, y, scroll: this.scrollY, moved: false };
@@ -167,10 +165,7 @@ export class StatsScene implements Scene {
   private handleUp(x: number, y: number): void {
     if (this.landscape) return;
     if (this.dragStart && !this.dragStart.moved) {
-      for (const hit of this.hits) {
-        const r = hit.rect;
-        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); break; }
-      }
+      dispatchHit(this.hits, x, y);
     }
     this.dragStart = null;
   }
@@ -199,7 +194,7 @@ export class StatsScene implements Scene {
 
     const hdr = drawSceneHeader(this.container, w, h, t('stats.title'), { icon: 'statsTabIcon' });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     // The Career hub peer strip [Stats|Titles|Achievements] (LOBBY_IA_REDESIGN P1.5 peer-tab
     // convention, see CareerTabs.ts): landscape stacks it in the notebook-margin gutter below the

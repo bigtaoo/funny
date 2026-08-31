@@ -323,7 +323,7 @@ export class FeedPanel {
         this.fuseRingGeom = drawHeaderAndRing(
           ml, currentTarget, def, inv, slotIds,
           { colX, colW, topY, headerBlockH, ringH, S }, artHooked,
-          (rect, action) => core.modalHits.push({ rect, action }),
+          (rect, fn) => core.modalHits.push({ rect, fn }),
           unassign, () => core.feedRedraw?.(),
         );
       };
@@ -363,12 +363,12 @@ export class FeedPanel {
           if (x2 <= x1 || y2 <= y1) return null;
           return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
         };
-        const pushHit = (rect: Rect, action: () => void): void => {
+        const pushHit = (rect: Rect, fn: () => void): void => {
           const c = clip(rect);
-          if (c) core.modalHits.push({ rect: c, action });
+          if (c) core.modalHits.push({ rect: c, fn });
         };
-        const pushPlainHit = (rect: Rect, action: () => void): void => {
-          core.modalHits.push({ rect, action });
+        const pushPlainHit = (rect: Rect, fn: () => void): void => {
+          core.modalHits.push({ rect, fn });
         };
 
         for (let i = 0; i < groups.length; i++) {
@@ -474,15 +474,15 @@ export class FeedPanel {
       if (prepStack.length) {
         drawPrepCrumb(
           ml, prepStack, inv, mx, my + 3 * S, mw, S, core.bt.busy,
-          (rect, action) => core.modalHits.push({ rect, action }),
+          (rect, fn) => core.modalHits.push({ rect, fn }),
           cancelPrep,
         );
       }
 
       // Dismiss on backdrop — suppressed while a fuse is in flight, same reasoning as Cancel above.
-      core.modalHits.push({ rect: { x: mx, y: my, w: mw, h: mh }, action: () => {} });
+      core.modalHits.push({ rect: { x: mx, y: my, w: mw, h: mh }, fn: () => {} });
       if (!core.bt.busy) {
-        core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => { core.closeModal(); core.render(); } });
+        core.modalHits.push({ rect: { x: 0, y: 0, w, h }, sound: 'sfx.ui.back', fn: () => { core.closeModal(); core.render(); } });
       }
     };
 

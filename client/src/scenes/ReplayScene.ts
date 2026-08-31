@@ -18,6 +18,7 @@ import { t } from '../i18n';
 import { netLog } from '../net/log';
 import { ui, sketchPanel, seedFor } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
+import { tapHandler } from '../ui/hits';
 
 /**
  * Replay player (S1-RP).
@@ -404,7 +405,7 @@ export class ReplayScene implements Scene {
     hot.endFill();
     hot.eventMode = 'static';
     hot.cursor = 'pointer';
-    hot.on('pointertap', () => this.switchViewpoint());
+    hot.on('pointertap', tapHandler(() => this.switchViewpoint()));
     this.overlay.addChild(hot);
   }
 
@@ -425,7 +426,7 @@ export class ReplayScene implements Scene {
     bg.y = y;
     bg.eventMode = 'static';
     bg.cursor = 'pointer';
-    bg.on('pointertap', onTap);
+    bg.on('pointertap', tapHandler(onTap));
 
     const label = makeText(text, {
       fontSize: snapFont(Math.round(h * 0.42)),

@@ -94,7 +94,7 @@ describe('AuctionScene — core.reopenCreateForm actually returns the user to th
     // Real entry point: open the create form, then tap its item field (always modalHits[0]).
     scene.createListing.openCreateForm();
     expect(scene.core.modalOpen).toBe(true);
-    scene.core.modalHits[0].action();
+    scene.core.modalHits[0].fn();
     // openItemPicker() closes the modal and swaps the body over to the picker overlay.
     expect(scene.core.itemPickerOpen).toBe(true);
     expect(scene.core.modalOpen).toBe(false);
@@ -124,7 +124,7 @@ describe('AuctionScene — core.reopenCreateForm actually returns the user to th
 
     scene.core.createClass = 'material'; // a class that always has a label ("Scrap")
     scene.createListing.openCreateForm();
-    scene.core.modalHits[0].action();
+    scene.core.modalHits[0].fn();
     expect(scene.core.itemPickerOpen).toBe(true);
 
     // The picker overlay replaces the body hits and rebinds the header Back button to
@@ -133,7 +133,7 @@ describe('AuctionScene — core.reopenCreateForm actually returns the user to th
       (hh: { rect: { x: number; y: number; w: number; h: number } }) => hh.rect === scene.core.backRect,
     );
     expect(backHit).toBeDefined();
-    backHit.action();
+    backHit.fn();
 
     expect(scene.core.itemPickerOpen).toBe(false);
     expect(scene.core.modalOpen).toBe(true); // returned to the form, not to the market list
@@ -219,13 +219,13 @@ describe('EquipmentScene — core.cancelAssignHook actually cancels the assign s
     // The assembly's render() always pushes the Back hit first (rect === core.backRect).
     const backHit = scene.core.hitRects[0];
     expect(backHit.rect).toBe(scene.core.backRect);
-    backHit.action();
+    backHit.fn();
 
     expect(scene.core.assign).toBeNull();     // picker cancelled…
     expect(onBack).not.toHaveBeenCalled();    // …and Back did NOT leave the scene
 
     // Second Back, now out of assign mode, does leave.
-    scene.core.hitRects[0].action();
+    scene.core.hitRects[0].fn();
     expect(onBack).toHaveBeenCalledTimes(1);
 
     scene.destroy();

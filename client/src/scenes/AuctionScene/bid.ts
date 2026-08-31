@@ -77,7 +77,7 @@ export class BidPanel {
       const stepLbl = txt(`+${step}`, FS.body, C.dark);
       stepLbl.anchor.set(0.5, 0.5); stepLbl.x = stepX + stepBtnW / 2; stepLbl.y = cy + stepBtnH / 2;
       ml.addChild(stepLbl);
-      core.modalHits.push({ rect: { x: stepX, y: cy, w: stepBtnW, h: stepBtnH }, action: () => { core.bidAmount = Math.max(minBid, core.bidAmount + step); this.openBidForm(auc); } });
+      core.modalHits.push({ rect: { x: stepX, y: cy, w: stepBtnW, h: stepBtnH }, fn: () => { core.bidAmount = Math.max(minBid, core.bidAmount + step); this.openBidForm(auc); } });
       stepX += stepBtnW + stepGap;
     }
     cy += stepBtnH + 16;
@@ -91,7 +91,7 @@ export class BidPanel {
       boLbl.anchor.set(0.5, 0.5); boLbl.x = mx + 24 + boBtnW / 2; boLbl.y = cy + boBtnH / 2;
       ml.addChild(boLbl);
       const buyoutPrice = auc.buyoutPrice;
-      core.modalHits.push({ rect: { x: boBtn.x, y: boBtn.y, w: boBtnW, h: boBtnH }, action: () => { core.bidAmount = buyoutPrice; this.confirmBid(auc); } });
+      core.modalHits.push({ rect: { x: boBtn.x, y: boBtn.y, w: boBtnW, h: boBtnH }, fn: () => { core.bidAmount = buyoutPrice; this.confirmBid(auc); } });
     }
 
     // Bid/Cancel buttons, sized to match the unified confirm dialog's button convention.
@@ -103,7 +103,7 @@ export class BidPanel {
     const ol = txt(t('auction.bid'), FS.bodyLg, C.light, true);
     ol.anchor.set(0.5, 0.5); ol.x = okBtn.x + btnW / 2; ol.y = okBtn.y + btnH / 2;
     ml.addChild(ol);
-    core.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: btnW, h: btnH }, action: () => this.confirmBid(auc) });
+    core.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: btnW, h: btnH }, fn: () => this.confirmBid(auc) });
 
     const caBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 4, btnW) });
     caBtn.x = mx + mw / 2 + 12; caBtn.y = btnY;
@@ -111,7 +111,7 @@ export class BidPanel {
     const cl = txt(t('common.cancel'), FS.bodyLg, C.dark);
     cl.anchor.set(0.5, 0.5); cl.x = caBtn.x + btnW / 2; cl.y = caBtn.y + btnH / 2;
     ml.addChild(cl);
-    core.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: btnW, h: btnH }, action: () => this.closeBidModal() });
+    core.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: btnW, h: btnH }, fn: () => this.closeBidModal() });
   }
 
   confirmBid(auc: AuctionView): void {

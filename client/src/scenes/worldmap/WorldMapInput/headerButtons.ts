@@ -4,82 +4,65 @@
 // extraction (form①): this block only ever reads ctx's rects/state and calls through to
 // ctx.panels/ctx.cb/ctx.view/ctx.net, so it's a pure function taking `ctx` + the tap coordinates,
 // returning whether it consumed the tap (handleDown returns immediately when it did).
+//
+// 2026-08-31: the nine hand-written containment tests became one `Hit[]` + `dispatchHit`
+// (ui/hits.ts), which is also what gives these buttons their tap cue — the map's HUD is the one
+// place in the world map that is unambiguously UI rather than terrain. A zero-width rect means
+// "this button isn't drawn right now" (no main base yet, no replays), so those entries are simply
+// not pushed instead of being guarded at test time.
 import type { WorldMapContext } from '../WorldMapContext';
+import { dispatchHit, type Hit } from '../../../ui/hits';
 
 export function hitTestHeaderButtons(ctx: WorldMapContext, x: number, y: number): boolean {
+  const hits: Hit[] = [];
+  /** `optional` mirrors the old `w > 0` guards: a rect the renderer left empty is not a button. */
+  const add = (rect: Hit['rect'], fn: () => void, opts?: { optional?: boolean; sound?: Hit['sound'] }): void => {
+    if (opts?.optional && rect.w <= 0) return;
+    hits.push({ rect, fn, sound: opts?.sound });
+  };
+
   // Zoom button (top-left over the map)
-  const zb = ctx.zoomBtnRect;
-  if (zb.w > 0 && x >= zb.x && x <= zb.x + zb.w && y >= zb.y && y <= zb.y + zb.h) {
-    ctx.view.setZoom(((ctx.zoom % 3) + 1) as 1 | 2 | 3);
-    return true;
-  }
+  add(ctx.zoomBtnRect, () => ctx.view.setZoom(((ctx.zoom % 3) + 1) as 1 | 2 | 3), { optional: true });
 
   // Header resource cluster — opens the Territory Overview panel (SLG_DESIGN_LOG.md §26)
-  const rc = ctx.resClusterRect;
-  if (rc.w > 0 && x >= rc.x && x <= rc.x + rc.w && y >= rc.y && y <= rc.y + rc.h) {
-    ctx.panels.openTerritoryPanel();
-    return true;
-  }
+  add(ctx.resClusterRect, () => ctx.panels.openTerritoryPanel(), { optional: true });
 
   // Back button (floating top-left chip, drawn on topLayer — see WorldMapRenderer)
-  const b = ctx.backRect;
-  if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
-    ctx.cb.onBack();
-    return true;
-  }
+  add(ctx.backRect, () => ctx.cb.onBack(), { sound: 'sfx.ui.back' });
 
   // Shop button (header bar, immediately left of the home/auction buttons)
-  const sb = ctx.shopBtnRect;
-  if (x >= sb.x && x <= sb.x + sb.w && y >= sb.y && y <= sb.y + sb.h) {
-    ctx.panels.openShopPanel();
-    return true;
-  }
+  add(ctx.shopBtnRect, () => ctx.panels.openShopPanel());
 
   // Home button (header bar, immediately left of the shop button) — recenters the camera on the
   // player's own base without leaving the world map. Omitted (zero rect) before mainBaseTile exists.
-  const hb = ctx.homeBtnRect;
-  if (hb.w > 0 && x >= hb.x && x <= hb.x + hb.w && y >= hb.y && y <= hb.y + hb.h) {
-    if (ctx.me?.mainBaseTile) {
-      const [bx, by] = ctx.parseTileId(ctx.me.mainBaseTile);
-      ctx.view.centerAt(bx, by);
-      ctx.view.renderMap();
-    }
-    return true;
-  }
+  add(ctx.homeBtnRect, () => {
+    if (!ctx.me?.mainBaseTile) return;
+    const [bx, by] = ctx.parseTileId(ctx.me.mainBaseTile);
+    ctx.view.centerAt(bx, by);
+    ctx.view.renderMap();
+  }, { optional: true });
 
   // Auction button (left column)
-  const a = ctx.aucBtnRect;
-  if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) {
-    ctx.cb.onOpenAuction();
-    return true;
-  }
+  add(ctx.aucBtnRect, () => ctx.cb.onOpenAuction());
 
   // Team badge (right column) — toggles the expanded team panel. Opening it re-fetches the formation
   // templates: unlike the march/station state (kept live by the gateway push channel) a team's ROSTER
   // only changes in the city/formation editor, which the map never hears about, so the panel would
   // otherwise show a stale set of teams until the next world entry.
-  const mb = ctx.teamBadgeRect;
-  if (mb.w > 0 && x >= mb.x && x <= mb.x + mb.w && y >= mb.y && y <= mb.y + mb.h) {
+  add(ctx.teamBadgeRect, () => {
     ctx.teamPanelExpanded = !ctx.teamPanelExpanded;
     if (ctx.teamPanelExpanded) void ctx.net.refreshTeams();
     ctx.panels.renderHud();
-    return true;
-  }
+  }, { optional: true });
 
   // Battle-replays badge (right column, below marches) — opens the last-100 replay browser
-  const rb = ctx.replayBadgeRect;
-  if (rb.w > 0 && x >= rb.x && x <= rb.x + rb.w && y >= rb.y && y <= rb.y + rb.h) {
-    ctx.panels.openReplayPanel();
-    return true;
-  }
+  add(ctx.replayBadgeRect, () => ctx.panels.openReplayPanel(), { optional: true });
 
   // Bottom chat bar — opens the social overlay (also the entry point to family management)
-  const cbr = ctx.chatBarRect;
-  if (cbr.w > 0 && x >= cbr.x && x <= cbr.x + cbr.w && y >= cbr.y && y <= cbr.y + cbr.h) {
+  add(ctx.chatBarRect, () => {
     ctx.markWorldChatSeen();
     ctx.cb.onOpenChat();
-    return true;
-  }
+  }, { optional: true });
 
-  return false;
+  return dispatchHit(hits, x, y);
 }

@@ -13,6 +13,7 @@ import { Prng } from '@nw/engine/math/prng';
 import { drawSceneHeader, type SceneHeaderResult } from '../../ui/widgets/SceneHeader';
 import { FS, snapFont } from '../../render/fontScale';
 import type { Badge } from '../ResultScene';
+import { tapHandler } from '../../ui/hits';
 
 // ── Pure(ish) builder helpers for ResultScene ─────────────────────────────────
 //
@@ -217,7 +218,7 @@ export function addProfileLine(
   line.y = top + h * 0.018;
   line.eventMode = 'static';
   line.cursor = 'pointer';
-  line.on('pointertap', () => popup.show(data));
+  line.on('pointertap', tapHandler(() => popup.show(data)));
   container.addChild(line);
   return addTitleSub(container, h, data, w / 2, line.y + line.height);
 }
@@ -242,7 +243,7 @@ export function addVersusLine(
     txt.anchor.set(0, 0);
     txt.eventMode = 'static';
     txt.cursor = 'pointer';
-    txt.on('pointertap', () => popup.show(data));
+    txt.on('pointertap', tapHandler(() => popup.show(data)));
     return txt;
   };
   const leftTxt = makeName(local.name + ' ' + t('profile.you'), 0x2c2c2a, local);
@@ -313,7 +314,7 @@ export function addPrimaryButton(
   bg.eventMode = 'static';
   bg.cursor = 'pointer';
   bg.name = 'resultPrimaryCta'; // test hook — see test/ui/scenes.ui.ts "outro tap-through"
-  bg.on('pointertap', onTap);
+  bg.on('pointertap', tapHandler(onTap));
   container.addChild(bg);
   addIconLabel(container, x, y, w, h, text, icon, 0xfffdf4, snapFont(Math.round(h * 0.40)), true);
 }
@@ -329,7 +330,7 @@ export function addSecondaryButton(
   bg.eventMode = 'static';
   bg.cursor = 'pointer';
   bg.name = `resultSecondary:${icon}`; // test hook — see test/ui/scenes.ui.ts "outro tap-through"
-  bg.on('pointertap', onTap);
+  bg.on('pointertap', tapHandler(onTap));
   container.addChild(bg);
   addIconLabel(container, x, y, w, h, text, icon, 0x444444, snapFont(Math.round(h * 0.34)), false);
 }
@@ -351,7 +352,7 @@ export function addHeader(container: PIXI.Container, w: number, h: number, onTap
   hit.eventMode = 'static';
   hit.cursor = 'pointer';
   hit.name = 'resultBackChip'; // test hook — see test/ui/scenes.ui.ts "top-left back chip"
-  hit.on('pointertap', onTap);
+  hit.on('pointertap', tapHandler(onTap, 'sfx.ui.back'));
   container.addChild(hit);
   return hdr;
 }
