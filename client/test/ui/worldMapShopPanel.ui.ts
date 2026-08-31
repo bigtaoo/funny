@@ -430,9 +430,13 @@ describe('WorldMapPanels.shopBadgeLabel — corner duration tag', () => {
 // `.png` stubs to a data URI that never decodes, so the icon is a real sprite that is simply never
 // shown (see buildFittedSprite) — and an assertion on the container alone would have passed even
 // against the broken build, which returned an empty one.
-describe('WorldMapPanels.renderShopPanel — every card actually draws its icon', () => {
-  /** Art sprites (Text is a Sprite subclass — excluded) under the modal layer, at absolute position. */
-  function iconSprites(ctx: WorldMapContext): { x: number; y: number }[] {
+describe('WorldMapPanels.renderShopPanel — every card actually draws its art', () => {
+  /**
+   * Art sprites under the modal layer (`PIXI.Text` is a Sprite subclass — excluded), at absolute
+   * position. Sizes are deliberately not used to tell one glyph from another: nothing decodes here,
+   * so no sprite is ever fitted and they all measure 1x1 — position is the only discriminator.
+   */
+  function artSprites(ctx: WorldMapContext): { x: number; y: number }[] {
     const out: { x: number; y: number }[] = [];
     const walk = (c: PIXI.Container, ox: number, oy: number): void => {
       for (const child of c.children as PIXI.Container[]) {
@@ -445,36 +449,45 @@ describe('WorldMapPanels.renderShopPanel — every card actually draws its icon'
     return out;
   }
 
-  it('draws exactly one icon per item card', () => {
+  // Two glyphs per card since §43 gave the price its coin cluster (kind icon + coin), plus the one
+  // in the panel's own balance readout above the grid.
+  const expectedArt = (cards: number): number => cards * 2 + 1;
+
+  it('draws the kind icon and price coin of every card, plus the panel balance coin', () => {
     const { ctx, panels } = buildHarness({ shopItems: makeShopItems(4) });
     panels.renderShopPanel();
-    expect(iconSprites(ctx)).toHaveLength(4);
+    expect(artSprites(ctx)).toHaveLength(expectedArt(4));
   });
 
   it('the battle-pass card is not the odd one out — a one-item catalog still draws its trophy', () => {
     const { ctx, panels } = buildHarness({ shopItems: [makeBattlePassItem()] });
     panels.renderShopPanel();
-    expect(iconSprites(ctx)).toHaveLength(1);
+    expect(artSprites(ctx)).toHaveLength(expectedArt(1));
   });
 
   it('an already-owned battle pass (greyed Buy band) keeps its icon', () => {
     const { ctx, panels } = buildHarness({ shopItems: [makeBattlePassItem()], hasBattlePass: true });
     panels.renderShopPanel();
-    expect(iconSprites(ctx)).toHaveLength(1);
+    expect(artSprites(ctx)).toHaveLength(expectedArt(1));
   });
 
-  it('each icon sits in its card\'s art frame — left of the name column, above the Buy band', () => {
+  it('the kind icon sits in the left art slot of its card, above and left of the price coin', () => {
     const { ctx, panels } = buildHarness({ shopItems: makeShopItems(2) });
     panels.renderShopPanel();
-    const icons = iconSprites(ctx).sort((a, b) => a.y - b.y || a.x - b.x);
+    // `infoScrollRect` is the card list; anything above it is the panel's own balance coin.
+    const inList = artSprites(ctx).filter((s) => s.y >= ctx.infoScrollRect!.y);
     // One Buy button per card, in card order, plus the panel's own Close button last.
     const bands = ctx.modalBtnRects.slice(0, 2).map((b) => b.rect);
-    expect(icons, 'without this the loop below asserts nothing').toHaveLength(bands.length);
-    icons.forEach((icon, i) => {
-      const band = bands[i]!;
-      expect(icon.x, 'icon is in the card\'s left-hand art frame').toBeGreaterThanOrEqual(band.x);
-      expect(icon.y, 'icon is above the full-width Buy band').toBeLessThan(band.y);
-      expect(icon.x, 'icon does not run into the name/cost column').toBeLessThan(band.x + band.w / 2);
-    });
+    expect(inList, 'without this the loop below asserts nothing').toHaveLength(bands.length * 2);
+    for (const band of bands) {
+      const inCard = inList
+        .filter((s) => s.x >= band.x && s.x < band.x + band.w)
+        .sort((a, b) => a.y - b.y);
+      expect(inCard, `card at x=${band.x} draws a kind icon and a price coin`).toHaveLength(2);
+      const [kind, coin] = inCard as [{ x: number; y: number }, { x: number; y: number }];
+      expect(kind.y, 'kind icon is above the full-width Buy band').toBeLessThan(band.y);
+      expect(kind.x, 'kind icon is in the left art slot, the coin in the text column').toBeLessThan(coin.x);
+      expect(kind.y, 'the coin sits lower, on the price row').toBeLessThan(coin.y);
+    }
   });
 });

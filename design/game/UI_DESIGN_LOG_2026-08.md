@@ -573,7 +573,9 @@ feat(lobby): 大厅背景装饰数量翻倍，alpha 调整为 0.25-0.38
 - `textureLoadedGuardCallSites`：新的 `base.once('loaded', fit)` 是具名回调，扫描器跟不进去，按它自己的规矩加进人工复核表（守卫在 `fit()` 第一行）。
 - `orgHeaderTitleIcon` 用「非 Text 的空容器」识别图标 → 改成「自身不含文字（所有子节点都是 Sprite）」；`shopScene` 按 baseTexture 数 sprite（harness 里所有 png 共用一个纹理）→ 加 `visible` 过滤，「没画出美术」在屏幕上本来就等于不可见。顺手把两处已经过时的注释（「buildIcon 返回空容器」）改掉——这正是 §39/§40 那条「过时注释会活两个月」的同一失效模式。
 
-**验证**：`tsc --noEmit` 干净；eslint 干净；`vitest run` 207 文件 / 2207 例全绿；`npm run test:ui` 237 文件 / 2240 例全绿。真实浏览器侧证据：修复后同一个挂桩面板里 9 个图标 sprite 全部 `visible=true`，trophy 量得 54×52（符合 128:123）。**真机截图（真实 Chrome，1920×911）已核对**：9 张卡片全部画出图标，battle_pass 的奖杯在位。
+**合并进当日分支时踩到的一件事（值得记，因为它正是新用例存在的理由）**：§43 给价格加了 coin 图标簇，于是「每张卡恰好一个 art sprite」当场失效——特性分支上 4 例全绿，合并后 4 例全红（1 卡 3 个 sprite、2 卡 5 个、4 卡 9 个 = 卡数×2 + 面板余额那一个）。改成按**位置**区分：kind glyph 在卡片左侧美术位，price coin 在右侧文字列的价格行，断言两者成对且 `kind.x < coin.x`、`kind.y < coin.y`。**不用尺寸区分**：harness 里纹理永不解码，所以没有 sprite 被 fit 过，全都量出 1×1，位置是唯一的判据。改完在合并状态下重做变异（把 `layer.addChild(icon)` 摘掉）——4 例全红，成立。顺带这组用例现在也守着 §43 的 coin 簇。
+
+**验证**：`tsc --noEmit` 干净；eslint 干净。特性分支上：`vitest run` 2207 例、`test:ui` 2240 例全绿。**合并进 `30.08.2026` 后在主检出重跑**（这一步不能省，见上一段）：`tsc --noEmit` 干净、`vitest run` 2237 例全绿、`test:ui` 2379 例全绿。真实浏览器侧证据：修复后同一个挂桩面板里 9 个图标 sprite 全部 `visible=true`，trophy 量得 54×52（符合 128:123）。**真机截图（真实 Chrome，1920×911）已核对**：9 张卡片全部画出图标，battle_pass 的奖杯在位。
 
 两条截图过程中的坑值得记：① in-app Browser 面板不能用来看这个——它的画布 `renderer.width/height` 是 0×0，截出来永远是纯白纸（CLAUDE.md 已有的「一律用真实 Chrome」那条，这轮又踩实一次）。② 离线挂桩时 `SceneManager` 的淡入淡出会卡在 `phase='out'`（`/bootstrap` 连不上 metaserver，没有东西驱动它），`mgr.current` 一直是 `IntroScene`；要手动把场景顶到前台，**必须操作 `mgr.targetStage` 而不是 `app.stage` 的直接子节点**——场景挂在 `targetStage` 底下，按「隐藏除 sc.container 以外的 stage 子节点」写会把 `targetStage` 自己隐藏掉，于是截图仍是白纸，看起来像修复没生效。
 
