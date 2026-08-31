@@ -2,6 +2,9 @@ import type * as PIXI from 'pixi.js-legacy';
 import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import type { AppViews } from '../app/AppViews';
+import { setAudioBus, audioBus } from '../audio/audioBus';
+import { ALL_CUES } from '../audio/cueCatalogue';
+import { WebAudioBus } from '../platform/web/WebAudioBus';
 
 // Test-only entry (client/test/browser Playwright specs) — boots the exact same real
 // PixiJS/WebGL app as entries/web.ts, but wraps AppViews so a Playwright script can drive
@@ -78,5 +81,23 @@ function instrumentViews(views: AppViews): AppViews {
   }).__nwE2E = { views, state, app };
   return views;
 }
+
+// Audio: the same backend the web entry installs, plus a handle on `window.__nwAudio` so a
+// browser smoke can fire a cue and measure the SFX bus. Audio has no other observable surface —
+// it cannot be screenshotted, and until the trigger points are wired (AUDIO_DESIGN.md §7 steps
+// 3-4) nothing in the game fires a cue at all, so without this there is no way to hear or
+// measure the pipeline end to end in a real browser. Permanent test infrastructure in the
+// never-shipped e2e entry, exactly like __nwE2E above — not one of the throwaway debug globals
+// test/no-debug-hooks-in-src.test.ts scans src/ for. (That guard matches the offending token as a
+// literal, so this comment deliberately does not spell it out.)
+const audio = new WebAudioBus();
+setAudioBus(audio);
+(window as unknown as { __nwAudio: unknown }).__nwAudio = {
+  play: (cue: string, count?: number) => audioBus().play(cue as never, count),
+  resume: () => audioBus().resume(),
+  cues: ALL_CUES,
+  /** How much of the shipped sample set actually decoded (0/0 until cueAssets.ts is filled). */
+  loaded: () => audio.loaded,
+};
 
 startApp(new WebPlatform('game-canvas'), instrumentViews).catch(console.error);
