@@ -141,6 +141,52 @@ export function containScale(texW: number, texH: number, boxW: number, boxH: num
   return Math.min(boxW / texW, boxH / texH);
 }
 
+/**
+ * A `url` sprite contain-fit and centred in a `boxW × boxH` box at local (0,0), which **lays itself
+ * out the moment the PNG decodes** instead of needing the caller to re-render.
+ *
+ * `PIXI.Texture.from` is lazy: the first call for a url starts the fetch and hands back a texture
+ * whose baseTexture is still `valid === false` (frame 1×1). A caller that just skips drawing on
+ * that first frame is left with a permanently blank box unless something happens to re-render it
+ * later — which is exactly the world-map shop panel's bug (2026-08-30): its cards are built once
+ * when the modal opens, so every icon whose PNG had not already been warmed by an earlier scene
+ * stayed empty for the life of the panel. Rather than teach each of the ~30 call sites to hook the
+ * decode, the sprite fixes itself: it starts `visible = false` (so a 1×1 frame can't smear across
+ * the box) and fits + shows on the baseTexture's `loaded` event. Invisible children are skipped by
+ * `Container.calculateBounds`, so a not-yet-decoded icon still measures as an empty box exactly
+ * like the old "return nothing" behaviour — no layout depends on the decode timing.
+ *
+ * The `destroyed` guard + `off` on teardown are load-bearing, not defensive noise: the texture can
+ * land after the scene that asked for it is gone, and touching a destroyed Sprite throws from
+ * inside a PIXI Runner on the shared ticker, which kills `Ticker.shared` and freezes the canvas
+ * until a page reload (same contract IntroScene's `fitIllustration` documents — see
+ * 菜单场景生命周期契约 in claudedocs/client-modules.md).
+ */
+export function buildFittedSprite(url: string, boxW: number, boxH: number, tint?: number): PIXI.Sprite {
+  const tex = getArtTexture(url);
+  const sprite = new PIXI.Sprite(tex);
+  if (tint !== undefined) sprite.tint = tint;
+  const fit = (): void => {
+    if (sprite.destroyed) return;
+    const scale = containScale(tex.width, tex.height, boxW, boxH);
+    sprite.scale.set(scale);
+    sprite.x = (boxW - tex.width * scale) / 2;
+    sprite.y = (boxH - tex.height * scale) / 2;
+    sprite.visible = true;
+  };
+  if (tex.baseTexture.valid) {
+    fit();
+    return sprite;
+  }
+  sprite.visible = false;
+  const base = tex.baseTexture;
+  base.once('loaded', fit);
+  // PIXI emits 'destroyed' before dropping the object's own listeners, so this always runs — it is
+  // what keeps a torn-down scene's sprite from being held alive by the (globally cached) baseTexture.
+  sprite.once('destroyed', () => base.off('loaded', fit));
+  return sprite;
+}
+
 /** Texture cache keyed by url — shared with the `PIXI.Texture.from` global cache. */
 export function getArtTexture(url: string): PIXI.Texture {
   // Match the mipmap opt-in preloadTexture() bakes in, so art created lazily here (not

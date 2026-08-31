@@ -328,3 +328,43 @@ feat(lobby): 大厅背景装饰数量翻倍，alpha 调整为 0.25-0.38
 **改动**：`ALPHA_MIN` 0.25 → 0.10、`ALPHA_RANGE` 0.13 → 0.12（[`decorCLayer.ts`](../../client/src/render/decorCLayer.ts)），两行。文件头 `@alpha-range` 标记同步改成 `0.10-0.22`，并把 §39 那段「实际是 0.25–0.38」的散文整段重写——它描述的已经是历史，留着就会变成第三代过时注释。新头部另记两条判据供后人查：**密度而非透明度才是「装饰太少」的旋钮**，以及**为什么 alpha 是一个全局数字而不是按场景分档**（bake 键那两笔代价）。
 
 **验证**：`decorCLayerContract.test.ts` 7 例全绿；双向变异各判红一次（改常量不改标记 → `@alpha-range says 0.10-0.22 but ALPHA_MIN/ALPHA_RANGE produce 0.3-0.42`；改标记不改常量 → 反向同一条），备份用 `cp` 不用 `git checkout`。`tsc --noEmit` 双 config 绿。
+
+## 41. 图标纹理解码前是空盒子 → 只渲染一次的面板永远缺图标（2026-08-30 定位，08-31 落地）
+
+**问题（用户报告）**：世界地图商店面板（[`WorldMapPanels/shop.ts`](../../client/src/scenes/worldmap/WorldMapPanels/shop.ts) `renderShopItemCard`）的 battle_pass 卡片图标位是空白，反复 `renderShopPanel()` 也不出现。报告里的推断是「trophy 资源可能压根没加载」。
+
+**实测把诊断改了（真实浏览器 + `start:e2e` 挂桩世界地图）**：
+
+| 报告里的观察 | 实测结论 |
+|---|---|
+| trophy 资源可能没加载 | `trophy_active.png` 完好（128×123 调色板 PNG），`new Image()` 能解码；`Texture.from` 也确实发请求：冷启动 `valid=false`/1×1，约 1s 后 `valid=true`/128×123，`loaded` 事件正常触发且触发时 `Texture.frame` 已同步 |
+| 面板里有 4 个 84×84 图标 sprite，battle_pass 没有 | **测量假象**：`buildInkIcon` 是 contain-fit，非正方形的 trophy 实际是 84×81，被 84×84 的过滤条件筛掉了 |
+| 只有 battle_pass 缺图标 | **冷纹理缓存下这个面板 9 个图标一个都不出现**（实测 `modalLayer` 里 0 个 art sprite）。报告那次看到 4 个，是因为 hourglass/armor/coinChest 已被装备页等先经过的场景暖过；trophy 只在排行榜奖章位用到，通常没被暖过，所以它是最常见的那个"幸存"症状 |
+
+**根因**：`PIXI.Texture.from` 是懒加载的。两个 icon builder（[`inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts) `buildInkIcon` / [`tabIconRaster.ts`](../../client/src/render/icons/tabIconRaster.ts) `buildRasterTabIcon`）对此的回答是 `if (!tex.baseTexture.valid) return box;`——返回空容器，注释里写明「靠调用方的下一次渲染补上」。**这个前提对按 ticker 重画的场景成立，对模态面板不成立**：商店面板在打开时渲染一次就不再重画，于是解码前建的图标永远是空盒子。2026-08-30 那批卡片文案改动没碰 `buildIcon`，只是把图标外面那圈蓝框去掉之后，空白变得显眼了。
+
+**修法：让 sprite 自己补上，而不是给 shop.ts 挂一个再渲染钩子。**
+
+[`cardArt.ts`](../../client/src/render/cardArt.ts) 新增 `buildFittedSprite(url, boxW, boxH, tint?)`：sprite **总是**创建，未解码时 `visible = false`，在 baseTexture 的 `loaded` 上把 contain-fit 的 scale/position 补齐并显示；两个 builder 都改成走它。三条判据：
+
+1. **不做成 shop.ts 里的一次性钩子**（lobby 商店 [`ShopScene/card.ts`](../../client/src/scenes/ShopScene/card.ts) 的 `artHooked` 就是那个形态），因为 `buildIcon` 有 ~40 个调用点，`buildInkIcon` 的空容器兜底是全局的——同一个洞在任何「渲染一次的面板」里都在，逐个挂钩子等于把这条契约抄 40 份。
+2. **`visible = false` 而不是「先不建 sprite」**：不可见子节点会被 `Container.calculateBounds` 跳过，所以「未解码 = 空盒子」的**测量**语义与旧行为完全一致——`BACK_ARROW_ASPECT` 那类「解码前先预留宽度」的调用方不受影响。反过来若直接建可见 sprite，1×1 的 frame 会被缩放成整个图标框的一坨糊。
+3. **`fit()` 开头的 `sprite.destroyed` 守卫 + sprite 自己的 `once('destroyed')` 摘钩**是必需的，不是防御性噪音：纹理可能在场景销毁后才到，碰已销毁的 Sprite 会从 PIXI Runner 里抛进 `Ticker.shared`，画布永久冻结直到刷新页面（`菜单场景生命周期契约`，见 [`claudedocs/client-modules.md`](../../claudedocs/client-modules.md)）。这与 `IntroScene.fitIllustration` 是同一套两半结构，区别只是这里没有场景可挂 unsub，所以摘钩挂在 sprite 的 `destroyed` 事件上（PIXI 先 `emit('destroyed')` 再 `removeAllListeners()`，所以一定跑得到）。
+
+**测试**
+
+- 新增 [`iconTextureSelfHeal.ui.ts`](../../client/test/ui/iconTextureSelfHeal.ui.ts)（5 例）：解码前不画且盒子仍为空 → 同一个 sprite 在解码后自己 fit 并显示（无人重建它）→ 销毁后才到的纹理不抛且已摘钩 → 已解码时建的图标当帧就显示（preload 路径）→ 光栅那半边同样自愈。
+- 新增 [`worldMapShopPanel.ui.ts`](../../client/test/ui/worldMapShopPanel.ui.ts) 的「每张卡真的画了图标」一组（4 例）。**这是本轮真正值得记的测试缺口**：该文件此前已经把 `shopIcon()` 解析器测得很细（3 档沙漏 / 2 档护盾 / 越界钳制 / 未知 kind 兜底 / battle_pass → `trophy`），而 `shopIcon()` 从头到尾都返回得对——坏的是下一层的绘制，而**没有任何一条断言检查图标进了显示树**，所以上面那些用例在「所有卡片都不画图标」的面板上照样全绿。新用例刻意数 **sprite** 而不是「`buildIcon` 返回的容器」：harness 里每个 `.png` 都桩成永不解码的 data URI，图标是一个真实但永不显示的 sprite，而断言容器本身在旧的坏实现下（返回空容器）也会通过。
+- 两组新用例都做了变异验证（备份用 `cp`，不用 `git checkout`——见 [`claudedocs/worktrees.md`](../../claudedocs/worktrees.md) 那条陷阱）：摘掉自愈钩子后 5 例判红 3 例；把 `box.addChild(...)` 改成不加后 4 例判红 3 例，据此给位置那一例补了一条长度断言（否则 `forEach` 在空数组上什么都不断言，静默变成永绿用例）。
+
+**4 处既有测试的适配**，都是本次改动使其**前提**失效、不是放宽断言：
+
+- `hudHeartHpBar` / `hudSurrenderLabel` 的手写 PIXI mock：`FakeSprite` 缺 `once`（真 `DisplayObject` 是 EventEmitter），给 `FakeContainer` 补上 `on/once/off` + `destroyed`。这两个文件的 `FakeBaseTexture` 早就为同一个原因补过 `on/once/off`。
+- `textureLoadedGuardCallSites`：新的 `base.once('loaded', fit)` 是具名回调，扫描器跟不进去，按它自己的规矩加进人工复核表（守卫在 `fit()` 第一行）。
+- `orgHeaderTitleIcon` 用「非 Text 的空容器」识别图标 → 改成「自身不含文字（所有子节点都是 Sprite）」；`shopScene` 按 baseTexture 数 sprite（harness 里所有 png 共用一个纹理）→ 加 `visible` 过滤，「没画出美术」在屏幕上本来就等于不可见。顺手把两处已经过时的注释（「buildIcon 返回空容器」）改掉——这正是 §39/§40 那条「过时注释会活两个月」的同一失效模式。
+
+**验证**：`tsc --noEmit` 干净；eslint 干净；`vitest run` 207 文件 / 2207 例全绿；`npm run test:ui` 237 文件 / 2240 例全绿。真实浏览器侧证据：修复后同一个挂桩面板里 9 个图标 sprite 全部 `visible=true`，trophy 量得 54×52（符合 128:123）。**真机截图（真实 Chrome，1920×911）已核对**：9 张卡片全部画出图标，battle_pass 的奖杯在位。
+
+两条截图过程中的坑值得记：① in-app Browser 面板不能用来看这个——它的画布 `renderer.width/height` 是 0×0，截出来永远是纯白纸（CLAUDE.md 已有的「一律用真实 Chrome」那条，这轮又踩实一次）。② 离线挂桩时 `SceneManager` 的淡入淡出会卡在 `phase='out'`（`/bootstrap` 连不上 metaserver，没有东西驱动它），`mgr.current` 一直是 `IntroScene`；要手动把场景顶到前台，**必须操作 `mgr.targetStage` 而不是 `app.stage` 的直接子节点**——场景挂在 `targetStage` 底下，按「隐藏除 sc.container 以外的 stage 子节点」写会把 `targetStage` 自己隐藏掉，于是截图仍是白纸，看起来像修复没生效。
+
+**顺带一条观感观察（不属于本次修复）**：奖杯是**描边**线稿，而同屏的护盾/宝箱是实心块面，所以整页缩放下看它几乎像空的——放大才看清。若用户觉得对比不够，那是美术档的事（`trophy_active.png` 的线宽），不是绘制路径的问题。

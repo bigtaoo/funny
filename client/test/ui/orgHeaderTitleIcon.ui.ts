@@ -77,8 +77,9 @@ function buildSect(w: number, h: number, orientation: 'portrait' | 'landscape'):
 /**
  * The title Text, plus the glyph of its `[icon][gap][title]` group — identified by POSITION, not by
  * "the sibling drawn before it": under the headless harness a raster tab icon's texture never
- * decodes, so `buildIcon` returns an empty Container (see buildRasterTabIcon's `valid` guard) which
- * is indistinguishable by type from the header chrome nodes sitting in the same parent. The x it
+ * decodes, so `buildIcon` returns a Container holding one never-shown Sprite (see
+ * `buildFittedSprite`), which is indistinguishable by type from the header chrome nodes sitting in
+ * the same parent — and draws nothing, so it has no measurable box either. The x it
  * must occupy is fully determined by `buildTitleIcon`'s two ratios, so match on that instead —
  * verified to fail when the `add(titleIcon.node)` call is removed.
  *
@@ -112,12 +113,23 @@ function textNodes(root: PIXI.Container): PIXI.Text[] {
   return out;
 }
 
-/** Non-Text display objects (glyph containers/sprites) whose box vertically overlaps `y`. */
+/**
+ * Non-Text display objects (glyph containers/sprites) whose box vertically overlaps `y`.
+ *
+ * "Carries no text of its own" is the glyph test, expressed as "every child is a Sprite" (an empty
+ * container passes vacuously). It used to be the stricter `children.length === 0`: under the
+ * headless harness every `.png` stubs to a data URI that never decodes, and the icon builders drew
+ * nothing at all until the texture was valid, so an icon box here could only ever be empty. Since
+ * 2026-08-30 they always add the art Sprite (invisible until it decodes — see `buildFittedSprite`),
+ * so emptiness no longer identifies a glyph.
+ */
 function glyphsNear(root: PIXI.Container, y: number): PIXI.Container[] {
   const out: PIXI.Container[] = [];
+  const isGlyph = (c: PIXI.Container): boolean =>
+    !(c instanceof PIXI.Text) && (c.children ?? []).every((ch) => ch instanceof PIXI.Sprite);
   const walk = (node: PIXI.Container): void => {
     for (const c of node.children as PIXI.Container[]) {
-      if (!(c instanceof PIXI.Text) && c.children?.length === 0 && c.y <= y && y <= c.y + 64) out.push(c);
+      if (isGlyph(c) && c.y <= y && y <= c.y + 64) out.push(c);
       if (c.children?.length) walk(c);
     }
   };
