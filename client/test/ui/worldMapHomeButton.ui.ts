@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 import { initI18n } from '../../src/i18n';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
@@ -205,9 +206,10 @@ describe('WorldMapInput.handleDown — home button recenters the camera on the p
 // chain really moves the camera, not just that the mocked collaborators were called.
 describe('WorldMap home button — real scene wiring end-to-end', () => {
   const LAYOUT = { designWidth: 1280, designHeight: 800 } as ILayout;
+  const { openTextInput } = createFakeTextInput();
   const CB: WorldMapCallbacks = {
     onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
-    onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
+    onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'], openTextInput,
     worldId: WORLD_ID, playerName: 'dbg', accountId: 'acc_dbg', storage: memStore,
   };
 

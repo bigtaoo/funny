@@ -30,6 +30,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { ChatScene } from '../../src/scenes/ChatScene';
 import type { ChatMessagePush } from '../../src/net/proto/transport';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -119,8 +120,9 @@ describe('tearDownChildren — frees text textures, spares shared bake textures'
 
 describe('ChatScene — repeated re-render frees the previous generation of text textures', () => {
   it('destroys each prior render generation instead of orphaning it', () => {
+    const { openTextInput } = createFakeTextInput();
     const scene = new ChatScene(createLayout(800, 1280), new InputManager(), {
-      onBack() {},
+      onBack() {}, openTextInput,
       peerName: 'Bob',
       peerPublicId: '123456789',
       myPublicId: '987654321',

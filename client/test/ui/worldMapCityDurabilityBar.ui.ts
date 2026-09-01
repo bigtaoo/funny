@@ -28,6 +28,7 @@ import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldCityNodeView } from '../../src/net/WorldApiClient';
 import type { ILayout } from '../../src/layout/ILayout';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 /** The fraction of a city frame's cell that is transparent padding above the art. Non-zero on purpose. */
 const CONTENT_TOP = 0.5;
@@ -55,6 +56,7 @@ const CB: WorldMapCallbacks = {
   onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
   onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
   worldId: WORLD_ID, playerName: 'dbg', accountId: 'acc_dbg', storage: memStore,
+  openTextInput: createFakeTextInput().openTextInput,
 };
 
 function buildScene(): WorldMapContext {

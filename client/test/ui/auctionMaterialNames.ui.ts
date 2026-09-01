@@ -13,6 +13,7 @@ import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { buildPickEntries, selectedItemLabel } from '../../src/scenes/AuctionScene/itemPickerRender';
 import { auctionLabel } from '../../src/scenes/AuctionScene/itemLabels';
 import type { WorldApiClient, AuctionView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -39,7 +40,8 @@ function stubWorldApi(): WorldApiClient {
 // Scene internals are `protected`/`private` (mixin-internal); every other UI spec reaches them via an
 // untyped handle rather than re-exposing them for tests, so we do the same.
 function buildScene(): any {
-  return new AuctionScene(createLayout(W, H), new InputManager(), { onBack() {}, worldApi: stubWorldApi() });
+  const { openTextInput } = createFakeTextInput();
+  return new AuctionScene(createLayout(W, H), new InputManager(), { onBack() {}, worldApi: stubWorldApi(), openTextInput });
 }
 
 describe('AuctionScene — material names match the rest of the game', () => {

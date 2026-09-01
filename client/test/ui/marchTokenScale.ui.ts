@@ -40,6 +40,7 @@ vi.mock('../../src/render/stickman/StickmanRuntime', () => {
 // Imported AFTER vi.mock (vitest hoists the mock registration above all imports regardless of
 // physical order, but keeping it textually first matches this file's own read order).
 import { WorldMapScene } from '../../src/scenes/WorldMapScene';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -67,7 +68,7 @@ function buildScene() {
     onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {},
     onOpenCity() {}, onOpenDefense() {},
     worldApi: stubWorldApi(), worldId: 'world:1:0', playerName: 'Tester', accountId: 'acc_test',
-    storage: memStore,
+    storage: memStore, openTextInput: createFakeTextInput().openTextInput,
   }) as any;
 }
 

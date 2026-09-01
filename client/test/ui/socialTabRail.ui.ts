@@ -27,6 +27,7 @@ import { FriendsScene } from '../../src/scenes/FriendsScene';
 import * as friendsInput from '../../src/scenes/FriendsScene/input';
 import type { WorldApiClient, FamilyDetailView, SectDetailView } from '../../src/net/WorldApiClient';
 import { drawSocialTabRail, type SocialTab } from '../../src/ui/widgets/socialTabRail';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -148,9 +149,10 @@ function clickFriendsRailTab(scene: any, tab: SocialTab): void {
 
 describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
   function build(onNavTab: (tab: SocialTab) => void): any {
+    const { openTextInput } = createFakeTextInput();
     const scene: any = new FamilyScene(createLayout(W, H), new InputManager(), {
       onBack() {}, onOpenSect() {}, onNavTab, async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
-      openChat() {},
+      openChat() {}, openTextInput,
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
     });
     scene.core.mode = 'myFamily';
@@ -212,8 +214,9 @@ describe('FamilyScene — social tab rail (onNavTab wiring)', () => {
 
 describe('SectScene — social tab rail (onNavTab wiring)', () => {
   function build(onNavTab: (tab: SocialTab) => void): any {
+    const { openTextInput } = createFakeTextInput();
     const scene: any = new SectScene(createLayout(W, H), new InputManager(), {
-      onBack() {}, onNavTab,
+      onBack() {}, onNavTab, openTextInput,
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
       getCoins: () => 100000, refreshWallet: async () => {},
     });
@@ -301,8 +304,9 @@ describe('drawSocialTabRail — hidden param (13.07.2026: sect tab hidden for no
 
 describe('FriendsScene — social tab rail still dispatches to switchTab after sharing drawSocialTabRail', () => {
   function build(): any {
+    const { openTextInput } = createFakeTextInput();
     return new FriendsScene(createLayout(W, H), new InputManager(), {
-      onBack() {}, onOpenRoom() {},
+      onBack() {}, onOpenRoom() {}, openTextInput,
       myPublicId: '',
       getProfileExtra: async () => ({}),
       loadFriends: async () => [],

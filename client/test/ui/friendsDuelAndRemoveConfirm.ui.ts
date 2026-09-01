@@ -18,6 +18,7 @@ import { initI18n, t, type TranslationKey } from '../../src/i18n';
 import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { FriendView } from '../../src/net/ApiClient';
 import * as log from '../../src/net/log';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -43,9 +44,11 @@ function buildFriendsScene(friends: FriendView[]): { scene: FriendsScene; spies:
     duelInvite: vi.fn(),
     duelRespond: vi.fn(),
   };
+  const { openTextInput } = createFakeTextInput();
   const cb: FriendsSceneCallbacks = {
     onBack() {},
     onOpenRoom() {},
+    openTextInput,
     myPublicId: '',
     getProfileExtra: async () => ({}),
     loadFriends: async () => friends,

@@ -15,6 +15,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { WorldChatMessage } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -33,8 +34,9 @@ describe('FriendsScene — world chat load failure surfaces an error + retry ins
     let shouldFail = true;
     const messages: WorldChatMessage[] = [];
 
+    const { openTextInput } = createFakeTextInput();
     const scene: any = new FriendsScene(createLayout(W, H), new InputManager(), {
-      onBack() {}, onOpenRoom() {},
+      onBack() {}, onOpenRoom() {}, openTextInput,
       myPublicId: '',
       getProfileExtra: async () => ({}),
       loadFriends: async () => [],

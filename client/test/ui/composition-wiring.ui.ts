@@ -23,6 +23,7 @@ import { initI18n } from '../../src/i18n';
 import type { WorldApiClient, TeamTemplate } from '../../src/net/WorldApiClient';
 import { createLocalMatch } from '../../src/app/matchEngine';
 import { getLevel } from '../../src/game';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -212,6 +213,7 @@ describe('ShopScene composition wiring', () => {
     const scene = new ShopScene(createLayout(800, 1280), new InputManager(), {
       onBack() {}, getCoins: () => 1000, getOwnedSkins: () => [],
       loadItems: async () => [], buy: async () => ({ ok: true }), openGacha() {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as unknown as Record<string, unknown>;
     const core = scene.core;
     expect(core).toBeDefined();
@@ -234,6 +236,7 @@ describe('SectScene composition wiring', () => {
       onBack() {}, onNavTab() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
       getCoins: () => 0, refreshWallet: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as unknown as Record<string, unknown>;
     const core = scene.core;
     expect(core).toBeDefined();
@@ -274,6 +277,7 @@ describe('FamilyScene composition wiring', () => {
       async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
       openChat() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
+      openTextInput: createFakeTextInput().openTextInput,
     }) as unknown as Record<string, unknown>;
     const core = scene.core;
     expect(core).toBeDefined();
@@ -317,6 +321,7 @@ describe('FriendsScene composition wiring', () => {
       openChat() {},
       loadMail: async () => ({ mail: [], unread: 0 }),
       markMailRead: async () => {}, claimMail: async () => true, deleteMail: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as unknown as Record<string, unknown>;
     const core = scene.core;
     expect(core).toBeDefined();
@@ -376,6 +381,7 @@ describe('AuctionScene composition wiring', () => {
     const { AuctionScene } = await import('../../src/scenes/AuctionScene');
     const scene = new AuctionScene(createLayout(800, 1280), new InputManager(), {
       onBack() {}, worldApi: stubWorldApi(),
+      openTextInput: createFakeTextInput().openTextInput,
     }) as unknown as Record<string, unknown>;
     const core = scene.core;
     expect(core).toBeDefined();

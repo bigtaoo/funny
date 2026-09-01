@@ -25,6 +25,7 @@ import { describe, it, expect } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { FeedbackDialog } from '../../src/ui/dialogs/FeedbackDialog';
 import { initI18n, t } from '../../src/i18n';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -38,7 +39,7 @@ const memStore = (() => {
 // long CJK runs with no whitespace, so they tokenize as a single PIXI wordWrap token each.
 initI18n('zh', memStore, ['zh', 'en', 'de']);
 
-const noop = { onSubmit: async () => {}, onClose: () => {} };
+const noop = { onSubmit: async () => {}, onClose: () => {}, openTextInput: createFakeTextInput().openTextInput };
 
 /** Every wordWrap-enabled Text node in the dialog: the intro paragraph and the input-echo label. */
 function findWrappedTexts(root: PIXI.Container): PIXI.Text[] {

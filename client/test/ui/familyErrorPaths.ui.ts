@@ -14,6 +14,7 @@ import { initI18n, t } from '../../src/i18n';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { WorldApiError } from '../../src/net/WorldApiClient';
 import type { WorldApiClient, FamilyMemberView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -36,11 +37,13 @@ function member(accountId: string, role: 'leader' | 'elder' | 'member'): FamilyM
 }
 
 function newScene(worldApi: WorldApiClient, myAccountId = 'me'): any {
+  const { openTextInput } = createFakeTextInput();
   return new FamilyScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenSect() {}, onNavTab() {},
     worldApi, worldId: 'w1', myAccountId, playerName: 'Tester',
     getFriendPublicIds: async () => new Set<string>(),
     addFriend: async () => {}, openChat: () => {},
+    openTextInput,
   });
 }
 

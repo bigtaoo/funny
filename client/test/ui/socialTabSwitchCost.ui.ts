@@ -29,6 +29,7 @@ import { initI18n } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { FriendView } from '../../src/net/ApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -52,8 +53,9 @@ function makeFriends(n: number): FriendView[] {
 function buildScene(overrides: Partial<FriendsSceneCallbacks> = {}) {
   const calls = { friends: 0, requests: 0, mail: 0, conversations: 0, world: 0 };
   const friends = makeFriends(12);
+  const { openTextInput } = createFakeTextInput();
   const scene = new FriendsScene(createLayout(W, H), new InputManager(), {
-    onBack() {}, onOpenRoom() {},
+    onBack() {}, onOpenRoom() {}, openTextInput,
     myPublicId: '', getProfileExtra: async () => ({}),
     loadFriends: async () => { calls.friends++; return friends; },
     loadRequests: async () => { calls.requests++; return { incoming: [], outgoing: [] }; },

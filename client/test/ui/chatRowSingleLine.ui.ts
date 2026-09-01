@@ -17,6 +17,7 @@ import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import { SectScene } from '../../src/scenes/SectScene';
 import type { WorldChatMessage, FamilyMessageView, SectMessageView, FamilyDetailView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -64,6 +65,7 @@ describe('World chat — single-line name-tag row', () => {
       loadSLGStatus: async () => null,
       loadWorldChat: async () => messages,
       defaultTab: 'world',
+      openTextInput: createFakeTextInput().openTextInput,
     });
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
 
@@ -94,6 +96,7 @@ describe('World chat — single-line name-tag row', () => {
       loadSLGStatus: async () => null,
       loadWorldChat: async () => messages,
       defaultTab: 'world',
+      openTextInput: createFakeTextInput().openTextInput,
     });
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
 

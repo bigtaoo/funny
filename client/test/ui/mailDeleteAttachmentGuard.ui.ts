@@ -17,6 +17,7 @@ import { initI18n, t } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
 import { setToastSink } from '../../src/net/log';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -36,8 +37,10 @@ setToastSink((text) => { toastMsgs.push(text); });
 const [W, H] = [800, 1280];
 
 function build(opts: { deleteMail: (id: string) => Promise<void> }): any {
+  const { openTextInput } = createFakeTextInput();
   return new FriendsScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenRoom() {},
+    openTextInput,
     myPublicId: '',
     getProfileExtra: async () => ({}),
     loadFriends: async () => [],

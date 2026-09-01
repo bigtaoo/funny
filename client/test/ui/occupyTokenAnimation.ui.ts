@@ -14,6 +14,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { WorldMapScene } from '../../src/scenes/WorldMapScene';
 import type { WorldApiClient, OccupationView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -41,7 +42,7 @@ function buildScene() {
     onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {},
     onOpenCity() {}, onOpenDefense() {},
     worldApi: stubWorldApi(), worldId: 'world:1:0', playerName: 'Tester', accountId: 'acc_test',
-    storage: memStore,
+    storage: memStore, openTextInput: createFakeTextInput().openTextInput,
   }) as any;
 }
 
