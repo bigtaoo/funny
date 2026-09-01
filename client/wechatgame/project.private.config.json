@@ -3,7 +3,6 @@
   "projectname": "wechatgame",
   "packOptions": {
     "ignore": [
-      { "type": "folder", "value": "cdn" },
       { "type": "suffix", "value": ".map" }
     ]
   },

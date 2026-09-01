@@ -21,6 +21,9 @@ const GATE = path.resolve(__dirname, '../scripts/checkWechatPackage.mjs');
 
 const HASH_A = 'a1b2c3d4e5f60718293a.png';
 const HASH_B = 'ffeeddccbbaa99887766.tao';
+/** What the real `wechatgame/project.private.config.json` carries in whole-package mode. */
+const IGNORE_MAP_ONLY = [{ type: 'suffix', value: '.map' }];
+const IGNORE_CDN = [{ type: 'folder', value: 'cdn' }, ...IGNORE_MAP_ONLY];
 
 let tmp: string;
 beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nw-wechat-gate-')); });
@@ -33,9 +36,21 @@ function writePkg(opts: {
   gameJson?: string | null;
   assets?: string[];
   extraFiles?: Record<string, string>;
+  /** `packOptions.ignore` for project.private.config.json; `null` omits the file entirely. */
+  packIgnore?: Array<{ type: string; value: string }> | null;
+  /** Raw override, for the unparseable-config case. */
+  packConfigRaw?: string;
 } = {}): string {
   const pkg = path.join(tmp, 'wechatgame');
   fs.mkdirSync(path.join(pkg, 'cdn'), { recursive: true });
+  if (opts.packConfigRaw !== undefined) {
+    fs.writeFileSync(path.join(pkg, 'project.private.config.json'), opts.packConfigRaw);
+  } else if (opts.packIgnore !== null) {
+    fs.writeFileSync(
+      path.join(pkg, 'project.private.config.json'),
+      JSON.stringify({ packOptions: { ignore: opts.packIgnore ?? IGNORE_MAP_ONLY } }),
+    );
+  }
   fs.writeFileSync(
     path.join(pkg, 'pixigame.js'),
     opts.bundle ?? `(()=>{const a="cdn/${HASH_A}",b="cdn/${HASH_B}";console.log(a,b);})();`,
@@ -83,7 +98,8 @@ describe('checkWechatPackage gate', () => {
 
   it('checks absolute CDN urls too (plan A builds bake the whole host in)', () => {
     const bundle = `(()=>{const a="https://cdn.example.com/cdn/${HASH_A}";console.log(a);})();`;
-    const { code, out } = run(writePkg({ bundle, assets: [] }));
+    // packIgnore matches the shape (rule 4 green) so this isolates rule 2.
+    const { code, out } = run(writePkg({ bundle, assets: [], packIgnore: IGNORE_CDN }));
     expect(code).toBe(1);
     expect(out).toContain(HASH_A);
   });
@@ -129,6 +145,51 @@ describe('checkWechatPackage gate', () => {
     const { code, out } = run(writePkg({ extraFiles: { '90.pixigame.js': '// chunk' } }));
     expect(code).toBe(1);
     expect(out).toContain('90.pixigame.js');
+  });
+
+  // ── packOptions.ignore vs the url shape (rule 4) ───────────────────────────
+  // Both halves shipped for months in a combination that cannot work, because no single file held
+  // both: webpack decided the url shape, project.private.config.json decided the pack manifest.
+  it('fails when a whole-package build ignores cdn/ — the 2026-09-01 "boots, then nothing"', () => {
+    const { code, out } = run(writePkg({ packIgnore: IGNORE_CDN }));
+    expect(code).toBe(1);
+    expect(out).toContain('excludes cdn/');
+    expect(out).toContain('2 package-relative');
+    expect(out).toContain('empty screen');
+  });
+
+  it('recognises the glob spelling of the same exclusion', () => {
+    expect(run(writePkg({ packIgnore: [{ type: 'glob', value: 'cdn/**' }] })).code).toBe(1);
+    expect(run(writePkg({ packIgnore: [{ type: 'folder', value: './cdn/' }] })).code).toBe(1);
+  });
+
+  it('fails the other way round: a plan A build that packs cdn/ anyway', () => {
+    const bundle = `(()=>{const a="https://cdn.example.com/cdn/${HASH_A}";console.log(a);})();`;
+    const { code, out } = run(writePkg({ bundle, assets: [HASH_A], packIgnore: IGNORE_MAP_ONLY }));
+    expect(code).toBe(1);
+    expect(out).toContain('absolute CDN urls');
+    expect(out).toContain('4 MB ceiling');
+  });
+
+  it('passes a plan A build with the matching exclusion, and names the mode it verified', () => {
+    const bundle = `(()=>{const a="https://cdn.example.com/cdn/${HASH_A}";console.log(a);})();`;
+    const { code, out } = run(writePkg({ bundle, assets: [HASH_A], packIgnore: IGNORE_CDN }));
+    expect(code).toBe(0);
+    expect(out).toContain('plan A CDN (cdn/ excluded)');
+  });
+
+  it('names whole-package mode on the way through, so a passing run says which one it checked', () => {
+    expect(run(writePkg()).out).toContain('whole-package (cdn/ packed)');
+  });
+
+  it('treats an absent project config as "nothing ignored" rather than failing', () => {
+    expect(run(writePkg({ packIgnore: null })).code).toBe(0);
+  });
+
+  it('fails on an unparseable project config instead of silently reading no ignore list', () => {
+    const { code, out } = run(writePkg({ packConfigRaw: '{"packOptions":' }));
+    expect(code).toBe(1);
+    expect(out).toContain('pack manifest');
   });
 
   // ── the one thing it must NOT do ───────────────────────────────────────────

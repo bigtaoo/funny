@@ -81,8 +81,9 @@ webpack 当前对图片 / `.tao` 用 `asset/resource`，每个资源被发成**�
   - `client/test/localReminders.test.ts` 同步补上了 `scheduleSubscriptionReminder` 的覆盖（此前只测了 in-app toast 兜底和每日提醒的文案拼装）：T-3d/T-0 两条通知的时间戳与 id、每次重排前先 cancel 两个 id（续费不会重复触发）、已进入 3 天窗口时只排 T-0、已过期只 cancel 且**不弹权限框**、权限被拒/待询、以及插件抛错（非 mobile 上的 stub 正是抛错）时静默降级不外泄。这批断言现在是这套排程数学**在 iOS 设备之外唯一被执行的地方**。
 - **资源 → CDN（方案 A 核心）**：`asset/resource` 的 `publicPath = NW_ASSET_CDN`、`filename = 'cdn/[contenthash][ext]'`。于是每个 `import x from '*.png/.tao'` **在构建期就烘焙成 `<CDN>/cdn/<hash>.png` 绝对 URL**，资源文件发到 `wechatgame/cdn/`（由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包，单独上传 CDN）。主包因此是**纯代码 ~1.5 MB**，远在 4 MB 红线内。
 - 资源更新只换 CDN 文件 + 改一处资源（contenthash 变）重传，主包过审周期不受影响。
-- `NW_ASSET_CDN` 留空时 `publicPath=''` → 包内相对路径（整包跑，仅本地 IDE 自测用）。
-- **产物完整性门禁 `check:wechatpackage`（2026-09-01 补，事故驱动）**：`wechatgame/` 是**整个 gitignore 的**，`pixigame.js` 和它旁边的 `cdn/` 完全可以来自两次不同的构建——真发生过一次，症状是开发者工具里**黑屏且控制台没有任何指向它的错误**（bundle 引用 301 个资源，磁盘上是 7 月那次构建的 57 个，L0 闸门一张图都取不到）。`scripts/checkWechatPackage.mjs` 读**产物**断言三件事：壳完整（`game.js` 确实 require 那个 bundle、`game.json` 能解析）、**每个烘焙进 bundle 的资源 URL 磁盘上都有文件**、只有一个 bundle（`<id>.pixigame.js` 同级文件 = 上一条的 `asyncChunks:false` 失守）。已串进 `build:wechat`，也可单独跑——**开发者工具黑屏时先跑它**，它离线回答「包本身是否完整」。它**故意查不了**反向的情况（旧 bundle + 新 `cdn/`）：`clean:false` 让历史文件只堆积不清扫，旧 hash 仍在、规则照样通过；孤儿文件因此只报数不报错。变异测试 `test/wechatPackageGate.test.ts`（12 例，每条规则一个恰好破坏它的 fixture）。详见 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md) §17.2。
+- `NW_ASSET_CDN` 留空时 `publicPath=''` → 包内相对路径（整包跑，仅本地 IDE 自测用）。**这个模式要求 `packOptions.ignore` 里不能有 `cdn/`**——它一直有，所以「整包跑」这条从落地那天到 2026-09-01 晚间**从未真正跑过一次**（`packOptions.ignore` 不只管上传，也管模拟器能看见哪些文件）。两个决定分居两个文件、谁也不知道对方，现在由门禁第 4 条把它们焊在一起（见下条 / LOG §21）。
+- **两种模式互斥，`packOptions.ignore` 必须跟着 URL 形状一起换**（LOG §21）：绝对 CDN URL → 必须排除 `cdn/`（否则 ~21 MB 美术进 4 MB 红线的主包，且运行时还会再下一遍）；包内相对路径 → 必须**不**排除（否则 `WechatAssetIO` 的 `readFileSync` 每一张都 `permission denied`，游戏起得来但一张图也没有）。**当前主检出是后者**（整包跑），CDN 还没部署（§4.2 遗留 1/2）。
+- **产物完整性门禁 `check:wechatpackage`（2026-09-01 补，事故驱动）**：`wechatgame/` 是**整个 gitignore 的**，`pixigame.js` 和它旁边的 `cdn/` 完全可以来自两次不同的构建——真发生过一次，症状是开发者工具里**黑屏且控制台没有任何指向它的错误**（bundle 引用 301 个资源，磁盘上是 7 月那次构建的 57 个，L0 闸门一张图都取不到）。`scripts/checkWechatPackage.mjs` 读**产物**断言四件事：壳完整（`game.js` 确实 require 那个 bundle、`game.json` 能解析）、**每个烘焙进 bundle 的资源 URL 磁盘上都有文件**、只有一个 bundle（`<id>.pixigame.js` 同级文件 = 上一条的 `asyncChunks:false` 失守）、**`packOptions.ignore` 与它刚读到的 URL 形状一致**（第 4 条，2026-09-01 晚间补，同样事故驱动：前三条问「字节在不在磁盘上」，这条问它后面那个问题——「在不在包里」，见 LOG §21）。已串进 `build:wechat`，也可单独跑——**开发者工具黑屏时先跑它**，它离线回答「包本身是否完整」。它**故意查不了**反向的情况（旧 bundle + 新 `cdn/`）：`clean:false` 让历史文件只堆积不清扫，旧 hash 仍在、规则照样通过；孤儿文件因此只报数不报错。变异测试 `test/wechatPackageGate.test.ts`（19 例，每条规则一个恰好破坏它的 fixture）。详见 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md) §17.2。
 
 ### 4.1 运行时：`AssetIO`（微信无 fetch）
 
@@ -112,7 +113,7 @@ interface AssetIO {
 - ⏳ **遗留**：
   1. **微信后台白名单**：把 CDN 域名加进 `downloadFile` 合法域名（以及远程图片域名白名单）；**后端 API 域名要加进另一份「request 合法域名」**（`wx.request` 与 `downloadFile` 各有各的清单，见 §18）。
   2. **部署**：`build:wechat` 后把 `wechatgame/cdn/*` 上传到 `<CDN>/cdn/`；微信开发者工具上传主包（`pixigame.js`+`game.js`+`game.json`，`cdn/` 已被 packOptions 忽略）。
-  3. **运行时验证**：webpack 产物能否在微信运行时跑，需微信 IDE 实测（本地无法验证）。**已部分完成**：2026-08-31 音频后端在 DevTools 无头实测通过（`AUDIO_DESIGN.md` §0.3），2026-09-01 修掉了两个把整个启动挡在黑屏后面的成因（LOG §17）并把宿主/REST 两层依赖收归自己（§4.3、LOG §18）。**真机仍未验。**
+  3. **运行时验证**：webpack 产物能否在微信运行时跑，需微信 IDE 实测（本地无法验证）。**已部分完成**：2026-08-31 音频后端在 DevTools 无头实测通过（`AUDIO_DESIGN.md` §0.3），2026-09-01 修掉了两个把整个启动挡在黑屏后面的成因（LOG §17）并把宿主/REST 两层依赖收归自己（§4.3、LOG §18），当天晚间修掉第三个——`packOptions.ignore` 把 `cdn/` 挡在包外，于是「整包跑」模式下一张资源都读不到（LOG §21）。**真机仍未验。**
 
 > CDN 域名：复用现有 gamestao.com 基础设施即可（web 资源已在 a.gamestao.com 的 Cloudflare 边缘）。`cdn/` 上传到某子域（如 `assets.gamestao.com` 或直接挂 a. 的某路径），构建时 `NW_ASSET_CDN=https://<子域>`。
 
@@ -197,7 +198,7 @@ interface AssetIO {
 | `client/webpack.config.js` | `TARGET=wechat` 分支：单 IIFE→`wechatgame/pixigame.js`、asset `publicPath=NW_ASSET_CDN`+发 `cdn/`；`TARGET=mobile` 分支：`NormalModuleReplacementPlugin` 做 `.hires` 兄弟文件重定向（见 §9） |
 | `client/src/net/transport.ts` + `client/src/platform/wechat/wechatTransport.ts` | 出站 **REST** 接缝（`NetRequest`/`NetResponse` + `setNetTransport`）+ 它的 `wx.request` 实现。**与 `AssetIO` 是两条路**：资源字节永不经此，见 §18 |
 | `client/src/entries/wechat.ts` | 无条件 `setAssetIO(new WechatAssetIO())` + `setNetTransport(new WechatTransport())`（微信无 fetch，资源与 REST 各走各的） |
-| `client/wechatgame/{game.js,game.json,project.private.config.json}` | 微信壳层 + `packOptions.ignore`（排除 `cdn/`、`.map`） |
+| `client/wechatgame/{game.js,game.json,project.private.config.json}` | 微信壳层 + `packOptions.ignore`（当前只排除 `.map`＝整包跑；切 CDN 时要加回 `cdn/`，门禁第 4 条守着，见 §4.0 / LOG §21） |
 | `client/public/web/index.html` | 预 boot CSS 加载占位 |
 
 ---

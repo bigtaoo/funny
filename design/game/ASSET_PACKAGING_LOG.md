@@ -519,6 +519,11 @@ get those」）**是预期内的**——本地构建没有配置 `NW_ASSET_CDN`�
 战斗资源在没有真实 CDN 之前**注定加载失败**——但现在是「优雅失败、有捕获、不崩」，不再是「一整个
 `URL` 构造函数级别的硬崩溃」。
 
+> **⚠ 上一段那句「是预期内的」当天晚间被推翻，见 §21。** 没配 `NW_ASSET_CDN` 时 URL 烘焙成**包内
+> 相对路径**，`WechatAssetIO` 走 `readFileSync` 读包内文件、根本不下载——那批报错跟 CDN 没部署毫无
+> 关系，唯一的成因就是 `packOptions.ignore` 把 `cdn/` 排除出了包（它同时管模拟器，不只管上传）。
+> 换句话说：这正是「游戏在开发者工具里跑不起来」本身，当时被自己的解释盖过去了。
+
 ### 20.5 一个顺带发现的技巧：模拟器探针文件不用靠用户贴，会话本身就能读
 
 三个探针目标写的 `wx.env.USER_DATA_PATH` 在 DevTools **模拟器**里对应本机一个真实、固定的目录
@@ -559,3 +564,95 @@ L0 阶段不再崩溃**——这是第一次在这条链路上跑过贴图加载
 「阻塞已修好」误读成「已经验完」——**下一个接手的人应该做的是从 20.1 表格开始，直接跑真机**，不必
 重新排查 20.2–20.4 那三处（已经带回归用例，重犯会被测试挡住）。三个构建目标当前状态：主检出
 `client/wechatgame/` 里装的是最后一次 `build:wechat` 主包（收尾前已确认干净，见下）。
+
+---
+
+## 21. 开发者工具里跑不起来的第四个成因：`packOptions.ignore` 把 `cdn/` 挡在包外（2026-09-01 晚间）
+
+§20 收尾时的状态是「三处阻塞修好，boot 的 L0 阶段不再崩溃，画面能推进到 loading/占位层级」，同一节
+把随后那一批 `readFileSync:fail permission denied, open cdn/*.mp3|.tao|.png` 记成**预期内**——理由是
+「本地构建没有配置 `NW_ASSET_CDN`，`cdn/` 又被 `packOptions.ignore` 排除在包外，这批资源在没有真实
+CDN 之前注定加载失败」。
+
+**那个理由是错的，而且它盖住的正是「游戏在开发者工具里跑不起来」本身。** 没配 `NW_ASSET_CDN` 时
+webpack 把 URL 烘焙成**包内相对路径**（`cdn/<hash>.png`，324 处），`WechatAssetIO` 走的是
+`isRemote()===false` 那条分支——**直接 `readFileSync` 读包内文件，一个字节都不下载**。所以那批报错
+跟 CDN 没有部署毫无关系：文件就在 `wechatgame/cdn/` 里，是 `packOptions.ignore` 的
+`{"type":"folder","value":"cdn"}` 让它们不在**包**里。`packOptions.ignore` 不只管上传——它同时决定
+模拟器能看见哪些文件，DevTools 自己那句提示已经说了（§20.4 引的「configured to ignore when package
+uploads, so simulator cannot get those」），只是当时被读成了一句无害的附注。
+
+### 21.1 这个组合从来不成立，而它分居两个文件
+
+- `webpack.config.js`（`isWechat` 分支）决定 **URL 形状**：`NW_ASSET_CDN` 有值 → 绝对 CDN URL；留空
+  → 包内相对路径。
+- `wechatgame/project.private.config.json` 决定 **包清单**：`packOptions.ignore` 里一直有 `cdn/`，
+  从方案 A 落地那天起没动过。
+
+方案 A（绝对 URL + 排除 `cdn/`）是自洽的；`ASSET_PACKAGING.md` §4.0 里那行「`NW_ASSET_CDN` 留空时
+`publicPath=''` → 包内相对路径（**整包跑，仅本地 IDE 自测用**）」也是自洽的。**但两者从来没有同时
+成立过**：仓库里钉死的是「相对路径 + 排除 `cdn/`」这个第三种组合，它一张资源都读不到。也就是说，
+那句「仅本地 IDE 自测用」的模式**从写下的那天到今天，一次都没有真正跑过**——而它正是本地唯一能跑的
+模式（CDN 至今没部署，§4.2 遗留 1/2）。
+
+同一类错误，第三次以同一种形状出现：**约定写在文档里、两半实现分居两个文件，没有任何东西检查它们
+是否说的是同一件事**（§4.0 `asyncChunks:false`、§17.2 bundle 与 `cdn/` 不同源，都是这个形状）。
+
+### 21.2 修法
+
+`project.private.config.json` 的 `packOptions.ignore` 去掉 `{"type":"folder","value":"cdn"}` 一行，
+只留 `.map`（source map 9.7 MB，模拟器不需要）。改完主检出就是**整包跑**模式：主包 2.16 MB 代码 +
+21.09 MB 资源（324 个被引用的文件；`cdn/` 里另有 12.42 MB 是 `clean:false` 留下的孤儿）。这个体积
+远超主包 4 MB 红线——**模拟器不校验，「上传」/「预览」才校验**，而那条路本来就要等 CDN 部署，不是
+这次要解的问题。
+
+**没有**改成让 `build:wechat` 自动改写这个文件：DevTools 自己也写它（在「详情」里改任何设置都会），
+两个写入方争一个文件换来的麻烦比省下的那次手改多。改成门禁去检查，见下。
+
+### 21.3 门禁第 4 条：把两个文件焊在一起
+
+`scripts/checkWechatPackage.mjs` 原来三条规则问的都是「**字节在不在磁盘上**」。新增第 4 条问它后面
+那个问题——「**在不在包里**」：读 `project.config.json` / `project.private.config.json`（后者覆盖
+前者，与 DevTools 的合并顺序一致）里的 `packOptions.ignore`，与它刚在 bundle 里数出来的 URL 形状
+对账，两个方向都拦：
+
+- 相对路径 + 排除 `cdn/` → **红**（本节的 bug；报错里直接给出 `readFileSync:fail permission denied`
+  和「游戏起得来但屏幕是空的」这两个症状，下一个人不用再从症状倒推）；
+- 绝对 URL + **不**排除 `cdn/` → **红**（反向失守：21 MB 美术进 4 MB 红线的主包，运行时还会再下一遍）。
+
+区分两种形状不需要第二个正则：绝对形式前面必然是 URL 自己的 `/`（`https://host/cdn/<hash>`），相对
+形式被烘焙成裸字符串字面量、前面是引号。`folder` 与 `glob`（`cdn/**`）两种写法都认，`./cdn/` 这类
+写法先归一化。通过时那行 ✅ 会**报出它验的是哪个模式**（`whole-package (cdn/ packed)` /
+`plan A CDN (cdn/ excluded)`）——之前它对模式一无所知，正是这一点让错的组合看起来是绿的。
+
+`.gitignore` 里 `wechatgame/project.config.json` 是被忽略的（DevTools 托管、含 appid），
+`project.private.config.json` 才是入库的那个——所以门禁两个都读，但真正能被 review 到的是后者。
+
+### 21.4 验证
+
+- **在真实产物上先看它红**：把 `{"type":"folder","value":"cdn"}` 加回一份产物副本，门禁精确复现
+  改动前的状态（`excludes cdn/, but the bundle bakes 324 package-relative cdn/ reference(s)`）；
+  去掉即绿。这是本节唯一直接证明「诊断成立」的一步——它复现的不是 fixture，是仓库改动前那一刻。
+- `test/wechatPackageGate.test.ts` 12 例 → **19 例**：新增 7 例覆盖两个方向、`glob`/`./cdn/` 两种
+  写法、配置文件缺失（当作「什么都没排除」而不是报错）、配置文件 JSON 坏掉（报错，不要静默当空）、
+  以及那行 ✅ 报出的模式名。**变异测试**：把第 4 条的两个判断短路成 `false`，恰好 3 例转红
+  （两个方向 + glob 写法），报告类的 4 例保持绿——正是期望的分工。
+- `npm run build:wechat` 重跑（19.7 s）：门禁绿、`grep -oE '\?\.[a-zA-Z_$([]|\?\?'` 两项均为 0、
+  acorn 以 `ecmaVersion:2019` 解析产物通过（§20.2 那条阻塞没有回归）。
+- `wechatPackageGate` 19 例 / `wechatSingleBundle` 14 例 / `wechatHost` 18 例 /
+  `WechatPlatform` 17 例 / `capacitorStubs` 7 例 全绿；`npm run typecheck`（`tsconfig.test.json` +
+  fulllink）绿——§20.2 记的那次红（mock callback 缺 `openTextInput`）已由 HEAD 的 92bad126f 还清。
+
+### 21.5 仍然欠着
+
+1. **这次没有在开发者工具里亲眼看到画面**。会话跑在同一台机器上，能读 DevTools 的落盘日志
+   （`%LOCALAPPDATA%\微信开发者工具\User Data\<hash>\WeappLog\`，§20.5 那条技巧的延伸——这次的诊断
+   就是从那里读出来的：日志里唯一的真错误是 §20.2 那条 `Illegal file ... 1:100`，时间戳在语法修复
+   之前，修复后的产物 acorn 解析干净，于是剩下的只能是运行期，而运行期唯一已知的失败就是这一条），
+   但**驱动不了 DevTools 的界面、截不了它的图**（CLAUDE.md 的「看画面用真实 Chrome」那条对 DevTools
+   不适用）。需要用户刷新一次项目复核；如果还有别的报错，那是本节之后的第五个成因。
+2. **孤儿资源现在也进包了**：`clean:false` 留下的 12.42 MB 未被引用的文件，在整包跑模式下会一起被
+   DevTools 扫进包里。对模拟器只是慢一点，不影响正确性；门禁按 §17.2 的既有理由**只报数不报错**
+   （旧 bundle + 新 `cdn/` 那个反向情况靠它们才不误报）。真要上传前扫一次的话，那属于 §4.2 遗留 2。
+3. **切 CDN 时要把 `cdn/` 加回 `packOptions.ignore`**。这条现在不靠人记得——`build:wechat` 里的门禁
+   第 4 条会红，并把要加的那行 JSON 直接写在报错里。

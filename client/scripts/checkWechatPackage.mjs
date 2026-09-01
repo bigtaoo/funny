@@ -18,6 +18,10 @@
 //   3. the bundle is one file    — a `<id>.pixigame.js` sibling means asyncChunks:false was lost
 //                                  (ASSET_PACKAGING §4.0; test/wechatSingleBundle.test.ts guards
 //                                  the config, this guards the output)
+//   4. `packOptions.ignore` agrees with the url shape rule 2 just read   ← the 2026-09-01 (evening)
+//                                  "boots, then nothing" failure: the bundle asked the package for
+//                                  `cdn/<hash>`, and packOptions had excluded `cdn/` from the
+//                                  package. See ASSET_PACKAGING_LOG.md §21.
 //
 // ⚠ What it deliberately cannot check: the mirror image of the failure above — a STALE bundle
 // against a fresh `cdn/`. The wechat output runs with `clean:false` (game.js/game.json/cdn live
@@ -74,7 +78,15 @@ if (!existsSync(join(PKG, 'game.json'))) {
 // form — where the character before the directory is the url's own `/`.
 const refPattern = new RegExp(`(?<![\\w])${ASSET_DIR}/([0-9a-f]{8,64}\\.[a-z0-9]{2,5})`, 'gi');
 const referenced = new Set();
-for (const m of bundle.matchAll(refPattern)) referenced.add(m[1]);
+// Which of the two shapes each hit is — the input to rule 4. Only the absolute form can be
+// preceded by `/` (it is the url's own separator, as in `https://host/cdn/<hash>`); the relative
+// form is baked as a bare string literal, so what precedes it is the quote.
+let relativeRefs = 0;
+let absoluteRefs = 0;
+for (const m of bundle.matchAll(refPattern)) {
+  referenced.add(m[1]);
+  if (bundle[m.index - 1] === '/') absoluteRefs++; else relativeRefs++;
+}
 
 const present = existsSync(join(PKG, ASSET_DIR))
   ? new Set(readdirSync(join(PKG, ASSET_DIR)))
@@ -103,6 +115,53 @@ if (strays.length) {
   fail(`${strays.length} stray chunk file(s) next to the bundle (${strays.join(', ')}) — a dynamic import escaped output.asyncChunks:false. See ASSET_PACKAGING §4.0.`);
 }
 
+// ── 4. packOptions.ignore agrees with the url shape ──────────────────────────
+// Rules 1-3 all ask "is the byte on disk". This one asks the question after that: **is it in the
+// package**. `packOptions.ignore` is DevTools' pack manifest, and it governs the simulator too, not
+// just upload — DevTools says so itself when a build trips this ("configured to ignore when package
+// uploads, so simulator cannot get those").
+//
+// The two url shapes webpack can bake (see rule 2) need OPPOSITE answers, and nothing tied the two
+// files together until this rule existed:
+//   - relative `cdn/<hash>`  (NW_ASSET_CDN unset, whole-package mode) → cdn/ MUST be packed;
+//     excluded, WechatAssetIO's in-package `readFileSync` fails on every single asset. That was the
+//     live state on 2026-09-01: `ignore` had carried `{folder: cdn}` since plan A landed, so the
+//     mode ASSET_PACKAGING §4.0 calls "整包跑，仅本地 IDE 自测用" had in fact never once run.
+//   - absolute `https://…/cdn/<hash>` (plan A) → cdn/ MUST be excluded; packed, ~21 MB of art goes
+//     into a main package with a 4 MB ceiling, and the runtime downloads it a second time anyway.
+const packCfg = { ignore: [], from: null };
+for (const name of ['project.config.json', 'project.private.config.json']) { // private overrides
+  if (!existsSync(join(PKG, name))) continue;
+  try {
+    const parsed = JSON.parse(readFileSync(join(PKG, name), 'utf8'));
+    if (Array.isArray(parsed?.packOptions?.ignore)) { packCfg.ignore = parsed.packOptions.ignore; packCfg.from = name; }
+  } catch (e) {
+    fail(`${name} is not valid JSON (${e.message}) — DevTools cannot read the pack manifest out of it.`);
+  }
+}
+/** Does this ignore list keep `cdn/` out of the package? Covers the folder and glob spellings. */
+const excludesAssetDir = packCfg.ignore.some((e) => {
+  const value = String(e?.value ?? '').replace(/^\.?\//, '').replace(/\/+$/, '');
+  if (e?.type === 'folder') return value === ASSET_DIR;
+  if (e?.type === 'glob') return value === ASSET_DIR || value.startsWith(`${ASSET_DIR}/`);
+  return false;
+});
+const where = packCfg.from ? `${packCfg.from} packOptions.ignore` : 'packOptions.ignore';
+if (relativeRefs > 0 && excludesAssetDir) {
+  fail(
+    `${where} excludes ${ASSET_DIR}/, but the bundle bakes ${relativeRefs} package-relative ` +
+    `${ASSET_DIR}/ reference(s) — every asset read would fail (\`readFileSync:fail permission denied\`), ` +
+    'so the game boots to an empty screen. Either drop that entry (whole-package mode, local IDE ' +
+    'self-test) or rebuild with NW_ASSET_CDN set (plan A). See ASSET_PACKAGING §4.0.'
+  );
+} else if (relativeRefs === 0 && absoluteRefs > 0 && !excludesAssetDir) {
+  fail(
+    `the bundle bakes absolute CDN urls (plan A), but ${where} does not exclude ${ASSET_DIR}/ — ` +
+    `the whole asset set would be packed into the main package (4 MB ceiling) and then downloaded ` +
+    'again at runtime. Add `{ "type": "folder", "value": "cdn" }`. See ASSET_PACKAGING §4.0.'
+  );
+}
+
 if (problems.length) {
   console.error(`\n❌ wechat package (${problems.length} problem${problems.length > 1 ? 's' : ''}):\n`);
   for (const p of problems) console.error(`  • ${p}`);
@@ -112,7 +171,9 @@ if (problems.length) {
 }
 
 const orphans = [...present].filter((n) => !referenced.has(n)).length;
+const mode = relativeRefs > 0 ? `whole-package (${ASSET_DIR}/ packed)` : `plan A CDN (${ASSET_DIR}/ excluded)`;
 console.log(
-  `✅ wechat package: shell intact, ${referenced.size} baked asset URLs all present in ${ASSET_DIR}/, single bundle` +
+  `✅ wechat package: shell intact, ${referenced.size} baked asset URLs all present in ${ASSET_DIR}/, single bundle, ` +
+  `${mode}` +
   (orphans ? ` (${orphans} unreferenced file(s) left by earlier builds — expected under clean:false)` : '')
 );
