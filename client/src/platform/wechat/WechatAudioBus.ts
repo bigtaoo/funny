@@ -9,7 +9,7 @@
 // > **`client/src/wx.d.ts` 里只声明了 `createInnerAudioContext`**——也就是把"我们的 typing 写了
 // > 什么"当成了"运行时提供什么"。真实的小游戏运行时从基础库 **2.19.0** 起就提供
 // > `wx.createWebAudioContext()`，一个标准 WebAudio 表面；本项目
-// > `wechatgame/project.private.config.json` 钉的是 **3.15.1**，早就在门槛之上。
+// > `wechatgame/project.private.config.json` 钉的是 **3.17.2**，早就在门槛之上。
 // > AUDIO_DESIGN.md §3 当时其实把这条备选写进了脚注，只是标着"没有设备可验证"——所以真正拦住
 // > 它的从来不是运行时，是没人去验。
 //

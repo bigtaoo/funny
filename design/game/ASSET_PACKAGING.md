@@ -82,6 +82,7 @@ webpack 当前对图片 / `.tao` 用 `asset/resource`，每个资源被发成**�
 - **资源 → CDN（方案 A 核心）**：`asset/resource` 的 `publicPath = NW_ASSET_CDN`、`filename = 'cdn/[contenthash][ext]'`。于是每个 `import x from '*.png/.tao'` **在构建期就烘焙成 `<CDN>/cdn/<hash>.png` 绝对 URL**，资源文件发到 `wechatgame/cdn/`（由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包，单独上传 CDN）。主包因此是**纯代码 ~1.5 MB**，远在 4 MB 红线内。
 - 资源更新只换 CDN 文件 + 改一处资源（contenthash 变）重传，主包过审周期不受影响。
 - `NW_ASSET_CDN` 留空时 `publicPath=''` → 包内相对路径（整包跑，仅本地 IDE 自测用）。
+- **产物完整性门禁 `check:wechatpackage`（2026-09-01 补，事故驱动）**：`wechatgame/` 是**整个 gitignore 的**，`pixigame.js` 和它旁边的 `cdn/` 完全可以来自两次不同的构建——真发生过一次，症状是开发者工具里**黑屏且控制台没有任何指向它的错误**（bundle 引用 301 个资源，磁盘上是 7 月那次构建的 57 个，L0 闸门一张图都取不到）。`scripts/checkWechatPackage.mjs` 读**产物**断言三件事：壳完整（`game.js` 确实 require 那个 bundle、`game.json` 能解析）、**每个烘焙进 bundle 的资源 URL 磁盘上都有文件**、只有一个 bundle（`<id>.pixigame.js` 同级文件 = 上一条的 `asyncChunks:false` 失守）。已串进 `build:wechat`，也可单独跑——**开发者工具黑屏时先跑它**，它离线回答「包本身是否完整」。它**故意查不了**反向的情况（旧 bundle + 新 `cdn/`）：`clean:false` 让历史文件只堆积不清扫，旧 hash 仍在、规则照样通过；孤儿文件因此只报数不报错。变异测试 `test/wechatPackageGate.test.ts`（12 例，每条规则一个恰好破坏它的 fixture）。详见 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md) §17.2。
 
 ### 4.1 运行时：`AssetIO`（微信无 fetch）
 
@@ -97,6 +98,8 @@ interface AssetIO {
 - **Web / CrazyGames（默认 `WebAssetIO`）**：`loadBinary = fetch().arrayBuffer()`；`textureSource = 原样返回`。**与现状零回归**。
 - **微信（`WechatAssetIO`，`entries/wechat.ts` 无条件注入）**：微信运行时**没有 `fetch`**，所以一切走 `wx.downloadFile` + `USER_DATA_PATH/nwassets/` 本地缓存（按 contenthash basename 作缓存键，命中即不再下载；并发去重）。URL 已由构建期 `publicPath` 烘焙好，`WechatAssetIO` 不需要再知道 CDN 基址。包内相对路径（无 CDN 构建）则直接 `readFile`/原样返回。
 
+**上屏 canvas 也是这条边界的一部分（2026-09-01）**：`WechatPlatform.getCanvas()` 曾经直接读裸全局 `canvas`——那是**适配层**给的，不在小游戏文档 API 里，基础库 3.17.2 起不再提供，于是 `startApp()` 第一行就 `ReferenceError`、黑屏。现在按文档契约走 `wx.createCanvas()`（**首次**调用返回上屏 canvas，故必须是进程里第一个 `createCanvas` 且必须记忆化），保留裸全局 / `GameGlobal.canvas` 两级回退以兼容旧基础库。详见 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md) §17.1。
+
 `.tao`（`StickmanRuntime._parse`）和三组装饰 atlas（`decorAtlas`/`labelDecor`/`decorCAtlas`）+ `bootManifest` 卡图预热**全部路由经 `AssetIO`**，微信下这些**已完整走 CDN+缓存**。
 
 ### 4.2 本期落地 / 遗留
@@ -109,7 +112,7 @@ interface AssetIO {
 - ⏳ **遗留**：
   1. **微信后台白名单**：把 CDN 域名加进 `downloadFile` 合法域名（以及远程图片域名白名单）。
   2. **部署**：`build:wechat` 后把 `wechatgame/cdn/*` 上传到 `<CDN>/cdn/`；微信开发者工具上传主包（`pixigame.js`+`game.js`+`game.json`，`cdn/` 已被 packOptions 忽略）。
-  3. **运行时验证**：webpack 产物能否在微信运行时跑，需微信 IDE 实测（本地无法验证）。
+  3. **运行时验证**：webpack 产物能否在微信运行时跑，需微信 IDE 实测（本地无法验证）。**已部分完成**：2026-08-31 音频后端在 DevTools 无头实测通过（`AUDIO_DESIGN.md` §0.3），2026-09-01 修掉了两个把整个启动挡在黑屏后面的成因（LOG §17）。**真机仍未验。**
 
 > CDN 域名：复用现有 gamestao.com 基础设施即可（web 资源已在 a.gamestao.com 的 Cloudflare 边缘）。`cdn/` 上传到某子域（如 `assets.gamestao.com` 或直接挂 a. 的某路径），构建时 `NW_ASSET_CDN=https://<子域>`。
 
@@ -457,3 +460,6 @@ bundle 从 §1 记的 ~1.5 MB 长到 2.08 MB（raw），**没有任何东西发�
 
 → 已拆出到 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md#16-icons_atlas-重打包最后一张调色板合并页--8-帧死重量2026-08-27)。
 
+## 17. 微信开发者工具黑屏：两个独立成因（2026-09-01）
+
+→ 已拆出到 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md#17-微信开发者工具黑屏两个独立成因2026-09-01)。
