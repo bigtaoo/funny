@@ -31,6 +31,7 @@ function gainBus(): AudioBus & { sfx: number[]; music: number[] } {
     play() {},
     setSfxVolume(v) { sfx.push(v); },
     setMusicVolume(v) { music.push(v); },
+    playMusic() {},
     resume() {},
   };
 }

@@ -12,8 +12,10 @@
 // recorded, not on the absence of an exception.
 //
 // Run with: npm test
-import { describe, it, expect, beforeEach } from 'vitest';
-import { ContextAudioBus, DEFAULT_SFX_VOLUME } from '../../src/audio/ContextAudioBus';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ContextAudioBus, DEFAULT_SFX_VOLUME, DEFAULT_MUSIC_VOLUME } from '../../src/audio/ContextAudioBus';
+import { FADE_IN_MS } from '../../src/audio/MusicPlayer';
+import { MUSIC_TRACKS } from '../../src/audio/musicTracks';
 import { setAssetIO } from '../../src/assets/assetIO';
 import { allSfxUrls } from '../../src/audio/cueAssets';
 import { fakeAudioContext, asCtx, type FakeAudioContext } from './fakeAudioContext';
@@ -35,13 +37,29 @@ beforeEach(() => {
   });
 });
 
+/** A stand-in for the platform's streaming music player (see `MusicSource`). */
+function fakeMusicSource() {
+  return {
+    loads: [] as { url: string; loop: boolean }[],
+    plays: 0,
+    pauses: 0,
+    volume: 0,
+    load(url: string, loop: boolean) { this.loads.push({ url, loop }); },
+    play() { this.plays++; },
+    pause() { this.pauses++; },
+    setVolume(v: number) { this.volume = v; },
+  };
+}
+
 /** A bus over a fresh fake context, plus the handles a case needs to poke at it. */
-function bus(opts: { state?: 'suspended' | 'running' } = {}) {
+function bus(opts: { state?: 'suspended' | 'running'; music?: 'ok' | 'absent' | 'throws' } = {}) {
   const ctx = fakeAudioContext();
   ctx.state = opts.state ?? 'running';
   let creates = 0;
   const gestures: (() => void)[] = [];
+  const visibility: ((visible: boolean) => void)[] = [];
   const warnings: string[] = [];
+  const src = fakeMusicSource();
   const b = new ContextAudioBus({
     createContext: () => {
       creates++;
@@ -49,12 +67,20 @@ function bus(opts: { state?: 'suspended' | 'running' } = {}) {
     },
     onGesture: (cb) => gestures.push(cb),
     warn: (message) => warnings.push(message),
+    createMusicSource: () => {
+      if (opts.music === 'absent') return null;
+      if (opts.music === 'throws') throw new Error('no music device');
+      return src;
+    },
+    onVisibility: (cb) => visibility.push(cb),
   });
   return {
     b,
     ctx,
     gestures,
+    visibility,
     warnings,
+    music: src,
     creates: () => creates,
     /** The SFX bus node: the first gain created, i.e. the one wired to `destination`. */
     busNode: () => ctx.of('gain').find((g) => g.out.includes(ctx.destination)),
@@ -281,5 +307,94 @@ describe('ContextAudioBus — the field names the e2e measurement surface reflec
     const priv = h.b as unknown as { bank: { variantsOf?: unknown } | null };
     expect(priv.bank).toBeTruthy();
     expect(typeof priv.bank!.variantsOf).toBe('function');
+  });
+});
+
+// ── the music half (AUDIO_DESIGN.md §2.3 / §7 step 7) ────────────────────────────────────────
+//
+// The point of these cases is the SEPARATION: music does not go through the `AudioContext` at
+// all (a cross-origin `createMediaElementSource` yields a silent stream — see `MusicPlayer.ts`),
+// so every way the two halves could accidentally become coupled is a real bug that would only
+// ever be noticed by ear.
+describe('ContextAudioBus — BGM', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('starts the track without ever building an AudioContext', () => {
+    // SFX are gated on `ctx.state === 'running'`; music must not be. A player who lands in the
+    // lobby and does not tap for ten seconds should hear music for those ten seconds.
+    const h = bus();
+    h.b.playMusic('bgm.lobby');
+    expect(h.music.loads).toHaveLength(1);
+    expect(h.music.plays).toBe(1);
+    expect(h.creates()).toBe(0);
+  });
+
+  it('plays music on a suspended context — the autoplay gates are separate ones', () => {
+    const h = bus({ state: 'suspended' });
+    h.b.play('sfx.ui.tap');          // dropped: SFX before the gate would pile up
+    h.b.playMusic('bgm.lobby');
+    expect(h.music.plays).toBe(1);
+  });
+
+  it('pushes the BGM channel volume through, before and after a track exists', () => {
+    const h = bus();
+    h.b.setMusicVolume(0.25);
+    h.b.playMusic('bgm.lobby');
+    vi.advanceTimersByTime(FADE_IN_MS);
+    expect(h.music.volume).toBeCloseTo(0.25 * MUSIC_TRACKS['bgm.lobby'].gain, 6);
+    h.b.setMusicVolume(0.5);
+    expect(h.music.volume).toBeCloseTo(0.5 * MUSIC_TRACKS['bgm.lobby'].gain, 6);
+  });
+
+  it('starts at the shipped BGM default rather than at full volume', () => {
+    // If the bus started the music channel at 1.0, every player whose settings have not loaded
+    // yet (or who never opens settings) hears the bed twice as loud as designed.
+    const h = bus();
+    h.b.playMusic('bgm.lobby');
+    vi.advanceTimersByTime(FADE_IN_MS);
+    expect(h.music.volume).toBeCloseTo(DEFAULT_MUSIC_VOLUME * MUSIC_TRACKS['bgm.lobby'].gain, 6);
+  });
+
+  it('a gesture resumes BOTH halves — the context and the rejected stream', () => {
+    const h = bus({ state: 'suspended' });
+    h.b.playMusic('bgm.lobby');
+    expect(h.music.plays).toBe(1);
+    h.gestures.forEach((cb) => cb());
+    expect(h.ctx.resumeCalls).toBeGreaterThan(0);
+    expect(h.music.plays).toBe(2);
+  });
+
+  it('backgrounding pauses the music (and only the music)', () => {
+    const h = bus();
+    h.b.playMusic('bgm.lobby');
+    vi.advanceTimersByTime(FADE_IN_MS);
+    h.visibility.forEach((cb) => cb(false));
+    expect(h.music.pauses).toBe(1);
+    h.visibility.forEach((cb) => cb(true));
+    expect(h.music.plays).toBe(2);
+  });
+
+  it('a host with no music device stays silent instead of throwing', () => {
+    // node's unit environment has a fake AudioContext but no `HTMLAudioElement`; that combination
+    // is real, not hypothetical, and SFX must be unaffected by it.
+    for (const music of ['absent', 'throws'] as const) {
+      const h = bus({ music });
+      expect(() => h.b.playMusic('bgm.lobby')).not.toThrow();
+      expect(() => h.b.setMusicVolume(0.5)).not.toThrow();
+      expect(h.b.musicState).toBeNull();
+      h.b.play('sfx.ui.tap');
+      expect(h.ctx.of('gain').length).toBeGreaterThan(0);
+    }
+  });
+
+  it('exposes the player state the e2e probe reads', () => {
+    // `__nwAudio.music()` is the only way to check the delivered music level in a real browser:
+    // the stream is not in the graph, so no AnalyserNode can see it (AUDIO_DESIGN §0.5).
+    const h = bus();
+    expect(h.b.musicState).toMatchObject({ want: null, loaded: null });
+    h.b.playMusic('bgm.lobby');
+    vi.advanceTimersByTime(FADE_IN_MS);
+    expect(h.b.musicState).toMatchObject({ want: 'bgm.lobby', loaded: 'bgm.lobby', level: 1 });
   });
 });

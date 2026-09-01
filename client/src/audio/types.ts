@@ -64,6 +64,20 @@ export type AudioCue =
   | 'sfx.ui.error';
 
 /**
+ * 循环长音（BGM）的词汇表，与 {@link AudioCue} 共用一个扁平 id 命名空间（AUDIO_DESIGN.md §2.3）。
+ *
+ * **只登记真的有文件的轨。** §2.3 的表里还写着 `bgm.battle` / `bgm.intro`，它们不在这个 union
+ * 里——`cueAssets.ts` 那一课（一个空条目与疏漏完全无法区分）在音乐这边更严重：一条没有文件的轨
+ * 会以"这个界面就是安静的"的形式存在，而那和设计意图完全一样，永远没有人会发现。写进 union 的
+ * 每一个 id 在 `MUSIC_TRACKS` 里都必须有文件，否则编译不过。
+ *
+ * 结算 stinger（`sfx.result.*`）**不在这里**：它们是一次性短音，走 SFX 管线（§2.3 尾注）。
+ */
+export type MusicTrack =
+  /** 大厅 / 菜单 / 商店 / 世界地图 / 结算 —— 除对局之外的一切（见 `sceneMusic.ts`）。 */
+  'bgm.lobby';
+
+/**
  * 可替换的音频设备（AUDIO_DESIGN.md §3）。
  *
  * **不挂在 `IPlatform` 上**，尽管 §3 原文写的是 `IPlatform.audio`——见 AUDIO_DESIGN.md §3
@@ -88,8 +102,18 @@ export interface AudioBus {
   play(cue: AudioCue, count?: number): void;
   /** SFX 总线增益，0..1（AUDIO_DESIGN.md §4 三档音量的 `sfx` 通道）。 */
   setSfxVolume(v: number): void;
-  /** BGM 总线增益，0..1。BGM 尚未实现，接受并忽略——设置页可以先接上滑杆。 */
+  /** BGM 通道增益，0..1（`master × bgm`，静音时 0）。 */
   setMusicVolume(v: number): void;
+  /**
+   * 声明**现在应该放哪条 BGM**；`null` = 应该安静（AUDIO_DESIGN.md §2.3 / §7 第 7 步）。
+   *
+   * 声明式而不是 `playMusic()`/`stopMusic()` 一对命令：唯一的调用方是 `SceneManager`，它每次
+   * 换场景都要说一次，而"大厅 → 商店 → 大厅"这类导航里绝大多数说的是同一条轨。幂等的
+   * setter 让那种情况天然什么都不做；一对命令则要求每个调用点自己记住上一次说了什么。
+   *
+   * 同 {@link play}：发后不理，不返回、不抛出、不 await。换轨走淡出淡入，由实现负责。
+   */
+  playMusic(track: MusicTrack | null): void;
   /** 越过浏览器/小游戏的 autoplay 闸门（AUDIO_DESIGN.md §5）；必须在用户手势里调。 */
   resume(): void;
 }

@@ -6,6 +6,7 @@
 // **本类只剩下两个平台答案**，其余全部在平台中立的 `audio/ContextAudioBus.ts` 里（2026-08-31
 // 接微信后端时抽出去的——见那个文件的头注释）：上下文从哪来、手势从哪来。
 import { ContextAudioBus } from '../../audio/ContextAudioBus';
+import { WebMusicSource } from './WebMusicSource';
 
 export class WebAudioBus extends ContextAudioBus {
   constructor() {
@@ -31,6 +32,21 @@ export class WebAudioBus extends ContextAudioBus {
         for (const ev of ['pointerdown', 'keydown', 'touchstart'] as const) {
           window.addEventListener(ev, cb, { passive: true });
         }
+      },
+      // BGM 走一条独立的流（AUDIO_DESIGN.md §2.3）——不是这个 `AudioContext` 的一部分，
+      // 理由整段在 `audio/MusicPlayer.ts` 的头注释里。
+      createMusicSource: () => WebMusicSource.create(),
+      // 切后台暂停音乐（§4 "失焦自动暂停"）。SFX 不需要：最长的 cue 也只有几百毫秒。
+      onVisibility: (cb) => {
+        if (typeof document === 'undefined') return;
+        document.addEventListener('visibilitychange', () => cb(!document.hidden));
+        // **当前值也要报一次，不只报变化。** `visibilitychange` 只在**切换**时触发，而页面
+        // 完全可能在后台标签页里加载完毕（用户按住 Ctrl 点开、从收藏夹批量打开、会话恢复）。
+        // 只监听变化的话，那种情况下音乐会在一个没人在看的标签页里开始播——而且此后不会有任何
+        // 事件来纠正它，因为"从后台切到前台"发的是 `visible`，不是 `hidden`。
+        // 2026-09-01 §0.5 的实测正是在一个 `document.hidden === true` 的标签页里做的，这个洞
+        // 就是那样冒出来的。
+        cb(!document.hidden);
       },
     });
   }

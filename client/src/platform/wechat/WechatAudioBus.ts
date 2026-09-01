@@ -20,6 +20,7 @@
 // **真正想要的东西**已经在 `audio/VoiceBudget.ts` 里了，平台中立、被用例守着，两个平台共用一份。
 // `InnerAudioContext` 的正当用途只剩 BGM（单实例、流式、`loop=true`），那是 §7 第 7 步的事。
 import { ContextAudioBus } from '../../audio/ContextAudioBus';
+import { WechatMusicSource } from './WechatMusicSource';
 
 /** 本文件用到的 wx 表面切片（`src/wx.d.ts` 里补齐了声明，这里只是就近说明用途）。 */
 declare const wx: {
@@ -27,6 +28,8 @@ declare const wx: {
   onTouchStart?(cb: () => void): void;
   onAudioInterruptionBegin?(cb: () => void): void;
   onAudioInterruptionEnd?(cb: () => void): void;
+  onHide?(cb: () => void): void;
+  onShow?(cb: () => void): void;
 };
 
 export class WechatAudioBus extends ContextAudioBus {
@@ -45,12 +48,28 @@ export class WechatAudioBus extends ContextAudioBus {
       onGesture: (cb) => {
         if (typeof wx !== 'undefined') wx.onTouchStart?.(cb);
       },
+      // BGM 是 `InnerAudioContext` 在本项目里**唯一**的正当用途——见 `WechatMusicSource.ts`
+      // 的头注释，以及上面那段关于 SFX 为什么不需要它的说明。
+      createMusicSource: () => WechatMusicSource.create(),
+      // 这个运行时没有 DOM，`wx.onHide`/`wx.onShow` 是 `visibilitychange` 的等价物。
+      onVisibility: (cb) => {
+        if (typeof wx === 'undefined') return;
+        wx.onHide?.(() => cb(false));
+        wx.onShow?.(() => cb(true));
+      },
     });
 
     // 中断（来电/系统闹钟）。这个运行时没有 DOM，所以没有 `visibilitychange`，这两个回调是
     // **唯一**的信号。SFX 这边只需要恢复那一半：最长的 cue 是几百毫秒，中断开始时它早就播完了，
     // 没有要暂停的东西；而中断**结束**后上下文可能停在 suspended，不 `resume()` 就是"接完一个
     // 电话回来游戏哑了"，且此后再没有任何手势会去修它（`onTouchStart` 的解锁已经在开局用掉了）。
-    if (typeof wx !== 'undefined') wx.onAudioInterruptionEnd?.(() => this.resume());
+    // 音频中断（来电/闹钟）。SFX 只需要恢复那一半（最长的 cue 是几百毫秒，中断开始时早已播完），
+    // **音乐两半都需要**：它是持续声源，中断开始时正响着。`Begin` 借用 `onVisibility` 那条
+    // 路径（对播放器而言"被系统抢走"和"切后台"是同一件事：按住，别淡出），`End` 放开并
+    // `resume()`——不接的话就是"接完一个电话回来游戏哑了"，而此后再没有任何手势会去修它。
+    if (typeof wx !== 'undefined') {
+      wx.onAudioInterruptionBegin?.(() => this.setMusicHidden(true));
+      wx.onAudioInterruptionEnd?.(() => { this.setMusicHidden(false); this.resume(); });
+    }
   }
 }

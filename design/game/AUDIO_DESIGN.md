@@ -1,6 +1,6 @@
 # Notebook Wars — 音频系统设计
 
-> 状态：**战斗 + UI 触发点都已接，设置页有三档音量与静音；四轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材）；平局 stinger 已补齐（18 个 cue）；微信不再静音（§7 第 5 步 ✅）；**素材第一批已发货（§7 第 6 步 ✅）——**10 个 cue 共 22 个样本，8 个 cue 刻意保留合成音**，全部 CC0、无需署名，峰值对齐实测成立（0.96–1.00×）。剩下 §7 第 7 步 BGM 与两个开放项（微信真机、**还没有人听过**）**（2026-09-01）· 权威：本文（音频**系统**的单一入口）· 更新：2026-09-01
+> 状态：**§7 的七步全部完成。** 战斗 + UI 触发点都已接，设置页有三档音量与静音；五轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）；素材第一批已发货（10 个 cue 共 22 个样本，8 个 cue 刻意保留合成音，全部 CC0、无需署名）；**BGM 落地（§7 第 7 步 ✅）——一条轨 `bgm.lobby`，流式、循环、淡入淡出、失焦暂停，交付峰值 0.0691**。剩下三个开放项：微信真机、**还没有人听过任何一个声音**、以及 §2.3 另外两条轨（`bgm.battle` / `bgm.intro`）的素材（2026-09-01）· 权威：本文（音频**系统**的单一入口）· 更新：2026-09-01
 >
 > **权威边界**：音频**美学方向**（音色取向、禁用清单）仍归 [`../product/art-direction.md`](../product/art-direction.md) §声音；本文拥有**系统实现**——资产清单与命名、触发表、播放层抽象、混音、设置项、平台约束。两者不重述对方。
 
@@ -8,7 +8,7 @@
 
 ## 0. 落地状态（2026-09-01）
 
-§7 的第 1–6 步已完成：**平台接缝 + cue 目录 + 程序化合成音 + 样本加载/解码/并发上限/混音器 + 战斗触发点 + UI 触发点 + 设置页音量 + 微信后端 + 素材第一批**，四轮实测（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材）都已做完。**只剩第 7 步 BGM**，加两个开放项：微信真机（§0.3 末尾）与**还没有人听过任何一个声音**（§7 第 6 步末尾）。
+§7 **七步全部完成**：平台接缝 + cue 目录 + 程序化合成音 + 样本加载/解码/并发上限/混音器 + 战斗触发点 + UI 触发点 + 设置页音量 + 微信后端 + 素材第一批 + **BGM**，五轮实测（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）都已做完。开放项三个：微信真机（§0.3 末尾）、**还没有人听过任何一个声音**（§7 第 6 步末尾 / §0.5 末尾）、§2.3 剩下两条轨的素材。
 
 **已存在的模块**（`client/src/audio/`，平台中立，无 PIXI 依赖）：
 
@@ -24,8 +24,11 @@
 | `CueMixer.ts` | 两级阶梯：有样本用样本，没有用合成音；合并增益、variant 不重复、±3% 音高抖动 |
 | `audioBus.ts` | 模块级接缝（`setAudioBus`/`audioBus`/`playSfx`）+ `NullAudioBus` |
 | `audioSettings.ts` | 三档音量 + 静音的持久化与换算（§4）。**2026-08-31 新增** |
+| `musicTracks.ts` | BGM 轨目录：id → 文件 URL + 混音 gain + loop。**cueAssets + cueCatalogue 的合并版**（一条轨就是一个文件，两者同生同灭）。**2026-09-01 新增** |
+| `MusicPlayer.ts` | 单实例流式播放器：淡入淡出、换轨、失焦暂停、autoplay 补播。平台中立，只要一个四方法的 `MusicSource`。**2026-09-01 新增** |
+| `sceneMusic.ts` | 场景类名 → 轨的**单一映射表**，`SceneManager` 调。**默认放、列出不放的**（理由见该文件头注释）。**2026-09-01 新增** |
 
-**后端**：`client/src/platform/web/WebAudioBus.ts`（`AudioContext` + SFX 总线 GainNode）。装在 `entries/{web,crazygames,mobile,web-e2e}.ts`；**微信保持 `NullAudioBus`（静音）**，理由见 §3。
+**后端**：`client/src/platform/web/WebAudioBus.ts`（`AudioContext` + SFX 总线 GainNode）+ `platform/wechat/WechatAudioBus.ts`；音乐各自多一个约 20 行的流式播放器（`WebMusicSource.ts` = `HTMLAudioElement`，`WechatMusicSource.ts` = `InnerAudioContext`）。
 
 **战斗触发点（2026-08-31 新增）**：`render/GameRenderer/events.ts` 的 `EventsPanel.collectCue` 是引擎事件 → cue 的**单一映射表**，`GameRendererCore.update()` 在排完 `state.events` 之后调一次 `flushAudio()`。映射如下（完整理由写在代码里）：
 
@@ -94,7 +97,7 @@
 
 **设置页（§4）**：`SettingsScene` 右栏加了一块音量区——三根滑杆（master / bgm / sfx）+ 一个静音开关，落在 `scenes/SettingsScene/audioPanel.ts`。**位置在 §0.2 (D) 被订正过一次**（原先撞在贯穿整宽的语言按钮行上，把 Deutsch 按钮吃掉一半，且是静默吃掉），现在是 `x0 = 0.60w` / `titleY = 0.30h`，由 `test/ui/settingsSliderOverlap.ui.ts` 守着。**master / sfx 两根滑杆松手时会试听一声 `sfx.ui.tap`**（§0.2 (B)：不试听的话它是一根完全盲的控件），bgm 那根保持静音。持久化走 `audio/audioSettings.ts`：一个 JSON 键 `nw_audio`，与 `nw_locale` / `nw_data_saver` 同级的**本地设置，不上云**（纯体验项，无防作弊价值，一次 `PUT /flags` 换不来任何东西）。形状抄 `assets/prefetchPolicy.ts`（`installAudioSettings({storage})` 在 `app.ts` 装一次），所以没装的环境（单元测试、headless）读到默认值、写入被丢掉，而不是抛错。**静音不清零滑杆**：`muted` 是独立于三个音量的覆盖，取消静音会回到玩家自己调的档位，而不是把他留在最底下。BGM 那根滑杆现在接的是 `setMusicVolume`，它接受并忽略（§7 第 7 步之前没有轨可放）——接上它是因为「设置里有个滑杆但拖了没反应」和「设置里没这一项」是两种体验，前者更糟，而这一项一定会有。
 
-**还没有的**：音频素材（§7 第 6 步）——18 个 cue **全部**是程序化合成音，`cueAssets.ts` 依旧是空的。BGM（§7 第 7 步）同样未开始。**微信真机**未验（DevTools 已验，见 §0.3 末尾那三条）。
+**还没有的**：§2.3 的另外两条轨（`bgm.battle` / `bgm.intro`）——`MusicTrack` union 里**没有**它们的 id，所以对局现在是刻意的安静而不是漏接（见 §2.3）。**微信真机**未验（DevTools 已验，见 §0.3 末尾那三条）。
 
 **验证过的**：
 - `test/audio/**` **127 个用例**（+4：`errorCueThrottle.test.ts`；**+18：`ContextAudioBus.test.ts`，2026-09-01**），`src/audio/**` 与 `src/ui/hits.ts` 行覆盖均 **100%**；两者都在 `vitest.config.ts` 的覆盖率门禁里（客户端整体 95.77% → **95.83%**，scope 又变大一点而百分比仍在上升）。
@@ -609,6 +612,119 @@ reward 0.08915 / error 0.07825 / gacha common 0.06680 · rare 0.07756 · epic 0.
 
 ---
 
+### 0.5 BGM 的实测（2026-09-01，§7 第 7 步）
+
+**发货了什么**：一条轨 `bgm.lobby`，`client/src/assets/audio/bgm-lobby.mp3`，**2065440 字节**、
+48 kHz 立体声、213.16 s、78 kbps VBR。母带是项目自有素材（`art/audio/sources/first-party/doodle-bed.flac`，
+13266428 字节，由投进来的 40.9 MB WAV **无损**转出——逐样本比对相等）；不需要署名。
+管线是新写的 [`tools/audio-pipeline/process_music.py`](../../tools/audio-pipeline/process_music.py)。
+
+#### 这一步真正的决定不是「怎么播」，是「音乐不走 SFX 那条管线」
+
+SFX 走 `AudioContext` + 解好的 `AudioBuffer`，因为它短、要并发、要抢占。音乐三条都不占，而照抄
+那条管线要付两笔钱，**两笔都只会以「静音」或「卡顿」的形式暴露**：
+
+| 照抄的做法 | 代价 |
+|---|---|
+| `decodeAudioData` 整轨 | 213 s × 48 kHz × 2 声道 × 4 字节 ≈ **82 MB 常驻内存**，换来的是一个在 CDN 上只有 2.0 MB 的文件 |
+| `createMediaElementSource` 把 `<audio>` 接进图（为了拿一个 GainNode） | 媒体元素**一旦跨源就必须带 CORS 响应头**，否则接出来是一条**静音**的流。本项目的资源全部在 `NW_ASSET_CDN` 上，正好全是跨源 |
+
+所以音乐是一条独立的流：web `HTMLAudioElement`、微信 `InnerAudioContext`（§5 那条订正预告过的
+「`InnerAudioContext` 剩下的正当用途只有 BGM」，现在兑现了）。淡入淡出因此由平台中立的
+`MusicPlayer` 用一个 50 ms 定时器直接写 `volume`，两个平台各自只提供 `load/play/pause/setVolume/isPlaying`。
+**ducking（§4 可选 P2）在这个形状下做不了**——那需要总线增益，也就需要先解决 CORS。这是一笔明码
+标价的交换，不是遗漏。
+
+#### 电平：没有峰值对齐，所以基准写在 catalogue 里
+
+样本那边 `process.py` 把每个文件缩放到 `delivered/(gain × bus)`，于是 `gain` 是纯混音权重。音乐
+**不做这一步**：一首成品的动态就是内容本身，为了对齐一个数字而在有损编码前砍掉 13 dB 是净损失。
+于是文件带着作者自己的峰值（0.6911）进来，交付电平的决定落在 `MUSIC_TRACKS['bgm.lobby'].gain = 0.20`：
+
+```
+交付峰值 = 0.6911 × 0.20 × 0.5(bgm 通道默认) = 0.0691
+交付 RMS = 0.0691 / 4.9(波峰因数 13.8 dB)   = 0.0143
+```
+
+参照物是同一套默认档下已实测的 SFX 交付峰值：`sfx.base.hit` 0.151（最响）、`sfx.ui.tap` 0.0923、
+`sfx.ink.tick` 0.028（最轻）。**音乐的峰值落在按钮音之下，而它的 RMS 比全表最轻的 cue 的峰值还低
+一半**——任何一个 SFX 事件都会明确浮在音乐之上，而音乐仍然听得见。这三个数由
+`audioAssets.test.ts` 的 `music` 规则钉在一起（改 `musicTracks.ts` 的 gain 即红）。
+
+#### 测出来的数（一）：编码梯位，以及为什么最小的那一档被否掉
+
+`process.py` 对 cue 的策略是「在带宽合法的采样率里取字节最少的」，因为 40 ms 的一戳没有高频可丢。
+音乐有，所以 `process_music.py` 换成**质量搜索**：沿 libsndfile 的 compression level 从小到大试，
+取第一个同时过两道门的。两道门都**相对于母带**，因为这首母带自己的 99% 能量滚降只到 12.0 kHz——
+一条「必须到 16 kHz」的固定标准量的是作曲者，不是编码器。
+
+| compression level | 字节 | 保住的滚降 | 可听频段最大误差 | 结果 |
+|---|---|---|---|---|
+| 0.9 | 1880952 | **51%**（6095 / 12010 Hz） | +0.04 dB | ❌ 一档之内丢掉一半频谱 |
+| **0.8** | **2065440** | **87%**（10433 Hz） | **+0.04 dB** | ✅ 采用 |
+| 0.7 | 2275632 | 90% | — | 更大，没必要 |
+| 0.5 | 3261792 | 96% | — | 同上 |
+
+门限（滚降 ≥85%、可听频段误差 ≤0.5 dB）就设在 0.8 与 0.9 之间那个**拐点**里。"可听频段"指的是
+能量在全曲最响频段 40 dB 以内的频段——这首母带 16 kHz 以上只有 −5 dB（比中频低 61 dB），
+用 0.5 dB 去要求那里会把整条梯子全否掉，量的还是听不见的东西。
+
+#### 测出来的数（二）：两个只有真浏览器能暴露的缺陷，各修一次
+
+两个都是**「淡入跑完了但没有声音跟着它」**这一类，而单元测试永远看不到——假的 `MusicSource`
+总是立刻开始播。
+
+**(A) 淡入在 autoplay 闸门关着的时候照样推进。** 冷启动 6 秒后探针报
+`level 0.67`，而 `element.paused` 还是 `true`：900 ms 的淡入在一片寂静里跑掉了三分之二，玩家第一次
+点屏幕时音乐会**直接以近满音量出现**——一次 pop，正是淡入存在的唯一目的所要防止的事。
+**修法**：`MusicSource` 加一个可选的 `isPlaying()`（web `!el.paused`，微信 `!ctx.paused`），
+`MusicPlayer.tick()` 在「想淡入但流没在走」时**不推进、并把定时器停掉**（否则就是一个从冷启动到
+第一次点击之间一直空转的 20 Hz 定时器）；重新点着它的只有 `resume()` 和 `setHidden(false)`，
+而那正是这个状态唯一能改变的两条路。
+
+**(B) 页面在后台标签页里加载完毕时，音乐照样开始播。** `visibilitychange` 只在**切换**时触发，
+而实测这一轮恰好就是在一个 `document.hidden === true` 的标签页里做的——于是「失焦自动暂停」
+（§4）对它完全没有作用，此后也不会有任何事件来纠正（从后台切到前台发的是 `visible`，不是 `hidden`）。
+用户按住 Ctrl 点开链接、从收藏夹批量打开、会话恢复，都会落进这个洞。**修法**：`WebAudioBus` 的
+`onVisibility` 注册之后**立刻把当前值也报一次**，而不只报变化。
+
+#### 测出来的数（三）：一次完整的进出对局往返
+
+修完之后在真浏览器里驱动 `SceneManager`（构造一个类名为 `GameScene` 的场景交给 `manager.goto`，
+所以走的是生产路径，不是测试后门）：
+
+| 时刻 | `level` | `element.volume` | `paused` | `currentTime` |
+|---|---|---|---|---|
+| 大厅稳态 | 1 | **0.1000** | false | 51.56 |
+| 进 `GameScene` 后 200 ms | 0.556 | 0.0556 | false | 51.76 |
+| 进 `GameScene` 后 600 ms | 0 | 0 | **true** | **52.01** |
+| 进 `GameScene` 后 1000 ms | 0 | 0 | true | 52.01（没动） |
+| 回到有音乐的场景 450 ms | 0.5 | 0.05 | false | 52.47 |
+| 回到有音乐的场景 1150 ms | 1 | 0.1000 | false | 53.17 |
+
+三件事同时被这张表证实：稳态音量正好是设计的 **0.1000**（= 0.5 × 0.20）；淡出 450 ms 之后流是
+**暂停**而不是卸载；回来时**从 52.01 s 接着放**，不是从头重新缓冲 2 MB。另外 `musicLog` 显示
+「大厅 → 别的菜单 → 大厅」这类导航重复请求同一条轨时 `currentTime` 连续推进——`playMusic` 的
+幂等性在真的 `SceneManager` 上成立。
+
+#### 测出来的数（四）：包体
+
+微信主包 **2197453 → 2203415 字节（+5962）**，就是整个 BGM 引擎（`MusicPlayer` + `musicTracks` +
+`sceneMusic` + 两个平台播放器 + `SceneManager` 那一个钩子）。**2.07 MB 的 mp3 一个字节都不在主包
+里**——它和美术走同一条 `asset/resource` 规则，产物落在 `wechatgame/cdn/`，由 `packOptions.ignore`
+排除（ASSET_PACKAGING §4 方案 A）。`check:wechatpackage` 现在核对 **324** 个烘焙 URL 全部在 `cdn/` 里。
+
+#### ⚠️ 仍然欠着：还是没有人听过
+
+和 §7 第 6 步末尾那条是同一件事，这里再记一次是因为**这一轮尝试过、失败了**：本机能驱动的两个
+浏览器面（真 Chrome 的 MCP 标签页、in-app 面板）**都是后台标签页**（`document.hidden === true`），
+而 Chrome 对后台标签页会**推迟媒体加载**（真 Chrome 那边 `readyState` 一直是 0，连一个媒体请求都
+没发出去）。上面所有数字是在 in-app 面板里量的——它把文件完整加载了（`readyState 4`、
+`duration 213.16`），播放推进也量到了，但它同样不是一个「有人在看、有人在听」的标签页。
+**「好不好听」「大厅里循环三分半会不会烦」仍然需要一个人坐下来听。**
+
+---
+
 ## 1. 美学基线（引自 art-direction，不在此复述）
 
 一句话锚点：**轻巧、卡通、非写实的"文具拟音"**——铅笔沙沙、橡皮擦、翻笔记本页、笔帽咔哒；**禁止**金属碰撞、爆炸轰鸣等写实战争音效。所有音效服从「我蓝敌红 / 手绘笔记本」的整体调性。细节见 art-direction §声音。
@@ -651,12 +767,26 @@ reward 0.08915 / error 0.07825 / gacha common 0.06680 · rare 0.07756 · epic 0.
 | `sfx.ui.error` | 失败/余额不足 toast | `net/log.ts` 的 `showToastMessage`，仅 `kind === 'error'`（不是 hit：失败来自异步结果）。**经 `raiseErrorCue()` 前沿节流，400 ms 一声**——一次失败扇出成多个 rejection 时，视觉层（`GlobalToast.show()` 先 `clear()`）只显示一条消息，音频层原先却会发出 2.4 倍于全表最响 cue 的爆音，实测见 §0.2 (A) | 〜 **刻意保留合成音，而这是唯一一个「有现成素材却否掉」的 cue**：Kenney 的 `error_00x` 形状完全对（daydayup 就发的这个），但一记数字报错嗡音正是 §10 要躲开的调性，而「服务器说不行」这件事在文具世界里**没有对应的手势**（`sfx.card.invalid` 有——那是擦掉写错的东西） | P2 |
 
 ### 2.3 BGM（循环长音）
-| 轨 id | 场景 | 备注 |
-|---|---|---|
-| `bgm.lobby` | 大厅 / 菜单 / 商店 | 轻松、低存在感 | 
-| `bgm.battle` | 对战 / 战役关卡内 | 节奏稍快、不喧宾夺主 |
-| `bgm.intro` | 首启故事（IntroScene） | 叙事氛围，可与 BGM_lobby 共用 |
-| `bgm.victory` / `bgm.defeat` | 结算短乐句（stinger，非循环） | 接 ResultScene |
+| 轨 id | 场景 | 状态 | 备注 |
+|---|---|---|---|
+| `bgm.lobby` | **除对局之外的一切**（大厅/菜单/商店/世界地图/结算/首启故事） | 🎵 **已发货 2026-09-01**（§0.5）：2065440 字节、213.16 s、gain 0.20、交付峰值 0.0691 | 轻松、低存在感 |
+| `bgm.battle` | 对战 / 战役关卡内 | ⛔ **不在 `MusicTrack` union 里** | 节奏稍快、不喧宾夺主 |
+| `bgm.intro` | 首启故事（IntroScene） | 🎵 **暂与 `bgm.lobby` 共用**（本表原稿就写着"可与 BGM_lobby 共用"） | 叙事氛围 |
+| `bgm.victory` / `bgm.defeat` | 结算短乐句（stinger，非循环） | ✅ 已实现为 `sfx.result.*`，见下 | 接 ResultScene |
+
+> **⚠️ 还不存在的轨，形式上也不许存在。** `bgm.battle` 没有素材，所以 `MusicTrack` union 里
+> **没有这个 id**——想播它的代码编译不过。这是 `cueAssets.ts` 那一课（"一个空条目与疏漏完全无法
+> 区分"）在音乐这边的加强版：一条没有文件的轨会以「这个界面就是安静的」的形式存在，而那和设计
+> 意图长得**一模一样**，永远不会有人发现。所以**对局现在是刻意的安静**，写在
+> `sceneMusic.ts` 的 `SILENT_SCENES` 里（`GameScene` / `ReplayScene` / `StatePlayerScene`），
+> 而不是"忘了接"。
+>
+> **场景 → 轨的映射是「默认放、列出不放的」，不是白名单。** 理由是 §0 记着的那一课：UI 触发点
+> 那一步连着两遍"按已知的机制去数"，两遍都漏掉一整族按钮，而漏掉的症状是**安静**——所有测试
+> 全绿。白名单在这里会原样重演：新加一个场景忘了登记就是静音，而静音和"本来就该安静"无法区分。
+> 反过来的错误（本该安静的新场景忘了登记）玩家会**听见**。两种错误都会发生，只有一种会被发现，
+> 所以默认值取在那一边。`SILENT_SCENES` 里的字符串由 `audioAssets.test.ts` 对着 `src/scenes/`
+> 的真实类名核对——拼错一个名字在运行时是**静默**失效。
 
 > 结算 stinger 走 SFX 管线（一次性），不占 BGM 槽 —— 已实现为 `sfx.result.victory` / `sfx.result.defeat` / **`sfx.result.draw`**（2026-08-31 补齐），是 catalogue 里优先级最高（120）的三个 cue，谁都不许抢。三者互斥（一局只可能以一种方式结束），所以彼此之间没有可排的名次；`cueCatalogue.test.ts` 把「结算档正好三个」钉死，好让第四个"结局"必须是一次有意的编辑。
 
@@ -677,10 +807,20 @@ interface AudioBus {
   preload(): Promise<void>;                 // 拉取+解码已发货样本；启动不 await
   play(cue: AudioCue, count?: number): void; // 一次性；count = 本帧合并的事件数，抬增益不重播
   setSfxVolume(v: number): void;             // 0..1
-  setMusicVolume(v: number): void;           // BGM 尚未实现，接受并忽略
+  setMusicVolume(v: number): void;           // BGM 通道增益，0..1
+  playMusic(track: MusicTrack | null): void; // 现在**应该**放哪条轨；null = 应该安静
   resume(): void;                            // 越过 autoplay 闸门（见 §5）
 }
 ```
+
+- **`playMusic(track|null)` 是声明式的，不是 `playBgm`/`stopBgm` 一对命令**（本节原稿写的是后者）。
+  唯一的调用方是 `SceneManager`，它每次换场景都要说一次，而"大厅 → 商店 → 大厅"这类导航里绝大
+  多数说的是同一条轨。幂等的 setter 让那种情况天然什么都不做；一对命令则要求每个调用点自己记住
+  上一次说了什么——40 个场景各记一份，就是 §0 那份「注定会漏的重复」的音乐版。
+- **音乐不经过 `AudioContext`**，所以 `ContextAudioBusDeps` 多了两个可选问题：
+  `createMusicSource()`（返回 `null` = 这个宿主放不了音乐，SFX 照常）与 `onVisibility(cb)`
+  （§4 失焦暂停）。整段理由在 §0.5 那张两行的表里（82 MB 解码内存 / 跨源 `createMediaElementSource`
+  的静音陷阱），代码在 `audio/MusicPlayer.ts` 的头注释里。
 
 与本节原稿的另外三处差异，都是实现时发现原稿的形状不对：
 
@@ -690,7 +830,7 @@ interface AudioBus {
 
 **后端只有一套，平台各自只回答两个问题**（2026-09-01 接微信时抽的，见 §0.3）。`audio/ContextAudioBus.ts` 是平台中立的那一半——总线 GainNode、SFX 音量、`SampleBank`/`CueMixer` 的装配、preload、autoplay 闸门、`loaded` 统计；平台侧注入 `createContext()`（返回 `null` = 这个宿主没有音频设备，静音而不抛出）和可选的 `onGesture(cb)`。
 
-- **Web / CrazyGames / Capacitor iOS 壳**：`platform/web/WebAudioBus.ts`（`AudioContext` + 解码缓冲，低延迟、可并发、好做混音/淡入），SFX 走 buffer source。**没有 `HTMLAudioElement` 降级**：没有 `AudioContext` 的环境（SSR、node 测试、极老 WebView）直接静音，因为那条降级路径无法承载合成音，等于要维护第二套永远测不到的播放实现。
+- **Web / CrazyGames / Capacitor iOS 壳**：`platform/web/WebAudioBus.ts`（`AudioContext` + 解码缓冲，低延迟、可并发、好做混音/淡入），SFX 走 buffer source；BGM 走 `platform/web/WebMusicSource.ts`（裸 `HTMLAudioElement`，`preload='metadata'`）。**没有 `HTMLAudioElement` 降级**：没有 `AudioContext` 的环境（SSR、node 测试、极老 WebView）直接静音，因为那条降级路径无法承载合成音，等于要维护第二套永远测不到的播放实现。
 - **微信小游戏**：`platform/wechat/WechatAudioBus.ts`（**2026-09-01 落地**，§7 第 5 步）——`wx.createWebAudioContext()` + `wx.onTouchStart`，另接 `wx.onAudioInterruptionEnd → resume()`（这个运行时没有 DOM，没有 `visibilitychange`，那两个回调是唯一的中断信号；只需要恢复那一半，因为最长的 cue 是几百毫秒，中断开始时早已播完）。**整条管线一行没改。**
   > **订正（2026-09-01）：本节原先写「微信没有振荡器、没有 GainNode，所以整条管线一行都跑不起来」，那是错的**——依据是 `client/src/wx.d.ts` 里只声明了 `createInnerAudioContext`，即把我们自己的类型声明当成了运行时的事实。小游戏从基础库 2.19.0 起就提供标准 WebAudio 表面。本节当时把这条备选写进了脚注、标着「没有设备可验证」；DevTools 实测见 §0.3，真机仍是开放项。
 - 资产路径**不用平台资源约定之外的任何东西**：见 §5 的首包体积那一行的订正。
@@ -706,11 +846,22 @@ interface AudioBus {
 - **持久化**：一个 JSON 键 **`nw_audio`**（`{master,bgm,sfx,muted}`），与 `nw_locale` / `nw_data_saver` 同级的本地设置。**不上云权威**（纯本地体验设置，无防作弊价值）。
   > **订正：不进 `SaveData.flags`。** 原稿写的是 flags/设置段；实现时改走 `IStorage` 直存，形状抄 `assets/prefetchPolicy.ts`（`installAudioSettings({storage})` 在 `app.ts` 装一次）。理由：`flags` 是**服务端权威**的存档字段，写它要一次 `PUT /flags` 往返，而音量既不需要跨设备一致、也不需要防篡改——把它放进云存档只是给每次拖滑杆加一个网络请求和一条失败路径。四个值合成一个键而不是四个键，是因为它们只会被一起读写，"音量存下了但静音位丢了"没有任何有用的含义。
   > 解析是**逐字段兜底 + 夹到 0..1**：手改过或截断的值退化成默认值，绝不退化成静音——"音频坏了"是最难归因的一类 bug。
-- **默认**：`master 1` / `bgm 0.5` / `sfx 0.8`，不静音（`DEFAULT_AUDIO_SETTINGS`）。BGM 那根滑杆现在接的是 `AudioBus.setMusicVolume`，它接受并忽略——接上它是因为「设置里有个滑杆但拖了没反应」和「设置里没这一项」是两种体验，前者更糟，而这一项一定会有（§7 第 7 步）。
-- **松手试听（2026-08-31 新增，§0.2 (B)）**：`master` / `sfx` 两根滑杆在 pointer-up 时播一声 `sfx.ui.tap`。**不在拖动中播**——`onDrag` 每次 pointer-move 都跑（实测一次真实拖动约 60–120 次），一次 move 一声就是 §0.1 里 `sfx.ink.tick` 那个机关枪换成手指。`bgm` 不试听：它现在什么都不驱动，用 SFX cue 去试听它是对「这根滑杆管什么」撒谎。落在 `AudioSlider.onRelease` 上而不是场景里，好让「松手响不响」和「响什么」仍然是 `audioPanel.ts` 一处的决定。
+- **默认**：`master 1` / `bgm 0.5` / `sfx 0.8`，不静音（`DEFAULT_AUDIO_SETTINGS`）。**BGM 那根滑杆自 2026-09-01 起真的在驱动东西**（§0.5）：`master × bgm` 直接乘进 `MusicPlayer` 的通道音量，同一帧生效。§0.5 的交付峰值 0.0691 就是在 `bgm 0.5` 这一档上算的——**改这个默认值会让 `credits.json` 记的那个数失效**，所以 `audioAssets.test.ts` 把两者钉在一起。
+- **松手试听（2026-08-31 新增，§0.2 (B)）**：`master` / `sfx` 两根滑杆在 pointer-up 时播一声 `sfx.ui.tap`。**不在拖动中播**——`onDrag` 每次 pointer-move 都跑（实测一次真实拖动约 60–120 次），一次 move 一声就是 §0.1 里 `sfx.ink.tick` 那个机关枪换成手指。落在 `AudioSlider.onRelease` 上而不是场景里，好让「松手响不响」和「响什么」仍然是 `audioPanel.ts` 一处的决定。
+  > **`bgm` 仍然不试听，但理由在 2026-09-01 换了一个**（行为没变）。原来是「它什么都不驱动，用 SFX cue 去试听它是对这根滑杆管什么撒谎」；现在它驱动一条真的床垫，而这**恰恰**是它不需要试听的原因——`SettingsScene` 不在 `SILENT_SCENES` 里，所以拖的时候音乐正在响，通道音量同一帧生效。**它是全游戏唯一一根自己试听自己的滑杆。**
 - **同瞬叠加是混音的一条硬约束（§0.2 (C)）**：同一个 cue 在同一瞬间播 n 次，**音调型精确线性放大 n 倍**、噪声型只放大约 √n。所以任何**可能被同瞬触发多次**的 cue 都必须走合并（`play(cue, count)`，n=8 时比裸叠安静 5.5 倍）或节流；否则一次扇出发出的声音会比游戏里任何设计音都响一倍多。战斗侧靠 `EventsPanel.flushAudio` 的同帧合并，toast 侧靠 `raiseErrorCue()` 的节流。
 - **Ducking（可选 P2）**：盲盒揭示 / 结算 stinger 播放时，BGM 短暂压低再恢复。
+  > **⚠️ 2026-09-01：在当前形状下做不了，而这是一笔明码标价的交换而不是遗漏。** ducking 需要一个
+  > 能被自动化的总线增益，也就需要把 `<audio>` 接进 WebAudio 图（`createMediaElementSource`）——
+  > 而那条路对**跨源**媒体（本项目的资源全部在 `NW_ASSET_CDN` 上）会静默产出一条**静音**的流，
+  > 除非先解决 CORS。真要做的时候，CORS 是一个必须先解决的**已知前提**，而不是一个惊喜；
+  > 目前 §0.5 的电平选择（音乐 RMS 比最轻的 cue 的峰值还低一半）本来就是为了不必 duck。
 - **失焦自动暂停**：页面/小游戏切后台（`visibilitychange` / `wx.onHide`）暂停 BGM，回前台恢复。
+  ✅ 2026-09-01。**不走淡出**（切后台本身已经是硬切，再花 450 ms 只会让音乐在别的 app 上面多响
+  半秒）。微信侧 `onAudioInterruptionBegin/End`（来电）复用同一条路径——对播放器而言「被系统抢走」
+  和「切后台」是同一件事。**订正一处实测抓到的洞**：只监听 `visibilitychange` 是不够的，页面
+  完全可能**在后台标签页里加载完毕**，此后再也不会有事件来纠正；所以注册之后要立刻把当前值也报
+  一次（§0.5 (B)）。
 
 ---
 
@@ -718,11 +869,11 @@ interface AudioBus {
 
 | 约束 | 平台 | 处理 |
 |---|---|---|
-| **autoplay 限制**：首次音频必须在用户手势后才能响 | Web（所有现代浏览器）/ iOS Safari | 首个 tap（IntroScene/LoginScene 任意首次交互）调 `audio.unlock()` 解锁 `AudioContext`；解锁前的 BGM 请求排队，解锁后补播 |
+| **autoplay 限制**：首次音频必须在用户手势后才能响 | Web（所有现代浏览器）/ iOS Safari | `WebAudioBus` 自己在 `window` 上挂 `pointerdown`/`keydown`/`touchstart` → `resume()`（比走 `InputManager` 严格更宽，见 §3）。**两个闸门是分开的**：`AudioContext.state` 管 SFX，`HTMLAudioElement.play()` 的 rejection 管 BGM，`resume()` 两个都捅一次。<br>**订正（2026-09-01，§0.5 (A)）：BGM 不是"请求排队、解锁后补播"，是"一直在试、并且把淡入停住"。** 排队对一条持续声源没有意义（队列里永远只有最后一条轨）；真正会出事的是**淡入照着墙钟跑完**——实测冷启动 6 秒时 `level` 已 0.67 而 `element.paused` 仍为 true，于是第一次点击换来的是一次满音量 pop。修法是 `MusicSource.isPlaying()` |
 | **iOS WebAudio 需手势解锁** | iOS 网页 | 同上，`AudioContext.resume()` 必须在手势回调内 |
 | **同时音频实例数有限** | 微信小游戏 | ~~SFX 走对象池（如 8 个 InnerAudioContext 轮转）。~~ **订正 2（2026-09-01，§0.3）：`InnerAudioContext` 对象池不需要了。** 微信走 `wx.createWebAudioContext()`，SFX 与 web 共用 `audio/` 那条管线，而对象池真正想要的「并发上限 + 优先级抢占」本来就在平台中立的 `VoiceBudget.ts` 里，两个平台共用一份。`InnerAudioContext` 剩下的正当用途只有 BGM（单实例、流式、`loop=true`，§7 第 7 步）。下面这条**订正 1** 仍然成立，它描述的是 `VoiceBudget` 的语义：<br>**丢弃规则不是"最旧"而是"按优先级抢占"**——最旧那个很可能正是一局一次的结算 stinger，而新来的是第 40 个攻击音；丢最旧会砍掉唯一那次胜利音，换来一个听不出区别的攻击音。已实现于 `audio/VoiceBudget.ts`（同优先级判输，被抢占者 12ms 淡出而非硬切；按**时间**退休而不靠 `ended` 事件，因为一个"悄悄停止清扫"的上限会失效于静默——前 N 个 cue 之后混音直接变哑，看起来就是"音频坏了"） |
 | ~~**首包体积**~~ | ~~微信小游戏~~ | **订正（2026-08-31）：这条约束对本项目不存在。** 原稿写"BGM 放分包/CDN 按需拉，首包只带 P0 SFX"，那是通用建议；而本项目按 ASSET_PACKAGING §4 的**方案 A** 早已把**全部**美术资源托管在 CDN（`asset/resource` 的 `publicPath = NW_ASSET_CDN`，产物进 `wechatgame/cdn/`，由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包），主包是**纯代码 ~1.5 MB**。音频文件走同一条规则、同一个 `assetIO`，天然落在 CDN 上，**一个字节都不进主包**——所以"首包只带 P0 SFX"这个取舍不需要做，BGM 也不需要为体积单独分包。真正要留意的是**下载量与缓存**（同 §16 的资源预算口径），不是包体红线。<br>实测（2026-09-01，微信后端落地后）：微信主包为音频总共多付 **10441 字节**（2187088 → 2197453），其中**播放引擎本身 8546 字节**（2188907 → 2197453），此前三轮的 1819 字节全是触发表的 cue 字符串字面量。距 4 MB 主包红线仍有大量余量 |
-| **解码开销** | 全平台 | **启动时 `preload()` 全量**（`app.ts` 在 L0 闸门之后 fire-and-forget，不 await）。订正原稿的"进场景前 preload 该场景所需 id"：SFX 全集是 ~100 KB 量级，按场景切分省不下有意义的字节，却要每个场景维护一份会腐烂的 id 清单。suspended 的 `AudioContext` 照样能解码，所以这一步既不需要网络闸门也不需要 autoplay 手势。BGM 落地时按轨流式，另说。<br>实测（2026-09-01，素材落地后）：**22 个文件 / 57578 字节全部解码成功**，`loaded()` 报 `{cues:10, variants:22}`；"~100 KB 量级"这个估算落在真实数字的两倍以内。解码确实在 suspended 上下文里完成——`__nwAudio.samples()` 就是靠这一点做到全程无手势的（§0.4） |
+| **解码开销** | 全平台 | **启动时 `preload()` 全量**（`app.ts` 在 L0 闸门之后 fire-and-forget，不 await）。订正原稿的"进场景前 preload 该场景所需 id"：SFX 全集是 ~100 KB 量级，按场景切分省不下有意义的字节，却要每个场景维护一份会腐烂的 id 清单。suspended 的 `AudioContext` 照样能解码，所以这一步既不需要网络闸门也不需要 autoplay 手势。**BGM 不进 `preload()`**（2026-09-01）：它按轨流式（`preload='metadata'`，浏览器边播边拉），因为一条 2.0 MB 的音乐在进大厅的同一瞬间和美术资源抢带宽是全屏里最不着急的那一件事。<br>实测（2026-09-01，素材落地后）：**22 个文件 / 57578 字节全部解码成功**，`loaded()` 报 `{cues:10, variants:22}`；"~100 KB 量级"这个估算落在真实数字的两倍以内。解码确实在 suspended 上下文里完成——`__nwAudio.samples()` 就是靠这一点做到全程无手势的（§0.4） |
 
 ---
 
@@ -737,6 +888,10 @@ interface AudioBus {
 | 样本加载 / 解码 / 并发上限 / 混音器 | ✅ `SampleBank` + `decodeAudio` + `VoiceBudget` + `CueMixer`，79 个用例 / 99.4% 行覆盖 |
 | 资产文件 + 命名约定 | ✅ **2026-09-01**（§7 第 6 步 / §0.4）。`client/src/assets/audio/` 下 **22 个文件、57578 字节**，命名 `<cue id 的 '.' 换成 '-'>_NN.mp3`；webpack 的 `asset/resource` 规则原样涵盖，`custom.d.ts` 已声明 `*.mp3`，一行配置没改。10 个 cue 有样本、8 个刻意保留合成音。来源 `art/audio/packs.json`，逐文件出处与理由 `art/audio/credits.json`，管线 [`tools/audio-pipeline/`](../../tools/audio-pipeline/README.md) |
 | 资产完整性门禁（每次提交都跑） | ✅ **2026-09-01** `client/test/audio/audioAssets.test.ts`（44 例）——不需要解码器也不需要 Python：按 MPEG 帧头解析 22 个 mp3，把磁盘文件 / `credits.json` / `packs.json` / `cueAssets.ts` / `AudioCue` union / 活的 `CUE_CATALOGUE` 六者互相钉住。**最该看住的一条是 `catalogue_gain` 仍然等于 `cueCatalogue.ts`**——改一个 gain，22 个文件的峰值对齐就悄悄失效，而文件照样能加载、能播、过掉其它所有测试，唯一症状是混音偏离了设计。结构是**十条纯规则 + 一套变异测试**（逐条把契约打坏、断言对应规则会红，标准同 `checkWechatPackage.mjs`：「a gate nobody has seen fail is not a gate」）。写那套变异测试**当场揪出它自己第一版看不见的两个洞**：①**没有任何用例验证「某个 cue 指向的是它自己的录音」**——把两个 cue 的 import 数组互换，全部旧用例照绿，而游戏两边都放错声音；②同一段录音被当成两个 cue 发货（`stroke_632474.ogg` 差一点同时进 `card.play` 和 `unit.attack`）。两者现在各是一条规则 |
+| **BGM（`bgm.lobby`）** | ✅ **2026-09-01**（§7 第 7 步 / §0.5）。`audio/MusicPlayer.ts`（单实例 + 淡入 900 ms / 淡出 450 ms + 失焦暂停 + autoplay 补播，平台中立）+ `audio/musicTracks.ts`（轨目录，gain 0.20）+ `audio/sceneMusic.ts`（场景 → 轨，默认放）+ 两个约 20 行的平台流式播放器（`WebMusicSource` = `HTMLAudioElement`，`WechatMusicSource` = `InnerAudioContext`）。挂钩点是 `SceneManager` 的 `swap`/`pushOverlay`/`popOverlay` 各一行，与 `setActiveScene` 并列。**不经过 `AudioContext`**，理由见 §0.5。微信主包 +5962 字节，2.07 MB 的 mp3 全在 CDN |
+| BGM 素材 + 授权 | ✅ **2026-09-01**。`client/src/assets/audio/bgm-lobby.mp3`（2065440 字节），母带 `art/audio/sources/first-party/doodle-bed.flac`（无损，13266428 字节），项目自有、无需署名。管线 [`tools/audio-pipeline/process_music.py`](../../tools/audio-pipeline/process_music.py)——**不做峰值对齐**（成品的动态即内容），编码走**质量搜索**而不是体积搜索，两道门都相对于母带自己的频谱 |
+| BGM 的门禁 | ✅ **2026-09-01** `audioAssets.test.ts` 扩了两条规则 + 六个变异用例：`music`（`MUSIC_TRACKS` ↔ `credits.json` ↔ 磁盘三方互钉，**最要紧的是 gain**——音乐没有峰值对齐，所以改 `musicTracks.ts` 一个数就能悄悄把一条三分半的床垫的电平翻倍，而**别的一切照样绿**）与 `sceneMusic`（`SILENT_SCENES` 的字符串必须是 `src/scenes/` 里真实存在的类名——拼错在运行时是静默失效） |
+| BGM 的测量面 | ✅ **2026-09-01** `entries/web-e2e.ts` 的 `__nwAudio.music()`（播放器状态 + `<audio>` 元素的 `volume`/`currentTime`/`readyState`/`duration`）与 `__nwAudio.musicLog()`（`SceneManager` 每一次轨请求）。**这是音乐侧唯一可能的测量面**：流刻意不在图里，所以没有任何 `AnalyserNode` 看得见它；交付电平只能闭式算——`element.volume × 文件峰值 0.6911` |
 | 解码峰值的测量面 | ✅ **2026-09-01** `entries/web-e2e.ts` 的 `__nwAudio.samples()`——报每个**已解码** buffer 的峰值，这是管线**结构上无法自证**的一件事（它在**有损编码之前**对齐峰值）。不依赖 autoplay 手势。实测偏差 −6.1%…+6.7%（§0.4） |
 | 触发埋点：游戏事件 → `playSfx` | ✅ 2026-08-31。单一漏斗：`render/GameRenderer/core.ts` 的 `for (const event of state.events) this.events.handleEvent(event, state)` 之后跟一次 `this.events.flushAudio()`；映射表全在 `render/GameRenderer/events.ts` 的 `EventsPanel.collectCue` 一处（**不在纯引擎层**——音频是表现层，`@nw/engine` 一行没动）。完整映射与实测见 §0 / §0.1。<br>那个已知的坑按预期咬人了：game over 后引擎 `step()` 提前返回、**不排空事件队列**，重复被消费的是**最后一帧的整批事件**（不只是 `game_over`），所以 `collectCue` 第一行就是 `if (this.core.gameEnded) return`，胜负 stinger 则写在 `game_over`/`game_draw` 分支里那个已有的一次性门**内部**。真浏览器三局复测：每局 stinger 恰好 1 次 |
 | UI 触发埋点 | ✅ 2026-08-31。先抽了 `ui/hits.ts`（共享 `Hit<S>` + `inRect`/`hitTest`/`runHit`/`dispatchHit`/`hitAction`/`tapHandler`），**22 份重复的 `interface Hit` 全部消失**，十几处内联的 `hitRects: { rect; action }[]` 一并收敛、`action` 改名 `fn`；UI cue 只在 `runHit` 一处发出，`sound` 省略即 `sfx.ui.tap`。覆盖三族按钮：①场景自持的矩形表；②战斗 HUD / 世界地图 HUD 的手写 `overRect` if 链；③**PIXI 原生 `pointertap` 按钮**（结算页 + 回放 + 五个对话框，第一遍漏掉的 22 处，见 §0 的 ⚠️）。防复发靠源码守卫 `test/uiTapSoundCoverage.test.ts` |
@@ -767,4 +922,23 @@ interface AudioBus {
    - ~~值得整套移植 daydayup 的 `tools/audio-pipeline/`。~~ ✅ 移植完成，见 [`tools/audio-pipeline/README.md`](../../tools/audio-pipeline/README.md)：`fetch_freesound.py` / `fetch_packs.py` / `audit.py` / `process.py` / `write_packs.py` / `selftest.py`（**73 个检查**）。**不进 CI**（那会把 Python 塞进每次构建）——它建立的不变量由 `client/test/audio/audioAssets.test.ts` 每次提交复查。三处与 daydayup 不同的地方（`body_ms` 而不是 `duration_ms`、lead 门禁改成一帧、峰值基准的来源）与两个新增的**源文件**门禁都写在那个 README 里。
    - ~~接入方式：在 `audio/cueAssets.ts` 加一行 `import` + 一个条目。~~ ✅ 照此落地，其余代码一行未改。
    - **⚠️ 仍然欠着的一件事，和代码无关：没有人听过任何一个声音。** 四轮实测（§0.1–§0.4）量到的全部是「响得对不对」——授权峰值、交付峰值、同瞬叠加、抖动、包体、跨平台一致性。「好不好听」一个字都没测，而且**加不了测量**：它需要一个人坐下来打一局然后签收。这是 §7 剩下的两个开放项之一（另一个是微信真机，见 §0.3 末尾）。
-7. BGM（`bgm.lobby` / `bgm.battle` / `bgm.intro` 两到三轨）+ 切场景淡入淡出 + 失焦暂停 + 可选 ducking。这半边**没有可参照的先例**，接口形状也与 SFX 不同（单实例 + 淡入淡出 + 流式），需要单独设计。
+7. ~~BGM（`bgm.lobby` / `bgm.battle` / `bgm.intro` 两到三轨）+ 切场景淡入淡出 + 失焦暂停 + 可选 ducking。~~ ✅ **2026-09-01**（落地与四组实测见 §0.5）。**发货的是一条轨，不是两到三条**，其余与本条设想一致。
+   - **这一步真正的决定不是「怎么播」，是「音乐不走 SFX 那条管线」。** 本条原稿说的"接口形状与
+     SFX 不同"是对的，但低估了：不同的不只是接口，是**整条信号路径**。照抄 `AudioContext` 要付
+     两笔只会以「静音」或「卡顿」形式暴露的钱——整轨解码 ≈ 82 MB 常驻内存，
+     `createMediaElementSource` 对跨源媒体（本项目全部资源）会静默产出一条静音的流。所以音乐是
+     一条独立的流，`ducking` 因此落到了「要做先解决 CORS」那一侧（§4 已就地记下）。
+   - **发货一条轨而不是三条，而且这是形式上强制的。** `bgm.battle` 没有素材，于是它**不在
+     `MusicTrack` union 里**——想播它的代码编译不过，对局是刻意的安静。理由是 §2.3 里那段：
+     一条没有文件的轨会以「这个界面就是安静的」的形式存在，而那和设计意图**长得一模一样**。
+   - **场景 → 轨的映射方向是这一步唯一有争议的选择，选的是「默认放」。** 依据是 §0 记着的 UI
+     触发点那一课：漏接的症状是**安静**，而安静不会有人报。默认放之后，唯一可能的错误（本该
+     安静的场景响了）是**听得见**的。
+   - **电平没有走峰值对齐，基准改写在 catalogue 里。** 样本那边 `gain` 是纯混音权重（文件已被
+     缩放）；音乐的成品动态就是内容，于是 `MUSIC_TRACKS[].gain = 0.20` 直接是交付电平的决定，
+     算式与参照物写在 §0.5 并由 `audioAssets.test.ts` 钉住。
+   - **两个只有真浏览器能暴露的缺陷，都属于「淡入跑完了但没有声音跟着它」**：autoplay 闸门关着
+     时淡入照样推进（→ 第一次点击是一次满音量 pop），以及页面在后台标签页里加载完毕时
+     `visibilitychange` 从不触发（→ 音乐在没人看的标签页里开始播）。两条修法见 §0.5 (A)/(B)。
+   - **⚠️ 还是没有人听过**，而且这一轮**尝试过并失败了**：本机能驱动的两个浏览器面都是后台标签页，
+     Chrome 对后台标签页推迟媒体加载。这仍然是 §7 的开放项之一。
