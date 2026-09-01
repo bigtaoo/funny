@@ -26,14 +26,17 @@ import type { FamilySceneCore } from '../src/scenes/FamilyScene/core';
 import type { DataHandlers } from '../src/scenes/FamilyScene/data';
 import { BusyTracker } from '../src/ui/busyTracker';
 import { FamilyRepaint } from '../src/scenes/FamilyScene/repaint';
+import { createFakeTextInput } from './harness/fakeTextInput';
 
 interface Msg { id: string; senderId: string; senderName: string; body: string; ts: number }
 
 /** Bare-bones stand-in for FamilySceneCore — only the fields doSendMsg()/submitMessage() touch.
  *  `repaint` is the real thing (2026-08-25): a keystroke now rewrites the send field's own Text, and
  *  with nothing rendered here it has no Text registered, so it falls back to core.render() — the
- *  production fallback, which is what these tests observe. */
-function fakeCore(): FamilySceneCore {
+ *  production fallback, which is what these tests observe. `openTextInput` defaults to a fake most
+ *  of these tests never exercise (they poke `sendInput`/`sendText` directly); only the "merged
+ *  text-entry + send unit" describe block at the bottom drives it through openSendInput() for real. */
+function fakeCore(openTextInput: FamilySceneCore['cb']['openTextInput'] = createFakeTextInput().openTextInput): FamilySceneCore {
   const core = {
     destroyed: false,
     family: { familyId: 'fam1' },
@@ -41,10 +44,11 @@ function fakeCore(): FamilySceneCore {
     messages: [] as Msg[],
     scrollYChannel: 0,
     channelStick: true,
-    sendInput: null as { value: string; remove: () => void } | null,
+    sendInput: null as { setValue: (v: string) => void; close: () => void } | null,
     sendText: '',
     bt: new BusyTracker(),
     cb: {
+      openTextInput,
       worldApi: { sendFamilyMessage: vi.fn().mockResolvedValue(undefined) },
       playerName: 'Tester',
       myAccountId: 'me',
@@ -74,15 +78,15 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     const core = fakeCore();
     const data = fakeData();
     const input = new InputPanel(core, data);
-    const removeSpy = vi.fn();
-    core.sendInput = { value: '  hello family  ', remove: removeSpy } as unknown as HTMLInputElement;
+    const closeSpy = vi.fn();
+    core.sendInput = { setValue: vi.fn(), close: closeSpy } as unknown as FamilySceneCore['sendInput'];
     core.sendText = '  hello family  ';
 
     await input.doSendMsg();
 
     expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledTimes(1);
     expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', 'hello family', 'Tester');
-    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
     expect(core.sendInput).toBeNull();
     expect(core.sendText).toBe('');
     expect(data.loadChannel).toHaveBeenCalledTimes(1);
@@ -123,7 +127,7 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     const core = fakeCore();
     const input = new InputPanel(core, fakeData());
     vi.spyOn(input, 'openSendInput').mockImplementation(() => {});
-    core.sendInput = { value: '   ', remove: vi.fn() } as unknown as HTMLInputElement;
+    core.sendInput = { setValue: vi.fn(), close: vi.fn() } as unknown as FamilySceneCore['sendInput'];
     core.sendText = '   ';
 
     await input.doSendMsg();
@@ -136,7 +140,7 @@ describe('FamilyScene Send button — doSendMsg()', () => {
     const data = fakeData();
     const input = new InputPanel(core, data);
     (core.cb.worldApi.sendFamilyMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('network down'));
-    core.sendInput = { value: 'hi', remove: vi.fn() } as unknown as HTMLInputElement;
+    core.sendInput = { setValue: vi.fn(), close: vi.fn() } as unknown as FamilySceneCore['sendInput'];
     core.sendText = 'hi';
 
     await input.doSendMsg();
@@ -223,129 +227,87 @@ describe('FamilyScene channel — submitMessage() optimistic echo (2026-07-15 la
 // and the reopened field is silently pre-filled with the draft the user just sent — the exact class
 // of "two merged code paths clobbering each other's state" a merge (rather than a hook) introduces.
 describe('FamilyScene — the merged text-entry + send unit', () => {
-  /** Fake DOM <input> capturing its listeners, same shape as familyChannelInput.test.ts's. */
-  interface FakeInput {
-    type: string; value: string; maxLength: number; style: { cssText: string };
-    _listeners: Record<string, (e: unknown) => void>;
-    focus(): void; remove(): void;
-    addEventListener(t: string, cb: (e: unknown) => void): void;
-    removed: boolean;
-  }
+  it('Send with no draft opens the real (unmocked) text-entry session, and a second Send then submits exactly what was typed into it', async () => {
+    const { openTextInput, sessions } = createFakeTextInput();
+    const core = fakeCore(openTextInput);
+    const data = fakeData();
+    const input = new InputPanel(core, data);
+    // A whitespace-only "draft" (the user tapped Send after typing nothing but spaces) — trims to
+    // an empty body, so this is still the open-the-field branch, but it leaves sendText non-empty
+    // going in, which is what makes the ordering below observable.
+    core.sendText = '   ';
 
-  /** Installs a minimal global `document`; returns the created inputs + a restore function. */
-  function installDocument(): { created: FakeInput[]; restore: () => void } {
-    const created: FakeInput[] = [];
-    const g = globalThis as unknown as { document?: unknown };
-    const prev = g.document;
-    g.document = {
-      body: { appendChild(): void {} },
-      createElement(): FakeInput {
-        const el: FakeInput = {
-          type: '', value: '', maxLength: 0, style: { cssText: '' }, _listeners: {}, removed: false,
-          focus(): void {}, remove(): void { this.removed = true; },
-          addEventListener(t: string, cb: (e: unknown) => void): void { this._listeners[t] = cb; },
-        };
-        created.push(el);
-        return el;
-      },
-    };
-    return { created, restore: () => { g.document = prev; } };
-  }
+    // ── 1st tap: nothing real typed yet ⇒ the merged class must open the text field, not send. ──
+    await input.doSendMsg();
 
-  it('Send with no draft opens the real (unmocked) hidden input, and a second Send then submits exactly what was typed into it', async () => {
-    const { created, restore } = installDocument();
-    try {
-      const core = fakeCore();
-      const data = fakeData();
-      const input = new InputPanel(core, data);
-      // A whitespace-only "draft" (the user tapped Send after typing nothing but spaces) — trims to
-      // an empty body, so this is still the open-the-field branch, but it leaves sendText non-empty
-      // going in, which is what makes the ordering below observable.
-      core.sendText = '   ';
+    expect(sessions).toHaveLength(1);
+    expect(core.sendInput).toBe(sessions[0]!.handle);
+    expect(core.cb.worldApi.sendFamilyMessage).not.toHaveBeenCalled();
+    // Freshly opened, NOT pre-seeded: doSendMsg() clears sendText BEFORE handing off to
+    // openSendInput(), which seeds the session from it. Move that clear after the handoff and
+    // the reopened field comes up holding the stale draft instead of empty.
+    expect(sessions[0]!.opts.value).toBe('');
+    expect(core.sendText).toBe('');
 
-      // ── 1st tap: nothing real typed yet ⇒ the merged class must open the text field, not send. ──
-      await input.doSendMsg();
+    // ── the user types (openSendInput's own onInput mirrors into core.sendText) ──
+    sessions[0]!.opts.onInput('merged flow works');
+    expect(core.sendText).toBe('merged flow works');
 
-      expect(created).toHaveLength(1);
-      expect(core.sendInput).toBe(created[0]);
-      expect(core.cb.worldApi.sendFamilyMessage).not.toHaveBeenCalled();
-      // Freshly opened, NOT pre-seeded: doSendMsg() clears sendText BEFORE handing off to
-      // openSendInput(), which seeds the DOM value from it. Move that clear after the handoff and
-      // the reopened field comes up holding the stale draft instead of empty.
-      expect(created[0]!.value).toBe('');
-      expect(core.sendText).toBe('');
+    // ── tapping Send closes the field first: openSendInput's onComplete nulls core.sendInput
+    //    before doSendMsg's own handler runs (the 2026-07-15 bug's exact ordering). ──
+    sessions[0]!.handle.close();
+    expect(core.sendInput).toBeNull();
 
-      // ── the user types (openSendInput's own 'input' listener mirrors into core.sendText) ──
-      created[0]!.value = 'merged flow works';
-      created[0]!._listeners.input!({});
-      expect(core.sendText).toBe('merged flow works');
+    // ── 2nd tap: a draft exists now ⇒ submit it, and do NOT reopen the field. ──
+    await input.doSendMsg();
 
-      // ── tapping Send blurs the field first: openSendInput's blur handler nulls core.sendInput
-      //    before doSendMsg's own handler runs (the 2026-07-15 bug's exact ordering). ──
-      created[0]!._listeners.blur!({});
-      expect(core.sendInput).toBeNull();
-
-      // ── 2nd tap: a draft exists now ⇒ submit it, and do NOT reopen the field. ──
-      await input.doSendMsg();
-
-      expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledTimes(1);
-      expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', 'merged flow works', 'Tester');
-      expect(core.messages).toHaveLength(1);
-      expect(core.messages[0]).toMatchObject({ body: 'merged flow works', senderId: 'me' });
-      expect(core.sendText).toBe('');
-      expect(core.sendInput).toBeNull();
-      expect(created).toHaveLength(1); // no second hidden input was opened
-      expect(data.loadChannel).toHaveBeenCalledTimes(1);
-    } finally {
-      restore();
-    }
+    expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledTimes(1);
+    expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', 'merged flow works', 'Tester');
+    expect(core.messages).toHaveLength(1);
+    expect(core.messages[0]).toMatchObject({ body: 'merged flow works', senderId: 'me' });
+    expect(core.sendText).toBe('');
+    expect(core.sendInput).toBeNull();
+    expect(sessions).toHaveLength(1); // no second text-entry session was opened
+    expect(data.loadChannel).toHaveBeenCalledTimes(1);
   });
 
-  it('Enter inside the hidden input reaches submitMessage on the same instance (the other face of the merge)', async () => {
-    const { created, restore } = installDocument();
-    try {
-      const core = fakeCore();
-      const data = fakeData();
-      const input = new InputPanel(core, data);
+  it('Enter inside the text-entry session reaches submitMessage on the same instance (the other face of the merge)', async () => {
+    const { openTextInput, sessions } = createFakeTextInput();
+    const core = fakeCore(openTextInput);
+    const data = fakeData();
+    const input = new InputPanel(core, data);
 
-      input.openSendInput();
-      const el = created[0]!;
-      el.value = '  typed then Enter  ';
-      el._listeners.input!({});
+    input.openSendInput();
+    const session = sessions[0]!;
+    session.opts.onInput('  typed then Enter  ');
 
-      await el._listeners.keydown!({ key: 'Enter' });
+    // onConfirm is `void` (TextInputOptions — matches a browser event listener, never awaited in
+    // production either), so it fire-and-forgets submitMessage(); let the chain settle.
+    session.opts.onConfirm!('  typed then Enter  ');
+    await vi.waitFor(() => expect(data.loadChannel).toHaveBeenCalledTimes(1));
 
-      // openSendInput's keydown handler calls this.submitMessage(body) directly — pre-merge that
-      // was a cross-mixin call into actions.ts.
-      expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledTimes(1);
-      expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', 'typed then Enter', 'Tester');
-      expect(el.removed).toBe(true);      // the field closes on Enter
-      expect(core.sendInput).toBeNull();
-      expect(core.sendText).toBe('');
-      expect(data.loadChannel).toHaveBeenCalledTimes(1);
-    } finally {
-      restore();
-    }
+    // openSendInput's onConfirm handler calls this.submitMessage(body) directly — pre-merge that
+    // was a cross-mixin call into actions.ts.
+    expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledTimes(1);
+    expect(core.cb.worldApi.sendFamilyMessage).toHaveBeenCalledWith('fam1', 'typed then Enter', 'Tester');
+    expect(session.closed).toBe(true);   // the field closes on Enter
+    expect(core.sendInput).toBeNull();
+    expect(core.sendText).toBe('');
+    expect(data.loadChannel).toHaveBeenCalledTimes(1);
   });
 
-  it('a non-Enter keypress inside the hidden input sends nothing and leaves the field open', async () => {
-    const { created, restore } = installDocument();
-    try {
-      const core = fakeCore();
-      const input = new InputPanel(core, fakeData());
+  it('typing without confirming sends nothing and leaves the field open', () => {
+    const { openTextInput, sessions } = createFakeTextInput();
+    const core = fakeCore(openTextInput);
+    const input = new InputPanel(core, fakeData());
 
-      input.openSendInput();
-      const el = created[0]!;
-      el.value = 'half a sentence';
-      el._listeners.input!({});
-      await el._listeners.keydown!({ key: 'a' });
+    input.openSendInput();
+    const session = sessions[0]!;
+    session.opts.onInput('half a sentence');
 
-      expect(core.cb.worldApi.sendFamilyMessage).not.toHaveBeenCalled();
-      expect(el.removed).toBe(false);
-      expect(core.sendInput).toBe(el);
-      expect(core.sendText).toBe('half a sentence');
-    } finally {
-      restore();
-    }
+    expect(core.cb.worldApi.sendFamilyMessage).not.toHaveBeenCalled();
+    expect(session.closed).toBe(false);
+    expect(core.sendInput).toBe(session.handle);
+    expect(core.sendText).toBe('half a sentence');
   });
 });

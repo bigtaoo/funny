@@ -410,28 +410,26 @@ export class TerritoryPanel implements TerritoryHandlers {
 
   openRenameInput(capitalIdx: number, current: string): void {
     if (this.core.ctx.hiddenInput) {
-      this.core.ctx.hiddenInput.remove();
+      this.core.ctx.hiddenInput.close();
       this.core.ctx.hiddenInput = null;
     }
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.value = current;
-    inp.maxLength = 24;
-    inp.placeholder = t('world.nationNamePrompt');
-    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-    document.body.appendChild(inp);
-    inp.focus();
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const name = inp.value.trim();
-        inp.remove();
+    // `placeholder` had no visible effect: the field is an invisible off-screen `<input>`, and this
+    // panel has no on-canvas caret/placeholder text mirroring it (unlike e.g. FriendsScene's
+    // caretText) — so it's dropped rather than carried over to IPlatform.openTextInput, which has
+    // no placeholder concept either (see TextInputOptions).
+    const handle = this.core.ctx.cb.openTextInput({
+      value: current,
+      maxLength: 24,
+      onInput: () => {}, // this panel doesn't mirror keystrokes onto canvas; only the committed Enter value matters
+      onConfirm: (value) => {
+        handle.close();
+        const name = value.trim();
         if (name && name !== current) void this.core.ctx.net.doRename(capitalIdx, name);
-      }
+      },
+      onComplete: () => {
+        if (this.core.ctx.hiddenInput === handle) this.core.ctx.hiddenInput = null;
+      },
     });
-    inp.addEventListener('blur', () => {
-      inp.remove();
-      if (this.core.ctx.hiddenInput === inp) this.core.ctx.hiddenInput = null;
-    });
-    this.core.ctx.hiddenInput = inp;
+    this.core.ctx.hiddenInput = handle;
   }
 }

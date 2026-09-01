@@ -59,6 +59,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     const loggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     const canRename = !state.offlineMode && !!api && loggedIn;
     views.showSettings({
+      openTextInput: (opts) => platform.openTextInput(opts),
       onBack() { nav.goLobby(); },
       playerName: playerName(),
       avatarId: avatarId(),
@@ -146,6 +147,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'LoginScene' });
     views.showLogin({
+      openTextInput: (opts) => platform.openTextInput(opts),
       onPlayOffline() { nav.goLobby({ offline: true }); },
       onLogin: (loginId, password) => doAuth(() => api!.login(loginId, password), loginId),
       onRegister: (loginId, password, displayName) =>

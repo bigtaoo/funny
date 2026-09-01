@@ -32,10 +32,12 @@ import { ConsentDialog } from '../../src/ui/dialogs/ConsentDialog';
 import { ReconnectPromptDialog } from '../../src/ui/dialogs/ReconnectPromptDialog';
 import { ui as C } from '../../src/render/sketchUi';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
+import { openDomTextInput } from '../../src/platform/web/domTextInput';
 
-// Minimal DOM stub so openHiddenInput() (document.createElement / body.appendChild /
-// element.focus) runs under the plain-Node headless harness. Only the members the input
-// helper touches are provided.
+// Minimal DOM stub so the real openDomTextInput() (document.createElement / body.appendChild /
+// element.focus — ASSET_PACKAGING §4.3/§4.4 item 1, wired into every scene below as
+// `cb.openTextInput`) runs under the plain-Node headless harness. Only the members it touches are
+// provided.
 const gDoc = globalThis as unknown as { document?: unknown };
 if (!gDoc.document) {
   gDoc.document = {
@@ -110,6 +112,7 @@ function expectBlinkingCaret(
 describe('FamilyScene — create-form caret', () => {
   function build(): any {
     return new FamilyScene(createLayout(W, H), new InputManager(), {
+      openTextInput: openDomTextInput,
       onBack() {}, onOpenSect() {}, onNavTab() {}, async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
       openChat() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
@@ -158,6 +161,7 @@ describe('FamilyScene — create-form caret', () => {
 describe('SectScene — create-form caret', () => {
   function build(): any {
     return new SectScene(createLayout(W, H), new InputManager(), {
+      openTextInput: openDomTextInput,
       onBack() {}, onNavTab() {}, worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
       getCoins: () => 100000, refreshWallet: async () => {},
     });
@@ -185,6 +189,7 @@ describe('SectScene — create-form caret', () => {
 describe('FriendsScene — family/sect/world tab carets', () => {
   function build(): any {
     return new FriendsScene(createLayout(W, H), new InputManager(), {
+      openTextInput: openDomTextInput,
       onBack() {}, onOpenRoom() {},
       myPublicId: '',
       getProfileExtra: async () => ({}),
@@ -323,6 +328,7 @@ describe('FriendsScene — family/sect/world tab carets', () => {
 describe('AuctionScene — designated-buyer field caret', () => {
   function build(): any {
     return new AuctionScene(createLayout(W, H), new InputManager(), {
+      openTextInput: openDomTextInput,
       onBack() {}, worldApi: stubWorldApi(),
     });
   }
@@ -356,7 +362,7 @@ describe('AuctionScene — designated-buyer field caret', () => {
 
 describe('FeedbackDialog — input field caret (2026-08-08: was a plain string concat, no caretDisplay)', () => {
   function build(): any {
-    return new FeedbackDialog(800, 1280, { onSubmit: async () => {}, onClose() {} });
+    return new FeedbackDialog(800, 1280, { openTextInput: openDomTextInput, onSubmit: async () => {}, onClose() {} });
   }
 
   it('starts unfocused: placeholder shown, no cursor', () => {
@@ -525,7 +531,7 @@ describe('Stage-level "blocking full-screen card" dialogs — dim backdrop swall
   describe('FeedbackDialog', () => {
     for (const [label, w, h] of SIZES) {
       it(`${label}: dim backdrop is static and hit-tests the full screen`, () => {
-        const scene = new FeedbackDialog(w, h, { onSubmit: async () => {}, onClose() {} });
+        const scene = new FeedbackDialog(w, h, { openTextInput: openDomTextInput, onSubmit: async () => {}, onClose() {} });
         expectFullScreenDim(scene.container, w, h);
         scene.destroy();
       });
@@ -535,7 +541,7 @@ describe('Stage-level "blocking full-screen card" dialogs — dim backdrop swall
   describe('AppealDialog', () => {
     for (const [label, w, h] of SIZES) {
       it(`${label}: dim backdrop is static and hit-tests the full screen`, () => {
-        const scene = new AppealDialog(w, h, 'ACCOUNT_BANNED', { onSubmit: async () => {}, onClose() {} });
+        const scene = new AppealDialog(w, h, 'ACCOUNT_BANNED', { openTextInput: openDomTextInput, onSubmit: async () => {}, onClose() {} });
         expectFullScreenDim(scene.container, w, h);
         scene.destroy();
       });
@@ -570,7 +576,7 @@ describe('Stage-level "blocking full-screen card" dialogs — dim backdrop swall
 // exercise, since they all hold a single instance for the test's whole duration.
 describe('app.ts ticker wiring — closure/reopen/AppealDialog edge cases (2026-08-08 fix, more angles)', () => {
   it('AppealDialog.update() (no-op today, zero args) survives being driven by the same real-Ticker shape', async () => {
-    const dlg = new AppealDialog(800, 1280, 'ACCOUNT_BANNED', { onSubmit: async () => {}, onClose() {} });
+    const dlg = new AppealDialog(800, 1280, 'ACCOUNT_BANNED', { openTextInput: openDomTextInput, onSubmit: async () => {}, onClose() {} });
     const ticker = new PIXI.Ticker();
     ticker.autoStart = false;
     // Mirrors app.ts's `appealDialog?.update()` — note zero args, unlike feedbackDialog's `update(dt)`.
@@ -585,7 +591,7 @@ describe('app.ts ticker wiring — closure/reopen/AppealDialog edge cases (2026-
   });
 
   it('the ticker callback tolerates feedbackDialog being nulled out mid-stream (mirrors closeFeedbackDialog())', () => {
-    let feedbackDialog: FeedbackDialog | null = new FeedbackDialog(800, 1280, { onSubmit: async () => {}, onClose() {} });
+    let feedbackDialog: FeedbackDialog | null = new FeedbackDialog(800, 1280, { openTextInput: openDomTextInput, onSubmit: async () => {}, onClose() {} });
     (feedbackDialog as unknown as { openInput(): void }).openInput();
 
     const ticker = new PIXI.Ticker();
@@ -614,7 +620,7 @@ describe('app.ts ticker wiring — closure/reopen/AppealDialog edge cases (2026-
     ticker.update(performance.now()); // ticking with nothing open yet must be a harmless no-op
 
     // setFeedbackSink()'s handler: construct a new dialog and assign it to the same outer variable.
-    feedbackDialog = new FeedbackDialog(800, 1280, { onSubmit: async () => {}, onClose() {} });
+    feedbackDialog = new FeedbackDialog(800, 1280, { openTextInput: openDomTextInput, onSubmit: async () => {}, onClose() {} });
     (feedbackDialog as unknown as { openInput(): void }).openInput();
     expect(collectTexts(feedbackDialog.container)).toContain('|');
 
@@ -634,6 +640,7 @@ describe('app.ts ticker wiring — closure/reopen/AppealDialog edge cases (2026-
 describe('LoginScene — email/password field caret (already-correct baseline)', () => {
   function build(): any {
     return new LoginScene(createLayout(W, H), new InputManager(), {
+      openTextInput: openDomTextInput,
       onLogin: async () => ({ ok: true }),
       onRegister: async () => ({ ok: true }),
       onPlayOffline() {},

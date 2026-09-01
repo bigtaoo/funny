@@ -1002,7 +1002,6 @@ export const zh = {
   'world.nationFree': '无主',
   'world.nationsEmpty': '尚未立国',
   'world.nationRename': '改名',
-  'world.nationNamePrompt': '输入首府名称',
   'world.seasonNo': '第 {n} 赛季',
   'world.seasonPop': '人口 {pop}/{cap}',
   'world.seasonReset': '重置剩 {d} 天',

@@ -194,50 +194,46 @@ export function addButton(
   core.hits.push({ rect: { x, y, w, h }, scroll: !!layer, fn });
 }
 
-// ── HTML hidden input helper ────────────────────────────────────────────────
+// ── Text input helper ─────────────────────────────────────────────────────
+// (`placeholder` was dropped 2026-09-01 converting this off IPlatform.openTextInput — the field it
+// used to set was on an invisible off-screen `<input>`, so it was never actually shown; the visible
+// placeholder is the separate on-canvas caretText()/caretDisplay() call every caller already makes.)
 
 export function openHiddenInput(core: FriendsSceneCore, opts: {
   value: string;
   maxLength: number;
-  placeholder?: string;
   /** Optional clamp applied to the raw value before onInput (e.g. display-width cap for org names). */
   clamp?(v: string): string;
   onInput(v: string): void;
   onBlur?(): void;
   onEnter?(): void;
 }): void {
-  // Tear down only the previous DOM element — NOT via core.clearHiddenInput(), which also
-  // resets the active-field flags (worldChatActive / family/sectActiveInput). Every
-  // caller sets its flag *before* calling openHiddenInput, so calling clearHiddenInput
-  // here would wipe the flag we just set → the field never shows its blinking caret
-  // (the blink loop in update() and caretDisplay() are both gated on that flag).
-  if (core.hiddenInput) { core.hiddenInput.remove(); core.hiddenInput = null; }
+  // Tear down only the previous session — NOT via core.clearHiddenInput(), which also resets the
+  // active-field flags (worldChatActive / family/sectActiveInput). Every caller sets its flag
+  // *before* calling openHiddenInput, so calling clearHiddenInput here would wipe the flag we just
+  // set → the field never shows its blinking caret (the blink loop in update() and caretDisplay()
+  // are both gated on that flag).
+  if (core.textInput) { core.textInput.close(); core.textInput = null; }
   core.caretOn = true;
   core.caretTimer = 0;
-  const inp = document.createElement('input');
-  inp.type = 'text';
-  inp.value = opts.value;
-  inp.maxLength = opts.maxLength;
-  inp.placeholder = opts.placeholder ?? '';
-  inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-  document.body.appendChild(inp);
-  inp.focus();
-  inp.addEventListener('input', () => {
-    if (opts.clamp) {
-      const clamped = opts.clamp(inp.value);
-      if (clamped !== inp.value) inp.value = clamped;
-    }
-    opts.onInput(inp.value);
-    if (!core.dead) core.render();
+  const handle = core.cb.openTextInput({
+    value: opts.value,
+    maxLength: opts.maxLength,
+    onInput: (v) => {
+      let value = v;
+      if (opts.clamp) {
+        const clamped = opts.clamp(v);
+        if (clamped !== v) { value = clamped; handle.setValue(clamped); }
+      }
+      opts.onInput(value);
+      if (!core.dead) core.render();
+    },
+    onConfirm: opts.onEnter ? () => opts.onEnter!() : undefined,
+    onComplete: () => {
+      opts.onBlur?.();
+      if (core.textInput === handle) core.textInput = null;
+      if (!core.dead) core.render();
+    },
   });
-  if (opts.onEnter) {
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') opts.onEnter!(); });
-  }
-  inp.addEventListener('blur', () => {
-    opts.onBlur?.();
-    if (inp.parentNode) inp.remove();
-    if (core.hiddenInput === inp) core.hiddenInput = null;
-    if (!core.dead) core.render();
-  });
-  core.hiddenInput = inp;
+  core.textInput = handle;
 }

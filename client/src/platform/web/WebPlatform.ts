@@ -1,5 +1,5 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult, TextInputOptions, ITextInput } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WebAdapter } from '../../inputSystem/WebAdapter';
 import { getOrCreateDeviceId } from '../uuid';
@@ -8,6 +8,7 @@ import type { Locale } from '../../i18n';
 import type { SafeAreaInsets } from '../../layout/ILayout';
 import { getNativeBilling, type IapKind } from '../iap';
 import { getNativeAds } from '../nativeAds';
+import { openDomTextInput } from './domTextInput';
 
 // ── Paddle.js (web coin recharge) type shim ──────────────────────────────────
 interface PaddleCheckoutEvent { name?: string }
@@ -87,6 +88,10 @@ export class WebPlatform implements IPlatform {
     toDesign: (sx: number, sy: number) => { x: number; y: number },
   ): void {
     new WebAdapter(this.canvas, input, toDesign);
+  }
+
+  openTextInput(opts: TextInputOptions): ITextInput {
+    return openDomTextInput(opts);
   }
 
   async onLoadingComplete(): Promise<void> { /* no-op */ }

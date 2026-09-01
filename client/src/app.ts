@@ -192,6 +192,7 @@ export async function startApp(
   setAppealSink((code) => {
     if (!core.submitAppeal || appealDialog) return;
     const dlg = new AppealDialog(app.screen.width, app.screen.height, code, {
+      openTextInput: (opts) => platform.openTextInput(opts),
       onSubmit: async (reason) => {
         await core.submitAppeal!(reason);
         showToastMessage(t('appeal.submitted'), 'success');
@@ -222,6 +223,7 @@ export async function startApp(
   setFeedbackSink(() => {
     if (!core.submitFeedback || feedbackDialog) return;
     const dlg = new FeedbackDialog(app.screen.width, app.screen.height, {
+      openTextInput: (opts) => platform.openTextInput(opts),
       onSubmit: (text) => core.submitFeedback!(text),
       onClose: closeFeedbackDialog,
     });

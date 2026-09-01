@@ -983,7 +983,6 @@ export const de: Record<TranslationKey, string> = {
   'world.nationFree': 'Frei',
   'world.nationsEmpty': 'Noch keine Nationen',
   'world.nationRename': 'Umbenennen',
-  'world.nationNamePrompt': 'Hauptstadtnamen eingeben',
   'world.seasonNo': 'Saison {n}',
   'world.seasonPop': 'Bev. {pop}/{cap}',
   'world.seasonReset': 'Reset in {d}T',

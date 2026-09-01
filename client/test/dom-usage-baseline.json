@@ -3,17 +3,5 @@
   "src/analytics/queue.ts": 3,
   "src/app/PixiAppViews.ts": 2,
   "src/assets/assetIO.ts": 1,
-  "src/platform/ota.ts": 1,
-  "src/scenes/AuctionScene/createListing.ts": 2,
-  "src/scenes/AuctionScene/numInput.ts": 2,
-  "src/scenes/ChatScene.ts": 2,
-  "src/scenes/FamilyScene/input.ts": 4,
-  "src/scenes/FriendsScene/chrome.ts": 2,
-  "src/scenes/LoginScene.ts": 2,
-  "src/scenes/SectScene/input.ts": 4,
-  "src/scenes/SettingsScene.ts": 2,
-  "src/scenes/ShopScene/core.ts": 2,
-  "src/scenes/worldmap/WorldMapPanels/territory.ts": 2,
-  "src/ui/dialogs/AppealDialog.ts": 3,
-  "src/ui/dialogs/FeedbackDialog.ts": 3
+  "src/platform/ota.ts": 1
 }

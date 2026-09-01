@@ -231,24 +231,20 @@ export class CreateListingPanel {
     core.buyerActive = true;
     core.caretOn = true;
     core.caretTimer = 0;
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.value = core.createBuyer;
-    inp.maxLength = 64;
-    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-    document.body.appendChild(inp);
-    inp.focus();
-    inp.addEventListener('input', () => {
-      core.createBuyer = inp.value.trim();
-      if (!core.destroyed && core.modalOpen) this.openCreateForm();
+    const handle = core.cb.openTextInput({
+      value: core.createBuyer,
+      maxLength: 64,
+      onInput: (value) => {
+        core.createBuyer = value.trim();
+        if (!core.destroyed && core.modalOpen) this.openCreateForm();
+      },
+      onComplete: () => {
+        core.buyerActive = false;
+        if (core.textInput === handle) core.textInput = null;
+        if (!core.destroyed && core.modalOpen) this.openCreateForm();
+      },
     });
-    inp.addEventListener('blur', () => {
-      core.buyerActive = false;
-      inp.remove();
-      if (core.hiddenInput === inp) core.hiddenInput = null;
-      if (!core.destroyed && core.modalOpen) this.openCreateForm();
-    });
-    core.hiddenInput = inp;
+    core.textInput = handle;
   }
 
   async doCreate(): Promise<void> {

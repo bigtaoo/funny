@@ -145,10 +145,9 @@ interface AssetIO {
 
 **门禁 `test/wechatHostSurface.test.ts`**：扫描微信可达图，禁止裸用 `document`/`window`/`new Image()`/`fetch`/`navigator`/`localStorage`。`typeof x !== …` 守卫与带理由的 `// dom-ok:` 免检。基线 `test/dom-usage-baseline.json`（21 文件 / 54 处）**是欠账清单不是白名单**：只能变小，基线项修好了不删也报红。逐条欠账见 §4.4。
 
-### 4.4 微信仍然欠着的两件（2026-09-01 盘点；原第 1 条「REST 层没有 `fetch`」当天下午还清，见 §18）
+### 4.4 微信仍然欠着的一件（2026-09-01 盘点；原第 1 条「REST 层没有 `fetch`」当天下午还清见 §18，原第 2 条「14 处隐藏 `<input>`」当天晚些还清见 §19）
 
-1. **14 处场景用隐藏 `<input>` 收文本**（登录名、聊天、拍卖出价、家族/宗门搜索、设置、反馈…），微信要换成 `wx` 的键盘 API。**这是 `dom-usage-baseline.json` 剩余 45 处里的 30 处。**
-2. **真机从未验过**。以上全部只在 Chromium 模拟器上成立。`entries/wechat-probe.ts`（`build:wechat-probe`）就是为那次复测留的：它把宿主表面的「装之前 / 装之后」两份快照写到 `USER_DATA_PATH`，真机上跑一次，`before` 与模拟器的差异就是全部答案。
+1. **真机从未验过**。以上全部只在 Chromium 模拟器上成立。`entries/wechat-probe.ts`（`build:wechat-probe`）就是为那次复测留的：它把宿主表面的「装之前 / 装之后」两份快照写到 `USER_DATA_PATH`，真机上跑一次，`before` 与模拟器的差异就是全部答案。§19 落地的 `IPlatform.openTextInput` 的 WeChat 实现也归在这条债下——`wx.showKeyboard` 一次只能开一个会话，「上一个还没关就开下一个」这条 focus-steal 路径同样没有真机验证。
 ---
 
 ## 5. 手机套壳 —— 全量打包
@@ -457,3 +456,7 @@ bundle 从 §1 记的 ~1.5 MB 长到 2.08 MB（raw），**没有任何东西发�
 ## 18. REST 走 `wx.request`：一个接缝，不是一个 `fetch` polyfill（2026-09-01）
 
 → 已拆出到 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md#18-rest-走-wxrequest一个接缝不是一个-fetch-polyfill2026-09-01)。
+
+## 19. 14 处隐藏 `<input>` → `IPlatform.openTextInput`（2026-09-01）
+
+→ 已拆出到 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md#19-14-处隐藏-input--iplatformopentextinput2026-09-01)。

@@ -78,8 +78,8 @@ export function addNumInput(
   core.modalHits.push({ rect: { x: plusBtn.x, y: plusBtn.y, w: btnSize, h: btnSize }, fn: () => onChange(value + 1) });
 }
 
-// Hidden-input driver for a tappable numeric field: live-updates the value as digits are typed and, on
-// blur, applies the optional clamp so an out-of-range price snaps to the nearest allowed bound.
+// Text-entry driver for a tappable numeric field: live-updates the value as digits are typed and, on
+// close, applies the optional clamp so an out-of-range price snaps to the nearest allowed bound.
 export function openNumInput(
   core: AuctionSceneCore,
   key: string,
@@ -90,33 +90,31 @@ export function openNumInput(
   core.numEditKey = key;
   core.caretOn = true;
   core.caretTimer = 0;
-  const inp = document.createElement('input');
-  inp.type = 'text';
-  inp.inputMode = 'numeric';
-  inp.value = String(current);
-  inp.maxLength = 12;
-  inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-  document.body.appendChild(inp);
-  inp.focus();
-  inp.select();
-  const parse = (): number => {
-    const digits = inp.value.replace(/[^0-9]/g, '');
+  const parse = (raw: string): number => {
+    const digits = raw.replace(/[^0-9]/g, '');
     return digits === '' ? 0 : parseInt(digits, 10);
   };
-  inp.addEventListener('input', () => {
-    const digits = inp.value.replace(/[^0-9]/g, '');
-    if (inp.value !== digits) inp.value = digits;
-    onChange(parse());
+  // TextInputOptions.onComplete() takes no value — track the live digits ourselves (mirrors reading
+  // inp.value at blur time in the old DOM version) so the clamp below sees the last-typed number.
+  let liveDigits = String(current).replace(/[^0-9]/g, '');
+  const handle = core.cb.openTextInput({
+    value: String(current),
+    maxLength: 12,
+    onInput: (value) => {
+      const digits = value.replace(/[^0-9]/g, '');
+      if (value !== digits) handle.setValue(digits);
+      liveDigits = digits;
+      onChange(parse(digits));
+    },
+    // Enter commits the value the same way closing does (PC keyboard convenience — mobile taps
+    // elsewhere to close, so this is additive, not a replacement path).
+    onConfirm: () => handle.close(),
+    onComplete: () => {
+      const v = parse(liveDigits);
+      core.numEditKey = null;
+      if (core.textInput === handle) core.textInput = null;
+      onChange(clamp ? clamp(v) : v);
+    },
   });
-  // Enter commits the value the same way blur does (PC keyboard convenience — mobile taps
-  // elsewhere to blur, so this is additive, not a replacement path).
-  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
-  inp.addEventListener('blur', () => {
-    const v = parse();
-    core.numEditKey = null;
-    inp.remove();
-    if (core.hiddenInput === inp) core.hiddenInput = null;
-    onChange(clamp ? clamp(v) : v);
-  });
-  core.hiddenInput = inp;
+  core.textInput = handle;
 }

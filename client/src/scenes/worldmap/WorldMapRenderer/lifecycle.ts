@@ -188,7 +188,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     const ctx = this.core.ctx;
     if (ctx.loadingTimeout) { clearTimeout(ctx.loadingTimeout); ctx.loadingTimeout = null; }
     cancelLoadingErase(ctx);
-    if (ctx.hiddenInput) { ctx.hiddenInput.remove(); ctx.hiddenInput = null; }
+    if (ctx.hiddenInput) { ctx.hiddenInput.close(); ctx.hiddenInput = null; }
     for (const s of ctx.pool) s.g.destroy();
     ctx.pool = [];
     for (const c of ctx.citySprites.values()) c.destroy({ children: true });
