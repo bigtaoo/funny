@@ -77,6 +77,12 @@ export default defineConfig({
         'src/app/appConstants.ts',
         'src/app/matchEngine.ts',
         'src/app/nav/room.ts',
+        // audio (2026-08-31, AUDIO_DESIGN.md): a DIRECTORY entry from day one rather than the
+        // per-file shape most of this list still has — `src/audio/**` is the platform-neutral half
+        // of the audio layer by construction (the backend lives in `src/platform/web/`), so a file
+        // landing here later is a pure module too and should be gated without a second edit here.
+        // It arrives already covered: test/audio/** is 79 cases over every module in it.
+        'src/audio/**',
         // assets / cache / i18n / layout
         'src/assets/assetIO.ts',
         'src/cache/MemoryMonitor.ts',
@@ -116,6 +122,11 @@ export default defineConfig({
         'src/render/vfx/parseEffectDef.ts',
         'src/render/vfx/registry.ts',
         'src/render/vfx/sampleParam.ts',
+        // ui: the PIXI-free half. `ui/hits.ts` (2026-08-31, AUDIO_DESIGN.md §7 step 4) is the
+        // client's single hit table + dispatcher — pure geometry plus the one place a UI cue is
+        // emitted, no PIXI import, and what 40 scenes' tap handling now runs through, so a
+        // regression here is a regression everywhere at once. Gated from the day it landed.
+        'src/ui/hits.ts',
         // scenes: the already-extracted pure modules — exactly the shape ADR-070's client half will
         // produce more of, one scene at a time (4b)
         'src/scenes/EquipmentScene/helpers.ts',

@@ -68,7 +68,7 @@ export class RenderPanel {
     const cl = txt(t('family.create'), FS.heading, C.light);
     cl.anchor.set(0.5, 0.5); cl.x = createBtn.x + bw / 2; cl.y = h / 2 + bh / 2;
     core.bodyLayer.addChild(cl);
-    core.hitRects.push({ rect: { x: createBtn.x, y: h / 2, w: bw, h: bh }, action: () => { core.mode = 'create'; core.render(); } });
+    core.hitRects.push({ rect: { x: createBtn.x, y: h / 2, w: bw, h: bh }, fn: () => { core.mode = 'create'; core.render(); } });
 
     const joinBtn = sketchButton(bw, bh, seedFor(1, 0, bw));
     joinBtn.x = w / 2 + gap; joinBtn.y = h / 2;
@@ -76,7 +76,7 @@ export class RenderPanel {
     const jl = txt(t('family.listAll'), FS.heading, C.light);
     jl.anchor.set(0.5, 0.5); jl.x = joinBtn.x + bw / 2; jl.y = h / 2 + bh / 2;
     core.bodyLayer.addChild(jl);
-    core.hitRects.push({ rect: { x: joinBtn.x, y: h / 2, w: bw, h: bh }, action: () => void this.actions.openJoinList() });
+    core.hitRects.push({ rect: { x: joinBtn.x, y: h / 2, w: bw, h: bh }, fn: () => void this.actions.openJoinList() });
   }
 
   renderCreate(): void {
@@ -104,7 +104,7 @@ export class RenderPanel {
     });
     nl.x = fieldX + 8; nl.y = y1 + fieldH / 2 - nl.height / 2;
     core.bodyLayer.addChild(nl);
-    core.hitRects.push({ rect: { x: fieldX, y: y1, w: w - fieldX - 20, h: fieldH }, action: () => this.input.openInputFor('name') });
+    core.hitRects.push({ rect: { x: fieldX, y: y1, w: w - fieldX - 20, h: fieldH }, fn: () => this.input.openInputFor('name') });
 
     const lbl2 = txt(t('family.tag') + ':', labelSize, C.dark);
     lbl2.x = 20; lbl2.y = y2 + fieldH / 2 - labelSize / 2;
@@ -119,7 +119,7 @@ export class RenderPanel {
     });
     tl.x = fieldX + 8; tl.y = y2 + fieldH / 2 - tl.height / 2;
     core.bodyLayer.addChild(tl);
-    core.hitRects.push({ rect: { x: fieldX, y: y2, w: tagW, h: fieldH }, action: () => this.input.openInputFor('tag') });
+    core.hitRects.push({ rect: { x: fieldX, y: y2, w: tagW, h: fieldH }, fn: () => this.input.openInputFor('tag') });
 
     const hint = txt('[A-Z0-9] 2-5 chars', FS.label, MUTED);
     hint.x = fieldX + tagW + 12; hint.y = y2 + fieldH / 2 - hint.height / 2;
@@ -136,7 +136,7 @@ export class RenderPanel {
     const ok = txt(t('family.create'), FS.heading, createBusy ? C.mid : C.light);
     ok.anchor.set(0.5, 0.5); ok.x = okBtn.x + okW / 2; ok.y = btnY + btnH / 2;
     core.bodyLayer.addChild(ok);
-    if (!createBusy) core.hitRects.push({ rect: { x: okBtn.x, y: btnY, w: okW, h: btnH }, action: () => void this.actions.doCreate() });
+    if (!createBusy) core.hitRects.push({ rect: { x: okBtn.x, y: btnY, w: okW, h: btnH }, fn: () => void this.actions.doCreate() });
 
     const cancelBtn = sketchPanel(okW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, okW) });
     cancelBtn.x = w / 2 + 10; cancelBtn.y = btnY;
@@ -145,7 +145,7 @@ export class RenderPanel {
     const ca = buildIcon('close', caSize, C.dark);
     ca.x = cancelBtn.x + okW / 2 - caSize / 2; ca.y = btnY + btnH / 2 - caSize / 2;
     core.bodyLayer.addChild(ca);
-    core.hitRects.push({ rect: { x: cancelBtn.x, y: btnY, w: okW, h: btnH }, action: () => { core.mode = 'noFamily'; core.render(); } });
+    core.hitRects.push({ rect: { x: cancelBtn.x, y: btnY, w: okW, h: btnH }, fn: () => { core.mode = 'noFamily'; core.render(); } });
   }
 
   renderMyFamily(): void {
@@ -197,7 +197,7 @@ export class RenderPanel {
       core.bodyLayer.addChild(icon);
       tl.anchor.set(0, 0.5); tl.x = groupX + iconSize + gapIL; tl.y = core.headerH + tabH / 2;
       core.bodyLayer.addChild(tl);
-      core.hitRects.push({ rect: { x: tx, y: core.headerH, w: tabW, h: tabH }, action: () => { core.activeTab = tab; core.scrollY = 0; core.channelStick = true; core.render(); } });
+      core.hitRects.push({ rect: { x: tx, y: core.headerH, w: tabW, h: tabH }, fn: () => { core.activeTab = tab; core.scrollY = 0; core.channelStick = true; core.render(); } });
     }
 
     const infoY = core.headerH + tabH;
@@ -279,7 +279,7 @@ export class RenderPanel {
     const arrow = txt('›', FS.bodyLg, 0xa9750f);
     arrow.anchor.set(1, 0.5); arrow.x = x0 + colW - 20; arrow.y = y + btnH / 2;
     core.bodyLayer.addChild(arrow);
-    core.hitRects.push({ rect: { x: x0 + 6, y: y + 2, w: colW - 12, h: btnH - 4 }, action: () => this.actions.openJoinRequests() });
+    core.hitRects.push({ rect: { x: x0 + 6, y: y + 2, w: colW - 12, h: btnH - 4 }, fn: () => this.actions.openJoinRequests() });
     return btnH;
   }
 
@@ -328,7 +328,7 @@ export class RenderPanel {
       badge.x = nameX; badge.y = y0 + Math.round(B * 0.06);
       core.bodyLayer.addChild(badge);
       if (core.isFamilyLeader) {
-        core.hitRects.push({ rect: { x: badge.x, y: badge.y, w: emblemSize, h: emblemSize }, action: () => core.openEmblemPicker() });
+        core.hitRects.push({ rect: { x: badge.x, y: badge.y, w: emblemSize, h: emblemSize }, fn: () => core.openEmblemPicker() });
       }
       nameX += emblemSize + 8;
     }

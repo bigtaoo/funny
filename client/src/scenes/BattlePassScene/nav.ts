@@ -6,11 +6,10 @@
 // own field (same reasoning as RoomScene/views.ts's RoomViewHost).
 import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
-import type { Rect } from '../../layout/ILayout';
+import type { Hit } from '../../ui/hits';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import type { BattlePassCallbacks } from '../BattlePassScene';
 
-interface Hit { rect: Rect; fn: () => void; }
 
 export interface NavHost {
   readonly container: PIXI.Container;
@@ -54,7 +53,7 @@ export function drawSidebar(host: NavHost, tbH: number): void {
     // scroll-content render path rebuilds `host.hits` via updateScrollPosition() right after this
     // call, which folds navHits back in; the no-scroll early-return path never calls
     // updateScrollPosition(), so it also unshifts directly here to take effect immediately.
-    host.navHits = hits.map((hit) => ({ rect: hit.rect, fn: hit.fn }));
+    host.navHits = [...hits];
     host.hits.unshift(...hits);
     return;
   }

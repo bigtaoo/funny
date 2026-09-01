@@ -7,7 +7,8 @@ import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../render/
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import { buildRasterTabIcon, BACK_ARROW_ART, BACK_ARROW_ASPECT, preloadIconArt } from '../render/icons';
-import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type View, type Field, type Hit } from './LoginScene/types';
+import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type View, type Field } from './LoginScene/types';
+import { dispatchHit, type Hit } from '../ui/hits';
 import { drawLanding, drawForm, drawSubmitting, PRESS_DUR, type FormHost } from './LoginScene/forms';
 
 export type { AuthOutcome, LoginSceneCallbacks } from './LoginScene/types';
@@ -183,13 +184,7 @@ export class LoginScene implements Scene {
 
   private handleDown(x: number, y: number): void {
     if (this.press) return; // swallow taps while a button is mid-press
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-        hit.fn();
-        return;
-      }
-    }
+    if (dispatchHit(this.hits, x, y)) return;
     // Tap outside any field/button → blur.
     if (this.focused) { this.blur(); this.render(); }
   }

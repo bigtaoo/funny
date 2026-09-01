@@ -39,7 +39,7 @@ interface SceneInternals {
     maxScroll: number;
     headerH: number;
     scrollRedraw: (() => void) | null;
-    hitRects: { rect: Rect; action: () => void; owner?: string }[];
+    hitRects: { rect: Rect; fn: () => void; owner?: string }[];
     headerOverlayLayer: PIXI.Container;
     gridLayer: PIXI.Container;
   };

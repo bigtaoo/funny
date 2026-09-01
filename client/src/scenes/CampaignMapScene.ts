@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
-import { ILayout, Rect } from '../layout/ILayout';
+import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { CHAPTER_ORDER, getChapterMap } from '../game';
@@ -11,6 +11,7 @@ import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, buildTitleIcon } from '../ui/widgets/SceneHeader';
 import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp } from './CampaignMapScene/drawing';
+import { dispatchHit, type Hit } from '../ui/hits';
 
 // ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the "campaign notebook" ──────
 //
@@ -48,7 +49,6 @@ export interface CampaignMapCallbacks {
   getPendingLevels(): string[];
 }
 
-interface Hit { rect: Rect; fn: () => void; }
 
 /** A built page: its display root, tap targets, and (optionally) the node to pulse. */
 interface Page {
@@ -201,10 +201,7 @@ export class CampaignMapScene implements Scene {
   private handleDown(x: number, y: number): void {
     // No `this.flip` guard: hits are kept live across flips (see flipTo), so taps
     // work even mid-animation or if the ticker stalls before a flip settles.
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); break; }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   // ── Shared header ───────────────────────────────────────────────────────────
@@ -245,7 +242,7 @@ export class CampaignMapScene implements Scene {
       root.addChild(sub);
     }
 
-    hits.push({ rect: hdr.backRect, fn: onBack });
+    hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: onBack });
 
     // Right-aligned header shortcuts, each on the one true primary-button
     // background (sketchButton, §7.5) so they read as real buttons — matching

@@ -11,6 +11,8 @@ import { GameEvent, GameState, MatchSummary, PlayerStats, SpellType } from '../.
 import { fromFp } from '../../game';
 import { factionInk } from '../theme';
 import { stateRecorder } from '../../game/replay/StateRecorder';
+import { playSfx } from '../../audio/audioBus';
+import type { AudioCue } from '../../audio/types';
 import type { GameRendererCore } from './core';
 
 /**
@@ -28,6 +30,17 @@ const SPELL_VFX: Partial<Record<SpellType, string>> = {
   [SpellType.Meteor]:         'meteor',
   [SpellType.BridgeCollapse]: 'bridge_collapse',
 };
+
+/**
+ * Ink regenerated per `sfx.ink.tick` drip.
+ *
+ * **Measured, not guessed.** `resource_changed` fires on every whole point of ink, and ink regen is
+ * `INK_REGEN_BASE` = 2/s rising to 4/s late game — a drip per event came out at 2.6 Hz in a real
+ * match (31 in 12 s, Chrome, campaign ch1_lv2), which is a machine gun, not the 背景节拍
+ * `cueCatalogue` describes. 10 is one average card's worth of ink (the deck's costs run 4–12), so
+ * one drip ≈ "another card is affordable": ~5 s apart early, ~2.5 s once regen accelerates.
+ */
+const INK_TICK_STEP = 10;
 
 export class EventsPanel {
   /** Assigned by GameRendererCore.buildSceneGraph() — see core.ts. */
@@ -51,11 +64,31 @@ export class EventsPanel {
   /** Match-level summary from the game_stats event, consumed on game_over/game_draw for star scoring. */
   private pendingSummary: MatchSummary | null = null;
 
+  /**
+   * Cues collected during the current frame's event drain → how many events merged into each
+   * (AUDIO_DESIGN §4's same-frame merge). A `Map`, not a `Set`: ten units landing a hit on the same
+   * frame is *one* louder `sfx.unit.hit`, not ten stacked copies phasing against each other — the
+   * count goes to `playSfx`, which raises the gain instead of re-triggering the voice.
+   * Drained by {@link flushAudio}, called once per frame by GameRendererCore.update().
+   */
+  private readonly frameCues: Map<AudioCue, number> = new Map();
+
+  /**
+   * Last `resource_changed.ink` seen for the local player; `null` until the first one arrives.
+   * `sfx.ink.tick` is a **rising** edge only — the engine emits `resource_changed` for spends and
+   * for the opening deal as well, and neither of those is a 墨滴回涨 node (AUDIO_DESIGN §2.1).
+   */
+  private lastLocalInk: number | null = null;
+
+  /** Ink regenerated since the last drip; see {@link INK_TICK_STEP}. */
+  private inkSinceTick = 0;
+
   constructor(private readonly core: GameRendererCore) {}
 
   // ── Event handling ─────────────────────────────────────────────────────────
 
   handleEvent(event: GameEvent, _state: GameState): void {
+    this.collectCue(event);
     switch (event.type) {
       case 'unit_attack_hit': {
         this.core.unitView.playHitEffect(event.targetId);
@@ -166,6 +199,11 @@ export class EventsPanel {
         if (this.core.tutorial && !this.core.tutorial.isFinished) break;
         if (this.core.gameEnded) break;
         this.core.gameEnded = true;
+        // Stinger lives *inside* the one-shot gate, not in collectCue(): after game over the engine's
+        // step() returns early without clearing the queue, so a paused/stalled driver can hand this
+        // same event back on every frame (see engine/sim/step.ts's comment). `gameEnded` is the only
+        // thing that makes it fire once — a naïve trigger would machine-gun the stinger at 60 fps.
+        this.cue(event.winner === this.core.localOwner ? 'sfx.result.victory' : 'sfx.result.defeat');
         stateRecorder.setWinner(event.winner ?? -1);
         this.core.input.cancelDrag(); this.core.input.cancelTapSelect();
         this.core.netStatus.clear();
@@ -179,6 +217,11 @@ export class EventsPanel {
         if (this.core.tutorial && !this.core.tutorial.isFinished) break;
         if (this.core.gameEnded) break;
         this.core.gameEnded = true;
+        // Stinger inside the one-shot gate, for the same 60 fps reason spelled out in `game_over`
+        // above. `sfx.result.draw` exists precisely because neither of the other two may stand in
+        // for it: a draw is its own outcome, and victory/defeat would each report the wrong one
+        // (AUDIO_DESIGN.md §7 step 6 — the gap left open by steps 3 and 4).
+        this.cue('sfx.result.draw');
         stateRecorder.setWinner(-1);
         this.core.input.cancelDrag(); this.core.input.cancelTapSelect();
         this.core.netStatus.clear();
@@ -242,6 +285,103 @@ export class EventsPanel {
         break;
       }
     }
+  }
+
+  // ── Audio (AUDIO_DESIGN §6 "触发埋点") ─────────────────────────────────────
+
+  /**
+   * Map one engine event onto its cue, if it has one. Called for **every** event, ahead of the
+   * visual switch — keeping the whole battle trigger table readable in one place instead of a
+   * `playSfx` sprinkled through twenty visual branches (AUDIO_DESIGN §6: this file is the single
+   * funnel, and the engine stays untouched — audio is presentation, never simulation).
+   *
+   * Nothing plays here; cues only accumulate into {@link frameCues} and go out in {@link flushAudio}.
+   *
+   * ⚠️ **The `gameEnded` early-return is load-bearing.** After game over the engine's `step()`
+   * returns early *without* clearing `state.events` (engine/sim/step.ts explains why), so the final
+   * frame's whole event batch — not just `game_over` — can be re-drained on every subsequent frame.
+   * Without this line the last tick's deaths and base hits would loop at 60 fps forever. The two
+   * result stingers are deliberately *not* collected here: they sit inside the `game_over` /
+   * `game_draw` branches, past the one-shot gate that sets this very flag.
+   */
+  private collectCue(event: GameEvent): void {
+    if (this.core.gameEnded) return;
+    switch (event.type) {
+      case 'card_played':
+        // Both sides: hearing the opponent's pen hit the page is information, and it is the one
+        // audible tell that an off-screen play just happened.
+        this.cue('sfx.card.play');
+        break;
+      // `unit_attack_start` fires on the *transition* into Attacking, not once per swing, so melee
+      // gets one "铅笔短戳" as it engages and then rides on `sfx.unit.hit` per landed blow.
+      // A true per-swing melee event would have to be added to @nw/engine, which §6's architecture
+      // red line forbids doing for audio's sake.
+      // The ranged half is `projectile_fired`: every arrow loosed, by a unit or by an arrow tower.
+      case 'unit_attack_start':
+      case 'projectile_fired':
+        this.cue('sfx.unit.attack');
+        break;
+      // Fires once per damaged target, so splash/piercing hits arrive as N events on one frame —
+      // exactly what the merge count is for. Covers units, buildings and escorts (the base has its own).
+      case 'unit_attack_hit':
+        this.cue('sfx.unit.hit');
+        break;
+      // Both bases: taking a hit and landing one are equally load-bearing signals, and the crack VFX
+      // already plays for both. Only the local player also gets the red vignette (see the visual branch).
+      case 'base_hp_changed':
+        this.cue('sfx.base.hit');
+        break;
+      case 'spell_cast':
+        this.cue('sfx.spell.cast');
+        break;
+      // "纸团揉碎" covers everything that dies: there is no separate building/escort cue in the
+      // vocabulary, and a tower collapsing in silence would read as a dropped frame.
+      case 'unit_died':
+      case 'building_destroyed':
+      case 'escort_died':
+        this.cue('sfx.unit.death');
+        break;
+      case 'resource_changed': {
+        if (event.owner !== this.core.localOwner) break;
+        const prev = this.lastLocalInk;
+        this.lastLocalInk = event.ink;
+        // Seed silently on the first sighting (the opening deal emits one per side); spends move the
+        // baseline but never drip — only refill is a 墨滴回涨 node.
+        if (prev === null || event.ink <= prev) break;
+        this.inkSinceTick += event.ink - prev;
+        if (this.inkSinceTick < INK_TICK_STEP) break;
+        this.inkSinceTick = 0;
+        this.cue('sfx.ink.tick');
+        break;
+      }
+    }
+  }
+
+  /** Merge one occurrence of `cue` into this frame's batch. */
+  private cue(cue: AudioCue): void {
+    this.frameCues.set(cue, (this.frameCues.get(cue) ?? 0) + 1);
+  }
+
+  /**
+   * Play everything collected this frame and reset the batch. Called once per frame by
+   * GameRendererCore.update(), right after the `state.events` drain — the merge in {@link frameCues}
+   * is only meaningful across a whole frame, so it cannot live inside `handleEvent`.
+   */
+  flushAudio(): void {
+    if (this.frameCues.size === 0) return;
+    for (const [cue, count] of this.frameCues) playSfx(cue, count);
+    this.frameCues.clear();
+  }
+
+  /**
+   * Scripted (non-engine) settlement stinger — tutorial graduation, which never emits a real
+   * `game_over` (see GameRendererCore.forceTutorialVictory). Kept here rather than calling `playSfx`
+   * from core.ts so every audio decision in the battle scene stays in this one file. Callers own the
+   * one-shot guarantee; `forceTutorialVictory` has its own `gameEnded` gate.
+   */
+  playResultStinger(winner: number): void {
+    this.cue(winner === this.core.localOwner ? 'sfx.result.victory' : 'sfx.result.defeat');
+    this.flushAudio();
   }
 
   /** Register an escort fade/blink tick on the shared ticker, tracked for destroy()-time cleanup. */

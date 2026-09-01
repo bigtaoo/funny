@@ -16,6 +16,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n/index';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from './HubTabs';
 import type { IconKind } from '../../render/icons';
+import type { Hit } from '../hits';
 
 export type SocialTab = 'friends' | 'family' | 'sect' | 'world' | 'mail';
 
@@ -43,10 +44,7 @@ const TAB_DEFS: { id: SocialTab; key: TranslationKey }[] = [
   { id: 'mail',    key: 'friends.tab.mail' },
 ];
 
-export interface SocialTabRailHit {
-  rect: { x: number; y: number; w: number; h: number };
-  fn: () => void;
-}
+export type SocialTabRailHit = Hit;
 
 export function drawSocialTabRail(
   container: PIXI.Container,

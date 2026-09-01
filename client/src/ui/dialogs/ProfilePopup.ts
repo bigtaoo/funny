@@ -26,6 +26,7 @@ import { tearDownChildren } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
 import { drawHudButton, hudButtonText } from '../widgets/hudButton';
 import { buildEmblemIcon, loadEmblemAtlas, type EmblemKey } from '../../render/emblemIcon';
+import { dispatchHit, tapHandler, type Hit } from '../hits';
 
 export interface ProfileData {
   /** Display name (nickname). */
@@ -95,7 +96,7 @@ export class ProfilePopup {
   private cardY = 0;
   private cardW = 0;
   private cardH = 0;
-  private tapRects: Array<{ x: number; y: number; w: number; h: number; action: () => void }> = [];
+  private tapRects: Hit[] = [];
 
   // Bumped on every show()/hide() so a slow in-flight extras fetch can tell it's gone stale (popup
   // closed, or reopened for someone else) and skip its patch-in re-render.
@@ -118,7 +119,7 @@ export class ProfilePopup {
     dim.endFill();
     dim.eventMode = 'static';
     dim.cursor = 'default';
-    dim.on('pointertap', () => this.hide());
+    dim.on('pointertap', tapHandler(() => this.hide(), 'sfx.ui.back'));
     this.container.addChild(dim);
 
     this.card = new PIXI.Container();
@@ -222,7 +223,7 @@ export class ProfilePopup {
       idLine.y = yBottom + cardH * 0.03;
       idLine.eventMode = 'static';
       idLine.cursor = 'pointer';
-      idLine.on('pointertap', () => this.copyId(idLine, data.publicId, idText));
+      idLine.on('pointertap', tapHandler(() => this.copyId(idLine, data.publicId, idText)));
       this.card.addChild(idLine);
       yBottom = idLine.y + idLine.height;
     }
@@ -312,7 +313,7 @@ export class ProfilePopup {
         ab.x = ax; ab.y = aY;
         ab.eventMode = 'static';
         ab.cursor = 'pointer';
-        ab.on('pointertap', () => { this.hide(); act.fn(); });
+        ab.on('pointertap', tapHandler(() => { this.hide(); act.fn(); }));
         this.card.addChild(ab);
         const al = makeText(t(act.labelKey), {
           fontSize: snapFont(Math.round(aH * 0.4)), fill: hudButtonText(actVariant),
@@ -322,7 +323,7 @@ export class ProfilePopup {
         al.x = ax + aW / 2; al.y = aY + aH / 2;
         this.card.addChild(al);
         // y is card-local here; offset to container space once the final cardY is known below.
-        this.tapRects.push({ x: cardX + ax, y: aY, w: aW, h: aH, action: () => { this.hide(); act.fn(); } });
+        this.tapRects.push({ rect: { x: cardX + ax, y: aY, w: aW, h: aH }, fn: () => { this.hide(); act.fn(); } });
       });
       cursorY = aY + aH + gapY;
     }
@@ -336,7 +337,7 @@ export class ProfilePopup {
     btn.x = bX; btn.y = bY;
     btn.eventMode = 'static';
     btn.cursor = 'pointer';
-    btn.on('pointertap', () => this.hide());
+    btn.on('pointertap', tapHandler(() => this.hide(), 'sfx.ui.back'));
     this.card.addChild(btn);
 
     const btnLabel = makeText(t('profile.close'), {
@@ -359,9 +360,10 @@ export class ProfilePopup {
     bg.drawRoundedRect(0, 0, cardW, finalH, 12);
     bg.endFill();
 
-    this.tapRects.push({ x: cardX + bX, y: bY, w: bW, h: bH, action: () => this.hide() });
+    this.tapRects.push({ rect: { x: cardX + bX, y: bY, w: bW, h: bH }, sound: 'sfx.ui.back', fn: () => this.hide() });
     // Action + close rects were registered in card-local y; shift them into container space.
-    for (const r of this.tapRects) r.y += cardY;
+    // Rebuilt rather than mutated in place: ui/hits.ts's Rect is readonly (layout/ILayout).
+    this.tapRects = this.tapRects.map((h) => ({ ...h, rect: { ...h.rect, y: h.rect.y + cardY } }));
 
     this.open = true;
     this.container.visible = true;
@@ -379,9 +381,7 @@ export class ProfilePopup {
    */
   handleTap(x: number, y: number): boolean {
     if (!this.open) return false;
-    for (const r of this.tapRects) {
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { r.action(); return true; }
-    }
+    if (dispatchHit(this.tapRects, x, y)) return true;
     const insideCard = x >= this.cardX && x <= this.cardX + this.cardW && y >= this.cardY && y <= this.cardY + this.cardH;
     if (!insideCard) this.hide();
     return true;

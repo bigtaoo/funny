@@ -30,7 +30,7 @@ const PORTRAIT: [number, number] = [800, 1280];
 const WORLD_ID = 'world:1:0';
 
 type Rect = { x: number; y: number; w: number; h: number };
-type Hit = Rect & { fn: () => void };
+type Hit = { rect: Rect; fn: () => void };
 type CitySceneInternals = {
   hits: Hit[];
   me: PlayerWorldView | null;
@@ -356,9 +356,9 @@ describe('CityScene "Fill All Teams" button (2026-08-02)', () => {
     const teamHits = inner.hits.filter((h) => h !== fillHit && h.fn.toString().includes('onEditTeam'));
     expect(teamHits.length).toBe(TEAM_CAP);
     for (const th of teamHits) {
-      expect(rectsOverlap(fillHit, th)).toBe(false);
+      expect(rectsOverlap(fillHit.rect, th.rect)).toBe(false);
       // The button sits strictly above every team card, never below or beside it.
-      expect(fillHit.y + fillHit.h).toBeLessThanOrEqual(th.y);
+      expect(fillHit.rect.y + fillHit.rect.h).toBeLessThanOrEqual(th.rect.y);
     }
     scene.destroy();
   });

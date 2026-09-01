@@ -97,7 +97,7 @@ export function drawHeaderTitle(core: FamilySceneCore, headerH: number): void {
     x += gap;
     if (emblemNode) {
       emblemNode.x = x; emblemNode.y = midY - emblemSize / 2;
-      if (isLeader) core.hitRects.push({ rect: { x, y: midY - emblemSize / 2, w: emblemSize, h: emblemSize }, action: () => core.openEmblemPicker() });
+      if (isLeader) core.hitRects.push({ rect: { x, y: midY - emblemSize / 2, w: emblemSize, h: emblemSize }, fn: () => core.openEmblemPicker() });
       x += emblemSize + 8;
     }
     nameNode.anchor.set(0, 0.5); nameNode.x = x; nameNode.y = midY;

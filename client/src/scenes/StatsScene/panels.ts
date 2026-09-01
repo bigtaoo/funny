@@ -1,10 +1,10 @@
 import * as PIXI from 'pixi.js-legacy';
-import { Rect } from '../../layout/ILayout';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { snapFont } from '../../render/fontScale';
 import type { MatchHistoryEntry } from '../../net/ApiClient';
+import type { Hit } from '../../ui/hits';
 
 // ── StatsScene/panels.ts — stat-panel + match-history-panel drawing primitives ──────
 //
@@ -13,7 +13,6 @@ import type { MatchHistoryEntry } from '../../net/ApiClient';
 // instance state beyond what's already passed in as an explicit param, so there's no
 // shared private state to justify a class/Core object, just a param list.
 
-export interface Hit { rect: Rect; fn: () => void; }
 export interface Row { label: string; value: string; valueColor?: number; rowHit?: () => void; valueIcon?: IconKind; }
 
 /** Pure height calc for {@link drawSection} — same formula, no drawing. Used to size the

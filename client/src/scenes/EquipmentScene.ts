@@ -101,7 +101,7 @@ export class EquipmentScene implements Scene {
     tearDownChildren(core.loadingLayer);
     // Back button (header is static art; its hit lives here so re-render keeps it).
     // While assigning, Back cancels the card picker rather than leaving the scene.
-    core.hitRects.push({ rect: core.backRect, action: () => core.backAction() });
+    core.hitRects.push({ rect: core.backRect, sound: 'sfx.ui.back', fn: () => core.backAction() });
 
     renderHeaderCurrency(core);
     this.inventory.renderSidebar();
@@ -151,7 +151,7 @@ export class EquipmentScene implements Scene {
         const key: EquipTab = i === 0 ? 'inv' : 'craft';
         if (core.activeTab !== key) { core.activeTab = key; core.scrollY = 0; core.render(); }
       });
-      core.hitRects.push(...hits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
+      core.hitRects.push(...hits);
 
       let bottom = top + stripH;
       renderMaterialsBand(core, 0, bottom, w);

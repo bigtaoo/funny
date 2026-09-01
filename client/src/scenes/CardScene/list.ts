@@ -130,12 +130,12 @@ export class ListPanel {
     if (!landscape) {
       const barH = bottomNavH(h);
       const { hits } = drawBottomNavTabs(core.bodyLayer, w, h - barH, barH, tabs, onSelect);
-      for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+      core.hitRects.push(...hits);
       return;
     }
     const sidebarW = sidebarNavW(w, h, true);
     const { hits } = drawSidebarTabs(core.bodyLayer, sidebarW, core.headerH, h, tabs, onSelect);
-    for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+    core.hitRects.push(...hits);
   }
 
   /**
@@ -301,8 +301,8 @@ export class ListPanel {
         this.cellRects.set(id, { x, y, w: layout.cellW });
         for (const hit of rec.hits) {
           core.hitRects.push({
-            rect: { x: x + hit.rect.x, y: y + hit.rect.y, w: hit.rect.w, h: hit.rect.h },
-            action: hit.action,
+            ...hit,
+            rect: { ...hit.rect, x: x + hit.rect.x, y: y + hit.rect.y },
             owner: id,
           });
         }

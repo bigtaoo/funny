@@ -136,13 +136,13 @@ export class CraftPanel {
     bl.anchor.set(0, 0.5); bl.x = groupX + (icSz + icGap) * fit; bl.y = btnY + btnH / 2;
     core.bodyLayer.addChild(bl);
     if (enabled) {
-      core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, owner: defId, action: () => void this.doCraft(defId) });
+      core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, owner: defId, fn: () => void this.doCraft(defId) });
     } else if (!core.bt.busy) {
       // Tapping a greyed-out button still explains *why*: material shortage is already visible via
       // the red cost chips above, but "inventory full" has no other on-card cue — surface it here
       // instead of making players hunt for the small header counter (see equip.err.full).
       const reason = full ? 'equip.err.full' : 'equip.err.materials';
-      core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, owner: defId, action: () => core.showToast(t(reason), C.red) });
+      core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, owner: defId, fn: () => core.showToast(t(reason), C.red) });
     }
   }
 

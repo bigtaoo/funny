@@ -98,12 +98,12 @@ export class ListPanel {
     if (!landscape) {
       const barH = bottomNavH(h);
       const { hits } = drawBottomNavTabs(core.bodyLayer, w, h - barH, barH, hubTabs, onSelect);
-      for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+      core.hitRects.push(...hits);
       return 0;
     }
     const sidebarW = sidebarNavW(w, h, true);
     const { hits } = drawSidebarTabs(core.bodyLayer, sidebarW, core.headerH, h, hubTabs, onSelect);
-    for (const hit of hits) core.hitRects.push({ rect: hit.rect, action: hit.fn });
+    core.hitRects.push(...hits);
     return sidebarW;
   }
 
@@ -146,7 +146,7 @@ export class ListPanel {
       core.bodyLayer.addChild(lbl);
       core.hitRects.push({
         rect: { x: contentX + i * chipW + pad / 2, y: y + 3, w: chipW - pad, h: FILTER_H - 12 },
-        action: () => { if (core.allFilter !== f) { core.allFilter = f; core.scrollY = 0; void core.loadData(); } },
+        fn: () => { if (core.allFilter !== f) { core.allFilter = f; core.scrollY = 0; void core.loadData(); } },
       });
     }
     return FILTER_H;
@@ -360,7 +360,7 @@ export class ListPanel {
         if (!busy) {
           core.hitRects.push({
             rect: { x: btnX, y: btnY, w: btnW, h: btnH },
-            action: isAuction ? () => this.bid.openBidForm(auc) : () => this.trade.confirmBuy(aucId, auc.price),
+            fn: isAuction ? () => this.bid.openBidForm(auc) : () => this.trade.confirmBuy(aucId, auc.price),
           });
         }
       }
@@ -376,7 +376,7 @@ export class ListPanel {
         cl.anchor.set(0.5, 0.5); cl.x = btnX + btnW / 2; cl.y = btnY + btnH / 2;
         core.bodyLayer.addChild(cl);
         const aucId = auc.auctionId;
-        if (!busy) core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, action: () => this.trade.confirmCancel(aucId) });
+        if (!busy) core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, fn: () => this.trade.confirmCancel(aucId) });
       } else {
         // Closed history cell → status badge (sold = accent, expired/cancelled = muted), no action.
         const statusKey = auc.status === 'sold'
@@ -485,6 +485,6 @@ export class ListPanel {
     const bl = txt(`+ ${t('auction.create')}`, FS.title, C.light);
     bl.anchor.set(0.5, 0.5); bl.x = contentX + contentW / 2; bl.y = btnY + btnH / 2;
     core.bodyLayer.addChild(bl);
-    core.hitRects.push({ rect: { x: contentX + contentW / 2 - btnW / 2, y: btnY, w: btnW, h: btnH }, action: () => this.createListing.openCreateForm() });
+    core.hitRects.push({ rect: { x: contentX + contentW / 2 - btnW / 2, y: btnY, w: btnW, h: btnH }, fn: () => this.createListing.openCreateForm() });
   }
 }

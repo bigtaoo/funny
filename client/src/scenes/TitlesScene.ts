@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
-import { ILayout, Rect } from '../layout/ILayout';
+import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
@@ -15,6 +15,7 @@ import { peekViewportH } from '../ui/widgets/scrollPeek';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { sortTitlesByWeight, getTitleKeys, formatLadderTitle, allTitleIds } from '../game/meta/titles';
 import { FS, snapFont } from '../render/fontScale';
+import { dispatchHit, type Hit } from '../ui/hits';
 
 // ── TitlesScene — title wall (S10, TITLE_DESIGN §7/§9) ────────────────────────────
 //
@@ -46,7 +47,6 @@ export interface TitlesSceneCallbacks {
   hasClaimableAchievement?: boolean;
 }
 
-interface Hit { rect: Rect; fn: () => void; }
 
 /** Dynamic (non-permanent) title fallback glyphs — see render/icons/titles.ts. */
 const LADDER_RANK_ICON: Readonly<Record<string, IconKind>> = {
@@ -154,12 +154,7 @@ export class TitlesScene implements Scene {
 
   private handleUp(x: number, y: number): void {
     if (this.dragStart && !this.dragStart.moved) {
-      for (const h of this.hits) {
-        if (x >= h.rect.x && x <= h.rect.x + h.rect.w && y >= h.rect.y && y <= h.rect.y + h.rect.h) {
-          h.fn();
-          break;
-        }
-      }
+      dispatchHit(this.hits, x, y);
     }
     this.dragStart = null;
   }
@@ -208,7 +203,7 @@ export class TitlesScene implements Scene {
   private drawHeader(): number {
     const { w, h } = this;
     const hdr = drawSceneHeader(this.container, w, h, t('titles.title'), { icon: 'honorTabIcon' });
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
     return hdr.headerH;
   }
 

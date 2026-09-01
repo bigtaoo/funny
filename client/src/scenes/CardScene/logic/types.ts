@@ -102,8 +102,6 @@ export const CARD_CELL_W_TARGET = 300;
 
 export interface Rect { x: number; y: number; w: number; h: number; }
 
-export interface Hit { rect: Rect; action: () => void; owner?: string; }
-
 /** feed.ts's fuse-confirm button call signature — see the file-header comment on {@link CardSceneCore.doFuse}. */
 export type DoFuseFn = (targetId: string, materialIds: string[], onSettled?: (success: boolean) => void) => Promise<void>;
 

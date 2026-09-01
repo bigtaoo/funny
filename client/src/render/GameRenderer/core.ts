@@ -277,6 +277,7 @@ export class GameRendererCore {
     stateRecorder.setWinner(winner);
     this.input.cancelDrag(); this.input.cancelTapSelect();
     this.hudView.showGameOver(winner, this.localOwner);
+    this.events.playResultStinger(winner);
     const stats = this.engine.state.snapshotStats();
     const summary = this.engine.state.snapshotSummary();
     this.scheduleGameEnd(() => this.onGameEnd?.(winner, stats, summary), 1500);
@@ -302,6 +303,7 @@ export class GameRendererCore {
     // internally skips on duplicate tick / unconfigured — zero engine intrusion.
     stateRecorder.capture(state);
     for (const event of state.events) this.events.handleEvent(event, state);
+    this.events.flushAudio(); // one merged flush per frame, not per event (AUDIO_DESIGN §4)
     this.boardView.update(dt);
     // 断路: persistent overlay on every column BridgeCollapse has blocked, for the full
     // block (tempBlockedCols maps col → expiry tick). Empty most of the time — cheap early-out.

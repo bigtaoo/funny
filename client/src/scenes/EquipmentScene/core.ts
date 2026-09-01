@@ -59,6 +59,8 @@ import { buildIcon, type IconKind } from '../../render/icons';
 import { buildLevelStars as buildLevelStarsRow } from '../../render/levelStars';
 import { MAT_COLOR, matIconKind } from './layout';
 import type { EquipTab, SectionKey, Rect } from './types';
+import { hitAction, inRect } from '../../ui/hits';
+import type { Hit } from '../../ui/hits';
 
 export type { EquipResult, EnhanceResult, EquipmentCallbacks, EquipTab, SectionKey, Rect, CellAction, EquipGridLayout } from './types';
 export * from './layout';
@@ -178,8 +180,8 @@ export class EquipmentSceneCore {
 
   /** owner (instance id) tags a grid-cell button/body hit so InventoryPanel.refreshInstanceCell()
    *  can drop and re-add just that cell's hits without touching the rest of the list. */
-  hitRects: { rect: Rect; action: () => void; owner?: string }[] = [];
-  modalHits: { rect: Rect; action: () => void }[] = [];
+  hitRects: Hit[] = [];
+  modalHits: Hit[] = [];
   modalOpen = false;
   /**
    * Detail-modal scale transform (popup-scale-to-80pct fix, 2026-07-14): the whole modal panel is
@@ -422,26 +424,18 @@ export class EquipmentSceneCore {
       // The header Back button must stay reachable even with a detail/craft modal open — otherwise
       // a tap there falls through to the modal's own dim-to-close catch-all and just closes the modal
       // instead of leaving the scene (LOBBY_IA_REDESIGN back-button-always-works fix, 2026-07-14).
-      if (this.inRect(x, y, this.backRect)) { this.backAction(); return; }
+      if (inRect(x, y, this.backRect)) { this.backAction(); return; }
       // Defer the modal hit to pointer-UP and drop it if the pointer drags past the threshold, same
       // as the grid behind it — so a press-drag-release on a reforge material-picker row only confirms
       // on release, and a drag away doesn't accidentally consume the wrong item (2026-07-17).
-      let modalHit: (() => void) | null = null;
-      for (const { rect, action } of this.modalHits) {
-        if (this.inRect(x, y, rect)) { modalHit = action; break; }
-      }
-      this.gesture.down(this.scrollY, y, modalHit);
+      this.gesture.down(this.scrollY, y, hitAction(this.modalHits, x, y));
       return;
     }
     // Don't fire the hit action here — capture it and start gesture tracking. If the pointer then
     // drags past the threshold it becomes a scroll and the tap is dropped on up; otherwise the tap
     // fires on up. This lets a drag that starts *on an item cell* scroll the grid instead of instantly
     // opening that item's detail.
-    let hit: (() => void) | null = null;
-    for (const { rect, action } of this.hitRects) {
-      if (this.inRect(x, y, rect)) { hit = action; break; }
-    }
-    this.gesture.down(this.scrollY, y, hit);
+    this.gesture.down(this.scrollY, y, hitAction(this.hitRects, x, y));
   }
 
   private handleMove(_x: number, y: number): void {
@@ -455,10 +449,6 @@ export class EquipmentSceneCore {
   private handleUp(): void {
     // Fires only for a genuine tap (pointer didn't drag); a released drag returns null.
     this.gesture.up()?.();
-  }
-
-  private inRect(x: number, y: number, r: Rect): boolean {
-    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
   }
 
   update(dt: number): void {

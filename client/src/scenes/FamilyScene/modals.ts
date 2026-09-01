@@ -40,7 +40,7 @@ function openModalFrame(core: FamilySceneCore, maxW: number, maxH: number): { mx
   const dim = new PIXI.Graphics();
   dim.beginFill(0x000000, 0.35).drawRect(0, 0, w, h).endFill();
   ml.addChild(dim);
-  core.modalHits.push({ rect: { x: 0, y: 0, w, h }, action: () => core.closeModal() });
+  core.modalHits.push({ rect: { x: 0, y: 0, w, h }, sound: 'sfx.ui.back', fn: () => core.closeModal() });
 
   const panel = sketchPanel(mw, mh, { fill: C.paper, border: C.dark, seed: seedFor(0, 0, mw) });
   panel.x = mx; panel.y = my;
@@ -97,7 +97,7 @@ export function drawFamilyPickModal(
       lbl.x = mx + 14; lbl.y = cy + 10;
       layer.addChild(lbl);
       const famId = fam.familyId;
-      core.modalHits.push({ rect: { x: mx + 8, y: cy, w: mw - 16, h: PICK_ROW_H }, action: () => onPick(famId), scroll: 'modal' });
+      core.modalHits.push({ rect: { x: mx + 8, y: cy, w: mw - 16, h: PICK_ROW_H }, fn: () => onPick(famId), scroll: 'modal' });
     }
     cy += PICK_ROW;
   }
@@ -183,14 +183,14 @@ export function drawJoinRequestsModal(
     al.anchor.set(0.5, 0.5); al.x = approveX + approveW / 2; al.y = cy + 14 + btnH / 2;
     layer.addChild(al);
     const rid = reqv.requestId;
-    if (!busy) core.modalHits.push({ rect: { x: approveX, y: cy + 14, w: approveW, h: btnH }, action: () => onRespond(rid, true), scroll: 'modal' });
+    if (!busy) core.modalHits.push({ rect: { x: approveX, y: cy + 14, w: approveW, h: btnH }, fn: () => onRespond(rid, true), scroll: 'modal' });
 
     const rejectBtn = sketchPanel(rejectW, btnH, { fill: 0xf0e0e0, border: rejectColor, seed: seedFor(cy, 2, rejectW) });
     rejectBtn.x = rejectX; rejectBtn.y = cy + 14;
     layer.addChild(rejectBtn);
     rl.anchor.set(0.5, 0.5); rl.x = rejectX + rejectW / 2; rl.y = cy + 14 + btnH / 2;
     layer.addChild(rl);
-    if (!busy) core.modalHits.push({ rect: { x: rejectX, y: cy + 14, w: rejectW, h: btnH }, action: () => onRespond(rid, false), scroll: 'modal' });
+    if (!busy) core.modalHits.push({ rect: { x: rejectX, y: cy + 14, w: rejectW, h: btnH }, fn: () => onRespond(rid, false), scroll: 'modal' });
 
     cy += REQ_ROW;
   }

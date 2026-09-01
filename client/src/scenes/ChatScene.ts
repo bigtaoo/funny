@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
-import { ILayout, Rect } from '../layout/ILayout';
+import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren, marginLineX } from '../render/sketchUi';
@@ -14,6 +14,10 @@ import type { ChatMessageView } from '../net/ApiClient';
 import type { ChatMessagePush } from '../net/proto/transport';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { measureRows, buildBubble } from './ChatScene/thread';
+import { runHit, type Hit as BaseHit } from '../ui/hits';
+
+/** This scene has a single scrollable region, so `scroll` degrades to a boolean (see ui/hits.ts). */
+type Hit = BaseHit<boolean>;
 
 // ── ChatScene (S6-2) — a 1:1 conversation window ──────────────────────────────
 //
@@ -43,7 +47,6 @@ export interface ChatSceneCallbacks {
   markRead(convId: string): Promise<void>;
 }
 
-interface Hit { rect: Rect; fn: () => void; scroll?: boolean; }
 
 const PAGE = 30;
 const DRAG_THRESHOLD = 8;
@@ -253,7 +256,7 @@ export class ChatScene implements Scene {
       const r = hit.rect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
         if (hit.scroll && (y < this.regionTop || y > this.regionBottom)) continue;
-        hit.fn();
+        runHit(hit);
         return;
       }
     }
@@ -279,7 +282,7 @@ export class ChatScene implements Scene {
     // Title is the PEER's name, so the glyph stands in for "a conversation", not for a page concept —
     // the same speech bubble the family/sect channel tabs use (batch 5).
     const hdr = drawSceneHeader(this.container, w, h, this.cb.peerName || `#${this.cb.peerPublicId}`, { icon: 'channelTabIcon' });
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
   }
 
   private drawThread(): void {

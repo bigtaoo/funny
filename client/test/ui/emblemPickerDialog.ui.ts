@@ -53,7 +53,7 @@ describe('emblemPickerDialog', () => {
     // rects (which are never square at these dimensions) — the 3rd hit pushed is EMBLEM_KEYS[1]
     // (dim rect is hit[0], grid cells start at hit[1] in EMBLEM_KEYS order).
     const secondCell = hits[2]!;
-    secondCell.action();
+    secondCell.fn();
     expect(picked).toEqual([EMBLEM_KEYS[1]]);
   });
 
@@ -66,7 +66,7 @@ describe('emblemPickerDialog', () => {
     );
     // Hit order: [dim, 24 grid cells, 8 swatches, confirm, cancel] — swatches start right after the grid.
     const swatchStart = 1 + EMBLEM_KEYS.length;
-    hits[swatchStart + 3]!.action(); // 4th swatch
+    hits[swatchStart + 3]!.fn(); // 4th swatch
     expect(pickedColors).toEqual([EMBLEM_COLORS[3]]);
   });
 
@@ -79,11 +79,11 @@ describe('emblemPickerDialog', () => {
     );
     const confirmHit = hits[hits.length - 2]!;
     const cancelHit = hits[hits.length - 1]!;
-    confirmHit.action();
+    confirmHit.fn();
     expect(confirmed).toBe(1);
-    cancelHit.action();
+    cancelHit.fn();
     expect(cancelled).toBe(1);
-    hits[0]!.action(); // the full-screen dim rect
+    hits[0]!.fn(); // the full-screen dim rect
     expect(cancelled).toBe(2);
   });
 
@@ -102,7 +102,7 @@ describe('emblemPickerDialog', () => {
       () => {}, () => {},
     );
     const hits1 = redraw();
-    hits1[2]!.action(); // pick EMBLEM_KEYS[1]
+    hits1[2]!.fn(); // pick EMBLEM_KEYS[1]
     expect(state.key).toBe(EMBLEM_KEYS[1]);
     const hits2 = redraw(); // caller re-invokes after the state mutation, as the real callers do
     expect(hits2).toHaveLength(hits1.length);

@@ -20,7 +20,7 @@
 // explicit constructor params/callbacks instead, see claudedocs/client-modules.md's split-form
 // priority note).
 import * as PIXI from 'pixi.js-legacy';
-import { ILayout, Rect } from '../../layout/ILayout';
+import { ILayout } from '../../layout/ILayout';
 import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import type { ShopItem } from '../../net/ApiClient';
@@ -33,6 +33,7 @@ import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTa
 import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
+import { hitAction, type Hit } from '../../ui/hits';
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -95,7 +96,6 @@ export interface ShopSceneCallbacks {
   initialTab?: 'shop' | 'coins';
 }
 
-export interface Hit { rect: Rect; fn: () => void; }
 
 /** One action button inside a product card. */
 export interface BtnSpec { label: string; enabled: boolean; primary: boolean; fn?: () => void; }
@@ -273,11 +273,7 @@ export class ShopSceneCore {
     // Capture the hit action and defer it to pointer-up — if the pointer drags past the threshold
     // it becomes a scroll and the tap is dropped, so a drag starting on a shop card scrolls the
     // list instead of instantly firing that card.
-    let hit: (() => void) | null = null;
-    for (const h of this.hits) {
-      const r = h.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit = h.fn; break; }
-    }
+    const hit = hitAction(this.hits, x, y);
     // No hit — blur the promo field if it was focused (matches the old miss-only behaviour).
     if (!hit && this.promoFocused) this.blurPromo();
     this.gesture.down(this.scrollY, y, hit);
@@ -335,7 +331,7 @@ export class ShopSceneCore {
       rightReserve: headerCurrencyWidth(sceneHeaderHeight(h), coins),
     });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     // Coin balance (top-right): shared header readout so it reads identically across every scene.
     drawHeaderCurrency(this.container, w, tbH, coins, [], undefined, 1, hdr.titleRight);

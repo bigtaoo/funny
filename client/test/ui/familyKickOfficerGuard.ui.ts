@@ -84,14 +84,14 @@ describe('FamilyScene — elder cannot be kicked without demoting first', () => 
 
     const [elderKick, memberKick] = kickHits;
 
-    elderKick.action();
+    elderKick.fn();
     expect(scene.core.modalOpen).toBe(false);
     expect(scene.toasts).toEqual([
       { msg: 'This member holds an office — demote them first before kicking', color: expect.any(Number) },
     ]);
 
     scene.toasts.length = 0;
-    memberKick.action();
+    memberKick.fn();
     expect(scene.core.modalOpen).toBe(true);
     expect(scene.toasts).toEqual([]);
 
@@ -107,7 +107,7 @@ describe('FamilyScene — elder cannot be kicked without demoting first', () => 
 
     const kickHits = findKickHits(scene);
     // Both rows are now plain members — either Kick hit should open the confirm dialog.
-    kickHits[0].action();
+    kickHits[0].fn();
     expect(scene.core.modalOpen).toBe(true);
     expect(scene.toasts).toEqual([]);
 

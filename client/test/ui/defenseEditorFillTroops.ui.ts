@@ -28,7 +28,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
  *  converted from a mixin-chain extends to composition - see claudedocs/client-modules.md split-form
  *  priority note). committedTroops/troops/teamCapacity/hits -> core; doFillTroops -> data. */
 function internals(scene: DefenseEditorScene): {
-  core: { committedTroops(): number; troops: number; teamCapacity(): number; hits: { action: () => void }[] };
+  core: { committedTroops(): number; troops: number; teamCapacity(): number; hits: { fn: () => void }[] };
   data: { doFillTroops(): Promise<void> };
 } {
   return scene as unknown as ReturnType<typeof internals>;
@@ -226,7 +226,7 @@ describe('DefenseEditorScene attack mode — troop readout + Fill-troops disable
     });
     await flush();
     const hits = internals(scene).core.hits;
-    expect(hits.some((h) => h.action.toString().includes('doFillTroops'))).toBe(true);
+    expect(hits.some((h) => h.fn.toString().includes('doFillTroops'))).toBe(true);
   });
 
   it('Fill-troops hit rect is dropped once committed troops reach the team capacity', async () => {
@@ -238,6 +238,6 @@ describe('DefenseEditorScene attack mode — troop readout + Fill-troops disable
     });
     await flush();
     const hits = internals(scene).core.hits;
-    expect(hits.some((h) => h.action.toString().includes('doFillTroops'))).toBe(false);
+    expect(hits.some((h) => h.fn.toString().includes('doFillTroops'))).toBe(false);
   });
 });

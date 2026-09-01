@@ -21,6 +21,8 @@ import { drawMainContent } from './mainContent';
 import { drawBottomNav } from './bottomNav';
 import { buildVsLayer } from './vsOverlay';
 import { onStartPressed } from './matchState';
+import { dispatchHit, runHit, type Hit } from '../../ui/hits';
+import type { Rect } from '../../layout/ILayout';
 
 export class BuildPanel {
   constructor(
@@ -66,121 +68,80 @@ export class BuildPanel {
 
   // ── Input ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Tap routing. Was a hand-written chain of 18 `if (x >= r.x && …) { …; return; }` blocks; it is
+   * now one `Hit[]` + a single `dispatchHit` (ui/hits.ts), which is also where the lobby's buttons
+   * got their tap cue — before that they were as silent as the rest of the PIXI-native family
+   * (AUDIO_DESIGN.md §0). Push order below is the old chain's order verbatim and `hitTest` is
+   * first-pushed-wins, so precedence is unchanged; a zero-width rect still means "this slot is not
+   * drawn right now" (offline, soft-gated, feature absent) and is simply not pushed.
+   */
   handleDown(x: number, y: number): void {
     const core = this.core;
     if (core.state !== 'idle') return;
-    // First-time feature guide (§4.1): any tap dismisses it and continues navigation. Checked before other hits.
+    // First-time feature guide (§4.1): any tap dismisses it and continues navigation. Checked before
+    // other hits, and it is a dismissal rather than a button — `back`, and it swallows the tap.
+    // Modelled as a Hit rather than a bare playSfx even though there is no rect to test: runHit is
+    // the single UI-cue outlet, and `test/uiTapSoundCoverage.test.ts` enforces that literally.
     if (core.guideLayer) {
-      this.overlays.clearGuide();
+      runHit({ sound: 'sfx.ui.back', fn: () => this.overlays.clearGuide() });
       return;
     }
     // Season settlement modal (SE-6): dismiss button or anywhere on backdrop dismisses it.
     if (core.settlementLayer) {
-      this.overlays.clearSettlement();
+      runHit({ sound: 'sfx.ui.back', fn: () => this.overlays.clearSettlement() });
       return;
     }
-    // Achievement-unlock toast tap → jump to the wall (S9-5b). Checked first so it wins over nav slots.
-    const tr = core.toastRect;
-    if (tr && x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {
+
+    const hits: Hit[] = [];
+    /** `optional` mirrors the old `w > 0` / callback-present guards: a slot that is not drawn is
+     *  not a button. */
+    const add = (rect: Rect | null | undefined, fn: (() => void) | null | undefined, opts?: { optional?: boolean; sound?: Hit['sound'] }): void => {
+      if (!rect || !fn) return;
+      if (opts?.optional && rect.w <= 0) return;
+      hits.push({ rect, fn, sound: opts?.sound });
+    };
+
+    // Achievement-unlock toast tap → jump to the wall (S9-5b). First so it wins over nav slots.
+    add(core.toastRect, () => {
       const open = core.cb.onOpenAchievements;
       this.overlays.clearToast();
       if (open) open();
-      return;
-    }
-    const p = core.profileChipRect;
-    if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
-      core.cb.onOpenProfile();
-      return;
-    }
-    if (x >= core.btnRect.x && x <= core.btnRect.x + core.btnRect.w &&
-        y >= core.btnRect.y && y <= core.btnRect.y + core.btnRect.h) {
-      onStartPressed(core);
-      return;
-    }
-    const camp = core.campaignBtnRect;
-    if (x >= camp.x && x <= camp.x + camp.w && y >= camp.y && y <= camp.y + camp.h) {
-      core.cb.onOpenCampaign();
-      return;
-    }
+    });
+    add(core.profileChipRect, () => core.cb.onOpenProfile());
+    add(core.btnRect, () => onStartPressed(core));
+    add(core.campaignBtnRect, () => core.cb.onOpenCampaign());
     // World map (SLG) pillar — promoted out of the bottom nav into the main layout.
-    const wp = core.worldPillarRect;
-    if (wp.w > 0 && x >= wp.x && x <= wp.x + wp.w && y >= wp.y && y <= wp.y + wp.h) {
-      // Soft gate (§4): chapter one not cleared → greyed out, tap shows bubble instead of entering.
+    // Soft gate (§4): chapter one not cleared → greyed out, tap shows a bubble instead of entering.
+    // That refusal is an error, not a navigation, so it says so.
+    add(core.worldPillarRect, () => {
       if (core.cb.worldLocked) { this.overlays.showInfoToast(t('lobby.world.locked')); return; }
-      if (core.cb.onOpenWorld) core.cb.onOpenWorld();
-      return;
-    }
-    const daily = core.dailyBtnRect;
-    if (core.cb.onOpenDaily && daily.w > 0 &&
-        x >= daily.x && x <= daily.x + daily.w && y >= daily.y && y <= daily.y + daily.h) {
-      core.cb.onOpenDaily();
-      return;
-    }
-    const ev = core.eventsBtnRect;
-    if (core.cb.onOpenEvents && ev.w > 0 &&
-        x >= ev.x && x <= ev.x + ev.w && y >= ev.y && y <= ev.y + ev.h) {
-      core.cb.onOpenEvents();
-      return;
-    }
-    const ml = core.mailStripRect;
-    if (ml.w > 0 && x >= ml.x && x <= ml.x + ml.w && y >= ml.y && y <= ml.y + ml.h) {
+      core.cb.onOpenWorld?.();
+    }, { optional: true, sound: core.cb.worldLocked ? 'sfx.ui.error' : undefined });
+    add(core.dailyBtnRect, core.cb.onOpenDaily && (() => core.cb.onOpenDaily!()), { optional: true });
+    add(core.eventsBtnRect, core.cb.onOpenEvents && (() => core.cb.onOpenEvents!()), { optional: true });
+    add(core.mailStripRect, () => {
       if (core.cb.onOpenMail) core.cb.onOpenMail();
       else if (core.cb.onOpenSocial) core.cb.onOpenSocial();
-      return;
-    }
-    const fb = core.feedbackStripRect;
-    if (fb.w > 0 && x >= fb.x && x <= fb.x + fb.w && y >= fb.y && y <= fb.y + fb.h) {
-      if (core.cb.onOpenFeedback) core.cb.onOpenFeedback();
-      return;
-    }
-    const auc = core.auctionStripRect;
-    if (auc.w > 0 && x >= auc.x && x <= auc.x + auc.w && y >= auc.y && y <= auc.y + auc.h) {
-      if (core.cb.onOpenAuction) core.cb.onOpenAuction();
-      return;
-    }
-    const acc = core.accountChipRect;
-    if (acc && core.accountChipFn &&
-        x >= acc.x && x <= acc.x + acc.w && y >= acc.y && y <= acc.y + acc.h) {
-      core.accountChipFn();
-      return;
-    }
-    const coinsChip = core.coinsChipRect;
-    if (coinsChip && core.cb.onOpenRecharge &&
-        x >= coinsChip.x && x <= coinsChip.x + coinsChip.w && y >= coinsChip.y && y <= coinsChip.y + coinsChip.h) {
-      core.cb.onOpenRecharge();
-      return;
-    }
-    const rankChip = core.rankChipRect;
-    if (rankChip && core.cb.onOpenLeaderboard &&
-        x >= rankChip.x && x <= rankChip.x + rankChip.w && y >= rankChip.y && y <= rankChip.y + rankChip.h) {
-      core.cb.onOpenLeaderboard();
-      return;
-    }
+    }, { optional: true });
+    add(core.feedbackStripRect, core.cb.onOpenFeedback && (() => core.cb.onOpenFeedback!()), { optional: true });
+    add(core.auctionStripRect, core.cb.onOpenAuction && (() => core.cb.onOpenAuction!()), { optional: true });
+    add(core.accountChipRect, core.accountChipFn && (() => core.accountChipFn!()));
+    add(core.coinsChipRect, core.cb.onOpenRecharge && (() => core.cb.onOpenRecharge!()));
+    add(core.rankChipRect, core.cb.onOpenLeaderboard && (() => core.cb.onOpenLeaderboard!()));
     // Bottom-nav center slot is now "home" (the lobby itself) — current page, no-op.
-    // Shop + social slots are only drawn when online (offline omits them entirely),
-    // so a zero-width rect here means the slot is absent — guard with w > 0.
-    const s = core.socialNavRect;
-    if (s.w > 0 && x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) {
+    // Shop + social slots are only drawn when online (offline omits them entirely), so a
+    // zero-width rect here means the slot is absent.
+    add(core.socialNavRect, () => {
       if (core.cb.onOpenSocial) core.cb.onOpenSocial();
       else core.cb.onOpenRoom();
-      return;
-    }
-    const sh = core.shopNavRect;
-    if (sh.w > 0 && x >= sh.x && x <= sh.x + sh.w && y >= sh.y && y <= sh.y + sh.h) {
-      core.cb.onOpenShop();
-      return;
-    }
+    }, { optional: true });
+    add(core.shopNavRect, () => core.cb.onOpenShop(), { optional: true });
     // Collection reads local save data → works offline; rect always assigned.
     // Stats is online-only now (§6 decision 6) → its rect is unassigned (w=0) offline.
-    const cd = core.cardsNavRect;
-    if (cd.w > 0 && x >= cd.x && x <= cd.x + cd.w && y >= cd.y && y <= cd.y + cd.h) {
-      core.cb.onOpenCards();
-      return;
-    }
-    const st = core.statsNavRect;
-    if (st.w > 0 && x >= st.x && x <= st.x + st.w && y >= st.y && y <= st.y + st.h) {
-      core.cb.onOpenStats();
-      return;
-    }
+    add(core.cardsNavRect, () => core.cb.onOpenCards(), { optional: true });
+    add(core.statsNavRect, () => core.cb.onOpenStats(), { optional: true });
+
+    dispatchHit(hits, x, y);
   }
 }

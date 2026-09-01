@@ -120,7 +120,7 @@ export function renderMembers(
       if (!busy) {
         core.hitRects.push({
           rect: { x: kx, y: btnY, w: kickW, h: btnH },
-          action: () => hasOffice
+          fn: () => hasOffice
             ? core.showToast(t('family.kick.needDemoteFirst'), C.dark)
             : actions.confirmKick(accId, mem.displayName ?? mem.publicId ?? ''),
           scroll: 'members',
@@ -141,7 +141,7 @@ export function renderMembers(
         rl.anchor.set(0.5, 0.5); rl.x = bx + roleW / 2; rl.y = btnY + btnH / 2;
         list.addChild(rl);
         const nextRole: 'elder' | 'member' = toElder ? 'elder' : 'member';
-        if (!busy) core.hitRects.push({ rect: { x: bx, y: btnY, w: roleW, h: btnH }, action: () => void actions.doSetRole(accId, nextRole), scroll: 'members' });
+        if (!busy) core.hitRects.push({ rect: { x: bx, y: btnY, w: roleW, h: btnH }, fn: () => void actions.doSetRole(accId, nextRole), scroll: 'members' });
         nameRight = bx - btnGap;
       }
     } else if (isMe) {
@@ -160,7 +160,7 @@ export function renderMembers(
         list.addChild(aBtn);
         al.anchor.set(0.5, 0.5); al.x = ax + aw / 2; al.y = btnY + btnH / 2;
         list.addChild(al);
-        if (!busy) core.hitRects.push({ rect: { x: ax, y: btnY, w: aw, h: btnH }, action: () => dissolve ? actions.confirmDissolve() : actions.confirmLeave(), scroll: 'members' });
+        if (!busy) core.hitRects.push({ rect: { x: ax, y: btnY, w: aw, h: btnH }, fn: () => dissolve ? actions.confirmDissolve() : actions.confirmLeave(), scroll: 'members' });
         nameRight = ax - btnGap;
       }
     }
@@ -184,7 +184,7 @@ export function renderMembers(
     // Tapping the name/role opens the unified profile popup (view info + Add Friend).
     core.hitRects.push({
       rect: { x: x0 + 6, y: cy + 2, w: roleLbl.x + roleLbl.width - (x0 + 6), h: R - 4 },
-      action: () => core.openMemberProfile(mem),
+      fn: () => core.openMemberProfile(mem),
       scroll: 'members',
     });
 
@@ -290,7 +290,7 @@ export function renderChannel(
   });
   fl.x = x0 + 12; fl.y = inputY + inputH / 2 - fl.height / 2;
   core.bodyLayer.addChild(fl);
-  core.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, action: () => input.openSendInput() });
+  core.hitRects.push({ rect: { x: x0 + 6, y: inputY, w: fieldW, h: inputH }, fn: () => input.openSendInput() });
 
   const sendBusy = core.bt.busy;
   const sendBtn = sendBusy
@@ -301,5 +301,5 @@ export function renderChannel(
   const sl = txt(t('family.send'), FS.heading, sendBusy ? C.mid : C.light);
   sl.anchor.set(0.5, 0.5); sl.x = right - sendW / 2; sl.y = inputY + inputH / 2;
   core.bodyLayer.addChild(sl);
-  if (!sendBusy) core.hitRects.push({ rect: { x: right - sendW, y: inputY, w: sendW, h: inputH }, action: () => void input.doSendMsg() });
+  if (!sendBusy) core.hitRects.push({ rect: { x: right - sendW, y: inputY, w: sendW, h: inputH }, fn: () => void input.doSendMsg() });
 }

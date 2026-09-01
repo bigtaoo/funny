@@ -74,7 +74,7 @@ describe('WorldMapPanels.renderReplayPanel — coordinate jump', () => {
     // Two rows, each contributing a coordinate-jump rect ahead of any replay-button rect.
     expect(ctx.modalBtnRects.length).toBeGreaterThanOrEqual(2);
 
-    const firstRowAction = ctx.modalBtnRects[0]!.action;
+    const firstRowAction = ctx.modalBtnRects[0]!.fn;
     firstRowAction();
 
     expect(centerAt).toHaveBeenCalledWith(34, 293);
@@ -91,7 +91,7 @@ describe('WorldMapPanels.renderReplayPanel — coordinate jump', () => {
     // registers only its coord-jump rect; the panel's own Close button is last — so row 2's jump is
     // the third rect overall.
     expect(ctx.modalBtnRects.length).toBe(4);
-    const secondRowAction = ctx.modalBtnRects[2]!.action;
+    const secondRowAction = ctx.modalBtnRects[2]!.fn;
     secondRowAction();
 
     expect(centerAt).toHaveBeenCalledWith(34, 292);

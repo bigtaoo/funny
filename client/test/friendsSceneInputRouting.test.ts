@@ -22,7 +22,7 @@ import { DRAG_THRESHOLD } from '../src/scenes/FriendsScene/core';
 import type { FriendsSceneCore } from '../src/scenes/FriendsScene/core';
 
 interface Hit { rect: { x: number; y: number; w: number; h: number }; fn: () => void; scroll?: boolean }
-interface ModalHit { rect: { x: number; y: number; w: number; h: number }; action: () => void }
+interface ModalHit { rect: { x: number; y: number; w: number; h: number }; fn: () => void }
 
 /** Only the fields input.ts reads or writes. Region is 100..800, maxScroll 300, one column. */
 function makeCore(over: Record<string, unknown> = {}) {
@@ -160,8 +160,8 @@ describe('FriendsScene modal/popup interception order', () => {
     const core = makeCore({
       modalOpen: true,
       modalHits: [
-        { rect: { x: 0, y: 0, w: 1920, h: 1080 }, action: dimClose }, // pushed first, underneath
-        { rect: { x: 400, y: 400, w: 200, h: 60 }, action: ok },
+        { rect: { x: 0, y: 0, w: 1920, h: 1080 }, fn: dimClose }, // pushed first, underneath
+        { rect: { x: 400, y: 400, w: 200, h: 60 }, fn: ok },
       ],
     });
     onPointerUp(as(core), 450, 420);
@@ -176,7 +176,7 @@ describe('FriendsScene modal/popup interception order', () => {
     const ok = vi.fn();
     const core = makeCore({
       modalOpen: true,
-      modalHits: [{ rect: { x: 400, y: 400, w: 200, h: 60 }, action: ok }],
+      modalHits: [{ rect: { x: 400, y: 400, w: 200, h: 60 }, fn: ok }],
     });
     onPointerDown(as(core), 450, 420);
     onPointerMove(as(core), 450, 420 - 500); // a long drag
@@ -188,7 +188,7 @@ describe('FriendsScene modal/popup interception order', () => {
     const pageHit = vi.fn();
     const core = makeCore({
       modalOpen: true,
-      modalHits: [{ rect: { x: 400, y: 400, w: 200, h: 60 }, action: vi.fn() }],
+      modalHits: [{ rect: { x: 400, y: 400, w: 200, h: 60 }, fn: vi.fn() }],
       hits: [{ rect: { x: 0, y: 0, w: 1920, h: 1080 }, fn: pageHit }],
     });
     onPointerUp(as(core), 50, 50);

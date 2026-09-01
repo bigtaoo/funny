@@ -212,7 +212,7 @@ export class AssignPanel {
     core.bodyLayer.addChild(hint);
 
     const cardId = card.id;
-    core.hitRects.push({ rect: { x, y, w: cellW, h: PICK_CELL_H }, action: () => void this.doEquipTo(cardId) });
+    core.hitRects.push({ rect: { x, y, w: cellW, h: PICK_CELL_H }, fn: () => void this.doEquipTo(cardId) });
   }
 
   /** Draw a unit portrait fitted into (x, y, box × boxH); re-renders once the texture finishes loading. */

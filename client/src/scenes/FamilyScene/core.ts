@@ -50,6 +50,10 @@ import { drawHeaderTitle } from './header';
 import { FamilyRepaint, type ScrollCol } from './repaint';
 import { onPointerDown, onPointerMove, onPointerUp, onWheel } from './pointer';
 import type { FamilySceneCallbacks, FamilyTab, ViewMode } from './types';
+import { type Hit as BaseHit } from '../../ui/hits';
+
+/** Scroll-column-tagged hit for this scene's two (three with the modal) independent lists. */
+type Hit = BaseHit<ScrollCol>;
 
 // Pure declarations live in ./types.ts (form ①, no logic) — re-exported here so existing
 // `from './FamilyScene/core'` imports keep resolving to the same names.
@@ -153,8 +157,8 @@ export class FamilySceneCore {
   // Hit rects. `scroll` marks a rect recorded in a scroll layer's build space (see ./repaint.ts):
   // handleDown maps the tap into that space and drops it when the tap landed outside the column's
   // viewport, where the overscan band's pre-built rows live.
-  hitRects: { rect: { x: number; y: number; w: number; h: number }; action: () => void; scroll?: ScrollCol }[] = [];
-  modalHits: { rect: { x: number; y: number; w: number; h: number }; action: () => void; scroll?: ScrollCol }[] = [];
+  hitRects: Hit[] = [];
+  modalHits: Hit[] = [];
   modalOpen = false;
 
   destroyed = false;
@@ -263,7 +267,7 @@ export class FamilySceneCore {
       variant: 'paper', accent: HEADER_ACCENT.slg,
     });
     this.headerH = hdr.headerH;
-    this.hitRects.push({ rect: hdr.backRect, action: () => this.cb.onBack() });
+    this.hitRects.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
     drawHeaderTitle(this, hdr.headerH);
   }
 
@@ -288,7 +292,7 @@ export class FamilySceneCore {
   drawRail(): void {
     const hidden: SocialTab[] = !this.isFamilyLeader && !this.family?.sectId ? ['sect'] : [];
     const railHits = drawSocialTabRail(this.bodyLayer, this.w, this.h, this.headerH, this.landscape, 'family', { family: this.joinRequests.length }, (tab) => this.cb.onNavTab(tab), hidden);
-    this.hitRects.push(...railHits.map((hit) => ({ rect: hit.rect, action: hit.fn })));
+    this.hitRects.push(...railHits);
   }
 
   // ── Confirm modal ─────────────────────────────────────────────────────────

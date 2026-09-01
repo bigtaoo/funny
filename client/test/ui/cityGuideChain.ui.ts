@@ -25,7 +25,7 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const [W, H]: [number, number] = [800, 1280];
 
 type Rect = { x: number; y: number; w: number; h: number };
-type Hit = Rect & { fn: () => void };
+type Hit = { rect: Rect; fn: () => void };
 type CitySceneInternals = {
   hits: Hit[];
   guide: GuideOverlay;
@@ -58,7 +58,7 @@ function isFillAllTeamsHit(h: Hit): boolean {
 }
 function isGuideActionHit(inner: CitySceneInternals, h: Hit): boolean {
   const action = inner.guide.currentAction();
-  return action != null && h.x === action.rect.x && h.y === action.rect.y;
+  return action != null && h.rect.x === action.rect.x && h.rect.y === action.rect.y;
 }
 /** The actual building-grid cards — excludes Back, the "Fill All Teams" button, the pinned team
  *  row, AND (unlike cityScene.ui.ts, which predates this feature) the guide's own appended
@@ -66,7 +66,7 @@ function isGuideActionHit(inner: CitySceneInternals, h: Hit): boolean {
 function gridHits(inner: CitySceneInternals): Hit[] {
   return inner.hits
     .slice(1)
-    .filter((h) => h.x >= inner.contentX && !isFillAllTeamsHit(h) && h.y <= inner.h - TEAM_BAND_Y_THRESHOLD && !isGuideActionHit(inner, h));
+    .filter((h) => h.rect.x >= inner.contentX && !isFillAllTeamsHit(h) && h.rect.y <= inner.h - TEAM_BAND_Y_THRESHOLD && !isGuideActionHit(inner, h));
 }
 
 /** getMe() never resolves — enough for the grid to sit in its default (all-level-0) state without
@@ -112,7 +112,7 @@ describe('CityScene guide chain step2 — highlight the first building card', ()
     const { scene, seen } = buildScene();
     const inner = internals(scene);
     const firstCardHit = gridHits(inner)[0]!;
-    tap(inner, firstCardHit.x + firstCardHit.w / 2, firstCardHit.y + firstCardHit.h / 2);
+    tap(inner, firstCardHit.rect.x + firstCardHit.rect.w / 2, firstCardHit.rect.y + firstCardHit.rect.h / 2);
     expect(seen.has('guide.world.step2')).toBe(true);
     scene.destroy();
   });
@@ -152,7 +152,7 @@ describe('CityScene guide chain step3 — highlight the back button', () => {
     // placed above/below backHit, not literally on top of it — assert proximity, not exact
     // overlap; generous bound, this is a sanity check that it's anchored to the header, not the
     // grid or team row far below).
-    expect(Math.abs(action.rect.y - backHit.y)).toBeLessThan(400);
+    expect(Math.abs(action.rect.y - backHit.rect.y)).toBeLessThan(400);
     scene.destroy();
   });
 
@@ -160,7 +160,7 @@ describe('CityScene guide chain step3 — highlight the back button', () => {
     const { scene, seen, calls } = buildScene(new Set(['guide.world.step2']));
     const inner = internals(scene);
     const backHit = inner.hits[0]!;
-    tap(inner, backHit.x + backHit.w / 2, backHit.y + backHit.h / 2);
+    tap(inner, backHit.rect.x + backHit.rect.w / 2, backHit.rect.y + backHit.rect.h / 2);
     expect(seen.has('guide.world.step3')).toBe(true);
     expect(calls.back).toBe(1);
     scene.destroy();
@@ -189,7 +189,7 @@ describe('CityScene guide chain — modal interplay', () => {
     const { scene } = buildScene();
     const inner = internals(scene);
     const firstCardHit = gridHits(inner)[0]!;
-    tap(inner, firstCardHit.x + firstCardHit.w / 2, firstCardHit.y + firstCardHit.h / 2);
+    tap(inner, firstCardHit.rect.x + firstCardHit.rect.w / 2, firstCardHit.rect.y + firstCardHit.rect.h / 2);
 
     expect(inner.selectedBuilding).not.toBeNull();
     expect(inner.guide.currentAction()).toBeNull();

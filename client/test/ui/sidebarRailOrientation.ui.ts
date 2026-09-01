@@ -48,7 +48,7 @@ const PORTRAIT: [number, number] = [390, 844];
 const LANDSCAPE: [number, number] = [844, 390];
 const EXPECTED_RAIL_W = 216; // Math.round(1080 * 0.2) — the short edge in both orientations
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 /** Find the (first) PIXI.Text node whose text matches `label` and return its render
  *  position — tab labels are anchored (0.5, 0.5), so .x/.y IS the center (see shopGroupTabs.ui.ts). */

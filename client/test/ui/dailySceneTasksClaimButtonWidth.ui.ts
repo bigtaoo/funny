@@ -78,7 +78,7 @@ function retentionWithHugeReward(): RetentionView {
 type Internals = {
   activeTab: string;
   render(): void;
-  hits: Array<{ x: number; y: number; w: number; h: number; fn: () => void }>;
+  hits: Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
 };
 
 function flush(): Promise<void> {
@@ -165,7 +165,7 @@ describe('DailyScene — daily-tasks claim button always fits its label (2026-08
     const label = findText(scene.container, (txt) => txt === t('daily.tasks.rewardCoins', { n: 5 }));
     expect(label).not.toBeNull();
     const hit = s.hits[s.hits.length - 1]!;
-    expect(hit.w).toBeGreaterThanOrEqual(label!.width + expectedPad(hit.h));
+    expect(hit.rect.w).toBeGreaterThanOrEqual(label!.width + expectedPad(hit.rect.h));
     scene.destroy();
   });
 
@@ -194,7 +194,7 @@ describe('DailyScene — daily-tasks claim button always fits its label (2026-08
     const label = findText(scene.container, (txt) => txt === t('daily.tasks.rewardCoins', { n: 5 }));
     expect(label).not.toBeNull();
     const hit = s.hits[s.hits.length - 1]!;
-    expect(hit.w).toBeGreaterThanOrEqual(label!.width + expectedPad(hit.h));
+    expect(hit.rect.w).toBeGreaterThanOrEqual(label!.width + expectedPad(hit.rect.h));
 
     hit.fn();
     await flush();
@@ -223,7 +223,7 @@ describe('DailyScene — daily-tasks claim button always fits its label (2026-08
     expect(label).not.toBeNull();
     expect(label!.width).toBeGreaterThan(500); // sanity: this string is indeed long enough to matter
     const hit = s.hits[s.hits.length - 1]!;
-    expect(hit.w).toBeGreaterThanOrEqual(label!.width + expectedPad(hit.h));
+    expect(hit.rect.w).toBeGreaterThanOrEqual(label!.width + expectedPad(hit.rect.h));
     scene.destroy();
   });
 });

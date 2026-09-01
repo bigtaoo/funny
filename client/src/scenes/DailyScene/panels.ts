@@ -13,8 +13,9 @@ import type { SaveData } from '../../game/meta/SaveData';
 import type { RetentionView } from '../../net/ApiClient';
 import { nextCheckinDay, dailyRewardClaimable, makeDayKey, makeMonthKey, weeklyPoints, weeklyClaimableTiers, WEEKLY_CHEST_THRESHOLDS } from '../../game/meta/retention';
 import type { DailyCallbacks } from './types';
+export type { Hit } from '../../ui/hits';
+import type { Hit } from '../../ui/hits';
 
-export interface Hit { x: number; y: number; w: number; h: number; fn: () => void }
 
 /** Everything the four panel-renderers below need out of DailyScene — passed explicitly instead
  *  of closing over `this` (form①). `doXxx` are the scene's own busy-tracked action wrappers, not
@@ -163,7 +164,7 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
     }
 
     if (isClaimable && ctx.cb.onCheckin) {
-      hits.push({ x, y, w: cw, h: ch, fn: () => ctx.doCheckin() });
+      hits.push({ rect: { x, y, w: cw, h: ch }, fn: () => ctx.doCheckin() });
     }
   }
 }
@@ -251,7 +252,7 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     container.addChild(btnBg, btnLabel);
 
     if (isClaimable) {
-      hits.push({ x: btnX, y: btnY, w: btnW, h: btnH, fn: () => ctx.doClaim() });
+      hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, sound: 'sfx.ui.reward', fn: () => ctx.doClaim() });
     }
   }
 }
@@ -339,7 +340,7 @@ export function renderWeekly(ctx: DailyPanelCtx, areaX: number, top: number, are
     container.addChild(btnBg, btnLabel);
 
     if (isClaimable && ctx.cb.onClaimWeekly) {
-      hits.push({ x: btnX, y: btnY, w: btnW, h: btnH, fn: () => ctx.doClaimWeekly(threshold) });
+      hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, sound: 'sfx.ui.reward', fn: () => ctx.doClaimWeekly(threshold) });
     }
   });
 }
@@ -396,6 +397,6 @@ export function renderAds(ctx: DailyPanelCtx, areaX: number, top: number, areaW:
   container.addChild(btnLabel);
 
   if (available && ctx.cb.onWatchAd) {
-    hits.push({ x: btnX, y: btnY, w: btnW, h: btnH, fn: () => ctx.doWatchAd() });
+    hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, fn: () => ctx.doWatchAd() });
   }
 }

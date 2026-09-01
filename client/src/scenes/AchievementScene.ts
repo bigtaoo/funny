@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { Scene } from './SceneManager';
-import { ILayout, Rect } from '../layout/ILayout';
+import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t, TranslationKey } from '../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../render/sketchUi';
@@ -14,6 +14,7 @@ import { drawCareerTabs } from '../ui/widgets/CareerTabs';
 import { drawSidebarTabs, drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
+import { dispatchHit, type Hit } from '../ui/hits';
 
 // collection/progression moved off 'brush'/'trophy' to their own AI icons (AI art batch 2 dedupe,
 // design/product/tab-icon-art-prompts.md §batch2) — 'brush' meant "皮肤" elsewhere (now skinIcon), not
@@ -66,7 +67,6 @@ export interface AchievementCallbacks {
   onOpenCodex?(): void;
 }
 
-interface Hit { rect: Rect; fn: () => void; }
 
 export class AchievementScene implements Scene {
   readonly container: PIXI.Container;
@@ -123,10 +123,7 @@ export class AchievementScene implements Scene {
   }
 
   private handleDown(x: number, y: number): void {
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   private flash(msg: string, kind: ToastKind = 'success'): void {
@@ -181,7 +178,7 @@ export class AchievementScene implements Scene {
     // Title bar (unified SceneHeader: back top-left + cached chrome, UI_DESIGN §3.1/§2.1).
     const hdr = drawSceneHeader(this.container, w, h, t('achievement.title'), { icon: 'achievementTabIcon' });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     // Career hub peer strip [Stats|Titles|Achievements] (LOBBY_IA_REDESIGN P1.5, see CareerTabs.ts).
     // Landscape draws it above the category sub-tabs in the left margin gutter regardless of load
@@ -381,7 +378,7 @@ export class AchievementScene implements Scene {
       const lbl = txt(t('achievement.claim', { coins: s.coins }), snapFont(Math.round(bh * 0.42)), 0xffffff, true);
       lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
       this.container.addChild(lbl);
-      this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: () => void this.claim(def.id, s.tier) });
+      this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, sound: 'sfx.ui.reward', fn: () => void this.claim(def.id, s.tier) });
     } else if (s.claimed) {
       const st = txt(t('achievement.claimed'), snapFont(Math.round(rowH * 0.34)), C.green, true);
       st.anchor.set(1, 0.5); st.x = rightX; st.y = cy;

@@ -38,7 +38,7 @@ export function drawHeaderAndRing(
   slotIds: readonly (string | null)[],
   box: RingBox,
   artHooked: Set<string>,
-  pushHit: (rect: Rect, action: () => void) => void,
+  pushHit: (rect: Rect, fn: () => void) => void,
   onUnassign: (slotIdx: number) => void,
   onArtLoaded: () => void,
 ): FuseRingGeom {

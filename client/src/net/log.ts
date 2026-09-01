@@ -6,6 +6,7 @@
 // Enabled by default; to silence it, call localStorage.setItem('nw_net_log', 'off').
 
 import { uncaughtErrorMessage } from './apiErrorMessage';
+import { playSfx } from '../audio/audioBus';
 
 export interface NetLogger {
   debug(msg: string, data?: unknown): void;
@@ -116,9 +117,62 @@ export function setToastSink(fn: (text: string, kind: ToastKind) => void): void 
   toastSink = fn;
 }
 
+/**
+ * `sfx.ui.error` is throttled to one voice per {@link ERROR_CUE_MERGE_MS}.
+ *
+ * Not a nicety — measured in a real browser (AUDIO_DESIGN.md §0.2). Six parallel fetches to a dead
+ * host, un-caught so they reached this module's own `unhandledrejection` handler, produced six
+ * `sfx.ui.error` voices inside **23 ms** and a bus peak of **0.3884**: 5.0x one error cue and 2.4x
+ * `sfx.card.play`, the loudest sound the game intends to make — while `GlobalToast.show()` calls
+ * `clear()` first and therefore showed the player exactly **one** toast. The visual layer already
+ * coalesces a burst; the audio layer did not.
+ *
+ * It is loud because `sfx.ui.error` is a TONE. Same-instant copies of a tone sum coherently (n
+ * voices -> n x peak, measured exactly linear to n=8), whereas noise-based cues only reach ~sqrt(n).
+ * The battle side never hit this because `EventsPanel.flushAudio` merges per frame and passes
+ * `play(cue, count)`, which raises gain sub-linearly (n=8: 0.1135 merged vs 0.6260 stacked).
+ *
+ * A leading-edge throttle rather than that `count` merge, for two reasons: firing on the leading
+ * edge costs no latency and needs no pending timer (a timer here would outlive a teardown), and
+ * `count` deliberately makes things LOUDER — right for "eight units were hit", wrong for "one
+ * failure fanned out into six rejections", which is not six times more failure.
+ *
+ * 400 ms is ~2x the cue's own 190 ms length: two onsets closer than that garble into one buzz
+ * instead of reading as two events, so a second voice inside the window adds noise, not
+ * information. Genuinely separate failures (a retry backoff, a second tap) are seconds apart and
+ * still sound.
+ */
+const ERROR_CUE_MERGE_MS = 400;
+let lastErrorCueAt = -Infinity;
+
+function raiseErrorCue(): void {
+  // `Date.now()` rather than `performance.now()`: this module already runs in node-based unit tests
+  // where the perf timeline is not guaranteed, and 400 ms needs no sub-millisecond precision.
+  const now = Date.now();
+  if (now - lastErrorCueAt < ERROR_CUE_MERGE_MS) return;
+  lastErrorCueAt = now;
+  playSfx('sfx.ui.error');
+}
+
+/** Test-only reset so one spec's burst cannot silence the next spec's first error. */
+export function __resetErrorCueThrottle(): void {
+  lastErrorCueAt = -Infinity;
+}
+
 /** Show a localized player toast (used as a targeted fallback for events such as SaveManager cloud sync failure). Silently no-ops if no sink is registered. */
 export function showToastMessage(text: string, kind: ToastKind = 'error'): void {
   if (!toastSink) return;
+  // `sfx.ui.error` (AUDIO_DESIGN.md §2.2) is raised HERE rather than at a hit, and it is the one
+  // UI cue that does not come out of ui/hits.ts's dispatcher. The reason is that a failure is not
+  // a tap: "not enough coins" / "network timeout" / "already claimed" all arrive from an async
+  // result, often seconds after the button that started it. This function is the single choke
+  // point every one of them already passes through — a cue per call site would be a few dozen
+  // duplicated lines that still miss whichever path is added next.
+  //
+  // Only the error kind sounds. A success toast is far more common (and often incidental, e.g.
+  // "settings saved"), and `sfx.ui.reward` is deliberately spent on the claim buttons instead,
+  // where it means "you got something".
+  if (kind === 'error') raiseErrorCue();
   // The sink must not throw — otherwise it could trigger another unhandledrejection and form a cycle.
   try { toastSink(text, kind); } catch { /* swallow */ }
 }

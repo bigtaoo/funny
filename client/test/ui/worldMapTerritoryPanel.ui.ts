@@ -189,7 +189,7 @@ describe('WorldMapPanels.renderTerritoryPanel — Overview tab', () => {
     const { ctx, panels, refreshTerritories } = buildHarness({ territoryTab: 'overview' });
     panels.renderTerritoryPanel();
     // Tab hits are the *inactive* tabs only, in tab order — on Overview that is [list, world].
-    const listTabAction = ctx.modalBtnRects[0]?.action;
+    const listTabAction = ctx.modalBtnRects[0]?.fn;
     expect(listTabAction).toBeTruthy();
     listTabAction!();
     expect(ctx.territoryTab).toBe('list');
@@ -219,7 +219,7 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
     expect(ctx.modalBtnRects).toHaveLength(11);
 
     // Checkbox buttons are pushed right after the 2 inactive tab buttons: index 2 = Lv.1, index 3 = Lv.2.
-    const lvl1Checkbox = ctx.modalBtnRects[2]?.action;
+    const lvl1Checkbox = ctx.modalBtnRects[2]?.fn;
     expect(lvl1Checkbox).toBeTruthy();
     lvl1Checkbox!();
 
@@ -231,9 +231,9 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
   it('re-checking a hidden level brings its rows back', () => {
     const { ctx, panels } = buildHarness({ territoryTab: 'list', territories: makeTerritories() });
     panels.renderTerritoryPanel();
-    ctx.modalBtnRects[2]!.action(); // hide level 1
+    ctx.modalBtnRects[2]!.fn(); // hide level 1
     expect(ctx.modalBtnRects).toHaveLength(7);
-    ctx.modalBtnRects[2]!.action(); // toggle level 1 again (still at index 2 post re-render)
+    ctx.modalBtnRects[2]!.fn(); // toggle level 1 again (still at index 2 post re-render)
     expect(ctx.territoryHiddenLevels.has(1)).toBe(false);
     expect(ctx.modalBtnRects).toHaveLength(11);
   });
@@ -243,7 +243,7 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
     const { ctx, panels, centerAt, renderMap } = buildHarness({ territoryTab: 'list', territories: single });
     panels.renderTerritoryPanel();
     // 2 inactive tabs + 1 checkbox (single level) + 1 row (jump, abandon) + 1 close = index 3 is Jump.
-    const jumpAction = ctx.modalBtnRects[3]?.action;
+    const jumpAction = ctx.modalBtnRects[3]?.fn;
     expect(jumpAction).toBeTruthy();
     jumpAction!();
     expect(centerAt).toHaveBeenCalledWith(9, 4);
@@ -257,7 +257,7 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
     const { ctx, panels, doAbandonFromList } = buildHarness({ territoryTab: 'list', territories: single });
     panels.renderTerritoryPanel();
     // index 4 is Abandon (right after Jump at index 3).
-    const abandonAction = ctx.modalBtnRects[4]?.action;
+    const abandonAction = ctx.modalBtnRects[4]?.fn;
     expect(abandonAction).toBeTruthy();
     abandonAction!();
     expect(doAbandonFromList).not.toHaveBeenCalled();
@@ -267,7 +267,7 @@ describe('WorldMapPanels.renderTerritoryPanel — Territory (list) tab', () => {
     // it is the *only* pair of rects left (the panel and its list are not drawn behind it at all).
     expect(ctx.modalBtnRects).toHaveLength(2);
     expect(ctx.infoScrollRect).toBeNull();
-    const okAction = ctx.modalBtnRects[0]?.action;
+    const okAction = ctx.modalBtnRects[0]?.fn;
     expect(okAction).toBeTruthy();
     okAction!();
     expect(doAbandonFromList).toHaveBeenCalledWith(9, 4);

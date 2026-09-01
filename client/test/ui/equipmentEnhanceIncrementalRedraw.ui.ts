@@ -38,8 +38,8 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 interface Rect { x: number; y: number; w: number; h: number; }
 interface SceneInternals {
   core: {
-    modalHits: { rect: Rect; action: () => void }[];
-    hitRects: { rect: Rect; action: () => void; owner?: string }[];
+    modalHits: { rect: Rect; fn: () => void }[];
+    hitRects: { rect: Rect; fn: () => void; owner?: string }[];
     bt: { busy: boolean; start(): void; stop(): void };
     modalScale: number;
     detailId: string | null;
@@ -55,14 +55,14 @@ interface SceneInternals {
  * `EQUIP_CELL_H` (266). Filtering to the 46-tall rects isolates the actual action buttons — the
  * card-body tap is *never* gated by `disabled`, so counting it would hide a stuck-disabled bug.
  */
-function actionHitsFor(internals: SceneInternals, owner: string): { rect: Rect; action: () => void; owner?: string }[] {
+function actionHitsFor(internals: SceneInternals, owner: string): { rect: Rect; fn: () => void; owner?: string }[] {
   return internals.core.hitRects.filter((h) => h.owner === owner && Math.abs(h.rect.h - 46) < 0.5);
 }
 
 /** modalHits store screen-space rects (post toModalScreen(), scaled by modalScale) — the confirm
  *  button's *local* height is detail.ts's `btnH = 32`, so match against that scaled by modalScale
  *  rather than the raw 32 (see detail.ts openDetail's `scale = h*0.8/mh` popup-scale transform). */
-function findConfirmHit(internals: SceneInternals): { rect: Rect; action: () => void } | undefined {
+function findConfirmHit(internals: SceneInternals): { rect: Rect; fn: () => void } | undefined {
   const expected = 32 * internals.core.modalScale;
   return internals.core.modalHits.find((h) => Math.abs(h.rect.h - expected) < 0.5);
 }
@@ -138,7 +138,7 @@ describe('EquipmentScene — enhance incremental redraw (2026-07-28)', () => {
     internals.detail.openDetail('inst_A');
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
-    confirm!.action();
+    confirm!.fn();
     await flush();
 
     expect(internals.inventory.cellContainers.get('inst_A')).toBe(containerA); // redrawn in place, same container
@@ -159,7 +159,7 @@ describe('EquipmentScene — enhance incremental redraw (2026-07-28)', () => {
     internals.detail.openDetail('inst_A');
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
-    confirm!.action();
+    confirm!.fn();
     await flush();
 
     expect(internals.inventory.cellContainers.get('inst_A')).toBe(containerA);
@@ -230,7 +230,7 @@ describe('EquipmentScene — enhance mid-flight save-push does not leave sibling
     internals.detail.openDetail('inst_A');
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
-    confirm!.action();
+    confirm!.fn();
     await flush();
 
     // inst_B was never enhanced — only ever touched by the mid-flight busy=true render. Its action
@@ -253,14 +253,14 @@ describe('EquipmentScene — enhance mid-flight save-push does not leave sibling
     internals.detail.openDetail('inst_A');
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
-    confirm!.action();
+    confirm!.fn();
     await flush();
 
     // Close the modal exactly the way a tap-outside does: DetailMixin's closeDetail() just clears
     // detailId and tears down the modal layer — it never touches the grid/hitRects. If the grid was
     // already correct at settle time, closing the modal changes nothing about it.
     const outerHit = internals.core.modalHits[internals.core.modalHits.length - 1];
-    outerHit.action();
+    outerHit.fn();
     expect(internals.core.detailId).toBeNull();
 
     const afterClose = actionHitsFor(internals, 'inst_B');
@@ -289,11 +289,11 @@ describe('EquipmentScene — enhance mid-flight save-push does not leave sibling
     internals.detail.openDetail(repId);
     const confirm = findConfirmHit(internals);
     expect(confirm).toBeDefined();
-    confirm!.action();
+    confirm!.fn();
     await flush();
 
     const outerHit = internals.core.modalHits[internals.core.modalHits.length - 1];
-    outerHit.action(); // close, like the user tapping outside the modal
+    outerHit.fn(); // close, like the user tapping outside the modal
 
     const otherOwners = [...new Set(internals.core.hitRects.map((h) => h.owner).filter((o): o is string => !!o && o !== repId))];
     expect(otherOwners.length).toBeGreaterThan(0); // the remaining stack must still be represented by some row

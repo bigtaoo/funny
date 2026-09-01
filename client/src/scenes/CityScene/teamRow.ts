@@ -241,12 +241,6 @@ export function renderTeamCard(
   // space. Editing itself lives in the team formation editor (onEditTeam callback).
   if (core.cb.onEditTeam) {
     const teamName = team?.name || teamSlotName(i);
-    core.hits.push({
-      x,
-      y,
-      w: cardW,
-      h: cardH,
-      fn: () => core.cb.onEditTeam!(id, teamName),
-    });
+    core.hits.push({ rect: { x, y, w: cardW, h: cardH }, fn: () => core.cb.onEditTeam!(id, teamName) });
   }
 }

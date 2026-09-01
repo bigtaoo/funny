@@ -12,11 +12,12 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../pixiText';
 import { ATTACK_LANES } from '@nw/engine/config';
 import { CardType, SpellType } from '../../game';
-import { Rect } from '../../layout/ILayout';
 import { t, type TranslationKey } from '../../i18n';
 import type { GameRendererCore } from './core';
 import { FS } from '../fontScale';
 import { EMPTY_UNIT_IDS, updatePlacementHighlights as updatePlacementHighlightsImpl } from './placementHighlights';
+import { playSfx } from '../../audio/audioBus';
+import { dispatchHit, type Hit } from '../../ui/hits';
 
 // ── Drag state ─────────────────────────────────────────────────────────────────
 
@@ -107,42 +108,50 @@ export class InputPanel {
     if (this.core.hudView.isPaused) {
       const cancel  = this.core.hudView.getSurrenderCancelRect();
       const confirm = this.core.hudView.getSurrenderConfirmRect();
-      if (cancel && this.overRect(x, y, cancel)) {
-        this.core.hudView.hideSurrenderConfirm();
-      } else if (confirm && this.overRect(x, y, confirm)) {
+      const overlay: Hit[] = [];
+      if (cancel)  overlay.push({ rect: cancel, sound: 'sfx.ui.back', fn: () => this.core.hudView.hideSurrenderConfirm() });
+      if (confirm) overlay.push({ rect: confirm, fn: () => {
         this.core.hudView.hideSurrenderConfirm();
         this.core.onExitToLobby?.();
-      }
+      } });
+      dispatchHit(overlay, x, y);
       return;
     }
 
-    // Surrender button — opens the confirmation overlay above.
-    if (this.overRect(x, y, this.core.hudView.getSurrenderRect())) {
-      this.cancelTapSelect();
-      this.core.hudView.showSurrenderConfirm();
-      return;
-    }
-
+    // HUD buttons. Collected into one table (ui/hits.ts) rather than a chain of overRect ifs, for
+    // the same reason the menu scenes were: this is where their tap cue comes from. Order below is
+    // the old if-chain's order, and hitTest keeps first-pushed-wins, so precedence is unchanged.
+    const hud: Hit[] = [
+      // Surrender button — opens the confirmation overlay above.
+      { rect: this.core.hudView.getSurrenderRect(), fn: () => {
+        this.cancelTapSelect();
+        this.core.hudView.showSurrenderConfirm();
+      } },
+    ];
     // Upgrade button — tap to upgrade immediately, no drag-onto-base needed.
-    if (this.core.hudView.upgradeEnabled && this.overRect(x, y, this.core.hudView.getUpgradeRect())) {
-      this.cancelTapSelect();
-      if (this.core.localPlayer(this.core.engine.state).canUpgradeBase()) this.core.engine.upgradeBase();
-      return;
+    if (this.core.hudView.upgradeEnabled) {
+      hud.push({ rect: this.core.hudView.getUpgradeRect(), fn: () => {
+        this.cancelTapSelect();
+        // Drawn enabled but not currently affordable: the tap is a real rejection, so it squeaks
+        // rather than tapping (same cue an unaffordable card gets — see rejectPlay).
+        if (this.core.localPlayer(this.core.engine.state).canUpgradeBase()) this.core.engine.upgradeBase();
+        else this.rejectPlay(true);
+      } });
     }
-
     // Refresh-hand button — simple tap (no drag): spend ink, redraw all cards.
-    if (this.core.hudView.refreshEnabled && this.overRect(x, y, this.core.hudView.getRefreshRect())) {
-      this.cancelTapSelect();
-      this.cancelDrag();
-      this.core.engine.refreshHand();
-      return;
+    if (this.core.hudView.refreshEnabled) {
+      hud.push({ rect: this.core.hudView.getRefreshRect(), fn: () => {
+        this.cancelTapSelect();
+        this.cancelDrag();
+        this.core.engine.refreshHand();
+      } });
     }
-
     // Opponent profile (top strip, netplay only — no cards live up there).
-    if (this.core.profilePopup && this.core.oppProfile && this.overRect(x, y, this.core.hudView.getEnemyInfoRect())) {
-      this.core.profilePopup.show(this.core.oppProfile);
-      return;
+    if (this.core.profilePopup && this.core.oppProfile) {
+      const opp = this.core.oppProfile;
+      hud.push({ rect: this.core.hudView.getEnemyInfoRect(), fn: () => this.core.profilePopup!.show(opp) });
     }
+    if (dispatchHit(hud, x, y)) return;
 
     // Hand cards — defer drag start until we see movement (tap vs drag)
     const cardIdx = this.core.handView.hitTestCardIndex(x, y);
@@ -153,9 +162,9 @@ export class InputPanel {
 
     // Local profile (bottom-strip info column) — checked AFTER cards so a card
     // in the same area always wins; only empty HUD space opens the popup.
-    if (this.core.profilePopup && this.core.selfProfile && this.overRect(x, y, this.core.hudView.getPlayerInfoRect())) {
-      this.core.profilePopup.show(this.core.selfProfile);
-      return;
+    if (this.core.profilePopup && this.core.selfProfile) {
+      const self = this.core.selfProfile;
+      if (dispatchHit([{ rect: this.core.hudView.getPlayerInfoRect(), fn: () => this.core.profilePopup!.show(self) }], x, y)) return;
     }
 
     // Board area while in tap-select: placement handled on handleUp
@@ -285,7 +294,7 @@ export class InputPanel {
   private startCardDrag(handIndex: number): void {
     const player = this.core.localPlayer(this.core.engine.state);
     const slot   = player.hand.slots[handIndex];
-    if (!slot || player.ink < slot.card.cost) return;
+    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot); return; }
 
     const card   = slot.card;
     const ghost  = this.buildDragGhost(t(card.nameKey as TranslationKey), card.cost);
@@ -307,7 +316,7 @@ export class InputPanel {
   private startTapSelect(handIndex: number): void {
     const player = this.core.localPlayer(this.core.engine.state);
     const slot   = player.hand.slots[handIndex];
-    if (!slot || player.ink < slot.card.cost) return;
+    if (!slot || player.ink < slot.card.cost) { this.rejectPlay(!!slot); return; }
 
     const card = slot.card;
     this.tapSelect = { handIndex, cardType: card.cardType, spellType: card.spellType };
@@ -326,23 +335,43 @@ export class InputPanel {
 
   // ── Shared placement logic ─────────────────────────────────────────────────
 
+  /**
+   * `sfx.card.invalid` — "费不够/非法出牌" (AUDIO_DESIGN.md §2.1). The one battle cue with no
+   * engine event behind it, which is why it was left out of the events.ts trigger table: an
+   * illegal play is rejected HERE, client-side, and `@nw/engine` is never told it happened
+   * (deliberately — see AUDIO_DESIGN.md §6's architecture line; a "you tried something illegal"
+   * event would be a display concern living in the deterministic sim).
+   *
+   * Fires at most once per press. Every caller is on a path that has already consumed the
+   * gesture — the drag never starts, the tap-select never latches, the commit returns — so a
+   * player mashing an unaffordable card gets one squeak per press, not a per-frame stream.
+   *
+   * `real` distinguishes "you pressed a card you cannot afford / cannot place there" from
+   * "you pressed an empty hand slot". The latter is not a rejection, it is nothing at all, and
+   * making blank space squeak would teach the player the sound means less than it does.
+   */
+  private rejectPlay(real: boolean): void {
+    if (real) playSfx('sfx.card.invalid');
+  }
+
+
   private commitCardPlay(
     handIndex: number, cardType: CardType, spellType: SpellType | undefined,
     col: number, row: number,
   ): void {
     // Tutorial checkpoint: only the target card type is allowed this beat; wrong plays are rejected (avoids waste / going off-script, §3.4).
-    if (this.core.tutorial && !this.core.tutorial.allowCardPlay(cardType, spellType)) return;
+    if (this.core.tutorial && !this.core.tutorial.allowCardPlay(cardType, spellType)) { this.rejectPlay(true); return; }
     switch (cardType) {
       case CardType.Unit: {
-        if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
-        if (this.core.engine.state.board.isCellOccupiedByUnit(col, this.core.localSpawnRow)) return;
+        if (!(ATTACK_LANES as readonly number[]).includes(col)) { this.rejectPlay(true); return; }
+        if (this.core.engine.state.board.isCellOccupiedByUnit(col, this.core.localSpawnRow)) { this.rejectPlay(true); return; }
         this.core.engine.playCard(handIndex, col);
         break;
       }
       case CardType.Building: {
-        if (!(ATTACK_LANES as readonly number[]).includes(col)) return;
-        if (this.core.engine.state.board.hasBuildingAt(col, this.core.localBuildRow)) return;
-        if (this.core.engine.state.board.isNoBuild(col, this.core.localBuildRow)) return;
+        if (!(ATTACK_LANES as readonly number[]).includes(col)) { this.rejectPlay(true); return; }
+        if (this.core.engine.state.board.hasBuildingAt(col, this.core.localBuildRow)) { this.rejectPlay(true); return; }
+        if (this.core.engine.state.board.isNoBuild(col, this.core.localBuildRow)) { this.rejectPlay(true); return; }
         this.core.engine.playCard(handIndex, col);
         break;
       }
@@ -379,10 +408,6 @@ export class InputPanel {
     this.core.handView.clearSelection();
     this.core.boardView.clearHighlights();
     this.core.unitView.setSpellTargetPreview(EMPTY_UNIT_IDS);
-  }
-
-  private overRect(x: number, y: number, r: Rect): boolean {
-    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
   }
 
   private buildDragGhost(label: string, cost: number, accentColor = 0x2244aa): PIXI.Container {

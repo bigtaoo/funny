@@ -12,10 +12,12 @@ import { showToastMessage } from '../net/log';
 import type { AvatarCategory } from '../render/avatar';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
-import type { SettingsSceneCallbacks, Hit } from './SettingsScene/types';
+import type { SettingsSceneCallbacks } from './SettingsScene/types';
+import { dispatchHit, hitAction, hitTest, inRect, type Hit } from '../ui/hits';
 import { drawProfile, drawLanguage, drawDataSaver, drawHelp, drawAccount, type PanelHost } from './SettingsScene/panels';
 import { drawAvatarPickerOverlay, type PickerHost } from './SettingsScene/avatarPicker';
 import { drawRenameOverlay, drawDeleteConfirm, type OverlayHost } from './SettingsScene/overlays';
+import { drawAudio, type AudioPanelHost, type AudioSlider } from './SettingsScene/audioPanel';
 
 export type { SettingsSceneCallbacks, RenameOutcome } from './SettingsScene/types';
 
@@ -62,8 +64,18 @@ export class SettingsScene implements Scene {
   pickerMaxScroll = 0;
   /** Grid viewport + per-cell hit list for the current picker render — read by handleDown/Move for drag-scroll vs tap. */
   pickerViewRect: Rect | null = null;
-  pickerCellHits: Array<{ rect: Rect; fn: () => void }> = [];
+  pickerCellHits: Hit[] = [];
   private readonly pickerGesture = new ScrollTapGesture();
+  /**
+   * Volume-slider drag zones (audioPanel.ts). Separate from `hits` because a slider must track the
+   * pointer live instead of firing once — see CardScene's modalSliders for the same split.
+   */
+  audioSliders: AudioSlider[] = [];
+  /** The slider currently being dragged (set on a press inside one of the rects above), or null. */
+  private activeAudioSlider: AudioSlider | null = null;
+  /** Set by a slider drag; update() turns it into at most ONE render per frame (a render() per
+   *  pointer-move rebuilds the whole scene tree and janks — the scroll-drag-throttle pattern). */
+  private audioDirty = false;
   /** Transient "why is this locked" hint shown under the grid; cleared after a couple seconds. */
   toastMsg: string | null = null;
   toastTimer = 0;
@@ -84,8 +96,14 @@ export class SettingsScene implements Scene {
     this.playerName = cb.playerName;
     this.currentAvatarId = cb.avatarId;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.unsubs.push(input.onMove((x, y) => this.handlePickerMove(y)));
-    this.unsubs.push(input.onUp(() => this.handlePickerUp()));
+    this.unsubs.push(input.onMove((x, y) => { this.handleAudioMove(x); this.handlePickerMove(y); }));
+    this.unsubs.push(input.onUp(() => {
+      // Release the slider BEFORE clearing it: the panel hangs its audition cue off onRelease so
+      // that "does letting go make a sound" stays a decision in audioPanel.ts (see there).
+      this.activeAudioSlider?.onRelease?.();
+      this.activeAudioSlider = null;
+      this.handlePickerUp();
+    }));
     // Avatar picker grid mouse-wheel scroll (browser/PC only — see wheelScroll.ts); only live while
     // the picker overlay is open, same viewport rect handleDown's inRect gate uses.
     this.unsubs.push(input.onWheel((x, y, deltaY) => {
@@ -109,6 +127,7 @@ export class SettingsScene implements Scene {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) { this.toastMsg = null; this.render(); }
     }
+    if (this.audioDirty) { this.audioDirty = false; this.render(); }
     if (this.bt.tick(dt)) this.render();
   }
 
@@ -119,27 +138,20 @@ export class SettingsScene implements Scene {
     this.container.destroy({ children: true });
   }
 
-  private inRect(x: number, y: number, r: Rect): boolean {
-    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-  }
-
   private handleDown(x: number, y: number): void {
     if (this.bt.busy) return;
+    // Volume sliders track the pointer live, so they are checked before (and instead of) the hit
+    // table and jump to the press point immediately — see audioPanel.ts.
+    const slider = hitTest(this.audioSliders, x, y);
+    if (slider) { this.activeAudioSlider = slider; slider.onDrag(x); return; }
     // The picker grid is drag-scrollable: a down inside its viewport starts a tap-vs-drag gesture
     // (ScrollTapGesture) instead of firing immediately, so a drag that starts on a cell scrolls the
     // grid rather than instantly selecting/toasting that cell.
-    if (this.avatarPickerOpen && this.pickerViewRect && this.inRect(x, y, this.pickerViewRect)) {
-      let hit: (() => void) | null = null;
-      for (const h of this.pickerCellHits) {
-        if (this.inRect(x, y, h.rect)) { hit = h.fn; break; }
-      }
-      this.pickerGesture.down(this.pickerScrollY, y, hit);
+    if (this.avatarPickerOpen && this.pickerViewRect && inRect(x, y, this.pickerViewRect)) {
+      this.pickerGesture.down(this.pickerScrollY, y, hitAction(this.pickerCellHits, x, y));
       return;
     }
-    for (const hit of this.hits) {
-      const r = hit.rect;
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { hit.fn(); return; }
-    }
+    dispatchHit(this.hits, x, y);
   }
 
   private handlePickerMove(y: number): void {
@@ -149,6 +161,10 @@ export class SettingsScene implements Scene {
       this.pickerScrollY = Math.max(0, Math.min(scroll, this.pickerMaxScroll));
       this.render();
     }
+  }
+
+  private handleAudioMove(x: number): void {
+    this.activeAudioSlider?.onDrag(x);
   }
 
   private handlePickerUp(): void {
@@ -225,17 +241,22 @@ export class SettingsScene implements Scene {
     if (this.destroyed) return;
     tearDownChildren(this.container); // caret blink (~2×/s) + per-keystroke rename field → free Text textures
     this.hits = [];
+    this.audioSliders = [];
 
     this.drawBackground();
     const tbH = this.drawHeader();
     drawProfile(this.asPanelHost(), tbH);
     drawLanguage(this.asPanelHost());
     drawDataSaver(this.asPanelHost());
+    drawAudio(this.asAudioHost());
     if (this.cb.onReplayTutorial) drawHelp(this.asPanelHost());
     drawAccount(this.asPanelHost());
     if (this.avatarPickerOpen) drawAvatarPickerOverlay(this.asPickerHost());
     if (this.renameOpen) drawRenameOverlay(this.asOverlayHost());
     if (this.deleteConfirmOpen) drawDeleteConfirm(this.asOverlayHost());
+    // The overlays paint over the volume block and reset `hits` to their own buttons; the sliders
+    // would otherwise stay live underneath and a drag across the dim would move a volume.
+    if (this.avatarPickerOpen || this.renameOpen || this.deleteConfirmOpen) this.audioSliders = [];
     if (this.bt.loadingVisible) drawLoadingOverlay(this.container, this.w, this.h, this.bt.dots, t('common.processing'));
   }
 
@@ -251,6 +272,18 @@ export class SettingsScene implements Scene {
       openAvatarPicker: () => this.openAvatarPicker(),
       openRename: () => this.openRename(),
       openDelete: () => this.openDelete(),
+    };
+  }
+
+  private asAudioHost(): AudioPanelHost {
+    const scene = this;
+    return {
+      container: this.container, w: this.w, h: this.h,
+      hits: this.hits,
+      get audioSliders() { return scene.audioSliders; },
+      set audioSliders(v) { scene.audioSliders = v; },
+      markAudioDirty: () => { this.audioDirty = true; },
+      render: () => this.render(),
     };
   }
 
@@ -318,7 +351,7 @@ export class SettingsScene implements Scene {
     const { w, h } = this;
     const hdr = drawSceneHeader(this.container, w, h, t('settings.title'), { icon: 'settingsTabIcon' });
     const tbH = hdr.headerH;
-    this.hits.push({ rect: hdr.backRect, fn: () => this.cb.onBack() });
+    this.hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: () => this.cb.onBack() });
 
     return tbH;
   }

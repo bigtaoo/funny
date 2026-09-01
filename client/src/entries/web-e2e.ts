@@ -2,6 +2,10 @@ import type * as PIXI from 'pixi.js-legacy';
 import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import type { AppViews } from '../app/AppViews';
+import { setAudioBus, audioBus } from '../audio/audioBus';
+import type { AudioBus } from '../audio/types';
+import { ALL_CUES } from '../audio/cueCatalogue';
+import { WebAudioBus } from '../platform/web/WebAudioBus';
 
 // Test-only entry (client/test/browser Playwright specs) — boots the exact same real
 // PixiJS/WebGL app as entries/web.ts, but wraps AppViews so a Playwright script can drive
@@ -78,5 +82,63 @@ function instrumentViews(views: AppViews): AppViews {
   }).__nwE2E = { views, state, app };
   return views;
 }
+
+// Audio: the same backend the web entry installs, plus a handle on `window.__nwAudio` so a
+// browser smoke can fire a cue and measure the SFX bus. Audio has no other observable surface —
+// it cannot be screenshotted, and until the trigger points are wired (AUDIO_DESIGN.md §7 steps
+// 3-4) nothing in the game fires a cue at all, so without this there is no way to hear or
+// measure the pipeline end to end in a real browser. Permanent test infrastructure in the
+// never-shipped e2e entry, exactly like __nwE2E above — not one of the throwaway debug globals
+// test/no-debug-hooks-in-src.test.ts scans src/ for. (That guard matches the offending token as a
+// literal, so this comment deliberately does not spell it out.)
+const audio = new WebAudioBus();
+
+// Cue log. An `AnalyserNode` on the SFX bus can tell you *something played* and how loud, but not
+// *which cue* — and once the battle triggers are wired (AUDIO_DESIGN.md §7 step 3) a real match
+// fires them faster than any human can attribute a peak to an event. Wrapping the bus here is the
+// only way to answer "did `card_played` reach `sfx.card.play`, once?" against the real game rather
+// than against a fake bus in vitest. It also makes the game-over hazard measurable: a stinger
+// re-firing every frame shows up as hundreds of entries, not one.
+interface CueLogEntry { cue: string; count: number; t: number }
+const CUE_LOG_CAP = 4000;
+const cueLog: CueLogEntry[] = [];
+const recordingBus: AudioBus = {
+  preload: () => audio.preload(),
+  play: (cue, count = 1) => {
+    if (cueLog.length >= CUE_LOG_CAP) cueLog.shift();
+    cueLog.push({ cue, count, t: Math.round(performance.now()) });
+    audio.play(cue, count);
+  },
+  setSfxVolume: (v) => audio.setSfxVolume(v),
+  setMusicVolume: (v) => audio.setMusicVolume(v),
+  resume: () => audio.resume(),
+};
+setAudioBus(recordingBus);
+(window as unknown as { __nwAudio: unknown }).__nwAudio = {
+  play: (cue: string, count?: number) => audioBus().play(cue as never, count),
+  resume: () => audioBus().resume(),
+  cues: ALL_CUES,
+  /** How much of the shipped sample set actually decoded (0/0 until cueAssets.ts is filled). */
+  loaded: () => audio.loaded,
+  /** Every cue the trigger layer has asked for, newest last. */
+  log: (): CueLogEntry[] => cueLog.slice(),
+  clearLog: (): void => { cueLog.length = 0; },
+  /**
+   * The live `AudioContext` and the SFX bus `GainNode`, so a browser smoke can hang an
+   * `AnalyserNode` off the bus and read the **delivered** PCM peak. That distinction is the whole
+   * point: `audioSynth.ts` authors a gain *before* the per-cue filters, and how much of it
+   * survives depends on the cutoff — AUDIO_DESIGN.md §0 records `sfx.unit.hit` authoring 0.15 and
+   * delivering 0.063, i.e. the mix reading backwards from the catalogue's intent. No unit test can
+   * see that layer; only a real context can.
+   *
+   * Reaches through TS privacy exactly like `views.app` above, and for the same reason: a
+   * production seam (`WebAudioBus.busNode`) existing solely for a test would be the worse trade.
+   * Both are null until `ensure()` has run — in practice `preload()` runs it during startup.
+   */
+  nodes: (): { ctx: AudioContext | null; sfx: GainNode | null } => {
+    const priv = audio as unknown as { ctx: AudioContext | null; sfx: GainNode | null };
+    return { ctx: priv.ctx, sfx: priv.sfx };
+  },
+};
 
 startApp(new WebPlatform('game-canvas'), instrumentViews).catch(console.error);

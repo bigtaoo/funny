@@ -64,7 +64,7 @@ function buildNoSectScene(coins: number, cb: Record<string, unknown> = {}): any 
   return scene;
 }
 
-type Hit = { rect: { x: number; y: number; w: number; h: number }; action: () => void };
+type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
 function collectTexts(root: PIXI.Container): string[] {
   const out: string[] = [];

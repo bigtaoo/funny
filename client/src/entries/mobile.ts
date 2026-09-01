@@ -1,6 +1,8 @@
 import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import { checkOtaUpdate } from '../platform/ota';
+import { setAudioBus } from '../audio/audioBus';
+import { WebAudioBus } from '../platform/web/WebAudioBus';
 
 // Native (Capacitor iOS/Android) entry. The same WebPlatform runs inside the WKWebView:
 // it detects the native StoreKit bridge injected on `window.NWBilling` by the shell
@@ -11,6 +13,11 @@ import { checkOtaUpdate } from '../platform/ota';
 // (Capgo, IOS_RELEASE.md §11): checkOtaUpdate() confirms this bundle booted, then downloads any
 // newer bundle in the background and arms it for the next cold start — decoupled from App Store
 // binary updates, which remain the only channel for native changes.
+// Same WebAudio backend as the web entry: the WKWebView is a real browser engine. iOS is the
+// strictest of the autoplay gates (AUDIO_DESIGN.md §5) — WebAudioBus resumes on the first
+// window-level gesture, which covers it.
+setAudioBus(new WebAudioBus());
+
 startApp(new WebPlatform('game-canvas')).catch(console.error);
 
 // Fire-and-forget: never blocks or interrupts the running game (see ota.ts).

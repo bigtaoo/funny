@@ -34,7 +34,7 @@ interface SceneInternals {
   core: {
     detailId: string | null;
     modalLayer: PIXI.Container;
-    modalHits: { rect: unknown; action: () => void }[];
+    modalHits: { rect: unknown; fn: () => void }[];
     skinPickerOpen: boolean;
   };
   detail: { openDetail(id: string): void };

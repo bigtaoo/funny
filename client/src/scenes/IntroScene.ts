@@ -8,6 +8,7 @@ import { buildPaperBackground, ui } from '../render/sketchUi';
 import { FS } from '../render/fontScale';
 import { getArtTexture } from '../render/cardArt';
 import introIllustrationUrl from '../assets/story/intro_notebook.png';
+import { dispatchHit } from '../ui/hits';
 
 // ── First-launch intro (background story) ─────────────────────────────────────
 //
@@ -133,12 +134,12 @@ export class IntroScene implements Scene {
   private handleDown(x: number, y: number): void {
     if (this.finished) return;
 
-    // Skip button
-    if (x >= this.skipRect.x && x <= this.skipRect.x + this.skipRect.w &&
-        y >= this.skipRect.y && y <= this.skipRect.y + this.skipRect.h) {
-      this.finish(true);
-      return;
-    }
+    // Skip button — the only actual BUTTON on this screen, so the only thing here that sounds.
+    // The bare tap below is a story advance ("tap to continue"): no chrome, whole screen, and it
+    // does early exactly what the per-line timeout would have done anyway — a cue there would read
+    // as the story clicking at the player (AUDIO_DESIGN.md §2.2, and the allowlist entry in
+    // test/uiTapSoundCoverage.test.ts for ResultScene's identical outro surface).
+    if (dispatchHit([{ rect: this.skipRect, sound: 'sfx.ui.back', fn: () => this.finish(true) }], x, y)) return;
 
     this.step();
   }

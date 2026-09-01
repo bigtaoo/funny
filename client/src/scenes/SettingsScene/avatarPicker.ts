@@ -17,7 +17,8 @@ import { FS, snapFont } from '../../render/fontScale';
 import { CARD_DEFS } from '../../game/meta/cardDefs';
 import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
 import { allTitleIds } from '../../game/meta/titles';
-import type { SettingsSceneCallbacks, Hit, AvatarPickerItem } from './types';
+import type { SettingsSceneCallbacks, AvatarPickerItem } from './types';
+import type { Hit } from '../../ui/hits';
 import { AVATAR_TABS, AVATAR_TAB_LABEL_KEY, AVATAR_TAB_ICON, AVATAR_LOCKED_KEY } from './types';
 
 function txt(label: string, size: number, color: number, bold = false): PIXI.Text {
@@ -39,7 +40,7 @@ export interface PickerHost {
   pickerScrollY: number;
   pickerMaxScroll: number;
   pickerViewRect: Rect | null;
-  pickerCellHits: Array<{ rect: Rect; fn: () => void }>;
+  pickerCellHits: Hit[];
   toastMsg: string | null;
   toastTimer: number;
   render(): void;
@@ -114,7 +115,7 @@ export function drawAvatarPickerOverlay(host: PickerHost): void {
     host.render();
   });
   tabLayer.x = px; tabLayer.y = tabY;
-  host.hits.push(...tabHits.map((hit) => ({ rect: { x: hit.rect.x + px, y: hit.rect.y + tabY, w: hit.rect.w, h: hit.rect.h }, fn: hit.fn })));
+  host.hits.push(...tabHits.map((hit) => ({ ...hit, rect: { ...hit.rect, x: hit.rect.x + px, y: hit.rect.y + tabY } })));
 
   // Scrollable icon grid below the tabs.
   const gridTop = tabY + tabStripH + Math.round(h * 0.02);

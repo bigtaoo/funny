@@ -48,8 +48,8 @@ interface SceneInternals {
     scrollRegionBottom: number;
     detailId: string | null;
     modalOpen: boolean;
-    modalHits: { rect: Rect; action: () => void }[];
-    hitRects: { rect: Rect; action: () => void; owner?: string }[];
+    modalHits: { rect: Rect; fn: () => void }[];
+    hitRects: { rect: Rect; fn: () => void; owner?: string }[];
     backRect: Rect;
     paused: boolean;
     pendingRender: boolean;
@@ -241,7 +241,7 @@ describe('CardScene under an EquipmentScene overlay (ADR-072)', () => {
     for (let i = 0; i < hitCount; i++) {
       const h = buildScene();
       h.detail.openDetail('c0');
-      h.core.modalHits[i]!.action();
+      h.core.modalHits[i]!.fn();
       if (h.openEquipment.mock.calls.length > 0) {
         const [cardId, slot] = h.openEquipment.mock.calls[0]! as [string, EquipSlot];
         expect(cardId).toBe('c0');

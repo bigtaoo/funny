@@ -210,7 +210,7 @@ describe('Territory panel tabs are the shared hub-tab strip, not three solid sla
     const { ctx, panels } = buildHarness({ territoryTab: 'overview' });
     panels.renderTerritoryPanel();
     // Tab hits are pushed first and in tab order; on Overview that is [list, world].
-    ctx.modalBtnRects[0]!.action();
+    ctx.modalBtnRects[0]!.fn();
     expect(ctx.territoryTab).toBe('list');
   });
 });

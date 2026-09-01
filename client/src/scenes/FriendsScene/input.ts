@@ -8,6 +8,7 @@
 // Core's constructor wires these onto the InputManager; nothing else calls them.
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { clamp, DRAG_THRESHOLD, type FriendsSceneCore } from './core';
+import { inRect, runHit } from '../../ui/hits';
 
 export function onPointerDown(core: FriendsSceneCore, x: number, y: number): void {
   if (core.popup.isOpen || core.modalOpen) return;
@@ -44,8 +45,8 @@ export function onPointerUp(core: FriendsSceneCore, x: number, y: number): void 
     // Reverse order: the full-screen dim rect is pushed first, so checking in push order would
     // let it win over the OK/Cancel buttons drawn on top of it (see FamilyScene/base.ts precedent).
     for (let i = core.modalHits.length - 1; i >= 0; i--) {
-      const { rect, action } = core.modalHits[i]!;
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) { action(); return; }
+      const h = core.modalHits[i]!;
+      if (inRect(x, y, h.rect)) { runHit(h); return; }
     }
     return;
   }
@@ -65,7 +66,7 @@ export function onPointerUp(core: FriendsSceneCore, x: number, y: number): void 
     const py = hit.scroll ? y + scrollDelta : y;
     if (x >= r.x && x <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
       if (hit.scroll && (y < core.regionTop || y > core.regionBottom)) continue;
-      hit.fn();
+      runHit(hit);
       return;
     }
   }

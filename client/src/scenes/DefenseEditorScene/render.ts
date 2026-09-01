@@ -168,7 +168,7 @@ export class RenderPanel implements RenderHandlers {
     core.bodyLayer.addChild(plusLbl);
     core.hits.push({
       rect: { x: plus.x, y: plus.y, w: btnW, h: btnH },
-      action: () => {
+      fn: () => {
         core.baseLevel = Math.min(MAX_BASE_LEVEL, core.baseLevel + 1);
         core.render();
       },
@@ -194,7 +194,7 @@ export class RenderPanel implements RenderHandlers {
     core.bodyLayer.addChild(minusLbl);
     core.hits.push({
       rect: { x: minus.x, y: minus.y, w: btnW, h: btnH },
-      action: () => {
+      fn: () => {
         core.baseLevel = Math.max(0, core.baseLevel - 1);
         core.render();
       },
@@ -244,7 +244,7 @@ export class RenderPanel implements RenderHandlers {
       const captured = tool;
       core.hits.push({
         rect: { x, y: top + 5, w: btnW, h: btnH },
-        action: () => {
+        fn: () => {
           core.tool = captured;
           core.render();
         },
@@ -340,7 +340,7 @@ export class RenderPanel implements RenderHandlers {
     core.bodyLayer.addChild(saveLbl);
     core.hits.push({
       rect: { x: save.x, y: save.y, w: btnW, h: btnH },
-      action: () => void this.saveActions.doSave(),
+      fn: () => void this.saveActions.doSave(),
     });
 
     const clear = sketchPanel(btnW, btnH, {
@@ -372,7 +372,7 @@ export class RenderPanel implements RenderHandlers {
       if (!fillFull) {
         core.hits.push({
           rect: { x: fill.x, y: fill.y, w: fillW, h: btnH },
-          action: () => void this.saveActions.doFillTroops(),
+          fn: () => void this.saveActions.doFillTroops(),
         });
       }
     }
@@ -383,7 +383,7 @@ export class RenderPanel implements RenderHandlers {
     core.bodyLayer.addChild(clearLbl);
     core.hits.push({
       rect: { x: clear.x, y: clear.y, w: btnW, h: btnH },
-      action: () => {
+      fn: () => {
         core.buildings.clear();
         core.garrison.clear();
         core.baseLevel = 0;
