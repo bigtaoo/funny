@@ -153,14 +153,53 @@ describe('checkWechatPackage gate', () => {
   it('fails when a whole-package build ignores cdn/ — the 2026-09-01 "boots, then nothing"', () => {
     const { code, out } = run(writePkg({ packIgnore: IGNORE_CDN }));
     expect(code).toBe(1);
-    expect(out).toContain('excludes cdn/');
+    expect(out).toContain('excludes 2 of the 2 asset(s)');
     expect(out).toContain('2 package-relative');
     expect(out).toContain('empty screen');
   });
 
-  it('recognises the glob spelling of the same exclusion', () => {
-    expect(run(writePkg({ packIgnore: [{ type: 'glob', value: 'cdn/**' }] })).code).toBe(1);
-    expect(run(writePkg({ packIgnore: [{ type: 'folder', value: './cdn/' }] })).code).toBe(1);
+  it('names the ignore entry that did it, and the files it took out', () => {
+    const { out } = run(writePkg({ packIgnore: IGNORE_CDN }));
+    expect(out).toContain('{"type":"folder","value":"cdn"}');
+    expect(out).toContain(`cdn/${HASH_A}`);
+    expect(out).toContain(`cdn/${HASH_B}`);
+  });
+
+  // The first version of rule 4 looked for the `cdn` FOLDER entry — the one spelling that had
+  // shipped. These are the spellings it would have walked past; they are the whole reason the
+  // matcher was extracted into scripts/lib/packIgnore.mjs and asked per file.
+  it.each([
+    ['folder, alternate spelling', [{ type: 'folder', value: './cdn/' }], 2],
+    ['glob over the directory', [{ type: 'glob', value: 'cdn/**' }], 2],
+    ['glob over one extension', [{ type: 'glob', value: '**/*.tao' }], 1],
+    ['suffix — the proxy question missed this entirely', [{ type: 'suffix', value: '.png' }], 1],
+    ['prefix', [{ type: 'prefix', value: 'cdn' }], 2],
+    ['a single file', [{ type: 'file', value: `cdn/${HASH_A}` }], 1],
+    ['regexp', [{ type: 'regexp', value: '^cdn/' }], 2],
+  ])('catches exclusion by %s', (_label, packIgnore, excluded) => {
+    const { code, out } = run(writePkg({ packIgnore }));
+    expect(code).toBe(1);
+    expect(out).toContain(`excludes ${excluded} of the 2 asset(s)`);
+  });
+
+  it('does not cry wolf: `.map` alone, and patterns that miss, leave the assets packed', () => {
+    expect(run(writePkg({ packIgnore: IGNORE_MAP_ONLY })).code).toBe(0);
+    expect(run(writePkg({ packIgnore: [{ type: 'folder', value: 'cdnx' }] })).code).toBe(0);
+    // A single `*` must not cross a separator, or every `*.png` rule would look like a cdn/ wipe.
+    expect(run(writePkg({ packIgnore: [{ type: 'glob', value: '*.png' }] })).code).toBe(0);
+  });
+
+  it('refuses to guess about an ignore entry it cannot evaluate, rather than going inert', () => {
+    for (const entry of [
+      { type: 'glob', value: 'cdn/{a,b}' },   // brace expansion: not implemented
+      { type: 'newtype', value: 'cdn' },      // a type DevTools may add later
+      { type: 'regexp', value: '(' },         // unparseable
+    ]) {
+      const { code, out } = run(writePkg({ packIgnore: [entry] }));
+      expect(code).toBe(1);
+      expect(out).toContain('cannot evaluate');
+      expect(out).toContain('scripts/lib/packIgnore.mjs');
+    }
   });
 
   it('fails the other way round: a plan A build that packs cdn/ anyway', () => {
@@ -190,6 +229,26 @@ describe('checkWechatPackage gate', () => {
     const { code, out } = run(writePkg({ packConfigRaw: '{"packOptions":' }));
     expect(code).toBe(1);
     expect(out).toContain('pack manifest');
+  });
+
+  // ── the repo's own shipped config, under test in the DEFAULT suite ─────────
+  // Everything above tests the gate. This tests the checkout, using the gate as the oracle: it
+  // copies the REAL `wechatgame/project.private.config.json` next to a fixture bundle that bakes
+  // relative urls — which is what a no-NW_ASSET_CDN build produces (locked by the sibling
+  // assertion in wechatAssetUrlShape.test.ts) — and asserts the assets come out packed.
+  //
+  // Why it earns its place next to rule 4: `check:wechatpackage` only runs inside `build:wechat`,
+  // which is ~20s and needs an artifact, so nothing in the fast suite had an opinion about that
+  // file. This does, in ~50ms. Verified red against the pre-2026-09-01 config (the `cdn` folder
+  // entry) — that is the shipped state it would have caught.
+  it("the checkout's own packOptions.ignore packs what a default build asks the package for", () => {
+    const real = fs.readFileSync(
+      path.resolve(__dirname, '../wechatgame/project.private.config.json'),
+      'utf8',
+    );
+    const { code, out } = run(writePkg({ packConfigRaw: real }));
+    expect(code, out).toBe(0);
+    expect(out).toContain('whole-package (cdn/ packed)');
   });
 
   // ── the one thing it must NOT do ───────────────────────────────────────────

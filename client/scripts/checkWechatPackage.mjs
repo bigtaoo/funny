@@ -18,10 +18,11 @@
 //   3. the bundle is one file    — a `<id>.pixigame.js` sibling means asyncChunks:false was lost
 //                                  (ASSET_PACKAGING §4.0; test/wechatSingleBundle.test.ts guards
 //                                  the config, this guards the output)
-//   4. `packOptions.ignore` agrees with the url shape rule 2 just read   ← the 2026-09-01 (evening)
+//   4. every asset the bundle asks the PACKAGE for is actually packed   ← the 2026-09-01 (evening)
 //                                  "boots, then nothing" failure: the bundle asked the package for
-//                                  `cdn/<hash>`, and packOptions had excluded `cdn/` from the
-//                                  package. See ASSET_PACKAGING_LOG.md §21.
+//                                  `cdn/<hash>`, and packOptions.ignore had excluded `cdn/` from the
+//                                  package. Rule 2 says the byte is on disk; this says it is
+//                                  reachable. See ASSET_PACKAGING_LOG.md §21.
 //
 // ⚠ What it deliberately cannot check: the mirror image of the failure above — a STALE bundle
 // against a fresh `cdn/`. The wechat output runs with `clean:false` (game.js/game.json/cdn live
@@ -34,6 +35,7 @@
 // gate actually FAILS when the contract is broken — a gate nobody has seen fail is not a gate.
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { ignoredBy, unsupportedEntries, describeEntry } from './lib/packIgnore.mjs';
 
 const pkgArg = process.argv.find((a) => a.startsWith('--pkg='));
 const PKG = resolve(process.cwd(), pkgArg ? pkgArg.slice('--pkg='.length) : 'wechatgame');
@@ -139,26 +141,44 @@ for (const name of ['project.config.json', 'project.private.config.json']) { // 
     fail(`${name} is not valid JSON (${e.message}) — DevTools cannot read the pack manifest out of it.`);
   }
 }
-/** Does this ignore list keep `cdn/` out of the package? Covers the folder and glob spellings. */
-const excludesAssetDir = packCfg.ignore.some((e) => {
-  const value = String(e?.value ?? '').replace(/^\.?\//, '').replace(/\/+$/, '');
-  if (e?.type === 'folder') return value === ASSET_DIR;
-  if (e?.type === 'glob') return value === ASSET_DIR || value.startsWith(`${ASSET_DIR}/`);
-  return false;
-});
+// Asked PER REFERENCED FILE, not by pattern-spotting: the first version of this rule looked for the
+// `cdn` folder entry specifically — the one spelling that had shipped — and `{"type":"suffix",
+// "value":".png"}` would have walked straight past it. scripts/lib/packIgnore.mjs implements the
+// six documented `type`s, and refuses to guess about anything else.
 const where = packCfg.from ? `${packCfg.from} packOptions.ignore` : 'packOptions.ignore';
-if (relativeRefs > 0 && excludesAssetDir) {
+const unevaluable = unsupportedEntries(packCfg.ignore);
+if (unevaluable.length) {
   fail(
-    `${where} excludes ${ASSET_DIR}/, but the bundle bakes ${relativeRefs} package-relative ` +
-    `${ASSET_DIR}/ reference(s) — every asset read would fail (\`readFileSync:fail permission denied\`), ` +
-    'so the game boots to an empty screen. Either drop that entry (whole-package mode, local IDE ' +
-    'self-test) or rebuild with NW_ASSET_CDN set (plan A). See ASSET_PACKAGING §4.0.'
+    `${where} contains ${unevaluable.length} entr${unevaluable.length > 1 ? 'ies' : 'y'} this gate cannot ` +
+    `evaluate, so it cannot say whether the assets are packed:\n` +
+    unevaluable.map(({ entry, why }) => `      - ${describeEntry(entry)} — ${why}`).join('\n') +
+    '\n    Extend scripts/lib/packIgnore.mjs rather than leaving the rule silently inert.'
   );
-} else if (relativeRefs === 0 && absoluteRefs > 0 && !excludesAssetDir) {
+}
+
+const excluded = [...referenced]
+  .map((name) => ({ name, by: ignoredBy(`${ASSET_DIR}/${name}`, packCfg.ignore) }))
+  .filter((r) => r.by);
+if (relativeRefs > 0 && excluded.length) {
+  const shown = excluded.slice(0, MAX_LISTED);
+  const rest = excluded.length - shown.length;
+  const culprits = [...new Set(excluded.map((r) => describeEntry(r.by)))];
   fail(
-    `the bundle bakes absolute CDN urls (plan A), but ${where} does not exclude ${ASSET_DIR}/ — ` +
-    `the whole asset set would be packed into the main package (4 MB ceiling) and then downloaded ` +
-    'again at runtime. Add `{ "type": "folder", "value": "cdn" }`. See ASSET_PACKAGING §4.0.'
+    `${where} excludes ${excluded.length} of the ${referenced.size} asset(s) the bundle asks the ` +
+    `package for — via ${culprits.join(', ')}:\n` +
+    shown.map((r) => `      - ${ASSET_DIR}/${r.name}`).join('\n') +
+    (rest > 0 ? `\n      … and ${rest} more` : '') +
+    `\n    The bundle bakes ${relativeRefs} package-relative ${ASSET_DIR}/ reference(s), so those reads` +
+    ' go through WechatAssetIO\'s in-package branch: every one fails with `readFileSync:fail permission' +
+    ' denied` and the game boots to an empty screen. Either drop that entry (whole-package mode, local' +
+    ' IDE self-test) or rebuild with NW_ASSET_CDN set (plan A). See ASSET_PACKAGING §4.0.'
+  );
+} else if (relativeRefs === 0 && absoluteRefs > 0 && excluded.length < referenced.size) {
+  fail(
+    `the bundle bakes absolute CDN urls (plan A), but ${where} leaves ` +
+    `${referenced.size - excluded.length} of ${referenced.size} asset(s) in the package — ` +
+    'the asset set would be packed into the main package (4 MB ceiling) and then downloaded again at ' +
+    'runtime. Add `{ "type": "folder", "value": "cdn" }`. See ASSET_PACKAGING §4.0.'
   );
 }
 

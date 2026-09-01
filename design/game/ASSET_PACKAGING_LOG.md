@@ -609,41 +609,76 @@ uploads, so simulator cannot get those」），只是当时被读成了一句无
 **没有**改成让 `build:wechat` 自动改写这个文件：DevTools 自己也写它（在「详情」里改任何设置都会），
 两个写入方争一个文件换来的麻烦比省下的那次手改多。改成门禁去检查，见下。
 
-### 21.3 门禁第 4 条：把两个文件焊在一起
+### 21.3 门禁第 4 条：问「在不在包里」，而且是逐文件问
 
 `scripts/checkWechatPackage.mjs` 原来三条规则问的都是「**字节在不在磁盘上**」。新增第 4 条问它后面
 那个问题——「**在不在包里**」：读 `project.config.json` / `project.private.config.json`（后者覆盖
-前者，与 DevTools 的合并顺序一致）里的 `packOptions.ignore`，与它刚在 bundle 里数出来的 URL 形状
-对账，两个方向都拦：
+前者，与 DevTools 的合并顺序一致）里的 `packOptions.ignore`，对**每一个被引用的资源**问一次。
 
-- 相对路径 + 排除 `cdn/` → **红**（本节的 bug；报错里直接给出 `readFileSync:fail permission denied`
-  和「游戏起得来但屏幕是空的」这两个症状，下一个人不用再从症状倒推）；
-- 绝对 URL + **不**排除 `cdn/` → **红**（反向失守：21 MB 美术进 4 MB 红线的主包，运行时还会再下一遍）。
+**第一版写错了方向，值得记下来**：它问的是「ignore 列表里有没有 `cdn` 这个 folder 条目」——也就是
+**当时恰好出事的那一种写法**。可 `packOptions.ignore` 支持六种 `type`（`folder`/`file`/`suffix`/
+`prefix`/`glob`/`regexp`），一条 `{"type":"suffix","value":".png"}` 能把 300 张图排除出包，而那个
+代理问题会全绿放过去。**这正是本节 bug 的同一形状：用一个代理问题冒充真问题。** 所以把匹配逻辑抽成
+`scripts/lib/packIgnore.mjs`（六种 `type` 全实现），逐文件判定，两个方向都拦：
 
-区分两种形状不需要第二个正则：绝对形式前面必然是 URL 自己的 `/`（`https://host/cdn/<hash>`），相对
-形式被烘焙成裸字符串字面量、前面是引号。`folder` 与 `glob`（`cdn/**`）两种写法都认，`./cdn/` 这类
-写法先归一化。通过时那行 ✅ 会**报出它验的是哪个模式**（`whole-package (cdn/ packed)` /
-`plan A CDN (cdn/ excluded)`）——之前它对模式一无所知，正是这一点让错的组合看起来是绿的。
+- 相对路径 + 任何一条 ignore 命中资源 → **红**。报错里点名**是哪一条 ignore 条目干的**、被它带走的
+  文件（前 12 个），以及 `readFileSync:fail permission denied` 和「游戏起得来但屏幕是空的」这两个
+  症状——下一个人不用再从症状倒推。
+- 绝对 URL + 还有资源留在包里 → **红**（反向失守：21 MB 美术进 4 MB 红线的主包，运行时还会再下一遍）。
+
+两处刻意的设计：
+
+- **区分两种 URL 形状不需要第二个正则**：绝对形式前面必然是 URL 自己的 `/`（`https://host/cdn/<hash>`），
+  相对形式被烘焙成裸字符串字面量、前面是引号。
+- **不会 evaluate 的 pattern 既不猜「在包里」也不猜「不在」**：未知 `type`、解析不了的 `regexp`、用了
+  没实现的 glob 语法（`{a,b}` 这类），一律**报红**并指名去扩 `packIgnore.mjs`。猜任何一边都是让门禁
+  开始说谎——一个静默失效的门禁比没有门禁更糟，因为它还在发绿灯。
+
+通过时那行 ✅ 会**报出它验的是哪个模式**（`whole-package (cdn/ packed)` / `plan A CDN (cdn/ excluded)`）
+——之前它对模式一无所知，正是这一点让错的组合看起来是绿的。
 
 `.gitignore` 里 `wechatgame/project.config.json` 是被忽略的（DevTools 托管、含 appid），
 `project.private.config.json` 才是入库的那个——所以门禁两个都读，但真正能被 review 到的是后者。
 
-### 21.4 验证
+### 21.4 测试：把「这个 checkout 现在是对的」也变成默认套件里的一条
+
+门禁只在 `build:wechat` 里跑（约 21 s，还得先有产物），所以**默认套件此前对那个配置文件没有任何
+意见**——这正是它能带着一个不成立的组合一路发货的原因。补两处，把契约的两半各自钉住：
+
+- **左半（webpack 烘出什么形状）** `test/wechatAssetUrlShape.test.ts`（6 例，新文件）：`NW_ASSET_CDN`
+  留空 → `publicPath === ''` + `filename === 'cdn/[contenthash][ext]'`；有值 → `<cdn>/`（多余的尾
+  斜杠归一化，不许出现 `//cdn/`）；三个 wechat target 一致；web/crazygames/mobile **没有**这个
+  generator（防有人「统一」掉），且 `NW_ASSET_CDN` 对它们无效。读配置不跑构建，理由同
+  `wechatSingleBundle.test.ts`：要防的是有人手改配置。
+- **右半（入库的包清单拿它怎么办）** `wechatPackageGate.test.ts` 里新增一例——把**真实的**
+  `wechatgame/project.private.config.json` 拷到一个 fixture 包旁边（bundle 烘的是相对 URL，也就是
+  左半那条断言锁住的默认构建形状），断言资源出来是**打进包里的**。约 50 ms，**这条就是那个会当场
+  抓住本节 bug 的测试**。
+
+`wechatPackageGate.test.ts` 12 例 → **29 例**：除上面那条，新增的覆盖两个方向、六种 ignore 写法
+逐一（`folder`/`./cdn/`/`glob cdn/**`/`glob **/*.tao`/`suffix .png`/`prefix`/`file`/`regexp`）、
+**不许误报**（只有 `.map` 时放行；`cdnx` 这种擦肩而过的 pattern 放行；单个 `*` 不许跨 `/`——否则
+任何 `*.png` 规则都会被读成「整个 cdn/ 被清空」）、无法 evaluate 的三类 pattern 一律报红、配置文件
+缺失（当作「什么都没排除」而不是报错）、配置文件 JSON 坏掉（报错，不要静默当空）、以及那行 ✅ 报出
+的模式名。
+
+### 21.5 验证
 
 - **在真实产物上先看它红**：把 `{"type":"folder","value":"cdn"}` 加回一份产物副本，门禁精确复现
-  改动前的状态（`excludes cdn/, but the bundle bakes 324 package-relative cdn/ reference(s)`）；
-  去掉即绿。这是本节唯一直接证明「诊断成立」的一步——它复现的不是 fixture，是仓库改动前那一刻。
-- `test/wechatPackageGate.test.ts` 12 例 → **19 例**：新增 7 例覆盖两个方向、`glob`/`./cdn/` 两种
-  写法、配置文件缺失（当作「什么都没排除」而不是报错）、配置文件 JSON 坏掉（报错，不要静默当空）、
-  以及那行 ✅ 报出的模式名。**变异测试**：把第 4 条的两个判断短路成 `false`，恰好 3 例转红
-  （两个方向 + glob 写法），报告类的 4 例保持绿——正是期望的分工。
-- `npm run build:wechat` 重跑（19.7 s）：门禁绿、`grep -oE '\?\.[a-zA-Z_$([]|\?\?'` 两项均为 0、
+  改动前的状态（`excludes 324 of the 324 asset(s) the bundle asks the package for`，并点名那条
+  ignore）；去掉即绿。这是唯一直接证明「诊断成立」的一步——它复现的不是 fixture，是仓库改动前那一刻。
+- **两条新测试各自做了变异**：① 把那条 `{folder: cdn}` 加回**真实的**
+  `project.private.config.json` → 只有「checkout 自己的包清单」那一例转红（56 ms）；② 把
+  `publicPath: assetCdn ? … : ''` 改成 `: undefined` → 只有「相对 URL 形状」那一例转红。两次都是
+  一例一红、零连带。
+- 把第 4 条的两个判断短路成 `false` → 恰好那批「该红」的用例转红，报告类的用例保持绿。
+- `npm run build:wechat` 重跑（21.5 s）：门禁绿、`grep -oE '\?\.[a-zA-Z_$([]|\?\?'` 两项均为 0、
   acorn 以 `ecmaVersion:2019` 解析产物通过（§20.2 那条阻塞没有回归）。
-- `wechatPackageGate` 19 例 / `wechatSingleBundle` 14 例 / `wechatHost` 18 例 /
-  `WechatPlatform` 17 例 / `capacitorStubs` 7 例 全绿；`npm run typecheck`（`tsconfig.test.json` +
-  fulllink）绿——§20.2 记的那次红（mock callback 缺 `openTextInput`）已由 HEAD 的 92bad126f 还清。
+- **全量默认套件 234 文件 / 2663 例全绿**；`npm run typecheck`（`tsconfig.test.json` + fulllink）绿
+  ——§20.2 记的那次红（mock callback 缺 `openTextInput`）已由 HEAD 的 92bad126f 还清；`npm run lint`
+  0 error（2 条既有 warning 在 `src/app/nav/world.ts`，与本次无关）；`check:filelength` 绿。
 
-### 21.5 仍然欠着
+### 21.6 仍然欠着
 
 1. **这次没有在开发者工具里亲眼看到画面**。会话跑在同一台机器上，能读 DevTools 的落盘日志
    （`%LOCALAPPDATA%\微信开发者工具\User Data\<hash>\WeappLog\`，§20.5 那条技巧的延伸——这次的诊断
