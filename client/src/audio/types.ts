@@ -10,8 +10,9 @@
 /**
  * 一次性短音的完整词汇表。id 沿用 AUDIO_DESIGN.md §2.1/§2.2 的命名（`sfx.` 前缀不是冗余：
  * 那份文档把 SFX 和 BGM 放在**同一个扁平 id 命名空间**里，BGM 是 `bgm.*`。BGM 走的是另一套
- * 接口形状（单实例 + 淡入淡出，见 §3 的 `playBgm`/`stopBgm`），所以还没进这个 union；
- * 保留前缀是为了那一天到来时不用改名）。
+ * 接口形状（单实例 + 淡入淡出 + 流式，见下面的 {@link MusicTrack} 与 `AudioBus.updateMusic`），
+ * 所以不在这个 union 里。保留 `sfx.` 前缀当初是为了 BGM 落地那天不用改名——**2026-09-01 那天
+ * 到了，一个 cue id 都没动**）。
  *
  * 加一个 cue 到这个 union，在 `CUE_CATALOGUE` 里给它混音决策之前是**编译错误**——
  * 这是刻意的：一个没有 gain/priority 的 cue 只会以"听起来不对"的形式暴露，那太晚了。
@@ -64,18 +65,29 @@ export type AudioCue =
   | 'sfx.ui.error';
 
 /**
- * 循环长音（BGM）的词汇表，与 {@link AudioCue} 共用一个扁平 id 命名空间（AUDIO_DESIGN.md §2.3）。
+ * BGM 轨的完整词汇表（AUDIO_DESIGN.md §2.3 / §7 第 7 步）。
  *
- * **只登记真的有文件的轨。** §2.3 的表里还写着 `bgm.battle` / `bgm.intro`，它们不在这个 union
- * 里——`cueAssets.ts` 那一课（一个空条目与疏漏完全无法区分）在音乐这边更严重：一条没有文件的轨
- * 会以"这个界面就是安静的"的形式存在，而那和设计意图完全一样，永远没有人会发现。写进 union 的
- * 每一个 id 在 `MUSIC_TRACKS` 里都必须有文件，否则编译不过。
+ * **与 `AudioCue` 共用同一个扁平 id 命名空间**（`sfx.` / `bgm.` 两个前缀），但**刻意是两个
+ * union**，因为它们进的是两条形状完全不同的路：cue 是一次性的、解码进 `SampleBank`、走
+ * `VoiceBudget` 抢占；轨是**流式**的、单实例、靠交叉淡入闭环。把它们塞进一个 union 只会让每个
+ * 消费者第一件事就是把它拆开。
  *
- * 结算 stinger（`sfx.result.*`）**不在这里**：它们是一次性短音，走 SFX 管线（§2.3 尾注）。
+ * **§2.3 列了四条轨，这里只有两条，那是拍板过的收敛而不是欠账**（2026-09-01）：
+ *  - `bgm.intro` 不存在——§2.3 自己写着「可与 BGM_lobby 共用」，而一条只在首启放一次的独立轨要
+ *    多付一次生成、一份下载量和一个永远只有一个人听过的验收。它由 `IntroScene` 省略 `music`
+ *    字段自动落到 `bgm.lobby`。
+ *  - `bgm.victory` / `bgm.defeat` 从来就不是轨：§2.3 的尾注已经把结算 stinger 归给 SFX 管线
+ *    （`sfx.result.*`，catalogue 里优先级最高的三个 cue），它们不占 BGM 槽。
  */
 export type MusicTrack =
-  /** 大厅 / 菜单 / 商店 / 世界地图 / 结算 —— 除对局之外的一切（见 `sceneMusic.ts`）。 */
+  /** 大厅 / 菜单 / 商店 / 世界地图 / 结算 / 首启故事——轻松、低存在感。 */
   'bgm.lobby';
+
+// **`bgm.battle` 不在这个 union 里，尽管 §2.3 列着它、尽管三个对局场景正等着它。**
+// 它没有 master（brief 在 `art/audio/suno/BRIEFS.md`），而一条没有文件的轨如果先进 union，
+// 它会以「这个界面就是安静的」的形式存在——那和设计意图长得**一模一样**，永远不会有人发现。
+// 所以对局场景现在声明的是 `music: null`（刻意的安静），等 master 到了再一起改成 `'bgm.battle'`：
+// 那时 `MUSIC_CATALOGUE` 缺条目会**编译不过**，缺文件会**构建不过**，两道都是硬的。
 
 /**
  * 可替换的音频设备（AUDIO_DESIGN.md §3）。
@@ -102,18 +114,29 @@ export interface AudioBus {
   play(cue: AudioCue, count?: number): void;
   /** SFX 总线增益，0..1（AUDIO_DESIGN.md §4 三档音量的 `sfx` 通道）。 */
   setSfxVolume(v: number): void;
-  /** BGM 通道增益，0..1（`master × bgm`，静音时 0）。 */
+  /** BGM 总线增益，0..1（同上的 `bgm` 通道）。 */
   setMusicVolume(v: number): void;
   /**
-   * 声明**现在应该放哪条 BGM**；`null` = 应该安静（AUDIO_DESIGN.md §2.3 / §7 第 7 步）。
+   * **一帧的 BGM**（AUDIO_DESIGN.md §7 第 7 步）。`desired` 是此刻**应该**在响的轨；传一个
+   * 已经在放的轨是空操作。
    *
-   * 声明式而不是 `playMusic()`/`stopMusic()` 一对命令：唯一的调用方是 `SceneManager`，它每次
-   * 换场景都要说一次，而"大厅 → 商店 → 大厅"这类导航里绝大多数说的是同一条轨。幂等的
-   * setter 让那种情况天然什么都不做；一对命令则要求每个调用点自己记住上一次说了什么。
+   * **为什么是每帧一次的推导，而不是"切场景时通知一声"**——这是这一步唯一真正的接口决定：
    *
-   * 同 {@link play}：发后不理，不返回、不抛出、不 await。换轨走淡出淡入，由实现负责。
+   *  - **没有钩子可挂，就没有能漏掉的时刻。** 本仓库有 40 个场景、三族互不相同的按钮机制
+   *    （§7 第 4 步为此漏了两遍），而"新加一个场景"每周都在发生。事件式的版本要求每个新入口
+   *    记得通知一次；推导式的版本读的是**已经每帧都在读的东西**。
+   *  - **没有触发点，就没有重复触发。** 设置已经在放的轨在 {@link MusicTrack} 播放器里是空操作，
+   *    所以来回切标签页、模态开关、场景淡入淡出中途再来一次 `goto`，都不可能把一条床重启。
+   *  - **autoplay 闸门自己会过去。** 手势之前这个调用无事可做；手势之后的那一帧，同一个调用把
+   *    床起起来。不需要队列、不需要重试、不需要记"刚才试过没有"。
+   *
+   * `dtMs` 驱动的是交叉淡入的包络和 ducking 的衰减，**不是**循环回绕的判据——回绕读的是正在
+   * 播的那条流自己的 `position()`（累积时钟会在每一次卡帧、后台、音频中断上悄悄漂移，症状是
+   * 接缝错位，听起来像一条切坏了的循环而不是像一个计数器的 bug）。
+   *
+   * `null` = 什么都不该响，走同一条淡出。
    */
-  playMusic(track: MusicTrack | null): void;
+  updateMusic(desired: MusicTrack | null, dtMs: number): void;
   /** 越过浏览器/小游戏的 autoplay 闸门（AUDIO_DESIGN.md §5）；必须在用户手势里调。 */
   resume(): void;
 }

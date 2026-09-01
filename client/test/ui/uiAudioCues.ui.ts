@@ -53,7 +53,7 @@ class RecordingBus implements AudioBus {
   play(cue: AudioCue): void { this.cues.push(cue); }
   setSfxVolume(): void {}
   setMusicVolume(): void {}
-  playMusic(): void {}
+  updateMusic(): void {}
   resume(): void {}
 }
 
@@ -165,9 +165,10 @@ describe('SettingsScene volume block (AUDIO_DESIGN §4)', () => {
     scene.destroy();
   });
 
-  it('the bgm slider stays silent — its channel drives nothing yet', () => {
-    // Auditioning an SFX cue for the music slider would be a lie about what the slider controls:
-    // setMusicVolume accepts and ignores until §7 step 7 lands.
+  it('the bgm slider stays silent — the bed itself is the audition', () => {
+    // Unchanged behaviour, changed reason (§7 step 7): the music channel now drives a real bed,
+    // which is audible WHILE the slider moves, so an SFX cue here would talk over the very thing
+    // it would be demonstrating. See `audioPanel.ts` for the full note.
     installAudioSettings({ storage: memStorage() });
     const { scene, input, inner } = buildSettings();
     const bgm = inner.audioSliders[1]!.rect;

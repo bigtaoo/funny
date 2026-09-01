@@ -20,9 +20,11 @@
 //
 // A fake ticker (deltaMS = 16) is stepped manually; helpers advance frames until the fade settles.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { SceneManager, type Scene, type InputGate, type DialogGate } from '../../src/scenes/SceneManager';
+import { setAudioBus, NullAudioBus } from '../../src/audio/audioBus';
+import type { AudioBus, MusicTrack } from '../../src/audio/types';
 import { InputManager } from '../../src/inputSystem/InputManager';
 
 /** Fake PIXI.Application exposing just what SceneManager touches, plus a manual frame(). */
@@ -386,5 +388,81 @@ describe('SceneManager × InputManager (integration)', () => {
     // The NEXT tap is delivered normally — input is fully live again.
     input._emitUp(6, 6);
     expect(bUp).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── BGM: which bed the frame asks for (AUDIO_DESIGN.md §7 step 7) ──────────────────────────────
+//
+// `onTick` derives the desired track every frame from `current.music` rather than being told on a
+// scene change. These cases pin the things that derivation gets wrong if written carelessly, and
+// every one of them is SILENT in the shipped game:
+//
+//   * a `??` fallback swallowing an explicit `null` — a scene asking for silence gets the lobby bed;
+//   * an overlay hijacking the bed — a City overlay opened over a match would stop the battle music,
+//     even though `current` is still alive and simulating underneath;
+//   * the music frame stopping when a scene throws — the bed freezes mid-crossfade, which reads as
+//     broken audio rather than as the broken scene it actually is.
+//
+// Driven through the real `setAudioBus` seam rather than a module mock: that is the seam production
+// uses, so a case here cannot pass against a shape the game does not have.
+describe('SceneManager — the per-frame BGM derivation', () => {
+  function recordingAudio(): (MusicTrack | null)[] {
+    const asks: (MusicTrack | null)[] = [];
+    // Spelled out rather than spread over a `NullAudioBus` — its methods live on the prototype, so
+    // a spread would produce an object that type-checks as nothing and throws at the first call.
+    const bus: AudioBus = {
+      preload: async () => {},
+      play: () => {},
+      setSfxVolume: () => {},
+      setMusicVolume: () => {},
+      resume: () => {},
+      updateMusic: (desired) => { asks.push(desired); },
+    };
+    setAudioBus(bus);
+    return asks;
+  }
+  afterEach(() => { setAudioBus(new NullAudioBus()); });
+
+  const last = <T,>(a: T[]): T | undefined => a[a.length - 1];
+
+  it('a scene that declares nothing gets the default bed', () => {
+    const asks = recordingAudio();
+    const { app, frame } = makeApp();
+    new SceneManager(app).goto(makeScene());
+    frame();
+    expect(last(asks)).toBe('bgm.lobby');
+  });
+
+  it('`music: null` means SILENCE and is not swallowed into the default', () => {
+    // The declared value that matters today: `bgm.battle` has no master, so the three match
+    // scenes declare `null` (see `GameScene.music`). `??` would read that as "omitted" and hand
+    // back the lobby bed — music under a match, which is exactly what the union's absence is
+    // meant to prevent. Only `undefined` may fall back.
+    const asks = recordingAudio();
+    const { app, frame } = makeApp();
+    new SceneManager(app).goto({ ...makeScene(), music: null } as Scene);
+    frame();
+    expect(last(asks)).toBeNull();
+  });
+
+  it('an overlay does NOT change the bed — `current` is still the situation', () => {
+    const asks = recordingAudio();
+    const { app, frame } = makeApp();
+    const mgr = new SceneManager(app);
+    mgr.goto({ ...makeScene(), music: null } as Scene);
+    mgr.pushOverlay(makeScene());        // declares nothing, i.e. would default to the lobby bed
+    frame();
+    expect(last(asks)).toBeNull();
+  });
+
+  it('keeps asking every frame even while the scene update is throwing', () => {
+    const asks = recordingAudio();
+    const { app, frame } = makeApp();
+    new SceneManager(app).goto({
+      ...makeScene({ update: () => { throw new Error('boom'); } }), music: null,
+    } as Scene);
+    frame();
+    frame();
+    expect(asks.filter((a) => a === null).length).toBeGreaterThanOrEqual(2);
   });
 });

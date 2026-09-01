@@ -1,8 +1,9 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
 import { setActiveScene, recordFrameSample } from '../net/anomaly';
-import { playMusic } from '../audio/audioBus';
-import { musicForScene } from '../audio/sceneMusic';
+import { updateMusic } from '../audio/audioBus';
+import { DEFAULT_TRACK } from '../audio/musicCatalogue';
+import type { MusicTrack } from '../audio/types';
 
 const log = netLog('scene');
 
@@ -21,6 +22,22 @@ export interface Scene {
    */
   pause?(): void;
   resume?(): void;
+  /**
+   * Which BGM track sounds while this scene is on screen (AUDIO_DESIGN.md §2.3 / §7 step 7).
+   *
+   * **Omitted means `bgm.lobby`** (`musicCatalogue.ts`'s `DEFAULT_TRACK`) — a default rather
+   * than a required field, the same call §7 step 4 made for `Hit.sound`. Most of this repo's 40
+   * scenes are shell screens; making each one restate the lobby bed would only make the handful
+   * that forget look like deliberate decisions. `null` means silence, which nothing asks for
+   * today but is the one thing the default cannot express.
+   *
+   * **A literal field rather than a scene-name lookup table.** The obvious alternative was to
+   * key off `setActiveScene`'s `constructor.name`, which is already a single funnel for exactly
+   * "what is on screen" — but production webpack mangles class names. Anomaly attribution
+   * tolerates a mangled name; music silently playing the wrong bed in the shipped build and the
+   * right one in dev does not.
+   */
+  readonly music?: MusicTrack | null;
 }
 
 // ── Transition tuning ──────────────────────────────────────────────────────────
@@ -220,7 +237,6 @@ export class SceneManager {
     this.targetStage.addChild(next.container);
     // Stamp the scene name for anomaly attribution (ANR watchdog has no other lead on what was on screen).
     setActiveScene(next.constructor?.name ?? 'Scene');
-    this.applyMusic(next);
   }
 
   /**
@@ -242,7 +258,6 @@ export class SceneManager {
     this.current?.pause?.();
     this.targetStage.addChild(scene.container); // addChild appends last → renders on top of `current`
     setActiveScene(scene.constructor?.name ?? 'Scene');
-    this.applyMusic(scene);
   }
 
   /** Tear down the overlay scene mounted by {@link pushOverlay} and resume `current` underneath. */
@@ -254,20 +269,6 @@ export class SceneManager {
     this.destroyScene(ov);
     this.current?.resume?.();
     setActiveScene(this.current?.constructor?.name ?? 'Scene');
-    this.applyMusic(this.current);
-  }
-
-  /**
-   * Tell the audio layer which BGM this screen wants (AUDIO_DESIGN §2.3). Called from the same
-   * three places as `setActiveScene`, and for the same reason: this class is the only thing that
-   * knows what is on screen, so putting it here is what keeps 40 scenes from each having to
-   * remember to start and stop music in their own constructor and `destroy()`.
-   *
-   * The mapping itself lives in `audio/sceneMusic.ts` — the manager only forwards a class name.
-   * `playMusic` is idempotent, so the lobby→shop→lobby round trip does not restart the track.
-   */
-  private applyMusic(scene: Scene | null): void {
-    playMusic(scene ? musicForScene(scene.constructor?.name ?? 'Scene') : null);
   }
 
   private destroyScene(scene: Scene): void {
@@ -309,6 +310,23 @@ export class SceneManager {
 
   private onTick = (): void => {
     this.stepTransition(this.app.ticker.deltaMS);
+
+    // BGM, derived fresh every frame (AUDIO_DESIGN.md §7 step 7). See `AudioBus.updateMusic`
+    // for why this is a derivation and not a notify-on-scene-change: with 40 scenes and three
+    // separate button mechanisms already found the hard way in §7 step 4, "remember to call it"
+    // is the shape of bug this repo keeps paying for.
+    //
+    // It follows `current`, NOT `overlayScene`. An overlay leaves `current` alive, mounted and
+    // simulating underneath — it is a layer on the same situation, not a new one, so a City
+    // overlay pushed over the world map should not be able to change the bed. Overlays that
+    // genuinely change the situation use `goto`, which does replace `current`.
+    //
+    // Placed before `tickScene` so a scene that throws (contained below) still gets its music
+    // frame — a frozen bed is a louder symptom than a frozen scene and would mislead.
+    // `?? DEFAULT_TRACK` would be wrong here: `music: null` means SILENCE, and `??` cannot tell
+    // it apart from the field being omitted. Only `undefined` falls back.
+    const declared = this.current?.music;
+    updateMusic(declared === undefined ? DEFAULT_TRACK : declared, this.app.ticker.deltaMS);
 
     if (this.current) this.tickScene(this.current);
     // The overlay scene (if any) ticks too, right on top of `current` — it's the visible/interactive

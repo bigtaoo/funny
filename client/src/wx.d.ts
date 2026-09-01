@@ -170,7 +170,13 @@ declare module wx {
     offTimeUpdate(cb: () => {});
 
     /** Listen for audio playback error events. */
-    onError(cb: () => {});
+    // Widened 2026-09-01 (§7 step 7): this was `cb: () => {}`, which declares a callback that
+    // takes NOTHING and returns an object — so the one useful thing about an audio failure, the
+    // errMsg, was untypeable at every call site. The shape below is the one the other three
+    // `onError` declarations in this file already use. Same family as §0.3's lesson: a runtime
+    // detail missing from OUR declaration file has exactly one symptom, which is that nobody
+    // uses it.
+    onError(cb: (opts: { errMsg: string; errCode: number }) => void): void;
 
     /** Remove listener for audio playback error events. */
     offError(cb: () => {});

@@ -26,7 +26,7 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import audit, process
+import audit, process, process_music
 
 FAILS = []
 
@@ -286,6 +286,142 @@ def main() -> int:
                    for rel in files
                    for w in process.check_source(os.path.join(process.SRC, rel), cap_ms)],
               "a source under art/audio/sources/ changed or went missing")
+
+    # ── BGM: band measurement, the shelf, and the `music` gate ───────────────────────────────
+    #
+    # Every measurement below is checked against a signal whose right answer is known
+    # independently, for the reason daydayup's version of this file records: two bugs in the
+    # exploratory version of these same measurements were found ONLY this way -- an FFT
+    # normalisation that calibrated peak amplitude while reporting RMS, and a block loop that
+    # never executed on short input and read -inf for everything. Both produced numbers that
+    # looked entirely plausible.
+    print("\nBGM band measurement")
+    t = np.arange(sr * 4) / sr
+
+    # band_rms: a sine reads its own RMS inside its own band and essentially nothing outside it.
+    for f, amp in ((100.0, 0.5), (1000.0, 0.25), (5000.0, 0.1)):
+        x = (amp * np.sin(2 * np.pi * f * t))[:, None]
+        got = audit.band_rms(x, sr, f * 0.8, f * 1.25)
+        check(f"a {f:.0f} Hz sine reads its own RMS in its own band",
+              near(got, audit.db(amp / np.sqrt(2)), 0.5), f"got {got:.2f}")
+        check(f"...and nothing 4-6x above it",
+              audit.band_rms(x, sr, f * 4, f * 6) < audit.db(amp / np.sqrt(2)) - 50)
+
+    # Two independent implementations of one truth: summing band_profile's log-spaced bands
+    # across 250-2000 Hz must land where band_rms puts the same range directly.
+    rng = np.random.default_rng(11)
+    noise = (rng.standard_normal(sr * 4) * 0.05)[:, None]
+    prof = audit.band_profile(noise, sr)
+    edges = audit.band_edges()
+    sel = [b for b in range(audit.BAND_N) if edges[b] >= 250 and edges[b + 1] <= 2000]
+    agg = audit.db(np.sqrt(np.sum(10 ** (prof[sel] / 10.0))))
+    direct = audit.band_rms(noise, sr, edges[sel[0]], edges[sel[-1] + 1])
+    check("band_profile and band_rms agree on broadband noise", near(agg, direct, 0.5),
+          f"{agg:.2f} vs {direct:.2f}")
+
+    # profile_diff's ENERGY WEIGHTING, which is what makes the number mean anything. Unweighted,
+    # a band sitting at -100 dBFS votes as loudly as the one carrying the music, and in an empty
+    # band the only thing left is FFT leakage whose phase differs between the two windows:
+    # daydayup measured 6.12 dB on a bed whose head and tail were IDENTICAL BY CONSTRUCTION,
+    # enough to fail a 3.5 dB gate on nothing at all.
+    per = np.stack([0.3 * np.sin(2 * np.pi * 440 * t[:sr]),
+                    0.3 * np.sin(2 * np.pi * 660 * t[:sr])], axis=1)
+    same = np.concatenate([per] * 10)
+    got_same = audit.xfade_band_diff(same, sr)
+    # Phrased as `not isnan and < 0.5` rather than `not (x > 0.5)`: a signal shorter than 4x the
+    # crossfade window returns nan, and `nan > 0.5` is False -- so the lazier phrasing would let
+    # "too short to measure" through as a pass.
+    check("a head and tail that are identical by construction read ~0 dB",
+          not np.isnan(got_same) and got_same < 0.5, f"got {got_same}")
+    other = np.stack([0.3 * np.sin(2 * np.pi * 3000 * t[:sr]),
+                      0.3 * np.sin(2 * np.pi * 3300 * t[:sr])], axis=1)
+    got_lurch = audit.xfade_band_diff(np.concatenate([per] * 9 + [other]), sr)
+    check("a tail three octaves away reads as a lurch", got_lurch > 5.0, f"got {got_lurch}")
+    check("a signal shorter than 4x the crossfade window reads nan, not a number",
+          np.isnan(audit.xfade_band_diff(per, sr)))
+
+    print("\nBGM production steps")
+
+    # low_shelf, held to the DESIGN REQUIREMENT rather than to its own formula -- which is what
+    # caught the order being wrong (a 2nd-order shelf reaches only -6.9 dB at f0/2, i.e. it
+    # under-delivers in the exact band it is aimed at).
+    def shelf_at(f, f0=80.0, g=-14.0):
+        y = process_music.low_shelf((0.4 * np.sin(2 * np.pi * f * t))[:, None], sr, f0, g)
+        return audit.db(float(np.sqrt(np.mean(y ** 2)))) - audit.db(0.4 / np.sqrt(2))
+    at40, at80, at160, at2k = (shelf_at(f) for f in (40.0, 80.0, 160.0, 2000.0))
+    check("the shelf delivers near its full cut by f0/2", -14.5 < at40 < -10.0, f"got {at40:.2f}")
+    check("the shelf is unity well above f0", abs(at2k) < 0.3, f"got {at2k:.2f}")
+    check("the shelf is monotonic across the corner", at40 < at80 < at160 < at2k,
+          f"{at40:.1f} {at80:.1f} {at160:.1f} {at2k:.1f}")
+    # Circularity is the property that lets a filter run over a LOOP region without inventing a
+    # seam. Asserted by commuting the filter with a rotation, which only a circular operator does.
+    sig = (rng.standard_normal(4096) * 0.1)[:, None]
+    rot_then = np.roll(process_music.low_shelf(sig, sr, 80.0, -14.0), 137, axis=0)
+    then_rot = process_music.low_shelf(np.roll(sig, 137, axis=0), sr, 80.0, -14.0)
+    check("low_shelf is circular, so a loop does not gain a seam",
+          float(np.max(np.abs(rot_then - then_rot))) < 1e-9)
+
+    y, _ = process_music.set_band_target(noise, sr, -30.0)
+    check("set_band_target lands on the target",
+          near(audit.band_rms(y, sr, *audit.MID_BAND), -30.0, 0.01))
+    loud = np.clip(noise * 40, -0.99, 0.99)
+    g, trim = process_music.peak_guard(loud, -3.0)
+    check("peak_guard brings a hot signal to the ceiling",
+          trim < 0 and near(audit.db(float(np.max(np.abs(g)))), -3.0, 0.01))
+    q, trim0 = process_music.peak_guard(noise, -3.0)
+    check("peak_guard never lifts a signal already under the ceiling",
+          trim0 == 0.0 and np.array_equal(q, noise))
+
+    st = np.stack([0.3 * np.sin(2 * np.pi * 440 * t), 0.3 * np.sin(2 * np.pi * 660 * t)], axis=1)
+    z = process_music.resample(st, sr, 24000)
+    check("the stereo resample keeps both channels and the duration",
+          z.shape[1] == 2 and near(len(z) / 24000, len(st) / sr, 1e-3))
+    check("the stereo resample keeps the level",
+          near(audit.db(float(np.sqrt(np.mean(z ** 2)))),
+               audit.db(float(np.sqrt(np.mean(st ** 2)))), 0.3))
+
+    print("\nBGM gate")
+
+    # The two constants that have to agree, in two files, with no compiler between them: the
+    # level `process_music.py` normalises TO must sit inside the window `audit.py` accepts. They
+    # are the same decision written twice, and nothing else would notice them parting.
+    lo_mid, hi_mid = next((lo, hi) for k, lo, hi, _ in audit.GATES["music"] if k == "mid_band_dbfs")
+    check("the gate's mid-band window contains process_music's level target",
+          lo_mid <= process_music.MID_TARGET_DBFS <= hi_mid,
+          f"target {process_music.MID_TARGET_DBFS} outside [{lo_mid}, {hi_mid}]")
+
+    check("a music path routes on its DIRECTORY, not its name",
+          audit.class_for("../../client/src/assets/audio/music/bgm-lobby.mp3", "sfx") == "music")
+    check("...and a cue next to it is unaffected",
+          audit.class_for("../../client/src/assets/audio/sfx-unit-death_00.mp3", "sfx")
+          == "feedback")
+    check("a bed held to the combat gate would be rejected -- i.e. the routing is load-bearing",
+          audit.gate({"duration_ms": 60000.0, "body_ms": 60000.0, "lead_silence_ms": 0.0,
+                      "peak_dbfs": -12.0, "clipped_samples": 0, "channels": 2}, "sfx") != [])
+
+    # Mutation test. A gate nobody has seen fail is not a gate (`checkWechatPackage.mjs`'s own
+    # header, and the lesson §0.4 records re-learning the hard way on the asset gate). Each row
+    # breaks exactly one clause of a passing measurement and names the word the failure must
+    # contain, so a rule that is silently dropped or loosened stops being invisible.
+    good = {"duration_ms": 60000.0, "xfade_band_diff": 1.2, "mid_band_dbfs": -29.0,
+            "peak_dbfs": -12.0, "clipped_samples": 0, "kbps": 96.0}
+    check("a well-formed bed passes the music gate", audit.gate(good, "music") == [],
+          f"got {audit.gate(good, 'music')}")
+    for field, bad, word in (
+        ("duration_ms", 15000.0, "20-90s"),        # too short: tires the ear
+        ("duration_ms", 95000.0, "20-90s"),        # too long: download budget
+        ("xfade_band_diff", 3.4, "lurch"),         # head and tail tonally apart
+        ("mid_band_dbfs", -24.0, "reading"),       # bed too loud: cues stop reading over it
+        ("mid_band_dbfs", -34.0, "reading"),       # bed too quiet: the other side of the window
+        ("peak_dbfs", -1.0, "headroom"),           # no headroom over the cue set
+        ("peak_dbfs", -30.0, "headroom"),          # effectively inaudible
+        ("clipped_samples", 4, "clipped"),
+        ("kbps", 192.0, "mobile data"),
+    ):
+        m = dict(good, **{field: bad})
+        fails = audit.gate(m, "music")
+        check(f"the music gate catches {field}={bad}",
+              any(word in f for f in fails), f"got {fails}")
 
     print()
     if FAILS:

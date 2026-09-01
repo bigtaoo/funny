@@ -20,15 +20,23 @@
 import type { AudioBus, AudioCue, MusicTrack } from './types';
 import { SampleBank } from './SampleBank';
 import { CueMixer } from './CueMixer';
-import { MusicPlayer, type MusicSource, type MusicState } from './MusicPlayer';
+import { MusicPlayer, type MusicDeck } from './MusicPlayer';
+import { DUCK_CUES } from './musicCatalogue';
 import { assetIO } from '../assets/assetIO';
 
 /** SFX 通道默认音量（AUDIO_DESIGN.md §4 "SFX 0.8"）。 */
 export const DEFAULT_SFX_VOLUME = 0.8;
-/** BGM 通道默认音量（AUDIO_DESIGN.md §4 "master 1 × bgm 0.5"）。 */
+
+/**
+ * BGM 通道默认音量（同上的 "bgm 0.5"）。
+ *
+ * **这个数是发货资产电平的另一半**：两条轨都被归一到 250–2000 Hz RMS = −29 dBFS，而那个目标是
+ * 按 `−29 dBFS × 0.5` 交付去推的（推导见 `tools/audio-pipeline/audit.py` 的 `music` 门禁）。
+ * 改这里而不重切资产，就是把整条床相对于 cue 集平移。
+ */
 export const DEFAULT_MUSIC_VOLUME = 0.5;
 
-/** 平台要回答的**两个**问题，其余全在 {@link ContextAudioBus} 里。 */
+/** 平台要回答的**四个**问题（BGM 落地前是两个），其余全在 {@link ContextAudioBus} 里。 */
 export interface ContextAudioBusDeps {
   /**
    * 造一个 WebAudio 上下文。**返回 `null` 就是"这个宿主没有音频设备"**——静音，不抛出：
@@ -50,21 +58,24 @@ export interface ContextAudioBusDeps {
    */
   warn?(message: string, err: unknown): void;
   /**
-   * 造一条流式音乐播放器（AUDIO_DESIGN.md §2.3）。**不走 `AudioContext`**——理由整段写在
-   * `MusicPlayer.ts` 的头注释里（82 MB 的解码内存 + 跨源 `createMediaElementSource` 的静音陷阱）。
+   * 造这个宿主的两个音乐 deck，或 `null` = 这个宿主放不了 BGM（AUDIO_DESIGN.md §7 第 7 步）。
    *
-   * 省略或返回 `null` = 这个宿主放不了音乐，SFX 照常。SFX 有设备而音乐没有是一个真实的组合：
-   * node 下的单元测试有假的 `AudioContext`，但没有 `HTMLAudioElement`。
+   * **收的是可能为 `null` 的 `ctx`，而且那不是疏忽**：web 的 deck 需要它
+   * （`createMediaElementSource` + 每 deck 一个 `GainNode`，因为 iOS 上 `audioEl.volume` 只读），
+   * 微信的 deck 完全不需要它（`InnerAudioContext` 没有音频图）。于是「没有 `createWebAudioContext`
+   * 的低版本基础库」这台设备**丢掉的是 SFX 样本，不是音乐**——这个签名就是那个性质的落点。
+   *
+   * 省略即"这个宿主没有 BGM"，与省略 `onGesture` 一样是合法状态（node 下的单元测试、e2e 入口）。
    */
-  createMusicSource?(): MusicSource | null;
+  createMusicDecks?(ctx: AudioContext | null): readonly [MusicDeck, MusicDeck] | null;
   /**
-   * 注册"页面可见性变了"的回调（AUDIO_DESIGN.md §4 "失焦自动暂停"）。web 是
-   * `visibilitychange`，微信是 `wx.onHide`/`wx.onShow`。
+   * 注册"前后台切换"的回调，`true` = 进后台（AUDIO_DESIGN.md §4 的失焦自动暂停）。
    *
-   * 只有音乐需要它：最长的 cue 也只有几百毫秒，切后台时早就播完了（同 `WechatAudioBus` 对
-   * 音频中断只接 `End` 那一半的理由）。
+   * web 是 `visibilitychange`，微信是 `wx.onHide`/`wx.onShow`（那个运行时没有 DOM）。
+   * **只有 BGM 需要它**：最长的 cue 是几百毫秒，切后台时它早就播完了，没有要暂停的东西——
+   * 而一条 60 秒的床不暂停，就是"切出去接个电话回来，音乐已经跑到了别处"。
    */
-  onVisibility?(cb: (visible: boolean) => void): void;
+  onFocusChange?(cb: (hidden: boolean) => void): void;
 }
 
 export class ContextAudioBus implements AudioBus {
@@ -78,24 +89,29 @@ export class ContextAudioBus implements AudioBus {
   private mixer: CueMixer | null = null;
   /** 造过一次就不再重试：宿主要么有 WebAudio，要么没有，逐次 `play()` 重试只是每帧一次 try/catch。 */
   private failed = false;
-  /** 音乐与 SFX 相互独立：一边没有设备不影响另一边（构造时决定一次，同 `failed` 的理由）。 */
+
+  // ── BGM（AUDIO_DESIGN.md §7 第 7 步）────────────────────────────────────────────────────
   private music: MusicPlayer | null = null;
+  private musicFailed = false;
   private musicVolume = DEFAULT_MUSIC_VOLUME;
+  /**
+   * 用户碰过屏幕没有——BGM 的 autoplay 闸门。
+   *
+   * **刻意不复用 `play()` 那条 `ctx.state === 'running'` 的判据**：那条把音乐拴在了 SFX 的
+   * `AudioContext` 上，而微信的 deck 根本不需要那个上下文（见 `createMusicDecks`）。用手势本身
+   * 作判据，两个平台同一条，且低版本基础库上音乐照样起得来。
+   */
+  private gestured = false;
 
   constructor(private readonly deps: ContextAudioBusDeps) {
-    deps.onGesture?.(() => this.resume());
-    let source: MusicSource | null = null;
-    try {
-      source = deps.createMusicSource?.() ?? null;
-    } catch {
-      // 同 `ensure()` 对上下文构造失败的处理：宿主声称有这个 API 但造不出来，降级成没有音乐。
-      source = null;
-    }
-    if (source) {
-      this.music = new MusicPlayer(source);
-      this.music.setChannelVolume(this.musicVolume);
-      deps.onVisibility?.((visible) => this.music?.setHidden(!visible));
-    }
+    // 宿主没有可监听的手势源（node、e2e 入口）就当作已经解锁——那种宿主的上下文本来一开始就是
+    // `running`，再等一个永远不会来的手势等于永远静音。
+    this.gestured = deps.onGesture === undefined;
+    deps.onGesture?.(() => {
+      this.gestured = true;
+      this.resume();
+    });
+    deps.onFocusChange?.((hidden) => this.music?.setPaused(hidden));
   }
 
   private ensure(): AudioContext | null {
@@ -144,10 +160,6 @@ export class ContextAudioBus implements AudioBus {
   resume(): void {
     const ctx = this.ensure();
     if (ctx && ctx.state === 'suspended') void ctx.resume();
-    // 音乐这边不需要"补播积压"（它只有一条 want，不是队列），但**需要重试一次 play()**：
-    // 首次进入大厅的音乐请求几乎必然发生在第一次点击之前，那一次 `play()` 被 autoplay 策略
-    // 拒掉了，而这里是它唯一的补救机会。
-    this.music?.resume();
   }
 
   setSfxVolume(v: number): void {
@@ -155,44 +167,61 @@ export class ContextAudioBus implements AudioBus {
     if (this.sfx) this.sfx.gain.value = this.sfxVolume;
   }
 
+  /** BGM 总线增益（AUDIO_DESIGN.md §4 的 `bgm` 通道）。**2026-09-01 起真的接了东西**——在此之前
+   *  它接受并忽略，好让设置页的滑杆不是一个盲控件。 */
   setMusicVolume(v: number): void {
     this.musicVolume = Math.max(0, Math.min(1, v));
-    this.music?.setChannelVolume(this.musicVolume);
+    this.music?.setBusVolume(this.musicVolume);
   }
 
   /**
-   * 声明现在该放哪条 BGM（`null` = 安静）。幂等，换轨走淡出淡入——全部在 `MusicPlayer` 里。
+   * 一帧的 BGM（`AudioBus.updateMusic`）。由 `SceneManager.onTick` 每帧无条件调一次。
    *
-   * 与 {@link play} 的一处关键差别：**这里不检查 `ctx.state === 'running'`。** SFX 在闸门打开
-   * 前一律丢弃（否则第一次点击会一次性听到积压的全部声音），而音乐是持续声源，"积压"没有意义——
-   * 它该做的是现在就试着播、被拒就等 `resume()` 再试。这也是它不共用 `AudioContext` 的又一个
-   * 结果：`HTMLAudioElement` 有它自己的 autoplay 闸门，与 `AudioContext.state` 无关。
+   * 手势之前直接返回：这时候没有任何能做的事，而**下一帧**就是解锁后的第一帧，同一个调用会把床
+   * 起起来——不需要队列、不需要重试。这也顺带保证了第一次下载不会在启动最忙的那几百毫秒里跟
+   * 22 个 cue 的 preload 抢带宽。
    */
-  playMusic(track: MusicTrack | null): void {
-    this.music?.setTrack(track);
-  }
-
-  /**
-   * 按住/放开音乐，不走淡出（AUDIO_DESIGN.md §4 "失焦自动暂停"）。
-   *
-   * `onVisibility` 走的是同一条路，`protected` 是为了让平台子类接上**别的**同义信号——微信的
-   * `onAudioInterruptionBegin/End`（来电）对播放器而言就是"切后台"，只是触发它的不是用户。
-   */
-  protected setMusicHidden(hidden: boolean): void {
-    this.music?.setHidden(hidden);
-  }
-
-  /** 音乐播放器的可观测状态；这个宿主放不了音乐时为 `null`。e2e 测量面用（`__nwAudio.music()`）。 */
-  get musicState(): MusicState | null {
-    return this.music?.state ?? null;
+  updateMusic(desired: MusicTrack | null, dtMs: number): void {
+    if (!this.gestured) return;
+    const player = this.ensureMusic();
+    player?.update(desired, dtMs);
   }
 
   play(cue: AudioCue, count = 1): void {
+    // Ducking（AUDIO_DESIGN.md §4）在**闸门之外**判：它读的是"游戏刚刚发生了什么"，而不是
+    // "这一声实际有没有出来"。放在下面那个 return 之后的话，一个正好没有样本、或者上下文还
+    // suspended 的瞬间就会让床忘记让路——而床是照放的，因为它走的是另一条闸门（`gestured`）。
+    if (DUCK_CUES.has(cue)) this.music?.requestDuck();
     const ctx = this.ensure();
     // `running` 之前什么都不播：suspended 的上下文会把声道排到闸门打开的那一刻，于是玩家的
     // 第一次点击会一次性听到之前积压的全部声音。
     if (!ctx || !this.mixer || ctx.state !== 'running') return;
     this.mixer.play(cue, count);
+  }
+
+  /**
+   * 懒造音乐播放器。**刻意不走 `ensure()`**：那个函数在拿不到 `AudioContext` 时会置 `failed`
+   * 并让整个后端静音，而音乐在微信上不需要那个上下文。这里只借 `ensure()` 顺手把 `ctx` 建起来
+   * （web 的 deck 需要它），拿到 `null` 也照常往下走，由平台侧的 `createMusicDecks` 决定这台设备
+   * 到底有没有 BGM。
+   */
+  private ensureMusic(): MusicPlayer | null {
+    if (this.music) return this.music;
+    if (this.musicFailed || !this.deps.createMusicDecks) return null;
+    let decks: readonly [MusicDeck, MusicDeck] | null = null;
+    try {
+      decks = this.deps.createMusicDecks(this.ensure());
+    } catch (err) {
+      this.deps.warn?.('music: 这个宿主造不出音乐 deck；本次会话没有 BGM', err);
+      decks = null;
+    }
+    if (!decks) {
+      this.musicFailed = true;
+      return null;
+    }
+    this.music = new MusicPlayer({ decks, warn: this.deps.warn });
+    this.music.setBusVolume(this.musicVolume);
+    return this.music;
   }
 
   /** 已解码的 cue 数 / variant 数——启动日志和浏览器冒烟用它回答"样本到底加载上了吗"。 */

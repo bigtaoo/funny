@@ -1,4 +1,8 @@
-// cue id → 已发货音频文件 URL。**本仓库唯一持有音频 `import` 语句的文件。**
+// cue id → 已发货音频文件 URL。**cue 侧唯一持有音频 `import` 语句的文件。**
+//
+// （2026-09-01 起有第二个：`musicCatalogue.ts` 持 BGM 的两条 import。原先这行写的是"全仓库唯一"。
+// 两者不合并，理由在那个文件的头注释：轨的 `path` 和 `lengthS` 是同一个决定的两半，而 cue 的
+// 混音数据和 URL 是两个决定——所以音乐是一个文件，cue 是 `cueCatalogue.ts` + 本文件两个。）
 //
 // 为什么是显式 import 而不是拼路径字符串（这是与 daydayup 那套实现最大的一处改判）：
 // funny 的资源 URL 在**构建期**由 webpack 烘焙（`asset/resource`，见 ASSET_PACKAGING §4）——
