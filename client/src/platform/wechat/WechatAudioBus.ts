@@ -60,13 +60,14 @@ export class WechatAudioBus extends ContextAudioBus {
     });
 
     // 中断（来电/系统闹钟）。这个运行时没有 DOM，所以没有 `visibilitychange`，这两个回调是
-    // **唯一**的信号。SFX 这边只需要恢复那一半：最长的 cue 是几百毫秒，中断开始时它早就播完了，
-    // 没有要暂停的东西；而中断**结束**后上下文可能停在 suspended，不 `resume()` 就是"接完一个
-    // 电话回来游戏哑了"，且此后再没有任何手势会去修它（`onTouchStart` 的解锁已经在开局用掉了）。
-    // 音频中断（来电/闹钟）。SFX 只需要恢复那一半（最长的 cue 是几百毫秒，中断开始时早已播完），
-    // **音乐两半都需要**：它是持续声源，中断开始时正响着。`Begin` 借用 `onVisibility` 那条
-    // 路径（对播放器而言"被系统抢走"和"切后台"是同一件事：按住，别淡出），`End` 放开并
-    // `resume()`——不接的话就是"接完一个电话回来游戏哑了"，而此后再没有任何手势会去修它。
+    // **唯一**的信号。
+    //
+    // **SFX 只需要恢复那一半**：最长的 cue 是几百毫秒，中断开始时它早就播完了，没有要暂停的
+    // 东西；而中断**结束**后上下文可能停在 suspended，不 `resume()` 就是"接完一个电话回来游戏
+    // 哑了"，且此后再没有任何手势会去修它（`onTouchStart` 的解锁已经在开局用掉了）。
+    //
+    // **音乐两半都需要**（2026-09-01）：它是持续声源，中断开始时正响着。`Begin` 借用
+    // `onVisibility` 那条路径——对播放器而言"被系统抢走"和"切后台"是同一件事：按住，别淡出。
     if (typeof wx !== 'undefined') {
       wx.onAudioInterruptionBegin?.(() => this.setMusicHidden(true));
       wx.onAudioInterruptionEnd?.(() => { this.setMusicHidden(false); this.resume(); });
