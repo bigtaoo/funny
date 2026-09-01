@@ -713,6 +713,36 @@ gain 1.0，与 −29 dBFS 的文件相乘正是上面那个 −35.02 dBFS。
 > 这也顺带说明：**每帧推导这个形状，在没有 rAF 的宿主上是彻底静默的**；它对生产没有影响
 > （玩家的标签页在前台），但任何后续的无头测量都必须知道这一点。
 
+#### 测出来的数（三）：ducking 在真实 stinger 下的包络（2026-09-01，事后补测）
+
+上面那条环境坑第二次咬人：这次能驱动的是**真实 Chrome**（`claude-in-chrome` 插件而不是 in-app
+面板），但插件驱动的标签页同样报 `document.hidden === true`（大概率是自动化窗口拿不到 OS 级焦点，
+Page Visibility API 不看"标签页是不是当前活动标签"，看的是"这个浏览器窗口有没有焦点"）——所以还是
+手动驱动，这次是 `app.ticker.update(t)`（PIXI 的 ticker 方法本身不检查可见性，只有**调度**它的那层
+rAF 会被冻结，直接调用绕开了那一层）。用真实 `ContextAudioBus.play('sfx.result.victory')`（不是
+`player.requestDuck()`）触发，逐帧读 `__nwAudio.music()`：
+
+| 累计 ms | duck | deck 增益 | 阶段 |
+|---|---|---|---|
+| 16 | 0.89 | 0.445 | 攻击中 |
+| 80 | 0.45 | 0.225 | 攻击结束 |
+| 160–520 | 0.45 | 0.225 | 保持 |
+| 620 | 0.5286 | 0.2643 | 释放开始 |
+| 920 | 0.7643 | 0.3821 | 释放中 |
+| ≥1500 | 1.0 | 0.5 | 完全放回 |
+
+四个常数（攻击 80 ms / 保持 500 ms / 释放 700 ms / 底 0.45）与源码逐帧吻合，包括一个一帧的量化细节：
+保持计时器在**上一帧**的值决定这一帧用哪个目标增益，所以释放不是恰好在第 500 ms 那一帧开始，而是在
+跨过 500 ms 边界的**下一帧**——60 fps 下差不超过 16 ms，听不出来，但解释了"为什么不是整百的边界"。
+
+这张表本身是一次性的（手动驱动出来的，不会再跑第二遍）；**沉淀下来的是**
+[`client/test/browser/audioDucking.spec.ts`](../../client/test/browser/audioDucking.spec.ts)——
+同一条链路，但跑在 Playwright 自己的浏览器里，那边**没有**这个 `document.hidden` 坑（连跑四次都过），
+所以它不需要手动驱动 ticker，真墙钟等待即可。两者的关系：上面这张表是"这次测出来数字对不对"的一次性
+证据，那条测试是"以后还对不对"的常驻回归——**它验证的是接线（cue 名字 → `DUCK_CUES` → 真
+`GainNode`），不是好不好听**，`MusicPlayer.test.ts` 原有的包络单测完全不经过 `ContextAudioBus.play()`
+所以看不见接线断掉。详见 [[audio-ducking-wiring-verified-2026-09-01]]。
+
 #### 与 daydayup 的三处不同，**都是删减**
 
 1. **deck 只有一个增益入口 `setGain`。** 那边 web 有一个上游的 music `GainNode`、微信没有音频图，
@@ -891,7 +921,8 @@ interface AudioBus {
 - **默认**：`master 1` / `bgm 0.5` / `sfx 0.8`，不静音（`DEFAULT_AUDIO_SETTINGS`）。**那个 `bgm 0.5` 是发货资产电平的另一半**（§0.5）：两条轨被归一到 250–2000 Hz RMS = −29 dBFS，而那个目标就是按 `−29 dBFS × 0.5` 交付推出来的。改这个默认值而不重切资产，等于把整条床相对于 cue 集平移。
 - **松手试听（2026-08-31 新增，§0.2 (B)）**：`master` / `sfx` 两根滑杆在 pointer-up 时播一声 `sfx.ui.tap`。**不在拖动中播**——`onDrag` 每次 pointer-move 都跑（实测一次真实拖动约 60–120 次），一次 move 一声就是 §0.1 里 `sfx.ink.tick` 那个机关枪换成手指。`bgm` 不试听：它现在什么都不驱动，用 SFX cue 去试听它是对「这根滑杆管什么」撒谎。落在 `AudioSlider.onRelease` 上而不是场景里，好让「松手响不响」和「响什么」仍然是 `audioPanel.ts` 一处的决定。
 - **同瞬叠加是混音的一条硬约束（§0.2 (C)）**：同一个 cue 在同一瞬间播 n 次，**音调型精确线性放大 n 倍**、噪声型只放大约 √n。所以任何**可能被同瞬触发多次**的 cue 都必须走合并（`play(cue, count)`，n=8 时比裸叠安静 5.5 倍）或节流；否则一次扇出发出的声音会比游戏里任何设计音都响一倍多。战斗侧靠 `EventsPanel.flushAudio` 的同帧合并，toast 侧靠 `raiseErrorCue()` 的节流。
-- **Ducking（可选 P2）**：盲盒揭示 / 结算 stinger 播放时，BGM 短暂压低再恢复。✅ **2026-09-01 落地**：−6.9 dB，80 ms 压下 / 500 ms 保持 / 700 ms 放回（放回远慢于压下——快速恢复本身就是一个可听见的事件，而 ducking 的整个用意是让人**不**注意到床动过）。触发它的六个 cue 在 `musicCatalogue.ts` 的 `DUCK_CUES` 里，**不在 `cueCatalogue.ts`**：「什么东西该给我让路」是音乐的混音决定，往 `CueDef` 加一个 `ducks` 会要求 18 个 cue 每个都回答一个与它自己无关的问题。重复触发只重新计时、不叠加压低量（十连揭示不该把床压到听不见）。**⚠️ 从未在真实 stinger 下听过**——用例断言的是包络的形状（`__nwAudio.music().duck`），不是它听起来对。
+- **Ducking（可选 P2）**：盲盒揭示 / 结算 stinger 播放时，BGM 短暂压低再恢复。✅ **2026-09-01 落地**：−6.9 dB，80 ms 压下 / 500 ms 保持 / 700 ms 放回（放回远慢于压下——快速恢复本身就是一个可听见的事件，而 ducking 的整个用意是让人**不**注意到床动过）。触发它的六个 cue 在 `musicCatalogue.ts` 的 `DUCK_CUES` 里，**不在 `cueCatalogue.ts`**：「什么东西该给我让路」是音乐的混音决定，往 `CueDef` 加一个 `ducks` 会要求 18 个 cue 每个都回答一个与它自己无关的问题。重复触发只重新计时、不叠加压低量（十连揭示不该把床压到听不见）。
+  > **2026-09-01（后）：包络形状与「cue → 真的会让路」的接线现在两边都测了，「听起来对不对」仍然没有。** `MusicPlayer.test.ts` 一直断言的是前者——它直接调 `player.requestDuck()`，从不经过 `ContextAudioBus.play()`，所以 `sfx.result.victory` 哪天掉出 `DUCK_CUES`、或者 `play()` 里那行 `this.music?.requestDuck()` 被删掉，这套单测**一个都不会红**（编译过、构建过、游戏照玩，症状只是"床不知道为什么没让路"）。补的是 `client/test/browser/audioDucking.spec.ts`：真 `ContextAudioBus.play('sfx.result.victory')` → 真 `DUCK_CUES` 查表 → 真 `MusicPlayer` → 真 `GainNode`，Playwright 真渲染器 + 真墙钟跑一遍攻击/保持/释放/回到 1，四次连跑没翻车（详见 [[audio-ducking-wiring-verified-2026-09-01]]）。**这仍然只是接线验证，不是听感验证**：ducking 的判断刻意放在 SFX 闸门之外（`play()` 里那条注释），所以这条测试在 `AudioContext` 停留 `suspended`（CI 的常态）时同样通过——它证明了「压下去、放回来」这条包络真的传到了真实音频图，没有证明玩家耳朵里那一下听起来对。
 - **失焦自动暂停**：页面/小游戏切后台（`visibilitychange` / `wx.onHide`）暂停 BGM，回前台恢复。✅ **2026-09-01 建成**（同上）：走 `ContextAudioBusDeps.onFocusChange`。web 用 `visibilitychange` 而不是 `blur`（后者在点开控制台或另一个窗口时也发，那时游戏仍然可见，停掉音乐只会让人以为它坏了）；微信没有 DOM，用 `onHide`/`onShow`，**并把音频中断接到同一个回调上**——对一条 60 秒的床来说「切出去了」和「来电话了」要的是同一件事。
 
 ---
