@@ -196,6 +196,30 @@ declare module wx {
 
   function createInnerAudioContext(opts?: { useWebAudioImplement?: boolean }): IInnerAudioContext;
 
+  /**
+   * Standard Web Audio API surface, since base library **2.19.0** (this project pins 3.15.1 in
+   * `wechatgame/project.private.config.json`). This is what `platform/wechat/WechatAudioBus.ts`
+   * runs on, and it is why the mini-game needs no audio implementation of its own — the whole
+   * `audio/` pipeline (procedural voices, AudioBuffer samples, bus gain) is portable as written.
+   *
+   * Declared as OPTIONAL on purpose: this file describes the API surface, not any one device's.
+   * A base library below 2.19.0 simply does not have it, and `WechatAudioBus` degrades that case
+   * to silence — so the optionality is the type system carrying that fact to every call site.
+   *
+   * The absence of this declaration is what made AUDIO_DESIGN.md §3 record the mini-game as
+   * "no oscillators, no GainNode" until 2026-08-31 — a statement about `wx.d.ts`, mistaken for
+   * one about the runtime.
+   */
+  function createWebAudioContext(): AudioContext;
+
+  /**
+   * Audio interruption (incoming call, alarm). This runtime has no DOM, so `visibilitychange`
+   * does not exist and these two are the only signal. `WechatAudioBus` listens to the END half
+   * only — see the reason there.
+   */
+  function onAudioInterruptionBegin(cb: () => void): void;
+  function onAudioInterruptionEnd(cb: () => void): void;
+
   function loadSubpackage(
     opts: Callback<{
       name: string;

@@ -9,7 +9,12 @@ const PreloadBootAssetsPlugin = require('./build/preloadBootAssets');
 module.exports = (env, argv) => {
   const isProd = argv.mode === 'production';
   const targetPlatform = env.TARGET || 'web';
-  const isWechat = targetPlatform === 'wechat';
+  // `wechat-e2e` is the WeChat twin of the `web-e2e` target: same runtime, same output contract
+  // (single self-executing pixigame.js, globalObject=globalThis, no HtmlWebpackPlugin, assets to
+  // cdn/), differing ONLY in which entry file webpack starts from. So every branch below keyed on
+  // `isWechat` is about the WeChat *platform*, never about which of the two entries is building —
+  // prefix match rather than equality is what keeps that true.
+  const isWechat = targetPlatform.startsWith('wechat');
   // Native (Capacitor iOS/Android) build. The bundle runs from capacitor://localhost, so there is
   // no same-origin backend — every backend URL must be baked as an absolute production address
   // (IOS_RELEASE.md §build). Env vars still override for staging/sandbox builds.

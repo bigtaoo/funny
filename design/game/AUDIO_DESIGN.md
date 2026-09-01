@@ -1,6 +1,6 @@
 # Notebook Wars — 音频系统设计
 
-> 状态：**战斗 + UI 触发点都已接，设置页有三档音量与静音；两轮真浏览器实测都已做完（§0.1 战斗 / §0.2 UI），第二轮抓出并修掉两个缺陷；平局 stinger 已补齐（18 个 cue）；资产仍为零（全部走程序化合成音）**（2026-08-31）· 权威：本文（音频**系统**的单一入口）· 更新：2026-08-31
+> 状态：**战斗 + UI 触发点都已接，设置页有三档音量与静音；三轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信）；平局 stinger 已补齐（18 个 cue）；微信不再静音——后端已落地并在 DevTools 里实测通过（§7 第 5 步 ✅）；资产仍为零（全部走程序化合成音）**（2026-09-01）· 权威：本文（音频**系统**的单一入口）· 更新：2026-09-01
 >
 > **权威边界**：音频**美学方向**（音色取向、禁用清单）仍归 [`../product/art-direction.md`](../product/art-direction.md) §声音；本文拥有**系统实现**——资产清单与命名、触发表、播放层抽象、混音、设置项、平台约束。两者不重述对方。
 
@@ -94,10 +94,11 @@
 
 **设置页（§4）**：`SettingsScene` 右栏加了一块音量区——三根滑杆（master / bgm / sfx）+ 一个静音开关，落在 `scenes/SettingsScene/audioPanel.ts`。**位置在 §0.2 (D) 被订正过一次**（原先撞在贯穿整宽的语言按钮行上，把 Deutsch 按钮吃掉一半，且是静默吃掉），现在是 `x0 = 0.60w` / `titleY = 0.30h`，由 `test/ui/settingsSliderOverlap.ui.ts` 守着。**master / sfx 两根滑杆松手时会试听一声 `sfx.ui.tap`**（§0.2 (B)：不试听的话它是一根完全盲的控件），bgm 那根保持静音。持久化走 `audio/audioSettings.ts`：一个 JSON 键 `nw_audio`，与 `nw_locale` / `nw_data_saver` 同级的**本地设置，不上云**（纯体验项，无防作弊价值，一次 `PUT /flags` 换不来任何东西）。形状抄 `assets/prefetchPolicy.ts`（`installAudioSettings({storage})` 在 `app.ts` 装一次），所以没装的环境（单元测试、headless）读到默认值、写入被丢掉，而不是抛错。**静音不清零滑杆**：`muted` 是独立于三个音量的覆盖，取消静音会回到玩家自己调的档位，而不是把他留在最底下。BGM 那根滑杆现在接的是 `setMusicVolume`，它接受并忽略（§7 第 7 步之前没有轨可放）——接上它是因为「设置里有个滑杆但拖了没反应」和「设置里没这一项」是两种体验，前者更糟，而这一项一定会有。
 
-**还没有的**：音频素材（§7 第 6 步）——18 个 cue **全部**是程序化合成音，`cueAssets.ts` 依旧是空的。
+**还没有的**：音频素材（§7 第 6 步）——18 个 cue **全部**是程序化合成音，`cueAssets.ts` 依旧是空的。BGM（§7 第 7 步）同样未开始。**微信真机**未验（DevTools 已验，见 §0.3 末尾那三条）。
 
 **验证过的**：
-- `test/audio/**` **109 个用例**（+4：`errorCueThrottle.test.ts`），`src/audio/**` 与 `src/ui/hits.ts` 行覆盖均 **100%**；两者都在 `vitest.config.ts` 的覆盖率门禁里（客户端整体 95.77% → **95.83%**，scope 又变大一点而百分比仍在上升）。
+- `test/audio/**` **127 个用例**（+4：`errorCueThrottle.test.ts`；**+18：`ContextAudioBus.test.ts`，2026-09-01**），`src/audio/**` 与 `src/ui/hits.ts` 行覆盖均 **100%**；两者都在 `vitest.config.ts` 的覆盖率门禁里（客户端整体 95.77% → **95.83%**，scope 又变大一点而百分比仍在上升）。
+  > **2026-09-01 顺带堵上一个 scope 的洞**：门禁 include 有 `src/audio/**`、**没有** `platform/**`，所以「`src/audio/**` 100%」一直是真的，同时后端类 `WebAudioBus` 一个用例都没有。抽出 `ContextAudioBus` 之后它进了门禁，18 例 + **8 个变异全抓**（明细见 §0.3）。
 - `test/uiTapSoundCoverage.test.ts` **11 例**——源码扫描守卫，四条断言 + 各自的 canary 和 allowlist 保鲜检查（明细见上面那张表）。四条**全部做过变异验证**。`DIRECT_UI_CUE_ALLOWLIST` 现在四条（新增 `audioPanel.ts` 的松手试听）。
 - `test/ui/settingsSliderOverlap.ui.ts` **14 例**（2026-08-31 新增，§0.2 (D)）——「任何滑杆矩形都不许与任何 hit 矩形相交」，3 种场景形状 × 4 种画布尺寸 + 两条结构断言。**做过变异验证**（把版面改回旧坐标，12 条全红）。
 - `test/audio/errorCueThrottle.test.ts` **4 例**（2026-08-31 新增，§0.2 (A)）——错误音扇出合并。**做过变异验证**。
@@ -105,6 +106,7 @@
 - 主套件 **2359 例**、UI 套件 **2428 例**、`test:sim` 13 例全绿。收敛命中表触碰了 80+ 个源文件和 12 个测试文件，两套件是这次重构唯一的行为安全网，一次都没有降级为「改测试迁就实现」——每一处红都是测试自己的旧形状（`h.x` → `h.rect.x`、`action` → `fn`）。
 - `tsc --noEmit`（`tsconfig.json` + `tsconfig.test.json`）、`eslint src`、500 行门禁、包体门禁、`test:sim`、`web` + `wechat` 两个 production 构建全通。
 - **微信主包只多付 585 字节**（2188322 → 2188907；其中 §0.2 的两处修复 + 松手试听占 148 字节，`sfx.result.draw` 占 28 字节），依旧接近持平：cue 字符串字面量 + `ui/hits.ts` + `audioSettings.ts` 是进包了，但**收敛本身省下的比它们花掉的还多**——大厅那条 18 分支链、战斗/世界地图 HUD 的 if 链、五份手抄的私有 `inRect`，全都塌成了共享的一份。**播放引擎仍旧没进**（`grep createOscillator` 命中 0 次）：`entries/wechat.ts` 依旧不 import `WebAudioBus`，装的是 `NullAudioBus`，所以微信上这些 `playSfx` 全部落在空操作上。
+  > **已过时（2026-09-01）**：微信后端落地后主包 2188907 → **2197453（+8546 字节）**，`createOscillator` / `createBiquadFilter` / `createWebAudioContext` 各命中 1 次——**播放引擎第一次真的进包**，微信上的 `playSfx` 不再是空操作。见 §0.3。
 - **真浏览器实测，不是推断**（Chrome，`entries/web-e2e.ts` 的 `window.__nwAudio` + 在 SFX 总线上挂一个 `AnalyserNode` 读 PCM 峰值）：`AudioContext` 在第一次真实点击后 `running`（48 kHz），总线增益 0.8（§4 的 SFX 默认值），**当时的 17 个 cue 全部出声**（第 18 个 `sfx.result.draw` 是 §0.2 那一轮补的，交付峰值 0.1179），`loaded()` 诚实地报 `{cues:0, variants:0}`。游戏本身跑着时**连续 2 秒静默量到 0.000**——既确认总线没有本底噪声/直流偏移，也确认目前确实没有任何代码在触发 cue。交付峰值：
 
   | cue | 峰值 | | cue | 峰值 |
@@ -302,6 +304,173 @@ n=8 时合并比裸叠**安静 5.5 倍**。`EventsPanel.flushAudio` 的 `Map<Aud
 - 新增的测量面：`__nwAudio.nodes()`（仅 `entries/web-e2e.ts`）——返回 `{ctx, sfx}`，与 `log()` / `clearLog()` 同类的永久测试基础设施。
 - **仍然没有人听过任何一个合成音。** 这一轮把「响得对不对」量到了尽头，「好不好听」还是只差一个人坐下来听。
 
+### 0.3 微信后端的实测（2026-09-01，§7 第 5 步）
+
+微信从此不再静音。落地形态**不是**本文 §3/§5 原先写的「`InnerAudioContext` 对象池」，而是
+`platform/wechat/WechatAudioBus.ts` —— 走 `wx.createWebAudioContext()`，**整条管线一行没改**。
+
+#### ⚠️ 拦住这一步的从来不是平台，是我们自己的 `.d.ts`
+
+微信一直装 `NullAudioBus`，理由写在 `entries/wechat.ts` 和 `audio/audioBus.ts` 两处注释里：
+「那个运行时没有振荡器、没有 GainNode，所以合成音、`AudioBuffer` 样本、总线增益这三样一行都
+跑不起来」。**那句话的唯一依据是 `client/src/wx.d.ts` 里只声明了 `createInnerAudioContext`**
+——即把「我们的声明文件写了什么」当成了「运行时提供什么」。
+
+真实的小游戏运行时从基础库 **2.19.0** 起就提供 `wx.createWebAudioContext()`，一个标准 WebAudio
+表面（DevTools 自带的小游戏 API 补全集里就有这一条，文档挂在
+`minigame/dev/api/media/audio/WebAudioContext.html`）；本项目
+`wechatgame/project.private.config.json` 钉的是 3.15.1，DevTools 实际装的基础库是 **3.17.2**，
+早就在门槛之上。本文 §3 其实把这条备选写进了脚注，只是标着「本仓库没有设备可验证」——
+**真正拦住它的是没人去验**。
+
+> 一般化的教训，比这次的代码值钱：**一个平台 API 在 `.d.ts` 里缺席，唯一的症状就是没人去用它。**
+> 没有编译错误、没有红用例、没有告警——缺席本身就是它的伪装。两处错误注释没有删掉，改成了
+> 记录成因。
+
+#### 于是「对象池」这个取舍不需要做
+
+§5 原先要求「SFX 走对象池（如 8 个 `InnerAudioContext` 轮转）」。`InnerAudioContext` 是**按 URL
+播放的流式播放器**：一个实例一次一条音轨，没有振荡器（合成音无处安放）、没有可写的总线增益
+（三档音量只能逐实例乘进去）、没有 `AudioBuffer`（同一个 cue 的 n 次合并只能变成 n 个实例，正好
+撞上 §0.2 (C) 那条线性叠加律）。用它铺 SFX 等于为这一个平台再养一套形状不同的混音器。
+
+而对象池**真正想要的东西**——并发上限 + 按优先级抢占——早就在 `audio/VoiceBudget.ts` 里了，
+平台中立、被用例守着、两个平台共用一份。`InnerAudioContext` 剩下的正当用途只有 BGM
+（单实例、流式、`loop=true`），即 §7 第 7 步。
+
+#### 顺带把后端类拉进了覆盖率门禁
+
+接第二个平台时才看清楚：`WebAudioBus` 里真正属于 web 的只有**两行**——上下文从哪来
+（`new AudioContext()`）、手势从哪来（`window.addEventListener`）。其余（总线 GainNode、SFX 音量、
+`SampleBank`/`CueMixer` 的装配、preload、autoplay 闸门、`loaded` 统计）在任何提供 WebAudio 表面的
+宿主上逐字相同。所以抽出平台中立的 `audio/ContextAudioBus.ts`，两个后端各自只回答那两个问题，
+各约 15 行。
+
+**这次抽取顺带修掉了一个此前没人注意到的洞**：`vitest.config.ts` 覆盖率门禁的 include 里有
+`src/audio/**`、**没有** `platform/**`。所以「`src/audio/**` 行覆盖 100%」这句话一直是真的，
+同时 `WebAudioBus` **一个用例都没有**——门禁的 scope 边界正好落在那个类外面。搬进 `audio/` 之后
+它进了门禁，新增 `test/audio/ContextAudioBus.test.ts` **18 例**（懒建上下文 / 宿主无音频设备的三条
+降级路径 / autoplay 闸门 / `count` 转发 / 建前设音量 / 夹取 / preload 不等闸门 / `ctx`+`sfx` 字段名
+反射面）。**8 个变异全部被抓**（拆掉 failed 闩、拆掉 ctx 记忆、丢掉 `count`、忽略建前音量、
+去掉 `running` 判断、去掉 `suspended` 判断、去掉手势接线、给 `sfx` 字段改名）。
+
+#### 怎么测的：一条新的测量面，以及两条走不通的路
+
+**两条死路，写下来省得下次再试：**
+
+1. **`miniprogram-automator` 够不到小游戏。** `cli.bat auto --auto-port 9420` 起得来，
+   `automator.connect()` 也真的连上了（WebSocket `readyState: 1`）——但 `evaluate` 和
+   `callWxMethod` **永远不返回**。那套协议是给**小程序**做的（appservice + pages），小游戏没有
+   那个 RPC 面，命令发出去没人接。
+2. **IDE 的 `--remote-port 3799` 不是 CDP HTTP 端点。** launch.log 里能看到这个参数，但
+   `/json/version` 打不通；devtools 进程监听的几个端口里只有两个是纯 WebSocket
+   （`Upgrade Required`），没有可枚举 target 的 CDP 面。
+
+**走通的路**：新增 `src/entries/wechat-e2e.ts` —— **`web-e2e.ts` 的小游戏孪生**，永不发布。
+它不启动游戏，直接构造 `WechatAudioBus`、在 SFX 总线上挂 `ScriptProcessorNode` 读**逐样本**峰值
+（不是轮询 `AnalyserNode`，理由同 §0.2），逐个 cue 播 10 次取中位数，把报告写到
+`wx.env.USER_DATA_PATH`——那在 DevTools 里是**磁盘上的真实目录**，于是整轮测量完全无头：不需要网络
+（也就不用动 `urlCheck` 域名白名单）、不需要读控制台、不需要人点一下。构建走
+`npm run build:wechat-e2e`（`webpack.config.js` 里 `isWechat` 由 `=== 'wechat'` 改成
+`startsWith('wechat')`——那些分支全都是关于**平台**的，不是关于哪个入口在构建）。
+
+> **报告有三个出口，因为每一个都有自己缺席的方式**：文件（唯一无头的，也是将来真机日志能带回来的）、
+> `GameGlobal.__nwAudioProbe`（有控制台的人的抓手）、以及一行 `console.log`。**第三个是这轮花掉一
+> 小时买来的**：磁盘上什么都没有，这件事对「探针崩了」和「模拟器根本没跑它」是等价的，而这两者
+> 要的修法完全不同。
+
+#### ⚠️⚠️ 那一小时的真正去向：DevTools 开的是**另一个目录**，而且那份产物已经坏了一个多月
+
+探针死活不落盘。查到最后：DevTools 窗口里开的是**主检出** `D:\funny\client\wechatgame`，而我构建
+的是自己 worktree 里的同名目录。更糟的是主检出那份 `pixigame.js` 是 **2026-07-29** 构建的，里面还
+带着 webpack 的 auto-publicPath 运行时（`document.currentScript` /
+`getElementsByTagName("script")`）——小游戏运行时没有 DOM，所以它**一启动就
+`TypeError: t.getElementsByTagName is not a function`**，连 `game.js` 第二行都过不去。
+
+现在构建的包里那个运行时**已经不再生成**（`grep currentScript` = 0），所以这是一个「**旧产物**」
+问题，不是「微信构建坏了」。但它的含义值得记下来：**主检出的 `wechatgame/` 产物是 gitignore 的，
+没有任何东西保证它是新的**，而谁在 DevTools 里开它都会看到一个与当前代码毫无关系的崩溃。本轮收尾
+时已把它刷新成当前构建。
+
+两条可复用的排查经验：
+
+- **`usr/` 目录是按 appid 分的，而 appid 不在 `project.private.config.json` 里。** 这个项目在
+  DevTools 里注册的是真 appid `wx25a3b18a3e83ffce`，所以报告落在
+  `WeappSimulator/WeappFileSystem/<user>/wx25a3b18a3e83ffce/usr/`，而我一直在
+  `touristappid/usr/` 底下找。旁边还躺着 8 月 25 号某次会话留下的 `boot-report.json` /
+  `tap-report.json` / `quality-probe.json`（仓库里已经没有对应代码）——**「写 USER_DATA_PATH」
+  这条路以前就有人走通过**。
+- **`nwassets/` 的出现是「真游戏入口没崩」的无头判据**：`WechatAssetIO` 在构造函数里
+  `mkdirSync` 它，而那是 `entries/wechat.ts` 的第一件事。本轮换回正常构建后它当场出现，
+  即真正的游戏入口（`setAssetIO` → `setAudioBus(new WechatAudioBus())` → `startApp`）
+  在微信运行时里正常启动。
+
+#### 测出来的数
+
+环境：DevTools 3.17.2（`platform: devtools`，模拟设备报 `iOS 10.0.1`），48 kHz，总线增益 0.800
+（§4 的 SFX 默认值），`loaded()` 诚实地报 `{cues:0, variants:0}`，2 秒静默基线 **0.0000**。
+
+- **`wx.createWebAudioContext` 存在，且上下文的工厂方法一个不缺**：`createGain` /
+  `createOscillator` / `createBufferSource` / `createBiquadFilter` / `createBuffer` /
+  `createAnalyser` / `createScriptProcessor` / `decodeAudioData` **全部是 function**。
+  `onTouchStart` / `onAudioInterruptionBegin` / `onAudioInterruptionEnd` 同样存在。
+- **这个运行时上没有 autoplay 闸门**：`ctx.state` 在**没有任何手势**的情况下直接就是 `running`
+  （web 上必须等第一次点击）。手势接线仍然保留——真机上未必如此，而一个用不到的 `resume()`
+  是零成本。
+- 18 个 cue **全部出声**，每个测 10 次取中位数（§0.2 (C) 定的口径）：
+
+  | cue | 微信中位数 | Chrome（§0/§0.2） | 比值 | 运行间抖动 |
+  |---|---|---|---|---|
+  | `sfx.card.play` | 0.1583 | 0.1460 | 1.08× | 35% |
+  | `sfx.base.hit` | 0.1341 | 0.1510 | 0.89× | 21% |
+  | `sfx.result.victory` | 0.1316 | 0.1320 | **1.00×** | 1% |
+  | `sfx.spell.cast` | 0.1254 | 0.1290 | 0.97× | 17% |
+  | `sfx.result.draw` | 0.1179 | 0.1179 | **1.00×** | 0% |
+  | `sfx.result.defeat` | 0.1178 | 0.1170 | **1.01×** | 4% |
+  | `sfx.card.invalid` | 0.1172 | 0.1050 | 1.12× | 15% |
+  | `sfx.ui.gacha.reveal.epic` | 0.1034 | 0.1010 | 1.02× | 18% |
+  | `sfx.unit.hit` | 0.0963 | 0.0980 | 0.98× | 48% |
+  | `sfx.ui.tap` | 0.0921 | 0.0923 | **1.00×** | 30% |
+  | `sfx.unit.death` | 0.0902 | 0.0990 | 0.91× | 27% |
+  | `sfx.ui.reward` | 0.0892 | 0.0892 | **1.00×** | 0% |
+  | `sfx.ui.error` | 0.0782 | 0.0780 | **1.00×** | 2% |
+  | `sfx.ui.gacha.reveal.rare` | 0.0765 | — | — | 0% |
+  | `sfx.ui.back` | 0.0706 | 0.0706 | **1.00×** | 1% |
+  | `sfx.ui.gacha.reveal.common` | 0.0668 | — | — | 0% |
+  | `sfx.unit.attack` | 0.0485 | 0.0580 | 0.84× | 40% |
+  | `sfx.ink.tick` | 0.0279 | 0.0280 | **1.00×** | 0% |
+
+- **这张表最有说服力的不是「都出声了」，是它的形状正好复现了 §0.2 (C)**：以**音调**为主体的 cue
+  与 Chrome **数值上一致到小数点后四位**（`result.draw` / `ui.reward` / `ui.back` / `ink.tick` /
+  `result.victory` / `ui.error` / `ui.tap` 七个，比值 1.00–1.01×），它们自己的抖动也是 0–4%；
+  以**噪声**为主体的 cue 落在 0.84–1.12× 之间，而它们的抖动是 15–48%——**偏差全部小于它们自己的
+  采样噪声**。也就是说确定性的那一半逐位相同，随机的那一半只差在它自己的随机性上。
+
+#### ⚠️ 这一轮**没有**验证到什么：真机
+
+**DevTools 是 Chromium 模拟器。** 上面那七个音调型 cue 与 Chrome 一致到四位小数，这件事本身就是
+证据——说明这个模拟器的 `createWebAudioContext` **不是一套独立实现，而是转发给 Chromium 的
+WebAudio**。所以它能证明的是：API 表面齐全、我们的接线正确、整条管线在 WebAudio 语义下跑得通、
+交付峰值与 catalogue 的意图一致。它**不能**证明 iOS/Android 微信客户端里那套原生实现给出同样的数。
+
+真机仍是**开放项**，需要验的三件事写在这里，好让下一个人不用重新推导：
+
+1. 低版本基础库（< 2.19.0）没有 `wx.createWebAudioContext` —— 代码已按「静音降级」处理
+   （`ContextAudioBus` 的 `createContext` 返回 `null`，与 SSR/node 走同一条路），但没有设备验过。
+2. 真机上 `ctx.state` 初始是不是 `running`。若不是，解锁走 `wx.onTouchStart`（已接）。
+3. 原生实现的滤波器/叠加行为是否与 Chromium 一致——即上面那张表在真机上还成不成立。
+   `entries/wechat-e2e.ts` 就是为这次复测留的：它写 `USER_DATA_PATH`，真机上可以随日志带回来。
+
+#### 包体
+
+微信主包 **2188907 → 2197453，+8546 字节**（基线是在同一环境下退到父提交重新构建的，
+逐字节复现了 §0.2 记的 2188907）。**这是播放引擎第一次真的进包**——此前三轮里
+`grep createOscillator` 一直是 0，只有 cue 字符串字面量跟着触发表进去；现在
+`createOscillator` / `createBiquadFilter` / `createWebAudioContext` 各命中 1 次。
+距 4 MB 主包红线仍有大量余量。
+
+---
+
 ## 1. 美学基线（引自 art-direction，不在此复述）
 
 一句话锚点：**轻巧、卡通、非写实的"文具拟音"**——铅笔沙沙、橡皮擦、翻笔记本页、笔帽咔哒；**禁止**金属碰撞、爆炸轰鸣等写实战争音效。所有音效服从「我蓝敌红 / 手绘笔记本」的整体调性。细节见 art-direction §声音。
@@ -375,9 +544,11 @@ interface AudioBus {
 - **`playSfx(id, {volume})` → `play(cue, count)`。** 单次播放不接受调用方传音量：混音权重是内容决策，住在 `cueCatalogue.ts` 一张表里（§4），否则"为什么攻击音把结算盖住了"要翻十个触发点。`count` 是本帧合并进来的事件数（§4 的合并规则）。
 - **`unlock()` → `resume()`，且不需要调用方接。** `WebAudioBus` 自己在 `window` 上挂 `pointerdown`/`keydown`/`touchstart`。比走 `InputManager` 严格更宽：后者会在场景淡入淡出和模态框期间闸掉指针事件，而 autoplay 闸门只要"用户碰过页面"，被游戏逻辑丢弃的那次点击同样能解锁。§6 里"IntroScene 首 tap 挂 unlock()"这条因此不需要了。
 
+**后端只有一套，平台各自只回答两个问题**（2026-09-01 接微信时抽的，见 §0.3）。`audio/ContextAudioBus.ts` 是平台中立的那一半——总线 GainNode、SFX 音量、`SampleBank`/`CueMixer` 的装配、preload、autoplay 闸门、`loaded` 统计；平台侧注入 `createContext()`（返回 `null` = 这个宿主没有音频设备，静音而不抛出）和可选的 `onGesture(cb)`。
+
 - **Web / CrazyGames / Capacitor iOS 壳**：`platform/web/WebAudioBus.ts`（`AudioContext` + 解码缓冲，低延迟、可并发、好做混音/淡入），SFX 走 buffer source。**没有 `HTMLAudioElement` 降级**：没有 `AudioContext` 的环境（SSR、node 测试、极老 WebView）直接静音，因为那条降级路径无法承载合成音，等于要维护第二套永远测不到的播放实现。
-- **微信小游戏**：**尚未实现，当前是 `NullAudioBus`（静音）。** `client/src/wx.d.ts` 只声明了 `wx.createInnerAudioContext`——那是一个按 URL 播放的播放器，**没有振荡器、没有 GainNode**，所以合成音、`AudioBuffer` 样本、总线增益这三样在那个运行时上一行都跑不起来。微信侧要的是本节原稿说的 `InnerAudioContext` 对象池（SFX 实例池复用，BGM 单实例 `loop=true`），是形状不同的一套后端，属于独立一步（§7 第 5 步）。在它落地之前微信静音，而不是装一个吞掉所有 cue 的假设备。
-  > 备选：若目标基础库确认提供 `wx.createWebAudioContext()`（WebAudio 形状），现有整条管线可以原样复用，只换上下文来源——但本仓库没有设备可验证，所以没有先把这个 API 声明写进 `wx.d.ts`。
+- **微信小游戏**：`platform/wechat/WechatAudioBus.ts`（**2026-09-01 落地**，§7 第 5 步）——`wx.createWebAudioContext()` + `wx.onTouchStart`，另接 `wx.onAudioInterruptionEnd → resume()`（这个运行时没有 DOM，没有 `visibilitychange`，那两个回调是唯一的中断信号；只需要恢复那一半，因为最长的 cue 是几百毫秒，中断开始时早已播完）。**整条管线一行没改。**
+  > **订正（2026-09-01）：本节原先写「微信没有振荡器、没有 GainNode，所以整条管线一行都跑不起来」，那是错的**——依据是 `client/src/wx.d.ts` 里只声明了 `createInnerAudioContext`，即把我们自己的类型声明当成了运行时的事实。小游戏从基础库 2.19.0 起就提供标准 WebAudio 表面。本节当时把这条备选写进了脚注、标着「没有设备可验证」；DevTools 实测见 §0.3，真机仍是开放项。
 - 资产路径**不用平台资源约定之外的任何东西**：见 §5 的首包体积那一行的订正。
 
 ---
@@ -405,8 +576,8 @@ interface AudioBus {
 |---|---|---|
 | **autoplay 限制**：首次音频必须在用户手势后才能响 | Web（所有现代浏览器）/ iOS Safari | 首个 tap（IntroScene/LoginScene 任意首次交互）调 `audio.unlock()` 解锁 `AudioContext`；解锁前的 BGM 请求排队，解锁后补播 |
 | **iOS WebAudio 需手势解锁** | iOS 网页 | 同上，`AudioContext.resume()` 必须在手势回调内 |
-| **同时音频实例数有限** | 微信小游戏 | SFX 走对象池（如 8 个 InnerAudioContext 轮转）。**订正：丢弃规则不是"最旧"而是"按优先级抢占"**——最旧那个很可能正是一局一次的结算 stinger，而新来的是第 40 个攻击音；丢最旧会砍掉唯一那次胜利音，换来一个听不出区别的攻击音。已实现于 `audio/VoiceBudget.ts`（同优先级判输，被抢占者 12ms 淡出而非硬切；按**时间**退休而不靠 `ended` 事件，因为一个"悄悄停止清扫"的上限会失效于静默——前 N 个 cue 之后混音直接变哑，看起来就是"音频坏了"） |
-| ~~**首包体积**~~ | ~~微信小游戏~~ | **订正（2026-08-31）：这条约束对本项目不存在。** 原稿写"BGM 放分包/CDN 按需拉，首包只带 P0 SFX"，那是通用建议；而本项目按 ASSET_PACKAGING §4 的**方案 A** 早已把**全部**美术资源托管在 CDN（`asset/resource` 的 `publicPath = NW_ASSET_CDN`，产物进 `wechatgame/cdn/`，由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包），主包是**纯代码 ~1.5 MB**。音频文件走同一条规则、同一个 `assetIO`，天然落在 CDN 上，**一个字节都不进主包**——所以"首包只带 P0 SFX"这个取舍不需要做，BGM 也不需要为体积单独分包。真正要留意的是**下载量与缓存**（同 §16 的资源预算口径），不是包体红线。<br>实测（2026-08-31，接完战斗触发点后重测）：微信主包为音频多付 **1234 字节**（2187088 → 2188322）——触发表的 cue 字符串字面量跟着 `events.ts` 进了包（`grep 'sfx.card.play'` 命中 1 次），但**播放引擎仍旧没进**（`grep createOscillator` 命中 0 次）：`entries/wechat.ts` 不 import `WebAudioBus`，装的是 `NullAudioBus`。接触发点之前这个数字是 0 字节 |
+| **同时音频实例数有限** | 微信小游戏 | ~~SFX 走对象池（如 8 个 InnerAudioContext 轮转）。~~ **订正 2（2026-09-01，§0.3）：`InnerAudioContext` 对象池不需要了。** 微信走 `wx.createWebAudioContext()`，SFX 与 web 共用 `audio/` 那条管线，而对象池真正想要的「并发上限 + 优先级抢占」本来就在平台中立的 `VoiceBudget.ts` 里，两个平台共用一份。`InnerAudioContext` 剩下的正当用途只有 BGM（单实例、流式、`loop=true`，§7 第 7 步）。下面这条**订正 1** 仍然成立，它描述的是 `VoiceBudget` 的语义：<br>**丢弃规则不是"最旧"而是"按优先级抢占"**——最旧那个很可能正是一局一次的结算 stinger，而新来的是第 40 个攻击音；丢最旧会砍掉唯一那次胜利音，换来一个听不出区别的攻击音。已实现于 `audio/VoiceBudget.ts`（同优先级判输，被抢占者 12ms 淡出而非硬切；按**时间**退休而不靠 `ended` 事件，因为一个"悄悄停止清扫"的上限会失效于静默——前 N 个 cue 之后混音直接变哑，看起来就是"音频坏了"） |
+| ~~**首包体积**~~ | ~~微信小游戏~~ | **订正（2026-08-31）：这条约束对本项目不存在。** 原稿写"BGM 放分包/CDN 按需拉，首包只带 P0 SFX"，那是通用建议；而本项目按 ASSET_PACKAGING §4 的**方案 A** 早已把**全部**美术资源托管在 CDN（`asset/resource` 的 `publicPath = NW_ASSET_CDN`，产物进 `wechatgame/cdn/`，由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包），主包是**纯代码 ~1.5 MB**。音频文件走同一条规则、同一个 `assetIO`，天然落在 CDN 上，**一个字节都不进主包**——所以"首包只带 P0 SFX"这个取舍不需要做，BGM 也不需要为体积单独分包。真正要留意的是**下载量与缓存**（同 §16 的资源预算口径），不是包体红线。<br>实测（2026-09-01，微信后端落地后）：微信主包为音频总共多付 **10441 字节**（2187088 → 2197453），其中**播放引擎本身 8546 字节**（2188907 → 2197453），此前三轮的 1819 字节全是触发表的 cue 字符串字面量。距 4 MB 主包红线仍有大量余量 |
 | **解码开销** | 全平台 | **启动时 `preload()` 全量**（`app.ts` 在 L0 闸门之后 fire-and-forget，不 await）。订正原稿的"进场景前 preload 该场景所需 id"：SFX 全集是 ~100 KB 量级，按场景切分省不下有意义的字节，却要每个场景维护一份会腐烂的 id 清单。suspended 的 `AudioContext` 照样能解码，所以这一步既不需要网络闸门也不需要 autoplay 手势。BGM 落地时按轨流式，另说 |
 
 ---
@@ -415,7 +586,8 @@ interface AudioBus {
 
 | 项 | 现状 |
 |---|---|
-| 平台音频抽象 | ✅ `audio/audioBus.ts`（模块级接缝，**不是** `IPlatform` 成员——见 §3 订正）+ `platform/web/WebAudioBus.ts` |
+| 平台音频抽象 | ✅ `audio/audioBus.ts`（模块级接缝，**不是** `IPlatform` 成员——见 §3 订正）+ `audio/ContextAudioBus.ts`（平台中立的后端，2026-09-01 从 `WebAudioBus` 抽出）+ 两个各约 15 行的平台半边：`platform/web/WebAudioBus.ts` / `platform/wechat/WechatAudioBus.ts` |
+| 微信音频后端 | ✅ **2026-09-01**（§7 第 5 步）。`wx.createWebAudioContext()`，管线原样复用，**不需要** `InnerAudioContext` 对象池（§5 订正 2）。`wx.d.ts` 补了三条声明（`createWebAudioContext` 声明为**可选**——低版本基础库真的没有，`ContextAudioBus` 把那种设备降级为静音）。DevTools 实测见 §0.3；**真机是开放项**，三件待验的事列在那一节末尾。微信主包 +8546 字节，播放引擎首次进包 |
 | cue 词汇表 + 混音表 | ✅ `audio/types.ts`（**18 个** cue，2026-08-31 补入 `sfx.result.draw`）+ `audio/cueCatalogue.ts`（gain/priority）。往 union 里加 cue，在 catalogue 里给它决策之前**编译不过** |
 | 程序化合成音（占位声源 + 永久兜底） | ✅ `audio/audioSynth.ts`，每个 cue 一把，文具拟音方向。**没有人听过** |
 | 样本加载 / 解码 / 并发上限 / 混音器 | ✅ `SampleBank` + `decodeAudio` + `VoiceBudget` + `CueMixer`，79 个用例 / 99.4% 行覆盖 |
@@ -425,6 +597,7 @@ interface AudioBus {
 | 设置页音量项 | ✅ 2026-08-31。`scenes/SettingsScene/audioPanel.ts`（右栏，三根滑杆 + 静音开关）+ `audio/audioSettings.ts`（`nw_audio` 一个 JSON 键）。滑杆**不是 hit**：它要跟手，所以留在 `audioSliders: { rect; onDrag; onRelease? }` 里，按下即接管指针、`update()` 每帧最多重绘一次（render()-per-pointermove 会卡）。<br>**§0.2 订正了两件事**：①版面撞在贯穿整宽的语言按钮行上（滑杆先查 hit 后查，所以是**静默**吃掉半个 Deutsch 按钮），已搬到 `0.60w / 0.30h` 并配 `test/ui/settingsSliderOverlap.ui.ts` 守着「滑杆矩形不许与 hit 矩形相交」；②「跟手好让玩家听到档位」这句话原本是假的（拖动一声不响、又没有 BGM），现在 master / sfx 松手时试听一声 `sfx.ui.tap`，实测试听峰值与档位严格成正比 |
 | 首启解锁手势 | ✅ 不需要调用方接：`WebAudioBus` 自己在 `window` 上挂 `pointerdown`/`keydown`/`touchstart`（见 §3） |
 | 盲盒/结算 stinger | ✅ 2026-08-31。结算 stinger 在 `EventsPanel`（§7 第 3 步），盲盒揭示在 `GachaScene/core.ts` 的 `revealCue()`——**一次抽一声**，取这一抽里最好的稀有度 |
+| 微信冒烟入口 | ✅ **2026-09-01** `entries/wechat-e2e.ts`（`npm run build:wechat-e2e`）——`web-e2e` 的小游戏孪生，永不发布。不启动游戏，直接构造 `WechatAudioBus`、在 SFX 总线挂 `ScriptProcessorNode` 读逐样本峰值，报告写 `wx.env.USER_DATA_PATH`（DevTools 里是磁盘真实目录，于是整轮无头）。**必须是一个入口而不是往运行中的游戏里注入脚本**：小游戏包是单个自执行 IIFE、什么都不导出，而 DevTools 的自动化端口说的是**小程序**协议——`miniprogram-automator` 连得上但 `evaluate`/`callWxMethod` 永不返回（§0.3 实测）。报告有三个出口（文件 / `GameGlobal.__nwAudioProbe` / `console.log`），理由见 §0.3 |
 | 浏览器冒烟入口 | ✅ `entries/web-e2e.ts` 暴露 `window.__nwAudio`：`play(cue)` / `resume()` / `cues` / `loaded()` / `log()` / `clearLog()`（总线包一层的 cue 流水账——AnalyserNode 只告诉你“响了、多响”，告诉不了你“响的是哪个 cue、合并了几个事件”，而一局里 cue 飞得比人眼快），**加 2026-08-31 新增的 `nodes()`**——直接交出 `AudioContext` 与 SFX 总线 `GainNode`，好让冒烟自己挂 `ScriptProcessorNode`/`AnalyserNode` 量**交付**峰值。必须是一个显式接缝而不是事后 patch：`app.ts` 的 `preload()` 启动时就建好了上下文，patch `AudioNode.prototype.connect` 永远晚一步（§0.2 开头那两个坑） |
 
 > **架构红线**：音频是**表现层**，触发点放在 render/scene 层订阅引擎事件，**不污染 `client/src/game`（纯 TS 确定性引擎）**——与 PIXI 渲染同级处理，保证引擎/回放/裁判确定性不受音频影响。
@@ -437,7 +610,7 @@ interface AudioBus {
 2. ~~cue 词汇表 + 混音表 + 程序化合成音 + 样本加载/解码/并发上限/混音器。~~ ✅ 2026-08-31
 3. ~~**战斗触发点**。~~ ✅ 2026-08-31（`EventsPanel.collectCue` + `flushAudio`，含同帧合并与 game-over 一次性门；真浏览器实测见 §0.1）。留下的两个口子**现在都补完了**：`sfx.card.invalid` 在第 4 步接上（客户端判的非法出牌，引擎不发事件）；`sfx.result.draw` 在第 6 步接上（见那一条）。
 4. ~~**UI 触发点**：先抽共享 hit 表 + 派发器（消掉 22 份重复的 `interface Hit`），再在那一处挂 `sfx.ui.*`；`SettingsScene` 三档音量 + 静音持久化。~~ ✅ 2026-08-31（`ui/hits.ts` + `audio/audioSettings.ts` + `SettingsScene/audioPanel.ts`；顺带补上了上一轮留下的 `sfx.card.invalid`。完整说明见 §0）。**真浏览器实测已补完**（§0.2），抓出并修掉两个缺陷：音量区版面撞语言按钮行（静默吃掉半个按钮）、`showToastMessage` 的错误音扇出成 2.4 倍爆音；顺带补上滑杆的松手试听。
-5. 微信 `InnerAudioContext` 后端 + 对象池（**不需要为体积分包**，见 §5 订正）。
+5. ~~微信 `InnerAudioContext` 后端 + 对象池（**不需要为体积分包**，见 §5 订正）。~~ ✅ **2026-09-01**——但**形状与这一条写的完全不同**：走 `wx.createWebAudioContext()`，整条管线原样复用，**没有对象池**（§5 订正 2：池真正想要的东西早在 `VoiceBudget.ts` 里）。拦住这一步的一直是我们自己的 `wx.d.ts` 缺声明，不是平台。落地与实测见 §0.3。**真机验证仍是开放项**（三件事列在 §0.3 末尾）；`entries/wechat-e2e.ts` 就是为那次复测留的。
 6. **音频素材**（+ 平局 stinger）。
    - ~~平局没有 stinger（词汇表缺 `sfx.result.draw`）——第 3、4 步各自留给这一步的口子。~~ ✅ 2026-08-31：`sfx.result.draw` 已进词汇表 / catalogue / 合成音 / `game_draw` 触发点，真浏览器交付峰值 0.1179（与失败 0.1178 齐平）。过程与那条「音调型 cue 的峰值取决于音符有没有重叠」的新规律见 §0.2 (E)。
    - **素材本身仍未开始**，成本比它看起来高，原因是我们的美学方向：
