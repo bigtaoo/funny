@@ -116,6 +116,40 @@ interface AssetIO {
 
 > CDN 域名：复用现有 gamestao.com 基础设施即可（web 资源已在 a.gamestao.com 的 Cloudflare 边缘）。`cdn/` 上传到某子域（如 `assets.gamestao.com` 或直接挂 a. 的某路径），构建时 `NW_ASSET_CDN=https://<子域>`。
 
+### 4.3 宿主适配层：微信构建不再靠别人的 DOM 兼容层活着（2026-09-01）
+
+**结论先说：客户端在微信上跑起来，一直依赖基础库自带的 DOM 兼容层，而这层依赖以前没人声明、
+没人测。** 2026-09-01 canary 3.17.2 少了几个全局类绑定，症状就是黑屏（LOG §17.1）。更要紧的是
+`D:\daydayup` 的 `design/04-wechat.md` 用两次线上 bug 换来的一条实测事实：
+
+> **`document` 在开发者工具模拟器里存在，在真机上不存在。**
+
+也就是说这类代码**在模拟器里能全绿、到手机上才炸**——funny 至今没在真机上跑过，所以这笔费还没
+付。适配层因此不是「canary 适配」，是**微信发布的前置条件**。
+
+**PIXI v7 的宿主依赖分两类，适配层也就是两个文件**（`platform/wechat/`，只被微信入口 import，
+因此天然不进 web/crazygames/mobile 包——同 `platform/ota.ts` 靠可达性隔离的办法）：
+
+| 文件 | 管什么 | 关键约束 |
+|---|---|---|
+| `wechatHost.ts`（+ `installHost.ts`） | PIXI **绕过 adapter 直接嗅探**的全局：`HTMLCanvasElement`、`HTMLImageElement`/`Image`、`navigator`、极小 `document`、`location`、`PointerEvent`、`window` | **必须是入口第一个 import**，早于 `@pixi/unsafe-eval`：`@pixi/settings` 的 `isMobile` 在**模块顶层**就读 `globalThis.navigator`，写在函数体里来不及。零 import。 |
+| `wechatPixiAdapter.ts` | PIXI **主动问**的 8 个方法（`settings.ADAPTER`） | `createCanvas` 走 `wx.createCanvas()`；2D 上下文构造函数从**丢弃的子 canvas**嗅探；`fetch`/`parseXML` 故意抛具名错 |
+
+三条设计约束，都是承重的：
+
+1. **任何东西都不从 `document` 派生。** 类绑定一律取 `wx.createCanvas()` / `wx.createImage()` 的实际产物。模拟器里 `document.createElement('canvas')` 甚至 `constructor.name` 恰好就是 `HTMLCanvasElement`（实测），照它写正是上面那个陷阱。
+2. **全部 `??=` 特性探测**，旧基础库/模拟器上近乎 no-op——所以验收条件是**两个库版本都必须绿**：只验 canary 是「让新库能跑」，只验已发布库是「把修复留住」，各证一半。
+3. **上屏 canvas 与类嗅探复用同一张 canvas。** 文档契约是「第一次 `wx.createCanvas()` 才是上屏」，嗅探要是自己再要一张，上屏就被偷走——同一个黑屏，隔了一层。`wechatHost.screenCanvas()` 是唯一出口，`WechatPlatform.getCanvas()` 只转发。
+
+**我们自己的调用点也不再靠嗅探**：`render/canvasTexture.ts` 指名 `CanvasResource`（`fastText` 的字形 atlas、stickman 的影子与描边三处），`shadow.ts`/`outline.ts` 的 canvas 创建改走 ADAPTER——那两处原本是 `document.createElement('canvas')`，真机必崩。
+
+**门禁 `test/wechatHostSurface.test.ts`**：扫描微信可达图，禁止裸用 `document`/`window`/`new Image()`/`fetch`/`navigator`/`localStorage`。`typeof x !== …` 守卫与带理由的 `// dom-ok:` 免检。基线 `test/dom-usage-baseline.json`（21 文件 / 54 处）**是欠账清单不是白名单**：只能变小，基线项修好了不删也报红。逐条欠账见 §4.4。
+
+### 4.4 微信仍然欠着的三件（2026-09-01 盘点）
+
+1. **REST 层没有 `fetch`**（`ApiClient`/`WorldApiClient`/`anomaly`/`analytics`）。`net/ApiClient/core.ts` 早就记着这条：微信云同步与合规一起排期，当前 `SaveManager` 降级为本地存档。要一个 `wx.request` 的桥（超时/AbortSignal/Response 形状/鉴权头都要对齐现有用例）。
+2. **14 处场景用隐藏 `<input>` 收文本**（登录名、聊天、拍卖出价、家族/宗门搜索、设置、反馈…），微信要换成 `wx` 的键盘 API。
+3. **真机从未验过**。以上全部只在 Chromium 模拟器上成立。`entries/wechat-probe.ts`（`build:wechat-probe`）就是为那次复测留的：它把宿主表面的「装之前 / 装之后」两份快照写到 `USER_DATA_PATH`，真机上跑一次，`before` 与模拟器的差异就是全部答案。
 ---
 
 ## 5. 手机套壳 —— 全量打包

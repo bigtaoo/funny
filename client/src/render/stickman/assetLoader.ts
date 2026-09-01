@@ -4,6 +4,7 @@
 // StickmanRuntime — the static loadAsset() cache delegates here.
 
 import * as PIXI from 'pixi.js-legacy';
+import { textureFromCanvas } from '../canvasTexture';
 import JSZip from 'jszip';
 import { Skeleton } from './skeleton';
 import type { AnimationClip, BoneKeyframe, SpriteBinding } from './types';
@@ -121,7 +122,7 @@ export async function parseTaoAsset(url: string, targetHeight?: number): Promise
       const widthTex = clampInt(OUTLINE_WIDTH_PX * texPerScreen, 1, 10);
       const built    = buildBoneOutline(ssImg, x, y, w, h, gapTex, widthTex, binding);
       if (built) {
-        outlineTextures.set(boneId, PIXI.Texture.from(built.canvas));
+        outlineTextures.set(boneId, textureFromCanvas(built.canvas));
         outlineAnchors.set(boneId, { ax: built.ax, ay: built.ay });
       }
     }

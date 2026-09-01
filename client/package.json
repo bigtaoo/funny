@@ -34,7 +34,8 @@
     "test:browser": "playwright test",
     "test:load": "vitest run --config vitest.load.config.ts",
     "test:manual": "vitest run --config vitest.manual.config.ts",
-    "build:wechat-e2e": "webpack --mode production --env TARGET=wechat-e2e"
+    "build:wechat-e2e": "webpack --mode production --env TARGET=wechat-e2e",
+    "build:wechat-probe": "webpack --mode production --env TARGET=wechat-probe"
   },
   "keywords": [],
   "author": "",

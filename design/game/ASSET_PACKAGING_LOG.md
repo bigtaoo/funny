@@ -166,3 +166,68 @@ ReferenceError: canvas is not defined
 - **画面由用户在开发者工具里核对**——这台机器上没有别的路子：`mcp__claude-in-chrome__*` 够不到 DevTools，`miniprogram-automator` 对小游戏是死路（`AUDIO_DESIGN.md` §0.3）。
 - 仍然欠着 §4.2 遗留 1/2（微信后台域名白名单、`cdn/` 上传），以及**真机**——3.17.2 的这条 canvas 行为是在 Chromium 模拟器上观察到的。
 
+### 17.4 宿主适配层：把这层依赖收归自己（当天下午）
+
+§17.1 修好 canvas 之后，下一个报错是 `Unrecognized source type to auto-detect Resource`（`Graphics`
+→ `FillStyle` → `Texture.WHITE`）。到这里性质就变了：**不是一个 API 没了，是 PIXI 依赖的整个 DOM
+嗅探面没了**。用户拍板自己拿一层适配层（理由：以后出问题查得快），架构与验收条件写在
+[`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4.3/§4.4，这里只记过程里值钱的东西。
+
+**第 1 阶段先量后写。** 新增 `platform/wechat/hostProbe.ts` + `entries/wechat-probe.ts`
+（`build:wechat-probe`，永不发布），把宿主表面写到 `USER_DATA_PATH`。实测结论一句话：
+**实现都在，只是没挂到全局**——`document`/`window`/`navigator`/`URL`/`WebGLRenderingContext` 都在，
+`document.createElement('canvas')` 正常返回且 `constructor.name` 恰好是 `HTMLCanvasElement`，
+`wx.createImage()` 的构造函数名就是 `HTMLImageElement`；缺的是 `HTMLCanvasElement`/
+`HTMLImageElement`/`Image`/`OffscreenCanvas`/`ImageBitmap`/`createImageBitmap`/`fetch`/`DOMParser`/
+`XMLHttpRequest`/`CanvasRenderingContext2D` 这些**全局类绑定**，外加裸 `canvas` 和 `document.baseURI`。
+
+> 探针的三个出口（磁盘 / `GameGlobal` / `console.log`）不是冗余：磁盘上什么都没有时，「探针崩了」
+> 和「模拟器根本没跑它」是等价的，而两者修法完全不同（AUDIO_DESIGN §0.3 同一条）。
+
+#### ⚠️ 中途被推翻的设计，以及推翻它的那句话
+
+第一版方案打算从 `document.createElement('canvas').constructor` 取类绑定——探针实测它可用。**错的。**
+`D:\daydayup` 的 `design/04-wechat.md` 里有他们用两次线上 bug 换来的一句：
+
+> **`document` 在开发者工具模拟器里存在，在真机上不存在。这是这个平台最有误导性的一件事。**
+
+我的探针正是在模拟器里量的。照那份数据设计，会得到一层**在模拟器里全绿、在手机上必崩**的适配层，
+而 funny 至今没在真机上跑过——**这笔费本来会由第一个真机测试的人来付**。改成一律从
+`wx.createCanvas()` / `wx.createImage()` 的实际产物取类。
+
+**这也是这轮最值钱的一般化**：探针只能告诉你「这台机器上有什么」，不能告诉你「这个平台保证什么」。
+两者之差就是模拟器与真机之差。
+
+#### 从 daydayup 抄到的其余三条（port the method, not the assets）
+
+- **不用 weapp-adapter，实现 PIXI 官方 adapter 扩展点**——他们 v8 用 `DOMAdapter.set()`，我们 v7 是
+  `settings.ADAPTER`，同一个决定。
+- **`fetch` 故意不实现**。他们复核过：Assets 真上了也没有任何路径走到 `fetch`（纹理解析只在
+  `createImageBitmap` 那条路上用它，而这个运行时没有 `createImageBitmap`，于是走 `createImage`）。
+  落到 `fetch` 的一律是「有人想要远端资源」，那是打包边界的决定，应该响亮地失败。
+- **测试 harness 要把浏览器全局真的 `delete` 掉**，而不是「碰巧没用到」。Node 自带 `fetch`/`URL`，
+  留着它们，一个仍然依赖 DOM 的实现会在测试里全绿、在手机上崩。
+
+v7 独有的两条（他们那边不适用）：`@pixi/settings` 的 `isMobile` 在**模块顶层**读
+`globalThis.navigator`，所以装宿主必须是入口第一个 **import**（写在函数体里，ESM 的求值顺序决定了
+来不及）；而他们踩的 `context.letterSpacing = '0px'` 毒化上下文那条，v7 关在
+`TextMetrics.experimentalLetterSpacing` 开关后面（默认关），只需一条用例钉住别被打开。
+
+#### 顺手修掉的两处真机必崩
+
+门禁扫出来的：`render/stickman/shadow.ts` 和 `outline.ts` 直接 `document.createElement('canvas')`。
+改走 `settings.ADAPTER.createCanvas`。另外三处造纹理（`fastText` 字形 atlas、影子、描边）改成指名
+`CanvasResource`（新增 `render/canvasTexture.ts`）——**不该让「画面出不出来」取决于某个全局补没补上**。
+
+#### 验证
+
+- `test/wechatHost.test.ts` 17 例，断言的是**真实 PIXI 判定函数**（`CanvasResource.test` /
+  `ImageResource.test` / `Texture.WHITE` / `determineCrossOrigin`），全局全部 delete，fake 只有 `wx`。
+  变异 5 个全抓：抽掉类绑定 4 红、抽掉 `location` 2 红、嗅探另造 canvas（偷走上屏）2 红、
+  `??=` 改成无条件覆盖 1 红、删掉 `Image` 工厂 2 红。
+- 门禁 13 例（含扫描器自身的误报/漏报用例）。变异：往 `render/bake.ts` 塞一句 `document.body` → 红；
+  同句加 `// dom-ok: 理由` → 绿。
+- 全量：`typecheck`（含 fulllink）干净 / `vitest run` 225 文件 2490 例 / `test:sim` 8 文件 13 例 /
+  `test:ui` 253 文件 2428 例 / `lint` 0 error / `build:wechat` + 包门禁绿（323 引用全在位）。
+- **画面仍未由人确认**：适配层落地后重新构建过，但开发者工具里那一眼只有用户能看
+  （`mcp__claude-in-chrome__*` 够不到 DevTools）。§4.4 第 3 条的真机验证同样开着。

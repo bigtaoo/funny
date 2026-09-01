@@ -6,6 +6,7 @@ import type { Locale } from '../../i18n';
 import type { IapKind } from '../iap';
 import type { NetworkKind } from '../../assets/prefetchPolicy';
 import { reportAnomaly } from '../../net/anomaly';
+import { screenCanvas } from './wechatHost';
 
 /**
  * WeChat mini-game platform adapter.
@@ -74,36 +75,12 @@ interface WxTouchEvent {
   changedTouches: WxTouch[];
 }
 
-// Older base libraries (and the weapp-adapter shim) exposed the on-screen canvas as a bare global.
-// `declare` only says the compiler may see it — resolveScreenCanvas() below owns what happens when
-// the runtime does not provide it.
-declare const canvas: HTMLCanvasElement | undefined;
-
-/**
- * The on-screen canvas, resolved once.
- *
- * The bare global `canvas` was never part of the documented mini-game API — it comes from the
- * adapter layer, and base library 3.17.2 (canary, released 2026-08-31) stopped providing it.
- * Reading it unguarded threw `ReferenceError: canvas is not defined` out of the first line of
- * startApp, before a single pixel: a black screen with the whole game intact behind it.
- *
- * The documented contract is `wx.createCanvas()`: the **first** call returns the on-screen canvas,
- * every later one an off-screen canvas. Two consequences, both load-bearing:
- *   - this must stay the first createCanvas in the process. It is: app.ts calls
- *     `platform.getCanvas()` before constructing the PIXI application, and PIXI's
- *     `settings.ADAPTER.createCanvas` only runs later, from render code.
- *   - it must be memoised, or a second `getCanvas()` would hand back an off-screen canvas and the
- *     renderer would draw into nothing — the same black screen, one indirection further away.
- */
-let screenCanvas: HTMLCanvasElement | undefined;
-function resolveScreenCanvas(): HTMLCanvasElement {
-  if (screenCanvas) return screenCanvas;
-  screenCanvas =
-    (typeof canvas !== 'undefined' && canvas) ||
-    (GameGlobal as { canvas?: HTMLCanvasElement }).canvas ||
-    (wx.createCanvas() as HTMLCanvasElement);
-  return screenCanvas;
-}
+// 上屏 canvas 的解析搬到了 `wechatHost.ts`：那边是入口第一个 import，必须在那里拿下「第一次 `wx.createCanvas()`」——它同时也是宿主类嗅探的取样对象（同一个工厂 ⇒ 同一个类，
+// 不必多要一张 canvas）。这里只是转发，`getCanvas()` 的语义一字未变。
+//
+// 历史：这里原先是 `return canvas`，读那个**裸全局**。它由适配层提供、不在小游戏文档 API 里，
+// 基础库 3.17.2 (canary) 起不再提供，于是 `startApp()` 第一行就 `ReferenceError`——整个游戏
+// 完好地站在黑屏后面（ASSET_PACKAGING_LOG §17.1）。
 
 class WechatStorage implements IStorage {
   getItem(key: string): string | null {
@@ -145,7 +122,7 @@ export class WechatPlatform implements IPlatform {
   readonly devicePixelRatio: number = 1;
 
   getCanvas(): HTMLCanvasElement {
-    return resolveScreenCanvas();
+    return screenCanvas() as HTMLCanvasElement;
   }
 
   getScreenSize(): { width: number; height: number } {

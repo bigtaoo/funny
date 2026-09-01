@@ -44,6 +44,7 @@
  * {@link resetFastTextCaches} (tests) and LRU eviction ever destroy one.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { baseTextureFromCanvas } from './canvasTexture';
 import { bakeResolution, hasBakeRenderer } from './bake';
 import { txt } from './sketchUi';
 
@@ -259,7 +260,8 @@ function buildGlyphAtlas(size: number, bold: boolean, color: number): GlyphAtlas
   if (!ctx) { release(); return null; }
   glyphTexts.forEach((t, i) => ctx.drawImage(t.canvas as CanvasImageSource, i * cellW, 0));
 
-  const base = PIXI.BaseTexture.from(atlasCanvas, {
+  // 指名 CanvasResource，不靠 instanceof 嗅探（微信没有 HTMLCanvasElement 全局）——见 canvasTexture.ts。
+  const base = baseTextureFromCanvas(atlasCanvas, {
     resolution,
     scaleMode: ref.texture.baseTexture.scaleMode,
   });
