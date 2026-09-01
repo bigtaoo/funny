@@ -38,6 +38,14 @@ export interface ContextAudioBusDeps {
    * 宿主没有可监听的手势源时省略即可——那种宿主上下文通常一开始就是 `running`。
    */
   onGesture?(cb: () => void): void;
+  /**
+   * 单个样本文件拉不到 / 解不开时往哪里报。省略即 `console.warn`（`SampleBank` 的默认）。
+   *
+   * 透出这个接缝是因为「往哪报」本来就是平台的事：web 有开发者控制台，微信小游戏的日志要进
+   * `wx` 那条管子才捞得回来。它同时是单元测试的出口——`preload()` 在 node 下必然逐文件失败
+   * （没有 fetch base URL），而那是**正确行为**，不该让 22 行退回提示淹掉测试输出。
+   */
+  warn?(message: string, err: unknown): void;
 }
 
 export class ContextAudioBus implements AudioBus {
@@ -80,6 +88,7 @@ export class ContextAudioBus implements AudioBus {
       // 平台字节读取（ASSET_PACKAGING §4.1）：web 是 fetch，微信是 wx.downloadFile + 本地缓存。
       // 传函数引用而不是 `assetIO()` 的结果，因为入口可能在本对象构造之后才 `setAssetIO`。
       readBinary: (url) => assetIO().loadBinary(url),
+      warn: this.deps.warn,
     });
     this.mixer = new CueMixer({ ctx, bus: this.sfx, bank: this.bank });
     return ctx;
@@ -89,9 +98,9 @@ export class ContextAudioBus implements AudioBus {
    * 解码**不需要**先过 autoplay 闸门——suspended 的上下文照样能解码——所以这个可以在启动时跑，
    * 通常远早于第一次手势就完成了（AUDIO_DESIGN.md §5 "进场景前 preload"）。
    *
-   * 当前 `cueAssets.ts` 是空的，于是这里是一次立即完成的空转。这条调用仍然要接：它是那种
-   * 缺失了**完全看不出来**的接线（合成音会把整个混音扛住，没有任何测试会红），素材落地那天
-   * 再补反而更容易忘。
+   * 自 2026-09-01 起这里真的有活干：10 个 cue 共 22 个样本（AUDIO_DESIGN.md §7 第 6 步），
+   * 另外 8 个 cue 刻意只有合成音。**逐文件尽力而为**——任何一个文件拉不到或解不开，只有那个
+   * variant 退回合成音，其余照常，所以「素材坏了」永远不会升级成「音频没了」。
    */
   async preload(): Promise<void> {
     if (!this.ensure() || !this.bank) return;

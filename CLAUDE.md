@@ -7,6 +7,7 @@
 ```
 client/          主游戏（TS + PixiJS，port 9090）
 tools/           animator(9091) / level-editor(9092) / ops(9093) / vfx-editor(9094) / map-editor(9095)
+                 audio-pipeline/（Python，无端口：音频素材的抓取 → 审计 → 转换 → 峰值对齐）
 server/          11 个 Node 服务 + engine/contracts/shared 包（npm workspaces）
   contracts/     openapi.yml（ADR-040 起由 openapi/ 分域片段生成，勿直接编辑）
                  + openapi-world.yml + openapi-auction.yml + *.proto（game/replay/transport）
@@ -42,6 +43,7 @@ claudedocs/      模块级快查文档（按需加载）
 | map-editor | — | `design/tools/map-editor/DESIGN.md` |
 | vfx-editor | — | `design/tools/vfx-editor/DESIGN.md` |
 | 文件格式 | [`claudedocs/file-formats.md`](claudedocs/file-formats.md) | — |
+| 音频素材管线 | [`tools/audio-pipeline/README.md`](tools/audio-pipeline/README.md) | `design/game/AUDIO_DESIGN.md` §0.4 / §7 |
 
 > 设计文档入口：[`design/README.md`](design/README.md)；关键拍板：[`design/DECISIONS.md`](design/DECISIONS.md)；实现进度：`design/game/META_TASKS.md`；数值权威：`server/engine/src/config.ts`
 

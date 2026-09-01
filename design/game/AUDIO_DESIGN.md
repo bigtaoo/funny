@@ -1,14 +1,14 @@
 # Notebook Wars — 音频系统设计
 
-> 状态：**战斗 + UI 触发点都已接，设置页有三档音量与静音；三轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信）；平局 stinger 已补齐（18 个 cue）；微信不再静音——后端已落地并在 DevTools 里实测通过（§7 第 5 步 ✅）；资产仍为零（全部走程序化合成音）**（2026-09-01）· 权威：本文（音频**系统**的单一入口）· 更新：2026-09-01
+> 状态：**战斗 + UI 触发点都已接，设置页有三档音量与静音；四轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材）；平局 stinger 已补齐（18 个 cue）；微信不再静音（§7 第 5 步 ✅）；**素材第一批已发货（§7 第 6 步 ✅）——**10 个 cue 共 22 个样本，8 个 cue 刻意保留合成音**，全部 CC0、无需署名，峰值对齐实测成立（0.96–1.00×）。剩下 §7 第 7 步 BGM 与两个开放项（微信真机、**还没有人听过**）**（2026-09-01）· 权威：本文（音频**系统**的单一入口）· 更新：2026-09-01
 >
 > **权威边界**：音频**美学方向**（音色取向、禁用清单）仍归 [`../product/art-direction.md`](../product/art-direction.md) §声音；本文拥有**系统实现**——资产清单与命名、触发表、播放层抽象、混音、设置项、平台约束。两者不重述对方。
 
 ---
 
-## 0. 落地状态（2026-08-31）
+## 0. 落地状态（2026-09-01）
 
-§7 的第 1–4 步已完成：**平台接缝 + cue 目录 + 程序化合成音 + 样本加载/解码/并发上限/混音器 + 战斗触发点 + UI 触发点 + 设置页音量**，两轮真浏览器实测（§0.1 / §0.2）都已做完。
+§7 的第 1–6 步已完成：**平台接缝 + cue 目录 + 程序化合成音 + 样本加载/解码/并发上限/混音器 + 战斗触发点 + UI 触发点 + 设置页音量 + 微信后端 + 素材第一批**，四轮实测（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材）都已做完。**只剩第 7 步 BGM**，加两个开放项：微信真机（§0.3 末尾）与**还没有人听过任何一个声音**（§7 第 6 步末尾）。
 
 **已存在的模块**（`client/src/audio/`，平台中立，无 PIXI 依赖）：
 
@@ -16,7 +16,7 @@
 |---|---|
 | `types.ts` | `AudioCue` 词汇表（18 个）+ `AudioBus` 接口 |
 | `cueCatalogue.ts` | 每个 cue 的 gain / priority（混音的单一来源） |
-| `cueAssets.ts` | cue → 已发货文件 URL。**全仓库唯一持有音频 `import` 的文件**，目前为空 |
+| `cueAssets.ts` | cue → 已发货文件 URL。**全仓库唯一持有音频 `import` 的文件**。2026-09-01 起有 10 个 cue / 22 个 variant（§0.4） |
 | `audioSynth.ts` | 每个 cue 一把程序化合成音（文具拟音，见 §1）+ `tone`/`noise` 两个原语 |
 | `decodeAudio.ts` | 归一 `decodeAudioData` 的 promise / callback 两种形状 |
 | `SampleBank.ts` | 走 `assets/assetIO.ts` 拉字节 + 解码，逐文件尽力而为 |
@@ -471,6 +471,142 @@ WebAudio**。所以它能证明的是：API 表面齐全、我们的接线正确
 
 ---
 
+### 0.4 素材第一批的实测（2026-09-01，§7 第 6 步）
+
+**发货了什么**：10 个 cue、22 个文件、**57578 字节**，四个来源全部可商用且**无需署名**
+（三个 CC0 + 一个逐条 CC0）。8 个 cue 刻意仍走合成音。管线移植自 daydayup 的
+`tools/audio-pipeline/`，落在 [`tools/audio-pipeline/`](../../tools/audio-pipeline/README.md)。
+
+| 来源 | 授权 | 用了几个 | 补的是什么 |
+|---|---|---|---|
+| **freesound.org**（API 逐条筛 CC0） | CC0，per **sound** | 17 | 唯一**可查询**的源，也是 `sfx.card.invalid` 能存在的唯一原因 |
+| **BigSoundBank**（LaSonotheque） | CC0，无需账号 | 2 | 铅笔签名笔画、翻页 |
+| **Kenney Interface Sounds** | CC0 | 2 | `ui.tap` / `ui.back`。Kenney 六个音频包里**唯一**不落在 art-direction §10 禁用清单里的那个 |
+| **OpenGameArt**（Luckius, Various Paper SFX） | CC0 | 1 | 揉纸 |
+
+#### ⚠️ 这一步真正的决定不是「挑哪个文件」，是「哪些 cue 不该换」
+
+18 个 cue 不是一类东西。**10 个换成样本、8 个保留合成音**，而这条线不是按「找不找得到」画的——
+`sfx.ui.error` 有现成且形状完全对的 Kenney `error_00x`（daydayup 就发的这个），照样被否掉。
+画线的依据是**这个 cue 的语义住在哪里**：
+
+- **住在音色里 → 换。** 「笔尖落纸的唰」「厚本子的闷响」「纸团揉碎的多颗粒」——这些是真实材料的
+  质感，合成噪声只是「一段被滤过的随机数」，永远差那一层纤维。
+- **住在音与音的关系里 → 不换。** 三个结算 stinger **共享同一个起始音高**，玩家靠「之后往哪走」
+  分辨胜/负/平；三档揭示是同一把声音逐档**加音、加亮**，于是「史诗」在第三个音落下之前就已经和
+  「普通」分开了。这些是三个 cue 之间的**关系**，不是三个声音——捡回来的录音只能用别人的调性
+  替换掉这个关系，不可能复现它。
+
+实测数字正好站在同一侧：§0.3 那张表里，要换的这 10 个当时抖动 15–48%，保留的这 8 个是 0–4%。
+逐条理由写在 `art/audio/credits.json` 的 `rationale` 与 **`kept_on_synth`**——后者是这一步交付物的
+一半：`cueAssets.ts` 里一个空条目**与疏漏完全无法区分**，而这一步在前三轮里正是那个状态。
+
+#### 峰值对齐的基准：一条能闭式验算的等式
+
+§7 第 6 步早先被订正过一次（`gain` 参数 ≠ 交付峰值）。这一轮把它落成一条可验算的式子：
+
+```
+文件峰值 = 实测交付峰值 / (catalogue gain × SFX 总线 0.8)
+```
+
+三个数都写在 `process.py` 的 `TARGETS` 里而不是预先除好，好让读者能各自回溯到出处。**它在一个
+cue 上可以闭式验算**：`sfx.ink.tick` 的合成音是单个无滤波的 `tone(gain: 0.07)`，而
+`0.07 × 0.5 × 0.8 = 0.0280` —— 正是浏览器量到的 0.0280。这条等式不是猜的。
+
+#### 管线新增的两道**源文件**门禁，都在挡「输出端看不见」的缺陷
+
+| 拒收条件 | 为什么输出门禁看不见 |
+|---|---|
+| `clipped_samples > 0` | 把削波文件往下缩 15 dB，失真原样保留，而 `audit.py` 量输出会读到干干净净的 0。不是假想：`book_275160.ogg`（0.18 dBFS）带 **1207 个削波样本**，而它差一点就成了 `sfx.base.hit` |
+| `attack_ms > cap_ms` | 沙沙声是**连续手势、没有起振点**，池子里一堆文件的峰值出现在 240 ms 处。把这种文件截到 120 ms 等于**切在它自己的峰值之前**，然后峰值对齐会把剩下那段极轻的爬升放大到目标电平。听起来就是「这个样本坏了」，而且没有别的症状 |
+
+#### ⚠️ 管线自己造出来的那个缺陷（已修，已钉死）
+
+去咔哒的头部淡入原本是 **4 ms**（daydayup 的取值），而保留的静音前导只有 **1 ms**——多出来的
+3 ms 淡入盖在**可听信号**上，把 cue 自己的起振压掉了。22 个资产里有 3 个因此没过 lead-silence
+门禁，**而那段延迟是管线自己发明的**。现在淡入正好覆盖 `PRE_ROLL_S`。
+
+顺带排除了一个看起来更像元凶的嫌疑：**MP3 编码器在这里一个样本都没加**——libsndfile 会剥掉编码
+填充，六个采样率梯位上用满量程起振实测 lead 全部 **0.00 ms**。
+
+#### ⚠️ 另一个花了时间的假象：一个擦着门限的孤立样本
+
+修完淡入还剩一个失败（`eraser_335951.ogg` 报 8.9 ms lead）。逐阶段量下来发现：**内存里是
+1.00 ms，写盘再读是 8.94 ms**，差别来自**一个样本**——第 48 号窗口峰值 `0.00132`，门限
+`0.0013125`，高出 0.00007；PCM_16 量化后读成 `0.00131`，掉到门限之下，扫描于是跳到真正的起振点。
+
+也就是说 **8.94 ms 是真的**（那段录音自己的极轻前导，-58 dBFS，比该 cue 峰值低 40 dB，听不见），
+而「1.00 ms」才是假象。**-40 dB 的相对门限分不开「管线加的延迟」和「录音自己的爬升」，而且在
+边界上脆到一个 LSB 就能翻转。** 于是改的是门限本身，理由与这个文件无关也站得住：
+
+> 战斗 cue 由 `EventsPanel.flushAudio()` 每帧排空一次，**每个 cue 本来就带 0–16.7 ms 的帧时钟
+> 量化**。样本内部再留 5 ms 的预算，落在系统自身定时噪声之下。所以 `sfx` 档放宽到**一帧
+> （16 ms）**；`ui` 档收到 **8 ms**（半帧）——按钮是全游戏最在意延迟的事件，而整个 cue 只有 43 ms。
+
+#### 测出来的数（一）：MP3 有损编码把峰值挪了多少
+
+峰值对齐是在**编码前**做的，而 MP3 是有损的——这是管线**结构上无法验证自己**的一件事。为此给
+`entries/web-e2e.ts` 加了 `__nwAudio.samples()`（读每个**已解码** buffer 的峰值，**不需要手势**，
+suspended 的上下文照样解码）。22 个文件全部解码成功，`loaded()` = `{cues:10, variants:22}`。
+
+偏差落在 **−6.1% … +6.7%（约 ±0.56 dB）**。参照物：catalogue 里最小的一档**有意**混音差是
+0.7 ↔ 0.9（约 2.2 dB）——编码误差是它的**四分之一**。最大偏差在 `sfx.spell.cast`（+6.7%），
+`sfx.ui.back` 则精确到小数点后五位一字不差（16 kHz、内容最接近纯音，受损最小）。
+
+#### 测出来的数（二）：活体交付峰值，对齐成立
+
+同一条 `ScriptProcessorNode` 挂在 SFX 总线上，每个 cue 测 10 次取中位数（§0.2 (C) 定的口径），
+2 秒静默基线 0.0000，总线增益 0.800，48 kHz。
+
+> **⚠️ 这一段是在 in-app 浏览器面板里量的，不是用户的 Chrome**，因为 Chrome 那边插件把标签页收进
+> 背景标签组、`document.visibilityState` 是 `hidden`：CDP 合成的点击拿不到 user activation，而
+> Chrome 也不会在隐藏标签页里 resume 音频上下文——`ctx.resume()` 直接不 settle，把渲染进程挂死。
+> in-app 面板可见，且**无 autoplay 闸门**（`ctx.state` 无手势直接是 `running`，与微信 DevTools
+> 同样的行为）。**下一个人要在真 Chrome 里量，得先解决标签页可见性，不要在隐藏标签页上浪费时间。**
+
+| cue | 样本（新） | 合成音（旧，§0/§0.2） | 比值 | 抖动 新 → 旧 |
+|---|---|---|---|---|
+| `sfx.base.hit` | 0.15120 | 0.1510 | **1.00×** | **0% ← 21%** |
+| `sfx.card.play` | 0.14359 | 0.1460 | 0.98× | 3% ← 35% |
+| `sfx.spell.cast` | 0.12679 | 0.1290 | 0.98× | 15% ← 17% |
+| `sfx.card.invalid` | 0.10409 | 0.1050 | 0.99× | 11% ← 15% |
+| `sfx.unit.death` | 0.09791 | 0.0990 | 0.99× | 15% ← 27% |
+| `sfx.unit.hit` | 0.09720 | 0.0980 | 0.99× | **4% ← 48%** |
+| `sfx.ui.tap` | 0.09198 | 0.0923 | **1.00×** | **2% ← 30%** |
+| `sfx.ui.back` | 0.07058 | 0.0706 | **1.00×** | 0% ← 1% |
+| `sfx.unit.attack` | 0.05544 | 0.0580 | 0.96× | 30% ← 40% |
+| `sfx.ink.tick` | 0.02742 | 0.0280 | 0.98× | **17% ← 0%** |
+
+**八个保留合成音的 cue 逐个复现旧值**（victory 0.13161 / defeat 0.11776 / draw 0.11787 /
+reward 0.08915 / error 0.07825 / gacha common 0.06680 · rare 0.07756 · epic 0.10338），说明这一轮
+没有碰到它们。
+
+#### ⚠️ 第五条规律：换成样本之后，抖动的成因**翻了个方向**
+
+前四条规律（§0 / §0.2 / §0.3）说的都是合成音世界里的事，其中第三条是「噪声型 cue 抖 27–48%、
+音调型 <1%」。样本世界里**这条规律的因果整个换掉了**：
+
+- 大部分 cue 变得**极其稳定**（`unit.hit` 48%→4%、`card.play` 35%→3%、`ui.tap` 30%→2%、
+  `base.hit` 21%→**0%**）。原因显然：样本是**固定波形**，每次播放不再重新掷一遍噪声。
+- 但 **`sfx.ink.tick` 从 0% 涨到 17%**，`unit.attack` 也仍然是 30%。它不是 variant 差异造成的
+  ——ink.tick 两个 variant 的峰值是 0.06968 / 0.06964，几乎一样。真正的来源是
+  **`CueMixer` 的 ±3% `playbackRate` 抖动**：重采样会挪动采样点相对波形的落点，而一个**又短又
+  尖**的瞬态（水滴 120 ms、铅笔戳 57 ms）的峰值恰好对这件事最敏感。
+
+一句话：**合成音世界里抖的是噪声型；样本世界里抖的是瞬态尖锐的那些**，而这两组几乎不重叠。
+所以「比响度至少测 10 次取中位数」这条口径继续有效，但**该盯的 cue 换了一批**。
+
+#### 这一轮**没有**验证到什么
+
+1. **仍然没有人听过任何一个声音**——十轮实测量到的全是「响得对不对」，「好不好听」一个字都没测。
+   这不是可以靠加测量解决的缺口，见 §7 第 6 步末尾。
+2. **微信侧没有复测。** 微信主包为这批素材 **+0 字节**（音频全部落在 `cdn/`，正如 §5 那条订正
+   预测的），但那 22 个文件在微信运行时的 `decodeAudioData` 上没有验过。主包 2197453 → **2199054
+   （+1601 字节）**，涨的全是 `cueAssets.ts` 烘焙进去的 22 条 URL 字符串。
+3. **真 Chrome 没有量到**（上面那条可见性告示）。
+
+---
+
 ## 1. 美学基线（引自 art-direction，不在此复述）
 
 一句话锚点：**轻巧、卡通、非写实的"文具拟音"**——铅笔沙沙、橡皮擦、翻笔记本页、笔帽咔哒；**禁止**金属碰撞、爆炸轰鸣等写实战争音效。所有音效服从「我蓝敌红 / 手绘笔记本」的整体调性。细节见 art-direction §声音。
@@ -479,32 +615,38 @@ WebAudio**。所以它能证明的是：API 表面齐全、我们的接线正确
 
 ## 2. 资产清单（最低可上线集 = MVP）
 
-> 对齐 [`../product/mvp-gaps.md`](../product/mvp-gaps.md) §8「基础音效」。占位素材用 **freesound.org（CC0）** 或自录文具声，正式资产后补。
+> 对齐 [`../product/mvp-gaps.md`](../product/mvp-gaps.md) §8「基础音效」。
+>
+> **素材状态（2026-09-01，§0.4）**：下面两张表里带 **🔊** 的 cue 已发货真实样本，带 **〜** 的
+> **刻意**只有合成音（不是待办——理由逐条写在 `art/audio/credits.json` 的 `kept_on_synth`，摘要在
+> §0.4「这一步真正的决定」）。来源与授权在 `art/audio/packs.json`，每个文件的出处、处理参数与挑选
+> 理由在 `art/audio/credits.json`，管线在 [`tools/audio-pipeline/`](../../tools/audio-pipeline/README.md)。
+> 四个来源全部可商用且**无需署名**。
 
 ### 2.1 战斗内 SFX（一次性短音）
-| 事件 id | 触发 | 拟音建议 | 优先级 |
-|---|---|---|---|
-| `sfx.card.play` | 出牌/落子 | 笔尖落纸"唰" | P0 |
-| `sfx.card.invalid` | 费不够/非法出牌 | 橡皮擦短"吱" | P0 |
-| `sfx.unit.attack` | 单位攻击 | 铅笔短戳 | P0 |
-| `sfx.unit.hit` | 单位受击 | 软"噗"/揉纸 | P0 |
-| `sfx.base.hit` | 基地受击 | 厚本子闷响 | P0 |
-| `sfx.spell.cast` | 法术（陨石等） | 翻页+落石涂抹 | P1 |
-| `sfx.unit.death` | 单位阵亡 | 纸团揉碎 | P1 |
-| `sfx.ink.tick` | 墨滴回涨节点（每回涨 10 点墨一声，不是每一点——理由见 §0.1） | 水滴"嘀" | P2 |
-| `sfx.result.victory` / `.defeat` / `.draw` | 结算（`game_over` / `game_draw`，写在一次性门内部） | 三音上行 / 二音下行 / **同音重复、音高不动** | P0 |
+| 事件 id | 触发 | 拟音建议 | 已发货素材 | 优先级 |
+|---|---|---|---|---|
+| `sfx.card.play` | 出牌/落子 | 笔尖落纸"唰" | 🔊 3 个（白板马克笔一笔 / 铅笔书写 / 签名起笔） | P0 |
+| `sfx.card.invalid` | 费不够/非法出牌 | 橡皮擦短"吱" | 🔊 3 个（白板笔擦声 —— CC0 里**根本没有橡皮擦**，而马克笔的"吱"本身就是文具声，见 §0.4） | P0 |
+| `sfx.unit.attack` | 单位攻击 | 铅笔短戳 | 🔊 2 个（铅笔落纸 / 签名起笔截到 60 ms） | P0 |
+| `sfx.unit.hit` | 单位受击 | 软"噗"/揉纸 | 🔊 3 个（闷的单次撞击，**不是**沙沙声——沙沙的起振都在 200–400 ms，见 §0.4） | P0 |
+| `sfx.base.hit` | 基地受击 | 厚本子闷响 | 🔊 **1 个**（整池里唯一同时够低、够快、零削波的文件；被否掉的三个近似候选写在 credits.json） | P0 |
+| `sfx.spell.cast` | 法术（陨石等） | 翻页+落石涂抹 | 🔊 3 个（翻页） | P1 |
+| `sfx.unit.death` | 单位阵亡 | 纸团揉碎 | 🔊 3 个（揉纸 / 揉干叶——同样的多颗粒） | P1 |
+| `sfx.ink.tick` | 墨滴回涨节点（每回涨 10 点墨一声，不是每一点——理由见 §0.1） | 水滴"嘀" | 🔊 2 个（单滴水） | P2 |
+| `sfx.result.victory` / `.defeat` / `.draw` | 结算（`game_over` / `game_draw`，写在一次性门内部） | 三音上行 / 二音下行 / **同音重复、音高不动** | 〜 **刻意保留合成音**：三者共享同一个起始音高，语义住在「之后往哪走」这个**关系**里，捡回来的录音只能替换掉它 | P0 |
 
 ### 2.2 UI SFX
 
 全部已接（2026-08-31，§7 第 4 步）。「出口」一列是**唯一**发这个 cue 的地方——新增触发点时改那里，不要在别处调 `playSfx`。除下表四行之外还有第五个出口：`SettingsScene/audioPanel.ts` 的音量滑杆在**松手**时试听一声 `sfx.ui.tap`（滑杆刻意不是 hit，理由见 §0.2 (B)）。
 
-| 事件 id | 触发 | 出口 | 优先级 |
-|---|---|---|---|
-| `sfx.ui.tap` | 按钮/格子点击 | `ui/hits.ts` 的 `runHit` 默认值——命中表走 `dispatchHit`/`hitAction`，PIXI 原生监听走 `tapHandler(fn)`，两条都汇进 `runHit` | P0 |
-| `sfx.ui.back` | 返回/关闭 | 同上，hit 上写 `sound: 'sfx.ui.back'` / `tapHandler(fn, 'sfx.ui.back')`（27 处 `hdr.backRect` + 模态 dismiss 遮罩 + 对话框 Cancel + 结算页返回芯片） | P1 |
-| `sfx.ui.reward` | 领奖/获得物品 | 同上，写在各 claim 按钮的 hit 上（成就/日常/周常/活动/战令/充值里程碑） | P1 |
-| `sfx.ui.gacha.reveal.common` / `.rare` / `.epic` | 盲盒揭示，按稀有度分层。实现成**三个独立 cue** 而不是一个 cue 的三个 variant：variant 是抗重复疲劳的随机取样，语义分层必须可寻址，否则调用方无法表达"这一抽是史诗" | `GachaScene/core.ts` 的 `revealCue(results)`，**一次抽一声**、取这一抽里最好的稀有度（legendary 并入 epic） | P1 |
-| `sfx.ui.error` | 失败/余额不足 toast | `net/log.ts` 的 `showToastMessage`，仅 `kind === 'error'`（不是 hit：失败来自异步结果）。**经 `raiseErrorCue()` 前沿节流，400 ms 一声**——一次失败扇出成多个 rejection 时，视觉层（`GlobalToast.show()` 先 `clear()`）只显示一条消息，音频层原先却会发出 2.4 倍于全表最响 cue 的爆音，实测见 §0.2 (A) | P2 |
+| 事件 id | 触发 | 出口 | 已发货素材 | 优先级 |
+|---|---|---|---|---|
+| `sfx.ui.tap` | 按钮/格子点击 | `ui/hits.ts` 的 `runHit` 默认值——命中表走 `dispatchHit`/`hitAction`，PIXI 原生监听走 `tapHandler(fn)`，两条都汇进 `runHit` | 🔊 **1 个**（Kenney `select_002`）。刻意只有一个：同一个按钮每次按下答出不同的声音读起来是「不一致」，而 variant 是抗重复疲劳的手段——按钮音的重复本身就是它的语义 | P0 |
+| `sfx.ui.back` | 返回/关闭 | 同上，hit 上写 `sound: 'sfx.ui.back'` / `tapHandler(fn, 'sfx.ui.back')`（27 处 `hdr.backRect` + 模态 dismiss 遮罩 + 对话框 Cancel + 结算页返回芯片） | 🔊 **1 个**（Kenney `back_002`，1833 Hz——包里最干净短文件中中心频率最低的那个，于是「离开」压在「进入」之下，与合成音那个 620→430 下滑建立的是同一个关系）。同样刻意只有一个 | P1 |
+| `sfx.ui.reward` | 领奖/获得物品 | 同上，写在各 claim 按钮的 hit 上（成就/日常/周常/活动/战令/充值里程碑） | 〜 **刻意保留合成音**：两音上行的短 chime，而 CC0 里的替代品是数字确认音——正是 art-direction §10 要躲开的那种「没有灵魂的 app UI」 | P1 |
+| `sfx.ui.gacha.reveal.common` / `.rare` / `.epic` | 盲盒揭示，按稀有度分层。实现成**三个独立 cue** 而不是一个 cue 的三个 variant：variant 是抗重复疲劳的随机取样，语义分层必须可寻址，否则调用方无法表达"这一抽是史诗" | `GachaScene/core.ts` 的 `revealCue(results)`，**一次抽一声**、取这一抽里最好的稀有度（legendary 并入 epic） | 〜 **刻意保留合成音**：三档是同一把声音逐档加音、加亮，于是「史诗」在第三个音落下之前就已经和「普通」分开。这是三个 cue 之间的**关系**，样本只能靠碰巧复现 | P1 |
+| `sfx.ui.error` | 失败/余额不足 toast | `net/log.ts` 的 `showToastMessage`，仅 `kind === 'error'`（不是 hit：失败来自异步结果）。**经 `raiseErrorCue()` 前沿节流，400 ms 一声**——一次失败扇出成多个 rejection 时，视觉层（`GlobalToast.show()` 先 `clear()`）只显示一条消息，音频层原先却会发出 2.4 倍于全表最响 cue 的爆音，实测见 §0.2 (A) | 〜 **刻意保留合成音，而这是唯一一个「有现成素材却否掉」的 cue**：Kenney 的 `error_00x` 形状完全对（daydayup 就发的这个），但一记数字报错嗡音正是 §10 要躲开的调性，而「服务器说不行」这件事在文具世界里**没有对应的手势**（`sfx.card.invalid` 有——那是擦掉写错的东西） | P2 |
 
 ### 2.3 BGM（循环长音）
 | 轨 id | 场景 | 备注 |
@@ -578,7 +720,7 @@ interface AudioBus {
 | **iOS WebAudio 需手势解锁** | iOS 网页 | 同上，`AudioContext.resume()` 必须在手势回调内 |
 | **同时音频实例数有限** | 微信小游戏 | ~~SFX 走对象池（如 8 个 InnerAudioContext 轮转）。~~ **订正 2（2026-09-01，§0.3）：`InnerAudioContext` 对象池不需要了。** 微信走 `wx.createWebAudioContext()`，SFX 与 web 共用 `audio/` 那条管线，而对象池真正想要的「并发上限 + 优先级抢占」本来就在平台中立的 `VoiceBudget.ts` 里，两个平台共用一份。`InnerAudioContext` 剩下的正当用途只有 BGM（单实例、流式、`loop=true`，§7 第 7 步）。下面这条**订正 1** 仍然成立，它描述的是 `VoiceBudget` 的语义：<br>**丢弃规则不是"最旧"而是"按优先级抢占"**——最旧那个很可能正是一局一次的结算 stinger，而新来的是第 40 个攻击音；丢最旧会砍掉唯一那次胜利音，换来一个听不出区别的攻击音。已实现于 `audio/VoiceBudget.ts`（同优先级判输，被抢占者 12ms 淡出而非硬切；按**时间**退休而不靠 `ended` 事件，因为一个"悄悄停止清扫"的上限会失效于静默——前 N 个 cue 之后混音直接变哑，看起来就是"音频坏了"） |
 | ~~**首包体积**~~ | ~~微信小游戏~~ | **订正（2026-08-31）：这条约束对本项目不存在。** 原稿写"BGM 放分包/CDN 按需拉，首包只带 P0 SFX"，那是通用建议；而本项目按 ASSET_PACKAGING §4 的**方案 A** 早已把**全部**美术资源托管在 CDN（`asset/resource` 的 `publicPath = NW_ASSET_CDN`，产物进 `wechatgame/cdn/`，由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包），主包是**纯代码 ~1.5 MB**。音频文件走同一条规则、同一个 `assetIO`，天然落在 CDN 上，**一个字节都不进主包**——所以"首包只带 P0 SFX"这个取舍不需要做，BGM 也不需要为体积单独分包。真正要留意的是**下载量与缓存**（同 §16 的资源预算口径），不是包体红线。<br>实测（2026-09-01，微信后端落地后）：微信主包为音频总共多付 **10441 字节**（2187088 → 2197453），其中**播放引擎本身 8546 字节**（2188907 → 2197453），此前三轮的 1819 字节全是触发表的 cue 字符串字面量。距 4 MB 主包红线仍有大量余量 |
-| **解码开销** | 全平台 | **启动时 `preload()` 全量**（`app.ts` 在 L0 闸门之后 fire-and-forget，不 await）。订正原稿的"进场景前 preload 该场景所需 id"：SFX 全集是 ~100 KB 量级，按场景切分省不下有意义的字节，却要每个场景维护一份会腐烂的 id 清单。suspended 的 `AudioContext` 照样能解码，所以这一步既不需要网络闸门也不需要 autoplay 手势。BGM 落地时按轨流式，另说 |
+| **解码开销** | 全平台 | **启动时 `preload()` 全量**（`app.ts` 在 L0 闸门之后 fire-and-forget，不 await）。订正原稿的"进场景前 preload 该场景所需 id"：SFX 全集是 ~100 KB 量级，按场景切分省不下有意义的字节，却要每个场景维护一份会腐烂的 id 清单。suspended 的 `AudioContext` 照样能解码，所以这一步既不需要网络闸门也不需要 autoplay 手势。BGM 落地时按轨流式，另说。<br>实测（2026-09-01，素材落地后）：**22 个文件 / 57578 字节全部解码成功**，`loaded()` 报 `{cues:10, variants:22}`；"~100 KB 量级"这个估算落在真实数字的两倍以内。解码确实在 suspended 上下文里完成——`__nwAudio.samples()` 就是靠这一点做到全程无手势的（§0.4） |
 
 ---
 
@@ -589,9 +731,11 @@ interface AudioBus {
 | 平台音频抽象 | ✅ `audio/audioBus.ts`（模块级接缝，**不是** `IPlatform` 成员——见 §3 订正）+ `audio/ContextAudioBus.ts`（平台中立的后端，2026-09-01 从 `WebAudioBus` 抽出）+ 两个各约 15 行的平台半边：`platform/web/WebAudioBus.ts` / `platform/wechat/WechatAudioBus.ts` |
 | 微信音频后端 | ✅ **2026-09-01**（§7 第 5 步）。`wx.createWebAudioContext()`，管线原样复用，**不需要** `InnerAudioContext` 对象池（§5 订正 2）。`wx.d.ts` 补了三条声明（`createWebAudioContext` 声明为**可选**——低版本基础库真的没有，`ContextAudioBus` 把那种设备降级为静音）。DevTools 实测见 §0.3；**真机是开放项**，三件待验的事列在那一节末尾。微信主包 +8546 字节，播放引擎首次进包 |
 | cue 词汇表 + 混音表 | ✅ `audio/types.ts`（**18 个** cue，2026-08-31 补入 `sfx.result.draw`）+ `audio/cueCatalogue.ts`（gain/priority）。往 union 里加 cue，在 catalogue 里给它决策之前**编译不过** |
-| 程序化合成音（占位声源 + 永久兜底） | ✅ `audio/audioSynth.ts`，每个 cue 一把，文具拟音方向。**没有人听过** |
+| 程序化合成音（**8 个 cue 的永久声源** + 另外 10 个的兜底） | ✅ `audio/audioSynth.ts`，每个 cue 一把，文具拟音方向。**没有人听过**。自 2026-09-01 起它对 8 个 cue 不再是"占位"而是**发货实现**（§0.4 那条分界线），对另外 10 个是逐文件的兜底——任何一个样本拉不到/解不开，只有那个 variant 退回这里 |
 | 样本加载 / 解码 / 并发上限 / 混音器 | ✅ `SampleBank` + `decodeAudio` + `VoiceBudget` + `CueMixer`，79 个用例 / 99.4% 行覆盖 |
-| 资产文件 + 命名约定 | 🟡 目录与命名已定（`client/src/assets/audio/`，`<cue id 的 '.' 换成 '-'>_NN.mp3`，webpack 的 `asset/resource` 规则已涵盖 `mp3\|wav\|ogg`，无需改配置），`custom.d.ts` 已声明 `*.mp3`。**但一个文件都还没有**：`cueAssets.ts` 是空的，全部 cue 走合成音。素材是独立一步——见 §7 第 6 步为什么现成的 CC0 游戏音效包用不了 |
+| 资产文件 + 命名约定 | ✅ **2026-09-01**（§7 第 6 步 / §0.4）。`client/src/assets/audio/` 下 **22 个文件、57578 字节**，命名 `<cue id 的 '.' 换成 '-'>_NN.mp3`；webpack 的 `asset/resource` 规则原样涵盖，`custom.d.ts` 已声明 `*.mp3`，一行配置没改。10 个 cue 有样本、8 个刻意保留合成音。来源 `art/audio/packs.json`，逐文件出处与理由 `art/audio/credits.json`，管线 [`tools/audio-pipeline/`](../../tools/audio-pipeline/README.md) |
+| 资产完整性门禁（每次提交都跑） | ✅ **2026-09-01** `client/test/audio/audioAssets.test.ts`——不需要解码器也不需要 Python：按 MPEG 帧头解析 22 个 mp3，把磁盘文件 / `credits.json` / `packs.json` / `AudioCue` union / 活的 `CUE_CATALOGUE` 五者互相钉住。**最该看住的一条是 `catalogue_gain` 仍然等于 `cueCatalogue.ts`**——改一个 gain，22 个文件的峰值对齐就悄悄失效，而文件照样能加载、能播、过掉其它所有测试，唯一症状是混音偏离了设计 |
+| 解码峰值的测量面 | ✅ **2026-09-01** `entries/web-e2e.ts` 的 `__nwAudio.samples()`——报每个**已解码** buffer 的峰值，这是管线**结构上无法自证**的一件事（它在**有损编码之前**对齐峰值）。不依赖 autoplay 手势。实测偏差 −6.1%…+6.7%（§0.4） |
 | 触发埋点：游戏事件 → `playSfx` | ✅ 2026-08-31。单一漏斗：`render/GameRenderer/core.ts` 的 `for (const event of state.events) this.events.handleEvent(event, state)` 之后跟一次 `this.events.flushAudio()`；映射表全在 `render/GameRenderer/events.ts` 的 `EventsPanel.collectCue` 一处（**不在纯引擎层**——音频是表现层，`@nw/engine` 一行没动）。完整映射与实测见 §0 / §0.1。<br>那个已知的坑按预期咬人了：game over 后引擎 `step()` 提前返回、**不排空事件队列**，重复被消费的是**最后一帧的整批事件**（不只是 `game_over`），所以 `collectCue` 第一行就是 `if (this.core.gameEnded) return`，胜负 stinger 则写在 `game_over`/`game_draw` 分支里那个已有的一次性门**内部**。真浏览器三局复测：每局 stinger 恰好 1 次 |
 | UI 触发埋点 | ✅ 2026-08-31。先抽了 `ui/hits.ts`（共享 `Hit<S>` + `inRect`/`hitTest`/`runHit`/`dispatchHit`/`hitAction`/`tapHandler`），**22 份重复的 `interface Hit` 全部消失**，十几处内联的 `hitRects: { rect; action }[]` 一并收敛、`action` 改名 `fn`；UI cue 只在 `runHit` 一处发出，`sound` 省略即 `sfx.ui.tap`。覆盖三族按钮：①场景自持的矩形表；②战斗 HUD / 世界地图 HUD 的手写 `overRect` if 链；③**PIXI 原生 `pointertap` 按钮**（结算页 + 回放 + 五个对话框，第一遍漏掉的 22 处，见 §0 的 ⚠️）。防复发靠源码守卫 `test/uiTapSoundCoverage.test.ts` |
 | 设置页音量项 | ✅ 2026-08-31。`scenes/SettingsScene/audioPanel.ts`（右栏，三根滑杆 + 静音开关）+ `audio/audioSettings.ts`（`nw_audio` 一个 JSON 键）。滑杆**不是 hit**：它要跟手，所以留在 `audioSliders: { rect; onDrag; onRelease? }` 里，按下即接管指针、`update()` 每帧最多重绘一次（render()-per-pointermove 会卡）。<br>**§0.2 订正了两件事**：①版面撞在贯穿整宽的语言按钮行上（滑杆先查 hit 后查，所以是**静默**吃掉半个 Deutsch 按钮），已搬到 `0.60w / 0.30h` 并配 `test/ui/settingsSliderOverlap.ui.ts` 守着「滑杆矩形不许与 hit 矩形相交」；②「跟手好让玩家听到档位」这句话原本是假的（拖动一声不响、又没有 BGM），现在 master / sfx 松手时试听一声 `sfx.ui.tap`，实测试听峰值与档位严格成正比 |
@@ -611,12 +755,14 @@ interface AudioBus {
 3. ~~**战斗触发点**。~~ ✅ 2026-08-31（`EventsPanel.collectCue` + `flushAudio`，含同帧合并与 game-over 一次性门；真浏览器实测见 §0.1）。留下的两个口子**现在都补完了**：`sfx.card.invalid` 在第 4 步接上（客户端判的非法出牌，引擎不发事件）；`sfx.result.draw` 在第 6 步接上（见那一条）。
 4. ~~**UI 触发点**：先抽共享 hit 表 + 派发器（消掉 22 份重复的 `interface Hit`），再在那一处挂 `sfx.ui.*`；`SettingsScene` 三档音量 + 静音持久化。~~ ✅ 2026-08-31（`ui/hits.ts` + `audio/audioSettings.ts` + `SettingsScene/audioPanel.ts`；顺带补上了上一轮留下的 `sfx.card.invalid`。完整说明见 §0）。**真浏览器实测已补完**（§0.2），抓出并修掉两个缺陷：音量区版面撞语言按钮行（静默吃掉半个按钮）、`showToastMessage` 的错误音扇出成 2.4 倍爆音；顺带补上滑杆的松手试听。
 5. ~~微信 `InnerAudioContext` 后端 + 对象池（**不需要为体积分包**，见 §5 订正）。~~ ✅ **2026-09-01**——但**形状与这一条写的完全不同**：走 `wx.createWebAudioContext()`，整条管线原样复用，**没有对象池**（§5 订正 2：池真正想要的东西早在 `VoiceBudget.ts` 里）。拦住这一步的一直是我们自己的 `wx.d.ts` 缺声明，不是平台。落地与实测见 §0.3。**真机验证仍是开放项**（三件事列在 §0.3 末尾）；`entries/wechat-e2e.ts` 就是为那次复测留的。
-6. **音频素材**（+ 平局 stinger）。
-   - ~~平局没有 stinger（词汇表缺 `sfx.result.draw`）——第 3、4 步各自留给这一步的口子。~~ ✅ 2026-08-31：`sfx.result.draw` 已进词汇表 / catalogue / 合成音 / `game_draw` 触发点，真浏览器交付峰值 0.1179（与失败 0.1178 齐平）。过程与那条「音调型 cue 的峰值取决于音符有没有重叠」的新规律见 §0.2 (E)。
-   - **素材本身仍未开始**，成本比它看起来高，原因是我们的美学方向：
-   - art-direction §声音 明令**禁止**金属碰撞与爆炸轰鸣，而现成的 CC0 游戏音效包（如 Kenney 的 Impact / Sci-Fi / Digital 那几个：激光、金属撞击、玻璃碎、爆炸）**整个落在禁用清单里**。能直接复用的只有 Interface Sounds 那一包里的 UI 音（tap/back/toggle/error 形状），战斗音必须另找纸质 foley（freesound.org 的 CC0 拟音）或自录。
-   - 素材到位后**按合成音峰值对齐**再进仓。这样换样本不改变混音权重，`cueCatalogue.ts` 那张表不用跟着调。
-     > **⚠️ 订正（2026-08-31）：本条原先写的是「`tone`/`noise` 两个原语的峰值就是它们的 `gain` 参数，所以这一步不需要重新渲染测量」——这句话已经被两轮实测各证伪一次。** §0 发现噪声过一道低通会损失取决于截止频率的能量（`sfx.unit.hit` 授权 0.15、交付 0.063）；§0.2 (E) 发现音调型 cue 的峰值还取决于**音符有没有重叠**（`sfx.result.draw` 授权 0.12、交付 0.0943，只因两个音刻意不重叠）。所以对齐的基准**必须是实测的交付峰值**，不是 `gain` 参数——本文 §0 的那张表就是这个基准（读它前先看那张表下面关于精度的警告：噪声型 cue 要测 10 次以上取中位数）。「UI 那几个各自只用一个原语」仍然是真的，但它省下的只是一层复杂度，不是那次测量。
-   - 值得整套移植 daydayup 的 `tools/audio-pipeline/`（audit → 剔除削波/双声道假立体声 → 裁前后静音 → 按各文件自己的 rolloff 搜最小采样率 → 峰值对齐）——那部分与素材来源无关。
-   - 接入方式：在 `audio/cueAssets.ts` 加一行 `import` + 一个条目，其余代码一行不用改。一个写错的文件名是**构建失败**而不是静默退回合成音。
+6. ~~**音频素材**（+ 平局 stinger）。~~ ✅ **2026-09-01**（落地与四项实测见 §0.4）。
+   - ~~平局没有 stinger（词汇表缺 `sfx.result.draw`）。~~ ✅ 2026-08-31：真浏览器交付峰值 0.1179（与失败 0.1178 齐平）。过程与那条「音调型 cue 的峰值取决于音符有没有重叠」的新规律见 §0.2 (E)。
+   - **发货形态与本条原先的设想有一处根本不同：不是「把 `cueAssets.ts` 填满」，是填 10 行、留 8 行空。** 原稿把这一步整个当成采购问题（「战斗音必须另找纸质 foley 或自录」），而实际做下来最关键的判断是**哪些 cue 不该换**——三个结算 stinger、`ui.reward`、三档 gacha、`ui.error` 的语义住在**音与音的关系**里（共享起始音高、逐档加音加亮），录音只能用别人的调性替换掉那个关系。`sfx.ui.error` 甚至是「有现成且形状完全对的素材却否掉」。两级阶梯（有样本用样本、没有用合成音）本来就是为这件事设计的，所以**代码一行没改**。逐条理由在 `art/audio/credits.json` 的 `kept_on_synth`。
+   - **来源**（全部可商用、**无需署名**）：freesound.org 逐条筛 CC0（17 个，唯一**可查询**的源，也是 `sfx.card.invalid` 能存在的唯一原因——Kenney 和 BigSoundBank 里**根本没有橡皮擦**）/ BigSoundBank（2 个，CC0、无需账号）/ Kenney Interface Sounds（2 个，六个音频包里唯一不落在 art-direction §10 禁用清单里的那个）/ OpenGameArt Luckius（1 个）。本条原稿说「战斗音必须自录」——事实是纸质 foley 的 CC0 池子比预想深得多（单是 `paper crumple` 就 261 条），**一个字都不用自录，也没有用 AI 生成**。
+   - ~~素材到位后**按合成音峰值对齐**再进仓。~~ ✅ 落成一条可闭式验算的等式：`文件峰值 = 实测交付峰值 / (catalogue gain × 总线 0.8)`，在 `sfx.ink.tick` 上验算成立（0.07 × 0.5 × 0.8 = 实测的 0.0280）。实测活体交付峰值 **0.96–1.00×** 于它替掉的合成音，`cueCatalogue.ts` 一个数都没动。
+     > **⚠️ 订正（2026-08-31）：本条原先写的是「`tone`/`noise` 两个原语的峰值就是它们的 `gain` 参数，所以这一步不需要重新渲染测量」——这句话已经被两轮实测各证伪一次。** §0 发现噪声过一道低通会损失取决于截止频率的能量（`sfx.unit.hit` 授权 0.15、交付 0.063）；§0.2 (E) 发现音调型 cue 的峰值还取决于**音符有没有重叠**（`sfx.result.draw` 授权 0.12、交付 0.0943，只因两个音刻意不重叠）。所以对齐的基准**必须是实测的交付峰值**，不是 `gain` 参数。
+     > **⚠️ 追加（2026-09-01）：这条订正当时还漏了一层——峰值是在 MP3 编码之前对齐的，而 MP3 是有损的。** 管线结构上无法自证这一层，所以新增了 `__nwAudio.samples()` 去量**已解码** buffer 的峰值。实测偏差 −6.1%…+6.7%（≈±0.56 dB），是 catalogue 里最小一档有意混音差（0.7↔0.9，≈2.2 dB）的四分之一，可以忽略；但**它是一层必须被量过才能忽略的东西**。
+   - ~~值得整套移植 daydayup 的 `tools/audio-pipeline/`。~~ ✅ 移植完成，见 [`tools/audio-pipeline/README.md`](../../tools/audio-pipeline/README.md)：`fetch_freesound.py` / `fetch_packs.py` / `audit.py` / `process.py` / `write_packs.py` / `selftest.py`（~50 个检查）。**不进 CI**（那会把 Python 塞进每次构建）——它建立的不变量由 `client/test/audio/audioAssets.test.ts` 每次提交复查。三处与 daydayup 不同的地方（`body_ms` 而不是 `duration_ms`、lead 门禁改成一帧、峰值基准的来源）与两个新增的**源文件**门禁都写在那个 README 里。
+   - ~~接入方式：在 `audio/cueAssets.ts` 加一行 `import` + 一个条目。~~ ✅ 照此落地，其余代码一行未改。
+   - **⚠️ 仍然欠着的一件事，和代码无关：没有人听过任何一个声音。** 四轮实测（§0.1–§0.4）量到的全部是「响得对不对」——授权峰值、交付峰值、同瞬叠加、抖动、包体、跨平台一致性。「好不好听」一个字都没测，而且**加不了测量**：它需要一个人坐下来打一局然后签收。这是 §7 剩下的两个开放项之一（另一个是微信真机，见 §0.3 末尾）。
 7. BGM（`bgm.lobby` / `bgm.battle` / `bgm.intro` 两到三轨）+ 切场景淡入淡出 + 失焦暂停 + 可选 ducking。这半边**没有可参照的先例**，接口形状也与 SFX 不同（单实例 + 淡入淡出 + 流式），需要单独设计。

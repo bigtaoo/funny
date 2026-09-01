@@ -3,7 +3,7 @@ import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import type { AppViews } from '../app/AppViews';
 import { setAudioBus, audioBus } from '../audio/audioBus';
-import type { AudioBus } from '../audio/types';
+import type { AudioBus, AudioCue } from '../audio/types';
 import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
 
@@ -118,7 +118,7 @@ setAudioBus(recordingBus);
   play: (cue: string, count?: number) => audioBus().play(cue as never, count),
   resume: () => audioBus().resume(),
   cues: ALL_CUES,
-  /** How much of the shipped sample set actually decoded (0/0 until cueAssets.ts is filled). */
+  /** How much of the shipped sample set actually decoded. Since 2026-09-01: expect 10 cues / 22 variants. */
   loaded: () => audio.loaded,
   /** Every cue the trigger layer has asked for, newest last. */
   log: (): CueLogEntry[] => cueLog.slice(),
@@ -138,6 +138,53 @@ setAudioBus(recordingBus);
   nodes: (): { ctx: AudioContext | null; sfx: GainNode | null } => {
     const priv = audio as unknown as { ctx: AudioContext | null; sfx: GainNode | null };
     return { ctx: priv.ctx, sfx: priv.sfx };
+  },
+  /**
+   * The measured peak of every **decoded** sample buffer, per cue and variant.
+   *
+   * This answers the one question `tools/audio-pipeline/process.py` structurally cannot answer
+   * about its own output. The pipeline scales each file to a target peak and *then* encodes to
+   * MP3 — and MP3 is lossy, so the decoded waveform is not the one that was written. It can
+   * overshoot. If it overshoots by 20% on one cue, that cue is 20% louder than
+   * `cueCatalogue.ts` says it is, the mix drifts from the design, and **nothing anywhere
+   * fails**: the file loads, decodes, plays, and passes `audit.py` (which measures the file,
+   * not the decode) and `audioAssets.test.ts` (which measures the bytes, not the audio).
+   *
+   * Deliberately independent of the autoplay gate: a suspended context decodes fine
+   * (AUDIO_DESIGN.md §5), so this is readable in a background tab with no user gesture — which
+   * matters, because the gesture is the part of a browser smoke that is awkward to automate.
+   *
+   * Reaches through TS privacy for `bank` for the same reason `nodes()` reaches for `ctx`/`sfx`.
+   */
+  samples: (): { cue: string; variant: number; peak: number; ms: number; rate: number }[] => {
+    const priv = audio as unknown as {
+      bank: { variantsOf(cue: AudioCue): readonly AudioBuffer[] | undefined } | null;
+    };
+    const bank = priv.bank;
+    if (!bank) return [];
+    const out: { cue: string; variant: number; peak: number; ms: number; rate: number }[] = [];
+    for (const cue of ALL_CUES) {
+      const variants = bank.variantsOf(cue);
+      if (!variants) continue;
+      variants.forEach((buf, variant) => {
+        let peak = 0;
+        for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+          const d = buf.getChannelData(ch);
+          for (let i = 0; i < d.length; i++) {
+            const v = Math.abs(d[i]!);
+            if (v > peak) peak = v;
+          }
+        }
+        out.push({
+          cue,
+          variant,
+          peak,
+          ms: Math.round(buf.duration * 1000),
+          rate: buf.sampleRate,
+        });
+      });
+    }
+    return out;
   },
 };
 

@@ -14,27 +14,75 @@
 // webpack 的 `asset/resource` 规则已经涵盖 `mp3|wav|ogg`，无需改配置）。
 //
 // 命名约定：`<cue id 里的 '.' 换成 '-'>_NN.<ext>`，例如 `sfx.unit.hit` 的第 3 个 variant 是
-// `sfx-unit-hit_02.mp3`。约定只服务于人和未来的处理脚本，不参与解析——URL 由上面的 import 决定。
+// `sfx-unit-hit_02.mp3`。约定只服务于人和处理脚本（`tools/audio-pipeline/process.py` 按它写出
+// 文件名，`audit.py` 按它反查该文件受哪个门禁约束），不参与解析——URL 由下面的 import 决定。
 import type { AudioCue } from './types';
+
+// ── 战斗内 ──────────────────────────────────────────────────────────────────
+import cardPlay00 from '../assets/audio/sfx-card-play_00.mp3';
+import cardPlay01 from '../assets/audio/sfx-card-play_01.mp3';
+import cardPlay02 from '../assets/audio/sfx-card-play_02.mp3';
+import cardInvalid00 from '../assets/audio/sfx-card-invalid_00.mp3';
+import cardInvalid01 from '../assets/audio/sfx-card-invalid_01.mp3';
+import cardInvalid02 from '../assets/audio/sfx-card-invalid_02.mp3';
+import unitAttack00 from '../assets/audio/sfx-unit-attack_00.mp3';
+import unitAttack01 from '../assets/audio/sfx-unit-attack_01.mp3';
+import unitHit00 from '../assets/audio/sfx-unit-hit_00.mp3';
+import unitHit01 from '../assets/audio/sfx-unit-hit_01.mp3';
+import unitHit02 from '../assets/audio/sfx-unit-hit_02.mp3';
+import baseHit00 from '../assets/audio/sfx-base-hit_00.mp3';
+import spellCast00 from '../assets/audio/sfx-spell-cast_00.mp3';
+import spellCast01 from '../assets/audio/sfx-spell-cast_01.mp3';
+import spellCast02 from '../assets/audio/sfx-spell-cast_02.mp3';
+import unitDeath00 from '../assets/audio/sfx-unit-death_00.mp3';
+import unitDeath01 from '../assets/audio/sfx-unit-death_01.mp3';
+import unitDeath02 from '../assets/audio/sfx-unit-death_02.mp3';
+import inkTick00 from '../assets/audio/sfx-ink-tick_00.mp3';
+import inkTick01 from '../assets/audio/sfx-ink-tick_01.mp3';
+
+// ── UI ─────────────────────────────────────────────────────────────────────
+import uiTap00 from '../assets/audio/sfx-ui-tap_00.mp3';
+import uiBack00 from '../assets/audio/sfx-ui-back_00.mp3';
 
 /**
  * 每个 cue 的样本 variant URL，按 variant 顺序。**没有条目 = 该 cue 只有合成音。**
  *
- * 为什么现在是空的：`art/` 下还没有任何音频资产。AUDIO_DESIGN.md §1 要的是「文具拟音」
- * （铅笔沙沙、橡皮擦、翻页、笔帽咔哒），并明确**禁止**金属碰撞与爆炸轰鸣——现成的 CC0 游戏
- * 音效包（Kenney 那六个：激光/金属撞击/玻璃碎/爆炸）正好整个落在禁用清单里，UI 那一小撮之外
- * 没有能直接拿来用的。所以素材要么自录、要么从 freesound.org 的 CC0 拟音里挑，是独立的一步。
+ * 素材来源、每个文件的出处与逐条挑选理由在 `art/audio/credits.json`（由
+ * `tools/audio-pipeline/process.py` 写出，不要手改），上游包的下载地址与 sha256 在
+ * `art/audio/packs.json`。四个源全部**无需署名**即可商用（三个 CC0 + 一个 royalty-free），
+ * 见 `packs.json` 的 `license` 一列。
  *
- * 在那之前这个映射保持为空，`CueMixer` 走合成音那一级——**这不是占位实现，是设计好的第二级**
- * （见 `CueMixer` 顶部注释）。素材到位后在这里加一行 import + 一个条目，`variantCount` 会自动
- * 反映出来，其余代码一行不用改。
+ * **10 个 cue 有样本，8 个刻意留空**（2026-09-01）。留空的那 8 个不是「还没做」——
+ * `credits.json` 的 `kept_on_synth` 逐条写了理由，一句话概括：**它们的语义住在音与音的关系里，
+ * 不住在音色里**。三个结算 stinger 共享同一个起始音高、靠「之后往哪走」区分胜/负/平；三档
+ * 揭示是同一把声音逐档加音、加亮；`sfx.ui.reward` 是两音上行。这些关系没法靠捡三段别人的录音
+ * 复现——捡回来的只会是别人的调性。实测也站在同一侧：这 8 个 cue 的运行间抖动是 0–4%，而换成
+ * 样本的那 10 个是 15–48%（AUDIO_DESIGN §0.3 那张表），也就是说需要真实质感的正是后者。
+ *
+ * 峰值对齐：每个样本被缩放到 `实测交付峰值 / (catalogue gain × SFX 总线 0.8)`，所以**换样本
+ * 不改变这个 cue 在混音里的权重**，`cueCatalogue.ts` 那张表一个数都不用动。基准是
+ * AUDIO_DESIGN §0/§0.2/§0.3 三轮真浏览器实测的**交付**峰值，不是 `audioSynth.ts` 里的 `gain`
+ * 参数——那两者不相等，§7 第 6 步为此已被订正过一次。
  *
  * 多余的 key 会被类型系统挡住（`Partial<Record<AudioCue, …>>`），拼错的 cue id 是编译错误。
  */
 export const CUE_ASSETS: Partial<Record<AudioCue, readonly string[]>> = {
-  // 示例（素材到位后照此形式填，删掉本注释）：
-  //   import tap00 from '../assets/audio/sfx-ui-tap_00.mp3';
-  //   'sfx.ui.tap': [tap00],
+  'sfx.card.play': [cardPlay00, cardPlay01, cardPlay02],
+  'sfx.card.invalid': [cardInvalid00, cardInvalid01, cardInvalid02],
+  'sfx.unit.attack': [unitAttack00, unitAttack01],
+  'sfx.unit.hit': [unitHit00, unitHit01, unitHit02],
+  // 一个 variant，而这是测量的结论不是偷懒：整个候选池里同时满足「够低（279 Hz）」「起振够快、
+  // 峰值落在 250 ms cap 之内」「零削波」的只有这一个文件。理由与被否掉的三个近似候选写在
+  // credits.json 的 rationale 里。
+  'sfx.base.hit': [baseHit00],
+  'sfx.spell.cast': [spellCast00, spellCast01, spellCast02],
+  'sfx.unit.death': [unitDeath00, unitDeath01, unitDeath02],
+  'sfx.ink.tick': [inkTick00, inkTick01],
+  // UI 两个各一个 variant，也是刻意的：同一个按钮每次按下答出不同的声音，读起来是「不一致」，
+  // 正好与这两个 cue 要传达的「按到了 / 退出去了」相反。variant 是抗重复疲劳的手段，而按钮音
+  // 的重复本身就是它的语义。
+  'sfx.ui.tap': [uiTap00],
+  'sfx.ui.back': [uiBack00],
 };
 
 /** 该 cue 的样本 URL 列表（无样本时为空数组，调用方读作「没东西可加载」而非错误）。 */

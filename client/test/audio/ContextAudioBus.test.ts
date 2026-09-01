@@ -12,9 +12,28 @@
 // recorded, not on the absence of an exception.
 //
 // Run with: npm test
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ContextAudioBus, DEFAULT_SFX_VOLUME } from '../../src/audio/ContextAudioBus';
+import { setAssetIO } from '../../src/assets/assetIO';
+import { allSfxUrls } from '../../src/audio/cueAssets';
 import { fakeAudioContext, asCtx, type FakeAudioContext } from './fakeAudioContext';
+
+// The bus reads bytes through the module-level `assetIO()` seam, not through its own deps (see
+// ContextAudioBus's comment on why: an entry point may `setAssetIO` after the bus is built). The
+// default is `WebAssetIO`, i.e. `fetch` — which under node has no base URL, so every `preload()`
+// below used to emit a stack trace per asset. It was harmless (the SampleBank is per-file
+// best-effort and each variant falls back to the synth voice) and invisible while `cueAssets.ts`
+// was empty; the moment 22 real files landed it became 22 stack traces per run, which is how
+// people stop reading test output.
+//
+// So the network is stubbed out here, and the per-file warnings are collected instead of printed
+// via the `warn` dep — both are the seams the production code already has, not test-only escapes.
+beforeEach(() => {
+  setAssetIO({
+    loadBinary: () => Promise.reject(new Error('no assets in unit tests')),
+    textureSource: (url: string) => Promise.resolve(url),
+  });
+});
 
 /** A bus over a fresh fake context, plus the handles a case needs to poke at it. */
 function bus(opts: { state?: 'suspended' | 'running' } = {}) {
@@ -22,17 +41,20 @@ function bus(opts: { state?: 'suspended' | 'running' } = {}) {
   ctx.state = opts.state ?? 'running';
   let creates = 0;
   const gestures: (() => void)[] = [];
+  const warnings: string[] = [];
   const b = new ContextAudioBus({
     createContext: () => {
       creates++;
       return asCtx(ctx);
     },
     onGesture: (cb) => gestures.push(cb),
+    warn: (message) => warnings.push(message),
   });
   return {
     b,
     ctx,
     gestures,
+    warnings,
     creates: () => creates,
     /** The SFX bus node: the first gain created, i.e. the one wired to `destination`. */
     busNode: () => ctx.of('gain').find((g) => g.out.includes(ctx.destination)),
@@ -209,12 +231,19 @@ describe('ContextAudioBus — volume', () => {
 });
 
 describe('ContextAudioBus — preload', () => {
-  it('reports honestly that no samples are shipped yet', async () => {
-    // `cueAssets.ts` is empty (AUDIO_DESIGN.md §7 step 6), so this resolves immediately and
-    // every cue runs on its procedural voice. 0/0 is the correct answer, not a failure.
+  it('degrades to the synth voice per FILE, and says so, when every read fails', async () => {
+    // Rewritten 2026-09-01: this case used to assert `{cues: 0, variants: 0}` because
+    // `cueAssets.ts` was empty. It is not any more (22 files across 10 cues), and what is worth
+    // pinning now is the shape of the failure rather than the count — the reader rejects
+    // everything here (see the beforeEach), so preload must still RESOLVE, report an honest
+    // zero, and account for each file it could not use. "Assets are broken" must never be able
+    // to become "audio is gone": every cue has a procedural voice underneath it.
     const h = bus();
     await h.b.preload();
     expect(h.b.loaded).toEqual({ cues: 0, variants: 0 });
+    // One warning per shipped variant, which is the count `cueAssets.ts` declares.
+    expect(h.warnings).toHaveLength(allSfxUrls().length);
+    expect(h.warnings.every((w) => w.includes('退回合成音'))).toBe(true);
   });
 
   it('decodes without waiting for the autoplay gate', async () => {
