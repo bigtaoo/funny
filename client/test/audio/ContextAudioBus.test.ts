@@ -268,4 +268,18 @@ describe('ContextAudioBus — the field names the e2e measurement surface reflec
     expect(priv.ctx).toBe(h.ctx);
     expect(priv.sfx).toBe(h.busNode());
   });
+
+  it('keeps `bank` reachable by name, with `variantsOf` on it', () => {
+    // Same class of silent breakage, one surface later (2026-09-01): `__nwAudio.samples()` reads
+    // the peak of every DECODED buffer by reflecting on `bank` and calling `variantsOf(cue)`.
+    // That is the only way to check the thing the asset pipeline structurally cannot check about
+    // its own output — it peak-matches BEFORE a lossy MP3 encode (AUDIO_DESIGN §0.4). Rename the
+    // field or the method and `samples()` returns an empty array forever: no error, no failing
+    // test, and the next person concludes the measurement surface never worked.
+    const h = bus();
+    void h.b.preload();
+    const priv = h.b as unknown as { bank: { variantsOf?: unknown } | null };
+    expect(priv.bank).toBeTruthy();
+    expect(typeof priv.bank!.variantsOf).toBe('function');
+  });
 });

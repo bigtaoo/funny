@@ -96,7 +96,7 @@ python -m venv --system-site-packages venv
 
       ./venv/Scripts/python write_packs.py
 
-- **`selftest.py`** — ~50 checks over the measurement, gating and conversion layer. Plain asserts.
+- **`selftest.py`** — 73 checks over the measurement, gating and conversion layer. Plain asserts.
   Measurement is checked against **synthetic** signals with known ground truth (a 1 kHz sine must
   read a 1 kHz centroid; 50 ms of leading zeros must read 50 ms of lead), because a measurement
   checked against a real file only tells you the number did not change.
@@ -107,6 +107,16 @@ python -m venv --system-site-packages venv
   "slow attack" signal used a quiet lead followed by a bang, which does **not** reproduce the
   defect — `attack_ms` counts from the first sample above −40 dBFS-relative, so a lead sitting
   54 dB down is not part of the attack at all. What the gate is for is a continuous **swell**.
+
+  Its `encode_smallest` block is worth keeping honest: it re-encodes at every ladder rate itself
+  and asserts the search picked the actual minimum, rather than merely a legal rate. A search that
+  silently degraded to "take the first" would still produce files that play and pass every other
+  check — it would just cost bytes. The block also asserts the shipped set spans more than one
+  sample rate, because if it ever did not, this whole search would be dead weight.
+
+  A handful of cases need `credits.json` on disk (the tables-vs-record comparisons). Those
+  **skip, loudly**, when it is absent — before the first `process.py` run "the record disagrees"
+  and "there is no record" are different findings and only the first is a defect.
 
 ## What runs in CI, and what does not
 
@@ -121,6 +131,19 @@ Every shipped sample was scaled so that swapping a synth voice for a sample does
 cue's weight in the mix. Edit a gain in `cueCatalogue.ts` and the arithmetic behind 22 files
 quietly stops holding — the files still load, still play, still pass everything else, and the only
 symptom is a mix that drifted away from the design.
+
+That file is structured as ten pure rules plus a **mutation suite** that breaks each contract in
+turn and asserts the matching rule complains — the same standard `scripts/checkWechatPackage.mjs`
+states with its `--pkg` flag: *a gate nobody has seen fail is not a gate.* Writing that suite is
+what found the two holes its first version could not see, and both are now rules of their own:
+
+- **`variantMapping`** — the original cases checked that a cue had the right *number* of variants
+  and that the files existed, never that a cue pointed at *its own* recordings. Swap two cues'
+  import arrays in `cueAssets.ts` and every one of them stayed green while the game played the
+  wrong sound for both. (The mutation case asserts exactly that: the old rules are all still happy
+  on the swapped snapshot.)
+- **`sourceUniqueness`** — one recording shipped as two different cues. Nearly happened here:
+  `stroke_632474.ogg` was a strong candidate for both `sfx.card.play` and `sfx.unit.attack`.
 
 A third measurement surface sits in the browser: `window.__nwAudio.samples()` in
 `entries/web-e2e.ts` reports the peak of every **decoded** buffer, which is the one thing this

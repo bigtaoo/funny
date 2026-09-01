@@ -21,7 +21,7 @@ silently reverse:
 
 Run: ./venv/Scripts/python selftest.py
 """
-import os, sys, tempfile
+import json, os, re, sys, tempfile
 import numpy as np
 import soundfile as sf
 
@@ -30,6 +30,14 @@ import audit, process
 
 FAILS = []
 
+# The shipped record, so a few cases can check the tables against what was actually written from
+# them. Absent before the first `process.py` run (and when this file is run from a checkout whose
+# assets have not been generated), which is a legitimate state -- those cases are then SKIPPED
+# rather than failed, and say so, because "the record disagrees" and "there is no record" are
+# different findings and only the first is a defect.
+_HAS_CREDITS = os.path.exists(process.CREDITS)
+_CREDITS = json.load(open(process.CREDITS)) if _HAS_CREDITS else {"cues": [], "kept_on_synth": {}}
+
 
 def check(name: str, cond: bool, detail: str = "") -> None:
     if cond:
@@ -37,6 +45,14 @@ def check(name: str, cond: bool, detail: str = "") -> None:
     else:
         print(f"  FAIL {name} {detail}")
         FAILS.append(name)
+
+
+def check_shipped(name: str, cond: bool, detail: str = "") -> None:
+    """A check that needs `credits.json` on disk. Skipped, loudly, when it is not there."""
+    if not _HAS_CREDITS:
+        print(f"  skip {name} (no {process.CREDITS} -- run process.py first)")
+        return
+    check(name, cond, detail)
 
 
 def near(a: float, b: float, tol: float) -> bool:
@@ -168,6 +184,82 @@ def main() -> int:
         check("resample preserves amplitude", near(float(np.max(np.abs(r))), 0.5, 0.02),
               f"got {float(np.max(np.abs(r)))}")
 
+        print("\nencode_smallest (the byte-budget search)")
+        # Not a formality: this search is why the shipped set is 57.6 KB rather than whatever
+        # 48 kHz would have cost. libsndfile's MP3 encoder picks its own VBR quality per rate, so
+        # bytes are NOT monotonic in rate -- if this ever silently stopped comparing and just took
+        # the first (lowest) rate, the files would still play and still pass every other check.
+        y = tone(sr, 1000, 0.12)
+        rates = [16000, 22050, 24000, 32000, 44100, 48000]
+        chosen_path = os.path.join(tmp, "enc.mp3")
+        chosen_rate, chosen_bytes = process.encode_smallest(y, sr, rates, chosen_path)
+        check("encode_smallest returns a rate from the list it was given", chosen_rate in rates,
+              f"got {chosen_rate}")
+        check("it leaves exactly one file at the target path and no .tmp siblings",
+              os.path.exists(chosen_path)
+              and not [f for f in os.listdir(tmp) if f.startswith("enc.mp3.")],
+              f"stray: {[f for f in os.listdir(tmp) if f.startswith('enc.mp3.')]}")
+        check("the reported byte count is the file's actual size",
+              chosen_bytes == os.path.getsize(chosen_path),
+              f"reported {chosen_bytes}, on disk {os.path.getsize(chosen_path)}")
+        # The claim under test: nothing in the list encodes smaller than what it picked.
+        sizes = {}
+        for r in rates:
+            p = os.path.join(tmp, f"probe_{r}.mp3")
+            sf.write(p, process.resample(y, sr, r), r, format="MP3", subtype="MPEG_LAYER_III")
+            sizes[r] = os.path.getsize(p)
+        check("it actually picked the smallest, not merely a valid one",
+              chosen_bytes == min(sizes.values()),
+              f"picked {chosen_rate}@{chosen_bytes}, smallest is "
+              f"{min(sizes, key=sizes.get)}@{min(sizes.values())}")
+        check("a single-rate list is a no-op search rather than an error",
+              process.encode_smallest(y, sr, [24000], os.path.join(tmp, "one.mp3"))[0] == 24000)
+        check_shipped("the shipped set really does span several rates (else the search is dead weight)",
+              len({f["sample_rate"] for c in _CREDITS["cues"] for f in c["files"]}) > 1,
+              "every shipped file has the same sample rate")
+
+        print("\ntables agree with each other")
+        check("every picked cue has a peak target",
+              set(process.PICKS) <= set(process.TARGETS),
+              f"missing: {sorted(set(process.PICKS) - set(process.TARGETS))}")
+        check("no peak target is left over from a cue that stopped being picked",
+              set(process.TARGETS) == set(process.PICKS),
+              f"extra: {sorted(set(process.TARGETS) - set(process.PICKS))}")
+        check("nothing is both picked and kept on the synth voice",
+              not (set(process.PICKS) & set(process.KEPT_ON_SYNTH)),
+              f"both: {sorted(set(process.PICKS) & set(process.KEPT_ON_SYNTH))}")
+        check("every PICKS entry names at least one source file",
+              all(files for files, _cap, _why in process.PICKS.values()))
+        check("every PICKS entry carries a rationale, not a placeholder",
+              all(len(why) > 60 for _f, _c, why in process.PICKS.values()))
+        # Same allowance the TS-side gate makes (`client/test/audio/audioAssets.test.ts`): a
+        # `See \`<cue>\`.` pointer is legitimate where several cues share ONE decision -- the three
+        # gacha reveal tiers are a single judgement about the relationship between them, and
+        # writing it out three times makes the record worse. But the pointer has to resolve, and
+        # what it resolves TO has to be a real reason. Keeping the two gates' definitions of
+        # "placeholder" identical matters: a rule that is stricter in Python than in CI just means
+        # the Python one gets edited away the first time it fires.
+        def synth_reason_ok(cue: str, why: str, depth: int = 0) -> bool:
+            ref = re.fullmatch(r"See `([^`]+)`\.", why)
+            if not ref:
+                return len(why) > 60
+            target = ref.group(1)
+            if target == cue or depth > 2 or target not in process.KEPT_ON_SYNTH:
+                return False
+            return synth_reason_ok(target, process.KEPT_ON_SYNTH[target], depth + 1)
+
+        bad_reasons = [c for c, why in process.KEPT_ON_SYNTH.items() if not synth_reason_ok(c, why)]
+        check("every KEPT_ON_SYNTH entry carries a real reason or a resolving cross-reference",
+              not bad_reasons, f"placeholders: {bad_reasons}")
+        check("a cross-reference to nowhere is rejected",
+              not synth_reason_ok("sfx.ui.reward", "See `sfx.nope`."))
+        check("a self-reference is rejected",
+              not synth_reason_ok("sfx.ui.reward", "See `sfx.ui.reward`."))
+        check_shipped("credits.json on disk matches the tables it was written from",
+              {c["cue"] for c in _CREDITS["cues"]} == set(process.PICKS)
+              and set(_CREDITS["kept_on_synth"]) == set(process.KEPT_ON_SYNTH),
+              "re-run process.py")
+
         print("\nsource rejection (defects invisible in the output)")
         clipped = wav(np.ones(int(sr * 0.05)) * 1.0, sr, tmp, "src-clip.wav")
         check("a clipped source is rejected",
@@ -182,8 +274,18 @@ def main() -> int:
         check("a source whose peak lands past the cap is rejected",
               any("attack" in w for w in process.check_source(p_slow, 100)),
               f"got {process.check_source(p_slow, 100)}")
+        silent = wav(np.zeros(int(sr * 0.1)), sr, tmp, "src-silent.wav")
+        check("a silent source is rejected",
+              any("silent" in w for w in process.check_source(silent, 100)),
+              f"got {process.check_source(silent, 100)}")
         clean = wav(tone(sr, 1000, 0.08), sr, tmp, "src-clean.wav")
         check("a clean, fast source is accepted", process.check_source(clean, 100) == [])
+        check("every source the shipped set was built from still passes both source gates",
+              not [f"{cue}:{rel}:{w}"
+                   for cue, (files, cap_ms, _why) in process.PICKS.items()
+                   for rel in files
+                   for w in process.check_source(os.path.join(process.SRC, rel), cap_ms)],
+              "a source under art/audio/sources/ changed or went missing")
 
     print()
     if FAILS:
