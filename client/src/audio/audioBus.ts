@@ -36,7 +36,7 @@ export class NullAudioBus implements AudioBus {
   play(_cue: AudioCue, _count?: number): void {}
   setSfxVolume(_v: number): void {}
   setMusicVolume(_v: number): void {}
-  playMusic(_track: MusicTrack | null): void {}
+  updateMusic(_desired: MusicTrack | null, _dtMs: number): void {}
   resume(): void {}
 }
 
@@ -80,20 +80,26 @@ export function playSfx(cue: AudioCue, count = 1): void {
 }
 
 /**
- * 声明当前场景该放的 BGM。**这是音乐侧唯一该用的入口**，`SceneManager` 在每次 swap /
- * pushOverlay / popOverlay 之后调一次；"哪个场景放哪条轨"的决定在 `sceneMusic.ts`。
+ * 推一帧 BGM（AUDIO_DESIGN.md §7 第 7 步）。**这是 BGM 侧唯一该用的入口**，与 {@link playSfx}
+ * 同一个形状、同一个理由：把"音频设备从哪来"关在本模块里。
  *
- * 与 {@link playSfx} 同样吞掉失败并只警告一次，理由也一样：调用点在场景切换的关键路径上，
- * 为了一条音乐把导航带崩是不划算的交换。
+ * 唯一的调用者是 `SceneManager.onTick`——见 `AudioBus.updateMusic` 的注释里为什么是每帧一次的
+ * 推导而不是切场景时通知一声。
+ *
+ * 失败在这里被吞掉的理由比 cue 那边更硬：这个调用跑在 `app.ticker` 上，**排在 PIXI 渲染器的
+ * 监听器前面**——PIXI 7 里任何一个 ticker 监听器抛出都会中止更新循环、并且不再安排下一次
+ * `requestAnimationFrame`，也就是整块画布永久冻结到刷新为止（`SceneManager.tickScene` 的注释
+ * 记着那个真实的故障报告）。为了一条背景音乐冒这个险是不成比例的。每个已安装的总线只警告一次：
+ * 一个坏掉的 deck 每秒坏 60 次。
  */
 let musicWarned = false;
-export function playMusic(track: MusicTrack | null): void {
+export function updateMusic(desired: MusicTrack | null, dtMs: number): void {
   try {
-    _bus.playMusic(track);
+    _bus.updateMusic(desired, dtMs);
   } catch (err) {
     if (!musicWarned) {
       musicWarned = true;
-      console.warn(`[audio] BGM ${track ?? '(stop)'} 播放失败；本次会话音乐保持静默：`, err);
+      console.warn('[audio] BGM 更新失败；本次会话没有背景音乐：', err);
     }
   }
 }

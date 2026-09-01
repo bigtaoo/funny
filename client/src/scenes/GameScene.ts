@@ -106,6 +106,13 @@ export interface GameSceneOptions {
 }
 
 export class GameScene implements Scene {
+  /**
+   * 对局刻意**安静**（AUDIO_DESIGN.md §2.3）。`bgm.battle` 还没有 master，而它没有进
+   * `MusicTrack` union——一条没有文件的轨会以「这个界面就是安静的」形式存在，和设计意图无法
+   * 区分。所以这里写的是显式的 `null`：它和「忘了声明」（省略 = 大厅床）是两回事。
+   * master 到了之后，这三处（本类、`ReplayScene`、`StatePlayerScene`）一起改成 `'bgm.battle'`。
+   */
+  readonly music = null;
   readonly container;
   private readonly renderer: GameRenderer;
   private readonly cb: GameSceneCallbacks;

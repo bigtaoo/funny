@@ -1,264 +1,380 @@
-"""Convert a music master into the shipped BGM track under client/src/assets/audio/.
+"""Produce the shipped BGM loops from AI-generated masters (AUDIO_DESIGN §2.3 / §7 step 7).
 
-Separate from `process.py` because BGM is a different kind of asset and shares almost none of
-its arithmetic (AUDIO_DESIGN §7 step 7):
+The second driver beside `process.py` (the 18 cues). It is separate because all three of its
+inputs differ from a cue's, and each difference changes a STEP rather than a parameter:
 
-  * **No trim, no cap, no peak-match.** A cue is an event, so the pipeline owns its onset, its
-    length and its level. A music bed is a finished musical statement -- its intro, its fade-out
-    and its own dynamics ARE the content. Scaling it to a target peak before a lossy encode
-    would only spend the encoder's headroom to move a number that `MUSIC_TRACKS[].gain` moves
-    for free at runtime.
-  * **The level decision therefore lives in the catalogue, not in the file.** `musicTracks.ts`
-    states the gain and the delivered-peak arithmetic it was chosen for; this script only
-    reports the file peak that arithmetic is anchored to.
-  * **The encode is a quality search, not a size search.** `process.py` keeps the smallest file
-    at any bandwidth-legal rate because a 40 ms jab has no top end to lose. 3.5 minutes of music
-    does, so the ladder here runs over libsndfile's compression level and stops at the smallest
-    file that still clears two measured gates (see `LADDER` / `pick`).
+  * The input is a 3-5 minute SONG, not a cue. A loop REGION has to be chosen, and its two ends
+    have to match each other across the player's crossfade window -- so the region is an
+    authored decision recorded in TRACKS below, arrived at by measurement (`--search`) rather
+    than by ear-and-eyeball.
+  * The input is mastered to ~0 dBFS. The cue set was deliberately peak-matched DOWN to the
+    synth voices it replaced and lives at -14..-23 dBFS on file (§0.4). There is no synth voice
+    for music to match, so level is set by a BAND TARGET instead: the 250-2000 Hz RMS, which is
+    the band every cue peaks in. See `audit.py`'s `music` gate for where -29 dBFS comes from.
+  * It is stereo and it STAYS stereo. `audit.py`'s sfx/ui gates forbid stereo ("wastes bytes")
+    because a 43 ms cue's second channel is pure overhead and doubles what the `SampleBank`
+    holds decoded in RAM. A 60 s bed STREAMS, so neither argument survives.
 
-Usage:
-    ./venv/Scripts/python process_music.py [--dry-run]
+One property worth stating because it is not obvious: every filter here runs as a single
+zero-phase multiply over the WHOLE region's spectrum. That is circular convolution, and a loop
+region IS circular -- so filtering cannot introduce the endpoint discontinuity that a
+windowed/overlap-add filter would. `selftest.py` asserts that circularity directly.
+
+**No `selfcheck()` in this file**, unlike daydayup's version of it: this repo keeps every check
+in `selftest.py`, so that one command answers "is the pipeline sound" for both drivers. The
+checks that daydayup wrote inline came across into that file.
+
+Paths here are REPO-ROOT relative, matching `process.py` -- so like it, this driver is run
+from the repo root rather than from this directory (`audit.py`, which takes paths as arguments,
+is the one that is run from here).
+
+Usage, from the repo root (P = tools/audio-pipeline):
+    P/venv/Scripts/python P/process_music.py --search "Some Suno Title.mp3"
+    P/venv/Scripts/python P/process_music.py --search bgm.lobby   # ...with its shelf applied
+    P/venv/Scripts/python P/process_music.py [--track bgm.lobby] [--out DIR]
 """
-import argparse, json, os, sys
+import argparse, os, shutil
 import numpy as np
 import soundfile as sf
 
-SRC = "art/audio/sources"
-OUT = "client/src/assets/audio"
-CREDITS = "art/audio/credits.json"
+# The band measurement lives in `audit.py` -- it is the measurement+gate module, and the
+# producer SHARING it is what keeps the number this script reports and the number the gate
+# checks from drifting apart. daydayup let them drift three times; see `profile_diff`'s
+# docstring there for what each drift cost.
+from audit import (BAND_N, MID_BAND, XFADE_S, band_edges, band_profile, band_rms,
+                   profile_diff, xfade_band_diff)
+# The delivered-headroom report is the whole reason MID_TARGET_DBFS has the value it has, so it
+# is computed from the cue set's own numbers rather than restated. `audioAssets.test.ts` already
+# pins `process.py`'s TARGETS against the live `cueCatalogue.ts`, so importing them here inherits
+# that guard instead of opening a second place for the gains to go stale.
+from process import BUS_GAIN, TARGETS
 
-# The BGM channel gain the delivered peaks below are quoted at -- `DEFAULT_AUDIO_SETTINGS` in
-# `audio/audioSettings.ts` (master 1.0 x bgm 0.5). Not a tunable: change it here only if that
-# default changes. `audioAssets.test.ts` holds the two together.
-MUSIC_CHANNEL = 0.5
+# Masters live under the same source tree as the cue foley, one directory per provenance
+# (`first-party/` for a track the project owns, `suno/` for a generated one). The BRIEFS for the
+# tracks that still need generating are in `art/audio/suno/BRIEFS.md`.
+SRC_DIR = 'art/audio/sources'
+OUT_DIR = 'client/src/assets/audio/music'
 
-# track id -> (source file, catalogue gain, why this track, licence facts). The `why` is the part
-# no measurement can supply; it is copied into credits.json so a later reader can tell a decision
-# from an accident.
+# Level target: the 250-2000 Hz RMS every track is normalised to. Derived in `audit.py`'s
+# `music` gate comment from this repo's measured cue peaks -- not copied from daydayup's -30.
+MID_TARGET_DBFS = -29.0
+PEAK_CEILING_DBFS = -3.0     # headroom for inter-sample peaks and MP3 encode overshoot
+
+# The BGM bus default (`DEFAULT_AUDIO_SETTINGS` in `audio/audioSettings.ts`: master 1.0 x bgm
+# 0.5). Only used for the report, but it is half of the derivation, so it is stated rather than
+# folded into a constant somebody would later read as arbitrary.
+MUSIC_BUS_GAIN = 0.5
+
+# Cues excluded from the headroom report's "binding constraint" line, with the reason. See the
+# `music` gate comment: `ink.tick` is authored as the faintest thing in the game AND throttled
+# to one tick per 10 ink (§0.1), so holding the bed 10 dB under it would drop the music 6 dB
+# below what anything else in the mix justifies.
+NOT_LEGIBILITY_CRITICAL = {'sfx.ink.tick'}
+
+RATE_LADDER = [24000, 32000, 44100, 48000]
+QUALITY_LADDER = [0.6, 0.4, 0.2]     # libsndfile VBR quality; higher number = smaller file
+
+# track id -> the authored decision. `region` is (start_s, length_s) from the crossfade-aware
+# search below; `shelf` is (corner Hz, gain dB) or None; `why` is the record that goes into
+# `art/audio/credits.json`.
 #
-# The gain is `MUSIC_TRACKS[track].gain` in `client/src/audio/musicTracks.ts`, quoted here rather
-# than derived, so the delivered peak this script reports can be checked against the one that
-# file's comment argues for. **Music is not peak-matched** (see the module docstring), so unlike
-# `process.py`'s TARGETS this number does not change a single byte of the output -- it only
-# decides what the recorded delivered peak MEANS.
-TRACKS = {
-    "bgm.lobby": (
-        "first-party/doodle-bed.flac",
-        0.20,
-        "The first and so far only music in the game. A 3:33 bed at -17 dBFS RMS with a 13.8 dB "
-        "crest factor -- quiet, wide-dynamic and with no percussive transients, which is what "
-        "lets it sit under a mix whose loudest cue peaks at 0.151 without ever competing for the "
-        "same moment. Shipped as `bgm.lobby` rather than `bgm.battle` because it opens and closes "
-        "on a fade: it is written to be entered and left, not to be interrupted by a match.",
-        {"source_pack": "first-party", "license": "proprietary (project-owned)",
-         "attribution_required": False},
-    ),
+# `--search` works on a bare filename with no entry here, which is the order the work actually
+# happens in: acquire the master, search, decide, record, then process.
+TRACKS: dict[str, dict] = {
+    'bgm.lobby': {
+        'src': 'first-party/doodle-bed.flac',
+        # From `--search first-party/doodle-bed.flac`. The 60-75 s bucket, not the 20-30 s one
+        # that scored best overall (0.27 dB at 13.5s/23.5s): a 23.5 s loop turns over every 24
+        # seconds in a screen players sit on for minutes, and a seam nobody can hear is worth
+        # nothing if the repetition is what they notice instead. 0.58 dB is a quarter of the
+        # 2.5 dB gate, and 74 s is three times the musical distance between repeats.
+        'region': (12.5, 74.0),
+        # No shelf. The master's own 20-250 Hz sits 14 dB under its mid band (this is a light
+        # acoustic bed, not a mix with a sub); a shelf here would be attenuating something that
+        # is not in the way, and `--search` was therefore run raw.
+        'shelf': None,
+        'why': (
+            'The first music in the game, and project-owned rather than licensed or generated. '
+            'A 74 s region lifted out of a 3:33 master, chosen by the same crossfade-window band '
+            'measure the gate then applies (0.58 dB across the seam, level within 0.09 dB). '
+            'Shipped as bgm.lobby rather than bgm.battle because it has no percussive transients '
+            'and no forward pull -- it is written to be sat on, not to be interrupted.'
+        ),
+    },
 }
 
-# libsndfile compression levels to try, smallest file first. 1.0 is not in the ladder: libsndfile
-# rejects it outright ("Error set compression level 1.0").
-LADDER = [0.9, 0.8, 0.7, 0.6, 0.5, 0.3, 0.0]
 
-# -- the two gates the ladder is searched against --------------------------------------------
-#
-# Both are relative to the SOURCE, never to an absolute spectrum: this master is already
-# band-limited (its own 99% rolloff is 12.0 kHz), so a fixed "must reach 16 kHz" rule would
-# measure the composer, not the encoder.
-#
-# 1. ROLLOFF. Keep at least this fraction of the source's own 99%-energy rolloff. The ladder for
-#    `doodle-bed.flac` has a knee right here -- 0.7 keeps 90% (10847/12010 Hz), 0.9 keeps 51%
-#    (6095 Hz), i.e. half the spectrum disappears in one rung. 0.85 sits inside that knee.
-MIN_ROLLOFF_KEPT = 0.85
-# 2. BAND ERROR. Per-band energy must land within this many dB of the source, but only in bands
-#    that carry real signal -- a band 40 dB under the track's loudest one is inaudible, and
-#    holding an encoder to 0.5 dB there would reject every rung of the ladder for nothing.
-MAX_BAND_ERR_DB = 0.5
-AUDIBLE_BAND_FLOOR_DB = 40.0
-BAND_EDGES = [0, 250, 1000, 4000, 8000, 12000, 16000, 24000]
-
-FFT_N = 1 << 14
-# Both spectral measures read a 30 s window from the MIDDLE of the track. The middle rather than
-# the whole file because both ends of a bed are a fade, and averaging those in would move every
-# band by the same amount in every candidate -- measuring the fade, not the encoder.
-WINDOW_S = 30
+def db(x: float) -> float:
+    return -np.inf if x <= 1e-12 else 20.0 * np.log10(x)
 
 
-def _mid_frames(y: np.ndarray, sr: int) -> np.ndarray:
-    mid = len(y) // 2
-    frames = min((len(y) - mid) // FFT_N, int(WINDOW_S * sr) // FFT_N)
-    return y[mid:mid + frames * FFT_N].reshape(-1, FFT_N) * np.hanning(FFT_N)
+def low_shelf(x: np.ndarray, sr: int, f0: float, gain_db: float) -> np.ndarray:
+    """Zero-phase low shelf: `gain_db` below f0, unity well above, smooth between.
 
+    g(f) = 1 + (G-1)/(1+(f/f0)^ORDER), applied as ONE FFT over the whole region. Circular, so
+    the loop's endpoints stay exactly as continuous as they already were.
 
-def bands(y: np.ndarray, sr: int) -> np.ndarray:
-    """Mean per-band energy over the mid-track window."""
-    freqs = np.fft.rfftfreq(FFT_N, 1 / sr)
-    S = (np.abs(np.fft.rfft(_mid_frames(y, sr), axis=1)) ** 2).mean(axis=0)
-    return np.array([S[(freqs >= a) & (freqs < b)].sum()
-                     for a, b in zip(BAND_EDGES, BAND_EDGES[1:])])
-
-
-def rolloff(y: np.ndarray, sr: int, frac: float = 0.99) -> float:
-    """Frequency below which `frac` of the mid-track energy lies."""
-    freqs = np.fft.rfftfreq(FFT_N, 1 / sr)
-    S = np.abs(np.fft.rfft(_mid_frames(y, sr), axis=1)).mean(axis=0)
-    c = np.cumsum(S)
-    return float(freqs[np.searchsorted(c, c[-1] * frac)])
-
-
-def measure(x: np.ndarray) -> dict:
-    """Objective facts about a music file. Same spirit as audit.py, different limits."""
-    mono = x.mean(axis=1)
-    peak = float(np.max(np.abs(x)))
-    rms = float(np.sqrt((x ** 2).mean()))
-    out = {
-        "channels": int(x.shape[1]),
-        "peak": round(peak, 4),
-        "peak_dbfs": round(20 * np.log10(max(peak, 1e-12)), 2),
-        "rms_dbfs": round(20 * np.log10(max(rms, 1e-12)), 2),
-        "crest_db": round(20 * np.log10(max(peak, 1e-12) / max(rms, 1e-12)), 2),
-        "clipped_samples": int(np.sum(np.abs(x) >= 0.999)),
-        "dc_offset": round(float(np.abs(mono.mean())), 5),
-    }
-    if x.shape[1] == 2:
-        out["lr_correlation"] = round(float(np.corrcoef(x[:, 0], x[:, 1])[0, 1]), 3)
+    ORDER is 4, not 2. A 2nd-order shelf at f0=80 Hz reaches only -6.9 dB at 40 Hz -- and
+    40-49 Hz is the exact band a shelf like this exists to tame, so the gentler curve
+    under-delivers where it is aimed. `selftest.py` asserts the REQUIREMENT (near-full
+    attenuation by f0/2, unity by 4*f0, monotonic between) rather than the algebra, which is
+    what caught the order being wrong in daydayup.
+    """
+    g_lin = 10.0 ** (gain_db / 20.0)
+    n = len(x)
+    freqs = np.fft.rfftfreq(n, 1.0 / sr)
+    gain = 1.0 + (g_lin - 1.0) / (1.0 + (freqs / f0) ** 4)
+    out = np.empty_like(x)
+    for c in range(x.shape[1]):
+        out[:, c] = np.fft.irfft(np.fft.rfft(x[:, c]) * gain, n)
     return out
 
 
-def check_source(m: dict, dur_s: float) -> list:
-    """Reject a master the encode cannot fix.
+def set_band_target(x: np.ndarray, sr: int, target_db: float) -> tuple[np.ndarray, float]:
+    """Scale so the MID_BAND RMS lands on target_db. Returns (signal, gain applied in dB)."""
+    delta = target_db - band_rms(x, sr, *MID_BAND)
+    return x * (10.0 ** (delta / 20.0)), delta
 
-    Deliberately short: unlike the found-foley pool, a music master is authored, so the failure
-    modes worth gating are the ones that would be baked into every byte we then ship.
+
+def peak_guard(x: np.ndarray, ceiling_db: float) -> tuple[np.ndarray, float]:
+    """Scale down if the peak exceeds the ceiling. Never scales UP -- a bed that came in quiet
+    is a level decision `set_band_target` already made, and lifting it here would undo that."""
+    peak = db(float(np.max(np.abs(x))))
+    if peak <= ceiling_db:
+        return x, 0.0
+    trim_db = ceiling_db - peak
+    return x * (10.0 ** (trim_db / 20.0)), trim_db
+
+
+def resample(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
+    """Per-channel spectral resample. `process.py`'s version is mono-only, by design."""
+    if sr_in == sr_out:
+        return x
+    n_out = int(round(len(x) * sr_out / sr_in))
+    out = np.zeros((n_out, x.shape[1]))
+    for c in range(x.shape[1]):
+        spec = np.fft.rfft(x[:, c])
+        bins = n_out // 2 + 1
+        new = np.zeros(bins, dtype=complex)
+        keep = min(len(spec), bins)
+        new[:keep] = spec[:keep]
+        out[:, c] = np.fft.irfft(new, n_out) * (n_out / len(x))
+    return out
+
+
+def search_regions(src: str, shelf: tuple | None = None, lo_s: float = 20.0,
+                   hi_s: float = 90.0, hop_s: float = 0.5) -> list[tuple]:
+    """Rank loop regions by the SAME measure the shipped file is then judged by.
+
+    That sentence is the whole design of this function, and daydayup paid for it three times
+    (see `audit.py`'s `profile_diff`). All three failures had one shape: a ranking metric
+    coarser than, or differently weighted from, or applied to a different signal than the
+    ACCEPTANCE metric, each producing candidates that scored well here and failed the gate.
+
+    So: full-window `band_profile` + `profile_diff`, the same two calls the gate makes, on the
+    PROCESSED signal (the shelf is applied first, because attenuating below 80 Hz moves the
+    energy weighting onto the mids where head and tail differ more -- a region daydayup ranked
+    at 1.41 dB raw measured 3.69 dB once shelved). Level normalisation is a scalar and cannot
+    change a dB difference, and the resample only drops bands near -80 dBFS, so the shelf is
+    the one step that has to be inside the loop.
+
+    Cost adds small terms for level mismatch and for settling in a passage quieter than the
+    track's own median -- without the second one a search lands on the intro, which is
+    seamless with itself for the boring reason that almost nothing is playing.
     """
-    bad = []
-    if m["clipped_samples"] > 0:
-        # Same reasoning as process.py's source gate: distortion survives everything downstream,
-        # and nothing measured on the OUTPUT can tell it apart from intended loudness.
-        bad.append(str(m["clipped_samples"]) + " clipped samples")
-    if m["dc_offset"] > 0.01:
-        # A DC offset costs headroom on every sample and is inaudible on its own -- exactly the
-        # kind of defect that only ever surfaces as "the loud parts distort".
-        bad.append("DC offset " + str(m["dc_offset"]))
-    if not 30 <= dur_s <= 600:
-        # Below 30 s a loop is a ringtone; above 10 minutes it is a download, not a bed.
-        bad.append("duration %.1f s outside 30-600 s" % dur_s)
-    return bad
+    x, sr = sf.read(src, dtype='float32', always_2d=True)
+    if shelf:
+        x = low_shelf(x.astype(np.float64), sr, *shelf)
+    mono = x.mean(axis=1)
+    w, hop = int(XFADE_S * sr), int(hop_s * sr)
+    nwin = (len(mono) - w) // hop + 1
+    if nwin <= 0:
+        raise SystemExit(f'{src}: shorter than the {XFADE_S} s crossfade window')
+    prof = np.stack([band_profile(mono[i * hop:i * hop + w], sr) for i in range(nwin)])
+    lvl = np.array([db(float(np.sqrt(np.mean(mono[i * hop:i * hop + w] ** 2))))
+                    for i in range(nwin)])
+    med = float(np.median(lvl))
+    steps_lo, steps_hi = int(lo_s / hop_s), int(hi_s / hop_s)
+    xf_steps = int(XFADE_S / hop_s)
+    out = []
+    for i in range(nwin):
+        for k in range(steps_lo, steps_hi + 1):
+            j = i + k - xf_steps
+            if j >= nwin:
+                break
+            d = profile_diff(prof[i], prof[j])
+            dl = abs(lvl[j] - lvl[i])
+            quiet = max(0.0, med - min(lvl[i], lvl[j]))
+            out.append((d + 0.5 * dl + 0.5 * quiet, i * hop_s, k * hop_s, d, dl, lvl[i], lvl[j]))
+    out.sort(key=lambda r: r[0])
+    return out
 
 
-def pick(x: np.ndarray, sr: int, path: str):
-    """Encode down the ladder and keep the smallest file that clears both gates.
-
-    Every rung is written to a temp file and read back -- the numbers below are measured on the
-    DECODED result, not predicted from the encoder's settings.
-    """
-    ref_mono = x.mean(axis=1)
-    B0 = bands(ref_mono, sr)
-    R0 = rolloff(ref_mono, sr)
-    audible = B0 >= B0.max() * 10 ** (-AUDIBLE_BAND_FLOOR_DB / 10)
-    tried = []
-    for cl in LADDER:
-        tmp = path + "." + str(cl) + ".tmp"
-        sf.write(tmp, x, sr, format="MP3", subtype="MPEG_LAYER_III", compression_level=cl)
-        y, sr2 = sf.read(tmp, always_2d=True, dtype="float64")
-        ym = y.mean(axis=1)
-        B = bands(ym, sr2)
-        R = rolloff(ym, sr2)
-        err = 10 * np.log10((B + 1e-20) / (B0 + 1e-20))
-        worst = float(np.max(np.abs(err[audible])))
-        kept = R / R0
-        n = os.path.getsize(tmp)
-        tried.append({"compression_level": cl, "bytes": n, "rolloff_kept": round(kept, 3),
-                      "worst_band_err_db": round(worst, 2)})
-        if kept >= MIN_ROLLOFF_KEPT and worst <= MAX_BAND_ERR_DB:
-            os.replace(tmp, path)
-            return cl, n, {
-                "source_rolloff99_hz": round(R0),
-                "encoded_rolloff99_hz": round(R),
-                "rolloff_kept": round(kept, 3),
-                "worst_audible_band_err_db": round(worst, 2),
-                "band_edges_hz": BAND_EDGES,
-                "audible_bands": [bool(v) for v in audible],
-                "ladder": tried,
-            }
-        os.remove(tmp)
-    raise SystemExit("no rung of the ladder cleared both gates: " + repr(tried))
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--dry-run", action="store_true", help="measure and gate, write nothing")
-    args = ap.parse_args()
-
-    root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-    os.chdir(root)
-
-    entries = []
-    for track, (rel, gain, why, lic) in TRACKS.items():
-        src = os.path.join(SRC, rel)
-        if not os.path.exists(src):
-            print("REJECT " + track + ": no such source " + rel, file=sys.stderr)
-            return 1
-        x, sr = sf.read(src, always_2d=True, dtype="float64")
-        dur_s = len(x) / sr
-        m = measure(x)
-        bad = check_source(m, dur_s)
-        if bad:
-            for b in bad:
-                print("REJECT %s: %s: %s" % (track, rel, b), file=sys.stderr)
-            return 1
-        stem = track.replace(".", "-")
-        print("%-12s %s  %6.1f s  %dch %d Hz  peak %.4f (%+.2f dBFS)  rms %+.2f dBFS  "
-              "crest %.1f dB" % (track, rel, dur_s, m["channels"], sr, m["peak"],
-                                 m["peak_dbfs"], m["rms_dbfs"], m["crest_db"]))
-        if args.dry_run:
+def report_search(name: str) -> None:
+    """`name` is a track id (searched WITH that track's shelf) or a bare source filename."""
+    spec = TRACKS.get(name)
+    src = os.path.join(SRC_DIR, spec['src']) if spec else (
+        name if os.path.isabs(name) else os.path.join(SRC_DIR, name))
+    shelf = spec['shelf'] if spec else None
+    best = search_regions(src, shelf=shelf)
+    print()
+    print(f'{os.path.basename(src)}: {len(best)} candidate regions, ranked by full-window '
+          f'band difference'
+          + (f', shelf {shelf[1]:+.0f} dB below {shelf[0]:.0f} Hz applied' if shelf
+             else ' (no shelf)'))
+    print('    bucket     cost   start      len   band-diff  lvl-diff   head    tail')
+    for lo, hi in ((20, 30), (30, 45), (45, 60), (60, 75), (75, 90)):
+        sel = [r for r in best if lo <= r[2] < hi]
+        if not sel:
             continue
-        os.makedirs(OUT, exist_ok=True)
-        path = os.path.join(OUT, stem + ".mp3")
-        cl, nbytes, deltas = pick(x, sr, path)
-        enc, enc_sr = sf.read(path, always_2d=True, dtype="float64")
-        em = measure(enc)
-        print("  -> %s.mp3  cl=%s  %d bytes  %.0f kbps  peak %.4f  rolloff %d Hz (%.0f%% of "
-              "source)  worst audible band err %+.2f dB"
-              % (stem, cl, nbytes, nbytes * 8 / dur_s / 1000, em["peak"],
-                 deltas["encoded_rolloff99_hz"], deltas["rolloff_kept"] * 100,
-                 deltas["worst_audible_band_err_db"]))
-        delivered = em["peak"] * gain * MUSIC_CHANNEL
-        print("     delivered peak %.4f = file %.4f x gain %.2f x bgm channel %.2f"
-              % (delivered, em["peak"], gain, MUSIC_CHANNEL))
-        entry = {"track": track, "file": stem + ".mp3", "source": rel}
-        entry.update(lic)
-        entry.update({
-            "sample_rate": enc_sr,
-            "channels": em["channels"],
-            "duration_ms": round(dur_s * 1000, 1),
-            "bytes": nbytes,
-            "compression_level": cl,
-            "source_peak": m["peak"],
-            "source_rms_dbfs": m["rms_dbfs"],
-            "file_peak": em["peak"],
-            "file_rms_dbfs": em["rms_dbfs"],
-            "crest_db": em["crest_db"],
-            "catalogue_gain": gain,
-            "music_channel_measured_at": MUSIC_CHANNEL,
-            "delivered_peak": round(delivered, 4),
-            "encode": deltas,
-            "rationale": why,
-        })
-        entries.append(entry)
-
-    if args.dry_run:
-        return 0
-
-    with open(CREDITS, encoding="utf-8") as fh:
-        credits = json.load(fh)
-    credits["music"] = entries
-    with open(CREDITS, "w", encoding="utf-8") as fh:
-        json.dump(credits, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    print("\n%d track(s), %d bytes -> %s" % (len(entries), sum(e["bytes"] for e in entries), OUT))
-    print("credits.json updated (" + CREDITS + ")")
-    return 0
+        c, st, ln, d, dl, hr, tr = sel[0]
+        print(f'    {lo:3}-{hi:3}s  {c:6.2f}  {st:6.1f}s  {ln:5.1f}s   {d:6.2f}dB   '
+              f'{dl:5.2f}dB  {hr:6.1f}  {tr:6.1f}')
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+def encode_smallest(y: np.ndarray, sr_in: int, path: str,
+                    tol_db: float = 1.5) -> tuple[int, int, float, float]:
+    """Smallest MP3 over (rate x quality) that survives a MEASURED fidelity check.
+
+    The check is not "did the encoder run" -- it decodes the result back and compares the two
+    bands the mix depends on (250-2000 Hz where the cues peak, and 2-8 kHz where a page-turn or
+    a marker squeak has to cut through) against the pre-encode signal. Without it, "smallest
+    file wins" would happily ship a setting that quietly dulls the bed.
+
+    Returns (rate, bytes, quality, worst band error in dB).
+    """
+    want_mid = band_rms(y, sr_in, *MID_BAND)
+    want_sfx = band_rms(y, sr_in, 2000.0, 8000.0)
+    best = None
+    for r in RATE_LADDER:
+        z = resample(y, sr_in, r)
+        for q in QUALITY_LADDER:
+            tmp = f'{path}.{r}.{q}.tmp'
+            sf.write(tmp, z, r, format='MP3', subtype='MPEG_LAYER_III',
+                     bitrate_mode='VARIABLE', compression_level=q)
+            back, bsr = sf.read(tmp, dtype='float64', always_2d=True)
+            err = max(abs(band_rms(back, bsr, *MID_BAND) - want_mid),
+                      abs(band_rms(back, bsr, 2000.0, min(8000.0, bsr / 2 - 1)) - want_sfx))
+            n = os.path.getsize(tmp)
+            if err > tol_db:
+                os.remove(tmp)
+                continue
+            if best is None or n < best[1]:
+                if best:
+                    os.remove(best[4])
+                best = (r, n, q, err, tmp)
+            else:
+                os.remove(tmp)
+    if best is None:
+        raise SystemExit(f'no (rate, quality) on the ladder held {tol_db} dB for {path}')
+    shutil.move(best[4], path)
+    return best[0], best[1], best[2], best[3]
+
+
+def delivered_cue_peaks() -> dict[str, float]:
+    """Delivered peak dBFS per cue: file peak x catalogue gain x SFX bus.
+
+    `process.py`'s TARGETS already holds the delivered figure directly (it is what the file
+    peaks were derived FROM), so this is a read rather than a computation -- which is the point:
+    the headroom line below compares two delivered numbers, and neither is re-derived here.
+    """
+    return {cue: db(delivered) for cue, (delivered, _gain) in TARGETS.items()}
+
+
+def headroom_report(mid_dbfs: float) -> None:
+    """How far each cue's delivered peak stands above the bed's delivered mid-band RMS.
+
+    This is the derivation in `audit.py`'s `music` gate, recomputed against the file that was
+    actually produced -- so a track that passed the gate but whose level drifted for any other
+    reason still has to show its ladder here.
+    """
+    bed = mid_dbfs + db(MUSIC_BUS_GAIN)
+    rows = sorted(((cue, p - bed) for cue, p in delivered_cue_peaks().items()),
+                  key=lambda kv: -kv[1])
+    print(f'       bed delivers {bed:.2f} dBFS mid-band RMS (file {mid_dbfs:.2f} x bus '
+          f'{MUSIC_BUS_GAIN}); cue delivered peak above it:')
+    for i in range(0, len(rows), 4):
+        print('         ' + '   '.join(f'{c.removeprefix("sfx."):<18} {d:+5.1f}'
+                                       for c, d in rows[i:i + 4]))
+    binding = min((r for r in rows if r[0] not in NOT_LEGIBILITY_CRITICAL), key=lambda kv: kv[1])
+    print(f'       binding constraint: {binding[0]} at {binding[1]:+.1f} dB'
+          + ('  <-- UNDER the 10 dB the target was set for' if binding[1] < 10.0 else ''))
+
+
+def process(track: str, out_dir: str) -> None:
+    spec = TRACKS[track]
+    src = os.path.join(SRC_DIR, spec['src'])
+    t0, dur = spec['region']
+    info = sf.info(src)
+    x, sr = sf.read(src, dtype='float64', always_2d=True,
+                    start=int(t0 * info.samplerate), stop=int((t0 + dur) * info.samplerate))
+
+    print(f'\n{track}  <- {spec["src"]}  region {t0}-{t0 + dur}s ({dur}s, {x.shape[1]} ch)')
+    print(f'  in   peak {db(float(np.max(np.abs(x)))):+7.2f} dBFS   '
+          f'mid {band_rms(x, sr, *MID_BAND):7.2f}   '
+          f'sub {band_rms(x, sr, 20, 250):7.2f}   sfx {band_rms(x, sr, 2000, 8000):7.2f}')
+
+    if spec['shelf']:
+        f0, g = spec['shelf']
+        print(f'       xfade band-diff {xfade_band_diff(x, sr):5.2f} dB (raw -- NOT the '
+              f'comparable figure, the shelf below moves the energy weighting)')
+        x = low_shelf(x, sr, f0, g)
+        print(f'  shelf {g:+.1f} dB below {f0:.0f} Hz  ->  '
+              f'sub {band_rms(x, sr, 20, 250):7.2f} dBFS, '
+              f'xfade band-diff {xfade_band_diff(x, sr):5.2f} dB')
+    else:
+        print(f'       xfade band-diff {xfade_band_diff(x, sr):5.2f} dB')
+
+    x, gain = set_band_target(x, sr, MID_TARGET_DBFS)
+    print(f'  level {gain:+.2f} dB  ->  mid {band_rms(x, sr, *MID_BAND):.2f} dBFS '
+          f'(target {MID_TARGET_DBFS})')
+    x, trim = peak_guard(x, PEAK_CEILING_DBFS)
+    if trim:
+        print(f'  peak guard {trim:+.2f} dB (the mid target is missed by that much)')
+
+    os.makedirs(out_dir, exist_ok=True)
+    # Shipped name flattens the track id's dots to dashes, exactly as `process.py` does for
+    # cues -- `bgm.lobby` -> `bgm-lobby.mp3`. No `_NN` suffix: a track has no variants.
+    path = os.path.join(out_dir, f'{track.replace(".", "-")}.mp3')
+    rate, nbytes, q, err = encode_smallest(x, sr, path)
+
+    back, bsr = sf.read(path, dtype='float64', always_2d=True)
+    kbps = nbytes * 8 / (len(back) / bsr) / 1000.0
+    mid = band_rms(back, bsr, *MID_BAND)
+    print(f'  out  {rate} Hz, VBR q={q}, {nbytes / 1024:.1f} kB, {kbps:.1f} kbps, '
+          f'band error {err:.2f} dB')
+    print(f'       peak {db(float(np.max(np.abs(back)))):+7.2f} dBFS   mid {mid:7.2f}   '
+          f'sub {band_rms(back, bsr, 20, 250):7.2f}   '
+          f'sfx {band_rms(back, bsr, 2000, min(8000, bsr / 2 - 1)):7.2f}')
+    # The decoded length is what `musicCatalogue.ts`'s `lengthS` has to carry: the player starts
+    # the next deck at `lengthS - XFADE_S`, so a value that drifts from the file puts the wrap in
+    # the wrong place -- audible as a stumble rather than as an error. MP3 frame padding means
+    # this is NOT the region length asked for, which is the whole reason it is printed.
+    print(f'       decoded {len(back) / bsr:.3f} s (region asked for {dur} s) '
+          f'<- musicCatalogue lengthS')
+    print(f'       xfade band-diff {xfade_band_diff(back, bsr):5.2f} dB (gate: <= 2.5)')
+    headroom_report(mid)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--track', choices=sorted(TRACKS), action='append')
+    ap.add_argument('--out', default=OUT_DIR)
+    ap.add_argument('--search', metavar='TRACK_OR_FILE', action='append',
+                    help='rank loop regions and exit. A track id searches that source WITH the '
+                         'track shelf applied, which is what the gate then measures; a bare '
+                         'filename searches the raw master.')
+    a = ap.parse_args()
+    if a.search:
+        for f in a.search:
+            report_search(f)
+        return
+    if not TRACKS:
+        raise SystemExit('TRACKS is empty -- generate the masters (art/audio/suno/BRIEFS.md), '
+                         'then --search one to pick its region and record it here.')
+    for t in (a.track or sorted(TRACKS)):
+        process(t, a.out)
+
+
+if __name__ == '__main__':
+    main()

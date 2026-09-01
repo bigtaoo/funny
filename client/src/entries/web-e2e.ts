@@ -3,7 +3,8 @@ import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import type { AppViews } from '../app/AppViews';
 import { setAudioBus, audioBus } from '../audio/audioBus';
-import type { AudioBus, AudioCue } from '../audio/types';
+import type { AudioBus, AudioCue, MusicTrack } from '../audio/types';
+import type { MusicPlayer, MusicDeck } from '../audio/MusicPlayer';
 import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
 
@@ -100,12 +101,12 @@ const audio = new WebAudioBus();
 // than against a fake bus in vitest. It also makes the game-over hazard measurable: a stinger
 // re-firing every frame shows up as hundreds of entries, not one.
 interface CueLogEntry { cue: string; count: number; t: number }
-/** Every BGM request the scene layer has made, newest last — the music half of `cueLog`. It answers
- *  the one question a volume reading cannot: did `SceneManager` ask for the right track at all? */
-interface MusicLogEntry { track: string | null; t: number }
-const musicLog: MusicLogEntry[] = [];
 const CUE_LOG_CAP = 4000;
 const cueLog: CueLogEntry[] = [];
+/** What the scene layer has ASKED for, newest last — one entry per change (see `updateMusic`). */
+interface MusicLogEntry { track: MusicTrack | null; t: number }
+const musicLog: MusicLogEntry[] = [];
+let lastMusicAsk: MusicTrack | null | undefined;
 const recordingBus: AudioBus = {
   preload: () => audio.preload(),
   play: (cue, count = 1) => {
@@ -115,9 +116,15 @@ const recordingBus: AudioBus = {
   },
   setSfxVolume: (v) => audio.setSfxVolume(v),
   setMusicVolume: (v) => audio.setMusicVolume(v),
-  playMusic: (track) => {
-    musicLog.push({ track, t: Math.round(performance.now()) });
-    audio.playMusic(track);
+  // Logged on CHANGE, not per frame: this runs 60 times a second in every phase, so recording
+  // each call would bury the cue log under 3600 entries a minute and say nothing — what a smoke
+  // needs to know is when the bed was asked to change and to what.
+  updateMusic: (desired, dtMs) => {
+    if (desired !== lastMusicAsk) {
+      lastMusicAsk = desired;
+      musicLog.push({ track: desired, t: Math.round(performance.now()) });
+    }
+    audio.updateMusic(desired, dtMs);
   },
   resume: () => audio.resume(),
 };
@@ -131,34 +138,46 @@ setAudioBus(recordingBus);
   /** Every cue the trigger layer has asked for, newest last. */
   log: (): CueLogEntry[] => cueLog.slice(),
   clearLog: (): void => { cueLog.length = 0; },
-  /** Every BGM request `SceneManager` has made, newest last. */
+  /** Every BGM track the scene layer has asked for, newest last (one entry per CHANGE). */
   musicLog: (): MusicLogEntry[] => musicLog.slice(),
   /**
-   * What the BGM player is actually doing (AUDIO_DESIGN.md §7 step 7).
+   * What the BGM runtime is actually doing right now (AUDIO_DESIGN.md §7 step 7).
    *
-   * This is the music half of `nodes()`, and it exists for the same reason: the music path is the
-   * one thing in the audio layer that **cannot** be measured through the `AudioContext`, because
-   * it deliberately does not go through it (a cross-origin `createMediaElementSource` yields a
-   * silent stream — see `audio/MusicPlayer.ts`). So the delivered level has to be read off the
-   * element itself, and the arithmetic behind it is closed-form:
+   * Music is the one part of this system with **no** peak-based observable: the two decks are
+   * streamed, never decoded into the `SampleBank`, so `samples()` cannot see them and an
+   * `AnalyserNode` on the SFX bus is on the wrong bus entirely. What actually has to be checked
+   * is behavioural and invisible to every other surface:
    *
-   *     delivered peak = element.volume × file peak (0.6911, from art/audio/credits.json)
+   *  - **the wrap fires where it was measured for.** `xfade_band_diff` accepted each track over
+   *    a 2 s window at a specific seam; a `lengthS` that drifts from the file puts the crossfade
+   *    somewhere nobody measured, and the only symptom is that the loop sounds slightly wrong
+   *    once a minute.
+   *  - **the two decks hand over.** `position()` per deck says whether the incoming stream is
+   *    really running while the outgoing one plays out, or whether one of them silently failed
+   *    (CORS on web, a missing file on WeChat) and the bed just stopped.
+   *  - **ducking returns to 1.** A duck that sticks is a bed that is quietly 6.9 dB low forever.
    *
-   * `element` reaches through TS privacy the same way `nodes()` does, and is null until the first
-   * `playMusic` has loaded a track.
+   * Reaches through TS privacy exactly like `nodes()` and `samples()`, for the same reason.
    */
-  music: () => {
-    // ContextAudioBus.music (private) -> MusicPlayer.source (private) -> WebMusicSource.element.
-    const priv = audio as unknown as {
-      music: { state: unknown; source?: { element?: HTMLAudioElement | null } } | null;
-    };
-    const el = priv.music?.source?.element ?? null;
+  music: (): {
+    track: MusicTrack | null; crossfading: boolean; duck: number;
+    decks: { position: number | null; gain: number }[];
+  } | null => {
+    const priv = audio as unknown as { music: MusicPlayer | null };
+    const p = priv.music;
+    if (!p) return null;
+    const decks = (p as unknown as { deps: { decks: readonly MusicDeck[] } }).deps.decks;
     return {
-      state: priv.music?.state ?? null,
-      element: el
-        ? { src: el.src, loop: el.loop, paused: el.paused, volume: el.volume,
-            currentTime: el.currentTime, duration: el.duration, readyState: el.readyState }
-        : null,
+      track: p.current,
+      crossfading: p.isCrossfading,
+      duck: p.duckLevel,
+      decks: decks.map((d) => ({
+        position: d.position(),
+        // The deck's own live output level, read from the platform object rather than from what
+        // the player last wrote — the two disagreeing is precisely the failure this exists for.
+        gain: (d as unknown as { gain?: GainNode; inner?: { volume: number } }).gain?.gain.value
+          ?? (d as unknown as { inner?: { volume: number } }).inner?.volume ?? 0,
+      })),
     };
   },
   /**

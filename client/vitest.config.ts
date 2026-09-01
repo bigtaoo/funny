@@ -83,6 +83,16 @@ export default defineConfig({
         // landing here later is a pure module too and should be gated without a second edit here.
         // It arrives already covered: test/audio/** is 79 cases over every module in it.
         'src/audio/**',
+        // ...and the two music DECKS, which live under `platform/` but are not the 15-line
+        // pass-throughs the SFX platform halves are (2026-09-01, §7 step 7). §0.3 already recorded
+        // what a partial include costs: "`src/audio/**` is 100%" stayed true the entire time
+        // `WebAudioBus` had zero cases, because a percentage only means anything inside the
+        // include. Each deck carries a branch that fails SILENTLY — `crossOrigin` (unset = a
+        // CDN-hosted bed feeds silence into the WebAudio graph, with no error anywhere) and the
+        // `Number.isFinite` guard on WeChat (`NaN >= seam` is false forever, i.e. a loop that
+        // never wraps again) — so they are gated where they live.
+        'src/platform/web/webMusicDeck.ts',
+        'src/platform/wechat/wechatMusicDeck.ts',
         // assets / cache / i18n / layout
         'src/assets/assetIO.ts',
         'src/cache/MemoryMonitor.ts',

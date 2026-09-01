@@ -60,6 +60,8 @@ function fitLabel(label: PIXI.Text, maxW: number): void {
 const log = netLog('replay');
 
 export class ReplayScene implements Scene {
+  /** 回放的是同一场对局，声音走同一条战斗管线——刻意安静，见 `GameScene.music`。 */
+  readonly music = null;
   readonly container: PIXI.Container;
 
   private renderer: GameRenderer | null = null;

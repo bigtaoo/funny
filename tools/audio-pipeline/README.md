@@ -1,8 +1,34 @@
 # audio-pipeline
 
-Four Python scripts behind the shipped cue samples under `client/src/assets/audio/`. Ported from
-daydayup's `tools/audio-pipeline/` on 2026-09-01 (AUDIO_DESIGN §7 step 6) — same discipline
-(measure, then convert), a different source pool and one structural change.
+Python scripts behind the shipped audio under `client/src/assets/audio/`. Ported from daydayup's
+`tools/audio-pipeline/` on 2026-09-01 (AUDIO_DESIGN §7 step 6) — same discipline (measure, then
+convert), a different source pool and one structural change.
+
+Two drivers, because their inputs differ in kind rather than in degree:
+
+  * **`process.py`** — the 18 cues. Input is a 40–300 ms library recording; output is peak-matched
+    to the synth voice it replaces.
+  * **`process_music.py`** — the BGM loops (added 2026-09-01, AUDIO_DESIGN §7 step 7). Input is a
+    3–5 minute song mastered near 0 dBFS; a loop **region** has to be chosen whose two ends match
+    across the player's crossfade window, and level is set by a **band target** rather than by
+    peak, because music has no synth voice to match. See its module docstring.
+
+    Masters live under `art/audio/sources/<provenance>/` — `first-party/` for one the project owns
+    (that is where the shipped `bgm.lobby` comes from: `doodle-bed.flac`, lossless, so the tracked
+    file IS the master), `suno/` for a generated one. The distinction is not filing: it decides
+    what "reproducible" means, and `musicAssets.test.ts`'s `checkReproducible` branches on it —
+    a generated master exists only as its prompt (which must be archived), a first-party master is
+    a file (which must be in the repo).
+
+    **⚠️ Masters arrive as WAV and are converted to FLAC before being tracked.** A 3.5-minute
+    stereo WAV is 40 MB and compresses badly in git; the FLAC is 13 MB and lossless, so nothing is
+    lost but the bytes. `.gitignore` excludes `art/audio/sources/**/*.wav` so a dropped-in master
+    cannot be committed raw by accident.
+
+`audit.py` measures and gates for both, and is deliberately the only place the band arithmetic
+lives — the producer imports it rather than reimplementing it. daydayup let a search metric and its
+acceptance metric drift apart three separate times; `profile_diff`'s docstring records what each
+drift cost.
 
 Authority for the audio **system** is [`design/game/AUDIO_DESIGN.md`](../../design/game/AUDIO_DESIGN.md);
 for the **aesthetic** it is `design/product/art-direction-map-ui.md` §10. These scripts own neither.
@@ -90,43 +116,14 @@ python -m venv --system-site-packages venv
   > nothing here: libsndfile strips encoder padding, measured at 0.00 ms lead on a full-scale
   > onset at all six ladder rates.
 
-- **`process_music.py`** — the BGM half, added 2026-09-01 with AUDIO_DESIGN §7 step 7. Shares
-  almost nothing with `process.py`, and each difference is a decision:
-
-      ./venv/Scripts/python process_music.py [--dry-run]
-
-  | `process.py` (cues) | `process_music.py` (tracks) |
-  |---|---|
-  | mono → trim → cap → **peak-match** → encode | measure → gate the master → encode. **No trim, no cap, no peak-match** |
-  | `gain` is a pure mixing weight; the level is baked into the file | `MUSIC_TRACKS[].gain` **is** the level decision; the file keeps the composer's own peak |
-  | encode = **size** search (smallest file at any bandwidth-legal rate) | encode = **quality** search (smallest compression level clearing two gates) |
-
-  **Why no peak-match.** A cue is an event, so the pipeline owns its onset, its length and its
-  level. A finished piece of music *is* its own dynamics — scaling it down ~13 dB before a lossy
-  encode spends the encoder's headroom to move a number that a runtime gain moves for free.
-  So the delivered-peak arithmetic lives in `musicTracks.ts` instead, and this script records
-  `catalogue_gain` / `music_channel_measured_at` / `delivered_peak` in `credits.json` so
-  `audioAssets.test.ts` can hold the three together.
-
-  **Why the encode ladder is a quality search.** A 40 ms jab has no top end to lose; 3.5 minutes
-  of music does. Two gates, both **relative to the master** (this one is already band-limited to
-  12.0 kHz, so an absolute "must reach 16 kHz" rule would measure the composer, not the encoder):
-  keep ≥85% of the source's own 99%-energy rolloff, and stay within 0.5 dB per band in every band
-  that is within 40 dB of the loudest one. Measured for `doodle-bed.flac`: level 0.9 is 9%
-  smaller but keeps only **51%** of the rolloff — half the spectrum gone in one rung — so the gate
-  sits inside that knee and 0.8 wins at 2065440 bytes.
-
-  > **The one line to know: `process.py`'s stale sweep only deletes `sfx-*`.** It used to delete
-  > every `mp3|wav|ogg` in the output directory, which would have silently unshipped the music on
-  > the next cue rebuild, leaving a `musicTracks.ts` build error as the only symptom.
-
 - **`write_packs.py`** — regenerates `art/audio/packs.json` (upstream provenance per source pack).
   Separate from `credits.json` because these facts are per **source** and have a different
   lifetime: a pack's URL and licence do not change when we re-pick which of its files we ship.
 
       ./venv/Scripts/python write_packs.py
 
-- **`selftest.py`** — 73 checks over the measurement, gating and conversion layer. Plain asserts.
+- **`selftest.py`** — **105** checks over the measurement, gating and conversion layer (73 before
+  the BGM band/shelf/gate block landed on 2026-09-01). Plain asserts.
   Measurement is checked against **synthetic** signals with known ground truth (a 1 kHz sine must
   read a 1 kHz centroid; 50 ms of leading zeros must read 50 ms of lead), because a measurement
   checked against a real file only tells you the number did not change.
@@ -175,16 +172,6 @@ what found the two holes its first version could not see, and both are now rules
 - **`sourceUniqueness`** — one recording shipped as two different cues. Nearly happened here:
   `stroke_632474.ogg` was a strong candidate for both `sfx.card.play` and `sfx.unit.attack`.
 
-The music side adds two rules of its own (2026-09-01), plus six mutation cases. The one worth
-reading is **`music`**, and specifically that `catalogue_gain` must still match `MUSIC_TRACKS`:
-music is the one asset class whose delivered level is decided *entirely* at runtime, so editing
-`musicTracks.ts` moves the level of a 3.5-minute bed with nothing else failing anywhere. Same
-defect class as the cue gain check, arrived at from the opposite direction — for a cue the gain is
-baked into 22 files, for a track it is baked into nothing at all. The other, **`sceneMusic`**,
-reads the class names out of `client/src/scenes/` and holds `SILENT_SCENES` to them: those are
-plain strings (`SceneManager` only ever has a constructor name), so a typo there is a silent
-no-op — the scene keeps playing lobby music and nothing fails.
-
 A third measurement surface sits in the browser: `window.__nwAudio.samples()` in
 `entries/web-e2e.ts` reports the peak of every **decoded** buffer, which is the one thing this
 pipeline structurally cannot check about its own output — it peak-matches *before* a lossy encode.
@@ -197,3 +184,22 @@ These are **Python**, unlike the rest of `tools/` which is Node. The reason is
 `soundfile`/`libsndfile`, which decodes and encodes OGG/MP3/WAV/FLAC in one dependency; there is
 no comparable single Node dependency, and this machine has no `ffmpeg`. `venv/` is gitignored —
 recreate it with the two commands at the top.
+
+## The BGM gate, and the one class deliberately left behind
+
+`audit.py` has a `music` gate class (20–90 s, `xfade_band_diff <= 2.5 dB`, `mid_band_dbfs` inside
+[−30, −28], no clipping, ≤ 128 kbps) and routes a file to it by **directory** — `assets/audio/music/`
+— rather than by name, because a track has no cue prefix and would otherwise fall through to the
+combat gate and be rejected for being long and stereo.
+
+It does **not** have daydayup's `loop` class, and that is a decision rather than an omission. That
+gate requires `step_db <= -50`: the last sample of the file sitting next to the first, which is what
+`el.loop = true` needs. MP3 pads both ends to a frame boundary, so sample-exact wrapping is
+unavailable no matter how the region is cut — `MusicPlayer` crossfades a second deck over the tail
+instead. Porting `loop` would be a gate held against a mechanism this client does not have.
+
+**Where the −29 dBFS level target comes from** is written out in `audit.py`'s `music` gate comment,
+and `process_music.py --track` reprints the derivation from `process.py`'s measured `TARGETS` after
+every run. It is not copied from daydayup's −30: this repo's cues are quieter on file and carry
+their own catalogue gains, so the number had to be re-derived. The binding constraint is
+`sfx.unit.attack` standing +10.3 dB above the bed.

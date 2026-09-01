@@ -83,6 +83,8 @@ interface BoardLike {
 }
 
 export class StatePlayerScene implements Scene {
+  /** 状态回放/排障，同 `GameScene.music`。 */
+  readonly music = null;
   readonly container: PIXI.Container;
 
   private readonly boardView: BoardView;

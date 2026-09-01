@@ -6,7 +6,7 @@
 // **本类只剩下两个平台答案**，其余全部在平台中立的 `audio/ContextAudioBus.ts` 里（2026-08-31
 // 接微信后端时抽出去的——见那个文件的头注释）：上下文从哪来、手势从哪来。
 import { ContextAudioBus } from '../../audio/ContextAudioBus';
-import { WebMusicSource } from './WebMusicSource';
+import { WebMusicDeck } from './webMusicDeck';
 
 export class WebAudioBus extends ContextAudioBus {
   constructor() {
@@ -33,20 +33,27 @@ export class WebAudioBus extends ContextAudioBus {
           window.addEventListener(ev, cb, { passive: true });
         }
       },
-      // BGM 走一条独立的流（AUDIO_DESIGN.md §2.3）——不是这个 `AudioContext` 的一部分，
-      // 理由整段在 `audio/MusicPlayer.ts` 的头注释里。
-      createMusicSource: () => WebMusicSource.create(),
-      // 切后台暂停音乐（§4 "失焦自动暂停"）。SFX 不需要：最长的 cue 也只有几百毫秒。
-      onVisibility: (cb) => {
+      // BGM（AUDIO_DESIGN.md §7 第 7 步）。web 的 deck **需要**这个上下文：iOS Safari 上
+      // `audioEl.volume` 是只读的，所以交叉淡入只能走 `MediaElementSource` + `GainNode`
+      // （见 `webMusicDeck.ts` 的头注释）。没有上下文的宿主（SSR、node、极老 WebView）因此也
+      // 没有 BGM——与 SFX 同一条降级，不是新增的一条。
+      createMusicDecks: (ctx) => {
+        if (!ctx || typeof Audio === 'undefined') return null;
+        return [new WebMusicDeck({ ctx }), new WebMusicDeck({ ctx })] as const;
+      },
+      // 失焦暂停（AUDIO_DESIGN.md §4）。`visibilitychange` 而不是 `blur`：切标签页、锁屏、
+      // 切到别的 app 都会发它，而 `blur` 还会在点开控制台或另一个窗口时发——那时游戏仍然可见，
+      // 把音乐停掉只是让人以为它坏了。
+      onFocusChange: (cb) => {
         if (typeof document === 'undefined') return;
-        document.addEventListener('visibilitychange', () => cb(!document.hidden));
-        // **当前值也要报一次，不只报变化。** `visibilitychange` 只在**切换**时触发，而页面
-        // 完全可能在后台标签页里加载完毕（用户按住 Ctrl 点开、从收藏夹批量打开、会话恢复）。
-        // 只监听变化的话，那种情况下音乐会在一个没人在看的标签页里开始播——而且此后不会有任何
-        // 事件来纠正它，因为"从后台切到前台"发的是 `visible`，不是 `hidden`。
-        // 2026-09-01 §0.5 的实测正是在一个 `document.hidden === true` 的标签页里做的，这个洞
-        // 就是那样冒出来的。
-        cb(!document.hidden);
+        document.addEventListener('visibilitychange', () => cb(document.hidden));
+        // **当前值也报一次，不只报变化。** `visibilitychange` 只在**切换**时触发，而页面完全
+        // 可能在一个后台标签页里加载完毕（按住 Ctrl 点开、从收藏夹批量打开、会话恢复），此后
+        // 也不会有任何事件来纠正——因为"从后台切到前台"发的是 `visible`，不是 `hidden`。
+        // 2026-09-01 的 BGM 实测就是在一个 `document.hidden === true` 的标签页里做的，这个洞
+        // 是那样冒出来的。`gestured` 闸门让它今天很难被触发（后台标签页收不到手势），但这一行
+        // 的代价是零，而"很难被触发"不是"不会被触发"。
+        cb(document.hidden);
       },
     });
   }

@@ -17,7 +17,7 @@ function recorder(): AudioBus & { calls: [AudioCue, number | undefined][] } {
     },
     setSfxVolume() {},
     setMusicVolume() {},
-    playMusic() {},
+    updateMusic() {},
     resume() {},
   };
 }
@@ -36,7 +36,7 @@ function brokenBus(): AudioBus {
     },
     setSfxVolume() {},
     setMusicVolume() {},
-    playMusic() {},
+    updateMusic() {},
     resume() {},
   };
 }
@@ -120,7 +120,7 @@ describe('NullAudioBus', () => {
     // A partial implementation would only surface as a TypeError at the one call site that uses
     // the missing method — on WeChat, where this is the shipped device.
     const bus: AudioBus = new NullAudioBus();
-    for (const m of ['preload', 'play', 'setSfxVolume', 'setMusicVolume', 'playMusic', 'resume'] as const) {
+    for (const m of ['preload', 'play', 'setSfxVolume', 'setMusicVolume', 'resume'] as const) {
       expect(typeof bus[m], m).toBe('function');
     }
   });

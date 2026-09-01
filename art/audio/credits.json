@@ -424,62 +424,29 @@
       "track": "bgm.lobby",
       "file": "bgm-lobby.mp3",
       "source": "first-party/doodle-bed.flac",
-      "source_pack": "first-party",
-      "license": "proprietary (project-owned)",
-      "attribution_required": false,
-      "sample_rate": 48000,
+      "generator": "first-party",
+      "generated": "2026-09-01",
+      "brief": "A quiet, unhurried acoustic bed for the screens outside a match -- lobby, menus, shop, world map, results. No percussive transients and no forward pull: the mix above it is made of pencil strokes and paper thuds, and anything with a beat would compete with them for the same moments.",
+      "prompt": null,
+      "region_start_s": 12.5,
+      "length_s": 74.0,
+      "source_length_s": 213.16,
+      "shelf": null,
+      "sample_rate": 24000,
       "channels": 2,
-      "duration_ms": 213160.0,
-      "bytes": 2065440,
-      "compression_level": 0.8,
-      "source_peak": 0.6833,
-      "source_rms_dbfs": -17.07,
-      "file_peak": 0.6911,
-      "file_rms_dbfs": -17.06,
-      "crest_db": 13.86,
-      "catalogue_gain": 0.2,
-      "music_channel_measured_at": 0.5,
-      "delivered_peak": 0.0691,
-      "encode": {
-        "source_rolloff99_hz": 12009,
-        "encoded_rolloff99_hz": 10433,
-        "rolloff_kept": 0.869,
-        "worst_audible_band_err_db": 0.04,
-        "band_edges_hz": [
-          0,
-          250,
-          1000,
-          4000,
-          8000,
-          12000,
-          16000,
-          24000
-        ],
-        "audible_bands": [
-          true,
-          true,
-          true,
-          true,
-          false,
-          false,
-          false
-        ],
-        "ladder": [
-          {
-            "compression_level": 0.9,
-            "bytes": 1880952,
-            "rolloff_kept": 0.512,
-            "worst_band_err_db": 0.1
-          },
-          {
-            "compression_level": 0.8,
-            "bytes": 2065440,
-            "rolloff_kept": 0.869,
-            "worst_band_err_db": 0.04
-          }
-        ]
-      },
-      "rationale": "The first and so far only music in the game. A 3:33 bed at -17 dBFS RMS with a 13.8 dB crest factor -- quiet, wide-dynamic and with no percussive transients, which is what lets it sit under a mix whose loudest cue peaks at 0.151 without ever competing for the same moment. Shipped as `bgm.lobby` rather than `bgm.battle` because it opens and closes on a fade: it is written to be entered and left, not to be interrupted by a match."
+      "bytes": 653016,
+      "xfade_band_diff_db": 0.57,
+      "mid_band_dbfs": -29.0,
+      "rationale": "A 74 s region lifted out of a 3:33 master, chosen by the same crossfade-window band measure the gate then applies (0.58 dB raw across the seam, 0.57 dB on the shipped file; levels within 0.09 dB). NOT the region that scored best overall -- 13.5s/23.5s measured 0.27 dB -- because a 23.5 s loop turns over every 24 seconds on screens players sit on for minutes, and a seam nobody can hear buys nothing if the repetition is what they notice instead. No low shelf: the master's own 20-250 Hz already sits 14 dB under its mid band, so a shelf would attenuate something that is not in the way."
     }
-  ]
+  ],
+  "music_terms": {
+    "license": "proprietary (project-owned)",
+    "generator": "first-party",
+    "terms_url": "",
+    "license_text_archived": false,
+    "accepted_by": "Tao Wang",
+    "accepted_on": "2026-09-01",
+    "note": "This track is NOT CC0. It is the project's own material, supplied by the project owner as art/audio/sources/first-party/doodle-bed.flac, and it is filed here rather than in packs.json on purpose: that file asserts every source is CC0 and commercial-ok without attribution, and that assertion protects the 22 SFX samples. Weakening it to make room for music would silently stop it protecting them."
+  }
 }
