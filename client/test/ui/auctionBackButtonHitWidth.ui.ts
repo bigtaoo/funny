@@ -17,6 +17,7 @@ import { openItemPicker } from '../../src/scenes/AuctionScene/itemPickerRender';
 import type { AuctionSceneCore } from '../../src/scenes/AuctionScene/core';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 import * as PIXI from 'pixi.js-legacy';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -58,7 +59,8 @@ function stubWorldApi(): WorldApiClient {
 
 function buildScene() {
   const calls = { back: 0 };
-  const cb: AuctionSceneCallbacks = { onBack: () => { calls.back++; }, worldApi: stubWorldApi() };
+  const { openTextInput } = createFakeTextInput();
+  const cb: AuctionSceneCallbacks = { onBack: () => { calls.back++; }, worldApi: stubWorldApi(), openTextInput };
   const scene = new AuctionScene(createLayout(...LANDSCAPE), new InputManager(), cb);
   return { scene, calls };
 }

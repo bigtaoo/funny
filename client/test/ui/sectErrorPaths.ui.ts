@@ -21,6 +21,7 @@ import { initI18n, t } from '../../src/i18n';
 import { SectScene } from '../../src/scenes/SectScene';
 import { WorldApiError } from '../../src/net/WorldApiClient';
 import type { WorldApiClient, SectDetailView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -53,6 +54,7 @@ function newScene(worldApi: WorldApiClient, myAccountId = 'other'): any {
     onBack() {}, onNavTab() {},
     worldApi, worldId: WORLD_ID, myAccountId, playerName: 'Tester',
     getCoins: () => 0, refreshWallet: async () => {},
+    openTextInput: createFakeTextInput().openTextInput,
   });
 }
 

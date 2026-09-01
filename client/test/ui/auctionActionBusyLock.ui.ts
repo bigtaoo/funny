@@ -11,6 +11,7 @@ import { initI18n, t } from '../../src/i18n';
 import { AuctionScene } from '../../src/scenes/AuctionScene';
 import type { AuctionView, WorldApiClient } from '../../src/net/WorldApiClient';
 import { TimeoutError } from '../../src/ui/busyTracker';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -45,8 +46,9 @@ function stubWorldApi(overrides: Partial<WorldApiClient> = {}): WorldApiClient {
 /** Parks the scene with a fixed listing snapshot on the 'all' tab — bypasses the constructor's own
  *  loadData() fetch (same reasoning as the Sect/Family busy-lock specs' direct-mode construction). */
 function buildListScene(worldApi: WorldApiClient, listing: AuctionView, myAccountId = 'acc_me'): any {
+  const { openTextInput } = createFakeTextInput();
   const scene: any = new AuctionScene(createLayout(W, H), new InputManager(), {
-    onBack() {}, worldApi, myAccountId,
+    onBack() {}, worldApi, myAccountId, openTextInput,
   });
   scene.core.allAuctions = [listing];
   scene.core.activeTab = 'all';
@@ -56,8 +58,9 @@ function buildListScene(worldApi: WorldApiClient, listing: AuctionView, myAccoun
 }
 
 function buildMineScene(worldApi: WorldApiClient, listing: AuctionView, myAccountId = 'acc_me'): any {
+  const { openTextInput } = createFakeTextInput();
   const scene: any = new AuctionScene(createLayout(W, H), new InputManager(), {
-    onBack() {}, worldApi, myAccountId,
+    onBack() {}, worldApi, myAccountId, openTextInput,
   });
   scene.core.myListings = [listing];
   scene.core.activeTab = 'mine';

@@ -29,6 +29,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData } from '../../src/game/meta/SaveData';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -83,7 +84,7 @@ describe('AuctionScene — core.reopenCreateForm actually returns the user to th
     } as unknown as import('../../src/net/WorldApiClient').WorldApiClient;
     const save = buildSave();
     return new AuctionScene(createLayout(800, 1280), new InputManager(), {
-      onBack() {}, worldApi, getSave: () => save,
+      onBack() {}, worldApi, getSave: () => save, openTextInput: createFakeTextInput().openTextInput,
     });
   }
 
@@ -153,7 +154,7 @@ describe('AuctionScene — core.reopenCreateForm actually returns the user to th
     const save = buildSave();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const scene = new AuctionScene(createLayout(800, 1280), new InputManager(), {
-      onBack() {}, worldApi, getSave: () => save,
+      onBack() {}, worldApi, getSave: () => save, openTextInput: createFakeTextInput().openTextInput,
     }) as any;
 
     scene.core.createClass = 'material';

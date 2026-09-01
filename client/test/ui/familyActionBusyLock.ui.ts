@@ -13,6 +13,7 @@ import { initI18n, t } from '../../src/i18n';
 import { FamilyScene } from '../../src/scenes/FamilyScene';
 import type { WorldApiClient, FamilyMemberView } from '../../src/net/WorldApiClient';
 import { TimeoutError } from '../../src/ui/busyTracker';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -34,11 +35,12 @@ function stubWorldApi(overrides: Partial<WorldApiClient> = {}): WorldApiClient {
  *  (doCreate/doLeave/…) live on `scene.actions` — see FamilyScene/core.ts's file-header comment
  *  (2026-08-11 mixin→composition conversion). */
 function buildCreateScene(worldApi: WorldApiClient): any {
+  const { openTextInput } = createFakeTextInput();
   const scene: any = new FamilyScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenSect() {}, onNavTab() {},
     worldApi, worldId: 'w1', myAccountId: 'me', playerName: 'Tester',
     getFriendPublicIds: async () => new Set<string>(),
-    addFriend: async () => {}, openChat: () => {},
+    addFriend: async () => {}, openChat: () => {}, openTextInput,
   });
   scene.core.mode = 'create';
   scene.core.createName = 'Iron Quill';
@@ -50,11 +52,12 @@ function buildCreateScene(worldApi: WorldApiClient): any {
 /** Parks the scene in 'myFamily' with a fixed member list — bypasses loadData()'s network
  *  round-trip (same reasoning as SectScene/sectCreateCost.ui.ts's buildNoSectScene). */
 function buildMyFamilyScene(worldApi: WorldApiClient, members: FamilyMemberView[], myAccountId: string): any {
+  const { openTextInput } = createFakeTextInput();
   const scene: any = new FamilyScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenSect() {}, onNavTab() {},
     worldApi, worldId: 'w1', myAccountId, playerName: 'Tester',
     getFriendPublicIds: async () => new Set<string>(),
-    addFriend: async () => {}, openChat: () => {},
+    addFriend: async () => {}, openChat: () => {}, openTextInput,
   });
   scene.core.family = { familyId: 'fam1', name: 'Iron Quill', tag: 'IRQ', leaderId: members.find((m) => m.role === 'leader')?.accountId ?? 'me', memberCount: members.length, prosperity: 0 };
   scene.core.members = members;

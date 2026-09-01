@@ -12,8 +12,10 @@ import type {
   IGameSocket,
   IPlatform,
   IStorage,
+  ITextInput,
   ShareResult,
   SocketHandlers,
+  TextInputOptions,
 } from '../../src/platform/IPlatform';
 import type { Locale } from '../../src/i18n';
 
@@ -129,5 +131,10 @@ export class HeadlessPlatform implements IPlatform {
   }
   setupInput(): void {
     throw new Error('HeadlessPlatform.setupInput() called — core leaked a render dependency');
+  }
+  // No DOM/keyboard in headless E2E — mirrors getCanvas/setupInput: the full-link flow never opens
+  // free-text entry, so this is a loud failure seam, not a real implementation.
+  openTextInput(_opts: TextInputOptions): ITextInput {
+    throw new Error('HeadlessPlatform.openTextInput() called — core leaked a render dependency');
   }
 }

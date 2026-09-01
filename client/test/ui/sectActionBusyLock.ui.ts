@@ -13,6 +13,7 @@ import { initI18n, t } from '../../src/i18n';
 import { SectScene } from '../../src/scenes/SectScene';
 import type { WorldApiClient, SectDetailView } from '../../src/net/WorldApiClient';
 import { TimeoutError } from '../../src/ui/busyTracker';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -47,6 +48,7 @@ function buildMySectScene(worldApi: WorldApiClient, sect: SectDetailView, myAcco
     onBack() {}, onNavTab() {},
     worldApi, worldId: WORLD_ID, myAccountId, playerName: 'Tester',
     getCoins: () => 0, refreshWallet: async () => {},
+    openTextInput: createFakeTextInput().openTextInput,
   });
   scene.core.inFamily = true;
   scene.core.myFamilyRole = 'leader'; // isFamilyLeader — shows the "Leave" bottom-bar button when not sect leader

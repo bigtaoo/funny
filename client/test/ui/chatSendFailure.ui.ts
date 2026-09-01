@@ -14,6 +14,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { ChatScene, type ChatSceneCallbacks } from '../../src/scenes/ChatScene';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -52,6 +53,7 @@ function findBodyText(container: PIXI.Container, bodyText: string): PIXI.Text | 
 }
 
 function buildChat(cb: Partial<ChatSceneCallbacks>): ChatScene {
+  const { openTextInput } = createFakeTextInput();
   return new ChatScene(createLayout(W, H), new InputManager(), {
     onBack() {},
     peerName: 'Bob',
@@ -61,6 +63,7 @@ function buildChat(cb: Partial<ChatSceneCallbacks>): ChatScene {
     loadMessages: async () => [],
     send: async () => ({ messageId: 'srv-1', ts: Date.now() }),
     markRead: async () => {},
+    openTextInput,
     ...cb,
   });
 }

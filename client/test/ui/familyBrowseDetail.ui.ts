@@ -11,6 +11,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { FamilyView, FamilyDetailView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -37,8 +38,10 @@ function famDetail(id: string, name: string, tag: string, extra: Partial<FamilyD
 }
 
 function buildScene(cb: Partial<FriendsSceneCallbacks> = {}): any {
+  const { openTextInput } = createFakeTextInput();
   return new FriendsScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenRoom() {},
+    openTextInput,
     myPublicId: '',
     getProfileExtra: async () => ({}),
     loadFriends: async () => [],

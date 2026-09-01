@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { WorldMapContext, type WorldMapCallbacks } from '../../src/scenes/worldmap/WorldMapContext';
 import type { ILayout } from '../../src/layout/ILayout';
 import type { WorldChatMessage } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 function chatMsg(ts: number): WorldChatMessage {
   return { id: 'm1', senderId: 'x', senderName: 'X', senderPublicId: '000000001', body: 'hi', ts };
@@ -34,6 +35,7 @@ function baseCb(overrides: Partial<WorldMapCallbacks>): WorldMapCallbacks {
     onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
     worldId: 'w1', playerName: 'dbg', accountId: 'acc_dbg',
     storage: memStorage(),
+    openTextInput: createFakeTextInput().openTextInput,
     ...overrides,
   };
 }

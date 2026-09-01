@@ -9,6 +9,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { SettingsScene, type SettingsSceneCallbacks } from '../../src/scenes/SettingsScene';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 initI18n('en');
 
@@ -35,6 +36,7 @@ function build(overrides: Partial<SettingsSceneCallbacks>): SettingsScene {
     renameCost: 500,
     getCoins: () => 0,
     onRename: async (name: string) => ({ ok: true, name }),
+    openTextInput: createFakeTextInput().openTextInput,
     ...overrides,
   });
 }

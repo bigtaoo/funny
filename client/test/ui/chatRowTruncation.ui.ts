@@ -27,6 +27,7 @@ import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { SectScene } from '../../src/scenes/SectScene';
 import { ORG_NAME_WIDTH_MAX } from '@nw/shared';
 import type { WorldChatMessage, SectMessageView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -245,6 +246,7 @@ describe('ADR-074 world-centre announcement reaches the row as prose', () => {
       loadSLGStatus: async () => null,
       loadWorldChat: async () => messages,
       defaultTab: 'world',
+      openTextInput: createFakeTextInput().openTextInput,
     });
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     return collectTexts(scene.container);

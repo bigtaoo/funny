@@ -21,6 +21,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { WorldChatMessage } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -54,7 +55,7 @@ const MSG: WorldChatMessage = {
 
 function buildScene(opts: { slgStatusHangs: boolean; loadSLGStatusCalls: { count: number } }): any {
   const cb = {
-    onBack() {}, onOpenRoom() {},
+    onBack() {}, onOpenRoom() {}, openTextInput: createFakeTextInput().openTextInput,
     myPublicId: '', getProfileExtra: async () => ({}),
     loadFriends: async () => [],
     loadRequests: async () => ({ incoming: [], outgoing: [] }),

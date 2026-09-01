@@ -25,6 +25,7 @@ import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { ILayout } from '../../src/layout/ILayout';
 import type { WorldTileView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 // vi.mock factories run the first time the mocked module is imported (transitively, via
 // WorldMapContext -> ... -> city.ts below) — which happens before this file's own top-level
@@ -74,6 +75,7 @@ const CB: WorldMapCallbacks = {
   onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
   onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
   worldId: 'w1', playerName: 'Tao', accountId: 'acc_dbg', storage: memStore,
+  openTextInput: createFakeTextInput().openTextInput,
 };
 
 function buildScene(): WorldMapContext {

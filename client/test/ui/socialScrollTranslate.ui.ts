@@ -26,6 +26,7 @@ import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
 import type { FriendView } from '../../src/net/ApiClient';
 import type { WorldChatMessage } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -65,6 +66,7 @@ function build(overrides: Partial<FriendsSceneCallbacks> = {}) {
     loadConversations: async () => [], openChat() {},
     loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
     claimMail: async () => true, deleteMail: async () => {},
+    openTextInput: createFakeTextInput().openTextInput,
     ...overrides,
   }) as any;
   return { scene, input };

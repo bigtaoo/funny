@@ -18,6 +18,7 @@ import { initI18n, t, setLocale, type Locale } from '../../src/i18n';
 import { SettingsScene } from '../../src/scenes/SettingsScene';
 import { installPrefetchPolicy, resetPrefetchPolicyForTest, isDataSaverEnabled } from '../../src/assets/prefetchPolicy';
 import type { IStorage } from '../../src/platform/IPlatform';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 initI18n('en');
 
@@ -68,6 +69,7 @@ function build(w: number, h: number): PIXI.Container {
     onRename: async (name: string) => ({ ok: true, name }),
     onReplayTutorial() {},
     onLogout() {},
+    openTextInput: createFakeTextInput().openTextInput,
   }).container;
 }
 
@@ -158,6 +160,7 @@ describe('SettingsScene — data-saver toggle click', () => {
       onBack() {}, playerName: 'Tester', publicId: '1', pvp: { rank: 'bronze', elo: 1 },
       renameCost: 500, getCoins: () => 0, onRename: async (n: string) => ({ ok: true, name: n }),
       onReplayTutorial() {}, onLogout() {},
+      openTextInput: createFakeTextInput().openTextInput,
     });
     return { s, storage };
   }

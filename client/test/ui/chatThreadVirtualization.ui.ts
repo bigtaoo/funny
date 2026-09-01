@@ -20,6 +20,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { ChatScene, type ChatSceneCallbacks } from '../../src/scenes/ChatScene';
 import type { ChatMessageView } from '../../src/net/ApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -70,6 +71,7 @@ function makeMessages(n: number): ChatMessageView[] {
 }
 
 function buildChat(cb: Partial<ChatSceneCallbacks>): ChatScene {
+  const { openTextInput } = createFakeTextInput();
   return new ChatScene(createLayout(W, H), new InputManager(), {
     onBack() {},
     peerName: 'Bob',
@@ -79,6 +81,7 @@ function buildChat(cb: Partial<ChatSceneCallbacks>): ChatScene {
     loadMessages: async () => [],
     send: async () => ({ messageId: 'srv-1', ts: Date.now() }),
     markRead: async () => {},
+    openTextInput,
     ...cb,
   });
 }
@@ -116,6 +119,7 @@ describe('ChatScene — message-thread virtualization (mobile OOM fix)', () => {
       loadMessages: async () => makeMessages(200),
       send: async () => ({ messageId: 'srv-1', ts: Date.now() }),
       markRead: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     });
     await flush();
 

@@ -27,6 +27,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -41,8 +42,10 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const [W, H] = [800, 1280];
 
 function buildScene(openFamilyHub: () => boolean, openSectHub: () => boolean): any {
+  const { openTextInput } = createFakeTextInput();
   return new FriendsScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenRoom() {},
+    openTextInput,
     myPublicId: '',
     getProfileExtra: async () => ({}),
     loadFriends: async () => [],

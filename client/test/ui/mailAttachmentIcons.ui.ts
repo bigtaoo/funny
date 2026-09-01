@@ -16,6 +16,7 @@ import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/Frien
 import type { MailView } from '../../src/net/ApiClient';
 import { cardInstanceArtUrl } from '../../src/render/cardArt';
 import { buildMaterialIcon } from '../../src/render/atlas/materialAtlas';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
 // real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
@@ -45,8 +46,10 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const [W, H] = [800, 1280];
 
 function build(cb: Partial<FriendsSceneCallbacks> = {}): any {
+  const { openTextInput } = createFakeTextInput();
   return new FriendsScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenRoom() {},
+    openTextInput,
     myPublicId: '',
     getProfileExtra: async () => ({}),
     loadFriends: async () => [],

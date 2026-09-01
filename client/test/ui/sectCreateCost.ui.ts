@@ -13,6 +13,7 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { SectScene } from '../../src/scenes/SectScene';
 import type { WorldApiClient, SectDetailView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -55,6 +56,7 @@ function buildNoSectScene(coins: number, cb: Record<string, unknown> = {}): any 
     playerName: 'Tester',
     getCoins: () => coins,
     refreshWallet: async () => {},
+    openTextInput: createFakeTextInput().openTextInput,
     ...cb,
   });
   scene.core.inFamily = true;

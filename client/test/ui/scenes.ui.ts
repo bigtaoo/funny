@@ -53,6 +53,7 @@ import { CardScene } from '../../src/scenes/CardScene';
 import type { PlayerStats, UnitType } from '@nw/engine/types';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave, type SaveData, type EquipSlot } from '../../src/game/meta/SaveData';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 // In-memory storage so initI18n (which persists the locale) has somewhere to write.
 const memStore = (() => {
@@ -224,6 +225,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onLogin: async () => ({ ok: true }),
         onRegister: async () => ({ ok: true }),
         onPlayOffline() {},
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {
@@ -271,6 +273,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         onRename: async (name: string) => ({ ok: true, name }),
         onLogin() {},
         onLogout() {},
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {
@@ -284,6 +287,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         buy: async () => ({ ok: true }),
         recharge: async () => ({ ok: true }),
         openGacha() {},
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {
@@ -382,6 +386,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         markMailRead: async () => {},
         claimMail: async () => true,
         deleteMail: async () => {},
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {
@@ -396,6 +401,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         loadMessages: async () => [],
         send: async () => ({ messageId: 'm1', ts: 0 }),
         markRead: async () => {},
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {
@@ -426,6 +432,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         playerName: 'Tester',
         accountId: 'acc_test',
         storage: memStore,
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {
@@ -442,6 +449,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         worldId: 'world:1:0',
         myAccountId: 'acc_test',
         playerName: 'Tester',
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {
@@ -456,6 +464,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
         playerName: 'Tester',
         getCoins: () => 100000,
         refreshWallet: async () => {},
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {
@@ -464,6 +473,7 @@ const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = 
       new AuctionScene(createLayout(w, h), new InputManager(), {
         onBack() {},
         worldApi: stubWorldApi(),
+        openTextInput: createFakeTextInput().openTextInput,
       }),
   },
   {

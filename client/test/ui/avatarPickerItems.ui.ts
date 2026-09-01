@@ -17,6 +17,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { SettingsScene } from '../../src/scenes/SettingsScene';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 initI18n('en');
 
@@ -31,7 +32,7 @@ describe('AVATAR_TABS', () => {
 });
 
 describe('pickerItems', () => {
-  const baseCb: SettingsSceneCallbacks = { onBack() {}, playerName: 'Tester' };
+  const baseCb: SettingsSceneCallbacks = { onBack() {}, playerName: 'Tester', openTextInput: createFakeTextInput().openTextInput };
 
   it('preset: all 20 avatars, always unlocked', () => {
     const items = pickerItems(baseCb, 'preset');
@@ -107,6 +108,7 @@ describe('SettingsScene — avatar picker overlay', () => {
       onBack() {},
       playerName: 'Tester',
       onSetAvatar() {},
+      openTextInput: createFakeTextInput().openTextInput,
     });
   }
 
