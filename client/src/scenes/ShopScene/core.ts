@@ -34,6 +34,11 @@ import { BusyTracker } from '../../ui/busyTracker';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
 import { hitAction, type Hit } from '../../ui/hits';
+import type { IPlatform, ITextInput } from '../../platform/IPlatform';
+
+// Client-side sanity cap — there's no server-validated promo-code max length constant to mirror
+// (unlike CHAT_BODY_MAX etc.), same reasoning as ChatScene/AppealDialog's hardcoded maxes.
+const PROMO_CODE_MAX = 32;
 
 /** Outcome of a buy — ok, or a message key to surface as a toast. */
 export type ShopActionResult =
@@ -42,6 +47,9 @@ export type ShopActionResult =
 
 export interface ShopSceneCallbacks {
   onBack(): void;
+  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput.
+   *  Used by the promo-code field. */
+  openTextInput: IPlatform['openTextInput'];
   /** Current server-authoritative coin balance (read from SaveData). */
   getCoins(): number;
   /**
@@ -177,8 +185,8 @@ export class ShopSceneCore {
   // ── Promo-code state ──────────────────────────────────────────────────────
   promoCode = '';
   promoFocused = false;
-  /** Hidden DOM input capturing keystrokes for promo-code entry (null on non-DOM platforms). */
-  hiddenInput: HTMLInputElement | null = null;
+  /** The promo field's text-entry session, or null when not focused. */
+  private textInput: ITextInput | null = null;
 
   /** @param render Injected by the outer ShopScene assembly (which owns the actual render
    *  dispatcher, since it's the only thing that knows about both tab-domain classes) — Core calls
@@ -197,7 +205,6 @@ export class ShopSceneCore {
       const next = wheelScrollY(this.regionTop, this.regionBottom, y, deltaY, this.scrollY, this.maxScroll);
       if (next !== null) { this.scrollY = next; this.scrollDirty = true; }
     }));
-    if (cb.redeemPromo) this.setupHiddenInput();
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
   }
 
@@ -211,59 +218,48 @@ export class ShopSceneCore {
   destroy(): void {
     this.destroyed = true;
     this.unsubs.forEach((u) => u());
-    if (this.hiddenInput) {
-      this.hiddenInput.remove();
-      this.hiddenInput = null;
-    }
+    this.textInput?.close();
     this.container.destroy({ children: true });
   }
 
-  // ── Hidden input (promo-code text capture) ────────────────────────────────
+  // ── Text input (promo-code capture) ─────────────────────────────────────────
+  // Opened lazily on first tap (unlike the old eagerly-constructed hidden <input>) — nothing to
+  // pre-build since IPlatform.openTextInput() both creates and focuses in one call.
 
-  private setupHiddenInput(): void {
-    if (typeof document === 'undefined') return;
-    const el = document.createElement('input');
-    el.type = 'text';
-    el.autocomplete = 'off';
-    el.setAttribute('autocapitalize', 'characters');
-    el.setAttribute('autocorrect', 'off');
-    el.setAttribute('spellcheck', 'false');
-    Object.assign(el.style, {
-      position: 'absolute', left: '-9999px', top: '-9999px',
-      opacity: '0', width: '1px', height: '1px',
-    });
-    el.addEventListener('input', () => {
-      this.promoCode = el.value.toUpperCase();
-      el.value = this.promoCode;
-      this.render();
-    });
-    el.addEventListener('blur', () => {
-      this.promoFocused = false;
-      this.render();
-    });
-    el.addEventListener('focus', () => {
-      this.promoFocused = true;
-      this.render();
-    });
-    // Enter-to-redeem is wired by the outer assembly, not here: it calls ActionsPanel.onRedeem(),
-    // which doesn't exist yet at Core-construction time — see ../ShopScene.ts.
-    document.body.appendChild(el);
-    this.hiddenInput = el;
-  }
-
-  focusPromo(): void {
-    this.promoFocused = true;
-    if (this.hiddenInput) {
-      this.hiddenInput.value = this.promoCode;
-      this.hiddenInput.focus();
+  /** @param onConfirm Wired by the caller (ShopScene/coins.ts, which holds ActionsPanel) since
+   *  ActionsPanel.onRedeem doesn't exist at Core-construction time — same two-phase-construction
+   *  shape as `render`, see this file's header comment. */
+  focusPromo(onConfirm?: () => void): void {
+    if (!this.textInput) {
+      const handle = this.cb.openTextInput({
+        value: this.promoCode,
+        maxLength: PROMO_CODE_MAX,
+        onInput: (value) => {
+          this.promoCode = value.toUpperCase();
+          if (this.promoCode !== value) handle.setValue(this.promoCode);
+          this.render();
+        },
+        onConfirm: onConfirm ? () => onConfirm() : undefined,
+        onComplete: () => {
+          if (this.textInput === handle) { this.textInput = null; this.promoFocused = false; this.render(); }
+        },
+      });
+      this.textInput = handle;
     }
+    this.promoFocused = true;
     this.render();
   }
 
   blurPromo(): void {
     this.promoFocused = false;
-    this.hiddenInput?.blur();
+    this.textInput?.close();
     this.render();
+  }
+
+  /** Overwrite the promo field's live value without closing it (e.g. clearing it after a
+   *  successful redeem) — a no-op while the field isn't open. */
+  setPromoValue(value: string): void {
+    this.textInput?.setValue(value);
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────

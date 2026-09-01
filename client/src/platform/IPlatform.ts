@@ -19,6 +19,57 @@ export interface ShareResult {
 }
 
 /**
+ * Options for {@link IPlatform.openTextInput} (ASSET_PACKAGING §4.3/§4.4 item 1) — every scene that
+ * needs free-text entry used to build its own hidden `<input>` directly, which works in the WeChat
+ * dev-tools simulator (it has a `document`) but throws on a real device (it doesn't). This is the
+ * single capability both platforms implement instead: Web/CrazyGames keep the hidden-`<input>`
+ * trick (now centralized in `platform/web/domTextInput.ts`), WeChat drives its native
+ * `wx.showKeyboard` keyboard.
+ */
+export interface TextInputOptions {
+  /** Initial text shown in the field. */
+  value: string;
+  /** Character cap — enforced by the host `<input>` on web, requested from the host keyboard on WeChat. */
+  maxLength: number;
+  /** Masks entry as a web/CrazyGames `<input type=password>`. WeChat's system keyboard has no masked
+   *  mode — ignored there (characters show in plain text); today only LoginScene's password fields
+   *  pass this, and WeChat never routes to LoginScene (wx.login replaces it), so this is a latent gap
+   *  rather than a live one — noted in ASSET_PACKAGING §4.4. */
+  password?: boolean;
+  /** Confirm-button label hint. Web/CrazyGames: the `enterkeyhint` attribute (mobile soft-keyboard
+   *  label). WeChat: `wx.showKeyboard`'s `confirmType`. Purely cosmetic; default 'done'. */
+  confirmType?: 'done' | 'next' | 'search' | 'go' | 'send';
+  /** Fired on every keystroke with the field's current full value (mirrors the old `<input>` 'input'
+   *  event). To filter/clip as the user types (e.g. an org-name width cap), call
+   *  {@link ITextInput.setValue} with the corrected value from inside this callback. */
+  onInput(value: string): void;
+  /**
+   * Fired when the platform's confirm affordance is used — Enter on web/CrazyGames, the system
+   * keyboard's Confirm button on WeChat. Never auto-closes the field on either platform (matching a
+   * plain `<input>`, which doesn't blur on Enter by itself) — call {@link ITextInput.close} from
+   * here if this field should close on confirm; omit entirely for fields that don't act on Enter
+   * (e.g. AuctionScene's buyer-id field).
+   */
+  onConfirm?(value: string): void;
+  /**
+   * Fired exactly once when the field is done — however that happens: the user tapped/typed away
+   * (web 'blur' / WeChat's keyboard-dismiss), or the caller called {@link ITextInput.close}. This is
+   * the single place to clean up scene state (matches the old hidden-`<input>` 'blur' handler every
+   * call site had).
+   */
+  onComplete(): void;
+}
+
+/** Handle returned by {@link IPlatform.openTextInput}. */
+export interface ITextInput {
+  /** Overwrite the field's current value without treating it as a fresh user edit (does not itself
+   *  invoke onInput) — for filtering/clipping mid-keystroke or clearing after a successful submit. */
+  setValue(value: string): void;
+  /** Dismiss the field now. Always invokes onComplete exactly once; a no-op if already closed. */
+  close(): void;
+}
+
+/**
  * IPlatform — abstraction layer for platform-specific capabilities.
  * Implemented per-platform: WebPlatform, WechatPlatform, CrazyGamesPlatform, …
  */
@@ -90,6 +141,14 @@ export interface IPlatform {
 
   /** Called after Pixi app is created — platform may set up orientation lock etc. */
   onAppReady(): void;
+
+  /**
+   * Open a single-line text-entry surface (see {@link TextInputOptions}). Only one field is ever
+   * open at a time in this app — opening a new one while another is still open closes the previous
+   * one first (its onComplete fires), the same way focusing a new `<input>` steals focus from (and
+   * blurs) whatever had it.
+   */
+  openTextInput(opts: TextInputOptions): ITextInput;
 
   // ── SDK lifecycle (ads, analytics) ──────────────────────────────────────────
 

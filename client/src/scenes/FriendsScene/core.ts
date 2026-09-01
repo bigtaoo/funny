@@ -54,6 +54,7 @@ import type { WorldChatMessage, FamilyView, FamilyDetailView } from '../../net/W
 import { serverNow } from '../../net/serverClock';
 import type { NetworkHandlers } from './network';
 import type { FriendsSceneCallbacks, Hit, Tab, View, SLGSocialStatus } from './types';
+import type { ITextInput } from '../../platform/IPlatform';
 
 export type { SLGSocialStatus, FriendsSceneCallbacks, Tab, View, Hit } from './types';
 
@@ -176,8 +177,8 @@ export class FriendsSceneCore {
    *  re-armed when they drag back to the bottom, re-enter the tab, or post (see drawWorldTab). */
   worldStick = true;
 
-  // Shared HTML input (family/sect forms + world channel input box)
-  hiddenInput: HTMLInputElement | null = null;
+  // Shared text-entry session (family/sect forms + world channel input box) — see chrome.ts's openHiddenInput.
+  textInput: ITextInput | null = null;
   /** Blink state for whichever field openHiddenInput last opened — shared across all callers. */
   caretOn = true;
   caretTimer = 0;
@@ -468,7 +469,7 @@ export class FriendsSceneCore {
   // (openHiddenInput itself moved to chrome.ts — see the file-header comment)
 
   clearHiddenInput(): void {
-    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    if (this.textInput) { this.textInput.close(); this.textInput = null; }
     this.familyActiveInput = null;
     this.sectActiveInput = null;
     this.worldChatActive = false;

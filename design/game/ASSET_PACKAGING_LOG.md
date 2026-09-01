@@ -1,6 +1,6 @@
 # Notebook Wars — 资源打包补测/复核/重打包记录（spec 见 [`ASSET_PACKAGING.md`](ASSET_PACKAGING.md)）
 
-> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§13（当前架构：三层分级/各平台打包方案/首屏加载策略）仍在 hub；本册是 §14 起的逐条记录——§14 预取裁剪+省流开关、§15 补测、§16 icons_atlas 重打包、§17 微信黑屏、§18 微信 REST 接缝——小节编号与正文一字未改。
+> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§13（当前架构：三层分级/各平台打包方案/首屏加载策略）仍在 hub；本册是 §14 起的逐条记录——§14 预取裁剪+省流开关、§15 补测、§16 icons_atlas 重打包、§17 微信黑屏、§18 微信 REST 接缝、§19 隐藏 `<input>` → `IPlatform.openTextInput`——小节编号与正文一字未改。
 
 ## 14. 预取按使用面裁剪 + 省流开关（2026-08-25）
 
@@ -323,4 +323,56 @@ v7 独有的两条（他们那边不适用）：`@pixi/settings` 的 `isMobile` 
 
 - **`wx.request` 的「request 合法域名」白名单**，与 `downloadFile` 的是**两份**（§4.2 遗留 1）。配不上就是全线 REST 挂掉；开发者工具能勾「不校验合法域名」绕过，真机不行——所以这条会精确地在真机上第一次现形。
 - **微信云同步本身**仍与合规一起排期：桥通了不等于 `SaveManager` 就该上云，`getApiBaseUrl()` 在微信构建里目前也还没注入。这次只把「没有传输层」这个物理障碍搬开。
-- **真机**（§4.4 第 3 条）。以上全部只在 Node 测试与 Chromium 模拟器上成立。
+- **真机**（§4.4，2026-09-01 晚间盘点后的唯一一条）。以上全部只在 Node 测试与 Chromium 模拟器上成立。
+
+## 19. 14 处隐藏 `<input>` → `IPlatform.openTextInput`（2026-09-01）
+
+§18 把 REST 层的 `fetch` 收归 `net/transport.ts` 之后，[`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4.4 只剩一条真正的功能缺口：**14 个场景直接 `document.createElement('input')` 收文本**——登录名/密码、聊天、家族/宗门创建表单与频道发言框、拍卖行买家 ID 与价格编辑、SLG 首府改名、申诉/反馈弹窗。这段代码不是「没适配微信」，是**微信上完全不通**：小游戏运行时没有 `document`，14 处调用点原样跑起来就是 14 个 `ReferenceError`（有一处，`LoginScene.setupHiddenInput()`，此前干脆用 `typeof document === 'undefined'` 整段跳过——效果是微信玩家永远打不开登录框，静默失效比抛错还隐蔽）。
+
+### 19.1 抽成 `IPlatform` 的一个能力，不是一个模块级接缝
+
+`assetIO()`/`netTransport()`/`audioBus()` 都是模块级单例（§6、§18.2）——这条不跟：文本输入的调用点全部在场景类里，而场景已经通过各自的 `XxxSceneCallbacks` 接口拿 `IPlatform` 的能力（`hasRewardedAd`/`showRewardedAd` 是先例），不需要再造一条独立的全局接缝。`IPlatform.openTextInput(opts): ITextInput` 直接加成 IPlatform 的方法，WebPlatform/CrazyGamesPlatform/WechatPlatform 三个实现各自满足：
+
+```ts
+interface TextInputOptions {
+  value: string; maxLength: number; password?: boolean;
+  confirmType?: 'done' | 'next' | 'search' | 'go' | 'send';
+  onInput(value: string): void;
+  onConfirm?(value: string): void;   // Enter（web/CrazyGames）/ 系统键盘 Confirm 键（微信）
+  onComplete(): void;                // 会话结束——无论因为谁关的
+}
+interface ITextInput { setValue(value: string): void; close(): void; }
+```
+
+`onConfirm` **不自动关闭输入**（web 一个纯 `<input>` 按 Enter 本来就不会自己 blur），微信侧同理把 `wx.showKeyboard` 的 `confirmHold` **恒定传 `true`**（永不自动收起）——两端行为对齐，「按 Enter 后是否关闭」完全由调用方的 `onConfirm` 自己决定要不要调 `close()`，不需要在接口里塞一个 `confirmHold` 选项分叉两条平台语义。14 个调用点原来的行为分两类，迁移时逐一保留：LoginScene/ChatScene（Enter 不关闭，允许继续编辑/连续发送）、FamilyScene/SectScene 发言框与拍卖数字编辑器/首府改名（Enter 提交并关闭）。
+
+Web/CrazyGames 的实现集中到 `client/src/platform/web/domTextInput.ts`（`openDomTextInput`）——12 个场景文件里原本几乎逐字重复的一段「建 `<input>` → 定位到屏幕外 → 挂 `input`/`keydown`/`blur` 监听 → `focus()`」样板收成一个函数，两个平台类各一行转发。这个文件躺在 `platform/web/` 下，天然在 `wechatHostSurface.test.ts` 的 `OFF_PATH` 排除范围里（跟 `WebPlatform.ts` 自己一样），是仓库里唯一一处「该碰 `document`」的新文件。
+
+FriendsScene 的 `chrome.ts` 早就有一个自己的 `openHiddenInput(core, opts)` 内部封装（8 个调用点共用），这次只改它的实现体去调 `core.cb.openTextInput`，8 个调用点的签名一个字没动。
+
+### 19.2 微信侧：`wx.showKeyboard` 家族，一次只有一个会话
+
+`wx.showKeyboard`/`updateKeyboard`/`hideKeyboard` + `onKeyboardInput`/`onKeyboardConfirm`/`onKeyboardComplete`（小游戏原生 API，基础库 2.1.0+，跟小程序 `<input>`/`KeyboardInputComponent` 组件完全是两套东西——这个运行时没有 DOM 可以挂那些组件）。`client/src/wx.d.ts` 里没有这几个声明——按本仓库的教训（AUDIO_DESIGN §0.3、§4.3）这不代表运行时没有，`WechatPlatform.ts` 照惯例自己声明一个只含本文件用到的字段的局部 `declare const wx`，不碰那个文件。
+
+真正的坑：`onKeyboardInput`/`onKeyboardConfirm`/`onKeyboardComplete` 是**全局**监听器——wx 的 API 里没有「这次回调属于哪个会话」的标识，跟「一次只能有一个键盘」这个事实本身是匹配的（一个 `<input>` 抢焦点也只有一个）。`WechatPlatform` 因此只在首次 `openTextInput()` 调用时装一次这三个全局监听（`wireKeyboardListenersOnce`），路由到 `this.activeTextInput` 指向的那个会话；`openTextInput()` 自己在打开新会话前，如果上一个还开着就先关掉它（触发它的 `onComplete`）——跟聚焦一个新 `<input>` 会 blur 旧的是同一个语义。`close()`（调用方主动关）和全局 `onKeyboardComplete`（原生键盘被关，无论是用户划走还是我们自己调的 `hideKeyboard()`）两条路径都会触发 `onComplete`，用一个 `closed` 标记 + `this.activeTextInput` 的身份检查保证只触发一次——`close()` 自己关闭时立刻把 `activeTextInput` 置空并直接调 `onComplete`，随后到达的 `onKeyboardComplete` 因为找不到匹配的活跃会话而空转。
+
+**已知限制，写进代码注释而不是留着不说**：`TextInputOptions.password` 在微信侧没有对应物——`wx.showKeyboard` 没有掩码输入这个概念，字符会明文显示在系统键盘的预览里。今天唯一传 `password: true` 的是 LoginScene 的密码字段，而微信从不走 LoginScene（`wx.login` 直接换 openid，见 `getAuthCredential`），所以这是一个潜在缺口而不是活的缺口——真要有人在微信上加了密码输入的路径才会现形。
+
+### 19.3 一次性顺手清理
+
+- **FriendsScene `openHiddenInput` 的 `placeholder` 参数是死代码**：设在一个 `opacity:0`、定位到屏幕外的 `<input>` 上，浏览器渲染的 placeholder 文字从来没人看得到——真正的占位文案走的是同一个 tap handler 里另一次调用的 `caretText()`（画在 canvas 上）。迁移时直接删掉这个参数，8 个调用点都没传过它。
+- **ShopScene 的 Enter-to-redeem 不再需要「先建后补听」的两段式构造**：旧代码里 `ShopSceneCore` 构造时就建好隐藏 `<input>`（`setupHiddenInput()`），但 Enter 键的处理要等 `ActionsPanel` 造出来才能接线，所以 `ShopScene.ts`（外层装配）在 `new ActionsPanel(...)` 之后单独 `core.hiddenInput?.addEventListener('keydown', ...)` 补一刀。新模型下输入会话是「用户点了才开」（`focusPromo()` 惰性打开），点击发生的时刻装配早就完成了，`onConfirm` 直接在 `focusPromo(onConfirm)` 里当参数传下去即可——`ShopScene.ts` 那段外部补线代码整段删除。
+- **FeedbackDialog 的 submit 成功路径原本只清了镜像状态 `feedbackText`，没清底层 `<input>` 的真实值**：连续两次提交、中间不重新聚焦的话，第二次输入会把已提交的文字和新内容拼在一起（DOM 层面从未清空过）。这个 bug 一直存在，只是没人踩到过（多数人提交后会重新点一次输入框）。这次经手顺便用新拿到的 `ITextInput.setValue('')` 补上，不算范围蔓延——修复点和迁移点是同一行代码。
+- **`world.nationNamePrompt` i18n key** 只喂给了那个从未渲染的 placeholder，三语言文件一并删除（`i18n-no-dead-keys.test.ts` 会抓不然会报死键）。
+
+### 19.4 门禁与验证
+
+- **`test/dom-usage-baseline.json`：15 处 / 5 文件**（原 21 文件 / 54 处落地时的口径；§18 已把 REST 那批还清到 17 文件 / 45 处，这次再还清 12 文件 / 30 处，剩下的 5 文件 15 处全部是 `analytics/`、`PixiAppViews.ts`（web-only 的 sketch demo 入口探测）、`assetIO.ts`/`ota.ts` 两个「平台默认实现」——跟本次改动无关，是各自独立的欠账）。§4.4 从两条欠账收成一条：只剩「真机从未验过」。
+- **`test/WechatPlatform.test.ts` 新增 `openTextInput` 一节（17 例）**：`wx.showKeyboard` 拿到正确的 `defaultValue`/`maxLength`/`confirmHold:true`/`confirmType`；`onKeyboardInput`/`onKeyboardConfirm` 路由到当前活跃会话；原生 `onKeyboardComplete` 触发一次 `onComplete` 且脱钩会话（之后的杂散 input/complete 事件不再命中）；`close()` 调 `hideKeyboard`、触发一次 `onComplete`，重复调用与随后到达的原生 `onKeyboardComplete` 都不会二次触发；`setValue()` 转发到 `updateKeyboard`，`close()` 后变 no-op；打开新会话会先关掉（并触发其 `onComplete`）旧会话。
+- **12 个场景文件逐一改完**，配套测试同步：`familyChannelInput.test.ts`/`familySendButton.test.ts`/`sectActions.test.ts`/`shopActions.test.ts` 里手搭的假 `document`（`document.createElement`/`addEventListener`）换成新建的 `test/harness/fakeTextInput.ts`（记录每次 `openTextInput()` 调用的 `TextInputOptions`，返回一个契约与真实实现一致——`close()` 幂等、`setValue()` 关闭后 no-op——的假 `ITextInput`）；5 个 `test:ui` 文件（`caretRegression.ui.ts`/`dialogModalInputGate.ui.ts`/`familyIncrementalRepaint.ui.ts`/`sectIncrementalRepaint.ui.ts`/`auctionScene.ui.ts`）改成把真实的 `openDomTextInput` 接到既有的假 `document` 上（这几个文件本来就在无 DOM 的 headless Node 环境里跑，假 `document` 早就在，只是原先直接喂给场景自己的 `document.createElement` 调用；现在喂给 `openDomTextInput`，断言方式基本不用改，除了 `AuctionScene` 那批需要从 `core.hiddenInput`/`core.textInput`（现在存的是不透明的 `ITextInput` 句柄）改成从假 `document` 自己的 `createElement` 记录里取最近一次创建的假元素）。
+- **全量**：`typecheck` 干净 / `vitest run` 229 文件 2572 例 / `test:sim` 8 文件 13 例 / `test:ui` 253 文件 2428 例 / `build:web` + `build:crazygames` + `build:mobile` + `build:wechat`（含 `check:wechatpackage` 包门禁）全部绿。`test:e2e` 需要活的 metaserver/gateway/matchsvc/gameserver/commercial + Mongo 全栈（`server/dev-up.ps1` 或 docker compose 起），这次会话环境里没有对应可达的地址，**没有跑**——纯客户端改动，`test:e2e` 覆盖的是编排/网络逻辑而非本次触碰的场景/平台层代码，风险可控但记在这里而不是假装跑过。
+- **真实浏览器人工核对**（`mcp__claude-in-chrome__*`，非 in-app Browser 面板）：SettingsScene 改名框（键入镜像、确认关闭）、FeedbackDialog 多行输入框（键入镜像、caret）两条路径截图确认符合预期。
+
+### 19.5 仍然欠着
+
+- **真机**（唯一一条，见 §4.4）。`wx.showKeyboard` 一次只有一个会话这条设计假设，以及「新会话打开时是否会让 wx 自己也补发一次 `onKeyboardComplete`」这个边界情况（本节 19.2 提到的 focus-steal 竞态），都只在这份代码审查 + 单元测试层面成立，从未在真机或开发者工具里点过一次。

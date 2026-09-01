@@ -49,6 +49,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     analytics.track('screen_view', { scene: 'AuctionScene' });
     views.showAuction({
       onBack() { nav.goLobby(); },
+      openTextInput: (opts) => platform.openTextInput(opts),
       worldApi,
       getSave: () => saveManager.get(),
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),
@@ -128,6 +129,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     };
 
     view = views.showWorldMap({
+      openTextInput: (opts) => platform.openTextInput(opts),
       onBack() { nav.goLobby({ fade: true }); }, // exiting the SLG — one of the transitions that cross-fade
       // Social overlay (world chat tab) — also the entry point to family management,
       // since FriendsScene's family tab already delegates to goFamilyHub once the
@@ -258,6 +260,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     };
     view = views.showFamily({
       onBack: onExit,
+      openTextInput: (opts) => platform.openTextInput(opts),
       onOpenSect: toSect,
       onNavTab(tab) {
         if (tab === 'family') return;
@@ -305,6 +308,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
     // still needs the hoisted `let`).
     const view: SectSceneView = views.showSect({
       onBack: onExit,
+      openTextInput: (opts) => platform.openTextInput(opts),
       onNavTab(tab) {
         if (tab === 'sect') return;
         // Sect→Family hop: SectScene already has the full family detail (see SectSceneCore.family),
@@ -347,6 +351,7 @@ export function createWorldNav(ctx: AppCtx): WorldNav {
   function goAuctionHouse(worldApi: WorldApiClient, worldId: string, opts?: { overlay?: boolean; onBack?: () => void }): void {
     views.showAuction({
       onBack: opts?.onBack ?? (() => goWorldMap(worldApi, worldId)),
+      openTextInput: (opts2) => platform.openTextInput(opts2),
       worldApi,
       getSave: () => saveManager.get(),
       onSaveChanged: (listener: () => void) => saveManager.subscribe(listener),

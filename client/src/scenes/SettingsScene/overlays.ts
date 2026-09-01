@@ -25,8 +25,10 @@ export interface OverlayHost {
   readonly h: number;
   readonly renameText: string;
   readonly caretOn: boolean;
-  readonly hiddenInput: HTMLInputElement | null;
   hits: Hit[];
+  /** Re-opens the text-entry session if it isn't already (e.g. the platform's keyboard was
+   *  dismissed natively but the overlay itself is still up) — a no-op while already open. */
+  focusRenameInput(): void;
   submitRename(): void;
   closeRename(): void;
   submitDelete(): void;
@@ -59,8 +61,8 @@ export function drawRenameOverlay(host: OverlayHost): void {
   ib.beginFill(0xffffff); ib.drawRect(ibX, ibY, ibW, ibH); ib.endFill();
   new SketchPen(ib, 34).rect(ibX + 2, ibY + 2, ibW - 4, ibH - 4, { color: C.accent, width: 2, jitter: 0.8 });
   container.addChild(ib);
-  // Tapping the field (re)focuses the hidden input on touch devices.
-  host.hits.push({ rect: { x: ibX, y: ibY, w: ibW, h: ibH }, fn: () => host.hiddenInput?.focus() });
+  // Tapping the field (re)focuses the text-entry session.
+  host.hits.push({ rect: { x: ibX, y: ibY, w: ibW, h: ibH }, fn: () => host.focusRenameInput() });
 
   const display = caretDisplay(host.renameText, host.caretOn, t('settings.renamePlaceholder'));
   const field = txt(display, snapFont(Math.round(ibH * 0.42)), (host.renameText || host.caretOn) ? C.dark : C.mid);

@@ -32,9 +32,12 @@ import { FeedbackDialog } from '../../src/ui/dialogs/FeedbackDialog';
 import { AppealDialog } from '../../src/ui/dialogs/AppealDialog';
 import { SceneManager, type Scene, type DialogGate } from '../../src/scenes/SceneManager';
 import type { LobbySceneCallbacks } from '../../src/scenes/LobbyScene';
+import { openDomTextInput } from '../../src/platform/web/domTextInput';
 
-// Minimal DOM stub — FeedbackDialog.openInput() is never called here, but the shared harness style
-// (caretRegression.ui.ts) keeps it available so a future test in this file can tap the field.
+// Minimal DOM stub so the real openDomTextInput() (wired into FeedbackDialog/AppealDialog below as
+// `cb.openTextInput`, ASSET_PACKAGING §4.3/§4.4 item 1) runs under the plain-Node headless harness
+// — the reported click-through bug (tapDialog below) does open the field. Same shape as
+// caretRegression.ui.ts's stub.
 const gDoc = globalThis as unknown as { document?: unknown };
 if (!gDoc.document) {
   gDoc.document = {
@@ -42,7 +45,8 @@ if (!gDoc.document) {
     createElement(): Record<string, unknown> {
       return {
         type: '', value: '', maxLength: 0, style: { cssText: '' },
-        focus(): void {}, remove(): void {}, addEventListener(): void {},
+        parentNode: null,
+        focus(): void {}, remove(): void {}, setAttribute(): void {}, addEventListener(): void {},
       };
     },
   };
@@ -116,6 +120,7 @@ function mount(w: number, h: number): {
   const layout = createLayout(w, h);
   const lobby = new LobbyScene(layout, input, lobbyCallbacks(fired));
   const dlg = new FeedbackDialog(layout.designWidth, layout.designHeight, {
+    openTextInput: openDomTextInput,
     onSubmit: async () => { fired.push('dialog.submit'); },
     onClose: () => { fired.push('dialog.close'); },
   });
@@ -238,6 +243,7 @@ function appLike(w: number, h: number, opts: { gated?: boolean } = {}) {
   const openFeedback = (): void => {
     if (dlg) return;
     dlg = new FeedbackDialog(layout.designWidth, layout.designHeight, {
+      openTextInput: openDomTextInput,
       onSubmit: async (text) => { submitted.push(text); },
       onClose: closeFeedback,
     });
@@ -380,7 +386,7 @@ describe('AppealDialog — same gate, over an arbitrary input-subscribed scene',
     it(`${label}: none of its controls leak a tap to the scene underneath`, () => {
       const input = new InputManager();
       const host = hostScene(input);
-      const dlg = new AppealDialog(w, h, 'ACCOUNT_BANNED', { onSubmit: async () => {}, onClose() {} });
+      const dlg = new AppealDialog(w, h, 'ACCOUNT_BANNED', { openTextInput: openDomTextInput, onSubmit: async () => {}, onClose() {} });
       const controls = dlg.container.children
         .filter((c) => c.eventMode === 'static' && (c as PIXI.Container).hitArea == null);
       expect(controls).toHaveLength(3); // reason field, Submit, Cancel

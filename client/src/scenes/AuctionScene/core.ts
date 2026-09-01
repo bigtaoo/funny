@@ -58,6 +58,7 @@ import {
   type AuctionSceneCallbacks, type AucTab, type ItemClass, type AucFilter,
   HUD_H, MATERIALS, AUCTION_POLL_SEC, auctionSig, bidSig,
 } from './types';
+import type { ITextInput } from '../../platform/IPlatform';
 
 export * from './types';
 
@@ -102,7 +103,7 @@ export class AuctionSceneCore {
   pollTimer = 0;
   /** Change-signature of the last applied listing snapshot — a poll only re-renders when this changes. */
   lastSig = '';
-  hiddenInput: HTMLInputElement | null = null;
+  textInput: ITextInput | null = null;
 
   bodyLayer!: PIXI.Container;
   modalLayer!: PIXI.Container;
@@ -434,7 +435,7 @@ export class AuctionSceneCore {
     this.destroyed = true;
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
-    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    this.textInput?.close();
     // Free descendant Text baseTextures before dropping the container (overlay over the live
     // WorldMapScene → leaks a screenful of Text per close otherwise). See sketchUi.tearDownChildren.
     tearDownChildren(this.container);

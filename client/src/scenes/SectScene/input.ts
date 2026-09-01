@@ -25,62 +25,53 @@ export class InputPanel implements InputHandlers {
     core.createField = field;
     core.caretOn = true;
     core.caretTimer = 0;
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.value = field === 'name' ? core.createName : core.createTag;
-    // name is width-capped (full-width = 2, cap 12) in the input handler; tag is a plain 5-char cap.
-    inp.maxLength = field === 'name' ? ORG_NAME_WIDTH_MAX : 5;
-    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-    document.body.appendChild(inp);
-    inp.focus();
-    inp.addEventListener('input', () => {
-      if (field === 'name') {
-        const clipped = truncateOrgName(inp.value, ORG_NAME_WIDTH_MAX);
-        if (clipped !== inp.value) inp.value = clipped;
-        core.createName = clipped;
-      } else {
-        core.createTag = inp.value.toUpperCase();
-      }
-      // Only this field's string changed, and its panel/hit rect are fixed-width — rewrite that one
-      // Text rather than rebuilding the form per keystroke (falls back to render() if the Text is
-      // gone; see ./repaint.ts).
-      if (!core.destroyed) core.repaint.setFieldValue(field === 'name' ? core.createName : core.createTag);
+    const handle = core.cb.openTextInput({
+      value: field === 'name' ? core.createName : core.createTag,
+      // name is width-capped (full-width = 2, cap 12) in the input handler; tag is a plain 5-char cap.
+      maxLength: field === 'name' ? ORG_NAME_WIDTH_MAX : 5,
+      onInput: (value) => {
+        if (field === 'name') {
+          const clipped = truncateOrgName(value, ORG_NAME_WIDTH_MAX);
+          if (clipped !== value) handle.setValue(clipped);
+          core.createName = clipped;
+        } else {
+          core.createTag = value.toUpperCase();
+        }
+        // Only this field's string changed, and its panel/hit rect are fixed-width — rewrite that one
+        // Text rather than rebuilding the form per keystroke (falls back to render() if the Text is
+        // gone; see ./repaint.ts).
+        if (!core.destroyed) core.repaint.setFieldValue(field === 'name' ? core.createName : core.createTag);
+      },
+      onComplete: () => {
+        core.createField = null;
+        if (core.hiddenInput === handle) core.hiddenInput = null;
+        if (!core.destroyed) core.render();
+      },
     });
-    inp.addEventListener('blur', () => {
-      core.createField = null;
-      inp.remove();
-      if (!core.destroyed) core.render();
-    });
-    core.hiddenInput = inp;
+    core.hiddenInput = handle;
   }
 
   openSendInput(): void {
     const core = this.core;
-    if (core.hiddenInput) { core.hiddenInput.remove(); core.hiddenInput = null; }
+    if (core.hiddenInput) { core.hiddenInput.close(); core.hiddenInput = null; }
     core.channelActive = true;
     core.caretOn = true;
     core.caretTimer = 0;
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.maxLength = 200;
-    inp.value = core.channelInput;
-    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-    document.body.appendChild(inp);
-    inp.focus();
-    inp.addEventListener('input', () => {
-      core.channelInput = inp.value;
-      // Same one-Text keystroke path as the create form above (see ./repaint.ts).
-      if (!core.destroyed) core.repaint.setFieldValue(core.channelInput);
+    const handle = core.cb.openTextInput({
+      value: core.channelInput,
+      maxLength: 200,
+      onInput: (value) => {
+        core.channelInput = value;
+        // Same one-Text keystroke path as the create form above (see ./repaint.ts).
+        if (!core.destroyed) core.repaint.setFieldValue(core.channelInput);
+      },
+      onConfirm: () => { void this.actions.doSendChannelMessage(); },
+      onComplete: () => {
+        core.channelActive = false;
+        if (core.hiddenInput === handle) core.hiddenInput = null;
+        if (!core.destroyed) core.render();
+      },
     });
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') void this.actions.doSendChannelMessage();
-    });
-    inp.addEventListener('blur', () => {
-      core.channelActive = false;
-      if (core.hiddenInput === inp) core.hiddenInput = null;
-      inp.remove();
-      if (!core.destroyed) core.render();
-    });
-    core.hiddenInput = inp;
+    core.hiddenInput = handle;
   }
 }

@@ -45,12 +45,6 @@ export class ShopScene implements Scene {
     this.shop = new ShopPanel(this.core, this.actions);
     this.coins = new CoinsPanel(this.core, this.actions);
 
-    // Enter-to-redeem shortcut on the hidden promo-code input: wired here (not in Core's
-    // setupHiddenInput) since it needs ActionsPanel.onRedeem(), which doesn't exist until now.
-    this.core.hiddenInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); void this.actions.onRedeem(); }
-    });
-
     this.render();
     void this.actions.loadItems();
   }

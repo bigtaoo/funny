@@ -5,9 +5,12 @@
 // callers, now updated to './core') keep resolving unchanged.
 import type { WorldApiClient, AuctionBidView, AuctionView } from '../../net/WorldApiClient';
 import type { SaveData } from '../../game/meta/SaveData';
+import type { IPlatform } from '../../platform/IPlatform';
 
 export interface AuctionSceneCallbacks {
   onBack(): void;
+  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput. */
+  openTextInput: IPlatform['openTextInput'];
   worldApi: WorldApiClient;
   /**
    * Read the current authoritative save — source for the equipment/card listing picker

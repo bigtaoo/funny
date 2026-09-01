@@ -265,7 +265,7 @@ export class ActionsPanel implements ActionsHandlers {
     const core = this.core;
     const body = core.channelInput.trim();
     if (!body || core.channelSending || !core.sect) return;
-    if (core.hiddenInput) { core.hiddenInput.remove(); core.hiddenInput = null; }
+    if (core.hiddenInput) { core.hiddenInput.close(); core.hiddenInput = null; }
     core.channelActive = false;
     core.channelSending = true;
     core.channelStick = true; // sending always snaps to the newest line (renderChannel pins to bottom)

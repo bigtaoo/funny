@@ -41,12 +41,15 @@ import { drawHeaderTitle } from './header';
 import { SectRepaint, type ScrollCol } from './repaint';
 import { onPointerDown, onPointerMove, onPointerUp, onWheel } from './pointer';
 import { type Hit as BaseHit } from '../../ui/hits';
+import type { IPlatform, ITextInput } from '../../platform/IPlatform';
 
 /** Scroll-column-tagged hit for this scene's two (three with the modal) independent lists. */
 type Hit = BaseHit<ScrollCol>;
 
 export interface SectSceneCallbacks {
   onBack(): void;
+  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput. */
+  openTextInput: IPlatform['openTextInput'];
   /** Rail click for one of the other 4 social tabs (friends/family/world/mail); 'sect' is a no-op. */
   onNavTab(tab: SocialTab): void;
   worldApi: WorldApiClient;
@@ -122,8 +125,8 @@ export class SectSceneCore {
   bodyLayer!: PIXI.Container;
   modalLayer!: PIXI.Container;
 
-  // Create form
-  hiddenInput: HTMLInputElement | null = null;
+  // Create form / send box (one shared text-entry session — see SectScene/input.ts)
+  hiddenInput: ITextInput | null = null;
   createName = '';
   createTag = '';
   createField: 'name' | 'tag' | null = null;
@@ -396,7 +399,7 @@ export class SectSceneCore {
     this.destroyed = true;
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
-    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    if (this.hiddenInput) { this.hiddenInput.close(); this.hiddenInput = null; }
     // Free descendant Text baseTextures before dropping the container (overlay over the live
     // WorldMapScene → leaks a screenful of Text per close otherwise). See sketchUi.tearDownChildren.
     tearDownChildren(this.container);

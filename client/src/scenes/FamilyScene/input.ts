@@ -32,79 +32,69 @@ export class InputPanel implements InputHandlers {
     core.createField = field;
     core.caretOn = true;
     core.caretTimer = 0;
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.value = field === 'name' ? core.createName : core.createTag;
-    // name is width-capped (full-width = 2, cap 12) in the input handler; tag is a plain 5-char cap.
-    inp.maxLength = field === 'name' ? ORG_NAME_WIDTH_MAX : 5;
-    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-    document.body.appendChild(inp);
-    inp.focus();
-    inp.addEventListener('input', () => {
-      if (field === 'name') {
-        const clipped = truncateOrgName(inp.value, ORG_NAME_WIDTH_MAX);
-        if (clipped !== inp.value) inp.value = clipped;
-        core.createName = clipped;
-      } else {
-        core.createTag = inp.value.toUpperCase();
-      }
-      // Only this field's string changed, and its panel/hit rect are fixed-width — rewrite that one
-      // Text rather than rebuilding the form per keystroke (falls back to render() if the Text is
-      // gone; see ./repaint.ts).
-      if (!core.destroyed) core.repaint.setFieldValue(field === 'name' ? core.createName : core.createTag);
+    const handle = core.cb.openTextInput({
+      value: field === 'name' ? core.createName : core.createTag,
+      // name is width-capped (full-width = 2, cap 12) in the input handler; tag is a plain 5-char cap.
+      maxLength: field === 'name' ? ORG_NAME_WIDTH_MAX : 5,
+      onInput: (value) => {
+        if (field === 'name') {
+          const clipped = truncateOrgName(value, ORG_NAME_WIDTH_MAX);
+          if (clipped !== value) handle.setValue(clipped);
+          core.createName = clipped;
+        } else {
+          core.createTag = value.toUpperCase();
+        }
+        // Only this field's string changed, and its panel/hit rect are fixed-width — rewrite that one
+        // Text rather than rebuilding the form per keystroke (falls back to render() if the Text is
+        // gone; see ./repaint.ts).
+        if (!core.destroyed) core.repaint.setFieldValue(field === 'name' ? core.createName : core.createTag);
+      },
+      onComplete: () => {
+        core.createField = null;
+        if (core.hiddenInput === handle) core.hiddenInput = null;
+        if (!core.destroyed) core.render();
+      },
     });
-    inp.addEventListener('blur', () => {
-      core.createField = null;
-      inp.remove();
-      if (!core.destroyed) core.render();
-    });
-    core.hiddenInput = inp;
+    core.hiddenInput = handle;
   }
 
   openSendInput(): void {
     const core = this.core;
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.maxLength = 200;
-    inp.value = core.sendText;
-    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-    document.body.appendChild(inp);
-    inp.focus();
     core.caretOn = true;
     core.caretTimer = 0;
-    // Mirror the hidden field into `sendText` so the on-canvas field shows the typed text +
-    // caret. Without this the field stayed on the placeholder and typing looked like a no-op.
-    inp.addEventListener('input', () => {
-      core.sendText = inp.value;
-      // Same one-Text keystroke path as the create form above (see ./repaint.ts).
-      if (!core.destroyed) core.repaint.setFieldValue(core.sendText);
-    });
-    inp.addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter') {
-        const body = inp.value.trim();
-        inp.remove();
-        core.sendInput = null;
+    const handle = core.cb.openTextInput({
+      value: core.sendText,
+      maxLength: 200,
+      // Mirror the field into `sendText` so the on-canvas field shows the typed text + caret.
+      // Without this the field stayed on the placeholder and typing looked like a no-op.
+      onInput: (value) => {
+        core.sendText = value;
+        // Same one-Text keystroke path as the create form above (see ./repaint.ts).
+        if (!core.destroyed) core.repaint.setFieldValue(core.sendText);
+      },
+      onConfirm: (value) => {
+        const body = value.trim();
+        handle.close();
         core.sendText = '';
-        await this.submitMessage(body);
-      }
+        void this.submitMessage(body);
+      },
+      onComplete: () => {
+        if (core.sendInput === handle) core.sendInput = null;
+        if (!core.destroyed) core.render();
+      },
     });
-    inp.addEventListener('blur', () => {
-      inp.remove();
-      core.sendInput = null;
-      if (!core.destroyed) core.render();
-    });
-    core.sendInput = inp;
+    core.sendInput = handle;
   }
 
   async doSendMsg(): Promise<void> {
     const core = this.core;
-    // Source the body from core.sendText, not core.sendInput.value — clicking Send blurs the
-    // hidden DOM input first (its 'blur' handler already nulled core.sendInput by the time this
+    // Source the body from core.sendText, not by reading the live session — tapping Send closes
+    // the text-entry session first (its onComplete already nulled core.sendInput by the time this
     // click handler runs), so sendInput can be null here even though the user has typed text.
-    // sendText mirrors the input's value on every keystroke, so it's always current regardless
-    // of DOM focus state.
+    // sendText mirrors the session's value on every keystroke, so it's always current regardless
+    // of focus state.
     const body = core.sendText.trim();
-    if (core.sendInput) { core.sendInput.remove(); core.sendInput = null; }
+    if (core.sendInput) { core.sendInput.close(); core.sendInput = null; }
     core.sendText = '';
     if (body) {
       await this.submitMessage(body);
