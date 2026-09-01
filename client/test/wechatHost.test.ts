@@ -166,6 +166,20 @@ describe('宿主已经提供时一个都不覆盖（旧基础库 / 模拟器上�
     expect(typeof g.HTMLCanvasElement).toBe('function');
     expect(typeof g.Image).toBe('function');
   });
+
+  // 本组标题的例外，唯一一个：baseURI 即使宿主已经提供 document 也会被覆盖（2026-09-01 真机测试
+  // 实测踩过，ASSET_PACKAGING_LOG.md §20）——DevTools 模拟器的游戏子上下文本身就有 document，但
+  // 它的 baseURI 不能拿去解析相对路径（现象与 baseURI 缺席时一样：`new URL` 直接抛），`document
+  // ??= {...}` 因此整体是 no-op，精心设的兜底值从没生效过。
+  it('宿主的 document 存在但 baseURI 不可用于相对解析时——baseURI 仍会被覆盖', async () => {
+    const PIXI = await pixi();
+    // 'about:blank' 复现的正是那个现象：非层级 scheme，不能当 new URL() 的 base。
+    const hostDoc = { baseURI: 'about:blank', addEventListener() {}, marker: 'host' };
+    g.document = hostDoc;
+    await installHost();
+    expect(g.document).toBe(hostDoc); // 同一个对象——只改了它的 baseURI 属性，不是整体替换
+    expect(() => PIXI.utils.determineCrossOrigin('cdn/abc.png')).not.toThrow();
+  });
 });
 
 describe('上屏 canvas：第一次 wx.createCanvas() 不许被类嗅探偷走', () => {

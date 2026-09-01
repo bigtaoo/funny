@@ -76,7 +76,45 @@ module.exports = (env, argv) => {
     devtool: isWechat ? 'source-map' : (isProd ? false : 'source-map'),
     module: {
       rules: [
-        { test: /\.ts$/, use: 'ts-loader', exclude: /node_modules/ },
+        {
+          test: /\.ts$/,
+          exclude: /node_modules/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              // WeChat only: DevTools' own packaging/preview pipeline (and the real-machine debug
+              // bridge) run the bundle through a parser that predates ES2020 — `?.`/`??` at any
+              // position anywhere in pixigame.js is an immediate "Illegal file" SyntaxError, before
+              // a single line of the game ever executes on device (ASSET_PACKAGING_LOG.md §20).
+              // tsconfig.json's ES2020 target is otherwise correct (evergreen web/CrazyGames/mobile
+              // webviews all support it) — downlevel for this one target only, ts-loader's override
+              // compiles that one syntax feature away without touching the shared tsconfig.
+              ...(isWechat ? { compilerOptions: { target: 'ES2019' } } : {}),
+            },
+          },
+        },
+        // WeChat only: the ts-loader override above only reaches our own .ts sources — PIXI itself
+        // (pixi.js-legacy + @pixi/*, plain .js/.mjs in node_modules) ships `?.`/`??` pre-built and
+        // ts-loader's `test: /\.ts$/` never touches it. Same "Illegal file" failure, same file
+        // (ASSET_PACKAGING_LOG.md §20), different source. No `exclude: /node_modules/` here —
+        // node_modules is exactly what needs reaching; scoped to the two offending syntax features
+        // only (not a full @babel/preset-env downlevel) to keep this a narrow, auditable patch over
+        // a dependency we don't control, matching §4.3's "own the layer, don't lean on somebody
+        // else's compat behavior" stance.
+        ...(isWechat ? [{
+          test: /\.m?js$/,
+          use: {
+            loader: 'babel-loader',
+            options: {
+              babelrc: false,
+              configFile: false,
+              plugins: [
+                '@babel/plugin-transform-optional-chaining',
+                '@babel/plugin-transform-nullish-coalescing-operator',
+              ],
+            },
+          },
+        }] : []),
         {
           test: /\.(png|jpg|gif|webp|mp3|wav|ogg|tao)$/i,
           type: 'asset/resource',

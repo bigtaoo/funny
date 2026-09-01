@@ -1,6 +1,6 @@
 # Notebook Wars — 资源打包补测/复核/重打包记录（spec 见 [`ASSET_PACKAGING.md`](ASSET_PACKAGING.md)）
 
-> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§13（当前架构：三层分级/各平台打包方案/首屏加载策略）仍在 hub；本册是 §14 起的逐条记录——§14 预取裁剪+省流开关、§15 补测、§16 icons_atlas 重打包、§17 微信黑屏、§18 微信 REST 接缝、§19 隐藏 `<input>` → `IPlatform.openTextInput`——小节编号与正文一字未改。
+> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§13（当前架构：三层分级/各平台打包方案/首屏加载策略）仍在 hub；本册是 §14 起的逐条记录——§14 预取裁剪+省流开关、§15 补测、§16 icons_atlas 重打包、§17 微信黑屏、§18 微信 REST 接缝、§19 隐藏 `<input>` → `IPlatform.openTextInput`、§20 真机测试清单——小节编号与正文一字未改。
 
 ## 14. 预取按使用面裁剪 + 省流开关（2026-08-25）
 
@@ -376,3 +376,185 @@ FriendsScene 的 `chrome.ts` 早就有一个自己的 `openHiddenInput(core, opt
 ### 19.5 仍然欠着
 
 - **真机**（唯一一条，见 §4.4）。`wx.showKeyboard` 一次只有一个会话这条设计假设，以及「新会话打开时是否会让 wx 自己也补发一次 `onKeyboardComplete`」这个边界情况（本节 19.2 提到的 focus-steal 竞态），都只在这份代码审查 + 单元测试层面成立，从未在真机或开发者工具里点过一次。
+
+## 20. 真机测试清单（拟定，2026-09-01）
+
+§17/§18/§19 把微信侧的功能债务全部还清之后，[`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4.4 和
+`AUDIO_DESIGN.md` §0.3 末尾剩下的都是**同一件事**：**funny 从未在真机上跑过微信版**，而 daydayup
+用两次线上 bug 换来的结论——`document` 在模拟器里存在、真机上不存在——正说明模拟器能骗到什么程度
+（§17.4）。以下是把这笔账还清所需的完整清单，**需要一台微信真机配合**（不限机型，但记录设备信息，
+见「前置」）。
+
+### 20.0 前置
+
+1. **三个构建各自独立，互相覆盖同一个 gitignore 的 `client/wechatgame/`**——`build:wechat`（正式包）
+   / `build:wechat-probe`（宿主探针）/ `build:wechat-e2e`（音频探针）三选一构建，跑哪个就只能测哪个。
+   **每次切换构建目标后必须重新 `cli.bat open`（或在 DevTools 里刷新）**，否则 DevTools 加载的是上一次
+   构建的产物——这正是 §17.2 那次黑屏的成因。全部测完收尾时必须重新 `npm run build:wechat` 把主检出
+   `wechatgame/` 换回正式包，不能让探针产物滞留（worktrees.md §17.2/56 条教训：DevTools 打开的永远是
+   主检出，"构建过=产物是新的"这个假设本身会骗人）。
+2. **连真机**：DevTools 项目页 → 真机调试（远程调试）→ 手机微信扫码。这一步给出**实时控制台**，直接对应
+   探针的出口 3（`console.log`）——不需要读 `USER_DATA_PATH` 落盘文件本身（那条路径在真机上无法从
+   DevTools 直接浏览，只有远程调试的控制台面板能看到）。
+3. **记录设备信息**（每项结果旁都要带这个，不然「真机验过」这句话本身没有意义）：机型、系统版本、
+   微信客户端版本、`wx.getSystemInfoSync().SDKVersion`（小游戏基础库版本——决定第 5 项 (a) 能不能覆盖到）。
+
+### 20.1 逐项
+
+| # | 项目 | 怎么测 | 通过标准 | 记录去向 |
+|---|---|---|---|---|
+| 1 | 探针 `before` 快照 diff | `build:wechat-probe` → 真机调试控制台读 `[nw-host-probe]` 那行 JSON 的 `before` 字段 | 不要求"通过"，要求**如实记录差异**——这就是任务本身 | `ASSET_PACKAGING.md` §4.3 新增小节，逐项对比 §17.4 记的模拟器基线 |
+| 2 | 画面出不出来 | `build:wechat` → 扫码打开 | 能看到 loading → 首屏，无黑屏 | 黑屏则先读控制台首条报错，对照 §17.1/§17.4 两种已知成因排除；新成因记入 §4.3 |
+| 3 | 文字可见（letterSpacing 中毒） | 首屏 + 任意一局对局，肉眼看标题/按钮文案/卡牌数值 | 所有可见 label 都有文字，没有空白 | 若有空白，先查是不是 `TextMetrics.experimentalLetterSpacing` 被意外打开（`test/wechatHost.test.ts` 锁的默认关） |
+| 4 | WebGL1 降级 | 控制台看 PIXI 启动时打的渲染器类型日志；肉眼检查有无破图（材质丢失/纹理黑块） | 渲染器类型与预期一致，画面无破图 | 记入 §4.3 新增小节 |
+| 5a | 音频：低版本基础库降级 | 读 20.0 第 3 步拿到的 SDKVersion；若 < 2.19.0，进一局听有无声音 | < 2.19.0 时应静音降级、不报错（`ContextAudioBus.createContext` 返回 `null`） | 若测试机版本已在阈值之上，**如实记"设备版本高于阈值，本轮未覆盖"**，不能当作已验证 |
+| 5b | 音频：`ctx.state` 初值 | `build:wechat-e2e` → 真机调试控制台读探针报告 | 记录初值是否为 `running`（模拟器结论：无需手势即 `running`，真机未必） | `AUDIO_DESIGN.md` §0.3 新增一节，补真机数据（不覆盖模拟器结论） |
+| 5c | 音频：原生滤波/叠加是否与 Chromium 一致 | 同上，读 18 个 cue 的中位数表 | 与 §0.3 现有表格逐行比对比值/抖动，记录差异（不要求数值相同，要求**记录到底一致到什么程度**） | 同上 |
+| 6 | `openTextInput` focus-steal（§19.5） | 连续触发两处文本输入（如先开聊天输入框不关、再点其它文本框），观察前一个是否正确关闭、键盘切换是否正常 | 新会话打开时旧会话被正确关闭（触发一次 `onComplete`），无残留/无二次触发 | `ASSET_PACKAGING_LOG.md` §19.5 补验证结果 |
+
+### 20.2 跑的过程中先撞上的一个更大的阻塞：编译产物里的 ES2020 语法，微信自己的打包/预览通道都不认
+
+第 1 项刚起步——`build:wechat-probe` 重新构建好、装进主检出 `wechatgame/` 之后，无论是「真机调试」
+（远程调试）还是普通「预览」扫码，DevTools 都在**同一个位置**拒绝同一个文件：
+
+```
+Remote Debug Error: Illegal file, error message: invalid file: pixigame.js, 1:100
+SyntaxError: Unexpected token .
+```
+
+数了一下第 100 个字符，落在 `a=e?.constructor` 的 `?.` 上——**可选链（optional chaining）**。这不是
+「装适配层之前/之后的宿主差异」，比那更前置：**DevTools 自己的打包/预览校验器（连带真机调试桥）
+根本解析不了 `?.`/`??`**，产物在被送到任何设备（模拟器也好、真机也好）之前，这一步就直接拒收。
+
+**排查顺序，避免下一个人重新走一遍：**
+
+1. 先确认这不是远程调试通道单独的毛病——`Remote Debug Error` 和普通「预览」（生成二维码扫码打开）
+   报的是**逐字节相同**的错误，同一个文件、同一个位置。预览也过不了，说明这不是调试链路窄，是
+   打包本身就不合法。
+2. `tsconfig.json` 的 `target` 钉的是 `ES2020`，webpack 只有 `ts-loader` 处理 `.ts`，没有任何东西
+   降级语法。项目自己的 `.ts` 源码（`grep -rc '?\.' src` 命中 895 处）编译后自然带着 `?.`/`??`。
+3. **只降级自己的 TS 还不够**——`grep -c '?\.' wechatgame/pixigame.js` 在只改了 tsconfig 目标之后
+   仍然非零；真正剩下的来源是 **`pixi.js-legacy`/`@pixi/*`（node_modules 里的纯 `.js`/`.mjs`）自己
+   预编译带着这两个操作符**，`ts-loader` 的 `test: /\.ts$/` 从来碰不到它们——同一份「模拟器骗了我们
+   多少」的教训，这次骗的不是宿主 API，是"以为控制了语法层级，其实只控制了自己写的那一半代码"。
+4. 验证方法上踩了一个坑：粗暴 `grep -c '?\.'` 在这份数值密集（`alpha:`/`scale` 等大量小数字面量）
+   的高度压缩产物里会**大量假阳性**——Terser 把 `0.5` 压成 `.5`，于是 `cond?.5:1`（三元表达式，
+   条件后跟去掉前导 0 的小数）这种合法代码里天然含 `?.` 这个子串。改用
+   `grep -oE '\?\.[a-zA-Z_$([]'`（`?.` 后面必须跟标识符/`(`/`[`，真正的可选链语法才会这样，三元加
+   小数字面量后面跟的是数字）才是准确的验证方式——本节以下所有"清零"的结论都是用这条口径验的。
+
+**修法：`client/webpack.config.js` 新增两条规则，只对 `isWechat` 生效**（[`webpack.config.js`](../../client/webpack.config.js)）：
+
+- `ts-loader` 按 target 加一条 `compilerOptions: { target: 'ES2019' }` 覆盖，降级自己的 `.ts` 源码；
+- 新增一条 `babel-loader` 规则，`test: /\.m?js$/` **不排除 `node_modules`**（这正是需要够到的地方），
+  只挂两个精确插件（`@babel/plugin-transform-optional-chaining` +
+  `@babel/plugin-transform-nullish-coalescing-operator`），不用整套 `@babel/preset-env`——只削掉这
+  两个具体语法特征，不去动这个我们不控制的依赖的其它任何东西（同 §4.3 的态度：自己兜底，不指望别人
+  的兼容层，但也只兜自己需要的那一小块，不做无谓的大动作）。
+
+**验证**：`build:wechat`/`build:wechat-probe`/`build:wechat-e2e` 三个目标重新构建，`grep -oE
+'\?\.[a-zA-Z_$([]'` 在三份产物里全部为 0（`??` 同样为 0）；`check:wechatpackage` 门禁绿（324 引用
+全在位）；`build:web` 不受影响（`isWechat` 门禁）；`test/wechatHost.test.ts` 17 例 /
+`test/WechatPlatform.test.ts` 17 例 / `test/wechatPackageGate.test.ts` 12 例全绿。**没有跑**
+`npm run typecheck`（`tsc -p tsconfig.test.json`）——发现它当前在 HEAD 上已经因为另一件事（约 20 个
+`test/ui/*.ui.ts` 文件的 mock callback 缺 `openTextInput` 字段）报红，跟这次改动无关（`webpack.config.js`
+不参与这条 typecheck 链路），已用 `spawn_task` 记成独立债务，不在本节范围内处理。
+
+**这条本身也是"模拟器骗了我们多少"的答案之一，而且比预想的更早、更根本**：ASSET_PACKAGING.md §4.3
+关心的是"宿主适配层"这一层，前提是产物能先被装进设备——但装都装不进去。如果没有这次真机测试，这
+个 bug 会一直被模拟器的黑屏遮住（DevTools 自己的模拟器面板是 Chromium，原生支持 `?.`/`??`，从不会
+在这条路径上报错），直到第一次真正尝试真机预览才会现形——而这正是今天在做的事。
+
+### 20.3 顺带修的第二件：探针/音频 e2e 在真机上够不到任何控制台
+
+20.2 修好之后，`build:wechat-probe` 的产物在真机上已经能正常打开（`预览` 扫码成功），但**真机上没有
+任何东西能看见 `console.log`**——`真机调试`（远程调试）这条路当时还没重试；`预览`本身不带控制台。
+`entries/wechat-probe.ts` / `entries/wechat-e2e.ts` 因此各加一行 `wx.setEnableDebug({enableDebug:
+true})`（`wx.d.ts` 里早就声明了这个方法，此前全仓库零调用点）——真机小游戏运行时对此有原生支持：
+调用后画面上会浮现一个 vConsole 悬浮面板，点开就是 Console 标签页，`console.log` 的内容原样可见。
+**只加在这两个「永不发布」的探针入口里**，不动 `entries/wechat.ts`——那是真正的出包，给真实玩家常驻
+一个调试面板不合适。
+
+> 因为 20.2 那个语法修复对**所有** WeChat target 都生效（`isWechat` 门禁而非按具体 entry），主包
+> `build:wechat` 现在也应该能正常走「真机调试」（远程调试）了，不再需要 vConsole 这条备选路——vConsole
+> 只是给两个探针入口再加一层保险（万一某台设备的远程调试仍然连不稳）。**这条尚待真机复核**，见 20.4。
+
+### 20.4 顺带修的第三件，也是最贵的一个：`document.baseURI` 的 `??=` 在模拟器子上下文里是 no-op
+
+20.2/20.3 修好之后第一次真正跑到贴图加载：`build:wechat` 装进主检出、DevTools 刷新，画面从纯黑变成
+纯米白色背景（`app.ts` 配的 `backgroundColor: 0xf5f0e8`）——**canvas 排上了，PIXI 渲染器真正跑起来
+了，但之后任何内容都没画出来**。控制台每一条 `[boot] step 失败` 都指向同一行：
+
+```
+TypeError: Failed to construct 'URL': Invalid URL
+    at bt (determineCrossOrigin.ts:22)
+```
+
+`wechatHost.ts` 早就为这一行写了兜底——`g.document ??= { baseURI: 'https://wechat-minigame.local/',
+... }`，注释也早就点名了 `determineCrossOrigin` 这个调用点（§4.3 落地时就写在代码里）。但兜底没生效，
+原因是 `??=` 判的是**整个 `document` 存不存在**：DevTools 模拟器把游戏代码跑在一个子上下文
+（`WAGameSubContext`）里，那个子上下文**已经有**一个 `document`，只是它的 `baseURI` 不可用于相对
+路径解析（现象与 baseURI 缺席时完全一样——`new URL('cdn/xxx.png', 那个 baseURI)` 照样抛
+`Invalid URL`，本机复现用 `'about:blank'` 就能精确重现同一个错误）。于是 `document ??= {...}` 整体
+是 no-op，精心设的 `baseURI` 从没生效过——**这个洞从 §4.3 落地那天就在，只是没人跑到贴图加载这一步**
+（此前的验证止步于"画面出没出来"，从没有人验证过"贴图真的解出来了"，见 §17.3/§4.4）。
+
+**修法**：`baseURI` 从 `document ??= {...}` 里拆出来，改成对 `g.document`（不管是我们刚创建的还是
+宿主已有的）无条件 `Object.defineProperty` 覆盖。之所以不能直接赋值——真实 `document` 上的
+`baseURI` 是 `Node.prototype` 继承下来的只读 accessor，`document.baseURI = x` 是静默 no-op（这正是
+问题本身），`defineProperty` 建一个同名自有属性去遮蔽它才有效；真机上 `document` 整个不存在，走的
+还是原来 `??=` 那条路创建自己的 `document`，这次只是额外确保 `baseURI` 这一个字段不会再被"宿主已经
+提供"这个前提放过。
+
+**验证**：新增用例「宿主的 document 存在但 baseURI 不可用于相对解析时——baseURI 仍会被覆盖」
+（`test/wechatHost.test.ts`，用 `about:blank` 复现），变异测试确认：注释掉这段 `defineProperty` 后
+该用例精确复现同一个 `TypeError: Invalid URL`（跟真实报错逐字相同）；恢复后 `wechatHost.test.ts`
+18 例 / `WechatPlatform.test.ts` 17 例 / `wechatPackageGate.test.ts` 12 例全绿。`build:wechat`
+重新构建，DevTools 刷新后复测：**boot 的 L0 阶段不再崩溃**，画面能推进到 loading/占位层级；剩下的
+报错（`readFileSync:fail permission denied, open cdn/*.mp3|.tao|.png`，以及 DevTools 自己那句
+「The following files have been configured to ignore when package uploads, so simulator cannot
+get those」）**是预期内的**——本地构建没有配置 `NW_ASSET_CDN`，`cdn/` 目录又被 `packOptions.ignore`
+排除在包外（ASSET_PACKAGING.md §4.2 遗留 2、§7 第 1 条，本来就还没做，不是这轮引入的），这批 L1/
+战斗资源在没有真实 CDN 之前**注定加载失败**——但现在是「优雅失败、有捕获、不崩」，不再是「一整个
+`URL` 构造函数级别的硬崩溃」。
+
+### 20.5 一个顺带发现的技巧：模拟器探针文件不用靠用户贴，会话本身就能读
+
+三个探针目标写的 `wx.env.USER_DATA_PATH` 在 DevTools **模拟器**里对应本机一个真实、固定的目录
+（`WeappSimulator/WeappFileSystem` 在 `%LOCALAPPDATA%\微信开发者工具\User Data\<hash>\` 下，appid
+子目录见 §17.4 的排查经验），会话跑在同一台机器上，直接 `Read`/`Bash` 就能读到——不需要用户开
+vConsole 手动贴。用这条路径重新验证过 20.4 的修复：`before.document.baseURI` 是 `"undefined"`
+（模拟器子上下文的 `document` 确实不带可用 `baseURI`），`after.document.baseURI` 是修复后的
+`https://wechat-minigame.local/`——不是靠单元测试推断，是实际探针产物上验证到的。**这条只对模拟器
+成立**：真机的 `USER_DATA_PATH` 在手机存储上，这台机器够不到，真机数据仍然只能靠用户读 vConsole /
+远程调试贴回来。§4.3 已经补上这份模拟器 diff（含一个新信息：`navigator.hardwareConcurrency` 报的是
+宿主 Windows 开发机的核数、`userAgent` 是完整的 iPhone UA 字符串，两者都不代表任何真机）。
+
+### 20.6 状态
+
+**三处阻塞（语法 / 调试通道 / baseURI）已修好并在模拟器里验证到实际效果，DevTools 模拟器里 boot 的
+L0 阶段不再崩溃**——这是第一次在这条链路上跑过贴图加载还活着。§4.3 已经写入模拟器 diff。**尚未在
+真机上复核**这三处修复（20.2/20.3 两处此前已由用户在真机上确认过阻塞已解除；20.4 这处 baseURI 的坑
+是模拟器专属子上下文触发的，理论上真机因为根本没有 `document` 应该走的是 `??=` 那条本就成立的路径，
+但这只是推断，同样需要真机复核）；20.1 的测量数据（探针 5a/5b/5c、画面/文字/WebGL/输入 6 项）也一项
+都还没拿到。已重新构建好的三个目标（`build:wechat` 主包 / `build:wechat-probe` / `build:wechat-e2e`，
+各自验证过 `grep -oE '\?\.[a-zA-Z_$([]|\?\?'` 为 0）都已装进主检出 `client/wechatgame/`——**同一时刻
+只能有一份在里面，切换测哪一项前必须重新 build 对应 target**（20.0 第 1 条）。
+
+后续 20.1 逐项由用户自行在真机上走一遍（本节起不再要求逐项在会话里同步回报，用户完成后把 vConsole /
+远程调试里的内容整段贴回来即可，由此写回 §4.3 / `AUDIO_DESIGN.md` §0.3）：
+
+1. `build:wechat-probe`，DevTools 刷新项目，先试「真机调试」（应该已经能连了）；连不上再退回「预览」
+   扫码 + 手机屏幕上的 vConsole 悬浮面板，两条路径读到的都是同一行 `[nw-host-probe]` JSON。
+2. `build:wechat`，同样扫码打开，肉眼确认画面/文字/无破图（20.1 第 2/3/4 项）；有余力顺手测一次
+   连续两次文本输入（第 6 项）。
+3. `build:wechat-e2e`，读 `[nw-audio-probe]` 那行 JSON（18 个 cue 的中位数表 + `ctx.state` 初值 +
+   `SDKVersion`，对应 20.1 第 5a/5b/5c 项）。
+
+### 20.7 本轮会话到此结束——状态是「三处阻塞修好，测量数据一项未拿到」
+
+会话在这里被用户收尾，20.1 的六项测量（探针 before 快照真机 diff、画面/文字/WebGL/输入 4 项真机
+实测、音频 5a/5b/5c 三条待验）**一项都还没有真机数据**，只有模拟器数据（§4.3 已记）。不要把
+「阻塞已修好」误读成「已经验完」——**下一个接手的人应该做的是从 20.1 表格开始，直接跑真机**，不必
+重新排查 20.2–20.4 那三处（已经带回归用例，重犯会被测试挡住）。三个构建目标当前状态：主检出
+`client/wechatgame/` 里装的是最后一次 `build:wechat` 主包（收尾前已确认干净，见下）。

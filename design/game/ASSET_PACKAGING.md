@@ -145,9 +145,30 @@ interface AssetIO {
 
 **门禁 `test/wechatHostSurface.test.ts`**：扫描微信可达图，禁止裸用 `document`/`window`/`new Image()`/`fetch`/`navigator`/`localStorage`。`typeof x !== …` 守卫与带理由的 `// dom-ok:` 免检。基线 `test/dom-usage-baseline.json`（21 文件 / 54 处）**是欠账清单不是白名单**：只能变小，基线项修好了不删也报红。逐条欠账见 §4.4。
 
+**探针的 before 快照——模拟器实测（2026-09-01，`entries/wechat-probe.ts`，DevTools 3.17.2）**：
+`document`/`window`/`navigator` 存在（"object"），但 `Image`/`HTMLCanvasElement`/`HTMLImageElement`/
+`HTMLVideoElement`/`OffscreenCanvas`/`ImageBitmap`/`createImageBitmap`/`fetch`/`DOMParser`/
+`XMLHttpRequest`/`CanvasRenderingContext2D` 全部 `"undefined"`，`URL`/`WebGLRenderingContext`/
+`requestAnimationFrame`/`performance` 存在——逐项对得上上面表格的判断。`document.baseURI`
+在 `before` 里是 `"undefined"`：这不只是缺席，而是**这台运行时的 `document` 本身就"存在但不完整"**
+——`navigator.userAgent` 报的是一个完整的 iPhone UA（`Mozilla/5.0 (iPhone; ... wechatdevtools/
+2.01.2510280 MicroMessenger/8.0.5 ...)`），`hardwareConcurrency: 22` 则是**宿主 Windows 开发机的
+核数，不是任何手机的**——这两个字段如果被拿去做设备分级判断，模拟器会给出与任何真机都不一致的答案。
+
+这条 `document.baseURI` 缺席直接炸出了一个真实 bug（不是"以防万一"）：`document ??= {...}` 只在
+`document` 整个不存在时才生效，而模拟器的游戏子上下文**已经有** `document`（只是没有可用的
+`baseURI`），于是我们写的兜底值从未生效，第一次真正跑到贴图加载就实测复现——
+`determineCrossOrigin` 抛 `TypeError: Invalid URL`，一整个游戏卡在纯背景色、任何贴图都画不出来。
+修法与验证记在 [`ASSET_PACKAGING_LOG.md` §20.4](ASSET_PACKAGING_LOG.md)；`after` 快照里
+`document.baseURI` 已经能看到修复生效（变成我们设的兜底值）。
+
+**这份 diff 目前只覆盖模拟器，不是真机**——`document` 在真机上完全不存在（daydayup 的核心教训），
+理论上应该整段走 `??=` 那条本就成立的路径，但这是推断，尚未在真机上复核，见 §4.4 第 1 条 /
+`ASSET_PACKAGING_LOG.md` §20.5。
+
 ### 4.4 微信仍然欠着的一件（2026-09-01 盘点；原第 1 条「REST 层没有 `fetch`」当天下午还清见 §18，原第 2 条「14 处隐藏 `<input>`」当天晚些还清见 §19）
 
-1. **真机从未验过**。以上全部只在 Chromium 模拟器上成立。`entries/wechat-probe.ts`（`build:wechat-probe`）就是为那次复测留的：它把宿主表面的「装之前 / 装之后」两份快照写到 `USER_DATA_PATH`，真机上跑一次，`before` 与模拟器的差异就是全部答案。§19 落地的 `IPlatform.openTextInput` 的 WeChat 实现也归在这条债下——`wx.showKeyboard` 一次只能开一个会话，「上一个还没关就开下一个」这条 focus-steal 路径同样没有真机验证。
+1. **真机从未验过**。以上全部只在 Chromium 模拟器上成立。`entries/wechat-probe.ts`（`build:wechat-probe`）就是为那次复测留的：它把宿主表面的「装之前 / 装之后」两份快照写到 `USER_DATA_PATH`，真机上跑一次，`before` 与模拟器的差异就是全部答案。§19 落地的 `IPlatform.openTextInput` 的 WeChat 实现也归在这条债下——`wx.showKeyboard` 一次只能开一个会话，「上一个还没关就开下一个」这条 focus-steal 路径同样没有真机验证。完整测试清单（含 `AUDIO_DESIGN.md` §0.3 末尾同源的三条待验）见 `ASSET_PACKAGING_LOG.md` §20。
 ---
 
 ## 5. 手机套壳 —— 全量打包

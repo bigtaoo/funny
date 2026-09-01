@@ -112,15 +112,29 @@ export function installWechatHost(): void {
   // **故意不含 `createElement`**——见文件头。需要 2D canvas 的路径必须走
   // `settings.ADAPTER.createCanvas()`（`wechatPixiAdapter.ts`）。
   g.document ??= {
-    // determineCrossOrigin: `new URL(url, document.baseURI)`。必须是合法绝对 URL，
-    // 否则相对资源路径（无 CDN 构建就是 `cdn/<hash>.png`）会抛 TypeError。
-    // 值本身无意义：它只参与「同源？」比较，结果只影响是否给 image 设 crossOrigin，
-    // 而 wx image 上那个属性无副作用。
-    baseURI: 'https://wechat-minigame.local/',
     addEventListener: (): void => { /* EventSystem.addEvents */ },
     removeEventListener: (): void => { /* EventSystem.removeEvents */ },
     dispatchEvent: (): boolean => false, // EventsTicker 的合成 pointermove 兜底路径
   };
+
+  // determineCrossOrigin: `new URL(url, document.baseURI)`。必须是合法绝对 URL，否则相对资源路径
+  // （无 CDN 构建就是 `cdn/<hash>.png`）会抛 TypeError。值本身无意义：它只参与「同源？」比较，结果
+  // 只影响是否给 image 设 crossOrigin，而 wx image 上那个属性无副作用。
+  //
+  // **不能挂在上面的 `??=` 里**（2026-09-01 真机测试实测踩过，ASSET_PACKAGING_LOG.md §20）：
+  // DevTools 模拟器把游戏代码跑在一个子上下文（`WAGameSubContext`）里，那个上下文**已经有**一个
+  // `document`，只是它的 `baseURI` 不可用于相对路径解析（现象与 baseURI 缺席时完全一样——
+  // `new URL(相对路径, 那个 baseURI)` 照样抛"Invalid URL"）。`document ??= {...}` 因此整体是
+  // no-op，我们精心设的 `baseURI` 从没生效过，直到这次真机测试第一次让加载流程跑到贴图加载这一步
+  // 才现形——此前的验证都停在"画面出没出来"（黑屏/canvas），从没有人验证过"贴图真的解出来了"。
+  // `document.baseURI` 在真实 `document` 上是 `Node.prototype` 继承下来的只读 accessor，直接赋值
+  // 是静默 no-op（这正是问题本身），`defineProperty` 建一个同名的自有属性去遮蔽它才有效。
+  try {
+    Object.defineProperty(g.document, 'baseURI', {
+      value: 'https://wechat-minigame.local/',
+      configurable: true,
+    });
+  } catch { /* 真的没法覆盖也别把启动炸了——退回宿主自己的 baseURI，好过整个装不上 */ }
 
   // EventsTicker 那条兜底路径会 `new PointerEvent(...)`。它的返回值被 dispatchEvent 吞掉，
   // 所以一个不做事的构造函数就够——但**必须存在**，否则那一行抛。

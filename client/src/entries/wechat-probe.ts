@@ -16,6 +16,14 @@
 import { collectHostProbe, writeHostProbe } from '../platform/wechat/hostProbe';
 import { installWechatHost } from '../platform/wechat/wechatHost';
 
+declare const wx: { setEnableDebug(opts: { enableDebug: boolean }): void };
+// Real-device "预览" ships with no attached console and no visible way to reach one — DevTools'
+// own remote-debug bridge cannot even load this bundle (ASSET_PACKAGING_LOG.md §20.2), so the exit
+// #3 `console.log` this file relies on is otherwise unreachable on a real phone. This turns on the
+// on-screen vConsole panel unconditionally — safe only because this entry is `build:wechat-probe`,
+// never shipped (see file header).
+try { wx.setEnableDebug({ enableDebug: true }); } catch { /* older base library: no-op, not fatal */ }
+
 const before = collectHostProbe();
 installWechatHost();
 const after = collectHostProbe();

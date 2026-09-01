@@ -42,6 +42,9 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/plugin-transform-nullish-coalescing-operator": "^8.0.1",
+    "@babel/plugin-transform-optional-chaining": "^8.0.1",
     "@bufbuild/buf": "^1.70.0",
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.0.0",
@@ -54,6 +57,7 @@
     "@typescript-eslint/eslint-plugin": "^8.59.1",
     "@typescript-eslint/parser": "^8.59.1",
     "@vitest/coverage-v8": "^2.1.9",
+    "babel-loader": "^10.1.1",
     "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^7.1.4",
     "eslint": "^10.2.1",
