@@ -4,6 +4,7 @@
 // from here, never the reverse, so the split stays acyclic.
 import { recentClientLogs, netLog } from '../log';
 import { getApiBaseUrl } from '../config';
+import { netTransport } from '../transport';
 import type { IStorage } from '../../platform/IPlatform';
 import { deviceClass, deviceMemoryGb, devicePixelRatio, momentContext, type MomentContext } from './deviceContext';
 
@@ -127,15 +128,16 @@ class AnomalyReporter {
     this.flushTimer = setTimeout(() => { this.flushTimer = null; void this.flush(); }, FLUSH_DEBOUNCE_MS);
   }
 
-  /** Regular fetch report (fire-and-forget; keepalive allows late deliveries to complete). Failures are silent and not re-queued (prevents unbounded offline accumulation). */
+  /** Regular report (fire-and-forget; keepalive allows late deliveries to complete). Failures are silent and not re-queued (prevents unbounded offline accumulation). */
   private async flush(): Promise<void> {
     const base = getApiBaseUrl();
     if (!base || this.queue.length === 0) return;
     const events = this.queue.splice(0, this.queue.length);
     this.sent += events.length;
     try {
-      await fetch(`${base}${ENDPOINT}`, {
+      await netTransport().request({
         method: 'POST',
+        url: `${base}${ENDPOINT}`,
         headers: { 'content-type': 'application/json' },
         body: envelope(events),
         keepalive: true,
@@ -145,10 +147,10 @@ class AnomalyReporter {
   }
 
   /**
-   * Eager exit flush: sends the pending queue + recent breadcrumbs via an uncredentialed keepalive fetch (survives page unload).
+   * Eager exit flush: sends the pending queue + recent breadcrumbs via an uncredentialed keepalive request (survives page unload).
    * Only sends when there are pending events — a clean exit (empty queue) sends nothing and attaches no breadcrumbs.
    *
-   * NOTE — why keepalive fetch and NOT navigator.sendBeacon: sendBeacon always sends the request credentialed (cookies),
+   * NOTE — why a keepalive request and NOT navigator.sendBeacon: sendBeacon always sends the request credentialed (cookies),
    * which makes the browser require `Access-Control-Allow-Credentials: true` on the cross-origin response. This API
    * authenticates via Bearer token, sets no cookies, and its CORS reflects the origin without that header — so a
    * credentialed beacon is blocked outright and the crash/exit report never lands (observed as a CORS error against
@@ -167,7 +169,11 @@ class AnomalyReporter {
     this.sent += events.length;
     const body = envelope(events);
     const url = `${base}${ENDPOINT}`;
-    try { void fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true, credentials: 'omit' }); } catch { /* swallow */ }
+    try {
+      void netTransport()
+        .request({ method: 'POST', url, headers: { 'content-type': 'application/json' }, body, keepalive: true, credentials: 'omit' })
+        .catch(() => { /* swallow */ });
+    } catch { /* swallow */ }
   }
 }
 

@@ -1,6 +1,6 @@
 # 资源分包与加载策略（ASSET_PACKAGING）
 
-> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-08-25（§13 加载链路复核；§14 预取按使用面裁剪 + 省流开关；§15 补测试（资源孤儿守卫 + 缓存策略门禁 + 两个门禁的变异测试））
+> 状态：实现中 · 权威：本文（资源分层/加载/分包的单一来源）· 更新：2026-09-01（§4.3 宿主适配层；§4.4 微信欠账盘点；§18 REST 走 `wx.request`）
 
 游戏要在 **Web（含 CrazyGames）/ 微信小游戏 / 手机套壳** 三个平台发布，三者对"资源何时进内存"的约束完全不同。本文锁定：
 
@@ -110,9 +110,9 @@ interface AssetIO {
 - ✅ **L1 PNG 经 AssetIO 落缓存**（2026-06-30）：新建 `client/src/assets/preloadTextures.ts`，`preloadTexture(url)` 通过 `assetIO().textureSource(url)` 取本地路径，并在 PIXI 缓存里**同时注册原始 URL 别名**（`PIXI.BaseTexture.addToCache`）——否则微信下 `PIXI.Texture.from(url)` 查不到缓存、继续拉 CDN。同步修复 `bootManifest.ts` L0 图片（原 `preheatTexture` 有同样 alias 缺失问题）。场景触发：`GachaScene`/`CollectionScene`/`GameScene` 构造时 fire-and-forget 预加载。
 - ✅ **立绘 mipmap 开启，消除缩小噪点**（2026-07-22）：独立立绘（英雄/兵种/建筑/logo）都是大图小用——英雄名单里 Anna 阵营 max/lena/mara（约 900×1450）缩到约 177×246、约 6×。PIXI 7 默认 `MIPMAP_MODES.POW2`，这些非 2 幂大图**不生成 mipmap**，大倍率 LINEAR 缩小欠采样 → 边缘走样成白色杂点。`preloadTextures.ts` 导出 `ART_TEX_OPTIONS`（`mipmap: ON` + `scaleMode: LINEAR`），在 `preloadTexture` 统一入口生效；`cardArt.getArtTexture` 兜底同选项，`avatar.buildPortraitIcon` / `HandView` 改走 `getArtTexture`——因 baseTexture 按 url 共享缓存，任一处先建出"无 mipmap"版本会拖累其余复用方。PIXI 仅在 **WebGL2** 上给非 2 幂纹理生成 mipmap（`TextureSystem`：POW2 默认或 WebGL1+非 2 幂自动回落无 mipmap），故微信 WebGL1 路径优雅降级、无破坏。
 - ⏳ **遗留**：
-  1. **微信后台白名单**：把 CDN 域名加进 `downloadFile` 合法域名（以及远程图片域名白名单）。
+  1. **微信后台白名单**：把 CDN 域名加进 `downloadFile` 合法域名（以及远程图片域名白名单）；**后端 API 域名要加进另一份「request 合法域名」**（`wx.request` 与 `downloadFile` 各有各的清单，见 §18）。
   2. **部署**：`build:wechat` 后把 `wechatgame/cdn/*` 上传到 `<CDN>/cdn/`；微信开发者工具上传主包（`pixigame.js`+`game.js`+`game.json`，`cdn/` 已被 packOptions 忽略）。
-  3. **运行时验证**：webpack 产物能否在微信运行时跑，需微信 IDE 实测（本地无法验证）。**已部分完成**：2026-08-31 音频后端在 DevTools 无头实测通过（`AUDIO_DESIGN.md` §0.3），2026-09-01 修掉了两个把整个启动挡在黑屏后面的成因（LOG §17）。**真机仍未验。**
+  3. **运行时验证**：webpack 产物能否在微信运行时跑，需微信 IDE 实测（本地无法验证）。**已部分完成**：2026-08-31 音频后端在 DevTools 无头实测通过（`AUDIO_DESIGN.md` §0.3），2026-09-01 修掉了两个把整个启动挡在黑屏后面的成因（LOG §17）并把宿主/REST 两层依赖收归自己（§4.3、LOG §18）。**真机仍未验。**
 
 > CDN 域名：复用现有 gamestao.com 基础设施即可（web 资源已在 a.gamestao.com 的 Cloudflare 边缘）。`cdn/` 上传到某子域（如 `assets.gamestao.com` 或直接挂 a. 的某路径），构建时 `NW_ASSET_CDN=https://<子域>`。
 
@@ -145,11 +145,10 @@ interface AssetIO {
 
 **门禁 `test/wechatHostSurface.test.ts`**：扫描微信可达图，禁止裸用 `document`/`window`/`new Image()`/`fetch`/`navigator`/`localStorage`。`typeof x !== …` 守卫与带理由的 `// dom-ok:` 免检。基线 `test/dom-usage-baseline.json`（21 文件 / 54 处）**是欠账清单不是白名单**：只能变小，基线项修好了不删也报红。逐条欠账见 §4.4。
 
-### 4.4 微信仍然欠着的三件（2026-09-01 盘点）
+### 4.4 微信仍然欠着的两件（2026-09-01 盘点；原第 1 条「REST 层没有 `fetch`」当天下午还清，见 §18）
 
-1. **REST 层没有 `fetch`**（`ApiClient`/`WorldApiClient`/`anomaly`/`analytics`）。`net/ApiClient/core.ts` 早就记着这条：微信云同步与合规一起排期，当前 `SaveManager` 降级为本地存档。要一个 `wx.request` 的桥（超时/AbortSignal/Response 形状/鉴权头都要对齐现有用例）。
-2. **14 处场景用隐藏 `<input>` 收文本**（登录名、聊天、拍卖出价、家族/宗门搜索、设置、反馈…），微信要换成 `wx` 的键盘 API。
-3. **真机从未验过**。以上全部只在 Chromium 模拟器上成立。`entries/wechat-probe.ts`（`build:wechat-probe`）就是为那次复测留的：它把宿主表面的「装之前 / 装之后」两份快照写到 `USER_DATA_PATH`，真机上跑一次，`before` 与模拟器的差异就是全部答案。
+1. **14 处场景用隐藏 `<input>` 收文本**（登录名、聊天、拍卖出价、家族/宗门搜索、设置、反馈…），微信要换成 `wx` 的键盘 API。**这是 `dom-usage-baseline.json` 剩余 45 处里的 30 处。**
+2. **真机从未验过**。以上全部只在 Chromium 模拟器上成立。`entries/wechat-probe.ts`（`build:wechat-probe`）就是为那次复测留的：它把宿主表面的「装之前 / 装之后」两份快照写到 `USER_DATA_PATH`，真机上跑一次，`before` 与模拟器的差异就是全部答案。
 ---
 
 ## 5. 手机套壳 —— 全量打包
@@ -176,7 +175,8 @@ interface AssetIO {
 | `client/src/render/atlas/spriteAtlas.ts` | **`createAtlasLoader` 工厂**——每个 PixiJS Spritesheet atlas 的解码/缓存/idempotent-load 单一实现，所有 atlas loader 模块都是它的薄封装 |
 | `client/src/render/{decorMergedAtlas,iconsAtlas,worldAtlas}.ts` | 三组合并 atlas 的共享加载实例（见 §8），纹理源经 `assetIO().textureSource` |
 | `client/webpack.config.js` | `TARGET=wechat` 分支：单 IIFE→`wechatgame/pixigame.js`、asset `publicPath=NW_ASSET_CDN`+发 `cdn/`；`TARGET=mobile` 分支：`NormalModuleReplacementPlugin` 做 `.hires` 兄弟文件重定向（见 §9） |
-| `client/src/entries/wechat.ts` | 无条件 `setAssetIO(new WechatAssetIO())`（微信无 fetch） |
+| `client/src/net/transport.ts` + `client/src/platform/wechat/wechatTransport.ts` | 出站 **REST** 接缝（`NetRequest`/`NetResponse` + `setNetTransport`）+ 它的 `wx.request` 实现。**与 `AssetIO` 是两条路**：资源字节永不经此，见 §18 |
+| `client/src/entries/wechat.ts` | 无条件 `setAssetIO(new WechatAssetIO())` + `setNetTransport(new WechatTransport())`（微信无 fetch，资源与 REST 各走各的） |
 | `client/wechatgame/{game.js,game.json,project.private.config.json}` | 微信壳层 + `packOptions.ignore`（排除 `cdn/`、`.map`） |
 | `client/public/web/index.html` | 预 boot CSS 加载占位 |
 
@@ -184,7 +184,7 @@ interface AssetIO {
 
 ## 7. 后续（按优先级）
 
-1. **微信上线闭环**：上传 `cdn/*` 到 CDN 子域 + 微信后台域名白名单 + 微信 IDE 实测 webpack 产物运行（§4.2 遗留 2/3/4）。
+1. **微信上线闭环**：上传 `cdn/*` 到 CDN 子域 + 微信后台两份域名白名单（`downloadFile` / `request`）+ 微信 IDE 与**真机**实测（§4.2 遗留 1/2/3）。
 2. ~~**L1 PNG 经 AssetIO**~~：**已完成（2026-06-30）**——见 §4.2 preloadTextures + URL alias 方案。
 3. ~~**Web JS code-split**~~：**已决定不做（2026-06-30，2026-08-25 用户复述确认）**。微信不支持运行时 `import()`、套壳全量本地化，受益平台仅 Web；风险大于收益，正式放弃。**代价已用体积门禁兜住**：不拆就意味着这一个包只会长不会分，所以 §13.4 给它加了绝对上限。
 4. **L0 瘦身复核**：定期核对 `bootManifest`，把"非首局必现"的项降级回 L1。**自 §13.4 起有门禁**：L0 阻塞层总字节超预算直接 CI 红。
@@ -487,8 +487,7 @@ bundle 从 §1 记的 ~1.5 MB 长到 2.08 MB（raw），**没有任何东西发�
 
 ## 15. 补测试：把三处约定变成被检查的不变量（2026-08-25）
 
-→ 已拆出到 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md)（与 §16 合为一册，逐条落地记录）。
-本文（§1–§14）是资源打包/加载策略的**当前架构权威**；本节与 §16 是该架构上线后的补测/复核/一次性重打包记录。
+→ 已拆出到 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md)。本文（§1–§14）是资源打包/加载策略的**当前架构权威**；§15 起（补测 / 复核 / 事故 / 重打包的逐条记录）都在那一册，编号与标题一字未改。
 
 ## 16. `icons_atlas` 重打包：最后一张调色板合并页 + 8 帧死重量（2026-08-27）
 
@@ -497,3 +496,7 @@ bundle 从 §1 记的 ~1.5 MB 长到 2.08 MB（raw），**没有任何东西发�
 ## 17. 微信开发者工具黑屏：两个独立成因（2026-09-01）
 
 → 已拆出到 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md#17-微信开发者工具黑屏两个独立成因2026-09-01)。
+
+## 18. REST 走 `wx.request`：一个接缝，不是一个 `fetch` polyfill（2026-09-01）
+
+→ 已拆出到 [`ASSET_PACKAGING_LOG.md`](ASSET_PACKAGING_LOG.md#18-rest-走-wxrequest一个接缝不是一个-fetch-polyfill2026-09-01)。

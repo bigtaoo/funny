@@ -1,6 +1,6 @@
 # Notebook Wars — 资源打包补测/复核/重打包记录（spec 见 [`ASSET_PACKAGING.md`](ASSET_PACKAGING.md)）
 
-> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§14（当前架构：三层分级/各平台打包方案/首屏加载策略/预取策略）仍在 hub；本册是 §15（补测）与 §16（icons_atlas 重打包）两节的逐条记录，小节编号与正文一字未改。
+> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§14（当前架构：三层分级/各平台打包方案/首屏加载策略/预取策略）仍在 hub；本册是 §15 起的逐条记录——§15 补测、§16 icons_atlas 重打包、§17 微信黑屏、§18 微信 REST 接缝——小节编号与正文一字未改。
 
 ## 15. 补测试：把三处约定变成被检查的不变量（2026-08-25）
 
@@ -231,3 +231,47 @@ v7 独有的两条（他们那边不适用）：`@pixi/settings` 的 `isMobile` 
   `test:ui` 253 文件 2428 例 / `lint` 0 error / `build:wechat` + 包门禁绿（323 引用全在位）。
 - **画面仍未由人确认**：适配层落地后重新构建过，但开发者工具里那一眼只有用户能看
   （`mcp__claude-in-chrome__*` 够不到 DevTools）。§4.4 第 3 条的真机验证同样开着。
+
+## 18. REST 走 `wx.request`：一个接缝，不是一个 `fetch` polyfill（2026-09-01）
+
+§17.4 把渲染层的宿主依赖收归自己之后，[`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4.4 只剩三条欠账，第 1 条是**整个 REST 层在微信上完全不通**：`net/ApiClient/core.ts`、`net/WorldApiClient/core.ts`、`net/anomaly/reporter.ts`、`analytics/{config,queue}.ts` 一共 6 处直接调 `fetch`，而小游戏运行时没有这个全局。`ApiClient/core.ts` 的注释里记着现状：「微信云同步与合规一起排期，当前 `SaveManager` 降级本地存档」——**但降级的其实不止云存档**：埋点、异常上报、SLG/社交/拍卖的每一次请求，在微信上都是一次同步抛出的 `ReferenceError` 或一个静默的 no-op。
+
+### 18.1 两种形状，以及为什么选了后一种
+
+| | (a) 在 `wechatHost` 里补 `globalThis.fetch` | (b) 在 `net/` 抽一个 transport 接缝 |
+|---|---|---|
+| 改动面 | 一个文件，REST 层一行不改 | 新增 2 个文件 + 6 个调用点 |
+| 契约 | 必须假装是 `fetch`（stream / redirect / `Request` 对象 / cookie jar / `Response` 全套） | 五个字段的 `NetRequest` + 四个成员的 `NetResponse`，**能满足的那部分才写进契约** |
+| 对其余代码的影响 | 翻转全图的特性探测 | 无 |
+| 门禁 | 6 处只能靠 `// dom-ok:` 放行 | 6 处消失 |
+
+选 (b)。三条理由里第二条是决定性的，也是当初没想到的那条：
+
+1. **一个只做得到一半的 `fetch` 正是 §4.3 要终结的东西。** `wx.request` 没有 stream、没有 redirect 模式、不认 `Request`/`Headers` 对象、没有 blob、没有 cookie jar。把它挂到 `fetch` 这个名字下，就是重新制造 2026-09-01 黑屏的那个形状：代码读一个宿主全局，拿到一个**几乎**对的东西，到真机上才发现差在哪。一个五字段的具名接缝是我们真能兑现的契约。
+2. **它会翻转整张图的特性探测。** `typeof fetch === 'function'` 在本仓库里就是活分支（`analytics/queue.ts` 的 unload 路径当时正靠它分流），第三方库里更多，PIXI 的 Assets 也是这么挑 loader 的。装上全局 `fetch` 等于把这些分支统统改道到 HTTP——**包括最终会走到资源 URL 上的那些**。而「包内文件不该走 HTTP」这条边界（`WechatAssetIO` + 故意抛错的 `wechatPixiAdapter.fetch`，§17.4）就再也守不住了：它现在能成立，靠的正是这个运行时**没有** `fetch`。
+3. **门禁会失明。** `test/wechatHostSurface.test.ts` 扫的是可达图里的裸 `fetch(`。走 (a) 的话这 6 处一个都不会消失，只能逐个加 `// dom-ok:`——欠账清单就变成了它自己头注释里警告的那种白名单。
+
+(a) 唯一的卖点「REST 层不用改」在这里也不值钱：6 个调用点里有 2 个是 `core.ts` 的共用 transport 辅助方法，另外 4 个是 fire-and-forget 的遥测发送，改动总量就是六处。
+
+### 18.2 落地
+
+- **`client/src/net/transport.ts`**：`NetRequest`（`method`/`url`/`headers`/`body?`/`signal?`/`keepalive?`/`credentials?`）→ `NetResponse`（`ok`/`status`/`json()`/`text()`）。默认实现是 fetch 的，**把原来各调用点手搓的 init 对象一字不差地搭回去**（可选字段是省略而不是给 `undefined`），所以 web 侧零回归、仓库里所有假 `fetch` 的测试一句不用改。`NetResponse` 是 `Response` 的子集，因此 web 路径直接把原对象递回去，不包一层。
+- **`client/src/platform/wechat/wechatTransport.ts`**：`wx.request` 实现。四处真实差异写在文件头的表里——① 字段名是 `header` 不是 `headers`（写错的话请求照发、只是一个头都不带，鉴权全线失效）；② `dataType` 默认 `'json'`，**它替你 parse 且失败时静默把字符串原样给回来**，于是一次 502 的 HTML 错误页会变成 `json.ok === undefined`，所以必须显式要非 `'json'`，parse 留给 `json()` 做、与 `fetch` 一样在非法 JSON 上抛；③ 取消桥到 `RequestTask.abort()`，且**由我们先 reject** 再 `abort()`（`abort()` 之后 wx 回不回调 `fail`、`errMsg` 长什么样都是运行时细节，先 reject 才能保证语义和 web 完全一致）；④ 没有 cookie jar，`credentials:'omit'` 天然成立。
+- **装配**：`entries/wechat.ts` 加 `setNetTransport(new WechatTransport())`，与 `setAssetIO`/`setAudioBus` 并排——同一条惯例，且**与 `setAssetIO` 那行是两条路，注释里点明了别混**。
+- **超时只有一个来源**：调用方自己的 `AbortController` + `setTimeout`（ADR-058 的 metaserver 10s、`WorldApiCore.req` 的 per-call `timeoutMs`）一字未动，transport 只负责把 signal 接到 `RequestTask` 上。`rateGate` 同理留在调用方，于是微信这条路**自动**继承了 5 req/s 的全局限速。
+
+**顺手删掉的一处死代码**：`analytics/queue.ts` 的 `flushSync` 原本是「有 `fetch` 就 keepalive fetch，否则 `navigator.sendBeacon`」。那个 fallback 在每个平台上都是死的——web / CrazyGames / 套壳都有 `fetch`（没有的话资源加载器先垮），而唯一真没有 `fetch` 的运行时（微信）**也没有 `sendBeacon`**，所以这个方法在微信上一直是个静默 no-op。现在它走 transport，微信上第一次真的发得出去，而且不像 beacon 那样丢掉 `Authorization` 头（那正是 2026-08-24 记的那个「2848 条 `session_end` 无一可归属」的坑）。对应的那条用例改成断言「没有 fetch 的运行时里，装上的 transport 收到了带鉴权头的请求」。
+
+### 18.3 门禁与验证
+
+- **`test/dom-usage-baseline.json`：54 → 45 处**（21 → 17 文件）。删掉 `analytics/config.ts`、`net/ApiClient/core.ts`、`net/WorldApiClient/core.ts`、`net/anomaly/reporter.ts` 四条，`analytics/queue.ts` 6 → 3。「基线不许留过期项」那条本来就会为此报红，所以这不是可选动作。`wechatHostSurface.test.ts` 里的总量上限同步从 54 拧到 45——**还完一批就往下拧**，否则上限自己会变成新的垃圾桶。剩下的 45 处里 30 处是 §4.4 第 2 条那批隐藏 `<input>`。
+- **`test/wechatTransport.test.ts`（18 例）**：harness 与 `wechatHost.test.ts` 同一个范式——`fetch`/`document`/`window`/`navigator`/`localStorage`/`XMLHttpRequest` 等在整轮测试期间从 `globalThis` 上**真的 delete 掉**，fake 只有 `wx`。所以最后那三例（真 `ApiClient` 跑通 login、错误信封解成 `ApiError`、ADR-058 的 10s 超时把 `RequestTask` abort 掉）是有分量的：它们跑在一个**没有 fetch 的进程**里，能绿就说明那条链路真的不碰 fetch 了。
+- **`test/netTransport.test.ts`（9 例）**：接缝本身 + 「REST 层真的经过接缝」——最后两例装一个假 transport 再断言**全局 `fetch` 一次都没被调用**。这条是给未来的人留的：哪天有人图省事把 `fetch` 写回 `ApiClient`，在 Node 里（自带 fetch）所有既有测试都会照绿，只有真机会崩。
+- **变异测试（9 个，全红）**：`header`→`headers`（2 红）、`dataType`→`'json'`（1）、抽掉 `task.abort()`（2）、抽掉「signal 已 aborted 就一个包都不发」（1）、`json()` 不再 parse（5）、抽掉重复 settle 的守卫（1）、`keepalive` 改成无条件写键（1）、不转发 `signal`（1）、以及把裸 `fetch` 塞回 `ApiClient/core.ts`（DOM 门禁 1 红）。
+- **全量**：`typecheck`（含 fulllink）干净 / `vitest run` **227 文件 2518 例** / `test:sim` 8 文件 13 例 / `test:ui` 253 文件 2428 例 / `lint` 0 error（2 条既有 warning，与本次无关）/ `build:wechat` + 包门禁绿（323 引用全在位）。
+
+### 18.4 仍然欠着
+
+- **`wx.request` 的「request 合法域名」白名单**，与 `downloadFile` 的是**两份**（§4.2 遗留 1）。配不上就是全线 REST 挂掉；开发者工具能勾「不校验合法域名」绕过，真机不行——所以这条会精确地在真机上第一次现形。
+- **微信云同步本身**仍与合规一起排期：桥通了不等于 `SaveManager` 就该上云，`getApiBaseUrl()` 在微信构建里目前也还没注入。这次只把「没有传输层」这个物理障碍搬开。
+- **真机**（§4.4 第 3 条）。以上全部只在 Node 测试与 Chromium 模拟器上成立。

@@ -5,6 +5,7 @@
 // class of bug describes), plus the surrounding flush/retry/flushSync contract it depends on.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventQueue, type QueueOptions } from '../src/analytics/queue';
+import type { NetRequest } from '../src/net/transport';
 
 function makeQueue(overrides: Partial<QueueOptions> = {}): EventQueue {
   return new EventQueue({
@@ -197,17 +198,31 @@ describe('EventQueue — flushSync()', () => {
     expect(fetchMock.mock.calls[0]![1].headers['Authorization']).toBeUndefined();
   });
 
-  it('falls back to sendBeacon where fetch does not exist — anonymous data beats none', () => {
+  it('sends through the installed transport in a runtime with no fetch — WeChat, where this used to be a silent no-op', async () => {
+    // Replaces a 'falls back to sendBeacon where fetch does not exist' case (2026-09-01,
+    // ASSET_PACKAGING §4.5). That fallback was dead everywhere: every platform that has
+    // `navigator.sendBeacon` also has `fetch`, and the one runtime that has neither — the WeChat
+    // mini-game — got nothing at all. It now gets a real wx.request via net/transport.ts, and
+    // unlike a beacon that send carries the Authorization header (the whole point of this method).
+    const { setNetTransport, fetchTransport } = await import('../src/net/transport');
     const beacon = vi.fn();
+    const request = vi.fn(async (_req: NetRequest) => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' }));
     vi.stubGlobal('navigator', { sendBeacon: beacon });
     vi.stubGlobal('fetch', undefined);
+    setNetTransport({ request });
+
     const q = makeQueue({ getToken: () => 'jwt' });
     q.push({ event: 'e1', ts: 1 });
     q.flushSync();
 
-    expect(beacon).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(beacon.mock.calls[0]![1]).events).toEqual([{ event: 'e1', ts: 1 }]);
+    expect(beacon).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
+    const req = request.mock.calls[0]![0]!;
+    expect(req).toMatchObject({ method: 'POST', url: 'https://analytics.test/analytics/events', keepalive: true, credentials: 'omit' });
+    expect(req.headers['Authorization']).toBe('Bearer jwt');
+    expect(JSON.parse(req.body!).events).toEqual([{ event: 'e1', ts: 1 }]);
     expect(rawQueue(q)).toHaveLength(0);
+    setNetTransport(fetchTransport);
   });
 });
 

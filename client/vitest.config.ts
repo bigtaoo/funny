@@ -103,6 +103,9 @@ export default defineConfig({
         'src/net/replayCompress.ts',
         'src/net/replayUpload.ts',
         'src/net/serverClock.ts',
+        // the outbound REST seam (2026-09-01, ASSET_PACKAGING §4.5) — every REST call in the client
+        // goes through it, and its WeChat half is unreachable from any suite that has a global fetch
+        'src/net/transport.ts',
         // platform
         'src/platform/localReminders.ts',
         'src/platform/uuid.ts',

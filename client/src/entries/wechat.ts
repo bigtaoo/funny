@@ -11,10 +11,12 @@ import '@pixi/unsafe-eval';
 import { startApp } from '../app';
 import { WechatPlatform } from '../platform/wechat/WechatPlatform';
 import { setAssetIO } from '../assets/assetIO';
+import { setNetTransport } from '../net/transport';
 import { WechatAssetIO } from '../assets/WechatAssetIO';
 import { setAudioBus } from '../audio/audioBus';
 import { installWechatPixiAdapter } from '../platform/wechat/wechatPixiAdapter';
 import { WechatAudioBus } from '../platform/wechat/WechatAudioBus';
+import { WechatTransport } from '../platform/wechat/wechatTransport';
 
 // PIXI 自己路由的那 8 个 DOM 调用（`createCanvas` / 上下文构造函数探针 / navigator / …）。
 // 与上面的宿主全局成对：全局管 PIXI **绕过 adapter 直接嗅探**的部分，这里管它**主动问**的部分。
@@ -24,6 +26,11 @@ installWechatPixiAdapter();
 // WeChat has no fetch: all assets go through wx.downloadFile + local cache (ASSET_PACKAGING §4).
 // Asset URLs are baked in at build time via webpack publicPath (absolute CDN URLs when NW_ASSET_CDN is set, otherwise package-relative paths).
 setAssetIO(new WechatAssetIO());
+
+// REST 也一样没有 fetch：整个请求面（metaserver / worldsvc / 埋点 / 异常上报）经 net/transport.ts
+// 这个接缝，微信换成 wx.request（ASSET_PACKAGING §4.4 第 1 条）。**与上面那行是两条路，别混**：
+// 资源字节走 AssetIO（downloadFile + 本地缓存），这里只跑 API base URL。
+setNetTransport(new WechatTransport());
 
 // Audio device (AUDIO_DESIGN.md §3, §7 step 5). Installed exactly like setAssetIO above.
 //

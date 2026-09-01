@@ -12,8 +12,8 @@
  * ## 基线的读法（重要）
  *
  * 基线**不是豁免清单，是欠账清单**：里面每一处都是「这段代码在微信真机上会抛」。它今天允许
- * 存在，只是因为修它们各自是独立任务（REST 层没有 `fetch`、14 处场景用隐藏 `<input>` 收文本）。
- * 所以基线只能变小，不能变大。
+ * 存在，只是因为修它们各自是独立任务（14 处场景用隐藏 `<input>` 收文本）。所以基线只能变小，
+ * 不能变大——REST 层那 6 处 `fetch` 已经在 2026-09-01 还掉了（`net/transport.ts` 接缝）。
  */
 
 /** 一条被禁的宿主用法。 */
@@ -28,7 +28,7 @@ export const DOM_PATTERNS: readonly DomPattern[] = [
   { name: 'document', re: /\bdocument\s*[.[]/, instead: '经 platform 层，或 PIXI 的 settings.ADAPTER（微信真机没有 document）' },
   { name: 'window', re: /\bwindow\s*[.[]/, instead: '经 platform 层（IPlatform.getScreenSize / devicePixelRatio）' },
   { name: 'new Image', re: /\bnew\s+Image\s*\(/, instead: 'assetIO().textureSource(url) → PIXI，或 wx.createImage()（platform/wechat）' },
-  { name: 'fetch', re: /(?<![.\w])(?<!\b(?:async|function|private|public|protected|static|get)\s)fetch\s*\(/, instead: 'assetIO().loadBinary，或一个 platform 层的请求接缝（微信只有 wx.request/downloadFile）' },
+  { name: 'fetch', re: /(?<![.\w])(?<!\b(?:async|function|private|public|protected|static|get)\s)fetch\s*\(/, instead: 'REST 走 net/transport.ts 的 netTransport()；资源字节走 assetIO().loadBinary（微信只有 wx.request / wx.downloadFile）' },
   { name: 'navigator', re: /\bnavigator\s*[.[]/, instead: 'platform 层（微信走 wx.getSystemInfoSync / wx.getNetworkType）' },
   { name: 'XMLHttpRequest', re: /\bXMLHttpRequest\b/, instead: '同 fetch' },
   { name: 'localStorage', re: /\blocalStorage\s*[.[]/, instead: 'platform.storage（IStorage，微信走 wx.setStorageSync）' },

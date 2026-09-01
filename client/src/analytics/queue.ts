@@ -2,6 +2,7 @@
 // Buffers events in memory and flushes on timer / lifecycle triggers / size threshold.
 
 import type { components } from '../net/openapi';
+import { netTransport } from '../net/transport';
 
 type AnalyticsEvent = components['schemas']['AnalyticsEvent'];
 
@@ -97,7 +98,7 @@ export class EventQueue {
    * Fire-and-forget flush for the hide / unload path (visibilitychange→hidden, beforeunload,
    * wx.onHide).
    *
-   * **Uses a keepalive fetch, NOT navigator.sendBeacon** — the reason is the whole point of this
+   * **Uses a keepalive request, NOT navigator.sendBeacon** — the reason is the whole point of this
    * method. `sendBeacon` cannot set request headers at all, so a beacon can never carry the
    * `Authorization` bearer token, and analyticsvc attributes `user_id` purely from that header. Every
    * event that only ever leaves on this path was therefore recorded anonymously, 100% of the time:
@@ -106,32 +107,34 @@ export class EventQueue {
    * 3297 identified vs 247 anonymous) were fine. It read like a sampling quirk; it was a hard
    * structural gap in exactly the two events the churn funnel is built on.
    *
-   * A keepalive fetch is the spec-sanctioned unload-surviving alternative and can set headers. It is
-   * already the same choice net/anomaly's exit beacon made, for a related reason (there: sendBeacon is
-   * always credentialed, which its CORS setup rejects outright).
+   * A keepalive fetch is the spec-sanctioned unload-surviving alternative and can set headers, so the
+   * transport asks for one. It is already the same choice net/anomaly's exit beacon made, for a
+   * related reason (there: sendBeacon is always credentialed, which its CORS setup rejects outright).
    *
    * Cost: an `Authorization` header makes this a preflighted request, and a preflight racing page
    * unload is not something to rely on — hence the `Access-Control-Max-Age` analyticsvc now returns,
    * so the periodic flush's preflight is still warm and this one goes out as a single request.
    *
-   * `sendBeacon` remains the fallback where `fetch` does not exist. Anonymous data beats none.
+   * The former `sendBeacon` fallback ("where `fetch` does not exist") is gone as of 2026-09-01, and
+   * with it the last reader of the global `fetch` in this file — the send now goes through
+   * net/transport.ts. That fallback was dead on every platform we ship: web / CrazyGames / the
+   * Capacitor shell all have `fetch` (the asset loader would not survive a runtime without it), and
+   * the one runtime that genuinely lacks it — the WeChat mini-game — has no `navigator.sendBeacon`
+   * either, so this method was a silent no-op there. It now sends via `wx.request`, which is the
+   * point of the seam. WeChat has no `keepalive` equivalent, but `wx.onHide` fires while the process
+   * is still alive (unlike `beforeunload`), so the send is best-effort rather than guaranteed.
    */
   flushSync(): void {
     if (this.queue.length === 0) return;
     const batch = this.buildBatch();
     this.queue = [];
-    const body = JSON.stringify(batch);
-    if (typeof fetch === 'function') {
-      // credentials:'omit' is deliberate, not cargo-culted: analyticsvc answers with
-      // `access-control-allow-origin: *`, and a wildcard origin is invalid for a credentialed
-      // request — so sending cookies here would make the browser reject the response outright.
-      void fetch(this.url, { method: 'POST', headers: this.headers(), keepalive: true, credentials: 'omit', body })
-        .catch(() => {});
-      return;
-    }
-    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-      navigator.sendBeacon(this.url, body);
-    }
+    // credentials:'omit' is deliberate, not cargo-culted: analyticsvc answers with
+    // `access-control-allow-origin: *`, and a wildcard origin is invalid for a credentialed
+    // request — so sending cookies here would make the browser reject the response outright.
+    // (WeChat has no cookie jar at all, so it is already true there.)
+    void netTransport()
+      .request({ method: 'POST', url: this.url, headers: this.headers(), keepalive: true, credentials: 'omit', body: JSON.stringify(batch) })
+      .catch(() => {});
   }
 
   async flush(): Promise<void> {
@@ -140,8 +143,9 @@ export class EventQueue {
     const snapshot = this.queue;
     this.queue = [];
     try {
-      await fetch(this.url, {
+      await netTransport().request({
         method: 'POST',
+        url: this.url,
         headers: this.headers(),
         credentials: 'omit',
         body: JSON.stringify(batch),

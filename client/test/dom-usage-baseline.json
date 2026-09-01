@@ -1,12 +1,8 @@
 {
-  "src/analytics/config.ts": 1,
   "src/analytics/index.ts": 8,
-  "src/analytics/queue.ts": 6,
+  "src/analytics/queue.ts": 3,
   "src/app/PixiAppViews.ts": 2,
   "src/assets/assetIO.ts": 1,
-  "src/net/ApiClient/core.ts": 1,
-  "src/net/WorldApiClient/core.ts": 2,
-  "src/net/anomaly/reporter.ts": 2,
   "src/platform/ota.ts": 1,
   "src/scenes/AuctionScene/createListing.ts": 2,
   "src/scenes/AuctionScene/numInput.ts": 2,

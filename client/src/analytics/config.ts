@@ -3,6 +3,7 @@
 // On failure: fallback = all disabled (safe degradation per §4.3).
 
 import type { components } from '../net/openapi';
+import { netTransport } from '../net/transport';
 
 export type AnalyticsConfig = components['schemas']['AnalyticsConfig'];
 export type AnalyticsEventConfig = components['schemas']['AnalyticsEventConfig'];
@@ -17,8 +18,11 @@ let cached: AnalyticsConfig = DISABLED_FALLBACK;
 
 export async function fetchAnalyticsConfig(analyticsBaseUrl: string): Promise<void> {
   try {
-    const res = await fetch(`${analyticsBaseUrl}/analytics/config`, {
+    // Through the transport seam, not the global fetch: the WeChat mini-game has no fetch and
+    // installs wx.request behind this (net/transport.ts, ASSET_PACKAGING §4.4).
+    const res = await netTransport().request({
       method: 'GET',
+      url: `${analyticsBaseUrl}/analytics/config`,
       headers: { Accept: 'application/json' },
     });
     if (res.ok) {

@@ -12,9 +12,13 @@
  * ## 基线不是豁免清单，是欠账清单
  *
  * `test/dom-usage-baseline.json` 里每一处都是「这段代码在微信真机上会抛」。允许它今天存在，只
- * 因为修它们各自是独立任务（REST 层没有 `fetch`；14 处场景用隐藏 `<input>` 收文本）。所以：
- * **只能变小，不能变大**，而且基线项消失时本测试会要求你把它删掉——否则「欠账」会慢慢变成
- * 「白名单」。
+ * 因为修它们各自是独立任务（14 处场景用隐藏 `<input>` 收文本）。所以：**只能变小，不能变大**，
+ * 而且基线项消失时本测试会要求你把它删掉——否则「欠账」会慢慢变成「白名单」。
+ *
+ * 已经还掉的一笔：**REST 层的 `fetch`**（2026-09-01，ASSET_PACKAGING §4.5）。`net/transport.ts`
+ * 这个接缝落地后，`ApiClient` / `WorldApiClient` / `anomaly` / `analytics` 四处共 6 个裸 `fetch`
+ * 归零，基线 54 → 45。剩下那两个 `fetch`（`assets/assetIO.ts` 的 `WebAssetIO`、`platform/ota.ts`
+ * 的 Capgo manifest）都是「平台默认实现」而不是共用路径，各自的平台会替换/够不着它们。
  */
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -69,10 +73,11 @@ describe('微信可达图：裸 DOM 用法不许增加', () => {
   });
 
   it('基线本身仍然是一份可读的欠账清单（数量级没有失控）', () => {
-    // 2026-09-01 落地时是 21 文件 / 54 处，绝大多数是两类：REST 层的 fetch、场景里的隐藏 input。
-    // 这个上限只防「有人把基线当垃圾桶」，不是设计目标——目标是清零。
+    // 2026-09-01 落地时是 21 文件 / 54 处，两类：REST 层的 fetch、场景里的隐藏 input。当天下午
+    // 前一类还清（§4.5 的 transport 接缝），剩 17 文件 / 45 处，其中 30 处是隐藏 input。
+    // 这个上限只防「有人把基线当垃圾桶」，不是设计目标——目标是清零，所以还完一批就往下拧。
     const total = Object.values(expected).reduce((a, b) => a + b, 0);
-    expect(total).toBeLessThanOrEqual(54);
+    expect(total).toBeLessThanOrEqual(45);
   });
 });
 
