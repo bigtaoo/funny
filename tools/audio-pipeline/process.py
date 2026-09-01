@@ -360,8 +360,11 @@ def main() -> int:
         return 0
 
     os.makedirs(OUT, exist_ok=True)
+    # Sweep only the files THIS script owns. `bgm-*.mp3` belongs to process_music.py and must
+    # survive a cue rebuild -- deleting it here would silently unship the music and leave a
+    # build error in `musicTracks.ts` as the only symptom.
     for stale in os.listdir(OUT):
-        if stale.lower().endswith((".mp3", ".wav", ".ogg")):
+        if stale.startswith("sfx-") and stale.lower().endswith((".mp3", ".wav", ".ogg")):
             os.remove(os.path.join(OUT, stale))
 
     report, rows = [], []

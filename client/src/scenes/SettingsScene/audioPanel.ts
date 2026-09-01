@@ -150,9 +150,12 @@ export function drawAudio(host: AudioPanelHost): void {
       // On release, not per move: `onDrag` runs on every pointer-move (240 of them in that test),
       // and one cue per move is precisely the machine-gun §0.1 caught `sfx.ink.tick` being.
       //
-      // `bgm` stays silent — its slider currently drives `setMusicVolume`, which accepts and
-      // ignores (§7 step 7), so auditioning it with an SFX cue would be a lie about what the
-      // slider controls.
+      // `bgm` stays silent, and **the reason changed on 2026-09-01 without the behaviour
+      // changing** (§7 step 7): it used to be "the slider drives nothing, so auditioning it with
+      // an SFX cue would be a lie about what it controls". Now it drives a real bed — and that is
+      // precisely why it still needs no audition: `SettingsScene` is not in `SILENT_SCENES`, so
+      // the music is playing while the player drags, and `MusicPlayer` applies the channel volume
+      // on the same frame. This slider is the one control in the game that auditions itself.
       ...(ch.id === 'bgm' ? {} : { onRelease: () => playSfx('sfx.ui.tap') }),
     });
   });

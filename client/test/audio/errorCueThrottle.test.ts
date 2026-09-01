@@ -21,6 +21,7 @@ function recorder(): AudioBus & { cues: AudioCue[] } {
     play(cue) { cues.push(cue); },
     setSfxVolume() {},
     setMusicVolume() {},
+    playMusic() {},
     resume() {},
   };
 }

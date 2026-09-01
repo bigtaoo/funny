@@ -90,6 +90,36 @@ python -m venv --system-site-packages venv
   > nothing here: libsndfile strips encoder padding, measured at 0.00 ms lead on a full-scale
   > onset at all six ladder rates.
 
+- **`process_music.py`** — the BGM half, added 2026-09-01 with AUDIO_DESIGN §7 step 7. Shares
+  almost nothing with `process.py`, and each difference is a decision:
+
+      ./venv/Scripts/python process_music.py [--dry-run]
+
+  | `process.py` (cues) | `process_music.py` (tracks) |
+  |---|---|
+  | mono → trim → cap → **peak-match** → encode | measure → gate the master → encode. **No trim, no cap, no peak-match** |
+  | `gain` is a pure mixing weight; the level is baked into the file | `MUSIC_TRACKS[].gain` **is** the level decision; the file keeps the composer's own peak |
+  | encode = **size** search (smallest file at any bandwidth-legal rate) | encode = **quality** search (smallest compression level clearing two gates) |
+
+  **Why no peak-match.** A cue is an event, so the pipeline owns its onset, its length and its
+  level. A finished piece of music *is* its own dynamics — scaling it down ~13 dB before a lossy
+  encode spends the encoder's headroom to move a number that a runtime gain moves for free.
+  So the delivered-peak arithmetic lives in `musicTracks.ts` instead, and this script records
+  `catalogue_gain` / `music_channel_measured_at` / `delivered_peak` in `credits.json` so
+  `audioAssets.test.ts` can hold the three together.
+
+  **Why the encode ladder is a quality search.** A 40 ms jab has no top end to lose; 3.5 minutes
+  of music does. Two gates, both **relative to the master** (this one is already band-limited to
+  12.0 kHz, so an absolute "must reach 16 kHz" rule would measure the composer, not the encoder):
+  keep ≥85% of the source's own 99%-energy rolloff, and stay within 0.5 dB per band in every band
+  that is within 40 dB of the loudest one. Measured for `doodle-bed.flac`: level 0.9 is 9%
+  smaller but keeps only **51%** of the rolloff — half the spectrum gone in one rung — so the gate
+  sits inside that knee and 0.8 wins at 2065440 bytes.
+
+  > **The one line to know: `process.py`'s stale sweep only deletes `sfx-*`.** It used to delete
+  > every `mp3|wav|ogg` in the output directory, which would have silently unshipped the music on
+  > the next cue rebuild, leaving a `musicTracks.ts` build error as the only symptom.
+
 - **`write_packs.py`** — regenerates `art/audio/packs.json` (upstream provenance per source pack).
   Separate from `credits.json` because these facts are per **source** and have a different
   lifetime: a pack's URL and licence do not change when we re-pick which of its files we ship.
@@ -144,6 +174,16 @@ what found the two holes its first version could not see, and both are now rules
   on the swapped snapshot.)
 - **`sourceUniqueness`** — one recording shipped as two different cues. Nearly happened here:
   `stroke_632474.ogg` was a strong candidate for both `sfx.card.play` and `sfx.unit.attack`.
+
+The music side adds two rules of its own (2026-09-01), plus six mutation cases. The one worth
+reading is **`music`**, and specifically that `catalogue_gain` must still match `MUSIC_TRACKS`:
+music is the one asset class whose delivered level is decided *entirely* at runtime, so editing
+`musicTracks.ts` moves the level of a 3.5-minute bed with nothing else failing anywhere. Same
+defect class as the cue gain check, arrived at from the opposite direction — for a cue the gain is
+baked into 22 files, for a track it is baked into nothing at all. The other, **`sceneMusic`**,
+reads the class names out of `client/src/scenes/` and holds `SILENT_SCENES` to them: those are
+plain strings (`SceneManager` only ever has a constructor name), so a typo there is a silent
+no-op — the scene keeps playing lobby music and nothing fails.
 
 A third measurement surface sits in the browser: `window.__nwAudio.samples()` in
 `entries/web-e2e.ts` reports the peak of every **decoded** buffer, which is the one thing this

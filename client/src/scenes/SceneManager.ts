@@ -1,6 +1,8 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
 import { setActiveScene, recordFrameSample } from '../net/anomaly';
+import { playMusic } from '../audio/audioBus';
+import { musicForScene } from '../audio/sceneMusic';
 
 const log = netLog('scene');
 
@@ -218,6 +220,7 @@ export class SceneManager {
     this.targetStage.addChild(next.container);
     // Stamp the scene name for anomaly attribution (ANR watchdog has no other lead on what was on screen).
     setActiveScene(next.constructor?.name ?? 'Scene');
+    this.applyMusic(next);
   }
 
   /**
@@ -239,6 +242,7 @@ export class SceneManager {
     this.current?.pause?.();
     this.targetStage.addChild(scene.container); // addChild appends last → renders on top of `current`
     setActiveScene(scene.constructor?.name ?? 'Scene');
+    this.applyMusic(scene);
   }
 
   /** Tear down the overlay scene mounted by {@link pushOverlay} and resume `current` underneath. */
@@ -250,6 +254,20 @@ export class SceneManager {
     this.destroyScene(ov);
     this.current?.resume?.();
     setActiveScene(this.current?.constructor?.name ?? 'Scene');
+    this.applyMusic(this.current);
+  }
+
+  /**
+   * Tell the audio layer which BGM this screen wants (AUDIO_DESIGN §2.3). Called from the same
+   * three places as `setActiveScene`, and for the same reason: this class is the only thing that
+   * knows what is on screen, so putting it here is what keeps 40 scenes from each having to
+   * remember to start and stop music in their own constructor and `destroy()`.
+   *
+   * The mapping itself lives in `audio/sceneMusic.ts` — the manager only forwards a class name.
+   * `playMusic` is idempotent, so the lobby→shop→lobby round trip does not restart the track.
+   */
+  private applyMusic(scene: Scene | null): void {
+    playMusic(scene ? musicForScene(scene.constructor?.name ?? 'Scene') : null);
   }
 
   private destroyScene(scene: Scene): void {

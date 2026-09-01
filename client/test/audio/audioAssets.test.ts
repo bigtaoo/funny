@@ -34,11 +34,15 @@ import { readdirSync, readFileSync, existsSync } from 'fs';
 import { basename, join } from 'path';
 import { ALL_CUES, CUE_CATALOGUE } from '../../src/audio/cueCatalogue';
 import { CUE_ASSETS } from '../../src/audio/cueAssets';
-import type { AudioCue } from '../../src/audio/types';
+import { MUSIC_TRACKS, ALL_MUSIC_TRACKS } from '../../src/audio/musicTracks';
+import { DEFAULT_SCENE_TRACK, SILENT_SCENES } from '../../src/audio/sceneMusic';
+import { DEFAULT_AUDIO_SETTINGS } from '../../src/audio/audioSettings';
+import type { AudioCue, MusicTrack } from '../../src/audio/types';
 
 const AUDIO_DIR = join(__dirname, '..', '..', 'src', 'assets', 'audio');
 const ART = join(__dirname, '..', '..', '..', 'art', 'audio');
 const REPO = join(__dirname, '..', '..', '..');
+const SCENES_DIR = join(__dirname, '..', '..', 'src', 'scenes');
 
 /** The SFX bus gain the delivered peaks were measured at — `DEFAULT_AUDIO_SETTINGS` master×sfx. */
 const BUS_GAIN = 0.8;
@@ -65,10 +69,35 @@ interface CreditCue {
   rationale: string;
   files: CreditFile[];
 }
+/**
+ * A shipped BGM track (AUDIO_DESIGN §7 step 7). Deliberately NOT the same shape as `CreditCue`:
+ * music is never peak-matched (`process_music.py` explains why), so there is no `target_file_peak`
+ * to check and no cap to check against — what there IS instead is a `delivered_peak` that only
+ * means anything alongside the gain and channel it was computed at.
+ */
+interface CreditMusic {
+  track: string;
+  file: string;
+  source: string;
+  source_pack: string;
+  license: string;
+  attribution_required: boolean;
+  sample_rate: number;
+  channels: number;
+  duration_ms: number;
+  bytes: number;
+  file_peak: number;
+  catalogue_gain: number;
+  music_channel_measured_at: number;
+  delivered_peak: number;
+  rationale: string;
+}
 interface Credits {
   bus_gain_measured_at: number;
   cues: CreditCue[];
   kept_on_synth: Record<string, string>;
+  /** Absent in a repo that predates §7 step 7; the rules treat that as "no music shipped". */
+  music?: CreditMusic[];
 }
 interface Pack {
   id: string;
@@ -95,6 +124,14 @@ interface Ctx {
   /** `CUE_CATALOGUE[cue].gain`, or undefined for a cue outside the union. */
   catalogueGain(cue: string): number | undefined;
   allCues: readonly string[];
+  /** track id -> the url `musicTracks.ts` imports for it, plus its mix decision. */
+  music: Record<string, { url: string; gain: number; loop: boolean }>;
+  /** `DEFAULT_AUDIO_SETTINGS.bgm` — the channel the delivered peaks were quoted at. */
+  bgmChannelDefault: number;
+  /** Scene class names the music map declares silent, and the names that actually exist in src. */
+  silentScenes: readonly string[];
+  sceneClassNames: readonly string[];
+  defaultSceneTrack: string;
   /** Contents of a repo-relative licence text file, or null if it is missing. */
   licenceText(relPath: string): string | null;
 }
@@ -133,7 +170,10 @@ export function mp3SampleRate(bytes: Buffer): number | null {
 // ── the rules ────────────────────────────────────────────────────────────────────────────────
 
 function checkDiskSet(ctx: Ctx): string[] {
-  const declared = new Set(ctx.credits.cues.flatMap((c) => c.files.map((f) => f.file)));
+  const declared = new Set([
+    ...ctx.credits.cues.flatMap((c) => c.files.map((f) => f.file)),
+    ...(ctx.credits.music ?? []).map((m) => m.file),
+  ]);
   const out: string[] = [];
   // Both directions: an orphan file ships bytes nobody can explain the licence of, and a file
   // credits.json promises but nobody shipped is a build failure via cueAssets.ts's import — but
@@ -342,6 +382,93 @@ function checkRationales(ctx: Ctx): string[] {
   return out;
 }
 
+/**
+ * The music half of `checkVariantMapping` + `checkPeakReference` in one rule, because for a track
+ * those two questions are one question.
+ *
+ * **The line worth reading: `catalogue_gain` must still match `MUSIC_TRACKS`.** Music is the one
+ * asset class whose delivered level is decided entirely at runtime — `process_music.py` ships the
+ * composer's own peak untouched, so editing `musicTracks.ts` moves the level of a 3.5-minute bed
+ * with nothing else failing anywhere. That is the same defect class this whole file exists for
+ * (a mix that drifted, and only a mix that drifted), just arrived by the opposite route: for a cue
+ * the gain is baked into 22 files, for a track it is baked into nothing at all.
+ */
+function checkMusic(ctx: Ctx): string[] {
+  const out: string[] = [];
+  const declared = ctx.credits.music ?? [];
+  const inCatalogue = new Set(Object.keys(ctx.music));
+  for (const t of inCatalogue) {
+    if (!declared.some((m) => m.track === t)) {
+      out.push(`${t}: in MUSIC_TRACKS but credits.json has no record of it`);
+    }
+  }
+  for (const m of declared) {
+    const def = ctx.music[m.track];
+    if (!def) {
+      out.push(`${m.track}: credits.json ships it but MUSIC_TRACKS does not — an orphan track`);
+      continue;
+    }
+    // Same reasoning as checkVariantMapping: under vitest an `import x from './y.mp3'` keeps the
+    // source path, so "does this track point at its OWN recording" is answerable here and nowhere
+    // else. Under webpack the url is a content hash and carries no filename.
+    if (basename(def.url) !== m.file) {
+      out.push(`${m.track}: musicTracks.ts imports ${basename(def.url)}, credits.json declares ${m.file}`);
+    }
+    if (def.gain !== m.catalogue_gain) {
+      out.push(`${m.track}: musicTracks.ts gain is ${def.gain}, credits.json recorded the `
+        + `delivered peak at ${m.catalogue_gain} — re-run tools/audio-pipeline/process_music.py`);
+    }
+    if (m.music_channel_measured_at !== ctx.bgmChannelDefault) {
+      out.push(`${m.track}: delivered peak quoted at bgm channel ${m.music_channel_measured_at}, `
+        + `DEFAULT_AUDIO_SETTINGS.bgm is ${ctx.bgmChannelDefault}`);
+    }
+    const expected = m.file_peak * m.catalogue_gain * m.music_channel_measured_at;
+    if (Math.abs(m.delivered_peak - expected) > 5e-5) {
+      out.push(`${m.track}: delivered_peak ${m.delivered_peak} != file_peak x gain x channel `
+        + `= ${expected.toFixed(5)}`);
+    }
+    // A bed that does not loop runs out after 3.5 minutes and leaves the lobby silent with no
+    // other symptom — the one property of a MusicDef that cannot be noticed in a short session.
+    if (!def.loop) out.push(`${m.track}: loop is false`);
+    if (m.rationale.length <= MIN_RATIONALE) out.push(`${m.track}: rationale is a placeholder`);
+    // Music has no pack row (it is not from a pack), so its licence facts live on the entry and
+    // are checked here rather than in checkPacks.
+    if (!m.license) out.push(`${m.track}: no licence recorded`);
+    if (m.attribution_required !== false) {
+      out.push(`${m.track}: attribution_required is not false — the game has no credits screen `
+        + `that would satisfy it`);
+    }
+    const got = ctx.file(m.file);
+    if (!got) { out.push(`${m.file}: not on disk`); continue; }
+    if (got.bytes !== m.bytes) {
+      out.push(`${m.file}: ${got.bytes} bytes on disk, credits.json says ${m.bytes}`);
+    }
+    if (got.sampleRate !== m.sample_rate) {
+      out.push(`${m.file}: MPEG header says ${got.sampleRate} Hz, credits.json says ${m.sample_rate} Hz`);
+    }
+  }
+  return out;
+}
+
+/**
+ * `sceneMusic.ts` names scenes as strings, because `SceneManager` only ever has a class name
+ * (webpack's terser keeps `/Scene$/` for exactly this). A typo in that list is therefore
+ * **silent**: the scene keeps playing lobby music and nothing anywhere fails. This rule reads the
+ * class names out of `src/scenes/` and holds the list to them.
+ */
+function checkSceneMusic(ctx: Ctx): string[] {
+  const out: string[] = [];
+  for (const name of ctx.silentScenes) {
+    if (!ctx.sceneClassNames.includes(name)) {
+      out.push(`sceneMusic.ts silences '${name}', which is not a scene class in src/scenes/`);
+    }
+  }
+  if (!Object.keys(ctx.music).includes(ctx.defaultSceneTrack)) {
+    out.push(`sceneMusic.ts defaults to '${ctx.defaultSceneTrack}', which is not in MUSIC_TRACKS`);
+  }
+  return out;
+}
+
 const RULES = {
   diskSet: checkDiskSet,
   sides: checkSides,
@@ -353,9 +480,30 @@ const RULES = {
   packs: checkPacks,
   licenceTexts: checkLicenceTexts,
   rationales: checkRationales,
+  music: checkMusic,
+  sceneMusic: checkSceneMusic,
 } as const;
 
 // ── the real snapshot ────────────────────────────────────────────────────────────────────────
+
+/** Every `export class …Scene` under `src/scenes/`, one directory deep — the same set
+ *  `SceneManager` can ever hand to `musicForScene`. */
+function sceneClassNames(): string[] {
+  const names = new Set<string>();
+  const files: string[] = [];
+  for (const e of readdirSync(SCENES_DIR, { withFileTypes: true })) {
+    if (e.isFile() && e.name.endsWith('.ts')) files.push(join(SCENES_DIR, e.name));
+    else if (e.isDirectory()) {
+      for (const f of readdirSync(join(SCENES_DIR, e.name))) {
+        if (f.endsWith('.ts')) files.push(join(SCENES_DIR, e.name, f));
+      }
+    }
+  }
+  for (const f of files) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/^export class (\w+)/gm)) names.add(m[1]!);
+  }
+  return [...names];
+}
 
 function realCtx(): Ctx {
   const credits: Credits = JSON.parse(readFileSync(join(ART, 'credits.json'), 'utf8'));
@@ -376,6 +524,11 @@ function realCtx(): Ctx {
     },
     catalogueGain: (cue) => CUE_CATALOGUE[cue as AudioCue]?.gain,
     allCues: ALL_CUES,
+    music: Object.fromEntries(ALL_MUSIC_TRACKS.map((t) => [t, { ...MUSIC_TRACKS[t as MusicTrack] }])),
+    bgmChannelDefault: DEFAULT_AUDIO_SETTINGS.bgm,
+    silentScenes: SILENT_SCENES,
+    sceneClassNames: sceneClassNames(),
+    defaultSceneTrack: DEFAULT_SCENE_TRACK,
     licenceText: (rel) => {
       const p = join(REPO, rel);
       return existsSync(p) ? readFileSync(p, 'utf8') : null;
@@ -396,7 +549,22 @@ describe('shipped audio assets', () => {
     // A total, so a batch that silently halves cannot pass every per-item rule above.
     expect(REAL.credits.cues).toHaveLength(10);
     expect(Object.keys(REAL.credits.kept_on_synth)).toHaveLength(8);
-    expect(REAL.onDisk).toHaveLength(22);
+    expect(REAL.onDisk.filter((f) => f.startsWith('sfx-'))).toHaveLength(22);
+  });
+
+  it('ships the one BGM track AUDIO_DESIGN §7 step 7 records', () => {
+    expect(ALL_MUSIC_TRACKS).toEqual(['bgm.lobby']);
+    expect(REAL.credits.music ?? []).toHaveLength(1);
+    expect(REAL.onDisk.filter((f) => f.startsWith('bgm-'))).toEqual(['bgm-lobby.mp3']);
+  });
+
+  it('the scene scan actually found the scenes (a blind checkSceneMusic would pass silently)', () => {
+    // Without this, an empty `sceneClassNames` — a moved directory, a changed export style —
+    // turns checkSceneMusic into a rule that can never complain, which is exactly the failure
+    // mode the mutation suite below exists to prevent, one level up.
+    expect(REAL.sceneClassNames.length).toBeGreaterThan(30);
+    expect(REAL.sceneClassNames).toContain('LobbyScene');
+    for (const name of REAL.silentScenes) expect(REAL.sceneClassNames).toContain(name);
   });
 });
 
@@ -411,6 +579,9 @@ function mutable(): Ctx {
     urls: structuredClone(REAL.urls) as Record<string, readonly string[]>,
     onDisk: [...REAL.onDisk],
     allCues: [...REAL.allCues],
+    music: structuredClone(REAL.music),
+    silentScenes: [...REAL.silentScenes],
+    sceneClassNames: [...REAL.sceneClassNames],
   };
 }
 
@@ -426,6 +597,52 @@ describe('the gate itself — each rule must go red when its contract is broken'
     const c = mutable();
     c.onDisk = [...c.onDisk, 'sfx-unit-attack_99.mp3'];
     fails(RULES.diskSet, c, 'orphan on disk');
+  });
+
+  it('a BGM file on disk that nothing declares (the shape the music step arrived in)', () => {
+    const c = mutable();
+    c.credits.music = [];
+    fails(RULES.diskSet, c, 'orphan on disk: bgm-lobby.mp3');
+  });
+
+  it("the music gain edited in musicTracks.ts — the drift nothing else can see", () => {
+    const c = mutable();
+    c.music['bgm.lobby']!.gain = 0.4;
+    fails(RULES.music, c, 'process_music.py');
+    // The point: every other rule is perfectly happy with a bed running twice as loud as designed.
+    expect(RULES.diskSet(c)).toEqual([]);
+    expect(RULES.streams(c)).toEqual([]);
+    expect(RULES.sceneMusic(c)).toEqual([]);
+  });
+
+  it('a track pointing at another file than the one credits.json accounts for', () => {
+    const c = mutable();
+    c.music['bgm.lobby']!.url = '/src/assets/audio/sfx-ui-tap_00.mp3';
+    fails(RULES.music, c, 'musicTracks.ts imports');
+  });
+
+  it('a bed shipped without loop — 3.5 minutes in, the lobby just goes quiet', () => {
+    const c = mutable();
+    c.music['bgm.lobby']!.loop = false;
+    fails(RULES.music, c, 'loop is false');
+  });
+
+  it('the bgm channel default moved out from under the recorded delivered peak', () => {
+    const c = mutable();
+    c.bgmChannelDefault = 0.8;
+    fails(RULES.music, c, 'DEFAULT_AUDIO_SETTINGS.bgm is 0.8');
+  });
+
+  it('a typo in the sceneMusic.ts silence list — otherwise a silent no-op', () => {
+    const c = mutable();
+    c.silentScenes = [...c.silentScenes, 'BattleScene'];   // the plausible wrong name for GameScene
+    fails(RULES.sceneMusic, c, 'not a scene class');
+  });
+
+  it('a default track that is not in MUSIC_TRACKS', () => {
+    const c = mutable();
+    c.defaultSceneTrack = 'bgm.battle';                    // §2.3 lists it; it does not exist yet
+    fails(RULES.sceneMusic, c, 'not in MUSIC_TRACKS');
   });
 
   it('a file credits.json promises but nobody shipped', () => {

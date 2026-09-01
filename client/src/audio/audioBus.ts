@@ -13,7 +13,7 @@
 // **未安装就是安全状态**，而且是测试里的常态：默认是一个真正的空操作总线，所以任何构造场景、
 // 跑 UI 冒烟、或者 headless 跑 `createAppCore` 的测试都不需要打桩音频，也不会因为没有
 // `AudioContext` 而抛错。
-import type { AudioBus, AudioCue } from './types';
+import type { AudioBus, AudioCue, MusicTrack } from './types';
 
 /**
  * 什么都不做的音频设备。**不是**降级路径的一部分——降级是"样本没有就用合成音"
@@ -36,6 +36,7 @@ export class NullAudioBus implements AudioBus {
   play(_cue: AudioCue, _count?: number): void {}
   setSfxVolume(_v: number): void {}
   setMusicVolume(_v: number): void {}
+  playMusic(_track: MusicTrack | null): void {}
   resume(): void {}
 }
 
@@ -48,6 +49,7 @@ let _bus: AudioBus = new NullAudioBus();
 export function setAudioBus(bus: AudioBus): void {
   _bus = bus;
   warned = false;
+  musicWarned = false;
 }
 
 /** 当前的音频设备（在某个平台安装自己的之前是 {@link NullAudioBus}）。 */
@@ -73,6 +75,25 @@ export function playSfx(cue: AudioCue, count = 1): void {
     if (!warned) {
       warned = true;
       console.warn(`[audio] cue ${cue} 播放失败；本次会话音频保持静默：`, err);
+    }
+  }
+}
+
+/**
+ * 声明当前场景该放的 BGM。**这是音乐侧唯一该用的入口**，`SceneManager` 在每次 swap /
+ * pushOverlay / popOverlay 之后调一次；"哪个场景放哪条轨"的决定在 `sceneMusic.ts`。
+ *
+ * 与 {@link playSfx} 同样吞掉失败并只警告一次，理由也一样：调用点在场景切换的关键路径上，
+ * 为了一条音乐把导航带崩是不划算的交换。
+ */
+let musicWarned = false;
+export function playMusic(track: MusicTrack | null): void {
+  try {
+    _bus.playMusic(track);
+  } catch (err) {
+    if (!musicWarned) {
+      musicWarned = true;
+      console.warn(`[audio] BGM ${track ?? '(stop)'} 播放失败；本次会话音乐保持静默：`, err);
     }
   }
 }

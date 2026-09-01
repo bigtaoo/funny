@@ -100,6 +100,10 @@ const audio = new WebAudioBus();
 // than against a fake bus in vitest. It also makes the game-over hazard measurable: a stinger
 // re-firing every frame shows up as hundreds of entries, not one.
 interface CueLogEntry { cue: string; count: number; t: number }
+/** Every BGM request the scene layer has made, newest last — the music half of `cueLog`. It answers
+ *  the one question a volume reading cannot: did `SceneManager` ask for the right track at all? */
+interface MusicLogEntry { track: string | null; t: number }
+const musicLog: MusicLogEntry[] = [];
 const CUE_LOG_CAP = 4000;
 const cueLog: CueLogEntry[] = [];
 const recordingBus: AudioBus = {
@@ -111,6 +115,10 @@ const recordingBus: AudioBus = {
   },
   setSfxVolume: (v) => audio.setSfxVolume(v),
   setMusicVolume: (v) => audio.setMusicVolume(v),
+  playMusic: (track) => {
+    musicLog.push({ track, t: Math.round(performance.now()) });
+    audio.playMusic(track);
+  },
   resume: () => audio.resume(),
 };
 setAudioBus(recordingBus);
@@ -123,6 +131,36 @@ setAudioBus(recordingBus);
   /** Every cue the trigger layer has asked for, newest last. */
   log: (): CueLogEntry[] => cueLog.slice(),
   clearLog: (): void => { cueLog.length = 0; },
+  /** Every BGM request `SceneManager` has made, newest last. */
+  musicLog: (): MusicLogEntry[] => musicLog.slice(),
+  /**
+   * What the BGM player is actually doing (AUDIO_DESIGN.md §7 step 7).
+   *
+   * This is the music half of `nodes()`, and it exists for the same reason: the music path is the
+   * one thing in the audio layer that **cannot** be measured through the `AudioContext`, because
+   * it deliberately does not go through it (a cross-origin `createMediaElementSource` yields a
+   * silent stream — see `audio/MusicPlayer.ts`). So the delivered level has to be read off the
+   * element itself, and the arithmetic behind it is closed-form:
+   *
+   *     delivered peak = element.volume × file peak (0.6911, from art/audio/credits.json)
+   *
+   * `element` reaches through TS privacy the same way `nodes()` does, and is null until the first
+   * `playMusic` has loaded a track.
+   */
+  music: () => {
+    // ContextAudioBus.music (private) -> MusicPlayer.source (private) -> WebMusicSource.element.
+    const priv = audio as unknown as {
+      music: { state: unknown; source?: { element?: HTMLAudioElement | null } } | null;
+    };
+    const el = priv.music?.source?.element ?? null;
+    return {
+      state: priv.music?.state ?? null,
+      element: el
+        ? { src: el.src, loop: el.loop, paused: el.paused, volume: el.volume,
+            currentTime: el.currentTime, duration: el.duration, readyState: el.readyState }
+        : null,
+    };
+  },
   /**
    * The live `AudioContext` and the SFX bus `GainNode`, so a browser smoke can hang an
    * `AnalyserNode` off the bus and read the **delivered** PCM peak. That distinction is the whole

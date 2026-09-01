@@ -17,13 +17,16 @@
 //
 // 确定性（AUDIO_DESIGN.md §6）：这里读引擎事件、按渲染时钟播放，从不碰 `GameState`、
 // 从不取 sim 的 `Prng`，所以不可能造成不同步。
-import type { AudioBus, AudioCue } from './types';
+import type { AudioBus, AudioCue, MusicTrack } from './types';
 import { SampleBank } from './SampleBank';
 import { CueMixer } from './CueMixer';
+import { MusicPlayer, type MusicSource, type MusicState } from './MusicPlayer';
 import { assetIO } from '../assets/assetIO';
 
 /** SFX 通道默认音量（AUDIO_DESIGN.md §4 "SFX 0.8"）。 */
 export const DEFAULT_SFX_VOLUME = 0.8;
+/** BGM 通道默认音量（AUDIO_DESIGN.md §4 "master 1 × bgm 0.5"）。 */
+export const DEFAULT_MUSIC_VOLUME = 0.5;
 
 /** 平台要回答的**两个**问题，其余全在 {@link ContextAudioBus} 里。 */
 export interface ContextAudioBusDeps {
@@ -46,6 +49,22 @@ export interface ContextAudioBusDeps {
    * （没有 fetch base URL），而那是**正确行为**，不该让 22 行退回提示淹掉测试输出。
    */
   warn?(message: string, err: unknown): void;
+  /**
+   * 造一条流式音乐播放器（AUDIO_DESIGN.md §2.3）。**不走 `AudioContext`**——理由整段写在
+   * `MusicPlayer.ts` 的头注释里（82 MB 的解码内存 + 跨源 `createMediaElementSource` 的静音陷阱）。
+   *
+   * 省略或返回 `null` = 这个宿主放不了音乐，SFX 照常。SFX 有设备而音乐没有是一个真实的组合：
+   * node 下的单元测试有假的 `AudioContext`，但没有 `HTMLAudioElement`。
+   */
+  createMusicSource?(): MusicSource | null;
+  /**
+   * 注册"页面可见性变了"的回调（AUDIO_DESIGN.md §4 "失焦自动暂停"）。web 是
+   * `visibilitychange`，微信是 `wx.onHide`/`wx.onShow`。
+   *
+   * 只有音乐需要它：最长的 cue 也只有几百毫秒，切后台时早就播完了（同 `WechatAudioBus` 对
+   * 音频中断只接 `End` 那一半的理由）。
+   */
+  onVisibility?(cb: (visible: boolean) => void): void;
 }
 
 export class ContextAudioBus implements AudioBus {
@@ -59,9 +78,24 @@ export class ContextAudioBus implements AudioBus {
   private mixer: CueMixer | null = null;
   /** 造过一次就不再重试：宿主要么有 WebAudio，要么没有，逐次 `play()` 重试只是每帧一次 try/catch。 */
   private failed = false;
+  /** 音乐与 SFX 相互独立：一边没有设备不影响另一边（构造时决定一次，同 `failed` 的理由）。 */
+  private music: MusicPlayer | null = null;
+  private musicVolume = DEFAULT_MUSIC_VOLUME;
 
   constructor(private readonly deps: ContextAudioBusDeps) {
     deps.onGesture?.(() => this.resume());
+    let source: MusicSource | null = null;
+    try {
+      source = deps.createMusicSource?.() ?? null;
+    } catch {
+      // 同 `ensure()` 对上下文构造失败的处理：宿主声称有这个 API 但造不出来，降级成没有音乐。
+      source = null;
+    }
+    if (source) {
+      this.music = new MusicPlayer(source);
+      this.music.setChannelVolume(this.musicVolume);
+      deps.onVisibility?.((visible) => this.music?.setHidden(!visible));
+    }
   }
 
   private ensure(): AudioContext | null {
@@ -110,6 +144,10 @@ export class ContextAudioBus implements AudioBus {
   resume(): void {
     const ctx = this.ensure();
     if (ctx && ctx.state === 'suspended') void ctx.resume();
+    // 音乐这边不需要"补播积压"（它只有一条 want，不是队列），但**需要重试一次 play()**：
+    // 首次进入大厅的音乐请求几乎必然发生在第一次点击之前，那一次 `play()` 被 autoplay 策略
+    // 拒掉了，而这里是它唯一的补救机会。
+    this.music?.resume();
   }
 
   setSfxVolume(v: number): void {
@@ -117,8 +155,37 @@ export class ContextAudioBus implements AudioBus {
     if (this.sfx) this.sfx.gain.value = this.sfxVolume;
   }
 
-  /** BGM 尚未实现（AUDIO_DESIGN.md §2.3 的四条轨还不存在）——接受并忽略，让设置页可以先接滑杆。 */
-  setMusicVolume(_v: number): void {}
+  setMusicVolume(v: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, v));
+    this.music?.setChannelVolume(this.musicVolume);
+  }
+
+  /**
+   * 声明现在该放哪条 BGM（`null` = 安静）。幂等，换轨走淡出淡入——全部在 `MusicPlayer` 里。
+   *
+   * 与 {@link play} 的一处关键差别：**这里不检查 `ctx.state === 'running'`。** SFX 在闸门打开
+   * 前一律丢弃（否则第一次点击会一次性听到积压的全部声音），而音乐是持续声源，"积压"没有意义——
+   * 它该做的是现在就试着播、被拒就等 `resume()` 再试。这也是它不共用 `AudioContext` 的又一个
+   * 结果：`HTMLAudioElement` 有它自己的 autoplay 闸门，与 `AudioContext.state` 无关。
+   */
+  playMusic(track: MusicTrack | null): void {
+    this.music?.setTrack(track);
+  }
+
+  /**
+   * 按住/放开音乐，不走淡出（AUDIO_DESIGN.md §4 "失焦自动暂停"）。
+   *
+   * `onVisibility` 走的是同一条路，`protected` 是为了让平台子类接上**别的**同义信号——微信的
+   * `onAudioInterruptionBegin/End`（来电）对播放器而言就是"切后台"，只是触发它的不是用户。
+   */
+  protected setMusicHidden(hidden: boolean): void {
+    this.music?.setHidden(hidden);
+  }
+
+  /** 音乐播放器的可观测状态；这个宿主放不了音乐时为 `null`。e2e 测量面用（`__nwAudio.music()`）。 */
+  get musicState(): MusicState | null {
+    return this.music?.state ?? null;
+  }
 
   play(cue: AudioCue, count = 1): void {
     const ctx = this.ensure();
