@@ -19,7 +19,7 @@ setAssetIO(new WechatAssetIO());
 // (silence) was the honest state. That claim read `client/src/wx.d.ts`, which declared only
 // `createInnerAudioContext`, as if it described the runtime. It described our typings. The real
 // runtime has offered `wx.createWebAudioContext()` — a standard Web Audio surface — since base
-// library 2.19.0, and this project pins 3.15.1. So WechatAudioBus reuses the pipeline verbatim
+// library 2.19.0, and this project pins 3.17.2. So WechatAudioBus reuses the pipeline verbatim
 // and the InnerAudioContext pool §5 called for is not needed for SFX; see WechatAudioBus.ts.
 setAudioBus(new WechatAudioBus());
 startApp(new WechatPlatform()).catch(console.error);

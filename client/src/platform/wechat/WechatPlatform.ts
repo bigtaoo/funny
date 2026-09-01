@@ -10,7 +10,7 @@ import { reportAnomaly } from '../../net/anomaly';
 /**
  * WeChat mini-game platform adapter.
  * Requires @pixi/unsafe-eval to be imported before pixi.js-legacy.
- * The WeChat runtime provides a global `canvas` object instead of DOM.
+ * There is no DOM: the render target comes from resolveScreenCanvas() below.
  */
 
 declare const wx: {
@@ -33,6 +33,8 @@ declare const wx: {
   getLaunchOptionsSync(): { query?: Record<string, string> };
   createRewardedVideoAd(opts: { adUnitId: string }): WxRewardedVideoAd;
   getNetworkType(opts: { success?: (res: { networkType: string }) => void; fail?: (err: unknown) => void }): void;
+  /** First call returns the on-screen canvas; later calls return off-screen ones (mini-game API). */
+  createCanvas(): unknown;
 };
 
 /** Rewarded-video-ad instance (WeChat mini-game ads API). One instance is reused across watches. */
@@ -72,8 +74,36 @@ interface WxTouchEvent {
   changedTouches: WxTouch[];
 }
 
-// WeChat mini-game exposes a global canvas
-declare const canvas: HTMLCanvasElement;
+// Older base libraries (and the weapp-adapter shim) exposed the on-screen canvas as a bare global.
+// `declare` only says the compiler may see it — resolveScreenCanvas() below owns what happens when
+// the runtime does not provide it.
+declare const canvas: HTMLCanvasElement | undefined;
+
+/**
+ * The on-screen canvas, resolved once.
+ *
+ * The bare global `canvas` was never part of the documented mini-game API — it comes from the
+ * adapter layer, and base library 3.17.2 (canary, released 2026-08-31) stopped providing it.
+ * Reading it unguarded threw `ReferenceError: canvas is not defined` out of the first line of
+ * startApp, before a single pixel: a black screen with the whole game intact behind it.
+ *
+ * The documented contract is `wx.createCanvas()`: the **first** call returns the on-screen canvas,
+ * every later one an off-screen canvas. Two consequences, both load-bearing:
+ *   - this must stay the first createCanvas in the process. It is: app.ts calls
+ *     `platform.getCanvas()` before constructing the PIXI application, and PIXI's
+ *     `settings.ADAPTER.createCanvas` only runs later, from render code.
+ *   - it must be memoised, or a second `getCanvas()` would hand back an off-screen canvas and the
+ *     renderer would draw into nothing — the same black screen, one indirection further away.
+ */
+let screenCanvas: HTMLCanvasElement | undefined;
+function resolveScreenCanvas(): HTMLCanvasElement {
+  if (screenCanvas) return screenCanvas;
+  screenCanvas =
+    (typeof canvas !== 'undefined' && canvas) ||
+    (GameGlobal as { canvas?: HTMLCanvasElement }).canvas ||
+    (wx.createCanvas() as HTMLCanvasElement);
+  return screenCanvas;
+}
 
 class WechatStorage implements IStorage {
   getItem(key: string): string | null {
@@ -115,7 +145,7 @@ export class WechatPlatform implements IPlatform {
   readonly devicePixelRatio: number = 1;
 
   getCanvas(): HTMLCanvasElement {
-    return canvas;
+    return resolveScreenCanvas();
   }
 
   getScreenSize(): { width: number; height: number } {

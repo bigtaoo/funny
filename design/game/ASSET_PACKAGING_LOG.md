@@ -118,3 +118,51 @@
 跑全量时 `client/test/cardSceneTabSwitchGuard.test.ts`（当天早些时候刚落地）是红的，而且跟本任务毫无关系：它报出来的「违规行」正是 `list.ts` 里**解释这个守卫的那句注释**。根因是 `text.split('\n')` 在 CRLF 检出上留下尾部 `\r`，而 `\r` 是 ECMAScript LineTerminator，于是 `$` 锚定的剥注释 `replace` 一个字符都没剥掉——**这个守卫在 CI（LF）永远绿、在每个 Windows 检出上永远红**。改成 `split(/\r?\n/)`，并反向验证过「真塞一句 `core.tab =` 仍然抓得到、行号也对」。
 
 修它不是扩大范围，是 ADR-066 之后 CI 红会挡住部署门禁、也挡住这次改动自己的验证。教训（一条以 `$` 结尾的逐行正则，正确性上限等于喂给它的 split）记在 [`claudedocs/client-testing.md`](../../claudedocs/client-testing.md)。
+
+## 17. 微信开发者工具黑屏：两个独立成因（2026-09-01）
+
+用户报「游戏在微信开发者工具里是黑屏」。查下来是**两件互不相干的事叠在一起**，而且顺序有意义：先修好的那个（资源）修完仍然黑屏，真正让第一行就抛的是第二个（canvas）。两个的共同底色是——`client/wechatgame/` 是**整个 gitignore 的**，没有任何东西保证它里面的东西彼此一致、或者和当前代码一致。
+
+### 17.1 上屏 canvas：裸全局 `canvas` 从来不是文档接口
+
+```
+ReferenceError: canvas is not defined
+    at Object.getCanvas (WechatPlatform.ts:57)
+    at define.constructor (app.ts:46)
+```
+
+`WechatPlatform.getCanvas()` 一直是 `return canvas`——读那个**裸全局**。它由适配层提供，**不在小游戏的文档 API 里**；开发者工具在 2026-08-31 晚上换到 canary 基础库 **3.17.2** 之后不再提供它。于是 `startApp()` 的第一行（`new PIXI.Application({ view: platform.getCanvas() })`）就抛，一个像素都没画：**整个游戏完好地站在黑屏后面，控制台里那条错误和"游戏"两个字毫无关联**。
+
+改成按文档的契约取：`wx.createCanvas()` 的**第一次**调用返回上屏 canvas，之后的都是离屏。所以 `resolveScreenCanvas()` 有两条承重约束，都写进了代码注释：
+
+- **它必须是进程里第一个 `createCanvas`**。目前是：`app.ts` 在构造 PIXI 应用**之前**调 `platform.getCanvas()`，而 PIXI 的 `settings.ADAPTER.createCanvas`（`render/fastText.ts` 那条路）只在渲染期才跑。
+- **必须记忆化**。不记的话第二次 `getCanvas()` 会拿到一张离屏 canvas，渲染进虚空——同一个黑屏，只是隔了一层。
+
+回退链是「裸全局 → `GameGlobal.canvas` → `wx.createCanvas()`」，所以旧基础库（≤ 3.15）和 3.17.2 都能跑。`test/WechatPlatform.test.ts` 补 4 例（三条路径各一 + 记忆化一），变异检查过：抽掉记忆化 1 例红、再抽掉 `GameGlobal` 分支 2 例红。
+
+`project.private.config.json` 钉的 `libVersion` 同步从 3.15.1 升到 **3.17.2**（跟上工具实际装的那版；`wx.d.ts` / `entries/wechat.ts` / `WechatAudioBus.ts` 里引用这个数的三处注释一并订正）。
+
+> **一般化**：这条和音频那次（`AUDIO_DESIGN.md` §0.3「把自己的 `.d.ts` 当成运行时事实」）是**同一枚硬币的两面**。那次是 typing 里**没声明**的 API 被当成运行时没有；这次是 typing 里**声明了**的全局被当成运行时一定有。`declare` 两个方向都不是证据。
+
+### 17.2 包不完整：`pixigame.js` 和 `cdn/` 来自两次不同的构建
+
+发现时磁盘上的状态：`pixigame.js` 是当天 09:08 的（当前代码），`cdn/` 里是 **7 月 29 日**的 **57 个**文件——而那份 bundle 烘焙进去的资源引用有 **301 个**。八月那批图标/美术全换了 contenthash，于是 244 个引用在磁盘上根本不存在，L0 闸门一张图都取不到。
+
+成因：前一轮（音频后端）收尾时只把 `pixigame.js` + `.map` **刷进主检出**，没有在主检出里跑一遍 `build:wechat`——真跑会把 301 个资源一起吐出来。两个文件时间戳精确相同、`cdn/` 一动没动，是"复制"而不是"构建"的指纹。DevTools 打开的**始终是主检出**（见 [`claudedocs/worktrees.md`](../../claudedocs/worktrees.md)），worktree 里构建得再新也没用。
+
+新增门禁 `client/scripts/checkWechatPackage.mjs`（`npm run check:wechatpackage`，并串进 `build:wechat`），**读产物、不读意图**，查三件事：
+
+1. **壳完整**——`game.js` 确实 `require('./pixigame.js')`、`game.json` 能解析。
+2. **每个烘焙进 bundle 的资源 URL 在磁盘上都有文件**（包内相对 `cdn/<hash>` 与方案 A 的绝对 CDN URL 两种形态都认；后者本地虽然不是运行时读取处，但它就是上传集）。← 本节这个黑屏。
+3. **只有一个 bundle**——出现 `<id>.pixigame.js` 同级文件说明 `asyncChunks:false` 失守（§4.0）。`test/wechatSingleBundle.test.ts` 守的是配置，这条守的是产物。
+
+**它故意查不了的那一半**：反过来的情况——**旧 bundle 配新 `cdn/`**。微信产物跑在 `clean:false` 下（`game.js`/`game.json`/`cdn/` 必须活下来），所以历史构建的文件只会堆积不会被扫掉，旧 bundle 的 hash 仍然都在、规则 2 照样通过。孤儿文件数因此只报数不报错——任何一次重建之后它都不为零。
+
+`test/wechatPackageGate.test.ts` 12 例，每条规则配一个**恰好破坏它**的 fixture（门禁自己也要做变异测试）。另外拿**真实产物**复现过一次事故现场：把 301 引用的 bundle 配上 57 个资源的 `cdn/`，门禁报「251 of 301 baked asset URLs have no file」——证明那条正则在真 bundle 上有效，而不只是在手搓 fixture 上。
+
+### 17.3 验证与欠账
+
+- 全量：client `npm run typecheck`（含测试工程 + fulllink）干净；`vitest run` **222 文件 2393 例**全绿（内含 `test/WechatPlatform.test.ts` 9 例、`test/wechatPackageGate.test.ts` 12 例）；`test:sim` 8 文件 13 例绿；`build:wechat` 通过且串联的门禁绿（**301 引用全在位，42 个孤儿**）。
+- **画面由用户在开发者工具里核对**——这台机器上没有别的路子：`mcp__claude-in-chrome__*` 够不到 DevTools，`miniprogram-automator` 对小游戏是死路（`AUDIO_DESIGN.md` §0.3）。
+- 仍然欠着 §4.2 遗留 1/2（微信后台域名白名单、`cdn/` 上传），以及**真机**——3.17.2 的这条 canvas 行为是在 Chromium 模拟器上观察到的。
+

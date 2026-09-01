@@ -197,7 +197,7 @@ declare module wx {
   function createInnerAudioContext(opts?: { useWebAudioImplement?: boolean }): IInnerAudioContext;
 
   /**
-   * Standard Web Audio API surface, since base library **2.19.0** (this project pins 3.15.1 in
+   * Standard Web Audio API surface, since base library **2.19.0** (this project pins 3.17.2 in
    * `wechatgame/project.private.config.json`). This is what `platform/wechat/WechatAudioBus.ts`
    * runs on, and it is why the mini-game needs no audio implementation of its own — the whole
    * `audio/` pipeline (procedural voices, AudioBuffer samples, bus gain) is portable as written.
