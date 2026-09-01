@@ -121,6 +121,16 @@ beforeunload                      最高    关 Tab，用 keepalive fetch（不�
 wx.onHide                         最高    微信小游戏切后台
 ```
 
+**实现落点（2026-09-01）**：上面三行的 web-vs-微信分支本来在 `analytics/index.ts`（churn_signal/
+session_end 那半）和 `analytics/queue.ts`（flushSync 那半）里各写了一份一模一样的代码，且两份
+都零测试覆盖——`wx.onHide`/`onShow` 分支从最初那版就是对的，但没有任何用例会在它被误删时报红。
+现已抽成 `client/src/platform/appLifecycle.ts` 的 `onAppLifecycleChange(cb)`：web/CrazyGames 用
+`visibilitychange`（→ `'hidden'`/`'visible'`）+ `beforeunload`（→ `'exit'`，仅这一路径区分「切走可能
+回来」与「关掉不会再回来」），微信用 `wx.onHide`/`wx.onShow`（微信没有「确定不会再回来」这个信号，
+一律报 `'hidden'`）。两个消费者现在只订阅这一个信号，分支只写一遍；覆盖见
+`client/test/appLifecycle.test.ts`（信号本身）+ `analyticsQueue.test.ts`/`analyticsSessionLifecycle.test.ts`
+（两个消费者的接线）。
+
 **⚠ 离场用 keepalive fetch，不用 `sendBeacon`（2026-08-24 修正，此前本节写反了）**：
 `beforeunload` 里普通 `fetch` 确实会被取消——但**带 `keepalive: true` 的不会**，那正是
 规范给页面卸载准备的机制。而 `sendBeacon` 有一个致命限制：**它完全无法设置请求头**，

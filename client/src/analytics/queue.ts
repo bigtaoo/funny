@@ -3,6 +3,7 @@
 
 import type { components } from '../net/openapi';
 import { netTransport } from '../net/transport';
+import { onAppLifecycleChange } from '../platform/appLifecycle';
 
 type AnalyticsEvent = components['schemas']['AnalyticsEvent'];
 
@@ -167,16 +168,8 @@ export class EventQueue {
   }
 
   private setupLifecycleHooks(): void {
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') this.flushSync();
-      });
-      window.addEventListener('beforeunload', () => this.flushSync());
-    }
-    // WeChat — wx.onHide available in the mini-game environment
-    const wx = (globalThis as { wx?: { onHide?: (cb: () => void) => void } }).wx;
-    if (wx?.onHide) {
-      wx.onHide(() => this.flushSync());
-    }
+    onAppLifecycleChange((state) => {
+      if (state !== 'visible') this.flushSync();
+    });
   }
 }

@@ -226,6 +226,83 @@ describe('EventQueue — flushSync()', () => {
   });
 });
 
+describe('EventQueue — start() wires the hide/unload flush (platform/appLifecycle.ts)', () => {
+  // Regression: setupLifecycleHooks() used to carry its own copy of the web-vs-WeChat branching
+  // (visibilitychange/beforeunload here, wx.onHide/onShow duplicated verbatim in analytics/
+  // index.ts) with zero coverage on either copy. Extracted into platform/appLifecycle.ts
+  // (2026-09-01); this exercises the real module, not a mock, so a regression in either the wiring
+  // here or the shared implementation shows up on this file.
+  function stubDom() {
+    const docListeners = new Map<string, Array<() => void>>();
+    const winListeners = new Map<string, Array<() => void>>();
+    const doc = {
+      visibilityState: 'visible' as 'visible' | 'hidden',
+      addEventListener: (t: string, cb: () => void) => {
+        docListeners.set(t, [...(docListeners.get(t) ?? []), cb]);
+      },
+    };
+    const win = {
+      addEventListener: (t: string, cb: () => void) => {
+        winListeners.set(t, [...(winListeners.get(t) ?? []), cb]);
+      },
+    };
+    vi.stubGlobal('document', doc);
+    vi.stubGlobal('window', win);
+    return {
+      hide: () => { doc.visibilityState = 'hidden'; (docListeners.get('visibilitychange') ?? []).forEach((f) => f()); },
+      show: () => { doc.visibilityState = 'visible'; (docListeners.get('visibilitychange') ?? []).forEach((f) => f()); },
+      unload: () => (winListeners.get('beforeunload') ?? []).forEach((f) => f()),
+    };
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('visibilitychange→hidden triggers flushSync', () => {
+    const dom = stubDom();
+    const q = makeQueue();
+    const flushSyncSpy = vi.spyOn(q, 'flushSync');
+    q.start();
+
+    dom.hide();
+    expect(flushSyncSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('beforeunload triggers flushSync too', () => {
+    const dom = stubDom();
+    const q = makeQueue();
+    const flushSyncSpy = vi.spyOn(q, 'flushSync');
+    q.start();
+
+    dom.unload();
+    expect(flushSyncSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('returning to the foreground does not itself flush', () => {
+    const dom = stubDom();
+    const q = makeQueue();
+    const flushSyncSpy = vi.spyOn(q, 'flushSync');
+    q.start();
+
+    dom.hide();
+    dom.show();
+    expect(flushSyncSpy).toHaveBeenCalledTimes(1); // only the hide, not the show
+  });
+
+  it('on WeChat (no DOM), wx.onHide alone still triggers flushSync', () => {
+    let hideCb: (() => void) | undefined;
+    vi.stubGlobal('document', undefined);
+    vi.stubGlobal('window', undefined);
+    vi.stubGlobal('wx', { onHide: (cb: () => void) => { hideCb = cb; } });
+
+    const q = makeQueue();
+    const flushSyncSpy = vi.spyOn(q, 'flushSync');
+    q.start();
+
+    hideCb!();
+    expect(flushSyncSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('EventQueue — start()/stop() timer lifecycle', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
