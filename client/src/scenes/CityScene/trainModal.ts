@@ -57,12 +57,12 @@ export function renderTrainModal(core: CitySceneCore): void {
 
   const dim = new PIXI.Graphics();
   dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
-  core.container.addChild(dim);
+  core.paint.modalLayer.addChild(dim);
 
   const panelRoot = new PIXI.Container();
   panelRoot.position.set(screenX, screenY);
   panelRoot.scale.set(scale);
-  core.container.addChild(panelRoot);
+  core.paint.modalLayer.addChild(panelRoot);
   const st = scaledTxt(scale);
 
   const panel = sketchPanel(mw, mh, {
@@ -228,7 +228,8 @@ export function renderTrainModal(core: CitySceneCore): void {
     rect: { x: 0, y: 0, w, h },
     fn: () => {
       core.selectedTrain = false;
-      core.render();
+      // paintModal, not render — see the same hit in modals.ts renderDetailModal.
+      core.paintModal();
     },
   });
 }

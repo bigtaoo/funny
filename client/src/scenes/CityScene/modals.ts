@@ -98,12 +98,12 @@ export class ModalsPanel implements ModalsHandlers {
     // Dim covers the full screen; tapping it (outside interactive rects) closes the modal.
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
-    this.core.container.addChild(dim);
+    this.core.paint.modalLayer.addChild(dim);
 
     const panelRoot = new PIXI.Container();
     panelRoot.position.set(screenX, screenY);
     panelRoot.scale.set(scale);
-    this.core.container.addChild(panelRoot);
+    this.core.paint.modalLayer.addChild(panelRoot);
     // Compensates PIXI.Text's raster blur from the panelRoot scale-up above — see scaledTxt().
     const st = scaledTxt(scale);
 
@@ -266,7 +266,9 @@ export class ModalsPanel implements ModalsHandlers {
       rect: { x: 0, y: 0, w, h },
       fn: () => {
         this.core.selectedBuilding = null;
-        this.core.render();
+        // paintModal, not render: the page underneath was never torn down, so dismissing the modal
+        // is a teardown of the modal layer plus a hit-table swap. Nothing else moved.
+        this.core.paintModal();
       },
     });
   }

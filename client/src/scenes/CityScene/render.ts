@@ -80,7 +80,7 @@ export class RenderPanel implements RenderHandlers {
     const icon = this.core.bldIcon('wall', iconSize, C.dark);
     icon.x = x0;
     icon.y = midY - iconSize / 2;
-    this.core.container.addChild(icon);
+    this.core.paint.pageLayer.addChild(icon);
 
     const barX = x0 + iconSize + gap;
     const barY = midY - barH / 2;
@@ -88,7 +88,7 @@ export class RenderPanel implements RenderHandlers {
     track.beginFill(0x2a1e12, 0.15);
     track.drawRoundedRect(barX, barY, barW, barH, 3);
     track.endFill();
-    this.core.container.addChild(track);
+    this.core.paint.pageLayer.addChild(track);
 
     // Green (healthy) → amber (mid) → red (low) — mirrors the world-map tile HP bar
     // (worldmap/tileGraphics.ts drawHpBar) so the color language is consistent everywhere.
@@ -97,11 +97,11 @@ export class RenderPanel implements RenderHandlers {
     fill.beginFill(fillColor, 0.9);
     fill.drawRoundedRect(barX, barY, Math.max(2, barW * ratio), barH, 3);
     fill.endFill();
-    this.core.container.addChild(fill);
+    this.core.paint.pageLayer.addChild(fill);
 
     valLbl.x = barX + barW + gap;
     valLbl.y = midY - valLbl.height / 2;
-    this.core.container.addChild(valLbl);
+    this.core.paint.pageLayer.addChild(valLbl);
   }
 
   // The 5 team slots (D-CITY-10) row + its two per-card renderers are split into ./teamRow.ts
@@ -136,7 +136,7 @@ export class RenderPanel implements RenderHandlers {
     });
     pg.x = cx0 + 8;
     pg.y = startY;
-    this.core.container.addChild(pg);
+    this.core.paint.pageLayer.addChild(pg);
 
     const cellW = Math.floor((w - 16) / 5);
     RESOURCE_TYPES.forEach((rt, i) => {
@@ -151,24 +151,24 @@ export class RenderPanel implements RenderHandlers {
       ab.beginFill(RES_COLORS[rt], 0.45);
       ab.drawRect(cx + 9, startY + 6, cellW - 18, 10);
       ab.endFill();
-      this.core.container.addChild(ab);
+      this.core.paint.pageLayer.addChild(ab);
 
       const icon = chipped(33, RES_COLORS[rt], (n) => this.core.resIcon(rt, n));
       icon.x = cx + 12;
       icon.y = startY + 24;
-      this.core.container.addChild(icon);
+      this.core.paint.pageLayer.addChild(icon);
 
       // Live total: grown client-side from the last fetch (tickResourceTotals updates it per second).
       const curLbl = txt(this.core.fmtNum(this.core.liveResource(rt)), FS.label, C.dark, true);
       curLbl.x = cx + 52;
       curLbl.y = startY + 24;
-      this.core.container.addChild(curLbl);
+      this.core.paint.pageLayer.addChild(curLbl);
       this.core.resTotalLbls.push({ rt, lbl: curLbl });
 
       const capLbl = txt(`/${this.core.fmtNum(cap)}`, FS.small, C.mid);
       capLbl.x = cx + 12;
       capLbl.y = startY + 62;
-      this.core.container.addChild(capLbl);
+      this.core.paint.pageLayer.addChild(capLbl);
 
       const yldLbl = txt(
         `+${this.core.fmtNum(rate)}/h`,
@@ -177,7 +177,7 @@ export class RenderPanel implements RenderHandlers {
       );
       yldLbl.x = cx + 12;
       yldLbl.y = startY + 84;
-      this.core.container.addChild(yldLbl);
+      this.core.paint.pageLayer.addChild(yldLbl);
     });
 
     return startY + panH + 4;
@@ -200,18 +200,18 @@ export class RenderPanel implements RenderHandlers {
     });
     pg.x = cx0 + 8;
     pg.y = startY;
-    this.core.container.addChild(pg);
+    this.core.paint.pageLayer.addChild(pg);
 
     const hdr = txt(t('city.buildQueue'), FS.body, C.mid, true);
     hdr.x = cx0 + 24;
     hdr.y = startY + 14;
-    this.core.container.addChild(hdr);
+    this.core.paint.pageLayer.addChild(hdr);
 
     if (queue.length === 0) {
       const empty = txt(t('city.queueEmpty'), FS.body, C.mid);
       empty.x = cx0 + 195;
       empty.y = startY + 14;
-      this.core.container.addChild(empty);
+      this.core.paint.pageLayer.addChild(empty);
     } else {
       const entry = queue[0]!;
       const secsLeft = Math.max(0, Math.ceil((entry.completeAt - now) / 1000));
@@ -224,7 +224,7 @@ export class RenderPanel implements RenderHandlers {
       const entryLbl = txt(label, FS.bodyLg, C.dark, true);
       entryLbl.x = cx0 + 195;
       entryLbl.y = startY + 14;
-      this.core.container.addChild(entryLbl);
+      this.core.paint.pageLayer.addChild(entryLbl);
 
       if (secsLeft > 0) {
         const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
@@ -284,9 +284,9 @@ export class RenderPanel implements RenderHandlers {
     gridLayer.y = viewY - this.core.scrollY;
     const maskG = new PIXI.Graphics();
     maskG.beginFill(0xffffff).drawRect(cx0, viewY, w, viewH).endFill();
-    this.core.container.addChild(maskG);
+    this.core.paint.pageLayer.addChild(maskG);
     gridLayer.mask = maskG;
-    this.core.container.addChild(gridLayer);
+    this.core.paint.pageLayer.addChild(gridLayer);
 
     // Viewport cull (2026-08-12, same fix as BattlePassScene/LeaderboardScene/ChatScene/
     // DeckBuilderScene): GRID_BUILDING_KEYS is a fixed ~11-entry list today, never a crash risk in
@@ -423,34 +423,33 @@ export class RenderPanel implements RenderHandlers {
       const screenY = viewY - this.core.scrollY + cy;
       if (screenY + CARD_H > viewY && screenY < viewY + viewH) {
         const cardRect = { x: cx0 + cx, y: screenY, w: cellW, h: CARD_H };
-        // SLG opening guide chain step2 (ONBOARDING_DESIGN §4.2): highlight the very first grid card
-        // until any card/train tile is opened. CityScene.ts's own header block leaves the guide alone
-        // whenever step2 is still pending — this is the only call that decides its content in that case.
-        if (i === 0 && !(this.core.cb.getFlag?.('guide.world.step2') ?? false)) {
-          this.core.guide.showAt(cardRect, t('guide.world.step2.body'), { w: this.core.w, h: this.core.h }, {
-            onSkip: () => this.core.cb.setFlag?.('guide.world.step2', true),
-          });
-        }
+        // SLG opening guide chain step2 (ONBOARDING_DESIGN §4.2): the very first grid card is the
+        // ring's target until any card/train tile is opened. Only the RECT is recorded here —
+        // CityScene.ts's paintPage owns the whole show/hide decision (and has to be able to replay
+        // it after a modal closes, when this grid is not being repainted at all).
+        if (i === 0) this.core.paint.guideStep2 = cardRect;
         this.core.hits.push({
           rect: cardRect,
           fn:
             tile.kind === 'bld'
+              // paintModal, not render: opening a modal changes nothing on the page behind it, so
+              // the page layer stays exactly as it is and only the modal layer is built.
               ? () => {
                   this.core.cb.setFlag?.('guide.world.step2', true);
                   this.core.selectedBuilding = tile.key;
-                  this.core.render();
+                  this.core.paintModal();
                 }
               : () => {
                   this.core.cb.setFlag?.('guide.world.step2', true);
                   this.core.selectedTrain = true;
-                  this.core.render();
+                  this.core.paintModal();
                 },
         });
       }
     });
 
     drawScrollIndicator(
-      this.core.container,
+      this.core.paint.pageLayer,
       { x: cx0, y: viewY, w, h: viewH },
       this.core.scrollY,
       this.core.scrollMax

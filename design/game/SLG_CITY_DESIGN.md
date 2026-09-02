@@ -352,6 +352,42 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - 验证：`tsc --noEmit`（`tsconfig.test.json` + fulllink）全绿、`test:ui` 253 文件 / 2421 例全绿、`build:web` 构建通过；**真机截图核对**走 §8.10 的 `web-e2e` 桩挂载路径（`__nwE2E.views.showCity()` + 假 `worldApi`，无需后端栈），中文复现用户那座满级城：石墨坊/文件柜/练兵场 Lv.10 均读「已满级」、练兵场读「训练提速 50%」、石墨坊 Lv.9 仍给「→ Lv.10 / 升级」、书桌 Lv.3 时仍给「需书桌 Lv.4」。
 - **顺手修掉一处已有的类型门禁失败**（不是本轮引入）：`client/test/wechatInputAdapter.test.ts`（commit `565cb17b8`）里 `globalThis as { wx?: FakeWx }` 是 TS2352 非重叠断言——`wx.d.ts` 声明了真的全局 `wx`。那个提交大概只跑了 vitest 没跑 `tsc`。改成经 `unknown` 的一次转换后本轮才有绿的类型门禁可用。
 
+### 8.13 点建造/加速整页闪一下：立即模式全量重建 + busy 遮罩门控错了（2026-09-02）
+
+用户报（带截图）：「为何在这个弹窗里，点建造或者加速，整个主城页面都被刷新了，晃的人眼花，而且我觉得这样对性能表现上也不好。」两件事都成立，而且是两个独立的根因叠在一起。
+
+**根因 A（晃眼）：遮罩门控在 `bt.busy` 上，而不是 `bt.loadingVisible`。** `CityScene.render()` 末尾按 `core.bt.busy` 铺一层全屏 25% 黑；`actions.ts` 的每个动作又在 `bt.start()` 后**同步**跑一次 `render()`。于是 30–80ms 的局域网往返 = 整页变暗又变亮，2–5 帧，每次点击都闪。`BusyTracker` 本来就有 `loadingVisible`（满 1 秒才亮，注释里明写 `if (bt.loadingVisible) drawLoadingOverlay(...)` 的用法），CityScene 却绕过它读了 `busy`。**遮罩从来不负责挡输入**——`handleDown` 的 `if (this.bt.busy) return` 才是，所以快请求根本不该看见任何遮罩。
+
+**根因 B（性能）：一次点击触发 3–4 次整页 teardown+rebuild。** `render()` 无条件 `tearDownChildren(core.container)` 再重建纸背景、装饰层、页眉、资源条、队列条、12 张建筑卡、5 张队伍卡、弹窗——单次约 55–65 个 `PIXI.Text`（各自一次 canvas 栅格化 + GPU 上传，对照 CardScene 卡背包那次实测的 105 个 ≈ 11ms）。而「加速」一次点击要跑：`bt.start()` 的前置 render → `refreshWallet()` 的 `onSaveChanged` render → `bt.stop()` 后的 render。另有两处纯浪费：`bt.tick` 每 0.4s 为**本场景根本不画的** dots 动画买一次整页重建；点开/关弹窗时页面内容一个字没变，也照样整页重建。
+
+**改法（四层，按依赖顺序）：**
+
+1. **遮罩门控换成 `bt.loadingVisible`，并删掉 `actions.ts` 里 5 处 `bt.start()` 后的前置 `render()`。** 快请求 → 中间零次重绘，只在数据真的变了之后画一次。
+2. **遮罩搬进自己的常驻层**（`paint.ts` 的 `busyLayer`），由 `update()` 直接 `syncBusy()` 切换 —— busy 状态从此不经过任何一次 render；`bt.tick()` 的返回值**故意不用**（它也为不画的 dots 动画返回 true）。
+3. **合帧渲染**：`core.requestRender()` 置脏标志，`update()` 每帧最多 flush 一次。同一 tick 里的多个请求折叠成一次绘制（加速那条路的 2 次请求 → 1 次绘制）。走这条路的是「一帧内可能触发多次」或「玩家早一帧看不出来」的入口：动作完成、`onSaveChanged`、队列轮询、拖动滚动、头像解码。**`data.ts` 那四片交错加载仍走同步 `render()`**——那是 2026-08-02 刻意做的「哪片先到哪片先画」，合帧会把它抹平。
+4. **按变更频率拆层**（`CityScene/paint.ts` 的 `CityPaint`，form ② 组合，同 `SectScene/repaint.ts` 先例）：
+   - `staticLayer` — 纸背景 + 装饰。**整个场景生命周期只画一次**（`w`/`h` 固定，无需失效）。
+   - `pageLayer` — 页眉/资源条/队列条/建筑网格/队伍行。只在页面数据变了时重建。
+   - `modalLayer` — 弹窗。`paintPage()` 从不碰它，反之亦然：**开关弹窗不再重建它背后的页面**。
+   - `busyLayer` — 在途遮罩（上面第 2 条）。
+   - 子节点顺序就是 z 序，`cityModalSpeedup.ui.ts` 依赖它（「弹窗画在暗掉的队列条之后/之上」，`textNodes(...).pop()`）。
+   - **命中表跟着分**：`paint.pageHits` 是页面自己那份，`core.hits` 由 `paintModal()`（唯一知道弹窗开没开的地方）决定 —— 有弹窗时 `[backHit, ...弹窗按钮]`，没弹窗时 `pageHits` + 末尾追加引导命中，与旧的单趟 render 逐位一致（`hits[0] === backHit` 是好几个测试的前提）。
+   - **引导环要能重放**：开弹窗会 `guide.hide()`，关弹窗时页面并没有重绘，所以没有别的东西会把环放回去。`paintPage()` 把那个决策存成 `paint.guideRestore` 闭包，`paintModal()` 在关闭分支里重放；step2 的目标矩形由 `renderBuildingGrid` 记到 `paint.guideStep2`（**只记矩形，不再自己调 `showAt`**），决策收拢在一处。
+
+**500 行门禁**：`core.ts` 因此涨到 611 行。按 split-priority order 拆了两刀：绘制机制整块进新的 `CityScene/paint.ts`（form ②，156 行），`checkQueueCompletion` 进 `data.ts` 变成 `refreshOnQueueDue(host)`（form ①，它本来就是一条数据刷新路径）。`core.ts` 回到 489 行。
+
+**覆盖测试**：`client/test/ui/cityRenderCoalescing.ui.ts`（新文件 9 例）——快请求全程零遮罩（**并且要驱动真帧**：遮罩由 `update()` 同步，不驱动帧的话把门控改回 `bt.busy` 也照样过）、满 1 秒才出遮罩且完成即撤、无遮罩期间输入照样被 `bt.busy` 挡住、一次升级只重绘一帧且第二帧不再画、空闲帧不画、开/关弹窗页面层是**同一批对象**（按引用比，不是长得一样）、关弹窗恢复页面命中表且 Back 仍在 `[0]`、纸背景整场只画一次、弹窗层在页面层之上。`textureLoadedGuardCallSites.test.ts` 的扫描器扩到 `paint[A-Z]\w*(): void {`——拆出来的 `paintPage`/`paintModal` 是各自独立的重绘入口，守卫契约必须跟过去，否则拆分本身就是契约上的一个洞。
+
+- **变异验证**（逐个改坏确认用例会挂）：恢复 `bt.start()` 后的前置 render → 合帧那例挂；遮罩门控改回 `bt.busy` → 快请求那例挂；关弹窗改回 `core.render()` → 分层两例挂。
+- **⚠️ 写这类断言的坑**：`expect(layer.children).toEqual(snapshot)` 在**失败**时会去遍历 PIXI DisplayObject 的 parent/children/transform 循环图构造 diff，直接把 V8 堆撑爆（本轮变异测试时实测 OOM，看起来像「测试挂了」而不是「断言失败了」）。改成按引用比的 `isSameTree()` 辅助函数。
+- 验证：`tsc --noEmit`（`tsconfig.json` + `tsconfig.test.json`）全绿、`eslint src` 无 error、`test:ui` 254 文件 / 2434 例 + 默认套件 241 文件 / 2780 例全绿、`check:filelength` 无新违规、`build:web` 构建通过；**真机核对**走 §8.10 的 `web-e2e` 桩挂载路径（`__nwE2E.views.showCity()` + 假 `worldApi`，无需后端栈），复现用户截图那座城（贴纸铺 Lv.5、队列 48:00、加速 48 金币），并在**四个层的 `addChild`/`removeChildren` 上挂钩子**逐次记录绘制（标签页被遮挡时 rAF 被挂起，用 `app.ticker.update()` 手动驱帧）：
+  - 开弹窗：**modal 层 1 次绘制（2 个对象）、page 层 0 次**，背后 55 个 Text 一个没动；
+  - 「关弹窗 → 开另一张卡 → 再关」三次交互：**合计 modal 层 1 次绘制、page 层 0 次**；
+  - 300ms 往返点「升级」，驱 79 帧：**page 层 1 次、modal 层 1 次、遮罩帧 0**；
+  - 1600ms 往返：遮罩 t≈1096ms 升起（只画 busy 层 2 个对象）、t≈1710ms 落下，随后**唯一一次** page 绘制；
+  - 引导链：开卡弹窗 → 环消失，关弹窗 → step3 的环出现在 Back 上（`guideRestore` 重放路径，且页面未重绘）。
+  - **测出来但不是回归的一处**：加速把 48 分钟的队列直接烧到 0，导致队列条目立刻「到期」，`refreshOnQueueDue` 每秒重新 `getMe` 一次、每次要一帧绘制 —— 桩服务器从不清队列才会这样，真服务端 2s 调度器清掉条目后就停。改前也是这个行为（那时是同步 `render()`），不是本轮引入的。
+
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）
 
 | 端点 | 鉴权 | 说明 |
