@@ -47,7 +47,13 @@ function buildHarness(opts: {
   const renderHud = vi.fn();
   const getTeams = vi.fn().mockResolvedValue(opts.teams ?? [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }, { cardInstanceId: 'c2' }] }]);
   const startMarch = vi.fn().mockResolvedValue({ toTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}` });
-  const getMarches = vi.fn().mockResolvedValue([]);
+  // showTeamPicker re-reads all three order slices before judging who is busy (2026-09-02), so the
+  // harness has to answer for them too. They echo whatever the test seeded on ctx — i.e. the server
+  // agrees with the client's cached view — which keeps the busy-team cases below meaningful instead of
+  // having the refresh silently wipe them. The stale-cache case gets its own harness override.
+  const getMarches = vi.fn(() => Promise.resolve(ctx.marches));
+  const getOccupations = vi.fn(() => Promise.resolve(ctx.occupations));
+  const getStationed = vi.fn(() => Promise.resolve(ctx.stationed));
   // Mirror the real getMe: it returns the FULL player view (with mainBaseTile + cardState), not a bare stub —
   // doMarchTeam reassigns ctx.me from it, and a later showTeamPicker needs mainBaseTile to not early-return.
   const getMe = vi.fn().mockResolvedValue({
@@ -69,14 +75,14 @@ function buildHarness(opts: {
     view: { renderMap: vi.fn() },
     cb: {
       worldId: WORLD_ID,
-      worldApi: { getTeams, startMarch, getMarches, getMe },
+      worldApi: { getTeams, startMarch, getMarches, getOccupations, getStationed, getMe },
       getSave: opts.getSave,
     },
     panels: { showModal, showToast, closeModal, showDeployDialog, renderHud },
   } as unknown as WorldMapContext;
 
   const net = new WorldMapNet(ctx);
-  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches, getMe };
+  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches, getOccupations, getStationed, getMe };
 }
 
 /** A promise whose resolution is controlled from the test — lets us freeze startMarch mid-flight. */
@@ -150,8 +156,10 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Legacy'))).toBe(false);
+    // The team EXISTS, so "go edit a formation" would be wrong advice — the head names the real blocker.
     const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
-    expect(head).toContain(t('world.team.noTeamsOccupy'));
+    expect(head).toContain(t('world.team.allNoTroops'));
+    expect(head).not.toContain(t('world.team.noTeamsOccupy'));
   });
 
   it('a team with zero committed troops (e.g. its cards were wiped) is omitted — it would just die on contact', async () => {
@@ -163,7 +171,7 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Wiped'))).toBe(false);
     const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
-    expect(head).toContain(t('world.team.noTeamsOccupy'));
+    expect(head).toContain(t('world.team.allNoTroops'));
   });
 });
 
@@ -449,7 +457,7 @@ describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes us
     let buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Cards'))).toBe(false);
     let head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
-    expect(head).toContain(t('world.team.noTeamsOccupy'));
+    expect(head).toContain(t('world.team.allNoTroops')); // the team exists — 0 troops is what to say
 
     // Server-side truth changed in the meantime (e.g. City's formation editor filled the team's troops
     // via distributeTroops) — a fresh getMe() now reports the real count. Nothing else touches ctx.me here.
@@ -465,7 +473,7 @@ describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes us
     buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Cards'))).toBe(true);
     head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
-    expect(head).not.toContain(t('world.team.noTeamsOccupy'));
+    expect(head).not.toContain(t('world.team.allNoTroops'));
   });
 
   it('refreshMe() is a no-op once the scene is destroyed — a slow response landing after teardown must not resurrect ctx.me', async () => {
@@ -478,5 +486,81 @@ describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes us
     getMe.mockResolvedValueOnce({ joined: true, mainBaseTile: ctx.me!.mainBaseTile, cardState: { c1: { currentTroops: 1300 } } } as PlayerWorldView);
     await net.refreshMe();
     expect(ctx.me).toBe(before); // untouched — refreshMe bailed out on ctx.destroyed
+  });
+});
+
+// 2026-09-02 user report: five full teams parked idle in the field ("野外停留" in the city, which reads
+// its own fresh slices), yet every 攻占 tap answered "尚无队伍，先去编辑布阵". Two independent defects met:
+//
+//   1. worldsvc's settleOccupation ended each hold with a `tile_update` push only, never the
+//      `march_update` the world map re-reads its order slices on (the 5s poll was removed in
+//      comm-audit-2026-07-27 P1-2). The finished occupations sat in ctx.occupations forever and kept
+//      every team flagged busy. Fixed server-side (core/push.ts pushOccupationSettled) AND here, by
+//      re-reading before judging — pushes are best-effort by construction, so the picker must not be
+//      the only thing standing between the player and a permanent dead end.
+//   2. The head line collapsed all four "nothing to offer" causes into the one that was false here.
+describe('WorldMapNet.showTeamPicker — empty-picker causes are named, not collapsed', () => {
+  it('a finished order still cached in ctx.occupations does not block the team — the picker re-reads first', async () => {
+    const { ctx, net, showModal, getOccupations } = buildHarness();
+    // The hold settled server-side (getOccupations answers empty) but no push ever arrived, so the
+    // client's cache still names t1. Pre-fix this was a permanent "no teams" for the rest of the session.
+    (ctx.occupations as { teamId: string }[]).push({ teamId: 't1' });
+    getOccupations.mockResolvedValueOnce([]);
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const buttons = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(true);
+    expect(ctx.occupations).toEqual([]); // and the stale entry is gone for every later read too
+  });
+
+  it('teams that all really are busy say so — not "go edit a formation"', async () => {
+    const { ctx, net, showModal } = buildHarness({
+      teams: [
+        { id: 't1', name: 'Marching', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Holding', army: [{ cardInstanceId: 'c2' }] },
+      ],
+    });
+    (ctx.marches as { mine: boolean; teamId: string }[]).push({ mine: true, teamId: 't1' });
+    (ctx.occupations as { teamId: string }[]).push({ teamId: 't2' });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
+    expect(head).toContain(t('world.team.allBusy'));
+    expect(head).not.toContain(t('world.team.noTeamsOccupy'));
+  });
+
+  it('one busy team + one troopless team is NOT "all busy" — the actionable half wins the message', async () => {
+    const { ctx, net, showModal } = buildHarness({
+      teams: [
+        { id: 't1', name: 'Marching', army: [{ cardInstanceId: 'c1' }] },
+        { id: 't2', name: 'Empty', army: [{ cardInstanceId: 'c2' }] },
+      ],
+      cardState: { c1: { currentTroops: 500 }, c2: { currentTroops: 0 } },
+    });
+    (ctx.marches as { mine: boolean; teamId: string }[]).push({ mine: true, teamId: 't1' });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
+    expect(head).toContain(t('world.team.allNoTroops'));
+  });
+
+  it('a failed getTeams says the fetch failed — claiming "you own no teams" is a claim we have no evidence for', async () => {
+    const { net, showModal, ctx } = buildHarness();
+    (ctx.cb.worldApi.getTeams as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new TypeError('offline'));
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
+    expect(head).toContain(t('world.team.loadFailed'));
+    expect(head).not.toContain(t('world.team.noTeamsOccupy'));
+  });
+
+  it('genuinely owning no team still gets the original advice, per kind', async () => {
+    for (const [kind, key] of [['occupy', 'world.team.noTeamsOccupy'], ['move', 'world.team.noTeamsMove'], ['attack', 'world.team.noTeams']] as const) {
+      const { net, showModal, ctx } = buildHarness({ teams: [] });
+      // attack additionally runs the ADR-039 連地 pre-check first; give it an owned neighbour so it passes.
+      (ctx as unknown as { tileCache: Map<string, unknown>; mapW: number; mapH: number }).tileCache =
+        new Map([[`${ANCHOR.x + 1}:${ANCHOR.y}`, { mine: true }]]);
+      (ctx as unknown as { mapW: number; mapH: number }).mapW = 1000;
+      (ctx as unknown as { mapW: number; mapH: number }).mapH = 1000;
+      await net.showTeamPicker(ANCHOR.x, ANCHOR.y, kind);
+      const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
+      expect(head, kind).toContain(t(key));
+    }
   });
 });

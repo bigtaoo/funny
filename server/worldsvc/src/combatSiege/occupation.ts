@@ -335,6 +335,15 @@ export class OccupationService {
       } catch (e) {
         console.error('[worldsvc] settleOccupation failed:', { id: claimed._id, err: (e as Error).message });
       }
+      // 2026-09-02 user report: tell the owner their hold ENDED. Deliberately here, at the claim, and
+      // not inside settleOccupation: the doc is gone from this point on no matter what follows — a
+      // stale tile makes settleOccupation early-return, and a throw is only logged — so this is the one
+      // place where "the occupation no longer exists" is unconditionally true. Without it the client's
+      // `ctx.occupations` never drops the finished hold and keeps the team flagged busy forever (see
+      // core/push.ts pushOccupationSettled). The autoReturn branch's return leg pushes a march_update
+      // of its own, so those settlements send two invalidations; both are plain re-read triggers, and
+      // paying one redundant push there is worth keeping this signal unconditional.
+      void this.core.pushOccupationSettled(claimed.ownerId, claimed);
       n++;
     }
     return n;

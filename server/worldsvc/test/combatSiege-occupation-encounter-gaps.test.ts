@@ -70,6 +70,7 @@ function makeCore(opts: {
   const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async () => ({ matchedCount: 1 }));
   const tilesUpdateOne = opts.tilesUpdateOne ?? vi.fn(async () => ({}));
   const pushMarch = vi.fn(async () => {});
+  const pushOccupationSettled = vi.fn(async () => {});
   const pushSiege = vi.fn(async () => {});
   const pushTile = vi.fn(async () => {});
   const pushTileToObservers = vi.fn(async () => {});
@@ -110,14 +111,14 @@ function makeCore(opts: {
     // against the live document (core/yield.ts settleExpr), not a value computed here — these unit tests
     // never reach a real server, so an empty expression object is all the call sites need.
     settleExpr: () => ({}),
-    pushMarch, pushSiege, pushTile, pushTileToObservers, bumpFamilyActivity, setOccupancy,
+    pushMarch, pushOccupationSettled, pushSiege, pushTile, pushTileToObservers, bumpFamilyActivity, setOccupancy,
     removeCover: vi.fn(async () => {}),
     recomputeYield: vi.fn(async () => emptyResources()),
     isConnectedToSectTerritory,
     meta: { getSaveFields: vi.fn(async () => null) },
     socialsvc: { getFamiliesByIds: vi.fn(async () => []) },
   } as unknown as WorldCore;
-  return { core, pwUpdateOne, tilesUpdateOne, pushMarch, pushSiege, pushTile, pushTileToObservers, bumpFamilyActivity, setOccupancy, stationedUpdateOne, isConnectedToSectTerritory };
+  return { core, pwUpdateOne, tilesUpdateOne, pushMarch, pushOccupationSettled, pushSiege, pushTile, pushTileToObservers, bumpFamilyActivity, setOccupancy, stationedUpdateOne, isConnectedToSectTerritory };
 }
 
 describe('OccupationService.applyOccupy — guard branches (no battle involved)', () => {
@@ -361,6 +362,67 @@ describe('OccupationService.processDueOccupations', () => {
     const { core } = withDue([d1], () => null);
     const svc = new OccupationService(core, fakeHelpers());
     expect(await svc.processDueOccupations(1_000)).toBe(0);
+  });
+
+  // 2026-09-02 user report: five idle teams, and every 攻占 tap said "尚无队伍，先去编辑布阵". Settlement
+  // ended each hold with a `tile_update` push only — but `march_update` is the ONLY signal the world map
+  // re-reads its marches/occupations/stationed slices on (the 5s poll went away in comm-audit-2026-07-27
+  // P1-2), so the finished holds sat in the client's ctx.occupations forever and kept every team flagged
+  // busy. Confirmed against the gateway's own log: five settlements, five tile_updates, zero march_updates.
+  // Only the autoReturn branch was ever covered, and by accident — its return leg pushes a real march.
+  it('a settled hold announces itself on the march_update channel, not just tile_update', async () => {
+    const d1 = occDoc({ teamId: 't1' });
+    const { core, pushOccupationSettled } = withDue([d1]);
+    (core as unknown as { deps: { cols: { tiles: { findOne: unknown } } } }).deps.cols.tiles.findOne =
+      async () => tile({ contestedBy: ATK });
+    const svc = new OccupationService(core, fakeHelpers());
+    await svc.processDueOccupations(1_000);
+    expect(pushOccupationSettled).toHaveBeenCalledWith(ATK, expect.objectContaining({ tile: TOTILE }));
+  });
+
+  it('a flat (teamless) hold announces itself too — its token keeps swinging on the map otherwise', async () => {
+    const d1 = occDoc();
+    const { core, pushOccupationSettled } = withDue([d1]);
+    (core as unknown as { deps: { cols: { tiles: { findOne: unknown } } } }).deps.cols.tiles.findOne =
+      async () => tile({ contestedBy: ATK });
+    const svc = new OccupationService(core, fakeHelpers());
+    await svc.processDueOccupations(1_000);
+    expect(pushOccupationSettled).toHaveBeenCalledTimes(1);
+  });
+
+  // The push sits at the claim, not inside settleOccupation, precisely so these two survivable failures
+  // still announce the deletion — the doc is gone either way, and a client that never hears about it is
+  // stuck exactly as the reporter was.
+  it('a stale tile makes settleOccupation early-return — the hold is still gone, so it is still announced', async () => {
+    const d1 = occDoc();
+    const { core, pushOccupationSettled, tilesUpdateOne } = withDue([d1]);
+    (core as unknown as { deps: { cols: { tiles: { findOne: unknown } } } }).deps.cols.tiles.findOne =
+      async () => tile({ contestedBy: 'someone-else' });
+    const svc = new OccupationService(core, fakeHelpers());
+    await svc.processDueOccupations(1_000);
+    expect(tilesUpdateOne).not.toHaveBeenCalled(); // nothing finalized
+    expect(pushOccupationSettled).toHaveBeenCalledTimes(1); // but the client must still drop the hold
+  });
+
+  it('a settlement that throws is still announced (the doc was already claim-deleted)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const d1 = occDoc();
+    const { core, pushOccupationSettled } = withDue([d1]);
+    (core as unknown as { deps: { cols: { tiles: { findOne: unknown } } } }).deps.cols.tiles.findOne = async () => {
+      throw new Error('boom');
+    };
+    const svc = new OccupationService(core, fakeHelpers());
+    await svc.processDueOccupations(1_000);
+    expect(pushOccupationSettled).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
+  });
+
+  it('a claim lost to a concurrent expulsion announces nothing — that hold is not ours to report', async () => {
+    const d1 = occDoc({ _id: `${W}:1:1` });
+    const { core, pushOccupationSettled } = withDue([d1], () => null);
+    const svc = new OccupationService(core, fakeHelpers());
+    await svc.processDueOccupations(1_000);
+    expect(pushOccupationSettled).not.toHaveBeenCalled();
   });
 
   it('settleOccupation throwing (stale tile lookup blows up) is caught and logged, but still counted', async () => {

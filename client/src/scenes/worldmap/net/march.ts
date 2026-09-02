@@ -10,7 +10,7 @@ import type { TeamTemplate } from '../../../net/WorldApiClient';
 import { carriedTroops, teamDisplayName } from '../../../game/meta/teamTroops';
 import { cardPower } from '../../../game/meta/cardDefs';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
-import { loadMapViewport } from './loaders';
+import { loadMapViewport, refreshMarches } from './loaders';
 import { errorMsg } from './errors';
 import { territoryConnected, attackFootprintCells } from '../logic/attackConnectivity';
 import { coordLine, type ModalButton } from '../WorldMapPanels/modalLine';
@@ -39,10 +39,23 @@ export async function showTeamPicker(
     ctx.panels.showToast(t('world.err.notConnected'), C.red);
     return;
   }
-  let teams: TeamTemplate[] = [];
-  try {
-    teams = await ctx.cb.worldApi.getTeams(ctx.cb.worldId);
-  } catch { /* offline — treat as empty */ }
+  // Re-read the order slices (marches/occupations/stationed) before judging who is busy — 2026-09-02
+  // user report. The world map's cached copies are refreshed ONLY by a gateway `march_update` push
+  // (the 5s poll was removed in comm-audit-2026-07-27 P1-2), and that push is best-effort: worldsvc
+  // fires it with retries=0 and drops it outright when the recipient has no live WS. A single lost
+  // push therefore left a FINISHED order in `ctx.occupations`/`ctx.marches` forever, and every team
+  // it named read as busy for the rest of the session — the reporter had all five teams stuck that
+  // way (the real trigger was settleOccupation never pushing at all; fixed server-side too, see
+  // combatSiege/occupation.ts). One extra round trip, parallel with getTeams, at the exact point the
+  // answer decides whether the player can act at all is worth far more than it costs.
+  const [fetched] = await Promise.all([
+    ctx.cb.worldApi.getTeams(ctx.cb.worldId).then((r) => r, () => null),
+    refreshMarches(ctx),
+  ]);
+  // `null` = the fetch itself failed (offline / timeout), which is NOT the same as owning no teams —
+  // see the head-line reason ladder at the bottom of this function.
+  const teamsFetchFailed = fetched === null;
+  const teams: TeamTemplate[] = fetched ?? [];
   // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march — marching or
   // holding a captured tile — must not accept a new order (mirrors the server-side TEAM_BUSY check in
   // combatMarch.ts, which checks both `marches` and `occupations`).
@@ -95,8 +108,11 @@ export async function showTeamPicker(
   // Only offer teams that can actually go into battle right now: non-empty army, not already
   // out on a march/hold, and carrying troops > 0 (a wiped-out or legacy team can't fight).
   // Sort: nearer first; ties broken by carried troops (more first), then combat power (higher first).
-  const usable = teams
-    .filter((tm) => tm.army.length > 0 && !busyTeamIds.has(tm.id) && committedOf(tm) > 0)
+  // `filled` is kept separately from `usable`: it is what tells "you own no teams" apart from "you own
+  // five and every one of them is unavailable", which the head line below has to say out loud.
+  const filled = teams.filter((tm) => tm.army.length > 0);
+  const usable = filled
+    .filter((tm) => !busyTeamIds.has(tm.id) && committedOf(tm) > 0)
     .sort((a, b) => distanceOf(a) - distanceOf(b) || committedOf(b) - committedOf(a) || powerOf(b) - powerOf(a));
   const buttons: ModalButton[] = [];
   for (const tm of usable) {
@@ -112,8 +128,35 @@ export async function showTeamPicker(
   const moveTitle = stationMode === 'garrison' ? t('world.team.pickTitleGarrison') : t('world.team.pickTitleMove');
   const head = usable.length > 0
     ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : kind === 'move' ? moveTitle : t('world.team.pickTitle'))
-    : (kind === 'occupy' ? t('world.team.noTeamsOccupy') : kind === 'move' ? t('world.team.noTeamsMove') : t('world.team.noTeams'));
+    : emptyPickerHead(teamsFetchFailed, filled, busyTeamIds, kind);
   ctx.panels.showModal([{ text: head, icon: 'cards' }, coordLine(tx, ty)], buttons);
+}
+
+/**
+ * Head line for a picker that has nothing to offer (2026-09-02 user report). This used to be a flat
+ * "尚无队伍，先去编辑布阵" for all four causes at once, which is advice the player cannot act on and,
+ * for three of the four, simply false — the reporter owned five full teams and was told to go build
+ * one. Each cause now names itself:
+ *
+ *   - the getTeams fetch failed  → say so; "you own no teams" is a claim we have no evidence for
+ *     (same distinction the team panel's `teamsLoaded` gate draws, see WorldMapContext).
+ *   - no team has any cards      → the original message, and here it is actually the right advice.
+ *   - every team is busy         → they're out on a march/hold; recall one or wait.
+ *   - none of the free ones      → they're home but empty; go distribute troops (分兵).
+ *     carries troops
+ */
+function emptyPickerHead(
+  teamsFetchFailed: boolean,
+  filled: TeamTemplate[],
+  busyTeamIds: Set<string | undefined>,
+  kind: 'attack' | 'occupy' | 'move',
+): string {
+  if (teamsFetchFailed) return t('world.team.loadFailed');
+  if (filled.length === 0) {
+    return kind === 'occupy' ? t('world.team.noTeamsOccupy') : kind === 'move' ? t('world.team.noTeamsMove') : t('world.team.noTeams');
+  }
+  if (filled.every((tm) => busyTeamIds.has(tm.id))) return t('world.team.allBusy');
+  return t('world.team.allNoTroops');
 }
 
 export async function doMarchTeam(
