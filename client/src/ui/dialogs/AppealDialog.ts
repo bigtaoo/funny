@@ -4,9 +4,10 @@
  * transport layer so every current and future call site gets this for free without per-scene wiring).
  *
  * Structurally the same self-drawn blocking full-screen card as {@link ConsentDialog}/{@link
- * ReconnectPromptDialog}, with a single-line reason field using the same hidden-`<input>`-overlay technique
- * FamilyScene's send box uses (a real HTML input positioned off-screen captures keyboard input; its value is
- * mirrored into a PIXI text label). Deliberately minimal — no caret blink, no multi-line textarea.
+ * ReconnectPromptDialog}, with a single-line reason field via `cb.openTextInput` (IPlatform.openTextInput,
+ * ASSET_PACKAGING §4.3/§4.4 item 1 — a real off-screen `<input>` on web/CrazyGames, `wx.showKeyboard` on
+ * WeChat; its value is mirrored into a PIXI text label). Deliberately minimal — no caret blink, no
+ * multi-line textarea.
  */
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
@@ -15,6 +16,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
+import type { IPlatform, ITextInput } from '../../platform/IPlatform';
 
 // Mirrors server/shared/src/social.ts APPEAL_REASON_MAX (500) — not imported: '@nw/shared' resolves to a
 // curated browser-safe subset (see client/webpack.config.js) that does not re-export server/shared/src/social.ts,
@@ -24,13 +26,14 @@ const APPEAL_REASON_MAX = 500;
 export type AppealCode = 'ACCOUNT_BANNED' | 'ACCOUNT_MUTED';
 
 export interface AppealDialogCallbacks {
+  openTextInput: IPlatform['openTextInput'];
   onSubmit(reason: string): Promise<void>;
   onClose(): void;
 }
 
 export class AppealDialog implements Scene {
   readonly container: PIXI.Container;
-  private hiddenInput: HTMLInputElement | null = null;
+  private textInput: ITextInput | null = null;
   private reasonText = '';
   private reasonLabel!: PIXI.Text;
   private errorLabel!: PIXI.Text;
@@ -50,36 +53,29 @@ export class AppealDialog implements Scene {
   update(): void { /* static */ }
 
   destroy(): void {
-    this.removeHiddenInput();
+    this.closeInput();
     this.container.removeAllListeners();
     this.container.destroy({ children: true });
   }
 
-  private removeHiddenInput(): void {
-    if (this.hiddenInput) {
-      this.hiddenInput.remove();
-      this.hiddenInput = null;
+  private closeInput(): void {
+    if (this.textInput) {
+      this.textInput.close();
+      this.textInput = null;
     }
   }
 
   private openInput(): void {
-    if (this.hiddenInput) { this.hiddenInput.focus(); return; }
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.maxLength = APPEAL_REASON_MAX;
-    inp.value = this.reasonText;
-    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-    document.body.appendChild(inp);
-    inp.addEventListener('input', () => {
-      this.reasonText = inp.value;
-      this.reasonLabel.text = this.reasonText || t('appeal.placeholder');
+    if (this.textInput) return; // already focused — nothing to steal focus from itself
+    this.textInput = this.cb.openTextInput({
+      value: this.reasonText,
+      maxLength: APPEAL_REASON_MAX,
+      onInput: (value) => {
+        this.reasonText = value;
+        this.reasonLabel.text = this.reasonText || t('appeal.placeholder');
+      },
+      onComplete: () => { this.textInput = null; },
     });
-    inp.addEventListener('blur', () => {
-      this.removeHiddenInput();
-    });
-    document.body.appendChild(inp);
-    inp.focus();
-    this.hiddenInput = inp;
   }
 
   private async submit(): Promise<void> {
@@ -93,7 +89,7 @@ export class AppealDialog implements Scene {
     this.errorLabel.text = '';
     try {
       await this.cb.onSubmit(reason);
-      this.removeHiddenInput();
+      this.closeInput();
       this.cb.onClose();
     } catch {
       this.submitting = false;
@@ -204,7 +200,7 @@ export class AppealDialog implements Scene {
     cancelBtn.x = bx2; cancelBtn.y = bY;
     cancelBtn.eventMode = 'static';
     cancelBtn.cursor = 'pointer';
-    cancelBtn.on('pointertap', tapHandler(() => { this.removeHiddenInput(); this.cb.onClose(); }, 'sfx.ui.back'));
+    cancelBtn.on('pointertap', tapHandler(() => { this.closeInput(); this.cb.onClose(); }, 'sfx.ui.back'));
     this.container.addChild(cancelBtn);
     const cancelLabel = txt(t('appeal.cancel'), snapFont(Math.round(bH * 0.36)), C.dark, true);
     cancelLabel.anchor.set(0.5, 0.5); cancelLabel.x = bx2 + bW / 2; cancelLabel.y = bY + bH / 2;

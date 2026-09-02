@@ -528,6 +528,30 @@ jobs:
         working-directory: tools
         run: node scripts/checkUnreachableModules.mjs
 
+      # tools/audio-pipeline is the one tool that is not a Node app (Python + numpy + soundfile —
+      # see its README's "Why Python": libsndfile in a wheel decodes AND encodes OGG/MP3/WAV/FLAC
+      # in one dependency, and this repo has no ffmpeg). It landed 2026-08-31..09-01 with a
+      # 435-line `selftest.py` of 106 checks — and **nothing in any of the 13 workflows ran it**,
+      # so 2100 lines of measurement and gating code had a self-test that could only rot. These
+      # two steps are that gap closed; they are the whole Python surface of CI.
+      #
+      # It needs the repo's committed raw sources (`art/audio/sources/**`, 22 files referenced by
+      # `process.PICKS`, all tracked) because its last source-gate case re-measures every one of
+      # them. `actions/checkout` above already brings them, so there is nothing to fetch.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/audio-pipeline/requirements.txt
+      - name: audio-pipeline deps
+        run: python -m pip install -r tools/audio-pipeline/requirements.txt
+      # Invoked from the repo root here, but it no longer matters which directory it runs from:
+      # `selftest.py` chdirs to the repo root itself (2026-09-02 — before that, running it the way
+      # its own docstring said crashed with a LibsndfileError, which is part of why it was never
+      # wired up).
+      - name: audio-pipeline selftest (measurement, gating, conversion)
+        run: python tools/audio-pipeline/selftest.py
+
   # Reads every server-test shard's + client-test's uploaded coverage/ artifacts (each shard only
   # produced coverage for the workspaces it ran) back onto one filesystem, then prints the same
   # consolidated table the old single-job "test coverage report" step did.

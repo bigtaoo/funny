@@ -24,6 +24,7 @@ import { SectScene } from '../../src/scenes/SectScene';
 import { ROW_H } from '../../src/scenes/SectScene/core';
 import { ui as C } from '../../src/render/sketchUi';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
+import { openDomTextInput } from '../../src/platform/web/domTextInput';
 
 // Minimal DOM stub for the hidden-input fields, recording each element's listeners so a test can
 // fire a real 'input' event the way a keystroke does (mirrors caretRegression.ui.ts's stub, which
@@ -43,6 +44,7 @@ if (!gDoc.document) {
         listeners: {} as Record<string, Array<() => void>>,
         focus(): void {},
         remove(): void {},
+        setAttribute(): void {},
         addEventListener(type: string, fn: () => void): void {
           const map = el.listeners as Record<string, Array<() => void>>;
           (map[type] ??= []).push(fn);
@@ -107,6 +109,7 @@ function stubWorldApi(): WorldApiClient {
 async function mount(w: number, h: number): Promise<{ scene: any; input: InputManager; core: any }> {
   const input = new InputManager();
   const scene = new SectScene(createLayout(w, h), input, {
+    openTextInput: openDomTextInput,
     onBack() {}, onNavTab() {},
     worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: ME, playerName: 'Tester',
     getCoins: () => 100_000, refreshWallet: async () => {},

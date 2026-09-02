@@ -12,7 +12,7 @@
  * ActionsPanel is now an independent class over `core` (2026-08-11 composition conversion — see
  * claudedocs/client-modules.md's split-form priority note), no PIXI needed since its body only
  * touches `core.bt`, `core.blurPromo()`, `core.render()`, `core.cb.*`, `core.promoCode`,
- * `core.hiddenInput`. `buildScene()` binds ActionsPanel's methods onto the same fake-core object
+ * `core.setPromoValue()`. `buildScene()` binds ActionsPanel's methods onto the same fake-core object
  * (mirrors sectActions.test.ts's / familySendButton.test.ts's flattened-fake pattern) so every
  * existing `scene.onBuy(...)`/`scene.cb`/`scene.bt` reference below keeps working unchanged.
  * `showToastMessage` is a real module function (not a `this.toast()` method), so it's spied via
@@ -40,7 +40,7 @@ class FakeShopSceneCore {
   items: unknown[] | null = null;
   loading = true;
   promoCode = '';
-  hiddenInput: { value: string; blur: () => void } | null = null;
+  setPromoValue = vi.fn();
   bt = new BusyTracker();
   cb = {
     loadItems: vi.fn(async (): Promise<unknown[]> => []),
@@ -217,8 +217,7 @@ describe('ShopScene — onRedeem() guards', () => {
 
 describe('ShopScene — onRedeem() success', () => {
   it('trims the code, clears the field (state + hidden input), and toasts success', async () => {
-    const hiddenInput = { value: 'CODE1', blur: vi.fn() };
-    const scene = buildScene({ promoCode: '  CODE1  ', hiddenInput });
+    const scene = buildScene({ promoCode: '  CODE1  ' });
     const spy = vi.spyOn(log, 'showToastMessage');
 
     await scene.onRedeem();
@@ -226,7 +225,7 @@ describe('ShopScene — onRedeem() success', () => {
     expect(scene.cb.redeemPromo).toHaveBeenCalledWith('CODE1');
     expect(scene.blurPromo).toHaveBeenCalledTimes(1);
     expect(scene.promoCode).toBe('');
-    expect(hiddenInput.value).toBe('');
+    expect(scene.setPromoValue).toHaveBeenCalledWith('');
     expect(spy).toHaveBeenCalledWith(t('shop.promoSuccess'), 'success');
     expect(scene.bt.busy).toBe(false);
   });

@@ -15,9 +15,15 @@ import type { ChatMessagePush } from '../net/proto/transport';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { measureRows, buildBubble } from './ChatScene/thread';
 import { runHit, type Hit as BaseHit } from '../ui/hits';
+import type { IPlatform, ITextInput } from '../platform/IPlatform';
 
 /** This scene has a single scrollable region, so `scroll` degrades to a boolean (see ui/hits.ts). */
 type Hit = BaseHit<boolean>;
+
+// Mirrors server/shared/src/social.ts CHAT_BODY_MAX (500) — not imported: '@nw/shared' resolves to a
+// curated browser-safe subset (see client/webpack.config.js), same reason AppealDialog/FamilyScene's
+// send-box hardcode their own max instead.
+const CHAT_BODY_MAX = 500;
 
 // ── ChatScene (S6-2) — a 1:1 conversation window ──────────────────────────────
 //
@@ -33,6 +39,8 @@ type Hit = BaseHit<boolean>;
 
 export interface ChatSceneCallbacks {
   onBack(): void;
+  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput. */
+  openTextInput: IPlatform['openTextInput'];
   peerName: string;
   peerPublicId: string;
   /** This player's own 9-digit public id (to right-align own messages). */
@@ -93,7 +101,7 @@ export class ChatScene implements Scene {
 
   private hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
-  private hiddenInput: HTMLInputElement | null = null;
+  private textInput: ITextInput | null = null;
   private dead = false;
 
   constructor(layout: ILayout, input: InputManager, cb: ChatSceneCallbacks) {
@@ -101,7 +109,6 @@ export class ChatScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
-    this.setupHiddenInput();
     this.unsubs.push(input.onDown((x, y) => this.onPointerDown(x, y)));
     this.unsubs.push(input.onMove((x, y) => this.onPointerMove(x, y)));
     this.unsubs.push(input.onUp((x, y) => this.onPointerUp(x, y)));
@@ -128,7 +135,7 @@ export class ChatScene implements Scene {
   destroy(): void {
     this.dead = true;
     this.unsubs.forEach((u) => u());
-    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    this.textInput?.close();
     this.container.destroy({ children: true });
   }
 
@@ -191,7 +198,7 @@ export class ChatScene implements Scene {
     const body = this.draft.trim();
     if (!body) return;
     this.draft = '';
-    if (this.hiddenInput) this.hiddenInput.value = '';
+    this.textInput?.setValue('');
     // Optimistic append (echoed as mine).
     const ts = Date.now();
     const localId = `local-${ts}`;
@@ -210,27 +217,25 @@ export class ChatScene implements Scene {
     }
   }
 
-  // ── Hidden input (compose) ────────────────────────────────────────────────
-  private setupHiddenInput(): void {
-    if (typeof document === 'undefined') return;
-    const el = document.createElement('input');
-    el.type = 'text';
-    el.autocomplete = 'off';
-    el.setAttribute('autocapitalize', 'sentences');
-    el.style.cssText =
-      'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;border:0;padding:0;margin:0;font-size:16px;z-index:-1;';
-    el.addEventListener('focus', () => { this.composeFocused = true; this.caretOn = true; this.caretTimer = 0; this.render(); });
-    el.addEventListener('blur', () => { this.composeFocused = false; this.render(); });
-    el.addEventListener('input', () => { this.draft = el.value; this.render(); });
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); void this.doSend(); }
-    });
-    document.body.appendChild(el);
-    this.hiddenInput = el;
-  }
-
+  // ── Text input (compose) ────────────────────────────────────────────────────
+  // Stays open across sends (no auto-close on Enter/onConfirm) — chat is a keep-typing surface,
+  // unlike e.g. FamilyScene's send box which closes after each message.
   private focusCompose(): void {
-    this.hiddenInput?.focus();
+    if (this.textInput) return; // already open
+    const handle = this.cb.openTextInput({
+      value: this.draft,
+      maxLength: CHAT_BODY_MAX,
+      onInput: (value) => { this.draft = value; this.render(); },
+      onConfirm: () => { void this.doSend(); },
+      onComplete: () => {
+        if (this.textInput === handle) { this.textInput = null; this.composeFocused = false; this.render(); }
+      },
+    });
+    this.textInput = handle;
+    this.composeFocused = true;
+    this.caretOn = true;
+    this.caretTimer = 0;
+    this.render();
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────

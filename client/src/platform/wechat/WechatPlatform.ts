@@ -1,16 +1,17 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult, TextInputOptions, ITextInput } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WechatAdapter } from '../../inputSystem/WechatAdapter';
 import type { Locale } from '../../i18n';
 import type { IapKind } from '../iap';
 import type { NetworkKind } from '../../assets/prefetchPolicy';
 import { reportAnomaly } from '../../net/anomaly';
+import { screenCanvas } from './wechatHost';
 
 /**
  * WeChat mini-game platform adapter.
  * Requires @pixi/unsafe-eval to be imported before pixi.js-legacy.
- * The WeChat runtime provides a global `canvas` object instead of DOM.
+ * There is no DOM: the render target comes from resolveScreenCanvas() below.
  */
 
 declare const wx: {
@@ -33,6 +34,31 @@ declare const wx: {
   getLaunchOptionsSync(): { query?: Record<string, string> };
   createRewardedVideoAd(opts: { adUnitId: string }): WxRewardedVideoAd;
   getNetworkType(opts: { success?: (res: { networkType: string }) => void; fail?: (err: unknown) => void }): void;
+  /** First call returns the on-screen canvas; later calls return off-screen ones (mini-game API). */
+  createCanvas(): unknown;
+
+  // ── Text input (ASSET_PACKAGING §4.3/§4.4 item 1) ──────────────────────────
+  // Mini-game-native keyboard, distinct from the mini-*program* `<input>`/`KeyboardInputComponent`
+  // widgets (this project has no DOM to mount those on). One session at a time: opening a second
+  // `showKeyboard` while the first is still up is the only case not exercised on real hardware yet
+  // (§4.4 item 2) — everything else here matches the public docs as of base library 2.1.0+.
+  showKeyboard(opts: {
+    defaultValue: string;
+    maxLength: number;
+    multiple: boolean;
+    /** false: tapping the system keyboard's Confirm button hides it (matches an `<input>` that
+     *  calls `.blur()` on Enter). This project always passes true — see WechatPlatform.openTextInput. */
+    confirmHold: boolean;
+    confirmType: string;
+    success?(): void;
+    fail?(err: unknown): void;
+  }): void;
+  /** Overwrite the keyboard's current input-box content (e.g. mid-keystroke filtering) — min base library 2.1.0. */
+  updateKeyboard(opts: { value: string; success?(): void; fail?(err: unknown): void }): void;
+  hideKeyboard(opts?: { success?(): void; fail?(err: unknown): void }): void;
+  onKeyboardInput(cb: (res: { value: string }) => void): void;
+  onKeyboardConfirm(cb: (res: { value: string }) => void): void;
+  onKeyboardComplete(cb: () => void): void;
 };
 
 /** Rewarded-video-ad instance (WeChat mini-game ads API). One instance is reused across watches. */
@@ -72,8 +98,12 @@ interface WxTouchEvent {
   changedTouches: WxTouch[];
 }
 
-// WeChat mini-game exposes a global canvas
-declare const canvas: HTMLCanvasElement;
+// 上屏 canvas 的解析搬到了 `wechatHost.ts`：那边是入口第一个 import，必须在那里拿下「第一次 `wx.createCanvas()`」——它同时也是宿主类嗅探的取样对象（同一个工厂 ⇒ 同一个类，
+// 不必多要一张 canvas）。这里只是转发，`getCanvas()` 的语义一字未变。
+//
+// 历史：这里原先是 `return canvas`，读那个**裸全局**。它由适配层提供、不在小游戏文档 API 里，
+// 基础库 3.17.2 (canary) 起不再提供，于是 `startApp()` 第一行就 `ReferenceError`——整个游戏
+// 完好地站在黑屏后面（ASSET_PACKAGING_LOG §17.1）。
 
 class WechatStorage implements IStorage {
   getItem(key: string): string | null {
@@ -115,7 +145,7 @@ export class WechatPlatform implements IPlatform {
   readonly devicePixelRatio: number = 1;
 
   getCanvas(): HTMLCanvasElement {
-    return canvas;
+    return screenCanvas() as HTMLCanvasElement;
   }
 
   getScreenSize(): { width: number; height: number } {
@@ -174,6 +204,74 @@ export class WechatPlatform implements IPlatform {
     toDesign: (sx: number, sy: number) => { x: number; y: number },
   ): void {
     new WechatAdapter(input, toDesign);
+  }
+
+  /**
+   * Whichever field `openTextInput` most recently opened and hasn't closed yet. `wx.onKeyboardInput`
+   * / `onKeyboardConfirm` / `onKeyboardComplete` are global listeners (there's no per-call handle in
+   * the wx API), matching the fact that only one keyboard session can ever be open at once — the
+   * same one-at-a-time invariant a real `<input>` gets for free from browser focus.
+   */
+  private activeTextInput: { readonly opts: TextInputOptions; closed: boolean } | null = null;
+  private keyboardListenersWired = false;
+
+  private wireKeyboardListenersOnce(): void {
+    if (this.keyboardListenersWired) return;
+    this.keyboardListenersWired = true;
+    wx.onKeyboardInput((res) => { this.activeTextInput?.opts.onInput(res.value); });
+    wx.onKeyboardConfirm((res) => { this.activeTextInput?.opts.onConfirm?.(res.value); });
+    // Fires on any keyboard dismissal — the user tapping away, or our own hideKeyboard() from
+    // ITextInput.close(). The latter already nulls activeTextInput and fires onComplete itself
+    // (see openTextInput below), so by the time this arrives for that case activeTextInput is
+    // already null and this is a no-op — onComplete never fires twice.
+    wx.onKeyboardComplete(() => {
+      const active = this.activeTextInput;
+      if (!active) return;
+      this.activeTextInput = null;
+      active.closed = true;
+      active.opts.onComplete();
+    });
+  }
+
+  /** wx.showKeyboard's native mini-game keyboard (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput. */
+  openTextInput(opts: TextInputOptions): ITextInput {
+    this.wireKeyboardListenersOnce();
+    // Opening a new field while one is still open steals it, same as focusing a new `<input>`
+    // blurs whatever had focus — closes the old one (firing its onComplete) before opening the new one.
+    if (this.activeTextInput && !this.activeTextInput.closed) {
+      const prev = this.activeTextInput;
+      prev.closed = true;
+      this.activeTextInput = null;
+      prev.opts.onComplete();
+    }
+    const session = { opts, closed: false };
+    this.activeTextInput = session;
+    try {
+      wx.showKeyboard({
+        defaultValue: opts.value,
+        maxLength: opts.maxLength,
+        multiple: false,
+        // Never auto-hide on Confirm — see TextInputOptions.onConfirm's doc comment; callers that
+        // want to close on confirm call ITextInput.close() from their onConfirm themselves.
+        confirmHold: true,
+        confirmType: opts.confirmType ?? 'done',
+        // No password/masked mode exists on this API (see TextInputOptions.password's doc comment)
+        // — opts.password is intentionally not read here.
+      });
+    } catch { /* best-effort, matches every other wx.* call in this file */ }
+    return {
+      setValue: (value: string): void => {
+        if (session.closed) return;
+        try { wx.updateKeyboard({ value }); } catch { /* ignore */ }
+      },
+      close: (): void => {
+        if (session.closed) return;
+        session.closed = true;
+        if (this.activeTextInput === session) this.activeTextInput = null;
+        try { wx.hideKeyboard(); } catch { /* ignore */ }
+        opts.onComplete();
+      },
+    };
   }
 
   async onLoadingComplete(): Promise<void> { /* no-op */ }

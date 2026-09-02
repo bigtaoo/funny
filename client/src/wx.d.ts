@@ -170,7 +170,13 @@ declare module wx {
     offTimeUpdate(cb: () => {});
 
     /** Listen for audio playback error events. */
-    onError(cb: () => {});
+    // Widened 2026-09-01 (§7 step 7): this was `cb: () => {}`, which declares a callback that
+    // takes NOTHING and returns an object — so the one useful thing about an audio failure, the
+    // errMsg, was untypeable at every call site. The shape below is the one the other three
+    // `onError` declarations in this file already use. Same family as §0.3's lesson: a runtime
+    // detail missing from OUR declaration file has exactly one symptom, which is that nobody
+    // uses it.
+    onError(cb: (opts: { errMsg: string; errCode: number }) => void): void;
 
     /** Remove listener for audio playback error events. */
     offError(cb: () => {});
@@ -197,7 +203,7 @@ declare module wx {
   function createInnerAudioContext(opts?: { useWebAudioImplement?: boolean }): IInnerAudioContext;
 
   /**
-   * Standard Web Audio API surface, since base library **2.19.0** (this project pins 3.15.1 in
+   * Standard Web Audio API surface, since base library **2.19.0** (this project pins 3.17.2 in
    * `wechatgame/project.private.config.json`). This is what `platform/wechat/WechatAudioBus.ts`
    * runs on, and it is why the mini-game needs no audio implementation of its own — the whole
    * `audio/` pipeline (procedural voices, AudioBuffer samples, bus gain) is portable as written.

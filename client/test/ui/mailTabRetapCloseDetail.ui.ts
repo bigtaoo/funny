@@ -20,6 +20,7 @@ import { sidebarNavW, bottomNavH } from '../../src/ui/widgets/HubTabs';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import type { MailView } from '../../src/net/ApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -70,8 +71,10 @@ function mailCellCenter(scene: any): { x: number; y: number } {
 
 function build(): { scene: any; input: InputManager } {
   const input = new InputManager();
+  const { openTextInput } = createFakeTextInput();
   const scene = new FriendsScene(createLayout(W, H), input, {
     onBack() {}, onOpenRoom() {},
+    openTextInput,
     myPublicId: '',
     getProfileExtra: async () => ({}),
     loadFriends: async () => [],

@@ -7,7 +7,11 @@ import { ui as C, txt, buildPaperBackground, tearDownChildren } from '../render/
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { FS } from '../render/fontScale';
 import { buildRasterTabIcon, BACK_ARROW_ART, BACK_ARROW_ASPECT, preloadIconArt } from '../render/icons';
-import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type View, type Field } from './LoginScene/types';
+import {
+  MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, MAX_LOGIN_ID_LEN, MAX_PASSWORD_LEN, MAX_DISPLAY_NAME_LEN,
+  type LoginSceneCallbacks, type View, type Field,
+} from './LoginScene/types';
+import type { ITextInput } from '../platform/IPlatform';
 import { dispatchHit, type Hit } from '../ui/hits';
 import { drawLanding, drawForm, drawSubmitting, PRESS_DUR, type FormHost } from './LoginScene/forms';
 
@@ -15,10 +19,10 @@ export type { AuthOutcome, LoginSceneCallbacks } from './LoginScene/types';
 
 // ── LoginScene (SA-3) — account login / register + single-player entry ─────────
 //
-// Canvas-drawn (mirrors RoomScene/LobbyScene). Free-text entry is captured by a
-// single hidden <input> overlaid on the page (works with desktop keyboards and
-// mobile soft keyboards); the value is mirrored onto canvas-drawn field boxes
-// (password masked as dots). Tapping a field focuses the hidden input.
+// Canvas-drawn (mirrors RoomScene/LobbyScene). Free-text entry goes through
+// cb.openTextInput (IPlatform.openTextInput, ASSET_PACKAGING §4.3/§4.4 item 1) — an off-screen
+// `<input>` on web/CrazyGames, wx.showKeyboard on WeChat; the value is mirrored onto canvas-drawn
+// field boxes (password masked as dots). Tapping a field opens the platform's text-entry session.
 //
 // Views: landing → (password | register) → submitting. OAuth is deferred (SA-2),
 // so there's no oauthWait view yet. Copy lives in the i18n `auth.*` namespace.
@@ -62,8 +66,8 @@ export class LoginScene implements Scene {
   /** Active button press: grows the button, then fires its action when the pop ends. */
   private press: { key: string; t: number; fn: () => void } | null = null;
 
-  /** Hidden DOM input that captures keystrokes (incl. mobile soft keyboard). */
-  private hiddenInput: HTMLInputElement | null = null;
+  /** The currently-open text-entry session (cb.openTextInput), or null when no field is focused. */
+  private textInput: ITextInput | null = null;
 
   constructor(layout: ILayout, input: InputManager, cb: LoginSceneCallbacks) {
     this.container = new PIXI.Container();
@@ -71,7 +75,6 @@ export class LoginScene implements Scene {
     this.h = layout.designHeight;
     this.cb = cb;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
-    this.setupHiddenInput();
     this.render();
     // The back arrow is an AI raster that decodes asynchronously, and this scene runs BEFORE the
     // lobby (which is what warms these textures for every other scene) — without this, the first
@@ -120,64 +123,50 @@ export class LoginScene implements Scene {
   destroy(): void {
     this.destroyed = true;
     this.unsubs.forEach((u) => u());
-    if (this.hiddenInput) {
-      this.hiddenInput.remove();
-      this.hiddenInput = null;
-    }
+    this.textInput?.close();
     this.container.destroy({ children: true });
   }
 
-  // ── Hidden input (text capture) ───────────────────────────────────────────────
+  // ── Text input (field capture) ─────────────────────────────────────────────────
 
-  private setupHiddenInput(): void {
-    if (typeof document === 'undefined') return; // non-DOM platform (wx skips this scene)
-    const el = document.createElement('input');
-    el.type = 'text';
-    el.autocomplete = 'off';
-    el.setAttribute('autocapitalize', 'off');
-    el.setAttribute('autocorrect', 'off');
-    // Off-screen but focusable, so mobile soft keyboards still appear. font-size
-    // 16px avoids iOS auto-zoom; opacity ~0 keeps it invisible.
-    el.style.cssText =
-      'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;' +
-      'border:0;padding:0;margin:0;font-size:16px;z-index:-1;';
-    el.addEventListener('input', () => {
-      if (this.focused) {
-        this.fields[this.focused] = el.value;
+  private fieldMaxLength(field: Field): number {
+    if (field === 'displayName') return MAX_DISPLAY_NAME_LEN;
+    if (field === 'loginId') return MAX_LOGIN_ID_LEN;
+    return MAX_PASSWORD_LEN; // password / confirmPassword
+  }
+
+  private focus(field: Field): void {
+    this.caretOn = true;
+    this.caretTimer = 0;
+    // Tapping straight from one field to another closes the outgoing session as part of this same
+    // call (openTextInput steals focus the way a new `<input>` would) — its onComplete runs before
+    // this returns and would otherwise null `this.focused` right out from under the field we're
+    // about to set below, so it only does that when it's still the live session at the time it fires.
+    const handle = this.cb.openTextInput({
+      value: this.fields[field],
+      maxLength: this.fieldMaxLength(field),
+      password: field === 'password' || field === 'confirmPassword',
+      onInput: (value) => {
+        this.fields[field] = value;
         // Editing any field clears a stale validation/auth error so the form stays
         // live: the red line disappears as the user fixes the input (the green ✓
         // hints already update per keystroke), and the submit button never looks
         // "stuck" behind an error that no longer reflects the current values.
         if (this.errorKey) { this.errorKey = null; this.errorDetail = null; }
         this.render();
-      }
+      },
+      onConfirm: () => this.onSubmit(),
+      onComplete: () => {
+        if (this.textInput === handle) { this.textInput = null; this.focused = null; this.render(); }
+      },
     });
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); this.onSubmit(); }
-    });
-    document.body.appendChild(el);
-    this.hiddenInput = el;
-  }
-
-  private focus(field: Field): void {
+    this.textInput = handle;
     this.focused = field;
-    this.caretOn = true;
-    this.caretTimer = 0;
-    const el = this.hiddenInput;
-    if (el) {
-      el.type = field === 'password' || field === 'confirmPassword' ? 'password' : 'text';
-      el.value = this.fields[field];
-      el.focus();
-      // Move caret to end.
-      const n = el.value.length;
-      try { el.setSelectionRange(n, n); } catch { /* type may not support it */ }
-    }
     this.render();
   }
 
   private blur(): void {
-    this.focused = null;
-    this.hiddenInput?.blur();
+    this.textInput?.close();
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ import { initI18n, t } from '../../src/i18n';
 import { snapFont } from '../../src/render/fontScale';
 import { FriendsScene } from '../../src/scenes/FriendsScene';
 import { addButton } from '../../src/scenes/FriendsScene/chrome';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -58,8 +59,9 @@ function collectTextNodes(root: PIXI.Container): PIXI.Text[] {
 }
 
 function build(w = W, h = H): any {
+  const { openTextInput } = createFakeTextInput();
   return new FriendsScene(createLayout(w, h), new InputManager(), {
-    onBack() {}, onOpenRoom() {},
+    onBack() {}, onOpenRoom() {}, openTextInput,
     myPublicId: '',
     getProfileExtra: async () => ({}),
     loadFriends: async () => [],

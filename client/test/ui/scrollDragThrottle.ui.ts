@@ -42,6 +42,7 @@ import { ChatScene } from '../../src/scenes/ChatScene';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { FriendView, ChatMessageView } from '../../src/net/ApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -172,6 +173,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       onBack() {}, onOpenSect() {}, onNavTab() {}, async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
       openChat() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     assertScrollDragThrottled(scene, input);
   });
@@ -182,6 +184,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       onBack() {}, onNavTab() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'acc_test', playerName: 'Tester',
       getCoins: () => 100000, refreshWallet: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     assertScrollDragThrottled(scene, input);
   });
@@ -190,6 +193,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
     const input = new InputManager();
     const scene = new AuctionScene(createLayout(W, H), input, {
       onBack() {}, worldApi: stubWorldApi(),
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     assertScrollDragThrottled(scene, input);
   });
@@ -241,6 +245,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       buy: async () => ({ ok: true }),
       recharge: async () => ({ ok: true }),
       openGacha() {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     assertScrollDragThrottled(scene, input);
   });
@@ -314,6 +319,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       loadConversations: async () => [], openChat() {},
       loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
       claimMail: async () => true, deleteMail: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     // Flush the refresh() microtasks queued by the constructor so the 30-row friends list
     // (and its non-zero maxScroll) is actually rendered before we drive the drag.
@@ -339,6 +345,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       loadConversations: async () => [], openChat() {},
       loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
       claimMail: async () => true, deleteMail: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     expect(scene.core.maxScroll).toBeGreaterThan(200);
@@ -376,6 +383,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       loadConversations: async () => [], openChat() {},
       loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
       claimMail: async () => true, deleteMail: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     expect(scene.core.maxScroll).toBeGreaterThan(0);
@@ -406,6 +414,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       loadConversations: async () => [], openChat() {},
       loadMail: async () => ({ mail: [], unread: 0 }), markMailRead: async () => {},
       claimMail: async () => true, deleteMail: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     // Stub in a spy so we can tell whether a profile hit fired without relying on ProfilePopup internals.
     (scene as any).friendsList.openFriendProfile = (id: string) => opened.push(id);
@@ -431,6 +440,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       loadMessages: async () => messages,
       send: async () => ({ messageId: 'mx', ts: 0 }),
       markRead: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     // Flush the load() microtasks queued by the constructor so the 40-message thread (and its
     // non-zero maxScroll) is actually rendered before we drive the drag.
@@ -452,6 +462,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
       loadMessages: async () => messages,
       send: async () => ({ messageId: 'mx', ts: 0 }),
       markRead: async () => {},
+      openTextInput: createFakeTextInput().openTextInput,
     }) as any;
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     const maxScroll0 = scene.maxScroll;

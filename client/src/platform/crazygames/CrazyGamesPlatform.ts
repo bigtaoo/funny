@@ -1,11 +1,12 @@
 import type * as PIXI from 'pixi.js-legacy';
-import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult } from '../IPlatform';
+import { IPlatform, IStorage, AuthCredential, IGameSocket, SocketHandlers, ShareResult, TextInputOptions, ITextInput } from '../IPlatform';
 import { InputManager } from '../../inputSystem/InputManager';
 import { WebAdapter } from '../../inputSystem/WebAdapter';
 import { getOrCreateDeviceId } from '../uuid';
 import { BrowserGameSocket } from '../../net/BrowserGameSocket';
 import type { Locale } from '../../i18n';
 import type { IapKind } from '../iap';
+import { openDomTextInput } from '../web/domTextInput';
 
 /**
  * CrazyGames platform adapter.
@@ -84,6 +85,10 @@ export class CrazyGamesPlatform implements IPlatform {
     document.body.style.margin     = '0';
     document.body.style.overflow   = 'hidden';
     document.body.style.background = '#f5f0e8';
+  }
+
+  openTextInput(opts: TextInputOptions): ITextInput {
+    return openDomTextInput(opts);
   }
 
   // ── SDK lifecycle ──────────────────────────────────────────────────────────

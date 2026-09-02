@@ -32,6 +32,7 @@ vi.mock('../../src/render/emblemIcon', async (importOriginal) => {
 
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 import { initI18n } from '../../src/i18n';
 import { WorldMapScene } from '../../src/scenes/WorldMapScene';
 import { EMBLEM_KEYS, EMBLEM_COLORS } from '../../src/render/emblemIcon';
@@ -58,9 +59,10 @@ function stubWorldApi(): WorldApiClient {
 }
 
 function buildScene(): any {
+  const { openTextInput } = createFakeTextInput();
   return new WorldMapScene(createLayout(W, H), new InputManager(), {
     onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {},
-    onOpenCity() {}, onOpenDefense() {},
+    onOpenCity() {}, onOpenDefense() {}, openTextInput,
     worldApi: stubWorldApi(), worldId: 'world:1:0', playerName: 'Tester', accountId: 'acc_test',
     storage: memStore,
   }) as any;

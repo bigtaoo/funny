@@ -15,6 +15,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -66,7 +67,7 @@ describe('SectScene.getFamily/getSect — SectSceneView accessors', () => {
     const scene = new SectScene(createLayout(1280, 800), new InputManager(), {
       onBack() {}, onNavTab() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'me', playerName: 'Tester',
-      getCoins: () => 0, refreshWallet: async () => {},
+      getCoins: () => 0, refreshWallet: async () => {}, openTextInput: createFakeTextInput().openTextInput,
     });
     await flush();
 
@@ -83,7 +84,7 @@ describe('SectScene.getFamily/getSect — SectSceneView accessors', () => {
       onBack() {}, onNavTab() {},
       worldApi: stubWorldApi({ getMyFamily: () => new Promise(() => {}) }), // never resolves
       worldId: 'world:1:0', myAccountId: 'me', playerName: 'Tester',
-      getCoins: () => 0, refreshWallet: async () => {},
+      getCoins: () => 0, refreshWallet: async () => {}, openTextInput: createFakeTextInput().openTextInput,
     });
 
     expect(scene.getFamily()).toBeNull();
@@ -100,6 +101,7 @@ describe('FamilyScene.getFamily — FamilySceneView accessor', () => {
       async addFriend() {}, async getFriendPublicIds() { return new Set<string>(); },
       openChat() {},
       worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: 'me', playerName: 'Tester',
+      openTextInput: createFakeTextInput().openTextInput,
     });
     await flush();
 
@@ -115,6 +117,7 @@ describe('FamilyScene.getFamily — FamilySceneView accessor', () => {
       openChat() {},
       worldApi: stubWorldApi({ getMyFamily: () => new Promise(() => {}) }),
       worldId: 'world:1:0', myAccountId: 'me', playerName: 'Tester',
+      openTextInput: createFakeTextInput().openTextInput,
     });
 
     expect(scene.getFamily()).toBeNull();

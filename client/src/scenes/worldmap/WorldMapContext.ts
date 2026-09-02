@@ -14,7 +14,7 @@ import type { WorldMapPanels } from './WorldMapPanels';
 import type { WorldMapNet } from './WorldMapNet';
 import type { WorldMapInput } from './WorldMapInput';
 import type { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
-import type { IStorage } from '../../platform/IPlatform';
+import type { IStorage, IPlatform, ITextInput } from '../../platform/IPlatform';
 import type { SaveData } from '../../game/meta/SaveData';
 import type { EraseCrumb } from './WorldMapRenderer/loadingReveal';
 import { GuideOverlay } from '../../render/GuideOverlay';
@@ -49,6 +49,9 @@ export type MapTokenEntry =
 // ── Public callbacks ────────────────────────────────────────────────────────
 export interface WorldMapCallbacks {
   onBack(): void;
+  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput. Used
+   *  by the territory panel's capital-rename field. */
+  openTextInput: IPlatform['openTextInput'];
   /** Open the social/chat overlay (FriendsScene, world channel tab) — also the entry point to family management (§25). */
   onOpenChat(): void;
   onOpenAuction(): void;
@@ -159,7 +162,7 @@ export class WorldMapContext {
   territoryHiddenLevels: Set<number> = new Set();
   /** Set while the list tab's Abandon confirm dialog is showing (which tile is pending). */
   territoryAbandonConfirm: { x: number; y: number } | null = null;
-  hiddenInput: HTMLInputElement | null = null;
+  hiddenInput: ITextInput | null = null;
   zoom: 1 | 2 | 3 = 1;
   zoomCfgs!: [ZoomCfg, ZoomCfg, ZoomCfg];
   get zc(): ZoomCfg { return this.zoomCfgs[this.zoom - 1]; }

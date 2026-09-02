@@ -28,6 +28,7 @@ import type { ShopSceneCore as ShopSceneCoreType } from '../../src/scenes/ShopSc
 // the exact URL the scene feeds to getArtTexture() — i.e. the same cached PIXI texture object.
 import infantryArtUrl from '../../src/assets/units/infantry.png';
 import { buildMaterialIcon } from '../../src/render/atlas/materialAtlas';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 type Hit = { rect: { x: number; y: number; w: number; h: number }; fn: () => void };
 
@@ -126,6 +127,7 @@ function buildShop(cb: Partial<ShopSceneCallbacks>): ShopScene {
     loadItems: async () => [],
     buy: async () => ({ ok: true }),
     openGacha() {},
+    openTextInput: createFakeTextInput().openTextInput,
     ...cb,
   });
 }
@@ -798,6 +800,7 @@ describe('ShopScene — landscape shop grid is 3-up and the price never overlaps
     new ShopScene(createLayout(1920, 1080), new InputManager(), {
       onBack() {}, getCoins: () => 100_000_000, getOwnedSkins: () => [],
       loadItems: async () => [], buy: async () => ({ ok: true }), openGacha() {},
+      openTextInput: createFakeTextInput().openTextInput,
       ...cb,
     });
 
@@ -860,6 +863,7 @@ describe('ShopScene — Coins tab always peeks the next tier row, even on a wide
       loadItems: async () => [], buy: async () => ({ ok: true }), openGacha() {},
       initialTab: 'coins', rechargeCoins: async () => ({ ok: true }),
       getMonetization: () => ({ subscriptionExpiry: 0, starterUsed: [] }),
+      openTextInput: createFakeTextInput().openTextInput,
       ...cb,
     });
 

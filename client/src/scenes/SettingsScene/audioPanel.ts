@@ -150,9 +150,13 @@ export function drawAudio(host: AudioPanelHost): void {
       // On release, not per move: `onDrag` runs on every pointer-move (240 of them in that test),
       // and one cue per move is precisely the machine-gun §0.1 caught `sfx.ink.tick` being.
       //
-      // `bgm` stays silent — its slider currently drives `setMusicVolume`, which accepts and
-      // ignores (§7 step 7), so auditioning it with an SFX cue would be a lie about what the
-      // slider controls.
+      // `bgm` stays silent, and **still does now that §7 step 7 has landed** — but the reason
+      // changed, so it is restated rather than left to be re-derived. It used to be "the channel
+      // drives nothing, so an SFX cue would lie about what the slider controls". Now the channel
+      // drives a real bed, and the bed is ALREADY AUDIBLE while the slider is being dragged —
+      // `MusicPlayer` picks the new bus volume up on the very next frame. So the audition would be
+      // redundant at best, and at worst an SFX cue talking over the thing it is meant to
+      // demonstrate. The other two sliders still need it: their channel is silent between cues.
       ...(ch.id === 'bgm' ? {} : { onRelease: () => playSfx('sfx.ui.tap') }),
     });
   });

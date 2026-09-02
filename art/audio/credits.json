@@ -1,0 +1,452 @@
+{
+  "note": "Licence and provenance for every audio asset under client/src/assets/audio/. Upstream pack details are in packs.json. Written by tools/audio-pipeline/process.py -- edit that, not this.",
+  "bus_gain_measured_at": 0.8,
+  "peak_reference": "AUDIO_DESIGN.md §0.3 measured delivered peaks (Chrome column); file_peak = delivered_peak / (catalogue_gain * bus_gain)",
+  "cues": [
+    {
+      "cue": "sfx.card.play",
+      "variants": 3,
+      "total_bytes": 7504,
+      "gate_class": "sfx",
+      "target_delivered_peak": 0.146,
+      "catalogue_gain": 1.0,
+      "target_file_peak": 0.1825,
+      "target_file_peak_dbfs": -14.77,
+      "cap_ms": 140,
+      "rationale": "Single strokes rather than continuous writing takes. Bright (3059-6849 Hz) against the synth's hp1200/lp7000 noise burst, and one of the three is a marker rather than a pencil -- marker is one of the game's own three pens (art-direction §3), so the variant spread carries a little of that instead of three takes of one gesture.",
+      "files": [
+        {
+          "file": "sfx-card-play_00.mp3",
+          "source": "freesound/stroke_335930.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 44100,
+          "duration_ms": 140.0,
+          "trimmed_ms": 319.7,
+          "capped_ms": 227.8,
+          "gain_applied_db": -6.84,
+          "bytes": 2608
+        },
+        {
+          "file": "sfx-card-play_01.mp3",
+          "source": "freesound/stroke_761665.ogg",
+          "source_pack": "freesound",
+          "source_channels": 1,
+          "sample_rate": 48000,
+          "duration_ms": 140.0,
+          "trimmed_ms": 2.6,
+          "capped_ms": 269.9,
+          "gain_applied_db": 5.51,
+          "bytes": 2592
+        },
+        {
+          "file": "sfx-card-play_02.mp3",
+          "source": "freesound/stroke_277312.ogg",
+          "source_pack": "freesound",
+          "source_channels": 1,
+          "sample_rate": 24000,
+          "duration_ms": 140.0,
+          "trimmed_ms": 20.5,
+          "capped_ms": 913.9,
+          "gain_applied_db": 11.77,
+          "bytes": 2304
+        }
+      ]
+    },
+    {
+      "cue": "sfx.card.invalid",
+      "variants": 3,
+      "total_bytes": 8208,
+      "gate_class": "sfx",
+      "target_delivered_peak": 0.105,
+      "catalogue_gain": 1.0,
+      "target_file_peak": 0.13125,
+      "target_file_peak_dbfs": -17.64,
+      "cap_ms": 160,
+      "rationale": "THE hole in the free packs: neither Kenney nor BigSoundBank has an eraser at all, and this cue's whole job is to sound like undoing a mistake. Whiteboard-marker squeaks are what CC0 has, and they are literally a stationery sound -- the squeak, not the material, is what reads as 'that did not work'. The dark third variant keeps three presses of an unaffordable card from sounding like one stuttering file.",
+      "files": [
+        {
+          "file": "sfx-card-invalid_00.mp3",
+          "source": "freesound/eraser_335948.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 48000,
+          "duration_ms": 160.0,
+          "trimmed_ms": 252.0,
+          "capped_ms": 126.5,
+          "gain_applied_db": -7.87,
+          "bytes": 2736
+        },
+        {
+          "file": "sfx-card-invalid_01.mp3",
+          "source": "freesound/eraser_335951.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 48000,
+          "duration_ms": 160.0,
+          "trimmed_ms": 116.4,
+          "capped_ms": 348.6,
+          "gain_applied_db": -11.71,
+          "bytes": 2664
+        },
+        {
+          "file": "sfx-card-invalid_02.mp3",
+          "source": "freesound/eraser_538144.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 32000,
+          "duration_ms": 160.0,
+          "trimmed_ms": 629.3,
+          "capped_ms": 409.1,
+          "gain_applied_db": -0.97,
+          "bytes": 2808
+        }
+      ]
+    },
+    {
+      "cue": "sfx.unit.attack",
+      "variants": 2,
+      "total_bytes": 4224,
+      "gate_class": "sfx",
+      "target_delivered_peak": 0.058,
+      "catalogue_gain": 0.7,
+      "target_file_peak": 0.10357,
+      "target_file_peak_dbfs": -19.7,
+      "cap_ms": 60,
+      "rationale": "The most-emitted cue in the game, so the pick is decided by onset, not timbre: both files peak within 6 ms of their own start, which is what survives a 60 ms cap. The second is the first 60 ms of a signature -- a stroke beginning, which is exactly what a pencil jab is.",
+      "files": [
+        {
+          "file": "sfx-unit-attack_00.mp3",
+          "source": "freesound/stroke_632474.ogg",
+          "source_pack": "freesound",
+          "source_channels": 1,
+          "sample_rate": 48000,
+          "duration_ms": 56.7,
+          "trimmed_ms": 26.8,
+          "capped_ms": 0.0,
+          "gain_applied_db": -4.55,
+          "bytes": 1728
+        },
+        {
+          "file": "sfx-unit-attack_01.mp3",
+          "source": "bigsoundbank/pencil-signature-3-s3238.mp3",
+          "source_pack": "bigsoundbank",
+          "source_channels": 1,
+          "sample_rate": 48000,
+          "duration_ms": 60.0,
+          "trimmed_ms": 343.4,
+          "capped_ms": 1804.6,
+          "gain_applied_db": -7.85,
+          "bytes": 2496
+        }
+      ]
+    },
+    {
+      "cue": "sfx.unit.hit",
+      "variants": 3,
+      "total_bytes": 5056,
+      "gate_class": "sfx",
+      "target_delivered_peak": 0.098,
+      "catalogue_gain": 0.9,
+      "target_file_peak": 0.13611,
+      "target_file_peak_dbfs": -17.32,
+      "cap_ms": 120,
+      "rationale": "Muffled single impacts, NOT paper rustles. Every rustle in the pool has a 200-400 ms attack (a rustle has no onset), which a 120 ms cap would cut before the peak -- see this file's header. These three land at 1222-3151 Hz against the synth's lp2400 'soft puff', peak inside 56 ms, and clip nowhere.",
+      "files": [
+        {
+          "file": "sfx-unit-hit_00.mp3",
+          "source": "freesound/hit_323725.ogg",
+          "source_pack": "freesound",
+          "source_channels": 1,
+          "sample_rate": 24000,
+          "duration_ms": 120.0,
+          "trimmed_ms": 86.6,
+          "capped_ms": 188.2,
+          "gain_applied_db": -14.54,
+          "bytes": 1296
+        },
+        {
+          "file": "sfx-unit-hit_01.mp3",
+          "source": "freesound/hit_13858.ogg",
+          "source_pack": "freesound",
+          "source_channels": 1,
+          "sample_rate": 22050,
+          "duration_ms": 120.0,
+          "trimmed_ms": 1.9,
+          "capped_ms": 164.0,
+          "gain_applied_db": -15.67,
+          "bytes": 1432
+        },
+        {
+          "file": "sfx-unit-hit_02.mp3",
+          "source": "freesound/hit_323721.ogg",
+          "source_pack": "freesound",
+          "source_channels": 1,
+          "sample_rate": 48000,
+          "duration_ms": 120.0,
+          "trimmed_ms": 59.3,
+          "capped_ms": 192.2,
+          "gain_applied_db": -12.97,
+          "bytes": 2328
+        }
+      ]
+    },
+    {
+      "cue": "sfx.base.hit",
+      "variants": 1,
+      "total_bytes": 1764,
+      "gate_class": "sfx",
+      "target_delivered_peak": 0.151,
+      "catalogue_gain": 1.05,
+      "target_file_peak": 0.17976,
+      "target_file_peak_dbfs": -14.91,
+      "cap_ms": 250,
+      "rationale": "ONE variant, and that is the measurement's verdict rather than a shortcut: this is the only file in the whole pool that is simultaneously low enough (279 Hz, against the synth's 110 Hz sine + lp700), fast enough to peak inside a 250 ms cap, and free of clipping. The obvious alternatives all fail exactly one of those -- book_275160 is 870 Hz and clean-sounding but carries 1207 clipped samples; book_243400 is clean but peaks 269 ms in; every `closed-book` take from BigSoundBank clips and sits above 3900 Hz, which is a hardback snapping shut, not a notebook absorbing a blow.",
+      "files": [
+        {
+          "file": "sfx-base-hit_00.mp3",
+          "source": "freesound/book_332668.ogg",
+          "source_pack": "freesound",
+          "source_channels": 1,
+          "sample_rate": 16000,
+          "duration_ms": 250.0,
+          "trimmed_ms": 75.4,
+          "capped_ms": 185.5,
+          "gain_applied_db": -14.55,
+          "bytes": 1764
+        }
+      ]
+    },
+    {
+      "cue": "sfx.spell.cast",
+      "variants": 3,
+      "total_bytes": 10852,
+      "gate_class": "feedback",
+      "target_delivered_peak": 0.129,
+      "catalogue_gain": 1.0,
+      "target_file_peak": 0.16125,
+      "target_file_peak_dbfs": -15.85,
+      "cap_ms": 400,
+      "rationale": "Page turns, matching the synth's swell + smear two-parter and the design's own 'page turn + falling-rock smear'. The longest cap in the set (400 ms) because a page turn IS the gesture -- clipping it short reads as a rustle rather than a turn.",
+      "files": [
+        {
+          "file": "sfx-spell-cast_00.mp3",
+          "source": "freesound/page_457767.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 22050,
+          "duration_ms": 350.1,
+          "trimmed_ms": 358.9,
+          "capped_ms": 0.0,
+          "gain_applied_db": -6.1,
+          "bytes": 2968
+        },
+        {
+          "file": "sfx-spell-cast_01.mp3",
+          "source": "freesound/page_397548.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 32000,
+          "duration_ms": 383.0,
+          "trimmed_ms": 118.0,
+          "capped_ms": 0.0,
+          "gain_applied_db": -6.68,
+          "bytes": 4500
+        },
+        {
+          "file": "sfx-spell-cast_02.mp3",
+          "source": "bigsoundbank/turned-page-s0164.mp3",
+          "source_pack": "bigsoundbank",
+          "source_channels": 1,
+          "sample_rate": 24000,
+          "duration_ms": 400.0,
+          "trimmed_ms": 224.2,
+          "capped_ms": 2.7,
+          "gain_applied_db": -13.05,
+          "bytes": 3384
+        }
+      ]
+    },
+    {
+      "cue": "sfx.unit.death",
+      "variants": 3,
+      "total_bytes": 14350,
+      "gate_class": "feedback",
+      "target_delivered_peak": 0.099,
+      "catalogue_gain": 0.85,
+      "target_file_peak": 0.14559,
+      "target_file_peak_dbfs": -16.74,
+      "cap_ms": 300,
+      "rationale": "Real crumples replace the synth's four staggered noise grains, which exist only because one noise burst reads as a puff rather than as paper being balled up. A recording is granular for free. Dry leaf is in the set deliberately: it is the same multi-grain crackle and it keeps three deaths in a row from being one file.",
+      "files": [
+        {
+          "file": "sfx-unit-death_00.mp3",
+          "source": "oga-luckius-paper/paper_crushed_-_1.mp3",
+          "source_pack": "oga-luckius-paper",
+          "source_channels": 2,
+          "sample_rate": 22050,
+          "duration_ms": 300.0,
+          "trimmed_ms": 0.0,
+          "capped_ms": 849.4,
+          "gain_applied_db": -15.64,
+          "bytes": 3622
+        },
+        {
+          "file": "sfx-unit-death_01.mp3",
+          "source": "freesound/crumple_106127.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 32000,
+          "duration_ms": 300.0,
+          "trimmed_ms": 18.9,
+          "capped_ms": 394.1,
+          "gain_applied_db": -15.34,
+          "bytes": 5616
+        },
+        {
+          "file": "sfx-unit-death_02.mp3",
+          "source": "freesound/crumple_235754.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 32000,
+          "duration_ms": 300.0,
+          "trimmed_ms": 102.0,
+          "capped_ms": 526.8,
+          "gain_applied_db": -14.03,
+          "bytes": 5112
+        }
+      ]
+    },
+    {
+      "cue": "sfx.ink.tick",
+      "variants": 2,
+      "total_bytes": 3380,
+      "gate_class": "sfx",
+      "target_delivered_peak": 0.028,
+      "catalogue_gain": 0.5,
+      "target_file_peak": 0.07,
+      "target_file_peak_dbfs": -23.1,
+      "cap_ms": 120,
+      "rationale": "Single drops, not a dripping-tap ambience. The quietest cue in the set by a wide margin (target -23 dBFS) because it is a background pulse; two variants because it fires on a timer and a timer with one sample is a metronome.",
+      "files": [
+        {
+          "file": "sfx-ink-tick_00.mp3",
+          "source": "freesound/drop_174718.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 22050,
+          "duration_ms": 120.0,
+          "trimmed_ms": 274.2,
+          "capped_ms": 77.6,
+          "gain_applied_db": -21.31,
+          "bytes": 1172
+        },
+        {
+          "file": "sfx-ink-tick_01.mp3",
+          "source": "freesound/drop_165206.ogg",
+          "source_pack": "freesound",
+          "source_channels": 2,
+          "sample_rate": 48000,
+          "duration_ms": 120.0,
+          "trimmed_ms": 0.0,
+          "capped_ms": 131.4,
+          "gain_applied_db": -20.83,
+          "bytes": 2208
+        }
+      ]
+    },
+    {
+      "cue": "sfx.ui.tap",
+      "variants": 1,
+      "total_bytes": 1016,
+      "gate_class": "ui",
+      "target_delivered_peak": 0.0923,
+      "catalogue_gain": 1.0,
+      "target_file_peak": 0.11537,
+      "target_file_peak_dbfs": -18.76,
+      "cap_ms": 60,
+      "rationale": "Kenney Interface Sounds is the one CC0 game-audio pack art-direction §10 does NOT rule out (its Impact/Sci-Fi/Digital siblings are metal, glass and explosions, i.e. the forbidden list), and `select` is the pack's own name for a selection blip. One variant on purpose: a button that answers differently each press reads as inconsistent, which is the opposite of what this cue is for.",
+      "files": [
+        {
+          "file": "sfx-ui-tap_00.mp3",
+          "source": "kenney-interface-sounds/Audio/select_002.ogg",
+          "source_pack": "kenney-interface-sounds",
+          "source_channels": 2,
+          "sample_rate": 22050,
+          "duration_ms": 43.3,
+          "trimmed_ms": 0.0,
+          "capped_ms": 0.0,
+          "gain_applied_db": -17.79,
+          "bytes": 1016
+        }
+      ]
+    },
+    {
+      "cue": "sfx.ui.back",
+      "variants": 1,
+      "total_bytes": 1224,
+      "gate_class": "ui",
+      "target_delivered_peak": 0.0706,
+      "catalogue_gain": 1.0,
+      "target_file_peak": 0.08825,
+      "target_file_peak_dbfs": -21.09,
+      "cap_ms": 120,
+      "rationale": "1833 Hz, the lowest centroid among the pack's clean short files, so leaving a screen sits UNDER entering one -- the same relationship the synth voice builds with a downward 620->430 Hz slide. Same one-variant reasoning as `sfx.ui.tap`.",
+      "files": [
+        {
+          "file": "sfx-ui-back_00.mp3",
+          "source": "kenney-interface-sounds/Audio/back_002.ogg",
+          "source_pack": "kenney-interface-sounds",
+          "source_channels": 1,
+          "sample_rate": 16000,
+          "duration_ms": 55.5,
+          "trimmed_ms": 14.3,
+          "capped_ms": 0.0,
+          "gain_applied_db": -20.12,
+          "bytes": 1224
+        }
+      ]
+    }
+  ],
+  "kept_on_synth": {
+    "sfx.result.victory": "A three-note rising phrase. Its meaning IS the direction, and the three stingers are designed to share a starting pitch so the player reads the result from where it goes next -- a found recording cannot carry that relationship, it can only replace it with someone else's. Measured run-to-run jitter is 1%, so there is no texture problem to solve either.",
+    "sfx.result.defeat": "Same reasoning as `sfx.result.victory`: two notes falling from the same pitch victory rises from.",
+    "sfx.result.draw": "Same reasoning, and the strongest case of the three: the cue is one pitch repeated with a deliberate GAP, and that gap is the whole semantics ('no direction'). See audioSynth.ts, which records why the gap must not be closed.",
+    "sfx.ui.reward": "A two-note rising chime. Tonal by design (0% measured jitter), and the CC0 alternatives are digital confirmation blips -- the exact 'soulless app UI' the art direction is written against.",
+    "sfx.ui.gacha.reveal.common": "The three reveal tiers are one voice with notes and brightness ADDED per tier, so that 'epic' is distinguishable before its third note lands. That is a relationship between three cues, not three sounds; samples would have to reproduce it by luck.",
+    "sfx.ui.gacha.reveal.rare": "See `sfx.ui.gacha.reveal.common`.",
+    "sfx.ui.gacha.reveal.epic": "See `sfx.ui.gacha.reveal.common`.",
+    "sfx.ui.error": "A sustained low buzz, and the one KEPT cue where a sample was genuinely available: Kenney's `error_00x` family is exactly this shape and daydayup ships one. Rejected anyway on direction -- a digital error buzz is the generic-app sound art-direction §10 pushes away from, and unlike `sfx.card.invalid` there is no stationery gesture that means 'the server said no'. Measured jitter is 2%, so the synth voice is not the weak link here."
+  },
+  "processing": "mono + trim(-40 dBFS, faded edges) + per-cue duration cap (faded) + peak-match to the measured delivered peak + smallest-bytes MP3 among bandwidth-legal sample rates (95% rolloff x 2.2).",
+  "music": [
+    {
+      "track": "bgm.lobby",
+      "file": "bgm-lobby.mp3",
+      "source": "first-party/doodle-bed.flac",
+      "generator": "first-party",
+      "generated": "2026-09-01",
+      "brief": "A quiet, unhurried acoustic bed for the screens outside a match -- lobby, menus, shop, world map, results. No percussive transients and no forward pull: the mix above it is made of pencil strokes and paper thuds, and anything with a beat would compete with them for the same moments.",
+      "prompt": null,
+      "region_start_s": 12.5,
+      "length_s": 74.0,
+      "source_length_s": 213.16,
+      "shelf": null,
+      "sample_rate": 24000,
+      "channels": 2,
+      "bytes": 653016,
+      "xfade_band_diff_db": 0.57,
+      "mid_band_dbfs": -29.0,
+      "rationale": "A 74 s region lifted out of a 3:33 master, chosen by the same crossfade-window band measure the gate then applies (0.58 dB raw across the seam, 0.57 dB on the shipped file; levels within 0.09 dB). NOT the region that scored best overall -- 13.5s/23.5s measured 0.27 dB -- because a 23.5 s loop turns over every 24 seconds on screens players sit on for minutes, and a seam nobody can hear buys nothing if the repetition is what they notice instead. No low shelf: the master's own 20-250 Hz already sits 14 dB under its mid band, so a shelf would attenuate something that is not in the way."
+    }
+  ],
+  "music_terms": {
+    "license": "proprietary (project-owned)",
+    "generator": "first-party",
+    "terms_url": "",
+    "license_text_archived": false,
+    "accepted_by": "Tao Wang",
+    "accepted_on": "2026-09-01",
+    "note": "This track is NOT CC0. It is the project's own material, supplied by the project owner as art/audio/sources/first-party/doodle-bed.flac, and it is filed here rather than in packs.json on purpose: that file asserts every source is CC0 and commercial-ok without attribution, and that assertion protects the 22 SFX samples. Weakening it to make room for music would silently stop it protecting them."
+  }
+}

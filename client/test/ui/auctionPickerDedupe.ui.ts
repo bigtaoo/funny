@@ -17,6 +17,7 @@ import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { SaveData, EquipmentInstance, CardInstance } from '../../src/game/meta/SaveData';
 import type { WorldApiClient, AuctionView } from '../../src/net/WorldApiClient';
 import { skinDisplayName } from '../../src/game/meta/skinDefs';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -46,9 +47,11 @@ function stubWorldApi(): WorldApiClient {
 // in this codebase reaches them via an untyped handle (see auctionScene.ui.ts) rather than re-exposing
 // internals just for tests, so we do the same here.
 function buildScene(cb: Record<string, unknown> = {}): any {
+  const { openTextInput } = createFakeTextInput();
   return new AuctionScene(createLayout(W, H), new InputManager(), {
     onBack() {},
     worldApi: stubWorldApi(),
+    openTextInput,
     ...cb,
   });
 }

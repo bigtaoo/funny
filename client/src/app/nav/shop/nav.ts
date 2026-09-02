@@ -28,6 +28,7 @@ export function createShopNav(ctx: AppCtx): ShopNav {
     const shopLoggedIn = !state.offlineMode && !!platform.storage.getItem(TOKEN_KEY);
     views.showShop({
       ...(initialTab ? { initialTab } : {}),
+      openTextInput: (opts) => platform.openTextInput(opts),
       onBack() {
         analytics.track('shop_close', { converted, time_sec: Math.round((Date.now() - shopOpenTs) / 1000) });
         if (onBack) onBack(); else nav.goLobby();

@@ -17,6 +17,7 @@ function recorder(): AudioBus & { calls: [AudioCue, number | undefined][] } {
     },
     setSfxVolume() {},
     setMusicVolume() {},
+    updateMusic() {},
     resume() {},
   };
 }
@@ -35,6 +36,7 @@ function brokenBus(): AudioBus {
     },
     setSfxVolume() {},
     setMusicVolume() {},
+    updateMusic() {},
     resume() {},
   };
 }

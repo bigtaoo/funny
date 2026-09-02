@@ -58,6 +58,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
     const view: FriendsView = views.showFriends({
       onBack: backTo,
       onOpenRoom() { nav.goRoom(); },
+      openTextInput: (opts) => platform.openTextInput(opts),
       myPublicId: platform.storage.getItem(PLAYER_PUBLIC_ID_KEY) ?? '',
       getProfileExtra: (publicId) => worldApi.getProfileExtra(publicId),
       ...(opts?.defaultTab ? { defaultTab: opts.defaultTab } : {}),
@@ -210,6 +211,7 @@ export function createSocialNav(ctx: AppCtx): Pick<Nav, 'goFriends' | 'goMail' |
       peerName,
       peerPublicId,
       myPublicId,
+      openTextInput: (opts) => platform.openTextInput(opts),
       onBack() { restore(); backToFriends(); },
       async resolveConvId(pid) {
         const convs = await client.getConversations();

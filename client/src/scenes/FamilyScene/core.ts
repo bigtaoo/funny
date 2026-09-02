@@ -51,6 +51,7 @@ import { FamilyRepaint, type ScrollCol } from './repaint';
 import { onPointerDown, onPointerMove, onPointerUp, onWheel } from './pointer';
 import type { FamilySceneCallbacks, FamilyTab, ViewMode } from './types';
 import { type Hit as BaseHit } from '../../ui/hits';
+import type { ITextInput } from '../../platform/IPlatform';
 
 /** Scroll-column-tagged hit for this scene's two (three with the modal) independent lists. */
 type Hit = BaseHit<ScrollCol>;
@@ -84,12 +85,12 @@ export class FamilySceneCore {
   /** Unified player-info popup — opened by tapping a member's name in the roster. */
   readonly profilePopup: ProfilePopup;
 
-  // Input overlay for create form
-  hiddenInput: HTMLInputElement | null = null;
-  // Input overlay for the channel send box — set while open so the Send button can read its value.
-  // `sendText` mirrors its value so the on-canvas field shows what's being typed (+ blinking caret),
-  // instead of staying stuck on the placeholder (the "can't type into chat" bug).
-  sendInput: HTMLInputElement | null = null;
+  // Text-entry session for the create form
+  hiddenInput: ITextInput | null = null;
+  // Text-entry session for the channel send box — set while open so the Send button can read its
+  // value. `sendText` mirrors its value so the on-canvas field shows what's being typed (+ blinking
+  // caret), instead of staying stuck on the placeholder (the "can't type into chat" bug).
+  sendInput: ITextInput | null = null;
   sendText = '';
   createName = '';
   createTag = '';
@@ -373,8 +374,8 @@ export class FamilySceneCore {
     this.destroyed = true;
     for (const u of this.unsubs) u();
     this.unsubs.length = 0;
-    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
-    if (this.sendInput) { this.sendInput.remove(); this.sendInput = null; }
+    if (this.hiddenInput) { this.hiddenInput.close(); this.hiddenInput = null; }
+    if (this.sendInput) { this.sendInput.close(); this.sendInput = null; }
     this.profilePopup.destroy();
     // Free descendant Text baseTextures before dropping the container (overlay over the live
     // WorldMapScene → leaks a screenful of Text per close otherwise). See sketchUi.tearDownChildren.

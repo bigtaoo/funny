@@ -14,6 +14,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import { allCityNodes, type MapEditorCityNode } from '@nw/shared';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 import { initI18n } from '../../src/i18n';
 import { WorldMapContext, type WorldMapCallbacks } from '../../src/scenes/worldmap/WorldMapContext';
 import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
@@ -41,9 +42,10 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const LAYOUT = { designWidth: 1280, designHeight: 800 } as ILayout;
 const WORLD_ID = 'w1';
 
+const { openTextInput } = createFakeTextInput();
 const CB: WorldMapCallbacks = {
   onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
-  onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
+  onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'], openTextInput,
   worldId: WORLD_ID, playerName: 'dbg', accountId: 'acc_dbg', storage: memStore,
 };
 

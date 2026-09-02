@@ -20,6 +20,7 @@ import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import { getCityContentTopFracForLevel } from '../../src/render/atlas/cityAtlasLoader';
 import type { ILayout } from '../../src/layout/ILayout';
 import type { WorldTileView } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 // See worldMapZoom3CityAnchor.ui.ts: the real loadCityAtlas() would hang on the headless stub
 // Image's never-firing onload. Stub the atlas as ready with a throwaway texture.
@@ -45,6 +46,7 @@ const CB: WorldMapCallbacks = {
   onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
   onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
   worldId: 'w1', playerName: 'dbg', accountId: 'acc_dbg', storage: memStore,
+  openTextInput: createFakeTextInput().openTextInput,
 };
 
 function buildScene(): WorldMapContext {

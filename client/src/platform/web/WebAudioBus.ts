@@ -6,6 +6,7 @@
 // **本类只剩下两个平台答案**，其余全部在平台中立的 `audio/ContextAudioBus.ts` 里（2026-08-31
 // 接微信后端时抽出去的——见那个文件的头注释）：上下文从哪来、手势从哪来。
 import { ContextAudioBus } from '../../audio/ContextAudioBus';
+import { WebMusicDeck } from './webMusicDeck';
 
 export class WebAudioBus extends ContextAudioBus {
   constructor() {
@@ -31,6 +32,33 @@ export class WebAudioBus extends ContextAudioBus {
         for (const ev of ['pointerdown', 'keydown', 'touchstart'] as const) {
           window.addEventListener(ev, cb, { passive: true });
         }
+      },
+      // BGM（AUDIO_DESIGN.md §7 第 7 步）。web 的 deck **需要**这个上下文：iOS Safari 上
+      // `audioEl.volume` 是只读的，所以交叉淡入只能走 `MediaElementSource` + `GainNode`
+      // （见 `webMusicDeck.ts` 的头注释）。没有上下文的宿主（SSR、node、极老 WebView）因此也
+      // 没有 BGM——与 SFX 同一条降级，不是新增的一条。
+      createMusicDecks: (ctx) => {
+        if (!ctx || typeof Audio === 'undefined') return null;
+        return [new WebMusicDeck({ ctx }), new WebMusicDeck({ ctx })] as const;
+      },
+      // 失焦暂停（AUDIO_DESIGN.md §4）。`visibilitychange` 而不是 `blur`：切标签页、锁屏、
+      // 切到别的 app 都会发它，而 `blur` 还会在点开控制台或另一个窗口时发——那时游戏仍然可见，
+      // 把音乐停掉只是让人以为它坏了。
+      onFocusChange: (cb) => {
+        if (typeof document === 'undefined') return;
+        document.addEventListener('visibilitychange', () => cb(document.hidden));
+        // **当前值也报一次，不只报变化。** `visibilitychange` 只在**切换**时触发，而页面完全
+        // 可能在一个后台标签页里加载完毕（按住 Ctrl 点开、从收藏夹批量打开、会话恢复），此后
+        // 也不会有任何事件来纠正——因为"从后台切到前台"发的是 `visible`，不是 `hidden`。
+        // 2026-09-01 的 BGM 实测就是在一个 `document.hidden === true` 的标签页里做的，这个洞
+        // 是那样冒出来的。`gestured` 闸门让它今天很难被触发（后台标签页收不到手势），但这一行
+        // 的代价是零，而"很难被触发"不是"不会被触发"。
+        //
+        // **这一行单独是空转的**（2026-09-02 由 `test/audio/WebAudioBus.test.ts` 钉出来）：此刻
+        // 还在 `ContextAudioBus` 的构造函数里，`music` 要到 `ensureMusic()` 才懒造，所以回调里
+        // 那个 `this.music?.setPaused(...)` 无处落地。承接它的是 `ContextAudioBus.hidden`——
+        // 那个字段存下这个值、等播放器造出来时补上 hold。两处必须同时在，少一处这条路就断了。
+        cb(document.hidden);
       },
     });
   }

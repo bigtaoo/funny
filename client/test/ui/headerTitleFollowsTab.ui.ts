@@ -34,6 +34,7 @@ import { AuctionScene } from '../../src/scenes/AuctionScene';
 import { EquipmentScene, type EquipmentCallbacks } from '../../src/scenes/EquipmentScene';
 import type { RetentionView } from '../../src/net/ApiClient';
 import type { WorldApiClient } from '../../src/net/WorldApiClient';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -113,6 +114,7 @@ describe('header title follows the active tab — rails that contain other pages
         buy: async () => ({ ok: true }),
         openGacha() {},
         rechargeCoins: async () => ({ ok: true }),
+        openTextInput: createFakeTextInput().openTextInput,
         initialTab,
       };
       return new ShopScene(createLayout(W, H), new InputManager(), cb);
@@ -157,6 +159,7 @@ describe('header title follows the active tab — rails that contain other pages
     const build = (defaultTab: 'friends' | 'mail' | 'world'): FriendsScene =>
       new FriendsScene(createLayout(W, H), new InputManager(), {
         onBack() {}, onOpenRoom() {},
+        openTextInput: createFakeTextInput().openTextInput,
         myPublicId: '',
         getProfileExtra: async () => ({}),
         loadFriends: async () => [],
@@ -200,6 +203,7 @@ describe('header title stays put — rails that only filter one page', () => {
       // Nothing in this file loads market data; a bare object is enough for the header + rail.
       worldApi: {} as WorldApiClient,
       myAccountId: 'acc_test',
+      openTextInput: createFakeTextInput().openTextInput,
     });
     const core = (scene as unknown as { core: { activeTab: string; render(): void } }).core;
     for (const tab of ['all', 'mine', 'bids'] as const) {

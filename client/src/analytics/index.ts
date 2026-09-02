@@ -7,6 +7,7 @@
 import type { IPlatform } from '../platform/IPlatform';
 import type { ApiClient } from '../net/ApiClient';
 import { getOrCreateDeviceId } from '../platform/uuid';
+import { onAppLifecycleChange } from '../platform/appLifecycle';
 import { getLocale } from '../i18n';
 import { fetchAnalyticsConfig, shouldTrack } from './config';
 import { EventQueue, type BatchMeta } from './queue';
@@ -63,7 +64,7 @@ function genSessionId(): string {
 
 /**
  * Call once at app startup.  Fetches the server-side sampling config and
- * starts the 30-second flush timer + lifecycle hooks (beforeunload / wx.onHide).
+ * starts the 30-second flush timer + lifecycle hooks (see platform/appLifecycle.ts).
  *
  * @param platform   IPlatform (for deviceId, storage, platform name, OS, language)
  * @param api        ApiClient (for JWT token when user is logged in) — undefined for anonymous
@@ -134,16 +135,10 @@ function onAppHidden(reason: string): void {
 function bindSessionLifecycle(): void {
   if (lifecycleBound) return;
   lifecycleBound = true;
-  if (typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') onAppHidden('background');
-      else hiddenFired = false; // back to foreground → re-arm
-    });
-    window.addEventListener('beforeunload', () => onAppHidden('explicit_exit'));
-  }
-  const wx = (globalThis as { wx?: { onHide?: (cb: () => void) => void; onShow?: (cb: () => void) => void } }).wx;
-  if (wx?.onHide) wx.onHide(() => onAppHidden('background'));
-  if (wx?.onShow) wx.onShow(() => { hiddenFired = false; });
+  onAppLifecycleChange((state) => {
+    if (state === 'visible') { hiddenFired = false; return; } // back to foreground → re-arm
+    onAppHidden(state === 'exit' ? 'explicit_exit' : 'background');
+  });
 }
 
 /**

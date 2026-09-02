@@ -9,13 +9,17 @@
 // inheritance chain — zero cross-domain `this.*` calls, so this was pure file-splitting via a chain,
 // see claudedocs/client-modules.md's split-form priority note).
 //
-// Transport uses the global fetch (natively supported by Web / CrazyGames). WeChat Mini Game has no fetch (uses wx.request) —
-// its cloud sync is scheduled together with WeChat online compliance; currently SaveManager degrades to local-only (offline-first) when baseUrl / fetch is absent.
+// Transport goes through the net/transport.ts seam, not the global fetch directly: the WeChat mini-game
+// runtime has no fetch at all and installs a wx.request-backed transport at boot (ASSET_PACKAGING §4.4).
+// On Web / CrazyGames the seam's default is the global fetch, with the same init object this file used
+// to build by hand. WeChat cloud sync itself is still scheduled together with WeChat online compliance;
+// SaveManager degrades to local-only (offline-first) whenever baseUrl is absent, which is unchanged.
 import { netLog, maybePromptAppeal } from '../log';
 import type { ApiResp } from './types';
 import { clientPlatformName } from '../../app/appConstants';
 import { getNativeBilling } from '../../platform/iap';
 import { globalRequestGate } from '../rateGate';
+import { netTransport, type NetResponse } from '../transport';
 
 /** Milliseconds before an unresponsive metaserver request is aborted (mirrors WorldApiClient.req). */
 const FETCH_TIMEOUT_MS = 10_000;
@@ -87,7 +91,7 @@ export class ApiClientCore {
     path: string,
     body?: unknown,
     extraHeaders?: Record<string, string>
-  ): Promise<Response> {
+  ): Promise<NetResponse> {
     const headers: Record<string, string> = {
       'x-nw-platform': requestPlatformHeader(),
       ...extraHeaders,
@@ -99,15 +103,16 @@ export class ApiClientCore {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     try {
-      return await fetch(`${this.baseUrl}${path}`, {
+      return await netTransport().request({
         method,
+        url: `${this.baseUrl}${path}`,
         headers,
         signal: ctrl.signal,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (e) {
-      // Network-layer failure (server not running / CORS / DNS / timeout abort): fetch rejection is
-      // very generic in the console, so we log the URL explicitly here.
+      // Network-layer failure (server not running / CORS / DNS / timeout abort): the transport's
+      // rejection is very generic in the console, so we log the URL explicitly here.
       log.error(`${method} ${path} network failure`, {
         url: `${this.baseUrl}${path}`,
         err: String(e),

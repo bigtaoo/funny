@@ -26,6 +26,7 @@ import { skinEquipKey, skinDisplayName } from '../../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
 import { SCALE as FORM_SCALE } from '../../src/scenes/AuctionScene/createListing';
 import { snapFont } from '../../src/render/fontScale';
+import { openDomTextInput } from '../../src/platform/web/domTextInput';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
 // real implementation) so the 2026-08-01-scoping spec below can inspect call arguments.
@@ -105,6 +106,7 @@ function makeAuction(overrides: Partial<AuctionView> = {}): AuctionView {
 function buildScene(cb: Record<string, unknown> = {}): any {
   return new AuctionScene(createLayout(W, H), new InputManager(), {
     onBack() {},
+    openTextInput: openDomTextInput,
     worldApi: stubWorldApi(),
     ...cb,
   });
@@ -174,24 +176,34 @@ function tapLabel(scene: any, container: PIXI.Container, label: string, hitsFiel
 }
 
 /** Capturing hidden-input stub. The headless UI harness (plain Node) has no DOM, so the numeric-field
- *  editor (openNumInput → document.createElement + addEventListener + blur) has nothing to attach to.
+ *  editor (openNumInput → cb.openTextInput → the real openDomTextInput()) has nothing to attach to.
  *  Installs a fake `document` whose created <input> records its 'input'/'blur' listeners and exposes
- *  `_fire(type)` so a test can drive the real handler code. Restores the previous global on teardown. */
+ *  `_fire(type)` so a test can drive the real handler code. Restores the previous global on teardown.
+ *  `core.textInput`/`core.hiddenInput` now hold the opaque ITextInput handle openDomTextInput()
+ *  returns, not the raw element — tests reach the fake element itself via `lastStubbedInput()`. */
 type StubInput = { value: string; _fire: (type: 'input' | 'blur') => void; [k: string]: unknown };
+let stubbedInputs: StubInput[] = [];
+/** The most recently `document.createElement()`d fake `<input>` — call after opening a field. */
+function lastStubbedInput(): StubInput {
+  return stubbedInputs[stubbedInputs.length - 1]!;
+}
 function withStubbedInput(run: () => void): void {
   const g = globalThis as unknown as { document?: unknown };
   const prev = g.document;
+  stubbedInputs = [];
   g.document = {
     body: { appendChild(): void {} },
     createElement(): StubInput {
       const listeners: Record<string, Array<() => void>> = {};
-      return {
+      const el: StubInput = {
         type: '', value: '', inputMode: '', maxLength: 0, placeholder: '', autocomplete: '',
         style: { cssText: '' }, parentNode: null,
         focus(): void {}, select(): void {}, remove(): void {}, setAttribute(): void {},
         addEventListener(t: string, fn: () => void): void { (listeners[t] ??= []).push(fn); },
         _fire(t: 'input' | 'blur'): void { for (const fn of listeners[t] ?? []) fn(); },
       };
+      stubbedInputs.push(el);
+      return el;
     },
   };
   try { run(); } finally { g.document = prev; }
@@ -552,7 +564,7 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
       const onChange = (v: number): void => { scene.core.createStartPrice = Math.max(1, v); };
       openNumInput(scene.core, 'startPrice', 15, onChange, (v: number) => scene.createListing.clampToBand(v));
 
-      const inp = scene.core.hiddenInput as unknown as StubInput;
+      const inp = lastStubbedInput();
       expect(scene.core.numEditKey).toBe('startPrice');
 
       inp.value = '12';                // below the floor (40) — but not clamped while typing
@@ -568,7 +580,7 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
       const onChange = (v: number): void => { scene.core.createPrice = Math.max(1, v); };
       openNumInput(scene.core, 'price', 10, onChange);
 
-      const inp = scene.core.hiddenInput as unknown as StubInput;
+      const inp = lastStubbedInput();
       inp.value = '1a2b3';
       inp._fire('input');
       expect(inp.value).toBe('123');
@@ -584,14 +596,14 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
       const onChange = (v: number): void => { scene.core.createStartPrice = Math.max(1, v); };
       openNumInput(scene.core, 'startPrice', 15, onChange, (v: number) => scene.createListing.clampToBand(v));
 
-      const inp = scene.core.hiddenInput as unknown as StubInput;
+      const inp = lastStubbedInput();
       inp.value = '12';
       inp._fire('input');
       inp._fire('blur');
 
       expect(scene.core.createStartPrice).toBe(40);   // clamped up to floor on commit
       expect(scene.core.numEditKey).toBeNull();
-      expect(scene.core.hiddenInput).toBeNull();
+      expect(scene.core.textInput).toBeNull();
       scene.destroy();
     });
   });
@@ -603,7 +615,7 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
       const onChange = (v: number): void => { scene.core.createStartPrice = Math.max(1, v); };
       openNumInput(scene.core, 'startPrice', 15, onChange, (v: number) => scene.createListing.clampToBand(v));
 
-      const inp = scene.core.hiddenInput as unknown as StubInput;
+      const inp = lastStubbedInput();
       inp.value = '9999';
       inp._fire('input');
       inp._fire('blur');
@@ -619,7 +631,7 @@ describe('AuctionScene — editable price field (openNumInput)', () => {
       const onChange = (v: number): void => { scene.core.createBuyoutPrice = Math.max(0, v); };
       openNumInput(scene.core, 'buyout', 0, onChange);       // no clamp passed
 
-      const inp = scene.core.hiddenInput as unknown as StubInput;
+      const inp = lastStubbedInput();
       inp.value = '5000';
       inp._fire('input');
       inp._fire('blur');

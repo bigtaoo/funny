@@ -13,6 +13,7 @@ import type { IStorage } from '../../platform/IPlatform';
 import { requestPlatformHeader } from '../ApiClient/core';
 import { maybePromptAppeal } from '../log';
 import { globalRequestGate } from '../rateGate';
+import { netTransport, type NetResponse } from '../transport';
 
 const TOKEN_KEY = 'nw_token';
 
@@ -36,14 +37,14 @@ export class WorldApiCore {
    * Ping worldsvc /health. Returns false ONLY on a definitive non-2xx response
    * from a reachable server (e.g. 503 = up-but-unhealthy).
    *
-   * The probe is a plain cross-origin fetch that reads the status. This works because
+   * The probe is a plain cross-origin GET that reads the status. This works because
    * Caddy routes /health → worldsvc (see server/Caddyfile), and worldsvc's /health
    * sends `access-control-allow-origin: *` like its other public routes — so the read
    * is CORS-allowed and no red "Cross-Origin Request Blocked" error is logged. (Before
    * that route existed, /health fell through to Caddy's CORS-less fallback and the
    * browser blocked the read.)
    *
-   * A thrown fetch (timeout / connection refused) is treated as INCONCLUSIVE →
+   * A thrown request (timeout / connection refused) is treated as INCONCLUSIVE →
    * returns true (no offline badge). Rationale: better to let the user click through
    * and hit real error handling than to mislabel a working service as offline. This
    * is an expected, harmless condition, so it's logged as a warning, not an error.
@@ -58,7 +59,12 @@ export class WorldApiCore {
     try {
       const ctrl = new AbortController();
       const id = setTimeout(() => ctrl.abort(), 3000);
-      const res = await fetch(`${base}/health`, { signal: ctrl.signal });
+      const res = await netTransport().request({
+        method: 'GET',
+        url: `${base}/health`,
+        headers: {},
+        signal: ctrl.signal,
+      });
       clearTimeout(id);
       return res.ok;
     } catch {
@@ -97,10 +103,11 @@ export class WorldApiCore {
     await globalRequestGate.acquire();
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let res: Response;
+    let res: NetResponse;
     try {
-      res = await fetch(url, {
+      res = await netTransport().request({
         method,
+        url,
         headers,
         signal: ctrl.signal,
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),

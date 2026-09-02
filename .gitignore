@@ -10,3 +10,15 @@ coverage/
 
 # Written by scripts/flakyReporter.mjs when a test only passed on a retry (CI uploads it as an artifact).
 flaky-report.json
+
+# tools/audio-pipeline is Python (soundfile/libsndfile — see its README for why it is not Node).
+# The venv is per-machine and ~40 MB; recreate it with the two commands at the top of that README.
+tools/audio-pipeline/venv/
+__pycache__/
+
+# Audio masters arrive here as WAV (40 MB for a 3.5-minute bed). `tools/audio-pipeline` converts
+# them to FLAC first — lossless, so it IS the master, at a third of the size — and it is the FLAC
+# that is tracked (e.g. art/audio/sources/first-party/doodle-bed.flac). Keeping the WAV as well
+# would permanently double .git for zero extra information.
+art/audio/sources/**/*.wav
+art/audio/sources/*.wav

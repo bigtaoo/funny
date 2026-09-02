@@ -1,9 +1,10 @@
 /**
  * FeedbackDialog — in-game player feedback entry (UI_DESIGN.md §4.1.1): opened from the lobby's right-side
  * strip (replacing the low-usage achievement shortcut there). Structurally the same self-drawn blocking
- * full-screen card as {@link AppealDialog}, reusing its hidden-`<input>`-overlay text capture technique.
- * Unlike AppealDialog it uses the caret-blink unified field treatment (see `ui/inputDisplay.ts`,
- * SettingsScene's rename field) since feedback is a longer, multi-line note, not a one-shot reason string.
+ * full-screen card as {@link AppealDialog}, reusing its `cb.openTextInput` text-capture technique
+ * (IPlatform.openTextInput, ASSET_PACKAGING §4.3/§4.4 item 1). Unlike AppealDialog it uses the
+ * caret-blink unified field treatment (see `ui/inputDisplay.ts`, SettingsScene's rename field) since
+ * feedback is a longer, multi-line note, not a one-shot reason string.
  *
  * Unlike AppealDialog, a successful submit does NOT close the dialog — it clears the input and shows an
  * inline "received, thanks" confirmation, so the player can send another note without reopening the panel
@@ -17,19 +18,21 @@ import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { caretDisplay } from '../inputDisplay';
 import { tapHandler } from '../hits';
+import type { IPlatform, ITextInput } from '../../platform/IPlatform';
 
 // Mirrors server/shared/src/social.ts FEEDBACK_TEXT_MAX (1000) — not imported: '@nw/shared' resolves to a
 // curated browser-safe subset (see client/webpack.config.js), same reason AppealDialog hardcodes its own max.
 const FEEDBACK_TEXT_MAX = 1000;
 
 export interface FeedbackDialogCallbacks {
+  openTextInput: IPlatform['openTextInput'];
   onSubmit(text: string): Promise<void>;
   onClose(): void;
 }
 
 export class FeedbackDialog implements Scene {
   readonly container: PIXI.Container;
-  private hiddenInput: HTMLInputElement | null = null;
+  private textInput: ITextInput | null = null;
   private feedbackText = '';
   private feedbackLabel!: PIXI.Text;
   private statusLabel!: PIXI.Text;
@@ -55,15 +58,15 @@ export class FeedbackDialog implements Scene {
   }
 
   destroy(): void {
-    this.removeHiddenInput();
+    this.closeInput();
     this.container.removeAllListeners();
     this.container.destroy({ children: true });
   }
 
-  private removeHiddenInput(): void {
-    if (this.hiddenInput) {
-      this.hiddenInput.remove();
-      this.hiddenInput = null;
+  private closeInput(): void {
+    if (this.textInput) {
+      this.textInput.close();
+      this.textInput = null;
     }
   }
 
@@ -78,26 +81,21 @@ export class FeedbackDialog implements Scene {
     this.inputActive = true;
     this.caretOn = true; this.caretTimer = 0;
     this.refreshLabel();
-    if (this.hiddenInput) { this.hiddenInput.focus(); return; }
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.maxLength = FEEDBACK_TEXT_MAX;
-    inp.value = this.feedbackText;
-    inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
-    document.body.appendChild(inp);
-    inp.addEventListener('input', () => {
-      this.feedbackText = inp.value;
-      this.refreshLabel();
-      if (this.statusLabel.text) this.statusLabel.text = ''; // typing again clears any prior status message
+    if (this.textInput) return; // already focused
+    this.textInput = this.cb.openTextInput({
+      value: this.feedbackText,
+      maxLength: FEEDBACK_TEXT_MAX,
+      onInput: (value) => {
+        this.feedbackText = value;
+        this.refreshLabel();
+        if (this.statusLabel.text) this.statusLabel.text = ''; // typing again clears any prior status message
+      },
+      onComplete: () => {
+        this.inputActive = false;
+        this.textInput = null;
+        this.refreshLabel();
+      },
     });
-    inp.addEventListener('blur', () => {
-      this.inputActive = false;
-      this.refreshLabel();
-      this.removeHiddenInput();
-    });
-    document.body.appendChild(inp);
-    inp.focus();
-    this.hiddenInput = inp;
   }
 
   private async submit(): Promise<void> {
@@ -112,8 +110,12 @@ export class FeedbackDialog implements Scene {
     this.statusLabel.text = '';
     try {
       await this.cb.onSubmit(text);
-      // Stays open (unlike AppealDialog's onClose) — feedback allows repeated submissions.
+      // Stays open (unlike AppealDialog's onClose) — feedback allows repeated submissions. Clear
+      // the live field too (not just the mirrored feedbackText) — the old hidden-<input> version
+      // left the DOM value untouched here, so the next keystroke re-read the just-submitted text
+      // out of the input and merged it with whatever was typed next.
       this.feedbackText = '';
+      this.textInput?.setValue('');
       this.refreshLabel();
       this.statusLabel.style.fill = C.green;
       this.statusLabel.text = t('feedback.sent');
@@ -241,7 +243,7 @@ export class FeedbackDialog implements Scene {
     closeBtn.x = bx2; closeBtn.y = bY;
     closeBtn.eventMode = 'static';
     closeBtn.cursor = 'pointer';
-    closeBtn.on('pointertap', tapHandler(() => { this.removeHiddenInput(); this.cb.onClose(); }, 'sfx.ui.back'));
+    closeBtn.on('pointertap', tapHandler(() => { this.closeInput(); this.cb.onClose(); }, 'sfx.ui.back'));
     this.container.addChild(closeBtn);
     const closeLabel = txt(t('feedback.close'), snapFont(Math.round(bH * 0.36)), C.dark, true);
     closeLabel.anchor.set(0.5, 0.5); closeLabel.x = bx2 + bW / 2; closeLabel.y = bY + bH / 2;

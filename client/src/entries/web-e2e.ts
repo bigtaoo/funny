@@ -3,7 +3,8 @@ import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import type { AppViews } from '../app/AppViews';
 import { setAudioBus, audioBus } from '../audio/audioBus';
-import type { AudioBus } from '../audio/types';
+import type { AudioBus, AudioCue, MusicTrack } from '../audio/types';
+import type { MusicPlayer, MusicDeck } from '../audio/MusicPlayer';
 import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
 
@@ -102,6 +103,10 @@ const audio = new WebAudioBus();
 interface CueLogEntry { cue: string; count: number; t: number }
 const CUE_LOG_CAP = 4000;
 const cueLog: CueLogEntry[] = [];
+/** What the scene layer has ASKED for, newest last — one entry per change (see `updateMusic`). */
+interface MusicLogEntry { track: MusicTrack | null; t: number }
+const musicLog: MusicLogEntry[] = [];
+let lastMusicAsk: MusicTrack | null | undefined;
 const recordingBus: AudioBus = {
   preload: () => audio.preload(),
   play: (cue, count = 1) => {
@@ -111,6 +116,16 @@ const recordingBus: AudioBus = {
   },
   setSfxVolume: (v) => audio.setSfxVolume(v),
   setMusicVolume: (v) => audio.setMusicVolume(v),
+  // Logged on CHANGE, not per frame: this runs 60 times a second in every phase, so recording
+  // each call would bury the cue log under 3600 entries a minute and say nothing — what a smoke
+  // needs to know is when the bed was asked to change and to what.
+  updateMusic: (desired, dtMs) => {
+    if (desired !== lastMusicAsk) {
+      lastMusicAsk = desired;
+      musicLog.push({ track: desired, t: Math.round(performance.now()) });
+    }
+    audio.updateMusic(desired, dtMs);
+  },
   resume: () => audio.resume(),
 };
 setAudioBus(recordingBus);
@@ -118,11 +133,53 @@ setAudioBus(recordingBus);
   play: (cue: string, count?: number) => audioBus().play(cue as never, count),
   resume: () => audioBus().resume(),
   cues: ALL_CUES,
-  /** How much of the shipped sample set actually decoded (0/0 until cueAssets.ts is filled). */
+  /** How much of the shipped sample set actually decoded. Since 2026-09-01: expect 10 cues / 22 variants. */
   loaded: () => audio.loaded,
   /** Every cue the trigger layer has asked for, newest last. */
   log: (): CueLogEntry[] => cueLog.slice(),
   clearLog: (): void => { cueLog.length = 0; },
+  /** Every BGM track the scene layer has asked for, newest last (one entry per CHANGE). */
+  musicLog: (): MusicLogEntry[] => musicLog.slice(),
+  /**
+   * What the BGM runtime is actually doing right now (AUDIO_DESIGN.md §7 step 7).
+   *
+   * Music is the one part of this system with **no** peak-based observable: the two decks are
+   * streamed, never decoded into the `SampleBank`, so `samples()` cannot see them and an
+   * `AnalyserNode` on the SFX bus is on the wrong bus entirely. What actually has to be checked
+   * is behavioural and invisible to every other surface:
+   *
+   *  - **the wrap fires where it was measured for.** `xfade_band_diff` accepted each track over
+   *    a 2 s window at a specific seam; a `lengthS` that drifts from the file puts the crossfade
+   *    somewhere nobody measured, and the only symptom is that the loop sounds slightly wrong
+   *    once a minute.
+   *  - **the two decks hand over.** `position()` per deck says whether the incoming stream is
+   *    really running while the outgoing one plays out, or whether one of them silently failed
+   *    (CORS on web, a missing file on WeChat) and the bed just stopped.
+   *  - **ducking returns to 1.** A duck that sticks is a bed that is quietly 6.9 dB low forever.
+   *
+   * Reaches through TS privacy exactly like `nodes()` and `samples()`, for the same reason.
+   */
+  music: (): {
+    track: MusicTrack | null; crossfading: boolean; duck: number;
+    decks: { position: number | null; gain: number }[];
+  } | null => {
+    const priv = audio as unknown as { music: MusicPlayer | null };
+    const p = priv.music;
+    if (!p) return null;
+    const decks = (p as unknown as { deps: { decks: readonly MusicDeck[] } }).deps.decks;
+    return {
+      track: p.current,
+      crossfading: p.isCrossfading,
+      duck: p.duckLevel,
+      decks: decks.map((d) => ({
+        position: d.position(),
+        // The deck's own live output level, read from the platform object rather than from what
+        // the player last wrote — the two disagreeing is precisely the failure this exists for.
+        gain: (d as unknown as { gain?: GainNode; inner?: { volume: number } }).gain?.gain.value
+          ?? (d as unknown as { inner?: { volume: number } }).inner?.volume ?? 0,
+      })),
+    };
+  },
   /**
    * The live `AudioContext` and the SFX bus `GainNode`, so a browser smoke can hang an
    * `AnalyserNode` off the bus and read the **delivered** PCM peak. That distinction is the whole
@@ -138,6 +195,53 @@ setAudioBus(recordingBus);
   nodes: (): { ctx: AudioContext | null; sfx: GainNode | null } => {
     const priv = audio as unknown as { ctx: AudioContext | null; sfx: GainNode | null };
     return { ctx: priv.ctx, sfx: priv.sfx };
+  },
+  /**
+   * The measured peak of every **decoded** sample buffer, per cue and variant.
+   *
+   * This answers the one question `tools/audio-pipeline/process.py` structurally cannot answer
+   * about its own output. The pipeline scales each file to a target peak and *then* encodes to
+   * MP3 — and MP3 is lossy, so the decoded waveform is not the one that was written. It can
+   * overshoot. If it overshoots by 20% on one cue, that cue is 20% louder than
+   * `cueCatalogue.ts` says it is, the mix drifts from the design, and **nothing anywhere
+   * fails**: the file loads, decodes, plays, and passes `audit.py` (which measures the file,
+   * not the decode) and `audioAssets.test.ts` (which measures the bytes, not the audio).
+   *
+   * Deliberately independent of the autoplay gate: a suspended context decodes fine
+   * (AUDIO_DESIGN.md §5), so this is readable in a background tab with no user gesture — which
+   * matters, because the gesture is the part of a browser smoke that is awkward to automate.
+   *
+   * Reaches through TS privacy for `bank` for the same reason `nodes()` reaches for `ctx`/`sfx`.
+   */
+  samples: (): { cue: string; variant: number; peak: number; ms: number; rate: number }[] => {
+    const priv = audio as unknown as {
+      bank: { variantsOf(cue: AudioCue): readonly AudioBuffer[] | undefined } | null;
+    };
+    const bank = priv.bank;
+    if (!bank) return [];
+    const out: { cue: string; variant: number; peak: number; ms: number; rate: number }[] = [];
+    for (const cue of ALL_CUES) {
+      const variants = bank.variantsOf(cue);
+      if (!variants) continue;
+      variants.forEach((buf, variant) => {
+        let peak = 0;
+        for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+          const d = buf.getChannelData(ch);
+          for (let i = 0; i < d.length; i++) {
+            const v = Math.abs(d[i]!);
+            if (v > peak) peak = v;
+          }
+        }
+        out.push({
+          cue,
+          variant,
+          peak,
+          ms: Math.round(buf.duration * 1000),
+          rate: buf.sampleRate,
+        });
+      });
+    }
+    return out;
   },
 };
 

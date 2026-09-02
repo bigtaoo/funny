@@ -6,6 +6,7 @@
 // outline tile after tile and read as a dense grid (reported: "地图看起来有些混乱").
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 import { initI18n } from '../../src/i18n';
 import { WorldMapContext, type WorldMapCallbacks } from '../../src/scenes/worldmap/WorldMapContext';
 import { WorldMapRenderer } from '../../src/scenes/worldmap/WorldMapRenderer';
@@ -27,9 +28,10 @@ const memStore = (() => {
 initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const LAYOUT = { designWidth: 1280, designHeight: 800 } as ILayout;
+const { openTextInput } = createFakeTextInput();
 const CB: WorldMapCallbacks = {
   onBack() {}, onOpenChat() {}, onOpenAuction() {}, onReplaySiege() {}, onOpenCity() {},
-  onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'],
+  onOpenDefense() {}, worldApi: {} as WorldMapCallbacks['worldApi'], openTextInput,
   worldId: 'w1', playerName: 'dbg', accountId: 'acc_dbg', storage: memStore,
 };
 

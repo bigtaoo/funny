@@ -20,6 +20,7 @@ function recorder(): AudioBus & { cues: AudioCue[] } {
     play(cue) { cues.push(cue); },
     setSfxVolume() {},
     setMusicVolume() {},
+    updateMusic() {},
     resume() {},
   };
 }
@@ -76,7 +77,7 @@ describe('runHit — the one place a UI cue is emitted', () => {
     const order: string[] = [];
     setAudioBus({
       async preload() {}, play: () => { order.push('cue'); },
-      setSfxVolume() {}, setMusicVolume() {}, resume() {},
+      setSfxVolume() {}, setMusicVolume() {}, updateMusic() {}, resume() {},
     });
     runHit({ fn: () => order.push('fn') });
     expect(order).toEqual(['cue', 'fn']);
@@ -85,7 +86,7 @@ describe('runHit — the one place a UI cue is emitted', () => {
   it('still runs the action when the device throws (playSfx swallows it)', () => {
     setAudioBus({
       async preload() {}, play() { throw new Error('device gone'); },
-      setSfxVolume() {}, setMusicVolume() {}, resume() {},
+      setSfxVolume() {}, setMusicVolume() {}, updateMusic() {}, resume() {},
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const fn = vi.fn();

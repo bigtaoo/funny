@@ -38,6 +38,7 @@ class RecordingBus implements AudioBus {
   play(cue: AudioCue, count = 1): void { this.calls.push([cue, count]); }
   setSfxVolume(): void {}
   setMusicVolume(): void {}
+  updateMusic(): void {}
   resume(): void {}
 }
 

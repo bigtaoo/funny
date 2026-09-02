@@ -31,7 +31,15 @@ declare const wx: {
   createWebAudioContext?(): AudioContext;
   getSystemInfoSync(): { SDKVersion?: string; platform?: string; system?: string };
   getFileSystemManager(): { writeFileSync(p: string, data: string, enc: 'utf8'): void };
+  setEnableDebug(opts: { enableDebug: boolean }): void;
 };
+
+// Real-device "预览" ships with no attached console and no visible way to reach one — DevTools'
+// own remote-debug bridge cannot even load a WeChat bundle containing ES2020 syntax
+// (ASSET_PACKAGING_LOG.md §20.2), so the `console.log` lines this file relies on as exit #3 are
+// otherwise unreachable on a real phone. Unconditional here — safe only because this entry is
+// `build:wechat-e2e`, never shipped (see file header).
+try { wx.setEnableDebug({ enableDebug: true }); } catch { /* older base library: no-op, not fatal */ }
 
 console.log('[nw-audio-probe] entry loaded');
 const OUT = `${wx.env.USER_DATA_PATH}/nw-audio-probe.json`;

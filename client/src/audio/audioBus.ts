@@ -13,7 +13,7 @@
 // **未安装就是安全状态**，而且是测试里的常态：默认是一个真正的空操作总线，所以任何构造场景、
 // 跑 UI 冒烟、或者 headless 跑 `createAppCore` 的测试都不需要打桩音频，也不会因为没有
 // `AudioContext` 而抛错。
-import type { AudioBus, AudioCue } from './types';
+import type { AudioBus, AudioCue, MusicTrack } from './types';
 
 /**
  * 什么都不做的音频设备。**不是**降级路径的一部分——降级是"样本没有就用合成音"
@@ -36,6 +36,7 @@ export class NullAudioBus implements AudioBus {
   play(_cue: AudioCue, _count?: number): void {}
   setSfxVolume(_v: number): void {}
   setMusicVolume(_v: number): void {}
+  updateMusic(_desired: MusicTrack | null, _dtMs: number): void {}
   resume(): void {}
 }
 
@@ -48,6 +49,7 @@ let _bus: AudioBus = new NullAudioBus();
 export function setAudioBus(bus: AudioBus): void {
   _bus = bus;
   warned = false;
+  musicWarned = false;
 }
 
 /** 当前的音频设备（在某个平台安装自己的之前是 {@link NullAudioBus}）。 */
@@ -73,6 +75,31 @@ export function playSfx(cue: AudioCue, count = 1): void {
     if (!warned) {
       warned = true;
       console.warn(`[audio] cue ${cue} 播放失败；本次会话音频保持静默：`, err);
+    }
+  }
+}
+
+/**
+ * 推一帧 BGM（AUDIO_DESIGN.md §7 第 7 步）。**这是 BGM 侧唯一该用的入口**，与 {@link playSfx}
+ * 同一个形状、同一个理由：把"音频设备从哪来"关在本模块里。
+ *
+ * 唯一的调用者是 `SceneManager.onTick`——见 `AudioBus.updateMusic` 的注释里为什么是每帧一次的
+ * 推导而不是切场景时通知一声。
+ *
+ * 失败在这里被吞掉的理由比 cue 那边更硬：这个调用跑在 `app.ticker` 上，**排在 PIXI 渲染器的
+ * 监听器前面**——PIXI 7 里任何一个 ticker 监听器抛出都会中止更新循环、并且不再安排下一次
+ * `requestAnimationFrame`，也就是整块画布永久冻结到刷新为止（`SceneManager.tickScene` 的注释
+ * 记着那个真实的故障报告）。为了一条背景音乐冒这个险是不成比例的。每个已安装的总线只警告一次：
+ * 一个坏掉的 deck 每秒坏 60 次。
+ */
+let musicWarned = false;
+export function updateMusic(desired: MusicTrack | null, dtMs: number): void {
+  try {
+    _bus.updateMusic(desired, dtMs);
+  } catch (err) {
+    if (!musicWarned) {
+      musicWarned = true;
+      console.warn('[audio] BGM 更新失败；本次会话没有背景音乐：', err);
     }
   }
 }

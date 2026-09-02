@@ -19,6 +19,7 @@ import { GachaScene, type GachaSceneCallbacks } from '../../src/scenes/GachaScen
 import { BattlePassScene, type BattlePassCallbacks } from '../../src/scenes/BattlePassScene';
 import { ShopScene, type ShopSceneCallbacks } from '../../src/scenes/ShopScene';
 import { sceneHeaderHeight } from '../../src/ui/widgets/SceneHeader';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -97,6 +98,7 @@ function buildShop(cb: Partial<ShopSceneCallbacks>): ShopScene {
     loadItems: async () => [],
     buy: async () => ({ ok: true }),
     openGacha() {},
+    openTextInput: createFakeTextInput().openTextInput,
     ...cb,
   });
 }

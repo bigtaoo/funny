@@ -1,6 +1,55 @@
 # Notebook Wars — 资源打包补测/复核/重打包记录（spec 见 [`ASSET_PACKAGING.md`](ASSET_PACKAGING.md)）
 
-> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§14（当前架构：三层分级/各平台打包方案/首屏加载策略/预取策略）仍在 hub；本册是 §15（补测）与 §16（icons_atlas 重打包）两节的逐条记录，小节编号与正文一字未改。
+> 从 `ASSET_PACKAGING.md` 拆出（2026-08-29，ADR-067 单册形态：hub 原位留同号 stub + 箭头，不建索引表）。§1–§13（当前架构：三层分级/各平台打包方案/首屏加载策略）仍在 hub；本册是 §14 起的逐条记录——§14 预取裁剪+省流开关、§15 补测、§16 icons_atlas 重打包、§17 微信黑屏、§18 微信 REST 接缝、§19 隐藏 `<input>` → `IPlatform.openTextInput`、§20 真机测试清单——小节编号与正文一字未改。
+
+## 14. 预取按使用面裁剪 + 省流开关（2026-08-25）
+
+§13.6 留的那条尾巴。起点是一句判断：**这不是「省流判据不准」的问题，是「预取得太多」的问题**——换个更准的网络探测最多让一部分玩家少下 5 MB，而按使用信号裁剪对**所有平台、所有网络**都生效，还顺带解决了内存那一半（wifi 上照样白解码 13.7 MB，跟计费与否无关）。所以顺序是 ①裁剪 → ②补探测 → ④给玩家开关，网络探测是次要的。
+
+新增 `client/src/assets/prefetchPolicy.ts`，把 `idlePrefetch` 需要但够不着的三件事收在一处：玩家设置、平台网络 API、场景写下的使用标记。
+
+### 14.1 ① 两个大波次按「用过才预热」裁剪
+
+`slg:world`（2.0 MB）+ `gacha`（1.2 MB）占 ~5 MB 预取量的 3.2 MB，而且是仅有的两个**玩家可能一次都不进**的界面。`WAVES` 表新增可选 `when`：
+
+| 波次 | 门控 | 理由 |
+|---|---|---|
+| `boot:background` / `icons:reward` / `battle` | 无 | 每个账号都会走到（第一局是所有人都做的事） |
+| `slg:world` | `hasUsedFeature('world')` | 全游戏最大单文件，1960×1827 RGBA ≈ **13.7 MB 解码内存** |
+| `gacha` | `hasUsedFeature('gacha')` | 且它自 §13.2 起本来就有进场闸门 |
+
+**标记是提示，不是权限**，所以刻意做得便宜、本地：写 `platform.storage`，**不走服务端 `flags`**——后者要一次 `PUT /flags` 往返，去记一件「猜错零成本」的事。猜错确实零成本：每个场景闸门都会重新 await 同一批幂等 loader，没预热的界面就是照旧付自己的闸门，跟本节存在之前一模一样。
+
+**标记写在场景自己的资源需求点**（`WorldMapRenderer/lifecycle.ts` 的 `bootstrap()`、`PixiAppViews.showGacha` 的闸门），**不写在 loader 里**——预取调用的正是那些 loader，写在那儿会让每个波次跑一次之后就自我论证。
+
+跳过的波次会 `console.info` 报出来（`[prefetch] not warming (never opened): …`），不静默瘦身。
+
+### 14.2 ② 微信改用 `wx.getNetworkType()`
+
+`navigator.connection` 是 Chromium 独有，微信运行时里**根本不存在**，所以此前微信构建一律读成「未知链路」、任何网络下都全量预取。`wx.getNetworkType` 是一等 API，仓库里**从来没被调用过**，`wx.d.ts` 里连声明都没有。
+
+`IPlatform` 新增可选 `getNetworkKind?(): Promise<NetworkKind>`；不实现的平台回落到 `navigatorNetworkKind()`（web/CrazyGames/mobile 本来就该用这个）。映射：`wifi`→wifi、`2g`→slow、`3g/4g/5g`→cellular、`none`→none、其余→unknown（这个列表加过 `5g`，所以按开集处理，不穷举 switch）。探测**永不 reject**，失败即 `unknown`＝当普通链路。
+
+> ⚠ **`cellular` 不跳过预取**，这条边界是承重的：要拦的是「投机字节真的伤人」的链路，不是「凡不是 wifi」——放宽会把大多数手机的预取直接关掉。让 4G 保持诚实的不是更严的网络判据，而是更小的投机集合（即 ①），而后者在 iOS Safari 这种**完全没有可用网络 API** 的地方同样成立。web 路径和平台探测两边各有一条测试钉住这个边界。
+
+### 14.3 ④ 设置里的「省流量」开关
+
+自动判据的补集：`navigator.connection` 在 iOS Safari / Firefox / 所有 iOS 内嵌浏览器里都不存在。**这里不要猜链路**——测吞吐会答错问题（快的 LTE 既快又计费），干脆让玩家自己说。全平台生效、不依赖任何 API、不可能猜错。开关写 `nw_data_saver`，`shouldSkipPrefetch()` 里优先级最高（marks 也压不过它）。
+
+**次日生效**：本次会话的预取链在玩家走到设置界面时早已决定甚至跑完，字节已经花掉了；这个开关管的是**之后的会话**，不做中途取消。
+
+布局上它是**标签 + 开关同一行**（不同于周围的分区），因为它挤在语言按钮和 Help/Account（0.73h）之间的空档里，堆叠式放不下。该场景**每个分区的 y 都是 h 的手调分数、无滚动无流式布局**，所以碰撞不会被推开、只会**默默画在邻居身上**——`test/ui/settingsDataSaverRow.ui.ts` 因此断言的是几何关系（4 种视口 × 3 种语言），而不是「标签在不在」。
+
+### 14.4 实测
+
+新档（从没开过世界地图/抽卡）：控制台 `[prefetch] not warming (never opened): slg:world, gacha`，`static/` 请求里**没有** 2002 KB 的 `world_atlas.png`、也没有 gacha 那批图。写入两个标记后重载：world atlas 恢复预取。两个方向都在真实运行的客户端里验过。
+
+> ⚠ **设置界面没有截图核对**：本轮 Browser pane 不显示（`screenshot` 一直超时）。改用几何断言覆盖，见 14.3 —— 对「不同宽高比下会不会重叠」这个具体风险，几何断言反而比一张截图更强，也每次 CI 都在跑。反向验证过（把行挪到 0.72h 制造重叠，4 个视口全红）。
+
+### 14.5 遗留
+
+- §13.6 第一条（world atlas 无条件预取）由本节 ① 解决；**编码仍然不能动**（§13.5）。若哪天世界地图必须对所有人预热，剩下的路仍是按 §6.12 的原话砍帧/砍尺寸。
+- 使用标记只有「用过 / 没用过」，没有时效。一个玩了一次 SLG 就再不碰的账号会一直预热那 2.0 MB。加个「最近 N 天」窗口是显然的下一步，但在有数据说明这值得之前不做——现在这版已经把最坏情况（从没进过的人）解决了。
 
 ## 15. 补测试：把三处约定变成被检查的不变量（2026-08-25）
 
@@ -118,3 +167,527 @@
 跑全量时 `client/test/cardSceneTabSwitchGuard.test.ts`（当天早些时候刚落地）是红的，而且跟本任务毫无关系：它报出来的「违规行」正是 `list.ts` 里**解释这个守卫的那句注释**。根因是 `text.split('\n')` 在 CRLF 检出上留下尾部 `\r`，而 `\r` 是 ECMAScript LineTerminator，于是 `$` 锚定的剥注释 `replace` 一个字符都没剥掉——**这个守卫在 CI（LF）永远绿、在每个 Windows 检出上永远红**。改成 `split(/\r?\n/)`，并反向验证过「真塞一句 `core.tab =` 仍然抓得到、行号也对」。
 
 修它不是扩大范围，是 ADR-066 之后 CI 红会挡住部署门禁、也挡住这次改动自己的验证。教训（一条以 `$` 结尾的逐行正则，正确性上限等于喂给它的 split）记在 [`claudedocs/client-testing.md`](../../claudedocs/client-testing.md)。
+
+## 17. 微信开发者工具黑屏：两个独立成因（2026-09-01）
+
+用户报「游戏在微信开发者工具里是黑屏」。查下来是**两件互不相干的事叠在一起**，而且顺序有意义：先修好的那个（资源）修完仍然黑屏，真正让第一行就抛的是第二个（canvas）。两个的共同底色是——`client/wechatgame/` 是**整个 gitignore 的**，没有任何东西保证它里面的东西彼此一致、或者和当前代码一致。
+
+### 17.1 上屏 canvas：裸全局 `canvas` 从来不是文档接口
+
+```
+ReferenceError: canvas is not defined
+    at Object.getCanvas (WechatPlatform.ts:57)
+    at define.constructor (app.ts:46)
+```
+
+`WechatPlatform.getCanvas()` 一直是 `return canvas`——读那个**裸全局**。它由适配层提供，**不在小游戏的文档 API 里**；开发者工具在 2026-08-31 晚上换到 canary 基础库 **3.17.2** 之后不再提供它。于是 `startApp()` 的第一行（`new PIXI.Application({ view: platform.getCanvas() })`）就抛，一个像素都没画：**整个游戏完好地站在黑屏后面，控制台里那条错误和"游戏"两个字毫无关联**。
+
+改成按文档的契约取：`wx.createCanvas()` 的**第一次**调用返回上屏 canvas，之后的都是离屏。所以 `resolveScreenCanvas()` 有两条承重约束，都写进了代码注释：
+
+- **它必须是进程里第一个 `createCanvas`**。目前是：`app.ts` 在构造 PIXI 应用**之前**调 `platform.getCanvas()`，而 PIXI 的 `settings.ADAPTER.createCanvas`（`render/fastText.ts` 那条路）只在渲染期才跑。
+- **必须记忆化**。不记的话第二次 `getCanvas()` 会拿到一张离屏 canvas，渲染进虚空——同一个黑屏，只是隔了一层。
+
+回退链是「裸全局 → `GameGlobal.canvas` → `wx.createCanvas()`」，所以旧基础库（≤ 3.15）和 3.17.2 都能跑。`test/WechatPlatform.test.ts` 补 4 例（三条路径各一 + 记忆化一），变异检查过：抽掉记忆化 1 例红、再抽掉 `GameGlobal` 分支 2 例红。
+
+`project.private.config.json` 钉的 `libVersion` 同步从 3.15.1 升到 **3.17.2**（跟上工具实际装的那版；`wx.d.ts` / `entries/wechat.ts` / `WechatAudioBus.ts` 里引用这个数的三处注释一并订正）。
+
+> **一般化**：这条和音频那次（`AUDIO_DESIGN.md` §0.3「把自己的 `.d.ts` 当成运行时事实」）是**同一枚硬币的两面**。那次是 typing 里**没声明**的 API 被当成运行时没有；这次是 typing 里**声明了**的全局被当成运行时一定有。`declare` 两个方向都不是证据。
+
+### 17.2 包不完整：`pixigame.js` 和 `cdn/` 来自两次不同的构建
+
+发现时磁盘上的状态：`pixigame.js` 是当天 09:08 的（当前代码），`cdn/` 里是 **7 月 29 日**的 **57 个**文件——而那份 bundle 烘焙进去的资源引用有 **301 个**。八月那批图标/美术全换了 contenthash，于是 244 个引用在磁盘上根本不存在，L0 闸门一张图都取不到。
+
+成因：前一轮（音频后端）收尾时只把 `pixigame.js` + `.map` **刷进主检出**，没有在主检出里跑一遍 `build:wechat`——真跑会把 301 个资源一起吐出来。两个文件时间戳精确相同、`cdn/` 一动没动，是"复制"而不是"构建"的指纹。DevTools 打开的**始终是主检出**（见 [`claudedocs/worktrees.md`](../../claudedocs/worktrees.md)），worktree 里构建得再新也没用。
+
+新增门禁 `client/scripts/checkWechatPackage.mjs`（`npm run check:wechatpackage`，并串进 `build:wechat`），**读产物、不读意图**，查三件事：
+
+1. **壳完整**——`game.js` 确实 `require('./pixigame.js')`、`game.json` 能解析。
+2. **每个烘焙进 bundle 的资源 URL 在磁盘上都有文件**（包内相对 `cdn/<hash>` 与方案 A 的绝对 CDN URL 两种形态都认；后者本地虽然不是运行时读取处，但它就是上传集）。← 本节这个黑屏。
+3. **只有一个 bundle**——出现 `<id>.pixigame.js` 同级文件说明 `asyncChunks:false` 失守（§4.0）。`test/wechatSingleBundle.test.ts` 守的是配置，这条守的是产物。
+
+**它故意查不了的那一半**：反过来的情况——**旧 bundle 配新 `cdn/`**。微信产物跑在 `clean:false` 下（`game.js`/`game.json`/`cdn/` 必须活下来），所以历史构建的文件只会堆积不会被扫掉，旧 bundle 的 hash 仍然都在、规则 2 照样通过。孤儿文件数因此只报数不报错——任何一次重建之后它都不为零。
+
+`test/wechatPackageGate.test.ts` 12 例，每条规则配一个**恰好破坏它**的 fixture（门禁自己也要做变异测试）。另外拿**真实产物**复现过一次事故现场：把 301 引用的 bundle 配上 57 个资源的 `cdn/`，门禁报「251 of 301 baked asset URLs have no file」——证明那条正则在真 bundle 上有效，而不只是在手搓 fixture 上。
+
+### 17.3 验证与欠账
+
+- 全量：client `npm run typecheck`（含测试工程 + fulllink）干净；`vitest run` **222 文件 2393 例**全绿（内含 `test/WechatPlatform.test.ts` 9 例、`test/wechatPackageGate.test.ts` 12 例）；`test:sim` 8 文件 13 例绿；`build:wechat` 通过且串联的门禁绿（**301 引用全在位，42 个孤儿**）。
+- **画面由用户在开发者工具里核对**——这台机器上没有别的路子：`mcp__claude-in-chrome__*` 够不到 DevTools，`miniprogram-automator` 对小游戏是死路（`AUDIO_DESIGN.md` §0.3）。
+- 仍然欠着 §4.2 遗留 1/2（微信后台域名白名单、`cdn/` 上传），以及**真机**——3.17.2 的这条 canvas 行为是在 Chromium 模拟器上观察到的。
+
+### 17.4 宿主适配层：把这层依赖收归自己（当天下午）
+
+§17.1 修好 canvas 之后，下一个报错是 `Unrecognized source type to auto-detect Resource`（`Graphics`
+→ `FillStyle` → `Texture.WHITE`）。到这里性质就变了：**不是一个 API 没了，是 PIXI 依赖的整个 DOM
+嗅探面没了**。用户拍板自己拿一层适配层（理由：以后出问题查得快），架构与验收条件写在
+[`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4.3/§4.4，这里只记过程里值钱的东西。
+
+**第 1 阶段先量后写。** 新增 `platform/wechat/hostProbe.ts` + `entries/wechat-probe.ts`
+（`build:wechat-probe`，永不发布），把宿主表面写到 `USER_DATA_PATH`。实测结论一句话：
+**实现都在，只是没挂到全局**——`document`/`window`/`navigator`/`URL`/`WebGLRenderingContext` 都在，
+`document.createElement('canvas')` 正常返回且 `constructor.name` 恰好是 `HTMLCanvasElement`，
+`wx.createImage()` 的构造函数名就是 `HTMLImageElement`；缺的是 `HTMLCanvasElement`/
+`HTMLImageElement`/`Image`/`OffscreenCanvas`/`ImageBitmap`/`createImageBitmap`/`fetch`/`DOMParser`/
+`XMLHttpRequest`/`CanvasRenderingContext2D` 这些**全局类绑定**，外加裸 `canvas` 和 `document.baseURI`。
+
+> 探针的三个出口（磁盘 / `GameGlobal` / `console.log`）不是冗余：磁盘上什么都没有时，「探针崩了」
+> 和「模拟器根本没跑它」是等价的，而两者修法完全不同（AUDIO_DESIGN §0.3 同一条）。
+
+#### ⚠️ 中途被推翻的设计，以及推翻它的那句话
+
+第一版方案打算从 `document.createElement('canvas').constructor` 取类绑定——探针实测它可用。**错的。**
+`D:\daydayup` 的 `design/04-wechat.md` 里有他们用两次线上 bug 换来的一句：
+
+> **`document` 在开发者工具模拟器里存在，在真机上不存在。这是这个平台最有误导性的一件事。**
+
+我的探针正是在模拟器里量的。照那份数据设计，会得到一层**在模拟器里全绿、在手机上必崩**的适配层，
+而 funny 至今没在真机上跑过——**这笔费本来会由第一个真机测试的人来付**。改成一律从
+`wx.createCanvas()` / `wx.createImage()` 的实际产物取类。
+
+**这也是这轮最值钱的一般化**：探针只能告诉你「这台机器上有什么」，不能告诉你「这个平台保证什么」。
+两者之差就是模拟器与真机之差。
+
+#### 从 daydayup 抄到的其余三条（port the method, not the assets）
+
+- **不用 weapp-adapter，实现 PIXI 官方 adapter 扩展点**——他们 v8 用 `DOMAdapter.set()`，我们 v7 是
+  `settings.ADAPTER`，同一个决定。
+- **`fetch` 故意不实现**。他们复核过：Assets 真上了也没有任何路径走到 `fetch`（纹理解析只在
+  `createImageBitmap` 那条路上用它，而这个运行时没有 `createImageBitmap`，于是走 `createImage`）。
+  落到 `fetch` 的一律是「有人想要远端资源」，那是打包边界的决定，应该响亮地失败。
+- **测试 harness 要把浏览器全局真的 `delete` 掉**，而不是「碰巧没用到」。Node 自带 `fetch`/`URL`，
+  留着它们，一个仍然依赖 DOM 的实现会在测试里全绿、在手机上崩。
+
+v7 独有的两条（他们那边不适用）：`@pixi/settings` 的 `isMobile` 在**模块顶层**读
+`globalThis.navigator`，所以装宿主必须是入口第一个 **import**（写在函数体里，ESM 的求值顺序决定了
+来不及）；而他们踩的 `context.letterSpacing = '0px'` 毒化上下文那条，v7 关在
+`TextMetrics.experimentalLetterSpacing` 开关后面（默认关），只需一条用例钉住别被打开。
+
+#### 顺手修掉的两处真机必崩
+
+门禁扫出来的：`render/stickman/shadow.ts` 和 `outline.ts` 直接 `document.createElement('canvas')`。
+改走 `settings.ADAPTER.createCanvas`。另外三处造纹理（`fastText` 字形 atlas、影子、描边）改成指名
+`CanvasResource`（新增 `render/canvasTexture.ts`）——**不该让「画面出不出来」取决于某个全局补没补上**。
+
+#### 验证
+
+- `test/wechatHost.test.ts` 17 例，断言的是**真实 PIXI 判定函数**（`CanvasResource.test` /
+  `ImageResource.test` / `Texture.WHITE` / `determineCrossOrigin`），全局全部 delete，fake 只有 `wx`。
+  变异 5 个全抓：抽掉类绑定 4 红、抽掉 `location` 2 红、嗅探另造 canvas（偷走上屏）2 红、
+  `??=` 改成无条件覆盖 1 红、删掉 `Image` 工厂 2 红。
+- 门禁 13 例（含扫描器自身的误报/漏报用例）。变异：往 `render/bake.ts` 塞一句 `document.body` → 红；
+  同句加 `// dom-ok: 理由` → 绿。
+- 全量：`typecheck`（含 fulllink）干净 / `vitest run` 225 文件 2490 例 / `test:sim` 8 文件 13 例 /
+  `test:ui` 253 文件 2428 例 / `lint` 0 error / `build:wechat` + 包门禁绿（323 引用全在位）。
+- **画面仍未由人确认**：适配层落地后重新构建过，但开发者工具里那一眼只有用户能看
+  （`mcp__claude-in-chrome__*` 够不到 DevTools）。§4.4 第 3 条的真机验证同样开着。
+
+## 18. REST 走 `wx.request`：一个接缝，不是一个 `fetch` polyfill（2026-09-01）
+
+§17.4 把渲染层的宿主依赖收归自己之后，[`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4.4 只剩三条欠账，第 1 条是**整个 REST 层在微信上完全不通**：`net/ApiClient/core.ts`、`net/WorldApiClient/core.ts`、`net/anomaly/reporter.ts`、`analytics/{config,queue}.ts` 一共 6 处直接调 `fetch`，而小游戏运行时没有这个全局。`ApiClient/core.ts` 的注释里记着现状：「微信云同步与合规一起排期，当前 `SaveManager` 降级本地存档」——**但降级的其实不止云存档**：埋点、异常上报、SLG/社交/拍卖的每一次请求，在微信上都是一次同步抛出的 `ReferenceError` 或一个静默的 no-op。
+
+### 18.1 两种形状，以及为什么选了后一种
+
+| | (a) 在 `wechatHost` 里补 `globalThis.fetch` | (b) 在 `net/` 抽一个 transport 接缝 |
+|---|---|---|
+| 改动面 | 一个文件，REST 层一行不改 | 新增 2 个文件 + 6 个调用点 |
+| 契约 | 必须假装是 `fetch`（stream / redirect / `Request` 对象 / cookie jar / `Response` 全套） | 五个字段的 `NetRequest` + 四个成员的 `NetResponse`，**能满足的那部分才写进契约** |
+| 对其余代码的影响 | 翻转全图的特性探测 | 无 |
+| 门禁 | 6 处只能靠 `// dom-ok:` 放行 | 6 处消失 |
+
+选 (b)。三条理由里第二条是决定性的，也是当初没想到的那条：
+
+1. **一个只做得到一半的 `fetch` 正是 §4.3 要终结的东西。** `wx.request` 没有 stream、没有 redirect 模式、不认 `Request`/`Headers` 对象、没有 blob、没有 cookie jar。把它挂到 `fetch` 这个名字下，就是重新制造 2026-09-01 黑屏的那个形状：代码读一个宿主全局，拿到一个**几乎**对的东西，到真机上才发现差在哪。一个五字段的具名接缝是我们真能兑现的契约。
+2. **它会翻转整张图的特性探测。** `typeof fetch === 'function'` 在本仓库里就是活分支（`analytics/queue.ts` 的 unload 路径当时正靠它分流），第三方库里更多，PIXI 的 Assets 也是这么挑 loader 的。装上全局 `fetch` 等于把这些分支统统改道到 HTTP——**包括最终会走到资源 URL 上的那些**。而「包内文件不该走 HTTP」这条边界（`WechatAssetIO` + 故意抛错的 `wechatPixiAdapter.fetch`，§17.4）就再也守不住了：它现在能成立，靠的正是这个运行时**没有** `fetch`。
+3. **门禁会失明。** `test/wechatHostSurface.test.ts` 扫的是可达图里的裸 `fetch(`。走 (a) 的话这 6 处一个都不会消失，只能逐个加 `// dom-ok:`——欠账清单就变成了它自己头注释里警告的那种白名单。
+
+(a) 唯一的卖点「REST 层不用改」在这里也不值钱：6 个调用点里有 2 个是 `core.ts` 的共用 transport 辅助方法，另外 4 个是 fire-and-forget 的遥测发送，改动总量就是六处。
+
+### 18.2 落地
+
+- **`client/src/net/transport.ts`**：`NetRequest`（`method`/`url`/`headers`/`body?`/`signal?`/`keepalive?`/`credentials?`）→ `NetResponse`（`ok`/`status`/`json()`/`text()`）。默认实现是 fetch 的，**把原来各调用点手搓的 init 对象一字不差地搭回去**（可选字段是省略而不是给 `undefined`），所以 web 侧零回归、仓库里所有假 `fetch` 的测试一句不用改。`NetResponse` 是 `Response` 的子集，因此 web 路径直接把原对象递回去，不包一层。
+- **`client/src/platform/wechat/wechatTransport.ts`**：`wx.request` 实现。四处真实差异写在文件头的表里——① 字段名是 `header` 不是 `headers`（写错的话请求照发、只是一个头都不带，鉴权全线失效）；② `dataType` 默认 `'json'`，**它替你 parse 且失败时静默把字符串原样给回来**，于是一次 502 的 HTML 错误页会变成 `json.ok === undefined`，所以必须显式要非 `'json'`，parse 留给 `json()` 做、与 `fetch` 一样在非法 JSON 上抛；③ 取消桥到 `RequestTask.abort()`，且**由我们先 reject** 再 `abort()`（`abort()` 之后 wx 回不回调 `fail`、`errMsg` 长什么样都是运行时细节，先 reject 才能保证语义和 web 完全一致）；④ 没有 cookie jar，`credentials:'omit'` 天然成立。
+- **装配**：`entries/wechat.ts` 加 `setNetTransport(new WechatTransport())`，与 `setAssetIO`/`setAudioBus` 并排——同一条惯例，且**与 `setAssetIO` 那行是两条路，注释里点明了别混**。
+- **超时只有一个来源**：调用方自己的 `AbortController` + `setTimeout`（ADR-058 的 metaserver 10s、`WorldApiCore.req` 的 per-call `timeoutMs`）一字未动，transport 只负责把 signal 接到 `RequestTask` 上。`rateGate` 同理留在调用方，于是微信这条路**自动**继承了 5 req/s 的全局限速。
+
+**顺手删掉的一处死代码**：`analytics/queue.ts` 的 `flushSync` 原本是「有 `fetch` 就 keepalive fetch，否则 `navigator.sendBeacon`」。那个 fallback 在每个平台上都是死的——web / CrazyGames / 套壳都有 `fetch`（没有的话资源加载器先垮），而唯一真没有 `fetch` 的运行时（微信）**也没有 `sendBeacon`**，所以这个方法在微信上一直是个静默 no-op。现在它走 transport，微信上第一次真的发得出去，而且不像 beacon 那样丢掉 `Authorization` 头（那正是 2026-08-24 记的那个「2848 条 `session_end` 无一可归属」的坑）。对应的那条用例改成断言「没有 fetch 的运行时里，装上的 transport 收到了带鉴权头的请求」。
+
+### 18.3 门禁与验证
+
+- **`test/dom-usage-baseline.json`：54 → 45 处**（21 → 17 文件）。删掉 `analytics/config.ts`、`net/ApiClient/core.ts`、`net/WorldApiClient/core.ts`、`net/anomaly/reporter.ts` 四条，`analytics/queue.ts` 6 → 3。「基线不许留过期项」那条本来就会为此报红，所以这不是可选动作。`wechatHostSurface.test.ts` 里的总量上限同步从 54 拧到 45——**还完一批就往下拧**，否则上限自己会变成新的垃圾桶。剩下的 45 处里 30 处是 §4.4 第 2 条那批隐藏 `<input>`。
+- **`test/wechatTransport.test.ts`（18 例）**：harness 与 `wechatHost.test.ts` 同一个范式——`fetch`/`document`/`window`/`navigator`/`localStorage`/`XMLHttpRequest` 等在整轮测试期间从 `globalThis` 上**真的 delete 掉**，fake 只有 `wx`。所以最后那三例（真 `ApiClient` 跑通 login、错误信封解成 `ApiError`、ADR-058 的 10s 超时把 `RequestTask` abort 掉）是有分量的：它们跑在一个**没有 fetch 的进程**里，能绿就说明那条链路真的不碰 fetch 了。
+- **`test/netTransport.test.ts`（9 例）**：接缝本身 + 「REST 层真的经过接缝」——最后两例装一个假 transport 再断言**全局 `fetch` 一次都没被调用**。这条是给未来的人留的：哪天有人图省事把 `fetch` 写回 `ApiClient`，在 Node 里（自带 fetch）所有既有测试都会照绿，只有真机会崩。
+- **变异测试（9 个，全红）**：`header`→`headers`（2 红）、`dataType`→`'json'`（1）、抽掉 `task.abort()`（2）、抽掉「signal 已 aborted 就一个包都不发」（1）、`json()` 不再 parse（5）、抽掉重复 settle 的守卫（1）、`keepalive` 改成无条件写键（1）、不转发 `signal`（1）、以及把裸 `fetch` 塞回 `ApiClient/core.ts`（DOM 门禁 1 红）。
+- **全量**：`typecheck`（含 fulllink）干净 / `vitest run` **227 文件 2518 例** / `test:sim` 8 文件 13 例 / `test:ui` 253 文件 2428 例 / `lint` 0 error（2 条既有 warning，与本次无关）/ `build:wechat` + 包门禁绿（323 引用全在位）。
+
+### 18.4 仍然欠着
+
+- **`wx.request` 的「request 合法域名」白名单**，与 `downloadFile` 的是**两份**（§4.2 遗留 1）。配不上就是全线 REST 挂掉；开发者工具能勾「不校验合法域名」绕过，真机不行——所以这条会精确地在真机上第一次现形。
+- **微信云同步本身**仍与合规一起排期：桥通了不等于 `SaveManager` 就该上云，`getApiBaseUrl()` 在微信构建里目前也还没注入。这次只把「没有传输层」这个物理障碍搬开。
+- **真机**（§4.4，2026-09-01 晚间盘点后的唯一一条）。以上全部只在 Node 测试与 Chromium 模拟器上成立。
+
+## 19. 14 处隐藏 `<input>` → `IPlatform.openTextInput`（2026-09-01）
+
+§18 把 REST 层的 `fetch` 收归 `net/transport.ts` 之后，[`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4.4 只剩一条真正的功能缺口：**14 个场景直接 `document.createElement('input')` 收文本**——登录名/密码、聊天、家族/宗门创建表单与频道发言框、拍卖行买家 ID 与价格编辑、SLG 首府改名、申诉/反馈弹窗。这段代码不是「没适配微信」，是**微信上完全不通**：小游戏运行时没有 `document`，14 处调用点原样跑起来就是 14 个 `ReferenceError`（有一处，`LoginScene.setupHiddenInput()`，此前干脆用 `typeof document === 'undefined'` 整段跳过——效果是微信玩家永远打不开登录框，静默失效比抛错还隐蔽）。
+
+### 19.1 抽成 `IPlatform` 的一个能力，不是一个模块级接缝
+
+`assetIO()`/`netTransport()`/`audioBus()` 都是模块级单例（§6、§18.2）——这条不跟：文本输入的调用点全部在场景类里，而场景已经通过各自的 `XxxSceneCallbacks` 接口拿 `IPlatform` 的能力（`hasRewardedAd`/`showRewardedAd` 是先例），不需要再造一条独立的全局接缝。`IPlatform.openTextInput(opts): ITextInput` 直接加成 IPlatform 的方法，WebPlatform/CrazyGamesPlatform/WechatPlatform 三个实现各自满足：
+
+```ts
+interface TextInputOptions {
+  value: string; maxLength: number; password?: boolean;
+  confirmType?: 'done' | 'next' | 'search' | 'go' | 'send';
+  onInput(value: string): void;
+  onConfirm?(value: string): void;   // Enter（web/CrazyGames）/ 系统键盘 Confirm 键（微信）
+  onComplete(): void;                // 会话结束——无论因为谁关的
+}
+interface ITextInput { setValue(value: string): void; close(): void; }
+```
+
+`onConfirm` **不自动关闭输入**（web 一个纯 `<input>` 按 Enter 本来就不会自己 blur），微信侧同理把 `wx.showKeyboard` 的 `confirmHold` **恒定传 `true`**（永不自动收起）——两端行为对齐，「按 Enter 后是否关闭」完全由调用方的 `onConfirm` 自己决定要不要调 `close()`，不需要在接口里塞一个 `confirmHold` 选项分叉两条平台语义。14 个调用点原来的行为分两类，迁移时逐一保留：LoginScene/ChatScene（Enter 不关闭，允许继续编辑/连续发送）、FamilyScene/SectScene 发言框与拍卖数字编辑器/首府改名（Enter 提交并关闭）。
+
+Web/CrazyGames 的实现集中到 `client/src/platform/web/domTextInput.ts`（`openDomTextInput`）——12 个场景文件里原本几乎逐字重复的一段「建 `<input>` → 定位到屏幕外 → 挂 `input`/`keydown`/`blur` 监听 → `focus()`」样板收成一个函数，两个平台类各一行转发。这个文件躺在 `platform/web/` 下，天然在 `wechatHostSurface.test.ts` 的 `OFF_PATH` 排除范围里（跟 `WebPlatform.ts` 自己一样），是仓库里唯一一处「该碰 `document`」的新文件。
+
+FriendsScene 的 `chrome.ts` 早就有一个自己的 `openHiddenInput(core, opts)` 内部封装（8 个调用点共用），这次只改它的实现体去调 `core.cb.openTextInput`，8 个调用点的签名一个字没动。
+
+### 19.2 微信侧：`wx.showKeyboard` 家族，一次只有一个会话
+
+`wx.showKeyboard`/`updateKeyboard`/`hideKeyboard` + `onKeyboardInput`/`onKeyboardConfirm`/`onKeyboardComplete`（小游戏原生 API，基础库 2.1.0+，跟小程序 `<input>`/`KeyboardInputComponent` 组件完全是两套东西——这个运行时没有 DOM 可以挂那些组件）。`client/src/wx.d.ts` 里没有这几个声明——按本仓库的教训（AUDIO_DESIGN §0.3、§4.3）这不代表运行时没有，`WechatPlatform.ts` 照惯例自己声明一个只含本文件用到的字段的局部 `declare const wx`，不碰那个文件。
+
+真正的坑：`onKeyboardInput`/`onKeyboardConfirm`/`onKeyboardComplete` 是**全局**监听器——wx 的 API 里没有「这次回调属于哪个会话」的标识，跟「一次只能有一个键盘」这个事实本身是匹配的（一个 `<input>` 抢焦点也只有一个）。`WechatPlatform` 因此只在首次 `openTextInput()` 调用时装一次这三个全局监听（`wireKeyboardListenersOnce`），路由到 `this.activeTextInput` 指向的那个会话；`openTextInput()` 自己在打开新会话前，如果上一个还开着就先关掉它（触发它的 `onComplete`）——跟聚焦一个新 `<input>` 会 blur 旧的是同一个语义。`close()`（调用方主动关）和全局 `onKeyboardComplete`（原生键盘被关，无论是用户划走还是我们自己调的 `hideKeyboard()`）两条路径都会触发 `onComplete`，用一个 `closed` 标记 + `this.activeTextInput` 的身份检查保证只触发一次——`close()` 自己关闭时立刻把 `activeTextInput` 置空并直接调 `onComplete`，随后到达的 `onKeyboardComplete` 因为找不到匹配的活跃会话而空转。
+
+**已知限制，写进代码注释而不是留着不说**：`TextInputOptions.password` 在微信侧没有对应物——`wx.showKeyboard` 没有掩码输入这个概念，字符会明文显示在系统键盘的预览里。今天唯一传 `password: true` 的是 LoginScene 的密码字段，而微信从不走 LoginScene（`wx.login` 直接换 openid，见 `getAuthCredential`），所以这是一个潜在缺口而不是活的缺口——真要有人在微信上加了密码输入的路径才会现形。
+
+### 19.3 一次性顺手清理
+
+- **FriendsScene `openHiddenInput` 的 `placeholder` 参数是死代码**：设在一个 `opacity:0`、定位到屏幕外的 `<input>` 上，浏览器渲染的 placeholder 文字从来没人看得到——真正的占位文案走的是同一个 tap handler 里另一次调用的 `caretText()`（画在 canvas 上）。迁移时直接删掉这个参数，8 个调用点都没传过它。
+- **ShopScene 的 Enter-to-redeem 不再需要「先建后补听」的两段式构造**：旧代码里 `ShopSceneCore` 构造时就建好隐藏 `<input>`（`setupHiddenInput()`），但 Enter 键的处理要等 `ActionsPanel` 造出来才能接线，所以 `ShopScene.ts`（外层装配）在 `new ActionsPanel(...)` 之后单独 `core.hiddenInput?.addEventListener('keydown', ...)` 补一刀。新模型下输入会话是「用户点了才开」（`focusPromo()` 惰性打开），点击发生的时刻装配早就完成了，`onConfirm` 直接在 `focusPromo(onConfirm)` 里当参数传下去即可——`ShopScene.ts` 那段外部补线代码整段删除。
+- **FeedbackDialog 的 submit 成功路径原本只清了镜像状态 `feedbackText`，没清底层 `<input>` 的真实值**：连续两次提交、中间不重新聚焦的话，第二次输入会把已提交的文字和新内容拼在一起（DOM 层面从未清空过）。这个 bug 一直存在，只是没人踩到过（多数人提交后会重新点一次输入框）。这次经手顺便用新拿到的 `ITextInput.setValue('')` 补上，不算范围蔓延——修复点和迁移点是同一行代码。
+- **`world.nationNamePrompt` i18n key** 只喂给了那个从未渲染的 placeholder，三语言文件一并删除（`i18n-no-dead-keys.test.ts` 会抓不然会报死键）。
+
+### 19.4 门禁与验证
+
+- **`test/dom-usage-baseline.json`：15 处 / 5 文件**（原 21 文件 / 54 处落地时的口径；§18 已把 REST 那批还清到 17 文件 / 45 处，这次再还清 12 文件 / 30 处，剩下的 5 文件 15 处全部是 `analytics/`、`PixiAppViews.ts`（web-only 的 sketch demo 入口探测）、`assetIO.ts`/`ota.ts` 两个「平台默认实现」——跟本次改动无关，是各自独立的欠账）。§4.4 从两条欠账收成一条：只剩「真机从未验过」。
+- **`test/WechatPlatform.test.ts` 新增 `openTextInput` 一节（17 例）**：`wx.showKeyboard` 拿到正确的 `defaultValue`/`maxLength`/`confirmHold:true`/`confirmType`；`onKeyboardInput`/`onKeyboardConfirm` 路由到当前活跃会话；原生 `onKeyboardComplete` 触发一次 `onComplete` 且脱钩会话（之后的杂散 input/complete 事件不再命中）；`close()` 调 `hideKeyboard`、触发一次 `onComplete`，重复调用与随后到达的原生 `onKeyboardComplete` 都不会二次触发；`setValue()` 转发到 `updateKeyboard`，`close()` 后变 no-op；打开新会话会先关掉（并触发其 `onComplete`）旧会话。
+- **12 个场景文件逐一改完**，配套测试同步：`familyChannelInput.test.ts`/`familySendButton.test.ts`/`sectActions.test.ts`/`shopActions.test.ts` 里手搭的假 `document`（`document.createElement`/`addEventListener`）换成新建的 `test/harness/fakeTextInput.ts`（记录每次 `openTextInput()` 调用的 `TextInputOptions`，返回一个契约与真实实现一致——`close()` 幂等、`setValue()` 关闭后 no-op——的假 `ITextInput`）；5 个 `test:ui` 文件（`caretRegression.ui.ts`/`dialogModalInputGate.ui.ts`/`familyIncrementalRepaint.ui.ts`/`sectIncrementalRepaint.ui.ts`/`auctionScene.ui.ts`）改成把真实的 `openDomTextInput` 接到既有的假 `document` 上（这几个文件本来就在无 DOM 的 headless Node 环境里跑，假 `document` 早就在，只是原先直接喂给场景自己的 `document.createElement` 调用；现在喂给 `openDomTextInput`，断言方式基本不用改，除了 `AuctionScene` 那批需要从 `core.hiddenInput`/`core.textInput`（现在存的是不透明的 `ITextInput` 句柄）改成从假 `document` 自己的 `createElement` 记录里取最近一次创建的假元素）。
+- **全量**：`typecheck` 干净 / `vitest run` 229 文件 2572 例 / `test:sim` 8 文件 13 例 / `test:ui` 253 文件 2428 例 / `build:web` + `build:crazygames` + `build:mobile` + `build:wechat`（含 `check:wechatpackage` 包门禁）全部绿。`test:e2e` 需要活的 metaserver/gateway/matchsvc/gameserver/commercial + Mongo 全栈（`server/dev-up.ps1` 或 docker compose 起），这次会话环境里没有对应可达的地址，**没有跑**——纯客户端改动，`test:e2e` 覆盖的是编排/网络逻辑而非本次触碰的场景/平台层代码，风险可控但记在这里而不是假装跑过。
+- **真实浏览器人工核对**（`mcp__claude-in-chrome__*`，非 in-app Browser 面板）：SettingsScene 改名框（键入镜像、确认关闭）、FeedbackDialog 多行输入框（键入镜像、caret）两条路径截图确认符合预期。
+- **订正（2026-09-01 补充会话）**：上面「`typecheck` 干净」这句话没有覆盖全部受影响文件——`ChatSceneCallbacks`/`FriendsSceneCallbacks`/`WorldMapCallbacks`/`AuctionSceneCallbacks`/`FamilySceneCallbacks`/`SectSceneCallbacks`/`ShopSceneCallbacks`/`SettingsSceneCallbacks`/`FeedbackDialogCallbacks` 新增 `openTextInput` 必填字段后，还有约 60 个 `test/ui/*.ui.ts` 文件（这次迁移没有触碰的、早于 `feat/wechat-text-input` 就存在的既有回归测试）以及 `test/harness/HeadlessPlatform.ts`（`IPlatform` 本身的假实现，供 `test:e2e`/`headless-nav.test.ts` 等用）里手搭的 mock callback 对象没有同步补上这个字段——本节写下时跑的 `tsc --noEmit -p tsconfig.test.json` 显然没有覆盖到这批文件（原因不明，可能是分批验证时漏跑了 `test/ui/` 全量），导致合并进日分支后 `npm run typecheck` 实际报约 116 处 `Property 'openTextInput' is missing` 一类错误。已在后续会话里按本节 19.4 上文所述的既定用法（`test/harness/fakeTextInput.ts` 的 `createFakeTextInput()`）逐一补齐，`HeadlessPlatform.ts` 按 `getCanvas`/`setupInput` 的既有惯例补了一个「渲染层方法，headless E2E 不该调用它」的 throw 实现。补齐后 `npm run typecheck`（含 `typecheck:fulllink`）、`npx vitest run`（233 文件 2639 例）、`npm run test:ui`（253 文件 2432 例）全部重新验证为绿。教训：给一个已存在的接口新增必填字段时，`tsc --noEmit` 的覆盖范围要按 `tsconfig.test.json` 的 `include` 逐项核对，不能只信一次本地跑绿的结果。
+
+### 19.5 仍然欠着
+
+- **真机**（唯一一条，见 §4.4）。`wx.showKeyboard` 一次只有一个会话这条设计假设，以及「新会话打开时是否会让 wx 自己也补发一次 `onKeyboardComplete`」这个边界情况（本节 19.2 提到的 focus-steal 竞态），都只在这份代码审查 + 单元测试层面成立，从未在真机或开发者工具里点过一次。
+
+## 20. 真机测试清单（拟定，2026-09-01）
+
+§17/§18/§19 把微信侧的功能债务全部还清之后，[`ASSET_PACKAGING.md`](ASSET_PACKAGING.md) §4.4 和
+`AUDIO_DESIGN.md` §0.3 末尾剩下的都是**同一件事**：**funny 从未在真机上跑过微信版**，而 daydayup
+用两次线上 bug 换来的结论——`document` 在模拟器里存在、真机上不存在——正说明模拟器能骗到什么程度
+（§17.4）。以下是把这笔账还清所需的完整清单，**需要一台微信真机配合**（不限机型，但记录设备信息，
+见「前置」）。
+
+### 20.0 前置
+
+1. **三个构建各自独立，互相覆盖同一个 gitignore 的 `client/wechatgame/`**——`build:wechat`（正式包）
+   / `build:wechat-probe`（宿主探针）/ `build:wechat-e2e`（音频探针）三选一构建，跑哪个就只能测哪个。
+   **每次切换构建目标后必须重新 `cli.bat open`（或在 DevTools 里刷新）**，否则 DevTools 加载的是上一次
+   构建的产物——这正是 §17.2 那次黑屏的成因。全部测完收尾时必须重新 `npm run build:wechat` 把主检出
+   `wechatgame/` 换回正式包，不能让探针产物滞留（worktrees.md §17.2/56 条教训：DevTools 打开的永远是
+   主检出，"构建过=产物是新的"这个假设本身会骗人）。
+2. **连真机**：DevTools 项目页 → 真机调试（远程调试）→ 手机微信扫码。这一步给出**实时控制台**，直接对应
+   探针的出口 3（`console.log`）——不需要读 `USER_DATA_PATH` 落盘文件本身（那条路径在真机上无法从
+   DevTools 直接浏览，只有远程调试的控制台面板能看到）。
+3. **记录设备信息**（每项结果旁都要带这个，不然「真机验过」这句话本身没有意义）：机型、系统版本、
+   微信客户端版本、`wx.getSystemInfoSync().SDKVersion`（小游戏基础库版本——决定第 5 项 (a) 能不能覆盖到）。
+
+### 20.1 逐项
+
+| # | 项目 | 怎么测 | 通过标准 | 记录去向 |
+|---|---|---|---|---|
+| 1 | 探针 `before` 快照 diff | `build:wechat-probe` → 真机调试控制台读 `[nw-host-probe]` 那行 JSON 的 `before` 字段 | 不要求"通过"，要求**如实记录差异**——这就是任务本身 | `ASSET_PACKAGING.md` §4.3 新增小节，逐项对比 §17.4 记的模拟器基线 |
+| 2 | 画面出不出来 | `build:wechat` → 扫码打开 | 能看到 loading → 首屏，无黑屏 | 黑屏则先读控制台首条报错，对照 §17.1/§17.4 两种已知成因排除；新成因记入 §4.3 |
+| 3 | 文字可见（letterSpacing 中毒） | 首屏 + 任意一局对局，肉眼看标题/按钮文案/卡牌数值 | 所有可见 label 都有文字，没有空白 | 若有空白，先查是不是 `TextMetrics.experimentalLetterSpacing` 被意外打开（`test/wechatHost.test.ts` 锁的默认关） |
+| 4 | WebGL1 降级 | 控制台看 PIXI 启动时打的渲染器类型日志；肉眼检查有无破图（材质丢失/纹理黑块） | 渲染器类型与预期一致，画面无破图 | 记入 §4.3 新增小节 |
+| 5a | 音频：低版本基础库降级 | 读 20.0 第 3 步拿到的 SDKVersion；若 < 2.19.0，进一局听有无声音 | < 2.19.0 时应静音降级、不报错（`ContextAudioBus.createContext` 返回 `null`） | 若测试机版本已在阈值之上，**如实记"设备版本高于阈值，本轮未覆盖"**，不能当作已验证 |
+| 5b | 音频：`ctx.state` 初值 | `build:wechat-e2e` → 真机调试控制台读探针报告 | 记录初值是否为 `running`（模拟器结论：无需手势即 `running`，真机未必） | `AUDIO_DESIGN.md` §0.3 新增一节，补真机数据（不覆盖模拟器结论） |
+| 5c | 音频：原生滤波/叠加是否与 Chromium 一致 | 同上，读 18 个 cue 的中位数表 | 与 §0.3 现有表格逐行比对比值/抖动，记录差异（不要求数值相同，要求**记录到底一致到什么程度**） | 同上 |
+| 6 | `openTextInput` focus-steal（§19.5） | 连续触发两处文本输入（如先开聊天输入框不关、再点其它文本框），观察前一个是否正确关闭、键盘切换是否正常 | 新会话打开时旧会话被正确关闭（触发一次 `onComplete`），无残留/无二次触发 | `ASSET_PACKAGING_LOG.md` §19.5 补验证结果 |
+
+### 20.2 跑的过程中先撞上的一个更大的阻塞：编译产物里的 ES2020 语法，微信自己的打包/预览通道都不认
+
+第 1 项刚起步——`build:wechat-probe` 重新构建好、装进主检出 `wechatgame/` 之后，无论是「真机调试」
+（远程调试）还是普通「预览」扫码，DevTools 都在**同一个位置**拒绝同一个文件：
+
+```
+Remote Debug Error: Illegal file, error message: invalid file: pixigame.js, 1:100
+SyntaxError: Unexpected token .
+```
+
+数了一下第 100 个字符，落在 `a=e?.constructor` 的 `?.` 上——**可选链（optional chaining）**。这不是
+「装适配层之前/之后的宿主差异」，比那更前置：**DevTools 自己的打包/预览校验器（连带真机调试桥）
+根本解析不了 `?.`/`??`**，产物在被送到任何设备（模拟器也好、真机也好）之前，这一步就直接拒收。
+
+**排查顺序，避免下一个人重新走一遍：**
+
+1. 先确认这不是远程调试通道单独的毛病——`Remote Debug Error` 和普通「预览」（生成二维码扫码打开）
+   报的是**逐字节相同**的错误，同一个文件、同一个位置。预览也过不了，说明这不是调试链路窄，是
+   打包本身就不合法。
+2. `tsconfig.json` 的 `target` 钉的是 `ES2020`，webpack 只有 `ts-loader` 处理 `.ts`，没有任何东西
+   降级语法。项目自己的 `.ts` 源码（`grep -rc '?\.' src` 命中 895 处）编译后自然带着 `?.`/`??`。
+3. **只降级自己的 TS 还不够**——`grep -c '?\.' wechatgame/pixigame.js` 在只改了 tsconfig 目标之后
+   仍然非零；真正剩下的来源是 **`pixi.js-legacy`/`@pixi/*`（node_modules 里的纯 `.js`/`.mjs`）自己
+   预编译带着这两个操作符**，`ts-loader` 的 `test: /\.ts$/` 从来碰不到它们——同一份「模拟器骗了我们
+   多少」的教训，这次骗的不是宿主 API，是"以为控制了语法层级，其实只控制了自己写的那一半代码"。
+4. 验证方法上踩了一个坑：粗暴 `grep -c '?\.'` 在这份数值密集（`alpha:`/`scale` 等大量小数字面量）
+   的高度压缩产物里会**大量假阳性**——Terser 把 `0.5` 压成 `.5`，于是 `cond?.5:1`（三元表达式，
+   条件后跟去掉前导 0 的小数）这种合法代码里天然含 `?.` 这个子串。改用
+   `grep -oE '\?\.[a-zA-Z_$([]'`（`?.` 后面必须跟标识符/`(`/`[`，真正的可选链语法才会这样，三元加
+   小数字面量后面跟的是数字）才是准确的验证方式——本节以下所有"清零"的结论都是用这条口径验的。
+
+**修法：`client/webpack.config.js` 新增两条规则，只对 `isWechat` 生效**（[`webpack.config.js`](../../client/webpack.config.js)）：
+
+- `ts-loader` 按 target 加一条 `compilerOptions: { target: 'ES2019' }` 覆盖，降级自己的 `.ts` 源码；
+- 新增一条 `babel-loader` 规则，`test: /\.m?js$/` **不排除 `node_modules`**（这正是需要够到的地方），
+  只挂两个精确插件（`@babel/plugin-transform-optional-chaining` +
+  `@babel/plugin-transform-nullish-coalescing-operator`），不用整套 `@babel/preset-env`——只削掉这
+  两个具体语法特征，不去动这个我们不控制的依赖的其它任何东西（同 §4.3 的态度：自己兜底，不指望别人
+  的兼容层，但也只兜自己需要的那一小块，不做无谓的大动作）。
+
+**验证**：`build:wechat`/`build:wechat-probe`/`build:wechat-e2e` 三个目标重新构建，`grep -oE
+'\?\.[a-zA-Z_$([]'` 在三份产物里全部为 0（`??` 同样为 0）；`check:wechatpackage` 门禁绿（324 引用
+全在位）；`build:web` 不受影响（`isWechat` 门禁）；`test/wechatHost.test.ts` 17 例 /
+`test/WechatPlatform.test.ts` 17 例 / `test/wechatPackageGate.test.ts` 12 例全绿。**没有跑**
+`npm run typecheck`（`tsc -p tsconfig.test.json`）——发现它当前在 HEAD 上已经因为另一件事（约 20 个
+`test/ui/*.ui.ts` 文件的 mock callback 缺 `openTextInput` 字段）报红，跟这次改动无关（`webpack.config.js`
+不参与这条 typecheck 链路），已用 `spawn_task` 记成独立债务，不在本节范围内处理。
+
+**这条本身也是"模拟器骗了我们多少"的答案之一，而且比预想的更早、更根本**：ASSET_PACKAGING.md §4.3
+关心的是"宿主适配层"这一层，前提是产物能先被装进设备——但装都装不进去。如果没有这次真机测试，这
+个 bug 会一直被模拟器的黑屏遮住（DevTools 自己的模拟器面板是 Chromium，原生支持 `?.`/`??`，从不会
+在这条路径上报错），直到第一次真正尝试真机预览才会现形——而这正是今天在做的事。
+
+### 20.3 顺带修的第二件：探针/音频 e2e 在真机上够不到任何控制台
+
+20.2 修好之后，`build:wechat-probe` 的产物在真机上已经能正常打开（`预览` 扫码成功），但**真机上没有
+任何东西能看见 `console.log`**——`真机调试`（远程调试）这条路当时还没重试；`预览`本身不带控制台。
+`entries/wechat-probe.ts` / `entries/wechat-e2e.ts` 因此各加一行 `wx.setEnableDebug({enableDebug:
+true})`（`wx.d.ts` 里早就声明了这个方法，此前全仓库零调用点）——真机小游戏运行时对此有原生支持：
+调用后画面上会浮现一个 vConsole 悬浮面板，点开就是 Console 标签页，`console.log` 的内容原样可见。
+**只加在这两个「永不发布」的探针入口里**，不动 `entries/wechat.ts`——那是真正的出包，给真实玩家常驻
+一个调试面板不合适。
+
+> 因为 20.2 那个语法修复对**所有** WeChat target 都生效（`isWechat` 门禁而非按具体 entry），主包
+> `build:wechat` 现在也应该能正常走「真机调试」（远程调试）了，不再需要 vConsole 这条备选路——vConsole
+> 只是给两个探针入口再加一层保险（万一某台设备的远程调试仍然连不稳）。**这条尚待真机复核**，见 20.4。
+
+### 20.4 顺带修的第三件，也是最贵的一个：`document.baseURI` 的 `??=` 在模拟器子上下文里是 no-op
+
+20.2/20.3 修好之后第一次真正跑到贴图加载：`build:wechat` 装进主检出、DevTools 刷新，画面从纯黑变成
+纯米白色背景（`app.ts` 配的 `backgroundColor: 0xf5f0e8`）——**canvas 排上了，PIXI 渲染器真正跑起来
+了，但之后任何内容都没画出来**。控制台每一条 `[boot] step 失败` 都指向同一行：
+
+```
+TypeError: Failed to construct 'URL': Invalid URL
+    at bt (determineCrossOrigin.ts:22)
+```
+
+`wechatHost.ts` 早就为这一行写了兜底——`g.document ??= { baseURI: 'https://wechat-minigame.local/',
+... }`，注释也早就点名了 `determineCrossOrigin` 这个调用点（§4.3 落地时就写在代码里）。但兜底没生效，
+原因是 `??=` 判的是**整个 `document` 存不存在**：DevTools 模拟器把游戏代码跑在一个子上下文
+（`WAGameSubContext`）里，那个子上下文**已经有**一个 `document`，只是它的 `baseURI` 不可用于相对
+路径解析（现象与 baseURI 缺席时完全一样——`new URL('cdn/xxx.png', 那个 baseURI)` 照样抛
+`Invalid URL`，本机复现用 `'about:blank'` 就能精确重现同一个错误）。于是 `document ??= {...}` 整体
+是 no-op，精心设的 `baseURI` 从没生效过——**这个洞从 §4.3 落地那天就在，只是没人跑到贴图加载这一步**
+（此前的验证止步于"画面出没出来"，从没有人验证过"贴图真的解出来了"，见 §17.3/§4.4）。
+
+**修法**：`baseURI` 从 `document ??= {...}` 里拆出来，改成对 `g.document`（不管是我们刚创建的还是
+宿主已有的）无条件 `Object.defineProperty` 覆盖。之所以不能直接赋值——真实 `document` 上的
+`baseURI` 是 `Node.prototype` 继承下来的只读 accessor，`document.baseURI = x` 是静默 no-op（这正是
+问题本身），`defineProperty` 建一个同名自有属性去遮蔽它才有效；真机上 `document` 整个不存在，走的
+还是原来 `??=` 那条路创建自己的 `document`，这次只是额外确保 `baseURI` 这一个字段不会再被"宿主已经
+提供"这个前提放过。
+
+**验证**：新增用例「宿主的 document 存在但 baseURI 不可用于相对解析时——baseURI 仍会被覆盖」
+（`test/wechatHost.test.ts`，用 `about:blank` 复现），变异测试确认：注释掉这段 `defineProperty` 后
+该用例精确复现同一个 `TypeError: Invalid URL`（跟真实报错逐字相同）；恢复后 `wechatHost.test.ts`
+18 例 / `WechatPlatform.test.ts` 17 例 / `wechatPackageGate.test.ts` 12 例全绿。`build:wechat`
+重新构建，DevTools 刷新后复测：**boot 的 L0 阶段不再崩溃**，画面能推进到 loading/占位层级；剩下的
+报错（`readFileSync:fail permission denied, open cdn/*.mp3|.tao|.png`，以及 DevTools 自己那句
+「The following files have been configured to ignore when package uploads, so simulator cannot
+get those」）**是预期内的**——本地构建没有配置 `NW_ASSET_CDN`，`cdn/` 目录又被 `packOptions.ignore`
+排除在包外（ASSET_PACKAGING.md §4.2 遗留 2、§7 第 1 条，本来就还没做，不是这轮引入的），这批 L1/
+战斗资源在没有真实 CDN 之前**注定加载失败**——但现在是「优雅失败、有捕获、不崩」，不再是「一整个
+`URL` 构造函数级别的硬崩溃」。
+
+> **⚠ 上一段那句「是预期内的」当天晚间被推翻，见 §21。** 没配 `NW_ASSET_CDN` 时 URL 烘焙成**包内
+> 相对路径**，`WechatAssetIO` 走 `readFileSync` 读包内文件、根本不下载——那批报错跟 CDN 没部署毫无
+> 关系，唯一的成因就是 `packOptions.ignore` 把 `cdn/` 排除出了包（它同时管模拟器，不只管上传）。
+> 换句话说：这正是「游戏在开发者工具里跑不起来」本身，当时被自己的解释盖过去了。
+
+### 20.5 一个顺带发现的技巧：模拟器探针文件不用靠用户贴，会话本身就能读
+
+三个探针目标写的 `wx.env.USER_DATA_PATH` 在 DevTools **模拟器**里对应本机一个真实、固定的目录
+（`WeappSimulator/WeappFileSystem` 在 `%LOCALAPPDATA%\微信开发者工具\User Data\<hash>\` 下，appid
+子目录见 §17.4 的排查经验），会话跑在同一台机器上，直接 `Read`/`Bash` 就能读到——不需要用户开
+vConsole 手动贴。用这条路径重新验证过 20.4 的修复：`before.document.baseURI` 是 `"undefined"`
+（模拟器子上下文的 `document` 确实不带可用 `baseURI`），`after.document.baseURI` 是修复后的
+`https://wechat-minigame.local/`——不是靠单元测试推断，是实际探针产物上验证到的。**这条只对模拟器
+成立**：真机的 `USER_DATA_PATH` 在手机存储上，这台机器够不到，真机数据仍然只能靠用户读 vConsole /
+远程调试贴回来。§4.3 已经补上这份模拟器 diff（含一个新信息：`navigator.hardwareConcurrency` 报的是
+宿主 Windows 开发机的核数、`userAgent` 是完整的 iPhone UA 字符串，两者都不代表任何真机）。
+
+### 20.6 状态
+
+**三处阻塞（语法 / 调试通道 / baseURI）已修好并在模拟器里验证到实际效果，DevTools 模拟器里 boot 的
+L0 阶段不再崩溃**——这是第一次在这条链路上跑过贴图加载还活着。§4.3 已经写入模拟器 diff。**尚未在
+真机上复核**这三处修复（20.2/20.3 两处此前已由用户在真机上确认过阻塞已解除；20.4 这处 baseURI 的坑
+是模拟器专属子上下文触发的，理论上真机因为根本没有 `document` 应该走的是 `??=` 那条本就成立的路径，
+但这只是推断，同样需要真机复核）；20.1 的测量数据（探针 5a/5b/5c、画面/文字/WebGL/输入 6 项）也一项
+都还没拿到。已重新构建好的三个目标（`build:wechat` 主包 / `build:wechat-probe` / `build:wechat-e2e`，
+各自验证过 `grep -oE '\?\.[a-zA-Z_$([]|\?\?'` 为 0）都已装进主检出 `client/wechatgame/`——**同一时刻
+只能有一份在里面，切换测哪一项前必须重新 build 对应 target**（20.0 第 1 条）。
+
+后续 20.1 逐项由用户自行在真机上走一遍（本节起不再要求逐项在会话里同步回报，用户完成后把 vConsole /
+远程调试里的内容整段贴回来即可，由此写回 §4.3 / `AUDIO_DESIGN.md` §0.3）：
+
+1. `build:wechat-probe`，DevTools 刷新项目，先试「真机调试」（应该已经能连了）；连不上再退回「预览」
+   扫码 + 手机屏幕上的 vConsole 悬浮面板，两条路径读到的都是同一行 `[nw-host-probe]` JSON。
+2. `build:wechat`，同样扫码打开，肉眼确认画面/文字/无破图（20.1 第 2/3/4 项）；有余力顺手测一次
+   连续两次文本输入（第 6 项）。
+3. `build:wechat-e2e`，读 `[nw-audio-probe]` 那行 JSON（18 个 cue 的中位数表 + `ctx.state` 初值 +
+   `SDKVersion`，对应 20.1 第 5a/5b/5c 项）。
+
+### 20.7 本轮会话到此结束——状态是「三处阻塞修好，测量数据一项未拿到」
+
+会话在这里被用户收尾，20.1 的六项测量（探针 before 快照真机 diff、画面/文字/WebGL/输入 4 项真机
+实测、音频 5a/5b/5c 三条待验）**一项都还没有真机数据**，只有模拟器数据（§4.3 已记）。不要把
+「阻塞已修好」误读成「已经验完」——**下一个接手的人应该做的是从 20.1 表格开始，直接跑真机**，不必
+重新排查 20.2–20.4 那三处（已经带回归用例，重犯会被测试挡住）。三个构建目标当前状态：主检出
+`client/wechatgame/` 里装的是最后一次 `build:wechat` 主包（收尾前已确认干净，见下）。
+
+---
+
+## 21. 开发者工具里跑不起来的第四个成因：`packOptions.ignore` 把 `cdn/` 挡在包外（2026-09-01 晚间）
+
+§20 收尾时的状态是「三处阻塞修好，boot 的 L0 阶段不再崩溃，画面能推进到 loading/占位层级」，同一节
+把随后那一批 `readFileSync:fail permission denied, open cdn/*.mp3|.tao|.png` 记成**预期内**——理由是
+「本地构建没有配置 `NW_ASSET_CDN`，`cdn/` 又被 `packOptions.ignore` 排除在包外，这批资源在没有真实
+CDN 之前注定加载失败」。
+
+**那个理由是错的，而且它盖住的正是「游戏在开发者工具里跑不起来」本身。** 没配 `NW_ASSET_CDN` 时
+webpack 把 URL 烘焙成**包内相对路径**（`cdn/<hash>.png`，324 处），`WechatAssetIO` 走的是
+`isRemote()===false` 那条分支——**直接 `readFileSync` 读包内文件，一个字节都不下载**。所以那批报错
+跟 CDN 没有部署毫无关系：文件就在 `wechatgame/cdn/` 里，是 `packOptions.ignore` 的
+`{"type":"folder","value":"cdn"}` 让它们不在**包**里。`packOptions.ignore` 不只管上传——它同时决定
+模拟器能看见哪些文件，DevTools 自己那句提示已经说了（§20.4 引的「configured to ignore when package
+uploads, so simulator cannot get those」），只是当时被读成了一句无害的附注。
+
+### 21.1 这个组合从来不成立，而它分居两个文件
+
+- `webpack.config.js`（`isWechat` 分支）决定 **URL 形状**：`NW_ASSET_CDN` 有值 → 绝对 CDN URL；留空
+  → 包内相对路径。
+- `wechatgame/project.private.config.json` 决定 **包清单**：`packOptions.ignore` 里一直有 `cdn/`，
+  从方案 A 落地那天起没动过。
+
+方案 A（绝对 URL + 排除 `cdn/`）是自洽的；`ASSET_PACKAGING.md` §4.0 里那行「`NW_ASSET_CDN` 留空时
+`publicPath=''` → 包内相对路径（**整包跑，仅本地 IDE 自测用**）」也是自洽的。**但两者从来没有同时
+成立过**：仓库里钉死的是「相对路径 + 排除 `cdn/`」这个第三种组合，它一张资源都读不到。也就是说，
+那句「仅本地 IDE 自测用」的模式**从写下的那天到今天，一次都没有真正跑过**——而它正是本地唯一能跑的
+模式（CDN 至今没部署，§4.2 遗留 1/2）。
+
+同一类错误，第三次以同一种形状出现：**约定写在文档里、两半实现分居两个文件，没有任何东西检查它们
+是否说的是同一件事**（§4.0 `asyncChunks:false`、§17.2 bundle 与 `cdn/` 不同源，都是这个形状）。
+
+### 21.2 修法
+
+`project.private.config.json` 的 `packOptions.ignore` 去掉 `{"type":"folder","value":"cdn"}` 一行，
+只留 `.map`（source map 9.7 MB，模拟器不需要）。改完主检出就是**整包跑**模式：主包 2.16 MB 代码 +
+21.09 MB 资源（324 个被引用的文件；`cdn/` 里另有 12.42 MB 是 `clean:false` 留下的孤儿）。这个体积
+远超主包 4 MB 红线——**模拟器不校验，「上传」/「预览」才校验**，而那条路本来就要等 CDN 部署，不是
+这次要解的问题。
+
+**没有**改成让 `build:wechat` 自动改写这个文件：DevTools 自己也写它（在「详情」里改任何设置都会），
+两个写入方争一个文件换来的麻烦比省下的那次手改多。改成门禁去检查，见下。
+
+### 21.3 门禁第 4 条：问「在不在包里」，而且是逐文件问
+
+`scripts/checkWechatPackage.mjs` 原来三条规则问的都是「**字节在不在磁盘上**」。新增第 4 条问它后面
+那个问题——「**在不在包里**」：读 `project.config.json` / `project.private.config.json`（后者覆盖
+前者，与 DevTools 的合并顺序一致）里的 `packOptions.ignore`，对**每一个被引用的资源**问一次。
+
+**第一版写错了方向，值得记下来**：它问的是「ignore 列表里有没有 `cdn` 这个 folder 条目」——也就是
+**当时恰好出事的那一种写法**。可 `packOptions.ignore` 支持六种 `type`（`folder`/`file`/`suffix`/
+`prefix`/`glob`/`regexp`），一条 `{"type":"suffix","value":".png"}` 能把 300 张图排除出包，而那个
+代理问题会全绿放过去。**这正是本节 bug 的同一形状：用一个代理问题冒充真问题。** 所以把匹配逻辑抽成
+`scripts/lib/packIgnore.mjs`（六种 `type` 全实现），逐文件判定，两个方向都拦：
+
+- 相对路径 + 任何一条 ignore 命中资源 → **红**。报错里点名**是哪一条 ignore 条目干的**、被它带走的
+  文件（前 12 个），以及 `readFileSync:fail permission denied` 和「游戏起得来但屏幕是空的」这两个
+  症状——下一个人不用再从症状倒推。
+- 绝对 URL + 还有资源留在包里 → **红**（反向失守：21 MB 美术进 4 MB 红线的主包，运行时还会再下一遍）。
+
+两处刻意的设计：
+
+- **区分两种 URL 形状不需要第二个正则**：绝对形式前面必然是 URL 自己的 `/`（`https://host/cdn/<hash>`），
+  相对形式被烘焙成裸字符串字面量、前面是引号。
+- **不会 evaluate 的 pattern 既不猜「在包里」也不猜「不在」**：未知 `type`、解析不了的 `regexp`、用了
+  没实现的 glob 语法（`{a,b}` 这类），一律**报红**并指名去扩 `packIgnore.mjs`。猜任何一边都是让门禁
+  开始说谎——一个静默失效的门禁比没有门禁更糟，因为它还在发绿灯。
+
+通过时那行 ✅ 会**报出它验的是哪个模式**（`whole-package (cdn/ packed)` / `plan A CDN (cdn/ excluded)`）
+——之前它对模式一无所知，正是这一点让错的组合看起来是绿的。
+
+`.gitignore` 里 `wechatgame/project.config.json` 是被忽略的（DevTools 托管、含 appid），
+`project.private.config.json` 才是入库的那个——所以门禁两个都读，但真正能被 review 到的是后者。
+
+### 21.4 测试：把「这个 checkout 现在是对的」也变成默认套件里的一条
+
+门禁只在 `build:wechat` 里跑（约 21 s，还得先有产物），所以**默认套件此前对那个配置文件没有任何
+意见**——这正是它能带着一个不成立的组合一路发货的原因。补两处，把契约的两半各自钉住：
+
+- **左半（webpack 烘出什么形状）** `test/wechatAssetUrlShape.test.ts`（6 例，新文件）：`NW_ASSET_CDN`
+  留空 → `publicPath === ''` + `filename === 'cdn/[contenthash][ext]'`；有值 → `<cdn>/`（多余的尾
+  斜杠归一化，不许出现 `//cdn/`）；三个 wechat target 一致；web/crazygames/mobile **没有**这个
+  generator（防有人「统一」掉），且 `NW_ASSET_CDN` 对它们无效。读配置不跑构建，理由同
+  `wechatSingleBundle.test.ts`：要防的是有人手改配置。
+- **右半（入库的包清单拿它怎么办）** `wechatPackageGate.test.ts` 里新增一例——把**真实的**
+  `wechatgame/project.private.config.json` 拷到一个 fixture 包旁边（bundle 烘的是相对 URL，也就是
+  左半那条断言锁住的默认构建形状），断言资源出来是**打进包里的**。约 50 ms，**这条就是那个会当场
+  抓住本节 bug 的测试**。
+
+`wechatPackageGate.test.ts` 12 例 → **29 例**：除上面那条，新增的覆盖两个方向、六种 ignore 写法
+逐一（`folder`/`./cdn/`/`glob cdn/**`/`glob **/*.tao`/`suffix .png`/`prefix`/`file`/`regexp`）、
+**不许误报**（只有 `.map` 时放行；`cdnx` 这种擦肩而过的 pattern 放行；单个 `*` 不许跨 `/`——否则
+任何 `*.png` 规则都会被读成「整个 cdn/ 被清空」）、无法 evaluate 的三类 pattern 一律报红、配置文件
+缺失（当作「什么都没排除」而不是报错）、配置文件 JSON 坏掉（报错，不要静默当空）、以及那行 ✅ 报出
+的模式名。
+
+### 21.5 验证
+
+- **在真实产物上先看它红**：把 `{"type":"folder","value":"cdn"}` 加回一份产物副本，门禁精确复现
+  改动前的状态（`excludes 324 of the 324 asset(s) the bundle asks the package for`，并点名那条
+  ignore）；去掉即绿。这是唯一直接证明「诊断成立」的一步——它复现的不是 fixture，是仓库改动前那一刻。
+- **两条新测试各自做了变异**：① 把那条 `{folder: cdn}` 加回**真实的**
+  `project.private.config.json` → 只有「checkout 自己的包清单」那一例转红（56 ms）；② 把
+  `publicPath: assetCdn ? … : ''` 改成 `: undefined` → 只有「相对 URL 形状」那一例转红。两次都是
+  一例一红、零连带。
+- 把第 4 条的两个判断短路成 `false` → 恰好那批「该红」的用例转红，报告类的用例保持绿。
+- `npm run build:wechat` 重跑（21.5 s）：门禁绿、`grep -oE '\?\.[a-zA-Z_$([]|\?\?'` 两项均为 0、
+  acorn 以 `ecmaVersion:2019` 解析产物通过（§20.2 那条阻塞没有回归）。
+- **全量默认套件 234 文件 / 2663 例全绿**；`npm run typecheck`（`tsconfig.test.json` + fulllink）绿
+  ——§20.2 记的那次红（mock callback 缺 `openTextInput`）已由 HEAD 的 92bad126f 还清；`npm run lint`
+  0 error（2 条既有 warning 在 `src/app/nav/world.ts`，与本次无关）；`check:filelength` 绿。
+
+### 21.6 仍然欠着
+
+1. **这次没有在开发者工具里亲眼看到画面**。会话跑在同一台机器上，能读 DevTools 的落盘日志
+   （`%LOCALAPPDATA%\微信开发者工具\User Data\<hash>\WeappLog\`，§20.5 那条技巧的延伸——这次的诊断
+   就是从那里读出来的：日志里唯一的真错误是 §20.2 那条 `Illegal file ... 1:100`，时间戳在语法修复
+   之前，修复后的产物 acorn 解析干净，于是剩下的只能是运行期，而运行期唯一已知的失败就是这一条），
+   但**驱动不了 DevTools 的界面、截不了它的图**（CLAUDE.md 的「看画面用真实 Chrome」那条对 DevTools
+   不适用）。需要用户刷新一次项目复核；如果还有别的报错，那是本节之后的第五个成因。
+2. **孤儿资源现在也进包了**：`clean:false` 留下的 12.42 MB 未被引用的文件，在整包跑模式下会一起被
+   DevTools 扫进包里。对模拟器只是慢一点，不影响正确性；门禁按 §17.2 的既有理由**只报数不报错**
+   （旧 bundle + 新 `cdn/` 那个反向情况靠它们才不误报）。真要上传前扫一次的话，那属于 §4.2 遗留 2。
+3. **切 CDN 时要把 `cdn/` 加回 `packOptions.ignore`**。这条现在不靠人记得——`build:wechat` 里的门禁
+   第 4 条会红，并把要加的那行 JSON 直接写在报错里。

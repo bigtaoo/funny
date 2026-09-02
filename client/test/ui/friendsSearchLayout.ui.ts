@@ -19,6 +19,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { FriendsScene, type FriendsSceneCallbacks } from '../../src/scenes/FriendsScene';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -36,9 +37,11 @@ function buildFriends(
   h: number,
   cb: Partial<FriendsSceneCallbacks> = {},
 ): FriendsScene {
+  const { openTextInput } = createFakeTextInput();
   return new FriendsScene(createLayout(w, h), input, {
     onBack() {},
     onOpenRoom() {},
+    openTextInput,
     myPublicId: '',
     getProfileExtra: async () => ({}),
     loadFriends: async () => [],

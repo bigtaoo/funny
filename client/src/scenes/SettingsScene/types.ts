@@ -4,6 +4,7 @@
 import { TranslationKey } from '../../i18n';
 import type { AvatarCategory } from '../../render/avatar';
 import type { IconKind } from '../../render/icons';
+import type { IPlatform } from '../../platform/IPlatform';
 
 /** Outcome of a rename attempt — ok with the accepted name, or a message key to toast. */
 export type RenameOutcome =
@@ -12,6 +13,9 @@ export type RenameOutcome =
 
 export interface SettingsSceneCallbacks {
   onBack(): void;
+  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput.
+   *  Used by the rename overlay. */
+  openTextInput: IPlatform['openTextInput'];
   /** Display name shown next to the avatar. */
   playerName: string;
   /**

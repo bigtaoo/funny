@@ -92,12 +92,50 @@ describe('cue assets', () => {
     for (const cue of ALL_CUES) {
       expect(variantCount(cue), cue).toBe(variantUrls(cue).length);
     }
-    // Today: no audio assets exist yet (see cueAssets.ts) — so the whole set is synth-only and
-    // the loader has nothing to load. This assertion is the honest record of that state; when
-    // the first files land it fails and gets updated to the real count, which is exactly the
-    // moment someone should be re-reading this file.
-    expect(allSfxUrls()).toEqual([]);
-    expect(cuesWithSamples()).toEqual([]);
+    // 2026-09-01: the first samples landed (AUDIO_DESIGN §7 step 6). The assertion that used to
+    // stand here — "the whole set is synth-only" — fired on exactly the commit that shipped
+    // them, which is what it was for.
+    //
+    // What replaces it is NOT a variant count. Counts are the pipeline's business
+    // (`tools/audio-pipeline/process.py` picks them from the pool, and `art/audio/credits.json`
+    // records why each one is 1, 2 or 3), and pinning them here would turn "we found a fourth
+    // usable crumple" into a test failure in a file that has nothing to say about crumples.
+    // What this file owns is the SPLIT: which cues are sample-backed and which stay procedural.
+    // That is a design decision per cue, argued in cueAssets.ts, and a cue silently changing
+    // sides is the failure worth catching.
+    expect([...cuesWithSamples()].sort()).toEqual([
+      'sfx.base.hit',
+      'sfx.card.invalid',
+      'sfx.card.play',
+      'sfx.ink.tick',
+      'sfx.spell.cast',
+      'sfx.ui.back',
+      'sfx.ui.tap',
+      'sfx.unit.attack',
+      'sfx.unit.death',
+      'sfx.unit.hit',
+    ]);
+    // The eight kept on the synth voice, stated positively so that adding a cue to the union
+    // without deciding its side is a failure here rather than a silent default.
+    const synthOnly = ALL_CUES.filter((c) => variantCount(c) === 0);
+    expect([...synthOnly].sort()).toEqual([
+      'sfx.result.defeat',
+      'sfx.result.draw',
+      'sfx.result.victory',
+      'sfx.ui.error',
+      'sfx.ui.gacha.reveal.common',
+      'sfx.ui.gacha.reveal.epic',
+      'sfx.ui.gacha.reveal.rare',
+      'sfx.ui.reward',
+    ]);
+    // Every sample-backed cue must actually have loadable urls — the two helpers disagreeing
+    // would mean `CUE_ASSETS` holds an empty array, which reads as "shipped" everywhere else.
+    for (const cue of cuesWithSamples()) {
+      expect(variantUrls(cue).length, cue).toBeGreaterThan(0);
+    }
+    expect(allSfxUrls().length).toBe(
+      cuesWithSamples().reduce((n, c) => n + variantCount(c), 0),
+    );
   });
 
   it('every declared url is unique (two cues sharing a file is a copy-paste slip)', () => {

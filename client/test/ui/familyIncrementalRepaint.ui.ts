@@ -25,6 +25,7 @@ import { ui as C } from '../../src/render/sketchUi';
 import { MUTED } from '../../src/scenes/FamilyScene/lists';
 import { drawFamilyPickModal, drawJoinRequestsModal } from '../../src/scenes/FamilyScene/modals';
 import type { WorldApiClient, FamilyDetailView, FamilyMemberView, FamilyMessageView } from '../../src/net/WorldApiClient';
+import { openDomTextInput } from '../../src/platform/web/domTextInput';
 
 // Minimal DOM stub for the hidden-input fields, recording each element's listeners so a test can
 // fire a real 'input' event the way a keystroke does (same stub shape as sectIncrementalRepaint.ui.ts).
@@ -43,6 +44,7 @@ if (!gDoc.document) {
         listeners: {} as Record<string, Array<() => void>>,
         focus(): void {},
         remove(): void {},
+        setAttribute(): void {},
         addEventListener(type: string, fn: () => void): void {
           const map = el.listeners as Record<string, Array<() => void>>;
           (map[type] ??= []).push(fn);
@@ -107,6 +109,7 @@ function stubWorldApi(): WorldApiClient {
 async function mount(w: number, h: number): Promise<{ scene: any; input: InputManager; core: any }> {
   const input = new InputManager();
   const scene = new FamilyScene(createLayout(w, h), input, {
+    openTextInput: openDomTextInput,
     onBack() {}, onOpenSect() {}, onNavTab() {},
     worldApi: stubWorldApi(), worldId: 'world:1:0', myAccountId: ME, playerName: 'Me',
     preloadedFamily: FAM,

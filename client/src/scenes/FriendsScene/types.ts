@@ -5,6 +5,7 @@
 import type { ProfileExtra } from '../../ui/dialogs/ProfilePopup';
 import type { Hit as BaseHit } from '../../ui/hits';
 import type { SocialTab } from '../../ui/widgets/socialTabRail';
+import type { IPlatform } from '../../platform/IPlatform';
 import type {
   FriendView,
   FriendRequestView,
@@ -30,6 +31,9 @@ export interface SLGSocialStatus {
 export interface FriendsSceneCallbacks {
   onBack(): void;
   onOpenRoom(): void;
+  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput. Used
+   *  by chrome.ts's openHiddenInput() for the family/sect create-forms + world-chat compose box. */
+  openTextInput: IPlatform['openTextInput'];
   /** Local player's own public id — used to skip "add friend" on your own world-chat messages. */
   myPublicId: string;
   /** Unified profile-popup extras (rank/ELO + family/sect) — see {@link ProfilePopup}'s `fetchExtra`. */

@@ -20,8 +20,9 @@ export const AUDIO_SETTINGS_KEY = 'nw_audio';
 export interface AudioSettings {
   /** 0..1, multiplies both channels. */
   master: number;
-  /** 0..1, BGM channel. Persisted and wired now even though no BGM track exists yet
-   *  (AUDIO_DESIGN.md §7 step 7) — `AudioBus.setMusicVolume` accepts and ignores it. */
+  /** 0..1, BGM channel. Drives `AudioBus.setMusicVolume` for real since 2026-09-01
+   *  (AUDIO_DESIGN.md §7 step 7); before that it was persisted and pushed into a method that
+   *  accepted and ignored it, so that the settings slider was never a control that did nothing. */
   bgm: number;
   /** 0..1, SFX channel. */
   sfx: number;

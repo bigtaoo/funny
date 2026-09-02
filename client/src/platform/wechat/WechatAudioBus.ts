@@ -9,7 +9,7 @@
 // > **`client/src/wx.d.ts` 里只声明了 `createInnerAudioContext`**——也就是把"我们的 typing 写了
 // > 什么"当成了"运行时提供什么"。真实的小游戏运行时从基础库 **2.19.0** 起就提供
 // > `wx.createWebAudioContext()`，一个标准 WebAudio 表面；本项目
-// > `wechatgame/project.private.config.json` 钉的是 **3.15.1**，早就在门槛之上。
+// > `wechatgame/project.private.config.json` 钉的是 **3.17.2**，早就在门槛之上。
 // > AUDIO_DESIGN.md §3 当时其实把这条备选写进了脚注，只是标着"没有设备可验证"——所以真正拦住
 // > 它的从来不是运行时，是没人去验。
 //
@@ -18,15 +18,26 @@
 // （三档音量只能逐实例乘进去）、还没有 `AudioBuffer`（同一个 cue 的 n 次合并只能变成 n 个实例）。
 // 用它铺 SFX 等于为这一个平台再养一套形状不同的混音器。而"并发上限 + 按优先级抢占"这个对象池
 // **真正想要的东西**已经在 `audio/VoiceBudget.ts` 里了，平台中立、被用例守着，两个平台共用一份。
-// `InnerAudioContext` 的正当用途只剩 BGM（单实例、流式、`loop=true`），那是 §7 第 7 步的事。
+// `InnerAudioContext` 的正当用途只剩 BGM（单实例、流式），那是 §7 第 7 步的事。
+//
+// > **订正（2026-09-01，§7 第 7 步落地时）：上一行原先写的是"单实例、流式、`loop=true`"。**
+// > 前两个成立，第三个不成立——MP3 的两端都被补齐到帧边界，样本级精确回绕不存在，而原生的
+// > `loop` 要么样本级精确要么不循环。所以 BGM 用的是**两个** `InnerAudioContext` 交叉淡入
+// > （`wechatMusicDeck.ts` + `audio/MusicPlayer.ts`），`loop` 在两个 deck 上都显式设成 `false`。
+// > 这条错的成因和 §7 第 5 步那条一样：照着 API 表面**能做什么**推断，而没有先问这个格式
+// > **允许什么**。
 import { ContextAudioBus } from '../../audio/ContextAudioBus';
+import { WechatMusicDeck, type InnerAudio } from './wechatMusicDeck';
 
 /** 本文件用到的 wx 表面切片（`src/wx.d.ts` 里补齐了声明，这里只是就近说明用途）。 */
 declare const wx: {
   createWebAudioContext?(): AudioContext;
+  createInnerAudioContext?(): InnerAudio;
   onTouchStart?(cb: () => void): void;
   onAudioInterruptionBegin?(cb: () => void): void;
   onAudioInterruptionEnd?(cb: () => void): void;
+  onHide?(cb: () => void): void;
+  onShow?(cb: () => void): void;
 };
 
 export class WechatAudioBus extends ContextAudioBus {
@@ -44,6 +55,27 @@ export class WechatAudioBus extends ContextAudioBus {
       // 触摸同样能解锁。
       onGesture: (cb) => {
         if (typeof wx !== 'undefined') wx.onTouchStart?.(cb);
+      },
+      // BGM（AUDIO_DESIGN.md §7 第 7 步）。**注意这里收下的 `ctx` 被完全忽略**，那正是这个签名
+      // 存在的理由：`InnerAudioContext` 没有音频图，所以音乐不依赖 `createWebAudioContext`。
+      // 于是一台低版本基础库（< 2.19.0）的设备**丢的是 SFX 样本，不是音乐**——它在上面那个
+      // `createContext` 里已经降级成静音了，而这里照样返回两个 deck。
+      createMusicDecks: () => {
+        if (typeof wx === 'undefined' || typeof wx.createInnerAudioContext !== 'function') {
+          return null;
+        }
+        const create = () => wx.createInnerAudioContext!();
+        return [new WechatMusicDeck({ create }), new WechatMusicDeck({ create })] as const;
+      },
+      // 失焦暂停（AUDIO_DESIGN.md §4）。这个运行时没有 DOM，所以没有 `visibilitychange`——
+      // `onHide`/`onShow` 是等价物。**音频中断也接到同一个回调上**（下面），因为对一条 60 秒的
+      // 床来说"切出去了"和"来电话了"要的是同一件事：保持位置地停住，回来接着放。
+      onFocusChange: (cb) => {
+        if (typeof wx === 'undefined') return;
+        wx.onHide?.(() => cb(true));
+        wx.onShow?.(() => cb(false));
+        wx.onAudioInterruptionBegin?.(() => cb(true));
+        wx.onAudioInterruptionEnd?.(() => cb(false));
       },
     });
 

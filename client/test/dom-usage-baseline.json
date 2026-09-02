@@ -1,0 +1,7 @@
+{
+  "src/analytics/index.ts": 5,
+  "src/app/PixiAppViews.ts": 2,
+  "src/assets/assetIO.ts": 1,
+  "src/platform/appLifecycle.ts": 3,
+  "src/platform/ota.ts": 1
+}

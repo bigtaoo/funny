@@ -3,12 +3,13 @@
 // outside each bone's silhouette, generated once from the spritesheet bitmap at
 // load. See StickmanRuntime / assetLoader for where these feed the outline cache.
 
+import * as PIXI from 'pixi.js-legacy';
 import type { SpriteBinding } from './types';
 
 /** Load an HTMLImageElement from a (same-origin / object) URL. */
 export function loadImageEl(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const img = new Image();
+    const img = new Image() as HTMLImageElement; // dom-ok: platform/wechat/wechatHost.ts 把 Image 接到 wx.createImage()
     img.onload  = () => resolve(img);
     img.onerror = () => reject(new Error('outline: spritesheet image load failed'));
     img.src = url;
@@ -34,16 +35,15 @@ export function buildBoneOutline(
   sx: number, sy: number, w: number, h: number,
   gap: number, width: number,
   binding: SpriteBinding | undefined,
-): { canvas: HTMLCanvasElement; ax: number; ay: number } | null {
+): { canvas: PIXI.ICanvas; ax: number; ay: number } | null {
   const inner = gap;            // dilation radius to the line's inner edge
   const outer = gap + width;    // dilation radius to the line's outer edge
   const B  = outer + 1;         // canvas margin must hold the full outer ring
   const OW = w + 2 * B;
   const OH = h + 2 * B;
 
-  const canvas = document.createElement('canvas');
-  canvas.width  = OW;
-  canvas.height = OH;
+  // ADAPTER，不是 `document`（见 shadow.ts 同一处注释：真机无 document）。
+  const canvas = PIXI.settings.ADAPTER.createCanvas(OW, OH);
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 

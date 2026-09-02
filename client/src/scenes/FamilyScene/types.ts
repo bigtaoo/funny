@@ -7,9 +7,12 @@
 // `from './FamilyScene/core'` imports keep resolving unchanged.
 import type { SocialTab } from '../../ui/widgets/socialTabRail';
 import type { WorldApiClient, FamilyDetailView, FamilyMessageView } from '../../net/WorldApiClient';
+import type { IPlatform } from '../../platform/IPlatform';
 
 export interface FamilySceneCallbacks {
   onBack(): void;
+  /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput. */
+  openTextInput: IPlatform['openTextInput'];
   /** Open the sect hub (S8-4b) — sect = a family-of-families, rooted in the family UI. */
   onOpenSect(): void;
   /** Rail click for one of the other 4 social tabs (friends/sect/world/mail); 'family' is a no-op. */

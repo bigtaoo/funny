@@ -113,7 +113,7 @@ export class ActionsPanel implements ActionHandlers {
       const res = await withTimeout(core.cb.redeemPromo(code));
       if (res.ok) {
         core.promoCode = '';
-        if (core.hiddenInput) core.hiddenInput.value = '';
+        core.setPromoValue('');
         showToastMessage(t('shop.promoSuccess'), 'success');
       } else {
         showToastMessage(t(res.key), 'error');

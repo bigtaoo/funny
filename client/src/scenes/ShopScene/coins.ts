@@ -140,7 +140,7 @@ export class CoinsPanel {
       body.addChild(caret);
     }
 
-    core.hits.push({ rect: { x, y, w: fieldW, h }, fn: () => core.focusPromo() });
+    core.hits.push({ rect: { x, y, w: fieldW, h }, fn: () => core.focusPromo(() => void this.actions.onRedeem()) });
 
     // Redeem button.
     const bx = x + fieldW + gap;

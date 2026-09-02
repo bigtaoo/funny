@@ -13,6 +13,7 @@ import type { AvatarCategory } from '../render/avatar';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
 import type { SettingsSceneCallbacks } from './SettingsScene/types';
+import type { ITextInput } from '../platform/IPlatform';
 import { dispatchHit, hitAction, hitTest, inRect, type Hit } from '../ui/hits';
 import { drawProfile, drawLanguage, drawDataSaver, drawHelp, drawAccount, type PanelHost } from './SettingsScene/panels';
 import { drawAvatarPickerOverlay, type PickerHost } from './SettingsScene/avatarPicker';
@@ -84,7 +85,7 @@ export class SettingsScene implements Scene {
   private readonly bt = new BusyTracker();
   caretOn = true;
   private caretTimer = 0;
-  hiddenInput: HTMLInputElement | null = null;
+  private textInput: ITextInput | null = null;
 
   get busy(): boolean { return this.bt.busy; }
 
@@ -113,7 +114,6 @@ export class SettingsScene implements Scene {
       const next = wheelScrollY(r.y, r.y + r.h, y, deltaY, this.pickerScrollY, this.pickerMaxScroll);
       if (next !== null) { this.pickerScrollY = next; this.render(); }
     }));
-    this.setupHiddenInput();
     if (cb.onSaveChanged) this.unsubs.push(cb.onSaveChanged(() => this.render()));
     this.render();
   }
@@ -134,7 +134,7 @@ export class SettingsScene implements Scene {
   destroy(): void {
     this.destroyed = true;
     this.unsubs.forEach((u) => u());
-    if (this.hiddenInput) { this.hiddenInput.remove(); this.hiddenInput = null; }
+    this.textInput?.close();
     this.container.destroy({ children: true });
   }
 
@@ -173,41 +173,40 @@ export class SettingsScene implements Scene {
     if (tap) tap();
   }
 
-  // ── Hidden input (rename capture) ────────────────────────────────────────────
+  // ── Text input (rename capture) ────────────────────────────────────────────
 
-  private setupHiddenInput(): void {
-    if (typeof document === 'undefined') return; // non-DOM platform
-    const el = document.createElement('input');
-    el.type = 'text';
-    el.maxLength = 24;
-    el.autocomplete = 'off';
-    el.setAttribute('autocapitalize', 'off');
-    el.setAttribute('autocorrect', 'off');
-    el.style.cssText =
-      'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;' +
-      'border:0;padding:0;margin:0;font-size:16px;z-index:-1;';
-    el.addEventListener('input', () => {
-      if (this.renameOpen) { this.renameText = el.value; this.render(); }
+  /** Opens (or re-opens) the text-entry session, seeded from the current renameText. */
+  private openRenameInput(): void {
+    const handle = this.cb.openTextInput({
+      value: this.renameText,
+      maxLength: 24,
+      onInput: (value) => {
+        if (this.renameOpen) { this.renameText = value; this.render(); }
+      },
+      onConfirm: () => { void this.submitRename(); },
+      onComplete: () => { if (this.textInput === handle) this.textInput = null; },
     });
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); void this.submitRename(); }
-    });
-    document.body.appendChild(el);
-    this.hiddenInput = el;
+    this.textInput = handle;
+  }
+
+  /** OverlayHost.focusRenameInput — re-opens the session if the platform's keyboard was
+   *  dismissed natively while the overlay itself is still up; a no-op if already open. */
+  focusRenameInput(): void {
+    if (this.textInput) return;
+    this.openRenameInput();
   }
 
   openRename(): void {
     this.renameOpen = true;
     this.renameText = '';
     this.caretOn = true; this.caretTimer = 0;
-    const el = this.hiddenInput;
-    if (el) { el.value = ''; el.focus(); }
+    this.openRenameInput();
     this.render();
   }
 
   closeRename(): void {
     this.renameOpen = false;
-    this.hiddenInput?.blur();
+    this.textInput?.close();
     this.render();
   }
 
@@ -216,7 +215,7 @@ export class SettingsScene implements Scene {
     const name = this.renameText.trim();
     if (!name) { this.closeRename(); return; }
     this.renameOpen = false;
-    this.hiddenInput?.blur();
+    this.textInput?.close();
     this.bt.start();
     this.render();
     try {
@@ -318,7 +317,7 @@ export class SettingsScene implements Scene {
     const scene = this;
     return {
       container: this.container, w: this.w, h: this.h,
-      renameText: this.renameText, caretOn: this.caretOn, hiddenInput: this.hiddenInput,
+      renameText: this.renameText, caretOn: this.caretOn,
       // Getter/setter, not a plain property: drawRenameOverlay/drawDeleteConfirm reassign
       // `host.hits = []` wholesale (not just `.push()`) to discard base-scene hits for the modal —
       // a plain copied property would only rebind this throwaway object literal, never reaching
@@ -326,6 +325,7 @@ export class SettingsScene implements Scene {
       // see the modal's own button hits. Same reasoning as PickerHost.hits below.
       get hits() { return scene.hits; },
       set hits(v) { scene.hits = v; },
+      focusRenameInput: () => this.focusRenameInput(),
       submitRename: () => void this.submitRename(),
       closeRename: () => this.closeRename(),
       submitDelete: () => void this.submitDelete(),

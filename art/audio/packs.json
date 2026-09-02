@@ -1,0 +1,220 @@
+{
+ "note": "Upstream provenance for the audio sources under art/audio/sources/. Per-file picks and rationale are in credits.json. Written by tools/audio-pipeline/write_packs.py -- edit that, not this.",
+ "all_sources_commercial_ok_without_attribution": true,
+ "packs": [
+  {
+   "id": "kenney-interface-sounds",
+   "title": "Interface Sounds (1.0)",
+   "author": "Kenney",
+   "page": "https://kenney.nl/assets/interface-sounds",
+   "download": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+   "license": "CC0-1.0",
+   "license_text": "art/audio/licenses/kenney-interface-sounds-LICENSE.txt",
+   "attribution_required": false,
+   "zip_bytes": 834536,
+   "sha256": "f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232",
+   "note": "The ONLY Kenney audio pack this project can use. Its siblings (Impact / Sci-Fi / Digital) are metal impacts, glass, lasers and explosions -- art-direction \u00a710's forbidden list, near-verbatim. Only the two files that ship are archived; `fetch_packs.py --only kenney` re-downloads the 100-file pack and CHECKS the sha256 above, which is a stronger guarantee than a committed blob -- a blob can only be trusted, a hash can be verified.",
+   "files_used": [
+    "Audio/back_002.ogg",
+    "Audio/select_002.ogg"
+   ]
+  },
+  {
+   "id": "bigsoundbank",
+   "title": "BigSoundBank (LaSonotheque)",
+   "author": "Joseph SARDIN",
+   "page": "https://bigsoundbank.com/",
+   "download": "per sound: https://bigsoundbank.com/UPLOAD/mp3/<id>.mp3 (the id is the -sNNNN suffix in each archived filename)",
+   "license": "CC0-1.0",
+   "license_text": null,
+   "attribution_required": false,
+   "note": "Each sound's own page states 'License CC0 (public domain): Free and royalty-free', answers 'Do I have to credit?' with 'No', and needs no account. MP3 is the only format served anonymously (wav/flac are behind a login), so these sources are lossy -- same situation as the .ogg packs, and the shipped asset is MP3 anyway. No licence text file is archived because the licence is stated on the web page rather than shipped in a bundle; recorded as a gap rather than papered over.",
+   "files_used": [
+    "pencil-signature-3-s3238.mp3",
+    "turned-page-s0164.mp3"
+   ]
+  },
+  {
+   "id": "oga-luckius-paper",
+   "title": "Various Paper Sound Effects",
+   "author": "Luckius",
+   "page": "https://opengameart.org/content/various-paper-sound-effects",
+   "download": "https://opengameart.org/sites/default/files/<name>.mp3",
+   "license": "CC0-1.0",
+   "license_text": null,
+   "attribution_required": false,
+   "note": "Seven files: 2 crushed, 1 ripped, 4 handling. Submitted as CC0; the author asks for credit as a courtesy, which credits.json gives.",
+   "files_used": [
+    "paper_crushed_-_1.mp3"
+   ]
+  },
+  {
+   "id": "freesound",
+   "title": "freesound.org (per-sound CC0 selection)",
+   "author": "various -- see sounds[] below",
+   "page": "https://freesound.org/",
+   "download": "preview-hq-ogg via the freesound API v2 (search/text + a token)",
+   "license": "CC0-1.0 (asserted per sound, not per pack -- see sounds[])",
+   "license_text": null,
+   "attribution_required": false,
+   "note": "The only QUERYABLE source in the pool, and the reason `sfx.card.invalid` exists at all: neither Kenney nor BigSoundBank has an eraser. Fetched by tools/audio-pipeline/fetch_freesound.py with filter=license:\"Creative Commons 0\", and every sound's own licence URL is recorded below. **These are PREVIEW renders (128 kbps Vorbis), not the uploaded originals** -- a plain API token authorises previews, while originals need a full OAuth2 browser round trip. For 40-400 ms foley that is re-encoded to MP3 regardless, the second lossy stage was judged not worth the OAuth flow; if a cue ever sounds gritty, this is the first thing to re-check.",
+   "files_used": [
+    "book_332668.ogg",
+    "crumple_106127.ogg",
+    "crumple_235754.ogg",
+    "drop_165206.ogg",
+    "drop_174718.ogg",
+    "eraser_335948.ogg",
+    "eraser_335951.ogg",
+    "eraser_538144.ogg",
+    "hit_13858.ogg",
+    "hit_323721.ogg",
+    "hit_323725.ogg",
+    "page_397548.ogg",
+    "page_457767.ogg",
+    "stroke_277312.ogg",
+    "stroke_335930.ogg",
+    "stroke_632474.ogg",
+    "stroke_761665.ogg"
+   ],
+   "sounds": [
+    {
+     "file": "book_332668.ogg",
+     "freesound_id": 332668,
+     "title": "big thud2.wav",
+     "author": "Reitanna",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "crumple_106127.ogg",
+     "freesound_id": 106127,
+     "title": "crumple.wav",
+     "author": "j1987",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "crumple_235754.ogg",
+     "freesound_id": 235754,
+     "title": "Crumple Dry Leaf 2",
+     "author": "elliotlp",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "drop_165206.ogg",
+     "freesound_id": 165206,
+     "title": "Water Drop Sound.wav",
+     "author": "metaepitome",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "drop_174718.ogg",
+     "freesound_id": 174718,
+     "title": "Single Water Drop",
+     "author": "paespedro",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "eraser_335948.ogg",
+     "freesound_id": 335948,
+     "title": "marker-whiteboard-short04",
+     "author": "newagesoup",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "eraser_335951.ogg",
+     "freesound_id": 335951,
+     "title": "marker-whiteboard-short01",
+     "author": "newagesoup",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "eraser_538144.ogg",
+     "freesound_id": 538144,
+     "title": "Erase",
+     "author": "Fupicat",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "hit_13858.ogg",
+     "freesound_id": 13858,
+     "title": "6.wav",
+     "author": "adcbicycle",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "hit_323721.ogg",
+     "freesound_id": 323721,
+     "title": "drop thunk.wav",
+     "author": "Reitanna",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "hit_323725.ogg",
+     "freesound_id": 323725,
+     "title": "thunk.wav",
+     "author": "Reitanna",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "page_397548.ogg",
+     "freesound_id": 397548,
+     "title": "Page Turn 01",
+     "author": "LilMati",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "page_457767.ogg",
+     "freesound_id": 457767,
+     "title": "turnPage.mp3",
+     "author": "partheeban",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "stroke_277312.ogg",
+     "freesound_id": 277312,
+     "title": "Pencil Writing on Paper",
+     "author": "elliotlp",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "stroke_335930.ogg",
+     "freesound_id": 335930,
+     "title": "marker-whiteboard-oneshot03",
+     "author": "newagesoup",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "stroke_632474.ogg",
+     "freesound_id": 632474,
+     "title": "Putting a pencil on paper to write",
+     "author": "ani_music",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    },
+    {
+     "file": "stroke_761665.ogg",
+     "freesound_id": 761665,
+     "title": "Pencil Scribble (9)",
+     "author": "JellyDaisies",
+     "license": "http://creativecommons.org/publicdomain/zero/1.0/",
+     "preview": "preview-hq-ogg"
+    }
+   ]
+  }
+ ]
+}

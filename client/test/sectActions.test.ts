@@ -57,7 +57,7 @@ class FakeSectSceneCore {
   channelActive = true;
   channelSending = false;
   channelStick = false;
-  hiddenInput: { remove: () => void } | null = null;
+  hiddenInput: { close: () => void } | null = null;
   bt = new BusyTracker();
   cb = {
     worldApi: {
@@ -405,13 +405,13 @@ describe('SectScene — doSendChannelMessage() guards', () => {
 
 describe('SectScene — doSendChannelMessage() success', () => {
   it('trims the draft, sends it, clears the input, and refetches the channel', async () => {
-    const removeSpy = vi.fn();
-    const { core, data, actions } = buildScene({ sect: makeSect(), channelInput: '  hello sect  ', hiddenInput: { remove: removeSpy } });
+    const closeSpy = vi.fn();
+    const { core, data, actions } = buildScene({ sect: makeSect(), channelInput: '  hello sect  ', hiddenInput: { close: closeSpy } });
 
     await actions.doSendChannelMessage();
 
     expect(core.cb.worldApi.sendSectMessage).toHaveBeenCalledWith('w1', 'hello sect', 'Tester');
-    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
     expect(core.hiddenInput).toBeNull();
     expect(core.channelInput).toBe('');
     expect(core.channelSending).toBe(false);
