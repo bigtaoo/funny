@@ -101,6 +101,11 @@
 **验证过的**：
 - `test/audio/**` **127 个用例**（+4：`errorCueThrottle.test.ts`；**+18：`ContextAudioBus.test.ts`，2026-09-01**），`src/audio/**` 与 `src/ui/hits.ts` 行覆盖均 **100%**；两者都在 `vitest.config.ts` 的覆盖率门禁里（客户端整体 95.77% → **95.83%**，scope 又变大一点而百分比仍在上升）。
   > **2026-09-01 顺带堵上一个 scope 的洞**：门禁 include 有 `src/audio/**`、**没有** `platform/**`，所以「`src/audio/**` 100%」一直是真的，同时后端类 `WebAudioBus` 一个用例都没有。抽出 `ContextAudioBus` 之后它进了门禁，18 例 + **8 个变异全抓**（明细见 §0.3）。
+  > **补记（2026-09-02）：那个洞只堵了一半，而且堵法本身留了一句会过期的话。** 抽出 `ContextAudioBus` 之后剩下的 `WebAudioBus` / `WechatAudioBus` 被判为「各自 ~15 行、只回答两个问题」而留在门禁外——量一下，**两个套件并集下两者都是 0%**。前提也早就不成立了：BGM 落地后平台要回答的从两个问题变成**四个**（上下文 / 手势 / deck / 前后台），其中三个带静默失败分支（`webkitAudioContext` 缺席 = 老 Safari 全哑；`createMusicDecks` 返回一个空上下文驱动不了的 deck = 静音且无日志；前后台接缝报错初值 = 床在后台响）。补 `test/audio/WebAudioBus.test.ts` **17 例** + `WechatAudioBus.test.ts` **19 例**，两者 100%，一并进 include。**四个变异全抓**（deck 改成需要 ctx / 去掉中断恢复 / 手势监听去掉 passive / `ensureMusic` 在无 ctx 时早退）。
+  >
+  > **并且这一轮真找出一个 bug，就在那句刚写下的注释里。** `WebAudioBus.onFocusChange` 结尾那句「当前值也报一次」（为「页面在后台标签页里加载完成」写的）是**空转**：它在 `ContextAudioBus` 的构造函数里同步执行，而 `music` 要到 `ensureMusic()` 才懒造，所以回调里 `this.music?.setPaused(hidden)` 无处落地，值被静默丢掉。修法是 `ContextAudioBus.hidden` 字段——存下来，等播放器造出来时补一次 hold（`MusicPlayer.update()` 在 hold 期间整段返回，所以效果是「床压根不起来」而不是「起来了再暂停」）。**两处必须同时在**，两边注释互相指着对方。
+  >
+  > 顺带一条同族的：`src/render/canvasTexture.ts`（微信不让 PIXI 嗅探资源类的第二道保险，`wechatHost.ts` 是第一道）落地时也是 0 用例——`textureFromCanvas` 从没被任何套件调用过。`test/canvasTexture.test.ts` **14 例**：行为 6 例 + 调用点扫描守卫 2 例 + 扫描器自测 6 例，同样进门禁。客户端整体 **94.8% → 96.1%**。
 - `test/uiTapSoundCoverage.test.ts` **11 例**——源码扫描守卫，四条断言 + 各自的 canary 和 allowlist 保鲜检查（明细见上面那张表）。四条**全部做过变异验证**。`DIRECT_UI_CUE_ALLOWLIST` 现在四条（新增 `audioPanel.ts` 的松手试听）。
 - `test/ui/settingsSliderOverlap.ui.ts` **14 例**（2026-08-31 新增，§0.2 (D)）——「任何滑杆矩形都不许与任何 hit 矩形相交」，3 种场景形状 × 4 种画布尺寸 + 两条结构断言。**做过变异验证**（把版面改回旧坐标，12 条全红）。
 - `test/audio/errorCueThrottle.test.ts` **4 例**（2026-08-31 新增，§0.2 (A)）——错误音扇出合并。**做过变异验证**。
@@ -617,7 +622,7 @@ reward 0.08915 / error 0.07825 / gacha common 0.06680 · rare 0.07756 · epic 0.
 24 kHz 立体声、**74.0 s 循环**、70.6 kbps VBR，频带电平 **−29.00 dBFS**（250–2000 Hz RMS）、
 接缝 **0.57 dB**。母带是**项目自有**素材（`art/audio/sources/first-party/doodle-bed.flac`，13266428
 字节，由投进来的 40.9 MB WAV 无损转出——逐样本比对相等），不需要署名。§2.3 的另一条轨 `bgm.battle`
-仍然缺 master（brief 在 `art/audio/suno/BRIEFS.md`），**它不在 `MusicTrack` union 里**，所以对局
+仍然缺 master（brief 在 [`art/audio/suno/BRIEFS.md`](../../art/audio/suno/BRIEFS.md)），**它不在 `MusicTrack` union 里**，所以对局
 现在是三处显式的 `music: null`，而不是漏接。
 
 #### ⚠️ 这一轮真正的教训在代码之外：同一件事被做了两遍

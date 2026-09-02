@@ -93,6 +93,17 @@ export default defineConfig({
         // never wraps again) — so they are gated where they live.
         'src/platform/web/webMusicDeck.ts',
         'src/platform/wechat/wechatMusicDeck.ts',
+        // ...and, 2026-09-02, the two SFX BUSES the paragraph above was arguing about. They were
+        // left out on the reasoning quoted in `ContextAudioBus.test.ts`'s header — "each ~15 lines
+        // answering two questions" — and measured a day later, both were at **0% in every suite in
+        // the repo**, exactly the shape §0.3 warned about. The premise had also expired: BGM took
+        // each of them from two injected answers to FOUR (context, gesture, decks, focus), and
+        // three of the four carry a branch that fails silently — `webkitAudioContext` (every
+        // pre-Safari-14 device mute), `createMusicDecks` handing back decks a null context cannot
+        // drive (silence, nothing logged), and the focus seam's initial report, which turned out to
+        // be a genuine no-op until `ContextAudioBus.hidden` landed with those cases.
+        'src/platform/web/WebAudioBus.ts',
+        'src/platform/wechat/WechatAudioBus.ts',
         // assets / cache / i18n / layout
         'src/assets/assetIO.ts',
         'src/cache/MemoryMonitor.ts',
@@ -121,6 +132,12 @@ export default defineConfig({
         'src/platform/uuid.ts',
         // render: only the PIXI-free helpers (geometry, theming, art descriptors, vfx defs) —
         // everything that actually draws stays out, per the paragraph at the top of this block
+        // 2026-09-02: the second of the two belts that keep the WeChat build off PIXI's resource
+        // sniffing (`wechatHost.ts` is the first). Sixteen lines, and NOT a pass-through: naming
+        // `CanvasResource` instead of letting `autoDetectResource` guess is the difference between
+        // a picture and a black screen on a runtime with no `HTMLCanvasElement` global. It shipped
+        // with no cases at all — `textureFromCanvas` had never been called by any suite.
+        'src/render/canvasTexture.ts',
         'src/render/HUDView/hpBar.ts',
         'src/render/TutorialDirector/panels.ts',
         'src/render/atlas/spriteAtlas.ts',
