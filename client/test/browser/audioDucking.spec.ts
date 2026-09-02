@@ -78,32 +78,79 @@ test.describe('browser smoke — BGM ducking against a real stinger', () => {
       na.play('sfx.result.victory');
     });
 
-    const readMusic = () => page.evaluate(() => {
-      const na = (window as unknown as { __nwAudio: { music(): MusicSnapshot | null } }).__nwAudio;
-      return na.music();
-    });
+    // ── Why this waits on the STATE and not on the clock (fixed 2026-09-02) ────────────────────
+    //
+    // This section used to be three `waitForTimeout`s asserting a fixed duck value at a fixed
+    // moment ("200ms in: 0.4 < duck < 0.5", "still held at 400ms", "released by 1800ms"), with a
+    // comment claiming "wide margin either side for CI scheduling jitter". That claim was wrong in
+    // both directions and the test failed 2 runs in 3 on a developer machine:
+    //
+    //   * The envelope does not advance on the wall clock. `advanceDuck` consumes the RENDER
+    //     ticker's accumulated `dtMs`, so what the assertion is really about is how much the
+    //     ticker has ticked — which diverges from `waitForTimeout` on every dropped frame.
+    //   * The margin was 100ms, not wide. `DUCK_HOLD_MS` is 500 and the second read aimed at 400,
+    //     and BOTH reads spend a `page.evaluate` CDP round-trip inside that budget. Measured: the
+    //     second read landed at ~583ms of ticker time, so the hold had expired and the release had
+    //     already started — `duck` read 0.515 (= 0.45 + 0.55 x 83/700) against a `< 0.5` bound.
+    //     No amount of widening fixes this shape: the boundary is fixed at 500ms while the
+    //     overhead ahead of it is unbounded.
+    //
+    // The timing itself is not this file's job, and it is not going untested — the envelope
+    // (80ms attack, the hold still down at 400ms, full release) is pinned deterministically in
+    // `test/audio/MusicPlayer.test.ts`'s "drops toward the duck level, holds, and comes all the
+    // way back to 1", which drives `update()` with exact dt and cannot drift. What ONLY this file
+    // can prove is the wiring: cue name -> `DUCK_CUES` membership -> `ContextAudioBus.play()` ->
+    // `music.requestDuck()` -> a real `GainNode`. So it now asserts exactly that, two ways:
+    //
+    //   1. **Poll until the state arrives.** Both regressions this spec exists for — a bed that
+    //      never ducks, and a duck that never releases — fail as a timeout here, which is a
+    //      clearer report than an off-by-a-frame numeric bound ever was.
+    //   2. **Assert the invariant `deckGain == steadyGain x duck` on ONE ATOMIC snapshot.** The
+    //      `waitForFunction` handle carries the snapshot from the frame the condition held, so the
+    //      gain and the duck it is being checked against cannot drift apart between two reads.
+    //      Landing mid-ramp is now harmless: the invariant holds at every point on the ramp, while
+    //      a duck that never reaches the graph breaks it at every point.
 
-    // Attack is DUCK_ATTACK_MS = 80ms to DUCK_LEVEL = 0.45; hold is DUCK_HOLD_MS = 500ms from the
-    // trigger. 200ms in is solidly past the attack and solidly inside the hold — wide margin
-    // either side for CI scheduling jitter.
-    await page.waitForTimeout(200);
-    const ducked = await readMusic();
-    expect(ducked!.duck).toBeGreaterThan(0.4);
-    expect(ducked!.duck).toBeLessThan(0.5);
-    expect(maxDeckGain(ducked!)).toBeCloseTo(steadyGain * 0.45, 2);
+    /** Mirrors `DUCK_LEVEL` in MusicPlayer.ts. The NUMBER is pinned there and in MusicPlayer.test.ts; here it is only a floor to wait for. */
+    const DUCK_LEVEL = 0.45;
 
-    // Still held at 400ms (hold doesn't expire until 500ms from the trigger).
-    await page.waitForTimeout(200);
-    const stillHeld = await readMusic();
-    expect(stillHeld!.duck).toBeGreaterThan(0.4);
-    expect(stillHeld!.duck).toBeLessThan(0.5);
+    /**
+     * The snapshot from the first frame on which the bed is at/below `floor` (`'ducked'`) or back
+     * at exactly 1 (`'released'`).
+     *
+     * `polling: 'raf'` samples once per animation frame, i.e. on the same clock the envelope
+     * advances on — so this cannot step over the state it is waiting for. The condition is
+     * expressed as a mode + threshold rather than a callback because the page function is
+     * serialized and can close over nothing (same constraint as the type-only casts in this
+     * file's header).
+     */
+    const snapshotWhen = async (
+      mode: 'ducked' | 'released',
+      floor: number,
+      what: string,
+    ): Promise<MusicSnapshot> => {
+      const handle = await page.waitForFunction(([m0, f]: [string, number]) => {
+        const na = (window as unknown as { __nwAudio: { music(): MusicSnapshot | null } }).__nwAudio;
+        const m = na.music();
+        if (!m) return null;
+        return (m0 === 'ducked' ? m.duck <= f : m.duck === 1) ? m : null;
+      }, [mode, floor] as [string, number], { timeout: 10_000, polling: 'raf' })
+        .catch((err: unknown) => { throw new Error(`timed out waiting for ${what}: ${String(err)}`); });
+      return (await handle.jsonValue()) as MusicSnapshot;
+    };
 
-    // Fully released by 500 (hold) + 700 (DUCK_RELEASE_MS) + generous margin. A duck that sticks
-    // is a bed quietly 6.9 dB low forever, and nothing else in the pipeline would report it.
-    await page.waitForTimeout(1300);
-    const released = await readMusic();
-    expect(released!.duck).toBe(1);
-    expect(maxDeckGain(released!)).toBeCloseTo(steadyGain, 2);
+    // Attack: down to the duck floor. A cue that fell out of `DUCK_CUES`, or a `play()` that
+    // stopped calling `requestDuck()`, never gets here.
+    const ducked = await snapshotWhen('ducked', DUCK_LEVEL + 0.005, 'the bed to duck');
+    expect(ducked.duck).toBeCloseTo(DUCK_LEVEL, 2);
+    // The invariant, against the duck value from this same frame: the level reached the real graph.
+    expect(maxDeckGain(ducked)).toBeCloseTo(steadyGain * ducked.duck, 3);
+
+    // Release: all the way back to 1. A duck that sticks is a bed quietly 6.9 dB low forever, and
+    // nothing else in the pipeline would report it.
+    const released = await snapshotWhen('released', 1, 'the duck to release');
+    expect(released.duck).toBe(1);
+    expect(maxDeckGain(released)).toBeCloseTo(steadyGain, 3);
 
     // The cue reached the real bus exactly once — a re-fire (e.g. from some future code path
     // calling play() again on the same event) would show up here before it showed up as a
