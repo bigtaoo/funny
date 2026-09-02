@@ -46,3 +46,20 @@ export function baseLevelLine(tile: WorldTileView): ModalLine | null {
   if (tile.type !== 'base' || tile.deskLevel == null) return null;
   return { text: t('world.baseLevel').replace('{lv}', String(tile.deskLevel)), icon: 'desk' };
 }
+
+/**
+ * The "there is a structure on this tile" line. One function rather than the ternary it replaces,
+ * because that ternary was written out at all three ownership branches (mine/ally/enemy) — three
+ * copies of a two-way mapping that now has to agree on an icon as well as a string, i.e. three
+ * chances to drift.
+ *
+ * Until batch 9 these lines carried an EMOJI inside the localised string (🏹/🚧) because no ink art
+ * existed: dropping it early would have left the line with no marker at all, and an emoji renders in
+ * the system font rather than the game's hand-drawn ink — on WeChat/iOS not even the same glyph
+ * twice. The strings lost their emoji in the same edit that gave these two an `icon:`.
+ */
+export function structureLine(kind: 'arrowTower' | 'blocker'): ModalLine {
+  return kind === 'arrowTower'
+    ? { text: t('world.hasArrowTower'), icon: 'arrowTower' }
+    : { text: t('world.hasBlocker'), icon: 'blocker' };
+}
