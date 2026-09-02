@@ -11,6 +11,10 @@ coverage/
 # Written by scripts/flakyReporter.mjs when a test only passed on a retry (CI uploads it as an artifact).
 flaky-report.json
 
+# The previous green main's coverage numbers, for the Δ column in the run-summary section. CI keeps
+# it in actions/cache, never in git; this only catches a local run with COVERAGE_BASELINE_OUT set.
+coverage-baseline.json
+
 # tools/audio-pipeline is Python (soundfile/libsndfile — see its README for why it is not Node).
 # The venv is per-machine and ~40 MB; recreate it with the two commands at the top of that README.
 tools/audio-pipeline/venv/

@@ -56,7 +56,7 @@ export default defineConfig({
       // is one of those: already-covered ground, moved inside the gate at zero new test cost. The
       // client number goes 91.2% (1924 lines) -> 94.8% (4260 lines), i.e. the scope more than
       // doubles and the percentage goes UP, which is the opposite of the direction a scope change
-      // is normally suspicious in (see scripts/coverageLib.mjs's `Scope (files)` column).
+      // is normally suspicious in (see scripts/coverageReport.mjs's `Scope (measured/src)` column).
       //
       // Yes, these are per-file entries, and ADR-070 calls a per-file include "the smell of a
       // missing module boundary". That still holds — it is why this list is explicitly TRANSITIONAL.
