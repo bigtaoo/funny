@@ -192,6 +192,35 @@ export class PushService {
     });
   }
   /**
+   * An occupation hold finished (2026-09-02 user report). `march_update` is the ONLY signal the world
+   * map re-reads its marches/occupations/stationed slices on (worldmap/net/push.ts applyMarchUpdate →
+   * refreshMarches; the 5s poll that used to cover everything else was removed in
+   * comm-audit-2026-07-27 P1-2) — so a state change that ends an order and is NOT announced on this
+   * channel leaves the client's copy stale forever.
+   *
+   * settleOccupation was exactly that hole: it deleted the OccupationDoc, flipped the tile and parked
+   * the team, but pushed only `tile_update` (which refreshes tiles alone). Every finished hold stayed
+   * in the client's `ctx.occupations`, so the team it named read as busy for the rest of the session
+   * and the team picker refused to offer it — the reporter had all five teams stuck that way. Only the
+   * `autoReturn` branch happened to be covered, because its return leg pushes a real march.
+   *
+   * The hold has no MarchDoc of its own by this point (claim-deleted on arrival), so the payload
+   * describes the hold itself: a zero-distance `occupy` on the captured tile, `arrived`. The client
+   * uses it purely as an invalidation trigger (it re-reads authoritative state and ignores the body),
+   * so the synthetic `occ:` id never reaches any UI.
+   */
+  async pushOccupationSettled(accountId: string, occ: { tile: string; dueAt: number; garrison: number }): Promise<void> {
+    await this.core.gateway.push(accountId, {
+      kind: 'march_update',
+      marchId: `occ:${occ.tile}`,
+      marchKind: 'occupy',
+      fromTile: occ.tile,
+      toTile: occ.tile,
+      arriveAt: occ.dueAt,
+      status: 'arrived',
+    });
+  }
+  /**
    * `ownerProfile`: pass a pre-resolved profile to skip this method's own meta fetch — used by
    * pushTileToObservers (comm-audit batch F item 7), which resolves the tile owner's profile once and
    * fans it out to every observer instead of each push re-fetching the same accountId's profile.
