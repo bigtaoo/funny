@@ -106,6 +106,18 @@ export default defineConfig({
         'src/platform/wechat/WechatAudioBus.ts',
         // assets / cache / i18n / layout
         'src/assets/assetIO.ts',
+        // ...and the L1 speculative warm-up (2026-09-02, ASSET_PACKAGING §11/§14). Both files were
+        // at 0% here for cause ① in `client-testing.md`: a thorough 335-line suite existed, it just
+        // lived in `test/ui/`, which reports no coverage — so `prefetchPolicy.ts`'s own doc comment
+        // (then "`test/ui/idlePrefetch.ui.ts` pins this boundary") was true and the boundary was still
+        // ungated. Moved to `test/idlePrefetch.test.ts` with no assertion changed. Worth gating
+        // rather than leaving as ui-only because both directions cost real player bytes: the
+        // `cellular` case deliberately does NOT skip (widening it turns prefetch off for most
+        // phones) and the per-feature usage marks are what keep a normal 4G link honest, so a
+        // regression either way is silent — the game still works, it just warms 2.0 MB nobody
+        // asked for or stops warming what everybody needs.
+        'src/assets/idlePrefetch.ts',
+        'src/assets/prefetchPolicy.ts',
         'src/cache/MemoryMonitor.ts',
         'src/cache/ObjectPool.ts',
         'src/cache/poolRegistry.ts',

@@ -24,24 +24,24 @@ const rewardIcons = wave('icons:reward');
 const world = wave('slg:world');
 const gacha = wave('gacha');
 
-vi.mock('../../src/assets/bootManifest', () => ({ preloadBootBackground: () => bootBackground() }));
-vi.mock('../../src/assets/battleAssets', () => ({ ensureBattleAssets: () => battle() }));
-vi.mock('../../src/render/rewardIcon', () => ({ preloadRewardIconArt: () => rewardIcons() }));
-vi.mock('../../src/render/gachaArt', () => ({ preloadGachaTextures: () => gacha() }));
-vi.mock('../../src/render/atlas/worldAtlas', () => ({ worldAtlas: { load: () => world() } }));
+vi.mock('../src/assets/bootManifest', () => ({ preloadBootBackground: () => bootBackground() }));
+vi.mock('../src/assets/battleAssets', () => ({ ensureBattleAssets: () => battle() }));
+vi.mock('../src/render/rewardIcon', () => ({ preloadRewardIconArt: () => rewardIcons() }));
+vi.mock('../src/render/gachaArt', () => ({ preloadGachaTextures: () => gacha() }));
+vi.mock('../src/render/atlas/worldAtlas', () => ({ worldAtlas: { load: () => world() } }));
 
 // Rotation clock, driven by the tests. Defaults to "never rotated", which is the state every test
 // below except the rotation block runs in — awaitRotationQuiet returns immediately there.
 const rotation: { at: number | undefined } = { at: undefined };
-vi.mock('../../src/net/anomaly/deviceContext', () => ({ lastRotationAt: () => rotation.at }));
+vi.mock('../src/net/anomaly/deviceContext', () => ({ lastRotationAt: () => rotation.at }));
 
 // After vi.mock (hoisted regardless of physical order — same pattern as battleGate.ui.ts).
-import { startIdlePrefetch, resetIdlePrefetchForTest } from '../../src/assets/idlePrefetch';
+import { startIdlePrefetch, resetIdlePrefetchForTest } from '../src/assets/idlePrefetch';
 import {
   installPrefetchPolicy, resetPrefetchPolicyForTest, markFeatureUsed, setDataSaverEnabled,
   type NetworkKind,
-} from '../../src/assets/prefetchPolicy';
-import type { IStorage } from '../../src/platform/IPlatform';
+} from '../src/assets/prefetchPolicy';
+import type { IStorage } from '../src/platform/IPlatform';
 
 /** In-memory stand-in for platform.storage — the marks and the data-saver flag live here. */
 const store = new Map<string, string>();

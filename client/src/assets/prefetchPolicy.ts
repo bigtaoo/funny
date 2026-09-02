@@ -131,7 +131,8 @@ export function networkKind(): Promise<NetworkKind> {
  * the prefetch off for most phones, i.e. for most players. What keeps a normal 4G link honest is
  * not a stricter network test but a smaller speculative set (the per-feature marks above), which
  * is the same fix that also works on iOS Safari and anywhere else with no usable network API at
- * all. `test/ui/idlePrefetch.ui.ts` pins this boundary.
+ * all. `test/idlePrefetch.test.ts` pins this boundary (it lived in `test/ui/` until 2026-09-02, which
+ * is exactly why this file read 0% for so long — that layer reports no coverage).
  */
 export async function shouldSkipPrefetch(): Promise<boolean> {
   if (isDataSaverEnabled()) return true;
