@@ -150,7 +150,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 | 常量（占位名） | 占位值 | 说明 |
 |---|---|---|
 | `DESK_MAX_LEVEL` | 10 | 书桌（总门控）上限，对齐三战君王殿 10 级（2026-07-15 由 20 改 10，见 D-CITY-7；STEP 常量翻倍保满级加成一致） |
-| `BUILDING_MAX_LEVEL` | =desk 当前等级 | 各建筑 ≤ 书桌等级 |
+| `BUILDING_MAX_LEVEL` | 10（= `DESK_MAX_LEVEL`） | **每座建筑的硬上限**（2026-09-02 起是真常量，见 §8.12）。软门控另有一层：目标等级还须 ≤ 书桌**当前**等级（`buildGateReason`）——两层叠起来，书桌满级时所有建筑才能到 10 |
 | `biomeGraphiteMax` 等四分阈值 | DRAFT | `biomeAt` 三分→四分（加 graphite 地块）的分区阈值（★P1 前置） |
 | `BUILD_YIELD_STEP` | 0.05（+5%/级） | inkPot/paperTray/graphiteMill/metalForge 每级产率乘数（4 地块） |
 | `STICKER_SELF_BASE` | DRAFT | stickerShop（民居模型）自产 sticker 基底/h（× lvl）；graphite 走地块产，无自产基底 |
@@ -337,6 +337,20 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - **这层测不到的**：headless 适配器下 res_atlas 不解码，`resIcon`/`bldIcon` 走的是 emoji/线稿回退分支，所以断言看到的是 chip 的**结构**而不是最终画面——只落在 `if (tex)` 分支里的改动这一层看不见。这个切分是对的（决策归测试，观感归截图），但别把它当成「图标好不好看」有覆盖。
 
 ---
+
+### 8.12 满级建筑仍在推销 Lv.11：`atMax` 只认书桌（2026-09-02）
+
+用户报（带截图，圈了两处）：书桌最高 10 级，可石墨坊 Lv.10 的详情弹窗照旧写着「→ Lv.11 / 消耗 35k / 时长 1:28:00 / **需书桌 Lv.11**」——一个不可能存在的书桌等级。
+
+- **根因**：`modals.ts` 的判据是 `lvl >= DESK_MAX_LEVEL && key === 'desk'`，**只有书桌**会走「已满级」分支。其余十座建筑到 10 级后落进升级分支，`buildGateReason` 对 `toLevel = 11` 返回 `'desk level too low'`，弹窗于是照着这条理由渲染出「需书桌 Lv.11」。等级上限这件事被写在了一个只描述书桌的条件里，而**每座建筑的实际天花板都是 10**：非书桌建筑的目标等级须 ≤ 书桌当前等级，书桌自己又停在 `DESK_MAX_LEVEL`。
+- **改法**（两端各一处，共享层先说清）：
+  - `slg/city.ts` 新增 `BUILDING_MAX_LEVEL`（= `DESK_MAX_LEVEL`，**不是冗余别名**：它是由门控*推导*出来的那个天花板，存在的理由就是「这座建筑满了没有」曾经没有名字可问）；`buildGateReason` 补一条 `toLevel > BUILDING_MAX_LEVEL → 'building at max level'`，**排在书桌等级检查之前**——过了天花板以后书桌门控永远满足不了，再说「书桌等级不足」等于叫玩家去升一座已经满级的书桌。
+  - 客户端 `atMax` 改成 `lvl >= BUILDING_MAX_LEVEL`（去掉 `key === 'desk'`）。`actions.ts` 的报错映射把 `'max level'` 排到 `'desk'` 之前，理由同上（顺带修掉「书桌满级」原先也被映射成「书桌等级不足」）。
+- **顺路扫同类问题**（用户要求）：弹窗里每一行加成都对着共享层的函数核了一遍，只有一处同类——**练兵场「训练提速」**。`drillTrainMult` 有 `DRILL_TRAIN_SPEED_FLOOR = 0.5` 地板，而卡片印的是裸乘积 `lvl × DRILL_TRAIN_SPEED_STEP`，于是从 **L7**（`ceil(0.5 / 0.08)`）起对外承诺一个训练队列根本不会给的提速：满级写「80%」，实际 50%。改成 `Math.round((1 - drillTrainMult(bld)) * 100)`，L1–L6 一字不变。其余各行（产率、仓储、兵力上限、队列槽、城墙耐久、书院加成、书包负重）都是无夹逼的线性式或直接调共享函数，**没有第三处**；装备 `+9`、卡牌满级、战令 30 级三处早就各自有满级分支，不属同类。
+- 覆盖测试：`client/test/ui/cityModalCappedNumbers.ui.ts`（新文件 6 例）——石墨坊满级读「已满级」且不出现 `→ Lv.11`/升级按钮/`doUpgrade` 命中；**十一个 key 逐个过**（不可达的「需书桌 Lv.11」、越顶目标、升级按钮、命中数全查）；**满级前一级仍给升级**（别把最后一级吃掉）；小书桌下真门控照旧（`需书桌 Lv.4`）；训练提速满级读 50%、地板前一级仍等于裸乘积、地板级与满级都钉 50%。`server/shared/test/city-buildings.test.ts` +1 例：`BUILDING_KEYS` 逐个在 `BUILDING_MAX_LEVEL` 处放行、`+1` 处以「at max level」拒绝（**不是**「desk level too low」）。
+- **变异验证**：`atMax` 改回带 `key === 'desk'` → 前两例挂；训练提速改回裸乘积 → 训练提速两例挂。
+- 验证：`tsc --noEmit`（`tsconfig.test.json` + fulllink）全绿、`test:ui` 253 文件 / 2421 例全绿、`build:web` 构建通过；**真机截图核对**走 §8.10 的 `web-e2e` 桩挂载路径（`__nwE2E.views.showCity()` + 假 `worldApi`，无需后端栈），中文复现用户那座满级城：石墨坊/文件柜/练兵场 Lv.10 均读「已满级」、练兵场读「训练提速 50%」、石墨坊 Lv.9 仍给「→ Lv.10 / 升级」、书桌 Lv.3 时仍给「需书桌 Lv.4」。
+- **顺手修掉一处已有的类型门禁失败**（不是本轮引入）：`client/test/wechatInputAdapter.test.ts`（commit `565cb17b8`）里 `globalThis as { wx?: FakeWx }` 是 TS2352 非重叠断言——`wx.d.ts` 声明了真的全局 `wx`。那个提交大概只跑了 vitest 没跑 `tsc`。改成经 `unknown` 的一次转换后本轮才有绿的类型门禁可用。
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）
 

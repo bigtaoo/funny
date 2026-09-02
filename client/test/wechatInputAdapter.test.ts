@@ -64,13 +64,17 @@ function adapter() {
   return { input, down, move, up };
 }
 
+// Through `unknown`: `wx.d.ts` declares a real global `wx`, so a direct assertion from
+// `typeof globalThis` to the FakeWx shape is a TS2352 non-overlap error (tsconfig.test.json).
+const g = globalThis as unknown as { wx?: FakeWx };
+
 beforeEach(() => {
   wx = fakeWx();
-  (globalThis as { wx?: FakeWx }).wx = wx;
+  g.wx = wx;
 });
 
 afterEach(() => {
-  delete (globalThis as { wx?: FakeWx }).wx;
+  delete g.wx;
 });
 
 describe('WechatAdapter — registration', () => {

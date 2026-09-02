@@ -40,6 +40,10 @@ export async function doUpgrade(host: ActionsHost, key: BuildingKey): Promise<vo
     const msg = e instanceof Error ? e.message : '';
     if (msg.includes('resources')) host.showToast(t('city.err.noResources'), C.red as number);
     else if (msg.includes('queue')) host.showToast(t('city.err.queueFull'), C.red as number);
+    // 'at max level' before 'desk': the server's reasons are 'desk at max level' /
+    // 'building at max level' / 'desk level too low', and the first of those contains "desk" too —
+    // telling a player whose desk is already maxed that their "desk level is too low" is nonsense.
+    else if (msg.includes('max level')) host.showToast(t('city.maxLevel'), C.red as number);
     else if (msg.includes('desk')) host.showToast(t('city.err.deskGate'), C.red as number);
     else host.showToast(t('city.err.generic'), C.red as number);
   } finally {
