@@ -19,6 +19,7 @@ import { initI18n, t } from '../../src/i18n';
 import { WorldMapNet } from '../../src/scenes/worldmap/WorldMapNet';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { PlayerWorldView } from '../../src/net/WorldApiClient';
+import { modalLineText, type ModalLine } from '../../src/scenes/worldmap/WorldMapPanels/modalLine';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -149,7 +150,7 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Legacy'))).toBe(false);
-    const head = showModal.mock.calls[0][0] as string[];
+    const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
     expect(head).toContain(t('world.team.noTeamsOccupy'));
   });
 
@@ -161,7 +162,7 @@ describe('WorldMapNet.showTeamPicker — occupy uses the team picker (§4.2)', (
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Wiped'))).toBe(false);
-    const head = showModal.mock.calls[0][0] as string[];
+    const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
     expect(head).toContain(t('world.team.noTeamsOccupy'));
   });
 });
@@ -447,7 +448,7 @@ describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes us
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     let buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Cards'))).toBe(false);
-    let head = showModal.mock.calls[0][0] as string[];
+    let head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
     expect(head).toContain(t('world.team.noTeamsOccupy'));
 
     // Server-side truth changed in the meantime (e.g. City's formation editor filled the team's troops
@@ -463,7 +464,7 @@ describe('WorldMapNet.refreshMe() — a team fully re-armed elsewhere becomes us
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Cards'))).toBe(true);
-    head = showModal.mock.calls[0][0] as string[];
+    head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
     expect(head).not.toContain(t('world.team.noTeamsOccupy'));
   });
 

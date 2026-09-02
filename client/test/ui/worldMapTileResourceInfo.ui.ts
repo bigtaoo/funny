@@ -23,6 +23,7 @@ import { initI18n, t } from '../../src/i18n';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { WorldTileView, PlayerWorldView } from '../../src/net/WorldApiClient';
+import { modalLineText, type ModalLine } from '../../src/scenes/worldmap/WorldMapPanels/modalLine';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -79,7 +80,7 @@ describe('WorldMapInput resource-type info line (2026-08-09) — shown for owned
     const h = buildHarness();
     h.ctx.tileCache.set(`${TX}:${TY}`, { occupied: true, mine: true, resType: 'paper', level: 5 } as WorldTileView);
     h.input.onTileClick(TX, TY);
-    const lines = h.showModal.mock.calls[0]![0] as string[];
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
     expect(lines).toContain(t('world.resLevel').replace('{res}', t('world.paper')).replace('{lv}', '5'));
   });
 
@@ -87,7 +88,7 @@ describe('WorldMapInput resource-type info line (2026-08-09) — shown for owned
     const h = buildHarness();
     h.ctx.tileCache.set(`${TX}:${TY}`, { occupied: true, ally: true, resType: 'graphite', level: 2 } as WorldTileView);
     h.input.onTileClick(TX, TY);
-    const lines = h.showModal.mock.calls[0]![0] as string[];
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
     expect(lines).toContain(t('world.resLevel').replace('{res}', t('world.graphite')).replace('{lv}', '2'));
   });
 
@@ -95,7 +96,7 @@ describe('WorldMapInput resource-type info line (2026-08-09) — shown for owned
     const h = buildHarness();
     h.ctx.tileCache.set(`${TX}:${TY}`, { occupied: true, resType: 'ink', level: 7 } as WorldTileView);
     h.input.onTileClick(TX, TY);
-    const lines = h.showModal.mock.calls[0]![0] as string[];
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
     expect(lines).toContain(t('world.resLevel').replace('{res}', t('world.ink')).replace('{lv}', '7'));
   });
 
@@ -103,8 +104,52 @@ describe('WorldMapInput resource-type info line (2026-08-09) — shown for owned
     const h = buildHarness();
     h.ctx.tileCache.set(`${TX}:${TY}`, { occupied: true, mine: true } as WorldTileView);
     h.input.onTileClick(TX, TY);
-    const lines = h.showModal.mock.calls[0]![0] as string[];
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
     expect(lines.some((l) => l.includes('Lv'))).toBe(false);
+  });
+});
+
+describe('WorldMapInput base tiles (2026-09-02) — the resource line is suppressed, the BASE level replaces it', () => {
+  // A capital's buried resource is inert: @nw/shared slg/march.ts tileYield() short-circuits on
+  // `type === 'base'` and pays a flat ink rate, ignoring resType and level. The line the client used
+  // to print there ("Metal Lv.3", from the 2026-08-09 fix above) therefore advertised production
+  // that does not exist, and its level belonged to the buried resource tile — not to the base, and
+  // not to the durability line printed right above it, which comes from the owner's WALL level.
+
+  it('an ally BASE with a resType shows no resource line', () => {
+    const h = buildHarness();
+    h.ctx.tileCache.set(`${TX}:${TY}`, { occupied: true, ally: true, type: 'base', resType: 'metal', level: 3 } as WorldTileView);
+    h.input.onTileClick(TX, TY);
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
+    expect(lines).not.toContain(t('world.resLevel').replace('{res}', t('world.metal')).replace('{lv}', '3'));
+    expect(lines.some((l) => l.includes(t('world.metal')))).toBe(false);
+  });
+
+  it('a base ANCHOR shows its own level from deskLevel instead', () => {
+    const h = buildHarness();
+    h.ctx.tileCache.set(`${TX}:${TY}`, { occupied: true, ally: true, type: 'base', resType: 'metal', level: 3, deskLevel: 7 } as WorldTileView);
+    h.input.onTileClick(TX, TY);
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
+    expect(lines).toContain(t('world.baseLevel').replace('{lv}', '7'));
+  });
+
+  it('a base RING cell (no deskLevel) shows no level line at all — not the level:1 its TileDoc is seeded with', () => {
+    // The 8 non-anchor cells of the 3x3 footprint are `type:'base'` placeholders with `level: 1` and
+    // no resType/deskLevel (worldsvc core/spawn.ts baseTileDocs), so printing "Base Lv.1" there would
+    // contradict the anchor one tile away.
+    const h = buildHarness();
+    h.ctx.tileCache.set(`${TX}:${TY}`, { occupied: true, ally: true, type: 'base', level: 1 } as WorldTileView);
+    h.input.onTileClick(TX, TY);
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
+    expect(lines.some((l) => l.includes('Lv'))).toBe(false);
+  });
+
+  it('a non-base tile is unaffected — the resource line still shows', () => {
+    const h = buildHarness();
+    h.ctx.tileCache.set(`${TX}:${TY}`, { occupied: true, ally: true, type: 'territory', resType: 'metal', level: 3 } as WorldTileView);
+    h.input.onTileClick(TX, TY);
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
+    expect(lines).toContain(t('world.resLevel').replace('{res}', t('world.metal')).replace('{lv}', '3'));
   });
 });
 
@@ -113,7 +158,7 @@ describe('WorldMapInput contested-hold priority (2026-08-09) — occupying/expul
     const h = buildHarness();
     h.ctx.tileCache.set(`${TX}:${TY}`, { type: 'stronghold', level: 8 } as WorldTileView);
     h.input.onTileClick(TX, TY);
-    const lines = h.showModal.mock.calls[0]![0] as string[];
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
     expect(lines[0]).toBe(t('world.stronghold'));
   });
 
@@ -122,7 +167,7 @@ describe('WorldMapInput contested-hold priority (2026-08-09) — occupying/expul
     const dueAt = Date.now() + 120_000;
     h.ctx.tileCache.set(`${TX}:${TY}`, { type: 'stronghold', level: 8, contestedUntil: dueAt, contestedByMe: true } as WorldTileView);
     h.input.onTileClick(TX, TY);
-    const lines = h.showModal.mock.calls[0]![0] as string[];
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
     expect(lines[0]).not.toBe(t('world.stronghold'));
     // 'world.occupyingMine' = 'Your occupation holds ({sec}s until it lands)' — assert the static prefix
     // (before the {sec} substitution) rather than the exact second count, which can drift by an epsilon
@@ -136,7 +181,7 @@ describe('WorldMapInput contested-hold priority (2026-08-09) — occupying/expul
     const dueAt = Date.now() + 60_000;
     h.ctx.tileCache.set(`${TX}:${TY}`, { type: 'stronghold', level: 8, contestedUntil: dueAt } as WorldTileView);
     h.input.onTileClick(TX, TY);
-    const lines = h.showModal.mock.calls[0]![0] as string[];
+    const lines = (h.showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);
     const buttons = h.showModal.mock.calls[0]![1] as Btn[];
     expect(lines[0]).not.toBe(t('world.stronghold'));
     expect(buttons.find((b) => b.label === t('world.actAttack'))).toBeTruthy();

@@ -822,6 +822,11 @@ export const zh = {
   'world.speedup': '训练加速 x2（剩{d}天{h}时{m}分{s}秒）',
   'world.garrison': '驻军 {n}',
   'world.resLevel': '{res} · Lv.{lv}',
+  // Base tiles show this INSTEAD of world.resLevel: a capital's buried resource pays a flat ink
+  // rate regardless of type/level (tileYield), so the only level worth printing there is its own.
+  'world.baseLevel': '主城 Lv.{lv}',
+  // One resource-cost line of a build confirm; the resource motif is the line's icon.
+  'world.costLine': '{res} ×{n}',
   'world.recommendTroops': '建议兵力 {n}',
   'world.buildingHp': '耐久 {hp}/{max}',
   'world.center': '世界中心',
@@ -891,7 +896,7 @@ export const zh = {
   'world.actWatchtower': '建瞭望塔',
   'world.hasWatchtower': '🗼 已建瞭望塔',
   'world.watchtowerTitle': '建造瞭望塔',
-  'world.watchtowerConfirm': '花费 📄{paper} 纸张 + 🔩{metal} 金属建瞭望塔？此格视野大幅扩展（持久，丢地即失）。',
+  'world.watchtowerConfirm': '此格视野大幅扩展（持久，丢地即失）。',
   'world.watchtowerBtn': '建造',
   'world.watchtowerBuilt': '瞭望塔已建成',
   // ── Player structures (ADR-051 P5): arrow tower / blocker ──────────────────
@@ -900,7 +905,7 @@ export const zh = {
   'world.actDemolish': '拆除建筑',
   'world.arrowTowerTitle': '建造箭塔',
   'world.blockerTitle': '建造阻挡',
-  'world.structureConfirm': '花费 📄{paper} 纸张 + 🔩{metal} 金属建造？只能建在己方/家族领地，敌军踏入箭塔周围 9 格会掉血。',
+  'world.structureConfirm': '只能建在己方/家族领地，敌军踏入箭塔周围 9 格会掉血。',
   'world.buildBtn': '建造',
   'world.structureBuilt': '建筑已建成',
   'world.structureDemolished': '建筑已拆除',
