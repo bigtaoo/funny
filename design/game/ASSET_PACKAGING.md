@@ -338,7 +338,8 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 | `test/preloadBootAssetsPlugin.test.ts` | node | 插件生成的**标签属性**正确 |
 | `test/appAssetGateWiring.test.ts` | node | `app.ts` 里两个调用点还在、顺序还对 |
 | `test/ui/bootManifestTiers.ui.ts` | ui | 闸门只等阻塞层 + **背景层被战斗闸门全覆盖** |
-| `test/ui/idlePrefetch.ui.ts` | ui | 预取的调度契约 |
+| `test/idlePrefetch.test.ts` | unit | 预取的调度契约（2026-09-02 从 `test/ui/` 移过来，一个断言未改：ui 层不报覆盖率，所以 `idlePrefetch.ts`/`prefetchPolicy.ts` 一直读 0%、也一直在门禁外） |
+| `test/prefetchPolicy.test.ts` | unit | 网络类型映射表 + data-saver 开关 + 使用标记的存储边界（写入抛异常不得弄挂调用方） |
 
 - **清单漂移守卫**（`bootPreloadManifest`）：插件是 JS、不能 import TS + PIXI 资源图，只能自带一份清单副本；副本悄悄烂掉比不做 preload 更糟。该测试从 `bootManifest.ts` 源码文本反推两层清单（含每项属于哪一层，因为层决定 `fetchpriority`），与插件源码里的两个数组比对，另校验文件真实存在、两层不重叠。正则本身有兜底断言（推导结果为空即失败），避免"两个空集合相等"式假绿。
 - **插件行为守卫**（`preloadBootAssetsPlugin`）：用假 compiler/compilation 驱动插件（`HtmlWebpackPlugin.getHooks()` 接受任意对象挂 hook；真构建一个 target 要 18s，这样是毫秒级）。断言 `crossorigin=anonymous`（§11.1 那个 bug 的回归锁）、`as` 与消费方一致、`fetchpriority` 高优先在前、publicPath 前缀与 `auto` 处理、`.hires` 重定向、缺项只 warn 不影响其余标签。喂给它的产物表是 `src/assets` 下**全部** png/tao 而非清单副本，所以这个文件跟"当前哪些资源在哪一层"解耦。

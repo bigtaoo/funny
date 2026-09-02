@@ -68,7 +68,7 @@ describe('WechatPlatform.getNetworkKind', () => {
 
   // 'cellular' must NOT skip the prefetch — the rule is "links where speculative bytes genuinely
   // hurt", not "anything short of wifi", which would turn the prefetch off for most phones.
-  // idlePrefetch.ui.ts pins the consuming side; this pins that 3g/4g/5g reach it as 'cellular'.
+  // test/idlePrefetch.test.ts pins the consuming side; this pins that 3g/4g/5g reach it as 'cellular'.
   it('never reports plain mobile data as slow', async () => {
     for (const t of ['3g', '4g', '5g']) {
       expect(await kindFor(reporting(t)), `${t} must not read as slow`).not.toBe('slow');
