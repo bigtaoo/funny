@@ -192,32 +192,40 @@ export class PushService {
     });
   }
   /**
-   * An occupation hold finished (2026-09-02 user report). `march_update` is the ONLY signal the world
-   * map re-reads its marches/occupations/stationed slices on (worldmap/net/push.ts applyMarchUpdate →
-   * refreshMarches; the 5s poll that used to cover everything else was removed in
-   * comm-audit-2026-07-27 P1-2) — so a state change that ends an order and is NOT announced on this
-   * channel leaves the client's copy stale forever.
+   * A field order ENDED and left no MarchDoc behind (2026-09-02 user report + follow-up audit).
    *
-   * settleOccupation was exactly that hole: it deleted the OccupationDoc, flipped the tile and parked
-   * the team, but pushed only `tile_update` (which refreshes tiles alone). Every finished hold stayed
-   * in the client's `ctx.occupations`, so the team it named read as busy for the rest of the session
-   * and the team picker refused to offer it — the reporter had all five teams stuck that way. Only the
-   * `autoReturn` branch happened to be covered, because its return leg pushes a real march.
+   * `march_update` is the ONLY signal the world map re-reads its marches/occupations/stationed slices
+   * on (worldmap/net/push.ts applyMarchUpdate → refreshMarches; the 5s poll that used to cover
+   * everything else was removed in comm-audit-2026-07-27 P1-2, on the assumption that push covers every
+   * state change). `tile_update` refreshes tiles alone. So any path that ends an order without
+   * announcing it here leaves the client's copy stale FOREVER — no reconnect, no scene re-entry
+   * recovers it, only a full reload — and every team the dead order names reads as busy, which the team
+   * picker turns into a flat refusal to dispatch.
    *
-   * The hold has no MarchDoc of its own by this point (claim-deleted on arrival), so the payload
-   * describes the hold itself: a zero-distance `occupy` on the captured tile, `arrived`. The client
-   * uses it purely as an invalidation trigger (it re-reads authoritative state and ignores the body),
-   * so the synthetic `occ:` id never reaches any UI.
+   * Five such paths exist, all of them deleting an OccupationDoc or a StationedDoc without a march to
+   * report (a path that ends an order by starting a return leg is already covered — the leg pushes a
+   * real march). They are enumerated and behaviourally pinned by
+   * worldsvc/test/order-end-push-audit.test.ts; the same file fails on any NEW deletion site that has
+   * not been reviewed against this rule.
+   *
+   * The order has no MarchDoc left by this point, so the payload describes the order itself: a
+   * zero-distance move on its own tile. The client uses it purely as an invalidation trigger (it
+   * re-reads authoritative state and ignores the body), so the synthetic `ended:` id never reaches any
+   * UI — but `kind`/`status` are still filled in truthfully rather than hard-coded, so a future
+   * consumer that DOES read the body is not handed a lie.
    */
-  async pushOccupationSettled(accountId: string, occ: { tile: string; dueAt: number; garrison: number }): Promise<void> {
+  async pushOrderEnded(
+    accountId: string,
+    o: { tile: string; kind: 'occupy' | 'move'; status: 'arrived' | 'recalled'; at: number },
+  ): Promise<void> {
     await this.core.gateway.push(accountId, {
       kind: 'march_update',
-      marchId: `occ:${occ.tile}`,
-      marchKind: 'occupy',
-      fromTile: occ.tile,
-      toTile: occ.tile,
-      arriveAt: occ.dueAt,
-      status: 'arrived',
+      marchId: `ended:${o.tile}`,
+      marchKind: o.kind,
+      fromTile: o.tile,
+      toTile: o.tile,
+      arriveAt: o.at,
+      status: o.status,
     });
   }
   /**

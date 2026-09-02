@@ -171,7 +171,13 @@ export class OccupationService {
       // Cancel the old hold (atomic claim by id + expected holder guards against a race with a concurrent
       // processDueOccupations tick that may have already settled/claimed it — in that case just proceed to
       // start our own hold on top of whatever ownership now stands, re-validated by the blocked check upstream).
-      await cols.occupations.deleteOne({ _id: tile._id, ownerId: tile.contestedBy });
+      const expelled = tile.contestedBy;
+      await cols.occupations.deleteOne({ _id: tile._id, ownerId: expelled });
+      // The winner's own pushes come from startOccupationHold below; this one goes to the LOSER, whose
+      // hold just stopped existing. Without it their client keeps the dead OccupationDoc forever and the
+      // team it names is busy for the rest of the session (same defect as settleOccupation's, found by
+      // the order-end push audit) — on top of which they would have no idea they had been expelled.
+      if (expelled) void this.core.pushOrderEnded(expelled, { tile: tile._id, kind: 'occupy', status: 'recalled', at: t });
       if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t, res.attackerDeployed);
       const proc = proceduralTile(m.worldId, tile.x, tile.y);
       await this.startOccupationHold(m, pw, proc, tile.x, tile.y, res.attackerSurvivors, t, replay);
@@ -343,7 +349,7 @@ export class OccupationService {
       // core/push.ts pushOccupationSettled). The autoReturn branch's return leg pushes a march_update
       // of its own, so those settlements send two invalidations; both are plain re-read triggers, and
       // paying one redundant push there is worth keeping this signal unconditional.
-      void this.core.pushOccupationSettled(claimed.ownerId, claimed);
+      void this.core.pushOrderEnded(claimed.ownerId, { tile: claimed.tile, kind: 'occupy', status: 'arrived', at: claimed.dueAt });
       n++;
     }
     return n;
@@ -365,6 +371,10 @@ export class OccupationService {
       { _id: claimed.tile },
       { $unset: { contestedBy: '', contestedUntil: '', contestedGarrison: '', contestedFamilyId: '' } },
     );
+    // Same rule as settleOccupation: the hold is gone, so say so on the order channel. The caller's own
+    // client could refresh locally instead, but the account's OTHER sessions/devices cannot, and today
+    // no client calls this route at all — leaving it silent would plant the defect for whoever wires it.
+    void this.core.pushOrderEnded(accountId, { tile: claimed.tile, kind: 'occupy', status: 'recalled', at: this.core.deps.now() });
     const after = await cols.tiles.findOne({ _id: claimed.tile });
     if (after) {
       void this.core.pushTile(accountId, after);

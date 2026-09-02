@@ -292,6 +292,10 @@ export class EncounterService {
         await cols.stationed.deleteOne({ _id: defenderOcc.id });
         // A destroyed garrison (P3b scenario-3 interception) also drops its 3×3 coverage from the reverse index.
         if (defStationed.mode === 'garrison') await core.removeCover(m.worldId, defStationed.x, defStationed.y, defStationed.tile);
+        // ...and tell its owner, exactly as the defMarch branch below already does for a destroyed march.
+        // That asymmetry was the bug: a wiped 驻扎 team stayed in the defender's ctx.stationed forever —
+        // a ghost sprite on their map, and (being garrison) permanently busy in their team picker.
+        void core.pushOrderEnded(defOwnerId, { tile: defStationed.tile, kind: 'move', status: 'recalled', at: t });
       } else if (defMarch) {
         const claimed = await cols.marches.findOneAndDelete({ _id: defenderOcc.id, status: 'marching' });
         if (claimed) {
