@@ -29,7 +29,7 @@ export function renderTeamsRow(core: CitySceneCore): number {
   const sectionLbl = txt(t('city.military.teams'), FS.body, C.mid, true);
   sectionLbl.x = cx0 + GRID_PAD + 4;
   sectionLbl.y = bandTop;
-  core.container.addChild(sectionLbl);
+  core.paint.pageLayer.addChild(sectionLbl);
 
   // "填满所有队伍" (2026-08-02): one tap drains the home troop pool into all 5 teams in slot
   // order instead of opening each team's formation editor to hit 分兵 individually. Sits flush
@@ -85,13 +85,13 @@ export function renderTeamCardLoading(
   panel.x = x;
   panel.y = y;
   panel.alpha = 0.5;
-  core.container.addChild(panel);
+  core.paint.pageLayer.addChild(panel);
 
   const name = txt(teamSlotName(i), FS.body, C.mid, true, cardW - pad * 2);
   name.x = x + pad;
   name.y = y + pad;
   name.alpha = 0.55;
-  core.container.addChild(name);
+  core.paint.pageLayer.addChild(name);
 
   const lbl = txt(
     `${t('city.military.teamLoading')}${'.'.repeat(core.loadDots + 1)}`,
@@ -102,7 +102,7 @@ export function renderTeamCardLoading(
   );
   lbl.x = x + pad;
   lbl.y = y + pad + 26;
-  core.container.addChild(lbl);
+  core.paint.pageLayer.addChild(lbl);
 }
 
 export function renderTeamCard(
@@ -135,7 +135,7 @@ export function renderTeamCard(
   });
   panel.x = x;
   panel.y = y;
-  core.container.addChild(panel);
+  core.paint.pageLayer.addChild(panel);
 
   // Leader portrait (2026-07-25): the team's own picture, so the five slots are told apart at a glance
   // instead of by reading "Team 1..5". Explicit 领队 pick from the formation editor, else the strongest
@@ -159,7 +159,7 @@ export function renderTeamCard(
     });
     frame.x = ax;
     frame.y = ay;
-    core.container.addChild(frame);
+    core.paint.pageLayer.addChild(frame);
     core.drawArtFit(artUrl, ax + 2, ay + 2, artSize - 4, artSize - 4);
     textW = Math.max(40, ax - 8 - (x + pad));
   }
@@ -167,7 +167,7 @@ export function renderTeamCard(
   const name = txt(team?.name || teamSlotName(i), FS.body, C.dark, true, textW);
   name.x = x + pad;
   name.y = y + pad;
-  core.container.addChild(name);
+  core.paint.pageLayer.addChild(name);
 
   let statusLbl: string;
   let statusColor: number;
@@ -219,7 +219,7 @@ export function renderTeamCard(
   const statusTag = txt(statusLbl, FS.small, statusColor, true, textW);
   statusTag.x = x + pad;
   statusTag.y = y + pad + 26;
-  core.container.addChild(statusTag);
+  core.paint.pageLayer.addChild(statusTag);
 
   if (filled) {
     // Troops as carried/cap (2026-07-25): a bare number said nothing about how full the team is, and
@@ -234,7 +234,7 @@ export function renderTeamCard(
     const subLbl = txt(sub, FS.small, C.mid, false, textW);
     subLbl.x = x + pad;
     subLbl.y = y + cardH - pad - 34;
-    core.container.addChild(subLbl);
+    core.paint.pageLayer.addChild(subLbl);
   }
 
   // Tap-to-edit — the row is fixed (not scrolled), so the hit rect is already absolute screen

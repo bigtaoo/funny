@@ -26,7 +26,7 @@ function host(): ArtHost & { hits: Hit[] } {
     destroyed: false,
     artHooked: new Set<string>(),
     hits: [] as Hit[],
-    render: () => {},
+    requestRender: () => {},
   };
 }
 

@@ -78,7 +78,7 @@ function cityHost(refreshWallet: () => Promise<void>, api: Record<string, unknow
     teams: [],
     me: { ...ME, buildQueue: [{ key: 'desk', completeAt: Date.now() + 600_000 }] } as unknown as PlayerWorldView,
     setMe: vi.fn(),
-    render: vi.fn(),
+    requestRender: vi.fn(),
     showToast: vi.fn(),
   } as unknown as ActionsHost;
 }

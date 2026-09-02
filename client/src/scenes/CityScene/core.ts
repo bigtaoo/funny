@@ -52,6 +52,7 @@ import * as actions from './actions';
 import * as helpers from './helpers';
 import * as icons from './icons';
 import * as data from './data';
+import { CityPaint } from './paint';
 import { hitAction, type Hit } from '../../ui/hits';
 
 // ── Public interface ─────────────────────────────────────────────────────────
@@ -111,11 +112,20 @@ export const TEAM_ROW_LABEL_H = 26;
 
 export class CitySceneCore {
   readonly container: PIXI.Container;
+  /** Display layers, repaint coalescing, page/modal hit tables, in-flight dim — see ./paint.ts. */
+  readonly paint: CityPaint;
+
   readonly w: number;
   readonly h: number;
   readonly cb: CitySceneCallbacks;
 
   readonly bt = new BusyTracker();
+  /**
+   * The hit table input actually consults. Rebuilt by paintModal(), which is the one place that
+   * knows whether a modal is up: `[backHit, ...modal hits]` while one is, `paint.pageHits` (+ the
+   * guide's own action, appended last) while none is. Kept as one flat array — cityScene.ui.ts and
+   * cityGuideChain.ui.ts both pin `hits[0] === backHit` and slice from index 1.
+   */
   hits: Hit[] = [];
   private readonly unsubs: Array<() => void> = [];
   /** Set in destroy(); guards render() so a late async load() re-render can't paint into a torn-down container. */
@@ -174,28 +184,26 @@ export class CitySceneCore {
    * dragged (so a drag starting on a building cell scrolls instead of firing it). See ScrollTapGesture.
    */
   private readonly gesture = new ScrollTapGesture();
-  /** Set by handleMove instead of rendering inline — avoids a render() per pointermove (jank). */
-  private scrollDirty = false;
-
-  /** @param render Injected by the outer CityScene assembly (which owns the actual render
-   *  dispatcher, since it's the only thing that knows about all domain classes) — Core and the
-   *  domain classes call `this.render()`/`this.core.render()` wherever the old flattened class
-   *  called its own `render()` method verbatim. Does NOT auto-fire the initial render/load — the
-   *  outer assembly does that once domains exist (see ../CityScene.ts).
-   *  @param guide SLG opening guide chain (ONBOARDING_DESIGN §4.2) — also injected by the outer
-   *  assembly, which mounts `guide.root` as a sibling of `container` that survives every
-   *  `tearDownChildren(core.container)` call inside render() (see ../CityScene.ts's constructor). */
+  /** @param render Full paint (page then modal), injected by the outer CityScene assembly — only
+   *  it knows about every domain class. Does NOT auto-fire the initial render/load; the assembly
+   *  does that once the domains exist (see ../CityScene.ts).
+   *  @param paintModal Modal-layer-only paint, injected the same way. Hit closures that merely open
+   *  or dismiss a modal call this instead of `render`, leaving `paint.pageLayer` standing.
+   *  @param guide SLG opening guide chain (ONBOARDING_DESIGN §4.2) — also injected by the assembly,
+   *  which mounts `guide.root` as a sibling of `container` that no layer teardown ever touches. */
   constructor(
     layout: ILayout,
     input: InputManager,
     cb: CitySceneCallbacks,
     readonly render: () => void,
+    readonly paintModal: () => void,
     readonly guide: GuideOverlay
   ) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    this.paint = new CityPaint(this);
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.unsubs.push(input.onMove((_x, y) => this.handleMove(y)));
     this.unsubs.push(input.onUp(() => this.handleUp()));
@@ -214,16 +222,33 @@ export class CitySceneCore {
         );
         if (next !== null) {
           this.scrollY = next;
-          this.scrollDirty = true;
+          this.requestRender();
         }
       })
     );
     if (cb.onSaveChanged)
       this.unsubs.push(
-        cb.onSaveChanged(() => {
-          if (!this.destroyed) this.render();
-        })
+        // requestRender, not render: doSpeedup/doSpeedupTraining await refreshWallet() mid-action,
+        // so this fires in the same tick as the action's own post-stop repaint.
+        cb.onSaveChanged(() => this.requestRender())
       );
+  }
+
+  /** Ask for a repaint on the next update() tick instead of painting inline (./paint.ts). */
+  requestRender(): void {
+    if (!this.destroyed) this.paint.requestRender();
+  }
+
+  /** Empties `paint.pageLayer` (and the page hit table) for a fresh page paint. */
+  beginPage(): void {
+    this.paint.beginPage();
+    this.hits = [];
+    this.resTotalLbls = [];
+  }
+
+  /** Empties `paint.modalLayer`, leaving the page layer exactly as it stands. */
+  beginModal(): void {
+    this.paint.beginModal();
   }
 
   update(dt: number): void {
@@ -231,18 +256,21 @@ export class CitySceneCore {
     // every frame regardless of whether a full render() fires this tick (render() decides *what* to
     // show; this just keeps whatever is showing animated).
     this.guide.update(dt);
-    if (this.scrollDirty) {
-      this.scrollDirty = false;
-      this.render();
-    }
-    if (this.bt.tick(dt)) this.render();
-    if (this.tickLoadDots(dt)) this.render();
+    // The in-flight dim lives in its own permanent layer, so busy state is a layer toggle rather
+    // than a reason to rebuild the scene. bt.tick's return value is deliberately ignored: it also
+    // goes true every 0.4s for the dot animation this scene's overlay does not draw, which used to
+    // buy a full teardown-and-rebuild that changed nothing on screen.
+    this.bt.tick(dt);
+    this.paint.syncBusy(this.bt.loadingVisible);
+    if (this.tickLoadDots(dt)) this.requestRender();
     this.simTimer += dt;
     if (this.simTimer >= 1) {
       this.simTimer = 0;
       this.tickResourceTotals();
-      this.checkQueueCompletion();
+      data.refreshOnQueueDue(this.dataHost());
     }
+    // Last in the tick, so everything above that asked for a paint gets folded into this one.
+    this.paint.flush();
   }
 
   /** Advances the team-row loading placeholders' trailing dots while their fetches are in flight.
@@ -254,38 +282,6 @@ export class CitySceneCore {
     this.loadDotTimer = 0;
     this.loadDots = (this.loadDots + 1) % 3;
     return true;
-  }
-
-  /**
-   * Build/train queue completion has no push and no other refresh path — worldsvc's 2s scheduler
-   * settles the queue server-side but never notifies gateway, so without this the countdown text
-   * only updates on the next render() (scroll/action-driven) and the finished entry never
-   * disappears until the player leaves and re-enters CityScene (P0-9, comm-audit-2026-07-27
-   * finding B10). Once a queue entry's completeAt has passed, re-fetch `me` — if the server hasn't
-   * processed it yet (scheduler lag), the entry is still there and this simply retries next tick.
-   */
-  private checkQueueCompletion(): void {
-    if (this.queueRefreshPending || this.destroyed || !this.me) return;
-    const now = Date.now();
-    const due =
-      (this.me.buildQueue ?? []).some((q) => q.completeAt <= now) ||
-      (this.me.trainingQueue ?? []).some((q) => q.completeAt <= now);
-    if (!due) return;
-    this.queueRefreshPending = true;
-    this.cb.worldApi
-      .getMe(this.cb.worldId)
-      .then((me) => {
-        if (!this.destroyed) {
-          this.setMe(me);
-          this.render();
-        }
-      })
-      .catch(() => {
-        /* offline: retry next tick */
-      })
-      .finally(() => {
-        this.queueRefreshPending = false;
-      });
   }
 
   /** Advance the resource-bar total labels in place (no full render). Mirrors worldsvc settle():
@@ -343,8 +339,13 @@ export class CitySceneCore {
    * getTeams goes first because the team row is what the player is waiting on here.
    */
   load(): void {
+    data.load(this.dataHost());
+  }
+
+  /** The getter/setter host data.ts's functions write back through — see DataHost's doc comment. */
+  private dataHost(): data.QueuePollHost {
     const core = this;
-    data.load({
+    return {
       cb: this.cb,
       get destroyed() { return core.destroyed; },
       get teams() { return core.teams; },
@@ -359,9 +360,13 @@ export class CitySceneCore {
       set teamsLoaded(v) { core.teamsLoaded = v; },
       get ordersLoaded() { return core.ordersLoaded; },
       set ordersLoaded(v) { core.ordersLoaded = v; },
+      get me() { return core.me; },
+      get queueRefreshPending() { return core.queueRefreshPending; },
+      set queueRefreshPending(v) { core.queueRefreshPending = v; },
       setMe: (me) => this.setMe(me),
       render: () => this.render(),
-    });
+      requestRender: () => this.requestRender(),
+    };
   }
 
   // ── Icon resolution — see CityScene/icons.ts ───────────────────────────────
@@ -382,7 +387,7 @@ export class CitySceneCore {
       get me() { return core.me; },
       set me(v) { core.me = v; },
       setMe: (me) => this.setMe(me),
-      render: () => this.render(),
+      requestRender: () => this.requestRender(),
       showToast: (msg, color) => this.showToast(msg, color),
     };
   }
@@ -412,7 +417,7 @@ export class CitySceneCore {
     const scroll = this.gesture.move(py);
     if (scroll !== null) {
       this.scrollY = Math.min(this.scrollMax, scroll);
-      this.scrollDirty = true;
+      this.requestRender();
     }
   }
 
@@ -437,9 +442,13 @@ export class CitySceneCore {
   private artHost(): helpers.ArtHost {
     const core = this;
     return {
-      container: this.container,
+      container: this.paint.pageLayer,
       get destroyed() { return core.destroyed; },
-      artHooked: this.artHooked, hits: this.hits, render: () => this.render(),
+      artHooked: this.artHooked,
+      // `hits` is reassigned by every paint, so hand over a live getter rather than the array that
+      // happened to be current when this host was built (addBtn pushes into it).
+      get hits() { return core.hits; },
+      requestRender: () => this.requestRender(),
     };
   }
 
