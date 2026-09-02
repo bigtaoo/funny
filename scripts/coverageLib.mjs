@@ -3,7 +3,7 @@
 // client/server `test:coverage` steps: coverageSummary.mjs (pure report, never fails) and
 // checkCoverageThreshold.mjs (CI gate, fails the job below the threshold). Kept in one place so
 // the package lists and the two coverage-backend parsers can't drift between the two scripts —
-// see claudedocs/server.md "测试覆盖率百分比工具" for why two backends exist.
+// see claudedocs/server-testing-tooling.md "测试覆盖率百分比工具" for why two backends exist.
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 

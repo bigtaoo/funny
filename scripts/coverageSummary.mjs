@@ -4,8 +4,8 @@
 // root, after all test steps. Pure reporting: never fails the job (always exits 0), so a missing
 // or partial coverage file (a workspace whose tests didn't run this time) just shows as a "—" row
 // instead of red-Xing an otherwise-green CI run over a report step. The exit code lives separately
-// in checkCoverageThreshold.mjs; the section's contents, verdict included, come from
-// coverageLib.mjs's `evaluate` + `renderSection`, which both scripts share.
+// in checkCoverageThreshold.mjs; the verdict comes from coverageLib.mjs's `evaluate` (which the
+// gate reads too, so the two cannot disagree) and the markdown from coverageReport.mjs.
 //
 // Two coverage backends are in play behind that (see claudedocs/client-testing.md and
 // claudedocs/server-testing-tooling.md "测试覆盖率"):
