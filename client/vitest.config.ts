@@ -130,6 +130,29 @@ export default defineConfig({
         // platform
         'src/platform/localReminders.ts',
         'src/platform/uuid.ts',
+        // ...and the two native-shell BRIDGE READERS (2026-09-02). Same story as the SFX buses two
+        // entries up, found the same way — by measuring instead of reasoning about size. Both were
+        // at **0% in every suite in the repo**: `NWBilling`, `NWAds` and `requestPlatformHeader`
+        // appeared in no test file at all. "It's 30 lines that read a global" is exactly the
+        // argument that kept `WebAudioBus` out, and the failure here is silent in the same way — a
+        // native shell whose injected bridge fails the shape check does not error, it silently
+        // becomes a *Paddle* build (web checkout inside a WKWebView) and declares itself platform
+        // `web` to the server, i.e. it spends from the wrong recharged-pool bucket (ADR-020).
+        // Cases + the four verified mutations live in `test/nativeBridges.test.ts`.
+        'src/platform/iap.ts',
+        'src/platform/nativeAds.ts',
+        // inputSystem: the WeChat touch adapter (2026-09-02). WeChat mini-games have no DOM, so
+        // PIXI's EventSystem never fires and EVERY tap in that build arrives through this one file
+        // — and it had never been instantiated by any suite. It is not a leaf, it is the first
+        // link: if it emits nothing (or emits screen coords where design coords are expected) the
+        // whole WeChat build is unplayable while every other suite stays green, because everything
+        // downstream of `InputManager` is driven straight from `_emitDown/_emitMove/_emitUp` in
+        // tests. Its sibling `WebAdapter` is in the same position and also uninstantiated
+        // anywhere; the difference is that a broken WebAdapter shows up the moment anyone opens
+        // localhost:9090, while nobody drives the WeChat build by hand between real-device rounds.
+        // `WebAdapter` stays out for now — it needs a DOM (addEventListener on canvas + window),
+        // which this node-environment suite does not have; test/ui is where that one belongs.
+        'src/inputSystem/WechatAdapter.ts',
         // render: only the PIXI-free helpers (geometry, theming, art descriptors, vfx defs) —
         // everything that actually draws stays out, per the paragraph at the top of this block
         // 2026-09-02: the second of the two belts that keep the WeChat build off PIXI's resource
