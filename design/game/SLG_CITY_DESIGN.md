@@ -347,9 +347,17 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
   - `slg/city.ts` 新增 `BUILDING_MAX_LEVEL`（= `DESK_MAX_LEVEL`，**不是冗余别名**：它是由门控*推导*出来的那个天花板，存在的理由就是「这座建筑满了没有」曾经没有名字可问）；`buildGateReason` 补一条 `toLevel > BUILDING_MAX_LEVEL → 'building at max level'`，**排在书桌等级检查之前**——过了天花板以后书桌门控永远满足不了，再说「书桌等级不足」等于叫玩家去升一座已经满级的书桌。
   - 客户端 `atMax` 改成 `lvl >= BUILDING_MAX_LEVEL`（去掉 `key === 'desk'`）。`actions.ts` 的报错映射把 `'max level'` 排到 `'desk'` 之前，理由同上（顺带修掉「书桌满级」原先也被映射成「书桌等级不足」）。
 - **顺路扫同类问题**（用户要求）：弹窗里每一行加成都对着共享层的函数核了一遍，只有一处同类——**练兵场「训练提速」**。`drillTrainMult` 有 `DRILL_TRAIN_SPEED_FLOOR = 0.5` 地板，而卡片印的是裸乘积 `lvl × DRILL_TRAIN_SPEED_STEP`，于是从 **L7**（`ceil(0.5 / 0.08)`）起对外承诺一个训练队列根本不会给的提速：满级写「80%」，实际 50%。改成 `Math.round((1 - drillTrainMult(bld)) * 100)`，L1–L6 一字不变。其余各行（产率、仓储、兵力上限、队列槽、城墙耐久、书院加成、书包负重）都是无夹逼的线性式或直接调共享函数，**没有第三处**；装备 `+9`、卡牌满级、战令 30 级三处早就各自有满级分支，不属同类。
-- 覆盖测试：`client/test/ui/cityModalCappedNumbers.ui.ts`（新文件 6 例）——石墨坊满级读「已满级」且不出现 `→ Lv.11`/升级按钮/`doUpgrade` 命中；**十一个 key 逐个过**（不可达的「需书桌 Lv.11」、越顶目标、升级按钮、命中数全查）；**满级前一级仍给升级**（别把最后一级吃掉）；小书桌下真门控照旧（`需书桌 Lv.4`）；训练提速满级读 50%、地板前一级仍等于裸乘积、地板级与满级都钉 50%。`server/shared/test/city-buildings.test.ts` +1 例：`BUILDING_KEYS` 逐个在 `BUILDING_MAX_LEVEL` 处放行、`+1` 处以「at max level」拒绝（**不是**「desk level too low」）。
-- **变异验证**：`atMax` 改回带 `key === 'desk'` → 前两例挂；训练提速改回裸乘积 → 训练提速两例挂。
-- 验证：`tsc --noEmit`（`tsconfig.test.json` + fulllink）全绿、`test:ui` 253 文件 / 2421 例全绿、`build:web` 构建通过；**真机截图核对**走 §8.10 的 `web-e2e` 桩挂载路径（`__nwE2E.views.showCity()` + 假 `worldApi`，无需后端栈），中文复现用户那座满级城：石墨坊/文件柜/练兵场 Lv.10 均读「已满级」、练兵场读「训练提速 50%」、石墨坊 Lv.9 仍给「→ Lv.10 / 升级」、书桌 Lv.3 时仍给「需书桌 Lv.4」。
+- **第三个问题是写测试时掉出来的**（补覆盖比补代码更值的一次）：`doUpgrade` 的报错阶梯共五条分支，此前**零覆盖**（`cityTrainTroops.ui.ts` 只覆盖了练兵那条链）。给它补测试的第一条断言就红了——「资源不足」那条判的是 `msg.includes('resources')`，而服务端抛的是 `Insufficient ${rt}`（"Insufficient paper"，**整句没有 resources 这个词**），于是真正的资源不足（客户端资源快照过期时才走到服务端）一律显示成「操作失败」。改成认**错误码** `INSUFFICIENT_RESOURCES`（码是契约，message 是散文），并保留 `includes('Insufficient')` 与 `doTrain` 同形作兜底。这条阶梯本身是**过期客户端**路径：`me.buildings` 是快照，另一个标签页/设备或刚完成的建造都能让服务端拒掉弹窗还在提供的升级。
+- 覆盖测试：`client/test/ui/cityModalCappedNumbers.ui.ts`（新文件 7 例）——石墨坊满级读「已满级」且不出现 `→ Lv.11`/升级按钮/`doUpgrade` 命中；**十一个 key 逐个过**（不可达的「需书桌 Lv.11」、越顶目标、升级按钮、命中数全查）；**满级前一级仍给升级**（别把最后一级吃掉）；小书桌下真门控照旧（`需书桌 Lv.4`）；训练提速满级读 50%、地板前一级仍等于裸乘积、地板级与满级都钉 50%。`server/shared/test/city-buildings.test.ts` +1 例：`BUILDING_KEYS` 逐个在 `BUILDING_MAX_LEVEL` 处放行、`+1` 处以「at max level」拒绝（**不是**「desk level too low」）。
+
+  三处扫的都是**整条曲线而不是采样点**：满级判定扫 L0–L10（任何等级都不许报出超顶目标，且「已满级」与「→ Lv.N」恰好二者之一）、训练提速扫 L0–L10（地板前等于裸乘积、地板起等于地板），将来改 step/floor 这两条仍成立。
+
+  另加 `client/test/ui/cityUpgradeErrorToasts.ui.ts`（新文件 4 例）：五条报错分支各读各的句子、五种资源短缺都读「资源不足」、两条 max-level 理由都读「已满级」而非「书桌等级不足」，以及**断言那些理由字符串就是 `buildGateReason` 真正返回的那几个**（哪天改文案会在这里挂，而不是静默掉进 generic）。用的是真的 `WorldApiError(code, message)`，与 `WorldApiClient/core.ts` 从 `{ok:false,error:{code,message}}` 信封里造出来的那个同一个类。
+
+  服务端 e2e `worldsvc/test/city-buildings.e2e.test.ts` +1 例（需 Mongo）：十一个 key 在满级城里逐个被拒且理由匹配 `/at max level/`、**不**匹配 `/desk level too low/`，并核对拒绝是干净的（资源一分没扣、队列没进条目）——改前那条路径是带着一份已算好的 11 级 cost 走到这里的。
+- **变异验证**：`atMax` 改回带 `key === 'desk'` → 前两例挂；训练提速改回裸乘积 → 训练提速两例挂；删掉 `buildGateReason` 里那条 `BUILDING_MAX_LEVEL` 分支重跑 e2e → `inkPot` 起全挂在「got 'desk level too low'」（`desk` 仍走它自己那条，正是预期）。
+- **踩到一次本地陷阱**：worldsvc 解析 `@nw/shared` 走 `dist`（`server/.gitignore` 忽略、不入库），所以新导出的 `BUILDING_MAX_LEVEL` 在 `cd server/shared && npm run build` 之前是 `undefined`——e2e 里 `$set` 出一堆 `null` 等级、测试以「升级居然成功了」的形状失败。**跑 worldsvc 测试前先 build shared**；共享层单测因为 import 的是 `../src` 所以看不见这个坑。
+- 验证：`tsc --noEmit`（`tsconfig.test.json` + fulllink）全绿、`test:ui` **254 文件 / 2430 例**全绿、worldsvc e2e 19/19（真 Mongo）、`build:web` 构建通过；**真机截图核对**走 §8.10 的 `web-e2e` 桩挂载路径（`__nwE2E.views.showCity()` + 假 `worldApi`，无需后端栈），中文复现用户那座满级城：石墨坊/文件柜/练兵场 Lv.10 均读「已满级」、练兵场读「训练提速 50%」、石墨坊 Lv.9 仍给「→ Lv.10 / 升级」、书桌 Lv.3 时仍给「需书桌 Lv.4」。
 - **顺手修掉一处已有的类型门禁失败**（不是本轮引入）：`client/test/wechatInputAdapter.test.ts`（commit `565cb17b8`）里 `globalThis as { wx?: FakeWx }` 是 TS2352 非重叠断言——`wx.d.ts` 声明了真的全局 `wx`。那个提交大概只跑了 vitest 没跑 `tsc`。改成经 `unknown` 的一次转换后本轮才有绿的类型门禁可用。
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）

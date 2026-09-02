@@ -124,6 +124,22 @@ describe('CityScene build-detail modal at max level', () => {
     }
   });
 
+  /** The invariant behind both of the above, swept over the whole level range rather than sampled:
+   *  whatever the modal quotes as the next target, it is a level the desk gate can still reach. */
+  it('never quotes a target above the cap at ANY level, and reads as maxed only at the cap', async () => {
+    for (let lvl = 0; lvl <= BUILDING_MAX_LEVEL; lvl++) {
+      const { scene, texts } = await openModal({ ...ALL_MAXED, graphiteMill: lvl }, 'graphiteMill');
+      const targets = texts
+        .filter((s) => s.startsWith('→ Lv.'))
+        .map((s) => Number(s.slice('→ Lv.'.length)));
+      expect(targets.every((n) => n <= BUILDING_MAX_LEVEL), `L${lvl} quoted ${targets.join()}`).toBe(true);
+      expect(texts.includes(t('city.maxLevel')), `L${lvl}`).toBe(lvl >= BUILDING_MAX_LEVEL);
+      // Exactly one of the two states, never both and never neither.
+      expect(targets.length === 1 || texts.includes(t('city.maxLevel')), `L${lvl}`).toBe(true);
+      scene.destroy();
+    }
+  });
+
   it('still offers the upgrade one level below the cap (the fix does not eat the last level)', async () => {
     const levels = { ...ALL_MAXED, graphiteMill: BUILDING_MAX_LEVEL - 1 };
     const { scene, inner, texts } = await openModal(levels, 'graphiteMill');
@@ -163,18 +179,26 @@ describe('CityScene drillYard training-speed line respects the speed floor', () 
     scene.destroy();
   });
 
+  /** The whole curve, not three samples: below the floor the raw product IS the truth (the fix must
+   *  not shift those levels), from `floorLevel` up every level reads the floor. A future step/floor
+   *  re-tune moves `floorLevel` with it and this keeps holding. */
   it('is unchanged below the floor and pinned to it from the floor level up', async () => {
-    const below = await openModal({ ...ALL_MAXED, drillYard: floorLevel - 1 }, 'drillYard');
-    expect(below.texts).toContain(pct(floorLevel - 1));
-    // Below the floor the raw product IS the truth — the fix must not shift these levels.
-    expect(pct(floorLevel - 1)).toBe(
-      t('city.bonusTrainSpeed').replace('{pct}', String(Math.round((floorLevel - 1) * DRILL_TRAIN_SPEED_STEP * 100)))
-    );
-    below.scene.destroy();
-
-    for (const lvl of [floorLevel, BUILDING_MAX_LEVEL]) {
+    expect(floorLevel).toBeGreaterThan(1);
+    expect(floorLevel).toBeLessThanOrEqual(BUILDING_MAX_LEVEL);
+    for (let lvl = 0; lvl <= BUILDING_MAX_LEVEL; lvl++) {
       const { scene, texts } = await openModal({ ...ALL_MAXED, drillYard: lvl }, 'drillYard');
-      expect(texts, String(lvl)).toContain(t('city.bonusTrainSpeed').replace('{pct}', '50'));
+      expect(texts, `L${lvl}`).toContain(pct(lvl));
+      const raw = t('city.bonusTrainSpeed').replace(
+        '{pct}', String(Math.round(lvl * DRILL_TRAIN_SPEED_STEP * 100))
+      );
+      if (lvl < floorLevel) expect(pct(lvl), `L${lvl} below the floor`).toBe(raw);
+      else {
+        expect(pct(lvl), `L${lvl} at/above the floor`).toBe(
+          t('city.bonusTrainSpeed').replace('{pct}', String(Math.round((1 - DRILL_TRAIN_SPEED_FLOOR) * 100)))
+        );
+        // The overstatement the card used to print.
+        if (lvl > floorLevel) expect(texts, `L${lvl}`).not.toContain(raw);
+      }
       scene.destroy();
     }
   });

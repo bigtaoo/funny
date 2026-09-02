@@ -38,7 +38,14 @@ export async function doUpgrade(host: ActionsHost, key: BuildingKey): Promise<vo
     host.showToast(t('city.upgrading'), C.green as number);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '';
-    if (msg.includes('resources')) host.showToast(t('city.err.noResources'), C.red as number);
+    // Insufficiency is matched on the ERROR CODE, which is the contract; the message it carries is
+    // prose. The message test used to be `includes('resources')` and matched nothing the server
+    // sends — `upgradeBuilding` throws INSUFFICIENT_RESOURCES with `Insufficient ${rt}` ("Insufficient
+    // paper"), so a genuinely short upgrade (a stale resource snapshot; the modal pre-checks the
+    // rest) read "Action failed". `includes('Insufficient')` is kept as doTrain's own fallback shape.
+    const code = e instanceof Error ? ((e as { code?: string }).code ?? '') : '';
+    if (code === 'INSUFFICIENT_RESOURCES' || msg.includes('Insufficient'))
+      host.showToast(t('city.err.noResources'), C.red as number);
     else if (msg.includes('queue')) host.showToast(t('city.err.queueFull'), C.red as number);
     // 'at max level' before 'desk': the server's reasons are 'desk at max level' /
     // 'building at max level' / 'desk level too low', and the first of those contains "desk" too —
