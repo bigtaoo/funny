@@ -76,8 +76,8 @@ export function buildModalGlyph(glyph: ModalGlyph, size: number, color: number):
  * The `(x, y)` line every tile modal carries. Centralised because it appeared verbatim at ten call
  * sites across WorldMapInput / cityPanel / march / deploy, none of which agreed on whether it was
  * worth a translation key (it isn't — the format is language-neutral) but all of which now need the
- * same glyph. `globe` is a stand-in until the map-pin art lands.
+ * same glyph.
  */
 export function coordLine(tx: number, ty: number): ModalLine {
-  return { text: `(${tx}, ${ty})`, icon: 'globe' };
+  return { text: `(${tx}, ${ty})`, icon: 'mapPin' };
 }

@@ -37,11 +37,13 @@ const ALIAS_OF: Record<string, keyof typeof TAB_ICON_RASTER> = {
 
 describe('ink-icon art on disk (pack_tab_icons.cjs, inks: [active])', () => {
   it('packs exactly one white master per ink kind, and nothing else for it', () => {
-    // 49 = batch 7's 43 (its original 44 minus `brush`, which gave up its own art after three
+    // 56 = batch 7's 43 (its original 44 minus `brush`, which gave up its own art after three
     // redraws and became a `skinIcon` alias) + batch 8's four stat words
-    // (`range`/`siege`/`crit`/`critmult`) + 8b's `unit`/`spell` card types. A 50th needs a doc
-    // entry, not a silent add.
-    expect(OWN_ART.length).toBe(49);
+    // (`range`/`siege`/`crit`/`critmult`) + 8b's `unit`/`spell` card types + batch 9's seven
+    // world-map modal slots (`watchtower`/`arrowTower`/`blocker`, which had only an emoji in the
+    // localised string, and `mapPin`/`camp`/`footsteps`/`stronghold`, which were each borrowing
+    // another kind's glyph). A 57th needs a doc entry, not a silent add.
+    expect(OWN_ART.length).toBe(56);
     for (const kind of OWN_ART) {
       expect(fs.existsSync(path.join(ASSET_DIR, `${kind}_active.png`)), `${kind}_active.png`).toBe(true);
       // The other three inks would be ~130 PNGs nobody draws — and baking them is the shape of the

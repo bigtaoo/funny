@@ -240,6 +240,29 @@ const JOBS = [
   // so those two draw no new art.
   { src: 'tabicon_unit.webp',              name: 'unit', inks: ['active'] },
   { src: 'tabicon_spell.webp',             name: 'spell', inks: ['active'] },
+
+  // Batch 9 (design/product/tab-icon-art-prompts-batch9.md, 2026-09-02): the world-map tile modal's
+  // remaining icon slots. Three of them are TILE STRUCTURES that had no ink-table art at all, so the
+  // localised string carried an emoji as the marker (`world.hasWatchtower`/`hasArrowTower`/
+  // `hasBlocker` were the last emoji left in that panel); the other four were borrowing a glyph that
+  // meant something else (`globe` for coordinates, `unit` for garrison, `spd` for stay, `siege` for
+  // the stronghold title).
+  //
+  // `watchtower`/`arrowTower`/`blocker` were drawn in ONE request and must stay that way on a
+  // redraw: all three appear in the same build menu at once, so "tells them apart at 26px" is a
+  // property of the SET, not of any one file (same rule as the hourglass tiers).
+  //
+  // NOT the same art as art/slg/slg-map/icon_{watchtower,blocker,arrowTower}.png, which exist and
+  // mean the same things: those are realistic pen hatching for the isometric map layer, measured in
+  // design/product/slg-building-art.md §6 as unreadable hatch mush at their own render size (~17-30px).
+  // Same `inks: ['active']` contract as batches 7/8 — one white master, tinted at draw time.
+  { src: 'tabicon_watchtower.png',         name: 'watchtower', inks: ['active'] },
+  { src: 'tabicon_arrowTower.png',         name: 'arrowTower', inks: ['active'] },
+  { src: 'tabicon_blocker.png',            name: 'blocker', inks: ['active'] },
+  { src: 'tabicon_mapPin.webp',            name: 'mapPin', inks: ['active'] },
+  { src: 'tabicon_camp.webp',              name: 'camp', inks: ['active'] },
+  { src: 'tabicon_footsteps.webp',         name: 'footsteps', inks: ['active'] },
+  { src: 'tabicon_stronghold.webp',        name: 'stronghold', inks: ['active'] },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');

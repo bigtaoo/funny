@@ -4,7 +4,7 @@ import { HUD_H } from './logic/constants';
 import { hitTestHeaderButtons } from './WorldMapInput/headerButtons';
 import { showCityPanel, type CityPanelState } from './WorldMapInput/cityPanel';
 import { coordLine, type ModalLine, type ModalButton } from './WorldMapPanels/modalLine';
-import { resLevelLine, baseLevelLine } from './WorldMapInput/tileInfoLines';
+import { resLevelLine, baseLevelLine, structureLine } from './WorldMapInput/tileInfoLines';
 import { territoryConnected } from './logic/attackConnectivity';
 import type { WorldMapContext } from './WorldMapContext';
 import { dispatchHit, hitAction, inRect, runHit, type Hit } from '../../ui/hits';
@@ -95,18 +95,18 @@ export class WorldMapInput {
         ...(stationedHere
           ? [{ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedHere.teamId), icon: 'home' as const }]
           : [
-              // The 停留/驻扎 pair, told apart by movement-vs-presence: chevrons for a team that just
-              // walks there and stays free to re-command, a helmet for one that digs in. (`armor`/
-              // `armorHeavy` were the obvious first pick for the latter and were rejected on sight --
-              // both are a round buckler seen face-on, which at 26px is an indistinct filled disc.)
-              { label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'idle'), icon: 'spd' as const },
-              { label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison'), icon: 'unit' as const },
+              // The 停留/驻扎 pair, told apart by movement-vs-presence: footprints for a team that
+              // just walks there and stays free to re-command, a pitched tent for one that digs in.
+              // Both were borrowing something else until batch 9 (`spd`'s chevrons and `unit`'s
+              // helmet); the helmet stays two lines further down, where it means "troops present".
+              { label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'idle'), icon: 'footsteps' as const },
+              { label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison'), icon: 'camp' as const },
             ]),
         { label: t('world.actDefense'), action: () => { this.ctx.panels.closeModal(); this.ctx.cb.onOpenDefense(tileKey); }, icon: 'defenseTabIcon' },
       ];
       // Watchtower (§18 G5 V2): build a long-radius persistent vision source on an owned tile. If a tower already exists, show a status line instead of the build button.
       if (!tile.watchtower) {
-        myButtons.push({ label: t('world.actWatchtower'), action: () => this.ctx.net.confirmWatchtower(tx, ty), icon: 'hammer' });
+        myButtons.push({ label: t('world.actWatchtower'), action: () => this.ctx.net.confirmWatchtower(tx, ty), icon: 'watchtower' });
       }
       // ADR-051 (P5): player structures — one per tile. Build an arrow tower (chips passing enemies over 9 cells)
       // or a blocker (forces enemy detours) on own territory; demolish one's own structure. (Not offered on the
@@ -114,11 +114,13 @@ export class WorldMapInput {
       if (tile.structure) {
         myButtons.push({ label: t('world.actDemolish'), action: () => void this.ctx.net.doDemolishStructure(tx, ty), icon: 'hammer' });
       } else {
-        // Three build actions can share this one menu, so they share the one "this builds something"
-        // glyph and let the label carry the difference -- three near-identical bespoke tower/barricade
-        // icons at 26px would be harder to tell apart than the words are.
-        myButtons.push({ label: t('world.actArrowTower'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'arrowTower'), icon: 'hammer' });
-        myButtons.push({ label: t('world.actBlocker'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'blocker'), icon: 'hammer' });
+        // These two plus the watchtower above can all be in this menu at once, which is why their
+        // art was drawn as one set and reviewed side by side at 26px (batch 9): a wide open trestle,
+        // a narrow closed shaft with an arrow, a low spiked lattice. `hammer` -- which all three
+        // shared while they had no art -- stays on demolish, where "this is construction work" is
+        // the whole message.
+        myButtons.push({ label: t('world.actArrowTower'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'arrowTower'), icon: 'arrowTower' });
+        myButtons.push({ label: t('world.actBlocker'), action: () => this.ctx.net.confirmBuildStructure(tx, ty, 'blocker'), icon: 'blocker' });
       }
       // Relocate here (§3.4): the capital may only move onto a 3×3 block the player already fully owns —
       // this clicked cell as centre plus all 8 neighbours. Only offered once that ring is fully mine
@@ -129,11 +131,8 @@ export class WorldMapInput {
       myButtons.push({ label: t('world.actAbandon'), action: () => this.ctx.net.doAbandon(tx, ty), icon: 'scrap' });
       myButtons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal(), icon: 'close' });
       const head: ModalLine[] = [{ text: t('world.mine'), icon: 'flag' }];
-      // The watchtower/structure lines still carry their emoji: no hand-drawn tower/barricade/arrow
-      // art exists yet, and dropping the emoji before it does would leave those lines with no marker
-      // at all. They become `icon:` slots in the same edit that adds the art.
-      if (tile.watchtower) head.push(t('world.hasWatchtower'));
-      if (tile.structure) head.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
+      if (tile.watchtower) head.push({ text: t('world.hasWatchtower'), icon: 'watchtower' });
+      if (tile.structure) head.push(structureLine(tile.structure.kind));
       head.push(coordLine(tx, ty));
       const mineBaseLine = baseLevelLine(tile);
       if (mineBaseLine) head.push(mineBaseLine);
@@ -159,7 +158,7 @@ export class WorldMapInput {
       if (stationedAlly) {
         allyButtons.push({ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedAlly.teamId), icon: 'home' });
       } else {
-        allyButtons.push({ label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison'), icon: 'unit' });
+        allyButtons.push({ label: t('world.actGarrison'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'garrison'), icon: 'camp' });
       }
       allyButtons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal(), icon: 'close' });
       const allyHead: ModalLine[] = [
@@ -167,7 +166,7 @@ export class WorldMapInput {
         { text: ownerLine, icon: 'avatarTabIcon' },
         coordLine(tx, ty),
       ];
-      if (tile.structure) allyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
+      if (tile.structure) allyHead.push(structureLine(tile.structure.kind));
       if (tile.maxHp && tile.hp != null) allyHead.push({ text: t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)), icon: 'hp' });
       const allyBaseLine = baseLevelLine(tile);
       if (allyBaseLine) allyHead.push(allyBaseLine);
@@ -194,7 +193,7 @@ export class WorldMapInput {
         coordLine(tx, ty),
       ];
       // ADR-051 (P5): flag an enemy structure so the player knows attacking this tile razes it.
-      if (tile.structure) enemyHead.push(t(tile.structure.kind === 'arrowTower' ? 'world.hasArrowTower' : 'world.hasBlocker'));
+      if (tile.structure) enemyHead.push(structureLine(tile.structure.kind));
       if (tile.maxHp && tile.hp != null) enemyHead.push({ text: t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)), icon: 'hp' });
       const enemyBaseLine = baseLevelLine(tile);
       if (enemyBaseLine) enemyHead.push(enemyBaseLine);
@@ -255,7 +254,7 @@ export class WorldMapInput {
     if (tile?.type === 'stronghold') {
       this.ctx.panels.showModal(
         [
-          { text: t('world.stronghold'), icon: 'siege' },
+          { text: t('world.stronghold'), icon: 'stronghold' },
           { text: t('world.strongholdHint'), icon: 'book' },
           coordLine(tx, ty),
         ],
@@ -298,7 +297,7 @@ export class WorldMapInput {
       }
       buttons.push({ label: t('world.actRecallStation'), action: () => void this.ctx.net.doRecallStationed(stationedNeutral.teamId), icon: 'home' });
     } else {
-      buttons.push({ label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'idle'), icon: 'spd' });
+      buttons.push({ label: t('world.actMove'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'move', 'idle'), icon: 'footsteps' });
     }
     // (Relocate moved to the owned-tile branch: §3.4 now requires the target 3×3 to be already fully owned,
     // so relocation is initiated by clicking your own centre tile, not a neutral one.)

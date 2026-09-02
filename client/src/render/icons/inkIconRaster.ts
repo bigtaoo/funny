@@ -112,6 +112,26 @@ import critmultInkUrl from '../../assets/tabicons/critmult_active.png';
 import unitInkUrl from '../../assets/tabicons/unit_active.png';
 import spellInkUrl from '../../assets/tabicons/spell_active.png';
 
+// Batch 9 (design/product/tab-icon-art-prompts-batch9.md): the world-map tile modal's icon slots.
+// `watchtower`/`arrowTower`/`blocker` are the three buildable tile structures — they had no glyph of
+// any kind, so their status lines carried an EMOJI (🗼/🏹/🚧) as the marker and all three build
+// buttons shared `hammer`. The other four replace a borrowed glyph whose meaning was someone else's:
+// `mapPin` was `globe`, `camp` was `unit` (a helmet, which still means "troops present" two lines
+// further down), `footsteps` was `spd` (the double chevron), `stronghold` was `siege` (the cracked
+// wall, which still means "besiege" on every attack button in the same panel).
+//
+// The three structures are drawn as ONE family and reviewed at 26px as one: they share a build menu,
+// so telling them apart is a property of the set. They deliberately do NOT reuse the same-named
+// isometric map art in art/slg/slg-map/ — that is realistic pen hatching, measured in
+// design/product/slg-building-art.md §6 as hatch mush at the ~17-30px it renders at.
+import watchtowerInkUrl from '../../assets/tabicons/watchtower_active.png';
+import arrowTowerInkUrl from '../../assets/tabicons/arrowTower_active.png';
+import blockerInkUrl from '../../assets/tabicons/blocker_active.png';
+import mapPinInkUrl from '../../assets/tabicons/mapPin_active.png';
+import campInkUrl from '../../assets/tabicons/camp_active.png';
+import footstepsInkUrl from '../../assets/tabicons/footsteps_active.png';
+import strongholdInkUrl from '../../assets/tabicons/stronghold_active.png';
+
 // The 6 kinds that ALIAS the white master of an existing tab icon rather than getting art of their
 // own, so each concept is drawn exactly once in the game. They live here rather than as call-site
 // renames to `pvpTabIcon`/`gachaTabIcon`/... because most of them have call sites where `color`
@@ -145,6 +165,7 @@ export type InkIconKind =
   | 'atk' | 'hp' | 'armor' | 'armorHeavy' | 'spd' | 'atkspd'
   | 'range' | 'siege' | 'crit' | 'critmult'
   | 'unit' | 'spell'
+  | 'watchtower' | 'arrowTower' | 'blocker' | 'mapPin' | 'camp' | 'footsteps' | 'stronghold'
   | 'scrap' | 'lead' | 'binding' | 'hammer' | 'ink'
   | 'replay' | 'share' | 'star' | 'lock' | 'medal' | 'close' | 'check' | 'play' | 'zoom' | 'cards'
   | 'flag' | 'desk' | 'cabinet' | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
@@ -213,6 +234,13 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   titleKing:         titleKingInkUrl as string,
   titleChampion:     titleChampionInkUrl as string,
   titleTop3:         titleTop3InkUrl as string,
+  watchtower:        watchtowerInkUrl as string,
+  arrowTower:        arrowTowerInkUrl as string,
+  blocker:           blockerInkUrl as string,
+  mapPin:            mapPinInkUrl as string,
+  camp:              campInkUrl as string,
+  footsteps:         footstepsInkUrl as string,
+  stronghold:        strongholdInkUrl as string,
   swords:            swordsInkUrl as string,
   home:              homeInkUrl as string,
   capsule:           capsuleInkUrl as string,

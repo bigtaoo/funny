@@ -1,6 +1,6 @@
 # 批次 9：世界地图弹窗图标槽的 7 个空位（瞭望塔 / 箭塔 / 阻挡 / 定位针 / 营帐 / 脚印 / 险地）— Prompt 文档
 
-> 创建：2026-09-02 · 状态：**判断表与 prompt 已定稿，等出图**（源图到位后按 §5 接线，代码改动已逐行列好）
+> 创建：2026-09-02 · 状态：**7 张已出图、已接线、已实拍验收（同日）**——6 张一版过，`camp` 判为「可用但最弱」并登记 v2 重出 prompt（见 §7）。全库账：**56 张自有美术 + 6 个别名 = 62 个 ink kind**
 > 前八批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（批 1–4，19 张）· [`batch5`](tab-icon-art-prompts-batch5.md)（页面标题，24 张）· [`batch6`](tab-icon-art-prompts-batch6.md)（大厅首页，3 张）· [`batch7`](tab-icon-art-prompts-batch7.md)（矢量清零，43 张）+ [`batch7-log`](tab-icon-art-prompts-batch7-log.md)（重出记录）· [`batch8`](tab-icon-art-prompts-batch8.md)（数值词条 4 张 + 8b 卡片元信息 2 张）
 > 配套代码：[`inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts) · [`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) · [`modalLine.ts`](../../client/src/scenes/worldmap/WorldMapPanels/modalLine.ts) · 调用点见 §5
 > 上游：[`SLG_LOG_2026-08.md` 「2026-09-02：地块弹窗」](../game/SLG_LOG_2026-08.md) 一节的「待补图」段（提交 `e2c83254f`）
@@ -195,6 +195,54 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 3. **真实弹窗实拍**，走 [[worldmap-standalone-debug-render]] 的零改源码套路（`start:e2e` + `__nwE2E.views.showWorldMap` + reject-fast `worldApi` Proxy，直接 poke `ctx.tileCache` 再调 `ctx.input.onTileClick`）。要摆出来的四种态：己方地块（三个建造按钮 + 驻扎/停留同屏，注意**窄列不画按钮图标**的 `btnW >= 200` 门禁，得挑宽列的那种菜单）、已建瞭望塔的地块（状态行）、带 `structure` 的地块（箭塔 / 阻挡两种）、险地弹窗（标题行）。看画面按 `CLAUDE.md`「看画面」走用户本机真实 Chrome。
 4. **判定标准是"读成什么"，不是"好不好看"**：一个读成另一件事的图标比没有图标更糟——`hammer` 共用至少诚实地说了"这是个建造按钮"。任何一张在 26px 上分不出来，就按 batch7-log 的格式记下"v1 为什么塌"再重出，**只改导致返工的那一处措辞**，别凭印象改别的地方。
 
-## 7. 出图记录
+## 7. 出图记录（2026-09-02 当日出图 + 接线 + 验收）
 
-> 待填。格式照 [`batch7-log`](tab-icon-art-prompts-batch7-log.md)：每张记 v 几、过没过、没过的话塌在哪、重出时改了哪一句。
+### 打包结果：7 张全部过 2.2:1 门禁
+
+裁边 + 长边归一到 128 之后的实测尺寸（`iconArtAspect.test.ts` 的上限是 2.2，本批无一需要豁免）：
+
+| kind | 尺寸 | 比 | kind | 尺寸 | 比 |
+|---|---|---|---|---|---|
+| `watchtower` | 106×128 | 1.21 | `camp` | 128×64 | **2.00** |
+| `arrowTower` | 84×128 | 1.52 | `footsteps` | 94×128 | 1.36 |
+| `blocker` | 128×107 | 1.20 | `stronghold` | 128×126 | 1.02 |
+| `mapPin` | 86×128 | 1.49 | | | |
+
+`blocker` 落在 1.20——§2 那条"塞进正方形"的措辞起了作用，地图上那张同名图是 2.91。**顺带验到一条**：重跑打包脚本后 188 张既有资源**零字节变化**，即这条管线是确定性的，加 JOBS 行不会顺手改动别人的图。
+
+### 26/28px 双衬底 + 真机实拍：6 张过，`camp` 记为「可用但最弱」
+
+深底（`C.dark` `#2c2c2a`，按钮填充）+ 纸底（`C.paper` `#faf6ee`，信息行）各看 26px 和 28px，然后按 §6 的五组并排看，最后在真实弹窗里实拍。
+
+**成组比对全部无撞车**：建造三件套（宽镂空 / 窄实心带臂 / 矮格栅）三种剪影一眼分开；`blocker` vs `siege` vs `stronghold` vs `close`（通透格栅 / 实心砖块 / 岩峰带 X / 孤立大 X）互不相似；`footsteps` vs `spd` 差异极大；`mapPin` vs `globe` vs `ink` 清清楚楚。
+
+**`camp`（营帐）判为可用但最弱，登记 v2**。它不跟 `lead`/`play`/`home` 混——§3 要求的「入口 + 绷绳 + 地面线」确实把它从三角剪影里拽出来了——但代价付错了维度：
+
+- **绷绳把外框拉宽到 2.00:1**，是全库除 `weapon`/`event` 两个豁免项之外最扁的一张。contain-fit 进方框后只占一半高度，于是在同一行里比左右邻居**明显轻一档**。
+- 而绷绳本身**在 26px 上完全消失**——它只贡献了宽度，没贡献可读性。26px 上剩下的读法是"一个矮篷子/一道支架"，要知道它是帐篷才看得出是帐篷。
+
+这不是"读成了另一件事"（那要打回重出），是"读得比邻居弱"，所以照 batch 7 对 `atk`/`scrap` 的处理**先上线、登记重出**。
+
+**v2 prompt（只改导致返工的那一处：去掉绷绳和地面线，改用脊杆端头破三角，整体收成方形）**：
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a ridge tent pitched on the ground, seen straight on — two straight sloping side panels meeting at a ridge pole along the top and running down to the ground with no vertical walls, a large inverted-V entrance opening in the middle of the front panel with its two flaps folded back to each side, and the ridge pole poking out as a short stub beyond the peak at each end. The tent stands as tall as it is wide, filling a square frame. No ropes, no pegs, no ground line. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D, no shading. Must stay clearly recognizable when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, guy ropes, tent pegs, a ground line, a wide flat silhouette more than one and a half times as wide as it is tall, a solid filled triangle, a bare cone, a cone with a ragged or flared bottom edge, a pencil lead or crayon tip, a house with vertical walls and a square door, a flag or pennant on the ridge pole, a campfire, smoke, more than one tent, a mountain or hill, text, letters, numbers, multiple objects, scattered pieces, confetti dots, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+重出落地是**零代码改动**：覆盖 `art/ui/tabicons/tabicon_camp.webp`（旧图移进 `_rejected/`，命名 `tabicon_camp_v1_flat2to1ropesvanish.webp`）、重跑 `node art/ui/tabicons/pack_tab_icons.cjs`，测试不用碰。
+
+### 实拍中查到的一件事：三个建造按钮的图标今天基本画不出来
+
+真机量到的数字：己方地块菜单 7–9 个按钮时 **`btnW = 166`**，而 `WorldMapPanels/core.ts` 的按钮图标门禁是 **`btnW >= 200`**。也就是说 `watchtower`/`arrowTower`/`blocker`/`camp`/`footsteps` 这五个**按钮**上的图标，在最常见的那个菜单里一个都不画。
+
+- 这不是本批引入的，是 2026-09-02 图标槽那轮就记在案的既有排版问题（当时三个建造按钮共用 `hammer`，同样画不出来），**根治办法是缩短标签**（有图标之后 `移动到此（停留）`/`移动并驻扎` 可以只留 `停留`/`驻扎`），属于产品决定。
+- **本批真正兑现的是那三条状态行**：`已建瞭望塔`/`箭塔`/`阻挡` 从 emoji 换成了手绘墨线，这是三个 P0 的主要目的；坐标行的 `mapPin` 和险地标题的 `stronghold` 也都在真实弹窗里就位。
+- 按钮那条路没有白接：验收时用同一条 `showModal` 路径造了一个宽列弹窗（`btnW = 284`/`210`），确认五个字形在**深色按钮填充**上都渲染正确、也都分得开——标签一缩短就会自动显示，不需要再改代码。
+
+### 验证
+
+`tsc --noEmit -p tsconfig.test.json`、`tsc --noEmit -p tsconfig.fulllink.json`、`npm run lint`（0 error）、`npm run build:web`、`npm run check:filelength`、单元 241 文件 2787 例、UI 254 文件 2430 例——全绿。`inkIconArt.test.ts` 的 `OWN_ART.length` 从 49 改到 56（算式注释同步）；`iconArtAspect.test.ts` 一字未动，7 张全部自己过关。
+
+三处重复的 `structure` 三元表达式（己方/盟友/敌方分支各一份）收敛成 `WorldMapInput/tileInfoLines.ts::structureLine()`——本来就是三份拷贝，现在还要多同意一个 icon，等于三份各自漂移的机会。
+
+**可视化验证**走 [[worldmap-standalone-debug-render]] 的零改源码套路，在用户本机真实 Chrome 里实拍：己方地块（瞭望塔 + 箭塔两条状态行、坐标行）、`阻挡` 状态行、险地弹窗（`stronghold` 标题与同弹窗内 `siege` 围攻按钮并存不撞）、以及上面那个宽列按钮弹窗。踩到两个跟本批无关但值得记的坑：`showWorldMap` 的 `cb` **必须带 `worldId`**（缺了 `proceduralTile` 里的 `worldSeed(world)` 直接 `undefined.length` 抛在 `WorldMapScene` 构造函数里），以及**标签页在后台时 rAF 被节流、`SceneManager` 的淡入淡出卡在 `elapsedMs: 0` 不推进**（`manager.current` 一直停在 `IntroScene`，看着像挂了）——截一张图让它前台化就继续跑了。
