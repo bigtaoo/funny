@@ -329,6 +329,43 @@ describe('CityScene home-desk Train Troops tile + modal (2026-07-21)', () => {
     scene.destroy();
   });
 
+  // ADR-079 (2026-09-02): the drillYard's slots run in parallel, so the queue's LAST entry is no longer
+  // "when everything is done" and the array order is no longer completion order. Two things follow for
+  // this modal, both pinned here:
+  //   · the quote must be SUM(remaining), not max(remaining) — speedupTraining burns the purchased seconds
+  //     off one slot at a time, so a max-based quote would under-charge and leave slots still running,
+  //     breaking the "the advertised price finishes the queue" invariant the chained queue used to have;
+  //   · the countdown rows must be sorted by completeAt, or a 30s batch queued last renders under a 2min one.
+  it('prices the speedup at the SUM of every parallel slot, and lists the rows soonest-first', async () => {
+    const now = Date.now();
+    const { scene, inner, speedupTraining } = await openTrainModal({
+      troops: 0, troopCap: 2000, resources: { ink: 100000 },
+      trainingQueue: [
+        { qty: 10, startAt: now, completeAt: now + 60_000 },
+        { qty: 20, startAt: now, completeAt: now + 120_000 },
+        { qty: 1, startAt: now, completeAt: now + 30_000 }, // soonest, queued LAST
+      ],
+    });
+
+    const modalHits = trainModalHits(inner);
+    const speedupHit = modalHits[modalHits.length - 2]!;
+    tap(inner, speedupHit.rect.x + speedupHit.rect.w / 2, speedupHit.rect.y + speedupHit.rect.h / 2);
+    await new Promise((r) => setTimeout(r, 0));
+    // (30 + 60 + 120)s / 60s-per-coin = 4. The pre-ADR-079 `max` formula would have quoted 2.
+    expect(speedupTraining).toHaveBeenCalledTimes(1);
+    expect(speedupTraining.mock.calls[0]![1]).toBe(4);
+
+    const texts = collectTexts(scene.container);
+    const rowIndex = (qty: number) => {
+      const prefix = t('city.trainEntry').split('{time}')[0]!.replace('{n}', String(qty));
+      return texts.findIndex((s2) => s2.startsWith(prefix));
+    };
+    expect(rowIndex(1)).toBeGreaterThanOrEqual(0);
+    expect(rowIndex(1)).toBeLessThan(rowIndex(10));
+    expect(rowIndex(10)).toBeLessThan(rowIndex(20));
+    scene.destroy();
+  });
+
   // S8-8 fix (2026-08-08): slg_speedup_* shop items now start a persistent 2x-speed buff
   // (speedupUntil) instead of one-time-draining the queue at purchase time — the modal must show
   // it's actually active, or a player who bought it has no way to tell.

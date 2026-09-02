@@ -9,7 +9,7 @@ import {
   INCOME_PROFILES, hourlyIncome, daysToMax, daysToMaxWithWhaleSpend, whaleResourcePackDailyMax,
   type CityTotals,
 } from './city';
-import { RESOURCE_CAP, TROOP_CAP_BASE, DESK_MAX_LEVEL } from '@nw/shared';
+import { RESOURCE_CAP, TROOP_CAP_BASE, DESK_MAX_LEVEL, TROOP_TRAIN_BATCH_MAX } from '@nw/shared';
 
 const RES = ['ink', 'paper', 'graphite', 'metal', 'sticker'] as const;
 const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -79,7 +79,9 @@ console.log('  has. That remains an open gap (ECONOMY_NUMBERS §13-SLG.6), not f
 console.log('── 5. Army training pacing (drillYard-max troop cap) ──');
 const a = armyPacing();
 console.log(`  troopCap @ drillYard L${DESK_MAX_LEVEL} = ${fmt(a.troopCap)} (base ${fmt(TROOP_CAP_BASE)})`);
-console.log(`  fill it: ${RES.map((r) => `${fmt((a.cost as any)[r] ?? 0)} ${r}`).join(', ')}, ${f1(a.totalTrainHours)} h continuous, or skip for ${fmt(a.coinsToSkip)} coins`);
+console.log(`  fill it: ${RES.map((r) => `${fmt((a.cost as any)[r] ?? 0)} ${r}`).join(', ')}, ${f1(a.wallClockHours)} h wall clock, or skip for ${fmt(a.coinsToSkip)} coins`);
+console.log(`  wall clock = ${a.batches} batches of <=${fmt(TROOP_TRAIN_BATCH_MAX)} over ${a.slots} PARALLEL slots (ADR-079) = ${a.rounds} rounds; ${f1(a.totalTrainHours)} h of troop-work divided by the slots.`);
+console.log('  coins-to-skip is NOT divided by the slots: a coin buys time off one slot at a time, so it still prices the full troop-work.');
 console.log(`  season window = ${a.seasonDays} days\n`);
 
 console.log('── 6. Combined days-to-max: max-city buildings + one full troopCap fill, same income pool (2026-08-02 re-check, ⚠️④) ──');
