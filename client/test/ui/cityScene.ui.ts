@@ -995,6 +995,9 @@ describe('CityScene queue-completion refresh (P0-9, comm-audit-2026-07-27 findin
     const cb: CitySceneCallbacks = { onBack: () => {}, worldApi: api, worldId: 'world:1:0' };
     const scene = new CityScene(createLayout(...PORTRAIT), new InputManager(), cb);
     await new Promise((r) => setTimeout(r, 0)); // initial load() resolves with the "before" me
+    // The strip starts out showing the (already past-due) entry, not the empty state — without
+    // this the assertion at the end could pass on a scene that never showed a queue at all.
+    expect(collectTexts(scene.container)).not.toContain(t('city.queueEmpty'));
 
     expect(getMeCalls).toEqual([1]);
     (scene as unknown as UpdateableScene).update(1); // crosses the 1s tick threshold → checkQueueCompletion
@@ -1004,6 +1007,18 @@ describe('CityScene queue-completion refresh (P0-9, comm-audit-2026-07-27 findin
     // `me` lives on the composed `core` field (2026-08-11: CityScene converted from a mixin-chain
     // `extends` to composition — see claudedocs/client-modules.md's split-form priority note).
     expect((scene as unknown as { core: { me: PlayerWorldView | null } }).core.me?.buildQueue).toEqual([]);
+
+    // …and it reaches the SCREEN. This half is the actual P0-9 symptom ("the finished entry sits
+    // in the UI until the player leaves and re-enters") and it went uncovered for a while: the
+    // assertions above only prove the re-fetch and the in-memory state. That was harmless while
+    // the poll painted inline, because state and paint were welded together in one `render()`
+    // call — you could not have one without the other. The 2026-09-02 coalescing pass
+    // (SLG_CITY_DESIGN §8.13) split them: the poll now calls `requestRender()` and `update()`
+    // flushes the paint on the next frame, so "state updated" and "screen updated" became two
+    // separate things needing two separate assertions. Deleting that `requestRender()` — i.e.
+    // reintroducing this exact bug — passed the entire suite before this line existed.
+    (scene as unknown as UpdateableScene).update(0.016); // the frame that flushes the owed paint
+    expect(collectTexts(scene.container)).toContain(t('city.queueEmpty'));
     scene.destroy();
   });
 

@@ -396,6 +396,15 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
   - 引导链：开卡弹窗 → 环消失，关弹窗 → step3 的环出现在 Back 上（`guideRestore` 重放路径，且页面未重绘）。
   - **测出来但不是回归的一处**：加速把 48 分钟的队列直接烧到 0，导致队列条目立刻「到期」，`refreshOnQueueDue` 每秒重新 `getMe` 一次、每次要一帧绘制 —— 桩服务器从不清队列才会这样，真服务端 2s 调度器清掉条目后就停。改前也是这个行为（那时是同步 `render()`），不是本轮引入的。
 
+**补覆盖（同日追加，4 个缺口都是先用变异确认过「删了它全套照绿」才写的）**：
+
+1. **⚠️ 最要命的一个：队列轮询「刷了状态但没刷屏」无人看守。** `cityScene.ui.ts` 的 P0-9 那组只断言了 `getMe` 被重新调用 + `core.me.buildQueue` 变空——**没有一条断言看屏幕**。这在轮询同步 `render()` 的年代无害（状态和绘制焊在同一次调用里，不可能只有其一），但本轮把两者拆开了：轮询改成 `requestRender()`、下一帧才画。实测**把 `refreshOnQueueDue` 里那句 `requestRender()` 删掉——也就是原样重现 P0-9 那个 bug——2439 例全绿**。现在那条用例补了首尾两断言（开局不该有「无建造中」、轮询+一帧后必须有），并写清了为什么以前不需要、现在需要。
+2. **前置绘制的契约只有 `doUpgrade` 一个动作在保。** 另外四个（`doSpeedup`/`doTrain`/`doSpeedupTraining`/`doFillAllTeams`）随便哪个把 `requestRender()` 加回 `bt.start()` 后面都全绿。改成五个动作的表驱动用例，每例让对应端点挂住、驱 8 帧，断言页面层没重绘 + 遮罩层为空（`bt.busy` 也一并断言，确保请求真的开出去了、不是被早退守卫吃掉）。
+3. **引导环的重放路径只在「整页重绘」下被覆盖过。** `cityGuideChain.ui.ts` 开关弹窗走的是 `inner.render()`，而真实点击走 `paintModal()` 单独一条路。把 `guideRestore()` 的调用从 `paintModal` 挪进 `paintPage`（环只在页面重绘时回来 = 真实点击下环再也不回来）——2439 例全绿。补两例：**关弹窗后环回来了、且页面层是同一批对象**（后半句才是关键，它证明环不是靠一次页面重绘捎带回来的）；以及**重放时要重新判断该点哪一步**（开卡会置上 step2 的 flag，回来的必须是 Back 上的 step3 环）——闭包里把 flag 改成构造时快照即挂。
+4. **弹窗层反复重建会不会漏纹理没人管。** `beginModal()` 换成 `removeChildren()`（Text 的 baseTexture 就此成孤儿，正是 §mem-leak 那一类）——2439 例全绿。补一例：开关三轮，每轮断言弹窗自己的 baseTexture 全被释放、而**页面层的一个都没被释放**。断言落在 `baseTexture.destroyed` 这个结果上（同 `campaignMapTextTeardown.ui.ts` 手法），不绑定具体用了哪个 teardown 函数。
+
+覆盖后：`test:ui` 255 文件 / 2447 例、默认套件 241 文件 / 2787 例全绿，无源码改动。
+
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）
 
 | 端点 | 鉴权 | 说明 |
