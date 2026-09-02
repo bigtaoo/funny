@@ -29,6 +29,8 @@ import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
 import type { WorldApiClient, PlayerWorldView, BuildingKey } from '../../src/net/WorldApiClient';
+import type { SaveData } from '../../src/game/meta/SaveData';
+import { teamSlotId } from '../../src/game/meta/teamTroops';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -42,6 +44,9 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 
 const PORTRAIT: [number, number] = [800, 1280];
 
+type Rect = { x: number; y: number; w: number; h: number };
+type Hit = { rect: Rect; fn: () => void };
+
 type CoreInternals = {
   w: number; h: number;
   container: PIXI.Container;
@@ -49,14 +54,20 @@ type CoreInternals = {
     staticLayer: PIXI.Container;
     pageLayer: PIXI.Container;
     modalLayer: PIXI.Container;
+    busyLayer: PIXI.Container;
   };
+  guide: { currentAction(): Hit | null };
   selectedBuilding: BuildingKey | null;
   selectedTrain: boolean;
-  hits: Array<{ rect: { x: number; y: number; w: number; h: number }; fn: () => void }>;
+  hits: Hit[];
   bt: { busy: boolean; loadingVisible: boolean };
   render(): void;
   paintModal(): void;
   doUpgrade(key: BuildingKey): Promise<void>;
+  doSpeedup(key: BuildingKey): Promise<void>;
+  doTrain(qty: number): Promise<void>;
+  doSpeedupTraining(coins: number): Promise<void>;
+  doFillAllTeams(): Promise<void>;
 };
 
 function internals(scene: CityScene): CoreInternals {
@@ -126,6 +137,75 @@ function build(): Harness {
     resolveUpgrade: () => releaseUpgrade?.(),
     refreshWalletCalls: () => walletCalls,
     fireSaveChanged: () => saveChanged?.(),
+  };
+}
+
+/**
+ * A scene whose `endpoint` never resolves, so the in-flight window stays open for as long as the
+ * test needs it. Everything else answers immediately. `extraMe` lets a case add whatever `me`
+ * fields its action checks before it reaches the network (a queue entry, a troop pool, …).
+ */
+function buildForAction(endpoint: string, extraMe: Record<string, unknown> = {}): Harness {
+  const hang = (): Promise<never> => new Promise<never>(() => {});
+  const me = meFixture(extraMe as Partial<PlayerWorldView>);
+  const worldApi = {
+    getMe: () => Promise.resolve(me),
+    getTeams: () => Promise.resolve([
+      { id: teamSlotId(0), name: '', army: [{ cardInstanceId: 'c1', col: 0, row: 0 }] },
+    ]),
+    getMarches: () => Promise.resolve([]),
+    getOccupations: () => Promise.resolve([]),
+    getStationed: () => Promise.resolve([]),
+    upgradeBuilding: hang, speedupBuild: hang, trainTroops: hang,
+    speedupTraining: hang, distributeTroops: hang,
+  } as unknown as Record<string, unknown>;
+  // Only the endpoint under test hangs; the rest would be a bug to reach anyway.
+  for (const k of ['upgradeBuilding', 'speedupBuild', 'trainTroops', 'speedupTraining', 'distributeTroops']) {
+    if (k !== endpoint) worldApi[k] = () => Promise.resolve(me);
+  }
+  const cb: CitySceneCallbacks = {
+    onBack: () => {},
+    worldApi: worldApi as unknown as WorldApiClient,
+    worldId: 'world:1:0',
+    getCoins: () => 99999,
+    refreshWallet: async () => {},
+    getSave: () => ({
+      cardInv: { c1: { id: 'c1', defId: 'lichuang', level: 1, gear: {}, locked: false } },
+      equipmentInv: {},
+    } as unknown as SaveData),
+    getFlag: () => true,
+    setFlag: () => {},
+  };
+  const scene = new CityScene(createLayout(...PORTRAIT), new InputManager(), cb);
+  return {
+    scene, inner: internals(scene),
+    resolveUpgrade: () => {}, refreshWalletCalls: () => 0, fireSaveChanged: () => {},
+  };
+}
+
+/** A scene whose guide flags are backed by `seen`, so the opening-guide chain is live. */
+function buildWithFlags(seen: Set<string>): Harness {
+  const me = meFixture();
+  const cb: CitySceneCallbacks = {
+    onBack: () => {},
+    worldApi: {
+      getMe: () => Promise.resolve(me),
+      getTeams: () => Promise.resolve([]),
+      getMarches: () => Promise.resolve([]),
+      getOccupations: () => Promise.resolve([]),
+      getStationed: () => Promise.resolve([]),
+      upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
+    } as unknown as WorldApiClient,
+    worldId: 'world:1:0',
+    getCoins: () => 99999,
+    getSave: () => ({ cardInv: {}, equipmentInv: {} } as unknown as SaveData),
+    getFlag: (k) => seen.has(k),
+    setFlag: (k, v) => { if (v) seen.add(k); else seen.delete(k); },
+  };
+  const scene = new CityScene(createLayout(...PORTRAIT), new InputManager(), cb);
+  return {
+    scene, inner: internals(scene),
+    resolveUpgrade: () => {}, refreshWalletCalls: () => 0, fireSaveChanged: () => {},
   };
 }
 
@@ -328,6 +408,167 @@ describe('CityScene layer split', () => {
     const kids = h.inner.container.children;
     expect(kids.indexOf(h.inner.paint.staticLayer)).toBeLessThan(kids.indexOf(h.inner.paint.pageLayer));
     expect(kids.indexOf(h.inner.paint.pageLayer)).toBeLessThan(kids.indexOf(h.inner.paint.modalLayer));
+    h.scene.destroy();
+  });
+});
+
+// ── The pre-flight-paint contract, across ALL five network actions ───────────────────────────
+//
+// The coalescing block above exercises doUpgrade only. That left the other four free to grow a
+// pre-flight paint back without anything going red — mutation-checked: adding `requestRender()`
+// after `bt.start()` in doTrain passed all 2439 UI tests. The contract is per-action, so the test
+// is too.
+describe('CityScene actions never paint before the server has answered', () => {
+  interface ActionCase {
+    name: string;
+    /** Endpoint this action calls; the harness makes it hang so the in-flight window stays open. */
+    endpoint: string;
+    /** Extra `me` fields the action needs to get past its own guards. */
+    me?: Record<string, unknown>;
+    run(inner: CoreInternals): Promise<void>;
+  }
+
+  const CASES: ActionCase[] = [
+    { name: 'doUpgrade', endpoint: 'upgradeBuilding', run: (i) => i.doUpgrade('inkPot') },
+    {
+      name: 'doSpeedup',
+      endpoint: 'speedupBuild',
+      // Needs a queue entry with time left, or doSpeedup returns before it ever starts.
+      me: { buildQueue: [{ key: 'inkPot', toLevel: 3, completeAt: Date.now() + 3600_000 }] },
+      run: (i) => i.doSpeedup('inkPot'),
+    },
+    { name: 'doTrain', endpoint: 'trainTroops', run: (i) => i.doTrain(100) },
+    { name: 'doSpeedupTraining', endpoint: 'speedupTraining', run: (i) => i.doSpeedupTraining(5) },
+    {
+      name: 'doFillAllTeams',
+      endpoint: 'distributeTroops',
+      // Needs a placed card with a troop gap and a non-empty pool, or it toasts and returns before
+      // `bt.start()` — see doFillAllTeams's early "nothing to allocate" branch.
+      me: { troops: 500, cardState: { c1: { currentTroops: 0 } } },
+      run: (i) => i.doFillAllTeams(),
+    },
+  ];
+
+  for (const c of CASES) {
+    it(`${c.name} paints nothing while its request is in flight`, async () => {
+      const h = buildForAction(c.endpoint, c.me);
+      await flush();
+      const before = h.inner.paint.pageLayer.children.slice();
+      expect(before.length).toBeGreaterThan(0);
+
+      void c.run(h.inner);
+      await flush();
+      expect(h.inner.bt.busy).toBe(true); // the request really is open
+
+      // Frames keep arriving while it is open. None of them may repaint, and none may raise the
+      // dim either (this is all well inside BusyTracker's 1 s threshold).
+      for (let i = 0; i < 8; i++) h.scene.update(0.016);
+      expect(isSameTree(h.inner.paint.pageLayer, before)).toBe(true);
+      expect(before.every((x) => !x.destroyed)).toBe(true);
+      expect(h.inner.paint.busyLayer.children.length).toBe(0);
+      h.scene.destroy();
+    });
+  }
+});
+
+// ── The guide ring's replay closure ──────────────────────────────────────────────────────────
+//
+// cityGuideChain.ui.ts covers the ring across a full `render()`. It cannot cover THIS: a real
+// dismissal goes through `paintModal()` alone and repaints nothing else, so the ring has to come
+// back from `paint.guideRestore` rather than from a page paint that happens to re-decide it.
+// Mutation-checked: moving the restore call into paintPage (so the ring returns only on a page
+// repaint) passed all 2439 UI tests.
+describe('CityScene guide ring survives a modal-only open/dismiss', () => {
+  /** The grid-tile hit, identified by the closure it was pushed with (render.ts's tile handler). */
+  function tileHit(inner: CoreInternals): Hit {
+    const h = inner.hits.find((x) => x.fn.toString().includes('selectedBuilding = tile.key'));
+    expect(h).toBeDefined();
+    return h!;
+  }
+
+  it('comes back on dismissal without repainting the page underneath', async () => {
+    const seen = new Set<string>(['guide.world.step2']); // step2 done → step3 (Back) is pending
+    const h = buildWithFlags(seen);
+    await flush();
+
+    expect(h.inner.guide.currentAction()).not.toBeNull(); // step3 ring is up
+    const page = h.inner.paint.pageLayer.children.slice();
+
+    // Open through the real grid-tile hit, which calls paintModal() — not render().
+    tileHit(h.inner).fn();
+    expect(h.inner.selectedBuilding).not.toBeNull();
+    expect(h.inner.guide.currentAction()).toBeNull(); // a modal supersedes the ring outright
+    expect(isSameTree(h.inner.paint.pageLayer, page)).toBe(true);
+
+    // Dismiss through the modal's own tap-outside hit — also paintModal() alone.
+    h.inner.hits[h.inner.hits.length - 1]!.fn();
+    expect(h.inner.selectedBuilding).toBeNull();
+    expect(h.inner.guide.currentAction()).not.toBeNull(); // ring is back…
+    expect(isSameTree(h.inner.paint.pageLayer, page)).toBe(true); // …and the page never moved
+    expect(page.every((x) => !x.destroyed)).toBe(true);
+    h.scene.destroy();
+  });
+
+  it('re-decides which step to ring, rather than replaying a stale one', async () => {
+    const seen = new Set<string>(); // nothing seen → step2 rings the first grid card
+    const h = buildWithFlags(seen);
+    await flush();
+    const step2Rect = { ...h.inner.guide.currentAction()!.rect };
+
+    // Opening a card marks step2 seen (the hit does it), so the ring that comes back on dismissal
+    // must be step3's on Back — not the grid-card ring the closure was originally built against.
+    tileHit(h.inner).fn();
+    expect(seen.has('guide.world.step2')).toBe(true);
+    h.inner.hits[h.inner.hits.length - 1]!.fn(); // dismiss
+
+    const back = h.inner.hits[0]!.rect;
+    const now = h.inner.guide.currentAction();
+    expect(now).not.toBeNull();
+    expect(now!.rect).not.toEqual(step2Rect);
+    expect(Math.abs(now!.rect.y - back.y)).toBeLessThan(400); // anchored to the header, not the grid
+    h.scene.destroy();
+  });
+});
+
+// ── Modal churn must not leak Text textures ──────────────────────────────────────────────────
+//
+// `beginModal()` uses tearDownChildren, not removeChildren: a plain remove leaves each Text's
+// baseTexture orphaned — the §mem-leak class this scene already pays for once per close, and the
+// modal layer is now the thing that churns most (opening and dismissing no longer rebuilds the
+// page, so this teardown is the only one that runs). Asserted on the outcome
+// (`baseTexture.destroyed`), like campaignMapTextTeardown.ui.ts, so it holds regardless of which
+// helper does the freeing. Mutation-checked: swapping in removeChildren() passed all 2439 UI tests.
+describe('CityScene modal teardown frees its Text textures', () => {
+  function textTextures(root: PIXI.Container): PIXI.BaseTexture[] {
+    const out: PIXI.BaseTexture[] = [];
+    (function walk(c: PIXI.Container): void {
+      for (const ch of c.children) {
+        if (ch instanceof PIXI.Text) out.push(ch.texture.baseTexture);
+        if (ch instanceof PIXI.Container) walk(ch);
+      }
+    })(root);
+    return out;
+  }
+
+  it('frees the outgoing modal textures on dismissal, on every open/close round', async () => {
+    const h = build();
+    await flush();
+    const pageTextures = textTextures(h.inner.paint.pageLayer);
+    expect(pageTextures.length).toBeGreaterThan(0);
+
+    for (let round = 0; round < 3; round++) {
+      h.inner.selectedBuilding = 'inkPot';
+      h.inner.paintModal();
+      const modalTextures = textTextures(h.inner.paint.modalLayer);
+      expect(modalTextures.length).toBeGreaterThan(0);
+      expect(modalTextures.some((t) => t.destroyed)).toBe(false);
+
+      h.inner.hits[h.inner.hits.length - 1]!.fn(); // tap-outside dismiss
+      expect(h.inner.paint.modalLayer.children.length).toBe(0);
+      expect(modalTextures.every((t) => t.destroyed)).toBe(true);
+      // The page standing behind it keeps every one of its own — it was never torn down.
+      expect(pageTextures.some((t) => t.destroyed)).toBe(false);
+    }
     h.scene.destroy();
   });
 });
