@@ -73,6 +73,9 @@ export const DRILL_TRAIN_SPEED_FLOOR = 0.5;    // drillYard: training-time multi
  * drillYard levels at which a training queue slot is granted, on top of TROOP_TRAIN_QUEUE_MAX (=1): L4 and
  * L10, i.e. 1 slot at L0–L3, 2 at L4–L9, 3 at L10.
  *
+ * Slots are parallel (ADR-079): `n` occupied slots train `n` batches at once, so this is a throughput
+ * multiplier, not just queue depth.
+ *
  * A threshold list rather than the old `floor(level / DRILL_QUEUE_PER_LEVELS)` because the useful slot count
  * is `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)` (a batch beyond that is rejected by the troopCap check before
  * it can occupy a slot) and that ceiling — 1 slot at L0 rising to 4 at L10 — is not a multiple of anything.

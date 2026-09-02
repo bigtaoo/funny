@@ -40,6 +40,8 @@ import {
   TROOP_CAP_BASE,
   troopTrainCost,
   TROOP_TRAIN_TIME_SEC,
+  TROOP_TRAIN_BATCH_MAX,
+  TROOP_SPEEDUP_SECS_PER_COIN,
   SLG_SHOP_ITEMS,
   type BuildingKey,
   type ResourceType,
@@ -217,20 +219,45 @@ export function daysToMaxWithWhaleSpend(p: IncomeProfile, totals: CityTotals): P
   return out;
 }
 
-/** Army-training pacing: time + full resource cost (ink/paper/graphite/metal/sticker) to fill the drillYard-max troop cap, and coin-to-skip. */
+/**
+ * Army-training pacing: time + full resource cost (ink/paper/graphite/metal/sticker) to fill the
+ * drillYard-max troop cap, and coin-to-skip.
+ *
+ * Two different "times" come out of this, and conflating them is what made the pre-ADR-079 version of this
+ * function disagree with `citySiegeRosters.trainPerHour` next door (which had modelled the slots as parallel
+ * all along):
+ *   · `totalTrainSec` — troop-seconds of work, `cap × secPerTroop`. Slot-count-independent, and the basis of
+ *     `coinsToSkip`, because a coin buys seconds off ONE slot (they do not stack across slots).
+ *   · `wallClockSec` — elapsed time a player actually waits, which the parallel slots DO divide. Batches are
+ *     capped at TROOP_TRAIN_BATCH_MAX, so filling the cap is `ceil(cap / batchMax)` batches run
+ *     `trainQueueMaxFor` at a time; each round costs its largest batch. At max drillYard that is 4 batches
+ *     over 3 slots = 2 rounds, i.e. half of `totalTrainSec`, not all of it.
+ */
 export function armyPacing() {
   const maxed: Partial<Record<BuildingKey, number>> = { drillYard: DESK_MAX_LEVEL };
   const cap = troopCapFor(maxed);
   const trainMult = drillTrainMult(maxed);
   const secPerTroop = TROOP_TRAIN_TIME_SEC * trainMult;
   const totalSec = cap * secPerTroop;
+
+  const batches: number[] = [];
+  for (let left = cap; left > 0; left -= TROOP_TRAIN_BATCH_MAX) batches.push(Math.min(TROOP_TRAIN_BATCH_MAX, left));
+  const slots = trainQueueMaxFor(maxed);
+  let wallSec = 0;
+  for (let i = 0; i < batches.length; i += slots) wallSec += Math.max(...batches.slice(i, i + slots)) * secPerTroop;
+
   return {
     troopCap: cap,
     cost: troopTrainCost(cap),
     secPerTroop,
+    slots,
+    batches: batches.length,
+    rounds: Math.ceil(batches.length / slots),
     totalTrainSec: totalSec,
     totalTrainHours: totalSec / 3600,
-    coinsToSkip: Math.ceil(totalSec / BUILD_SPEEDUP_SECS_PER_COIN),
+    wallClockSec: wallSec,
+    wallClockHours: wallSec / 3600,
+    coinsToSkip: Math.ceil(totalSec / TROOP_SPEEDUP_SECS_PER_COIN),
     seasonDays: SEASON_LENGTH_DAYS,
   };
 }

@@ -41,6 +41,12 @@ export const TROOP_TRAIN_BATCH_MAX = 5000;
  * curve is now 1 / 2 / 3 slots (see DRILL_QUEUE_LEVEL_THRESHOLDS), deliberately kept at or below that ceiling at
  * every level so every slot stays useful and refilling an empty pool never costs more than two sit-downs
  * (asserted in city-buildings.test.ts — the bound is the reason the curve is 1/2/3 and not something else).
+ *
+ * **What a slot is worth (ADR-079, 2026-09-02).** Slots run in PARALLEL — each occupied slot trains its batch
+ * on its own clock, so the slot count multiplies training throughput (`trainPerHour` = perSlot × slots, which
+ * is what econ-sim had modelled all along). Until 2026-09-02 worldsvc chained the batches instead, making the
+ * L4/L10 slot grants worth zero throughput and only fewer sit-downs; the ADR-075 sit-down bound above was
+ * written under that reading and still holds, it is just no longer the only thing a slot buys.
  */
 export const TROOP_TRAIN_QUEUE_MAX = 1;
 /** Speed-up rate: seconds of training time per coin spent (DRAFT, 60 s/coin). */

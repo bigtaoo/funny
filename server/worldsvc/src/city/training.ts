@@ -56,19 +56,24 @@ export class CityTrainingService {
     for (const rt of RESOURCE_TYPES) resources[rt] = (resources[rt] ?? 0) - (cost[rt] ?? 0);
     const inkCost = cost.ink ?? 0;
 
-    // Training starts immediately after the previous (already buff-caught-up) batch finishes; if no batch
-    // is in progress, start immediately. Note: this new entry's own duration is NOT pre-multiplied by the
-    // buff — the buff instead speeds up the whole queue uniformly (via applyTrainingSpeedupCatchup) as
-    // real time passes while it's active, which transparently covers entries added after purchase too.
-    const lastComplete = queue.length > 0 ? queue[queue.length - 1]!.completeAt : t;
+    // ADR-079 (2026-09-02): slots run in PARALLEL — the batch starts now, not after whatever is already
+    // queued. It used to chain off `queue[queue.length - 1].completeAt`, which made every drillYard slot
+    // worth exactly zero throughput: filling an empty 20,000 pool took `cap × secPerTroop` at 1 slot and at
+    // 3 alike, and the slot grants at drillYard L4/L10 only ever bought the player fewer sit-downs. econ-sim
+    // had modelled the slots as parallel from the start (`trainPerHour` = perSlot × trainQueueMaxFor), so the
+    // ADR-074 siege gates were already calibrated against this — the server was the side that was wrong.
+    //
+    // Note: this new entry's own duration is NOT pre-multiplied by the buff — the buff instead speeds up
+    // every slot uniformly (via applyTrainingSpeedupCatchup) as real time passes while it's active, which
+    // transparently covers entries added after purchase too.
     // Battle pass bonus (S8-8): hasBattlePass → training speed +20% (duration ×0.8). drillYard further speeds training (SLG_CITY_DESIGN, ×drillTrainMult).
     const trainSpeedMult = (pw.hasBattlePass ? 0.8 : 1) * drillTrainMult(pw.buildings);
     const duration = Math.round(qty * TROOP_TRAIN_TIME_SEC * 1000 * trainSpeedMult);
     const entry: TrainingEntry = {
       qty,
       inkCost,
-      startAt: lastComplete,
-      completeAt: lastComplete + duration,
+      startAt: t,
+      completeAt: t + duration,
     };
     const nextQueue = [...queue, entry];
     const tq = trainingQueueOps(nextQueue);
@@ -88,7 +93,8 @@ export class CityTrainingService {
 
   /**
    * Spend coins to speed up training. Coins are converted to reduced duration (TROOP_SPEEDUP_SECS_PER_COIN seconds/coin);
-   * time is subtracted from the front of the queue, with overflow carrying to the next batch. Expired batches are immediately dequeued and added to troops.
+   * time is subtracted from the earliest-finishing slot, with overflow carrying to the next-earliest (ADR-079: slots run in
+   * parallel, so "earliest-finishing" is not "first in the array"). Drained batches are immediately dequeued and added to troops.
    * Calls commercial.spend() to deduct coins (no speedup if this fails).
    */
   async speedupTraining(worldId: string, accountId: string, coins: number, clientPlatform?: string): Promise<PlayerWorldView> {
@@ -122,31 +128,40 @@ export class CityTrainingService {
       // top of it — otherwise this coin-based instant-skip would operate on stale (un-caught-up) completeAt
       // values and under-credit the buff's already-elapsed portion.
       const settledFrom = fresh.speedupSettledAt ?? t;
-      const newQueue = applyTrainingSpeedupCatchup(fresh.trainingQueue ?? [], fresh.speedupUntil, settledFrom, t).slice();
+      let newQueue = applyTrainingSpeedupCatchup(fresh.trainingQueue ?? [], fresh.speedupUntil, settledFrom, t).slice();
       let remaining = speedSec * 1000;
       let troopsReady = 0;
 
-      for (let i = 0; i < newQueue.length && remaining > 0; ) {
+      // Burn the purchased seconds slot by slot, cheapest (earliest-finishing) first. ADR-079 made the
+      // slots parallel, which changes this loop in two ways:
+      //   · The order is by `completeAt`, not array position — the array is in enqueue order, and a small
+      //     batch queued last can now be the one finishing first.
+      //   · No cascade afterwards. Compressing one slot cannot move another: each entry owns its own
+      //     `startAt`, and the old `startAt(i+1) = completeAt(i)` re-link would have re-serialised exactly
+      //     the queue this ADR unchained.
+      // Pricing is unchanged by the parallel switch and deliberately so: a coin still buys
+      // TROOP_SPEEDUP_SECS_PER_COIN seconds off ONE slot (spilling into the next once that slot lands), so
+      // the coin→troops rate — the residual pay-to-win risk gate ③ of the ADR-074 siege calibration
+      // records — is exactly what it was. The client quotes Σ(remaining), matching this loop, so the
+      // advertised price still finishes the whole queue (see trainModal.ts).
+      const byCompletion = newQueue.map((_e, i) => i).sort((a, b) => newQueue[a]!.completeAt - newQueue[b]!.completeAt);
+      const drained = new Set<number>();
+      for (const i of byCompletion) {
+        if (remaining <= 0) break;
         const e = newQueue[i]!;
-        const left = e.completeAt - t;
+        // Clamp: an entry the 2s scheduler tick has not collected yet is already due, and must cost zero
+        // rather than refund negative time into `remaining` (which the unclamped subtraction below did).
+        const left = Math.max(0, e.completeAt - t);
         if (remaining >= left) {
           remaining -= left;
           troopsReady += e.qty;
-          newQueue.splice(i, 1);
+          drained.add(i);
         } else {
           newQueue[i] = { ...e, completeAt: e.completeAt - remaining };
           remaining = 0;
-          i++;
         }
       }
-
-      // Update startAt for remaining batches (cascade after compressing completeAt)
-      for (let i = 1; i < newQueue.length; i++) {
-        const prev = newQueue[i - 1]!;
-        const cur = newQueue[i]!;
-        const dur = cur.completeAt - cur.startAt;
-        newQueue[i] = { ...cur, startAt: prev.completeAt, completeAt: prev.completeAt + dur };
-      }
+      if (drained.size > 0) newQueue = newQueue.filter((_, i) => !drained.has(i));
 
       const newTroops = Math.min(fresh.troopCap, fresh.troops + troopsReady);
       const tq = trainingQueueOps(newQueue);

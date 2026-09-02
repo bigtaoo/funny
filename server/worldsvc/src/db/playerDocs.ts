@@ -63,7 +63,12 @@ export interface TeamTemplate {
   leaderCardId?: string;
 }
 
-/** Training queue entry (S8-2). Each batch queues independently; scheduler converts to troop strength when completeAt is reached. */
+/**
+ * Training queue entry (S8-2). Each batch occupies one of the drillYard's slots and runs **in parallel**
+ * with the others (ADR-079, 2026-09-02): `startAt` is the enqueue instant, never the previous entry's
+ * `completeAt`. The scheduler converts a batch to troop strength when its own `completeAt` is reached,
+ * independently of every other entry.
+ */
 export interface TrainingEntry {
   qty: number;       // quantity trained in this batch
   inkCost: number;   // ink already deducted (no refund needed on dequeue)
@@ -72,24 +77,33 @@ export interface TrainingEntry {
 }
 
 /**
- * Every write to `trainingQueue` must mirror its head (earliest completeAt, the queue is always kept
- * sorted — chained scheduling) onto this scalar so `processCompletedTraining`'s due-scan can use a real
- * index instead of `trainingQueue.0.completeAt` (unindexable in practice, was a full COLLSCAN every
- * scheduler tick — 2026-07-26 VPS CPU investigation). Returns the `$set`/`$unset` fragments to merge into
- * the caller's update; `unset` is only non-empty once the queue drains, since a missing field (not `null`)
- * is what keeps it out of the partial index and out of the due-scan's match.
+ * Every write to `trainingQueue` must mirror its EARLIEST completeAt onto this scalar so
+ * `processCompletedTraining`'s due-scan can use a real index instead of `trainingQueue.0.completeAt`
+ * (unindexable in practice, was a full COLLSCAN every scheduler tick — 2026-07-26 VPS CPU investigation).
+ * Returns the `$set`/`$unset` fragments to merge into the caller's update; `unset` is only non-empty once
+ * the queue drains, since a missing field (not `null`) is what keeps it out of the partial index and out
+ * of the due-scan's match.
+ *
+ * ⚠️ `Math.min` over the whole array, NOT `queue[0]` — that shortcut was only correct while batches were
+ * chained (ADR-079 made slots parallel, 2026-09-02, and the array is in enqueue order, not completion
+ * order). A 2-troop batch queued behind a 5,000-troop one now finishes first, and mirroring the head would
+ * hide it from the indexed due-scan until the long batch completed — the troops would simply not arrive.
+ * `processCompletedTraining`'s pipeline already derived the mirror with `$min`, so it was the write paths
+ * that had to catch up.
  */
 export function trainingQueueOps(queue: TrainingEntry[]): { set: Record<string, number>; unset: Record<string, ''> } {
-  return queue.length > 0 ? { set: { nextTrainingCompleteAt: queue[0]!.completeAt }, unset: {} } : { set: {}, unset: { nextTrainingCompleteAt: '' } };
+  return queue.length > 0
+    ? { set: { nextTrainingCompleteAt: Math.min(...queue.map((e) => e.completeAt)) }, unset: {} }
+    : { set: {}, unset: { nextTrainingCompleteAt: '' } };
 }
 
 /**
  * S8-8 fix (2026-08-08): fold the train-speedup buff's effect for the real-time window [fromT, toT] into
  * `queue`'s completeAt/startAt. While `speedupUntil` is in the future, the WHOLE queue advances
  * TRAIN_SPEEDUP_BUFF_MULT× faster than real time — every entry's clock shifts earlier by the same amount
- * (`extra`), which preserves both each entry's own duration (completeAt-startAt) and the
- * startAt(i+1)===completeAt(i) chain invariant, so no cascade re-link is needed afterward (contrast with
- * speedupTraining's coin-based instant-skip, which changes each entry's duration and must re-chain).
+ * (`extra`), preserving each entry's own duration (completeAt-startAt). This is exactly right for the
+ * parallel slots of ADR-079: the slots advance independently, so a real-time window that is worth `extra`
+ * of extra progress is worth it to every slot at once.
  *
  * Callers must persist the returned queue AND advance a `speedupSettledAt` bookkeeping field to `toT`
  * together (same $set) — this is the incremental high-water mark that lets the buff apply continuously
