@@ -15,8 +15,8 @@ cd tools/<tool> && npm run lint             # eslint .（2026-08-26 新增）
 权威的**跨包**覆盖率数字来自仓库根（读的是各包刚产出的 `coverage/`，跟 CI 同一份脚本）：
 
 ```bash
-node scripts/coverageSummary.mjs          # 报表，永不失败
-node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则退出 1
+node scripts/coverageSummary.mjs          # 报表（也是唯一写 CI 运行摘要页的那个），永不失败
+node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则退出 1（只出日志 + 退出码）
 ```
 
 `desktop-shell` 没有测试基础设施（1 个依赖的 Electron 壳），**不在**任何覆盖率清单里；它的 `tsc -p tsconfig.json`（即 `npm run build`）就是它的类型检查。**也刻意不给它写单测**（ADR-071）：539 行全是 Electron 主进程接线（`BrowserWindow`/`ipcMain`/`autoUpdater`/`git` 调用），要测就得把整个 Electron 面 mock 掉，断言的是 mock 而不是它的行为。它受的约束是**可达性闸门**（2026-08-21 接入，见下），那条不需要跑它。
@@ -33,7 +33,7 @@ node scripts/checkCoverageThreshold.mjs   # 门禁，低于门槛/缺产出则�
 
 覆盖率那条闸门有两半，都已受门禁：
 - **管路**——某个工具包不再产出 `coverage/`，`checkCoverageThreshold.mjs` 判红。这不是覆盖率回归，报错文案也刻意分开说（"produced no coverage output at all"），免得有人去找缺失的测试而真正要修的是缺失的 CI 步骤。这条分开说的措辞是 ADR-070 那轮顺带修掉的既有缺陷，**跟豁免机制无关，机制退休后保留**。
-- **百分比**——5 个包各自的 scope 现在都 ≥90%（下表；四个 100%、animator 98.9%）。**过渡已结束**：`NOT_GATED_JSON_SUMMARY_PACKAGES`、行上的 `gated` 字段、报表的「reported, not gated」小节、门禁的豁免脚注全部随 Phase 4e 删除。退休的理由与验收条件写在 ADR-070 末尾那条「收尾」记录里；一句话版本是「留着一套能用的、合法地不受门禁约束的机制，本身就是一份长期邀请函」。另一样保留下来的是报表的 **`Scope (files)`** 列——那是防「缩 include 抬 %」的护栏，跟豁免无关，五个包毕业后反而更该看（三个包的 scope 只占 `src` 文件的 1/4 到 1/2）。
+- **百分比**——5 个包各自的 scope 现在都 ≥90%（下表；四个 100%、animator 98.9%）。**过渡已结束**：`NOT_GATED_JSON_SUMMARY_PACKAGES`、行上的 `gated` 字段、报表的「reported, not gated」小节、门禁的豁免脚注全部随 Phase 4e 删除。退休的理由与验收条件写在 ADR-070 末尾那条「收尾」记录里；一句话版本是「留着一套能用的、合法地不受门禁约束的机制，本身就是一份长期邀请函」。另一样保留下来的是报表的 **`Scope (measured/src)`** 列（2026-09-02 前叫 `Scope (files)`）——那是防「缩 include 抬 %」的护栏，跟豁免无关，五个包毕业后反而更该看（三个包的 scope 只占 `src` 文件的 1/4 到 1/2，现在占比 <60% 会直接打 ⚠️）。
 
 ## ESLint（2026-08-26 新增：五个工具以前一个 lint 都没有）
 
@@ -139,7 +139,7 @@ node -e "const t=require('./coverage/coverage-summary.json').total.lines; consol
 
 **结论（五个包走完之后）**：graduation 不等于边界有人守。`include` 回到目录级只是让「加文件」变得可见**给覆盖率算法**，不等于可见给门禁——门禁只看一个百分比，而百分比有余量。每个毕业的包都该配一条同形的 purity 守卫，`PURE_DIRS` 改一下就能抄——但**白名单和 DOM 全局清单要按目标工具的实际情况改**，别照抄 map-editor 那份：`level-editor` 根本没有 pixi.js 依赖（面板用裸 `canvas.getContext('2d')`），所以"挡 pixi"那句话在这里没有对应物，承重的是 DOM 全局清单（按该工具 impure 半边真正用到的 global 逐个列：`document`/`window`/`ResizeObserver`/`CanvasRenderingContext2D`/`MouseEvent`/`WheelEvent`/`showOpenFilePicker`…），允许的 bare specifier 也从 `@nw/shared/slg` 变成 `@nw/engine/*`。四条断言各做过 red-then-green 实测（DOM 全局、跨界 import、纯目录改名 canary、往 include 加第三个目录 canary）。**4c 走得更远：连「一律禁 DOM」这个前提本身都可能不成立**（`vfx-editor` 的 `src/io/**` 在门禁范围内、又理应用 IndexedDB/localStorage/Blob），那时要改的不是清单里的条目而是**判据**——见下方「4c 实测」的两层写法。**4d 把这条推到了四层**（同一个包里 `core`/`skeleton` 零浏览器 API、`animation` 只许 rAF 两个、`io` 一份显式清单），并且是唯一一个真有 `pixi.js` 可挡、也是唯一一个 scope 内**必须**跨界 `import type` 一个 PIXI 拥有者的包——见下方「4d 实测」。**4e 又是第五种形状**：`ops` 的 include 名下两个目录**本来就该受不同规矩**（`logic/**` 一个 global 不许碰，`api/**` 允许 `fetch`/`localStorage`/`location` 这三个、REST 客户端的定义就是这个），并成一条会两头都坏；它还是唯一一个连**扫描器本身**都被抓出两个 bug 的包（引号里的 `from`、行注释里的 `src/api/**` 被当成块注释开头）——见下方「4e 实测」。**五个包五种形状，这本身就是结论**：可以抄的只有骨架（受检目录从 `coverage.include` 反推 + canary + LF/CRLF + 每条断言 red-then-green），判据和扫描器每次都得自己量、自己验。余量数字也一样越往后越大：4b 49 行 → 4a 72 → 4d ~140 → **4e 168**，因为它是「测试越好、能容忍的杂质越多」的直接后果。
 
-**防刷分的那一列**：报表每行有 `Scope (files)`（measured / `src` 下源文件数）。缩 include 抬 % 的同时这个比例会掉，两个数印在同一张表里，取舍在 review 时就看得见。
+**防刷分的那一列**：报表每行有 `Scope (measured/src)`（measured / `src` 下源文件数 + 占比，<60% 打 ⚠️；2026-09-02 前叫 `Scope (files)`，只印两个数不印占比）。缩 include 抬 % 的同时这个比例会掉，两个数印在同一张表里，取舍在 review 时就看得见。
 
 ## Phase 4 graduation：五个工具怎么接进门禁（**已全部完成**）
 

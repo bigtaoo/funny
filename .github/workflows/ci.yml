@@ -552,11 +552,14 @@ jobs:
       - name: audio-pipeline selftest (measurement, gating, conversion)
         run: python tools/audio-pipeline/selftest.py
 
-  # Reads every server-test shard's + client-test's uploaded coverage/ artifacts (each shard only
-  # produced coverage for the workspaces it ran) back onto one filesystem, then prints the same
-  # consolidated table the old single-job "test coverage report" step did.
+  # Reads every server-test shard's + client-test's + tools-test's uploaded coverage/ artifacts
+  # (each shard only produced coverage for the workspaces it ran) back onto one filesystem, then
+  # renders ONE run-summary section over the lot: verdict in the heading, failures and regressions
+  # above the fold, the per-package table collapsed under it. 2026-09-02 merged what used to be
+  # two near-identical sections (report + gate table) into that one — see
+  # scripts/coverageReport.mjs' renderSection.
   # scripts/coverageSummary.mjs never throws, so `if: always()` + downloading whatever artifacts
-  # did get produced lets it still render a (possibly partial) table even if a shard failed.
+  # did get produced lets it still render a (possibly partial) section even if a shard failed.
   # 2026-08-15: runs on PRs too, now that both events produce coverage (see server-test) — the 90%
   # gate below is only a release gate if it can also block the PR that would breach it.
   coverage-report:
@@ -603,13 +606,48 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: test coverage report
+      # Δ column (2026-09-02): the last green `main` run's per-package numbers, carried between
+      # runs by actions/cache. Restore-only here — the save step at the bottom of this job is what
+      # publishes a new baseline, and only on a green push to main, so a red run can never poison
+      # the numbers every later run is compared against. `key` deliberately cannot match (it
+      # carries this run's id); `restore-keys` is a prefix, so what comes back is the most recent
+      # entry saved under it. Caches written on the default branch are readable from every branch,
+      # which is what lets a PR run compare itself against main; the reverse is not true, which is
+      # the other reason PR runs never save.
+      #
+      # Absent or evicted is the boring path, not a failure: the Δ column renders '—' and the
+      # section says so (see readBaseline in scripts/coverageLib.mjs).
+      - name: restore coverage baseline (last green main)
+        uses: actions/cache/restore@v4
+        with:
+          path: coverage-baseline.json
+          key: coverage-baseline-main-${{ github.run_id }}
+          restore-keys: coverage-baseline-main-
+      # This step owns the run-summary section outright as of 2026-09-02 — heading, verdict,
+      # regressions and the collapsed per-package table. It used to write a `## Test coverage`
+      # table and the gate step below appended a SECOND heading with a second full table whose
+      # `Lines` column was byte-identical to this one's and whose `Status` column was 19 identical
+      # ✅ on any green run, with the verdict as the last line under it. Both steps get their
+      # verdict from one `evaluate` call in scripts/coverageLib.mjs, so only one of them has to
+      # render it — hence TESTS_OK is passed to BOTH now (this step needs it to print the
+      # "not enforced" heading the gate's exit code already honoured).
+      #
+      # IN and OUT are the same file on purpose: coverageSummary.mjs reads the baseline before it
+      # writes the new one, and the cache-save step below is what decides whether the new one
+      # counts.
+      - name: coverage report (run summary)
+        env:
+          TESTS_OK: ${{ needs.server-test.result == 'success' && needs.client-test.result == 'success' && needs.tools-test.result == 'success' }}
+          COVERAGE_BASELINE_IN: coverage-baseline.json
+          COVERAGE_BASELINE_OUT: coverage-baseline.json
         run: node scripts/coverageSummary.mjs
       # Hard gate (2026-08-15): fails this job — and therefore blocks every *-deploy.yml, which
       # gates on `workflow_run.conclusion == 'success'` — if any package's line coverage drops
       # below 90%. Deliberately a separate step/script from the report above: that one must never
-      # fail (see its own header comment), this one must always fail below the bar. See
-      # scripts/checkCoverageThreshold.mjs and claudedocs/server.md "测试覆盖率百分比工具".
+      # fail (see its own header comment), this one must always fail below the bar. Since
+      # 2026-09-02 that exit code is ALL it contributes — the run-summary section is the report
+      # step's, and this step's own output goes to its log. See scripts/checkCoverageThreshold.mjs
+      # and claudedocs/server-testing-tooling.md "测试覆盖率百分比工具".
       #
       # TESTS_OK breaks the cascade that made every shard failure report TWICE and hid its own cause:
       # a failed shard produces no coverage/ artifact, the gate then failed with "no coverage/ output
@@ -627,6 +665,17 @@ jobs:
         env:
           TESTS_OK: ${{ needs.server-test.result == 'success' && needs.client-test.result == 'success' && needs.tools-test.result == 'success' }}
         run: node scripts/checkCoverageThreshold.mjs
+      # Publishes this run's numbers as the baseline every later run's Δ column is read against.
+      # Three conditions, each load-bearing: `success()` so a run that just failed the gate cannot
+      # become the thing future runs are compared favourably against; push-to-main so a PR cannot
+      # move the reference out from under the PRs beside it; and a run-id-suffixed key because
+      # cache entries are immutable — same key, no overwrite, silently stale forever.
+      - name: save coverage baseline
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: coverage-baseline.json
+          key: coverage-baseline-main-${{ github.run_id }}
 
   # Slow path: docker compose brings up the full stack (mongo + meta + commercial + gateway + matchsvc + game),
   # then runs the real client orchestration core (createAppCore) as a Node process on the runner host for full end-to-end tests.

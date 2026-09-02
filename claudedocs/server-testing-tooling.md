@@ -1,4 +1,4 @@
-# 服务端 — 覆盖率百分比工具与 CI 稳定性（2026-08-13 ~ 08-15）
+# 服务端 — 覆盖率百分比工具与 CI 稳定性（2026-08-13 ~ 09-02）
 
 > 从 [`server-testing.md`](server-testing.md) 拆出（2026-08-20，原文件 501 行，ADR-067）。姊妹分册：[`server-testing-coverage.md`](server-testing-coverage.md)（各服务逐个补测记录）、[`server-testing-typecheck.md`](server-testing-typecheck.md)（`test/**` 类型检查）。
 > 本册是工具/流水线侧：怎么量出百分比、90% 门禁怎么加、CI 怎么并行拆分、以及「PR 绿了、合进 main 却红」那轮 flaky 治理。下文各处「见下方各自小节」指的是各包的补测记录，现在在 [`server-testing-coverage.md`](server-testing-coverage.md)；下文「前两节」指的是 hub 上保留的那两轮人工审计。
@@ -130,7 +130,7 @@
 
 - **`coverageLib.mjs` 多了第二类行**：`NOT_GATED_JSON_SUMMARY_PACKAGES`（5 个 `tools/*`），`collectRows` 给每行打 `gated` 标记与 `srcFiles` 计数。`gated: false` = 进报表、**必须产出 coverage**、但百分比暂不比 90%。产出缺失照样 fail-closed——「tools/ops 悄悄不产 coverage 了」是断掉的流水线，跟它在哪个清单上无关；这条也是这一阶段唯一能替 tools 守住的东西（百分比走 ADR-070 的 Phase 4 逐个 ratchet）。
 - **两处既有缺陷顺带修掉**：①门禁把「完全没产出」报成「低于 90% 门槛」——对 not-gated 包这话直接是错的（它豁免于门槛却仍然失败），对 gated 包也会把人引去找缺失的测试而真正要修的是缺失的 CI 步骤；现已分成两条消息。②补上兄弟守卫早有的 canary：待检包数为 0 时判红，而不是印「all 0 packages >= 90%」退出 0。
-- **两条反刷分护栏**：报表每行新增 `Scope (files)` 列（measured / `src` 源文件数）——`client`（只圈 `src/game/**`）和四个 scoped 的 tools 包都刻意只测全树的一部分，这是合理且有记录的选择，但也是**唯一能不加测试就抬高百分比的旋钮**，把 scope 大小印在它所修饰的数字旁边，缩窄在同一张表里就现形；`checkCoverageThreshold.mjs` 则每次运行都复述 not-gated 包的当前值与目标（绿跑也印），只写在设计文档里的「临时豁免」会无声变成永久。`Overall` 仍只统计 gated 包——把 tools 折进去会悄悄重定义一个自 2026-08-15 起就意为"发布门禁实际强制的覆盖率"的数字。
+- **两条反刷分护栏**：报表每行新增 `Scope (files)` 列（measured / `src` 源文件数；2026-09-02 改名 `Scope (measured/src)`，并把除法先做掉、占比 <60% 打 ⚠️——见本册末节）——`client`（只圈 `src/game/**`）和四个 scoped 的 tools 包都刻意只测全树的一部分，这是合理且有记录的选择，但也是**唯一能不加测试就抬高百分比的旋钮**，把 scope 大小印在它所修饰的数字旁边，缩窄在同一张表里就现形；`checkCoverageThreshold.mjs` 则每次运行都复述 not-gated 包的当前值与目标（绿跑也印），只写在设计文档里的「临时豁免」会无声变成永久。`Overall` 仍只统计 gated 包——把 tools 折进去会悄悄重定义一个自 2026-08-15 起就意为"发布门禁实际强制的覆盖率"的数字。
 - **CI**：`tools-test` 改跑 `npm run test:coverage`（这些套件都是纯逻辑、各约 1s，不存在 client 那种 v8 插桩税），上传一个以 `tools/` 为根的 artifact（同 server `rest` 分片那个 rooting 技巧），`coverage-report` 增加 `needs: tools-test` + 下载回 `tools/`，并把 `tools-test.result` 并入 `TESTS_OK`（否则一次 tools 测试挂会自报两次红，正是上面 `TESTS_OK` 那条要打断的级联）。
 - **测试**：新增 `server/shared/test/coverageScripts.test.ts`（18 例）——与 `guardScripts.test.ts` 同一手法（spawn 真实 CLI 打 fixture 树，退出码才是 CI 消费的契约）。**注意一个坑**：vitest **无法加载项目 root 之外的 `.mjs`**（整文件报 SyntaxError、位置指在 import 说明符上），所以包清单和 `countSrcFiles` 是通过子进程（`libEval`）读的，不是直接 import。三条关键断言都做过红检（把行为改坏确认变红再还原）。
 
@@ -143,3 +143,31 @@
 - **解析方式是文本，不是 YAML parse**：按 `- name:` 切步骤、各自取 `working-directory:` 与 `run:` 正文。这些脚本刻意零依赖，而 ci.yml 里的 `working-directory` 全是单行值。
 - **econ-sim 不进 90% 名单**：3509 行里大半是 `*Run.ts` 入口脚本，设百分比门槛只会买到「为百分比写的测试」。**跑它的 18 例**才是要的——它们锁的是强化保护成本、据点战斗这类平衡数值。CI 里它挂在 `rest` shard（不需要 Mongo/Redis，5s；单开一个 runner 会花 30s 装环境跑 5s 测试），typecheck 挂在 `server-checks` 的 `tsc -b` 之后（要靠那步产出的 `dist/` 解析 `@nw/*`）。**不需要安装步骤**：它自己没有 `node_modules`，`tsc`/`vitest`/`@nw/*` 全靠向上走解析到 `server/` 的 hoist 树。
 - **测试**：`guardScripts.test.ts` 28 → **32** 例（+4：两个脚本都有步骤时通过——这条是承重的，它证明 `working-directory` 的匹配真的对得上而不是全都判红；没有步骤时失败并同时点名 `test` 与 `typecheck`；`test:coverage` 这种近似名字不算；没有 `test` 脚本的包不管）。fixture 侧新增两个旋钮：`extraPackages`（造非 workspace 包）与 `ciSteps`（造 ci.yml）。三向反验都在真仓库上跑过一遍（无步骤→红、两步都在→绿、只有 test→红且只报 typecheck）。
+
+## 运行摘要读不下去：两张表合成一张，加 Headroom / Δ（2026-09-02，worktree `feat/coverage-summary-readability`）
+
+起因是 owner 看 CI 运行摘要页的一句话：「标题全是一样的，大部分也都是 93%」。拿 run 33611845069 的五个 coverage artifact 在本地把两个脚本各跑一遍复现，问题有六条，且**每一条都不是渲染细节，而是这张表答不上人真正带来的问题**：
+
+1. **两张表，一张是另一张的子集**。`coverageSummary.mjs` 的 `## Test coverage` 19 行，`checkCoverageThreshold.mjs` 紧跟着又追加一个 `## Coverage threshold check (>= 90% lines per package)` 标题 + 同样 19 行，`Lines` 列逐字节相同，只多一个绿跑时 19 个一模一样 ✅ 的 `Status` 列。约 40 行表格传达一个 bit。
+2. **`Statements` 列恒等于 `Lines`**：v8 provider 下两者本就等价，而 `readLcov` 里 `statements` 是直接赋成 `lines` 的——一整列**不可能**跟旁边那列不同。
+3. **结论在最下面**：`**PASSED**` 是第二张表末尾的那行。
+4. **行序是包清单顺序**，`server/engine` 排最后只因为它是走 lcov 解析器的那个。没有任何风险排序，于是 `90.7%` 和 `100.0%` 在视觉上一样重。
+5. **离红线还有多远，根本没打出来**。metaserver 90.7% / 8670 行 = 只剩 65 行余量；gameserver 92.1% / 924 行 = 只剩 19 行。后者才是最脆的那个，但在按百分比读的表里根本排不到前面。
+6. **没有 Δ**。绿跑时人唯一真想知道的是"动了没有"，而这张表一年来答不上。
+
+改法：
+
+- **一张表，一个标题，结论进标题**：`## Coverage — ✅ 19/19 packages ≥ 90% lines · overall 94.8%`。失败/回退/`not enforced` 这类要动手的东西留在**折叠外**，19 行明细收进 `<details>`（step summary 支持这个 HTML 子集）——绿跑默认视图三行。
+- **谁写摘要页**：只有 `coverageSummary.mjs`。`checkCoverageThreshold.mjs` **不再写 `$GITHUB_STEP_SUMMARY`**，只往自己的 step 日志打失败行 + 决定退出码——那本来也是它唯一独有的东西。两个脚本的结论来自**同一次 `evaluate` 调用**，所以只需要一个去渲染，也不可能互相矛盾。**副作用：`TESTS_OK` 现在要传给两个 step**（报表那步需要它才能印出 `⏭️ not enforced` 那个标题，以前只有门禁认这个变量）。
+- **脚本分层**（三个文件，两个是薄壳）：`coverageLib.mjs` = 包清单 + 两个后端解析器 + `evaluate`（判定：谁过、以哪种方式没过、加权 overall、一个 `verdict`）+ baseline 读写；`coverageReport.mjs`（新）= `renderSection`，纯表现，不读文件不做判断；两个入口脚本各 50–80 行。**为什么拆**：渲染直接堆在 lib 里会让它到 496 行——离全仓库遵守的 500 行只差一点，而且那时它已经不止一个职责；两半之间唯一的共享物就是 evaluate 出来的那个对象，放一起也没有省下任何东西。
+- **删 `Statements` 列**；新增 **`Headroom`**（`gateHeadroom`：当前已覆盖的行还能丢多少才破线，也约等于"还能加多少未测新代码"），并**按它升序排，最脆的在最上面**。排完立刻看出之前被 93% 淹掉的事：gameserver / botsvc / gateway 只剩 19 / 27 / 40 行余量，随手加个未测文件就红；而最显眼的 metaserver 90.7% 其实排第五。
+- **`Scope (files)` → `Scope (measured/src)`**，把除法先做掉并在占比 <60% 时打 ⚠️。ADR-070 加这列是为了防「缩 include 抬 %」，但没人会在扫 19 行表格时去心算 108÷502——于是全仓库 scope 最窄的那行（client，22%）反而是页面上最不显眼的。护栏本身没变，只是终于看得见了。
+- **Δ 列（对齐"上一次绿的 main"）**：`ci.yml` 用 `actions/cache` 把一份 `coverage-baseline.json` 在 run 之间带着走——`actions/cache/restore` 每次都恢复（`restore-keys: coverage-baseline-main-` 前缀取最新），`actions/cache/save` **只在 `success() && push && ref == main` 时**存。三个条件各有用处：`success()` 防"刚破线的那次成为后来人的对照基准"，push-to-main 防一个 PR 把参照物从旁边其它 PR 脚下挪走，key 带 run id 是因为 cache 条目不可覆盖（同 key 就是永久陈旧）。默认分支的 cache 对所有分支可读、反之不可读——这正好是"PR 跟 main 比、PR 之间互不干扰"想要的语义。基线缺失/损坏是**安静路径**：Δ 印 `—`，并明说一句为什么，不是失败（首次落地、cache 过期、本地跑都是这个状态）。
+- **回退单独提到折叠外**：`⚠️ Line coverage dropped in N package(s) since the last green main: ...`。仍在 90% 之上却掉了一个点，正是"最后变成 90.1% 而没人注意到"的那个状态——门禁看不见它，所以报表必须看见。
+- **顺带修掉一个旧算错**：`measured` 原本是"总数 − skipped"，而 `skipped` 只算「测试 job 挂了所以不追究」那一类；于是**测试全绿、某个分片却没产出 coverage** 时，标题会印「19/19 measured」，正好压在下面那句「1 package produced no coverage output at all」上面。现在 `measured` 只数真出了数字的行（红检过）。
+
+测试：`server/shared/test/coverageScripts.test.ts` 从 15 例扩到 26 例。既有断言里有 5 条随文案迁移（`NOT ENFORCED` 大写段落搬去了摘要页、门禁日志是小写那行；below-bar 消息多了 headroom；scope 列改名带百分比；全缺产物那例的落脚文案换成 `produced no coverage output at all`）。新增三组：`run-summary section`（**只有一个 `##` 标题**、门禁跑完那份文件逐字节不变、三种标题各自的措辞、`measured` 只数真有数字的行、headroom 数值与排序、`Statements` 不存在、⚠️ 只在窄 scope 出现）、`coverage baseline (Δ column)`（自己写的基线能读回来 → `±0`；仍过门禁但掉一个点 → 回退行出现**且在 `<details>` 之前**；基线里没有的包 → `new`；缺失/损坏 → 印那句说明且退出 0）、`gateHeadroom`（三个数值 + 跟着 `COVERAGE_THRESHOLD` 走 + missing 行返回 null）。**四条关键断言做过红检**（门禁重新写摘要页 / 改成按包名排序 / 回退行挪到折叠内 / `measured` 换回旧算法，各自确认变红再还原）。
+
+**排序那条断言第一版是假的**，值得记一笔：原来选的两个包是 `server/admin`(91%) 和 `server/shared`(99%)，可它们的**字母序恰好跟 headroom 序一致**——把实现换成 `sort by pkg name` 照样全绿。改成 `server/worldsvc`(91%) 与 `server/admin`(99%) 才让两个序相反，红检这才真的红。跟 `coverageScope.test.ts` 那批"断言的是符号引用、值对不对都能过"是同一类陷阱。
+
+**没做的**：没把 `Δ` 变成门禁。回退是**报表**的事——一个"不许掉超过 0.5 点"的硬门槛会在正常重构（删掉一坨覆盖好的死代码）时误红，而 90% 那条线已经是硬约束了。
