@@ -42,7 +42,14 @@ export interface FakeBuffer {
   getChannelData(ch: number): Float32Array;
 }
 
-export type FakeNodeKind = 'gain' | 'oscillator' | 'bufferSource' | 'biquad' | 'destination';
+export type FakeNodeKind =
+  | 'gain'
+  | 'oscillator'
+  | 'bufferSource'
+  | 'biquad'
+  | 'destination'
+  /** `createMediaElementSource` — the <audio> end of a `WebMusicDeck`'s graph. */
+  | 'mediaElement';
 
 export interface FakeNode {
   kind: FakeNodeKind;
@@ -97,6 +104,15 @@ export interface FakeAudioContext {
   createOscillator(): FakeNode;
   createBufferSource(): FakeNode;
   createBiquadFilter(): FakeNode;
+  /**
+   * The <audio> elements handed to `createMediaElementSource`, in call order.
+   *
+   * `WebMusicDeck` routes its element through this node rather than setting `audioEl.volume`
+   * (read-only on iOS Safari — see that file's header), so "did a deck actually get built"
+   * is only answerable by looking at this.
+   */
+  mediaElements: unknown[];
+  createMediaElementSource(el: unknown): FakeNode;
   createBuffer(channels: number, length: number, rate: number): FakeBuffer;
   resume(): Promise<void>;
   decodeAudioData(
@@ -142,6 +158,13 @@ export function fakeAudioContext(opts: { sampleRate?: number; now?: number } = {
       const n = node('biquad');
       n.frequency = param(350);
       n.type = 'lowpass';
+      ctx.nodes.push(n);
+      return n;
+    },
+    mediaElements: [],
+    createMediaElementSource(el) {
+      ctx.mediaElements.push(el);
+      const n = node('mediaElement');
       ctx.nodes.push(n);
       return n;
     },

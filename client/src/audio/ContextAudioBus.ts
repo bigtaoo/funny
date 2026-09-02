@@ -102,6 +102,19 @@ export class ContextAudioBus implements AudioBus {
    * 作判据，两个平台同一条，且低版本基础库上音乐照样起得来。
    */
   private gestured = false;
+  /**
+   * 最近一次收到的前后台状态。**存下来，而不是就地用掉。**
+   *
+   * `onFocusChange` 是在构造函数里注册的，而平台侧可以（web 侧就是）在注册的同时**把当前值也
+   * 报一次**——那一刻 `this.music` 必然还是 `null`（播放器由 `ensureMusic()` 懒造），所以就地
+   * `this.music?.setPaused(hidden)` 会把那个值静默丢掉。这个字段是它的落点：`ensureMusic()`
+   * 造完播放器后照它 hold 一次。
+   *
+   * 拿掉它的后果不是"少一层保险"，而是让 web 侧那行"当前值也报一次"整段变成空转——在一个
+   * 后台标签页里加载完成的页面此后收不到任何 `visibilitychange`（切回来发的是 `visible`），
+   * 于是床会在后台响起来。2026-09-02 的用例就是钉这一条的。
+   */
+  private hidden = false;
 
   constructor(private readonly deps: ContextAudioBusDeps) {
     // 宿主没有可监听的手势源（node、e2e 入口）就当作已经解锁——那种宿主的上下文本来一开始就是
@@ -111,7 +124,10 @@ export class ContextAudioBus implements AudioBus {
       this.gestured = true;
       this.resume();
     });
-    deps.onFocusChange?.((hidden) => this.music?.setPaused(hidden));
+    deps.onFocusChange?.((hidden) => {
+      this.hidden = hidden;
+      this.music?.setPaused(hidden);
+    });
   }
 
   private ensure(): AudioContext | null {
@@ -221,6 +237,10 @@ export class ContextAudioBus implements AudioBus {
     }
     this.music = new MusicPlayer({ decks, warn: this.deps.warn });
     this.music.setBusVolume(this.musicVolume);
+    // 见 `hidden` 的注释：这个播放器可能是在**已经处于后台**的时候才造出来的，而那个事实是在它
+    // 存在之前就报过来的。`MusicPlayer.update()` 在 hold 期间整段返回，所以这一行的效果是"这条
+    // 床压根不会起来"，而不是"起来了再暂停"。
+    if (this.hidden) this.music.setPaused(true);
     return this.music;
   }
 

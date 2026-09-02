@@ -36,7 +36,7 @@ They own the arithmetic between a downloaded recording and a file the game ships
 
 ```
 python -m venv --system-site-packages venv
-./venv/Scripts/python -m pip install numpy soundfile
+./venv/Scripts/python -m pip install -r requirements.txt
 ```
 
 ## The scripts
@@ -122,13 +122,22 @@ python -m venv --system-site-packages venv
 
       ./venv/Scripts/python write_packs.py
 
-- **`selftest.py`** — **105** checks over the measurement, gating and conversion layer (73 before
-  the BGM band/shelf/gate block landed on 2026-09-01). Plain asserts.
+- **`selftest.py`** — **106** checks over the measurement, gating and conversion layer (73 before
+  the BGM band/shelf/gate block landed on 2026-09-01). Plain asserts. **Runs in CI** since
+  2026-09-02 (`tools-test` job in `.github/workflows/ci.yml`) — before that nothing ran it, so
+  2100 lines of pipeline had a self-test that could only rot.
   Measurement is checked against **synthetic** signals with known ground truth (a 1 kHz sine must
   read a 1 kHz centroid; 50 ms of leading zeros must read 50 ms of lead), because a measurement
   checked against a real file only tells you the number did not change.
 
-      ./venv/Scripts/python selftest.py
+      ./venv/Scripts/python selftest.py       # from anywhere: it chdirs to the repo root itself
+
+  It used to be **106 checks only if you ran it from the repo root**, and the docs said to run it
+  from this directory. From here it crashed in the source-rejection block with a `LibsndfileError`
+  (`process.SRC` is a repo-root-relative string), and before getting that far it reported the
+  `credits.json` cases as "skip -- run process.py first" when the real cause was the working
+  directory. Fixed 2026-09-02 by chdir-ing inside `selftest.py`, which is also what made it
+  wireable into CI: the count is now the same from anywhere, and there is no wrong way to call it.
 
   One of its own cases was wrong on first run and is commented where it was fixed: the
   "slow attack" signal used a quiet lead followed by a bang, which does **not** reproduce the

@@ -19,13 +19,28 @@ silently reverse:
   * `trim`'s head fade spans the pre-roll and NOT 4 ms, which is what stopped the pipeline from
     inventing 3 ms of latency on every asset.
 
-Run: ./venv/Scripts/python selftest.py
+Run: ./venv/Scripts/python selftest.py   (from anywhere -- see the chdir below)
 """
 import json, os, re, sys, tempfile
 import numpy as np
 import soundfile as sf
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+
+# **Run from the repo root, whatever directory the caller was in.**
+#
+# `process.SRC` / `process.CREDITS` / `process_music.OUT_DIR` are all repo-root-relative strings
+# (`art/audio/sources`, ...), because the pipeline's own entry points are documented to be invoked
+# from there. This file was not: its docstring said `./venv/Scripts/python selftest.py`, i.e. from
+# THIS directory -- and run that way it (a) crashed with a `LibsndfileError` traceback in the
+# source-rejection block and (b) before reaching it, silently reported the `credits.json` cases as
+# "skip (run process.py first)" when the real cause was the working directory. Both symptoms point
+# away from the actual problem, which is exactly the kind of thing that keeps a self-test from
+# being wired into CI. Fixing the cwd here rather than in the docs means there is no way left to
+# invoke it wrong.
+os.chdir(os.path.join(_HERE, "..", ".."))
+
 import audit, process, process_music
 
 FAILS = []

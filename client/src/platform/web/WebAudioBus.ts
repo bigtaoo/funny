@@ -53,6 +53,11 @@ export class WebAudioBus extends ContextAudioBus {
         // 2026-09-01 的 BGM 实测就是在一个 `document.hidden === true` 的标签页里做的，这个洞
         // 是那样冒出来的。`gestured` 闸门让它今天很难被触发（后台标签页收不到手势），但这一行
         // 的代价是零，而"很难被触发"不是"不会被触发"。
+        //
+        // **这一行单独是空转的**（2026-09-02 由 `test/audio/WebAudioBus.test.ts` 钉出来）：此刻
+        // 还在 `ContextAudioBus` 的构造函数里，`music` 要到 `ensureMusic()` 才懒造，所以回调里
+        // 那个 `this.music?.setPaused(...)` 无处落地。承接它的是 `ContextAudioBus.hidden`——
+        // 那个字段存下这个值、等播放器造出来时补上 hold。两处必须同时在，少一处这条路就断了。
         cb(document.hidden);
       },
     });

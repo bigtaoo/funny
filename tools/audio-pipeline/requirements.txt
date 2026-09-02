@@ -1,0 +1,13 @@
+# The audio pipeline's two dependencies (tools/audio-pipeline/README.md "Setup").
+#
+# One source of truth, added 2026-09-02 when `selftest.py` was wired into CI: before that the
+# versions lived only in a `pip install numpy soundfile` line in the README, so the CI runner and
+# a developer's venv had no way to agree on anything.
+#
+# Floors, not pins. `soundfile` is the load-bearing one — it is `libsndfile` in a wheel, which is
+# what lets this pipeline decode and encode OGG/MP3/WAV/FLAC without an `ffmpeg` on the machine
+# (README "Why Python"). 0.12 is where the bundled libsndfile gained MP3 *encoding*, which
+# `process.py` and `process_music.py` both depend on; anything older silently cannot write the
+# shipped format. numpy 1.26 is the first release with a 3.12 wheel.
+numpy>=1.26
+soundfile>=0.12
