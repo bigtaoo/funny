@@ -28,6 +28,7 @@ import {
   TROOP_TRAIN_STICKER_COST,
   TROOP_TRAIN_TIME_SEC,
   TROOP_TRAIN_QUEUE_MAX,
+  drillTrainMult,
   DRILL_QUEUE_LEVEL_THRESHOLDS,
   TRAIN_SPEEDUP_BUFF_MULT,
   baseFootprintCells,
@@ -566,6 +567,100 @@ describe.skipIf(!mongo)('worldsvc training-queue nextTrainingCompleteAt mirror e
     expect(doc!.troops).toBe(100 - DEPLOYED);
     expect(doc!.trainingQueue ?? []).toHaveLength(0);
     expect(doc!.nextTrainingCompleteAt).toBeUndefined(); // mirror removed via $$REMOVE, not set to null
+  });
+
+  // The regression test for ADR-079 stated as a MEASUREMENT rather than a shape assertion: how many
+  // troops per hour does the real scheduler actually deliver? That number is what econ-sim's
+  // `trainPerHour` (= perSlot x trainQueueMaxFor) feeds into the ADR-074 siege gates, and for months the
+  // two disagreed — econ-sim said parallel, worldsvc chained. Nothing anywhere compared them, because
+  // every existing case asserted the SHAPE of the queue rather than its throughput. Serial scheduling
+  // fails this outright: batch 2 would land a full batch-duration after batch 1, halving the rate.
+  it('training throughput scales with the drillYard slot count (the number econ-sim calibrates against)', async () => {
+    const { x, y } = findCoord(20, 60);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+    const drillYard = DRILL_QUEUE_LEVEL_THRESHOLDS[0]!; // 2 slots
+    await grantQueueSlots('a', drillYard);
+
+    const startedAt = nowMs;
+    await svc.trainTroops(W, 'a', 100);
+    await svc.trainTroops(W, 'a', 100);
+    const queue = (await rawDoc('a'))!.trainingQueue!;
+
+    // Both slots run over the SAME window: 200 troops arrive in the time one batch of 100 takes.
+    expect(queue.map((e) => e.completeAt)).toEqual([queue[0]!.completeAt, queue[0]!.completeAt]);
+    const windowMs = queue[0]!.completeAt - startedAt;
+    const mult = drillTrainMult({ drillYard });
+    // Math.round to match trainTroops: 100 * 5 * 1000 * 0.68 is 339999.99999999994 in float, and the
+    // service rounds before storing.
+    expect(windowMs).toBe(Math.round(100 * TROOP_TRAIN_TIME_SEC * 1000 * mult));
+
+    // Measured troops/hour must equal econ-sim's model — `perSlot x slots`, the exact expression in
+    // `econ-sim/src/citySiegeRosters.ts` trainPerHour. Keep the two in lockstep; if this ever has to
+    // change, the ADR-074 gates (`npm run city-siege`) have to be re-run in the same commit.
+    const measuredPerHour = (200 * 3_600_000) / windowMs;
+    const perSlot = 3600 / (TROOP_TRAIN_TIME_SEC * mult);
+    expect(measuredPerHour).toBeCloseTo(perSlot * (TROOP_TRAIN_QUEUE_MAX + 1), 6);
+  });
+
+  // Two slots loaded in the same request now finish in the same instant, so one scheduler tick has to
+  // settle BOTH. The settlement is a single aggregation pipeline that `$sum`s the qty of everything
+  // `$filter` removes — that multi-entry path had no coverage: every other case here drains one batch at
+  // a time (the mirror-advance case above deliberately staggers them to watch the mirror move).
+  it('one scheduler tick settles every slot that came due together, and clears the mirror', async () => {
+    const { x, y } = findCoord(25, 60);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+    await grantQueueSlots('a', DRILL_QUEUE_LEVEL_THRESHOLDS[0]!);
+
+    await svc.trainTroops(W, 'a', 100);
+    await svc.trainTroops(W, 'a', 100);
+    const due = (await rawDoc('a'))!.trainingQueue![0]!.completeAt;
+
+    nowMs = due + 1;
+    expect(await svc.processCompletedTraining(nowMs)).toBe(2); // both, in ONE tick
+    const doc = await rawDoc('a');
+    expect(doc!.troops).toBe(200);
+    expect(doc!.trainingQueue ?? []).toHaveLength(0);
+    expect(doc!.nextTrainingCompleteAt).toBeUndefined();
+  });
+
+  // The S8-8 buff cases all run against a ONE-entry queue, so "the WHOLE queue advances 2x" was never
+  // actually observed on more than one slot. It matters more now: applyTrainingSpeedupCatchup subtracts
+  // the same `extra` from every entry, which is right precisely BECAUSE the slots are independent (a
+  // real-time window worth `extra` of progress is worth it to each slot at once). A future refactor that
+  // "shared" the buff across the queue instead would still pass every single-entry case.
+  it('S8-8 + ADR-079: the buff advances every parallel slot by the same amount, order intact', async () => {
+    const { x, y } = findCoord(30, 60);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    await drainTroops('a');
+    await grantQueueSlots('a', DRILL_QUEUE_LEVEL_THRESHOLDS[0]!);
+
+    await svc.trainTroops(W, 'a', 100); // longer
+    await svc.trainTroops(W, 'a', 20);  // shorter, queued second
+    const before = (await rawDoc('a'))!.trainingQueue!;
+    await svc.buySlgShopItem(W, 'a', 'slg_speedup_1h');
+
+    const elapsed = 30_000;
+    nowMs += elapsed;
+    await svc.processCompletedTraining(nowMs); // the tick is what folds the buff in for an idle player
+    const after = (await rawDoc('a'))!;
+    const extra = elapsed * (TRAIN_SPEEDUP_BUFF_MULT - 1);
+
+    expect(after.trainingQueue!.map((e) => e.completeAt)).toEqual(before.map((e) => e.completeAt - extra));
+    // Uniform compression cannot reorder the slots, and the mirror still tracks the shorter one.
+    expect(after.nextTrainingCompleteAt).toBe(before[1]!.completeAt - extra);
+
+    // The shorter slot lands on its own while the longer one keeps running — the whole point of a slot.
+    nowMs = after.nextTrainingCompleteAt! + 1;
+    expect(await svc.processCompletedTraining(nowMs)).toBe(1);
+    const settled = await rawDoc('a');
+    expect(settled!.troops).toBe(20);
+    expect(settled!.trainingQueue).toHaveLength(1);
+    expect(settled!.trainingQueue![0]!.qty).toBe(100);
   });
 
   it('ensureIndexes builds a partial index on nextTrainingCompleteAt (not a full-collection scan)', async () => {
