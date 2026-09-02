@@ -23,6 +23,7 @@ import { initI18n, t } from '../../src/i18n';
 import { WorldMapNet } from '../../src/scenes/worldmap/WorldMapNet';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { SiegeResult } from '../../src/net/proto/transport';
+import { modalLineText, type ModalLine } from '../../src/scenes/worldmap/WorldMapPanels/modalLine';
 
 // 2026-08-13 (claudedocs/client-modules.md "单文件 500 行收敛" split): applySiegeResult's own
 // loadMapViewport/refreshMe/refreshMarches calls (in net/push.ts) are now direct module-scope calls
@@ -124,7 +125,7 @@ describe('WorldMapNet.applySiegeResult — role is server-authoritative (attacke
   it('a won attack that finalizes instantly (base siege / structure chip / PvE stronghold-or-crossing — target tile has no contestedByMe) still opens the siege modal with replay, not a toast', async () => {
     await h.net.applySiegeResult(siege('attacker_win', ME, 'attack'));
     expect(h.showModal).toHaveBeenCalledTimes(1);
-    const lines = h.showModal.mock.calls[0][0] as string[];
+    const lines = (h.showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
     expect(lines[0]).toBe(t('world.siegeWin').replace('{loot}', ''));
     expect(h.showToast).not.toHaveBeenCalled();
   });

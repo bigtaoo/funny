@@ -12,6 +12,7 @@ import { initI18n, t } from '../../src/i18n';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { WorldTileView, PlayerWorldView, StationedView } from '../../src/net/WorldApiClient';
+import { modalLineText, type ModalLine } from '../../src/scenes/worldmap/WorldMapPanels/modalLine';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -85,7 +86,7 @@ describe('WorldMapInput garrison targeting rule (own + ally only, 2026-08-02)', 
     h.input.onTileClick(FAR.x, FAR.y);
     const labels = (h.showModal.mock.calls[0][1] as Btn[]).map((b) => b.label);
     expect(labels).toEqual([t('world.actGarrison'), t('common.close')]);
-    const headLines = h.showModal.mock.calls[0][0] as string[];
+    const headLines = (h.showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
     expect(headLines[0]).toBe(t('world.allyTile'));
     expect(headLines).toContain('Ally');
   });

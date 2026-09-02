@@ -112,10 +112,10 @@ export async function applySiegeResult(ctx: WorldMapContext, s: SiegeResult): Pr
         : s.outcome === 'defender_win' ? t('world.siegeLoss')
         : t('world.siegeDraw');
       ctx.panels.showModal(
-        [line],
+        [{ text: line, icon: 'swords' }],
         [
-          { label: t('world.replaySiege'), action: () => { ctx.panels.closeModal(); ctx.cb.onReplaySiege(s.siegeId); } },
-          { label: t('common.close'), action: () => ctx.panels.closeModal() },
+          { label: t('world.replaySiege'), action: () => { ctx.panels.closeModal(); ctx.cb.onReplaySiege(s.siegeId); }, icon: 'replay' },
+          { label: t('common.close'), action: () => ctx.panels.closeModal(), icon: 'close' },
         ],
       );
     }

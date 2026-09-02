@@ -13,6 +13,7 @@ import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 import { loadMapViewport } from './loaders';
 import { errorMsg } from './errors';
 import { territoryConnected, attackFootprintCells } from '../logic/attackConnectivity';
+import { coordLine, type ModalButton } from '../WorldMapPanels/modalLine';
 
 /**
  * Team picker for a team-based march. kind='attack' (siege a real player / stronghold) or 'occupy'
@@ -97,21 +98,22 @@ export async function showTeamPicker(
   const usable = teams
     .filter((tm) => tm.army.length > 0 && !busyTeamIds.has(tm.id) && committedOf(tm) > 0)
     .sort((a, b) => distanceOf(a) - distanceOf(b) || committedOf(b) - committedOf(a) || powerOf(b) - powerOf(a));
-  const buttons: { label: string; action: () => void }[] = [];
+  const buttons: ModalButton[] = [];
   for (const tm of usable) {
     const committed = committedOf(tm);
     buttons.push({
       label: `${teamDisplayName(tm)} · ${t('world.team.committed').replace('{n}', String(committed))}`,
       action: () => void doMarchTeam(ctx, pendingTeamIds, tx, ty, tm.id, kind, stationMode),
+      icon: 'swords',
     });
   }
-  buttons.push({ label: t('common.close'), action: () => ctx.panels.closeModal() });
+  buttons.push({ label: t('common.close'), action: () => ctx.panels.closeModal(), icon: 'close' });
   // 移动并驻扎 (stationMode==='garrison') gets its own picker title so the intent is unmistakable at team-select time.
   const moveTitle = stationMode === 'garrison' ? t('world.team.pickTitleGarrison') : t('world.team.pickTitleMove');
   const head = usable.length > 0
     ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : kind === 'move' ? moveTitle : t('world.team.pickTitle'))
     : (kind === 'occupy' ? t('world.team.noTeamsOccupy') : kind === 'move' ? t('world.team.noTeamsMove') : t('world.team.noTeams'));
-  ctx.panels.showModal([head, `(${tx}, ${ty})`], buttons);
+  ctx.panels.showModal([{ text: head, icon: 'cards' }, coordLine(tx, ty)], buttons);
 }
 
 export async function doMarchTeam(

@@ -16,15 +16,22 @@ import { peekViewportH } from '../../../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../../../render/fontScale';
 import { HUD_H, MARGIN, CONFIRM_H } from '../logic/constants';
 import { PANEL_W, PANEL_MARGIN, PANEL_BTN_FONT } from './spec';
+import {
+  modalLineText, modalLineIcon, buildModalGlyph,
+  type ModalLine, type ModalButton,
+} from './modalLine';
+import { buildIcon } from '../../../render/icons';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 
 export class WorldMapPanelsCore {
   constructor(readonly ctx: WorldMapContext) {}
 
-  showModal(
-    lines: string[],
-    buttons: { label: string; action: () => void; disabled?: boolean }[]
-  ): void {
+  /**
+   * The world map's one modal primitive: a stack of centered information lines over a grid of
+   * action buttons. Both a line and a button may carry a leading glyph (see ./modalLine.ts) —
+   * plain strings still work and render exactly as before.
+   */
+  showModal(lines: ModalLine[], buttons: ModalButton[]): void {
     const ml = this.ctx.modalLayer;
     tearDownChildren(ml);
 
@@ -52,14 +59,25 @@ export class WorldMapPanelsCore {
     const rows = Math.ceil(buttons.length / cols);
     const rowGap = 16;
 
+    // Leading glyph on an information line: sized to the line's own font so icon and text read as
+    // one row. A resource motif whose atlas has not decoded yet comes back null and the line simply
+    // lays out without it (never a blank box).
+    const lineGlyph = Math.round(FS.title);
+    const lineGlyphGap = 10;
+
     // Pre-measure wrapped label heights so the panel sizes to content instead of clipping/overlapping.
+    // The label is left-anchored now and the icon+text pair is centered as a group (an icon-less line
+    // is identical to the old center-anchored single label).
     const labels = lines.map((line) => {
-      const lbl = txt(line, FS.title, C.dark, false, textW);
-      lbl.anchor.set(0.5, 0);
-      return lbl;
+      const spec = modalLineIcon(line);
+      const glyph = spec ? buildModalGlyph(spec, lineGlyph, C.dark) : null;
+      const lead = glyph ? lineGlyph + lineGlyphGap : 0;
+      const lbl = txt(modalLineText(line), FS.title, C.dark, false, textW - lead);
+      lbl.anchor.set(0, 0);
+      return { lbl, glyph, lead };
     });
     const textH =
-      labels.reduce((sum, lbl) => sum + lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
+      labels.reduce((sum, e) => sum + e.lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
     const btnAreaH = btnH * rows + rowGap * (rows - 1);
     const mh = Math.max(CONFIRM_H * 1.5, topPad + textH + btnGap + btnAreaH + btnGap);
     const my = (h - HUD_H - mh) / 2;
@@ -75,8 +93,17 @@ export class WorldMapPanelsCore {
     ml.addChild(panel);
 
     let ly = my + topPad;
-    for (const lbl of labels) {
-      lbl.x = mx + mw / 2;
+    for (const { lbl, glyph, lead } of labels) {
+      const rowX = mx + (mw - (lbl.width + lead)) / 2;
+      if (glyph) {
+        glyph.x = rowX;
+        // Centered on the label's full height rather than on its first text line: every icon-bearing
+        // line here is a short single-liner, and on the few that do wrap (the confirm/hint copy) a
+        // block-centered glyph reads as a bullet instead of drifting off the top.
+        glyph.y = ly + (lbl.height - lineGlyph) / 2;
+        ml.addChild(glyph);
+      }
+      lbl.x = rowX + lead;
       lbl.y = ly;
       ml.addChild(lbl);
       ly += lbl.height + lineGap;
@@ -113,10 +140,24 @@ export class WorldMapPanelsCore {
       // with two close affordances side by side (a glyph button in the tile-action modals, a
       // `t('world.close')` text button in the shop/territory/replay panels); both are now
       // `t('common.close')` text (2026-08-30 SLG widget pass).
+      // Leading glyph, drawn only where the column is wide enough to still leave a readable label:
+      // a full six-button tile menu squeezes each column to ~165px, and spending 34px of that on an
+      // icon would push an already-wrapping CJK label ("移动到此（停留）") onto a third line. Wide
+      // columns (a two- or three-button modal, i.e. most confirms) always get it.
+      const btnGlyph = 26;
+      const btnGlyphGap = 8;
+      const icon = btn.icon && btnW >= 200 ? buildIcon(btn.icon, btnGlyph, disabled ? C.mid : C.light) : null;
+      const lead = icon ? btnGlyph + btnGlyphGap : 0;
       // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
-      const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16);
-      bl.anchor.set(0.5, 0.5);
-      bl.x = bx + btnW / 2;
+      const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16 - lead);
+      bl.anchor.set(0, 0.5);
+      const grpX = bx + (btnW - (bl.width + lead)) / 2;
+      if (icon) {
+        icon.x = grpX;
+        icon.y = by + (btnH - btnGlyph) / 2;
+        ml.addChild(icon);
+      }
+      bl.x = grpX + lead;
       bl.y = by + btnH / 2;
       ml.addChild(bl);
       this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, fn: btn.action });
@@ -203,12 +244,17 @@ export class WorldMapPanelsCore {
       void this.ctx.net.doMarch(tx, ty, kind, qty);
     };
     this.showModal(
-      [t('world.deployTitle').replace('{avail}', String(avail)), `${kindLabel} → (${tx}, ${ty})`],
       [
+        { text: t('world.deployTitle').replace('{avail}', String(avail)), icon: 'unit' },
+        { text: `${kindLabel} → (${tx}, ${ty})`, icon: 'globe' },
+      ],
+      [
+        // ¼ / ½ / 全部 stay bare: they are a quantity ladder, and three different glyphs for "a
+        // fraction of the same pool" would read as three different actions.
         { label: t('world.deployQuarter'), action: () => send(Math.floor(avail / 4)) },
         { label: t('world.deployHalf'), action: () => send(Math.floor(avail / 2)) },
         { label: t('world.deployAll'), action: () => send(avail) },
-        { label: t('common.close'), action: () => this.closeModal() },
+        { label: t('common.close'), action: () => this.closeModal(), icon: 'close' },
       ]
     );
   }

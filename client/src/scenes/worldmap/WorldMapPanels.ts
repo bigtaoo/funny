@@ -16,6 +16,7 @@
 // `extends` chain — every method here exists because WorldMapInput/WorldMapNet/WorldMapRenderer
 // already call `ctx.panels.methodName(...)` directly and must keep resolving.
 import { WorldMapPanelsCore } from './WorldMapPanels/core';
+import type { ModalLine, ModalButton } from './WorldMapPanels/modalLine';
 import { HudPanel } from './WorldMapPanels/hud';
 import { ShopPanel } from './WorldMapPanels/shop';
 import { TerritoryPanel } from './WorldMapPanels/territory';
@@ -44,10 +45,7 @@ export class WorldMapPanels {
   }
 
   // ── core: modal/toast/deploy primitives (./WorldMapPanels/core.ts) ───────
-  showModal(
-    lines: string[],
-    buttons: { label: string; action: () => void; disabled?: boolean }[]
-  ): void {
+  showModal(lines: ModalLine[], buttons: ModalButton[]): void {
     this.core.showModal(lines, buttons);
   }
 

@@ -21,6 +21,7 @@ import { initI18n, t } from '../../src/i18n';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { WorldTileView, PlayerWorldView } from '../../src/net/WorldApiClient';
+import { modalLineText, type ModalLine } from '../../src/scenes/worldmap/WorldMapPanels/modalLine';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -128,7 +129,7 @@ describe('WorldMapInput occupy connectivity pre-filter (ADR-039)', () => {
     const tx = ANCHOR.x, ty = ANCHOR.y + 2; // 4-adjacent to the capital footprint (enabled Occupy)
     h.ctx.tileCache.set(`${tx}:${ty}`, { resType: 'metal', level: 3 } as WorldTileView);
     h.input.onTileClick(tx, ty);
-    const lines = h.showModal.mock.calls[0][0] as string[];
+    const lines = (h.showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
     expect(lines).toContain(t('world.resLevel').replace('{res}', t('world.metal')).replace('{lv}', '3'));
     // npcGarrison(level) = NPC_GARRISON_PER_LEVEL(120) * level
     expect(lines).toContain(t('world.recommendTroops').replace('{n}', '360'));

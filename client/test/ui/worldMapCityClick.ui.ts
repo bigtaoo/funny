@@ -19,6 +19,7 @@ import { initI18n, t } from '../../src/i18n';
 import { WorldMapInput } from '../../src/scenes/worldmap/WorldMapInput';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { WorldTileView, PlayerWorldView, WorldCityNodeView } from '../../src/net/WorldApiClient';
+import { modalLineText, type ModalLine } from '../../src/scenes/worldmap/WorldMapPanels/modalLine';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -85,7 +86,8 @@ function cityNode(over: Partial<WorldCityNodeView> = {}): WorldCityNodeView {
 /** Read the modal from the LAST showModal call (the panel redraws once after refreshCities resolves). */
 function lastModal(showModal: ReturnType<typeof vi.fn>): [string[], Btn[]] {
   const calls = showModal.mock.calls;
-  return calls[calls.length - 1] as [string[], Btn[]];
+  const [lines, buttons] = calls[calls.length - 1] as [ModalLine[], Btn[]];
+  return [lines.map(modalLineText), buttons];
 }
 
 describe('WorldMapInput.onTileClick — wild city ground (ADR-074 P0 guarantees)', () => {
