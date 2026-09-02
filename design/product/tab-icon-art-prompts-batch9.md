@@ -1,6 +1,6 @@
 # 批次 9：世界地图弹窗图标槽的 7 个空位（瞭望塔 / 箭塔 / 阻挡 / 定位针 / 营帐 / 脚印 / 险地）— Prompt 文档
 
-> 创建：2026-09-02 · 状态：**7 张已出图、已接线、已实拍验收（同日）**——6 张一版过，`camp` 判为「可用但最弱」并登记 v2 重出 prompt（见 §7）。全库账：**56 张自有美术 + 6 个别名 = 62 个 ink kind**
+> 创建：2026-09-02 · 状态：**全批完成（同日）**——7 张出图 + 接线 + 实拍验收，其中 6 张一版过，`camp` v2 一版过（v1 判为「可用但最弱」，见 §7）。全库账：**56 张自有美术 + 6 个别名 = 62 个 ink kind**
 > 前八批：[`tab-icon-art-prompts.md`](tab-icon-art-prompts.md)（批 1–4，19 张）· [`batch5`](tab-icon-art-prompts-batch5.md)（页面标题，24 张）· [`batch6`](tab-icon-art-prompts-batch6.md)（大厅首页，3 张）· [`batch7`](tab-icon-art-prompts-batch7.md)（矢量清零，43 张）+ [`batch7-log`](tab-icon-art-prompts-batch7-log.md)（重出记录）· [`batch8`](tab-icon-art-prompts-batch8.md)（数值词条 4 张 + 8b 卡片元信息 2 张）
 > 配套代码：[`inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts) · [`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) · [`modalLine.ts`](../../client/src/scenes/worldmap/WorldMapPanels/modalLine.ts) · 调用点见 §5
 > 上游：[`SLG_LOG_2026-08.md` 「2026-09-02：地块弹窗」](../game/SLG_LOG_2026-08.md) 一节的「待补图」段（提交 `e2c83254f`）
@@ -203,7 +203,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 | kind | 尺寸 | 比 | kind | 尺寸 | 比 |
 |---|---|---|---|---|---|
-| `watchtower` | 106×128 | 1.21 | `camp` | 128×64 | **2.00** |
+| `watchtower` | 106×128 | 1.21 | `camp` | 128×64 → **v2 128×89** | 2.00 → **1.44** |
 | `arrowTower` | 84×128 | 1.52 | `footsteps` | 94×128 | 1.36 |
 | `blocker` | 128×107 | 1.20 | `stronghold` | 128×126 | 1.02 |
 | `mapPin` | 86×128 | 1.49 | | | |
@@ -230,6 +230,10 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 ```
 
 重出落地是**零代码改动**：覆盖 `art/ui/tabicons/tabicon_camp.webp`（旧图移进 `_rejected/`，命名 `tabicon_camp_v1_flat2to1ropesvanish.webp`）、重跑 `node art/ui/tabicons/pack_tab_icons.cjs`，测试不用碰。
+
+**v2 验收结果（同日，一版过）**：裁边后 **128×89 = 1.44:1**（v1 是 2.00）。26/28px 深底+纸底上它现在**填满方框、跟邻居同一个重量级**，读成"带敞口的 A 字帐篷"；跟 `lead`（毛糙锥体）、`play`（实心三角）、`home`（三角顶 + 方身 + 方门）三张三角剪影并排都分得开。真机实拍时特意把 `camp` 和 `home` 放进**同一个弹窗**（`移动并驻扎` 与 `召回驻军` 确实会同屏），信息行和深色按钮两种衬底上都不混。重跑打包只有 `camp_active.png` 一张变化，其余 194 张零字节改动。
+
+**没有达成的那个数**：我原本说要看到 ≤1.3:1，实际是 1.44。没有再要一版——1.3 只是"填得满方框、跟邻居等重"的代用指标，而那个目标已经在 26px 并排上直接看到达成了；为一个代用指标再跑一轮是本末倒置。真正该记住的门槛仍然是 2.2（硬拦）加上"并排看一眼"（判定）。
 
 ### 实拍中查到的一件事：三个建造按钮的图标今天基本画不出来
 
