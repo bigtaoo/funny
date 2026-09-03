@@ -49,8 +49,13 @@
 	<false/>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-5437693117291100~7980565358</string>
-	<key>NSUserTrackingUsageDescription</key>
-	<string>This identifier will be used to show you more relevant ads and rewards.</string>
+	<!-- No NSUserTrackingUsageDescription on purpose (2026-09-03): the app serves non-personalized
+	     ads only (AppDelegate.swift's nonPersonalizedRequest(), npa=1), never reads the IDFA, and
+	     declares "Data Used to Track You: none" in App Store Connect. Adding the key back would
+	     mean the binary can prompt for tracking while the privacy label says it does not.
+	     SKAdNetworkItems below stays: Apple's App Privacy guidance explicitly excludes SKAdNetwork
+	     from the definition of tracking (aggregate install attribution, no user-level identifier,
+	     no ATT required), and AdMob needs it for publisher-side attribution. -->
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>

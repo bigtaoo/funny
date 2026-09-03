@@ -5,7 +5,7 @@ import { CommercialService } from './service';
 import { startInternalHttp } from './internalHttp';
 import { loadCommercialEnv } from './config';
 import { loadInternalAuth, IAP_TIERS, createLogger, startHeartbeat, connectDailyCounterRedis } from '@nw/shared';
-import { createReceiptVerifier } from './iap';
+import { createAppleSubscriptionReader, createReceiptVerifier } from './iap';
 
 async function main(): Promise<void> {
   // Hardening (L2-3): IAP dev stub must never be enabled in production — enabling it accidentally
@@ -33,7 +33,17 @@ async function main(): Promise<void> {
   // it already holds for active-match tracking instead of opening a second one for adsDaily/pveDaily).
   const redis = await connectDailyCounterRedis(env.redisUrl);
 
-  const svc = new CommercialService({ cols: mongo.collections, now: () => Date.now(), verifyReceipt, redis });
+  // Apple auto-renewable subscription sync (IOS_RELEASE.md §4.1b). No dev-stub counterpart on purpose —
+  // see createAppleSubscriptionReader's doc; null here simply means the sync route grants nothing.
+  const verifyAppleSubscriptions = createAppleSubscriptionReader();
+
+  const svc = new CommercialService({
+    cols: mongo.collections,
+    now: () => Date.now(),
+    verifyReceipt,
+    verifyAppleSubscriptions,
+    redis,
+  });
   const server = startInternalHttp(
     { host: env.host, port: env.port, internalAuth: loadInternalAuth(env.internalKey) },
     svc,

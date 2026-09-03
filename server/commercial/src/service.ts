@@ -85,6 +85,7 @@ export class CommercialService {
 
   // ── subscription ──
   monthlyCardBuy(...args: Parameters<SubscriptionService['monthlyCardBuy']>) { return this.subscription.monthlyCardBuy(...args); }
+  subscriptionSyncApple(...args: Parameters<SubscriptionService['subscriptionSyncApple']>) { return this.subscription.subscriptionSyncApple(...args); }
   yearCardBuy(...args: Parameters<SubscriptionService['yearCardBuy']>) { return this.subscription.yearCardBuy(...args); }
   monthlyCardClaim(...args: Parameters<SubscriptionService['monthlyCardClaim']>) { return this.subscription.monthlyCardClaim(...args); }
 

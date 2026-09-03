@@ -19,6 +19,11 @@
 | 平台 | 环境变量 | 申请位置 | receipt 格式 |
 |---|---|---|---|
 | Apple App Store | `NW_APPLE_PASSWORD` | App Store Connect →「App 内购买项目」→ App 专用共享密钥 | base64 receipt data |
+
+> **同一把密钥现在喂两条链路**（2026-09-03）：除了单次验单（`appleVerify`），自动续订订阅的续期同步
+> （`appleSubscriptionTransactions` ← `POST /iap/apple/sync`）也用它。缺失时**两条都 fail closed**：验单返
+> `INVALID_RECEIPT`，同步返 `granted: 0` 什么都不发（不报错——那条请求是客户端冷启动自己发的，没人在等结果）。
+> 机制见 [`IOS_RELEASE.md §4.1b`](IOS_RELEASE.md)。
 | Google Play | `NW_GOOGLE_SERVICE_ACCOUNT_JSON`（整串）+ `NW_GOOGLE_PACKAGE_NAME` | GCP 创建服务账户 JSON；Play Console 授予该账户「查看财务数据/管理订单」权限 | `${productId}:${purchaseToken}` |
 | 微信支付 V3 | `NW_WX_PAY_MCH_ID` + `NW_WX_PAY_API_KEY_V3` | 微信商户平台「API 安全」→ V3 APIKey（32 字节） | `transaction_id` |
 | Stripe（Web） | `NW_STRIPE_SECRET_KEY` | Stripe Dashboard → API keys（`sk_live_*` 生产 / `sk_test_*` 沙盒） | `payment_intent_id`（`pi_*`） |

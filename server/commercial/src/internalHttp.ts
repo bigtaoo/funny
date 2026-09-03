@@ -339,6 +339,16 @@ export function startInternalHttp(
                 clientPlatform: strOpt(b.clientPlatform),
               }),
             );
+          case '/internal/subscription/sync-apple':
+            return send(
+              res,
+              200,
+              await svc.subscriptionSyncApple({
+                accountId: str(b.accountId),
+                receipt: str(b.receipt),
+                clientPlatform: strOpt(b.clientPlatform),
+              }),
+            );
           case '/internal/monthly-card/claim':
             return send(
               res,

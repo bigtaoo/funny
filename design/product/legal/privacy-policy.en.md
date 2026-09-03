@@ -70,7 +70,7 @@ We **do not sell** your personal information. We share only what is necessary, i
 | **App stores / payment channels** (Apple, Google, WeChat Pay, CrazyGames, etc.) | Transaction / receipt data | Purchase fulfilment & verification |
 | **Cloud / hosting providers** ({{CLOUD_PROVIDER}}) | Backend-stored account & save data | Service hosting |
 | **Analytics service** (in-house analyticsvc / {{ANALYTICS_SDK}}) | Pseudonymous analytics events | Operations analytics (consent in EU/UK) |
-| **Advertising SDK** ({{ADS_SDK}}, if applicable) | Minimal serving identifiers | Rewarded ads (no cross-app tracking unless ATT/consent) |
+| **Advertising SDK** (Google AdMob, mobile rewarded video only) | Minimal serving identifiers | Rewarded ads, requested as **non-personalised only** (no IDFA, no cross-app tracking) |
 | **Aggregator platforms** (CrazyGames, etc.) | Login/session info required by the platform | Running inside the platform |
 | **Regulators / law enforcement** | Information legally required | Legal obligation |
 
@@ -87,7 +87,7 @@ For EU / UK users, analytics events and non-essential analytics are **off by def
 The web version uses essential local storage (localStorage) to keep your login and game state; any analytics cookies are subject to a cookie consent banner. Essential storage is required for the service and cannot be disabled.
 
 ### 6.3 Advertising & tracking
-By default we **do not perform cross-app ad tracking**. If we later introduce tracking that requires App Tracking Transparency (ATT), we will request separate consent via the iOS system prompt; declining does not affect core gameplay.
+We **do not perform cross-app ad tracking**. Rewarded video in the mobile app is served by Google AdMob and is requested as **non-personalised advertising only** (`npa=1`): we do not read the advertising identifier (IDFA), and consequently **no App Tracking Transparency prompt is shown on iOS**. Apple's SKAdNetwork is used for aggregate install attribution only, which Apple's own guidance does not classify as tracking. If we ever switch to personalised advertising, we will request separate consent via the ATT system prompt and update this policy and the App Store privacy label to match; declining would not affect core gameplay.
 
 ---
 

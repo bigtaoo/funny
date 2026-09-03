@@ -26,7 +26,7 @@ import type {
 } from '../db';
 import type { RandInt } from '../gacha';
 import { displayChannelOf, effectiveCoins, type RechargeChannel } from '../spendChannel';
-import type { IapProductKind } from '../iap';
+import type { AppleSubscriptionTx, IapProductKind } from '../iap';
 
 /** A resolved, drawable pool: either a derived/static GachaPoolDef or an ops-authored custom config (§12). */
 export type ResolvedPool = { kind: 'derived'; pool: GachaPoolDef } | { kind: 'custom'; cfg: CustomPoolConfig };
@@ -79,6 +79,14 @@ export interface CommercialDeps {
   ) =>
     | Promise<{ ok: boolean; coins: number; usdCents?: number; product?: IapProductKind }>
     | { ok: boolean; coins: number; usdCents?: number; product?: IapProductKind };
+  /**
+   * Reads the auto-renewable subscription periods out of an Apple receipt (iap.ts's
+   * createAppleSubscriptionReader), for subscriptionSyncApple. Separate from `verifyReceipt` on
+   * purpose: it has no dev-stub fallback, because the grants it drives bypass the single-slot gate
+   * (see subscriptionCardBuy's `renewal`) and a forgeable receipt there would mint subscription time.
+   * Absent/null = Apple unconfigured; the sync then reports nothing to grant instead of granting.
+   */
+  verifyAppleSubscriptions?: ((receipt: string) => Promise<AppleSubscriptionTx[]>) | null;
   /** victoryDaily counter backend (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts). null (the
    *  default in every test in this package) = correct-for-single-instance in-process counter, not a disabled cap. */
   redis?: RedisLike | null;

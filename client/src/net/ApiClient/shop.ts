@@ -8,6 +8,7 @@ export interface ShopApi {
   shopBuy(itemId: string, qty?: number): Promise<{ save: SaveData; granted: string }>;
   adsReward(adToken: string, platform?: string): Promise<{ save: SaveData; granted: number }>;
   iapVerify(platform: string, receipt: string): Promise<{ save: SaveData; granted: number }>;
+  iapAppleSync(receipt: string): Promise<{ save: SaveData; granted: number }>;
   paddleCheckout(tierId: string): Promise<{ transactionId: string }>;
   redeemPromoCode(code: string): Promise<{ save: SaveData; granted: number }>;
 }
@@ -59,6 +60,16 @@ export class ShopService implements ShopApi {
       platform,
       receipt,
     });
+  }
+
+  /**
+   * Apply any Apple auto-renewable subscription period that has been charged but not granted yet
+   * (IOS_RELEASE.md §4.1b). Idempotent, and Apple-only — no `platform` argument, because Apple is
+   * the one channel whose subscriptions renew without the app being involved at all. `granted` is
+   * how many periods this call actually added, which is 0 on almost every call.
+   */
+  async iapAppleSync(receipt: string): Promise<{ save: SaveData; granted: number }> {
+    return this.core.post<{ save: SaveData; granted: number }>('/iap/apple/sync', { receipt });
   }
 
   /**

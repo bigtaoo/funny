@@ -32,18 +32,23 @@
     <tr><th>Category</th><th>Examples</th><th>Purpose</th><th>Legal basis</th></tr>
     <tr><td>Account data</td><td>Username, email address, hashed password</td><td>Authentication, account management</td><td>Contract (Art. 6(1)(b) GDPR)</td></tr>
     <tr><td>Game state</td><td>Progress, inventory, match history, coins balance</td><td>Game functionality, server authority</td><td>Contract</td></tr>
-    <tr><td>Transaction data</td><td>Purchase amounts, Paddle transaction IDs</td><td>Payment processing, fraud prevention</td><td>Contract; Legal obligation</td></tr>
+    <tr><td>Transaction data</td><td>Purchase amounts, and the transaction identifier issued by the payment processor for your platform (Paddle on the web, Apple on iOS)</td><td>Payment processing, fraud prevention</td><td>Contract; Legal obligation</td></tr>
     <tr><td>Technical data</td><td>IP address, device type, browser, session logs</td><td>Security, debugging, abuse prevention</td><td>Legitimate interest (Art. 6(1)(f))</td></tr>
     <tr><td>Analytics</td><td>Gameplay events, session duration (anonymised)</td><td>Game balance and improvement</td><td>Legitimate interest</td></tr>
   </table>
 
   <h2>3. Payment Processing</h2>
-  <p>Payments are processed by <strong>Paddle.com Market Limited</strong>, our Merchant of Record. Paddle collects and stores your payment details (card number, billing address) directly — we never see or store full card data. Paddle's privacy policy applies to payment data: <a href="https://www.paddle.com/legal/privacy" target="_blank" rel="noopener">paddle.com/legal/privacy</a>.</p>
+  <p>Who processes your payment depends on where you play. In both cases we never see or store your card number or billing address — the processor holds those directly, and we receive only the amount, the product, and a transaction identifier.</p>
+  <ul>
+    <li><strong>On the web:</strong> payments are processed by <strong>Paddle.com Market Limited</strong>, our Merchant of Record. Paddle's privacy policy applies to payment data: <a href="https://www.paddle.com/legal/privacy" target="_blank" rel="noopener">paddle.com/legal/privacy</a>.</li>
+    <li><strong>In the iOS app:</strong> all purchases go through <strong>Apple's In-App Purchase</strong> system. Apple is the seller of record, handles the payment and your billing relationship, and its privacy policy applies to that data: <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">apple.com/legal/privacy</a>. We receive Apple's receipt in order to deliver what you bought; billing questions and refunds for iOS purchases are handled by Apple, not by us.</li>
+  </ul>
 
   <h2>4. Data Sharing</h2>
   <p>We do not sell your personal data. We share data only with:</p>
   <ul>
-    <li><strong>Paddle</strong> — payment processing (see §3)</li>
+    <li><strong>Paddle</strong> (web) / <strong>Apple</strong> (iOS app) — payment processing (see §3)</li>
+    <li><strong>Google AdMob</strong> — rewarded video ads in the mobile app, requested as <em>non-personalised</em> ads only. We do not use the advertising identifier (IDFA) and do not track you across other companies' apps or websites: <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">how Google uses data from partner sites</a></li>
     <li><strong>Infrastructure providers</strong> — cloud hosting (servers located in the EU/EEA where possible)</li>
     <li><strong>Legal authorities</strong> — if required by law</li>
   </ul>

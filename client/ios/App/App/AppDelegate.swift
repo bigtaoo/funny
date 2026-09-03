@@ -3,7 +3,6 @@ import Capacitor
 import StoreKit
 import WebKit
 import GoogleMobileAds
-import AppTrackingTransparency
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -105,6 +104,21 @@ final class NWBridgeViewController: CAPBridgeViewController,
               window.webkit.messageHandlers.nwbilling.postMessage({ id: id, tierId: String(tierId) });
             } catch (e) { delete pending[id]; reject(e); }
           });
+        },
+        // Current App Store receipt, or null when the device has none yet. Read by the JS side's
+        // auto-renewable subscription sync (src/platform/appleSubscriptionSync.ts) — a renewal never
+        // passes through this app, so the refreshed receipt is the only trace of it.
+        receipt: function(){
+          return new Promise(function(resolve, reject){
+            var id = 'nw' + (++seq);
+            pending[id] = {
+              resolve: function(r){ resolve(r.receipt ? r.receipt : null); },
+              reject: reject
+            };
+            try {
+              window.webkit.messageHandlers.nwbilling.postMessage({ id: id, op: 'receipt' });
+            } catch (e) { delete pending[id]; reject(e); }
+          });
         }
       };
     })();
@@ -189,8 +203,15 @@ final class NWBridgeViewController: CAPBridgeViewController,
         }
         guard message.name == Self.handlerName,
               let body = message.body as? [String: Any],
-              let jsId = body["id"] as? String,
-              let tierId = body["tierId"] as? String else { return }
+              let jsId = body["id"] as? String else { return }
+        // window.NWBilling.receipt() — no purchase, just hand back the current receipt (empty string
+        // when there is none, which the JS wrapper turns into null). Kept on this same handler so the
+        // bridge stays one message channel with one promise registry.
+        if body["op"] as? String == "receipt" {
+            settle(jsId, ok: true, payload: Self.appStoreReceiptBase64() ?? "")
+            return
+        }
+        guard let tierId = body["tierId"] as? String else { return }
         guard SKPaymentQueue.canMakePayments() else {
             settle(jsId, ok: false, payload: "payments_disabled"); return
         }
@@ -281,12 +302,31 @@ final class NWBridgeViewController: CAPBridgeViewController,
     private var rewardedAd: RewardedAd?
     private var pendingAdJsId: String?
 
+    /**
+     * An ad request tagged non-personalized (`npa=1`), which is what every request from this app
+     * uses. This is the decision that keeps the App Privacy label honest (2026-09-03): the app
+     * declares no tracking, shows no ATT prompt, and therefore must not ask Google for
+     * personalised ads — `npa=1` says so explicitly rather than relying on the IDFA simply being
+     * unavailable. It costs some eCPM and buys a label that matches the binary.
+     *
+     * SKAdNetwork (`SKAdNetworkItems` in Info.plist) deliberately stays: Apple's own App Privacy
+     * guidance excludes it from the definition of tracking — it reports install attribution in
+     * aggregate, with no user-level identifier and no ATT requirement.
+     */
+    private func nonPersonalizedRequest() -> Request {
+        let request = Request()
+        let extras = Extras()
+        extras.additionalParameters = ["npa": "1"]
+        request.register(extras)
+        return request
+    }
+
     /** Load the next ad in the background so `showRewarded` doesn't pay the network round-trip. */
     private func preloadRewardedAd() {
         Task { [weak self] in
             guard let self = self else { return }
             do {
-                let ad = try await RewardedAd.load(with: Self.rewardedAdUnitId, request: Request())
+                let ad = try await RewardedAd.load(with: Self.rewardedAdUnitId, request: self.nonPersonalizedRequest())
                 ad.fullScreenContentDelegate = self
                 self.rewardedAd = ad
             } catch {
@@ -295,11 +335,15 @@ final class NWBridgeViewController: CAPBridgeViewController,
         }
     }
 
-    /** Requests ATT (once, on first ad request — a no-op if already answered) then presents the preloaded ad. */
+    /**
+     * Presents the preloaded ad. No App Tracking Transparency prompt: this app serves
+     * NON-PERSONALIZED ads only (see `nonPersonalizedRequest()`), so it never asks for the IDFA and
+     * has nothing to ask permission for. Apple's App Privacy answers say "Data Used to Track You:
+     * none", and an ATT prompt in an app that doesn't track is both a rejection risk and a needless
+     * scare for the player.
+     */
     private func handleShowRewarded(jsId: String, accountId: String?) {
-        requestTrackingAuthorizationIfNeeded { [weak self] in
-            self?.presentRewardedAd(jsId: jsId, accountId: accountId)
-        }
+        presentRewardedAd(jsId: jsId, accountId: accountId)
     }
 
     private func presentRewardedAd(jsId: String, accountId: String?) {
@@ -343,16 +387,7 @@ final class NWBridgeViewController: CAPBridgeViewController,
         preloadRewardedAd()
     }
 
-    /** ATT must be requested before any ad request that could use IDFA; safe to call repeatedly (no-op once answered). */
-    private func requestTrackingAuthorizationIfNeeded(_ completion: @escaping () -> Void) {
-        if #available(iOS 14, *) {
-            guard ATTrackingManager.trackingAuthorizationStatus == .notDetermined else { completion(); return }
-            ATTrackingManager.requestTrackingAuthorization { _ in DispatchQueue.main.async(execute: completion) }
-        } else {
-            completion()
-        }
-    }
-
+    /** Resolve/reject the JS promise `window.NWAds.showRewarded` handed out for `jsId`. */
     private func settleAds(_ jsId: String, ok: Bool, payload: String) {
         let escaped = payload
             .replacingOccurrences(of: "\\", with: "\\\\")
