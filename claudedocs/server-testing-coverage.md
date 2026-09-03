@@ -316,7 +316,7 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 |---|---|---|---|
 | ~~commercial~~ | ~~81.25%~~ → **99.6%** | 98.14% | 见「commercial 补测第二轮」一节 |
 | ~~admin~~ | ~~82.09%~~ → **92.42%** | 95.88% | 上一节已补完 |
-| metaserver | **85.86%** | 90.74% | 481 / 3403 |
+| ~~metaserver~~ | ~~85.86%~~ → **99.47%** | 94.65% | 见「metaserver 补测第三轮」一节 |
 | ~~worldsvc~~ | ~~86.99%~~ → **91.48%** | 96.48% | 见「worldsvc 补测第二轮」一节 |
 | ~~auctionsvc~~ | ~~88.18%~~ → **99.58%** | 96.99% | 见"auctionsvc 补测第二轮"一节 |
 | ~~socialsvc~~ | ~~89.22%~~ → **99.73%** | 96.09% | 见「socialsvc 补测第二轮」一节 |
@@ -334,16 +334,16 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 各包最大缺口所在（每包按未覆盖分支数排前几名，供下一轮排期）：
 
 - **commercial**（最低）：`internalHttp.ts` 77.3%（22 条）、`gacha.ts` 80.5%、`service/base.ts` 77.3%、`service/gachaDraw.ts` 80.0%、`iap/productResolve.ts` 69.0%、`service/gachaPool.ts` **61.9% 分支 / 100% 行**——最后这个正是 admin 那一节说的形状：行全绿，分支只跑了一半。
-- **metaserver**（绝对数量最多，481 条，摊在 68 个文件上）：`service/telemetry.ts` 74.7%、`internal/promoGachaRoutes.ts` 70.8%、`service/liveops/retention.ts` 80.7%、`economy/orders.ts` 58.3%、`internal/matchReport/eloSettlement.ts` **48.6%**（全仓最低的单文件）。
+- ~~**metaserver**（绝对数量最多，481 条，摊在 68 个文件上）：`service/telemetry.ts` 74.7%、`internal/promoGachaRoutes.ts` 70.8%、`service/liveops/retention.ts` 80.7%、`economy/orders.ts` 58.3%、`internal/matchReport/eloSettlement.ts` **48.6%**（全仓最低的单文件）。~~ → 已补完，见「metaserver 补测第三轮」一节。
 - **worldsvc**（534 条，58 个文件）：集中在 `combatSiege/`——`encounter.ts` 75.0%（31 条）、`arrival/citySiege.ts` 50.9%、`arrival.ts` 74.7%、`arrival/cityDefenders.ts` 57.4%；另有 `httpApi/sectRoutes.ts` 73.5%/100% 行、`city/training.ts` 69.7%/100% 行。
 - ~~**auctionsvc**：`auctionService/trade.ts` 75.7%（26 条，占全包四分之一）、`journalSweep.ts` 72.4%/100% 行、`delivery.ts` 72.7%。~~ → 已补完，见"auctionsvc 补测第二轮"一节。
 - ~~**socialsvc**：`httpApi/helpers.ts` **40.0%**、`friend/chat.ts` 76.8%、`friend/relations.ts` 82.8%/100% 行。~~ → 已补完，见「socialsvc 补测第二轮」一节。
 - ~~**botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。~~ 已于同日补完，见下面的"botsvc 补测第二轮"一节。
 - **client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。
 
-**排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高——**已于同日做完，见下一节**。剩下的：commercial 是百分比最低的、且 149 条集中在 6 个文件里——**已于同日做完，见本文件最后一节**；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完——**worldsvc 已于同日按这个建议做完，见本文件最后一节；metaserver 是唯一剩下的**。
+**排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高——**已于同日做完，见下一节**。剩下的：commercial 是百分比最低的、且 149 条集中在 6 个文件里——**已于同日做完，见本文件最后一节**；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完——**worldsvc 与 metaserver 都已于同日按这个建议做完（metaserver 切了 7 组），见本文件最后两节。至此这张表上的 7 个破线包全部补完。**
 
-**先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支；auctionsvc / botsvc / socialsvc / commercial / worldsvc 已在下面五节补完，**只剩 metaserver 一个包**），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
+**先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支；**六个包已在下面六节全部补完，加上上一节的 admin，7 个破线包一个不剩**），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
 
 ## botsvc 补测第二轮：**分支**覆盖率，从 89.39% 拉到 98.17%（2026-09-03，worktree `feat/botsvc-branch-coverage`）
 
@@ -524,3 +524,77 @@ auctionsvc 整体：**分支 88.18% → 99.58%**，行 95.37% → 96.99%（`npm 
 worldsvc 整体：**分支 86.99% → 91.48%**（3933/4299），行 95.69% → **96.48%**（`npm run test:coverage`，101 test files 全绿，`npx tsc --noEmit -p tsconfig.test.json` 干净）。
 
 **未继续追**（下一轮候选，按剩余分支数排序）：`combatMarch/startMarchValidation.ts` 85.15%、`core/spawn.ts` 79.1%、`httpApi/admin.ts` 82.79%、`siegeEngine.ts` 82.92%、`territory/structures.ts` 82.45%、`combatMarch/stationed.ts` **61.29%/98.59% 行**、`httpApi/helpers.ts` 78.94%、`mapTemplateService.ts` 76.3%——都是上一轮就标注过"等价路径变体/需要注入故障"的那批，本轮没排进去。
+
+## metaserver 补测第三轮：**分支**覆盖率，从 85.86% 拉到 99.47%（2026-09-03，worktree `feat/metaserver-branch-coverage`）
+
+上一节那张表里最后一个没补的包，也是绝对数量最大的一个：**481 条未覆盖分支摊在 68 个文件上**，没有哪一刀能一次砍掉一大块。这是 metaserver 的第三轮补测，前两轮（本文件第一、二节）都是以**行**覆盖率为目标；这一轮的缺口分布跟那两轮完全不同——不是「某个文件/某一层完全没测」，而是散在已经 90%+ 行覆盖的文件里的兜底、拒绝路径和降级侧。
+
+**方法照搬 admin 第三轮 + engine 那轮的分组并行**，切成 **7 组**（每组一个目录/一个主题，各写各自前缀的新文件，互不改动既有测试、`src/` 一行没动）：
+
+| 组 | 范围 | 新增文件 / 例数 |
+|---|---|---|
+| A | `internal/matchReport/` + `replayDecode.ts` | 4 / 34 |
+| B | `internal/*Routes.ts` | 3 / 76 |
+| C | `economy/` + `service/economy/` | 5 + 1 个共享 fake / 146 |
+| D | telemetry / events / ads / 审计 / `app.ts` | 5 / 74 |
+| E | `service/liveops/` + `service/pve/` | 5 / 53 |
+| F | `accounts/` + save + service 核心 | 6 / 163 |
+| G | 装备 / 卡牌 / 皮肤 / 社交 / 客户端封装 | 6 / 66 |
+
+合计 **34 个新测试文件 + 1 个共享 helper，612 例**。
+
+**派发时给每组的不是「把这个文件补到 90%」，而是逐文件的未覆盖分支行号。** 从上一轮全量跑的 `coverage/lcov.info` 里读 `BRDA` 记录（`taken` 为 `0`/`-` 即未执行），按文件聚合成 `src/<file> [N sites]: <行号列表>`，脚本留在 `server/node_modules/.cache/uncoveredBranchLines.cjs`（gitignore 内，不进仓库；任何包都能复用，参数是一份 lcov）。这样每个 agent 不用猜哪半边没跑过，收工时也能用同一个脚本对自己那批测试单独跑一次覆盖率、直接列出「我还差哪几行」。
+
+**并发跑 vitest 的 Mongo 问题**沿用 2026-08-14 第二轮的解法：先单独起**一个**常驻 `MongoMemoryReplSet`，URI 通过 `NW_MONGO_URI` 发给每个 agent（`globalSetup.ts` 检测到该变量就跳过自己起停的逻辑），每组用自己独占的 DB 名（`nw_meta_grp<X>_branch_test`）。另外禁止 agent 跑 `npm test` / `npm run test:coverage` / `tsc -b`——7 个进程会抢同一个 `dist/`；只跑 `npx vitest run test/<自己的文件>`，覆盖率输出各写各的 `./coverage-grp<X>`。
+
+### 各文件结果
+
+行覆盖率也顺带涨了（**90.74% → 94.65%**），因为这批测试第一次让若干模块的整个函数体在 vitest 下执行。**注意分母从 3403 涨到 4013**：v8 只统计**被执行过的函数内部**的分支，`/internal/skins/{escrow,grant}`、`service/telemetry.ts`、`service/base.ts`、`liveops/profile.ts` 这些此前只有 dist-import e2e、没有任何 src 级测试的模块，它们的分支原先根本不在分母里——所以这里的百分比涨幅同时包含「补上了缺口」和「把此前不可见的分支纳入了测量」。
+
+- **A**：`eloSettlement.ts` 48.57%（全仓最低单文件）、`reportRoute.ts` 83.6%、`peerJudge.ts` 75%、`replayDecode.ts` 55.55% → **四个全部 100%**。
+- **B**：`promoGachaRoutes.ts` 70.83% → **100%**、`mailRoutes.ts` 80% → **100%**、`ladderRoutes.ts` 86.67% → **100%**、`accountRoutes.ts` → 98.73%、`economyRoutes.ts` → 96.83%。
+- **C**：`duplicates.ts` 63.63%、`subscriptions.ts` 74.24%、`adsPromo.ts` 74.07%、`starter.ts` 79.31%、`shop.ts` 86.95% → **全部 100%**；`orders.ts` 58.33% → 98.66%、`delivery.ts` 83.33% → 98.38%、`gacha.ts` 72.54% → 96.55%。
+- **D**：`service/telemetry.ts` 74.71%（此前零专属单测）、`clientLog.ts` 87.5%、`anticheatAudit.ts` 89.47%、`moderation.ts`、`reputationDecay.ts`、`coinAnomalyAudit.ts` → **全部 100%**；`ads.ts` → 98.63%、`events.ts` → 96.22%。
+- **E**：`liveops/profile.ts` 76.59%（此前零专属单测）、`liveops/events.ts`、`lobbyBadges.ts`、`liveops/helpers.ts`、`pve/verify.ts` 84.5%、`pve/clear.ts` → **全部 100%**；`retention.ts` 80.73% → 98.61%、`pve/helpers.ts` → 98.5%、`pve/stamina.ts` → 96.55%、`achievements.ts` → 96.66%。
+- **F**：`service/base.ts` 60%（本组最差、此前零专属单测）、`save.ts` 66.66%、`accounts/resolve.ts` 66.66%、`accounts/profile.ts` 77.5%、`service/inventory.ts` 71.87%、`accounts/{oauthBind,password}.ts`、`service/{save,social,auth}.ts`、`accountCache.ts`、`auth.ts` → **全部 100%**。
+- **G**：`social.ts` 70%、`ladderSeason.ts` 70.37%、`skin.ts`、`mail.ts`、`replayArchive.ts`、`cards/{fuse,query}.ts`、`equipment/{reforge,salvage}.ts`、`commercialClient.ts`、`socialsvcClient.ts` → **全部 100%**；`enhance.ts` 98.66%、`craft.ts` 97.43%、`paddle/webhookRoute.ts` 98.5%。
+
+### 这批分支不是凑百分比
+
+三种形状跟 admin 那一节归纳的完全一致，但这个包里它们守的是钱和存档：
+
+- **输掉的竞态**。`mutateSave` 的 CAS 靠「包一层 `findOneAndUpdate`、只让指定那一次失配」变成确定性的：输一次时断言输家**重读到赢家的 150 金币再加 5**（而不是拿旧值算出 105 覆盖回去），输四次时拿 `REV_CONFLICT`。签到 / 每日 / 周宝箱 / 成就 / 称号 / 头像 / 皮肤 / 旗标 / PVE 通关 / PVE 校验十条领取路径的 409 尾巴全部钉上了「**什么都没领、一枚金币没发**」，而不只是钉状态码——半发才是这类接口真正的事故形态。
+- **发放失败之后的可恢复性**。day-14 卡牌、周奖励 tier-15 装备发放失败时，领取已记录但库存计数没动，幂等账本里是 `committed:false`——所以文档承诺的「重试会重新发**同一次抽到的东西**」是可验证的；`salvage` 的扣款失败断言 claim 留在 `committed:false`（退款可恢复）而不是被删；`enhance`/`craft` 中途材料被抽走时断言幂等键**被释放**——可重试和永久卡在「处理中」的区别。
+- **错误消息链上哪一环胜出**。`commercialClient.post()` 里上游返回 JSON 字面量 `null` 是唯一让 `body === null` 而 `error` 为 undefined 的形状，抛出的消息退化成 `status 200`；`socialsvcClient` 的 `data?.error ?? r.error ?? ''` 三环全钉，包括最后消息裁成 `socialsvc insertSystemMail failed: 200` 的那种。这些字符串就是运营真正读到的那句话。
+- **兜底决定的是「0 还是一个洞」**。telemetry / clientLog 缺字段时落成 `0` 还是 `undefined`，在趋势图上是地板和缺口的区别，而缺口读起来像一次故障。
+
+### 顺带挖出的源码问题（本轮 `src/` 一行没改，全部留档给对应负责人）
+
+1. **`shared/src/season.ts` + `ladderSeason.ts`：`reachedRanks` 这本「终身账本」每次赛季迁移都被清空。** `types.ts:178` 写着 "lifetime ledger…not reset across seasons"、`season.ts:76` 写着首达奖励 "granted only once per lifetime, cannot be farmed"，但 `makePvpSeasonDefaults` 返回 `reachedRanks: []`，`migrateIfStale` 把 defaults 摊到 `save.pvp` 上，账本就没了。下一场排位重跑 `computeFirstReachGrant(rank, [])`，软重置后段位及以下的首达奖励会**再发一次**。commercial 的 `orderId` 幂等（`rank.first.<acct>.<newly.join('.')>`）只挡住「重新达成的段位集合完全相同」那一类；软重置后一次性拿到 `bronze.silver.gold`（上赛季分几步爬的）就是个新 orderId，真出金币。A 组的迁移测试**故意不断言** `reachedRanks`，没把错误行为钉死。
+2. **`skin.ts`：`grantSkin` 先铸 instance 再检查存档是否存在。** save 不存在时路由回 404 并（正确地）释放预留、邀请重试；而重试时那条孤儿 `skinInstances` 行让幂等检查提前 `{ok:true}` 返回——auctionsvc 收到 **200**、`skinInstances` 有行，但 `inventory.skins`（模块自己的头注释说这是 "do I own at least one" 的唯一视图，装备选择器 / everOwned / auctionsvc 合约都读它）永远拿不到 id，而 `assembleSkinCounts` 只往另一个方向自愈。皮肤既不显示也不能装备，交易却读作已交付。B 组用 `retry after a save-not-found grant reports ok but leaves inventory.skins empty` 把当前行为钉住（期望值写在行尾注释里），修好会可见地翻红。
+3. **`anticheatAudit.ts`：peer judge 返回负数统计会给无辜玩家定罪。** `compareAudit` 算 `reported ?? 0` 减 `authoritative ?? 0`，裁判对一个什么都没上报的一方回 `{"kill.archer": -5}` 就得出 `overclaim: 5`——真回滚战绩 + `statSuspicion++` + 开一条 OPS 审查单。这也是 `:194` 那条 `reported ?? {}` 分支唯一的可达方式。`Math.max(0, …)` 夹一下（或者在 `parsePerSideStats` 里）就能关。
+4. **`ads.ts`：gstatic 返回畸形密钥响应会毒化缓存五分钟。** `getAdmobKeys` 对任何 2xx 都缓存 `json.keys ?? []`，于是一次「200 但没有 `keys`」让整个 `ADMOB_KEY_TTL` 窗口内每个 AdMob SSV 回调验签失败：奖励静默丢失，而且回 400 让 Google 停止重试。非 2xx 正确抛错且不缓存，只有空列表这条漏了。
+5. **`delivery.ts`：`mirrorWalletFrom` 的「镜像已是最新就跳过写」优化对未订阅账号从来不生效。** 新建的 `monetization` 对象总带 `subscriptionLastClaimDay` 键，而值为 `undefined` 时 Mongo 写入会丢字段，于是存进去的子文档缺这个键，跟 `stableStringify` 出来的新对象永远不相等。结果每次 `GET /save` 都重写镜像并推高 `save.rev`——正是 2026-07-27 那次改动想消灭的「跟在途 `PUT /save` 撞出假 409」。只有真领过订阅的账号才拿得到本该有的跳过。测试名里标了 `KNOWN GAP`。修法：写入前省略 `undefined` 的键，或者比较两侧都归一成 `null`/`0`。
+6. **`accounts/profile.ts`：`ensurePublicId` 对已硬删除的账号会 500。** accounts 行不存在时那条 guarded `updateOne({_id, publicId:{$exists:false}})` 永远不匹配、回读也读不到，八次重试烧完抛 `failed to allocate publicId after retries`。持一枚仍有效的 JWT 打 `GET /save` 就能复现——应该是 410（`base.ts` 硬编码的那个），实际是 500。
+7. **`shared/src/api.ts:132` 的 `ERROR_HTTP_STATUS` 缺五个域真的会返回的码**：`NOT_REFORGE_ELIGIBLE`、`INVALID_RARITY`、`INVALID_MATERIAL_LEVEL`、`CARD_LOCKED`、`WRONG_FACTION`，全部落到 `?? 400`。最刺眼的是 `CARD_LOCKED` 是 `EQUIP_LOCKED`（409）的卡牌对应物——**拿锁定的卡当材料融合报 400，分解锁定的装备报 409**，同一件事两个码。（`ACCOUNT_DELETED`/`ALREADY_ACTIVE` 也不在表里，前者只是因为 `base.ts` 硬编码了 410 才对。）
+8. **`events.ts`：`kind:'coins'` 但没配 `count` 的奖励会扣玩家的东西却什么都不发**——两个分发分支都不匹配（`kind === 'coins' && count > 0` 与 `kind !== 'coins'`），`claimEventReward` 仍然返回 `{ok:true}`。守卫该加在 `validateEventInput`。
+9. **`resolveBy*` 的盲读回让 `isNew` 静默降级**：`isNew = doc?._id === accountId`，upsert 之后的回读拿不到文档时为 `false`，于是真·新账号被跳过 `maybeGrantStarterCards`。默认安全方向，已在测试里记下来。
+
+### 剩下的 21 条未覆盖分支（全部有不可达证明，不是「没排进去」）
+
+- `internal/economyRoutes.ts` 201/229/277/304（4 条）：`ERROR_HTTP_STATUS[r.code] ?? 400` 的兜底臂。能进 escrow/grant 那条路径的 `CardError`/`SkinError` 码全都在表里（上面第 7 条说的五个缺码没有一个是这些路径会返回的）。
+- `service/economy/gacha.ts` 57/74：`totalWeight > 0 ? … : 0`。两个 builder 要么返回空数组（`.map` 不跑）、要么权重必正，构造不出「非空但总权重为 0」。
+- `liveops/retention.ts` 213/393：`if (!claimedReward) return ok(...)`——`claimCheckinDay`/`claimWeeklyTier` 成功时必定设置 `reward`，纯 TS narrowing 用的防御性 return。
+- `ads.ts:206`：WeChat 回调里的「缺字段返回 400」是死代码，`verifyWechatAdsCallback` 在前面就已经要求两个字段都真值。
+- `app.ts:120`：`Math.round(reply.elapsedTime ?? 0)`。`onResponse` 触发时 fastify 一定填好了数字，要逼出 `undefined` 得 monkey-patch Reply 原型 getter——那测的是 mock 不是代码。
+- `titles.ts:59`：`equippedTitle ?? titleId`。`grantTitle` 在 `prevEquipped` 为假值时无条件赋值，返回不了 `undefined`；源码注释自己写了这个兜底只为满足 `Record<string,string>`。
+- `economy/orders.ts:216`（`shopDef.qty ?? 1`，`SHOP_ITEMS` 里每个 `material` 条目都定义了 `qty`）、`economy/delivery.ts:115`（`materialInc ?? {}`，它的守卫数组本身就是遍历 `materialInc` 填出来的）、`equipment/{enhance.ts:169,craft.ts:109}`（`nextMaterials[mat] ?? 0`，上一行的循环已保证每种材料都 `>= qty`，且逐条核过所有成本表没有非正数量）。
+- `internal/accountRoutes.ts:85`：`profile.displayName ? {displayName} : {}` 的省略侧——`getProfile` 会经 `ensureDisplayName` 懒补 `randomPlayerName()`，返回值恒非空。
+- `liveops/achievements.ts:65`（`def.tiers[tier-1]?.coins ?? 0`，`validateClaim` 已拒非法 tier）、`pve/helpers.ts:249`（`if (!unitId) continue`，键出自 `levelCardReward` 的 `cardKey(unitId, tier)`，`parseCardKey` 必解得出）、`pve/stamina.ts:67`（三元里第二份 `stDoc?.regenAt ?? 0`，只在第一份已经非零时求值——写成一个提出去的 `const curRegenAt` 会更好读，顺带消掉这条不可达臂）。
+- `config.ts:1` / `index.ts:1`：env 读取 + 进程启动装配，同前几轮先例不追。
+
+### 环境陷阱（这次踩到的）
+
+**这个包的全量 `test:coverage` 需要先把 `socialsvc` 也 build 出来**：`test/mail-claim.e2e.test.ts` 直接 `import '../../socialsvc/dist/mailService.js'`。在新 worktree 里第一次跑全量时，2279 例全过、只有这一个 suite 因为 `Failed to load url ../../socialsvc/dist/mailService.js` 整个加载失败，于是 `test:coverage` 非零退出、`coverage-summary.json` 也就不会被消费。同 admin 那一节的 `comp-mail.e2e.test.ts` 是同一类陷阱（那边要 build metaserver + socialsvc），只是这次方向反过来。修法就是 `cd server/socialsvc && npm run build`。
+
+metaserver 整体：**分支 85.86% → 99.47%**（4013 条里覆盖 3992），行 90.74% → **94.65%**（`npm run test:coverage`，**138 test files / 2285 tests 全绿**，`npm run typecheck:test` 干净）。至此上一节那张全仓表里 7 个破线的包全部补完，13 个 server 包的分支覆盖率全部过 90% 门禁。
