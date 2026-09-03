@@ -41,7 +41,7 @@ src/
 │   └── ContextMenu.ts         右键菜单（easing 切换等）
 │
 ├── io/
-│   ├── IOController.ts        .tao 导出（JSZip + shelf bin-packing + canvas PNG）；.tao.editor 存档（buildEditorBlob / loadEditorBlob 复用）；桌面壳原生 fs / 浏览器 File System Access API 双路径，Load 记住的文件身份供 Save 直接覆盖、Export 直接落到同目录
+│   ├── IOController.ts        .tao 导出（JSZip + shelf bin-packing + canvas PNG）；.taoeditor 存档（buildEditorBlob / loadEditorBlob 复用）；桌面壳原生 fs / 浏览器 File System Access API 双路径，Load 记住的文件身份供 Save 直接覆盖、Export 直接落到同目录
 │   ├── ProjectStore.ts        IndexedDB 工程库（meta + blobs 两 store）
 │   └── AutoSaveController.ts  多工程自动保存 + 切换 + 启动恢复（见 §11）
 │
@@ -158,7 +158,7 @@ setAllLengthScales(scales: Record<string, number>): void
 - **用途**：每个角色设置一次，让骨骼可视长度与美术图片比例对齐，方便动画调整。与关键帧动画数据完全独立（旋转关键帧不受骨骼长度影响）。
 - **生效位置**：`Skeleton.computeFK(..., lengthScales?)` — 每根骨骼的 `len` 乘以对应倍率后再计算 tip 坐标；sprite 跟随 FK 位置，因此也随骨骼伸缩。
 - **Inspector UI**：选中骨骼后（root 和 head 除外），顶部显示 **Length (px)** 输入框，输入实际像素值，内部换算为 `px / bone.defaultLen`。
-- **序列化**：`.tao.editor` 和 `.tao` 均含 `boneLengthScales` 字段（稀疏对象，仅含非 1.0 的骨骼）；旧文件缺失时安全回退为全 1.0。
+- **序列化**：`.taoeditor` 和 `.tao` 均含 `boneLengthScales` 字段（稀疏对象，仅含非 1.0 的骨骼）；旧文件缺失时安全回退为全 1.0。
 
 ### 挂点（AttachmentPoint）
 
@@ -328,7 +328,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 - shadow 不打包（运行时程序绘制，见 file-formats.md）。
 - 比例 ≈1 的图直接透传，不重编码。
 
-**无损保证**：游戏 runtime `sprite.scale = 关键帧 × binding.scale` 为纯乘法，小图 × 放大后 binding 与原图 × 原 binding 像素级一致，**runtime 零改动**；`SUPERSAMPLE(2)` 余量覆盖高 DPI 与放大动画帧。烘焙仅作用于 `.tao` 导出路径，`.tao.editor` 存档继续保存无损原图。
+**无损保证**：游戏 runtime `sprite.scale = 关键帧 × binding.scale` 为纯乘法，小图 × 放大后 binding 与原图 × 原 binding 像素级一致，**runtime 零改动**；`SUPERSAMPLE(2)` 余量覆盖高 DPI 与放大动画帧。烘焙仅作用于 `.tao` 导出路径，`.taoeditor` 存档继续保存无损原图。
 
 > **✅ 已落地（2026-06-27）· 按身高档烘到绝对目标分辨率**（设计见 [art-direction.md §4.5.3 (B)](../../product/art-direction.md)，与运行时 (A) 同期实现）：
 > - **导出面板加身高档下拉** `#sel-export-tier`（S/M/L/XL，默认 M；XL 仅神话生物）。`IOController.readExportTier()` 读取，导入 `.tao` 时从 `unitHeight.tier` 回填。
@@ -377,7 +377,7 @@ selGfx       — 选中高亮 + 挂点标记 + Guide
 
 **存储**：IndexedDB 库 `nw-animator`，两个 object store（`ProjectStore.ts`）：
 - `meta`：`{ id, name, updatedAt }`——列表渲染只读这个，不拉 blob。
-- `blobs`：`{ id, blob }`——blob 即 `IOController.buildEditorBlob()` 产出的 `.tao.editor` zip；仅在打开工程时读取。
+- `blobs`：`{ id, blob }`——blob 即 `IOController.buildEditorBlob()` 产出的 `.taoeditor` zip；仅在打开工程时读取。
 
 > localStorage 装不下 PNG，故用 IndexedDB；`updatedAt` 用于下拉按最近编辑排序。
 

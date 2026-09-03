@@ -49,7 +49,7 @@ function triggerDownload(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-/** First accepted extension declared in `types` (e.g. ".tao.editor"), or '' if none. */
+/** First accepted extension declared in `types` (e.g. ".taoeditor"), or '' if none. */
 function primaryExt(types: Array<{ accept: Record<string, string[]> }>): string {
   for (const t of types) {
     for (const exts of Object.values(t.accept)) {
@@ -60,11 +60,12 @@ function primaryExt(types: Array<{ accept: Record<string, string[]> }>): string 
 }
 
 /** Guarantee `name` ends with exactly one `ext`. Collapses an accidentally
- *  doubled compound extension (e.g. "x.tao.editor.tao.editor" → "x.tao.editor")
- *  and appends `ext` when missing. This is what prevents the File System Access
- *  picker from re-appending a compound extension (Chrome appends the accepted
- *  extension when the chosen name doesn't already end with it, and historically
- *  double-appends multi-dot extensions like ".tao.editor"). */
+ *  doubled extension (e.g. "x.taoeditor.taoeditor" → "x.taoeditor") and appends
+ *  `ext` when missing, so the File System Access picker cannot re-append one
+ *  (Chrome appends the accepted extension whenever the chosen name doesn't
+ *  already end with it). The single-dot ".taoeditor" is itself the fix for the
+ *  worse case: the compound ".tao.editor" it replaced got double-appended by
+ *  Chrome, which is how "max.tao.editor.tao.editor" ended up in the repo. */
 function ensureSingleExt(name: string, ext: string): string {
   if (!ext) return name;
   const lower = ext.toLowerCase();
@@ -86,7 +87,7 @@ export async function saveWithPicker(
   startIn?: WritableFileHandle | null,
 ): Promise<WritableFileHandle | null> {
   // Pass a name that already carries exactly one canonical extension so neither
-  // the native picker nor the user prompt can produce a doubled ".tao.editor".
+  // the native picker nor the user prompt can produce a doubled ".taoeditor".
   const ext       = primaryExt(types);
   const suggested = ensureSingleExt(suggestedName, ext);
 
@@ -120,11 +121,15 @@ export function basename(path: string): string {
   return path.replace(/^.*[\\/]/, '');
 }
 
-/** Same-directory `.tao` path for the loaded `.tao.editor` file, e.g.
- *  `…\runner\runner.tao.editor` → `…\runner\runner.tao`. */
+/** Same-directory `.tao` path for the loaded `.taoeditor` file, e.g.
+ *  `…\runner\runner.taoeditor` → `…\runner\runner.tao`. Also strips the legacy
+ *  `.tao.editor` suffix, so opening a project saved before the rename still
+ *  exports next to it instead of producing `runner.tao.editor.tao`. */
 export function deriveTaoPath(editorPath: string): string {
-  const suffix = '.tao.editor';
-  return editorPath.toLowerCase().endsWith(suffix)
-    ? editorPath.slice(0, -suffix.length) + '.tao'
-    : `${editorPath}.tao`;
+  for (const suffix of ['.taoeditor', '.tao.editor']) {
+    if (editorPath.toLowerCase().endsWith(suffix)) {
+      return editorPath.slice(0, -suffix.length) + '.tao';
+    }
+  }
+  return `${editorPath}.tao`;
 }

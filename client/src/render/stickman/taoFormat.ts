@@ -68,7 +68,7 @@ export interface TaoBindingJson {
    * widened anchorX/anchorY to "outside 0-1 allowed" as the replacement. That removal
    * migrated neither the data nor the client: 7 of the 18 bundles in src/assets kept
    * non-zero values (harpy, infantry, ironclad, medic, runner, skin_infantry, splitter),
-   * the matching art/*.tao.editor projects too, and assetLoader kept applying them until
+   * the matching art/*.taoeditor projects too, and assetLoader kept applying them until
    * 2026-08-26. They lasted that long because every writer hop was an untyped `{ ...b }`
    * spread, which carries keys the type never declared.
    *

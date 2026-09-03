@@ -31,13 +31,13 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 历史与已定案的处理：
 
 - `SpriteBinding` 曾在 **2026-06-05 ~ 06-09** 短暂带过 `offsetX/offsetY`（世界坐标像素偏移）。**2026-06-09（`0f438040`）删除**：同一个 commit 里去掉了类型字段、去掉了 animator `Renderer.ts` 的应用（sprite 位置 + anchor gizmo 连线），并把 anchor 的注释从"0–1"改成"**允许超出 0–1**"——即以放宽 anchor 取代该通道。
-- 但那次删除**没迁移数据、也漏了客户端**：`client/src/assets` 里 18 个包中有 **7 个**仍带非零值（`harpy` / `infantry` / `ironclad` / `medic` / `runner` / `skins/skin_infantry` / `splitter`），对应 `art/**/*.tao.editor` 母版同样带；而客户端 `pose.ts` 一直在 `sprite.x/y` 上加这两个值。
+- 但那次删除**没迁移数据、也漏了客户端**：`client/src/assets` 里 18 个包中有 **7 个**仍带非零值（`harpy` / `infantry` / `ironclad` / `medic` / `runner` / `skins/skin_infantry` / `splitter`），对应 `art/**/*.taoeditor` 母版同样带；而客户端 `pose.ts` 一直在 `sprite.x/y` 上加这两个值。
 - 数据能存活十周，是因为写侧每一跳都是**无类型对象展开**（`{ ...b }`，`editorProject.ts` / `taoExport.ts`），会捎带类型从未声明的键——类型检查和画师都看不见它。
 - **它不是美术意图**：animator 预览从 2026-06-09 起就不应用这两个值，所以画师**从来没看见过它们的效果**，也没有任何 UI 能编辑；而 7 个包里的偏移值**逐字节相同**（`l_lower_arm(-1,13)` / `r_upper_leg(-12,7)` / `r_lower_leg(-8,0)` / `l_upper_leg(16,0)` / `l_lower_leg(2,0)`），而同一批 binding 的 anchor/rotation/scale 却每个单位都单独调过（`harpy` scale 0.3 vs `infantry` 0.55，rotation −40 vs −97，`splitter` 甚至 `anchorX: 1.2` 已超出 0–1）。这是模板项目里冻住的一组常量，不是逐单位调出来的美术数值。
 - **结论：判定为死字段，画面以 animator 预览（画师验收的那一版）为准。**
   - 客户端 `assetLoader.ts` **不再读**、`pose.ts` **不再加**这两个值——`pose.ts` 那句"composite formula (matches animator Renderer.ts)"从此才真正成立（此前恰恰在这两个字段上不一致）。
-  - 写侧新增 `io/bindingSerialization.ts`，**逐字段构造** binding 取代 `{ ...b }` 展开：类型删掉的字段不再写出，加字段则会在此处编译报错。加载 `.tao.editor` 时同样过一遍，老存档打开即归一化。
-  - **不做批量重导出**：既然没人再读这两个键，包里的残留就是死字节；且 `art/**` 母版与 `client/src/assets/**` 已分叉（见下方 2026-07-17 note），重导出风险远大于收益。画师下次打开并保存对应 `.tao.editor` 时会自然清掉。
+  - 写侧新增 `io/bindingSerialization.ts`，**逐字段构造** binding 取代 `{ ...b }` 展开：类型删掉的字段不再写出，加字段则会在此处编译报错。加载 `.taoeditor` 时同样过一遍，老存档打开即归一化。
+  - **不做批量重导出**：既然没人再读这两个键，包里的残留就是死字节；且 `art/**` 母版与 `client/src/assets/**` 已分叉（见下方 2026-07-17 note），重导出风险远大于收益。画师下次打开并保存对应 `.taoeditor` 时会自然清掉。
   - 画面影响：这 7 个单位的相关肢体各移动 **1.2–2.1 屏幕像素**（偏移在 rig 空间最大 16，乘 `targetScreenPx ÷ naturalHeight` ≈ 0.074–0.130；单位屏高 54px）。方向是**回到画师在 animator 里对齐的关节位置**。
 
 ### `easing`：字段存在，但真包里一次都没出现过
@@ -66,17 +66,23 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 - **结论：阴影形状/纹理全局统一，单位间差异只靠 `shadowW/H` 缩放参数**——零贴图、零打包。
 
 实现要点（完整调用链）：
-- **animator 导出**（`tools/animator/src/io/IOController.ts`）：`buildExportImages` / `buildEditorBlob` 不再把 `shadow` 槽打进 spritesheet / `.tao.editor`。
+- **animator 导出**（`tools/animator/src/io/IOController.ts`）：`buildExportImages` / `buildEditorBlob` 不再把 `shadow` 槽打进 spritesheet / `.taoeditor`。
 - **animator 编辑**：阴影槽已从图片面板（`ImageController.ALL_SLOTS` 去掉 shadow）移除，只在 `AttachmentPanel` 调挂点位置 + `shadowW/H`；预览（`Renderer.ts`）改用同一份程序生成纹理（`shadowTexture()`），与游戏一致。
 - **runtime**（`StickmanRuntime.ts`）：构造时若有 `shadow` 挂点就建一个底层 sprite 用程序纹理；加载 spritesheet 时**跳过任何 `shadow` 帧**，所以**旧 `.tao`（仍打包了 shadow.png）也走统一程序绘制**，无需重导出。
 - 旧 `.tao` 内残留的 `shadow.png` 成为死字节，运行时忽略；如需瘦身可在 animator 里重新导出覆盖。
 - **2026-07-17 瘦身**：`client/src/assets` 里 `infantry/max/shieldbearer` 三个仍带 `shadow` 帧的旧包，已用脚本外科式删掉 `spritesheet.json` 的 `shadow` 帧条目（`animation.json` 的 shadow 挂点 + `spritesheet.png` 字节不动，程序阴影照常渲染）。注意 `art/units/*/*.tao` 母版早已重导出为无 shadow 帧，但与 `src/assets/*` 已**分叉**（不同版本、PNG 体积差很大），故不可用母版覆盖 src/assets——只能就地删帧。
 
-## `.tao.editor`（编辑器存档）
+## `.taoeditor`（编辑器存档）
 
 ZIP 内含 `editor.json`（v1，动画+绑定+挂点+编辑器状态）+ `images/*.png`（各骨骼原始 PNG，无损）
 
 保存用 File System Access API（`showSaveFilePicker`），Firefox 退回 `<a download>`。
+
+**2026-09-03 后缀改名 `.tao.editor` → `.taoeditor`**（单点，不再是复合扩展名）。改名理由是复合扩展名在 Windows 上没有第一等支持：文件类型关联/图标只认最后一段（`.editor`），而 Chrome 的 `showSaveFilePicker` 在选定名字不以整段复合扩展名结尾时会把整段再追加一次——`art/units/{max,lena}/*.tao.editor.tao.editor` 就是这么长出来的（archer/shieldbearer 那两个早前已清）。`fileIO.ts` 的 `ensureSingleExt` 保留作兜底，但根因已经不在了。
+
+- **仓库里 20 个存档已全部改名**（`art/units/**`、`art/units/old/**`、`art/skins/**`），两个双扩展名残件一并收成 `max.taoeditor` / `lena.taoeditor`。
+- **读侧仍认旧后缀**：animator 的两条打开路径（桌面壳 `fs.openFile` 过滤器、浏览器 `showOpenFilePicker`）与 `index.html` 的兜底 `<input accept>` 都同时列 `.taoeditor` 和 `.tao.editor`；`deriveTaoPath` 两种后缀都剥。**写侧只写 `.taoeditor`**——旧文件打开后一存就自然改名。
+- 带日期的过程记录（`META_TASKS.md`、`client-testing-log.md`、`GACHA_DESIGN.md §9.5` 等）里的 `.tao.editor` **刻意没改**：那些写的是"当时发生了什么"。
 
 ## `client/src/assets` 的 png —— 必须是"发布态"，可直接核查
 

@@ -25,7 +25,7 @@ export function serializeBinding(b: SpriteBinding): SpriteBinding {
   };
 }
 
-/** Bindings as written to `.tao` / `.tao.editor`, keyed by bone slot id. */
+/** Bindings as written to `.tao` / `.taoeditor`, keyed by bone slot id. */
 export function serializeBindings(
   bindings: ReadonlyMap<string, SpriteBinding>,
 ): Record<string, SpriteBinding> {

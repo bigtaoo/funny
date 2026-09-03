@@ -1,6 +1,6 @@
 // ── ProjectStore ──────────────────────────────────────────────────────────────
 // IndexedDB-backed library of saved animator projects. Each project is one
-// `.tao.editor` zip blob (built by IOController) plus lightweight metadata.
+// `.taoeditor` zip blob (built by IOController) plus lightweight metadata.
 //
 // Two object stores keep listing cheap: `meta` holds only {id,name,updatedAt}
 // so the project dropdown can render without pulling megabytes of blob data;

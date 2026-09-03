@@ -55,7 +55,7 @@
 
 - **每个工具保持独立 webpack 工程**（现状不变）：本地开发仍是 `npm run start` 起对应端口；壳在生产模式下加载的是各工具的**生产构建**（远程托管或打包进壳，见 §4 的取舍）。
 - **侧边栏**：壳的唯一自有 UI，只做工具切换 + 全局菜单（更新提示、关于），不侵入各工具内部 UI。
-- **数据/文件读写**：各工具现有的 `.tao`/`.tao.editor`/vfx json 等 IO 逻辑不变；壳新增的是"这些文件存在哪个本地目录、要不要提交"这一层，通过 `contextBridge` 注入的 `window.nwDesktop.fs.*` / `window.nwDesktop.git.*` 暴露给工具页面调用（工具页面现有的 `showSaveFilePicker` 等浏览器 API 调用可保留作为壳外后备，不强制迁移）。
+- **数据/文件读写**：各工具现有的 `.tao`/`.taoeditor`/vfx json 等 IO 逻辑不变；壳新增的是"这些文件存在哪个本地目录、要不要提交"这一层，通过 `contextBridge` 注入的 `window.nwDesktop.fs.*` / `window.nwDesktop.git.*` 暴露给工具页面调用（工具页面现有的 `showSaveFilePicker` 等浏览器 API 调用可保留作为壳外后备，不强制迁移）。
 
 ---
 
