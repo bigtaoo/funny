@@ -306,7 +306,7 @@ accent.
 
 **⚠️ v6 prompt 里 "three-quarter side view, body turned about 45 degrees" 这句和 Pose 段的实际描述已经不一致**（Pose 段改成了"头身同向、正面站姿"倾向），GPT Image 2 实测结果是接近正面站姿——说明当前这版落地效果比开头那句字面描述更偏正面。**下次重出前先决定 pending 里的①**，如果选"就要正面站姿"，应该把开头这句一并改成 front-ish stance 以消除自相矛盾；如果选"还要 3/4 侧身"，则要在保留"头身同向不独立转脖子"这条硬约束的前提下，把身体转向和头部朝向都同步转 45 度（不要只转身体），再试一版。
 
-**Pending（下次接手时先做这两件事）**：
+**Pending（下次接手时先做这两件事）** — **2026-09-03 复核仍然全开**：`art/skins/archer.png` 与 `art/skins/archer/archer.png` 都还是 2026-07-24/26 的 v3 字节，`client/src/assets/units/skins/skin_archer.tao` 就是从这版 v3 绑出来的。这是全库唯一还需要**新出图**的美术缺口（其余批次已逐项核对关闭）。
 1. **拍板站姿**：v6 的正面站姿 vs 找回 3/4 侧身（见上方 ⚠️）——owner 尚未最终确认，只说"头部不再违和，先这样吧"。
 2. **落盘成品图**：owner 是在 GPT Image 2 工具里出的图，还没有把最终选定的那张存回仓库——`art/skins/archer.png` 目前仍是 v3 的旧图（头部违和的那版）。选定站姿后先把 PNG 存回该路径（同时更新 `art/skins/archer/archer.png` 那份，两处都要覆盖），再进 GIMP 切件 → animator 绑骨 → `UnitView.ts` `SKIN_ASSETS` / `shop.ts` 接线（见文档末尾"出图后流程"）。
 

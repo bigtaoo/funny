@@ -10,14 +10,14 @@ import { buildTaoBlob, exportTao, type TaoExportHost } from './taoExport';
 // ── IOController ──────────────────────────────────────────────────────────────
 //
 // Thin coordinating class (claudedocs/client-modules.md "单文件 500 行收敛" form①):
-// the `.tao.editor` save/load flow lives in editorProject.ts, the `.tao` runtime-bundle
+// the `.taoeditor` save/load flow lives in editorProject.ts, the `.tao` runtime-bundle
 // export flow lives in taoExport.ts, clip<->JSON conversion in clipSerialization.ts, and
 // the shared disk/File-System-Access-API plumbing in fileIO.ts. This class only owns the
 // three pieces of mutable disk-identity state both flows read/write, and hands each flow
 // a small host object exposing exactly the state/services it needs.
 
 export class IOController {
-  /** Disk file identity of the currently loaded `.tao.editor`, so Save can overwrite it
+  /** Disk file identity of the currently loaded `.taoeditor`, so Save can overwrite it
    *  directly and Export can land the `.tao` alongside it without asking again. Desktop
    *  shell keeps an absolute path; browser (File System Access API) keeps a handle. Reset
    *  by any `loadEditorBlob()` — set afterwards by the disk-backed load paths only. */
@@ -76,13 +76,13 @@ export class IOController {
     };
   }
 
-  /** Build the `.tao.editor` archive (editor.json + per-slot PNGs) as a Blob.
+  /** Build the `.taoeditor` archive (editor.json + per-slot PNGs) as a Blob.
    *  Shared by the manual "Save .editor" button and the IndexedDB auto-save. */
   async buildEditorBlob(): Promise<Blob> {
     return buildEditorBlob(this.editorProjectHost());
   }
 
-  /** Overwrites the currently loaded `.tao.editor` file directly when its disk identity
+  /** Overwrites the currently loaded `.taoeditor` file directly when its disk identity
    *  is known (desktop path or browser handle); only asks for a location the first time
    *  a brand-new project is saved, then remembers it for every save after that. */
   async saveEditorProject(): Promise<void> {
@@ -99,7 +99,7 @@ export class IOController {
     return loadEditorProject(this.editorProjectHost(), file);
   }
 
-  /** Restore editor state from a `.tao.editor` archive (File or Blob). Returns whether the
+  /** Restore editor state from a `.taoeditor` archive (File or Blob). Returns whether the
    *  load succeeded, so disk-backed load paths know it's safe to remember the file's path/
    *  handle. Used by both the manual "Load .editor" button and project switching. */
   async loadEditorBlob(data: Blob, label: string): Promise<boolean> {
@@ -113,7 +113,7 @@ export class IOController {
     return buildTaoBlob(this.taoExportHost());
   }
 
-  /** Writes the `.tao` bundle next to the loaded `.tao.editor` (desktop: derived same-
+  /** Writes the `.tao` bundle next to the loaded `.taoeditor` (desktop: derived same-
    *  directory path written directly; browser: remembered handle reused) so repeat
    *  exports never re-prompt. Only asks for a location when there's nothing to anchor to
    *  yet (no project loaded/saved this session). */

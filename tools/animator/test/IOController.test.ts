@@ -156,7 +156,7 @@ describe('toolbar wiring', () => {
 
   it('the file input change handler loads the picked file and resets the input value', () => {
     make();
-    const file = new File(['zip'], 'archer.tao.editor');
+    const file = new File(['zip'], 'archer.taoeditor');
     elements.get('editor-file-input')!.files = [file];
 
     fire('editor-file-input', 'change', { target: elements.get('editor-file-input') });
@@ -191,7 +191,7 @@ describe('delegation', () => {
     await io.saveEditorProjectAs();
     expect(editorProject.saveEditorProjectAs).toHaveBeenCalledTimes(1);
 
-    const file = new File(['x'], 'p.tao.editor');
+    const file = new File(['x'], 'p.taoeditor');
     await io.loadEditorProject(file);
     expect(editorProject.loadEditorProject).toHaveBeenCalledWith(expect.anything(), file);
 
@@ -267,13 +267,13 @@ describe('host objects', () => {
     const { io } = make();
 
     await io.saveEditorProject();
-    hostOf(editorProject.saveEditorProject).editorFilePath = 'C:/art/archer.tao.editor';
+    hostOf(editorProject.saveEditorProject).editorFilePath = 'C:/art/archer.taoeditor';
 
     await io.exportTao();
-    expect(hostOf(taoExport.exportTao).editorFilePath).toBe('C:/art/archer.tao.editor');
+    expect(hostOf(taoExport.exportTao).editorFilePath).toBe('C:/art/archer.taoeditor');
 
     await io.buildEditorBlob();
-    expect(hostOf(editorProject.buildEditorBlob).editorFilePath).toBe('C:/art/archer.tao.editor');
+    expect(hostOf(editorProject.buildEditorBlob).editorFilePath).toBe('C:/art/archer.taoeditor');
   });
 
   it('the browser handles cross the same way, in both directions', async () => {
@@ -287,12 +287,12 @@ describe('host objects', () => {
     const editorHost = hostOf(editorProject.loadEditorBlob);
     expect((editorHost.taoFileHandle as unknown as { name: string }).name).toBe('archer.tao');
 
-    editorHost.editorFileHandle = handle('archer.tao.editor');
+    editorHost.editorFileHandle = handle('archer.taoeditor');
     editorHost.taoFileHandle = null;
 
     await io.buildTaoBlob();
     const taoHost = hostOf(taoExport.buildTaoBlob);
-    expect((taoHost.editorFileHandle as unknown as { name: string }).name).toBe('archer.tao.editor');
+    expect((taoHost.editorFileHandle as unknown as { name: string }).name).toBe('archer.taoeditor');
     expect(taoHost.taoFileHandle).toBeNull();
   });
 
@@ -300,7 +300,7 @@ describe('host objects', () => {
     const { io } = make();
 
     await io.buildEditorBlob();
-    hostOf(editorProject.buildEditorBlob).editorFilePath = 'C:/art/p.tao.editor';
+    hostOf(editorProject.buildEditorBlob).editorFilePath = 'C:/art/p.taoeditor';
 
     fire('btn-export', 'click');
     fire('btn-save-editor', 'click');
@@ -308,7 +308,7 @@ describe('host objects', () => {
     fire('btn-load-editor', 'click');
 
     for (const fn of [taoExport.exportTao, editorProject.saveEditorProject, editorProject.saveEditorProjectAs, editorProject.triggerLoadEditor]) {
-      expect(hostOf(fn).editorFilePath).toBe('C:/art/p.tao.editor');
+      expect(hostOf(fn).editorFilePath).toBe('C:/art/p.taoeditor');
     }
   });
 });

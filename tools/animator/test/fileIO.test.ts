@@ -30,24 +30,28 @@ describe('clamp01', () => {
 
 describe('basename', () => {
   it('strips a Windows-style path', () => {
-    expect(basename('C:\\Users\\me\\runner\\runner.tao.editor')).toBe('runner.tao.editor');
+    expect(basename('C:\\Users\\me\\runner\\runner.taoeditor')).toBe('runner.taoeditor');
   });
   it('strips a POSIX-style path', () => {
-    expect(basename('/home/me/runner/runner.tao.editor')).toBe('runner.tao.editor');
+    expect(basename('/home/me/runner/runner.taoeditor')).toBe('runner.taoeditor');
   });
   it('returns the input unchanged when there is no separator', () => {
-    expect(basename('runner.tao.editor')).toBe('runner.tao.editor');
+    expect(basename('runner.taoeditor')).toBe('runner.taoeditor');
   });
 });
 
 describe('deriveTaoPath', () => {
-  it('swaps the .tao.editor suffix for .tao (same directory)', () => {
-    expect(deriveTaoPath('C:\\rig\\runner\\runner.tao.editor')).toBe('C:\\rig\\runner\\runner.tao');
+  it('swaps the .taoeditor suffix for .tao (same directory)', () => {
+    expect(deriveTaoPath('C:\\rig\\runner\\runner.taoeditor')).toBe('C:\\rig\\runner\\runner.tao');
   });
   it('is case-insensitive on the suffix match', () => {
+    expect(deriveTaoPath('runner.TAOEDITOR')).toBe('runner.tao');
+  });
+  it('also strips the pre-rename .tao.editor suffix', () => {
+    expect(deriveTaoPath('C:\\rig\\runner\\runner.tao.editor')).toBe('C:\\rig\\runner\\runner.tao');
     expect(deriveTaoPath('runner.TAO.EDITOR')).toBe('runner.tao');
   });
-  it('appends .tao when the path does not end with .tao.editor', () => {
+  it('appends .tao when the path does not end with .taoeditor', () => {
     expect(deriveTaoPath('runner')).toBe('runner.tao');
   });
 });
@@ -110,10 +114,10 @@ describe('saveWithPicker', () => {
     const picker = vi.fn(async (_opts: unknown) => handle);
     vi.stubGlobal('window', { showSaveFilePicker: picker });
 
-    await saveWithPicker(blob, 'project.tao.editor.tao.editor', [
-      { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.tao.editor'] } },
+    await saveWithPicker(blob, 'project.taoeditor.taoeditor', [
+      { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.taoeditor'] } },
     ]);
-    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'project.tao.editor' });
+    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'project.taoeditor' });
   });
 
   it('native picker: forwards startIn when given', async () => {

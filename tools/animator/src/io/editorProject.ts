@@ -1,4 +1,4 @@
-// IOController's `.tao.editor` save/load flow, extracted as form① free functions (claudedocs/
+// IOController's `.taoeditor` save/load flow, extracted as form① free functions (claudedocs/
 // client-modules.md "单文件 500 行收敛"). editorFilePath/editorFileHandle are getter/setter
 // pairs (not plain properties) because these functions reassign them wholesale (a fresh load
 // clears both, a disk-backed load/save re-sets one) — a plain copied property would only rebind
@@ -59,7 +59,8 @@ export async function triggerLoadEditor(host: EditorProjectHost): Promise<void> 
 async function loadEditorFromDesktop(host: EditorProjectHost): Promise<void> {
   try {
     const result = await window.nwDesktop!.fs.openFile([
-      { name: 'Tao Editor Project', extensions: ['tao.editor'] },
+      // 'tao.editor' is the pre-rename suffix — still openable, never written.
+      { name: 'Tao Editor Project', extensions: ['taoeditor', 'tao.editor'] },
     ]);
     if (result.canceled) return;
     if (result.error || !result.data || !result.path) {
@@ -77,7 +78,8 @@ async function loadEditorViaPicker(host: EditorProjectHost): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const picker = (window as any).showOpenFilePicker;
     const [handle]: WritableFileHandle[] = await picker({
-      types: [{ description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.tao.editor'] } }],
+      // '.tao.editor' is the pre-rename suffix — still openable, never written.
+      types: [{ description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.taoeditor', '.tao.editor'] } }],
     });
     const file = await handle.getFile();
     const ok = await loadEditorBlob(host, file, file.name);
@@ -90,7 +92,7 @@ async function loadEditorViaPicker(host: EditorProjectHost): Promise<void> {
 
 // ── Editor save / load ────────────────────────────────────────────────────
 
-/** Build the `.tao.editor` archive (editor.json + per-slot PNGs) as a Blob.
+/** Build the `.taoeditor` archive (editor.json + per-slot PNGs) as a Blob.
  *  Shared by the manual "Save .editor" button and the IndexedDB auto-save. */
 export async function buildEditorBlob(host: EditorProjectHost): Promise<Blob> {
   const zip = new JSZip();
@@ -130,11 +132,11 @@ export async function buildEditorBlob(host: EditorProjectHost): Promise<Blob> {
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
 }
 
-/** Overwrites the currently loaded `.tao.editor` file directly when its disk identity
+/** Overwrites the currently loaded `.taoeditor` file directly when its disk identity
  *  is known (desktop path or browser handle); only asks for a location the first time
  *  a brand-new project is saved, then remembers it for every save after that. */
 export async function saveEditorProject(host: EditorProjectHost): Promise<void> {
-  host.bus.emit('status', 'Saving .tao.editor…');
+  host.bus.emit('status', 'Saving .taoeditor…');
   try {
     const blob = await buildEditorBlob(host);
 
@@ -155,7 +157,7 @@ export async function saveEditorProject(host: EditorProjectHost): Promise<void> 
       await writable.close();
     } else {
       host.editorFileHandle = await saveWithPicker(blob, 'project', [
-        { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.tao.editor'] } },
+        { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.taoeditor'] } },
       ]);
     }
     host.bus.emit('status', 'Project saved');
@@ -178,7 +180,7 @@ export async function saveEditorProjectAs(host: EditorProjectHost): Promise<void
     }
 
     const handle = await saveWithPicker(blob, 'project', [
-      { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.tao.editor'] } },
+      { description: 'Tao Editor Project', accept: { 'application/octet-stream': ['.taoeditor'] } },
     ], host.editorFileHandle);
     if (handle) {
       host.editorFileHandle = handle;
@@ -194,7 +196,7 @@ export async function saveEditorProjectAs(host: EditorProjectHost): Promise<void
  *  path, or null if the user cancelled the dialog. */
 async function saveEditorProjectAsDesktop(host: EditorProjectHost, blob: Blob): Promise<string | null> {
   const result = await window.nwDesktop!.fs.saveFileAs(
-    { defaultPath: host.editorFilePath ?? undefined, filters: [{ name: 'Tao Editor Project', extensions: ['tao.editor'] }] },
+    { defaultPath: host.editorFilePath ?? undefined, filters: [{ name: 'Tao Editor Project', extensions: ['taoeditor'] }] },
     await blob.arrayBuffer(),
   );
   if (result.canceled) return null;
@@ -207,7 +209,7 @@ export function loadEditorProject(host: EditorProjectHost, file: File): Promise<
   return loadEditorBlob(host, file, file.name);
 }
 
-/** Restore editor state from a `.tao.editor` archive (File or Blob). Returns whether the
+/** Restore editor state from a `.taoeditor` archive (File or Blob). Returns whether the
  *  load succeeded, so disk-backed load paths know it's safe to remember the file's path/
  *  handle. Used by both the manual "Load .editor" button and project switching — always
  *  clears any remembered disk identity first; the disk-backed load paths re-set it after. */
