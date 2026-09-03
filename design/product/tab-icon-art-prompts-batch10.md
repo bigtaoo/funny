@@ -1,6 +1,6 @@
 # 批次 10：「保护中」的伞（`umbrella`，1 张）— 语义判断 + Prompt 文档
 
-> 创建：2026-09-03 · 状态：**语义已定，prompt 待出图**（出图后按 §3 接线，§4 验收）。落地后全库账：56 张自有美术 + 6 个别名 → **57 张自有美术 + 6 个别名 = 63 个 ink kind**
+> 创建：2026-09-03 · 状态：**全批完成（同日）**——1 张出图 + 接线 + 26/28px 双衬底 + 真机实拍验收，**一版过**（见 §6）。全库账：**57 张自有美术 + 6 个别名 = 63 个 ink kind**
 > 前九批：[批 1–4](tab-icon-art-prompts.md) · [批 5](tab-icon-art-prompts-batch5.md) · [批 6](tab-icon-art-prompts-batch6.md) · [批 7](tab-icon-art-prompts-batch7.md) + [批 7 log](tab-icon-art-prompts-batch7-log.md) · [批 8](tab-icon-art-prompts-batch8.md) · [批 9](tab-icon-art-prompts-batch9.md)
 > 配套代码：[`inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts) · [`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs) · [`WorldMapPanels/hud.ts`](../../client/src/scenes/worldmap/WorldMapPanels/hud.ts)
 > 上游：[批 9 §「『保护中』的盾不在本批」](tab-icon-art-prompts-batch9.md) —— 那条把它留成 backlog，理由是「画盾 / 画伞 / 用 `lock` 是一次独立的语义判断，不该顺手塞进一批以地块结构物为主题的出图里」
@@ -85,3 +85,18 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
    - `umbrella` vs `camp`（批 9 的 A 字帐篷）——两张都是"顶 + 底下有东西"，而它们**同屏**（buff 行和队伍行都在世界地图 HUD 右列）。
 3. **真机实拍**走 [[worldmap-standalone-debug-render]]：`start:e2e` + `__nwE2E.views.showWorldMap`（cb **必须带 `worldId`**）+ reject-fast `worldApi` Proxy，然后直接 poke `ctx.me.baseProtectedUntil = Date.now() + 5400e3`、`ctx.teams`/`ctx.stationed`、`ctx.teamsLoaded = true`、`ctx.teamPanelExpanded = true`，调 `ctx.panels.renderHud()`。要摆出来的一屏：**保护中 buff 行 + 野外停留/野外驻扎/驻军在家三条队伍行同屏**——这一屏就是「四分圆有三个含义」的原始案发现场，也是判断伞是否真的把它解开的唯一现场。
 4. **判定标准是"读成什么"，不是"好不好看"**。任何一张在 26px 上读成蘑菇、钟、头盔或帐篷，就按批 7 log 的格式记下"v1 为什么塌"再重出，**只改导致返工的那一处措辞**。
+
+## 6. 出图记录（2026-09-03 同日出图 + 接线 + 验收，一版过）
+
+**打包结果：`umbrella_active.png` 裁边后 128×128 = 1.00:1**——全批次里最方的一张（批 9 那七张是 1.02–1.52，`camp` v2 是 1.44）。`iconArtAspect.test.ts` 一字未动、自己过关；重跑打包脚本时其余 196 张**零字节变化**（这条管线的确定性又验了一次）。
+
+**26/28px × 深底 + 纸底，四组并排全部无撞车**（§5 那四组）：
+
+- vs `armor` / `armorHeavy`：形态完全不同一档——实心穹顶 + 细杆弯钩 vs 黑白相间的四分圆。这一张的**实心穹顶**正是批 7 总结第一条（「28px 上活下来的是实心块」）的正面用法，26px 上伞沿的扇贝波纹和 J 形钩都还在。
+- vs `defense`（头盔）：头盔是**空心**穹顶 + 一条竖直护面、没有杆；伞是**实心**穹顶 + 杆 + 钩。§2 第 1 条要求"填充承担身份"就是为了这一组。
+- vs `lock`：一眼分开，也顺手确认了 §1 的判断——挂锁读"锁住"，伞读"罩着"。
+- vs `camp`（A 字帐篷）：帐篷是折线、空心、三角；伞是曲线、实心、圆顶。两者**确实同屏**（buff 行与队伍行都在 HUD 右列），实拍那一屏两张同时在，不混。
+
+**真机实拍（Playwright 落文件，1600×900 @2x）**：保护中 buff 行现在是伞，正下方是训练加速的沙漏，两条 chip 读成两件事；同屏的三条队伍行分别是脚印（野外停留）/ 帐篷（野外驻扎）/ 房子（驻军在家）。**整屏再也没有四分圆**——§0 那张「一块图三个含义」的表就此清空。
+
+**没有做的两件事**（都在 §1 末段有据）：商店的 `PROTECTION_ICON_TIERS` 仍是 `armor`/`armorHeavy`（档位阶梯在那儿成立，换伞要再画一张加固档）；`hud.ts` 里那句"复用商城同一套图形语言"的注释已按 §4⑤ 改成实话（加速档仍共用沙漏，保护档不再共用）。
