@@ -34,7 +34,7 @@ webpack 当前对图片 / `.tao` 用 `asset/resource`，每个资源被发成**�
 | 层 | 何时加载 | 归属 | 体量 |
 |---|---|---|---|
 | **L0 启动必需** | 启动闸门内 `await` 完才进大厅（带加载进度） | 代码核心包 + 大厅/战场装饰三组 atlas（A `decor_atlas` / B `label_*` / C `decor_c_atlas`）+ 开局三兵 `infantry/archer/shieldbearer` 的 `.tao`+卡图 `.png` + `game_base`/兵营卡图 | 代码 ~1.5 MB + 资源 ~1.8 MB |
-| **L1 按需** | 进对应场景时懒加载（HTTP/CDN 按 URL 拉） | gacha 全套（卡背/框/banner/月卡，2026-08-24 起 1.2 MB，见 §12.1）、英雄单位 `max/lena/mara` 的 `.tao`+`.png`（`max.tao` 单个 ~600 KB）、法术卡图、收集册大图、装饰 C 组之外的氛围图 | ~5 MB |
+| **L1 按需** | 进对应场景时懒加载（HTTP/CDN 按 URL 拉） | gacha 全套（卡背/框/banner/月卡，2026-08-24 起 1.2 MB，见 §12.1）、英雄单位 `max/lena/mara` 的 `.tao`+`.png`（**`max.tao` 已从 ~600 KB 降到 14 KB**——2026-09-03 发现上线那份是 6 月的未烘焙导出，拷回母版即修；门禁见 `client/test/unitRigsAreBaked.test.ts`）、法术卡图、收集册大图、装饰 C 组之外的氛围图 | ~5 MB |
 | **L2 永不进包** | — | `art/` 下全部 `.xcf` GIMP 源、`.taoeditor` 编辑元数据、地图/概念源图 | ~47 MB |
 
 **L0 清单的单一来源 = `client/src/assets/bootManifest.ts`**。新增"开局必现"的资源往该清单加一条；其余一律默认 L1（不进闸门）。**保持 L0 极小**是这套设计的纪律——每加一条都拖慢首屏。

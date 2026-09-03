@@ -71,6 +71,7 @@ ZIP 内含 `animation.json`（v2）+ `spritesheet.png`（shelf bin-packing）+ `
 - **runtime**（`StickmanRuntime.ts`）：构造时若有 `shadow` 挂点就建一个底层 sprite 用程序纹理；加载 spritesheet 时**跳过任何 `shadow` 帧**，所以**旧 `.tao`（仍打包了 shadow.png）也走统一程序绘制**，无需重导出。
 - 旧 `.tao` 内残留的 `shadow.png` 成为死字节，运行时忽略；如需瘦身可在 animator 里重新导出覆盖。
 - **2026-07-17 瘦身**：`client/src/assets` 里 `infantry/max/shieldbearer` 三个仍带 `shadow` 帧的旧包，已用脚本外科式删掉 `spritesheet.json` 的 `shadow` 帧条目（`animation.json` 的 shadow 挂点 + `spritesheet.png` 字节不动，程序阴影照常渲染）。注意 `art/units/*/*.tao` 母版早已重导出为无 shadow 帧，但与 `src/assets/*` 已**分叉**（不同版本、PNG 体积差很大），故不可用母版覆盖 src/assets——只能就地删帧。
+  > **⚠️ 这条「不可用母版覆盖」已经作废（2026-09-03 逐对核过）**：11 对里 10 对早就同步回去了、逐字节相同，剩下的那一对就是 max——而**上线那份才是旧的**（未烘焙的 6 月导出，607 KB vs 母版 14 KB，占全部兵种 rig 字节的 77%）。当时这条建议正是让人「就地打补丁而不是拷母版」的那句话，而就地打补丁恰好是让 max 分叉活下来的手法：z-order 修复（07-15，改 1 字节）和上面这次删 shadow 帧（07-17，改 68 字节）都打在那个 6 月的旧壳上。max 已在 2026-09-03 拷回母版并上了门禁 `client/test/unitRigsAreBaked.test.ts`（`unitHeight` 存在 + binding scale > 1 + 每个 rig 字节上限 + 有母版就必须逐字节相同）。**现在的规矩是：上线的 `.tao` 必须是母版的拷贝，修 rig 一律重新导出，不要再就地改包。**
 
 ## `.taoeditor`（编辑器存档）
 
