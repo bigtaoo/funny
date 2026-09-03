@@ -292,7 +292,7 @@ analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverag
 
 **这批分支不是凑百分比**：`describeFlag`/`describeShopItem` 的可选链决定审计日志 `summary` 里写什么，而审计行是运营改了什么的唯一持久记录——此前没有任何测试钉过"flag 没有 rollout / rollout 全空 / 被关掉"时那行字长什么样；`listAudit` 的能力收窄决定一个没有 `audit.view.all` 的运营能不能看到别人的操作记录（`httpApi` 只查了更弱的 `audit.view.self`）；`resolveAntiCheatReview` 的先封号后结单顺序决定"结单了但封号没落地"会不会发生。
 
-新增 5 个测试文件 + 1 个共享 helper + 给既有 `clients-adminManage.test.ts` 追加一个 describe（共 154 例，原有 203 例零改动）：
+新增 5 个测试文件 + 1 个共享 helper + 给既有 `clients-adminManage.test.ts` 追加一个 describe（共 **168 例**——5 个新文件 160 例 + 追加的 8 例，原有 238 例零改动）：
 
 - `test/stubDeps.ts`（helper）：构造一份 `AdminServiceDeps`，审计日志换成内存数组，域实例仍然过**真实的** `AdminService` 构造函数拿（同 `promo.test.ts` 的先例——`AdminCore.audit`/`requireCap`/`actorNames` 是被测对象，用假的等于测假的）。故意**不做**通用内存版 Mongo：没传的字段就是 `undefined`，测试一旦走到没桩的集合会直接 TypeError，而不是安静地跑进第二套并行实现里。`cols` 按集合逐个合并（比展开深一层），这样只想加 `auditLog.find` 的测试仍然拿得到捕获用的 `auditLog.insertOne`。
 - `test/validators.test.ts`（40 例）：`service/validators.ts` 84% 行 / **48.42%** 分支（全包最差）→ **100/100**。八个纯函数逐个穷举：三个 id 的缺席/空白/自交易、severity 归一、`reasons` 非数组、`num()` 的非有限/负数、三种附件类型 × 缺 id/负数量、9 位 publicId、`validateRollout` 的每个 string[] 字段（非数组/含非字符串/trim 后全空）+ pct 五种非法值 + 未知平台、`validateShopItemInput` 的 null/数组/NaN/布尔、以及上面提到的两个审计摘要格式化器。
@@ -302,7 +302,7 @@ analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverag
 - `test/serviceDegrade.test.ts`（23 例）：ladder（6 条）/gacha/mapTemplates/paddleEvents/appeals 的 `available` 两侧 + `AdminError` 的 `message ?? code` + `FlagsService.upsertFlag` 的文档装配（rollout 校验后为空 / desc 空白或非字符串时必须整个字段不写进去）。这一组顺带把各域"读默默降级、写响亮报错"的分工钉下来了：ladder/gacha/mapTemplates 的读返回空值让 ops 控制台照常渲染，gacha 的写抛自己的 `gacha_unavailable`（而不是 client 的通用 502，让运营知道是部署没配好而不是配置被拒），appeals 两个方法**都**报错（申诉队列在后端不可达时显示成"没有申诉"，看起来就像没事可做）。
 - `test/clients-adminManage.test.ts` 追加 8 例：`HttpGachaPoolsClient` 的 `detail ?? error ?? r.error ?? 模板` 消息链和 `r.status || 502`（62.5% → **100%** 分支）——只有每条链的第一环跑过。链上哪一环胜出是运营真正读到的那句话：`detail` 是 meta 自己的校验说明，`r.error` 是传输故障，模板是最后兜底；status 0 的传输故障也是唯一不能显示成 "HTTP 0" 的情况。
 
-admin 整体：**分支 82.09% → 92.42%**，行 93.81% → 95.88%（`npm run test:coverage`，24 test files / 357 tests 全绿，`npm run typecheck:test` 干净）。`src/service` 这一层 70.83% → **96.5%** 分支，用户点名的三个最差文件（validators/accounts/ladder）全部 100%。
+admin 整体：**分支 82.09% → 92.42%**，行 93.81% → 95.88%（`npm run test:coverage`，24 test files / **406** tests 全绿，`npm run typecheck:test` 干净）。`src/service` 这一层 70.83% → **96.5%** 分支，用户点名的三个最差文件（validators/accounts/ladder）全部 100%。
 
 **未继续追**（下一轮候选，按剩余分支数排序）：`src/httpApi/*`（84.61% 分支——`helpers.ts` 72.4%、`playerRoutes.ts` 79.2%、`trustSafetyRoutes.ts` 79.4%、`opsConfigRoutes.ts` 80.6%、`monitorRoutes.ts` 82.6%、`accountRoutes.ts` 82.3%、`session.ts` 84.2%、`slgRoutes.ts` 88.2%：都是"query 参数缺席/畸形"和错误映射分支，要走 `httpRoutes.e2e.test.ts` 那套真实 HTTP 注入，一条分支一次请求，比 service 层贵得多）、`src/clients/{analytics,paddleEvents,events,ladder,mismatch,appeals}.ts`（78~89% 分支，同上面 gachaPools 那批消息链/降级形状，`vi.mock` 一下就能补，只是本轮没排进去）、`src/service/{reports,shop,slgAudit,events,world,moderation,auth}.ts`（81~93% 分支，各剩 1~5 条）、`src/db.ts`（75%）、`src/index.ts`（0%，进程 bootstrap，同前几轮先例不追）。
 
