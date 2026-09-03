@@ -9,10 +9,21 @@
 // 'success'` — a failure here blocks every `*-deploy.yml` from firing, i.e. this is the mechanism
 // that turns "90% is our bar" from a read-only report line into an actual release gate.
 //
-// Gates on LINE coverage only (not branches/functions) — matches this repo's own convention
-// throughout claudedocs' "补测" writeups and the coverage-baseline memory notes, which have always
-// tracked/quoted line % as *the* number; branches/functions are reported for context but were
-// never the target metric any "fix the lowest" round chased.
+// Gates on LINE and BRANCH coverage, each against its own 90% bar (functions stays reported-only).
+//
+// 2026-09-03 — the branch bar is new, and the reason it is here is that its absence was invisible.
+// For a year this gated lines only, matching the repo convention that every "补测" writeup and
+// coverage-baseline note quotes line % as *the* number. Measuring the column nobody gated found
+// every package >=90% on lines and 7 of the 13 server packages under 90% on branches, one of them
+// (server/admin) at 93.81% lines / 82.09% branches. That is not a rounding difference: uncovered
+// branches concentrate in the absent-field fallbacks, the refusal paths and the lost-CAS-race arms
+// — the code that only runs when something has gone wrong, which is the code a test is most worth
+// having for. Functions is deliberately still ungated: it is the metric most easily satisfied by
+// calling a function once and asserting nothing.
+//
+// A package below both bars is reported once per bar, on its own line, because "add tests for the
+// untested lines" and "exercise the other side of the conditions you already run" are different
+// pieces of work.
 //
 // A missing coverage/ output (a workspace whose test:coverage step didn't run or didn't finish)
 // fails closed, not open — we can't confirm >=90% without the data, so silently passing would let
@@ -33,11 +44,14 @@
 // exit code.
 //
 // Usage: node scripts/checkCoverageThreshold.mjs   (cwd = repo root; same as coverageSummary.mjs)
-// Override the bar with COVERAGE_THRESHOLD=85 (percent) if ever needed — defaults to 90.
+// Override either bar if ever needed — both default to 90:
+//   COVERAGE_THRESHOLD=85            the line bar
+//   COVERAGE_BRANCH_THRESHOLD=80     the branch bar
+// One global knob per bar, not a per-package exemption list — see readGateEnv's note for why.
 import { evaluate, readGateEnv } from './coverageLib.mjs';
 
-const { threshold, testsOk } = readGateEnv();
-const ev = evaluate(process.cwd(), { threshold, testsOk });
+const { threshold, branchThreshold, testsOk } = readGateEnv();
+const ev = evaluate(process.cwd(), { threshold, branchThreshold, testsOk });
 
 // Canary, same reasoning as scripts/checkFileLength.mjs' and checkDocLinks': every check in
 // `evaluate` iterates the package list, so an empty one would print a cheerful "all 0 packages >=
@@ -62,6 +76,14 @@ if (ev.belowBar.length > 0) {
       ev.belowBar.map((f) => `${f.pkg} (${f.pct.toFixed(1)}%, ${f.headroom} lines)`).join(', '),
   );
 }
+if (ev.belowBranchBar.length > 0) {
+  console.error(
+    `checkCoverageThreshold: ${ev.belowBranchBar.length} package(s) below the ${branchThreshold}% branch-coverage bar — ` +
+      ev.belowBranchBar
+        .map((f) => `${f.pkg} (${f.branchPct.toFixed(1)}%, ${f.branchHeadroom} branches)`)
+        .join(', '),
+  );
+}
 if (ev.missingOutput.length > 0) {
   console.error(
     `checkCoverageThreshold: ${ev.missingOutput.length} package(s) produced no coverage output at all — ` +
@@ -71,8 +93,9 @@ if (ev.missingOutput.length > 0) {
 }
 if (ev.failures.length > 0) process.exit(1);
 
+const bars = `>= ${threshold}% lines / ${branchThreshold}% branches`;
 console.log(
   ev.skipped > 0
-    ? `checkCoverageThreshold: not enforced — ${ev.measured} gated package(s) >= ${threshold}%, ${ev.skipped} skipped (their test job failed).`
-    : `checkCoverageThreshold: OK — all ${ev.measured} gated packages >= ${threshold}%.`,
+    ? `checkCoverageThreshold: not enforced — ${ev.measured} gated package(s) ${bars}, ${ev.skipped} skipped (their test job failed).`
+    : `checkCoverageThreshold: OK — all ${ev.measured} gated packages ${bars}.`,
 );

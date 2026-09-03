@@ -171,3 +171,26 @@
 **排序那条断言第一版是假的**，值得记一笔：原来选的两个包是 `server/admin`(91%) 和 `server/shared`(99%)，可它们的**字母序恰好跟 headroom 序一致**——把实现换成 `sort by pkg name` 照样全绿。改成 `server/worldsvc`(91%) 与 `server/admin`(99%) 才让两个序相反，红检这才真的红。跟 `coverageScope.test.ts` 那批"断言的是符号引用、值对不对都能过"是同一类陷阱。
 
 **没做的**：没把 `Δ` 变成门禁。回退是**报表**的事——一个"不许掉超过 0.5 点"的硬门槛会在正常重构（删掉一坨覆盖好的死代码）时误红，而 90% 那条线已经是硬约束了。
+
+## 第二条门禁线：分支覆盖率也卡 90%（2026-09-03）
+
+上一节末尾"没做的"那条说过不把 Δ 变成门禁，理由是回退属于报表的事、90% 那条线已经是硬约束——**但那条硬约束只量行覆盖率**。这一节补的就是这个：`checkCoverageThreshold.mjs` 从 2026-08-15 落地起就只看 `lines.pct`，脚本头注释也写明了"分支/函数只是参考不设门槛"，理由是本仓库所有"补测"记录和记忆笔记一直拿行 % 当**那个**数字。
+
+**为什么现在补**：把没人卡的那一列量了一遍（19 个进门禁的包全量 `test:coverage`），结果是**行覆盖率全部 ≥90%，13 个 server 包里 7 个分支低于 90%**——`server/admin` 是 93.81% 行 / 82.09% 分支。基线表和逐包缺口在 [`server-testing-coverage.md`](server-testing-coverage.md) 的"全仓分支覆盖率横向核实"一节。这不是四舍五入的差别：没被覆盖的分支系统性地集中在**缺字段兜底、拒绝路径、输掉的 CAS 竞态**上，也就是只在出错时才走的那些代码——恰恰是最值得有测试的部分。函数覆盖率**仍然不设门槛**：它是最容易靠"把函数调一次、什么都不断言"满足的指标。
+
+改动（三个脚本 + ci.yml，共约 90 行）：
+
+- **`coverageLib.mjs`**：新增 `DEFAULT_BRANCH_THRESHOLD = 90`（**独立常量**，不跟 `DEFAULT_THRESHOLD` 共用一个数——两条线是对两个指标的两个独立决定，合成一个数意味着以后动其中一条会静悄悄把另一条也动了）；`readGateEnv` 多读一个 `COVERAGE_BRANCH_THRESHOLD`；`gateHeadroom(row, threshold, metric = 'lines')` 泛化成能算任一指标（默认值让所有既有调用点原样可读）；`evaluate` 给每行结果加 `below: ['lines'|'branches']` 数组 + `branchPct`/`branchHeadroom`，返回值多一个 `belowBranchBar` 列表。
+- **为什么是 `below` 数组而不是继续 `!reason` 推导**：`belowBar` 原来是 `failures.filter((f) => !f.reason)`——在只有一条线的时候这是对的，但第二条线一落地，它会把每一个分支失败都归类成行失败。三个下游报告点现在过滤一个显式事实。
+- **一个包同时破两条线，就在两条消息里各出现一次**，不是只报一次：`给未测的行补测试` 和 `把你已经在跑的条件走另一边` 是两件不同的活，砍掉第二条就是砍掉一半指令。
+- **`coverageReport.mjs`**：标题两条线都点名（绿跑印 `≥ 90% lines / 90% branches`——**只印 `≥ 90% lines` 的标题正是让分支漂了一年还看着一切正常的那句话**）；折叠外多一条分支失败行；表格加 `Δ br` 和 `Br. headroom` 两列；**排序改成按两个 headroom 里更紧的那个**（"最脆的在最上面"在只有一条线时等于行 headroom，有两条线之后，一个还剩 400 行余量、只剩 3 条分支余量的包才是最脆的，按行 headroom 排会把它扔到表格最底下）；`Branch coverage dropped in N package(s)` 回退行——baseline 文件从写下来那天就存着分支数字，只是没人读。
+- **`ci.yml`**：步骤名 `enforce >=90% line coverage per package` → `enforce >=90% line and branch coverage per package`。
+- **没有做的：per-package 豁免名单**。ADR-070 Phase 4e 刻意把那套机制退役了（理由：留一条能豁免的活路，就是在邀请人去走它而不是去干活），所以这里**只有一个全局旋钮** `COVERAGE_BRANCH_THRESHOLD`。整仓降线是一个显眼的、明显临时的、一行的动作；一份被免除的包清单两样都不是。
+
+**⚠️ 落地即红**：6 个包（commercial 81.3% / metaserver 85.9% / worldsvc 87.0% / auctionsvc 88.2% / socialsvc 89.2% / botsvc 89.4%）当场破线，合计缺 362 条分支；因为 8 个 `*-deploy.yml` 都靠 `workflow_run.conclusion == 'success'` 门控，**这段时间所有部署被挡**。这是知情选择（先立线、再逐包补，让门禁去驱动补测），不是意外。真要在补完之前发一次版：`COVERAGE_BRANCH_THRESHOLD=80` 临时降线。排序后的表格顺带露出了行 headroom 从来看不见的东西——**gameserver 和 gateway 只剩 +5 条分支余量**，随手加个 `if` 就红。
+
+测试：`coverageScripts.test.ts` 从 29 例扩到 36 例。夹具的 `coverageTree` 拆出 `pct`（行）和 `branchPct`（分支）两个独立旋钮——**这是这次最关键的夹具改动**：原来 `metric(p)` 把四个指标一起设成同一个数，那样既表达不出"一个指标过、另一个不过"这个门禁存在的理由，又会让每一条既有的行覆盖率用例意外变成分支用例（`honours COVERAGE_THRESHOLD` 那例会直接假红）。新增 7 例：100% 行 / 62% 分支必须红（**这条就是门禁存在的那个用例**，而且行覆盖率故意钉在线上方——万一以后分支检查被拿掉，不能让行那一半顺手接住、把失败伪装成别的东西）、两条线各自点名、同时破两条线两边都点名、`COVERAGE_BRANCH_THRESHOLD` 双向且与行线互不影响、绿日志两条线都点名、`Br. headroom` 数值 + 更紧者优先的排序、分支回退行、`gateHeadroom` 的 `metric` 参数、以及两条线各读自己的 env。
+
+**红检（本仓库"门禁脚本自己要能被看着失败"的惯例）做了两个变异**：①删掉 `below.push('branches')` 那一行 → 6 例变红；②`DEFAULT_BRANCH_THRESHOLD` 改成 `0`（"看起来配好了、实际放过一切"这个最像样的失效模式）→ 9 例变红。两次都还原后 36 例全绿。
+
+**排序那条断言又差点写成假的**（跟上一节记的同一类陷阱，第三次了）：`prints gate headroom in lines and sorts the most-fragile package first` 这条既有用例在新排序下会红——因为夹具里 admin 的分支 headroom 跟其它所有包**打平**，排序落到字母序 tiebreak，`server/admin` 反而排到最前面。修法是把 admin 的 `branchPct` 一起抬高让它的 fragility 无争议，而不是去改断言迁就实现。

@@ -343,4 +343,4 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 
 **排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高；commercial 是百分比最低的、且 149 条集中在 6 个文件里；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完。
 
-**先决问题**：这一维目前**没有门禁**，所以补完还会再漂回去。要么把 `checkCoverageThreshold.mjs` 加一个分支阈值（初值按现状定在 80%，再逐包往上棘轮，同 ADR-070 那套"reported, not gated"退役前的做法），要么就接受它是一个需要人定期主动去量的东西——但至少现在有了一份基线数字，下次量能看出方向。
+**先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
