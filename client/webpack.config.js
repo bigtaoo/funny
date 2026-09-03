@@ -206,11 +206,25 @@ module.exports = (env, argv) => {
       // Copy marketing landing (home) + legal pages (terms/privacy/refunds/pricing) + branding icons
       // (favicon / apple-touch / PWA manifest, referenced by <link> in the HTML templates) to dist root.
       // home.html is the crawler-readable site Paddle reviews (the game root / is a bare canvas).
-      ...(!isWechat ? [new CopyPlugin({ patterns: [
+      //
+      // ⚠ The five web pages are WEB-ONLY, and `!isMobile` is the point of this condition, not a
+      // tidiness pass. They are the web *payment channel's* surface: pay.html loads paddle.js from
+      // Paddle's CDN and opens a live checkout; pricing.html/home.html advertise USD coin packs
+      // bought through Paddle; refunds.html tells the reader to email a Paddle transaction id.
+      // Copying them into the `mobile` build put every one of them inside the iOS app binary (and
+      // inside every OTA bundle), with terms.html → refunds.html reachable from the in-app consent
+      // gate — an alternative purchase/refund path in a store build, which App Review 3.1.1 treats
+      // as grounds for removal. The native shell links to the hosted copies over https instead
+      // (ui/dialogs/ConsentDialog.ts), which is also the only form iOS can actually open: a
+      // `capacitor://localhost/...` URL handed to UIApplication.open just fails silently.
+      // The icons stay — they are branding referenced by the HTML templates, not commerce.
+      ...(!isWechat && !isMobile ? [new CopyPlugin({ patterns: [
         { from: 'public/web/home.html' }, { from: 'public/web/terms.html' }, { from: 'public/web/privacy.html' }, { from: 'public/web/refunds.html' }, { from: 'public/web/pricing.html' },
         // pay.html: standalone Paddle checkout surface, set as the Dashboard "Default payment link"
         // (handles hosted-checkout ?_ptxn links from receipts / retry emails). See COMMERCIAL_DESIGN §IAP.
         { from: 'public/web/pay.html' },
+      ] })] : []),
+      ...(!isWechat ? [new CopyPlugin({ patterns: [
         { from: 'public/favicon-16.png' }, { from: 'public/favicon-32.png' }, { from: 'public/favicon-48.png' },
         { from: 'public/apple-touch-icon.png' }, { from: 'public/icon-192.png' }, { from: 'public/icon-512.png' },
         { from: 'public/site.webmanifest' },
@@ -300,6 +314,18 @@ module.exports = (env, argv) => {
         pkg,
         path.resolve(__dirname, stub),
       ))),
+      // …and the swap in the other direction: web-only code kept OUT of the native bundle. Same
+      // mechanism, different reason — the two above are about bytes, this one is about what a store
+      // build is allowed to contain. `platform/web/paddleCheckout.ts` loads paddle.js from Paddle's
+      // CDN and opens a hosted checkout; inside the iOS app that is an alternative purchase
+      // mechanism (App Review 3.1.1), and a payment SDK we would be shipping undisclosed in an app
+      // that bills through StoreKit. WebPlatform is shared by every target, so reachability alone
+      // can't keep it out — the runtime guards (WebPlatform.iapKind / nativeShell.ts) stop callers,
+      // and this stops it being in the binary at all.
+      ...(isMobile ? [new webpack.NormalModuleReplacementPlugin(
+        /^\.\/paddleCheckout$/,
+        path.resolve(__dirname, 'src/platform/stubs/paddleCheckout.ts'),
+      )] : []),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),

@@ -116,6 +116,16 @@
 - 预期落点：**12+ / Teen 档**（以问卷结果为准；不得勾成全年龄/儿童，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)）。
 
 ### 1.4 隐私营养标签（Privacy Nutrition Label）
+
+> 🚨 **填之前必须先解决一处自相矛盾（2026-09-03 发现，尚未定）**：下面写的是「不做跟踪、免 ATT 弹窗」，
+> 但客户端**已经在弹 ATT** ——`client/ios/App/App/Info.plist` 有 `NSUserTrackingUsageDescription` + 47 条
+> `SKAdNetworkItems`，`AppDelegate.swift` 的 `requestTrackingAuthorizationIfNeeded()` 在播激励视频前会真的弹
+> （AdMob 接入，`IAP_CREDENTIALS.md §2.1`）。§0.3 的「跨 App 广告跟踪标识：否」同样与之打架。
+> 二选一，**填错是下架级风险**：
+> 1. **保持不跟踪**：AdMob 改成非个性化广告（`npa=1`）、去掉 ATT 请求与 `SKAdNetworkItems`，本节照原样填；
+> 2. **接受跟踪**：本节改成 `Data Used to Track You: 标识符（IDFA）`，§0.3 同步改，ATT 文案找法务过一遍
+>    （目前是占位英文）。
+
 按 §0.3 填写：
 - **Data Used to Track You**：无（声明不做跨 App 跟踪 → 免 ATT 弹窗）。
 - **Data Linked to You**：标识符（设备 ID）、联系信息（邮箱，可选）、用户内容（昵称/私聊）、购买、使用数据（埋点）。
@@ -124,6 +134,10 @@
 
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
 - [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验
+- [x] **原生包内不含网页支付通道**（2026-09-03 审计 + 修复，详见 [`IOS_RELEASE.md §10`](../../game/IOS_RELEASE.md)）：
+      `home/pricing/refunds/pay/terms/privacy.html` 六个静态页曾随 `mobile` 构建进入 iOS 包与每个 OTA 包，
+      Paddle 结账模块曾编进原生 bundle，桥丢失时 `iapKind()` 曾回落 `paddle`——均已堵上，`nativePaymentIsolation.test.ts` 护住
+- [ ] **隐私政策补 Apple 支付口径**：`privacy.html §3` 目前只写 Paddle 是 merchant of record，没提 iOS 走 Apple
 - [ ] 应用内删除账号入口（5.1.1(v)）——Track 1 L1-2 已实现
 - [ ] 抽卡概率公示页（3.1.1）——Track 1 L1-3
 - [ ] 隐私政策 URL 可点（登录/设置页）

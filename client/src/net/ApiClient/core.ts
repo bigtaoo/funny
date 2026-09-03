@@ -18,6 +18,7 @@ import { netLog, maybePromptAppeal } from '../log';
 import type { ApiResp } from './types';
 import { clientPlatformName } from '../../app/appConstants';
 import { getNativeBilling } from '../../platform/iap';
+import { nativeShell } from '../../platform/nativeShell';
 import { globalRequestGate } from '../rateGate';
 import { netTransport, type NetResponse } from '../transport';
 
@@ -30,13 +31,18 @@ const log = netLog('api');
  * Request platform declared to the server (X-NW-Platform, ADR-020): which recharged-pool bucket this session
  * may spend from / display alongside the free pool (server/commercial/src/spendChannel.ts). A native shell
  * (Capacitor iOS/Android) injects `window.NWBilling` at runtime — the same signal `platform/iap.ts` uses to
- * route recharges to Apple/Google — so it's checked first; anything else falls back to the build-time TARGET
- * (web/wechat/crazygames), which can't distinguish a native shell on its own (mobile reuses the web bundle).
+ * route recharges to Apple/Google — so it's checked first.
+ *
+ * Then, before the build-time TARGET, comes Capacitor's own view of the platform (`platform/nativeShell.ts`).
+ * TARGET cannot distinguish a native shell on its own — mobile reuses the web bundle, so it reads 'web' there
+ * — and a shell whose bridge injection broke would otherwise declare itself a web session and spend from the
+ * *web* (Paddle) bucket, which is the exact cross-channel leak ADR-020 exists to prevent. The shell knows what
+ * it is even when the bridge is gone, so it answers here; the bridge is only needed to pick a *store*.
  */
 export function requestPlatformHeader(): string {
   const native = getNativeBilling();
   if (native) return native.kind === 'apple' ? 'ios' : 'android';
-  return clientPlatformName();
+  return nativeShell() ?? clientPlatformName();
 }
 
 export class ApiError extends Error {

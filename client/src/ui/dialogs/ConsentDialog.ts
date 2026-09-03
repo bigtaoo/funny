@@ -8,7 +8,8 @@
  * leaves the device and the lobby is unreachable until `onAccept` fires.
  *
  * The privacy-policy / terms links open the hosted legal pages in a new browser
- * tab (`/privacy.html`, `/terms.html`), matching the marketing site's footer.
+ * tab (`/privacy.html`, `/terms.html`), matching the marketing site's footer —
+ * except in the native shell, which needs absolute https URLs (see {@link legalUrl}).
  */
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
@@ -17,6 +18,29 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
+import { isNativeShell } from '../../platform/nativeShell';
+
+/** Hosted marketing/legal site (Cloudflare Worker `nivara-client`, deploy-cloudflare.md §domains). */
+const LEGAL_SITE = 'https://nivara.gamestao.com';
+
+/**
+ * Where a legal link should point for this build.
+ *
+ * On the web the pages sit next to the game (`/privacy.html`), so a relative path is right.
+ * In the native shell neither half of that holds: the pages are deliberately not bundled (they are
+ * the web payment channel's surface — see webpack.config.js), and even when they were, the link did
+ * nothing at all. `window.open(..., '_blank')` in a WKWebView reaches Capacitor's
+ * `createWebViewWith`, which calls `UIApplication.open` on the URL — and the URL there is
+ * `capacitor://localhost/privacy.html`, a scheme no app is registered for, so iOS silently drops it.
+ * An absolute https URL is the one form that opens (in the system browser), and a working privacy
+ * link is something App Review checks.
+ *
+ * `path` is the extensionless canonical form: the site 307s `/privacy.html` → `/privacy`, and a
+ * store build should not spend a redirect to reach its own privacy policy.
+ */
+function legalUrl(path: '/privacy' | '/terms'): string {
+  return isNativeShell() ? `${LEGAL_SITE}${path}` : `${path}.html`;
+}
 
 export interface ConsentCallbacks {
   /** Player accepted — the core records consent (local flag + server) and proceeds. */
@@ -114,8 +138,8 @@ export class ConsentDialog implements Scene {
     this.container.addChild(body);
 
     // Policy / terms links — clickable, open the hosted legal pages in a new tab.
-    this.addLink(t('consent.privacyPolicy'), w / 2, cardY + dyLink1, unit, '/privacy.html');
-    this.addLink(t('consent.terms'), w / 2, cardY + dyLink2, unit, '/terms.html');
+    this.addLink(t('consent.privacyPolicy'), w / 2, cardY + dyLink1, unit, legalUrl('/privacy'));
+    this.addLink(t('consent.terms'), w / 2, cardY + dyLink2, unit, legalUrl('/terms'));
 
     // Accept button (only affordance — backdrop tap does NOT dismiss; consent is required).
     const bW = Math.round(cardW * 0.6);
