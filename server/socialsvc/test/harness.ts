@@ -28,6 +28,7 @@ export class FakeMeta implements SocialMetaClient {
   readonly available = true;
   private readonly byAccount = new Map<string, ProfileView>();
   private readonly byPublicId = new Map<string, string>(); // publicId → accountId
+  private readonly eloByAccount = new Map<string, number>();
 
   add(accountId: string, publicId: string, displayName = publicId, rank?: string, equippedTitle?: string): this {
     const profile: ProfileView = { publicId, displayName, ...(rank ? { rank } : {}), ...(equippedTitle ? { equippedTitle } : {}) };
@@ -40,6 +41,18 @@ export class FakeMeta implements SocialMetaClient {
   mute(accountId: string, until: number): this {
     const p = this.byAccount.get(accountId);
     if (p) this.byAccount.set(accountId, { ...p, mutedUntil: until });
+    return this;
+  }
+
+  /**
+   * Gives an already-added account an avatar. Separate from `add` rather than a seventh positional
+   * parameter: `avatarId` is optional on ProfileView, and both the friend list and the family roster
+   * spread it in conditionally — so "has an avatar" and "has none" are two branches a test needs to
+   * be able to pick between per account, not per registry.
+   */
+  avatar(accountId: string, avatarId: string): this {
+    const p = this.byAccount.get(accountId);
+    if (p) this.byAccount.set(accountId, { ...p, avatarId });
     return this;
   }
 
@@ -58,11 +71,23 @@ export class FakeMeta implements SocialMetaClient {
     return out;
   }
 
+  /**
+   * Gives an already-added account a ladder ELO. Kept in its own map rather than on ProfileView,
+   * which has no `elo` field — ELO reaches socialsvc only through /internal/player (the profile-popup
+   * "extra" lookup), so this mirrors metaserver returning it there. Without it "player has an ELO"
+   * was unreachable from any test, and the popup's `elo` field never got written.
+   */
+  elo(accountId: string, elo: number): this {
+    this.eloByAccount.set(accountId, elo);
+    return this;
+  }
+
   async getPlayerRankByPublicId(publicId: string): Promise<{ accountId: string; rank?: string; elo?: number } | null> {
     const accountId = this.byPublicId.get(publicId);
     if (!accountId) return null;
     const p = this.byAccount.get(accountId);
-    return { accountId, ...(p?.rank ? { rank: p.rank } : {}) };
+    const elo = this.eloByAccount.get(accountId);
+    return { accountId, ...(p?.rank ? { rank: p.rank } : {}), ...(elo !== undefined ? { elo } : {}) };
   }
 }
 

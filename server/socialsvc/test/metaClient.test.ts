@@ -99,6 +99,16 @@ describe('HttpSocialMetaClient', () => {
       expect(r).toEqual({ accountId: 'acc-a', elo: 1000 });
       expect(r).not.toHaveProperty('rank');
     });
+    it('found, no elo -> elo omitted (not present as undefined)', async () => {
+      // An account that has a rank tier but no numeric ELO yet: the profile popup renders the tier
+      // and simply has no number to show, so the field must be absent rather than `elo: undefined`
+      // (which serializes away anyway, but reads as "ELO 0" in anything that coerces it).
+      nextStatus = 200;
+      nextBody = { accountId: 'acc-a', rank: 'gold' };
+      const r = await new HttpSocialMetaClient(base, KEY).getPlayerRankByPublicId('100000001');
+      expect(r).toEqual({ accountId: 'acc-a', rank: 'gold' });
+      expect(r).not.toHaveProperty('elo');
+    });
     it('not found (no accountId in body) -> null', async () => {
       nextStatus = 200;
       nextBody = {};
