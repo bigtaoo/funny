@@ -218,6 +218,8 @@ POST /world/march/{marchId}/recall  { worldId }     → ok
 POST /world/sweep         { worldId, fromX,fromY, toX,toY, troops } → MarchView
 POST /world/troops/train  { worldId, qty }          → PlayerWorldView
 POST /world/troops/speedup{ worldId, coins }        → PlayerWorldView
+POST /world/troops/recover{ worldId, cardId }       → PlayerWorldView（CC-3 花金币治疗受伤角色卡；补记 2026-09-03）
+POST /world/structure/demolish { worldId, x, y }    → ok（ADR-051 P5 拆除自己的建筑；补记 2026-09-03）
 GET/PUT /world/defense    ?worldId&tileKey / { worldId, tileKey?, defenseConfig } → DefenseConfig（攻守两用布阵）
 GET/PUT /world/teams      ?worldId / { worldId, teams[] } → TeamTemplate[]（进攻布阵模板，≤5 支）
 GET  /world/siege/{siegeId}/replay  ?worldId        → SiegeReplayView（观战重播，客户端同 seed headless 重跑；含 attackerName/defenderName 供回放基地铭牌+视角标签）
@@ -300,6 +302,7 @@ DELETE /social/friends/{publicId} | /social/friends/block/{publicId}
 GET  /social/chat/conversations | /social/chat/{convId}/messages
 POST /social/chat/send | /social/chat/read
 GET  /social/mail        POST /social/mail/send
+GET  /social/mail/{mailId}/read   DELETE /social/mail/{mailId}
 GET  /social/badges      GET /social/profile/{publicId}/extra
 ```
 

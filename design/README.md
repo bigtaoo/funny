@@ -354,6 +354,15 @@ botsvc 写成「设计中」），根因就是同一个事实存在两处、且�
 `claudedocs/README.md` 漏自己 6 份；仓库地图漏 `tools/desktop-shell`、`tools/gimp-export-layers`。
 另发现三份文档（本文、`BALANCE.md`、`ECONOMY_NUMBERS_LIVEOPS.md`）末尾残留历史会话漏进去的 `</content>` 标签，已清。
 
+**D 类 —— 契约覆盖缺口**：`SERVER_API` 自称「接口契约单一来源」，但把四份 openapi spec 的 180 条路径逐条对过之后，
+有 **7 条端点在 spec 里、`design/` 全库一处未提**（`/match/{roomId}/replay/share`、`/pve/stamina/purchase`、
+`/recharge/claim`、`/world/structure/demolish`、`/world/troops/recover`、`/social/mail/{mailId}` 的读/删两条），
+另有 `/pve/enter`（体力扣费点）只在 `ECONOMY_NUMBERS.md` 出现过、契约文档漏列。同时 `openapi-social.yml` 这**第四份 spec**
+从未出现在 §0/§1.2 的契约清单里，socialsvc/auctionsvc 两个公网面在本文档也没有小节（已补 §12/§13）。
+`BALANCE.md` 侧：§4 手牌表漏了 `HAND_REFRESH_COST=10`（整手刷新，HUD 上有按钮），§8 之后接 `§7.1` 编号断裂，
+头部「来源截至 2026-06-21 / 更新 2026-07-02」与正文里 2026-07-15 的改动记录三个日期互不相容。全部已修，
+现在 180 条路径**每一条**都能在 `design/` 里检索到。
+
 **核对通过的部分**（本次未动）：全库 md 相对链接 0 处断链；§2 登记表其余 13 条代码路径全部存在；
 `BALANCE.md` §1–§7 除 Max 一处外与代码逐项一致（棋盘/墨/加速/手牌/11 单位/2 建筑/24 卡费/PvE 法术）；
 `PVP_LOADOUT_DESIGN` 的 12 单位 `siegeValue` + 费用表逐项一致；11 进程与端口表四处口径一致；
