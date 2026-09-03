@@ -36,7 +36,7 @@
 | [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | **经济/养成数值演算表（数字权威：体力/合成/护甲/金币/皮肤）** | 设计中 **（拆分：§12 起 → `ECONOMY_NUMBERS_LIVEOPS.md`）** |
 | [ECONOMY_VERIFICATION_LOG.md](game/ECONOMY_VERIFICATION_LOG.md) | econ-sim 各轨（NATION/CITY/C/D/E/F/STRONGHOLD）核验过程与结论（已 CLOSED，非数值权威） | 已完成 **（拆分：F 轨起 → `ECONOMY_VERIFICATION_LOG_CAPACITY.md`）** |
 | [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | **角色卡实例系统（Hero Roster/喂卡升级/兵力/受伤/布阵对接；数字→ECONOMY_NUMBERS §6）** | 设计中 **（拆分：§9 起 → `CHARACTER_CARDS_DESIGN_IMPL.md`）** |
-| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e）；⚠️洗练当前不扣金币 **（2026-08-17 拆分：§3–8 → `_MODEL`，§9–14 → `_IMPL`，§15–20 → `_REF`）** |
+| [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | **装备系统机制基准（槽位/获取/强化/洗练/引擎注入；数字→ECONOMY_NUMBERS §5）** | 已实现（`shared/equipment.ts` craft/enhance+0..9/reforge/salvage+e2e；洗练基础金币已于 ADR-030 / 2026-07-03 实装，`metaserver/src/equipment/reforge.ts` 走 `commercial.spend`） **（2026-08-17 拆分：§3–8 → `_MODEL`，§9–14 → `_IMPL`，§15–20 → `_REF`）** |
 | [ITEM_IDENTITY_DESIGN.md](game/ITEM_IDENTITY_DESIGN.md) | **物品身份基准（唯一id/状态/溯源，跨材料/装备/角色卡/皮肤/称号；装备/角色卡溯源字段已实现，材料/皮肤/称号实例化为后续待办清单）** | 设计中（ADR-059） |
 | [EQUIPMENT_ICON_PROMPTS.md](game/EQUIPMENT_ICON_PROMPTS.md) | 装备图标 AI 生成 prompt 清单（美术素材，非机制基准） | 参考 |
 | [ACHIEVEMENT_DESIGN.md](game/ACHIEVEMENT_DESIGN.md) | **成就系统机制基准（统计里程碑→一次性金币；服务器权威/领取；数字→ECONOMY_BALANCE §2.4）** | 已实现（`shared/achievements.ts` StatKey/分阶/反作弊L1+测试） |
@@ -84,7 +84,7 @@
 | [SLG_CITY_SIEGE_DESIGN.md](game/SLG_CITY_SIEGE_DESIGN.md) | **野外城池攻占机制基准（宗门门槛 + 耐久/回复封死单人 + 归属/产量/锚点收益；补完 SLG §3.1 长期挂着的「驻军/耐久待定」缺口；数字→ECONOMY_VERIFICATION_LOG §13-SLG-CITYSIEGE）** | 设计中 **·数值 DRAFT（未经 econ-sim 核验）** |
 | [SLG_ECONOMY_CHECK.md](game/SLG_ECONOMY_CHECK.md) | **SLG DRAFT 数值的经济性核验方法（6 条轨道分流：持久经济聚合/赛季资源/围攻/分区公平/节奏/运维；判据+流程+登记口径；数字仍→ECONOMY_NUMBERS §13-SLG）** | 设计中 |
 | [WORLD_MAP_ART_SPEC.md](game/WORLD_MAP_ART_SPEC.md) | 大世界地图美术资产规格书（待替换的程序占位色块清单；权威=WorldMapScene.ts/SLG_DESIGN） | 实现中 |
-| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg.ts）** | 实现中 **（§9 拆分任务清单 → `AUCTION_DESIGN_SPLIT_TASKS.md`）** |
+| [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg/auction.ts）** | 实现中 **（§9 拆分任务清单 → `AUCTION_DESIGN_SPLIT_TASKS.md`）** |
 | [UI_DESIGN.md](game/UI_DESIGN.md) | **菜单 / 元系统客户端 UI**（与战斗 UI 分工，见 §3） | 实现中 **（2026-08-17 拆分：场景规格 → `UI_DESIGN_SCENES.md`，变更记录 → `UI_DESIGN_LOG_*.md`）** |
 | [LOBBY_IA_REDESIGN.md](game/LOBBY_IA_REDESIGN.md) | 大厅信息架构重规划（一级入口/底部 tab 重分组；装备并入养成、战绩升级为生涯、克制付费曝光） | 设计中 **（拆分：变更记录 → `LOBBY_IA_REDESIGN_LOG.md`）** |
 | [PARALLEL_DEV_PLAN.md](game/archive/PARALLEL_DEV_PLAN.md) | **并行开发计划（按依赖耦合分三条轨道 A/B/C，各自 worktree）** | 已归档 |
@@ -156,8 +156,8 @@
 | 称号系统**机制**（公开身份名片/统一容器/授予/展示） | [game/TITLE_DESIGN.md](game/TITLE_DESIGN.md) | 段位首达金币数字去 ECONOMY_BALANCE §2.3；与成就解耦（成就纯自看，炫耀走称号） |
 | 留存系统**机制**（签到/每日任务/周常/dayKey/领取） | [game/RETENTION_DESIGN.md](game/RETENTION_DESIGN.md) | 数字去 ECONOMY_NUMBERS §12；金币只从每日任务满点出、收敛 ~60/月，不新增龙头 |
 | 活动/Live-ops **编排**（配置/生命周期/类型/经济约束） | [game/EVENTS_DESIGN.md](game/EVENTS_DESIGN.md) | 数字去 ECONOMY_NUMBERS §14；发奖复用 OPS 邮件、计数复用 statKey、限定直购复用 commercial；不新增金币龙头（ADR-014） |
-| **野外城池**怎么打（宗门门槛/耐久+回复/守军波次/归属/占领收益） | [game/SLG_CITY_SIEGE_DESIGN.md](game/SLG_CITY_SIEGE_DESIGN.md) | 注意与 `SLG_CITY_DESIGN.md`（**主城**内政）区分；数字去 `server/shared/src/slg/siege.ts`（`CITY_*`），核验轨道走 SLG_ECONOMY_CHECK 轨道 3（围攻）+ 轨道 2（赛季资源） |
-| 拍卖行**机制**（交易模型/挂单状态机/定向受拍/税/反 RMT） | [game/AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | 从 SLG §7/§14 抽出，机制以本文为准；数字去 `server/shared/src/slg.ts`（`AUCTION_*`）；仅 coin 计价、赛季资源禁挂 |
+| **野外城池**怎么打（宗门门槛/耐久+回复/守军波次/归属/占领收益） | [game/SLG_CITY_SIEGE_DESIGN.md](game/SLG_CITY_SIEGE_DESIGN.md) | 注意与 `SLG_CITY_DESIGN.md`（**主城**内政）区分；数字去 `server/shared/src/slg/citySiege.ts`（`CITY_*`；2026-08-25 从 `siege.ts` 拆出，`siege.ts` 只留格位级围攻结算），核验轨道走 SLG_ECONOMY_CHECK 轨道 3（围攻）+ 轨道 2（赛季资源） |
+| 拍卖行**机制**（交易模型/挂单状态机/定向受拍/税/反 RMT） | [game/AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | 从 SLG §7/§14 抽出，机制以本文为准；数字去 `server/shared/src/slg/auction.ts`（`AUCTION_*`）；仅 coin 计价、赛季资源禁挂 |
 | 两套赛季的**独立性契约/边界/对照**（天梯 vs SLG 大区谁重置谁、共享资产归属） | [game/SEASON_OVERVIEW.md](game/SEASON_OVERVIEW.md) | 不重述机制；机制权威仍归 SEASON_DESIGN / SLG_DESIGN；锁「两条时钟互不触发 + 重置写入域隔离 + 共享 coin/称号归属」 |
 | 天梯赛季/战令/排行榜**机制**（赛季时钟·软重置·惰性迁移·峰值奖励·Top100·Battle Pass） | [game/SEASON_DESIGN.md](game/SEASON_DESIGN.md) | 数字去 ECONOMY_NUMBERS §13；天梯赛季6周 ≠ SLG大区赛季2个月（两条独立时钟）；赛季切换 = admin 手动开启 |
 | 角色卡**机制/流派**（6张·东西双版本·获取分层） | [game/CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | 数值锚点占位→落 `config.ts`+[BALANCE.md](game/BALANCE.md)；涛3＝现有兵转具名(数值不动·锚点)，Anna3＝新画变体；PvP全送/PvE章节解锁(ADR-016) |

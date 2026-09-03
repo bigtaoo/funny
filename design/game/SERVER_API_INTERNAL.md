@@ -206,7 +206,10 @@ GET  /world/map/sparse    ?worldId&cx&cy&r&lod      → WorldMapSparseView（鸟
 GET  /world/tile/{tileId}                           → WorldTileView
 GET  /world/me            ?worldId                  → PlayerWorldView（兵力/资源/产率/训练队列）
 POST /world/join          { worldId }               → PlayerWorldView（自动落城）
-POST /world/occupy | /world/abandon                 { worldId, x, y } → ok
+POST /world/abandon                                 { worldId, x, y } → ok
+  ⚠️ `POST /world/occupy` **不是公网端点**（订正 2026-09-03）：S8-1 的瞬间占领只保留给 e2e 直接调
+     `svc.occupyTile()` 铺场景，公网路由已摘除（见 `SLG_DESIGN.md` §5.4，回归断言
+     `worldsvc/test/httpApi.e2e.test.ts` 期望 404）。真实占领走 §5.4 的「行军→PvE 战斗→胜后占领倒计时」。
 POST /world/relocate      { worldId, x, y }         → PlayerWorldView（迁城，花 RELOCATE_COST）
 POST /world/watchtower    { worldId, x, y }         → WorldTileView（建瞭望塔视野源，G5 V2）
 GET  /world/march         ?worldId                  → MarchView[]
@@ -229,16 +232,12 @@ GET  /world/shop/items                              → SlgShopItemView[]
 POST /world/shop/buy      { worldId, itemId }       → ok
 ```
 
-### 10.3 Family（家族）
-```
-GET  /family/list         ?worldId                  → FamilyView[]
-GET  /family/{familyId}                             → FamilyView（含成员）
-POST /family/create       { worldId, name, tag }    → FamilyView
-POST /family/join | /family/leave | /family/dissolve { worldId, familyId? } → ok
-POST /family/kick | /family/role  { worldId, targetId, role? } → ok
-POST /family/message      { worldId, body, senderName? } → { id }（经 gateway 扇出家族频道）
-GET  /family/channel      ?worldId&familyId&before?&limit? → FamilyMessageView[]
-```
+### 10.3 Family（家族）—— **已迁出 worldsvc，见 §12**
+
+> **订正 2026-09-03**：本节原先列的是 worldsvc 上那套带 `worldId` 的 `/family/*`（ADR-021 前的形态）。
+> 家族已随 ADR-021 整体迁入 **socialsvc**，改为**去 worldId 的全局持久**实体，路径前缀 `/social/family/*`，
+> 端点集合与请求形态都变了（不是简单换前缀）。本节旧表在代码里**一条都不存在**，已删除以免误导——
+> 真实清单见下面 §12，机器契约 `server/contracts/openapi-social.yml`，设计权威 `SOCIAL_SVC_DESIGN.md`。
 
 ### 10.4 Sect（宗门，S8-4b）
 ```
@@ -258,7 +257,7 @@ GET  /sect/channel  ?worldId&before?&limit?         → SectMessageView[]
 
 ## 11. analyticsvc 公网接口（埋点 ingest，`ANALYTICS_DESIGN.md §8`）
 
-> 第八应用进程（端口 18085，连 `notebook_wars_analytics`，反代 `/analytics`）。无状态、不连业务库，仅复用 `NW_JWT_SECRET` 验签取 `accountId`。**写入 fire-and-forget**（`writeConcern:{w:0}`，客户端失败静默丢弃，不影响游戏）。机器契约（追加进 `openapi.yml`）见 `ANALYTICS_DESIGN.md §8`。
+> 埋点进程（端口 18085，连 `notebook_wars_analytics`，反代 `/analytics`）。无状态、不连业务库，仅复用 `NW_JWT_SECRET` 验签取 `accountId`。**写入 fire-and-forget**（`writeConcern:{w:0}`，客户端失败静默丢弃，不影响游戏）。机器契约（追加进 `openapi.yml`）见 `ANALYTICS_DESIGN.md §8`。
 
 ```
 GET  /analytics/config                              → AnalyticsConfig   // 公开无鉴权；session 启动拉一次采集开关/采样率
@@ -269,3 +268,59 @@ GET  /internal/query    (X-Internal-Key)            → 聚合结果   // 仅 op
 - **`AnalyticsConfig`**：`{ enabled, defaultSample, events: { [name]: { enabled?, sample? } } }`——服务端控制开关，不发版即可调粒度；客户端拉取失败回退 `enabled:false`（安全退化）。
 - **`AnalyticsEventBatch`**：公共属性（`session_id/device_id/platform/os/game_version/locale`）放 batch 根层，每条 event 仅 `{ event, ts, props? }`（减传输体积）。`POST /analytics/events` JWT 可选：有 token 附 `user_id`，否则匿名设备。
 - 不记请求 IP；账号注销按 `user_id` 批删事件（GDPR，§2.10）。事件分类 / 漏斗 / 数据库见 `ANALYTICS_DESIGN.md §5/§6/§9`。
+
+---
+
+## 12. socialsvc 公网接口（社交，第五面；`SOCIAL_SVC_DESIGN.md`）
+
+> **补齐 2026-09-03**：§0 早就把 socialsvc 记为第五公网面，但本文一直只有 worldsvc(§10)/analyticsvc(§11) 两节，
+> 社交面的端点清单从未落到「接口契约单一来源」里（家族那套还留着 §10.3 的 worldsvc 旧形态）。
+> **机器契约 = `server/contracts/openapi-social.yml`**（第四份 openapi spec，§0/§1.2 原先只列了三份）；
+> 设计权威 = `SOCIAL_SVC_DESIGN.md`。下表只作导航，字段/形态以 spec 为准，本文不重复 schema。
+
+反代 `/social/*` → socialsvc（端口 8085，连专属库 `nw_social`）。**家族随 ADR-021 迁入本服务后去掉 `worldId`，全局持久。**
+
+```
+# 家族（Family）
+GET  /social/family/mine | /social/family/search | /social/family/browse
+GET  /social/family/{familyId} | /social/family/requests | /social/family/{familyId}/messages
+POST /social/family                                  # 创建
+POST /social/family/{familyId}/join | /social/family/leave | /social/family/disband
+POST /social/family/kick | /social/family/role | /social/family/announcement | /social/family/emblem
+POST /social/family/requests/{requestId}/respond
+POST /social/family/{familyId}/messages              # 发家族频道消息（经 gateway 扇出）
+
+# 好友（Friend）
+GET    /social/friends | /social/friends/requests
+POST   /social/friends/search | /social/friends/request | /social/friends/respond
+POST   /social/friends/block | /social/friends/report
+DELETE /social/friends/{publicId} | /social/friends/block/{publicId}
+
+# 私聊（Chat）/ 邮件（Mail）/ 其它
+GET  /social/chat/conversations | /social/chat/{convId}/messages
+POST /social/chat/send | /social/chat/read
+GET  /social/mail        POST /social/mail/send
+GET  /social/badges      GET /social/profile/{publicId}/extra
+```
+
+- **内部面**（`X-Internal-Key`，玩家不可达）：`/internal/mail/system{,/bulk}`（系统邮件写入的**唯一**权威路径，
+  metaserver `insertSystemMail`/`bulkInsertSystemMail` 委托到这里，见 `claudedocs/server.md`）、`/internal/family/{activity,batch}`、
+  `/internal/presence/{online,offline}`、`/internal/push`、`/internal/reports`、`/admin/internal/moderation-wordlists`。
+- **gateway 回调面**：`/gw/presence`、`/gw/push/batch`、`/gw/social/invalidate`。
+
+---
+
+## 13. auctionsvc 公网接口（拍卖行，第六面；`AUCTION_DESIGN.md`）
+
+> **补齐 2026-09-03**：同上——§0 记了第六面，本文却没有对应小节。
+> **机器契约 = `server/contracts/openapi-auction.yml`**；机制权威 = `AUCTION_DESIGN.md`；数值 = `server/shared/src/slg/auction.ts`（`AUCTION_*`）。
+
+反代 `/auction` → auctionsvc（端口 18086，**独立库** `notebook_wars_auction`；2026-07-07 从 worldsvc 解耦成独立进程）。
+
+```
+GET  /auction/list | /auction/mine | /auction/myBids | /auction/refprice
+POST /auction/create
+POST /auction/{auctionId}/buy | /auction/{auctionId}/bid | /auction/{auctionId}/cancel
+```
+
+- 仅 coin 计价，赛季资源禁挂（`AUCTION_DESIGN` 反 RMT 闸门）；托管结算 + 异常审计走 admin。

@@ -123,6 +123,9 @@ const RAW_UNIT_BLUEPRINTS: Record<UnitType, RawUnitBlueprint> = {
     canTargetFlying: true, // only unit type that can hit Harpy besides arrow towers (types.ts:22)
   },
   // ── Reused units (PvE waves + reused in the PvP pool via PVP_LOADOUT_DESIGN) ──
+  // NOTE: all six below are PvE waves AND rank-gated PvP cards since PVP-P1 (2026-06-30) —
+  // they have CARD_DEFINITIONS entries. Do not describe them as "PvE-only" (the per-unit
+  // comments said exactly that until 2026-09-03, contradicting this header and BALANCE.md §5.2).
   // No progression cards (CARD_DEFS covers only the six heroes), so their siegeValue
   // lives only here — the engine blueprint is the single source for PvP.
   // Ironclad: anti-arrow damage sponge. armor=3 makes arrow tower (15 dmg) deal
@@ -155,7 +158,7 @@ const RAW_UNIT_BLUEPRINTS: Record<UnitType, RawUnitBlueprint> = {
     radius_fp: 250,       // diameter 500fp = 0.5 cells — dense swarm
     siegeValue: 6,        // fast fragile swarm: low per-unit siege, keeps it a harasser not a finisher
   },
-  // Harpy: PvE-only flying unit. flying=true means ground melee can't target it
+  // Harpy: flying unit (PvE waves + PvP king-tier unlock). flying=true means ground melee can't target it
   // (only archers + arrow towers). Bypasses blocked cells. Fragile — one arrow-
   // tower volley kills it — but demands the player has placed towers, punishing
   // pure barracks builds. Small radius keeps it visually distinct from runners.
@@ -172,7 +175,8 @@ const RAW_UNIT_BLUEPRINTS: Record<UnitType, RawUnitBlueprint> = {
     canTargetFlying: false,
     siegeValue: 7,        // fragile flyer that bypasses defense: kept low so a fly-over rush can't finish
   },
-  // Medic: PvE-only support. No attack (range 0, attack 0, extreme interval so the
+  // Medic: support unit (PvE waves + PvP king-tier unlock; PvP gets a symbolic melee
+  // override in buildPvpBlueprints). No attack here (range 0, attack 0, extreme interval so the
   // engine never fires). Emits an aura_heal that heals nearby allies for 8 HP/s.
   // Slow and soft, but a cluster escorted by a Medic becomes self-sustaining — must
   // be prioritised or the whole wave stops dying.
@@ -188,7 +192,7 @@ const RAW_UNIT_BLUEPRINTS: Record<UnitType, RawUnitBlueprint> = {
     traits: [{ type: 'aura_heal', radius: 2, hps: 8 }],
     siegeValue: 4,        // support unit: symbolic siege only — not meant to batter the base
   },
-  // Berserker: PvE-only rage brawler. Below 40% HP its attack interval halves
+  // Berserker: rage brawler (PvE waves + PvP grandmaster-tier unlock). Below 40% HP its attack interval halves
   // (×1.5 attack speed), making it increasingly dangerous the longer it survives.
   // Burst it down before the threshold or it shreds buildings faster than expected.
   [UnitType.Berserker]: {
@@ -203,7 +207,7 @@ const RAW_UNIT_BLUEPRINTS: Record<UnitType, RawUnitBlueprint> = {
     berserkerThreshold: 0.4,
     siegeValue: 13,       // building-shredder identity (see comment) → high siege
   },
-  // Splitter: PvE-only bomb unit. Dies and immediately spawns 2 Runners at its
+  // Splitter: bomb unit (PvE waves + PvP grandmaster-tier unlock). Dies and immediately spawns 2 Runners at its
   // position. Ignoring it is worse than fighting it — killing it with area damage
   // (Meteor, Rockslide) clears all three units; single-target fire turns one slow
   // threat into two fast ones.

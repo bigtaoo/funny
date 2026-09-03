@@ -95,7 +95,7 @@
 
 ## 13-SLG-CITY. SLG 主城建筑 / 练兵节奏数值（B 轨·纯季内·不进 §6.1）`[已过 B 轨建筑节奏核验 2026-06-30]`
 
-> 机制权威：[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)；核验方法 = [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §4（B 轨第 2 条「建造/练兵节奏」）；本节为 **SLG_CITY DRAFT 数字单一源** + econ-sim 结论。常量真源 = `server/shared/src/slg.ts`。
+> 机制权威：[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)；核验方法 = [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §4（B 轨第 2 条「建造/练兵节奏」）；本节为 **SLG_CITY DRAFT 数字单一源** + econ-sim 结论。常量真源 = `server/shared/src/slg/city.ts`（2026-07-05 由 `slg.ts` 拆分而来）。
 > **铁律**：主城建筑/兵力/赛季资源**季末全清**（D-CITY-1 / SLG4），**零持久 faucet/sink**——本节是**纯季内节奏**，**永不进 §6.1 月度金币预算**，建筑**绝不喂 `buildPvpBlueprints`**（天梯红线 D-CITY-6）。coin 只买**速度**（加速变现）不买**上限**（防 P2W）。
 
 ### 13-SLG-CITY.1 可调参数表（`@nw/shared/slg.ts`，全 DRAFT）

@@ -3,7 +3,7 @@
 > 创建：2026-06-13。本文件是客户端 ↔ 服务器的**接口契约**：REST 端点 + WebSocket 消息 + 锁步时序。
 > 双端实现以本文件为准（客户端 `NetClient`/`SaveStore`/`EconomyClient` 与 `server/` 各 service）。
 > 配套：`META_DESIGN.md`（系统/架构）、`META_TASKS.md`（任务）、`ECONOMY_BALANCE.md`（数值）；SLG 大世界（worldsvc）契约见 `SLG_DESIGN.md §14`；埋点见 `ANALYTICS_DESIGN.md §8`。
-> 契约单一来源在 `server/contracts/`：`openapi.yml`（meta REST）+ `openapi-world.yml`（worldsvc REST）+ `openapi-auction.yml`（auctionsvc REST）+ `transport.proto`（WS 控制面/数据面）+ `game.proto`（PlayerCommand，对服务器 opaque）+ `replay.proto`（录像），双端 codegen（见 `META_TASKS.md` C-2）。
+> 契约单一来源在 `server/contracts/`：`openapi.yml`（meta REST）+ `openapi-world.yml`（worldsvc REST）+ `openapi-social.yml`（socialsvc REST，补记 2026-09-03）+ `openapi-auction.yml`（auctionsvc REST）+ `transport.proto`（WS 控制面/数据面）+ `game.proto`（PlayerCommand，对服务器 opaque）+ `replay.proto`（录像），双端 codegen（见 `META_TASKS.md` C-2）。
 > **⚠️ ADR-040（2026-07-14）**：`openapi.yml` 本身已是**生成产物**（文件头 `AUTO-GENERATED … DO NOT EDIT`）——真源是 `contracts/openapi/paths/<domain>.yml`（9 fragment）+ `openapi/schemas.yml`，改契约改 fragment 后跑 `npm run gen:api:contracts` 重新合并，**勿手改 `openapi.yml`**。
 
 ---
@@ -16,7 +16,7 @@
 | 内容 | 文件 |
 |---|---|
 | 开头 ~ Notebook Wars — 服务器协议 / API 契约 | **本文** |
-| §7 已定/开放问题、§8 内部服务契约、§9 commercial、§10 worldsvc、§11 analyticsvc | [`SERVER_API_INTERNAL.md`](SERVER_API_INTERNAL.md) |
+| §7 已定/开放问题、§8 内部服务契约、§9 commercial、§10 worldsvc、§11 analyticsvc、**§12 socialsvc、§13 auctionsvc**（后两节 2026-09-03 补齐） | [`SERVER_API_INTERNAL.md`](SERVER_API_INTERNAL.md) |
 
 ## 0. 总览
 
@@ -203,8 +203,13 @@ POST /cards/unlock      { cardInstanceId }                                → { 
 ```
 GET  /events                                   → { events: ActiveEvent[] }   // 当前 active 活动 + 配置 + 我的进度
 POST /events/claim   { eventId, milestoneId }  → { save, granted } | NOT_REACHED | ALREADY_CLAIMED | EVENT_ENDED
-POST /events/redeem  { eventId, shopItemId }   → { save, granted } | INSUFFICIENT_POINTS | EVENT_ENDED
+POST /events/redeem  { eventId, shopItemId }   → { save, granted } | INSUFFICIENT_POINTS | EVENT_ENDED   # ⚠️ 未实现
 ```
+
+> **实现状态（补记 2026-09-03）**：`GET /events` 与 `POST /events/claim` 已在 `openapi.yml` + `routes.gen.ts` 落地；
+> **`POST /events/redeem` 至今只有本节这份契约草案**——spec 里没有它，代码里没有它，`eventPoints` 这个字段在
+> `@nw/shared` 里也还不存在。活动积分兑换整条线随 `EVENTS_DESIGN.md`（状态：设计中）一起待实现。
+> 本节其余描述照旧有效。
 
 - **`GET /events`**：返回 active 活动的 `EventDef`（窗口/i18n key/任务/里程碑/乘子/限定 SKU，文案走 i18n 不内嵌明文）+ 该玩家服务器权威进度（任务计数/已领里程碑/活动积分 `eventPoints`）。
 - **`/events/claim`**：服务器按 `window + 幂等键(eventId+milestoneId+accountId)` 二次校验，达成则发系统邮件（领取时经 commercial/inventory 入账，幂等）；过窗 `EVENT_ENDED`（已获奖励进领取宽限，如结束后 7 天可领）。

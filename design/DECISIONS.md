@@ -19,7 +19,7 @@
 | [ADR-002](DECISIONS_ADR-001-040.md#adr-002-局内货币重命名-coins--ink--accepted--2026-06-13) | 局内货币重命名 `coins → ink` | Accepted | 2026-06-13 |
 | [ADR-003](DECISIONS_ADR-001-040.md#adr-003-阵营色--我蓝敌红v03--accepted--2026-06-14) | 阵营色 = 我蓝敌红（v0.3） | Accepted | 2026-06-14 |
 | [ADR-004](DECISIONS_ADR-001-040.md#adr-004-服务端进程拆分gateway--matchsvc-独立--accepted--2026-06-14s1-m5) | 服务端进程拆分（gateway / matchsvc 独立） | Accepted | 2026-06-14 |
-| [ADR-005](DECISIONS_ADR-001-040.md#adr-005-应用进程口径--8-个--accepted--2026-06-21) | 应用进程口径 = 8 个 | Accepted | 2026-06-21 |
+| [ADR-005](DECISIONS_ADR-001-040.md#adr-005-应用进程口径--8-个--superseded-by-adr-080--2026-06-21) | 应用进程口径 = 8 个 | Superseded by ADR-080 | 2026-06-21 |
 | [ADR-006](DECISIONS_ADR-001-040.md#adr-006-pve-数据走服务器权威方案-b--accepted--2026-06-pve_integrity_plan-8) | PvE 数据走服务器权威（方案 B） | Accepted | 2026-06 |
 | [ADR-007](DECISIONS_ADR-001-040.md#adr-007-slg-围攻--双方预布兵确定性自动战斗--accepted--2026-06-20g3) | SLG 围攻 = 双方预布兵确定性自动战斗 | Accepted | 2026-06-20 |
 | [ADR-008](DECISIONS_ADR-001-040.md#adr-008-叙事铁律两本笔记本东西不混搭--accepted) | 叙事铁律：两本笔记本，东西不混搭 | Accepted | — |
