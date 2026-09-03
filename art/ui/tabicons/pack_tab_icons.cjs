@@ -263,6 +263,14 @@ const JOBS = [
   { src: 'tabicon_camp.webp',              name: 'camp', inks: ['active'] },
   { src: 'tabicon_footsteps.webp',         name: 'footsteps', inks: ['active'] },
   { src: 'tabicon_stronghold.webp',        name: 'stronghold', inks: ['active'] },
+
+  // Batch 10 (design/product/tab-icon-art-prompts-batch10.md, 2026-09-03): the capital-protection
+  // buff chip's own glyph. It was borrowing `armorHeavy` — the heraldic quartered disc, whose own
+  // acceptance note already said it reads as heraldry rather than armor and leans on the label for
+  // meaning, which is precisely what a row whose label is "Protected (1d 2h)" cannot do. An umbrella
+  // rather than another shield: `equipIcon`'s kite shield is already what "equipment" looks like
+  // everywhere in this game, including every equipment reward.
+  { src: 'tabicon_umbrella.webp',          name: 'umbrella', inks: ['active'] },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');

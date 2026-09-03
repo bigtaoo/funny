@@ -31,6 +31,10 @@ import type { WorldMapContext, DeployKind } from '../WorldMapContext';
  */
 const BTN_LABEL_PAD = 8;
 
+/** Leading-glyph box on a modal button, and the gap between it and the label. */
+const BTN_GLYPH = 26;
+const BTN_GLYPH_GAP = 8;
+
 /**
  * Would `label` still lay out the same beside a `lead`-wide leading glyph, inside a `labelW`-wide,
  * `btnH`-tall button? Measured, not estimated: {@link PIXI.TextMetrics} runs the same wrap the
@@ -86,10 +90,32 @@ export class WorldMapPanelsCore {
     // Wrap into multiple rows once buttons would otherwise be squeezed below a legible width
     // (e.g. the 6-button owned-tile menu: Reinforce/Defense/Watchtower/Relocate/Abandon/Close) —
     // a single row at that count left labels overlapping their neighbors.
-    const minBtnW = 150;
+    //
+    // `minBtnW` was 150 (five across, `btnW` 166) until 2026-09-03. At that width a Latin label got
+    // ~8 characters per line and ~6 beside an icon, so German compounds broke mid-word
+    // (`Verstä/rken`) and only 6 of the 9 owned-tile buttons could keep the glyph
+    // `labelFitsBesideGlyph` had just unlocked. 180 caps a row at four (`btnW` 210).
+    const minBtnW = 180;
     const maxCols = Math.max(1, Math.floor((mw + modalMargin) / (minBtnW + modalMargin)));
-    const cols = Math.min(buttons.length, maxCols);
-    const rows = Math.ceil(buttons.length / cols);
+    const rowsFor = (c: number): number => Math.ceil(buttons.length / c);
+    // ...and four across is still not enough for every locale: `Watchtower` (176px) and `Verstärken`
+    // are one or two characters over the ~160px a 210px column leaves beside a glyph, so they lost
+    // theirs while their neighbours kept it — which looks like a bug, not a budget. So the column
+    // count follows the content too: narrow the grid while any label cannot carry its glyph, but
+    // ONLY while that costs no extra row. For the 9-button owned-tile menu 4→3 columns is free
+    // (both are 3 rows) and hands every locale its full set of glyphs at `btnW` 284; for a 4-button
+    // menu 4→3 would turn one row into two, so it stops and that one label goes without. Menu
+    // geometry therefore varies by locale, which is the point — zh stays four across.
+    let cols = Math.min(buttons.length, maxCols);
+    while (cols > 1 && rowsFor(cols - 1) === rowsFor(cols)) {
+      const w = Math.min(300, (mw - modalMargin * (cols + 1)) / cols);
+      const allFit = buttons.every(
+        (b) => !b.icon || labelFitsBesideGlyph(b.label, w - 16, BTN_GLYPH + BTN_GLYPH_GAP, btnH)
+      );
+      if (allFit) break;
+      cols -= 1;
+    }
+    const rows = rowsFor(cols);
     const rowGap = 16;
 
     // Leading glyph on an information line: sized to the line's own font so icon and text read as
@@ -181,20 +207,18 @@ export class WorldMapPanelsCore {
       // just-drawn glyphs that could never appear), and shortening the copy changed nothing.
       // Measuring the label instead makes the gate self-adjusting: `停留`/`驻扎` earn their glyph
       // in a 166px column, a German compound still drops it exactly where it would have wrapped.
-      const btnGlyph = 26;
-      const btnGlyphGap = 8;
       const icon =
-        btn.icon && labelFitsBesideGlyph(btn.label, btnW - 16, btnGlyph + btnGlyphGap, btnH)
-          ? buildIcon(btn.icon, btnGlyph, disabled ? C.mid : C.light)
+        btn.icon && labelFitsBesideGlyph(btn.label, btnW - 16, BTN_GLYPH + BTN_GLYPH_GAP, btnH)
+          ? buildIcon(btn.icon, BTN_GLYPH, disabled ? C.mid : C.light)
           : null;
-      const lead = icon ? btnGlyph + btnGlyphGap : 0;
+      const lead = icon ? BTN_GLYPH + BTN_GLYPH_GAP : 0;
       // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
       const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16 - lead);
       bl.anchor.set(0, 0.5);
       const grpX = bx + (btnW - (bl.width + lead)) / 2;
       if (icon) {
         icon.x = grpX;
-        icon.y = by + (btnH - btnGlyph) / 2;
+        icon.y = by + (btnH - BTN_GLYPH) / 2;
         ml.addChild(icon);
       }
       bl.x = grpX + lead;

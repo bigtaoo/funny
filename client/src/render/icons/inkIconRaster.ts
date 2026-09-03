@@ -132,6 +132,13 @@ import campInkUrl from '../../assets/tabicons/camp_active.png';
 import footstepsInkUrl from '../../assets/tabicons/footsteps_active.png';
 import strongholdInkUrl from '../../assets/tabicons/stronghold_active.png';
 
+// Batch 10 (design/product/tab-icon-art-prompts-batch10.md): the capital-protection buff chip's own
+// glyph, which had been borrowing `armorHeavy`. Not another shield, deliberately — `equipIcon`'s kite
+// shield is what "equipment" looks like across the whole game (every equipment reward draws it), so a
+// second shield would collide with the widest meaning in the set. Not `lock` either: a padlock reads
+// as "unavailable" here, and beside a countdown it reads as "unlocks in 1h 29m", the exact inverse.
+import umbrellaInkUrl from '../../assets/tabicons/umbrella_active.png';
+
 // The 6 kinds that ALIAS the white master of an existing tab icon rather than getting art of their
 // own, so each concept is drawn exactly once in the game. They live here rather than as call-site
 // renames to `pvpTabIcon`/`gachaTabIcon`/... because most of them have call sites where `color`
@@ -166,6 +173,7 @@ export type InkIconKind =
   | 'range' | 'siege' | 'crit' | 'critmult'
   | 'unit' | 'spell'
   | 'watchtower' | 'arrowTower' | 'blocker' | 'mapPin' | 'camp' | 'footsteps' | 'stronghold'
+  | 'umbrella'
   | 'scrap' | 'lead' | 'binding' | 'hammer' | 'ink'
   | 'replay' | 'share' | 'star' | 'lock' | 'medal' | 'close' | 'check' | 'play' | 'zoom' | 'cards'
   | 'flag' | 'desk' | 'cabinet' | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
@@ -241,6 +249,7 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   camp:              campInkUrl as string,
   footsteps:         footstepsInkUrl as string,
   stronghold:        strongholdInkUrl as string,
+  umbrella:          umbrellaInkUrl as string,
   swords:            swordsInkUrl as string,
   home:              homeInkUrl as string,
   capsule:           capsuleInkUrl as string,

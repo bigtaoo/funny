@@ -177,9 +177,13 @@ export class HudPanel implements HudHandlers {
       // ── Active buffs (S8-8 UI fix, 2026-08-08): the capital-protection shield and the
       // training-speedup buff both took effect server-side with no way to see them or how much
       // time is left — see baseProtectedUntil/speedupUntil (PlayerWorldView). One compact chip
-      // (icon + countdown) per active buff, reusing the same glyphs the shop panel already uses
-      // for these items (SPEEDUP_ICON_TIERS/PROTECTION_ICON_TIERS in shop.ts) so the HUD and the
-      // shop read as the same visual language. ──
+      // (icon + countdown) per active buff. The speed-up chip still borrows the shop's middle
+      // hourglass tier (SPEEDUP_ICON_TIERS in shop.ts), so those two read as one language; the
+      // protection chip no longer does. It drew `armorHeavy`, half of the shop's protection ladder,
+      // and that pair is the heraldic quartered disc whose own batch-7 acceptance note says it reads
+      // as heraldry with the LABEL carrying the meaning — which a row labelled "Protected (1d 2h)"
+      // cannot do, since protection is the very thing the glyph has to say. `umbrella` is its own
+      // glyph (batch 10); the shop keeps armor/armorHeavy, where a two-step ladder is the point. ──
       const buffNow = serverNow();
       const buffs: { icon: IconKind; label: string }[] = [];
       const shieldUntil = this.core.ctx.me.baseProtectedUntil ?? 0;
@@ -187,7 +191,7 @@ export class HudPanel implements HudHandlers {
         // 天/时/分/秒 breakdown (2026-08-08 UI fix) — a bare "146282s" is unreadable; these
         // shields commonly run 8-24h+ so days/hours matter more than the leftover seconds.
         buffs.push({
-          icon: 'armorHeavy',
+          icon: 'umbrella',
           label: t('world.protected', dhmsFromMs(shieldUntil - buffNow)),
         });
       }
