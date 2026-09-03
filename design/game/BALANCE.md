@@ -228,4 +228,3 @@
 - **依赖**：metaserver 新增 `@nw/engine` 依赖 + 一套 proto codegen（`buf.gen.yaml` + `scripts/gen-proto.mjs`，照抄 gameserver/botsvc 现成模式），仅供这一离线脚本使用，不影响常驻服务运行时。
 - **抽样规则**（`server/metaserver/scripts/samplePvpReplays.ts`，`npx tsx` 手动/外部调度触发）：争议对局排除；**爆冷对局**（赢方赛前 ELO 明显更低，≥150 分）优先全采；其余按 `--rate`（默认 5%）随机兜底；已采样过的（`pvpPlaySequences` 里已有）跳过。解码失败（残缺/损坏 replay）记日志跳过，不静默丢弃。
 - **产出用法**：暂不建专门报表页——采样量小，更适合直接查 `pvpPlaySequences` 或写临时聚合脚本（例如"爆冷局赢家用了什么卡序列"）；等摸出固定分析需求，再考虑并入阶段一的 ops 页面。
-</content>

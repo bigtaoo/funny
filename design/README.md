@@ -1,9 +1,16 @@
 # Notebook Wars — 设计文档索引与治理
 
-> 状态：实现中 · 权威：本文（文档治理的单一入口）· 更新：2026-07-22
+> 状态：实现中 · 权威：本文（文档治理的单一入口）· 更新：2026-09-03（一致性审计后的三轮修正，见 §6）
 
 本文件是 **所有设计文档的统一入口**：去哪找、谁是权威、新文档放哪、数值怎么管。
 新增/搬动/废弃任何 `design/` 下文档，**必须同步更新本文的文档地图**。
+
+> **地图完整性可机械核对**——`design/` 下每一份 `.md` 都必须能在本文找到一个链接。核对命令：
+> ```bash
+> comm -13 <(grep -oE '\]\(([a-zA-Z0-9_./-]+\.md)\)' design/README.md | sed -E 's/^\]\(//; s/\)$//; s|^\./||' | sort -u) <(find design -name '*.md' | sed 's|^design/||' | sort)
+> ```
+> 输出为空才算齐。2026-09-03 审计时它输出 **62 行**（含整组 25 份美术 prompt 文档、31 份续册、一个已 Accepted 的
+> 子系统设计 `SLG_FIELD_BATTLE_DESIGN.md`）——上面那句「必须同步更新」写了两个月，从未被执行过一次。现已补齐至 0。
 
 ---
 
@@ -82,6 +89,7 @@
 | [SGZ_LAND_REFERENCE.md](game/SGZ_LAND_REFERENCE.md) | **参考资料**：三国志战略版地块/资源/建筑/版图机制调研（非本项目设计基准，供 SLG 地块系统设计对照） | 参考 |
 | [SLG_CITY_DESIGN.md](game/SLG_CITY_DESIGN.md) | **SLG 主城内政/建筑系统机制基准（仿三战书桌内政：资源建筑/练兵/城防/科技；激活 graphite/sticker faucet+sink；数字→ECONOMY_VERIFICATION_LOG §13-SLG-CITY，红线不喂天梯）** | P1+P2 已实现（e2e 8/8 实测）·数值 DRAFT |
 | [SLG_CITY_SIEGE_DESIGN.md](game/SLG_CITY_SIEGE_DESIGN.md) | **野外城池攻占机制基准（宗门门槛 + 耐久/回复封死单人 + 归属/产量/锚点收益；补完 SLG §3.1 长期挂着的「驻军/耐久待定」缺口；数字→ECONOMY_VERIFICATION_LOG §13-SLG-CITYSIEGE）** | 已实现（P0/P1/P2 2026-08-25 + P3 2026-08-27，ADR-074/076/077）**·数值已由 `econ-sim/citySiegeRun.ts` 实测标定**（不再是 DRAFT） |
+| [SLG_FIELD_BATTLE_DESIGN.md](game/SLG_FIELD_BATTLE_DESIGN.md) | **SLG 实时野战遭遇机制基准（停留/驻扎拆分 + Redis 逐格行军 + 玩家建筑层；SLG_DESIGN §4/§5.4 野外驻扎 v1 的 v2 升级）** | Accepted（ADR-051，2026-07-24）**·补进本地图 2026-09-03** |
 | [SLG_ECONOMY_CHECK.md](game/SLG_ECONOMY_CHECK.md) | **SLG DRAFT 数值的经济性核验方法（6 条轨道分流：持久经济聚合/赛季资源/围攻/分区公平/节奏/运维；判据+流程+登记口径；数字仍→ECONOMY_NUMBERS §13-SLG）** | 设计中 |
 | [WORLD_MAP_ART_SPEC.md](game/WORLD_MAP_ART_SPEC.md) | 大世界地图美术资产规格书（待替换的程序占位色块清单；权威=WorldMapScene.ts/SLG_DESIGN） | 实现中 |
 | [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | **拍卖行机制基准（交易模型/状态机/反 RMT；从 SLG §7/§14 抽出；数字→server/shared/src/slg/auction.ts）** | 实现中 **（§9 拆分任务清单 → `AUCTION_DESIGN_SPLIT_TASKS.md`）** |
@@ -100,6 +108,55 @@
 | [release/acceptance-S0-8.md](game/release/acceptance-S0-8.md) | 验收清单：meta 阶段 S0–S8 |
 | [release/acceptance-S1-9.md](game/release/acceptance-S1-9.md) | 验收清单：阶段 S1–S9 |
 | [release/acceptance-smoke.md](game/release/acceptance-smoke.md) | 上线前冒烟验收清单 |
+
+
+#### 1.2.2 续册（正文按 500 行约定拆出，编号沿用父文档）
+
+> **这些不是独立设计基准**——小节编号与父文档连续，源码里的 `父文档.md §N` 引用照旧有效，权威归父文档。
+> 列在这里只为让文档地图**可枚举**：2026-09-03 审计发现 62 份 `design/` 文档从未出现在本地图里，其中 31 份是这类续册。
+
+| 续册 | 父文档 | 承载 |
+|---|---|---|
+| [ANALYTICS_DESIGN_BACKEND.md](game/ANALYTICS_DESIGN_BACKEND.md) | [ANALYTICS_DESIGN.md](game/ANALYTICS_DESIGN.md) | §6 起（埋点后端） |
+| [ANNA_CHARACTERS_MONSTERS.md](game/ANNA_CHARACTERS_MONSTERS.md) | [ANNA_CHARACTERS.md](game/ANNA_CHARACTERS.md) | 怪物设定 |
+| [AUCTION_DESIGN_SPLIT_TASKS.md](game/AUCTION_DESIGN_SPLIT_TASKS.md) | [AUCTION_DESIGN.md](game/AUCTION_DESIGN.md) | §9 拆分任务清单 |
+| [CAMPAIGN_DESIGN_KNOBS.md](game/CAMPAIGN_DESIGN_KNOBS.md) | [CAMPAIGN_DESIGN.md](game/CAMPAIGN_DESIGN.md) | §4.9 起（难度旋钮） |
+| [CHARACTER_CARDS_DESIGN_IMPL.md](game/CHARACTER_CARDS_DESIGN_IMPL.md) | [CHARACTER_CARDS_DESIGN.md](game/CHARACTER_CARDS_DESIGN.md) | §9 起（实现） |
+| [CHARACTER_DESIGN_HEROES_IRONCLAD_RUNNER.md](game/CHARACTER_DESIGN_HEROES_IRONCLAD_RUNNER.md) | [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | §7.6 英雄（Ironclad / Runner） |
+| [CHARACTER_DESIGN_HEROES_MEDIC.md](game/CHARACTER_DESIGN_HEROES_MEDIC.md) | [CHARACTER_DESIGN.md](game/CHARACTER_DESIGN.md) | §7.6 英雄（Medic） |
+| [COMMERCIAL_DESIGN_IAP.md](game/COMMERCIAL_DESIGN_IAP.md) | [COMMERCIAL_DESIGN.md](game/COMMERCIAL_DESIGN.md) | §10 起（IAP） |
+| [DESIGN_SUBSYSTEMS.md](game/DESIGN_SUBSYSTEMS.md) | [DESIGN.md](game/DESIGN.md) | §8 起（子系统） |
+| [DIFFICULTY_SIM_TUNING_CH1_STARS.md](game/DIFFICULTY_SIM_TUNING_CH1_STARS.md) | [DIFFICULTY_SIM.md](game/DIFFICULTY_SIM.md) | ch1 + 三星调参记录 |
+| [DIFFICULTY_SIM_TUNING_CH2-CH6.md](game/DIFFICULTY_SIM_TUNING_CH2-CH6.md) | [DIFFICULTY_SIM.md](game/DIFFICULTY_SIM.md) | ch2–ch6 调参记录 |
+| [ECONOMY_NUMBERS_LIVEOPS.md](game/ECONOMY_NUMBERS_LIVEOPS.md) | [ECONOMY_NUMBERS.md](game/ECONOMY_NUMBERS.md) | §12 起（留存/赛季/活动/角色卡数字） |
+| [ECONOMY_VERIFICATION_LOG_CAPACITY.md](game/ECONOMY_VERIFICATION_LOG_CAPACITY.md) | [ECONOMY_VERIFICATION_LOG.md](game/ECONOMY_VERIFICATION_LOG.md) | F 轨起（容量/险地/NPC 血量） |
+| [EQUIPMENT_DESIGN_MODEL.md](game/EQUIPMENT_DESIGN_MODEL.md) | [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | §3–8（数据模型） |
+| [EQUIPMENT_DESIGN_IMPL.md](game/EQUIPMENT_DESIGN_IMPL.md) | [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | §9–14（实现） |
+| [EQUIPMENT_DESIGN_REF.md](game/EQUIPMENT_DESIGN_REF.md) | [EQUIPMENT_DESIGN.md](game/EQUIPMENT_DESIGN.md) | §15–20（参考） |
+| [FEATURE_FLAGS_DESIGN_LOG.md](game/FEATURE_FLAGS_DESIGN_LOG.md) | [FEATURE_FLAGS_DESIGN.md](game/FEATURE_FLAGS_DESIGN.md) | §8 实现记录 |
+| [LOBBY_IA_REDESIGN_LOG.md](game/LOBBY_IA_REDESIGN_LOG.md) | [LOBBY_IA_REDESIGN.md](game/LOBBY_IA_REDESIGN.md) | 变更记录 |
+| [SEASON_DESIGN_IMPL_SPEC.md](game/SEASON_DESIGN_IMPL_SPEC.md) | [SEASON_DESIGN.md](game/SEASON_DESIGN.md) | §13A 起（可编码规格） |
+| [SERVER_API_INTERNAL.md](game/SERVER_API_INTERNAL.md) | [SERVER_API.md](game/SERVER_API.md) | §7 起（内部契约 + worldsvc/analyticsvc/socialsvc/auctionsvc 公网面） |
+| [SLG_CITY_SIEGE_DESIGN_LOG.md](game/SLG_CITY_SIEGE_DESIGN_LOG.md) | [SLG_CITY_SIEGE_DESIGN.md](game/SLG_CITY_SIEGE_DESIGN.md) | §10 P0–P3 落地记录 |
+| [SLG_DESIGN_CONTRACTS.md](game/SLG_DESIGN_CONTRACTS.md) | [SLG_DESIGN.md](game/SLG_DESIGN.md) | §10 起（契约） |
+| [SLG_LOG_S21-S33.md](game/SLG_LOG_S21-S33.md) | [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | §21–§33 |
+| [SLG_LOG_S34-S49.md](game/SLG_LOG_S34-S49.md) | [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | §34–§49 |
+| [SLG_LOG_S50-S63.md](game/SLG_LOG_S50-S63.md) | [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | §50–§63 |
+| [SLG_LOG_SPEC_SEASON.md](game/SLG_LOG_SPEC_SEASON.md) | [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | §17 大区赛季可编码规格 |
+| [SLG_LOG_SPEC_SYSTEMS.md](game/SLG_LOG_SPEC_SYSTEMS.md) | [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | §16、§18–§20 承重墙系统（围攻/视野/险地/多 shard） |
+| [SLG_LOG_2026-08.md](game/SLG_LOG_2026-08.md) | [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | 2026-08 起的实现记录 |
+| [UI_DESIGN_SCENES.md](game/UI_DESIGN_SCENES.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 场景规格 |
+| [UI_DESIGN_LOG_2026-06_07.md](game/UI_DESIGN_LOG_2026-06_07.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 2026-06/07 |
+| [UI_DESIGN_LOG_2026-08.md](game/UI_DESIGN_LOG_2026-08.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 2026-08 起 |
+
+#### 1.2.3 审计记录（一次性切面审计，非设计基准）
+
+| 文档 | 范围 |
+|---|---|
+| [COMM_AUDIT_INTERNAL_2026-07-28.md](game/COMM_AUDIT_INTERNAL_2026-07-28.md) | 服务间通信协议审计（11 进程的内部端点/出站客户端/Redis 通道；结论已全部修复） |
+| [SERVER_LOGIC_AUDIT_2026-07-29.md](game/SERVER_LOGIC_AUDIT_2026-07-29.md) | 单进程内部业务逻辑审计（复杂度/内存/数据结构/输入校验/容错；结论已按严重度全部修复） |
+
+> 存储侧那一轮（2026-07-27 Mongo/Redis）记录在 [`claudedocs/server-audits.md`](../claudedocs/server-audits.md)，不在 `design/` 下。
 
 ### 1.3 产品与玩法愿景（`design/product/`）
 | 文档 | 范围 | 状态 |
@@ -128,6 +185,49 @@
 |---|---|
 | [release/store-assets-checklist.md](product/release/store-assets-checklist.md) | 商店上架素材清单（图标/截图/描述/分级等发布物料核对） |
 
+
+#### 1.3.3 续册（`design/product/`，编号沿用父文档）
+
+| 续册 | 父文档 | 承载 |
+|---|---|---|
+| [art-direction-map-ui.md](product/art-direction-map-ui.md) | [art-direction.md](product/art-direction.md) | 六 起（地图 / UI 美术方向） |
+| [logic-architecture-events.md](product/logic-architecture-events.md) | [logic-architecture.md](product/logic-architecture.md) | 七 起（事件系统） |
+| [deploy-cloudflare-staging.md](product/deploy-cloudflare-staging.md) | [deploy-cloudflare.md](product/deploy-cloudflare.md) | 6b 起（staging 环境） |
+
+#### 1.3.4 美术 prompt / 出图记录（`design/product/`，素材制作过程，**非设计基准**）
+
+> **美术方向权威仍是** [`art-direction.md`](product/art-direction.md)；本组是「照那个方向实际出了哪些图、哪一版过/打回」的过程记录。
+> 单个文件动辄 50–70 KB，全组约 700 KB——2026-09-03 审计前**整组 25 份一份都不在文档地图里**。
+> 接线/验收结论（图标长宽比豁免、`iconArtAspect.test.ts` 等）以各文件自己的状态头为准。
+
+| 文档 | 范围 |
+|---|---|
+| [tab-icon-art-prompts.md](product/tab-icon-art-prompts.md) | 底部 tab / 通用图标 prompt（第 1–4 批，全部完成） |
+| [tab-icon-art-prompts-batch5.md](product/tab-icon-art-prompts-batch5.md) | 图标第 5 批（43 个光栅图标 / 129 张 PNG，完成） |
+| [tab-icon-art-prompts-batch6.md](product/tab-icon-art-prompts-batch6.md) | 图标第 6 批（46 个图标 / 138 张 PNG，完成） |
+| [tab-icon-art-prompts-batch7.md](product/tab-icon-art-prompts-batch7.md) | 图标第 7 批（最终 43 张自有美术 + 6 别名 = 49 个 ink kind，完成） |
+| [tab-icon-art-prompts-batch7-log.md](product/tab-icon-art-prompts-batch7-log.md) | 图标第 7 批的逐版打回记录 |
+| [tab-icon-art-prompts-batch8.md](product/tab-icon-art-prompts-batch8.md) | 图标第 8 批 |
+| [tab-icon-art-prompts-batch9.md](product/tab-icon-art-prompts-batch9.md) | 图标第 9 批（7 张，含 `camp` v2，完成） |
+| [avatar-art-prompts.md](product/avatar-art-prompts.md) | 头像 prompt |
+| [back-arrow-art.md](product/back-arrow-art.md) | 返回箭头图标 |
+| [battle-arrow-tower-art.md](product/battle-arrow-tower-art.md) | 战斗内箭塔美术 |
+| [panel-frame-art-prompts.md](product/panel-frame-art-prompts.md) | 面板边框 prompt |
+| [shop-art-prompts.md](product/shop-art-prompts.md) | 商店美术 prompt |
+| [gacha-art-prompts.md](product/gacha-art-prompts.md) | 盲盒美术 prompt |
+| [skin-art-prompts.md](product/skin-art-prompts.md) | 皮肤美术 prompt |
+| [family-emblem-art-prompts.md](product/family-emblem-art-prompts.md) | 家族徽记 prompt |
+| [chapter-interlude-art-prompts.md](product/chapter-interlude-art-prompts.md) | 章节过场插画 prompt（6/6 完成） |
+| [intro-story-art-prompts.md](product/intro-story-art-prompts.md) | 开场故事插画 prompt |
+| [city-image-prompts.md](product/city-image-prompts.md) | 城池立绘 prompt |
+| [player-base-image-prompts.md](product/player-base-image-prompts.md) | 玩家主城立绘 prompt |
+| [player-base-image-prompts-v2.md](product/player-base-image-prompts-v2.md) | 玩家主城立绘 prompt v2 |
+| [slg-building-art.md](product/slg-building-art.md) | SLG 建筑美术 |
+| [slg-citybld-icon-prompts.md](product/slg-citybld-icon-prompts.md) | SLG 主城建筑图标 prompt（6/6 完成） |
+| [slg-resource-art.md](product/slg-resource-art.md) | SLG 资源图标美术（母题 5 张） |
+| [slg-resource-art-levels.md](product/slg-resource-art-levels.md) | SLG 资源分级图标 |
+| [slg-terrain-art.md](product/slg-terrain-art.md) | SLG 地形美术 |
+
 ### 1.4 工具（`design/tools/`）
 | 文档 | 范围 |
 |---|---|
@@ -139,7 +239,12 @@
 | [vfx-editor/DESIGN.md](tools/vfx-editor/DESIGN.md) | 特效编辑器（端口 9094，方案 A 墨线矢量程序特效；状态：设计中） |
 
 ### 1.5 快查文档（`claudedocs/`，模块级速查，非设计基准）
-`animator.md` · `client-modules.md` · `client-testing.md` · `client-memory-leak.md` · `file-formats.md` · `worktrees.md` · **`server.md`（进程拓扑/端口权威）**
+
+索引在 [`claudedocs/README.md`](../claudedocs/README.md)。全量 14 份（**订正 2026-09-03**：本节此前只列了 7 份）：
+
+- **进程 / 服务端**：**[`server.md`](../claudedocs/server.md)（进程拓扑 / 端口权威）** · [`server-audits.md`](../claudedocs/server-audits.md)（存储侧审计与修复记录） · [`server-testing.md`](../claudedocs/server-testing.md) · [`server-testing-coverage.md`](../claudedocs/server-testing-coverage.md) · [`server-testing-tooling.md`](../claudedocs/server-testing-tooling.md) · [`server-testing-typecheck.md`](../claudedocs/server-testing-typecheck.md)
+- **客户端**：[`client-modules.md`](../claudedocs/client-modules.md) · [`client-testing.md`](../claudedocs/client-testing.md) · [`client-testing-log.md`](../claudedocs/client-testing-log.md) · [`client-memory-leak.md`](../claudedocs/client-memory-leak.md)
+- **工具 / 其它**：[`animator.md`](../claudedocs/animator.md) · [`tools-testing.md`](../claudedocs/tools-testing.md) · [`file-formats.md`](../claudedocs/file-formats.md) · [`worktrees.md`](../claudedocs/worktrees.md)
 
 ---
 
@@ -210,5 +315,50 @@
 **命名**：`game/`/`tools/` 用 `UPPER_SNAKE.md`，`product/` 用 `kebab-case.md`（沿用现状）。
 
 **改数值**：改 `config.ts` → 同步 [BALANCE.md](game/BALANCE.md) 快照（注明日期）→ 大改记 ADR。**不要**去 core-gameplay-loop / v1-balance 改数值（前者数值非权威，后者已归档）。
-</content>
-</invoke>
+
+**状态标记只有一个家**（新增 2026-09-03）：每份文档的「状态」写在**它自己的文档头**（`> 状态：… · 权威：… · 更新：YYYY-MM-DD`）。
+§1 各表的状态列是**那一行的镜像**，不是第二处真源——两边不一致时**认文档头**，然后修 README。
+2026-09-03 审计发现 11 行两侧对不上（10 行是 README 落后，含把已发货的录像分享写成「待实现」、把 6.9k 行的
+botsvc 写成「设计中」），根因就是同一个事实存在两处、且没有任何门禁比对它们。**新开文档必须带状态头**——
+`SOCIAL_SVC_DESIGN.md` 当时没有，README 那一行于是无从校对，一路错到审计。
+
+**加/减一个应用进程必须记 ADR**（新增 2026-09-03，见 [ADR-080](DECISIONS_ADR-070-onward.md)）：只改
+`claudedocs/server.md` 不算——后者是「现在代码长这样」的快查，不是拍板记录。socialsvc / auctionsvc / botsvc
+三次加进程都只改了快查，导致 ADR-005 长期是全仓唯一还说「8 个进程」的文档。
+
+---
+
+## 6. 一致性审计记录
+
+### 2026-09-03 —— 全库审计（161 份文档 vs 代码）
+
+机械核对了六件事：README 地图完整性、全库相对链接、§2 登记表里每条代码路径是否存在、`BALANCE.md` 逐项对表
+`config.ts`/`blueprintDefs.ts`、`SERVER_API` 端点 vs 四份 openapi spec、ADR 索引 vs 正文。结论分三类，已全部修完。
+
+**A 类 —— 代码与文档冲突（10 处）**
+1. `BALANCE.md` 的 Max 攻击力停在 14，代码 2026-07-17 已改 11（ghost-fix 后重调）——漂移 7 周，本文 §0 铁律 1 的第一次失效。
+2. `server/shared/src/slg.ts` 2026-07-05 拆包后不存在，仍有 9 份活文档（含本文 §2 登记表）把它当数值真源。
+3. 野外城池 `CITY_*` 真源指向 `slg/siege.ts`，实际在 `slg/citySiege.ts`（该文件头自己就写了文档指错）。
+4. 本文装备行的 ⚠️「洗练当前不扣金币」——ADR-030 已于 2026-07-03 实装收费，`ECONOMY_BALANCE §3.4` 早标了 ✅。
+5. `SERVER_API_INTERNAL §10.1` 仍列 `POST /world/occupy`，该路由已摘除（e2e 断言 404）。
+6. `SERVER_API_INTERNAL §10.3` 整组 Family 端点在代码里一条都不存在（ADR-021 迁 socialsvc 并去掉 `worldId`）。
+7. 账号删除端点三处仍写 `POST /account/delete`，落地的是 `DELETE /account`。
+8. ADR-005「8 个应用进程」至今 Accepted，全仓其余文档都是 11——三次加进程都没记 ADR。已加 ADR-080 取代。
+9. `SERVER_API §2.9` 的 `POST /events/redeem` 有完整契约，spec 与代码均无。
+10. `blueprintDefs.ts` 四个单位注释写「PvE-only」，与同文件上方 section 注释和 `PVP_LOADOUT_DESIGN` 矛盾。
+
+**B 类 —— 状态标记两侧对不上（11 行）**：详见 §5「状态标记只有一个家」。10 行是本文落后（把已发货的录像分享
+记成「待实现」、把 6.9k 行的 botsvc 记成「设计中」等），1 行是文档头落后（`SEASON_DESIGN` 还写「设计中 / 2026-06-21」）。
+
+**C 类 —— 索引缺失**：62 份文档不在本地图里；`DECISIONS.md` 标题写「共 69 条」而实际 79 行、ADR-079 有正文无索引行；
+`claudedocs/README.md` 漏自己 6 份；仓库地图漏 `tools/desktop-shell`、`tools/gimp-export-layers`。
+另发现三份文档（本文、`BALANCE.md`、`ECONOMY_NUMBERS_LIVEOPS.md`）末尾残留历史会话漏进去的 `</content>` 标签，已清。
+
+**核对通过的部分**（本次未动）：全库 md 相对链接 0 处断链；§2 登记表其余 13 条代码路径全部存在；
+`BALANCE.md` §1–§7 除 Max 一处外与代码逐项一致（棋盘/墨/加速/手牌/11 单位/2 建筑/24 卡费/PvE 法术）；
+`PVP_LOADOUT_DESIGN` 的 12 单位 `siegeValue` + 费用表逐项一致；11 进程与端口表四处口径一致；
+阵营色我蓝敌红、gacha 70/90、天梯 9 段、`SLG_MAP_W/H=1500`、troopCap 5000+1500/级 全部与代码相符。
+
+**根因与门禁**：两类漂移各有一个模式——**代码文件搬家后不回改文档**（A2/A3，`slg.ts` 与 gacha 两次拆包同源），
+**同一事实存在两处且无门禁比对**（B 全类）。对应加了两条规约（§5「状态标记只有一个家」、「加减进程必须记 ADR」）
++ 一条可机械执行的地图完整性核对命令（见本文页首）。这三条都是「能用命令跑出来」的形态，而不是又一句提醒。
