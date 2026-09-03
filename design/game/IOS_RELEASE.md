@@ -88,7 +88,27 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
 | `com.gamestao.nivara.coins.t4999` | 6500  | $49.99 |
 | `com.gamestao.nivara.coins.t9999` | 13500 | $99.99 |
 
-金币数以 `server/shared/src/economy.ts` 的 `IAP_TIERS` 为唯一权威（此表随之为准）。iOS 提供全 7 档（web/Paddle 仅 t499 起）。
+金币数以 `server/shared/src/economy.ts` 的 `IAP_TIERS` 为唯一权威（此表随之为准）。
+
+> ⚠️ **实际只有 5 档能买到**：商店的档位表是客户端硬编码的 `WEB_COIN_TIERS`（[`client/src/scenes/ShopScene/coins.ts`](../../client/src/scenes/ShopScene/coins.ts)），
+> $4.99 起共 5 档，**所有平台共用**。`t099` / `t199` 在 App 内没有任何入口——ASC 里建了也是触达不到的商品，Apple 不会放行。
+> 建商品前先定：要么只建 5 个，要么给 iOS 补上这两档。另有一处待决：该表把价格写死成 `$4.99` 字样，
+> 而 App Store 是按 storefront 本地化定价（德区含税欧元），应改为从 `SKProduct.priceLocale` 回读真实价再显示。
+
+### 4.1b 四个非币商品（月卡 / 年卡 / 两个新手包）
+
+这四样在 iOS 上走的是**同一个 StoreKit 桥**，商品 ID 约定由服务端 `resolveNonCoinProduct` 定义（见 §10.4）：
+
+| 商品键（客户端传给桥） | App Store Product ID | 类型 |
+|---|---|---|
+| `monthly_card` | `com.gamestao.nivara.sub.monthly` | 订阅（自动续订 or 非续订，**待定**） |
+| `year_card` | `com.gamestao.nivara.sub.year` | 订阅（同上） |
+| `starter_draw` | `com.gamestao.nivara.starter.draw` | 非消耗型（一次性） |
+| `starter_growth` | `com.gamestao.nivara.starter.growth` | 非消耗型（一次性） |
+
+**这四个 ASC 里还没建**，不建就是四个点了必失败的按钮，审核员一定会点（2.1）。
+自动续订 vs 非续订只影响 ASC 里怎么建，不影响上面的 ID 字符串；服务端 `subscriptionCardBuy` 目前按「买断一段时长」处理，
+选**非续订订阅（Non-Renewing Subscription）**与现有服务端语义最贴合。
 
 ### 4.2 服务端环境变量（VPS commercial）
 - `NW_IAP_BUNDLE=com.gamestao.nivara` —— **必须改**（默认 `com.nw` 会匹配不到商品，fail closed 发失败）。
@@ -140,10 +160,80 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
 ## 9. 审核注意（避免拒审）
 
 - **4.2 最低功能**：本 App 是完整可玩游戏（非套壳网站），有本地战役/联机/养成，满足。
-- **3.1.1 数字商品必须走 IAP**：已实现（原生检测 `window.NWBilling` 走 Apple；Paddle 仅 web 生效，原生包无 Paddle 入口）。切勿在原生内出现引导站外支付的文案/链接。
+- **3.1.1 数字商品必须走 IAP**：已实现（原生检测 `window.NWBilling` 走 Apple）。**这条以前只做到「路由正确」，不等于「原生包里没有 Paddle」——2026-09-03 的审计发现四处泄漏，已修，见 §10。** 切勿在原生内出现引导站外支付的文案/链接。
 - **登录**：匿名设备登录（`getAuthCredential` device），无强制第三方登录 → 无需 Sign in with Apple。
 - **iPad 必测**：通用 App 审核会在 iPad 上跑，务必补 iPad 截图且 iPad 上无布局破裂。
 - **3.3.1 热更新边界**：若启用 OTA（§11），热更只能改 JS/资源、不得改变主要用途或新增站外支付，否则违规可下架。原生改动一律走二进制发布。
+
+## 10. 支付渠道隔离（2026-09-03 审计 + 修复）
+
+> 起因：提审前复查「网页支付有没有混进 iOS 包」。客户端的**路由**一直是对的（`WebPlatform.iapKind()` 探到 `window.NWBilling` 就走 Apple），
+> 但「路由正确」和「原生包里没有网页支付」是两件事。审计查出四处，全部已修（分支 `feat/ios-payment-isolation`）。
+> 四处的共同点：**失败是静默的**——不报错、不崩、玩起来一切正常，只是这个 App 悄悄变成了一个套着原生壳的网页电商 App。
+
+### 10.1 桥没注入时不再回落 Paddle
+
+`window.NWBilling` 由 `AppDelegate.swift` 的 `NWBridgeViewController` 注入，而这个类是靠 `Main.storyboard` 的 `customClass` 挂上去的。
+一次 `cap sync` 或 Capacitor 大版本升级重新生成 storyboard，桥就没了——App 照常启动、照常能玩，但：
+
+- `iapKind()` 旧实现 `getNativeBilling()?.kind ?? 'paddle'` → **App Store 版本在 WKWebView 里开 Paddle 收银台**（3.1.1，可下架）；
+- `requestPlatformHeader()` 同样的兜底 → 声明 `X-NW-Platform: web`，去花 **web(Paddle) 桶**的金币（ADR-020 渠道隔离被绕过）。
+
+修法：新增 [`client/src/platform/nativeShell.ts`](../../client/src/platform/nativeShell.ts)，问 **Capacitor 自己**（`Capacitor.getPlatform()`）而不是问我们注入的全局。
+桥只用来决定「哪个商店」，「是不是原生壳」由 Capacitor 回答——后者不依赖我们的任何接线是否正确。
+
+| 情形 | 旧行为 | 新行为 |
+|---|---|---|
+| 浏览器，无桥 | `paddle` | `paddle`（不变） |
+| 原生壳 + 好桥 | `apple` | `apple`（不变） |
+| **原生壳，桥丢失/畸形** | **`paddle`** | **`null`**（充值入口整体消失，`iapKind() !== null` 是 shop nav 的统一门） |
+| **原生壳，桥丢失** → `X-NW-Platform` | **`web`** | **`ios` / `android`** |
+
+「能卖但卖错渠道」比「暂时不能卖」严重得多：前者会被下架，后者只是个待修的 bug。
+
+### 10.2 Paddle 结账模块整体不进原生包
+
+光有运行时门还不够——`pay.html` 是**一个能用的 Paddle 收银台**，而 `WebPlatform` 里的 `loadPaddle()` 会从 `cdn.paddle.com` 拉 SDK。
+这些东西根本不该出现在一个用 StoreKit 计费的 App 的二进制里。两处都堵上了：
+
+1. **静态页**：`webpack.config.js` 的 CopyPlugin 条件从 `!isWechat` 收紧到 `!isWechat && !isMobile`。
+   `home/pricing/refunds/pay/terms/privacy.html` 六个页面以前**全部进了 iOS 包和每一个 OTA 包**，其中 `terms.html → refunds.html`
+   还能从应用内同意弹窗点进去，页面上写着「拿 Paddle transaction ID 发邮件申请退款」——iOS 退款归 Apple，这是审核灰区加客服灾难。
+   图标/manifest 拆到第二个 CopyPlugin，仍旧四个目标都发。
+2. **代码**：Paddle 的全部实现从 `WebPlatform.ts` 抽到 [`platform/web/paddleCheckout.ts`](../../client/src/platform/web/paddleCheckout.ts)，
+   mobile 构建用 `NormalModuleReplacementPlugin` 换成 [`platform/stubs/paddleCheckout.ts`](../../client/src/platform/stubs/paddleCheckout.ts)（抛异常的桩）。
+   跟既有的 Capacitor 桩表是**镜像**关系：那两条把原生代码挡在网页包外（为了体积），这一条把网页支付挡在原生包外（为了合规）。
+   验证：`build:mobile` 产物里 `cdn.paddle.com` 已 grep 不到；只剩 `paddleCheckout()` 这个**打我们自己后端**的 REST 方法名（无害）。
+
+### 10.3 同意弹窗的法务链接在 iOS 上本来就是死的
+
+`ConsentDialog` 用 `window.open('/privacy.html', '_blank')`。在 WKWebView 里这会走到 Capacitor 的 `createWebViewWith`，
+它对 URL 调 `UIApplication.shared.open(...)`——而 URL 是 `capacitor://localhost/privacy.html`，**没有任何 App 注册这个 scheme，iOS 静默丢弃**。
+即：隐私政策和用户协议两个链接在原生包里点了没反应，而审核员一定会点。
+
+修法：原生壳下改指向线上绝对地址 `https://nivara.gamestao.com/privacy` / `/terms`（实测 200；`/privacy.html` 会 307 到无后缀形式，所以直接用无后缀）。
+网页端行为不变，仍是相对路径。
+
+### 10.4 四个非币商品的 product ID 两边对不上（会导致 2.1 拒审）
+
+月卡 / 年卡 / 两个新手包走的是**同一个** `window.NWBilling.purchase()`，只是传的是商品键而不是档位 ID
+（`client/src/app/nav/shop/iap.ts` 的 `doBuySubscription` / `doBuyStarter`）。但：
+
+- Swift 侧 `productId(for:)` 无条件拼 `<bundle>.coins.<key>` → 会去问 App Store 要 `com.gamestao.nivara.coins.monthly_card`；
+- 服务端 `resolveNonCoinProduct`（`server/commercial/src/iap/productResolve.ts`）认的是 `<bundle>.sub.monthly` / `.sub.year` / `.starter.draw` / `.starter.growth`。
+
+结果：iOS 上这四个按钮点了必然 `invalid_product`；就算按错名字在 ASC 建了商品，收据也会在**扣款之后**解析不出商品。
+已在 `AppDelegate.swift` 加映射表对齐服务端约定。**这四个商品 ASC 还没建**（§4.1 原先只列了 7 个消耗型），见 §12。
+
+### 10.5 回归测试
+
+[`client/test/nativePaymentIsolation.test.ts`](../../client/test/nativePaymentIsolation.test.ts)（16 例），按上面四条一一对应：
+
+- 假的是 `@capacitor/core` 边界（不是 `nativeShell` 本身），所以 `nativeShell.ts` 自己也被覆盖；
+- 读**真的** `webpack.config.js` 断言 mobile 的 CopyPlugin 不含那六个页面、web 六个都在、图标两边都在、mobile 有 paddleCheckout 桩替换；
+- 跨语言钉死 Swift 表和服务端表（正则各自抠出字典字面量后比对）——这是 §10.4 那种「两张表、两种语言、没有编译器管」的唯一防线。
+
+`client/test/nativeBridges.test.ts`（桥的形状检查）留在原处只管「选哪个商店」，头注释已改指向本文件。
 
 ## 11. OTA 热更新（Capgo 自托管，路线 B）
 
@@ -237,9 +327,20 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] 生成 Distribution 证书 `.p12` / App Store 描述文件 / ASC API Key `.p8`
 - [x] 配齐 §3 的 9 个 GitHub Secrets（走仓库 CI 流水线推 `ios-v*` tag 构建，已验证可用）
 - [x] 推 `ios-v1.0.0` 类似构建 → TestFlight 已发布，人工测试通过（**注**：此时 IAP 商品尚未建，充值→发币对账未覆盖，见下）
-- [ ] ASC 建 7 个消耗型 IAP 商品（§4.1）+ 填 App 专用共享密钥（**2026-07-21 确认：尚未添加**）
+- [x] 支付渠道隔离审计 + 修复（§10，2026-09-03）
+- [ ] **先定：币档只建 5 个还是补齐 7 个**（§4.1 的 ⚠️），以及月卡/年卡用哪种订阅类型（§4.1b）
+- [ ] ASC 建消耗型币档商品 + **§4.1b 的 4 个非币商品** + 填 App 专用共享密钥（**2026-07-21 确认：尚未添加**）
 - [ ] VPS commercial 设 `NW_IAP_BUNDLE=com.gamestao.nivara` + `NW_APPLE_PASSWORD`，重启
-- [ ] 美术：iPhone 6.7"/6.5" + iPad 12.9" 截图
+      （`server/.env.example` 仍是默认 `com.nw`，不改则全部 fail closed 不发币）
+- [x] 美术：iPhone 6.7"/6.5" + iPad 12.9" 截图（2026-08-18 出齐，`art/store/en/`，英文一套；德/中文换 locale 重跑即可）
+- [ ] **解决 ATT 与隐私标签的矛盾**：`Info.plist` 有 `NSUserTrackingUsageDescription` + 47 条 SKAdNetwork，
+      `AppDelegate.swift` 也真的会弹 ATT（AdMob 激励视频），但 [`store-assets-checklist.md §1.4`](../product/release/store-assets-checklist.md)
+      写的是「Data Used to Track You：无」。二选一，填错是下架级
+- [ ] **隐私政策补 Apple 支付口径**：`client/public/web/privacy.html §3` 目前只写 Paddle 是 merchant of record，
+      没提 iOS 走 Apple；这份就是要填进 ASC 的隐私政策 URL，审核员会读
 - [ ] 填隐私标签 + App 描述（三语）
-- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面 IAP 商品先建好）
+- [ ] **原生层拿 Xcode 编译一次**：TestFlight 那版（2026-07-21）之后 `client/ios` 又进了 AdMob 桥
+      （`IAP_CREDENTIALS §2.1` 自述「未在 Xcode 里编译验证」，Google 改过 Swift API 命名）和 Capgo OTA 插件，
+      **当前 HEAD 的原生代码没有任何一次成功构建记录**
+- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面 IAP 商品先建好），四个非币商品各买一次
 - [ ] 提交审核（**2026-07-21 确认：尚未提审**）

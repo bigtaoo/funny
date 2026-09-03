@@ -155,8 +155,26 @@ final class NWBridgeViewController: CAPBridgeViewController,
 
     deinit { SKPaymentQueue.default().remove(self) }
 
+    // The JS side buys more than coin tiers through this same bridge: the shop's subscription cards
+    // and starter packs also call window.NWBilling.purchase(), with the product key instead of a
+    // tier id (client/src/app/nav/shop/iap.ts — doBuySubscription / doBuyStarter). Those four have
+    // their own product-id convention on the verifying end, `<bundle>.sub.monthly` / `.sub.year` /
+    // `.starter.draw` / `.starter.growth` (server/commercial/src/iap/productResolve.ts,
+    // resolveNonCoinProduct). Deriving every id as `<bundle>.coins.<key>` — as this did until
+    // 2026-09-03 — asked StoreKit for four products that exist in no App Store Connect account, so
+    // all four buttons failed with `invalid_product`, and had the products been created under that
+    // name the receipt would then have resolved to nothing server-side, after the player was
+    // charged. Both sides must name the same product; this table is that agreement.
+    private static let nonCoinProductSuffixes: [String: String] = [
+        "monthly_card": "sub.monthly",
+        "year_card": "sub.year",
+        "starter_draw": "starter.draw",
+        "starter_growth": "starter.growth",
+    ]
+
     private static func productId(for tierId: String) -> String {
         let bundle = Bundle.main.bundleIdentifier ?? "com.gamestao.nivara"
+        if let suffix = nonCoinProductSuffixes[tierId] { return "\(bundle).\(suffix)" }
         return "\(bundle).coins.\(tierId)"
     }
 
