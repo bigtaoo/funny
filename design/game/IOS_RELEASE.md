@@ -75,13 +75,15 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
 
 ## 4. IAP 商品配置（充值发币的前提）
 
-### 4.1 App Store Connect 建商品
-在 ASC → 你的 App → **App 内购买项目** 新建 **7 个消耗型（Consumable）**，Product ID 用 `<bundle>.coins.<tier>`：
+### 4.1 App Store Connect 建商品：9 个，付费点与 Paddle 逐一对齐
 
-| Product ID | 金币 | 参考美元价 |
+**总原则（2026-09-03 定）：iOS 的付费点与 web(Paddle) 完全一致**，一个不多一个不少。Paddle 沙箱现有 9 个
+Price（见 `IAP_CREDENTIALS.md §1.1` 与那次事故记录），ASC 就建对应的 9 个。
+
+**5 个消耗型（Consumable）**，Product ID 用 `<bundle>.coins.<tier>`：
+
+| Product ID | 金币 | 美元价 |
 |---|---|---|
-| `com.gamestao.nivara.coins.t099`  | 100   | $0.99 |
-| `com.gamestao.nivara.coins.t199`  | 210   | $1.99 |
 | `com.gamestao.nivara.coins.t499`  | 550   | $4.99 |
 | `com.gamestao.nivara.coins.t999`  | 1150  | $9.99 |
 | `com.gamestao.nivara.coins.t1999` | 2400  | $19.99 |
@@ -90,25 +92,66 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
 
 金币数以 `server/shared/src/economy.ts` 的 `IAP_TIERS` 为唯一权威（此表随之为准）。
 
-> ⚠️ **实际只有 5 档能买到**：商店的档位表是客户端硬编码的 `WEB_COIN_TIERS`（[`client/src/scenes/ShopScene/coins.ts`](../../client/src/scenes/ShopScene/coins.ts)），
-> $4.99 起共 5 档，**所有平台共用**。`t099` / `t199` 在 App 内没有任何入口——ASC 里建了也是触达不到的商品，Apple 不会放行。
-> 建商品前先定：要么只建 5 个，要么给 iOS 补上这两档。另有一处待决：该表把价格写死成 `$4.99` 字样，
-> 而 App Store 是按 storefront 本地化定价（德区含税欧元），应改为从 `SKProduct.priceLocale` 回读真实价再显示。
+> **为什么不是 7 个**：`IAP_TIERS` 里还有 `t099` / `t199` 两档，但商店的档位表是客户端硬编码的
+> `WEB_COIN_TIERS`（[`client/src/scenes/ShopScene/coins.ts`](../../client/src/scenes/ShopScene/coins.ts)），
+> $4.99 起共 5 档、所有平台共用，这两档**在 App 内没有任何入口**。ASC 里建了也是触达不到的商品，Apple 不会放行。
+> 要上这两档就先给客户端加入口，那是另一件事。
 
-### 4.1b 四个非币商品（月卡 / 年卡 / 两个新手包）
+> **未决（不阻塞提审）**：`WEB_COIN_TIERS` 把价格写死成 `$4.99` 字样，而 App Store 按 storefront 本地化定价
+> （德区是含税欧元）。正解是从 `SKProduct.priceLocale` 回读真实价再显示，要动原生桥，等首版跑通再做。
 
-这四样在 iOS 上走的是**同一个 StoreKit 桥**，商品 ID 约定由服务端 `resolveNonCoinProduct` 定义（见 §10.4）：
+### 4.1b 四个非币商品：月卡/年卡是**自动续订订阅**
 
-| 商品键（客户端传给桥） | App Store Product ID | 类型 |
-|---|---|---|
-| `monthly_card` | `com.gamestao.nivara.sub.monthly` | 订阅（自动续订 or 非续订，**待定**） |
-| `year_card` | `com.gamestao.nivara.sub.year` | 订阅（同上） |
-| `starter_draw` | `com.gamestao.nivara.starter.draw` | 非消耗型（一次性） |
-| `starter_growth` | `com.gamestao.nivara.starter.growth` | 非消耗型（一次性） |
+| 商品键（客户端传给桥） | App Store Product ID | ASC 类型 | 价格 |
+|---|---|---|---|
+| `monthly_card` | `com.gamestao.nivara.sub.monthly` | **自动续订订阅**（1 个月） | $4.99 |
+| `year_card` | `com.gamestao.nivara.sub.year` | **自动续订订阅**（1 年） | $49.99 |
+| `starter_draw` | `com.gamestao.nivara.starter.draw` | 非消耗型 | $0.99 |
+| `starter_growth` | `com.gamestao.nivara.starter.growth` | 非消耗型 | $4.99 |
 
-**这四个 ASC 里还没建**，不建就是四个点了必失败的按钮，审核员一定会点（2.1）。
-自动续订 vs 非续订只影响 ASC 里怎么建，不影响上面的 ID 字符串；服务端 `subscriptionCardBuy` 目前按「买断一段时长」处理，
-选**非续订订阅（Non-Renewing Subscription）**与现有服务端语义最贴合。
+商品 ID 约定由服务端 `resolveNonCoinProduct`（`server/commercial/src/iap/productResolve.ts`）定义，
+Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**这四个 ASC 里还没建**——不建就是四个点了必失败的按钮，
+审核员一定会点（2.1）。
+
+**ASC 建法**：两个订阅放**同一个订阅群组**（Subscription Group，例如 `Nivara Pass`），月/年是同群组的两档。
+同群组是 Apple 期望的形态，用户能在月↔年之间升降级而不产生两份并行订阅；服务端只有一个
+`subscription.expiry`，任何一档到账都是往后延，天然兼容。
+
+#### 自动续订怎么到账（2026-09-03 实装）
+
+自动续订的钱在 **Apple 那边**扣，不经过 App，也不会有人通知我们的服务器。StoreKit 1 的表现是：每次续期在
+**app receipt 里多一条 transaction**。所以链路是「冷启动重读收据 → 交服务端 → 服务端问 Apple → 把没发过的
+周期补上」：
+
+```
+玩家冷启动 → 进大厅（已登录、存档已加载）
+  └─ syncAppleSubscription()  (client/src/platform/appleSubscriptionSync.ts，每会话最多一次)
+       ├─ window.NWBilling.receipt()      ← 新增的桥方法，读 appStoreReceiptURL
+       └─ POST /iap/apple/sync { receipt }
+            └─ commercial.subscriptionSyncApple
+                 ├─ appleSubscriptionTransactions()  ← verifyReceipt，**要全量历史**
+                 └─ 每条周期 → subscriptionCardBuy({ orderId: `apple:<transactionId>`, renewal: true })
+```
+
+三个设计点，每个都是踩过的坑的反面：
+
+1. **幂等键是 Apple 的 `transaction_id`，不是收据本身。** 收据 blob 每次刷新都可能不同（里面有
+   `receipt_creation_date`），拿它当键会在没有任何新购买时重复发放。`subscriptionCardBuy` 本来就按
+   `orderId` 幂等，`apple:<transactionId>` 直接复用了这套机制——所以每次冷启动都调是安全的。
+2. **`renewal: true` 绕过单卡门（且只绕过它）。** Apple 会在当前周期**结束前约一天**扣款，正是为了让订阅不断档；
+   于是每一次续期到达时卡都还在生效中，原来的 `ALREADY_ACTIVE` 门会把它**全部拒掉**——钱扣了，什么都不给，
+   而玩家看不到任何失败可以投诉。绕过的只是「是不是已经有一张在跑」这个问题，`orderId` 幂等一点没松。
+   普通购买（玩家手点 Buy）的单卡门原样保留，有测试钉住。
+3. **拉全量历史（不设 `exclude-old-transactions`）。** 三个月没开 App 的玩家，收据里躺着三次续期；
+   只看最新一条就会静默少发两个月，而玩家根本无从察觉。全量拉 + `orderId` 幂等 = 不会少发也不会多发。
+   单次最多处理最近 60 个周期（`MAX_SYNC_PERIODS`）。
+
+**退款**：带 `cancellation_date_ms` 的周期直接跳过（Apple 已经把钱要回去了）。已发出去的天数不回收——
+与现有 web/Paddle 通道的口径一致。
+
+**这条链路没有真机验证过**（本机无 Xcode/沙盒），逻辑侧由
+`server/commercial/test/appleSubscriptionSync.e2e.test.ts`（13 例，含「续期撞上生效中的卡」与「同一收据反复同步」）
++ `client/test/appleSubscriptionSync.test.ts`（9 例）覆盖。
 
 ### 4.2 服务端环境变量（VPS commercial）
 - `NW_IAP_BUNDLE=com.gamestao.nivara` —— **必须改**（默认 `com.nw` 会匹配不到商品，fail closed 发失败）。
@@ -328,19 +371,25 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] 配齐 §3 的 9 个 GitHub Secrets（走仓库 CI 流水线推 `ios-v*` tag 构建，已验证可用）
 - [x] 推 `ios-v1.0.0` 类似构建 → TestFlight 已发布，人工测试通过（**注**：此时 IAP 商品尚未建，充值→发币对账未覆盖，见下）
 - [x] 支付渠道隔离审计 + 修复（§10，2026-09-03）
-- [ ] **先定：币档只建 5 个还是补齐 7 个**（§4.1 的 ⚠️），以及月卡/年卡用哪种订阅类型（§4.1b）
-- [ ] ASC 建消耗型币档商品 + **§4.1b 的 4 个非币商品** + 填 App 专用共享密钥（**2026-07-21 确认：尚未添加**）
+- [x] 定下付费点：**与 Paddle 逐一对齐，共 9 个**（§4.1 / §4.1b，2026-09-03）
+- [x] 定下月卡/年卡形态：**自动续订订阅，同一订阅群组**，续期到账链路已实装（§4.1b）
+- [ ] ASC 建 9 个商品（5 消耗型 + 2 自动续订订阅 + 2 非消耗型）+ 填 App 专用共享密钥
+      （**2026-07-21 确认：尚未添加**；共享密钥现在是两条链路的凭据——验单**和**续期同步）
 - [ ] VPS commercial 设 `NW_IAP_BUNDLE=com.gamestao.nivara` + `NW_APPLE_PASSWORD`，重启
       （`server/.env.example` 仍是默认 `com.nw`，不改则全部 fail closed 不发币）
 - [x] 美术：iPhone 6.7"/6.5" + iPad 12.9" 截图（2026-08-18 出齐，`art/store/en/`，英文一套；德/中文换 locale 重跑即可）
-- [ ] **解决 ATT 与隐私标签的矛盾**：`Info.plist` 有 `NSUserTrackingUsageDescription` + 47 条 SKAdNetwork，
-      `AppDelegate.swift` 也真的会弹 ATT（AdMob 激励视频），但 [`store-assets-checklist.md §1.4`](../product/release/store-assets-checklist.md)
-      写的是「Data Used to Track You：无」。二选一，填错是下架级
-- [ ] **隐私政策补 Apple 支付口径**：`client/public/web/privacy.html §3` 目前只写 Paddle 是 merchant of record，
-      没提 iOS 走 Apple；这份就是要填进 ASC 的隐私政策 URL，审核员会读
+- [x] **ATT 与隐私标签的矛盾已解**（2026-09-03，选「不跟踪」）：AdMob 改为只请求非个性化广告（`npa=1`），
+      删掉 ATT 请求与 `NSUserTrackingUsageDescription`；`SKAdNetworkItems` 保留（按 Apple 自己的口径不算 tracking）。
+      隐私标签照 `store-assets-checklist.md §1.4` 原样填「Data Used to Track You：无」
+- [x] **隐私政策/条款/退款政策补 Apple 支付口径**（2026-09-03）：`privacy.html §3` 分列 web(Paddle) 与 iOS(Apple)、
+      §4 加 AdMob 非个性化一行；`terms.html §3` 点明两个渠道的销售主体；`refunds.html` 新增 §0
+      「App Store 买的找 Apple 退」。三语 `design/product/legal/privacy-policy.*.md` 的 §6.3 与广告 SDK 行同步改
 - [ ] 填隐私标签 + App 描述（三语）
 - [ ] **原生层拿 Xcode 编译一次**：TestFlight 那版（2026-07-21）之后 `client/ios` 又进了 AdMob 桥
       （`IAP_CREDENTIALS §2.1` 自述「未在 Xcode 里编译验证」，Google 改过 Swift API 命名）和 Capgo OTA 插件，
       **当前 HEAD 的原生代码没有任何一次成功构建记录**
 - [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面 IAP 商品先建好），四个非币商品各买一次
+- [ ] **沙盒验一次自动续订**（§4.1b）：沙盒订阅按加速时钟续期（1 个月 ≈ 5 分钟），买月卡 → 杀进程 →
+      等一次续期 → 冷启动 → 确认 `subscriptionExpiry` 又往后 30 天且金币 +600；再冷启动一次确认**不重复发**。
+      这是整条链路里唯一没法在本机验的部分
 - [ ] 提交审核（**2026-07-21 确认：尚未提审**）

@@ -414,6 +414,46 @@
                     granted: { type: integer }
       '400': { $ref: '#/components/responses/ErrorResp' }
 
+/iap/apple/sync:
+  post:
+    operationId: iapAppleSync
+    tags: [iap]
+    summary: Apply not-yet-granted Apple auto-renewable subscription periods (idempotent)
+    description: >
+      Re-reads the iOS app receipt and grants any auto-renewable subscription period Apple has
+      charged for but the server has not applied yet. Auto-renewals happen inside Apple's systems
+      with no user action, so re-reading the receipt is how the server learns about them; the client
+      calls this unprompted on cold start. Each period is granted under `apple:<transactionId>` and
+      is therefore idempotent — `granted` reports how many were actually new, so a caller can skip
+      refreshing on the (usual) zero. Never errors on an unusable receipt: it reports `granted: 0`.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [receipt]
+            properties:
+              receipt: { type: string, description: Base64 App Store receipt (appStoreReceiptURL). }
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [save, granted]
+                  properties:
+                    save: { $ref: '#/components/schemas/SaveData' }
+                    granted: { type: integer, description: Subscription periods newly applied by this call. }
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
 # NOTE: POST /shop/paddle/checkout and POST /paddle/webhook (server/metaserver/src/paddle.ts) are
 # deliberately NOT declared here. Like the /ads/callback/* routes in ads.ts, they're registered
 # outside the codegen'd MetaHandlers dispatch because they need non-standard request handling this

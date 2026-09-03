@@ -326,6 +326,10 @@ export class ApiClient {
     return this.shopSvc.iapVerify(platform, receipt);
   }
 
+  iapAppleSync(receipt: string): Promise<{ save: SaveData; granted: number }> {
+    return this.shopSvc.iapAppleSync(receipt);
+  }
+
   paddleCheckout(tierId: string): Promise<{ transactionId: string }> {
     return this.shopSvc.paddleCheckout(tierId);
   }

@@ -19,15 +19,15 @@
 // wechat,stripe,devStub}.ts`. This file keeps only the `createReceiptVerifier` factory, which wires
 // env-var-derived credentials into a `dispatch` closure over the per-platform verify functions —
 // identical to the original body, just importing what used to be same-file private functions.
-import type { IapTierMap, VerifyReceipt } from './iap/types';
-import { appleVerify } from './iap/apple';
+import type { IapTierMap, VerifyAppleSubscriptions, VerifyReceipt } from './iap/types';
+import { appleVerify, appleSubscriptionTransactions } from './iap/apple';
 import { googleVerify, type GoogleServiceAccount } from './iap/google';
 import { wxPayVerify } from './iap/wechat';
 import { stripeVerify } from './iap/stripe';
 import { devVerify } from './iap/devStub';
 import { usdCentsForCoins } from '@nw/shared';
 
-export type { IapTierMap, IapProductKind, IapVerifyResult, VerifyReceipt } from './iap/types';
+export type { AppleSubscriptionTx, IapTierMap, IapProductKind, IapVerifyResult, VerifyAppleSubscriptions, VerifyReceipt } from './iap/types';
 
 /**
  * Build the receipt-verification function. Supports four platforms:
@@ -97,4 +97,22 @@ export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
     if (!result.ok) return result;
     return { ...result, usdCents: usdCentsForCoins(result.coins) };
   };
+}
+
+/**
+ * The reader the auto-renewal sync uses (IOS_RELEASE.md §4.1b), or null when Apple is unconfigured.
+ *
+ * Deliberately NOT part of `createReceiptVerifier`'s dispatch, and deliberately with no dev-stub
+ * branch. That verifier answers "is this one receipt good for one product", which every platform can
+ * answer and a stub can fake; this reads a list of *already-paid-for* periods and hands each one a
+ * grant with no further gate — the single-slot check that normally stops a card from stacking is
+ * bypassed for renewals (see subscriptionCardBuy's `renewal` flag), because Apple has already taken
+ * the money for a period that overlaps the running one. A forgeable receipt there would mint
+ * subscription time on demand, so the only accepted input is one Apple itself just validated.
+ * Null (no NW_APPLE_PASSWORD) means the sync route reports "nothing to sync" rather than granting.
+ */
+export function createAppleSubscriptionReader(): VerifyAppleSubscriptions {
+  const applePassword = process.env.NW_APPLE_PASSWORD ?? '';
+  if (!applePassword) return null;
+  return (receipt: string) => appleSubscriptionTransactions(receipt, applePassword);
 }

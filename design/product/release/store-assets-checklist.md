@@ -117,14 +117,15 @@
 
 ### 1.4 隐私营养标签（Privacy Nutrition Label）
 
-> 🚨 **填之前必须先解决一处自相矛盾（2026-09-03 发现，尚未定）**：下面写的是「不做跟踪、免 ATT 弹窗」，
-> 但客户端**已经在弹 ATT** ——`client/ios/App/App/Info.plist` 有 `NSUserTrackingUsageDescription` + 47 条
-> `SKAdNetworkItems`，`AppDelegate.swift` 的 `requestTrackingAuthorizationIfNeeded()` 在播激励视频前会真的弹
-> （AdMob 接入，`IAP_CREDENTIALS.md §2.1`）。§0.3 的「跨 App 广告跟踪标识：否」同样与之打架。
-> 二选一，**填错是下架级风险**：
-> 1. **保持不跟踪**：AdMob 改成非个性化广告（`npa=1`）、去掉 ATT 请求与 `SKAdNetworkItems`，本节照原样填；
-> 2. **接受跟踪**：本节改成 `Data Used to Track You: 标识符（IDFA）`，§0.3 同步改，ATT 文案找法务过一遍
->    （目前是占位英文）。
+> ✅ **口径已定（2026-09-03）：不跟踪，按下面照填。** 曾经有过一处自相矛盾——本节写着「不做跟踪、免 ATT」，
+> 而客户端因为接了 AdMob 激励视频，`Info.plist` 带 `NSUserTrackingUsageDescription`、`AppDelegate.swift`
+> 播广告前真的会弹 ATT。已按「不跟踪」这一侧统一：AdMob 改为**只请求非个性化广告**（`npa=1`，
+> `nonPersonalizedRequest()`），ATT 请求与 `NSUserTrackingUsageDescription` 双双删除，不再读取 IDFA。
+>
+> `SKAdNetworkItems`（47 条）**保留**：Apple 自己的 App Privacy 口径把 SKAdNetwork 排除在 tracking 之外
+> （聚合层面的安装归因，无用户级标识符，不需要 ATT），AdMob 发布方侧的归因要用它。
+> 代价是 eCPM 会低一些，换到的是「标签写的和二进制干的是同一件事」。
+> 详见 [`IOS_RELEASE.md §12`](../../game/IOS_RELEASE.md) 与三语隐私政策 §6.3。
 
 按 §0.3 填写：
 - **Data Used to Track You**：无（声明不做跨 App 跟踪 → 免 ATT 弹窗）。

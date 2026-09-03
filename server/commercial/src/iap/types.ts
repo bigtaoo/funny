@@ -23,6 +23,24 @@ export interface IapVerifyResult {
 
 export type VerifyReceipt = (platform: string, receipt: string) => Promise<IapVerifyResult>;
 
+/**
+ * One auto-renewable subscription period read out of an Apple receipt
+ * (iap/apple.ts's appleSubscriptionTransactions). Apple issues a fresh transaction for every renewal,
+ * so this is the unit a launch-time sync grants — one period, once, keyed by `transactionId`.
+ */
+export interface AppleSubscriptionTx {
+  /** Apple's per-transaction id. Becomes the grant's orderId as `apple:<transactionId>`, which is what
+   *  makes syncing on every cold start idempotent rather than a monthly-card printing press. */
+  transactionId: string;
+  /** Which of the two subscription SKUs this period belongs to. */
+  product: 'monthly_card' | 'year_card';
+  /** purchase_date_ms, used only to grant the periods in the order they were paid for. */
+  purchasedMs: number;
+}
+
+/** Reads the subscription periods out of an Apple receipt; null when Apple credentials are unconfigured. */
+export type VerifyAppleSubscriptions = ((receipt: string) => Promise<AppleSubscriptionTx[]>) | null;
+
 // Same NW_IAP_PRODUCT_MAP convention as resolveCoinsFromProductId (productId:kind pairs), just with a
 // reserved kind set instead of a coin-tier lookup — the two never collide since IAP_TIERS keys are all
 // t-prefixed (t099, t499, ...) and these kinds are full words.

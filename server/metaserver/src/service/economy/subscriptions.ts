@@ -58,6 +58,33 @@ export async function monthlyCardBuyHandler(core: MetaCore, req: FastifyRequest,
 }
 
 /**
+ * Apply any auto-renewable subscription period Apple has already charged for but the server has not
+ * granted yet (IOS_RELEASE.md §4.1b). The iOS client calls this unprompted on cold start.
+ *
+ * Unlike monthlyCardBuy/yearCardBuy this takes no `platform`: it is Apple-only by construction —
+ * Apple is the one channel whose subscriptions renew without the app being involved. It is also the
+ * one endpoint here that never reports a receipt problem to the caller. Nobody asked for this
+ * request, so there is no one to show an error to; an unusable receipt (no subscription in it, Apple
+ * unconfigured, Apple unreachable) is simply `granted: 0`, and the next cold start tries again.
+ */
+export async function iapAppleSyncHandler(core: MetaCore, req: FastifyRequest, reply: FastifyReply) {
+  if (!core.ensureCommercial(reply)) return;
+  const accountId = accountIdOf(req);
+  const { receipt } = (req.body ?? {}) as { receipt?: string };
+  if (!receipt) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'missing receipt'));
+  const { cols, commercial, now } = core.deps;
+  const clientPlatform = clientPlatformOf(req);
+  const r = await commercial.subscriptionSyncApple({ accountId, receipt, clientPlatform });
+  if (!r.ok) return reply.code(400).send(err(subscriptionErrCode(r.error), r.error));
+  if (r.granted > 0) log.info('apple subscription periods synced', { accountId, granted: r.granted });
+  const w = r.wallet ?? (await commercial.getWallet(accountId, clientPlatform));
+  const save = w
+    ? await mirrorWalletFrom(cols, accountId, w, now())
+    : await getOrCreateSave(cols, accountId, now());
+  return ok({ save, granted: r.granted });
+}
+
+/**
  * Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as
  * the monthly card. Same receipt-verification gate as monthlyCardBuy — see its doc comment.
  */
