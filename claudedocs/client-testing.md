@@ -33,6 +33,17 @@ CI（`.github/workflows/ci.yml`）的 `client unit tests` 步已切到 `npm run 
 
 **⚠️ 2026-08-15：模拟类套件拆出去了（`vitest.sim.config.ts`）**。`test/difficulty/**`（ch1-6 + core）和 `test/pvpSim.test.ts` 跑的是整场无头战斗模拟，占这套件 188s 里的 ~175s，且插桩税按引擎 tick 线性叠加——带 `--coverage` 时整套从 188s 涨到 668s，几乎全部由它们贡献。实测把它们排除后 **client 行覆盖只掉 0.05 个百分点（91.20% → 91.15%）**：它们碰到的 `src/game/**` 早被单元测试覆盖了，它们的真实价值是行为/平衡回归（"第 6 章还打得过吗"），不是覆盖率来源。所以：`vitest.config.ts` 的 `exclude` 排掉这两处，新增 `vitest.sim.config.ts` 专收它们（不带 coverage），`package.json` 里 `test` 和 `test:coverage` **都在末尾链一条 `npm run test:sim`**——一个测试文件都没少跑，只是不再给最贵的那批插桩。带 coverage 的那半从 668s 掉到 ~13s，这才让 CI 有条件在 **PR 和 push-to-main 两端都跑 coverage**（此前 PR 上不跑，导致覆盖率回归和时序 flake 只能在合并后的 main 上暴露，连带挡掉部署——见 `claudedocs/server.md` "CI 稳定性"节）。新增只跑模拟的入口：`npm run test:sim`。
 
+### 分支覆盖率补齐：91.05% → 97.53%（2026-09-03）
+
+行覆盖率有 CI 门禁盯着，**分支覆盖率此前没有**——一个包可以行 96% 过关、分支 91% 而不会有任何东西报出来。2026-09-03 给 `checkCoverageThreshold.mjs` 加了第二条线（分支同样卡 90%，见 [`server-testing-tooling.md`](server-testing-tooling.md)），随后把全仓 19 个包逐个补齐；client 这一轮的记录在 [`server-testing-coverage.md`](server-testing-coverage.md) 的「client 补测」一节（连同 engine 那一半——client 的 `vitest.config.ts` 把 `@nw/engine` alias 到 engine 源码，「逻辑」这一层两边测的是同一批断言的两侧）。
+
+结果：分支 **91.05% → 97.53%**、行 96.17% → 97.19%，14 个新测试文件、约 210 例，**既有测试一行没改**。这里只记两条对写客户端测试有用的结论：
+
+- **「行 100% / 分支 78%」几乎总是同一个原因：那个类从没被 `new` 过。** 最大的一处是 `cache/MemoryMonitor.ts`（24 条，全客户端最大单块）——`texBytes()` 被 `test/render/textureByteAccounting.test.ts` 测得很透，但 `MemoryMonitor` 本身没有任何测试构造过，于是 `install()`、采样 tick、三条泄漏门禁、两条「仍在爬升」条件、重警冷却和整个 `dump()` 载荷都只以默认输入跑过一次。同型的还有 `app/matchEngine.ts`（55%，全客户端最低）：它几乎全是条件展开，漏掉一个是**静默**的——对局照跑，只是没有卡等级/装备/卡组限制/AI 难度。
+- **fixture 的默认值就是分支的盲区。** 所有 fixture 的 `gear` 都是 `{}` → `scenes/CardScene/logic/feedPlan.ts` 那条「带装备的卡可以当材料、永远不能当 feeder」的规则四处都没测到（而它守的是「服务器不会卸下材料，它直接删卡」，即静默拆掉玩家配好的一套装备）；所有 fixture 都带 `res`/`stats`/`cardInv` → `StateReplay` 的 v1 流、`game/meta/**` 的一整排 `?? 0` 兜底全空。写 fixture 时**至少留一个「上一版存档形状」的变体**比事后补分支便宜。
+
+**⚠️ 测试自己的类型也进门禁**：`tsconfig.test.json` 覆盖 `test/**`（下面「静态类型检查」一节），这一轮有 12 处第一次写出来时测试绿、类型红（`ApiError` 是 2 参、`carriedTroops` 吃的是 SLG 账本不是卡牌库、`t()` 的 key 是 `TranslationKey` 联合、`fakeBuffer(duration)` 必填）。**收尾前跑 `npm run typecheck`**，`npx vitest run` 全绿不代表类型过。
+
 ### 覆盖率 scope 扩到「已经被测到的模块」（2026-08-21，ADR-071）
 
 `include` 不再只有 `src/game/**`。起因是一次全仓库门禁体检：`src/game/**` 只有 **1924 可执行行**，是 `client/src` 全部 **55143 行**的 3.5%——数字诚实，但门禁管的地盘很小。

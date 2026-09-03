@@ -18,6 +18,7 @@ import { describe, it, expect } from 'vitest';
 import { NetInputSource, type CmdSink } from '../src/game/net/NetInputSource';
 import { PlayerCommands } from '../src/net/proto/game';
 import type { FrameCmds, ServerMsg } from '../src/net/proto/transport';
+import type { MatchStartInfo } from '../src/game/net/NetInputSource';
 import type { PlayerCommand } from '@nw/engine/types';
 
 class CaptureSink implements CmdSink {
@@ -152,7 +153,7 @@ describe('frame decode', () => {
 // ── The deck field on both match-rebuild messages ───────────────────────────────────────────
 
 describe('deck restriction on match_start and conn_resync', () => {
-  function infoFor(msg: ServerMsg): ReturnType<NetInputSource['matchStartInfo']> {
+  function infoFor(msg: ServerMsg): MatchStartInfo | null {
     const src = new NetInputSource(new CaptureSink());
     src.handleServerMsg(msg);
     return src.matchStartInfo;

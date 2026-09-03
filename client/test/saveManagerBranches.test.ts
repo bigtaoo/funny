@@ -324,7 +324,7 @@ describe('stamina', () => {
       api: api({
         pveEnter: vi.fn(async () => {
           call++;
-          if (call === 1) throw new ApiError(400, 'UNKNOWN_LEVEL', 'no such level');
+          if (call === 1) throw new ApiError('UNKNOWN_LEVEL', 'no such level');
           throw new Error('network');
         }),
       }),
@@ -400,7 +400,7 @@ describe('recordClear and the replay spot check', () => {
     });
     await asked.recordClear('ch1_lv1', 3, replay());
     expect(pveVerify).toHaveBeenCalledTimes(1);
-    expect(pveVerify.mock.calls[0]![0]).toBe('v1');
+    expect(pveVerify).toHaveBeenCalledWith('v1', expect.anything(), expect.anything());
 
     // ② asked, but this run has no replay (a mode that does not record one) → nothing uploaded,
     // and no crash trying to serialise `undefined`.
@@ -495,7 +495,7 @@ describe('flushPending', () => {
     const mgr = new SaveManager({
       store: st,
       api: api({ pveClear: vi.fn(async () => ({ save: cloud, needsReplay: true, verifyId: 'v9' })), pveVerify }),
-      loadReplay: () => undefined,
+      loadReplay: () => null,
     });
     await mgr.refresh();
     expect(pveVerify).not.toHaveBeenCalled();
@@ -508,7 +508,7 @@ describe('flushPending', () => {
 
     const noId = store();
     noId.savePending([{ levelId: 'ch1_lv1', stars: 3, ts: 1 }]);
-    await new SaveManager({ store: noId, api: api({ pveClear, pveVerify }), loadReplay: () => undefined }).refresh();
+    await new SaveManager({ store: noId, api: api({ pveClear, pveVerify }), loadReplay: () => null }).refresh();
     expect(pveVerify).not.toHaveBeenCalled();
 
     const noLoader = store();

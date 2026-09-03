@@ -322,9 +322,9 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 | ~~socialsvc~~ | ~~89.22%~~ → **99.73%** | 96.09% | 见「socialsvc 补测第二轮」一节 |
 | ~~botsvc~~ | ~~89.39%~~ → **98.17%** | 94.66% | 见"botsvc 补测第二轮"一节 |
 | gateway | 91.03% | 93.07% | 45 / 502 |
-| client | 91.05% | 96.17% | 231 / 2583 |
+| ~~client~~ | ~~91.05%~~ → **97.53%** | 96.17% → 97.19% | 见「client 补测」一节 |
 | gameserver | 91.47% | 92.09% | 29 / 340 |
-| engine | 91.93% | 93.32% | 119 / 1474 |
+| ~~engine~~ | ~~91.93%~~ → **99.61%** | 93.32% → 99.27% | 见「engine 补测第二轮」一节 |
 | shared | 95.38% | 98.98% | 82 / 1778 |
 | analyticsvc | 96.54% | 95.80% | 14 / 405 |
 | matchsvc | 97.53% | 93.99% | 11 / 446 |
@@ -339,7 +339,7 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 - ~~**auctionsvc**：`auctionService/trade.ts` 75.7%（26 条，占全包四分之一）、`journalSweep.ts` 72.4%/100% 行、`delivery.ts` 72.7%。~~ → 已补完，见"auctionsvc 补测第二轮"一节。
 - ~~**socialsvc**：`httpApi/helpers.ts` **40.0%**、`friend/chat.ts` 76.8%、`friend/relations.ts` 82.8%/100% 行。~~ → 已补完，见「socialsvc 补测第二轮」一节。
 - ~~**botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。~~ 已于同日补完，见下面的"botsvc 补测第二轮"一节。
-- **client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。
+- ~~**client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。~~ → 已补完，见本文件「client 补测」一节；同轮把 **engine** 也补完了。剩下没做的三个包是 **gateway 91.03% / gameserver 91.47% / shared 95.38%**。
 
 **排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高——**已于同日做完，见下一节**。剩下的：commercial 是百分比最低的、且 149 条集中在 6 个文件里——**已于同日做完，见本文件最后一节**；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完——**worldsvc 与 metaserver 都已于同日按这个建议做完（metaserver 切了 7 组），见本文件最后两节。至此这张表上的 7 个破线包全部补完。**
 
@@ -617,3 +617,65 @@ worldsvc 整体：**分支 86.99% → 91.48%**（3933/4299），行 95.69% → *
 **这个包的全量 `test:coverage` 需要先把 `socialsvc` 也 build 出来**：`test/mail-claim.e2e.test.ts` 直接 `import '../../socialsvc/dist/mailService.js'`。在新 worktree 里第一次跑全量时，2279 例全过、只有这一个 suite 因为 `Failed to load url ../../socialsvc/dist/mailService.js` 整个加载失败，于是 `test:coverage` 非零退出、`coverage-summary.json` 也就不会被消费。同 admin 那一节的 `comp-mail.e2e.test.ts` 是同一类陷阱（那边要 build metaserver + socialsvc），只是这次方向反过来。修法就是 `cd server/socialsvc && npm run build`。
 
 metaserver 整体：**分支 85.86% → 99.47%**（4013 条里覆盖 3992），行 90.74% → **94.65%**（`npm run test:coverage`，**138 test files / 2285 tests 全绿**，`npm run typecheck:test` 干净）。至此上一节那张全仓表里 7 个破线的包全部补完，13 个 server 包的分支覆盖率全部过 90% 门禁。
+
+
+## engine 补测第二轮：**分支**覆盖率，从 91.93% 拉到 99.61%（2026-09-03，worktree `feat/logic-client-branch-cov`）
+
+「全仓分支覆盖率横向核实」那张表补完 7 个破线包之后，剩下 5 个包**过了 90% 门禁但分支低于自己的行覆盖率**：gateway 91.03%、client 91.05%、gameserver 91.47%、engine 91.93%、shared 95.38%。这一轮做的是其中的 **engine（逻辑核心）** 和 **client**，两个包一起看是因为 client 的 `vitest.config.ts` 把 `@nw/engine` alias 到 engine 的 TS 源码——「逻辑」这一层的行为，两边的测试是同一套断言的两侧。
+
+engine 是全仓唯一非 vitest 的包（`tsc -b` 编到 `dist/` 再 `node --test`），所以 lcov 里的行号是**编译产物**的行号；派发时先用 `uncoveredBranchLines.cjs`（同 metaserver 第三轮，脚本仍在 gitignore 的 cache 里）从 lcov 读 `BRDA`，再逐个回读 `dist/*.js` 对应行映射回 `src/*.ts`。7 个新测试文件、121 例，**既有测试一行没改**。
+
+119 条缺口的分布：
+
+| 处 | 条数 | 形状 |
+|---|---|---|
+| `campaign/levelSchema.ts` + 8 个子模块 | 43 | 关卡 JSON 校验器，**零专属测试** |
+| `balance/equipment.ts` | 23 | `accumInstance` 的 affix switch + `applyEquipment` 的四条静默忽略 + 绝对字段的 `?? base` |
+| `blueprintDefs.ts` | 9 | 每个可选属性的 fp 缩放三元 |
+| `Board.ts` | 7 | 三个车道扫描的 skip 臂 |
+| `engine/driver/realtimeDriver.ts` | 6 | 追帧梯 + 累加器上限 + lockstep 停顿 |
+| MovementSystem / AISystem / TraitSystem / threatAssessment / cardSelection / meteorTargeting / pveUpgrades / progression / math.fixed / Card | 31 | 各 1~5 条，多为「只走过一侧的守卫」 |
+
+**`levelSchema` 是上一轮明写「留给下一轮」的那块**（2026-08-15 engine 行覆盖率那节末尾：「真实缺口，留给下一轮」）。这一轮按它写：每条 `fail()` 都有一例，且断言的是**错误的 `path`**而不只是「抛了」——path 就是这个模块的产品（关卡编辑器把它显示给作者）。
+
+**唯一动了 `src/` 的地方**：`blueprintDefs.ts` 的两个 bake 函数改成 `export`，注释里写明是**测试缝**。理由不是覆盖率：这两个函数每个表项只在模块加载时调用一次，所以哪些 `!== undefined` 臂会跑完全由「今天的 `RAW_UNIT_BLUEPRINTS` 恰好设了哪些可选属性」决定——其中八个（`armorEnrageBonus`/`armorEnrageThreshold`/`reflectPct`/`critPct`/`critMult`/`lifestealPct`/`burstOnSingleMult`/`slowOnHit`）**没有任何单位设**，从模块外不可达。它们不是死代码：TraitSystem/CombatSystem 都在读，给一个单位开暴击就是往 raw 表里加这个字段；而失败是静默的——`*_fp` 改名后不在 `...rest` 里，漏掉一个字段的单位就是「新属性直接不见」，不抛异常、金 replay 不变（没有单位有这个字段）、其它套件全绿。`index.ts` 没有 re-export，除测试外无人 import。
+
+**结果**：分支 91.93% → **99.61%**、行 93.32% → **99.27%**、函数 91.77% → 96.97%，456 例全绿（`tsc -b` / `npm run typecheck:test` 干净；受 `blueprintDefs.ts` 波及的 server 全量 `tsc -b tsconfig.build.json` 也干净）。分母 1474 → 1590，因为 v8 只统计**被执行过的函数内部**的分支——`levelSchema` 的子模块、`realtimeDriver` 等模块是这一轮第一次被测量。
+
+**剩下 7 条，全部有不可达证明**：
+
+- `types.js` 5/9（4 条）：TS 给 `export * from` 桶文件生成的 `__createBinding` ES5 兜底（`Object.create ? … : else`）。Node 下恒真，同 shared 的 `mongo/collections.ts`、worldsvc 的 `combatSiege/ctx.ts` 先例。
+- `systems/ai/meteorTargeting.js` 40/41（2 条）：`at()`/`unitsAt()` 的越界夹取。锚点扫描循环自己的边界（`r <= BOARD_ROWS-2`、`c <= BOARD_COLS-2`）保证 `c+1`/`r+1` 永不越界——2026-08-15 那轮已判定不可达，这轮复核结论不变。
+- `balance/pveUpgrades.js` 247（1 条）：`baseHp > 0` 的假臂。表里没有 hp 为 0 的蓝图；它是 `baseAtk > 0`（Medic 攻击 0，本轮已覆盖）的对称伙伴，留着而不是删掉。
+
+## client 补测：**分支**覆盖率，从 91.05% 拉到 97.53%（2026-09-03，同一 worktree）
+
+同一轮的另一半。client 的 231 条缺口摊在 57 个文件上，形状跟 engine 完全不同——不是「某个模块没测」，而是**「行 100% / 分支 78%」的模块**：一个类被 import 过、它的纯函数被测得很透，但类本身从没被 `new` 过，或者所有 fixture 的 `gear` 都是 `{}`、`res` 都在、`stats` 都有。
+
+按缺口从大到小做，14 个新测试文件（其中 `test/audio/` 下 1 个），约 210 例：
+
+| 文件 | 缺口 | 做完 | 这批分支守的是什么 |
+|---|---|---|---|
+| `cache/MemoryMonitor.ts` | 24 | **100%** | 三条泄漏门禁。行 100% 分支 78.8%，因为**没有任何测试 `new` 过这个类**——`install()`、采样 tick、三个超预算触发、两条「仍在爬升」条件、30 s 重警冷却、整个 `dump()` 载荷都只以默认输入跑过一次 |
+| `game/meta/SaveManager.ts` + `SaveStore.ts` | 19 + 7 | **100% / 100%** | 三个乐观装备写的**卸下**那一半（删键 vs 写空串、三个端点对「无」的拼法不一致）、被拒后的自纠 refresh、体力回复算术与结算队列、两条清关路径上的 `needsReplay && verifyId && replay`、两个离线队列对损坏 storage 的解析 |
+| `render/vfx/parseEffectDef.ts` | 14 | **100%** | 每条拒绝臂，以及这个模块**故意**的软硬分界：结构错误抛（构建期挂），未知图元/未知 ease 只 warn 并降级（一个坏图层不能让整个特效变空白） |
+| `net/judgeRunner.ts` | 13 | 96.6% | 裁判「算不出来」的每一种（帧字节解不开、关卡本地没有、帧流不够长、名册快照非 JSON、防御配置坏）、siege 双向判定、proto→engine 的 refresh_hand/upgrade_base/未知变体解码 |
+| `game/campaign/maps/mapSchema.ts` | 10 | **100%** | 章节地图校验的其余拒绝臂 + 坐标越界只 warn |
+| `app/matchEngine.ts` | 9 | **100%** | 全客户端最低的 55%。工厂几乎全是条件展开，漏掉一个是静默的：对局照跑，只是没有卡等级/装备/卡组限制/AI 难度 |
+| `game/net/NetInputSource.ts` | 9 | **100%** | 出入两向的 proto 编解码 + `match_start`/`conn_resync` 两条消息上的卡组字段 |
+| `net/anomaly/reporter.ts` | 11 | **100%** | 冷却、会话上限、防抖，以及每一条「遥测不能伤到玩家」的 catch |
+| `game/replay/StateReplay.ts` | 11 | 98.5% | 建筑时间线（carry-forward 而非插值）、v1（无 `res`）流、空流 |
+| `scenes/CardScene/logic/{feedPlan,cardSort}.ts` | 13 | 94% / 95.5% | 「带装备的卡可以当材料，永远不能当 feeder」这条规则出现的四处 + 确定性 tiebreak |
+| `game/meta/**` + `campaign/progress.ts` | 25 | 多数 100% | 存档不是今天这个形状时的降级：`stats`/`achievements`/`cardInv` 缺失、未知 `defId`、指向已不存在的卡的队伍条目、未知赛季称号、非数字 `version` |
+| `scenes/worldmap/logic/{teamStatus,occupyFrontier}.ts` | 8 | **100% / 100%** | 六种行军 kind 各自的标签（`sweep` 读成 `attack` 是在告诉玩家军队要去打一块它只是在清的地） + `/world/me` 还没回来时的 `(0,0)` 兜底 |
+| `audio/**` | 11 → 6 | 95~100% | 容纳臂：deck 抛、已播完的源节点、解码器 settle 两次、无 warn 钩子时的 `console.warn` 兜底、三路以上时的抢占扫描 |
+
+**结果**：分支 91.05% → **97.53%**（2799 条里覆盖 2730）、行 96.17% → **97.19%**，254 个文件 3045 例全绿；`npm run typecheck`（含 `tsconfig.test.json`）干净。分母 2583 → 2799 同样是 v8 的「只数被执行过的函数」——`MemoryMonitor` 的类体、`matchEngine` 的 replay 分支等是第一次进分母。
+
+**测试自己的类型也过门禁**：`tsconfig.test.json` 把 `test/**` 一起检查（见 [`client-testing.md`](client-testing.md) 的静态类型检查一节），这一轮有 12 处第一次写出来时类型不过——`ApiError` 是 2 参不是 3 参、`carriedTroops` 吃的是 SLG 账本不是卡牌库、`t()` 的 key 是 `TranslationKey` 联合而不是 `string`、`fakeBuffer(duration)` 必填。**先跑 `npm run typecheck` 再宣称完成**，测试绿不等于类型绿。
+
+### 剩下 69 条（37 个文件），下一轮的清单
+
+前六名：`render/bake.ts` 6（「没有 renderer」那一侧——需要 `vi.resetModules` 后在任何 `setBakeRenderer` 之前 import）、`scenes/CardScene/logic/feedPlan.ts` 6（**全部不可达**：`copiesOf.get() ?? 0` 的 map 是用同一个 pool 建的、两处 id tiebreak 的 `=== 0` 臂在库里 id 唯一、`mats.length < FUSION_MATERIAL_COUNT` 在 `pickFeeder` 已要求 `isFusableNow` 之后不可达）、`audio/MusicPlayer.ts` 4（deck 退休簿记 + `silence` 的 catch）、`game/replay/StateRecorder.ts` 3、`net/WorldApiClient/core.ts` 3、`scenes/EquipmentScene/helpers.ts` 3。其余 31 个文件各 1~2 条，多为 `?? fallback` 与平台守卫。
+
+已确认不可达、留档不追的：`sampleParam` 2（`span <= 0` 与循环后的 `return last.v`，两条早退已答完所有能到那里的输入）、`judgeRunner` 2（`winner ?? N` 只在**平局**时触发，campaign/siege 要跑到强制平局阈值 ≈3 万 tick）、`StateReplay` 2（`resSig` 的 `?? []` 在 `if (!f.res) continue` 后面、`keptTicksForUnit` 的 `n === 0` 没有空列表调用方）、`cardSort` 1（不同等级、装备补偿后**恰好相等**的战力）、`tileStyle` 1（源码自己写了 `biomeMixAt` 恒返回 `t=0`，第二臂「effectively dead but kept for the type/shape」）、`cueAssets` 1（`CUE_ASSETS` 每个条目都有 urls）、`migrate` 2（`MIGRATIONS` 是从 0 起的密集表，没有版本空洞）。
