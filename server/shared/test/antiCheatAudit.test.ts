@@ -81,6 +81,23 @@ describe('compareAudit', () => {
     expect(res.suspicious).toBe(false);
     expect(res.overclaim).toEqual({});
   });
+
+  it('a NEGATIVE authoritative count cannot manufacture an overclaim against a silent side', () => {
+    // The judge is an arbitrary online peer, so its numbers are not trustworthy. Before the clamp,
+    // `reported(0) - authoritative(-5)` convicted a player who reported nothing at all: real stat
+    // rollback, statSuspicion++, and an open OPS review row a human then had to un-pick.
+    const res = compareAudit(undefined, { 'kill.archer': -5 });
+    expect(res.suspicious).toBe(false);
+    expect(res.overclaim).toEqual({});
+  });
+
+  it('a negative reported count is treated as 0, not as a credit against a real overclaim', () => {
+    // Symmetric clamp on the client-supplied side: a negative there must not be usable to drag the
+    // subtraction around either. 0 - 3 is still under-reporting, so still clean.
+    const res = compareAudit({ 'kill.archer': -100 }, { 'kill.archer': 3 });
+    expect(res.suspicious).toBe(false);
+    expect(res.overclaim).toEqual({});
+  });
 });
 
 // ── applyRollback ─────────────────────────────────────────────────────────────────

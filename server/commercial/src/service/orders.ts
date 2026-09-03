@@ -49,14 +49,23 @@ export class OrdersService {
      * not race the winner's still-in-flight refund credit. Only a callback arriving well after delivery heals
      * a genuinely dropped refund (crash between the status flip and the credit call). Past the window, the
      * ledger-absence read is still just a plain read — two stale-claim healers landing together would both
-     * see no ledger entry and both credit(). The `healClaimedAt` CAS on the order doc closes that: only the
+     * see no refund ledger row and both credit(). The `healClaimedAt` CAS on the order doc closes that: only the
      * caller whose findOneAndUpdate matches proceeds to credit().
      */
     private async healOrderRefund(order: OrderDoc): Promise<Result<object>> {
       const refund = order.refundCoins ?? 0;
       if (refund <= 0) return { ok: true };
       if (!this.core.isStaleClaim(order.deliveredAt ?? order.ts)) return { ok: true };
-      const landed = await this.core.cols.ledger.findOne({ accountId: order.accountId, orderId: order._id });
+      // `reason: 'gacha_refund'` is load-bearing, not decoration (2026-09-03 fix): the order's OWN debit row
+      // carries the same orderId (shopCharge writes reason:'shop', gachaDraw writes reason:'gacha'), so a
+      // probe keyed on {accountId, orderId} alone matched that debit and reported "the refund already
+      // landed" for every shop/gacha order — leaving this heal permanently inert on exactly the orders
+      // meta's duplicate-item refund targets. Only the credit written below shares this reason.
+      const landed = await this.core.cols.ledger.findOne({
+        accountId: order.accountId,
+        orderId: order._id,
+        reason: 'gacha_refund',
+      });
       if (landed) return { ok: true };
       const claimed = await this.core.cols.orders.findOneAndUpdate(
         { _id: order._id, healClaimedAt: { $exists: false } },

@@ -153,3 +153,62 @@ describe('GameServerClient', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('GameServerClient — server-side match_over', () => {
+  it('delivers match_over to onMatchOver (the server settled the match, no more frame_batches coming)', async () => {
+    // Room.destroy() never closes the socket, so a forfeit/hash-mismatch settlement arrives as a
+    // message and then silence. Without this handler the bot sits in its lockstep loop waiting for
+    // frames that will never come, until playRankedMatch's 20-minute wall-clock guard fires — one
+    // bot occupying a fleet slot (and a live gameserver connection) for twenty minutes per forfeit.
+    const listening = await listen();
+    wss = listening.wss;
+    wss.on('connection', (ws) => {
+      ws.send(Envelope.encode(Envelope.fromPartial({ server: { matchStart: matchStartMsg } })).finish());
+      setTimeout(() => {
+        ws.send(
+          Envelope.encode(
+            Envelope.fromPartial({ server: { matchOver: { winnerSide: 0, mismatch: true, reason: 'hash mismatch' } } }),
+          ).finish(),
+        );
+      }, 10);
+    });
+
+    const onMatchOver = vi.fn();
+    const onFrameBatch = vi.fn();
+    const client = new GameServerClient();
+    await client.connect(listening.url, 'tkt-1', {
+      onMatchStart: () => undefined,
+      onFrameBatch,
+      onDisconnect: () => undefined,
+      onMatchOver,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onMatchOver).toHaveBeenCalledTimes(1);
+    expect(onMatchOver.mock.calls[0]![0]).toMatchObject({ winnerSide: 0, mismatch: true });
+    expect(onFrameBatch).not.toHaveBeenCalled();
+    client.close();
+  });
+
+  it('ignores a match_over that arrives before match_start rather than resolving connect()', async () => {
+    // connect() only resolves on match_start; a stray match_over must not be mistaken for one, or the
+    // caller would start pumping an engine it never built.
+    const listening = await listen();
+    wss = listening.wss;
+    wss.on('connection', (ws) => {
+      ws.send(Envelope.encode(Envelope.fromPartial({ server: { matchOver: { winnerSide: 1 } } })).finish());
+    });
+
+    const onMatchOver = vi.fn();
+    const client = new GameServerClient();
+    await expect(
+      client.connect(
+        listening.url,
+        'tkt-1',
+        { onMatchStart: () => undefined, onFrameBatch: () => undefined, onDisconnect: () => undefined, onMatchOver },
+        40,
+      ),
+    ).rejects.toThrow(/timed out/);
+    expect(onMatchOver).toHaveBeenCalledTimes(1);
+  });
+});

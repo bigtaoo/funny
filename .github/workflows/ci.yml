@@ -649,6 +649,13 @@ jobs:
       # step's, and this step's own output goes to its log. See scripts/checkCoverageThreshold.mjs
       # and claudedocs/server-testing-tooling.md "测试覆盖率百分比工具".
       #
+      # 2026-09-03: BRANCH coverage is now gated at 90% too, on its own bar. It had never been
+      # gated, and measuring the column found every package over the line bar with 7 of the 13
+      # server packages under 90% on branches — so this step goes red until those land. The bar is
+      # a single global knob, not a per-package exemption list (ADR-070 Phase 4e retired that
+      # mechanism deliberately): if a deploy is genuinely needed before the backfills are done,
+      # lower it here, visibly and temporarily, with COVERAGE_BRANCH_THRESHOLD.
+      #
       # TESTS_OK breaks the cascade that made every shard failure report TWICE and hid its own cause:
       # a failed shard produces no coverage/ artifact, the gate then failed with "no coverage/ output
       # found for server/metaserver" (run 31887181835), and that second, louder red is what people
@@ -661,7 +668,7 @@ jobs:
       # suppress the "no coverage/ output for tools/ops" failure the same way it already does for a
       # failed server shard — otherwise one red tools test reports itself twice, with the louder,
       # wronger message winning (the exact cascade the TESTS_OK comment above was added to break).
-      - name: enforce >=90% line coverage per package
+      - name: enforce >=90% line and branch coverage per package
         env:
           TESTS_OK: ${{ needs.server-test.result == 'success' && needs.client-test.result == 'success' && needs.tools-test.result == 'success' }}
         run: node scripts/checkCoverageThreshold.mjs

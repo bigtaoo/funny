@@ -86,16 +86,28 @@ const RAISED_THRESHOLD = 95;
  * A repo-shaped tree carrying coverage output for every package coverageLib knows about — the
  * baseline that each failure case below mutates exactly one thing about.
  *
- * `pct` overrides one package's percentage; `omit` drops one package's coverage/ output entirely
- * (the "its step never ran" case, which is distinct from "it ran and scored 0"); `srcFiles`/
- * `scopeFiles` drive the report's Scope column.
+ * `pct` overrides one package's LINE percentage (statements and functions follow it, since the
+ * v8 provider makes statements identical to lines and no bar is enforced on functions);
+ * `branchPct` overrides its BRANCH percentage independently. The two are separate knobs because
+ * the whole point of the 2026-09-03 branch bar is the package that is fine on one and not the
+ * other — a fixture where every metric moved together could not express the case the gate was
+ * added for, and would have made every pre-existing line-coverage case accidentally a branch
+ * case too. `omit` drops a package's coverage/ output entirely (the "its step never ran" case,
+ * distinct from "it ran and scored 0"); `srcFiles`/`scopeFiles` drive the report's Scope column.
  */
 function coverageTree(
-  opts: { pct?: Record<string, number>; omit?: string[]; srcFiles?: number; scopeFiles?: number } = {},
+  opts: {
+    pct?: Record<string, number>;
+    branchPct?: Record<string, number>;
+    omit?: string[];
+    srcFiles?: number;
+    scopeFiles?: number;
+  } = {},
 ): string {
   const root = mkdtempSync(join(tmpdir(), 'nw-cov-'));
   trees.push(root);
   const pct = opts.pct ?? {};
+  const branchPct = opts.branchPct ?? {};
   const omit = new Set(opts.omit ?? []);
   const srcFiles = opts.srcFiles ?? 3;
   const scopeFiles = opts.scopeFiles ?? 2;
@@ -105,16 +117,18 @@ function coverageTree(
     if (omit.has(pkg)) continue;
 
     const p = pct[pkg] ?? GATED_FIXTURE_PCT;
+    const bp = branchPct[pkg] ?? GATED_FIXTURE_PCT;
     if (LCOV_PACKAGES.includes(pkg)) {
       const hit = Math.round(p * 10);
+      const brHit = Math.round(bp * 10);
       write(
         root,
         `${pkg}/coverage/lcov.info`,
-        `SF:src/f0.ts\nLF:1000\nLH:${hit}\nBRF:1000\nBRH:${hit}\nFNF:1000\nFNH:${hit}\nend_of_record\n`,
+        `SF:src/f0.ts\nLF:1000\nLH:${hit}\nBRF:1000\nBRH:${brHit}\nFNF:1000\nFNH:${hit}\nend_of_record\n`,
       );
     } else {
       const summary: Record<string, unknown> = {
-        total: { lines: metric(p), statements: metric(p), branches: metric(p), functions: metric(p) },
+        total: { lines: metric(p), statements: metric(p), branches: metric(bp), functions: metric(p) },
       };
       for (let i = 0; i < scopeFiles; i++) summary[`/abs/${pkg}/src/f${i}.ts`] = { lines: metric(p) };
       write(root, `${pkg}/coverage/coverage-summary.json`, JSON.stringify(summary));
@@ -293,6 +307,69 @@ describe('checkCoverageThreshold.mjs', () => {
     expect(r.code).toBe(0);
     expect(r.out).toContain('>= 60%');
   });
+
+  // ── the branch bar (2026-09-03) ──────────────────────────────────────────────────────────────
+  //
+  // THE case this bar exists for, and the one no assertion in this file could previously express:
+  // a package at 100% lines and 62% branches. That was a green run for a year, across seven
+  // packages at once, and the only thing that ever reported it was somebody choosing to read a
+  // column by hand. Lines are deliberately pinned ABOVE the bar here — if this case ever starts
+  // passing because the gate stopped checking branches, the line half must not accidentally catch
+  // it and make the failure look like something else.
+  it('fails a package below the branch bar even when its line coverage is perfect', () => {
+    const r = run(THRESHOLD_SCRIPT, coverageTree({ pct: { 'server/admin': 100 }, branchPct: { 'server/admin': 62 } }));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('below the 90% branch-coverage bar');
+    expect(r.out).toContain('server/admin (62.0%');
+    // Not a line failure, and calling it one would send the reader after the wrong work: "add
+    // tests for untested lines" and "exercise the other side of a condition you already run" are
+    // different jobs.
+    expect(r.out).not.toContain('below the 90% line-coverage bar');
+  });
+
+  it('reports the line bar and the branch bar as separate lines, naming a package on each', () => {
+    const r = run(THRESHOLD_SCRIPT, coverageTree({ pct: { 'server/admin': 80 }, branchPct: { 'server/gateway': 70 } }));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('below the 90% line-coverage bar');
+    expect(r.out).toContain('server/admin (80.0%');
+    expect(r.out).toContain('below the 90% branch-coverage bar');
+    expect(r.out).toContain('server/gateway (70.0%');
+  });
+
+  // A package under both bars is named once per bar rather than once in total — each line is
+  // addressed to a different piece of work, so dropping it from the second is dropping half the
+  // instruction.
+  it('names a package under both bars on both lines', () => {
+    const r = run(THRESHOLD_SCRIPT, coverageTree({ pct: { 'server/admin': 70 }, branchPct: { 'server/admin': 70 } }));
+    expect(r.code).toBe(1);
+    const lineMsg = r.out.split('\n').find((l) => l.includes('line-coverage bar')) ?? '';
+    const branchMsg = r.out.split('\n').find((l) => l.includes('branch-coverage bar')) ?? '';
+    expect(lineMsg).toContain('server/admin');
+    expect(branchMsg).toContain('server/admin');
+  });
+
+  it('honours COVERAGE_BRANCH_THRESHOLD in both directions, independently of the line bar', () => {
+    // 85 sits between the raised and lowered branch bars, so a knob that were ignored would give
+    // the same verdict twice; lines stay at the passing default throughout, which is what makes
+    // this an assertion about the branch bar specifically.
+    const tree = coverageTree({ branchPct: { 'server/admin': 85 } });
+    expect(run(THRESHOLD_SCRIPT, tree).code).toBe(1);
+    const lowered = run(THRESHOLD_SCRIPT, tree, { COVERAGE_BRANCH_THRESHOLD: '80' });
+    expect(lowered.code).toBe(0);
+    expect(lowered.out).toContain('80% branches');
+    const raised = run(THRESHOLD_SCRIPT, tree, { COVERAGE_BRANCH_THRESHOLD: '99' });
+    expect(raised.code).toBe(1);
+    expect(raised.out).toContain('below the 99% branch-coverage bar');
+  });
+
+  // The green log has to name both bars: "all 19 gated packages >= 90%" is what it said while it
+  // was checking one metric, and that sentence reading true is precisely how the branch drift went
+  // unnoticed.
+  it('names both bars in the passing log line', () => {
+    const r = run(THRESHOLD_SCRIPT, coverageTree());
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('>= 90% lines / 90% branches');
+  });
 });
 
 // ── scripts/coverageSummary.mjs ──────────────────────────────────────────────────────────────────
@@ -369,11 +446,25 @@ describe('run-summary section', () => {
   });
 
   it('carries the verdict in the heading instead of under two tables', () => {
-    expect(renderSummary(coverageTree()).page).toContain(`## Coverage — ✅ ${GATED.length}/${GATED.length} packages ≥ 90% lines`);
+    // Both gated bars are named, not just lines: the heading is the one line most readers see, and
+    // "✅ 19/19 packages ≥ 90% lines" is the sentence that was true all year while seven packages
+    // sat under 90% on branches.
+    expect(renderSummary(coverageTree()).page).toContain(
+      `## Coverage — ✅ ${GATED.length}/${GATED.length} packages ≥ 90% lines / 90% branches`,
+    );
 
     const failed = renderSummary(coverageTree({ pct: { 'server/admin': 80.1 } }));
     expect(failed.code).toBe(0); // still never the thing that reddens a run
     expect(failed.page).toContain('## Coverage — ❌ 1 below 90% lines');
+
+    const branchFailed = renderSummary(coverageTree({ branchPct: { 'server/admin': 80.1 } }));
+    expect(branchFailed.code).toBe(0);
+    expect(branchFailed.page).toContain('## Coverage — ❌ 1 below 90% branches');
+    expect(branchFailed.page).toContain('below the 90% branch-coverage bar: server/admin (80.1%');
+
+    // Both at once, each counted under its own bar.
+    const both = renderSummary(coverageTree({ pct: { 'server/admin': 80 }, branchPct: { 'server/gateway': 80 } }));
+    expect(both.page).toContain('## Coverage — ❌ 1 below 90% lines, 1 below 90% branches');
 
     const skipped = renderSummary(coverageTree({ omit: ['server/admin'] }), { TESTS_OK: 'false' });
     expect(skipped.page).toContain('## Coverage — ⏭️ not enforced (a test job failed)');
@@ -399,12 +490,41 @@ describe('run-summary section', () => {
     // The two overrides are chosen so headroom order is the REVERSE of alphabetical order —
     // otherwise this case passes just as happily against a plain sort by package name, which is
     // what it looked like the first time it was written.
-    const { page } = renderSummary(coverageTree({ pct: { 'server/worldsvc': 91, 'server/admin': 99 } }));
+    const { page } = renderSummary(
+      coverageTree({
+        pct: { 'server/worldsvc': 91, 'server/admin': 99 },
+        // admin's branch percentage is raised alongside its line percentage so its fragility is
+        // unambiguously the loosest of the three. Left at the fixture default it would TIE with
+        // every other package on branch headroom, the sort would fall through to the alphabetical
+        // tiebreak, and `server/admin` would lead the table — a true statement about the sort, but
+        // it would stop this case saying anything about headroom ordering.
+        branchPct: { 'server/admin': 99 },
+      }),
+    );
     // 910 of 1000 covered against a 90% bar: 900 must stay covered, so 10 lines may go.
     expect(page).toContain('| server/worldsvc | 91.0% | — | +10 |');
     expect(page).toContain('| server/admin | 99.0% | — | +90 |');
     expect(page.indexOf('| server/worldsvc |')).toBeLessThan(page.indexOf('| server/gateway |'));
     expect(page.indexOf('| server/gateway |')).toBeLessThan(page.indexOf('| server/admin |'));
+  });
+
+  // The branch half of the column above. Added with the branch bar (2026-09-03) for the same
+  // reason its line twin exists: a percentage on its own does not say how close to the bar it is,
+  // and 91.5% over 340 branches (5 to spare) reads identically to 91.9% over 1474 (28 to spare).
+  it('prints branch headroom too, and sorts by the TIGHTER of the two headrooms', () => {
+    // server/admin: huge line slack, almost none on branches. server/worldsvc: the reverse. Sorted
+    // by line headroom alone — the pre-2026-09-03 order — admin would sit at the BOTTOM of the
+    // table as the safest-looking row in the repo, which is exactly backwards.
+    const { page } = renderSummary(
+      coverageTree({
+        pct: { 'server/admin': 99, 'server/worldsvc': 91 },
+        branchPct: { 'server/admin': 90.1, 'server/worldsvc': 99 },
+      }),
+    );
+    // 901 of 1000 branches against a 90% bar: 900 must stay covered, so 1 may go.
+    expect(page).toMatch(/\| server\/admin \| 99\.0% \| — \| \+90 \| 90\.1% \| — \| \+1 \|/);
+    expect(page).toMatch(/\| server\/worldsvc \| 91\.0% \| — \| \+10 \| 99\.0% \| — \| \+90 \|/);
+    expect(page.indexOf('| server/admin |')).toBeLessThan(page.indexOf('| server/worldsvc |'));
   });
 
   // `Statements` was identical to `Lines` in every row by construction — the v8 provider makes
@@ -463,6 +583,25 @@ describe('coverage baseline (Δ column)', () => {
     expect(r.out.indexOf('Line coverage dropped')).toBeLessThan(r.out.indexOf('<details>'));
   });
 
+  // The branch twin (2026-09-03). The baseline file has carried the branch percentage since it was
+  // written — nothing read it — so this is the drift that could happen with every number on the
+  // page still green: a package sheds branch coverage, stays over 90%, and no line moves.
+  it('names a package whose BRANCH coverage dropped while still clearing both bars', () => {
+    const root = coverageTree();
+    const baseline = join(root, 'baseline.json');
+    run(SUMMARY_SCRIPT, root, { COVERAGE_BASELINE_OUT: baseline });
+
+    const dropped = coverageTree({ branchPct: { 'server/admin': GATED_FIXTURE_PCT - 1 } });
+    const r = run(SUMMARY_SCRIPT, dropped, { COVERAGE_BASELINE_IN: baseline });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('## Coverage — ✅');
+    expect(r.out).toContain('Branch coverage dropped in 1 package(s)');
+    expect(r.out).toContain('server/admin -1.0');
+    // Not reported as a line drop — no line moved.
+    expect(r.out).not.toContain('Line coverage dropped');
+    expect(r.out.indexOf('Branch coverage dropped')).toBeLessThan(r.out.indexOf('<details>'));
+  });
+
   it('marks a package the baseline never saw as new, not as a move', () => {
     const root = coverageTree();
     const baseline = join(root, 'baseline.json');
@@ -502,5 +641,59 @@ describe('gateHeadroom', () => {
     // The bar is a knob, so the headroom moves with it — not hard-coded to 90 anywhere.
     expect(libEval<number>('lib.gateHeadroom({ lines: { covered: 950, total: 1000 } }, 95)')).toBe(0);
     expect(libEval<number | null>('lib.gateHeadroom({ missing: true }, 90) ?? null')).toBe(null);
+  });
+
+  // The same arithmetic over the other gated metric. `metric` defaults to 'lines' so the four
+  // assertions above still describe every existing caller.
+  it('does the same for branches when asked, and still defaults to lines', () => {
+    const row = '{ lines: { covered: 990, total: 1000 }, branches: { covered: 910, total: 1000 } }';
+    expect(libEval<number>(`lib.gateHeadroom(${row}, 90, 'branches')`)).toBe(10);
+    expect(libEval<number>(`lib.gateHeadroom(${row}, 90)`)).toBe(90);
+    expect(libEval<number>(`lib.gateHeadroom(${row}, 90, 'lines')`)).toBe(90);
+    expect(libEval<number | null>("lib.gateHeadroom({ missing: true }, 90, 'branches') ?? null")).toBe(null);
+  });
+});
+
+// ── the branch bar's own wiring (2026-09-03) ─────────────────────────────────────────────────────
+//
+// Two constants and two lists, pinned from the outside because each has a plausible way to go
+// quietly wrong: a branch bar defaulting to 0 would pass everything while looking configured, and
+// a `belowBranchBar` that were derived from `!reason` (the way `belowBar` was while there was one
+// bar) would classify every branch failure as a line failure.
+describe('branch gate wiring', () => {
+  it('defaults both bars to 90 and reads each from its own env var', () => {
+    expect(libEval<number>('lib.DEFAULT_BRANCH_THRESHOLD')).toBe(90);
+    expect(libEval<{ threshold: number; branchThreshold: number }>('lib.readGateEnv({})')).toEqual({
+      threshold: 90,
+      branchThreshold: 90,
+      testsOk: true,
+    });
+    // Each var moves only its own bar — a single shared knob would be a silent coupling.
+    expect(
+      libEval<{ threshold: number; branchThreshold: number }>(
+        "lib.readGateEnv({ COVERAGE_THRESHOLD: '70' })",
+      ),
+    ).toMatchObject({ threshold: 70, branchThreshold: 90 });
+    expect(
+      libEval<{ threshold: number; branchThreshold: number }>(
+        "lib.readGateEnv({ COVERAGE_BRANCH_THRESHOLD: '70' })",
+      ),
+    ).toMatchObject({ threshold: 90, branchThreshold: 70 });
+  });
+
+  it('sorts each failing package into the list for the bar it actually breached', () => {
+    const root = coverageTree({
+      pct: { 'server/admin': 70 },
+      branchPct: { 'server/gateway': 70, 'server/admin': 70 },
+    });
+    const ev = libEval<{ belowBar: string[]; belowBranchBar: string[]; verdict: string }>(
+      `(() => { const e = lib.evaluate(${JSON.stringify(root)}, lib.readGateEnv({})); return { ` +
+        'belowBar: e.belowBar.map((f) => f.pkg), belowBranchBar: e.belowBranchBar.map((f) => f.pkg), ' +
+        'verdict: e.verdict }; })()',
+    );
+    expect(ev.verdict).toBe('fail');
+    // admin breached both, so it is in both lists; gateway breached only the branch bar.
+    expect(ev.belowBar).toEqual(['server/admin']);
+    expect(ev.belowBranchBar.sort()).toEqual(['server/admin', 'server/gateway']);
   });
 });

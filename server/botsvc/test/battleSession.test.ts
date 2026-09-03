@@ -383,3 +383,83 @@ describe('playRankedMatch — matchmaking / connection failures', () => {
     expect(gameServer.instance.close).toHaveBeenCalledTimes(1);
   });
 });
+
+// Every guard below is a "the match is already over" check. They exist because the three settlement
+// sources — this bot's own engine, the server's match_over, and the transport (abort/disconnect/
+// timeout) — are genuinely concurrent, and the losers of that race all still run their handler. A
+// second settlement is not a no-op that happens to be harmless: it would close() the socket twice and
+// call reject() on an already-resolved promise, which surfaces as an unhandled rejection and kills
+// the whole fleet's process (the same class of failure as the 2026-07-14 load test).
+describe('playRankedMatch — late callbacks after the match already settled', () => {
+  it('ignores a disconnect that lands after the match already resolved (no second finish, no double close)', async () => {
+    const promise = playRankedMatch(opts());
+    await flush();
+    const handlers = gameServer.getHandlers();
+    handlers.onMatchStart(baseMatchStart);
+
+    engine.isGameOver.mockReturnValue(true);
+    engine.getResult.mockReturnValue({ stateHash: 'hash-1', winnerSide: 1 });
+    engine.didIWin.mockReturnValue(true);
+    handlers.onFrameBatch({ toFrame: 3, frames: [] });
+    await expect(promise).resolves.toEqual({ won: true, stateHash: 'hash-1' });
+
+    // Real ordering: the bot reports its result and closes, and the close comes back as a 'close'
+    // event on the same socket a tick later.
+    expect(() => handlers.onDisconnect(1006)).not.toThrow();
+    await flush();
+    expect(gameServer.instance.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a second match_over (already settled by the first)', async () => {
+    const promise = playRankedMatch(opts());
+    await flush();
+    const handlers = gameServer.getHandlers();
+    handlers.onMatchStart(baseMatchStart);
+
+    handlers.onMatchOver({ winnerSide: 1, reason: 'disconnect', mismatch: false });
+    await expect(promise).resolves.toEqual({ won: true, stateHash: '' });
+
+    expect(() => handlers.onMatchOver({ winnerSide: 0, reason: 'disconnect', mismatch: false })).not.toThrow();
+    await flush();
+    expect(gameServer.instance.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('a pump already queued on setImmediate stops instead of stepping a finished match', async () => {
+    // The catch-up chunking (MAX_FRAMES_PER_ADVANCE) means there is always a window where a pump is
+    // scheduled but the match settles first. Without the guard that pump would keep stepping the
+    // engine and submitting commands into a socket playRankedMatch has already closed.
+    const controller = new AbortController();
+    const promise = playRankedMatch(opts({ abortSignal: controller.signal }));
+    await flush();
+    const handlers = gameServer.getHandlers();
+    handlers.onMatchStart(baseMatchStart);
+
+    engine.advance.mockReturnValue({ toSubmit: [new Uint8Array([1])], hasMore: true });
+    handlers.onFrameBatch({ toFrame: 3, frames: [] }); // pumps once, reschedules itself
+    expect(engine.advance).toHaveBeenCalledTimes(1);
+
+    controller.abort(); // settles before the queued pump runs
+    await expect(promise).rejects.toThrow('match aborted: bot logged out');
+
+    await flush(); // let the queued pump run
+    expect(engine.advance).toHaveBeenCalledTimes(1); // it returned at the guard, it did not step again
+    expect(gameServer.instance.submitCmd).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('playRankedMatch — difficulty default', () => {
+  it('builds the engine at difficulty 5 when the caller does not pick one', async () => {
+    // BotSession always passes BOT_AI_DIFFICULTY, so this default only shows up for other callers —
+    // but AIDifficulty is a 1-10 scale where `undefined` would not throw, it would just produce a
+    // silently mis-tuned opponent, so the fallback is worth pinning to a number.
+    const promise = playRankedMatch(opts({ difficulty: undefined }));
+    await flush();
+    const handlers = gameServer.getHandlers();
+    handlers.onMatchStart(baseMatchStart);
+
+    expect(MockBattleEngine).toHaveBeenCalledWith(baseMatchStart, 5);
+
+    handlers.onDisconnect(1006); // tidy teardown so the promise does not dangle
+    await expect(promise).rejects.toThrow();
+  });
+});

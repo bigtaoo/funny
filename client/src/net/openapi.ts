@@ -2429,6 +2429,8 @@ export interface operations {
                 };
             };
             401: components["responses"]["ErrorResp"];
+            403: components["responses"]["ErrorResp"];
+            410: components["responses"]["ErrorResp"];
         };
     };
     getMatchHistory: {
@@ -4184,6 +4186,7 @@ export interface operations {
             403: components["responses"]["ErrorResp"];
             404: components["responses"]["ErrorResp"];
             409: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
         };
     };
     getTitles: {

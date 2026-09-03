@@ -1,7 +1,8 @@
-# 服务端 — 各服务测试覆盖率补齐（2026-08-13 ~ 08-15）
+# 服务端 — 各服务测试覆盖率补齐（2026-08-13 ~ 09-03）
 
 > 从 [`server-testing.md`](server-testing.md) 拆出（2026-08-20，原文件 501 行，ADR-067）。姊妹分册：[`server-testing-tooling.md`](server-testing-tooling.md)（覆盖率工具 / CI）、[`server-testing-typecheck.md`](server-testing-typecheck.md)（`test/**` 类型检查）。
 > 本册是 13 个包逐个把**行覆盖率百分比**拉到 90%+ 的记录，一个包一节。工具怎么接上的、90% 门禁在哪，见上面第一个链接；「哪些代码路径完全没测过」的人工审计在 [`server-testing.md`](server-testing.md)。
+> **2026-09-03 起多了第二个口径**：末尾两节（admin 第三轮、botsvc）是以**分支覆盖率**为目标的记录，中间隔着一节全仓横向核实。行覆盖率有 CI 门禁盯着，分支覆盖率没有——一个包可以行 93% 过关、分支 82% 而不会有任何东西报出来，所以这一维的缺口只能靠人主动去量。
 
 ## metaserver 补测：equipment/auth/economy/paddle 从 0~10% 拉到 90%+（2026-08-13，同日追加）
 
@@ -278,3 +279,341 @@ matchsvc 那一节的姊妹任务，同一次重新核实里 **analyticsvc（87.
 - **httpApi.ts + service/{dist,funnel,ingest,traffic}.ts**（需要真实 Mongo）：`httpApi.ts`（219 行，此前 80.23%，`GET /internal/query?type=...` 分发链尾部几个查询类型分支 + 边界处理未测）→ 100% 行（分支 92.47%，剩 7 行——逐条验证均为"真实 HTTP 语境下结构性不可达"：`clientIp` 的 `Array.isArray(xff)` 分支（Node 会把重复的 `X-Forwarded-For` header 自动拼成一个逗号分隔字符串，永远不会以数组形式出现在 `req.headers`）、`remoteAddress`/`resolveGeo` 的空 IP 兜底（真实已建立的 TCP 连接恒有 `remoteAddress`）、`ERROR_HTTP_STATUS[code] ?? 400`（该文件用到的三个错误码在 `@nw/shared/src/api.ts` 里全部有映射）、`req.method`/`req.url` 的空值兜底（Node 恒会填充这两个字段）——均逐条验证过确实不可达，不是偷懒跳过）；`service/dist.ts`（分支 80.95%）→ **100/100/100**；`service/funnel.ts`（分支 86.56%）→ **100/100/100**；`service/ingest.ts`（分支 80.39%）→ **100/100/100**；`service/traffic.ts`（funcs 85.71%）→ **100/100/100**。扩展了既有的 `test/analytics.e2e.test.ts`（25→43 例）+ `test/service-domains.e2e.test.ts`（24→32 例），未新建文件。
 
 analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverage`，6 test files / 98 tests 全绿——原有 49 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 84.16%→97.56%、函数覆盖 95.83%→98.64%。**未继续追**：`db.ts`（90%，本轮未列入任务清单，非新增缺口）、`index.ts`（0%，bootstrap，同前几个包先例不追）。
+
+## admin 补测第三轮：**分支**覆盖率，从 82.09% 拉到 92.42%（2026-09-03，worktree `feat/admin-branch-coverage`）
+
+前面十五节全部是**行**覆盖率的记录——因为 CI 门禁（`scripts/checkCoverageThreshold.mjs`）只卡行覆盖率，本文档开头那句"逐个把行覆盖率百分比拉到 90%+"也是照这个口径写的。本节是第一节以**分支**覆盖率为目标的：admin 的行覆盖率 93.81% 早就过了门禁，但分支只有 **82.09%**（1530 个分支里 274 个从未执行），而且这个数字**没有任何机制会报出来**——门禁不看它，`coverageSummary.mjs` 的表格里它只是个参考列。
+
+**根因和第一、二轮都不同，不是"某个文件/某一层完全没测"**：这轮缺口分布在已经 100% 行覆盖的文件里。既有 e2e 把每个方法都调过一遍，但**每次都用完整、格式正确的输入，且每个 client 都 `available: true`**，于是同一批代码里三类分支从未跑过：
+
+1. **`?? ''` / `Array.isArray` 之类的兜底**——`httpApi` 把解析后的 JSON body / query 原样转发给 service，任何字段都可以缺席，这些兜底就是为此存在的，却从未收到过缺字段的输入。
+2. **每一条拒绝路径和每一次输掉的竞态**——`tickets.ts` 四处 `if (!res)`（status CAS 输给并发操作 → 409）、三处 `status !== 'pending'` 守卫、`accounts.ts` 的 11000 重复键处理。e2e 结构上做不到确定性地制造这些（两个调用方必须同时抵达 `findOneAndUpdate`）。
+3. **`available: false` 的降级侧**——同 2026-08-20 `promo.test.ts` 那次（见 [`server-testing.md`](server-testing.md)）的形状，这次把剩下五个域（ladder/gacha/mapTemplates/paddleEvents/appeals）补完。
+
+**这批分支不是凑百分比**：`describeFlag`/`describeShopItem` 的可选链决定审计日志 `summary` 里写什么，而审计行是运营改了什么的唯一持久记录——此前没有任何测试钉过"flag 没有 rollout / rollout 全空 / 被关掉"时那行字长什么样；`listAudit` 的能力收窄决定一个没有 `audit.view.all` 的运营能不能看到别人的操作记录（`httpApi` 只查了更弱的 `audit.view.self`）；`resolveAntiCheatReview` 的先封号后结单顺序决定"结单了但封号没落地"会不会发生。
+
+新增 5 个测试文件 + 1 个共享 helper + 给既有 `clients-adminManage.test.ts` 追加一个 describe（共 **168 例**——5 个新文件 160 例 + 追加的 8 例，原有 238 例零改动）：
+
+- `test/stubDeps.ts`（helper）：构造一份 `AdminServiceDeps`，审计日志换成内存数组，域实例仍然过**真实的** `AdminService` 构造函数拿（同 `promo.test.ts` 的先例——`AdminCore.audit`/`requireCap`/`actorNames` 是被测对象，用假的等于测假的）。故意**不做**通用内存版 Mongo：没传的字段就是 `undefined`，测试一旦走到没桩的集合会直接 TypeError，而不是安静地跑进第二套并行实现里。`cols` 按集合逐个合并（比展开深一层），这样只想加 `auditLog.find` 的测试仍然拿得到捕获用的 `auditLog.insertOne`。
+- `test/validators.test.ts`（40 例）：`service/validators.ts` 84% 行 / **48.42%** 分支（全包最差）→ **100/100**。八个纯函数逐个穷举：三个 id 的缺席/空白/自交易、severity 归一、`reasons` 非数组、`num()` 的非有限/负数、三种附件类型 × 缺 id/负数量、9 位 publicId、`validateRollout` 的每个 string[] 字段（非数组/含非字符串/trim 后全空）+ pct 五种非法值 + 未知平台、`validateShopItemInput` 的 null/数组/NaN/布尔、以及上面提到的两个审计摘要格式化器。
+- `test/accounts.test.ts`（23 例）：`service/accounts.ts` 94% 行 / **50%** 分支 → **100/100**。含两条自我保护守卫（super 不能把自己降级/停用，否则整个部署再没人能管账号，除了直接改 Mongo 没有恢复路径）、11000 并发重复键 → 409（且其它 insert 错误原样抛出，别把真 DB 故障报成重名）、空 patch 短路（不写库也不写审计——空 summary 的 `account.update` 读起来像"有人改了这个账号"而其实什么都没改）。
+- `test/analyticsService.test.ts`（33 例）：`service/analytics.ts` 86% 行 / **64.86%** 分支 → **100/100**。审计可见性收窄、from/to 四种组合、三个 id 输入的兜底、每一条 `players`/`antiCheat`/`suspiciousPve` 的 503、`resolveAntiCheatReview` 的先封号后结单、`sampleOnce` 的 `gameLoad ?? 0`（gameserver 不上报时必须采成 0 而不是 `undefined`，否则趋势图是个洞而不是地板）。
+- `test/ticketsService.test.ts`（41 例）：`service/tickets.ts` 94% 行 / **65.27%** 分支 → **100/100**。四条输掉的 CAS、三条状态机守卫、四眼原则的"有别人能批则拒绝自批 / 没别人则允许并在审计里打 `[SELF-APPROVED:no-other-approver]`"两侧、retry 的原子占位（双击的败方拿 409 而不是发第二封邮件）、以及执行器在邮件后端"返回 ok 但没给 recipientCount"和"失败但没给 error"两种半残响应下写进文档和审计的内容。
+- `test/serviceDegrade.test.ts`（23 例）：ladder（6 条）/gacha/mapTemplates/paddleEvents/appeals 的 `available` 两侧 + `AdminError` 的 `message ?? code` + `FlagsService.upsertFlag` 的文档装配（rollout 校验后为空 / desc 空白或非字符串时必须整个字段不写进去）。这一组顺带把各域"读默默降级、写响亮报错"的分工钉下来了：ladder/gacha/mapTemplates 的读返回空值让 ops 控制台照常渲染，gacha 的写抛自己的 `gacha_unavailable`（而不是 client 的通用 502，让运营知道是部署没配好而不是配置被拒），appeals 两个方法**都**报错（申诉队列在后端不可达时显示成"没有申诉"，看起来就像没事可做）。
+- `test/clients-adminManage.test.ts` 追加 8 例：`HttpGachaPoolsClient` 的 `detail ?? error ?? r.error ?? 模板` 消息链和 `r.status || 502`（62.5% → **100%** 分支）——只有每条链的第一环跑过。链上哪一环胜出是运营真正读到的那句话：`detail` 是 meta 自己的校验说明，`r.error` 是传输故障，模板是最后兜底；status 0 的传输故障也是唯一不能显示成 "HTTP 0" 的情况。
+
+admin 整体：**分支 82.09% → 92.42%**，行 93.81% → 95.88%（`npm run test:coverage`，24 test files / **406** tests 全绿，`npm run typecheck:test` 干净）。`src/service` 这一层 70.83% → **96.5%** 分支，用户点名的三个最差文件（validators/accounts/ladder）全部 100%。
+
+**未继续追**（下一轮候选，按剩余分支数排序）：`src/httpApi/*`（84.61% 分支——`helpers.ts` 72.4%、`playerRoutes.ts` 79.2%、`trustSafetyRoutes.ts` 79.4%、`opsConfigRoutes.ts` 80.6%、`monitorRoutes.ts` 82.6%、`accountRoutes.ts` 82.3%、`session.ts` 84.2%、`slgRoutes.ts` 88.2%：都是"query 参数缺席/畸形"和错误映射分支，要走 `httpRoutes.e2e.test.ts` 那套真实 HTTP 注入，一条分支一次请求，比 service 层贵得多）、`src/clients/{analytics,paddleEvents,events,ladder,mismatch,appeals}.ts`（78~89% 分支，同上面 gachaPools 那批消息链/降级形状，`vi.mock` 一下就能补，只是本轮没排进去）、`src/service/{reports,shop,slgAudit,events,world,moderation,auth}.ts`（81~93% 分支，各剩 1~5 条）、`src/db.ts`（75%）、`src/index.ts`（0%，进程 bootstrap，同前几轮先例不追）。
+
+## 全仓分支覆盖率横向核实（2026-09-03，紧接上一节）
+
+admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + client + 5 个 tools）的 `test:coverage` 完整跑了一轮，专门读那个没有门禁盯着的分支列。结论：**行覆盖率全部 ≥90%（门禁的口径），但 13 个 server 包里有 7 个分支覆盖率低于 90%**——也就是说这一维的漂移不是 admin 一家的事，是全仓范围的系统性空白，只是从来没人量过。
+
+按分支覆盖率从低到高（`engine` 走 `node --test` 的 lcov，其余读 `coverage-summary.json`）：
+
+| 包 | 分支 | 行 | 未覆盖分支 |
+|---|---|---|---|
+| ~~commercial~~ | ~~81.25%~~ → **99.6%** | 98.14% | 见「commercial 补测第二轮」一节 |
+| ~~admin~~ | ~~82.09%~~ → **92.42%** | 95.88% | 上一节已补完 |
+| ~~metaserver~~ | ~~85.86%~~ → **99.47%** | 94.65% | 见「metaserver 补测第三轮」一节 |
+| ~~worldsvc~~ | ~~86.99%~~ → **91.48%** | 96.48% | 见「worldsvc 补测第二轮」一节 |
+| ~~auctionsvc~~ | ~~88.18%~~ → **99.58%** | 96.99% | 见"auctionsvc 补测第二轮"一节 |
+| ~~socialsvc~~ | ~~89.22%~~ → **99.73%** | 96.09% | 见「socialsvc 补测第二轮」一节 |
+| ~~botsvc~~ | ~~89.39%~~ → **98.17%** | 94.66% | 见"botsvc 补测第二轮"一节 |
+| gateway | 91.03% | 93.07% | 45 / 502 |
+| client | 91.05% | 96.17% | 231 / 2583 |
+| gameserver | 91.47% | 92.09% | 29 / 340 |
+| engine | 91.93% | 93.32% | 119 / 1474 |
+| shared | 95.38% | 98.98% | 82 / 1778 |
+| analyticsvc | 96.54% | 95.80% | 14 / 405 |
+| matchsvc | 97.53% | 93.99% | 11 / 446 |
+
+`tools/` 五个包全部 ≥94%（ops 99.88%、map-editor 97.04%、animator 96.58%、level-editor 96.23%、vfx-editor 94.37%）——ADR-070 的 4a–4e 把它们的行覆盖率做到 100% 时顺带把分支也带上去了，这一维不需要处理。
+
+各包最大缺口所在（每包按未覆盖分支数排前几名，供下一轮排期）：
+
+- **commercial**（最低）：`internalHttp.ts` 77.3%（22 条）、`gacha.ts` 80.5%、`service/base.ts` 77.3%、`service/gachaDraw.ts` 80.0%、`iap/productResolve.ts` 69.0%、`service/gachaPool.ts` **61.9% 分支 / 100% 行**——最后这个正是 admin 那一节说的形状：行全绿，分支只跑了一半。
+- ~~**metaserver**（绝对数量最多，481 条，摊在 68 个文件上）：`service/telemetry.ts` 74.7%、`internal/promoGachaRoutes.ts` 70.8%、`service/liveops/retention.ts` 80.7%、`economy/orders.ts` 58.3%、`internal/matchReport/eloSettlement.ts` **48.6%**（全仓最低的单文件）。~~ → 已补完，见「metaserver 补测第三轮」一节。
+- **worldsvc**（534 条，58 个文件）：集中在 `combatSiege/`——`encounter.ts` 75.0%（31 条）、`arrival/citySiege.ts` 50.9%、`arrival.ts` 74.7%、`arrival/cityDefenders.ts` 57.4%；另有 `httpApi/sectRoutes.ts` 73.5%/100% 行、`city/training.ts` 69.7%/100% 行。
+- ~~**auctionsvc**：`auctionService/trade.ts` 75.7%（26 条，占全包四分之一）、`journalSweep.ts` 72.4%/100% 行、`delivery.ts` 72.7%。~~ → 已补完，见"auctionsvc 补测第二轮"一节。
+- ~~**socialsvc**：`httpApi/helpers.ts` **40.0%**、`friend/chat.ts` 76.8%、`friend/relations.ts` 82.8%/100% 行。~~ → 已补完，见「socialsvc 补测第二轮」一节。
+- ~~**botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。~~ 已于同日补完，见下面的"botsvc 补测第二轮"一节。
+- **client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。
+
+**排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高——**已于同日做完，见下一节**。剩下的：commercial 是百分比最低的、且 149 条集中在 6 个文件里——**已于同日做完，见本文件最后一节**；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完——**worldsvc 与 metaserver 都已于同日按这个建议做完（metaserver 切了 7 组），见本文件最后两节。至此这张表上的 7 个破线包全部补完。**
+
+**先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支；**六个包已在下面六节全部补完，加上上一节的 admin，7 个破线包一个不剩**），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
+
+## botsvc 补测第二轮：**分支**覆盖率，从 89.39% 拉到 98.17%（2026-09-03，worktree `feat/botsvc-branch-coverage`）
+
+上一节的排期建议把 botsvc 排在第一（37 条缺口，`protoCodec.ts` 一个文件占 8 条），本节是照着做的结果。行覆盖率 92.74% 早就过了门禁，分支 89.39% 差 3 条破线。
+
+**先说一个会让人对不上账的计数细节**：v8 的分支**总数**跑完这轮从 **349 涨到 383**。v8 是按实际执行到的代码去发现分支点的，先前从未进入过的函数体里的分支根本不出现在分母里——所以「缺 37 条」和「缺 7 条」之间不是 30 条的差，补进去的是 64 条。看 `coverage-summary.json` 的绝对分母做同比时要留意这一点。
+
+**缺口分成三种形状，跟 admin 那轮的三种只部分重合**：
+
+1. **整个文件没有自己的测试，只被上层顺带跑过**——`protoCodec.ts`（61.9%）和 `envelopeSocket.ts`（83.3%）都没有测试文件，全靠 `engineDriver.test.ts` / `gameServerClient.test.ts` 走整局对战和真 WS 时捎带执行。捎带执行只会走happy path：喂进编解码器的永远是引擎自己产出的、格式正确的数据，且只有 AISystem 恰好会决定的那一个判别式；socket 永远是开着的。
+2. **真实引擎/真实网络摆不出来的状态**——`engineDriver.ts` 的 6 条全在这里：棋盘上有建筑物且 bot 在 Bottom（镜像视图要连建筑物的 side 一起翻）、AI 在 Bottom 决定了 `upgrade_base`/`refresh_hand`（没有 row 可翻）、`GamePhase.GameOver` 但**没有** `game_over` 事件（game_draw）、同一 tick 里两个终局信号、结束前读 `getResult()`。6 张牌的测试对局跑一万帧也进不去这些状态。
+3. **「已经结束了」的重入守卫**——`battleSession.ts` 的 4 条：三个结算来源（本机引擎 game_over、服务端 match_over、传输层 abort/disconnect/timeout）是真并发的，竞速输掉的那两个照样会把自己的 handler 跑完。第二次结算不是无害的空操作：它会二次 `close()` 并对已 resolve 的 promise 调 `reject()`，变成 unhandled rejection 打死整个 fleet 的进程（跟 2026-07-14 那次同类）。
+
+新增 3 个测试文件 + 给 6 个既有文件追加（共 **58 例**，119 → **177**，既有 119 例零改动）：
+
+- `test/protoCodec.test.ts`（19 例，新）：61.9% → **100%**。畸形帧丢弃（这里抛出去就是 ws `message` 回调里的 uncaughtException）、两个方向上的三个判别式各自穷举、以及每一处 `?? 0`——这些兜底存在的理由是 proto3 的 scalar 没有可选性而引擎的 `col`/`row` 有，跨边界时字段缺席必须落到 0；落成 `undefined` 不会报错，只会让两边模拟悄悄分叉。外加 `matchStateHash` 的槽位顺序敏感性（2026-07-14 那个镜像 stats bug 就是同样两份 stats 换了槽位）。
+- `test/envelopeSocket.test.ts`（7 例，新）：83.3% → **100%**。用真 `WebSocketServer`（同 `gameServerClient.test.ts`），外加一个只 accept 不回应的裸 TCP 监听来制造「握手永远不完成」——这跟「端口拒绝连接」是两条不同的路径，前者必须 `terminate()`，不然半开连接留到进程结束。`send()` 在 socket 已关闭时的 readyState 检查是承重的而非装饰：调用方是个 lockstep 循环，掉线后还会再提交几个 tick 的命令，而 `ws` 对已关闭的 socket 直接抛。
+- `test/engineDriver.stubEngine.test.ts`（11 例，新）：83.78% → **100%**。`vi.mock('@nw/engine')` 只替换 `createGameEngine` 和 `AISystem`，`BOARD_ROWS`/`Side`/`GamePhase` 全部走 `importOriginal` 的真值——`flipRow`/`flipSide` 正是被测逻辑，把它们的输入也桩掉就等于在测这个测试文件自己的算术。既有的 `engineDriver.test.ts` 跑真引擎、是 netplay 契约的权威，两者分工不重叠（红检里能看到：把建筑物的 `flipSide` 拿掉，真引擎那一套全绿，只有这个文件红）。
+- 追加：`battleSession.test.ts` +4（三条晚到回调 + `difficulty ?? 5`）、`bot.test.ts` +5、`internalHttp.test.ts` +4（1MB 上限把上传打断 / 畸形 JSON → 400）、`gameServerClient.test.ts` +2（服务端单方面结算的 `match_over`：Room.destroy() 不关 socket，没有这个 handler 的话 bot 会一直等永远不会来的 frame_batch，直到 20 分钟的墙钟守卫——每次对手掉线就占用一个 fleet 槽位二十分钟）、`worldClient.test.ts` +3、`capacityClient.test.ts` +2、`scheduler.test.ts` +1。
+
+**bot.ts 那两条 `!this.token || !this.worldId` 守卫值得单独记**：`tickSlg` 顶上已经查过 token，公开 API 上唯一能让下面这两条真正触发的路径是**「world 调用 await 期间 `logout()` 了」**——`logout()` 清 token 但不清 worldId，于是顶上的检查通过、底下的不通过。测试就照这个接线（`getWorldMe` 的 fake 里调 `session.logout()`）。真实后果不是抽象的：没有这两条，这个 tick 会继续拿一个 fleet 已经放弃的 token 去 POST `/world/build/upgrade`，在真后端上就是一个 401，挂在一个没人再跟踪为在线的账号上。`trySiege` 那条（L203）到不了——见下面的清单。
+
+botsvc 整体：**分支 89.39% → 98.17%（376/383）**，行 92.74% → **94.66%**，函数 99.03%；19 test files / **177** tests 全绿，`npm run typecheck:test` 干净。
+
+**故意没追的 7 条**（每条都核对过不可达，别当成漏掉再补一遍）：
+
+| 位置 | 为什么到不了 |
+|---|---|
+| `index.ts` | 进程 bootstrap，同前几轮先例不追 |
+| `pool.ts:22` `return 'starter_growth'` | `TIER_THRESHOLDS` 最后一档 `upTo: 1.0`，而 `generateBotPool` 的 `ratio = (i-0.5)/size` 恒 < 1，循环兜底那行公开 API 到不了 |
+| `socialClient.ts:20` `...(body ? {…} : {})` | `SocialClient` 没有任何方法带 body（与 `worldClient` 的 `call` 保持同形状而留的） |
+| `capacityClient.ts:22` `r.error ?? 'network error'` | `fetchInternalJson` 在 `status === 0` 时**总会**带上 `error`，右侧兜底取不到 |
+| `gatewayClient.ts:25` 定时器里的 `if (settled) return` | `finish()` 会 `clearTimeout(timer)`，settle 之后这个回调根本不会跑 |
+| `gameServerClient.ts:31` 定时器里的 `if (gotMatchStart) return` | 同上：`match_start`/`close`/`error`/`catch` 四条路都 `clearTimeout` |
+| `bot.ts:203` `trySiege` 的守卫 | 要同时满足「worldId 未设」和「`slgTick % 5 === 0`」，但 `slgTick++` 在 worldId 那个块**之后**，worldId 一旦设上就不会再清——两个条件在公开 API 上互斥 |
+
+后四条是同一种东西：**先写守卫、后加清理**造成的死分支。留着没害（都是一行的 early return），但也说明这一维数到 100% 是没有意义的目标——不可达的防御分支不会因为写了测试就变得可达。
+
+**红检**（本仓库惯例，改一处实现看指定的测试变红，再还原）：① 去掉 `buildMirroredView` 里建筑物的 `flipSide` → 只有新的 stub-engine 文件红一例，真引擎那套 15 例全绿；② 去掉 `battleSession` `finish()` 的 `if (settled) return` → 晚到回调那一例红；③ 去掉 `upgradeNextBuilding` 的守卫 → 登出竞态那一例红。三次都还原后 177 例全绿。
+
+## auctionsvc 补测第二轮：**分支**覆盖率，从 88.18% 拉到 99.58%（2026-09-03，worktree `feat/auctionsvc-branch-coverage`）
+
+"全仓分支覆盖率横向核实"那一节把 auctionsvc 列在 88.18% 分支 / 95.37% 行（101 条未覆盖，门禁要 90%）。本节按那份缺口清单处理这个包（与上一节的 botsvc 同日、各自独立 worktree）。2026-08-14 那一轮（本文件上面的"auctionsvc 补测"）拉的是**行**覆盖率，这一轮的口径是分支——两轮之间源码没变，变的是量哪一列。
+
+**缺口形状跟 admin 那一轮完全一致，而且更极端**：`journalSweep.ts` 是 **100% 行 / 72.41% 分支**，`listing.ts`/`pricing.ts`/`audit.ts`/`base.ts` 也全是 100% 行。原因是既有 e2e 已经把每个方法都调过了，只是**每次都用形状完整的输入、每个 client 都 `available: true`、每个 CAS 都赢**。具体三类：
+
+1. **缺字段兜底**。`saleMode ?? 'fixed'`（B 竞价字段之前的老文档）、`topBid?.amount ?? startPrice ?? price`、`itemNameOf` 的四个 `?? ''`、`equipInstanceOf`/`cardInstanceOf` 的"payload 里没有 instance"。`createAuction` 永远写 `saleMode`，所以**没有任何 e2e 造得出的挂单能跑到这些兜底**——它们服务的是历史文档和 httpApi 原样转发的 JSON body。
+2. **每一条拒绝路径和每一次输掉的 CAS**。`buyAuction` 的 rev 竞争必须区分"挂单还开着（REV_CONFLICT，可重试）"和"挂单已关（AUCTION_CLOSED，别再试）"；到期扫描必须跳过别的实例已经抢走的文档；journal `begin` 的 `inflight`/`replay`/"另一个 caller 先 reopen 了"三种判决。这些要求竞争写落在 read→write 窗口内，单进程 e2e 结构上到不了。
+3. **下游"答了但答不出 JSON"的一侧**。`metaClient`/`commercialClient`/`mailClient` 的消息兜底链（`body?.error ?? res.error ?? 模板`）此前一次都没跑过——既有 client 测试的假服务器永远回合法 JSON，而 `fetchInternalJson` 在**非 JSON 响应**（meta 前面挂个 502 的网关错误页就是这个形状）和主机不可达时都返回 `body: null`。也就是说生产上真出一次 502，会是这段代码第一次运行。
+
+**做法：stub 集合单测，不是加 e2e**（沿用 `server/admin/test/stubDeps.ts` 的先例，本轮新建 `server/auctionsvc/test/stubDeps.ts`）——**走真实的 `AuctionService` 构造器**，让 pricing/journal/trade 的接线是真货，只 stub 某条分支实际碰到的那一两个集合调用；**故意不做通用内存 Mongo**，于是测试一旦走到没 stub 的集合会抛 `TypeError`，而不是悄悄跑起第二套平行实现。
+
+新增 7 个文件、116 例（既有 255 例零改动）：
+
+- `test/stubDeps.ts`：`stubDeps()` + `mkAuction()`/`mkOrder()`/`dupKeyError()`。commercial/mail 默认是记录数组，`meta` **故意不给默认实现**（没 stub 的 escrow 调用应该炸，而不是假装托管成功）。
+- `test/base-helpers.test.ts`（21 例）：`base.ts` 87.32% → **100%** 分支、`delivery.ts` 72.72% → **100%**。畸形 payload 的每一条兜底，以及 `attachmentOf` 返回 null 时 `deliverItem` **不发信**（"重试也变不出一个从来没存进去的 instance"，所以这算交付完成而不是可重试失败）。
+- `test/trade-branches.test.ts`（29 例）：`trade.ts` 75.7% → **100%** 分支（全包最大的一块，26 条）。三个入口的全部校验拒绝、两条 rev 竞争的诚实区分、`replay` 判决不重复扣款、日限拒绝时**不触发从未 started 的 spend**（否则等于为了退款先扣一次钱）、以及 My-Bids 参与记录写失败被吞掉（币已托管、topBid 已记，抛出去等于把一次成功的出价报成失败）。
+- `test/journal-branches.test.ts`（13 例）：`journal.ts` 87.8% → **100%** 分支 + `journalSteps.ts` 97.05% → **100%**。非 11000 的 insert 错误必须原样抛（不能当成"钥匙被别人拿着"）、TTL 清掉的行、属于别的账号的钥匙、`CLAIM_GRACE_MS` 内的活claim、reopen CAS 输掉；还有回滚时**用托管快照而不是请求 payload** 归还装备（请求里只有 `instanceId`，`grantEquipment` 拿它什么也发不出去——这正是卖家装备会凭空消失的那条路），以及退款补偿**不**被快照改写（替换只对 `grant`/`mailItem` 生效）。
+- `test/journal-sweep-branches.test.ts`（6 例）：`journalSweep.ts` 72.41% → **100%** 分支，本包"行全绿、分支缺一半"的标本。独占 claim 输掉（两个 auctionsvc 实例扫同一个集合，单进程 e2e 到不了）、`kindOf` 的 `expired`/老 `saleMode` 两臂、以及 `rebuild` 的赢家/价格兜底——那两个兜底决定一份重建出来的结算**付给谁**。
+- `test/create-branches.test.ts`（12 例）：`create.ts` 85.71% → **100%** 分支。五种售卖模式参数拒绝、三种 payload 拒绝、journal 非 `fresh` 判决，以及装备专有的两条护栏臂（`buyoutPrice` 也必须在带内——否则挂单时接受、出价时 placeBid 必然 `PRICE_OUT_OF_RANGE`，卖家配的一键买断永久点不动；以及 meta 答了托管但没给 instance 时类目留空而不是崩）。
+- `test/pricing-listing-audit-branches.test.ts`（13 例）：`pricing.ts` 88.88% → **100%**、`listing.ts` 92.85% → **100%**、`audit.ts` 73.33% → **100%**。`equip::0`/`equip:{defId}`（无 level 段）两种退化类目、无参考价类目的冷启动放行、`bumpDaily` 的 upsert 返回空文档、指定买家置顶排序的两个方向、`deletedCount ?? 0`，以及 `scanAnomalies` 对"没有 buyerId"、"没有 soldAt 且 id 里没有可解析 ts"、竞价成交按 topBid 计价三种文档的处理。
+- `test/httpApi-branch-gaps.test.ts`（12 例）：`httpApi.ts` 94.63% → **98.75%** 分支。整条 `/internal/audit/anomalies` ops 路由（G7 反 RMT 拉取，此前**一次都没被调过**——admin 侧测了它的对端，auctionsvc 这一端没有）、create 的 `designatedBuyerId` 转发、bid 的 `amount` 非数字、shared 的 `ERROR_HTTP_STATUS` 没收录的 ErrorCode 必须退化成 400、抛出非 Error 时的兜底日志，以及**不带 Host 头的 HTTP/1.0 请求**（`fetch` 一定带 Host，只能用裸 socket 写请求行）。
+- `test/client-error-fallbacks.test.ts`（10 例）：`metaClient.ts` 90.66% → **100%**、`mailClient.ts` 92.3% → **100%**、`commercialClient.ts` 83.33% → 94.73%、`db.ts` 80% → **100%**。非 JSON 响应（`body: null`）下 `deductMaterial`/三个 `escrow*`/`spend` 的消息兜底链、mail 的 `{ok:false}` 无 error 字段、以及 `createAuctionMongo` 连接失败时日志里的**凭据脱敏**（断言 `://***@` 在、口令不在）。
+
+auctionsvc 整体：**分支 88.18% → 99.58%**，行 95.37% → 96.99%（`npm run test:coverage`，27 test files / **371** tests 全绿；`npm run typecheck:test` 干净；`check:auctionjournal`、`check:filelength` 均过）。`src/auctionService/` 这一层 12 个文件**全部 100% 分支**。
+
+**剩下 3 条刻意不追**（都是公开面上不可达的）：`httpApi.ts` 的 `req.method ?? 'GET'` 和 `req.url ?? ''`（node 的 http server 这两个字段永远有值，只有直接构造假 `IncomingMessage` 才能命中，那测的是假对象不是服务）、`commercialClient.ts` 第 58 行 `res.error ?? 模板` 的模板臂（`fetchInternalJson` 在 `body === null` 时**必然**填 `error`，所以模板永远拿不到手）。`index.ts` 仍是 0%（进程 bootstrap，同前几轮先例不追）。
+
+## socialsvc 补测第二轮：**分支**覆盖率，从 89.21% 拉到 99.73%（2026-09-03，worktree `feat/socialsvc-branch-coverage`）
+
+「全仓分支覆盖率横向核实」那一节把 socialsvc 列在 89.22% 分支 / 94.71% 行（110 条未覆盖，门禁要 90%）；本节按那份缺口清单处理这个包（与上面两节的 botsvc / auctionsvc 同日、各自独立 worktree）。缺口形状跟 admin 第三轮**完全一样**、只是分布更极端：`friend/relations.ts` 和 `mailService.ts` 都是**行 100% / 分支 82%**——既有 e2e 把每个方法都调过，但每次都是「两个账号都有 profile、gateway 是活的、边没有 alias、CAS 从没输过」这一种输入。
+
+**六个新测试文件 + 一个共享 helper + 给两个既有文件各追加一点（共 +116 例，216 → 332，原有 216 例零改动）**：
+
+- `test/stubCols.ts`（helper）：`overrideCollection` / `withCollection` —— 用 Proxy **只换真实 Mongo collection 上的一个方法**，其余方法（含驱动自己加的）原样转发到真 collection。专门用来制造那些两个并发调用者才能造出的分支：`findOneAndUpdate` 返回 `null`（输掉 CAS）、`insertOne` 抛非 11000 的错、`bulkWrite` 返回没有 `upsertedIds` 的半残结果。**故意不做内存版 Mongo**——没桩的方法落到真驱动，测试不可能悄悄跑进第二套手写的查询语义里（同 admin `test/stubDeps.ts` 的理由）。
+- `test/httpHelpers.test.ts`（21 例）：`httpApi/helpers.ts` **40% 分支（全包最低）→ 100%**。`readJson` 的四条兜底（空 body、畸形 JSON 必须 reject 而不是静默 `{}`、超 1MB 的 reject **并且** `req.destroy()`——P0-9 那条修复真正限制内存的是 destroy 而不是 reject、socket error）、`sendErr` 的 `?? 400`（`ALREADY_ACTIVE` 是真实存在但 `ERROR_HTTP_STATUS` 没有条目的 code，测试里顺手断言了这一点，将来它有了条目会立刻红）、`sendSocialErr` 七个分支逐条钉（客户端是按 code 选文案的，"已经是好友"和"被拉黑"是两种 UI）、`numQ` 的缺席/非数字/空串/Infinity。
+- `test/mailServiceBranches.e2e.test.ts`（15 例）：`mailService.ts` 82.53% → **100%**。`toMailView` 对「没有 fromName 的系统邮件」和「`expireAt` 是数字而非 BSON Date 的老文档」（`Number(Date)` vs `getTime()` 是「还剩几天过期」和 NaN 的差别）；`claimMailAtomic` 输掉 claim CAS 必须报 ALREADY_CLAIMED（返回文档就是把同一份附件发两次）；`sendPlayerMail` 的 subject/body 整个缺席、发件人 profile 解析不出来；`expireDays <= 0` 走默认 TTL（调用方用 0 表示"用默认"，不能变成一封已过期的信）；`bulkWrite` 没给 `upsertedIds` 时一个都不算新插入，于是不会重复推送。
+- `test/friendChatBranches.e2e.test.ts`（14 例）：`friend/chat.ts` 76.47% → **100%**。速率限制器的 sweep（它是内存泄漏防护，唯一可观测效果就是那张 map 的内容，所以直接断言 map——同 shared `SlidingRateLimiter` 和 admin `loginAttempts` 的先例）；`getConversations`/`getMessages` 里那批 `?? ''` / `?? 0` / `d.lastBody ?` ——它们服务的是**不是本 service 刚写的**文档：还没有消息的会话行、对方账号已注销、`ts` 是数字；以及 e2e 从没发过的拒绝路径（未知收件人、body 缺席、**发送方**拉黑收件人这一侧的双向 block 检查、发送方自己 profile 解析不出来）。
+- `test/friendRelationsBranches.e2e.test.ts`（18 例）：`friend/relations.ts` 82.79% → **100%**。`FriendView` 的三个可选字段（rank/alias/avatarId）各自的两侧 + `presence[id] ?? false`（好友不在 presence map 里必须读成离线而不是 undefined）；指向已注销账号的好友边 / 待处理请求被跳过而不是渲染成一行没名字的可点条目；`available: false` 的 gateway 下好友列表照常返回、全员离线；`respondFriend` 输掉 status CAS（不能凭一条别人已处理的请求建立好友关系）；`ensureFriendCounter` 遇到**非** 11000 的插入错误必须抛出——吞掉它等于把真实数据库故障报成"计数器已就绪"，然后用一个从没播种过的数字去卡 FRIEND_CAP。
+- `test/familyBranches.e2e.test.ts`（19 例）：`family/membership.ts` 91.47% / `internal.ts` 89.18% / `chat.ts` 91.42% / `shared.ts` 95% **全部 → 100%**。压根不在任何家族里的请求者去 kick/改公告/改族徽（这三个方法紧接守卫就解引用成员行，守卫是唯一挡在 TypeError 前面的东西）；长老踢长老、给自己改职位这两条**没有覆盖的权限规则**（都在防不可恢复的自伤：长老把能制衡自己的同级降级；族长把自己降级之后再没人能升任何人）；非 11000 的 insert 必须抛而不是报成 ALREADY_IN_FAMILY（会让玩家去追一个并不存在的成员身份）；`respondJoinRequest` 输掉 CAS；驳回时家族文档已被解散 → 仍然发信，只是名字为空；以及缺字段的老文档（没有 `activity` 的家族、家族文档已消失的成员行、数字 `ts` 的消息）。
+- `test/socialHttpBranches.e2e.test.ts`（30 例）：`httpApi.ts` 85.1% → **96.49%**、七个路由文件全部 → **100%**。shell 的四个失败出口（`/internal/` 与 `/social/` 下的未知路径各一个 404——顺带走完每个 domain handler 的"没匹配"出口、验不过的 token 的 401 `invalid token`、**非 JSON body → 500**：`readJson` reject 的是 SyntaxError，只有 shell 那条非 `SlgError` 的 catch 分支会把它变成响应而不是一个悬着的 socket）；**没有 Host 头的 HTTP/1.0 请求**（用裸 socket 发——`fetch` 一定会带 Host，HTTP/1.1 也要求带；`new URL(req.url, 'http://' + host)` 是 shell 拿到请求后做的第一件事，`http://undefined` 会抛，所以那个 `?? 'social'` 决定这种请求还能不能被路由）；每一条 `typeof body.x === 'string' ? … : null` / `: 1` / `: 0` 兜底（worldsvc 确实会省略 `delta`/`territoryCount`，这些默认值是活的行为不是死防御）；`sendSocialErr` 的几处交接；`presenceFanOut` 三个提前 return（gateway 不可用 / 没有好友 / 没有 publicId）——它是 fire-and-forget，请求怎样都是 200，这几条钉的是"什么都不推"，settle 沿用 `internalPushHttp.e2e.test.ts` 已有的 `flushFanOut`。
+- 既有 `test/harness.ts` 追加 `FakeMeta.avatar()` / `FakeMeta.elo()`（各自独立方法，不再往 `add()` 后面加位置参数）：`avatarId` 是好友列表和家族名册各自条件展开的字段，`elo` 只经 `/internal/player` 到达 socialsvc（资料卡 extra 查询），此前"这个账号有头像/有 ELO"从任何测试都到不了，那两个字段就从没被写出来过。
+- 既有 `test/metaClient.test.ts` 追加 1 例：`/internal/player` 返回有 rank 但没 elo（95.65% → **100%**）。
+
+结果：**分支 89.21% → 99.73%**（1141 条里只剩 3 条），行 94.71% → 96.09%，`npm run test:coverage` 20 files / **332** tests 全绿，`npm run typecheck` + `npm run typecheck:test` 干净。`src/{family,friend,httpApi}/` 三个目录整体 100% 分支。
+
+**剩下的 3 条不追**：`httpApi.ts:55` 的 `req.method ?? 'GET'` 和 `:64` 的 `req.url ?? ''`——node:http 从不会把这两个留成 undefined，走真实 HTTP 结构上到不了（同一行的 `req.headers.host ?? 'social'` 能到，已用 HTTP/1.0 覆盖）；`src/index.ts` 进程 bootstrap，同前几轮先例不追。
+
+## commercial 补测第二轮：**分支**覆盖率，从 81.25% 拉到 99.6%（2026-09-03，worktree `feat/commercial-branch-coverage`）
+
+「全仓分支覆盖率横向核实」那张表里 commercial 是分支覆盖率**最低**的包（81.25%，795 条里 149 条从未执行），行覆盖率 93.64% 早就过了门禁。本节把它补完：**分支 81.25% → 99.6%（1000 条里只剩 4 条；v8 的分母随「实际执行到的代码」浮动，同一套测试在 worktree 和主检出分别报 996 / 1000 条总数，未覆盖恒为那 4 条）**，行 93.64% → **98.14%**（`npm run test:coverage`，25 test files / **424** tests 全绿——新增 211 例，原有 213 例零改动；`npm run typecheck` + `npm run typecheck:test` 干净）。`src/service` 这一层 11 个文件全部 **100% 行 / 100% 分支**，`src/iap` 7 个文件同样全绿。
+
+**149 条缺口分成三类形状**（跟 admin 第三轮的三类只有第三类重合，前两类是这个包特有的）：
+
+1. **9 处 E11000 catch 块，整块从未执行**（`shop.ts` 的 shopCharge/spend/grant、`gachaDraw.ts` 的 gachaDraw/redeemFate、`recharge.ts` 的 rechargeVerify/verifyNonCoinReceipt/paddleComplete、`promo.ts` 的 promoRedeem、`base.ts` 的 subscriptionCardBuy）。这些是 insert-first 幂等键（§6.5）的**败方**分支：预检查读没查到行、抵达 insert 时另一个调用方已经占掉同一个 key。既有 e2e 把「预检查发现已有行」那一侧测得很透，但要进 catch 需要两个调用方落在同一个几毫秒窗口里——真实 mongod 只有靠赢一次真实竞态才能产生，所以整块代码（连带里面每个决定「败方告诉玩家什么」的 `??` 兜底）一条都没跑过。
+2. **`?? fallback`：读回来的文档没带那个字段**。`orders.pityAfter`（§7 Fate 点数才加的）和 `coinsAfter` 的回填都比集合本身年轻，而真实 Mongo 的 `$inc` 永远会创建它 `$inc` 的字段——所以「返回的文档缺这个字段」这种形状只有**旧版本写的行**和手工修过的行能产生，一次全新的 e2e 跑不出来。同类还有 `applySubscription` 的 `ref.reason`/`ref.orderId`（只有部分调用方传，默认值决定**账本行**里写什么）。
+3. **拒绝路径 / 降级侧**（同 admin 第三轮的第 2、3 类）：非有限金额、pool CRUD 校验、refund heal 的四个守卫、支付渠道端故障（Apple 5xx / socket 断 / OAuth 无 token）、env 映射表写坏。
+
+**这批分支不是凑百分比**——它们各自钉住的东西：
+
+- **非 11000 的驱动错误必须原样上抛**。每个 catch 旁边都有一行 `throw e`，此前一条也没跑过。吞掉它等于把「数据库连不上」变成 `ok:true, 你这笔已经成功了`——对钱包来说是最坏的一种谎话（客户端从此不再重试，玩家的钱没了）。
+- **败方必须报赢家的结果，而不是自己本地算出来的那份**（赢家实际扣的币、实际摇出的 results、实际到达的 status）；赢家的行**已经被回滚掉**时（每个调用点在扣款失败后都会删掉自己占的槽位）还得落到一个无害的中性答案，而不是在缺失文档上崩掉。
+- **`Number.isFinite` 必须在 floor 之前**：`Math.floor(Infinity) === Infinity` 会穿过 `=== 0` 检查直接进无条件 `$inc`，把余额变成 NaN——之后每次 `$inc` 都还是 NaN，不手改 Mongo 没有恢复路径。
+- **一笔不确定的校验必须 throw、不能 return ok:false**：`rechargeVerify` 把 `ok:false` 映射成 `INVALID_RECEIPT`（永久性的「你的收据是假的」，客户端不会重试），而抛出去是 400/INTERNAL_ERROR、调用方可以在商店恢复后重试。把「Apple 抽风了一分钟」翻译成「你这笔无效」，代价是一个付了钱的玩家的币。
+- **db.ts 的连接失败日志**：那句诊断是把 URI 脱敏后拼出来的，而 commercial 的 `NW_COMM_MONGO_URI` 带 `user:password@host`。脱敏一旦坏掉，数据库密码就进了启动日志（会被 ship 到 Loki，有 ops 控制台权限的人都能读）。
+
+新增 **9 个测试文件 + 1 个共享 helper**（211 例，既有 13 个文件零改动）：
+
+- `test/helpers/fakeCols.ts`（helper）：按集合逐个给方法桩，`stubCols()` 只是个类型转换；`replies(...)` 按调用顺序返回预置值、**用超就 reject**（一次意料之外的多余读说明被测代码的形状变了，应该响亮地失败——实测第一次跑就靠这条揪出了一个 describe 内共享桩导致的跨用例串味）。故意**不做**通用内存版 Mongo：桩只返回预置值/抛预置错误，不模拟查询匹配、原子性和更新语义；断言只针对**服务**的决定（返回值、下一步调了哪个集合方法），从不针对「假数据库存了什么」——存储语义仍然由真实 Mongo 的 e2e 文件负责。没桩的集合就是 `undefined`，走到它的路径直接 TypeError（同 admin `stubDeps.ts` 的规则）。
+- `test/dupKeyReplay.test.ts`（41 例）：上面第 1 类。9 个调用点每个三到六态——赢家行可读 / 赢家是**另一个账号**（跨账号余额泄漏，`shopCharge`/`spend`/`grant`/`subscriptionCardBuy` 都有这条守卫）/ 赢家的行已被回滚 / 非 11000 错误上抛；`subscriptionCardBuy` 另加「赢家的 claim 还新鲜 → 只读快照」「过了 15s 宽限期但输掉 healClaimedAt CAS → 还是只读快照」「赢下 CAS → 真的把废弃的 grant 续完」三态。
+- `test/partialRowFallbacks.test.ts`（14 例）：上面第 2 类。`applySubscription`/`applySubscriptionIfInactive` 直接调（它们是 `WalletCore` 的公开 API），断言默认 reason 落进账本行、没有 orderId 时账本行**不带**这个字段、更新后的钱包没有 subscription 子树时到期时间取 `now + days`（不是 `undefined`——这个值是客户端渲染月卡剩余时间的那个数）；外加 gachaDraw 重放老订单行（没有 pityAfter / pityAfter 里没有这个池的键 / coinsAfter 还没回填）、redeemFate 扣完后钱包没有 fatePoints 字段、monthlyCardClaim 领取到的钱包没有 subscription 子树、orderDelivered 两次读之间订单消失、promoRedeem 撞键后读到的兑换行还新鲜。
+- `test/serviceGuards.e2e.test.ts`（52 例，真实 Mongo）：非有限金额（ads/victory/spend 各自 BAD_REQUEST 且**钱包文档都不创建**；`grant` 例外——它本来就允许 amount 0，非有限值坍缩成 0、占槽位不给币）、`orderDelivered` 的 refundCoins 归一（Infinity→0 / 12.9→12 / 负数→0）、refund heal 的四个守卫、`paddleRefund` 三态（未知交易 / 没记 usdCents / 扣一次后重投的 webhook 变 no-op）、`verifyNonCoinReceipt` 的五态（同账号同商品重放 ok / 跨账号 / 跨商品 / 收据本身解析成另一个商品 / 解析成币档）、渠道路由（apple 收据只进 `recharged.apple`、paddle 进 `recharged.web`、认不出来的平台退回自由池——月卡/年卡/成长包各自两侧）、starterBuy 的六条重放与拒绝路径、以及 `gachaPool.ts` 全部 CRUD 校验（五种非法 limited 配置、shadow 静态池 id、编辑自定义池必须保留原始 createdBy/createdAt、关闭未知池 NOT_FOUND、关闭后 endAt 夹到 now 且配置**留着**让 featured legendary 仍可用 Fate 兑换）。
+- `test/internalHttpParsing.e2e.test.ts`（29 例，真实 node:http + 真实 Mongo）：`str()`/`num()`/`strOpt()` 是 meta 的 JSON 到「真正搬币的代码」之间的**全部**类型边界，此前只被格式正确的 body 走过。补了：完全没有 body（读成 `{}`）、body 解析不了（400，且不回显 parser 细节）、字段类型全错（数字 accountId 不能变成钱包主键 `"123"`、字符串 amount 不能变成 `$inc` 里的 NaN）、超 1MB 的 body（要么 400 要么连接被拆掉，两者都不是成功、也没写进任何集合）、非 GET/POST 动词 → 404、三个 `xxx required` 的 400、`minGain` 五态、HTTP/1.0 不带 Host 头也要能路由（URL 是拿 Host 拼的合成 base）、以及每个可选字段的**两侧**（refundCoins 数字 vs 字符串、promo code 三个可选字段给了 vs 没给 vs 类型错、paddle event 的 status/accountId、custom pool 的 config 缺失 / items 不是数组 / 有无 costTen）。另起一个「依赖故意为空」的 service 实例验证：任何意料之外的运行时故障都只能变成裸的 `INTERNAL_ERROR`——`e.message` 可能带着第三方支付渠道的原始响应体或 Mongo 连接串，这个端点的响应里两者都不该出现。
+- `test/iapPlatformEdges.test.ts`（22 例）：Apple/Google/Stripe 的**商店端故障**（5xx、socket 错误、sandbox 重试也失败、OAuth 非 2xx、OAuth 响应里没有 access_token、Play 查询非 404 的错误状态要带响应体抛出）、收据里没有任何交易 / `latest_receipt_info` 缺失退回 `receipt.in_app`、「最新一笔」的 reduce 在最新那笔排**第一**时也要选对、非币 SKU 必须回 `{ok:true, coins:0, product}`（那个 `product` 是 `verifyNonCoinReceipt` 用来比对调用方期望 SKU 的东西，所以月卡收据不能拿去领启动包），以及 `createReceiptVerifier` 的凭证门（service-account JSON 解析失败要 log 且 fail closed、WeChat 只配了一半凭证、Stripe 无 key、未知平台）。
+- `test/productResolve.test.ts`（24 例）：四个 env 驱动的解析函数直接调。规则只有一条——**凡是解析不到精确档位/SKU 的就解析成「什么都不是」（0 币 / null），绝不落到某个默认赠予**：部署的 product map 里打错一个字，购买必须 fail closed，而不是悄悄发最小档（或最大档）。含 map 里没冒号的条目、指向不存在档位的条目、tier 半边为空、map 设了就**不再**回落到内建 `${bundle}.coins.<tier>` 约定、`NW_IAP_BUNDLE` 覆盖与默认两侧。
+- `test/gachaRollEdges.test.ts`（18 例）：`gacha.ts` 里「池配置不是我们假设的那样」的守卫。池定义不是常量——limited 池是抽卡时从 admin 文档 `buildLimitedPool` **现场构建**的，custom 池是运营在控制台逐条填的，而它们引用的物品目录独立演进。所以覆盖：某个稀有度档位为空（硬保底要一张池子里没有的传说）、连 common 也空（退化成合成 id）、odds 表里有 `itemsByRarity` 没有的物品（显示成 common）和反向（权重当 0，不可抽中）、权重小到 ×1e6 后取整为 0（`validateCustomPool` 只要求 `> 0`，这种配置存得下去）、目录里已经不存在的物品（存量池活得比目录长）、tenFloor 是 legendary 时要**重置** pity、以及默认 crypto rng 的 `n <= 1 → 0` 短路（生产每一次抽卡都走它，`randomInt(0)` 会直接抛）。另有 3 例明确标注 off-contract：喂一个 `rng(n)` 返回 `n` 的随机源（超出 `RandInt` 契约、cryptoRand 不可能产生），只为证明循环后的兜底 return 给出的是真实物品而不是 `undefined!`——那几个非空断言是「坏 rng 别把 undefined 塞进一笔已经扣了钱的抽卡结果」的最后一道。
+- `test/walletViewHelpers.test.ts`（10 例）：`devVerifyReceipt` 的决策树（注意它**不是** `iap/devStub.ts` 的 `devVerify`，两者行为不同：前者是本包 `deps.verifyReceipt` 缺席时的兜底，也就是整个 e2e 套件和所有 dev/CI 部署实际用的那个）——空收据、已知/未知 `product:`、已知/未知 `tier:`、无前缀（E2E 的 `topup_` 路径），且 usdCents 必须跟着档位一起回落，否则 `totalRechargeCents` 会被一个和实发币数不匹配的价格顶上去。外加 `limitedConfigFromDoc`/`customConfigFromDoc` 的可选字段两侧（`fillerLegendaries` / `costTen` 缺席时整个字段不能出现，否则 `undefined` 会流到 `buildLimitedPool` 和 ×10 价格里）。
+- `test/dbConnect.test.ts`（1 例）：连不上时脱敏 + 重抛（上面「不是凑百分比」的最后一条）。
+
+**剩下 4 条不追，原因逐条**：`src/index.ts` 1 条（进程 bootstrap，同前几轮先例）；`gacha.ts` 2 条（`rollFixedOddsItem` 的 `total > 0 ? rng(total) : 0` 和随后的循环兜底——`fixedOddsTable()` 的构造决定了 total 永远 > 0：`remainderItemId` 吸收 `100 − Σ`，要让全部权重取整为 0 就得让 Σ 同时是 100 和 0，自相矛盾。**不可达**，不是没测）；`internalHttp.ts` 1 条（`req.url ?? ''`，node 的 http server 永远会设 `req.url`）。
+
+**顺带发现的一个真问题（2026-09-03 已修，worktree `claude/upbeat-pare-d878c2`）**：`orders.ts` 的 `healOrderRefund` 用 `ledger.findOne({ accountId, orderId })` 判断「这笔退款到底落地了没」，但**同一个 orderId 上早就有一行扣款账本**（`shopCharge` 写 `reason:'shop'`、`gachaDraw` 写 `reason:'gacha'`，都带同一个 orderId）。所以对 shop/gacha 订单，这个探针恒为真，heal 永远不会触发——而「重复的 delivery 回调补上崩溃丢掉的重复退款」这套机制，本来就是给 gacha 的重复品退款设计的。查询少了一个 `reason: 'gacha_refund'` 条件。**修法**：探针补上 `reason: 'gacha_refund'`（退款那笔 `credit` 是唯一写这个 reason 的地方），业务逻辑其余部分一字未动。**回归测试**：`serviceGuards.e2e.test.ts` 新增「heals a dropped refund on a shop order, whose own debit row shares the orderId」——先断言那行 `reason:'shop'` 的扣款账本确实带着同一个 orderId（就是它挡住了探针），再模拟「状态翻了、credit 没跑」的崩溃，要求 heal 补一次且只补一次（第二次回调被 `healClaimedAt` CAS 挡住）。这个用例在改 `orders.ts` 之前是红的（`gacha_refund` 账本行 0 ≠ 1）。补测那一轮的两个 heal 用例当时改用 **starter 订单**（cost 0、插入时是 'charged'、没有扣款账本行）才走通这条路径，现在两种订单形状都有覆盖，测试注释已相应改写。
+
+**同时排查了姊妹探针 `recharge.ts` 的 `healRechargeCredit`（`ledger.findOne({ accountId, receiptId })`），结论：没有同类缺陷。**全仓 `receiptId` 只在 `base.ts` 的 `credit()` 里落进账本，而带 `receiptId` 的 `credit()` 调用只有三处（`rechargeVerify` 正常路径、`paddleComplete` 正常路径、`healRechargeCredit` 自己），全部 `reason:'recharge'`，全部是**贷记**——充值路径上没有任何一方会用同一个 receiptId 写扣款行，所以「账本里有这个 receiptId」等价于「这笔充值确实落地了」，探针本身就是精确的，不需要补 reason。
+
+**索引**：`ledger` 上没有 `(accountId, orderId)` 或 `(accountId, orderId, reason)` 复合索引，但**加不加 reason 都不会 collscan**——`ensureIndexes` 里的 `{ accountId: 1, ts: -1 }` 已经把扫描范围钉在单个账号上（实测 explain：`IXSCAN accountId_1_ts_-1` → `FETCH` 里对 `orderId`+`reason` 做残余过滤），新加的 `reason` 条件跟原来的 `orderId` 走同一个 FETCH filter，查询计划一字不变。这个探针只在「delivery 回调重复、且已过 15s 宽限窗」时才跑，频率极低，因此没有为它新增索引。
+
+## worldsvc 补测第二轮：**分支**覆盖率，从 86.99% 拉到 91.48%（2026-09-03，worktree `feat/worldsvc-branch-cov`）
+
+「全仓分支覆盖率横向核实」那节的排期建议说 worldsvc「绝对数量大但摊得很平，适合按目录分组并行做」。本节就是那一轮：**不追全包扫平，只打那一节点名的几个热点文件**，四路并行，一次过线。至此那张表上破线的 6 个包只剩 metaserver 一个。
+
+**⚠️ 本轮最重要的一条教训：分支覆盖率的分母会跟着覆盖率一起涨，「缺 534 条、补 124 条就够」这套算术不成立。**
+开工前按基线算的是「4106 条缺 534，门禁要 90%，至少补 124 条」。跑完全量的实际结果是 **covered +361 / total +193**，分母从 4106 涨到 **4299**。原因是 v8 的覆盖率是**执行推导**出来的：一个从没被调用过的函数，里面的子分支根本不会被枚举进 `BRDA` 记录，也就不进分母。测试跑到的路径变多，能"看见"的分支点跟着变多。本轮 +193 的分母增长**全部落在这次动的 8 个目标文件上**（其余文件只有零星 +1，来自被新测试顺带执行到的路径），对照见下表——这 8 个文件的分支总数从 667 涨到 848。
+**实践含义**：立目标时别照着 `(0.9 × total) − covered` 算需要补多少条，那个 `total` 在你补的过程中会往上跑；按"把最差的几个文件打到 95%+"来定范围，然后跑全量看真实百分比。
+
+**并行方案跟 2026-08-15 那轮 worldsvc 不同，这次一个 mongod 都没起**：那一轮的缺口在路由层/客户端封装/bootstrap，得连真库，所以主会话先起一个共享 `MongoMemoryReplSet` 再把 URI 喂给各 agent（见上面那节 + [[parallel-vitest-agents-shared-mongo-2026-08-14]]）。这一轮的缺口全在**领域计算**里（siege 结算、训练/建造队列、路由分发的参数校验），沿用 [[worldsvc-domain-service-unit-testable-no-mongo]]：手搭 fake `WorldCore` / fake `SiegeCtx` / fake `req`+`res`，四个 agent 共享同一个 worktree、各自 `NW_MONGO_URI=<随便一个不存在的地址> npx vitest run test/<自己的文件>`，命中 `globalSetup.ts` 的 `if (process.env.NW_MONGO_URI) return` 短路——**既跳过起库，也避开四路同时写 `tmpdir()/nw-worldsvc-mongo-uri` 那个握手文件的竞态**。
+**另一个必须绕开的并发点**：agent 迭代时不能跑 `npm test`——worldsvc 的 `pretest` 会重跑 `gen-openapi-world.mjs`，四路并发会互相覆盖 `src/generated/routes.gen.ts`。一律直接 `npx vitest run`，全量 `test:coverage` 由主会话最后串行跑一次。
+
+新增 5 个测试文件、**184 例**（原有 96 文件零改动），按目录分四组：
+
+| 文件 | 分支 | 行 | 剩余未覆盖 |
+|---|---|---|---|
+| `combatSiege/arrival/citySiege.ts` | ~~50.94%~~ (27/53) → **98.71%** (77/78) | 94.28% → **100%** | 111 |
+| `combatSiege/arrival/cityDefenders.ts` | ~~57.44%~~ (27/47) → **91.17%** (62/68) | 97.19% → **100%** | 143-144, 229, 248 |
+| `city/training.ts` | ~~69.69%~~ (46/66) → **94.80%** (73/77) | 100% | 54, 56-57 |
+| `httpApi/sectRoutes.ts` | ~~73.49%~~ (61/83) → **100%** (116/116) | 100% | — |
+| `city/buildings.ts` | ~~74.02%~~ (57/77) → **97.82%** (90/92) | 94.87% → **100%** | 54, 170 |
+| `combatSiege/arrival.ts` | ~~74.71%~~ (65/87) → **99.07%** (107/108) | 85.71% → **100%** | 201 |
+| `combatSiege/encounter.ts` | ~~75.00%~~ (93/124) → **99.31%** (146/147) | 98.36% → **100%** | 150 |
+| `combatMarch/command.ts` | ~~83.84%~~ (109/130) → **98.14%** (159/162) | 89.81% → **99.24%** | 224-225 |
+
+- `test/combatSiege-arrival-city-branch-gaps.test.ts`（33 例）：假 `WorldCore` + 假 `SiegeCtx`。**关键技巧**：要让 NPC 波次走**真实的**便宜结算公式（`resolveSiege`）而不是无头引擎，靠的是 `shouldUseCheapSiege` 的**棋盘溢出**判据——选一个 `cityWaveGarrison` 超过 `SIEGE_SYNTH_ARMY_MAX_TROOPS` 的城池等级，胜负两侧都会落到便宜路径；只用 10× 兵力比那条规则的话只造得出赢的一侧。`runSiegeBattle` 文件级 `vi.mock`（`siege-crash-replay.e2e.test.ts` 的先例），默认实现直接抛"unexpected engine call"，只有 5 个**关于引擎**的用例给它真实现——便宜路径的用例反过来断言引擎从未被调用。
+- `test/combatSiege-encounter-arrival-branch-gaps.test.ts`（42 例）：两处模块级 mock，都写在文件头注释里。`src/siegeWorkerPool` 打桩（打的是 worker 池，不是战斗 helper），这样能钉死结算代码拿到的那份 `SiegeResolution` 具体长什么样、以及引擎崩溃的兜底路径；默认桩返回一个明显是假的哨兵值，谁不小心落到引擎上会**响亮地红**而不是安静地对上。`applySiege` 是个分发器，把五个落地模块（`{base,stronghold,city,crossing,land}Siege`）mock 掉之后，它自己算的锚点/`effGarrison`/`tileLevel`/整个 `replay` 载荷全部在调用边界上可断言。
+- `test/city-training-buildings-branch-gaps.test.ts`（31 例）：`CityTrainingService`/建造服务只碰 `this.core`，桩 `deps.cols`/`deps.now`/`settle` 就够。
+- `test/sectRoutes-branch-gaps.test.ts`（21 例）+ `test/combatMarch-command-branch-gaps.test.ts`（34 例）：`handleSectRoutes(ctx)` 全部入参走一个 `RouteCtx`，拿 `Readable` 假 `req` + 记录 `writeHead`/`end` 的假 `res` + 每个方法一个 `vi.fn()` 的 `sectSvc` 直接驱动，不起 HTTP server。**每条校验用例都断言三件事**：状态码、body 里的 `ErrorCode`、以及对应 `sectSvc` 方法**没有**被调用——只断言"返回了 true"会让"校验失败了但业务照样执行"这种 bug 溜过去。
+
+四组都不 mock `@nw/shared` 的纯函数，期望值用源码同一条公式（真实 `resolveSiege`/`cityWaveGarrison`/`troopTrainCost`/`marchDurationFromPath`/`computeCardStateUpdates`…）现算，常数改了断言跟着动。
+
+**剩余 11 条查证下来全是死分支，不是"难测"**（这也是本轮最后停在 91.48% 而不是继续往上推的原因）：
+
+1. `citySiege.ts:111` / `cityDefenders.ts:229` —— `waveDeployed > 0 ? … : 0`。`waveDeployed` 由 `attackerDeployed > 0 ? attackerDeployed : deployedHp` 得来，而三行之上的 `deployedHp <= 0 → break` 已经保证了 `deployedHp > 0`，`: 0` 臂两个文件里都是死的。
+2. `cityDefenders.ts:143` 的 `e.initialHp ?? 0` —— `resolveCardArmy` 恒写 `initialHp: Math.max(0, troops)`。
+3. `cityDefenders.ts:144(x2)` 的 `ratios.hp/attack[unitType] ?? 1` —— `cardInstances` 和 `resolved` 出自同一份 army+cardInv，`garrisonProgressionRatios` 会给它拿到的每个 unit type 都写键（只跳过 `UNIT_BLUEPRINTS` 里没有的类型，而 `CARD_DEFS` 里没有这种条目）。只有数据出 bug 才可达。
+4. `cityDefenders.ts:137` 的 `save?.cardInv ?? {}` 和 `:248` 的 `d.owner.cardState ?? {}` —— `cardInv` 为空时 130 行的 `resolveCardArmy` 产出空 army，队伍在 132 行的 `sumArmyHp(army) <= 0` 就被跳过了，走不到后面。
+5. `training.ts:54(1/2), 56(x2), 57` 的 `cost[rt] ?? 0` / `resources[rt] ?? 0` 系列 —— `troopTrainCost()` 五种资源单价全是正常数（10/5/5/5/1）且 `qty` 被 clamp 到 ≥1，`cost[rt]` 永远不是 nullish；也正因为每种资源都有正成本，缺键的资源包在 54 行就抛了，56 行的兜底同样不可达。
+6. `buildings.ts:54` 的排队链接臂 —— `BUILD_QUEUE_SLOTS === 1`，38 行的队满守卫先抛；那是给未来付费第二格留的前向兼容代码（源码注释自己写了）。**顺带**：`speedupBuild` 在 114 行的两条目级联循环今天也没有生产可达性，本轮靠手工塞队列才测到。
+7. `buildings.ts:170` 的 `fresh.buildQueue ?? []` —— 165 行已经做过同样的 `?? []`，缺字段的话 `done` 为空、166 行就返回了。
+8. `combatSiege/arrival.ts:201` 的 `defenderId ? … : false` —— 174 行的 `!target?.ownerId → return` 已经保证 `defenderId` 恒真。
+9. `encounter.ts:150` 的 `pw.cardState?.[id]?.currentTroops ?? 0` —— 这行只在 `writeFieldCardState` 之后跑，而后者只在 `currentTotal > 0` 时调用，那就保证了 army 里每个 card id 都有条目。
+10. `command.ts:286` 的 `await restoreClaim?.()` —— 整段 rollback 在 `if (!hasCardArmy && !idleRedispatch)` 之下，而 `restoreClaim` 只在 `if (idleRedispatch)` 里赋值，恒为 `null`。源码 282-284 行的注释自己写明了"今天这条分支上 restoreClaim 恒为 null——但这个函数的分支条件 2026-08-08 已经被拓宽过一次"，是有意的防御性代码。
+
+**这批补测顺带挖出三个跟覆盖率无关的问题**（本轮一行 `src/` 都没改，留给对应负责人）：
+
+- **`combatSiege/arrival/cityDefenders.ts:129-136`：注释承诺的优雅降级并不存在。** 注释说存档读不出来时"`hpMult` 留空，也就是回到 P4 之前的朴素基线"，`CityDefender.fortify` 的文档也说"存档读不出来的队伍 fortify 恰好是 1"。实际上 `save === null` 时 `resolveCardArmy` 拿到空 `cardInv`、条目全被丢掉、队伍在 132 行整个被跳过——**它根本不防守**。也就是说 metaserver 抖一下，城池的整个守军会静默消失，而不是按基线出战。本轮已有一例（`a team whose owner's save cannot be read fields nothing and is skipped entirely`）把**当前真实行为**钉住，注释（也可能是行为本身）需要有人对齐。
+- **`combatSiege/encounter.ts:162`：箭塔对 flat army 的 `marcherDestroyed` 不可达。** `survivors = Math.max(0, troops − min(round(troops × 0.1), 300))` 恒 ≥ `0.9 × troops`，而 `troops <= 0` 在 156 行就 `noOp` 返回了，所以任何 `troops > 0` 的 flat march 都杀不掉。但 `TowerDamageResult.marcherDestroyed` 的文档注释（"flat army 被打到 0 → `advanceMarch` 必须删掉这次行军"）和 `test/field-tower-flat-destroy.e2e.test.ts` 都还在承诺这件事。要么是比例/上限的相互作用改过，要么这个承诺已经过期——归 ADR-051 P5 的负责人。（`combatSiege-occupation-encounter-gaps.test.ts:690` 那条既有用例的长注释一直在绕着同一个问题打转，只是没点破。）
+- **flat / legacy 显式 army 打穿整条阶梯时耐久掉 0**，因为 `teamSiegeValue` 只数 card 条目。不是 bug，但反直觉，本轮用两例钉住了。
+
+worldsvc 整体：**分支 86.99% → 91.48%**（3933/4299），行 95.69% → **96.48%**（`npm run test:coverage`，101 test files 全绿，`npx tsc --noEmit -p tsconfig.test.json` 干净）。
+
+**未继续追**（下一轮候选，按剩余分支数排序）：`combatMarch/startMarchValidation.ts` 85.15%、`core/spawn.ts` 79.1%、`httpApi/admin.ts` 82.79%、`siegeEngine.ts` 82.92%、`territory/structures.ts` 82.45%、`combatMarch/stationed.ts` **61.29%/98.59% 行**、`httpApi/helpers.ts` 78.94%、`mapTemplateService.ts` 76.3%——都是上一轮就标注过"等价路径变体/需要注入故障"的那批，本轮没排进去。
+
+## metaserver 补测第三轮：**分支**覆盖率，从 85.86% 拉到 99.47%（2026-09-03，worktree `feat/metaserver-branch-coverage`）
+
+上一节那张表里最后一个没补的包，也是绝对数量最大的一个：**481 条未覆盖分支摊在 68 个文件上**，没有哪一刀能一次砍掉一大块。这是 metaserver 的第三轮补测，前两轮（本文件第一、二节）都是以**行**覆盖率为目标；这一轮的缺口分布跟那两轮完全不同——不是「某个文件/某一层完全没测」，而是散在已经 90%+ 行覆盖的文件里的兜底、拒绝路径和降级侧。
+
+**方法照搬 admin 第三轮 + engine 那轮的分组并行**，切成 **7 组**（每组一个目录/一个主题，各写各自前缀的新文件，互不改动既有测试、`src/` 一行没动）：
+
+| 组 | 范围 | 新增文件 / 例数 |
+|---|---|---|
+| A | `internal/matchReport/` + `replayDecode.ts` | 4 / 34 |
+| B | `internal/*Routes.ts` | 3 / 76 |
+| C | `economy/` + `service/economy/` | 5 + 1 个共享 fake / 146 |
+| D | telemetry / events / ads / 审计 / `app.ts` | 5 / 74 |
+| E | `service/liveops/` + `service/pve/` | 5 / 53 |
+| F | `accounts/` + save + service 核心 | 6 / 163 |
+| G | 装备 / 卡牌 / 皮肤 / 社交 / 客户端封装 | 6 / 66 |
+
+合计 **34 个新测试文件 + 1 个共享 helper，612 例**。
+
+**派发时给每组的不是「把这个文件补到 90%」，而是逐文件的未覆盖分支行号。** 从上一轮全量跑的 `coverage/lcov.info` 里读 `BRDA` 记录（`taken` 为 `0`/`-` 即未执行），按文件聚合成 `src/<file> [N sites]: <行号列表>`，脚本留在 `server/node_modules/.cache/uncoveredBranchLines.cjs`（gitignore 内，不进仓库；任何包都能复用，参数是一份 lcov）。这样每个 agent 不用猜哪半边没跑过，收工时也能用同一个脚本对自己那批测试单独跑一次覆盖率、直接列出「我还差哪几行」。
+
+**并发跑 vitest 的 Mongo 问题**沿用 2026-08-14 第二轮的解法：先单独起**一个**常驻 `MongoMemoryReplSet`，URI 通过 `NW_MONGO_URI` 发给每个 agent（`globalSetup.ts` 检测到该变量就跳过自己起停的逻辑），每组用自己独占的 DB 名（`nw_meta_grp<X>_branch_test`）。另外禁止 agent 跑 `npm test` / `npm run test:coverage` / `tsc -b`——7 个进程会抢同一个 `dist/`；只跑 `npx vitest run test/<自己的文件>`，覆盖率输出各写各的 `./coverage-grp<X>`。
+
+### 各文件结果
+
+行覆盖率也顺带涨了（**90.74% → 94.65%**），因为这批测试第一次让若干模块的整个函数体在 vitest 下执行。**注意分母从 3403 涨到 4013**：v8 只统计**被执行过的函数内部**的分支，`/internal/skins/{escrow,grant}`、`service/telemetry.ts`、`service/base.ts`、`liveops/profile.ts` 这些此前只有 dist-import e2e、没有任何 src 级测试的模块，它们的分支原先根本不在分母里——所以这里的百分比涨幅同时包含「补上了缺口」和「把此前不可见的分支纳入了测量」。
+
+- **A**：`eloSettlement.ts` 48.57%（全仓最低单文件）、`reportRoute.ts` 83.6%、`peerJudge.ts` 75%、`replayDecode.ts` 55.55% → **四个全部 100%**。
+- **B**：`promoGachaRoutes.ts` 70.83% → **100%**、`mailRoutes.ts` 80% → **100%**、`ladderRoutes.ts` 86.67% → **100%**、`accountRoutes.ts` → 98.73%、`economyRoutes.ts` → 96.83%。
+- **C**：`duplicates.ts` 63.63%、`subscriptions.ts` 74.24%、`adsPromo.ts` 74.07%、`starter.ts` 79.31%、`shop.ts` 86.95% → **全部 100%**；`orders.ts` 58.33% → 98.66%、`delivery.ts` 83.33% → 98.38%、`gacha.ts` 72.54% → 96.55%。
+- **D**：`service/telemetry.ts` 74.71%（此前零专属单测）、`clientLog.ts` 87.5%、`anticheatAudit.ts` 89.47%、`moderation.ts`、`reputationDecay.ts`、`coinAnomalyAudit.ts` → **全部 100%**；`ads.ts` → 98.63%、`events.ts` → 96.22%。
+- **E**：`liveops/profile.ts` 76.59%（此前零专属单测）、`liveops/events.ts`、`lobbyBadges.ts`、`liveops/helpers.ts`、`pve/verify.ts` 84.5%、`pve/clear.ts` → **全部 100%**；`retention.ts` 80.73% → 98.61%、`pve/helpers.ts` → 98.5%、`pve/stamina.ts` → 96.55%、`achievements.ts` → 96.66%。
+- **F**：`service/base.ts` 60%（本组最差、此前零专属单测）、`save.ts` 66.66%、`accounts/resolve.ts` 66.66%、`accounts/profile.ts` 77.5%、`service/inventory.ts` 71.87%、`accounts/{oauthBind,password}.ts`、`service/{save,social,auth}.ts`、`accountCache.ts`、`auth.ts` → **全部 100%**。
+- **G**：`social.ts` 70%、`ladderSeason.ts` 70.37%、`skin.ts`、`mail.ts`、`replayArchive.ts`、`cards/{fuse,query}.ts`、`equipment/{reforge,salvage}.ts`、`commercialClient.ts`、`socialsvcClient.ts` → **全部 100%**；`enhance.ts` 98.66%、`craft.ts` 97.43%、`paddle/webhookRoute.ts` 98.5%。
+
+### 这批分支不是凑百分比
+
+三种形状跟 admin 那一节归纳的完全一致，但这个包里它们守的是钱和存档：
+
+- **输掉的竞态**。`mutateSave` 的 CAS 靠「包一层 `findOneAndUpdate`、只让指定那一次失配」变成确定性的：输一次时断言输家**重读到赢家的 150 金币再加 5**（而不是拿旧值算出 105 覆盖回去），输四次时拿 `REV_CONFLICT`。签到 / 每日 / 周宝箱 / 成就 / 称号 / 头像 / 皮肤 / 旗标 / PVE 通关 / PVE 校验十条领取路径的 409 尾巴全部钉上了「**什么都没领、一枚金币没发**」，而不只是钉状态码——半发才是这类接口真正的事故形态。
+- **发放失败之后的可恢复性**。day-14 卡牌、周奖励 tier-15 装备发放失败时，领取已记录但库存计数没动，幂等账本里是 `committed:false`——所以文档承诺的「重试会重新发**同一次抽到的东西**」是可验证的；`salvage` 的扣款失败断言 claim 留在 `committed:false`（退款可恢复）而不是被删；`enhance`/`craft` 中途材料被抽走时断言幂等键**被释放**——可重试和永久卡在「处理中」的区别。
+- **错误消息链上哪一环胜出**。`commercialClient.post()` 里上游返回 JSON 字面量 `null` 是唯一让 `body === null` 而 `error` 为 undefined 的形状，抛出的消息退化成 `status 200`；`socialsvcClient` 的 `data?.error ?? r.error ?? ''` 三环全钉，包括最后消息裁成 `socialsvc insertSystemMail failed: 200` 的那种。这些字符串就是运营真正读到的那句话。
+- **兜底决定的是「0 还是一个洞」**。telemetry / clientLog 缺字段时落成 `0` 还是 `undefined`，在趋势图上是地板和缺口的区别，而缺口读起来像一次故障。
+
+### 顺带挖出的源码问题 → **已全部修复**（2026-09-03 后续任务，worktree `claude/happy-khorana-0fa94b`）
+
+补测那一轮 `src/` 一行没改，把九个问题全部留档。随后的修复任务按下面的顺序逐条关闭，`src/` 的每一处改动都配了测试；其中五条原本有测试把**错误行为**钉死（标了 `KNOWN GAP` 或把 bug 写进用例名），修的时候在同一次改动里把断言翻了过来——所以「测试变红」在这几条上是预期结果，不是回归。
+
+1. **`shared/src/season.ts` + `ladderSeason.ts`：`reachedRanks` 这本「终身账本」每次赛季迁移都被清空。** `types.ts:178` 写着 "lifetime ledger…not reset across seasons"、`season.ts:76` 写着首达奖励 "granted only once per lifetime, cannot be farmed"，但 `makePvpSeasonDefaults` 返回 `reachedRanks: []`，`migrateIfStale` 把 defaults 摊到 `save.pvp` 上，账本就没了。下一场排位重跑 `computeFirstReachGrant(rank, [])`，软重置后段位及以下的首达奖励会**再发一次**。commercial 的 `orderId` 幂等（`rank.first.<acct>.<newly.join('.')>`）只挡住「重新达成的段位集合完全相同」那一类；软重置后一次性拿到 `bronze.silver.gold`（上赛季分几步爬的）就是个新 orderId，真出金币。
+   **修法**：`makePvpSeasonDefaults` 加第三个参数 `reachedRanks: RankId[] = []` 并原样带出（拷贝一份，不别名调用方的数组），`migrateIfStale` 传 `save.pvp.reachedRanks ?? []`。挡在源头而不是在 `migrateIfStale` 里事后补一行 —— 这个函数叫 "defaults"，但它返回的字段里只有这一个不是「本赛季的」，把这件事写进签名，下一个调用方就不会再踩。默认值 `[]` 留给唯一真·新存档的调用方 `makeNewSave`。测试：`shared/test/season.test.ts` 加了「账本带过去」和「拷贝而非别名」两例，`items-social-branch-season.test.ts` 加了迁移后账本原样保留 + 老存档没有账本时迁成 `[]` 两例（这一条原本就是「A 组的迁移测试故意不断言 `reachedRanks`」，现在断言了）。
+2. **`skin.ts`：`grantSkin` 先铸 instance 再检查存档是否存在。** save 不存在时路由回 404 并（正确地）释放预留、邀请重试；而重试时那条孤儿 `skinInstances` 行让幂等检查提前 `{ok:true}` 返回——auctionsvc 收到 **200**、`skinInstances` 有行，但 `inventory.skins`（模块自己的头注释说这是 "do I own at least one" 的唯一视图，装备选择器 / everOwned / auctionsvc 合约都读它）永远拿不到 id，而 `assembleSkinCounts` 只往另一个方向自愈。皮肤既不显示也不能装备，交易却读作已交付。
+   **修法**两半：(a) 铸 instance 之前先确认存档存在，孤儿从此不会产生；(b) 删掉 `if (already) return {ok:true}` 这个提前返回——铸 instance 本来就按 id 幂等，而下面那个循环在 `inventory.skins` 已含该 id 时本来就是空转，所以直接落到循环里既是重试该做的事（把镜像补上），也顺手**治好修复前已经留下的孤儿**。测试：`internal-routes-branch-economy.test.ts` 里那条 `retry after a save-not-found grant reports ok but leaves inventory.skins empty` 翻成 `…delivers the skin into inventory.skins`（并断言 404 那次**没有**铸出孤儿），另加一例「预置一条孤儿行 → 重试把 `inventory.skins` 补上且不重复铸」。
+3. **`anticheatAudit.ts`：peer judge 返回负数统计会给无辜玩家定罪。** `compareAudit` 算 `reported ?? 0` 减 `authoritative ?? 0`，裁判对一个什么都没上报的一方回 `{"kill.archer": -5}` 就得出 `overclaim: 5`——真回滚战绩 + `statSuspicion++` + 开一条 OPS 审查单。
+   **修法**：`compareAudit` 里两侧都 `Math.max(0, …)`。两侧而不是只夹裁判那侧——`reported` 来自客户端自己的战报，同样不可信；计数不可能为负，夹掉不丢任何信息。**连带**：这条 bug 曾是 `anticheatAudit.ts:194` 那个 `reported ?? {}` 分支唯一的可达方式，夹住之后它就不可达了，所以把 `?? {}` 从「定罪时」上移到「算 `compareAudit` 时」（`parsed[side] ?? {}` 同样处理）——某一方在任一张表里缺席是干净路径上的日常，两侧默认值这才都被跑到，分支没丢。测试：`shared/test/antiCheatAudit.test.ts` 加负数裁判 + 负数上报两例；`telemetry-events-branch-audit.test.ts` 里那条 `a side that reported nothing is still convicted when the judge returns a NEGATIVE stat` 翻成 `is NOT convicted`（断言无审查单、战绩没动、判定 `clean`），另加一例「裁判的表里整个缺这一方」。
+4. **`accounts/profile.ts`：`ensurePublicId` 对已硬删除的账号会 500。** accounts 行不存在时那条 guarded `updateOne({_id, publicId:{$exists:false}})` 永远不匹配、回读也读不到，八次重试烧完抛 `failed to allocate publicId after retries`。持一枚仍有效的 JWT 打 `GET /save` 就能复现——应该是 410（`base.ts` 硬编码的那个），实际是 500。
+   **修法**：`ensurePublicId` 开头那次读本来就会拿到 `null`，直接在那里抛一个专门的 `AccountGoneError`（同文件导出，`accounts.ts` 已 `export *`）；`SaveService.getSave` 捕获它并回 `410 ACCOUNT_DELETED`——跟 `rejectIfBanned` 给**软**删除的回答一模一样，客户端那套「账号没了」的处理不用再分两种情况。`getSave` 因此补上了 `reply` 形参（`MetaHandlers` 里本来就有，只是实现没用）。其余调用方（auth/oauthBind 刚解析完账号、内部 accountRoutes）不受影响：它们要么账号必然存在，要么原本也是 500。测试：`accounts-core-branch-profile.test.ts` 加「行不存在 → 立刻抛 `AccountGoneError`，一次写都没发」，`accounts-core-branch-service.test.ts` 加 `GET /save` 的 410。
+5. **`delivery.ts`：`mirrorWalletFrom` 的「镜像已是最新就跳过写」优化对未订阅账号从来不生效。** 新建的 `monetization` 对象总带 `subscriptionLastClaimDay` 键，而值为 `undefined` 时写入不会留下这个键，于是存进去的子文档缺它，跟 `stableStringify` 出来的新对象永远不相等。结果每次 `GET /save` 都重写镜像并推高 `save.rev`——正是 2026-07-27 那次改动想消灭的「跟在途 `PUT /save` 撞出假 409」。
+   **修法**：`stableStringify` 序列化对象时**丢掉值为 `undefined` 或 `null` 的键**。选它而不是「写入前删键」是因为它把两侧对称地归一了：缺键、`undefined`、`null` 三种形状比出来相同，无论驱动把 `undefined` 落成「丢字段」还是「写 null」都对；而且这是个比较用的规范化函数，做这件事是它的本分。测试：`economy-branch-delivery.test.ts` 里的 `KNOWN GAP` 那条翻成「未订阅账号也跳过写（rev 不变）」，另加一例「真改了 `subscriptionLastClaimDay` 仍然会写」——证明跳过比的是内容，不是把这个字段忽略掉了。
+6. **`ads.ts`：gstatic 返回畸形密钥响应会毒化缓存五分钟。** `getAdmobKeys` 对任何 2xx 都缓存 `json.keys ?? []`，于是一次「200 但没有 `keys`」让整个 `ADMOB_KEY_TTL` 窗口内每个 AdMob SSV 回调验签失败：奖励静默丢失，而且回 400 让 Google 停止重试。
+   **修法**：2xx 但拿不到可用密钥列表（缺字段或空数组）时抛错、**不写缓存**，跟上面非 2xx 那条一个待遇；`verifyAdmobCallback` 原有的 catch 仍然把它变成一次拒绝，但下一个回调会重新去取。测试：`telemetry-events-branch-ads.test.ts` 里 `gstatic answers 200 with no keys` 那条把 `expect(fetchMock).toHaveBeenCalledTimes(1)`（「空列表被缓存了」）改成 `2`（「什么都没缓存，第二次重新取」），另加空数组 `keys: []` 一例。
+7. **`shared/src/api.ts:132` 的 `ERROR_HTTP_STATUS` 缺五个域真的会返回的码**：`NOT_REFORGE_ELIGIBLE`、`INVALID_RARITY`、`INVALID_MATERIAL_LEVEL`、`CARD_LOCKED`、`WRONG_FACTION`，全部落到 `?? 400`。最刺眼的是 `CARD_LOCKED` 是 `EQUIP_LOCKED`（409）的卡牌对应物——**拿锁定的卡当材料融合报 400，分解锁定的装备报 409**，同一件事两个码。
+   **修法**：五个都补进表里 —— `CARD_LOCKED` / `NOT_REFORGE_ELIGIBLE` 给 409（分别对齐 `EQUIP_LOCKED` 和 `NOT_SALVAGEABLE`：都是「当前状态不允许」而非「请求写错了」），`INVALID_RARITY` / `INVALID_MATERIAL_LEVEL` / `WRONG_FACTION` 给 400（材料本身不满足条件，跟 `INVALID_SLOT` 同类）。这五个码声明在 metaserver 自己的 `equipment/cards` 错误联合里、不在 shared 的 `ErrorCode` 中，所以是普通字符串键，旁边写了注释说明为什么。**分支不能丢**：`accounts-core-branch-inventory.test.ts` 整个文件的目的就是驱动 `ERROR_HTTP_STATUS[r.code] ?? 400` 的兜底臂，原来正是拿这五个码当「表里没有的码」，全部补进表就把那条臂变成不可达了；所以每个 spec 的 `unmapped` 字段改成 `domainMapped: {code, status}`（断言新的状态码），兜底臂另用一个**构造上永远不会进表**的码 `SOME_CODE_FROM_A_FUTURE_RELEASE` 驱动。连带翻红的还有 `cards-fuse-batch-unit.test.ts` 和 `cards.e2e.test.ts` 里三处对 `CARD_LOCKED` 断言 400 的用例（其中一条注释就写着「`CARD_LOCKED` 没有表项，所以落到 400」），都改成 409。`WRONG_FACTION` / `INVALID_MATERIAL_LEVEL` 仍是 400，相关 e2e 无需改动。（`ACCOUNT_DELETED`/`ALREADY_ACTIVE` 也不在表里，前者只是因为 `base.ts` 硬编码了 410 才对——本轮未动。）
+8. **`events.ts`：`kind:'coins'` 但没配 `count` 的奖励会扣玩家的东西却什么都不发**——两个分发分支都不匹配（`kind === 'coins' && count > 0` 与 `kind !== 'coins'`），`claimEventReward` 仍然返回 `{ok:true}`。
+   **原判「守卫该加在 `validateEventInput`」这一半是错的：那里本来就有**（`shared/src/events.ts:100`，`git log -S` 确认早于本轮，只是被 i18n 那次提交重写过一遍）。所以经 `adminCreateEvent`/`adminUpdateEvent` 是进不来这种奖励的，真正的敞口是**绕过 admin CRUD 写进 `cols.events` 的文档**（手工种的、或者守卫存在之前建的老活动）。**修法**因此放在 `claimEventReward` 自己：在扣分**之前**拒掉，回新的 `ClaimEventError` 变体 `REWARD_MISCONFIGURED`，路由映射成 **500 `INTERNAL`** 并打一条 `log.error`。500 是故意的——玩家没做错任何事也没被扣分，坏掉的是活动配置，而 5xx 才是真正会进运营告警的那一档，比「每次都安静地拒绝」更可能让奖励被修好。测试：`telemetry-events-branch-events.test.ts` 里那条 `dispatches nothing, yet still reports the deduction honestly` 翻成 `is refused BEFORE the points are deducted`（并断言积分还在），另加显式 `count: 0` 一例。
+9. **`resolveBy*` 的盲读回让 `isNew` 静默降级**：`isNew = doc?._id === accountId`，upsert 之后的回读拿不到文档时为 `false`，于是真·新账号被跳过 `maybeGrantStarterCards`。
+   **修法**：三个 `resolveBy*` 都改成先接住 upsert 自己的结果 `res.upsertedCount === 1`，`isNew = upserted || doc?._id === accountId`。upsert 结果是第一手证据、盲读回毁不掉它；id 比对退化成兜底（给不报 `upsertedCount` 的驱动/替身用）。输掉竞态那侧不受影响：E11000 走 catch，`upserted` 保持 `false`。测试：`accounts-core-branch-accounts.test.ts` 里三条 `blind read-back … isNew=false` 全部翻成 `isNew=true`，另加一例「输掉竞态 + 盲读回 → 仍然 `isNew=false`」，确保修复没把方向拧反成到处重发新手卡。
+
+**顺带清掉的一条死分支**：第 8 条的守卫落地后，分发处那个 `reward.kind === 'coins' && (reward.count ?? 0) > 0 && commercial.available` 里的 `count > 0` 就再也没有假的那一侧了（守卫在扣分之前已经把它拒掉）。留着就是一条不可达分支，所以改写成嵌套的 `if (kind === 'coins') { if (commercial.available) … } else { … }`——两层的两侧都有既有用例跑到。
+
+**修复任务自己的验证**：`server` 全量 `tsc -b tsconfig.build.json` + `npm run typecheck:test`（13 个包）干净；metaserver `npm run test:coverage` 138 个文件全绿；受 `@nw/shared` 改动波及的另外五个包（shared / auctionsvc / socialsvc / worldsvc / analyticsvc）各自全量跑过也全绿；`client` 侧 `npm run rest:gen` 重生成 + `tsc --noEmit` 干净。
+
+**契约同步**：`CARD_LOCKED` 改判 409 不需要动契约（`/cards/{fuse,fuse-batch,lock,unlock}`、`/equipment/reforge` 本来就声明了 `'409'`），但另两条新状态要补：`openapi/paths/save.yml` 的 `getSave` 加 `'410'`（顺带补上一直漏掉的 `'403'`——封禁走的那条），`openapi/paths/liveops.yml` 的 `claimEventReward` 加 `'500'`。重跑 `gen:api:contracts` + `gen:api:server` 后 `routes.gen.ts` **零变化**（错误响应不进生成的 handler 类型），client 的 `openapi.ts` 只多了那三行。
+
+**门禁没有回退**：metaserver **分支 99.47%（4038 条里覆盖 4017）**、行 94.65% → **94.67%**。分支分母从 4013 涨到 4038 是新增的判断（410 那条 `instanceof`、admob 的「有没有可用密钥」、`REWARD_MISCONFIGURED` 的两条映射臂、`upsertedCount` 那个或、`grantSkin` 的存在性前检、`stableStringify` 的过滤谓词……），**新增的每一条两侧都有用例**——中途曾掉到 99.35%，差的五条全部补齐了（其中一条不是补测试而是删掉了源码里那半条死分支，见上）。剩下没覆盖的**仍然是同一批 21 条**，下一节那份清单一字未变。
+
+### 剩下的 21 条未覆盖分支（全部有不可达证明，不是「没排进去」）
+
+- `internal/economyRoutes.ts` 201/229/277/304（4 条）：`ERROR_HTTP_STATUS[r.code] ?? 400` 的兜底臂。能进 escrow/grant 那条路径的 `CardError`/`SkinError` 码全都在表里（第 7 条补进去的五个域内码，没有一个是这些路径会返回的——补完之后这条兜底臂只会更不可达）。
+- `service/economy/gacha.ts` 57/74：`totalWeight > 0 ? … : 0`。两个 builder 要么返回空数组（`.map` 不跑）、要么权重必正，构造不出「非空但总权重为 0」。
+- `liveops/retention.ts` 213/393：`if (!claimedReward) return ok(...)`——`claimCheckinDay`/`claimWeeklyTier` 成功时必定设置 `reward`，纯 TS narrowing 用的防御性 return。
+- `ads.ts:206`：WeChat 回调里的「缺字段返回 400」是死代码，`verifyWechatAdsCallback` 在前面就已经要求两个字段都真值。
+- `app.ts:120`：`Math.round(reply.elapsedTime ?? 0)`。`onResponse` 触发时 fastify 一定填好了数字，要逼出 `undefined` 得 monkey-patch Reply 原型 getter——那测的是 mock 不是代码。
+- `titles.ts:59`：`equippedTitle ?? titleId`。`grantTitle` 在 `prevEquipped` 为假值时无条件赋值，返回不了 `undefined`；源码注释自己写了这个兜底只为满足 `Record<string,string>`。
+- `economy/orders.ts:216`（`shopDef.qty ?? 1`，`SHOP_ITEMS` 里每个 `material` 条目都定义了 `qty`）、`economy/delivery.ts:115`（`materialInc ?? {}`，它的守卫数组本身就是遍历 `materialInc` 填出来的）、`equipment/{enhance.ts:169,craft.ts:109}`（`nextMaterials[mat] ?? 0`，上一行的循环已保证每种材料都 `>= qty`，且逐条核过所有成本表没有非正数量）。
+- `internal/accountRoutes.ts:85`：`profile.displayName ? {displayName} : {}` 的省略侧——`getProfile` 会经 `ensureDisplayName` 懒补 `randomPlayerName()`，返回值恒非空。
+- `liveops/achievements.ts:65`（`def.tiers[tier-1]?.coins ?? 0`，`validateClaim` 已拒非法 tier）、`pve/helpers.ts:249`（`if (!unitId) continue`，键出自 `levelCardReward` 的 `cardKey(unitId, tier)`，`parseCardKey` 必解得出）、`pve/stamina.ts:67`（三元里第二份 `stDoc?.regenAt ?? 0`，只在第一份已经非零时求值——写成一个提出去的 `const curRegenAt` 会更好读，顺带消掉这条不可达臂）。
+- `config.ts:1` / `index.ts:1`：env 读取 + 进程启动装配，同前几轮先例不追。
+
+### 环境陷阱（这次踩到的）
+
+**这个包的全量 `test:coverage` 需要先把 `socialsvc` 也 build 出来**：`test/mail-claim.e2e.test.ts` 直接 `import '../../socialsvc/dist/mailService.js'`。在新 worktree 里第一次跑全量时，2279 例全过、只有这一个 suite 因为 `Failed to load url ../../socialsvc/dist/mailService.js` 整个加载失败，于是 `test:coverage` 非零退出、`coverage-summary.json` 也就不会被消费。同 admin 那一节的 `comp-mail.e2e.test.ts` 是同一类陷阱（那边要 build metaserver + socialsvc），只是这次方向反过来。修法就是 `cd server/socialsvc && npm run build`。
+
+metaserver 整体：**分支 85.86% → 99.47%**（4013 条里覆盖 3992），行 90.74% → **94.65%**（`npm run test:coverage`，**138 test files / 2285 tests 全绿**，`npm run typecheck:test` 干净）。至此上一节那张全仓表里 7 个破线的包全部补完，13 个 server 包的分支覆盖率全部过 90% 门禁。

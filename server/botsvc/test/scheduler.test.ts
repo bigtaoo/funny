@@ -277,3 +277,14 @@ describe('Scheduler upkeep rotation', () => {
     expect(pool[8]!.familyCalls).toBe(1); // untouched this round
   });
 });
+
+describe('Scheduler upkeep with nobody online', () => {
+  it('returns before slicing when the online set is empty (empty pool, nothing to rotate over)', async () => {
+    // Guards the rotation arithmetic below it: chunkSize = ceil(0/rotations) = 0, so `start` and the
+    // slice would be degenerate rather than wrong — but a pass over an empty fleet has nothing to do
+    // at all, and this keeps a still-starting fleet from spinning up workers every tick.
+    const scheduler = new Scheduler([], fakeCapacity(async () => 0), OPTS);
+    await expect(scheduler.tick()).resolves.toBeUndefined();
+    expect(scheduler.status()).toEqual({ total: 0, online: 0, targetOnline: 10, effectiveTarget: 10, paused: false });
+  });
+});

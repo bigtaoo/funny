@@ -217,4 +217,15 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.TRANSFER_TARGET_INVALID]: 400,
   [ErrorCode.TRANSFER_SAME_SHARD]: 400,
   [ErrorCode.TRANSFER_BUSY]: 409,
+  // —— Domain-local codes (2026-09-03). These five are declared in metaserver's own equipment/cards
+  // error unions rather than in ErrorCode above, but they reach the client through the same
+  // `ERROR_HTTP_STATUS[r.code] ?? 400` mapping in service/inventory.ts — so leaving them out meant a
+  // silent 400 for every one of them. The pointed one is CARD_LOCKED: it is the card-side twin of
+  // EQUIP_LOCKED (409), and without an entry "fuse a locked card" answered 400 while "salvage a locked
+  // piece of equipment" answered 409 for the identical refusal. ——
+  NOT_REFORGE_ELIGIBLE: 409,   // this rarity cannot be reforged at all — a state conflict, like NOT_SALVAGEABLE
+  CARD_LOCKED: 409,            // locked card offered as fusion material — twin of EQUIP_LOCKED
+  INVALID_RARITY: 400,         // material has the wrong rarity for this reforge
+  INVALID_MATERIAL_LEVEL: 400, // material must be unenhanced (+0)
+  WRONG_FACTION: 400,          // fusion material is from the other faction
 };

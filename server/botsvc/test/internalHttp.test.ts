@@ -158,4 +158,40 @@ describe('botsvc internalHttp', () => {
     const r = await fetch(`${base}/internal/bots/nope`, { headers: hdr(KEY) });
     expect(r.status).toBe(404);
   });
+
+  // ── Request-body edge cases (readJson) ───────────────────────────────────
+
+  it('POST /scale with a malformed JSON body → 400 carrying the parse error', async () => {
+    // The route handler never sees this: readJson rejects and the outer catch turns it into a 400.
+    // Worth pinning because the alternative (an unhandled rejection inside the request callback) is a
+    // process-level crash on a port ops can reach with curl.
+    const r = await fetch(`${base}/internal/bots/scale`, { method: 'POST', headers: hdr(KEY), body: '{ not json' });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toMatchObject({ ok: false });
+    expect(scheduler.status().targetOnline).toBe(OPTS.targetOnline);
+  });
+
+  it('POST /scale with an oversized body is destroyed at the 1MB cap instead of buffering it', async () => {
+    // P0-9: this port had no cap at all, so `body` grew unbounded. The cap has to fire while the
+    // upload is still streaming — the assertion is that the connection dies mid-request rather than
+    // that a tidy response comes back, because "we answered politely after accepting 900MB" is
+    // exactly the failure being prevented.
+    const oversized = JSON.stringify({ targetOnline: 1, pad: 'x'.repeat((1 << 20) + 1024) });
+    await expect(
+      fetch(`${base}/internal/bots/scale`, { method: 'POST', headers: hdr(KEY), body: oversized }),
+    ).rejects.toThrow();
+    expect(scheduler.status().targetOnline).toBe(OPTS.targetOnline);
+  });
+
+  it('POST /pause with an empty body still works (readJson is only reached by /scale)', async () => {
+    const r = await fetch(`${base}/internal/bots/pause`, { method: 'POST', headers: hdr(KEY), body: '' });
+    expect(r.status).toBe(200);
+    expect(scheduler.status().paused).toBe(true);
+  });
+
+  it('POST /scale with an empty body → 400 (empty string parses to {}, not a parse error)', async () => {
+    const r = await fetch(`${base}/internal/bots/scale`, { method: 'POST', headers: hdr(KEY), body: '' });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toMatchObject({ ok: false, error: 'targetOnline required' });
+  });
 });

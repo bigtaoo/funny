@@ -199,27 +199,51 @@ export function collectRows(root) {
 
 export const DEFAULT_THRESHOLD = 90;
 
-/** Reads the two knobs CI passes in, so both scripts read them identically.
+/** The BRANCH bar (2026-09-03). A separate constant from DEFAULT_THRESHOLD even though both are
+ *  90: they are two independent decisions about two different metrics, and collapsing them into
+ *  one number would mean a future move of either silently moved the other.
  *
- *  TESTS_OK unset (local runs) is treated as 'true' — fail closed, same as before it existed. */
+ *  Why it exists at all: for a year this gate measured LINES only, so branch coverage drifted with
+ *  nothing reporting it. A full-repo measurement on 2026-09-03 found every package >=90% on lines
+ *  and 7 of the 13 server packages under 90% on branches (server/admin: 93.81% lines / 82.09%
+ *  branches). The gap is not cosmetic — what goes uncovered is systematically the absent-field
+ *  fallbacks, the refusal paths and the lost-CAS-race arms, i.e. precisely the code that only runs
+ *  when something has gone wrong. Baseline table and per-package gaps:
+ *  claudedocs/server-testing-coverage.md, "全仓分支覆盖率横向核实". */
+export const DEFAULT_BRANCH_THRESHOLD = 90;
+
+/** Reads the knobs CI passes in, so both scripts read them identically.
+ *
+ *  TESTS_OK unset (local runs) is treated as 'true' — fail closed, same as before it existed.
+ *
+ *  COVERAGE_BRANCH_THRESHOLD is the branch bar's override, mirroring COVERAGE_THRESHOLD. It is
+ *  deliberately one global knob and NOT a per-package exemption list: ADR-070 Phase 4e retired
+ *  exactly that mechanism, on the reasoning that leaving a working way to be exempt in place is a
+ *  standing invitation to reach for it instead of doing the work. Lowering the bar repo-wide is a
+ *  visible, obviously-temporary, one-line act; a list of excused packages is neither. */
 export function readGateEnv(env = process.env) {
   return {
     threshold: Number(env.COVERAGE_THRESHOLD ?? DEFAULT_THRESHOLD),
+    branchThreshold: Number(env.COVERAGE_BRANCH_THRESHOLD ?? DEFAULT_BRANCH_THRESHOLD),
     testsOk: (env.TESTS_OK ?? 'true') !== 'false',
   };
 }
 
-/** How many currently-covered lines this package could lose before it breaches the bar — negative
- *  if it already has.
+/** How many currently-covered lines (or branches — pass `metric`) this package could lose before
+ *  it breaches that bar — negative if it already has.
  *
  *  This is the column that makes the table worth reading. Sorted by percentage alone, 90.7% over
  *  8670 lines (65 lines of slack) and 92.1% over 924 lines (19 lines of slack) sort the wrong way
  *  round, and both read as "93%, fine" beside a 100.0% with hundreds to spare. It also answers the
  *  question people actually arrive with — "how much untested code can I add here before CI stops
- *  me" — which the percentage on its own never could. */
-export function gateHeadroom(row, threshold) {
+ *  me" — which the percentage on its own never could.
+ *
+ *  `metric` defaults to 'lines' so every existing caller reads unchanged; the branch gate passes
+ *  'branches' for the same arithmetic over the other metric. */
+export function gateHeadroom(row, threshold, metric = 'lines') {
   if (row.missing) return null;
-  return row.lines.covered - Math.ceil((threshold / 100) * row.lines.total);
+  const m = row[metric];
+  return m.covered - Math.ceil((threshold / 100) * m.total);
 }
 
 /** Line-weighted totals across every measured row, per metric. */
@@ -237,17 +261,24 @@ function overallOf(rows) {
 }
 
 /**
- * The whole gate decision in one object: which packages pass, which of the two ways the others
+ * The whole gate decision in one object: which packages pass, which of the three ways the others
  * failed, the weighted overall, and one `verdict` of 'pass' | 'fail' | 'not-enforced' | 'empty'.
  *
- * The two failure kinds stay separate all the way through (`belowBar` vs `missingOutput`), because
- * "produced no coverage at all" is a broken pipeline and not a coverage regression — reporting it
- * as the latter sent readers hunting for missing tests when the fix was a missing CI step.
+ * The failure kinds stay separate all the way through (`belowBar` / `belowBranchBar` /
+ * `missingOutput`), because they are three different bugs with three different fixes: "produced no
+ * coverage at all" is a broken pipeline and not a coverage regression (reporting it as the latter
+ * sent readers hunting for missing tests when the fix was a missing CI step), and below-on-branches
+ * is not below-on-lines either — a package can be at 100% lines and 62% branches, which is what a
+ * line-only gate had been calling green (see DEFAULT_BRANCH_THRESHOLD's note). A package below both
+ * bars appears in both lists, once per bar it breached, so each message names it for its own reason.
  *
  * 'empty' is the canary: every check below iterates `rows`, so an empty list would otherwise print
  * a cheerful "all 0 packages >= 90%" and exit 0 — a gate that retires itself by turning green.
  */
-export function evaluate(root, { threshold = DEFAULT_THRESHOLD, testsOk = true } = {}) {
+export function evaluate(
+  root,
+  { threshold = DEFAULT_THRESHOLD, branchThreshold = DEFAULT_BRANCH_THRESHOLD, testsOk = true } = {},
+) {
   const rows = collectRows(root);
   const results = rows.map((row) => {
     if (row.missing) {
@@ -256,15 +287,33 @@ export function evaluate(root, { threshold = DEFAULT_THRESHOLD, testsOk = true }
       // failure, the run is already red and no deploy can fire, so this gate has nothing left to
       // protect: report it and pass.
       return testsOk
-        ? { pkg: row.pkg, row, ok: false, reason: 'no coverage/ output found' }
-        : { pkg: row.pkg, row, ok: true, reason: 'not evaluated — its test job failed' };
+        ? { pkg: row.pkg, row, ok: false, reason: 'no coverage/ output found', below: [] }
+        : { pkg: row.pkg, row, ok: true, reason: 'not evaluated — its test job failed', below: [] };
     }
     const pct = row.lines.pct;
-    return { pkg: row.pkg, row, ok: pct >= threshold, pct, headroom: gateHeadroom(row, threshold) };
+    const branchPct = row.branches.pct;
+    // `below` is the list of bars this package breached, so the three reporting sites downstream
+    // filter on an explicit fact rather than re-deriving it from `!reason` — which is what they did
+    // while there was only one bar, and which would have silently classified every branch failure
+    // as a line failure the moment the second bar landed.
+    const below = [];
+    if (pct < threshold) below.push('lines');
+    if (branchPct < branchThreshold) below.push('branches');
+    return {
+      pkg: row.pkg,
+      row,
+      ok: below.length === 0,
+      pct,
+      branchPct,
+      below,
+      headroom: gateHeadroom(row, threshold),
+      branchHeadroom: gateHeadroom(row, branchThreshold, 'branches'),
+    };
   });
 
   const failures = results.filter((r) => !r.ok);
-  const belowBar = failures.filter((f) => !f.reason);
+  const belowBar = failures.filter((f) => f.below.includes('lines'));
+  const belowBranchBar = failures.filter((f) => f.below.includes('branches'));
   const missingOutput = failures.filter((f) => f.reason);
   // `measured` counts rows that actually produced a number, NOT "everything we didn't skip" —
   // those are different whenever a package is missing its coverage/ while the tests passed, and
@@ -284,11 +333,13 @@ export function evaluate(root, { threshold = DEFAULT_THRESHOLD, testsOk = true }
 
   return {
     threshold,
+    branchThreshold,
     testsOk,
     rows,
     results,
     failures,
     belowBar,
+    belowBranchBar,
     missingOutput,
     skipped,
     measured,

@@ -41,6 +41,12 @@
                         ticket: { type: string }
                         mode: { type: string, enum: [friendly, ranked] }
       '401': { $ref: '#/components/responses/ErrorResp' }
+      # Banned / temp-banned account (rejectIfBanned, base.ts).
+      '403': { $ref: '#/components/responses/ErrorResp' }
+      # ACCOUNT_DELETED. Both the soft delete (deletedAt still on the row) and the hard delete
+      # (accounts row gone, JWT not yet expired) answer 410 — the latter used to 500 out of
+      # ensurePublicId's retry loop instead (fixed 2026-09-03).
+      '410': { $ref: '#/components/responses/ErrorResp' }
 
 /match/history:
   get:
