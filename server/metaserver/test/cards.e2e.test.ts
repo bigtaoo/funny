@@ -186,10 +186,11 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect(body(res).error.code).toBe('WRONG_FACTION');
     });
 
-    it('fuse: locked material → 400 CARD_LOCKED', async () => {
+    it('fuse: locked material → 409 CARD_LOCKED', async () => {
+      // 409, same as salvaging locked equipment (EQUIP_LOCKED) — one refusal, one status.
       await m.collections.cardInstances.updateOne({ _id: materialIds[0] }, { $set: { locked: true } });
       const res = await fuse(targetId, materialIds, 'ik-locked');
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(409);
       expect(body(res).error.code).toBe('CARD_LOCKED');
     });
 
@@ -293,7 +294,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       expect((await readSave()).rev).toBe(revAfterFirst); // no-op did not bump rev
     });
 
-    it('locked card is rejected as fusion material → 400 CARD_LOCKED', async () => {
+    it('locked card is rejected as fusion material → 409 CARD_LOCKED', async () => {
       const inv = await readCardInv(m, accountId);
       const taoCards = Object.values(inv).filter((c) => CARD_DEFS[c.defId]?.faction === 'tao');
       const targetId = taoCards[0]!.id;
@@ -302,7 +303,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
       for (const id of extraIds) await seedCard(id, 'lichuang', 1);
       await lock(materialId);
       const res = await fuse(targetId, [materialId, ...extraIds], 'ik-lock-then-fuse');
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(409);
       expect(body(res).error.code).toBe('CARD_LOCKED');
     });
 
@@ -369,7 +370,7 @@ describe.skipIf(!mongo)('cards backend e2e', () => {
 
       await lock(materialId);
       const blocked = await fuse(targetId, materialIds, 'ik-cycle-blocked');
-      expect(blocked.statusCode).toBe(400);
+      expect(blocked.statusCode).toBe(409); // as EQUIP_LOCKED — see ERROR_HTTP_STATUS
       expect(body(blocked).error.code).toBe('CARD_LOCKED');
 
       await unlock(materialId);

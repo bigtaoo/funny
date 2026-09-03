@@ -6,12 +6,15 @@
 // inventory-service-unit.test.ts re-drives one happy path plus one *mapped* error per handler — what
 // was left untaken on all nine handlers is the OTHER side of `ERROR_HTTP_STATUS[r.code] ?? 400`.
 //
-// That side is not hypothetical: five codes the domain really does return — NOT_REFORGE_ELIGIBLE,
-// INVALID_RARITY, INVALID_MATERIAL_LEVEL (equipment) and CARD_LOCKED, WRONG_FACTION (cards) — have no
-// entry in ERROR_HTTP_STATUS, so they take the fallback. Without it `reply.code(undefined)` would throw
-// and the player would get a 500 for an ordinary refusal. The domain functions are stubbed here (this
-// file is about the wrapper's own dispatch, not about re-testing craft/fuse) so each handler can be
-// driven through both sides deterministically.
+// Those five codes used to take that fallback — NOT_REFORGE_ELIGIBLE, INVALID_RARITY,
+// INVALID_MATERIAL_LEVEL (equipment) and CARD_LOCKED, WRONG_FACTION (cards) are declared in the
+// domains' own error unions rather than in shared's ErrorCode, and ERROR_HTTP_STATUS had no entry for
+// any of them. They all have one as of 2026-09-03 (see `domainMapped` per spec below; CARD_LOCKED in
+// particular is 409 to match its equipment twin EQUIP_LOCKED instead of a lone 400), so the fallback is
+// driven here by a code that genuinely has no entry and never will — a future/unknown one. It still
+// matters: without it `reply.code(undefined)` would throw and an ordinary refusal would be a 500. The
+// domain functions are stubbed here (this file is about the wrapper's own dispatch, not about
+// re-testing craft/fuse) so each handler can be driven through every side deterministically.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CardInstance, Collections, EquipmentInstance, SaveData } from '@nw/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -94,9 +97,12 @@ interface Spec {
   expected: unknown;
   /** A code that IS in ERROR_HTTP_STATUS, with the status it must produce. */
   mapped: { code: string; status: number };
-  /** A code the domain really returns but that ERROR_HTTP_STATUS has no entry for. */
-  unmapped: string;
+  /** A domain-local code (not in shared's ErrorCode) that ERROR_HTTP_STATUS nonetheless maps. */
+  domainMapped: { code: string; status: number };
 }
+
+/** No entry in ERROR_HTTP_STATUS by construction — this is what drives the `?? 400` fallback arm. */
+const UNMAPPED_CODE = 'SOME_CODE_FROM_A_FUTURE_RELEASE';
 
 const SPECS: Spec[] = [
   {
@@ -107,7 +113,7 @@ const SPECS: Spec[] = [
     success: { save: SAVE, instance: INST },
     expected: { save: SAVE, instance: INST },
     mapped: { code: 'INSUFFICIENT_MATERIALS', status: 402 },
-    unmapped: 'INVALID_RARITY',
+    domainMapped: { code: 'INVALID_RARITY', status: 400 },
   },
   {
     name: 'enhanceEquipment',
@@ -117,7 +123,7 @@ const SPECS: Spec[] = [
     success: { success: true, instance: INST, save: SAVE },
     expected: { success: true, instance: INST, save: SAVE },
     mapped: { code: 'ENHANCE_MAX_LEVEL', status: 409 },
-    unmapped: 'INVALID_RARITY',
+    domainMapped: { code: 'INVALID_RARITY', status: 400 },
   },
   {
     name: 'salvageEquipment',
@@ -127,7 +133,7 @@ const SPECS: Spec[] = [
     success: { refunded: { scrap: 3 }, save: SAVE },
     expected: { refunded: { scrap: 3 }, save: SAVE },
     mapped: { code: 'NOT_SALVAGEABLE', status: 409 },
-    unmapped: 'INVALID_RARITY',
+    domainMapped: { code: 'INVALID_RARITY', status: 400 },
   },
   {
     name: 'equipEquipment',
@@ -137,7 +143,7 @@ const SPECS: Spec[] = [
     success: { save: SAVE },
     expected: { save: SAVE },
     mapped: { code: 'INVALID_SLOT', status: 400 },
-    unmapped: 'INVALID_RARITY',
+    domainMapped: { code: 'INVALID_RARITY', status: 400 },
   },
   {
     name: 'reforgeEquipment',
@@ -147,7 +153,7 @@ const SPECS: Spec[] = [
     success: { instance: INST, save: SAVE },
     expected: { instance: INST, save: SAVE },
     mapped: { code: 'EQUIP_LOCKED', status: 409 },
-    unmapped: 'NOT_REFORGE_ELIGIBLE',
+    domainMapped: { code: 'NOT_REFORGE_ELIGIBLE', status: 409 },
   },
   {
     name: 'cardsFuse',
@@ -157,7 +163,7 @@ const SPECS: Spec[] = [
     success: { card: CARD, save: SAVE },
     expected: { card: CARD, save: SAVE },
     mapped: { code: 'CARD_NOT_FOUND', status: 404 },
-    unmapped: 'CARD_LOCKED',
+    domainMapped: { code: 'CARD_LOCKED', status: 409 },
   },
   {
     name: 'cardsFuseBatch',
@@ -167,7 +173,7 @@ const SPECS: Spec[] = [
     success: { completed: 2, save: SAVE },
     expected: { completed: 2, save: SAVE },
     mapped: { code: 'BAD_REQUEST', status: 400 },
-    unmapped: 'WRONG_FACTION',
+    domainMapped: { code: 'WRONG_FACTION', status: 400 },
   },
   {
     name: 'cardsLock',
@@ -177,7 +183,7 @@ const SPECS: Spec[] = [
     success: { save: SAVE },
     expected: { save: SAVE },
     mapped: { code: 'CARD_NOT_FOUND', status: 404 },
-    unmapped: 'CARD_LOCKED',
+    domainMapped: { code: 'CARD_LOCKED', status: 409 },
   },
   {
     name: 'cardsUnlock',
@@ -187,7 +193,7 @@ const SPECS: Spec[] = [
     success: { save: SAVE },
     expected: { save: SAVE },
     mapped: { code: 'CARD_NOT_FOUND', status: 404 },
-    unmapped: 'CARD_LOCKED',
+    domainMapped: { code: 'CARD_LOCKED', status: 409 },
   },
 ];
 
@@ -215,14 +221,26 @@ describe.each(SPECS)('InventoryService.$name', (spec) => {
     expect(rp.sent.payload?.error).toEqual({ code: spec.mapped.code, message: 'nope' });
   });
 
-  it('a domain error code with no ERROR_HTTP_STATUS entry -> 400, never an undefined status', async () => {
-    h.state.result = { error: 'nope', code: spec.unmapped };
+  it('a domain-local code carries its own status too, not a blanket 400', async () => {
+    // These come from equipment/cards' own error unions, never from shared's ErrorCode — but they reach
+    // the client through the same map, so a missing entry silently flattened them. CARD_LOCKED was the
+    // visible cost: fusing with a locked card answered 400 while salvaging locked equipment answered
+    // 409 for the identical refusal.
+    h.state.result = { error: 'nope', code: spec.domainMapped.code };
+    const rp = reply();
+    await spec.call(makeService(), req(spec.body), rp);
+    expect(rp.sent.status).toBe(spec.domainMapped.status);
+    expect(rp.sent.payload?.error).toEqual({ code: spec.domainMapped.code, message: 'nope' });
+  });
+
+  it('a code with no ERROR_HTTP_STATUS entry at all -> 400, never an undefined status', async () => {
+    h.state.result = { error: 'nope', code: UNMAPPED_CODE };
     const rp = reply();
     await spec.call(makeService(), req(spec.body), rp);
     expect(rp.sent.status).toBe(400);
     // The code itself still reaches the client verbatim, so the UI can show the specific refusal even
     // though the status had to be generalised.
-    expect(rp.sent.payload?.error).toEqual({ code: spec.unmapped, message: 'nope' });
+    expect(rp.sent.payload?.error).toEqual({ code: UNMAPPED_CODE, message: 'nope' });
   });
 });
 

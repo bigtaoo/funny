@@ -165,6 +165,35 @@ describe('migrateIfStale', () => {
     expect(r.save.titles).toBeDefined();
   });
 
+  it('carries the lifetime reachedRanks ledger across the rollover instead of wiping it', async () => {
+    // The ledger is what makes first-reach rank coins a once-per-lifetime grant (season.ts §4.3,
+    // types.ts "not reset across seasons"). makePvpSeasonDefaults used to return [] and migrateIfStale
+    // spreads its result over pvp — so a soft reset re-armed every rank at or below the player's new
+    // rank, and their next ranked match paid the whole ladder out again through commercial.
+    const f = makeCols();
+    const save = seedPlayer(f, 'p-ledger', (s) => {
+      s.pvp.seasonNo = 1;
+      s.pvp.elo = 1900;
+      s.pvp.reachedRanks = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'star'];
+    });
+    const r = await migrateIfStale(f.cols, commercial, new FakeSocialsvc(), save, season(2), 9_000);
+    expect(r.migrated).toBe(true);
+    expect(r.save.pvp.reachedRanks).toEqual(['bronze', 'silver', 'gold', 'platinum', 'diamond', 'star']);
+    // Everything else in the defaults block IS per-season and still resets.
+    expect(r.save.pvp.seasonNo).toBe(2);
+    expect(r.save.pvp.seasonPeakElo).toBe(r.save.pvp.elo);
+  });
+
+  it('a pre-S11 save with no ledger at all migrates to an empty one rather than undefined', async () => {
+    const f = makeCols();
+    const save = seedPlayer(f, 'p-noledger', (s) => {
+      s.pvp.seasonNo = 1;
+      delete (s.pvp as Partial<SaveData['pvp']>).reachedRanks;
+    });
+    const r = await migrateIfStale(f.cols, commercial, new FakeSocialsvc(), save, season(2), 9_000);
+    expect(r.save.pvp.reachedRanks).toEqual([]);
+  });
+
   it('previous-season settlement failing does not block the migration (rewards are re-issued idempotently later)', async () => {
     const f = makeCols();
     const save = seedPlayer(f, 'p-settlefail', (s) => {

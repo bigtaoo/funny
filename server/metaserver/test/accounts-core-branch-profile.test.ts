@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeNewSave, type Collections, type SaveData } from '@nw/shared';
 import {
+  AccountGoneError,
   ensureDisplayName,
   ensurePublicId,
   getDisplayName,
@@ -204,6 +205,16 @@ describe('ensurePublicId (lazy allocation, 9 digits, unique index)', () => {
     const id = await ensurePublicId(colsFor(accounts), 'a');
     expect(id).toMatch(/^[1-9]\d{8}$/);
     expect(accounts.docs.get('a')!.publicId).toBe(id);
+  });
+
+  it('the accounts row is gone -> AccountGoneError immediately, without burning the retries', async () => {
+    // A hard-deleted account can still hold a non-expired JWT. The guarded update below can never match
+    // a document that does not exist and the re-read can never find one, so all 8 attempts used to burn
+    // out into a generic "failed to allocate publicId after retries" — surfacing as a 500 on GET /save
+    // where the soft-delete path answers a clean 410.
+    const accounts = new RacingAccounts(); // empty: no row for 'ghost'
+    await expect(ensurePublicId(colsFor(accounts), 'ghost')).rejects.toBeInstanceOf(AccountGoneError);
+    expect(accounts.writes).toBe(0);
   });
 
   it('eight consecutive collisions -> throws rather than returning a bogus id', async () => {

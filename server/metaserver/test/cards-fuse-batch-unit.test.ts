@@ -180,8 +180,9 @@ describe.skipIf(!mongo)('fuseCardsBatch', () => {
     await m.collections.cardInstances.updateOne({ _id: rounds[0]!.materialIds[0]! }, { $set: { locked: true } });
 
     const res = await post(rounds, 'ik-firstbad');
-    // CARD_LOCKED has no ERROR_HTTP_STATUS entry, so it falls through to 400 — same as /cards/fuse.
-    expect(res.statusCode).toBe(400);
+    // 409, matching EQUIP_LOCKED — the equipment twin of this same "it's locked, unlock it first"
+    // refusal (ERROR_HTTP_STATUS gained the card-side entry on 2026-09-03).
+    expect(res.statusCode).toBe(409);
     expect(body(res).error.code).toBe('CARD_LOCKED');
     expect(await m.collections.cardIdem.findOne({ _id: 'ik-firstbad' }), 'nothing ran ⇒ nothing claimed').toBeNull();
     expect(await m.collections.cardInstances.countDocuments({ accountId })).toBe(2 * (FUSION_MATERIAL_COUNT + 1));

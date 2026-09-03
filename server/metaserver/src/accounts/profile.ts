@@ -85,14 +85,34 @@ export async function getProfile(
 }
 
 /**
+ * Thrown when the accounts row for an authenticated request no longer exists — a hard-deleted account
+ * whose JWT has not expired yet. Callers on the player-facing surface translate this into 410
+ * ACCOUNT_DELETED, the same status {@link MetaCore.rejectIfBanned} answers for a *soft*-deleted account,
+ * so the client's "your account is gone" handling fires for both instead of only one.
+ */
+export class AccountGoneError extends Error {
+  constructor(readonly accountId: string) {
+    super(`account ${accountId} no longer exists`);
+    this.name = 'AccountGoneError';
+  }
+}
+
+/**
  * Ensure the account has a 9-digit numeric public id: returns immediately if one already exists,
  * otherwise generates a globally unique one and writes it. The publicId unique index causes
  * updateOne to throw on concurrent writes or collisions → retry with a new candidate;
  * collisions are extremely rare given a space of 900 million.
+ *
+ * Throws {@link AccountGoneError} when the accounts row itself is missing (2026-09-03 fix): the guarded
+ * `{_id, publicId:{$exists:false}}` update below can never match a document that does not exist and the
+ * re-read can never find one either, so all 8 attempts used to burn out into a generic
+ * "failed to allocate publicId after retries" — surfacing a hard-deleted account holding a still-valid
+ * JWT as a 500 instead of a 410.
  */
 export async function ensurePublicId(cols: Collections, accountId: string): Promise<string> {
   const existing = await cols.accounts.findOne({ _id: accountId }, { projection: { publicId: 1 } });
   if (existing?.publicId) return existing.publicId;
+  if (!existing) throw new AccountGoneError(accountId);
   for (let attempt = 0; attempt < 8; attempt++) {
     // 100000000–999999999: exactly 9 digits, first digit non-zero.
     const candidate = String(randomInt(100_000_000, 1_000_000_000));

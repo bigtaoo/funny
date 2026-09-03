@@ -58,8 +58,14 @@ export function compareAudit(
   const overclaim: Partial<Record<StatKey, number>> = {};
   let suspicious = false;
   for (const k of PVP_REPORTED_STAT_KEYS) {
-    const r = reported?.[k] ?? 0;
-    const a = authoritative?.[k] ?? 0;
+    // Both sides are clamped to a non-negative count before the subtraction (2026-09-03 fix). Neither
+    // input is trustworthy: `reported` comes from the client's own end-of-match report, `authoritative`
+    // from whichever peer happened to be picked as judge. Without the clamp a judge answering
+    // `{"kill.archer": -5}` for a side that reported NOTHING yields overclaim 5 — a confirmed conviction
+    // (stat rollback + statSuspicion++ + an open OPS review row) manufactured against an innocent player
+    // by a single malicious peer. A count can never be negative, so treating one as 0 loses nothing.
+    const r = Math.max(0, reported?.[k] ?? 0);
+    const a = Math.max(0, authoritative?.[k] ?? 0);
     const over = r - a;
     if (over > 0) {
       overclaim[k] = over;

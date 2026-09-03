@@ -68,9 +68,16 @@ async function getAdmobKeys(): Promise<AdmobKey[]> {
   const resp = await fetch(ADMOB_KEY_URL);
   if (!resp.ok) throw new Error(`admob keys fetch HTTP ${resp.status}`);
   const json = (await resp.json()) as { keys?: AdmobKey[] };
-  const keys = json.keys ?? [];
-  admobKeysCache = { keys, fetchedAt: now };
-  return keys;
+  // A 2xx carrying no usable key list is a failure, not an empty result (2026-09-03 fix). Caching
+  // `[]` from one malformed response poisoned the whole ADMOB_KEY_TTL window: every SSV callback in
+  // those five minutes failed signature verification, so the reward was silently dropped AND Google
+  // was answered 400, which tells it to stop retrying. Throwing instead leaves the cache untouched,
+  // so the very next callback re-fetches — same treatment the non-2xx branch above already got.
+  if (!Array.isArray(json.keys) || json.keys.length === 0) {
+    throw new Error('admob keys response carried no keys');
+  }
+  admobKeysCache = { keys: json.keys, fetchedAt: now };
+  return json.keys;
 }
 
 /**

@@ -272,15 +272,25 @@ describe('claimEventReward refusal and dispatch paths', () => {
     expect(s.socialsvc.mail.size).toBe(0); // coins never go out as a mail attachment
   });
 
-  it('a coins reward configured with no count dispatches nothing, yet still reports the deduction honestly', async () => {
+  it('a coins reward configured with no count is refused BEFORE the points are deducted', async () => {
     // A misconfigured reward (`kind:'coins'` with count 0/absent) satisfies neither dispatch branch, so
-    // the player is charged and receives nothing. Asserted rather than fixed: this is the observable
-    // behaviour ops needs to know about (the guard belongs in validateEventInput, not here).
+    // until 2026-09-03 the player was charged and handed nothing while the call still answered ok.
+    // validateEventInput rejects this shape at create/update time, so a doc in this state was written
+    // around the admin CRUD — which is exactly why claimEventReward now carries its own backstop.
     const s = setup([{ rewardId: 'zero', cost: 10, kind: 'coins' }], [participant(50)]);
     const res = await claimEventReward(s.cols, ACC, 'ev1', 'zero', NOW, s.commercial, s.socialsvc);
-    expect(res).toMatchObject({ ok: true, pointsLeft: 40 });
+    expect(res).toEqual({ ok: false, error: 'REWARD_MISCONFIGURED' });
     expect(s.commercial.grantCalls).toHaveLength(0);
     expect(s.socialsvc.mail.size).toBe(0);
+    // The point of refusing early: the points are still there to spend on a reward that works.
+    expect((await s.cols.eventParticipants.findOne({ _id: participantId('ev1', ACC) }))?.points).toBe(50);
+  });
+
+  it('an explicit count of 0 is refused the same way as an absent one', async () => {
+    const s = setup([{ rewardId: 'zeroed', cost: 10, kind: 'coins', count: 0 }], [participant(50)]);
+    const res = await claimEventReward(s.cols, ACC, 'ev1', 'zeroed', NOW, s.commercial, s.socialsvc);
+    expect(res).toEqual({ ok: false, error: 'REWARD_MISCONFIGURED' });
+    expect(s.commercial.grantCalls).toHaveLength(0);
   });
 
   it('a coins reward with commercial unavailable also dispatches nothing (points already spent)', async () => {

@@ -117,10 +117,12 @@ describe('registerAdCallbackRoutes: AdMob SSV degraded paths', () => {
     expect(comm.calls).toHaveLength(0);
   });
 
-  it('gstatic answers 200 with no `keys` field → empty key list, callback rejected', async () => {
-    // Same outcome as a 500, but reached through `json.keys ?? []` rather than a throw. Note the
-    // consequence, which is why this branch is worth naming: an empty list IS cached for 5 minutes, so
-    // one malformed response silently refuses every SSV callback for that window.
+  it('gstatic answers 200 with no `keys` field → callback rejected AND the cache is not poisoned', async () => {
+    // Same outcome as a 500 for this one call — but the important part is what it does NOT do. Caching
+    // `json.keys ?? []` on any 2xx (the behaviour until 2026-09-03) meant a single malformed response
+    // failed signature verification for the whole 5-minute ADMOB_KEY_TTL window: every reward in it
+    // silently lost, and every callback answered 400, which tells Google to stop retrying. A 2xx with
+    // no usable key list is now a failure like the non-2xx above, so the next callback re-fetches.
     fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
     vi.stubGlobal('fetch', fetchMock);
     const comm = fakeAdsCommercial();
@@ -129,7 +131,20 @@ describe('registerAdCallbackRoutes: AdMob SSV degraded paths', () => {
     expect(first.statusCode).toBe(400);
     const second = await app.inject({ method: 'GET', url: signedUrl({ transaction_id: 'tx-nokeys-2', custom_data: ACCOUNT_ID }) });
     expect(second.statusCode).toBe(400);
-    expect(fetchMock).toHaveBeenCalledTimes(1); // the empty list was cached, not re-fetched
+    expect(fetchMock).toHaveBeenCalledTimes(2); // nothing cached — the second callback tries gstatic again
+    expect(comm.calls).toHaveLength(0);
+  });
+
+  it('gstatic answers 200 with an EMPTY keys array → same treatment, still not cached', async () => {
+    // The other half of "no usable key list": a well-formed body whose array happens to be empty is
+    // just as unusable as a missing field, and caching it would poison the window the same way.
+    fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ keys: [] }) }));
+    vi.stubGlobal('fetch', fetchMock);
+    const comm = fakeAdsCommercial();
+    mount(comm.fake);
+    expect((await app.inject({ method: 'GET', url: signedUrl({ transaction_id: 'tx-emptykeys-1', custom_data: ACCOUNT_ID }) })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: signedUrl({ transaction_id: 'tx-emptykeys-2', custom_data: ACCOUNT_ID }) })).statusCode).toBe(400);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(comm.calls).toHaveLength(0);
   });
 
