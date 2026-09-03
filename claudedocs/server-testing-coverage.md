@@ -319,7 +319,7 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 | metaserver | **85.86%** | 90.74% | 481 / 3403 |
 | worldsvc | **86.99%** | 95.69% | 534 / 4106 |
 | auctionsvc | **88.18%** | 95.37% | 101 / 855 |
-| socialsvc | **89.22%** | 94.71% | 110 / 1021 |
+| ~~socialsvc~~ | ~~89.22%~~ → **99.73%** | 96.09% | 下面「socialsvc 补测第二轮」已补完 |
 | botsvc | **89.39%** | 92.74% | 37 / 349 |
 | gateway | 91.03% | 93.07% | 45 / 502 |
 | client | 91.05% | 96.17% | 231 / 2583 |
@@ -337,10 +337,30 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 - **metaserver**（绝对数量最多，481 条，摊在 68 个文件上）：`service/telemetry.ts` 74.7%、`internal/promoGachaRoutes.ts` 70.8%、`service/liveops/retention.ts` 80.7%、`economy/orders.ts` 58.3%、`internal/matchReport/eloSettlement.ts` **48.6%**（全仓最低的单文件）。
 - **worldsvc**（534 条，58 个文件）：集中在 `combatSiege/`——`encounter.ts` 75.0%（31 条）、`arrival/citySiege.ts` 50.9%、`arrival.ts` 74.7%、`arrival/cityDefenders.ts` 57.4%；另有 `httpApi/sectRoutes.ts` 73.5%/100% 行、`city/training.ts` 69.7%/100% 行。
 - **auctionsvc**：`auctionService/trade.ts` 75.7%（26 条，占全包四分之一）、`journalSweep.ts` 72.4%/100% 行、`delivery.ts` 72.7%。
-- **socialsvc**：`httpApi/helpers.ts` **40.0%**、`friend/chat.ts` 76.8%、`friend/relations.ts` 82.8%/100% 行。
+- ~~**socialsvc**：`httpApi/helpers.ts` **40.0%**、`friend/chat.ts` 76.8%、`friend/relations.ts` 82.8%/100% 行。~~（已补完，见下一节）
 - **botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。
 - **client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。
 
 **排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高；commercial 是百分比最低的、且 149 条集中在 6 个文件里；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完。
 
-**先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
+**先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支；socialsvc 已在下一节补完，剩 5 个包、354 条），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
+
+## socialsvc 补测第二轮：**分支**覆盖率，从 89.21% 拉到 99.73%（2026-09-03，worktree `feat/socialsvc-branch-coverage`）
+
+上一节表里 socialsvc 缺 110 条分支（89.22%，行 94.71% 早已过关）。缺口形状跟 admin 第三轮**完全一样**、只是分布更极端：`friend/relations.ts` 和 `mailService.ts` 都是**行 100% / 分支 82%**——既有 e2e 把每个方法都调过，但每次都是「两个账号都有 profile、gateway 是活的、边没有 alias、CAS 从没输过」这一种输入。
+
+**六个新测试文件 + 一个共享 helper + 给两个既有文件各追加一点（共 +116 例，216 → 332，原有 216 例零改动）**：
+
+- `test/stubCols.ts`（helper）：`overrideCollection` / `withCollection` —— 用 Proxy **只换真实 Mongo collection 上的一个方法**，其余方法（含驱动自己加的）原样转发到真 collection。专门用来制造那些两个并发调用者才能造出的分支：`findOneAndUpdate` 返回 `null`（输掉 CAS）、`insertOne` 抛非 11000 的错、`bulkWrite` 返回没有 `upsertedIds` 的半残结果。**故意不做内存版 Mongo**——没桩的方法落到真驱动，测试不可能悄悄跑进第二套手写的查询语义里（同 admin `test/stubDeps.ts` 的理由）。
+- `test/httpHelpers.test.ts`（21 例）：`httpApi/helpers.ts` **40% 分支（全包最低）→ 100%**。`readJson` 的四条兜底（空 body、畸形 JSON 必须 reject 而不是静默 `{}`、超 1MB 的 reject **并且** `req.destroy()`——P0-9 那条修复真正限制内存的是 destroy 而不是 reject、socket error）、`sendErr` 的 `?? 400`（`ALREADY_ACTIVE` 是真实存在但 `ERROR_HTTP_STATUS` 没有条目的 code，测试里顺手断言了这一点，将来它有了条目会立刻红）、`sendSocialErr` 七个分支逐条钉（客户端是按 code 选文案的，"已经是好友"和"被拉黑"是两种 UI）、`numQ` 的缺席/非数字/空串/Infinity。
+- `test/mailServiceBranches.e2e.test.ts`（15 例）：`mailService.ts` 82.53% → **100%**。`toMailView` 对「没有 fromName 的系统邮件」和「`expireAt` 是数字而非 BSON Date 的老文档」（`Number(Date)` vs `getTime()` 是「还剩几天过期」和 NaN 的差别）；`claimMailAtomic` 输掉 claim CAS 必须报 ALREADY_CLAIMED（返回文档就是把同一份附件发两次）；`sendPlayerMail` 的 subject/body 整个缺席、发件人 profile 解析不出来；`expireDays <= 0` 走默认 TTL（调用方用 0 表示"用默认"，不能变成一封已过期的信）；`bulkWrite` 没给 `upsertedIds` 时一个都不算新插入，于是不会重复推送。
+- `test/friendChatBranches.e2e.test.ts`（14 例）：`friend/chat.ts` 76.47% → **100%**。速率限制器的 sweep（它是内存泄漏防护，唯一可观测效果就是那张 map 的内容，所以直接断言 map——同 shared `SlidingRateLimiter` 和 admin `loginAttempts` 的先例）；`getConversations`/`getMessages` 里那批 `?? ''` / `?? 0` / `d.lastBody ?` ——它们服务的是**不是本 service 刚写的**文档：还没有消息的会话行、对方账号已注销、`ts` 是数字；以及 e2e 从没发过的拒绝路径（未知收件人、body 缺席、**发送方**拉黑收件人这一侧的双向 block 检查、发送方自己 profile 解析不出来）。
+- `test/friendRelationsBranches.e2e.test.ts`（18 例）：`friend/relations.ts` 82.79% → **100%**。`FriendView` 的三个可选字段（rank/alias/avatarId）各自的两侧 + `presence[id] ?? false`（好友不在 presence map 里必须读成离线而不是 undefined）；指向已注销账号的好友边 / 待处理请求被跳过而不是渲染成一行没名字的可点条目；`available: false` 的 gateway 下好友列表照常返回、全员离线；`respondFriend` 输掉 status CAS（不能凭一条别人已处理的请求建立好友关系）；`ensureFriendCounter` 遇到**非** 11000 的插入错误必须抛出——吞掉它等于把真实数据库故障报成"计数器已就绪"，然后用一个从没播种过的数字去卡 FRIEND_CAP。
+- `test/familyBranches.e2e.test.ts`（19 例）：`family/membership.ts` 91.47% / `internal.ts` 89.18% / `chat.ts` 91.42% / `shared.ts` 95% **全部 → 100%**。压根不在任何家族里的请求者去 kick/改公告/改族徽（这三个方法紧接守卫就解引用成员行，守卫是唯一挡在 TypeError 前面的东西）；长老踢长老、给自己改职位这两条**没有覆盖的权限规则**（都在防不可恢复的自伤：长老把能制衡自己的同级降级；族长把自己降级之后再没人能升任何人）；非 11000 的 insert 必须抛而不是报成 ALREADY_IN_FAMILY（会让玩家去追一个并不存在的成员身份）；`respondJoinRequest` 输掉 CAS；驳回时家族文档已被解散 → 仍然发信，只是名字为空；以及缺字段的老文档（没有 `activity` 的家族、家族文档已消失的成员行、数字 `ts` 的消息）。
+- `test/socialHttpBranches.e2e.test.ts`（30 例）：`httpApi.ts` 85.1% → **96.49%**、七个路由文件全部 → **100%**。shell 的四个失败出口（`/internal/` 与 `/social/` 下的未知路径各一个 404——顺带走完每个 domain handler 的"没匹配"出口、验不过的 token 的 401 `invalid token`、**非 JSON body → 500**：`readJson` reject 的是 SyntaxError，只有 shell 那条非 `SlgError` 的 catch 分支会把它变成响应而不是一个悬着的 socket）；**没有 Host 头的 HTTP/1.0 请求**（用裸 socket 发——`fetch` 一定会带 Host，HTTP/1.1 也要求带；`new URL(req.url, 'http://' + host)` 是 shell 拿到请求后做的第一件事，`http://undefined` 会抛，所以那个 `?? 'social'` 决定这种请求还能不能被路由）；每一条 `typeof body.x === 'string' ? … : null` / `: 1` / `: 0` 兜底（worldsvc 确实会省略 `delta`/`territoryCount`，这些默认值是活的行为不是死防御）；`sendSocialErr` 的几处交接；`presenceFanOut` 三个提前 return（gateway 不可用 / 没有好友 / 没有 publicId）——它是 fire-and-forget，请求怎样都是 200，这几条钉的是"什么都不推"，settle 沿用 `internalPushHttp.e2e.test.ts` 已有的 `flushFanOut`。
+- 既有 `test/harness.ts` 追加 `FakeMeta.avatar()` / `FakeMeta.elo()`（各自独立方法，不再往 `add()` 后面加位置参数）：`avatarId` 是好友列表和家族名册各自条件展开的字段，`elo` 只经 `/internal/player` 到达 socialsvc（资料卡 extra 查询），此前"这个账号有头像/有 ELO"从任何测试都到不了，那两个字段就从没被写出来过。
+- 既有 `test/metaClient.test.ts` 追加 1 例：`/internal/player` 返回有 rank 但没 elo（95.65% → **100%**）。
+
+结果：**分支 89.21% → 99.73%**（1141 条里只剩 3 条），行 94.71% → 96.09%，`npm run test:coverage` 20 files / **332** tests 全绿，`npm run typecheck` + `npm run typecheck:test` 干净。`src/{family,friend,httpApi}/` 三个目录整体 100% 分支。
+
+**剩下的 3 条不追**：`httpApi.ts:55` 的 `req.method ?? 'GET'` 和 `:64` 的 `req.url ?? ''`——node:http 从不会把这两个留成 undefined，走真实 HTTP 结构上到不了（同一行的 `req.headers.host ?? 'social'` 能到，已用 HTTP/1.0 覆盖）；`src/index.ts` 进程 bootstrap，同前几轮先例不追。
