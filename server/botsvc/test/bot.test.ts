@@ -29,6 +29,21 @@ function fakeCommercial(): any {
   return { buyMonthlyCard: vi.fn(), buyStarterGrowth: vi.fn() };
 }
 
+/** A world fake complete enough to reach trySiege's own checks, so a case can knock out one piece. */
+function siegeWorld(over: Record<string, unknown> = {}): any {
+  return {
+    getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
+    joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
+    upgradeBuilding: vi.fn().mockResolvedValue(undefined),
+    getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 100, mainBaseTile: 's3-0:5:5' }),
+    baseCoords: vi.fn().mockReturnValue({ x: 5, y: 5 }),
+    getWorldMapSparse: vi.fn().mockResolvedValue({ tiles: [] }),
+    pickAttackTarget: vi.fn().mockReturnValue(null),
+    startMarchAttack: vi.fn().mockResolvedValue(undefined),
+    ...over,
+  };
+}
+
 const battleOpts = { gatewayWsUrl: 'ws://unused/gw', chancePerTick: 0 };
 
 async function loggedInSession(world: any): Promise<BotSession> {
@@ -352,5 +367,102 @@ describe('BotSession payment-tier bootstrap (on login)', () => {
     await session.login();
 
     expect(commercial.buyMonthlyCard).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BotSession.tickSlg — incomplete backend state', () => {
+  it('retries the season join on the next tick when the join comes back without a worldId', async () => {
+    // A season boundary (or a worldsvc that accepted the request but has no shard for this account
+    // yet) answers `joined` with no worldId. Caching that as the world would send every later tick's
+    // build/march to `worldId=undefined`, so the tick has to bail and re-join instead.
+    const world: any = {
+      getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
+      joinSeason: vi.fn().mockResolvedValue({ joined: false }),
+      upgradeBuilding: vi.fn().mockResolvedValue(undefined),
+    };
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+    await session.tickSlg();
+
+    expect(world.joinSeason).toHaveBeenCalledTimes(2); // nothing was cached, so it tried again
+    expect(world.upgradeBuilding).not.toHaveBeenCalled();
+  });
+
+  it('skips the siege and upgrades instead when the bot has no base tile yet', async () => {
+    const world = siegeWorld({ getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 100 }) });
+    world.baseCoords = vi.fn().mockReturnValue(null); // no mainBaseTile -> no march origin
+    const session = await loggedInSession(world);
+
+    for (let i = 0; i < 4; i++) await session.tickSlg();
+    world.upgradeBuilding.mockClear();
+    await session.tickSlg();
+
+    expect(world.getWorldMapSparse).not.toHaveBeenCalled(); // bailed before the map scan
+    expect(world.startMarchAttack).not.toHaveBeenCalled();
+    expect(world.upgradeBuilding).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the siege and upgrades instead when the garrison is empty', async () => {
+    // Marching 0 troops is a request worldsvc would reject anyway; more to the point the bot has just
+    // been wiped, and spending the tick rebuilding is what a real player does.
+    const world = siegeWorld({ getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 0, mainBaseTile: 's3-0:5:5' }) });
+    const session = await loggedInSession(world);
+
+    for (let i = 0; i < 4; i++) await session.tickSlg();
+    world.upgradeBuilding.mockClear();
+    await session.tickSlg();
+
+    expect(world.getWorldMapSparse).not.toHaveBeenCalled();
+    expect(world.startMarchAttack).not.toHaveBeenCalled();
+    expect(world.upgradeBuilding).toHaveBeenCalledTimes(1);
+  });
+
+  it('a logout that lands mid-tick stops the rest of the tick from spending a dead token', async () => {
+    // The only window where the private guards in upgradeNextBuilding/trySiege can actually fire:
+    // logout() clears the token while a world call is already in flight, so the checks at the top of
+    // tickSlg passed but the ones further down no longer do. Without them the tick would keep going
+    // and issue a POST /world/build/upgrade with a token the fleet has already given up — a real
+    // 401 against a real backend, blamed on an account nothing is tracking as online any more.
+    const holder: { session?: BotSession } = {};
+    const world = siegeWorld({
+      getWorldMe: vi.fn(async () => {
+        holder.session!.logout();
+        return { joined: true, troops: 0, mainBaseTile: 's3-0:5:5' };
+      }),
+    });
+    const session = await loggedInSession(world);
+    holder.session = session;
+
+    for (let i = 0; i < 4; i++) await session.tickSlg();
+    world.upgradeBuilding.mockClear();
+    await session.tickSlg(); // siege-interval tick: getWorldMe logs out mid-flight
+
+    expect(world.startMarchAttack).not.toHaveBeenCalled();
+    expect(world.upgradeBuilding).not.toHaveBeenCalled(); // the fallback upgrade is skipped too
+    expect(session.state).toBe('offline');
+  });
+});
+
+describe('BotSession payment-tier bootstrap — no accountId', () => {
+  it('skips the purchase when device-login returned a token but no accountId', async () => {
+    // commercial's endpoints are keyed by accountId; sending `undefined` would either 400 or, worse,
+    // land on some other account's wallet. Login itself still has to succeed — the bot can play.
+    const meta: any = { deviceLogin: vi.fn().mockResolvedValue({ token: 't', isNew: false }) };
+    const commercial = fakeCommercial();
+    const session = new BotSession(
+      { deviceId: 'bot-0006', paymentTier: 'monthly_card' },
+      meta,
+      fakeSocial(),
+      commercial,
+      fakeWorld(),
+      battleOpts,
+    );
+
+    await session.login();
+
+    expect(session.state).toBe('lobby_idle');
+    expect(commercial.buyMonthlyCard).not.toHaveBeenCalled();
+    expect(commercial.buyStarterGrowth).not.toHaveBeenCalled();
   });
 });
