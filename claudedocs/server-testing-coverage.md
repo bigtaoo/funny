@@ -1,7 +1,8 @@
-# 服务端 — 各服务测试覆盖率补齐（2026-08-13 ~ 08-15）
+# 服务端 — 各服务测试覆盖率补齐（2026-08-13 ~ 09-03）
 
 > 从 [`server-testing.md`](server-testing.md) 拆出（2026-08-20，原文件 501 行，ADR-067）。姊妹分册：[`server-testing-tooling.md`](server-testing-tooling.md)（覆盖率工具 / CI）、[`server-testing-typecheck.md`](server-testing-typecheck.md)（`test/**` 类型检查）。
 > 本册是 13 个包逐个把**行覆盖率百分比**拉到 90%+ 的记录，一个包一节。工具怎么接上的、90% 门禁在哪，见上面第一个链接；「哪些代码路径完全没测过」的人工审计在 [`server-testing.md`](server-testing.md)。
+> **2026-09-03 起多了第二个口径**：最后一节（admin 第三轮）是第一节以**分支覆盖率**为目标的记录。行覆盖率有 CI 门禁盯着，分支覆盖率没有——一个包可以行 93% 过关、分支 82% 而不会有任何东西报出来，所以这一维的缺口只能靠人主动去量。
 
 ## metaserver 补测：equipment/auth/economy/paddle 从 0~10% 拉到 90%+（2026-08-13，同日追加）
 
@@ -278,3 +279,29 @@ matchsvc 那一节的姊妹任务，同一次重新核实里 **analyticsvc（87.
 - **httpApi.ts + service/{dist,funnel,ingest,traffic}.ts**（需要真实 Mongo）：`httpApi.ts`（219 行，此前 80.23%，`GET /internal/query?type=...` 分发链尾部几个查询类型分支 + 边界处理未测）→ 100% 行（分支 92.47%，剩 7 行——逐条验证均为"真实 HTTP 语境下结构性不可达"：`clientIp` 的 `Array.isArray(xff)` 分支（Node 会把重复的 `X-Forwarded-For` header 自动拼成一个逗号分隔字符串，永远不会以数组形式出现在 `req.headers`）、`remoteAddress`/`resolveGeo` 的空 IP 兜底（真实已建立的 TCP 连接恒有 `remoteAddress`）、`ERROR_HTTP_STATUS[code] ?? 400`（该文件用到的三个错误码在 `@nw/shared/src/api.ts` 里全部有映射）、`req.method`/`req.url` 的空值兜底（Node 恒会填充这两个字段）——均逐条验证过确实不可达，不是偷懒跳过）；`service/dist.ts`（分支 80.95%）→ **100/100/100**；`service/funnel.ts`（分支 86.56%）→ **100/100/100**；`service/ingest.ts`（分支 80.39%）→ **100/100/100**；`service/traffic.ts`（funcs 85.71%）→ **100/100/100**。扩展了既有的 `test/analytics.e2e.test.ts`（25→43 例）+ `test/service-domains.e2e.test.ts`（24→32 例），未新建文件。
 
 analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverage`，6 test files / 98 tests 全绿——原有 49 例零改动；`npx tsc --noEmit` 干净）。分支覆盖 84.16%→97.56%、函数覆盖 95.83%→98.64%。**未继续追**：`db.ts`（90%，本轮未列入任务清单，非新增缺口）、`index.ts`（0%，bootstrap，同前几个包先例不追）。
+
+## admin 补测第三轮：**分支**覆盖率，从 82.09% 拉到 92.42%（2026-09-03，worktree `feat/admin-branch-coverage`）
+
+前面十五节全部是**行**覆盖率的记录——因为 CI 门禁（`scripts/checkCoverageThreshold.mjs`）只卡行覆盖率，本文档开头那句"逐个把行覆盖率百分比拉到 90%+"也是照这个口径写的。本节是第一节以**分支**覆盖率为目标的：admin 的行覆盖率 93.81% 早就过了门禁，但分支只有 **82.09%**（1530 个分支里 274 个从未执行），而且这个数字**没有任何机制会报出来**——门禁不看它，`coverageSummary.mjs` 的表格里它只是个参考列。
+
+**根因和第一、二轮都不同，不是"某个文件/某一层完全没测"**：这轮缺口分布在已经 100% 行覆盖的文件里。既有 e2e 把每个方法都调过一遍，但**每次都用完整、格式正确的输入，且每个 client 都 `available: true`**，于是同一批代码里三类分支从未跑过：
+
+1. **`?? ''` / `Array.isArray` 之类的兜底**——`httpApi` 把解析后的 JSON body / query 原样转发给 service，任何字段都可以缺席，这些兜底就是为此存在的，却从未收到过缺字段的输入。
+2. **每一条拒绝路径和每一次输掉的竞态**——`tickets.ts` 四处 `if (!res)`（status CAS 输给并发操作 → 409）、三处 `status !== 'pending'` 守卫、`accounts.ts` 的 11000 重复键处理。e2e 结构上做不到确定性地制造这些（两个调用方必须同时抵达 `findOneAndUpdate`）。
+3. **`available: false` 的降级侧**——同 2026-08-20 `promo.test.ts` 那次（见 [`server-testing.md`](server-testing.md)）的形状，这次把剩下五个域（ladder/gacha/mapTemplates/paddleEvents/appeals）补完。
+
+**这批分支不是凑百分比**：`describeFlag`/`describeShopItem` 的可选链决定审计日志 `summary` 里写什么，而审计行是运营改了什么的唯一持久记录——此前没有任何测试钉过"flag 没有 rollout / rollout 全空 / 被关掉"时那行字长什么样；`listAudit` 的能力收窄决定一个没有 `audit.view.all` 的运营能不能看到别人的操作记录（`httpApi` 只查了更弱的 `audit.view.self`）；`resolveAntiCheatReview` 的先封号后结单顺序决定"结单了但封号没落地"会不会发生。
+
+新增 5 个测试文件 + 1 个共享 helper + 给既有 `clients-adminManage.test.ts` 追加一个 describe（共 154 例，原有 203 例零改动）：
+
+- `test/stubDeps.ts`（helper）：构造一份 `AdminServiceDeps`，审计日志换成内存数组，域实例仍然过**真实的** `AdminService` 构造函数拿（同 `promo.test.ts` 的先例——`AdminCore.audit`/`requireCap`/`actorNames` 是被测对象，用假的等于测假的）。故意**不做**通用内存版 Mongo：没传的字段就是 `undefined`，测试一旦走到没桩的集合会直接 TypeError，而不是安静地跑进第二套并行实现里。`cols` 按集合逐个合并（比展开深一层），这样只想加 `auditLog.find` 的测试仍然拿得到捕获用的 `auditLog.insertOne`。
+- `test/validators.test.ts`（40 例）：`service/validators.ts` 84% 行 / **48.42%** 分支（全包最差）→ **100/100**。八个纯函数逐个穷举：三个 id 的缺席/空白/自交易、severity 归一、`reasons` 非数组、`num()` 的非有限/负数、三种附件类型 × 缺 id/负数量、9 位 publicId、`validateRollout` 的每个 string[] 字段（非数组/含非字符串/trim 后全空）+ pct 五种非法值 + 未知平台、`validateShopItemInput` 的 null/数组/NaN/布尔、以及上面提到的两个审计摘要格式化器。
+- `test/accounts.test.ts`（23 例）：`service/accounts.ts` 94% 行 / **50%** 分支 → **100/100**。含两条自我保护守卫（super 不能把自己降级/停用，否则整个部署再没人能管账号，除了直接改 Mongo 没有恢复路径）、11000 并发重复键 → 409（且其它 insert 错误原样抛出，别把真 DB 故障报成重名）、空 patch 短路（不写库也不写审计——空 summary 的 `account.update` 读起来像"有人改了这个账号"而其实什么都没改）。
+- `test/analyticsService.test.ts`（33 例）：`service/analytics.ts` 86% 行 / **64.86%** 分支 → **100/100**。审计可见性收窄、from/to 四种组合、三个 id 输入的兜底、每一条 `players`/`antiCheat`/`suspiciousPve` 的 503、`resolveAntiCheatReview` 的先封号后结单、`sampleOnce` 的 `gameLoad ?? 0`（gameserver 不上报时必须采成 0 而不是 `undefined`，否则趋势图是个洞而不是地板）。
+- `test/ticketsService.test.ts`（41 例）：`service/tickets.ts` 94% 行 / **65.27%** 分支 → **100/100**。四条输掉的 CAS、三条状态机守卫、四眼原则的"有别人能批则拒绝自批 / 没别人则允许并在审计里打 `[SELF-APPROVED:no-other-approver]`"两侧、retry 的原子占位（双击的败方拿 409 而不是发第二封邮件）、以及执行器在邮件后端"返回 ok 但没给 recipientCount"和"失败但没给 error"两种半残响应下写进文档和审计的内容。
+- `test/serviceDegrade.test.ts`（23 例）：ladder（6 条）/gacha/mapTemplates/paddleEvents/appeals 的 `available` 两侧 + `AdminError` 的 `message ?? code` + `FlagsService.upsertFlag` 的文档装配（rollout 校验后为空 / desc 空白或非字符串时必须整个字段不写进去）。这一组顺带把各域"读默默降级、写响亮报错"的分工钉下来了：ladder/gacha/mapTemplates 的读返回空值让 ops 控制台照常渲染，gacha 的写抛自己的 `gacha_unavailable`（而不是 client 的通用 502，让运营知道是部署没配好而不是配置被拒），appeals 两个方法**都**报错（申诉队列在后端不可达时显示成"没有申诉"，看起来就像没事可做）。
+- `test/clients-adminManage.test.ts` 追加 8 例：`HttpGachaPoolsClient` 的 `detail ?? error ?? r.error ?? 模板` 消息链和 `r.status || 502`（62.5% → **100%** 分支）——只有每条链的第一环跑过。链上哪一环胜出是运营真正读到的那句话：`detail` 是 meta 自己的校验说明，`r.error` 是传输故障，模板是最后兜底；status 0 的传输故障也是唯一不能显示成 "HTTP 0" 的情况。
+
+admin 整体：**分支 82.09% → 92.42%**，行 93.81% → 95.88%（`npm run test:coverage`，24 test files / 357 tests 全绿，`npm run typecheck:test` 干净）。`src/service` 这一层 70.83% → **96.5%** 分支，用户点名的三个最差文件（validators/accounts/ladder）全部 100%。
+
+**未继续追**（下一轮候选，按剩余分支数排序）：`src/httpApi/*`（84.61% 分支——`helpers.ts` 72.4%、`playerRoutes.ts` 79.2%、`trustSafetyRoutes.ts` 79.4%、`opsConfigRoutes.ts` 80.6%、`monitorRoutes.ts` 82.6%、`accountRoutes.ts` 82.3%、`session.ts` 84.2%、`slgRoutes.ts` 88.2%：都是"query 参数缺席/畸形"和错误映射分支，要走 `httpRoutes.e2e.test.ts` 那套真实 HTTP 注入，一条分支一次请求，比 service 层贵得多）、`src/clients/{analytics,paddleEvents,events,ladder,mismatch,appeals}.ts`（78~89% 分支，同上面 gachaPools 那批消息链/降级形状，`vi.mock` 一下就能补，只是本轮没排进去）、`src/service/{reports,shop,slgAudit,events,world,moderation,auth}.ts`（81~93% 分支，各剩 1~5 条）、`src/db.ts`（75%）、`src/index.ts`（0%，进程 bootstrap，同前几轮先例不追）。

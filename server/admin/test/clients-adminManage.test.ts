@@ -223,3 +223,72 @@ describe('HttpLadderClient', () => {
     expect(await new HttpLadderClient('http://meta', 'k').getCurrentSeason()).toEqual({ seasonNo: 3, startAt: 1, endAt: 2, state: 'active' });
   });
 });
+
+// ── Error-message fallback chains (2026-09-03 branch-coverage pass) ─────────────────────────────
+// The `HttpGachaPoolsClient` group above covers each method's happy path plus one failure, which is
+// enough for 100% LINE coverage but left 9 of its 24 branches unexecuted: every method builds its
+// thrown message out of a `detail ?? error ?? r.error ?? template` chain and its status out of
+// `r.status || 502`, and only the first link of each had ever run. The chain is what an operator
+// actually reads when a pool edit is refused, so which link wins matters: `detail` is meta's own
+// validation prose, `r.error` is a transport failure, and the template is the last resort. A
+// network error (status 0) is also the only case that must NOT surface as "HTTP 0".
+describe('HttpGachaPoolsClient error-message and status fallbacks', () => {
+  it('list maps a transport failure (status 0) to 502 and names the transport error', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 0, body: null, error: 'timeout' });
+    await expect(new HttpGachaPoolsClient('http://meta', 'k').list()).rejects.toMatchObject({
+      status: 502,
+      message: 'list gacha pools timeout',
+    });
+  });
+
+  it('list falls back to "network error" when the transport failed without a message', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 0, body: null });
+    await expect(new HttpGachaPoolsClient('http://meta', 'k').list()).rejects.toMatchObject({
+      message: 'list gacha pools network error',
+    });
+  });
+
+  it('list treats a 200 with no pools array as an empty list', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: {} });
+    expect(await new HttpGachaPoolsClient('http://meta', 'k').list()).toEqual([]);
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: null });
+    expect(await new HttpGachaPoolsClient('http://meta', 'k').list()).toEqual([]);
+  });
+
+  it('createCustom prefers detail, then error, then the transport error, then the HTTP template', async () => {
+    const client = new HttpGachaPoolsClient('http://meta', 'k');
+    fetchMock.mockResolvedValue({ ok: false, status: 400, body: { detail: 'detail wins', error: 'ignored' } });
+    await expect(client.createCustom({} as never, 'adm-1')).rejects.toMatchObject({ message: 'detail wins' });
+    fetchMock.mockResolvedValue({ ok: false, status: 409, body: { error: 'pool exists' } });
+    await expect(client.createCustom({} as never, 'adm-1')).rejects.toMatchObject({ status: 409, message: 'pool exists' });
+    fetchMock.mockResolvedValue({ ok: false, status: 0, body: null, error: 'socket hang up' });
+    await expect(client.createCustom({} as never, 'adm-1')).rejects.toMatchObject({ status: 502, message: 'socket hang up' });
+    fetchMock.mockResolvedValue({ ok: false, status: 500, body: null });
+    await expect(client.createCustom({} as never, 'adm-1')).rejects.toMatchObject({ message: 'create pool HTTP 500' });
+  });
+
+  it('createCustom rejects a 200 that carries no pool id', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: {} });
+    await expect(new HttpGachaPoolsClient('http://meta', 'k').createCustom({} as never, 'adm-1')).rejects.toMatchObject({
+      status: 200,
+      message: 'create pool HTTP 200',
+    });
+  });
+
+  it('close prefers the body error, then the transport error, then the HTTP template', async () => {
+    const client = new HttpGachaPoolsClient('http://meta', 'k');
+    fetchMock.mockResolvedValue({ ok: false, status: 404, body: { error: 'no such pool' } });
+    await expect(client.close('p1')).rejects.toMatchObject({ status: 404, message: 'no such pool' });
+    fetchMock.mockResolvedValue({ ok: false, status: 0, body: null, error: 'socket hang up' });
+    await expect(client.close('p1')).rejects.toMatchObject({ status: 502, message: 'socket hang up' });
+    fetchMock.mockResolvedValue({ ok: false, status: 503, body: null });
+    await expect(client.close('p1')).rejects.toMatchObject({ message: 'close pool HTTP 503' });
+  });
+
+  it('close rejects a 200 that carries no pool id', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body: {} });
+    await expect(new HttpGachaPoolsClient('http://meta', 'k').close('p1')).rejects.toMatchObject({
+      message: 'close pool HTTP 200',
+    });
+  });
+});
