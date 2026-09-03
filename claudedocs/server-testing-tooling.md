@@ -187,7 +187,7 @@
 - **`ci.yml`**：步骤名 `enforce >=90% line coverage per package` → `enforce >=90% line and branch coverage per package`。
 - **没有做的：per-package 豁免名单**。ADR-070 Phase 4e 刻意把那套机制退役了（理由：留一条能豁免的活路，就是在邀请人去走它而不是去干活），所以这里**只有一个全局旋钮** `COVERAGE_BRANCH_THRESHOLD`。整仓降线是一个显眼的、明显临时的、一行的动作；一份被免除的包清单两样都不是。
 
-**⚠️ 落地即红**：6 个包（commercial 81.3% / metaserver 85.9% / worldsvc 87.0% / auctionsvc 88.2% / socialsvc 89.2% / botsvc 89.4%）当场破线，合计缺 362 条分支；因为 8 个 `*-deploy.yml` 都靠 `workflow_run.conclusion == 'success'` 门控，**这段时间所有部署被挡**。这是知情选择（先立线、再逐包补，让门禁去驱动补测），不是意外。真要在补完之前发一次版：`COVERAGE_BRANCH_THRESHOLD=80` 临时降线。排序后的表格顺带露出了行 headroom 从来看不见的东西——**gameserver 和 gateway 只剩 +5 条分支余量**，随手加个 `if` 就红。
+**⚠️ 落地即红**：6 个包（commercial 81.3% / metaserver 85.9% / worldsvc 87.0% / auctionsvc 88.2% / socialsvc 89.2% / ~~botsvc 89.4%~~ → 98.17%，同日补完）当场破线，合计缺 362 条分支；因为 8 个 `*-deploy.yml` 都靠 `workflow_run.conclusion == 'success'` 门控，**这段时间所有部署被挡**。这是知情选择（先立线、再逐包补，让门禁去驱动补测），不是意外。真要在补完之前发一次版：`COVERAGE_BRANCH_THRESHOLD=80` 临时降线。排序后的表格顺带露出了行 headroom 从来看不见的东西——**gameserver 和 gateway 只剩 +5 条分支余量**，随手加个 `if` 就红。
 
 测试：`coverageScripts.test.ts` 从 29 例扩到 36 例。夹具的 `coverageTree` 拆出 `pct`（行）和 `branchPct`（分支）两个独立旋钮——**这是这次最关键的夹具改动**：原来 `metric(p)` 把四个指标一起设成同一个数，那样既表达不出"一个指标过、另一个不过"这个门禁存在的理由，又会让每一条既有的行覆盖率用例意外变成分支用例（`honours COVERAGE_THRESHOLD` 那例会直接假红）。新增 7 例：100% 行 / 62% 分支必须红（**这条就是门禁存在的那个用例**，而且行覆盖率故意钉在线上方——万一以后分支检查被拿掉，不能让行那一半顺手接住、把失败伪装成别的东西）、两条线各自点名、同时破两条线两边都点名、`COVERAGE_BRANCH_THRESHOLD` 双向且与行线互不影响、绿日志两条线都点名、`Br. headroom` 数值 + 更紧者优先的排序、分支回退行、`gateHeadroom` 的 `metric` 参数、以及两条线各读自己的 env。
 

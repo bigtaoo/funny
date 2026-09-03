@@ -2,7 +2,7 @@
 
 > 从 [`server-testing.md`](server-testing.md) 拆出（2026-08-20，原文件 501 行，ADR-067）。姊妹分册：[`server-testing-tooling.md`](server-testing-tooling.md)（覆盖率工具 / CI）、[`server-testing-typecheck.md`](server-testing-typecheck.md)（`test/**` 类型检查）。
 > 本册是 13 个包逐个把**行覆盖率百分比**拉到 90%+ 的记录，一个包一节。工具怎么接上的、90% 门禁在哪，见上面第一个链接；「哪些代码路径完全没测过」的人工审计在 [`server-testing.md`](server-testing.md)。
-> **2026-09-03 起多了第二个口径**：最后一节（admin 第三轮）是第一节以**分支覆盖率**为目标的记录。行覆盖率有 CI 门禁盯着，分支覆盖率没有——一个包可以行 93% 过关、分支 82% 而不会有任何东西报出来，所以这一维的缺口只能靠人主动去量。
+> **2026-09-03 起多了第二个口径**：末尾两节（admin 第三轮、botsvc）是以**分支覆盖率**为目标的记录，中间隔着一节全仓横向核实。行覆盖率有 CI 门禁盯着，分支覆盖率没有——一个包可以行 93% 过关、分支 82% 而不会有任何东西报出来，所以这一维的缺口只能靠人主动去量。
 
 ## metaserver 补测：equipment/auth/economy/paddle 从 0~10% 拉到 90%+（2026-08-13，同日追加）
 
@@ -320,7 +320,7 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 | worldsvc | **86.99%** | 95.69% | 534 / 4106 |
 | auctionsvc | **88.18%** | 95.37% | 101 / 855 |
 | socialsvc | **89.22%** | 94.71% | 110 / 1021 |
-| botsvc | **89.39%** | 92.74% | 37 / 349 |
+| ~~botsvc~~ | ~~89.39%~~ → **98.17%** | 94.66% | 下一节已补完 |
 | gateway | 91.03% | 93.07% | 45 / 502 |
 | client | 91.05% | 96.17% | 231 / 2583 |
 | gameserver | 91.47% | 92.09% | 29 / 340 |
@@ -338,9 +338,48 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 - **worldsvc**（534 条，58 个文件）：集中在 `combatSiege/`——`encounter.ts` 75.0%（31 条）、`arrival/citySiege.ts` 50.9%、`arrival.ts` 74.7%、`arrival/cityDefenders.ts` 57.4%；另有 `httpApi/sectRoutes.ts` 73.5%/100% 行、`city/training.ts` 69.7%/100% 行。
 - **auctionsvc**：`auctionService/trade.ts` 75.7%（26 条，占全包四分之一）、`journalSweep.ts` 72.4%/100% 行、`delivery.ts` 72.7%。
 - **socialsvc**：`httpApi/helpers.ts` **40.0%**、`friend/chat.ts` 76.8%、`friend/relations.ts` 82.8%/100% 行。
-- **botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。
+- ~~**botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。~~ 已于同日补完，见下一节。
 - **client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。
 
-**排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高；commercial 是百分比最低的、且 149 条集中在 6 个文件里；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完。
+**排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高——**已于同日做完，见下一节**。剩下的：commercial 是百分比最低的、且 149 条集中在 6 个文件里；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完。
 
 **先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
+
+## botsvc 补测：**分支**覆盖率，从 89.39% 拉到 98.17%（2026-09-03，worktree `feat/botsvc-branch-coverage`）
+
+上一节的排期建议把 botsvc 排在第一（37 条缺口，`protoCodec.ts` 一个文件占 8 条），本节是照着做的结果。行覆盖率 92.74% 早就过了门禁，分支 89.39% 差 3 条破线。
+
+**先说一个会让人对不上账的计数细节**：v8 的分支**总数**跑完这轮从 **349 涨到 383**。v8 是按实际执行到的代码去发现分支点的，先前从未进入过的函数体里的分支根本不出现在分母里——所以「缺 37 条」和「缺 7 条」之间不是 30 条的差，补进去的是 64 条。看 `coverage-summary.json` 的绝对分母做同比时要留意这一点。
+
+**缺口分成三种形状，跟 admin 那轮的三种只部分重合**：
+
+1. **整个文件没有自己的测试，只被上层顺带跑过**——`protoCodec.ts`（61.9%）和 `envelopeSocket.ts`（83.3%）都没有测试文件，全靠 `engineDriver.test.ts` / `gameServerClient.test.ts` 走整局对战和真 WS 时捎带执行。捎带执行只会走happy path：喂进编解码器的永远是引擎自己产出的、格式正确的数据，且只有 AISystem 恰好会决定的那一个判别式；socket 永远是开着的。
+2. **真实引擎/真实网络摆不出来的状态**——`engineDriver.ts` 的 6 条全在这里：棋盘上有建筑物且 bot 在 Bottom（镜像视图要连建筑物的 side 一起翻）、AI 在 Bottom 决定了 `upgrade_base`/`refresh_hand`（没有 row 可翻）、`GamePhase.GameOver` 但**没有** `game_over` 事件（game_draw）、同一 tick 里两个终局信号、结束前读 `getResult()`。6 张牌的测试对局跑一万帧也进不去这些状态。
+3. **「已经结束了」的重入守卫**——`battleSession.ts` 的 4 条：三个结算来源（本机引擎 game_over、服务端 match_over、传输层 abort/disconnect/timeout）是真并发的，竞速输掉的那两个照样会把自己的 handler 跑完。第二次结算不是无害的空操作：它会二次 `close()` 并对已 resolve 的 promise 调 `reject()`，变成 unhandled rejection 打死整个 fleet 的进程（跟 2026-07-14 那次同类）。
+
+新增 3 个测试文件 + 给 6 个既有文件追加（共 **58 例**，119 → **177**，既有 119 例零改动）：
+
+- `test/protoCodec.test.ts`（19 例，新）：61.9% → **100%**。畸形帧丢弃（这里抛出去就是 ws `message` 回调里的 uncaughtException）、两个方向上的三个判别式各自穷举、以及每一处 `?? 0`——这些兜底存在的理由是 proto3 的 scalar 没有可选性而引擎的 `col`/`row` 有，跨边界时字段缺席必须落到 0；落成 `undefined` 不会报错，只会让两边模拟悄悄分叉。外加 `matchStateHash` 的槽位顺序敏感性（2026-07-14 那个镜像 stats bug 就是同样两份 stats 换了槽位）。
+- `test/envelopeSocket.test.ts`（7 例，新）：83.3% → **100%**。用真 `WebSocketServer`（同 `gameServerClient.test.ts`），外加一个只 accept 不回应的裸 TCP 监听来制造「握手永远不完成」——这跟「端口拒绝连接」是两条不同的路径，前者必须 `terminate()`，不然半开连接留到进程结束。`send()` 在 socket 已关闭时的 readyState 检查是承重的而非装饰：调用方是个 lockstep 循环，掉线后还会再提交几个 tick 的命令，而 `ws` 对已关闭的 socket 直接抛。
+- `test/engineDriver.stubEngine.test.ts`（11 例，新）：83.78% → **100%**。`vi.mock('@nw/engine')` 只替换 `createGameEngine` 和 `AISystem`，`BOARD_ROWS`/`Side`/`GamePhase` 全部走 `importOriginal` 的真值——`flipRow`/`flipSide` 正是被测逻辑，把它们的输入也桩掉就等于在测这个测试文件自己的算术。既有的 `engineDriver.test.ts` 跑真引擎、是 netplay 契约的权威，两者分工不重叠（红检里能看到：把建筑物的 `flipSide` 拿掉，真引擎那一套全绿，只有这个文件红）。
+- 追加：`battleSession.test.ts` +4（三条晚到回调 + `difficulty ?? 5`）、`bot.test.ts` +5、`internalHttp.test.ts` +4（1MB 上限把上传打断 / 畸形 JSON → 400）、`gameServerClient.test.ts` +2（服务端单方面结算的 `match_over`：Room.destroy() 不关 socket，没有这个 handler 的话 bot 会一直等永远不会来的 frame_batch，直到 20 分钟的墙钟守卫——每次对手掉线就占用一个 fleet 槽位二十分钟）、`worldClient.test.ts` +3、`capacityClient.test.ts` +2、`scheduler.test.ts` +1。
+
+**bot.ts 那两条 `!this.token || !this.worldId` 守卫值得单独记**：`tickSlg` 顶上已经查过 token，公开 API 上唯一能让下面这两条真正触发的路径是**「world 调用 await 期间 `logout()` 了」**——`logout()` 清 token 但不清 worldId，于是顶上的检查通过、底下的不通过。测试就照这个接线（`getWorldMe` 的 fake 里调 `session.logout()`）。真实后果不是抽象的：没有这两条，这个 tick 会继续拿一个 fleet 已经放弃的 token 去 POST `/world/build/upgrade`，在真后端上就是一个 401，挂在一个没人再跟踪为在线的账号上。`trySiege` 那条（L203）到不了——见下面的清单。
+
+botsvc 整体：**分支 89.39% → 98.17%（376/383）**，行 92.74% → **94.66%**，函数 99.03%；19 test files / **177** tests 全绿，`npm run typecheck:test` 干净。
+
+**故意没追的 7 条**（每条都核对过不可达，别当成漏掉再补一遍）：
+
+| 位置 | 为什么到不了 |
+|---|---|
+| `index.ts` | 进程 bootstrap，同前几轮先例不追 |
+| `pool.ts:22` `return 'starter_growth'` | `TIER_THRESHOLDS` 最后一档 `upTo: 1.0`，而 `generateBotPool` 的 `ratio = (i-0.5)/size` 恒 < 1，循环兜底那行公开 API 到不了 |
+| `socialClient.ts:20` `...(body ? {…} : {})` | `SocialClient` 没有任何方法带 body（与 `worldClient` 的 `call` 保持同形状而留的） |
+| `capacityClient.ts:22` `r.error ?? 'network error'` | `fetchInternalJson` 在 `status === 0` 时**总会**带上 `error`，右侧兜底取不到 |
+| `gatewayClient.ts:25` 定时器里的 `if (settled) return` | `finish()` 会 `clearTimeout(timer)`，settle 之后这个回调根本不会跑 |
+| `gameServerClient.ts:31` 定时器里的 `if (gotMatchStart) return` | 同上：`match_start`/`close`/`error`/`catch` 四条路都 `clearTimeout` |
+| `bot.ts:203` `trySiege` 的守卫 | 要同时满足「worldId 未设」和「`slgTick % 5 === 0`」，但 `slgTick++` 在 worldId 那个块**之后**，worldId 一旦设上就不会再清——两个条件在公开 API 上互斥 |
+
+后四条是同一种东西：**先写守卫、后加清理**造成的死分支。留着没害（都是一行的 early return），但也说明这一维数到 100% 是没有意义的目标——不可达的防御分支不会因为写了测试就变得可达。
+
+**红检**（本仓库惯例，改一处实现看指定的测试变红，再还原）：① 去掉 `buildMirroredView` 里建筑物的 `flipSide` → 只有新的 stub-engine 文件红一例，真引擎那套 15 例全绿；② 去掉 `battleSession` `finish()` 的 `if (settled) return` → 晚到回调那一例红；③ 去掉 `upgradeNextBuilding` 的守卫 → 登出竞态那一例红。三次都还原后 177 例全绿。

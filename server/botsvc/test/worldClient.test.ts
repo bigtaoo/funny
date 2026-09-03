@@ -111,3 +111,21 @@ describe('WorldClient.pickAttackTarget', () => {
     expect(client.pickAttackTarget([])).toBeNull();
   });
 });
+
+describe('WorldClient.baseCoords — non-numeric segments', () => {
+  // 'not-a-tile-id' above is rejected one line earlier, by the <3-segment check, so the Number.isFinite
+  // pair had never actually run against a bad value. It has to hold: baseCoords feeds
+  // BotSession.trySiege's march origin, and a NaN x/y would go out as `fromX=NaN` on a real POST
+  // /world/march instead of the bot simply skipping the siege this tick.
+  it('returns null when the x segment is not a number', () => {
+    expect(client.baseCoords({ joined: true, mainBaseTile: 's3-0:ab:34' })).toBeNull();
+  });
+
+  it('returns null when the y segment is not a number', () => {
+    expect(client.baseCoords({ joined: true, mainBaseTile: 's3-0:12:cd' })).toBeNull();
+  });
+
+  it('still parses a worldId that itself contains extra colons (split from the right)', () => {
+    expect(client.baseCoords({ joined: true, mainBaseTile: 's3:0:12:34' })).toEqual({ x: 12, y: 34 });
+  });
+});
