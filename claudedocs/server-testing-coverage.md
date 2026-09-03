@@ -314,7 +314,7 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 
 | 包 | 分支 | 行 | 未覆盖分支 |
 |---|---|---|---|
-| commercial | **81.25%** | 93.64% | 149 / 795 |
+| ~~commercial~~ | ~~81.25%~~ → **99.59%** | 98.14% | 下一节已补完 |
 | ~~admin~~ | ~~82.09%~~ → **92.42%** | 95.88% | 上一节已补完 |
 | metaserver | **85.86%** | 90.74% | 481 / 3403 |
 | worldsvc | **86.99%** | 95.69% | 534 / 4106 |
@@ -344,3 +344,38 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 **排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高；commercial 是百分比最低的、且 149 条集中在 6 个文件里；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完。
 
 **先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
+
+## commercial 补测第二轮：**分支**覆盖率，从 81.25% 拉到 99.59%（2026-09-03，worktree `feat/commercial-branch-coverage`）
+
+上一节那张表里 commercial 是分支覆盖率**最低**的包（81.25%，795 条里 149 条从未执行），行覆盖率 93.64% 早就过了门禁。本节把它补完：**分支 81.25% → 99.59%（996 条里只剩 4 条）**，行 93.64% → **98.14%**（`npm run test:coverage`，25 test files / **424** tests 全绿——新增 211 例，原有 213 例零改动；`npm run typecheck` + `npm run typecheck:test` 干净）。`src/service` 这一层 11 个文件全部 **100% 行 / 100% 分支**，`src/iap` 7 个文件同样全绿。
+
+**149 条缺口分成三类形状**（跟 admin 第三轮的三类只有第三类重合，前两类是这个包特有的）：
+
+1. **9 处 E11000 catch 块，整块从未执行**（`shop.ts` 的 shopCharge/spend/grant、`gachaDraw.ts` 的 gachaDraw/redeemFate、`recharge.ts` 的 rechargeVerify/verifyNonCoinReceipt/paddleComplete、`promo.ts` 的 promoRedeem、`base.ts` 的 subscriptionCardBuy）。这些是 insert-first 幂等键（§6.5）的**败方**分支：预检查读没查到行、抵达 insert 时另一个调用方已经占掉同一个 key。既有 e2e 把「预检查发现已有行」那一侧测得很透，但要进 catch 需要两个调用方落在同一个几毫秒窗口里——真实 mongod 只有靠赢一次真实竞态才能产生，所以整块代码（连带里面每个决定「败方告诉玩家什么」的 `??` 兜底）一条都没跑过。
+2. **`?? fallback`：读回来的文档没带那个字段**。`orders.pityAfter`（§7 Fate 点数才加的）和 `coinsAfter` 的回填都比集合本身年轻，而真实 Mongo 的 `$inc` 永远会创建它 `$inc` 的字段——所以「返回的文档缺这个字段」这种形状只有**旧版本写的行**和手工修过的行能产生，一次全新的 e2e 跑不出来。同类还有 `applySubscription` 的 `ref.reason`/`ref.orderId`（只有部分调用方传，默认值决定**账本行**里写什么）。
+3. **拒绝路径 / 降级侧**（同 admin 第三轮的第 2、3 类）：非有限金额、pool CRUD 校验、refund heal 的四个守卫、支付渠道端故障（Apple 5xx / socket 断 / OAuth 无 token）、env 映射表写坏。
+
+**这批分支不是凑百分比**——它们各自钉住的东西：
+
+- **非 11000 的驱动错误必须原样上抛**。每个 catch 旁边都有一行 `throw e`，此前一条也没跑过。吞掉它等于把「数据库连不上」变成 `ok:true, 你这笔已经成功了`——对钱包来说是最坏的一种谎话（客户端从此不再重试，玩家的钱没了）。
+- **败方必须报赢家的结果，而不是自己本地算出来的那份**（赢家实际扣的币、实际摇出的 results、实际到达的 status）；赢家的行**已经被回滚掉**时（每个调用点在扣款失败后都会删掉自己占的槽位）还得落到一个无害的中性答案，而不是在缺失文档上崩掉。
+- **`Number.isFinite` 必须在 floor 之前**：`Math.floor(Infinity) === Infinity` 会穿过 `=== 0` 检查直接进无条件 `$inc`，把余额变成 NaN——之后每次 `$inc` 都还是 NaN，不手改 Mongo 没有恢复路径。
+- **一笔不确定的校验必须 throw、不能 return ok:false**：`rechargeVerify` 把 `ok:false` 映射成 `INVALID_RECEIPT`（永久性的「你的收据是假的」，客户端不会重试），而抛出去是 400/INTERNAL_ERROR、调用方可以在商店恢复后重试。把「Apple 抽风了一分钟」翻译成「你这笔无效」，代价是一个付了钱的玩家的币。
+- **db.ts 的连接失败日志**：那句诊断是把 URI 脱敏后拼出来的，而 commercial 的 `NW_COMM_MONGO_URI` 带 `user:password@host`。脱敏一旦坏掉，数据库密码就进了启动日志（会被 ship 到 Loki，有 ops 控制台权限的人都能读）。
+
+新增 **9 个测试文件 + 1 个共享 helper**（211 例，既有 13 个文件零改动）：
+
+- `test/helpers/fakeCols.ts`（helper）：按集合逐个给方法桩，`stubCols()` 只是个类型转换；`replies(...)` 按调用顺序返回预置值、**用超就 reject**（一次意料之外的多余读说明被测代码的形状变了，应该响亮地失败——实测第一次跑就靠这条揪出了一个 describe 内共享桩导致的跨用例串味）。故意**不做**通用内存版 Mongo：桩只返回预置值/抛预置错误，不模拟查询匹配、原子性和更新语义；断言只针对**服务**的决定（返回值、下一步调了哪个集合方法），从不针对「假数据库存了什么」——存储语义仍然由真实 Mongo 的 e2e 文件负责。没桩的集合就是 `undefined`，走到它的路径直接 TypeError（同 admin `stubDeps.ts` 的规则）。
+- `test/dupKeyReplay.test.ts`（41 例）：上面第 1 类。9 个调用点每个三到六态——赢家行可读 / 赢家是**另一个账号**（跨账号余额泄漏，`shopCharge`/`spend`/`grant`/`subscriptionCardBuy` 都有这条守卫）/ 赢家的行已被回滚 / 非 11000 错误上抛；`subscriptionCardBuy` 另加「赢家的 claim 还新鲜 → 只读快照」「过了 15s 宽限期但输掉 healClaimedAt CAS → 还是只读快照」「赢下 CAS → 真的把废弃的 grant 续完」三态。
+- `test/partialRowFallbacks.test.ts`（14 例）：上面第 2 类。`applySubscription`/`applySubscriptionIfInactive` 直接调（它们是 `WalletCore` 的公开 API），断言默认 reason 落进账本行、没有 orderId 时账本行**不带**这个字段、更新后的钱包没有 subscription 子树时到期时间取 `now + days`（不是 `undefined`——这个值是客户端渲染月卡剩余时间的那个数）；外加 gachaDraw 重放老订单行（没有 pityAfter / pityAfter 里没有这个池的键 / coinsAfter 还没回填）、redeemFate 扣完后钱包没有 fatePoints 字段、monthlyCardClaim 领取到的钱包没有 subscription 子树、orderDelivered 两次读之间订单消失、promoRedeem 撞键后读到的兑换行还新鲜。
+- `test/serviceGuards.e2e.test.ts`（52 例，真实 Mongo）：非有限金额（ads/victory/spend 各自 BAD_REQUEST 且**钱包文档都不创建**；`grant` 例外——它本来就允许 amount 0，非有限值坍缩成 0、占槽位不给币）、`orderDelivered` 的 refundCoins 归一（Infinity→0 / 12.9→12 / 负数→0）、refund heal 的四个守卫、`paddleRefund` 三态（未知交易 / 没记 usdCents / 扣一次后重投的 webhook 变 no-op）、`verifyNonCoinReceipt` 的五态（同账号同商品重放 ok / 跨账号 / 跨商品 / 收据本身解析成另一个商品 / 解析成币档）、渠道路由（apple 收据只进 `recharged.apple`、paddle 进 `recharged.web`、认不出来的平台退回自由池——月卡/年卡/成长包各自两侧）、starterBuy 的六条重放与拒绝路径、以及 `gachaPool.ts` 全部 CRUD 校验（五种非法 limited 配置、shadow 静态池 id、编辑自定义池必须保留原始 createdBy/createdAt、关闭未知池 NOT_FOUND、关闭后 endAt 夹到 now 且配置**留着**让 featured legendary 仍可用 Fate 兑换）。
+- `test/internalHttpParsing.e2e.test.ts`（29 例，真实 node:http + 真实 Mongo）：`str()`/`num()`/`strOpt()` 是 meta 的 JSON 到「真正搬币的代码」之间的**全部**类型边界，此前只被格式正确的 body 走过。补了：完全没有 body（读成 `{}`）、body 解析不了（400，且不回显 parser 细节）、字段类型全错（数字 accountId 不能变成钱包主键 `"123"`、字符串 amount 不能变成 `$inc` 里的 NaN）、超 1MB 的 body（要么 400 要么连接被拆掉，两者都不是成功、也没写进任何集合）、非 GET/POST 动词 → 404、三个 `xxx required` 的 400、`minGain` 五态、HTTP/1.0 不带 Host 头也要能路由（URL 是拿 Host 拼的合成 base）、以及每个可选字段的**两侧**（refundCoins 数字 vs 字符串、promo code 三个可选字段给了 vs 没给 vs 类型错、paddle event 的 status/accountId、custom pool 的 config 缺失 / items 不是数组 / 有无 costTen）。另起一个「依赖故意为空」的 service 实例验证：任何意料之外的运行时故障都只能变成裸的 `INTERNAL_ERROR`——`e.message` 可能带着第三方支付渠道的原始响应体或 Mongo 连接串，这个端点的响应里两者都不该出现。
+- `test/iapPlatformEdges.test.ts`（22 例）：Apple/Google/Stripe 的**商店端故障**（5xx、socket 错误、sandbox 重试也失败、OAuth 非 2xx、OAuth 响应里没有 access_token、Play 查询非 404 的错误状态要带响应体抛出）、收据里没有任何交易 / `latest_receipt_info` 缺失退回 `receipt.in_app`、「最新一笔」的 reduce 在最新那笔排**第一**时也要选对、非币 SKU 必须回 `{ok:true, coins:0, product}`（那个 `product` 是 `verifyNonCoinReceipt` 用来比对调用方期望 SKU 的东西，所以月卡收据不能拿去领启动包），以及 `createReceiptVerifier` 的凭证门（service-account JSON 解析失败要 log 且 fail closed、WeChat 只配了一半凭证、Stripe 无 key、未知平台）。
+- `test/productResolve.test.ts`（24 例）：四个 env 驱动的解析函数直接调。规则只有一条——**凡是解析不到精确档位/SKU 的就解析成「什么都不是」（0 币 / null），绝不落到某个默认赠予**：部署的 product map 里打错一个字，购买必须 fail closed，而不是悄悄发最小档（或最大档）。含 map 里没冒号的条目、指向不存在档位的条目、tier 半边为空、map 设了就**不再**回落到内建 `${bundle}.coins.<tier>` 约定、`NW_IAP_BUNDLE` 覆盖与默认两侧。
+- `test/gachaRollEdges.test.ts`（18 例）：`gacha.ts` 里「池配置不是我们假设的那样」的守卫。池定义不是常量——limited 池是抽卡时从 admin 文档 `buildLimitedPool` **现场构建**的，custom 池是运营在控制台逐条填的，而它们引用的物品目录独立演进。所以覆盖：某个稀有度档位为空（硬保底要一张池子里没有的传说）、连 common 也空（退化成合成 id）、odds 表里有 `itemsByRarity` 没有的物品（显示成 common）和反向（权重当 0，不可抽中）、权重小到 ×1e6 后取整为 0（`validateCustomPool` 只要求 `> 0`，这种配置存得下去）、目录里已经不存在的物品（存量池活得比目录长）、tenFloor 是 legendary 时要**重置** pity、以及默认 crypto rng 的 `n <= 1 → 0` 短路（生产每一次抽卡都走它，`randomInt(0)` 会直接抛）。另有 3 例明确标注 off-contract：喂一个 `rng(n)` 返回 `n` 的随机源（超出 `RandInt` 契约、cryptoRand 不可能产生），只为证明循环后的兜底 return 给出的是真实物品而不是 `undefined!`——那几个非空断言是「坏 rng 别把 undefined 塞进一笔已经扣了钱的抽卡结果」的最后一道。
+- `test/walletViewHelpers.test.ts`（10 例）：`devVerifyReceipt` 的决策树（注意它**不是** `iap/devStub.ts` 的 `devVerify`，两者行为不同：前者是本包 `deps.verifyReceipt` 缺席时的兜底，也就是整个 e2e 套件和所有 dev/CI 部署实际用的那个）——空收据、已知/未知 `product:`、已知/未知 `tier:`、无前缀（E2E 的 `topup_` 路径），且 usdCents 必须跟着档位一起回落，否则 `totalRechargeCents` 会被一个和实发币数不匹配的价格顶上去。外加 `limitedConfigFromDoc`/`customConfigFromDoc` 的可选字段两侧（`fillerLegendaries` / `costTen` 缺席时整个字段不能出现，否则 `undefined` 会流到 `buildLimitedPool` 和 ×10 价格里）。
+- `test/dbConnect.test.ts`（1 例）：连不上时脱敏 + 重抛（上面「不是凑百分比」的最后一条）。
+
+**剩下 4 条不追，原因逐条**：`src/index.ts` 1 条（进程 bootstrap，同前几轮先例）；`gacha.ts` 2 条（`rollFixedOddsItem` 的 `total > 0 ? rng(total) : 0` 和随后的循环兜底——`fixedOddsTable()` 的构造决定了 total 永远 > 0：`remainderItemId` 吸收 `100 − Σ`，要让全部权重取整为 0 就得让 Σ 同时是 100 和 0，自相矛盾。**不可达**，不是没测）；`internalHttp.ts` 1 条（`req.url ?? ''`，node 的 http server 永远会设 `req.url`）。
+
+**顺带发现的一个真问题（未修，留给 owner 定夺）**：`orders.ts` 的 `healOrderRefund` 用 `ledger.findOne({ accountId, orderId })` 判断「这笔退款到底落地了没」，但**同一个 orderId 上早就有一行扣款账本**（`shopCharge` 写 `reason:'shop'`、`gachaDraw` 写 `reason:'gacha'`，都带同一个 orderId）。所以对 shop/gacha 订单，这个探针恒为真，heal 永远不会触发——而「重复的 delivery 回调补上崩溃丢掉的重复退款」这套机制，本来就是给 gacha 的重复品退款设计的。查询少了一个 `reason: 'gacha_refund'` 条件。本轮两个 heal 用例改用 **starter 订单**（cost 0、插入时是 'charged'、没有扣款账本行，而 meta 的重复退款回调对启动包的 10 连抽同样适用）才走通了这条路径，测试注释里记了这一点。修它要动钱路，属于独立改动，不塞进补测这一轮。
