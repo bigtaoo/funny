@@ -153,12 +153,13 @@ describe.skipIf(!mongo)('commercial service guards', () => {
       expect(await m.collections.ledger.countDocuments({ orderId: 'del-fresh', reason: 'gacha_refund' })).toBe(1);
     });
 
-    // The heal's "did the credit already land" probe reads `ledger.findOne({accountId, orderId})`, so it
-    // can only tell refund-landed from refund-missing on an order that has NO other ledger row under the
-    // same orderId. Starter-pack orders are exactly that shape (cost 0, inserted 'charged' with no ledger
-    // row, items delivered by meta afterwards — so meta's duplicate-refund callback applies to them),
-    // which is what these two use. See claudedocs/server-testing-coverage.md: for shop/gacha orders the
-    // debit row already carries the same orderId and masks the probe, leaving the heal inert there.
+    // The heal's "did the credit already land" probe reads
+    // `ledger.findOne({accountId, orderId, reason: 'gacha_refund'})`. The `reason` clause is load-bearing:
+    // shop/gacha orders already carry a DEBIT row under the same orderId (`reason:'shop'` / `reason:'gacha'`),
+    // so without it the probe was unconditionally true there and the heal could never fire — see the
+    // shop-order regression below, and claudedocs/server-testing-coverage.md. Starter-pack orders (cost 0,
+    // inserted 'charged' with no ledger row, items delivered by meta afterwards — so meta's duplicate-refund
+    // callback applies to them) are the other shape the heal must handle, and are what these two use.
     async function starterOrder(accountId: string, orderId: string): Promise<void> {
       const r = await svc.starterBuy({ accountId, productId: PRODUCT_STARTER_DRAW, orderId });
       expect(r.ok).toBe(true);
@@ -191,6 +192,29 @@ describe.skipIf(!mongo)('commercial service guards', () => {
       // And only once: the healClaimedAt CAS is now stamped, so a third callback is a no-op.
       expect(await svc.orderDelivered({ orderId: 'del-crash', refundCoins: 75 })).toEqual({ ok: true });
       expect(await m.collections.ledger.countDocuments({ orderId: 'del-crash', reason: 'gacha_refund' })).toBe(1);
+    });
+
+    // Regression for the probe defect: a SHOP order's own debit row carries the same orderId, so a probe
+    // without the `reason` clause matches it and reports "the refund already landed" for an order that
+    // never got one — leaving the heal permanently inert on exactly the shop/gacha orders meta's
+    // duplicate-item refund targets. Same simulated crash as above, on a shop order this time.
+    it('heals a dropped refund on a shop order, whose own debit row shares the orderId', async () => {
+      await chargedOrder('del-shop-crash', 'del-shop-a');
+      const spent = (await m.collections.wallets.findOne({ _id: 'del-shop-a' }))?.coins ?? 0;
+      // The masking row: the charge itself, under the very orderId the probe looks up.
+      expect(await m.collections.ledger.countDocuments({ orderId: 'del-shop-crash', reason: 'shop' })).toBe(1);
+      await m.collections.orders.updateOne(
+        { _id: 'del-shop-crash' },
+        { $set: { status: 'delivered', refundCoins: 75 }, $unset: { deliveredAt: '' } },
+      );
+      t += 60_000;
+      expect(await svc.orderDelivered({ orderId: 'del-shop-crash', refundCoins: 75 })).toEqual({ ok: true });
+      expect(await m.collections.ledger.countDocuments({ orderId: 'del-shop-crash', reason: 'gacha_refund' })).toBe(1);
+      expect((await m.collections.wallets.findOne({ _id: 'del-shop-a' }))?.coins).toBe(spent + 75);
+      // And exactly once: the healClaimedAt CAS stops the next callback, same as the starter-order case.
+      expect(await svc.orderDelivered({ orderId: 'del-shop-crash', refundCoins: 75 })).toEqual({ ok: true });
+      expect(await m.collections.ledger.countDocuments({ orderId: 'del-shop-crash', reason: 'gacha_refund' })).toBe(1);
+      expect((await m.collections.wallets.findOne({ _id: 'del-shop-a' }))?.coins).toBe(spent + 75);
     });
   });
 
