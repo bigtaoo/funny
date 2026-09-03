@@ -177,12 +177,12 @@ describe('anticheatAudit: what the durable review record says when the convictio
     expect((await saves.findOne({ _id: 'acctA' }))?.save.stats?.['kill.archer']).toBe(50); // untouched
   });
 
-  it('a side that reported nothing is still convicted when the judge returns a NEGATIVE stat for it', async () => {
-    // `reported ?? {}`: the only way this side of the guard is reachable. compareAudit computes
-    // reported(0) - authoritative, so a peer judge that answers with a negative count manufactures an
-    // "overclaim" against a player who reported nothing at all — and it lands as a real rollback plus a
-    // suspicion increment. Asserted, not fixed (see the report accompanying this test file); the point
-    // of pinning it is that the review row is the record a human would have to un-pick.
+  it('a side that reported nothing is NOT convicted when the judge returns a NEGATIVE stat for it', async () => {
+    // The judge is an arbitrary online peer. Before compareAudit clamped its inputs (2026-09-03), it
+    // computed reported(0) - authoritative(-5) = an "overclaim" of 5 against a player who reported
+    // nothing at all — landing as a real stat rollback, a statSuspicion increment, and an open OPS
+    // review row a human then had to un-pick. One malicious judge, one innocent player, per match.
+    // Also the clean-verdict path for `doc.reportedStats?.[side] ?? {}`: side 0 is absent from the map.
     const { cols, saves, matches, antiCheatReviews } = makeCols();
     seedSave(saves, 'acctA', { 'kill.archer': 7 });
     seedSave(saves, 'acctB');
@@ -191,11 +191,27 @@ describe('anticheatAudit: what the durable review record says when the convictio
     gateway.next = { ok: true, statsJson: '{"0":{"kill.archer":-5},"1":{}}' };
 
     const res = await auditOnce(deps(cols, gateway));
-    expect(res.flagged).toBe(1);
-    const review = await antiCheatReviews.findOne({ _id: 'r1:acctA' });
-    expect(review?.reported).toEqual({});
-    expect(review?.overclaim).toEqual({ 'kill.archer': 5 });
-    expect((await saves.findOne({ _id: 'acctA' }))?.save.stats?.['kill.archer']).toBe(2);
+    expect(res.flagged).toBe(0);
+    expect(await antiCheatReviews.findOne({ _id: 'r1:acctA' })).toBeNull();
+    expect((await saves.findOne({ _id: 'acctA' }))?.save.stats?.['kill.archer']).toBe(7); // untouched
+    expect((await matches.findOne({ _id: 'r1' }))?.audited?.verdict).toBe('clean');
+  });
+
+  it("a side missing from the judge's own stats map is treated as zeros, not as a conviction", async () => {
+    // `parsed[side] ?? {}`: the judge answered for side 1 only. A side it said nothing about must fall
+    // through as "authoritative 0 for everything" — which for a side that also reported nothing is
+    // clean, and for one that reported 40 is the full overclaim (covered by the next test).
+    const { cols, saves, matches, antiCheatReviews } = makeCols();
+    seedSave(saves, 'acctA');
+    seedSave(saves, 'acctB');
+    seedMatch(matches, 'r1', { '0': {}, '1': {} });
+    const gateway = new FakeGateway();
+    gateway.next = { ok: true, statsJson: '{"1":{}}' }; // side 0 entirely absent
+
+    const res = await auditOnce(deps(cols, gateway));
+    expect(res.flagged).toBe(0);
+    expect(await antiCheatReviews.findOne({ _id: 'r1:acctA' })).toBeNull();
+    expect((await matches.findOne({ _id: 'r1' }))?.audited?.verdict).toBe('clean');
   });
 
   it('convicting an account that has no stats to roll back records rolledBack:{} and leaves stats absent', async () => {

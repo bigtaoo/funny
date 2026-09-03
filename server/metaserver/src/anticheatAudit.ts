@@ -187,11 +187,15 @@ async function auditMatch(
   // Compare reported vs re-computed values per side and collect overclaiming sides.
   const overclaimBySide: Record<string, Partial<Record<StatKey, number>>> = {};
   for (const p of doc.players) {
-    const reported = doc.reportedStats?.[String(p.side)];
-    const authoritative = parsed[String(p.side)];
+    // Normalized here rather than at the flagOverclaim call: a side missing from either map is an
+    // ordinary "reported nothing" / "judge saw nothing", which happens on the clean path too, so both
+    // halves of these defaults stay exercised. (They used to sit on the conviction call, where the
+    // absent-side half was only reachable via the negative-authoritative bug compareAudit now clamps.)
+    const reported = doc.reportedStats?.[String(p.side)] ?? {};
+    const authoritative = parsed[String(p.side)] ?? {};
     const cmp = compareAudit(reported, authoritative);
     if (!cmp.suspicious) continue;
-    const rolled = await flagOverclaim(deps, doc, p, reported ?? {}, authoritative ?? {}, cmp.overclaim, verdict.judgeAccountId);
+    const rolled = await flagOverclaim(deps, doc, p, reported, authoritative, cmp.overclaim, verdict.judgeAccountId);
     if (rolled) {
       overclaimBySide[String(p.side)] = rolled;
       result.flagged++;

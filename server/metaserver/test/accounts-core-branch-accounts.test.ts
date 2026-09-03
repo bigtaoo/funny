@@ -120,15 +120,26 @@ describe('resolveByDevice', () => {
     await expect(resolveByDevice(colsFor(accounts), 'dev-boom', TS)).rejects.toMatchObject({ code: 121 });
   });
 
-  it('the read-back after a successful upsert comes back empty -> the generated id is still returned', async () => {
-    // Consequence worth knowing: isNew degrades to false here (the id comparison has nothing to compare
-    // against), so the caller skips its new-account flow rather than granting starter content twice.
+  it('the read-back after a successful upsert comes back empty -> generated id returned, still isNew', async () => {
+    // isNew used to degrade to false here (the id comparison had nothing to compare against), so a
+    // genuinely new account whose confirming read hit a lagging secondary silently skipped
+    // maybeGrantStarterCards — the player started with nothing and no error anywhere. The upsert's own
+    // upsertedCount is the evidence that survives a blind read (2026-09-03 fix).
     const accounts = new BlindReads();
     const r = await resolveByDevice(colsFor(accounts), 'dev-blind', TS);
     expect(r.accountId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(r.isNew).toBe(false);
+    expect(r.isNew).toBe(true);
     expect(r.isAnonymous).toBe(true);
     expect([...accounts.docs.values()][0]!.deviceId).toBe('dev-blind'); // the write itself landed
+  });
+
+  it('a LOST upsert race followed by a blind read-back still reports isNew=false', async () => {
+    // The other direction of the same fix: nothing was upserted (E11000 — someone else won), so even
+    // with the read-back blind this must not claim a fresh account and re-grant starter content.
+    const accounts = new ThrowingUpdate({ code: 11000 });
+    accounts.findOne = async () => null;
+    const r = await resolveByDevice(colsFor(accounts), 'dev-lost-blind', TS);
+    expect(r.isNew).toBe(false);
   });
 });
 
@@ -172,11 +183,11 @@ describe('resolveByOpenid', () => {
     await expect(resolveByOpenid(colsFor(accounts), 'oid-boom', TS)).rejects.toMatchObject({ code: 2 });
   });
 
-  it('blind read-back -> generated id returned, isNew=false, still non-anonymous', async () => {
+  it('blind read-back -> generated id returned, still isNew, still non-anonymous', async () => {
     const accounts = new BlindReads();
     const r = await resolveByOpenid(colsFor(accounts), 'oid-blind', TS);
     expect(r.accountId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(r.isNew).toBe(false);
+    expect(r.isNew).toBe(true); // see resolveByDevice's blind-read case
     expect(r.isAnonymous).toBe(false);
   });
 });
@@ -223,11 +234,11 @@ describe('resolveByOAuth', () => {
     await expect(resolveByOAuth(colsFor(accounts), 'apple', 'boom', TS)).rejects.toMatchObject({ message: 'connection reset' });
   });
 
-  it('blind read-back -> generated id returned, isNew=false', async () => {
+  it('blind read-back -> generated id returned, still isNew', async () => {
     const accounts = new BlindReads();
     const r = await resolveByOAuth(colsFor(accounts), 'apple', 'blind', TS);
     expect(r.accountId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(r.isNew).toBe(false);
+    expect(r.isNew).toBe(true); // see resolveByDevice's blind-read case
     expect(r.isAnonymous).toBe(false);
   });
 });

@@ -135,10 +135,21 @@ export function seasonPeakCoins(rank: RankId): number {
 
 // ── pvp field extension (SE-1, default value factory for new SaveData.pvp fields) ──────────────────
 
-/** Initializes pvp season fields for a new save / migration (caller spreads the result into the pvp block). */
+/**
+ * Initializes pvp season fields for a new save / migration (caller spreads the result into the pvp block).
+ *
+ * `reachedRanks` is the ONE field here that is not per-season: it is the lifetime first-reach ledger
+ * (types.ts "not reset across seasons", §4.3 "granted only once per lifetime, cannot be farmed"), so a
+ * migrating caller must pass the ledger it already has. Returning a fresh `[]` unconditionally — as this
+ * did until 2026-09-03 — wiped it on every season rollover, because migrateIfStale spreads the result
+ * over the existing pvp block; the next ranked match then re-granted first-reach coins for every rank at
+ * or below the post-soft-reset rank. Real coins, once per season, per returning player.
+ * Defaults to `[]` for the only genuinely new-save caller (makeNewSave).
+ */
 export function makePvpSeasonDefaults(
   seasonNo: number,
   elo: number,
+  reachedRanks: RankId[] = [],
 ): {
   seasonNo: number;
   seasonPeakElo: number;
@@ -149,6 +160,6 @@ export function makePvpSeasonDefaults(
     seasonNo,
     seasonPeakElo: elo,
     seasonPeakRank: eloToRank(elo),
-    reachedRanks: [],
+    reachedRanks: [...reachedRanks],
   };
 }

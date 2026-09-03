@@ -215,12 +215,22 @@ export async function mirrorCoins(
 }
 
 /** Recursively sorts object keys so two structurally-identical objects stringify the same regardless of
- * insertion order (Mongo preserves storage order, which need not match a freshly-built plain object's). */
+ * insertion order (Mongo preserves storage order, which need not match a freshly-built plain object's).
+ *
+ * Keys whose value is `undefined` or `null` are dropped (2026-09-03 fix), because that is exactly what a
+ * round trip through Mongo does to them: `monetization` is always built with a `subscriptionLastClaimDay`
+ * key, but for an account that never claimed a subscription day its value is `undefined` and the stored
+ * sub-document simply has no such key. Comparing the two verbatim therefore NEVER matched for an
+ * unsubscribed account, so mirrorWalletFrom's skip-the-write path below was dead for the overwhelming
+ * majority of players and every GET /save bumped save.rev again — reviving the spurious-409-against-an-
+ * in-flight-PUT problem the 2026-07-27 audit removed. Normalizing absent/undefined/null to the same
+ * thing on both sides is what makes the comparison mean "is the stored mirror current". */
 function stableStringify(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
   if (v && typeof v === 'object') {
-    const keys = Object.keys(v as Record<string, unknown>).sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`).join(',')}}`;
+    const rec = v as Record<string, unknown>;
+    const keys = Object.keys(rec).filter((k) => rec[k] !== undefined && rec[k] !== null).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(rec[k])}`).join(',')}}`;
   }
   return JSON.stringify(v);
 }

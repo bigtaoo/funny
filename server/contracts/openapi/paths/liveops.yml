@@ -373,6 +373,10 @@
       '403': { $ref: '#/components/responses/ErrorResp' }
       '404': { $ref: '#/components/responses/ErrorResp' }
       '409': { $ref: '#/components/responses/ErrorResp' }
+      # REWARD_MISCONFIGURED: the event's reward definition cannot be dispatched (a `kind:'coins'`
+      # entry with no positive `count`, only reachable for a doc written around the admin CRUD).
+      # Refused before any points are deducted; a 5xx so ops' alerting sees the broken definition.
+      '500': { $ref: '#/components/responses/ErrorResp' }
 
 # —— S10 titles (L2-2, TITLE_DESIGN): fetch granted titles + select the displayed title ——
 /titles:

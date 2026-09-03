@@ -378,22 +378,56 @@ describe('POST /internal/skins/grant', () => {
     expect(internalGrantOrders.docs.has('g-ghost')).toBe(false);
   });
 
-  // Documents current behaviour of the retry the released reservation above invites, which is NOT what
-  // the design describes: grantSkin (src/skin.ts) upserts the skinInstances row *before* it discovers
-  // the save is missing, so the failed attempt leaves an orphan instance keyed by the same orderId. The
-  // retry then short-circuits on grantSkin's `already` guard and returns ok:true without ever adding
-  // the id to `inventory.skins` — the "do I own at least one" view the equip picker and everOwned read.
-  // Reported, deliberately not fixed here (src is out of scope for this coverage pass).
-  it('retry after a save-not-found grant reports ok but leaves inventory.skins empty (suspected src/skin.ts ordering bug)', async () => {
+  // The retry that released reservation invites now actually delivers (src/skin.ts fixed 2026-09-03).
+  // It used to mint the skinInstances row BEFORE discovering the save was missing, so the failed attempt
+  // left an orphan instance keyed by the same orderId; the retry short-circuited on that orphan and
+  // answered ok:true without ever adding the id to `inventory.skins` — the "do I own at least one" view
+  // the equip picker, everOwned and auctionsvc's contract all read. The trade read as delivered while
+  // the skin stayed invisible and unequippable forever.
+  it('retry after a save-not-found grant delivers the skin into inventory.skins', async () => {
     const { app, saves, skinInstances } = build();
     const payload = { accountId: 'ghost', skinId: 'skin_e1', orderId: 'g-ghost' };
     await app.inject({ method: 'POST', url: '/internal/skins/grant', headers: authHeaders, payload });
-    expect([...skinInstances.docs.values()]).toHaveLength(1); // orphan minted despite the 404
+    expect([...skinInstances.docs.values()]).toHaveLength(0); // no orphan minted for a save that isn't there
     saves.seed(saveRow('ghost'));
     const r2 = await app.inject({ method: 'POST', url: '/internal/skins/grant', headers: authHeaders, payload });
     expect(r2.statusCode).toBe(200);
-    expect(saves.docs.get('ghost')!.save.inventory!.skins).toEqual([]); // should be ['skin_e1']
-    expect(saves.docs.get('ghost')!.save.everOwned?.skin).toBeUndefined();
+    expect(saves.docs.get('ghost')!.save.inventory!.skins).toEqual(['skin_e1']);
+    expect(saves.docs.get('ghost')!.save.everOwned?.skin).toEqual(['skin_e1']);
+    expect([...skinInstances.docs.values()]).toHaveLength(1);
+  });
+
+  // The orphan-healing half of the same fix: an instance row left behind by a pre-fix grant (or by a
+  // crash between the mint and the save write) must not make a retry a silent no-op — the retry has to
+  // reconcile inventory.skins, which is why grantSkin no longer returns early on an existing instance.
+  it('an orphan instance row from a pre-fix grant is healed by the retry rather than short-circuiting it', async () => {
+    const { app, saves, skinInstances } = build({ saves: [saveRow('a')] });
+    skinInstances.seed({ _id: 'skin_grant_g-orphan', accountId: 'a', skinId: 'skin_e1' });
+    const r = await app.inject({
+      method: 'POST', url: '/internal/skins/grant', headers: authHeaders,
+      payload: { accountId: 'a', skinId: 'skin_e1', orderId: 'g-orphan' },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(saves.docs.get('a')!.save.inventory!.skins).toEqual(['skin_e1']);
+    expect([...skinInstances.docs.values()]).toHaveLength(1); // healed, not duplicated
+  });
+
+  it('the save disappears between the existence pre-check and the loop read → 404, reservation released', async () => {
+    // grantSkin reads saves twice: once to refuse a missing save before minting anything, then again
+    // inside the rev loop. A delete landing in that window is the only way to reach the loop's own
+    // not-found arm, and it must answer 404 (releasing the reservation for a retry) rather than
+    // reporting a delivery that never happened.
+    const { app, internalGrantOrders, saves } = build({ saves: [saveRow('a')] });
+    let reads = 0;
+    const real = saves.findOne.bind(saves);
+    saves.findOne = async (q?: Record<string, unknown>) => (++reads === 1 ? real(q) : null);
+    const r = await app.inject({
+      method: 'POST', url: '/internal/skins/grant', headers: authHeaders,
+      payload: { accountId: 'a', skinId: 'skin_e1', orderId: 'g-vanish' },
+    });
+    expect(r.statusCode).toBe(404);
+    expect(JSON.parse(r.payload)).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(internalGrantOrders.docs.has('g-vanish')).toBe(false);
   });
 
   it('rev CAS never matches → 409 REV_CONFLICT, reservation released', async () => {

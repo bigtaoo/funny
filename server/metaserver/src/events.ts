@@ -4,10 +4,12 @@
 // claimEventReward: redeem points for a reward; dispatches via mail or commercial coin grant.
 import { randomUUID } from 'node:crypto';
 import type { Collections, EventDoc, EventParticipantDoc } from '@nw/shared';
-import { isEventActive, validateEventInput, type EventInput, type EventTaskKind } from '@nw/shared';
+import { createLogger, isEventActive, validateEventInput, type EventInput, type EventTaskKind } from '@nw/shared';
 import type { CommercialClient } from './commercialClient.js';
 import { insertSystemMail } from './mail.js';
 import type { MetaSocialsvcClient } from './socialsvcClient.js';
+
+const log = createLogger('meta:events');
 
 // ── Event view (sent to client) ────────────────────────────────────────────────
 
@@ -259,7 +261,8 @@ export type ClaimEventError =
   | 'NOT_FOUND'          // event or reward does not exist
   | 'EVENT_CLOSED'       // outside the event window
   | 'INSUFFICIENT_POINTS' // not enough points
-  | 'CLAIM_LIMIT_REACHED'; // exceeds maxClaims
+  | 'CLAIM_LIMIT_REACHED' // exceeds maxClaims
+  | 'REWARD_MISCONFIGURED'; // the reward definition cannot be dispatched (see the guard in claimEventReward)
 
 export interface ClaimEventOk {
   ok: true;
@@ -291,6 +294,17 @@ export async function claimEventReward(
 
   const reward = event.rewards.find((r) => r.rewardId === rewardId);
   if (!reward) return { ok: false, error: 'NOT_FOUND' };
+
+  // Refuse BEFORE the points deduction below, rather than deducting and then matching neither dispatch
+  // branch (2026-09-03 fix): a `kind:'coins'` reward with no positive `count` satisfies neither
+  // `kind === 'coins' && count > 0` nor `kind !== 'coins'`, so the player used to be charged and handed
+  // nothing while the call still answered ok. validateEventInput already rejects this shape at
+  // create/update time, so reaching here means a doc written around the admin CRUD (a hand-seeded or
+  // pre-guard event) — which is exactly the case worth failing loudly on instead of silently charging.
+  if (reward.kind === 'coins' && !((reward.count ?? 0) > 0)) {
+    log.error('claimEventReward: coins reward has no positive count, refusing', { eventId, rewardId });
+    return { ok: false, error: 'REWARD_MISCONFIGURED' };
+  }
 
   const pid = participantId(eventId, accountId);
 
@@ -360,12 +374,15 @@ export async function claimEventReward(
   const claimIndex = updated.claimedRewards.length - 1;
   const dispatchKey = `event.claim:${pid}:${rewardId}:${claimIndex}`;
 
-  // Dispatch reward
-  if (reward.kind === 'coins' && (reward.count ?? 0) > 0 && commercial.available) {
-    await commercial
-      .grant({ accountId, amount: reward.count!, reason: 'event_reward', orderId: dispatchKey })
-      .catch(() => {/* best-effort; points already deducted, no rollback for now (ops compensation fallback) */});
-  } else if (reward.kind !== 'coins') {
+  // Dispatch reward. No `count > 0` re-check here: the guard above already refused that shape before
+  // anything was deducted, so re-testing it would only add an arm nothing can reach.
+  if (reward.kind === 'coins') {
+    if (commercial.available) {
+      await commercial
+        .grant({ accountId, amount: reward.count!, reason: 'event_reward', orderId: dispatchKey })
+        .catch(() => {/* best-effort; points already deducted, no rollback for now (ops compensation fallback) */});
+    }
+  } else {
     // material / skin → mail attachment
     await insertSystemMail(
       socialsvc,

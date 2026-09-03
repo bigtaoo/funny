@@ -22,15 +22,20 @@ export async function claimEventRewardHandler(deps: ServiceDeps, req: FastifyReq
   const socialsvc = deps.socialsvc ?? nullMetaSocialsvcClient;
   const result = await claimEventReward(cols, accountId, eventId, rewardId, now(), commercial, socialsvc);
   if (!result.ok) {
+    // REWARD_MISCONFIGURED is a 500 on purpose: the player did nothing wrong and was not charged, the
+    // event definition is broken, and a 5xx is what actually reaches ops' alerting so the reward gets
+    // repaired instead of quietly refusing every claim (see claimEventReward's guard).
     const code =
       result.error === 'NOT_FOUND' ? 404 :
       result.error === 'EVENT_CLOSED' ? 403 :
       result.error === 'INSUFFICIENT_POINTS' ? 402 :
+      result.error === 'REWARD_MISCONFIGURED' ? 500 :
       409;
     const errCode =
       result.error === 'NOT_FOUND' ? ErrorCode.NOT_FOUND :
       result.error === 'EVENT_CLOSED' ? ErrorCode.BAD_REQUEST :
       result.error === 'INSUFFICIENT_POINTS' ? ErrorCode.INSUFFICIENT_FUNDS :
+      result.error === 'REWARD_MISCONFIGURED' ? ErrorCode.INTERNAL :
       ErrorCode.ALREADY_CLAIMED;
     return reply.code(code).send(err(errCode, result.error));
   }

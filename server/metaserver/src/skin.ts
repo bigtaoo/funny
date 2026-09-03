@@ -186,9 +186,18 @@ export async function grantSkin(
   if (!skinId) return { error: 'skinId required', code: 'BAD_REQUEST' };
   const instance: SkinInstance = { id: `skin_grant_${orderId ?? randomUUID()}`, skinId, sourceType: 'auction_return', obtainedAt: now() };
 
-  const already = await cols.skinInstances.findOne({ _id: instance.id, accountId });
+  // Ordering matters (2026-09-03 fix): this used to mint the instance row FIRST and only discover a
+  // missing save inside the loop below. The 404 that produced correctly released auctionsvc's grant
+  // reservation and invited a retry — but the retry then found the orphan row left by the failed
+  // attempt, short-circuited on it, and answered 200 without ever putting the id in `inventory.skins`.
+  // Since inventory.skins is this module's "do I own at least one" view (equip picker / everOwned /
+  // auctionsvc contract all read it, and assembleSkinCounts only self-heals the other direction), the
+  // trade read as delivered while the skin stayed invisible and unequippable forever.
+  if (!(await cols.saves.findOne({ _id: accountId }))) return { error: 'save not found', code: 'NOT_FOUND' };
+  // The mint is idempotent by id, and the loop below is a no-op once inventory.skins already has the
+  // id — so there is deliberately no `already`-guard early return here any more: falling through is
+  // what reconciles inventory.skins for a retry (and heals an orphan minted before this fix).
   await cols.skinInstances.updateOne({ _id: instance.id }, { $set: toInstanceDoc(instance, accountId) }, { upsert: true });
-  if (already) return { ok: true };
 
   for (let attempt = 0; attempt < REV_RETRIES; attempt++) {
     const doc = await cols.saves.findOne({ _id: accountId });

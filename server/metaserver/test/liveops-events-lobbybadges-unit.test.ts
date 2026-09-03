@@ -167,6 +167,30 @@ describe.skipIf(!mongo)('events.ts + lobbyBadges.ts (src import, real Mongo, cov
       expect(body(r).error.code).toBe('INSUFFICIENT_FUNDS');
     });
 
+    it('a coins reward with no count -> 500 INTERNAL, and the points are NOT spent', async () => {
+      // validateEventInput refuses this shape at create/update time, so a doc in this state was written
+      // around the admin CRUD — inserted directly here, exactly as ops or a pre-guard migration would.
+      // claimEventReward's own backstop refuses before the deduction; the handler maps that to a 5xx on
+      // purpose, because the broken thing is the event definition and ops needs to see it.
+      await buildAndAuth();
+      await m.collections.events.insertOne(seedEvent({
+        _id: 'ev-broken',
+        rewards: [{ rewardId: 'no_count', cost: 10, kind: 'coins' }],
+      }));
+      const accountId = (body(await app.inject({ method: 'GET', url: '/save', headers: auth() }))).data.save.accountId;
+      await m.collections.eventParticipants.updateOne(
+        { _id: `ev-broken:${accountId}` },
+        { $set: { _id: `ev-broken:${accountId}`, eventId: 'ev-broken', accountId, points: 100, taskProgress: [], claimedRewards: [], updatedAt: NOW } },
+        { upsert: true },
+      );
+      const r = await app.inject({ method: 'POST', url: '/events/claim', headers: auth(), payload: { eventId: 'ev-broken', rewardId: 'no_count' } });
+      expect(r.statusCode).toBe(500);
+      expect(body(r).error.code).toBe('INTERNAL');
+      const p = await m.collections.eventParticipants.findOne({ _id: `ev-broken:${accountId}` });
+      expect(p?.points).toBe(100); // refused before the deduction
+      expect(p?.claimedRewards).toEqual([]);
+    });
+
     it('happy path (coins reward): commercial.grant delivers coins, pointsLeft debited', async () => {
       const comm = {
         available: true,

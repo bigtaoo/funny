@@ -140,7 +140,7 @@ describe.skipIf(!mongo)('service-layer branch backfill (group F)', () => {
       await m.collections.accounts.insertOne({ _id: 'acc-sv1', deviceId: 'dev-sv1', createdAt: TS } as never);
       const core = new MetaCore(makeDeps(m.collections, { socialsvc }));
       const svc = new SaveService(core);
-      const r = await svc.getSave(fakeReq({ accountId: 'acc-sv1' })) as { ok: boolean; data: Record<string, unknown> };
+      const r = await svc.getSave(fakeReq({ accountId: 'acc-sv1' }), fakeReply()) as { ok: boolean; data: Record<string, unknown> };
       expect(r.ok).toBe(true);
       expect(r.data.publicId).toMatch(/^[1-9]\d{8}$/);
       expect(r.data.serverNow).toBe(TS);
@@ -150,7 +150,7 @@ describe.skipIf(!mongo)('service-layer branch backfill (group F)', () => {
     it('with commercial unavailable the wallet reconcile is skipped entirely and the local save is served', async () => {
       await m.collections.accounts.insertOne({ _id: 'acc-sv2', deviceId: 'dev-sv2', createdAt: TS } as never);
       const core = new MetaCore(makeDeps(m.collections, { commercial: commercialStub(false) }));
-      const r = await new SaveService(core).getSave(fakeReq({ accountId: 'acc-sv2' })) as { ok: boolean; data: Record<string, unknown> };
+      const r = await new SaveService(core).getSave(fakeReq({ accountId: 'acc-sv2' }), fakeReply()) as { ok: boolean; data: Record<string, unknown> };
       expect(r.ok).toBe(true);
       expect((r.data.save as { accountId: string }).accountId).toBe('acc-sv2');
     });
@@ -162,9 +162,36 @@ describe.skipIf(!mongo)('service-layer branch backfill (group F)', () => {
       // lazy backfill's $exists guard will not replace it), which no HTTP test ever produces.
       await m.collections.accounts.insertOne({ _id: 'acc-sv3', displayName: '', createdAt: TS } as never);
       const core = new MetaCore(makeDeps(m.collections));
-      const r = await new SaveService(core).getSave(fakeReq({ accountId: 'acc-sv3' })) as { ok: boolean; data: Record<string, unknown> };
+      const r = await new SaveService(core).getSave(fakeReq({ accountId: 'acc-sv3' }), fakeReply()) as { ok: boolean; data: Record<string, unknown> };
       expect(r.ok).toBe(true);
       expect('displayName' in r.data).toBe(false);
+    });
+
+    it('a hard-deleted account still holding a valid JWT -> 410 ACCOUNT_DELETED, not a 500', async () => {
+      // rejectIfBanned only catches the SOFT delete (deletedAt on a row that still exists), so a request
+      // whose accounts row is genuinely gone gets all the way here. ensurePublicId used to burn its 8
+      // retries against a document that cannot be matched and throw a generic allocation failure, which
+      // the fastify error handler turned into a 500. 410 is what the soft-delete path already answers,
+      // and what the client's "your account is gone" handling keys off.
+      const core = new MetaCore(makeDeps(m.collections));
+      const rp = fakeReply();
+      await new SaveService(core).getSave(fakeReq({ accountId: 'acc-hard-deleted' }), rp);
+      expect(rp.sent.status).toBe(410);
+      expect(rp.sent.payload?.error?.code).toBe('ACCOUNT_DELETED');
+    });
+
+    it('any OTHER failure in that same batch is rethrown, not swallowed as a 410', async () => {
+      // The 410 arm keys off AccountGoneError specifically. A Mongo hiccup on one of the other three
+      // reads must still reach fastify's error handler as a 500 — turning every infrastructure blip
+      // into "your account was deleted" would be a far worse lie than the 500 this replaced.
+      await m.collections.accounts.insertOne({ _id: 'acc-sv4', deviceId: 'dev-sv4', createdAt: TS } as never);
+      const cols = {
+        ...m.collections,
+        pveStamina: { findOne: async () => { throw new Error('pveStamina unreachable'); } },
+      } as unknown as typeof m.collections;
+      const core = new MetaCore(makeDeps(cols));
+      await expect(new SaveService(core).getSave(fakeReq({ accountId: 'acc-sv4' }), fakeReply()))
+        .rejects.toThrow('pveStamina unreachable');
     });
   });
 

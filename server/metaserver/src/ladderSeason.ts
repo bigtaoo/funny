@@ -286,7 +286,11 @@ export async function migrateIfStale(
 
   const newElo = softReset(save.pvp.elo, SEASON_RESET_BASELINE);
   const newRank = eloToRank(newElo) as RankId;
-  const defaults = makePvpSeasonDefaults(currentSeason.seasonNo, newElo);
+  // The lifetime first-reach ledger is threaded through, not re-defaulted: everything else this returns
+  // is per-season and SHOULD be reset here, but reachedRanks is the guard that keeps first-reach rank
+  // coins a once-per-lifetime grant. Dropping it made every season rollover re-arm the whole ladder
+  // below the player's post-soft-reset rank for another payout (fixed 2026-09-03).
+  const defaults = makePvpSeasonDefaults(currentSeason.seasonNo, newElo, save.pvp.reachedRanks ?? []);
 
   // Reset battle pass (backfill was already handled in settleSeasonForPlayer)
   const newBp = makeFreshBattlePass(currentSeason.seasonNo);

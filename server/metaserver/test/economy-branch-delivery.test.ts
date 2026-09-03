@@ -226,16 +226,24 @@ describe.skipIf(!mongo)('economy/delivery.ts + duplicates.ts branch backfill', (
       expect(second.rev).toBe(revAfterFirst);
     });
 
-    it('KNOWN GAP: an unsubscribed wallet (subscriptionLastClaimDay undefined) re-writes the mirror every time', async () => {
-      // Mongo drops undefined-valued fields on write, so the stored monetization sub-document is missing
-      // the `subscriptionLastClaimDay` key that stableStringify of the freshly-built object emits — the
-      // two never compare equal and the 2026-07-27 "skip the write when the mirror is already current"
-      // optimization never engages for any account without a subscription claim. Asserted here as the
-      // current behavior (rev keeps climbing on every GET /save), not as the desired one.
+    it('an unsubscribed wallet (subscriptionLastClaimDay undefined) also skips the write', async () => {
+      // The majority case, and the one the skip existed for. A field written as `undefined` does not
+      // survive the round trip through Mongo, so the stored monetization sub-document simply lacks the
+      // `subscriptionLastClaimDay` key that the freshly-built object carries — and comparing them
+      // verbatim never matched, so the skip was dead for every account without a subscription claim and
+      // every GET /save bumped save.rev again (the spurious-409-vs-in-flight-PUT the 2026-07-27 audit
+      // removed). stableStringify now drops undefined/null-valued keys on both sides.
       const w = wallet();
       const first = await mirrorWalletFrom(m.collections, accountId, w, NOW);
       const second = await mirrorWalletFrom(m.collections, accountId, w, NOW + 1000);
+      expect(second.rev).toBe(first.rev);
+    });
+
+    it('a real change still writes — the skip compares content, it does not just ignore the field', async () => {
+      const first = await mirrorWalletFrom(m.collections, accountId, wallet(), NOW);
+      const second = await mirrorWalletFrom(m.collections, accountId, wallet({ subscriptionLastClaimDay: '2027-03-01' }), NOW + 1000);
       expect(second.rev).toBe(first.rev + 1);
+      expect(second.monetization?.subscriptionLastClaimDay).toBe('2027-03-01');
     });
 
     it('growth pack still unused + account within the window -> mirrors starterGrowthEligible true', async () => {

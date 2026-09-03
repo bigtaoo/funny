@@ -172,6 +172,21 @@ describe('makePvpSeasonDefaults', () => {
     expect(d.seasonNo).toBe(3);
     expect(d.seasonPeakElo).toBe(INITIAL_ELO);
     expect(d.seasonPeakRank).toBe(eloToRank(INITIAL_ELO));
-    expect(d.reachedRanks).toEqual([]);
+    expect(d.reachedRanks).toEqual([]); // only for a genuinely new save — see the next two cases
+  });
+
+  it('carries the lifetime first-reach ledger through instead of resetting it', () => {
+    // The whole point of reachedRanks (types.ts "not reset across seasons"): a season migration spreads
+    // this result over the existing pvp block, so returning [] here silently re-armed every first-reach
+    // rank coin the player had already been paid for. Money, once per season, per returning player.
+    const d = makePvpSeasonDefaults(4, 1350, ['bronze', 'silver', 'gold']);
+    expect(d.reachedRanks).toEqual(['bronze', 'silver', 'gold']);
+  });
+
+  it("copies the ledger rather than aliasing the caller's array", () => {
+    const ledger: RankId[] = ['bronze'];
+    const d = makePvpSeasonDefaults(4, 1350, ledger);
+    ledger.push('silver');
+    expect(d.reachedRanks).toEqual(['bronze']);
   });
 });

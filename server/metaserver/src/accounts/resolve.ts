@@ -46,8 +46,9 @@ export async function resolveByDevice(
   // upsert-race behavior, not a bug in this query. Catch it and fall through to the re-read below,
   // same as the loser was always intended to do, instead of surfacing an unhandled 500 to a client
   // that's just retrying a dropped request.
+  let upserted = false;
   try {
-    await cols.accounts.updateOne(
+    const res = await cols.accounts.updateOne(
       { deviceId },
       {
         $setOnInsert: { _id: accountId, deviceId, createdAt: now },
@@ -55,11 +56,17 @@ export async function resolveByDevice(
       },
       { upsert: true },
     );
+    upserted = res.upsertedCount === 1;
   } catch (e) {
     if ((e as { code?: number }).code !== 11000) throw e;
   }
   const doc = await cols.accounts.findOne({ deviceId });
-  const isNew = doc?._id === accountId;
+  // The upsert's own result is the primary evidence (2026-09-03 fix); the id comparison is only the
+  // fallback for a driver/double that reports no upsertedCount. Deriving isNew from the read-back
+  // ALONE meant a read that came back empty (a replica-set secondary that has not yet seen the write
+  // this very call just made) silently reported isNew=false for a genuinely new account — and the
+  // caller then skipped maybeGrantStarterCards, so the player started with nothing and no error.
+  const isNew = upserted || doc?._id === accountId;
   // device-only account = anonymous; if this device already has bound credentials, use the actual value.
   return {
     accountId: doc ? doc._id : accountId,
@@ -84,8 +91,9 @@ export async function resolveByOpenid(
   const accountId = randomUUID();
   // 2026-08-03 fix: see resolveByDevice's comment — a racing upsert can throw E11000 even with
   // upsert:true; catch it and fall through to the re-read below instead of an unhandled 500.
+  let upserted = false;
   try {
-    await cols.accounts.updateOne(
+    const res = await cols.accounts.updateOne(
       { openid },
       {
         $setOnInsert: { _id: accountId, openid, createdAt: now },
@@ -93,13 +101,14 @@ export async function resolveByOpenid(
       },
       { upsert: true },
     );
+    upserted = res.upsertedCount === 1;
   } catch (e) {
     if ((e as { code?: number }).code !== 11000) throw e;
   }
   const doc = await cols.accounts.findOne({ openid });
   return {
     accountId: doc ? doc._id : accountId,
-    isNew: doc?._id === accountId,
+    isNew: upserted || doc?._id === accountId, // see resolveByDevice: a blind read-back must not hide a new account
     isAnonymous: doc ? isAnonymousAccount(doc) : false,
   };
 }
@@ -124,8 +133,9 @@ export async function resolveByOAuth(
   const accountId = randomUUID();
   // 2026-08-03 fix: see resolveByDevice's comment — a racing upsert can throw E11000 even with
   // upsert:true; catch it and fall through to the re-read below instead of an unhandled 500.
+  let upserted = false;
   try {
-    await cols.accounts.updateOne(
+    const res = await cols.accounts.updateOne(
       { 'oauth.provider': provider, 'oauth.sub': sub },
       {
         $setOnInsert: {
@@ -137,13 +147,14 @@ export async function resolveByOAuth(
       },
       { upsert: true },
     );
+    upserted = res.upsertedCount === 1;
   } catch (e) {
     if ((e as { code?: number }).code !== 11000) throw e;
   }
   const doc = await cols.accounts.findOne({ 'oauth.provider': provider, 'oauth.sub': sub });
   return {
     accountId: doc ? doc._id : accountId,
-    isNew: doc?._id === accountId,
+    isNew: upserted || doc?._id === accountId, // see resolveByDevice: a blind read-back must not hide a new account
     isAnonymous: false,
   };
 }

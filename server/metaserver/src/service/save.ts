@@ -10,7 +10,7 @@ import { getOrCreateSave, writeMigratedSave } from '../save.js';
 import { readArchivedMeta, readArchivedReplayGz } from '../replayArchive.js';
 import { grantTitleToPlayer } from '../titles.js';
 import { getCurrentSeason, migrateIfStale } from '../ladderSeason.js';
-import { getDisplayName, ensurePublicId, hasFreeRename } from '../accounts.js';
+import { getDisplayName, ensurePublicId, hasFreeRename, AccountGoneError } from '../accounts.js';
 import { mirrorWalletFrom, reconcileUndelivered } from '../economy.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
@@ -56,7 +56,7 @@ export class SaveService implements SaveHandlers {
       return this.stateShareRate.allow(accountId, now);
     }
 
-    async getSave(req: FastifyRequest) {
+    async getSave(req: FastifyRequest, reply: FastifyReply) {
       const accountId = accountIdOf(req);
       const { cols, commercial, now } = this.core.deps;
       // Kicked off now, awaited only where needed below (season migration check) — independent of the
@@ -101,13 +101,26 @@ export class SaveService implements SaveHandlers {
       // Stamina snapshot injection (A4): stamina is stored in a separate collection and merged into the save
       // mirror on response. These four reads are mutually independent (different collections/fields, none
       // consumes another's result) — same Promise.all pattern as accounts.ts's getProfile.
-      const [stamina, displayName, publicId, freeRename] = await Promise.all([
-        this.core.readStaminaSnapshot(accountId, now()),
-        getDisplayName(cols, accountId),
-        ensurePublicId(cols, accountId),
-        // freeRename: the player still holds their one-time free rename (current name is a system default).
-        hasFreeRename(cols, accountId),
-      ]);
+      let stamina: { current: number; regenAt: number };
+      let displayName: string | undefined;
+      let publicId: string;
+      let freeRename: boolean;
+      try {
+        [stamina, displayName, publicId, freeRename] = await Promise.all([
+          this.core.readStaminaSnapshot(accountId, now()),
+          getDisplayName(cols, accountId),
+          ensurePublicId(cols, accountId),
+          // freeRename: the player still holds their one-time free rename (current name is a system default).
+          hasFreeRename(cols, accountId),
+        ]);
+      } catch (e) {
+        // Hard-deleted account still holding a non-expired JWT: rejectIfBanned only catches the SOFT
+        // delete (deletedAt on a row that still exists), so this request gets all the way here and used
+        // to 500 out of ensurePublicId's exhausted retry loop. 410 is the same answer a soft delete
+        // gets, which is what the client already knows how to handle.
+        if (e instanceof AccountGoneError) return reply.code(410).send(err(ErrorCode.ACCOUNT_DELETED, 'account deleted'));
+        throw e;
+      }
       save = { ...save, stamina };
       return ok({
         save,
