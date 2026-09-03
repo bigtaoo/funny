@@ -140,7 +140,7 @@ detail layers, prominent gold accents on the tallest spires.
 
 6 张新图已就位并打包进图集，帧齐全：`city_atlas` 现含 `city_lv1..4`（档回退）+ `city_l2/l4/l5/l7/l8/l10`（每级图），共 10 帧，1024×768，调色板量化 ~287 KB。`png+json` 已写入 `client/src/assets/slg/` 与 `tools/map-editor/src/assets/slg/`（两份字节一致）。打包脚本 `art/slg/slg-building/pack_city_atlas.js` 已重写：区域生长 flood-fill 去背（兼容浅色方格纸 / 深色晕影 / 纯色 / 已抠图 4 类背景），10 帧网格，sharp 调色板压缩。源图已按帧名重命名（`city_l{n}.png` / `city_lv{n}.png` / `city_l10.webp`）。
 
-- **仍待补**：Lv1/3/6/9 无专属图，运行时回退到所属档的 `city_lv{tier}`（去背干净，可正常用）。
+- ~~**仍待补**：Lv1/3/6/9 无专属图，运行时回退到所属档的 `city_lv{tier}`（去背干净，可正常用）。~~ **已补齐**（2026-08-14「命名统一」那轮，2026-09-03 复核）：`client/src/assets/slg/world_atlas.json` 现含 `city_l1`…`city_l10` 十帧齐全，`city_lv{tier}` 档回退帧已不存在。本条只是 2026-07-06 当天的读数。
 - **`city_lv4` 已修**（2026-07-06）：原 0fe2fbb5 源图自带的不透明方格纸底板已用 flood-fill（从透明边缘向内、按底板色扩散、遇城堡深墨轮廓停）抠除，再删除小的离散残块（陷阱像素/网格碎片），仅保留城堡本体+其贴地投影。已覆盖回 `city_lv4.png` 源并重新打包，全 10 帧现均无背景。
 
 ## 接入说明（已实现）

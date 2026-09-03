@@ -123,7 +123,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 代码：[`CareerTabs.ts`](../../client/src/ui/widgets/CareerTabs.ts)（`collection.title` → `rosterIcon`）、[`LobbyScene/bottomNav.ts`](../../client/src/scenes/LobbyScene/bottomNav.ts)（`lobby.nav.cards` → `rosterIcon`）、[`AuctionScene/itemPickerRender.ts`](../../client/src/scenes/AuctionScene/itemPickerRender.ts)（筛选条 `icons` 表：`card`→`rosterIcon`、`skin`→`skinIcon`）、[`AuctionScene/list.ts`](../../client/src/scenes/AuctionScene/list.ts)（新增 `FILTER_ICON_OVERRIDE` 局部表，同样覆盖主筛选条的 `card`/`skin`）。`tsc --noEmit` 通过；`vitest --config vitest.ui.config.ts` 全量 181 文件 1629 用例通过。
 
-### 待出图（4 张新概念，草案 prompt）
+### 待出图（4 张新概念，草案 prompt） — ✅ 当时的待办，已出图+接线（见文档头「状态」；2026-09-03 复核 4 张全在 `client/src/assets/tabicons/`）
 
 延续批次 1 的共用骨架（"手绘涂鸦、单色墨线、粗糙抖动笔触、单一大剪影、纯白底、缩到 32px 仍可辨"），四张互相之间也要避免撞视觉语言——尤其 `statsTabIcon`(柱状图) 与 `progressTabIcon`(箭头阶梯) 这两个"向上"母题在导航路径上是父子关系（首页"战绩"→成就墙"进阶"分类），必须一眼区分开；`honorTabIcon`(桂冠) 特意选了不同于圆形奖牌的开口造型，避免跟 `medal` 挤在同一堆"奖章"语言里；`collectionTabIcon`(拼图块) 特意避开本来就在同一个成就分类条上的 `book`(pve) 造型。
 
@@ -191,7 +191,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 批次 3 落地后，`trophy`/`book`/`armor`/`swords`/`hammer`/`scrap`/`tag`/`coin`/`capsule`/`coinChest`/`home`/`globe` 这些 `SketchPen` 常量仍然保留在 `DRAW` 表里——只是不再有任何**页签**指向它们，全部改指向对应的新光栅 `IconKind`；这些常量继续服务于头像底色、结算页动作按钮/奖励行、装备属性显示、GachaScene 稀有度标记等非页签场景。
 
-### 待出图（12 张新概念，草案 prompt）
+### 待出图（12 张新概念，草案 prompt） — ✅ 当时的待办，已出图+接线（见文档头「状态」；2026-09-03 复核 12 张全在 `client/src/assets/tabicons/`）
 
 延续前两批的共用骨架（手绘涂鸦、单色墨线、粗糙抖动笔触、单一大剪影、纯白底、缩到 32px 仍可辨）。互相之间刻意避让：`pveTabIcon`(藏宝图) 不画成书/册页避免撞回 `book`；`achievementTabIcon`(奖杯) / `battlepassTabIcon`(门票) / `honorTabIcon`(桂冠，已有) / `medal`(圆牌，程序绘制) 四者要在同一堆"荣誉类"视觉里各自留出辨识空间——奖杯保留最经典的双耳杯身，门票是矩形+虚线撕口，都不画成圆形奖章或桂冠。
 

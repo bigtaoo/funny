@@ -201,6 +201,8 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
 - [ ] 是否需要给这 6 个兵也定"跟 Max/Lena/Mara 的关系/羁绊"（例如裂变兵是否有"被驯服的怪物，谁收编的它"这层身份）——留待讨论（穷奇/獬豸/卫安/Aello/Björn/Lerna 六个暂时都不定）
 - [ ] 是否要落 ADR（本节拍板的阵营归属属于会造成漂移的决定）——**等用户过目两侧设计后一并记**
 - [x] **跑兵/医疗兵墨线过淡，实战几乎看不清**（2026-07-29 用户截图反馈，同日已解决）：对比 `client/src/assets/units/{medic,runner,infantry,ironclad}.tao` 的 spritesheet 发现，步兵/穷奇的骨骼部件有交叉排线打阴影，视觉重量够；跑兵（獬豸）/医疗兵（卫安）只有极细空心轮廓、几乎纯白，糊进米黄方格纸背景（`art-direction.md §3.1` `#F5F0E8`）里辨识度很差。**最终方案**（迭代到 v5/v7 才定稿，见 §7.6）：黑墨水钢笔线稿（不是铅笔排线，避免跟穷奇撞媒材）+ 识别特征实心马克笔上色（獬豸角/尾巴青色、卫安药箱/十字/布条绿色）+ 全身淡色荧光笔浅扫（把实心色块跟身体统一，不再像贴纸）。中途还顺带修了两个连带问题：獬豸 prompt 里混进的"耳朵"描述（模板残留，从没设计过耳朵）、卫安"双手举在身前"被误画成交握心虚的姿态（改成双手分开伸向病人）。GIMP 抠件 → animator 绑骨为下一步，不在本次会话范围内。
+- [x] **獬豸（Runner）出图 → 抠件 → 绑骨 → 上线**：✅ 2026-08-30/31（`3ae644d5b`）——`art/units/runner/` 全套部件 + `runner.taoeditor` 工程，`client/src/assets/units/runner.tao` 与母版逐字节一致。
+- [ ] **卫安（Medic）绑骨没做完，战斗里仍是旧的淡线稿**（2026-09-03 核对）：v7 新图早在 `f05ad876a`（2026-07-29）就出了，卡面图也已随 2026-08-20 那批 `exportUnitCardArt.mjs` 上线；但 `client/src/assets/units/medic.tao` 与**归档的旧 rig** `art/units/old/medic/medic.tao` **md5 完全相同**——也就是上线的战斗骨骼还是被显式标为 old 的那一份。`art/units/medic/` 目前只有 `medic.xcf`，图层零件还没导出。**剩下的步骤**：GIMP 图层导出 → animator 绑骨（照 Runner 那轮）→ 导出 `.tao` 覆盖 `client/src/assets/units/medic.tao`。**核对方式别看文件日期**（资产重组/压缩批次会刷新时间戳），用上面那个 md5 对比。
 
 ### 7.6 涛阵营三个新英雄（具名+背景+视觉，2026-07-02 定稿）
 
