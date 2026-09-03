@@ -465,7 +465,12 @@ auctionsvc 整体：**分支 88.18% → 99.58%**，行 95.37% → 96.99%（`npm 
 
 **剩下 4 条不追，原因逐条**：`src/index.ts` 1 条（进程 bootstrap，同前几轮先例）；`gacha.ts` 2 条（`rollFixedOddsItem` 的 `total > 0 ? rng(total) : 0` 和随后的循环兜底——`fixedOddsTable()` 的构造决定了 total 永远 > 0：`remainderItemId` 吸收 `100 − Σ`，要让全部权重取整为 0 就得让 Σ 同时是 100 和 0，自相矛盾。**不可达**，不是没测）；`internalHttp.ts` 1 条（`req.url ?? ''`，node 的 http server 永远会设 `req.url`）。
 
-**顺带发现的一个真问题（未修，留给 owner 定夺）**：`orders.ts` 的 `healOrderRefund` 用 `ledger.findOne({ accountId, orderId })` 判断「这笔退款到底落地了没」，但**同一个 orderId 上早就有一行扣款账本**（`shopCharge` 写 `reason:'shop'`、`gachaDraw` 写 `reason:'gacha'`，都带同一个 orderId）。所以对 shop/gacha 订单，这个探针恒为真，heal 永远不会触发——而「重复的 delivery 回调补上崩溃丢掉的重复退款」这套机制，本来就是给 gacha 的重复品退款设计的。查询少了一个 `reason: 'gacha_refund'` 条件。本轮两个 heal 用例改用 **starter 订单**（cost 0、插入时是 'charged'、没有扣款账本行，而 meta 的重复退款回调对启动包的 10 连抽同样适用）才走通了这条路径，测试注释里记了这一点。修它要动钱路，属于独立改动，不塞进补测这一轮。
+**顺带发现的一个真问题（2026-09-03 已修，worktree `claude/upbeat-pare-d878c2`）**：`orders.ts` 的 `healOrderRefund` 用 `ledger.findOne({ accountId, orderId })` 判断「这笔退款到底落地了没」，但**同一个 orderId 上早就有一行扣款账本**（`shopCharge` 写 `reason:'shop'`、`gachaDraw` 写 `reason:'gacha'`，都带同一个 orderId）。所以对 shop/gacha 订单，这个探针恒为真，heal 永远不会触发——而「重复的 delivery 回调补上崩溃丢掉的重复退款」这套机制，本来就是给 gacha 的重复品退款设计的。查询少了一个 `reason: 'gacha_refund'` 条件。**修法**：探针补上 `reason: 'gacha_refund'`（退款那笔 `credit` 是唯一写这个 reason 的地方），业务逻辑其余部分一字未动。**回归测试**：`serviceGuards.e2e.test.ts` 新增「heals a dropped refund on a shop order, whose own debit row shares the orderId」——先断言那行 `reason:'shop'` 的扣款账本确实带着同一个 orderId（就是它挡住了探针），再模拟「状态翻了、credit 没跑」的崩溃，要求 heal 补一次且只补一次（第二次回调被 `healClaimedAt` CAS 挡住）。这个用例在改 `orders.ts` 之前是红的（`gacha_refund` 账本行 0 ≠ 1）。补测那一轮的两个 heal 用例当时改用 **starter 订单**（cost 0、插入时是 'charged'、没有扣款账本行）才走通这条路径，现在两种订单形状都有覆盖，测试注释已相应改写。
+
+**同时排查了姊妹探针 `recharge.ts` 的 `healRechargeCredit`（`ledger.findOne({ accountId, receiptId })`），结论：没有同类缺陷。**全仓 `receiptId` 只在 `base.ts` 的 `credit()` 里落进账本，而带 `receiptId` 的 `credit()` 调用只有三处（`rechargeVerify` 正常路径、`paddleComplete` 正常路径、`healRechargeCredit` 自己），全部 `reason:'recharge'`，全部是**贷记**——充值路径上没有任何一方会用同一个 receiptId 写扣款行，所以「账本里有这个 receiptId」等价于「这笔充值确实落地了」，探针本身就是精确的，不需要补 reason。
+
+**索引**：`ledger` 上没有 `(accountId, orderId)` 或 `(accountId, orderId, reason)` 复合索引，但**加不加 reason 都不会 collscan**——`ensureIndexes` 里的 `{ accountId: 1, ts: -1 }` 已经把扫描范围钉在单个账号上（实测 explain：`IXSCAN accountId_1_ts_-1` → `FETCH` 里对 `orderId`+`reason` 做残余过滤），新加的 `reason` 条件跟原来的 `orderId` 走同一个 FETCH filter，查询计划一字不变。这个探针只在「delivery 回调重复、且已过 15s 宽限窗」时才跑，频率极低，因此没有为它新增索引。
+
 ## worldsvc 补测第二轮：**分支**覆盖率，从 86.99% 拉到 91.48%（2026-09-03，worktree `feat/worldsvc-branch-cov`）
 
 「全仓分支覆盖率横向核实」那节的排期建议说 worldsvc「绝对数量大但摊得很平，适合按目录分组并行做」。本节就是那一轮：**不追全包扫平，只打那一节点名的几个热点文件**，四路并行，一次过线。至此那张表上破线的 6 个包只剩 metaserver 一个。
