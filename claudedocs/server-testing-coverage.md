@@ -434,7 +434,7 @@ auctionsvc 整体：**分支 88.18% → 99.58%**，行 95.37% → 96.99%（`npm 
 
 ## commercial 补测第二轮：**分支**覆盖率，从 81.25% 拉到 99.59%（2026-09-03，worktree `feat/commercial-branch-coverage`）
 
-上一节那张表里 commercial 是分支覆盖率**最低**的包（81.25%，795 条里 149 条从未执行），行覆盖率 93.64% 早就过了门禁。本节把它补完：**分支 81.25% → 99.59%（996 条里只剩 4 条）**，行 93.64% → **98.14%**（`npm run test:coverage`，25 test files / **424** tests 全绿——新增 211 例，原有 213 例零改动；`npm run typecheck` + `npm run typecheck:test` 干净）。`src/service` 这一层 11 个文件全部 **100% 行 / 100% 分支**，`src/iap` 7 个文件同样全绿。
+「全仓分支覆盖率横向核实」那张表里 commercial 是分支覆盖率**最低**的包（81.25%，795 条里 149 条从未执行），行覆盖率 93.64% 早就过了门禁。本节把它补完：**分支 81.25% → 99.59%（996 条里只剩 4 条）**，行 93.64% → **98.14%**（`npm run test:coverage`，25 test files / **424** tests 全绿——新增 211 例，原有 213 例零改动；`npm run typecheck` + `npm run typecheck:test` 干净）。`src/service` 这一层 11 个文件全部 **100% 行 / 100% 分支**，`src/iap` 7 个文件同样全绿。
 
 **149 条缺口分成三类形状**（跟 admin 第三轮的三类只有第三类重合，前两类是这个包特有的）：
 
