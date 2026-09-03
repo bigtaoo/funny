@@ -90,7 +90,7 @@
 
 - **同意**：采集个人信息（实名身份、设备、行为埋点）需**明示告知 + 取得同意**，敏感个人信息（身份证号）单独同意。复用 analyticsvc 顶层 `enabled` 开关（ANALYTICS §10）作埋点撤回闸门，并补**首次同意弹窗 + 隐私政策（中国区版本）**。
 - **境内存储**：在中国境内运营收集的个人信息**原则上存储在境内**——后端 Mongo/Redis 需有**境内机房部署**；如需出境（如跨区账号），走 PIPL 出境安全评估/标准合同（依规模与数据类型）。**部署架构待定（§10 待办）**。
-- **数据权利与删除**：账号删除 / 数据导出能力复用 `POST /account/delete`（SERVER_API §2.10）+ analyticsvc 按 `user_id` 批删；中国区删除范围与留存义务（如交易记录依法留存最小集）按法务定。
+- **数据权利与删除**：账号删除 / 数据导出能力复用 `DELETE /account`（SERVER_API §2.10；订正 2026-09-03——落地端点是 `DELETE /account` 软删 + 7 天宽限，旧文的 `POST /account/delete` 是未落地的设计稿措辞）+ analyticsvc 按 `user_id` 批删；中国区删除范围与留存义务（如交易记录依法留存最小集）按法务定。
 - **最小化与加密**：实名明文身份信息按最小化原则采集、加密存储，仅保留判定所需（`ageBand`/`realNameVerified` 标记 + 必要校验留痕）。
 - **第三方共享**：广告/分析 SDK 的数据共享需在隐私政策（中国区）如实披露并取得同意。
 
@@ -110,7 +110,7 @@
 | 实名认证 | account 模型 + `ageBand` 概念 | 实名门 + 对接版署/第三方认证 + `realNameVerified`/`ageBand` 权威字段 |
 | 防沉迷限时 | 服务器时钟权威（dayKey/节拍器） | 时段闸 + 时长闸（meta/gameserver 入口校验 + 时长计数） |
 | 充值限额 | commercial 充值 + dayKey 计数范式 | 分龄单次/月度额度校验（`monthKey` 计数）+ `<8` 拒付 |
-| PIPL 同意/删除 | analyticsvc `enabled` + 按 user_id 删 + `/account/delete`（§2.10） | 中国区隐私政策 + 首次同意弹窗 + 敏感信息单独同意 |
+| PIPL 同意/删除 | analyticsvc `enabled` + 按 user_id 删 + `DELETE /account`（§2.10） | 中国区隐私政策 + 首次同意弹窗 + 敏感信息单独同意 |
 | 数据境内存储 | — | 境内机房部署架构 + 出境评估（如需） |
 | 抽卡概率公示 | commercial `GachaPool.weight` + pity（与海外共用） | 公示页 + `displayRates` 回执（GLOBAL §4，中外共用一套） |
 | 适龄提示 / 健康忠告 | — | 启动/设置页标识 + 文案 |

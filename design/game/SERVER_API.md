@@ -3,7 +3,7 @@
 > 创建：2026-06-13。本文件是客户端 ↔ 服务器的**接口契约**：REST 端点 + WebSocket 消息 + 锁步时序。
 > 双端实现以本文件为准（客户端 `NetClient`/`SaveStore`/`EconomyClient` 与 `server/` 各 service）。
 > 配套：`META_DESIGN.md`（系统/架构）、`META_TASKS.md`（任务）、`ECONOMY_BALANCE.md`（数值）；SLG 大世界（worldsvc）契约见 `SLG_DESIGN.md §14`；埋点见 `ANALYTICS_DESIGN.md §8`。
-> 契约单一来源在 `server/contracts/`：`openapi.yml`（meta REST）+ `openapi-world.yml`（worldsvc REST）+ `openapi-auction.yml`（auctionsvc REST）+ `transport.proto`（WS 控制面/数据面）+ `game.proto`（PlayerCommand，对服务器 opaque）+ `replay.proto`（录像），双端 codegen（见 `META_TASKS.md` C-2）。
+> 契约单一来源在 `server/contracts/`：`openapi.yml`（meta REST）+ `openapi-world.yml`（worldsvc REST）+ `openapi-social.yml`（socialsvc REST，补记 2026-09-03）+ `openapi-auction.yml`（auctionsvc REST）+ `transport.proto`（WS 控制面/数据面）+ `game.proto`（PlayerCommand，对服务器 opaque）+ `replay.proto`（录像），双端 codegen（见 `META_TASKS.md` C-2）。
 > **⚠️ ADR-040（2026-07-14）**：`openapi.yml` 本身已是**生成产物**（文件头 `AUTO-GENERATED … DO NOT EDIT`）——真源是 `contracts/openapi/paths/<domain>.yml`（9 fragment）+ `openapi/schemas.yml`，改契约改 fragment 后跑 `npm run gen:api:contracts` 重新合并，**勿手改 `openapi.yml`**。
 
 ---
@@ -16,7 +16,7 @@
 | 内容 | 文件 |
 |---|---|
 | 开头 ~ Notebook Wars — 服务器协议 / API 契约 | **本文** |
-| §7 已定/开放问题、§8 内部服务契约、§9 commercial、§10 worldsvc、§11 analyticsvc | [`SERVER_API_INTERNAL.md`](SERVER_API_INTERNAL.md) |
+| §7 已定/开放问题、§8 内部服务契约、§9 commercial、§10 worldsvc、§11 analyticsvc、**§12 socialsvc、§13 auctionsvc**（后两节 2026-09-03 补齐） | [`SERVER_API_INTERNAL.md`](SERVER_API_INTERNAL.md) |
 
 ## 0. 总览
 
@@ -118,6 +118,21 @@ POST /shop/buy        { itemId, qty? }         → { save: SaveData, granted: It
 ```
 `qty`（2026-08-10，可选，默认 1，1–20）：一次请求内买 `qty` 份，服务端原子完成"校验每日上限（若有）→ 扣费 `cost×qty`→发货 `qty` 份"，全有或全无（详见 `ECONOMY_NUMBERS.md` §6.6）——不是客户端循环调用 `qty` 次。
 
+### 2.3a 累充里程碑 / 限时直购（`GACHA_DESIGN.md §6/§13`）
+
+> **补记 2026-09-03**：下列端点在 `openapi.yml` 里已存在多时，但 `design/` 全库从未提到过端点名。
+
+```
+POST /recharge/claim    { milestoneId }   → { save, granted }   // 累充里程碑领奖（GACHA_DESIGN §13）
+POST /starter/buy       { receipt }       → { save, granted }   // 新手包一次性直购（须验单，INVALID_RECEIPT）
+POST /monthly-card/buy | /monthly-card/claim              // 月卡购买 / 每日领取
+POST /year-card/buy                                       // 年卡购买
+POST /fate/redeem       { }               → { save, granted }   // 命运点兑换
+POST /promo/redeem      { code }          → { save, granted }   // 兑换码
+```
+
+- **`/recharge/claim`**：进度 `totalRechargeCents` 由服务器从 `save.monetization` 读取，本端点**只记领取 + 发货**，不自行累加充值额（充值额只能由 IAP 验单链路写，§2.6/§9）。幂等键 = `accountId + milestoneId`。
+
 ### 2.4 盲盒（economy-service，S2-3）
 ```
 GET  /gacha/pools                              → { pools: GachaPool[] }
@@ -152,14 +167,18 @@ POST /iap/verify      { platform, receipt }    → { save: SaveData, granted: nu
 > `progress.cleared` / `progress.stars` / `materials` 自 ADR-006 起**服务器权威**——这几段只能经下列端点写（当时的表述是"`PUT /save` 同步段收窄为仅 `equipped`/`flags`"；`PUT /save` 本身已于 ADR-056 整个下线，见 §2.2）。奖励按 `@nw/shared/pveRewards.ts` 服务器重算，不信客户端自报数额。`pveUpgrades` 曾经也是这一批（第三个端点 `/pve/upgrade`），**该端点已于 2026-07-30 删除**（见下方说明）；字段本身仍在 `SaveData` 上只读留存（L0 反作弊比对用），不再有任何写入路径。
 
 ```
+POST /pve/enter    { levelId }                 → { save: SaveData }   // 进入关卡时扣体力（ADR 2026-07-06）
 POST /pve/clear    { levelId, stars, pveSnapshot?, replayRef? }
    → { save: SaveData, capped?: boolean, needsReplay?: boolean, verifyId?: string }
 POST /pve/verify   { verifyId, frames }        → { save: SaveData, status: 'verified'|'rejected'|'unverified' }
+POST /pve/stamina/purchase                     → { save: SaveData }   // A4 付费补体力：30 金币 → +60 体力
 ```
 
 - **`/pve/clear`**：校验 level 存在 + **已解锁**（前置关在 `progress.cleared` 内）+ `stars≤3` → 按 `grantForClear(levelId,isFirst)` 在**每日上限**（`PVE_DAILY_CLEAR_REWARD_CAP`，按 `dayKey` 原子计数，Redis 存储，类比 `victoryDaily`，均见 §5 的 `dailyCounter.ts` 说明）内发材料；首通额外发首通奖励 + 解锁下一关 + 记星（取 max）→ 原子写 `progress/stars/materials`（rev 守卫）→ 回推权威 save。超上限：仍写 progress/stars，材料不发（`capped:true`）。
 - **抽检复算（L1，复用 S1-J 对等裁判）**：`shouldSpotCheck` 命中（首通恒查 / 开局 `pveSnapshot` 与服务器权威 `pveUpgrades` 不符「开局战力不符→必作弊」/ 按 `PVE_VERIFY_SAMPLE_RATE` 随机）→ 暂扣材料、记 `pveVerifications{status:pending}`、回 `{needsReplay:true, verifyId}`；客户端补传录像帧调 `/pve/verify` → meta 经 `gateway.judge` 派第三方无头复算 → 复算星数 ≥ 声称则发材料(`verified`)，< 声称则不发(`rejected`)，无裁判可裁则 benefit-of-doubt 照发(`unverified`)。
-- 两端点均返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
+- **`/pve/stamina/purchase`**（补记 2026-09-03，此前 spec 里有、`design/` 里全库无一处提及）：走 `commercial.spend` 扣 30 金币后给 +60 体力，数值见 [`BALANCE.md`](BALANCE.md) §10 / [`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md) §3；余额不足 `INSUFFICIENT_FUNDS`，体力已满仍按满值封顶。客户端入口 `LevelPrepScene` 的「补充体力」按钮（失败则路由到商店）。
+- **`/pve/enter`**（补记 2026-09-03，此前只在 `ECONOMY_NUMBERS.md` §3 出现过，本「契约单一来源」漏列）：体力**在进入关卡时**扣、不在结算时扣（2026-07-06 拍板）；中途撤退/打输不退还。离线时客户端本地镜像先扣，联网后用本端点与 `pveStamina` 集合对账。也是 `rejectIfBanned()` 的两个生效点之一（另一个是 `/pve/clear`）。
+- 四端点均返回完整权威 SaveData（客户端 adopt 镜像，同经济回执）。
 - ~~`/pve/upgrade`~~ **已删除（2026-07-30）**：曾经"服务器按 `PVE_UPGRADE_COSTS` 校验材料足够 → 扣材料 + `pveUpgrades[id]+1` → 回推 save"，CC-1 起单位养成改走 Hero Roster（`cardInv`）后彻底死代码——客户端唯一调用点 `SaveManager.upgrade()` 早已零调用方且标 `@deprecated`。删除范围：契约片段（`openapi/paths/pve.yml`）+ 两处生成产物（`openapi.yml`/`routes.gen.ts`，重跑 `gen:api:contracts`/`gen:api:server`）+ `MetaHandlers`/`PveHandlers` 类型 + 服务端 handler（`pve.ts`）+ `@nw/shared` 里同样孤儿的 `PVE_UPGRADE_COSTS`/`findPveUpgrade`/`pveUpgradeCost` + client `ApiClient`/`SaveManager` + 两侧既有测试。详见 `SLG_DESIGN_LOG.md` §43 / comm-audit-p2-remaining。
 
 ### 2.8 装备养成（服务器权威，ADR-010 / ADR-012 / `EQUIPMENT_DESIGN.md §18`）
@@ -203,8 +222,13 @@ POST /cards/unlock      { cardInstanceId }                                → { 
 ```
 GET  /events                                   → { events: ActiveEvent[] }   // 当前 active 活动 + 配置 + 我的进度
 POST /events/claim   { eventId, milestoneId }  → { save, granted } | NOT_REACHED | ALREADY_CLAIMED | EVENT_ENDED
-POST /events/redeem  { eventId, shopItemId }   → { save, granted } | INSUFFICIENT_POINTS | EVENT_ENDED
+POST /events/redeem  { eventId, shopItemId }   → { save, granted } | INSUFFICIENT_POINTS | EVENT_ENDED   # ⚠️ 未实现
 ```
+
+> **实现状态（补记 2026-09-03）**：`GET /events` 与 `POST /events/claim` 已在 `openapi.yml` + `routes.gen.ts` 落地；
+> **`POST /events/redeem` 至今只有本节这份契约草案**——spec 里没有它，代码里没有它，`eventPoints` 这个字段在
+> `@nw/shared` 里也还不存在。活动积分兑换整条线随 `EVENTS_DESIGN.md`（状态：设计中）一起待实现。
+> 本节其余描述照旧有效。
 
 - **`GET /events`**：返回 active 活动的 `EventDef`（窗口/i18n key/任务/里程碑/乘子/限定 SKU，文案走 i18n 不内嵌明文）+ 该玩家服务器权威进度（任务计数/已领里程碑/活动积分 `eventPoints`）。
 - **`/events/claim`**：服务器按 `window + 幂等键(eventId+milestoneId+accountId)` 二次校验，达成则发系统邮件（领取时经 commercial/inventory 入账，幂等）；过窗 `EVENT_ENDED`（已获奖励进领取宽限，如结束后 7 天可领）。
@@ -416,6 +440,17 @@ enum RoomPhase { WAITING = 0; READY = 1; COUNTDOWN = 2; IN_MATCH = 3; OVER = 4; 
 ---
 
 ## 6. 录像（replay，M13 / `META_DESIGN.md §6.6`）
+
+> **分享端点（补记 2026-09-03）**：`openapi.yml` 里另有一组输入流录像的分享端点，`design/` 此前全库未提：
+>
+> ```
+> POST /match/{roomId}/replay/share   (JWT)   → { shareCode }   // 仅能分享本账号参与过的对局；7 天 TTL
+> GET  /r/{shareCode}                 (公开)  → Replay          // 免登录；过期返 404
+> ```
+>
+> 与 [`REPLAY_SHARE_DESIGN.md`](REPLAY_SHARE_DESIGN.md) 的**状态流**分享（`POST /replay/share` + 公开 `GET /r/{shareCode}`）
+> 是两套东西：这一组分享的是**服务端归档的输入流录像**（S1-RP，要重放引擎才能看），那一组是客户端自产的状态流
+> （哑播放器直接放）。两者共用 `/r/{shareCode}` 这个公开读路径。
 
 统一输入管线让对局/关卡都可回放：**录像 = `seed` + 配置 + 输入流**，从不存状态。
 

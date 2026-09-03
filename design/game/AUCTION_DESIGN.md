@@ -4,7 +4,7 @@
 >
 > 配套阅读：[`COMMERCIAL_DESIGN.md`](COMMERCIAL_DESIGN.md)（金币钱包 spend/grant，拍卖结算走它）、[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（货币政策/反通胀哲学）、[`ECONOMY_NUMBERS.md`](ECONOMY_NUMBERS.md)（数值演算）、[`SERVER_API.md`](SERVER_API.md)（接口契约）、[`OPS_DESIGN.md`](OPS_DESIGN.md)（反 RMT 审计工单复用）、[`EQUIPMENT_DESIGN.md`](EQUIPMENT_DESIGN.md)/[`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)（装备/角色卡实例定义）、[`SLG_DESIGN.md`](SLG_DESIGN.md)（仅材料 `scrap/lead/binding` 的产出侧定义共享，拍卖机制本身与 SLG 世界/赛季生命周期无关，见 §9 拍板说明）。
 >
-> **本文是拍卖行机制权威**：数值不在本文定——常量在 `server/shared/src/slg.ts`（`AUCTION_*`），本文只引用并注 DRAFT。
+> **本文是拍卖行机制权威**：数值不在本文定——常量在 `server/shared/src/slg/auction.ts`（`AUCTION_*`；2026-07-05 由 `slg.ts` 拆分而来），本文只引用并注 DRAFT。
 
 ---
 
@@ -385,4 +385,4 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 ## 9. 拆分任务清单（去 SLG/worldId 耦合 + 独立服务）
 
 → 已拆出到 [`AUCTION_DESIGN_SPLIT_TASKS.md`](AUCTION_DESIGN_SPLIT_TASKS.md)（2026-07-06 拍板，逐任务执行记录，已完成）。
-本文（§0–§8）是拍卖行的**机制权威**；数值仍在 `server/shared/src/slg.ts` 的 `AUCTION_*`。
+本文（§0–§8）是拍卖行的**机制权威**；数值仍在 `server/shared/src/slg/auction.ts` 的 `AUCTION_*`。

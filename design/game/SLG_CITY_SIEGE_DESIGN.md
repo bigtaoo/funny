@@ -2,7 +2,7 @@
 
 > 状态：**P0/P1/P2 已落地（2026-08-25）**，**P3 已落地（2026-08-27）**——守方驻防队 + §8 三条收益 + §9 收口，见 §10-P3。数值已经 econ-sim 实测标定；机制原案有三处被实测否掉（见 §5），P3 的「驻防队替代 NPC 波次」是第四处（改为**加在前面**，见 §10-P3-3）。· 权威：本文（野外城池机制基准）· 创建：2026-08-25
 > 上级：[`SLG_DESIGN.md`](SLG_DESIGN.md)（大世界总纲，§3.1 城池节点 / §5 攻防模型）。本文把 SLG §3.1 里长期挂着「城池的驻军/耐久数值仍是 §5 待定项，本轮只做视觉」的那个缺口补完，并把它从「贴图」升级成一个有数据模型、有归属、有收益的玩法实体。
-> 配套：[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)（**主城**内政，勿混淆——本文是**野外 NPC 城池**）、[`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md)（数字登记，本系统落 §13-SLG-CITYSIEGE）、[`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)（核验流程）、[`SOCIAL_DESIGN.md`](SOCIAL_DESIGN.md)（家族/宗门层级）。数值真源：`server/shared/src/slg/siege.ts`。
+> 配套：[`SLG_CITY_DESIGN.md`](SLG_CITY_DESIGN.md)（**主城**内政，勿混淆——本文是**野外 NPC 城池**）、[`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md)（数字登记，本系统落 §13-SLG-CITYSIEGE）、[`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md)（核验流程）、[`SOCIAL_DESIGN.md`](SOCIAL_DESIGN.md)（家族/宗门层级）。数值真源：`server/shared/src/slg/citySiege.ts`（2026-08-25 从 `siege.ts` 拆出——本文原先指名 `siege.ts`，但该文件是格位级围攻结算，本子系统自带耐久曲线/波次梯度/归属规则后单独成文件；见该文件头部注释）。
 > 拍板：[ADR-074](../DECISIONS.md)（2026-08-25，用户当场四问四答）。
 
 ---

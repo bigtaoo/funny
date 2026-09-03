@@ -2,7 +2,7 @@
 
 > 状态：设计中 · 权威：本文（建筑系统机制基准）· 创建：2026-06-30
 > 上级：[`SLG_DESIGN.md`](SLG_DESIGN.md)（大世界总纲，§4 兵力/§7 经济/§9 架构）。本文把「点进主城的内政界面 + 建筑升级 + 加成 + 练兵」从 SLG §4/§7 承诺细化到字段/常量/注入点级别。
-> 配套：[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（faucet/sink 政策）、[`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md)（数字登记，本系统数值落 §13-SLG-CITY）、[`SERVER_API.md`](SERVER_API.md)（端点契约）、`server/shared/src/slg.ts`（常量真源）。
+> 配套：[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（faucet/sink 政策）、[`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md)（数字登记，本系统数值落 §13-SLG-CITY）、[`SERVER_API.md`](SERVER_API.md)（端点契约）、`server/shared/src/slg/city.ts`（常量真源；2026-07-05 由 `slg.ts` 拆分而来）。
 > 参考原型：三国志·战略版（灵犀互娱）主城内政——君王殿等级门控 + 资源建筑提产量 + 民居产币 + 校场练兵 + 城防提耐久 + 科技建筑加成 + 官职委任。本文取其**结构**，换我们的文具皮 + 5 资源 + 统一养成边界。
 
 ---
@@ -145,7 +145,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 ## 7. DRAFT 数值（已过 B 轨节奏核验 2026-06-30；登记 → ECONOMY_VERIFICATION_LOG §13-SLG-CITY）
 
-> **已过 B 轨建筑/练兵节奏核验**（2026-06-30，econ-sim `city.ts`）：faucet/sink 与重肝节奏成立（paper 7.7× cap 的资源门控肝、落 60 天窗口、满级乘子合理）——方法/判据见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §4，**完整结论 + 参数表登记在** [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md) **§13-SLG-CITY**。常量真源 = `server/shared/src/slg.ts`，下表是设计侧占位快照（数值仍 DRAFT，终态判据=上线后实测）。
+> **已过 B 轨建筑/练兵节奏核验**（2026-06-30，econ-sim `city.ts`）：faucet/sink 与重肝节奏成立（paper 7.7× cap 的资源门控肝、落 60 天窗口、满级乘子合理）——方法/判据见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §4，**完整结论 + 参数表登记在** [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md) **§13-SLG-CITY**。常量真源 = `server/shared/src/slg/city.ts`，下表是设计侧占位快照（数值仍 DRAFT，终态判据=上线后实测）。
 
 | 常量（占位名） | 占位值 | 说明 |
 |---|---|---|

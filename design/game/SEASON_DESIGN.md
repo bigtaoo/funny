@@ -1,6 +1,13 @@
 # 天梯赛季 + 战令 + 排行榜设计 — Ranked Season / Battle Pass / Leaderboard
 
-> 状态：设计中 · 权威：**本文（天梯赛季 / 战令 / 排行榜机制单一来源）** · 更新：2026-06-21
+> 状态：**已实现（S11 全量，SE-1 ~ SE-10）** · 权威：**本文（天梯赛季 / 战令 / 排行榜机制单一来源）** · 更新：2026-09-03
+>
+> **订正 2026-09-03**：本行此前一直是「设计中 · 更新 2026-06-21」，而 `design/README.md` 早已记「已实现」——
+> 两边对不上。核对代码后确认 README 是对的：`shared/src/season.ts`（`SEASON_DURATION`/`SEASON_RESET_BASELINE`/
+> `softReset`/`migrateIfStale`/`firstReachCoins`）+ `shared/src/battlepass.ts`（`BATTLEPASS_DEFS`）+
+> `metaserver/src/ladderSeason.ts`（`settleSeasonForPlayer`）+ `ladderSeasons` 集合 + `POST /admin/ladder/season/roll`
+> + `GET /leaderboard` + `/battlepass/{buy,claim}` 全部在库。§13 表里 SE-1/2/3/4/7/8 六行当时漏打 ✅（它们是
+> 已打勾的 SE-5/6/9/10 的前置依赖，不可能没落地），本次一并补上。
 >
 > 本文是天梯运营层的**机制设计基准**：赛季时钟、软重置、段位首达金币补齐、赛季峰值追踪与结算奖励、排行榜、战令（Battle Pass）、惰性迁移、接口契约、UI、经济联动、实现拆解。
 > **数值不在本文拍死**：ELO/段位/首达金币 → [`ECONOMY_BALANCE.md §2.3`](ECONOMY_BALANCE.md)；赛季重置基准/赛季奖励/战令奖励曲线 → [`ECONOMY_NUMBERS.md §13`](ECONOMY_NUMBERS.md)。
@@ -298,14 +305,14 @@ POST /battlepass/buy                      (JWT) → 下单（commercial）
 
 | 阶段 | 内容 | 依赖 | 优先级 |
 |---|---|---|---|
-| **SE-1** | `@nw/shared`：`LadderSeasonDoc` 类型 + `SEASON_DURATION`/`SEASON_RESET_BASELINE` 常量 + `softReset()` / `migrateIfStale()` 纯函数 + `firstReachCoins()`；`pvp` 扩字段（`seasonNo/seasonPeakElo/seasonPeakRank/reachedRanks`）+ `makeNewSave` 初值 | — | P0 |
-| **SE-2** | meta：`ladderSeasons` 集合 + 懒创建当前赛季；`migrateIfStale` 接入 `GET /save` reconcile 与 ranked 结算前；`applyPvp` 补**峰值追踪 + 段位首达金币**（修 §4.3 现状缺口） | SE-1 | P0 |
-| **SE-3** | meta：`POST /admin/ladder/season/roll`（CAS 幂等）；S7 ops 后台加「开启新赛季」按钮（手动触发）+ 临近 `endAt` 高亮提示 | SE-2、S7 | P0 |
-| **SE-4** | meta：`settleSeasonForPlayer`（峰值金币走邮件 + `grantTitle` 段位称号，幂等）；接入迁移点 | SE-2、S6 邮件、S10 | P0 |
+| **SE-1** ✅ | `@nw/shared`：`LadderSeasonDoc` 类型 + `SEASON_DURATION`/`SEASON_RESET_BASELINE` 常量 + `softReset()` / `migrateIfStale()` 纯函数 + `firstReachCoins()`；`pvp` 扩字段（`seasonNo/seasonPeakElo/seasonPeakRank/reachedRanks`）+ `makeNewSave` 初值 | — | P0 |
+| **SE-2** ✅ | meta：`ladderSeasons` 集合 + 懒创建当前赛季；`migrateIfStale` 接入 `GET /save` reconcile 与 ranked 结算前；`applyPvp` 补**峰值追踪 + 段位首达金币**（修 §4.3 现状缺口） | SE-1 | P0 |
+| **SE-3** ✅ | meta：`POST /admin/ladder/season/roll`（CAS 幂等）；S7 ops 后台加「开启新赛季」按钮（手动触发）+ 临近 `endAt` 高亮提示 | SE-2、S7 | P0 |
+| **SE-4** ✅ | meta：`settleSeasonForPlayer`（峰值金币走邮件 + `grantTitle` 段位称号，幂等）；接入迁移点 | SE-2、S6 邮件、S10 | P0 |
 | **SE-5** ✅ | meta：`GET /leaderboard`（Top100 + 我的名次实算 + 称号 join）+ 复合索引 + 60s 进程缓存（2026-07-03：`getLeaderboard` 补 `me` 实算=`countDocuments(elo>myElo & 本季)+1`，未打本季则省略 → 契约 openapi + routes.gen + 客户端 openapi.ts 已同步；同日补 60s 进程缓存：Top-100 `entries` 按 `seasonNo` 缓存 60s、赛季 roll 因键不匹配隐式失效，`me` 每次实算不缓存；缓存命中/失效/换季三例单测 `leaderboard-cache.test.ts`） | SE-2 | P0 |
 | **SE-6** ✅ | 客户端：赛季横幅 + 排行榜面板 + 赛季结算弹层 + i18n（`season.*`/`leaderboard.*`）（2026-06-22：`LeaderboardScene`/`StatsScene` 横幅/`LobbyScene.showSeasonSettlement`/i18n zh+en+de；2026-07-03：榜单补拖拽滚动 + 赛季标下固定「我的名次」行 `leaderboard.myRank`/`myRankNone`） | SE-5、UI_DESIGN | P0 |
-| **SE-7** | `@nw/shared` `BATTLEPASS_DEFS` + `battlePass` 块入 SaveData 权威段；赛季经验在留存/ranked 结算点累加 | SE-1、RETENTION | P1 |
-| **SE-8** | meta：`POST /battlepass/claim`（双轨二次校验 + 幂等）+ `/buy`（commercial 发货置 hasPass）+ 迁移点补发未领（§9） | SE-7、S5 | P1 |
+| **SE-7** ✅ | `@nw/shared` `BATTLEPASS_DEFS` + `battlePass` 块入 SaveData 权威段；赛季经验在留存/ranked 结算点累加 | SE-1、RETENTION | P1 |
+| **SE-8** ✅ | meta：`POST /battlepass/claim`（双轨二次校验 + 幂等）+ `/buy`（commercial 发货置 hasPass）+ 迁移点补发未领（§9） | SE-7、S5 | P1 |
 | **SE-9** ✅ | 客户端：战令面板（双轨/四态/红点/购 Pass）+ i18n `battlepass.*`（2026-06-22：`BattlePassScene`/`battlepassDefs.ts`/`AppViews.showBattlePass`/i18n） | SE-8、UI_DESIGN | P1 |
 | **SE-10** ✅ | 数值校准：赛季峰值金币 + 战令金币入 ECONOMY_NUMBERS §13，跑总产出模拟（`ECONOMY §9`）（2026-06-22：`BP_XP_PER_RANKED_LOSS` 60→40；总产出模拟留 ECONOMY §9 后续） | SE-4、SE-8 | P1 |
 

@@ -261,7 +261,7 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 
 ## 15. 角色卡 / Hero Roster 数值（CHARACTER_CARDS_DESIGN 全套） `[DRAFT]`
 
-> 机制权威：[`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)；本节为**角色卡数字单一源**。常量真源：养成/背包 = `server/shared/src/cards.ts`；SLG 运行态 = `server/shared/src/slg.ts`；卡池 = `server/shared/src/economy.ts`。
+> 机制权威：[`CHARACTER_CARDS_DESIGN.md`](CHARACTER_CARDS_DESIGN.md)；本节为**角色卡数字单一源**。常量真源：养成/背包 = `server/shared/src/cards.ts`；SLG 运行态 = `server/shared/src/slg/`（2026-07-05 起按域拆包：`core.ts` 世界/资源、`city.ts` 主城内政、`citySiege.ts` 野外城池、`siege.ts` 格位围攻、`auction.ts` 拍卖）；卡池 = `server/shared/src/economy.ts`。
 > 状态：全部 `[DRAFT]` 占位值（已随 CC-1~5 落地代码），终态判据 = 上线后 analyticsvc 实测（升级速率 / 背包占用 / 受伤频率 / 卡池出货）对账，偏差惰性下版本生效。CHARACTER_CARDS_DESIGN §16 开放问题已在此登记。
 
 ### 15.1 卡定义（CardDef，`cards.ts`）
@@ -335,4 +335,3 @@ value(material) = DUPE_REFUND_COINS[该材料所在 gacha 稀有度档] / GACHA_
 | 综合产出合成封顶 | ≤ 常态 2.5× | 活动（加成期） |
 | 活动积分 | 活动期清零、不沉淀 | 活动（局部货币） |
 | 活动金币月度归口 | 并入 §6.1「活动 ~40/月」 | 活动（经济红线） |
-</content>

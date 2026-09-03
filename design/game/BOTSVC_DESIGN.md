@@ -2,7 +2,11 @@
 
 > 创建：2026-07-13。本文件设计 **botsvc（独立机器人玩家进程）**：冷启动期用机器人填充匹配池/SLG世界人气，模拟真实玩家登录/下线/打关卡/匹配/玩SLG。
 > 配套阅读：`META_DESIGN.md`（服务拓扑/内部密钥）、`MATCHSVC_DESIGN.md`（§8 现有 `match_bot_fallback` 排位超时兜底代打，与本文机器人是两套独立机制，见 §1 决策 B1）、`SOCIAL_SVC_DESIGN.md`（家族数据模型）、`SLG_DESIGN.md`、`GATEWAY_DESIGN.md`。
-> 状态：设计中。
+> 状态：**已实现**（2026-07-14 全量落地：§3.2 SLG 节奏 + §1-B3 真实 gateway/gameserver 排位对战 + 1000 bot 负载实测；已在 `docker-compose.prod.yml`、`ecosystem.config.cjs`、`dev-up.ps1`）· 权威：本文（botsvc 设计基准）· 更新：2026-09-03
+>
+> **订正 2026-09-03**：本行与 `design/README.md` 那一行**都**一直写着「设计中」，而 `server/botsvc/src/` 已是
+> 21 个文件 / 约 6.9k 行、自带 protobuf codegen、在 prod compose 里以 ~300 bot 常驻在线运行。§8 的开放问题
+> 清单本身早已全部打勾（含 1000 bot 实测），只有这一行没跟。
 
 ---
 

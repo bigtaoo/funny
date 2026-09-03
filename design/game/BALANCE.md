@@ -1,13 +1,13 @@
 # 战斗数值快照（BALANCE）
 
-> 状态：实现中 · **权威：`server/engine/src/config.ts`（`@nw/engine`；本文是它的快照，非权威）** · 更新：2026-07-02（PvP 锚点平衡：Max 攻 22→14 + 费 5→6，等墨胜率 91%→54%；infantry 保持不动，判定为竞技场 swarm 伪迹）
+> 状态：实现中 · **权威：`server/engine/src/config.ts`（`@nw/engine`；本文是它的快照，非权威）** · 更新：2026-09-03（补齐 ghost-fix 后的 Max 攻 14→11 与整手刷新 10 墨，见 §5.1/§4）
 >
 > ⚠️ 改数值改 `config.ts`，然后同步本文 + 注明日期。**不要**只改本文。
 > ⚠️ ADR-065（2026-08-12）：引擎内部（`Unit`/`Building`/blueprint）把 HP/攻击等连续型战斗数值改成了定点整数（×1000, `_fp` 后缀字段），但 `config.ts` 的人类可读表和本文数字口径**都不受影响**——仍是真实单位（`hp: 60`），定点化只发生在 blueprint bake 之后的引擎运行时表示，代码里的 `hp_fp: 60000` 对应本文/`config.ts` 的 `60`。
 > 本文取代 `product/v1-balance.md`（未落地）与 `core-gameplay-loop.md` 内联数值（设计意图）作为文档侧数值参考。
 > 引擎已抽成 `@nw/engine`（G3-2b-0，2026-06-21）：config.ts 真身在 `server/engine/src/`，client 经 alias 引用、旧 `@nw/engine/config.ts` 留 re-export shim。
 
-来源：[`server/engine/src/config.ts`](../../server/engine/src/config.ts)（截至 2026-06-21）。
+来源：[`server/engine/src/config.ts`](../../server/engine/src/config.ts) + [`server/engine/src/blueprintDefs.ts`](../../server/engine/src/blueprintDefs.ts)（单位/建筑蓝图表 2026-08-12 按 500 行约定拆出，见 ADR-065）。**核对于 2026-09-03**：§1–§7 全表已与代码逐项对表。
 
 ---
 
@@ -52,6 +52,7 @@
 | 手牌数 | 6 |
 | 自动刷新倒计时 | 30 s（900 ticks，`CARD_REFRESH_TICKS`）自动刷新单槽 |
 | 开局错峰偏移 | 随机 [0, 15 s]（450 ticks） |
+| 整手手动刷新 | **10 墨**（`HAND_REFRESH_COST`，重抽全部 6 槽，同入场；HUD 有按钮）——补记 2026-09-03，本表此前漏了这一项 |
 
 ## 5. 单位
 
@@ -61,7 +62,7 @@
 | 普通兵 Infantry | 60 | 12 | 0.8s | 1.4 | 1（近战） | 2 | 400 | 0 |
 | 盾兵 ShieldBearer | 240 | 8 | 1.2s | 0.85 | 1（近战） | 1 | 500 | 0 |
 | 弓箭兵 Archer | 35 | 22 | 1.4s | 1.1 | 2（远程，投射物 14 格/s） | 1 | 350 | 0 |
-| Max（Anna 先锋） | 190 | **14**（锚点平衡 22→14） | 1.3s | 1.0 | 1（近战） | 1 | 490 | **2** |
+| Max（Anna 先锋） | 190 | **11**（22→14→11，见下方两轮平衡记录） | 1.3s | 1.0 | 1（近战） | 1 | 490 | **2** |
 | Lena（Anna 哨卫） | 150 | 10 | 1.0s | 0.75 | 1（近战） | 1 | 510 | **8** |
 | Mara（Anna 游击） | 40 | 12 | 1.3s | 1.4 | 2（远程，投射物 14 格/s） | 1 | 320 | 0 |
 
@@ -87,6 +88,7 @@
 > **锚点平衡 pass（2026-07-02，`pvpSim.ts`）：解决 P4 遗留的 max_1（91%）/infantry_1（82%）等墨偏强。**
 > - **Max：攻 22→14 + 费 5→6（等墨 91%→54.5%）。** 关键诊断：Max 对费用**完全不敏感**（5/6/7 费都 90.9%），说明这是**属性过载**而非定价问题——一个 190HP/armor2 的肉盾同时拥有 22 近战 DPS（比弓兵远程 22 还猛、比狂战 18 高），在无 AOE 的纯 blob 对撞里通杀。攻降到 14（仍 > 普通兵 12、< 狂战 18）保留「耐揍先锋」身份、去掉 DPS 过载；费用并入 6 档匹配其肉盾属性块。analytical cp/ink 0.83→0.55。**旁注**：Max 也是 PvE lv1 敌方首波单位（`levelSchema.test.ts`），此改令该波略降难度（非玩家单位，无战力回退风险）。
 > - **infantry：保持不动，判定为竞技场伪迹。** infantry_1 是 cp/ink=1.0 的**标尺单位**（其余单位皆相对它归一），其等墨高胜率是「无 AOE 竞技场过奖廉价高身数」的 swarm 伪迹——与被接受的 splitter 100% 同类（真正克制都是陨石 AOE，模拟器不建模）。且费 4 是 lv1「经济命门」的地基（`DIFFICULTY_SIM`），费 4→5（→59%）的收益不抵其对战役经济的涟漪。故**不改数值**，仅以本注记录判定；`pvpSim.test.ts` 加护栏锁死 max_1 ≤ 65% 防回退。
+> **ghost-fix 后重调（2026-07-17，commit `e31c86a4f`）：Max 攻 14→11，费保持 6。** 上一条的 54.5% 是在一个**有 bug 的竞技场**里测出来的：堆叠单位的索敌缺陷（Board 多占位格修复前）让 swarm 产生「ghost」伪迹，一直在压着 Max 的真实对局胜率。缺陷修掉后 max_1 等墨从 54% 弹到 **73%**，越过 `pvpSim.test.ts` 的 ≤65% 护栏。攻 14→11（现在**低于**普通兵 12——Max 的身份改为完全靠 190 HP + armor 2 + `burstOnSingle` 撑，不靠裸 DPS）把它压回约 54%。**这一条 2026-07-17 就已落在 `blueprintDefs.ts` 与 `pvpSim.test.ts`，但本文的 §5.1 表与 §7 卡表直到 2026-09-03 才补上——文档漂移 7 周，是本文头部那条「改 config.ts 后同步本文」的第一次失效记录。**
 
 ## 6. 建筑
 
@@ -105,8 +107,8 @@
 | 普通兵 ×2 | 4 | 兵 | 一卡出 2 |
 | 盾兵 ×2 | 6 | 兵 | |
 | 弓箭兵 ×2 | 5 | 兵 | |
-| Max ×2 | **6**（锚点平衡 5→6） | 兵 | Anna 侧，PvE ch2 解锁后进池 |
-| Lena ×2 | 7 | 兵 | Anna 侧，PvE ch4 解锁后进池 |
+| Max ×2 | **6**（锚点平衡 5→6） | 兵 | Anna 侧，永久入 PvP 基础库 |
+| Lena ×2 | 7 | 兵 | Anna 侧，永久入 PvP 基础库 |
 | Mara ×2 | 5 | 兵 | Anna 侧，永久入 PvP 基础库 |
 | 兵营 ×2 | 14 | 建筑 | |
 | 箭塔 ×2 | 12 | 建筑 | |
@@ -133,7 +135,9 @@
 > 背景：armor:2/级时 L9 玩家单位有 +16 护甲，Ironclad (10 攻) 等低攻敌对玩家造成 max(1,10-16)=1 伤害，
 > TTK 爆炸。改为 armor:1/级（L9 = +8）后 Ironclad 实伤恢复到 max(1,10-8)=2，与敌方 HP 同步上调，维持难度。
 
-### 7.1 PvE 专属法术卡（不进 PvP 池，硬墙）
+### 8.1 PvE 专属法术卡（不进 PvP 池，硬墙）
+
+> 编号订正 2026-09-03：本节原编号 `7.1`，但它排在 `## 8` 之后，跟 §7「卡牌」不连续。
 | 卡 | 费用 | 效果 |
 |---|---|---|
 | 落石 Rockslide | 3 | 伤害 80 |
@@ -197,8 +201,8 @@
 |---|---|
 | 体力上限 | **120** |
 | 自然恢复速率 | **1 点 / 6 分钟** |
-| 关卡消耗 | **统一 10 / 次**（定额，2026-07-06 拍板；数值权威见 `ECONOMY_NUMBERS.md §3`） |
-| 付费补充 | **30 金币 → +60 体力**（走 commercial.spend） |
+| 关卡消耗 | **统一 10 / 次**（定额，2026-07-06 拍板；**进入关卡时**扣 = `POST /pve/enter`，非结算时扣；数值权威见 `ECONOMY_NUMBERS.md §3`） |
+| 付费补充 | **30 金币 → +60 体力**（`POST /pve/stamina/purchase`，走 commercial.spend；SERVER_API §2.7） |
 | 错误码 | `INSUFFICIENT_STAMINA`（HTTP 402）|
 
 **实现说明**：
@@ -227,4 +231,3 @@
 - **依赖**：metaserver 新增 `@nw/engine` 依赖 + 一套 proto codegen（`buf.gen.yaml` + `scripts/gen-proto.mjs`，照抄 gameserver/botsvc 现成模式），仅供这一离线脚本使用，不影响常驻服务运行时。
 - **抽样规则**（`server/metaserver/scripts/samplePvpReplays.ts`，`npx tsx` 手动/外部调度触发）：争议对局排除；**爆冷对局**（赢方赛前 ELO 明显更低，≥150 分）优先全采；其余按 `--rate`（默认 5%）随机兜底；已采样过的（`pvpPlaySequences` 里已有）跳过。解码失败（残缺/损坏 replay）记日志跳过，不静默丢弃。
 - **产出用法**：暂不建专门报表页——采样量小，更适合直接查 `pvpPlaySequences` 或写临时聚合脚本（例如"爆冷局赢家用了什么卡序列"）；等摸出固定分析需求，再考虑并入阶段一的 ops 页面。
-</content>

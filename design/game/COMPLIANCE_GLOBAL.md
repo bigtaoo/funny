@@ -150,7 +150,7 @@
 | 埋点同意/删除 | analyticsvc `enabled` 开关 + 按 user_id 删（ANALYTICS §10） | 首次同意弹窗（按地区） |
 | 抽卡掉率数据 | commercial `GachaPool.weight` + pity | 公示页 + `displayRates` 回执字段 + i18n |
 | 内购 | `iapVerify` dev 桩 | 平台 IAP/Billing SDK + 真票据校验 |
-| 账号删除 | account 模型 + `POST /account/delete` 契约（SERVER_API §2.10） | meta 编排实现（删/匿名化 + 跨服务联动） |
+| 账号删除 | account 模型 + `DELETE /account` 契约（SERVER_API §2.10；订正 2026-09-03，与本文 §3.5 清单口径统一） | meta 编排实现（删/匿名化 + 跨服务联动） |
 | UGC | social 敏感词 + 拉黑 + 举报 + displayName 过滤（2026-07-27 全部补齐） | — |
 | 隐私政策入口 | — | LoginScene / SettingsScene 链接 |
 
