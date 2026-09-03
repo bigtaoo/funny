@@ -318,7 +318,7 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 | ~~admin~~ | ~~82.09%~~ → **92.42%** | 95.88% | 上一节已补完 |
 | metaserver | **85.86%** | 90.74% | 481 / 3403 |
 | worldsvc | **86.99%** | 95.69% | 534 / 4106 |
-| auctionsvc | **88.18%** | 95.37% | 101 / 855 |
+| ~~auctionsvc~~ | ~~88.18%~~ → **99.58%** | 96.99% | 见下一节 |
 | socialsvc | **89.22%** | 94.71% | 110 / 1021 |
 | botsvc | **89.39%** | 92.74% | 37 / 349 |
 | gateway | 91.03% | 93.07% | 45 / 502 |
@@ -336,7 +336,7 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 - **commercial**（最低）：`internalHttp.ts` 77.3%（22 条）、`gacha.ts` 80.5%、`service/base.ts` 77.3%、`service/gachaDraw.ts` 80.0%、`iap/productResolve.ts` 69.0%、`service/gachaPool.ts` **61.9% 分支 / 100% 行**——最后这个正是 admin 那一节说的形状：行全绿，分支只跑了一半。
 - **metaserver**（绝对数量最多，481 条，摊在 68 个文件上）：`service/telemetry.ts` 74.7%、`internal/promoGachaRoutes.ts` 70.8%、`service/liveops/retention.ts` 80.7%、`economy/orders.ts` 58.3%、`internal/matchReport/eloSettlement.ts` **48.6%**（全仓最低的单文件）。
 - **worldsvc**（534 条，58 个文件）：集中在 `combatSiege/`——`encounter.ts` 75.0%（31 条）、`arrival/citySiege.ts` 50.9%、`arrival.ts` 74.7%、`arrival/cityDefenders.ts` 57.4%；另有 `httpApi/sectRoutes.ts` 73.5%/100% 行、`city/training.ts` 69.7%/100% 行。
-- **auctionsvc**：`auctionService/trade.ts` 75.7%（26 条，占全包四分之一）、`journalSweep.ts` 72.4%/100% 行、`delivery.ts` 72.7%。
+- ~~**auctionsvc**：`auctionService/trade.ts` 75.7%（26 条，占全包四分之一）、`journalSweep.ts` 72.4%/100% 行、`delivery.ts` 72.7%。~~ → 已补完，见"auctionsvc 补测第二轮"一节。
 - **socialsvc**：`httpApi/helpers.ts` **40.0%**、`friend/chat.ts` 76.8%、`friend/relations.ts` 82.8%/100% 行。
 - **botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。
 - **client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。
@@ -344,3 +344,31 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 **排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高；commercial 是百分比最低的、且 149 条集中在 6 个文件里；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完。
 
 **先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
+
+## auctionsvc 补测第二轮：**分支**覆盖率，从 88.18% 拉到 99.58%（2026-09-03，worktree `feat/auctionsvc-branch-coverage`）
+
+上一节的横向核实把 auctionsvc 列在 88.18% 分支 / 95.37% 行（101 条未覆盖，门禁要 90%）。本节按那份缺口清单处理这个包。2026-08-14 那一轮（本文件上面的"auctionsvc 补测"）拉的是**行**覆盖率，这一轮的口径是分支——两轮之间源码没变，变的是量哪一列。
+
+**缺口形状跟 admin 那一轮完全一致，而且更极端**：`journalSweep.ts` 是 **100% 行 / 72.41% 分支**，`listing.ts`/`pricing.ts`/`audit.ts`/`base.ts` 也全是 100% 行。原因是既有 e2e 已经把每个方法都调过了，只是**每次都用形状完整的输入、每个 client 都 `available: true`、每个 CAS 都赢**。具体三类：
+
+1. **缺字段兜底**。`saleMode ?? 'fixed'`（B 竞价字段之前的老文档）、`topBid?.amount ?? startPrice ?? price`、`itemNameOf` 的四个 `?? ''`、`equipInstanceOf`/`cardInstanceOf` 的"payload 里没有 instance"。`createAuction` 永远写 `saleMode`，所以**没有任何 e2e 造得出的挂单能跑到这些兜底**——它们服务的是历史文档和 httpApi 原样转发的 JSON body。
+2. **每一条拒绝路径和每一次输掉的 CAS**。`buyAuction` 的 rev 竞争必须区分"挂单还开着（REV_CONFLICT，可重试）"和"挂单已关（AUCTION_CLOSED，别再试）"；到期扫描必须跳过别的实例已经抢走的文档；journal `begin` 的 `inflight`/`replay`/"另一个 caller 先 reopen 了"三种判决。这些要求竞争写落在 read→write 窗口内，单进程 e2e 结构上到不了。
+3. **下游"答了但答不出 JSON"的一侧**。`metaClient`/`commercialClient`/`mailClient` 的消息兜底链（`body?.error ?? res.error ?? 模板`）此前一次都没跑过——既有 client 测试的假服务器永远回合法 JSON，而 `fetchInternalJson` 在**非 JSON 响应**（meta 前面挂个 502 的网关错误页就是这个形状）和主机不可达时都返回 `body: null`。也就是说生产上真出一次 502，会是这段代码第一次运行。
+
+**做法：stub 集合单测，不是加 e2e**（沿用 `server/admin/test/stubDeps.ts` 的先例，本轮新建 `server/auctionsvc/test/stubDeps.ts`）——**走真实的 `AuctionService` 构造器**，让 pricing/journal/trade 的接线是真货，只 stub 某条分支实际碰到的那一两个集合调用；**故意不做通用内存 Mongo**，于是测试一旦走到没 stub 的集合会抛 `TypeError`，而不是悄悄跑起第二套平行实现。
+
+新增 7 个文件、116 例（既有 255 例零改动）：
+
+- `test/stubDeps.ts`：`stubDeps()` + `mkAuction()`/`mkOrder()`/`dupKeyError()`。commercial/mail 默认是记录数组，`meta` **故意不给默认实现**（没 stub 的 escrow 调用应该炸，而不是假装托管成功）。
+- `test/base-helpers.test.ts`（21 例）：`base.ts` 87.32% → **100%** 分支、`delivery.ts` 72.72% → **100%**。畸形 payload 的每一条兜底，以及 `attachmentOf` 返回 null 时 `deliverItem` **不发信**（"重试也变不出一个从来没存进去的 instance"，所以这算交付完成而不是可重试失败）。
+- `test/trade-branches.test.ts`（29 例）：`trade.ts` 75.7% → **100%** 分支（全包最大的一块，26 条）。三个入口的全部校验拒绝、两条 rev 竞争的诚实区分、`replay` 判决不重复扣款、日限拒绝时**不触发从未 started 的 spend**（否则等于为了退款先扣一次钱）、以及 My-Bids 参与记录写失败被吞掉（币已托管、topBid 已记，抛出去等于把一次成功的出价报成失败）。
+- `test/journal-branches.test.ts`（13 例）：`journal.ts` 87.8% → **100%** 分支 + `journalSteps.ts` 97.05% → **100%**。非 11000 的 insert 错误必须原样抛（不能当成"钥匙被别人拿着"）、TTL 清掉的行、属于别的账号的钥匙、`CLAIM_GRACE_MS` 内的活claim、reopen CAS 输掉；还有回滚时**用托管快照而不是请求 payload** 归还装备（请求里只有 `instanceId`，`grantEquipment` 拿它什么也发不出去——这正是卖家装备会凭空消失的那条路），以及退款补偿**不**被快照改写（替换只对 `grant`/`mailItem` 生效）。
+- `test/journal-sweep-branches.test.ts`（6 例）：`journalSweep.ts` 72.41% → **100%** 分支，本包"行全绿、分支缺一半"的标本。独占 claim 输掉（两个 auctionsvc 实例扫同一个集合，单进程 e2e 到不了）、`kindOf` 的 `expired`/老 `saleMode` 两臂、以及 `rebuild` 的赢家/价格兜底——那两个兜底决定一份重建出来的结算**付给谁**。
+- `test/create-branches.test.ts`（12 例）：`create.ts` 85.71% → **100%** 分支。五种售卖模式参数拒绝、三种 payload 拒绝、journal 非 `fresh` 判决，以及装备专有的两条护栏臂（`buyoutPrice` 也必须在带内——否则挂单时接受、出价时 placeBid 必然 `PRICE_OUT_OF_RANGE`，卖家配的一键买断永久点不动；以及 meta 答了托管但没给 instance 时类目留空而不是崩）。
+- `test/pricing-listing-audit-branches.test.ts`（13 例）：`pricing.ts` 88.88% → **100%**、`listing.ts` 92.85% → **100%**、`audit.ts` 73.33% → **100%**。`equip::0`/`equip:{defId}`（无 level 段）两种退化类目、无参考价类目的冷启动放行、`bumpDaily` 的 upsert 返回空文档、指定买家置顶排序的两个方向、`deletedCount ?? 0`，以及 `scanAnomalies` 对"没有 buyerId"、"没有 soldAt 且 id 里没有可解析 ts"、竞价成交按 topBid 计价三种文档的处理。
+- `test/httpApi-branch-gaps.test.ts`（12 例）：`httpApi.ts` 94.63% → **98.75%** 分支。整条 `/internal/audit/anomalies` ops 路由（G7 反 RMT 拉取，此前**一次都没被调过**——admin 侧测了它的对端，auctionsvc 这一端没有）、create 的 `designatedBuyerId` 转发、bid 的 `amount` 非数字、shared 的 `ERROR_HTTP_STATUS` 没收录的 ErrorCode 必须退化成 400、抛出非 Error 时的兜底日志，以及**不带 Host 头的 HTTP/1.0 请求**（`fetch` 一定带 Host，只能用裸 socket 写请求行）。
+- `test/client-error-fallbacks.test.ts`（10 例）：`metaClient.ts` 90.66% → **100%**、`mailClient.ts` 92.3% → **100%**、`commercialClient.ts` 83.33% → 94.73%、`db.ts` 80% → **100%**。非 JSON 响应（`body: null`）下 `deductMaterial`/三个 `escrow*`/`spend` 的消息兜底链、mail 的 `{ok:false}` 无 error 字段、以及 `createAuctionMongo` 连接失败时日志里的**凭据脱敏**（断言 `://***@` 在、口令不在）。
+
+auctionsvc 整体：**分支 88.18% → 99.58%**，行 95.37% → 96.99%（`npm run test:coverage`，27 test files / **371** tests 全绿；`npm run typecheck:test` 干净；`check:auctionjournal`、`check:filelength` 均过）。`src/auctionService/` 这一层 12 个文件**全部 100% 分支**。
+
+**剩下 3 条刻意不追**（都是公开面上不可达的）：`httpApi.ts` 的 `req.method ?? 'GET'` 和 `req.url ?? ''`（node 的 http server 这两个字段永远有值，只有直接构造假 `IncomingMessage` 才能命中，那测的是假对象不是服务）、`commercialClient.ts` 第 58 行 `res.error ?? 模板` 的模板臂（`fetchInternalJson` 在 `body === null` 时**必然**填 `error`，所以模板永远拿不到手）。`index.ts` 仍是 0%（进程 bootstrap，同前几轮先例不追）。
