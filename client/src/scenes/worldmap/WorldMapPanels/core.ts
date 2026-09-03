@@ -23,6 +23,39 @@ import {
 import { buildIcon } from '../../../render/icons';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 
+/**
+ * Breathing room a wrapped button label needs inside the button's own height before it reads as
+ * touching the sketch border. Measured in the browser at `FS.title`: one line is 31px, so two fit
+ * the 84px button (62) and may still carry a leading glyph, while three (93) do not fit either way
+ * and lose it — the case the old width proxy existed to prevent.
+ */
+const BTN_LABEL_PAD = 8;
+
+/**
+ * Would `label` still lay out the same beside a `lead`-wide leading glyph, inside a `labelW`-wide,
+ * `btnH`-tall button? Measured, not estimated: {@link PIXI.TextMetrics} runs the same wrap the
+ * `PIXI.Text` will (`breakWords`, monospace, `FS.title`) without building a display object — a
+ * throwaway `PIXI.Text` would have to be destroyed, and `Text.destroy()` zeroes its own canvas.
+ *
+ * The glyph is granted only when it costs the label NO extra line (so a menu's existing typographic
+ * rhythm never degrades to buy an icon) and the label still fits the button's height (so a label
+ * that already overflows doesn't get an icon piled on top of it).
+ */
+function labelFitsBesideGlyph(label: string, labelW: number, lead: number, btnH: number): boolean {
+  const measure = (wrapW: number): PIXI.TextMetrics =>
+    PIXI.TextMetrics.measureText(
+      label,
+      new PIXI.TextStyle({
+        fontSize: FS.title, fontFamily: 'monospace', wordWrap: true, wordWrapWidth: wrapW, breakWords: true,
+      }),
+    );
+  const withGlyph = measure(labelW - lead);
+  return (
+    withGlyph.lines.length <= measure(labelW).lines.length &&
+    withGlyph.height <= btnH - BTN_LABEL_PAD
+  );
+}
+
 export class WorldMapPanelsCore {
   constructor(readonly ctx: WorldMapContext) {}
 
@@ -140,13 +173,20 @@ export class WorldMapPanelsCore {
       // with two close affordances side by side (a glyph button in the tile-action modals, a
       // `t('world.close')` text button in the shop/territory/replay panels); both are now
       // `t('common.close')` text (2026-08-30 SLG widget pass).
-      // Leading glyph, drawn only where the column is wide enough to still leave a readable label:
-      // a full six-button tile menu squeezes each column to ~165px, and spending 34px of that on an
-      // icon would push an already-wrapping CJK label ("移动到此（停留）") onto a third line. Wide
-      // columns (a two- or three-button modal, i.e. most confirms) always get it.
+      // Leading glyph, drawn where the label still fits beside it. This was a flat `btnW >= 200`
+      // check until 2026-09-03, which was a proxy for the real question ("would the 34px an icon
+      // costs push this label onto another line?") — but it answered by button COUNT, since `btnW`
+      // falls out of `cols` alone. So a 5-across menu lost every icon however short its labels
+      // were (the batch-9 shoot measured `btnW = 166` on the 9-button owned-tile menu, i.e. five
+      // just-drawn glyphs that could never appear), and shortening the copy changed nothing.
+      // Measuring the label instead makes the gate self-adjusting: `停留`/`驻扎` earn their glyph
+      // in a 166px column, a German compound still drops it exactly where it would have wrapped.
       const btnGlyph = 26;
       const btnGlyphGap = 8;
-      const icon = btn.icon && btnW >= 200 ? buildIcon(btn.icon, btnGlyph, disabled ? C.mid : C.light) : null;
+      const icon =
+        btn.icon && labelFitsBesideGlyph(btn.label, btnW - 16, btnGlyph + btnGlyphGap, btnH)
+          ? buildIcon(btn.icon, btnGlyph, disabled ? C.mid : C.light)
+          : null;
       const lead = icon ? btnGlyph + btnGlyphGap : 0;
       // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
       const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16 - lead);
