@@ -305,3 +305,42 @@ analyticsvc 整体行覆盖率 **87.59% → 95.61%**（`npx vitest run --coverag
 admin 整体：**分支 82.09% → 92.42%**，行 93.81% → 95.88%（`npm run test:coverage`，24 test files / 357 tests 全绿，`npm run typecheck:test` 干净）。`src/service` 这一层 70.83% → **96.5%** 分支，用户点名的三个最差文件（validators/accounts/ladder）全部 100%。
 
 **未继续追**（下一轮候选，按剩余分支数排序）：`src/httpApi/*`（84.61% 分支——`helpers.ts` 72.4%、`playerRoutes.ts` 79.2%、`trustSafetyRoutes.ts` 79.4%、`opsConfigRoutes.ts` 80.6%、`monitorRoutes.ts` 82.6%、`accountRoutes.ts` 82.3%、`session.ts` 84.2%、`slgRoutes.ts` 88.2%：都是"query 参数缺席/畸形"和错误映射分支，要走 `httpRoutes.e2e.test.ts` 那套真实 HTTP 注入，一条分支一次请求，比 service 层贵得多）、`src/clients/{analytics,paddleEvents,events,ladder,mismatch,appeals}.ts`（78~89% 分支，同上面 gachaPools 那批消息链/降级形状，`vi.mock` 一下就能补，只是本轮没排进去）、`src/service/{reports,shop,slgAudit,events,world,moderation,auth}.ts`（81~93% 分支，各剩 1~5 条）、`src/db.ts`（75%）、`src/index.ts`（0%，进程 bootstrap，同前几轮先例不追）。
+
+## 全仓分支覆盖率横向核实（2026-09-03，紧接上一节）
+
+admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + client + 5 个 tools）的 `test:coverage` 完整跑了一轮，专门读那个没有门禁盯着的分支列。结论：**行覆盖率全部 ≥90%（门禁的口径），但 13 个 server 包里有 7 个分支覆盖率低于 90%**——也就是说这一维的漂移不是 admin 一家的事，是全仓范围的系统性空白，只是从来没人量过。
+
+按分支覆盖率从低到高（`engine` 走 `node --test` 的 lcov，其余读 `coverage-summary.json`）：
+
+| 包 | 分支 | 行 | 未覆盖分支 |
+|---|---|---|---|
+| commercial | **81.25%** | 93.64% | 149 / 795 |
+| ~~admin~~ | ~~82.09%~~ → **92.42%** | 95.88% | 上一节已补完 |
+| metaserver | **85.86%** | 90.74% | 481 / 3403 |
+| worldsvc | **86.99%** | 95.69% | 534 / 4106 |
+| auctionsvc | **88.18%** | 95.37% | 101 / 855 |
+| socialsvc | **89.22%** | 94.71% | 110 / 1021 |
+| botsvc | **89.39%** | 92.74% | 37 / 349 |
+| gateway | 91.03% | 93.07% | 45 / 502 |
+| client | 91.05% | 96.17% | 231 / 2583 |
+| gameserver | 91.47% | 92.09% | 29 / 340 |
+| engine | 91.93% | 93.32% | 119 / 1474 |
+| shared | 95.38% | 98.98% | 82 / 1778 |
+| analyticsvc | 96.54% | 95.80% | 14 / 405 |
+| matchsvc | 97.53% | 93.99% | 11 / 446 |
+
+`tools/` 五个包全部 ≥94%（ops 99.88%、map-editor 97.04%、animator 96.58%、level-editor 96.23%、vfx-editor 94.37%）——ADR-070 的 4a–4e 把它们的行覆盖率做到 100% 时顺带把分支也带上去了，这一维不需要处理。
+
+各包最大缺口所在（每包按未覆盖分支数排前几名，供下一轮排期）：
+
+- **commercial**（最低）：`internalHttp.ts` 77.3%（22 条）、`gacha.ts` 80.5%、`service/base.ts` 77.3%、`service/gachaDraw.ts` 80.0%、`iap/productResolve.ts` 69.0%、`service/gachaPool.ts` **61.9% 分支 / 100% 行**——最后这个正是 admin 那一节说的形状：行全绿，分支只跑了一半。
+- **metaserver**（绝对数量最多，481 条，摊在 68 个文件上）：`service/telemetry.ts` 74.7%、`internal/promoGachaRoutes.ts` 70.8%、`service/liveops/retention.ts` 80.7%、`economy/orders.ts` 58.3%、`internal/matchReport/eloSettlement.ts` **48.6%**（全仓最低的单文件）。
+- **worldsvc**（534 条，58 个文件）：集中在 `combatSiege/`——`encounter.ts` 75.0%（31 条）、`arrival/citySiege.ts` 50.9%、`arrival.ts` 74.7%、`arrival/cityDefenders.ts` 57.4%；另有 `httpApi/sectRoutes.ts` 73.5%/100% 行、`city/training.ts` 69.7%/100% 行。
+- **auctionsvc**：`auctionService/trade.ts` 75.7%（26 条，占全包四分之一）、`journalSweep.ts` 72.4%/100% 行、`delivery.ts` 72.7%。
+- **socialsvc**：`httpApi/helpers.ts` **40.0%**、`friend/chat.ts` 76.8%、`friend/relations.ts` 82.8%/100% 行。
+- **botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。
+- **client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。
+
+**排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高；commercial 是百分比最低的、且 149 条集中在 6 个文件里；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完。
+
+**先决问题**：这一维目前**没有门禁**，所以补完还会再漂回去。要么把 `checkCoverageThreshold.mjs` 加一个分支阈值（初值按现状定在 80%，再逐包往上棘轮，同 ADR-070 那套"reported, not gated"退役前的做法），要么就接受它是一个需要人定期主动去量的东西——但至少现在有了一份基线数字，下次量能看出方向。
