@@ -160,6 +160,7 @@ export class WorldCore {
   getCover(worldId: string, tile: string): Promise<CoverEntry[]> { return this.pushSvc.getCover(worldId, tile); }
   clearSpatialIndexes(worldId: string): Promise<void> { return this.pushSvc.clearSpatialIndexes(worldId); }
   pushMarch(accountId: string, v: MarchView): Promise<void> { return this.pushSvc.pushMarch(accountId, v); }
+  pushOrderEnded(accountId: string, o: { tile: string; kind: 'occupy' | 'move'; status: 'arrived' | 'recalled'; at: number }): Promise<void> { return this.pushSvc.pushOrderEnded(accountId, o); }
   pushTile(accountId: string, t: TileDoc, ownerProfile?: PlayerProfile | null): Promise<void> { return this.pushSvc.pushTile(accountId, t, ownerProfile); }
   pushSiege(accountId: string, s: SiegeDoc, lootSummaryStr: string): Promise<void> { return this.pushSvc.pushSiege(accountId, s, lootSummaryStr); }
 

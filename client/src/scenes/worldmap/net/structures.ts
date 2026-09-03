@@ -7,6 +7,23 @@ import { ui as C } from '../../../render/sketchUi';
 import { withTimeout, TimeoutError } from '../../../ui/busyTracker';
 import { ARROW_TOWER_COST, BLOCKER_COST } from '@nw/shared';
 import { RELOCATE_COST, WATCHTOWER_COST_METAL, WATCHTOWER_COST_PAPER } from '../logic/constants';
+import type { ModalLine } from '../WorldMapPanels/modalLine';
+
+/**
+ * One resource-cost line of a build confirm, e.g. "Paper x20" behind the paper motif.
+ *
+ * The cost used to be interpolated into the middle of the confirm SENTENCE with an emoji in
+ * front of each number ("Spend [emoji]20 paper + [emoji]12 metal to build?"). Emoji render in the
+ * system font rather than the game's hand-drawn ink -- and on WeChat/iOS not necessarily as the
+ * same glyph twice -- so the costs are their own icon-bearing lines now, using the same five
+ * resource motifs the header readout draws.
+ */
+function costLine(res: 'paper' | 'metal', n: number): ModalLine {
+  return {
+    text: t('world.costLine').replace('{res}', t(`world.${res}`)).replace('{n}', String(n)),
+    icon: { res },
+  };
+}
 import type { WorldMapContext } from '../WorldMapContext';
 import { loadMapViewport, refreshTerritories } from './loaders';
 import { errorMsg } from './errors';
@@ -14,10 +31,13 @@ import { errorMsg } from './errors';
 /** Second confirmation before relocation (shows cost); confirm → doRelocate. */
 export function confirmRelocate(ctx: WorldMapContext, tx: number, ty: number): void {
   ctx.panels.showModal(
-    [t('world.relocateTitle'), t('world.relocateConfirm').replace('{n}', String(RELOCATE_COST))],
     [
-      { label: t('world.relocateBtn'), action: () => void doRelocate(ctx, tx, ty) },
-      { label: t('common.close'), action: () => ctx.panels.closeModal() },
+      { text: t('world.relocateTitle'), icon: 'castle' },
+      { text: t('world.relocateConfirm').replace('{n}', String(RELOCATE_COST)), icon: 'coin' },
+    ],
+    [
+      { label: t('world.relocateBtn'), action: () => void doRelocate(ctx, tx, ty), icon: 'castle' },
+      { label: t('common.close'), action: () => ctx.panels.closeModal(), icon: 'close' },
     ],
   );
 }
@@ -47,14 +67,14 @@ export async function doRelocate(ctx: WorldMapContext, tx: number, ty: number): 
 export function confirmWatchtower(ctx: WorldMapContext, tx: number, ty: number): void {
   ctx.panels.showModal(
     [
-      t('world.watchtowerTitle'),
-      t('world.watchtowerConfirm')
-        .replace('{paper}', String(WATCHTOWER_COST_PAPER))
-        .replace('{metal}', String(WATCHTOWER_COST_METAL)),
+      { text: t('world.watchtowerTitle'), icon: 'hammer' },
+      costLine('paper', WATCHTOWER_COST_PAPER),
+      costLine('metal', WATCHTOWER_COST_METAL),
+      { text: t('world.watchtowerConfirm'), icon: 'book' },
     ],
     [
-      { label: t('world.watchtowerBtn'), action: () => void doWatchtower(ctx, tx, ty) },
-      { label: t('common.close'), action: () => ctx.panels.closeModal() },
+      { label: t('world.watchtowerBtn'), action: () => void doWatchtower(ctx, tx, ty), icon: 'hammer' },
+      { label: t('common.close'), action: () => ctx.panels.closeModal(), icon: 'close' },
     ],
   );
 }
@@ -80,14 +100,14 @@ export function confirmBuildStructure(ctx: WorldMapContext, tx: number, ty: numb
   const cost = kind === 'arrowTower' ? ARROW_TOWER_COST : BLOCKER_COST;
   ctx.panels.showModal(
     [
-      t(kind === 'arrowTower' ? 'world.arrowTowerTitle' : 'world.blockerTitle'),
-      t('world.structureConfirm')
-        .replace('{paper}', String(cost.paper ?? 0))
-        .replace('{metal}', String(cost.metal ?? 0)),
+      { text: t(kind === 'arrowTower' ? 'world.arrowTowerTitle' : 'world.blockerTitle'), icon: 'hammer' },
+      costLine('paper', cost.paper ?? 0),
+      costLine('metal', cost.metal ?? 0),
+      { text: t('world.structureConfirm'), icon: 'book' },
     ],
     [
-      { label: t('world.buildBtn'), action: () => void doBuildStructure(ctx, tx, ty, kind) },
-      { label: t('common.close'), action: () => ctx.panels.closeModal() },
+      { label: t('world.buildBtn'), action: () => void doBuildStructure(ctx, tx, ty, kind), icon: 'hammer' },
+      { label: t('common.close'), action: () => ctx.panels.closeModal(), icon: 'close' },
     ],
   );
 }

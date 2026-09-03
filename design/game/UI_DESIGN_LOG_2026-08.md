@@ -580,3 +580,88 @@ feat(lobby): 大厅背景装饰数量翻倍，alpha 调整为 0.25-0.38
 两条截图过程中的坑值得记：① in-app Browser 面板不能用来看这个——它的画布 `renderer.width/height` 是 0×0，截出来永远是纯白纸（CLAUDE.md 已有的「一律用真实 Chrome」那条，这轮又踩实一次）。② 离线挂桩时 `SceneManager` 的淡入淡出会卡在 `phase='out'`（`/bootstrap` 连不上 metaserver，没有东西驱动它），`mgr.current` 一直是 `IntroScene`；要手动把场景顶到前台，**必须操作 `mgr.targetStage` 而不是 `app.stage` 的直接子节点**——场景挂在 `targetStage` 底下，按「隐藏除 sc.container 以外的 stage 子节点」写会把 `targetStage` 自己隐藏掉，于是截图仍是白纸，看起来像修复没生效。
 
 **顺带一条观感观察（不属于本次修复）**：奖杯是**描边**线稿，而同屏的护盾/宝箱是实心块面，所以整页缩放下看它几乎像空的——放大才看清。若用户觉得对比不够，那是美术档的事（`trophy_active.png` 的线宽），不是绘制路径的问题。
+
+## 45. 地块菜单的按钮图标门禁：`btnW >= 200` 是在替一个它没问的问题作答（2026-09-03）
+
+**上游**：批 9（[`tab-icon-art-prompts-batch9.md`](../product/tab-icon-art-prompts-batch9.md)）出了 7 张地块弹窗图标，实拍时量到己方地块菜单 `btnW = 166`，而 [`WorldMapPanels/core.ts`](../../client/src/scenes/worldmap/WorldMapPanels/core.ts) 的按钮图标门禁是 `btnW >= 200`——**刚画的五个按钮字形一个都不显示**。当时记的结论是「缩短标签就会自动亮，代码不用改」。
+
+**那条结论错了一半**，而错的那一半正好是可执行的那一半：
+
+```
+btnW = min(300, (900 - 12·(cols+1)) / cols)      cols = min(n, 5)
+n≤2 → 300   n=3 → 284   n=4 → 210   n≥5 → 166
+```
+
+`btnW` 是**按钮个数**的函数，跟标签一个字都无关。己方地块菜单是 8–10 个按钮（增援 + 停留/驻扎 + 设防 + 瞭望塔 + 箭塔 + 阻挡 + 迁都 + 放弃 + 关闭），永远落在 166——**标签缩到一个字也不会亮**。
+
+**根因是门禁的形式**：`btnW >= 200` 是"宽列"的代用指标，而它真正想问的是它自己注释里写着的那句——「图标占掉 34px 之后，这个标签会不会多占一行」。用列宽回答这个问题，就必然把答案锁死在按钮个数上。
+
+**修法：改成实测。** 新增 `labelFitsBesideGlyph(label, labelW, lead, btnH)`，用 `PIXI.TextMetrics.measureText` 把标签按**缩窄后的宽度**量一遍（同一套 `breakWords` / monospace / `FS.title`，不建任何显示对象——扔掉一个 `PIXI.Text` 要 destroy，而 `Text.destroy()` 结尾会把自己的画布宽高清零、连 `texture:false` 都拦不住，见 [`client-memory-leak.md` §10](../../claudedocs/client-memory-leak.md)），两条判据：
+
+1. **图标不许让标签多占一行**——菜单原有的排印节奏不拿来换图标；
+2. **标签仍装得进按钮高度**（`btnH - 8`）——已经溢出的标签不再往上叠一个图标。
+
+浏览器实测的行高：`FS.title` 一行 **31px**，所以两行 62 装得进 84 的按钮（可以带图标），三行 93 装不进（两种情况下都装不进，正是旧门禁存在的理由）。
+
+**同时缩短六个键的标签**（三语，`world.act*`）。它不是门禁的替代品，是让实测能通过的前提：
+
+| 键 | zh | en | de |
+|---|---|---|---|
+| `actMove` | 移动到此（停留） → **停留** | Move here (idle) → **Idle** | Hierher ziehen (Rast) → **Rast** |
+| `actGarrison` | 移动并驻扎 → **驻扎** | Move & garrison → **Camp** | Ziehen & stationieren → **Lager** |
+| `actWatchtower` | 建瞭望塔 → **瞭望塔** | Build watchtower → **Watchtower** | Wachturm bauen → **Wachturm** |
+| `actArrowTower` | 建箭塔 → **箭塔** | Build arrow tower → **Arrow tower** | Pfeilturm bauen → **Pfeilturm** |
+| `actBlocker` | 建阻挡 → **阻挡** | Build blocker → **Blocker** | Sperre bauen → **Sperre** |
+| `actDemolish` | 拆除建筑 → **拆除** | Demolish structure → **Demolish** | Struktur abreißen → **Abreißen** |
+
+三个建造键去掉动词（"建" / "Build" / "bauen"）不是为了省字数才顺手做的：**它们在英德两语本来就溢出**。实测 `Build watchtower` 在 166px 列里是**三行 93px**，画在 84px 高的按钮上——这个溢出一直都在，跟本轮改动无关，去掉动词把它压回两行。动词并没有丢，确认弹窗的标题仍是 `world.watchtowerTitle` = "Wachturm bauen" 那一句完整话。
+
+**顺手把队伍状态行从四分圆挪走**（[`logic/teamStatus.ts`](../../client/src/scenes/worldmap/logic/teamStatus.ts)）：`stationed`（野外停留）`armor` → **`footsteps`**、`garrisoned`（野外驻扎）`armorHeavy` → **`camp`**。零新美术：批 9 刚出的这两张正是玩家点「停留」「驻扎」得到的状态。它同时解掉一件实拍才看得见的事——世界地图 HUD 一屏上**那块四分圆有三个含义**（保护中 buff 行 + 这两条队伍行），而 `armor`/`armorHeavy` 之间只差一圈粗黑外沿。剩下的保护 buff 行归 [`batch10`](../product/tab-icon-art-prompts-batch10.md)（伞）。
+
+**三语实测（`btnW = 166`，九按钮己方地块菜单，Playwright 落文件 + 逐按钮读显示树）**
+
+| | 画出图标 | 没画的是谁，为什么 |
+|---|---|---|
+| zh | **9 / 9** | —— |
+| en | 6 / 9 | `Defense` / `Blocker` / `Abandon`：单行 124px 放得下 150，但放不下图标留的 116，会多占一行 |
+| de | 6 / 9 | `Wachturm` / `Aufgeben`：同上（141px） |
+
+也就是说 **latin 语系在 166px 列里的天花板是「图标旁 6 个字符」**（32px monospace 一字 17.6px，116 ÷ 17.6 ≈ 6.6；中文 32px 一字，116 ÷ 32 = 3 字）。德语的 `Verstärken` / `Verteidigung` / `Schließen` 在**本轮改动之前就已经**在词中断行了（166px 列 bare 也是两行），本轮没让任何一个标签变长或多断一行；但要让英德也 9/9，只有两条路，都不属于本轮范围、也都不该靠继续砍文案解决：**① 把 `minBtnW` 150 提到 180**（`maxCols` 5→4、`btnW` 210、图标旁 8 个字符），代价是九按钮菜单多一行高度；**② 五列时按钮标签降到 `FS.heading`**。留给产品决定。
+
+**测试**：新增 [`worldMapModalBtnIconFit.ui.ts`](../../client/test/ui/worldMapModalBtnIconFit.ui.ts)（5 例），钉的是**判据**而不是某个标签——九列短标签全画图标（旧门禁下 0 个，判红）、只有"会多占一行"的那一个按钮丢图标而邻居不丢、已经换行的标签保留图标（图标没让它多占）、两按钮宽列照旧、没要图标的按钮不画。变异验证：把门禁改回 `btnW >= 200`，5 例中 3 例判红。用例里的字宽是 headless 适配器的 7px/字（`test/harness/pixiHeadless.ts`），文件头写明了这一点——它测的是规则，不是真实字体的数字。
+
+**验证**：`tsc --noEmit -p tsconfig.test.json` 干净；`npm run lint` 0 error（2 个 warning 在 `app/nav/world.ts`，与本轮无关）；`npm run build:web` 过；`check:filelength` 过（`core.ts` 369→409 行，限 500）；`vitest run` 241 文件 2787 例、`test:ui` 256 文件 2458 例全绿。**可视化**：三语各一张实拍（中文菜单 9 个图标齐、英德按上表），以及 HUD 一屏确认「野外停留＝脚印 / 野外驻扎＝帐篷 / 驻军在家＝房子」三行各不相同、四分圆在这一屏只剩保护 buff 行一处。
+
+**过程中值得记的一条**：这一轮真实 Chrome 那条路走到一半断了——`computer{screenshot}` 报 `Script injection timed out`，而 `javascript_tool` 还活着；触发点是标签页被切到后台（后台标签的 `setTimeout` 被节流到分钟级，于是带 `await` 的 evaluate 全部 45s 超时，`fetch` 也永远不返回，连本地收集器都收不到）。重新 `navigate` 能恢复一次，但每次 evaluate 超时后又会坏。所以最后一段像素证据是走 [[playwright-screenshot-recipe-2026-08-15]] 落文件拿的——顺带发现这条路对本任务更合适：一个脚本里循环三语、每语一次 `showWorldMap` + 逐按钮读显示树 + `page.screenshot({clip})`，比人手点三遍稳。
+
+### 45.1 四列还不够：列数也得跟着内容走（2026-09-03 同日第二轮）
+
+§45 把门禁改成实测之后，中文 9/9、英德 6/9。差的五个（`Defense`/`Blocker`/`Abandon`/`Wachturm`/`Aufgeben`）都是"单行放得下 150，放不下图标留的 116"，所以先按最直接的办法把 `minBtnW` 150 → **180**（`maxCols` 5→4、`btnW` 210、图标旁 ~9 个字符）。实测：**zh 9/9、en 7/9、de 8/9**——`Watchtower`（176px）、`Arrow tower`（194px）、`Verstärken`（176px）**比 160px 的额度只超出 1–2 个字符**，于是它们丢图标、邻居留着，看起来像 bug 而不像预算。
+
+再砍文案已经不是办法（en 要 ≤9 字符，`Watchtower` 正好 10）。所以**让列数也跟着内容走**，跟门禁同一个思路：
+
+```
+cols = min(n, maxCols)                      // maxCols = 4（minBtnW 180）
+while (cols > 1 && 少一列不会多一行) {
+  if (每个按钮的标签在这个列宽下都放得下图标) break;
+  cols--;
+}
+```
+
+**「不会多一行」这个守卫是它免费的原因**：九按钮菜单四列和三列都是 **3 行**，所以 en/de 退到三列（`btnW` 284、图标旁 ~13 个字符）**一点高度都不多花**；而四按钮菜单退列会把一行变两行，于是它停住、那一个标签自己不带图标。菜单几何因此**按语言不同**——中文留在四列，英德走三列——这不是缺陷，正是本地化该有的样子。
+
+**三语实测（同一条 `showModal` 路径，逐按钮读显示树）**
+
+| | 列 × `btnW` | 行 | 画出图标 | 标签行数 |
+|---|---|---|---|---|
+| zh | 4 × 210 | 3 | **9 / 9** | 全部 1 行 |
+| en | 3 × 284 | 3 | **9 / 9** | 全部 1 行 |
+| de | 3 × 284 | 3 | **9 / 9** | 全部 1 行 |
+
+也就是说词中断行（`Verstä/rken`、`Vertei/digung`、`Watcht/ower`）**全部消失**——那是本轮真正的收获，比"图标齐了"更值钱：那些断行在 2026-09-03 之前就一直在。§45 末尾列的两条备选（提 `minBtnW` / 降字号）第一条已用，第二条不需要了。
+
+**测试**：[`worldMapModalBtnIconFit.ui.ts`](../../client/test/ui/worldMapModalBtnIconFit.ui.ts) 扩到 6 例，新增两条把两半规则分开钉住——「九按钮菜单为了让放不下的那个标签也拿到图标而退到三列，且**行数不变**」、「四按钮菜单不退列（退了要多一行），只有那一个按钮不带图标」。变异各杀一例：把门禁换回 `btnW >= 200` 杀第二条（新几何下 `btnW` 恒 ≥200，所以只有"该拒绝"的用例还能分辨它）；把退列循环关掉杀第一条。
+
+**同轮落地的还有批 10 的伞**：`umbrella_active.png`（128×128 = 1.00:1，一版过），`hud.ts` 的保护 buff 行 `armorHeavy` → `umbrella`，`OWN_ART` 56 → 57。**世界地图 HUD 一屏上的四分圆至此清零**（§45 挪走两条队伍行，这一轮挪走 buff 行）。判断依据、prompt、验收记录见 [`tab-icon-art-prompts-batch10.md`](../product/tab-icon-art-prompts-batch10.md)。
+
+**验证**：`tsc --noEmit -p tsconfig.test.json` 干净、`lint` 0 error、`build:web` 过、`check:filelength` 过、`vitest run` 2788 例 + `test:ui` 2459 例全绿；`iconArtAspect.test.ts` 自动把伞纳进来（1.00:1，无豁免）。像素证据：三语菜单各一张 + HUD 一屏（伞 + 沙漏 + 脚印/帐篷/房子三条队伍行）。

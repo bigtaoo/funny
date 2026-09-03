@@ -3,8 +3,8 @@
 // client/server `test:coverage` steps: coverageSummary.mjs (pure report, never fails) and
 // checkCoverageThreshold.mjs (CI gate, fails the job below the threshold). Kept in one place so
 // the package lists and the two coverage-backend parsers can't drift between the two scripts —
-// see claudedocs/server.md "测试覆盖率百分比工具" for why two backends exist.
-import { readFileSync, readdirSync } from 'node:fs';
+// see claudedocs/server-testing-tooling.md "测试覆盖率百分比工具" for why two backends exist.
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Workspaces whose `npm run test:coverage` writes coverage/coverage-summary.json (vitest,
@@ -184,4 +184,153 @@ export function collectRows(root) {
     ...JSON_SUMMARY_PACKAGES.map((pkg) => readJsonSummary(root, pkg)).map(withMeta),
     ...LCOV_PACKAGES.map((pkg) => readLcov(root, pkg)).map(withMeta),
   ];
+}
+
+// ─── Gate evaluation ─────────────────────────────────────────────────────────────────────────────
+//
+// 2026-09-02: `evaluate` lives here, down with the parsers, for the same reason the package
+// lists do — the run-summary page used to carry TWO headings and TWO 19-row tables
+// (coverageSummary's report and checkCoverageThreshold's gate table) whose `Lines` columns were
+// byte-identical and whose `Status` column was 19 identical ✅ on every green run. Merging them
+// into one section means exactly one script may RENDER it (see scripts/coverageReport.mjs),
+// while the other still has to know the same verdict to print it in its own log and pick its
+// exit code — so the verdict is decided here, once, instead of being derived twice from the same
+// rows with two chances to disagree.
+
+export const DEFAULT_THRESHOLD = 90;
+
+/** Reads the two knobs CI passes in, so both scripts read them identically.
+ *
+ *  TESTS_OK unset (local runs) is treated as 'true' — fail closed, same as before it existed. */
+export function readGateEnv(env = process.env) {
+  return {
+    threshold: Number(env.COVERAGE_THRESHOLD ?? DEFAULT_THRESHOLD),
+    testsOk: (env.TESTS_OK ?? 'true') !== 'false',
+  };
+}
+
+/** How many currently-covered lines this package could lose before it breaches the bar — negative
+ *  if it already has.
+ *
+ *  This is the column that makes the table worth reading. Sorted by percentage alone, 90.7% over
+ *  8670 lines (65 lines of slack) and 92.1% over 924 lines (19 lines of slack) sort the wrong way
+ *  round, and both read as "93%, fine" beside a 100.0% with hundreds to spare. It also answers the
+ *  question people actually arrive with — "how much untested code can I add here before CI stops
+ *  me" — which the percentage on its own never could. */
+export function gateHeadroom(row, threshold) {
+  if (row.missing) return null;
+  return row.lines.covered - Math.ceil((threshold / 100) * row.lines.total);
+}
+
+/** Line-weighted totals across every measured row, per metric. */
+function overallOf(rows) {
+  const acc = { lines: [0, 0], branches: [0, 0], functions: [0, 0] };
+  for (const row of rows) {
+    if (row.missing) continue;
+    for (const key of Object.keys(acc)) {
+      acc[key][0] += row[key].covered;
+      acc[key][1] += row[key].total;
+    }
+  }
+  const pct = (k) => (acc[k][1] === 0 ? 0 : (acc[k][0] / acc[k][1]) * 100);
+  return { lines: pct('lines'), branches: pct('branches'), functions: pct('functions') };
+}
+
+/**
+ * The whole gate decision in one object: which packages pass, which of the two ways the others
+ * failed, the weighted overall, and one `verdict` of 'pass' | 'fail' | 'not-enforced' | 'empty'.
+ *
+ * The two failure kinds stay separate all the way through (`belowBar` vs `missingOutput`), because
+ * "produced no coverage at all" is a broken pipeline and not a coverage regression — reporting it
+ * as the latter sent readers hunting for missing tests when the fix was a missing CI step.
+ *
+ * 'empty' is the canary: every check below iterates `rows`, so an empty list would otherwise print
+ * a cheerful "all 0 packages >= 90%" and exit 0 — a gate that retires itself by turning green.
+ */
+export function evaluate(root, { threshold = DEFAULT_THRESHOLD, testsOk = true } = {}) {
+  const rows = collectRows(root);
+  const results = rows.map((row) => {
+    if (row.missing) {
+      // Missing coverage/ output fails closed when the tests passed — we cannot confirm >=T%
+      // without the data. When a test job already failed, the absence is a CONSEQUENCE of that
+      // failure, the run is already red and no deploy can fire, so this gate has nothing left to
+      // protect: report it and pass.
+      return testsOk
+        ? { pkg: row.pkg, row, ok: false, reason: 'no coverage/ output found' }
+        : { pkg: row.pkg, row, ok: true, reason: 'not evaluated — its test job failed' };
+    }
+    const pct = row.lines.pct;
+    return { pkg: row.pkg, row, ok: pct >= threshold, pct, headroom: gateHeadroom(row, threshold) };
+  });
+
+  const failures = results.filter((r) => !r.ok);
+  const belowBar = failures.filter((f) => !f.reason);
+  const missingOutput = failures.filter((f) => f.reason);
+  // `measured` counts rows that actually produced a number, NOT "everything we didn't skip" —
+  // those are different whenever a package is missing its coverage/ while the tests passed, and
+  // the old arithmetic made the heading claim "19/19 measured" on a run where one shard emitted
+  // nothing at all. `skipped` stays narrower: only rows excused because their test job failed.
+  const skipped = results.filter((r) => r.ok && r.reason).length;
+  const measured = results.filter((r) => !r.row.missing).length;
+
+  const verdict =
+    rows.length === 0
+      ? 'empty'
+      : failures.length > 0
+        ? 'fail'
+        : skipped > 0
+          ? 'not-enforced'
+          : 'pass';
+
+  return {
+    threshold,
+    testsOk,
+    rows,
+    results,
+    failures,
+    belowBar,
+    missingOutput,
+    skipped,
+    measured,
+    verdict,
+    overall: overallOf(rows),
+  };
+}
+
+// ─── Baseline (the previous run's numbers, for the Δ column) ─────────────────────────────────────
+//
+// The one thing a reader of a GREEN run actually needs to know is whether the number moved, and
+// the table could not answer it: 19 absolute percentages, most in the low 90s, tell you nothing
+// about whether the PR in front of you just cost a point. ci.yml carries this file between runs
+// via actions/cache — saved only on a green push to `main`, restored on every run — so every run,
+// PRs included, is compared against the last `main` that passed the gate.
+//
+// An absent or unreadable baseline is not an error: Δ renders '—' and nothing else changes. That
+// is the state on the first run after this landed, after a cache eviction, and on every local
+// invocation, so it has to be the boring path rather than a failure.
+
+export function writeBaseline(path, evaluation, meta = {}) {
+  const rows = {};
+  for (const row of evaluation.rows) {
+    if (row.missing) continue;
+    rows[row.pkg] = {
+      lines: row.lines.pct,
+      branches: row.branches.pct,
+      functions: row.functions.pct,
+      scopeFiles: row.scopeFiles,
+      srcFiles: row.srcFiles,
+    };
+  }
+  const body = { ...meta, overall: evaluation.overall, rows };
+  writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`, 'utf8');
+}
+
+export function readBaseline(path) {
+  if (!path) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    return parsed && typeof parsed.rows === 'object' && parsed.rows !== null ? parsed : null;
+  } catch {
+    return null;
+  }
 }

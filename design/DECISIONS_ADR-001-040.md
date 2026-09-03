@@ -27,7 +27,9 @@
 - **决策**：gateway（控制面 WS）与 matchsvc（匹配大脑）拆为独立进程，经内部 HTTP 互通；commercial 独立进程 + 独立库。
 - **影响**：[`GATEWAY_DESIGN.md`](game/GATEWAY_DESIGN.md) / [`MATCHSVC_DESIGN.md`](game/MATCHSVC_DESIGN.md) / [`claudedocs/server.md`](../claudedocs/server.md) 为现行实现。[`META_DESIGN.md`](game/META_DESIGN.md) §6.1 写于过渡期，其"6 组件"是 meta 范畴口径。
 
-## ADR-005 应用进程口径 = 8 个 — Accepted — 2026-06-21
+## ADR-005 应用进程口径 = 8 个 — Superseded by ADR-080 — 2026-06-21
+
+> **⚠️ 已被取代（2026-09-03）**：口径现为 **11 个**，见 [ADR-080](DECISIONS_ADR-070-onward.md#adr-080-应用进程口径--11-个取代-adr-005-的8-个--accepted--2026-09-03)。socialsvc / auctionsvc / botsvc 三次加进程（8→10→11）当时都没记 ADR，本条因此长期是全仓唯一还在说「8 个」的文档。以下原文保留作历史记录。
 
 - **决策**：应用进程 8 个：metaserver / gateway / matchsvc / gameserver / commercial / admin / worldsvc / analyticsvc。`shared` 是 npm 包不计入；mongo/redis 是基础设施。
 - **背景**：CLAUDE.md 旧称"九进程"且列表漏了 matchsvc、混入了 shared 包。

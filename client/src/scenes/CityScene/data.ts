@@ -17,6 +17,7 @@ import type {
 export interface DataHost {
   readonly cb: CitySceneCallbacks;
   readonly destroyed: boolean;
+  readonly me: PlayerWorldView | null;
   teams: TeamTemplate[];
   marches: MarchView[];
   occupations: OccupationView[];
@@ -25,6 +26,47 @@ export interface DataHost {
   ordersLoaded: boolean;
   setMe(me: PlayerWorldView): void;
   render(): void;
+  /** Coalesced repaint (CitySceneCore.requestRender) — refreshOnQueueDue's only paint path. */
+  requestRender(): void;
+}
+
+/** refreshOnQueueDue's re-entrancy guard, kept on the host so the poll can't stack requests. */
+export interface QueuePollHost extends DataHost {
+  queueRefreshPending: boolean;
+}
+
+/**
+ * Build/train queue completion has no push and no other refresh path — worldsvc's 2s scheduler
+ * settles the queue server-side but never notifies gateway, so without this the countdown text only
+ * updates on the next render() (scroll/action-driven) and the finished entry never disappears until
+ * the player leaves and re-enters CityScene (P0-9, comm-audit-2026-07-27 finding B10). Once a queue
+ * entry's completeAt has passed, re-fetch `me` — if the server hasn't processed it yet (scheduler
+ * lag), the entry is still there and this simply retries next tick.
+ *
+ * Called from CitySceneCore.update's once-per-second tick.
+ */
+export function refreshOnQueueDue(host: QueuePollHost): void {
+  if (host.queueRefreshPending || host.destroyed || !host.me) return;
+  const now = Date.now();
+  const due =
+    (host.me.buildQueue ?? []).some((q) => q.completeAt <= now) ||
+    (host.me.trainingQueue ?? []).some((q) => q.completeAt <= now);
+  if (!due) return;
+  host.queueRefreshPending = true;
+  host.cb.worldApi
+    .getMe(host.cb.worldId)
+    .then((me) => {
+      if (!host.destroyed) {
+        host.setMe(me);
+        host.requestRender();
+      }
+    })
+    .catch(() => {
+      /* offline: retry next tick */
+    })
+    .finally(() => {
+      host.queueRefreshPending = false;
+    });
 }
 
 /**

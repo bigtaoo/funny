@@ -21,12 +21,13 @@ import {
   type TileType,
   type ResourceType,
 } from '@nw/shared';
-import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc, StationedDoc } from '../db';
+import type { TileDoc, PlayerWorldDoc, MarchDoc, OccupationDoc } from '../db';
 import { WorldCore } from '../core';
 import type { SiegeReplayInputs, OccupationView } from '../worldTypes';
 import { refundTroops, startReturnMarch, parkMarchInPlace, resolveOwnerEmblems } from '../combatShared';
 import type { SiegeHelpersService } from './helpers';
 import { writeOccupyCardState, resolveOccupationBattle } from './occupationBattle';
+import { settleOccupation } from './occupationSettle';
 
 /** Minimal "what does this tile look like right now" shape `writeContestedHold`/`startOccupationHold`
  * need — satisfied by a `ProceduralTile` (neutral/stronghold/crossing PvE captures) or a plain literal
@@ -171,7 +172,13 @@ export class OccupationService {
       // Cancel the old hold (atomic claim by id + expected holder guards against a race with a concurrent
       // processDueOccupations tick that may have already settled/claimed it — in that case just proceed to
       // start our own hold on top of whatever ownership now stands, re-validated by the blocked check upstream).
-      await cols.occupations.deleteOne({ _id: tile._id, ownerId: tile.contestedBy });
+      const expelled = tile.contestedBy;
+      await cols.occupations.deleteOne({ _id: tile._id, ownerId: expelled });
+      // The winner's own pushes come from startOccupationHold below; this one goes to the LOSER, whose
+      // hold just stopped existing. Without it their client keeps the dead OccupationDoc forever and the
+      // team it names is busy for the rest of the session (same defect as settleOccupation's, found by
+      // the order-end push audit) — on top of which they would have no idea they had been expelled.
+      if (expelled) void this.core.pushOrderEnded(expelled, { tile: tile._id, kind: 'occupy', status: 'recalled', at: t });
       if (hasCardArmy) await writeOccupyCardState(this.core, m, pw, res.attackerSurvivors, t, res.attackerDeployed);
       const proc = proceduralTile(m.worldId, tile.x, tile.y);
       await this.startOccupationHold(m, pw, proc, tile.x, tile.y, res.attackerSurvivors, t, replay);
@@ -331,10 +338,19 @@ export class OccupationService {
       const claimed = await cols.occupations.findOneAndDelete({ _id: d._id, ownerId: d.ownerId, dueAt: d.dueAt });
       if (!claimed) continue; // lost to a concurrent expulsion / processor
       try {
-        await this.settleOccupation(claimed, t);
+        await settleOccupation(this.core, claimed, t);
       } catch (e) {
         console.error('[worldsvc] settleOccupation failed:', { id: claimed._id, err: (e as Error).message });
       }
+      // 2026-09-02 user report: tell the owner their hold ENDED. Deliberately here, at the claim, and
+      // not inside settleOccupation: the doc is gone from this point on no matter what follows — a
+      // stale tile makes settleOccupation early-return, and a throw is only logged — so this is the one
+      // place where "the occupation no longer exists" is unconditionally true. Without it the client's
+      // `ctx.occupations` never drops the finished hold and keeps the team flagged busy forever (see
+      // core/push.ts pushOccupationSettled). The autoReturn branch's return leg pushes a march_update
+      // of its own, so those settlements send two invalidations; both are plain re-read triggers, and
+      // paying one redundant push there is worth keeping this signal unconditional.
+      void this.core.pushOrderEnded(claimed.ownerId, { tile: claimed.tile, kind: 'occupy', status: 'arrived', at: claimed.dueAt });
       n++;
     }
     return n;
@@ -356,6 +372,10 @@ export class OccupationService {
       { _id: claimed.tile },
       { $unset: { contestedBy: '', contestedUntil: '', contestedGarrison: '', contestedFamilyId: '' } },
     );
+    // Same rule as settleOccupation: the hold is gone, so say so on the order channel. The caller's own
+    // client could refresh locally instead, but the account's OTHER sessions/devices cannot, and today
+    // no client calls this route at all — leaving it silent would plant the defect for whoever wires it.
+    void this.core.pushOrderEnded(accountId, { tile: claimed.tile, kind: 'occupy', status: 'recalled', at: this.core.deps.now() });
     const after = await cols.tiles.findOne({ _id: claimed.tile });
     if (after) {
       void this.core.pushTile(accountId, after);
@@ -382,101 +402,5 @@ export class OccupationService {
     // helper for consistency with getMarches/getStationed rather than a bespoke single-owner lookup.
     const emblems = await resolveOwnerEmblems(this.core, worldId, own.map((d) => d.ownerId));
     return result.map((v, i) => (emblems[i] ? { ...v, ...emblems[i] } : v));
-  }
-
-  /** Finalize a settled OccupationDoc into real TileDoc ownership. Re-validates contestedBy to guard against a lost race. */
-  private async settleOccupation(d: OccupationDoc, t: number): Promise<void> {
-    const { cols } = this.core.deps;
-    const tile = await cols.tiles.findOne({ _id: d.tile });
-    if (!tile || tile.contestedBy !== d.ownerId) return; // stale (expelled / already settled elsewhere) — nothing to finalize
-
-    // 2026-08-09: `d.type` is only ever set for a captured crossing (writeContestedHold's
-    // settleType) — a bridge/plankway MUST keep its passage type on settlement, unlike every other
-    // hold (neutral/stronghold/PvP-territory), which always settles into plain 'territory'.
-    const tileDoc: TileDoc = {
-      _id: d.tile,
-      worldId: d.worldId,
-      x: d.x,
-      y: d.y,
-      type: d.type ?? 'territory',
-      level: d.level,
-      ...(d.resType ? { resType: d.resType } : {}),
-      ownerId: d.ownerId,
-      garrison: d.garrison,
-      ...(d.familyId ? { familyId: d.familyId } : {}),
-      rev: 0,
-    };
-    await cols.tiles.updateOne(
-      { _id: d.tile },
-      { $set: tileDoc, $unset: { contestedBy: '', contestedUntil: '', contestedGarrison: '', contestedFamilyId: '' } },
-    );
-
-    const pw = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, d.ownerId) });
-    if (pw) {
-      const yieldRate = await this.core.recomputeYield(d.worldId, d.ownerId);
-      // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
-      // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
-      // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
-      // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
-      // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
-      await cols.playerWorld.updateOne({ _id: pw._id }, [
-        { $set: { resources: this.core.settleExpr(pw.buildings, t), yieldRate, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
-      ]);
-      void this.core.bumpFamilyActivity(d.worldId, pw.familyId, 1);
-    }
-    // Post-capture disposition (2026-07-23, user decision): by default the capturing team STAYS stationed on
-    // the tile it just took (idle in the field) — write a StationedDoc so it stays "out" and renders a standing
-    // sprite. Only when that team opted into `autoReturn` do we skip this: the OccupationDoc was already
-    // claim-deleted upstream (processDueOccupations), so the team is already freed = idle at home, which is
-    // exactly the pre-2026-07-23 behavior ("和现在那样自动返回"). Flat "散兵占领" (no teamId) never stations.
-    if (d.teamId) {
-      const team = pw?.teams?.find((tm) => tm.id === d.teamId);
-      if (!team?.autoReturn) {
-        const stDoc: StationedDoc = {
-          _id: d.tile,
-          worldId: d.worldId,
-          ownerId: d.ownerId,
-          ...(d.familyId ? { familyId: d.familyId } : {}),
-          tile: d.tile,
-          x: d.x,
-          y: d.y,
-          teamId: d.teamId,
-          army: team?.army ?? [],
-          troops: d.garrison,
-          sinceAt: t,
-          // ADR-051 (P3a): a team that just captured a tile stays 停留 idle by default (可再动/就地占领); it does
-          // not auto-garrison. No cover registered (idle only defends its own cell). 驻扎 is an explicit intent.
-          mode: 'idle',
-          ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
-        };
-        await cols.stationed.updateOne({ _id: d.tile }, { $set: stDoc }, { upsert: true });
-        // ADR-051 (P2): register the parked team in the occupancy index so an enemy march entering this tile
-        // detects it (scenario 1). Cleared on recall (recallStationed) or capture (abandonTile).
-        await this.core.setOccupancy(d.worldId, d.tile, {
-          kind: 'stationed',
-          id: d.tile,
-          ownerId: d.ownerId,
-          ...(d.familyId ? { familyId: d.familyId } : {}),
-          teamId: d.teamId,
-          tile: d.tile,
-          leaveAt: Number.MAX_SAFE_INTEGER,
-        });
-      } else {
-        // autoReturn (2026-08-01, SLG_DESIGN_LOG §46): the team walks home over a travel-time return leg
-        // instead of being freed instantly. troops:0 always — `d.garrison` already became the captured tile's
-        // own permanent defense above (tileDoc.garrison), so sending it home too would double-count it; the
-        // team's own strength (if any) already lives in cardState (§6.1), unaffected by this leg.
-        await startReturnMarch(this.core, {
-          worldId: d.worldId, ownerId: d.ownerId, fromTile: d.tile, x: d.x, y: d.y,
-          troops: 0,
-          army: team?.army, teamId: d.teamId, leaderUnitType: d.leaderUnitType,
-        }, t);
-      }
-    }
-    const after = await cols.tiles.findOne({ _id: d.tile });
-    if (after) {
-      void this.core.pushTile(d.ownerId, after);
-      await this.core.pushTileToObservers(after, new Set([d.ownerId]));
-    }
   }
 }

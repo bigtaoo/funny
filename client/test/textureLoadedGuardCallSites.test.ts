@@ -169,12 +169,18 @@ describe("texture 'loaded' callbacks cannot throw into Ticker.shared", () => {
 describe('every menu scene render() opens with a destroyed/dead guard', () => {
   const GUARD_RE = /if\s*\(\s*!?\s*(this|core)\.(destroyed|dead)\s*\)\s*return/;
 
+  // `render` plus the `paintX` halves a scene splits its render into once it stops rebuilding one
+  // flat tree per pass (CityScene's page/modal layer split, 2026-09-02). Those halves are redraw
+  // entry points in their own right — CityScene injects `paintModal` into its Core, which hands it
+  // to hit closures — so the guard contract has to reach them too, or the split is a hole in it.
+  const RENDER_DEF_RE = /^\s*(private |public )?(render|paint[A-Z]\w*)\(\): void \{/;
+
   function sceneRenderDefs(): { rel: string; line: number; window: string }[] {
     const out: { rel: string; line: number; window: string }[] = [];
     for (const file of listSourceFiles(path.join(SRC_ROOT, 'scenes'))) {
       const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
       lines.forEach((l, i) => {
-        if (!/^\s*(private |public )?render\(\): void \{/.test(l)) return;
+        if (!RENDER_DEF_RE.test(l)) return;
         out.push({
           rel: path.relative(SRC_ROOT, file).replace(/\\/g, '/'),
           line: i + 1,

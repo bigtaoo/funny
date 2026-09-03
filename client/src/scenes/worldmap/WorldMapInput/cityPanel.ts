@@ -6,6 +6,7 @@
 import { t } from '../../../i18n';
 import { cityNodeCovering } from '@nw/shared';
 import { formatDuration } from '../logic/formatDuration';
+import { coordLine, type ModalLine, type ModalButton } from '../WorldMapPanels/modalLine';
 import type { WorldMapContext } from '../WorldMapContext';
 
 /**
@@ -46,15 +47,15 @@ export function showCityPanel(
     });
   }
   const city = cityNodeCovering(ctx.cityNodes ?? [], tx, ty);
-  const lines: string[] = [t('world.city'), `(${tx}, ${ty})`];
+  const lines: ModalLine[] = [{ text: t('world.city'), icon: 'castle' }, coordLine(tx, ty)];
   const level = city?.level ?? tileLevel;
-  if (level != null) lines.push(t('world.cityLevel').replace('{lv}', String(level)));
+  if (level != null) lines.push({ text: t('world.cityLevel').replace('{lv}', String(level)), icon: 'star' });
 
   if (!city) {
     // No node state (entry payload not landed yet, or a world opened before P1 and never reset) — show
     // what the tile knows and nothing more, rather than a siege button that would 400 on departure.
-    lines.push(t('world.cityHint'));
-    ctx.panels.showModal(lines, [{ label: t('common.close'), action: () => { state.openAt = null; ctx.panels.closeModal(); } }]);
+    lines.push({ text: t('world.cityHint'), icon: 'book' });
+    ctx.panels.showModal(lines, [{ label: t('common.close'), action: () => { state.openAt = null; ctx.panels.closeModal(); }, icon: 'close' }]);
     return;
   }
 
@@ -62,22 +63,25 @@ export function showCityPanel(
   const owned = !!city.ownerSectId;
   const mine = owned && city.ownerSectId === mySect;
   lines.push(owned
-    ? t(mine ? 'world.cityOwnedByUs' : 'world.cityOwnedBy').replace('{sect}', city.ownerSectName ?? city.ownerSectId ?? '')
-    : t('world.cityUnclaimed'));
+    ? { text: t(mine ? 'world.cityOwnedByUs' : 'world.cityOwnedBy').replace('{sect}', city.ownerSectName ?? city.ownerSectId ?? ''), icon: 'sectTabIcon' }
+    : { text: t('world.cityUnclaimed'), icon: 'flag' });
 
   // Durability as an ABSOLUTE pair, not just a bar: the curve is base-dominated (26,000 + 900/level, see
   // SLG_CITY_SIEGE_DESIGN §6.5), so a level-3 city and a level-10 capital are within ~22% of each other
   // and a percentage-only readout looks like a bug. The regen line is the part that explains the whole
   // design — it is why one player can never finish this alone.
   if (city.durabilityMax != null && city.durability != null) {
-    lines.push(t('world.cityDurability')
-      .replace('{cur}', String(Math.round(city.durability)))
-      .replace('{max}', String(city.durabilityMax)));
-    if (city.regenPerHour) lines.push(t('world.cityRegen').replace('{n}', String(city.regenPerHour)));
+    lines.push({
+      text: t('world.cityDurability')
+        .replace('{cur}', String(Math.round(city.durability)))
+        .replace('{max}', String(city.durabilityMax)),
+      icon: 'hp',
+    });
+    if (city.regenPerHour) lines.push({ text: t('world.cityRegen').replace('{n}', String(city.regenPerHour)), icon: 'hourglassSm' });
   }
 
   const protectedFor = (city.protectedUntil ?? 0) - Date.now();
-  if (protectedFor > 0) lines.push(t('world.cityProtected').replace('{d}', formatDuration(Math.ceil(protectedFor / 1000))));
+  if (protectedFor > 0) lines.push({ text: t('world.cityProtected').replace('{d}', formatDuration(Math.ceil(protectedFor / 1000))), icon: 'lock' });
 
   // Per-sect contribution this siege round (§7). Ownership goes to the LAST hit, not the largest
   // contributor — this list is here so a sect can see whether it is actually the one doing the work.
@@ -85,22 +89,25 @@ export function showCityPanel(
   if (log) {
     const top = Object.entries(log).sort((a, b) => b[1] - a[1]).slice(0, 3);
     for (const [sectId, dmg] of top) {
-      lines.push(t('world.citySiegeLog')
-        .replace('{sect}', sectId === mySect ? t('world.citySiegeLogUs') : sectId)
-        .replace('{n}', String(Math.round(dmg))));
+      lines.push({
+        text: t('world.citySiegeLog')
+          .replace('{sect}', sectId === mySect ? t('world.citySiegeLogUs') : sectId)
+          .replace('{n}', String(Math.round(dmg))),
+        icon: 'atk',
+      });
     }
   }
 
-  const buttons: { label: string; action: () => void }[] = [];
+  const buttons: ModalButton[] = [];
   if (!mySect) {
-    lines.push(t('world.cityNeedSect'));
+    lines.push({ text: t('world.cityNeedSect'), icon: 'lock' });
   } else if (mine) {
-    lines.push(t('world.cityOursHint'));
+    lines.push({ text: t('world.cityOursHint'), icon: 'check' });
   } else if (protectedFor > 0) {
     // Protection line already shown above; no button.
   } else {
-    buttons.push({ label: t('world.actSiegeCity'), action: () => void ctx.net.showTeamPicker(tx, ty, 'attack') });
+    buttons.push({ label: t('world.actSiegeCity'), action: () => void ctx.net.showTeamPicker(tx, ty, 'attack'), icon: 'siege' });
   }
-  buttons.push({ label: t('common.close'), action: () => { state.openAt = null; ctx.panels.closeModal(); } });
+  buttons.push({ label: t('common.close'), action: () => { state.openAt = null; ctx.panels.closeModal(); }, icon: 'close' });
   ctx.panels.showModal(lines, buttons);
 }

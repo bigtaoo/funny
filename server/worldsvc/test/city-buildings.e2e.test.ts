@@ -1,7 +1,7 @@
 // worldsvc home-city building system end-to-end (SLG_CITY_DESIGN P1, ADR-022): real Mongo.
 //   ① upgradeBuilding deducts resources + enqueues a build; processCompletedBuilds applies the level when due;
 //   ② resource buildings (stickerShop / graphiteMill) take effect in recomputeYield after completion (faucet/sink wiring);
-//   ③ drillYard raises troopCap on completion; ④ desk gate rejects over-level upgrades; ⑤ insufficient resources rejected;
+//   ③ drillYard raises troopCap on completion; ④ desk gate rejects over-level upgrades + no key gets an 11th level; ⑤ insufficient resources rejected;
 //   ⑥ speedupBuild (coins → time) finishes a build immediately; ⑦ season reset wipes the playerWorld doc (buildings cleared).
 // Requires `cd server && docker compose up -d`.
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,9 @@ import {
   TROOP_CAP_BASE,
   DRILL_TROOPCAP_STEP,
   DESK_MAX_LEVEL,
+  BUILDING_MAX_LEVEL,
+  BUILDING_KEYS,
+  RESOURCE_TYPES,
   troopCapFor,
   STICKER_SELF_BASE,
   RESOURCE_CAP,
@@ -221,6 +224,33 @@ describe.skipIf(!mongo)('worldsvc home-city buildings e2e', () => {
     const after = (await svc.getMe(W, 'a')).troopCap!;
     expect(after).toBe(troopCapFor({ drillYard: 5 }));
     expect(after).toBeGreaterThan(migrated); // an upgrade must never shrink the cap
+  });
+
+  /**
+   * The endpoint side of the "-> Lv.11 / needs Desk Lv.11" report (2026-09-02): with everything at
+   * the ceiling there is no legal 11th level for ANY key, and the refusal must name the ceiling
+   * rather than a desk level the player can no longer raise. Also asserts the refusal is clean —
+   * no resources burned, nothing queued — since the pre-fix path reached this call with a full
+   * cost already computed for level 11.
+   */
+  it('rejects an 11th level for every building, as max level rather than a desk shortfall', async () => {
+    const { x, y } = findCoord(45, 45);
+    await svc.joinWorld(W, 'a', x, y);
+    await fund('a');
+    const maxed = Object.fromEntries(BUILDING_KEYS.map((k) => [`buildings.${k}`, BUILDING_MAX_LEVEL]));
+    await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: maxed as never });
+    const before = await svc.getMe(W, 'a');
+
+    for (const key of BUILDING_KEYS) {
+      await expect(svc.upgradeBuilding(W, 'a', key), key).rejects.toThrow(/at max level/);
+      await expect(svc.upgradeBuilding(W, 'a', key), key).rejects.not.toThrow(/desk level too low/);
+    }
+
+    const after = await svc.getMe(W, 'a');
+    expect(after.buildQueue ?? []).toEqual([]);
+    for (const rt of RESOURCE_TYPES) {
+      expect(after.resources?.[rt] ?? 0, rt).toBe(before.resources?.[rt] ?? 0);
+    }
   });
 
   it('desk gate rejects upgrading a building above the desk level', async () => {

@@ -10,7 +10,7 @@
  * appTickerDialogWiring.test.ts, which this file mirrors).
  *
  * Behaviour of the two functions themselves is covered elsewhere: test/ui/bootManifestTiers.ui.ts
- * and test/ui/idlePrefetch.ui.ts. This file only asserts they are still plugged in, and in the
+ * and test/idlePrefetch.test.ts. This file only asserts they are still plugged in, and in the
  * right order relative to the first scene.
  */
 import { describe, it, expect } from 'vitest';

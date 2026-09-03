@@ -49,12 +49,18 @@ export interface TeamRow {
   stationedTeamId: string | null;
 }
 
+// `stationed` (野外停留) and `garrisoned` (野外驻扎) are the two states a team lands in by taking the
+// tile menu's 停留 / 驻扎 actions, so they now carry those actions' own glyphs (batch 9) instead of
+// `armor`/`armorHeavy`. Those two are the quartered-disc buckler pair, told apart only by rim
+// weight — and the world-map HUD drew all three of them at once (these two rows plus the
+// protection buff chip), i.e. one disc with three meanings on one screen, which is what the batch-7
+// acceptance note meant by "reads as heraldry, the label carries the semantics".
 const STATE_ICON: Record<TeamRowState, IconKind> = {
   marching: 'flag',
   returning: 'replay',
   occupying: 'siege',
-  stationed: 'armor',
-  garrisoned: 'armorHeavy',
+  stationed: 'footsteps',
+  garrisoned: 'camp',
   injured: 'hp',
   home: 'home',
 };

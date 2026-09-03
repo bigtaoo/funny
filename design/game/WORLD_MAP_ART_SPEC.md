@@ -256,7 +256,7 @@
 
 ## 六、资源图标（HUD 内显示）— ✅ 已接入（复用 `res_atlas`，无需单独出 24px 图）
 
-> **赛季资源权威 = 5 种**（`server/shared/src/slg.ts` `RESOURCE_TYPES` + `WorldMapScene.renderHud()`）：
+> **赛季资源权威 = 5 种**（`server/shared/src/slg/core.ts` `RESOURCE_TYPES` + `WorldMapScene.renderHud()`）：
 > `ink 墨水` / `paper 纸张` / `graphite 石墨` / `metal 金属` / `sticker 贴纸`。
 > 旧「食物/木材/铁矿（food/wood/iron）」命名已废弃，勿再使用。
 >

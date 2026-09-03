@@ -44,11 +44,15 @@ export function committedTroops(me: PlayerWorldView | null, army: TeamTemplate['
 }
 
 export interface ArtHost {
+  /** Where these helpers draw: CityScene's `pageLayer`, not the scene container — the page is the
+   *  only layer whose paint mints buttons and portraits. */
   readonly container: PIXI.Container;
   readonly destroyed: boolean;
   readonly artHooked: Set<string>;
   readonly hits: Hit[];
-  render(): void;
+  /** Coalesced repaint (CitySceneCore.requestRender) — a portrait finishing its decode is worth a
+   *  frame's wait, and several finishing together are worth exactly one paint between them. */
+  requestRender(): void;
 }
 
 /** Draw a card portrait centred inside a box; re-render once its texture decodes (mirrors DefenseEditorScene). */
@@ -58,7 +62,7 @@ export function drawArtFit(host: ArtHost, url: string, x: number, y: number, box
     if (!host.artHooked.has(url)) {
       host.artHooked.add(url);
       tex.baseTexture.once('loaded', () => {
-        if (!host.destroyed) host.render();
+        if (!host.destroyed) host.requestRender();
       });
     }
     return;

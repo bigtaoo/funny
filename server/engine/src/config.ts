@@ -170,7 +170,7 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
   // never oppressive → no extra flying mechanic added), medic 6 is non-oppressive support.
   // Splitter raised 4→5: its on-death 2-Runner split wins ~100% of equal-ink melee trades at
   // any cost in 4–6; the real counter is AOE (meteor), which the arena cannot model, so cost 5
-  // aligns it with the 5-bracket while meteor remains its hard answer (BALANCE.md §5.3).
+  // aligns it with the 5-bracket while meteor remains its hard answer (BALANCE.md §5.2).
   { id: 'runner',    nameKey: 'card.runner.name',    descKey: 'card.runner.desc',    cardType: CardType.Unit, cost: 3, unitType: UnitType.Runner    },
   { id: 'ironclad',  nameKey: 'card.ironclad.name',  descKey: 'card.ironclad.desc',  cardType: CardType.Unit, cost: 8, unitType: UnitType.Ironclad  },
   { id: 'berserker', nameKey: 'card.berserker.name', descKey: 'card.berserker.desc', cardType: CardType.Unit, cost: 6, unitType: UnitType.Berserker },

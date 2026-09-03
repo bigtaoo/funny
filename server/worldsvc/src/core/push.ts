@@ -192,6 +192,43 @@ export class PushService {
     });
   }
   /**
+   * A field order ENDED and left no MarchDoc behind (2026-09-02 user report + follow-up audit).
+   *
+   * `march_update` is the ONLY signal the world map re-reads its marches/occupations/stationed slices
+   * on (worldmap/net/push.ts applyMarchUpdate → refreshMarches; the 5s poll that used to cover
+   * everything else was removed in comm-audit-2026-07-27 P1-2, on the assumption that push covers every
+   * state change). `tile_update` refreshes tiles alone. So any path that ends an order without
+   * announcing it here leaves the client's copy stale FOREVER — no reconnect, no scene re-entry
+   * recovers it, only a full reload — and every team the dead order names reads as busy, which the team
+   * picker turns into a flat refusal to dispatch.
+   *
+   * Five such paths exist, all of them deleting an OccupationDoc or a StationedDoc without a march to
+   * report (a path that ends an order by starting a return leg is already covered — the leg pushes a
+   * real march). They are enumerated and behaviourally pinned by
+   * worldsvc/test/order-end-push-audit.test.ts; the same file fails on any NEW deletion site that has
+   * not been reviewed against this rule.
+   *
+   * The order has no MarchDoc left by this point, so the payload describes the order itself: a
+   * zero-distance move on its own tile. The client uses it purely as an invalidation trigger (it
+   * re-reads authoritative state and ignores the body), so the synthetic `ended:` id never reaches any
+   * UI — but `kind`/`status` are still filled in truthfully rather than hard-coded, so a future
+   * consumer that DOES read the body is not handed a lie.
+   */
+  async pushOrderEnded(
+    accountId: string,
+    o: { tile: string; kind: 'occupy' | 'move'; status: 'arrived' | 'recalled'; at: number },
+  ): Promise<void> {
+    await this.core.gateway.push(accountId, {
+      kind: 'march_update',
+      marchId: `ended:${o.tile}`,
+      marchKind: o.kind,
+      fromTile: o.tile,
+      toTile: o.tile,
+      arriveAt: o.at,
+      status: o.status,
+    });
+  }
+  /**
    * `ownerProfile`: pass a pre-resolved profile to skip this method's own meta fetch — used by
    * pushTileToObservers (comm-audit batch F item 7), which resolves the tile owner's profile once and
    * fans it out to every observer instead of each push re-fetching the same accountId's profile.

@@ -1,6 +1,6 @@
 # 决策日志（ADR）
 
-> 状态：实现中 · 权威：本文 · 更新：2026-08-18
+> 状态：实现中 · 权威：本文 · 更新：2026-09-03
 
 记录**会造成文档间漂移**的关键拍板：改数值口径、改命名、改架构、废弃旧方案。
 每条 ADR 注明：日期、决策、影响的文档、为什么。新拍板追加在末尾，不改旧条目（要改就加一条新的 *Supersedes*）。
@@ -11,7 +11,9 @@
 
 ---
 
-## ADR 索引（共 69 条）
+## ADR 索引（共 81 条 = 80 个编号 + 一条字母子条 ADR-026b）
+
+> **计数由脚本核对**（`grep -cE '^\| \[ADR-' DECISIONS.md`）。2026-09-03 审计时标题写着「共 69 条」而实际有 79 行，且 ADR-079 有正文没索引行——本文自己那条「新增条目要同时往这张表里加一行」的规矩失效了一次。
 
 | 编号 | 决策 | 状态 | 日期 |
 |---|---|---|---|
@@ -19,7 +21,7 @@
 | [ADR-002](DECISIONS_ADR-001-040.md#adr-002-局内货币重命名-coins--ink--accepted--2026-06-13) | 局内货币重命名 `coins → ink` | Accepted | 2026-06-13 |
 | [ADR-003](DECISIONS_ADR-001-040.md#adr-003-阵营色--我蓝敌红v03--accepted--2026-06-14) | 阵营色 = 我蓝敌红（v0.3） | Accepted | 2026-06-14 |
 | [ADR-004](DECISIONS_ADR-001-040.md#adr-004-服务端进程拆分gateway--matchsvc-独立--accepted--2026-06-14s1-m5) | 服务端进程拆分（gateway / matchsvc 独立） | Accepted | 2026-06-14 |
-| [ADR-005](DECISIONS_ADR-001-040.md#adr-005-应用进程口径--8-个--accepted--2026-06-21) | 应用进程口径 = 8 个 | Accepted | 2026-06-21 |
+| [ADR-005](DECISIONS_ADR-001-040.md#adr-005-应用进程口径--8-个--superseded-by-adr-080--2026-06-21) | 应用进程口径 = 8 个 | Superseded by ADR-080 | 2026-06-21 |
 | [ADR-006](DECISIONS_ADR-001-040.md#adr-006-pve-数据走服务器权威方案-b--accepted--2026-06-pve_integrity_plan-8) | PvE 数据走服务器权威（方案 B） | Accepted | 2026-06 |
 | [ADR-007](DECISIONS_ADR-001-040.md#adr-007-slg-围攻--双方预布兵确定性自动战斗--accepted--2026-06-20g3) | SLG 围攻 = 双方预布兵确定性自动战斗 | Accepted | 2026-06-20 |
 | [ADR-008](DECISIONS_ADR-001-040.md#adr-008-叙事铁律两本笔记本东西不混搭--accepted) | 叙事铁律：两本笔记本，东西不混搭 | Accepted | — |
@@ -93,6 +95,9 @@
 | [ADR-075](DECISIONS_ADR-070-onward.md#adr-075-slg-兵力上限曲线重调基数腰斩--每级加倍练兵场成长感-训练队列槽位去死值--accepted--2026-08-25) | SLG 兵力上限曲线重调：基数 10000→5000 / 每级 1000→1500（成长 2×→4×）+ 训练队列槽位 1/2/3 去死值 + troopCap 重算迁移 | Accepted | 2026-08-25 |
 | [ADR-076](DECISIONS_ADR-070-onward.md#adr-076-宗门驻防队加在-npc-波次前面而不是替代它--州府防御加成改按城池归属判定--accepted--2026-08-27) | 宗门驻防队**加在** NPC 波次前面而不是替代它（保住 P2 实测的兵耗闸门）+ `NATION_BONUS_DEFENSE` 改按 `CityDoc.ownerSectId` 判定 + `defenderLock` 未使用即退役 | Accepted | 2026-08-27 |
 | [ADR-077](DECISIONS_ADR-070-onward.md#adr-077-驻防队的练度花在阵地基地-hp上不是花在守军自己的-hp-上--accepted--2026-08-27) | 驻防队的练度折成一个因子，花在**阵地的象征性基地 HP** 上（实测：花在守军自己 HP 上等于零效果）；不动引擎/不抬 `ENGINE_VERSION`/不改回放 payload | Accepted | 2026-08-27 |
+| [ADR-078](DECISIONS_ADR-070-onward.md#adr-078-覆盖率运行摘要合成一张表门禁只出退出码报表加-headroom--δδ-不设门禁--accepted--2026-09-02) | 覆盖率运行摘要两张表合成一张（门禁脚本只留退出码、不再写摘要页）+ 新 `Headroom` 列并按它排序 + 对齐上一次绿 main 的 Δ（**只进报表、不设门禁**）+ 删恒等于 `Lines` 的 `Statements` 列 | Accepted | 2026-09-02 |
+| [ADR-079](DECISIONS_ADR-070-onward.md#adr-079-训练队列槽位改为并行练兵场的槽位第一次真的给吞吐--accepted--2026-09-02) | 训练队列槽位改为并行：练兵场的槽位第一次真的给吞吐 | Accepted | 2026-09-02 |
+| [ADR-080](DECISIONS_ADR-070-onward.md#adr-080-应用进程口径--11-个取代-adr-005-的8-个--accepted--2026-09-03) | 应用进程口径 = 11 个（取代 ADR-005 的「8 个」） | Accepted | 2026-09-03 |
 
 ---
 

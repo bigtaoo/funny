@@ -4,6 +4,11 @@
 > 背景：原 SOC1 拍板"持久数据扩展 meta，不新建 social 进程"；**本文件推翻 SOC1**，改为独立 socialsvc。
 > 触发原因：家族本是常规游戏功能（非 SLG 专属），但被绑定在 worldsvc 的 worldId 下，每赛季重置；好友/邮件在 metaserver 也使其持续臃肿；所有频道 Redis pub/sub 无统一宿主。
 > 配套阅读：`SOCIAL_DESIGN.md`（原社交设计，数据模型细节仍有效）、`SLG_DESIGN.md`（家族→大区同步）、`GATEWAY_DESIGN.md`（/gw/push 通道）、`META_TASKS.md`（任务进度）。
+> 状态：**已实现**（§6 迁移路径 P1–P4 全部完成，末批 2026-06-29；OpenAPI 契约 2026-07-27 补齐，见 §9）· 权威：本文（socialsvc 设计基准）· 更新：2026-09-03
+>
+> **补记 2026-09-03**：本文此前**没有状态头**，`design/README.md` 因此一直把它记成「设计中」，而服务早已上线
+> （`server/socialsvc/` 30 文件 / 约 5.7k 行，在 prod compose + ecosystem + Caddy `/social*`，e2e 38 例）。
+> 端点清单见 `SERVER_API_INTERNAL.md §12`（同日补齐），机器契约 `server/contracts/openapi-social.yml`。
 
 ---
 

@@ -16,15 +16,59 @@ import { peekViewportH } from '../../../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../../../render/fontScale';
 import { HUD_H, MARGIN, CONFIRM_H } from '../logic/constants';
 import { PANEL_W, PANEL_MARGIN, PANEL_BTN_FONT } from './spec';
+import {
+  modalLineText, modalLineIcon, buildModalGlyph,
+  type ModalLine, type ModalButton,
+} from './modalLine';
+import { buildIcon } from '../../../render/icons';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
+
+/**
+ * Breathing room a wrapped button label needs inside the button's own height before it reads as
+ * touching the sketch border. Measured in the browser at `FS.title`: one line is 31px, so two fit
+ * the 84px button (62) and may still carry a leading glyph, while three (93) do not fit either way
+ * and lose it — the case the old width proxy existed to prevent.
+ */
+const BTN_LABEL_PAD = 8;
+
+/** Leading-glyph box on a modal button, and the gap between it and the label. */
+const BTN_GLYPH = 26;
+const BTN_GLYPH_GAP = 8;
+
+/**
+ * Would `label` still lay out the same beside a `lead`-wide leading glyph, inside a `labelW`-wide,
+ * `btnH`-tall button? Measured, not estimated: {@link PIXI.TextMetrics} runs the same wrap the
+ * `PIXI.Text` will (`breakWords`, monospace, `FS.title`) without building a display object — a
+ * throwaway `PIXI.Text` would have to be destroyed, and `Text.destroy()` zeroes its own canvas.
+ *
+ * The glyph is granted only when it costs the label NO extra line (so a menu's existing typographic
+ * rhythm never degrades to buy an icon) and the label still fits the button's height (so a label
+ * that already overflows doesn't get an icon piled on top of it).
+ */
+function labelFitsBesideGlyph(label: string, labelW: number, lead: number, btnH: number): boolean {
+  const measure = (wrapW: number): PIXI.TextMetrics =>
+    PIXI.TextMetrics.measureText(
+      label,
+      new PIXI.TextStyle({
+        fontSize: FS.title, fontFamily: 'monospace', wordWrap: true, wordWrapWidth: wrapW, breakWords: true,
+      }),
+    );
+  const withGlyph = measure(labelW - lead);
+  return (
+    withGlyph.lines.length <= measure(labelW).lines.length &&
+    withGlyph.height <= btnH - BTN_LABEL_PAD
+  );
+}
 
 export class WorldMapPanelsCore {
   constructor(readonly ctx: WorldMapContext) {}
 
-  showModal(
-    lines: string[],
-    buttons: { label: string; action: () => void; disabled?: boolean }[]
-  ): void {
+  /**
+   * The world map's one modal primitive: a stack of centered information lines over a grid of
+   * action buttons. Both a line and a button may carry a leading glyph (see ./modalLine.ts) —
+   * plain strings still work and render exactly as before.
+   */
+  showModal(lines: ModalLine[], buttons: ModalButton[]): void {
     const ml = this.ctx.modalLayer;
     tearDownChildren(ml);
 
@@ -46,20 +90,53 @@ export class WorldMapPanelsCore {
     // Wrap into multiple rows once buttons would otherwise be squeezed below a legible width
     // (e.g. the 6-button owned-tile menu: Reinforce/Defense/Watchtower/Relocate/Abandon/Close) —
     // a single row at that count left labels overlapping their neighbors.
-    const minBtnW = 150;
+    //
+    // `minBtnW` was 150 (five across, `btnW` 166) until 2026-09-03. At that width a Latin label got
+    // ~8 characters per line and ~6 beside an icon, so German compounds broke mid-word
+    // (`Verstä/rken`) and only 6 of the 9 owned-tile buttons could keep the glyph
+    // `labelFitsBesideGlyph` had just unlocked. 180 caps a row at four (`btnW` 210).
+    const minBtnW = 180;
     const maxCols = Math.max(1, Math.floor((mw + modalMargin) / (minBtnW + modalMargin)));
-    const cols = Math.min(buttons.length, maxCols);
-    const rows = Math.ceil(buttons.length / cols);
+    const rowsFor = (c: number): number => Math.ceil(buttons.length / c);
+    // ...and four across is still not enough for every locale: `Watchtower` (176px) and `Verstärken`
+    // are one or two characters over the ~160px a 210px column leaves beside a glyph, so they lost
+    // theirs while their neighbours kept it — which looks like a bug, not a budget. So the column
+    // count follows the content too: narrow the grid while any label cannot carry its glyph, but
+    // ONLY while that costs no extra row. For the 9-button owned-tile menu 4→3 columns is free
+    // (both are 3 rows) and hands every locale its full set of glyphs at `btnW` 284; for a 4-button
+    // menu 4→3 would turn one row into two, so it stops and that one label goes without. Menu
+    // geometry therefore varies by locale, which is the point — zh stays four across.
+    let cols = Math.min(buttons.length, maxCols);
+    while (cols > 1 && rowsFor(cols - 1) === rowsFor(cols)) {
+      const w = Math.min(300, (mw - modalMargin * (cols + 1)) / cols);
+      const allFit = buttons.every(
+        (b) => !b.icon || labelFitsBesideGlyph(b.label, w - 16, BTN_GLYPH + BTN_GLYPH_GAP, btnH)
+      );
+      if (allFit) break;
+      cols -= 1;
+    }
+    const rows = rowsFor(cols);
     const rowGap = 16;
 
+    // Leading glyph on an information line: sized to the line's own font so icon and text read as
+    // one row. A resource motif whose atlas has not decoded yet comes back null and the line simply
+    // lays out without it (never a blank box).
+    const lineGlyph = Math.round(FS.title);
+    const lineGlyphGap = 10;
+
     // Pre-measure wrapped label heights so the panel sizes to content instead of clipping/overlapping.
+    // The label is left-anchored now and the icon+text pair is centered as a group (an icon-less line
+    // is identical to the old center-anchored single label).
     const labels = lines.map((line) => {
-      const lbl = txt(line, FS.title, C.dark, false, textW);
-      lbl.anchor.set(0.5, 0);
-      return lbl;
+      const spec = modalLineIcon(line);
+      const glyph = spec ? buildModalGlyph(spec, lineGlyph, C.dark) : null;
+      const lead = glyph ? lineGlyph + lineGlyphGap : 0;
+      const lbl = txt(modalLineText(line), FS.title, C.dark, false, textW - lead);
+      lbl.anchor.set(0, 0);
+      return { lbl, glyph, lead };
     });
     const textH =
-      labels.reduce((sum, lbl) => sum + lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
+      labels.reduce((sum, e) => sum + e.lbl.height, 0) + lineGap * Math.max(0, labels.length - 1);
     const btnAreaH = btnH * rows + rowGap * (rows - 1);
     const mh = Math.max(CONFIRM_H * 1.5, topPad + textH + btnGap + btnAreaH + btnGap);
     const my = (h - HUD_H - mh) / 2;
@@ -75,8 +152,17 @@ export class WorldMapPanelsCore {
     ml.addChild(panel);
 
     let ly = my + topPad;
-    for (const lbl of labels) {
-      lbl.x = mx + mw / 2;
+    for (const { lbl, glyph, lead } of labels) {
+      const rowX = mx + (mw - (lbl.width + lead)) / 2;
+      if (glyph) {
+        glyph.x = rowX;
+        // Centered on the label's full height rather than on its first text line: every icon-bearing
+        // line here is a short single-liner, and on the few that do wrap (the confirm/hint copy) a
+        // block-centered glyph reads as a bullet instead of drifting off the top.
+        glyph.y = ly + (lbl.height - lineGlyph) / 2;
+        ml.addChild(glyph);
+      }
+      lbl.x = rowX + lead;
       lbl.y = ly;
       ml.addChild(lbl);
       ly += lbl.height + lineGap;
@@ -113,10 +199,29 @@ export class WorldMapPanelsCore {
       // with two close affordances side by side (a glyph button in the tile-action modals, a
       // `t('world.close')` text button in the shop/territory/replay panels); both are now
       // `t('common.close')` text (2026-08-30 SLG widget pass).
+      // Leading glyph, drawn where the label still fits beside it. This was a flat `btnW >= 200`
+      // check until 2026-09-03, which was a proxy for the real question ("would the 34px an icon
+      // costs push this label onto another line?") — but it answered by button COUNT, since `btnW`
+      // falls out of `cols` alone. So a 5-across menu lost every icon however short its labels
+      // were (the batch-9 shoot measured `btnW = 166` on the 9-button owned-tile menu, i.e. five
+      // just-drawn glyphs that could never appear), and shortening the copy changed nothing.
+      // Measuring the label instead makes the gate self-adjusting: `停留`/`驻扎` earn their glyph
+      // in a 166px column, a German compound still drops it exactly where it would have wrapped.
+      const icon =
+        btn.icon && labelFitsBesideGlyph(btn.label, btnW - 16, BTN_GLYPH + BTN_GLYPH_GAP, btnH)
+          ? buildIcon(btn.icon, BTN_GLYPH, disabled ? C.mid : C.light)
+          : null;
+      const lead = icon ? BTN_GLYPH + BTN_GLYPH_GAP : 0;
       // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
-      const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16);
-      bl.anchor.set(0.5, 0.5);
-      bl.x = bx + btnW / 2;
+      const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16 - lead);
+      bl.anchor.set(0, 0.5);
+      const grpX = bx + (btnW - (bl.width + lead)) / 2;
+      if (icon) {
+        icon.x = grpX;
+        icon.y = by + (btnH - BTN_GLYPH) / 2;
+        ml.addChild(icon);
+      }
+      bl.x = grpX + lead;
       bl.y = by + btnH / 2;
       ml.addChild(bl);
       this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, fn: btn.action });
@@ -203,12 +308,17 @@ export class WorldMapPanelsCore {
       void this.ctx.net.doMarch(tx, ty, kind, qty);
     };
     this.showModal(
-      [t('world.deployTitle').replace('{avail}', String(avail)), `${kindLabel} → (${tx}, ${ty})`],
       [
+        { text: t('world.deployTitle').replace('{avail}', String(avail)), icon: 'unit' },
+        { text: `${kindLabel} → (${tx}, ${ty})`, icon: 'globe' },
+      ],
+      [
+        // ¼ / ½ / 全部 stay bare: they are a quantity ladder, and three different glyphs for "a
+        // fraction of the same pool" would read as three different actions.
         { label: t('world.deployQuarter'), action: () => send(Math.floor(avail / 4)) },
         { label: t('world.deployHalf'), action: () => send(Math.floor(avail / 2)) },
         { label: t('world.deployAll'), action: () => send(avail) },
-        { label: t('common.close'), action: () => this.closeModal() },
+        { label: t('common.close'), action: () => this.closeModal(), icon: 'close' },
       ]
     );
   }

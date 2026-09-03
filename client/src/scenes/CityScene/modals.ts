@@ -7,10 +7,10 @@ import { formatDuration } from '../worldmap/logic/formatDuration';
 import { serverNow } from '../../net/serverClock';
 import type { BuildingKey } from '../../net/WorldApiClient';
 import {
-  DESK_MAX_LEVEL,
+  BUILDING_MAX_LEVEL,
   CABINET_CAP_STEP,
   DRILL_TROOPCAP_STEP,
-  DRILL_TRAIN_SPEED_STEP,
+  drillTrainMult,
   baseDurabilityMax,
   ACADEMY_HP_STEP,
   ACADEMY_DAMAGE_STEP,
@@ -67,7 +67,11 @@ export class ModalsPanel implements ModalsHandlers {
       Object.entries(cost).every(
         ([rt, need]) => (resources?.[rt as ResourceType] ?? 0) >= (need ?? 0)
       );
-    const atMax = lvl >= DESK_MAX_LEVEL && key === 'desk';
+    // BUILDING_MAX_LEVEL, not "DESK_MAX_LEVEL if key === 'desk'": every building stops at the
+    // desk's ceiling (a non-desk target above it can never clear the desk gate), so a maxed L10
+    // stationery building used to fall through to the upgrade rows and advertise "→ Lv.11 /
+    // needs Desk Lv.11" — an unreachable target (user bug report 2026-09-02).
+    const atMax = lvl >= BUILDING_MAX_LEVEL;
 
     // Natural (unscaled) content size — laid out in a local frame, then scaled to
     // fill 80% of the constrained screen axis (popup-scale-to-80% convention).
@@ -94,12 +98,12 @@ export class ModalsPanel implements ModalsHandlers {
     // Dim covers the full screen; tapping it (outside interactive rects) closes the modal.
     const dim = new PIXI.Graphics();
     dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
-    this.core.container.addChild(dim);
+    this.core.paint.modalLayer.addChild(dim);
 
     const panelRoot = new PIXI.Container();
     panelRoot.position.set(screenX, screenY);
     panelRoot.scale.set(scale);
-    this.core.container.addChild(panelRoot);
+    this.core.paint.modalLayer.addChild(panelRoot);
     // Compensates PIXI.Text's raster blur from the panelRoot scale-up above — see scaledTxt().
     const st = scaledTxt(scale);
 
@@ -262,7 +266,9 @@ export class ModalsPanel implements ModalsHandlers {
       rect: { x: 0, y: 0, w, h },
       fn: () => {
         this.core.selectedBuilding = null;
-        this.core.render();
+        // paintModal, not render: the page underneath was never torn down, so dismissing the modal
+        // is a teardown of the modal layer plus a hit-table swap. Nothing else moved.
+        this.core.paintModal();
       },
     });
   }
@@ -330,10 +336,14 @@ export class ModalsPanel implements ModalsHandlers {
       }
       case 'drillYard':
         lines.push(t('city.bonusTroopCap').replace('{n}', String(lvl * DRILL_TROOPCAP_STEP)));
+        // Read off drillTrainMult, NOT `lvl * DRILL_TRAIN_SPEED_STEP`: that raw product ignores the
+        // DRILL_TRAIN_SPEED_FLOOR clamp, so from L7 up (ceil(0.5 / 0.08)) the card advertised a
+        // speed-up the training queue never applies — "+80%" at L10 against a real +50%. Same class
+        // of bug as the "→ Lv.11" one above: a number the rest of the code cannot honour.
         lines.push(
           t('city.bonusTrainSpeed').replace(
             '{pct}',
-            String(Math.round(lvl * DRILL_TRAIN_SPEED_STEP * 100))
+            String(Math.round((1 - drillTrainMult(bld)) * 100))
           )
         );
         lines.push(t('city.bonusQueueSlots').replace('{n}', String(trainQueueMaxFor(bld))));

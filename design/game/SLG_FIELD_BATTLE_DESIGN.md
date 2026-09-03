@@ -2,7 +2,7 @@
 
 > 状态：**Accepted** — 2026-07-24 起草并拍板（worktree `feat/field-battle`）；§8 待审点全部采用提议默认。
 > 关联：[`SLG_DESIGN.md`](SLG_DESIGN.md) §4（行军/占领）、§5.4（占领行军=PvE 战斗）、[`SLG_DESIGN_LOG.md`](SLG_DESIGN_LOG.md) 野外驻扎 v1（2026-07-23）。本文档是该 v1 的 **v2 升级**，并新增建筑层。
-> 拟记 ADR：**ADR-051**（审定后写入 [`DECISIONS.md`](../DECISIONS.md)）。
+> ADR：**[ADR-051](../DECISIONS_ADR-041-069.md#adr-051-slg-实时野战遭遇系统停留驻扎拆分--redis-逐格行军--玩家建筑层--accepted--2026-07-24)** 已写入（Accepted，2026-07-24）——本行此前一直写「拟记 ADR-051（审定后写入）」，订正 2026-09-03。
 
 ---
 

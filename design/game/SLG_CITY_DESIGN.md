@@ -2,7 +2,7 @@
 
 > 状态：设计中 · 权威：本文（建筑系统机制基准）· 创建：2026-06-30
 > 上级：[`SLG_DESIGN.md`](SLG_DESIGN.md)（大世界总纲，§4 兵力/§7 经济/§9 架构）。本文把「点进主城的内政界面 + 建筑升级 + 加成 + 练兵」从 SLG §4/§7 承诺细化到字段/常量/注入点级别。
-> 配套：[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（faucet/sink 政策）、[`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md)（数字登记，本系统数值落 §13-SLG-CITY）、[`SERVER_API.md`](SERVER_API.md)（端点契约）、`server/shared/src/slg.ts`（常量真源）。
+> 配套：[`ECONOMY_BALANCE.md`](ECONOMY_BALANCE.md)（faucet/sink 政策）、[`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md)（数字登记，本系统数值落 §13-SLG-CITY）、[`SERVER_API.md`](SERVER_API.md)（端点契约）、`server/shared/src/slg/city.ts`（常量真源；2026-07-05 由 `slg.ts` 拆分而来）。
 > 参考原型：三国志·战略版（灵犀互娱）主城内政——君王殿等级门控 + 资源建筑提产量 + 民居产币 + 校场练兵 + 城防提耐久 + 科技建筑加成 + 官职委任。本文取其**结构**，换我们的文具皮 + 5 资源 + 统一养成边界。
 
 ---
@@ -71,7 +71,7 @@
 | `metalForge` | 金属铸坊 | 资源 | **metal 全局产率乘数** | `recomputeYield` | P1 |
 | `stickerShop` | 贴纸铺 | 资源（民居模型） | **sticker 主城自产**（铜币位/通用资源 faucet，非地块）→ **激活 sticker faucet**；绝不产 coin | `recomputeYield` 自产项 | P1 |
 | `cabinet` | 文件柜 | 仓储 | 提 `RESOURCE_CAP`（仓储上限）+ 被掠夺时保护一部分（三战仓库护粮） | `settleResources` cap + `applySiege` loot | P1 |
-| `drillYard` | 练兵场 | 军事 | 提 `troopCap`（**总兵力上限**，`5000+1500×lvl`，ADR-075）+ 训练速度（`trainTroops` 时长，每级 -8%，地板 0.5）+ 训练队列槽位（`TROOP_TRAIN_QUEUE_MAX` + `DRILL_QUEUE_LEVEL_THRESHOLDS` → 1/2/3）+ 解锁更高兵种训练。**两个 PvE 门槛的实际钥匙**：L4 开关隘、L5 开险地（ADR-075 后移，守军常量不动，见 ECONOMY_VERIFICATION_LOG_CAPACITY §13-SLG-STRONGHOLD.7） | `trainTroops` / `troopCap` | P1 |
+| `drillYard` | 练兵场 | 军事 | 提 `troopCap`（**总兵力上限**，`5000+1500×lvl`，ADR-075）+ 训练速度（`trainTroops` 时长，每级 -8%，地板 0.5）+ 训练队列槽位（`TROOP_TRAIN_QUEUE_MAX` + `DRILL_QUEUE_LEVEL_THRESHOLDS` → 1/2/3，**槽位并行**，ADR-079）+ 解锁更高兵种训练。**两个 PvE 门槛的实际钥匙**：L4 开关隘、L5 开险地（ADR-075 后移，守军常量不动，见 ECONOMY_VERIFICATION_LOG_CAPACITY §13-SLG-STRONGHOLD.7） | `trainTroops` / `troopCap` | P1 |
 | `satchel` | 书包 | 军事 | 提**单支队伍出征携带兵力上限**（与 `drillYard` 的总兵力上限是两个独立维度，D-CITY-9）：`satchelCarryCapFor`=`SATCHEL_CARRY_BASE`(=`TROOP_CAP_BASE`=**5000**，ADR-075；零级即可单队带满初始兵力池) + `satchel` 每级 `SATCHEL_CARRY_STEP`(=`DRILL_TROOPCAP_STEP`=**1500**，ADR-075 改为直接引用而非字面量)，满级(L10)=**20,000**，与 `drillYard` 满级总 `troopCap` 相等（满配才能单队打满仓）——同基数、同步长、同 10 级，该相等现在按构造成立，shared 单测有断言。 | `server/worldsvc/src/combatMarch.ts` `startMarch`：team 出征时校验实际携带兵力（flat army 用 `troops`；card army 用 `cardState.currentTroops` 求和）不超过该 cap，超限 `SATCHEL_CAP_EXCEEDED` | **已实现** |
 | `wall` | 城墙 | 城防 | **主城耐久（durability）上限来源**（D-CITY-8，2026-07-16 已实现，由"围攻时临时给守军加 HP"升级为持久化耐久值）：被围攻战斗获胜后 5 分钟宽限期，按攻方攻城值扣耐久；耐久随时间自愈；归零 = 城池摧毁 + 丢失全部领地 + 强制迁城 + 系统邮件 | 主城 `settleSiegeDamage` + `baseDurabilityMax`/`regenDurability`（`shared/src/slg/siege.ts`） | P2（耐久化改造 P3 已实现，客户端血条/特效待后续） |
 | `academy` | 书院 | 科技 | **SLG 赛季内**蓝图 buff（HP/伤害/速度），季末清；UI 独立成军事屏的科技树面板（D-CITY-12） | `buildSiegeBlueprints` 赛季叠加层 | P2 |
@@ -122,7 +122,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 | **`biomeAt`**（地图地块资源分区，`slg.ts:587`）✅ 已四分 | ~~三分仅 `ink/paper/metal`~~ → 已四分含 `graphite` | 已改四分加入 `graphite`（粮木石铁四地块），graphite 有地图产出。阈值见 §7。 |
 | **`recomputeYield`**（产率唯一出口，所有改产率路径已收口于此） | 聚合领地格 `tileYield` + 国民加成 | 末尾乘 `buildingYieldMult(buildings, rt)`（4 地块建筑 inkPot/paperTray/graphiteMill/metalForge）；加 `buildingSelfYield(buildings,'sticker')` 自产项（stickerShop=民居模型，sticker 非地块）。`Math.floor` 保整。 |
 | **`settleResources`**（惰性结算，cap=`RESOURCE_CAP`） | `min(settled, RESOURCE_CAP)` | cap 改 `resourceCap(buildings)` = `RESOURCE_CAP × (1+cabinet·step)`（文件柜提仓储上限）。 |
-| **`trainTroops` / `troopCap`** | `troopCap` 恒 `TROOP_CAP_BASE`；训练时长 `TROOP_TRAIN_TIME_SEC × battlePass` | `troopCap = troopCapFor(buildings)` = `TROOP_CAP_BASE + drillYard·step`；训练时长再乘 `drillTrainMult(drillYard)`；队列上限 `TROOP_TRAIN_QUEUE_MAX + drillYard 档`。 |
+| **`trainTroops` / `troopCap`** | `troopCap` 恒 `TROOP_CAP_BASE`；训练时长 `TROOP_TRAIN_TIME_SEC × battlePass` | `troopCap = troopCapFor(buildings)` = `TROOP_CAP_BASE + drillYard·step`；训练时长再乘 `drillTrainMult(drillYard)`；队列上限 `TROOP_TRAIN_QUEUE_MAX + drillYard 档`，**且槽位并行**（ADR-079：`n` 个占用槽同时训 `n` 批，满级填满兵力池 13.9 h → 6.9 h 墙上时间）。 |
 | **主城 `buildSiegeBattle`/`landSiege`**（仅 `type:'base'` 分支） | 按 tileLevel 派生基地 | 主城被围攻 → 基地等级/守军 HP 乘 `wallDefenseMult(wall)`（P2）。普通领地不受影响。 |
 | **`buildSiegeBlueprints`**（SLG 围攻蓝图，统一养成口） | 吃 `pveUpgrades`（装备/科技） | P2 叠加 `academyBuff(academy)` 作**赛季内**临时层（独立形参，季末清）。天梯口 `buildPvpBlueprints` 不动。 |
 | **掠夺 `applySiege` loot** | 按 `SIEGE_LOOT_RATE` 比例掠 | 主城被破时 `cabinet` 保护一部分（`lootRate × (1 − cabinetProtect)`）。 |
@@ -145,12 +145,12 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 ## 7. DRAFT 数值（已过 B 轨节奏核验 2026-06-30；登记 → ECONOMY_VERIFICATION_LOG §13-SLG-CITY）
 
-> **已过 B 轨建筑/练兵节奏核验**（2026-06-30，econ-sim `city.ts`）：faucet/sink 与重肝节奏成立（paper 7.7× cap 的资源门控肝、落 60 天窗口、满级乘子合理）——方法/判据见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §4，**完整结论 + 参数表登记在** [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md) **§13-SLG-CITY**。常量真源 = `server/shared/src/slg.ts`，下表是设计侧占位快照（数值仍 DRAFT，终态判据=上线后实测）。
+> **已过 B 轨建筑/练兵节奏核验**（2026-06-30，econ-sim `city.ts`）：faucet/sink 与重肝节奏成立（paper 7.7× cap 的资源门控肝、落 60 天窗口、满级乘子合理）——方法/判据见 [`SLG_ECONOMY_CHECK.md`](SLG_ECONOMY_CHECK.md) §4，**完整结论 + 参数表登记在** [`ECONOMY_VERIFICATION_LOG.md`](ECONOMY_VERIFICATION_LOG.md) **§13-SLG-CITY**。常量真源 = `server/shared/src/slg/city.ts`，下表是设计侧占位快照（数值仍 DRAFT，终态判据=上线后实测）。
 
 | 常量（占位名） | 占位值 | 说明 |
 |---|---|---|
 | `DESK_MAX_LEVEL` | 10 | 书桌（总门控）上限，对齐三战君王殿 10 级（2026-07-15 由 20 改 10，见 D-CITY-7；STEP 常量翻倍保满级加成一致） |
-| `BUILDING_MAX_LEVEL` | =desk 当前等级 | 各建筑 ≤ 书桌等级 |
+| `BUILDING_MAX_LEVEL` | 10（= `DESK_MAX_LEVEL`） | **每座建筑的硬上限**（2026-09-02 起是真常量，见 §8.12）。软门控另有一层：目标等级还须 ≤ 书桌**当前**等级（`buildGateReason`）——两层叠起来，书桌满级时所有建筑才能到 10 |
 | `biomeGraphiteMax` 等四分阈值 | DRAFT | `biomeAt` 三分→四分（加 graphite 地块）的分区阈值（★P1 前置） |
 | `BUILD_YIELD_STEP` | 0.05（+5%/级） | inkPot/paperTray/graphiteMill/metalForge 每级产率乘数（4 地块） |
 | `STICKER_SELF_BASE` | DRAFT | stickerShop（民居模型）自产 sticker 基底/h（× lvl）；graphite 走地块产，无自产基底 |
@@ -159,8 +159,8 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 | `DRILL_TROOPCAP_STEP` | **1,500**（ADR-075；原 1,000） | 练兵场每级 troopCap 增量。满级仍 20,000（`5000+10×1500`），但整条曲线由 **2× 变 4×**、首级由 +10% 变 +30%——练兵场是兵力池成长的唯一来源，旧曲线感知不到等于可跳过 |
 | `DRILL_TRAIN_SPEED_STEP` | 0.08（-8%/级，地板 0.5） | 练兵场每级训练提速。**后期收益走这里，不走更大的单批**（见 `TROOP_TRAIN_BATCH_MAX`） |
 | `TROOP_TRAIN_BATCH_MAX` | 5,000（2026-07-22 由 500 提升；**刻意不随 troopCap 成长**） | 单批训练人数上限。跟着 troopCap 涨会立刻把死槽变回来（满级 10,000/批 → 只需 2 槽），正是 ADR-075 要消灭的东西 |
-| `TROOP_TRAIN_QUEUE_MAX` | **1**（ADR-075；原 2） | 零级训练队列槽位。必须 ≥1——练兵场建成前 troopCap 已非零，0 槽会让新号无法练兵 |
-| `DRILL_QUEUE_LEVEL_THRESHOLDS` | **[4, 10]**（ADR-075；原 `DRILL_QUEUE_PER_LEVELS=2`） | 练兵场加槽等级 → 槽位 **1 / 2 / 3**（L0–3 / L4–9 / L10）。有用槽位的天花板是 `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)`（超出的批次会先被 troopCap 校验拒掉，永远占不到槽），旧的 `2+floor(L/2)` 在 batchMax 提到 5000 后满级有 **3 个死槽**。阈值刻意不超过天花板（仅 L0 持平）：每槽都有用，且「空仓填满」在任何等级**不超过 2 次上线**（L0=1 次，L1 起=2 次；测试钉住） |
+| `TROOP_TRAIN_QUEUE_MAX` | **1**（ADR-075；原 2） | 零级训练队列槽位（**并行**，ADR-079）。必须 ≥1——练兵场建成前 troopCap 已非零，0 槽会让新号无法练兵 |
+| `DRILL_QUEUE_LEVEL_THRESHOLDS` | **[4, 10]**（ADR-075；原 `DRILL_QUEUE_PER_LEVELS=2`） | 练兵场加槽等级 → 槽位 **1 / 2 / 3**（L0–3 / L4–9 / L10）。有用槽位的天花板是 `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)`（超出的批次会先被 troopCap 校验拒掉，永远占不到槽），旧的 `2+floor(L/2)` 在 batchMax 提到 5000 后满级有 **3 个死槽**。阈值刻意不超过天花板（仅 L0 持平）：每槽都有用，且「空仓填满」在任何等级**不超过 2 次上线**（L0=1 次，L1 起=2 次；测试钉住）。**ADR-079 起槽位并行**：这条「上线次数」的论证依旧成立，但不再是槽位买到的全部——`n` 个槽 = `n` 倍训练吞吐 |
 | `SATCHEL_CARRY_STEP` | **= `DRILL_TROOPCAP_STEP`**（ADR-075；原字面量 1,000） | 书包每级单队携带上限。改成直接引用而非恰好相等的字面量，D-CITY-9 的「满级书包 == 满级 troopCap」不变式从此按构造成立 |
 | `WALL_DEFENSE_STEP` | DRAFT | 城墙每级主城基地/守军加成（P2） |
 | `BUILD_COST_{key}(level)` | DRAFT | 升级消耗 5 资源曲线；高级吃 graphite+sticker（sink） |
@@ -215,7 +215,7 @@ buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: n
 
 - **训练队列**：逐条列出 `trainingQueue`（数量 + `formatDuration` 倒计时）。
 - **训练三档按钮**：`+100` / `+500` / `Max`（`Max` = `min(TROOP_TRAIN_BATCH_MAX, troopCap-troops-已排队, ink/TROOP_TRAIN_INK_COST)`）——用固定档位代替 §8 原设想的「数量滑杆」，与 2026-07-18 之前删除的旧 world-map 练兵面板手感一致，实现更省（复用同一套 `sketchPanel` 按钮 + `this.hits` 命中模式，不需要额外的拖动手势组件）。按钮在训练队列已满 / 兵力已达上限 / 墨水不足时置灰，点击给出对应 toast（`city.err.trainQueueFull`/`city.err.troopCap`/`city.err.noInk`）。**2026-07-22**：档位从 `+10`/`+50` 上调一个数量级，`TROOP_TRAIN_BATCH_MAX` 同步从 500 提到 5000（`server/shared/src/slg/core.ts`）——兵力上限普遍在万级，旧档位点满一次训练队列要点几十次。
-- **加速按钮**：队列非空时显示，复用 `city.speedup`/`speedupTraining`（与建造队列加速同一套系数 `TROOP_SPEEDUP_SECS_PER_COIN`）。
+- **加速按钮**：队列非空时显示，复用 `city.speedup`/`speedupTraining`（与建造队列加速同一套系数 `TROOP_SPEEDUP_SECS_PER_COIN`）。**2026-09-02（ADR-079）**：报价从「最后一条批次的剩余」改成 **`Σ` 每个槽的剩余**——槽位并行后前者既少收钱又加速不完；批次行同时改为按 `completeAt` 升序显示（数组是入队序，不再等于完成序）。
 - 新增 i18n：`city.trainEntry`/`city.trainMax`/`city.err.trainQueueFull`（zh/en/de 三语）；另有历史遗留 key `city.trainPanel`（定义了但从未被任何代码引用），当时留作弹窗标题的候选、未强行塞入布局——**2026-08-16 的 i18n 死 key 审计已删**（见 `UI_DESIGN.md` §33；真要加弹窗标题时重新加一个 key 比养着一个没人用的便宜）。
 - 覆盖测试：`client/test/ui/cityTrainTroops.ui.ts`（headless PIXI，驱动真实 `handleDown`/`handleUp` 命中测试，覆盖 +10 训练成功 / 队列已满不下单 / 加速按钮调用）。
 - **2026-08-25（ADR-075）补上状态行**：面板此前只有「兵力 {cur}/{cap}」+ 批次行，玩家看到置灰的「最大 +0」时既看不出槽位占用、也看不出兵力上限的余量早已被在训批次预定（`capLeft = cap - troops - 已排队`），更分不清是「槽位满」还是「兵力满」——两者 toast 不同、解法也不同（等 vs 升练兵场）。新增一行 `city.trainQueueStatus`（三语）：`队列 {n}/{max} · 在训 {training} · 可训 {left}`，槽位满或可训为 0 时整行转红。`可训` 直接对上「最大 +N」的数字，置灰原因自解释。UI 测试新增该行的断言（含「可训 = cap - troops - 已排队，不是 cap - troops」）。
@@ -337,6 +337,82 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 - **这层测不到的**：headless 适配器下 res_atlas 不解码，`resIcon`/`bldIcon` 走的是 emoji/线稿回退分支，所以断言看到的是 chip 的**结构**而不是最终画面——只落在 `if (tex)` 分支里的改动这一层看不见。这个切分是对的（决策归测试，观感归截图），但别把它当成「图标好不好看」有覆盖。
 
 ---
+
+### 8.12 满级建筑仍在推销 Lv.11：`atMax` 只认书桌（2026-09-02）
+
+用户报（带截图，圈了两处）：书桌最高 10 级，可石墨坊 Lv.10 的详情弹窗照旧写着「→ Lv.11 / 消耗 35k / 时长 1:28:00 / **需书桌 Lv.11**」——一个不可能存在的书桌等级。
+
+- **根因**：`modals.ts` 的判据是 `lvl >= DESK_MAX_LEVEL && key === 'desk'`，**只有书桌**会走「已满级」分支。其余十座建筑到 10 级后落进升级分支，`buildGateReason` 对 `toLevel = 11` 返回 `'desk level too low'`，弹窗于是照着这条理由渲染出「需书桌 Lv.11」。等级上限这件事被写在了一个只描述书桌的条件里，而**每座建筑的实际天花板都是 10**：非书桌建筑的目标等级须 ≤ 书桌当前等级，书桌自己又停在 `DESK_MAX_LEVEL`。
+- **改法**（两端各一处，共享层先说清）：
+  - `slg/city.ts` 新增 `BUILDING_MAX_LEVEL`（= `DESK_MAX_LEVEL`，**不是冗余别名**：它是由门控*推导*出来的那个天花板，存在的理由就是「这座建筑满了没有」曾经没有名字可问）；`buildGateReason` 补一条 `toLevel > BUILDING_MAX_LEVEL → 'building at max level'`，**排在书桌等级检查之前**——过了天花板以后书桌门控永远满足不了，再说「书桌等级不足」等于叫玩家去升一座已经满级的书桌。
+  - 客户端 `atMax` 改成 `lvl >= BUILDING_MAX_LEVEL`（去掉 `key === 'desk'`）。`actions.ts` 的报错映射把 `'max level'` 排到 `'desk'` 之前，理由同上（顺带修掉「书桌满级」原先也被映射成「书桌等级不足」）。
+- **顺路扫同类问题**（用户要求）：弹窗里每一行加成都对着共享层的函数核了一遍，只有一处同类——**练兵场「训练提速」**。`drillTrainMult` 有 `DRILL_TRAIN_SPEED_FLOOR = 0.5` 地板，而卡片印的是裸乘积 `lvl × DRILL_TRAIN_SPEED_STEP`，于是从 **L7**（`ceil(0.5 / 0.08)`）起对外承诺一个训练队列根本不会给的提速：满级写「80%」，实际 50%。改成 `Math.round((1 - drillTrainMult(bld)) * 100)`，L1–L6 一字不变。其余各行（产率、仓储、兵力上限、队列槽、城墙耐久、书院加成、书包负重）都是无夹逼的线性式或直接调共享函数，**没有第三处**；装备 `+9`、卡牌满级、战令 30 级三处早就各自有满级分支，不属同类。
+- **第三个问题是写测试时掉出来的**（补覆盖比补代码更值的一次）：`doUpgrade` 的报错阶梯共五条分支，此前**零覆盖**（`cityTrainTroops.ui.ts` 只覆盖了练兵那条链）。给它补测试的第一条断言就红了——「资源不足」那条判的是 `msg.includes('resources')`，而服务端抛的是 `Insufficient ${rt}`（"Insufficient paper"，**整句没有 resources 这个词**），于是真正的资源不足（客户端资源快照过期时才走到服务端）一律显示成「操作失败」。改成认**错误码** `INSUFFICIENT_RESOURCES`（码是契约，message 是散文），并保留 `includes('Insufficient')` 与 `doTrain` 同形作兜底。这条阶梯本身是**过期客户端**路径：`me.buildings` 是快照，另一个标签页/设备或刚完成的建造都能让服务端拒掉弹窗还在提供的升级。
+- 覆盖测试：`client/test/ui/cityModalCappedNumbers.ui.ts`（新文件 7 例）——石墨坊满级读「已满级」且不出现 `→ Lv.11`/升级按钮/`doUpgrade` 命中；**十一个 key 逐个过**（不可达的「需书桌 Lv.11」、越顶目标、升级按钮、命中数全查）；**满级前一级仍给升级**（别把最后一级吃掉）；小书桌下真门控照旧（`需书桌 Lv.4`）；训练提速满级读 50%、地板前一级仍等于裸乘积、地板级与满级都钉 50%。`server/shared/test/city-buildings.test.ts` +1 例：`BUILDING_KEYS` 逐个在 `BUILDING_MAX_LEVEL` 处放行、`+1` 处以「at max level」拒绝（**不是**「desk level too low」）。
+
+  三处扫的都是**整条曲线而不是采样点**：满级判定扫 L0–L10（任何等级都不许报出超顶目标，且「已满级」与「→ Lv.N」恰好二者之一）、训练提速扫 L0–L10（地板前等于裸乘积、地板起等于地板），将来改 step/floor 这两条仍成立。
+
+  另加 `client/test/ui/cityUpgradeErrorToasts.ui.ts`（新文件 4 例）：五条报错分支各读各的句子、五种资源短缺都读「资源不足」、两条 max-level 理由都读「已满级」而非「书桌等级不足」，以及**断言那些理由字符串就是 `buildGateReason` 真正返回的那几个**（哪天改文案会在这里挂，而不是静默掉进 generic）。用的是真的 `WorldApiError(code, message)`，与 `WorldApiClient/core.ts` 从 `{ok:false,error:{code,message}}` 信封里造出来的那个同一个类。
+
+  服务端 e2e `worldsvc/test/city-buildings.e2e.test.ts` +1 例（需 Mongo）：十一个 key 在满级城里逐个被拒且理由匹配 `/at max level/`、**不**匹配 `/desk level too low/`，并核对拒绝是干净的（资源一分没扣、队列没进条目）——改前那条路径是带着一份已算好的 11 级 cost 走到这里的。
+- **变异验证**：`atMax` 改回带 `key === 'desk'` → 前两例挂；训练提速改回裸乘积 → 训练提速两例挂；删掉 `buildGateReason` 里那条 `BUILDING_MAX_LEVEL` 分支重跑 e2e → `inkPot` 起全挂在「got 'desk level too low'」（`desk` 仍走它自己那条，正是预期）。
+- **踩到一次本地陷阱**：worldsvc 解析 `@nw/shared` 走 `dist`（`server/.gitignore` 忽略、不入库），所以新导出的 `BUILDING_MAX_LEVEL` 在 `cd server/shared && npm run build` 之前是 `undefined`——e2e 里 `$set` 出一堆 `null` 等级、测试以「升级居然成功了」的形状失败。**跑 worldsvc 测试前先 build shared**；共享层单测因为 import 的是 `../src` 所以看不见这个坑。
+- 验证：`tsc --noEmit`（`tsconfig.test.json` + fulllink）全绿、`test:ui` **254 文件 / 2430 例**全绿、worldsvc e2e 19/19（真 Mongo）、`build:web` 构建通过；**真机截图核对**走 §8.10 的 `web-e2e` 桩挂载路径（`__nwE2E.views.showCity()` + 假 `worldApi`，无需后端栈），中文复现用户那座满级城：石墨坊/文件柜/练兵场 Lv.10 均读「已满级」、练兵场读「训练提速 50%」、石墨坊 Lv.9 仍给「→ Lv.10 / 升级」、书桌 Lv.3 时仍给「需书桌 Lv.4」。
+- **顺手修掉一处已有的类型门禁失败**（不是本轮引入）：`client/test/wechatInputAdapter.test.ts`（commit `565cb17b8`）里 `globalThis as { wx?: FakeWx }` 是 TS2352 非重叠断言——`wx.d.ts` 声明了真的全局 `wx`。那个提交大概只跑了 vitest 没跑 `tsc`。改成经 `unknown` 的一次转换后本轮才有绿的类型门禁可用。
+
+### 8.13 点建造/加速整页闪一下：立即模式全量重建 + busy 遮罩门控错了（2026-09-02）
+
+用户报（带截图）：「为何在这个弹窗里，点建造或者加速，整个主城页面都被刷新了，晃的人眼花，而且我觉得这样对性能表现上也不好。」两件事都成立，而且是两个独立的根因叠在一起。
+
+**根因 A（晃眼）：遮罩门控在 `bt.busy` 上，而不是 `bt.loadingVisible`。** `CityScene.render()` 末尾按 `core.bt.busy` 铺一层全屏 25% 黑；`actions.ts` 的每个动作又在 `bt.start()` 后**同步**跑一次 `render()`。于是 30–80ms 的局域网往返 = 整页变暗又变亮，2–5 帧，每次点击都闪。`BusyTracker` 本来就有 `loadingVisible`（满 1 秒才亮，注释里明写 `if (bt.loadingVisible) drawLoadingOverlay(...)` 的用法），CityScene 却绕过它读了 `busy`。**遮罩从来不负责挡输入**——`handleDown` 的 `if (this.bt.busy) return` 才是，所以快请求根本不该看见任何遮罩。
+
+**根因 B（性能）：一次点击触发 3–4 次整页 teardown+rebuild。** `render()` 无条件 `tearDownChildren(core.container)` 再重建纸背景、装饰层、页眉、资源条、队列条、12 张建筑卡、5 张队伍卡、弹窗——单次约 55–65 个 `PIXI.Text`（各自一次 canvas 栅格化 + GPU 上传，对照 CardScene 卡背包那次实测的 105 个 ≈ 11ms）。而「加速」一次点击要跑：`bt.start()` 的前置 render → `refreshWallet()` 的 `onSaveChanged` render → `bt.stop()` 后的 render。另有两处纯浪费：`bt.tick` 每 0.4s 为**本场景根本不画的** dots 动画买一次整页重建；点开/关弹窗时页面内容一个字没变，也照样整页重建。
+
+**改法（四层，按依赖顺序）：**
+
+1. **遮罩门控换成 `bt.loadingVisible`，并删掉 `actions.ts` 里 5 处 `bt.start()` 后的前置 `render()`。** 快请求 → 中间零次重绘，只在数据真的变了之后画一次。
+2. **遮罩搬进自己的常驻层**（`paint.ts` 的 `busyLayer`），由 `update()` 直接 `syncBusy()` 切换 —— busy 状态从此不经过任何一次 render；`bt.tick()` 的返回值**故意不用**（它也为不画的 dots 动画返回 true）。
+3. **合帧渲染**：`core.requestRender()` 置脏标志，`update()` 每帧最多 flush 一次。同一 tick 里的多个请求折叠成一次绘制（加速那条路的 2 次请求 → 1 次绘制）。走这条路的是「一帧内可能触发多次」或「玩家早一帧看不出来」的入口：动作完成、`onSaveChanged`、队列轮询、拖动滚动、头像解码。**`data.ts` 那四片交错加载仍走同步 `render()`**——那是 2026-08-02 刻意做的「哪片先到哪片先画」，合帧会把它抹平。
+4. **按变更频率拆层**（`CityScene/paint.ts` 的 `CityPaint`，form ② 组合，同 `SectScene/repaint.ts` 先例）：
+   - `staticLayer` — 纸背景 + 装饰。**整个场景生命周期只画一次**（`w`/`h` 固定，无需失效）。
+   - `pageLayer` — 页眉/资源条/队列条/建筑网格/队伍行。只在页面数据变了时重建。
+   - `modalLayer` — 弹窗。`paintPage()` 从不碰它，反之亦然：**开关弹窗不再重建它背后的页面**。
+   - `busyLayer` — 在途遮罩（上面第 2 条）。
+   - 子节点顺序就是 z 序，`cityModalSpeedup.ui.ts` 依赖它（「弹窗画在暗掉的队列条之后/之上」，`textNodes(...).pop()`）。
+   - **命中表跟着分**：`paint.pageHits` 是页面自己那份，`core.hits` 由 `paintModal()`（唯一知道弹窗开没开的地方）决定 —— 有弹窗时 `[backHit, ...弹窗按钮]`，没弹窗时 `pageHits` + 末尾追加引导命中，与旧的单趟 render 逐位一致（`hits[0] === backHit` 是好几个测试的前提）。
+   - **引导环要能重放**：开弹窗会 `guide.hide()`，关弹窗时页面并没有重绘，所以没有别的东西会把环放回去。`paintPage()` 把那个决策存成 `paint.guideRestore` 闭包，`paintModal()` 在关闭分支里重放；step2 的目标矩形由 `renderBuildingGrid` 记到 `paint.guideStep2`（**只记矩形，不再自己调 `showAt`**），决策收拢在一处。
+
+**500 行门禁**：`core.ts` 因此涨到 611 行。按 split-priority order 拆了两刀：绘制机制整块进新的 `CityScene/paint.ts`（form ②，156 行），`checkQueueCompletion` 进 `data.ts` 变成 `refreshOnQueueDue(host)`（form ①，它本来就是一条数据刷新路径）。`core.ts` 回到 489 行。
+
+**覆盖测试**：`client/test/ui/cityRenderCoalescing.ui.ts`（新文件 9 例）——快请求全程零遮罩（**并且要驱动真帧**：遮罩由 `update()` 同步，不驱动帧的话把门控改回 `bt.busy` 也照样过）、满 1 秒才出遮罩且完成即撤、无遮罩期间输入照样被 `bt.busy` 挡住、一次升级只重绘一帧且第二帧不再画、空闲帧不画、开/关弹窗页面层是**同一批对象**（按引用比，不是长得一样）、关弹窗恢复页面命中表且 Back 仍在 `[0]`、纸背景整场只画一次、弹窗层在页面层之上。`textureLoadedGuardCallSites.test.ts` 的扫描器扩到 `paint[A-Z]\w*(): void {`——拆出来的 `paintPage`/`paintModal` 是各自独立的重绘入口，守卫契约必须跟过去，否则拆分本身就是契约上的一个洞。
+
+- **变异验证**（逐个改坏确认用例会挂）：恢复 `bt.start()` 后的前置 render → 合帧那例挂；遮罩门控改回 `bt.busy` → 快请求那例挂；关弹窗改回 `core.render()` → 分层两例挂。
+- **⚠️ 写这类断言的坑**：`expect(layer.children).toEqual(snapshot)` 在**失败**时会去遍历 PIXI DisplayObject 的 parent/children/transform 循环图构造 diff，直接把 V8 堆撑爆（本轮变异测试时实测 OOM，看起来像「测试挂了」而不是「断言失败了」）。改成按引用比的 `isSameTree()` 辅助函数。
+- 验证：`tsc --noEmit`（`tsconfig.json` + `tsconfig.test.json`）全绿、`eslint src` 无 error、`test:ui` 254 文件 / 2434 例 + 默认套件 241 文件 / 2780 例全绿、`check:filelength` 无新违规、`build:web` 构建通过；**真机核对**走 §8.10 的 `web-e2e` 桩挂载路径（`__nwE2E.views.showCity()` + 假 `worldApi`，无需后端栈），复现用户截图那座城（贴纸铺 Lv.5、队列 48:00、加速 48 金币），并在**四个层的 `addChild`/`removeChildren` 上挂钩子**逐次记录绘制（标签页被遮挡时 rAF 被挂起，用 `app.ticker.update()` 手动驱帧）：
+  - 开弹窗：**modal 层 1 次绘制（2 个对象）、page 层 0 次**，背后 55 个 Text 一个没动；
+  - 「关弹窗 → 开另一张卡 → 再关」三次交互：**合计 modal 层 1 次绘制、page 层 0 次**；
+  - 300ms 往返点「升级」，驱 79 帧：**page 层 1 次、modal 层 1 次、遮罩帧 0**；
+  - 1600ms 往返：遮罩 t≈1096ms 升起（只画 busy 层 2 个对象）、t≈1710ms 落下，随后**唯一一次** page 绘制；
+  - 引导链：开卡弹窗 → 环消失，关弹窗 → step3 的环出现在 Back 上（`guideRestore` 重放路径，且页面未重绘）。
+  - **测出来但不是回归的一处**：加速把 48 分钟的队列直接烧到 0，导致队列条目立刻「到期」，`refreshOnQueueDue` 每秒重新 `getMe` 一次、每次要一帧绘制 —— 桩服务器从不清队列才会这样，真服务端 2s 调度器清掉条目后就停。改前也是这个行为（那时是同步 `render()`），不是本轮引入的。
+### 8.14 训练队列槽位改为并行（2026-09-02，ADR-079）
+
+owner 对着自家主城的训练面板问：「队列 3/3、在训 7225，这三个槽位不是并行的吗？顺序的话，三个队列就没意义了啊。」截图里三行倒计时 `1:59:26 / 3:13:32 / 3:13:36` 首尾相接，一秒不差——确实是**串行**。
+
+- **根因是两侧从来没对齐过，不是漏做**：`worldsvc/src/city/training.ts` 的 `trainTroops` 把新批次挂在 `queue[last].completeAt` 上（链式），而 `econ-sim/src/citySiegeRosters.ts` 的 `trainPerHour` 从第一天起就是 `perSlot × trainQueueMaxFor(b)`（并行）。**ADR-074 的攻城门禁是拿并行那一侧标定的**，所以服务端才是错的那边；重跑 `npm run city-siege`，gate ③ 每个数与 ECONOMY_VERIFICATION_LOG_CAPACITY §13-SLG-CITYSIEGE 已登记的值逐字相同，五门全 PASS。
+- **改动**：`startAt = t`（入队即开跑）；`trainingQueueOps` 的 `nextTrainingCompleteAt` 镜像从 `queue[0]` 改成 `Math.min(...)`（数组是入队序，并行后不再等于完成序——排在 5,000 兵后面的 2 兵批次先完工，镜像取队头会让它在索引 due-scan 里彻底消失）；`speedupTraining` 逐槽按 `completeAt` 升序烧、删掉 re-link 级联、把已到期 entry 的剩余夹到 ≥0（原来会**倒退钱**）；客户端报价从 `max(剩余)` 改成 `Σ(剩余)`，批次行按完工时间排序。
+- **金币定价刻意不变**：一枚币仍只买一个槽的 60 秒，所以 gate ③ 记在案的「金币换兵、原则上无上限」残余风险一分没动。
+- **手感**：满级填满 20,000 兵从 13.9 h 变成 **6.9 h**（4 批 ÷ 3 槽 = 2 轮）。ADR-075 定 1/2/3 曲线时的「空仓填满不超过 2 次上线」论证仍然成立，只是不再是槽位买到的全部。
+- **存量不迁移**：线上已链式排好的 entry 保持自己的 `completeAt`，排完即自愈。
+
+**补覆盖（同日追加，4 个缺口都是先用变异确认过「删了它全套照绿」才写的）**：
+
+1. **⚠️ 最要命的一个：队列轮询「刷了状态但没刷屏」无人看守。** `cityScene.ui.ts` 的 P0-9 那组只断言了 `getMe` 被重新调用 + `core.me.buildQueue` 变空——**没有一条断言看屏幕**。这在轮询同步 `render()` 的年代无害（状态和绘制焊在同一次调用里，不可能只有其一），但本轮把两者拆开了：轮询改成 `requestRender()`、下一帧才画。实测**把 `refreshOnQueueDue` 里那句 `requestRender()` 删掉——也就是原样重现 P0-9 那个 bug——2439 例全绿**。现在那条用例补了首尾两断言（开局不该有「无建造中」、轮询+一帧后必须有），并写清了为什么以前不需要、现在需要。
+2. **前置绘制的契约只有 `doUpgrade` 一个动作在保。** 另外四个（`doSpeedup`/`doTrain`/`doSpeedupTraining`/`doFillAllTeams`）随便哪个把 `requestRender()` 加回 `bt.start()` 后面都全绿。改成五个动作的表驱动用例，每例让对应端点挂住、驱 8 帧，断言页面层没重绘 + 遮罩层为空（`bt.busy` 也一并断言，确保请求真的开出去了、不是被早退守卫吃掉）。
+3. **引导环的重放路径只在「整页重绘」下被覆盖过。** `cityGuideChain.ui.ts` 开关弹窗走的是 `inner.render()`，而真实点击走 `paintModal()` 单独一条路。把 `guideRestore()` 的调用从 `paintModal` 挪进 `paintPage`（环只在页面重绘时回来 = 真实点击下环再也不回来）——2439 例全绿。补两例：**关弹窗后环回来了、且页面层是同一批对象**（后半句才是关键，它证明环不是靠一次页面重绘捎带回来的）；以及**重放时要重新判断该点哪一步**（开卡会置上 step2 的 flag，回来的必须是 Back 上的 step3 环）——闭包里把 flag 改成构造时快照即挂。
+4. **弹窗层反复重建会不会漏纹理没人管。** `beginModal()` 换成 `removeChildren()`（Text 的 baseTexture 就此成孤儿，正是 §mem-leak 那一类）——2439 例全绿。补一例：开关三轮，每轮断言弹窗自己的 baseTexture 全被释放、而**页面层的一个都没被释放**。断言落在 `baseTexture.destroyed` 这个结果上（同 `campaignMapTextTeardown.ui.ts` 手法），不绑定具体用了哪个 teardown 函数。
+
+覆盖后：`test:ui` 255 文件 / 2447 例、默认套件 241 文件 / 2787 例全绿，无源码改动。
 
 ## 9. 契约 / 端点（→ SERVER_API + openapi-world）
 

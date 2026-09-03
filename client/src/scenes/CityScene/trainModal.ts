@@ -57,12 +57,12 @@ export function renderTrainModal(core: CitySceneCore): void {
 
   const dim = new PIXI.Graphics();
   dim.beginFill(0x000000, 0.45).drawRect(0, 0, w, h).endFill();
-  core.container.addChild(dim);
+  core.paint.modalLayer.addChild(dim);
 
   const panelRoot = new PIXI.Container();
   panelRoot.position.set(screenX, screenY);
   panelRoot.scale.set(scale);
-  core.container.addChild(panelRoot);
+  core.paint.modalLayer.addChild(panelRoot);
   const st = scaledTxt(scale);
 
   const panel = sketchPanel(mw, mh, {
@@ -132,7 +132,11 @@ export function renderTrainModal(core: CitySceneCore): void {
   queueLbl.y = iy;
   panelRoot.addChild(queueLbl);
   iy += 20;
-  for (const e of trainQueue) {
+  // ADR-079: the slots run in parallel, so the array's enqueue order is no longer completion order — a
+  // small batch queued last can be the first to land. Sort a copy for display so the countdowns read
+  // top-to-bottom (`trainQueue` itself is the server's array and must not be reordered in place).
+  const byCompletion = [...trainQueue].sort((a2, b2) => a2.completeAt - b2.completeAt);
+  for (const e of byCompletion) {
     const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
     const ql = st(
       t('city.trainEntry').replace('{n}', String(e.qty)).replace('{time}', formatDuration(sec)),
@@ -201,8 +205,12 @@ export function renderTrainModal(core: CitySceneCore): void {
   iy += 36;
 
   if (trainQueue.length > 0) {
-    const lastDone = trainQueue[trainQueue.length - 1]!.completeAt;
-    const remainSec = Math.max(0, Math.ceil((lastDone - now) / 1000));
+    // Price = the SUM of every slot's remaining time, not the latest completeAt. speedupTraining burns
+    // the purchased seconds off one slot at a time (earliest-finishing first, spilling into the next), so
+    // the sum is exactly what it takes to drain the whole queue — the invariant "the advertised price
+    // finishes everything" is the same one the chained queue had, it just stopped being `max` when
+    // ADR-079 unchained the slots. Quoting `max` here would have under-charged and left slots running.
+    const remainSec = byCompletion.reduce((s2, e) => s2 + Math.max(0, Math.ceil((e.completeAt - now) / 1000)), 0);
     const coins = Math.max(1, Math.ceil(remainSec / TROOP_SPEEDUP_SECS_PER_COIN));
     const rectLocal = { x: 10, y: iy, w: mw - 20, h: 30 };
     const g = sketchPanel(rectLocal.w, rectLocal.h, {
@@ -228,7 +236,8 @@ export function renderTrainModal(core: CitySceneCore): void {
     rect: { x: 0, y: 0, w, h },
     fn: () => {
       core.selectedTrain = false;
-      core.render();
+      // paintModal, not render — see the same hit in modals.ts renderDetailModal.
+      core.paintModal();
     },
   });
 }

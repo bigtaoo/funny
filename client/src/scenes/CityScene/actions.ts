@@ -25,27 +25,50 @@ export interface ActionsHost {
   me: PlayerWorldView | null;
   /** Assign `me` and stamp the sim baseline — see CitySceneCore.setMe's doc comment. */
   setMe(me: PlayerWorldView): void;
-  render(): void;
+  /**
+   * Coalesced repaint (CitySceneCore.requestRender) — deliberately NOT an inline render(). Each
+   * action below asks for exactly one paint, at the end, once the server's answer is in `me`; the
+   * ones that also `await refreshWallet()` get a second request out of that callback's
+   * onSaveChanged listener, and the two fold into a single paint on the next frame.
+   *
+   * There is no pre-flight paint either. There used to be one right after `bt.start()`, purely to
+   * put up the in-flight dim — which CityScene now keeps in its own permanent layer, gated on
+   * BusyTracker's 1-second `loadingVisible` threshold rather than on `busy`. A fast round trip
+   * therefore repaints once, when something actually changed, instead of flashing a full-screen
+   * wash on and off around it (user report 2026-09-02). Input stays blocked throughout either way:
+   * CitySceneCore.handleDown drops every tap while `bt.busy`.
+   */
+  requestRender(): void;
   showToast(msg: string, color?: number): void;
 }
 
 export async function doUpgrade(host: ActionsHost, key: BuildingKey): Promise<void> {
   if (host.bt.busy) return;
   host.bt.start();
-  host.render();
   try {
     host.setMe(await host.cb.worldApi.upgradeBuilding(host.cb.worldId, key));
     host.showToast(t('city.upgrading'), C.green as number);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '';
-    if (msg.includes('resources')) host.showToast(t('city.err.noResources'), C.red as number);
+    // Insufficiency is matched on the ERROR CODE, which is the contract; the message it carries is
+    // prose. The message test used to be `includes('resources')` and matched nothing the server
+    // sends — `upgradeBuilding` throws INSUFFICIENT_RESOURCES with `Insufficient ${rt}` ("Insufficient
+    // paper"), so a genuinely short upgrade (a stale resource snapshot; the modal pre-checks the
+    // rest) read "Action failed". `includes('Insufficient')` is kept as doTrain's own fallback shape.
+    const code = e instanceof Error ? ((e as { code?: string }).code ?? '') : '';
+    if (code === 'INSUFFICIENT_RESOURCES' || msg.includes('Insufficient'))
+      host.showToast(t('city.err.noResources'), C.red as number);
     else if (msg.includes('queue')) host.showToast(t('city.err.queueFull'), C.red as number);
+    // 'at max level' before 'desk': the server's reasons are 'desk at max level' /
+    // 'building at max level' / 'desk level too low', and the first of those contains "desk" too —
+    // telling a player whose desk is already maxed that their "desk level is too low" is nonsense.
+    else if (msg.includes('max level')) host.showToast(t('city.maxLevel'), C.red as number);
     else if (msg.includes('desk')) host.showToast(t('city.err.deskGate'), C.red as number);
     else host.showToast(t('city.err.generic'), C.red as number);
   } finally {
     host.bt.stop();
   }
-  host.render();
+  host.requestRender();
 }
 
 export async function doSpeedup(host: ActionsHost, key: BuildingKey): Promise<void> {
@@ -59,7 +82,6 @@ export async function doSpeedup(host: ActionsHost, key: BuildingKey): Promise<vo
   const secsLeft = Math.max(0, Math.ceil((entry.completeAt - serverNow()) / 1000));
   const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
   host.bt.start();
-  host.render();
   try {
     host.setMe(await host.cb.worldApi.speedupBuild(host.cb.worldId, key, coins));
     // The coins were charged server-side and the response above carries only the world state —
@@ -71,13 +93,12 @@ export async function doSpeedup(host: ActionsHost, key: BuildingKey): Promise<vo
   } finally {
     host.bt.stop();
   }
-  host.render();
+  host.requestRender();
 }
 
 export async function doTrain(host: ActionsHost, qty: number): Promise<void> {
   if (host.bt.busy || qty <= 0) return;
   host.bt.start();
-  host.render();
   try {
     host.setMe(await host.cb.worldApi.trainTroops(host.cb.worldId, qty));
   } catch (e: unknown) {
@@ -90,13 +111,12 @@ export async function doTrain(host: ActionsHost, qty: number): Promise<void> {
   } finally {
     host.bt.stop();
   }
-  host.render();
+  host.requestRender();
 }
 
 export async function doSpeedupTraining(host: ActionsHost, coins: number): Promise<void> {
   if (host.bt.busy) return;
   host.bt.start();
-  host.render();
   try {
     host.setMe(await host.cb.worldApi.speedupTraining(host.cb.worldId, coins));
     // Same as doSpeedup above — resync the wallet after the server-side charge.
@@ -107,7 +127,7 @@ export async function doSpeedupTraining(host: ActionsHost, coins: number): Promi
   } finally {
     host.bt.stop();
   }
-  host.render();
+  host.requestRender();
 }
 
 /**
@@ -153,7 +173,6 @@ export async function doFillAllTeams(host: ActionsHost): Promise<void> {
   }
 
   host.bt.start();
-  host.render();
   try {
     await host.cb.worldApi.distributeTroops(host.cb.worldId, allocations);
     let total = 0;
@@ -176,5 +195,5 @@ export async function doFillAllTeams(host: ActionsHost): Promise<void> {
   } finally {
     host.bt.stop();
   }
-  host.render();
+  host.requestRender();
 }

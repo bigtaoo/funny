@@ -24,7 +24,7 @@
 // nothing) reads exactly like a successful retirement.
 import { describe, expect, it, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -249,7 +249,9 @@ describe('checkCoverageThreshold.mjs', () => {
     const r = run(THRESHOLD_SCRIPT, coverageTree({ pct: { 'server/admin': 80.1 } }));
     expect(r.code).toBe(1);
     expect(r.out).toContain('below the 90% line-coverage bar');
-    expect(r.out).toContain('server/admin (80.1%)');
+    // The message gained the headroom in lines (`80.1%, -198 lines`) when that column landed,
+    // so this stops at the percentage rather than pinning the whole parenthesis.
+    expect(r.out).toContain('server/admin (80.1%');
   });
 
   // Fails closed on a missing output: we cannot confirm >=90% without the data, and a silent pass
@@ -275,7 +277,10 @@ describe('checkCoverageThreshold.mjs', () => {
   it('skips missing output instead of double-reporting when a test job already failed', () => {
     const r = run(THRESHOLD_SCRIPT, coverageTree({ omit: ['server/admin', 'server/gateway'] }), { TESTS_OK: 'false' });
     expect(r.code).toBe(0);
-    expect(r.out).toContain('NOT ENFORCED');
+    // Wording, not shouting: the uppercase **NOT ENFORCED** paragraph is the run-summary
+    // section's (coverageSummary.mjs renders it), and this script's own log line is the
+    // lowercase one. What must not change is that it exits 0 and says how many it skipped.
+    expect(r.out).toContain('not enforced');
     expect(r.out).toContain('2 skipped');
   });
 
@@ -286,7 +291,7 @@ describe('checkCoverageThreshold.mjs', () => {
     expect(run(THRESHOLD_SCRIPT, tree, { COVERAGE_THRESHOLD: String(RAISED_THRESHOLD) }).code).toBe(1);
     const r = run(THRESHOLD_SCRIPT, tree, { COVERAGE_THRESHOLD: '60' });
     expect(r.code).toBe(0);
-    expect(r.out).toContain('>= 60% lines per package');
+    expect(r.out).toContain('>= 60%');
   });
 });
 
@@ -296,8 +301,11 @@ describe('coverageSummary.mjs', () => {
   it('prints a scope column of measured-over-source files', () => {
     const r = run(SUMMARY_SCRIPT, coverageTree({ srcFiles: 7, scopeFiles: 2 }));
     expect(r.code).toBe(0);
-    expect(r.out).toContain('| Scope (files) |');
-    expect(r.out).toContain('2 / 7');
+    expect(r.out).toContain('| Scope (measured/src) |');
+    // The ratio now comes with the division already done — nobody divides 108 by 502 while
+    // skimming a 19-row table, which is how the narrowest scope in the repo stayed the least
+    // visible thing on the page.
+    expect(r.out).toContain('2 / 7 (29%)');
   });
 
   // Overall has meant "the coverage the release gate enforces" since 2026-08-15, and every package
@@ -318,6 +326,181 @@ describe('coverageSummary.mjs', () => {
   it('still exits 0 when coverage output is missing entirely', () => {
     const r = run(SUMMARY_SCRIPT, coverageTree({ omit: [...GATED] }));
     expect(r.code).toBe(0);
-    expect(r.out).toContain('No coverage/ output found for');
+    // It reports the breakage in full — it just isn't the thing that sets the exit code.
+    expect(r.out).toContain('produced no coverage output at all');
+  });
+});
+
+// ── the one-section run summary (2026-09-02) ─────────────────────────────────────────────────────
+//
+// What these pin is a division of labour, not a layout: for a year the run-summary page carried
+// TWO headings and TWO full tables — coverageSummary's report and checkCoverageThreshold's gate
+// table — whose `Lines` columns were byte-identical and whose `Status` column was N identical ✅
+// on every green run, with the actual verdict as the last line under the second one. The section
+// is now rendered once, by the report script, and the gate contributes only its exit code.
+//
+// The reason that needs a test rather than just a comment: nothing about either script's PURPOSE
+// stops the gate from appending "just a small failure table" to the summary again, and the second
+// time it happens it will look reasonable. The verdict itself cannot drift between the two —
+// they get it from one `evaluate` call in coverageLib — but the page can.
+
+describe('run-summary section', () => {
+  function renderSummary(root: string, env: Record<string, string> = {}): { code: number; out: string; page: string } {
+    const page = join(root, 'step-summary.md');
+    const r = run(SUMMARY_SCRIPT, root, { GITHUB_STEP_SUMMARY: page, ...env });
+    return { ...r, page: existsSync(page) ? readFileSync(page, 'utf8') : '' };
+  }
+
+  it('is one heading, written by the report script, with the gate adding nothing to the page', () => {
+    const root = coverageTree();
+    const page = join(root, 'step-summary.md');
+
+    const report = renderSummary(root);
+    expect(report.code).toBe(0);
+    expect(report.page.match(/^## /gm)).toHaveLength(1);
+
+    // The gate runs next in CI and inherits the SAME $GITHUB_STEP_SUMMARY file. It must leave it
+    // exactly as it found it — its log is where its output goes now.
+    const before = readFileSync(page, 'utf8');
+    const gate = run(THRESHOLD_SCRIPT, root, { GITHUB_STEP_SUMMARY: page });
+    expect(gate.code).toBe(0);
+    expect(readFileSync(page, 'utf8')).toBe(before);
+    expect(gate.out).toContain('OK — all');
+  });
+
+  it('carries the verdict in the heading instead of under two tables', () => {
+    expect(renderSummary(coverageTree()).page).toContain(`## Coverage — ✅ ${GATED.length}/${GATED.length} packages ≥ 90% lines`);
+
+    const failed = renderSummary(coverageTree({ pct: { 'server/admin': 80.1 } }));
+    expect(failed.code).toBe(0); // still never the thing that reddens a run
+    expect(failed.page).toContain('## Coverage — ❌ 1 below 90% lines');
+
+    const skipped = renderSummary(coverageTree({ omit: ['server/admin'] }), { TESTS_OK: 'false' });
+    expect(skipped.page).toContain('## Coverage — ⏭️ not enforced (a test job failed)');
+  });
+
+  // `measured` used to be "every row we didn't skip", which is a different set the moment a
+  // package is missing its coverage/ while the tests passed: the heading claimed "19/19 measured"
+  // directly above a paragraph saying one shard had emitted nothing at all. The loudest number on
+  // the page contradicting the failure under it is worse than not printing it.
+  it('counts only the packages that produced a number as measured', () => {
+    const missing = renderSummary(coverageTree({ omit: ['server/admin'] }));
+    expect(missing.page).toContain(`${GATED.length - 1}/${GATED.length} measured`);
+
+    const excused = renderSummary(coverageTree({ omit: ['server/admin', 'server/gateway'] }), { TESTS_OK: 'false' });
+    expect(excused.page).toContain(`${GATED.length - 2}/${GATED.length} measured`);
+  });
+
+  // The column that was missing is the one that made the table worth opening. Without it the rows
+  // were 19 absolute percentages in config order, so `90.7%` over 8670 lines (65 lines of slack)
+  // and `92.1%` over 924 (19 lines) read identically — and both read as "93%, fine" beside a
+  // `100.0%` with hundreds to spare.
+  it('prints gate headroom in lines and sorts the most-fragile package first', () => {
+    // The two overrides are chosen so headroom order is the REVERSE of alphabetical order —
+    // otherwise this case passes just as happily against a plain sort by package name, which is
+    // what it looked like the first time it was written.
+    const { page } = renderSummary(coverageTree({ pct: { 'server/worldsvc': 91, 'server/admin': 99 } }));
+    // 910 of 1000 covered against a 90% bar: 900 must stay covered, so 10 lines may go.
+    expect(page).toContain('| server/worldsvc | 91.0% | — | +10 |');
+    expect(page).toContain('| server/admin | 99.0% | — | +90 |');
+    expect(page.indexOf('| server/worldsvc |')).toBeLessThan(page.indexOf('| server/gateway |'));
+    expect(page.indexOf('| server/gateway |')).toBeLessThan(page.indexOf('| server/admin |'));
+  });
+
+  // `Statements` was identical to `Lines` in every row by construction — the v8 provider makes
+  // them the same for the vitest packages, and readLcov aliases one to the other for engine — so
+  // it was a column that could not ever disagree with the column beside it.
+  it('has no Statements column', () => {
+    expect(renderSummary(coverageTree()).page).not.toContain('Statements');
+  });
+
+  it('flags a narrow coverage scope rather than leaving the division to the reader', () => {
+    expect(renderSummary(coverageTree({ srcFiles: 10, scopeFiles: 2 })).page).toContain('2 / 10 (20%) ⚠️');
+    // Checked per-row rather than "no ⚠️ anywhere on the page": the lcov fixture writes a single
+    // SF: block, so server/engine is legitimately 1-of-10 in every tree here and flagged for it.
+    const wide = renderSummary(coverageTree({ srcFiles: 10, scopeFiles: 9 })).page;
+    expect(wide).toMatch(/\| server\/admin \|.*\| 9 \/ 10 \(90%\) \|/);
+    expect(wide).not.toMatch(/\| server\/admin \|.*⚠️/);
+  });
+});
+
+// ── Δ against the previous green main (2026-09-02) ───────────────────────────────────────────────
+//
+// The question a reader of a GREEN run actually arrives with is "did it move", and for a year the
+// table could not answer it. ci.yml carries the baseline between runs via actions/cache (saved
+// only on a green push to main, restored everywhere), which is CI plumbing these cases can't
+// reach — what they pin is the contract that plumbing depends on: the file round-trips, an absent
+// or corrupt one is the boring path rather than a failure, and a package that dropped while still
+// clearing the bar is named ABOVE the fold. That last one is the whole point: 90.1% arrived one
+// unnoticed tenth at a time.
+
+describe('coverage baseline (Δ column)', () => {
+  it('round-trips a baseline it wrote itself, and reports no movement', () => {
+    const root = coverageTree();
+    const baseline = join(root, 'baseline.json');
+    expect(run(SUMMARY_SCRIPT, root, { COVERAGE_BASELINE_OUT: baseline }).code).toBe(0);
+    expect(existsSync(baseline)).toBe(true);
+
+    const again = run(SUMMARY_SCRIPT, root, { COVERAGE_BASELINE_IN: baseline });
+    expect(again.out).toContain('±0');
+    expect(again.out).not.toContain('Line coverage dropped');
+    expect(again.out).not.toContain('No baseline from a previous run');
+  });
+
+  it('names a package that dropped while still clearing the bar, above the fold', () => {
+    const root = coverageTree();
+    const baseline = join(root, 'baseline.json');
+    run(SUMMARY_SCRIPT, root, { COVERAGE_BASELINE_OUT: baseline });
+
+    // One point lower on one package — comfortably still over 90%, i.e. invisible to the gate.
+    const dropped = coverageTree({ pct: { 'server/admin': GATED_FIXTURE_PCT - 1 } });
+    const r = run(SUMMARY_SCRIPT, dropped, { COVERAGE_BASELINE_IN: baseline });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('## Coverage — ✅');
+    expect(r.out).toContain('Line coverage dropped in 1 package(s)');
+    expect(r.out).toContain('server/admin -1.0');
+    // Above the fold, not inside the collapsed table — that is the only reason to compute it.
+    expect(r.out.indexOf('Line coverage dropped')).toBeLessThan(r.out.indexOf('<details>'));
+  });
+
+  it('marks a package the baseline never saw as new, not as a move', () => {
+    const root = coverageTree();
+    const baseline = join(root, 'baseline.json');
+    run(SUMMARY_SCRIPT, root, { COVERAGE_BASELINE_OUT: baseline });
+    const parsed = JSON.parse(readFileSync(baseline, 'utf8')) as { rows: Record<string, unknown> };
+    delete parsed.rows['server/admin'];
+    writeFileSync(baseline, JSON.stringify(parsed), 'utf8');
+
+    const r = run(SUMMARY_SCRIPT, root, { COVERAGE_BASELINE_IN: baseline });
+    expect(r.out).toMatch(/\| server\/admin \|[^|]+\| new \|/);
+    expect(r.out).not.toContain('Line coverage dropped');
+  });
+
+  // Absent on the first run after this landed, after a cache eviction, and on every local
+  // invocation — so it has to be the quiet path, and it has to SAY the column is blank rather than
+  // print a page of ±0 that reads as "nothing changed".
+  it('degrades to a blank Δ column when the baseline is missing or corrupt', () => {
+    const root = coverageTree();
+    const missing = run(SUMMARY_SCRIPT, root, { COVERAGE_BASELINE_IN: join(root, 'nope.json') });
+    expect(missing.code).toBe(0);
+    expect(missing.out).toContain('No baseline from a previous run was available');
+
+    const corrupt = join(root, 'corrupt.json');
+    writeFileSync(corrupt, 'not json at all', 'utf8');
+    const r = run(SUMMARY_SCRIPT, root, { COVERAGE_BASELINE_IN: corrupt });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('No baseline from a previous run was available');
+  });
+});
+
+describe('gateHeadroom', () => {
+  it('counts the covered lines a package could lose before breaching the bar', () => {
+    // 950 of 1000 against a 90% bar: 900 must stay covered, so 50 may go.
+    expect(libEval<number>('lib.gateHeadroom({ lines: { covered: 950, total: 1000 } }, 90)')).toBe(50);
+    // Already under: negative, and by the number of lines that would have to be covered to fix it.
+    expect(libEval<number>('lib.gateHeadroom({ lines: { covered: 880, total: 1000 } }, 90)')).toBe(-20);
+    // The bar is a knob, so the headroom moves with it — not hard-coded to 90 anywhere.
+    expect(libEval<number>('lib.gateHeadroom({ lines: { covered: 950, total: 1000 } }, 95)')).toBe(0);
+    expect(libEval<number | null>('lib.gateHeadroom({ missing: true }, 90) ?? null')).toBe(null);
   });
 });

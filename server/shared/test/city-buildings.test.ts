@@ -16,6 +16,8 @@ import {
   TROOP_TRAIN_STICKER_COST,
   troopTrainCost,
   DESK_MAX_LEVEL,
+  BUILDING_MAX_LEVEL,
+  BUILDING_KEYS,
   BUILD_YIELD_STEP,
   STICKER_SELF_BASE,
   CABINET_CAP_STEP,
@@ -183,6 +185,18 @@ describe('desk gate (D-CITY-6) + cost / time curves', () => {
     expect(buildGateReason({ desk: 1 }, 'wall', 1)).toBeNull();   // P2: wall now buildable (desk gate applies normally)
     expect(buildGateReason({ desk: 1 }, 'wall', 2)).toBe('desk level too low');  // desk still gates level
     expect(buildGateReason(undefined, 'badkey' as BuildingKey, 1)).toBe('unknown building');
+  });
+  /** A non-desk building stops at BUILDING_MAX_LEVEL too — and says so, rather than blaming a desk
+   *  that is already maxed (the "needs Desk Lv.11" bug report, 2026-09-02). */
+  it('every building tops out at BUILDING_MAX_LEVEL, reported as max level not a desk shortfall', () => {
+    expect(BUILDING_MAX_LEVEL).toBe(DESK_MAX_LEVEL);
+    const maxedDesk = { desk: DESK_MAX_LEVEL };
+    for (const key of BUILDING_KEYS) {
+      expect(buildGateReason(maxedDesk, key, BUILDING_MAX_LEVEL)).toBeNull();
+      expect(buildGateReason(maxedDesk, key, BUILDING_MAX_LEVEL + 1)).toMatch(/at max level$/);
+    }
+    // Not "desk level too low": with a maxed desk there is no desk level left to reach for.
+    expect(buildGateReason(maxedDesk, 'graphiteMill', BUILDING_MAX_LEVEL + 1)).toBe('building at max level');
   });
   it('cost scales with target level; high-tier buildings sink graphite/sticker', () => {
     const c1 = buildCost('cabinet', 1);

@@ -1,80 +1,57 @@
 #!/usr/bin/env node
-// CI's final reporting step: reads the coverage output every client/server workspace's own
-// `test:coverage` script just produced and prints one consolidated table — run from the repo
+// CI's coverage REPORT step: reads the coverage output every client/server/tools workspace's own
+// `test:coverage` script just produced and renders the run-summary section — run from the repo
 // root, after all test steps. Pure reporting: never fails the job (always exits 0), so a missing
-// or partial coverage file (a workspace whose tests didn't run this time) just shows as "—"
-// instead of red-Xing an otherwise-green CI run over a report step. The threshold gate lives
-// separately in checkCoverageThreshold.mjs (see coverageLib.mjs for the shared package lists/parsers
-// both scripts use — this file used to inline them, kept in sync by hand, until that script needed
-// the same data).
+// or partial coverage file (a workspace whose tests didn't run this time) just shows as a "—" row
+// instead of red-Xing an otherwise-green CI run over a report step. The exit code lives separately
+// in checkCoverageThreshold.mjs; the verdict comes from coverageLib.mjs's `evaluate` (which the
+// gate reads too, so the two cannot disagree) and the markdown from coverageReport.mjs.
 //
-// Two report formats coexist because two coverage backends are in play (see claudedocs/
-// client-testing.md and claudedocs/server.md "测试覆盖率"):
-//   - vitest workspaces (client + all server/* except engine) emit coverage/coverage-summary.json
-//     (the `json-summary` reporter) — a ready-made istanbul-style `{ total: { lines, statements,
-//     branches, functions } }` object, no parsing needed.
+// Two coverage backends are in play behind that (see claudedocs/client-testing.md and
+// claudedocs/server-testing-tooling.md "测试覆盖率"):
+//   - vitest workspaces (client + tools/* + all server/* except engine) emit
+//     coverage/coverage-summary.json (the `json-summary` reporter) — a ready-made istanbul-style
+//     `{ total: { lines, statements, branches, functions } }` object, no parsing needed.
 //   - server/engine runs its compiled dist/ output through Node's own `node --test
 //     --experimental-test-coverage`, which only writes lcov (coverage/lcov.info) — summed by hand
-//     below from its LF/LH/BRF/BRH/FNF/FNH lines.
+//     in coverageLib's readLcov from its LF/LH/BRF/BRH/FNF/FNH lines.
 //
-// 2026-08-20 (ADR-070): the five tools/* packages joined the table in their own "reported, not
-// gated" section, and every row gained a "Scope (files)" column — see coverageLib.mjs's
-// countSrcFiles for why a percentage is not meaningful here without the size of the scope it was
-// measured over.
+// 2026-09-02 — THIS script is now the only one that writes to $GITHUB_STEP_SUMMARY. It used to
+// write a `## Test coverage` table and then checkCoverageThreshold.mjs appended a second
+// `## Coverage threshold check` heading with a second 19-row table whose `Lines` column was
+// byte-identical to this one's and whose `Status` column was 19 identical ✅ on any green run: ~40
+// rows of page to convey one bit, with the actual verdict at the bottom of the second one. The
+// section is now one verdict-carrying heading, failures/regressions above the fold, and the table
+// inside a `<details>`. See renderSection in coverageReport.mjs for the rest of what changed
+// (Statements column dropped, Headroom and Δ added, rows sorted most-fragile first).
+//
+// Usage: node scripts/coverageSummary.mjs   (cwd = repo root)
+//   COVERAGE_THRESHOLD=85         override the bar the section reports against (default 90)
+//   TESTS_OK=false                a test job in this run already failed (see coverageLib)
+//   COVERAGE_BASELINE_IN=<path>   previous run's baseline JSON, for the Δ column
+//   COVERAGE_BASELINE_OUT=<path>  write this run's numbers out as the next baseline
+// IN and OUT may be the same file (ci.yml passes one path for both): the baseline is read on the
+// line below, and only written at the bottom, after the section has already been rendered.
 import { appendFileSync } from 'node:fs';
-import { collectRows } from './coverageLib.mjs';
+import { evaluate, readBaseline, readGateEnv, writeBaseline } from './coverageLib.mjs';
+import { renderSection } from './coverageReport.mjs';
 
 const ROOT = process.cwd();
-const rows = collectRows(ROOT);
+const ev = evaluate(ROOT, readGateEnv());
+const report = renderSection(ev, readBaseline(process.env.COVERAGE_BASELINE_IN));
 
-function fmtPct(metric) {
-  return metric ? `${metric.pct.toFixed(1)}%` : '—';
-}
-
-/** "measured N of M source files" — see countSrcFiles in coverageLib.mjs for why this is printed. */
-function fmtScope(row) {
-  if (row.missing || row.srcFiles === 0) return '—';
-  return `${row.scopeFiles} / ${row.srcFiles}`;
-}
-
-// Every row is gated since ADR-070 Phase 4e retired the "reported, not gated" section that used to
-// sit below this table (see coverageLib.mjs). The label stays `Overall (gated)` on purpose: it names
-// what the number MEANS — the coverage the release gate actually enforces — which is how every doc
-// and note has quoted it since 2026-08-15, and renaming it would break the continuity of a tracked
-// number to save one word.
-const overall = { lines: [0, 0], statements: [0, 0], branches: [0, 0], functions: [0, 0] };
-for (const row of rows) {
-  if (row.missing) continue;
-  for (const key of ['lines', 'statements', 'branches', 'functions']) {
-    overall[key][0] += row[key].covered;
-    overall[key][1] += row[key].total;
-  }
-}
-const overallPct = (key) => (overall[key][1] === 0 ? 0 : (overall[key][0] / overall[key][1]) * 100);
-
-const lines = [];
-lines.push('## Test coverage');
-lines.push('');
-lines.push('| Package | Lines | Statements | Branches | Functions | Scope (files) |');
-lines.push('|---|---|---|---|---|---|');
-const rowLine = (row) =>
-  row.missing
-    ? `| ${row.pkg} | — | — | — | — | — |`
-    : `| ${row.pkg} | ${fmtPct(row.lines)} | ${fmtPct(row.statements)} | ${fmtPct(row.branches)} | ${fmtPct(row.functions)} | ${fmtScope(row)} |`;
-
-for (const row of rows) lines.push(rowLine(row));
-lines.push(`| **Overall (gated)** | **${overallPct('lines').toFixed(1)}%** | **${overallPct('statements').toFixed(1)}%** | **${overallPct('branches').toFixed(1)}%** | **${overallPct('functions').toFixed(1)}%** |  |`);
-lines.push('');
-
-const missing = rows.filter((r) => r.missing).map((r) => r.pkg);
-if (missing.length > 0) {
-  lines.push(`_No coverage/ output found for: ${missing.join(', ')} — its test:coverage step may not have run._`);
-  lines.push('');
-}
-
-const report = lines.join('\n');
 console.log(report);
 
 if (process.env.GITHUB_STEP_SUMMARY) {
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, report + '\n');
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${report}\n`);
+}
+
+// Written unconditionally when asked for; ci.yml decides whether it becomes the next baseline (it
+// only saves the cache entry on a green push to main), so a red run cannot poison the comparison
+// every later run is read against.
+if (process.env.COVERAGE_BASELINE_OUT) {
+  writeBaseline(process.env.COVERAGE_BASELINE_OUT, ev, {
+    commit: process.env.GITHUB_SHA ?? null,
+    runId: process.env.GITHUB_RUN_ID ?? null,
+  });
 }

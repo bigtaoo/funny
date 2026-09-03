@@ -48,6 +48,18 @@ export const BUILDING_YIELD_RES: Readonly<Partial<Record<BuildingKey, ResourceTy
 // are scaled ×4 (sum_{2..20}lvl / sum_{2..10}lvl ≈ 3.87, rounded to a clean 4×) so total investment-to-max
 // stays in the same ballpark rather than getting cheaper/faster purely from fewer levels.
 export const DESK_MAX_LEVEL = 10;              // hub total-level cap (Three-Kingdoms 君王殿 = 10, D-CITY-7)
+/**
+ * Hard level ceiling for EVERY building, desk included.
+ *
+ * Not a redundant alias of DESK_MAX_LEVEL: it is the ceiling *derived* from the desk gate. A
+ * non-desk building may never target a level above the current desk level (buildGateReason), and
+ * desk itself stops at DESK_MAX_LEVEL — so DESK_MAX_LEVEL is where every building stops. It exists
+ * as its own name because callers that ask "is this building maxed?" were getting that wrong:
+ * the city detail modal used to treat `lvl >= DESK_MAX_LEVEL` as max-level for `desk` ONLY, so a
+ * maxed L10 stationery building still advertised "→ Lv.11 / needs Desk Lv.11" — a target no desk
+ * can ever reach (user bug report 2026-09-02).
+ */
+export const BUILDING_MAX_LEVEL = DESK_MAX_LEVEL;
 export const BUILD_YIELD_STEP = 0.10;          // resource building: +10% land-resource yield per level
 export const STICKER_SELF_BASE = 400;          // stickerShop: sticker self-produced per hour per level (residential-model faucet)
 export const CABINET_CAP_STEP = 0.20;          // cabinet: +20% storage cap per level
@@ -60,6 +72,9 @@ export const DRILL_TRAIN_SPEED_FLOOR = 0.5;    // drillYard: training-time multi
 /**
  * drillYard levels at which a training queue slot is granted, on top of TROOP_TRAIN_QUEUE_MAX (=1): L4 and
  * L10, i.e. 1 slot at L0–L3, 2 at L4–L9, 3 at L10.
+ *
+ * Slots are parallel (ADR-079): `n` occupied slots train `n` batches at once, so this is a throughput
+ * multiplier, not just queue depth.
  *
  * A threshold list rather than the old `floor(level / DRILL_QUEUE_PER_LEVELS)` because the useful slot count
  * is `ceil(troopCap / TROOP_TRAIN_BATCH_MAX)` (a batch beyond that is rejected by the troopCap check before
@@ -194,6 +209,10 @@ export function buildGateReason(
   if (!BUILDING_KEYS.includes(key)) return 'unknown building';
   if (!Number.isFinite(toLevel) || toLevel < 1) return 'invalid target level';
   if (key === 'desk') return toLevel > DESK_MAX_LEVEL ? 'desk at max level' : null;
+  // Ordered before the desk-level check on purpose: past BUILDING_MAX_LEVEL the desk gate can never
+  // be satisfied, so "desk level too low" would tell the player to grow a desk that is already
+  // maxed. Say "at max level" instead.
+  if (toLevel > BUILDING_MAX_LEVEL) return 'building at max level';
   if (toLevel > deskLevel(buildings)) return 'desk level too low';
   return null;
 }

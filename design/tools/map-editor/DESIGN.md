@@ -89,7 +89,7 @@
 
 | 维度 | 现状 | 代码位置 |
 |---|---|---|
-| 地形生成 | `proceduralTile(world, x, y)` 纯函数：按到地图中心的距离 `dr` + 若干层 value-noise 决定 obstacle / gate / familyKeep / stronghold / resource / neutral，**不接收国家信息作为输入** | `server/shared/src/slg.ts` `proceduralTile()` |
+| 地形生成 | `proceduralTile(world, x, y)` 纯函数：按到地图中心的距离 `dr` + 若干层 value-noise 决定 obstacle / gate / familyKeep / stronghold / resource / neutral，**不接收国家信息作为输入** | `server/shared/src/slg/mapgen/tileGen.ts` `proceduralTile()` |
 | 国家分区 | 10 个固定首府坐标（`CAPITAL_FRACTIONS`，8 边缘+1 内环+1 居中），每格按最近首府做 Voronoi 分配（`nearestCapitalIdx`），**不接收地形信息作为输入** | 同上 `nearestCapitalIdx()` / `CAPITAL_FRACTIONS` |
 | 两者关系 | 运行时各自独立求值，从未合流校验——国界可能直接切穿一片 obstacle 山脉、切穿资源大区、或让某国大半地块被关隘/障碍圈住 | — |
 
