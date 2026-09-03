@@ -317,7 +317,7 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 | ~~commercial~~ | ~~81.25%~~ → **99.6%** | 98.14% | 见「commercial 补测第二轮」一节 |
 | ~~admin~~ | ~~82.09%~~ → **92.42%** | 95.88% | 上一节已补完 |
 | metaserver | **85.86%** | 90.74% | 481 / 3403 |
-| worldsvc | **86.99%** | 95.69% | 534 / 4106 |
+| ~~worldsvc~~ | ~~86.99%~~ → **91.48%** | 96.48% | 见「worldsvc 补测第二轮」一节 |
 | ~~auctionsvc~~ | ~~88.18%~~ → **99.58%** | 96.99% | 见"auctionsvc 补测第二轮"一节 |
 | ~~socialsvc~~ | ~~89.22%~~ → **99.73%** | 96.09% | 见「socialsvc 补测第二轮」一节 |
 | ~~botsvc~~ | ~~89.39%~~ → **98.17%** | 94.66% | 见"botsvc 补测第二轮"一节 |
@@ -341,9 +341,9 @@ admin 补完后顺手把**全部 19 个进门禁的包**（13 个 server + clien
 - ~~**botsvc**（只差 37 条）：`protoCodec.ts` 61.9%、`engineDriver.ts` 83.8%——最便宜的一个包。~~ 已于同日补完，见下面的"botsvc 补测第二轮"一节。
 - **client**（已过 90%，留档）：`cache/MemoryMonitor.ts` 78.8%/100% 行（24 条）、`game/meta/SaveManager.ts` 83.8%、`net/judgeRunner.ts` 77.6%、`net/anomaly/reporter.ts` 72.5%。
 
-**排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高——**已于同日做完，见下一节**。剩下的：commercial 是百分比最低的、且 149 条集中在 6 个文件里——**已于同日做完，见本文件最后一节**；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完。
+**排期建议**：botsvc（37 条，`protoCodec.ts` 一个文件就占 8 条，同 gateway 那次的 proto 编解码形状）性价比最高——**已于同日做完，见下一节**。剩下的：commercial 是百分比最低的、且 149 条集中在 6 个文件里——**已于同日做完，见本文件最后一节**；metaserver/worldsvc 的绝对数量大但摊得很平（60 个文件各剩几条），适合像 engine 那轮一样按目录分组并行做，不适合一次啃完——**worldsvc 已于同日按这个建议做完，见本文件最后一节；metaserver 是唯一剩下的**。
 
-**先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支；auctionsvc / botsvc / socialsvc 已在下面三节补完，剩 metaserver + worldsvc 两个包——commercial 已在本文件最后一节补完），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
+**先决问题（当日已解决）**：这一维原本**没有门禁**，所以补完还会再漂回去。同日给 `checkCoverageThreshold.mjs` 加了第二条线，**分支覆盖率同样卡 90%**（不是先按现状定 80% 再棘轮——直接立在 90%，让门禁去驱动补测），实现与红检见 [`server-testing-tooling.md`](server-testing-tooling.md) 的"第二条门禁线"一节。**代价是知情选择的**：上表那 6 个包当场破线（合计缺 362 条分支；auctionsvc / botsvc / socialsvc / commercial / worldsvc 已在下面五节补完，**只剩 metaserver 一个包**），而 8 个 `*-deploy.yml` 都靠 CI 的 workflow conclusion 门控，所以补完之前所有部署被挡；真要临时发版，`COVERAGE_BRANCH_THRESHOLD=80` 降线一次（**只有这一个全局旋钮，没有 per-package 豁免名单**——ADR-070 Phase 4e 刻意退役了那套机制）。
 
 ## botsvc 补测第二轮：**分支**覆盖率，从 89.39% 拉到 98.17%（2026-09-03，worktree `feat/botsvc-branch-coverage`）
 
@@ -466,3 +466,56 @@ auctionsvc 整体：**分支 88.18% → 99.58%**，行 95.37% → 96.99%（`npm 
 **剩下 4 条不追，原因逐条**：`src/index.ts` 1 条（进程 bootstrap，同前几轮先例）；`gacha.ts` 2 条（`rollFixedOddsItem` 的 `total > 0 ? rng(total) : 0` 和随后的循环兜底——`fixedOddsTable()` 的构造决定了 total 永远 > 0：`remainderItemId` 吸收 `100 − Σ`，要让全部权重取整为 0 就得让 Σ 同时是 100 和 0，自相矛盾。**不可达**，不是没测）；`internalHttp.ts` 1 条（`req.url ?? ''`，node 的 http server 永远会设 `req.url`）。
 
 **顺带发现的一个真问题（未修，留给 owner 定夺）**：`orders.ts` 的 `healOrderRefund` 用 `ledger.findOne({ accountId, orderId })` 判断「这笔退款到底落地了没」，但**同一个 orderId 上早就有一行扣款账本**（`shopCharge` 写 `reason:'shop'`、`gachaDraw` 写 `reason:'gacha'`，都带同一个 orderId）。所以对 shop/gacha 订单，这个探针恒为真，heal 永远不会触发——而「重复的 delivery 回调补上崩溃丢掉的重复退款」这套机制，本来就是给 gacha 的重复品退款设计的。查询少了一个 `reason: 'gacha_refund'` 条件。本轮两个 heal 用例改用 **starter 订单**（cost 0、插入时是 'charged'、没有扣款账本行，而 meta 的重复退款回调对启动包的 10 连抽同样适用）才走通了这条路径，测试注释里记了这一点。修它要动钱路，属于独立改动，不塞进补测这一轮。
+## worldsvc 补测第二轮：**分支**覆盖率，从 86.99% 拉到 91.48%（2026-09-03，worktree `feat/worldsvc-branch-cov`）
+
+「全仓分支覆盖率横向核实」那节的排期建议说 worldsvc「绝对数量大但摊得很平，适合按目录分组并行做」。本节就是那一轮：**不追全包扫平，只打那一节点名的几个热点文件**，四路并行，一次过线。至此那张表上破线的 6 个包只剩 metaserver 一个。
+
+**⚠️ 本轮最重要的一条教训：分支覆盖率的分母会跟着覆盖率一起涨，「缺 534 条、补 124 条就够」这套算术不成立。**
+开工前按基线算的是「4106 条缺 534，门禁要 90%，至少补 124 条」。跑完全量的实际结果是 **covered +361 / total +193**，分母从 4106 涨到 **4299**。原因是 v8 的覆盖率是**执行推导**出来的：一个从没被调用过的函数，里面的子分支根本不会被枚举进 `BRDA` 记录，也就不进分母。测试跑到的路径变多，能"看见"的分支点跟着变多。本轮 +193 的分母增长**全部落在这次动的 8 个目标文件上**（其余文件只有零星 +1，来自被新测试顺带执行到的路径），对照见下表——这 8 个文件的分支总数从 667 涨到 848。
+**实践含义**：立目标时别照着 `(0.9 × total) − covered` 算需要补多少条，那个 `total` 在你补的过程中会往上跑；按"把最差的几个文件打到 95%+"来定范围，然后跑全量看真实百分比。
+
+**并行方案跟 2026-08-15 那轮 worldsvc 不同，这次一个 mongod 都没起**：那一轮的缺口在路由层/客户端封装/bootstrap，得连真库，所以主会话先起一个共享 `MongoMemoryReplSet` 再把 URI 喂给各 agent（见上面那节 + [[parallel-vitest-agents-shared-mongo-2026-08-14]]）。这一轮的缺口全在**领域计算**里（siege 结算、训练/建造队列、路由分发的参数校验），沿用 [[worldsvc-domain-service-unit-testable-no-mongo]]：手搭 fake `WorldCore` / fake `SiegeCtx` / fake `req`+`res`，四个 agent 共享同一个 worktree、各自 `NW_MONGO_URI=<随便一个不存在的地址> npx vitest run test/<自己的文件>`，命中 `globalSetup.ts` 的 `if (process.env.NW_MONGO_URI) return` 短路——**既跳过起库，也避开四路同时写 `tmpdir()/nw-worldsvc-mongo-uri` 那个握手文件的竞态**。
+**另一个必须绕开的并发点**：agent 迭代时不能跑 `npm test`——worldsvc 的 `pretest` 会重跑 `gen-openapi-world.mjs`，四路并发会互相覆盖 `src/generated/routes.gen.ts`。一律直接 `npx vitest run`，全量 `test:coverage` 由主会话最后串行跑一次。
+
+新增 5 个测试文件、**184 例**（原有 96 文件零改动），按目录分四组：
+
+| 文件 | 分支 | 行 | 剩余未覆盖 |
+|---|---|---|---|
+| `combatSiege/arrival/citySiege.ts` | ~~50.94%~~ (27/53) → **98.71%** (77/78) | 94.28% → **100%** | 111 |
+| `combatSiege/arrival/cityDefenders.ts` | ~~57.44%~~ (27/47) → **91.17%** (62/68) | 97.19% → **100%** | 143-144, 229, 248 |
+| `city/training.ts` | ~~69.69%~~ (46/66) → **94.80%** (73/77) | 100% | 54, 56-57 |
+| `httpApi/sectRoutes.ts` | ~~73.49%~~ (61/83) → **100%** (116/116) | 100% | — |
+| `city/buildings.ts` | ~~74.02%~~ (57/77) → **97.82%** (90/92) | 94.87% → **100%** | 54, 170 |
+| `combatSiege/arrival.ts` | ~~74.71%~~ (65/87) → **99.07%** (107/108) | 85.71% → **100%** | 201 |
+| `combatSiege/encounter.ts` | ~~75.00%~~ (93/124) → **99.31%** (146/147) | 98.36% → **100%** | 150 |
+| `combatMarch/command.ts` | ~~83.84%~~ (109/130) → **98.14%** (159/162) | 89.81% → **99.24%** | 224-225 |
+
+- `test/combatSiege-arrival-city-branch-gaps.test.ts`（33 例）：假 `WorldCore` + 假 `SiegeCtx`。**关键技巧**：要让 NPC 波次走**真实的**便宜结算公式（`resolveSiege`）而不是无头引擎，靠的是 `shouldUseCheapSiege` 的**棋盘溢出**判据——选一个 `cityWaveGarrison` 超过 `SIEGE_SYNTH_ARMY_MAX_TROOPS` 的城池等级，胜负两侧都会落到便宜路径；只用 10× 兵力比那条规则的话只造得出赢的一侧。`runSiegeBattle` 文件级 `vi.mock`（`siege-crash-replay.e2e.test.ts` 的先例），默认实现直接抛"unexpected engine call"，只有 5 个**关于引擎**的用例给它真实现——便宜路径的用例反过来断言引擎从未被调用。
+- `test/combatSiege-encounter-arrival-branch-gaps.test.ts`（42 例）：两处模块级 mock，都写在文件头注释里。`src/siegeWorkerPool` 打桩（打的是 worker 池，不是战斗 helper），这样能钉死结算代码拿到的那份 `SiegeResolution` 具体长什么样、以及引擎崩溃的兜底路径；默认桩返回一个明显是假的哨兵值，谁不小心落到引擎上会**响亮地红**而不是安静地对上。`applySiege` 是个分发器，把五个落地模块（`{base,stronghold,city,crossing,land}Siege`）mock 掉之后，它自己算的锚点/`effGarrison`/`tileLevel`/整个 `replay` 载荷全部在调用边界上可断言。
+- `test/city-training-buildings-branch-gaps.test.ts`（31 例）：`CityTrainingService`/建造服务只碰 `this.core`，桩 `deps.cols`/`deps.now`/`settle` 就够。
+- `test/sectRoutes-branch-gaps.test.ts`（21 例）+ `test/combatMarch-command-branch-gaps.test.ts`（34 例）：`handleSectRoutes(ctx)` 全部入参走一个 `RouteCtx`，拿 `Readable` 假 `req` + 记录 `writeHead`/`end` 的假 `res` + 每个方法一个 `vi.fn()` 的 `sectSvc` 直接驱动，不起 HTTP server。**每条校验用例都断言三件事**：状态码、body 里的 `ErrorCode`、以及对应 `sectSvc` 方法**没有**被调用——只断言"返回了 true"会让"校验失败了但业务照样执行"这种 bug 溜过去。
+
+四组都不 mock `@nw/shared` 的纯函数，期望值用源码同一条公式（真实 `resolveSiege`/`cityWaveGarrison`/`troopTrainCost`/`marchDurationFromPath`/`computeCardStateUpdates`…）现算，常数改了断言跟着动。
+
+**剩余 11 条查证下来全是死分支，不是"难测"**（这也是本轮最后停在 91.48% 而不是继续往上推的原因）：
+
+1. `citySiege.ts:111` / `cityDefenders.ts:229` —— `waveDeployed > 0 ? … : 0`。`waveDeployed` 由 `attackerDeployed > 0 ? attackerDeployed : deployedHp` 得来，而三行之上的 `deployedHp <= 0 → break` 已经保证了 `deployedHp > 0`，`: 0` 臂两个文件里都是死的。
+2. `cityDefenders.ts:143` 的 `e.initialHp ?? 0` —— `resolveCardArmy` 恒写 `initialHp: Math.max(0, troops)`。
+3. `cityDefenders.ts:144(x2)` 的 `ratios.hp/attack[unitType] ?? 1` —— `cardInstances` 和 `resolved` 出自同一份 army+cardInv，`garrisonProgressionRatios` 会给它拿到的每个 unit type 都写键（只跳过 `UNIT_BLUEPRINTS` 里没有的类型，而 `CARD_DEFS` 里没有这种条目）。只有数据出 bug 才可达。
+4. `cityDefenders.ts:137` 的 `save?.cardInv ?? {}` 和 `:248` 的 `d.owner.cardState ?? {}` —— `cardInv` 为空时 130 行的 `resolveCardArmy` 产出空 army，队伍在 132 行的 `sumArmyHp(army) <= 0` 就被跳过了，走不到后面。
+5. `training.ts:54(1/2), 56(x2), 57` 的 `cost[rt] ?? 0` / `resources[rt] ?? 0` 系列 —— `troopTrainCost()` 五种资源单价全是正常数（10/5/5/5/1）且 `qty` 被 clamp 到 ≥1，`cost[rt]` 永远不是 nullish；也正因为每种资源都有正成本，缺键的资源包在 54 行就抛了，56 行的兜底同样不可达。
+6. `buildings.ts:54` 的排队链接臂 —— `BUILD_QUEUE_SLOTS === 1`，38 行的队满守卫先抛；那是给未来付费第二格留的前向兼容代码（源码注释自己写了）。**顺带**：`speedupBuild` 在 114 行的两条目级联循环今天也没有生产可达性，本轮靠手工塞队列才测到。
+7. `buildings.ts:170` 的 `fresh.buildQueue ?? []` —— 165 行已经做过同样的 `?? []`，缺字段的话 `done` 为空、166 行就返回了。
+8. `combatSiege/arrival.ts:201` 的 `defenderId ? … : false` —— 174 行的 `!target?.ownerId → return` 已经保证 `defenderId` 恒真。
+9. `encounter.ts:150` 的 `pw.cardState?.[id]?.currentTroops ?? 0` —— 这行只在 `writeFieldCardState` 之后跑，而后者只在 `currentTotal > 0` 时调用，那就保证了 army 里每个 card id 都有条目。
+10. `command.ts:286` 的 `await restoreClaim?.()` —— 整段 rollback 在 `if (!hasCardArmy && !idleRedispatch)` 之下，而 `restoreClaim` 只在 `if (idleRedispatch)` 里赋值，恒为 `null`。源码 282-284 行的注释自己写明了"今天这条分支上 restoreClaim 恒为 null——但这个函数的分支条件 2026-08-08 已经被拓宽过一次"，是有意的防御性代码。
+
+**这批补测顺带挖出三个跟覆盖率无关的问题**（本轮一行 `src/` 都没改，留给对应负责人）：
+
+- **`combatSiege/arrival/cityDefenders.ts:129-136`：注释承诺的优雅降级并不存在。** 注释说存档读不出来时"`hpMult` 留空，也就是回到 P4 之前的朴素基线"，`CityDefender.fortify` 的文档也说"存档读不出来的队伍 fortify 恰好是 1"。实际上 `save === null` 时 `resolveCardArmy` 拿到空 `cardInv`、条目全被丢掉、队伍在 132 行整个被跳过——**它根本不防守**。也就是说 metaserver 抖一下，城池的整个守军会静默消失，而不是按基线出战。本轮已有一例（`a team whose owner's save cannot be read fields nothing and is skipped entirely`）把**当前真实行为**钉住，注释（也可能是行为本身）需要有人对齐。
+- **`combatSiege/encounter.ts:162`：箭塔对 flat army 的 `marcherDestroyed` 不可达。** `survivors = Math.max(0, troops − min(round(troops × 0.1), 300))` 恒 ≥ `0.9 × troops`，而 `troops <= 0` 在 156 行就 `noOp` 返回了，所以任何 `troops > 0` 的 flat march 都杀不掉。但 `TowerDamageResult.marcherDestroyed` 的文档注释（"flat army 被打到 0 → `advanceMarch` 必须删掉这次行军"）和 `test/field-tower-flat-destroy.e2e.test.ts` 都还在承诺这件事。要么是比例/上限的相互作用改过，要么这个承诺已经过期——归 ADR-051 P5 的负责人。（`combatSiege-occupation-encounter-gaps.test.ts:690` 那条既有用例的长注释一直在绕着同一个问题打转，只是没点破。）
+- **flat / legacy 显式 army 打穿整条阶梯时耐久掉 0**，因为 `teamSiegeValue` 只数 card 条目。不是 bug，但反直觉，本轮用两例钉住了。
+
+worldsvc 整体：**分支 86.99% → 91.48%**（3933/4299），行 95.69% → **96.48%**（`npm run test:coverage`，101 test files 全绿，`npx tsc --noEmit -p tsconfig.test.json` 干净）。
+
+**未继续追**（下一轮候选，按剩余分支数排序）：`combatMarch/startMarchValidation.ts` 85.15%、`core/spawn.ts` 79.1%、`httpApi/admin.ts` 82.79%、`siegeEngine.ts` 82.92%、`territory/structures.ts` 82.45%、`combatMarch/stationed.ts` **61.29%/98.59% 行**、`httpApi/helpers.ts` 78.94%、`mapTemplateService.ts` 76.3%——都是上一轮就标注过"等价路径变体/需要注入故障"的那批，本轮没排进去。
