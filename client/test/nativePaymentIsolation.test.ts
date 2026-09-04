@@ -228,12 +228,42 @@ describe('the mobile bundle carries no web payment surface', () => {
     expect(moduleReplacements('web').map((r) => r.to)).not.toContain('src/platform/stubs/paddleCheckout.ts');
   });
 
-  it('the consent gate links somewhere the shell can actually open', () => {
+  it('the consent gate links somewhere the shell can actually open', async () => {
     // The pages are gone from the bundle, so a relative link would 404 — and even when they were
-    // bundled, `window.open('capacitor://localhost/privacy.html')` silently did nothing on iOS.
-    const src = fs.readFileSync(path.join(CLIENT_DIR, 'src/ui/dialogs/ConsentDialog.ts'), 'utf8');
-    expect(src).toMatch(/isNativeShell\(\)\s*\?\s*`\$\{LEGAL_SITE\}/);
-    expect(src).toMatch(/const LEGAL_SITE = 'https:\/\//);
+    // bundled, `window.open('capacitor://localhost/privacy.html')` silently did nothing on iOS:
+    // Capacitor routes target=_blank to UIApplication.open, which drops a scheme nothing registers.
+    // An absolute https URL is the only form that opens, and a reviewer does click these.
+    const { legalUrl } = await import('../src/ui/dialogs/ConsentDialog');
+    cap.platform = 'ios';
+    expect(legalUrl('/privacy')).toBe('https://nivara.gamestao.com/privacy');
+    expect(legalUrl('/terms')).toBe('https://nivara.gamestao.com/terms');
+    // ...and the web build is unchanged: same-origin, next to the game, as it has always been.
+    cap.platform = 'web';
+    expect(legalUrl('/privacy')).toBe('/privacy.html');
+    expect(legalUrl('/terms')).toBe('/terms.html');
+  });
+});
+
+describe('the Paddle stub is a stand-in for the real module, not a smaller thing', () => {
+  // The swap happens in webpack, so TypeScript only ever sees the real class: a method added to
+  // PaddleCheckout and not to the stub compiles clean everywhere and throws "not a function" on
+  // iOS only, at the moment a player taps buy. Same failure shape capacitorStubs.test.ts guards
+  // for in the other direction, and the same reason it is a test rather than a convention.
+  it('exposes every public method the real one does', async () => {
+    const real = await import('../src/platform/web/paddleCheckout');
+    const stub = await import('../src/platform/stubs/paddleCheckout');
+    const methods = (c: new () => object) =>
+      Object.getOwnPropertyNames(c.prototype).filter((n) => n !== 'constructor').sort();
+    // Spelled out rather than compared as sets, because `load` is private and TypeScript's privacy is
+    // erased at runtime — a comparison would need a filter, and a filter is where the next public
+    // method quietly slips through. Growing either class fails this and forces the choice to be made.
+    expect(methods(real.PaddleCheckout)).toEqual(['load', 'open']);
+    expect(methods(stub.PaddleCheckout)).toEqual(['open']);
+  });
+
+  it('and refuses rather than half-working', async () => {
+    const { PaddleCheckout } = await import('../src/platform/stubs/paddleCheckout');
+    await expect(new PaddleCheckout().open()).rejects.toThrow(/native build/);
   });
 });
 

@@ -145,6 +145,37 @@ describe.skipIf(!mongo)('apple auto-renewable subscription sync (e2e)', () => {
     expect(r).toMatchObject({ ok: true, granted: 0, subscriptionExpiry: 0 });
   });
 
+  it("one player's receipt cannot grant a second account", async () => {
+    // A receipt is a file on a device; it can be copied, shared, or replayed by a modified client.
+    // The orderId is `apple:<transactionId>` and orders carry an accountId, so the first account to
+    // claim a period owns it — a second account submitting the same receipt must be refused rather
+    // than handed a free month. (subscriptionCardBuy's ownership check, 2026-08-04; this is the
+    // first caller that can reach it with an attacker-supplied key.)
+    periods = [monthly('tx-shared')];
+    const mine = await svc.subscriptionSyncApple({ accountId: 'owner', receipt: 'r', clientPlatform: 'ios' });
+    expect(mine.ok && mine.granted).toBe(1);
+
+    const theirs = await svc.subscriptionSyncApple({ accountId: 'thief', receipt: 'r', clientPlatform: 'ios' });
+    expect(theirs.ok && theirs.granted).toBe(0);
+    const w = await svc.getWallet('thief', 'ios');
+    expect(w.subscriptionExpiry).toBe(0);
+    expect(w.coins).toBe(0);
+  });
+
+  it('caps how many periods one sync applies, keeping the newest', async () => {
+    // Apple keeps every renewal in the receipt forever, so a long-lived subscriber's receipt grows
+    // without bound and all but the newest entries are already-granted no-ops. MAX_SYNC_PERIODS
+    // bounds the per-cold-start work; what must not happen is the cap silently eating the NEW ones.
+    periods = Array.from({ length: 70 }, (_, i) => monthly(`tx-${i}`, i + 1));
+    const r = await svc.subscriptionSyncApple({ accountId: 'h', receipt: 'r', clientPlatform: 'ios' });
+    expect(r.ok && r.granted).toBe(60);
+
+    // The 10 dropped ones are the OLDEST. Proof: re-syncing the same receipt now grants nothing —
+    // if the cap had kept the oldest 60, the 10 newest would still be ungranted and land here.
+    const again = await svc.subscriptionSyncApple({ accountId: 'h', receipt: 'r', clientPlatform: 'ios' });
+    expect(again.ok && again.granted).toBe(0);
+  });
+
   it('a reader that throws is a non-event, not a failed request', async () => {
     // Apple unreachable mid-boot. Nobody asked for this call, so there is nobody to show an error to.
     const flaky = new CommercialService({

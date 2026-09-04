@@ -74,7 +74,7 @@ Wir **verkaufen** Ihre personenbezogenen Daten **nicht**. Wir teilen nur das Not
 | **Aggregator-Plattformen** (CrazyGames usw.) | von der Plattform geforderte Login-/Sitzungsdaten | Betrieb innerhalb der Plattform |
 | **Behörden / Strafverfolgung** | gesetzlich geforderte Daten | rechtliche Verpflichtung |
 
-> Vor dem Start sind {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} / {{ADS_SDK}} durch die tatsächlichen Dritten und deren Datenschutzlinks zu ersetzen, konsistent mit iOS Privacy Label und Google Play Data Safety Form.
+> Vor dem Start sind {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} durch die tatsächlichen Dritten und deren Datenschutzlinks zu ersetzen, konsistent mit iOS Privacy Label und Google Play Data Safety Form. (Das Werbe-SDK wurde am 2026-09-03 eingesetzt: Google AdMob, ausschließlich nicht personalisiert.)
 
 ---
 
@@ -159,4 +159,4 @@ Wir können diese Erklärung von Zeit zu Zeit aktualisieren. Über wesentliche �
 
 ---
 
-> **Platzhalter-Checkliste vor dem Start**: `{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{ADS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` und gehostete URL `{{PRIVACY_POLICY_URL}}` (für den Client-`consent.*`-Link).
+> **Platzhalter-Checkliste vor dem Start**: `{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` und gehostete URL `{{PRIVACY_POLICY_URL}}` (für den Client-`consent.*`-Link).

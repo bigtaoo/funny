@@ -126,6 +126,27 @@ export class BranchCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: this.subscriptionExpiry, ...this.embedded(a.accountId) };
   }
 
+  /** Periods this sync should report as newly granted; `nextSubscriptionError` refuses it instead. */
+  syncGranted = 0;
+  syncCalls: { accountId: string; receipt: string; clientPlatform?: string }[] = [];
+
+  async subscriptionSyncApple(a: { accountId: string; receipt: string; clientPlatform?: string }) {
+    this.syncCalls.push({ accountId: a.accountId, receipt: a.receipt, clientPlatform: a.clientPlatform });
+    if (this.nextSubscriptionError) {
+      const e = this.nextSubscriptionError;
+      this.nextSubscriptionError = null;
+      return { ok: false as const, error: e };
+    }
+    if (this.syncGranted > 0) this.subscriptionExpiry = 30 * 86400000 * this.syncGranted;
+    return {
+      ok: true as const,
+      coinsAfter: this.bal(a.accountId),
+      subscriptionExpiry: this.subscriptionExpiry,
+      granted: this.syncGranted,
+      ...this.embedded(a.accountId),
+    };
+  }
+
   async yearCardBuy(a: { accountId: string; orderId: string }) {
     if (this.nextSubscriptionError) {
       const e = this.nextSubscriptionError;
