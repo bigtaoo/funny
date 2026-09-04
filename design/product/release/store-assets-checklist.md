@@ -277,11 +277,30 @@ Quoten-Seite. Kostenlos spielbar.
 | 操作说明 | 鼠标/触屏操作说明 | 待补 |
 
 ### 4.2 合规 / 平台要求（COMPLIANCE_GLOBAL §8 Web 专属）
-- [ ] 隐私政策 URL 可访问 + 客户端可点。
-- [ ] cookie/同意条（若用分析 cookie）+ EU/UK 同意弹层（Track 1 L1-1）。
-- [ ] 支付渠道合规 + 虚拟道具条款（见用户协议 §5/§6）。
-- [ ] CrazyGames 内容政策逐条核对（含广告 SDK 兼容、外链限制）。
-- [ ] 抽卡概率公示页可达。
+- [x] **隐私政策 URL 可访问 + 客户端可点**（2026-09-04 修，真机核对过）：同意弹层的两个链接此前是根相对 `/privacy.html`，在门户域名下必然 404；`legalUrl()` 现按「是否跑在自家源上」分叉，CrazyGames 与原生壳一样给绝对 https（`ConsentDialog.ts`）。**这条修的时候顺带挖出一个更大的洞**：分叉依据 `clientPlatformName()` 读的是 `globalThis.TARGET`，而 DefinePlugin 那一行 key 是裸的 `TARGET`，**根本没替换成员表达式**——所以这个函数在任何真实构建里都返回 `'web'`（影响面不止本条，见 [`ANALYTICS_DESIGN §3.3`](../../game/ANALYTICS_DESIGN.md)）。补 key + 真编译探针后，在 crazygames dev 构建里实测：两个链接确实 `window.open('https://nivara.gamestao.com/privacy' | '/terms')`，`GET /bootstrap?platform=crazygames` 也终于报对了平台。⚠️ 仍只有**首启同意弹层**一处入口，设置页没有常驻链接（与 iOS §1.5 同一条欠账）。
+- [x] cookie/同意条（若用分析 cookie）+ EU/UK 同意弹层（Track 1 L1-1）：`ConsentDialog` 首启阻塞，**全区玩家都弹**（不按地区分叉），所以门户玩家一定见得到上面那两个链接。⚠️ 门户自己也有一套 GDPR 流程，是否重复需按开发者后台口径确认。
+- [x] **支付渠道合规**（2026-09-04 修）：`iapKind()` 早已返回 `null`（金币页/月卡年卡按钮不出现），但**构建产物**里还带着整套 Paddle 网页支付面（`pay/pricing/refunds/home/terms/privacy.html`）+ 编进 bundle 的 Paddle 结账模块——那是要整包上传给门户的东西。现按 iOS 同一套办法堵上：copy 规则与 `paddleCheckout` stub 替换都扩到 `crazygames`。虚拟道具条款见用户协议 §5/§6。
+- [x] **广告 SDK 接线**（2026-09-04 修）：①`adStarted` → 广告播放期间整机静音（门户 QA 明确检查这条），四条退出路径（finish/error/throw/超时）都恢复；②`sdkGameLoadingStart()` 此前从未调用（只调了 Stop），现与 `init()` 一起放进构造函数，与 `onLoadingComplete()` 的 Stop 配成一对；③激励视频补上与插屏同款的超时兜底（有了静音之后，卡住的 SDK 会让整个会话哑掉，不只是转圈）。
+- [ ] CrazyGames 内容政策逐条核对（外链限制、账号系统、加载时长要求）——需对着开发者后台逐条过。
+- [ ] 抽卡概率公示页可达（代码侧已有，`GachaScene/odds.ts`，待冒烟实测）。
+- [ ] **四平台冒烟的 CrazyGames 那一列**（[`acceptance-smoke.md §1`](../../game/release/acceptance-smoke.md)）——9 行全空，这条路从没在门户环境里真跑过。
+
+### 4.3 构建与上传配方（2026-09-04 补）
+
+门户**托管我们上传的整包**，因此这个 target 和原生壳属于同一类：包不跑在自家源上。两条推论都已固化进 `webpack.config.js`（`isOffOrigin` / `bakesRemoteBases` 两个谓词，回归测试 [`client/test/crazyGamesPortalIsolation.test.ts`](../../../client/test/crazyGamesPortalIsolation.test.ts) 20 例）：
+
+1. **后端地址必须烘死**。此前 `build:crazygames` 走的是「生产 = 空串 = 同源」这一档，而同源在门户上是 crazygames.com → `net/config.ts` 拿到 null → **整包退化成纯离线**（登录/云存档/PvP/大世界全没了，而且不报错）。现在生产构建默认烘 `https://api.gamestao.com`（五个服务全烘，含 social/auction，绕过 2026-08-02 那条派生端口守卫）。
+2. **网页支付面不进包**（见 §4.2 第三条）。
+
+```bash
+# 门户上传包（默认已烘生产地址，env 仅在打 staging 包时才需要覆盖）
+cd client && NW_BUILD_VERSION=$(git rev-parse --short HEAD) npm run build:crazygames
+# → client/dist/ 整个目录打 zip 上传；index.html 里已带门户 SDK 的 <script>
+```
+
+- **本地开发照旧**：`npm run start:crazygames` 是 webpack-dev-server，仍指 localhost 那套（`bakesRemoteBases` 只在生产模式对这个 target 生效）。
+- **CI 里没有这条流水线**：`.github/workflows/` 只有 `client-deploy.yml`（Cloudflare 的 web 包）。门户是手动上传，暂不建 job；真要建时照 §4.3 这条命令即可。
+- 体积参考（2026-09-04 实测）：`dist/` 约 25 MB，主包 2.1 MiB JS。门户对首屏加载时长有要求，上传前值得实测一次。
 
 ---
 
@@ -310,6 +329,6 @@ Quoten-Seite. Kostenlos spielbar.
 | iOS | ✅ 图标 + 截图齐（预览视频可选，未做） | §1.3 待填 | §1.4 待填 | §1.5 | 全球版 §5.2 |
 | Google Play | ✅ 图标 + 特征图 + 截图齐 | §2.3 待填 | §2.4 待填 | §2.5 | 全球版 §5.2 |
 | 微信小游戏 | ✅ 图标（既有 logo-512）+ 分享图齐；截图仍是英文版，中文版待跑 | §3.3 待评估 | 隐私政策(CN) | §3.2（依版号） | 中国区 §5.1 |
-| CrazyGames | ✅ 横版缩略图齐 | 平台要求 | 隐私政策 | §4.2 | 全球版 §5.2 |
+| CrazyGames | ✅ 横版缩略图齐；操作说明文案待补（§4.1） | 平台要求 | 隐私政策 | §4.2 四条已修，剩内容政策核对 + 冒烟 | 全球版 §5.2 |
 
 > **依赖提醒**：图标 / 横幅 / 截图**全部已出且可一键复跑**（§0.4 三个脚本）。剩余美术类缺口只有可选的 App 预览视频；剩余非美术缺口是中文/德文截图（脚本换 locale 即可）与 iPad 横版适配（见 §0.6）。隐私标签答案依赖 §0.3 定稿（已与隐私政策对齐）；中国区整块依赖版号流程（Track 2 L2-4）。
