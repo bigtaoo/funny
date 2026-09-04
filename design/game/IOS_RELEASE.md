@@ -150,7 +150,10 @@ Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**这�
 与现有 web/Paddle 通道的口径一致。
 
 **这条链路没有真机验证过**（本机无 Xcode/沙盒），逻辑侧由
-`server/commercial/test/appleSubscriptionSync.e2e.test.ts`（13 例，含「续期撞上生效中的卡」与「同一收据反复同步」）
+`server/commercial/test/appleSubscriptionSync.e2e.test.ts`（15 例，含「续期撞上生效中的卡」「同一收据反复同步」
+「一个人的收据能不能给第二个账号发卡」「60 条上限保的是最新的」）
++ `server/metaserver/test/iapAppleSync.test.ts`（9 例，路由层：`granted:0` 必须是 200、到账后 expiry 要落进存档、
+收据原样转发 + 平台声明、commercial 挂了/拒绝、发放后钱包读失败仍算成功）
 + `client/test/appleSubscriptionSync.test.ts`（9 例）覆盖。
 
 ### 4.2 服务端环境变量（VPS commercial）
@@ -270,13 +273,22 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
 
 ### 10.5 回归测试
 
-[`client/test/nativePaymentIsolation.test.ts`](../../client/test/nativePaymentIsolation.test.ts)（16 例），按上面四条一一对应：
+[`client/test/nativePaymentIsolation.test.ts`](../../client/test/nativePaymentIsolation.test.ts)（18 例），按上面四条一一对应：
 
 - 假的是 `@capacitor/core` 边界（不是 `nativeShell` 本身），所以 `nativeShell.ts` 自己也被覆盖；
 - 读**真的** `webpack.config.js` 断言 mobile 的 CopyPlugin 不含那六个页面、web 六个都在、图标两边都在、mobile 有 paddleCheckout 桩替换；
 - 跨语言钉死 Swift 表和服务端表（正则各自抠出字典字面量后比对）——这是 §10.4 那种「两张表、两种语言、没有编译器管」的唯一防线。
 
 `client/test/nativeBridges.test.ts`（桥的形状检查）留在原处只管「选哪个商店」，头注释已改指向本文件。
+
+另有两项同源的钉子（2026-09-03 补）：`legalUrl` 已导出并**按返回值**测（原先只拿正则匹配源码——而「链接点了没反应」正是它要防的失败，
+不该只测文本长相）；Paddle 桩与真类的方法面对钉（webpack 换的桩，tsc 只看得见真类，一边加方法另一边不加会编译全绿、
+iOS 上玩家点购买时才 `not a function`）。
+
+**广告/隐私口径的门禁**：[`client/test/adsPrivacyPosture.test.ts`](../../client/test/adsPrivacyPosture.test.ts)（7 例）把
+`Info.plist`、`AppDelegate.swift` 的广告路径、`store-assets-checklist.md §1.4`、三语隐私政策钉成同一个故事。
+ATT 那处矛盾能活六周，正是因为四处分别正确、没人一眼看全，而且**任何运行时测试都看不见**（App 两种情况都跑得好好的）。
+产品口径若改回个性化广告，这个文件就是要同步翻转的清单。
 
 ## 11. OTA 热更新（Capgo 自托管，路线 B）
 
