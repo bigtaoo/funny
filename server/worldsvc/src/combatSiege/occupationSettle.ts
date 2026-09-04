@@ -29,6 +29,10 @@ export async function settleOccupation(core: WorldCore, d: OccupationDoc, t: num
     ...(d.resType ? { resType: d.resType } : {}),
     ownerId: d.ownerId,
     garrison: d.garrison,
+    // Start the baseline-heal clock at the settlement (shared/src/slg/garrison.ts): without a checkpoint the
+    // tile would read as already healed to tileGarrisonBaseline(level), handing the new owner free defence
+    // the instant they took it.
+    garrisonRegenAt: t,
     ...(d.familyId ? { familyId: d.familyId } : {}),
     rev: 0,
   };

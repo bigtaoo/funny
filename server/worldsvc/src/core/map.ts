@@ -12,7 +12,7 @@ import { allCityNodes, proceduralTile, tileId, playerWorldId, isInVision, sliceR
 import type { WorldCore } from '../core';
 import type { YieldService } from './yield';
 import type { VisionService } from './vision';
-import { siegeHpView } from './helpers';
+import { liveGarrison, siegeHpView } from './helpers';
 import type { TileDoc } from '../db';
 import type { PlayerProfile } from '../metaClient';
 import {
@@ -265,7 +265,10 @@ export class MapService {
       ...(ownerProfile?.publicId ? { ownerPublicId: ownerProfile.publicId } : {}),
       ...(ownerProfile?.displayName ? { ownerName: ownerProfile.displayName } : {}),
       ...(o.familyId ? { familyId: o.familyId } : {}),
-      ...(o.garrison ? { garrison: o.garrison } : {}),
+      // LIVE garrison (baseline heal folded in), not the stored field: this is intel about how hard the
+      // tile is to take, and it is the same number combat will resolve against. Computed for display only
+      // and never persisted, exactly like siegeHpView's base durability regen below.
+      ...((): { garrison?: number } => { const g = liveGarrison(o, now); return g ? { garrison: g } : {}; })(),
       ...siegeHpView(o, now),
       ...(o.protectedUntil ? { protectedUntil: o.protectedUntil } : {}),
       ...(o.contestedUntil ? { contestedUntil: o.contestedUntil } : {}),

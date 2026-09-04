@@ -450,11 +450,19 @@ describe('landSiege', () => {
     await landSiege(core, ctx, march(), pw(), target, DEF, pw({ accountId: DEF }), winRes(30), 1_000, null);
     // 2026-08-24: the chip and the garrison wipe are persisted as deltas now (a reinforce landing in the
     // window must survive), so the 100 → 70 arithmetic reads as "subtract the 30 surviving attackers".
+    //
+    // 2026-09-04 (garrison regen, SLG_DESIGN §5.6): the delta is now the LIVE garrison rather than the
+    // stored one, and the write stamps the heal clock. It is still 0 here — not because the heal was
+    // skipped, but because this fixture's `t` is 1_000ms: the tile's absent checkpoint reads as epoch, so
+    // only 1s of the 5-minute window has elapsed and floor() of a 0.4-troop heal is 0. That makes this
+    // case a clean check of the timestamp alone; the heal arithmetic itself is pinned against realistic
+    // clocks in core-helpers-gaps.test.ts and shared/test/garrison.test.ts.
     expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, [
       {
         $set: {
           'structure.hp': { $subtract: [{ $ifNull: ['$structure.hp', 100] }, 30] },
-          garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 0] }] }, // fixture garrison is 0
+          garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 0] }] },
+          garrisonRegenAt: 1_000,
           rev: { $add: ['$rev', 1] },
         },
       },
@@ -495,12 +503,18 @@ describe('landSiege', () => {
     const res: SiegeResolution = { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 12, attackerDeployed: 0, defenderDeployed: 12 };
     await landSiege(core, ctx, m, attacker, target, DEF, pw({ accountId: DEF }), res, 1_000, null);
     // 2026-08-24: persisted as casualties rather than "set to survivors", so a reinforce arriving in the
-    // same processDueArrivals tick is no longer erased. The fixture tile starts at garrison 0 and the
-    // resolution reports 12 survivors, so the clamped loss is 0 — nothing to deduct.
+    // same processDueArrivals tick is no longer erased.
+    //
+    // 2026-09-04 (garrison regen, SLG_DESIGN §5.6): the loss basis is the LIVE garrison now, and the write
+    // stamps the heal clock. The clamped loss stays 0 — the fixture's `t` is 1_000ms, so barely any of the
+    // 5-minute heal window has elapsed against the tile's absent (epoch) checkpoint, and 12 survivors
+    // already exceed what stood. Realistic-clock heal arithmetic is pinned elsewhere (see the structure
+    // case above for the full note).
     expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, [
       {
         $set: {
           garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 0] }] },
+          garrisonRegenAt: 1_000,
           rev: { $add: ['$rev', 1] },
         },
       },

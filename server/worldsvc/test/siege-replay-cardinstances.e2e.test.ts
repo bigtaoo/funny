@@ -194,7 +194,13 @@ describe.skipIf(!mongo)('siege replay cardInstances/equipmentInv fidelity (2026-
 
   it('attack march (arrival.ts territory path): card team win persists cardInstances, and getSiegeReplay returns them', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
-    const tgt = findCoord((t) => t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center', 40, 40);
+    // `t.level === 1` added 2026-09-04 (garrison regen, SLG_DESIGN §5.6): an owned tile now heals up to
+    // tileGarrisonBaseline(level) = 120 × level, and this march spends real game-time in transit, so by
+    // arrival the target stands at its baseline no matter what `setupDefender` stored. On an unconstrained
+    // (up to level-10) tile that is 1200 troops and the "weak defender" this case needs became strong
+    // enough to win — the assertion below flipped to defender_win. Pinning level 1 puts the floor at 120,
+    // i.e. what the 100 below was always meant to express, and keeps this case about replay fidelity.
+    const tgt = findCoord((t) => t.type !== 'obstacle' && t.type !== 'bridge' && t.type !== 'plankway' && t.type !== 'center' && t.level === 1, 40, 40);
     await setupDefender('b', tgt.x, tgt.y, 100); // weak defender — the card team should win cleanly
     await connect(svc, 'a', tgt);
 

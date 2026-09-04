@@ -5,7 +5,7 @@
 import type { SiegeResolution } from '@nw/shared';
 import { computeCardStateUpdates, cardStateDeltaPipeline } from '../../cardStateSettlement';
 import type { TileDoc, PlayerWorldDoc, MarchDoc } from '../../db';
-import { lootSummary, emptyResources } from '../../core';
+import { lootSummary, emptyResources, liveGarrison } from '../../core';
 import type { WorldCore } from '../../core';
 import type { SiegeReplayInputs } from '../../worldTypes';
 import { startReturnMarch } from '../../combatShared';
@@ -67,12 +67,15 @@ export async function landSiege(
       // subtraction, so it is expressible as a delta; the garrison "wipe" likewise removes exactly the
       // defenders the battle killed, which is not the same as "set to 0" once a reinforce march can land in
       // the window — that reinforcement should still be standing afterwards, not silently deleted.
-      const killedGarrison = target.garrison ?? 0;
+      // liveGarrison: the assault cleared the defenders it actually FOUGHT (stored + baseline heal, the
+      // same figure applySiege built `effGarrison` from), not just the stored ones.
+      const killedGarrison = liveGarrison(target, t);
       await cols.tiles.updateOne({ _id: m.toTile }, [
         {
           $set: {
             'structure.hp': { $subtract: [{ $ifNull: ['$structure.hp', target.structure.hpMax] }, res.attackerSurvivors] },
             garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, killedGarrison] }] },
+            garrisonRegenAt: t,
             rev: { $add: ['$rev', 1] },
           },
         },
@@ -125,11 +128,21 @@ export async function landSiege(
     // and reinforce arrivals in the SAME tick, and `combatMarch/arrival.ts` credits a reinforcement with
     // `$inc: { garrison }`; a defender reinforcing the tile under attack — the most ordinary defensive play
     // there is — had those troops silently erased. Persist the casualties instead.
-    const defenderLosses = Math.max(0, (target.garrison ?? 0) - res.defenderSurvivors);
+    //
+    // 2026-09-04 (garrison regen): the loss basis is the LIVE garrison — stored plus the baseline heal the
+    // battle actually fought (shared/src/slg/garrison.ts) — while the subtraction still lands on the STORED
+    // field. That asymmetry is deliberate and is what keeps the heal un-harvestable: militia conjured by
+    // regen can die (losses may exceed `stored`, clamped at 0) but can never be banked into the owner's
+    // refundable balance. Do not "fix" this by writing the live value here — that reopens the "get attacked,
+    // wait out the heal, 放弃 for a bigger refund than you paid" troop faucet. `garrisonRegenAt` restarts the
+    // heal clock from this settlement; a `reinforce` landing in the same tick deliberately does not touch it
+    // (combatMarch/arrival.ts), so partial healing survives being reinforced.
+    const defenderLosses = Math.max(0, liveGarrison(target, t) - res.defenderSurvivors);
     await cols.tiles.updateOne({ _id: m.toTile }, [
       {
         $set: {
           garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, defenderLosses] }] },
+          garrisonRegenAt: t,
           rev: { $add: ['$rev', 1] },
         },
       },

@@ -49,7 +49,7 @@ import { SpawnService } from './core/spawn';
 import { VisionService } from './core/vision';
 import { MapService } from './core/map';
 
-export { emptyResources, deleteInBatches, lootSummary, MARCHABLE_KINDS } from './core/helpers';
+export { emptyResources, deleteInBatches, lootSummary, liveGarrison, MARCHABLE_KINDS } from './core/helpers';
 
 /**
  * The full shared kernel: root fields/primitives + composed domain layers. Constructed as

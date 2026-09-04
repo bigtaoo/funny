@@ -26,6 +26,10 @@ export function errorMsg(e: unknown): string {
       PATH_BLOCKED:  t('world.err.pathBlocked'),
       TERRITORY_NOT_CONNECTED: t('world.err.notConnected'),
       TEAM_BUSY:     t('world.team.busy'),
+      // Team stamina (SLG_DESIGN §4.6). The picker already filters exhausted teams out, so reaching this
+      // means the budget ran out between opening the picker and tapping — or the caller is 就地占领 /
+      // cityPanel, which dispatch a specific team without going through the picker's filter at all.
+      TEAM_EXHAUSTED: t('world.err.teamExhausted'),
       SATCHEL_CAP_EXCEEDED: t('world.err.satchelCap'),
       // Optimistic-lock miss on the player's world doc (2026-08-24). startMarch — which produced the great
       // majority of these — no longer writes to playerWorld on dispatch at all, so this should now be rare;

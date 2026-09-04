@@ -105,6 +105,7 @@ export const ErrorCode = {
   ALREADY_ACTIVE: 'ALREADY_ACTIVE',                 // monthly/year card still running — single-slot gate, buy again once it expires (§5)
   // —— SLG teams (2026-07-15): idle-team gate on march dispatch ——
   TEAM_BUSY: 'TEAM_BUSY',                           // team is already committed to an active (non-recalled) march; recall it first
+  TEAM_EXHAUSTED: 'TEAM_EXHAUSTED',                 // team has less than SLG_TEAM_STAMINA_COST stamina left; it refills over time (SLG_DESIGN §4.6)
   OCCUPATION_NOT_FOUND: 'OCCUPATION_NOT_FOUND',     // no active occupation-hold for this team/tile (already settled, expelled, or never started)
   MAIL_HAS_UNCLAIMED_ATTACHMENT: 'MAIL_HAS_UNCLAIMED_ATTACHMENT', // mail has an attachment that hasn't been claimed yet; claim it before deleting
   // —— SLG city P3 (2026-07-16): satchel per-march troop-carry cap ——
@@ -210,6 +211,7 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.FATE_INVALID_ITEM]: 400,
   [ErrorCode.ALREADY_PURCHASED]: 409,
   [ErrorCode.TEAM_BUSY]: 409,
+  [ErrorCode.TEAM_EXHAUSTED]: 409,
   [ErrorCode.OCCUPATION_NOT_FOUND]: 404,
   [ErrorCode.MAIL_HAS_UNCLAIMED_ATTACHMENT]: 409,
   [ErrorCode.SATCHEL_CAP_EXCEEDED]: 409,

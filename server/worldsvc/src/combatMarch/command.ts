@@ -5,7 +5,7 @@
 // 形态②): only ever calls `this.core` (never `this.siege` — that dependency belongs entirely to
 // ArrivalService's settlement side), zero cross-mixin `this.*` calls in the original chain —
 // assembled by composition in ../combatMarch.ts.
-import { tileId, marchId, playerWorldId, marchDurationFromPath, marchStepArriveAt, marchMoraleFromPath, OCCUPY_MIN_TROOPS, MARCH_MIN_TROOPS, isInVision, marchInterpPos, satchelCarryCapFor, SlgError, MARCH_RETURN_SPEEDUP_SECS_PER_COIN, type MarchKind } from '@nw/shared';
+import { tileId, marchId, playerWorldId, marchDurationFromPath, marchStepArriveAt, marchMoraleFromPath, OCCUPY_MIN_TROOPS, MARCH_MIN_TROOPS, isInVision, marchInterpPos, satchelCarryCapFor, SlgError, MARCH_RETURN_SPEEDUP_SECS_PER_COIN, regenTeamStamina, SLG_TEAM_STAMINA_MAX, SLG_TEAM_STAMINA_COST, type MarchKind } from '@nw/shared';
 import type { MarchDoc, ArmyEntry } from '../db';
 import { WorldCore } from '../core';
 import { MARCHABLE_KINDS } from '../core';
@@ -59,6 +59,11 @@ export class CommandService {
     // inside the team block below; drives the origin override, the from-tile ownership skip, the
     // pool-deduction skip, and the atomic StationedDoc claim before insert.
     let idleRedispatch = false;
+    // Stamina charge, deferred to the end of the dispatch so a march that fails to commit (duplicate-team
+    // insert, insufficient pool troops) costs nothing. Both stay null for a flat-pool march, which commands
+    // no team and so spends no stamina — see the charge site for why that hole is deliberate.
+    let staminaTeamId: string | null = null;
+    let staminaBefore = 0;
     // 'move' (2026-07-23) is always team-based — "选中的部队" is a team, and a moved team parks on the tile as a
     // whole (unlike reinforce's faceless garrison), so there is no flat-pool move path.
     if (kind === 'move' && !teamId) throw new SlgError('BAD_REQUEST', 'Move requires a team');
@@ -83,6 +88,27 @@ export class CommandService {
       idleRedispatch = !!busyStationed && busyStationed.mode !== 'garrison' && (kind === 'occupy' || kind === 'move' || kind === 'attack');
       if (busyMarch || busyHold || (busyStationed && !idleRedispatch)) {
         throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
+      }
+      // Stamina gate (2026-09-04, SLG_DESIGN §4.6): one order costs SLG_TEAM_STAMINA_COST from this team's
+      // own budget, which refills on a wall clock. Checked here (before anything is written) and charged
+      // once the dispatch has fully committed, at the bottom of this function.
+      //
+      // A read-then-write with no optimistic guard is safe here *because of the gate directly above*: the
+      // {worldId,ownerId,teamId} partial-unique index on `marches` (plus the occupations/stationed checks)
+      // admits at most one live order per team, and `startMarch` is the only spender — so there is no second
+      // writer to race with on this field, unlike the shared troop pool a few lines down. If a second
+      // spender is ever added, this needs the same `$gte`-style atomic filter the pool debit uses.
+      staminaTeamId = teamId;
+      staminaBefore = regenTeamStamina(
+        pw.teamState?.[teamId]?.stamina ?? SLG_TEAM_STAMINA_MAX,
+        pw.teamState?.[teamId]?.staminaAt ?? 0,
+        now(),
+      );
+      if (staminaBefore < SLG_TEAM_STAMINA_COST) {
+        throw new SlgError(
+          'TEAM_EXHAUSTED',
+          `Team stamina ${staminaBefore} is below the ${SLG_TEAM_STAMINA_COST} an order costs`,
+        );
       }
       if (idleRedispatch) {
         // Depart from where the team STANDS (ignore any client-supplied origin — an idle field team is not at the
@@ -286,6 +312,31 @@ export class CommandService {
         await restoreClaim?.();
         throw new SlgError('NO_TROOPS', 'Insufficient troops');
       }
+    }
+    // Charge stamina now that the dispatch has committed: the march document is inserted and (for a
+    // flat-troop, non-redispatch march) the pool debit matched, so every remaining step is a push.
+    //
+    // Only team orders are charged. A flat-pool `reinforce` or `sweep` carries no teamId — there is no
+    // per-team budget to draw from — so those stay free, and that is the intended shape rather than an
+    // oversight: they are bounded by the troop pool and by training time instead, and making the world map
+    // un-actionable once five teams are tired would leave a player with a full pool and nothing to do with
+    // it. Revisit together with any future flat-march rework, not on its own.
+    // `rev` is deliberately NOT bumped, for the reason spelled out where the resource settle used to
+    // live (a few lines up): it is a pure optimistic lock with no business meaning, so bumping it from a
+    // write nobody guards on would only invalidate other writers' guards for free. Both keys are scoped
+    // dotted paths under this team's own subdocument, so the write commutes with every other playerWorld
+    // writer — including a scheduler settle landing in the same window (teams.e2e.test.ts covers exactly
+    // that race), and including the `teamState.{id}.injuredUntil` writes on the defence side.
+    if (staminaTeamId) {
+      await cols.playerWorld.updateOne(
+        { _id: pw._id },
+        {
+          $set: {
+            [`teamState.${staminaTeamId}.stamina`]: staminaBefore - SLG_TEAM_STAMINA_COST,
+            [`teamState.${staminaTeamId}.staminaAt`]: t,
+          },
+        },
+      );
     }
     const view = this.core.marchView(doc);
     void this.core.pushMarch(accountId, view);

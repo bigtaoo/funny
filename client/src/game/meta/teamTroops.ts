@@ -9,6 +9,7 @@
 // Several scenes (CityScene, WorldMapNet) previously each summed troops independently and drifted
 // apart; they now all route through carriedTroops() here.
 
+import { regenTeamStamina, SLG_TEAM_STAMINA_MAX, SLG_TEAM_STAMINA_COST } from '@nw/shared';
 import type { TeamTemplate, CardSLGState } from '../../net/WorldApiClient';
 import type { CardInstance, EquipmentInstance } from './SaveData';
 import { troopCap, cardPower } from './cardDefs';
@@ -104,4 +105,25 @@ export function teamLeaderCard(
     }
   }
   return best;
+}
+
+/** One team's live stamina/injury slice as the server persists it (PlayerWorldView.teamState[id]). */
+export type TeamRuntimeState = { injuredUntil?: number | null; stamina?: number; staminaAt?: number };
+
+/**
+ * Live stamina of a team (SLG_DESIGN §4.6), recomputed from the server's checkpoint pair with the SAME
+ * shared function worldsvc charges against — the view carries `{stamina, staminaAt}`, not a live figure,
+ * so the bar keeps ticking between responses instead of freezing until the next refetch. Same
+ * raw-timestamp-plus-local-clock contract the injury countdowns already use.
+ *
+ * Both fields absent (a team that has never marched, or an account predating the system) reads as FULL,
+ * matching the server's own default — never as 0, which would lock a player out of the world map.
+ */
+export function teamStamina(state: TeamRuntimeState | undefined, now: number): number {
+  return regenTeamStamina(state?.stamina ?? SLG_TEAM_STAMINA_MAX, state?.staminaAt ?? 0, now);
+}
+
+/** Whether this team has enough stamina left to be given one more order. Mirrors startMarch's gate. */
+export function teamCanAct(state: TeamRuntimeState | undefined, now: number): boolean {
+  return teamStamina(state, now) >= SLG_TEAM_STAMINA_COST;
 }

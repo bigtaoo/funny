@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
+import { SLG_TEAM_STAMINA_COST, SLG_TEAM_STAMINA_MAX } from '@nw/shared';
 import { initI18n, setLocale } from '../../src/i18n';
 import { WorldMapPanels } from '../../src/scenes/worldmap/WorldMapPanels';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
@@ -38,8 +39,14 @@ function tmpl(id: string): TeamTemplate {
   return { id, name: '', army: [{ cardInstanceId: `card-${id}` }] } as TeamTemplate;
 }
 
-/** One team per status the panel can render, so a single renderHud covers every row shape at once. */
-function buildHarness() {
+/** One team per status the panel can render, so a single renderHud covers every row shape at once.
+ *
+ * `t1RestingStamina` (2026-09-04, team stamina / SLG_DESIGN §4.6) switches t1's home row between its two
+ * status strings, both of which now carry a number: "at home · stamina N" when the team can still be
+ * given an order, and the longer "resting · stamina N" when it cannot. Both are checked, because the
+ * whole point of this file is that a reworded status line must not silently overflow — and this change
+ * made the home row, previously the SHORTEST one here, a contender for the longest in German. */
+function buildHarness(t1RestingStamina = false) {
   const teams = ['t1', 't2', 't3', 't4', 't5'].map(tmpl);
   const cardState: Record<string, { currentTroops: number }> = {};
   for (const t of teams) cardState[`card-${t.id}`] = { currentTroops: 99_999 }; // worst-case digit count
@@ -62,7 +69,14 @@ function buildHarness() {
     me: {
       joined: true, mainBaseTile: `${WORLD_ID}:${BASE.x}:${BASE.y}`,
       troops: 10, troopCap: 100, territoryCount: 1, resources: {}, yieldRate: {}, cardState,
-      teamState: { t5: { injuredUntil: NOW + TWELVE_HOURS } },
+      teamState: {
+        t5: { injuredUntil: NOW + TWELVE_HOURS },
+        // Worst-case digit count on both sides of the branch: 100 is the widest stamina figure, and
+        // SLG_TEAM_STAMINA_COST - 1 is the largest value that still reads as resting.
+        t1: t1RestingStamina
+          ? { stamina: SLG_TEAM_STAMINA_COST - 1, staminaAt: NOW }
+          : { stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW },
+      },
     },
     marches, occupations: [], stationed,
     teams, teamsLoaded: true, teamPanelExpanded: true,
@@ -88,9 +102,11 @@ beforeEach(() => { setLocale('en'); });
 
 describe('team panel rows fit their 320px column', () => {
   for (const lang of LOCALES) {
-    it(`[${lang}] no row text runs past the panel's right edge`, () => {
+  for (const resting of [false, true]) {
+    const tag = `${lang}${resting ? ', resting' : ''}`;
+    it(`[${tag}] no row text runs past the panel's right edge`, () => {
       setLocale(lang);
-      const { ctx, panels } = buildHarness();
+      const { ctx, panels } = buildHarness(resting);
       panels.renderHud();
       expect(ctx.teamRowRects.length).toBe(5);
       const panelRight = ctx.teamBadgeRect.x + ctx.teamBadgeRect.w;
@@ -102,9 +118,9 @@ describe('team panel rows fit their 320px column', () => {
       }
     });
 
-    it(`[${lang}] every action button label stays inside its own button`, () => {
+    it(`[${tag}] every action button label stays inside its own button`, () => {
       setLocale(lang);
-      const { ctx, panels } = buildHarness();
+      const { ctx, panels } = buildHarness(resting);
       panels.renderHud();
       const buttons = ctx.teamRowRects
         .map((r) => r.recallRect ?? r.instantReturnRect ?? r.recallStationRect)
@@ -119,9 +135,9 @@ describe('team panel rows fit their 320px column', () => {
       }
     });
 
-    it(`[${lang}] a status line never reaches under its row's action button`, () => {
+    it(`[${tag}] a status line never reaches under its row's action button`, () => {
       setLocale(lang);
-      const { ctx, panels } = buildHarness();
+      const { ctx, panels } = buildHarness(resting);
       panels.renderHud();
       for (const row of ctx.teamRowRects) {
         const action = row.recallRect ?? row.instantReturnRect ?? row.recallStationRect;
@@ -133,5 +149,6 @@ describe('team panel rows fit their 320px column', () => {
         expect(status!.x + status!.width).toBeLessThanOrEqual(action.x);
       }
     });
+  }
   }
 });
