@@ -384,3 +384,17 @@ v1 的递增**比 v2 还猛**——它的毛病从来不是墨少，而是墨**�
 **修法**：`text.split(/\r?\n/)`。改完做了双向验证：①守卫变绿；②往 `list.ts` 真塞一句 `core.tab = 'skins'`，守卫照样抓到并报对行号（说明修的是切分，不是把匹配放宽了）。
 
 **推广**：仓库里 `split('\n')` 有十几处，但只有**同时**做「逐行 + `$` 锚定 / 行尾注释剥离」的才会中招——只用来数行号（`src.slice(0, m.index).split('\n').length`）或只做 `includes` 的不受影响。审计过同类的 `no-debug-hooks-in-src` / `input-subscription-cleanup` / `sceneTitleIconCoverage` / `socialErrorWiring`，都不带 `$` 逐行正则，无需改。**写这类守卫时的判据一句话：一条以 `$` 结尾的逐行正则，正确性上限等于喂给它的那个 split。**
+
+## 构建期常量替换：断言配置说了什么 ≠ 断言替换真的发生了（2026-09-04，`globalThis.TARGET`）
+
+`webpack.config.js` 的 DefinePlugin 有一行 `TARGET: JSON.stringify(targetPlatform)`，而三个读它的地方（`app/appConstants.ts` 的 `clientPlatformName`、`analytics/index.ts`、`net/anomaly/reporter.ts`）写的都是 `globalThis.TARGET`。**裸 key 只替换自由变量，成员表达式要 key 里自己带上** —— 旁边 `'globalThis.__NW_API_BASE__'` 那几行一直是对的，唯独这一行不是。于是替换从来没发生过，微信包和 CrazyGames 包都把自己上报成 `web`（埋点 platform 维、异常日志 `platform` 字段、`X-NW-Platform` 充值池桶三处同时中招）。
+
+**为什么整套测试都看不见它**，值得单独记：①配置读取型断言（`wechatSingleBundle.test.ts` 那一路）读的是 key 写对没有，**替换生不生效不在它的视野里**；②单元测试自己往 `globalThis.TARGET` 上写值——那恰好是唯一能读到它的场景，于是所有平台分支的用例都是绿的；③类型、构建、游戏运行全都正常，症状只是一个维度上的值悄悄变成常量。
+
+**修法是一层比一层贵的三级，别停在第一级**：
+
+1. 补 key。
+2. `targetGlobalCompile.test.ts`：拿真 config 编译一个三行 fixture，`output.library = commonjs2` + `target: 'node'`，然后**在 Node 里 `require` 产物问它到底看见什么**。抄 `capacitorStubCompile.test.ts` 的形状，4 个 target 全跑约 2 秒。文本 grep 不行——要的是值，而值正是 bundler 改完名之后文本看不出来的东西。
+3. fixture 同时导出**自己写的那个表达式**和**真正的 `clientPlatformName()`**。前者证明「这个形状会被替换」，后者证明「代码里现在写的还是这个形状」——只有前者的话，读法被重构掉之后探针照样绿。
+
+**顺带量出来的 webpack 行为**（靠改坏源码再跑，不是查文档）：它的 parser 比 key 看上去宽容——`globalThis['TARGET']`（字符串字面量下标）和 `const g = globalThis; g.TARGET`（简单 const 别名）**都还会被替换**；跟不上的是**读法离开表达式**，比如把三处重复的读法抽成 `read(globalThis, 'TARGET')`——那是这里下一个最可能的编辑，也正是第 3 级用例唯一抓得住、前两级抓不住的那个变异。
