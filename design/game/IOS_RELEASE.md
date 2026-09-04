@@ -86,7 +86,10 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
    至少一种本地化的显示名 + 描述、价格档、**审核用截图**（用 `art/store/en/shop__iphone_6.7.png`）、审核备注。
    金币数不填进 ASC——服务端 `IAP_TIERS` 是唯一权威。
 3. **订阅群组**：订阅 → 创建群组 `Nivara Pass` → 在群组内建 `…sub.monthly`（1 个月）与 `…sub.year`（1 年）。
-   两档**必须同群组**（理由见 §4.1b）。订阅额外要填本地化显示名 + 描述、时长、价格、群组内等级排序（年卡更高一级）。
+   两档**必须同群组**（理由见 §4.1b）。订阅额外要填本地化显示名 + 描述、时长、价格、群组内等级排序。
+   等级建议**两档放同一级**：两张卡权益完全相同（都是立得 600 + 每天 120，只有时长差），同级 = crossgrade，
+   切换在下个续期生效；分级会变成即时升级，Apple 按比例退掉月卡剩余时间，而服务端是 `max(now, 当前 expiry)`
+   往后叠加（`service/base.ts`），玩家白拿一段已退款的时长。
    **别开免费试用 / 促销价**：续期同步（§4.1b）按周期逐条补发，不认这些特殊周期类型。
 4. **2 个非消耗型**：`…starter.draw`（$0.99）、`…starter.growth`（$4.99）。
 5. **App 专用共享密钥**：App 内购买项目页右上角生成并复制 → 填进 VPS commercial 的 `NW_APPLE_PASSWORD`，
@@ -132,8 +135,8 @@ Price（见 `IAP_CREDENTIALS.md §1.1` 与那次事故记录），ASC 就建对�
 | `starter_growth` | `com.gamestao.nivara.starter.growth` | 非消耗型 | $4.99 |
 
 商品 ID 约定由服务端 `resolveNonCoinProduct`（`server/commercial/src/iap/productResolve.ts`）定义，
-Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**这四个 ASC 里还没建**——不建就是四个点了必失败的按钮，
-审核员一定会点（2.1）。
+Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**四个已于 2026-09-04 在 ASC 建齐**（此前不建就是四个
+点了必失败的按钮，审核员一定会点，2.1）。
 
 **ASC 建法**：两个订阅放**同一个订阅群组**（Subscription Group，例如 `Nivara Pass`），月/年是同群组的两档。
 同群组是 Apple 期望的形态，用户能在月↔年之间升降级而不产生两份并行订阅；服务端只有一个
@@ -182,6 +185,16 @@ Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**这�
 - `NW_IAP_BUNDLE=com.gamestao.nivara` —— **必须改**（默认 `com.nw` 会匹配不到商品，fail closed 发失败）。
 - `NW_APPLE_PASSWORD=<App 专用共享密钥>` —— ASC →「App 内购买项目」→ App 专用共享密钥。
 - 生产必须 `NODE_ENV=production` 且 **不设** `NW_IAP_DEV`（详见 [`IAP_CREDENTIALS.md`](IAP_CREDENTIALS.md) §0）。
+
+> ⚠️ **只写 `.env` 不生效**（2026-09-04 踩到并已修）。compose 不把 `server/.env` 读进容器，只做 `${...}` 插值；
+> `docker-compose.cloud.yml` 的 `commercial` 块此前**没列任何支付凭据**，所以 `NW_APPLE_PASSWORD` 一直没进过进程，
+> Apple 验单在生产上从来是 fail closed。已在 `8ef2dac07` 补齐透传（四家凭据 + 三个映射变量），细节与第二个坑
+> （空串会盖掉代码里的 `?? 默认值`）见 [`IAP_CREDENTIALS.md`](IAP_CREDENTIALS.md)「产品 ID / 金额 → 档位映射」。
+> 改完 `.env` 后重新加载：`docker compose -f docker-compose.cloud.yml --env-file .env up -d commercial`（不用重建镜像）。
+
+**当前进度（2026-09-04）**：ASC 里 9 个商品已建齐（5 消耗型 + 2 非消耗型 + 2 自动续订订阅），状态均为
+「准备提交」；VPS 已设 `NW_IAP_BUNDLE=com.gamestao.nivara` 并透传到容器（`printenv` 已确认）。**只差
+`NW_APPLE_PASSWORD`**——填进去并重启 commercial 后沙盒充值链路才通。
 
 > 客户端请求的 Product ID 由 `AppDelegate.swift` 自动派生自 App 的 Bundle ID（`<bundleId>.coins.<tierId>`），与上表一致，无需额外配置。
 
@@ -407,11 +420,12 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] 支付渠道隔离审计 + 修复（§10，2026-09-03）
 - [x] 定下付费点：**与 Paddle 逐一对齐，共 9 个**（§4.1 / §4.1b，2026-09-03）
 - [x] 定下月卡/年卡形态：**自动续订订阅，同一订阅群组**，续期到账链路已实装（§4.1b）
-- [ ] ASC 建 9 个商品（5 消耗型 + 2 自动续订订阅 + 2 非消耗型）+ 填 App 专用共享密钥
-      （**2026-07-21 确认：尚未添加**；共享密钥现在是两条链路的凭据——验单**和**续期同步）。
+- [x] ASC 建 9 个商品（5 消耗型 + 2 自动续订订阅 + 2 非消耗型）——**2026-09-04 建齐，状态「准备提交」**。
       **点击顺序见 §4.0**；先确认 Paid Apps 协议是 Active，否则商品与沙盒都不可用
-- [ ] VPS commercial 设 `NW_IAP_BUNDLE=com.gamestao.nivara` + `NW_APPLE_PASSWORD`，重启
-      （`server/.env.example` 仍是默认 `com.nw`，不改则全部 fail closed 不发币）
+- [ ] 填 App 专用共享密钥（共享密钥是两条链路的凭据——验单**和**续期同步）：写进 VPS 的
+      `NW_APPLE_PASSWORD` 后 `up -d commercial`。**这是沙盒联调唯一还缺的一项**
+- [x] VPS commercial 设 `NW_IAP_BUNDLE=com.gamestao.nivara`（2026-09-04，且已补上 compose 透传——
+      在那之前 `.env` 里的凭据根本进不了容器，见 §4.2 的告警）
 - [x] 美术：iPhone 6.7"/6.5" + iPad 12.9" 截图（2026-08-18 出齐，`art/store/en/`，英文一套；德/中文换 locale 重跑即可）
 - [x] **ATT 与隐私标签的矛盾已解**（2026-09-03，选「不跟踪」）：AdMob 改为只请求非个性化广告（`npa=1`），
       删掉 ATT 请求与 `NSUserTrackingUsageDescription`；`SKAdNetworkItems` 保留（按 Apple 自己的口径不算 tracking）。
