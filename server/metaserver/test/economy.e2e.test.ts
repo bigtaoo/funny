@@ -870,6 +870,14 @@ describe.skipIf(!mongo)('meta economy orchestration e2e', () => {
   });
 
   it('ad cap: more than 5 times → 429', async () => {
+    // adsDayKey() buckets by UTC date, and the walk below spans ~60 min (6 x ADS_MIN_INTERVAL_MS),
+    // so a run that starts inside the last hour of a UTC day rolls the key over mid-test: the
+    // cap counter restarts on the new day and the over-cap watch answers 200. That is a flake
+    // window one hour wide every day, not a code bug -- it took down 2026-09-04 CI, which ran
+    // this at 23:03 UTC. Snap to the next UTC midnight first -- always forward, so the interval
+    // guard's stored lastAdAt stays in the past -- and the walk then has a full day of headroom
+    // no matter what the wall clock says when the suite runs.
+    fakeNow = new Date(fakeNow).setUTCHours(24, 0, 0, 0);
     for (let i = 0; i < 5; i++) {
       fakeNow += ADS_MIN_INTERVAL_MS + 1000;
       const r = await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: `ok-${i}` } });
