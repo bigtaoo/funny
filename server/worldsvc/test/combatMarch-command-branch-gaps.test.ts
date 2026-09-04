@@ -662,6 +662,23 @@ describe('startMarch — team stamina (SLG_DESIGN §4.6)', () => {
     expect(staminaWrite()).toBeUndefined();
   });
 
+  it('the charge writes ONLY the two scoped team keys — no rev bump, nothing else touched', async () => {
+    // Two claims the source spells out and nothing asserted. (1) `rev` is deliberately left alone: it is a
+    // pure optimistic lock, and bumping it from a write nobody guards on would invalidate other writers'
+    // guards for free. (2) Both keys are dotted paths under THIS team's subdocument, so the write commutes
+    // with every other playerWorld writer — a scheduler settle landing in the same window, or the defence
+    // side's `teamState.{id}.injuredUntil`. A `$set: { teamState }` on the whole map would silently clobber
+    // the other four teams' state, and would still satisfy every other case in this block.
+    const s = withStamina({ stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW });
+    await s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1');
+    const calls = (ctx.cols.playerWorld.updateOne as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const call = calls.find((c) => 'teamState.t1.stamina' in (((c[1] as { $set?: Record<string, unknown> })?.$set) ?? {}))!;
+    expect(Object.keys(call[1] as Record<string, unknown>)).toEqual(['$set']); // no $inc, no rev
+    expect(Object.keys((call[1] as { $set: Record<string, unknown> }).$set).sort())
+      .toEqual(['teamState.t1.stamina', 'teamState.t1.staminaAt']);
+    expect(call[0]).toEqual({ _id: expect.anything() }); // no rev guard either — the write is unconditional
+  });
+
   it('a busy team still reports TEAM_BUSY, not TEAM_EXHAUSTED, when both would block', async () => {
     // Recalling is the action that unblocks a busy team; waiting is the one for a tired team. With both
     // true the player must be told the former, so the busy gate has to stay ahead of the stamina gate.

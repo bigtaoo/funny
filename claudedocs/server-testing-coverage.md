@@ -679,3 +679,27 @@ engine 是全仓唯一非 vitest 的包（`tsc -b` 编到 `dist/` 再 `node --te
 前六名：`render/bake.ts` 6（「没有 renderer」那一侧——需要 `vi.resetModules` 后在任何 `setBakeRenderer` 之前 import）、`scenes/CardScene/logic/feedPlan.ts` 6（**全部不可达**：`copiesOf.get() ?? 0` 的 map 是用同一个 pool 建的、两处 id tiebreak 的 `=== 0` 臂在库里 id 唯一、`mats.length < FUSION_MATERIAL_COUNT` 在 `pickFeeder` 已要求 `isFusableNow` 之后不可达）、`audio/MusicPlayer.ts` 4（deck 退休簿记 + `silence` 的 catch）、`game/replay/StateRecorder.ts` 3、`net/WorldApiClient/core.ts` 3、`scenes/EquipmentScene/helpers.ts` 3。其余 31 个文件各 1~2 条，多为 `?? fallback` 与平台守卫。
 
 已确认不可达、留档不追的：`sampleParam` 2（`span <= 0` 与循环后的 `return last.v`，两条早退已答完所有能到那里的输入）、`judgeRunner` 2（`winner ?? N` 只在**平局**时触发，campaign/siege 要跑到强制平局阈值 ≈3 万 tick）、`StateReplay` 2（`resSig` 的 `?? []` 在 `if (!f.res) continue` 后面、`keptTicksForUnit` 的 `n === 0` 没有空列表调用方）、`cardSort` 1（不同等级、装备补偿后**恰好相等**的战力）、`tileStyle` 1（源码自己写了 `biomeMixAt` 恒返回 `t=0`，第二臂「effectively dead but kept for the type/shape」）、`cueAssets` 1（`CUE_ASSETS` 每个条目都有 urls）、`migrate` 2（`MIGRATIONS` 是从 0 起的密集表，没有版本空洞）。
+
+## SLG 领地驻军回复 + 队伍体力：功能落地后的补测（2026-09-05，主检出当日分支 `04.09.2026`）
+
+给 `cac9e7109`（feat(slg): territory garrison regen + per-team stamina）补第二轮测试。功能提交自带的测试已经很密（`shared/test/garrison.test.ts` 的两条纯曲线、`core-helpers-gaps` 的 `liveGarrison`、`combatMarch-command-branch-gaps` 的 8 例体力闸门、客户端 `worldMapTeamStatus` / `worldMapTeamStaminaPicker`），所以这轮不是"再测一遍纯函数"，而是**把 stored/live 这条不变量在每个真正写库的接缝上钉死**——纯函数测得再透，也拦不住某个调用点读错了那两个数里的哪一个。
+
+### 新增/扩写的 7 个文件
+
+| 文件 | 例数 | 守的是哪条接缝 |
+|---|---|---|
+| `worldsvc/test/territory-abandon-refund.test.ts`（新） | 4 | **反刷兵的那一半**：`abandonTile` 的退款必须读 `tile.garrison` 原始值，不是 `liveGarrison`。这是全仓唯一一个"故意不走 live"的读点，而且改成 live 看起来像 bug 修复（那确实是守城的那个数）。假 `WorldCore`，不需要 Mongo |
+| `worldsvc/test/combatMarch-arrival-reinforce-gaps.test.ts`（新） | 3 | 增援落地那一行的两半：`$inc` 打在 stored 上，且**不盖 `garrisonRegenAt`**。盖了的话半血领地被增援反而更弱（丢掉已积累的回复），而写出来的 update 看着完全正常——只有下一次 `liveGarrison` 的答案会变 |
+| `worldsvc/test/core-map-tileview-gaps.test.ts`（新） | 6 | `tileDocView` 的驻军字段：地图上看到的是 live（情报＝战斗要打的那个数），且"0 → 整个 key 不下发"的老形状在改成 IIFE 后没丢（下发字面量 0 会被客户端读成"空地"，正是这功能要消灭的那个读法） |
+| `client/test/ui/cityTeamCardStamina.ui.ts`（新） | 8 | 城内队伍卡的状态链优先级：受伤 > 野外 > 行军 > 未加载 > **体力不足** > 闲置 > 空。`scenes/CityScene/**` 此前覆盖率 0，这是第一个——真 PIXI（ui 套件的无头适配层）+ 手搭的 `CitySceneCore` 替身（只读 7 个字段），不构造整个场景 |
+| `worldsvc/test/combatSiege-arrival-variants-gaps.test.ts`（扩） | +4 | `landSiege` 在**真实时钟**下的伤亡写入。原有几例的 `t` 是 1000ms，回复量 floor 成 0，等于只验了时间戳；这几例让 stored=100 的 10 级地在半个窗口后按 700 应战，于是"伤亡按 live 算、减法落在 stored 上、`$max` 兜底 0"三件事第一次能被分开看见 |
+| `worldsvc/test/combatSiege-encounter-arrival-branch-gaps.test.ts`（扩） | +3 | `applySiege` 的 `effGarrison`：半窗口的**部分**回复（原有两例只覆盖了"完全没回"和"没有 checkpoint = 全满"两个端点）、以及被打空的地在一个窗口后 `defenderConfig` 不再是 `null`——即"不再是白送的空地"这句设计话术的机器可读形式 |
+| `worldsvc/test/combatSiege-occupation-encounter-gaps.test.ts`（扩） | +1 | `settleOccupation` 建档时盖 `garrisonRegenAt`。缺 checkpoint 读作"很久没打过 = 已满血"，占领结算这条路不盖就等于白送新主人一整个 baseline（夺取那条路的同一义务在 `combatSiege-damage-helpers-gaps` 里已有） |
+
+### 每条断言都做了变异验证
+
+新写的测试最容易变成"绿得毫无信息"，所以逐条把源码改坏跑一遍，确认真的红：`map.ts` 改回 `o.garrison`（红 2）、`territory.ts` 退款改成 `liveGarrison`（红 4）、增援写入补上 `$set: { garrisonRegenAt: t }`（红 2）、`landSiege` 的伤亡基数改回 stored（红 2）、`teamRow.ts` 的体力分支短路（红 1）、`march.ts` 的 `doMarchTeam` 前置检查短路（红 2）。全部改回后重跑绿。
+
+客户端那边同批还补了 `teamTroops.ts`→`teamStamina/teamCanAct` 的直接单测（6 例，此前只有经 `teamStatus`/picker 的间接覆盖，而"缺 state = 满"这个默认值错了会把玩家整个锁在世界地图外）、`doMarchTeam` 的前置检查（5 例，就地占领根本不经过 picker 的过滤）、以及服务端真答 `TEAM_EXHAUSTED` 时的 `errors.ts` 映射（1 例）。
+
+**环境**：主检出的 `server/shared/dist` 是旧的，worldsvc 单测第一次跑直接 `tileGarrisonBaseline is not a function` 红了 14 例——先 `cd server/shared && npm run build`。这不是本轮改坏的，是任何一次在主检出跑 worldsvc 测试都会踩的门槛。

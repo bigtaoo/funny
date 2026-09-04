@@ -9,7 +9,10 @@
 //   1. an exhausted team drops out of the button list, and the empty-picker head names STAMINA rather
 //      than falling through to "go distribute troops" — advice that would not unblock the player;
 //   2. the figure shown on a usable row is the REGENERATED one, folded in from the checkpoint pair at
-//      open time, so reopening the picker a few minutes later already reflects the refill.
+//      open time, so reopening the picker a few minutes later already reflects the refill;
+//   3. and `doMarchTeam`'s own pre-check, which is NOT the same gate: two callers reach a dispatch
+//      without ever passing the picker's filter (就地占领 names a stationed team directly, and a picker
+//      left open long enough can be tapped after the budget was spent elsewhere).
 //
 // Same harness shape as worldMapOccupyTeamPicker.ui.ts (panels.showModal spied, no PIXI rendering),
 // plus a `teamState` seed that harness has no reason to carry.
@@ -18,6 +21,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SLG_TEAM_STAMINA_COST, SLG_TEAM_STAMINA_MAX } from '@nw/shared';
 import { initI18n, t } from '../../src/i18n';
 import { WorldMapNet } from '../../src/scenes/worldmap/WorldMapNet';
+import { WorldApiError } from '../../src/net/WorldApiClient';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { PlayerWorldView } from '../../src/net/WorldApiClient';
 import { modalLineText, type ModalLine } from '../../src/scenes/worldmap/WorldMapPanels/modalLine';
@@ -84,7 +88,7 @@ function buildHarness(opts: {
     panels: { showModal, showToast, closeModal, renderHud },
   } as unknown as WorldMapContext;
 
-  return { ctx, net: new WorldMapNet(ctx), showModal, startMarch };
+  return { ctx, net: new WorldMapNet(ctx), showModal, showToast, startMarch };
 }
 
 const labelsOf = (showModal: ReturnType<typeof vi.fn>): string[] =>
@@ -181,5 +185,72 @@ describe('showTeamPicker — team stamina gate (§4.6)', () => {
     await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
     expect(labelsOf(showModal).filter((l) => l !== t('common.close'))).toHaveLength(0);
     expect(headOf(showModal)).toContain(t('world.team.allNoTroops'));
+  });
+});
+
+describe('doMarchTeam — the pre-check behind the picker (§4.6)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('refuses an exhausted team without a round trip, in the words the server would have answered with', async () => {
+    // 就地占领 (doInPlaceOccupy) names a specific stationed team and never opens the picker, so the row
+    // filter cannot help it: without this check the only feedback would be a TEAM_EXHAUSTED round trip.
+    const { net, showToast, startMarch } = buildHarness({
+      teamState: { t1: { stamina: SLG_TEAM_STAMINA_COST - 1, staminaAt: NOW } },
+    });
+    await net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'occupy');
+    expect(startMarch).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(t('world.err.teamExhausted'), expect.anything());
+  });
+
+  it('the in-place occupy entry point goes through the same gate', async () => {
+    const { net, showToast, startMarch } = buildHarness({
+      teamState: { t1: { stamina: 0, staminaAt: NOW } },
+    });
+    await net.doInPlaceOccupy(ANCHOR.x, ANCHOR.y, 't1');
+    expect(startMarch).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(t('world.err.teamExhausted'), expect.anything());
+  });
+
+  it('a team with exactly one order left is dispatched, not refused', async () => {
+    const { net, startMarch } = buildHarness({
+      teamState: { t1: { stamina: SLG_TEAM_STAMINA_COST, staminaAt: NOW } },
+    });
+    await net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'occupy');
+    expect(startMarch).toHaveBeenCalledTimes(1);
+  });
+
+  it('the refill is read at TAP time, so a team that was empty when the picker opened can still go', async () => {
+    // The pre-check recomputes from the checkpoint pair against the current clock rather than trusting a
+    // figure captured when the modal was built — a picker left open across the wall is not stale.
+    const { net, startMarch } = buildHarness({ teamState: { t1: { stamina: 0, staminaAt: NOW } } });
+    vi.setSystemTime(NOW + SLG_TEAM_STAMINA_COST * 60_000);
+    await net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'occupy');
+    expect(startMarch).toHaveBeenCalledTimes(1);
+  });
+
+  it('a team that has never marched is never blocked by the pre-check', async () => {
+    const { net, startMarch } = buildHarness();
+    await net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'occupy');
+    expect(startMarch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a TEAM_EXHAUSTED answer from the server (§4.6)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('is shown as the same localized line the client-side pre-check uses, not as a raw code', () => {
+    // The two gates can genuinely disagree: the client charges nothing, so a second device (or a
+    // dispatch from the city panel) can spend the budget between this client's last refresh and the tap.
+    // When that happens the player must read the same sentence either way — an untranslated
+    // "TEAM_EXHAUSTED" toast is how a mapping gap in errors.ts shows up in production.
+    const { net, showToast } = buildHarness();
+    (net as unknown as { ctx: { cb: { worldApi: { startMarch: unknown } } } }).ctx.cb.worldApi.startMarch =
+      vi.fn().mockRejectedValue(new WorldApiError('TEAM_EXHAUSTED', 'Team stamina 3 is below the 15 an order costs'));
+    return net.doMarchTeam(ANCHOR.x, ANCHOR.y, 't1', 'occupy').then(() => {
+      expect(showToast).toHaveBeenCalledWith(t('world.err.teamExhausted'), expect.anything());
+      expect(t('world.err.teamExhausted')).not.toBe('world.err.teamExhausted'); // the key really resolves
+    });
   });
 });

@@ -34,6 +34,7 @@ import {
   playerWorldId,
   nationDefenseStrength,
   tileGarrisonBaseline,
+  TILE_GARRISON_REGEN_MS,
   academyBuff,
   npcBaseHp,
   type SiegeResolution,
@@ -958,5 +959,67 @@ describe('ArrivalService.applySiege — engine-version drift warning', () => {
     await run({ engineVersion: undefined });
     expect(warnSpy).not.toHaveBeenCalled();
     expect(landing.landSiege).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// The baseline heal AT the siege seam (2026-09-04, SLG_DESIGN §5.6).
+//
+// `applySiege` folds `liveGarrison(baseTile, t)` into `effGarrison`, and the two cases the rest of
+// this file already covers are the endpoints: a checkpoint stamped at `T` (the `tile()` default —
+// no heal at all) and an absent one (fully healed). What sits between them is untested here, and it
+// is where the feature actually lives: a tile that was stripped a few minutes ago fights with a
+// PARTIAL refill, and a tile whose stored garrison is 0 is no longer the empty board that made a
+// second attack a loss-free capture.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+describe('ArrivalService.applySiege — the baseline heal folded into effGarrison', () => {
+  it('a half-elapsed regen window fights at stored + half the baseline, not at either endpoint', async () => {
+    // Level 5 → baseline 600; stripped to 50 stored, 2.5 minutes ago → 50 + 300 = 350 defending.
+    const h = arrivalCore({
+      tiles: { [TILE]: tile({ ownerId: DEF, level: 5, garrison: 50, garrisonRegenAt: T - TILE_GARRISON_REGEN_MS / 2 }) },
+    });
+    await h.svc.applySiege(march({ troops: 100_000 }), pw(), T);
+
+    const { res } = lastLandSiege();
+    const live = 50 + tileGarrisonBaseline(5) / 2;
+    expect(res).toEqual(resolveSiege(100_000, nationDefenseStrength(live, false)));
+    // Neither endpoint: not the stored 50 the document holds, and not the full baseline either.
+    expect(res).not.toEqual(resolveSiege(100_000, nationDefenseStrength(50, false)));
+    expect(res).not.toEqual(resolveSiege(100_000, nationDefenseStrength(tileGarrisonBaseline(5), false)));
+  });
+
+  it('a tile stripped to 0 by an earlier siege is no longer an EMPTY tile once the window has passed', async () => {
+    // The free-capture this feature exists to close: `shouldUseCheapSiege` hands the attacker an
+    // instant, loss-free win against a 0-troop defender, and before the heal a tile that lost one
+    // battle stayed at 0 forever. `buildDefenderConfig` returning null is the machine-readable form of
+    // "there is nobody here" — after the heal it must be a real defender again.
+    const h = arrivalCore({
+      tiles: { [TILE]: tile({ ownerId: DEF, level: 8, garrison: 0, garrisonRegenAt: T - TILE_GARRISON_REGEN_MS }) },
+    });
+    await h.svc.applySiege(march({ troops: 100_000 }), pw(), T);
+
+    const { res, replay } = lastLandSiege();
+    expect(replay.defenderConfig).not.toBeNull();
+    expect(res).toEqual(resolveSiege(100_000, nationDefenseStrength(tileGarrisonBaseline(8), false)));
+    expect(res).not.toEqual(resolveSiege(100_000, 0));
+  });
+
+  it('the same stored 0 heals to a different figure on a different tile level', async () => {
+    // Reads as a sanity check but is the reason the baseline is level-derived rather than a flat
+    // constant: "how hard is this territory to retake" has to stay a property of the LAND, not of the
+    // fight that emptied it, or every stripped tile in the world would defend identically.
+    const strengths: number[] = [];
+    for (const level of [2, 9]) {
+      const h = arrivalCore({
+        tiles: { [TILE]: tile({ ownerId: DEF, level, garrison: 0, garrisonRegenAt: T - TILE_GARRISON_REGEN_MS }) },
+      });
+      await h.svc.applySiege(march({ troops: 100_000 }), pw(), T);
+      const { res, replay } = lastLandSiege();
+      expect(res).toEqual(resolveSiege(100_000, nationDefenseStrength(tileGarrisonBaseline(level), false)));
+      expect(replay.tileLevel).toBe(level);
+      strengths.push(res.defenderDeployed);
+    }
+    expect(strengths[1]!).toBeGreaterThan(strengths[0]!);
   });
 });
