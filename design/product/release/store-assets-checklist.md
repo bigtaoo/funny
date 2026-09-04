@@ -20,6 +20,63 @@
 
 > 长描述（每渠道字数上限不同）以简短描述为基底扩写，强调：手绘笔记本美术、回合策略深度、战役剧情（涛 vs Anna 东西碰撞）、联机对战、养成（不破坏 PvP 公平）。**避免**「赌博/博彩」类措辞（盲盒措辞统一为「付费随机道具」并指向概率公示）。
 
+### 0.1b 长描述（三语，2026-09-04 拟；App Store / Play 直接复制）
+
+> 写作口径：**功能陈述，不吹**。Apple 审核对"最好/第一/免费"一类措辞和与实际功能不符的描述会退回；
+> 抽卡一律写作「付费随机道具」并点明概率公示，绝不出现赌博/博彩类词汇（各渠道口径统一，见 §5）。
+> 长度控制在 ~800 字符以内：Play 上限 4000、App Store 4000，但商店只展示前三行，长了没人读。
+
+**中文**
+
+```
+一本笔记本，两种画法，一场持续到最后一页的战争。
+
+Nivara 是一款画在方格纸上的回合制策略游戏。你排布兵种、算清行动顺序、在对手的墨迹里找破绽——
+每一回合都是一道有正解的小题，而不是拼手速。
+
+· 战役：跟随涛与 Anna 的东西方笔记之争，逐章推进，剧情与关卡交替
+· 联机对战：实时回合制 PvP，同步的是操作而非结果，双方看到的是同一场仗
+· 大世界：占地、行军、结盟，与其他玩家共享一张会变化的地图
+· 养成：卡牌、皮肤、装备可收集；战力成长不改变 PvP 的对局规则
+
+内含付费随机道具，抽取概率在游戏内「概率」页公示。可完全免费游玩。
+```
+
+**English**
+
+```
+One notebook, two ways of drawing, and a war that runs to the last page.
+
+Nivara is a turn-based strategy game drawn on graph paper. You place your units, count out the
+order of actions, and look for the gap in your opponent's ink — every turn is a small problem with
+a right answer, not a race against the clock.
+
+· Campaign — follow Tao and Anna's duel of East and West notebooks, chapter by chapter
+· Multiplayer — real-time turn-based PvP that syncs inputs, not outcomes: both sides see one battle
+· Open world — claim ground, march, form alliances on a shared map that keeps changing
+· Collection — cards, skins and gear to collect; progression never changes the rules of a PvP match
+
+Contains paid random items; the draw rates are published in-game on the odds page. Free to play.
+```
+
+**Deutsch**
+
+```
+Ein Notizbuch, zwei Zeichenstile, ein Krieg bis zur letzten Seite.
+
+Nivara ist ein rundenbasiertes Strategiespiel auf kariertem Papier. Du stellst deine Einheiten auf,
+zählst die Zugreihenfolge durch und suchst die Lücke in der Tinte deines Gegners — jede Runde ist
+eine kleine Aufgabe mit einer richtigen Lösung, kein Wettlauf gegen die Uhr.
+
+· Kampagne — das Duell zwischen Taos und Annas Notizbüchern, Kapitel für Kapitel
+· Mehrspieler — rundenbasiertes Echtzeit-PvP: synchronisiert werden Eingaben, nicht Ergebnisse
+· Open World — Gebiete einnehmen, marschieren, Bündnisse schließen auf einer gemeinsamen Karte
+· Sammeln — Karten, Skins und Ausrüstung; Fortschritt ändert nie die Regeln eines PvP-Matches
+
+Enthält kostenpflichtige Zufallsgegenstände; die Wahrscheinlichkeiten stehen im Spiel auf der
+Quoten-Seite. Kostenlos spielbar.
+```
+
 ### 0.2 关键词 / 标签（待各渠道适配）
 策略, 回合制, 联机对战, 笔记本, 手绘, 战棋 / strategy, turn-based, multiplayer, notebook, hand-drawn, tactics / Strategie, rundenbasiert, Mehrspieler, Notizbuch, Taktik
 
@@ -106,7 +163,7 @@
 
 ### 1.2 元数据
 - 名称（≤30 字符）、副标题（≤30）、描述、关键词（≤100 字符逗号分隔）、推广文本——三语（见 §0.1）。
-- 隐私政策 URL：`{{PRIVACY_POLICY_URL}}`（必填）。
+- 隐私政策 URL：`https://nivara.gamestao.com/privacy`（必填；`/privacy.html` 会 307 到无后缀形式，填无后缀的）。
 - 支持 URL / 营销 URL。
 
 ### 1.3 年龄分级（Apple 自有问卷）
@@ -134,14 +191,21 @@
 - 是否加密传输：是；是否可请求删除：是（应用内删除账号）。
 
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
-- [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验
+- [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 桥 + `commercial/src/iap.ts` 验单，
+      fail closed）；剩下的是**外部动作**：ASC 建 9 个商品 + 填 App 专用共享密钥 + VPS 设 `NW_IAP_BUNDLE`/`NW_APPLE_PASSWORD`，
+      步骤见 [`IOS_RELEASE.md §4.0`](../../game/IOS_RELEASE.md)。真机沙盒对账仍未做
 - [x] **原生包内不含网页支付通道**（2026-09-03 审计 + 修复，详见 [`IOS_RELEASE.md §10`](../../game/IOS_RELEASE.md)）：
       `home/pricing/refunds/pay/terms/privacy.html` 六个静态页曾随 `mobile` 构建进入 iOS 包与每个 OTA 包，
       Paddle 结账模块曾编进原生 bundle，桥丢失时 `iapKind()` 曾回落 `paddle`——均已堵上，`nativePaymentIsolation.test.ts` 护住
-- [ ] **隐私政策补 Apple 支付口径**：`privacy.html §3` 目前只写 Paddle 是 merchant of record，没提 iOS 走 Apple
-- [ ] 应用内删除账号入口（5.1.1(v)）——Track 1 L1-2 已实现
-- [ ] 抽卡概率公示页（3.1.1）——Track 1 L1-3
-- [ ] 隐私政策 URL 可点（登录/设置页）
+- [x] **隐私政策补 Apple 支付口径**（2026-09-03）：`privacy.html §3` 已分列 web(Paddle) 与 iOS(Apple)，
+      `terms.html §3` 点明两个渠道的销售主体，`refunds.html §0` 写明「App Store 买的找 Apple 退」，三语 `.md` 同步
+- [x] 应用内删除账号入口（5.1.1(v)）—— `SettingsScene/panels.ts` 的 `drawAccount()` 在退出登录下方给出红色入口，
+      二次确认在 `overlays.ts` 的 `drawDeleteConfirm()`（Track 1 L1-2，登录态可见）
+- [x] 抽卡概率公示页（3.1.1）—— `GachaScene/page.ts` 卡池横幅右上角的 ⓘ 入口 → `GachaScene/odds.ts` 概率详情
+- [x] 隐私政策 URL 可点（2026-09-04）—— 首启同意弹窗 (`ConsentDialog`) **以及设置页**「法律条款」区两条链接，
+      均走 `legalUrl()`：网页相对路径、原生壳绝对 https（`capacitor://` 会被 iOS 静默丢弃）。
+      **补设置页入口的原因**：同意弹窗一辈子只出现一次，审核员的设备上早已同意过——在此之前 App 内根本找不到隐私政策。
+      门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例，含四种视口的几何核对与两种壳下的真实 URL）
 
 ---
 
@@ -158,7 +222,7 @@
 
 ### 2.2 元数据
 - 应用名称（≤30）、简短描述（≤80）、完整描述（≤4000）——三语（见 §0.1）。
-- 隐私政策 URL：`{{PRIVACY_POLICY_URL}}`（必填）。
+- 隐私政策 URL：`https://nivara.gamestao.com/privacy`（必填；`/privacy.html` 会 307 到无后缀形式，填无后缀的）。
 
 ### 2.3 年龄分级（IARC 问卷）
 - 含**随机付费道具（gacha）/ 模拟赌博**：如实勾。

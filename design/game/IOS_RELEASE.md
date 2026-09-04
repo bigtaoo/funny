@@ -75,6 +75,28 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
 
 ## 4. IAP 商品配置（充值发币的前提）
 
+### 4.0 操作步骤（ASC 侧，照做即可）
+
+下面这一节是**你在 App Store Connect 里的点击顺序**；4.1/4.1b 是这些商品的权威清单与设计依据。
+在 ASC 里选中 App `Nivara: Notebook Wars`（Bundle ID `com.gamestao.nivara`）后：
+
+1. **先看协议**：「协议、税务和银行业务」里 **Paid Apps 协议必须是 Active**（含税务表与银行账号）。
+   不是 Active 的话，商品会永远停在「缺少元数据」，**沙盒也拿不到商品**——这是最常见的"我明明建了却买不到"。
+2. **5 个消耗型**：App 内购买项目 → ＋ → 消耗型，产品 ID 照 §4.1 逐字填。每个要：参考名称、
+   至少一种本地化的显示名 + 描述、价格档、**审核用截图**（用 `art/store/en/shop__iphone_6.7.png`）、审核备注。
+   金币数不填进 ASC——服务端 `IAP_TIERS` 是唯一权威。
+3. **订阅群组**：订阅 → 创建群组 `Nivara Pass` → 在群组内建 `…sub.monthly`（1 个月）与 `…sub.year`（1 年）。
+   两档**必须同群组**（理由见 §4.1b）。订阅额外要填本地化显示名 + 描述、时长、价格、群组内等级排序（年卡更高一级）。
+   **别开免费试用 / 促销价**：续期同步（§4.1b）按周期逐条补发，不认这些特殊周期类型。
+4. **2 个非消耗型**：`…starter.draw`（$0.99）、`…starter.growth`（$4.99）。
+5. **App 专用共享密钥**：App 内购买项目页右上角生成并复制 → 填进 VPS commercial 的 `NW_APPLE_PASSWORD`，
+   同时设 `NW_IAP_BUNDLE=com.gamestao.nivara` 后重启（§4.2）。**这一串是两条链路的凭据**：验单**和**续期同步。
+6. **沙盒测试员**：用户和访问 → 沙盒 → 测试员，建一个（用没绑过 Apple ID 的邮箱别名）；
+   真机上 设置 → App Store → 沙盒账户 登录它，再按 §12 走充值对账与续订演练。
+
+> ⚠️ **产品 ID 建完不能改、不能删**，写错只能弃用再建一个新 ID。Swift 侧映射表与服务端 `resolveNonCoinProduct`
+> 已由跨语言测试钉死（§10.4/§10.5），ID 必须与 §4.1/§4.1b 逐字一致。
+
 ### 4.1 App Store Connect 建商品：9 个，付费点与 Paddle 逐一对齐
 
 **总原则（2026-09-03 定）：iOS 的付费点与 web(Paddle) 完全一致**，一个不多一个不少。Paddle 沙箱现有 9 个
@@ -386,7 +408,8 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] 定下付费点：**与 Paddle 逐一对齐，共 9 个**（§4.1 / §4.1b，2026-09-03）
 - [x] 定下月卡/年卡形态：**自动续订订阅，同一订阅群组**，续期到账链路已实装（§4.1b）
 - [ ] ASC 建 9 个商品（5 消耗型 + 2 自动续订订阅 + 2 非消耗型）+ 填 App 专用共享密钥
-      （**2026-07-21 确认：尚未添加**；共享密钥现在是两条链路的凭据——验单**和**续期同步）
+      （**2026-07-21 确认：尚未添加**；共享密钥现在是两条链路的凭据——验单**和**续期同步）。
+      **点击顺序见 §4.0**；先确认 Paid Apps 协议是 Active，否则商品与沙盒都不可用
 - [ ] VPS commercial 设 `NW_IAP_BUNDLE=com.gamestao.nivara` + `NW_APPLE_PASSWORD`，重启
       （`server/.env.example` 仍是默认 `com.nw`，不改则全部 fail closed 不发币）
 - [x] 美术：iPhone 6.7"/6.5" + iPad 12.9" 截图（2026-08-18 出齐，`art/store/en/`，英文一套；德/中文换 locale 重跑即可）
@@ -396,7 +419,11 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] **隐私政策/条款/退款政策补 Apple 支付口径**（2026-09-03）：`privacy.html §3` 分列 web(Paddle) 与 iOS(Apple)、
       §4 加 AdMob 非个性化一行；`terms.html §3` 点明两个渠道的销售主体；`refunds.html` 新增 §0
       「App Store 买的找 Apple 退」。三语 `design/product/legal/privacy-policy.*.md` 的 §6.3 与广告 SDK 行同步改
-- [ ] 填隐私标签 + App 描述（三语）
+- [x] **设置页补法律条款入口**（2026-09-04）：`SettingsScene` 右列新增「法律条款」两条链接（隐私政策 / 用户协议），
+      走 `legalUrl()` 与同意弹窗同源。此前 App 内唯一的入口在首启同意弹窗，**只出现一次**——
+      审核员的设备上早已同意过，等于点不到隐私政策（5.1.1(i)）。门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例）
+- [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
+      直接复制进 ASC 即可
 - [ ] **原生层拿 Xcode 编译一次**：TestFlight 那版（2026-07-21）之后 `client/ios` 又进了 AdMob 桥
       （`IAP_CREDENTIALS §2.1` 自述「未在 Xcode 里编译验证」，Google 改过 Swift API 命名）和 Capgo OTA 插件，
       **当前 HEAD 的原生代码没有任何一次成功构建记录**
@@ -404,4 +431,14 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [ ] **沙盒验一次自动续订**（§4.1b）：沙盒订阅按加速时钟续期（1 个月 ≈ 5 分钟），买月卡 → 杀进程 →
       等一次续期 → 冷启动 → 确认 `subscriptionExpiry` 又往后 30 天且金币 +600；再冷启动一次确认**不重复发**。
       这是整条链路里唯一没法在本机验的部分
+- [ ] **发版前把当日分支合进 `main`**：iOS 相关的支付隔离、自动续订、非个性化广告、设置页法律入口都还在
+      日分支上（2026-09-04 核：`main` 落后 18 个提交）。`ios-v*` tag 要打在包含这些提交的 ref 上，
+      否则 CI 构建的是没修过的那版
 - [ ] 提交审核（**2026-07-21 确认：尚未提审**）
+
+> **2026-09-04 复核**：以上未打勾项逐条用代码/CI 核过。三项曾经挂着的合规硬门其实早已实现，已在
+> [`store-assets-checklist.md §1.5`](../product/release/store-assets-checklist.md) 划掉（删除账号入口、
+> 抽卡概率公示页、隐私政策 Apple 口径）；第四项「隐私政策 URL 可点」当天补上了**设置页**的法律条款入口
+> ——在此之前 App 内唯一的隐私政策链接在首启同意弹窗里，**而它一辈子只出现一次**，审核员的设备上早已同意过。
+> iOS CI 最后一次成功构建是 **2026-07-21 09:59Z**（`gh run list --workflow=release-ios.yml`），
+> 而 AdMob 桥是同日 10:30 合入的——**「原生层没编译过」这条不是猜测，是两个时间戳的差**。

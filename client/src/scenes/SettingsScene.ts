@@ -15,7 +15,7 @@ import { wheelScrollY } from '../ui/wheelScroll';
 import type { SettingsSceneCallbacks } from './SettingsScene/types';
 import type { ITextInput } from '../platform/IPlatform';
 import { dispatchHit, hitAction, hitTest, inRect, type Hit } from '../ui/hits';
-import { drawProfile, drawLanguage, drawDataSaver, drawHelp, drawAccount, type PanelHost } from './SettingsScene/panels';
+import { drawProfile, drawLanguage, drawDataSaver, drawHelp, drawAccount, drawLegal, type PanelHost } from './SettingsScene/panels';
 import { drawAvatarPickerOverlay, type PickerHost } from './SettingsScene/avatarPicker';
 import { drawRenameOverlay, drawDeleteConfirm, type OverlayHost } from './SettingsScene/overlays';
 import { drawAudio, type AudioPanelHost, type AudioSlider } from './SettingsScene/audioPanel';
@@ -250,6 +250,7 @@ export class SettingsScene implements Scene {
     drawAudio(this.asAudioHost());
     if (this.cb.onReplayTutorial) drawHelp(this.asPanelHost());
     drawAccount(this.asPanelHost());
+    drawLegal(this.asPanelHost());
     if (this.avatarPickerOpen) drawAvatarPickerOverlay(this.asPickerHost());
     if (this.renameOpen) drawRenameOverlay(this.asOverlayHost());
     if (this.deleteConfirmOpen) drawDeleteConfirm(this.asOverlayHost());

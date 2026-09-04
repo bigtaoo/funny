@@ -1459,6 +1459,7 @@ export const zh = {
   // ── Title system (S10, TITLE_DESIGN) ─────────────────────────────────────────
   'settings.help': '帮助',
   'settings.replayTutorial': '重看新手教学',
+  'settings.legal': '法律条款',
   'titles.title': '称号墙',
   'titles.empty': '暂无称号',
   'titles.equipped': '已佩戴',

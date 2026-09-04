@@ -1437,6 +1437,7 @@ export const de: Record<TranslationKey, string> = {
   // ── Titelsystem (S10) ────────────────────────────────────────────────────────
   'settings.help': 'Hilfe',
   'settings.replayTutorial': 'Tutorial erneut',
+  'settings.legal': 'Rechtliches',
   'titles.title': 'Titelwand',
   'titles.empty': 'Noch keine Titel',
   'titles.equipped': 'Angelegt',
