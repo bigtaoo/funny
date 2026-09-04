@@ -215,6 +215,14 @@ describe('priceIdForTier (checkoutRoute.ts\'s tier→priceId lookup, not re-expo
 /** Minimal fake commercial covering only what checkoutRoute.ts/webhookRoute.ts touch, plus a couple of
  * accountId sentinels to force failure branches paddle-routes.e2e.test.ts never triggers for starter/coin. */
 class FakeCommercial implements CommercialClient {
+
+  // Not exercised by this file — the Apple auto-renewal sync has its own suites
+  // (commercial/test/appleSubscriptionSync.e2e.test.ts, metaserver/test/iapAppleSync.test.ts).
+  // Present because CommercialClient requires it: a double that silently lacked a money-moving
+  // method would let a handler regress to calling nothing at all and still look green.
+  async subscriptionSyncApple(_a: { accountId: string; receipt: string }) {
+    return { ok: true as const, coinsAfter: 0, subscriptionExpiry: 0, granted: 0 };
+  }
   readonly available = true;
   coins = new Map<string, number>();
   subscriptions = new Map<string, { expiry: number }>();

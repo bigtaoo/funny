@@ -74,7 +74,7 @@
 | **聚合平台**（CrazyGames 等） | 平台要求的登录/会话信息 | 平台内运行 |
 | **监管/执法机关** | 依法要求的信息 | 法律义务 |
 
-> 上线前须将 {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} / {{ADS_SDK}} 替换为实际使用的第三方名称及其隐私政策链接，并确保与 iOS 隐私标签、Google Play 数据安全表口径一致。
+> 上线前须将 {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} 替换为实际使用的第三方名称及其隐私政策链接，并确保与 iOS 隐私标签、Google Play 数据安全表口径一致。（广告 SDK 已于 2026-09-03 填实：Google AdMob，仅非个性化。）
 
 ---
 
@@ -159,4 +159,4 @@
 
 ---
 
-> **上线前占位替换清单**：`{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{ADS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` 及托管 URL `{{PRIVACY_POLICY_URL}}`（供客户端 `consent.*` 链接）。
+> **上线前占位替换清单**：`{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` 及托管 URL `{{PRIVACY_POLICY_URL}}`（供客户端 `consent.*` 链接）。

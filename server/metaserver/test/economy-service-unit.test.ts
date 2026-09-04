@@ -128,6 +128,21 @@ class FakeCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry, ...wallet };
   }
 
+  /**
+   * Apple auto-renewal sync. Modelled on the real one's defining property rather than its mechanics:
+   * a renewal EXTENDS a subscription that is still active, where monthlyCardBuy above refuses one
+   * (ALREADY_ACTIVE). `syncGranted` is how many periods the receipt is pretending to carry.
+   */
+  syncGranted = 0;
+  async subscriptionSyncApple(a: { accountId: string; receipt: string }) {
+    const sub = this.subscriptions.get(a.accountId);
+    const base = Math.max(sub?.expiry ?? 0, Date.now());
+    const expiry = this.syncGranted > 0 ? base + this.syncGranted * 30 * 24 * 60 * 60 * 1000 : (sub?.expiry ?? 0);
+    if (this.syncGranted > 0) this.subscriptions.set(a.accountId, { ...sub, expiry });
+    const wallet = this.populateWalletInResponses ? { wallet: this.walletOf(a.accountId) } : {};
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry, granted: this.syncGranted, ...wallet };
+  }
+
   async monthlyCardClaim(a: { accountId: string; dayKey: string }) {
     if (this.nextMonthlyClaimError) {
       const e = this.nextMonthlyClaimError;

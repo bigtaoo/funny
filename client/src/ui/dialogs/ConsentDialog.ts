@@ -37,8 +37,12 @@ const LEGAL_SITE = 'https://nivara.gamestao.com';
  *
  * `path` is the extensionless canonical form: the site 307s `/privacy.html` → `/privacy`, and a
  * store build should not spend a redirect to reach its own privacy policy.
+ *
+ * Exported for its own test (nativePaymentIsolation.test.ts) — a link that silently does nothing is
+ * precisely the failure this exists to prevent, so it is worth asserting on the value rather than on
+ * the shape of the source.
  */
-function legalUrl(path: '/privacy' | '/terms'): string {
+export function legalUrl(path: '/privacy' | '/terms'): string {
   return isNativeShell() ? `${LEGAL_SITE}${path}` : `${path}.html`;
 }
 

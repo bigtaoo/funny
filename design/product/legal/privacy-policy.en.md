@@ -74,7 +74,7 @@ We **do not sell** your personal information. We share only what is necessary, i
 | **Aggregator platforms** (CrazyGames, etc.) | Login/session info required by the platform | Running inside the platform |
 | **Regulators / law enforcement** | Information legally required | Legal obligation |
 
-> Before launch, replace {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} / {{ADS_SDK}} with the actual third parties and their privacy-policy links, and keep them consistent with the iOS Privacy Label and Google Play Data Safety form.
+> Before launch, replace {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} with the actual third parties and their privacy-policy links, and keep them consistent with the iOS Privacy Label and Google Play Data Safety form. (The advertising SDK was filled in on 2026-09-03: Google AdMob, non-personalised only.)
 
 ---
 
@@ -159,4 +159,4 @@ We may update this Policy from time to time. Material changes will be notified i
 
 ---
 
-> **Pre-launch placeholder checklist**: `{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{ADS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` and hosted URL `{{PRIVACY_POLICY_URL}}` (for the client `consent.*` link).
+> **Pre-launch placeholder checklist**: `{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` and hosted URL `{{PRIVACY_POLICY_URL}}` (for the client `consent.*` link).
