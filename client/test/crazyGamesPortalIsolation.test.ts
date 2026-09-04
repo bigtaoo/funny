@@ -72,9 +72,9 @@ function bakedGlobals(target: string, mode: string, env: Record<string, string> 
 }
 
 /** Every file the target's CopyPlugins copy into dist, client-relative with forward slashes. */
-function copiedFiles(target: string): string[] {
+function copiedFiles(target: string, mode = 'development'): string[] {
   return withCleanEnv(() => {
-    const { plugins } = configFactory({ TARGET: target }, { mode: 'development' });
+    const { plugins } = configFactory({ TARGET: target }, { mode });
     return plugins
       .filter((p): p is { constructor: { name: string }; patterns: { from: string }[] } =>
         !!p && (p as { constructor?: { name?: string } }).constructor?.name === 'CopyPlugin')
@@ -83,9 +83,9 @@ function copiedFiles(target: string): string[] {
 }
 
 /** The modules the target swaps out, as client-relative `to` paths. */
-function moduleReplacementTargets(target: string): string[] {
+function moduleReplacementTargets(target: string, mode = 'development'): string[] {
   return withCleanEnv(() => {
-    const { plugins } = configFactory({ TARGET: target }, { mode: 'development' });
+    const { plugins } = configFactory({ TARGET: target }, { mode });
     return plugins
       .filter((p): p is { constructor: { name: string }; newResource: unknown } =>
         !!p && (p as { constructor?: { name?: string } }).constructor?.name === 'NormalModuleReplacementPlugin')
@@ -164,6 +164,19 @@ describe('the CrazyGames bundle carries no web payment surface', () => {
     expect(moduleReplacementTargets('web')).not.toContain('src/platform/stubs/paddleCheckout.ts');
   });
 
+  it('REGRESSION: both exclusions hold in either mode, unlike the address baking', () => {
+    // The config has two predicates one condition apart: `isOffOrigin` (a property of the target)
+    // gates these two exclusions, `bakesRemoteBases` adds "and production" and gates the addresses,
+    // because `start:crazygames` must keep the localhost stack. Collapsing them — the obvious
+    // tidy-up — would put a live Paddle checkout back into a bundle built in development mode,
+    // which is a thing someone in a hurry uploads.
+    for (const mode of ['development', 'production']) {
+      expect(copiedFiles('crazygames', mode).some((f) => f.endsWith('/pay.html')), `mode=${mode}`).toBe(false);
+      expect(moduleReplacementTargets('crazygames', mode), `mode=${mode}`)
+        .toContain('src/platform/stubs/paddleCheckout.ts');
+    }
+  });
+
   it('branding icons stay — they are referenced by the HTML template, not commerce', () => {
     expect(copiedFiles('crazygames')).toContain('public/site.webmanifest');
     expect(copiedFiles('crazygames')).toContain('public/apple-touch-icon.png');
@@ -182,18 +195,23 @@ describe('legalUrl() — the consent gate links somewhere that exists', () => {
   const g = globalThis as Globals;
   afterEach(() => { delete g.TARGET; vi.resetModules(); });
 
+  // Both cases re-import ConsentDialog after resetModules, which drags PIXI, sketchUi and the
+  // locale tables in with it — normally ~0.5s, but measured at 5s on a loaded machine, i.e. right
+  // on vitest's default. The generous timeout is about the import, not about the assertions.
+  const IMPORT_BUDGET_MS = 30_000;
+
   it('REGRESSION: on CrazyGames the links are absolute https, not a portal-domain 404', async () => {
     g.TARGET = 'crazygames';
     const { legalUrl } = await import('../src/ui/dialogs/ConsentDialog');
     expect(legalUrl('/privacy')).toBe('https://nivara.gamestao.com/privacy');
     expect(legalUrl('/terms')).toBe('https://nivara.gamestao.com/terms');
-  });
+  }, IMPORT_BUDGET_MS);
 
   it('the plain web build is unchanged: same-origin, next to the game', async () => {
     g.TARGET = 'web';
     const { legalUrl } = await import('../src/ui/dialogs/ConsentDialog');
     expect(legalUrl('/privacy')).toBe('/privacy.html');
-  });
+  }, IMPORT_BUDGET_MS);
 });
 
 // ── 4. Silence while an ad plays ────────────────────────────────────────────────────────────────
@@ -328,6 +346,46 @@ describe('CrazyGamesPlatform ads mute the game while they play', () => {
     expect(writes, 'suspension must not touch storage').toEqual([]);
     expect(audio.getAudioSettings().muted, 'the player\'s own mute survives the ad').toBe(true);
     expect(silent(bus)).toBe(true);
+  });
+
+  it('restores the exact gains the player had, not merely "something audible"', async () => {
+    // `silent()` only distinguishes 0 from not-0, so on its own it would accept an ad that came
+    // back at full blast. The gains are a matrix (master x channel, audioSettings' apply()), and
+    // the restore path recomputes rather than remembering — which is right, and worth pinning to
+    // the arithmetic rather than to "the sound came back".
+    const { bus, audio } = await setup();
+    audio.setAudioVolume('master', 0.5);
+    audio.setAudioVolume('sfx', 0.4);
+    audio.setAudioVolume('bgm', 0.2);
+    audio.setAudioSuspended(true);
+    audio.setAudioSuspended(false);
+    expect(bus.sfx[bus.sfx.length - 1]).toBeCloseTo(0.5 * 0.4, 5);
+    expect(bus.music[bus.music.length - 1]).toBeCloseTo(0.5 * 0.2, 5);
+  });
+
+  it('a slider dragged mid-ad stays silent, and lands at its new value afterwards', async () => {
+    // The settings screen is reachable while an ad plays on a portal that renders it beside the
+    // canvas, and every write goes through the same apply() — which must keep reading `suspended`
+    // rather than treating "the player just set a volume" as an unsuspend.
+    const { bus, audio } = await setup();
+    audio.setAudioSuspended(true);
+    audio.setAudioVolume('sfx', 0.9);
+    expect(silent(bus), 'a volume write must not un-silence an ad').toBe(true);
+    audio.setAudioSuspended(false);
+    expect(bus.sfx[bus.sfx.length - 1]).toBeCloseTo(0.9, 5);
+  });
+
+  it('is idempotent, so a double adStarted or a raced timeout is harmless', async () => {
+    // Both callbacks and the timeout call into this, and the SDK is not ours: two adStarted events,
+    // or an adFinished arriving after the timeout already unsuspended, must not leave a counter
+    // half-decremented and the game silent.
+    const { bus, audio } = await setup();
+    audio.setAudioSuspended(true);
+    audio.setAudioSuspended(true);
+    audio.setAudioSuspended(false);
+    expect(silent(bus)).toBe(false);
+    audio.setAudioSuspended(false);
+    expect(silent(bus)).toBe(false);
   });
 });
 

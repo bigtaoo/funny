@@ -43,7 +43,7 @@ beforeAll(() => { outRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nw-target-pro
 afterAll(() => { fs.rmSync(outRoot, { recursive: true, force: true }); });
 
 /** Compile the fixture through the real config for `target`, then require the bundle and read it. */
-async function compiledTargetValue(target: string): Promise<string> {
+async function compiledProbe(target: string): Promise<{ raw: string; viaAppConstants: string }> {
   const cfg = makeConfig({ TARGET: target }, { mode: 'development' });
   const outDir = path.join(outRoot, target);
   cfg.entry = FIXTURE;
@@ -73,7 +73,7 @@ async function compiledTargetValue(target: string): Promise<string> {
     });
   });
   const bundlePath = path.join(outDir, 'probe.js');
-  return (requireJs(bundlePath) as { target: string }).target;
+  return requireJs(bundlePath) as { raw: string; viaAppConstants: string };
 }
 
 describe('globalThis.TARGET survives the build', () => {
@@ -82,8 +82,32 @@ describe('globalThis.TARGET survives the build', () => {
   it.each(['crazygames', 'wechat', 'mobile', 'web'])(
     'REGRESSION: a %s build reports that target at runtime, not undefined',
     async (target) => {
-      expect(await compiledTargetValue(target)).toBe(target);
+      expect((await compiledProbe(target)).raw).toBe(target);
     },
     60_000,
   );
+
+  // The case above reads an expression the fixture spells out itself, so it proves DefinePlugin
+  // substitutes this *shape* — not that the shape is still what the shipped code writes. Compiling
+  // the real clientPlatformName() closes that.
+  //
+  // What that buys, measured rather than assumed (2026-09-04, by mutating appConstants and
+  // re-running): webpack's parser is more forgiving than the key suggests — `globalThis['TARGET']`
+  // and even `const g = globalThis; g.TARGET` are both still substituted, because it follows
+  // string-literal member access and simple const aliases. What it cannot follow is the read
+  // leaving the expression: factor the three duplicated readers into `read(globalThis, 'TARGET')`
+  // — the obvious dedupe, and the next plausible edit here — and the value silently reverts to
+  // undefined. That mutation fails these cases and passes the ones above, which is the whole
+  // reason both halves exist.
+  it.each([
+    ['crazygames', 'crazygames'],
+    ['wechat', 'wechat'],
+    ['web', 'web'],
+    // mobile is not a platform *name*: it reuses the web bundle and answers 'web' by design, with
+    // the shell identified separately by Capacitor (net/ApiClient/core.ts's requestPlatformHeader).
+    // Pinned so that intent stays visible rather than looking like the bug this file exists for.
+    ['mobile', 'web'],
+  ])('clientPlatformName() in a %s build answers %s', async (target, expected) => {
+    expect((await compiledProbe(target)).viaAppConstants).toBe(expected);
+  }, 60_000);
 });
