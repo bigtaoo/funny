@@ -746,6 +746,12 @@ components:
       type: object
       properties:
         injuredUntil: { type: integer, nullable: true, description: Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend. }
+        # Team stamina (2026-09-04, SLG_DESIGN §4.6): the CHECKPOINT pair, not a live value — the client
+        # recomputes the current figure with regenTeamStamina(stamina, staminaAt, now) from @nw/shared, the
+        # same function the server charges against, so the bar ticks between responses instead of only on a
+        # refetch. Same raw-timestamp contract as injuredUntil above. Both absent = never marched = full.
+        stamina: { type: integer, description: "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full." }
+        staminaAt: { type: integer, description: "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then." }
 
     # Formation unit (mirrors GarrisonEntry + CC-3 cardInstanceId, G3-2c). Validity of unitType/col/row is checked by the engine levelSchema;
     # initialHp = troops allocated to this unit (= HP, §16.1); cardInstanceId = CC-3 primary key (replaces unitType for new armies).

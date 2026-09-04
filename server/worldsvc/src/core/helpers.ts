@@ -5,6 +5,8 @@
 import {
   buildingMaxHp,
   regenDurability,
+  regenGarrison,
+  tileGarrisonBaseline,
   RESOURCE_TYPES,
   VISION_WATCHTOWER_RADIUS,
   VISION_BASE_RADIUS,
@@ -40,6 +42,27 @@ export function siegeHpView(o: TileDoc, now: number): { hp?: number; maxHp?: num
   }
   const maxHp = buildingMaxHp(o.level);
   return { maxHp, hp: o.hp ?? maxHp };
+}
+
+/**
+ * Live garrison of a tile — {@link TileDoc.garrison} healed toward `tileGarrisonBaseline(level)` by the
+ * elapsed share of TILE_GARRISON_REGEN_MS (shared/src/slg/garrison.ts). **Every path that decides a
+ * battle must go through this**, so that "how strong is this tile right now" has exactly one answer;
+ * reading `tile.garrison` raw is correct only where the question is how many troops the owner is owed
+ * back (the 放弃 refund).
+ *
+ * Only OWNED, non-base, non-ring tiles heal. A base anchor's garrison is structurally 0 — the capital
+ * defends with in-base teams (ADR-026 §2), and healing it would silently add a second defence layer the
+ * design does not have; ring cells hold no garrison at all (ADR-025); an unowned tile's strength is
+ * `npcGarrison(level)`, computed procedurally at the point of use and never stored. Pure — no write.
+ */
+export function liveGarrison(o: TileDoc, now: number): number {
+  const stored = Math.max(0, Math.floor(o.garrison ?? 0));
+  if (!o.ownerId || o.type === 'base' || o.baseRing) return stored;
+  // `o.level ?? 1` mirrors how the siege path reads it (combatSiege/arrival.ts) — TileDoc.level is typed
+  // required but is absent on some documents, and defaulting here keeps this helper's answer identical to
+  // the tileLevel the same battle is resolved at.
+  return regenGarrison(stored, tileGarrisonBaseline(o.level ?? 1), o.garrisonRegenAt ?? 0, now);
 }
 
 export const emptyResources = (): Record<ResourceType, number> => ({ ink: 0, paper: 0, graphite: 0, metal: 0, sticker: 0 });

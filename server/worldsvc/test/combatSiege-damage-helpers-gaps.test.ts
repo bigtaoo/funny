@@ -372,10 +372,14 @@ describe('SiegeDamageService settleSiegeDamage — HP depleted (capture)', () =>
       tilesFindOne: () => tile({ ownerId: DEF, level: 2, hp: 5, type: 'territory' }),
     });
     await settle(core, fakeHelpers(), dmgDoc({ damage: 100, attackerSurvivors: 3 }), 1_000);
+    // `garrisonRegenAt` (2026-09-04, garrison regen / SLG_DESIGN §5.6): a hand-over must stamp the heal
+    // clock. Without it the captured tile carries no checkpoint, which reads as "no recent battle" — i.e.
+    // already healed to tileGarrisonBaseline(level) — and would gift the captor a full baseline the instant
+    // they took it, on top of the 3 survivors they actually paid for.
     expect(tilesUpdateOne).toHaveBeenCalledWith(
       { _id: TILE },
       {
-        $set: { type: 'territory', ownerId: ATK, garrison: 3, hp: maxHp },
+        $set: { type: 'territory', ownerId: ATK, garrison: 3, garrisonRegenAt: 1_000, hp: maxHp },
         $unset: { protectedUntil: '' },
         $inc: { rev: 1 },
       },

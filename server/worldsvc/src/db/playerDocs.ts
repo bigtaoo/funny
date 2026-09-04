@@ -158,7 +158,18 @@ export interface PlayerWorldDoc {
    * ADR-026: per-team defence run-time state. A team that loses a defensive wave is marked injured (injuredUntil = now + SLG_TEAM_INJURY_MS)
    * and never defends until healed. Keyed by team id ('t1'..'t5'). Distinct from CC-3 card-level cardState[].injuredUntil.
    */
-  teamState?: Record<string, { injuredUntil?: number }>;
+  teamState?: Record<string, {
+    injuredUntil?: number;
+    /**
+     * Team stamina checkpoint (2026-09-04, SLG_DESIGN §4.6) — stamina left as of `staminaAt`, refilled
+     * lazily by `regenTeamStamina` at every read. Both fields absent = the team has never marched = full;
+     * that is also the migration for accounts that predate the system, and the reason the charge in
+     * combatMarch/command.ts writes the pair together rather than `$inc`-ing a counter.
+     */
+    stamina?: number;
+    /** Unix ms the `stamina` checkpoint was written (= the last order this team was charged for). */
+    staminaAt?: number;
+  }>;
   familyId?: string;
   /**
    * Sect the family belonged to at joinWorld time (comm-audit batch F item 8b) — same SS7 read-only-mirror

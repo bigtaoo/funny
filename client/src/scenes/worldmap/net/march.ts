@@ -7,7 +7,7 @@
 import { t } from '../../../i18n';
 import { ui as C } from '../../../render/sketchUi';
 import type { TeamTemplate } from '../../../net/WorldApiClient';
-import { carriedTroops, teamDisplayName } from '../../../game/meta/teamTroops';
+import { carriedTroops, teamDisplayName, teamStamina, teamCanAct } from '../../../game/meta/teamTroops';
 import { cardPower } from '../../../game/meta/cardDefs';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 import { loadMapViewport, refreshMarches } from './loaders';
@@ -111,14 +111,22 @@ export async function showTeamPicker(
   // `filled` is kept separately from `usable`: it is what tells "you own no teams" apart from "you own
   // five and every one of them is unavailable", which the head line below has to say out loud.
   const filled = teams.filter((tm) => tm.army.length > 0);
+  // Stamina gate (SLG_DESIGN §4.6): a team below SLG_TEAM_STAMINA_COST is filtered out here rather than
+  // offered-and-rejected, exactly like a busy one — startMarch would answer TEAM_EXHAUSTED, and a row that
+  // only ever produces an error toast is worse than no row plus a head line saying why. Recomputed from the
+  // checkpoint pair on every open, so a picker reopened a minute later already sees the refill.
+  const nowMs = Date.now();
+  const staminaOf = (tm: TeamTemplate): number => teamStamina(me.teamState?.[tm.id], nowMs);
   const usable = filled
-    .filter((tm) => !busyTeamIds.has(tm.id) && committedOf(tm) > 0)
+    .filter((tm) => !busyTeamIds.has(tm.id) && committedOf(tm) > 0 && teamCanAct(me.teamState?.[tm.id], nowMs))
     .sort((a, b) => distanceOf(a) - distanceOf(b) || committedOf(b) - committedOf(a) || powerOf(b) - powerOf(a));
   const buttons: ModalButton[] = [];
   for (const tm of usable) {
     const committed = committedOf(tm);
+    // Stamina rides in the row label rather than getting its own line: the player picks a team by
+    // comparing rows, and "which of these can still go out twice" is part of that comparison.
     buttons.push({
-      label: `${teamDisplayName(tm)} · ${t('world.team.committed').replace('{n}', String(committed))}`,
+      label: `${teamDisplayName(tm)} · ${t('world.team.committed').replace('{n}', String(committed))} · ${t('world.team.stamina').replace('{n}', String(staminaOf(tm)))}`,
       action: () => void doMarchTeam(ctx, pendingTeamIds, tx, ty, tm.id, kind, stationMode),
       icon: 'swords',
     });
@@ -128,7 +136,7 @@ export async function showTeamPicker(
   const moveTitle = stationMode === 'garrison' ? t('world.team.pickTitleGarrison') : t('world.team.pickTitleMove');
   const head = usable.length > 0
     ? (kind === 'occupy' ? t('world.team.pickTitleOccupy') : kind === 'move' ? moveTitle : t('world.team.pickTitle'))
-    : emptyPickerHead(teamsFetchFailed, filled, busyTeamIds, kind);
+    : emptyPickerHead(teamsFetchFailed, filled, busyTeamIds, kind, (tm) => teamCanAct(me.teamState?.[tm.id], nowMs));
   ctx.panels.showModal([{ text: head, icon: 'cards' }, coordLine(tx, ty)], buttons);
 }
 
@@ -144,18 +152,24 @@ export async function showTeamPicker(
  *   - every team is busy         → they're out on a march/hold; recall one or wait.
  *   - none of the free ones      → they're home but empty; go distribute troops (分兵).
  *     carries troops
+ *   - every free one is out of    → stamina refills on a wall clock, so waiting is the only answer — say
+ *     stamina                       that rather than blaming the formation (SLG_DESIGN §4.6).
  */
 function emptyPickerHead(
   teamsFetchFailed: boolean,
   filled: TeamTemplate[],
   busyTeamIds: Set<string | undefined>,
   kind: 'attack' | 'occupy' | 'move',
+  canAct: (tm: TeamTemplate) => boolean,
 ): string {
   if (teamsFetchFailed) return t('world.team.loadFailed');
   if (filled.length === 0) {
     return kind === 'occupy' ? t('world.team.noTeamsOccupy') : kind === 'move' ? t('world.team.noTeamsMove') : t('world.team.noTeams');
   }
   if (filled.every((tm) => busyTeamIds.has(tm.id))) return t('world.team.allBusy');
+  // Exhausted before "no troops": a tired team that also happens to be empty should be told the thing
+  // that resolves on its own (wait) rather than sent to 分兵, which would not unblock the order.
+  if (filled.every((tm) => busyTeamIds.has(tm.id) || !canAct(tm))) return t('world.team.allExhausted');
   return t('world.team.allNoTroops');
 }
 
@@ -168,6 +182,15 @@ export async function doMarchTeam(
   if (!me?.mainBaseTile) { ctx.panels.showToast(t('world.needBase'), C.red); return; }
   // Guard against a second dispatch of the same team while the first is still in flight (see pendingTeamIds).
   if (pendingTeamIds.has(teamId)) { ctx.panels.showToast(t('world.team.busy'), C.red); return; }
+  // Stamina pre-check (SLG_DESIGN §4.6). The picker already filters exhausted teams out of its rows, but
+  // this is the choke point EVERY team dispatch goes through, and two callers reach it without that
+  // filter: 就地占领 (doInPlaceOccupy names a specific stationed team, no picker at all) and any picker
+  // left open long enough for the budget to be spent elsewhere. Refusing here turns a server round trip
+  // that could only ever answer TEAM_EXHAUSTED into an immediate, same-worded toast.
+  if (!teamCanAct(me.teamState?.[teamId], Date.now())) {
+    ctx.panels.showToast(t('world.err.teamExhausted'), C.red);
+    return;
+  }
   pendingTeamIds.add(teamId);
   // Origin is always the main base for a fresh dispatch. ADR-051 (P3c): if the picked team is actually a 停留
   // idle field team being re-commanded, worldsvc overrides fromX/fromY to its stationed cell server-side, so

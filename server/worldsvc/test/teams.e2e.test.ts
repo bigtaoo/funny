@@ -23,6 +23,8 @@ import {
   SATCHEL_CARRY_BASE,
   SATCHEL_CARRY_STEP,
   satchelCarryCapFor,
+  SLG_TEAM_STAMINA_COST,
+  SLG_TEAM_STAMINA_MAX,
   type CardInstance,
 } from '@nw/shared';
 import { createWorldMongo, type WorldMongo } from '../src/db';
@@ -589,11 +591,17 @@ describe.skipIf(!mongo)('worldsvc teams + siege replay e2e', () => {
     expect(marches).toHaveLength(1);
 
     const pwAfter = await m.collections.playerWorld.findOne({ _id: pwBefore!._id });
-    // rev is +1 from the injected bump *alone*: a card-army dispatch writes nothing to playerWorld, so it
-    // neither guards on rev nor bumps it (rev is an optimistic lock with no business meaning — it appears in
-    // no PlayerWorldView and no httpApi response — so bumping it for a no-op write would only invalidate
-    // other writers' guards for free).
+    // rev is +1 from the injected bump *alone*: a card-army dispatch neither guards on rev nor bumps it
+    // (rev is an optimistic lock with no business meaning — it appears in no PlayerWorldView and no
+    // httpApi response — so bumping it for a write nobody guards on would only invalidate other writers'
+    // guards for free).
+    //
+    // 2026-09-04 (team stamina, SLG_DESIGN §4.6): a team dispatch is no longer a literal no-op on
+    // playerWorld — it writes `teamState.t-race.{stamina,staminaAt}`. The claim this case makes is
+    // unchanged and is asserted below: that write is two scoped dotted paths, so it commutes with the
+    // concurrent settlement instead of clobbering it, and it still leaves rev alone.
     expect(pwAfter!.rev).toBe(pwBefore!.rev + 1);
+    expect(pwAfter!.teamState?.['t-race']?.stamina).toBe(SLG_TEAM_STAMINA_MAX - SLG_TEAM_STAMINA_COST);
     // And the concurrent settlement's credit is intact — the lost update the rev guard was added for.
     expect(pwAfter!.resources.ink).toBe(pwBefore!.resources.ink + 12_345);
   });

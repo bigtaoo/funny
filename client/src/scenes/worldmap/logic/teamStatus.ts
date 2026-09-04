@@ -15,7 +15,7 @@
 // march list used to be the only place to recall them.
 import { t } from '../../../i18n';
 import { formatDuration } from './formatDuration';
-import { carriedTroops, teamDisplayName } from '../../../game/meta/teamTroops';
+import { carriedTroops, teamDisplayName, teamStamina, teamCanAct } from '../../../game/meta/teamTroops';
 import type { IconKind } from '../../../render/icons';
 import type { MarchView } from '../../../net/WorldApiClient';
 import type { WorldMapContext } from '../WorldMapContext';
@@ -47,6 +47,13 @@ export interface TeamRow {
   march: MarchView | null;
   /** Field-stationed team behind this row — recallable via ADR-051's recall-stationed endpoint. */
   stationedTeamId: string | null;
+  /**
+   * Live team stamina (SLG_DESIGN §4.6), or null for a flat-troop army row — those command no team and
+   * so have no budget. Only surfaced in the `home` row's status today (that is the one state where the
+   * player is deciding whether to send this team out); carried on every team row so a caller that wants
+   * a bar does not have to re-derive it.
+   */
+  stamina: number | null;
 }
 
 // `stationed` (野外停留) and `garrisoned` (野外驻扎) are the two states a team lands in by taking the
@@ -105,12 +112,14 @@ export function buildTeamRows(ctx: WorldMapContext, now: number): TeamRow[] {
     const occupation = ctx.occupations.find((o) => o.teamId === team.id) ?? null;
     const station = ctx.stationed.find((s) => s.mine !== false && s.teamId === team.id) ?? null;
     const injuredUntil = me?.teamState?.[team.id]?.injuredUntil ?? 0;
+    const stamina = teamStamina(me?.teamState?.[team.id], now);
     const base = {
       key: team.id,
       title: teamDisplayName(team),
       troops: carriedTroops(team.army, cardState),
       march: null as MarchView | null,
       stationedTeamId: null as string | null,
+      stamina,
     };
 
     // Order matters: a march outranks the station/occupation docs that coexist with it mid-recall,
@@ -157,7 +166,18 @@ export function buildTeamRows(ctx: WorldMapContext, now: number): TeamRow[] {
       });
       continue;
     }
-    rows.push({ ...base, state: 'home', status: t('city.military.teamIdle'), jumpX: baseX, jumpY: baseY });
+    // Home is the one state where stamina changes what the player can do next, so it is the only status
+    // line that spends characters on it. A team too tired to be given an order says so outright —
+    // otherwise the world map would show it idle at base while the team picker silently refused to list
+    // it, which is exactly the "looked idle but kept failing" confusion the TEAM_BUSY filter caused once.
+    rows.push({
+      ...base,
+      state: 'home',
+      status: teamCanAct(me?.teamState?.[team.id], now)
+        ? `${t('city.military.teamIdle')} · ${t('world.team.stamina').replace('{n}', String(stamina))}`
+        : t('world.team.resting').replace('{n}', String(stamina)),
+      jumpX: baseX, jumpY: baseY,
+    });
   }
 
   // Flat-troop armies: own marches carrying no teamId. `mine !== false` because ctx.marches also holds
@@ -169,6 +189,7 @@ export function buildTeamRows(ctx: WorldMapContext, now: number): TeamRow[] {
       key: `march:${m.marchId}`,
       title: t('world.team.flatArmy'),
       troops: m.troops,
+      stamina: null, // a flat-pool army commands no team, so there is no stamina budget behind it
       state: m.kind === 'return' ? 'returning' : 'marching',
       status: `${marchKindLabel(m.kind)} ${at(mx, my)} ${formatDuration((m.arriveAt - now) / 1000)}`,
       jumpX: mx, jumpY: my,

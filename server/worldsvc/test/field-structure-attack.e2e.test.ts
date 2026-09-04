@@ -120,11 +120,22 @@ describe.skipIf(!mongo)('worldsvc structure-durability e2e (ADR-051 §5.2)', () 
     } as TileDoc);
   }
 
-  /** Insert an enemy ('b') territory tile carrying a structure (0 garrison → the assault always clears it). */
+  /**
+   * Insert an enemy ('b') territory tile carrying a structure, with 0 garrison so the assault always
+   * clears it and every survivor goes into the structure chip — this file is about structure durability
+   * and nothing else.
+   *
+   * `garrisonRegenAt: now()` (2026-09-04, garrison regen / SLG_DESIGN §5.6) is what makes that 0 hold. An
+   * owned tile heals up to `tileGarrisonBaseline(level)` from its checkpoint, and an ABSENT checkpoint
+   * reads as "no recent battle" — so without this stamp the tile stands at 120 troops however plainly the
+   * document says 0, the assault has to grind through them first, and the chip shrinks (measured: the
+   * first arrow-tower blow went from 600 to 156, leaving hp at 844 instead of 400). Stamping the current
+   * instant is also the honest production shape for "a tile stripped moments ago".
+   */
   async function enemyStructureTile(x: number, y: number, kind: 'arrowTower' | 'blocker', hp: number, hpMax: number): Promise<string> {
     const tid = tileId(W, x, y);
     await m.collections.tiles.insertOne({
-      _id: tid, worldId: W, x, y, type: 'territory', level: 1, ownerId: 'b', garrison: 0,
+      _id: tid, worldId: W, x, y, type: 'territory', level: 1, ownerId: 'b', garrison: 0, garrisonRegenAt: now(),
       structure: { kind, level: 1, hp, hpMax, ownerId: 'b', builtAt: now() }, rev: 0,
     } as TileDoc);
     if (kind === 'arrowTower') redis.setCoverTower(W, x, y, 'b');

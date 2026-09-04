@@ -871,6 +871,7 @@ export const zh = {
   'world.err.pathBlocked': '无可通行路线（地形阻挡）',
   'world.err.notConnected': '目标地块须与本宗门已占领地相邻',
   'world.err.satchelCap': '队伍携带兵力超过挎包上限，请建造/升级挎包或减少该队伍兵力',
+  'world.err.teamExhausted': '这支队伍体力不够，等它恢复或换一支',
   // REV_CONFLICT (2026-08-24): optimistic-lock miss on the player's world doc. The dispatch path that used to
   // produce most of these no longer writes at all, but the remaining guarded spenders (shop / buildStructure /
   // buildWatchtower) can still lose a race, and this code previously fell through to the raw English server
@@ -965,6 +966,10 @@ export const zh = {
   'world.team.noTeamsMove': '尚无队伍，先去编辑布阵',
   'world.team.allBusy': '所有队伍都在行军或占领中，先召回一支或等它到位',
   'world.team.allNoTroops': '队伍都没有兵力，先回主城分兵',
+  // 队伍体力（SLG_DESIGN §4.6）：每次出征扣 SLG_TEAM_STAMINA_COST，按分钟回复。
+  'world.team.stamina': '体力 {n}',
+  'world.team.resting': '休整中 · 体力 {n}',
+  'world.team.allExhausted': '能用的队伍体力都不够了，等它们恢复',
   'world.team.loadFailed': '队伍加载失败，请稍后重试',
   'world.team.autoReturn': '占领后回城',
   'world.team.noCards': '没有可用卡牌（可能已受伤或编入其他队伍）',

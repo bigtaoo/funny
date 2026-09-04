@@ -191,6 +191,9 @@ export class TerritoryService {
       ...(resType ? { resType } : {}),
       ownerId: accountId,
       garrison: GARRISON_PER_TILE,
+      // Baseline-heal clock starts on acquisition (shared/src/slg/garrison.ts); an absent checkpoint reads
+      // as "healed long ago", which on a high-level tile would hand out tileGarrisonBaseline(level) for free.
+      garrisonRegenAt: t,
       rev: 0,
     };
     await cols.tiles.updateOne({ _id: tid }, { $set: tileDoc }, { upsert: true });
@@ -259,6 +262,10 @@ export class TerritoryService {
     if (tile.type === 'base') throw new SlgError('TILE_NOT_OWNED', 'Cannot abandon the capital');
 
     const t = now();
+    // The STORED garrison, deliberately not `liveGarrison(tile, t)`: only troops the owner actually paid
+    // for come back. Baseline-heal militia (shared/src/slg/garrison.ts) defends the tile but was never
+    // bought, and refunding it would make "occupy a high-level tile → wait out the heal → abandon" mint
+    // troops out of nothing.
     const refund = tile.garrison ?? 0;
     await cols.tiles.deleteOne({ _id: tid }); // abandon → revert to procedural neutral (sparse storage leaves no empty shell)
     // 2026-07-23: giving up the tile frees any team stationed on it (the team pops back to idle-at-home). Recall

@@ -33,6 +33,7 @@ import {
   resolveSiege,
   playerWorldId,
   nationDefenseStrength,
+  tileGarrisonBaseline,
   academyBuff,
   npcBaseHp,
   type SiegeResolution,
@@ -123,8 +124,16 @@ function pw(overrides: Partial<PlayerWorldDoc> = {}): PlayerWorldDoc {
   } as unknown as PlayerWorldDoc;
 }
 
+/**
+ * `garrisonRegenAt: T` (2026-09-04, garrison regen / SLG_DESIGN §5.6) is part of the DEFAULT because these
+ * cases are about siege resolution, not about the baseline heal: an owned tile with no checkpoint reads as
+ * "no recent battle", i.e. already healed to `tileGarrisonBaseline(level)`, which would silently replace
+ * every `garrison:` this file sets with a level-derived number. Stamping the current instant pins each tile
+ * at exactly the garrison the case asked for. The absent-checkpoint read has its own case below, and the
+ * heal arithmetic is pinned in core-helpers-gaps.test.ts / shared/test/garrison.test.ts.
+ */
 function tile(overrides: Partial<TileDoc> = {}): TileDoc {
-  return { _id: TILE, worldId: W, x: 5, y: 5, type: 'territory', level: 1, rev: 0, ...overrides } as unknown as TileDoc;
+  return { _id: TILE, worldId: W, x: 5, y: 5, type: 'territory', level: 1, garrisonRegenAt: T, rev: 0, ...overrides } as unknown as TileDoc;
 }
 
 /** A flat (non-card) army entry — `initialHp` is what sumArmyHp/scaleArmyByRatio operate on. */
@@ -772,6 +781,9 @@ describe('ArrivalService.applySiege — base-ring anchor resolution (ADR-025)', 
 
 describe('ArrivalService.applySiege — garrison / level / formation defaults', () => {
   it('a tile with no garrison field and no level defaults to 0 garrison and level 1, and the province bonus is consulted', async () => {
+    // A tile freshly stripped to nothing: no `garrison` field, and a checkpoint at the current instant so
+    // the baseline heal has not started yet (see the `tile()` fixture note). This is what "empty garrison"
+    // now means in production — a tile that is EMPTY, not merely un-stamped.
     const h = arrivalCore({ tiles: { [TILE]: tile({ ownerId: DEF, garrison: undefined, level: undefined } as never) }, inOwnSectProvince: true });
     await h.svc.applySiege(march({ troops: 5_000 }), pw(), T);
 
@@ -782,6 +794,21 @@ describe('ArrivalService.applySiege — garrison / level / formation defaults', 
     expect(replay.defenderConfig).toBeNull();       // buildDefenderConfig returns null for an empty garrison
     const mult = moraleCombatMultiplier(MARCH_MORALE_MAX);
     expect(res).toEqual(resolveSiege(Math.round(sumArmyHp(synthesizeArmy(5_000, 'attacker')) * mult), 0));
+  });
+
+  it('a tile with NO garrisonRegenAt fights at its level baseline, not at its stored garrison (2026-09-04)', async () => {
+    // The absent-checkpoint read, and the whole point of the feature: a territory stripped by an earlier
+    // siege (or written before the field existed) is not a free capture for the next march. Level 6 puts
+    // the floor at tileGarrisonBaseline(6) = 720 even though the document says 5 troops are left.
+    const h = arrivalCore({
+      tiles: { [TILE]: tile({ ownerId: DEF, level: 6, garrison: 5, garrisonRegenAt: undefined } as never) },
+    });
+    await h.svc.applySiege(march({ troops: 100_000 }), pw(), T);
+
+    const { res } = lastLandSiege();
+    expect(res).toEqual(resolveSiege(100_000, nationDefenseStrength(tileGarrisonBaseline(6), false)));
+    // And not what the stored field alone would have given, which is what used to happen.
+    expect(res).not.toEqual(resolveSiege(100_000, nationDefenseStrength(5, false)));
   });
 
   it('a flat march with no army snapshot synthesizes its attacker formation from the troop count', async () => {

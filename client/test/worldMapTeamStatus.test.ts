@@ -7,7 +7,8 @@
 // asked for), and that flat-troop marches, which are not teams, keep their own recallable rows.
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initI18n } from '../src/i18n';
+import { SLG_TEAM_STAMINA_COST, SLG_TEAM_STAMINA_MAX } from '@nw/shared';
+import { initI18n, t } from '../src/i18n';
 import { buildTeamRows, awayCount } from '../src/scenes/worldmap/logic/teamStatus';
 import type { WorldMapContext } from '../src/scenes/worldmap/WorldMapContext';
 import type { MarchView, OccupationView, StationedView, TeamTemplate } from '../src/net/WorldApiClient';
@@ -37,7 +38,7 @@ function harness(opts: {
   marches?: MarchView[];
   occupations?: OccupationView[];
   stationed?: StationedView[];
-  teamState?: Record<string, { injuredUntil?: number }>;
+  teamState?: Record<string, { injuredUntil?: number; stamina?: number; staminaAt?: number }>;
 }): WorldMapContext {
   const teams = opts.teams ?? [];
   const cardState: Record<string, { currentTroops: number }> = {};
@@ -174,5 +175,64 @@ describe('awayCount — the badge numerator', () => {
     const rows = buildTeamRows(ctx, NOW);
     expect(rows).toHaveLength(3);
     expect(awayCount(rows)).toBe(1); // home and injured are both "not out"
+  });
+});
+
+// Team stamina (SLG_DESIGN §4.6, 2026-09-04). Home is the one state whose status line spends
+// characters on stamina, because it is the only one where the number changes what the player can do
+// next — a team too tired to be given an order must not read as plain 闲置 while the team picker
+// silently refuses to list it.
+describe('buildTeamRows — team stamina on the home row', () => {
+  it('carries the live figure on every team row, and null on a flat-troop army row', () => {
+    const ctx = harness({
+      teams: [team('t1', 100)],
+      teamState: { t1: { stamina: 40, staminaAt: NOW } },
+      marches: [march({ marchId: 'flat1' })], // no teamId → a flat-pool army, not a team
+    });
+    const rows = buildTeamRows(ctx, NOW);
+    expect(rows.find((r) => r.key === 't1')!.stamina).toBe(40);
+    expect(rows.find((r) => r.key === 'march:flat1')!.stamina).toBeNull();
+  });
+
+  it('a team that has never marched reads as FULL, not empty', () => {
+    const rows = buildTeamRows(harness({ teams: [team('t1', 100)] }), NOW);
+    expect(rows[0]!.stamina).toBe(SLG_TEAM_STAMINA_MAX);
+    expect(rows[0]!.status).toContain(t('world.team.stamina').replace('{n}', String(SLG_TEAM_STAMINA_MAX)));
+  });
+
+  it('folds the elapsed refill in, so the row does not freeze between server responses', () => {
+    const ctx = harness({ teams: [team('t1', 100)], teamState: { t1: { stamina: 20, staminaAt: NOW } } });
+    expect(buildTeamRows(ctx, NOW + 10 * 60_000)[0]!.stamina).toBe(30);
+  });
+
+  it('a team below one order\'s cost says "resting" instead of idle', () => {
+    const ctx = harness({
+      teams: [team('t1', 100)],
+      teamState: { t1: { stamina: SLG_TEAM_STAMINA_COST - 1, staminaAt: NOW } },
+    });
+    const row = buildTeamRows(ctx, NOW)[0]!;
+    expect(row.state).toBe('home'); // still home — stamina is not a separate row state
+    expect(row.status).toBe(t('world.team.resting').replace('{n}', String(SLG_TEAM_STAMINA_COST - 1)));
+    expect(row.status).not.toContain(t('city.military.teamIdle'));
+  });
+
+  it('exactly one order\'s worth still reads as idle (the gate is >=)', () => {
+    const ctx = harness({
+      teams: [team('t1', 100)],
+      teamState: { t1: { stamina: SLG_TEAM_STAMINA_COST, staminaAt: NOW } },
+    });
+    expect(buildTeamRows(ctx, NOW)[0]!.status).toContain(t('city.military.teamIdle'));
+  });
+
+  it('an order outranks stamina — a marching team reports where it is, not how tired it is', () => {
+    const ctx = harness({
+      teams: [team('t1', 100)],
+      teamState: { t1: { stamina: 0, staminaAt: NOW } },
+      marches: [march({ marchId: 'm1', teamId: 't1' })],
+    });
+    const row = buildTeamRows(ctx, NOW)[0]!;
+    expect(row.state).toBe('marching');
+    expect(row.status).not.toContain(t('world.team.stamina').replace('{n}', '0'));
+    expect(row.stamina).toBe(0); // still carried on the row for any caller that wants it
   });
 });

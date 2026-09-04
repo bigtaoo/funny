@@ -303,6 +303,11 @@ export class ArrivalService {
       }
       return;
     }
+    // `$inc` on the STORED garrison, and deliberately NO `garrisonRegenAt` stamp. Both halves matter
+    // (shared/src/slg/garrison.ts): incrementing the stored field keeps reinforcements refundable and keeps
+    // baseline-heal militia out of the owner's balance, while leaving the checkpoint alone means a tile
+    // reinforced mid-heal keeps the healing it had accrued — live garrison becomes (stored + troops) still
+    // healed from the old anchor, rather than restarting the clock and silently discarding it.
     await cols.tiles.updateOne({ _id: m.toTile }, { $inc: { garrison: m.troops, rev: 1 } });
     void this.core.pushMarch(m.ownerId, this.core.marchView({ ...m, status: 'arrived' }));
     const after = await cols.tiles.findOne({ _id: m.toTile });

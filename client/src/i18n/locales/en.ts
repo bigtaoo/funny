@@ -853,6 +853,7 @@ export const en: Record<TranslationKey, string> = {
   'world.err.pathBlocked': 'No passable route (terrain blocks the way)',
   'world.err.notConnected': 'Target must border your sect\'s territory',
   'world.err.satchelCap': 'Team carries more troops than the satchel cap — build/upgrade a satchel or reduce the team',
+  'world.err.teamExhausted': 'This team is out of stamina — wait for it to refill or send another',
   'world.err.revConflict': 'Your state just changed — please try again',
   // Military actions / siege (C2)
   'world.actAttack': 'Siege',
@@ -943,6 +944,10 @@ export const en: Record<TranslationKey, string> = {
   'world.team.noTeamsMove': 'No teams yet — go edit a formation',
   'world.team.allBusy': 'Every team is out on a march or a hold — recall one or wait',
   'world.team.allNoTroops': 'No team is carrying troops — distribute troops in the city first',
+  // Team stamina (SLG_DESIGN §4.6): each order costs SLG_TEAM_STAMINA_COST and refills per minute.
+  'world.team.stamina': 'Stamina {n}',
+  'world.team.resting': 'Resting · stamina {n}',
+  'world.team.allExhausted': 'Every available team is out of stamina — wait for it to refill',
   'world.team.loadFailed': 'Could not load your teams — please try again',
   'world.team.autoReturn': 'Return after capture',
   'world.team.noCards': 'No cards available (injured or already on another team)',

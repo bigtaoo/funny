@@ -11,6 +11,8 @@ import {
   TEAM_CAP,
   teamTroopCap,
   teamLeaderCard,
+  teamStamina,
+  teamCanAct,
 } from '../../game/meta/teamTroops';
 import { cardInstanceArtUrl } from '../../render/cardArt';
 import { CARD_GAP, GRID_PAD, TEAM_ROW_CARD_H, TEAM_ROW_LABEL_H } from './core';
@@ -208,6 +210,17 @@ export function renderTeamCard(
     // marches/occupations not back yet — this team may well be marching, so keep animating
     // rather than asserting "闲置" and then correcting ourselves a moment later.
     statusLbl = `${t('city.military.teamLoading')}${'.'.repeat(core.loadDots + 1)}`;
+    statusColor = C.mid as number;
+  } else if (filled && !teamCanAct(core.me?.teamState?.[id], now)) {
+    // Home but too tired to be given an order (SLG_DESIGN §4.6). Ranked below every real order — a
+    // marching team's whereabouts matter more than its budget — but above plain 闲置, which would
+    // promise an action the world map's team picker then refuses to offer.
+    //
+    // The stamina figure rides in this label and NOT beside 闲置 above, deliberately: the comment on the
+    // station branch applies here too (in portrait the leader portrait squeezes this column to its 40px
+    // floor, where the existing 4-glyph labels already wrap), so only the state that actually blocks the
+    // player spends the extra characters. A healthy team's number is on the world-map team panel.
+    statusLbl = t('world.team.resting').replace('{n}', String(teamStamina(core.me?.teamState?.[id], now)));
     statusColor = C.mid as number;
   } else if (filled) {
     statusLbl = t('city.military.teamIdle');

@@ -60,7 +60,26 @@ export interface TileDoc {
   ownerId?: string; // occupying accountId
   familyId?: string;
   defense?: DefenseConfig; // territory defense (P5, embedded)
+  /**
+   * Troops the OWNER paid for on this tile: GARRISON_PER_TILE on an occupy, plus every `reinforce`
+   * arrival, minus siege casualties. Refundable to the troop pool on 放弃 (territory.ts).
+   *
+   * **Not what an attacker fights.** Combat resolves against the LIVE garrison — this value healed up to
+   * `tileGarrisonBaseline(level)` over `TILE_GARRISON_REGEN_MS` since `garrisonRegenAt` — which is always
+   * >= this field and is never written back into it. Read it through `liveGarrison(tile, now)`
+   * (core/helpers.ts), never raw, on any path that decides a battle; read it raw only where the question
+   * is "how many troops does the owner get back". See shared/src/slg/garrison.ts for why the two differ.
+   */
   garrison?: number;
+  /**
+   * Last time `garrison` was settled by combat (or the tile founded) — the lazy-regen anchor for the
+   * baseline heal, mirroring `durabilityRegenAt`. **Absent means "no recent battle"**, i.e. the tile reads
+   * as sitting at its baseline: that is the intended migration for documents written before the regen
+   * existed, and the reason every founding/casualty write below stamps it (so a freshly taken tile does
+   * not instead read as instantly healed). A `reinforce` arrival deliberately does NOT touch it — see
+   * combatMarch/arrival.ts.
+   */
+  garrisonRegenAt?: number;
   /**
    * ADR-026: building HP. On a main-base anchor this is the whole capital's HP; on territory/level/stronghold tiles it is that building's HP.
    * Absent = full (derive from buildingMaxHp(level) on read/first hit). A successful siege deducts the attacker team's siege value; HP≤0 → captured.
