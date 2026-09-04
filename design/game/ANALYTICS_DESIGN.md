@@ -97,13 +97,15 @@ interface CommonProps {
   session_id:    string;   // 每次 app 启动新生成的 UUID
   user_id?:      string;   // accountId（已登录），缺省匿名
   device_id:     string;   // IPlatform 的 getOrCreateDeviceId()
-  platform:      'web' | 'wechat' | 'crazygames';
+  platform:      'web' | 'wechat' | 'crazygames';   // ⚠️ 2026-09-04 前这一维恒为 'web'，见下
   os:            string;   // navigator.platform 或 wx.getSystemInfo
   game_version:  string;   // __NW_BUILD_VERSION__（webpack 注入）
   locale:        string;   // 当前语言
   ts:            number;   // 客户端 unix ms
 }
 ```
+
+> ⚠️ **`platform` 这一维在 2026-09-04 之前恒为 `'web'`，历史数据不可用于分平台切分。** 三处读它的地方（`analytics/index.ts`、`app/appConstants.ts` 的 `clientPlatformName`、`net/anomaly/reporter.ts`）写的都是 `globalThis.TARGET`，而 `webpack.config.js` 的 DefinePlugin 那一行 key 是裸的 `TARGET`——**裸 key 只替换自由变量，不替换成员表达式**（`__NW_*__` 那几行一直写成 `'globalThis.__NW_API_BASE__'` 正是这个原因）。于是替换从来没发生过，微信包和 CrazyGames 包都把自己上报成 `web`：埋点这一维、异常日志的 `platform` 字段、以及 `X-NW-Platform` 请求头（ADR-020 用它挑充值池桶）三处同时受影响。**没有任何测试能看见它**——配置读起来是对的，而单元测试自己往 `globalThis.TARGET` 上写值，恰好是唯一能读到的场景。修法是补一行 `'globalThis.TARGET'` key；守卫是 `client/test/targetGlobalCompile.test.ts`（真编译 + 在 Node 里 require 产物问它到底看见什么，配置断言在这个 bug 上是无效的）。
 
 ### 3.4 flush 触发策略
 

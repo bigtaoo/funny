@@ -213,7 +213,7 @@
 | 操作说明 | 鼠标/触屏操作说明 | 待补 |
 
 ### 4.2 合规 / 平台要求（COMPLIANCE_GLOBAL §8 Web 专属）
-- [x] **隐私政策 URL 可访问 + 客户端可点**（2026-09-04 修）：同意弹层的两个链接此前是根相对 `/privacy.html`，在门户域名下必然 404；`legalUrl()` 现按「是否跑在自家源上」分叉，CrazyGames 与原生壳一样给绝对 https（`ConsentDialog.ts`）。⚠️ 仍只有**首启同意弹层**一处入口，设置页没有常驻链接（与 iOS §1.5 同一条欠账）。
+- [x] **隐私政策 URL 可访问 + 客户端可点**（2026-09-04 修，真机核对过）：同意弹层的两个链接此前是根相对 `/privacy.html`，在门户域名下必然 404；`legalUrl()` 现按「是否跑在自家源上」分叉，CrazyGames 与原生壳一样给绝对 https（`ConsentDialog.ts`）。**这条修的时候顺带挖出一个更大的洞**：分叉依据 `clientPlatformName()` 读的是 `globalThis.TARGET`，而 DefinePlugin 那一行 key 是裸的 `TARGET`，**根本没替换成员表达式**——所以这个函数在任何真实构建里都返回 `'web'`（影响面不止本条，见 [`ANALYTICS_DESIGN §3.3`](../../game/ANALYTICS_DESIGN.md)）。补 key + 真编译探针后，在 crazygames dev 构建里实测：两个链接确实 `window.open('https://nivara.gamestao.com/privacy' | '/terms')`，`GET /bootstrap?platform=crazygames` 也终于报对了平台。⚠️ 仍只有**首启同意弹层**一处入口，设置页没有常驻链接（与 iOS §1.5 同一条欠账）。
 - [x] cookie/同意条（若用分析 cookie）+ EU/UK 同意弹层（Track 1 L1-1）：`ConsentDialog` 首启阻塞，**全区玩家都弹**（不按地区分叉），所以门户玩家一定见得到上面那两个链接。⚠️ 门户自己也有一套 GDPR 流程，是否重复需按开发者后台口径确认。
 - [x] **支付渠道合规**（2026-09-04 修）：`iapKind()` 早已返回 `null`（金币页/月卡年卡按钮不出现），但**构建产物**里还带着整套 Paddle 网页支付面（`pay/pricing/refunds/home/terms/privacy.html`）+ 编进 bundle 的 Paddle 结账模块——那是要整包上传给门户的东西。现按 iOS 同一套办法堵上：copy 规则与 `paddleCheckout` stub 替换都扩到 `crazygames`。虚拟道具条款见用户协议 §5/§6。
 - [x] **广告 SDK 接线**（2026-09-04 修）：①`adStarted` → 广告播放期间整机静音（门户 QA 明确检查这条），四条退出路径（finish/error/throw/超时）都恢复；②`sdkGameLoadingStart()` 此前从未调用（只调了 Stop），现与 `init()` 一起放进构造函数，与 `onLoadingComplete()` 的 Stop 配成一对；③激励视频补上与插屏同款的超时兜底（有了静音之后，卡住的 SDK 会让整个会话哑掉，不只是转圈）。
