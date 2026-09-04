@@ -347,6 +347,16 @@ module.exports = (env, argv) => {
       )] : []),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
+        // …and the same value under the name the code actually reads. A key without dots only
+        // replaces a *free variable* `TARGET`, but all three readers spell it `globalThis.TARGET`
+        // (app/appConstants.ts, analytics/index.ts, net/anomaly/reporter.ts) — a member expression,
+        // which DefinePlugin rewrites only when the key says so, exactly as the __NW_*__ rows below
+        // have always done. So until 2026-09-04 the substitution silently never happened: every
+        // wechat and crazygames build read `undefined` and called itself 'web' — in analytics, in
+        // the anomaly log's `platform` field, and in the X-NW-Platform header that picks the
+        // recharged-pool bucket (ADR-020). Compile-probed by targetGlobalCompile.test.ts, because
+        // this is the failure mode a config-reading test cannot see.
+        'globalThis.TARGET': JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),
         'globalThis.__NW_GATEWAY_WS__': JSON.stringify(gatewayWs),
         'globalThis.__NW_BUILD_VERSION__': JSON.stringify(process.env.NW_BUILD_VERSION || '0.0.0'),
