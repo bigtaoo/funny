@@ -36,6 +36,15 @@
 
 档位金币数与档位 ID 均以 `@nw/shared` 的 `IAP_TIERS` / `IAP_TIERS_LIST` 为准。
 
+> ⚠️ **填进 `.env` 不等于容器能看见**（2026-09-04 踩到）。compose 不会把 `server/.env` 读进容器，它只做本文件里
+> `${...}` 的插值；`commercial` 服务的 `environment:` 块没写的变量，进程永远读不到。这四家凭据加
+> `NW_IAP_BUNDLE` / `NW_IAP_PRODUCT_MAP` / `NW_IAP_AMOUNT_MAP` 是 2026-09-04 才补进
+> `docker-compose.cloud.yml` 的——在那之前 `NW_APPLE_PASSWORD` 在 `.env` 里躺着，Apple 验单在生产上一直是
+> fail closed。加新凭据时**两个文件一起改**。
+>
+> 同一处的第二个坑：这些变量在代码里是 `process.env.X ?? 默认值`，**空字符串会盖掉默认值**。所以 compose 里用
+> `${NW_IAP_BUNDLE:-com.gamestao.nivara}` 而不是 `${NW_IAP_BUNDLE-...}`——`.env` 里留空时也能落到正确默认。
+
 ### 1.1 Paddle（Web 充值通道）
 
 Web 端充值走 Paddle（非上面的 `/iap/verify`，而是 `metaserver/src/paddle.ts` 的 `/shop/paddle/checkout` + `/paddle/webhook`）。验签/加币逻辑权威见该文件。

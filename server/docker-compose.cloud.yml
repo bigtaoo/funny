@@ -104,6 +104,29 @@ services:
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
       # victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
       NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
+      # IAP receipt verification (commercial/src/iap.ts). Each credential left empty → that platform
+      # verifies fail-closed (INVALID_RECEIPT), never awards coins; the Dockerfile hard-codes
+      # NODE_ENV=production so the dev stub stays off here no matter what .env says.
+      # ⚠ Every var the process reads MUST be listed in this block: compose never loads server/.env
+      # into the container, it only interpolates ${...} written here. An .env entry with no line here
+      # reaches nothing — which is why Apple verification was dead in prod until 2026-09-04, despite
+      # NW_APPLE_PASSWORD sitting in .env since the file was written.
+      NW_APPLE_PASSWORD: ${NW_APPLE_PASSWORD:-}
+      NW_GOOGLE_SERVICE_ACCOUNT_JSON: ${NW_GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      NW_GOOGLE_PACKAGE_NAME: ${NW_GOOGLE_PACKAGE_NAME:-com.nw.game}
+      NW_WX_PAY_MCH_ID: ${NW_WX_PAY_MCH_ID:-}
+      NW_WX_PAY_API_KEY_V3: ${NW_WX_PAY_API_KEY_V3:-}
+      NW_STRIPE_SECRET_KEY: ${NW_STRIPE_SECRET_KEY:-}
+      # Product id → coin tier / non-coin SKU resolution (iap/productResolve.ts). The bundle prefix must
+      # match the shipped app or every App Store product id resolves to 0 coins while verification still
+      # reports success — defaulted to the real bundle rather than the code's `com.nw` for that reason.
+      # `:-` (not `-`) on purpose: these read `process.env.X ?? default`, so an EMPTY value would win
+      # over the code default and break resolution just as thoroughly as a wrong one.
+      NW_IAP_BUNDLE: ${NW_IAP_BUNDLE:-com.gamestao.nivara}
+      NW_IAP_PRODUCT_MAP: ${NW_IAP_PRODUCT_MAP:-}
+      NW_IAP_AMOUNT_MAP: ${NW_IAP_AMOUNT_MAP:-}
+      # NW_IAP_DEV is deliberately NOT passed through: the dev stub has no business in the cloud stack,
+      # and index.ts refuses to start with it set under NODE_ENV=production anyway.
     depends_on:
       redis:
         condition: service_healthy
