@@ -304,7 +304,9 @@ describe('worldsvc SLG order throughput', () => {
       const arrivals = labels['sched:arrivals'];
       const counters = (after.counters ?? {}) as Record<string, number>;
       /* eslint-disable-next-line no-console */
-      console.log(`[load] sched:arrivals p50 ${arrivals?.p50 ?? '-'}ms  p90 ${arrivals?.p90 ?? '-'}ms  max ${arrivals?.max ?? '-'}ms | batched ${counters['arrivals.batched'] ?? 0} / serial ${counters['arrivals.serial'] ?? 0}`);
+      console.log(`[load] sched:arrivals p50 ${arrivals?.p50 ?? '-'}ms  p90 ${arrivals?.p90 ?? '-'}ms  max ${arrivals?.max ?? '-'}ms`);
+      /* eslint-disable-next-line no-console */
+      console.log(`[load] arrivals split: batched ${counters['arrivals.batched'] ?? 0} | serial ${counters['arrivals.serial'] ?? 0} (arriving ${counters['arrivals.arriving'] ?? 0}, blocked ${counters['arrivals.blocked'] ?? 0}, legacy ${counters['arrivals.legacy'] ?? 0})`);
       if (arrivals) {
         expect(arrivals.p90 ?? 0, 'sched:arrivals is overrunning its own interval — due marches are settling late and the backlog compounds').toBeLessThan(ARRIVALS_P90_BUDGET_MS);
       }
