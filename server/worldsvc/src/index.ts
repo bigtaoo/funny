@@ -1,13 +1,14 @@
 // worldsvc process bootstrap (S8-0 + S8-4 + S8-5): connect dedicated DB → optional Redis → services → public REST listen.
 // SLG_DESIGN §14.1 P1: worldsvc is a public face (reverse proxy /world → this process; /auction moved to auctionsvc, §9 task 6).
-import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat, startEventLoopMonitor, SlgShopPriceCache, WordlistCache, fetchInternalJson } from '@nw/shared';
+import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat, SlgShopPriceCache, WordlistCache, fetchInternalJson } from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
 import { SectService } from './sectService';
 import { NationChannelService } from './nationChannelService';
 import { MapTemplateService } from './mapTemplateService';
-import { startHttpApi, routeTimings } from './httpApi';
+import { startHttpApi } from './httpApi';
+import { routeTimings, startWorldMetrics, stopWorldMetrics } from './metrics';
 import { startScheduler } from './scheduler';
 import { HttpWorldGatewayClient } from './gatewayClient';
 import { HttpWorldCommercialClient, nullWorldCommercialClient } from './commercialClient';
@@ -138,6 +139,7 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     scheduler.stop();
     server.close();
+    stopWorldMetrics();
     await shutdownComputeBackend();
     if (redis) await redis.quit().catch(() => {});
     await mongo.close();
@@ -158,8 +160,8 @@ async function main(): Promise<void> {
   // heartbeat carries the rolling loop percentiles plus the slowest routes so a regression shows up in
   // Grafana without anyone having to be watching at the time.
   const hbLog = createLogger('worldsvc');
-  const loopMonitor = startEventLoopMonitor(hbLog);
   const compute = getComputeBackend();
+  const loopMonitor = startWorldMetrics(hbLog, compute.name);
   startHeartbeat(hbLog, {
     extra: () => ({ compute: compute.name, loopLagMs: loopMonitor.drain(), routes: routeTimings.drain() }),
   });
