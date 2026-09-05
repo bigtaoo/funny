@@ -70,11 +70,11 @@
 | **应用商店 / 支付渠道**（Apple、Google、微信支付、CrazyGames 等） | 交易/票据信息 | 内购履约与验签 |
 | **云服务/托管商**（{{CLOUD_PROVIDER}}） | 后端存储的账号与存档数据 | 服务托管 |
 | **分析服务**（自建 analyticsvc / {{ANALYTICS_SDK}}） | 假名化埋点事件 | 运营分析（EU/UK 需同意） |
-| **广告 SDK**（{{ADS_SDK}}，如适用） | 必要的展示标识 | 激励广告（不做跨 App 跟踪，除非 ATT/同意） |
+| **广告 SDK**（Google AdMob，仅移动端激励视频） | 必要的展示标识 | 激励广告，**仅请求非个性化广告**（不读取 IDFA、不做跨 App 跟踪） |
 | **聚合平台**（CrazyGames 等） | 平台要求的登录/会话信息 | 平台内运行 |
 | **监管/执法机关** | 依法要求的信息 | 法律义务 |
 
-> 上线前须将 {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} / {{ADS_SDK}} 替换为实际使用的第三方名称及其隐私政策链接，并确保与 iOS 隐私标签、Google Play 数据安全表口径一致。
+> 上线前须将 {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} 替换为实际使用的第三方名称及其隐私政策链接，并确保与 iOS 隐私标签、Google Play 数据安全表口径一致。（广告 SDK 已于 2026-09-03 填实：Google AdMob，仅非个性化。）
 
 ---
 
@@ -87,7 +87,7 @@
 网页版使用必要的本地存储（localStorage）维持登录与游戏状态；如使用分析类 cookie，将通过 cookie 同意条征得同意。必要存储为服务运行所必需，不可关闭。
 
 ### 6.3 广告与跟踪
-我们默认**不做跨 App 广告跟踪**。如未来引入需 ATT（App Tracking Transparency）的跟踪，将通过 iOS 系统弹窗单独征得同意；拒绝不影响游戏核心功能。
+我们**不做跨 App 广告跟踪**。移动端的激励视频由 Google AdMob 提供，且**只请求非个性化广告**（`npa=1`）：我们不读取广告标识符（IDFA），因此 iOS 上**不会弹出 ATT 授权框**。iOS 的 SKAdNetwork 仅用于聚合层面的安装归因，按 Apple 的定义不属于「跟踪」。如未来改为投放个性化广告，将通过 ATT 系统弹窗单独征得同意，且同步更新本政策与 App Store 隐私标签；拒绝不影响游戏核心功能。
 
 ---
 
@@ -159,4 +159,4 @@
 
 ---
 
-> **上线前占位替换清单**：`{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{ADS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` 及托管 URL `{{PRIVACY_POLICY_URL}}`（供客户端 `consent.*` 链接）。
+> **上线前占位替换清单**：`{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` 及托管 URL `{{PRIVACY_POLICY_URL}}`（供客户端 `consent.*` 链接）。

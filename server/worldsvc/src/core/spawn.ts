@@ -190,6 +190,10 @@ export class SpawnService {
           ownerId,
           ...(opts.familyId ? { familyId: opts.familyId } : {}),
           garrison: opts.garrison ?? GARRISON_PER_TILE,
+          // Uniformly present even though a base anchor never heals (liveGarrison excludes type 'base' —
+          // the capital defends with in-base teams, ADR-026 §2), so no tile this factory writes is missing
+          // the checkpoint and readable as "healed long ago".
+          garrisonRegenAt: opts.now,
           // ADR-026: the anchor holds the whole capital's building HP (= level × SLG_BASE_HP_PER_LEVEL).
           hp: buildingMaxHp(opts.level),
           // D-CITY-8: the anchor's durability, capped by the wall-level-derived durabilityMax (replaces hp for base sieges).

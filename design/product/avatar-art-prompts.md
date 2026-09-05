@@ -432,6 +432,9 @@ sexualized, revealing clothing
 
 ## 四、功能实现待办（本文档只覆盖美术+渲染契约，以下留给功能实现阶段）
 
+> **✅ 全节关闭（2026-09-03 用代码核对）**：10 条全部 ✅，且下面几条 ✅ 条目里写的"仍缺皮肤胸像表 / `categoryIcon('skin', ...)` 仍未改 / skin 分类仍在用全身立绘"三处**也已不成立**——`client/src/render/skinAvatarArt.ts` 导出 6 张专属皮肤胸像（`client/src/assets/avatars/skin/avatar_skin_*.png`），`avatar.ts:204` 的 `case 'skin'` 走 `SKIN_AVATAR_ART_URLS` + `SKIN_HEAD_BOX`，不再兜底到 `UNIT_ART_URLS`。在库总数：preset 20 + hero 6 + skin 6 = 32 张，全部接线。
+> 那三句是各自 ✅ 当天的真实状态，留着作过程记录，别再当待办读。
+
 1. **删除 `equip`/`material` 分类**：✅ 2026-08-15（独立 worktree `feat/avatar-wiring`）——`client/src/render/avatar.ts`（`AvatarCategory` 类型、`CATEGORY_BG`、`categoryIcon`）、`client/src/scenes/SettingsScene/types.ts`（`AVATAR_TABS`/`AVATAR_TAB_LABEL_KEY`/`AVATAR_LOCKED_KEY`）、`avatarPicker.ts` 的 `pickerItems()` 对应两个 `case`、`nav/auth.ts` 的 `ownedEquipment`/`ownedMaterials` 传参均已删除。存量账号迁移：服务端 `isAvatarOwned`（`save.ts`）equip/material 落到 `default: false`（`PUT /avatar/equip` 一律 403，不再区分"已拥有/未拥有"），新增 `sanitizeEquippedAvatar` 接进 `app.ts` 的 `preSerialization` 钩子——存量 `equip:*`/`material:*` 头像读时静默换成 `preset:0`，只读不改库，跟 `equipmentInv`/`cardInv`/`skinCounts` 的读时回填同一约定。
 2. **`pack_avatar_atlas.cjs` 退役**：✅ 2026-08-15——`art/ui/head/pack_avatar_atlas.cjs` + `client/src/render/atlas/avatarAtlas.ts` 整体删除（确认过 `avatarAtlas.ts` 除 `avatar.ts` 外无其它引用者，`bootManifest.ts` 没有直接依赖它，不需要改 boot 清单；`iconsAtlas.ts` 底层共享图集本身保留，equip/material/faction 三类图标仍在用）。`client/src/assets/avatars/{avatars.png,avatars.json}` 这两个文件在动手前已不存在（早前 `072131d8` 重组资产时已并入 `icons_atlas.png/json`，本条目当时的表述已过时）。
 3. **新增独立 PNG import**：✅ 2026-08-15 `preset_*` 20 张 + `hero_*` 6 张均已完成——`client/src/render/presetAvatarArt.ts`/`heroAvatarArt.ts` 仿 `cardArt.ts` 写法分别导出 `PRESET_AVATAR_ART_URLS`/`HERO_AVATAR_ART_URLS`（图片分别在 `client/src/assets/avatars/preset/`、`client/src/assets/avatars/hero/`，见上方「资产处理」）。仍缺：皮肤胸像 url 表（§三，等 skin 立绘定稿后再做）。

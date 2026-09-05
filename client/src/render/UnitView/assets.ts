@@ -60,7 +60,7 @@ export const STICKMAN_ASSETS: Partial<Record<UnitType, string>> = {
  * LAUNCH SKIN CATALOGUE (owner decision 2026-07-02, GACHA_DESIGN §9.5): one skin per
  * character, 6 total, each a full .tao (procedural recolor retired post-v0.4, see
  * art-direction §9.1). Rigged onto each character's base skeleton (animator, 2026-07-30) —
- * see art/skins/<character>/ for the .tao.editor sources.
+ * see art/skins/<character>/ for the .taoeditor sources.
  */
 const SKIN_ASSETS: Record<string, Partial<Record<UnitType, string>>> = {
   skin_shop_c1: { [UnitType.Infantry]:     skinInfantryTaoUrl     as unknown as string }, // Tao/Lichuang  (shop, common)

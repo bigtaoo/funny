@@ -20,6 +20,8 @@ import {
   marchDurationFromPath,
   marchMoraleFromPath,
   proceduralTile,
+  SLG_TEAM_STAMINA_COST,
+  SLG_TEAM_STAMINA_MAX,
   type MarchKind,
 } from '@nw/shared';
 import { CommandService } from '../src/combatMarch/command';
@@ -381,8 +383,13 @@ describe('startMarch — ADR-051 idle re-dispatch claim and its rollback', () =>
     expect(doc.fromTile).toBe(tid(FROM.x, FROM.y));
     expect(doc.troops).toBe(700); // the StationedDoc's post-encounter strength, not the roster template's 600
     expect(doc.leaderUnitType).toBe('sword');
-    // Troops are already out of the pool, so no deduction is attempted.
-    expect(ctx.cols.playerWorld.updateOne).not.toHaveBeenCalled();
+    // Troops are already out of the pool, so no deduction is attempted. Narrowed from a blanket
+    // "playerWorld was never written" when team stamina landed (2026-09-04): a re-dispatch DOES now write
+    // playerWorld, for the stamina charge — see the stamina describe block. The claim this case makes is
+    // about the troop pool specifically, so it asserts on the `$inc: { troops }` shape rather than on the
+    // collection being untouched.
+    const pwWrites = (ctx.cols.playerWorld.updateOne as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(pwWrites.every((c) => !((c[1] as { $inc?: Record<string, unknown> })?.$inc ?? {}).troops)).toBe(true);
     expect(ctx.raw.clearOccupancy).toHaveBeenCalledWith(W, stationedDoc.tile, stationedDoc.tile);
   });
 
@@ -546,5 +553,139 @@ describe('getMarches — the no-vision shortcut', () => {
     expect(ctx.cols.marches.find).toHaveBeenCalledTimes(2);
     const enemyQuery = argOf(ctx.cols.marches.find, 1, 0) as Record<string, unknown>;
     expect(enemyQuery).toMatchObject({ worldId: W, status: 'marching', minX: { $lte: 8 }, maxX: { $gte: 2 } });
+  });
+});
+
+describe('startMarch — team stamina (SLG_DESIGN §4.6)', () => {
+  const occupyTiles = [tile(FROM.x, FROM.y, { ownerId: ACC })]; // target unowned → a legal occupy
+
+  /** A team dispatch with an explicit stamina checkpoint on t1 (omit `state` for "never marched"). */
+  function withStamina(
+    state: { stamina?: number; staminaAt?: number } | undefined,
+    extra: WorldOpts = {},
+  ): CommandService {
+    return build({
+      pw: playerWorld({
+        teams: [flatTeam()],
+        ...(state ? { teamState: { t1: state } } : {}),
+      } as unknown as Partial<PlayerWorldDoc>),
+      tiles: occupyTiles,
+      ...extra,
+    });
+  }
+
+  /** The `$set` payload of the stamina write, or undefined if playerWorld was never written for it. */
+  function staminaWrite(): Record<string, unknown> | undefined {
+    const calls = (ctx.cols.playerWorld.updateOne as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    for (const c of calls) {
+      const update = c[1] as { $set?: Record<string, unknown> } | undefined;
+      if (update?.$set && 'teamState.t1.stamina' in update.$set) return update.$set;
+    }
+    return undefined;
+  }
+
+  it('a team with no teamState entry at all reads as FULL and is charged one order', async () => {
+    const s = withStamina(undefined);
+    await s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1');
+    expect(staminaWrite()).toEqual({
+      'teamState.t1.stamina': SLG_TEAM_STAMINA_MAX - SLG_TEAM_STAMINA_COST,
+      'teamState.t1.staminaAt': NOW,
+    });
+  });
+
+  it('the charge is taken from the REGENERATED figure, not the stale stored one', async () => {
+    // Stored 0 five minutes ago → 5 points back at 1/min, still short of one order's 15.
+    const s = withStamina({ stamina: 0, staminaAt: NOW - 5 * 60_000 });
+    await expectSlg(
+      s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1'),
+      ErrorCode.TEAM_EXHAUSTED,
+      /below the 15/,
+    );
+    // Stored 0 a full 20 minutes ago → 20 back: affordable, and the debit is 20-15, not 0-15.
+    const s2 = withStamina({ stamina: 0, staminaAt: NOW - 20 * 60_000 });
+    await s2.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1');
+    expect(staminaWrite()).toEqual({
+      'teamState.t1.stamina': 20 - SLG_TEAM_STAMINA_COST,
+      'teamState.t1.staminaAt': NOW,
+    });
+  });
+
+  it('exactly SLG_TEAM_STAMINA_COST is enough (the gate is >=, so the last order is affordable)', async () => {
+    const s = withStamina({ stamina: SLG_TEAM_STAMINA_COST, staminaAt: NOW });
+    await s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1');
+    expect(staminaWrite()).toMatchObject({ 'teamState.t1.stamina': 0 });
+  });
+
+  it('one point short refuses with TEAM_EXHAUSTED and inserts no march at all', async () => {
+    const s = withStamina({ stamina: SLG_TEAM_STAMINA_COST - 1, staminaAt: NOW });
+    await expectSlg(
+      s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1'),
+      ErrorCode.TEAM_EXHAUSTED,
+    );
+    expect(ctx.cols.marches.insertOne).not.toHaveBeenCalled();
+    expect(staminaWrite()).toBeUndefined();
+  });
+
+  it('a dispatch that fails to commit costs nothing — the charge lands after the pool debit', async () => {
+    // deductMatched: 0 → the pool guard misses, startMarch rolls the march back and throws NO_TROOPS.
+    const s = withStamina({ stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW }, { deductMatched: 0 });
+    await expectSlg(
+      s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 600, 't1'),
+      ErrorCode.NO_TROOPS,
+    );
+    expect(ctx.cols.marches.deleteOne).toHaveBeenCalledTimes(1);
+    expect(staminaWrite()).toBeUndefined();
+  });
+
+  it('an idle re-dispatch is charged too — standing in the field is not a free order', async () => {
+    const stationedDoc = {
+      _id: tid(FROM.x, FROM.y), worldId: W, ownerId: ACC, tile: tid(FROM.x, FROM.y),
+      x: FROM.x, y: FROM.y, teamId: 't1', army: [{ col: 0, row: 0, unitType: 'sword', initialHp: 700 }],
+      troops: 700, sinceAt: NOW - 60_000, mode: 'idle',
+    } as unknown as StationedDoc;
+    const s = build({
+      pw: playerWorld({ teams: [flatTeam()] } as Partial<PlayerWorldDoc>),
+      tiles: [],
+      busyStationed: stationedDoc,
+      claim: stationedDoc,
+    });
+    await s.startMarch(W, ACC, 9, 9, TO.x, TO.y, 'move', 0, 't1');
+    expect(staminaWrite()).toMatchObject({
+      'teamState.t1.stamina': SLG_TEAM_STAMINA_MAX - SLG_TEAM_STAMINA_COST,
+    });
+  });
+
+  it('a flat-pool march commands no team and is never charged', async () => {
+    const s = build({ pw: playerWorld(), tiles: OWNED_TILES });
+    await s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'reinforce', 600);
+    expect(ctx.cols.marches.insertOne).toHaveBeenCalledTimes(1);
+    expect(staminaWrite()).toBeUndefined();
+  });
+
+  it('the charge writes ONLY the two scoped team keys — no rev bump, nothing else touched', async () => {
+    // Two claims the source spells out and nothing asserted. (1) `rev` is deliberately left alone: it is a
+    // pure optimistic lock, and bumping it from a write nobody guards on would invalidate other writers'
+    // guards for free. (2) Both keys are dotted paths under THIS team's subdocument, so the write commutes
+    // with every other playerWorld writer — a scheduler settle landing in the same window, or the defence
+    // side's `teamState.{id}.injuredUntil`. A `$set: { teamState }` on the whole map would silently clobber
+    // the other four teams' state, and would still satisfy every other case in this block.
+    const s = withStamina({ stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW });
+    await s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1');
+    const calls = (ctx.cols.playerWorld.updateOne as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const call = calls.find((c) => 'teamState.t1.stamina' in (((c[1] as { $set?: Record<string, unknown> })?.$set) ?? {}))!;
+    expect(Object.keys(call[1] as Record<string, unknown>)).toEqual(['$set']); // no $inc, no rev
+    expect(Object.keys((call[1] as { $set: Record<string, unknown> }).$set).sort())
+      .toEqual(['teamState.t1.stamina', 'teamState.t1.staminaAt']);
+    expect(call[0]).toEqual({ _id: expect.anything() }); // no rev guard either — the write is unconditional
+  });
+
+  it('a busy team still reports TEAM_BUSY, not TEAM_EXHAUSTED, when both would block', async () => {
+    // Recalling is the action that unblocks a busy team; waiting is the one for a tired team. With both
+    // true the player must be told the former, so the busy gate has to stay ahead of the stamina gate.
+    const s = withStamina({ stamina: 0, staminaAt: NOW }, { busyMarch: march({ teamId: 't1' }) });
+    await expectSlg(
+      s.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'occupy', 0, 't1'),
+      ErrorCode.TEAM_BUSY,
+    );
   });
 });

@@ -48,7 +48,7 @@ cd tools/animator && npm run start   # 端口 9091
 `tools/animator` 这几年反复撞上同一类环境坑——不管是 in-app Browser 面板（不 compositing，`document.visibilityState` 恒为 `'hidden'`）还是真实 Chrome 标签页（被系统最小化/锁屏导致 `document.hidden` 变 `true`）——一旦 `document.hidden`，`requestAnimationFrame` 就不再触发，PIXI ticker 冻结、主 canvas 停在 0×0，常规「截图确认」直接失效。下面这套手法不依赖屏幕合成，可以在这两种情况下都拿到真实验证：
 
 1. **临时挂调试钩子**：在 `tools/animator/src/App.ts` 构造函数末尾（`autoSave.bootstrap()` 之后）加一行 `(globalThis as any).__NW_DEBUG = { state, renderer, ioCtrl, imageCtrl, animCtrl, bus, cmdManager, Skeleton };`，把内部对象暴露给页面全局。Webpack HMR 会热更新，但**改 `InteractionController.ts` 之类文件 HMR 拒绝接受**（`[HMR] Error: Aborted because ... is not accepted`），会强制整页刷新、清空已建立的选中/工程状态，需要重新走一遍加载步骤——每改一次这个文件都要预期到这一点，或者攒够改动再一次性重测。**收尾前务必删掉这个钩子**，`git diff --stat App.ts` 确认只剩真正的功能改动。
-2. **无人工点击加载工程**：起一个小的本地静态文件服务器（带 CORS 头）serve 目标 `.tao.editor`，页面里 `fetch()` 取回 blob，调 `dbg.ioCtrl.loadEditorBlob(blob, name)` 直接加载，不用人在 UI 里拖文件。
+2. **无人工点击加载工程**：起一个小的本地静态文件服务器（带 CORS 头）serve 目标 `.taoeditor`，页面里 `fetch()` 取回 blob，调 `dbg.ioCtrl.loadEditorBlob(blob, name)` 直接加载，不用人在 UI 里拖文件。
 3. **`state.editorMode` 默认是 `'animate'` 不是 `'skin'`**——只设 `previewMode='sprite'` 拿到的是当前动画 clip 某一帧的姿态，不是静息姿 Binding。排查绑定/锚点问题前先显式 `dbg.state.setEditorMode('skin')`，否则诊断对象就测错了。
 4. **渲染+截图**：`dbg.renderer.pixiApp.ticker.update(performance.now()); dbg.renderer.pixiApp.renderer.render(dbg.renderer.pixiApp.stage);` 手动强制画一帧，再 `canvas.toDataURL(...)` 读像素，不依赖屏幕合成。
 5. **局部放大**：把 `renderer.pixiApp.view` 的一个子矩形 `ctx.drawImage(src, sx, sy, sw, sh, 0, 0, sw*scale, sh*scale)`（`imageSmoothingEnabled=false`）画到一个离屏 canvas 上再截这个 canvas，比整图缩放更清楚。
@@ -215,7 +215,7 @@ alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新
 - **11 根固定骨骼**：root → spine → head / 4 臂 / 4 腿
 - **FK**：`Skeleton.computeFK(rootX, rootY, transforms, lengthScales?)` 纯函数；hit-test 须传 `state.boneLengthScales`
 - **关键帧插值**：`sampleClip(clip, t)` 无外部依赖，可复制到游戏引擎
-- **导出格式**：`.tao`（JSZip + spritesheet.png + animation.json v2）；`.tao.editor`（保留原始图 + 编辑状态）。Load 记住文件身份（桌面壳路径 / 浏览器 File System Access handle），Save 直接覆盖、Export 直接落到同目录，都不重复弹框；"导入 .tao" 已移除，换成"另存为"（存一份新 `.tao.editor` 并把之后的 Save/Export 目标切过去）
+- **导出格式**：`.tao`（JSZip + spritesheet.png + animation.json v2）；`.taoeditor`（保留原始图 + 编辑状态）。Load 记住文件身份（桌面壳路径 / 浏览器 File System Access handle），Save 直接覆盖、Export 直接落到同目录，都不重复弹框；"导入 .tao" 已移除，换成"另存为"（存一份新 `.taoeditor` 并把之后的 Save/Export 目标切过去）
 - **多工程自动保存**：IndexedDB 库 `nw-animator`（`meta`+`blobs` 两 store），脏事件停手 1.5s debounce 静默存当前工程，启动恢复上次工程；底部栏工程下拉 + 增删改复制 + 状态点。编排见 `AutoSaveController`，存储见 `ProjectStore`，UI 见 `ProjectPanel`（设计 §11）。**注意**：浏览器本地存储，换浏览器/清缓存即失；重要成果仍需 `Save .editor` 导磁盘。`Load .editor` 会覆盖当前选中工程
 - **骨骼长度**：`AppState.boneLengthScales`（稀疏 Map）序列化进两种格式
 - **编辑器模式**：`'skin'`（静息姿调 Binding）/ `'animate'`（关键帧编辑）；快捷键 `S`
@@ -253,7 +253,7 @@ alpha 命中 + 选中优先落地后补的测试（`ImageController.test.ts` 新
 | `src/io/IOController.ts` | 装配壳（2026-08-13 起，`单文件 500 行收敛` form①，771→123）：只留 `editorFilePath`/`editorFileHandle`/`taoFileHandle` 三个磁盘身份字段 + 两个 host builder，逻辑全下沉到 `src/io/{fileIO,clipSerialization,editorProject,taoExport}.ts` |
 | `src/io/fileIO.ts` | 磁盘 / File System Access API 工具函数（`isDesktop`/`saveWithPicker`/`basename`/`deriveTaoPath` 等），纯函数，无需 host |
 | `src/io/clipSerialization.ts` | clip↔JSON 互转（`serializeClip`/`deserializeClip`），纯函数，无需 host |
-| `src/io/editorProject.ts` | `.tao.editor` 存档读写（`buildEditorBlob`/`loadEditorBlob` 复用），`EditorProjectHost` |
+| `src/io/editorProject.ts` | `.taoeditor` 存档读写（`buildEditorBlob`/`loadEditorBlob` 复用），`EditorProjectHost` |
 | `src/io/taoExport.ts` | `.tao` 导出 + 贴图烘焙 + 精灵表打包，`TaoExportHost`；桌面壳 `window.nwDesktop.fs` / 浏览器 File System Access API 双路径 |
 | `src/io/ProjectStore.ts` | IndexedDB 工程库（`meta`+`blobs` 两 store） |
 | `src/io/AutoSaveController.ts` | 多工程自动保存 + 切换 + 启动恢复 |

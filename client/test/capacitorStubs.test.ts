@@ -110,8 +110,12 @@ describe('non-mobile builds carry no Capacitor runtime', () => {
   });
 
   it('the mobile build keeps the real packages', () => {
-    // The whole point of the stubs is that mobile is the one target Capacitor is real on.
-    expect(replacements('mobile').filter((r) => r.to.includes(`${STUB_DIR}/`))).toEqual([]);
+    // The whole point of these stubs is that mobile is the one target Capacitor is real on.
+    // Scoped to `@capacitor/*` rather than "mobile stubs nothing": the stub mechanism also runs in
+    // the opposite direction now (web-only paddleCheckout → a stub on mobile, see
+    // nativePaymentIsolation.test.ts), and that swap is not this file's contract.
+    const capacitorStubs = [`${STUB_DIR}/capacitorCore.ts`, `${STUB_DIR}/localNotifications.ts`];
+    expect(replacements('mobile').filter((r) => capacitorStubs.some((s) => r.to.endsWith(s)))).toEqual([]);
   });
 });
 

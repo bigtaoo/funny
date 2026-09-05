@@ -1808,6 +1808,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                             "type": "integer",
                             "nullable": true,
                             "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                          },
+                          "stamina": {
+                            "type": "integer",
+                            "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                          },
+                          "staminaAt": {
+                            "type": "integer",
+                            "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                           }
                         }
                       },
@@ -2078,6 +2086,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -2286,6 +2302,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -2681,6 +2705,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                 "type": "integer",
                                 "nullable": true,
                                 "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                              },
+                              "stamina": {
+                                "type": "integer",
+                                "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                              },
+                              "staminaAt": {
+                                "type": "integer",
+                                "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                               }
                             }
                           },
@@ -3393,6 +3425,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -3601,6 +3641,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -3962,6 +4010,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                 "type": "integer",
                                 "nullable": true,
                                 "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                              },
+                              "stamina": {
+                                "type": "integer",
+                                "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                              },
+                              "staminaAt": {
+                                "type": "integer",
+                                "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                               }
                             }
                           },
@@ -4327,6 +4383,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                 "type": "integer",
                                 "nullable": true,
                                 "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                              },
+                              "stamina": {
+                                "type": "integer",
+                                "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                              },
+                              "staminaAt": {
+                                "type": "integer",
+                                "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                               }
                             }
                           },
@@ -4887,6 +4951,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                                 "type": "integer",
                                 "nullable": true,
                                 "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                              },
+                              "stamina": {
+                                "type": "integer",
+                                "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                              },
+                              "staminaAt": {
+                                "type": "integer",
+                                "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                               }
                             }
                           },
@@ -5115,6 +5187,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -6001,6 +6081,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -6209,6 +6297,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -6417,6 +6513,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -6625,6 +6729,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },
@@ -7360,6 +7472,14 @@ export const WORLD_RESPONSE_SCHEMAS: Record<string, Record<string, unknown>> = {
                         "type": "integer",
                         "nullable": true,
                         "description": "Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend."
+                      },
+                      "stamina": {
+                        "type": "integer",
+                        "description": "Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full."
+                      },
+                      "staminaAt": {
+                        "type": "integer",
+                        "description": "Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then."
                       }
                     }
                   },

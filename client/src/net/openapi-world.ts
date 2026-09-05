@@ -1238,6 +1238,10 @@ export interface components {
         TeamSLGState: {
             /** @description Unix ms timestamp when the team's injury lock ends; null/absent = not injured. Injured teams never defend. */
             injuredUntil?: number | null;
+            /** @description Stamina left at `staminaAt` (0..SLG_TEAM_STAMINA_MAX). Absent = full. */
+            stamina?: number;
+            /** @description Unix ms the `stamina` checkpoint was written. Regen is SLG_TEAM_STAMINA_REGEN_PER_MIN per minute since then. */
+            staminaAt?: number;
         };
         ArmyEntry: {
             /** @description CC-3 primary key (character card instance) */

@@ -185,10 +185,10 @@ describe('buildTaoBlob — image baking', () => {
 describe('exportTao', () => {
   beforeEach(() => { vi.stubGlobal('document', { getElementById: () => null }); });
 
-  it('desktop shell: writes next to the loaded .tao.editor via the derived same-directory path', async () => {
+  it('desktop shell: writes next to the loaded .taoeditor via the derived same-directory path', async () => {
     const writeFile = vi.fn(async (_path: string, _buf: ArrayBuffer) => ({ ok: true }));
     vi.stubGlobal('window', { nwDesktop: { fs: { writeFile } } });
-    const host = makeHost({ editorFilePath: 'C:\\rig\\runner.tao.editor' });
+    const host = makeHost({ editorFilePath: 'C:\\rig\\runner.taoeditor' });
 
     await exportTao(host);
     expect(writeFile).toHaveBeenCalledTimes(1);
@@ -229,7 +229,7 @@ describe('exportTao', () => {
 
   it('a failure anywhere in the flow reports an error, not a thrown exception', async () => {
     vi.stubGlobal('window', { nwDesktop: { fs: { writeFile: async () => ({ ok: false, error: 'disk full' }) } } });
-    const host = makeHost({ editorFilePath: 'C:\\rig\\runner.tao.editor' });
+    const host = makeHost({ editorFilePath: 'C:\\rig\\runner.taoeditor' });
     await expect(exportTao(host)).resolves.toBeUndefined();
     expect(host.events[host.events.length - 1]).toEqual({ event: 'error', payload: 'Export failed: disk full' });
   });

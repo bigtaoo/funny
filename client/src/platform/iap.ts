@@ -27,6 +27,17 @@ export interface NwBillingBridge {
    * Rejects if the user cancels or the purchase fails.
    */
   purchase(tierId: string): Promise<{ receipt: string }>;
+  /**
+   * The current app-store receipt, or null when the device has none yet (fresh install, never
+   * purchased). Used only by the Apple auto-renewable subscription sync (platform/appleSubscriptionSync.ts):
+   * a renewal happens inside Apple's systems with no user action, and re-reading the receipt is the
+   * only way the app learns about it.
+   *
+   * Optional because the shell can be older than the JS: OTA hot-updates ship new JS to a native
+   * binary that may predate this method (IOS_RELEASE.md §11), so callers must feature-detect rather
+   * than assume. Absent bridge method = no sync, which is the pre-2026-09-03 behaviour.
+   */
+  receipt?(): Promise<string | null>;
 }
 
 /** Reads the injected native billing bridge, if any (validated shape). */
@@ -34,4 +45,15 @@ export function getNativeBilling(): NwBillingBridge | null {
   const b = (globalThis as { NWBilling?: NwBillingBridge }).NWBilling;
   if (b && typeof b.purchase === 'function' && (b.kind === 'apple' || b.kind === 'google')) return b;
   return null;
+}
+
+/**
+ * The bridge's receipt reader, when this shell has one. Checked separately from getNativeBilling's
+ * shape check on purpose: `receipt` is newer than the bridge itself, so an older binary running
+ * OTA-updated JS has a perfectly good bridge with no reader on it. That is not a malformed bridge —
+ * purchases still work — it just means this session cannot sync renewals.
+ */
+export function getNativeReceiptReader(): (() => Promise<string | null>) | null {
+  const b = getNativeBilling();
+  return b && typeof b.receipt === 'function' ? b.receipt.bind(b) : null;
 }

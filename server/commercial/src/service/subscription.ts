@@ -32,7 +32,22 @@ export interface SubscriptionHandlers {
     dayKey: string;
     clientPlatform?: string;
   }): Promise<Result<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet: WalletView }>>;
+  subscriptionSyncApple(args: {
+    accountId: string;
+    receipt: string;
+    clientPlatform?: string;
+  }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; granted: number; wallet: WalletView }>>;
 }
+
+/**
+ * Ceiling on how many receipt periods one sync applies. Apple keeps every renewal in the receipt
+ * forever, so a five-year subscriber's receipt carries ~60 of them and all but the newest are
+ * already-granted no-ops. Taking the newest N bounds the work per cold start without ever dropping an
+ * ungranted period: a player would have to miss N consecutive renewals — five years of not opening
+ * the app while still paying — to lose one, and the periods dropped in that case are ones that
+ * expired long ago anyway.
+ */
+const MAX_SYNC_PERIODS = 60;
 
 export class SubscriptionService {
   constructor(private readonly core: WalletCore) {}
@@ -117,6 +132,76 @@ export class SubscriptionService {
         claimed: MONTHLY_CARD_DAILY_COINS,
         subscriptionExpiry: res.subscription?.expiry ?? 0,
         wallet: walletView(res, args.clientPlatform),
+      };
+    }
+
+    /**
+     * Apply every not-yet-granted auto-renewable subscription period in an Apple receipt
+     * (IOS_RELEASE.md §4.1b). The client calls this on cold start, so it is written to be a cheap
+     * no-op in the overwhelmingly common case where there is nothing new.
+     *
+     * Why a sync exists at all: an auto-renewable subscription renews inside Apple's systems, with no
+     * user action and no round trip through our client. StoreKit 1 surfaces those renewals as extra
+     * transactions in the app receipt, so re-reading the receipt is how the server learns the player
+     * paid again. Each period is granted under `apple:<transactionId>` — subscriptionCardBuy is
+     * idempotent on orderId, which is what makes running this on every launch safe rather than a
+     * monthly-card printing press.
+     *
+     * `renewal: true` is passed because a renewal by definition arrives while the current period is
+     * still running (Apple bills ~a day early so the subscription never lapses); the single-slot gate
+     * would otherwise reject money Apple has already taken. See subscriptionCardBuy's `renewal` doc.
+     *
+     * Returns `granted` = how many periods this call actually added, so the caller can skip the save
+     * round trip when nothing changed. Fails closed to `granted: 0` when Apple is unconfigured or the
+     * receipt is rejected — never an error the player sees, since this runs unprompted at boot.
+     */
+    async subscriptionSyncApple(args: {
+      accountId: string;
+      receipt: string;
+      clientPlatform?: string;
+    }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; granted: number; wallet: WalletView }>> {
+      const read = this.core.verifyAppleSubscriptions;
+      const periods = read ? await read(args.receipt).catch(() => []) : [];
+      const recent = periods.slice(-MAX_SYNC_PERIODS);
+
+      let granted = 0;
+      let last: Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }> | null = null;
+      for (const period of recent) {
+        const before = (await this.core.cols.wallets.findOne({ _id: args.accountId }))?.subscription?.expiry ?? 0;
+        const res = await this.core.subscriptionCardBuy({
+          accountId: args.accountId,
+          orderId: `apple:${period.transactionId}`,
+          clientPlatform: args.clientPlatform,
+          channel: 'apple',
+          days: period.product === 'year_card' ? YEAR_CARD_DAYS : MONTHLY_CARD_DAYS,
+          immediateCoins: period.product === 'year_card' ? YEAR_CARD_IMMEDIATE_COINS : MONTHLY_CARD_IMMEDIATE_COINS,
+          renewal: true,
+        });
+        // A replay of an already-granted period returns ok with the wallet untouched; a real grant moves
+        // the expiry. Comparing is how "granted" stays honest without subscriptionCardBuy having to
+        // report new-vs-replay, which no other caller needs to know.
+        if (res.ok) {
+          if (res.subscriptionExpiry > before) granted += 1;
+          last = res;
+        }
+      }
+
+      if (last?.ok) {
+        return {
+          ok: true,
+          coinsAfter: last.coinsAfter,
+          subscriptionExpiry: last.subscriptionExpiry,
+          granted,
+          wallet: last.wallet,
+        };
+      }
+      const w = await this.core.cols.wallets.findOne({ _id: args.accountId });
+      return {
+        ok: true,
+        coinsAfter: effectiveCoins(w, spendChannelOf(args.clientPlatform)),
+        subscriptionExpiry: w?.subscription?.expiry ?? 0,
+        granted: 0,
+        wallet: walletView(w, args.clientPlatform),
       };
     }
 }

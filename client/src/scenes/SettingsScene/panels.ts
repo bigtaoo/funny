@@ -12,6 +12,7 @@ import { buildAvatar } from '../../render/avatar';
 import type { SettingsSceneCallbacks } from './types';
 import type { Hit } from '../../ui/hits';
 import { isDataSaverEnabled, setDataSaverEnabled } from '../../assets/prefetchPolicy';
+import { legalUrl } from '../../ui/dialogs/ConsentDialog';
 
 const LOCALE_LABEL: Record<Locale, string> = { zh: '中文', en: 'English', de: 'Deutsch' };
 
@@ -262,4 +263,51 @@ export function drawAccount(host: PanelHost): void {
       addButton(host, t('settings.deleteAccount'), secY + Math.round(h * 0.125), C.red, () => host.openDelete(), btnW, x);
     }
   }
+}
+
+/**
+ * Privacy policy / Terms links (Apple 5.1.1(i), `store-assets-checklist §1.5`).
+ *
+ * App Review checks that the privacy policy is reachable **from inside the app**, not only from the
+ * store listing. Until now the only in-app link pair lived in {@link ConsentDialog}, which is shown
+ * once on first launch and is unreachable afterwards — a reviewer signing in on a device that has
+ * already consented would find no policy anywhere in the UI.
+ *
+ * Sits in the right column under Help so it shares the existing Help/Account band instead of needing
+ * a new one — this scene has no flow layout, every section is a hand-tuned fraction of `h`, and a
+ * new band would silently draw on top of its neighbours (see settingsDataSaverRow.ui.ts).
+ *
+ * URLs come from {@link legalUrl}: relative pages on the web, absolute https in the native shell,
+ * where the pages are deliberately not bundled and a `capacitor://` URL is silently dropped by iOS
+ * (IOS_RELEASE.md §10.3).
+ */
+export function drawLegal(host: PanelHost): void {
+  const { w, h, container } = host;
+  const secY = Math.round(h * 0.73);
+  const x = Math.round(w * 0.56);
+
+  // 0.142h, not the 0.125h the delete button opposite uses: this column has the Replay-tutorial
+  // BUTTON above it (ending at 0.845h), and at 0.125h the label's caps sat flush against its border
+  // — checked in a real browser at 1568x744, where the gap is ~7px and reads as a collision.
+  const label = txt(t('settings.legal'), FS.title, C.dark, true);
+  label.anchor.set(0, 0.5); label.y = secY + Math.round(h * 0.142); label.x = x;
+  container.addChild(label);
+
+  const rowH = Math.round(h * 0.04);
+  const links: ReadonlyArray<readonly [TranslationKey, '/privacy' | '/terms']> = [
+    ['consent.privacyPolicy', '/privacy'],
+    ['consent.terms', '/terms'],
+  ];
+  links.forEach(([key, path], i) => {
+    const y = secY + Math.round(h * 0.175) + i * rowH;
+    const link = txt('· ' + t(key), FS.label, C.accent, true);
+    link.anchor.set(0, 0.5); link.x = x; link.y = y;
+    container.addChild(link);
+    host.hits.push({
+      // Wider than the glyphs: these are two short lines of text, and a tap target the exact width
+      // of "Terms" in English is a miss on a phone (and a different width in every locale).
+      rect: { x, y: y - rowH / 2, w: Math.max(Math.round(link.width), Math.round(w * 0.3)), h: rowH },
+      fn: () => { if (typeof window !== 'undefined') window.open(legalUrl(path), '_blank', 'noopener'); },
+    });
+  });
 }

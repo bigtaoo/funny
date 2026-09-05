@@ -16,6 +16,7 @@ import {
   scheduleSubscriptionReminder, checkInAppSubscriptionReminder,
   scheduleDailyReminder, type DailyReminderReason,
 } from '../../platform/localReminders';
+import { syncAppleSubscription } from '../../platform/appleSubscriptionSync';
 
 /**
  * Roll an AI level (1–10, engine AISystem.ts) for a manually-started practice match,
@@ -144,6 +145,12 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       const expiry = saveManager.get().monetization?.subscriptionExpiry ?? 0;
       void scheduleSubscriptionReminder(expiry);
       checkInAppSubscriptionReminder(platform.storage, expiry);
+      // Apple auto-renewable subscriptions renew inside Apple's systems, so a renewal reaches us only
+      // by re-reading the app receipt (platform/appleSubscriptionSync.ts). Hooked here rather than at
+      // boot because this is where "logged in, save loaded, real lobby entry" is already established —
+      // exactly the precondition the reminder above needs. Self-limiting to one attempt per session,
+      // and a no-op off the iOS shell.
+      if (api) void syncAppleSubscription(api, (save) => saveManager.adoptServer(save));
     }
     // First-time feature guide (ONBOARDING_DESIGN §4.1): if a feature's guide has not been seen,
     // show a dismissible guide card in the lobby before navigating; if already seen, navigate directly.

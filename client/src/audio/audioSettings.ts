@@ -35,6 +35,9 @@ export const DEFAULT_AUDIO_SETTINGS: Readonly<AudioSettings> = { master: 1, bgm:
 
 let storage: IStorage | null = null;
 let current: AudioSettings = { ...DEFAULT_AUDIO_SETTINGS };
+/** Host-imposed silence (an ad is playing). Deliberately NOT part of {@link AudioSettings}: see
+ *  {@link setAudioSuspended}. */
+let suspended = false;
 
 function clamp01(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback;
@@ -60,7 +63,7 @@ function parse(raw: string | null): AudioSettings {
 /** Push the current settings onto the installed bus. Safe before any bus is installed — the
  *  default `NullAudioBus` accepts and drops both calls. */
 function apply(): void {
-  const gain = current.muted ? 0 : current.master;
+  const gain = current.muted || suspended ? 0 : current.master;
   const bus = audioBus();
   bus.setSfxVolume(gain * current.sfx);
   bus.setMusicVolume(gain * current.bgm);
@@ -84,6 +87,26 @@ export function installAudioSettings(deps: { storage: IStorage }): void {
 export function resetAudioSettingsForTest(): void {
   storage = null;
   current = { ...DEFAULT_AUDIO_SETTINGS };
+  suspended = false;
+}
+
+/**
+ * Silence everything for as long as the host says so — today: while a CrazyGames ad plays, where
+ * muting the game is a portal QA requirement (our BGM over their ad's audio is what it exists to
+ * prevent).
+ *
+ * A separate flag rather than `setAudioMuted(true)` for two reasons, both of which have to hold:
+ *  * it does **not** persist — an ad that ends with a crashed callback, or a tab closed mid-ad, must
+ *    not leave `nw_audio.muted` on disk and a player wondering why the game is silent next launch;
+ *  * it does **not** overwrite the player's own mute — unsuspending restores whatever they chose,
+ *    including a mute they set themselves before the ad started.
+ *
+ * Idempotent, so a double `adFinished`/timeout race is harmless.
+ */
+export function setAudioSuspended(v: boolean): void {
+  if (suspended === v) return;
+  suspended = v;
+  apply();
 }
 
 export function getAudioSettings(): Readonly<AudioSettings> {

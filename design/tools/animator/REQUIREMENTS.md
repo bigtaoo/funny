@@ -32,7 +32,7 @@ Notebook Wars 使用程序化骨骼角色（stickman）作为战斗单位，由 
               → 在静息姿下逐骨骼调整 Binding（anchor / offset / rotation / scale）
 3. [动画阶段] 切换到 Animate 模式 → 选择或新建动画片段（如 "walk"）
               → 拖动骨骼调整姿态 → K 键打关键帧 → 播放预览 → 反复调整
-4. 保存 .tao.editor（保留图片 + 编辑状态，下次继续编辑）
+4. 保存 .taoeditor（保留图片 + 编辑状态，下次继续编辑）
 5. 导出 .tao（游戏引擎读取）
 ```
 
@@ -222,7 +222,7 @@ zOrder 只决定**画**的顺序，不能直接当**点选**的顺序用：贴�
 - **Inspector**：选中骨骼后（root / head 除外）顶部显示 **Length (px)** 输入框，输入实际像素值
 - **内部存储**：`boneLengthScales: Map<boneId, number>`（稀疏，1.0 不存储）
 - **生效范围**：FK 计算、hit-test、渲染；与关键帧动画数据完全独立
-- **序列化**：写入 `.tao.editor` 和 `.tao`；游戏运行时读取 `boneLengthScales` 还原骨骼比例
+- **序列化**：写入 `.taoeditor` 和 `.tao`；游戏运行时读取 `boneLengthScales` 还原骨骼比例
 
 ### 3.10 挂点系统（Attachment Points）
 
@@ -291,12 +291,12 @@ zOrder 只决定**画**的顺序，不能直接当**点选**的顺序用：贴�
 
 | 操作 | 文件 | 说明 |
 |---|---|---|
-| Export .tao | `.tao` | 游戏引擎用：动画 JSON + spritesheet；写到已加载 `.tao.editor` 的同目录（桌面壳直接写；浏览器复用本次会话记住的保存 handle），不重复弹框 |
-| Save .tao.editor | `.tao.editor` | 编辑器存档：保留原始图片 + 完整编辑状态；直接覆盖已加载的文件，不重复弹框 |
-| Load .tao.editor | `.tao.editor` | 恢复完整编辑会话（图片 + 动画 + 绑定 + 骨骼长度）；只在此处弹一次文件选择框，记住的路径/handle 供之后的 Save/Export 复用 |
-| 另存为 | `.tao.editor` | 存一份新文件（弹一次保存框），之后的 Save/Export 目标切到这份新文件（同 Word/Photoshop 惯例） |
+| Export .tao | `.tao` | 游戏引擎用：动画 JSON + spritesheet；写到已加载 `.taoeditor` 的同目录（桌面壳直接写；浏览器复用本次会话记住的保存 handle），不重复弹框 |
+| Save .taoeditor | `.taoeditor` | 编辑器存档：保留原始图片 + 完整编辑状态；直接覆盖已加载的文件，不重复弹框 |
+| Load .taoeditor | `.taoeditor` | 恢复完整编辑会话（图片 + 动画 + 绑定 + 骨骼长度）；只在此处弹一次文件选择框，记住的路径/handle 供之后的 Save/Export 复用 |
+| 另存为 | `.taoeditor` | 存一份新文件（弹一次保存框），之后的 Save/Export 目标切到这份新文件（同 Word/Photoshop 惯例） |
 
-**2026-07-28**：`Import .tao` 按钮已移除（实际没人用——项目内没有只有 `.tao` 没有 `.tao.editor` 的场景），换成"另存为"。Save/Export 从"每次都弹原生/浏览器保存框选路径"改成"记住 Load 时的文件身份，直接覆盖/派生同目录路径"，桌面壳（`tools/desktop-shell`）内用原生 IPC 落盘（`window.nwDesktop.fs.*`），脱离壳单独跑时退回浏览器 File System Access API（`showOpenFilePicker`/`showSaveFilePicker`，记住 handle 复用；Export 因浏览器 API 拿不到目录，首次仍需弹一次框）。见 [`design/tools/desktop-shell/DESIGN.md`](../desktop-shell/DESIGN.md) §3/§8。
+**2026-07-28**：`Import .tao` 按钮已移除（实际没人用——项目内没有只有 `.tao` 没有 `.taoeditor` 的场景），换成"另存为"。Save/Export 从"每次都弹原生/浏览器保存框选路径"改成"记住 Load 时的文件身份，直接覆盖/派生同目录路径"，桌面壳（`tools/desktop-shell`）内用原生 IPC 落盘（`window.nwDesktop.fs.*`），脱离壳单独跑时退回浏览器 File System Access API（`showOpenFilePicker`/`showSaveFilePicker`，记住 handle 复用；Export 因浏览器 API 拿不到目录，首次仍需弹一次框）。见 [`design/tools/desktop-shell/DESIGN.md`](../desktop-shell/DESIGN.md) §3/§8。
 
 ---
 
@@ -359,13 +359,13 @@ zOrder 只决定**画**的顺序，不能直接当**点选**的顺序用：贴�
 
 Shelf bin-packing 合并图集，canvas.toBlob PNG，JSZip DEFLATE 二次压缩。
 
-**导出烘焙（缩小体积，约 -1/3）**：导出前每张骨骼图按「实际显示分辨率 × 1.5 余量」缩小，并改写 `animation.json` 的 `binding.scaleX/Y` 补偿，渲染结果像素级一致、runtime 零改动。详见 `ARCHITECTURE.md §8`。`.tao.editor` 存档不烘焙，继续保存无损原图。
+**导出烘焙（缩小体积，约 -1/3）**：导出前每张骨骼图按「实际显示分辨率 × 1.5 余量」缩小，并改写 `animation.json` 的 `binding.scaleX/Y` 补偿，渲染结果像素级一致、runtime 零改动。详见 `ARCHITECTURE.md §8`。`.taoeditor` 存档不烘焙，继续保存无损原图。
 
 ---
 
-## 5. 编辑器存档格式（.tao.editor 文件）
+## 5. 编辑器存档格式（.taoeditor 文件）
 
-`.tao.editor` 是 ZIP 压缩包，**保存完整编辑状态**，可随时加载继续编辑：
+`.taoeditor` 是 ZIP 压缩包，**保存完整编辑状态**，可随时加载继续编辑：
 
 - `editor.json`（version 1）：动画 + 绑定 + 挂点 + boneLengthScales + 编辑器状态（当前 clip、预览模式）
 - `images/spine.png`、`images/head.png` … 各骨骼原始 PNG（无损，不合并 spritesheet）

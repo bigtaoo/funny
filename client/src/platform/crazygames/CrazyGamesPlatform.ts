@@ -7,6 +7,7 @@ import { BrowserGameSocket } from '../../net/BrowserGameSocket';
 import type { Locale } from '../../i18n';
 import type { IapKind } from '../iap';
 import { openDomTextInput } from '../web/domTextInput';
+import { setAudioSuspended } from '../../audio/audioSettings';
 
 /**
  * CrazyGames platform adapter.
@@ -16,6 +17,13 @@ import { openDomTextInput } from '../web/domTextInput';
  *
  * The SDK script must be loaded in index.html before the game bundle:
  *   <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+ *
+ * Portal-facing obligations this class carries, none of which the rest of the game knows about:
+ *  * the loading window is opened and closed as a pair (constructor / `onLoadingComplete`);
+ *  * gameplay is bracketed with `gameplayStart`/`gameplayStop` (called by app/nav);
+ *  * **the game is silent while an ad plays** — `adStarted` suspends audio, and every exit from an
+ *    ad (finish, error, throw, timeout) restores it. Portal QA checks this; a game playing its BGM
+ *    over the advertiser's audio is the thing it checks for.
  */
 
 // ─── SDK type shim ────────────────────────────────────────────────────────────
@@ -28,12 +36,13 @@ declare global {
         game: {
           gameplayStart(): void;
           gameplayStop(): void;
-          sdkGameLoadingStop?(): void; // optional — may not exist in all versions
+          sdkGameLoadingStart?(): void; // optional — may not exist in all versions
+          sdkGameLoadingStop?(): void;  // ditto
         };
         ad: {
           requestAd(
             type: 'midgame' | 'rewarded',
-            callbacks: { adFinished?(): void; adError?(e: unknown): void },
+            callbacks: { adStarted?(): void; adFinished?(): void; adError?(e: unknown): void },
           ): void;
         };
       };
@@ -50,6 +59,8 @@ export class CrazyGamesPlatform implements IPlatform {
   readonly supportedLocales: readonly Locale[] = ['zh', 'en', 'de'];
 
   private sdk: NonNullable<typeof window.CrazyGames>['SDK'] | null = null;
+  /** Resolves once `SDK.init()` has settled (either way). See {@link ready}. */
+  private readonly initDone: Promise<void>;
 
   constructor(canvasId = 'game-canvas') {
     let canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
@@ -59,6 +70,30 @@ export class CrazyGamesPlatform implements IPlatform {
       document.body.appendChild(canvas);
     }
     this.canvas = canvas;
+    this.initDone = this.ready();
+  }
+
+  /**
+   * Initialise the SDK and open the loading window.
+   *
+   * Runs from the constructor, not from `onLoadingComplete()`, because the two loading calls are a
+   * pair: `sdkGameLoadingStart()` has to be made while the game is *still loading* for
+   * `sdkGameLoadingStop()` to close anything. Initialising only at the end of the preload — which
+   * is what this class did until 2026-09-04 — left the portal never told that loading had begun.
+   *
+   * Never rejects: on a portal-less host (our own dev server) `window.CrazyGames` is simply absent
+   * and every SDK call below degrades to a no-op, which is the same shape `showMidgameAd` relies on.
+   */
+  private async ready(): Promise<void> {
+    try {
+      this.sdk = window.CrazyGames?.SDK ?? null;
+      if (!this.sdk) return;
+      await this.sdk.init();
+      this.sdk.game.sdkGameLoadingStart?.();
+    } catch (e) {
+      console.warn('[CrazyGames] init failed:', e);
+      this.sdk = null;
+    }
   }
 
   getCanvas(): HTMLCanvasElement { return this.canvas; }
@@ -94,13 +129,11 @@ export class CrazyGamesPlatform implements IPlatform {
   // ── SDK lifecycle ──────────────────────────────────────────────────────────
 
   async onLoadingComplete(): Promise<void> {
+    await this.initDone;
     try {
-      this.sdk = window.CrazyGames?.SDK ?? null;
-      if (!this.sdk) return;
-      await this.sdk.init();
-      this.sdk.game.sdkGameLoadingStop?.();
+      this.sdk?.game.sdkGameLoadingStop?.();
     } catch (e) {
-      console.warn('[CrazyGames] init failed:', e);
+      console.warn('[CrazyGames] sdkGameLoadingStop failed:', e);
     }
   }
 
@@ -116,14 +149,23 @@ export class CrazyGamesPlatform implements IPlatform {
    * callback (ad-blocked with no fill, transient SDK bug) must not freeze the result screen forever. */
   private static readonly MIDGAME_AD_TIMEOUT_MS = 8000;
 
+  /** Upper bound on a rewarded ad — see the note in {@link showRewardedAd}. */
+  private static readonly REWARDED_AD_TIMEOUT_MS = 90_000;
+
   showMidgameAd(): Promise<void> {
     return new Promise((resolve) => {
       if (!this.sdk) { resolve(); return; }
       let settled = false;
-      const done = (): void => { if (!settled) { settled = true; resolve(); } };
+      const done = (): void => {
+        if (settled) return;
+        settled = true;
+        setAudioSuspended(false);
+        resolve();
+      };
       const timer = setTimeout(done, CrazyGamesPlatform.MIDGAME_AD_TIMEOUT_MS);
       try {
         this.sdk.ad.requestAd('midgame', {
+          adStarted: () => setAudioSuspended(true),
           adFinished: () => { clearTimeout(timer); done(); },
           adError: () => { clearTimeout(timer); done(); },
         });
@@ -145,12 +187,28 @@ export class CrazyGamesPlatform implements IPlatform {
   showRewardedAd(_accountId: string): Promise<{ adToken: string; platform: string } | null> {
     return new Promise((resolve) => {
       if (!this.sdk) { resolve(null); return; }
+      let settled = false;
+      const done = (v: { adToken: string; platform: string } | null): void => {
+        if (settled) return;
+        settled = true;
+        setAudioSuspended(false);
+        resolve(v);
+      };
+      // Same reasoning as MIDGAME_AD_TIMEOUT_MS, and now load-bearing for a second reason: with the
+      // game muted for the duration, an SDK that calls neither callback would leave it muted for the
+      // rest of the session, not merely leave the DailyScene spinner up. Generous enough that a real
+      // rewarded video (15-30s) can never reach it; "no reward" is the safe answer if it ever does.
+      const timer = setTimeout(() => done(null), CrazyGamesPlatform.REWARDED_AD_TIMEOUT_MS);
       try {
         this.sdk.ad.requestAd('rewarded', {
-          adFinished: () => resolve({ adToken: `cg-${Date.now()}-${Math.random().toString(36).slice(2)}`, platform: 'dev' }),
-          adError: () => resolve(null),
+          adStarted: () => setAudioSuspended(true),
+          adFinished: () => {
+            clearTimeout(timer);
+            done({ adToken: `cg-${Date.now()}-${Math.random().toString(36).slice(2)}`, platform: 'dev' });
+          },
+          adError: () => { clearTimeout(timer); done(null); },
         });
-      } catch { resolve(null); }
+      } catch { clearTimeout(timer); done(null); }
     });
   }
 

@@ -265,6 +265,19 @@
 - **为何是 4 向共边而非 8 向含对角（已拍板，2026-07-14）**：正方形格子只有 4 个共享一条边的"相邻"格，另 4 个对角格只碰一个顶点。连地取共边（几何正确、前线干净、与三战/率土一致）；曾考虑放宽到 8 向"看着挨着就算"，否决——那会让版图斜向渗透、封锁墙可斜绕，且"相邻"定义含糊。正解是保持 4 向 + 前沿高亮把共边关系画清楚（见上条）。
 - **权衡（已知取舍，接受）**：先手/占据资源密集区的宗门扩张会更快滚雪球，弱势宗门可能被彻底堵死在外圈——但一个大区真正对抗的宗门通常只有两三个，连地规则逼着弱势方要么被兼并要么结盟，而不是绕开前线偷家，符合"明确前线 + 解释为何要夺关键城池"的设计目的。
 
+### 4.6 队伍体力（出征频率闸门，2026-09-04）
+
+> **用户拍板**：「每个队伍都有体力的限制，100 点体力，每次行动耗费 15 点，每分钟恢复一点，所以玩家也无法一直行动。」
+
+- **为什么需要它**：在此之前，SLG 侧**没有任何机制约束出征频率**。既有的几道闸门管的都是别的维度——`troopCap`/训练管"能养多少兵"，`satchelCarryCapFor` 管"一支队伍能带多少"，[§4.4 行军疲劳](#44-行军疲劳远征战力惩罚2026-07-21) 罚的是**距离**（且每次出征重置为满，永不累积），`injuredUntil`（卡牌 5 分钟 / 队伍 10 分钟）只在队伍被**打光**之后才生效。一支never打输的队伍可以整天连续出征，这正是「打完等目标驻军恢复、再打一遍」这种纯耗时循环成立的原因。体力就是补上的那道频率成本。
+- **规则**：每支队伍（`t1..t5`）各有独立体力，上限 `SLG_TEAM_STAMINA_MAX = 100`；每次世界地图指令扣 `SLG_TEAM_STAMINA_COST = 15`；按 `SLG_TEAM_STAMINA_REGEN_PER_MIN = 1` 每分钟回复。满额可连出 6 次；稳态是每队每 15 分钟一次指令，5 队合计约 20 次/小时（满额起步约 33 次）。**刻意留宽**——正常玩法碰不到墙，只有刷循环才会。
+- **计费范围 = 带队伍的指令**：`attack`/`occupy`/`move`（含 [§4.5](#45-实时野战遭遇系统停留驻扎--建筑层adr-0512026-07-24) 的停留队伍就地再出征——站在野外不是免费指令）。**散兵行军（`reinforce`/`sweep`，从兵力池直接发、不挂队伍）不计费**：它们没有队伍预算可扣，且这是有意保留的口子——让"五队都累了"的玩家仍有事可做（这两条本就受兵力池+训练时间约束），而不是把整张世界地图锁死。回收这个口子要连着散兵行军一起重做，不单独动。
+- **实现（懒计算，无定时任务）**：`playerWorld.teamState[teamId].{stamina, staminaAt}` 存**检查点对**，读时用 `regenTeamStamina(stamina, staminaAt, now)`（`server/shared/src/slg/siege.ts`，与 `regenDurability` 同一形态）折算；两字段都缺 = 从未出征 = **满额**，这同时也是历史存档的迁移路径。校验在 `startMarch` 的队伍忙碌门禁之后（写任何东西之前）、扣费在整个 dispatch 提交之后——所以插入失败/兵力不足回滚的指令**不扣体力**。**忙碌优先于体力**：两者同时成立时报 `TEAM_BUSY`（该做的是召回），不报 `TEAM_EXHAUSTED`（该做的是等）。
+- **并发**：`marches` 上 `{worldId,ownerId,teamId}` 的 partial-unique 索引保证一支队伍同时只有一条活指令，而 `startMarch` 是唯一的体力消费者——所以这里的读-改-写不需要额外的乐观锁。**若将来新增第二个消费者，必须比照兵力池的 `$gte` 原子过滤改写。**
+- **客户端**：`teamState` 原样透给客户端（同 `injuredUntil` 的既有约定），`teamStamina`/`teamCanAct`（`client/src/game/meta/teamTroops.ts`）用同一个共享函数本地折算，所以体力条在两次响应之间照常走秒。选队面板把体力不足的队伍**整行过滤掉**（同忙碌队伍的处理），并给出专门的空态文案 `world.team.allExhausted`——只会报错的行比不存在的行更糟。世界地图队伍面板/主城队伍卡在"在家"态显示体力；`TEAM_EXHAUSTED`（409）在客户端映射为 `world.err.teamExhausted`。
+- **与 PvE 体力（[BALANCE.md §10](BALANCE.md)，上限 120、`save.stamina`）无关**：那个是账号级、闸关卡刷取；这个是队伍级、闸世界地图指令。两套独立，不共享数值也不互相消耗。
+- **回归测试**：`server/shared/test/garrison.test.ts`（`regenTeamStamina` 曲线/上下限/时钟回退）、`server/worldsvc/test/combatMarch-command-branch-gaps.test.ts`（"从未出征=满额"、按**回复后**的值扣费、边界值 15 可出征/14 拒、失败 dispatch 不扣费、停留再出征照扣、散兵不扣、忙碌优先）。
+
 ---
 
 ## 5. 战斗接入（承重墙）
@@ -363,6 +376,23 @@
 - **`relocateBase`（主动迁城）缺 rev 守卫**：整段迁城（校验九格己方全占 → 扣 500 金币 → 删旧主城/建新主城 tile → 结算资源写回 `playerWorld`）此前全程没有并发保护，末尾 `updateOne` 是无条件的盲 `$set`——同一账号并发发起两次迁城，或迁城过程中恰好撞上另一次结算（建筑升级/训练 tick），后写入者会把先写入者刚落的 `resources`/`rev` 原样覆盖。改法比照本文件其他站点（`refundTroops`/`transferLoot`）已有的模式：函数一开始先用 `updateOne({_id, rev: pw.rev}, {$inc:{rev:1}})` 原子认领这一代 rev（抢不到直接 `REV_CONFLICT`，不扣费不动格子），末尾资源结算的写回也带上刚认领的 `rev` 做 CAS，失败同样 `REV_CONFLICT`。
 - **`startMarch` 出征扣兵 + 围攻/驱逐夺城奖励结算都是盲 `$set`**：`combatMarch/command.ts` 的 `startMarch`（卡牌布阵/idle-redispatch 分支）原先无条件 `$set` 写回 `resources`；改为 `rev`-guarded CAS，失败时（区分"确实兵力不足"vs"纯粹 rev 冲突"各自返回 `NO_TROOPS`/`REV_CONFLICT`）回滚刚插入的行军文档。`combatSiege/arrival.ts` 里"夺取要塞（stronghold）一次性资源奖励"的结算原是读一次快照就无条件写回，改为最多重试 5 次的「每次都重新读取最新 `playerWorld` 再算奖励再 CAS 写回」循环——这段是从调度器（`processDueArrivals`）跑的，不是活的 HTTP 请求，重试耗尽只记错误日志、不抛出（夺城本身已经无条件落地，不能因为这个一次性奖励失败就把夺城结果打回）。
 - **回归测试**：`server/worldsvc/test/httpApi.e2e.test.ts`（`/world/occupy` 404）、`server/worldsvc/test/service.e2e.test.ts`（`recoverCard` 第二次收费）、`server/worldsvc/test/card-slg.e2e.test.ts`（卡牌围攻按真实 HP 而非 `m.troops` 结算）、`server/worldsvc/test/stronghold.e2e.test.ts`（并发夺城奖励结算）、`server/worldsvc/test/teams.e2e.test.ts`（`relocateBase` 并发 rev 冲突）。
+
+### 5.6 领地驻军自动恢复（2026-09-04）
+
+> **用户拍板**：「中立领地和玩家领地，驻军是五分钟恢复的。比如现在打完了，五分钟后就恢复了，所以玩家不管是打中立地还是敌人的地，没有驻守的情况下相当于每次都打本身的守军。」
+
+- **中立地本来就是这个行为，但机制不同**：中立/资源格的守军是 `npcGarrison(level)` **程序化推导、从不落库**（`combatSiege/arrival/sweep.ts`、`combatSiege/occupation.ts`），扫荡只结算掠夺和攻方伤亡，不写回守军。所以中立地是**无状态、永远满编**——比"5 分钟恢复"更硬，连那 5 分钟的空窗都没有。这一侧无需改动。
+- **玩家领地此前不恢复，这是本节修的洞**：`TileDoc.garrison` 是持久化的，改它的地方只有三处——增援落地 `$inc`、围攻伤亡扣减、放弃退回兵力池——**没有任何定时恢复**。而 `shouldUseCheapSiege` 在守军为 0 时直接走线性公式（`siegeEngine.ts`），攻方零损失拿地。等于**一次进攻就把一块领地永久变成免费地产**。
+- **规则**：领地有一条按等级推导的「固有守军」基线 `tileGarrisonBaseline(level) = npcGarrison(level) = 120 × level`，战损后在 `TILE_GARRISON_REGEN_MS = 5 分钟`内**线性**恢复到基线（残血按比例更快：缺一半只要 2.5 分钟）。基线取"它作为中立地时的守军"，理由：这是代码里**唯一由格子本身推导**的守军数——占领写 `GARRISON_PER_TILE`(500)、围攻胜写攻方残兵、占领倒计时结算写 `contestedGarrison`，同一块地有三个不同的历史值；只有等级基线让"这块地会用多少兵抵抗"与归属无关，防守方才能推理没去过的格子。
+- **stored / live 两个数是整个设计的关键**：
+  - **stored** = `TileDoc.garrison` = 玩家**真金白银投入**的兵（占领付的 + 每次增援），放弃可退回兵力池，会被战损扣减。
+  - **live** = `liveGarrison(tile, now)`（`worldsvc/src/core/helpers.ts`）= stored 补足到基线后的值 = **攻方实际要打的兵**。
+  - 恢复**只填 stored 与基线之间的缺口，永不抬高 stored**。这不是实现细节而是**反刷门禁**：否则"占一块 10 级地（付 500）→ 等 5 分钟 → 放弃退 1200"就是无限兵力龙头。围攻结算把伤亡作为**增量**打在 stored 上（`combatSiege/arrival/landSiege.ts`），天然保住这条性质——伤亡可以超过 stored 并被夹到 0，即恢复出来的民兵能战死但永远无法被提现。
+- **增援仍然是唯一的防守投入**：基线是免费的、同等级每块地一样，所以它是**地板不是防御**。`reinforce` 加在 stored 上、**且刻意不动 `garrisonRegenAt`**——被打残后立刻增援，已经积累的恢复进度不会被清零（live = stored+增援，仍按旧锚点继续恢复）。超出基线的部分就是玩家买到的东西：让这块地比同级别的其他地更难打，也是攻方必须多带兵的唯一原因。
+- **`garrisonRegenAt` 缺失 = "很久没打过" = 已在基线**（这是历史 TileDoc 的迁移路径）。因此**所有建立/战损写入都必须盖时间戳**（`territory.ts` 直接占领、`occupationSettle.ts` 倒计时结算、`combatSiege/damage.ts` 建筑易手、`core/spawn.ts` 出生），否则刚打下来的地会读成"瞬间满血"。
+- **不恢复的三类格**：未占领格（走 `npcGarrison`，本就不落库）、主城锚点（`garrison` 结构性为 0，主城靠城内队伍防守，见 ADR-026 §2——给它恢复等于凭空多一层设计里没有的防线）、主城 ring 格（ADR-025，不持守军）。
+- **客户端**：瓦片视图（`core/map.ts` `tileDocView`）吐的 `garrison` 改为 **live** 值——它是"这块地多难打"的情报，且与战斗实际结算的是同一个数；纯展示计算、不落库，与 `siegeHpView` 的主城耐久恢复同一处理。仍走既有的战争迷雾情报门禁（`gateIntel`）。
+- **回归测试**：`server/shared/test/garrison.test.ts`（恢复曲线、基线、上下限、"超额不动"、时钟回退）、`server/worldsvc/test/core-helpers-gaps.test.ts`（`liveGarrison`：按等级恢复、缺检查点=在基线、超额原样、未占领/主城/ring 不恢复）。
 
 ---
 

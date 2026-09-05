@@ -8,6 +8,7 @@
 // shop (SLG shop items), prosperity (prosperity/season settlement/sharding), mapgen (terrain + proceduralTile + templates),
 // march (tile yield + A* pathfinding), siege (siege settlement + siege level + card troop system),
 // vision (fog of war geometry, split out of siege 2026-08-25),
+// garrison (owned-tile garrison baseline + lazy regen, 2026-09-04),
 // citySiege (ADR-074 wild-city siege: wave ladder + durability/regen + yield),
 // transfer (G6 mid-season shard transfer/merge, §27).
 export * from './core';
@@ -28,6 +29,7 @@ export * from './mapEdit';
 export * from './mapRle';
 export * from './march';
 export * from './siege';
+export * from './garrison';
 export * from './vision';
 export * from './citySiege';
 export * from './transfer';

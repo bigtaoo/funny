@@ -111,6 +111,13 @@ export interface CommercialClient {
     dayKey: string;
     clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet?: WalletView }>>;
+  /** Apply any auto-renewable subscription periods in an Apple receipt that have not been granted yet
+   *  (IOS_RELEASE.md §4.1b). Idempotent — the client calls it on every cold start. */
+  subscriptionSyncApple(args: {
+    accountId: string;
+    receipt: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; granted: number; wallet?: WalletView }>>;
   starterBuy(args: {
     accountId: string;
     productId: string;
@@ -344,6 +351,13 @@ export class HttpCommercialClient implements CommercialClient {
   yearCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
     return this.post<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>(
       '/internal/year-card/buy',
+      args,
+    );
+  }
+
+  subscriptionSyncApple(args: { accountId: string; receipt: string; clientPlatform?: string }) {
+    return this.post<{ coinsAfter: number; subscriptionExpiry: number; granted: number; wallet?: WalletView }>(
+      '/internal/subscription/sync-apple',
       args,
     );
   }

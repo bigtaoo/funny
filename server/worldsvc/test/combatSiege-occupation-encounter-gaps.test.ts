@@ -488,6 +488,26 @@ describe('OccupationService.processDueOccupations', () => {
     expect(pwUpdateOne).toHaveBeenCalled();
   });
 
+  it('stamps the garrison heal clock at the settlement — a captured tile is not born already healed', async () => {
+    // 2026-09-04 (garrison regen, SLG_DESIGN §5.6). An ABSENT `garrisonRegenAt` reads as "no recent
+    // battle", i.e. sitting at `tileGarrisonBaseline(level)`; that default is the migration for
+    // documents written before the field existed, so every path that FOUNDS a tile has to stamp it or
+    // the new owner is handed the full level baseline the instant the hold settles, on top of the
+    // garrison they actually committed. This is the settle path's copy of that obligation (the capture
+    // path's lives in combatSiege-damage-helpers-gaps.test.ts).
+    const d1 = occDoc({ garrison: 10 });
+    const { core, tilesUpdateOne } = withDue([d1]);
+    (core as unknown as { deps: { cols: { tiles: { findOne: unknown } } } }).deps.cols.tiles.findOne =
+      async () => tile({ contestedBy: ATK });
+    const svc = new OccupationService(core, fakeHelpers());
+    await svc.processDueOccupations(1_000);
+    const [, args] = tilesUpdateOne.mock.calls[0]!;
+    expect((args as { $set: { garrison: number; garrisonRegenAt: number } }).$set).toMatchObject({
+      garrison: 10,
+      garrisonRegenAt: 1_000,
+    });
+  });
+
   it('a crossing hold (d.type set) settles into that SAME passage type, not plain territory', async () => {
     const d1 = occDoc({ type: 'bridge' });
     const { core, tilesUpdateOne } = withDue([d1]);

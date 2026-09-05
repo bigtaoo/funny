@@ -20,6 +20,63 @@
 
 > 长描述（每渠道字数上限不同）以简短描述为基底扩写，强调：手绘笔记本美术、回合策略深度、战役剧情（涛 vs Anna 东西碰撞）、联机对战、养成（不破坏 PvP 公平）。**避免**「赌博/博彩」类措辞（盲盒措辞统一为「付费随机道具」并指向概率公示）。
 
+### 0.1b 长描述（三语，2026-09-04 拟；App Store / Play 直接复制）
+
+> 写作口径：**功能陈述，不吹**。Apple 审核对"最好/第一/免费"一类措辞和与实际功能不符的描述会退回；
+> 抽卡一律写作「付费随机道具」并点明概率公示，绝不出现赌博/博彩类词汇（各渠道口径统一，见 §5）。
+> 长度控制在 ~800 字符以内：Play 上限 4000、App Store 4000，但商店只展示前三行，长了没人读。
+
+**中文**
+
+```
+一本笔记本，两种画法，一场持续到最后一页的战争。
+
+Nivara 是一款画在方格纸上的回合制策略游戏。你排布兵种、算清行动顺序、在对手的墨迹里找破绽——
+每一回合都是一道有正解的小题，而不是拼手速。
+
+· 战役：跟随涛与 Anna 的东西方笔记之争，逐章推进，剧情与关卡交替
+· 联机对战：实时回合制 PvP，同步的是操作而非结果，双方看到的是同一场仗
+· 大世界：占地、行军、结盟，与其他玩家共享一张会变化的地图
+· 养成：卡牌、皮肤、装备可收集；战力成长不改变 PvP 的对局规则
+
+内含付费随机道具，抽取概率在游戏内「概率」页公示。可完全免费游玩。
+```
+
+**English**
+
+```
+One notebook, two ways of drawing, and a war that runs to the last page.
+
+Nivara is a turn-based strategy game drawn on graph paper. You place your units, count out the
+order of actions, and look for the gap in your opponent's ink — every turn is a small problem with
+a right answer, not a race against the clock.
+
+· Campaign — follow Tao and Anna's duel of East and West notebooks, chapter by chapter
+· Multiplayer — real-time turn-based PvP that syncs inputs, not outcomes: both sides see one battle
+· Open world — claim ground, march, form alliances on a shared map that keeps changing
+· Collection — cards, skins and gear to collect; progression never changes the rules of a PvP match
+
+Contains paid random items; the draw rates are published in-game on the odds page. Free to play.
+```
+
+**Deutsch**
+
+```
+Ein Notizbuch, zwei Zeichenstile, ein Krieg bis zur letzten Seite.
+
+Nivara ist ein rundenbasiertes Strategiespiel auf kariertem Papier. Du stellst deine Einheiten auf,
+zählst die Zugreihenfolge durch und suchst die Lücke in der Tinte deines Gegners — jede Runde ist
+eine kleine Aufgabe mit einer richtigen Lösung, kein Wettlauf gegen die Uhr.
+
+· Kampagne — das Duell zwischen Taos und Annas Notizbüchern, Kapitel für Kapitel
+· Mehrspieler — rundenbasiertes Echtzeit-PvP: synchronisiert werden Eingaben, nicht Ergebnisse
+· Open World — Gebiete einnehmen, marschieren, Bündnisse schließen auf einer gemeinsamen Karte
+· Sammeln — Karten, Skins und Ausrüstung; Fortschritt ändert nie die Regeln eines PvP-Matches
+
+Enthält kostenpflichtige Zufallsgegenstände; die Wahrscheinlichkeiten stehen im Spiel auf der
+Quoten-Seite. Kostenlos spielbar.
+```
+
 ### 0.2 关键词 / 标签（待各渠道适配）
 策略, 回合制, 联机对战, 笔记本, 手绘, 战棋 / strategy, turn-based, multiplayer, notebook, hand-drawn, tactics / Strategie, rundenbasiert, Mehrspieler, Notizbuch, Taktik
 
@@ -106,7 +163,7 @@
 
 ### 1.2 元数据
 - 名称（≤30 字符）、副标题（≤30）、描述、关键词（≤100 字符逗号分隔）、推广文本——三语（见 §0.1）。
-- 隐私政策 URL：`{{PRIVACY_POLICY_URL}}`（必填）。
+- 隐私政策 URL：`https://nivara.gamestao.com/privacy`（必填；`/privacy.html` 会 307 到无后缀形式，填无后缀的）。
 - 支持 URL / 营销 URL。
 
 ### 1.3 年龄分级（Apple 自有问卷）
@@ -116,6 +173,17 @@
 - 预期落点：**12+ / Teen 档**（以问卷结果为准；不得勾成全年龄/儿童，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)）。
 
 ### 1.4 隐私营养标签（Privacy Nutrition Label）
+
+> ✅ **口径已定（2026-09-03）：不跟踪，按下面照填。** 曾经有过一处自相矛盾——本节写着「不做跟踪、免 ATT」，
+> 而客户端因为接了 AdMob 激励视频，`Info.plist` 带 `NSUserTrackingUsageDescription`、`AppDelegate.swift`
+> 播广告前真的会弹 ATT。已按「不跟踪」这一侧统一：AdMob 改为**只请求非个性化广告**（`npa=1`，
+> `nonPersonalizedRequest()`），ATT 请求与 `NSUserTrackingUsageDescription` 双双删除，不再读取 IDFA。
+>
+> `SKAdNetworkItems`（47 条）**保留**：Apple 自己的 App Privacy 口径把 SKAdNetwork 排除在 tracking 之外
+> （聚合层面的安装归因，无用户级标识符，不需要 ATT），AdMob 发布方侧的归因要用它。
+> 代价是 eCPM 会低一些，换到的是「标签写的和二进制干的是同一件事」。
+> 详见 [`IOS_RELEASE.md §12`](../../game/IOS_RELEASE.md) 与三语隐私政策 §6.3。
+
 按 §0.3 填写：
 - **Data Used to Track You**：无（声明不做跨 App 跟踪 → 免 ATT 弹窗）。
 - **Data Linked to You**：标识符（设备 ID）、联系信息（邮箱，可选）、用户内容（昵称/私聊）、购买、使用数据（埋点）。
@@ -123,10 +191,21 @@
 - 是否加密传输：是；是否可请求删除：是（应用内删除账号）。
 
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
-- [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验
-- [ ] 应用内删除账号入口（5.1.1(v)）——Track 1 L1-2 已实现
-- [ ] 抽卡概率公示页（3.1.1）——Track 1 L1-3
-- [ ] 隐私政策 URL 可点（登录/设置页）
+- [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 桥 + `commercial/src/iap.ts` 验单，
+      fail closed）；剩下的是**外部动作**：ASC 建 9 个商品 + 填 App 专用共享密钥 + VPS 设 `NW_IAP_BUNDLE`/`NW_APPLE_PASSWORD`，
+      步骤见 [`IOS_RELEASE.md §4.0`](../../game/IOS_RELEASE.md)。真机沙盒对账仍未做
+- [x] **原生包内不含网页支付通道**（2026-09-03 审计 + 修复，详见 [`IOS_RELEASE.md §10`](../../game/IOS_RELEASE.md)）：
+      `home/pricing/refunds/pay/terms/privacy.html` 六个静态页曾随 `mobile` 构建进入 iOS 包与每个 OTA 包，
+      Paddle 结账模块曾编进原生 bundle，桥丢失时 `iapKind()` 曾回落 `paddle`——均已堵上，`nativePaymentIsolation.test.ts` 护住
+- [x] **隐私政策补 Apple 支付口径**（2026-09-03）：`privacy.html §3` 已分列 web(Paddle) 与 iOS(Apple)，
+      `terms.html §3` 点明两个渠道的销售主体，`refunds.html §0` 写明「App Store 买的找 Apple 退」，三语 `.md` 同步
+- [x] 应用内删除账号入口（5.1.1(v)）—— `SettingsScene/panels.ts` 的 `drawAccount()` 在退出登录下方给出红色入口，
+      二次确认在 `overlays.ts` 的 `drawDeleteConfirm()`（Track 1 L1-2，登录态可见）
+- [x] 抽卡概率公示页（3.1.1）—— `GachaScene/page.ts` 卡池横幅右上角的 ⓘ 入口 → `GachaScene/odds.ts` 概率详情
+- [x] 隐私政策 URL 可点（2026-09-04）—— 首启同意弹窗 (`ConsentDialog`) **以及设置页**「法律条款」区两条链接，
+      均走 `legalUrl()`：网页相对路径、原生壳绝对 https（`capacitor://` 会被 iOS 静默丢弃）。
+      **补设置页入口的原因**：同意弹窗一辈子只出现一次，审核员的设备上早已同意过——在此之前 App 内根本找不到隐私政策。
+      门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例，含四种视口的几何核对与两种壳下的真实 URL）
 
 ---
 
@@ -143,7 +222,7 @@
 
 ### 2.2 元数据
 - 应用名称（≤30）、简短描述（≤80）、完整描述（≤4000）——三语（见 §0.1）。
-- 隐私政策 URL：`{{PRIVACY_POLICY_URL}}`（必填）。
+- 隐私政策 URL：`https://nivara.gamestao.com/privacy`（必填；`/privacy.html` 会 307 到无后缀形式，填无后缀的）。
 
 ### 2.3 年龄分级（IARC 问卷）
 - 含**随机付费道具（gacha）/ 模拟赌博**：如实勾。
@@ -198,11 +277,30 @@
 | 操作说明 | 鼠标/触屏操作说明 | 待补 |
 
 ### 4.2 合规 / 平台要求（COMPLIANCE_GLOBAL §8 Web 专属）
-- [ ] 隐私政策 URL 可访问 + 客户端可点。
-- [ ] cookie/同意条（若用分析 cookie）+ EU/UK 同意弹层（Track 1 L1-1）。
-- [ ] 支付渠道合规 + 虚拟道具条款（见用户协议 §5/§6）。
-- [ ] CrazyGames 内容政策逐条核对（含广告 SDK 兼容、外链限制）。
-- [ ] 抽卡概率公示页可达。
+- [x] **隐私政策 URL 可访问 + 客户端可点**（2026-09-04 修，真机核对过）：同意弹层的两个链接此前是根相对 `/privacy.html`，在门户域名下必然 404；`legalUrl()` 现按「是否跑在自家源上」分叉，CrazyGames 与原生壳一样给绝对 https（`ConsentDialog.ts`）。**这条修的时候顺带挖出一个更大的洞**：分叉依据 `clientPlatformName()` 读的是 `globalThis.TARGET`，而 DefinePlugin 那一行 key 是裸的 `TARGET`，**根本没替换成员表达式**——所以这个函数在任何真实构建里都返回 `'web'`（影响面不止本条，见 [`ANALYTICS_DESIGN §3.3`](../../game/ANALYTICS_DESIGN.md)）。补 key + 真编译探针后，在 crazygames dev 构建里实测：两个链接确实 `window.open('https://nivara.gamestao.com/privacy' | '/terms')`，`GET /bootstrap?platform=crazygames` 也终于报对了平台。⚠️ 仍只有**首启同意弹层**一处入口，设置页没有常驻链接（与 iOS §1.5 同一条欠账）。
+- [x] cookie/同意条（若用分析 cookie）+ EU/UK 同意弹层（Track 1 L1-1）：`ConsentDialog` 首启阻塞，**全区玩家都弹**（不按地区分叉），所以门户玩家一定见得到上面那两个链接。⚠️ 门户自己也有一套 GDPR 流程，是否重复需按开发者后台口径确认。
+- [x] **支付渠道合规**（2026-09-04 修）：`iapKind()` 早已返回 `null`（金币页/月卡年卡按钮不出现），但**构建产物**里还带着整套 Paddle 网页支付面（`pay/pricing/refunds/home/terms/privacy.html`）+ 编进 bundle 的 Paddle 结账模块——那是要整包上传给门户的东西。现按 iOS 同一套办法堵上：copy 规则与 `paddleCheckout` stub 替换都扩到 `crazygames`。虚拟道具条款见用户协议 §5/§6。
+- [x] **广告 SDK 接线**（2026-09-04 修）：①`adStarted` → 广告播放期间整机静音（门户 QA 明确检查这条），四条退出路径（finish/error/throw/超时）都恢复；②`sdkGameLoadingStart()` 此前从未调用（只调了 Stop），现与 `init()` 一起放进构造函数，与 `onLoadingComplete()` 的 Stop 配成一对；③激励视频补上与插屏同款的超时兜底（有了静音之后，卡住的 SDK 会让整个会话哑掉，不只是转圈）。
+- [ ] CrazyGames 内容政策逐条核对（外链限制、账号系统、加载时长要求）——需对着开发者后台逐条过。
+- [ ] 抽卡概率公示页可达（代码侧已有，`GachaScene/odds.ts`，待冒烟实测）。
+- [ ] **四平台冒烟的 CrazyGames 那一列**（[`acceptance-smoke.md §1`](../../game/release/acceptance-smoke.md)）——9 行全空，这条路从没在门户环境里真跑过。
+
+### 4.3 构建与上传配方（2026-09-04 补）
+
+门户**托管我们上传的整包**，因此这个 target 和原生壳属于同一类：包不跑在自家源上。两条推论都已固化进 `webpack.config.js`（`isOffOrigin` / `bakesRemoteBases` 两个谓词，回归测试 [`client/test/crazyGamesPortalIsolation.test.ts`](../../../client/test/crazyGamesPortalIsolation.test.ts) 20 例）：
+
+1. **后端地址必须烘死**。此前 `build:crazygames` 走的是「生产 = 空串 = 同源」这一档，而同源在门户上是 crazygames.com → `net/config.ts` 拿到 null → **整包退化成纯离线**（登录/云存档/PvP/大世界全没了，而且不报错）。现在生产构建默认烘 `https://api.gamestao.com`（五个服务全烘，含 social/auction，绕过 2026-08-02 那条派生端口守卫）。
+2. **网页支付面不进包**（见 §4.2 第三条）。
+
+```bash
+# 门户上传包（默认已烘生产地址，env 仅在打 staging 包时才需要覆盖）
+cd client && NW_BUILD_VERSION=$(git rev-parse --short HEAD) npm run build:crazygames
+# → client/dist/ 整个目录打 zip 上传；index.html 里已带门户 SDK 的 <script>
+```
+
+- **本地开发照旧**：`npm run start:crazygames` 是 webpack-dev-server，仍指 localhost 那套（`bakesRemoteBases` 只在生产模式对这个 target 生效）。
+- **CI 里没有这条流水线**：`.github/workflows/` 只有 `client-deploy.yml`（Cloudflare 的 web 包）。门户是手动上传，暂不建 job；真要建时照 §4.3 这条命令即可。
+- 体积参考（2026-09-04 实测）：`dist/` 约 25 MB，主包 2.1 MiB JS。门户对首屏加载时长有要求，上传前值得实测一次。
 
 ---
 
@@ -231,6 +329,6 @@
 | iOS | ✅ 图标 + 截图齐（预览视频可选，未做） | §1.3 待填 | §1.4 待填 | §1.5 | 全球版 §5.2 |
 | Google Play | ✅ 图标 + 特征图 + 截图齐 | §2.3 待填 | §2.4 待填 | §2.5 | 全球版 §5.2 |
 | 微信小游戏 | ✅ 图标（既有 logo-512）+ 分享图齐；截图仍是英文版，中文版待跑 | §3.3 待评估 | 隐私政策(CN) | §3.2（依版号） | 中国区 §5.1 |
-| CrazyGames | ✅ 横版缩略图齐 | 平台要求 | 隐私政策 | §4.2 | 全球版 §5.2 |
+| CrazyGames | ✅ 横版缩略图齐；操作说明文案待补（§4.1） | 平台要求 | 隐私政策 | §4.2 四条已修，剩内容政策核对 + 冒烟 | 全球版 §5.2 |
 
 > **依赖提醒**：图标 / 横幅 / 截图**全部已出且可一键复跑**（§0.4 三个脚本）。剩余美术类缺口只有可选的 App 预览视频；剩余非美术缺口是中文/德文截图（脚本换 locale 即可）与 iPad 横版适配（见 §0.6）。隐私标签答案依赖 §0.3 定稿（已与隐私政策对齐）；中国区整块依赖版号流程（Track 2 L2-4）。

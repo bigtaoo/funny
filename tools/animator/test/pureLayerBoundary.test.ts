@@ -47,7 +47,7 @@ const SRC = join(PKG, 'src');
  *  trusted as a literal — see that test for why it is the load-bearing link to the gate. */
 const PURE_DIRS = ['animation', 'core', 'io', 'skeleton'];
 
-/** Bare packages a pure module may import AT RUNTIME. `jszip` is the `.tao`/`.tao.editor` archive
+/** Bare packages a pure module may import AT RUNTIME. `jszip` is the `.tao`/`.taoeditor` archive
  *  format itself — a pure data dependency with no DOM or PIXI of its own, and the io tests drive
  *  the real package rather than a mock. `pixi.js` is deliberately absent: that is the whole point. */
 const ALLOWED_PACKAGES = ['jszip'];

@@ -19,7 +19,21 @@ module.exports = (env, argv) => {
   // no same-origin backend — every backend URL must be baked as an absolute production address
   // (IOS_RELEASE.md §build). Env vars still override for staging/sandbox builds.
   const isMobile = targetPlatform === 'mobile';
-  const MOBILE_ORIGIN = 'https://api.gamestao.com';
+  // CrazyGames build. The portal hosts the uploaded bundle on *its own* domain, so "same-origin"
+  // there means crazygames.com, not ours — exactly the native shell's problem with a different
+  // cause, and with the same consequence if left unfixed: net/config.ts sees an empty base, returns
+  // null, and the game silently degrades to offline-only (no login, no cloud save, no PvP, no SLG).
+  // So this target bakes absolute addresses too. See store-assets-checklist.md §4.3.
+  const isCrazyGames = targetPlatform === 'crazygames';
+  // Targets whose shipped bundle does not run on our own origin: no service can use a relative
+  // ('' = same-origin) base, and nothing that belongs to the web payment channel may travel with
+  // the package. A property of the target, so it holds in either mode.
+  const isOffOrigin = isMobile || isCrazyGames;
+  // …but the *address baking* has one mode exception: `npm run start:crazygames` is
+  // webpack-dev-server on localhost, exactly like `start:web`, and must keep the localhost dev
+  // defaults below. Only the bundle actually uploaded to the portal needs absolute addresses.
+  const bakesRemoteBases = isMobile || (isCrazyGames && isProd);
+  const REMOTE_ORIGIN = 'https://api.gamestao.com';
 
   // metaserver REST base URL / gateway control-plane WS: injected as globals at build time,
   // read at runtime by net/config.ts.
@@ -31,15 +45,15 @@ module.exports = (env, argv) => {
   // (must match NW_GW_PORT / NW_GATEWAY_PUBLIC_WS_URL in dev-up.ps1).
   // If not configured in production, values are empty → net/config returns null → degrades to
   // local offline-only mode.
-  const apiBase = process.env.NW_API_BASE || (isMobile ? `${MOBILE_ORIGIN}/api` : (isProd ? '' : 'http://localhost:18080'));
-  const gatewayWs = process.env.NW_GATEWAY_WS || (isMobile ? 'wss://api.gamestao.com/gw' : (isProd ? '' : 'ws://localhost:8086/gw'));
-  const worldBase = process.env.NW_WORLD_BASE || (isMobile ? MOBILE_ORIGIN : (isProd ? '' : 'http://localhost:18084'));
-  // Social base: web/CrazyGames default to '' (same-origin, reverse-proxied). Native has no
+  const apiBase = process.env.NW_API_BASE || (bakesRemoteBases ? `${REMOTE_ORIGIN}/api` : (isProd ? '' : 'http://localhost:18080'));
+  const gatewayWs = process.env.NW_GATEWAY_WS || (bakesRemoteBases ? 'wss://api.gamestao.com/gw' : (isProd ? '' : 'ws://localhost:8086/gw'));
+  const worldBase = process.env.NW_WORLD_BASE || (bakesRemoteBases ? REMOTE_ORIGIN : (isProd ? '' : 'http://localhost:18084'));
+  // Social base: web defaults to '' (same-origin, reverse-proxied). Native and CrazyGames have no
   // same-origin backend, so it must be baked absolute like the others.
-  const socialBase = process.env.NW_SOCIAL_BASE || (isMobile ? MOBILE_ORIGIN : '');
-  // Auction base: same reasoning as social — web/CrazyGames derive port 18086 client-side (net/config.ts
-  // getAuctionBaseUrl), native has no same-origin backend so it must be baked absolute like the others.
-  const auctionBase = process.env.NW_AUCTION_BASE || (isMobile ? MOBILE_ORIGIN : '');
+  const socialBase = process.env.NW_SOCIAL_BASE || (bakesRemoteBases ? REMOTE_ORIGIN : '');
+  // Auction base: same reasoning as social — web derives port 18086 client-side (net/config.ts
+  // getAuctionBaseUrl), off-origin targets have no same-origin backend so it must be baked absolute.
+  const auctionBase = process.env.NW_AUCTION_BASE || (bakesRemoteBases ? REMOTE_ORIGIN : '');
 
   // Guard against the 2026-08-02 production incident: net/config.ts's getSocialBaseUrl()/getAuctionBaseUrl()
   // fall back to deriving a dev-only port (8085/18086) from NW_WORLD_BASE whenever their own env var is
@@ -50,7 +64,7 @@ module.exports = (env, argv) => {
   // split out, silently breaking the whole auction house. Fail the build instead of shipping a broken
   // fallback — add new entries here whenever a getXBaseUrl() following this pattern joins net/config.ts.
   const DERIVED_PORT_BACKEND_ENVS = ['NW_SOCIAL_BASE', 'NW_AUCTION_BASE'];
-  if (isProd && !isMobile && worldBase) {
+  if (isProd && !bakesRemoteBases && worldBase) {
     for (const key of DERIVED_PORT_BACKEND_ENVS) {
       if (!process.env[key]) {
         throw new Error(
@@ -206,11 +220,29 @@ module.exports = (env, argv) => {
       // Copy marketing landing (home) + legal pages (terms/privacy/refunds/pricing) + branding icons
       // (favicon / apple-touch / PWA manifest, referenced by <link> in the HTML templates) to dist root.
       // home.html is the crawler-readable site Paddle reviews (the game root / is a bare canvas).
-      ...(!isWechat ? [new CopyPlugin({ patterns: [
+      //
+      // ⚠ The five web pages are WEB-ONLY, and excluding the two off-origin targets is the point of
+      // this condition, not a tidiness pass. They are the web *payment channel's* surface: pay.html
+      // loads paddle.js from Paddle's CDN and opens a live checkout; pricing.html/home.html
+      // advertise USD coin packs bought through Paddle; refunds.html tells the reader to email a
+      // Paddle transaction id.
+      // Copying them into the `mobile` build put every one of them inside the iOS app binary (and
+      // inside every OTA bundle), with terms.html → refunds.html reachable from the in-app consent
+      // gate — an alternative purchase/refund path in a store build, which App Review 3.1.1 treats
+      // as grounds for removal. `crazygames` is the same hazard through a different door: that
+      // bundle is uploaded wholesale to the portal, so these pages would ship as part of the game
+      // there too, and CrazyGames likewise forbids routing players to an outside payment flow.
+      // Both link to the hosted copies over https instead (ui/dialogs/ConsentDialog.ts) — which is
+      // also the only form that works off-origin: `capacitor://localhost/...` handed to
+      // UIApplication.open fails silently, and `/privacy.html` under the portal's domain is a 404.
+      // The icons stay — they are branding referenced by the HTML templates, not commerce.
+      ...(!isWechat && !isOffOrigin ? [new CopyPlugin({ patterns: [
         { from: 'public/web/home.html' }, { from: 'public/web/terms.html' }, { from: 'public/web/privacy.html' }, { from: 'public/web/refunds.html' }, { from: 'public/web/pricing.html' },
         // pay.html: standalone Paddle checkout surface, set as the Dashboard "Default payment link"
         // (handles hosted-checkout ?_ptxn links from receipts / retry emails). See COMMERCIAL_DESIGN §IAP.
         { from: 'public/web/pay.html' },
+      ] })] : []),
+      ...(!isWechat ? [new CopyPlugin({ patterns: [
         { from: 'public/favicon-16.png' }, { from: 'public/favicon-32.png' }, { from: 'public/favicon-48.png' },
         { from: 'public/apple-touch-icon.png' }, { from: 'public/icon-192.png' }, { from: 'public/icon-512.png' },
         { from: 'public/site.webmanifest' },
@@ -300,8 +332,31 @@ module.exports = (env, argv) => {
         pkg,
         path.resolve(__dirname, stub),
       ))),
+      // …and the swap in the other direction: web-only code kept OUT of the off-origin bundles.
+      // Same mechanism, different reason — the two above are about bytes, this one is about what a
+      // published build is allowed to contain. `platform/web/paddleCheckout.ts` loads paddle.js from
+      // Paddle's CDN and opens a hosted checkout; inside the iOS app that is an alternative purchase
+      // mechanism (App Review 3.1.1), and a payment SDK we would be shipping undisclosed in an app
+      // that bills through StoreKit. On CrazyGames it is the outside-payment flow the portal
+      // forbids, in a package they host. WebPlatform is shared by every target, so reachability
+      // alone can't keep it out — the runtime guards (WebPlatform.iapKind / CrazyGamesPlatform's
+      // null iapKind / nativeShell.ts) stop callers, and this stops it being in the bundle at all.
+      ...(isOffOrigin ? [new webpack.NormalModuleReplacementPlugin(
+        /^\.\/paddleCheckout$/,
+        path.resolve(__dirname, 'src/platform/stubs/paddleCheckout.ts'),
+      )] : []),
       new webpack.DefinePlugin({
         TARGET: JSON.stringify(targetPlatform),
+        // …and the same value under the name the code actually reads. A key without dots only
+        // replaces a *free variable* `TARGET`, but all three readers spell it `globalThis.TARGET`
+        // (app/appConstants.ts, analytics/index.ts, net/anomaly/reporter.ts) — a member expression,
+        // which DefinePlugin rewrites only when the key says so, exactly as the __NW_*__ rows below
+        // have always done. So until 2026-09-04 the substitution silently never happened: every
+        // wechat and crazygames build read `undefined` and called itself 'web' — in analytics, in
+        // the anomaly log's `platform` field, and in the X-NW-Platform header that picks the
+        // recharged-pool bucket (ADR-020). Compile-probed by targetGlobalCompile.test.ts, because
+        // this is the failure mode a config-reading test cannot see.
+        'globalThis.TARGET': JSON.stringify(targetPlatform),
         'globalThis.__NW_API_BASE__': JSON.stringify(apiBase),
         'globalThis.__NW_GATEWAY_WS__': JSON.stringify(gatewayWs),
         'globalThis.__NW_BUILD_VERSION__': JSON.stringify(process.env.NW_BUILD_VERSION || '0.0.0'),

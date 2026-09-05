@@ -853,6 +853,7 @@ export const de: Record<TranslationKey, string> = {
   'world.err.pathBlocked': 'Keine begehbare Route (Gelände blockiert)',
   'world.err.notConnected': 'Das Ziel muss an das Gebiet deiner Sekte angrenzen',
   'world.err.satchelCap': 'Das Team trägt mehr Truppen als das Ranzen-Limit — Ranzen bauen/aufwerten oder Team verkleinern',
+  'world.err.teamExhausted': 'Diesem Team fehlt die Ausdauer — auf Erholung warten oder ein anderes schicken',
   'world.err.revConflict': 'Dein Status hat sich gerade geändert — bitte erneut versuchen',
   // Militäraktionen / Belagerung (C2)
   'world.actAttack': 'Belagern',
@@ -943,6 +944,10 @@ export const de: Record<TranslationKey, string> = {
   'world.team.noTeamsMove': 'Noch keine Teams — erst eine Aufstellung anlegen',
   'world.team.allBusy': 'Alle Teams sind im Marsch oder halten Land — eins zurückrufen oder warten',
   'world.team.allNoTroops': 'Kein Team führt Truppen — erst in der Stadt Truppen verteilen',
+  // Team-Ausdauer (SLG_DESIGN §4.6): jeder Befehl kostet SLG_TEAM_STAMINA_COST, Füllung pro Minute.
+  'world.team.stamina': 'Ausdauer {n}',
+  'world.team.resting': 'Erholt sich · Ausdauer {n}',
+  'world.team.allExhausted': 'Allen verfügbaren Teams fehlt die Ausdauer — auf Erholung warten',
   'world.team.loadFailed': 'Teams konnten nicht geladen werden — bitte erneut versuchen',
   'world.team.autoReturn': 'Nach Einnahme zurück',
   'world.team.noCards': 'Keine Karten verfügbar (verletzt oder bereits in einem anderen Team)',
@@ -1437,6 +1442,7 @@ export const de: Record<TranslationKey, string> = {
   // ── Titelsystem (S10) ────────────────────────────────────────────────────────
   'settings.help': 'Hilfe',
   'settings.replayTutorial': 'Tutorial erneut',
+  'settings.legal': 'Rechtliches',
   'titles.title': 'Titelwand',
   'titles.empty': 'Noch keine Titel',
   'titles.equipped': 'Angelegt',

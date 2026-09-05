@@ -6,8 +6,10 @@
 // These are pure functions — no PIXI harness needed, so this runs under the default vitest config.
 
 import { describe, it, expect } from 'vitest';
+import { SLG_TEAM_STAMINA_COST, SLG_TEAM_STAMINA_MAX, regenTeamStamina } from '@nw/shared';
 import {
   carriedTroops, teamTroopCap, teamLeaderCard, TEAM_CAP, teamSlotId, teamSlotName, teamDisplayName,
+  teamStamina, teamCanAct,
 } from '../src/game/meta/teamTroops';
 import type { TeamTemplate, CardSLGState } from '../src/net/WorldApiClient';
 import type { CardInstance } from '../src/game/meta/SaveData';
@@ -129,5 +131,53 @@ describe('teamDisplayName', () => {
 
   it('falls back to the raw id if it is not in the expected t{n} slot-id shape', () => {
     expect(teamDisplayName({ id: 'legacy-team-id', name: '' })).toBe('legacy-team-id');
+  });
+});
+
+// Team stamina (2026-09-04, SLG_DESIGN §4.6). The view carries the server's CHECKPOINT pair
+// ({stamina, staminaAt}), never a live figure, so these two are what every client reader — the world-map
+// team rows, the city team cards, the team picker, doMarchTeam's pre-check — turns it into a number. The
+// defaults are the part worth pinning here: a team that has never marched, and any account created
+// before the system existed, carry no teamState at all, and reading that as 0 would lock the player out
+// of the world map entirely (the picker would offer nothing and every dispatch would be refused).
+describe('teamStamina / teamCanAct', () => {
+  const T = 1_700_000_000_000;
+  const MIN = 60_000;
+
+  it('an absent state reads as FULL, and so does an absent field within it', () => {
+    expect(teamStamina(undefined, T)).toBe(SLG_TEAM_STAMINA_MAX);
+    expect(teamStamina({}, T)).toBe(SLG_TEAM_STAMINA_MAX);
+    expect(teamStamina({ injuredUntil: T + 1 }, T)).toBe(SLG_TEAM_STAMINA_MAX);
+    expect(teamCanAct(undefined, T)).toBe(true);
+  });
+
+  it('folds the elapsed refill in, so a bar ticks between server responses', () => {
+    expect(teamStamina({ stamina: 10, staminaAt: T }, T)).toBe(10);
+    expect(teamStamina({ stamina: 10, staminaAt: T }, T + 30 * MIN)).toBe(regenTeamStamina(10, T, T + 30 * MIN));
+    expect(teamStamina({ stamina: 10, staminaAt: T }, T + 10_000 * MIN)).toBe(SLG_TEAM_STAMINA_MAX);
+  });
+
+  it('recomputes with the SAME shared function the server charges against — no client-side copy of the curve', () => {
+    for (const mins of [0, 1, 7, 45, 500]) {
+      expect(teamStamina({ stamina: 3, staminaAt: T }, T + mins * MIN)).toBe(regenTeamStamina(3, T, T + mins * MIN));
+    }
+  });
+
+  it('teamCanAct mirrors the server gate exactly — `>=` one order cost, not `>`', () => {
+    // One point either side of the wall. The picker filters on this and the server refuses on the same
+    // comparison; a strict `>` here would hide the last affordable order behind an empty picker.
+    expect(teamCanAct({ stamina: SLG_TEAM_STAMINA_COST, staminaAt: T }, T)).toBe(true);
+    expect(teamCanAct({ stamina: SLG_TEAM_STAMINA_COST - 1, staminaAt: T }, T)).toBe(false);
+    expect(teamCanAct({ stamina: 0, staminaAt: T }, T)).toBe(false);
+  });
+
+  it('an exhausted team becomes actionable again purely by waiting', () => {
+    const spent = { stamina: 0, staminaAt: T };
+    expect(teamCanAct(spent, T)).toBe(false);
+    expect(teamCanAct(spent, T + SLG_TEAM_STAMINA_COST * MIN)).toBe(true);
+  });
+
+  it('never subtracts on a clock that runs backwards (a stale local clock must not strand a team)', () => {
+    expect(teamStamina({ stamina: 40, staminaAt: T }, T - 60 * MIN)).toBe(40);
   });
 });

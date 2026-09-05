@@ -128,6 +128,21 @@ class FakeCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry, ...wallet };
   }
 
+  /**
+   * Apple auto-renewal sync. Modelled on the real one's defining property rather than its mechanics:
+   * a renewal EXTENDS a subscription that is still active, where monthlyCardBuy above refuses one
+   * (ALREADY_ACTIVE). `syncGranted` is how many periods the receipt is pretending to carry.
+   */
+  syncGranted = 0;
+  async subscriptionSyncApple(a: { accountId: string; receipt: string }) {
+    const sub = this.subscriptions.get(a.accountId);
+    const base = Math.max(sub?.expiry ?? 0, Date.now());
+    const expiry = this.syncGranted > 0 ? base + this.syncGranted * 30 * 24 * 60 * 60 * 1000 : (sub?.expiry ?? 0);
+    if (this.syncGranted > 0) this.subscriptions.set(a.accountId, { ...sub, expiry });
+    const wallet = this.populateWalletInResponses ? { wallet: this.walletOf(a.accountId) } : {};
+    return { ok: true as const, coinsAfter: this.bal(a.accountId), subscriptionExpiry: expiry, granted: this.syncGranted, ...wallet };
+  }
+
   async monthlyCardClaim(a: { accountId: string; dayKey: string }) {
     if (this.nextMonthlyClaimError) {
       const e = this.nextMonthlyClaimError;
@@ -357,6 +372,14 @@ describe.skipIf(!mongo)('economy service handlers (src import, coverage backfill
     });
 
     it('daily cap reached (more than ADS_DAILY_CAP watches in a day) -> 429, distinct from the cooldown branch', async () => {
+      // adsDayKey() buckets by UTC date, and the walk below spans ~60 min (6 x ADS_MIN_INTERVAL_MS),
+      // so a run that starts inside the last hour of a UTC day rolls the key over mid-test: the
+      // cap counter restarts on the new day and the over-cap watch answers 200. That is a flake
+      // window one hour wide every day, not a code bug -- it took down 2026-09-04 CI, which ran
+      // this at 23:03 UTC. Snap to the next UTC midnight first -- always forward, so the interval
+      // guard's stored lastAdAt stays in the past -- and the walk then has a full day of headroom
+      // no matter what the wall clock says when the suite runs.
+      fakeNow = new Date(fakeNow).setUTCHours(24, 0, 0, 0);
       for (let i = 0; i < ADS_DAILY_CAP; i++) {
         fakeNow += ADS_MIN_INTERVAL_MS + 1000;
         const r = await app.inject({ method: 'POST', url: '/ads/reward', headers: auth(), payload: { adToken: `cap-${i}` } });

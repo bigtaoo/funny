@@ -163,6 +163,9 @@ export class SiegeDamageService {
             type: isCrossing ? tile.type : 'territory',
             ownerId: d.attackerId,
             garrison: d.attackerSurvivors,
+            // Baseline-heal clock starts at the hand-over (shared/src/slg/garrison.ts) — an absent
+            // checkpoint reads as "already healed", which would gift the captor a full baseline on arrival.
+            garrisonRegenAt: t,
             hp: maxHp,
             ...(isCrossing && attacker?.familyId ? { familyId: attacker.familyId } : {}),
           },

@@ -616,6 +616,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/iap/apple/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply not-yet-granted Apple auto-renewable subscription periods (idempotent)
+         * @description Re-reads the iOS app receipt and grants any auto-renewable subscription period Apple has charged for but the server has not applied yet. Auto-renewals happen inside Apple's systems with no user action, so re-reading the receipt is how the server learns about them; the client calls this unprompted on cold start. Each period is granted under `apple:<transactionId>` and is therefore idempotent — `granted` reports how many were actually new, so a caller can skip refreshing on the (usual) zero. Never errors on an unusable receipt: it reports `granted: 0`.
+         */
+        post: operations["iapAppleSync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/promo/redeem": {
         parameters: {
             query?: never;
@@ -3234,6 +3254,42 @@ export interface operations {
                         ok: true;
                         data: {
                             save: components["schemas"]["SaveData"];
+                            granted: number;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
+    iapAppleSync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Base64 App Store receipt (appStoreReceiptURL). */
+                    receipt: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            save: components["schemas"]["SaveData"];
+                            /** @description Subscription periods newly applied by this call. */
                             granted: number;
                         };
                     };

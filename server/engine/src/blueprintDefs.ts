@@ -24,7 +24,7 @@ import {
 // through unchanged — they were never part of this ADR's scope.
 
 /** Real-unit authoring shape for `UnitBlueprint` (ADR-065) — see comment above. */
-type RawUnitBlueprint = Omit<UnitBlueprint,
+export type RawUnitBlueprint = Omit<UnitBlueprint,
   | 'hp_fp' | 'attack_fp' | 'siegeValue_fp' | 'armor_fp' | 'armorEnrageBonus_fp'
   | 'berserkerThreshold_fp' | 'armorEnrageThreshold_fp' | 'reflectPct_fp'
   | 'critPct_fp' | 'critMult_fp' | 'lifestealPct_fp' | 'burstOnSingleMult_fp' | 'slowOnHit'
@@ -44,8 +44,23 @@ type RawUnitBlueprint = Omit<UnitBlueprint,
   slowOnHit?: { mult: number; durationSec: number };
 };
 
-/** Converts one real-unit `RawUnitBlueprint` into the fp-scaled `UnitBlueprint` (ADR-065). */
-function bakeUnitBlueprint(raw: RawUnitBlueprint): UnitBlueprint {
+/**
+ * Converts one real-unit `RawUnitBlueprint` into the fp-scaled `UnitBlueprint` (ADR-065).
+ *
+ * Exported only as a TEST SEAM (2026-09-03). It is called exactly once per table entry at
+ * module load, so which of its per-field `!== undefined` arms ever run is decided entirely by
+ * which optional stats today's `RAW_UNIT_BLUEPRINTS` happens to set — eight of them
+ * (`armorEnrageBonus`, `armorEnrageThreshold`, `reflectPct`, `critPct`, `critMult`,
+ * `lifestealPct`, `burstOnSingleMult`, `slowOnHit`) are set by NO unit, so the fp-scaling half
+ * of each is unreachable from outside this file. Those fields are not dead code: they are read
+ * by TraitSystem/CombatSystem and are what a designer adds to a raw entry to give a unit crit,
+ * lifesteal or an on-hit slow. If one of them were dropped from the destructuring or scaled
+ * with the wrong helper, the unit would silently ship with the stat missing (`...rest` does not
+ * carry it, since the field is renamed to `*_fp`) — nothing would throw and no other test would
+ * notice, because no unit exercises it yet. `blueprint-bake.test.ts` covers all of them.
+ * Nothing outside the tests imports it, and `index.ts` does not re-export it.
+ */
+export function bakeUnitBlueprint(raw: RawUnitBlueprint): UnitBlueprint {
   const {
     hp, attack, siegeValue, armor, armorEnrageBonus, berserkerThreshold,
     armorEnrageThreshold, reflectPct, critPct, critMult, lifestealPct,
@@ -291,14 +306,18 @@ export const UNIT_BLUEPRINTS: Record<UnitType, UnitBlueprint> = bakeUnitBlueprin
 // the engine.
 
 /** Real-unit authoring shape for `BuildingBlueprint` (ADR-065). */
-type RawBuildingBlueprint = Omit<BuildingBlueprint, 'hp_fp' | 'attack_fp' | 'armor_fp'> & {
+export type RawBuildingBlueprint = Omit<BuildingBlueprint, 'hp_fp' | 'attack_fp' | 'armor_fp'> & {
   hp: number;
   attack?: number;
   armor?: number;
 };
 
-/** Converts one real-unit `RawBuildingBlueprint` into the fp-scaled `BuildingBlueprint` (ADR-065). */
-function bakeBuildingBlueprint(raw: RawBuildingBlueprint): BuildingBlueprint {
+/**
+ * Converts one real-unit `RawBuildingBlueprint` into the fp-scaled `BuildingBlueprint` (ADR-065).
+ * Exported as a test seam for the same reason as {@link bakeUnitBlueprint}: no building in
+ * `RAW_BUILDING_BLUEPRINTS` sets `armor`, so that field's scaling arm has no other caller.
+ */
+export function bakeBuildingBlueprint(raw: RawBuildingBlueprint): BuildingBlueprint {
   const { hp, attack, armor, ...rest } = raw;
   return {
     ...rest,

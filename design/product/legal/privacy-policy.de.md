@@ -70,11 +70,11 @@ Wir **verkaufen** Ihre personenbezogenen Daten **nicht**. Wir teilen nur das Not
 | **App-Stores / Zahlungskanäle** (Apple, Google, WeChat Pay, CrazyGames usw.) | Transaktions-/Belegdaten | Kaufabwicklung & Verifizierung |
 | **Cloud-/Hosting-Anbieter** ({{CLOUD_PROVIDER}}) | im Backend gespeicherte Konto- & Speicherdaten | Service-Hosting |
 | **Analysedienst** (eigener analyticsvc / {{ANALYTICS_SDK}}) | pseudonyme Analyse-Ereignisse | Betriebsanalyse (in EU/UK mit Einwilligung) |
-| **Werbe-SDK** ({{ADS_SDK}}, falls zutreffend) | minimale Auslieferungs-IDs | belohnte Werbung (kein app-übergreifendes Tracking ohne ATT/Einwilligung) |
+| **Werbe-SDK** (Google AdMob, nur belohnte Videos in der mobilen App) | minimale Auslieferungs-IDs | belohnte Werbung, **ausschließlich als nicht personalisierte Werbung** angefordert (keine IDFA, kein app-übergreifendes Tracking) |
 | **Aggregator-Plattformen** (CrazyGames usw.) | von der Plattform geforderte Login-/Sitzungsdaten | Betrieb innerhalb der Plattform |
 | **Behörden / Strafverfolgung** | gesetzlich geforderte Daten | rechtliche Verpflichtung |
 
-> Vor dem Start sind {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} / {{ADS_SDK}} durch die tatsächlichen Dritten und deren Datenschutzlinks zu ersetzen, konsistent mit iOS Privacy Label und Google Play Data Safety Form.
+> Vor dem Start sind {{CLOUD_PROVIDER}} / {{ANALYTICS_SDK}} durch die tatsächlichen Dritten und deren Datenschutzlinks zu ersetzen, konsistent mit iOS Privacy Label und Google Play Data Safety Form. (Das Werbe-SDK wurde am 2026-09-03 eingesetzt: Google AdMob, ausschließlich nicht personalisiert.)
 
 ---
 
@@ -87,7 +87,7 @@ Für EU-/UK-Nutzer sind Analyse-Ereignisse und nicht notwendige Analysen **stand
 Die Webversion nutzt notwendigen lokalen Speicher (localStorage), um Login und Spielstand zu halten; etwaige Analyse-Cookies unterliegen einem Cookie-Einwilligungsbanner. Notwendiger Speicher ist für den Dienst erforderlich und nicht deaktivierbar.
 
 ### 6.3 Werbung & Tracking
-Standardmäßig führen wir **kein app-übergreifendes Werbe-Tracking** durch. Sollten wir künftig Tracking einführen, das App Tracking Transparency (ATT) erfordert, holen wir die Einwilligung gesondert über den iOS-Systemdialog ein; eine Ablehnung beeinträchtigt das Kern-Gameplay nicht.
+Wir führen **kein app-übergreifendes Werbe-Tracking** durch. Belohnte Videos in der mobilen App liefert Google AdMob, angefordert **ausschließlich als nicht personalisierte Werbung** (`npa=1`): Wir lesen die Werbe-ID (IDFA) nicht aus, weshalb unter iOS **kein ATT-Dialog erscheint**. Apples SKAdNetwork dient allein der aggregierten Installations-Attribution und gilt nach Apples eigenen Vorgaben nicht als Tracking. Sollten wir künftig auf personalisierte Werbung umstellen, holen wir die Einwilligung gesondert über den ATT-Systemdialog ein und aktualisieren diese Richtlinie sowie das App-Store-Datenschutzlabel entsprechend; eine Ablehnung würde das Kern-Gameplay nicht beeinträchtigen.
 
 ---
 
@@ -159,4 +159,4 @@ Wir können diese Erklärung von Zeit zu Zeit aktualisieren. Über wesentliche �
 
 ---
 
-> **Platzhalter-Checkliste vor dem Start**: `{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{ADS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` und gehostete URL `{{PRIVACY_POLICY_URL}}` (für den Client-`consent.*`-Link).
+> **Platzhalter-Checkliste vor dem Start**: `{{EFFECTIVE_DATE}}` `{{COMPANY_LEGAL_NAME}}` `{{COMPANY_ADDRESS}}` `{{CLOUD_PROVIDER}}` `{{ANALYTICS_SDK}}` `{{PRIVACY_CONTACT_EMAIL}}` `{{EU_REP_OR_DPO}}` und gehostete URL `{{PRIVACY_POLICY_URL}}` (für den Client-`consent.*`-Link).

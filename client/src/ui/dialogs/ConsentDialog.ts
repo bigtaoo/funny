@@ -8,7 +8,9 @@
  * leaves the device and the lobby is unreachable until `onAccept` fires.
  *
  * The privacy-policy / terms links open the hosted legal pages in a new browser
- * tab (`/privacy.html`, `/terms.html`), matching the marketing site's footer.
+ * tab (`/privacy.html`, `/terms.html`), matching the marketing site's footer —
+ * except where the game is not served from our own origin, which needs absolute
+ * https URLs (see {@link legalUrl}).
  */
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
@@ -17,6 +19,39 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
+import { isNativeShell } from '../../platform/nativeShell';
+import { clientPlatformName } from '../../app/appConstants';
+
+/** Hosted marketing/legal site (Cloudflare Worker `nivara-client`, deploy-cloudflare.md §domains). */
+const LEGAL_SITE = 'https://nivara.gamestao.com';
+
+/**
+ * Where a legal link should point for this build.
+ *
+ * A relative path is only right when the game is served from our own origin, i.e. the plain web
+ * build sitting next to `/privacy.html` on nivara.gamestao.com. Two targets are not:
+ *
+ *  * **The native shell.** The pages are deliberately not bundled (they are the web payment
+ *    channel's surface — see webpack.config.js), and even when they were, the link did nothing at
+ *    all: `window.open(..., '_blank')` in a WKWebView reaches Capacitor's `createWebViewWith`,
+ *    which calls `UIApplication.open` on `capacitor://localhost/privacy.html` — a scheme no app is
+ *    registered for, so iOS silently drops it. A working privacy link is something App Review checks.
+ *  * **CrazyGames.** The portal hosts the uploaded bundle on its own domain, so a root-relative
+ *    `/privacy.html` resolves against *crazygames.com* and 404s. The pages are not shipped in that
+ *    bundle either (same webpack.config.js copy rule as the native build), and would be unreachable
+ *    at that path if they were. A reachable privacy policy is both a portal requirement and a GDPR one.
+ *
+ * `path` is the extensionless canonical form: the site 307s `/privacy.html` → `/privacy`, and a
+ * store build should not spend a redirect to reach its own privacy policy.
+ *
+ * Exported for its own tests (nativePaymentIsolation.test.ts, crazyGamesPortalIsolation.test.ts) —
+ * a link that silently does nothing is precisely the failure this exists to prevent, so it is worth
+ * asserting on the value rather than on the shape of the source.
+ */
+export function legalUrl(path: '/privacy' | '/terms'): string {
+  const ownOrigin = !isNativeShell() && clientPlatformName() !== 'crazygames';
+  return ownOrigin ? `${path}.html` : `${LEGAL_SITE}${path}`;
+}
 
 export interface ConsentCallbacks {
   /** Player accepted — the core records consent (local flag + server) and proceeds. */
@@ -114,8 +149,8 @@ export class ConsentDialog implements Scene {
     this.container.addChild(body);
 
     // Policy / terms links — clickable, open the hosted legal pages in a new tab.
-    this.addLink(t('consent.privacyPolicy'), w / 2, cardY + dyLink1, unit, '/privacy.html');
-    this.addLink(t('consent.terms'), w / 2, cardY + dyLink2, unit, '/terms.html');
+    this.addLink(t('consent.privacyPolicy'), w / 2, cardY + dyLink1, unit, legalUrl('/privacy'));
+    this.addLink(t('consent.terms'), w / 2, cardY + dyLink2, unit, legalUrl('/terms'));
 
     // Accept button (only affordance — backdrop tap does NOT dismiss; consent is required).
     const bW = Math.round(cardW * 0.6);

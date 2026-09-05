@@ -19,6 +19,11 @@
 | 平台 | 环境变量 | 申请位置 | receipt 格式 |
 |---|---|---|---|
 | Apple App Store | `NW_APPLE_PASSWORD` | App Store Connect →「App 内购买项目」→ App 专用共享密钥 | base64 receipt data |
+
+> **同一把密钥现在喂两条链路**（2026-09-03）：除了单次验单（`appleVerify`），自动续订订阅的续期同步
+> （`appleSubscriptionTransactions` ← `POST /iap/apple/sync`）也用它。缺失时**两条都 fail closed**：验单返
+> `INVALID_RECEIPT`，同步返 `granted: 0` 什么都不发（不报错——那条请求是客户端冷启动自己发的，没人在等结果）。
+> 机制见 [`IOS_RELEASE.md §4.1b`](IOS_RELEASE.md)。
 | Google Play | `NW_GOOGLE_SERVICE_ACCOUNT_JSON`（整串）+ `NW_GOOGLE_PACKAGE_NAME` | GCP 创建服务账户 JSON；Play Console 授予该账户「查看财务数据/管理订单」权限 | `${productId}:${purchaseToken}` |
 | 微信支付 V3 | `NW_WX_PAY_MCH_ID` + `NW_WX_PAY_API_KEY_V3` | 微信商户平台「API 安全」→ V3 APIKey（32 字节） | `transaction_id` |
 | Stripe（Web） | `NW_STRIPE_SECRET_KEY` | Stripe Dashboard → API keys（`sk_live_*` 生产 / `sk_test_*` 沙盒） | `payment_intent_id`（`pi_*`） |
@@ -30,6 +35,15 @@
 - `NW_IAP_AMOUNT_MAP`（可选，微信/Stripe）：`amount:tier,...`；不填时内置默认按 `IAP_TIERS_LIST.usdCents` 匹配 **Stripe 美元价（cents）→ 档位**（99→t099 … 9999→t9999）。**微信按人民币分（fen）计价，经济配置中无对应人民币锚点价，微信渠道必须显式配置 `NW_IAP_AMOUNT_MAP`**，否则金额匹配不到档位（fail closed，发失败）。
 
 档位金币数与档位 ID 均以 `@nw/shared` 的 `IAP_TIERS` / `IAP_TIERS_LIST` 为准。
+
+> ⚠️ **填进 `.env` 不等于容器能看见**（2026-09-04 踩到）。compose 不会把 `server/.env` 读进容器，它只做本文件里
+> `${...}` 的插值；`commercial` 服务的 `environment:` 块没写的变量，进程永远读不到。这四家凭据加
+> `NW_IAP_BUNDLE` / `NW_IAP_PRODUCT_MAP` / `NW_IAP_AMOUNT_MAP` 是 2026-09-04 才补进
+> `docker-compose.cloud.yml` 的——在那之前 `NW_APPLE_PASSWORD` 在 `.env` 里躺着，Apple 验单在生产上一直是
+> fail closed。加新凭据时**两个文件一起改**。
+>
+> 同一处的第二个坑：这些变量在代码里是 `process.env.X ?? 默认值`，**空字符串会盖掉默认值**。所以 compose 里用
+> `${NW_IAP_BUNDLE:-com.gamestao.nivara}` 而不是 `${NW_IAP_BUNDLE-...}`——`.env` 里留空时也能落到正确默认。
 
 ### 1.1 Paddle（Web 充值通道）
 
@@ -91,10 +105,11 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
 **已落地的部分**：
 - **App ID**：`ca-app-pub-5437693117291100~7980565358`；**激励视频 Ad Unit ID**：`ca-app-pub-5437693117291100/3500329092`（2026-07-21 AdMob 后台创建，均已写入代码，见下）。
 - **`client/ios/App/Podfile`**：`capacitor_pods` 里加了 `pod 'Google-Mobile-Ads-SDK'`（CocoaPods 包名已核实，当前版本 12.12.0）。
-- **`client/ios/App/App/Info.plist`**：加了 `GADApplicationIdentifier`（真实 App ID）、`NSUserTrackingUsageDescription`（ATT 弹窗文案）、`SKAdNetworkItems`（Google 官方文档 47 条标识符列表，2026-07-21 现查）。
+- **`client/ios/App/App/Info.plist`**：加了 `GADApplicationIdentifier`（真实 App ID）、~~`NSUserTrackingUsageDescription`（ATT 弹窗文案）~~、`SKAdNetworkItems`（Google 官方文档 47 条标识符列表，2026-07-21 现查）。
+  ⚠️ **2026-09-03 改口径为「不跟踪」**：`NSUserTrackingUsageDescription` 与 ATT 请求已删除，广告改为只请求非个性化（`npa=1`）；`SKAdNetworkItems` 保留（按 Apple 口径不算 tracking）。见 [`IOS_RELEASE.md §12`](IOS_RELEASE.md) 与 `store-assets-checklist.md §1.4`。
 - **`client/ios/App/App/AppDelegate.swift`**：`NWBridgeViewController` 扩了一个 `window.NWAds` 桥（与既有 `window.NWBilling` StoreKit 桥同一个类、同一套 `pending{jsId}` Promise-settle 模式）：
   - `capacitorDidLoad()` 里 `MobileAds.shared.start(...)` + 预加载一条广告（`preloadRewardedAd()`）。
-  - `window.NWAds.showRewarded(accountId)` → 触发 ATT 弹窗（若尚未询问过）→ `present(from:)`；奖励回调只在**真正播完**时置位，`adDidDismissFullScreenContent`（`FullScreenContentDelegate`）里才 resolve/reject——提前关闭视为未看完，不发奖励。
+  - `window.NWAds.showRewarded(accountId)` → `present(from:)`（2026-09-03 起**不再触发 ATT 弹窗**，见上）；奖励回调只在**真正播完**时置位，`adDidDismissFullScreenContent`（`FullScreenContentDelegate`）里才 resolve/reject——提前关闭视为未看完，不发奖励。
   - `accountId` 写入 `ServerSideVerificationOptions.customRewardText`，供 SSV 回调识别账号。
   - Debug 编译用 Google 官方测试 Ad Unit（`ca-app-pub-3940256099942544/1712485313`），Release 才用真实 ID——避免本地/模拟器调试期间打真实广告请求。
 - **`client/src/platform/nativeAds.ts`**：新增 `getNativeAds()`，仿 `platform/iap.ts` 的 `getNativeBilling()` 探测 `window.NWAds`。
@@ -104,7 +119,7 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
 - **SSV 回调地址**：AdMob 后台已经配了 `https://api.gamestao.com/ads/callback/admob` 并验证通过（2026-07-21），`custom_data` 用 `customRewardText` 传 accountId，这是发币的权威通道——客户端 `/ads/reward` 只是「立即显示到账」的乐观 UI。
 - **拿真机/Xcode 编译一次**，确认 Swift API 版本对得上（尤其 `RewardedAd.load`/`FullScreenContentDelegate`/`ServerSideVerificationOptions.customRewardText` 这几个近期改过命名的 API）。
 - 沙盒测试：先用 Debug 编译（自动切到 Google 测试广告单元）跑通"点按钮 → 弹广告 → 关掉 → 领到金币"全流程，再切 Release 用真实 ID 测一次。
-- ATT 弹窗文案（`NSUserTrackingUsageDescription`）当前是占位英文，上线前找产品/法务过一遍措辞。
+- ~~ATT 弹窗文案~~ —— 已随「不跟踪」口径删除（2026-09-03），无需再找法务过措辞。
 6. **本地测试**：本地开发机没有公网 HTTPS，SSV 回调收不到——用 `ngrok http 18080` 之类临时穿透，把生成的 URL 填进 AdMob 测试配置；或先只验证客户端侧「能弹出广告、能拿到 reward 回调」，SSV 链路留到部署到 `api.gamestao.com` 后再连调。
 7. **Android**：`client/` 目前只有 `ios/`，没有 `android/` Capacitor 平台——若要上 Android 渠道，先 `npx cap add android`，原生桥用 Kotlin/Java 写等价的 `WebAppInterface`（Capacitor `@JavascriptInterface`）版本，AdMob SDK 换 Android 版依赖，其余（SSV、服务端校验）完全复用现有实现。
 

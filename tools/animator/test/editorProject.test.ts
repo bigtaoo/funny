@@ -1,4 +1,4 @@
-// IOController's `.tao.editor` save/load flow (io/editorProject.ts). Drives the real function
+// IOController's `.taoeditor` save/load flow (io/editorProject.ts). Drives the real function
 // bodies against real AppState/AnimationController/CommandManager/EventBus instances (all PIXI-
 // free) plus a real JSZip (round-trips an actual zip archive, not a mocked one) and a hand-rolled
 // fake ImageController (the one dependency here that needs real `pixi.js` texture creation, which
@@ -103,7 +103,7 @@ describe('buildEditorBlob / loadEditorBlob — round trip', () => {
 
     // Fresh host — restore from the built blob.
     const host2 = makeHost();
-    const ok = await loadEditorBlob(host2, blob, 'runner.tao.editor');
+    const ok = await loadEditorBlob(host2, blob, 'runner.taoeditor');
     expect(ok).toBe(true);
     expect(host2.state.getBinding('spine')).toMatchObject({ scaleX: 1.5, scaleY: 1.5 });
     expect(host2.animCtrl.store.get('idle')).toMatchObject({ duration: 400, loop: true });
@@ -126,10 +126,10 @@ describe('buildEditorBlob / loadEditorBlob — round trip', () => {
   it('loadEditorBlob resets any previously-remembered disk identity before restoring', async () => {
     const blob = await buildEditorBlob(makeHost());
     const host = makeHost();
-    host.editorFilePath = '/old/path.tao.editor';
+    host.editorFilePath = '/old/path.taoeditor';
     host.editorFileHandle = {} as WritableFileHandle;
     host.taoFileHandle = {} as WritableFileHandle;
-    await loadEditorBlob(host, blob, 'x.tao.editor');
+    await loadEditorBlob(host, blob, 'x.taoeditor');
     expect(host.editorFilePath).toBeNull();
     expect(host.editorFileHandle).toBeNull();
     expect(host.taoFileHandle).toBeNull();
@@ -141,14 +141,14 @@ describe('buildEditorBlob / loadEditorBlob — round trip', () => {
     zip.file('editor.json', JSON.stringify({ version: 2, bindings: {}, animations: {}, attachmentPoints: [] }));
     const blob = await zip.generateAsync({ type: 'blob' });
 
-    const ok = await loadEditorBlob(host, blob, 'newer.tao.editor');
+    const ok = await loadEditorBlob(host, blob, 'newer.taoeditor');
     expect(ok).toBe(false);
     expect(host.events.some((e) => e.event === 'error' && String(e.payload).includes('Unsupported editor version 2'))).toBe(true);
   });
 
   it('a corrupted/non-zip blob fails gracefully (false + error event, no throw)', async () => {
     const host = makeHost();
-    const ok = await loadEditorBlob(host, new Blob(['not a zip']), 'broken.tao.editor');
+    const ok = await loadEditorBlob(host, new Blob(['not a zip']), 'broken.taoeditor');
     expect(ok).toBe(false);
     expect(host.events.some((e) => e.event === 'error')).toBe(true);
   });
@@ -158,7 +158,7 @@ describe('buildEditorBlob / loadEditorBlob — round trip', () => {
     zip.file('images/spine.png', 'not-really-a-png');
     const blob = await zip.generateAsync({ type: 'blob' });
     const host = makeHost();
-    const ok = await loadEditorBlob(host, blob, 'no-json.tao.editor');
+    const ok = await loadEditorBlob(host, blob, 'no-json.taoeditor');
     expect(ok).toBe(false);
     expect(host.events.some((e) => e.event === 'error' && String(e.payload).includes('editor.json missing'))).toBe(true);
   });
@@ -171,17 +171,17 @@ describe('buildEditorBlob / loadEditorBlob — round trip', () => {
     }));
     const blob = await zip.generateAsync({ type: 'blob' });
     const host = makeHost();
-    await loadEditorBlob(host, blob, 'x.tao.editor');
+    await loadEditorBlob(host, blob, 'x.taoeditor');
     expect(host.animCtrl.currentName).toBe('idle');
   });
 
   it('loadEditorProject(host, file) is a thin wrapper that forwards the file\'s own name as the label', async () => {
     const blob = await buildEditorBlob(makeHost());
-    const file = new File([blob], 'my-rig.tao.editor');
+    const file = new File([blob], 'my-rig.taoeditor');
     const host = makeHost();
     const ok = await loadEditorProject(host, file);
     expect(ok).toBe(true);
-    expect(host.events.some((e) => e.event === 'status' && String(e.payload) === 'Loaded my-rig.tao.editor')).toBe(true);
+    expect(host.events.some((e) => e.event === 'status' && String(e.payload) === 'Loaded my-rig.taoeditor')).toBe(true);
   });
 });
 
@@ -207,18 +207,18 @@ describe('saveEditorProject', () => {
     const writeFile = vi.fn(async (_path: string, _buf: ArrayBuffer) => ({ ok: true }));
     vi.stubGlobal('window', { nwDesktop: { fs: { writeFile } } });
     const host = makeHost();
-    host.editorFilePath = 'C:\\rig\\runner.tao.editor';
+    host.editorFilePath = 'C:\\rig\\runner.taoeditor';
 
     await saveEditorProject(host);
     expect(writeFile).toHaveBeenCalledTimes(1);
-    expect(writeFile.mock.calls[0]![0]).toBe('C:\\rig\\runner.tao.editor');
+    expect(writeFile.mock.calls[0]![0]).toBe('C:\\rig\\runner.taoeditor');
     expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Project saved' });
   });
 
   it('desktop shell: a failed write reports an error, not a thrown exception', async () => {
     vi.stubGlobal('window', { nwDesktop: { fs: { writeFile: async () => ({ ok: false, error: 'disk full' }) } } });
     const host = makeHost();
-    host.editorFilePath = 'C:\\rig\\runner.tao.editor';
+    host.editorFilePath = 'C:\\rig\\runner.taoeditor';
     await expect(saveEditorProject(host)).resolves.toBeUndefined();
     expect(host.events[host.events.length - 1]).toEqual({ event: 'error', payload: 'Save failed: disk full' });
   });
@@ -240,9 +240,9 @@ describe('saveEditorProjectAs', () => {
   it('desktop shell: cancelling the save-as dialog leaves the host untouched and emits nothing further', async () => {
     vi.stubGlobal('window', { nwDesktop: { fs: { saveFileAs: async () => ({ canceled: true }) } } });
     const host = makeHost();
-    host.editorFilePath = 'C:\\rig\\runner.tao.editor';
+    host.editorFilePath = 'C:\\rig\\runner.taoeditor';
     await saveEditorProjectAs(host);
-    expect(host.editorFilePath).toBe('C:\\rig\\runner.tao.editor'); // unchanged — cancel never overwrote it
+    expect(host.editorFilePath).toBe('C:\\rig\\runner.taoeditor'); // unchanged — cancel never overwrote it
     expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saving a copy…' }); // no follow-up status/error
   });
 });
@@ -262,7 +262,7 @@ function pickerHandle(file: File, written: Blob[] = []): WritableFileHandle {
   };
 }
 
-/** A real `.tao.editor` archive for the load paths to actually parse. */
+/** A real `.taoeditor` archive for the load paths to actually parse. */
 async function editorArchive(): Promise<Blob> {
   const src = makeHost();
   src.state.setBinding('spine', binding({ scaleX: 1.25 }));
@@ -275,7 +275,7 @@ describe('triggerLoadEditor', () => {
   it('desktop shell: reads the file over IPC and remembers its path for later saves', async () => {
     const archive = await editorArchive();
     const openFile = vi.fn(async (_filters: Array<{ name: string; extensions: string[] }>) => ({
-      canceled: false, path: 'C:\\rig\\runner.tao.editor', data: await archive.arrayBuffer(),
+      canceled: false, path: 'C:\\rig\\runner.taoeditor', data: await archive.arrayBuffer(),
     }));
     vi.stubGlobal('window', { nwDesktop: { fs: { openFile } } });
     const host = makeHost();
@@ -283,11 +283,14 @@ describe('triggerLoadEditor', () => {
     await triggerLoadEditor(host);
 
     expect(openFile).toHaveBeenCalledTimes(1);
-    expect(openFile.mock.calls[0]![0]).toEqual([{ name: 'Tao Editor Project', extensions: ['tao.editor'] }]);
-    expect(host.editorFilePath).toBe('C:\\rig\\runner.tao.editor');
+    // Both suffixes are offered so pre-rename projects still open; only 'taoeditor' is written.
+    expect(openFile.mock.calls[0]![0]).toEqual([
+      { name: 'Tao Editor Project', extensions: ['taoeditor', 'tao.editor'] },
+    ]);
+    expect(host.editorFilePath).toBe('C:\\rig\\runner.taoeditor');
     expect(host.state.getBinding('spine')!.scaleX).toBe(1.25);   // the archive really was applied
     // The status label is the file's basename, not its full path.
-    expect(host.events.some((e) => e.event === 'status' && String(e.payload).includes('runner.tao.editor'))).toBe(true);
+    expect(host.events.some((e) => e.event === 'status' && String(e.payload).includes('runner.taoeditor'))).toBe(true);
   });
 
   it('desktop shell: a cancelled dialog changes nothing at all', async () => {
@@ -314,7 +317,7 @@ describe('triggerLoadEditor', () => {
   });
 
   it('desktop shell: a truthy result with no data is reported rather than parsed as an empty zip', async () => {
-    vi.stubGlobal('window', { nwDesktop: { fs: { openFile: async () => ({ canceled: false, path: 'C:\\x.tao.editor' }) } } });
+    vi.stubGlobal('window', { nwDesktop: { fs: { openFile: async () => ({ canceled: false, path: 'C:\\x.taoeditor' }) } } });
     const host = makeHost();
 
     await triggerLoadEditor(host);
@@ -325,7 +328,7 @@ describe('triggerLoadEditor', () => {
 
   it('desktop shell: a corrupt archive leaves the path unset — it is only remembered on success', async () => {
     const openFile = async () => ({
-      canceled: false, path: 'C:\\rig\\broken.tao.editor',
+      canceled: false, path: 'C:\\rig\\broken.taoeditor',
       data: await new Blob(['not a zip at all']).arrayBuffer(),
     });
     vi.stubGlobal('window', { nwDesktop: { fs: { openFile } } });
@@ -339,7 +342,7 @@ describe('triggerLoadEditor', () => {
 
   it('browser with File System Access: remembers the handle so Save can overwrite silently', async () => {
     const archive = await editorArchive();
-    const file = new File([await archive.arrayBuffer()], 'runner.tao.editor');
+    const file = new File([await archive.arrayBuffer()], 'runner.taoeditor');
     const handle = pickerHandle(file);
     const picker = vi.fn(async (_opts: unknown) => [handle]);
     vi.stubGlobal('window', { showOpenFilePicker: picker });
@@ -375,7 +378,7 @@ describe('triggerLoadEditor', () => {
   });
 
   it('browser: a corrupt archive leaves the handle unset', async () => {
-    const handle = pickerHandle(new File(['garbage'], 'broken.tao.editor'));
+    const handle = pickerHandle(new File(['garbage'], 'broken.taoeditor'));
     vi.stubGlobal('window', { showOpenFilePicker: async () => [handle] });
     const host = makeHost();
 
@@ -424,7 +427,7 @@ describe('saveEditorProject — first save of a brand-new project', () => {
     await saveEditorProject(host);
 
     expect(picker).toHaveBeenCalledTimes(1);
-    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'project.tao.editor' });
+    expect(picker.mock.calls[0]![0]).toMatchObject({ suggestedName: 'project.taoeditor' });
     expect(host.editorFileHandle).toBe(handle);
     expect(written).toHaveLength(1);
     expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Project saved' });
@@ -436,7 +439,7 @@ describe('saveEditorProject — first save of a brand-new project', () => {
   });
 
   it('desktop shell: no known path yet → save-as dialog, whose result becomes the path', async () => {
-    const saveFileAs = vi.fn(async (_opts: { defaultPath?: string; filters: unknown[] }) => ({ canceled: false, path: 'C:\\rig\\new.tao.editor' }));
+    const saveFileAs = vi.fn(async (_opts: { defaultPath?: string; filters: unknown[] }) => ({ canceled: false, path: 'C:\\rig\\new.taoeditor' }));
     vi.stubGlobal('window', { nwDesktop: { fs: { saveFileAs, writeFile: vi.fn() } } });
     const host = makeHost();
 
@@ -445,9 +448,9 @@ describe('saveEditorProject — first save of a brand-new project', () => {
     expect(saveFileAs).toHaveBeenCalledTimes(1);
     expect(saveFileAs.mock.calls[0]![0]).toEqual({
       defaultPath: undefined,
-      filters: [{ name: 'Tao Editor Project', extensions: ['tao.editor'] }],
+      filters: [{ name: 'Tao Editor Project', extensions: ['taoeditor'] }],
     });
-    expect(host.editorFilePath).toBe('C:\\rig\\new.tao.editor');
+    expect(host.editorFilePath).toBe('C:\\rig\\new.taoeditor');
     expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Project saved' });
   });
 
@@ -474,18 +477,18 @@ describe('saveEditorProject — first save of a brand-new project', () => {
 
 describe('saveEditorProjectAs — desktop shell', () => {
   it('writes a copy, retargets Save at it, and reports the basename only', async () => {
-    const saveFileAs = vi.fn(async (_opts: { defaultPath?: string; filters: unknown[] }) => ({ canceled: false, path: 'C:\\rig\\copies\\runner-v2.tao.editor' }));
+    const saveFileAs = vi.fn(async (_opts: { defaultPath?: string; filters: unknown[] }) => ({ canceled: false, path: 'C:\\rig\\copies\\runner-v2.taoeditor' }));
     vi.stubGlobal('window', { nwDesktop: { fs: { saveFileAs } } });
     const host = makeHost();
-    host.editorFilePath = 'C:\\rig\\runner.tao.editor';
+    host.editorFilePath = 'C:\\rig\\runner.taoeditor';
 
     await saveEditorProjectAs(host);
 
     // The old path is offered as the dialog's starting point…
-    expect(saveFileAs.mock.calls[0]![0]).toMatchObject({ defaultPath: 'C:\\rig\\runner.tao.editor' });
+    expect(saveFileAs.mock.calls[0]![0]).toMatchObject({ defaultPath: 'C:\\rig\\runner.taoeditor' });
     // …and the new one replaces it, so subsequent Saves overwrite the copy (Word/Photoshop rule).
-    expect(host.editorFilePath).toBe('C:\\rig\\copies\\runner-v2.tao.editor');
-    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved a copy to runner-v2.tao.editor' });
+    expect(host.editorFilePath).toBe('C:\\rig\\copies\\runner-v2.taoeditor');
+    expect(host.events[host.events.length - 1]).toEqual({ event: 'status', payload: 'Saved a copy to runner-v2.taoeditor' });
   });
 
   it('reports a failed save-as as an error', async () => {
@@ -498,7 +501,7 @@ describe('saveEditorProjectAs — desktop shell', () => {
   });
 
   it('browser: a cancelled picker (null handle) leaves the current target in place', async () => {
-    const existing = pickerHandle(new File([], 'current.tao.editor'));
+    const existing = pickerHandle(new File([], 'current.taoeditor'));
     const abort = Object.assign(new Error('cancelled'), { name: 'AbortError' });
     vi.stubGlobal('window', { showSaveFilePicker: async () => { throw abort; } });
     const host = makeHost();

@@ -42,7 +42,7 @@ import { runSiegeBattle, synthesizeArmy, scaleArmyByRatio, sumArmyHp, resolveCar
 import type { GarrisonEntry, EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ENGINE_VERSION } from '@nw/engine';
 import type { PlayerWorldDoc, MarchDoc } from '../db';
-import { WorldCore } from '../core';
+import { liveGarrison, WorldCore } from '../core';
 import type { SiegeReplayInputs } from '../worldTypes';
 import { refundTroops, parkMarchInPlace } from '../combatShared';
 import type { SiegeHelpersService } from './helpers';
@@ -199,7 +199,11 @@ export class ArrivalService {
     // §9 kept the bonus and dropped its production twin, which only means anything once it is keyed on
     // something that still moves — `CityDoc.ownerSectId`, the same handle §7's capture writes.
     const inOwnNation = defenderId ? await this.core.inOwnSectProvince(m.worldId, defenderId, baseTile.x, baseTile.y) : false;
-    const effGarrison = nationDefenseStrength(baseTile.garrison ?? 0, inOwnNation);
+    // liveGarrison, not the stored field: an owned tile heals back to tileGarrisonBaseline(level) over
+    // TILE_GARRISON_REGEN_MS (shared/src/slg/garrison.ts), so a territory stripped by an earlier siege is
+    // not a free capture for the next march. The heal is folded in here and in `defenderLosses` below
+    // (landSiege.ts) and nowhere else — it is never written back into TileDoc.garrison.
+    const effGarrison = nationDefenseStrength(liveGarrison(baseTile, t), inOwnNation);
 
     // E8/CC-3: fetch attacker's progression snapshot early (needed for card army resolution + blueprint injection).
     // For a base siege, also kick off the defender's card-only snapshot here so it runs in parallel with the

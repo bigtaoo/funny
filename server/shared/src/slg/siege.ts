@@ -262,6 +262,49 @@ export const SLG_SIEGE_DAMAGE_DELAY_MS = 5 * 60 * 1000;
 /** Team-level injury lock (ms) applied to a defending team that loses a wave; injured teams never defend until healed (ADR-026 §5). [DRAFT] */
 export const SLG_TEAM_INJURY_MS = 10 * 60 * 1000;
 
+// ── Team stamina (2026-09-04): the rate limit on how OFTEN a player can act ──────────────────────
+// The pre-existing limiters all bound something other than frequency: `troopCap`/training bound how many
+// troops you can field, `satchelCarryCapFor` how many one team may carry, `marchMoraleFromPath` punishes
+// DISTANCE (and resets to full every departure, so it never accumulates), and injury only bites after a
+// team is actually wiped. Nothing stopped an unbeaten team from launching orders back-to-back all day,
+// which is what made "attack, wait for the target's garrison to heal, attack again" a pure time-cost loop.
+// Stamina is that missing cost: each order spends a slice of a per-team budget that refills on a wall clock,
+// so a player's tempo is bounded by their team count (SIEGE_TEAM_CAP) rather than by their patience.
+// Distinct from the PvE campaign stamina (BALANCE.md §10, `save.stamina`) — that one gates level clears and
+// is per-account; this one is per-team and gates world-map orders only. See design/game/SLG_DESIGN.md §4.6.
+
+/** Full stamina budget of a single team. [DRAFT] */
+export const SLG_TEAM_STAMINA_MAX = 100;
+
+/**
+ * Stamina spent by one world-map order (attack / occupy / move — i.e. every `startMarch` that carries a
+ * teamId; a flat-pool reinforce or sweep commands no team and so spends none).
+ *
+ * At {@link SLG_TEAM_STAMINA_MAX} = 100 this is 6 orders from full, and with
+ * {@link SLG_TEAM_STAMINA_REGEN_PER_MIN} = 1 the steady state is one order per 15 minutes per team —
+ * 5 teams (SIEGE_TEAM_CAP) → ~20 orders/hour at full tilt, ~33 from a full bar. Deliberately loose enough
+ * that ordinary play never sees the wall and only a farming loop does. [DRAFT]
+ */
+export const SLG_TEAM_STAMINA_COST = 15;
+
+/** Stamina regained per real-world minute, per team (a full bar takes 100 minutes). [DRAFT] */
+export const SLG_TEAM_STAMINA_REGEN_PER_MIN = 1;
+
+/**
+ * Live stamina of one team: `current`, refilled by however many minutes have passed since `staminaAt`,
+ * capped at {@link SLG_TEAM_STAMINA_MAX}. Pure; same lazy-checkpoint shape as {@link regenDurability} and
+ * `regenGarrison` — no timer writes this, every reader recomputes it.
+ *
+ * `staminaAt = 0` (an account that predates this system, or a team that has never marched) reads as full
+ * rather than empty: `current` defaults to the max at the call sites, and the elapsed term only ever adds.
+ */
+export function regenTeamStamina(current: number, staminaAt: number, now: number): number {
+  const cur = Math.max(0, Math.min(SLG_TEAM_STAMINA_MAX, Math.floor(current)));
+  if (cur >= SLG_TEAM_STAMINA_MAX) return SLG_TEAM_STAMINA_MAX;
+  const minutes = Math.max(0, now - staminaAt) / 60_000;
+  return Math.min(SLG_TEAM_STAMINA_MAX, Math.floor(cur + minutes * SLG_TEAM_STAMINA_REGEN_PER_MIN));
+}
+
 /** Building max HP from its level (ADR-026 §1). Floors at 1 so every building is destructible in finite hits. */
 export function buildingMaxHp(level: number): number {
   return Math.max(1, Math.floor((Math.max(0, Math.floor(level)) || 0) * SLG_BASE_HP_PER_LEVEL) || SLG_BASE_HP_PER_LEVEL);

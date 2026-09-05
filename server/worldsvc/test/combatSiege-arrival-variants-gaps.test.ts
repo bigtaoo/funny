@@ -18,6 +18,8 @@ import {
   passageGarrison,
   strongholdGarrison,
   npcGarrison,
+  tileGarrisonBaseline,
+  TILE_GARRISON_REGEN_MS,
   MARCH_MORALE_MAX,
   STRONGHOLD_LOOT_PER_LEVEL,
   SWEEP_LOOT_PER_LEVEL,
@@ -450,11 +452,19 @@ describe('landSiege', () => {
     await landSiege(core, ctx, march(), pw(), target, DEF, pw({ accountId: DEF }), winRes(30), 1_000, null);
     // 2026-08-24: the chip and the garrison wipe are persisted as deltas now (a reinforce landing in the
     // window must survive), so the 100 → 70 arithmetic reads as "subtract the 30 surviving attackers".
+    //
+    // 2026-09-04 (garrison regen, SLG_DESIGN §5.6): the delta is now the LIVE garrison rather than the
+    // stored one, and the write stamps the heal clock. It is still 0 here — not because the heal was
+    // skipped, but because this fixture's `t` is 1_000ms: the tile's absent checkpoint reads as epoch, so
+    // only 1s of the 5-minute window has elapsed and floor() of a 0.4-troop heal is 0. That makes this
+    // case a clean check of the timestamp alone; the heal arithmetic itself is pinned against realistic
+    // clocks in core-helpers-gaps.test.ts and shared/test/garrison.test.ts.
     expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, [
       {
         $set: {
           'structure.hp': { $subtract: [{ $ifNull: ['$structure.hp', 100] }, 30] },
-          garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 0] }] }, // fixture garrison is 0
+          garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 0] }] },
+          garrisonRegenAt: 1_000,
           rev: { $add: ['$rev', 1] },
         },
       },
@@ -495,12 +505,18 @@ describe('landSiege', () => {
     const res: SiegeResolution = { outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: 12, attackerDeployed: 0, defenderDeployed: 12 };
     await landSiege(core, ctx, m, attacker, target, DEF, pw({ accountId: DEF }), res, 1_000, null);
     // 2026-08-24: persisted as casualties rather than "set to survivors", so a reinforce arriving in the
-    // same processDueArrivals tick is no longer erased. The fixture tile starts at garrison 0 and the
-    // resolution reports 12 survivors, so the clamped loss is 0 — nothing to deduct.
+    // same processDueArrivals tick is no longer erased.
+    //
+    // 2026-09-04 (garrison regen, SLG_DESIGN §5.6): the loss basis is the LIVE garrison now, and the write
+    // stamps the heal clock. The clamped loss stays 0 — the fixture's `t` is 1_000ms, so barely any of the
+    // 5-minute heal window has elapsed against the tile's absent (epoch) checkpoint, and 12 survivors
+    // already exceed what stood. Realistic-clock heal arithmetic is pinned elsewhere (see the structure
+    // case above for the full note).
     expect(tilesUpdateOne).toHaveBeenCalledWith({ _id: TILE }, [
       {
         $set: {
           garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 0] }] },
+          garrisonRegenAt: 1_000,
           rev: { $add: ['$rev', 1] },
         },
       },
@@ -713,5 +729,86 @@ describe('applyBaseSiege', () => {
       [{ unitType: 0, col: 0, row: 1, initialHp: 100 }] as never,
       undefined, undefined, undefined, {}, {}, true, 1_000, null,
     )).resolves.toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// landSiege.ts — the casualty write against a PARTIALLY HEALED tile (2026-09-04, SLG_DESIGN §5.6).
+//
+// The landSiege cases above deliberately run at `t = 1_000ms`, where the heal rounds to zero, so they
+// check the timestamp and nothing else. These run at a realistic clock, because that is the only place
+// the feature's central asymmetry is observable as a write: the loss is measured against the LIVE
+// garrison (stored + heal — the defenders the battle actually fought) while the subtraction lands on the
+// STORED field, clamped at 0. That is what lets regenerated militia die without ever being banked into
+// the owner's refundable balance, which is the whole anti-exploit ("get attacked, wait out the heal,
+// 放弃 for a bigger refund than you paid"). A test that only ever sees a 0 heal cannot tell the two
+// apart, and the "fix" that reopens the faucet — writing the live value back — passes every case above.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('landSiege — casualties against a partially healed garrison', () => {
+  const NOW = 1_700_000_000_000;
+  /** Half the regen window elapsed: level 10 → baseline 1200 → 600 healed on top of whatever is stored. */
+  const HALF = NOW - TILE_GARRISON_REGEN_MS / 2;
+  const HEALED = tileGarrisonBaseline(10) / 2;
+  // Local copies of the two resolution shapes the landSiege block above builds — they are scoped to
+  // that describe, and these cases only need the two survivor counts.
+  const winRes = (survivors: number): SiegeResolution => ({ outcome: 'attacker_win', attackerSurvivors: survivors, defenderSurvivors: 0, attackerDeployed: survivors, defenderDeployed: 0 });
+  const loseRes = (defSurvivors: number): SiegeResolution => ({ outcome: 'defender_win', attackerSurvivors: 0, defenderSurvivors: defSurvivors, attackerDeployed: 0, defenderDeployed: defSurvivors });
+
+  /** The `$set` stage of the tile pipeline landSiege wrote. */
+  function tileSet(tilesUpdateOne: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const [, pipeline] = tilesUpdateOne.mock.calls.at(-1)!;
+    return ((pipeline as [{ $set: Record<string, unknown> }])[0]).$set;
+  }
+
+  it('defender_win: the loss is measured against the live garrison, and can exceed what is stored', async () => {
+    const { core, tilesUpdateOne } = makeCore({ pwById: { [`${W}:${ATK}`]: pw({ mainBaseTile: undefined }) } });
+    const target = tile({ type: 'territory', ownerId: DEF, level: 10, garrison: 100, garrisonRegenAt: HALF });
+    // 100 stored + 600 healed = 700 defending; 12 walk away, so 688 died — far more than the 100 the
+    // document holds. The `$max` clamp is what makes that expressible: the stored field floors at 0
+    // instead of going negative and turning a lost battle into a refund credit.
+    const losses = 100 + HEALED - 12;
+    await landSiege(core, fakeCtx(), march(), pw(), target, DEF, pw({ accountId: DEF }), loseRes(12), NOW, null);
+    expect(tileSet(tilesUpdateOne)).toEqual({
+      garrison: { $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, losses] }] },
+      garrisonRegenAt: NOW,
+      rev: { $add: ['$rev', 1] },
+    });
+    expect(losses).toBeGreaterThan(100); // the point: the delta is NOT bounded by the stored field
+  });
+
+  it('the subtraction is a delta on the stored field — the live figure is never written back', async () => {
+    // The one-line "fix" this guards against is `garrison: liveGarrison(target, t) - survivors`, which
+    // reads identically in a battle log and mints troops: the owner could then 放弃 a tile they paid
+    // GARRISON_PER_TILE for and get the level baseline back.
+    const { core, tilesUpdateOne } = makeCore({ pwById: { [`${W}:${ATK}`]: pw({ mainBaseTile: undefined }) } });
+    const target = tile({ type: 'territory', ownerId: DEF, level: 10, garrison: 100, garrisonRegenAt: HALF });
+    await landSiege(core, fakeCtx(), march(), pw(), target, DEF, pw({ accountId: DEF }), loseRes(500), NOW, null);
+    const set = tileSet(tilesUpdateOne);
+    expect(set.garrison).toEqual({ $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 200] }] });
+    // A surviving-defender count ABOVE the stored 100 still produces a subtraction, not an assignment:
+    // 700 live − 500 survivors = 200 dead, and `$subtract` keeps a reinforce that lands in the same tick.
+    expect(Object.keys(set)).toEqual(['garrison', 'garrisonRegenAt', 'rev']);
+  });
+
+  it('attacker_win against a structure clears the live garrison, not just the stored part', async () => {
+    const { core, tilesUpdateOne } = makeCore({ pwById: { [`${W}:${ATK}`]: pw({ mainBaseTile: undefined }) } });
+    const target = tile({
+      type: 'territory', ownerId: DEF, level: 10, garrison: 100, garrisonRegenAt: HALF,
+      structure: { kind: 'arrowTower', level: 1, hp: 100, hpMax: 100, ownerId: DEF, builtAt: 0 } as never,
+    });
+    await landSiege(core, fakeCtx(), march(), pw(), target, DEF, pw({ accountId: DEF }), winRes(30), NOW, null);
+    // The assault cleared everyone who stood there — 700 — so the militia the heal conjured is gone from
+    // the fight; the stored 100 the owner paid for is what the clamp actually removes.
+    expect(tileSet(tilesUpdateOne).garrison).toEqual({ $max: [0, { $subtract: [{ $ifNull: ['$garrison', 0] }, 100 + HEALED] }] });
+  });
+
+  it('restarts the heal clock at the settlement, so the next attacker faces a stripped tile again', async () => {
+    const { core, tilesUpdateOne } = makeCore({ pwById: { [`${W}:${ATK}`]: pw({ mainBaseTile: undefined }) } });
+    const target = tile({ type: 'territory', ownerId: DEF, level: 10, garrison: 100, garrisonRegenAt: HALF });
+    await landSiege(core, fakeCtx(), march(), pw(), target, DEF, pw({ accountId: DEF }), loseRes(12), NOW, null);
+    // Not left at the old checkpoint: back-to-back attacks each pay the full 5 minutes, rather than the
+    // second one arriving to find a tile that has been "healing" since the first battle it already won.
+    expect(tileSet(tilesUpdateOne).garrisonRegenAt).toBe(NOW);
   });
 });

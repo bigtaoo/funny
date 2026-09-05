@@ -96,7 +96,7 @@ export async function buildTaoBlob(host: TaoExportHost): Promise<Blob> {
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
 }
 
-/** Writes the `.tao` bundle next to the loaded `.tao.editor` (desktop: derived same-
+/** Writes the `.tao` bundle next to the loaded `.taoeditor` (desktop: derived same-
  *  directory path written directly; browser: remembered handle reused) so repeat
  *  exports never re-prompt. Only asks for a location when there's nothing to anchor to
  *  yet (no project loaded/saved this session). */

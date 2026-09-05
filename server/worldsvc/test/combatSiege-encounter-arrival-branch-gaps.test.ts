@@ -33,6 +33,8 @@ import {
   resolveSiege,
   playerWorldId,
   nationDefenseStrength,
+  tileGarrisonBaseline,
+  TILE_GARRISON_REGEN_MS,
   academyBuff,
   npcBaseHp,
   type SiegeResolution,
@@ -123,8 +125,16 @@ function pw(overrides: Partial<PlayerWorldDoc> = {}): PlayerWorldDoc {
   } as unknown as PlayerWorldDoc;
 }
 
+/**
+ * `garrisonRegenAt: T` (2026-09-04, garrison regen / SLG_DESIGN §5.6) is part of the DEFAULT because these
+ * cases are about siege resolution, not about the baseline heal: an owned tile with no checkpoint reads as
+ * "no recent battle", i.e. already healed to `tileGarrisonBaseline(level)`, which would silently replace
+ * every `garrison:` this file sets with a level-derived number. Stamping the current instant pins each tile
+ * at exactly the garrison the case asked for. The absent-checkpoint read has its own case below, and the
+ * heal arithmetic is pinned in core-helpers-gaps.test.ts / shared/test/garrison.test.ts.
+ */
 function tile(overrides: Partial<TileDoc> = {}): TileDoc {
-  return { _id: TILE, worldId: W, x: 5, y: 5, type: 'territory', level: 1, rev: 0, ...overrides } as unknown as TileDoc;
+  return { _id: TILE, worldId: W, x: 5, y: 5, type: 'territory', level: 1, garrisonRegenAt: T, rev: 0, ...overrides } as unknown as TileDoc;
 }
 
 /** A flat (non-card) army entry — `initialHp` is what sumArmyHp/scaleArmyByRatio operate on. */
@@ -772,6 +782,9 @@ describe('ArrivalService.applySiege — base-ring anchor resolution (ADR-025)', 
 
 describe('ArrivalService.applySiege — garrison / level / formation defaults', () => {
   it('a tile with no garrison field and no level defaults to 0 garrison and level 1, and the province bonus is consulted', async () => {
+    // A tile freshly stripped to nothing: no `garrison` field, and a checkpoint at the current instant so
+    // the baseline heal has not started yet (see the `tile()` fixture note). This is what "empty garrison"
+    // now means in production — a tile that is EMPTY, not merely un-stamped.
     const h = arrivalCore({ tiles: { [TILE]: tile({ ownerId: DEF, garrison: undefined, level: undefined } as never) }, inOwnSectProvince: true });
     await h.svc.applySiege(march({ troops: 5_000 }), pw(), T);
 
@@ -782,6 +795,21 @@ describe('ArrivalService.applySiege — garrison / level / formation defaults', 
     expect(replay.defenderConfig).toBeNull();       // buildDefenderConfig returns null for an empty garrison
     const mult = moraleCombatMultiplier(MARCH_MORALE_MAX);
     expect(res).toEqual(resolveSiege(Math.round(sumArmyHp(synthesizeArmy(5_000, 'attacker')) * mult), 0));
+  });
+
+  it('a tile with NO garrisonRegenAt fights at its level baseline, not at its stored garrison (2026-09-04)', async () => {
+    // The absent-checkpoint read, and the whole point of the feature: a territory stripped by an earlier
+    // siege (or written before the field existed) is not a free capture for the next march. Level 6 puts
+    // the floor at tileGarrisonBaseline(6) = 720 even though the document says 5 troops are left.
+    const h = arrivalCore({
+      tiles: { [TILE]: tile({ ownerId: DEF, level: 6, garrison: 5, garrisonRegenAt: undefined } as never) },
+    });
+    await h.svc.applySiege(march({ troops: 100_000 }), pw(), T);
+
+    const { res } = lastLandSiege();
+    expect(res).toEqual(resolveSiege(100_000, nationDefenseStrength(tileGarrisonBaseline(6), false)));
+    // And not what the stored field alone would have given, which is what used to happen.
+    expect(res).not.toEqual(resolveSiege(100_000, nationDefenseStrength(5, false)));
   });
 
   it('a flat march with no army snapshot synthesizes its attacker formation from the troop count', async () => {
@@ -931,5 +959,67 @@ describe('ArrivalService.applySiege — engine-version drift warning', () => {
     await run({ engineVersion: undefined });
     expect(warnSpy).not.toHaveBeenCalled();
     expect(landing.landSiege).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// The baseline heal AT the siege seam (2026-09-04, SLG_DESIGN §5.6).
+//
+// `applySiege` folds `liveGarrison(baseTile, t)` into `effGarrison`, and the two cases the rest of
+// this file already covers are the endpoints: a checkpoint stamped at `T` (the `tile()` default —
+// no heal at all) and an absent one (fully healed). What sits between them is untested here, and it
+// is where the feature actually lives: a tile that was stripped a few minutes ago fights with a
+// PARTIAL refill, and a tile whose stored garrison is 0 is no longer the empty board that made a
+// second attack a loss-free capture.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+describe('ArrivalService.applySiege — the baseline heal folded into effGarrison', () => {
+  it('a half-elapsed regen window fights at stored + half the baseline, not at either endpoint', async () => {
+    // Level 5 → baseline 600; stripped to 50 stored, 2.5 minutes ago → 50 + 300 = 350 defending.
+    const h = arrivalCore({
+      tiles: { [TILE]: tile({ ownerId: DEF, level: 5, garrison: 50, garrisonRegenAt: T - TILE_GARRISON_REGEN_MS / 2 }) },
+    });
+    await h.svc.applySiege(march({ troops: 100_000 }), pw(), T);
+
+    const { res } = lastLandSiege();
+    const live = 50 + tileGarrisonBaseline(5) / 2;
+    expect(res).toEqual(resolveSiege(100_000, nationDefenseStrength(live, false)));
+    // Neither endpoint: not the stored 50 the document holds, and not the full baseline either.
+    expect(res).not.toEqual(resolveSiege(100_000, nationDefenseStrength(50, false)));
+    expect(res).not.toEqual(resolveSiege(100_000, nationDefenseStrength(tileGarrisonBaseline(5), false)));
+  });
+
+  it('a tile stripped to 0 by an earlier siege is no longer an EMPTY tile once the window has passed', async () => {
+    // The free-capture this feature exists to close: `shouldUseCheapSiege` hands the attacker an
+    // instant, loss-free win against a 0-troop defender, and before the heal a tile that lost one
+    // battle stayed at 0 forever. `buildDefenderConfig` returning null is the machine-readable form of
+    // "there is nobody here" — after the heal it must be a real defender again.
+    const h = arrivalCore({
+      tiles: { [TILE]: tile({ ownerId: DEF, level: 8, garrison: 0, garrisonRegenAt: T - TILE_GARRISON_REGEN_MS }) },
+    });
+    await h.svc.applySiege(march({ troops: 100_000 }), pw(), T);
+
+    const { res, replay } = lastLandSiege();
+    expect(replay.defenderConfig).not.toBeNull();
+    expect(res).toEqual(resolveSiege(100_000, nationDefenseStrength(tileGarrisonBaseline(8), false)));
+    expect(res).not.toEqual(resolveSiege(100_000, 0));
+  });
+
+  it('the same stored 0 heals to a different figure on a different tile level', async () => {
+    // Reads as a sanity check but is the reason the baseline is level-derived rather than a flat
+    // constant: "how hard is this territory to retake" has to stay a property of the LAND, not of the
+    // fight that emptied it, or every stripped tile in the world would defend identically.
+    const strengths: number[] = [];
+    for (const level of [2, 9]) {
+      const h = arrivalCore({
+        tiles: { [TILE]: tile({ ownerId: DEF, level, garrison: 0, garrisonRegenAt: T - TILE_GARRISON_REGEN_MS }) },
+      });
+      await h.svc.applySiege(march({ troops: 100_000 }), pw(), T);
+      const { res, replay } = lastLandSiege();
+      expect(res).toEqual(resolveSiege(100_000, nationDefenseStrength(tileGarrisonBaseline(level), false)));
+      expect(replay.tileLevel).toBe(level);
+      strengths.push(res.defenderDeployed);
+    }
+    expect(strengths[1]!).toBeGreaterThan(strengths[0]!);
   });
 });

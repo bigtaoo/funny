@@ -11,10 +11,13 @@
 // What makes them worth cases rather than a glance is that BOTH failure directions are silent:
 //
 //   • a bridge that fails the shape check is indistinguishable from no bridge at all, so a
-//     native iOS shell shipping a malformed `window.NWBilling` doesn't error — it quietly
-//     becomes a *Paddle* build (web checkout inside a WKWebView, which Apple rejects) and
-//     declares itself as platform `web` to the server, i.e. it spends from the wrong
-//     recharged-pool bucket (ADR-020 / `spendChannel.ts`).
+//     native iOS shell shipping a malformed `window.NWBilling` doesn't error — it used to quietly
+//     become a *Paddle* build (web checkout inside a WKWebView, which Apple rejects) and declare
+//     itself as platform `web` to the server, i.e. spend from the wrong recharged-pool bucket
+//     (ADR-020 / `spendChannel.ts`). Both of those now bottom out in `platform/nativeShell.ts`
+//     instead, which asks Capacitor rather than our own injected globals; the cases for that
+//     are in nativePaymentIsolation.test.ts. The shape check below is still what picks the
+//     *store*, so it keeps its own cases here.
 //   • a bridge that passes the shape check but was never injected on this platform can't
 //     happen — which is exactly why the check has to stay strict rather than truthy.
 //
@@ -179,12 +182,12 @@ describe('requestPlatformHeader — X-NW-Platform (ADR-020)', () => {
     expect(requestPlatformHeader()).toBe('crazygames');
   });
 
-  it('a MALFORMED bridge falls back to TARGET rather than guessing a store', () => {
-    // The silent-failure case spelled out in this file's header: a native shell whose injected
-    // bridge is broken reports itself as a web session. That is the deliberate choice — the
-    // alternative (trusting `kind` without checking `purchase`) would declare `ios` for a session
-    // that cannot actually complete a StoreKit purchase. Pinned so the strictness can't be
-    // "simplified" away later.
+  it('a MALFORMED bridge falls back rather than guessing a store', () => {
+    // Trusting `kind` without checking `purchase` would declare `ios` for a session that cannot
+    // actually complete a StoreKit purchase, so the strictness is pinned here against a later
+    // "simplification". These cases run outside the shell (Capacitor reports `web` under vitest),
+    // where the fallback is the build-time TARGET; inside the shell it is the shell's own platform
+    // instead — see nativePaymentIsolation.test.ts.
     g.TARGET = 'web';
     setBilling({ kind: 'apple' });
     expect(requestPlatformHeader()).toBe('web');

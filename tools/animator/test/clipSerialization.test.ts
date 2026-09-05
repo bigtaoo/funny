@@ -1,5 +1,5 @@
 // IOController's clip<->JSON conversion (io/clipSerialization.ts) — fully pure functions, no
-// PIXI/DOM dependency at all. This is the format the `.tao.editor` archive's editor.json and the
+// PIXI/DOM dependency at all. This is the format the `.taoeditor` archive's editor.json and the
 // `.tao` runtime bundle's animation.json both persist animations in (see claudedocs/file-formats.md).
 import { describe, it, expect } from 'vitest';
 import { serializeClip, serializeKeyframe, deserializeClip, deserializeKeyframe } from '../src/io/clipSerialization';
