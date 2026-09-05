@@ -71,7 +71,7 @@ test.describe('browser smoke — BGM ducking against a real stinger', () => {
     });
     expect(before?.duck).toBe(1);
     const steadyGain = before ? maxDeckGain(before) : 0;
-    expect(steadyGain).toBeCloseTo(0.5, 2); // bus(1) × duck(1) × trackGain(1) × busGain(0.5)
+    expect(steadyGain).toBeCloseTo(0.2, 2); // bus(1) × duck(1) × trackGain(1) × busGain(0.2)
 
     await page.evaluate(() => {
       const na = (window as unknown as { __nwAudio: { play(cue: string): void } }).__nwAudio;

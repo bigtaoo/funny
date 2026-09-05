@@ -65,9 +65,15 @@ MID_TARGET_DBFS = -29.0
 PEAK_CEILING_DBFS = -3.0     # headroom for inter-sample peaks and MP3 encode overshoot
 
 # The BGM bus default (`DEFAULT_AUDIO_SETTINGS` in `audio/audioSettings.ts`: master 1.0 x bgm
-# 0.5). Only used for the report, but it is half of the derivation, so it is stated rather than
+# 0.2). Only used for the report, but it is half of the derivation, so it is stated rather than
 # folded into a constant somebody would later read as arbitrary.
-MUSIC_BUS_GAIN = 0.5
+#
+# **0.5 -> 0.2 on 2026-09-05**, from the listening pass (AUDIO_DESIGN 0.6): at 0.5 the bed
+# DELIVERED 2.2 dB louder than the tap cue it is supposed to sit under (bed -35.0 dBFS mid-band
+# RMS against the tap's -37.2), which is the number behind "the music is too loud". 0.2 puts it
+# 5.8 dB under -- the requested half. The FILE target below is unchanged: it is the reference the
+# gate holds, and moving the mix belongs on the bus the player can also move.
+MUSIC_BUS_GAIN = 0.2
 
 # Cues excluded from the headroom report's "binding constraint" line, with the reason. See the
 # `music` gate comment: `ink.tick` is authored as the faintest thing in the game AND throttled
@@ -88,34 +94,41 @@ TRACKS: dict[str, dict] = {
     'bgm.lobby': {
         'src': 'first-party/doodle-bed.flac',
         # From `--search bgm.lobby`, i.e. searched on the SLOWED master -- the region is a
-        # decision about the file that ships, and at 0.8x a 2 s crossfade window spans different
-        # material than it did at 1.0x. Re-searching is therefore part of changing `speed`, not
-        # an optional tidy-up: the 12.5s/74.0s region this replaces was picked on a timeline that
-        # no longer exists (and 74 s of it becomes 92.5 s, past the gate's 90 s ceiling).
+        # decision about the file that ships, and at a different `speed` a 2 s crossfade window
+        # spans different material. **Re-searching is part of changing `speed`, not a tidy-up**,
+        # and this entry has now been re-picked twice for exactly that reason (12.5s/74.0s at
+        # 1.0x, 45.0s/61.0s at 0.8x, this one at 0.7x); none of the three transfers by rescaling.
         #
-        # 45.0s/61.0s wins its bucket AND every other bucket (cost 0.69, seam 0.55 dB, levels
-        # within 0.26 dB) -- so unlike last time there is no trade to make between the seam and
-        # the distance between repeats. Nothing at 72 s or longer survives: the best of them
-        # measures 2.50 dB, which is the gate.
-        'region': (45.0, 61.0),
-        # Played at four fifths of the tempo it was performed at, pitch held (`time_stretch`).
+        # 91.5s/73.0s is its bucket's winner (cost 0.80, seam 0.69 dB, levels within 0.21 dB).
+        # The 30-45 s bucket scores better overall (0.56) and is again declined for the reason
+        # the first cut recorded: a 33 s loop turns over every 33 seconds on screens players sit
+        # on for minutes, and a seam nobody can hear buys nothing if the repetition is what they
+        # notice instead. 73 s is also longer than the 61 s it replaces, which is the direction
+        # this should move as the bed gets slower and quieter.
+        'region': (91.5, 73.0),
+        # Played at seven tenths of the tempo it was performed at, pitch held (`time_stretch`).
         # The listening pass called the bed "too hurried" -- the first thing anybody said about
         # any sound in this game -- and a lobby bed is the one piece of audio a player hears for
-        # minutes at a stretch with nothing else asking for attention. 0.8 rather than a half:
-        # halving needs a 2x stretch, where the vocoder's smearing is plainly audible on sustained
-        # strings, and it would also drop this region past the gate's 90 s ceiling. At 1.25x the
-        # artefacts sit under the noise floor of a bed mixed 6 dB below the cue set.
-        'speed': 0.8,
+        # minutes at a stretch with nothing else asking for attention. **0.8 was tried first and
+        # was still too fast**, so this is the second step down, not a first guess.
+        #
+        # Not a half (which is what "slow it down by one time" literally asks for): 0.5 needs a 2x
+        # stretch, where the vocoder's smearing is plainly audible on sustained strings, and a
+        # region long enough to be worth looping would land past the gate's 90 s ceiling. 1.43x
+        # still keeps the artefacts under the noise floor of a bed now mixed 5.8 dB BELOW the tap
+        # cue (see MUSIC_BUS_GAIN) -- and being quieter is itself what buys the extra stretch.
+        'speed': 0.7,
         # No shelf. The master's own 20-250 Hz sits 14 dB under its mid band (this is a light
         # acoustic bed, not a mix with a sub); a shelf here would be attenuating something that
         # is not in the way, and `--search` was therefore run raw.
         'shelf': None,
         'why': (
             'The first music in the game, and project-owned rather than licensed or generated. '
-            'Played at 0.8x with its pitch held (phase vocoder), because the listening pass '
-            'called the original bed too hurried for a screen players sit on for minutes. '
-            'A 61 s region lifted out of the slowed master, chosen by the same crossfade-window '
-            'band measure the gate then applies (0.55 dB across the seam, level within 0.26 dB). '
+            'Played at 0.7x with its pitch held (phase vocoder), because the listening pass '
+            'called the original bed too hurried for a screen players sit on for minutes -- and '
+            'called 0.8x still too fast. A 73 s region lifted out of the slowed master, chosen by '
+            'the same crossfade-window band measure the gate then applies (0.69 dB across the '
+            'seam, level within 0.21 dB). '
             'Shipped as bgm.lobby rather than bgm.battle because it has no percussive transients '
             'and no forward pull -- it is written to be sat on, not to be interrupted.'
         ),

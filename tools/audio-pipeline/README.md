@@ -15,12 +15,19 @@ Two drivers, because their inputs differ in kind rather than in degree:
 
     A track also has a **tempo**, and `speed` in its `TRACKS` entry re-renders the master through a
     pitch-preserving phase vocoder before a region is chosen (`load_master`). `bgm.lobby` ships at
-    0.8x since 2026-09-05 — the listening pass called the original bed too hurried, and the
-    slowdown is spent HERE rather than on a runtime `playbackRate` so that both platforms stream
-    one identical file whose stored timeline is the played one (AUDIO_DESIGN §0.6). **Changing
-    `speed` means re-running `--search`**: at 0.8x a 2 s crossfade window spans different material,
-    so the recorded region was picked against a timeline that no longer exists, and a 74 s region
-    would become 92.5 s — past the gate's 90 s ceiling.
+    0.7x since 2026-09-05 — the listening pass called the original bed too hurried and 0.8x still
+    too fast — and the slowdown is spent HERE rather than on a runtime `playbackRate` so that both
+    platforms stream one identical file whose stored timeline is the played one (AUDIO_DESIGN
+    §0.6). **Changing `speed` means re-running `--search`**: a 2 s crossfade window spans different
+    material at a different speed, so a recorded region was picked against a timeline that no
+    longer exists, and rescaling a 74 s region to 92.5 s would land past the gate's 90 s ceiling
+    anyway. That region has now been re-picked once per speed — three times.
+
+    `MUSIC_BUS_GAIN` (the headroom report's other half) went 0.5 -> 0.2 in the same pass: measured,
+    the bed had been DELIVERING 2.2 dB louder than the `ui.tap` cue it is supposed to sit under.
+    The file target stayed at -29 dBFS — it is the reference the gate holds and the only thing
+    making two tracks comparable, so the mix decision belongs on the bus, which is also the knob
+    the player can move.
 
     Masters live under `art/audio/sources/<provenance>/` — `first-party/` for one the project owns
     (that is where the shipped `bgm.lobby` comes from: `doodle-bed.flac`, lossless, so the tracked

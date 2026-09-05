@@ -47,7 +47,7 @@ describe('installAudioSettings', () => {
     installAudioSettings({ storage: memStorage() });
     expect(getAudioSettings()).toEqual(DEFAULT_AUDIO_SETTINGS);
     expect(last(bus.sfx)).toBeCloseTo(0.8);   // master 1 × sfx 0.8
-    expect(last(bus.music)).toBeCloseTo(0.5); // master 1 × bgm 0.5
+    expect(last(bus.music)).toBeCloseTo(0.2); // master 1 × bgm 0.2
   });
 
   it('restores a saved blob and applies master × channel', () => {

@@ -31,7 +31,15 @@ export interface AudioSettings {
 }
 
 /** AUDIO_DESIGN.md §4 "默认": BGM on but modest, SFX loud, nothing muted. */
-export const DEFAULT_AUDIO_SETTINGS: Readonly<AudioSettings> = { master: 1, bgm: 0.5, sfx: 0.8, muted: false };
+// `bgm` 是 **0.2 而不是 0.5**（2026-09-05 改，AUDIO_DESIGN §0.6）。0.5 那个数看起来已经比 sfx 的
+// 0.8「低一截」，但两根滑杆管的是量级完全不同的信号：一条 61 秒的床和一记 43 毫秒的点击。实测
+// 交付电平——床 −35.0 dBFS 中频 RMS、`sfx.ui.tap` −37.2——**床比按钮音还响 2.2 dB**（峰值上高
+// 4.5 dB），这就是「音量太大」听到的东西。0.2 把床放到按钮音下面 5.8 dB，也就是要求的一半。
+//
+// **改的是总线不是资产**：文件电平 −29 dBFS 是 `audit.py` 的 `music` 门禁钉住的参照
+// （窗口 [−30, −28]），把混音决定挪进资产会同时废掉那个门禁和它的推导；而总线正是玩家自己也能
+// 拖的那一根，默认值本来就该是「默认的混音」而不是「唯一的混音」。
+export const DEFAULT_AUDIO_SETTINGS: Readonly<AudioSettings> = { master: 1, bgm: 0.2, sfx: 0.8, muted: false };
 
 let storage: IStorage | null = null;
 let current: AudioSettings = { ...DEFAULT_AUDIO_SETTINGS };
