@@ -7,7 +7,7 @@ import { CHAPTER_ORDER, getChapterMap } from '../game';
 import { isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
-import { buildIcon } from '../render/icons';
+import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, buildTitleIcon } from '../ui/widgets/SceneHeader';
 import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp } from './CampaignMapScene/drawing';
@@ -254,9 +254,19 @@ export class CampaignMapScene implements Scene {
     const pillGap = Math.round(w * 0.02);
     let rightX = w - Math.round(w * 0.04);
 
-    const addHeaderButton = (labelStr: string, fn: () => void): void => {
+    // Each pill carries a leading glyph, the same [icon][gap][label] shape the
+    // title beside it and the world-map header entries (WorldMapPanels/headerHud)
+    // use, so a shortcut is recognizable before its two CJK characters are read.
+    // The `'active'` bake is the light ink cut for a dark fill — `tabIconVariant`
+    // would pick the de-emphasised `inactive` grey off the gold label colour,
+    // which all but vanishes on the ink-dark pill.
+    const iconSz = Math.round(fontSz * 1.15);
+    const iconGap = Math.round(fontSz * 0.35);
+
+    const addHeaderButton = (labelStr: string, icon: IconKind, fn: () => void): void => {
       const label = txt(labelStr, fontSz, C.gold, true);
-      const pillW = Math.round(label.width + padX * 2);
+      const groupW = iconSz + iconGap + label.width;
+      const pillW = Math.round(groupW + padX * 2);
       const pillX = rightX - pillW;
       const pillY = Math.round((tbH - pillH) / 2);
 
@@ -264,8 +274,14 @@ export class CampaignMapScene implements Scene {
       bg.x = pillX; bg.y = pillY;
       root.addChild(bg);
 
-      label.anchor.set(0.5, 0.5);
-      label.x = pillX + pillW / 2; label.y = tbH / 2;
+      const groupX = pillX + (pillW - groupW) / 2;
+      const glyph = buildIcon(icon, iconSz, C.gold, { variant: 'active' });
+      glyph.x = Math.round(groupX);
+      glyph.y = Math.round(tbH / 2 - iconSz / 2);
+      root.addChild(glyph);
+
+      label.anchor.set(0, 0.5);
+      label.x = Math.round(groupX + iconSz + iconGap); label.y = tbH / 2;
       root.addChild(label);
 
       hits.push({ rect: { x: pillX, y: pillY, w: pillW, h: pillH }, fn });
@@ -274,11 +290,14 @@ export class CampaignMapScene implements Scene {
 
     // Single growth-hub entry (LOBBY_IA_REDESIGN §9): merges the former separate
     // Collection/Equipment header links, matching the lobby's unified [Collection|Equipment] tab.
-    addHeaderButton(t('campaign.equipment'), () => this.cb.onOpenEquipment());
+    // `equipIcon` is the same shield the lobby's Equipment tab and EquipmentScene wear.
+    addHeaderButton(t('campaign.equipment'), 'equipIcon', () => this.cb.onOpenEquipment());
 
     // Chapter-page-only shortcut to the notebook overview (TOC), since Back now exits to the lobby directly.
+    // The open-notebook `campaignTabIcon` reads as "back to the book" without colliding with the
+    // treasure-map `pveTabIcon` this same bar already shows beside the title.
     if (showChaptersButton) {
-      addHeaderButton(t('campaign.chapters'), () => this.backToToc());
+      addHeaderButton(t('campaign.chapters'), 'campaignTabIcon', () => this.backToToc());
     }
 
     return tbH;
