@@ -60,6 +60,21 @@
 // orders before it legitimately runs out — that is the game's economy, not a defect. NO_TROOPS is
 // therefore counted separately from real failures and does not count against the success rate.
 //
+// ── ⚠ NOT REPEATABLE AGAINST THE SAME WORLD ──────────────────────────────────────────────────────────
+// Each run takes a fresh fleet id, but every fleet joins the SAME season world and its territory,
+// occupations and player docs accumulate. Measured 2026-09-05 over three back-to-back runs of identical
+// code (by the end: 1601 playerWorld docs, 17488 owned tiles, 1117 occupations still pending):
+//
+//   POST /world/march p50    7.5ms  →  122.8ms
+//   client dispatch p99       99ms  →  7471ms
+//   sched:occupations p99     82ms  →  4381ms
+//
+// A crowded world makes dispatch itself expensive (vision and connectivity scan more tiles) and the
+// previous run's unsettled occupations compete for the same thread. So run-over-run numbers are NOT
+// comparable, and a failing latency budget on a re-run may be measuring the dirt rather than the code.
+// Compare against a run on a comparably-aged world, or give the run a fresh world first.
+// TODO: have the run provision its own world (or reset one) so the fleet size is the only variable.
+//
 // That is also why each run gets a FRESH device-id prefix by default. Device login is idempotent per
 // deviceId, so a fixed prefix means the second run inherits the first run's spent troop pools: the very
 // first execution of this test measured 200 bots, and the next one measured 200 bots answering NO_TROOPS
