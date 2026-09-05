@@ -12,6 +12,22 @@ import { WorldCore } from '../core';
 import type { SiegeService } from '../combatSiege';
 import { refundTroops, parkMarchInPlace, startReturnMarch } from '../combatShared';
 
+/**
+ * How many due marches one arrival tick will settle. Each one costs a handful of Mongo/Redis round trips
+ * (and a step-by-step walk for a stepping march), all issued sequentially, so an unbounded scan could make
+ * a single tick run for minutes. Overridable via `NW_SLG_ARRIVAL_SCAN_LIMIT` so an operator can trade tick
+ * length for arrival punctuality without a deploy.
+ */
+const ARRIVAL_SCAN_LIMIT = Number(process.env.NW_SLG_ARRIVAL_SCAN_LIMIT) || 500;
+
+/**
+ * The arrival tick runs every 2s, and a world that is over the cap is typically over it for a while — so
+ * the warning is throttled to once a minute. Unthrottled it would be 30 identical lines per minute for as
+ * long as the condition lasts, which is how a signal stops being read.
+ */
+const CAP_WARN_INTERVAL_MS = 60_000;
+let lastCapWarnAt = 0;
+
 export class ArrivalService {
   constructor(
     private readonly core: WorldCore,
@@ -40,8 +56,16 @@ export class ArrivalService {
           { nextStepAt: { $exists: false }, arriveAt: { $lte: t } },
         ],
       })
-      .limit(500)
+      .limit(ARRIVAL_SCAN_LIMIT)
       .toArray();
+    // Hitting the cap means more marches were due this tick than one pass will settle. The remainder is not
+    // lost — the next tick picks it up — but every march in it arrives late, and before 2026-09-05 that
+    // happened in complete silence. It is the clearest single signal that the world has outgrown this
+    // scheduler, so it is logged rather than left to be inferred from player complaints about late armies.
+    if (due.length >= ARRIVAL_SCAN_LIMIT && t - lastCapWarnAt >= CAP_WARN_INTERVAL_MS) {
+      lastCapWarnAt = t;
+      console.warn(`[world-scheduler] arrival scan hit its ${ARRIVAL_SCAN_LIMIT}-march cap; the overflow settles a tick late (raise NW_SLG_ARRIVAL_SCAN_LIMIT or shard the world)`);
+    }
     let n = 0;
     for (const m of due) {
       if (m.path && m.stepIndex != null && m.nextStepAt != null) {

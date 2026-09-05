@@ -1,11 +1,12 @@
-// Unit tests for SiegeWorkerPool (server-logic-audit-2026-07-29, item 3 — siegeEngine moved off the main
-// thread). No Mongo needed: these exercise the pool in isolation, not the worldsvc business logic around it
+// Unit tests for ComputeWorkerPool (server-logic-audit-2026-07-29 item 3 moved siegeEngine off the main
+// thread; worldsvc-concurrency-2026-09-05 generalised the pool and added march pathfinding as its second
+// tenant). No Mongo needed: these exercise the pool in isolation, not the worldsvc business logic around it
 // (that's covered by the existing siege/base-siege/stronghold/passage/field-encounter e2e suites, which all
 // still pass unchanged now that `runSiegeBattle` is async — see siegeEngine.ts).
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SiegeWorkerPool, defaultSiegeWorkerPoolSize } from '../src/siegeWorkerPool';
+import { ComputeWorkerPool, defaultComputePoolSize } from '../src/compute/pool';
 import { runSiegeBattleSync, synthesizeArmy, SIEGE_SYNTH_ARMY_MAX_TROOPS, type SiegeBattleInput } from '../src/siegeEngine';
 
 const CRASH_WORKER = path.join(__dirname, 'fixtures', 'crashWorker.ts');
@@ -23,9 +24,9 @@ function bigEvenBattle(seed: number): SiegeBattleInput {
   };
 }
 
-const pools: SiegeWorkerPool[] = [];
-function makePool(...args: ConstructorParameters<typeof SiegeWorkerPool>): SiegeWorkerPool {
-  const pool = new SiegeWorkerPool(...args);
+const pools: ComputeWorkerPool[] = [];
+function makePool(...args: ConstructorParameters<typeof ComputeWorkerPool>): ComputeWorkerPool {
+  const pool = new ComputeWorkerPool(...args);
   pools.push(pool);
   return pool;
 }
@@ -34,20 +35,20 @@ afterEach(async () => {
   await Promise.all(pools.splice(0).map((p) => p.close()));
 });
 
-describe('defaultSiegeWorkerPoolSize', () => {
+describe('defaultComputePoolSize', () => {
   it('is at least 1 and at most cpus-1', () => {
-    const n = defaultSiegeWorkerPoolSize();
+    const n = defaultComputePoolSize();
     expect(n).toBeGreaterThanOrEqual(1);
     expect(n).toBeLessThanOrEqual(Math.max(1, os.cpus().length - 1));
   });
 });
 
-describe('SiegeWorkerPool basic scheduling', () => {
-  it('submit → resolves with the exact same result runSiegeBattleSync produces for the same input (determinism unaffected by moving execution to a worker)', async () => {
+describe('ComputeWorkerPool basic scheduling', () => {
+  it('runSiege resolves with the exact same result runSiegeBattleSync produces for the same input (determinism unaffected by moving execution to a worker)', async () => {
     const pool = makePool(2);
     const input = bigEvenBattle(1234);
     const expected = runSiegeBattleSync(input);
-    const actual = await pool.submit(input);
+    const actual = await pool.runSiege(input);
     expect(actual).toEqual(expected);
   });
 
@@ -59,7 +60,7 @@ describe('SiegeWorkerPool basic scheduling', () => {
       tileLevel: 1,
       seed: i,
     }));
-    const results = await Promise.all(inputs.map((inp) => pool.submit(inp)));
+    const results = await Promise.all(inputs.map((inp) => pool.runSiege(inp)));
     expect(results).toHaveLength(12);
     // Cross-check every result against the pure sync function for the same input.
     inputs.forEach((inp, i) => {
@@ -67,7 +68,7 @@ describe('SiegeWorkerPool basic scheduling', () => {
     });
   });
 
-  it('bad input (invalid formation) rejects the submit() promise rather than hanging or crashing the worker', async () => {
+  it('bad input (invalid formation) rejects the runSiege() promise rather than hanging or crashing the worker', async () => {
     const pool = makePool(1);
     const badInput: SiegeBattleInput = {
       attackerArmy: [{ unitType: synthesizeArmy(60, 'attacker')[0]!.unitType, col: -999, row: -999, initialHp: 60 }],
@@ -75,51 +76,51 @@ describe('SiegeWorkerPool basic scheduling', () => {
       tileLevel: 1,
       seed: 1,
     };
-    await expect(pool.submit(badInput)).rejects.toThrow();
-    // The worker itself survived (caught the error internally, per siegeWorker.ts) — a follow-up good task
+    await expect(pool.runSiege(badInput)).rejects.toThrow();
+    // The worker itself survived (caught the error internally, per compute/worker.ts) — a follow-up good task
     // on the same pool still succeeds, proving the worker wasn't torn down by the bad input.
     const good = bigEvenBattle(2);
-    await expect(pool.submit(good)).resolves.toEqual(runSiegeBattleSync(good));
+    await expect(pool.runSiege(good)).resolves.toEqual(runSiegeBattleSync(good));
   });
 });
 
-describe('SiegeWorkerPool crash self-heal', () => {
+describe('ComputeWorkerPool crash self-heal', () => {
   it('a worker that hard-crashes mid-task rejects that task and the pool respawns a replacement (size unchanged)', async () => {
     const pool = makePool(1, 30_000, CRASH_WORKER);
     expect(pool.size).toBe(1);
 
-    await expect(pool.submit(bigEvenBattle(1))).rejects.toThrow(/crashed/);
+    await expect(pool.runSiege(bigEvenBattle(1))).rejects.toThrow(/crashed/);
     // Pool self-healed: still exactly 1 worker (the crashed one was replaced, not just removed).
     expect(pool.size).toBe(1);
 
     // Self-heal is not a one-shot fluke: the pool survives repeated crashes (every fresh crashWorker
     // instance crashes again on its first message).
-    await expect(pool.submit(bigEvenBattle(2))).rejects.toThrow(/crashed/);
+    await expect(pool.runSiege(bigEvenBattle(2))).rejects.toThrow(/crashed/);
     expect(pool.size).toBe(1);
-    await expect(pool.submit(bigEvenBattle(3))).rejects.toThrow(/crashed/);
+    await expect(pool.runSiege(bigEvenBattle(3))).rejects.toThrow(/crashed/);
     expect(pool.size).toBe(1);
   });
 
   it('a crash only rejects the task that was in flight on that worker; concurrent tasks on other workers are unaffected', async () => {
     const pool = makePool(2, 30_000, CRASH_WORKER);
     // Both workers crash immediately on their first message, but each task's own rejection is independent.
-    const results = await Promise.allSettled([pool.submit(bigEvenBattle(1)), pool.submit(bigEvenBattle(2))]);
+    const results = await Promise.allSettled([pool.runSiege(bigEvenBattle(1)), pool.runSiege(bigEvenBattle(2))]);
     expect(results.every((r) => r.status === 'rejected')).toBe(true);
     expect(pool.size).toBe(2); // both replaced
   });
 });
 
-describe('SiegeWorkerPool task timeout', () => {
+describe('ComputeWorkerPool task timeout', () => {
   it('a hung worker (never responds) is terminated and its task rejects after the configured timeout; pool size is restored', async () => {
     const pool = makePool(1, 200, HANG_WORKER); // 200ms timeout — short for test speed
     const start = Date.now();
-    await expect(pool.submit(bigEvenBattle(1))).rejects.toThrow(/timed out/);
+    await expect(pool.runSiege(bigEvenBattle(1))).rejects.toThrow(/timed out/);
     expect(Date.now() - start).toBeGreaterThanOrEqual(190); // allow a few ms of scheduling slop
     expect(pool.size).toBe(1); // hung worker was terminated + replaced
   });
 });
 
-describe('SiegeWorkerPool task timeout (dispatch-time arming regression)', () => {
+describe('ComputeWorkerPool task timeout (dispatch-time arming regression)', () => {
   it('a task queued behind several quick-but-non-instant tasks past taskTimeoutMs still gets full hang protection once it is actually dispatched', async () => {
     // Single worker so tasks run strictly one at a time. The fixture answers each of the first 5 messages
     // after ~150ms and hangs on the 6th. That 6th task sits in `queue` for ~750ms (5 × 150ms) before a
@@ -134,7 +135,7 @@ describe('SiegeWorkerPool task timeout (dispatch-time arming regression)', () =>
     // 6th task gets its own full 400ms of hang protection starting from when it actually begins running.
     const pool = makePool(1, 400, SLOW_THEN_HANG_WORKER);
     const inputs = Array.from({ length: 6 }, (_, i) => bigEvenBattle(i));
-    const submissions = inputs.map((inp) => pool.submit(inp));
+    const submissions = inputs.map((inp) => pool.runSiege(inp));
 
     await expect(Promise.all(submissions.slice(0, 5))).resolves.toBeDefined();
     await expect(submissions[5]).rejects.toThrow(/timed out/);
@@ -142,28 +143,28 @@ describe('SiegeWorkerPool task timeout (dispatch-time arming regression)', () =>
   });
 });
 
-describe('SiegeWorkerPool queueing under load', () => {
+describe('ComputeWorkerPool queueing under load', () => {
   it('more in-flight submissions than workers still all resolve (queued, not rejected/dropped)', async () => {
     const pool = makePool(2);
     const inputs = Array.from({ length: 6 }, (_, i) => bigEvenBattle(100 + i));
-    const results = await Promise.all(inputs.map((inp) => pool.submit(inp)));
+    const results = await Promise.all(inputs.map((inp) => pool.runSiege(inp)));
     expect(results).toHaveLength(6);
     inputs.forEach((inp, i) => expect(results[i]).toEqual(runSiegeBattleSync(inp)));
   });
 });
 
-describe('SiegeWorkerPool close()', () => {
-  it('rejects in-flight and queued tasks, and rejects any further submit() calls', async () => {
-    const pool = new SiegeWorkerPool(1); // not auto-closed by afterEach — closed manually below
-    const queued = pool.submit(bigEvenBattle(1));
+describe('ComputeWorkerPool close()', () => {
+  it('rejects in-flight and queued tasks, and rejects any further submissions', async () => {
+    const pool = new ComputeWorkerPool(1); // not auto-closed by afterEach — closed manually below
+    const queued = pool.runSiege(bigEvenBattle(1));
     const closeP = pool.close();
     await expect(queued).rejects.toThrow(/closed/);
     await closeP;
-    await expect(pool.submit(bigEvenBattle(2))).rejects.toThrow(/closed/);
+    await expect(pool.runSiege(bigEvenBattle(2))).rejects.toThrow(/closed/);
   });
 });
 
-describe('SiegeWorkerPool wall-clock parallelism (the "free lunch" the audit called out: scheduler.ts\'s Promise.allSettled over concurrent siege battles used to serialize on one thread; the pool actually spreads them across cores)', () => {
+describe('ComputeWorkerPool wall-clock parallelism (the "free lunch" the audit called out: scheduler.ts\'s Promise.allSettled over concurrent siege battles used to serialize on one thread; the pool actually spreads them across cores)', () => {
   it('N concurrent heavy battles on an N-worker pool complete in well under N× a single battle\'s time (real cross-core parallelism, not queued serial execution)', async () => {
     const N = 6;
     const pool = makePool(N);
@@ -173,11 +174,11 @@ describe('SiegeWorkerPool wall-clock parallelism (the "free lunch" the audit cal
     // real long-lived worldsvc process pays once at boot, not per battle — excluding it here is what makes
     // this a fair "steady state" comparison instead of measuring pool cold-start).
     const warmup = Array.from({ length: N }, (_, i) => bigEvenBattle(9000 + i));
-    await Promise.all(warmup.map((inp) => pool.submit(inp)));
+    await Promise.all(warmup.map((inp) => pool.runSiege(inp)));
     runSiegeBattleSync(inputs[0]!); // warm the main thread's own JIT too, for the serial baseline below
 
     const parallelStart = Date.now();
-    await Promise.all(inputs.map((inp) => pool.submit(inp)));
+    await Promise.all(inputs.map((inp) => pool.runSiege(inp)));
     const parallelMs = Date.now() - parallelStart;
 
     // Serial baseline for comparison (what scheduler.ts effectively did before this change: one battle

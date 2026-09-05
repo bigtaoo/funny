@@ -28,6 +28,7 @@ export * from './mapgen';
 export * from './mapEdit';
 export * from './mapRle';
 export * from './march';
+export * from './mapTerrainIndex';
 export * from './siege';
 export * from './garrison';
 export * from './vision';

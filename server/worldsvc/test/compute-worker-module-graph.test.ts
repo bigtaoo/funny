@@ -1,12 +1,12 @@
-// Static gate for the siege worker thread's module graph.
+// Static gate for the compute worker thread's module graph.
 //
-// siegeWorker.ts runs under tsx inside a `worker_threads` realm, where extensionless relative specifiers do
-// not resolve on Linux (2026-08-14 investigation, recorded in siegeWorker.ts and siegeWorkerPool.ts). They
+// compute/worker.ts runs under tsx inside a `worker_threads` realm, where extensionless relative specifiers
+// do not resolve on Linux (2026-08-14 investigation, recorded in compute/worker.ts and compute/pool.ts). They
 // DO resolve on Windows, which is this project's dev machine — so a violation passes every local run and
 // blows up only on CI, as a "siege worker crashed mid-battle: Cannot find module …" with no obvious link to
 // the import that caused it.
 //
-// That has now happened twice. The first time it was siegeWorker.ts's own static import of siegeEngine; the
+// That has now happened twice. The first time it was the worker entry's own static import of siegeEngine; the
 // second (2026-08-24) was siegeEngine.ts re-exporting the post-battle card-army settlement it had just been
 // split into — a one-line re-export that added this module graph's first load-time relative import.
 //
@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const SRC = path.join(__dirname, '..', 'src');
-const ENTRY = 'siegeWorker.ts';
+const ENTRY = 'compute/worker.ts';
 
 /** Strip comments so prose about imports (these files carry plenty) can't match as code. */
 function stripNoise(src: string): string {
@@ -35,7 +35,7 @@ interface Spec {
    * `import type` / `export type` are erased by the compiler and never resolved at all, which is why
    * siegeEngine.ts's `import type { ArmyEntry } from './db'` was never a problem. A dynamic import inside a
    * function body is deferred, so it is not part of the boot graph either — it is also the escape hatch
-   * siegeWorker.ts itself uses. Known limit, stated rather than papered over: a lazy dynamic import on a code
+   * the worker entry itself uses. Known limit, stated rather than papered over: a lazy dynamic import on a code
    * path the worker actually reaches would still break at runtime and this gate would not see it.
    */
   eager: boolean;
@@ -64,7 +64,7 @@ function relativeSpecifiers(src: string): Spec[] {
   return out;
 }
 
-/** A template hole counts as explicit: siegeWorker.ts spells the extension out, it just computes which one. */
+/** A template hole counts as explicit: the worker entry spells the extension out, it just computes which one. */
 function hasExplicitExtension(raw: string): boolean {
   return /\.(ts|js|mjs|cjs)$/.test(raw) || /\$\{[^}]*\}$/.test(raw);
 }
@@ -93,7 +93,7 @@ function walk(): { violations: string[]; visited: string[] } {
       }
       // The entry's own hop into siegeEngine is a deferred import on purpose (a static one is exactly what
       // broke in 2026-08-14), so follow it; every other deferred import stops the walk rather than dragging
-      // in files the worker never loads — siegeEngine.ts's lazy import of siegeWorkerPool among them.
+      // in files the worker never loads — siegeEngine.ts's lazy import of ./compute among them.
       if (!spec.eager && file !== ENTRY) continue;
       const target = resolveToFile(file, spec.raw);
       if (target) queue.push(target);
@@ -102,15 +102,18 @@ function walk(): { violations: string[]; visited: string[] } {
   return { violations, visited: [...visited] };
 }
 
-describe('siege worker module graph', () => {
+describe('compute worker module graph', () => {
   it('loads only files whose relative imports spell out an extension (tsx worker realm, Linux)', () => {
     expect(walk().violations).toEqual([]);
   });
 
-  it('reaches siegeEngine.ts — i.e. the walk is looking at the graph it claims to', () => {
+  it('reaches both computation modules — i.e. the walk is looking at the graph it claims to', () => {
     // Without this the gate silently passes the day someone renames the entry or changes the deferred-import
-    // shape, because an empty graph has no violations either.
-    expect(walk().visited).toContain('siegeEngine.ts');
+    // shape, because an empty graph has no violations either. Both of the worker's tenants are named, so
+    // adding a third kind of job without wiring its module into this walk fails here rather than on Linux CI.
+    const { visited } = walk();
+    expect(visited).toContain('siegeEngine.ts');
+    expect(visited).toContain('compute/pathRunner.ts');
   });
 
   it('flags a load-time relative import, and exempts the erased and deferred forms', () => {

@@ -1,4 +1,4 @@
-// worker_threads pool for the deterministic siege engine (server-logic-audit-2026-07-29, item 3).
+// worker_threads pool for worldsvc's CPU-bound computation (siege battles + march pathfinding).
 //
 // Problem: `runHeadless` (server/engine/src/runHeadless.ts) is a fully synchronous `while` loop — a
 // close-to-even-strength base siege can run up to SIEGE_BATTLE_TIMEOUT_TICKS(=18000)+TICK_MARGIN(=600)
@@ -17,11 +17,19 @@
 // runs unmodified inside a worker; only "where do we read input / write output" changes (worker.ts wraps
 // the existing `runSiegeBattleSync`, formerly the sole `runSiegeBattle` export, in a postMessage handler).
 // All Mongo access stays on the main thread — only this pure CPU computation crosses the thread boundary.
+//
+// 2026-09-05 (worldsvc-concurrency): generalised from siege-only to a task union, and put behind the
+// ComputeBackend interface in ./types.ts. The second tenant is A* march pathfinding, which the concurrency
+// audit measured blocking the loop for 2-6 SECONDS on an unreachable target — the same disease as the
+// siege engine, on a path every single march order goes through. Everything about the pool's shape
+// (long-lived workers, idle-or-queue scheduling, crash self-heal, per-task hang guard) is unchanged; only
+// the message payload became a discriminated union and `submit` became typed per task kind.
 import { Worker } from 'node:worker_threads';
 import os from 'node:os';
 import path from 'node:path';
-import type { SiegeBattleInput } from './siegeEngine';
-import type { SiegeResolution } from '@nw/shared';
+import type { SiegeResolution, PathCell } from '@nw/shared';
+import type { SiegeBattleInput } from '../siegeEngine';
+import type { ComputeBackend, PathRequest } from './types';
 
 // Running under `tsx` (dev `node --watch --import tsx src/index.ts`, and vitest, which transpiles on the
 // fly) __filename still ends in `.ts`; after `tsc -b` (prod `node dist/index.js`) it ends in `.js` and the
@@ -30,34 +38,50 @@ import type { SiegeResolution } from '@nw/shared';
 // flags/loader hooks) able to load the `.ts` source directly, mirroring how the main process itself is
 // invoked in dev. In prod this branch never triggers — `tsx` stays a devDependency only.
 const IS_TS_RUNTIME = __filename.endsWith('.ts');
-const DEFAULT_WORKER_PATH = path.join(__dirname, IS_TS_RUNTIME ? 'siegeWorker.ts' : 'siegeWorker.js');
+const DEFAULT_WORKER_PATH = path.join(__dirname, IS_TS_RUNTIME ? 'worker.ts' : 'worker.js');
 
 /** `--import tsx` is only needed when the worker script itself is `.ts` source (dev/test); a compiled `.js` worker runs with plain `node`. */
 function execArgvFor(workerPath: string): string[] {
   return workerPath.endsWith('.ts') ? ['--import', 'tsx'] : [];
 }
 
-/** `os.cpus().length - 1` (leave one core for the event loop + everything else on the box), min 1. Override via `NW_SIEGE_WORKER_POOL_SIZE`. */
-export function defaultSiegeWorkerPoolSize(): number {
+/** `os.cpus().length - 1` (leave one core for the event loop + everything else on the box), min 1. Override via `NW_COMPUTE_POOL_SIZE`. */
+export function defaultComputePoolSize(): number {
   const cpus = os.cpus().length || 1;
   return Math.max(1, cpus - 1);
 }
 
-/** A hung worker (stuck tick loop / bad engine bug) is terminated and replaced after this long. Override via `NW_SIEGE_WORKER_TASK_TIMEOUT_MS`. */
+/** A hung worker (stuck tick loop / bad engine bug) is terminated and replaced after this long. Override via `NW_COMPUTE_TASK_TIMEOUT_MS`. */
 const DEFAULT_TASK_TIMEOUT_MS = 30_000;
+
+/**
+ * What crosses the thread boundary. Structured-clone safe by construction: plain data only, no functions,
+ * no class instances — the same constraint the future remote backend will have to satisfy over JSON.
+ */
+export type ComputeJob =
+  | { kind: 'siege'; input: SiegeBattleInput }
+  | { kind: 'path'; input: PathRequest }
+  /** Force the per-world terrain/connectivity index to be built now (see warmWorld). */
+  | { kind: 'warm'; input: { world: string; mapW: number; mapH: number } };
+
+/** Result shape per job kind, so `submit` can be typed without a cast at each call site. */
+export type ComputeJobResult<J extends ComputeJob> =
+  J extends { kind: 'siege' } ? SiegeResolution
+    : J extends { kind: 'path' } ? PathCell[] | null
+      : void;
 
 interface TaskRequest {
   taskId: number;
-  input: SiegeBattleInput;
+  job: ComputeJob;
 }
 type TaskResponse =
-  | { taskId: number; ok: true; result: SiegeResolution }
+  | { taskId: number; ok: true; result: unknown }
   | { taskId: number; ok: false; error: string };
 
 interface PendingTask {
   taskId: number;
-  input: SiegeBattleInput;
-  resolve: (r: SiegeResolution) => void;
+  job: ComputeJob;
+  resolve: (r: never) => void;
   reject: (e: Error) => void;
   /**
    * Hang-guard timer, armed only once the task is actually handed to a worker (see `dispatch`) — null while
@@ -87,7 +111,9 @@ interface PoolWorker {
  * settlement is a background scheduler tick, not a synchronous HTTP request — queuing under load is fine,
  * see design/game/SERVER_LOGIC_AUDIT_2026-07-29.md item 3).
  */
-export class SiegeWorkerPool {
+export class ComputeWorkerPool implements ComputeBackend {
+  readonly name = 'worker';
+
   private readonly workers: PoolWorker[] = [];
   private readonly queue: PendingTask[] = [];
   private readonly pending = new Map<number, PendingTask>();
@@ -98,13 +124,13 @@ export class SiegeWorkerPool {
   private readonly workerExecArgv: string[];
 
   /**
-   * @param size Worker count, default {@link defaultSiegeWorkerPoolSize}.
+   * @param size Worker count, default {@link defaultComputePoolSize}.
    * @param taskTimeoutMs Per-task hang guard, default {@link DEFAULT_TASK_TIMEOUT_MS}.
    * @param workerScriptPath Test-only override of the worker entry script (e.g. a fixture that crashes on
    *   command, for exercising crash/self-heal deterministically) — production code never passes this.
    */
   constructor(
-    size: number = defaultSiegeWorkerPoolSize(),
+    size: number = defaultComputePoolSize(),
     taskTimeoutMs: number = DEFAULT_TASK_TIMEOUT_MS,
     workerScriptPath: string = DEFAULT_WORKER_PATH,
   ) {
@@ -115,14 +141,14 @@ export class SiegeWorkerPool {
   }
 
   private spawnWorker(): void {
-    // 2026-08-14 fix (see siegeWorker.ts's own comment): pass the dev/prod extension as workerData
-    // instead of letting siegeWorker.ts recompute it via `__filename.endsWith('.ts')` — confirmed on
+    // 2026-08-14 fix (see compute/worker.ts's own comment): pass the dev/prod extension as workerData
+    // instead of letting the worker recompute it via `__filename.endsWith('.ts')` — confirmed on
     // real Linux CI that tsx's `--import` hook runs the worker's entry module under ESM semantics
     // (even though the file is .ts and the nearest package.json has no "type": "module"), where
     // `__filename` is simply undefined; `import.meta.url` would be the ESM-safe equivalent, but this
     // project's tsconfig targets `module: CommonJS` and TS rejects `import.meta` syntax outright
     // under that setting (same TS5097-style incompatibility as the earlier `.ts`-extension attempt).
-    // workerData sidesteps needing either global inside the worker at all: this file (siegeWorkerPool.ts)
+    // workerData sidesteps needing either global inside the worker at all: this file (compute/pool.ts)
     // is always the true entry, always runs on the main thread in real CommonJS, so `IS_TS_RUNTIME`
     // computed here is reliable.
     const worker = new Worker(this.workerPath, {
@@ -133,7 +159,7 @@ export class SiegeWorkerPool {
     worker.on('message', (msg: TaskResponse) => this.onMessage(entry, msg));
     worker.on('error', (err) => this.onWorkerDown(entry, err));
     worker.on('exit', (code) => {
-      if (code !== 0) this.onWorkerDown(entry, new Error(`siege worker exited with code ${code}`));
+      if (code !== 0) this.onWorkerDown(entry, new Error(`compute worker exited with code ${code}`));
     });
     // Deliberately left ref'd (Node's default): an idle worker keeps the process alive, same as an open
     // Mongo/Redis connection or listening HTTP socket. Tried `.unref()` here on the theory that it would
@@ -155,7 +181,7 @@ export class SiegeWorkerPool {
     if (!task) return; // already timed out / worker replaced — response arrived late, discard
     this.pending.delete(msg.taskId);
     if (task.timer) clearTimeout(task.timer);
-    if (msg.ok) task.resolve(msg.result);
+    if (msg.ok) task.resolve(msg.result as never);
     else task.reject(new Error(msg.error));
     this.dispatch();
   }
@@ -178,7 +204,7 @@ export class SiegeWorkerPool {
       if (task) {
         this.pending.delete(entry.currentTaskId);
         if (task.timer) clearTimeout(task.timer);
-        task.reject(new Error(`siege worker crashed mid-battle: ${err.message}`));
+        task.reject(new Error(`compute worker crashed mid-job: ${err.message}`));
       }
     }
 
@@ -188,15 +214,43 @@ export class SiegeWorkerPool {
     }
   }
 
-  /** Submit one siege battle for computation on the pool. Never rejects due to "pool full" — queues instead. */
-  submit(input: SiegeBattleInput): Promise<SiegeResolution> {
-    if (this.closed) return Promise.reject(new Error('siege worker pool is closed'));
-    return new Promise<SiegeResolution>((resolve, reject) => {
+  /** Submit one job for computation on the pool. Never rejects due to "pool full" — queues instead. */
+  submit<J extends ComputeJob>(job: J): Promise<ComputeJobResult<J>> {
+    if (this.closed) return Promise.reject(new Error('compute worker pool is closed'));
+    return new Promise<ComputeJobResult<J>>((resolve, reject) => {
       const taskId = this.nextTaskId++;
       // No timer yet — armed in `dispatch()` once a worker actually picks this up (see PendingTask.timer doc).
-      this.queue.push({ taskId, input, resolve, reject, timer: null });
+      this.queue.push({ taskId, job, resolve: resolve as (r: never) => void, reject, timer: null });
       this.dispatch();
     });
+  }
+
+  // ── ComputeBackend ────────────────────────────────────────────────────────────
+
+  runSiege(input: SiegeBattleInput): Promise<SiegeResolution> {
+    return this.submit({ kind: 'siege', input });
+  }
+
+  findPath(input: PathRequest): Promise<PathCell[] | null> {
+    return this.submit({ kind: 'path', input });
+  }
+
+  /**
+   * Build the per-world terrain index on EVERY worker, not just one: each thread has its own heap, so a
+   * world warmed on one worker is still cold on the next, and a request that lands there pays the ~2.5s
+   * build while holding that worker.
+   *
+   * "Every worker" relies on `dispatch` handing each queued job to a DIFFERENT idle worker, which holds
+   * exactly when the pool is idle — the boot-time call this exists for. Called under load it degrades to
+   * "some workers warmed twice, some not at all", which costs a rebuild rather than a wrong answer, so it
+   * is not worth a per-worker addressing mechanism the pool otherwise has no use for.
+   *
+   * Best-effort by contract (see ComputeBackend.warmWorld): a failure means the first real path request
+   * for this world is slow, never that it is wrong, so failures are swallowed rather than propagated.
+   */
+  async warmWorld(world: string, mapW: number, mapH: number): Promise<void> {
+    const jobs = this.workers.map(() => this.submit({ kind: 'warm', input: { world, mapW, mapH } }).catch(() => undefined));
+    await Promise.all(jobs);
   }
 
   private onTaskTimeout(taskId: number): void {
@@ -207,8 +261,8 @@ export class SiegeWorkerPool {
     // not merely slow, so terminating it (rather than waiting indefinitely) keeps the pool from shrinking
     // to zero usable workers over time.
     const stuck = this.workers.find((w) => w.currentTaskId === taskId);
-    if (stuck) this.onWorkerDown(stuck, new Error(`siege battle exceeded ${this.taskTimeoutMs}ms`));
-    task.reject(new Error(`siege battle timed out after ${this.taskTimeoutMs}ms`));
+    if (stuck) this.onWorkerDown(stuck, new Error(`compute job '${task.job.kind}' exceeded ${this.taskTimeoutMs}ms`));
+    task.reject(new Error(`compute job '${task.job.kind}' timed out after ${this.taskTimeoutMs}ms`));
   }
 
   private dispatch(): void {
@@ -223,7 +277,7 @@ export class SiegeWorkerPool {
       task.timer.unref?.();
       idle.currentTaskId = task.taskId;
       this.pending.set(task.taskId, task);
-      const req: TaskRequest = { taskId: task.taskId, input: task.input };
+      const req: TaskRequest = { taskId: task.taskId, job: task.job };
       idle.worker.postMessage(req);
     }
   }
@@ -238,33 +292,13 @@ export class SiegeWorkerPool {
     this.closed = true;
     for (const task of this.queue.splice(0)) {
       if (task.timer) clearTimeout(task.timer);
-      task.reject(new Error('siege worker pool closed'));
+      task.reject(new Error('compute worker pool closed'));
     }
     for (const task of this.pending.values()) {
       if (task.timer) clearTimeout(task.timer);
-      task.reject(new Error('siege worker pool closed'));
+      task.reject(new Error('compute worker pool closed'));
     }
     this.pending.clear();
     await Promise.all(this.workers.splice(0).map((w) => w.worker.terminate()));
-  }
-}
-
-let singleton: SiegeWorkerPool | null = null;
-
-/** Process-wide siege worker pool, lazily constructed on first use (so importing this module — e.g. from inside the worker itself via siegeEngine.ts — never spawns workers-within-a-worker). */
-export function getSiegeWorkerPool(): SiegeWorkerPool {
-  if (!singleton) {
-    const size = Number(process.env.NW_SIEGE_WORKER_POOL_SIZE) || defaultSiegeWorkerPoolSize();
-    const taskTimeoutMs = Number(process.env.NW_SIEGE_WORKER_TASK_TIMEOUT_MS) || DEFAULT_TASK_TIMEOUT_MS;
-    singleton = new SiegeWorkerPool(size, taskTimeoutMs);
-  }
-  return singleton;
-}
-
-/** Graceful shutdown hook (index.ts) — also lets tests reset the singleton between suites. */
-export async function shutdownSiegeWorkerPool(): Promise<void> {
-  if (singleton) {
-    await singleton.close();
-    singleton = null;
   }
 }
