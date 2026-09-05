@@ -40,13 +40,18 @@ class Reservoir {
     this.total++;
   }
 
-  /** Snapshot + reset the sample window (the total count is cumulative and is NOT reset). */
-  drain(): LatencySnapshot | null {
+  /** Read the sample window without disturbing it. */
+  peek(): LatencySnapshot | null {
     const len = Math.min(this.n, SAMPLE_CAP);
     if (len === 0) return null;
     const s = Array.from(this.buf.subarray(0, len)).sort((a, b) => a - b);
     const at = (q: number): number => Math.round(s[Math.min(len - 1, Math.floor(q * len))]! * 10) / 10;
-    const snap: LatencySnapshot = { count: this.total, p50: at(0.5), p90: at(0.9), p99: at(0.99), max: Math.round(s[len - 1]! * 10) / 10 };
+    return { count: this.total, p50: at(0.5), p90: at(0.9), p99: at(0.99), max: Math.round(s[len - 1]! * 10) / 10 };
+  }
+
+  /** Snapshot + reset the sample window (the total count is cumulative and is NOT reset). */
+  drain(): LatencySnapshot | null {
+    const snap = this.peek();
     this.n = 0;
     return snap;
   }
@@ -79,11 +84,26 @@ export class RouteTimings {
     }
   }
 
+  /**
+   * Every label that saw traffic since the last drain, slowest p99 first, WITHOUT resetting the windows.
+   *
+   * Exists because two readers now want this table and only one of them may consume it: the heartbeat
+   * drains it on its own schedule, while an ops/metrics endpoint must be able to look at any time without
+   * silently emptying the next heartbeat's report.
+   */
+  snapshot(): Record<string, LatencySnapshot> {
+    return this.collect((r) => r.peek());
+  }
+
   /** Snapshot every label that saw traffic since the last drain, slowest p99 first; resets the windows. */
   drain(): Record<string, LatencySnapshot> {
+    return this.collect((r) => r.drain());
+  }
+
+  private collect(read: (r: Reservoir) => LatencySnapshot | null): Record<string, LatencySnapshot> {
     const out: [string, LatencySnapshot][] = [];
     for (const [label, r] of this.byLabel) {
-      const snap = r.drain();
+      const snap = read(r);
       if (snap) out.push([label, snap]);
     }
     out.sort((a, b) => b[1].p99 - a[1].p99);
@@ -106,9 +126,18 @@ export interface EventLoopMonitorOptions {
   checkMs?: number;
 }
 
+export interface LoopLagSnapshot {
+  p50: number;
+  p90: number;
+  p99: number;
+  max: number;
+}
+
 export interface EventLoopMonitor {
-  /** Percentiles since the last {@link drain}, in milliseconds. */
-  drain(): { p50: number; p90: number; p99: number; max: number };
+  /** Percentiles since the last {@link drain}, in milliseconds, WITHOUT resetting the histogram. */
+  snapshot(): LoopLagSnapshot;
+  /** Percentiles since the last drain, in milliseconds; resets the histogram. */
+  drain(): LoopLagSnapshot;
   stop(): void;
 }
 
@@ -140,9 +169,11 @@ export function startEventLoopMonitor(log: Logger, opts: EventLoopMonitorOptions
     }
   }, checkMs);
   if (typeof timer.unref === 'function') timer.unref();
+  const read = (): LoopLagSnapshot => ({ p50: ms(h.percentile(50)), p90: ms(h.percentile(90)), p99: ms(h.percentile(99)), max: ms(h.max) });
   return {
+    snapshot: read,
     drain: () => {
-      const snap = { p50: ms(h.percentile(50)), p90: ms(h.percentile(90)), p99: ms(h.percentile(99)), max: ms(h.max) };
+      const snap = read();
       h.reset();
       return snap;
     },

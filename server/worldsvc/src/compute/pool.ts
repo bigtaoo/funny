@@ -45,10 +45,26 @@ function execArgvFor(workerPath: string): string[] {
   return workerPath.endsWith('.ts') ? ['--import', 'tsx'] : [];
 }
 
-/** `os.cpus().length - 1` (leave one core for the event loop + everything else on the box), min 1. Override via `NW_COMPUTE_POOL_SIZE`. */
+/**
+ * Upper bound on the pool, independent of core count. Override via `NW_COMPUTE_POOL_SIZE`.
+ *
+ * `cpus - 1` alone was the right rule while workers were STATELESS — they only ran siege battles, so an
+ * idle one cost a V8 isolate and nothing else. Pathfinding changed that: each worker now caches its own
+ * per-world terrain index (~6.75MB per world at 1500x1500, bounded LRU), and workers do not share heaps.
+ * Measured on a 22-core box with the local stack, one world warmed: 21 workers -> 586MB RSS, 4 workers ->
+ * 239MB. That is ~20MB per worker for capacity nothing asks for — the audit's own budget puts the whole
+ * steady-state pathfinding load at a fraction of one core (80 orders/s at ~2ms each), and siege battles
+ * are bursty rather than sustained.
+ *
+ * 8 keeps real headroom over both while making the memory bill independent of how big the host happens to
+ * be. A box with fewer cores still gets `cpus - 1`.
+ */
+const MAX_COMPUTE_POOL_SIZE = 8;
+
+/** `os.cpus().length - 1` (leave one core for the event loop and everything else), capped and min 1. */
 export function defaultComputePoolSize(): number {
   const cpus = os.cpus().length || 1;
-  return Math.max(1, cpus - 1);
+  return Math.min(MAX_COMPUTE_POOL_SIZE, Math.max(1, cpus - 1));
 }
 
 /** A hung worker (stuck tick loop / bad engine bug) is terminated and replaced after this long. Override via `NW_COMPUTE_TASK_TIMEOUT_MS`. */

@@ -22,13 +22,18 @@
 //   httpApi/sectRoutes.ts   sect create/join/leave/dissolve/ally/unally/vote/message/channel (S8-4b)
 //   httpApi/nationRoutes.ts nation/world public channel + nation naming (B7/§6.4, S8-6.5)
 import { createServer, type Server } from 'http';
-import { ErrorCode, ok, err, extractBearer, verifyToken, loadInternalAuth, SlgError, createLogger, RouteTimings } from '@nw/shared';
+import { ErrorCode, ok, err, extractBearer, verifyToken, loadInternalAuth, SlgError, createLogger } from '@nw/shared';
 import type { WorldService } from './service';
 import type { SectService } from './sectService';
 import type { NationChannelService } from './nationChannelService';
 import type { WorldSocialsvcClient } from './socialsvcClient';
 import type { MapTemplateService } from './mapTemplateService';
 import { send, sendErr, type RouteDeps, type RouteCtx } from './httpApi/helpers';
+// Per-route latency lives in ./metrics so the heartbeat and the ops endpoint can both read it — see that
+// file for why one drains and the other peeks. Labels here are `METHOD /pathname`, and only for requests a
+// handler actually claimed; everything else collapses into one `not-found` bucket, so a caller cannot grow
+// the table by varying URLs.
+import { routeTimings } from './metrics';
 import { handleAdminRoutes } from './httpApi/admin';
 import { handleMapRoutes } from './httpApi/mapRoutes';
 import { handleSeasonRoutes } from './httpApi/seasonRoutes';
@@ -39,16 +44,6 @@ import { handleSectRoutes } from './httpApi/sectRoutes';
 import { handleNationRoutes } from './httpApi/nationRoutes';
 
 const log = createLogger('worldsvc');
-
-/**
- * Per-route latency, drained into the heartbeat log (worldsvc-concurrency-2026-09-05, phase 0). Exported
- * rather than owned by `startHttpApi` so index.ts can hand the same instance to the scheduler and the
- * compute pool — one table covering "where did the wall clock go", HTTP and background alike.
- *
- * Labels are `METHOD /pathname` only for requests a handler actually claimed; everything else collapses
- * into a single `not-found` bucket, so an unauthenticated client cannot grow the map by varying URLs.
- */
-export const routeTimings = new RouteTimings();
 
 /**
  * The JWT-branch handler chain, in the exact order the original if-chain tested them (see the file header):
