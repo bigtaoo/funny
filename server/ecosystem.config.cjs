@@ -78,6 +78,21 @@ module.exports = {
         NW_COMM_MONGO_DB: process.env.NW_COMM_MONGO_DB || 'notebook_wars_commercial',
         // victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
         NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
+        // IAP receipt verification + product resolution (commercial/src/iap.ts, iap/productResolve.ts).
+        // pm2 does inherit the ambient environment, unlike compose — these are listed anyway so this file
+        // stays a readable inventory of what the process needs, and so the deploy-config lint can check one
+        // list for all three deployment paths. `??` (not `||`) on the two defaulted ones, matching the code:
+        // an empty string must fall through to the default rather than override it.
+        NW_APPLE_PASSWORD: process.env.NW_APPLE_PASSWORD,
+        NW_GOOGLE_SERVICE_ACCOUNT_JSON: process.env.NW_GOOGLE_SERVICE_ACCOUNT_JSON,
+        NW_GOOGLE_PACKAGE_NAME: process.env.NW_GOOGLE_PACKAGE_NAME ?? 'com.nw.game',
+        NW_WX_PAY_MCH_ID: process.env.NW_WX_PAY_MCH_ID,
+        NW_WX_PAY_API_KEY_V3: process.env.NW_WX_PAY_API_KEY_V3,
+        NW_STRIPE_SECRET_KEY: process.env.NW_STRIPE_SECRET_KEY,
+        NW_IAP_BUNDLE: process.env.NW_IAP_BUNDLE ?? 'com.gamestao.nivara',
+        NW_IAP_PRODUCT_MAP: process.env.NW_IAP_PRODUCT_MAP,
+        NW_IAP_AMOUNT_MAP: process.env.NW_IAP_AMOUNT_MAP,
+        NW_IAP_NONCOIN_AMOUNT_MAP: process.env.NW_IAP_NONCOIN_AMOUNT_MAP,
       },
     },
     {

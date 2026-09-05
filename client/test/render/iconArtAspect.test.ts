@@ -147,3 +147,51 @@ describe('packed icon art — escalating tiers', () => {
     expect(md).toBeLessThan(lg!);
   });
 });
+
+// Third property of the packed art, and the only one that is a property of the PACKER rather than of
+// any one drawing: the output is a silhouette, not a filled block.
+//
+// pack_tab_icons.cjs derives alpha from LUMINANCE (white paper → transparent), which silently assumes
+// the source is opaque. A source that carries its own alpha channel packs as a SOLID INK SQUARE
+// instead: sharp zeroes the RGB of fully transparent pixels, black means ink, so every pixel outside
+// the drawing becomes ink. That is exactly what the 2026-09-05 check-in cue arrow did — the first
+// source in ~200 to come out of the generator with alpha, every earlier one having been flat white.
+// The packer now flattens onto white first.
+//
+// The per-asset tests cannot generalise this. checkinCueArt.test.ts caught it only because that art
+// happened to need a "the burst's centre stays hollow" case; the next alpha-carrying source lands
+// wherever nobody wrote such a case, and a solid square is still a perfectly valid PNG that
+// `buildRasterTabIcon` will happily draw. So measure the whole directory: the guard costs one decode
+// per file and covers every asset added from here on, with no per-asset bookkeeping.
+describe('packed icon art — the packer still emits silhouettes', () => {
+  /** Share of pixels that are essentially opaque, at the file's own resolution. */
+  async function opaqueShare(file: string): Promise<number> {
+    const sharp = (await import('sharp')).default;
+    const { data, info } = await sharp(path.join(ASSET_DIR, file))
+      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    let opaque = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i]! > 200) opaque++;
+    return opaque / (info.width * info.height);
+  }
+
+  /**
+   * The alpha-flattening failure fills the frame (share ≈ 1.0). Measured across all 199 assets on
+   * 2026-09-05 the densest real glyph is `stats_active` at 0.60, and the median is far below that —
+   * so this sits a third above the busiest drawing anyone has shipped, and still an unmissable
+   * distance under a filled square. A NEW asset that trips it is far likelier to be a packing
+   * accident than a legitimately solid icon; if one ever is legitimate, it gets an exemption here
+   * with the reason, the way ELONGATED_ON_PURPOSE works above.
+   */
+  const MAX_OPAQUE_SHARE = 0.8;
+
+  it(`keeps every packed PNG under ${MAX_OPAQUE_SHARE * 100}% opaque coverage (a filled frame is the packer losing the alpha channel)`, async () => {
+    const files = fs.readdirSync(ASSET_DIR).filter((f) => f.endsWith('.png'));
+    expect(files.length).toBeGreaterThan(100); // the sweep found the directory
+    const shares = await Promise.all(files.map((f) => opaqueShare(f)));
+    const solid = files
+      .map((f, i) => [f, shares[i]!] as const)
+      .filter(([, share]) => share > MAX_OPAQUE_SHARE)
+      .map(([f, share]) => `${f} (${(share * 100).toFixed(1)}% opaque)`);
+    expect(solid, 'repack these: the source most likely carries its own alpha channel').toEqual([]);
+  });
+});

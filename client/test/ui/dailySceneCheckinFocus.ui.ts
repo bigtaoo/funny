@@ -226,6 +226,134 @@ describe('DailyScene checkin grid — the claimable cell is the focal point (202
   });
 });
 
+// The hand-drawn half of the same pass (2026-09-05, `feat(client): point at the claimable check-in
+// cell with hand-drawn art`): a curved arrow hooked into the claimable cell and a starburst behind
+// it. checkinCueArt.test.ts measures the two PNGs as art (the baked green, the hollow centre); what
+// nothing measured is where panels.ts PUTS them, which is where the arithmetic lives:
+//
+//   - The source arrow points down-and-right, so the directions used here are FLIPS of it, and
+//     mirroring a Container scales it around its own origin — every flip needs a position
+//     compensation of one whole sprite width. Get that backwards and the arrow lands a full sprite
+//     away, on the wrong side of the cell. It would be wrong only for days in the right-hand half of
+//     the grid, so a screenshot taken on the wrong day shows nothing at all.
+//   - The burst is masked at the grid's top edge because a row-0 cell's upward rays otherwise strike
+//     through the section title. The mask is invisible in every screenshot not taken on days 1-7,
+//     and deleting it looks like removing a redundant node.
+//
+// Both cues also live inside the claimable cell's own (breathing, torn-down-on-tab-switch) container
+// rather than the shared grid one, which is what makes them scale with it and die with it.
+//
+// The arrow assertions are written against its TAIL corner — with |scale| == 1 the sprite's local
+// (0,0) maps exactly to (arrow.x, arrow.y) — because the art itself never decodes here (every .png
+// import is stubbed to a 1x1 data URI, see vitest.ui.config.ts), so the node has a transform but no
+// bounds. That is enough: the tail is the end the compensation moves.
+describe('DailyScene checkin grid — the hand-drawn cue art points at the claimable cell (2026-09-05)', () => {
+  /** The claimable cell's own container: [clip, burst, fill, trace, number, ...reward, arrow]. */
+  function cueNodes(root: PIXI.Container): { focal: PIXI.Container; clip: PIXI.Graphics; burst: PIXI.Container; arrow: PIXI.Container } {
+    const focal = focalCell(root);
+    expect(focal, 'no claimable cell to carry the cues').not.toBeNull();
+    const kids = focal!.children;
+    return {
+      focal: focal!,
+      clip: kids[0] as PIXI.Graphics,
+      burst: kids[1] as PIXI.Container,
+      arrow: kids[kids.length - 1] as PIXI.Container,
+    };
+  }
+
+  /** A cell's rectangle in design space, read off the filled panel drawn under its day number. */
+  function cellRect(root: PIXI.Container, day: number): { x: number; y: number; w: number; h: number } {
+    const parent = parentOfDay(root, day);
+    const idx = parent.children.findIndex((c) => c instanceof PIXI.Text && c.text === String(day));
+    let first = idx - 1;
+    while (first > 0 && parent.children[first - 1] instanceof PIXI.Graphics) first--;
+    const g = parent.children[first] as PIXI.Graphics;
+    const shape = (g.geometry as unknown as { graphicsData: { shape: { width: number; height: number } }[] })
+      .graphicsData[0]!.shape;
+    return { x: g.x, y: g.y, w: shape.width, h: shape.height };
+  }
+
+  // Day 3 sits in the left half of the week row, day 6 in the right half — the two sides of
+  // `fromLeft`, i.e. the mirrored branch and the unmirrored one.
+  for (const [claimed, day, side] of [[2, 3, 'left'], [5, 6, 'right']] as const) {
+    it(`hooks the arrow in from below and outward on a ${side}-half day, one whole sprite of compensation and all`, async () => {
+      const scene = await buildCheckinTab(saveWith(claimed, false));
+      const { focal, arrow } = cueNodes(scene.container);
+      expect(dayOf(focal)).toBe(String(day));
+      expect(arrow instanceof PIXI.Text || arrow instanceof PIXI.Graphics).toBe(false);
+      expect(arrow.parent, 'the arrow must breathe and tear down with the cell').toBe(focal);
+
+      // A mirror, not a resize: the two halves differ in the SIGN of scale.x and nothing else.
+      expect(Math.abs(arrow.scale.x)).toBeCloseTo(1, 6);
+      expect(arrow.scale.x).toBe(side === 'left' ? 1 : -1);
+      expect(arrow.scale.y, 'always drawn from below, so the vertical flip is unconditional').toBe(-1);
+
+      const cell = cellRect(scene.container, day);
+      // The tail corner: below the cell, and on the side that faces the page edge. Drop either
+      // branch's `± aSize` compensation and the tail lands inside the cell instead.
+      expect(arrow.y).toBeGreaterThan(cell.y + cell.h);
+      if (side === 'left') expect(arrow.x).toBeLessThan(cell.x);
+      else expect(arrow.x).toBeGreaterThan(cell.x + cell.w);
+      // …but only just below: it may fall on the next row's number-free lower half, never further.
+      const rowPitch = cellRect(scene.container, day + 7).y - cell.y;
+      expect(arrow.y - (cell.y + cell.h)).toBeLessThan(rowPitch);
+      scene.destroy();
+    });
+  }
+
+  it('lays the burst under the cell’s own fill and clips it off the section title', async () => {
+    const scene = await buildCheckinTab(saveWith(2, false));   // day 3 → row 0, the row that can reach the title
+    const { focal, clip, burst } = cueNodes(scene.container);
+    expect(burst.parent).toBe(focal);
+    expect(burst.mask, 'the burst is the one masked node in the grid').toBe(clip);
+    // Added before the cell's own panel, so only the ray tips show past the fill.
+    const fillIdx = focal.children.findIndex((c) => c instanceof PIXI.Graphics && c !== clip);
+    expect(focal.children.indexOf(burst)).toBeLessThan(fillIdx);
+
+    // The section title above the grid: the last "check-in" line drawn above the mask's edge (the
+    // others are the header title and the tab rail's own labels, which sit further down the page).
+    const clipTop = (clip.geometry as unknown as { graphicsData: { shape: { y: number } }[] })
+      .graphicsData[0]!.shape.y;
+    const maskTop = focal.toGlobal(new PIXI.Point(0, clipTop)).y;
+    const titles = allTexts(scene.container).filter((t) => /check-in/i.test(t.text) && t.y < maskTop);
+    const title = titles.reduce((a, b) => (a.y > b.y ? a : b));
+    const titleBottom = title.y + title.height;
+
+    expect(maskTop, 'the burst is clipped at or below the section title').toBeGreaterThanOrEqual(titleBottom);
+    // …and the clip is load-bearing rather than decorative: unmasked, the burst really does reach up
+    // through that line. Without this the case above would still pass with the mask deleted.
+    expect(focal.toGlobal(new PIXI.Point(0, burst.y)).y).toBeLessThan(titleBottom);
+    scene.destroy();
+  });
+
+  it('draws no cue at all once today is claimed — nothing to point at, so nothing points', async () => {
+    const scene = await buildCheckinTab(saveWith(3, true));
+    expect(focalCell(scene.container)).toBeNull();
+    // The burst is the only masked node the grid ever builds, so its absence is checkable even
+    // though the stubbed art makes every raster node look alike.
+    const grid = parentOfDay(scene.container, 8);
+    let masked = 0;
+    const walk = (n: PIXI.Container): void => {
+      for (const c of n.children) {
+        if ((c as PIXI.Container).mask) masked++;
+        if (c instanceof PIXI.Container) walk(c);
+      }
+    };
+    walk(grid);
+    expect(masked).toBe(0);
+    scene.destroy();
+  });
+});
+
+/** Depth-first collect of every PIXI.Text under `root`. */
+function allTexts(root: PIXI.Container, out: PIXI.Text[] = []): PIXI.Text[] {
+  for (const c of root.children) {
+    if (c instanceof PIXI.Text) out.push(c);
+    else if (c instanceof PIXI.Container) allTexts(c, out);
+  }
+  return out;
+}
+
 /** Sum of per-channel distance between two RGB ints — "how far apart do these two swatches read". */
 function chDist(a: number, b: number): number {
   return Math.abs((a >> 16 & 0xff) - (b >> 16 & 0xff))
