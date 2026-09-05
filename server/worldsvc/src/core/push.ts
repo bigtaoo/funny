@@ -162,6 +162,100 @@ export class PushService {
     }
   }
 
+  // ── Batched forms (2026-09-05, `sched:arrivals` deep batching) ───────────────────────────
+  // occ and cover are each ONE Redis hash per world keyed by tileId, so "every cell this arrival tick will
+  // touch" is a single HMGET and a single HSET rather than one round trip per cell. That shape is the whole
+  // reason the batching is possible at all; the per-cell methods above stay for the serial settlement path,
+  // which interleaves reads and writes with combat and so cannot be collapsed.
+  //
+  // Each degrades to the per-field methods when the client does not implement the batched command (the
+  // in-memory test fakes implement only hset/hget/hdel). Same best-effort posture throughout: a Redis
+  // failure weakens the encounter index, never arrival correctness.
+
+  /** Read the occupant of each tile in one round trip. Absent/unparsable cells are simply missing from the map. */
+  async getOccupancyMany(worldId: string, tiles: string[]): Promise<Map<string, OccEntry>> {
+    const out = new Map<string, OccEntry>();
+    const redis = this.core.deps.redis;
+    if (!redis || tiles.length === 0) return out;
+    try {
+      const raw = redis.hmget
+        ? await redis.hmget(this.occKey(worldId), tiles)
+        : await Promise.all(tiles.map((t) => redis.hget(this.occKey(worldId), t)));
+      tiles.forEach((tile, i) => {
+        const cur = raw[i];
+        if (!cur) return;
+        try {
+          out.set(tile, JSON.parse(cur) as OccEntry);
+        } catch {
+          /* one unparsable cell must not lose the rest of the batch */
+        }
+      });
+    } catch {
+      /* best-effort: an empty map reads as "no occupants", which only disables encounters for this tick */
+    }
+    return out;
+  }
+
+  /** Read every coverage source over each tile in one round trip. Uncovered tiles are missing from the map. */
+  async getCoverMany(worldId: string, tiles: string[]): Promise<Map<string, CoverEntry[]>> {
+    const out = new Map<string, CoverEntry[]>();
+    const redis = this.core.deps.redis;
+    if (!redis || tiles.length === 0) return out;
+    try {
+      const raw = redis.hmget
+        ? await redis.hmget(this.coverKey(worldId), tiles)
+        : await Promise.all(tiles.map((t) => redis.hget(this.coverKey(worldId), t)));
+      tiles.forEach((tile, i) => {
+        const cur = raw[i];
+        if (!cur) return;
+        try {
+          const entries = Object.values(JSON.parse(cur) as Record<string, CoverEntry>);
+          if (entries.length > 0) out.set(tile, entries);
+        } catch {
+          /* as above */
+        }
+      });
+    } catch {
+      /* best-effort */
+    }
+    return out;
+  }
+
+  /** Write many occupants in one round trip (each entry lands on its own `tile` field). */
+  async setOccupancyMany(worldId: string, entries: OccEntry[]): Promise<void> {
+    const redis = this.core.deps.redis;
+    if (!redis || entries.length === 0) return;
+    try {
+      if (redis.hsetMany) {
+        await redis.hsetMany(this.occKey(worldId), entries.flatMap((e) => [e.tile, JSON.stringify(e)]));
+      } else {
+        for (const e of entries) await redis.hset(this.occKey(worldId), e.tile, JSON.stringify(e));
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /**
+   * Clear many occupancy entries in one round trip, each still guarded on "we are the unit that holds this
+   * cell" (see clearOccupancy). The guard runs server-side (hdelJsonIdMatch) precisely because the batched
+   * form widens the gap between deciding to clear and clearing: a plain batched HDEL would evict whoever
+   * took the cell in between.
+   */
+  async clearOccupancyMany(worldId: string, cells: Array<{ tile: string; id: string }>): Promise<void> {
+    const redis = this.core.deps.redis;
+    if (!redis || cells.length === 0) return;
+    try {
+      if (redis.hdelJsonIdMatch) {
+        await redis.hdelJsonIdMatch(this.occKey(worldId), cells.map((c) => c.tile), cells.map((c) => c.id));
+      } else {
+        for (const c of cells) await this.clearOccupancy(worldId, c.tile, c.id);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
   /**
    * Drop the occ/cover spatial-index hashes for a world being reset (2026-07-29 audit fix). resetSeason
    * wipes tiles/marches/occupations/stationed in Mongo but never cleared these two Redis hashes — if the
