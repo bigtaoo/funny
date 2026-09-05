@@ -30,11 +30,29 @@ let loopMonitor: EventLoopMonitor | null = null;
  */
 let computeName = 'unset';
 
+/**
+ * Free-running counters, for facts that are not durations. Added 2026-09-05 with the `sched:arrivals` deep
+ * batching: from the outside a tick that batches 600 marches and a tick that quietly demotes all 600 to the
+ * per-march path look the same except for being slow, and "slow" is exactly what everything else looks like
+ * too. `arrivals.batched` / `arrivals.serial` make the split a number the load test (and ops) can read.
+ *
+ * Cumulative and peeked, never drained — the heartbeat's drain-vs-peek asymmetry above applies to windowed
+ * latency, whereas a counter that resets on read cannot be polled by two readers at all.
+ */
+const counters = new Map<string, number>();
+
+/** Add to a counter (labels come from call sites, never from client input — same rule as routeTimings). */
+export function bumpCounter(label: string, n = 1): void {
+  counters.set(label, (counters.get(label) ?? 0) + n);
+}
+
 export interface WorldMetrics {
   /** Milliseconds the event loop ran late. The headline number: a stall here IS the failure mode. */
   loopLagMs: LoopLagSnapshot;
   /** Per-route / per-task latency, slowest p99 first. */
   labels: Record<string, LatencySnapshot>;
+  /** Cumulative counters since process start (see `bumpCounter`). */
+  counters: Record<string, number>;
   /** Which compute backend is serving pathfinding and siege battles (`worker` / `remote`). */
   compute: string;
   uptimeSec: number;
@@ -53,6 +71,7 @@ export function worldMetricsSnapshot(): WorldMetrics {
   return {
     loopLagMs: loopMonitor?.snapshot() ?? { p50: 0, p90: 0, p99: 0, max: 0 },
     labels: routeTimings.snapshot(),
+    counters: Object.fromEntries(counters),
     compute: computeName,
     uptimeSec: Math.round(process.uptime()),
     rssMb: Math.round(process.memoryUsage().rss / 1048576),
@@ -64,4 +83,5 @@ export function stopWorldMetrics(): void {
   loopMonitor?.stop();
   loopMonitor = null;
   computeName = 'unset';
+  counters.clear();
 }

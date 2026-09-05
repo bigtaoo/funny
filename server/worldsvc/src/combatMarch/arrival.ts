@@ -11,12 +11,20 @@ import type { MarchDoc, StationedDoc, PlayerWorldDoc } from '../db';
 import { WorldCore } from '../core';
 import type { SiegeService } from '../combatSiege';
 import { refundTroops, parkMarchInPlace, startReturnMarch } from '../combatShared';
+import { applyFastSteps, collectArrivalBatch } from './arrivalBatch';
+import { bumpCounter } from '../metrics';
 
 /**
  * How many due marches one arrival tick will settle. Each one costs a handful of Mongo/Redis round trips
  * (and a step-by-step walk for a stepping march), all issued sequentially, so an unbounded scan could make
  * a single tick run for minutes. Overridable via `NW_SLG_ARRIVAL_SCAN_LIMIT` so an operator can trade tick
  * length for arrival punctuality without a deploy.
+ *
+ * 2026-09-05: the deep batching (arrivalBatch.ts) makes this cap far cheaper to raise — an uneventful march
+ * now costs a share of a constant number of round trips rather than seven of its own. The DEFAULT is left
+ * alone anyway: what a tick still pays per march is the serial tail (arrivals, encounters, interceptions),
+ * and how big that tail is depends on how crowded the world is, not on how many marches are due. Raise it
+ * from the env when the cap warning below actually fires.
  */
 const ARRIVAL_SCAN_LIMIT = Number(process.env.NW_SLG_ARRIVAL_SCAN_LIMIT) || 500;
 
@@ -66,8 +74,23 @@ export class ArrivalService {
       lastCapWarnAt = t;
       console.warn(`[world-scheduler] arrival scan hit its ${ARRIVAL_SCAN_LIMIT}-march cap; the overflow settles a tick late (raise NW_SLG_ARRIVAL_SCAN_LIMIT or shard the world)`);
     }
+    // 2026-09-05 (`sched:arrivals` deep batching, WORLDSVC_CONCURRENCY_AUDIT §5.4): the due list used to be
+    // walked one march at a time, ~7 serial round trips each, which the 200-bot load test measured at
+    // p50 1761ms / p90 6705ms against this task's own 2000ms interval. Marches that provably cannot fight
+    // this tick — no arrival to settle, no occupant or coverage on any cell they enter, no cell shared with
+    // another march in the batch — are settled together in a constant number of round trips instead. See
+    // arrivalBatch.ts for why the rest deliberately stays serial: a field encounter writes the DEFENDER's
+    // ledger, so concurrent settlement is a genuine cross-player race, not a theoretical one.
+    const { fast, serial, familyOf } = await collectArrivalBatch(this.core, due, t);
+    // Batched writes first, while the reads that justified them are freshest: the serial pass below can run
+    // for a long time (it does combat, and combat calls metaserver over HTTP).
+    await applyFastSteps(this.core, fast, familyOf);
+    // Publish the split so a regression that quietly demotes everything to the per-march path is a visible
+    // number rather than just a slower tick (see metrics.ts `bumpCounter`).
+    bumpCounter('arrivals.batched', fast.length);
+    bumpCounter('arrivals.serial', serial.length);
     let n = 0;
-    for (const m of due) {
+    for (const m of serial) {
       if (m.path && m.stepIndex != null && m.nextStepAt != null) {
         // Stepping march: advance cell-by-cell up to t; settles (and counts) only on reaching the final cell.
         if (await this.advanceMarch(m, t)) n++;

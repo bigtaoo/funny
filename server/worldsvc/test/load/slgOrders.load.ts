@@ -48,6 +48,7 @@
 //   NW_LOAD_MIN_OK_PCT    min % of orders that must be accepted default 90
 //   NW_LOAD_P99_MS        dispatch-latency p99 budget          default 2000
 //   NW_LOAD_LOOP_MS       worldsvc event-loop stall budget     default 500
+//   NW_LOAD_ARRIVALS_P90_MS  sched:arrivals p90 budget          default 2000  (its own interval)
 //   NW_LOAD_FLEET_ID      device-id prefix; a fresh one per run default a timestamp (see below)
 //   NW_INTERNAL_KEY       X-Internal-Key for /admin/world/metrics  default dev-internal-key (the local stack's)
 //
@@ -83,6 +84,13 @@ const LOGIN_CONC = Number(process.env.NW_LOAD_LOGIN_CONC ?? 25);
 const MIN_OK_PCT = Number(process.env.NW_LOAD_MIN_OK_PCT ?? 90);
 const P99_BUDGET_MS = Number(process.env.NW_LOAD_P99_MS ?? 2000);
 const LOOP_BUDGET_MS = Number(process.env.NW_LOAD_LOOP_MS ?? 500);
+/**
+ * The arrival tick must keep up with its own 2s interval. This run's orders become in-transit marches, and
+ * `sched:arrivals` settling them is what the 2026-09-05 deep batching was for — it was measured here at
+ * p50 1761ms / p90 6705ms before that change (WORLDSVC_CONCURRENCY_AUDIT §5.4/§6), i.e. every march
+ * arriving progressively later with the only symptom being a warning line in the log.
+ */
+const ARRIVALS_P90_BUDGET_MS = Number(process.env.NW_LOAD_ARRIVALS_P90_MS ?? 2000);
 const INTERNAL_KEY = process.env.NW_INTERNAL_KEY ?? 'dev-internal-key';
 const FLEET_ID = process.env.NW_LOAD_FLEET_ID ?? Date.now().toString(36);
 
@@ -287,6 +295,19 @@ describe('worldsvc SLG order throughput', () => {
     if (after) {
       const loop = (after.loopLagMs ?? {}) as { max?: number };
       expect(loop.max ?? 0, 'worldsvc event loop stalled — pathfinding or another sync CPU burst is back on the request thread').toBeLessThan(LOOP_BUDGET_MS);
+
+      // The arrival tick: the bottleneck this run surfaced in the first place. `arrivals.batched` /
+      // `arrivals.serial` say whether the batching engaged at all — a tick that quietly demoted every march
+      // back to the per-march path is slow in exactly the way everything else here is slow, so the split has
+      // to be read as a number rather than inferred from the timing.
+      const labels = (after.labels ?? {}) as Record<string, { p50?: number; p90?: number; max?: number }>;
+      const arrivals = labels['sched:arrivals'];
+      const counters = (after.counters ?? {}) as Record<string, number>;
+      /* eslint-disable-next-line no-console */
+      console.log(`[load] sched:arrivals p50 ${arrivals?.p50 ?? '-'}ms  p90 ${arrivals?.p90 ?? '-'}ms  max ${arrivals?.max ?? '-'}ms | batched ${counters['arrivals.batched'] ?? 0} / serial ${counters['arrivals.serial'] ?? 0}`);
+      if (arrivals) {
+        expect(arrivals.p90 ?? 0, 'sched:arrivals is overrunning its own interval — due marches are settling late and the backlog compounds').toBeLessThan(ARRIVALS_P90_BUDGET_MS);
+      }
     }
   });
 });

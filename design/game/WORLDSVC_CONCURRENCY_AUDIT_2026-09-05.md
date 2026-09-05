@@ -140,6 +140,8 @@ ComputeBackend        ← 接口：runSiege / findPath / warmup
 
 已做的是：**5 个任务拆成各自的 interval + 各自的 running 守卫**（原来共用一个，最慢的任务决定所有任务的节奏）、每个任务单独计时并在超出自身 interval 时告警、到期扫描上限改为 `NW_SLG_ARRIVAL_SCAN_LIMIT` 可配置并在触顶时告警（此前是静默截断）。深度批处理留作下一个杠杆，**前提是阶段 0 的指标真的指向它**。
 
+> **后续（同日第三轮）**：指标确实指向了它（第五节 5.4 ①），深度批处理已经做了——但**没有**按原计划做「分块并发」。见第六节：并发那一半仍然被否决，理由和这里写的一模一样；真正拿到收益的是把「这一 tick 打不起来的行军」批量处理掉。
+
 ### 出入 3：路径缓存没做
 
 预过滤 + 查表把典型指令的寻路降到约 2ms，缓存的收益不再显著，而缓存键必须包含「闸门集合指纹」才正确——复杂度换不到对应的收益。留作后续可选项。
@@ -172,7 +174,7 @@ worldsvc/src/compute/
 ### 还没做的（下一个杠杆，按顺序）
 
 1. ~~用 botsvc 造 200 bot 的真实负载测试~~ → **已做，见下面第五节。**
-2. **`sched:arrivals` 深度批处理**——负载测试把它从「推测」变成了**实测第一瓶颈**（p50 1761ms / p90 6705ms，远超它自己 2s 的 interval）。见第五节。
+2. ~~**`sched:arrivals` 深度批处理**~~ → **已做，见第六节。**
 3. `getMap` 的 **payload 本身**（40 次/秒 × 6561 格 × 528KB ≈ 21MB/s 出口）。往返侧已经削过了：成员集合的 3 次 socialsvc 往返进了缓存，`familyMemberIds`/`sectMateMemberIds`/`allySectMemberIds`/`computeVisionSources` 原本**各自重读同一份 playerWorld** 且串行执行，现在读一次、四个并发。剩下的是 payload 大小本身（缩小默认半径 / 更多走 sparse / 增量 diff），没动。
 4. A\* 的 `g`/`par`/`closed` 从 `Map`/`Set` 换成带代际标记的 typed array scratch buffer——只在长距离行军真的占主导时才值得。
 
@@ -247,3 +249,69 @@ worldsvc loopLagMs.max          28.9ms      ← 事件循环全程没有停顿
 
 - **`GET /admin/world/metrics`**（内部端口，X-Internal-Key）：事件循环延迟 + 每路由/每 scheduler 任务的 p50/p90/p99 + 计算后端名 + RSS。**非破坏性读取**（`peek`），所以运维随便轮询都不会把 heartbeat 的窗口偷空——这条不对称是 `worldsvc/src/metrics.ts` 单独存在的全部理由。
 - `docker/docker-compose.local.yml` 把 worldsvc 的 18084 发布到宿主（**仅本地**；nginx 故意不代理 `/admin/world/*`，prod/cloud compose 未动）。
+
+---
+
+## 六、`sched:arrivals` 深度批处理（2026-09-05 当日第三轮）
+
+分支 `feat/arrivals-batching`。这是第五节 5.4 ① 点名的那一刀：负载测试把 `sched:arrivals` 从「推测的下一个杠杆」变成了**实测第一瓶颈**（p50 1761ms / p90 6705ms，对着它自己 2s 的 interval，30 次超时告警）。
+
+### 6.1 先说没做什么：仍然不并发
+
+出入 2 里推迟它的理由**一个字都没有改**：`advanceMarch` 里的野战遭遇（`resolveFieldEncounter`）会写**防守方**的账本——对方的 `cardState`、对方的 `StationedDoc`/`MarchDoc`。两条行军并发结算就是两个写者同时改一个陌生玩家的文档，而 `arrival.ts` 的注释史表明这段代码已经被更窄版本的同类竞态咬过好几次。
+
+所以本轮**没有引入任何并发**，`runBounded` 分块并发那条原计划继续搁置。真正的观察是另一条：
+
+> 瓶颈不是「结算太慢」，是「**为一件根本不会发生的事付了全套代价**」。
+
+`MARCH_SPEED_SEC_PER_TILE = 6`，tick 是 2s。绝大多数到期行军这一 tick 只是在空地上往前挪一格：没有到达结算、没有遭遇、没有拦截。旧代码却给每一条都付了：重读自己的 march 文档、读整份 playerWorld、每格 `clearOccupancy` + `getOccupancy` + `getCover` + `setOccupancy`、再写一次游标——约 7 次严格串行往返。
+
+### 6.2 做法：按「这一 tick 能不能打起来」切两半
+
+`combatMarch/arrivalBatch.ts`（新文件）先做一次**纯函数的行程规划**（`planMarchSteps`：不做任何 I/O，只从游标和时钟推出这一 tick 会进入/离开哪些格子），然后一次批量读（一次投影过的 playerWorld 查询 + 每个世界各一次 occ/cover 的 `HMGET`），再按四条规则分流：
+
+一条行军进 **fast**（批处理），当且仅当：
+
+1. 这一 tick **不到终点**——到达结算要打仗、要停驻、要写地块，全部留给原路径；
+2. 进入的每一格 **occ 为空**（有人就可能遭遇；**友军也算**——原路径遇到友军会 `skipOwnOcc` 保留对方的条目，批处理会盖掉，语义不同就不批）；
+3. 进入的每一格 **cover 为空**（箭塔穿透伤害 / 驻防 3×3 拦截）；
+4. 这一 tick 里**没有第二条行军碰到它的任何一格**（进入的和离开的都算，包括 legacy/return 行军的落点）。
+
+其余全部进 **serial**，走**一行没改**的 `advanceMarch`/`applyArrival`。
+
+第 4 条故意做得很粗：只要同一 tick 内两条行军的格子集合有交集，两条都降级。「谁踩到谁」正是遭遇的形状，而 fast 路径存在的前提就是不必回答这个问题；更聪明的规则得推理 tick 内的先后顺序，那正是这段代码历史上被咬的方式。1500×1500 的图上几百条行军，撞格子是罕见事件，粗规则几乎不花钱。
+
+### 6.3 批处理这一半的成本
+
+occ 和 cover 各是**每个世界一个 Redis hash、field = tileId**——这个结构本身就是能批的全部原因：
+
+| | 旧（每条行军） | 新（整个 tick） |
+|---|---|---|
+| march 重读 | 1 次 `findOne` | 0（批量 `bulkWrite` 的过滤器自带守卫） |
+| playerWorld | 1 次整份 `findOne` | **1 次** `find({_id:{$in}})`，投影只取 `familyId` |
+| occ 读 | 每格 1 次 `HGET` | **1 次** `HMGET` |
+| cover 读 | 每格 1 次 `HGET` | **1 次** `HMGET` |
+| occ 清 | 每格 1 次 `HGET`+`HDEL` | **1 次** `EVAL`（服务端逐 field 校验 `.id` 再删） |
+| occ 写 | 每格 1 次 `HSET` | **1 次** `HSET`（多 field） |
+| 游标写 | 每条 1 次 `updateOne` | **1 次** `bulkWrite` |
+
+几个刻意的取舍：
+
+- **playerWorld 只投影 `familyId`。** fast 路径只需要它（写 occ 条目时的敌我标记），而整份 playerWorld 带着整个 `cardState` 账本——几百份拉下来是把往返问题换成 payload 问题。serial 路径照旧各自读整份，它要打仗，打仗要读写 `cardState`。
+- **中间格子的 occ 写被折叠掉。** 一条 fast 行军一 tick 跨 3 格，原路径会在 3 个格子上依次写了又清；批处理只写它最后停的那一格。合法性来自第 4 条规则：那些格子这一 tick 里没有第二个读者，而 occ 索引的读者**只有** `advanceMarch` 的进格检查。
+- **批量清 occ 必须服务端校验。** `clearOccupancy` 原本是「读出来看看还是不是自己的，是才删」；批处理把「决定删」和「删」之间的窗口拉大了，所以配了一段 Lua（`hdelJsonIdMatch`），逐 field 比对 `.id` 再删。裸的批量 `HDEL` 会把这中间接手该格的单位一起清掉。
+- **Mongo 先写、Redis 后写。** 游标 `bulkWrite` 带着和原路径一样的守卫（`status:'marching'` 且 `kind ≠ 'return'`），所以扫描之后才落地的召回会匹配失败；只有**真的匹配上**的行军才会拿到 occ 条目。召回自己会清掉它那一格的 occ（`recallMarch`），事后再给它写一条就是**永久泄漏**（没有任何东西会去清一个文档已经不存在的 occ id）——这正是原路径那次重读要防的事，这里用一次 `matchedCount` 比对 + 极少发生的一次确认查询，给整批一次性关掉。
+
+### 6.4 可观测性：`arrivals.batched` / `arrivals.serial`
+
+`metrics.ts` 新增累计计数器（`bumpCounter`，随 `GET /admin/world/metrics` 一起 peek 出来）。理由很实际：**一个把 600 条行军全部悄悄降级回逐条路径的回归，从外面看就只是「有点慢」**，而这个系统里所有东西出问题时看起来都是「有点慢」。有了这两个数，批处理有没有真的生效是一个可读的数字。
+
+### 6.5 测试与变异验证
+
+- `worldsvc/test/arrival-batch-split.test.ts`（16 用例，纯函数、不需要 DB）：规划与分流规则本身——到达 tick 不批、occ/cover 非空不批、**友军占位也不批**、两条行军撞格子两条都降级、legacy 行军的落点也算占用、没有 playerWorld 的不批，以及 fast 行军最终写的那条 occ 条目（只写最后一格、`leaveAt` 与原路径同式）。
+- `worldsvc/test/arrival-batch-roundtrips.e2e.test.ts`（8 用例，真 Mongo）：**断言的是成本而不是行为**。用一个统计每次调用的 Mongo 集合 Proxy + 一个实现了批量命令并计数的假 Redis，钉死「12 条无事发生的行军 = `marches.find` 1 次、`playerWorld.find` 1 次、`bulkWrite` 1 次、`updateOne`/`findOne` 各 0 次、`HMGET` 2 次、批量清 1 次、批量写 1 次」，外加落后 3 格时预算不变、旧版 Redis（只有单 field 命令）回退路径产出一致、以及被降级的那三类（有敌人/无 playerWorld/正在到达）确实还走逐条路径。
+- **变异验证 4 轮，全部被抓**：① 让 `splitArrivalBatch` 永不批处理 → 6 条红；② 去掉「到达 tick 不批」 → 2 条红；③ 去掉撞格子规则 → 2 条红；④ 去掉 `bulkWrite` 的召回守卫 → 召回那条红。（5.1 的教训照做：时序/成本类断言，测不出回归的和通过的长得一模一样。）
+
+### 6.6 还没做的
+
+按原顺序，下一个是 `getMap` 的 **payload 本身**（40 次/秒 × 6561 格 × 528KB ≈ 21MB/s 出口；往返侧已经削过，剩下的是缩小默认半径 / 更多走 sparse / 增量 diff）。再之后是 A\* 的 scratch buffer。**200 bot 负载测试要在活集群上重跑一遍**，确认 `sched:arrivals` 的 p90 真的从 6705ms 掉下来——本轮的证据是往返次数（单测钉死）和类型/测试全绿，还不是端到端的 p90 数字。
