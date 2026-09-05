@@ -60,6 +60,11 @@ const INKS = {
   inactive: { r: 0x68, g: 0x68, b: 0x68, thicken: 0 }, // C.mid   — inactive tab cell (paper fill)
   content:  { r: 0x2c, g: 0x2c, b: 0x2a, thicken: 0 }, // C.dark  — content on paper (reward rows)
   accent:   { r: 0x44, g: 0x77, b: 0xcc, thicken: 1 }, // C.accent— back-button arrow on the paper bar
+  // Deep green — the check-in calendar's claimable-cell ink. Must stay equal to `INK_CLAIMABLE` in
+  // client/src/scenes/DailyScene/panels.ts: these two glyphs exist only to point at that one cell,
+  // and a cue drawn in a different green than the box it points at reads as a second element rather
+  // than as part of it. Nothing else in the game asks for this ink, so no other job opts in.
+  checkinCue: { r: 0x2e, g: 0x7d, b: 0x32, thicken: 2 },
 };
 
 /** Inks a JOBS row gets when it doesn't name its own — the tab-icon triple. */
@@ -271,6 +276,16 @@ const JOBS = [
   // rather than another shield: `equipIcon`'s kite shield is already what "equipment" looks like
   // everywhere in this game, including every equipment reward.
   { src: 'tabicon_umbrella.webp',          name: 'umbrella', inks: ['active'] },
+
+  // Check-in calendar focal cue (design/product/checkin-focus-cue-art.md, 2026-09-05). Like `back`,
+  // these are NOT tab icons — they are page content drawn beside/behind one calendar cell, in the
+  // one green ink that cell is drawn in, so they take a single opt-in ink instead of the tab triple.
+  // Both are drawn far larger than a 28px tab cell (the arrow at ~0.5x a cell's height, the burst at
+  // ~1.6x), which is why 2 dilate passes is the ceiling here rather than the floor: neither shape
+  // can close up (an arc plus two head strokes; sixteen rays with wide white gaps), but neither
+  // needs the compensation a tab cell needs either.
+  { src: 'tabicon_cueArrow.png', name: 'cueArrow', inks: ['checkinCue'] },
+  { src: 'tabicon_cueBurst.png', name: 'cueBurst', inks: ['checkinCue'] },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');
@@ -347,7 +362,15 @@ async function process(job) {
     console.warn(`⚠️  skip ${job.name}: source not found (${job.src}) — drop the AI-generated file here first`);
     return [];
   }
-  const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  // Step 1 of the pipeline reads alpha out of LUMINANCE (white paper → transparent), so a source
+  // that already carries its own alpha channel has to be composited onto white first. Skip this and
+  // a transparent-background drawing packs as a SOLID INK SQUARE: every pixel outside the strokes is
+  // RGB 0,0,0 (sharp zeroes the colour of fully transparent pixels), luminance 0, therefore "ink".
+  // Not hypothetical — the 2026-09-05 check-in cue arrow came out of the generator with alpha while
+  // every earlier source was flat white, and the failure is silent (a square is still a valid PNG).
+  const meta = await sharp(file).metadata();
+  const src = meta.hasAlpha ? sharp(file).flatten({ background: '#ffffff' }) : sharp(file);
+  const { data, info } = await src.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H, channels: ch } = info;
 
   const rows = [];

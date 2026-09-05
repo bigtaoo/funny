@@ -7,6 +7,7 @@ import { makeText } from '../../render/pixiText';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, scaledTxt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
+import { buildRasterTabIcon, CHECKIN_CUE_ART } from '../../render/icons/tabIconRaster';
 import { buildRewardIcon } from '../../render/rewardIcon';
 import { FS, snapFont } from '../../render/fontScale';
 import type { SaveData } from '../../game/meta/SaveData';
@@ -174,6 +175,21 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
       cell.pivot.set(cx, cy);
       cell.position.set(cx, cy);
       cell.scale.set(CHECKIN_PULSE.min);
+
+      // Hand-drawn starburst behind the cell (art doc: design/product/checkin-focus-cue-art.md).
+      // Added first = under the cell's own fill, so only the ray tips show. It reaches over the
+      // neighbouring cells, which is the point — a burst that stopped at the cell's edge would just
+      // be a border. Masked at the grid's top edge because a row-0 cell's upward rays otherwise
+      // strike straight through the "签到月历" section title (measured on day 1, 2026-09-05).
+      // Nothing clips the other three sides: sideways and downwards it only ever reaches paper.
+      const burstSize = cellH * 1.5;
+      const burst = buildRasterTabIcon(CHECKIN_CUE_ART.burst, burstSize, burstSize);
+      burst.x = cx - burstSize / 2; burst.y = cy - burstSize / 2;
+      burst.alpha = 0.4;
+      const clip = new PIXI.Graphics();
+      clip.beginFill(0xffffff).drawRect(cx - burstSize, gridTop, burstSize * 2, burstSize * 2).endFill();
+      burst.mask = clip;
+      cell.addChild(clip, burst);
     }
     // Text inside a container scaled past 1 blurs (rasterised glyph canvas, see sketchUi's
     // scaledTxt doc) — so the claimable cell's labels rasterise at the breathe's peak scale and are
@@ -282,6 +298,27 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
       tick.x = cx - tickSz / 2; tick.y = cy - tickSz / 2;
       tick.alpha = 0.6;
       container.addChild(tick);
+    }
+
+    // Hand-drawn arrow curling into the cell's lower outward corner. The source art points down and
+    // right, so the two other directions used here are flips of it (mirroring a Container scales
+    // around its own origin, hence the position compensation).
+    //
+    // Always from BELOW, and sideways towards the page edge: every other approach walks onto
+    // content. From above it would cross the section title on row 0, and a milestone's gold bonus
+    // badge sits in the top-right corner of its cell — exactly where an arrow coming down from the
+    // row above lands. Below, the tail falls on a neighbour's number-free lower half, or (last row)
+    // on empty paper.
+    if (isClaimable) {
+      const aSize = cellH * 0.45;
+      const fromLeft = col < COLS / 2;
+      const arrow = buildRasterTabIcon(CHECKIN_CUE_ART.arrow, aSize, aSize);
+      const tipX = fromLeft ? x + cw * 0.12 : x + cw - cw * 0.12;
+      const tipY = y + ch - ch * 0.16;
+      arrow.scale.set(fromLeft ? 1 : -1, -1);
+      arrow.x = fromLeft ? tipX - aSize : tipX + aSize;
+      arrow.y = tipY + aSize;
+      cell.addChild(arrow);
     }
 
     if (isClaimable && ctx.cb.onCheckin) {

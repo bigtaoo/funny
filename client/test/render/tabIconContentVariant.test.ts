@@ -28,9 +28,12 @@ const SOURCE_DIR = path.resolve(__dirname, '../../../art/ui/tabicons');
  * own ink set rather than the tab triple. Every tab-icon contract below has to skip it — see
  * `backArrowArt.test.ts` for the contracts that DO apply to it.
  *   `back` — the back-button arrow (19.08.2026): inks `accent` + `active` only.
+ *   `cueArrow` / `cueBurst` — the check-in calendar's focal cue (2026-09-05): ink `checkinCue` only.
  */
 const NON_TAB_BASES = [
   'back',
+  'cueArrow',
+  'cueBurst',
   // The batch-7 ink icons (2026-08-25): packed by the same script into the same directory, but with
   // ONE white master each (`inks: ['active']`) because they are tinted live rather than picking a
   // pre-baked ink — so every three-variant contract below has to skip them. Their own contracts,
@@ -40,7 +43,7 @@ const NON_TAB_BASES = [
   // hand would quietly exempt `homeTabIcon` from the tab contracts).
   ...Object.keys(INK_ICON_ART).filter((k) => !(INK_ICON_ALIASES as readonly string[]).includes(k)),
 ];
-const INK_SUFFIX_RE = /_(active|inactive|content|accent)\.png$/;
+const INK_SUFFIX_RE = /_(active|inactive|content|accent|checkinCue)\.png$/;
 /**
  * `TAB_ICON_RASTER` kinds that are NOT packed by pack_tab_icons.cjs into ASSET_DIR at all — the 5
  * coin balance/reward tiers (folded in 2026-08-25 from the deleted coinIconAtlas.ts) source from

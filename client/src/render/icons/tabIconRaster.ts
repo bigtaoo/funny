@@ -147,6 +147,8 @@ import bagTabIconInactiveUrl from '../../assets/tabicons/bag_inactive.png';
 import bagTabIconContentUrl from '../../assets/tabicons/bag_content.png';
 import backArrowAccentUrl from '../../assets/tabicons/back_accent.png';
 import backArrowActiveUrl from '../../assets/tabicons/back_active.png';
+import checkinCueArrowUrl from '../../assets/tabicons/cueArrow_checkinCue.png';
+import checkinCueBurstUrl from '../../assets/tabicons/cueBurst_checkinCue.png';
 import craftTabIconActiveUrl from '../../assets/tabicons/craft_active.png';
 import craftTabIconInactiveUrl from '../../assets/tabicons/craft_inactive.png';
 import craftTabIconContentUrl from '../../assets/tabicons/craft_content.png';
@@ -333,6 +335,7 @@ export function preloadTabIconTextures(): Promise<void> {
   return preloadTextureList([
     ...Object.values(TAB_ICON_RASTER).flatMap((v) => Object.values(v)),
     ...Object.values(BACK_ARROW_ART),
+    ...Object.values(CHECKIN_CUE_ART),
   ]);
 }
 
@@ -382,6 +385,20 @@ export function buildRasterTabIcon(url: string, w: number, h: number = w): PIXI.
  * Packed from `art/ui/tabicons/tabicon_back.png` with three dilate passes (see the pack script).
  */
 export const BACK_ARROW_ART = { accent: backArrowAccentUrl as string, active: backArrowActiveUrl as string };
+
+/**
+ * The check-in calendar's focal cue — a hand-drawn arrow that points into the claimable cell and a
+ * starburst that sits behind it (`scenes/DailyScene/panels.ts#renderCheckin`, RETENTION_DESIGN
+ * §10.16). Like {@link BACK_ARROW_ART} these are deliberately NOT `RasterIconKind`s: nothing
+ * dispatches to them through `buildIcon`, and they carry a single opt-in ink (deep green, matching
+ * that cell's border) rather than the tab triple. Packed from `art/ui/tabicons/tabicon_cue*.png`.
+ *
+ * No aspect constant beside them, unlike the back arrow: both are sized off the calendar cell's own
+ * height and contain-fit into a square box, so nothing about the layout depends on the texture
+ * having decoded. An undecoded cue simply isn't drawn for that frame — it is pure decoration on top
+ * of five other channels that already mark the cell.
+ */
+export const CHECKIN_CUE_ART = { arrow: checkinCueArrowUrl as string, burst: checkinCueBurstUrl as string };
 
 /**
  * Aspect ratio (w / h) of the packed back-arrow art, so a caller can reserve the arrow's width
