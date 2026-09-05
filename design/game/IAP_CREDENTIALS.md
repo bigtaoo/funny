@@ -33,6 +33,7 @@
 - `NW_IAP_PRODUCT_MAP`（可选，Apple/Google）：`productId:tier,...`；不填用默认约定 `${NW_IAP_BUNDLE}.coins.<tierId>`，其中 `<tierId>` 为 `IAP_TIERS` 的键（`t099/t199/t499/t999/t1999/t4999/t9999`），例如 `com.nw.coins.t499`。
 - `NW_IAP_BUNDLE`（默认 `com.nw`）：默认产品 ID 的前缀。
 - `NW_IAP_AMOUNT_MAP`（可选，微信/Stripe）：`amount:tier,...`；不填时内置默认按 `IAP_TIERS_LIST.usdCents` 匹配 **Stripe 美元价（cents）→ 档位**（99→t099 … 9999→t9999）。**微信按人民币分（fen）计价，经济配置中无对应人民币锚点价，微信渠道必须显式配置 `NW_IAP_AMOUNT_MAP`**，否则金额匹配不到档位（fail closed，发失败）。
+- `NW_IAP_NONCOIN_AMOUNT_MAP`（微信/Stripe，**没有内置默认**）：`amount:kind,...`，`kind` 取 `month_card`/`year_card`/`starter_draw`/`starter_growth`（`NON_COIN_PRODUCT_KINDS`）。Apple/Google 的非金币 SKU 靠产品 ID 解析、不看这张表；微信/Stripe 的验单响应只带金额，所以订阅和新手礼包在这两个渠道**只能**靠它。`resolveNonCoinProductFromAmount` 在它为空时直接返回 `null`（fail closed，玩家付了钱什么都不发）——这是 §5/§6 的人民币定价「待中国区上架核定」时故意选的姿态，不是漏写。
 
 档位金币数与档位 ID 均以 `@nw/shared` 的 `IAP_TIERS` / `IAP_TIERS_LIST` 为准。
 
@@ -44,6 +45,18 @@
 >
 > 同一处的第二个坑：这些变量在代码里是 `process.env.X ?? 默认值`，**空字符串会盖掉默认值**。所以 compose 里用
 > `${NW_IAP_BUNDLE:-com.gamestao.nivara}` 而不是 `${NW_IAP_BUNDLE-...}`——`.env` 里留空时也能落到正确默认。
+
+> **2026-09-05 收口**：上面那句「加新凭据时两个文件一起改」当天只兑现了一半——`docker-compose.prod.yml`
+> （`deploy/up.sh` 拉起的正是它）和 `ecosystem.config.cjs` 的 `nw-commercial` 块一天之后仍然一个凭据都没有，
+> 和 09-04 修掉的是同一个 bug、只是换了个文件。`NW_IAP_NONCOIN_AMOUNT_MAP` 更彻底：三份部署文件加
+> `.env.example` **全都没有**，也就是说它那条 fail-closed 分支从来没有过被关掉的可能。三处已补齐。
+>
+> 靠人记「一起改」已经失败两次，所以改成机械门禁：`matchsvc/test/deploy-config.test.ts` 现在扫
+> `commercial/src` 下所有 `process.env.NW_*`，逐个断言它出现在 cloud/prod 两份 compose 的
+> `commercial.environment` 里，也出现在 `ecosystem.config.cjs` 的 `nw-commercial` 里——**新凭据从第一次被代码
+> 读到的那天起自动进入覆盖**，不需要有人记得同步测试。故意不下发的只有 `NW_IAP_DEV`（生产下 `index.ts` 会拒绝
+> 启动），这个例外带理由写死在测试里。同一处还断言了带默认值的变量必须用 `${X:-...}` 而不是 `${X-...}`，
+> 即上面那第二个坑。
 
 ### 1.1 Paddle（Web 充值通道）
 

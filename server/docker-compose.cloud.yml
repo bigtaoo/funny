@@ -125,6 +125,10 @@ services:
       NW_IAP_BUNDLE: ${NW_IAP_BUNDLE:-com.gamestao.nivara}
       NW_IAP_PRODUCT_MAP: ${NW_IAP_PRODUCT_MAP:-}
       NW_IAP_AMOUNT_MAP: ${NW_IAP_AMOUNT_MAP:-}
+      # Amount → non-coin SKU (subscriptions / starter packs) for the channels whose verify response carries a
+      # price rather than a product id. resolveNonCoinProductFromAmount has no built-in default and returns null
+      # while this is unset, so leaving it out of the block means a WeChat/Stripe subscription can never resolve.
+      NW_IAP_NONCOIN_AMOUNT_MAP: ${NW_IAP_NONCOIN_AMOUNT_MAP:-}
       # NW_IAP_DEV is deliberately NOT passed through: the dev stub has no business in the cloud stack,
       # and index.ts refuses to start with it set under NODE_ENV=production anyway.
     depends_on:
