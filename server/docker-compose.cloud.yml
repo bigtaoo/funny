@@ -82,6 +82,18 @@ services:
       # writes this key on match start. Missing here meant matchsvc wrote it but meta could never read or
       # clear it: resume prompts were silently dead in prod despite being fully implemented (found 2026-07-27).
       NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
+      # Rewarded-video signature verification (C2, metaserver/src/ads.ts). All three sat in .env.example
+      # from the day that file was written and never reached the process — the NW_APPLE_PASSWORD shape.
+      # NW_WECHAT_ADS_KEY is the load-bearing one: POST /ads/callback/wechat returns 503 without it, so
+      # WeChat's server-side reward callback was dead, not merely unverified. The two *_CLIENT_KEY vars
+      # fail OPEN (unset = adToken accepted on token uniqueness + daily cap alone), so the gap meant
+      # client-token verification could never be switched on no matter what the operator put in .env.
+      NW_ADMOB_CLIENT_KEY: ${NW_ADMOB_CLIENT_KEY:-}
+      NW_WECHAT_ADS_CLIENT_KEY: ${NW_WECHAT_ADS_CLIENT_KEY:-}
+      NW_WECHAT_ADS_KEY: ${NW_WECHAT_ADS_KEY:-}
+      # Process alert webhook (S4-3): uncaughtException/unhandledRejection POST here. Same shape again —
+      # present in .env.example, never passed through, so a filled-in webhook silently sent nothing.
+      NW_ALERT_WEBHOOK_URL: ${NW_ALERT_WEBHOOK_URL:-}
     depends_on:
       commercial:
         condition: service_started
@@ -272,6 +284,10 @@ services:
       NW_SOCIAL_MONGO_DB: ${NW_SOCIAL_MONGO_DB:-nw_social}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_META_INTERNAL_URL: http://metaserver:8080
+      # Moderation word-list overlay polling (CONTENT_MODERATION_DESIGN.md §3.2). Missing → WordlistCache
+      # never starts (index.ts gates on it), so socialsvc only ever uses the built-in REGION_WORDLISTS and
+      # every ops word-list edit is inert. Degrades quietly: no error, just a permanently stale list.
+      NW_ADMIN_INTERNAL_URL: http://admin:8083
     depends_on:
       - gateway
     restart: unless-stopped
@@ -297,6 +313,10 @@ services:
       NW_AUCTION_INTERNAL_URL: http://auctionsvc:18086
       NW_WORLD_INTERNAL_URL: http://worldsvc:18084
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
+      # analyticsvc query backend (OPS_DESIGN S7). analyticsvc runs in this same stack, but admin was never
+      # told where it is → HttpAnalyticsClient.query() returns {} for every query, so every analytics panel
+      # (events/DAU/funnels/retention) renders empty with no error. ecosystem.config.cjs had it; no compose did.
+      NW_ANALYTICS_BASE_URL: http://analyticsvc:18085
     restart: unless-stopped
 
   analyticsvc:

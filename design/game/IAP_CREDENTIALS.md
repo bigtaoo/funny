@@ -58,6 +58,17 @@
 > 启动），这个例外带理由写死在测试里。同一处还断言了带默认值的变量必须用 `${X:-...}` 而不是 `${X-...}`，
 > 即上面那第二个坑。
 
+> **2026-09-05 第二轮：把这条 lint 推广到全部十个服务**，因为「代码读了、没人下发」显然不是
+> `commercial` 独有的毛病。全量扫描出 25 个缺口，其中 6 个是真坏了的功能（meta 的
+> `NW_SOCIALSVC_INTERNAL_URL` 最狠：prod + pm2 上 `/social/*` 全线 503、系统邮件直接抛），
+> 其余 19 个是默认值本来就对的调参旋钮，逐条带理由写进测试的 `NOT_DEPLOYED` 表。完整决策表见
+> [`DEPLOY_TOPOLOGY.md`](DEPLOY_TOPOLOGY.md) §5.5。
+>
+> **和本文直接相关的一条**：§1.1 的 `NW_PADDLE_*` 五个变量，两份 compose 都有，但
+> `ecosystem.config.cjs` 的 `nw-meta` 一个都没有——IAP 那半边 09-04/09-05 修了两轮，Paddle 这半边
+> （Web 充值凭据）在 pm2 路径上一直是空的。pm2 会继承 shell 环境所以不像 compose 那样必然失效，
+> 但这个文件就是「这个进程需要什么」的清单，而它恰恰是历史上最常被漏掉的那份。已补齐。
+
 ### 1.1 Paddle（Web 充值通道）
 
 Web 端充值走 Paddle（非上面的 `/iap/verify`，而是 `metaserver/src/paddle.ts` 的 `/shop/paddle/checkout` + `/paddle/webhook`）。验签/加币逻辑权威见该文件。

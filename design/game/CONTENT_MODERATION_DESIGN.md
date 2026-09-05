@@ -84,6 +84,13 @@ function normalizeForFilter(text: string): string {
 
 ### 3.2 词库外部化
 
+> ⚠️ **2026-09-05：这一节的下发链路在 cloud/prod 上从来没接通过。** socialsvc 的 `index.ts` 按
+> `NW_ADMIN_INTERNAL_URL` gate `WordlistCache.start()`，而两份 compose 的 `socialsvc.environment`
+> 和 `ecosystem.config.cjs` 的 `nw-social` 都没有这一行——也就是说 2026-07-29 后端做完、2026-08-20
+> ops 页面补齐之后，运营在页面上改的覆盖表**在生产上一次都没生效过**，线上只跑内置 `REGION_WORDLISTS`。
+> 安静降级：不报错、不打日志，页面照常保存成功。三处已补齐，并由
+> `server/matchsvc/test/deploy-config.test.ts` 兜住（见 [`DEPLOY_TOPOLOGY.md`](DEPLOY_TOPOLOGY.md) §5.5）。
+
 - `server/admin` 新增集合 `moderationWordlists`（库 `notebook_wars_admin`，延续 OPS1 的"admin 自己的库"惯例）：
 
 ```ts
