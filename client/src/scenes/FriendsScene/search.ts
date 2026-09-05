@@ -92,7 +92,7 @@ export class SearchPanel {
     const btnH = Math.round(h * 0.065);
     addButton(core, t('friends.searchBtn'), (w - fW) / 2, screenY(cy), fW, btnH,
       enabled ? C.dark : C.btnOff, enabled ? C.accent : C.light,
-      () => { if (enabled) void this.network.doSearch(); }, 0xffffff, undefined, layer);
+      () => { if (enabled) void this.network.doSearch(); }, 0xffffff, undefined, layer, 'zoom');
     cy += btnH + Math.round(h * 0.03);
 
     if (core.searchResult) {
@@ -113,7 +113,7 @@ export class SearchPanel {
       const bW = Math.round(fW * 0.26);
       const bH = Math.round(rh * 0.52);
       addButton(core, t('friends.add'), rx + fW - bW - Math.round(fW * 0.04), ry + (rh - bH) / 2, bW, bH,
-        C.green, C.green, () => void this.network.doAdd(res.publicId), 0xffffff, snapFont(Math.round(bH * 0.4)), layer);
+        C.green, C.green, () => void this.network.doAdd(res.publicId), 0xffffff, snapFont(Math.round(bH * 0.4)), layer, 'friendsTabIcon');
       cy += rh;
     } else if (core.searchMsgKey) {
       const msg = txt(t(core.searchMsgKey), FS.heading, C.mid);

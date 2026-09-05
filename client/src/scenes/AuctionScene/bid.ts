@@ -3,6 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { t } from '../../i18n';
 import { WorldApiError, type AuctionView } from '../../net/WorldApiClient';
 import type { AuctionSceneCore } from './core';
@@ -100,17 +101,14 @@ export class BidPanel {
     const okBtn = sketchButton(btnW, btnH, seedFor(0, 3, btnW));
     okBtn.x = mx + mw / 2 - 12 - btnW; okBtn.y = btnY;
     ml.addChild(okBtn);
-    const ol = txt(t('auction.bid'), FS.bodyLg, C.light, true);
-    ol.anchor.set(0.5, 0.5); ol.x = okBtn.x + btnW / 2; ol.y = okBtn.y + btnH / 2;
-    ml.addChild(ol);
+    drawButtonLabel(ml, okBtn.x, okBtn.y, btnW, btnH, t('auction.bid'), 'bidTabIcon', C.light, FS.bodyLg);
     core.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: btnW, h: btnH }, fn: () => this.confirmBid(auc) });
 
     const caBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 4, btnW) });
     caBtn.x = mx + mw / 2 + 12; caBtn.y = btnY;
     ml.addChild(caBtn);
-    const cl = txt(t('common.cancel'), FS.bodyLg, C.dark);
-    cl.anchor.set(0.5, 0.5); cl.x = caBtn.x + btnW / 2; cl.y = caBtn.y + btnH / 2;
-    ml.addChild(cl);
+    drawButtonLabel(ml, caBtn.x, caBtn.y, btnW, btnH, t('common.cancel'), 'close', C.dark, FS.bodyLg,
+      { bold: false });
     core.modalHits.push({ rect: { x: caBtn.x, y: caBtn.y, w: btnW, h: btnH }, fn: () => this.closeBidModal() });
   }
 

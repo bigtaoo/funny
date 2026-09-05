@@ -15,6 +15,7 @@ import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { bottomNavH } from '../../ui/widgets/HubTabs';
 import { snapFont } from '../../render/fontScale';
 import type { ShopSceneCore, CardSpec } from './core';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import type { ActionHandlers } from './actions';
 import { drawCard } from './card';
 
@@ -68,7 +69,7 @@ export class CoinsPanel {
         coinAmount: tier.coins,
         lines,
         highlight: tier.bestValue,
-        buttons: [{ label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.actions.onRecharge(tierId) }],
+        buttons: [{ label: t('shop.buy'), enabled: !busy, primary: true, icon: 'coin', fn: () => void this.actions.onRecharge(tierId) }],
       };
     });
 
@@ -153,9 +154,8 @@ export class CoinsPanel {
     btn.x = bx; btn.y = y;
     body.addChild(btn);
 
-    const blabel = txt(t('shop.promoRedeem'), snapFont(Math.round(h * 0.30)), canRedeem ? 0xffffff : C.mid, true);
-    blabel.anchor.set(0.5, 0.5); blabel.x = bx + btnW / 2; blabel.y = y + h / 2;
-    body.addChild(blabel);
+    drawButtonLabel(body, bx, y, btnW, h, t('shop.promoRedeem'), 'gift', canRedeem ? 0xffffff : C.mid,
+      snapFont(Math.round(h * 0.30)));
 
     if (canRedeem) {
       core.hits.push({ rect: { x: bx, y, w: btnW, h }, fn: () => void this.actions.onRedeem() });

@@ -168,7 +168,8 @@ export class MailPanel {
         done.anchor.set(0.5, 0.5); done.x = core.cCX; done.y = cy + bH / 2;
         core.container.addChild(done);
       } else {
-        addButton(core, t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.network.doClaim(m), 0xffffff);
+        addButton(core, t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.network.doClaim(m),
+          0xffffff, undefined, undefined, 'gift');
       }
       cy += bH + Math.round(h * 0.02);
     }

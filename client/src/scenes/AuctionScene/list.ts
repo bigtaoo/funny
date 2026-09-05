@@ -7,6 +7,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
 import { t } from '../../i18n';
 import type { AuctionView } from '../../net/WorldApiClient';
@@ -354,9 +355,9 @@ export class ListPanel {
           : sketchButton(btnW, btnH, seedFor(y, 0, btnW));
         btn.x = btnX; btn.y = btnY;
         core.bodyLayer.addChild(btn);
-        const bl = txt(isAuction ? t('auction.bid') : t('auction.buy'), FS.small, busy ? C.mid : C.light);
-        bl.anchor.set(0.5, 0.5); bl.x = btnX + btnW / 2; bl.y = btnY + btnH / 2;
-        core.bodyLayer.addChild(bl);
+        drawButtonLabel(core.bodyLayer, btnX, btnY, btnW, btnH,
+          isAuction ? t('auction.bid') : t('auction.buy'), isAuction ? 'bidTabIcon' : 'coin',
+          busy ? C.mid : C.light, FS.small, { bold: false });
         if (!busy) {
           core.hitRects.push({
             rect: { x: btnX, y: btnY, w: btnW, h: btnH },
@@ -482,9 +483,8 @@ export class ListPanel {
     const btn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
     btn.x = contentX + contentW / 2 - btnW / 2; btn.y = btnY;
     core.bodyLayer.addChild(btn);
-    const bl = txt(`+ ${t('auction.create')}`, FS.title, C.light);
-    bl.anchor.set(0.5, 0.5); bl.x = contentX + contentW / 2; bl.y = btnY + btnH / 2;
-    core.bodyLayer.addChild(bl);
+    drawButtonLabel(core.bodyLayer, contentX + contentW / 2 - btnW / 2, btnY, btnW, btnH,
+      t('auction.create'), 'tag', C.light, FS.title, { bold: false });
     core.hitRects.push({ rect: { x: contentX + contentW / 2 - btnW / 2, y: btnY, w: btnW, h: btnH }, fn: () => this.createListing.openCreateForm() });
   }
 }

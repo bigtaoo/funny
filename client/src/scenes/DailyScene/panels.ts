@@ -6,6 +6,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, scaledTxt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { buildIcon } from '../../render/icons';
 import { buildRasterTabIcon, CHECKIN_CUE_ART } from '../../render/icons/tabIconRaster';
 import { buildRewardIcon } from '../../render/rewardIcon';
@@ -396,10 +397,10 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
   if (ctx.cb.onClaimDaily) {
     const btnH = cardH * 0.85;
     const coinsReward = retention?.defs?.dailyCoinsReward ?? 2;
-    const btnLabel = txt(
-      isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.tasks.rewardCoins', { n: coinsReward }),
-      snapFont(Math.round(btnH * 0.36)), 0xffffff,
-    );
+    const btnLabelText = isClaimed
+      ? t('daily.tasks.rewardClaimed')
+      : t('daily.tasks.rewardCoins', { n: coinsReward });
+    const btnLabel = txt(btnLabelText, snapFont(Math.round(btnH * 0.36)), 0xffffff);
     // Button width must fit whichever label is showing. A fixed cardW*0.45 fraction (kept below
     // as a floor, for landscape's squat cards where it was already comfortably wide) undersized
     // in portrait: cardH — and thus this label's font, sized off btnH — scales with the screen's
@@ -409,15 +410,16 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     // label's actual measured width makes the fix orientation- and locale-agnostic instead of
     // retuning yet another magic fraction for portrait (or for German's longer strings).
     const btnPad = btnH * 0.5;
-    const btnW = Math.max(cardW * 0.45, btnLabel.width + btnPad);
+    const btnW = Math.max(cardW * 0.45, btnLabel.width + buttonLabelIconW(snapFont(Math.round(btnH * 0.36))) + btnPad);
     const btnX = PAD + cardW - btnW;
     const btnY = summaryY + cardH * 0.08;
     const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
     const btnBg = sketchPanel(btnW, btnH, { fill: btnFill, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
     btnBg.x = btnX; btnBg.y = btnY;
-    btnLabel.anchor.set(0.5, 0.5);
-    btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
-    container.addChild(btnBg, btnLabel);
+    btnLabel.destroy();
+    container.addChild(btnBg);
+    drawButtonLabel(container, btnX, btnY, btnW, btnH, btnLabelText, 'gift', 0xffffff,
+      snapFont(Math.round(btnH * 0.36)), { bold: false });
 
     if (isClaimable) {
       hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, sound: 'sfx.ui.reward', fn: () => ctx.doClaim() });
@@ -499,13 +501,10 @@ export function renderWeekly(ctx: DailyPanelCtx, areaX: number, top: number, are
     const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
     const btnBg = sketchPanel(btnW, btnH, { fill: btnFill, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
     btnBg.x = btnX; btnBg.y = btnY;
-    const btnLabel = txt(
-      isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.weekly.claim'),
-      snapFont(Math.round(btnH * 0.36)), 0xffffff,
-    );
-    btnLabel.anchor.set(0.5, 0.5);
-    btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
-    container.addChild(btnBg, btnLabel);
+    container.addChild(btnBg);
+    drawButtonLabel(container, btnX, btnY, btnW, btnH,
+      isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.weekly.claim'), 'gift', 0xffffff,
+      snapFont(Math.round(btnH * 0.36)), { bold: false });
 
     if (isClaimable && ctx.cb.onClaimWeekly) {
       hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, sound: 'sfx.ui.reward', fn: () => ctx.doClaimWeekly(threshold) });
@@ -559,10 +558,8 @@ export function renderAds(ctx: DailyPanelCtx, areaX: number, top: number, areaW:
   if (capReached) btnLabelText = t('daily.ads.capReached');
   else if (cooling) btnLabelText = t('daily.ads.cooldown', { time: formatCooldown(nextAvailableAt - nowMs) });
   else btnLabelText = t('daily.ads.watch');
-  const btnLabel = txt(btnLabelText, snapFont(Math.round(btnH * 0.32)), 0xffffff);
-  btnLabel.anchor.set(0.5, 0.5);
-  btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
-  container.addChild(btnLabel);
+  drawButtonLabel(container, btnX, btnY, btnW, btnH, btnLabelText, 'adsTabIcon', 0xffffff,
+    snapFont(Math.round(btnH * 0.32)), { bold: false });
 
   if (available && ctx.cb.onWatchAd) {
     hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, fn: () => ctx.doWatchAd() });

@@ -17,9 +17,11 @@ import { InputManager } from '../../inputSystem/InputManager';
 import { t, TranslationKey } from '../../i18n';
 import type { Rarity } from '../../game/meta/SaveData';
 import type { GachaOverflow, GachaPool, GachaResultEntry } from '../../net/ApiClient';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
 import { showToastMessage } from '../../net/log';
 import { buildDecorCLayer } from '../../render/decorCLayer';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import type { IconKind } from '../../render/icons';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
 import { BusyTracker, withTimeout, TimeoutError } from '../../ui/busyTracker';
 import { getEquipDef } from '../../game/meta/equipmentDefs';
@@ -377,17 +379,14 @@ export class GachaSceneCore {
     return itemId;
   }
 
-  addButton(label: string, x: number, y: number, w: number, h: number, fill: number, stroke: number, fn: () => void, enabled = true): void {
+  addButton(label: string, x: number, y: number, w: number, h: number, fill: number, stroke: number, fn: () => void, enabled = true, icon?: IconKind): void {
     const g = sketchPanel(w, h, { fill, border: stroke, width: 2, seed: seedFor(x, y, w) });
     g.x = x;
     g.y = y;
     this.container.addChild(g);
 
-    const tl = txt(label, snapFont(Math.round(h * 0.36)), enabled ? 0xffffff : C.mid, true);
-    tl.anchor.set(0.5, 0.5);
-    tl.x = x + w / 2;
-    tl.y = y + h / 2;
-    this.container.addChild(tl);
+    drawButtonLabel(this.container, x, y, w, h, label, icon ?? null, enabled ? 0xffffff : C.mid,
+      snapFont(Math.round(h * 0.36)));
 
     if (enabled) this.hits.push({ rect: { x, y, w, h }, fn });
   }

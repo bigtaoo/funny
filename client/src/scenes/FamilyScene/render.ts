@@ -10,6 +10,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { caretText } from './repaint';
 import { FAMILY_CAP } from '@nw/shared';
@@ -65,17 +66,15 @@ export class RenderPanel {
     const createBtn = sketchButton(bw, bh, seedFor(0, 0, bw));
     createBtn.x = w / 2 - bw - gap; createBtn.y = h / 2;
     core.bodyLayer.addChild(createBtn);
-    const cl = txt(t('family.create'), FS.heading, C.light);
-    cl.anchor.set(0.5, 0.5); cl.x = createBtn.x + bw / 2; cl.y = h / 2 + bh / 2;
-    core.bodyLayer.addChild(cl);
+    drawButtonLabel(core.bodyLayer, createBtn.x, h / 2, bw, bh, t('family.create'), 'familyTabIcon',
+      C.light, FS.heading);
     core.hitRects.push({ rect: { x: createBtn.x, y: h / 2, w: bw, h: bh }, fn: () => { core.mode = 'create'; core.render(); } });
 
     const joinBtn = sketchButton(bw, bh, seedFor(1, 0, bw));
     joinBtn.x = w / 2 + gap; joinBtn.y = h / 2;
     core.bodyLayer.addChild(joinBtn);
-    const jl = txt(t('family.listAll'), FS.heading, C.light);
-    jl.anchor.set(0.5, 0.5); jl.x = joinBtn.x + bw / 2; jl.y = h / 2 + bh / 2;
-    core.bodyLayer.addChild(jl);
+    drawButtonLabel(core.bodyLayer, joinBtn.x, h / 2, bw, bh, t('family.listAll'), 'zoom',
+      C.light, FS.heading);
     core.hitRects.push({ rect: { x: joinBtn.x, y: h / 2, w: bw, h: bh }, fn: () => void this.actions.openJoinList() });
   }
 
@@ -133,9 +132,8 @@ export class RenderPanel {
       : sketchButton(okW, btnH, seedFor(0, 0, okW));
     okBtn.x = w / 2 - okW - 10; okBtn.y = btnY;
     core.bodyLayer.addChild(okBtn);
-    const ok = txt(t('family.create'), FS.heading, createBusy ? C.mid : C.light);
-    ok.anchor.set(0.5, 0.5); ok.x = okBtn.x + okW / 2; ok.y = btnY + btnH / 2;
-    core.bodyLayer.addChild(ok);
+    drawButtonLabel(core.bodyLayer, okBtn.x, btnY, okW, btnH, t('family.create'), 'check',
+      createBusy ? C.mid : C.light, FS.heading);
     if (!createBusy) core.hitRects.push({ rect: { x: okBtn.x, y: btnY, w: okW, h: btnH }, fn: () => void this.actions.doCreate() });
 
     const cancelBtn = sketchPanel(okW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 0, okW) });

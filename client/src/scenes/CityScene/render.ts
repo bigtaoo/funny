@@ -237,7 +237,8 @@ export class RenderPanel implements RenderHandlers {
           speedLabel,
           0xffffff,
           C.gold,
-          () => void this.core.doSpeedup(entry.key)
+          () => void this.core.doSpeedup(entry.key),
+          'hourglassSm'
         );
       }
     }

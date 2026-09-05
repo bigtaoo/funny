@@ -23,6 +23,7 @@ import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { CARD_DEFINITIONS } from '@nw/engine/config';
 import { hitAction, type Hit } from '../ui/hits';
+import { drawButtonLabel } from '../ui/widgets/buttonLabel';
 import {
   PVP_DECK_SIZE,
   PVP_BASE_CARDS,
@@ -192,9 +193,8 @@ export class DeckBuilderScene implements Scene {
     const btnPanel = sketchPanel(btnW, btnH, { fill: C.accent, border: C.dark, width: 2, seed: strHash('db_confirm') });
     btnPanel.x = btnX; btnPanel.y = btnY;
     this.container.addChild(btnPanel);
-    const btnLabel = txt(t('pvp.confirmDeck' as TranslationKey), FS.title, C.dark);
-    btnLabel.anchor.set(0.5, 0.5); btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
-    this.container.addChild(btnLabel);
+    drawButtonLabel(this.container, btnX, btnY, btnW, btnH, t('pvp.confirmDeck' as TranslationKey), 'check',
+      C.dark, FS.title, { bold: false });
     this.hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, fn: () => this.confirm() });
 
     // Card counter

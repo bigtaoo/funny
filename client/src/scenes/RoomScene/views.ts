@@ -13,6 +13,8 @@ import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../rende
 import { FS, snapFont } from '../../render/fontScale';
 import { CODE_ALPHABET, CODE_LEN, type RoomSceneCallbacks } from './types';
 import type { Hit } from '../../ui/hits';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import type { IconKind } from '../../render/icons';
 
 export interface RoomViewHost {
   readonly container: PIXI.Container;
@@ -41,15 +43,16 @@ export function addButton(
   host: RoomViewHost,
   label: string, x: number, y: number, w: number, h: number,
   fill: number, stroke: number, fn: () => void,
-  textColor = 0xffffff, fontSize?: number,
+  textColor = 0xffffff, fontSize?: number, icon?: IconKind,
 ): void {
   const g = sketchPanel(w, h, { fill, border: stroke, width: 2, seed: seedFor(x, y, w) });
   g.x = x; g.y = y;
   host.container.addChild(g);
 
-  const tl = txt(label, snapFont(fontSize ?? Math.round(h * 0.36)), textColor, true);
-  tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
-  host.container.addChild(tl);
+  // One shared [icon][gap][label] group (ui/widgets/buttonLabel) — it drops the glyph by itself
+  // on the code-pad keys, which are far too narrow to hold one beside a character.
+  drawButtonLabel(host.container, x, y, w, h, label, icon ?? null, textColor,
+    snapFont(fontSize ?? Math.round(h * 0.36)));
 
   host.hits.push({ rect: { x, y, w, h }, fn });
 }
@@ -63,13 +66,15 @@ export function drawIdle(host: RoomViewHost): void {
   const y0 = Math.round(h * 0.24);
 
   // Ranked (primary) → matchmaking queue.
-  addButton(host, t('room.ranked'), btnX, y0, btnW, btnH, C.dark, C.green, () => host.onRanked());
+  addButton(host, t('room.ranked'), btnX, y0, btnW, btnH, C.dark, C.green, () => host.onRanked(),
+    0xffffff, undefined, 'pvpTabIcon');
   const rankedHint = txt(t('room.rankedDesc'), FS.label, C.mid);
   rankedHint.anchor.set(0.5, 0); rankedHint.x = w / 2; rankedHint.y = y0 + btnH + Math.round(h * 0.008);
   host.container.addChild(rankedHint);
 
   const y1 = y0 + btnH + gap + Math.round(h * 0.03);
-  addButton(host, t('room.create'), btnX, y1, btnW, btnH, C.dark, C.accent, () => host.onCreate());
+  addButton(host, t('room.create'), btnX, y1, btnW, btnH, C.dark, C.accent, () => host.onCreate(),
+    0xffffff, undefined, 'roomTabIcon');
   addButton(host, t('room.join'), btnX, y1 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.onJoinPressed());
 
   const hint = txt(t('room.share'), FS.label, C.mid);
@@ -91,7 +96,7 @@ export function drawSearching(host: RoomViewHost): void {
   const btnW = Math.round(w * 0.5);
   const btnH = Math.round(h * 0.09);
   addButton(host, t('room.cancelSearch'), (w - btnW) / 2, Math.round(h * 0.62), btnW, btnH,
-    C.paper, C.red, () => host.onCancelSearch(), C.red);
+    C.paper, C.red, () => host.onCancelSearch(), C.red, undefined, 'close');
 }
 
 export function drawConnecting(host: RoomViewHost, connectingKey: TranslationKey): void {
@@ -171,7 +176,7 @@ export function drawCodeEntry(host: RoomViewHost): void {
   const ready = host.codeChars.length === CODE_LEN;
   addButton(host, t('room.confirm'), aX0 + 2 * (aW + aGap), aY, aW, aH,
     ready ? C.dark : C.btnOff, ready ? C.gold : C.light,
-    () => host.onConfirmCode(), 0xffffff, Math.round(aH * 0.32));
+    () => host.onConfirmCode(), 0xffffff, Math.round(aH * 0.32), 'check');
 }
 
 export function drawInRoom(host: RoomViewHost): void {
@@ -218,7 +223,7 @@ export function drawInRoom(host: RoomViewHost): void {
 
   addButton(host, myReady ? t('room.cancelReady') : t('room.ready'), btnX, btnY, btnW, btnH,
     myReady ? C.paper : C.green, myReady ? C.mid : C.green,
-    () => host.onToggleReady(), myReady ? C.dark : 0xffffff);
+    () => host.onToggleReady(), myReady ? C.dark : 0xffffff, undefined, myReady ? 'close' : 'check');
 
   const players = host.roomState?.players ?? [];
   const bothReady = players.length === 2 && players.every((p) => p.ready && p.connected);
@@ -226,7 +231,7 @@ export function drawInRoom(host: RoomViewHost): void {
     const sY = btnY + btnH + Math.round(h * 0.025);
     addButton(host, t('room.start'), btnX, sY, btnW, btnH,
       bothReady ? C.dark : C.btnOff, bothReady ? C.gold : C.light,
-      () => { if (bothReady) host.cb.startMatch(); }, 0xffffff);
+      () => { if (bothReady) host.cb.startMatch(); }, 0xffffff, undefined, 'play');
   } else {
     const wait = txt(t('room.waitingHost'), FS.label, C.mid);
     wait.anchor.set(0.5, 0); wait.x = w / 2; wait.y = btnY + btnH + Math.round(h * 0.03);

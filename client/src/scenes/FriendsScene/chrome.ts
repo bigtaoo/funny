@@ -9,11 +9,12 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
-import { buildIcon } from '../../render/icons';
+import { buildIcon, type IconKind } from '../../render/icons';
 import { buildDecorCLayer } from '../../render/decorCLayer';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { drawSocialTabRail, SOCIAL_TAB_ICON, type SocialTab } from '../../ui/widgets/socialTabRail';
 import { sidebarNavW } from '../../ui/widgets/HubTabs';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight } from '../../ui/widgets/SceneHeader';
 import type { FriendsSceneCore } from './core';
 
@@ -163,7 +164,7 @@ export function addButton(
   core: FriendsSceneCore,
   label: string, x: number, y: number, w: number, h: number,
   fill: number, stroke: number, fn: () => void,
-  textColor = 0xffffff, fontSize?: number, layer?: PIXI.Container,
+  textColor = 0xffffff, fontSize?: number, layer?: PIXI.Container, icon?: IconKind,
 ): void {
   const target = layer ?? core.container;
   const g = sketchPanel(w, h, { fill, border: stroke, width: 2, seed: seedFor(x, y, w) });
@@ -179,16 +180,24 @@ export function addButton(
   } else {
     // Shrink to fit when the label (e.g. a cost suffix like "发言 · 50 金币") is wider than the
     // button — narrow portrait buttons otherwise let the text spill past the button's border.
+    // With an icon the whole group scales instead, and drops the glyph outright when the button
+    // is too narrow to hold both (drawButtonLabel's minFit) — this scene's list rows have the
+    // tightest buttons in the game. Variant comes from the label colour: white on the dark/green
+    // fills, ink on the paper ones, which is exactly what tabIconVariant resolves.
     let size = fontSize ?? snapFont(Math.round(h * 0.36));
-    const maxTextW = w * 0.88;
-    let tl = txt(label, size, textColor, true);
-    while (tl.width > maxTextW && size > 10) {
-      size -= 1;
-      tl.destroy();
-      tl = txt(label, size, textColor, true);
+    if (icon) {
+      drawButtonLabel(target, x, y, w, h, label, icon, textColor, size, { inset: Math.round(w * 0.12) });
+    } else {
+      const maxTextW = w * 0.88;
+      let tl = txt(label, size, textColor, true);
+      while (tl.width > maxTextW && size > 10) {
+        size -= 1;
+        tl.destroy();
+        tl = txt(label, size, textColor, true);
+      }
+      tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
+      target.addChild(tl);
     }
-    tl.anchor.set(0.5, 0.5); tl.x = x + w / 2; tl.y = y + h / 2;
-    target.addChild(tl);
   }
 
   core.hits.push({ rect: { x, y, w, h }, scroll: !!layer, fn });

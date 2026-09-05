@@ -62,9 +62,19 @@
 
 > **按钮背景统一（2026-07-15）**：全屏菜单场景（登录/大厅/设置/…）早已共享 `render/sketchUi.ts` 的 `sketchPanel()` + `ui` 调色板（§7.5：手绘描边按钮，非透明/纯白/纯黑各自为政）；本次审计发现真正的缺口在**战斗内 HUD**（`HUDView`/`ProfilePopup`/`TutorialDirector`），此前各自写死十六进制色值（`0x2c2c2a`/`0xf0ece0`/`0x3a6ea5`/`0x999999`…）。新增 `ui/widgets/hudButton.ts` 导出 `drawHudButton(g, w, h, variant)` + `hudButtonText(variant)`，5 个语义变体：`primary`（主操作，暂停恢复/关闭/升级/教程跳过）、`accent`（同权重次操作，靠色相区分，刷新手牌/教程下一步）、`secondary`（低权重操作，退出大厅/设置齿轮）、`danger`（拉黑/移除等破坏性操作）、`disabled`。颜色源自 `theme.ts` 的 `palette`，换肤只改一处。同时把两处历史遗留的场景本地 `const C = {...}`（`SettingsScene.ts`/`IntroScene.ts`，与 `sketchUi.ui` 完全重复的调色板）改为直接 `import { ui } from '../render/sketchUi'`，消除并行调色板。
 
-> **按钮前置图标（2026-09-05 普查）**：`[图标][gap][文案]` 整组在按钮内居中——先由装备页锻造卡的 Craft 按钮落地（2026-08-19，见 `design/product/tab-icon-art-prompts.md` 末节），世界地图头部三枚入口按钮（拍卖/商店/回家）与结算页主/次按钮是同一形状。**深色填充的按钮必须显式取 `variant: 'active'`**：`tabIconVariant()` 按标签色判亮度，金色标签（`C.gold`，亮度 0.59）会落到 `inactive` 的淡灰墨，画在 `C.dark` 底上等于隐形（同一个坑在底栏犯过一次）。本次接线战役地图头部的「装备」（`equipIcon`，与大厅装备页签同一枚盾）与「章节」（`campaignTabIcon`，摊开的笔记本；标题位已被藏宝图 `pveTabIcon` 占着，不撞）。
+> **按钮前置图标（2026-09-05）**：`[图标][gap][文案]` 整组在按钮内居中。这个形状此前在四处各长了一遍（装备页 Craft 按钮、世界地图头部三枚入口、结算页主/次按钮、战役地图头部快捷键），本次抽成 **`ui/widgets/buttonLabel.ts` 的 `drawButtonLabel()`**，全屏菜单场景的按钮**内容**从此和按钮**背景**（`sketchPanel`/`sketchButton`）一样只有一份实现。三条行为写在 `test/ui/buttonLabel.ui.ts` 里：
 >
-> **缺口普查（同日）**：共享按钮 helper（`sketchButton`/各场景 `addButton`/`addBtn`/`drawButton`/`drawHudButton`/`entryBtn`/结算页主次按钮）共 **102 处调用点**，其中带前置图标的只有上述 **9 处**（Craft 1 + 世界地图 3 + 结算 2 + 好友列表的 ✕ 特例 1 + 本次战役 2），**剩余 ~93 处是纯文字按钮**；扣掉同一按钮的多状态分支（Sect 盟友按钮 3 次、Room 的准备/取消等）后，实际不同按钮约 **60–70 个**。其中战斗内 HUD 的 10 处走 `hudButton.ts` 另一套扁平体系、且寸土寸金，宜单独判断。**美术侧缺口远小于接线侧**：现有图标 114 枚（46 页签 + 5 金币 + 63 墨线），确认/取消/搜索/领取/出价/开始/加速/改名/购买这些高频动作都有现成符号可复用，真正没画过的约 **9–10 枚**——删除(trash，覆盖删邮件+删账号)、发送(纸飞机)、复制(房间码)、登录(钥匙)、登出、帮助(问号)、清空(橡皮)、暂停、升级(上箭头)、跳过(教程)。
+> - **整组居中**，不是文案居中——退回后者会让图标挂在按钮左缘外，只有正好盯着那个按钮才看得出来；
+> - **放不下就丢图标**（`minFit`，默认 0.82）：好友列表的「接受/拒绝」按钮是按两个汉字宽度做的，缩放整组会把文字压到看不清，那比没图标更糟。**正因为有这条兜底，「所有按钮都加图标」才能无脑铺开**——放不下的按钮在自己的真实宽度上自动退回原样，不需要维护一张「哪些按钮太窄」的手工清单；
+> - **方格用 `stack`**（图标在上、文案在下）：大厅右侧 Daily/Mail/Events/Auc. 那一列是正方形格，横排会被 `minFit` 判成放不下。
+>
+> **墨色变体**：`tabIconVariant()` 按**标签色**判亮度——白字→`active`（浅墨），深字/灰字→`content`（深墨）。这条规则对绝大多数按钮是对的（深底配白字、纸底配深字），**唯一要显式覆盖的是深底 + 金字**：`C.gold` 亮度 0.59 会落到淡灰墨，画在 `C.dark` 上等于隐形（同一个坑在底栏犯过一次），所以战役地图头部那两枚金字按钮显式传 `variant: 'active'`。反过来也别一律写死 `'active'`：禁用态标签是 `C.mid` 灰字、底色是浅灰 `btnOff`，写死浅墨同样看不见——**让标签色决定，是唯一不需要逐处判断的规则**。
+>
+> **本轮接线 96 处、26 枚图标、零新美术**（全部复用现有 114 枚：46 页签 + 5 金币 + 63 墨线）。用量前几名：`check` 确认/接受/提交 19、`close` 取消/拒绝/关闭 18、`coin` 购买/充值 8、`zoom` 搜索 7、`gift` 领取 5、`friendsTabIcon` 加好友/结盟 5、`familyTabIcon` 家族 4、`channelTabIcon` 发言 3。覆盖场景：好友（列表/搜索/家族宗门表单/邮件/世界频道）、房间、登录、设置（含改名与删号弹窗）、大厅右侧入口条、家族、宗门、拍卖（出价/一口价/上架）、抽卡、商城（全部购买按钮）、每日（签到/周奖/看广告）、成就、卡组、关卡准备、城池（加速/填满队伍）、卡牌融合批处理、六个通用对话框（确认/徽章/申诉/隐私/反馈/重连）。
+>
+> **仍缺的美术（10 枚，按影响面排序）**：删除(trash，删邮件+删账号)、登录(钥匙，登录页+设置页入口)、注册(新用户)、登出、改名(笔；`brush` 已被皮肤占用)、反馈(大厅侧栏 + 反馈对话框)、复制(房间码)、加入(门，`roomTabIcon` 已给「创建房间」)、清空(橡皮，房间码/搜索框)、结盟(握手；现借用 `friendsTabIcon`)。这些按钮已经接在 `drawButtonLabel` 上，补画后只需在调用点填一个 kind。
+>
+> **战斗内 HUD 的 10 处按钮本轮没接**：它们走 `ui/widgets/hudButton.ts` 的扁平填充体系（不是手绘描边），标签是**常驻 `PIXI.Text` 字段**、按帧改样式而不是重绘，接图标要动按钮的生命周期；且战斗界面寸土寸金。真要接的话，「升级」可复用 `progressTabIcon`（三个上箭头）、「退出大厅」`homeTabIcon`、「继续」`play`，缺暂停与跳过两枚。
 
 > **ScrollIndicator（2026-07-14）**：`ui/widgets/ScrollIndicator.ts` 导出 `drawScrollIndicator(parent, view, scrollY, scrollMax, opts?)`——在视口 `view`（= 内容 mask 矩形）右缘画墨黑细圆角轨道 + 位置滑块（长≈视口/内容比、位置≈滚动进度），`scrollMax<=0` 或视口退化时返回 `null` 不画。**只是指示器、不吃指针**，各场景仍自管拖拽/滚轮。约定：在 `render()` 内容+mask 加完后调一行，画进**不随滚动位移**的容器（容器位移型场景用 `this.container`；无 mask 剔除重绘型用 `bodyLayer` 并以 `listY/listH` 局部量作视口）；有拖拽快速路径（BattlePass/CardCodex）的场景在快速路径里也重画一次。已接入全部可滚动页面：BattlePass、CardCodex、Leaderboard、DeckBuilder、Chat、Shop（商城/充值）、Friends（好友/世界/邮件）、Equipment（背包/装配/合成）、Card 花名册、Sect（名册/频道）、Family（名册/频道）、Auction（列表/物品选择）、WorldMap 世界信息面板。纯几何 `scrollThumbGeometry()` 拆出单测。
 >

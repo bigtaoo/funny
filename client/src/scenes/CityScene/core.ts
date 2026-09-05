@@ -43,6 +43,7 @@ import {
   type ResourceType,
 } from '@nw/shared';
 import { BusyTracker } from '../../ui/busyTracker';
+import type { IconKind } from '../../render/icons';
 import { showToastMessage } from '../../net/log';
 import { ScrollTapGesture } from '../../ui/scrollTapGesture';
 import { wheelScrollY } from '../../ui/wheelScroll';
@@ -464,9 +465,10 @@ export class CitySceneCore {
     label: string,
     textColor: number,
     fill: number,
-    fn: () => void
+    fn: () => void,
+    icon?: IconKind
   ): void {
-    helpers.addBtn(this.artHost(), x, y, w, h, label, textColor, fill, fn);
+    helpers.addBtn(this.artHost(), x, y, w, h, label, textColor, fill, fn, icon);
   }
 
   fmtNum(n: number): string {
