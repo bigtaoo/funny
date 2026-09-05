@@ -14,7 +14,7 @@ import type { SaveData } from '../game/meta/SaveData';
 import type { RetentionView } from '../net/ApiClient';
 import { nextCheckinDay, dailyRewardClaimable, weeklyClaimableTiers } from '../game/meta/retention';
 import type { DailyCallbacks } from './DailyScene/types';
-import { renderCheckin, renderDailyTasks, renderWeekly, renderAds, type DailyPanelCtx, type Hit } from './DailyScene/panels';
+import { renderCheckin, renderDailyTasks, renderWeekly, renderAds, CHECKIN_PULSE, type DailyPanelCtx, type Hit } from './DailyScene/panels';
 import { preloadRewardIconArt } from '../render/rewardIcon';
 import type { IconKind } from '../render/icons';
 import { dispatchHit } from '../ui/hits';
@@ -74,6 +74,12 @@ export class DailyScene implements Scene {
   /** Seconds accumulator driving the ads-tab cooldown countdown (re-renders once/sec so "mm:ss" ticks down without a network refetch). */
   private cooldownTick = 0;
 
+  /** The check-in grid's claimable cell while that tab is up, else null — set by every render() via
+   *  `DailyPanelCtx.setPulseTarget`, animated in {@link update}. Never held across a render: the node
+   *  it points at is destroyed by `tearDownChildren`, so render() must overwrite (or clear) it. */
+  private pulseTarget: PIXI.Container | null = null;
+  private pulseT = 0;
+
   constructor(layout: ILayout, input: InputManager, cb: DailyCallbacks) {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
@@ -114,6 +120,14 @@ export class DailyScene implements Scene {
 
   update(dt: number): void {
     if (this.bt.tick(dt)) this.render();
+    // Claimable-cell breathe. Mutates one node's scale — deliberately NOT a re-render, which would
+    // re-mint 30 cells' worth of Text textures every frame (the iPad WebGL exhaustion documented on
+    // tearDownChildren).
+    if (this.pulseTarget) {
+      this.pulseT = (this.pulseT + dt) % CHECKIN_PULSE.periodSec;
+      const phase = (1 - Math.cos((this.pulseT / CHECKIN_PULSE.periodSec) * Math.PI * 2)) / 2;   // 0→1→0
+      this.pulseTarget.scale.set(CHECKIN_PULSE.min + (CHECKIN_PULSE.max - CHECKIN_PULSE.min) * phase);
+    }
     if (this.activeTab === 'ads' && (this.retention?.ads.nextAvailableAt ?? 0) > 0) {
       this.cooldownTick += dt;
       if (this.cooldownTick >= 1) {
@@ -125,6 +139,7 @@ export class DailyScene implements Scene {
 
   destroy(): void {
     this.destroyed = true;
+    this.pulseTarget = null;
     for (const unsub of this.unsubs) unsub();
     this.container.destroy({ children: true });
   }
@@ -159,12 +174,16 @@ export class DailyScene implements Scene {
       doClaim: () => void this.doClaim(),
       doClaimWeekly: (threshold: number) => void this.doClaimWeekly(threshold),
       doWatchAd: () => void this.doWatchAd(),
+      setPulseTarget: (cell) => { this.pulseTarget = cell; },
     };
   }
 
   private render(): void {
     if (this.destroyed) return;
     tearDownChildren(this.container);
+    // Whatever the breathe was pointing at is one of the nodes just destroyed. Only renderCheckin
+    // sets it again; the other three tabs (and the no-save early return below) leave it null.
+    this.pulseTarget = null;
     this.hits = [];
     const { w, h, landscape } = this;
 

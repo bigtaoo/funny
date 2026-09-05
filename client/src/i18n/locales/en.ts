@@ -1416,6 +1416,8 @@ export const en: Record<TranslationKey, string> = {
   'daily.checkin.rewardCard': '1 character card',
   'daily.checkin.rewardEquipment': '1 equipment item',
   'daily.checkin.bonusCoins': '+{n} coins',
+  'daily.checkin.claimHint': 'Day {n} · tap to claim',
+  'daily.checkin.tomorrowHint': 'Day {n} · unlocks tomorrow',
   'daily.tasks.title': 'Daily Tasks',
   'daily.tasks.pveLabel': 'Clear any PvE level',
   'daily.tasks.pvpLabel': 'Play any PvP match',
