@@ -373,13 +373,35 @@ describe.skipIf(!mongo)('worldsvc arrival tick: round-trip cost (`sched:arrivals
     }
   });
 
-  it('reports the batched/serial split so a silent demotion is visible', async () => {
+  it('reports the batched/serial split, and why each serial march is serial', async () => {
     const { worldMetricsSnapshot } = await import('../src/metrics');
+    const read = () => worldMetricsSnapshot().counters;
+    const delta = (a: Record<string, number>, b: Record<string, number>, k: string) => (b[k] ?? 0) - (a[k] ?? 0);
+
     await launchFleet();
-    const before = worldMetricsSnapshot().counters['arrivals.batched'] ?? 0;
+    // One extra march that will ARRIVE this tick, and one blocked by an occupant — so the three reasons are
+    // distinguishable, which is the whole point of splitting the counter.
+    await svc.joinWorld(W, 'arriver', 100, 700);
+    await m.collections.marches.insertOne(steppingMarch('arriver1', 'arriver', 100, 700, 2));
+    const blockedCell = tileId(W, 101, 200); // march mm0's next cell
+    await redis.hset(`world:${W}:occ`, blockedCell, JSON.stringify({
+      kind: 'stationed', id: blockedCell, ownerId: 'enemy', tile: blockedCell, leaveAt: Number.MAX_SAFE_INTEGER,
+    }));
+    await m.collections.stationed.insertOne({
+      _id: blockedCell, worldId: W, ownerId: 'enemy', tile: blockedCell, x: 101, y: 200,
+      teamId: 't1', army: [], troops: 50, sinceAt: DEPART, mode: 'idle',
+    });
+
+    const before = read();
     nowMs = DEPART + STEP_MS;
     await svc.processDueArrivals();
-    expect((worldMetricsSnapshot().counters['arrivals.batched'] ?? 0) - before).toBe(FLEET);
+    const after = read();
+
+    expect(delta(before, after, 'arrivals.batched')).toBe(FLEET - 1); // all but the blocked one
+    expect(delta(before, after, 'arrivals.serial')).toBe(2);
+    expect(delta(before, after, 'arrivals.arriving')).toBe(1);
+    expect(delta(before, after, 'arrivals.blocked')).toBe(1);
+    expect(delta(before, after, 'arrivals.legacy')).toBe(0);
   });
 
   it('leaves a player with no world doc on the per-march path', async () => {

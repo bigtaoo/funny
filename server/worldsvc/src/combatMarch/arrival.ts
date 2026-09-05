@@ -81,7 +81,7 @@ export class ArrivalService {
     // another march in the batch — are settled together in a constant number of round trips instead. See
     // arrivalBatch.ts for why the rest deliberately stays serial: a field encounter writes the DEFENDER's
     // ledger, so concurrent settlement is a genuine cross-player race, not a theoretical one.
-    const { fast, serial, familyOf } = await collectArrivalBatch(this.core, due, t);
+    const { fast, serial, stats, familyOf } = await collectArrivalBatch(this.core, due, t);
     // Batched writes first, while the reads that justified them are freshest: the serial pass below can run
     // for a long time (it does combat, and combat calls metaserver over HTTP).
     await applyFastSteps(this.core, fast, familyOf);
@@ -89,6 +89,12 @@ export class ArrivalService {
     // number rather than just a slower tick (see metrics.ts `bumpCounter`).
     bumpCounter('arrivals.batched', fast.length);
     bumpCounter('arrivals.serial', serial.length);
+    // ...split by REASON, because the three are different problems. `arriving` marches settle — they fight,
+    // park, take ground — and no batching makes that cheaper; `blocked` ones were demoted because the ground
+    // around them was busy. Which of the two dominates the serial tail decides where the next lever goes.
+    bumpCounter('arrivals.arriving', stats.arriving);
+    bumpCounter('arrivals.blocked', stats.blocked);
+    bumpCounter('arrivals.legacy', stats.legacy);
     let n = 0;
     for (const m of serial) {
       if (m.path && m.stepIndex != null && m.nextStepAt != null) {

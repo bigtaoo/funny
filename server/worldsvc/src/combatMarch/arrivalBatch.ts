@@ -100,6 +100,21 @@ export interface ArrivalBatchSplit {
   fast: StepPlan[];
   /** Marches that keep the per-march settlement path, in their original due order. */
   serial: MarchDoc[];
+  /**
+   * Why each serial march is serial. Reported because "the tick is slow" and "the tick is slow FOR THIS
+   * REASON" are different findings, and the next lever depends on which: settling arrivals (each one a real
+   * battle, not batchable by any amount of cleverness) is a different problem from marches demoted because
+   * the ground around them was busy. The first 200-bot run after the batching landed showed 796 batched
+   * against 1300 serial, and this is what tells those 1300 apart.
+   */
+  stats: {
+    /** Stepping marches that reach their destination this tick and must settle (fight, park, take ground). */
+    arriving: number;
+    /** Stepping marches demoted by an occupant, coverage, a shared cell, or a missing playerWorld. */
+    blocked: number;
+    /** Legacy docs and 'return' legs, which have no stepping cursor and settle by arriveAt. */
+    legacy: number;
+  };
 }
 
 /**
@@ -125,16 +140,21 @@ export function splitArrivalBatch(input: ArrivalBatchInput): ArrivalBatchSplit {
 
   const fast: StepPlan[] = [];
   const serial: MarchDoc[] = [];
+  let arriving = 0;
   for (const p of plans) {
     const batchable =
       !p.reachesEnd &&
       hasPlayerWorld(p.march) &&
       p.cells.every((c) => touchCount.get(c) === 1) &&
       p.entered.every((c) => !occ.has(c) && !cover.has(c));
-    if (batchable) fast.push(p);
-    else serial.push(p.march);
+    if (batchable) {
+      fast.push(p);
+      continue;
+    }
+    if (p.reachesEnd) arriving++;
+    serial.push(p.march);
   }
-  return { fast, serial };
+  return { fast, serial, stats: { arriving, blocked: serial.length - arriving, legacy: legacy.length } };
 }
 
 /**
@@ -226,7 +246,7 @@ export async function collectArrivalBatch(
   });
   // Legacy / 'return' marches settle through the untouched single-arrival path, ahead of the stepping ones
   // demoted to serial, which is the order processDueArrivals walked the due list in before.
-  return { fast: split.fast, serial: [...legacy, ...split.serial], familyOf };
+  return { fast: split.fast, serial: [...legacy, ...split.serial], stats: split.stats, familyOf };
 }
 
 /**
