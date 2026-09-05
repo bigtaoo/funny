@@ -88,7 +88,7 @@ export class WorldChatPanel {
     addButton(core, sendLabel,
       px + inputW + Math.round(w * 0.02), inputY + Math.round(inputH * 0.125),
       sendBtnW, Math.round(inputH * 0.75), sendFill, C.gold,
-      () => { if (!core.worldSending) void this.network.doSendWorldChat(); });
+      () => { if (!core.worldSending) void this.network.doSendWorldChat(); }, 0xffffff, undefined, undefined, 'channelTabIcon');
 
     // Message list above input
     core.regionTop = core.bodyTop + Math.round(h * 0.01);
@@ -106,7 +106,7 @@ export class WorldChatPanel {
       addButton(core, t('friends.retry'),
         core.cCX - btnW / 2, msgY + Math.round(h * 0.05),
         btnW, btnH, C.dark, C.gold,
-        () => { void this.network.loadWorldMessages(); }, 0xffffff, undefined, layer);
+        () => { void this.network.loadWorldMessages(); }, 0xffffff, undefined, layer, 'replay');
       core.maxScroll = 0;
       return;
     }

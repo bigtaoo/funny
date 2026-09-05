@@ -12,6 +12,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { t } from '../../i18n';
 import { buildIcon } from '../../render/icons';
 import { buildMaterialIcon, type MaterialKind } from '../../render/atlas/materialAtlas';
@@ -204,9 +205,8 @@ export class CreateListingPanel {
     const okBtn = sketchButton(btnW, btnH, seedFor(0, 0, btnW));
     okBtn.x = mx + mw / 2 - 98 * SCALE; okBtn.y = cy;
     ml.addChild(okBtn);
-    const ol = txt(t('auction.create'), snapFont(13 * SCALE), C.light);
-    ol.anchor.set(0.5, 0.5); ol.x = mx + mw / 2 - 53 * SCALE; ol.y = cy + 16 * SCALE;
-    ml.addChild(ol);
+    drawButtonLabel(ml, okBtn.x, okBtn.y, btnW, btnH, t('auction.create'), 'tag', C.light,
+      snapFont(13 * SCALE), { bold: false });
     core.modalHits.push({ rect: { x: okBtn.x, y: okBtn.y, w: btnW, h: btnH }, fn: () => void this.doCreate() });
 
     const caBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 1, btnW) });

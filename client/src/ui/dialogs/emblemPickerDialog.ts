@@ -13,6 +13,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
+import { drawButtonLabel } from '../widgets/buttonLabel';
 import { t } from '../../i18n/index';
 import { EMBLEM_KEYS, EMBLEM_COLORS, type EmblemKey, buildEmblemIcon, isEmblemAtlasReady } from '../../render/emblemIcon';
 import { type Hit, type Rect } from '../hits';
@@ -137,17 +138,15 @@ export function drawEmblemPickerDialog(
     : sketchButton(btnW, btnH, seedFor(0, 1, btnW));
   confirmBtn.x = mx + mw / 2 - btnGapHalf - btnW; confirmBtn.y = btnY;
   ml.addChild(confirmBtn);
-  const cl = txt(t('common.ok'), FS.bodyLg, busy ? C.mid : C.light, true);
-  cl.anchor.set(0.5, 0.5); cl.x = confirmBtn.x + btnW / 2; cl.y = btnY + btnH / 2;
-  ml.addChild(cl);
+  drawButtonLabel(ml, confirmBtn.x, btnY, btnW, btnH, t('common.ok'), 'check', busy ? C.mid : C.light,
+    FS.bodyLg);
   if (!busy) hits.push({ rect: { x: confirmBtn.x, y: btnY, w: btnW, h: btnH }, fn: onConfirm });
 
   const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, btnW) });
   cancelBtn.x = mx + mw / 2 + btnGapHalf; cancelBtn.y = btnY;
   ml.addChild(cancelBtn);
-  const xl = txt(t('common.cancel'), FS.bodyLg, C.dark);
-  xl.anchor.set(0.5, 0.5); xl.x = cancelBtn.x + btnW / 2; xl.y = btnY + btnH / 2;
-  ml.addChild(xl);
+  drawButtonLabel(ml, cancelBtn.x, btnY, btnW, btnH, t('common.cancel'), 'close', C.dark, FS.bodyLg,
+    { bold: false });
   hits.push({ rect: { x: cancelBtn.x, y: btnY, w: btnW, h: btnH }, sound: 'sfx.ui.back', fn: onCancel });
 
   return hits;

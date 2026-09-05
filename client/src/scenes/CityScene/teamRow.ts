@@ -47,7 +47,8 @@ export function renderTeamsRow(core: CitySceneCore): number {
     t('city.military.fillAllTeams'),
     0xffffff,
     C.accent,
-    () => void core.doFillAllTeams()
+    () => void core.doFillAllTeams(),
+    'unit'
   );
 
   const rowY = bandTop + TEAM_ROW_LABEL_H;

@@ -16,6 +16,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
 import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
+import { drawButtonLabel } from '../widgets/buttonLabel';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
@@ -163,9 +164,8 @@ export class ConsentDialog implements Scene {
     btn.on('pointertap', tapHandler(() => this.cb.onAccept()));
     this.container.addChild(btn);
 
-    const btnLabel = txt(t('consent.accept'), snapFont(Math.round(bH * 0.4)), 0xffffff, true);
-    btnLabel.anchor.set(0.5, 0.5); btnLabel.x = bX + bW / 2; btnLabel.y = bY + bH / 2;
-    this.container.addChild(btnLabel);
+    drawButtonLabel(this.container, bX, bY, bW, bH, t('consent.accept'), 'check', 0xffffff,
+      snapFont(Math.round(bH * 0.4)));
   }
 
   /** Add a centred, tappable "· <label>" link that opens `url` in a new browser tab. */

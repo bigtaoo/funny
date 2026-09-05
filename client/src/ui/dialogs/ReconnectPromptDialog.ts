@@ -11,6 +11,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
 import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
+import { drawButtonLabel } from '../widgets/buttonLabel';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
@@ -114,9 +115,8 @@ export class ReconnectPromptDialog implements Scene {
     resumeBtn.cursor = 'pointer';
     resumeBtn.on('pointertap', tapHandler(() => this.cb.onReconnect()));
     this.container.addChild(resumeBtn);
-    const resumeLabel = txt(t('reconnect.accept'), snapFont(Math.round(bH * 0.36)), 0xffffff, true);
-    resumeLabel.anchor.set(0.5, 0.5); resumeLabel.x = bx1 + bW / 2; resumeLabel.y = bY + bH / 2;
-    this.container.addChild(resumeLabel);
+    drawButtonLabel(this.container, bx1, bY, bW, bH, t('reconnect.accept'), 'replay', 0xffffff,
+      snapFont(Math.round(bH * 0.36)));
 
     const declineBtn = sketchPanel(bW, bH, { fill: 0xeeeeee, border: C.mid, width: 2.4, seed: seedFor(bW, bH, 3) });
     declineBtn.x = bx2; declineBtn.y = bY;
@@ -124,8 +124,7 @@ export class ReconnectPromptDialog implements Scene {
     declineBtn.cursor = 'pointer';
     declineBtn.on('pointertap', tapHandler(() => this.cb.onDecline(), 'sfx.ui.back'));
     this.container.addChild(declineBtn);
-    const declineLabel = txt(t('reconnect.decline'), snapFont(Math.round(bH * 0.36)), C.dark, true);
-    declineLabel.anchor.set(0.5, 0.5); declineLabel.x = bx2 + bW / 2; declineLabel.y = bY + bH / 2;
-    this.container.addChild(declineLabel);
+    drawButtonLabel(this.container, bx2, bY, bW, bH, t('reconnect.decline'), 'close', C.dark,
+      snapFont(Math.round(bH * 0.36)));
   }
 }

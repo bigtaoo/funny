@@ -13,6 +13,8 @@ import type { SettingsSceneCallbacks } from './types';
 import type { Hit } from '../../ui/hits';
 import { isDataSaverEnabled, setDataSaverEnabled } from '../../assets/prefetchPolicy';
 import { legalUrl } from '../../ui/dialogs/ConsentDialog';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import type { IconKind } from '../../render/icons';
 
 const LOCALE_LABEL: Record<Locale, string> = { zh: '中文', en: 'English', de: 'Deutsch' };
 
@@ -40,7 +42,7 @@ export interface PanelHost {
 }
 
 /** A dark button with a hand-drawn border. `fn = null` → disabled (greyed, inert). */
-export function addButton(host: PanelHost, label: string, y: number, border: number, fn: (() => void) | null, width?: number, x?: number): void {
+export function addButton(host: PanelHost, label: string, y: number, border: number, fn: (() => void) | null, width?: number, x?: number, icon?: IconKind): void {
   const { w, h } = host;
   const btnW = width ?? Math.round(w * 0.5);
   const btnH = Math.round(h * 0.07);
@@ -55,10 +57,12 @@ export function addButton(host: PanelHost, label: string, y: number, border: num
   box.x = bx; box.y = y;
   host.container.addChild(box);
 
-  const lbl = txt(label, snapFont(Math.round(btnH * 0.34)), 0xffffff, true);
-  lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = y + btnH / 2;
-  lbl.alpha = enabled ? 1 : 0.6;
-  host.container.addChild(lbl);
+  // [icon][gap][label], drawn into its own container so the disabled state can dim the glyph
+  // and the text together (the label used to carry the alpha alone).
+  const content = new PIXI.Container();
+  drawButtonLabel(content, bx, y, btnW, btnH, label, icon ?? null, 0xffffff, snapFont(Math.round(btnH * 0.34)));
+  content.alpha = enabled ? 1 : 0.6;
+  host.container.addChild(content);
 
   if (enabled) host.hits.push({ rect: { x: bx, y, w: btnW, h: btnH }, fn });
 }
@@ -237,7 +241,7 @@ export function drawHelp(host: PanelHost): void {
   const label = txt(t('settings.help'), FS.title, C.dark, true);
   label.anchor.set(0, 0.5); label.x = x; label.y = secY;
   container.addChild(label);
-  addButton(host, t('settings.replayTutorial'), secY + Math.round(h * 0.045), C.accent, () => cb.onReplayTutorial!(), Math.round(w * 0.4), x);
+  addButton(host, t('settings.replayTutorial'), secY + Math.round(h * 0.045), C.accent, () => cb.onReplayTutorial!(), Math.round(w * 0.4), x, 'replay');
 }
 
 export function drawAccount(host: PanelHost): void {

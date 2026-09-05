@@ -6,6 +6,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
 import { t } from '../../i18n';
 import { ui as C, sketchPanel } from '../../render/sketchUi';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { SketchPen } from '../../render/sketch';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { FS, snapFont } from '../../render/fontScale';
@@ -77,17 +78,15 @@ export function drawRenameOverlay(host: OverlayHost): void {
   const okBox = new PIXI.Graphics();
   okBox.beginFill(C.green); okBox.drawRect(okX, byy, btnW, btnH); okBox.endFill();
   container.addChild(okBox);
-  const okLbl = txt(t('settings.renameConfirm'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
-  okLbl.anchor.set(0.5, 0.5); okLbl.x = okX + btnW / 2; okLbl.y = byy + btnH / 2;
-  container.addChild(okLbl);
+  drawButtonLabel(container, okX, byy, btnW, btnH, t('settings.renameConfirm'), 'check', 0xffffff,
+    snapFont(Math.round(btnH * 0.36)));
   host.hits.push({ rect: { x: okX, y: byy, w: btnW, h: btnH }, fn: () => host.submitRename() });
 
   const cBox = new PIXI.Graphics();
   cBox.beginFill(C.mid); cBox.drawRect(cancelX, byy, btnW, btnH); cBox.endFill();
   container.addChild(cBox);
-  const cLbl = txt(t('settings.renameCancel'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
-  cLbl.anchor.set(0.5, 0.5); cLbl.x = cancelX + btnW / 2; cLbl.y = byy + btnH / 2;
-  container.addChild(cLbl);
+  drawButtonLabel(container, cancelX, byy, btnW, btnH, t('settings.renameCancel'), 'close', 0xffffff,
+    snapFont(Math.round(btnH * 0.36)));
   host.hits.push({ rect: { x: cancelX, y: byy, w: btnW, h: btnH }, fn: () => host.closeRename() });
 
   // Tap anywhere outside the panel/buttons closes the overlay — registered LAST so the
@@ -137,9 +136,8 @@ export function drawDeleteConfirm(host: OverlayHost): void {
   const cBox = new PIXI.Graphics();
   cBox.beginFill(C.mid); cBox.drawRect(cancelX, byy, btnW, btnH); cBox.endFill();
   container.addChild(cBox);
-  const cLbl = txt(t('settings.deleteAccount.cancel'), snapFont(Math.round(btnH * 0.36)), 0xffffff, true);
-  cLbl.anchor.set(0.5, 0.5); cLbl.x = cancelX + btnW / 2; cLbl.y = byy + btnH / 2;
-  container.addChild(cLbl);
+  drawButtonLabel(container, cancelX, byy, btnW, btnH, t('settings.deleteAccount.cancel'), 'close', 0xffffff,
+    snapFont(Math.round(btnH * 0.36)));
   host.hits.push({ rect: { x: cancelX, y: byy, w: btnW, h: btnH }, fn: () => host.closeDelete() });
 
   // Tap outside panel = cancel (registered last so the buttons win — first-match-wins).

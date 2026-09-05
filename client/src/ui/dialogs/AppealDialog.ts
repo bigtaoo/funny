@@ -13,6 +13,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
 import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
+import { drawButtonLabel } from '../widgets/buttonLabel';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { tapHandler } from '../hits';
@@ -192,9 +193,8 @@ export class AppealDialog implements Scene {
     this.submitBtn.cursor = 'pointer';
     this.submitBtn.on('pointertap', tapHandler(() => void this.submit()));
     this.container.addChild(this.submitBtn);
-    const submitLabel = txt(t('appeal.submit'), snapFont(Math.round(bH * 0.36)), 0xffffff, true);
-    submitLabel.anchor.set(0.5, 0.5); submitLabel.x = bx1 + bW / 2; submitLabel.y = bY + bH / 2;
-    this.container.addChild(submitLabel);
+    drawButtonLabel(this.container, bx1, bY, bW, bH, t('appeal.submit'), 'check', 0xffffff,
+      snapFont(Math.round(bH * 0.36)));
 
     const cancelBtn = sketchPanel(bW, bH, { fill: 0xeeeeee, border: C.mid, width: 2.4, seed: seedFor(bW, bH, 3) });
     cancelBtn.x = bx2; cancelBtn.y = bY;
@@ -202,8 +202,7 @@ export class AppealDialog implements Scene {
     cancelBtn.cursor = 'pointer';
     cancelBtn.on('pointertap', tapHandler(() => { this.closeInput(); this.cb.onClose(); }, 'sfx.ui.back'));
     this.container.addChild(cancelBtn);
-    const cancelLabel = txt(t('appeal.cancel'), snapFont(Math.round(bH * 0.36)), C.dark, true);
-    cancelLabel.anchor.set(0.5, 0.5); cancelLabel.x = bx2 + bW / 2; cancelLabel.y = bY + bH / 2;
-    this.container.addChild(cancelLabel);
+    drawButtonLabel(this.container, bx2, bY, bW, bH, t('appeal.cancel'), 'close', C.dark,
+      snapFont(Math.round(bH * 0.36)));
   }
 }

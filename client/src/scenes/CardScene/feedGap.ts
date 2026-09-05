@@ -11,6 +11,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { snapFont } from '../../render/fontScale';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { FACTION_COLOR } from '../../render/factionIcon';
 import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { buildLevelStars } from '../../render/levelStars';
@@ -252,18 +253,16 @@ export function drawPrepBatchBtn(
   const btnH = 17 * S;
   const btnY = y + (GAP_U * S - btnH) / 2;
   const lbl = txt(t('roster.fusePrepAll', { n: rounds }), snapFont(9 * S), busy ? C.mid : C.light, true);
-  const btnW = Math.min(w - 16 * S, Math.max(110 * S, lbl.width + 20 * S));
+  const btnW = Math.min(w - 16 * S, Math.max(110 * S, lbl.width + buttonLabelIconW(snapFont(9 * S)) + 20 * S));
   const btnX = x + (w - btnW) / 2;
   const btn = sketchPanel(btnW, btnH, {
     fill: busy ? C.btnOff : C.dark, border: C.gold, seed: seedFor(0, 28, btnW),
   });
   btn.x = btnX; btn.y = btnY;
   ml.addChild(btn);
-  lbl.anchor.set(0.5, 0.5);
-  lbl.x = btnX + btnW / 2;
-  lbl.y = btnY + btnH / 2;
-  if (lbl.width > btnW - 8 * S) lbl.scale.set((btnW - 8 * S) / lbl.width);
-  ml.addChild(lbl);
+  lbl.destroy();
+  drawButtonLabel(ml, btnX, btnY, btnW, btnH, t('roster.fusePrepAll', { n: rounds }), 'craftTabIcon',
+    busy ? C.mid : C.light, snapFont(9 * S), { inset: 8 * S });
   if (!busy) pushHit({ x: btnX, y: btnY, w: btnW, h: btnH }, onRun);
 }
 

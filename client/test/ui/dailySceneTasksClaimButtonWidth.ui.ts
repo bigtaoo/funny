@@ -100,19 +100,32 @@ function expectedPad(btnH: number): number {
 }
 
 /**
- * `renderDailyTasks` appends the button's Graphics background then its Text label as the very
- * last two children it adds (nothing else is added after in `render()` while `bt.loadingVisible`
- * is false, which it is here) — so they're reliably the last two entries in `container.children`.
- * Used for the "already claimed" state, which registers no click hit to read geometry from another
- * way.
+ * `renderDailyTasks` appends the button's Graphics background, then (since the 2026-09-05 button-icon
+ * pass) the gift glyph's container, then its Text label — nothing else is added after in `render()`
+ * while `bt.loadingVisible` is false, which it is here. So the label is the LAST child and the
+ * background is the last Graphics before it; the glyph sits between them. Used for the "already
+ * claimed" state, which registers no click hit to read geometry from another way.
  */
-function lastButtonPair(scene: DailyScene): { bg: PIXI.Graphics; label: PIXI.Text } {
+function lastButtonPair(scene: DailyScene): { bg: PIXI.Graphics; glyph: PIXI.DisplayObject; label: PIXI.Text } {
   const children = scene.container.children;
   const label = children[children.length - 1] as PIXI.Text;
-  const bg = children[children.length - 2] as PIXI.Graphics;
   expect(label).toBeInstanceOf(PIXI.Text);
-  expect(bg).toBeInstanceOf(PIXI.Graphics);
-  return { bg, label };
+  const bgIdx = children.map((c, i) => [c, i] as const)
+    .filter(([c]) => c instanceof PIXI.Graphics)
+    .map(([, i]) => i)
+    .pop();
+  expect(bgIdx).toBeDefined();
+  const bg = children[bgIdx!] as PIXI.Graphics;
+  return { bg, glyph: children[bgIdx! + 1]!, label };
+}
+
+/**
+ * The group — `[icon][gap][label]` — is what gets centred in the button now, not the label alone.
+ * Its left edge is the glyph's x (drawButtonLabel positions it there regardless of whether the
+ * icon texture has decoded, which in a headless run it never does), its right edge the label's.
+ */
+function groupCentre(glyph: PIXI.DisplayObject, label: PIXI.Text): number {
+  return (glyph.x + label.x + label.width) / 2;
 }
 
 function claimedSave(): SaveData {
@@ -145,13 +158,13 @@ describe('DailyScene — daily-tasks claim button always fits its label (2026-08
     s.activeTab = 'tasks';
     s.render();
 
-    const { bg, label } = lastButtonPair(scene);
+    const { bg, glyph, label } = lastButtonPair(scene);
     expect(label.text).toBe(t('daily.tasks.rewardClaimed'));
     expect(bg.width).toBeGreaterThanOrEqual(label.width + expectedPad(bg.height));
-    // Label stays centred in the (now possibly widened) button — a few px of slack for the
-    // sketchPanel border's hand-drawn jitter, which nudges the Graphics' measured bounds slightly
-    // off its nominal w/h (see sketchPanel/SketchPen), independent of this fix.
-    expect(Math.abs(label.x - (bg.x + bg.width / 2))).toBeLessThan(3);
+    // The icon+label group stays centred in the (now possibly widened) button — a few px of slack
+    // for the sketchPanel border's hand-drawn jitter, which nudges the Graphics' measured bounds
+    // slightly off its nominal w/h (see sketchPanel/SketchPen), independent of this fix.
+    expect(Math.abs(groupCentre(glyph, label) - (bg.x + bg.width / 2))).toBeLessThan(3);
     scene.destroy();
   });
 
@@ -176,10 +189,10 @@ describe('DailyScene — daily-tasks claim button always fits its label (2026-08
     s.activeTab = 'tasks';
     s.render();
 
-    const { bg, label } = lastButtonPair(scene);
+    const { bg, glyph, label } = lastButtonPair(scene);
     expect(label.text).toBe(t('daily.tasks.rewardClaimed'));
     expect(bg.width).toBeGreaterThanOrEqual(label.width + expectedPad(bg.height));
-    expect(Math.abs(label.x - (bg.x + bg.width / 2))).toBeLessThan(3);
+    expect(Math.abs(groupCentre(glyph, label) - (bg.x + bg.width / 2))).toBeLessThan(3);
     scene.destroy();
   });
 

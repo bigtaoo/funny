@@ -12,6 +12,7 @@ import { buildIcon, type IconKind } from '../render/icons';
 import { buildMaterialIcon, type MaterialKind } from '../render/atlas/materialAtlas';
 import { FS, snapFont } from '../render/fontScale';
 import { dispatchHit, type Hit } from '../ui/hits';
+import { drawButtonLabel } from '../ui/widgets/buttonLabel';
 
 // ── LevelPrepScene — objective / brief / stamina + Start ────────────────────
 //
@@ -174,9 +175,8 @@ export class LevelPrepScene implements Scene {
       const buyBg = sketchPanel(buyW, buyH, { fill: C.red, border: C.dark, width: 1.6, seed: seedFor(buyX, buyY, buyW) });
       buyBg.x = buyX; buyBg.y = buyY;
       this.container.addChild(buyBg);
-      const buyLbl = txt(t('stamina.buy'), snapFont(Math.round(buyH * 0.4)), 0xffffff, true);
-      buyLbl.anchor.set(0.5, 0.5); buyLbl.x = buyX + buyW / 2; buyLbl.y = buyY + buyH / 2;
-      this.container.addChild(buyLbl);
+      drawButtonLabel(this.container, buyX, buyY, buyW, buyH, t('stamina.buy'), 'coin', 0xffffff,
+        snapFont(Math.round(buyH * 0.4)));
       this.hits.push({ rect: { x: buyX, y: buyY, w: buyW, h: buyH }, fn: () => this.cb.onBuyStamina() });
     }
 

@@ -14,6 +14,7 @@ import { caretText } from './repaint';
 import { drawChatLine } from '../../ui/widgets/chatRow';
 import { truncateToWidth } from '../../ui/widgets/truncateText';
 import { FS } from '../../render/fontScale';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore } from './core';
 
@@ -298,8 +299,7 @@ export function renderChannel(
     : sketchButton(sendW, inputH, seedFor(1, 0, sendW));
   sendBtn.x = right - sendW; sendBtn.y = inputY;
   core.bodyLayer.addChild(sendBtn);
-  const sl = txt(t('family.send'), FS.heading, sendBusy ? C.mid : C.light);
-  sl.anchor.set(0.5, 0.5); sl.x = right - sendW / 2; sl.y = inputY + inputH / 2;
-  core.bodyLayer.addChild(sl);
+  drawButtonLabel(core.bodyLayer, right - sendW, inputY, sendW, inputH, t('family.send'), 'channelTabIcon',
+    sendBusy ? C.mid : C.light, FS.heading);
   if (!sendBusy) core.hitRects.push({ rect: { x: right - sendW, y: inputY, w: sendW, h: inputH }, fn: () => void input.doSendMsg() });
 }

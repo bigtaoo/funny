@@ -15,6 +15,7 @@ import { fitContentToBox } from '../../render/fitToBox';
 import { Rect } from '../../layout/ILayout';
 import { C, txt, sketchPanel, drawBtn, type LobbySceneCore } from './core';
 import type { BadgesPanel } from './badges';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { headerMetrics } from './format';
 import { snapFont } from '../../render/fontScale';
 
@@ -187,13 +188,16 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
     const hasFeedback = !!core.cb.onOpenFeedback;
     const hasAuction  = !!core.cb.onOpenAuction;
 
-    type StripEntry = { label: string; border: number; seed: number; tag: 'daily' | 'mail' | 'events' | 'feedback' | 'auction' };
+    // `icon` is the same glyph the destination screen wears on its own title bar / tab, so the
+    // strip reads as five shortcuts rather than five words. Feedback has no glyph of its own yet
+    // (see UI_DESIGN §2's art gap list) and stays label-only — drawButtonLabel takes null.
+    type StripEntry = { label: string; border: number; seed: number; icon: IconKind | null; tag: 'daily' | 'mail' | 'events' | 'feedback' | 'auction' };
     const entries: StripEntry[] = [];
-    entries.push({ label: t('daily.title'),         border: C.gold,  seed: 71, tag: 'daily'    });
-    if (hasMail)     entries.push({ label: t('lobby.strip.mail'),    border: C.gold,  seed: 72, tag: 'mail'     });
-    if (hasEvents)   entries.push({ label: t('lobby.strip.events'),  border: C.red,   seed: 73, tag: 'events'   });
-    if (hasFeedback) entries.push({ label: t('lobby.strip.feedback'),border: C.accent,seed: 74, tag: 'feedback' });
-    if (hasAuction)  entries.push({ label: t('lobby.strip.auction'), border: C.green, seed: 75, tag: 'auction'  });
+    entries.push({ label: t('daily.title'),         border: C.gold,  seed: 71, icon: 'checkinTabIcon', tag: 'daily'    });
+    if (hasMail)     entries.push({ label: t('lobby.strip.mail'),    border: C.gold,  seed: 72, icon: 'mailTabIcon',    tag: 'mail'     });
+    if (hasEvents)   entries.push({ label: t('lobby.strip.events'),  border: C.red,   seed: 73, icon: 'eventTabIcon',   tag: 'events'   });
+    if (hasFeedback) entries.push({ label: t('lobby.strip.feedback'),border: C.accent,seed: 74, icon: null,             tag: 'feedback' });
+    if (hasAuction)  entries.push({ label: t('lobby.strip.auction'), border: C.green, seed: 75, icon: 'auctionTabIcon', tag: 'auction'  });
 
     const itemGap  = Math.round(h * 0.014);
     const totalH   = entries.length * sideItemSz + (entries.length - 1) * itemGap;
@@ -207,13 +211,9 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
       bg.x = sideX; bg.y = iy;
       core.container.addChild(bg);
 
-      const lbl = txt(entry.label, fontSize, C.dark, true);
-      lbl.anchor.set(0.5, 0.5);
-      lbl.x = sideX + sideItemSz / 2; lbl.y = iy + sideItemSz / 2;
-      // Scale down if label doesn't fit (e.g. longer EN strings).
-      const maxW = sideItemSz * 0.88;
-      if (lbl.width > maxW) lbl.scale.set(maxW / lbl.width);
-      core.container.addChild(lbl);
+      // Square cell → glyph stacked over the label (a row would leave neither any room).
+      drawButtonLabel(core.container, sideX, iy, sideItemSz, sideItemSz, entry.label, entry.icon,
+        C.dark, fontSize, { stack: true, inset: sideItemSz * 0.12 });
 
       const rect: Rect = { x: sideX, y: iy, w: sideItemSz, h: sideItemSz };
       switch (entry.tag) {

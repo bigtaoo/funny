@@ -15,6 +15,7 @@ import { drawSidebarTabs, drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab }
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 import { dispatchHit, type Hit } from '../ui/hits';
+import { drawButtonLabel } from '../ui/widgets/buttonLabel';
 
 // collection/progression moved off 'brush'/'trophy' to their own AI icons (AI art batch 2 dedupe,
 // design/product/tab-icon-art-prompts.md §batch2) — 'brush' meant "皮肤" elsewhere (now skinIcon), not
@@ -375,9 +376,8 @@ export class AchievementScene implements Scene {
       const btn = sketchPanel(bw, bh, { fill: C.gold, border: C.gold, width: 1.6, seed: seedFor(bx, by, bw) });
       btn.x = bx; btn.y = by;
       this.container.addChild(btn);
-      const lbl = txt(t('achievement.claim', { coins: s.coins }), snapFont(Math.round(bh * 0.42)), 0xffffff, true);
-      lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-      this.container.addChild(lbl);
+      drawButtonLabel(this.container, bx, by, bw, bh, t('achievement.claim', { coins: s.coins }), 'gift',
+        0xffffff, snapFont(Math.round(bh * 0.42)));
       this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, sound: 'sfx.ui.reward', fn: () => void this.claim(def.id, s.tier) });
     } else if (s.claimed) {
       const st = txt(t('achievement.claimed'), snapFont(Math.round(rowH * 0.34)), C.green, true);

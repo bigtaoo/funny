@@ -17,6 +17,7 @@ import { drawChatLine } from '../../ui/widgets/chatRow';
 const ROW_INSET = 12;
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { FS } from '../../render/fontScale';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import type { SectSceneCore } from './core';
 import { ROW_H } from './core';
 
@@ -202,9 +203,8 @@ export function renderChannel(
   const sendBtn = sketchButton(sendW, inputH, seedFor(1, 0, sendW));
   sendBtn.x = right - sendW; sendBtn.y = inputY;
   core.bodyLayer.addChild(sendBtn);
-  const sl = txt(sendLabel, FS.heading, C.light);
-  sl.anchor.set(0.5, 0.5); sl.x = right - sendW / 2; sl.y = inputY + inputH / 2;
-  core.bodyLayer.addChild(sl);
+  drawButtonLabel(core.bodyLayer, right - sendW, inputY, sendW, inputH, sendLabel, 'channelTabIcon',
+    C.light, FS.heading);
   core.hitRects.push({
     rect: { x: right - sendW, y: inputY, w: sendW, h: inputH },
     fn: () => { if (!core.channelSending) void actions.doSendChannelMessage(); },

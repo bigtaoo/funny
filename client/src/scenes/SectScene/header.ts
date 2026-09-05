@@ -6,6 +6,8 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
+import type { IconKind } from '../../render/icons';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { buildTitleIcon, backPillRightEdge } from '../../ui/widgets/SceneHeader';
 import { FS } from '../../render/fontScale';
@@ -133,27 +135,27 @@ function drawHeaderAllianceButtons(
   // Busy (a mutating action in flight) greys these out too — mainly to avoid the race of opening
   // a new ally/manage-ally modal while a previous ally/unally request is still pending.
   const busy = core.bt.busy;
-  const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
+  const addBtn = (label: string, color: number, action: () => void, seed: number, icon: IconKind): void => {
     const c = busy ? C.mid : color;
-    // Measure the label off-tree first, then add the panel *before* the label so the label
-    // paints on top of it — adding the opaque sketchPanel fill after the text hid the text
-    // entirely (border-only button, still clickable since hit-testing doesn't care about z-order).
+    // Measure the label off-tree first so the pill can be sized to its contents — the glyph's box
+    // is part of that width now, otherwise drawButtonLabel would scale the group down inside a
+    // pill that was only ever sized for the text.
     const lbl = txt(label, FS.tiny, c);
-    const bw = Math.ceil(lbl.width) + padX * 2;
+    const bw = Math.ceil(lbl.width + buttonLabelIconW(FS.tiny)) + padX * 2;
+    lbl.destroy();
     const bx = x - bw;
     const btn = add(sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 3, bw) }));
     btn.x = bx; btn.y = by;
-    add(lbl);
-    lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
+    drawButtonLabel(core.container, bx, by, bw, bh, label, icon, c, FS.tiny, { bold: false });
     if (!busy) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: action });
     x = bx - 8;
   };
 
   if (core.isSectLeader) {
-    addBtn(t('sect.manageAllies'), C.dark, () => void core.allianceHooks.openManageAllies(), 2);
-    addBtn(t('sect.ally'), C.accent, () => void core.allianceHooks.openAllyList(), 1);
+    addBtn(t('sect.manageAllies'), C.dark, () => void core.allianceHooks.openManageAllies(), 2, 'settingsTabIcon');
+    addBtn(t('sect.ally'), C.accent, () => void core.allianceHooks.openAllyList(), 1, 'friendsTabIcon');
   } else {
-    addBtn(t('sect.allies', { n: core.sect.allySectIds.length }), C.accent, () => void core.allianceHooks.openAlliesView(), 1);
+    addBtn(t('sect.allies', { n: core.sect.allySectIds.length }), C.accent, () => void core.allianceHooks.openAlliesView(), 1, 'friendsTabIcon');
   }
   return x;
 }

@@ -39,8 +39,10 @@ export class FriendsListPanel {
     const aGap = Math.round(w * 0.02);
     const aW = Math.round((core.cW - aGap) / 2);
     const aX0 = core.cX;
-    addButton(core, t('friends.search'), aX0, aY, aW, aH, C.dark, C.accent, () => this.search.openSearch());
-    addButton(core, t('friends.room'), aX0 + aW + aGap, aY, aW, aH, C.dark, C.gold, () => core.cb.onOpenRoom());
+    addButton(core, t('friends.search'), aX0, aY, aW, aH, C.dark, C.accent, () => this.search.openSearch(),
+      0xffffff, undefined, undefined, 'zoom');
+    addButton(core, t('friends.room'), aX0 + aW + aGap, aY, aW, aH, C.dark, C.gold, () => core.cb.onOpenRoom(),
+      0xffffff, undefined, undefined, 'roomTabIcon');
 
     core.regionTop = aY + aH + Math.round(h * 0.02);
     core.regionBottom = core.bodyBottom;
@@ -139,9 +141,9 @@ export class FriendsListPanel {
     const rejX = rx + rw - bW - Math.round(rw * 0.03);
     const accX = rejX - bW - Math.round(rw * 0.02);
     addButton(core, t('friends.accept'), accX, bY, bW, bH, C.green, C.green,
-      () => void this.network.doRespond(r.requestId, true), 0xffffff, snapFont(Math.round(bH * 0.4)), layer);
+      () => void this.network.doRespond(r.requestId, true), 0xffffff, snapFont(Math.round(bH * 0.4)), layer, 'check');
     addButton(core, t('friends.reject'), rejX, bY, bW, bH, C.paper, C.red,
-      () => void this.network.doRespond(r.requestId, false), C.red, snapFont(Math.round(bH * 0.4)), layer);
+      () => void this.network.doRespond(r.requestId, false), C.red, snapFont(Math.round(bH * 0.4)), layer, 'close');
   }
 
   private drawDuelInviteBanner(
@@ -173,9 +175,9 @@ export class FriendsListPanel {
     const rejX = rx + rw - bW - Math.round(rw * 0.03);
     const accX = rejX - bW - Math.round(rw * 0.02);
     addButton(core, t('friends.accept'), accX, bY, bW, bH, C.green, C.green,
-      () => this.network.doDuelRespond(invite.inviteId, true), 0xffffff, snapFont(Math.round(bH * 0.4)), layer);
+      () => this.network.doDuelRespond(invite.inviteId, true), 0xffffff, snapFont(Math.round(bH * 0.4)), layer, 'check');
     addButton(core, t('friends.reject'), rejX, bY, bW, bH, C.paper, C.red,
-      () => this.network.doDuelRespond(invite.inviteId, false), C.red, snapFont(Math.round(bH * 0.4)), layer);
+      () => this.network.doDuelRespond(invite.inviteId, false), C.red, snapFont(Math.round(bH * 0.4)), layer, 'close');
   }
 
   private drawFriendRow(layer: PIXI.Container, f: FriendView, _contentY: number, y: number): void {
@@ -252,7 +254,7 @@ export class FriendsListPanel {
       t(duelSentHere ? 'friends.duelSent' : 'friends.duel'), duelX, duelY, duelW, duelH,
       canDuel ? C.dark : C.btnOff, canDuel ? C.gold : C.light,
       canDuel ? () => this.network.doDuel(f.publicId) : () => {},
-      canDuel ? 0xffffff : C.mid, snapFont(Math.round(duelH * 0.42)), layer,
+      canDuel ? 0xffffff : C.mid, snapFont(Math.round(duelH * 0.42)), layer, 'duelTabIcon',
     );
 
     core.hits.push({ rect: { x: rx, y, w: rw, h: rh }, scroll: true, fn: () => this.openFriendProfile(f) });
