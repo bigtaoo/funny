@@ -81,9 +81,79 @@
 
 ---
 
+## 5.5 环境变量下发：读到的必须发下去，不发的必须写明理由（2026-09-05）
+
+**规则**：一个服务 `src/` 里出现的每个 `process.env.NW_*`，要么出现在 `docker-compose.cloud.yml` +
+`docker-compose.prod.yml` 对应服务的 `environment:` 块和 `ecosystem.config.cjs` 对应 app 的 `env` 里，
+要么在 `server/matchsvc/test/deploy-config.test.ts` 的 `NOT_DEPLOYED` 表里带一句理由。没有第三种状态。
+
+由来：`NW_APPLE_PASSWORD` 在 `.env` 里躺了几个月、Apple 验单一直 fail closed（见
+[IAP_CREDENTIALS.md §1](IAP_CREDENTIALS.md)）。**compose 只插值它自己写了 `${...}` 的变量，
+`server/.env` 里填了什么它一概不看**——这是本条规则唯一要记住的机制。2026-09-05 把当时只覆盖
+`commercial` 的那条 lint 推广到全部十个服务，扫出 25 个「代码读了、没人发」的变量。
+
+### 补下发的（6 个，都是真坏了的功能）
+
+| 服务 | 变量 | 缺失时的表现 |
+|---|---|---|
+| metaserver | `NW_SOCIALSVC_INTERNAL_URL` | **本轮最严重**。P2 起 socialsvc 是好友/私聊/邮件的唯一权威，meta 全部转发给它；缺失 → `nullMetaSocialsvcClient` → `/social/*` 全线 503、系统邮件直接抛 `socialsvc not configured`。**只有 prod 和 pm2 缺**（cloud 一直有），所以从没在 cloud 上暴露过 |
+| socialsvc | `NW_ADMIN_INTERNAL_URL` | `WordlistCache` 不启动（`index.ts` 按它 gate），只用内置 `REGION_WORDLISTS`，运营改的敏感词覆盖表永远不生效。安静降级，无日志 |
+| admin | `NW_ANALYTICS_BASE_URL` | analyticsvc 明明在同一个 stack 里跑着，admin 却不知道它在哪；`HttpAnalyticsClient.query()` 返回 `{}` 而不是报错 → 数据分析页（事件/DAU/漏斗/留存）**全空白但不报错**。pm2 侧本来就有，两份 compose 都没有 |
+| metaserver | `NW_WECHAT_ADS_KEY` | **fail closed**：`POST /ads/callback/wechat` 在它没配时直接返 503，微信激励视频的服务端回调**根本没通**，不是「没验签」而是「没工作」 |
+| metaserver | `NW_ADMOB_CLIENT_KEY`·`NW_WECHAT_ADS_CLIENT_KEY` | fail open（不配就放行，只靠 token 唯一性 + 每日上限兜底）。所以缺口的后果是**客户端 adToken 验签永远开不起来**，运营在 `.env` 里怎么填都没用 |
+| metaserver | `NW_ALERT_WEBHOOK_URL` | `uncaughtException`/`unhandledRejection` 的告警 POST 静默发不出去 |
+
+后四条和 `NW_APPLE_PASSWORD` 是**一模一样的形状**：`.env.example` 里明明白白列着一行、运营照着填了、
+没有任何一条部署路径转发它。
+
+pm2 侧另有一批只差在 `ecosystem.config.cjs` 的（两份 compose 都有）：`nw-meta` 的 `NW_PADDLE_*`
+五个（Web 充值凭据，即 §1.1 那张表——**IAP 那半边 09-04/09-05 修了，Paddle 这半边没人管**）、
+`NW_REGION`、`NW_LOKI_PUSH_URL`、`NW_REPLAY_ARCHIVE_DIR`；`nw-matchsvc` 的
+`NW_MM_BOT_FALLBACK_MS`、`NW_REGION`。本轮一并补齐。
+
+### 故意不下发的（19 个）
+
+理由逐条写死在测试的 `NOT_DEPLOYED` 表里，这里只记分类和几条**不是「调参默认值正确」**的：
+
+- **`NW_OAUTH_GOOGLE_CLIENT_ID` / `_SECRET`** — 客户端那头压根没实现。`ACCOUNT_DESIGN.md` SA-2 把它
+  挂起等一个能联调的回调域名，`LoginScene` 至今没有 `oauthWait` 视图，没有任何东西会走到 `/auth/oauth`。
+  **那个视图上线的那天，这两条要一起删掉。**
+- **`NW_GATEWAY_PUBLIC_WS_URL`** — Caddy 把 `/api` 和 `/gw` 放在同一个 origin 下，客户端
+  `net/config.ts` 自己推导（`http→ws`、`/api→/gw`）得到的地址本来就是对的；显式下发只会多一个能配错的地方。
+  这个变量是给**跨 origin** 部署用的（比如 CI：meta `:18080`、gateway `:8086/gw`）。
+- **`NW_GAME_ID`** — **必须不下发**。默认值 `randomUUID()` 正是「重启后按新 id 注册」的机制，
+  matchsvc `GameRegistry` 靠 `STALE_MS=30s` 把旧条目淘汰掉；写死反而会让两个实例抢同一个注册条目。
+- **`NW_SLG_AUTO_SETTLE`** — 代码读的是 `!== '0'`，即「不显式关就是开」，而开正是 cloud/prod 想要的。
+- **`NW_COMPUTE_BACKEND` / `NW_COMPUTE_URL`** — 指向那个还没开始建的独立算力服务（`compute/index.ts`），
+  非 `remote` 的一切取值（含未设置）都走进程内 worker 池，也就是 cloud/prod 实际在跑的东西。
+- 其余 13 条是纯调参旋钮（限流阈值、采样间隔、TTL、扫描上限、bot 出手概率……），代码默认值就是生产值。
+
+> ⚠️ **留了一个待观察项**：`NW_COMPUTE_POOL_SIZE` 的默认值是 `cpus-1`（`compute/pool.ts`），
+> 而 **`os.cpus()` 在容器里报的是宿主机核数**，本仓库又没有任何服务设 cpu limit。目前 worldsvc 是唯一
+> 的重算力消费者，先按默认跑；**哪天围攻把机器压垮了，这是第一个该提成真 compose 行的旋钮。**
+
+### 机械门禁
+
+`server/matchsvc/test/deploy-config.test.ts` 的
+`deploy config — every service passes through what its source reads` 块。**从 `src/` 推导，不是手写清单**
+——新变量从第一次被代码读到那天起自动进入覆盖，不需要有人记得同步测试。表里还有一条反向断言：
+`NOT_DEPLOYED` 里的每个变量必须仍然被源码读到，防止例外表攒下一堆早就没人用的名字。
+
+改部署文件后跑一次（`server/` 下）：
+
+```
+npx vitest run matchsvc/test/deploy-config.test.ts
+docker compose -f docker-compose.cloud.yml config -q
+docker compose -f docker-compose.prod.yml config -q
+```
+
+（`config -q` 需要 `.env` 里有那几个 `${X:?}` 必填项；临时验证可以 `--env-file` 指一份填了假值的文件。）
+---
+
 ## 6. 关联文档
 - 进程拓扑/端口：[`claudedocs/server.md`](../../claudedocs/server.md)
 - meta 架构基准：[META_DESIGN.md](META_DESIGN.md)
 - matchsvc 机制：[MATCHSVC_DESIGN.md](MATCHSVC_DESIGN.md) · gateway：[GATEWAY_DESIGN.md](GATEWAY_DESIGN.md)
 - 中国合规：[COMPLIANCE_CN.md](COMPLIANCE_CN.md)
+- 部署环境变量门禁：`server/matchsvc/test/deploy-config.test.ts`（见 §5.5）
 - 决策记录：[DECISIONS.md](../DECISIONS.md) ADR-019
