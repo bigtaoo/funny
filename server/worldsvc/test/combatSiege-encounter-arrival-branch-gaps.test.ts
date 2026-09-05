@@ -7,12 +7,13 @@
 // directly and no real Mongo is needed.
 //
 // Two things ARE module-mocked, both deliberately:
-//   1. `src/siegeWorkerPool` — the real `runSiegeBattle` hands the fight to a worker thread whose
-//      outcome is engine-decided. Stubbing the pool (not the battle helpers) lets a test pin the
+//   1. `src/compute` — the real `runSiegeBattle` hands the fight to the compute backend (a worker
+//      thread today, see compute/types.ts), whose outcome is engine-decided. Stubbing the backend
+//      (not the battle helpers) lets a test pin the
 //      exact SiegeResolution the settlement code then has to divide, write and persist, and lets
 //      the engine-crash fallback be reached without fabricating an illegal formation. Tests that
 //      want the deterministic cheap formula instead steer `shouldUseCheapSiege` with real
-//      SIEGE_CHEAP_RATIO / SIEGE_SYNTH_ARMY_MAX_TROOPS-derived sizes; the default pool stub returns
+//      SIEGE_CHEAP_RATIO / SIEGE_SYNTH_ARMY_MAX_TROOPS-derived sizes; the default backend stub returns
 //      an obviously-bogus sentinel so a test that lands on the engine by accident fails loudly.
 //   2. `src/combatSiege/arrival/*` — applySiege is a DISPATCHER; the five landing modules it
 //      delegates to already have their own unit suite (combatSiege-arrival-variants-gaps.test.ts).
@@ -65,9 +66,9 @@ const engineStub = vi.hoisted(() => ({
   submit: null as null | ((input: unknown) => Promise<unknown>),
 }));
 
-vi.mock('../src/siegeWorkerPool', () => ({
-  getSiegeWorkerPool: () => ({
-    submit: async (input: unknown) => {
+vi.mock('../src/compute', () => ({
+  getComputeBackend: () => ({
+    runSiege: async (input: unknown) => {
       if (!engineStub.submit) {
         return {
           outcome: 'attacker_win',

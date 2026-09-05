@@ -1,6 +1,6 @@
-// Test-only worker fixture for siegeWorkerPool.test.ts: crashes (hard `process.exit`) the instant it
+// Test-only worker fixture for computePool.test.ts: crashes (hard `process.exit`) the instant it
 // receives its first task message, instead of computing a real siege result. Used to exercise
-// SiegeWorkerPool's crash-detection + respawn path deterministically, without needing to provoke a real
+// ComputeWorkerPool's crash-detection + respawn path deterministically, without needing to provoke a real
 // bug in the engine. Every freshly spawned instance of this worker crashes on its first message (module
 // state is per-worker, so a respawned replacement crashes again just as reliably) — that's what lets the
 // test assert "self-heals repeatedly", not just once.

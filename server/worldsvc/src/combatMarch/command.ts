@@ -5,15 +5,15 @@
 // 形态②): only ever calls `this.core` (never `this.siege` — that dependency belongs entirely to
 // ArrivalService's settlement side), zero cross-mixin `this.*` calls in the original chain —
 // assembled by composition in ../combatMarch.ts.
-import { tileId, marchId, playerWorldId, marchDurationFromPath, marchStepArriveAt, marchMoraleFromPath, OCCUPY_MIN_TROOPS, MARCH_MIN_TROOPS, isInVision, marchInterpPos, satchelCarryCapFor, SlgError, MARCH_RETURN_SPEEDUP_SECS_PER_COIN, regenTeamStamina, SLG_TEAM_STAMINA_MAX, SLG_TEAM_STAMINA_COST, type MarchKind } from '@nw/shared';
-import type { MarchDoc, ArmyEntry } from '../db';
+import { tileId, marchId, playerWorldId, marchDurationFromPath, marchStepArriveAt, marchMoraleFromPath, OCCUPY_MIN_TROOPS, MARCH_MIN_TROOPS, isInVision, marchInterpPos, SlgError, MARCH_RETURN_SPEEDUP_SECS_PER_COIN, SLG_TEAM_STAMINA_COST, type MarchKind } from '@nw/shared';
+import type { MarchDoc } from '../db';
 import { WorldCore } from '../core';
 import { MARCHABLE_KINDS } from '../core';
 import type { MarchView, PlayerWorldView } from '../worldTypes';
 import { refundTroops, computeMarchPath, resolveOwnerEmblems } from '../combatShared';
 import { legBox, sourcesBoundingBox } from '../core/helpers';
-import { resolveLeaderUnitType } from '../leaderUnit';
 import { validateMarchTarget } from './startMarchValidation';
+import { resolveMarchTeam } from './startMarchTeam';
 
 export class CommandService {
   constructor(private readonly core: WorldCore) {}
@@ -45,100 +45,17 @@ export class CommandService {
     if (!this.core.inBounds(fromX, fromY) || !this.core.inBounds(toX, toY)) {
       throw new SlgError('OUT_OF_RANGE', 'Coordinates out of bounds');
     }
-    // Siege with a team (G3-2c; occupy also since 2026-07-15 SLG_DESIGN §4.2): draw the army from the saved
-    // attack formation template; committed troops = sum of troops assigned to each unit. The team can be edited
-    // after departure without affecting the in-transit march (the army snapshot is persisted with MarchDoc).
-    // Neither attack nor occupy, or no team → use flat troops (synthesized generic units at combat time).
-    let army: ArmyEntry[] | undefined;
-    // March-token art (2026-07-26): resolved once at dispatch from the deployed team's leader card, frozen onto
-    // the march (see MarchDoc.leaderUnitType) so it renders identically for the owner and for enemies viewing it
-    // in vision (who cannot otherwise read the owner's cardInv). See leaderUnit.ts::resolveLeaderUnitType.
-    let leaderUnitType: string | undefined;
-    // ADR-051 (P3c, scope extended 2026-08-08 to include attack): re-dispatch of an *idle* (停留) field team —
-    // commanded again straight from where it stands (attack/move/occupy), without recalling home first. Set
-    // inside the team block below; drives the origin override, the from-tile ownership skip, the
-    // pool-deduction skip, and the atomic StationedDoc claim before insert.
-    let idleRedispatch = false;
-    // Stamina charge, deferred to the end of the dispatch so a march that fails to commit (duplicate-team
-    // insert, insufficient pool troops) costs nothing. Both stay null for a flat-pool march, which commands
-    // no team and so spends no stamina — see the charge site for why that hole is deliberate.
-    let staminaTeamId: string | null = null;
-    let staminaBefore = 0;
-    // 'move' (2026-07-23) is always team-based — "选中的部队" is a team, and a moved team parks on the tile as a
-    // whole (unlike reinforce's faceless garrison), so there is no flat-pool move path.
-    if (kind === 'move' && !teamId) throw new SlgError('BAD_REQUEST', 'Move requires a team');
-    if ((kind === 'attack' || kind === 'occupy' || kind === 'move') && teamId) {
-      const team = (pw.teams ?? []).find((t) => t.id === teamId);
-      if (!team || team.army.length === 0) throw new SlgError('BAD_REQUEST', 'Team does not exist or is empty');
-      // Idle-team gate (2026-07-15): a team already committed to an active (non-recalled) march must not accept
-      // a new order — same "out" predicate as the defender-skip check in combatSiege/arrival.ts (ADR-026 §2).
-      // Marches are deleted from the collection once processed (combatMarch.ts claim-and-delete), so "marching"
-      // covers transit; a won occupy/siege then hands the team off to an OccupationDoc for the hold countdown
-      // (combatSiege/occupation.ts). Since 2026-07-23 a settled team can also STAY stationed on a tile (a
-      // StationedDoc) — check all three so the team stays "out" end-to-end until the player recalls it.
-      const [busyMarch, busyHold, busyStationed] = await Promise.all([
-        cols.marches.findOne({ worldId, ownerId: accountId, teamId, status: { $ne: 'recalled' } }),
-        cols.occupations.findOne({ worldId, ownerId: accountId, teamId }),
-        cols.stationed.findOne({ worldId, ownerId: accountId, teamId }),
-      ]);
-      // ADR-051 (P3c): a 停留 idle field team is NOT busy — it can be re-commanded straight from where it stands,
-      // for any of attack/occupy/move (2026-08-08: attack added — user wanted parity with occupy, a
-      // forward-stationed team should be usable to launch a fresh siege without a round trip home first).
-      // A 驻扎 garrison stays locked (must recall first), as do marching/holding teams.
-      idleRedispatch = !!busyStationed && busyStationed.mode !== 'garrison' && (kind === 'occupy' || kind === 'move' || kind === 'attack');
-      if (busyMarch || busyHold || (busyStationed && !idleRedispatch)) {
-        throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
-      }
-      // Stamina gate (2026-09-04, SLG_DESIGN §4.6): one order costs SLG_TEAM_STAMINA_COST from this team's
-      // own budget, which refills on a wall clock. Checked here (before anything is written) and charged
-      // once the dispatch has fully committed, at the bottom of this function.
-      //
-      // A read-then-write with no optimistic guard is safe here *because of the gate directly above*: the
-      // {worldId,ownerId,teamId} partial-unique index on `marches` (plus the occupations/stationed checks)
-      // admits at most one live order per team, and `startMarch` is the only spender — so there is no second
-      // writer to race with on this field, unlike the shared troop pool a few lines down. If a second
-      // spender is ever added, this needs the same `$gte`-style atomic filter the pool debit uses.
-      staminaTeamId = teamId;
-      staminaBefore = regenTeamStamina(
-        pw.teamState?.[teamId]?.stamina ?? SLG_TEAM_STAMINA_MAX,
-        pw.teamState?.[teamId]?.staminaAt ?? 0,
-        now(),
-      );
-      if (staminaBefore < SLG_TEAM_STAMINA_COST) {
-        throw new SlgError(
-          'TEAM_EXHAUSTED',
-          `Team stamina ${staminaBefore} is below the ${SLG_TEAM_STAMINA_COST} an order costs`,
-        );
-      }
-      if (idleRedispatch) {
-        // Depart from where the team STANDS (ignore any client-supplied origin — an idle field team is not at the
-        // base) and carry its STATIONED snapshot forward: army + troops reflect field-encounter losses (P2b/P3b),
-        // not the roster template. Mirrors recallStationed, which likewise forwards claimed.army/claimed.troops.
-        // Troops already left the pool at the original dispatch and satchel was validated then (can only shrink),
-        // so no pool deduction and no satchel re-check below.
-        fromX = busyStationed!.x;
-        fromY = busyStationed!.y;
-        army = busyStationed!.army;
-        troops = busyStationed!.troops;
-        leaderUnitType = busyStationed!.leaderUnitType;
-      } else {
-        army = team.army;
-        troops = team.army.reduce((s, e) => s + Math.max(1, Math.floor(e.initialHp ?? 0)), 0);
-        const attackerSave = await this.core.meta.getSaveFields(accountId, ['cardInv', 'equipmentInv']).catch(() => null);
-        leaderUnitType = resolveLeaderUnitType(team, attackerSave?.cardInv ?? {}, attackerSave?.equipmentInv ?? {});
-        // D-CITY-9: satchel gates how many troops a SINGLE team may carry per march/siege — independent of the
-        // total troopCap pool (troopCapFor/drillYard). Card-army teams carry real strength in cardState.currentTroops
-        // (the flat `troops` above degenerates to card count for them, per the CC-3 note below), so sum that instead.
-        const teamHasCardArmy = team.army.some((e) => !!e.cardInstanceId);
-        const carried = teamHasCardArmy
-          ? team.army.reduce((s, e) => s + (e.cardInstanceId ? (pw.cardState?.[e.cardInstanceId]?.currentTroops ?? 0) : 0), 0)
-          : troops;
-        const satchelCap = satchelCarryCapFor(pw.buildings);
-        if (carried > satchelCap) {
-          throw new SlgError('SATCHEL_CAP_EXCEEDED', `Team carries ${carried} troops, exceeds satchel cap of ${satchelCap}`);
-        }
-      }
-    }
+    // Team resolution (see startMarchTeam.ts): which army marches, whether that team is allowed to be
+    // commanded at all (busy / stamina / satchel gates), and — for an ADR-051 P3c idle re-dispatch — the
+    // overridden origin it departs from. `idleRedispatch` then drives three things further down: the
+    // from-tile ownership skip, the pool-deduction skip, and the atomic StationedDoc claim before insert.
+    // Everything comes back `undefined`/false for a flat-pool march, which commands no team.
+    const resolved = await resolveMarchTeam(this.core, worldId, accountId, pw, kind, troops, fromX, fromY, teamId);
+    const { army, leaderUnitType, idleRedispatch, staminaTeamId, staminaBefore } = resolved;
+    troops = resolved.troops;
+    fromX = resolved.fromX;
+    fromY = resolved.fromY;
+
     // CC-3 card-based team (cardInstanceId entries): committed strength lives entirely in cardState.currentTroops
     // (§6.1/§9 of CHARACTER_CARDS_DESIGN — a ledger fully independent of playerWorld.troops), so `troops` above
     // is not a meaningful pool quantity for this march (it degenerates to "card count" since ArmyEntry carries no
@@ -158,7 +75,14 @@ export class CommandService {
     }
 
     const fromTid = tileId(worldId, fromX, fromY);
-    const fromTile = await cols.tiles.findOne({ _id: fromTid });
+    // 2026-09-05 (phase 2): the origin-tile read and the sect's city payoff are independent of each other and
+    // of everything between here and the path computation, so they are issued together rather than a round
+    // trip apart. Only the READS move — the checks below stay in their original order, so a caller who fails
+    // both the origin check and target validation still sees TILE_NOT_OWNED, exactly as before.
+    const [fromTile, payoff] = await Promise.all([
+      cols.tiles.findOne({ _id: fromTid }),
+      this.core.sectPayoff(pw.sectId),
+    ]);
     // ADR-051 (P3c): an idle re-dispatch departs from the team's stationed cell, which is often neutral (unowned)
     // land — skip the own-territory requirement for it. The cell is legal by construction (the team stands there),
     // and fromX/fromY were overridden above to the StationedDoc's coordinates, so `fromTid` is that exact cell.
@@ -170,19 +94,19 @@ export class CommandService {
     // See startMarchValidation.ts for the per-kind checks (occupy/reinforce/attack/move/sweep) — this
     // resolves defenderId (attack only) and throws the same SlgError as before on any failure.
     const toTid = tileId(worldId, toX, toY);
-    const defenderId = await validateMarchTarget(this.core, worldId, accountId, kind, toX, toY, toTid, hasCardArmy, troops, stationMode);
+    const defenderId = await validateMarchTarget(this.core, worldId, accountId, kind, toX, toY, toTid, hasCardArmy, troops, stationMode, pw);
 
     const t = now();
     // ADR-051 (P3c): a re-dispatched idle team's troops already left the pool at its original dispatch (they are
     // "out in the field"), so there is no pool balance to check or deduct — same exemption as a card army.
     if (!hasCardArmy && !idleRedispatch && pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
 
-    const path = await computeMarchPath(this.core, worldId, fromX, fromY, toX, toY, accountId);
+    const path = await computeMarchPath(this.core, worldId, fromX, fromY, toX, toY, accountId, pw);
     const departAt = t;
     // ADR-074 §8.3: -10% march time while the owner's sect holds the world center. Snapshotted onto the
     // document (see MarchDoc.speedMult) so the step scan uses the same figure `arriveAt` came from, and so
     // losing the world center mid-flight does not retime a march already in the air.
-    const speedMult = (await this.core.sectPayoff(pw.sectId)).marchMult;
+    const speedMult = payoff.marchMult;
     const arriveAt = departAt + marchDurationFromPath(path, speedMult) * 1000;
     // Morale (行军疲劳 — see SLG_DESIGN.md §4.4; distinct from the card "士气加成" bonus): 1 point lost per tile moved, computed once from the full path since marches don't tick
     // live in transit (single scheduled arrival event). Scales combat power on arrival — see moraleCombatMultiplier.

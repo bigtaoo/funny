@@ -1,13 +1,13 @@
 // worldsvc process bootstrap (S8-0 + S8-4 + S8-5): connect dedicated DB → optional Redis → services → public REST listen.
 // SLG_DESIGN §14.1 P1: worldsvc is a public face (reverse proxy /world → this process; /auction moved to auctionsvc, §9 task 6).
-import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat, SlgShopPriceCache, WordlistCache, fetchInternalJson } from '@nw/shared';
+import { SLG_MAP_W, SLG_MAP_H, createLogger, startHeartbeat, startEventLoopMonitor, SlgShopPriceCache, WordlistCache, fetchInternalJson } from '@nw/shared';
 import { createWorldMongo } from './db';
 import { connectRedis } from './redis';
 import { WorldService } from './service';
 import { SectService } from './sectService';
 import { NationChannelService } from './nationChannelService';
 import { MapTemplateService } from './mapTemplateService';
-import { startHttpApi } from './httpApi';
+import { startHttpApi, routeTimings } from './httpApi';
 import { startScheduler } from './scheduler';
 import { HttpWorldGatewayClient } from './gatewayClient';
 import { HttpWorldCommercialClient, nullWorldCommercialClient } from './commercialClient';
@@ -15,7 +15,7 @@ import { HttpWorldMetaClient, nullWorldMetaClient } from './metaClient';
 import { HttpWorldMailClient, nullWorldMailClient } from './mailClient';
 import { HttpWorldSocialsvcClient, nullWorldSocialsvcClient } from './socialsvcClient';
 import { loadWorldsvcEnv } from './config';
-import { shutdownSiegeWorkerPool } from './siegeWorkerPool';
+import { getComputeBackend, shutdownComputeBackend } from './compute';
 
 async function main(): Promise<void> {
   const env = loadWorldsvcEnv();
@@ -124,7 +124,7 @@ async function main(): Promise<void> {
 
   const mapTemplateSvc = new MapTemplateService({ cols: mongo.collections, now: () => Date.now() });
 
-  const scheduler = startScheduler(svc, { autoSettleSeasons: env.autoSettleSeasons });
+  const scheduler = startScheduler(svc, { autoSettleSeasons: env.autoSettleSeasons, timings: routeTimings });
 
   const server = startHttpApi(
     { host: env.host, port: env.port, jwtSecret: env.jwtSecret, internalKey: env.internalKey },
@@ -138,7 +138,7 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     scheduler.stop();
     server.close();
-    await shutdownSiegeWorkerPool();
+    await shutdownComputeBackend();
     if (redis) await redis.quit().catch(() => {});
     await mongo.close();
     process.exit(0);
@@ -152,7 +152,39 @@ async function main(): Promise<void> {
       `gateway=${gateway.available ? 'on' : 'off'}; ` +
       `commercial=${commercial.available ? 'on' : 'off'}; meta=${meta.available ? 'on' : 'off'}; socialsvc=${socialsvc.available ? 'on' : 'off'}`,
   );
-  startHeartbeat(createLogger('worldsvc')); // liveness heartbeat: one info log every 5 minutes when idle
+  // worldsvc-concurrency-2026-09-05 phase 0: the SLG concurrency work is entirely about wall-clock time
+  // spent NOT serving requests, and none of it is visible in ordinary logs (nothing errors; each query
+  // looks fast; the process just stops). The loop monitor warns on the spot for any stall >=250ms; the
+  // heartbeat carries the rolling loop percentiles plus the slowest routes so a regression shows up in
+  // Grafana without anyone having to be watching at the time.
+  const hbLog = createLogger('worldsvc');
+  const loopMonitor = startEventLoopMonitor(hbLog);
+  const compute = getComputeBackend();
+  startHeartbeat(hbLog, {
+    extra: () => ({ compute: compute.name, loopLagMs: loopMonitor.drain(), routes: routeTimings.drain() }),
+  });
+
+  // Warm the per-world terrain/connectivity index on every compute worker before players arrive
+  // (worldsvc-concurrency-2026-09-05 phase 1). Building it costs ~2.5s per world per worker; paying that
+  // here means the first marches after a deploy are as fast as the rest, instead of a handful of orders
+  // each stalling one worker. Best-effort and non-blocking: a failure just restores the old lazy build.
+  //
+  // Capped deliberately: each worker keeps a bounded LRU of these indexes (getMapTerrainIndex in
+  // @nw/shared), so warming more worlds than that cache holds would evict what it had just built and burn
+  // the boot window doing it. Beyond the cap the old lazy build takes over, which is correct, just slower
+  // on first use.
+  const WARM_WORLD_LIMIT = 4;
+  void mongo.collections.worlds
+    .find({ status: 'active' }, { projection: { _id: 1 }, limit: WARM_WORLD_LIMIT })
+    .toArray()
+    .then(async (worlds) => {
+      for (const w of worlds) {
+        const t0 = Date.now();
+        await compute.warmWorld(w._id, SLG_MAP_W, SLG_MAP_H);
+        hbLog.info('compute path index warmed', { world: w._id, ms: Date.now() - t0 });
+      }
+    })
+    .catch((e) => hbLog.warn('compute path index warmup failed (falling back to lazy build)', { err: (e as Error).message }));
 }
 
 main().catch((e) => {

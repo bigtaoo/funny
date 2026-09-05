@@ -70,15 +70,24 @@ export class MapService {
     // G5 vision: compute the requester's currently visible tile set (own/family territory + capitals + in-transit marches).
     // Fog now gates only INTEL (garrison / HP / watchtower) per tile — the static structure layer (location /
     // ownership / base identity / level / occupation state) is public map-wide (2026-07-24 fog-model change, see gateIntel).
-    const sources = await this.vision.computeVisionSources(worldId, accountId, x0, x1, y0, y1);
+    //
+    // 2026-09-05 (worldsvc-concurrency phase 2): these four used to run one after another, and each one
+    // began by re-reading the requester's SAME playerWorld document — four sequential round trips for one
+    // document, on the endpoint every online player polls every ~5s. Read it once, hand it to all four,
+    // and run them together: they are independent of each other, and the sect lookups underneath are now
+    // memoised in the socialsvc client too (see socialsvcClient.ts's membership cache).
+    const requesterPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    const [sources, family, sectMates, allySect] = await Promise.all([
+      this.vision.computeVisionSources(worldId, accountId, x0, x1, y0, y1, requesterPw),
+      // Family member set (including self): visible family ally territory is tagged ally (client renders in friendly color, not enemy color).
+      this.vision.familyMemberIds(worldId, accountId, requesterPw),
+      // Own sect's OTHER families (not own family, not allied sects): visible territory is tagged sectmate
+      // (client renders a third "friendly but not family" colour, 2026-08-08).
+      this.vision.sectMateMemberIds(worldId, accountId, requesterPw),
+      // Allied sect member set (≤2 allied sects): visible allied territory is tagged allySect (client renders yellow border, §8.2).
+      this.vision.allySectMemberIds(worldId, accountId, requesterPw),
+    ]);
     const vis = (x: number, y: number): boolean => isInVision(sources, x, y);
-    // Family member set (including self): visible family ally territory is tagged ally (client renders in friendly color, not enemy color).
-    const family = await this.vision.familyMemberIds(worldId, accountId);
-    // Own sect's OTHER families (not own family, not allied sects): visible territory is tagged sectmate
-    // (client renders a third "friendly but not family" colour, 2026-08-08).
-    const sectMates = await this.vision.sectMateMemberIds(worldId, accountId);
-    // Allied sect member set (≤2 allied sects): visible allied territory is tagged allySect (client renders yellow border, §8.2).
-    const allySect = await this.vision.allySectMemberIds(worldId, accountId);
 
     // Batch-resolve display names for every other player's territory in the viewport. Ownership is now public
     // map-wide (fog gates only marching troops + garrison/HP intel), so owner names show regardless of vision —
@@ -151,9 +160,13 @@ export class MapService {
     let sectMateSet = new Set<string>();
     let allySectSet = new Set<string>();
     if (lod === 'mid') {
-      family = await this.vision.familyMemberIds(worldId, accountId);
-      sectMateSet = await this.vision.sectMateMemberIds(worldId, accountId);
-      allySectSet = await this.vision.allySectMemberIds(worldId, accountId);
+      // Same one-read-three-uses shape as getMap above (2026-09-05, phase 2).
+      const requesterPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+      [family, sectMateSet, allySectSet] = await Promise.all([
+        this.vision.familyMemberIds(worldId, accountId, requesterPw),
+        this.vision.sectMateMemberIds(worldId, accountId, requesterPw),
+        this.vision.allySectMemberIds(worldId, accountId, requesterPw),
+      ]);
     }
 
     const tiles: WorldTileSparseView[] = owned.map((o) => {
