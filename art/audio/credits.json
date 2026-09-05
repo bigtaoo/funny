@@ -428,16 +428,17 @@
       "generated": "2026-09-01",
       "brief": "A quiet, unhurried acoustic bed for the screens outside a match -- lobby, menus, shop, world map, results. No percussive transients and no forward pull: the mix above it is made of pencil strokes and paper thuds, and anything with a beat would compete with them for the same moments.",
       "prompt": null,
-      "region_start_s": 12.5,
-      "length_s": 74.0,
+      "speed": 0.8,
+      "region_start_s": 45.0,
+      "length_s": 61.0,
       "source_length_s": 213.16,
       "shelf": null,
       "sample_rate": 24000,
       "channels": 2,
-      "bytes": 653016,
-      "xfade_band_diff_db": 0.57,
+      "bytes": 544368,
+      "xfade_band_diff_db": 0.55,
       "mid_band_dbfs": -29.0,
-      "rationale": "A 74 s region lifted out of a 3:33 master, chosen by the same crossfade-window band measure the gate then applies (0.58 dB raw across the seam, 0.57 dB on the shipped file; levels within 0.09 dB). NOT the region that scored best overall -- 13.5s/23.5s measured 0.27 dB -- because a 23.5 s loop turns over every 24 seconds on screens players sit on for minutes, and a seam nobody can hear buys nothing if the repetition is what they notice instead. No low shelf: the master's own 20-250 Hz already sits 14 dB under its mid band, so a shelf would attenuate something that is not in the way."
+      "rationale": "Played at 0.8x with its pitch held (a phase vocoder in process_music.py, not a runtime playbackRate: WeChat does not document whether its knob transposes, and a file whose stored timeline is the played one is the only kind whose 2 s crossfade window is the one the gate measured). The listening pass called the original bed too hurried for screens players sit on for minutes. A 61 s region lifted out of the slowed master, chosen by the same crossfade-window band measure the gate then applies (0.55 dB across the seam, levels within 0.26 dB) -- and re-searched rather than rescaled, because at 0.8x a 2 s window spans different material than the 12.5s/74.0s region was picked against. It wins its own 60-75 s bucket and every other bucket, so unlike the first cut there was no trade between the seam and the distance between repeats; nothing 72 s or longer survives at all (best 2.50 dB, which is the gate). No low shelf: the master's own 20-250 Hz already sits 14 dB under its mid band, so a shelf would attenuate something that is not in the way."
     }
   ],
   "music_terms": {

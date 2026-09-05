@@ -64,8 +64,13 @@ export interface TrackDef {
  */
 export const MUSIC_CATALOGUE: Record<MusicTrack, TrackDef> = {
   // `lengthS` 是 `process_music.py` 打印的 **decoded** 秒数，不是它被要求切的区段长度
-  // （MP3 帧补齐让两者可以不等）。回绕在 `lengthS - XFADE_S` = 72.0 s 处触发。
-  'bgm.lobby': { path: lobbyUrl, lengthS: 74.0, gain: 1.0 },
+  // （MP3 帧补齐让两者可以不等）。回绕在 `lengthS - XFADE_S` = 59.0 s 处触发。
+  //
+  // **这个文件按 0.8x 重切过一次（2026-09-05）**：第一次听感反馈是「太急促」，而放慢是在**资产**
+  // 里花掉的，不是在运行时的 `playbackRate` 上——两个平台那个旋钮背后是变调还是保音高，微信没有
+  // 文档保证，而 `XFADE_S` 是播放器里 2 秒**墙钟**，只有存储时间轴就等于播放时间轴的文件才能让它
+  // 和门禁量过的那 2 秒是同一段。区段也跟着重搜了（74 s → 61 s，见 `process_music.py` 的 TRACKS）。
+  'bgm.lobby': { path: lobbyUrl, lengthS: 61.0, gain: 1.0 },
 };
 
 /** 每一条轨，运行时可枚举。从目录导出，所以不会像手写清单那样与 union 漂开。 */

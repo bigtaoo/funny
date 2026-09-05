@@ -13,6 +13,15 @@ Two drivers, because their inputs differ in kind rather than in degree:
     across the player's crossfade window, and level is set by a **band target** rather than by
     peak, because music has no synth voice to match. See its module docstring.
 
+    A track also has a **tempo**, and `speed` in its `TRACKS` entry re-renders the master through a
+    pitch-preserving phase vocoder before a region is chosen (`load_master`). `bgm.lobby` ships at
+    0.8x since 2026-09-05 — the listening pass called the original bed too hurried, and the
+    slowdown is spent HERE rather than on a runtime `playbackRate` so that both platforms stream
+    one identical file whose stored timeline is the played one (AUDIO_DESIGN §0.6). **Changing
+    `speed` means re-running `--search`**: at 0.8x a 2 s crossfade window spans different material,
+    so the recorded region was picked against a timeline that no longer exists, and a 74 s region
+    would become 92.5 s — past the gate's 90 s ceiling.
+
     Masters live under `art/audio/sources/<provenance>/` — `first-party/` for one the project owns
     (that is where the shipped `bgm.lobby` comes from: `doodle-bed.flac`, lossless, so the tracked
     file IS the master), `suno/` for a generated one. The distinction is not filing: it decides
