@@ -7,8 +7,8 @@
 //
 // The contract worth a file of its own is the INK. These two glyphs exist only to point at one
 // green box, and the green is baked into the PNG at pack time while the box's own green is a
-// constant in panels.ts — two independent copies of one colour, in two languages, that no compiler
-// or renderer will ever compare. Drift is silent and reads as "the arrow isn't part of the cell".
+// constant in panels/checkin.ts — two independent copies of one colour, in two languages, that no
+// compiler or renderer will ever compare. Drift is silent and reads as "the arrow isn't part of the cell".
 // Run: npm test
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -17,7 +17,7 @@ import zlib from 'zlib';
 
 const ASSET_DIR = path.resolve(__dirname, '../../src/assets/tabicons');
 const PACKER = path.resolve(__dirname, '../../../art/ui/tabicons/pack_tab_icons.cjs');
-const PANELS = path.resolve(__dirname, '../../src/scenes/DailyScene/panels.ts');
+const PANELS = path.resolve(__dirname, '../../src/scenes/DailyScene/panels/checkin.ts');
 const BASES = ['cueArrow', 'cueBurst'] as const;
 const INK = 'checkinCue';
 
@@ -64,16 +64,16 @@ describe('check-in cue art', () => {
   });
 
   // Two copies of one colour that nothing compares at build or draw time: the packer's INKS table
-  // bakes it into the pixels, panels.ts's INK_CLAIMABLE strokes the cell's border with it. If they
-  // drift the page still renders — the arrow simply stops looking like it belongs to the box.
-  it('bakes exactly the green that panels.ts draws the claimable cell in', () => {
+  // bakes it into the pixels, panels/checkin.ts's INK_CLAIMABLE strokes the cell's border with it.
+  // If they drift the page still renders — the arrow simply stops looking like it belongs to the box.
+  it('bakes exactly the green that panels/checkin.ts draws the claimable cell in', () => {
     const inkRow = /checkinCue:\s*\{\s*r:\s*(0x[0-9a-f]{2}),\s*g:\s*(0x[0-9a-f]{2}),\s*b:\s*(0x[0-9a-f]{2})/i
       .exec(fs.readFileSync(PACKER, 'utf8'));
     expect(inkRow, 'checkinCue row in pack_tab_icons.cjs INKS').not.toBeNull();
     const packerInk = (Number(inkRow![1]) << 16) | (Number(inkRow![2]) << 8) | Number(inkRow![3]);
 
     const cellInk = /INK_CLAIMABLE\s*=\s*(0x[0-9a-f]{6})/i.exec(fs.readFileSync(PANELS, 'utf8'));
-    expect(cellInk, 'INK_CLAIMABLE in DailyScene/panels.ts').not.toBeNull();
+    expect(cellInk, 'INK_CLAIMABLE in DailyScene/panels/checkin.ts').not.toBeNull();
     expect(packerInk).toBe(Number(cellInk![1]));
 
     // …and that the packed pixels really carry it, not just the table that claims to.
