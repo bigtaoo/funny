@@ -1,7 +1,7 @@
 # 签到月历「可领取」指示图 — Prompt + 接线计划
 
 > 创建：2026-09-05 · 出图+接线完成：2026-09-05 · 状态：**已完成**（2 张新图 / 2 张 PNG，两张都用上了）
-> 配套代码：[`client/src/scenes/DailyScene/panels.ts`](../../client/src/scenes/DailyScene/panels.ts)（`renderCheckin`）
+> 配套代码：[`client/src/scenes/DailyScene/panels/checkin.ts`](../../client/src/scenes/DailyScene/panels/checkin.ts)（`renderCheckin`，2026-09-06 从 `panels.ts` 拆出）
 > 设计背景：[`../game/RETENTION_DESIGN.md §10.16`](../game/RETENTION_DESIGN.md)
 > 美术总纲：[`art-direction.md`](art-direction.md) §0 / §7.6 · 同类单图先例：[`back-arrow-art.md`](back-arrow-art.md)
 
@@ -57,7 +57,7 @@ Hand-drawn doodle in a worn school notebook, single dark-ink pen line art, sligh
 
 ### 墨色不是 `content`，是新加的 `checkinCue`
 
-计划里写的是烤 `content`（`C.dark` 墨黑）。实际改成在 `INKS` 里新加一档 **`checkinCue` = `#2e7d32`**，也就是可签到格描边的那个绿。理由：这两张图的全部意义就是"指向那一个绿格子"，用墨黑画出来会读成"页面上又多了一个重要元素"，用同色画出来才读成"那个格子的一部分"。代价是这个绿在两个地方各存了一份（packer 的 `INKS` 表、`panels.ts` 的 `INK_CLAIMABLE`），编译器和渲染器都不会去比对它们——所以 `client/test/render/checkinCueArt.test.ts` 用正则把两处都读出来直接断言相等，并且顺带断言 PNG 调色板里真的有这个颜色（防"表改了、图没重打"）。
+计划里写的是烤 `content`（`C.dark` 墨黑）。实际改成在 `INKS` 里新加一档 **`checkinCue` = `#2e7d32`**，也就是可签到格描边的那个绿。理由：这两张图的全部意义就是"指向那一个绿格子"，用墨黑画出来会读成"页面上又多了一个重要元素"，用同色画出来才读成"那个格子的一部分"。代价是这个绿在两个地方各存了一份（packer 的 `INKS` 表、`panels/checkin.ts` 的 `INK_CLAIMABLE`），编译器和渲染器都不会去比对它们——所以 `client/test/render/checkinCueArt.test.ts` 用正则把两处都读出来直接断言相等，并且顺带断言 PNG 调色板里真的有这个颜色（防"表改了、图没重打"）。
 
 ### 打包管线的一个静默 bug（本轮触发并修掉）
 
