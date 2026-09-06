@@ -189,14 +189,15 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
     const hasAuction  = !!core.cb.onOpenAuction;
 
     // `icon` is the same glyph the destination screen wears on its own title bar / tab, so the
-    // strip reads as five shortcuts rather than five words. Feedback has no glyph of its own yet
-    // (see UI_DESIGN §2's art gap list) and stays label-only — drawButtonLabel takes null.
+    // strip reads as five shortcuts rather than five words. Feedback is the one that is not a
+    // destination's own glyph: a megaphone drawn for it in batch 11, since a speech bubble would
+    // have been `channel` (the family/sect chat) a second time.
     type StripEntry = { label: string; border: number; seed: number; icon: IconKind | null; tag: 'daily' | 'mail' | 'events' | 'feedback' | 'auction' };
     const entries: StripEntry[] = [];
     entries.push({ label: t('daily.title'),         border: C.gold,  seed: 71, icon: 'checkinTabIcon', tag: 'daily'    });
     if (hasMail)     entries.push({ label: t('lobby.strip.mail'),    border: C.gold,  seed: 72, icon: 'mailTabIcon',    tag: 'mail'     });
     if (hasEvents)   entries.push({ label: t('lobby.strip.events'),  border: C.red,   seed: 73, icon: 'eventTabIcon',   tag: 'events'   });
-    if (hasFeedback) entries.push({ label: t('lobby.strip.feedback'),border: C.accent,seed: 74, icon: null,             tag: 'feedback' });
+    if (hasFeedback) entries.push({ label: t('lobby.strip.feedback'),border: C.accent,seed: 74, icon: 'megaphone',      tag: 'feedback' });
     if (hasAuction)  entries.push({ label: t('lobby.strip.auction'), border: C.green, seed: 75, icon: 'auctionTabIcon', tag: 'auction'  });
 
     const itemGap  = Math.round(h * 0.014);

@@ -20,7 +20,8 @@ import {
   modalLineText, modalLineIcon, buildModalGlyph,
   type ModalLine, type ModalButton,
 } from './modalLine';
-import { buildIcon } from '../../../render/icons';
+import { buildIcon, type IconKind } from '../../../render/icons';
+import { drawButtonLabel } from '../../../ui/widgets/buttonLabel';
 import type { WorldMapContext, DeployKind } from '../WorldMapContext';
 
 /**
@@ -393,6 +394,8 @@ export class WorldMapPanelsCore {
    * the tap action still fires, so a disabled row can surface an explanatory toast instead of reading as dead.
    * `border` overrides the default blue stroke, for the one case the game reserves a different colour:
    * a card's primary/confirm action strokes green (ShopScene/card.ts's `drawButton`).
+   * `icon` prefixes the label with a glyph (dropped by `drawButtonLabel` when the row button is too
+   * narrow to hold both, which is what a 120px-wide row button in German usually is).
    */
   panelButtonIn(
     layer: PIXI.Container,
@@ -404,7 +407,8 @@ export class WorldMapPanelsCore {
     fill: number,
     action: () => void,
     disabled = false,
-    border: number = C.accent
+    border: number = C.accent,
+    icon: IconKind | null = null
   ): void {
     const bp = sketchPanel(bw, bh, {
       fill: disabled ? C.btnDis : fill,
@@ -414,11 +418,7 @@ export class WorldMapPanelsCore {
     bp.x = x;
     bp.y = y;
     layer.addChild(bp);
-    const bl = txt(label, PANEL_BTN_FONT, disabled ? C.mid : C.light);
-    bl.anchor.set(0.5, 0.5);
-    bl.x = x + bw / 2;
-    bl.y = y + bh / 2;
-    layer.addChild(bl);
+    drawButtonLabel(layer, x, y, bw, bh, label, icon, disabled ? C.mid : C.light, PANEL_BTN_FONT, { bold: false });
     this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, fn: action });
   }
 

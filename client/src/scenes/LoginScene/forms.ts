@@ -44,8 +44,10 @@ export function drawLanding(host: FormHost): void {
   const gap = Math.round(h * 0.035);
   const y0 = Math.round(h * 0.28);
 
-  addButton(host, t('auth.login'), btnX, y0, btnW, btnH, C.dark, C.accent, () => host.goView('password'));
-  addButton(host, t('auth.register'), btnX, y0 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.goView('register'));
+  addButton(host, t('auth.login'), btnX, y0, btnW, btnH, C.dark, C.accent, () => host.goView('password'),
+    0xffffff, undefined, true, 'key');
+  addButton(host, t('auth.register'), btnX, y0 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.goView('register'),
+    0xffffff, undefined, true, 'userPlus');
 
   // Single-player entry — visually secondary (paper fill).
   const offY = y0 + 2 * (btnH + gap) + Math.round(h * 0.02);
@@ -137,7 +139,7 @@ export function drawForm(host: FormHost, isRegister: boolean): void {
     isRegister ? t('auth.submitRegister') : t('auth.submitLogin'),
     fieldX, y, fieldW, Math.round(h * 0.092),
     C.dark, isRegister ? C.gold : C.accent, () => host.onSubmit(),
-    0xffffff, undefined, submitEnabled(fields, isRegister), 'check',
+    0xffffff, undefined, submitEnabled(fields, isRegister), isRegister ? 'userPlus' : 'key',
   );
   y += Math.round(h * 0.092) + Math.round(h * 0.03);
 

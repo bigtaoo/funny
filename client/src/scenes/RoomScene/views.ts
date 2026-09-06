@@ -75,7 +75,8 @@ export function drawIdle(host: RoomViewHost): void {
   const y1 = y0 + btnH + gap + Math.round(h * 0.03);
   addButton(host, t('room.create'), btnX, y1, btnW, btnH, C.dark, C.accent, () => host.onCreate(),
     0xffffff, undefined, 'roomTabIcon');
-  addButton(host, t('room.join'), btnX, y1 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.onJoinPressed());
+  addButton(host, t('room.join'), btnX, y1 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.onJoinPressed(),
+    0xffffff, undefined, 'enter');
 
   const hint = txt(t('room.share'), FS.label, C.mid);
   hint.anchor.set(0.5, 0); hint.x = w / 2; hint.y = y1 + 2 * btnH + gap + Math.round(h * 0.035);
@@ -169,7 +170,7 @@ export function drawCodeEntry(host: RoomViewHost): void {
 
   addButton(host, t('room.clear'), aX0, aY, aW, aH, C.paper, C.mid, () => {
     host.codeChars = []; host.render();
-  }, C.dark, Math.round(aH * 0.32));
+  }, C.dark, Math.round(aH * 0.32), 'eraser');
   addButton(host, '⌫', aX0 + aW + aGap, aY, aW, aH, C.paper, C.mid, () => {
     host.codeChars.pop(); host.render();
   }, C.dark, Math.round(aH * 0.40));
@@ -195,7 +196,7 @@ export function drawInRoom(host: RoomViewHost): void {
   const copyW = Math.round(w * 0.34);
   const copyH = Math.round(h * 0.06);
   addButton(host, t('room.copy'), (w - copyW) / 2, Math.round(h * 0.30), copyW, copyH,
-    C.paper, C.accent, () => host.copyCode(code), C.accent, Math.round(copyH * 0.40));
+    C.paper, C.accent, () => host.copyCode(code), C.accent, Math.round(copyH * 0.40), 'sheets');
 
   // Player slots (side 0 then side 1).
   const slotW = Math.round(w * 0.78);

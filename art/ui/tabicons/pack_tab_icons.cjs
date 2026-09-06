@@ -277,6 +277,31 @@ const JOBS = [
   // everywhere in this game, including every equipment reward.
   { src: 'tabicon_umbrella.webp',          name: 'umbrella', inks: ['active'] },
 
+  // Batch 11 (design/product/tab-icon-art-prompts-batch11.md, 2026-09-06): the ten actions the
+  // button-icon rollout could not wire because nothing in the library meant them, and borrowing a
+  // neighbour would have given one glyph two meanings. Four of them are deliberately NOT the
+  // obvious drawing: `enter` is a doorframe plus an arrow because the half-open door is `room`
+  // (create room, often the button right next to it); `power` rather than a door-with-arrow for
+  // logout, which would have been that same pair twice; `penWrite` is a pen AND the line it just
+  // drew, because a lone pen is already `lead`/`pencils`/`duel`/`brush`; `sheets` inverts to a
+  // solid-black front page because `cards` is already two stacked outlined cards.
+  { src: 'tabicon_trash.webp',             name: 'trash', inks: ['active'] },
+  { src: 'tabicon_key.webp',               name: 'key', inks: ['active'] },
+  { src: 'tabicon_userPlus.webp',          name: 'userPlus', inks: ['active'] },
+  { src: 'tabicon_power.webp',             name: 'power', inks: ['active'] },
+  { src: 'tabicon_penWrite.webp',          name: 'penWrite', inks: ['active'] },
+  { src: 'tabicon_megaphone.webp',         name: 'megaphone', inks: ['active'] },
+  { src: 'tabicon_enter.webp',             name: 'enter', inks: ['active'] },
+  { src: 'tabicon_eraser.webp',            name: 'eraser', inks: ['active'] },
+  // Both of these are v2s. At 26px the v1 sheets read as ONE document (the back page came out a
+  // one-pixel sliver) and the v1 handshake as a V (hairline arms, a fingernail-sized clasp). Both
+  // prompts had asked for the shapes in adjectives; the v2s give the offset, the arm width and the
+  // clasp width as fractions of the drawing, which is the only form the model honours.
+  { src: 'tabicon_sheets.webp',            name: 'sheets', inks: ['active'] },
+  // `handshake` (sect alliance) is still out: v1 read as a V, v2 as a featureless ball between two
+  // bars and came out 2.42:1, over the aspect gate. The button keeps borrowing `friends` until a
+  // version reads as two hands at 26px — see batch 11 §6.
+
   // Check-in calendar focal cue (design/product/checkin-focus-cue-art.md, 2026-09-05). Like `back`,
   // these are NOT tab icons — they are page content drawn beside/behind one calendar cell, in the
   // one green ink that cell is drawn in, so they take a single opt-in ink instead of the tab triple.

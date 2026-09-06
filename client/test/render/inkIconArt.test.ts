@@ -43,8 +43,11 @@ describe('ink-icon art on disk (pack_tab_icons.cjs, inks: [active])', () => {
     // world-map modal slots (`watchtower`/`arrowTower`/`blocker`, which had only an emoji in the
     // localised string, and `mapPin`/`camp`/`footsteps`/`stronghold`, which were each borrowing
     // another kind's glyph) + batch 10's `umbrella` for the capital-protection buff chip, the last
-    // borrowed glyph on the world-map HUD. A 58th needs a doc entry, not a silent add.
-    expect(OWN_ART.length).toBe(57);
+    // borrowed glyph on the world-map HUD + batch 11's nine button actions (`trash`/`key`/
+    // `userPlus`/`power`/`penWrite`/`megaphone`/`sheets`/`enter`/`eraser`), the ones the
+    // button-icon rollout had to leave label-only because nothing in the set meant them. A 67th
+    // needs a doc entry, not a silent add.
+    expect(OWN_ART.length).toBe(66);
     for (const kind of OWN_ART) {
       expect(fs.existsSync(path.join(ASSET_DIR, `${kind}_active.png`)), `${kind}_active.png`).toBe(true);
       // The other three inks would be ~130 PNGs nobody draws — and baking them is the shape of the

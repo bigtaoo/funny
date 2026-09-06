@@ -126,7 +126,7 @@ export function drawProfile(host: PanelHost, tbH: number): void {
     const enabled = (free || coins >= cost) && !host.busy;
     const btnY = cardY + av + Math.round(h * 0.02);
     const label = free ? t('settings.renameFree') : t('settings.rename', { cost });
-    addButton(host, label, btnY, enabled ? C.accent : C.light, enabled ? () => host.openRename() : null, Math.round(w * 0.46));
+    addButton(host, label, btnY, enabled ? C.accent : C.light, enabled ? () => host.openRename() : null, Math.round(w * 0.46), undefined, 'penWrite');
 
     // Free rename: show a hint instead of the balance line.
     const sub = free ? t('settings.renameFreeHint') : t('settings.coins', { coins });
@@ -258,13 +258,13 @@ export function drawAccount(host: PanelHost): void {
     hint.anchor.set(0, 0.5); hint.x = x; hint.y = secY + Math.round(h * 0.045);
     container.addChild(hint);
     if (cb.onLogin) {
-      addButton(host, t('auth.loginEntry'), secY + Math.round(h * 0.09), C.gold, () => cb.onLogin!(), btnW, x);
+      addButton(host, t('auth.loginEntry'), secY + Math.round(h * 0.09), C.gold, () => cb.onLogin!(), btnW, x, 'key');
     }
   } else if (cb.onLogout) {
-    addButton(host, t('auth.logout'), secY + Math.round(h * 0.045), C.dark, () => cb.onLogout!(), btnW, x);
+    addButton(host, t('auth.logout'), secY + Math.round(h * 0.045), C.dark, () => cb.onLogout!(), btnW, x, 'power');
     // Account deletion (C5-b, Apple 5.1.1(v)) — danger entry below logout, online only.
     if (cb.onDeleteAccount) {
-      addButton(host, t('settings.deleteAccount'), secY + Math.round(h * 0.125), C.red, () => host.openDelete(), btnW, x);
+      addButton(host, t('settings.deleteAccount'), secY + Math.round(h * 0.125), C.red, () => host.openDelete(), btnW, x, 'trash');
     }
   }
 }

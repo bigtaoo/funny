@@ -115,7 +115,10 @@ export function renderWorldTabBody(
           PANEL_ROW_BTN_W,
           PANEL_ROW_BTN_H,
           C.accent,
-          () => openRenameInput(n.capitalIdx, name)
+          () => openRenameInput(n.capitalIdx, name),
+          false,
+          C.accent,
+          'penWrite'
         );
       } else {
         const status = n.ownerId ? t('world.nationOwned') : t('world.nationFree');

@@ -128,9 +128,8 @@ export function drawDeleteConfirm(host: OverlayHost): void {
   const delBox = new PIXI.Graphics();
   delBox.beginFill(C.red); delBox.drawRect(delX, byy, btnW, btnH); delBox.endFill();
   container.addChild(delBox);
-  const delLbl = txt(t('settings.deleteAccount.confirm'), snapFont(Math.round(btnH * 0.32)), 0xffffff, true);
-  delLbl.anchor.set(0.5, 0.5); delLbl.x = delX + btnW / 2; delLbl.y = byy + btnH / 2;
-  container.addChild(delLbl);
+  drawButtonLabel(container, delX, byy, btnW, btnH, t('settings.deleteAccount.confirm'), 'trash', 0xffffff,
+    snapFont(Math.round(btnH * 0.32)));
   host.hits.push({ rect: { x: delX, y: byy, w: btnW, h: btnH }, fn: () => host.submitDelete() });
 
   const cBox = new PIXI.Graphics();

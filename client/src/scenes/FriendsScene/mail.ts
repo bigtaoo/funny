@@ -177,7 +177,8 @@ export class MailPanel {
     const dH = Math.round(h * 0.07);
     const deleteBlocked = hasAtt && !m.claimed;
     addButton(core, t('mail.delete'), px, core.bodyBottom - dH - Math.round(h * 0.01), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
-      () => deleteBlocked ? core.toast('mail.deleteBlockedAttachment') : void this.network.doMailDelete(m), deleteBlocked ? C.mid : C.red);
+      () => deleteBlocked ? core.toast('mail.deleteBlockedAttachment') : void this.network.doMailDelete(m), deleteBlocked ? C.mid : C.red,
+      undefined, undefined, 'trash');
   }
 
   /**
