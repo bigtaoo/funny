@@ -269,6 +269,7 @@ export class PagePanel implements PageHandlers {
       canSingle ? C.accent : C.light,
       () => void core.onDraw(1),
       canSingle,
+      'capsule',
     );
     btnY += btnH + Math.round(h * 0.025);
     core.addButton(
@@ -281,6 +282,7 @@ export class PagePanel implements PageHandlers {
       canTen ? C.gold : C.light,
       () => void core.onDraw(10),
       canTen,
+      'capsule',
     );
 
     // Fate Points (GACHA_DESIGN §7): shown on limited pools; redeem when at the threshold.
@@ -305,6 +307,7 @@ export class PagePanel implements PageHandlers {
         canRedeem ? C.gold : C.light,
         () => void core.onRedeemFate(),
         canRedeem,
+        'check',
       );
     }
   }

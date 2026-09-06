@@ -7,6 +7,8 @@ import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
+import type { IconKind } from '../../render/icons';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { FS, snapFont } from '../../render/fontScale';
 import { MIN_PASSWORD_LEN, MIN_LOGIN_ID_LEN, type LoginSceneCallbacks, type Field, type View } from './types';
 import type { Hit } from '../../ui/hits';
@@ -42,13 +44,15 @@ export function drawLanding(host: FormHost): void {
   const gap = Math.round(h * 0.035);
   const y0 = Math.round(h * 0.28);
 
-  addButton(host, t('auth.login'), btnX, y0, btnW, btnH, C.dark, C.accent, () => host.goView('password'));
-  addButton(host, t('auth.register'), btnX, y0 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.goView('register'));
+  addButton(host, t('auth.login'), btnX, y0, btnW, btnH, C.dark, C.accent, () => host.goView('password'),
+    0xffffff, undefined, true, 'key');
+  addButton(host, t('auth.register'), btnX, y0 + btnH + gap, btnW, btnH, C.dark, C.gold, () => host.goView('register'),
+    0xffffff, undefined, true, 'userPlus');
 
   // Single-player entry — visually secondary (paper fill).
   const offY = y0 + 2 * (btnH + gap) + Math.round(h * 0.02);
   addButton(host, t('auth.playOffline'), btnX, offY, btnW, btnH, C.paper, C.green,
-    () => host.cb.onPlayOffline(), C.dark);
+    () => host.cb.onPlayOffline(), C.dark, undefined, true, 'play');
 
   // Wrap within the design width so long locales (EN/DE run wider than the 1080
   // design width in monospace) stay on-screen instead of clipping both edges.
@@ -135,7 +139,7 @@ export function drawForm(host: FormHost, isRegister: boolean): void {
     isRegister ? t('auth.submitRegister') : t('auth.submitLogin'),
     fieldX, y, fieldW, Math.round(h * 0.092),
     C.dark, isRegister ? C.gold : C.accent, () => host.onSubmit(),
-    0xffffff, undefined, submitEnabled(fields, isRegister),
+    0xffffff, undefined, submitEnabled(fields, isRegister), isRegister ? 'userPlus' : 'key',
   );
   y += Math.round(h * 0.092) + Math.round(h * 0.03);
 
@@ -217,7 +221,7 @@ export function addButton(
   host: FormHost,
   label: string, x: number, y: number, w: number, h: number,
   fill: number, stroke: number, fn: () => void, textColor = 0xffffff,
-  fontSize?: number, enabled = true,
+  fontSize?: number, enabled = true, icon?: IconKind,
 ): void {
   const f  = enabled ? fill : C.btnDis;
   const st = enabled ? stroke : C.btnOff;
@@ -232,9 +236,10 @@ export function addButton(
   g.x = -w / 2; g.y = -h / 2;
   cont.addChild(g);
 
-  const tl = txt(label, snapFont(fontSize ?? Math.round(h * 0.36)), tc, true);
-  tl.anchor.set(0.5, 0.5); tl.x = 0; tl.y = 0;
-  cont.addChild(tl);
+  // Laid out around the container's own centre (it sits at the button's midpoint so the press
+  // pop scales about the middle), hence the -w/2, -h/2 box.
+  drawButtonLabel(cont, -w / 2, -h / 2, w, h, label, icon ?? null, tc,
+    snapFont(fontSize ?? Math.round(h * 0.36)));
 
   if (!enabled) cont.alpha = 0.55;
 

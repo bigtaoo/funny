@@ -179,6 +179,13 @@ services:
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
       # Same audit: without it SlgShopPriceCache never starts (ops shop-price panel inert).
       NW_ADMIN_INTERNAL_URL: http://admin:18083
+    # LOCAL ONLY (worldsvc-concurrency-2026-09-05): the SLG load test reads worldsvc's own
+    # `GET /admin/world/metrics` — event-loop lag + per-route latency — and nginx deliberately does not
+    # proxy `/admin/world/*`, so there is no public route to it (and there should not be). Publishing the
+    # port here gives the host a way in for that read; the endpoint still requires X-Internal-Key, and
+    # docker-compose.prod.yml / .cloud.yml are untouched, where worldsvc stays reachable only through the
+    # reverse proxy. Same pattern admin (18083) already uses in this file.
+    ports: ['18084:18084']
     depends_on:
       mongo: { condition: service_healthy }
       redis: { condition: service_started }

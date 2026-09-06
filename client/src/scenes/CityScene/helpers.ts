@@ -3,7 +3,7 @@
 // EquipmentScene/helpers.ts's precedent. drawArtFit/addBtn take a small ArtHost since they write
 // into the shared container/hits/artHooked; the rest are pure functions of their arguments.
 import * as PIXI from 'pixi.js-legacy';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { ui as C, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
 import type {
   TeamTemplate,
@@ -15,6 +15,8 @@ import type {
 import { carriedTroops } from '../../game/meta/teamTroops';
 import { getArtTexture } from '../../render/cardArt';
 import type { Hit } from '../../ui/hits';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import type { IconKind } from '../../render/icons';
 
 /**
  * Where a team currently is, if it isn't sitting at home — mirrors the server's
@@ -78,7 +80,7 @@ export function drawArtFit(host: ArtHost, url: string, x: number, y: number, box
 export function addBtn(
   host: ArtHost,
   x: number, y: number, w: number, h: number,
-  label: string, textColor: number, fill: number, fn: () => void,
+  label: string, textColor: number, fill: number, fn: () => void, icon?: IconKind,
 ): void {
   const g = sketchPanel(w, h, { fill, border: C.line, width: 1, seed: seedFor(x, y, w) });
   g.x = x;
@@ -88,11 +90,7 @@ export function addBtn(
   // drawButton, HubTabs): this used to left-align at `x + 12` and centre vertically against a
   // hardcoded 22px line height rather than the label's measured one, so a short label sat pinned to
   // the left edge of a wide button and a CJK/Latin height difference nudged it off centre.
-  const lbl = txt(label, FS.body, textColor, true);
-  lbl.anchor.set(0.5, 0.5);
-  lbl.x = x + w / 2;
-  lbl.y = y + h / 2;
-  host.container.addChild(lbl);
+  drawButtonLabel(host.container, x, y, w, h, label, icon ?? null, textColor, FS.body);
   host.hits.push({ rect: { x, y, w, h }, fn });
 }
 

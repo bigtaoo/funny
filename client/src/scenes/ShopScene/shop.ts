@@ -122,8 +122,8 @@ export class ShopPanel {
     if (core.cb.buyMonthlyCard) {
       const buttons: BtnSpec[] = [
         active
-          ? { label: t('shop.monthlyActive'), enabled: false, primary: true }
-          : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.actions.runUnboundedDeal(() => core.cb.buyMonthlyCard!(), 'shop.bought', t('shop.monthlyCard')) },
+          ? { label: t('shop.monthlyActive'), enabled: false, primary: true, icon: 'check' }
+          : { label: t('shop.buy'), enabled: !busy, primary: true, icon: 'coin', fn: () => void this.actions.runUnboundedDeal(() => core.cb.buyMonthlyCard!(), 'shop.bought', t('shop.monthlyCard')) },
       ];
       if (core.cb.claimMonthlyCard) {
         // Claim greys out both when the card is inactive (not purchased) and once today's reward is taken.
@@ -153,8 +153,8 @@ export class ShopPanel {
         lines: [{ text: active ? t('shop.monthlyActive') : t('shop.monthlyInactive'), color: active ? C.green : C.mid }],
         buttons: [
           active
-            ? { label: t('shop.monthlyActive'), enabled: false, primary: true }
-            : { label: t('shop.buy'), enabled: !busy, primary: true, fn: () => void this.actions.runUnboundedDeal(() => core.cb.buyYearCard!(), 'shop.bought', t('shop.yearCard')) },
+            ? { label: t('shop.monthlyActive'), enabled: false, primary: true, icon: 'check' }
+            : { label: t('shop.buy'), enabled: !busy, primary: true, icon: 'coin', fn: () => void this.actions.runUnboundedDeal(() => core.cb.buyYearCard!(), 'shop.bought', t('shop.yearCard')) },
         ],
       });
     }
@@ -176,7 +176,7 @@ export class ShopPanel {
           icon: pk.icon, iconColor: C.gold, artUrl: pk.art, title: t(pk.label),
           usdCents: pk.usdCents,
           buttons: [{
-            label: t('shop.buy'), enabled: !busy, primary: true,
+            label: t('shop.buy'), enabled: !busy, primary: true, icon: 'coin',
             fn: () => void this.actions.runUnboundedDeal(() => core.cb.buyStarter!(pk.id), 'shop.bought', t(pk.label)),
           }],
         });
@@ -201,8 +201,8 @@ export class ShopPanel {
           lines: known ? [{ text: t('shop.item.protect_enhance.desc'), color: C.mid }] : [],
           coinAmount: item.cost,
           buttons: [
-            { label: t('shop.buyX10'), enabled: canBuy10, primary: false, fn: () => void this.actions.onBuyBulk(item.id, itemTitle, BULK_BUY_QTY) },
-            { label: t('shop.buy'), enabled: canBuy, primary: true, fn: () => void this.actions.onBuy(item.id, itemTitle) },
+            { label: t('shop.buyX10'), enabled: canBuy10, primary: false, icon: 'coin', fn: () => void this.actions.onBuyBulk(item.id, itemTitle, BULK_BUY_QTY) },
+            { label: t('shop.buy'), enabled: canBuy, primary: true, icon: 'coin', fn: () => void this.actions.onBuy(item.id, itemTitle) },
           ],
         });
       }

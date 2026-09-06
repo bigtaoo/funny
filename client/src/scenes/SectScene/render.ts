@@ -12,6 +12,8 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor } from '../../render/sketchUi';
 import { buildEmblemIcon, type EmblemKey } from '../../render/emblemIcon';
 import { buildIcon } from '../../render/icons';
+import type { IconKind } from '../../render/icons';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { caretText } from './repaint';
 import { FS } from '../../render/fontScale';
 import type { SectSceneCore, SectTab } from './core';
@@ -176,17 +178,15 @@ export class RenderPanel {
       : sketchButton(btnW, btnH, seedFor(0, 1, btnW));
     okBtn.x = okX; okBtn.y = y;
     core.bodyLayer.addChild(okBtn);
-    const ok = txt(t('sect.create'), FS.body * S, createBusy ? C.mid : C.light);
-    ok.anchor.set(0.5, 0.5); ok.x = okX + btnW / 2; ok.y = y + btnH / 2;
-    core.bodyLayer.addChild(ok);
+    drawButtonLabel(core.bodyLayer, okX, y, btnW, btnH, t('sect.create'), 'sectTabIcon',
+      createBusy ? C.mid : C.light, FS.body * S, { bold: false });
     if (!createBusy) core.hitRects.push({ rect: { x: okX, y, w: btnW, h: btnH }, fn: () => void this.actions.doCreate() });
 
     const cancelBtn = sketchPanel(btnW, btnH, { fill: 0xeeeeee, border: C.mid, seed: seedFor(1, 1, btnW) });
     cancelBtn.x = cancelX; cancelBtn.y = y;
     core.bodyLayer.addChild(cancelBtn);
-    const ca = txt(t('social.sect.cancel'), FS.body * S, C.dark);
-    ca.anchor.set(0.5, 0.5); ca.x = cancelX + btnW / 2; ca.y = y + btnH / 2;
-    core.bodyLayer.addChild(ca);
+    drawButtonLabel(core.bodyLayer, cancelX, y, btnW, btnH, t('social.sect.cancel'), 'close', C.dark,
+      FS.body * S, { bold: false });
     core.hitRects.push({ rect: { x: cancelX, y, w: btnW, h: btnH }, fn: () => { core.mode = 'noSect'; core.render(); } });
   }
 
@@ -424,26 +424,26 @@ export class RenderPanel {
     let x = rightEdge - 8; // right anchor; each button is placed to the left of the previous one
     const busy = core.bt.busy;
 
-    const addBtn = (label: string, color: number, action: () => void, seed: number): void => {
+    const addBtn = (label: string, color: number, action: () => void, seed: number, icon: IconKind): void => {
       const c = busy ? C.mid : color;
       const lbl = txt(label, FS.tiny, c);
-      const bw = Math.ceil(lbl.width) + padX * 2;
+      const bw = Math.ceil(lbl.width + buttonLabelIconW(FS.tiny)) + padX * 2;
+      lbl.destroy();
       const bx = x - bw;
       const btn = sketchPanel(bw, bh, { fill: 0xf8f8f0, border: c, seed: seedFor(seed, 3, bw) });
       btn.x = bx; btn.y = by;
       core.bodyLayer.addChild(btn);
-      lbl.anchor.set(0.5, 0.5); lbl.x = bx + bw / 2; lbl.y = by + bh / 2;
-      core.bodyLayer.addChild(lbl);
+      drawButtonLabel(core.bodyLayer, bx, by, bw, bh, label, icon, c, FS.tiny, { bold: false });
       if (!busy) core.hitRects.push({ rect: { x: bx, y: by, w: bw, h: bh }, fn: action });
       x = bx - 8;
     };
 
     if (core.isSectLeader) {
       // Rightmost = manage (break), then ally (form) to its left.
-      addBtn(t('sect.manageAllies'), C.dark, () => void this.actions.openManageAllies(), 2);
-      addBtn(t('sect.ally'), C.accent, () => void this.actions.openAllyList(), 1);
+      addBtn(t('sect.manageAllies'), C.dark, () => void this.actions.openManageAllies(), 2, 'settingsTabIcon');
+      addBtn(t('sect.ally'), C.accent, () => void this.actions.openAllyList(), 1, 'friendsTabIcon');
     } else {
-      addBtn(t('sect.allies', { n: core.sect.allySectIds.length }), C.accent, () => void this.actions.openAlliesView(), 1);
+      addBtn(t('sect.allies', { n: core.sect.allySectIds.length }), C.accent, () => void this.actions.openAlliesView(), 1, 'friendsTabIcon');
     }
   }
 

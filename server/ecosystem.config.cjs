@@ -17,7 +17,8 @@ const GW_INTERNAL = process.env.NW_GATEWAY_INTERNAL_URL || 'http://127.0.0.1:809
 const MM_INTERNAL = process.env.NW_MATCHSVC_INTERNAL_URL || 'http://127.0.0.1:8091';
 // commercial internal base URL (meta → commercial; not reachable by players, not exposed publicly, S5).
 const COMM_INTERNAL = process.env.NW_COMMERCIAL_INTERNAL_URL || 'http://127.0.0.1:8092';
-// socialsvc internal base URL (gateway/worldsvc → socialsvc fan-out/delegation, S6).
+// socialsvc internal base URL (meta/gateway/worldsvc → socialsvc, S6). meta is the heaviest consumer:
+// since P2 socialsvc is the sole friend/chat/mail authority and meta proxies every /social/* route to it.
 const SOCIAL_INTERNAL = process.env.NW_SOCIALSVC_INTERNAL_URL || 'http://127.0.0.1:8085';
 // admin internal base URL (meta/matchsvc feature-flag polling + worldsvc SLG shop-price polling).
 // ⚠ comm-audit-internal-2026-07-28: this was missing from EVERY pm2 app block, so under pm2 the
@@ -58,6 +59,30 @@ module.exports = {
         // meant the resume prompt was silently dead in prod (matchsvc wrote the key, meta never read it).
         NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
         NW_ADMIN_INTERNAL_URL: ADMIN_INTERNAL, // feature-flag polling (was missing → flags always defaulted)
+        // ⚠ 2026-09-05: missing here AND in docker-compose.prod.yml, so under pm2 (and in the prod
+        // topology) meta fell back to nullMetaSocialsvcClient — every /social/* route 503s and system
+        // mail throws 'socialsvc not configured'. cloud compose had it; these two paths never did.
+        NW_SOCIALSVC_INTERNAL_URL: SOCIAL_INTERNAL,
+        // Rewarded-video signature verification (C2, metaserver/src/ads.ts) + process alert webhook
+        // (S4-3). All four live in .env.example and none was ever passed through — the NW_APPLE_PASSWORD
+        // shape. Presence, not truthiness: undefined unless the environment provides them.
+        NW_ADMOB_CLIENT_KEY: process.env.NW_ADMOB_CLIENT_KEY,
+        NW_WECHAT_ADS_CLIENT_KEY: process.env.NW_WECHAT_ADS_CLIENT_KEY,
+        NW_WECHAT_ADS_KEY: process.env.NW_WECHAT_ADS_KEY,
+        NW_ALERT_WEBHOOK_URL: process.env.NW_ALERT_WEBHOOK_URL,
+        // Paddle web recharge (metaserver/src/paddle.ts) — the payment half of the same story as
+        // commercial's NW_APPLE_PASSWORD: compose forwards these, the pm2 inventory never did. Unset
+        // → web recharge is simply disabled (IAP_CREDENTIALS.md §1.1), silently.
+        NW_PADDLE_API_KEY: process.env.NW_PADDLE_API_KEY,
+        NW_PADDLE_WEBHOOK_SECRET: process.env.NW_PADDLE_WEBHOOK_SECRET,
+        NW_PADDLE_CLIENT_TOKEN: process.env.NW_PADDLE_CLIENT_TOKEN,
+        NW_PADDLE_PRICE_IDS: process.env.NW_PADDLE_PRICE_IDS,
+        NW_PADDLE_SANDBOX: process.env.NW_PADDLE_SANDBOX,
+        // Region tag + Loki push + cold-tier replay archive. All three read `?? null`, i.e. the feature
+        // just switches itself off when absent, which is why nobody noticed pm2 never passed them.
+        NW_REGION: process.env.NW_REGION,
+        NW_LOKI_PUSH_URL: process.env.NW_LOKI_PUSH_URL,
+        NW_REPLAY_ARCHIVE_DIR: process.env.NW_REPLAY_ARCHIVE_DIR,
       },
     },
     {
@@ -78,6 +103,21 @@ module.exports = {
         NW_COMM_MONGO_DB: process.env.NW_COMM_MONGO_DB || 'notebook_wars_commercial',
         // victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
         NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
+        // IAP receipt verification + product resolution (commercial/src/iap.ts, iap/productResolve.ts).
+        // pm2 does inherit the ambient environment, unlike compose — these are listed anyway so this file
+        // stays a readable inventory of what the process needs, and so the deploy-config lint can check one
+        // list for all three deployment paths. `??` (not `||`) on the two defaulted ones, matching the code:
+        // an empty string must fall through to the default rather than override it.
+        NW_APPLE_PASSWORD: process.env.NW_APPLE_PASSWORD,
+        NW_GOOGLE_SERVICE_ACCOUNT_JSON: process.env.NW_GOOGLE_SERVICE_ACCOUNT_JSON,
+        NW_GOOGLE_PACKAGE_NAME: process.env.NW_GOOGLE_PACKAGE_NAME ?? 'com.nw.game',
+        NW_WX_PAY_MCH_ID: process.env.NW_WX_PAY_MCH_ID,
+        NW_WX_PAY_API_KEY_V3: process.env.NW_WX_PAY_API_KEY_V3,
+        NW_STRIPE_SECRET_KEY: process.env.NW_STRIPE_SECRET_KEY,
+        NW_IAP_BUNDLE: process.env.NW_IAP_BUNDLE ?? 'com.gamestao.nivara',
+        NW_IAP_PRODUCT_MAP: process.env.NW_IAP_PRODUCT_MAP,
+        NW_IAP_AMOUNT_MAP: process.env.NW_IAP_AMOUNT_MAP,
+        NW_IAP_NONCOIN_AMOUNT_MAP: process.env.NW_IAP_NONCOIN_AMOUNT_MAP,
       },
     },
     {
@@ -113,6 +153,10 @@ module.exports = {
         // Active-match resume tracking + multi-instance gateway push fan-out (2026-07-18).
         NW_REDIS_URL: process.env.NW_REDIS_URL || 'redis://127.0.0.1:6379',
         NW_ADMIN_INTERNAL_URL: ADMIN_INTERNAL, // feature-flag polling (was missing → flags always defaulted)
+        // Bot-fallback wait before a human queue falls back to a bot opponent (code default 30s), and
+        // the region tag carried into match records. Both compose files pass these; pm2 did not.
+        NW_MM_BOT_FALLBACK_MS: process.env.NW_MM_BOT_FALLBACK_MS,
+        NW_REGION: process.env.NW_REGION,
       },
     },
     {
@@ -206,6 +250,9 @@ module.exports = {
         NW_SOCIAL_MONGO_DB: process.env.NW_SOCIAL_MONGO_DB || 'nw_social',
         NW_GATEWAY_INTERNAL_URL: GW_INTERNAL,
         NW_META_INTERNAL_URL: META_BASE,
+        // Moderation word-list overlay polling (CONTENT_MODERATION_DESIGN.md §3.2). Missing → WordlistCache
+        // never starts, so only the built-in REGION_WORDLISTS apply and every ops word-list edit is inert.
+        NW_ADMIN_INTERNAL_URL: ADMIN_INTERNAL,
       },
     },
     {

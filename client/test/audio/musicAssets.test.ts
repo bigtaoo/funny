@@ -57,6 +57,10 @@ interface MusicCredit {
   /** The verbatim style prompt for a GENERATED master; `null` for a first-party one, whose
    *  reproducibility record is the master file itself — see `checkReproducible`. */
   prompt: string | null;
+  /** Playback speed the master was re-rendered at before the region was cut (1.0 = as performed;
+   *  `bgm.lobby` ships at 0.8, pitch held). Part of the cut record, not a note: the master plus
+   *  the region reproduces the file only at the speed it was cut at. */
+  speed: number;
   region_start_s: number;
   length_s: number;
   source_length_s: number;
@@ -294,8 +298,23 @@ function checkReproducible(ctx: Ctx): string[] {
   //
   // Either way the check is on the artefact that would actually be needed, and neither branch can
   // be satisfied by prose.
+  //
+  // **The master is only half of it: the other half is what was DONE to it.** `bgm.lobby` ships
+  // at 0.8x through a phase vocoder (2026-09-05, the listening pass called the bed too hurried),
+  // and a re-cut at the recorded region but the wrong speed is a different track that passes
+  // every other rule in this file. So the cut record has to carry the speed — and `length_s`,
+  // the one number in that record the shipped bytes can contradict, is checked against them.
   const out: string[] = [];
   for (const m of ctx.credits.music) {
+    if (!(m.speed > 0)) {
+      out.push(`${m.track}: no playback speed recorded — the master alone does not re-cut the `
+        + 'file, and 1.0 has to be a stated decision rather than an absent field');
+    }
+    const info = ctx.info(m.file);
+    if (info && Math.abs(info.seconds - m.length_s) > 0.2) {
+      out.push(`${m.track}: credits records a ${m.length_s} s region but the shipped file `
+        + `measures ${info.seconds.toFixed(3)} s — the record does not describe these bytes`);
+    }
     if (m.generator === FIRST_PARTY) {
       if (!m.source) { out.push(`${m.track}: no source master named`); continue; }
       if (!ctx.masterExists(m.source)) {
@@ -581,6 +600,21 @@ describe('every rule has been seen to fail', () => {
     c.credits.music[0]!.generator = 'Suno v4';
     c.credits.music[0]!.prompt = null;
     fails(checkReproducible, c, 'not archived');
+  });
+
+  it('checkReproducible: a cut record with no speed', () => {
+    const c = mutable();
+    (c.credits.music[0] as { speed: number }).speed = 0;
+    fails(checkReproducible, c, 'no playback speed recorded');
+  });
+
+  it('checkReproducible: the region length left at the previous cut', () => {
+    // The exact 2026-09-05 near-miss: `speed` went to 0.8 and the region was re-searched, so a
+    // `length_s` left at 74 would have described the file that USED to ship while every other
+    // number in the record was current.
+    const c = mutable();
+    c.credits.music[0]!.length_s = 74.0;
+    fails(checkReproducible, c, 'does not describe these bytes');
   });
 
   it('checkTerms: the music record relabelled as CC0', () => {

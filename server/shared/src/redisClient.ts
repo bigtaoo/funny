@@ -50,7 +50,12 @@ export interface RedisLike {
 
   // ── hashes ─────────────────────────────────────────────────────────────────
   hget(key: string, field: string): Promise<string | null>;
-  hset(key: string, field: string, value: string): Promise<unknown>;
+  /** HMGET: one round trip for many fields of the same hash (worldsvc's arrival tick reads a whole batch of
+   *  occupancy/coverage cells at once — the per-cell HGET it replaced was the tick's dominant cost). */
+  hmget(key: string, ...fields: string[]): Promise<(string | null)[]>;
+  /** The `...rest` tail is HSET's variadic field/value form (same worldsvc batch, write side). Keeping the
+   *  first pair explicit means the common two-argument call is still shape-checked. */
+  hset(key: string, field: string, value: string, ...rest: string[]): Promise<unknown>;
   hdel(key: string, ...fields: string[]): Promise<unknown>;
   hincrby(key: string, field: string, delta: number): Promise<number>;
 

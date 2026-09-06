@@ -7,6 +7,7 @@
 // behavior change: returns the resolved `defenderId` (attack only) or throws the same SlgError as before.
 import { proceduralTile, isCityGroundTile, SlgError, OCCUPY_MIN_TROOPS, type MarchKind } from '@nw/shared';
 import { WorldCore } from '../core';
+import type { PlayerWorldDoc } from '../db';
 
 /**
  * Validate the target tile at departure for `kind` (will be re-validated on arrival since state may
@@ -24,6 +25,8 @@ export async function validateMarchTarget(
   hasCardArmy: boolean,
   troops: number,
   stationMode: 'idle' | 'garrison' | undefined,
+  /** The caller's already-loaded world doc, forwarded to the connectivity check so it need not re-read it. */
+  pw: PlayerWorldDoc,
 ): Promise<string | undefined> {
   const { cols, now } = core.deps;
   const proc = proceduralTile(worldId, toX, toY);
@@ -53,7 +56,7 @@ export async function validateMarchTarget(
     }
     // ADR-039 territory connectivity ("连地"): the target must border land already held by the player's sect.
     // occupy never targets a capital (bases are runtime-placed, not procedurally occupiable), so a single cell.
-    if (!(await core.isConnectedToSectTerritory(worldId, accountId, [{ x: toX, y: toY }]))) {
+    if (!(await core.isConnectedToSectTerritory(worldId, accountId, [{ x: toX, y: toY }], pw))) {
       throw new SlgError('TERRITORY_NOT_CONNECTED', 'Target tile must be adjacent to your sect\'s territory');
     }
   } else if (kind === 'reinforce') {
@@ -90,7 +93,7 @@ export async function validateMarchTarget(
       const r = (city.footprint - 1) / 2;
       const cells: { x: number; y: number }[] = [];
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) cells.push({ x: city.x + dx, y: city.y + dy });
-      if (!(await core.isConnectedToSectTerritory(worldId, accountId, cells))) {
+      if (!(await core.isConnectedToSectTerritory(worldId, accountId, cells, pw))) {
         throw new SlgError('TERRITORY_NOT_CONNECTED', "The city must border your sect's territory");
       }
       if (!hasCardArmy && troops < OCCUPY_MIN_TROOPS) throw new SlgError('NO_TROOPS', `Siege requires at least ${OCCUPY_MIN_TROOPS} troops`);
@@ -123,7 +126,7 @@ export async function validateMarchTarget(
     // bridges/plankways — all siege targets funnel through this same branch. A capital's anchor is only
     // ever bordered by its own ring cells, so a capital target checks against its whole 3×3 footprint
     // (targetFootprintCells), not just the exact (toX,toY) cell.
-    if (!(await core.isConnectedToSectTerritory(worldId, accountId, core.targetFootprintCells(toTile, toX, toY)))) {
+    if (!(await core.isConnectedToSectTerritory(worldId, accountId, core.targetFootprintCells(toTile, toX, toY), pw))) {
       throw new SlgError('TERRITORY_NOT_CONNECTED', 'Target tile must be adjacent to your sect\'s territory');
     }
     // Card armies have no server-side minimum-troops gate (see hasCardArmy note in command.ts) — only the legacy flat-troop path checks this.

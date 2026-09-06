@@ -357,6 +357,55 @@ def main() -> int:
 
     print("\nBGM production steps")
 
+    # time_stretch, held to the three properties the `speed` decision rests on: it changes
+    # DURATION, it leaves PITCH where it was, and it leaves LEVEL where it was. The third is the
+    # quiet one -- `set_band_target` runs after it and would absorb a level error into the shipped
+    # file without anything going red, and the headroom ladder printed next to it would then be
+    # describing a bed that is not the one on disk.
+    def peak_hz(y, sr_, n=8192):
+        seg = y[len(y) // 2:len(y) // 2 + n, 0] * np.hanning(n)
+        return float(np.fft.rfftfreq(n, 1.0 / sr_)[np.abs(np.fft.rfft(seg)).argmax()])
+
+    a440 = (0.4 * np.sin(2 * np.pi * 440 * t))[:, None]
+    slow = process_music.time_stretch(a440, sr, 0.8)
+    # Within one analysis window: the last partial frame of the input has no full window to sit
+    # in, so the tail is short by a fixed amount rather than by a fraction of the length.
+    check("0.8x plays for 1.25x as long",
+          near(len(slow) / sr, len(a440) / sr / 0.8, 2.0 * process_music.STRETCH_N / sr),
+          f"got {len(slow) / sr:.3f} s from {len(a440) / sr:.3f} s")
+    check("0.8x does NOT move the pitch (a resample would drop it a minor third)",
+          near(peak_hz(slow, sr), 440.0, 3.0), f"got {peak_hz(slow, sr):.1f} Hz")
+    check("0.8x holds the level set_band_target is about to read",
+          near(audit.db(float(np.sqrt(np.mean(slow ** 2)))),
+               audit.db(float(np.sqrt(np.mean(a440 ** 2)))), 0.1))
+    # Both partials of a dyad survive. A lock that pinned every bin to ONE peak per frame -- the
+    # plausible off-by-one in `peak_regions` -- would flatten the second note into a sideband of
+    # the first, and a single-sine case cannot see that.
+    dyad = np.stack([0.3 * np.sin(2 * np.pi * 440 * t) + 0.3 * np.sin(2 * np.pi * 1100 * t)] * 2,
+                    axis=1)
+    ds = process_music.time_stretch(dyad, sr, 0.8)
+    spec = np.abs(np.fft.rfft(ds[sr:sr + 8192, 0] * np.hanning(8192)))
+    freqs = np.fft.rfftfreq(8192, 1.0 / sr)
+    check("both notes of a dyad come through the phase lock",
+          all(spec[(freqs > f - 10) & (freqs < f + 10)].max() > 0.3 * spec.max()
+              for f in (440.0, 1100.0)))
+    # 1.0 is the path every track without a `speed` takes, and `load_master` calls this
+    # unconditionally -- so it has to be a genuine no-op and not a round trip through the vocoder.
+    check("speed 1.0 returns the input untouched",
+          process_music.time_stretch(a440, sr, 1.0) is a440)
+
+    # peak_regions on a spectrum whose peaks are known by construction: two of them, and the
+    # boundary between their regions at the midpoint.
+    mag = np.zeros(64)
+    mag[10] = mag[40] = 1.0
+    mag[9] = mag[11] = mag[39] = mag[41] = 0.5
+    reg = process_music.peak_regions(mag)
+    check("peak_regions finds the peaks and splits at the midpoint between them",
+          reg[10] == 10 and reg[40] == 40 and reg[24] == 10 and reg[26] == 40,
+          f"got {reg[10]}, {reg[40]}, {reg[24]}, {reg[26]}")
+    check("a spectrum with no peak at all maps every bin to itself, rather than raising",
+          np.array_equal(process_music.peak_regions(np.zeros(64)), np.arange(64)))
+
     # low_shelf, held to the DESIGN REQUIREMENT rather than to its own formula -- which is what
     # caught the order being wrong (a 2nd-order shelf reaches only -6.9 dB at f0/2, i.e. it
     # under-delivers in the exact band it is aimed at).

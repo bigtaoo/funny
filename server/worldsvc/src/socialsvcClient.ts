@@ -78,7 +78,36 @@ export interface WorldSocialsvcClient {
   push(channel: SocialsvcChannel, event: string, payload: unknown, targets?: string[]): Promise<void>;
 }
 
+/**
+ * How long a family/sect membership read may be served from memory (worldsvc-concurrency-2026-09-05,
+ * phase 2). These two reads sit on worldsvc's hottest paths and each one is a cross-service HTTP hop:
+ * every march dispatch resolves "which families share my sect" for the ADR-039 connectivity check, and
+ * every ~5s map poll resolves it three times over (familyMemberIds / sectMateMemberIds /
+ * allySectMemberIds). At 200 concurrent players that is a few hundred socialsvc requests per second for
+ * data that changes when somebody joins or leaves a sect — minutes to hours apart.
+ *
+ * 10s is chosen against what the staleness can actually cause, not as a round number. Sect membership
+ * gates two things: territory connectivity (ADR-039) and the friendly-fire block (§18.7). A family that
+ * just left your sect stays un-attackable for up to 10s (over-protective, harmless); one that just joined
+ * stays attackable for up to 10s (self-correcting, and no worse than the pre-existing joinWorld-time
+ * `familyId` mirror the same code paths already rely on). Neither can be farmed for an advantage.
+ *
+ * Writes worldsvc itself makes (setSect / resetSlgState) invalidate immediately, so the TTL only ever
+ * covers changes made through socialsvc's own surface.
+ */
+const MEMBERSHIP_CACHE_TTL_MS = 10_000;
+
+interface CacheEntry<T> {
+  at: number;
+  value: T;
+}
+
 export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
+  /** sectId → its member families. Cleared wholesale on any sect membership write (they are rare). */
+  private readonly bySectCache = new Map<string, CacheEntry<FamilySummary[]>>();
+  /** familyId → its summary. Only successful lookups are stored; a miss is never cached as "no family". */
+  private readonly byIdCache = new Map<string, CacheEntry<FamilySummary>>();
+
   constructor(
     private readonly baseUrl: string | null,
     private readonly internalKey: string,
@@ -90,6 +119,23 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
 
   private opts(label: string) {
     return { caller: 'worldsvc' as const, key: this.internalKey, timeoutMs: 5000, label };
+  }
+
+  /**
+   * Drop cached membership. Called from every write that can change which sect a family is in — worldsvc
+   * is authoritative for that, so it always knows; the TTL is only a backstop for changes made elsewhere.
+   * Clears `bySectCache` entirely rather than tracking which sect entries mention this family: a sect
+   * change is a once-in-a-session event, and a precise index here would be more code than it saves.
+   */
+  private invalidateMembership(familyId: string): void {
+    this.byIdCache.delete(familyId);
+    this.bySectCache.clear();
+  }
+
+  /** Evict expired entries. Piggybacked on ordinary traffic, same idiom as SlidingRateLimiter.maybeSweep. */
+  private sweep(now: number): void {
+    for (const [k, e] of this.bySectCache) if (now - e.at >= MEMBERSHIP_CACHE_TTL_MS) this.bySectCache.delete(k);
+    for (const [k, e] of this.byIdCache) if (now - e.at >= MEMBERSHIP_CACHE_TTL_MS) this.byIdCache.delete(k);
   }
 
   async getFamilyId(accountId: string): Promise<string | null> {
@@ -114,25 +160,51 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
 
   async getFamiliesByIds(familyIds: string[]): Promise<FamilySummary[]> {
     if (!this.baseUrl || familyIds.length === 0) return [];
+    const now = Date.now();
+    this.sweep(now);
+    // Serve what is cached and ask only for the rest, so a mostly-warm batch still shrinks to a small
+    // request instead of an all-or-nothing cache hit (viewport batches overlap heavily poll to poll).
+    const hits: FamilySummary[] = [];
+    const misses: string[] = [];
+    for (const id of familyIds) {
+      const e = this.byIdCache.get(id);
+      if (e) hits.push(e.value);
+      else misses.push(id);
+    }
+    if (misses.length === 0) return hits;
     const res = await fetchInternalJson<{ data?: { families?: FamilySummary[] } }>(
       `${this.baseUrl}/internal/family/batch`,
-      { ...this.opts('/internal/family/batch'), method: 'POST', body: { familyIds } },
+      { ...this.opts('/internal/family/batch'), method: 'POST', body: { familyIds: misses } },
     );
-    if (!res.ok) return [];
-    return res.body?.data?.families ?? [];
+    // A failed call must not poison the cache — and must not report "these families do not exist"
+    // either, so the partial hits are still returned rather than swallowed.
+    if (!res.ok) return hits;
+    const fetched = res.body?.data?.families ?? [];
+    for (const f of fetched) this.byIdCache.set(f.familyId, { at: now, value: f });
+    return [...hits, ...fetched];
   }
 
   async getFamiliesBySect(sectId: string): Promise<FamilySummary[]> {
     if (!this.baseUrl) return [];
+    const now = Date.now();
+    this.sweep(now);
+    const cached = this.bySectCache.get(sectId);
+    if (cached) return cached.value;
     const res = await fetchInternalJson<{ data?: { families?: FamilySummary[] } }>(
       `${this.baseUrl}/internal/family/by-sect/${encodeURIComponent(sectId)}`,
       this.opts('/internal/family/by-sect'),
     );
+    // Only a successful response is cached. Caching the `[]` a failed call returns would pin "this sect
+    // has no members" for the whole TTL, which silently breaks ADR-039 connectivity for everyone in it.
     if (!res.ok) return [];
-    return res.body?.data?.families ?? [];
+    const families = res.body?.data?.families ?? [];
+    this.bySectCache.set(sectId, { at: now, value: families });
+    for (const f of families) this.byIdCache.set(f.familyId, { at: now, value: f });
+    return families;
   }
 
   async setSect(familyId: string, sectId: string | null, sectName?: string | null): Promise<void> {
+    this.invalidateMembership(familyId);
     if (!this.baseUrl) return;
     const res = await fetchInternalJson(
       `${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/sect`,
@@ -180,6 +252,7 @@ export class HttpWorldSocialsvcClient implements WorldSocialsvcClient {
   }
 
   async resetSlgState(familyId: string): Promise<void> {
+    this.invalidateMembership(familyId); // a season reset clears the family's sect, so drop the cached view
     if (!this.baseUrl) return;
     const res = await fetchInternalJson(
       `${this.baseUrl}/internal/family/${encodeURIComponent(familyId)}/slg-reset`,

@@ -21,15 +21,17 @@ import type { WorldCore } from '../core';
 import type { PushService } from './push';
 import { tileVisionRadius } from './helpers';
 import { computeTerritoryCount } from '../prosperity';
-import type { TileDoc } from '../db';
+import type { TileDoc, PlayerWorldDoc } from '../db';
 
 export class VisionService {
   constructor(private readonly core: WorldCore, private readonly push: PushService) {}
 
   /** Set of accountIds for the player plus all same-family members (family-level vision sharing / ally determination, §8.2; includes self). Sourced from PlayerWorldDoc.familyId (SS7 mirror, scoped to this world) rather than a local family mirror (dead since P4, see db.ts note above SectDoc). */
-  async familyMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+  async familyMemberIds(worldId: string, accountId: string, pw?: PlayerWorldDoc | null): Promise<Set<string>> {
     const ids = new Set<string>([accountId]);
-    const myPw = await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    // `pw` (2026-09-05, phase 2): the caller's already-loaded world doc. getMap used to resolve all three
+    // membership sets plus its vision sources back to back, each re-reading this same document.
+    const myPw = pw ?? await this.core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (myPw?.familyId) {
       const mates = await this.core.deps.cols.playerWorld.find({ worldId, familyId: myPw.familyId }).toArray();
       for (const m of mates) ids.add(m.accountId);
@@ -43,10 +45,10 @@ export class VisionService {
    * Alliances do **not** share vision (§8.2); used only by getMap to tag allied territory (yellow border). No sect / no alliance → empty set.
    * Does not include self or same-family members (those go through `familyMemberIds`).
    */
-  async allySectMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+  async allySectMemberIds(worldId: string, accountId: string, pw?: PlayerWorldDoc | null): Promise<Set<string>> {
     const { cols } = this.core.deps;
     const result = new Set<string>();
-    const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    const myPw = pw ?? await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId) return result;
     // comm-audit batch F item 8b: sectId is mirrored onto PlayerWorldDoc at joinWorld (same SS7 tradeoff as
     // familyId) — no getFamiliesByIds([myPw.familyId]) round trip needed just to read it.
@@ -69,10 +71,10 @@ export class VisionService {
    * to this world. Does not share vision (only family does, DECISIONS §18.6); used only by getMap to tag
    * a third ownership colour distinct from family-ally/allied-sect/enemy. No family/no sect → empty set.
    */
-  async sectMateMemberIds(worldId: string, accountId: string): Promise<Set<string>> {
+  async sectMateMemberIds(worldId: string, accountId: string, pw?: PlayerWorldDoc | null): Promise<Set<string>> {
     const { cols } = this.core.deps;
     const result = new Set<string>();
-    const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    const myPw = pw ?? await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId || !myPw.sectId) return result;
     const sectFams = await this.core.socialsvc.getFamiliesBySect(myPw.sectId);
     const famIds = sectFams.map((f) => f.familyId).filter((fid) => fid !== myPw.familyId);
@@ -121,10 +123,11 @@ export class VisionService {
     x1: number,
     y0: number,
     y1: number,
+    pw?: PlayerWorldDoc | null,
   ): Promise<VisionSource[]> {
     const { cols, now } = this.core.deps;
     // Vision source owners = self + same-family members (family-level sharing, decided in §8.2).
-    const ids = [...(await this.familyMemberIds(worldId, accountId))];
+    const ids = [...(await this.familyMemberIds(worldId, accountId, pw))];
 
     // Source territory: pad the viewport by the maximum vision radius (territory/watchtowers outside the viewport can still illuminate its edges).
     const pad = VISION_MAX_RADIUS;
@@ -174,12 +177,22 @@ export class VisionService {
     const ys = cells.map((c) => c.y);
     const pad = VISION_MAX_RADIUS;
     // Vision sources are territory/capitals/watchtowers → query owned tiles within the cells bounding-box padded by the maximum vision radius.
+    //
+    // 2026-09-05 (phase 2): the filter used to be the bounding box alone and the projection was the whole
+    // document. Every march dispatch calls this with its full path, so on a contested map that pulled a
+    // large slab of `tiles` — most of it unowned, none of it needed beyond four fields — across the wire
+    // and through a `for` loop that immediately `continue`d on `!t.ownerId`. Pushing "has an owner" into
+    // the query and projecting only what `tileVisionRadius` and the loop below read leaves the same
+    // result set with a fraction of the transfer. The projected fields are exactly what the loop below
+    // and `tileVisionRadius` read — widen the projection if either ever reads a fifth.
     const owned = await cols.tiles
       .find({
         worldId,
+        ownerId: { $exists: true },
         x: { $gte: Math.min(...xs) - pad, $lte: Math.max(...xs) + pad },
         y: { $gte: Math.min(...ys) - pad, $lte: Math.max(...ys) + pad },
       })
+      .project<Pick<TileDoc, 'x' | 'y' | 'ownerId' | 'type' | 'watchtower'>>({ x: 1, y: 1, ownerId: 1, type: 1, watchtower: 1 })
       .toArray();
     const seers = new Set<string>();
     for (const t of owned) {
@@ -213,10 +226,12 @@ export class VisionService {
    * purposes, unlike friendlyAccountIds' friendly-fire check which does include allies). No family →
    * empty set (caller falls back to the player's own tiles only).
    */
-  private async ownSectFamilyIds(worldId: string, accountId: string): Promise<Set<string>> {
+  private async ownSectFamilyIds(worldId: string, accountId: string, pw?: PlayerWorldDoc | null): Promise<Set<string>> {
     const { cols } = this.core.deps;
     const result = new Set<string>();
-    const myPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
+    // `pw` is the caller's already-loaded world doc when it has one (2026-09-05, phase 2) — only
+    // `familyId` is read from it, and the march dispatch path loads that document first thing.
+    const myPw = pw ?? await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });
     if (!myPw?.familyId) return result;
     result.add(myPw.familyId);
     const [myFam] = await this.core.socialsvc.getFamiliesByIds([myPw.familyId]);
@@ -259,9 +274,10 @@ export class VisionService {
     worldId: string,
     accountId: string,
     targetCells: readonly { x: number; y: number }[],
+    pw?: PlayerWorldDoc | null,
   ): Promise<boolean> {
     const { cols } = this.core.deps;
-    const famIds = await this.ownSectFamilyIds(worldId, accountId);
+    const famIds = await this.ownSectFamilyIds(worldId, accountId, pw);
     // Resolve the sect's member accounts *and* their capitals in one pass. A member's own capital
     // footprint is treated as guaranteed initial territory (SLG_DESIGN §4.1 "主城落地即视为初始领地")
     // regardless of whether every ring TileDoc still carries `ownerId` — so a player can always

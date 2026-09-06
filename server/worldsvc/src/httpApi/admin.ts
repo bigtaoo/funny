@@ -3,6 +3,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { ErrorCode, SlgError, createLogger, ok, err, parseCityNodes, type InternalAuthVerifier } from '@nw/shared';
 import { readJson, send, sendErr, numQ, type RouteDeps } from './helpers';
+import { worldMetricsSnapshot } from '../metrics';
 
 const log = createLogger('worldsvc');
 
@@ -24,6 +25,17 @@ export async function handleAdminRoutes(
   const { svc, mapTemplateSvc } = deps;
   if (!internalAuth.verify(req.headers).ok) {
     return sendErr(res, ErrorCode.UNAUTHENTICATED, 'internal endpoint requires X-Internal-Key');
+  }
+
+  // ── Runtime metrics (worldsvc-concurrency-2026-09-05): event-loop lag + per-route/per-scheduler-task
+  // latency, read non-destructively so polling this never empties the heartbeat's own report.
+  //
+  // The load test (worldsvc/test/load/) is the reason it is an endpoint and not just a log line: the
+  // property that whole workstream defends — "no synchronous CPU on the request thread" — is invisible
+  // from outside, where a blocked loop merely looks like every request being slow at once. This is how a
+  // run says which of the two it saw. Ops gets the same view for free.
+  if (method === 'GET' && aurl.pathname === '/admin/world/metrics') {
+    return send(res, 200, ok(worldMetricsSnapshot()));
   }
 
   // ── Map templates (§24 Layer A, admin map editor) — self-contained sub-branch, any method, no worldId gate. ──

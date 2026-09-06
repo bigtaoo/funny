@@ -38,6 +38,22 @@ export interface WorldRedis {
    * (e.g. in-memory test fakes, which have no real concurrency to race against).
    */
   hmergeJsonField?(key: string, field: string, entryKey: string, entryJson: string | null): Promise<unknown>;
+  /**
+   * Batched hash reads/writes for the arrival tick (2026-09-05, `sched:arrivals` deep batching). The occ and
+   * cover indexes are both ONE hash per world keyed by tileId, so a whole tick's worth of cells is a single
+   * HMGET / HSET rather than one round trip per cell — which is what made the tick O(steps) round trips.
+   * All three are optional and fall back to the per-field ops in core/push.ts, so the in-memory test fakes
+   * (which implement only hset/hget/hdel) keep working unchanged.
+   */
+  hmget?(key: string, fields: string[]): Promise<(string | null)[]>;
+  /** `pairs` is a flat [field, value, field, value, ...] list — one HSET for the whole batch. */
+  hsetMany?(key: string, pairs: string[]): Promise<unknown>;
+  /**
+   * Delete each `fields[i]` only if the JSON object stored there still has `.id === ids[i]` — the batched form
+   * of clearOccupancy's match guard, run server-side so the read-and-compare cannot be raced by a hand-off on
+   * the same tile (a plain batched HDEL would delete whoever took the cell in the meantime).
+   */
+  hdelJsonIdMatch?(key: string, fields: string[], ids: string[]): Promise<unknown>;
 }
 
 /** Bounded wait for the initial connection outcome (see doc comment on connectRedis below). */
@@ -58,6 +74,25 @@ if isEmpty then
   redis.call('HDEL', KEYS[1], ARGV[1])
 else
   redis.call('HSET', KEYS[1], ARGV[1], cjson.encode(map))
+end
+return 1
+`;
+
+/**
+ * Batched, match-guarded HDEL for the occupancy index (see WorldRedis.hdelJsonIdMatch). ARGV alternates
+ * field, expected-id: a field is dropped only while its stored occupant JSON still carries that id, so a cell
+ * that changed hands between the caller's read and this call is left alone. `pcall` because a malformed value
+ * must not abort the whole batch — the same "best-effort index" posture as every other write in core/push.ts.
+ */
+const HDEL_JSON_ID_MATCH_SCRIPT = `
+for i = 1, #ARGV, 2 do
+  local cur = redis.call('HGET', KEYS[1], ARGV[i])
+  if cur then
+    local ok, e = pcall(cjson.decode, cur)
+    if ok and e and e.id == ARGV[i + 1] then
+      redis.call('HDEL', KEYS[1], ARGV[i])
+    end
+  end
 end
 return 1
 `;
@@ -119,6 +154,18 @@ export async function connectRedis(url: string | undefined): Promise<WorldRedis 
       // race by running the merge server-side in a single atomic Lua script.
       hmergeJsonField: (key, field, entryKey, entryJson) =>
         client.eval(MERGE_JSON_FIELD_SCRIPT, 1, key, field, entryKey, entryJson ?? ''),
+      // Batched forms — see the interface doc comment. `hmget`/`hset` take a variadic field list in the
+      // Redis protocol, so a whole arrival tick's cells cost one round trip each way.
+      hmget: (key, fields) => client.hmget(key, ...fields),
+      hsetMany: (key, pairs) => {
+        // HSET's variadic field/value form. Spread as [first pair, ...tail] rather than one array because
+        // RedisLike declares the first pair explicitly, so the ordinary two-argument call stays shape-checked.
+        const [f0, v0, ...rest] = pairs;
+        if (f0 === undefined || v0 === undefined) return Promise.resolve(0);
+        return client.hset(key, f0, v0, ...rest);
+      },
+      hdelJsonIdMatch: (key, fields, ids) =>
+        client.eval(HDEL_JSON_ID_MATCH_SCRIPT, 1, key, ...fields.flatMap((f, i) => [f, ids[i]!])),
     };
     return wrapped;
   } catch (e) {

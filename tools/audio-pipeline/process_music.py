@@ -11,6 +11,10 @@ inputs differ from a cue's, and each difference changes a STEP rather than a par
     synth voices it replaced and lives at -14..-23 dBFS on file (§0.4). There is no synth voice
     for music to match, so level is set by a BAND TARGET instead: the 250-2000 Hz RMS, which is
     the band every cue peaks in. See `audit.py`'s `music` gate for where -29 dBFS comes from.
+  * The track has a TEMPO, and it can be wrong independently of everything else here being
+    right. `speed` in a TRACKS entry re-renders the master through a pitch-preserving phase
+    vocoder before a region is chosen (`load_master`), so the shipped file's stored timeline IS
+    the played timeline -- see that function for why every measurement downstream depends on it.
   * It is stereo and it STAYS stereo. `audit.py`'s sfx/ui gates forbid stereo ("wastes bytes")
     because a 43 ms cue's second channel is pure overhead and doubles what the `SampleBank`
     holds decoded in RAM. A 60 s bed STREAMS, so neither argument survives.
@@ -61,9 +65,15 @@ MID_TARGET_DBFS = -29.0
 PEAK_CEILING_DBFS = -3.0     # headroom for inter-sample peaks and MP3 encode overshoot
 
 # The BGM bus default (`DEFAULT_AUDIO_SETTINGS` in `audio/audioSettings.ts`: master 1.0 x bgm
-# 0.5). Only used for the report, but it is half of the derivation, so it is stated rather than
+# 0.2). Only used for the report, but it is half of the derivation, so it is stated rather than
 # folded into a constant somebody would later read as arbitrary.
-MUSIC_BUS_GAIN = 0.5
+#
+# **0.5 -> 0.2 on 2026-09-05**, from the listening pass (AUDIO_DESIGN 0.6): at 0.5 the bed
+# DELIVERED 2.2 dB louder than the tap cue it is supposed to sit under (bed -35.0 dBFS mid-band
+# RMS against the tap's -37.2), which is the number behind "the music is too loud". 0.2 puts it
+# 5.8 dB under -- the requested half. The FILE target below is unchanged: it is the reference the
+# gate holds, and moving the mix belongs on the bus the player can also move.
+MUSIC_BUS_GAIN = 0.2
 
 # Cues excluded from the headroom report's "binding constraint" line, with the reason. See the
 # `music` gate comment: `ink.tick` is authored as the faintest thing in the game AND throttled
@@ -83,20 +93,42 @@ QUALITY_LADDER = [0.6, 0.4, 0.2]     # libsndfile VBR quality; higher number = s
 TRACKS: dict[str, dict] = {
     'bgm.lobby': {
         'src': 'first-party/doodle-bed.flac',
-        # From `--search first-party/doodle-bed.flac`. The 60-75 s bucket, not the 20-30 s one
-        # that scored best overall (0.27 dB at 13.5s/23.5s): a 23.5 s loop turns over every 24
-        # seconds in a screen players sit on for minutes, and a seam nobody can hear is worth
-        # nothing if the repetition is what they notice instead. 0.58 dB is a quarter of the
-        # 2.5 dB gate, and 74 s is three times the musical distance between repeats.
-        'region': (12.5, 74.0),
+        # From `--search bgm.lobby`, i.e. searched on the SLOWED master -- the region is a
+        # decision about the file that ships, and at a different `speed` a 2 s crossfade window
+        # spans different material. **Re-searching is part of changing `speed`, not a tidy-up**,
+        # and this entry has now been re-picked twice for exactly that reason (12.5s/74.0s at
+        # 1.0x, 45.0s/61.0s at 0.8x, this one at 0.7x); none of the three transfers by rescaling.
+        #
+        # 91.5s/73.0s is its bucket's winner (cost 0.80, seam 0.69 dB, levels within 0.21 dB).
+        # The 30-45 s bucket scores better overall (0.56) and is again declined for the reason
+        # the first cut recorded: a 33 s loop turns over every 33 seconds on screens players sit
+        # on for minutes, and a seam nobody can hear buys nothing if the repetition is what they
+        # notice instead. 73 s is also longer than the 61 s it replaces, which is the direction
+        # this should move as the bed gets slower and quieter.
+        'region': (91.5, 73.0),
+        # Played at seven tenths of the tempo it was performed at, pitch held (`time_stretch`).
+        # The listening pass called the bed "too hurried" -- the first thing anybody said about
+        # any sound in this game -- and a lobby bed is the one piece of audio a player hears for
+        # minutes at a stretch with nothing else asking for attention. **0.8 was tried first and
+        # was still too fast**, so this is the second step down, not a first guess.
+        #
+        # Not a half (which is what "slow it down by one time" literally asks for): 0.5 needs a 2x
+        # stretch, where the vocoder's smearing is plainly audible on sustained strings, and a
+        # region long enough to be worth looping would land past the gate's 90 s ceiling. 1.43x
+        # still keeps the artefacts under the noise floor of a bed now mixed 5.8 dB BELOW the tap
+        # cue (see MUSIC_BUS_GAIN) -- and being quieter is itself what buys the extra stretch.
+        'speed': 0.7,
         # No shelf. The master's own 20-250 Hz sits 14 dB under its mid band (this is a light
         # acoustic bed, not a mix with a sub); a shelf here would be attenuating something that
         # is not in the way, and `--search` was therefore run raw.
         'shelf': None,
         'why': (
             'The first music in the game, and project-owned rather than licensed or generated. '
-            'A 74 s region lifted out of a 3:33 master, chosen by the same crossfade-window band '
-            'measure the gate then applies (0.58 dB across the seam, level within 0.09 dB). '
+            'Played at 0.7x with its pitch held (phase vocoder), because the listening pass '
+            'called the original bed too hurried for a screen players sit on for minutes -- and '
+            'called 0.8x still too fast. A 73 s region lifted out of the slowed master, chosen by '
+            'the same crossfade-window band measure the gate then applies (0.69 dB across the '
+            'seam, level within 0.21 dB). '
             'Shipped as bgm.lobby rather than bgm.battle because it has no percussive transients '
             'and no forward pull -- it is written to be sat on, not to be interrupted.'
         ),
@@ -106,6 +138,103 @@ TRACKS: dict[str, dict] = {
 
 def db(x: float) -> float:
     return -np.inf if x <= 1e-12 else 20.0 * np.log10(x)
+
+
+# Phase-vocoder settings for `time_stretch`. 2048 at 48 kHz is a 42.7 ms window (~23 Hz bins):
+# long enough to resolve the master's lowest sustained notes into their own bins -- a shorter one
+# smears two neighbouring partials together and the lock below then pins both to one rotation --
+# and short enough that a pluck stays a pluck. The 4x overlap is what the phase advance is
+# derived across; the synthesis hop is the only thing `speed` changes.
+STRETCH_N = 2048
+STRETCH_HOP = 512
+
+
+def peak_regions(mag: np.ndarray) -> np.ndarray:
+    """bin -> the index of the spectral peak whose region of influence it falls in.
+
+    A peak is a bin taller than its two neighbours on each side (two, not one: a single-neighbour
+    test promotes every ripple on a partial's skirt into a peak of its own, which is exactly the
+    fragmentation the lock exists to prevent). Regions meet at the midpoint between neighbouring
+    peaks. A frame with no peak at all -- silence, or a flat noise floor -- maps every bin to
+    itself, degrading to the unlocked vocoder rather than to an exception.
+    """
+    n = len(mag)
+    peaks = np.flatnonzero((mag[2:-2] > mag[:-4]) & (mag[2:-2] > mag[1:-3])
+                           & (mag[2:-2] > mag[3:-1]) & (mag[2:-2] > mag[4:])) + 2
+    if len(peaks) == 0:
+        return np.arange(n)
+    bounds = (peaks[:-1] + peaks[1:] + 1) // 2
+    return peaks[np.searchsorted(bounds, np.arange(n), side='right')]
+
+
+def time_stretch(x: np.ndarray, sr: int, speed: float) -> np.ndarray:
+    """Play the material at `speed` x its original tempo WITHOUT moving its pitch.
+
+    A phase vocoder: analyse at `STRETCH_HOP`, resynthesise at `STRETCH_HOP / speed`, and carry
+    each bin forward at the frequency the analysis actually measured rather than at its bin
+    centre. The one-line alternative -- resampling -- drops 0.8x playback a minor third, which is
+    a different instrument rather than a slower one.
+
+    **Identity phase locking** (Laroche & Dolson 1999): only spectral PEAKS advance their own
+    phase; every other bin is pinned to its peak's rotation, preserving the phase relationships
+    one note's partials had in the analysis frame. Without it a stretched acoustic bed picks up
+    the hollow, chorused "phasiness" that is this algorithm's signature, because each bin drifts
+    into a phase of its own and one struck string arrives as several.
+
+    Output length is `round(len(x) / speed)` up to one synthesis hop, and the achieved ratio is
+    exactly `hs / STRETCH_HOP` -- both hops are integers, so `speed` is quantised. At 0.8 it is
+    exact (512 -> 640); `process` prints what was achieved rather than what was asked for.
+
+    Amplitude is held by dividing out the accumulated window-square envelope, so this is level-
+    preserving for any hop and `set_band_target` downstream still finds the level it expects.
+    """
+    if speed == 1.0:
+        return x
+    ha, n = STRETCH_HOP, STRETCH_N
+    hs = int(round(ha / speed))
+    # Periodic (not symmetric) Hann: the one that tiles, which is what an overlap-add depends on.
+    win = np.hanning(n + 1)[:n]
+    frames = 1 + max(0, len(x) - n) // ha
+    n_out = (frames - 1) * hs + n
+    out = np.zeros((n_out, x.shape[1]))
+    env = np.zeros(n_out)
+    omega = 2.0 * np.pi * np.arange(n // 2 + 1) / n
+    for c in range(x.shape[1]):
+        prev_ana = syn = None
+        for m in range(frames):
+            spec = np.fft.rfft(x[m * ha:m * ha + n, c] * win)
+            mag, ana = np.abs(spec), np.angle(spec)
+            if m == 0:
+                syn = ana.copy()
+            else:
+                # Heterodyned phase difference, wrapped to (-pi, pi] -> the bin's TRUE frequency.
+                d = ana - prev_ana - ha * omega
+                d -= 2.0 * np.pi * np.round(d / (2.0 * np.pi))
+                adv = hs * (omega + d / ha)
+                lock = peak_regions(mag)
+                syn = syn[lock] + adv[lock] + (ana - ana[lock])
+            prev_ana = ana
+            out[m * hs:m * hs + n, c] += np.fft.irfft(mag * np.exp(1j * syn), n) * win
+            if c == 0:
+                env[m * hs:m * hs + n] += win * win
+    # Floored at a thousandth of the steady state. The floor only ever bites in the first and last
+    # half-window, where it leaves a fade instead of dividing near-silence by near-zero.
+    return out / np.maximum(env, 1e-3 * float(env.max()))[:, None]
+
+
+def load_master(src: str, speed: float) -> tuple[np.ndarray, int]:
+    """The master as the player will hear it: whole file, float64, `speed` already applied.
+
+    **The stretch runs before the region is chosen**, and that ordering is why nothing downstream
+    of here had to learn about it. Every later measurement -- `--search`'s ranking, the shelf,
+    `xfade_band_diff`, the gate's `duration_ms`, the `lengthS` the player wraps on -- is then made
+    on the timeline that actually plays, so a 2 s crossfade window means the same 2 s here as it
+    does in `MusicPlayer`. Stretching after the cut would leave every one of those numbers
+    describing a file that no longer exists, and the seam gate would be judging a window 1.6 s
+    wide while calling it 2.
+    """
+    x, sr = sf.read(src, dtype='float64', always_2d=True)
+    return time_stretch(x, sr, speed), sr
 
 
 def low_shelf(x: np.ndarray, sr: int, f0: float, gain_db: float) -> np.ndarray:
@@ -162,8 +291,8 @@ def resample(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     return out
 
 
-def search_regions(src: str, shelf: tuple | None = None, lo_s: float = 20.0,
-                   hi_s: float = 90.0, hop_s: float = 0.5) -> list[tuple]:
+def search_regions(src: str, shelf: tuple | None = None, speed: float = 1.0,
+                   lo_s: float = 20.0, hi_s: float = 90.0, hop_s: float = 0.5) -> list[tuple]:
     """Rank loop regions by the SAME measure the shipped file is then judged by.
 
     That sentence is the whole design of this function, and daydayup paid for it three times
@@ -176,13 +305,15 @@ def search_regions(src: str, shelf: tuple | None = None, lo_s: float = 20.0,
     energy weighting onto the mids where head and tail differ more -- a region daydayup ranked
     at 1.41 dB raw measured 3.69 dB once shelved). Level normalisation is a scalar and cannot
     change a dB difference, and the resample only drops bands near -80 dBFS, so the shelf is
-    the one step that has to be inside the loop.
+    the one step that has to be inside the loop. `speed` is inside it for a stronger reason:
+    it changes how much MATERIAL a 2-second window spans, so a search run at 1.0 ranks windows
+    the shipped file never has (see `load_master`).
 
     Cost adds small terms for level mismatch and for settling in a passage quieter than the
     track's own median -- without the second one a search lands on the intro, which is
     seamless with itself for the boring reason that almost nothing is playing.
     """
-    x, sr = sf.read(src, dtype='float32', always_2d=True)
+    x, sr = load_master(src, speed)
     if shelf:
         x = low_shelf(x.astype(np.float64), sr, *shelf)
     mono = x.mean(axis=1)
@@ -210,16 +341,19 @@ def search_regions(src: str, shelf: tuple | None = None, lo_s: float = 20.0,
     return out
 
 
-def report_search(name: str) -> None:
-    """`name` is a track id (searched WITH that track's shelf) or a bare source filename."""
+def report_search(name: str, speed: float = 1.0) -> None:
+    """`name` is a track id (searched WITH that track's own shelf and speed, which is what the
+    gate then measures) or a bare source filename (searched raw, at `--speed`)."""
     spec = TRACKS.get(name)
     src = os.path.join(SRC_DIR, spec['src']) if spec else (
         name if os.path.isabs(name) else os.path.join(SRC_DIR, name))
     shelf = spec['shelf'] if spec else None
-    best = search_regions(src, shelf=shelf)
+    speed = spec['speed'] if spec else speed
+    best = search_regions(src, shelf=shelf, speed=speed)
     print()
     print(f'{os.path.basename(src)}: {len(best)} candidate regions, ranked by full-window '
           f'band difference'
+          + (f', speed {speed}x applied' if speed != 1.0 else '')
           + (f', shelf {shelf[1]:+.0f} dB below {shelf[0]:.0f} Hz applied' if shelf
              else ' (no shelf)'))
     print('    bucket     cost   start      len   band-diff  lvl-diff   head    tail')
@@ -305,11 +439,17 @@ def process(track: str, out_dir: str) -> None:
     spec = TRACKS[track]
     src = os.path.join(SRC_DIR, spec['src'])
     t0, dur = spec['region']
-    info = sf.info(src)
-    x, sr = sf.read(src, dtype='float64', always_2d=True,
-                    start=int(t0 * info.samplerate), stop=int((t0 + dur) * info.samplerate))
+    speed = spec['speed']
+    full, sr = load_master(src, speed)
+    x = full[int(t0 * sr):int((t0 + dur) * sr)]
 
     print(f'\n{track}  <- {spec["src"]}  region {t0}-{t0 + dur}s ({dur}s, {x.shape[1]} ch)')
+    if speed != 1.0:
+        # The ACHIEVED ratio, not the asked-for one: both vocoder hops are integers (see
+        # `time_stretch`), so a `speed` that does not divide STRETCH_HOP is quantised.
+        got = STRETCH_HOP / int(round(STRETCH_HOP / speed))
+        print(f'  speed {speed}x (achieved {got:.4f}x, pitch held)  ->  master is '
+              f'{len(full) / sr:.2f} s long, region taken from that timeline')
     print(f'  in   peak {db(float(np.max(np.abs(x)))):+7.2f} dBFS   '
           f'mid {band_rms(x, sr, *MID_BAND):7.2f}   '
           f'sub {band_rms(x, sr, 20, 250):7.2f}   sfx {band_rms(x, sr, 2000, 8000):7.2f}')
@@ -362,12 +502,16 @@ def main() -> None:
     ap.add_argument('--out', default=OUT_DIR)
     ap.add_argument('--search', metavar='TRACK_OR_FILE', action='append',
                     help='rank loop regions and exit. A track id searches that source WITH the '
-                         'track shelf applied, which is what the gate then measures; a bare '
-                         'filename searches the raw master.')
+                         'track shelf and speed applied, which is what the gate then measures; a '
+                         'bare filename searches the raw master at --speed.')
+    ap.add_argument('--speed', type=float, default=1.0,
+                    help='playback speed for a bare-filename --search. A track id ignores it and '
+                         'uses its own: a region has to be picked at the speed it will be played '
+                         'at (see `load_master`).')
     a = ap.parse_args()
     if a.search:
         for f in a.search:
-            report_search(f)
+            report_search(f, a.speed)
         return
     if not TRACKS:
         raise SystemExit('TRACKS is empty -- generate the masters (art/audio/suno/BRIEFS.md), '

@@ -168,7 +168,8 @@ export class MailPanel {
         done.anchor.set(0.5, 0.5); done.x = core.cCX; done.y = cy + bH / 2;
         core.container.addChild(done);
       } else {
-        addButton(core, t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.network.doClaim(m), 0xffffff);
+        addButton(core, t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.network.doClaim(m),
+          0xffffff, undefined, undefined, 'gift');
       }
       cy += bH + Math.round(h * 0.02);
     }
@@ -176,7 +177,8 @@ export class MailPanel {
     const dH = Math.round(h * 0.07);
     const deleteBlocked = hasAtt && !m.claimed;
     addButton(core, t('mail.delete'), px, core.bodyBottom - dH - Math.round(h * 0.01), panelW, dH, C.paper, deleteBlocked ? C.mid : C.red,
-      () => deleteBlocked ? core.toast('mail.deleteBlockedAttachment') : void this.network.doMailDelete(m), deleteBlocked ? C.mid : C.red);
+      () => deleteBlocked ? core.toast('mail.deleteBlockedAttachment') : void this.network.doMailDelete(m), deleteBlocked ? C.mid : C.red,
+      undefined, undefined, 'trash');
   }
 
   /**

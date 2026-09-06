@@ -1,4 +1,4 @@
-// Test-only worker fixture for siegeWorkerPool.test.ts: responds to each of the first 5 task messages
+// Test-only worker fixture for computePool.test.ts: responds to each of the first 5 task messages
 // (fabricated result, not a real engine run) after a fixed delay, then hangs forever on every message after
 // that. On a single-worker pool this lets several quick-but-non-instant tasks pile up ahead of a 6th in
 // `queue` long enough that the 6th's wait-in-queue alone exceeds a shorter taskTimeoutMs before it's ever

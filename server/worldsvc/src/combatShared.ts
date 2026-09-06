@@ -12,7 +12,6 @@ import {
   tileId,
   marchId,
   playerWorldId,
-  findMarchPath,
   marchDurationFromPath,
   baseFootprintCells,
   SlgError,
@@ -23,6 +22,7 @@ import {
 import type { PlayerWorldDoc, MarchDoc, StationedDoc, ArmyEntry } from './db';
 import type { WorldCore } from './core';
 import { legBox } from './core/helpers';
+import { getComputeBackend } from './compute';
 
 /**
  * Refund troops to the pool (capped at troopCap) + settle resources; optionally merge loot into resources
@@ -95,6 +95,15 @@ const PATHFIND_QUERY_PAD = 60;
  * scale. All 3 obstacle queries are now scoped to a padded bounding box around the march's endpoints
  * (PATHFIND_QUERY_PAD above), using the existing `{worldId,x,y}` index, cutting them back down to "near the
  * route" instead of "the whole world".
+ *
+ * 2026-09-05 (worldsvc-concurrency): the A* itself no longer runs here. It ran synchronously on worldsvc's
+ * one event loop, and the concurrency audit measured it blocking that loop for 2-6 SECONDS whenever the
+ * destination turned out to be unreachable (rivers and mountain rings cut the map into 20 components joined
+ * by only 75 crossings, and a crossing is passable only to whoever holds it — so "unreachable" is the
+ * common case, not the exotic one). That is the whole explanation for "my fifth team's order lags": five
+ * orders in a row queue behind each other's pathfinding. Everything above this line — the three Mongo
+ * obstacle scans — still happens on the main thread, because it is I/O; only the pure computation is handed
+ * to the compute backend (worker thread today, a separate service later; see compute/types.ts).
  */
 export async function computeMarchPath(
   core: WorldCore,
@@ -104,8 +113,15 @@ export async function computeMarchPath(
   toX: number,
   toY: number,
   requesterId: string,
+  /**
+   * The requester's already-loaded world doc, when the caller has one (2026-09-05, phase 2). Only
+   * `familyId` and `mainBaseTile` are read from it, both of which every caller on the dispatch path has
+   * already fetched — startMarch reads `pw` as its first statement. Omit it and this re-reads, exactly as
+   * before; passing it removes one Mongo round trip from the middle of a ~20-hop command.
+   */
+  requesterPwDoc?: PlayerWorldDoc | null,
 ): Promise<PathCell[]> {
-  const requesterPw = await core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, requesterId) });
+  const requesterPw = requesterPwDoc ?? await core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, requesterId) });
   const allyFamilyId = requesterPw?.familyId;
 
   const box = legBox(fromX, fromY, toX, toY);
@@ -149,17 +165,17 @@ export async function computeMarchPath(
     const friendly = so?.ownerId === requesterId || (!!allyFamilyId && so?.familyId === allyFamilyId);
     if (!friendly) blockedBaseKeys.add(`${b.x}:${b.y}`);
   }
-  const path = findMarchPath(
-    worldId,
-    core.deps.mapW,
-    core.deps.mapH,
-    fromX,
-    fromY,
-    toX,
-    toY,
-    passableGateKeys,
-    blockedBaseKeys,
-  );
+  const path = await getComputeBackend().findPath({
+    world: worldId,
+    mapW: core.deps.mapW,
+    mapH: core.deps.mapH,
+    fx: fromX,
+    fy: fromY,
+    tx: toX,
+    ty: toY,
+    passableGateKeys: [...passableGateKeys],
+    blockedBaseKeys: [...blockedBaseKeys],
+  });
   if (!path) throw new SlgError('PATH_BLOCKED', 'No viable path found');
   return path;
 }
@@ -199,7 +215,7 @@ export async function startReturnMarch(
   const bx = core.coordX(pw.mainBaseTile);
   const by = core.coordY(pw.mainBaseTile);
   try {
-    const path = await computeMarchPath(core, worldId, x, y, bx, by, ownerId);
+    const path = await computeMarchPath(core, worldId, x, y, bx, by, ownerId, pw);
     // ADR-074 §8.3 applies to the walk home too — it is the same march clock, and exempting return legs
     // would make the discount depend on which direction a team is facing.
     const speedMult = (await core.sectPayoff(pw.sectId)).marchMult;

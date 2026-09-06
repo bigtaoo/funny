@@ -28,13 +28,14 @@ import { assetIO } from '../assets/assetIO';
 export const DEFAULT_SFX_VOLUME = 0.8;
 
 /**
- * BGM 通道默认音量（同上的 "bgm 0.5"）。
+ * BGM 通道默认音量（同上的 "bgm 0.2"）。
  *
- * **这个数是发货资产电平的另一半**：两条轨都被归一到 250–2000 Hz RMS = −29 dBFS，而那个目标是
- * 按 `−29 dBFS × 0.5` 交付去推的（推导见 `tools/audio-pipeline/audit.py` 的 `music` 门禁）。
- * 改这里而不重切资产，就是把整条床相对于 cue 集平移。
+ * **这个数是发货资产电平的另一半**：轨被归一到 250–2000 Hz RMS = −29 dBFS，交付出去的是
+ * `−29 dBFS × 这个数`（推导见 `tools/audio-pipeline/audit.py` 的 `music` 门禁）。改这里而不重切
+ * 资产，就是把整条床相对于 cue 集平移——**2026-09-05 就是这么从 0.5 挪到 0.2 的**（听感反馈
+ * 「音量太大」，实测那时床比 `sfx.ui.tap` 还响 2.2 dB；理由写在 `audioSettings.ts` 的默认值上）。
  */
-export const DEFAULT_MUSIC_VOLUME = 0.5;
+export const DEFAULT_MUSIC_VOLUME = 0.2;
 
 /** 平台要回答的**四个**问题（BGM 落地前是两个），其余全在 {@link ContextAudioBus} 里。 */
 export interface ContextAudioBusDeps {

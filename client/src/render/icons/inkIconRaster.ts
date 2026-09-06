@@ -139,6 +139,25 @@ import strongholdInkUrl from '../../assets/tabicons/stronghold_active.png';
 // as "unavailable" here, and beside a countdown it reads as "unlocks in 1h 29m", the exact inverse.
 import umbrellaInkUrl from '../../assets/tabicons/umbrella_active.png';
 
+// Batch 11 (design/product/tab-icon-art-prompts-batch11.md): the actions the button-icon rollout
+// left iconless because nothing in the library meant them and borrowing a neighbour would have given
+// one glyph two meanings. Four are deliberately NOT the obvious drawing: `enter` is a doorframe with
+// an arrow through it because the half-open door is `room` (create room, usually the button right
+// beside it); `power` rather than a door-with-arrow for logout, which would have been that same pair
+// twice; `penWrite` is a pen AND the line it just drew, since a lone pen is already `lead`/`pencils`/
+// `duel`/`brush`; `sheets` inverts to a solid-black front page because `cards` is two outlined ones.
+// The sect's ally button is NOT here — three tries never read as two hands at 26px, so it keeps
+// borrowing `friends` (batch 11 §6).
+import trashInkUrl from '../../assets/tabicons/trash_active.png';
+import keyInkUrl from '../../assets/tabicons/key_active.png';
+import userPlusInkUrl from '../../assets/tabicons/userPlus_active.png';
+import powerInkUrl from '../../assets/tabicons/power_active.png';
+import penWriteInkUrl from '../../assets/tabicons/penWrite_active.png';
+import megaphoneInkUrl from '../../assets/tabicons/megaphone_active.png';
+import sheetsInkUrl from '../../assets/tabicons/sheets_active.png';
+import enterInkUrl from '../../assets/tabicons/enter_active.png';
+import eraserInkUrl from '../../assets/tabicons/eraser_active.png';
+
 // The 6 kinds that ALIAS the white master of an existing tab icon rather than getting art of their
 // own, so each concept is drawn exactly once in the game. They live here rather than as call-site
 // renames to `pvpTabIcon`/`gachaTabIcon`/... because most of them have call sites where `color`
@@ -174,6 +193,7 @@ export type InkIconKind =
   | 'unit' | 'spell'
   | 'watchtower' | 'arrowTower' | 'blocker' | 'mapPin' | 'camp' | 'footsteps' | 'stronghold'
   | 'umbrella'
+  | 'trash' | 'key' | 'userPlus' | 'power' | 'penWrite' | 'megaphone' | 'sheets' | 'enter' | 'eraser'
   | 'scrap' | 'lead' | 'binding' | 'hammer' | 'ink'
   | 'replay' | 'share' | 'star' | 'lock' | 'medal' | 'close' | 'check' | 'play' | 'zoom' | 'cards'
   | 'flag' | 'desk' | 'cabinet' | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
@@ -250,6 +270,15 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   footsteps:         footstepsInkUrl as string,
   stronghold:        strongholdInkUrl as string,
   umbrella:          umbrellaInkUrl as string,
+  trash:             trashInkUrl as string,
+  key:               keyInkUrl as string,
+  userPlus:          userPlusInkUrl as string,
+  power:             powerInkUrl as string,
+  penWrite:          penWriteInkUrl as string,
+  megaphone:         megaphoneInkUrl as string,
+  sheets:            sheetsInkUrl as string,
+  enter:             enterInkUrl as string,
+  eraser:            eraserInkUrl as string,
   swords:            swordsInkUrl as string,
   home:              homeInkUrl as string,
   capsule:           capsuleInkUrl as string,

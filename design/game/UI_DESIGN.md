@@ -62,6 +62,22 @@
 
 > **按钮背景统一（2026-07-15）**：全屏菜单场景（登录/大厅/设置/…）早已共享 `render/sketchUi.ts` 的 `sketchPanel()` + `ui` 调色板（§7.5：手绘描边按钮，非透明/纯白/纯黑各自为政）；本次审计发现真正的缺口在**战斗内 HUD**（`HUDView`/`ProfilePopup`/`TutorialDirector`），此前各自写死十六进制色值（`0x2c2c2a`/`0xf0ece0`/`0x3a6ea5`/`0x999999`…）。新增 `ui/widgets/hudButton.ts` 导出 `drawHudButton(g, w, h, variant)` + `hudButtonText(variant)`，5 个语义变体：`primary`（主操作，暂停恢复/关闭/升级/教程跳过）、`accent`（同权重次操作，靠色相区分，刷新手牌/教程下一步）、`secondary`（低权重操作，退出大厅/设置齿轮）、`danger`（拉黑/移除等破坏性操作）、`disabled`。颜色源自 `theme.ts` 的 `palette`，换肤只改一处。同时把两处历史遗留的场景本地 `const C = {...}`（`SettingsScene.ts`/`IntroScene.ts`，与 `sketchUi.ui` 完全重复的调色板）改为直接 `import { ui } from '../render/sketchUi'`，消除并行调色板。
 
+> **按钮前置图标（2026-09-05）**：`[图标][gap][文案]` 整组在按钮内居中。这个形状此前在四处各长了一遍（装备页 Craft 按钮、世界地图头部三枚入口、结算页主/次按钮、战役地图头部快捷键），本次抽成 **`ui/widgets/buttonLabel.ts` 的 `drawButtonLabel()`**，全屏菜单场景的按钮**内容**从此和按钮**背景**（`sketchPanel`/`sketchButton`）一样只有一份实现。三条行为写在 `test/ui/buttonLabel.ui.ts` 里：
+>
+> - **整组居中**，不是文案居中——退回后者会让图标挂在按钮左缘外，只有正好盯着那个按钮才看得出来；
+> - **放不下就丢图标**（`minFit`，默认 0.82）：好友列表的「接受/拒绝」按钮是按两个汉字宽度做的，缩放整组会把文字压到看不清，那比没图标更糟。**正因为有这条兜底，「所有按钮都加图标」才能无脑铺开**——放不下的按钮在自己的真实宽度上自动退回原样，不需要维护一张「哪些按钮太窄」的手工清单；
+> - **方格用 `stack`**（图标在上、文案在下）：大厅右侧 Daily/Mail/Events/Auc. 那一列是正方形格，横排会被 `minFit` 判成放不下。
+>
+> **墨色变体**：`tabIconVariant()` 按**标签色**判亮度——白字→`active`（浅墨），深字/灰字→`content`（深墨）。这条规则对绝大多数按钮是对的（深底配白字、纸底配深字），**唯一要显式覆盖的是深底 + 金字**：`C.gold` 亮度 0.59 会落到淡灰墨，画在 `C.dark` 上等于隐形（同一个坑在底栏犯过一次），所以战役地图头部那两枚金字按钮显式传 `variant: 'active'`。反过来也别一律写死 `'active'`：禁用态标签是 `C.mid` 灰字、底色是浅灰 `btnOff`，写死浅墨同样看不见——**让标签色决定，是唯一不需要逐处判断的规则**。
+>
+> **本轮接线 96 处、26 枚图标、零新美术**（全部复用现有 114 枚：46 页签 + 5 金币 + 63 墨线）。用量前几名：`check` 确认/接受/提交 19、`close` 取消/拒绝/关闭 18、`coin` 购买/充值 8、`zoom` 搜索 7、`gift` 领取 5、`friendsTabIcon` 加好友/结盟 5、`familyTabIcon` 家族 4、`channelTabIcon` 发言 3。覆盖场景：好友（列表/搜索/家族宗门表单/邮件/世界频道）、房间、登录、设置（含改名与删号弹窗）、大厅右侧入口条、家族、宗门、拍卖（出价/一口价/上架）、抽卡、商城（全部购买按钮）、每日（签到/周奖/看广告）、成就、卡组、关卡准备、城池（加速/填满队伍）、卡牌融合批处理、六个通用对话框（确认/徽章/申诉/隐私/反馈/重连）。
+>
+> **美术缺口已补齐（2026-09-06，批次 11）**：上面那 10 枚里的 **9 枚已出图并接线**——`trash` 删除、`key` 登录、`userPlus` 注册、`power` 登出、`penWrite` 改名、`megaphone` 反馈、`sheets` 复制、`enter` 加入、`eraser` 清空。四枚**没有画第一直觉的那个造型**：加入不画门（半开的门是 `room` 的「创建房间」，两枚常同屏）而是门框+箭头；登出不画「门+向外箭头」（同上）而是电源符号；改名不画单独一支笔（`lead`/`pencils`/`duel`/`brush` 已占满笔类）而是「笔+刚写下的一道线」；复制的两张纸把前一张填实黑（`cards` 就是两张白底描线卡）。**第 10 枚 `handshake`（结盟）结案为不画**：两版都塌——v1 读成 V、v2 读成哑铃且 2.42:1 超 `iconArtAspect` 门禁；根因是「手大到 26px 看得见」和「不许画手指」在这个尺寸上互相矛盾，不是措辞问题。`sect.ally` 继续借 `friendsTabIcon`（那表达的是「另一个组织」，不冲突）。判断依据、prompt 与实拍见 [`tab-icon-art-prompts-batch11.md`](../product/tab-icon-art-prompts-batch11.md)。
+>
+> 同批顺手补了两处**上一轮漏掉的按钮**（零新美术）：世界地图面板行按钮（`panelButtonIn` 此前自己画一行居中 `txt`，现在走 `drawButtonLabel`，因此也获得了缩放/丢图标兜底）、主城防守页脚的保存/填满/清空一簇。i18n 里 `settings.rename` 的 `✎` 与 `room.copy` 的 `📋` 前缀三语删除——真图标进来后它们是重复的。
+>
+> **战斗内 HUD 的 10 处按钮本轮没接**：它们走 `ui/widgets/hudButton.ts` 的扁平填充体系（不是手绘描边），标签是**常驻 `PIXI.Text` 字段**、按帧改样式而不是重绘，接图标要动按钮的生命周期；且战斗界面寸土寸金。真要接的话，「升级」可复用 `progressTabIcon`（三个上箭头）、「退出大厅」`homeTabIcon`、「继续」`play`，缺暂停与跳过两枚。
+
 > **ScrollIndicator（2026-07-14）**：`ui/widgets/ScrollIndicator.ts` 导出 `drawScrollIndicator(parent, view, scrollY, scrollMax, opts?)`——在视口 `view`（= 内容 mask 矩形）右缘画墨黑细圆角轨道 + 位置滑块（长≈视口/内容比、位置≈滚动进度），`scrollMax<=0` 或视口退化时返回 `null` 不画。**只是指示器、不吃指针**，各场景仍自管拖拽/滚轮。约定：在 `render()` 内容+mask 加完后调一行，画进**不随滚动位移**的容器（容器位移型场景用 `this.container`；无 mask 剔除重绘型用 `bodyLayer` 并以 `listY/listH` 局部量作视口）；有拖拽快速路径（BattlePass/CardCodex）的场景在快速路径里也重画一次。已接入全部可滚动页面：BattlePass、CardCodex、Leaderboard、DeckBuilder、Chat、Shop（商城/充值）、Friends（好友/世界/邮件）、Equipment（背包/装配/合成）、Card 花名册、Sect（名册/频道）、Family（名册/频道）、Auction（列表/物品选择）、WorldMap 世界信息面板。纯几何 `scrollThumbGeometry()` 拆出单测。
 >
 > **鼠标滚轮全面接入（2026-07-23）**：此前"各场景自管拖拽/滚轮"里的滚轮部分只有 WorldMap 一处真正接了（`WorldMapInput.handleWheel`），其余全部只支持触屏拖拽。新增 `ui/wheelScroll.ts` 的 `wheelScrollY(regionTop, regionBottom, y, deltaY, scrollY, maxScroll)` 纯函数判定，铺到上面列出的**全部**可滚动页面（含新增的 Settings 头像选择器、DefenseEditor 出击卡组、Recharge 档位列表——这两个之前没在 ScrollIndicator 清单里）。`InputManager.onWheel` 只在浏览器/PC 派发（微信小游戏无 wheel 事件），场景侧零平台判断代码、不影响触屏。多 Tab/双栏共享同一 `scrollY` 的场景（FriendsScene 五 Tab；Sect/Family 的名册列+频道列）一份 `onWheel` 订阅按当前激活列路由；双栏场景新增了独立的 `xxxRegionTop/Bottom`+`xxxMax` 字段（拖拽本不需要提前知道视口边界，滚轮判定必须要）。同批顺带给 Auction 的价格/出价数字输入框加了「回车=失焦提交」（此前只有失焦提交，聊天类输入框的回车发送早已覆盖 Chat/Family/Friends/Sect）。

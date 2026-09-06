@@ -280,12 +280,22 @@ GATES = {
     # WHERE -29 COMES FROM. It is derived from this repo's own measured cue set, not copied from
     # daydayup's -30 (whose cues are ~2 dB louder on file and carry different catalogue gains).
     # Delivered cue peak = file peak x CUE_CATALOGUE gain x 0.8 (the SFX bus, §4); delivered bed
-    # mid-band RMS = file mid x 1.0 (track gain) x 0.5 (the BGM bus default, §4). At -29 dBFS on
-    # file the bed delivers -35.0, and the cues stand above it by:
+    # mid-band RMS = file mid x 1.0 (track gain) x the BGM bus default (§4). At -29 dBFS on file
+    # and the ORIGINAL 0.5 bus the bed delivered -35.0, and the cues stood above it by:
     #
     #     base.hit +18.6   card.play +18.3   spell.cast +17.2   card.invalid +15.4
     #     unit.death +14.9   unit.hit +14.8   ui.tap +14.3   ui.back +12.0
     #     unit.attack +10.3   ink.tick +4.0      (dB)
+    #
+    # **The bus moved to 0.2 on 2026-09-05 and this window did not** (AUDIO_DESIGN §0.6). The
+    # listening pass said the bed was too loud, and the measurement agreed for a reason the ladder
+    # above cannot show: it compares a bed's RMS with a cue's PEAK, and on RMS against RMS the bed
+    # was 2.2 dB LOUDER than `ui.tap` (-35.0 vs -37.2). At 0.2 it sits 5.8 dB under it, and every
+    # entry in the ladder gains 7.96 dB. So -29 on file stays exactly what it was -- the fixed
+    # reference this gate holds, and the thing that makes two tracks comparable -- while the mix
+    # decision lives on the bus, which is also the knob the player can move. The consequence for
+    # this window: the 10 dB rule below is now met with margin (+18.2 dB) instead of binding, so
+    # it is a FLOOR the level must not fall back through, not the thing that sets it.
     #
     # That ladder is not hand-arithmetic: `process_music.py --track ...` prints it from
     # `process.py`'s TARGETS (the MEASURED delivered peaks) after every run, so a track whose

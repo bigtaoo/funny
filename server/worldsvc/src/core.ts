@@ -158,6 +158,11 @@ export class WorldCore {
   addCover(worldId: string, cx: number, cy: number, entry: CoverEntry): Promise<void> { return this.pushSvc.addCover(worldId, cx, cy, entry); }
   removeCover(worldId: string, cx: number, cy: number, sourceTile: string): Promise<void> { return this.pushSvc.removeCover(worldId, cx, cy, sourceTile); }
   getCover(worldId: string, tile: string): Promise<CoverEntry[]> { return this.pushSvc.getCover(worldId, tile); }
+  // Batched forms used by the arrival tick (core/push.ts "Batched forms").
+  getOccupancyMany(worldId: string, tiles: string[]): Promise<Map<string, OccEntry>> { return this.pushSvc.getOccupancyMany(worldId, tiles); }
+  getCoverMany(worldId: string, tiles: string[]): Promise<Map<string, CoverEntry[]>> { return this.pushSvc.getCoverMany(worldId, tiles); }
+  setOccupancyMany(worldId: string, entries: OccEntry[]): Promise<void> { return this.pushSvc.setOccupancyMany(worldId, entries); }
+  clearOccupancyMany(worldId: string, cells: Array<{ tile: string; id: string }>): Promise<void> { return this.pushSvc.clearOccupancyMany(worldId, cells); }
   clearSpatialIndexes(worldId: string): Promise<void> { return this.pushSvc.clearSpatialIndexes(worldId); }
   pushMarch(accountId: string, v: MarchView): Promise<void> { return this.pushSvc.pushMarch(accountId, v); }
   pushOrderEnded(accountId: string, o: { tile: string; kind: 'occupy' | 'move'; status: 'arrived' | 'recalled'; at: number }): Promise<void> { return this.pushSvc.pushOrderEnded(accountId, o); }

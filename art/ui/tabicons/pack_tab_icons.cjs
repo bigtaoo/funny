@@ -60,6 +60,11 @@ const INKS = {
   inactive: { r: 0x68, g: 0x68, b: 0x68, thicken: 0 }, // C.mid   — inactive tab cell (paper fill)
   content:  { r: 0x2c, g: 0x2c, b: 0x2a, thicken: 0 }, // C.dark  — content on paper (reward rows)
   accent:   { r: 0x44, g: 0x77, b: 0xcc, thicken: 1 }, // C.accent— back-button arrow on the paper bar
+  // Deep green — the check-in calendar's claimable-cell ink. Must stay equal to `INK_CLAIMABLE` in
+  // client/src/scenes/DailyScene/panels.ts: these two glyphs exist only to point at that one cell,
+  // and a cue drawn in a different green than the box it points at reads as a second element rather
+  // than as part of it. Nothing else in the game asks for this ink, so no other job opts in.
+  checkinCue: { r: 0x2e, g: 0x7d, b: 0x32, thicken: 2 },
 };
 
 /** Inks a JOBS row gets when it doesn't name its own — the tab-icon triple. */
@@ -271,6 +276,41 @@ const JOBS = [
   // rather than another shield: `equipIcon`'s kite shield is already what "equipment" looks like
   // everywhere in this game, including every equipment reward.
   { src: 'tabicon_umbrella.webp',          name: 'umbrella', inks: ['active'] },
+
+  // Batch 11 (design/product/tab-icon-art-prompts-batch11.md, 2026-09-06): the ten actions the
+  // button-icon rollout could not wire because nothing in the library meant them, and borrowing a
+  // neighbour would have given one glyph two meanings. Four of them are deliberately NOT the
+  // obvious drawing: `enter` is a doorframe plus an arrow because the half-open door is `room`
+  // (create room, often the button right next to it); `power` rather than a door-with-arrow for
+  // logout, which would have been that same pair twice; `penWrite` is a pen AND the line it just
+  // drew, because a lone pen is already `lead`/`pencils`/`duel`/`brush`; `sheets` inverts to a
+  // solid-black front page because `cards` is already two stacked outlined cards.
+  { src: 'tabicon_trash.webp',             name: 'trash', inks: ['active'] },
+  { src: 'tabicon_key.webp',               name: 'key', inks: ['active'] },
+  { src: 'tabicon_userPlus.webp',          name: 'userPlus', inks: ['active'] },
+  { src: 'tabicon_power.webp',             name: 'power', inks: ['active'] },
+  { src: 'tabicon_penWrite.webp',          name: 'penWrite', inks: ['active'] },
+  { src: 'tabicon_megaphone.webp',         name: 'megaphone', inks: ['active'] },
+  { src: 'tabicon_enter.webp',             name: 'enter', inks: ['active'] },
+  { src: 'tabicon_eraser.webp',            name: 'eraser', inks: ['active'] },
+  // Both of these are v2s. At 26px the v1 sheets read as ONE document (the back page came out a
+  // one-pixel sliver) and the v1 handshake as a V (hairline arms, a fingernail-sized clasp). Both
+  // prompts had asked for the shapes in adjectives; the v2s give the offset, the arm width and the
+  // clasp width as fractions of the drawing, which is the only form the model honours.
+  { src: 'tabicon_sheets.webp',            name: 'sheets', inks: ['active'] },
+  // `handshake` (sect alliance) is still out: v1 read as a V, v2 as a featureless ball between two
+  // bars and came out 2.42:1, over the aspect gate. The button keeps borrowing `friends` until a
+  // version reads as two hands at 26px — see batch 11 §6.
+
+  // Check-in calendar focal cue (design/product/checkin-focus-cue-art.md, 2026-09-05). Like `back`,
+  // these are NOT tab icons — they are page content drawn beside/behind one calendar cell, in the
+  // one green ink that cell is drawn in, so they take a single opt-in ink instead of the tab triple.
+  // Both are drawn far larger than a 28px tab cell (the arrow at ~0.5x a cell's height, the burst at
+  // ~1.6x), which is why 2 dilate passes is the ceiling here rather than the floor: neither shape
+  // can close up (an arc plus two head strokes; sixteen rays with wide white gaps), but neither
+  // needs the compensation a tab cell needs either.
+  { src: 'tabicon_cueArrow.png', name: 'cueArrow', inks: ['checkinCue'] },
+  { src: 'tabicon_cueBurst.png', name: 'cueBurst', inks: ['checkinCue'] },
 ];
 
 const OUT_DIR = path.resolve(__dirname, '../../../client/src/assets/tabicons');
@@ -347,7 +387,15 @@ async function process(job) {
     console.warn(`⚠️  skip ${job.name}: source not found (${job.src}) — drop the AI-generated file here first`);
     return [];
   }
-  const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  // Step 1 of the pipeline reads alpha out of LUMINANCE (white paper → transparent), so a source
+  // that already carries its own alpha channel has to be composited onto white first. Skip this and
+  // a transparent-background drawing packs as a SOLID INK SQUARE: every pixel outside the strokes is
+  // RGB 0,0,0 (sharp zeroes the colour of fully transparent pixels), luminance 0, therefore "ink".
+  // Not hypothetical — the 2026-09-05 check-in cue arrow came out of the generator with alpha while
+  // every earlier source was flat white, and the failure is silent (a square is still a valid PNG).
+  const meta = await sharp(file).metadata();
+  const src = meta.hasAlpha ? sharp(file).flatten({ background: '#ffffff' }) : sharp(file);
+  const { data, info } = await src.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H, channels: ch } = info;
 
   const rows = [];

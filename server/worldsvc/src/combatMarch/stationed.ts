@@ -33,7 +33,7 @@ export class StationedService {
     const by = this.core.coordY(pw.mainBaseTile);
     const hasCardArmy = (claimed.army ?? []).some((e) => !!e.cardInstanceId);
     const t = now();
-    const path = await computeMarchPath(this.core, worldId, claimed.x, claimed.y, bx, by, accountId);
+    const path = await computeMarchPath(this.core, worldId, claimed.x, claimed.y, bx, by, accountId, pw);
     const speedMult = (await this.core.sectPayoff(pw.sectId)).marchMult; // ADR-074 §8.3
     const arriveAt = t + marchDurationFromPath(path, speedMult) * 1000;
     const back: MarchDoc = {

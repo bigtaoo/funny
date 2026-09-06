@@ -4,6 +4,7 @@
 // comment — since RenderPanel just needs a one-line delegate for each, not their full bodies here.
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { FS } from '../../render/fontScale';
 import * as PIXI from 'pixi.js-legacy';
 import { BuildingType, UnitType } from '@nw/engine/types';
@@ -333,11 +334,8 @@ export class RenderPanel implements RenderHandlers {
     save.x = rightEdge - btnW;
     save.y = cy;
     core.bodyLayer.addChild(save);
-    const saveLbl = txt(t('world.defense.save'), labelSize, C.light, true);
-    saveLbl.anchor.set(0.5, 0.5);
-    saveLbl.x = save.x + btnW / 2;
-    saveLbl.y = save.y + btnH / 2;
-    core.bodyLayer.addChild(saveLbl);
+    drawButtonLabel(core.bodyLayer, save.x, save.y, btnW, btnH, t('world.defense.save'), 'check', C.light, labelSize,
+      { inset: Math.round(btnW * 0.1) });
     core.hits.push({
       rect: { x: save.x, y: save.y, w: btnW, h: btnH },
       fn: () => void this.saveActions.doSave(),
@@ -363,12 +361,8 @@ export class RenderPanel implements RenderHandlers {
       fill.x = clear.x - fillW - gap;
       fill.y = cy;
       core.bodyLayer.addChild(fill);
-      const fillLbl = txt(t('world.team.fill'), labelSize, fillFull ? C.mid : C.dark, true);
-      fillLbl.anchor.set(0.5, 0.5);
-      fillLbl.x = fill.x + fillW / 2;
-      fillLbl.y = fill.y + btnH / 2;
-      if (fillLbl.width > fillW - 6) fillLbl.scale.set((fillW - 6) / fillLbl.width);
-      core.bodyLayer.addChild(fillLbl);
+      drawButtonLabel(core.bodyLayer, fill.x, fill.y, fillW, btnH, t('world.team.fill'), 'unit',
+        fillFull ? C.mid : C.dark, labelSize, { inset: Math.round(fillW * 0.1) });
       if (!fillFull) {
         core.hits.push({
           rect: { x: fill.x, y: fill.y, w: fillW, h: btnH },
@@ -376,11 +370,8 @@ export class RenderPanel implements RenderHandlers {
         });
       }
     }
-    const clearLbl = txt(t('world.defense.clear'), labelSize, C.red, true);
-    clearLbl.anchor.set(0.5, 0.5);
-    clearLbl.x = clear.x + btnW / 2;
-    clearLbl.y = clear.y + btnH / 2;
-    core.bodyLayer.addChild(clearLbl);
+    drawButtonLabel(core.bodyLayer, clear.x, clear.y, btnW, btnH, t('world.defense.clear'), 'eraser', C.red, labelSize,
+      { inset: Math.round(btnW * 0.1) });
     core.hits.push({
       rect: { x: clear.x, y: clear.y, w: btnW, h: btnH },
       fn: () => {

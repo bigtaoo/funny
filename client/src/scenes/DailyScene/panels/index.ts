@@ -2,36 +2,24 @@
 // (claudedocs/client-modules.md "单文件 500 行收敛" — same shape as StatsScene/panels.ts /
 // ResultScene/builders.ts): each takes an explicit `DailyPanelCtx` + geometry params instead of
 // closing over `this`, so DailyScene.ts's own render() stays a thin per-tab dispatcher.
-import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../../render/pixiText';
-import { t, TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import { buildIcon } from '../../render/icons';
-import { buildRewardIcon } from '../../render/rewardIcon';
-import { FS, snapFont } from '../../render/fontScale';
-import type { SaveData } from '../../game/meta/SaveData';
-import type { RetentionView } from '../../net/ApiClient';
-import { nextCheckinDay, dailyRewardClaimable, makeDayKey, makeMonthKey, weeklyPoints, weeklyClaimableTiers, WEEKLY_CHEST_THRESHOLDS } from '../../game/meta/retention';
-import type { DailyCallbacks } from './types';
-export type { Hit } from '../../ui/hits';
-import type { Hit } from '../../ui/hits';
+//
+// renderCheckin (by far the biggest of the four, and self-contained) lives in ./checkin — split out
+// 2026-09-06 to keep this file under the 500-line convention; DailyPanelCtx/Hit/CHECKIN_PULSE are
+// re-exported here so `./DailyScene/panels` stays the one import path both DailyScene.ts and the
+// UI tests use.
+import { makeText } from '../../../render/pixiText';
+import { t, TranslationKey } from '../../../i18n';
+import { ui as C, txt, sketchPanel, seedFor } from '../../../render/sketchUi';
+import { drawButtonLabel, buttonLabelIconW } from '../../../ui/widgets/buttonLabel';
+import { buildRewardIcon } from '../../../render/rewardIcon';
+import { FS, snapFont } from '../../../render/fontScale';
+import type { SaveData } from '../../../game/meta/SaveData';
+import { dailyRewardClaimable, makeDayKey, weeklyPoints, weeklyClaimableTiers, WEEKLY_CHEST_THRESHOLDS } from '../../../game/meta/retention';
+import type { DailyPanelCtx } from '../types';
 
-
-/** Everything the four panel-renderers below need out of DailyScene — passed explicitly instead
- *  of closing over `this` (form①). `doXxx` are the scene's own busy-tracked action wrappers, not
- *  `cb.onXxx` directly (the scene still owns bt/retention/toast/reload around each action). */
-export interface DailyPanelCtx {
-  container: PIXI.Container;
-  hits: Hit[];
-  h: number;
-  landscape: boolean;
-  retention: RetentionView | null;
-  cb: DailyCallbacks;
-  doCheckin(): void;
-  doClaim(): void;
-  doClaimWeekly(threshold: number): void;
-  doWatchAd(): void;
-}
+export type { Hit } from '../../../ui/hits';
+export type { DailyPanelCtx } from '../types';
+export { renderCheckin, CHECKIN_PULSE } from './checkin';
 
 /** Formats a remaining-ms duration as "mm:ss" for the ads-tab cooldown button label. */
 export function formatCooldown(ms: number): string {
@@ -39,134 +27,6 @@ export function formatCooldown(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
-  const { container, hits, h, landscape, retention } = ctx;
-  const sec = txt(t('daily.checkin.title'), FS.title, C.dark, true);
-  sec.x = areaX + areaW * 0.05; sec.y = top;
-  container.addChild(sec);
-
-  // Portrait: 5 columns (6 rows) instead of landscape's 6 columns (5 rows) — user report
-  // (2026-08-09, screenshot): with 6 columns the narrow portrait width capped cellW hard, and
-  // since cellH is itself capped by cellW*0.8 (see below), cells stayed small while the leftover
-  // vertical space widened into a big gap between rows. Fewer, wider columns raise the cellW cap,
-  // which raises cellH too — bigger cells that eat more of the available height, leaving less to
-  // spread as row gaps. Landscape's width was never the constraint, so it keeps 6/5 unchanged.
-  const COLS = landscape ? 6 : 5;
-  const ROWS = Math.ceil(30 / COLS);
-  const innerPad = areaW * 0.04;
-  const cellW = (areaW - innerPad * 2) / COLS;
-  const cellH = Math.min(areaH * 0.78 / ROWS, cellW * 0.8);
-  const gridTop = top + sec.height + h * 0.015;
-
-  // Portrait's cells are still capped by the cellW*0.8 aspect ratio (now a looser cap thanks to
-  // the 5-col width above, but rarely the exact areaH/ROWS fit), which used to leave the fixed
-  // h*0.006 row gap from landscape and bunch all rows into the page's top third with a blank void
-  // below (user report, 2026-08-09). Landscape's areaH is already ~consumed by ROWS*cellH so this
-  // is a no-op there — spread only kicks in when portrait's leftover vertical space is positive.
-  let rowGap = h * 0.006;
-  if (!landscape) {
-    const gridAvailH = top + areaH - gridTop;
-    const spread = gridAvailH - ROWS * cellH;
-    if (spread > 0) rowGap = spread / (ROWS - 1);
-  }
-
-  const monthKey = makeMonthKey(nowMs);
-  const claimedDays = (save.retention?.checkin?.monthKey === monthKey
-    ? save.retention.checkin.claimedDays
-    : []) as number[];
-  const claimable = nextCheckinDay(save, nowMs);
-  const rewards = retention?.defs?.rewards ?? [];
-  const milestones = new Set([7, 14, 21, 30]);
-
-  for (let day = 1; day <= 30; day++) {
-    const col = (day - 1) % COLS;
-    const row = Math.floor((day - 1) / COLS);
-    const cx = areaX + innerPad + col * cellW + cellW * 0.5;
-    const cy = gridTop + row * (cellH + rowGap) + cellH * 0.5;
-    const x = cx - cellW * 0.46;
-    const y = cy - cellH * 0.46;
-    const cw = cellW * 0.92;
-    const ch = cellH * 0.92;
-
-    // Sequential accumulation model: claimed cells (≤ claimed count) get a checkmark;
-    // the next unclaimed cell = claimable (highlighted); the rest = locked (dimmed).
-    // claimable is provided by nextCheckinDay, may be null (already claimed today / month full) → no highlighted cell.
-    const isClaimed = claimedDays.includes(day);
-    const isClaimable = claimable !== null && day === claimable;
-    const isLocked = !isClaimed && !isClaimable;
-    const isMilestone = milestones.has(day);
-
-    let fillColor = isClaimed ? 0xd0ccc0 : isLocked ? 0xf2ede0 : 0xb8e0c0;
-    if (isMilestone && !isClaimed) fillColor = isClaimable ? 0xffd88a : 0xfaf0c8;
-
-    const bg = sketchPanel(cw, ch, { fill: fillColor, border: isMilestone ? 0x8a7020 : C.line, width: isMilestone ? 1.8 : 1.2, seed: seedFor(x, y, day) });
-    bg.x = x; bg.y = y;
-    container.addChild(bg);
-
-    const numTxt = txt(String(day), snapFont(Math.round(ch * 0.32)), isClaimed ? 0x999999 : isLocked ? 0xaaaaaa : 0x333333);
-    numTxt.anchor.set(0.5, 0);
-    numTxt.x = cx; numTxt.y = y + ch * 0.06;
-    container.addChild(numTxt);
-
-    const reward = rewards[day - 1];
-    if (reward) {
-      // Card/equipment milestones are single items (drawn randomly at claim time) — glyph only,
-      // no "+1" (mirrors BattlePassScene's skin reward: single item, no count).
-      const singleItem = reward.kind === 'card' || reward.kind === 'equipment';
-      const baseY = y + ch * 0.92;
-      const rc = Math.round(ch * 0.26);
-      const ic = buildRewardIcon(reward, rc, reward.kind === 'coins' ? C.gold : 0x336644);
-      if (ic) {
-        if (singleItem) {
-          ic.x = cx - rc / 2; ic.y = baseY - rc;
-          container.addChild(ic);
-        } else {
-          const rt = txt(`+${reward.count}`, snapFont(Math.round(ch * 0.24)), reward.kind === 'coins' ? 0x8a7020 : 0x336644);
-          const groupW = rc + Math.round(ch * 0.03) + rt.width;
-          const gx = cx - groupW / 2;
-          ic.x = gx; ic.y = baseY - rc;
-          rt.anchor.set(0, 1);
-          rt.x = gx + rc + Math.round(ch * 0.03); rt.y = baseY;
-          container.addChild(ic, rt);
-        }
-      } else {
-        const rt = txt(`+${reward.count}`, snapFont(Math.round(ch * 0.24)), 0x336644);
-        rt.anchor.set(0.5, 1);
-        rt.x = cx; rt.y = baseY;
-        container.addChild(rt);
-      }
-    }
-
-    // Milestone bonus coins (R1b, 2026-08-01): small badge in the cell's top-right corner,
-    // alongside (not replacing) the primary reward drawn above.
-    if (reward?.bonusCoins) {
-      const rc = Math.round(ch * 0.18);
-      const ic = buildIcon('coin', rc, C.gold);
-      const rt = txt(`+${reward.bonusCoins}`, snapFont(Math.round(ch * 0.18)), 0x8a7020);
-      rt.anchor.set(0, 0);
-      const groupW = rc + Math.round(ch * 0.02) + rt.width;
-      const gx = x + cw - ch * 0.05 - groupW;
-      const gy = y + ch * 0.04;
-      ic.x = gx; ic.y = gy;
-      rt.x = gx + rc + Math.round(ch * 0.02); rt.y = gy;
-      container.addChild(ic, rt);
-    }
-
-    // Claimed cell: stamp a green checkmark (user feedback: tick the claimed date after collecting).
-    if (isClaimed) {
-      const tickSz = Math.round(ch * 0.5);
-      const tick = buildIcon('check', tickSz, 0x2e7d32);
-      tick.x = cx - tickSz / 2; tick.y = cy - tickSz / 2;
-      tick.alpha = 0.85;
-      container.addChild(tick);
-    }
-
-    if (isClaimable && ctx.cb.onCheckin) {
-      hits.push({ rect: { x, y, w: cw, h: ch }, fn: () => ctx.doCheckin() });
-    }
-  }
 }
 
 export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
@@ -201,8 +61,8 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     bg.x = PAD; bg.y = cy;
     container.addChild(bg);
 
-    // Label is wrapped and width-capped to the left ~62% of the card so long
-    // labels (e.g. "Clear any PvE level") can never grow into the right-aligned state text.
+    // Label is wrapped and width-capped to the left ~62% of the card so long labels
+    // (e.g. "Clear any PvE level") can never grow into the right-aligned state text.
     const label = makeText(t(labelKey as TranslationKey), {
       fontSize: snapFont(Math.round(cardH * 0.3)), fill: 0x333333, fontFamily: 'monospace',
       wordWrap: true, wordWrapWidth: cardW * 0.6, breakWords: true,
@@ -228,10 +88,10 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
   if (ctx.cb.onClaimDaily) {
     const btnH = cardH * 0.85;
     const coinsReward = retention?.defs?.dailyCoinsReward ?? 2;
-    const btnLabel = txt(
-      isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.tasks.rewardCoins', { n: coinsReward }),
-      snapFont(Math.round(btnH * 0.36)), 0xffffff,
-    );
+    const btnLabelText = isClaimed
+      ? t('daily.tasks.rewardClaimed')
+      : t('daily.tasks.rewardCoins', { n: coinsReward });
+    const btnLabel = txt(btnLabelText, snapFont(Math.round(btnH * 0.36)), 0xffffff);
     // Button width must fit whichever label is showing. A fixed cardW*0.45 fraction (kept below
     // as a floor, for landscape's squat cards where it was already comfortably wide) undersized
     // in portrait: cardH — and thus this label's font, sized off btnH — scales with the screen's
@@ -241,15 +101,16 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     // label's actual measured width makes the fix orientation- and locale-agnostic instead of
     // retuning yet another magic fraction for portrait (or for German's longer strings).
     const btnPad = btnH * 0.5;
-    const btnW = Math.max(cardW * 0.45, btnLabel.width + btnPad);
+    const btnW = Math.max(cardW * 0.45, btnLabel.width + buttonLabelIconW(snapFont(Math.round(btnH * 0.36))) + btnPad);
     const btnX = PAD + cardW - btnW;
     const btnY = summaryY + cardH * 0.08;
     const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
     const btnBg = sketchPanel(btnW, btnH, { fill: btnFill, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
     btnBg.x = btnX; btnBg.y = btnY;
-    btnLabel.anchor.set(0.5, 0.5);
-    btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
-    container.addChild(btnBg, btnLabel);
+    btnLabel.destroy();
+    container.addChild(btnBg);
+    drawButtonLabel(container, btnX, btnY, btnW, btnH, btnLabelText, 'gift', 0xffffff,
+      snapFont(Math.round(btnH * 0.36)), { bold: false });
 
     if (isClaimable) {
       hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, sound: 'sfx.ui.reward', fn: () => ctx.doClaim() });
@@ -331,13 +192,10 @@ export function renderWeekly(ctx: DailyPanelCtx, areaX: number, top: number, are
     const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
     const btnBg = sketchPanel(btnW, btnH, { fill: btnFill, border: 0x666666, width: 1.5, seed: seedFor(btnX, btnY, 0) });
     btnBg.x = btnX; btnBg.y = btnY;
-    const btnLabel = txt(
-      isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.weekly.claim'),
-      snapFont(Math.round(btnH * 0.36)), 0xffffff,
-    );
-    btnLabel.anchor.set(0.5, 0.5);
-    btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
-    container.addChild(btnBg, btnLabel);
+    container.addChild(btnBg);
+    drawButtonLabel(container, btnX, btnY, btnW, btnH,
+      isClaimed ? t('daily.tasks.rewardClaimed') : t('daily.weekly.claim'), 'gift', 0xffffff,
+      snapFont(Math.round(btnH * 0.36)), { bold: false });
 
     if (isClaimable && ctx.cb.onClaimWeekly) {
       hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, sound: 'sfx.ui.reward', fn: () => ctx.doClaimWeekly(threshold) });
@@ -391,10 +249,8 @@ export function renderAds(ctx: DailyPanelCtx, areaX: number, top: number, areaW:
   if (capReached) btnLabelText = t('daily.ads.capReached');
   else if (cooling) btnLabelText = t('daily.ads.cooldown', { time: formatCooldown(nextAvailableAt - nowMs) });
   else btnLabelText = t('daily.ads.watch');
-  const btnLabel = txt(btnLabelText, snapFont(Math.round(btnH * 0.32)), 0xffffff);
-  btnLabel.anchor.set(0.5, 0.5);
-  btnLabel.x = btnX + btnW / 2; btnLabel.y = btnY + btnH / 2;
-  container.addChild(btnLabel);
+  drawButtonLabel(container, btnX, btnY, btnW, btnH, btnLabelText, 'adsTabIcon', 0xffffff,
+    snapFont(Math.round(btnH * 0.32)), { bold: false });
 
   if (available && ctx.cb.onWatchAd) {
     hits.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, fn: () => ctx.doWatchAd() });

@@ -287,6 +287,14 @@ POST   /admin/accounts/{id}/reset-password { password }
 
 ## 5. 数据分析（自采快照）
 
+> ⚠️ **2026-09-05：analyticsvc 那一半在 cloud/prod 上一直是空白页。** 本节的自采快照
+> （`metricSnapshots`）走的是 admin 自己的库，没问题；但 analyticsvc 支撑的那些页面（事件计数 / DAU /
+> 漏斗 / 留存 / 地区 / OS 分布）要靠 `NW_ANALYTICS_BASE_URL` 找到 analyticsvc——**两份 compose 都没写
+> 这一行**，尽管 analyticsvc 就在同一个 stack 里跑着（`ecosystem.config.cjs` 的 pm2 路径本来就有）。
+> `HttpAnalyticsClient.query()` 在没配置时返回 `{}` 而不是抛错，所以现象是**页面全空、不报错、不打日志**，
+> 看起来像"还没有数据"。两份 compose 已补 `http://analyticsvc:18085`，并由
+> `server/matchsvc/test/deploy-config.test.ts` 兜住（见 [`DEPLOY_TOPOLOGY.md`](DEPLOY_TOPOLOGY.md) §5.5）。
+
 - admin 起一个**采样定时器**（如每 30–60s），调 gateway/matchsvc `GET /internal/stats` + 可选 meta 概览，写 `metricSnapshots`。
 - 趋势查询（`GET /admin/monitor/trend`）直接读 `metricSnapshots` 聚合，前端画折线。
 - 指标示例：在线人数、匹配队列长度、平均匹配等待、活跃房间数、game 实例负载、（接入后）当日注册/补偿发送量。

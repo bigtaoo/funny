@@ -47,8 +47,8 @@ import type { ArmyEntry, CardSLGState } from './db';
 // INVARIANT: this file must never gain a RUNTIME relative import/re-export (`import`/`export … from './x'`
 // without an explicit extension). `import type` is fine — it is erased before the module ever loads.
 //
-// siegeEngine.ts is loaded inside the siege worker thread (siegeWorker.ts), which runs under tsx, whose
-// extensionless-specifier resolution is broken in a worker_thread realm on Linux — see siegeWorker.ts's own
+// siegeEngine.ts is loaded inside the compute worker thread (compute/worker.ts), which runs under tsx,
+// whose extensionless-specifier resolution is broken in a worker_thread realm on Linux — see that file's own
 // comment for the 2026-08-14 investigation. On Windows the same specifier resolves fine, so a violation
 // passes locally and fails only on CI. It bit again on 2026-08-24: splitting the post-battle card-army
 // state into ./cardStateSettlement.ts and re-exporting it from here (to keep existing import sites working)
@@ -57,8 +57,8 @@ import type { ArmyEntry, CardSLGState } from './db';
 // their four call sites instead, and siegeengine-worker-imports.test.ts pins this invariant statically so
 // the next violation fails on every machine rather than only on Linux.
 // NOT a top-level import (see runSiegeBattle below for why) — deliberately deferred to a lazy
-// dynamic import inside that function's body instead of `import { getSiegeWorkerPool } from
-// './siegeWorkerPool'` up here.
+// dynamic import inside that function's body instead of `import { getComputeBackend } from
+// './compute'` up here.
 
 /**
  * Real-unit full HP for a blueprint unit type. ADR-065: `@nw/engine`'s `UNIT_BLUEPRINTS` is
@@ -342,8 +342,8 @@ export interface SiegeBattleInput {
  * Settlement goes through the single landing point at service.landSiege (G3-1), decoupled from this function.
  *
  * **Pure + synchronous** — this is the actual CPU-bound computation (the `runHeadless` while-loop can run
- * up to ~18,600 ticks for an evenly-matched base siege, see siegeWorkerPool.ts). It is the function that
- * runs *inside* the worker thread (siegeWorker.ts calls it directly); the main thread must never call this
+ * up to ~18,600 ticks for an evenly-matched base siege, see compute/pool.ts). It is the function that
+ * runs *inside* the worker thread (compute/worker.ts calls it directly); the main thread must never call this
  * directly (it would block the event loop for the whole battle) — main-thread callers use {@link runSiegeBattle}
  * instead, which dispatches to the worker pool. Exported for the worker + for tests that want the raw
  * synchronous result without pool overhead.
@@ -403,7 +403,7 @@ export function runSiegeBattleSync(input: SiegeBattleInput): SiegeResolution {
 
 /**
  * Main-thread entry point (server-logic-audit-2026-07-29, item 3): dispatches to the process-wide
- * {@link SiegeWorkerPool} instead of running {@link runSiegeBattleSync} directly, so the potentially
+ * the compute backend instead of running {@link runSiegeBattleSync} directly, so the potentially
  * ~18,600-tick computation never blocks worldsvc's event loop. Every existing call site
  * (combatSiege/{arrival,occupation,encounter}.ts) already awaits inside an async function and already
  * wraps the call in try/catch for engine-failure fallback to the cheap linear formula — `await
@@ -413,8 +413,8 @@ export function runSiegeBattleSync(input: SiegeBattleInput): SiegeResolution {
  * thread it runs on changed. Rejects (instead of throwing) on bad input (level validation failure) or pool
  * failure (worker crash/timeout) — callers' existing catch blocks handle both identically to a thrown error.
  *
- * 2026-08-14 fix (real Linux CI failure): `getSiegeWorkerPool` used to be a top-level import from
- * `./siegeWorkerPool`. siegeWorker.ts (the worker-thread entry) dynamically imports THIS file — this
+ * 2026-08-14 fix (real Linux CI failure): the pool accessor used to be a top-level import from
+ * `./siegeWorkerPool` (now `./compute`). The worker-thread entry dynamically imports THIS file — this
  * one, `siegeEngine.ts` — to reach `runSiegeBattleSync`; loading this module inside the worker means
  * every one of its top-level imports gets evaluated too, including one it never actually needs
  * on that thread. That transitive `./siegeWorkerPool` import is exactly the kind of extensionless
@@ -427,6 +427,6 @@ export function runSiegeBattleSync(input: SiegeBattleInput): SiegeResolution {
  * never had this problem — so laziness alone sidesteps needing an explicit-extension workaround here.
  */
 export async function runSiegeBattle(input: SiegeBattleInput): Promise<SiegeResolution> {
-  const { getSiegeWorkerPool } = await import('./siegeWorkerPool');
-  return getSiegeWorkerPool().submit(input);
+  const { getComputeBackend } = await import('./compute');
+  return getComputeBackend().runSiege(input);
 }

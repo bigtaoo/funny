@@ -29,6 +29,11 @@ import type { NationChannelService } from './nationChannelService';
 import type { WorldSocialsvcClient } from './socialsvcClient';
 import type { MapTemplateService } from './mapTemplateService';
 import { send, sendErr, type RouteDeps, type RouteCtx } from './httpApi/helpers';
+// Per-route latency lives in ./metrics so the heartbeat and the ops endpoint can both read it — see that
+// file for why one drains and the other peeks. Labels here are `METHOD /pathname`, and only for requests a
+// handler actually claimed; everything else collapses into one `not-found` bucket, so a caller cannot grow
+// the table by varying URLs.
+import { routeTimings } from './metrics';
 import { handleAdminRoutes } from './httpApi/admin';
 import { handleMapRoutes } from './httpApi/mapRoutes';
 import { handleSeasonRoutes } from './httpApi/seasonRoutes';
@@ -39,6 +44,21 @@ import { handleSectRoutes } from './httpApi/sectRoutes';
 import { handleNationRoutes } from './httpApi/nationRoutes';
 
 const log = createLogger('worldsvc');
+
+/**
+ * The JWT-branch handler chain, in the exact order the original if-chain tested them (see the file header):
+ * each returns true once it has matched a route and sent a response. Hoisted out of the request path so the
+ * timing wrapper has a single place to record from, instead of seven near-identical `if (await ...) return`.
+ */
+const ROUTE_CHAIN: readonly ((ctx: RouteCtx) => Promise<boolean>)[] = [
+  handleMapRoutes,
+  handleSeasonRoutes,
+  handleActionRoutes,
+  handleEconomyRoutes,
+  handleSiegeRoutes,
+  handleSectRoutes,
+  handleNationRoutes,
+];
 
 export function startHttpApi(
   opts: { host: string; port: number; jwtSecret: string; internalKey: string },
@@ -107,22 +127,29 @@ export function startHttpApi(
 
       const ctx: RouteCtx = { req, res, method, path, q, accountId, clientPlatform, ...deps };
 
+      const startedAt = performance.now();
+      let matched = false;
       try {
-        if (await handleMapRoutes(ctx)) return;
-        if (await handleSeasonRoutes(ctx)) return;
-        if (await handleActionRoutes(ctx)) return;
-        if (await handleEconomyRoutes(ctx)) return;
-        if (await handleSiegeRoutes(ctx)) return;
-        if (await handleSectRoutes(ctx)) return;
-        if (await handleNationRoutes(ctx)) return;
+        for (const handler of ROUTE_CHAIN) {
+          if (await handler(ctx)) {
+            matched = true;
+            return;
+          }
+        }
 
         // Season management /admin/world/* has been moved out of the JWT branch to use X-Internal-Key (C4/§17.7, see internal branch above).
 
         return sendErr(res, ErrorCode.NOT_FOUND, 'not found');
       } catch (e) {
+        // A throw means a handler DID claim this route and then rejected — an ordinary SlgError business
+        // refusal, or a real fault. Either way the time belongs to that route, not to the `not-found`
+        // bucket; handlers signal "not mine" by returning false, they never signal it by throwing.
+        matched = true;
         if (e instanceof SlgError) return sendErr(res, e.code, e.message);
         log.error('unhandled error', { err: e instanceof Error ? e : String(e) });
         send(res, 500, err(ErrorCode.INTERNAL, 'internal server error'));
+      } finally {
+        routeTimings.record(matched ? `${method} ${path}` : 'not-found', performance.now() - startedAt);
       }
     })();
   });

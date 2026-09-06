@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ContextAudioBus, DEFAULT_MUSIC_VOLUME } from '../../src/audio/ContextAudioBus';
+import { DEFAULT_AUDIO_SETTINGS } from '../../src/audio/audioSettings';
 import { DUCK_CUES, MUSIC_CATALOGUE } from '../../src/audio/musicCatalogue';
 import type { MusicDeck } from '../../src/audio/MusicPlayer';
 import type { AudioCue } from '../../src/audio/types';
@@ -121,8 +122,14 @@ describe('ContextAudioBus — music volume', () => {
     const h = harness();
     h.gesture();
     for (let i = 0; i < 200; i++) h.bus.updateMusic('bgm.lobby', 16); // settle the fade
-    expect(DEFAULT_MUSIC_VOLUME).toBe(0.5);
-    expect(h.decks[0].gain).toBeCloseTo(MUSIC_CATALOGUE['bgm.lobby'].gain * 0.5, 5);
+    // **Two files hold one number.** `ContextAudioBus` needs a level before any settings are
+    // installed (boot, unit tests, a host with no storage); `audioSettings.ts` owns the slider the
+    // player sees. They are only ever the same value — and 2026-09-05 proved the pair is real, not
+    // theoretical: moving the default from 0.5 to 0.2 (AUDIO_DESIGN §0.6, the bed measured 2.2 dB
+    // LOUDER than the tap cue it sits under) took an edit in both files.
+    expect(DEFAULT_MUSIC_VOLUME).toBe(DEFAULT_AUDIO_SETTINGS.bgm);
+    expect(DEFAULT_MUSIC_VOLUME).toBe(0.2);
+    expect(h.decks[0].gain).toBeCloseTo(MUSIC_CATALOGUE['bgm.lobby'].gain * DEFAULT_MUSIC_VOLUME, 5);
   });
 
   it('a volume set BEFORE the player exists still applies once it does', () => {

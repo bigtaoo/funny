@@ -1,5 +1,5 @@
 // Unit tests (pure, no Mongo, no worker pool — runSiegeBattleSync is the synchronous function that
-// runs INSIDE the worker; siegeWorkerPool.test.ts already cross-checks it against the pool's async
+// runs INSIDE the worker; computePool.test.ts already cross-checks it against the pool's async
 // wrapper, but only ever with perfectly evenly-matched "bigEvenBattle" armies, which happens to only
 // exercise the attacker_win outcome branch (see src/siegeEngine.ts's outcome ternary just before the
 // two `return` statements) — never the defender-holds branch. Both are pinned directly here.

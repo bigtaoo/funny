@@ -14,6 +14,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
 import type { Scene } from '../../scenes/SceneManager';
 import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor } from '../../render/sketchUi';
+import { drawButtonLabel } from '../widgets/buttonLabel';
 import { snapFont } from '../../render/fontScale';
 import { t } from '../../i18n/index';
 import { caretDisplay } from '../inputDisplay';
@@ -235,9 +236,8 @@ export class FeedbackDialog implements Scene {
     this.submitBtn.cursor = 'pointer';
     this.submitBtn.on('pointertap', tapHandler(() => void this.submit()));
     this.container.addChild(this.submitBtn);
-    const submitLabel = txt(t('feedback.submit'), snapFont(Math.round(bH * 0.36)), 0xffffff, true);
-    submitLabel.anchor.set(0.5, 0.5); submitLabel.x = bx1 + bW / 2; submitLabel.y = bY + bH / 2;
-    this.container.addChild(submitLabel);
+    drawButtonLabel(this.container, bx1, bY, bW, bH, t('feedback.submit'), 'check', 0xffffff,
+      snapFont(Math.round(bH * 0.36)));
 
     const closeBtn = sketchPanel(bW, bH, { fill: 0xeeeeee, border: C.mid, width: 2.4, seed: seedFor(bW, bH, 3) });
     closeBtn.x = bx2; closeBtn.y = bY;
@@ -245,8 +245,7 @@ export class FeedbackDialog implements Scene {
     closeBtn.cursor = 'pointer';
     closeBtn.on('pointertap', tapHandler(() => { this.closeInput(); this.cb.onClose(); }, 'sfx.ui.back'));
     this.container.addChild(closeBtn);
-    const closeLabel = txt(t('feedback.close'), snapFont(Math.round(bH * 0.36)), C.dark, true);
-    closeLabel.anchor.set(0.5, 0.5); closeLabel.x = bx2 + bW / 2; closeLabel.y = bY + bH / 2;
-    this.container.addChild(closeLabel);
+    drawButtonLabel(this.container, bx2, bY, bW, bH, t('feedback.close'), 'close', C.dark,
+      snapFont(Math.round(bH * 0.36)));
   }
 }

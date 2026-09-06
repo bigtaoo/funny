@@ -191,6 +191,9 @@ Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**四�
 > Apple 验单在生产上从来是 fail closed。已在 `8ef2dac07` 补齐透传（四家凭据 + 三个映射变量），细节与第二个坑
 > （空串会盖掉代码里的 `?? 默认值`）见 [`IAP_CREDENTIALS.md`](IAP_CREDENTIALS.md)「产品 ID / 金额 → 档位映射」。
 > 改完 `.env` 后重新加载：`docker compose -f docker-compose.cloud.yml --env-file .env up -d commercial`（不用重建镜像）。
+> **2026-09-05 补**：同一批变量在 `docker-compose.prod.yml` 和 `ecosystem.config.cjs` 里当时仍然缺席，`NW_IAP_NONCOIN_AMOUNT_MAP`
+> 三处全缺；已补齐，并由 `matchsvc/test/deploy-config.test.ts` 从 `commercial/src` 的 `process.env` 读取处反推覆盖，
+> 新凭据自动纳入。见 [`IAP_CREDENTIALS.md`](IAP_CREDENTIALS.md)。
 
 **当前进度（2026-09-04）**：ASC 里 9 个商品已建齐（5 消耗型 + 2 非消耗型 + 2 自动续订订阅），状态均为
 「准备提交」；VPS 已设 `NW_IAP_BUNDLE=com.gamestao.nivara` 并透传到容器（`printenv` 已确认）。**只差

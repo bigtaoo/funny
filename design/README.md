@@ -155,6 +155,7 @@
 |---|---|
 | [COMM_AUDIT_INTERNAL_2026-07-28.md](game/COMM_AUDIT_INTERNAL_2026-07-28.md) | 服务间通信协议审计（11 进程的内部端点/出站客户端/Redis 通道；结论已全部修复） |
 | [SERVER_LOGIC_AUDIT_2026-07-29.md](game/SERVER_LOGIC_AUDIT_2026-07-29.md) | 单进程内部业务逻辑审计（复杂度/内存/数据结构/输入校验/容错；结论已按严重度全部修复） |
+| [WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md](game/WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md) | worldsvc SLG 并发瓶颈审计与整改（目标 200 同时在线 / 约 80 指令/秒；A\* 寻路阻塞事件循环是元凶，已按阶段 0~3 实施，阶段 4 只留计算服务的接口口子） |
 
 > 存储侧那一轮（2026-07-27 Mongo/Redis）记录在 [`claudedocs/server-audits.md`](../claudedocs/server-audits.md)，不在 `design/` 下。
 

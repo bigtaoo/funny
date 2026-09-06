@@ -11,6 +11,7 @@ import { buildMaterialIcon } from '../../render/atlas/materialAtlas';
 import { getArtTexture, containScale } from '../../render/cardArt';
 import { snapFont } from '../../render/fontScale';
 import type { ShopSceneCore, CardSpec, BtnSpec } from './core';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 
 /**
  * Draw one product card as an image-dominant vertical tile: a big square art/icon fills the top,
@@ -219,8 +220,7 @@ export function drawButton(
   });
   btn.x = x; btn.y = y;
   body.addChild(btn);
-  const lbl = txt(b.label, snapFont(Math.round(h * 0.42)), b.enabled ? 0xffffff : C.mid, true);
-  lbl.anchor.set(0.5, 0.5); lbl.x = x + w / 2; lbl.y = y + h / 2;
-  body.addChild(lbl);
+  drawButtonLabel(body, x, y, w, h, b.label, b.icon ?? null, b.enabled ? 0xffffff : C.mid,
+    snapFont(Math.round(h * 0.42)));
   if (b.enabled && b.fn) core.hits.push({ rect: { x, y, w, h }, fn: b.fn });
 }

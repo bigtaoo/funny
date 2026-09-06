@@ -11,6 +11,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
+import { drawButtonLabel } from '../widgets/buttonLabel';
 import { t } from '../../i18n/index';
 import { type Hit, type Rect } from '../hits';
 
@@ -63,16 +64,13 @@ export function drawConfirmDialog(
   const okBtn = sketchButton(BTN_W, BTN_H, seedFor(0, 1, BTN_W));
   okBtn.x = mx + mw / 2 - BTN_GAP_HALF - BTN_W; okBtn.y = btnY;
   ml.addChild(okBtn);
-  const ol = txt(t('common.ok'), FS.bodyLg, C.light, true);
-  ol.anchor.set(0.5, 0.5); ol.x = okBtn.x + BTN_W / 2; ol.y = okBtn.y + BTN_H / 2;
-  ml.addChild(ol);
+  drawButtonLabel(ml, okBtn.x, okBtn.y, BTN_W, BTN_H, t('common.ok'), 'check', C.light, FS.bodyLg);
 
   const caBtn = sketchPanel(BTN_W, BTN_H, { fill: 0xeeeeee, border: C.mid, seed: seedFor(0, 2, BTN_W) });
   caBtn.x = mx + mw / 2 + BTN_GAP_HALF; caBtn.y = btnY;
   ml.addChild(caBtn);
-  const cl = txt(t('common.cancel'), FS.bodyLg, C.dark);
-  cl.anchor.set(0.5, 0.5); cl.x = caBtn.x + BTN_W / 2; cl.y = caBtn.y + BTN_H / 2;
-  ml.addChild(cl);
+  drawButtonLabel(ml, caBtn.x, caBtn.y, BTN_W, BTN_H, t('common.cancel'), 'close', C.dark, FS.bodyLg,
+    { bold: false });
 
   return [
     { rect: { x: okBtn.x, y: okBtn.y, w: BTN_W, h: BTN_H }, fn: onOk },

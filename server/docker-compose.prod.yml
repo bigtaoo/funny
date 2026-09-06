@@ -78,6 +78,11 @@ services:
       # Peer judge (Phase C): calls gateway for third-party re-evaluation when ranked hash mismatch. No depends_on
       # to avoid a cycle with gateway→metaserver; judge is only called at game end, gracefully dropped if gateway is unreachable.
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
+      # ⚠ socialsvc is the sole friend/chat/mail authority since P2 and meta proxies every one of those
+      # routes to it. Missing here (prod only; cloud always had it) → nullMetaSocialsvcClient → /social/*
+      # answers 503 across the board and system mail throws 'socialsvc not configured'. Found 2026-09-05
+      # by the source-derived scan this file's lint now runs for every service.
+      NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
       # Feature flag delivery + client log targeted collection (FEATURE_FLAGS_DESIGN §9).
       # ⚠ Critical gotcha (same as matchsvc): missing NW_ADMIN_INTERNAL_URL → flag polling disabled → /bootstrap always returns empty map → targeted collection never works.
       NW_ADMIN_INTERNAL_URL: http://admin:8083
@@ -99,6 +104,18 @@ services:
       # writes this key on match start. Missing here meant matchsvc wrote it but meta could never read or
       # clear it: resume prompts were silently dead in prod despite being fully implemented (found 2026-07-27).
       NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
+      # Rewarded-video signature verification (C2, metaserver/src/ads.ts). All three sat in .env.example
+      # from the day that file was written and never reached the process — the NW_APPLE_PASSWORD shape.
+      # NW_WECHAT_ADS_KEY is the load-bearing one: POST /ads/callback/wechat returns 503 without it, so
+      # WeChat's server-side reward callback was dead, not merely unverified. The two *_CLIENT_KEY vars
+      # fail OPEN (unset = adToken accepted on token uniqueness + daily cap alone), so the gap meant
+      # client-token verification could never be switched on no matter what the operator put in .env.
+      NW_ADMOB_CLIENT_KEY: ${NW_ADMOB_CLIENT_KEY:-}
+      NW_WECHAT_ADS_CLIENT_KEY: ${NW_WECHAT_ADS_CLIENT_KEY:-}
+      NW_WECHAT_ADS_KEY: ${NW_WECHAT_ADS_KEY:-}
+      # Process alert webhook (S4-3): uncaughtException/unhandledRejection POST here. Same shape again —
+      # present in .env.example, never passed through, so a filled-in webhook silently sent nothing.
+      NW_ALERT_WEBHOOK_URL: ${NW_ALERT_WEBHOOK_URL:-}
     depends_on:
       mongo:
         condition: service_healthy
@@ -124,6 +141,29 @@ services:
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
       # victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
       NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
+      # IAP receipt verification (commercial/src/iap.ts). Each credential left empty → that platform
+      # verifies fail-closed (INVALID_RECEIPT), never awards coins; the Dockerfile hard-codes
+      # NODE_ENV=production so the dev stub stays off here no matter what .env says.
+      # ⚠ Every var the process reads MUST be listed in this block: compose never loads server/.env
+      # into the container, it only interpolates ${...} written here. An .env entry with no line here
+      # reaches nothing — cloud carried that gap until 2026-09-04 and this file until 2026-09-05.
+      NW_APPLE_PASSWORD: ${NW_APPLE_PASSWORD:-}
+      NW_GOOGLE_SERVICE_ACCOUNT_JSON: ${NW_GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      NW_GOOGLE_PACKAGE_NAME: ${NW_GOOGLE_PACKAGE_NAME:-com.nw.game}
+      NW_WX_PAY_MCH_ID: ${NW_WX_PAY_MCH_ID:-}
+      NW_WX_PAY_API_KEY_V3: ${NW_WX_PAY_API_KEY_V3:-}
+      NW_STRIPE_SECRET_KEY: ${NW_STRIPE_SECRET_KEY:-}
+      # Product id → coin tier / non-coin SKU resolution (iap/productResolve.ts). The bundle prefix must
+      # match the shipped app or every App Store product id resolves to 0 coins while verification still
+      # reports success — defaulted to the real bundle rather than the code's `com.nw` for that reason.
+      # `:-` (not `-`) on purpose: these read `process.env.X ?? default`, so an EMPTY value would win
+      # over the code default and break resolution just as thoroughly as a wrong one.
+      NW_IAP_BUNDLE: ${NW_IAP_BUNDLE:-com.gamestao.nivara}
+      NW_IAP_PRODUCT_MAP: ${NW_IAP_PRODUCT_MAP:-}
+      NW_IAP_AMOUNT_MAP: ${NW_IAP_AMOUNT_MAP:-}
+      NW_IAP_NONCOIN_AMOUNT_MAP: ${NW_IAP_NONCOIN_AMOUNT_MAP:-}
+      # NW_IAP_DEV is deliberately NOT passed through: the dev stub has no business in a production stack,
+      # and index.ts refuses to start with it set under NODE_ENV=production anyway.
     depends_on:
       mongo:
         condition: service_healthy
@@ -293,6 +333,10 @@ services:
       NW_AUCTION_INTERNAL_URL: http://auctionsvc:18086
       NW_WORLD_INTERNAL_URL: http://worldsvc:18084
       NW_SOCIALSVC_INTERNAL_URL: http://socialsvc:8085
+      # analyticsvc query backend (OPS_DESIGN S7). analyticsvc runs in this same stack, but admin was never
+      # told where it is → HttpAnalyticsClient.query() returns {} for every query, so every analytics panel
+      # (events/DAU/funnels/retention) renders empty with no error. ecosystem.config.cjs had it; no compose did.
+      NW_ANALYTICS_BASE_URL: http://analyticsvc:18085
     depends_on:
       mongo:
         condition: service_healthy
@@ -333,6 +377,10 @@ services:
       NW_SOCIAL_MONGO_DB: ${NW_SOCIAL_MONGO_DB:-nw_social}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_META_INTERNAL_URL: http://metaserver:8080
+      # Moderation word-list overlay polling (CONTENT_MODERATION_DESIGN.md §3.2). Missing → WordlistCache
+      # never starts (index.ts gates on it), so socialsvc only ever uses the built-in REGION_WORDLISTS and
+      # every ops word-list edit is inert. Degrades quietly: no error, just a permanently stale list.
+      NW_ADMIN_INTERNAL_URL: http://admin:8083
     depends_on:
       mongo:
         condition: service_healthy

@@ -106,7 +106,7 @@ export interface ShopSceneCallbacks {
 
 
 /** One action button inside a product card. */
-export interface BtnSpec { label: string; enabled: boolean; primary: boolean; fn?: () => void; }
+export interface BtnSpec { label: string; enabled: boolean; primary: boolean; fn?: () => void; icon?: IconKind; }
 
 /** Declarative spec for one product card cell; drawCard() lays it out uniformly. */
 export interface CardSpec {
