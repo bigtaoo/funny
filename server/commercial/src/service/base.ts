@@ -23,7 +23,7 @@ import type { CommercialCollections, WalletDoc } from '../db';
 import { isCustomPoolDoc } from '../db';
 import type { RandInt } from '../gacha';
 import { displayChannelOf, effectiveCoins, type RechargeChannel } from '../spendChannel';
-import type { AppleSubscriptionTx, IapProductKind } from '../iap';
+import type { AppleSubscriptionTx } from '../iap';
 import type { AppleServerApi } from '../iap/appleServerApi';
 import {
   findGachaPool,

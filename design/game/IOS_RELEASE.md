@@ -533,11 +533,11 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       （ASC → 用户和访问 → **集成** → 左栏 **Keys** → **In-App Purchase**；Issuer ID 在该页顶部）。
       四个变量已进 `secrets/funny/prod.yaml` 并推到 VPS，`NW_APPLE_PASSWORD` 一并删除。
       容器内实测：base64 解出的 PEM 与源 `.p8` sha256 一致，Node `createPrivateKey` 认它是 EC 私钥
-- [ ] **在 ASC 配 App Store Server Notifications V2 的 URL**（§4.0 第 5b 步）：生产与沙盒都指向
-      `https://api.gamestao.com/api/iap/apple/notifications`。**不配就收不到任何续订通知**，
-      自动续订永远不会到账。
-      2026-09-07 已填过一次，但填的是**漏掉 `/api` 的裸路径** —— 那个地址被 Caddy 兜底规则接走并回 200，
-      Apple 会当成投递成功。**待改成上面带 `/api` 的地址**，改完用 §4.0 第 5b 步的 curl 自测确认
+- [x] **在 ASC 配 App Store Server Notifications V2 的 URL**（§4.0 第 5b 步）—— **2026-09-07 完成**，
+      生产与沙盒都指向 `https://api.gamestao.com/api/iap/apple/notifications`。
+      期间踩过一次：先填的是**漏掉 `/api` 的裸路径**，被 Caddy 兜底规则接走回 200，Apple 会当成投递成功
+      并且不再重投 —— 通知全部静默丢失，且没有任何报错可看。已改正并 curl 复验：
+      `{}` → 400 `missing signedPayload`，`{"signedPayload":"not.a.jws"}` → 200 `unverified`
 - [x] VPS commercial 设 `NW_IAP_BUNDLE=com.gamestao.nivara`（2026-09-04，且已补上 compose 透传——
       在那之前 `.env` 里的凭据根本进不了容器，见 §4.2 的告警）
 - [x] 美术：iPhone 6.7"/6.5" + iPad 12.9" 截图（2026-08-18 出齐，`art/store/en/`，英文一套；德/中文换 locale 重跑即可）

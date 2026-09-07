@@ -6,7 +6,7 @@
 // when it matters — a route that 500s on a payload it will never accept turns one bad notification
 // into days of retries, and one that 200s while commercial is down throws away real renewals.
 import { describe, expect, it } from 'vitest';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type LightMyRequestResponse } from 'fastify';
 import { registerAppleWebhookRoute } from '../dist/apple/webhookRoute.js';
 import type { CommercialClient } from '../dist/commercialClient.js';
 
@@ -20,7 +20,7 @@ function appWith(
   const app = Fastify({ logger: false });
   registerAppleWebhookRoute(app, {
     commercial: {
-      appleNotification: async (args) => {
+      appleNotification: async (args: { signedPayload: string }) => {
         seen.push(args.signedPayload);
         return appleNotification(args);
       },
@@ -29,7 +29,7 @@ function appWith(
   return { app, seen };
 }
 
-const post = (app: FastifyInstance, payload: unknown) =>
+const post = (app: FastifyInstance, payload: object | string): Promise<LightMyRequestResponse> =>
   app.inject({ method: 'POST', url: '/iap/apple/notifications', payload });
 
 describe('POST /iap/apple/notifications', () => {

@@ -1,23 +1,205 @@
 // commercial internal client (S5-5): meta calls commercial via internal HTTP (X-Internal-Key) to
 // handle coin deduction / gacha draws / bookkeeping. Contract: SERVER_API.md §9 / COMMERCIAL_DESIGN §5. meta is the sole caller of commercial.
-//
-// The contract itself (the CommercialClient interface and the view types) lives in
-// commercialContract.ts and is re-exported below, so importers keep using this module either way.
-import { fetchInternalJson } from '@nw/shared';
+import { fetchInternalJson, type CustomPoolConfig } from '@nw/shared';
 import type {
   Body,
-  CoinGainRow,
-  CommercialClient,
-  GachaPoolView,
   GachaResultEntry,
-  PaddleEventView,
-  PromoCodeView,
   UndeliveredOrder,
   WalletView,
-} from './commercialContract.js';
-import type { CustomPoolConfig } from '@nw/shared';
+  GachaPoolView,
+  CoinGainRow,
+  PaddleEventView,
+  PromoCodeView,
+} from './commercialClient/views.js';
 
-export * from './commercialContract.js';
+// Re-exported so existing `from '../commercialClient.js'` imports keep resolving after the split.
+export type { GachaResultEntry, UndeliveredOrder, WalletView, GachaPoolView, CoinGainRow, PaddleEventView, PromoCodeView };
+
+/** meta-side commercial client interface (allows injecting a fake implementation in unit tests). */
+export interface CommercialClient {
+  readonly available: boolean;
+  /** `clientPlatform` (X-NW-Platform, ADR-020): which recharged bucket the returned `coins` should include
+   * alongside the free pool — prevents e.g. a Paddle-bought balance leaking into the iOS app's display. */
+  getWallet(accountId: string, clientPlatform?: string): Promise<WalletView | null>;
+  shopCharge(args: {
+    accountId: string;
+    itemId: string;
+    cost: number;
+    /** Units to charge/deliver in this one call (bulk-buy, ×10 button, 2026-08-10). Default 1. */
+    qty?: number;
+    orderId: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ orderId: string; coinsAfter: number; status: string }>>;
+  gachaDraw(args: {
+    accountId: string;
+    poolId: string;
+    count: number;
+    orderId: string;
+    clientPlatform?: string;
+  }): Promise<
+    Body<{
+      orderId: string;
+      coinsAfter: number;
+      pityAfter: number;
+      results: GachaResultEntry[];
+      fateGained: number;
+      fatePointsAfter: number;
+    }>
+  >;
+  // ── Limited pools + monetization (GACHA_DESIGN §2/§5/§6/§7) ──
+  createCustomPool(args: {
+    config: CustomPoolConfig;
+    createdBy: string;
+  }): Promise<Body<{ id: string }>>;
+  closeLimitedPool(args: { id: string }): Promise<Body<{ id: string }>>;
+  listLimitedPools(): Promise<GachaPoolView[]>;
+  listActiveLimitedPools(now: number): Promise<GachaPoolView[]>;
+  redeemFate(args: {
+    accountId: string;
+    itemId: string;
+    orderId: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ orderId: string; itemId: string; coinsAfter: number; fatePointsAfter: number }>>;
+  monthlyCardBuy(args: {
+    accountId: string;
+    orderId: string;
+    /** The verified recharge platform (apple/google/wechat from verifyNonCoinReceipt, 'paddle' from the
+     * webhook) — tags which recharged bucket funds the immediate coins (ADR-020). */
+    rechargePlatform?: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>>;
+  yearCardBuy(args: {
+    accountId: string;
+    orderId: string;
+    rechargePlatform?: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>>;
+  monthlyCardClaim(args: {
+    accountId: string;
+    dayKey: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; claimed: number; subscriptionExpiry: number; wallet?: WalletView }>>;
+  /** Apply any auto-renewable subscription periods in an Apple receipt that have not been granted yet
+   *  (IOS_RELEASE.md §4.1b). Idempotent — the client calls it on every cold start. */
+  subscriptionSyncApple(args: {
+    accountId: string;
+    receipt: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; granted: number; wallet?: WalletView }>>;
+  /**
+   * Hand an App Store Server Notification V2 to commercial, which verifies Apple's signature and acts
+   * on it. The payload is forwarded verbatim and deliberately not inspected here: the Apple
+   * credentials and the pinned root certificates live in commercial, so that is where a payload can
+   * be judged genuine (server/commercial/src/service/appleNotifications.ts).
+   */
+  appleNotification(args: {
+    signedPayload: string;
+  }): Promise<Body<{ outcome: string }>>;
+  /**
+   * This account's `appAccountToken` — the UUID the iOS client attaches to a StoreKit 2 purchase so
+   * Apple can name the owner on every later notification about it. Allocated on first ask and stable
+   * afterwards (server/commercial/src/service/appleAccount.ts).
+   */
+  appleAccountToken(args: { accountId: string }): Promise<Body<{ token: string }>>;
+  /** Store the player's answer to the consumption-data question the app asks (CONSUMPTION_REQUEST). */
+  appleConsumptionConsent(args: {
+    accountId: string;
+    consented: boolean;
+  }): Promise<Body<{ consented: boolean }>>;
+  starterBuy(args: {
+    accountId: string;
+    productId: string;
+    orderId: string;
+    rechargePlatform?: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; results: GachaResultEntry[]; wallet?: WalletView }>>;
+  spend(args: {
+    accountId: string;
+    amount: number;
+    reason: string;
+    orderId: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number }>>;
+  /** Pure coin grant (mail attachment claim S6-3), orderId is idempotent. amount=0 only reserves the idempotency slot without adding coins. */
+  grant(args: {
+    accountId: string;
+    amount: number;
+    reason: string;
+    orderId: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number }>>;
+  orderDelivered(args: { orderId: string; refundCoins?: number }): Promise<Body<object>>;
+  undeliveredOrders(accountId: string): Promise<UndeliveredOrder[]>;
+  rechargeVerify(args: {
+    accountId: string;
+    platform: string;
+    receipt: string;
+    receiptId: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
+  /**
+   * Verify a receipt resolves to a specific non-coin SKU (monthly/year card, starter pack) before
+   * granting it — closes the gap where `/monthly-card/buy` etc. used to grant on a bare authenticated
+   * request with no proof of payment (GACHA_DESIGN §5/§6). Does not itself grant anything.
+   */
+  verifyNonCoinReceipt(args: {
+    accountId: string;
+    platform: string;
+    receipt: string;
+    receiptId: string;
+    expectedProduct: 'monthly_card' | 'year_card' | 'starter_draw' | 'starter_growth';
+  }): Promise<Body<{ product: string }>>;
+  adsCredit(args: {
+    accountId: string;
+    amount: number;
+    dayKey: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number }>>;
+  victoryCredit(args: {
+    accountId: string;
+    amount: number;
+    dayKey: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; credited: number; capped: boolean }>>;
+  promoRedeem(args: {
+    accountId: string;
+    code: string;
+    clientPlatform?: string;
+  }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
+  createPromoCode(args: {
+    code: string;
+    coins: number;
+    expiresAt?: number;
+    totalLimit?: number;
+    note?: string;
+    createdBy: string;
+  }): Promise<Body<{ code: string }>>;
+  listPromoCodes(): Promise<PromoCodeView[]>;
+  /** Credit coins from a verified Paddle transaction (signature already checked by metaserver). */
+  paddleComplete(args: {
+    accountId: string;
+    transactionId: string;
+    coins: number;
+    usdCents?: number;
+  }): Promise<Body<{ coinsAfter: number; coinsGranted: number }>>;
+  /** Decrement totalRechargeCents for a refunded Paddle transaction (GACHA_DESIGN §13, ADR-045). */
+  paddleRefund(args: { transactionId: string }): Promise<Body<{ decrementedCents: number }>>;
+  /** Log a non-`transaction.completed` Paddle webhook event for support/CS lookup (ADMIN-facing, COMMERCIAL_DESIGN §10.4). */
+  recordPaddleEvent(args: {
+    transactionId: string;
+    eventType: string;
+    status?: string;
+    accountId?: string;
+    rawEvent: string;
+  }): Promise<void>;
+  listPaddleEvents(args: { accountId?: string; transactionId?: string; limit?: number }): Promise<PaddleEventView[]>;
+  /**
+   * Coin-anomaly daily audit (COMMERCIAL_DESIGN §6.6): accounts whose non-recharge ledger gain within the
+   * UTC day `dayKey` (YYYY-MM-DD) is >= minGain, sorted by gain descending. Unavailable/error → empty array
+   * (best-effort — the caller is an offline review scan, not a request path).
+   */
+  auditCoinGains(dayKey: string, minGain: number): Promise<CoinGainRow[]>;
+}
 
 /** Real HTTP implementation. baseUrl is null (commercial not configured) → available=false, economy endpoints return 503. */
 export class HttpCommercialClient implements CommercialClient {
