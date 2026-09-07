@@ -1210,11 +1210,11 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     expect(r.data.save.equipMailOverflowCount).toBe(9);
   });
 
-  // 30s (default suite timeout is 15s, see vitest.config.ts): this is the only test in the file
-  // doing two full CARD_INV_CAP/EQUIPMENT_INV_CAP (500-each) batch inserts back to back — under
-  // `--coverage` (v8 instrumentation overhead on every statement in the request path) it
-  // reproducibly blows the default 15s even though the underlying work hasn't changed; every
-  // other test here stays comfortably under 1s coverage or not (2026-08-13, test:coverage backfill).
+  // The 30s override this test used to carry (2026-08-13) is gone: it was a bandaid over
+  // seedCardBatch/seedEquipmentBatch issuing one round trip per instance, so this test — the only
+  // one doing a full CARD_INV_CAP (500) *and* a full EQUIPMENT_INV_CAP (1000) fill — paid 1500 of
+  // them and its wall time tracked ambient latency instead of the code. Both helpers do a single
+  // bulkWrite now (2026-09-07), and this test runs in ~1s like every other one here.
   it('mailed attachments carry the real instance data, not just a count — cards keep defId/level, equipment keeps defId/rarity', async () => {
     await fillCardInv(CARD_INV_CAP);
     comm.nextResults = [{ itemId: 'chenshou', rarity: 'rare' as const }];
@@ -1229,7 +1229,7 @@ describe.skipIf(!mongo2)('gacha inventory-full overflow → mail', () => {
     expect(r2.data.overflow.equipMailed).toBe(1);
     const equipMail = socialsvc.sent.find((s) => s.content.attachments?.[0]?.kind === 'equipment');
     expect(equipMail?.content.attachments?.[0]?.instance).toMatchObject({ defId: 'wp_marker', rarity: 'rare', level: 0 });
-  }, 30000);
+  });
 
   it('mail delivery failure (socialsvc unreachable) does not block the draw response or lose the overflow accounting', async () => {
     await fillCardInv(CARD_INV_CAP);

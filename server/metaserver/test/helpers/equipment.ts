@@ -2,7 +2,23 @@
 // collection (2026-07-26 storage split — see server/metaserver/src/equipment.ts header comment). Used by
 // equipment.e2e.test.ts / economy.e2e.test.ts / internal-economy.test.ts so all three tests share one
 // definition of the collection's document shape instead of each re-deriving it.
-import type { MongoHandle, EquipmentInstance } from '@nw/shared';
+import type { MongoHandle, EquipmentInstance, EquipmentInstanceDoc } from '@nw/shared';
+
+/** The `equipmentInstances` row an `EquipmentInstance` maps to — one definition shared by the single
+ * and batch seeders so they can never drift apart. */
+function equipmentDoc(accountId: string, inst: EquipmentInstance): EquipmentInstanceDoc {
+  return {
+    _id: inst.id,
+    accountId,
+    defId: inst.defId,
+    rarity: inst.rarity,
+    level: inst.level,
+    affixes: inst.affixes,
+    ...(inst.locked !== undefined ? { locked: inst.locked } : {}),
+    ...(inst.sourceType !== undefined ? { sourceType: inst.sourceType } : {}),
+    ...(inst.obtainedAt !== undefined ? { obtainedAt: inst.obtainedAt } : {}),
+  };
+}
 
 /** Directly seeds (or overwrites) one equipment instance into `equipmentInstances`, bypassing the API. */
 export async function seedEquipment(
@@ -12,30 +28,33 @@ export async function seedEquipment(
 ): Promise<void> {
   await m.collections.equipmentInstances.updateOne(
     { _id: inst.id },
-    {
-      $set: {
-        _id: inst.id,
-        accountId,
-        defId: inst.defId,
-        rarity: inst.rarity,
-        level: inst.level,
-        affixes: inst.affixes,
-        ...(inst.locked !== undefined ? { locked: inst.locked } : {}),
-        ...(inst.sourceType !== undefined ? { sourceType: inst.sourceType } : {}),
-        ...(inst.obtainedAt !== undefined ? { obtainedAt: inst.obtainedAt } : {}),
-      },
-    },
+    { $set: equipmentDoc(accountId, inst) },
     { upsert: true },
   );
 }
 
-/** Seeds a batch (e.g. filling an account's inventory toward the cap) and sets `equipmentInvCount` to match. */
+/**
+ * Seeds a batch (e.g. filling an account's inventory toward the cap) and sets `equipmentInvCount` to match.
+ *
+ * ONE `bulkWrite`, not a loop of `updateOne`s. Callers fill to `EQUIPMENT_INV_CAP` (1000 since the
+ * 2026-08-10 300→1000 capacity raise), and a per-instance loop made the seed 1000 sequential round
+ * trips — a test whose wall time is `cap × ambient latency`, i.e. one that passes or times out
+ * depending on how loaded the machine is rather than on what the code does. See
+ * claudedocs/server-testing-tooling.md "CI 稳定性".
+ */
 export async function seedEquipmentBatch(
   m: MongoHandle,
   accountId: string,
   instances: EquipmentInstance[],
 ): Promise<void> {
-  for (const inst of instances) await seedEquipment(m, accountId, inst);
+  if (instances.length > 0) {
+    await m.collections.equipmentInstances.bulkWrite(
+      instances.map((inst) => ({
+        updateOne: { filter: { _id: inst.id }, update: { $set: equipmentDoc(accountId, inst) }, upsert: true },
+      })),
+      { ordered: false },
+    );
+  }
   await m.collections.saves.updateOne(
     { _id: accountId },
     { $set: { 'save.equipmentInvCount': instances.length } },
