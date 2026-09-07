@@ -354,6 +354,20 @@ export function startInternalHttp(
           // live here (service/appleNotifications.ts).
           case '/internal/apple/notification':
             return send(res, 200, await svc.appleNotification({ signedPayload: str(b.signedPayload) }));
+          // The appAccountToken this account's next StoreKit purchase should carry. Allocated on
+          // first ask and stable afterwards, so /bootstrap can hand it out on every call
+          // (service/appleAccount.ts explains why it must exist before the purchase).
+          case '/internal/apple/account-token':
+            return send(res, 200, await svc.appleAccountToken({ accountId: str(b.accountId) }));
+          case '/internal/apple/consumption-consent':
+            return send(
+              res,
+              200,
+              await svc.appleConsumptionConsent({
+                accountId: str(b.accountId),
+                consented: b.consented === true,
+              }),
+            );
           case '/internal/monthly-card/claim':
             return send(
               res,

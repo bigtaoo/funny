@@ -17,6 +17,8 @@ import {
   scheduleDailyReminder, type DailyReminderReason,
 } from '../../platform/localReminders';
 import { syncAppleSubscription } from '../../platform/appleSubscriptionSync';
+import { drainAppleTransactions } from '../../platform/appleUnfinishedTransactions';
+import { shouldAskConsumptionConsent, recordConsumptionConsent } from '../../platform/appleConsumptionConsent';
 
 /**
  * Roll an AI level (1–10, engine AISystem.ts) for a manually-started practice match,
@@ -151,6 +153,10 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
       // exactly the precondition the reminder above needs. Self-limiting to one attempt per session,
       // and a no-op off the iOS shell.
       if (api) void syncAppleSubscription(api, (save) => saveManager.adoptServer(save));
+      // Same hook, second Apple-only job: report the transactions StoreKit delivered outside a
+      // purchase (an approved Ask-to-Buy, a restore, anything a previous install never reported)
+      // and finish them once the server has granted (platform/appleUnfinishedTransactions.ts).
+      if (api) void drainAppleTransactions(api, (save) => saveManager.adoptServer(save));
     }
     // First-time feature guide (ONBOARDING_DESIGN §4.1): if a feature's guide has not been seen,
     // show a dismissible guide card in the lobby before navigating; if already seen, navigate directly.
@@ -233,6 +239,20 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
         lobby.showSeasonSettlement(lastSeen, peakRank, currentSeason);
       }
       platform.storage.setItem(LAST_SEEN_SEASON_KEY, String(currentSeason));
+    }
+
+    // Apple's consumption-data question (IOS_RELEASE.md §4.1b), asked once, of a player who has
+    // actually paid for something: may we tell Apple how much of a purchase they used if they ever
+    // ask Apple for a refund? Without an answer the server stays silent and we forfeit the only say
+    // we get in a refund decision (platform/appleConsumptionConsent.ts). Placed after the settlement
+    // popup so a season transition — a once-a-month event the player is waiting for — wins the
+    // screen; this question keeps until the next lobby entry.
+    if (loggedIn && !opts?.fromResize && api
+        && shouldAskConsumptionConsent(platform.storage, saveManager.get())) {
+      const client = api;
+      lobby.showConsumptionConsent((consented) => {
+        void recordConsumptionConsent(client, platform.storage, consented);
+      });
     }
 
     // Paint the cached social total immediately so the dot survives a resize

@@ -209,6 +209,7 @@ export class PixiAppViews implements AppViews {
       showAchievementToast: (m) => scene.showAchievementToast(m),
       showSeasonSettlement: (o, p, n) => scene.showSeasonSettlement(o, p, n),
       showFeatureGuide: (tk, bk, onDismiss) => scene.showFeatureGuide(tk, bk, onDismiss),
+      showConsumptionConsent: (onAnswer) => scene.showConsumptionConsent(onAnswer),
     };
   }
 

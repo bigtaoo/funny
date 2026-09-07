@@ -45,7 +45,7 @@ export interface MiscApi {
   getBootstrap(
     platform: string,
     publicId?: string
-  ): Promise<{ flags: Record<string, boolean>; paddleClientToken?: string }>;
+  ): Promise<{ flags: Record<string, boolean>; paddleClientToken?: string; appleAccountToken?: string }>;
   postClientLog(body: {
     publicId: string;
     platform?: string;
@@ -175,11 +175,11 @@ export class MiscService implements MiscApi {
   async getBootstrap(
     platform: string,
     publicId?: string
-  ): Promise<{ flags: Record<string, boolean>; paddleClientToken?: string }> {
+  ): Promise<{ flags: Record<string, boolean>; paddleClientToken?: string; appleAccountToken?: string }> {
     const qs = `?platform=${encodeURIComponent(platform)}${
       publicId ? `&publicId=${encodeURIComponent(publicId)}` : ''
     }`;
-    return this.core.request<{ flags: Record<string, boolean>; paddleClientToken?: string }>(
+    return this.core.request<{ flags: Record<string, boolean>; paddleClientToken?: string; appleAccountToken?: string }>(
       'GET',
       `/bootstrap${qs}`
     );

@@ -60,6 +60,8 @@ interface Captured {
   achievementToasts: string[];
   featureGuideCalls: { titleKey: string; bodyKey: string; onDismiss: () => void }[];
   seasonSettlementCalls: [number, string, number][];
+  /** Set when the Apple consumption-consent card is put up (IOS_RELEASE.md §4.1b). */
+  consumptionConsentAsk?: (consented: boolean) => void;
 }
 
 function buildLobbyNav(opts: {
@@ -109,6 +111,7 @@ function buildLobbyNav(opts: {
         showFeatureGuide: (titleKey, bodyKey, onDismiss) => {
           captured.featureGuideCalls.push({ titleKey, bodyKey, onDismiss });
         },
+        showConsumptionConsent: (onAnswer) => { captured.consumptionConsentAsk = onAnswer; },
       };
     },
   } as unknown as AppViews;

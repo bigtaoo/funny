@@ -38,6 +38,13 @@ export class FeatureFlags {
   private flags: Record<string, boolean> = {};
   /** Paddle.js seller client token delivered by /bootstrap (COMMERCIAL_DESIGN §IAP client); null until fetched / when Paddle is unconfigured server-side. */
   private paddleClientToken: string | null = null;
+  /**
+   * The `appAccountToken` an iOS purchase must carry (IOS_RELEASE.md §6), delivered by /bootstrap;
+   * null on every other platform and until the first bootstrap lands. It rides along on this poll
+   * because it has to be in hand BEFORE a purchase starts, and this is the request the client already
+   * makes early — the same reasoning as paddleClientToken above.
+   */
+  private appleAccountToken: string | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private uploadTimer: ReturnType<typeof setInterval> | null = null;
   /** Current log upload threshold rank (snapshot collects entries at or below this verbosity); null = no threshold matched, nothing uploaded. */
@@ -68,6 +75,16 @@ export class FeatureFlags {
     return this.paddleClientToken;
   }
 
+  /**
+   * The appAccountToken to attach to the next iOS purchase, or null when there is none yet (not an
+   * iOS shell, not logged in, or the first bootstrap has not landed). A purchase made without it
+   * still works — the account link written at verification time covers it — so callers pass whatever
+   * this returns rather than waiting for it.
+   */
+  getAppleAccountToken(): string | null {
+    return this.appleAccountToken;
+  }
+
   /** Start: fetch immediately + start periodic polling. Safe to call multiple times (ignored if already running). */
   start(): void {
     void this.refresh();
@@ -78,9 +95,15 @@ export class FeatureFlags {
   async refresh(): Promise<void> {
     try {
       const publicId = this.getPublicId() ?? undefined;
-      const { flags, paddleClientToken } = await this.api.getBootstrap(this.platform, publicId);
+      const { flags, paddleClientToken, appleAccountToken } = await this.api.getBootstrap(
+        this.platform,
+        publicId,
+      );
       this.flags = flags ?? {};
       this.paddleClientToken = paddleClientToken ?? null;
+      // Only overwritten when the server sent one: an anonymous poll (the client polls before login
+      // too) must not wipe the token a logged-in poll already delivered.
+      if (appleAccountToken) this.appleAccountToken = appleAccountToken;
       this.recomputeLogThreshold();
     } catch {
       // bootstrap failed: keep the previous result silently (common at early startup or while offline; must never affect the main flow).

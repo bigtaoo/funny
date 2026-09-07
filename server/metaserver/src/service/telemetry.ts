@@ -7,7 +7,7 @@ import { ok, FLAG_KEYS, flagDefault, extractBearer, verifyToken, FLAG_PLATFORMS 
 import { ErrorCode, err } from '@nw/shared';
 import { buildLokiPayload, buildAnomalyLokiPayload, pushToLoki, type ClientLogEntry, type ClientAnomalyEvent, type ClientAnomalySession } from '../clientLog.js';
 import type { MetaHandlers } from '../generated/routes.gen.js';
-import { createRateLimiter, type RateLimiter, type MetaCore } from './base.js';
+import { clientPlatformOf, createRateLimiter, type RateLimiter, type MetaCore } from './base.js';
 
 /** Clamp a client-supplied number into a sane range (telemetry is unauthenticated — see clientAnomaly). */
 function clampNum(n: number, lo: number, hi: number): number {
@@ -18,6 +18,14 @@ type TelemetryHandlers = Pick<
   MetaHandlers,
   'bootstrap' | 'clientLog' | 'clientAnomaly' | 'getAnalyticsConfig' | 'postAnalyticsEvents'
 >;
+
+/**
+ * accountId -> appAccountToken, process-local (see TelemetryService.appleAccountToken). Cleared
+ * wholesale on overflow rather than evicting one entry: this is a cache of immutable values whose
+ * only cost on a miss is one internal call, so LRU bookkeeping would buy nothing.
+ */
+const APPLE_ACCOUNT_TOKENS = new Map<string, string>();
+const APPLE_ACCOUNT_TOKEN_CACHE_MAX = 10_000;
 
 /** 4 client log level flags (ordered by verbosity; for documentation/guard use only). */
 const CLIENT_LOG_KEYS = FLAG_KEYS.filter((k) => k.startsWith('client_log_'));
@@ -59,8 +67,8 @@ export class TelemetryService implements TelemetryHandlers {
     async bootstrap(req: FastifyRequest) {
       const flags: Record<string, boolean> = {};
       const cache = this.core.deps.flags;
+      const ctx = this.flagCtx(req);
       if (cache) {
-        const ctx = this.flagCtx(req);
         for (const key of FLAG_KEYS) {
           const resolved = cache.isOn(key, ctx);
           if (resolved !== flagDefault(key)) flags[key] = resolved;
@@ -70,7 +78,52 @@ export class TelemetryService implements TelemetryHandlers {
       // the checkout overlay. It is a public, client-safe token (ptok_/live_/test_); only sent when
       // configured, so non-web / unconfigured deployments receive nothing extra.
       const paddleClientToken = process.env.NW_PADDLE_CLIENT_TOKEN;
-      return ok(paddleClientToken ? { flags, paddleClientToken } : { flags });
+      const appleAccountToken = await this.appleAccountToken(req, ctx.accountId);
+      return ok({
+        flags,
+        ...(paddleClientToken ? { paddleClientToken } : {}),
+        ...(appleAccountToken ? { appleAccountToken } : {}),
+      });
+    }
+
+    /**
+     * The `appAccountToken` an iOS client attaches to its next StoreKit 2 purchase (IOS_RELEASE.md
+     * §6), or undefined for every other caller.
+     *
+     * Delivered here rather than through an endpoint of its own because the token must be in hand
+     * BEFORE a purchase starts — and this is the one call the client already makes early, so it costs
+     * no extra round trip client-side (the same reason paddleClientToken rides along above).
+     *
+     * Only for a logged-in iOS caller: an anonymous session has no account to attach, and no other
+     * platform can use the value. Failures are swallowed — a bootstrap that cannot reach commercial
+     * must still deliver feature flags, and a purchase with no token still resolves through
+     * appleTransactionLinks (server/commercial/src/service/appleAccount.ts).
+     *
+     * "iOS" is read from the X-NW-Platform header (ADR-020), not from the `platform` query param the
+     * flag context uses: the header is set by the shell itself for exactly this purpose, while the
+     * query param carries the build target and knows nothing about which shell is running it.
+     */
+    private async appleAccountToken(
+      req: FastifyRequest,
+      accountId: string | undefined,
+    ): Promise<string | undefined> {
+      if (!accountId || clientPlatformOf(req) !== 'ios') return undefined;
+      const { commercial } = this.core.deps;
+      if (!commercial?.available) return undefined;
+      const cached = APPLE_ACCOUNT_TOKENS.get(accountId);
+      if (cached) return cached;
+      try {
+        const r = await commercial.appleAccountToken({ accountId });
+        if (!r.ok) return undefined;
+        // Bounded, and safe to cache indefinitely: the token is allocated once per account and never
+        // changes, so a hit can never be stale. Without it, the client's 120-second bootstrap poll
+        // (client/src/net/featureFlags.ts) would put a commercial round trip on every tick.
+        if (APPLE_ACCOUNT_TOKENS.size >= APPLE_ACCOUNT_TOKEN_CACHE_MAX) APPLE_ACCOUNT_TOKENS.clear();
+        APPLE_ACCOUNT_TOKENS.set(accountId, r.token);
+        return r.token;
+      } catch {
+        return undefined;
+      }
     }
 
     /** Whether this publicId is currently named in the allowPublicIds of any client_log_* flag (prevents arbitrary clients from flooding Loki with logs). */

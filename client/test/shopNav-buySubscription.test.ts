@@ -82,7 +82,11 @@ function buildShopNav(opts: FakeApiOpts) {
     baseUrl: null,
     saveManager,
     replayStore: {} as AppCtx['replayStore'],
-    featureFlags: { getPaddleClientToken: () => 'ptok_test' } as unknown as FeatureFlags,
+    featureFlags: {
+      getPaddleClientToken: () => 'ptok_test',
+      // Delivered by /bootstrap on iOS and attached to the StoreKit purchase (IOS_RELEASE.md §6).
+      getAppleAccountToken: () => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    } as unknown as FeatureFlags,
     state,
     nav,
     getNetSession: () => null,

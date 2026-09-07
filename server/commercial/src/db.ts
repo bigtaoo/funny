@@ -178,6 +178,44 @@ export interface AppleNotificationDoc {
   ts: number;
 }
 
+/**
+ * appAccountToken -> account. Apple's own "which of your users does this purchase belong to" field:
+ * the client attaches it to the StoreKit 2 purchase, and Apple then echoes it back on the
+ * transaction and on every notification about it (appleServerApi.ts's AppleTransaction).
+ *
+ * Why this exists alongside AppleTransactionLinkDoc rather than replacing it: a link row can only be
+ * written when a purchase is REPORTED, which leaves a hole nothing can close afterwards -- the charge
+ * succeeds, the app is killed before it POSTs, and every later notification about that subscription
+ * is unroutable forever. This row is written BEFORE the purchase, when the account asks for its
+ * token, so that hole closes. The link table stays as the fallback: StoreKit 1 purchases carry no
+ * token at all, and a token can be missing from an older transaction.
+ *
+ * `_id` is the token because token -> account is the direction the notification path looks up. One
+ * row per account for the lifetime of the account: the token is allocated once and reused, so every
+ * purchase a player ever makes carries the same one and a support query by account is a single hit.
+ */
+export interface AppleAccountTokenDoc {
+  _id: string; // appAccountToken (UUID v4)
+  accountId: string;
+  createdAt: number;
+}
+
+/**
+ * Whether a player agreed to let us answer Apple's CONSUMPTION_REQUEST with their consumption data
+ * (service/appleConsumption.ts). Apple requires `customerConsented: true` AND requires the consent to
+ * be collected by the app from the customer; a submission reporting false is rejected outright, so an
+ * account with no row here gets no reply sent on its behalf at all.
+ *
+ * Stored per account rather than per purchase: the question the app asks ("may we share how much of a
+ * purchase you used, if you ask Apple for a refund?") is not about one transaction, and asking again
+ * per purchase would be a worse experience for no more information.
+ */
+export interface AppleConsumptionConsentDoc {
+  _id: string; // accountId
+  consented: boolean;
+  ts: number;
+}
+
 /** Gacha draw history (persisted per draw, M7). */
 export interface GachaHistoryDoc {
   accountId: string;
@@ -262,6 +300,8 @@ export interface CommercialCollections {
   paddleEvents: Collection<PaddleEventDoc>;
   appleTransactionLinks: Collection<AppleTransactionLinkDoc>;
   appleNotifications: Collection<AppleNotificationDoc>;
+  appleAccountTokens: Collection<AppleAccountTokenDoc>;
+  appleConsumptionConsents: Collection<AppleConsumptionConsentDoc>;
   gachaHistory: Collection<GachaHistoryDoc>;
   promoCodes: Collection<PromoCodeDoc>;
   promoRedemptions: Collection<PromoRedemptionDoc>;
@@ -302,6 +342,8 @@ export async function createCommercialMongo(
     paddleEvents: db.collection<PaddleEventDoc>('paddleEvents'),
     appleTransactionLinks: db.collection<AppleTransactionLinkDoc>('appleTransactionLinks'),
     appleNotifications: db.collection<AppleNotificationDoc>('appleNotifications'),
+    appleAccountTokens: db.collection<AppleAccountTokenDoc>('appleAccountTokens'),
+    appleConsumptionConsents: db.collection<AppleConsumptionConsentDoc>('appleConsumptionConsents'),
     gachaHistory: db.collection<GachaHistoryDoc>('gachaHistory'),
     promoCodes: db.collection<PromoCodeDoc>('promoCodes'),
     promoRedemptions: db.collection<PromoRedemptionDoc>('promoRedemptions'),
@@ -326,6 +368,11 @@ export async function createCommercialMongo(
     await collections.appleTransactionLinks.createIndex({ accountId: 1 });
     await collections.appleNotifications.createIndex({ accountId: 1, ts: -1 });
     await collections.appleNotifications.createIndex({ originalTransactionId: 1 });
+    // appleAccountTokens._id = the token; the unique index the other way round is what makes allocation
+    // idempotent -- two concurrent /bootstrap calls for the same account cannot end up with two
+    // tokens, which would split one player's purchases across two identities Apple reports.
+    await collections.appleAccountTokens.createIndex({ accountId: 1 }, { unique: true });
+    // appleConsumptionConsents._id = accountId is naturally unique; nothing scans it.
     // recharges._id = receiptId is naturally unique; wallets._id = accountId is naturally unique.
     // promoCodes._id = code is naturally unique; promoRedemptions._id = accountId:code is naturally unique.
     await collections.promoRedemptions.createIndex({ accountId: 1, ts: -1 });

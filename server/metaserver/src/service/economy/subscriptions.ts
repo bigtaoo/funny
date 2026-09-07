@@ -85,6 +85,31 @@ export async function iapAppleSyncHandler(core: MetaCore, req: FastifyRequest, r
 }
 
 /**
+ * Record the player's consent to sharing purchase-usage data with Apple when they ask Apple for a
+ * refund (CONSUMPTION_REQUEST, IOS_RELEASE.md §4.1b).
+ *
+ * Apple requires this consent to be collected by the app and rejects any consumption report that
+ * says `customerConsented: false`, so the stored answer is what decides whether the webhook answers
+ * Apple at all. Both answers are recorded: "declined" is a real answer and stops the app re-asking.
+ * Apple-only by construction, like iapAppleSync — no other channel asks us about consumption.
+ */
+export async function setAppleConsumptionConsentHandler(
+  core: MetaCore,
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  if (!core.ensureCommercial(reply)) return;
+  const accountId = accountIdOf(req);
+  const { consented } = (req.body ?? {}) as { consented?: unknown };
+  if (typeof consented !== 'boolean') {
+    return reply.code(400).send(err(ErrorCode.BAD_REQUEST, 'consented must be a boolean'));
+  }
+  const r = await core.deps.commercial.appleConsumptionConsent({ accountId, consented });
+  if (!r.ok) return reply.code(400).send(err(ErrorCode.BAD_REQUEST, r.error));
+  return ok({ consented: r.consented });
+}
+
+/**
  * Buy the year card (GACHA_DESIGN §5): 365-day subscription, same single-slot gate + daily claim as
  * the monthly card. Same receipt-verification gate as monthlyCardBuy — see its doc comment.
  */

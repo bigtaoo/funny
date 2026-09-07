@@ -109,6 +109,8 @@ export class HeadlessAppViews implements AppViews {
   events?: EventCallbacks;
   /** Last daily-reward-claimable badge the core pushed into the lobby handle. */
   lastRetentionBadge?: boolean;
+  /** The Apple consumption-consent card's answer callback, when the lobby put the card up. */
+  lastConsumptionConsentAsk?: (consented: boolean) => void;
   /** Last events-available flag the core pushed into the lobby handle. */
   lastEventsAvailable?: boolean;
   replay?: ReplaySceneCallbacks;
@@ -155,6 +157,7 @@ export class HeadlessAppViews implements AppViews {
       // Headless: skip the guide card entirely and continue straight to the
       // wrapped navigation, matching a player who dismisses it immediately.
       showFeatureGuide: (_tk, _bk, onDismiss) => { onDismiss(); },
+      showConsumptionConsent: (onAnswer) => { this.lastConsumptionConsentAsk = onAnswer; },
     };
   }
   showSettings(cb: SettingsSceneCallbacks): void { this.screen = 'settings'; this.settings = cb; }

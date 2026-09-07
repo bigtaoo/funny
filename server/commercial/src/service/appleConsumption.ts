@@ -4,14 +4,18 @@
 // actually used. It decides with or without our answer, so silence forfeits the only input we get —
 // which for a game selling coin packs is the whole defence against "buy coins, spend them, refund".
 //
-// ── ⚠️ Consent gate: why this currently never sends ──
+// ── Consent gate ──
 // Apple requires `customerConsented: true`, and requires that the consent be collected **by the app**,
 // from the customer, before any consumption data is sent; a submission with `false` is rejected
-// outright, and Apple's guidance for "no consent" is to not respond at all. The shipped iOS binary has
-// no such consent UI — that is client work, and this migration's phase A is server-only
-// (IOS_RELEASE.md §6). So everything here is built and tested, and `customerHasConsented` returns
-// false until the client can actually ask. Recording the notification still happens; only the reply is
-// withheld. Claiming consent we never obtained would be a false statement to Apple about a customer.
+// outright, and Apple's guidance for "no consent" is to not respond at all. So the app asks
+// (SettingsScene → POST /iap/apple/consumption-consent) and the answer is stored per account
+// (service/appleAccount.ts). An account that was never asked, or that declined, produces no reply to
+// Apple whatsoever — the notification is still recorded, only the answer is withheld. Claiming consent
+// we never obtained would be a false statement to Apple about one of its customers.
+//
+// Until 2026-09-07 this was hard-coded false (phase A was server-only, and the app had no way to ask),
+// which meant the refund defence below was implemented but never actually fired.
+import { hasAppleConsumptionConsent } from './appleAccount';
 import type { WalletCore } from './base';
 import type { AppleTransaction } from '../iap/appleServerApi';
 import type { ConsumptionRequest } from '@apple/app-store-server-library';
@@ -22,12 +26,12 @@ const MILLIUNITS_FULL = 100000;
 /**
  * Whether this customer agreed to share consumption data with Apple.
  *
- * Hard-false until the app can ask (see the file header). Kept as a function rather than a constant so
- * the phase-B change is one implementation swap — read the stored per-account consent — rather than a
- * hunt through call sites.
+ * A thin re-export of the stored answer (service/appleAccount.ts) so callers reading this file see
+ * where the flag in `buildConsumptionRequest` comes from. No consent recorded -> false, and the
+ * webhook then declines to answer Apple at all rather than answering with a false.
  */
-export function customerHasConsented(_accountId: string): boolean {
-  return false;
+export function customerHasConsented(core: WalletCore, accountId: string): Promise<boolean> {
+  return hasAppleConsumptionConsent(core, accountId);
 }
 
 /**
@@ -76,7 +80,7 @@ export async function buildConsumptionRequest(
   const pct = await consumptionPercentage(core, accountId, tx);
   const delivered = pct !== undefined;
   return {
-    customerConsented: customerHasConsented(accountId),
+    customerConsented: await customerHasConsented(core, accountId),
     consumptionPercentage: pct,
     deliveryStatus: delivered ? 'DELIVERED' : 'UNDELIVERED_OTHER',
     // No free trial or sample of a coin pack exists to have offered — coins are the product itself.

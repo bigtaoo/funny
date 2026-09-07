@@ -105,6 +105,7 @@ export class MetaService implements MetaHandlers {
   adsReward(...args: Parameters<EconomyService['adsReward']>) { return this.economySvc.adsReward(...args); }
   iapVerify(...args: Parameters<EconomyService['iapVerify']>) { return this.economySvc.iapVerify(...args); }
   iapAppleSync(...args: Parameters<EconomyService['iapAppleSync']>) { return this.economySvc.iapAppleSync(...args); }
+  setAppleConsumptionConsent(...args: Parameters<EconomyService['setAppleConsumptionConsent']>) { return this.economySvc.setAppleConsumptionConsent(...args); }
   redeemPromoCode(...args: Parameters<EconomyService['redeemPromoCode']>) { return this.economySvc.redeemPromoCode(...args); }
 
   // ── inventory ──

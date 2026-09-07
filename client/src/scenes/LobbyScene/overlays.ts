@@ -125,6 +125,85 @@ export class OverlaysPanel {
     core.guideOnDismiss = onDismiss;
   }
 
+  /**
+   * The consumption-data consent card (IOS_RELEASE.md §4.1b): a two-button question, unlike every
+   * other overlay in this file, because "dismissed" is not an answer Apple accepts. Both buttons
+   * answer; there is deliberately no way to close it without answering, and it is only ever shown
+   * once (platform/appleConsumptionConsent.ts decides when).
+   *
+   * A card in the lobby rather than a row in Settings: that screen has no flow layout — every
+   * section is a hand-tuned fraction of the viewport height, and its columns already run to 0.93h —
+   * so a new row there would draw on top of a neighbour on some viewport nobody checked. This also
+   * puts the question where the player will actually read it, once, instead of on a settings page
+   * they may never open.
+   */
+  showConsumptionConsent(onAnswer: (consented: boolean) => void): void {
+    const core = this.core;
+    if (core.destroyed || core.consentLayer) return;
+    const { w, h } = core;
+    const layer = new PIXI.Container();
+
+    const backdrop = new PIXI.Graphics();
+    backdrop.beginFill(0x000000, 0.6).drawRect(0, 0, w, h).endFill();
+    layer.addChild(backdrop);
+
+    const cw = Math.round(w * 0.8);
+    const ch = Math.round(h * 0.42);
+    const cx = (w - cw) / 2;
+    const cy = (h - ch) / 2;
+    const card = sketchPanel(cw, ch, { fill: C.paper, border: C.accent, width: 2.6, seed: 137 });
+    card.x = cx; card.y = cy;
+    layer.addChild(card);
+
+    const titleLbl = txt(t('iap.consentTitle'), snapFont(Math.round(ch * 0.11)), C.dark, true);
+    titleLbl.anchor.set(0.5, 0); titleLbl.x = w / 2; titleLbl.y = cy + Math.round(ch * 0.08);
+    layer.addChild(titleLbl);
+
+    const bodyLbl = makeText(t('iap.consentBody'), {
+      fontSize: snapFont(Math.round(ch * 0.075)), fill: C.mid, fontFamily: 'monospace',
+      wordWrap: true, wordWrapWidth: cw - Math.round(cw * 0.12), align: 'center',
+    });
+    bodyLbl.anchor.set(0.5, 0); bodyLbl.x = w / 2; bodyLbl.y = cy + Math.round(ch * 0.26);
+    layer.addChild(bodyLbl);
+
+    // Two buttons side by side, each 40% of the card: "Allow" carries the accent, "Not now" is
+    // plain, and neither is pre-selected — the honest presentation of a question we must not lead.
+    const btnW = Math.round(cw * 0.4);
+    const btnH = Math.round(ch * 0.17);
+    const gap = Math.round(cw * 0.04);
+    const btnY = cy + ch - btnH - Math.round(ch * 0.09);
+    const yesX = cx + cw / 2 - gap / 2 - btnW;
+    const noX = cx + cw / 2 + gap / 2;
+
+    const draw = (bx: number, fill: number, label: string, labelColor: number): void => {
+      const btn = new PIXI.Graphics();
+      btn.beginFill(fill).drawRoundedRect(bx, btnY, btnW, btnH, Math.round(btnH * 0.3)).endFill();
+      layer.addChild(btn);
+      const lbl = txt(label, snapFont(Math.round(btnH * 0.4)), labelColor, true);
+      lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = btnY + btnH / 2;
+      layer.addChild(lbl);
+    };
+    draw(yesX, C.accent, t('iap.consentAllow'), 0xffffff);
+    draw(noX, C.light, t('iap.consentDecline'), C.dark);
+
+    core.container.addChild(layer);
+    core.consentLayer = layer;
+    core.consentYesRect = { x: yesX, y: btnY, w: btnW, h: btnH };
+    core.consentNoRect = { x: noX, y: btnY, w: btnW, h: btnH };
+    core.consentOnAnswer = onAnswer;
+  }
+
+  /** Tear the consent card down and report the answer (called by build.ts's tap routing). */
+  answerConsumptionConsent(consented: boolean): void {
+    const core = this.core;
+    const cb = core.consentOnAnswer;
+    core.consentOnAnswer = null;
+    core.consentYesRect = null;
+    core.consentNoRect = null;
+    if (core.consentLayer) { core.consentLayer.destroy({ children: true }); core.consentLayer = null; }
+    cb?.(consented);
+  }
+
   clearGuide(): void {
     const core = this.core;
     core.guideDismissRect = null;

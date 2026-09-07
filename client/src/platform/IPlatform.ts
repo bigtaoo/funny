@@ -235,11 +235,17 @@ export interface IPlatform {
   openPaddleCheckout(transactionId: string, clientToken: string): Promise<{ completed: boolean }>;
 
   /**
-   * Run the native store purchase for a coin tier via the injected bridge and return the receipt
-   * to verify (POST /iap/verify). Only meaningful when iapKind() is 'apple' / 'google'; rejects on
-   * cancel / failure / missing bridge.
+   * Run the native store purchase for a coin tier (or a non-coin product key) via the injected
+   * bridge and return the value to verify with (POST /iap/verify): a store receipt on Google and on
+   * pre-StoreKit-2 iOS binaries, a bare Apple transaction id on current ones — the server accepts
+   * either. Only meaningful when iapKind() is 'apple' / 'google'; rejects on cancel / failure /
+   * missing bridge.
+   *
+   * `appAccountToken` (iOS) is the UUID /bootstrap allocated for this account; attaching it is what
+   * lets Apple name the owner on later notifications about this purchase (IOS_RELEASE.md §6). Every
+   * other platform ignores it, and so does an older iOS binary — callers pass it unconditionally.
    */
-  nativeIapPurchase(tierId: string): Promise<{ receipt: string }>;
+  nativeIapPurchase(tierId: string, appAccountToken?: string): Promise<{ receipt: string }>;
 
   // ── Out-of-game replay sharing (REPLAY_SHARE_DESIGN §4) ─────────────────────
 

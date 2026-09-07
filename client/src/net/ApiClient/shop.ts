@@ -9,6 +9,14 @@ export interface ShopApi {
   adsReward(adToken: string, platform?: string): Promise<{ save: SaveData; granted: number }>;
   iapVerify(platform: string, receipt: string): Promise<{ save: SaveData; granted: number }>;
   iapAppleSync(receipt: string): Promise<{ save: SaveData; granted: number }>;
+  /**
+   * Record whether the player lets us tell Apple how much of a purchase they used, when they ask
+   * Apple for a refund (CONSUMPTION_REQUEST, IOS_RELEASE.md §4.1b). iOS-only in practice: no other
+   * store asks us this. Apple requires the app to collect the consent and rejects a report that says
+   * `false`, so with nothing stored the server stays silent rather than answering on the player's
+   * behalf.
+   */
+  setAppleConsumptionConsent(consented: boolean): Promise<{ consented: boolean }>;
   paddleCheckout(tierId: string): Promise<{ transactionId: string }>;
   redeemPromoCode(code: string): Promise<{ save: SaveData; granted: number }>;
 }
@@ -70,6 +78,17 @@ export class ShopService implements ShopApi {
    */
   async iapAppleSync(receipt: string): Promise<{ save: SaveData; granted: number }> {
     return this.core.post<{ save: SaveData; granted: number }>('/iap/apple/sync', { receipt });
+  }
+
+  /**
+   * Record whether the player lets us tell Apple how much of a purchase they used, when they ask
+   * Apple for a refund (CONSUMPTION_REQUEST, IOS_RELEASE.md §4.1b). iOS-only in practice: no other
+   * store asks us this. Apple requires the app to collect the consent and rejects a report that says
+   * `false`, so with nothing stored the server stays silent rather than answering on the player's
+   * behalf.
+   */
+  async setAppleConsumptionConsent(consented: boolean): Promise<{ consented: boolean }> {
+    return this.core.post<{ consented: boolean }>('/iap/apple/consumption-consent', { consented });
   }
 
   /**

@@ -454,6 +454,49 @@
                     granted: { type: integer, description: Subscription periods newly applied by this call. }
       '400': { $ref: '#/components/responses/ErrorResp' }
 
+/iap/apple/consumption-consent:
+  post:
+    operationId: setAppleConsumptionConsent
+    tags: [iap]
+    summary: Record whether the player lets us send Apple their purchase-usage data on a refund request
+    description: >
+      Apple asks the seller how much of a purchase was actually used when a customer requests a
+      refund (CONSUMPTION_REQUEST, answered within 12 hours). Apple requires that the consent for
+      sharing that data is collected BY THE APP from the customer, and rejects any submission
+      reporting `customerConsented: false` — so with no consent recorded here the server does not
+      answer Apple at all. A one-time card in the lobby is what asks (iOS shell only); both answers
+      are stored, because "declined" is not the same as "never asked".
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [consented]
+            properties:
+              consented:
+                type: boolean
+                description: The player's answer, as collected by the app.
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ok, data]
+              properties:
+                ok: { type: boolean, enum: [true] }
+                data:
+                  type: object
+                  required: [consented]
+                  properties:
+                    consented:
+                      type: boolean
+                      description: The stored answer, echoed back.
+      '400': { $ref: '#/components/responses/ErrorResp' }
+
 # NOTE: POST /shop/paddle/checkout and POST /paddle/webhook (server/metaserver/src/paddle.ts) are
 # deliberately NOT declared here. Like the /ads/callback/* routes in ads.ts, they're registered
 # outside the codegen'd MetaHandlers dispatch because they need non-standard request handling this

@@ -114,4 +114,8 @@ export class LobbyScene implements Scene {
   showFeatureGuide(titleKey: TranslationKey, bodyKey: TranslationKey, onDismiss: () => void): void {
     this.overlays.showFeatureGuide(titleKey, bodyKey, onDismiss);
   }
+  /** Apple consumption-data consent question (IOS_RELEASE.md §4.1b) — answered, never dismissed. */
+  showConsumptionConsent(onAnswer: (consented: boolean) => void): void {
+    this.overlays.showConsumptionConsent(onAnswer);
+  }
 }
