@@ -349,6 +349,11 @@ export function startInternalHttp(
                 clientPlatform: strOpt(b.clientPlatform),
               }),
             );
+          // App Store Server Notifications V2. metaserver forwards Apple's payload verbatim without
+          // inspecting it — the signature check needs the Apple credentials and pinned roots, which
+          // live here (service/appleNotifications.ts).
+          case '/internal/apple/notification':
+            return send(res, 200, await svc.appleNotification({ signedPayload: str(b.signedPayload) }));
           case '/internal/monthly-card/claim':
             return send(
               res,

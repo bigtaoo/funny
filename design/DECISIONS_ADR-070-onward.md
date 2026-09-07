@@ -306,3 +306,41 @@ owner 看着自家主城的训练面板问了一句：「队列 3/3、在训 722
 - **背景（为什么现在补这条）**：[ADR-005](DECISIONS_ADR-001-040.md#adr-005-应用进程口径--8-个--superseded-by-adr-080--2026-06-21)（2026-06-21）把口径钉成 8 个。此后 socialsvc（ADR-021，2026-06-28）、auctionsvc（2026-07-07 从 worldsvc 解耦）、botsvc（2026-07-22）三次加进程，口径 8 → 10 → 11，但**三次都没记 ADR**——`claudedocs/server.md`、`design/README.md §4`、`SERVER_API.md §0`、`META_DESIGN.md` 都各自就地改成了 11，只有 ADR-005 还挂着 `Accepted — 8 个`。ADR 日志存在的唯一理由就是拦这种「口径漂移」，结果它自己成了唯一一份还在说 8 的文档。2026-09-03 的设计文档一致性审计翻出这条。
 - **影响**：[ADR-005](DECISIONS_ADR-001-040.md#adr-005-应用进程口径--8-个--superseded-by-adr-080--2026-06-21) 状态改为 `Superseded by ADR-080`（正文保留作历史记录）。其余文档已是 11，无需改动。
 - **顺带定的规矩**：**加/减一个应用进程必须记一条 ADR**，不能只改 `claudedocs/server.md`——后者是「现在代码长这样」的快查，不是拍板记录。
+
+## ADR-081 Apple IAP 走 App Store Server API + Notifications V2，弃用 verifyReceipt — Accepted — 2026-09-07
+
+- **决策**：Apple 渠道的验单与续订全部改用 **App Store Server API**（Apple 官方 Node 库
+  `@apple/app-store-server-library`）+ **App Store Server Notifications V2** webhook，**删除** `verifyReceipt`
+  与共享密钥 `NW_APPLE_PASSWORD`。凭据换成 In-App Purchase Key 四件套（`NW_APPLE_IAP_KEY_ID` /
+  `NW_APPLE_IAP_ISSUER_ID` / `NW_APPLE_IAP_PRIVATE_KEY_BASE64` / `NW_APPLE_APP_ID`）。
+  **分两批**：A 批只动服务端（本批，客户端零改动）；B 批把客户端换成 StoreKit 2，前置门槛是先拿到一次
+  绿色 Xcode 构建。细节见 [`IOS_RELEASE.md §4.1b/§6`](game/IOS_RELEASE.md)。
+
+- **背景**：`verifyReceipt` 自 2023-06-05 弃用、不再有新功能，但 Apple **至今未公布终止日期**——所以这不是被
+  迫迁移，是趁发布前主动把债还掉（用户明确要求「不留技术债」）。核实过没有更新的形态取代它：通知仍是 V2
+  没有 V3，StoreKit 2 仍是客户端推荐，Advanced Commerce API 需逐 App 审批且面向超大目录，与 9 个固定 SKU 无关。
+
+- **为什么能拆成两批**（这条是关键，不然 A 批做不了）：Apple 官方库带 `ReceiptUtility`，可以**在本地**从
+  StoreKit 1 收据里拆出 transaction id（不联网、不需要密钥），再走新 API。于是服务端可以完全迁移干净而
+  **客户端一行不改**。拆开的理由是**能验证的不该被不能验证的卡住**：服务端在本机全可测，Swift 在本机
+  完全编译不了，而原生层自 2026-07-21 起就没编译过、里面已经躺着两个未验证的改动。
+
+- **三个设计选择**：
+  1. **`appleTransactionLinks` 表**（`originalTransactionId → accountId`）。通知里只有 Apple 自己的 id，
+     **没有任何属于我们的东西**；唯一能把两边对上的瞬间是首次购买那次带登录态的请求。B 批的
+     `appAccountToken` 会成为主路由键，这张表退为冗余兜底（两者都做，用户拍板）。
+  2. **不删冷启动对账**。webhook 做实时，`getTransactionHistory` 做兜底——只留 webhook 的话，一次漏投
+     或一次 URL 配错就是永久丢失，而旧的轮询本来是自愈的。任何时候都不该出现「安全网已拆、替代品未到位」。
+  3. **根证书 base64 内联进 `.ts`**，不放 `.cer`。tsc 不复制二进制到 `dist/`，那样 dev 下能跑、容器里必死
+     ——正是 `NW_APPLE_PASSWORD` 那次事故的形状。
+
+- **影响**：`NW_APPLE_PASSWORD` 从 `.env.example` / 两份 compose / `ecosystem.config.cjs` 移除，四个新变量
+  补齐三处（`matchsvc/test/deploy-config.test.ts` 的全服务扫描自动生效）。新增 metaserver 路由
+  `POST /iap/apple/notifications`（按 Paddle 先例不进 OpenAPI 契约）与 commercial 内部路由
+  `/internal/apple/notification`；新增两个集合 `appleTransactionLinks` / `appleNotifications`。
+
+- **已知缺口（写进文档而不是假装没有）**：① **验签本身没有测试保护**——测试用 `Environment.LOCAL_TESTING`
+  跑真的 `SignedDataVerifier`，而它恰恰跳过签名校验，Apple 也没发布证书夹具；覆盖到的是解码之后的全部逻辑。
+  ② **CONSUMPTION_REQUEST 退款防御已实现但不发送**：Apple 要求 `customerConsented: true` 且要求同意由 App
+  向玩家收集，报 false 会被直接拒收；同意 UI 属 B 批，到时把 `customerHasConsented()` 换成读真实同意即可。
+  ③ 真机沙盒仍未验证（本机无 Xcode/沙盒）。

@@ -129,6 +129,55 @@ export interface PaddleEventDoc {
   ts: number;
 }
 
+/**
+ * Apple subscription → account link. `_id` is the `originalTransactionId`, the one id that stays
+ * constant across every renewal of a subscription (and across reinstalls, device changes and
+ * storefront changes).
+ *
+ * Why this table has to exist: an App Store Server Notification announcing a renewal carries Apple's
+ * ids and nothing of ours — no account, no session, no header we control. The only moment both facts
+ * are in hand is the original purchase, which arrives on an authenticated request; so that is where
+ * the pairing is written down, and every later renewal is matched by looking it up here. Without it a
+ * DID_RENEW notification is unroutable and the player silently stops being paid for.
+ *
+ * Written on every successful Apple subscription verification, not just the first — a Restore
+ * Purchases or a re-verify re-asserts the same row, so a link can heal rather than being a one-shot
+ * value that is lost forever if it misses.
+ */
+export interface AppleTransactionLinkDoc {
+  _id: string; // originalTransactionId (naturally unique)
+  accountId: string;
+  product: 'monthly_card' | 'year_card';
+  /** Apple's per-Apple-Account-per-app id (WWDC25). Only present on recent OS versions, so it is
+   *  recorded when offered and never relied on as the routing key. */
+  appTransactionId?: string;
+  linkedAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Every App Store Server Notification we accept, logged for support ("the player says they were
+ * charged / refunded — what did Apple actually tell us"). Mirrors what `paddleEvents` does for the
+ * web channel, which previously had no Apple counterpart at all.
+ *
+ * `_id` is Apple's `notificationUUID`, which also dedupes Apple's at-least-once redelivery.
+ */
+export interface AppleNotificationDoc {
+  _id: string; // notificationUUID
+  notificationType: string;
+  subtype?: string;
+  /** Resolved account, when the notification could be routed to one; absent means it could not be. */
+  accountId?: string;
+  transactionId?: string;
+  originalTransactionId?: string;
+  productId?: string;
+  /** CONSUMPTION_REQUEST only: why the customer asked for a refund (notifications v2.11+). */
+  consumptionRequestReason?: string;
+  /** What we did about it — 'granted' | 'ignored' | 'unlinked' | 'consumption_sent' | 'consumption_failed'. */
+  outcome: string;
+  ts: number;
+}
+
 /** Gacha draw history (persisted per draw, M7). */
 export interface GachaHistoryDoc {
   accountId: string;
@@ -211,6 +260,8 @@ export interface CommercialCollections {
   orders: Collection<OrderDoc>;
   recharges: Collection<RechargeDoc>;
   paddleEvents: Collection<PaddleEventDoc>;
+  appleTransactionLinks: Collection<AppleTransactionLinkDoc>;
+  appleNotifications: Collection<AppleNotificationDoc>;
   gachaHistory: Collection<GachaHistoryDoc>;
   promoCodes: Collection<PromoCodeDoc>;
   promoRedemptions: Collection<PromoRedemptionDoc>;
@@ -249,6 +300,8 @@ export async function createCommercialMongo(
     orders: db.collection<OrderDoc>('orders'),
     recharges: db.collection<RechargeDoc>('recharges'),
     paddleEvents: db.collection<PaddleEventDoc>('paddleEvents'),
+    appleTransactionLinks: db.collection<AppleTransactionLinkDoc>('appleTransactionLinks'),
+    appleNotifications: db.collection<AppleNotificationDoc>('appleNotifications'),
     gachaHistory: db.collection<GachaHistoryDoc>('gachaHistory'),
     promoCodes: db.collection<PromoCodeDoc>('promoCodes'),
     promoRedemptions: db.collection<PromoRedemptionDoc>('promoRedemptions'),
@@ -267,6 +320,12 @@ export async function createCommercialMongo(
     // paddleEvents._id = transactionId:eventType is naturally unique; index for support lookup by account/transaction.
     await collections.paddleEvents.createIndex({ accountId: 1, ts: -1 });
     await collections.paddleEvents.createIndex({ transactionId: 1 });
+    // appleTransactionLinks._id = originalTransactionId and appleNotifications._id = notificationUUID
+    // are both naturally unique; these two index the support-lookup direction ("everything Apple sent
+    // about this player") and the reverse link lookup ("which subscriptions does this account own").
+    await collections.appleTransactionLinks.createIndex({ accountId: 1 });
+    await collections.appleNotifications.createIndex({ accountId: 1, ts: -1 });
+    await collections.appleNotifications.createIndex({ originalTransactionId: 1 });
     // recharges._id = receiptId is naturally unique; wallets._id = accountId is naturally unique.
     // promoCodes._id = code is naturally unique; promoRedemptions._id = accountId:code is naturally unique.
     await collections.promoRedemptions.createIndex({ accountId: 1, ts: -1 });

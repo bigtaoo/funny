@@ -192,7 +192,8 @@ Quoten-Seite. Kostenlos spielbar.
 
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
 - [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 桥 + `commercial/src/iap.ts` 验单，
-      fail closed）；剩下的是**外部动作**：ASC 建 9 个商品 + 填 App 专用共享密钥 + VPS 设 `NW_IAP_BUNDLE`/`NW_APPLE_PASSWORD`，
+      fail closed，2026-09-07 已换成 App Store Server API）；ASC 建 9 个商品已完成。剩下的**外部动作**：
+      生成 In-App Purchase Key（四个 `NW_APPLE_IAP_*` / `NW_APPLE_APP_ID`）+ 在 ASC 配通知 V2 的 URL，
       步骤见 [`IOS_RELEASE.md §4.0`](../../game/IOS_RELEASE.md)。真机沙盒对账仍未做
 - [x] **原生包内不含网页支付通道**（2026-09-03 审计 + 修复，详见 [`IOS_RELEASE.md §10`](../../game/IOS_RELEASE.md)）：
       `home/pricing/refunds/pay/terms/privacy.html` 六个静态页曾随 `mobile` 构建进入 iOS 包与每个 OTA 包，

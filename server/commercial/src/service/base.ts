@@ -24,6 +24,7 @@ import { isCustomPoolDoc } from '../db';
 import type { RandInt } from '../gacha';
 import { displayChannelOf, effectiveCoins, type RechargeChannel } from '../spendChannel';
 import type { AppleSubscriptionTx, IapProductKind } from '../iap';
+import type { AppleServerApi } from '../iap/appleServerApi';
 import {
   findGachaPool,
   isLimitedPoolActive,
@@ -37,6 +38,7 @@ import {
   type WalletView,
   type Result,
   type CommercialDeps,
+  type IapVerifyOutcome,
 } from './walletView';
 export {
   devVerifyReceipt,
@@ -48,6 +50,7 @@ export {
   type WalletView,
   type Result,
   type CommercialDeps,
+  type IapVerifyOutcome,
 };
 
 export class WalletCore {
@@ -59,12 +62,12 @@ export class WalletCore {
   readonly now: () => number;
   readonly rng?: RandInt;
   readonly redis: RedisLike | null;
-  readonly verifyReceipt: (
-    platform: string,
-    receipt: string,
-  ) => Promise<{ ok: boolean; coins: number; usdCents?: number; product?: IapProductKind }>;
+  readonly verifyReceipt: (platform: string, receipt: string) => Promise<IapVerifyOutcome>;
   /** See CommercialDeps.verifyAppleSubscriptions. null = Apple unconfigured (no dev-stub stand-in by design). */
   readonly verifyAppleSubscriptions: ((receipt: string) => Promise<AppleSubscriptionTx[]>) | null;
+  /** See CommercialDeps.appleServerApi. null = Apple unconfigured; the notification webhook then
+   *  records what arrived and grants nothing. */
+  readonly appleServerApi: AppleServerApi | null;
 
   constructor(deps: CommercialDeps) {
     this.deps = deps;
@@ -76,6 +79,7 @@ export class WalletCore {
     // Uniformly wrap as async to be compatible with both the synchronous dev stub and async real receipt verifiers.
     this.verifyReceipt = (p, r) => Promise.resolve(raw(p, r));
     this.verifyAppleSubscriptions = deps.verifyAppleSubscriptions ?? null;
+    this.appleServerApi = deps.appleServerApi ?? null;
   }
 
   /**

@@ -19,6 +19,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
 import { IAP_TIERS } from '@nw/shared';
 import { appleVerify } from '../src/iap/apple';
+import type { AppleServerApi, AppleTransaction } from '../src/iap/appleServerApi';
+import { APIException } from '@apple/app-store-server-library';
+import { fakeAppleApi, tx } from './appleFakes';
 import { googleVerify, type GoogleServiceAccount } from '../src/iap/google';
 import { stripeVerify } from '../src/iap/stripe';
 import { createReceiptVerifier } from '../src/iap';
@@ -39,7 +42,6 @@ const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  delete process.env.NW_APPLE_PASSWORD;
   delete process.env.NW_GOOGLE_SERVICE_ACCOUNT_JSON;
   delete process.env.NW_GOOGLE_PACKAGE_NAME;
   delete process.env.NW_WX_PAY_MCH_ID;
@@ -53,88 +55,49 @@ afterEach(() => {
 
 // ── Apple ────────────────────────────────────────────────────────────────────
 describe('appleVerify — the App Store misbehaving', () => {
-  const PW = 'shared-secret';
+  // 2026-09-07: rewritten for the App Store Server API. Several old cases were deleted rather than
+  // translated because the shapes they guarded against cannot occur any more: `getTransactionInfo(id)`
+  // answers with exactly one transaction, so there is no in_app/latest_receipt_info fallback, no empty
+  // transaction list, and no "pick the newest of several" reduce to get wrong. What survives is the
+  // invariant at the top of this file, which the new transport makes just as easy to break.
 
-  it('throws (not ok:false) when verifyReceipt answers with a 5xx', async () => {
-    mockFetch(() => Promise.resolve(jsonResp({}, 503)));
-    await expect(appleVerify('receipt==', TIER_MAP, PW)).rejects.toThrow(
-      'apple verify failed: apple verifyReceipt HTTP 503',
-    );
+  const oneTx = (over: Partial<AppleTransaction> = {}) =>
+    fakeAppleApi({ transactions: [tx({ transactionId: 'tx1', productId: 'com.nw.coins.t099', ...over })] });
+
+  /** An API whose lookup fails the way a struggling App Store does. */
+  function failingApi(err: unknown): AppleServerApi {
+    const api = fakeAppleApi({});
+    api.verifyTransaction = async () => { throw err; };
+    return api;
+  }
+
+  it('throws (not ok:false) when Apple answers with a 5xx', async () => {
+    // The distinction this file exists for: ok:false becomes a permanent INVALID_RECEIPT the client
+    // never retries, so "Apple had a bad minute" must not be reported as "your purchase is fake".
+    const api = failingApi(new APIException(503));
+    await expect(appleVerify('tx1', TIER_MAP, api)).rejects.toBeInstanceOf(APIException);
   });
 
-  it('throws when the request itself fails, keeping the original error as `cause`', async () => {
+  it('throws when the request itself fails', async () => {
     const net = new Error('ECONNRESET');
-    mockFetch(() => Promise.reject(net));
-    await expect(appleVerify('receipt==', TIER_MAP, PW)).rejects.toMatchObject({
-      message: 'apple verify failed: ECONNRESET',
-      cause: net,
-    });
+    await expect(appleVerify('tx1', TIER_MAP, failingApi(net))).rejects.toThrow('ECONNRESET');
   });
 
-  it('throws when the sandbox retry (status 21007) fails too', async () => {
-    let call = 0;
-    mockFetch(() => {
-      call++;
-      return Promise.resolve(call === 1 ? jsonResp({ status: 21007 }) : jsonResp({}, 500));
-    });
-    await expect(appleVerify('receipt==', TIER_MAP, PW)).rejects.toThrow('apple verifyReceipt HTTP 500');
+  it('returns ok:false — not a throw — for an id Apple genuinely does not have', async () => {
+    // The one case where a negative answer IS conclusive: both environments agree the id is unknown.
+    await expect(appleVerify('nope', TIER_MAP, fakeAppleApi({}))).resolves.toEqual({ ok: false, coins: 0 });
   });
 
-  // Older receipts (and StoreKit responses for non-renewing products) carry the transactions under
-  // receipt.in_app instead of the flat latest_receipt_info.
-  it('falls back to receipt.in_app when latest_receipt_info is absent', async () => {
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResp({
-          status: 0,
-          receipt: { in_app: [{ product_id: 'com.nw.coins.t099', transaction_id: 'tx1', purchase_date_ms: '1000' }] },
-        }),
-      ),
-    );
-    await expect(appleVerify('receipt==', TIER_MAP, PW)).resolves.toEqual({ ok: true, coins: IAP_TIERS.t099 });
+  it('rejects a revoked transaction rather than granting it again', async () => {
+    process.env.NW_IAP_BUNDLE = 'com.nw';
+    await expect(appleVerify('tx1', TIER_MAP, oneTx({ revoked: true }))).resolves.toEqual({ ok: false, coins: 0 });
   });
 
-  it('rejects a status-0 receipt that contains no transactions at all', async () => {
-    mockFetch(() => Promise.resolve(jsonResp({ status: 0 })));
-    await expect(appleVerify('receipt==', TIER_MAP, PW)).resolves.toEqual({ ok: false, coins: 0 });
-  });
-
-  it('rejects a status-0 receipt whose in_app list is empty', async () => {
-    mockFetch(() => Promise.resolve(jsonResp({ status: 0, receipt: { in_app: [] } })));
-    await expect(appleVerify('receipt==', TIER_MAP, PW)).resolves.toEqual({ ok: false, coins: 0 });
-  });
-
-  // The "latest transaction" reduce must not depend on the store's ordering: the newest entry wins
-  // whether it arrives first or last (iap.test.ts covers last-is-newest).
-  it('picks the newest transaction when it is listed FIRST', async () => {
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResp({
-          status: 0,
-          latest_receipt_info: [
-            { product_id: 'com.nw.coins.t999', transaction_id: 'new', purchase_date_ms: '9000' },
-            { product_id: 'com.nw.coins.t099', transaction_id: 'old', purchase_date_ms: '1000' },
-          ],
-        }),
-      ),
-    );
-    await expect(appleVerify('receipt==', TIER_MAP, PW)).resolves.toEqual({ ok: true, coins: IAP_TIERS.t999 });
-  });
-
-  it('returns the non-coin SKU (coins:0) for a subscription product_id', async () => {
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResp({
-          status: 0,
-          latest_receipt_info: [{ product_id: 'com.nw.sub.monthly', transaction_id: 'tx1', purchase_date_ms: '1000' }],
-        }),
-      ),
-    );
-    await expect(appleVerify('receipt==', TIER_MAP, PW)).resolves.toEqual({
-      ok: true,
-      coins: 0,
-      product: 'monthly_card',
-    });
+  it('returns the non-coin SKU (coins:0) for a subscription product id', async () => {
+    process.env.NW_IAP_BUNDLE = 'com.nw';
+    await expect(
+      appleVerify('tx1', TIER_MAP, oneTx({ productId: 'com.nw.sub.monthly', originalTransactionId: 'o1' })),
+    ).resolves.toEqual({ ok: true, coins: 0, product: 'monthly_card', originalTransactionId: 'o1' });
   });
 });
 
@@ -253,7 +216,7 @@ describe('createReceiptVerifier — per-platform credential gates', () => {
   });
 
   it('rejects stripe when NW_STRIPE_SECRET_KEY is absent', async () => {
-    process.env.NW_APPLE_PASSWORD = 'pw'; // some credential exists, so the dev stub stays off
+    process.env.NW_WX_PAY_MCH_ID = 'mch'; // some credential exists, so the dev stub stays off
     const verify = createReceiptVerifier(TIER_MAP);
     await expect(verify('stripe', 'pi_1')).resolves.toEqual({ ok: false, coins: 0 });
   });
@@ -269,7 +232,7 @@ describe('createReceiptVerifier — per-platform credential gates', () => {
   });
 
   it('rejects an unknown platform outright', async () => {
-    process.env.NW_APPLE_PASSWORD = 'pw';
+    process.env.NW_WX_PAY_MCH_ID = 'mch';
     const verify = createReceiptVerifier(TIER_MAP);
     await expect(verify('nintendo', 'whatever')).resolves.toEqual({ ok: false, coins: 0 });
   });

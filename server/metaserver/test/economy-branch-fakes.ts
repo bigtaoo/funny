@@ -23,6 +23,11 @@ import { FakeSocialsvc, fakeGateway } from './helpers/fakeClients.js';
  * that lets a handler skip its extra getWallet round trip.
  */
 export class BranchCommercial implements CommercialClient {
+  // Unused here; only present to satisfy `implements CommercialClient` (the webhook has its own tests).
+  async appleNotification(_a: { signedPayload: string }) {
+    return { ok: true as const, outcome: 'ignored' };
+  }
+
   readonly available: boolean;
   constructor(available = true) {
     this.available = available;

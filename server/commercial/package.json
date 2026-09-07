@@ -13,6 +13,7 @@
     "test:coverage": "npm run pretest --if-present && vitest run --coverage"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "^3.1.0",
     "@nw/shared": "*",
     "mongodb": "^6.10.0"
   },
