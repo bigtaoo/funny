@@ -25,6 +25,11 @@ import { AccountCache } from '../src/accountCache.js';
 const jwt = { secret: 'test-secret' };
 
 class FakeCommercial implements CommercialClient {
+  // Unused here; only present to satisfy `implements CommercialClient` (the webhook has its own tests).
+  async appleNotification(_a: { signedPayload: string }) {
+    return { ok: true as const, outcome: 'ignored' };
+  }
+
 
   // Not exercised by this file — the Apple auto-renewal sync has its own suites
   // (commercial/test/appleSubscriptionSync.e2e.test.ts, metaserver/test/iapAppleSync.test.ts).

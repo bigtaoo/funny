@@ -141,7 +141,7 @@ describe.skipIf(!mongo)('apple auto-renewable subscription sync (e2e)', () => {
   });
 
   it('grants nothing when Apple is unconfigured, and reports the wallet as it stands', async () => {
-    // No verifyAppleSubscriptions in deps at all — what a deployment without NW_APPLE_PASSWORD gets.
+    // No verifyAppleSubscriptions in deps at all — what a deployment with no Apple credentials gets.
     const unconfigured = new CommercialService({ cols: m.collections, now, rng: zero });
     const r = await unconfigured.subscriptionSyncApple({ accountId: 'f', receipt: 'r', clientPlatform: 'ios' });
     expect(r).toMatchObject({ ok: true, granted: 0, subscriptionExpiry: 0 });

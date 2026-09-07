@@ -74,22 +74,29 @@ export class AppleNotificationService {
     outcome: AppleNotificationOutcome,
     accountId: string | null,
   ): Promise<void> {
+    // Absent fields are omitted rather than written as undefined: the driver stores undefined as an
+    // explicit null, and then the obvious support query for exactly the rows that matter —
+    // `{ accountId: { $exists: false } }`, "which charges could we not route to a player" — matches
+    // nothing at all, because the field does exist and merely holds null.
+    const set: Record<string, unknown> = {
+      notificationType: n.notificationType,
+      outcome,
+      ts: this.core.now(),
+    };
+    const optional: Record<string, string | undefined> = {
+      subtype: n.subtype,
+      accountId: accountId ?? undefined,
+      transactionId: n.transaction?.transactionId,
+      originalTransactionId: n.transaction?.originalTransactionId,
+      productId: n.transaction?.productId,
+      consumptionRequestReason: n.consumptionRequestReason,
+    };
+    for (const [k, v] of Object.entries(optional)) if (v !== undefined) set[k] = v;
+
     try {
       await this.core.cols.appleNotifications.updateOne(
         { _id: n.notificationUUID },
-        {
-          $set: {
-            notificationType: n.notificationType,
-            subtype: n.subtype,
-            accountId: accountId ?? undefined,
-            transactionId: n.transaction?.transactionId,
-            originalTransactionId: n.transaction?.originalTransactionId,
-            productId: n.transaction?.productId,
-            consumptionRequestReason: n.consumptionRequestReason,
-            outcome,
-            ts: this.core.now(),
-          },
-        },
+        { $set: set },
         { upsert: true },
       );
     } catch {

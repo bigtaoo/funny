@@ -18,11 +18,33 @@
 
 | 平台 | 环境变量 | 申请位置 | receipt 格式 |
 |---|---|---|---|
-| Apple App Store | `NW_APPLE_PASSWORD` | App Store Connect →「App 内购买项目」→ App 专用共享密钥 | base64 receipt data |
+| Apple App Store | `NW_APPLE_IAP_KEY_ID` + `NW_APPLE_IAP_ISSUER_ID` + `NW_APPLE_IAP_PRIVATE_KEY_BASE64` + `NW_APPLE_APP_ID` | App Store Connect → 用户和访问 → 集成 → **App 内购买项目**（生成 In-App Purchase Key） | transaction id（客户端仍可传 StoreKit 1 收据，服务端本地拆出 id） |
 
-> **同一把密钥现在喂两条链路**（2026-09-03）：除了单次验单（`appleVerify`），自动续订订阅的续期同步
-> （`appleSubscriptionTransactions` ← `POST /iap/apple/sync`）也用它。缺失时**两条都 fail closed**：验单返
-> `INVALID_RECEIPT`，同步返 `granted: 0` 什么都不发（不报错——那条请求是客户端冷启动自己发的，没人在等结果）。
+> **⚠️ 2026-09-07 换了整条链路**：`verifyReceipt` + App 专用共享密钥（`NW_APPLE_PASSWORD`）已**全部删除**，
+> 换成 **App Store Server API**（Apple 官方 Node 库 `@apple/app-store-server-library`）。
+> `verifyReceipt` 自 2023-06-05 起弃用、不再有新功能，Apple 至今未公布终止日期——所以这不是被逼的迁移，
+> 是主动把债还掉。共享密钥在新链路里**没有任何用途**，删掉即可，不用留着。
+>
+> **四个变量都要有，缺一即 fail closed**（验单返 `INVALID_RECEIPT`，webhook 只记录不发放）：
+>
+> | 变量 | 从哪来 |
+> |---|---|
+> | `NW_APPLE_IAP_KEY_ID` | 生成 key 时显示的 Key ID |
+> | `NW_APPLE_IAP_ISSUER_ID` | 同一页面顶部的 Issuer ID |
+> | `NW_APPLE_IAP_PRIVATE_KEY_BASE64` | 下载的 `.p8`（**只能下载一次**）转 base64：`base64 -w0 SubscriptionKey_XXXX.p8` |
+> | `NW_APPLE_APP_ID` | App 的**数字** id（App Store Connect →「App 信息」），验签时用来确认这条负载是发给本 App 的 |
+>
+> `.p8` 走 base64 而不是原文，是因为 PEM 带换行，直接写进 `.env` / compose 插值会被撕碎。
+>
+> **这把 key 不是 CI 那把**：CI 上传构建用的是 ASC API Key（`ASC_API_KEY_*`，角色 App Manager），
+> 这里要的是 Users and Access → Integrations → **In-App Purchase** 下单独生成的 key，两者不通用。
+>
+> **根证书随代码走**：`SignedDataVerifier` 要求调用方自备 Apple 根证书，已 base64 内联在
+> `commercial/src/iap/appleRootCAs.ts`（**不是** `.cer` 文件——tsc 不会把二进制复制进 `dist/`，那样
+> dev 下能跑、容器里必死，正是本文件下面记的那类事故）。更新方法与指纹核对写在该文件头部。
+>
+> 续订不再靠客户端轮询收据，改由 **App Store Server Notifications V2** 推送（`POST /iap/apple/notifications`
+> → commercial 验签分派）。ASC 里要把通知 URL 配成 `https://api.gamestao.com/iap/apple/notifications`。
 > 机制见 [`IOS_RELEASE.md §4.1b`](IOS_RELEASE.md)。
 | Google Play | `NW_GOOGLE_SERVICE_ACCOUNT_JSON`（整串）+ `NW_GOOGLE_PACKAGE_NAME` | GCP 创建服务账户 JSON；Play Console 授予该账户「查看财务数据/管理订单」权限 | `${productId}:${purchaseToken}` |
 | 微信支付 V3 | `NW_WX_PAY_MCH_ID` + `NW_WX_PAY_API_KEY_V3` | 微信商户平台「API 安全」→ V3 APIKey（32 字节） | `transaction_id` |

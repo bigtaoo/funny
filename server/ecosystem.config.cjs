@@ -108,7 +108,10 @@ module.exports = {
         // stays a readable inventory of what the process needs, and so the deploy-config lint can check one
         // list for all three deployment paths. `??` (not `||`) on the two defaulted ones, matching the code:
         // an empty string must fall through to the default rather than override it.
-        NW_APPLE_PASSWORD: process.env.NW_APPLE_PASSWORD,
+        NW_APPLE_IAP_KEY_ID: process.env.NW_APPLE_IAP_KEY_ID,
+        NW_APPLE_IAP_ISSUER_ID: process.env.NW_APPLE_IAP_ISSUER_ID,
+        NW_APPLE_IAP_PRIVATE_KEY_BASE64: process.env.NW_APPLE_IAP_PRIVATE_KEY_BASE64,
+        NW_APPLE_APP_ID: process.env.NW_APPLE_APP_ID,
         NW_GOOGLE_SERVICE_ACCOUNT_JSON: process.env.NW_GOOGLE_SERVICE_ACCOUNT_JSON,
         NW_GOOGLE_PACKAGE_NAME: process.env.NW_GOOGLE_PACKAGE_NAME ?? 'com.nw.game',
         NW_WX_PAY_MCH_ID: process.env.NW_WX_PAY_MCH_ID,

@@ -216,7 +216,7 @@ describe('createReceiptVerifier — per-platform credential gates', () => {
   });
 
   it('rejects stripe when NW_STRIPE_SECRET_KEY is absent', async () => {
-    process.env.NW_APPLE_PASSWORD = 'pw'; // some credential exists, so the dev stub stays off
+    process.env.NW_WX_PAY_MCH_ID = 'mch'; // some credential exists, so the dev stub stays off
     const verify = createReceiptVerifier(TIER_MAP);
     await expect(verify('stripe', 'pi_1')).resolves.toEqual({ ok: false, coins: 0 });
   });
@@ -232,7 +232,7 @@ describe('createReceiptVerifier — per-platform credential gates', () => {
   });
 
   it('rejects an unknown platform outright', async () => {
-    process.env.NW_APPLE_PASSWORD = 'pw';
+    process.env.NW_WX_PAY_MCH_ID = 'mch';
     const verify = createReceiptVerifier(TIER_MAP);
     await expect(verify('nintendo', 'whatever')).resolves.toEqual({ ok: false, coins: 0 });
   });
