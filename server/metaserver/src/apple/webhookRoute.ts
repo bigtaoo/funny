@@ -19,7 +19,15 @@
 // recorded on the commercial side (the appleNotifications collection) instead, which is where anyone
 // investigating would look. Same reasoning the Paddle webhook already documents.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { createLogger } from '@nw/shared';
 import type { CommercialClient } from '../commercialClient.js';
+
+// NOT app.log: metaserver builds Fastify with `logger: false` (index.ts) and logs requests through a
+// @nw/shared onResponse hook instead, so every app.log.* call in a route is silently discarded. The
+// warnings below are the only trace an operator gets of a notification we could not act on — they
+// were dropped on the floor until 2026-09-07, which is precisely why a verification bug that failed
+// every sandbox payload went unnoticed while Apple recorded each delivery as a success.
+const log = createLogger('meta:apple');
 
 export interface AppleWebhookDeps {
   commercial: CommercialClient;
@@ -39,18 +47,18 @@ export function registerAppleWebhookRoute(app: FastifyInstance, deps: AppleWebho
       const result = await deps.commercial.appleNotification({ signedPayload });
       if (!result.ok) {
         // Apple unconfigured, or commercial refused — logged for operators, still 200 for Apple.
-        app.log.error(`apple notification not processed: ${result.error}`);
+        log.error(`notification not processed: ${result.error}`);
         return reply.code(200).send('unprocessed');
       }
       if (result.outcome !== 'granted' && result.outcome !== 'ignored') {
         // 'unlinked' (a charge we cannot attribute) and 'unverified' (a payload we could not trust)
         // both mean a player may have paid for something they did not get — worth a log line each.
-        app.log.warn(`apple notification outcome=${result.outcome}`);
+        log.warn(`notification outcome=${result.outcome}`);
       }
       return reply.code(200).send(result.outcome);
     } catch (e) {
       // commercial unreachable is the one genuinely retryable case, so let Apple resend.
-      app.log.error(`apple notification failed: ${(e as Error).message}`);
+      log.error(`notification failed: ${(e as Error).message}`);
       return reply.code(503).send('unavailable');
     }
   });
