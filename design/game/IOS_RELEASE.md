@@ -103,6 +103,25 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
    `-d '{"signedPayload":"not.a.jws"}'` 应回 **200 `unverified`**（`unprocessed` = 凭据没进容器）。
    **不配这个，自动续订就永远不会到账**——续期发生在 Apple 内部，没有 URL 我们收不到任何通知。
 
+5c. **用真通知验一遍**（curl 那两条只证明路由活着，不证明验签对）。ASC 页面上**没有**「发送测试通知」
+   按钮，只有 API：`POST /inApps/v1/notifications/test`，要拿 `.p8` 签一个 ES256 JWT
+   （`aud: appstoreconnect-v1`，`bid` = bundle id，`exp` ≤ iat+1h；Node 用
+   `sign({ key, dsaEncoding: 'ieee-p1363' })`，默认的 DER 编码 JOSE 不认）。
+   拿到 `testNotificationToken` 后再 `GET /inApps/v1/notifications/test/{token}` 看 Apple 自己的结论。
+   **App 没上架过时生产环境会回 401**，用 sandbox 主机 `api.storekit-sandbox.itunes.apple.com`。
+
+   三个都要对上，缺一个都不算通过：
+
+   | 看哪里 | 期望 |
+   |---|---|
+   | Apple 的 `GET .../test/{token}` | `firstSendAttemptResult: SUCCESS` |
+   | 我们的响应体（把同一 `signedPayload` 重放一次） | `ignored`（**不是 `unverified`**） |
+   | `appleNotifications` 集合 | 多一行 `{_id: notificationUUID, notificationType: TEST, outcome: ignored}` |
+
+   > ⚠️ **`SUCCESS` + 200 完全不代表成功。** 2026-09-07 第一次跑就是这样：Apple 记 SUCCESS、我们回 200，
+   > 而验签其实全败、库里 0 行、日志一片干净。两个缺陷叠在一起（见 §4.2b），第二个把第一个藏住了。
+   > 所以判断标准是**库里那一行**，不是 Apple 的投递结果，也不是 HTTP 状态码。
+
 6. **沙盒测试员**：用户和访问 → 沙盒 → 测试员，建一个（用没绑过 Apple ID 的邮箱别名）；
    真机上 设置 → App Store → 沙盒账户 登录它，再按 §12 走充值对账与续订演练。
 
@@ -252,6 +271,46 @@ B 批上了 StoreKit 2 + `appAccountToken` 之后**依然保留**，而且多了
 > **钱包渠道隔离（ADR-020，已实现，无需额外配置）**：iOS IAP 充值的金币落在钱包的 `recharged.apple` 桶，只有
 > 声明 `X-NW-Platform: ios`（原生壳自动发送，见 `client/src/net/ApiClient/base.ts`）的请求才可见/可花，不会与
 > web(Paddle) 充值的余额混用（反之亦然）。机制细节见 [`COMMERCIAL_DESIGN.md §11`](COMMERCIAL_DESIGN_IAP.md#11-钱包按支付渠道隔离adr-0202026-07-27)。
+
+### 4.2b 两个静默失败（2026-09-07 用真通知发现并修复）
+
+配好凭据、`/api` 路径也对之后，Apple 的真 TEST 通知**看起来**是成功的：Apple 记
+`firstSendAttemptResult: SUCCESS`，我们回 200。实际上验签全败、`appleNotifications` 集合 0 行、
+日志一个字都没有。两个独立缺陷，第二个把第一个藏住了。
+
+**① sandbox 回退分支是死代码**（`iap/appleServerApi.ts`）
+
+`verifyNotification` / `decodeTransaction` 都是「先用 production verifier，报错是"环境不对"才回退 sandbox」。
+判据写的是 `VerificationStatus.INVALID_ENVIRONMENT`（= 4），但 production verifier 对 sandbox 载荷抛的是
+**`INVALID_APP_IDENTIFIER`（= 3）**：production verifier 必须带 `appAppleId` 构造，而 sandbox 载荷里
+**根本没有 `appAppleId` 字段**，身份检查先失败，环境检查压根没跑到。于是 sandbox 的一切
+（沙盒测试员、TestFlight 购买、所有测试通知）全部 `unverified`。
+
+放宽到也重试 status 3 不损失安全性：`bundleId` 在两个环境都校验，别的 App 的合法载荷两边都过不去；
+production 载荷丢给 sandbox verifier 则会改在环境上被拒。
+
+**② 路由的日志出口是空操作**（`metaserver/src/apple/webhookRoute.ts`）
+
+路由用 `app.log.warn` / `app.log.error` 报告「验不过 / 认不到账号」，但 metaserver 的
+`index.ts` 明确 `logger: false`（请求日志走 `@nw/shared` 的 onResponse 钩子），
+**所以 metaserver 历史日志里 `app.log.*` 出现次数是 0**。已改用 `createLogger('meta:apple')`。
+
+> ✅ **同一个坑的其余实例已清完（2026-09-07）**：`metaserver/src/paddle/webhookRoute.ts`（8 处，
+> 包括注释写着「for CS/refund lookup」、报告月卡/年卡/新手礼包发货失败的那几条）和
+> `paddle/checkoutRoute.ts`（1 处，唯一记录 Paddle 建单 502 真实原因的地方）都改成了
+> `createLogger('meta:paddle')`。`metaserver/src` 里现在 `app.log` 出现次数为 0。
+>
+> **并且把坑本身封了**：`server/eslint.config.mjs` 新增一条只对 `metaserver/src/**` 生效的
+> `no-restricted-syntax`，选择器 `MemberExpression[object.name='app'][property.name='log']`，
+> 报错文案直接给出正确写法。理由是这个陷阱在调用点没有任何标记——类型能过、运行不报错、
+> 日志里什么都没有，只有读过 `index.ts` 的人才知道。只限 metaserver 是因为它是唯一关掉 Fastify
+> logger 的服务；测试文件本来就不在 lint 范围内（见 config 头注释），那里 `logger: true` 的
+> 构造仍可正常用 `app.log`。
+
+**为什么测试没抓到**：现有 Apple 测试全部注入假的 `AppleServerApi`，而这个假体位于
+「判断载荷属于哪个环境」**之上**。回归测试因此打在 `makeAppleServerApi` 这一层
+（`commercial/test/appleEnvFallback.test.ts`）：两个可重试状态都覆盖，并钉住「签名失败仍然 fail closed、
+不给第二次机会」。
 
 ## 5. 构建与发布
 

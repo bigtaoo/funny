@@ -124,9 +124,25 @@ function isNotFound(e: unknown): boolean {
   );
 }
 
-/** True when a payload verified against the wrong environment's verifier. */
+/**
+ * True when a payload was rejected for a reason the *other* environment's verifier could satisfy.
+ *
+ * INVALID_ENVIRONMENT is the obvious one. INVALID_APP_IDENTIFIER is the one that actually fires, and
+ * missing it made every sandbox payload fail closed (found 2026-09-07 with a real Apple TEST
+ * notification): the production verifier is built with `appAppleId` because `SignedDataVerifier`
+ * requires it there, but a sandbox payload carries no `appAppleId` at all — so the identifier check
+ * rejects it first and the environment check is never reached. Status 3, not 4.
+ *
+ * Retrying on it costs nothing in safety: `bundleId` is verified in BOTH environments, so a payload
+ * genuinely signed for another app still fails both verifiers, and a production payload offered to
+ * the sandbox verifier is then rejected on the environment instead.
+ */
 function isWrongEnvironment(e: unknown): boolean {
-  return e instanceof VerificationException && e.status === VerificationStatus.INVALID_ENVIRONMENT;
+  if (!(e instanceof VerificationException)) return false;
+  return (
+    e.status === VerificationStatus.INVALID_ENVIRONMENT ||
+    e.status === VerificationStatus.INVALID_APP_IDENTIFIER
+  );
 }
 
 /**

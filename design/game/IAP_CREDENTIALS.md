@@ -48,6 +48,8 @@
 > —— **`/api` 前缀不能省**：Caddy 只有 `handle_path /api/*` 转给 metaserver 并剥掉前缀，
 > 裸 `/iap/*` 掉进兜底的 `respond "Notebook Wars server" 200`，Apple 会当成投递成功、通知静默丢失。
 > 机制见 [`IOS_RELEASE.md §4.1b`](IOS_RELEASE.md)。
+> **验收标准是 `appleNotifications` 集合里多一行，不是 Apple 的 `SUCCESS` 也不是 HTTP 200** ——
+> 这两个在验签全败时也照样是绿的，见 [`IOS_RELEASE.md §4.2b`](IOS_RELEASE.md)。
 | Google Play | `NW_GOOGLE_SERVICE_ACCOUNT_JSON`（整串）+ `NW_GOOGLE_PACKAGE_NAME` | GCP 创建服务账户 JSON；Play Console 授予该账户「查看财务数据/管理订单」权限 | `${productId}:${purchaseToken}` |
 | 微信支付 V3 | `NW_WX_PAY_MCH_ID` + `NW_WX_PAY_API_KEY_V3` | 微信商户平台「API 安全」→ V3 APIKey（32 字节） | `transaction_id` |
 | Stripe（Web） | `NW_STRIPE_SECRET_KEY` | Stripe Dashboard → API keys（`sk_live_*` 生产 / `sk_test_*` 沙盒） | `payment_intent_id`（`pi_*`） |
