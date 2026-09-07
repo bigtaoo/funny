@@ -96,7 +96,11 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
    记下 Key ID 与 Issuer ID，下载 `.p8`（**只有这一次机会**）。再到「App 信息」抄下 App 的**数字 id**。
    四样填进 VPS commercial（§4.2）。**2026-09-07 起共享密钥不再使用**，`verifyReceipt` 整条链路已删除。
 5b. **配置 App Store Server Notifications V2**：同在「App 信息」页，把生产与沙盒的通知 URL 都指向
-   `https://api.gamestao.com/iap/apple/notifications`（同一个地址即可，负载里带 `environment` 区分）。
+   `https://api.gamestao.com/api/iap/apple/notifications`（同一个地址即可，负载里带 `environment` 区分）。
+   **`/api` 前缀不能省**——Caddy 只把 `/api/*` 转给 metaserver（`handle_path`，转发时剥掉前缀）；
+   裸 `/iap/*` 命中兜底 `respond "Notebook Wars server" 200`，Apple 收到 200 就不再重投。
+   填完自测：`curl -X POST <URL> -d '{}'` 应回 **400 `missing signedPayload`**；
+   `-d '{"signedPayload":"not.a.jws"}'` 应回 **200 `unverified`**（`unprocessed` = 凭据没进容器）。
    **不配这个，自动续订就永远不会到账**——续期发生在 Apple 内部，没有 URL 我们收不到任何通知。
 
 6. **沙盒测试员**：用户和访问 → 沙盒 → 测试员，建一个（用没绑过 Apple ID 的邮箱别名）；
@@ -491,13 +495,15 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       **点击顺序见 §4.0**；先确认 Paid Apps 协议是 Active，否则商品与沙盒都不可用
 - [x] ~~填 App 专用共享密钥~~ —— **作废（2026-09-07）**。`verifyReceipt` 已弃用，整条链路换成
       App Store Server API，共享密钥在新链路里没有任何用途。改成下面两项
-- [ ] **生成 In-App Purchase Key 并填进 VPS**（§4.0 第 5 步）：ASC → 用户和访问 → 集成 → App 内购买项目
-      → 生成 key（`.p8` **只能下载一次**）。四个变量：`NW_APPLE_IAP_KEY_ID` / `NW_APPLE_IAP_ISSUER_ID` /
-      `NW_APPLE_IAP_PRIVATE_KEY_BASE64` / `NW_APPLE_APP_ID`，写进凭据仓后 `push-env.py` 推送，
-      再 `up -d commercial`。**这是沙盒联调的前置**
+- [x] **生成 In-App Purchase Key 并填进 VPS**（§4.0 第 5 步）—— **2026-09-07 完成**。key `5JQRWMNU2U`
+      （ASC → 用户和访问 → **集成** → 左栏 **Keys** → **In-App Purchase**；Issuer ID 在该页顶部）。
+      四个变量已进 `secrets/funny/prod.yaml` 并推到 VPS，`NW_APPLE_PASSWORD` 一并删除。
+      容器内实测：base64 解出的 PEM 与源 `.p8` sha256 一致，Node `createPrivateKey` 认它是 EC 私钥
 - [ ] **在 ASC 配 App Store Server Notifications V2 的 URL**（§4.0 第 5b 步）：生产与沙盒都指向
-      `https://api.gamestao.com/iap/apple/notifications`。**不配就收不到任何续订通知**，
-      自动续订永远不会到账
+      `https://api.gamestao.com/api/iap/apple/notifications`。**不配就收不到任何续订通知**，
+      自动续订永远不会到账。
+      2026-09-07 已填过一次，但填的是**漏掉 `/api` 的裸路径** —— 那个地址被 Caddy 兜底规则接走并回 200，
+      Apple 会当成投递成功。**待改成上面带 `/api` 的地址**，改完用 §4.0 第 5b 步的 curl 自测确认
 - [x] VPS commercial 设 `NW_IAP_BUNDLE=com.gamestao.nivara`（2026-09-04，且已补上 compose 透传——
       在那之前 `.env` 里的凭据根本进不了容器，见 §4.2 的告警）
 - [x] 美术：iPhone 6.7"/6.5" + iPad 12.9" 截图（2026-08-18 出齐，`art/store/en/`，英文一套；德/中文换 locale 重跑即可）

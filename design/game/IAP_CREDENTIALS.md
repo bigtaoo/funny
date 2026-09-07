@@ -44,7 +44,9 @@
 > dev 下能跑、容器里必死，正是本文件下面记的那类事故）。更新方法与指纹核对写在该文件头部。
 >
 > 续订不再靠客户端轮询收据，改由 **App Store Server Notifications V2** 推送（`POST /iap/apple/notifications`
-> → commercial 验签分派）。ASC 里要把通知 URL 配成 `https://api.gamestao.com/iap/apple/notifications`。
+> → commercial 验签分派）。ASC 里要把通知 URL 配成 `https://api.gamestao.com/api/iap/apple/notifications`
+> —— **`/api` 前缀不能省**：Caddy 只有 `handle_path /api/*` 转给 metaserver 并剥掉前缀，
+> 裸 `/iap/*` 掉进兜底的 `respond "Notebook Wars server" 200`，Apple 会当成投递成功、通知静默丢失。
 > 机制见 [`IOS_RELEASE.md §4.1b`](IOS_RELEASE.md)。
 | Google Play | `NW_GOOGLE_SERVICE_ACCOUNT_JSON`（整串）+ `NW_GOOGLE_PACKAGE_NAME` | GCP 创建服务账户 JSON；Play Console 授予该账户「查看财务数据/管理订单」权限 | `${productId}:${purchaseToken}` |
 | 微信支付 V3 | `NW_WX_PAY_MCH_ID` + `NW_WX_PAY_API_KEY_V3` | 微信商户平台「API 安全」→ V3 APIKey（32 字节） | `transaction_id` |
