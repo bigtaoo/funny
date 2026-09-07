@@ -553,11 +553,10 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       `NWBridgeViewController` 换 StoreKit 2，`Transaction.updates` + `Transaction.unfinished` 两条流
       都消费并**先报服务端再 finish**，`appAccountToken` 随 `/bootstrap` 下发并成为通知的首选路由键，
       消耗数据同意做成大厅两按钮卡片（退款防御从此真的会发）。
-      ⚠️ **Swift 只有 CI 能判定**：`release-ios.yml` 手动跑一次、`destination: none`（只编译不上传）
-- [ ] **`Podfile.lock` 需要在下一次 CI 构建后刷新**：`platform :ios` 从 13.0 改到 15.0 之后，
-      committed lock 的 `PODFILE CHECKSUM` 已经对不上（本机 Windows 解不了 pod，算不出新值）。
-      CI 的 `pod install` 会重新生成，`gh run download <id> -n Podfile.lock` 取回来提交即可——
-      和 2026-09-07 第一次提交 lock 时同一套动作
+      ⚠️ **Swift 只有 CI 能判定**：`release-ios.yml` 手动跑、`destination: none`（只编译不上传）——**2026-09-07 run #6 全绿**（`Build IPA` success、`Upload to App Store Connect` skipped），即 StoreKit 2 的 Swift 真的能编译，iOS 15 也过了 `pod install` 的一致性断言
+- [x] **`Podfile.lock` 已随 iOS 15 的平台改动刷新** —— 2026-09-07：改 `platform :ios` 会让 committed
+      lock 的 `PODFILE CHECKSUM` 失效（本机 Windows 解不了 pod，算不出新值）。从那次编译检查构建的
+      artifact 取回（`gh run download <id> -n Podfile.lock`）后**只有 checksum 一行变**，pod 版本一个没动
 - [ ] 提交审核（**2026-07-21 确认：尚未提审**）
 
 > **2026-09-07 第二轮（B 批）新增的验证缺口**，别当成已保障：
