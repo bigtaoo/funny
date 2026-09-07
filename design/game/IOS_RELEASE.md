@@ -470,6 +470,14 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [ ] 端到端演练：发一个 `ota-v` 小改动 → 真机冷启动两次 → 确认自动更新到新版；断网启动 → 确认落回当前包不白屏
 - [ ] （硬化）确认插件 checksum 算法后，给 `ota-publish.yml` 的 manifest 补 `checksum` 字段
 
+> **⚠️ Apple 在本次上传里给了一条带期限的警告（编号 90068）**：
+> `MinimumOSVersion too low. This app has a MinimumOSVersion of 13.0. Starting in Spring 2027, all iOS
+> apps must have a MinimumOSVersion of 15.0 or later in order to be uploaded to App Store Connect or
+> submitted for distribution.`
+>
+> 即：把部署目标抬到 **iOS 15 不再只是 StoreKit 2 的前提（§6 B 批），而是 2027 年春季起的**
+> **硬性上传要求**。两件事合成一件做，且有了截止日期。
+
 ## 12. 待办 checklist
 
 - [x] Apple Developer：建 App ID（勾 IAP）+ ASC App 记录
@@ -504,10 +512,11 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       审核员的设备上早已同意过，等于点不到隐私政策（5.1.1(i)）。门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例）
 - [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可
-- [ ] **原生层拿 Xcode 编译一次**（现在也是 **§6 B 批的前置门槛**：要在已知能编译的基线上才能
-      改 StoreKit 2，否则失败了归因不清）：TestFlight 那版（2026-07-21）之后 `client/ios` 又进了 AdMob 桥
-      （`IAP_CREDENTIALS §2.1` 自述「未在 Xcode 里编译验证」，Google 改过 Swift API 命名）和 Capgo OTA 插件，
-      **当前 HEAD 的原生代码没有任何一次成功构建记录**
+- [x] **原生层拿 Xcode 编译一次** —— **2026-09-07 完成**（run #4，6分10秒，从 `main` 手动触发）。
+      自 2026-07-21 以来第一次成功构建：**那两个从未验证过的原生件都真的编译了**
+      （`Google-Mobile-Ads-SDK` 与 `CapgoCapacitorUpdater` 均出现在 Xcode 的编译产物里），AdMob 桥那些
+      照新命名盲写的 Swift API 没有对不上。IPA 39 MB 已 `UPLOAD SUCCEEDED` 传到 ASC，CFBundleVersion=4。
+      **这也解开了 §6 B 批的前置门槛**：现在有一个已知能编译的基线了。
 - [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面 IAP 商品先建好），四个非币商品各买一次
 - [ ] **沙盒验一次自动续订**（§4.1b）：沙盒订阅按加速时钟续期（1 个月 ≈ 5 分钟），买月卡 → 杀进程 →
       等一次续期 → 冷启动 → 确认 `subscriptionExpiry` 又往后 30 天且金币 +600；再冷启动一次确认**不重复发**。
