@@ -10,6 +10,8 @@
 - **乐观锁**：存档/钱包 `findOneAndUpdate({_id, rev})` 守卫；rev 不匹配返回 409
 - **三通道**：玩家只触达 `meta`(REST) + `gateway`(WS `/gw?token=`) + `game`(WS `?ticket=`)
 - **内部认证模型（S12-1，`@nw/shared/internalAuth.ts`，SERVER_API §8.0）**：内部端口三道纵深——①网络隔离(端口不绑公网/不经反代，第一道)；②玩家/服务密钥命名空间分离(内部路由**从不校验玩家 JWT**，只认 `X-Internal-Key`→玩家 JWT 结构性 401)；③集中校验器 `createInternalAuth`（timing-safe + caller 识别 + 可选 per-caller 密钥）。默认 `NW_INTERNAL_KEY` 单一共享(零变更)；配 `NW_INTERNAL_KEYS=caller=key,...` 启用 per-caller 严格(泄露局部化/可轮换/可识别)。调用方统一 `internalHeaders(caller, key)` 出站。**ticket HMAC 仍只用 `NW_INTERNAL_KEY`**(双方须同一把)，不走 per-caller 注册表。被调方=meta/commercial/matchsvc/gateway/analyticsvc
+- **内部 handler 必须返回 `Result` 信封（2026-09-07 踩到）**：`commercial/src/internalHttp.ts` 的 `send()` 把返回对象**原样**写出去，不补 `ok`。返回裸 `{ token }` 的 handler，在 metaserver 侧被 `if (!r.ok)` 当作失败静默丢掉——没有日志、没有报错，测试也照绿（fake 自己返回了 `{ok:true}`）。新 handler 一律 `Result<T>`。
+- **contract 片段里的 description 别写进 `{...}` 内联映射（2026-09-07 踩到）**：YAML flow mapping 里的**逗号会结束这个值**，后半句变成未知 schema keyword，Fastify strict mode 于是**拒绝构建整张路由表**（现象：metaserver e2e 全红，`unknown keyword: "..."`），真上线就是全服 REST 起不来。含逗号/冒号的描述用块式写法。⚠️ 这类错只在**跑完整 metaserver 测试**时暴露，且 e2e 读的是 `dist/`——改完 contract 要先 `tsc -b` 再跑。
 - **钱包权威**：`SaveData.wallet.coins` 是只读镜像；商业操作经 commercial → meta 编排 → 回推
 - **PvE 服务器权威**：通关/升级走 `/pve/clear`、`/pve/upgrade` API；`SyncPatch` 只同步 `equipped`/`flags`
 

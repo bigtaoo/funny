@@ -1,6 +1,12 @@
 require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
 
-platform :ios, '13.0'
+# iOS 15.0, not 13.0 (2026-09-07). Two reasons that arrived together: StoreKit 2 (the purchase flow
+# in AppDelegate.swift) requires iOS 15, and the App Store's own upload warning 90068 says a
+# MinimumOSVersion below 15.0 stops being accepted for upload or submission from spring 2027. There
+# are zero installed users, so nothing is dropped by moving. Keep this in step with
+# IPHONEOS_DEPLOYMENT_TARGET in App.xcodeproj -- assertDeploymentTarget below fails the pod install
+# if they disagree.
+platform :ios, '15.0'
 use_frameworks!
 
 # workaround to avoid Xcode caching of Pods that requires

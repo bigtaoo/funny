@@ -422,6 +422,13 @@ export const de: Record<TranslationKey, string> = {
   'shop.starterDraw': 'Starter-Erstzugpaket',
   'shop.starterGrowth': 'Starter-Wachstumspaket',
   'shop.alreadyOwned': 'Gekauft',
+  // ── Apple-Verbrauchsdaten-Einwilligung (IOS_RELEASE.md §4.1b): Bei einer Rückerstattungsanfrage fragt
+  //    Apple uns, wie viel des Kaufs verbraucht wurde. Apple verlangt, dass die App selbst diese
+  //    Einwilligung einholt, und ohne sie gar nicht zu antworten. Einmal gefragt, beide Antworten gespeichert ──
+  'iap.consentTitle': 'Daten bei einer Rückerstattung',
+  'iap.consentBody': 'Wenn du bei Apple eine Rückerstattung beantragst, fragt Apple uns, wie viel du von diesem Kauf schon verbraucht hattest (zum Beispiel wie viele Münzen du ausgegeben hast). Dürfen wir Apple diesen Wert nennen? Er wird nur bei einer Rückerstattungsanfrage übermittelt und betrifft nichts anderes — keine Chats, keine Decks.',
+  'iap.consentAllow': 'Erlauben',
+  'iap.consentDecline': 'Nicht erlauben',
   // ── Erinnerung an Monatskarten-Ablauf (GACHA_DESIGN §9.3 / G10) ──
   'shop.reminderSoonTitle': 'Monatskarte läuft bald ab',
   'shop.reminderSoonBody': 'Deine Monatskarte läuft in 3 Tagen ab — jetzt verlängern, um den täglichen Bonus zu behalten.',

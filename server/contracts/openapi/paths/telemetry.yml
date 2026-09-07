@@ -41,6 +41,16 @@
                         Only present when the server has NW_PADDLE_CLIENT_TOKEN configured; absent otherwise. The web client
                         needs this to open the Paddle checkout overlay. Must be declared here or the Fastify response
                         serializer strips it from the wire (fast-json-stringify only emits schema-declared properties).
+                    appleAccountToken:
+                      type: string
+                      format: uuid
+                      description: >-
+                        The `appAccountToken` this account's next StoreKit 2 purchase must carry
+                        (IOS_RELEASE.md §6) — a UUID the server allocated and stored against the
+                        account, which Apple then echoes back on every transaction and notification
+                        about that purchase. Only sent to a logged-in iOS client (`platform=ios`);
+                        every other caller receives nothing extra. Same serializer caveat as
+                        paddleClientToken: undeclared properties never reach the wire.
 
 /client/log:
   post:

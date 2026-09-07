@@ -22,6 +22,8 @@ interface SvcOpts {
   flags?: FeatureFlagCache | null;
   lokiPushUrl?: string | null;
   region?: string | null;
+  /** A commercial double for the appAccountToken lookup; the default `{}` is "unavailable". */
+  commercial?: unknown;
 }
 
 function makeSvc(opts: SvcOpts = {}): TelemetryService {
@@ -29,7 +31,7 @@ function makeSvc(opts: SvcOpts = {}): TelemetryService {
     cols: {} as never,
     jwt: JWT,
     now: () => NOW,
-    commercial: {} as never,
+    commercial: (opts.commercial ?? {}) as never,
     gateway: {} as never,
     gatewayPublicUrl: null,
     authRateLimit: 0,
@@ -138,6 +140,84 @@ describe('TelemetryService.bootstrap flag-evaluation context', () => {
     } finally {
       delete process.env.NW_PADDLE_CLIENT_TOKEN;
     }
+  });
+});
+
+// ── bootstrap: the appAccountToken an iOS purchase has to carry (IOS_RELEASE.md §6) ───────────────
+describe('TelemetryService.bootstrap appAccountToken', () => {
+  /** A commercial double counting how often it is actually asked (the cache is the point). */
+  function fakeCommercial(): { c: unknown; calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      c: {
+        available: true,
+        appleAccountToken: async ({ accountId }: { accountId: string }) => {
+          calls.push(accountId);
+          return { ok: true, token: `tok-${accountId}` };
+        },
+      },
+    };
+  }
+
+  const iosHeaders = (accountId: string) => ({
+    authorization: `Bearer ${signToken(accountId, JWT)}`,
+    'x-nw-platform': 'ios',
+  });
+
+  it('is delivered to a logged-in iOS caller', async () => {
+    const { c } = fakeCommercial();
+    const svc = makeSvc({ flags: null, commercial: c });
+    const out = (await svc.bootstrap(req({ query: {}, headers: iosHeaders('acc-1') }))) as {
+      data: Record<string, unknown>;
+    };
+    expect(out.data).toEqual({ flags: {}, appleAccountToken: 'tok-acc-1' });
+  });
+
+  it('is withheld from an anonymous iOS caller — there is no account to attach it to', async () => {
+    const { c, calls } = fakeCommercial();
+    const svc = makeSvc({ flags: null, commercial: c });
+    const out = (await svc.bootstrap(req({ query: {}, headers: { 'x-nw-platform': 'ios' } }))) as {
+      data: Record<string, unknown>;
+    };
+    expect(out.data).toEqual({ flags: {} });
+    expect(calls).toEqual([]);
+  });
+
+  it('is withheld from every other platform, which cannot use it', async () => {
+    // Read from X-NW-Platform (the shell declares it, ADR-020), not from the `platform` query param —
+    // that one carries the build target and does not know which shell is running it.
+    const { c, calls } = fakeCommercial();
+    const svc = makeSvc({ flags: null, commercial: c });
+    const out = (await svc.bootstrap(
+      req({ query: { platform: 'web' }, headers: { authorization: `Bearer ${signToken('acc-2', JWT)}` } }),
+    )) as { data: Record<string, unknown> };
+    expect(out.data).toEqual({ flags: {} });
+    expect(calls).toEqual([]);
+  });
+
+  it('asks commercial once per account, not once per poll', async () => {
+    // The client polls /bootstrap every 120 s. The token is allocated once and never changes, so a
+    // second round trip for it would be pure waste that scales with the player count.
+    const { c, calls } = fakeCommercial();
+    const svc = makeSvc({ flags: null, commercial: c });
+    await svc.bootstrap(req({ query: {}, headers: iosHeaders('acc-cached') }));
+    await svc.bootstrap(req({ query: {}, headers: iosHeaders('acc-cached') }));
+    await svc.bootstrap(req({ query: {}, headers: iosHeaders('acc-cached') }));
+    expect(calls).toEqual(['acc-cached']);
+  });
+
+  it('a commercial failure costs the token, not the bootstrap', async () => {
+    // Feature flags are what the cold start actually depends on; a purchase with no token still
+    // verifies and still grants (the appleTransactionLinks fallback covers it).
+    const svc = makeSvc({
+      flags: null,
+      commercial: { available: true, appleAccountToken: async () => { throw new Error('down'); } },
+    });
+    const out = (await svc.bootstrap(req({ query: {}, headers: iosHeaders('acc-3') }))) as {
+      data: Record<string, unknown>;
+    };
+    expect(out.data).toEqual({ flags: {} });
   });
 });
 

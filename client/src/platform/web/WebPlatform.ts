@@ -162,10 +162,10 @@ export class WebPlatform implements IPlatform {
     return isNativeShell() ? null : 'paddle';
   }
 
-  nativeIapPurchase(tierId: string): Promise<{ receipt: string }> {
+  nativeIapPurchase(tierId: string, appAccountToken?: string): Promise<{ receipt: string }> {
     const native = getNativeBilling();
     if (!native) return Promise.reject(new Error('no native billing bridge'));
-    return native.purchase(tierId);
+    return native.purchase(tierId, appAccountToken);
   }
 
   async openPaddleCheckout(transactionId: string, clientToken: string): Promise<{ completed: boolean }> {

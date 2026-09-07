@@ -186,24 +186,40 @@ Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**四�
 `EXPIRED` / `DID_FAIL_TO_RENEW` / `GRACE_PERIOD_EXPIRED` 同样只记录（订阅自己会到期，不需要动作）。
 
 **退款防滥用（CONSUMPTION_REQUEST）**：玩家向 Apple 申请退款时，Apple 给我们 **12 小时**回报消耗数据，
-不回答等于弃权。服务端逻辑已完成（`service/appleConsumption.ts` 从 ledger 算消耗比例），**但现在不发**：
-Apple 要求 `customerConsented: true`，而且要求这个同意由 **App 向玩家收集**；报 false 的提交 Apple 直接拒收，
-官方指引也是「没同意就不要响应」。同意 UI 是客户端工作（§6 的 B 批），到那时把 `customerHasConsented()`
-换成读真实同意即可——**一个函数的事**，其余已经就位。
+不回答等于弃权。服务端从 ledger 算消耗比例（`service/appleConsumption.ts`），**2026-09-07 起真的会发**——
+同意 UI 已随 B 批落地（ADR-082）：大厅的两按钮卡片，只对**付过钱的** iOS 玩家问一次
+（`platform/appleConsumptionConsent.ts`；没付过钱的人看到退款数据授权只是噪音），答案存
+`appleConsumptionConsents`，`POST /iap/apple/consumption-consent` 落库。
+两种答案都记：**「拒绝」和「没问过」不是一回事**，拒绝了就别再问。
+没有同意（拒绝了、或还没问）时**一个字都不发**：Apple 直接拒收 `customerConsented: false` 的提交，
+官方指引也是「没同意就不要响应」——`outcome: 'consumption_no_consent'` 记一行，仅此而已。
+卡片**没有 dismiss 区**，只有两个按钮：Apple 只接受 `true`，把「随便点了一下」当同意是替玩家撒谎。
 
 **冷启动对账仍在**（`POST /iap/apple/sync`），只是底下从「解析收据」换成「问 Apple 要权威历史」
 （`getTransactionHistory`）。它是 webhook 漏投、服务宕机窗口、URL 配错这三类情况的兜底。
-等 B 批上了 StoreKit 2 + `appAccountToken` 后再考虑删它。
+B 批上了 StoreKit 2 + `appAccountToken` 之后**依然保留**，而且多了一个身份：`pending()` 里订阅类交易的
+上报口就是它（§6 的路由表）。另外它现在**会补写 link 行**——2026-09-07 第一版文档承诺过这件事而代码没做，
+同日 B 批补上（ADR-082）。
 
 **真机仍未验证**（本机无 Xcode/沙盒）。逻辑侧覆盖：
-`server/commercial/test/appleNotifications.e2e.test.ts`（20 例，**用真的 `SignedDataVerifier`** 跑
+`server/commercial/test/appleNotifications.e2e.test.ts`（26 例，含 token 路由、并发首问收敛、同意两态，**用真的 `SignedDataVerifier`** 跑
 `Environment.LOCAL_TESTING`，含各 notificationType 分派、重投只发一次、未关联降级、购买→link→续期全链）
-+ `server/commercial/test/appleSubscriptionSync.e2e.test.ts`（15 例）
++ `server/commercial/test/appleSubscriptionSync.e2e.test.ts`（16 例，含 link 补写与 upsert 不重复）
++ 客户端侧 `client/test/appleUnfinishedTransactions.test.ts`（12 例，路由/不提前 finish/上限）、
+`client/test/appleConsumptionConsent.test.ts`（6 例）、`client/test/iosStoreKit2.test.ts`（8 例文本门禁）
 + `server/metaserver/test/appleWebhookRoute.test.ts`（12 例，路由层的状态码契约）
 + `server/metaserver/test/iapAppleSync.test.ts`（9 例）。
 
 > ⚠️ **验签本身没有测试保护**：`LOCAL_TESTING` 恰恰跳过的就是签名校验，Apple 也没发布可用的证书夹具。
 > 那部分是 Apple 自己的代码（有它自己的测试），我们盖的是解码之后的全部逻辑。
+>
+> **想补的话，路是通的**（2026-09-07 读过库的实现，尚未做）：`SignedDataVerifier` 的根证书是调用方给的，
+> 所以可以自签一套夹具链来验**我们这边的接线**（根证书列表 / `enableOnlineChecks=false` / environment /
+> bundleId）真的能拒掉伪造负载。要求：① 三段 `x5c`（leaf、intermediate、root），链长不等于 3 直接
+> `INVALID_CHAIN_LENGTH`；② intermediate 必须 `CA:true` 且带扩展 OID `1.2.840.113635.100.6.2.1`，
+> leaf 必须带 `1.2.840.113635.100.6.11.1`（Apple 私有 OID，库里硬校验）；③ `enableOnlineChecks=false`
+> 才不会去打 OCSP；④ 用 `Environment.SANDBOX`（`appAppleId` 可省）。openssl 能生成，夹具提交进仓库即可。
+> 三个用例：夹具链通过、换一个不受信根被拒、负载被篡改被拒。
 
 ### 4.2 服务端环境变量（VPS commercial）
 - `NW_IAP_BUNDLE=com.gamestao.nivara` —— **必须改**（默认 `com.nw` 会匹配不到商品，fail closed 发失败）。
@@ -249,39 +265,55 @@ git tag ios-v1.0.0 && git push origin ios-v1.0.0
 
 ## 6. StoreKit 桥（实现说明）
 
-> **分两批做（2026-09-07 定）**：A 批只动服务端，客户端一行不改；B 批才把客户端换成 StoreKit 2。
-> 拆开的理由是**能验证的不该被不能验证的卡住**——服务端在本机全可测，Swift 在本机完全编译不了。
+> **两批都已落地**：A 批服务端（2026-09-07，ADR-081），B 批客户端 StoreKit 2（同日，ADR-082）。
+> 拆两批的理由是**能验证的不该被不能验证的卡住**——服务端在本机全可测，Swift 在本机完全编译不了。
 
-**A 批（已完成，服务端）**
+**当前形态（StoreKit 2）**
 
-- JS 契约不变：`client/src/platform/iap.ts` 的 `NwBillingBridge`（`window.NWBilling.purchase(tierId) → { receipt }`）。
-- 原生实现不变：`ios/App/App/AppDelegate.swift` 的 `NWBridgeViewController`，仍是 StoreKit 1
-  （`SKProductsRequest` 取商品 → `SKPaymentQueue` 下单 → 读 `appStoreReceiptURL` 的 base64 收据回传 JS）。
-- **校验换了**：客户端照旧 POST `{ platform:'apple', receipt }` 到 `/iap/verify`，但服务端不再打
-  `verifyReceipt`。`commercial/src/iap/apple.ts` 先用 Apple 官方库的 `ReceiptUtility` **在本地**从收据里拆出
-  transaction id（不联网、不需要密钥），再走 **App Store Server API** 的 `getTransactionInfo` 拿权威交易，
-  `SignedDataVerifier` 验签后映射商品。生产查不到自动回退沙盒（对应旧的 21007 语义）。
-  这就是「服务端能先走一步」的关键：Apple 专门为这条迁移路径提供了 `ReceiptUtility`。
+- JS 契约：`client/src/platform/iap.ts` 的 `NwBillingBridge`。
+  `purchase(tierId, appAccountToken?) → { receipt }`（`receipt` 里现在装的是**裸 transaction id**，
+  字段名沿用是为了向下兼容：OTA 会把新 JS 塞进旧壳、也会把旧 JS 留在新壳上，两个方向都得能跑），
+  另加 `pending()` / `finish(transactionId)` / `receipt()`，三个都**特性探测**后再用。
+- 原生实现：`ios/App/App/AppDelegate.swift` 的 `NWBridgeViewController`。
+  `Product.products(for:)` → `product.purchase(options:)`（挂 `appAccountToken`）→ `VerificationResult`
+  解包 → 回传 `transaction.id`。**收据解析在客户端彻底没有了**。
+- 服务端不变：仍是 `POST /iap/verify { platform:'apple', receipt }`，A 批起就能吃裸 id
+  （`transactionIdFromReceipt` 拆不出来就当 id 用）。
 
-**B 批（待做，客户端）——前置条件：先拿到一次绿色 Xcode 构建**
+**三条规则，每条都是踩过的坑的反面**
 
-原生层自 2026-07-21 起没编译过，里面已经躺着未验证的 AdMob 桥和 Capgo 插件。**先推一个 `ios-v*` 把当前
-代码编译一次**，在已知能编译的基线上再改，否则失败了三个改动混在一起分不清是谁的锅。之后：
+1. **原生层一个 `finish()` 都不主动调。** 只有 JS 在**服务端确认发放之后**调 `finish(transactionId)`。
+   没 finish 的代价是 StoreKit 每次启动再送一次（幂等，噪音）；提前 finish 的代价是**钱收了、内容没发、
+   而且没有任何地方还记得这笔交易**。门禁：`client/test/iosStoreKit2.test.ts` 断言全文件只有一处 `.finish()`。
+   唯一例外是 `ALREADY_PURCHASED`（礼包已拥有）——那是真交付过了，不 finish 会永远重报。
+2. **`Transaction.updates` 和 `Transaction.unfinished` 两条流都要消费。** 前者是运行期到达的
+   （Ask-to-Buy 批准、别的设备恢复、续期），后者是**上一次安装欠下的**。只听 `updates` 会静默丢掉积压。
+   ⚠️ 这两条流会**吐出大量历史交易**：原生侧按 transactionId 去重 + 队列上限 50，JS 侧
+   （`platform/appleUnfinishedTransactions.ts`）每次最多报 20 笔、每会话一次，其余留给下次启动。
+3. **`.unverified` 一律不当购买、也不 finish。** 验不过的交易留在 StoreKit 队列里，而不是被悄悄消费掉。
 
-1. `IPHONEOS_DEPLOYMENT_TARGET` 与 `Podfile` 的 `platform :ios` 从 **13.0 抬到 15.0**——StoreKit 2 要求 iOS 15+。
-   零存量用户，抬了才能单路径落地；不抬就要留 StoreKit 1/2 双分支，而回退分支在本机和 CI 都永远测不到。
-2. `NWBridgeViewController` 换 StoreKit 2：`Product.products(for:)` → `product.purchase()` →
-   `VerificationResult` 解包 → 回传 `transaction.id` → `transaction.finish()`。
-   服务端**已经能接受裸 transaction id**（不是收据就当 id 用），所以这一步不需要服务端配合改动。
-3. **`Transaction.updates` 监听器必须先回报服务端再 `finish()`**——它是 StoreKit 2 里处理「购买调用之外
-   到达的交易」的地方（Ask-to-Buy 批准、跨设备恢复）。只 finish 会静默丢掉这些。
-   ⚠️ 已知问题：该流可能一次吐出大量历史交易，要做过滤与去重。
-4. `appAccountToken`：**购买前**由服务端分配 UUID 并存 `uuid → accountId`，搭 `/bootstrap` 下发
-   （那里已经在发 `paddleClientToken`，不新增往返）。它让通知**自带**账号信息，补上「扣款成功但客户端
-   没回报」时 `appleTransactionLinks` 写不下的那个洞；配合 `setAppAccountToken` 端点还能给历史交易补挂。
-5. 收集消耗数据同意（§4.1b 的 CONSUMPTION_REQUEST），把 `customerHasConsented()` 换成读真实同意。
-6. 之后才谈删掉收据式 `/iap/apple/sync`，以及把契约里的 `receipt` 字段改名为 `transactionId`
-   （A 批阶段客户端传的确实还是收据，那时叫 `receipt` 是诚实的）。
+**上报路由**（`platform/appleUnfinishedTransactions.ts`，按原生给的 `productKey` 分派）
+
+| productKey | 报给谁 | 为什么不是 `/iap/verify` |
+|---|---|---|
+| `monthly_card` / `year_card` | `POST /iap/apple/sync` | 它会把这笔交易背后**所有**周期都补齐，且绕过单卡门 |
+| `starter_draw` / `starter_growth` | `POST /starter/buy` | 非消耗型，按 `apple:<txid>` 幂等 |
+| 其它（金币档） | `POST /iap/verify` | 同上 |
+
+**`appAccountToken`（ADR-082）**
+
+服务端预分配 UUID → 存 `token → accountId`（`appleAccountTokens` 集合，`accountId` 唯一索引）→ 随
+`/bootstrap` 下发（只给**已登录且带 `X-NW-Platform: ios`** 的请求，metaserver 侧按 accountId 进程内缓存，
+因为 token 一次分配终身不变）→ 客户端购买时挂上 → Apple 在之后每条通知里回带。
+它补的是 `appleTransactionLinks` 那个**补不回的洞**：扣款成功但客户端没上报 → 从来没有 link 行 →
+该订阅之后所有通知永久无主。`resolveAccount` 先问 token，再问 link 表；两张网都留着（StoreKit 1 买的没 token）。
+
+**还没做的（不阻塞，且都记了原因）**
+
+- 契约里 `receipt` 字段没改名成 `transactionId`：改名要动 `/iap/verify` / `/starter/buy` /
+  月卡年卡四条端点、三个平台的客户端与微信/Google 分支，收益只是命名诚实度。等哪次顺路改。
+- 收据式 `/iap/apple/sync` 保留：它现在是 webhook 漏投的兜底网，也是 `pending()` 里订阅类的上报口。
+- `SKProduct.priceLocale` 回读真实本地价（§4.1 未决那条）仍未做。
 
 ## 7. 上架素材（素材清单见 store-assets-checklist）
 
@@ -530,10 +562,24 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] **发版前把当日分支合进 `main`**：支付隔离、自动续订、非个性化广告、设置页法律入口已随
       `04.09.2026` 分支经 PR #126 合入 `main`（2026-09-07 核：`git merge-base --is-ancestor` 确认）。
       下一个 `ios-v*` tag 打在 `main` 上即可带上这些提交
-- [ ] **§6 B 批：客户端换 StoreKit 2**（抬部署目标到 iOS 15 + `Transaction.updates` 回报 +
-      `appAccountToken` + 消耗数据同意 UI）。**不阻塞首版提审**：服务端已经能接 StoreKit 1 收据，
-      弃用的 `verifyReceipt` 已经不在链路上了
+- [x] **§6 B 批：客户端换 StoreKit 2** —— **2026-09-07 完成**（ADR-082）：部署目标 13.0 → **15.0**
+      （两处，`client/test/iosStoreKit2.test.ts` 钉住；顺带关掉 Apple 的 2027 春季死线），
+      `NWBridgeViewController` 换 StoreKit 2，`Transaction.updates` + `Transaction.unfinished` 两条流
+      都消费并**先报服务端再 finish**，`appAccountToken` 随 `/bootstrap` 下发并成为通知的首选路由键，
+      消耗数据同意做成大厅两按钮卡片（退款防御从此真的会发）。
+      ⚠️ **Swift 只有 CI 能判定**：`release-ios.yml` 手动跑、`destination: none`（只编译不上传）——**2026-09-07 run #6 全绿**（`Build IPA` success、`Upload to App Store Connect` skipped），即 StoreKit 2 的 Swift 真的能编译，iOS 15 也过了 `pod install` 的一致性断言
+- [x] **`Podfile.lock` 已随 iOS 15 的平台改动刷新** —— 2026-09-07：改 `platform :ios` 会让 committed
+      lock 的 `PODFILE CHECKSUM` 失效（本机 Windows 解不了 pod，算不出新值）。从那次编译检查构建的
+      artifact 取回（`gh run download <id> -n Podfile.lock`）后**只有 checksum 一行变**，pod 版本一个没动
 - [ ] 提交审核（**2026-07-21 确认：尚未提审**）
+
+> **2026-09-07 第二轮（B 批）新增的验证缺口**，别当成已保障：
+> ① **Swift 在本机既不能编译也没有单元测试**。`client/test/iosStoreKit2.test.ts` 是**读文本的门禁**
+> （部署目标两处一致、没有 StoreKit 1 调用残留、两条流都消费、`.finish()` 全文件只有一处、
+> JS 桥暴露 `pending`/`finish`），它能挡住命名漂移和「改了一处忘了另一处」，**挡不住编译错误**。
+> ② `appAccountToken` 与 `finish()` 的真实行为**只有真机沙盒能验**：本机没有 StoreKit 环境，
+> `Transaction.updates` 到底吐多少条历史交易也只能在真机上量。
+> ③ 大厅同意卡片的**布局只在桌面浏览器视口下看过**（iOS 壳里跑不到，因为它要 `NWBilling` 桥在场）。
 
 > **2026-09-04 复核**：以上未打勾项逐条用代码/CI 核过。三项曾经挂着的合规硬门其实早已实现，已在
 > [`store-assets-checklist.md §1.5`](../product/release/store-assets-checklist.md) 划掉（删除账号入口、

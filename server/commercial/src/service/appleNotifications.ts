@@ -22,7 +22,8 @@ import {
 import type { Result, WalletCore } from './base';
 import type { AppleNotification, AppleTransaction } from '../iap/appleServerApi';
 import { resolveNonCoinProduct } from '../iap/productResolve';
-import { buildConsumptionRequest, customerHasConsented } from './appleConsumption';
+import { buildConsumptionRequest } from './appleConsumption';
+import { accountForAppleAccountToken, hasAppleConsumptionConsent } from './appleAccount';
 
 /** What the webhook did with a notification. Recorded on the log row and returned for the caller's logs. */
 export type AppleNotificationOutcome =
@@ -57,13 +58,18 @@ export class AppleNotificationService {
   /**
    * Which account this notification concerns.
    *
-   * Apple sends no identifier of ours, so the answer comes from what we recorded at purchase time
-   * (db.ts's AppleTransactionLinkDoc). `appAccountToken` — the id Apple carries on behalf of the app
-   * — is checked first and is currently always absent: the shipped StoreKit 1 binary cannot set it.
-   * When the StoreKit 2 client lands (IOS_RELEASE.md §6 phase B) it becomes the primary key and this
-   * lookup becomes the fallback that heals purchases the token missed.
+   * Apple sends no identifier of ours, so both answers come from something we wrote down earlier.
+   * `appAccountToken` is asked first because it is the one that was recorded BEFORE the money moved
+   * (service/appleAccount.ts): it is present even when the purchase itself was never reported, which
+   * is exactly the case the link table cannot cover. The link table then answers for everything the
+   * token cannot — a purchase made by the StoreKit 1 binary, or a transaction old enough to predate
+   * the token — so neither mechanism replaces the other.
    */
   private async resolveAccount(tx: AppleTransaction): Promise<string | null> {
+    if (tx.appAccountToken) {
+      const byToken = await accountForAppleAccountToken(this.core, tx.appAccountToken);
+      if (byToken) return byToken;
+    }
     const link = await this.core.cols.appleTransactionLinks.findOne({ _id: tx.originalTransactionId });
     return link?.accountId ?? null;
   }
@@ -132,9 +138,9 @@ export class AppleNotificationService {
    * knows (appleConsumption.ts assembles it).
    *
    * Without the customer's consent nothing is sent at all: Apple rejects a submission that reports
-   * `customerConsented: false`, and its own guidance for that case is to not respond. The gate is
-   * currently always closed because collecting that consent needs app UI that does not exist yet —
-   * see appleConsumption.ts's header.
+   * `customerConsented: false`, and its own guidance for that case is to not respond. The consent is
+   * collected by the app (SettingsScene) and stored per account — an account that was never asked, or
+   * declined, produces `consumption_no_consent` and no call to Apple.
    */
   private async answerConsumptionRequest(
     n: AppleNotification,
@@ -143,7 +149,7 @@ export class AppleNotificationService {
   ): Promise<AppleNotificationOutcome> {
     const api = this.core.appleServerApi;
     if (!api) return 'ignored';
-    if (!customerHasConsented(accountId)) return 'consumption_no_consent';
+    if (!(await hasAppleConsumptionConsent(this.core, accountId))) return 'consumption_no_consent';
     try {
       const request = await buildConsumptionRequest(this.core, accountId, tx, n.consumptionRequestReason);
       await api.sendConsumption(tx.transactionId, request);

@@ -5,6 +5,7 @@ import type { IapProductKind } from '../iap';
 import type { Result, WalletCore } from './base';
 import type { PaddleEventDoc } from '../db';
 import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
+import { linkAppleSubscription } from './appleAccount';
 
 export interface RechargeHandlers {
   rechargeVerify(args: {
@@ -184,36 +185,6 @@ export class RechargeService {
       return { ok: true, coinsAfter, coinsGranted };
     }
 
-    /**
-     * Record which account owns an Apple subscription, keyed by the id Apple will quote in every
-     * future renewal notification (db.ts's AppleTransactionLinkDoc explains why this is the only
-     * moment the pairing is knowable). Upsert rather than insert: a Restore Purchases or a repeat
-     * verification re-asserts the same row instead of failing on a duplicate key, so the link heals.
-     *
-     * Best-effort by design — the purchase itself must not fail because the bookkeeping row didn't
-     * write. A missing link costs future renewals, which the cold-start sync still backfills; a
-     * refused purchase costs the sale outright.
-     */
-    private async linkAppleSubscription(
-      accountId: string,
-      originalTransactionId: string,
-      product: 'monthly_card' | 'year_card',
-    ): Promise<void> {
-      const now = this.core.now();
-      try {
-        await this.core.cols.appleTransactionLinks.updateOne(
-          { _id: originalTransactionId },
-          {
-            $set: { accountId, product, updatedAt: now },
-            $setOnInsert: { linkedAt: now },
-          },
-          { upsert: true },
-        );
-      } catch {
-        // Swallowed on purpose — see the doc comment above.
-      }
-    }
-
     async verifyNonCoinReceipt(args: {
       accountId: string;
       platform: string;
@@ -240,7 +211,7 @@ export class RechargeService {
         v.originalTransactionId &&
         (v.product === 'monthly_card' || v.product === 'year_card')
       ) {
-        await this.linkAppleSubscription(args.accountId, v.originalTransactionId, v.product);
+        await linkAppleSubscription(this.core, args.accountId, v.originalTransactionId, v.product);
       }
       try {
         await this.core.cols.recharges.insertOne({

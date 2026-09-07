@@ -344,3 +344,53 @@ owner 看着自家主城的训练面板问了一句：「队列 3/3、在训 722
   ② **CONSUMPTION_REQUEST 退款防御已实现但不发送**：Apple 要求 `customerConsented: true` 且要求同意由 App
   向玩家收集，报 false 会被直接拒收；同意 UI 属 B 批，到时把 `customerHasConsented()` 换成读真实同意即可。
   ③ 真机沙盒仍未验证（本机无 Xcode/沙盒）。
+
+## ADR-082 客户端换 StoreKit 2：部署目标抬到 iOS 15、finish 由服务端确认后触发、appAccountToken 随 /bootstrap 下发 — Accepted — 2026-09-07
+
+- **决策**：ADR-081 的 **B 批**落地。四件事一起做，因为它们互为前提：
+  1. **`IPHONEOS_DEPLOYMENT_TARGET` / `platform :ios` 13.0 → 15.0**。StoreKit 2 要 iOS 15，而 Apple 上传
+     警告 90068 又给了硬期限（**2027 年春季起 `MinimumOSVersion < 15.0` 不能再上传或提审**）。零存量用户，
+     所以这不是权衡，是两件事合成一件。两处必须同步，`Podfile` 的 `assertDeploymentTarget` 会在 runner 上
+     炸给你看——门禁前移到 `client/test/iosStoreKit2.test.ts`。
+  2. **`NWBridgeViewController` 换 StoreKit 2**：`Product.products(for:)` → `product.purchase(options:)` →
+     `VerificationResult` 解包 → 回传 `transaction.id`。服务端 A 批就能吃裸 transaction id，所以这一步
+     不需要服务端配合。收据解析从此在客户端彻底消失。
+  3. **`Transaction.updates` + `Transaction.unfinished` 两条流都消费**，队列交给 JS 上报。
+  4. **`appAccountToken`**：服务端预分配 UUID、存 `token → accountId`，随 `/bootstrap` 下发，购买时挂上。
+
+- **`finish()` 的时机是这批里唯一真正的设计选择**：**原生层一个 `finish()` 都不主动调**，只有 JS 在
+  **服务端确认发放之后**调 `window.NWBilling.finish(transactionId)` 才 finish。理由是失败形态不对称：
+  没 finish 的代价是 StoreKit 每次启动再送一次（幂等，噪音而已）；提前 finish 的代价是**钱收了、内容没发、
+  而且从此没有任何地方还记得这笔交易**——不可恢复且不可见。所以「报完再 finish」写死在
+  `client/test/iosStoreKit2.test.ts`（断言全文件只有一处 `.finish()`，且在 `handleFinish` 里）。
+  唯一的例外是 `ALREADY_PURCHASED`（新手礼包已拥有）：那是真的已交付，不 finish 会永远重报。
+
+- **为什么 `appAccountToken` 和 `appleTransactionLinks` 两张网都要**（ADR-081 已拍板，这里补落地形态）：
+  link 行只能在**购买被上报时**写下，所以它有个补不回的洞（扣款成功→App 被杀→之后该订阅所有通知永久无主）。
+  token 在**购买之前**就写好，洞就没了。反过来 token 也不能独当：StoreKit 1 买的交易没有 token。
+  于是 `resolveAccount` 先问 token，再问 link 表。**顺带修掉一处「文档承诺了但代码没做」**：
+  ADR-081 的文档说冷启动对账会补写 link，实际没有——`subscriptionSyncApple` 现在真的写了。
+
+- **token 走 `/bootstrap` 而不是新端点**：它必须在购买**之前**在手，而 `/bootstrap` 是客户端本来就早早会发的
+  那个请求（`paddleClientToken` 同理）。代价是客户端每 120 秒轮询一次 bootstrap → 每次都要问 commercial。
+  所以 metaserver 侧按 accountId 做**进程内缓存**（token 一次分配、终身不变，缓存不可能过期），并且只对
+  **带 `X-NW-Platform: ios` 且已登录**的请求计算——其它平台一行代码都不多跑。
+  用 header 而不是 `platform` 查询参数：header 是壳自己声明的（ADR-020），查询参数是构建目标，不认识壳。
+
+- **消耗数据同意 UI 落在大厅卡片，不是设置页**：`SettingsScene` 没有流式布局——每个区块都是 `h` 的手调分数，
+  两列已经排到 0.93h，再加一行就会在某个没人量过的视口上压住邻居（那个坑在 `panels.ts` 里有注释记着）。
+  而且这个问题**只需要问一次**，不需要常驻入口。所以做成大厅的**两按钮卡片**（`iap.consent*` 三语），
+  只对**付过钱的** iOS 玩家问一次（`totalRechargeCents > 0`；没付过钱的人看到退款数据授权只是噪音），
+  两种答案都存。**「点掉」不算答案**：这张卡没有 dismiss 区，只有两个按钮，因为 Apple 只接受 `true`，
+  而把「随便点了一下」当同意是替玩家撒谎。存下来之后 `customerHasConsented()` 读真值——ADR-081 那条
+  「退款防御已实现但发不出去」就此关闭。
+
+- **影响**：新增两个集合 `appleAccountTokens`（`_id` = token，`accountId` 唯一索引，并发首问靠它收敛）与
+  `appleConsumptionConsents`（`_id` = accountId）。新增契约端点 `POST /iap/apple/consumption-consent`。
+  新增客户端模块 `platform/appleUnfinishedTransactions.ts`（按 productKey 路由到三条既有发放端点，
+  单次最多 20 笔）与 `platform/appleConsumptionConsent.ts`。`release-ios.yml` 的 `destination` 多一个
+  `none`（只编译不上传；这个 input 在 2026-09-07 之前**根本没被引用过**）。
+
+- **仍然没有的保障**：① 验签本身依旧没有测试（同 ADR-081 ①，`LOCAL_TESTING` 跳过的正是它）；
+  ② **Swift 本机编译不了**，所以 `client/test/iosStoreKit2.test.ts` 是读文本的门禁，不是编译；
+  真正的判定只能是 CI（`release-ios.yml`，`destination: none` 即可）；③ 真机沙盒仍未验证。

@@ -20,7 +20,10 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createMongo, makeNewSave, type MongoHandle } from '@nw/shared';
-import { iapAppleSyncHandler } from '../src/service/economy/subscriptions.js';
+import {
+  iapAppleSyncHandler,
+  setAppleConsumptionConsentHandler,
+} from '../src/service/economy/subscriptions.js';
 import { BranchCommercial, makeCore, mkReply, mkReq } from './economy-branch-fakes.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -148,5 +151,58 @@ describe.skipIf(!mongo)('POST /iap/apple/sync', () => {
     const res = await iapAppleSyncHandler(core, mkReq(accountId, { receipt: 'RCPT' }, 'ios'), reply);
     expect(get()).toBeUndefined();
     expect(data(res).granted).toBe(1);
+  });
+});
+
+// ── POST /iap/apple/consumption-consent ───────────────────────────────────────────────────────────
+//
+// The one endpoint whose whole job is to record an answer to a question. It matters because the
+// server refuses to answer Apple's refund questions without a stored `true` — so a handler that
+// quietly accepted a non-boolean, or dropped the value, would turn the refund defence off again with
+// nothing looking broken.
+describe.skipIf(!mongo)('POST /iap/apple/consumption-consent', () => {
+  const m = mongo!;
+  let accountId: string;
+  let comm: BranchCommercial;
+  let core: ReturnType<typeof makeCore>;
+
+  beforeEach(async () => {
+    accountId = `acc-${randomUUID()}`;
+    comm = new BranchCommercial();
+    core = makeCore({ cols: m.collections, commercial: comm, now: () => NOW });
+  });
+
+  it('stores an allow', async () => {
+    const { reply, get } = mkReply();
+    const res = await setAppleConsumptionConsentHandler(
+      core, mkReq(accountId, { consented: true }, 'ios'), reply,
+    );
+    expect(get()).toBeUndefined();
+    expect((res as { data: { consented: boolean } }).data.consented).toBe(true);
+    expect(comm.consumptionConsents).toEqual([{ accountId, consented: true }]);
+  });
+
+  it('stores a refusal as a refusal — not as "never asked"', async () => {
+    const { reply } = mkReply();
+    await setAppleConsumptionConsentHandler(core, mkReq(accountId, { consented: false }, 'ios'), reply);
+    expect(comm.consumptionConsents).toEqual([{ accountId, consented: false }]);
+  });
+
+  it('rejects anything that is not a boolean, rather than coercing it', async () => {
+    // 'true', 1 and undefined would all be truthy somewhere downstream. A consent flag we inferred is
+    // exactly the thing Apple's requirement is about.
+    for (const consented of ['true', 1, null, undefined]) {
+      const { reply, get } = mkReply();
+      await setAppleConsumptionConsentHandler(core, mkReq(accountId, { consented }, 'ios'), reply);
+      expect(get()?.code).toBe(400);
+    }
+    expect(comm.consumptionConsents).toEqual([]);
+  });
+
+  it('503s when commercial is unavailable, instead of reporting a consent nobody stored', async () => {
+    const down = makeCore({ cols: m.collections, commercial: new BranchCommercial(false), now: () => NOW });
+    const { reply, get } = mkReply();
+    await setAppleConsumptionConsentHandler(down, mkReq(accountId, { consented: true }, 'ios'), reply);
+    expect(get()?.code).toBe(503);
   });
 });

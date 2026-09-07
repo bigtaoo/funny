@@ -23,13 +23,20 @@ on:
   workflow_dispatch:
     inputs:
       destination:
-        description: 'Upload destination'
+        # 'none' archives and exports the IPA but skips the App Store Connect upload -- the mode to
+        # use when the question is "does the native layer still compile", which is the only question
+        # the Windows dev machine cannot answer for itself. Uploading to answer it burns a build
+        # number and puts an untested binary in front of TestFlight testers for no reason.
+        # testflight/appstore both upload; ASC decides what a build is eligible for, so the two
+        # behave identically here (this input did nothing at all until 2026-09-07).
+        description: 'Upload destination (none = compile check only)'
         required: true
         default: 'testflight'
         type: choice
         options:
           - testflight
           - appstore
+          - none
 
 jobs:
   build-and-publish:
@@ -156,6 +163,7 @@ jobs:
           path: ${{ runner.temp }}/ipa/*.ipa
 
       - name: Upload to App Store Connect
+        if: github.event_name != 'workflow_dispatch' || inputs.destination != 'none'
         run: |
           mkdir -p ~/private_keys
           echo -n "${{ secrets.ASC_API_KEY_CONTENT_BASE64 }}" | base64 --decode > ~/private_keys/AuthKey_${{ secrets.ASC_API_KEY_ID }}.p8
