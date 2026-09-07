@@ -42,4 +42,26 @@ export default [
     plugins: { '@typescript-eslint': tseslint },
     rules: sharedRules({ js, tseslint, prettierConfig }),
   },
+  {
+    // metaserver-only (2026-09-07): `app.log.*` type-checks, runs, and goes nowhere. index.ts builds
+    // Fastify with `logger: false` and logs requests through a @nw/shared onResponse hook instead, so
+    // Fastify's own logger is a no-op in production — every route-level app.log call is discarded
+    // without a warning from the compiler or the runtime. Two routes had been writing "for CS/refund
+    // lookup" warnings about failed real-money grants into that void; a silently unverified Apple IAP
+    // payload went unnoticed the same way. Nothing marks the trap at the call site, so the linter does.
+    // Scoped to metaserver because it is the only service that disables the Fastify logger; if another
+    // one ever does, widen this. Test files are out of lint scope anyway (see the header), which is
+    // where the `logger: true` builds live — those are free to keep using app.log.
+    files: ['metaserver/src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[object.name='app'][property.name='log']",
+          message:
+            "metaserver runs Fastify with `logger: false`, so app.log.* output is discarded. Use a module-level `const log = createLogger('meta:<area>')` from @nw/shared instead.",
+        },
+      ],
+    },
+  },
 ];

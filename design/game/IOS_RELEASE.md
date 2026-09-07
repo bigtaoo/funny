@@ -277,8 +277,17 @@ production 载荷丢给 sandbox verifier 则会改在环境上被拒。
 `index.ts` 明确 `logger: false`（请求日志走 `@nw/shared` 的 onResponse 钩子），
 **所以 metaserver 历史日志里 `app.log.*` 出现次数是 0**。已改用 `createLogger('meta:apple')`。
 
-> ⚠️ **同一个坑还在别处**：`metaserver/src/paddle/webhookRoute.ts` 里那些注释写着「for support/CS lookup」
-> 的 `app.log.warn` / `app.log.error` 同样从未落到日志里。本次没动它（不在本任务范围），**待办**。
+> ✅ **同一个坑的其余实例已清完（2026-09-07）**：`metaserver/src/paddle/webhookRoute.ts`（8 处，
+> 包括注释写着「for CS/refund lookup」、报告月卡/年卡/新手礼包发货失败的那几条）和
+> `paddle/checkoutRoute.ts`（1 处，唯一记录 Paddle 建单 502 真实原因的地方）都改成了
+> `createLogger('meta:paddle')`。`metaserver/src` 里现在 `app.log` 出现次数为 0。
+>
+> **并且把坑本身封了**：`server/eslint.config.mjs` 新增一条只对 `metaserver/src/**` 生效的
+> `no-restricted-syntax`，选择器 `MemberExpression[object.name='app'][property.name='log']`，
+> 报错文案直接给出正确写法。理由是这个陷阱在调用点没有任何标记——类型能过、运行不报错、
+> 日志里什么都没有，只有读过 `index.ts` 的人才知道。只限 metaserver 是因为它是唯一关掉 Fastify
+> logger 的服务；测试文件本来就不在 lint 范围内（见 config 头注释），那里 `logger: true` 的
+> 构造仍可正常用 `app.log`。
 
 **为什么测试没抓到**：现有 Apple 测试全部注入假的 `AppleServerApi`，而这个假体位于
 「判断载荷属于哪个环境」**之上**。回归测试因此打在 `makeAppleServerApi` 这一层
