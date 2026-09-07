@@ -27,6 +27,7 @@ import { PromoService } from './service/promo';
 import { RewardsService } from './service/rewards';
 import { OrdersService } from './service/orders';
 import { AuditService } from './service/audit';
+import { AppleNotificationService } from './service/appleNotifications';
 
 export type { ServiceErr, WalletView, Result, CommercialDeps, Rarity } from './service/base';
 export type { CoinGainRow } from './service/audit';
@@ -47,6 +48,7 @@ export class CommercialService {
   private readonly rewards: RewardsService;
   private readonly orders: OrdersService;
   private readonly audit: AuditService;
+  private readonly appleNotifications: AppleNotificationService;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(...args: any[]) {
@@ -62,6 +64,7 @@ export class CommercialService {
     this.rewards = new RewardsService(this.core);
     this.orders = new OrdersService(this.core);
     this.audit = new AuditService(this.core);
+    this.appleNotifications = new AppleNotificationService(this.core);
   }
 
   /** GET /internal/wallet — the one WalletCore method called directly (not through a domain). */
@@ -88,6 +91,9 @@ export class CommercialService {
   subscriptionSyncApple(...args: Parameters<SubscriptionService['subscriptionSyncApple']>) { return this.subscription.subscriptionSyncApple(...args); }
   yearCardBuy(...args: Parameters<SubscriptionService['yearCardBuy']>) { return this.subscription.yearCardBuy(...args); }
   monthlyCardClaim(...args: Parameters<SubscriptionService['monthlyCardClaim']>) { return this.subscription.monthlyCardClaim(...args); }
+
+  // ── apple notifications (App Store Server Notifications V2) ──
+  appleNotification(...args: Parameters<AppleNotificationService['appleNotification']>) { return this.appleNotifications.appleNotification(...args); }
 
   // ── starter ──
   starterBuy(...args: Parameters<StarterService['starterBuy']>) { return this.starter.starterBuy(...args); }

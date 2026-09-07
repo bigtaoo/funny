@@ -6,6 +6,7 @@ import { startInternalHttp } from './internalHttp';
 import { loadCommercialEnv } from './config';
 import { loadInternalAuth, IAP_TIERS, createLogger, startHeartbeat, connectDailyCounterRedis } from '@nw/shared';
 import { createAppleSubscriptionReader, createReceiptVerifier } from './iap';
+import { createAppleServerApi } from './iap/appleServerApi';
 
 async function main(): Promise<void> {
   // Hardening (L2-3): IAP dev stub must never be enabled in production — enabling it accidentally
@@ -36,12 +37,17 @@ async function main(): Promise<void> {
   // Apple auto-renewable subscription sync (IOS_RELEASE.md §4.1b). No dev-stub counterpart on purpose —
   // see createAppleSubscriptionReader's doc; null here simply means the sync route grants nothing.
   const verifyAppleSubscriptions = createAppleSubscriptionReader();
+  // The same Apple configuration, exposed as the full API for the notification webhook (verifying
+  // Apple's signature on an unsolicited payload, and answering CONSUMPTION_REQUEST). Null when Apple
+  // is unconfigured, which makes the webhook record-only rather than trusting what it cannot verify.
+  const appleServerApi = createAppleServerApi();
 
   const svc = new CommercialService({
     cols: mongo.collections,
     now: () => Date.now(),
     verifyReceipt,
     verifyAppleSubscriptions,
+    appleServerApi,
     redis,
   });
   const server = startInternalHttp(

@@ -19,27 +19,38 @@ export interface IapVerifyResult {
    * the caller (commercial's subscription/starter mixins, via metaserver) require real proof of payment.
    */
   product?: IapProductKind;
+  /**
+   * Apple only. The id that stays the same across every renewal of one subscription, which is how a
+   * later renewal notification — carrying no account information of its own — is matched back to the
+   * player who bought it (`appleTransactionLinks`, db.ts). Recorded at purchase time because that is
+   * the one moment both facts are in hand: Apple's id, and an authenticated account.
+   */
+  originalTransactionId?: string;
 }
 
 export type VerifyReceipt = (platform: string, receipt: string) => Promise<IapVerifyResult>;
 
 /**
- * One auto-renewable subscription period read out of an Apple receipt
+ * One auto-renewable subscription period, as reported by the App Store Server API
  * (iap/apple.ts's appleSubscriptionTransactions). Apple issues a fresh transaction for every renewal,
- * so this is the unit a launch-time sync grants — one period, once, keyed by `transactionId`.
+ * so this is the unit a sync grants — one period, once, keyed by `transactionId`.
  */
 export interface AppleSubscriptionTx {
   /** Apple's per-transaction id. Becomes the grant's orderId as `apple:<transactionId>`, which is what
    *  makes syncing on every cold start idempotent rather than a monthly-card printing press. */
   transactionId: string;
+  /** Constant across this subscription's renewals — the account-routing key for renewal notifications. */
+  originalTransactionId: string;
   /** Which of the two subscription SKUs this period belongs to. */
   product: 'monthly_card' | 'year_card';
-  /** purchase_date_ms, used only to grant the periods in the order they were paid for. */
+  /** Purchase time, used only to grant the periods in the order they were paid for. */
   purchasedMs: number;
 }
 
-/** Reads the subscription periods out of an Apple receipt; null when Apple credentials are unconfigured. */
-export type VerifyAppleSubscriptions = ((receipt: string) => Promise<AppleSubscriptionTx[]>) | null;
+/** Reads a purchase's subscription periods from Apple; null when Apple credentials are unconfigured. */
+export type VerifyAppleSubscriptions =
+  | ((receiptOrTransactionId: string) => Promise<AppleSubscriptionTx[]>)
+  | null;
 
 // Same NW_IAP_PRODUCT_MAP convention as resolveCoinsFromProductId (productId:kind pairs), just with a
 // reserved kind set instead of a coin-tier lookup — the two never collide since IAP_TIERS keys are all

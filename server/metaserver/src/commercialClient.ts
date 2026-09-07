@@ -118,6 +118,15 @@ export interface CommercialClient {
     receipt: string;
     clientPlatform?: string;
   }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; granted: number; wallet?: WalletView }>>;
+  /**
+   * Hand an App Store Server Notification V2 to commercial, which verifies Apple's signature and acts
+   * on it. The payload is forwarded verbatim and deliberately not inspected here: the Apple
+   * credentials and the pinned root certificates live in commercial, so that is where a payload can
+   * be judged genuine (server/commercial/src/service/appleNotifications.ts).
+   */
+  appleNotification(args: {
+    signedPayload: string;
+  }): Promise<Body<{ outcome: string }>>;
   starterBuy(args: {
     accountId: string;
     productId: string;
@@ -360,6 +369,10 @@ export class HttpCommercialClient implements CommercialClient {
       '/internal/subscription/sync-apple',
       args,
     );
+  }
+
+  appleNotification(args: { signedPayload: string }) {
+    return this.post<{ outcome: string }>('/internal/apple/notification', args);
   }
 
   monthlyCardClaim(args: { accountId: string; dayKey: string; clientPlatform?: string }) {

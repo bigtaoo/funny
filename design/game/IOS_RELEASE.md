@@ -28,7 +28,7 @@
 
 - 后端地址烘焙成**绝对生产地址**（`api.gamestao.com`），因为原生没有同源后端（`webpack.config.js` 的 `isMobile` 分支，含 `__NW_SOCIAL_BASE__`）。
 - 入口 `src/entries/mobile.ts`：不做 web 版那种 `/version.json` 前台轮询 + `location.reload()`（原生 WKWebView 不能整页远程重载）。**JS/资源级的自动更新改由 OTA 热更新负责**（Capgo，见 §11），与 App Store 二进制更新解耦。
-- **支付走 Apple IAP**：原生壳在 WKWebView 注入 `window.NWBilling`（`ios/App/App/AppDelegate.swift` 的 `NWBridgeViewController`），客户端 `WebPlatform.iapKind()` 检测到后把充值路由到 Apple（而非 web 的 Paddle）。收据 → `POST /iap/verify` → `server/commercial` 的 `appleVerify`（StoreKit 1 `verifyReceipt`，已实现）。
+- **支付走 Apple IAP**：原生壳在 WKWebView 注入 `window.NWBilling`（`ios/App/App/AppDelegate.swift` 的 `NWBridgeViewController`），客户端 `WebPlatform.iapKind()` 检测到后把充值路由到 Apple（而非 web 的 Paddle）。收据 → `POST /iap/verify` → `server/commercial` 的 `appleVerify`（2026-09-07 起走 **App Store Server API**，不再是 `verifyReceipt`；§6）。
 
 **关键身份**：Bundle ID `com.gamestao.nivara`，App Store 名 `Nivara: Notebook Wars`（纯 `Nivara` 被占，见 §0），通用（iPhone+iPad，`TARGETED_DEVICE_FAMILY = "1,2"`）。
 
@@ -92,8 +92,13 @@ base64 -i AuthKey_XXXX.p8 -o asckey.b64
    往后叠加（`service/base.ts`），玩家白拿一段已退款的时长。
    **别开免费试用 / 促销价**：续期同步（§4.1b）按周期逐条补发，不认这些特殊周期类型。
 4. **2 个非消耗型**：`…starter.draw`（$0.99）、`…starter.growth`（$4.99）。
-5. **App 专用共享密钥**：App 内购买项目页右上角生成并复制 → 填进 VPS commercial 的 `NW_APPLE_PASSWORD`，
-   同时设 `NW_IAP_BUNDLE=com.gamestao.nivara` 后重启（§4.2）。**这一串是两条链路的凭据**：验单**和**续期同步。
+5. **In-App Purchase Key（不是共享密钥了）**：用户和访问 → 集成 → **App 内购买项目** → 生成 key，
+   记下 Key ID 与 Issuer ID，下载 `.p8`（**只有这一次机会**）。再到「App 信息」抄下 App 的**数字 id**。
+   四样填进 VPS commercial（§4.2）。**2026-09-07 起共享密钥不再使用**，`verifyReceipt` 整条链路已删除。
+5b. **配置 App Store Server Notifications V2**：同在「App 信息」页，把生产与沙盒的通知 URL 都指向
+   `https://api.gamestao.com/iap/apple/notifications`（同一个地址即可，负载里带 `environment` 区分）。
+   **不配这个，自动续订就永远不会到账**——续期发生在 Apple 内部，没有 URL 我们收不到任何通知。
+
 6. **沙盒测试员**：用户和访问 → 沙盒 → 测试员，建一个（用没绑过 Apple ID 的邮箱别名）；
    真机上 设置 → App Store → 沙盒账户 登录它，再按 §12 走充值对账与续订演练。
 
@@ -142,48 +147,67 @@ Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**四�
 同群组是 Apple 期望的形态，用户能在月↔年之间升降级而不产生两份并行订阅；服务端只有一个
 `subscription.expiry`，任何一档到账都是往后延，天然兼容。
 
-#### 自动续订怎么到账（2026-09-03 实装）
+#### 自动续订怎么到账（2026-09-07 重写）
 
-自动续订的钱在 **Apple 那边**扣，不经过 App，也不会有人通知我们的服务器。StoreKit 1 的表现是：每次续期在
-**app receipt 里多一条 transaction**。所以链路是「冷启动重读收据 → 交服务端 → 服务端问 Apple → 把没发过的
-周期补上」：
+自动续订的钱在 **Apple 那边**扣，不经过 App。旧做法是让客户端每次冷启动重读整份收据交给服务端；
+现在改成 **Apple 主动推**（App Store Server Notifications V2），冷启动同步退居为兜底的对账网。
 
 ```
-玩家冷启动 → 进大厅（已登录、存档已加载）
-  └─ syncAppleSubscription()  (client/src/platform/appleSubscriptionSync.ts，每会话最多一次)
-       ├─ window.NWBilling.receipt()      ← 新增的桥方法，读 appStoreReceiptURL
-       └─ POST /iap/apple/sync { receipt }
-            └─ commercial.subscriptionSyncApple
-                 ├─ appleSubscriptionTransactions()  ← verifyReceipt，**要全量历史**
-                 └─ 每条周期 → subscriptionCardBuy({ orderId: `apple:<transactionId>`, renewal: true })
+续期发生（玩家无感，App 可能根本没开）
+  └─ Apple → POST /iap/apple/notifications { signedPayload }   ← metaserver，无玩家鉴权
+       └─ 原样转发 → commercial /internal/apple/notification
+            ├─ SignedDataVerifier 验签（根证书内联在 iap/appleRootCAs.ts）
+            ├─ originalTransactionId → appleTransactionLinks 查出 accountId
+            └─ SUBSCRIBED / DID_RENEW → subscriptionCardBuy({ orderId: `apple:<transactionId>`, renewal: true })
 ```
+
+**为什么需要 `appleTransactionLinks` 这张表**：通知里只有 Apple 自己的 id，**没有任何属于我们的东西**
+（没有账号、没有 session、没有我们控制的 header）。唯一能把两边对上的瞬间是**首次购买**——那是一次带登录
+态的请求。所以 `verifyNonCoinReceipt` 成功时就把 `originalTransactionId → accountId` 写下来，之后每一次续期
+都靠它寻址。写入用 upsert 而非 insert：恢复购买 / 重装 / 卡过期后再买都会重新断言同一行，链接能自愈。
 
 三个设计点，每个都是踩过的坑的反面：
 
-1. **幂等键是 Apple 的 `transaction_id`，不是收据本身。** 收据 blob 每次刷新都可能不同（里面有
-   `receipt_creation_date`），拿它当键会在没有任何新购买时重复发放。`subscriptionCardBuy` 本来就按
-   `orderId` 幂等，`apple:<transactionId>` 直接复用了这套机制——所以每次冷启动都调是安全的。
+1. **幂等键是 Apple 的 `transactionId`。** `subscriptionCardBuy` 本来就按 `orderId` 幂等，
+   `apple:<transactionId>` 直接复用了这套机制——所以 **webhook 和冷启动对账可以完全重叠**，
+   同一个周期两边都到也只发一次。Apple 自己也是 at-least-once 投递。
 2. **`renewal: true` 绕过单卡门（且只绕过它）。** Apple 会在当前周期**结束前约一天**扣款，正是为了让订阅不断档；
    于是每一次续期到达时卡都还在生效中，原来的 `ALREADY_ACTIVE` 门会把它**全部拒掉**——钱扣了，什么都不给，
-   而玩家看不到任何失败可以投诉。绕过的只是「是不是已经有一张在跑」这个问题，`orderId` 幂等一点没松。
-   普通购买（玩家手点 Buy）的单卡门原样保留，有测试钉住。
-3. **拉全量历史（不设 `exclude-old-transactions`）。** 三个月没开 App 的玩家，收据里躺着三次续期；
-   只看最新一条就会静默少发两个月，而玩家根本无从察觉。全量拉 + `orderId` 幂等 = 不会少发也不会多发。
-   单次最多处理最近 60 个周期（`MAX_SYNC_PERIODS`）。
+   而玩家看不到任何失败可以投诉。普通购买（玩家手点 Buy）的单卡门原样保留，有测试钉住。
+3. **路由不到账号的通知要落盘，不能丢。** 没有 link 行 = Apple 扣了一个我们叫不出名字的人的钱。
+   这种行以 `outcome: 'unlinked'` 写进 `appleNotifications`，是任何人事后能发现它的唯一途径（查询用
+   `{ accountId: { $exists: false } }`）。玩家下次开 App 时冷启动对账会把余额补上，同时把缺的 link 写上。
 
-**退款**：带 `cancellation_date_ms` 的周期直接跳过（Apple 已经把钱要回去了）。已发出去的天数不回收——
-与现有 web/Paddle 通道的口径一致。
+**退款**：`REFUND` / `REVOKE` 只记录，**已发出去的天数不回收**——与现有 web/Paddle 通道的口径一致。
+`EXPIRED` / `DID_FAIL_TO_RENEW` / `GRACE_PERIOD_EXPIRED` 同样只记录（订阅自己会到期，不需要动作）。
 
-**这条链路没有真机验证过**（本机无 Xcode/沙盒），逻辑侧由
-`server/commercial/test/appleSubscriptionSync.e2e.test.ts`（15 例，含「续期撞上生效中的卡」「同一收据反复同步」
-「一个人的收据能不能给第二个账号发卡」「60 条上限保的是最新的」）
-+ `server/metaserver/test/iapAppleSync.test.ts`（9 例，路由层：`granted:0` 必须是 200、到账后 expiry 要落进存档、
-收据原样转发 + 平台声明、commercial 挂了/拒绝、发放后钱包读失败仍算成功）
-+ `client/test/appleSubscriptionSync.test.ts`（9 例）覆盖。
+**退款防滥用（CONSUMPTION_REQUEST）**：玩家向 Apple 申请退款时，Apple 给我们 **12 小时**回报消耗数据，
+不回答等于弃权。服务端逻辑已完成（`service/appleConsumption.ts` 从 ledger 算消耗比例），**但现在不发**：
+Apple 要求 `customerConsented: true`，而且要求这个同意由 **App 向玩家收集**；报 false 的提交 Apple 直接拒收，
+官方指引也是「没同意就不要响应」。同意 UI 是客户端工作（§6 的 B 批），到那时把 `customerHasConsented()`
+换成读真实同意即可——**一个函数的事**，其余已经就位。
+
+**冷启动对账仍在**（`POST /iap/apple/sync`），只是底下从「解析收据」换成「问 Apple 要权威历史」
+（`getTransactionHistory`）。它是 webhook 漏投、服务宕机窗口、URL 配错这三类情况的兜底。
+等 B 批上了 StoreKit 2 + `appAccountToken` 后再考虑删它。
+
+**真机仍未验证**（本机无 Xcode/沙盒）。逻辑侧覆盖：
+`server/commercial/test/appleNotifications.e2e.test.ts`（20 例，**用真的 `SignedDataVerifier`** 跑
+`Environment.LOCAL_TESTING`，含各 notificationType 分派、重投只发一次、未关联降级、购买→link→续期全链）
++ `server/commercial/test/appleSubscriptionSync.e2e.test.ts`（15 例）
++ `server/metaserver/test/appleWebhookRoute.test.ts`（12 例，路由层的状态码契约）
++ `server/metaserver/test/iapAppleSync.test.ts`（9 例）。
+
+> ⚠️ **验签本身没有测试保护**：`LOCAL_TESTING` 恰恰跳过的就是签名校验，Apple 也没发布可用的证书夹具。
+> 那部分是 Apple 自己的代码（有它自己的测试），我们盖的是解码之后的全部逻辑。
 
 ### 4.2 服务端环境变量（VPS commercial）
 - `NW_IAP_BUNDLE=com.gamestao.nivara` —— **必须改**（默认 `com.nw` 会匹配不到商品，fail closed 发失败）。
-- `NW_APPLE_PASSWORD=<App 专用共享密钥>` —— ASC →「App 内购买项目」→ App 专用共享密钥。
+- **App Store Server API 凭据四件套**（2026-09-07 取代共享密钥）：
+  `NW_APPLE_IAP_KEY_ID` / `NW_APPLE_IAP_ISSUER_ID` / `NW_APPLE_IAP_PRIVATE_KEY_BASE64`（`.p8` 的 base64）/
+  `NW_APPLE_APP_ID`（App 的数字 id）。缺一个就全链路 fail closed。取值与理由见
+  [`IAP_CREDENTIALS.md §1`](IAP_CREDENTIALS.md)。
+- ~~`NW_APPLE_PASSWORD`~~ —— **已删除**。旧的 `verifyReceipt` 链路不再存在，这个变量留着也没人读。
 - 生产必须 `NODE_ENV=production` 且 **不设** `NW_IAP_DEV`（详见 [`IAP_CREDENTIALS.md`](IAP_CREDENTIALS.md) §0）。
 
 > ⚠️ **只写 `.env` 不生效**（2026-09-04 踩到并已修）。compose 不把 `server/.env` 读进容器，只做 `${...}` 插值；
@@ -195,9 +219,11 @@ Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**四�
 > 三处全缺；已补齐，并由 `matchsvc/test/deploy-config.test.ts` 从 `commercial/src` 的 `process.env` 读取处反推覆盖，
 > 新凭据自动纳入。见 [`IAP_CREDENTIALS.md`](IAP_CREDENTIALS.md)。
 
-**当前进度（2026-09-04）**：ASC 里 9 个商品已建齐（5 消耗型 + 2 非消耗型 + 2 自动续订订阅），状态均为
-「准备提交」；VPS 已设 `NW_IAP_BUNDLE=com.gamestao.nivara` 并透传到容器（`printenv` 已确认）。**只差
-`NW_APPLE_PASSWORD`**——填进去并重启 commercial 后沙盒充值链路才通。
+**当前进度（2026-09-07）**：ASC 里 9 个商品已建齐（5 消耗型 + 2 非消耗型 + 2 自动续订订阅），状态均为
+「准备提交」；VPS 已设 `NW_IAP_BUNDLE=com.gamestao.nivara` 并透传到容器（`printenv` 已确认）。
+**还差两项外部动作**：① 生成 In-App Purchase Key 并填齐四个 `NW_APPLE_IAP_*` / `NW_APPLE_APP_ID`；
+② 在 ASC 配 App Store Server Notifications V2 的回调 URL。两者都做完，沙盒充值与自动续订才通。
+（共享密钥 `NW_APPLE_PASSWORD` 已作废，不需要了——见 §4.2。）
 
 > 客户端请求的 Product ID 由 `AppDelegate.swift` 自动派生自 App 的 Bundle ID（`<bundleId>.coins.<tierId>`），与上表一致，无需额外配置。
 
@@ -219,9 +245,39 @@ git tag ios-v1.0.0 && git push origin ios-v1.0.0
 
 ## 6. StoreKit 桥（实现说明）
 
-- JS 契约：`client/src/platform/iap.ts` 的 `NwBillingBridge`（`window.NWBilling.purchase(tierId) → { receipt }`）。
-- 原生实现：`ios/App/App/AppDelegate.swift` 的 `NWBridgeViewController`（`CAPBridgeViewController` 子类，经 `Main.storyboard` 挂载，**不新增工程文件**，随 App target 编译）。StoreKit 1：`SKProductsRequest` 取商品 → `SKPaymentQueue` 下单 → 成功后读 `appStoreReceiptURL` 的 base64 收据回传 JS。
-- 校验：客户端把 `{ platform:'apple', receipt }` POST 到 `/iap/verify`；`server/commercial/src/iap.ts` 的 `appleVerify` 打 Apple `verifyReceipt`（生产返 21007 自动回退 sandbox），读 `in_app[]` 最新 `product_id` 映射金币。
+> **分两批做（2026-09-07 定）**：A 批只动服务端，客户端一行不改；B 批才把客户端换成 StoreKit 2。
+> 拆开的理由是**能验证的不该被不能验证的卡住**——服务端在本机全可测，Swift 在本机完全编译不了。
+
+**A 批（已完成，服务端）**
+
+- JS 契约不变：`client/src/platform/iap.ts` 的 `NwBillingBridge`（`window.NWBilling.purchase(tierId) → { receipt }`）。
+- 原生实现不变：`ios/App/App/AppDelegate.swift` 的 `NWBridgeViewController`，仍是 StoreKit 1
+  （`SKProductsRequest` 取商品 → `SKPaymentQueue` 下单 → 读 `appStoreReceiptURL` 的 base64 收据回传 JS）。
+- **校验换了**：客户端照旧 POST `{ platform:'apple', receipt }` 到 `/iap/verify`，但服务端不再打
+  `verifyReceipt`。`commercial/src/iap/apple.ts` 先用 Apple 官方库的 `ReceiptUtility` **在本地**从收据里拆出
+  transaction id（不联网、不需要密钥），再走 **App Store Server API** 的 `getTransactionInfo` 拿权威交易，
+  `SignedDataVerifier` 验签后映射商品。生产查不到自动回退沙盒（对应旧的 21007 语义）。
+  这就是「服务端能先走一步」的关键：Apple 专门为这条迁移路径提供了 `ReceiptUtility`。
+
+**B 批（待做，客户端）——前置条件：先拿到一次绿色 Xcode 构建**
+
+原生层自 2026-07-21 起没编译过，里面已经躺着未验证的 AdMob 桥和 Capgo 插件。**先推一个 `ios-v*` 把当前
+代码编译一次**，在已知能编译的基线上再改，否则失败了三个改动混在一起分不清是谁的锅。之后：
+
+1. `IPHONEOS_DEPLOYMENT_TARGET` 与 `Podfile` 的 `platform :ios` 从 **13.0 抬到 15.0**——StoreKit 2 要求 iOS 15+。
+   零存量用户，抬了才能单路径落地；不抬就要留 StoreKit 1/2 双分支，而回退分支在本机和 CI 都永远测不到。
+2. `NWBridgeViewController` 换 StoreKit 2：`Product.products(for:)` → `product.purchase()` →
+   `VerificationResult` 解包 → 回传 `transaction.id` → `transaction.finish()`。
+   服务端**已经能接受裸 transaction id**（不是收据就当 id 用），所以这一步不需要服务端配合改动。
+3. **`Transaction.updates` 监听器必须先回报服务端再 `finish()`**——它是 StoreKit 2 里处理「购买调用之外
+   到达的交易」的地方（Ask-to-Buy 批准、跨设备恢复）。只 finish 会静默丢掉这些。
+   ⚠️ 已知问题：该流可能一次吐出大量历史交易，要做过滤与去重。
+4. `appAccountToken`：**购买前**由服务端分配 UUID 并存 `uuid → accountId`，搭 `/bootstrap` 下发
+   （那里已经在发 `paddleClientToken`，不新增往返）。它让通知**自带**账号信息，补上「扣款成功但客户端
+   没回报」时 `appleTransactionLinks` 写不下的那个洞；配合 `setAppAccountToken` 端点还能给历史交易补挂。
+5. 收集消耗数据同意（§4.1b 的 CONSUMPTION_REQUEST），把 `customerHasConsented()` 换成读真实同意。
+6. 之后才谈删掉收据式 `/iap/apple/sync`，以及把契约里的 `receipt` 字段改名为 `transactionId`
+   （A 批阶段客户端传的确实还是收据，那时叫 `receipt` 是诚实的）。
 
 ## 7. 上架素材（素材清单见 store-assets-checklist）
 
@@ -414,6 +470,14 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [ ] 端到端演练：发一个 `ota-v` 小改动 → 真机冷启动两次 → 确认自动更新到新版；断网启动 → 确认落回当前包不白屏
 - [ ] （硬化）确认插件 checksum 算法后，给 `ota-publish.yml` 的 manifest 补 `checksum` 字段
 
+> **⚠️ Apple 在本次上传里给了一条带期限的警告（编号 90068）**：
+> `MinimumOSVersion too low. This app has a MinimumOSVersion of 13.0. Starting in Spring 2027, all iOS
+> apps must have a MinimumOSVersion of 15.0 or later in order to be uploaded to App Store Connect or
+> submitted for distribution.`
+>
+> 即：把部署目标抬到 **iOS 15 不再只是 StoreKit 2 的前提（§6 B 批），而是 2027 年春季起的**
+> **硬性上传要求**。两件事合成一件做，且有了截止日期。
+
 ## 12. 待办 checklist
 
 - [x] Apple Developer：建 App ID（勾 IAP）+ ASC App 记录
@@ -425,8 +489,15 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] 定下月卡/年卡形态：**自动续订订阅，同一订阅群组**，续期到账链路已实装（§4.1b）
 - [x] ASC 建 9 个商品（5 消耗型 + 2 自动续订订阅 + 2 非消耗型）——**2026-09-04 建齐，状态「准备提交」**。
       **点击顺序见 §4.0**；先确认 Paid Apps 协议是 Active，否则商品与沙盒都不可用
-- [ ] 填 App 专用共享密钥（共享密钥是两条链路的凭据——验单**和**续期同步）：写进 VPS 的
-      `NW_APPLE_PASSWORD` 后 `up -d commercial`。**这是沙盒联调唯一还缺的一项**
+- [x] ~~填 App 专用共享密钥~~ —— **作废（2026-09-07）**。`verifyReceipt` 已弃用，整条链路换成
+      App Store Server API，共享密钥在新链路里没有任何用途。改成下面两项
+- [ ] **生成 In-App Purchase Key 并填进 VPS**（§4.0 第 5 步）：ASC → 用户和访问 → 集成 → App 内购买项目
+      → 生成 key（`.p8` **只能下载一次**）。四个变量：`NW_APPLE_IAP_KEY_ID` / `NW_APPLE_IAP_ISSUER_ID` /
+      `NW_APPLE_IAP_PRIVATE_KEY_BASE64` / `NW_APPLE_APP_ID`，写进凭据仓后 `push-env.py` 推送，
+      再 `up -d commercial`。**这是沙盒联调的前置**
+- [ ] **在 ASC 配 App Store Server Notifications V2 的 URL**（§4.0 第 5b 步）：生产与沙盒都指向
+      `https://api.gamestao.com/iap/apple/notifications`。**不配就收不到任何续订通知**，
+      自动续订永远不会到账
 - [x] VPS commercial 设 `NW_IAP_BUNDLE=com.gamestao.nivara`（2026-09-04，且已补上 compose 透传——
       在那之前 `.env` 里的凭据根本进不了容器，见 §4.2 的告警）
 - [x] 美术：iPhone 6.7"/6.5" + iPad 12.9" 截图（2026-08-18 出齐，`art/store/en/`，英文一套；德/中文换 locale 重跑即可）
@@ -441,16 +512,21 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       审核员的设备上早已同意过，等于点不到隐私政策（5.1.1(i)）。门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例）
 - [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可
-- [ ] **原生层拿 Xcode 编译一次**：TestFlight 那版（2026-07-21）之后 `client/ios` 又进了 AdMob 桥
-      （`IAP_CREDENTIALS §2.1` 自述「未在 Xcode 里编译验证」，Google 改过 Swift API 命名）和 Capgo OTA 插件，
-      **当前 HEAD 的原生代码没有任何一次成功构建记录**
+- [x] **原生层拿 Xcode 编译一次** —— **2026-09-07 完成**（run #4，6分10秒，从 `main` 手动触发）。
+      自 2026-07-21 以来第一次成功构建：**那两个从未验证过的原生件都真的编译了**
+      （`Google-Mobile-Ads-SDK` 与 `CapgoCapacitorUpdater` 均出现在 Xcode 的编译产物里），AdMob 桥那些
+      照新命名盲写的 Swift API 没有对不上。IPA 39 MB 已 `UPLOAD SUCCEEDED` 传到 ASC，CFBundleVersion=4。
+      **这也解开了 §6 B 批的前置门槛**：现在有一个已知能编译的基线了。
 - [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面 IAP 商品先建好），四个非币商品各买一次
 - [ ] **沙盒验一次自动续订**（§4.1b）：沙盒订阅按加速时钟续期（1 个月 ≈ 5 分钟），买月卡 → 杀进程 →
       等一次续期 → 冷启动 → 确认 `subscriptionExpiry` 又往后 30 天且金币 +600；再冷启动一次确认**不重复发**。
       这是整条链路里唯一没法在本机验的部分
-- [ ] **发版前把当日分支合进 `main`**：iOS 相关的支付隔离、自动续订、非个性化广告、设置页法律入口都还在
-      日分支上（2026-09-04 核：`main` 落后 18 个提交）。`ios-v*` tag 要打在包含这些提交的 ref 上，
-      否则 CI 构建的是没修过的那版
+- [x] **发版前把当日分支合进 `main`**：支付隔离、自动续订、非个性化广告、设置页法律入口已随
+      `04.09.2026` 分支经 PR #126 合入 `main`（2026-09-07 核：`git merge-base --is-ancestor` 确认）。
+      下一个 `ios-v*` tag 打在 `main` 上即可带上这些提交
+- [ ] **§6 B 批：客户端换 StoreKit 2**（抬部署目标到 iOS 15 + `Transaction.updates` 回报 +
+      `appAccountToken` + 消耗数据同意 UI）。**不阻塞首版提审**：服务端已经能接 StoreKit 1 收据，
+      弃用的 `verifyReceipt` 已经不在链路上了
 - [ ] 提交审核（**2026-07-21 确认：尚未提审**）
 
 > **2026-09-04 复核**：以上未打勾项逐条用代码/CI 核过。三项曾经挂着的合规硬门其实早已实现，已在

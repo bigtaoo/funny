@@ -17,7 +17,17 @@ end
 target 'App' do
   capacitor_pods
   # Add your Pods here
-  pod 'Google-Mobile-Ads-SDK'
+  # Pinned to the major version that is actually known to build. Left unconstrained until
+  # 2026-09-07, which meant every CI run resolved whatever was newest that day: the bridge in
+  # AppDelegate.swift was written on 2026-07-21 against v12's API names and first compiled -- seven
+  # weeks later -- against 13.9.0, a major bump nobody chose. It happened to still compile; the v9
+  # -> v10 bump that renamed every GADXxx symbol to Xxx would not have.
+  #
+  # 13.9.0 is what shipped in run #4 (read out of GoogleMobileAdsResources.bundle inside the
+  # uploaded IPA, not inferred). `~> 13.9` keeps patch and minor fixes flowing and stops the next
+  # major from arriving unannounced. Bump it deliberately, after checking the release notes for
+  # renamed APIs -- nothing here can compile-check Swift, so a surprise major is found in CI at best.
+  pod 'Google-Mobile-Ads-SDK', '~> 13.9'
 end
 
 post_install do |installer|

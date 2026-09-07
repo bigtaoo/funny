@@ -264,4 +264,5 @@ docker compose -f docker-compose.cloud.yml --env-file .env up -d
 
 - 特效编辑器（vfx-editor）与关卡编辑器（level-editor）**发布配置均已就绪**（各一份 `wrangler/*.jsonc` + GitHub Action，见 §6），设开关 repo variable 并 push/手动 Run 即上线。
 - 全球多区域演进见 `DEPLOY_TOPOLOGY.md`（ADR-019）：Meta 共享 + 对战层按区隔离。本文件是单区起步版，选 VPS 商时心里装着「以后每区复制一套 matchsvc/gameserver」。
-- 备份：Atlas M0 自带快照；如需导出见 `server/deploy/backup-mongo.sh`（连接串改成 Atlas 即可）。
+- 备份：Atlas M0 自带快照；VPS 上另有每日 `mongodump` 导出，crontab `0 2 * * *` 跑 `server/deploy/backup-mongo-docker-wrapper.sh`（用一次性 `mongo:7` 容器跑 `backup-mongo.sh`，因为 host 上没有 mongodump 二进制），落 `/root/backups/mongo/dump_*.tar.gz`，`NW_BACKUP_KEEP_DAYS=7` 自动清旧的。**2026-09-07 发现并修复**：该 wrapper 脚本自 07-30 创建起就没加执行位，cron 静默失败了 39 天（`/var/log/nw-backup.log` 全是 `Permission denied`，期间唯一一份存活 dump 是 07-30 手动跑的那次）；已 `chmod +x` 并手动补跑一次验证。**运维提示**：这个失败模式 cron 不会报警，得去 VPS 上看 `/var/log/nw-backup.log` 或数一下 `/root/backups/mongo/` 里最新文件的日期。
+- **VPS 磁盘 / docker build cache**：docker 在这台机器上用 containerd overlayfs 快照，实际存储在 `/var/lib/containerd` 而非 `/var/lib/docker`（后者只有几百 MB，看错目录会漏掉大头）。build cache 不会自己过期，2026-09-07 发现攒了 11.99GB（675 层，全部 inactive，跨两个月的构建历史），把根分区从 77% 推到快满；已 `docker builder prune -af` 清掉，另加 crontab `0 3 * * 0`（周日 3am，避开 2am 的 mongo 备份）跑同一条命令做每周清理，日志 `/var/log/nw-docker-prune.log`。

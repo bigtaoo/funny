@@ -49,6 +49,11 @@ interface OrderRow {
  * (POOL_UNAVAILABLE, PROMO_EXPIRED/EXHAUSTED, ALREADY_ACTIVE, wallet-unavailable, fateGained>0, ...).
  */
 class FakeCommercial implements CommercialClient {
+  // Unused here; only present to satisfy `implements CommercialClient` (the webhook has its own tests).
+  async appleNotification(_a: { signedPayload: string }) {
+    return { ok: true as const, outcome: 'ignored' };
+  }
+
   readonly available: boolean;
   constructor(available = true) {
     this.available = available;

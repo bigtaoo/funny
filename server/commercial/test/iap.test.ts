@@ -4,6 +4,9 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
 import { IAP_TIERS, DEV_STUB_DEFAULT_TIER } from '@nw/shared';
 import { createReceiptVerifier } from '../src/iap';
+import { appleVerify } from '../src/iap/apple';
+import type { AppleTransaction } from '../src/iap/appleServerApi';
+import { fakeAppleApi, tx } from './appleFakes';
 
 // Exercise the real canonical tier map so the built-in `${bundle}.coins.<tierId>` convention is validated end to end.
 const TIER_MAP = IAP_TIERS;
@@ -29,139 +32,85 @@ const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 afterEach(() => {
   vi.unstubAllGlobals();
   // clear environment variables that may have been set during a test
-  delete process.env.NW_APPLE_PASSWORD;
+  delete process.env.NW_APPLE_IAP_KEY_ID;
+  delete process.env.NW_APPLE_IAP_ISSUER_ID;
+  delete process.env.NW_APPLE_IAP_PRIVATE_KEY_BASE64;
+  delete process.env.NW_APPLE_APP_ID;
   delete process.env.NW_GOOGLE_SERVICE_ACCOUNT_JSON;
   delete process.env.NW_GOOGLE_PACKAGE_NAME;
   delete process.env.NW_IAP_BUNDLE;
   delete process.env.NW_IAP_PRODUCT_MAP;
   delete process.env.NW_IAP_DEV;
+  delete process.env.NW_STRIPE_SECRET_KEY;
   process.env.NODE_ENV = ORIGINAL_NODE_ENV;
 });
 
 // ── Apple ────────────────────────────────────────────────────────────────────
 
 describe('apple verify', () => {
-  const password = 'shared-secret';
+  // 2026-09-07: verifyReceipt (one HTTP POST authenticated by a shared secret) was replaced by the
+  // App Store Server API, so these no longer stub `fetch` — the transport, the JWT and the signature
+  // check are all Apple's library's job now. What is still ours, and what these cover, is which
+  // verified transaction becomes how many coins.
+  const api = (transactions: AppleTransaction[]) => fakeAppleApi({ transactions });
 
-  function makeVerifier() {
-    process.env.NW_APPLE_PASSWORD = password;
+  it('returns coins for a coin-tier product', async () => {
     process.env.NW_IAP_BUNDLE = BUNDLE;
-    return createReceiptVerifier(TIER_MAP);
-  }
-
-  it('returns coins for valid prod receipt with smallest tier product', async () => {
-    mockFetch((_url, init) => {
-      const body = JSON.parse((init?.body as string) ?? '{}');
-      expect(body.password).toBe(password);
-      return Promise.resolve(
-        jsonResp({
-          status: 0,
-          latest_receipt_info: [
-            { product_id: 'com.nw.coins.t099', transaction_id: 'tx1', purchase_date_ms: '1000' },
-          ],
-        }),
-      );
-    });
-
-    const verify = makeVerifier();
-    const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t099, usdCents: 99 });
+    const result = await appleVerify('tx1', TIER_MAP, api([tx({ transactionId: 'tx1', productId: 'com.nw.coins.t099' })]));
+    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t099, originalTransactionId: 'tx1' });
   });
 
-  it('retries sandbox when prod returns status 21007', async () => {
-    let callCount = 0;
-    mockFetch((url) => {
-      callCount++;
-      if (callCount === 1) {
-        expect(url).toContain('buy.itunes.apple.com');
-        return Promise.resolve(jsonResp({ status: 21007 }));
-      }
-      expect(url).toContain('sandbox.itunes.apple.com');
-      return Promise.resolve(
-        jsonResp({
-          status: 0,
-          latest_receipt_info: [
-            { product_id: 'com.nw.coins.t9999', transaction_id: 'tx2', purchase_date_ms: '2000' },
-          ],
-        }),
-      );
-    });
-
-    const verify = makeVerifier();
-    const result = await verify('apple', 'base64receipt==');
-    expect(callCount).toBe(2);
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t9999, usdCents: 9999 });
+  it('returns the non-coin SKU (coins:0) plus the id renewals will be routed by', async () => {
+    process.env.NW_IAP_BUNDLE = BUNDLE;
+    const result = await appleVerify(
+      'tx2',
+      TIER_MAP,
+      api([tx({ transactionId: 'tx2', originalTransactionId: 'orig-9', productId: 'com.nw.sub.monthly' })]),
+    );
+    expect(result).toEqual({ ok: true, coins: 0, product: 'monthly_card', originalTransactionId: 'orig-9' });
   });
 
-  it('rejects forged receipt (status !== 0)', async () => {
-    mockFetch(() => Promise.resolve(jsonResp({ status: 21002 }))); // invalid receipt
-
-    const verify = makeVerifier();
-    const result = await verify('apple', 'forged==');
+  it('rejects a revoked transaction — Apple already took the money back', async () => {
+    process.env.NW_IAP_BUNDLE = BUNDLE;
+    const result = await appleVerify(
+      'tx3',
+      TIER_MAP,
+      api([tx({ transactionId: 'tx3', productId: 'com.nw.coins.t099', revoked: true })]),
+    );
     expect(result).toEqual({ ok: false, coins: 0 });
   });
 
-  it('rejects unknown product_id', async () => {
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResp({
-          status: 0,
-          latest_receipt_info: [
-            { product_id: 'com.unknown.product', transaction_id: 'tx3', purchase_date_ms: '1000' },
-          ],
-        }),
-      ),
-    );
-
-    const verify = makeVerifier();
-    const result = await verify('apple', 'base64receipt==');
+  it('rejects an id Apple does not recognise', async () => {
+    const result = await appleVerify('never-existed', TIER_MAP, api([]));
     expect(result).toEqual({ ok: false, coins: 0 });
   });
 
-  it('picks latest transaction when multiple in_app entries present', async () => {
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResp({
-          status: 0,
-          latest_receipt_info: [
-            { product_id: 'com.nw.coins.t099', transaction_id: 'tx_old', purchase_date_ms: '500' },
-            { product_id: 'com.nw.coins.t499', transaction_id: 'tx_new', purchase_date_ms: '9000' },
-          ],
-        }),
-      ),
+  it('rejects an unknown product id', async () => {
+    process.env.NW_IAP_BUNDLE = BUNDLE;
+    const result = await appleVerify(
+      'tx4',
+      TIER_MAP,
+      api([tx({ transactionId: 'tx4', productId: 'com.unknown.product' })]),
     );
-
-    const verify = makeVerifier();
-    const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t499, usdCents: 499 });
-  });
-
-  it('returns ok:false when NW_APPLE_PASSWORD is not set', async () => {
-    // password not set; factory returns false immediately
-    process.env.NW_IAP_DEV = 'false';
-    const verify = createReceiptVerifier(TIER_MAP);
-    const result = await verify('apple', 'base64receipt==');
     expect(result).toEqual({ ok: false, coins: 0 });
   });
 
   it('supports custom product map via NW_IAP_PRODUCT_MAP', async () => {
-    process.env.NW_APPLE_PASSWORD = password;
     process.env.NW_IAP_PRODUCT_MAP = 'custom.product.gold:t9999';
-
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResp({
-          status: 0,
-          latest_receipt_info: [
-            { product_id: 'custom.product.gold', transaction_id: 'txC', purchase_date_ms: '1000' },
-          ],
-        }),
-      ),
+    const result = await appleVerify(
+      'txC',
+      TIER_MAP,
+      api([tx({ transactionId: 'txC', productId: 'custom.product.gold' })]),
     );
+    expect(result).toMatchObject({ ok: true, coins: IAP_TIERS.t9999 });
+  });
 
+  it('returns ok:false when Apple is unconfigured', async () => {
+    // No NW_APPLE_IAP_* credentials -> createAppleServerApi() is null -> the apple branch fails closed,
+    // exactly as it did when the shared secret was missing.
+    process.env.NW_IAP_DEV = 'false';
     const verify = createReceiptVerifier(TIER_MAP);
-    const result = await verify('apple', 'base64receipt==');
-    expect(result).toEqual({ ok: true, coins: IAP_TIERS.t9999, usdCents: 9999 });
+    expect(await verify('apple', 'base64receipt==')).toEqual({ ok: false, coins: 0 });
   });
 });
 
@@ -277,10 +226,13 @@ describe('dev stub', () => {
   });
 
   it('dev stub disabled when real credentials present and NW_IAP_DEV not set', async () => {
-    process.env.NW_APPLE_PASSWORD = 'real-password';
-    mockFetch(() => Promise.resolve(jsonResp({ status: 21002 }))); // invalid receipt
+    // Any one configured platform closes the stub for ALL platforms — the gate asks "is this a real
+    // deployment", not "is this platform configured". Stripe is used as that signal here rather than
+    // Apple so the assertion stays offline: configuring Apple for real would send the `tier:` receipt
+    // to Apple's servers, which is a network call, not a unit test.
+    process.env.NW_STRIPE_SECRET_KEY = 'sk_test_real';
     const verify = createReceiptVerifier(TIER_MAP);
-    // tier: prefix no longer routes through the stub; it goes through real apple verification (which returns failure)
+    // `tier:` no longer routes through the stub; apple with no Apple credentials fails closed.
     const result = await verify('apple', 'tier:t099');
     expect(result).toEqual({ ok: false, coins: 0 });
   });

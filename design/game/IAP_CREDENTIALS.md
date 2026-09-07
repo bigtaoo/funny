@@ -18,11 +18,33 @@
 
 | 平台 | 环境变量 | 申请位置 | receipt 格式 |
 |---|---|---|---|
-| Apple App Store | `NW_APPLE_PASSWORD` | App Store Connect →「App 内购买项目」→ App 专用共享密钥 | base64 receipt data |
+| Apple App Store | `NW_APPLE_IAP_KEY_ID` + `NW_APPLE_IAP_ISSUER_ID` + `NW_APPLE_IAP_PRIVATE_KEY_BASE64` + `NW_APPLE_APP_ID` | App Store Connect → 用户和访问 → 集成 → **App 内购买项目**（生成 In-App Purchase Key） | transaction id（客户端仍可传 StoreKit 1 收据，服务端本地拆出 id） |
 
-> **同一把密钥现在喂两条链路**（2026-09-03）：除了单次验单（`appleVerify`），自动续订订阅的续期同步
-> （`appleSubscriptionTransactions` ← `POST /iap/apple/sync`）也用它。缺失时**两条都 fail closed**：验单返
-> `INVALID_RECEIPT`，同步返 `granted: 0` 什么都不发（不报错——那条请求是客户端冷启动自己发的，没人在等结果）。
+> **⚠️ 2026-09-07 换了整条链路**：`verifyReceipt` + App 专用共享密钥（`NW_APPLE_PASSWORD`）已**全部删除**，
+> 换成 **App Store Server API**（Apple 官方 Node 库 `@apple/app-store-server-library`）。
+> `verifyReceipt` 自 2023-06-05 起弃用、不再有新功能，Apple 至今未公布终止日期——所以这不是被逼的迁移，
+> 是主动把债还掉。共享密钥在新链路里**没有任何用途**，删掉即可，不用留着。
+>
+> **四个变量都要有，缺一即 fail closed**（验单返 `INVALID_RECEIPT`，webhook 只记录不发放）：
+>
+> | 变量 | 从哪来 |
+> |---|---|
+> | `NW_APPLE_IAP_KEY_ID` | 生成 key 时显示的 Key ID |
+> | `NW_APPLE_IAP_ISSUER_ID` | 同一页面顶部的 Issuer ID |
+> | `NW_APPLE_IAP_PRIVATE_KEY_BASE64` | 下载的 `.p8`（**只能下载一次**）转 base64：`base64 -w0 SubscriptionKey_XXXX.p8` |
+> | `NW_APPLE_APP_ID` | App 的**数字** id（App Store Connect →「App 信息」），验签时用来确认这条负载是发给本 App 的 |
+>
+> `.p8` 走 base64 而不是原文，是因为 PEM 带换行，直接写进 `.env` / compose 插值会被撕碎。
+>
+> **这把 key 不是 CI 那把**：CI 上传构建用的是 ASC API Key（`ASC_API_KEY_*`，角色 App Manager），
+> 这里要的是 Users and Access → Integrations → **In-App Purchase** 下单独生成的 key，两者不通用。
+>
+> **根证书随代码走**：`SignedDataVerifier` 要求调用方自备 Apple 根证书，已 base64 内联在
+> `commercial/src/iap/appleRootCAs.ts`（**不是** `.cer` 文件——tsc 不会把二进制复制进 `dist/`，那样
+> dev 下能跑、容器里必死，正是本文件下面记的那类事故）。更新方法与指纹核对写在该文件头部。
+>
+> 续订不再靠客户端轮询收据，改由 **App Store Server Notifications V2** 推送（`POST /iap/apple/notifications`
+> → commercial 验签分派）。ASC 里要把通知 URL 配成 `https://api.gamestao.com/iap/apple/notifications`。
 > 机制见 [`IOS_RELEASE.md §4.1b`](IOS_RELEASE.md)。
 | Google Play | `NW_GOOGLE_SERVICE_ACCOUNT_JSON`（整串）+ `NW_GOOGLE_PACKAGE_NAME` | GCP 创建服务账户 JSON；Play Console 授予该账户「查看财务数据/管理订单」权限 | `${productId}:${purchaseToken}` |
 | 微信支付 V3 | `NW_WX_PAY_MCH_ID` + `NW_WX_PAY_API_KEY_V3` | 微信商户平台「API 安全」→ V3 APIKey（32 字节） | `transaction_id` |
@@ -122,13 +144,23 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
 
 > AdMob SSV 服务端回调用 Google 公开验证密钥（`gstatic.com/admob/reward/verifier-keys.json`），无需配置环境变量。
 
-### 2.1 AdMob 原生接入（iOS，2026-07-21 已实装，未在 Xcode 里编译验证）
+### 2.1 AdMob 原生接入（iOS，2026-07-21 实装，**2026-09-07 首次编译通过**）
 
-服务端（`/ads/reward` 客户端校验 + `/ads/callback/admob` SSV 回调）+ 客户端原生桥均已实现。**⚠️ 本机（Windows）无 Xcode/macOS 工具链，以下代码是照 Google 当前官方文档现查现写的，从未在 Xcode 里编译过**——接手 iOS 构建的人第一次跑 `pod install` + build 时请留意是否有 API 对不上（Google Mobile Ads SDK 的 Swift API 大改过一次，`GADXxx` 前缀已改成不带前缀的 `Xxx` 命名，本次实现按新命名写的）。
+服务端（`/ads/reward` 客户端校验 + `/ads/callback/admob` SSV 回调）+ 客户端原生桥均已实现。
+这份代码当初是在无 Xcode/macOS 的 Windows 上照 Google 官方文档**盲写**的（`GADXxx` 前缀已改成 `Xxx`，
+按新命名写），挂了七周没人验证；**2026-09-07 的 run #4 首次编译通过，写对了**。
+本机仍无法编译 Swift，所以**改动这个桥之后只能靠 CI 发现错误**——推一次构建再合，别积着。
 
 **已落地的部分**：
 - **App ID**：`ca-app-pub-5437693117291100~7980565358`；**激励视频 Ad Unit ID**：`ca-app-pub-5437693117291100/3500329092`（2026-07-21 AdMob 后台创建，均已写入代码，见下）。
-- **`client/ios/App/Podfile`**：`capacitor_pods` 里加了 `pod 'Google-Mobile-Ads-SDK'`（CocoaPods 包名已核实，当前版本 12.12.0）。
+- **`client/ios/App/Podfile`**：`pod 'Google-Mobile-Ads-SDK', '~> 13.9'`。⚠️ **2026-09-07 之前没有任何版本约束**，
+  于是每次 CI 都拉当天最新的：代码按 v12 命名写于 07-21，七周后实际是在 **13.9.0** 上编译的，
+  一个没人选过的大版本。这次没出事，但 v9→v10 那次把 `GADXxx` 全改成 `Xxx` 就会出事。
+  版本号是从上传的 IPA 里 `GoogleMobileAdsResources.bundle` 读出来的（不是推断）；同时带入依赖 UMP 3.1.0。
+  **`Podfile.lock` 已于 2026-09-07 提交**（取自 run #5 的 artifact——本机 Windows 解不了 pod，只能从 CI 拿）。
+  **锁版本约束是「政策」，lock 才是「可重现」**：有了它，同一个 commit 两次构建装的是同一份字节（含校验和）。
+  CI 另外会把解析结果写进 step summary 并把 lock 传成 artifact，以后改了依赖就从那里取新的。
+  锁上之后重跑一次验过：依旧解析到 13.9.0，行为未变。
 - **`client/ios/App/App/Info.plist`**：加了 `GADApplicationIdentifier`（真实 App ID）、~~`NSUserTrackingUsageDescription`（ATT 弹窗文案）~~、`SKAdNetworkItems`（Google 官方文档 47 条标识符列表，2026-07-21 现查）。
   ⚠️ **2026-09-03 改口径为「不跟踪」**：`NSUserTrackingUsageDescription` 与 ATT 请求已删除，广告改为只请求非个性化（`npa=1`）；`SKAdNetworkItems` 保留（按 Apple 口径不算 tracking）。见 [`IOS_RELEASE.md §12`](IOS_RELEASE.md) 与 `store-assets-checklist.md §1.4`。
 - **`client/ios/App/App/AppDelegate.swift`**：`NWBridgeViewController` 扩了一个 `window.NWAds` 桥（与既有 `window.NWBilling` StoreKit 桥同一个类、同一套 `pending{jsId}` Promise-settle 模式）：
@@ -141,7 +173,11 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
 
 **还没做、真正上线前必须补**：
 - **SSV 回调地址**：AdMob 后台已经配了 `https://api.gamestao.com/ads/callback/admob` 并验证通过（2026-07-21），`custom_data` 用 `customRewardText` 传 accountId，这是发币的权威通道——客户端 `/ads/reward` 只是「立即显示到账」的乐观 UI。
-- **拿真机/Xcode 编译一次**，确认 Swift API 版本对得上（尤其 `RewardedAd.load`/`FullScreenContentDelegate`/`ServerSideVerificationOptions.customRewardText` 这几个近期改过命名的 API）。
+- ~~拿真机/Xcode 编译一次，确认 Swift API 版本对得上~~ —— **2026-09-07 完成**（run #4）。
+  `RewardedAd.load` / `FullScreenContentDelegate` / `ServerSideVerificationOptions.customRewardText`
+  这几个改过名的 API 在 13.9.0 上全部对得上；`GoogleMobileAdsResources.bundle` 确实进了 IPA，
+  说明 SDK 真的链进去了（它是静态 XCFramework，不会出现在 `Frameworks/` 里，别拿那个当依据）。
+  **仍未验证的是运行时**：能编译不等于广告能弹、奖励能到账，那要真机跑一次。
 - 沙盒测试：先用 Debug 编译（自动切到 Google 测试广告单元）跑通"点按钮 → 弹广告 → 关掉 → 领到金币"全流程，再切 Release 用真实 ID 测一次。
 - ~~ATT 弹窗文案~~ —— 已随「不跟踪」口径删除（2026-09-03），无需再找法务过措辞。
 6. **本地测试**：本地开发机没有公网 HTTPS，SSV 回调收不到——用 `ngrok http 18080` 之类临时穿透，把生成的 URL 填进 AdMob 测试配置；或先只验证客户端侧「能弹出广告、能拿到 reward 回调」，SSV 链路留到部署到 `api.gamestao.com` 后再连调。

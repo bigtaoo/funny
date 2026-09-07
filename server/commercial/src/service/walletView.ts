@@ -27,6 +27,7 @@ import type {
 import type { RandInt } from '../gacha';
 import { displayChannelOf, effectiveCoins, type RechargeChannel } from '../spendChannel';
 import type { AppleSubscriptionTx, IapProductKind } from '../iap';
+import type { AppleServerApi } from '../iap/appleServerApi';
 
 /** A resolved, drawable pool: either a derived/static GachaPoolDef or an ops-authored custom config (§12). */
 export type ResolvedPool = { kind: 'derived'; pool: GachaPoolDef } | { kind: 'custom'; cfg: CustomPoolConfig };
@@ -60,6 +61,19 @@ export interface WalletView {
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: ServiceErr };
 
+/**
+ * What a receipt verification answers. `originalTransactionId` is Apple-only: the id every future
+ * renewal notification for that subscription will quote, recorded at purchase time so the renewal can
+ * be routed back to this account (db.ts's AppleTransactionLinkDoc).
+ */
+export interface IapVerifyOutcome {
+  ok: boolean;
+  coins: number;
+  usdCents?: number;
+  product?: IapProductKind;
+  originalTransactionId?: string;
+}
+
 export interface CommercialDeps {
   cols: CommercialCollections;
   now: () => number;
@@ -77,8 +91,8 @@ export interface CommercialDeps {
     platform: string,
     receipt: string,
   ) =>
-    | Promise<{ ok: boolean; coins: number; usdCents?: number; product?: IapProductKind }>
-    | { ok: boolean; coins: number; usdCents?: number; product?: IapProductKind };
+    | Promise<IapVerifyOutcome>
+    | IapVerifyOutcome;
   /**
    * Reads the auto-renewable subscription periods out of an Apple receipt (iap.ts's
    * createAppleSubscriptionReader), for subscriptionSyncApple. Separate from `verifyReceipt` on
@@ -87,6 +101,14 @@ export interface CommercialDeps {
    * Absent/null = Apple unconfigured; the sync then reports nothing to grant instead of granting.
    */
   verifyAppleSubscriptions?: ((receipt: string) => Promise<AppleSubscriptionTx[]>) | null;
+  /**
+   * The App Store Server API, for the notification webhook (iap.ts's createAppleServerApi). Held
+   * separately from `verifyAppleSubscriptions` because notifications need two capabilities that
+   * reading periods does not: verifying Apple's signature on an unsolicited payload, and answering a
+   * CONSUMPTION_REQUEST. Null = Apple unconfigured; the webhook then records the notification and
+   * grants nothing, rather than trusting an unverifiable payload.
+   */
+  appleServerApi?: AppleServerApi | null;
   /** victoryDaily counter backend (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts). null (the
    *  default in every test in this package) = correct-for-single-instance in-process counter, not a disabled cap. */
   redis?: RedisLike | null;

@@ -12,6 +12,7 @@ import { assembleSkinCounts } from './skin.js';
 import { sanitizeEquippedAvatar } from './save.js';
 import { registerAdCallbackRoutes } from './ads.js';
 import { registerPaddleRoutes } from './paddle.js';
+import { registerAppleWebhookRoute } from './apple/webhookRoute.js';
 
 const log = createLogger('meta');
 import { makeSecurityHandlers } from './auth.js';
@@ -229,6 +230,9 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
 
   // Ad platform SSV callbacks (platform-initiated; no player authentication).
   registerAdCallbackRoutes(app, { cols: opts.cols, commercial, now, redis });
+
+  // App Store Server Notifications V2 (platform-initiated; signature verified inside commercial).
+  registerAppleWebhookRoute(app, { commercial });
 
   // Paddle Billing routes: player checkout session + Paddle webhook.
   registerPaddleRoutes(app, {

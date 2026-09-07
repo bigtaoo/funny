@@ -25,6 +25,11 @@ if (!mongo) console.warn(`[achievements.e2e] Mongo unreachable (${URI}) — skip
 
 /** Minimal fake commercial: wallet credit (grant idempotent by orderId) + getWallet; remaining endpoints are unreachable from claim paths — stubbed for TS. */
 class FakeCommercial implements CommercialClient {
+  // Unused here; only present to satisfy `implements CommercialClient` (the webhook has its own tests).
+  async appleNotification(_a: { signedPayload: string }) {
+    return { ok: true as const, outcome: 'ignored' };
+  }
+
 
   // Not exercised by this file — the Apple auto-renewal sync has its own suites
   // (commercial/test/appleSubscriptionSync.e2e.test.ts, metaserver/test/iapAppleSync.test.ts).
