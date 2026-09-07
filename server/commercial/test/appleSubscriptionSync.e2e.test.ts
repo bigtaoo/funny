@@ -20,6 +20,8 @@ import { createCommercialMongo, type CommercialMongo } from '../src/db';
 import { CommercialService } from '../src/service';
 import { appleSubscriptionTransactions } from '../src/iap/apple';
 import type { AppleSubscriptionTx } from '../src/iap';
+import type { AppleTransaction } from '../src/iap/appleServerApi';
+import { fakeAppleApi, tx } from './appleFakes';
 import type { RandInt } from '../src/gacha';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
@@ -47,7 +49,7 @@ const DAY = 86_400_000;
 
 /** A monthly period as the receipt reader would report it. */
 function monthly(id: string, purchasedMs = 1): AppleSubscriptionTx {
-  return { transactionId: id, product: 'monthly_card', purchasedMs };
+  return { transactionId: id, originalTransactionId: id, product: 'monthly_card', purchasedMs };
 }
 
 describe.skipIf(!mongo)('apple auto-renewable subscription sync (e2e)', () => {
@@ -119,7 +121,7 @@ describe.skipIf(!mongo)('apple auto-renewable subscription sync (e2e)', () => {
 
   it('a year period grants 365 days, and periods apply in purchase order', async () => {
     periods = [
-      { transactionId: 'y-1', product: 'year_card', purchasedMs: 2 },
+      { transactionId: 'y-1', originalTransactionId: 'y-1', product: 'year_card', purchasedMs: 2 },
       monthly('m-1', 1),      // deliberately out of order in the array
     ];
     const r = await svc.subscriptionSyncApple({ accountId: 'd', receipt: 'r', clientPlatform: 'ios' });
@@ -189,84 +191,69 @@ describe.skipIf(!mongo)('apple auto-renewable subscription sync (e2e)', () => {
   });
 });
 
-// ── The reader itself: what gets pulled out of Apple's verifyReceipt response ───────────────────
+// ── The reader itself: what gets pulled out of the App Store Server API's transaction history ─────
+//
+// 2026-09-07: this used to stub `fetch` and assert on verifyReceipt's request body. That endpoint is
+// gone; the history now comes from Apple's own client, so the seam moved to the AppleServerApi
+// interface (test/appleFakes.ts) and these assertions are about which periods we keep, not about HTTP.
 describe('appleSubscriptionTransactions', () => {
-  afterEach(() => { vi.unstubAllGlobals(); });
-
-  /** Stub `fetch` with one response per call, in order (prod first, then sandbox on a 21007 retry). */
-  function stubApple(...responses: object[]): { bodies: unknown[] } {
-    const bodies: unknown[] = [];
-    let i = 0;
-    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
-      bodies.push(JSON.parse(init.body));
-      return { ok: true, json: async () => responses[Math.min(i++, responses.length - 1)] };
-    });
-    return { bodies };
-  }
-
-  const row = (o: Record<string, string>) => ({
-    product_id: 'com.nw.sub.monthly', transaction_id: 'tx', purchase_date_ms: '1', ...o,
-  });
-
-  it('asks for the FULL history, not just the newest transaction', async () => {
-    // The distinguishing detail vs appleVerify: a player who has not opened the app in three months
-    // has three ungranted renewals sitting in the receipt, and excluding old transactions would drop
-    // two of them silently.
-    const { bodies } = stubApple({ status: 0, latest_receipt_info: [] });
-    await appleSubscriptionTransactions('r', 'pw');
-    expect(bodies[0]).not.toHaveProperty('exclude-old-transactions');
-  });
+  const sub = (o: Partial<AppleTransaction> & { transactionId: string }) =>
+    tx({ productId: 'com.nw.sub.monthly', ...o });
 
   it('returns every subscription period, oldest first', async () => {
-    stubApple({
-      status: 0,
-      latest_receipt_info: [
-        row({ transaction_id: 'b', purchase_date_ms: '200' }),
-        row({ transaction_id: 'a', purchase_date_ms: '100' }),
-        row({ transaction_id: 'y', product_id: 'com.nw.sub.year', purchase_date_ms: '150' }),
+    const api = fakeAppleApi({
+      history: [
+        sub({ transactionId: 'b', purchasedMs: 200 }),
+        sub({ transactionId: 'a', purchasedMs: 100 }),
+        sub({ transactionId: 'y', productId: 'com.nw.sub.year', purchasedMs: 150 }),
       ],
     });
-    expect(await appleSubscriptionTransactions('r', 'pw')).toEqual([
-      { transactionId: 'a', product: 'monthly_card', purchasedMs: 100 },
-      { transactionId: 'y', product: 'year_card', purchasedMs: 150 },
-      { transactionId: 'b', product: 'monthly_card', purchasedMs: 200 },
+    expect(await appleSubscriptionTransactions('r', api)).toEqual([
+      { transactionId: 'a', originalTransactionId: 'a', product: 'monthly_card', purchasedMs: 100 },
+      { transactionId: 'y', originalTransactionId: 'y', product: 'year_card', purchasedMs: 150 },
+      { transactionId: 'b', originalTransactionId: 'b', product: 'monthly_card', purchasedMs: 200 },
     ]);
   });
 
   it('drops refunded periods — Apple took the money back', async () => {
-    stubApple({
-      status: 0,
-      latest_receipt_info: [
-        row({ transaction_id: 'kept' }),
-        row({ transaction_id: 'refunded', cancellation_date_ms: '999' }),
-      ],
+    const api = fakeAppleApi({
+      history: [sub({ transactionId: 'kept' }), sub({ transactionId: 'refunded', revoked: true })],
     });
-    const got = await appleSubscriptionTransactions('r', 'pw');
+    const got = await appleSubscriptionTransactions('r', api);
     expect(got.map((p) => p.transactionId)).toEqual(['kept']);
   });
 
-  it('ignores coin tiers and starter packs sharing the receipt', async () => {
-    stubApple({
-      status: 0,
-      latest_receipt_info: [
-        row({ transaction_id: 'coins', product_id: 'com.nw.coins.t499' }),
-        row({ transaction_id: 'starter', product_id: 'com.nw.starter.draw' }),
-        row({ transaction_id: 'sub' }),
+  it('ignores coin tiers and starter packs sharing the same subscription history', async () => {
+    const api = fakeAppleApi({
+      history: [
+        sub({ transactionId: 'coins', productId: 'com.nw.coins.t499' }),
+        sub({ transactionId: 'starter', productId: 'com.nw.starter.draw' }),
+        sub({ transactionId: 'sub' }),
       ],
     });
-    const got = await appleSubscriptionTransactions('r', 'pw');
+    const got = await appleSubscriptionTransactions('r', api);
     expect(got.map((p) => p.transactionId)).toEqual(['sub']);
   });
 
-  it('retries against sandbox on 21007, like appleVerify does', async () => {
-    const { bodies } = stubApple({ status: 21007 }, { status: 0, latest_receipt_info: [row({})] });
-    const got = await appleSubscriptionTransactions('r', 'pw');
-    expect(bodies).toHaveLength(2);
-    expect(got).toHaveLength(1);
+  it('carries originalTransactionId through — it is what routes future renewal notifications', async () => {
+    const api = fakeAppleApi({
+      history: [sub({ transactionId: 'renewal-3', originalTransactionId: 'original-1' })],
+    });
+    const [period] = await appleSubscriptionTransactions('r', api);
+    expect(period!.originalTransactionId).toBe('original-1');
   });
 
-  it('fails closed on a rejected receipt', async () => {
-    stubApple({ status: 21002, latest_receipt_info: [row({})] });
-    expect(await appleSubscriptionTransactions('r', 'pw')).toEqual([]);
+  it('fails closed when Apple rejects the lookup', async () => {
+    const api = fakeAppleApi({});
+    api.transactionHistory = async () => { throw new Error('APIException 4040010'); };
+    expect(await appleSubscriptionTransactions('r', api)).toEqual([]);
+  });
+
+  it('unwraps a StoreKit 1 receipt to an id before asking Apple, and passes a bare id straight through', async () => {
+    // The shipped binary sends a base64 app receipt; a StoreKit 2 client will send the id itself.
+    // Neither needs a flag — an input that is not a parseable receipt is used as the id verbatim.
+    const api = fakeAppleApi({ history: [] });
+    await appleSubscriptionTransactions('2000000123456789', api);
+    expect(api.transactionHistory).toHaveBeenCalledWith('2000000123456789');
   });
 });

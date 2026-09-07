@@ -21,6 +21,7 @@
 // identical to the original body, just importing what used to be same-file private functions.
 import type { IapTierMap, VerifyAppleSubscriptions, VerifyReceipt } from './iap/types';
 import { appleVerify, appleSubscriptionTransactions } from './iap/apple';
+import { createAppleServerApi } from './iap/appleServerApi';
 import { googleVerify, type GoogleServiceAccount } from './iap/google';
 import { wxPayVerify } from './iap/wechat';
 import { stripeVerify } from './iap/stripe';
@@ -31,7 +32,7 @@ export type { AppleSubscriptionTx, IapTierMap, IapProductKind, IapVerifyResult, 
 
 /**
  * Build the receipt-verification function. Supports four platforms:
- * - apple: NW_APPLE_PASSWORD (App Store shared secret)
+ * - apple: App Store Server API (NW_APPLE_IAP_KEY_ID / _ISSUER_ID / _PRIVATE_KEY_BASE64 + NW_APPLE_APP_ID)
  * - google: NW_GOOGLE_SERVICE_ACCOUNT_JSON (service-account JSON string) + NW_GOOGLE_PACKAGE_NAME
  * - wechat: NW_WX_PAY_MCH_ID + NW_WX_PAY_API_KEY_V3
  * - stripe: NW_STRIPE_SECRET_KEY
@@ -42,7 +43,7 @@ export type { AppleSubscriptionTx, IapTierMap, IapProductKind, IapVerifyResult, 
  *   A process with NW_IAP_DEV=true incorrectly set is rejected at commercial startup (index.ts); this is the second line of defence.
  */
 export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
-  const applePassword = process.env.NW_APPLE_PASSWORD ?? '';
+  const appleApi = createAppleServerApi();
   const googleSaJson = process.env.NW_GOOGLE_SERVICE_ACCOUNT_JSON ?? '';
   const googlePackage = process.env.NW_GOOGLE_PACKAGE_NAME ?? 'com.nw.game';
   const mchId = process.env.NW_WX_PAY_MCH_ID ?? '';
@@ -52,7 +53,7 @@ export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
   const devEnabled =
     !isProd &&
     (process.env.NW_IAP_DEV === 'true' ||
-      (!applePassword && !googleSaJson && !mchId && !stripeKey));
+      (!appleApi && !googleSaJson && !mchId && !stripeKey));
 
   let googleSa: GoogleServiceAccount | null = null;
   if (googleSaJson) {
@@ -73,8 +74,8 @@ export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
 
     switch (platform) {
       case 'apple':
-        if (!applePassword) return { ok: false, coins: 0 };
-        return appleVerify(receipt, tierMap, applePassword);
+        if (!appleApi) return { ok: false, coins: 0 };
+        return appleVerify(receipt, tierMap, appleApi);
       case 'google':
         if (!googleSa) return { ok: false, coins: 0 };
         return googleVerify(receipt, tierMap, googleSa, googlePackage);
@@ -109,10 +110,11 @@ export function createReceiptVerifier(tierMap: IapTierMap): VerifyReceipt {
  * bypassed for renewals (see subscriptionCardBuy's `renewal` flag), because Apple has already taken
  * the money for a period that overlaps the running one. A forgeable receipt there would mint
  * subscription time on demand, so the only accepted input is one Apple itself just validated.
- * Null (no NW_APPLE_PASSWORD) means the sync route reports "nothing to sync" rather than granting.
+ * Null (Apple unconfigured) means the sync route reports "nothing to sync" rather than granting.
  */
 export function createAppleSubscriptionReader(): VerifyAppleSubscriptions {
-  const applePassword = process.env.NW_APPLE_PASSWORD ?? '';
-  if (!applePassword) return null;
-  return (receipt: string) => appleSubscriptionTransactions(receipt, applePassword);
+  const appleApi = createAppleServerApi();
+  if (!appleApi) return null;
+  return (receiptOrTransactionId: string) =>
+    appleSubscriptionTransactions(receiptOrTransactionId, appleApi);
 }
