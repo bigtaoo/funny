@@ -139,7 +139,11 @@ export class OverlaysPanel {
    */
   showConsumptionConsent(onAnswer: (consented: boolean) => void): void {
     const core = this.core;
-    if (core.destroyed || core.consentLayer) return;
+    // Not while another overlay owns the screen. Drawing over the season-settlement modal would
+    // stack two cards and take its taps (this one is added later and answered first), and the
+    // settlement is a once-a-season moment the player is waiting for. The question is asked on the
+    // next lobby entry instead — nothing about it is time-critical.
+    if (core.destroyed || core.consentLayer || core.settlementLayer || core.guideLayer) return;
     const { w, h } = core;
     const layer = new PIXI.Container();
 

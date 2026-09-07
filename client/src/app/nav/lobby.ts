@@ -244,9 +244,9 @@ export function createLobbyNav(ctx: AppCtx): Pick<Nav, 'goLobby'> {
     // Apple's consumption-data question (IOS_RELEASE.md §4.1b), asked once, of a player who has
     // actually paid for something: may we tell Apple how much of a purchase they used if they ever
     // ask Apple for a refund? Without an answer the server stays silent and we forfeit the only say
-    // we get in a refund decision (platform/appleConsumptionConsent.ts). Placed after the settlement
-    // popup so a season transition — a once-a-month event the player is waiting for — wins the
-    // screen; this question keeps until the next lobby entry.
+    // we get in a refund decision (platform/appleConsumptionConsent.ts). Asked last, and skipped
+    // outright while the season-settlement or feature-guide overlay is up (the card declines to draw
+    // over another one) — this question keeps until the next lobby entry, those do not.
     if (loggedIn && !opts?.fromResize && api
         && shouldAskConsumptionConsent(platform.storage, saveManager.get())) {
       const client = api;
