@@ -157,8 +157,10 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
   于是每次 CI 都拉当天最新的：代码按 v12 命名写于 07-21，七周后实际是在 **13.9.0** 上编译的，
   一个没人选过的大版本。这次没出事，但 v9→v10 那次把 `GADXxx` 全改成 `Xxx` 就会出事。
   版本号是从上传的 IPA 里 `GoogleMobileAdsResources.bundle` 读出来的（不是推断）；同时带入依赖 UMP 3.1.0。
-  **`Podfile.lock` 仍未提交**（本机 Windows 解不了 pod），已让 CI 把它传成 artifact 并把版本打进
-  step summary；下一次构建后把那份 lock 下载下来提交，构建才算真正可重现。
+  **`Podfile.lock` 已于 2026-09-07 提交**（取自 run #5 的 artifact——本机 Windows 解不了 pod，只能从 CI 拿）。
+  **锁版本约束是「政策」，lock 才是「可重现」**：有了它，同一个 commit 两次构建装的是同一份字节（含校验和）。
+  CI 另外会把解析结果写进 step summary 并把 lock 传成 artifact，以后改了依赖就从那里取新的。
+  锁上之后重跑一次验过：依旧解析到 13.9.0，行为未变。
 - **`client/ios/App/App/Info.plist`**：加了 `GADApplicationIdentifier`（真实 App ID）、~~`NSUserTrackingUsageDescription`（ATT 弹窗文案）~~、`SKAdNetworkItems`（Google 官方文档 47 条标识符列表，2026-07-21 现查）。
   ⚠️ **2026-09-03 改口径为「不跟踪」**：`NSUserTrackingUsageDescription` 与 ATT 请求已删除，广告改为只请求非个性化（`npa=1`）；`SKAdNetworkItems` 保留（按 Apple 口径不算 tracking）。见 [`IOS_RELEASE.md §12`](IOS_RELEASE.md) 与 `store-assets-checklist.md §1.4`。
 - **`client/ios/App/App/AppDelegate.swift`**：`NWBridgeViewController` 扩了一个 `window.NWAds` 桥（与既有 `window.NWBilling` StoreKit 桥同一个类、同一套 `pending{jsId}` Promise-settle 模式）：
