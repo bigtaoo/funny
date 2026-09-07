@@ -66,6 +66,26 @@ jobs:
         working-directory: client
         run: npx cap sync ios
 
+      # `cap sync` runs pod install but prints only how long it took, so until 2026-09-07 no build
+      # recorded which pod versions it had used. That is the difference between "this broke, and here
+      # is the version that changed" and "this broke, and the last good build left no evidence".
+      # Podfile.lock is also not committed (pods cannot be resolved on the Windows dev machine), so
+      # this artifact is currently the only place it exists -- download it to commit one.
+      - name: Record resolved pod versions
+        working-directory: client/ios/App
+        run: |
+          echo "### Resolved CocoaPods versions" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          sed -n '/^PODS:/,/^DEPENDENCIES:/p' Podfile.lock | sed '$d' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          sed -n '/^PODS:/,/^DEPENDENCIES:/p' Podfile.lock
+
+      - name: Upload Podfile.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: Podfile.lock
+          path: client/ios/App/Podfile.lock
+
       - name: Set build number
         working-directory: client/ios/App
         run: agvtool new-version -all ${{ github.run_number }}

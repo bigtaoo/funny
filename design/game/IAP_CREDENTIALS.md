@@ -144,13 +144,21 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
 
 > AdMob SSV 服务端回调用 Google 公开验证密钥（`gstatic.com/admob/reward/verifier-keys.json`），无需配置环境变量。
 
-### 2.1 AdMob 原生接入（iOS，2026-07-21 已实装，未在 Xcode 里编译验证）
+### 2.1 AdMob 原生接入（iOS，2026-07-21 实装，**2026-09-07 首次编译通过**）
 
-服务端（`/ads/reward` 客户端校验 + `/ads/callback/admob` SSV 回调）+ 客户端原生桥均已实现。**⚠️ 本机（Windows）无 Xcode/macOS 工具链，以下代码是照 Google 当前官方文档现查现写的，从未在 Xcode 里编译过**——接手 iOS 构建的人第一次跑 `pod install` + build 时请留意是否有 API 对不上（Google Mobile Ads SDK 的 Swift API 大改过一次，`GADXxx` 前缀已改成不带前缀的 `Xxx` 命名，本次实现按新命名写的）。
+服务端（`/ads/reward` 客户端校验 + `/ads/callback/admob` SSV 回调）+ 客户端原生桥均已实现。
+这份代码当初是在无 Xcode/macOS 的 Windows 上照 Google 官方文档**盲写**的（`GADXxx` 前缀已改成 `Xxx`，
+按新命名写），挂了七周没人验证；**2026-09-07 的 run #4 首次编译通过，写对了**。
+本机仍无法编译 Swift，所以**改动这个桥之后只能靠 CI 发现错误**——推一次构建再合，别积着。
 
 **已落地的部分**：
 - **App ID**：`ca-app-pub-5437693117291100~7980565358`；**激励视频 Ad Unit ID**：`ca-app-pub-5437693117291100/3500329092`（2026-07-21 AdMob 后台创建，均已写入代码，见下）。
-- **`client/ios/App/Podfile`**：`capacitor_pods` 里加了 `pod 'Google-Mobile-Ads-SDK'`（CocoaPods 包名已核实，当前版本 12.12.0）。
+- **`client/ios/App/Podfile`**：`pod 'Google-Mobile-Ads-SDK', '~> 13.9'`。⚠️ **2026-09-07 之前没有任何版本约束**，
+  于是每次 CI 都拉当天最新的：代码按 v12 命名写于 07-21，七周后实际是在 **13.9.0** 上编译的，
+  一个没人选过的大版本。这次没出事，但 v9→v10 那次把 `GADXxx` 全改成 `Xxx` 就会出事。
+  版本号是从上传的 IPA 里 `GoogleMobileAdsResources.bundle` 读出来的（不是推断）；同时带入依赖 UMP 3.1.0。
+  **`Podfile.lock` 仍未提交**（本机 Windows 解不了 pod），已让 CI 把它传成 artifact 并把版本打进
+  step summary；下一次构建后把那份 lock 下载下来提交，构建才算真正可重现。
 - **`client/ios/App/App/Info.plist`**：加了 `GADApplicationIdentifier`（真实 App ID）、~~`NSUserTrackingUsageDescription`（ATT 弹窗文案）~~、`SKAdNetworkItems`（Google 官方文档 47 条标识符列表，2026-07-21 现查）。
   ⚠️ **2026-09-03 改口径为「不跟踪」**：`NSUserTrackingUsageDescription` 与 ATT 请求已删除，广告改为只请求非个性化（`npa=1`）；`SKAdNetworkItems` 保留（按 Apple 口径不算 tracking）。见 [`IOS_RELEASE.md §12`](IOS_RELEASE.md) 与 `store-assets-checklist.md §1.4`。
 - **`client/ios/App/App/AppDelegate.swift`**：`NWBridgeViewController` 扩了一个 `window.NWAds` 桥（与既有 `window.NWBilling` StoreKit 桥同一个类、同一套 `pending{jsId}` Promise-settle 模式）：
@@ -163,7 +171,11 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
 
 **还没做、真正上线前必须补**：
 - **SSV 回调地址**：AdMob 后台已经配了 `https://api.gamestao.com/ads/callback/admob` 并验证通过（2026-07-21），`custom_data` 用 `customRewardText` 传 accountId，这是发币的权威通道——客户端 `/ads/reward` 只是「立即显示到账」的乐观 UI。
-- **拿真机/Xcode 编译一次**，确认 Swift API 版本对得上（尤其 `RewardedAd.load`/`FullScreenContentDelegate`/`ServerSideVerificationOptions.customRewardText` 这几个近期改过命名的 API）。
+- ~~拿真机/Xcode 编译一次，确认 Swift API 版本对得上~~ —— **2026-09-07 完成**（run #4）。
+  `RewardedAd.load` / `FullScreenContentDelegate` / `ServerSideVerificationOptions.customRewardText`
+  这几个改过名的 API 在 13.9.0 上全部对得上；`GoogleMobileAdsResources.bundle` 确实进了 IPA，
+  说明 SDK 真的链进去了（它是静态 XCFramework，不会出现在 `Frameworks/` 里，别拿那个当依据）。
+  **仍未验证的是运行时**：能编译不等于广告能弹、奖励能到账，那要真机跑一次。
 - 沙盒测试：先用 Debug 编译（自动切到 Google 测试广告单元）跑通"点按钮 → 弹广告 → 关掉 → 领到金币"全流程，再切 Release 用真实 ID 测一次。
 - ~~ATT 弹窗文案~~ —— 已随「不跟踪」口径删除（2026-09-03），无需再找法务过措辞。
 6. **本地测试**：本地开发机没有公网 HTTPS，SSV 回调收不到——用 `ngrok http 18080` 之类临时穿透，把生成的 URL 填进 AdMob 测试配置；或先只验证客户端侧「能弹出广告、能拿到 reward 回调」，SSV 链路留到部署到 `api.gamestao.com` 后再连调。
