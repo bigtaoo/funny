@@ -208,6 +208,14 @@ B 批上了 StoreKit 2 + `appAccountToken` 之后**依然保留**，而且多了
 
 > ⚠️ **验签本身没有测试保护**：`LOCAL_TESTING` 恰恰跳过的就是签名校验，Apple 也没发布可用的证书夹具。
 > 那部分是 Apple 自己的代码（有它自己的测试），我们盖的是解码之后的全部逻辑。
+>
+> **想补的话，路是通的**（2026-09-07 读过库的实现，尚未做）：`SignedDataVerifier` 的根证书是调用方给的，
+> 所以可以自签一套夹具链来验**我们这边的接线**（根证书列表 / `enableOnlineChecks=false` / environment /
+> bundleId）真的能拒掉伪造负载。要求：① 三段 `x5c`（leaf、intermediate、root），链长不等于 3 直接
+> `INVALID_CHAIN_LENGTH`；② intermediate 必须 `CA:true` 且带扩展 OID `1.2.840.113635.100.6.2.1`，
+> leaf 必须带 `1.2.840.113635.100.6.11.1`（Apple 私有 OID，库里硬校验）；③ `enableOnlineChecks=false`
+> 才不会去打 OCSP；④ 用 `Environment.SANDBOX`（`appAppleId` 可省）。openssl 能生成，夹具提交进仓库即可。
+> 三个用例：夹具链通过、换一个不受信根被拒、负载被篡改被拒。
 
 ### 4.2 服务端环境变量（VPS commercial）
 - `NW_IAP_BUNDLE=com.gamestao.nivara` —— **必须改**（默认 `com.nw` 会匹配不到商品，fail closed 发失败）。
