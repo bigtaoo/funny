@@ -241,9 +241,11 @@ B 批上了 StoreKit 2 + `appAccountToken` 之后**依然保留**，而且多了
 
 **当前进度（2026-09-07）**：ASC 里 9 个商品已建齐（5 消耗型 + 2 非消耗型 + 2 自动续订订阅），状态均为
 「准备提交」；VPS 已设 `NW_IAP_BUNDLE=com.gamestao.nivara` 并透传到容器（`printenv` 已确认）。
-**还差两项外部动作**：① 生成 In-App Purchase Key 并填齐四个 `NW_APPLE_IAP_*` / `NW_APPLE_APP_ID`；
-② 在 ASC 配 App Store Server Notifications V2 的回调 URL。两者都做完，沙盒充值与自动续订才通。
-（共享密钥 `NW_APPLE_PASSWORD` 已作废，不需要了——见 §4.2。）
+**两项外部动作都已完成（2026-09-07 当天）**：① In-App Purchase Key 已生成、四个变量已推到 VPS 并在容器里
+实测过（§12）；② ASC 的通知 URL 已配成 `https://api.gamestao.com/api/iap/apple/notifications`
+——**注意那个 `/api` 前缀**，Caddy 只经 `handle_path /api/*` 暴露 metaserver，裸路径会被兜底规则接走回 200，
+而 200 对 Apple 就是「投递成功」，通知从此静默丢失。共享密钥 `NW_APPLE_PASSWORD` 已作废并删除（§4.2）。
+**剩下的是真机沙盒**：充值对账 + 自动续订演练（§12）。
 
 > 客户端请求的 Product ID 由 `AppDelegate.swift` 自动派生自 App 的 Bundle ID（`<bundleId>.coins.<tierId>`），与上表一致，无需额外配置。
 
