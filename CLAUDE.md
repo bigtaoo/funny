@@ -1,6 +1,6 @@
 # funny — Notebook Wars
 
-浏览器 + 微信小游戏的回合制策略游戏，配套工具链。
+浏览器 + 微信小游戏的实时策略对战游戏（车道推进 / 塔防式，30 Hz 定点 lockstep），配套工具链。
 
 **仓库地图、模块快查、设计文档入口全在 [`claudedocs/README.md`](claudedocs/README.md)。** 本文件只放会话规则。
 

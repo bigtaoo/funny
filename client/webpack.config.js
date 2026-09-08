@@ -241,6 +241,14 @@ module.exports = (env, argv) => {
         // pay.html: standalone Paddle checkout surface, set as the Dashboard "Default payment link"
         // (handles hosted-checkout ?_ptxn links from receipts / retry emails). See COMMERCIAL_DESIGN §IAP.
         { from: 'public/web/pay.html' },
+        // about.html / support.html are the App Store "Marketing URL" and "Support URL" targets
+        // (store-assets-checklist §1.2). They carry NO purchase surface — that is the whole reason
+        // they exist rather than pointing Apple at home.html — so 3.1.1 is not what keeps them out
+        // of the off-origin builds. They are simply website pages: nothing in the game links to
+        // them, so shipping them inside the iOS binary and every OTA bundle would be dead weight,
+        // and a store build has no business serving its own marketing site. Same group, different
+        // reason; the gate in nativePaymentIsolation.test.ts asserts both lists separately.
+        { from: 'public/web/about.html' }, { from: 'public/web/support.html' },
       ] })] : []),
       ...(!isWechat ? [new CopyPlugin({ patterns: [
         { from: 'public/favicon-16.png' }, { from: 'public/favicon-32.png' }, { from: 'public/favicon-48.png' },
