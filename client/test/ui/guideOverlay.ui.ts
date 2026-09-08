@@ -22,6 +22,11 @@ initI18n('en', memStore, ['zh', 'en', 'de']);
 const VIEWPORT = { w: 800, h: 1280 };
 const RECT = { x: 100, y: 200, w: 120, h: 90 };
 
+// PIXI declares `GraphicsGeometry.dirty` protected, but it is the counter that moves on a real
+// re-triangulation -- which is precisely what the ring tests below pin. Read it through a
+// structural cast instead of subclassing `Graphics` just to widen one field.
+const geomDirty = (g: PIXI.Graphics): number => (g.geometry as unknown as { dirty: number }).dirty;
+
 describe('GuideOverlay', () => {
   it('root starts empty with no active action until something is shown', () => {
     const guide = new GuideOverlay();
@@ -188,11 +193,11 @@ describe('GuideOverlay', () => {
     guide.showAt(RECT, 'pulsing', VIEWPORT, { onSkip: () => {} });
     const ring = (guide as unknown as { ring: PIXI.Graphics }).ring;
 
-    const dirtyAfterShow = ring.geometry.dirty;
+    const dirtyAfterShow = geomDirty(ring);
     const alphaAfterShow = ring.alpha;
     for (let i = 0; i < 60; i++) guide.update(1 / 60); // one second at frame rate
     // Not one geometry rebuild in 60 frames (the old code did 60).
-    expect(ring.geometry.dirty).toBe(dirtyAfterShow);
+    expect(geomDirty(ring)).toBe(dirtyAfterShow);
     // ...but it IS still breathing.
     expect(ring.alpha).not.toBe(alphaAfterShow);
     expect(ring.alpha).toBeGreaterThan(0.4);
@@ -238,12 +243,12 @@ describe('GuideOverlay', () => {
     guide.showAt(RECT, 'follow me', VIEWPORT, { onSkip: () => {} });
     const ring = (guide as unknown as { ring: PIXI.Graphics }).ring;
 
-    const dirtyBefore = ring.geometry.dirty;
+    const dirtyBefore = geomDirty(ring);
     guide.showAt(RECT, 'follow me', VIEWPORT, { onSkip: () => {} }); // same rect → cached
-    expect(ring.geometry.dirty).toBe(dirtyBefore);
+    expect(geomDirty(ring)).toBe(dirtyBefore);
 
     guide.showAt({ ...RECT, x: RECT.x + 40 }, 'follow me', VIEWPORT, { onSkip: () => {} });
-    expect(ring.geometry.dirty).toBeGreaterThan(dirtyBefore);
+    expect(geomDirty(ring)).toBeGreaterThan(dirtyBefore);
   });
 
   it('update(dt) is a safe no-op when nothing is currently showing', () => {
