@@ -18,7 +18,11 @@
 //
 // Run: npm run test:ui
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import * as PIXI from 'pixi.js-legacy';
+import {
+  RenderPolicy, resetRenderHold, setRenderPolicyClock,
+} from '../../src/render/renderPolicy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n } from '../../src/i18n';
@@ -199,5 +203,118 @@ describe('world-map overlay: ink on demand, tokens every frame', () => {
     it('an explicit "repaint regardless" request', () => expectOneRepaint((s) => {
       s.ctx.overlayInkDirty = true;
     }));
+  });
+});
+
+// ── the gate for turning WorldMapScene's `paint` to 'reactive' ────────────────────────────────
+//
+// The map is the most expensive tick in this client, and idle it draws the same picture ~49 of every
+// 60 frames (claudedocs/client-render-budget.md §7) — which is what makes demand-driven painting
+// worth having here. But getting it wrong does not show up as a slow map: it shows up as a march
+// visibly frozen in mid-air until the player touches the screen, and the two valves that make
+// ADR-083 safe elsewhere (the 500 ms floor, the 400 ms post-input hold) would only turn that into a
+// stutter instead of preventing it.
+//
+// So this pins the load-bearing direction against the real policy: while a march is in the air,
+// `RenderPolicy` in 'reactive' mode must paint EVERY frame. The policy clock is frozen so neither
+// valve can paint on the test's behalf, and `Date.now` is driven by hand because the token's
+// position is interpolated from it — a synchronous 60-frame loop otherwise takes place at a single
+// instant, the token never moves, and the test would pass for the wrong reason.
+describe("world map under a 'reactive' paint policy", () => {
+  let clockMs = 10_000;
+  let nowMs = 0;
+  const realNow = Date.now;
+
+  beforeEach(() => {
+    clockMs = 10_000;
+    nowMs = realNow();
+    Date.now = () => nowMs;
+    setRenderPolicyClock(() => clockMs);
+    resetRenderHold();
+  });
+
+  afterEach(() => {
+    Date.now = realNow;
+    setRenderPolicyClock();
+    resetRenderHold();
+  });
+
+  /** Get the first-paint cover out of the picture. It is a spinning ink ring plus a 1.3 s eraser
+   * wipe with falling flecks (WorldMapRenderer/loadingReveal.ts), and here the stubbed API never
+   * resolves, so nothing would ever dismiss it — leaving a scene that legitimately changes every
+   * frame and a "does it skip" assertion that silently measures the spinner. */
+  function revealMap(scene: Spied): void {
+    const ctx = scene.ctx as unknown as {
+      view: { buildPanel: { hideLoading(): void } };
+      loadingSpinner: unknown; loadingEraseLayer: unknown;
+    };
+    ctx.view.buildPanel.hideLoading();
+    for (let i = 0; i < 400 && (ctx.loadingSpinner || ctx.loadingEraseLayer); i++) frame(scene);
+    expect(ctx.loadingSpinner).toBeNull();
+    expect(ctx.loadingEraseLayer).toBeNull();
+  }
+
+  /** One frame of scene time, wall clock included. */
+  function frame(scene: Spied): void { nowMs += 17; scene.update(1 / 60); }
+
+  /** A march's token as a plain container on the real token layer.
+   *
+   * The stickman token cannot exist headlessly — `StickmanRuntime.loadAsset` never resolves under
+   * the test adapter, so that branch of `syncMarchTokens` has no display object and moves nothing.
+   * The 'dot' entry is the LOD-downgrade variant the same function builds past
+   * STICKMAN_TOKEN_BUDGET live tokens, and it goes through the same per-frame `position.set` — so
+   * seeding one exercises the real "the token moves every frame" path with only the artwork faked. */
+  function seedToken(scene: Spied, marchId: string): void {
+    const ctx = scene.ctx as unknown as {
+      marchTokenLayer: PIXI.Container;
+      marchTokenRuntimes: Map<string, unknown>;
+    };
+    const sprite = new PIXI.Container();
+    ctx.marchTokenLayer.addChild(sprite);
+    ctx.marchTokenRuntimes.set(marchId, { mode: 'dot', sprite, kind: 'infantry' });
+  }
+
+  /** The scene mounted under a policy-driven stage, `tick()` called by hand exactly as
+   * SceneManager's ticker listener does. Returns paints over `n` frames after one settling frame. */
+  function paintsOver(scene: Spied, n: number): number {
+    const stage = new PIXI.Container();
+    stage.addChild((scene as unknown as { container: PIXI.Container }).container);
+    const host = { ticker: new PIXI.Ticker(), stage, paints: 0, render(): void { host.paints += 1; } };
+    const policy = new RenderPolicy(host, () => 'reactive');
+    frame(scene);
+    policy.tick();          // settling frame: with lastPaintMs still 0 the floor paints regardless
+    host.paints = 0;
+    for (let i = 0; i < n; i++) { frame(scene); policy.tick(); }
+    return host.paints;
+  }
+
+  it('paints every single frame while a march is in flight', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    scene.ctx.marches = [march('m1')];
+    seedToken(scene, 'm1');
+    expect(paintsOver(scene, 60)).toBe(60);
+    scene.destroy();
+  });
+
+  it('...and all but stops once the march lands (otherwise the saving is imaginary)', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    scene.ctx.marches = [march('m1')];
+    seedToken(scene, 'm1');
+    frame(scene);
+    scene.ctx.marches = [];                  // arrived / recalled — nothing moving any more
+    // Not 0: the HUD countdown repaints once a second (lifecycle.ts hudTickTimer), and 60 frames is
+    // one second of scene time. That is the floor of what an idle map costs, and it is the number
+    // §7's "~11 changes/s" is made of — one HUD tick plus the shield bubbles this map has none of.
+    expect(paintsOver(scene, 60)).toBeLessThanOrEqual(2);
+    scene.destroy();
+  });
+
+  it('an idle map is all but still', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    expect(paintsOver(scene, 60)).toBeLessThanOrEqual(2);
+    scene.destroy();
   });
 });

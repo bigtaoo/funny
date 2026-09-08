@@ -73,13 +73,14 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 
 世界地图的叠加层墨线用同一套思路的第二个签名 `overlayInkSignature(ctx)`（`WorldMapRenderer/fog.ts`）：摘要相机 + 服务端状态，因为写 `ctx.marches`/`occupations`/`stationed`/`nations` 的站点散在 `net/` 与 `WorldMapPanels/` 共约 15 处。格子归属这一维靠 `VersionedTileCache`（`Map` 子类，`set`/`delete`/`clear` 各自 `version++`）——**覆写三个 mutator 而不是改 10 个调用点，是因为前者不可能忘**。
 
-## 5. 四份门禁（都在既有 `npm run test:ui` / `npm test` 里）
+## 5. 五份门禁（都在既有 `npm run test:ui` / `npm test` 里）
 
 | 文件 | 钉住什么 |
 |---|---|
 | `test/ui/renderPolicy.ui.ts`（33 例） | dpr 上限、`maxFPS`、**接管 PIXI 自己的渲染监听**（行为断言，否则每条 skip 都是假的）、**每一类变更都必须重绘**（移动/缩放/旋转/alpha/隐藏/显示/renderable/tint/重画/改字/图集换帧/贴图解码/子节点增删/zIndex 重排/嵌套深处）、hold/floor/invalidate 三个阀 |
-| `test/ui/worldMapOverlayCoalescing.ui.ts`（13 例） | 「一条行军在途 60 帧 → 墨线 0 次、token 60 次」；墨线依赖的每个输入都触发**正好一次**重建；拖动 6 次 pointermove 只重建一次 |
+| `test/ui/worldMapOverlayCoalescing.ui.ts`（16 例） | 「一条行军在途 60 帧 → 墨线 0 次、token 60 次」；墨线依赖的每个输入都触发**正好一次**重建；拖动 6 次 pointermove 只重建一次。最后 3 例是 §7 那个开关的前置门禁：真 `RenderPolicy` 的 `'reactive'` 模式压在真 `WorldMapScene` 上，**行军在途 60/60 帧全画**、落地后 ≤2/60 |
 | `test/ui/sceneGeometryBudget.ui.ts`（3 例） | 大厅一帧**索引预算 25,000**（实测 15,582 headless）。计数直接调 `GraphicsGeometry.updateBatches()`（PIXI 三角化是纯 JS），CI 无 GPU 也能拿到精确三角数；`bake()` 喂 stub renderer，量的是**上线路径** |
+| `test/ui/guideOverlay.ui.ts`（18 例） | 引导圆环：`update()` 一秒 60 帧**一次几何重建都不许有**、alpha 仍在动、一秒最多 ~10 个不同 alpha（`update` + 每帧 `showAt` 一起调也一样）、目标移动时几何**必须**重描 |
 | `test/ui/renderLoopWiring.ui.ts`（15 例） | 中间那层接线（ADR-072 的教训）：app.ts 真的装了 policy、真的过了 dpr 上限、四条指针路径都 hold、`paintMode` 对 overlay/fade 悲观 |
 
 **每一条关键断言都做过变异验证**（删掉签名里对应那行 / 把 lifecycle 改回每帧重建 / 把大厅那份 `sketchPanel` 改回旧实现 → 报 271,110 索引，红得很响）。
@@ -99,6 +100,8 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 5. 真 GPU 时间：`EXT_disjoint_timer_query_webgl2`，但**结果不会同步就绪**——beginQuery/render N 次/endQuery 放一次 JS 调用，`QUERY_RESULT` 放**下一次**调用里读。
 6. ⚠️ **不要 hook `requestAnimationFrame` 再手动重放回调**：回调会重新注册，同步重放 120 帧后队列指数爆炸（实测涨到 9,363 万条，页面卡死）。用第 2 步的 ticker 驱动。
 7. ⚠️ **窗口被遮挡时不要量「一帧多少毫秒」**。手动驱动能绕过 rAF 停发，但绕不过合成器：`document.hidden` 为真时同步连打 `render()` 会被逐帧阻塞，实测从 8 ms/帧退化到 ~750 ms/帧（连驱 60 帧直接把 CDP 的 45 s 超时耗光）。**耗时数字必须在窗口可见时取**；只想知道「画面变没变」则不需要可见——把 `PIXI.Renderer.prototype.render` 临时换成空函数再驱动 ticker，场景 update 照跑、GPU 一次不碰，量签名变化率又快又干净（记得 `finally` 里换回来）。
+8. ⚠️ **「窗口可见」比想象的难拿到，先读 `document.visibilityState` 再决定信不信数字。** 2026-09-08 想给 §7 的 8.25 ms 重取一次精确值，卡在这里：Chrome 窗口开着、没最小化，但游戏标签页不是它所在窗口的**当前**标签页，于是 `document.hidden` 恒为 `true`（截图照样能出图——扩展抓得到非前台标签页，所以「截图正常」不等于「可以量时间」）。`tabs_create_mcp` 新开标签页、`tabs_context_mcp{createIfEmpty:true}` 新开窗口、Win32 `SetForegroundWindow` 抬窗口，三条都没能把它顶到前台。**结论：要 ms 就得请人手动点一下那个标签页**；每次量之前把 `visibilityState` 一起打出来，不然会拿一个自己都不知道不可信的数去做决定。
+9. **想在同一个页面里做「修复前 vs 修复后」的 A/B，直接 patch 模块的 prototype。** 第 1 步那个 webpack require 不只能拿 PIXI：`req.c['./src/render/GuideOverlay.ts'].exports` 就是那个类本身，`G.prototype.update = <旧实现>` 就把线上代码换回修复前的行为，三次量测之间只差这一处（2026-09-08 §7 的 A/B/C 就是这么做的）。比「切分支重编译再登一次账号」快一个量级，而且排除了「两次量测之间世界变了」这个最难排除的干扰项。记得把原方法存下来在最后还回去。
 
 ## 7. 世界地图能不能也改成 `reactive`（2026-09-08 实测）
 
@@ -117,7 +120,22 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 - **能省的很多**。空闲地图**一秒只真的变 11 次**（10 次是护盾气泡的 `SHIELD_ANIM_FPS`，剩下 1 次是 HUD），也就是 60 帧里有 **~49 帧画的是同一张图**。而世界地图整 tick（场景 update + 画）是**这个客户端最贵的一帧**——同机同窗口测到 8.25 ms/tick（对照：空闲大厅 0.084 ms，战斗 2.1 ms）。花 18 ms/s 省掉 ~49 次这种帧，账面上是一比二十以上。
 - **有行军在途时省不到**：token 每帧动，签名每帧变，那时地图本来就该画。这是「白付一趟遍历」的上界，也就是 0.30 ms/帧。
 
-**但先修一个 bug 再谈开关**：`render/GuideOverlay.ts` 的 `update()` **每帧**调 `drawRing()`，而 `drawRing` 是 `clear()` + `lineStyle` + `drawRoundedRect` ——为了 `0.5 + 0.4 * sin(pulseT * 4)` 这个呼吸 alpha，把一个圆角矩形每秒重新三角化 60 次。新号进世界地图时它一直亮着，实测**签名 60/60 帧全变**，把上面那 11 次直接顶成 60 次；把它隐藏掉才量到 11。GuideOverlay 还挂在 CityScene 等**已经是 `reactive`** 的场景上，所以这一条今天就在让新手引导期间的菜单以满帧重绘。改法是显而易见的一行：动 `ring.alpha`，别重描几何（alpha 也在签名里，照样会重绘，但不再重建几何，而且可以顺手限速）。
+**那个 bug 已经修了（2026-09-08 下午）**：`render/GuideOverlay.ts` 的 `update()` 每帧调 `drawRing()`（`clear()` + `lineStyle` + `drawRoundedRect`），为了 `0.5 + 0.4 * sin(pulseT * 4)` 这个呼吸 alpha 把圆角矩形每秒重新三角化 60 次，新号进图时签名 **60/60 帧全变**。改法是把「几何」与「呼吸」拆开：
+
+- 几何只在目标 rect **真的移动**时重描（`syncRing` 比对缓存的 rect；`traceRing` 用不透明的 `lineStyle`）。
+- 呼吸走 `ring.alpha`，且**量化的是相位、不是调用方**：`Math.floor(pulseT * RING_PULSE_FPS) / RING_PULSE_FPS`（10 fps，同护盾气泡）。这一点是关键——`update()` 与「每帧再调一次 `showAt`」是两个都会跑的调用点（`WorldMapRendererLifecycle.updateGuide` 两个都调），量化相位让它们落在同一个值上，谁都没法把宿主顶回满帧；换成「限流调用方」的写法就挡不住另一个调用点。
+
+**同一个页面里的 A/B/C**（配方 §6 第 9 条：patch `GuideOverlay.prototype` 造出修复前的行为，三次量测之间只差这一处；世界地图 L1、引导 step1 圆环亮着、`Renderer.render` 换空函数、驱 120 帧）：
+
+| | 签名变化 / 120 帧 | ring 几何重建 / 120 帧 | 不同的 alpha 值 / 120 帧 |
+|---|---|---|---|
+| **修复后** | **39–41**（≈20/s） | **0** | 21（≈10.5/s） |
+| 引导整个中和掉（基线） | 22（≈11/s） | 0 | 1 |
+| 修复前的行为 | **120**（帧帧变） | **478** | 1（alpha 烘在 `lineStyle` 里） |
+
+读法：引导亮着时，圆环现在**加** ~10 次重绘/秒（10 + 护盾 10 + HUD 1 ≈ 20/s），而不是把 11/s 顶成 60/s；几何一次都不重建了（修复前 478 次/120 帧 = 每帧约 4 次 `geometry.dirty` 递增，因为 `update` 与 `showAt` 各描一次、每次 `clear`+`lineStyle`+`drawRoundedRect`）。
+
+⚠️ **顺带更正本节上一版写的一句话**：当时写「GuideOverlay 还挂在 CityScene 等**已经是 `reactive`** 的场景上，所以这一条今天就在让新手引导期间的菜单以满帧重绘」——**不成立**。CityScene 在 SLG 里永远是 `pushOverlay` 挂在活着的世界地图上（`app/nav/world.ts` 的 `openCity`，ADR-044），而 `paintMode` 对组合取悲观（§2），所以那个组合本来就是 `'live'`。这条 bug 的真实代价是**每秒 60 次白白三角化**（两个宿主都付）＋**把世界地图的签名变化率顶满**（也就是拦住这个开关的那件事）。
 
 ## 8. 诊断开关在微信上是瞎的（已修，2026-09-08）
 
@@ -136,6 +154,6 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 
 ## 10. 还没做的
 
-1. **`WorldMapScene` 的 `paint` 开关还没真的拨**——§7 的数字支持拨，但先修 `GuideOverlay` 每帧重描，否则新手引导期间白付遍历。拨之前还要补一条门禁（行军在途时必须每帧画）。
-2. **8.25 ms/tick 这个数字是在窗口被遮挡的状态下取的**（见 §6 第 7 条），量级可信、精度不可信；拨开关前值得在可见窗口里重取一次。
-3. **iOS / 微信真机仍然没有人拿着手机跑过**。§9 只是把管子接好了，数字要等真机上线。功耗（不是帧数）本来也不在客户端能自测的范围内，要靠设备侧的电池统计。
+1. **`WorldMapScene` 的 `paint` 开关还没真的拨。** §7 的数字支持拨，拦路的 `GuideOverlay` bug 已经修掉（§7），**门禁也已经就位**——`test/ui/worldMapOverlayCoalescing.ui.ts` 最后 3 例把「行军在途 60/60 帧全画、落地后 ≤2/60」钉在真 `RenderPolicy` + 真 `WorldMapScene` 上（写这三例时的两个坑：policy 时钟必须冻住，否则 500 ms 地板自己就把帧画满；`Date.now` 必须手动推进，否则同步跑 60 帧发生在同一个瞬间、token 一动不动，用例会为了错误的理由变绿）。拨的时候不需要再补测试。
+2. **8.25 ms/tick 这个数字仍然是在窗口被遮挡的状态下取的**（§6 第 7 条），量级可信、精度不可信。2026-09-08 想重取一次，**卡在拿不到一个可见的标签页**上——详见 §6 第 8 条；要这个数就得请人手动把那个标签页点到前台，然后照 §6 第 2 步驱 10 帧读每帧 ms。
+3. **iOS / 微信真机仍然没有人拿着手机跑过。** §9 只是把管子接好了，数字要等真机上线（Grafana 里按 `platform` 切 `fpsP50`、按 `scene` 切 `skipPct`）。功耗（不是帧数）本来也不在客户端能自测的范围内，要靠设备侧的电池统计。

@@ -14,8 +14,10 @@
 //
 // Usage is idempotent by design: call `showAt`/`showCard` every render pass with the flags-derived
 // decision for "what should be showing right now" — a repeat call with the same text is a cheap
-// no-op (only the ring's breathing phase redraws via `update`); a call with different text/target
-// rebuilds the bubble. Callers therefore never need to reason about "did I already call hide()".
+// no-op (the ring's geometry is re-traced only when the target actually moves; its breathing is an
+// `alpha` ramp quantized to RING_PULSE_FPS, so a per-frame call site cannot make it repaint faster
+// than that); a call with different text/target rebuilds the bubble. Callers therefore never need
+// to reason about "did I already call hide()".
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, tearDownChildren } from './sketchUi';
 import { FS } from './fontScale';
@@ -29,6 +31,13 @@ const BUBBLE_GAP = 10;
 const BUBBLE_PAD = 12;
 const BUBBLE_MAX_W = 320;
 const SKIP_SIZE = 22;
+/** Steps per second the ring's breathing alpha is quantized to. The ring is a pure decoration on
+ * top of otherwise-static menu screens, and alpha is one of the fields `render/renderPolicy.ts`
+ * hashes — so an unquantized sine would pin every host scene at full frame rate for as long as the
+ * guide is up (which is exactly what it used to do, see client-render-budget.md §7). Same call, and
+ * same rate, as the world map's shield bubbles (`WorldMapRenderer/lifecycle.ts` SHIELD_ANIM_FPS)
+ * and art-direction §5.4's "frame rate keeps the hand-drawn jitter, smoothness is not the goal". */
+const RING_PULSE_FPS = 10;
 
 export class GuideOverlay {
   /** Root container — caller `addChild`s this wherever/whenever it needs to sit on top (this class
@@ -42,6 +51,9 @@ export class GuideOverlay {
   private activeKey: string | null = null;
   private targetRect: GuideRect | null = null;
   private pulseT = 0;
+  /** The rect `ring`'s geometry was last traced for — the ring is re-traced only when this stops
+   * matching, so a per-frame `showAt` on a stationary target re-triangulates nothing. */
+  private ringGeomRect: GuideRect | null = null;
 
   /** Current tappable action (skip glyph on a spotlight bubble, or the button on a card) — null when nothing is showing. Rect is in the same coordinate space as wherever the host mounted `root` (scene-absolute screen px, as long as that ancestry carries no transform — true for every current host). */
   private action: { rect: GuideRect; fn: () => void } | null = null;
@@ -69,13 +81,13 @@ export class GuideOverlay {
     const key = `at:${text}`;
     if (this.activeKey === key) {
       this.positionBubble(rect, viewport);
-      this.drawRing(rect);
+      this.syncRing(rect);
       return;
     }
     this.activeKey = key;
     this.buildBubble(text, viewport, opts?.onSkip);
     this.positionBubble(rect, viewport);
-    this.drawRing(rect);
+    this.syncRing(rect);
   }
 
   /**
@@ -91,10 +103,12 @@ export class GuideOverlay {
     this.buildCard(text, btnLabel, onBtn, viewport);
   }
 
-  /** Advance the ring's breathing animation. Call every frame while mounted; cheap no-op when nothing is active. */
+  /** Advance the ring's breathing animation. Call every frame while mounted; cheap no-op when
+   * nothing is active. Never touches geometry — only `ring.alpha`, and only {@link RING_PULSE_FPS}
+   * distinct values of it per second. */
   update(dt: number): void {
     this.pulseT += dt;
-    if (this.ring.visible && this.targetRect) this.drawRing(this.targetRect);
+    if (this.ring.visible && this.targetRect) this.applyPulse();
   }
 
   /** Clear whatever is currently showing. Root stays mounted for reuse. */
@@ -112,15 +126,36 @@ export class GuideOverlay {
 
   // ── internals ──────────────────────────────────────────────────────────────
 
-  private drawRing(rect: GuideRect): void {
-    const a = 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(this.pulseT * 4));
+  /** Bring the ring in line with `rect` and the current breathing phase. Splitting the two is the
+   * whole point: the stroke is re-traced only on an actual move, the breathing rides on
+   * `ring.alpha`. Safe to call every frame from a call site that also calls `update`. */
+  private syncRing(rect: GuideRect): void {
+    const g = this.ringGeomRect;
+    if (!g || g.x !== rect.x || g.y !== rect.y || g.w !== rect.w || g.h !== rect.h) {
+      this.traceRing(rect);
+      this.ringGeomRect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+    }
+    this.applyPulse();
+  }
+
+  /** Re-triangulate the rounded-rect stroke. Opaque: the breathing lives on `ring.alpha` instead,
+   * so this runs on a move, not on a frame. */
+  private traceRing(rect: GuideRect): void {
     const x = rect.x - RING_PAD;
     const y = rect.y - RING_PAD;
     const w = rect.w + RING_PAD * 2;
     const h = rect.h + RING_PAD * 2;
     this.ring.clear();
-    this.ring.lineStyle(3.5, C.accent, a);
+    this.ring.lineStyle(3.5, C.accent, 1);
     this.ring.drawRoundedRect(x, y, w, h, 10);
+  }
+
+  /** Breathing alpha, phase-quantized to {@link RING_PULSE_FPS}. Quantizing the *phase* rather than
+   * throttling the caller is what makes this idempotent within a step — both `update` and a
+   * per-frame `showAt` land on the same value, so neither can push the host past 10 repaints/s. */
+  private applyPulse(): void {
+    const step = Math.floor(this.pulseT * RING_PULSE_FPS) / RING_PULSE_FPS;
+    this.ring.alpha = 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(step * 4));
   }
 
   private buildBubble(text: string, viewport: GuideViewport, onSkip?: () => void): void {

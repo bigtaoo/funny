@@ -173,6 +173,60 @@ describe('GuideOverlay', () => {
     expect(guide.currentAction()).not.toBeNull();
   });
 
+  // ── breathing ring: alpha, not geometry (client-render-budget.md §7) ─────────────────────────
+  //
+  // The ring used to `clear()` + `lineStyle` + `drawRoundedRect` on EVERY `update(dt)`, purely to
+  // move a sine-driven alpha. `render/renderPolicy.ts` hashes `geometry.dirty` and `alpha`, so that
+  // pinned every host scene — including `reactive` ones like CityScene — at full frame rate for as
+  // long as the guide was up (measured: world map signature changed 60/60 frames with the ring
+  // showing, 11/60 with it hidden). These three pin the fix: geometry only on a real move, alpha
+  // quantized to RING_PULSE_FPS, and the ring still actually follows a moving target.
+
+  it('update(dt) never re-triangulates the ring — the breathing rides on alpha alone', () => {
+    const guide = new GuideOverlay();
+    guide.showAt(RECT, 'pulsing', VIEWPORT, { onSkip: () => {} });
+    const ring = (guide as unknown as { ring: PIXI.Graphics }).ring;
+
+    const dirtyAfterShow = ring.geometry.dirty;
+    const alphaAfterShow = ring.alpha;
+    for (let i = 0; i < 60; i++) guide.update(1 / 60); // one second at frame rate
+    // Not one geometry rebuild in 60 frames (the old code did 60).
+    expect(ring.geometry.dirty).toBe(dirtyAfterShow);
+    // ...but it IS still breathing.
+    expect(ring.alpha).not.toBe(alphaAfterShow);
+    expect(ring.alpha).toBeGreaterThan(0.4);
+    expect(ring.alpha).toBeLessThanOrEqual(0.9);
+  });
+
+  it('the ring repaints at most ~10x/second even when update() AND showAt() are both called every frame', () => {
+    const guide = new GuideOverlay();
+    const alphas = new Set<number>();
+    // Exactly what WorldMapRendererLifecycle.updateGuide does: update(dt) then a fresh showAt with
+    // the same text on a stationary target, 60 times a second.
+    for (let i = 0; i < 60; i++) {
+      guide.update(1 / 60);
+      guide.showAt(RECT, 'pulsing', VIEWPORT, { onSkip: () => {} });
+      alphas.add((guide as unknown as { ring: PIXI.Graphics }).ring.alpha);
+    }
+    // Distinct alpha values == repaints the render policy will see. 10 steps/s, +1 for the boundary
+    // the loop can straddle. Un-quantize the phase and this is 60.
+    expect(alphas.size).toBeLessThanOrEqual(11);
+    expect(alphas.size).toBeGreaterThan(1); // and it is not frozen either
+  });
+
+  it('a moved target DOES re-trace the ring (it must follow pan/zoom, not freeze at the old spot)', () => {
+    const guide = new GuideOverlay();
+    guide.showAt(RECT, 'follow me', VIEWPORT, { onSkip: () => {} });
+    const ring = (guide as unknown as { ring: PIXI.Graphics }).ring;
+
+    const dirtyBefore = ring.geometry.dirty;
+    guide.showAt(RECT, 'follow me', VIEWPORT, { onSkip: () => {} }); // same rect → cached
+    expect(ring.geometry.dirty).toBe(dirtyBefore);
+
+    guide.showAt({ ...RECT, x: RECT.x + 40 }, 'follow me', VIEWPORT, { onSkip: () => {} });
+    expect(ring.geometry.dirty).toBeGreaterThan(dirtyBefore);
+  });
+
   it('update(dt) is a safe no-op when nothing is currently showing', () => {
     const guide = new GuideOverlay();
     expect(() => guide.update(0.5)).not.toThrow();
