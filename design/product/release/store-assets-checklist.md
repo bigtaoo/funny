@@ -191,10 +191,13 @@ Quoten-Seite. Kostenlos spielbar.
 - 是否加密传输：是；是否可请求删除：是（应用内删除账号）。
 
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
-- [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 桥 + `commercial/src/iap.ts` 验单，
-      fail closed，2026-09-07 已换成 App Store Server API）；ASC 建 9 个商品已完成。剩下的**外部动作**：
-      生成 In-App Purchase Key（四个 `NW_APPLE_IAP_*` / `NW_APPLE_APP_ID`）+ 在 ASC 配通知 V2 的 URL，
-      步骤见 [`IOS_RELEASE.md §4.0`](../../game/IOS_RELEASE.md)。真机沙盒对账仍未做
+- [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 2 桥 + App Store Server API
+      验单，fail closed，2026-09-07 A/B 两批，ADR-081/082）；ASC 建 9 个商品已完成。
+      **凭据与通知 URL 也已完成（2026-09-07）**：In-App Purchase Key 的四个 `NW_APPLE_IAP_*` / `NW_APPLE_APP_ID`
+      已进 VPS，通知 V2 的 URL 生产与沙盒都指向 `https://api.gamestao.com/api/iap/apple/notifications`
+      （见 [`IOS_RELEASE.md §12`](../../game/IOS_RELEASE.md)，步骤在 §4.0）。
+      **本条唯一还开着的是真机沙盒对账**：5 个币档 + 4 个非币商品各买一次、自动续订演练一次，
+      依赖一个带 StoreKit 2 的 TestFlight 构建（见 `IOS_RELEASE.md §12`）
 - [x] **原生包内不含网页支付通道**（2026-09-03 审计 + 修复，详见 [`IOS_RELEASE.md §10`](../../game/IOS_RELEASE.md)）：
       `home/pricing/refunds/pay/terms/privacy.html` 六个静态页曾随 `mobile` 构建进入 iOS 包与每个 OTA 包，
       Paddle 结账模块曾编进原生 bundle，桥丢失时 `iapKind()` 曾回落 `paddle`——均已堵上，`nativePaymentIsolation.test.ts` 护住

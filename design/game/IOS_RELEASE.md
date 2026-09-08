@@ -611,12 +611,26 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       审核员的设备上早已同意过，等于点不到隐私政策（5.1.1(i)）。门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例）
 - [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可
+- [ ] **填年龄分级问卷**（Apple 自有问卷）——答案已定在
+      [`store-assets-checklist §1.3`](../product/release/store-assets-checklist.md)：模拟赌博/随机付费道具
+      （gacha）=是、用户互动+不受限网络访问=是，预期落 **12+**。
+      **本条此前在这张 checklist 里没有行**，只记在 store-assets §6 的汇总表里（2026-09-08 补）
 - [x] **原生层拿 Xcode 编译一次** —— **2026-09-07 完成**（run #4，6分10秒，从 `main` 手动触发）。
       自 2026-07-21 以来第一次成功构建：**那两个从未验证过的原生件都真的编译了**
       （`Google-Mobile-Ads-SDK` 与 `CapgoCapacitorUpdater` 均出现在 Xcode 的编译产物里），AdMob 桥那些
       照新命名盲写的 Swift API 没有对不上。IPA 39 MB 已 `UPLOAD SUCCEEDED` 传到 ASC，CFBundleVersion=4。
       **这也解开了 §6 B 批的前置门槛**：现在有一个已知能编译的基线了。
-- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面 IAP 商品先建好），四个非币商品各买一次
+- [ ] **从 `main` 出一个带 StoreKit 2 的上传型构建** —— 2026-09-08 已手动触发
+      （`gh workflow run release-ios.yml --ref main -f destination=testflight`，run `34201608554`，
+      head `e2e307e45`）。**为什么这是独立一条**：`release-ios.yml` 的三次 2026-09-07 成功构建里，
+      两次上传的都是 B 批**之前**的代码（CFBundleVersion=4），唯一带 StoreKit 2 的那次是
+      `destination: none` 的编译检查、没有上传——而 B 批直到 2026-09-08 的 PR #129 才进 `main`。
+      所以在这次构建处理完之前，TestFlight 上不存在任何可用于沙盒验证的二进制。
+      顺带满足 §11.6 的「首个带 Capgo 插件的壳走一次二进制发布」。
+      ⚠️ 历史上从没打过 `ios-v*` tag（`git tag -l 'ios-v*'` 为空），一直是手动 dispatch
+- [ ] TestFlight 沙盒账号走通一次充值→发币对账（依赖上面的构建 + IAP 商品），五个币档 + 四个非币商品各买一次。
+      **这也是 §4.2b 那个 sandbox 验签回退修复（`13ba7b325`）的第一次真交易验证**——它此前只用
+      Apple 的 TEST 通知验过，没有任何一笔真沙盒购买走过那条分支
 - [ ] **沙盒验一次自动续订**（§4.1b）：沙盒订阅按加速时钟续期（1 个月 ≈ 5 分钟），买月卡 → 杀进程 →
       等一次续期 → 冷启动 → 确认 `subscriptionExpiry` 又往后 30 天且金币 +600；再冷启动一次确认**不重复发**。
       这是整条链路里唯一没法在本机验的部分
