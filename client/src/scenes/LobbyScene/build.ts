@@ -87,6 +87,27 @@ export class BuildPanel {
       runHit({ sound: 'sfx.ui.back', fn: () => this.overlays.clearGuide() });
       return;
     }
+    // Apple consumption-data consent (IOS_RELEASE.md §4.1b): the one overlay here that a tap cannot
+    // dismiss. Only its two buttons do anything; every other tap is swallowed, because "the player
+    // tapped somewhere" is not consent and not a refusal either.
+    if (core.consentLayer) {
+      const answers: Hit[] = [];
+      if (core.consentYesRect) {
+        answers.push({
+          rect: core.consentYesRect,
+          fn: () => this.overlays.answerConsumptionConsent(true),
+        });
+      }
+      if (core.consentNoRect) {
+        answers.push({
+          rect: core.consentNoRect,
+          sound: 'sfx.ui.back',
+          fn: () => this.overlays.answerConsumptionConsent(false),
+        });
+      }
+      dispatchHit(answers, x, y);
+      return;
+    }
     // Season settlement modal (SE-6): dismiss button or anywhere on backdrop dismisses it.
     if (core.settlementLayer) {
       runHit({ sound: 'sfx.ui.back', fn: () => this.overlays.clearSettlement() });

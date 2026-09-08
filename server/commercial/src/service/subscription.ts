@@ -9,6 +9,7 @@ import {
 } from '@nw/shared';
 import type { Result, WalletView, WalletCore } from './base';
 import { walletView } from './base';
+import { linkAppleSubscription } from './appleAccount';
 import { effectiveCoins, rechargeChannelOf, spendChannelOf } from '../spendChannel';
 
 export interface SubscriptionHandlers {
@@ -167,6 +168,14 @@ export class SubscriptionService {
       let granted = 0;
       let last: Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }> | null = null;
       for (const period of recent) {
+        // Heal the account link while we are here. This runs on the path that exists precisely
+        // because a purchase can be charged and never reported -- the case that leaves no link row
+        // -- and without this write the next renewal notification is still unroutable, so the
+        // player would depend on opening the app for every single period. (This was documented as
+        // happening here on 2026-09-07; it did not actually happen until this line existed.)
+        await linkAppleSubscription(
+          this.core, args.accountId, period.originalTransactionId, period.product,
+        );
         const before = (await this.core.cols.wallets.findOne({ _id: args.accountId }))?.subscription?.expiry ?? 0;
         const res = await this.core.subscriptionCardBuy({
           accountId: args.accountId,

@@ -422,6 +422,13 @@ export const en: Record<TranslationKey, string> = {
   'shop.starterDraw': 'Starter First-Draw Pack',
   'shop.starterGrowth': 'Starter Growth Pack',
   'shop.alreadyOwned': 'Purchased',
+  // ── Apple consumption-data consent (IOS_RELEASE.md §4.1b): when a player asks Apple for a refund,
+  //    Apple asks us how much of the purchase was used. Apple requires the app itself to collect this
+  //    consent, and says not to answer at all without it. Asked once, of a paying player; both answers stored ──
+  'iap.consentTitle': 'Sharing data on a refund',
+  'iap.consentBody': 'If you ever ask Apple for a refund, Apple asks us how much of that purchase you had used (how many coins you spent, for example). May we give Apple that usage figure? It is sent only when you request a refund, and covers nothing else — not your chats, not your decks.',
+  'iap.consentAllow': 'Allow',
+  'iap.consentDecline': 'Do not allow',
   // ── Monthly-card expiry reminder (GACHA_DESIGN §9.3 / G10) ──
   'shop.reminderSoonTitle': 'Monthly card expiring soon',
   'shop.reminderSoonBody': 'Your monthly card expires in 3 days — renew to keep your daily bonus.',

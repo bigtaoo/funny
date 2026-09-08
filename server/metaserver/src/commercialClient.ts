@@ -95,6 +95,17 @@ export interface CommercialClient {
   appleNotification(args: {
     signedPayload: string;
   }): Promise<Body<{ outcome: string }>>;
+  /**
+   * This account's `appAccountToken` — the UUID the iOS client attaches to a StoreKit 2 purchase so
+   * Apple can name the owner on every later notification about it. Allocated on first ask and stable
+   * afterwards (server/commercial/src/service/appleAccount.ts).
+   */
+  appleAccountToken(args: { accountId: string }): Promise<Body<{ token: string }>>;
+  /** Store the player's answer to the consumption-data question the app asks (CONSUMPTION_REQUEST). */
+  appleConsumptionConsent(args: {
+    accountId: string;
+    consented: boolean;
+  }): Promise<Body<{ consented: boolean }>>;
   starterBuy(args: {
     accountId: string;
     productId: string;
@@ -316,6 +327,14 @@ export class HttpCommercialClient implements CommercialClient {
 
   appleNotification(args: { signedPayload: string }) {
     return this.post<{ outcome: string }>('/internal/apple/notification', args);
+  }
+
+  appleAccountToken(args: { accountId: string }) {
+    return this.post<{ token: string }>('/internal/apple/account-token', args);
+  }
+
+  appleConsumptionConsent(args: { accountId: string; consented: boolean }) {
+    return this.post<{ consented: boolean }>('/internal/apple/consumption-consent', args);
   }
 
   monthlyCardClaim(args: { accountId: string; dayKey: string; clientPlatform?: string }) {

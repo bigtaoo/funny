@@ -98,6 +98,13 @@ export interface LobbyView {
    * The core uses SaveManager.featSeen to decide whether to show the guide or navigate directly.
    */
   showFeatureGuide(titleKey: TranslationKey, bodyKey: TranslationKey, onDismiss: () => void): void;
+  /**
+   * Apple consumption-data consent (IOS_RELEASE.md §4.1b): a two-button question over the lobby,
+   * asked once of a paying iOS player. Unlike every other overlay here it cannot be dismissed —
+   * `onAnswer` runs with the player's actual answer, because "closed it" is neither a yes nor a no
+   * and Apple accepts only the yes.
+   */
+  showConsumptionConsent(onAnswer: (consented: boolean) => void): void;
 }
 
 /** Live handle for the room scene — the core forwards NetSession control events to it. */

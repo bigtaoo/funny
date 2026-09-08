@@ -330,6 +330,10 @@ export class ApiClient {
     return this.shopSvc.iapAppleSync(receipt);
   }
 
+  setAppleConsumptionConsent(consented: boolean): Promise<{ consented: boolean }> {
+    return this.shopSvc.setAppleConsumptionConsent(consented);
+  }
+
   paddleCheckout(tierId: string): Promise<{ transactionId: string }> {
     return this.shopSvc.paddleCheckout(tierId);
   }
@@ -545,7 +549,7 @@ export class ApiClient {
   getBootstrap(
     platform: string,
     publicId?: string
-  ): Promise<{ flags: Record<string, boolean>; paddleClientToken?: string }> {
+  ): Promise<{ flags: Record<string, boolean>; paddleClientToken?: string; appleAccountToken?: string }> {
     return this.miscSvc.getBootstrap(platform, publicId);
   }
 

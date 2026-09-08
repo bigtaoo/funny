@@ -141,6 +141,13 @@ describe.skipIf(!mongo)('App Store Server Notifications V2 (e2e)', () => {
 
   const logOf = (uuid: string) => m.collections.appleNotifications.findOne({ _id: uuid });
 
+  /** The account's appAccountToken, asserting the handler's own Result envelope on the way through. */
+  async function tokenFor(accountId: string): Promise<string> {
+    const r = await svc.appleAccountToken({ accountId });
+    if (!r.ok) throw new Error(`appleAccountToken failed: ${r.error}`);
+    return r.token;
+  }
+
   it('DID_RENEW extends the subscription of the linked account', async () => {
     await link('player-1');
     const res = await svc.appleNotification({ signedPayload: signedNotification('DID_RENEW') });
@@ -237,10 +244,41 @@ describe.skipIf(!mongo)('App Store Server Notifications V2 (e2e)', () => {
     expect(res).toMatchObject({ ok: true, outcome: 'ignored' });
   });
 
-  it('CONSUMPTION_REQUEST sends nothing while the app cannot collect consent', async () => {
+  it('routes by appAccountToken with no link row at all', async () => {
+    // The hole appAccountToken exists to close: the purchase was charged and never reported, so
+    // nothing ever wrote a link. The token was recorded BEFORE the purchase, so the renewal still
+    // finds its owner.
+    const token = await tokenFor('player-7');
+    const res = await svc.appleNotification({
+      signedPayload: signedNotification('DID_RENEW', {
+        uuid: 'by-token',
+        transaction: { appAccountToken: token },
+      }),
+    });
+    expect(res).toMatchObject({ ok: true, outcome: 'granted' });
+    expect(await logOf('by-token')).toMatchObject({ accountId: 'player-7' });
+    const wallet = await m.collections.wallets.findOne({ _id: 'player-7' });
+    expect(wallet?.subscription?.expiry).toBeGreaterThan(now());
+  });
+
+  it('falls back to the link table when the token is one we never issued', async () => {
+    // A token from another environment, or a corrupted one: it must not route anywhere by itself,
+    // and it must not stop the link table from answering.
+    await link('player-1');
+    const res = await svc.appleNotification({
+      signedPayload: signedNotification('DID_RENEW', {
+        uuid: 'unknown-token',
+        transaction: { appAccountToken: '11111111-2222-3333-4444-555555555555' },
+      }),
+    });
+    expect(res).toMatchObject({ ok: true, outcome: 'granted' });
+    expect(await logOf('unknown-token')).toMatchObject({ accountId: 'player-1' });
+  });
+
+  it('CONSUMPTION_REQUEST sends nothing until the player has consented', async () => {
     // Apple rejects a submission reporting customerConsented:false and tells you not to respond at
-    // all in that case. The consent UI is client work (phase B) — until it ships this must stay silent
-    // rather than claim a consent nobody gave. The row records that the request arrived.
+    // all in that case. So an account that was never asked, or that declined, produces silence rather
+    // than a claim of consent nobody gave. The row records that the request arrived.
     await link('player-1');
     const res = await svc.appleNotification({
       signedPayload: signedNotification('CONSUMPTION_REQUEST', {
@@ -254,6 +292,57 @@ describe.skipIf(!mongo)('App Store Server Notifications V2 (e2e)', () => {
       outcome: 'consumption_no_consent',
       consumptionRequestReason: 'UNINTENDED_PURCHASE',
     });
+  });
+
+  it('CONSUMPTION_REQUEST answers Apple once the player has consented', async () => {
+    // The other half of the gate above: with consent stored (the app asked, the player allowed), the
+    // ledger-derived consumption report actually goes out — this is the refund defence firing.
+    await link('player-1');
+    await svc.appleConsumptionConsent({ accountId: 'player-1', consented: true });
+    const res = await svc.appleNotification({
+      signedPayload: signedNotification('CONSUMPTION_REQUEST', {
+        uuid: 'consume-2',
+        reason: 'UNINTENDED_PURCHASE',
+      }),
+    });
+    expect(res).toMatchObject({ ok: true, outcome: 'consumption_sent' });
+    expect(consumption).toHaveLength(1);
+    expect(consumption[0]).toMatchObject({
+      transactionId: 'tx-1',
+      request: { customerConsented: true },
+    });
+  });
+
+  it('a declined consent is a stored answer, not a missing one — still no submission', async () => {
+    await link('player-1');
+    await svc.appleConsumptionConsent({ accountId: 'player-1', consented: false });
+    const res = await svc.appleNotification({
+      signedPayload: signedNotification('CONSUMPTION_REQUEST', { uuid: 'consume-3' }),
+    });
+    expect(res).toMatchObject({ ok: true, outcome: 'consumption_no_consent' });
+    expect(consumption).toHaveLength(0);
+  });
+
+  it('hands out one appAccountToken per account, however often it is asked', async () => {
+    // Two tokens for one player would split their purchases across two identities in Apple's
+    // reports, and the second would resolve to nothing until a link row happened to exist.
+    const a = await tokenFor('player-9');
+    const b = await tokenFor('player-9');
+    expect(b).toBe(a);
+    expect(await m.collections.appleAccountTokens.countDocuments({ accountId: 'player-9' })).toBe(1);
+    expect(await tokenFor('player-10')).not.toBe(a);
+  });
+
+  it('survives concurrent first asks for the same account', async () => {
+    // Two /bootstrap calls can race (the client polls, and a login can land mid-poll). The unique
+    // index makes the loser read the winner's row instead of minting a second token.
+    const tokens = await Promise.all([
+      tokenFor('player-11'),
+      tokenFor('player-11'),
+      tokenFor('player-11'),
+    ]);
+    expect(new Set(tokens).size).toBe(1);
+    expect(await m.collections.appleAccountTokens.countDocuments({ accountId: 'player-11' })).toBe(1);
   });
 
   it('reports an unverifiable payload without throwing', async () => {

@@ -26,6 +26,7 @@ import {
   monthlyCardClaimHandler,
   claimRechargeMilestoneHandler,
   iapAppleSyncHandler,
+  setAppleConsumptionConsentHandler,
 } from './economy/subscriptions.js';
 import { starterBuyHandler } from './economy/starter.js';
 import { adsRewardHandler, iapVerifyHandler, redeemPromoCodeHandler } from './economy/adsPromo.js';
@@ -34,7 +35,7 @@ type EconomyHandlers = Pick<
   MetaHandlers,
   | 'getShopItems' | 'getGachaPools' | 'shopBuy' | 'gachaDraw' | 'redeemFate'
   | 'monthlyCardBuy' | 'yearCardBuy' | 'monthlyCardClaim' | 'claimRechargeMilestone' | 'starterBuy'
-  | 'adsReward' | 'iapVerify' | 'iapAppleSync' | 'redeemPromoCode'
+  | 'adsReward' | 'iapVerify' | 'iapAppleSync' | 'setAppleConsumptionConsent' | 'redeemPromoCode'
 >;
 
 export class EconomyService {
@@ -90,6 +91,10 @@ export class EconomyService {
 
     async iapAppleSync(...args: Parameters<EconomyHandlers['iapAppleSync']>) {
       return iapAppleSyncHandler(this.core, ...args);
+    }
+
+    async setAppleConsumptionConsent(...args: Parameters<EconomyHandlers['setAppleConsumptionConsent']>) {
+      return setAppleConsumptionConsentHandler(this.core, ...args);
     }
 
     async redeemPromoCode(...args: Parameters<EconomyHandlers['redeemPromoCode']>) {

@@ -81,6 +81,7 @@
 1. **不许依赖没注入的随机源**。业务代码里的 `Math.random()` 要么走注入（如本轮的 `WorldServiceDeps.rng`），要么测试绕开它（显式坐标/显式 id）。
 2. **不许"写完立刻读" fire-and-forget**。正确姿势是 `vi.waitFor` 轮询（先例：`metaserver/test/pvp-card-stats.e2e.test.ts`、`gameserver/test/lifecycle.test.ts`）。
 3. **并发用例不许断言具体的交错**。断言要对所有合法交错都成立（先例：`worldsvc/test/review-fixes-2026-08-03.e2e.test.ts` 的 coin conservation 写法）；确实要覆盖某条竞态分支时，注入钩子把那个交错**制造出来**（同文件的 `onSpend`），别指望调度器碰巧给你。
+4. **fixture 播种不许是 O(N) 次往返**（2026-09-07 新增，见下）。用例的墙钟时间必须是常数，不能是 `N × 环境延迟`——那样它是过是挂取决于机器有多忙，而不是代码干了什么。批量播种一律一次 `bulkWrite`。
 
 > **规则 3 又被违反过一次（2026-08-27 抓到）**：`auctionsvc/test/journal-atomicity.e2e.test.ts` 的「同一竞拍者同一金额两次出价」那例写的是 `Promise.allSettled([placeBid, placeBid])` + `expect(fulfilled).toHaveLength(1)`——**这个文件自己的头注释就写着「并发一律在读写窗口内注入，绝不用顺序调两次代替」，而这一例恰好是被禁的那种写法**。
 >
@@ -89,6 +90,37 @@
 > 修法：拆成两例，两个交错**各自注入**。①第二次出价注入进第一次的「领账本行 → topBid CAS」窗口（`svcWithHook`），必然被 `begin` 拦下——这才是修复前真会出钱的那条分支。②另一例钉 replay 那个顺序，而它**写不成顺序调用**：第一笔落完 `topBid` 就是 10，同额重提会死在**最小加价检查**（`BID_TOO_LOW`）、永远到不了 `begin`；replay 分支只对「取快照时 `topBid` 还是 null」的调用方可达，所以注入点是输家**自己的快照读**——`svcWithHook` 表达不了（它的 hook 永远跑在真调用**之前**，而这里要读先发生），用了一个局部 proxy。两例都做了变异验证（拆掉 `begin` 的 in-flight 守卫 / 把 `done` 当成可重开的 `aborted`），全量套件 `--retry=0` 连跑 5 次 255/255。
 >
 > **两条可复用的判据**：①**一份把规则写在头注释里的文件，不等于它每一例都遵守**——审查并发用例要看代码，不要看文件声称的纪律。②看到 flakyReporter 报「重试才过」时，先问的不是「哪里有竞态」，而是「**这条断言对所有合法交错都成立吗**」；本例里产品代码一点问题都没有，红的是断言。
+---
+
+## 规则 4 的来源：`economy.e2e.test.ts` 的三个 equipment 用例卡在 15s 线上（2026-09-07，worktree `cranky-bhaskara-50e749`）
+
+**现象**：`metaserver/test/economy.e2e.test.ts` 的「gacha inventory-full overflow → mail」组，三个 equipment 用例在 CI 命令（`npm run test:coverage`）下测出 **15.25s / 15.23s / 15.57s**，而 `testTimeout` 正是 **15000ms**。同组的 `mailed attachments` 那例 21.9s，靠一个 2026-08-13 加的 `, 30000` 单例超时活着。全量套件跑一次会有两例被 flakyReporter 记成 FLAKY——`retry: 1` 正在遮住它。
+
+**根因不是"越往后越慢"**（这是当时的第一直觉，实测不成立）。`--retry=0` 单跑该文件的逐例耗时：前 61 例平在 ~510ms、无任何趋势；overflow 组的耗时与**播种的文档数严格成正比**，与它在文件里的位置无关：
+
+| 用例 | 播种文档数 | 耗时（无 coverage） |
+|---|---|---|
+| roster ×3 | 500 | 1393 / 1375 / 1607 ms |
+| equipment ×3 | **1000** | 2762 / 2772 / 2353 ms |
+| mailed attachments | 500 + 1000 | 3149 ms |
+| fresh account | 0 | 511 ms |
+
+139 个文件的全量套件里再测一次，同样是 2.88–2.92s——**跨文件不累积**，同一个 mongod 被反复 `dropDatabase` 也没有把它拖慢。
+
+真因在 `test/helpers/{equipment,cards}.ts`：`seedEquipmentBatch` / `seedCardBatch` 写的是 `for (const inst of instances) await seedXxx(...)`，**每个实例一次 `updateOne` 往返**。于是用例墙钟 = `cap × 环境延迟`。而 `EQUIPMENT_INV_CAP` 在 **2026-08-10 从 300 提到 1000**——那次容量提升把这三个用例的播种成本一次性乘了 3.3 倍，把它们推到 15s 线上；`CARD_INV_CAP` 还是 500，所以 card 那三个（8.2s）只是排在后面等着。这就是为什么"最近的改动没碰过它"却突然开始挂：改的是常量，不是测试。
+
+**修法**（治本，不动 `testTimeout`）：两个 helper 各改成**一次 `bulkWrite(..., { ordered: false })`**，1000 次往返变 1 次；顺手把 `$set` 的文档形状抽成 `equipmentDoc()` / `cardDoc()`，单条与批量共用一份定义。`mailed attachments` 那例的 `, 30000` 一并删掉——它是同一个根因的补丁。
+
+**效果**（同一台机器，`npm run test:coverage` 口径，两个文件 119 例全绿）：
+
+- 改前：equipment 三例 15.25 / 15.23 / 15.57s，`mailed attachments` 21.9s。
+- 改后：`economy.e2e` + `equipment.e2e` **全部 119 例中位数 1047ms、最大 1519ms**，最慢的那例还不是播种用例。距 15s 有 ~10 倍余量。
+- 无 coverage 口径：equipment 三例 2762ms → 1099ms；扣掉该文件 ~510ms 的每例底噪后，播种部分 2251ms → 93ms（**24×**）。
+
+**两条可复用的判据**：①**"越往后越慢"要先用逐例耗时证伪**——本例里 61 个前置用例的耗时是一条水平线，把注意力引向"共享状态累积"会完全走错方向；耗时与**用例自己的输入规模**对齐才是真信号。②**改一个容量常量，等于改了每一个把该常量当循环上界的测试的运行时长**。`EQUIPMENT_INV_CAP` 那次 300→1000 的 PR 在测试侧是零 diff，代价却全落在这里——播种成本写成 O(1) 往返，这类改动就再也波及不到时间维度。
+
+**顺带**：该文件每个 `beforeEach` 都 `dropDatabase()` + `ensureIndexes()`（约 40 个 `createIndex`），这就是那条 ~510ms 的底噪，70 例合计 ~35s，是文件时长的大头。它是常数、不制造不确定性，本轮没动。
+
 ---
 
 ## 守卫脚本自己接入测试 + 两条 canary（2026-08-20，worktree `feat/guard-script-tests`）

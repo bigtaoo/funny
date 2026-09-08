@@ -354,6 +354,15 @@ export class LobbySceneCore {
   /** Season-settlement modal overlay (SE-6). Blocks lobby taps until dismissed. */
   settlementLayer: PIXI.Container | null = null;
   settlementDismissRect: Rect | null = null;
+  /**
+   * Apple consumption-data consent card (IOS_RELEASE.md §4.1b). Two answer rects and no dismiss
+   * rect: "closed without answering" is not an answer Apple accepts, so this overlay swallows every
+   * other tap until one of the two buttons is pressed.
+   */
+  consentLayer: PIXI.Container | null = null;
+  consentYesRect: Rect | null = null;
+  consentNoRect: Rect | null = null;
+  consentOnAnswer: ((consented: boolean) => void) | null = null;
   /** First-time feature guide overlay (ONBOARDING §4.1). After dismissal the callback continues navigation to the feature. */
   guideLayer: PIXI.Container | null = null;
   guideDismissRect: Rect | null = null;

@@ -9,6 +9,7 @@ import { withTimeout, TimeoutError } from '../../../ui/busyTracker';
 import type { AppCtx } from '../../appCtx';
 import { log } from '../../appConstants';
 import { scheduleSubscriptionReminder } from '../../../platform/localReminders';
+import { finishNativeTransaction } from '../../../platform/iap';
 import type { SaveData } from '../../../game/meta/SaveData';
 
 export interface ShopIap {
@@ -28,6 +29,27 @@ export interface ShopIap {
 
 export function createShopIap(ctx: AppCtx): ShopIap {
   const { saveManager, platform, featureFlags } = ctx;
+
+  /**
+   * The appAccountToken to hand StoreKit with the next purchase, or undefined when there is none
+   * (not iOS, not logged in yet, bootstrap not back). Never blocks a purchase on it: a purchase with
+   * no token is still verified and still granted — it only loses the ability for Apple's later
+   * notifications to name the account by themselves (IOS_RELEASE.md §6).
+   */
+  function appleAccountToken(): string | undefined {
+    return featureFlags?.getAppleAccountToken() ?? undefined;
+  }
+
+  /**
+   * Tell StoreKit the content for `receipt` was delivered, now that the server has granted it.
+   *
+   * A no-op on Google and on pre-StoreKit-2 iOS binaries (which finish their own transactions), and
+   * deliberately not awaited by the callers' success path: the grant is already durable server-side,
+   * so a failed finish costs one redundant report on a later launch, nothing more.
+   */
+  function finishNative(kind: string, receipt: string): void {
+    if (kind === 'apple') void finishNativeTransaction(receipt);
+  }
 
   /** Poll the authoritative save until coins rise above `before` (Paddle webhook lag) or attempts run out (~10s). */
   async function pollForCoinIncrease(before: number): Promise<boolean> {
@@ -85,8 +107,10 @@ export function createShopIap(ctx: AppCtx): ShopIap {
     const kind = platform.iapKind();
     try {
       if (kind === 'apple' || kind === 'google') {
-        const { receipt } = await platform.nativeIapPurchase(tierId); // user-paced native store sheet — unbounded
+        // user-paced native store sheet — unbounded
+        const { receipt } = await platform.nativeIapPurchase(tierId, appleAccountToken());
         const { save } = await withTimeout(client.iapVerify(kind, receipt));
+        finishNative(kind, receipt);
         saveManager.adoptServer(save);
         onConverted();
         analytics.track('iap_purchase', { tier: tierId, platform: kind });
@@ -136,8 +160,10 @@ export function createShopIap(ctx: AppCtx): ShopIap {
     const kind = platform.iapKind();
     if (kind === 'apple' || kind === 'google') {
       try {
-        const { receipt } = await platform.nativeIapPurchase(product); // user-paced native store sheet — unbounded
+        // user-paced native store sheet — unbounded
+        const { receipt } = await platform.nativeIapPurchase(product, appleAccountToken());
         const { save } = await withTimeout(buyWithReceipt(kind, receipt));
+        finishNative(kind, receipt);
         saveManager.adoptServer(save);
         onConverted();
         analytics.track(trackEvent, { platform: kind });
@@ -184,8 +210,10 @@ export function createShopIap(ctx: AppCtx): ShopIap {
     const kind = platform.iapKind();
     if (kind === 'apple' || kind === 'google') {
       try {
-        const { receipt } = await platform.nativeIapPurchase(productId); // user-paced native store sheet — unbounded
+        // user-paced native store sheet — unbounded
+        const { receipt } = await platform.nativeIapPurchase(productId, appleAccountToken());
         const { save } = await withTimeout(client.starterBuy(productId, kind, receipt));
+        finishNative(kind, receipt);
         saveManager.adoptServer(save);
         onConverted();
         analytics.track('starter_buy', { product_id: productId, platform: kind });

@@ -2,9 +2,14 @@
 // session creation — JWT auth required. Depends on priceIds.ts for the tier→priceId lookup; zero
 // dependency on webhookRoute.ts (the two routes never call each other).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { GROWTH_PACK_WINDOW_DAYS, IAP_TIERS, PRODUCT_STARTER_GROWTH } from '@nw/shared';
+import { GROWTH_PACK_WINDOW_DAYS, IAP_TIERS, PRODUCT_STARTER_GROWTH, createLogger } from '@nw/shared';
 import { priceIdForTier } from './priceIds.js';
 import type { PaddleDeps } from './types.js';
+
+// NOT app.log: metaserver builds Fastify with `logger: false`, so route-level app.log.* calls are
+// discarded (see webhookRoute.ts's note). This is the only record of *why* a checkout 502'd — the
+// access log shows the status code, never the Paddle API error behind it.
+const log = createLogger('meta:paddle');
 
 const PADDLE_PROD_API = 'https://api.paddle.com';
 const PADDLE_SANDBOX_API = 'https://sandbox-api.paddle.com';
@@ -118,7 +123,7 @@ export function registerCheckoutRoute(app: FastifyInstance, deps: PaddleDeps): v
         transactionId = await createPaddleTransaction(priceId, accountId);
       } catch (e) {
         const msg = (e as Error).message;
-        app.log.error(`paddle checkout error: ${msg}`);
+        log.error(`paddle checkout error: ${msg}`);
         return reply
           .code(502)
           .send({ ok: false, error: { code: 'PADDLE_ERROR', message: 'checkout create failed' } });

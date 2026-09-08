@@ -94,6 +94,23 @@ describe.skipIf(!mongo)('apple auto-renewable subscription sync (e2e)', () => {
     expect(w.coins).toBe(600);                                    // the immediate grant, exactly once
   });
 
+  it('writes the account link the notification path needs, and re-asserts it on later syncs', async () => {
+    // The reason this matters: the sync is the path that runs when a purchase was charged and never
+    // reported, which is exactly the case that left no link row. Granting the period but not writing
+    // the link would leave the player dependent on opening the app for every future renewal.
+    periods = [monthly('tx-1')];
+    await svc.subscriptionSyncApple({ accountId: 'link-me', receipt: 'r', clientPlatform: 'ios' });
+    expect(await m.collections.appleTransactionLinks.findOne({ _id: 'tx-1' })).toMatchObject({
+      accountId: 'link-me',
+      product: 'monthly_card',
+    });
+
+    // Upsert, not insert: the second cold start must not fail on the duplicate key and must leave
+    // exactly one row behind.
+    await svc.subscriptionSyncApple({ accountId: 'link-me', receipt: 'r', clientPlatform: 'ios' });
+    expect(await m.collections.appleTransactionLinks.countDocuments({ _id: 'tx-1' })).toBe(1);
+  });
+
   it('REGRESSION: a renewal extends a card that is still active, instead of ALREADY_ACTIVE', async () => {
     periods = [monthly('tx-1', 1)];
     const first = await svc.subscriptionSyncApple({ accountId: 'b', receipt: 'r', clientPlatform: 'ios' });

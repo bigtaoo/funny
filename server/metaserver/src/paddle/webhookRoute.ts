@@ -2,11 +2,19 @@
 // no player auth, HMAC-SHA256 verified. Depends on priceIds.ts + signature.ts; zero dependency on
 // checkoutRoute.ts (the two routes never call each other).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { createLogger } from '@nw/shared';
 import { mirrorCoins, mirrorWalletFrom, deliverOrder } from '../economy.js';
 import { nullMetaSocialsvcClient } from '../socialsvcClient.js';
 import { coinsForPriceId, starterProductForPriceId, subscriptionForPriceId, usdCentsForPriceId } from './priceIds.js';
 import { verifyPaddleSignature } from './signature.js';
 import type { PaddleDeps } from './types.js';
+
+// NOT app.log: metaserver builds Fastify with `logger: false` (index.ts) and logs requests through a
+// @nw/shared onResponse hook instead, so every app.log.* call in a route is silently discarded — the
+// container's whole log history contains zero of the messages below. Every warning here concerns real
+// money that already changed hands, and the comments at those call sites promise a trace "for
+// CS/refund lookup"; until 2026-09-07 that trace did not exist. Same reasoning as apple/webhookRoute.ts.
+const log = createLogger('meta:paddle');
 
 interface PaddleWebhookEvent {
   event_type?: string;
@@ -119,7 +127,7 @@ export function registerWebhookRoute(app: FastifyInstance, deps: PaddleDeps): vo
           // These SKUs aren't meant to be quantity-adjustable (buying N cards isn't a supported grant
           // shape) — the Paddle dashboard price should disable quantity selection; log if it ever shows up.
           if (typeof rawQuantity === 'number' && Number.isFinite(rawQuantity) && rawQuantity !== 1) {
-            app.log.warn(`paddle webhook: subscription tx ${transactionId} reported quantity ${rawQuantity}, ignoring (grants exactly one card)`);
+            log.warn(`paddle webhook: subscription tx ${transactionId} reported quantity ${rawQuantity}, ignoring (grants exactly one card)`);
           }
           const orderId = `paddle:${transactionId}`;
           // Real money via Paddle (web-only store) — tags the 'web' recharged bucket (ADR-020), not the free pool.
@@ -130,7 +138,7 @@ export function registerWebhookRoute(app: FastifyInstance, deps: PaddleDeps): vo
             // Real money already changed hands but the grant was refused (e.g. an extreme same-instant
             // race against another purchase slipping past the checkout-time pre-check) — log for CS/refund
             // lookup instead of silently dropping it.
-            app.log.error(`paddle webhook: subscription grant failed ${result.error} tx=${transactionId}`);
+            log.error(`paddle webhook: subscription grant failed ${result.error} tx=${transactionId}`);
             await deps.commercial.recordPaddleEvent({
               transactionId, eventType: 'transaction.completed', status, accountId, rawEvent: rawBody,
             });
@@ -147,7 +155,7 @@ export function registerWebhookRoute(app: FastifyInstance, deps: PaddleDeps): vo
         const starterProduct = starterProductForPriceId(priceId);
         if (starterProduct) {
           if (typeof rawQuantity === 'number' && Number.isFinite(rawQuantity) && rawQuantity !== 1) {
-            app.log.warn(`paddle webhook: starter pack tx ${transactionId} reported quantity ${rawQuantity}, ignoring (grants exactly one pack)`);
+            log.warn(`paddle webhook: starter pack tx ${transactionId} reported quantity ${rawQuantity}, ignoring (grants exactly one pack)`);
           }
           const orderId = `paddle:${transactionId}`;
           // Real money via Paddle (web-only store) — tags the 'web' recharged bucket (ADR-020) for starter_growth's coins.
@@ -156,7 +164,7 @@ export function registerWebhookRoute(app: FastifyInstance, deps: PaddleDeps): vo
             // Real money already changed hands but the grant was refused (e.g. an extreme same-instant
             // race, or the checkout-time pre-check window closing between checkout and webhook) — log
             // for CS/refund lookup instead of silently dropping it.
-            app.log.error(`paddle webhook: starter pack grant failed ${result.error} tx=${transactionId}`);
+            log.error(`paddle webhook: starter pack grant failed ${result.error} tx=${transactionId}`);
             await deps.commercial.recordPaddleEvent({
               transactionId, eventType: 'transaction.completed', status, accountId, rawEvent: rawBody,
             });
@@ -176,7 +184,7 @@ export function registerWebhookRoute(app: FastifyInstance, deps: PaddleDeps): vo
 
         const unitCoins = coinsForPriceId(priceId);
         if (unitCoins === 0) {
-          app.log.warn(`paddle webhook: unknown priceId ${priceId} for tx ${transactionId}`);
+          log.warn(`paddle webhook: unknown priceId ${priceId} for tx ${transactionId}`);
           return reply.code(200).send('unknown price'); // 200 so Paddle does not retry
         }
 
@@ -189,7 +197,7 @@ export function registerWebhookRoute(app: FastifyInstance, deps: PaddleDeps): vo
           Number.isFinite(rawQuantity) &&
           (rawQuantity < MIN_PADDLE_QUANTITY || rawQuantity > MAX_PADDLE_QUANTITY)
         ) {
-          app.log.warn(
+          log.warn(
             `paddle webhook: quantity ${rawQuantity} out of range for tx ${transactionId}, clamped to ${clampedQuantity}`,
           );
         }
@@ -198,7 +206,7 @@ export function registerWebhookRoute(app: FastifyInstance, deps: PaddleDeps): vo
 
         const result = await deps.commercial.paddleComplete({ accountId, transactionId, coins, usdCents });
         if (!result.ok) {
-          app.log.error(`paddle paddleComplete failed: ${result.error} tx=${transactionId}`);
+          log.error(`paddle paddleComplete failed: ${result.error} tx=${transactionId}`);
           return reply.code(200).send('processed'); // still 200 to prevent retry loops on business errors
         }
 

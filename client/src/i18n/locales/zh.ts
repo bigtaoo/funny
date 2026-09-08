@@ -426,6 +426,12 @@ export const zh = {
   'shop.starterDraw': '新手首抽包',
   'shop.starterGrowth': '新手成长包',
   'shop.alreadyOwned': '已购买',
+  // ── Apple 消耗数据同意（IOS_RELEASE.md §4.1b）：玩家向 Apple 申请退款时，Apple 会问我们这笔购买用掉了多少；
+  //    Apple 要求这个同意由 App 亲自向玩家收集，没有同意就干脆不回答。付费玩家只问一次，两种答案都记下来 ──
+  'iap.consentTitle': '关于退款时的数据共享',
+  'iap.consentBody': '如果你以后向 Apple 申请退款，Apple 会向我们询问这笔购买你已经用掉了多少（例如金币花了多少）。是否允许我们把这项使用数据提供给 Apple？我们只会在你申请退款时提供，不含聊天、卡组等其它内容。',
+  'iap.consentAllow': '允许',
+  'iap.consentDecline': '不允许',
   // ── 月卡到期提醒（GACHA_DESIGN §9.3 / G10）：soon = 到期前提醒，expired = 到期后提醒；两组文案同时用于 iOS 本地推送标题/正文，以及 Web/微信应用内提示条 ──
   'shop.reminderSoonTitle': '月卡即将到期',
   'shop.reminderSoonBody': '你的月卡还有 3 天到期，记得续费保持每日奖励～',

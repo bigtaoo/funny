@@ -636,6 +636,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/iap/apple/consumption-consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record whether the player lets us send Apple their purchase-usage data on a refund request
+         * @description Apple asks the seller how much of a purchase was actually used when a customer requests a refund (CONSUMPTION_REQUEST, answered within 12 hours). Apple requires that the consent for sharing that data is collected BY THE APP from the customer, and rejects any submission reporting `customerConsented: false` — so with no consent recorded here the server does not answer Apple at all. A one-time card in the lobby is what asks (iOS shell only); both answers are stored, because "declined" is not the same as "never asked".
+         */
+        post: operations["setAppleConsumptionConsent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/promo/redeem": {
         parameters: {
             query?: never;
@@ -3298,6 +3318,41 @@ export interface operations {
             400: components["responses"]["ErrorResp"];
         };
     };
+    setAppleConsumptionConsent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The player's answer, as collected by the app. */
+                    consented: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        data: {
+                            /** @description The stored answer, echoed back. */
+                            consented: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+        };
+    };
     redeemPromoCode: {
         parameters: {
             query?: never;
@@ -5096,6 +5151,11 @@ export interface operations {
                             };
                             /** @description Paddle.js client-side token (COMMERCIAL_DESIGN §IAP client) — public, client-safe (ptok_/live_/test_). Only present when the server has NW_PADDLE_CLIENT_TOKEN configured; absent otherwise. The web client needs this to open the Paddle checkout overlay. Must be declared here or the Fastify response serializer strips it from the wire (fast-json-stringify only emits schema-declared properties). */
                             paddleClientToken?: string;
+                            /**
+                             * Format: uuid
+                             * @description The `appAccountToken` this account's next StoreKit 2 purchase must carry (IOS_RELEASE.md §6) — a UUID the server allocated and stored against the account, which Apple then echoes back on every transaction and notification about that purchase. Only sent to a logged-in iOS client (`platform=ios`); every other caller receives nothing extra. Same serializer caveat as paddleClientToken: undeclared properties never reach the wire.
+                             */
+                            appleAccountToken?: string;
                         };
                     };
                 };

@@ -28,6 +28,18 @@ export class BranchCommercial implements CommercialClient {
     return { ok: true as const, outcome: 'ignored' };
   }
 
+  // Unused here; only present to satisfy `implements CommercialClient` (appleAccount has its own tests).
+  async appleAccountToken(_a: { accountId: string }) {
+    return { ok: true as const, token: '00000000-0000-4000-8000-000000000000' };
+  }
+
+  /** What POST /iap/apple/consumption-consent handed down, in order. */
+  consumptionConsents: { accountId: string; consented: boolean }[] = [];
+  async appleConsumptionConsent(a: { accountId: string; consented: boolean }) {
+    this.consumptionConsents.push({ accountId: a.accountId, consented: a.consented });
+    return { ok: true as const, consented: a.consented };
+  }
+
   readonly available: boolean;
   constructor(available = true) {
     this.available = available;

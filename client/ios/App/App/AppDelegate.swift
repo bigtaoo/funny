@@ -51,21 +51,44 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 }
 
-// MARK: - Native StoreKit billing bridge (window.NWBilling)
+// MARK: - Native StoreKit 2 billing bridge (window.NWBilling)
 //
-// Injects `window.NWBilling` into Capacitor's WKWebView so the web bundle routes coin-tier
-// recharges through Apple IAP instead of Paddle (client/src/platform/iap.ts, WebPlatform.iapKind).
-// StoreKit 1 consumable flow: fetch product → queue payment → on success hand the base64 App Store
-// receipt back to JS, which POSTs it to /iap/verify (server/commercial/src/iap.ts → appleVerify,
-// which reads in_app[] latest product_id → coins). Product IDs follow the server default convention
-// `<bundleId>.coins.<tierId>` (e.g. com.gamestao.nivara.coins.t499); the server must set
-// NW_IAP_BUNDLE=com.gamestao.nivara (or NW_IAP_PRODUCT_MAP) so the mapping matches (IAP_CREDENTIALS.md).
+// Injects `window.NWBilling` into Capacitor's WKWebView so the web bundle routes recharges and the
+// four non-coin SKUs through Apple IAP instead of Paddle (client/src/platform/iap.ts,
+// WebPlatform.iapKind).
+//
+// ── StoreKit 2 since 2026-09-07 (IOS_RELEASE.md §6 phase B) ──
+// This was StoreKit 1 (SKProductsRequest + SKPaymentQueue observer) handing the base64 app receipt
+// to JS, which POSTed it to /iap/verify. Three things the move buys, in the order they matter:
+//
+//   1. `appAccountToken`. A subscription renewal is billed inside Apple's systems and the
+//      notification that reports it carries no identifier of ours — unless the purchase attached
+//      one. This is that identifier, allocated server-side before the purchase (/bootstrap), so a
+//      renewal names its owner even if the app never got to report the original sale.
+//   2. `Transaction.updates` / `Transaction.unfinished`. Transactions that arrive outside a
+//      purchase() call — an Ask-to-Buy approval, a restore on another device, anything a previous
+//      install left unfinished — appear only here. StoreKit 1 surfaced them through the payment
+//      queue observer; with StoreKit 2 there is no equivalent unless these streams are consumed.
+//   3. No receipt parsing anywhere. A verified `Transaction` is signed by Apple, so JS forwards a
+//      bare transaction id and the server asks the App Store Server API for the authoritative
+//      record (server/commercial/src/iap/appleServerApi.ts).
+//
+// ── The finish() rule ──
+// Nothing is finished here. A transaction is finished only after JS reports it and the SERVER says
+// it granted (`window.NWBilling.finish`). Until then StoreKit redelivers it on every launch, which
+// is exactly what should happen to "money taken, coins not delivered": finishing on arrival would
+// make that state both unrecoverable and invisible. The cost is that a permanently unusable
+// transaction is retried once per session forever — cheap, and visible in the server logs.
+//
+// Product IDs follow the server's conventions: `<bundleId>.coins.<tierId>` for coin tiers and the
+// four suffixes in `nonCoinProductSuffixes` for the rest (server/commercial/src/iap/productResolve.ts;
+// the two tables are pinned to each other by client/test/nativePaymentIsolation.test.ts). The server
+// must set NW_IAP_BUNDLE=com.gamestao.nivara so the mapping matches (IAP_CREDENTIALS.md).
 //
 // Wired via Main.storyboard (customClass=NWBridgeViewController, module=App) so no new file needs
 // to be added to the Xcode target's build phases — it compiles as part of the existing App target.
 final class NWBridgeViewController: CAPBridgeViewController,
-    SKProductsRequestDelegate, SKPaymentTransactionObserver, WKScriptMessageHandler,
-    FullScreenContentDelegate {
+    WKScriptMessageHandler, FullScreenContentDelegate {
 
     private static let handlerName = "nwbilling"
 
@@ -80,9 +103,30 @@ final class NWBridgeViewController: CAPBridgeViewController,
     private static let rewardedAdUnitId = "ca-app-pub-5437693117291100/3500329092"
     #endif
 
-    // jsId <-> product correlation for the async StoreKit round-trip.
-    private var requestToJsId: [ObjectIdentifier: String] = [:]      // SKProductsRequest -> jsId
-    private var pendingByProduct: [String: [String]] = [:]           // productId -> [jsId] (FIFO)
+    /// One transaction Apple has verified, waiting for JS to report it and call finish().
+    private struct QueuedTx {
+        let transactionId: String
+        /// The key JS knows the product by ('t499', 'monthly_card', …) — it decides which endpoint reports it.
+        let productKey: String
+    }
+
+    /// Verified transactions the server has not acknowledged yet, keyed by transaction id.
+    private var unfinished: [String: StoreKit.Transaction] = [:]
+    /// Transactions already handed to JS this session (by purchase() or pending()) — kept out of the
+    /// queue so one transaction is not reported twice. The consequence when a report then fails: the
+    /// transaction is not offered again until the next launch, where it comes back through
+    /// `Transaction.unfinished` (nothing finished it, so it is still owed). One retry per launch is
+    /// the right cadence for something the player is not waiting on.
+    private var handed: Set<String> = []
+    /// Queue drained by `window.NWBilling.pending()`, oldest first.
+    private var queued: [QueuedTx] = []
+    private var updatesTask: Task<Void, Never>?
+
+    /// `Transaction.unfinished` replays everything this install still owes content for, which after a
+    /// StoreKit 1 → 2 migration or a restore is a long tail of history rather than a handful of
+    /// events. The queue is bounded so one boot cannot turn into hundreds of POSTs; anything past the
+    /// cap stays in StoreKit's own queue and is picked up on a later launch.
+    private static let maxQueued = 50
 
     // JS injected into every page load: defines window.NWBilling + a promise-settle registry.
     private static let bridgeJS = """
@@ -91,34 +135,42 @@ final class NWBridgeViewController: CAPBridgeViewController,
       var seq = 0; var pending = {};
       window.__nwBillingSettle = function(id, ok, payload){
         var p = pending[id]; if(!p) return; delete pending[id];
-        if(ok){ p.resolve({ receipt: payload }); } else { p.reject(new Error(payload || 'purchase_failed')); }
+        if(ok){ p.resolve(payload); } else { p.reject(new Error(payload || 'purchase_failed')); }
       };
+      function call(msg, unwrap){
+        return new Promise(function(resolve, reject){
+          var id = 'nw' + (++seq);
+          pending[id] = { resolve: function(payload){ resolve(unwrap(payload)); }, reject: reject };
+          msg.id = id;
+          try { window.webkit.messageHandlers.nwbilling.postMessage(msg); }
+          catch (e) { delete pending[id]; reject(e); }
+        });
+      }
       window.NWBilling = {
-        __nw: true,
+        __nw: 2,
         kind: 'apple',
-        purchase: function(tierId){
-          return new Promise(function(resolve, reject){
-            var id = 'nw' + (++seq);
-            pending[id] = { resolve: resolve, reject: reject };
-            try {
-              window.webkit.messageHandlers.nwbilling.postMessage({ id: id, tierId: String(tierId) });
-            } catch (e) { delete pending[id]; reject(e); }
-          });
+        // Resolves with the Apple transaction id, carried in `receipt` for contract compatibility —
+        // the JS side and the server both accept a bare id there (client/src/platform/iap.ts).
+        // `appAccountToken` is optional: an older JS bundle running on this binary just omits it.
+        purchase: function(tierId, appAccountToken){
+          return call({ tierId: String(tierId), appAccountToken: appAccountToken ? String(appAccountToken) : null },
+                      function(p){ return { receipt: p }; });
         },
-        // Current App Store receipt, or null when the device has none yet. Read by the JS side's
-        // auto-renewable subscription sync (src/platform/appleSubscriptionSync.ts) — a renewal never
-        // passes through this app, so the refreshed receipt is the only trace of it.
+        // A transaction id belonging to this device's subscription, or null when there is none.
+        // Read by the auto-renewable subscription sync (src/platform/appleSubscriptionSync.ts).
+        // Still named `receipt` because that is what an older JS bundle asks for; under StoreKit 2
+        // there is no receipt to read and the server needs no more than an id.
         receipt: function(){
-          return new Promise(function(resolve, reject){
-            var id = 'nw' + (++seq);
-            pending[id] = {
-              resolve: function(r){ resolve(r.receipt ? r.receipt : null); },
-              reject: reject
-            };
-            try {
-              window.webkit.messageHandlers.nwbilling.postMessage({ id: id, op: 'receipt' });
-            } catch (e) { delete pending[id]; reject(e); }
-          });
+          return call({ op: 'receipt' }, function(p){ return p ? p : null; });
+        },
+        // Transactions StoreKit delivered outside a purchase() call, each { transactionId, productKey }.
+        // The caller reports each one to the server and only then calls finish() on it.
+        pending: function(){
+          return call({ op: 'pending' }, function(p){ try { return JSON.parse(p || '[]'); } catch (e) { return []; } });
+        },
+        // Tell StoreKit the content was delivered. Only ever called after the server granted.
+        finish: function(transactionId){
+          return call({ op: 'finish', transactionId: String(transactionId) }, function(){ return undefined; });
         }
       };
     })();
@@ -151,13 +203,13 @@ final class NWBridgeViewController: CAPBridgeViewController,
     """
 
     override func capacitorDidLoad() {
-        SKPaymentQueue.default().add(self)
         guard let ucc = webView?.configuration.userContentController else { return }
         ucc.add(self, name: Self.handlerName)
         // atDocumentStart user script covers the real app navigation and any reload…
         ucc.addUserScript(WKUserScript(source: Self.bridgeJS, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         // …and an immediate eval covers the case where navigation already began before this hook.
         webView?.evaluateJavaScript(Self.bridgeJS, completionHandler: nil)
+        startTransactionListener()
 
         // AdMob rewarded-ad bridge (window.NWAds) — see the matching MARK section below.
         MobileAds.shared.start(completionHandler: nil)
@@ -167,7 +219,7 @@ final class NWBridgeViewController: CAPBridgeViewController,
         preloadRewardedAd()
     }
 
-    deinit { SKPaymentQueue.default().remove(self) }
+    deinit { updatesTask?.cancel() }
 
     // The JS side buys more than coin tiers through this same bridge: the shop's subscription cards
     // and starter packs also call window.NWBilling.purchase(), with the product key instead of a
@@ -186,14 +238,78 @@ final class NWBridgeViewController: CAPBridgeViewController,
         "starter_growth": "starter.growth",
     ]
 
+    private static func bundleId() -> String {
+        return Bundle.main.bundleIdentifier ?? "com.gamestao.nivara"
+    }
+
     private static func productId(for tierId: String) -> String {
-        let bundle = Bundle.main.bundleIdentifier ?? "com.gamestao.nivara"
+        let bundle = bundleId()
         if let suffix = nonCoinProductSuffixes[tierId] { return "\(bundle).\(suffix)" }
         return "\(bundle).coins.\(tierId)"
     }
 
-    // MARK: WKScriptMessageHandler — receives { id, tierId } from window.NWBilling.purchase,
-    // or { id, accountId } from window.NWAds.showRewarded (see the ads MARK section below).
+    /// The inverse of `productId(for:)`: which key JS knows this App Store product by, or nil for a
+    /// product this build has no name for (a retired SKU, or one only a newer JS bundle knows).
+    private static func productKey(for productId: String) -> String? {
+        let bundle = bundleId()
+        let coinPrefix = "\(bundle).coins."
+        if productId.hasPrefix(coinPrefix) { return String(productId.dropFirst(coinPrefix.count)) }
+        for (key, suffix) in nonCoinProductSuffixes where productId == "\(bundle).\(suffix)" { return key }
+        return nil
+    }
+
+    /// The two auto-renewable product ids, for the subscription lookup `receipt()` answers with.
+    private static func subscriptionProductIds() -> [String] {
+        return ["monthly_card", "year_card"]
+            .compactMap { nonCoinProductSuffixes[$0] }
+            .map { "\(bundleId()).\($0)" }
+    }
+
+    /// Unwrap a StoreKit verification result, or nil when Apple's signature did not check out.
+    ///
+    /// `.unverified` is not "probably fine": acting on it would let a tampered device mint
+    /// transactions. Such a transaction is also deliberately NOT finished — it stays in StoreKit's
+    /// queue instead of being silently consumed, so a genuine purchase behind a transient
+    /// verification failure is not thrown away.
+    private static func verified(_ result: VerificationResult<StoreKit.Transaction>) -> StoreKit.Transaction? {
+        if case .verified(let tx) = result { return tx }
+        return nil
+    }
+
+    // MARK: Transaction listener
+    //
+    // Two streams, both required. `Transaction.unfinished` is finite and yields the backlog this
+    // install still owes content for; `Transaction.updates` runs for the process lifetime and
+    // delivers what arrives later (an Ask-to-Buy approval, a renewal, a purchase made on another
+    // device). Started from capacitorDidLoad, before the web view can ask for anything, so a
+    // transaction that lands during startup is queued rather than missed. The backlog is drained
+    // first and the live stream is attached after it: a transaction arriving in that gap is not
+    // finished by anyone, so it simply reappears in `unfinished` on the next launch.
+    private func startTransactionListener() {
+        updatesTask = Task { [weak self] in
+            for await result in StoreKit.Transaction.unfinished {
+                await self?.ingest(result)
+            }
+            for await result in StoreKit.Transaction.updates {
+                await self?.ingest(result)
+            }
+        }
+    }
+
+    @MainActor
+    private func ingest(_ result: VerificationResult<StoreKit.Transaction>) {
+        guard let tx = Self.verified(result) else { return }
+        let id = String(tx.id)
+        unfinished[id] = tx
+        // Already reported this session — either purchase() just handed it over, or pending() did.
+        if handed.contains(id) { return }
+        guard let key = Self.productKey(for: tx.productID) else { return }
+        if queued.contains(where: { $0.transactionId == id }) { return }
+        if queued.count >= Self.maxQueued { return }
+        queued.append(QueuedTx(transactionId: id, productKey: key))
+    }
+
+    // MARK: WKScriptMessageHandler — window.NWBilling.* and window.NWAds.showRewarded
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == Self.adsHandlerName {
             guard let body = message.body as? [String: Any],
@@ -204,74 +320,107 @@ final class NWBridgeViewController: CAPBridgeViewController,
         guard message.name == Self.handlerName,
               let body = message.body as? [String: Any],
               let jsId = body["id"] as? String else { return }
-        // window.NWBilling.receipt() — no purchase, just hand back the current receipt (empty string
-        // when there is none, which the JS wrapper turns into null). Kept on this same handler so the
-        // bridge stays one message channel with one promise registry.
-        if body["op"] as? String == "receipt" {
-            settle(jsId, ok: true, payload: Self.appStoreReceiptBase64() ?? "")
-            return
-        }
-        guard let tierId = body["tierId"] as? String else { return }
-        guard SKPaymentQueue.canMakePayments() else {
-            settle(jsId, ok: false, payload: "payments_disabled"); return
-        }
-        let request = SKProductsRequest(productIdentifiers: [Self.productId(for: tierId)])
-        request.delegate = self
-        requestToJsId[ObjectIdentifier(request)] = jsId
-        request.start()
-    }
 
-    // MARK: SKProductsRequestDelegate
-    func productsRequest(_ request: SKProductsRequest, didReceive response: SKProductsResponse) {
-        guard let jsId = requestToJsId.removeValue(forKey: ObjectIdentifier(request)) else { return }
-        guard let product = response.products.first else {
-            settle(jsId, ok: false, payload: "invalid_product"); return
-        }
-        pendingByProduct[product.productIdentifier, default: []].append(jsId)
-        SKPaymentQueue.default().add(SKPayment(product: product))
-    }
-
-    func request(_ request: SKRequest, didFailWithError error: Error) {
-        guard let skReq = request as? SKProductsRequest,
-              let jsId = requestToJsId.removeValue(forKey: ObjectIdentifier(skReq)) else { return }
-        settle(jsId, ok: false, payload: error.localizedDescription)
-    }
-
-    // MARK: SKPaymentTransactionObserver
-    func paymentQueue(_ queue: SKPaymentQueue, updatedTransactions transactions: [SKPaymentTransaction]) {
-        for tx in transactions {
-            switch tx.transactionState {
-            case .purchased, .restored:
-                if let receipt = Self.appStoreReceiptBase64() {
-                    resolveNext(for: tx.payment.productIdentifier, ok: true, payload: receipt)
-                } else {
-                    resolveNext(for: tx.payment.productIdentifier, ok: false, payload: "no_receipt")
-                }
-                SKPaymentQueue.default().finishTransaction(tx)
-            case .failed:
-                let cancelled = (tx.error as NSError?)?.code == SKError.paymentCancelled.rawValue
-                resolveNext(for: tx.payment.productIdentifier, ok: false,
-                            payload: cancelled ? "cancelled" : (tx.error?.localizedDescription ?? "failed"))
-                SKPaymentQueue.default().finishTransaction(tx)
-            case .purchasing, .deferred:
-                break
-            @unknown default:
-                break
+        switch body["op"] as? String {
+        case "receipt":
+            Task { await handleSubscriptionId(jsId: jsId) }
+        case "pending":
+            handlePending(jsId: jsId)
+        case "finish":
+            guard let transactionId = body["transactionId"] as? String else {
+                settle(jsId, ok: false, payload: "missing_transaction_id"); return
+            }
+            Task { await handleFinish(jsId: jsId, transactionId: transactionId) }
+        default:
+            guard let tierId = body["tierId"] as? String else { return }
+            Task {
+                await handlePurchase(jsId: jsId, tierId: tierId,
+                                     appAccountToken: body["appAccountToken"] as? String)
             }
         }
     }
 
-    private func resolveNext(for productId: String, ok: Bool, payload: String) {
-        guard var ids = pendingByProduct[productId], !ids.isEmpty else { return }
-        let jsId = ids.removeFirst()
-        pendingByProduct[productId] = ids.isEmpty ? nil : ids
-        settle(jsId, ok: ok, payload: payload)
+    // MARK: Purchase
+    @MainActor
+    private func handlePurchase(jsId: String, tierId: String, appAccountToken: String?) async {
+        guard AppStore.canMakePayments else {
+            settle(jsId, ok: false, payload: "payments_disabled"); return
+        }
+        do {
+            let products = try await Product.products(for: [Self.productId(for: tierId)])
+            guard let product = products.first else {
+                settle(jsId, ok: false, payload: "invalid_product"); return
+            }
+            var options: Set<Product.PurchaseOption> = []
+            // The account this purchase belongs to, as a UUID the server allocated and recorded
+            // beforehand (/bootstrap → appleAccountTokens). Apple echoes it back on every
+            // notification about this transaction, which is what lets a renewal be attributed
+            // without the app having reported the original sale. A value that is not a UUID is
+            // dropped rather than failing the sale: the money is the player's, the token is our
+            // bookkeeping, and the appleTransactionLinks fallback still covers it.
+            if let raw = appAccountToken, let uuid = UUID(uuidString: raw) {
+                options.insert(.appAccountToken(uuid))
+            }
+            switch try await product.purchase(options: options) {
+            case .success(let verification):
+                guard let tx = Self.verified(verification) else {
+                    settle(jsId, ok: false, payload: "unverified"); return
+                }
+                let id = String(tx.id)
+                unfinished[id] = tx
+                handed.insert(id)
+                settle(jsId, ok: true, payload: id)
+            case .userCancelled:
+                settle(jsId, ok: false, payload: "cancelled")
+            case .pending:
+                // Ask-to-Buy or an SCA challenge: there is no transaction yet. If it is approved —
+                // possibly days later, possibly while the app is closed — it arrives on
+                // Transaction.updates and is reported through pending() then.
+                settle(jsId, ok: false, payload: "deferred")
+            @unknown default:
+                settle(jsId, ok: false, payload: "failed")
+            }
+        } catch {
+            settle(jsId, ok: false, payload: error.localizedDescription)
+        }
     }
 
-    private static func appStoreReceiptBase64() -> String? {
-        guard let url = Bundle.main.appStoreReceiptURL,
-              let data = try? Data(contentsOf: url) else { return nil }
-        return data.base64EncodedString()
+    // MARK: Unfinished-transaction handoff
+    private func handlePending(jsId: String) {
+        for tx in queued { handed.insert(tx.transactionId) }
+        let items = queued.map { ["transactionId": $0.transactionId, "productKey": $0.productKey] }
+        let json = (try? JSONSerialization.data(withJSONObject: items))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        settle(jsId, ok: true, payload: json)
+    }
+
+    @MainActor
+    private func handleFinish(jsId: String, transactionId: String) async {
+        queued.removeAll { $0.transactionId == transactionId }
+        handed.remove(transactionId)
+        if let tx = unfinished.removeValue(forKey: transactionId) {
+            await tx.finish()
+        }
+        // Resolves either way: JS may retry finish() after a dropped response, and a transaction
+        // finished in an earlier session is simply no longer known to StoreKit. Both are success.
+        settle(jsId, ok: true, payload: "")
+    }
+
+    // MARK: Subscription id for the cold-start sync
+    //
+    // `Transaction.latest(for:)` rather than `currentEntitlements`: a subscription that has already
+    // lapsed still has a last period that may never have been granted, and that is precisely the
+    // case the sync exists for. A coin transaction id would be useless here — the server expands the
+    // id into the whole history behind it, and a consumable's history holds no subscription periods.
+    @MainActor
+    private func handleSubscriptionId(jsId: String) async {
+        var newest: StoreKit.Transaction?
+        for productId in Self.subscriptionProductIds() {
+            guard let result = await StoreKit.Transaction.latest(for: productId),
+                  let tx = Self.verified(result) else { continue }
+            if newest == nil || tx.purchaseDate > newest!.purchaseDate { newest = tx }
+        }
+        settle(jsId, ok: true, payload: newest.map { String($0.id) } ?? "")
     }
 
     // Settle the JS promise on the main thread via the injected registry.
