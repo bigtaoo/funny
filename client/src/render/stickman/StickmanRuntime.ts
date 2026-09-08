@@ -51,6 +51,10 @@ export class StickmanRuntime {
   readonly gearSprites: Array<{ sprite: PIXI.Graphics; placement: GearPlacement }> = [];
   /** Identity of the currently-applied gear, so {@link setGear} is a no-op when unchanged. */
   private gearKey = '';
+  /** Minimum seconds between pose samples, or 0 for "every tick" (see StickmanOptions.poseFps). */
+  private readonly poseIntervalSec: number;
+  /** Time accumulated since the last pose sample; only used when {@link poseIntervalSec} > 0. */
+  private poseAcc = 0;
   /** Container holding the gear decals, between the bones and the hit-flash outline. */
   private readonly gearLayer: PIXI.Container;
   readonly asset:   TaoAsset;
@@ -70,6 +74,7 @@ export class StickmanRuntime {
 
   constructor(asset: TaoAsset, options: StickmanOptions = {}) {
     this.asset        = asset;
+    this.poseIntervalSec = options.poseFps && options.poseFps > 0 ? 1 / options.poseFps : 0;
     this.container    = new PIXI.Container();
     this.gearLayer    = new PIXI.Container();
     this.outlineLayer = new PIXI.Container();
@@ -343,15 +348,29 @@ export class StickmanRuntime {
     if (this.currentClipName === 'attack' && this.attackIntervalSec > 0 && this.currentClip.duration > 0) {
       rate = this.currentClip.duration / this.attackIntervalSec;
     }
+    // Pose-rate cap (menu decoration; see StickmanOptions.poseFps). Clip TIME still advances by the
+    // full `dt` below, so a throttled figure plays its clip at the authored speed — it just samples
+    // fewer poses along the way. Skipping the time advance instead would slow the animation down.
+    if (this.poseIntervalSec > 0) {
+      this.poseAcc += dt;
+      if (this.poseAcc < this.poseIntervalSec) { this.time += dt * rate; this.clampTime(); return; }
+      this.poseAcc = 0;
+    }
     this.time += dt * rate;
+    this.clampTime();
+
+    applyPose(this);
+  }
+
+  /** Wrap (looping) or clamp (one-shot) {@link time} into the current clip's duration. */
+  private clampTime(): void {
+    if (!this.currentClip) return;
     if (this.currentClip.loop) {
       const dur = this.currentClip.duration;
       if (dur > 0) this.time = this.time % dur;
     } else {
       this.time = Math.min(this.time, this.currentClip.duration);
     }
-
-    applyPose(this);
   }
 
   destroy(): void {

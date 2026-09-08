@@ -8,8 +8,10 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { SketchPen } from '../../render/sketch';
+import { inkLayer } from '../../render/sketchUi';
 import { buildIcon, IconKind, RasterIconVariant } from '../../render/icons';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
+import { MENU_POSE_FPS } from '../../render/stickman/constants';
 import { randomHeroAssetUrl } from '../../render/heroSilhouette';
 import { fitContentToBox } from '../../render/fitToBox';
 import { Rect } from '../../layout/ILayout';
@@ -58,7 +60,7 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
 
   // 1. Hero — start match. Offline → local AI match; online → PvP ranked.
   core.btnRect = { x: contentX, y: heroY, w: contentW, h: heroH };
-  core.btnBg = new PIXI.Graphics();
+  core.btnBg = new PIXI.Container();
   drawBtn(core.btnBg, contentW, heroH, true);
   core.btnBg.x = contentX; core.btnBg.y = heroY;
   core.container.addChild(core.btnBg);
@@ -103,7 +105,7 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
   const heroFigureInsertAfter = heroMotif;
   StickmanRuntime.loadAsset(randomHeroAssetUrl(), heroFigureH).then(asset => {
     if (core.destroyed) return;
-    const runtime = new StickmanRuntime(asset, { showShadow: false });
+    const runtime = new StickmanRuntime(asset, { showShadow: false, poseFps: MENU_POSE_FPS });
     runtime.setSilhouette(0x000000);
     runtime.container.alpha = 0.22;
     // Fit the true rendered extent to 90% of the button height, centred both
@@ -254,7 +256,10 @@ function drawPillar(
   bg.x = x; bg.y = y;
   core.container.addChild(bg);
   // Coloured ink accent stroke down the left edge.
-  new SketchPen(bg, seed ^ 0x55).line(4, 6, 4, h - 6, { color: accent, width: 5, jitter: 0.8, taper: 0.85 });
+  // `inkLayer`, not `bg` itself: a panel is a container of frame sprites now (see core.ts's
+  // drawBtn/sketchPanel), so there is no single Graphics to stroke into. Same call vsOverlay.ts
+  // already makes for its own accent stroke.
+  new SketchPen(inkLayer(bg), seed ^ 0x55).line(4, 6, 4, h - 6, { color: accent, width: 5, jitter: 0.8, taper: 0.85 });
 
   // Large hand-drawn motif filling the card's upper half (replaces the old small icon):
   // accent-ink colour at low alpha as a "card doodle"; the title text drawn over it remains legible.

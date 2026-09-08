@@ -7,6 +7,7 @@
 
 import { uncaughtErrorMessage } from './apiErrorMessage';
 import { playSfx } from '../audio/audioBus';
+import { debugFlag } from '../debugFlags';
 
 export interface NetLogger {
   debug(msg: string, data?: unknown): void;
@@ -72,11 +73,9 @@ export function recentClientLogs(n: number): ClientLogEntry[] {
 }
 
 function enabled(): boolean {
-  try {
-    return globalThis.localStorage?.getItem('nw_net_log') !== 'off';
-  } catch {
-    return true;
-  }
+  // Through debugFlags, not `globalThis.localStorage`: WeChat has no such global, so this switch
+  // silently ignored its own 'off' there. Default stays ON (any value but 'off' enables).
+  return debugFlag('nw_net_log') !== 'off';
 }
 
 export function netLog(tag: string): NetLogger {

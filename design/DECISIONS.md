@@ -98,6 +98,9 @@
 | [ADR-078](DECISIONS_ADR-070-onward.md#adr-078-覆盖率运行摘要合成一张表门禁只出退出码报表加-headroom--δδ-不设门禁--accepted--2026-09-02) | 覆盖率运行摘要两张表合成一张（门禁脚本只留退出码、不再写摘要页）+ 新 `Headroom` 列并按它排序 + 对齐上一次绿 main 的 Δ（**只进报表、不设门禁**）+ 删恒等于 `Lines` 的 `Statements` 列 | Accepted | 2026-09-02 |
 | [ADR-079](DECISIONS_ADR-070-onward.md#adr-079-训练队列槽位改为并行练兵场的槽位第一次真的给吞吐--accepted--2026-09-02) | 训练队列槽位改为并行：练兵场的槽位第一次真的给吞吐 | Accepted | 2026-09-02 |
 | [ADR-080](DECISIONS_ADR-070-onward.md#adr-080-应用进程口径--11-个取代-adr-005-的8-个--accepted--2026-09-03) | 应用进程口径 = 11 个（取代 ADR-005 的「8 个」） | Accepted | 2026-09-03 |
+| [ADR-081](DECISIONS_ADR-070-onward.md#adr-081-apple-iap-走-app-store-server-api--notifications-v2弃用-verifyreceipt--accepted--2026-09-07) | Apple IAP 走 App Store Server API + Notifications V2，弃用 `verifyReceipt` | Accepted | 2026-09-07 |
+| [ADR-082](DECISIONS_ADR-070-onward.md#adr-082-客户端换-storekit-2部署目标抬到-ios-15finish-由服务端确认后触发appaccounttoken-随-bootstrap-下发--accepted--2026-09-07) | 客户端换 StoreKit 2：部署目标抬到 iOS 15、finish 由服务端确认后触发、`appAccountToken` 随 `/bootstrap` 下发 | Accepted | 2026-09-07 |
+| [ADR-083](DECISIONS_ADR-070-onward.md#adr-083-渲染循环三级节流dpr-上限-2maxfps-60菜单场景按需重绘含派生式变更检测--重绘地板--accepted--2026-09-08) | 渲染循环三级节流：dpr 上限 2、`maxFPS` 60、菜单场景按需重绘（派生式变更检测 + 500 ms 重绘地板）+ 大厅面板改走烘焙图集 + 世界地图墨线与 token 拆开 | Accepted | 2026-09-08 |
 
 ---
 

@@ -1,6 +1,9 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
-import { reportAnomaly } from '../net/anomaly';
+import { reportAnomaly, getActiveScene } from '../net/anomaly';
+import { debugNum } from '../debugFlags';
+import { renderStats } from '../render/renderStats';
+import * as analytics from '../analytics';
 
 // Runtime CPU / main-thread saturation monitor: browsers expose no direct CPU usage API; the observable equivalent signal is "main thread fully occupied".
 // Two parallel sampling paths; if either sustains a threshold breach, one cpu anomaly is reported (reportAnomaly → full-volume channel → Loki):
@@ -20,13 +23,39 @@ const DEFAULT_BUSY_WARN = 0.5;      // long-task busy ratio ≥ this value is co
 const WINDOW_MS = 2_000;            // sampling window
 const SUSTAIN_WINDOWS = 5;          // report only after this many consecutive low-FPS windows (≈10s), to avoid reporting transient spikes
 
-function numFromLs(key: string, fallback: number): number {
-  try {
-    const raw = globalThis.localStorage?.getItem(key);
-    const v = raw == null ? NaN : Number(raw);
-    if (Number.isFinite(v) && v > 0) return v;
-  } catch { /* localStorage unavailable: use default */ }
-  return fallback;
+// ── render_profile (ADR-083 follow-up) ────────────────────────────────────────
+// The anomaly paths above only fire when something is WRONG, which cannot answer "what frame rate and
+// paint rate does this build actually run at on an iPhone / inside WeChat" — the question ADR-083 left
+// open, and the one its dpr cap (iOS/web only: WechatPlatform.devicePixelRatio is hardcoded to 1) and
+// its demand-driven painting were never measured against on real hardware. So a healthy build reports
+// its own numbers too: a periodic aggregate of the SAME 2s windows the watchdog already samples, plus
+// the paint counters from render/renderPolicy.ts, tagged with the active scene.
+//
+// Volume is bounded rather than continuous: first report after FIRST_PROFILE_WINDOWS (≈30s — long
+// enough for boot and the first scene to settle, short enough that a short session still reports),
+// then one every PROFILE_EVERY_WINDOWS (≈5min), at most MAX_PROFILES_PER_SESSION. Only windows that
+// were fully visible contribute, for the same reason the watchdog discards hidden ones: a throttled
+// background tab reports a fake 4fps.
+const FIRST_PROFILE_WINDOWS = 15;   // ≈30s of visible sampling
+const PROFILE_EVERY_WINDOWS = 150;  // ≈5min of visible sampling
+const MAX_PROFILES_PER_SESSION = 6;
+
+
+
+/**
+ * Static renderer facts app.ts knows and this module does not: the resolution the backbuffer was
+ * actually created at (already through `rendererResolution`'s cap), the raw device pixel ratio it was
+ * capped from, and the backbuffer size in device pixels. Passed in rather than read off a global so
+ * the profile reports what SHIPPED on this device instead of what a re-derivation would guess.
+ */
+export interface RenderProfileInfo {
+  /** `app.renderer.resolution` — post-cap (MAX_RENDER_RESOLUTION). */
+  resolution: number;
+  /** `platform.devicePixelRatio` — pre-cap. Differs from `resolution` exactly where the cap bit. */
+  dpr: number;
+  /** Backbuffer size in device pixels (`app.view.width/height`). */
+  canvasW: number;
+  canvasH: number;
 }
 
 interface LongTaskEntry { duration: number }
@@ -45,11 +74,25 @@ export class PerfMonitor {
    *  tab is throttled by the browser to save power, which tanks the ticker's real fps without any actual JS slowness. Sampling
    *  document.hidden only at window-end would miss a tab that was hidden mid-window and became visible again before the tick fires. */
   private hiddenSinceLastWindow = this.isHiddenNow();
+  /** Static renderer facts for `render_profile`, handed in by app.ts (see {@link RenderProfileInfo}). */
+  private renderInfo: RenderProfileInfo | null = null;
+  /** fps of every visible window since the last profile report — sorted at report time for a median. */
+  private fpsSamples: number[] = [];
+  /** Total ms those windows covered (not wall time: hidden windows are excluded). */
+  private profileSpanMs = 0;
+  /** Visible windows since the last profile report. */
+  private windowsSinceProfile = 0;
+  /** `renderStats()` at the last report, to diff paints/ticks into per-second rates. */
+  private lastPaintCounters: { ticks: number; painted: number } | null = null;
+  private profilesSent = 0;
   private onVisibilityChange = (): void => { if (this.isHiddenNow()) this.hiddenSinceLastWindow = true; };
   private onFreeze = (): void => { this.hiddenSinceLastWindow = true; };
 
-  install(ticker: PIXI.Ticker): void {
+  install(ticker: PIXI.Ticker, renderInfo?: RenderProfileInfo): void {
     this.ticker = ticker;
+    this.renderInfo = renderInfo ?? null;
+    const rs = renderStats();
+    this.lastPaintCounters = rs ? { ticks: rs.ticks, painted: rs.painted } : null;
     ticker.add(this.onTick);
     this.installLongTaskObserver();
     globalThis.document?.addEventListener?.('visibilitychange', this.onVisibilityChange);
@@ -98,11 +141,18 @@ export class PerfMonitor {
     if (this.hiddenSinceLastWindow) {
       this.hiddenSinceLastWindow = this.isHiddenNow();
       this.lowFpsStreak = 0;
+      // Also drop it from the profile aggregate: a throttled background tab would otherwise report
+      // a fake 4fps as if the device were struggling.
       return;
     }
 
+    this.fpsSamples.push(fps);
+    this.profileSpanMs += windowMs;
+    this.windowsSinceProfile += 1;
+    this.maybeReportProfile();
+
     // ① Long-task busy ratio: report immediately if the threshold is breached in a single window (a long task is hard evidence of a saturated main thread).
-    if (this.observer && busyRatio >= numFromLs('nw_cpu_busy_warn', DEFAULT_BUSY_WARN)) {
+    if (this.observer && busyRatio >= debugNum('nw_cpu_busy_warn', DEFAULT_BUSY_WARN)) {
       reportAnomaly('cpu', `main-thread busy ${(busyRatio * 100).toFixed(0)}% over ${Math.round(windowMs)}ms`, {
         busyRatio: Math.round(busyRatio * 100) / 100, windowMs: Math.round(windowMs), fps: Math.round(fps),
       });
@@ -111,7 +161,7 @@ export class PerfMonitor {
     }
 
     // ② Sustained low FPS: report only after multiple consecutive windows (transient drops or scene transitions do not count).
-    const fpsWarn = numFromLs('nw_fps_warn', DEFAULT_FPS_WARN);
+    const fpsWarn = debugNum('nw_fps_warn', DEFAULT_FPS_WARN);
     if (fps < fpsWarn) {
       this.lowFpsStreak += 1;
       if (this.lowFpsStreak >= SUSTAIN_WINDOWS) {
@@ -125,4 +175,57 @@ export class PerfMonitor {
       this.lowFpsStreak = 0;
     }
   };
+
+  /**
+   * Emit one `render_profile` when enough visible windows have accumulated (see the constants above).
+   *
+   * Everything here is derived from samples the watchdog was already taking, plus a diff of
+   * `renderStats()`, so a healthy session pays one array sort and one analytics event per report.
+   */
+  private maybeReportProfile(): void {
+    if (this.profilesSent >= MAX_PROFILES_PER_SESSION) return;
+    const due = this.profilesSent === 0 ? FIRST_PROFILE_WINDOWS : PROFILE_EVERY_WINDOWS;
+    if (this.windowsSinceProfile < due) return;
+
+    const sorted = [...this.fpsSamples].sort((a, b) => a - b);
+    const spanS = this.profileSpanMs / 1000;
+    const props: Record<string, unknown> = {
+      scene: getActiveScene() || 'unknown',
+      spanS: Math.round(spanS),
+      windows: this.windowsSinceProfile,
+      fpsP50: Math.round(sorted[Math.floor(sorted.length / 2)] ?? 0),
+      fpsMin: Math.round(sorted[0] ?? 0),
+      fpsMax: Math.round(sorted[sorted.length - 1] ?? 0),
+      maxFps: this.ticker?.maxFPS ?? 0,
+    };
+    if (this.renderInfo) {
+      props.res = this.renderInfo.resolution;
+      props.dpr = this.renderInfo.dpr;
+      // The single number saying whether ADR-083's dpr cap did anything on this device.
+      props.dprCapped = this.renderInfo.dpr > this.renderInfo.resolution;
+      props.canvasW = this.renderInfo.canvasW;
+      props.canvasH = this.renderInfo.canvasH;
+    }
+    // Paint rate: the whole point of demand-driven painting is that this sits BELOW the tick rate on
+    // a menu and equals it in a battle. Absent when no RenderPolicy is installed (tests, tools).
+    const rs = renderStats();
+    if (rs && this.lastPaintCounters && spanS > 0) {
+      const dTicks = rs.ticks - this.lastPaintCounters.ticks;
+      const dPaints = rs.painted - this.lastPaintCounters.painted;
+      if (dTicks > 0) {
+        props.tickPerSec = Math.round(dTicks / spanS);
+        props.paintPerSec = Math.round(dPaints / spanS);
+        props.skipPct = Math.round(((dTicks - dPaints) / dTicks) * 100);
+      }
+    }
+    if (rs) this.lastPaintCounters = { ticks: rs.ticks, painted: rs.painted };
+
+    analytics.track('render_profile', props);
+    log.info('render_profile', props);
+
+    this.profilesSent += 1;
+    this.fpsSamples = [];
+    this.profileSpanMs = 0;
+    this.windowsSinceProfile = 0;
+  }
 }

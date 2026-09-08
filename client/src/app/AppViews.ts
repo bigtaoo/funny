@@ -57,6 +57,7 @@ import type { TitlesSceneCallbacks } from '../scenes/TitlesScene';
 import type { DailyCallbacks } from '../scenes/DailyScene';
 import type { EventCallbacks } from '../scenes/EventScene';
 import type { ConsentCallbacks } from '../ui/dialogs/ConsentDialog';
+import type { AgeGateCallbacks, AgeGateMode } from '../ui/dialogs/AgeGateDialog';
 import type { ReconnectPromptCallbacks } from '../ui/dialogs/ReconnectPromptDialog';
 import type { DeckBuilderCallbacks } from '../scenes/DeckBuilderScene';
 import type { CitySceneCallbacks } from '../scenes/CityScene';
@@ -193,6 +194,12 @@ export interface AppViews {
   showRealLayerInterlude(illustrationUrl: string, textKey: TranslationKey, cb: IllustratedInterludeCallbacks): void;
   /** First-launch GDPR / privacy consent gate (C5-c, L1-1). Blocks until accepted. */
   showConsent(cb: ConsentCallbacks): void;
+  /**
+   * Neutral age gate, ahead of the consent gate (COMPLIANCE_GLOBAL §3.4). 'ask' collects a birth
+   * year and reports it through `cb`; 'blocked' is the dead end for a player who already declared
+   * an age below {@link MIN_AGE_YEARS} and never calls back.
+   */
+  showAgeGate(mode: AgeGateMode, cb: AgeGateCallbacks): void;
   /** Login-reconnect-prompt: "resume your unfinished match?" shown when GET /save reports an activeMatch. */
   showReconnectPrompt(cb: ReconnectPromptCallbacks): void;
   /**

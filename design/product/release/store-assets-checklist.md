@@ -167,10 +167,39 @@ Quoten-Seite. Kostenlos spielbar.
 - 支持 URL / 营销 URL。
 
 ### 1.3 年龄分级（Apple 自有问卷）
-如实勾选（拉高分级但漏报=下架风险）：
-- **模拟赌博 / 含随机付费道具（gacha）**：是（频繁/强烈视实际）。
-- **用户互动 / 不受限网络访问（社交、私聊）**：是。
-- 预期落点：**12+ / Teen 档**（以问卷结果为准；不得勾成全年龄/儿童，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)）。
+
+> **2026-09-08 重写**：Apple 换了问卷与尺度，旧记录的两条勾选与「12+」落点都已失效。
+> **全球尺度现在是 4+ / 9+ / 13+ / 16+ / 18+，没有 12+**；新版问卷自 **2026-01-31** 起强制，
+> 不填会卡住所有版本提交。下面是逐行答案与依据（每一条都用代码核过，别照旧稿抄）。
+
+**Step 1 — In-App Controls / Capabilities**
+
+| 行 | 答 | 依据 |
+|---|---|---|
+| Parental Controls | 否 | 包里没有家长监护/消费限额功能（中国区分龄限额仍在 §3.2 未做项里） |
+| Age Assurance | **是** | 首启中性年龄声明门，`client/src/ui/dialogs/AgeGateDialog.ts`（2026-09-08 实装，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)）。⚠️ 它是**自我声明**，不是身份核验——若问卷有核验方式的追问，照实答自我声明 |
+| Unrestricted Web Access | 否 | 没有内嵌浏览器（无 `@capacitor/browser`），只有隐私政策/用户协议两个**固定** URL 跳系统浏览器（`SettingsScene/panels.ts`、`ConsentDialog.ts`） |
+| User-Generated Content | 是 | 玩家自选昵称出现在排行榜/世界地图/对战界面；家族/宗门聊天对成员群发。**少报是危险方向** |
+| Social Media | 否 | 没有信息流、没有转发/放大、没有发现机制——只有私聊与组织内群聊 |
+| Social Media Disabled for Users Under 13 | 否 | 这是给上一行答「是」的 App 用的减档项，要求调用 Declared Age Range API；我们两者都没有（该行若被自动灰掉就跳过） |
+| Messaging and Chat | 是 | 好友私聊 + 家族聊天（`socialsvc/src/family/chat.ts`）+ 宗门聊天（`worldsvc/src/sect/chat.ts`） |
+| Advertising | 是 | AdMob 激励视频（`NWBridgeViewController.swift`）；与是否个性化无关 |
+
+**内容类问题**：暴力/性/药物/恐怖等一律**无**。**模拟赌博答「无」**——这一问指赌场式玩法
+（老虎机/扑克），答「频繁」会把分级顶到 18+；抽卡走**随机付费道具（loot box）**那一问。
+
+**随机付费道具答「是」**（必答，概率公示页 `GachaScene/odds.ts` 就是 3.1.1 要的那个）。**后果要接受**：
+巴西商店被强制 **18+**、澳大利亚 **16+**（15+ 已于 2026-06-18 取消）。
+
+**✅ 2026-09-08 实际填完，问卷算出 13+**（与预期一致）。**Override 选 `Not Applicable`，Age Suitability URL 留空**：
+override 到更高档会让商店页面与三处已定口径（§3.4 自我定级 / 三语政策 §9 / 年龄门的 13 岁门槛）互相打架——
+商店写 16+ 而门仍放 13 岁进来，等于自己声明的东西自己不执行；而分区的更高分级（巴西 18+、澳大利亚 16+）
+是 loot box 声明**自动**带来的，不需要 override。Age Suitability URL 那个字段**尤其不能填 `/home` 或
+`/pricing`**——两页都通向 Paddle 网页结账，而 3.1.1 管到 metadata（同 §1.2 营销 URL 那条）。
+
+- 预期落点：全球 **13+**（Messaging and Chat 决定的下限，与 §3.4 的 13+ 自我定级一致），
+  巴西 18+、澳大利亚 16+；**EU 侧按 PEGI 16 预期**（[`COMPLIANCE_GLOBAL §6.1`](../../game/COMPLIANCE_GLOBAL.md) 已写明
+  含付费随机道具默认 PEGI 16）。不得勾成全年龄/儿童档，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)。
 
 ### 1.4 隐私营养标签（Privacy Nutrition Label）
 
@@ -184,17 +213,46 @@ Quoten-Seite. Kostenlos spielbar.
 > 代价是 eCPM 会低一些，换到的是「标签写的和二进制干的是同一件事」。
 > 详见 [`IOS_RELEASE.md §12`](../../game/IOS_RELEASE.md) 与三语隐私政策 §6.3。
 
+> **✅ 2026-09-08 已在 ASC 填写并发布**，但**只填了 6 个数据类型，还差两个真实收集项**（下面「已发布状态」一节）。
+
 按 §0.3 填写：
 - **Data Used to Track You**：无（声明不做跨 App 跟踪 → 免 ATT 弹窗）。
 - **Data Linked to You**：标识符（设备 ID）、联系信息（邮箱，可选）、用户内容（昵称/私聊）、购买、使用数据（埋点）。
 - **Data Not Linked to You**：诊断（如崩溃日志，假名化）。
 - 是否加密传输：是；是否可请求删除：是（应用内删除账号）。
 
+#### 1.4b 已发布状态与欠账（2026-09-08）
+
+**已填并发布的 6 项**（设置全部正确）：Email Address（App 功能/关联）、User ID（App 功能/关联）、
+Device ID（App 功能 **+ 第三方广告** /关联）、Product Interaction（分析/不关联）、
+Crash Data、Performance Data（分析/不关联）。跟踪那一问答「否」。
+**Privacy Policy URL 当天补填** `https://nivara.gamestao.com/privacy`——它是**必填项**，
+发布时是空的（`–`）；User Privacy Choices URL 可选，留空。
+
+**⚠️ 还差两项真实收集项**（用户 2026-09-08 主动延后，提审前必须补，否则是 5.1.2 方向的漏报）：
+
+| 缺的类型 | 该填 | 代码依据 |
+|---|---|---|
+| **Purchases → Purchase History** | App 功能 / 关联 / 不跟踪 | `commercial/src/db.ts` 的 `orders` `recharges` `ledger` `appleTransactionLinks` 四个集合都以 accountId 为键 |
+| **User Content → Other User Content** | App 功能 / 关联 / 不跟踪 | 聊天存在服务端：`socialsvc/src/family/chat.ts:68` 往 `familyMessages` `insertOne`，好友会话走 `friendSvc.getMessages(accountId, convId, before, limit)`（客户端「加载更早的消息」就是它） |
+
+补上后「Data Linked to You」摘要会变成 Identifiers / Contact Info / **Purchases** / **User Content**。
+
+**两处可选加强（AdMob 口径，同日延后）**：`Usage Data → Advertising Data`（第三方广告/不关联/不跟踪）；
+给 `Product Interaction` 再加一个 `Third-Party Advertising` 用途——Google 的披露指引写明
+「user product interactions … may be used to improve advertising performance」，即使 `npa=1`
+曝光与频次控制仍会记录。不加也说得过去（都不涉及跟踪判定），加了更贴近官方口径。
+
+---
+
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
-- [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 桥 + `commercial/src/iap.ts` 验单，
-      fail closed，2026-09-07 已换成 App Store Server API）；ASC 建 9 个商品已完成。剩下的**外部动作**：
-      生成 In-App Purchase Key（四个 `NW_APPLE_IAP_*` / `NW_APPLE_APP_ID`）+ 在 ASC 配通知 V2 的 URL，
-      步骤见 [`IOS_RELEASE.md §4.0`](../../game/IOS_RELEASE.md)。真机沙盒对账仍未做
+- [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 2 桥 + App Store Server API
+      验单，fail closed，2026-09-07 A/B 两批，ADR-081/082）；ASC 建 9 个商品已完成。
+      **凭据与通知 URL 也已完成（2026-09-07）**：In-App Purchase Key 的四个 `NW_APPLE_IAP_*` / `NW_APPLE_APP_ID`
+      已进 VPS，通知 V2 的 URL 生产与沙盒都指向 `https://api.gamestao.com/api/iap/apple/notifications`
+      （见 [`IOS_RELEASE.md §12`](../../game/IOS_RELEASE.md)，步骤在 §4.0）。
+      **本条唯一还开着的是真机沙盒对账**：5 个币档 + 4 个非币商品各买一次、自动续订演练一次，
+      依赖一个带 StoreKit 2 的 TestFlight 构建（见 `IOS_RELEASE.md §12`）
 - [x] **原生包内不含网页支付通道**（2026-09-03 审计 + 修复，详见 [`IOS_RELEASE.md §10`](../../game/IOS_RELEASE.md)）：
       `home/pricing/refunds/pay/terms/privacy.html` 六个静态页曾随 `mobile` 构建进入 iOS 包与每个 OTA 包，
       Paddle 结账模块曾编进原生 bundle，桥丢失时 `iapKind()` 曾回落 `paddle`——均已堵上，`nativePaymentIsolation.test.ts` 护住

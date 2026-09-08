@@ -120,7 +120,7 @@ To exercise your rights, contact us via §12; we respond within statutory timefr
 
 ## 9. Children's privacy
 
-The Game is **self-rated 13+ and is not directed to children under 13** (avoiding US COPPA / GDPR-K). We use a neutral age gate at registration/entry and do not serve child-directed targeted ads. We do not knowingly collect personal information from children under 13; if you believe we have, contact us via §12 for deletion.
+The Game is **self-rated 13+ and is not directed to children under 13** (avoiding US COPPA / GDPR-K). We use a neutral age gate on first entry (you select your birth year, with no hint of the threshold; the declaration is recorded once per account, and a declared age under 13 cannot enter the game) and do not serve child-directed targeted ads. We do not knowingly collect personal information from children under 13; if you believe we have, contact us via §12 for deletion.
 
 > The Mainland China version identifies minors via real-name results and applies anti-addiction and spending limits (see §10); this is separate from the 13+ overseas self-rating.
 

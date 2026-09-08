@@ -34,6 +34,8 @@ export type { FamilySceneCallbacks, FamilySceneView } from './FamilyScene/core';
  */
 export class FamilyScene implements Scene {
   readonly container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   private readonly core: FamilySceneCore;
   private readonly data: DataPanel;

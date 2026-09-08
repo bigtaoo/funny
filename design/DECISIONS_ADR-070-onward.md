@@ -394,3 +394,73 @@ owner 看着自家主城的训练面板问了一句：「队列 3/3、在训 722
 - **仍然没有的保障**：① 验签本身依旧没有测试（同 ADR-081 ①，`LOCAL_TESTING` 跳过的正是它）；
   ② **Swift 本机编译不了**，所以 `client/test/iosStoreKit2.test.ts` 是读文本的门禁，不是编译；
   真正的判定只能是 CI（`release-ios.yml`，`destination: none` 即可）；③ 真机沙盒仍未验证。
+
+## ADR-083 渲染循环三级节流：dpr 上限 2、maxFPS 60、菜单场景按需重绘（含派生式变更检测 + 重绘地板） — Accepted — 2026-09-08
+
+owner 报「手机上很快就没电了，mac 上让电脑的风扇都加速了，而且电脑发热严重」，随后追加「slg 里，地图甚至卡顿到影响体验了」。真浏览器实测（Windows / Intel Arc Pro / dpr 1.5 / 画布 1280×631 CSS = 1920×947 设备像素）：**空闲大厅**每帧 23 个 draw call、**253,737 个索引**、GPU **0.77 ms**、主线程 **0.8 ms**——一个静止不动的菜单。全仓 grep 不到 `maxFPS`，`resolution` 直接吃 `platform.devicePixelRatio`。
+
+- **根因不是某一处泄漏，是三件事叠加。** ①PIXI 的 `Application` 每个 `requestAnimationFrame` 无条件重绘整棵舞台，没有任何 dirty 判定；②没有帧率上限，120 Hz 手机 / ProMotion Mac 直接付双倍；③`resolution` 用满 dpr，dpr-3 手机的光栅面积是 dpr-2 的 2.25 倍。三者相乘，设备一刻也进不了低功耗态——这正是「耗电 + 发热 + 风扇」的形状。
+- **决策一（`render/renderPolicy.ts`）：`resolution = min(dpr, 2)`。** 这套画风是 ~2 px 的手绘墨线，dpr 3 买不到任何肉眼可见的东西。纯 fill-rate 收益，零行为风险。
+- **决策二：`ticker.maxFPS = 60`。** 一行赋值，120 Hz 设备帧数减半。所有消费方本来就积分 `deltaMS`，`dt` 只是分布变了，没有任何模拟读数会改变。
+- **决策三：菜单/外壳场景按需重绘，`Scene.paint?: 'live' | 'reactive'`，缺省 `'live'`。** 缺省等于改动前的行为，所以一个什么都不声明的场景**不会**因为这条 ADR 改变任何表现；28 个菜单场景显式声明 `'reactive'`，战斗 / 回放 / 观战 / SLG 地图 / 开场动画 / 插叙保持 `'live'`（它们本来每帧都在动，按需重绘也省不到东西）。
+- **决策三的关键取舍：变更检测是「派生」，不是 `markDirty()` 协议。** 显式失效标记的诱惑很大，但这个仓库已经写下过结论——`SceneManager.onTick` 每帧重新推导 BGM 而不是靠通知，理由是「40 个场景 + 三套按钮机制，『记得调一下』就是这个仓库反复付账的 bug 形状」。这里的代价更高：漏一次不是听错床，是**画面冻住**，而这恰好是本客户端出过的最严重故障（「切 UI 卡死，只有刷新能救」）。所以 `stageSignature()` 每 tick 走一遍舞台，从渲染器读的那几个字段直接推导「这一帧变没变」：`visible`/`renderable`/`alpha`/`tint`/`transform._localID`/`zIndex`/`baseTexture.uid`+frame+`dirtyId`/`geometry.dirty`/`text`/子节点数与顺序。空闲大厅 89 个对象，实测整 tick（场景 update + 这趟遍历）**0.084 ms**——比它省下的那次重绘便宜一个量级。
+- **决策三的安全阀：`IDLE_FLOOR_MS = 500` 与 `ACTIVE_AFTER_INPUT_MS = 400`。** 推导可以不完整（某种变化不落在上面任何一个字段上），所以即使签名没变也每 500 ms 强制画一帧，任何指针事件则在 400 ms 内维持满帧。**漏检的最坏情况因此是「一帧晚了半秒」，而不是「一帧永远不来」**——这是让决策三敢上的唯一理由。`InputManager` 的四个 emit 漏斗（down/move/up/wheel）在**网关之前**调 `holdRenderActive()`：被 modal/fade 吞掉的那一下同样改变画面（弹窗走 PixiJS 自己的事件系统，根本不经过这些订阅者）。
+- **`document.hidden` 短路被删掉了。** 第一版有，结果整块画布在「窗口被完全遮挡但合成器仍为截图唤醒一帧」的状态下**全黑**。浏览器在真正后台时早就停发 rAF 了，这个判断只能在它唯一还能生效的场合里制造 bug——PIXI 自己的渲染监听从来不管这个。
+- **决策四：大厅那份自己的 `sketchPanel`/`drawBtn` 退休，改走 `render/sketchUi.ts` + `render/panelFrame.ts` 的烘焙图集。** `SketchPen.trace` 为了 taper 每段都换一次 `lineStyle`，配上 round cap/join，**一块 976×105 的面板 = 735 条不可合批 primitive + 68,496 个索引**，而大厅有四块这个量级的。世界地图 HUD 2026-08 就搬过一次（132,300 顶点 → 704），大厅从来没有理由留自己那一份。顺带把 `render/avatar.ts` 的铅笔描边圆环也烘焙掉（一个 46 px 圆环 6,048 个索引，而成员列表/聊天/地图 token 会同屏摆几十个）；**seed 量化到 8 个变体**，否则按 `publicId`/行号播种会给每个见过的玩家永久留一张 RenderTexture。
+- **决策五（SLG 卡顿的直接原因）：世界地图把「叠加层墨线」与「行军 token」拆开。** `renderOverlay()` 原先一次做两件事，而 lifecycle 只要有任何行军/占领/驻防在途就每帧调它——于是每秒 60 次重建**没有变化**的几何：云雾遮罩（视口矩形 + 裁剪多边形挖洞 + 一圈粗描边）、`occupyFrontierCells` 扫全部可见格再逐格画多边形与四组角括号、每支驻防队 3×3 的虚线光环、10 个国都星标、每条行军 9 段的渐隐轨迹。现在 `renderOverlayInk()` 按需、`syncTokens(dt)` 每帧（只动 sprite 变换与 clip 播放）。**「按需」同样是派生的**：`overlayInkSignature(ctx)` 摘要相机 + 服务端状态，因为写 `ctx.marches`/`occupations`/`stationed`/`nations` 的站点散在 `net/` 与 `WorldMapPanels/` 共约 15 处，让每一处记得置位就是「前线高亮到下次平移才更新」的来源。格子归属这一维靠 `VersionedTileCache`（`Map` 子类，`set`/`delete`/`clear` 各自 `version++`）交出一个整数——**覆写三个 mutator 而不是改 10 个调用点，是因为前者不可能忘**。
+- **决策六：拖动地图时叠加层墨线一帧最多重建一次。** `WorldMapInput.handleMove` 原先每个 pointermove 都 `renderOverlay()`；指针事件可以比刷新率更密（120 Hz 面板、合并的触摸批次），于是一帧的可见画面要付两三次重建。现在只置 `overlayInkDirty`，由 lifecycle 每帧消费一次。
+- **决策七：护盾气泡 10 fps、菜单火柴人 12 fps（`MENU_POSE_FPS`）。** 前者每步是两次 `Graphics` 全量重建（虚线穹顶 + 光晕脉冲），一条慢速虚线爬行在 10 fps 与 60 fps 之间无从分辨；后者是 art-direction §5.4 本来就要的东西（「帧率保留手绘的跳跃感，不必追求丝滑流畅」），同时让一个按需重绘的大厅停在 ~12 次/秒而不是 60。`StickmanOptions.poseFps` 缺省不限速，战斗单位一个不受影响；**clip 时间照常按全量 `dt` 前进**，只是采样点变少，否则动画会整体变慢。
+- **效果（同一台机器、同一画布）**：空闲大厅 **253,737 → 4,794 索引/帧**（headless 里测同一棵树是 271,110 → 15,582，两个口径都记在 `test/ui/sceneGeometryBudget.ui.ts`）；整 tick 主线程 **0.8 ms → 0.084 ms**；空闲重绘 **60–120 次/秒 → ~5–12 次/秒**（boil 标题 8 fps + 火柴人 12 fps 与 500 ms 地板决定）。战斗仍然 120/120 帧全画、2.1 ms/tick——**gameplay 一分没动**。SLG：一条行军在途时叠加层重建 **60 → 0 次/60 帧**，token 仍然 60 次。
+- **门禁（owner 要求「最好是能加上 ci 门禁避免以后出现类似的问题」）**：四份，全部在既有 `npm run test:ui` / `npm test` 里跑，不新增 CI job。
+  - `test/ui/renderPolicy.ui.ts`（33 例）——dpr 上限、maxFPS、**接管 PIXI 自己的渲染监听**（行为断言：`reactive` + 无变化时驱动真 `Ticker` 必须一帧不画；否则下面每一条 skip 都是假的），以及**每一类变更都必须重绘**：移动/缩放/旋转/alpha/隐藏/显示/renderable/tint/重画/改字/图集换帧/贴图解码完成/子节点增删/zIndex 重排/嵌套深处。逐条做过变异验证（删掉签名里对应那行，对应用例转红）。**变异跑出三处真 bug**：`Texture` 根本没有 `uid`（只有 `BaseTexture` 有），所以第一版每个 sprite 都在哈希 `undefined`，图集换帧检测不到；`sortDirty` 会被无关的 `addChild` 提前置真，光靠它漏得掉 zIndex 重排；`graphicsData.length`/`baseTexture.valid`/`mask` 三个字段无论怎么造都无法让它们单独生效——**冗余字段直接删掉，而不是留在那里假装被覆盖**。剩下 `visible` 与 `children.length` 两个字段是遍历形状本身的分隔符（不可单独钉死），这一点写在代码注释和测试里，防止后人「清理」。
+  - `test/ui/worldMapOverlayCoalescing.ui.ts`（21 例）——「一条行军在途 60 帧，墨线重建 0 次、token 60 次」，加上**墨线依赖的每一个输入都必须触发正好一次重建**（平移、纵向平移、选中、行军增删、驻防到达、国都易主、格子归属变化、显式 dirty），以及拖动 6 次 pointermove 只重建一次。同样逐条变异验证；把 lifecycle 改回每帧重建 → 13 例全红。**2026-09-08 补的最后 3 例是拨 `paint` 开关的前置门禁**（见下面「还没做的」①）：真 `RenderPolicy` 跑 `'reactive'` 模式压在真 WorldMapScene 上，行军在途必须 **60/60 帧全画**，落地后掉到 ≤2/60。两处细节决定这三例是不是摆设——**policy 时钟冻住**（否则 500 ms 地板自己就把帧画满了）、**`Date.now` 手动推进**（token 位置是按它插值的，同步跑 60 帧本来发生在同一个瞬间，token 一动不动，用例会为了错误的理由变绿）；headless 加载不了 token 的 `.tao`，所以种的是同函数里 `STICKMAN_TOKEN_BUDGET` 之外那条 'dot' LOD 分支的真实 display object。变异验证：把 `syncMarchTokens` 的逐帧 `position.set` 拿掉 → 60 变 1。
+  - `test/ui/sceneGeometryBudget.ui.ts`（3 例）——大厅一帧的**索引预算 25,000**。计数方式是直接调 `GraphicsGeometry.updateBatches()`（PIXI 的三角化是纯 JS），所以 CI 无 GPU 也能拿到精确三角数；`bake()` 喂一个 stub renderer，量的是**上线路径**而不是 headless 回退。第二例证明门禁真的会响（单块页宽面板改回实时描边 = 39,786 索引，自己就超预算），实测把大厅那份 `sketchPanel` 改回旧实现 → 报 **271,110**，红得很响。
+  - `test/ui/renderLoopWiring.ui.ts`（15 例）——中间那层接线，ADR-072 的教训（「首轮测试全在场景层和视图层，漏了中间那层接线，而原 bug 恰恰只长在那里」）：app.ts 是否真的装了 policy、是否真的把 dpr 过了上限、四条指针路径是否都 hold（包括被 modal 吞掉那一下）、`paintMode` 对 overlay 与 fade 是否**悲观**（reactive 的城池面板压在 live 的地图上必须仍算 live）。同样逐条变异验证。
+- **诊断口子**：`localStorage.nw_render_debug` 置任意值后，`globalThis.__nwRenderStats` 暴露 `{ticks, painted, skipped}`。与 `nw_mem_warn_mb`/`nw_fps_warn` 同类，默认不发布任何全局。没有这个句柄，「重绘率」这个唯一能说明门禁有没有在工作的数字，每次都得手工重新给页面打桩（2026-09-08 这次就是这么测的）。
+- **影响**：新增 `client/src/render/renderPolicy.ts`；`app.ts`（resolution + install）、`app/PixiAppViews.ts`（resize 后 invalidate）、`inputSystem/InputManager.ts`（四个漏斗）、`scenes/SceneManager.ts`（`Scene.paint` + `paintMode` + swap/overlay 处 invalidate）、28 个场景各一行 `paint`、`scenes/LobbyScene/{core,mainContent}.ts`、`render/avatar.ts`、`render/stickman/{StickmanRuntime,constants,runtimeTypes}.ts`、`scenes/worldmap/{WorldMapContext,WorldMapInput}.ts` 与 `WorldMapRenderer/{fog,lifecycle}.ts`；`test/pageBakeCallSites.test.ts` 登记新的 bake 站点。快查文档见 [`claudedocs/client-render-budget.md`](../claudedocs/client-render-budget.md)。
+- **还没做的（2026-09-08 当天收尾，三条都有进展，详见 [`claudedocs/client-render-budget.md`](../claudedocs/client-render-budget.md) §7–§10）**：
+  - ①**世界地图也改 `'reactive'` 了 —— 见 ADR-085**（同日下午）。当天上午量的那批数字（L1 1,536 对象 / 签名 0.21 ms、L2 3,859 / 0.30 ms、L3 199 / 0.016 ms、**空闲时画面一秒只真变 11 次**）成立并支持改；拦路的 `GuideOverlay` 每帧重描呼吸环已修（几何只在目标移动时重描、呼吸走 `ring.alpha` 且量化相位）。**但这条里「世界地图整 tick 8.25 ms、是本客户端最贵的一帧」作废**——那次量在被遮挡的窗口里，可见窗口重取是 **1.3 ms**，而且那 1.3 ms 几乎全是场景 `update()`（跳过重绘不跳过它）。改的理由因此从「主线程一比二十」换成「GPU/present 一比四」：0.708 ms/帧 × ~49 帧/秒 ≈ 35 ms/s，主线程基本打平。详见 ADR-085。
+  - ①′ **顺带更正这条记录里另一句**：当时写「GuideOverlay 还挂在 CityScene 等**已经 reactive** 的场景上，所以正在让引导期的菜单满帧重绘」——不成立。CityScene 在 SLG 里永远是 `pushOverlay` 压在世界地图上（`app/nav/world.ts` 的 `openCity`，ADR-044），而 `paintMode` 对组合取悲观，那个组合当时本来就是 `'live'`。那条 bug 的真实代价是每秒 60 次白白三角化 ＋ 把世界地图的签名变化率顶满。
+  - ②**SLG 地图的画面确认做了**（owner 自己登录，服务端数据里 5 个世界 / 18,605 格 / 258 城）：L1/L2/L3 三级缩放 + 两次拖动平移全部正常——瓦片、基地 3×3 城池 sprite、护盾气泡、前线高亮、HUD、云雾遮罩的斜边界都跟着相机走，没有残留几何、没有撕裂。决策五/六（叠加层墨线按需 + 拖动一帧最多重建一次）在真画面上成立。
+  - ③**iOS/微信真机数字仍然没有**，但通往它的两个窟窿补上了 —— 见 ADR-084。
+
+## ADR-084 诊断开关统一走 platform.storage；健康会话上报 `render_profile`（真机帧数/重绘率） — Accepted — 2026-09-08
+
+ADR-083 的三个旋钮只在一台 Windows 桌面的 devtools 会话里量过。要拿 iOS/微信的数字时撞上两件事：
+
+- **微信上所有诊断开关都是瞎的。** `nw_render_debug` / `nw_fps_warn` / `nw_mem_warn_mb` / `nw_gentex_budget` / `nw_tex_budget_mb` / `nw_cpu_busy_warn` / `nw_net_log` 七个各自直接读 `globalThis.localStorage`，外面套 `try {} catch {}` 回落默认值。微信小游戏**没有这个全局**（走 `wx.getStorageSync`，即 `platform.storage`），于是七个开关在微信上永远停在默认值且不报错。`net/anomaly/reporter.ts` 早就踩过同一个坑并用 `setAnomalyStorage` 解决了——这次是把同一个缝补到 flag 上，而不是补第八次。
+- **就算读得到也没用：微信打不开控制台，iOS 要接 Safari Web Inspector 才读得到一个全局。** 「去设备上读一个数」这条路在这两个宿主上不通。
+
+- **决策一：新增 `client/src/debugFlags.ts`**（`debugFlag` / `debugNum` / `setDebugFlagStorage`），七个读点全部改走它；`app.ts` 在**两个 watchdog 装载之前**调 `setDebugFlagStorage(platform.storage)`。缺省仍回落到 `globalThis.localStorage` shim，所以 web 行为与既有测试（stub 全局）一字不变。
+- **决策二：设备自己报，不靠人去读。** `cache/PerfMonitor` 本来就在按 2 秒窗口采 fps（卡顿告警用），现在健康会话把这份采样连同重绘计数报成 **`render_profile`** analytics 事件：`scene` / `spanS` / `windows` / `fpsP50` / `fpsMin` / `fpsMax` / `maxFps` / `res` / `dpr` / `dprCapped` / `canvasW` / `canvasH` / `tickPerSec` / `paintPerSec` / `skipPct`。两个关键派生位：**`dprCapped`（`dpr > res`）= ADR-083 的 dpr 上限在这台设备上到底有没有生效**（微信永远是 false —— `WechatPlatform.devicePixelRatio` 硬编码 1，那条旋钮在微信是空操作，只有 iOS/web 吃它），**`paintPerSec` vs `tickPerSec` = 按需重绘有没有在工作**。
+- **走 analytics 而不是 anomaly 通道。** anomaly 是「出事了」的全量通道（有冷却与配额），把常态画像塞进去会污染它；`render_profile` 是健康数据，归 analyticsvc → Grafana。服务端 `analyticsvc` 里采样率 **1.0**：整条事件的意义就是跨宿主/跨设备对比，采样掉就没有意义了。
+- **量是有界的，而不是连续的**：每会话最多 6 条（首条约 30 秒——够 boot 和第一个场景稳定，又不至于短会话什么都不报；之后每约 5 分钟）。**只统计全程可见的窗口**，理由和卡顿 watchdog 丢弃隐藏窗口一样：被节流的后台标签页会报出假的 4 fps，看起来像一台快死的设备。
+- **`renderStats` 单独成一个模块**（`render/renderStats.ts`，零 import）。第一版把计数器的读口直接开在 `renderPolicy.ts` 上，结果 `PerfMonitor` 的**值**引入把整个 canvas renderer 拖进了 plain-node 单测环境（`document.createElement is not a function`）——PerfMonitor 自己那句 `import * as PIXI` 只用在类型位置、会被擦除，所以它一直跑得动 node 环境。把计数器搬到一个无依赖的文件后两边都干净。
+- **门禁**：`test/debugFlags.test.ts`（5 例）——行为一道（注入 storage 要被读到、异常要吞、缺省回落全局），**机械一道**：`src/` 下除 `debugFlags.ts` 与 `anomaly/reporter.ts` 两个 shim 外，任何文件都不许 `localStorage.getItem('nw_…')`。`test/renderProfile.test.ts`（8 例）——够窗口才报、fps 分布/场景/renderer 事实、`dprCapped` 两个方向、**重绘率必须是计数器的差值而不是累计值**、第二条对第一条做差、隐藏窗口既不计数也不拉低 fps、每会话上限、没装 policy 时不带重绘字段也不抛。三处变异（把隐藏窗口也计入 / 把差值改成累计 / 删掉每会话上限）逐一验证会转红。
+  - 顺带一个测试自身的坑，写在 `renderProfile.test.ts` 的 `feedWindow` 里：**喂窗口只能用能整除 2000 ms 的帧率**（50/25/10/4）。60 fps 的 16.666… ms 凑不出整窗口，余下的帧会漏进下一个窗口，攒十几个窗口后边界漂移到「25 fps 的窗口报成 33 fps」。函数里直接 `throw` 挡住，而不是留给下一个人去查。
+- **影响**：新增 `client/src/debugFlags.ts`、`client/src/render/renderStats.ts`、`client/test/debugFlags.test.ts`、`client/test/renderProfile.test.ts`；改 `render/renderPolicy.ts`（flag 走 seam + 计数器发布）、`cache/PerfMonitor.ts`（flag + `render_profile`）、`cache/MemoryMonitor.ts`（三个 flag）、`net/log.ts`（一个 flag）、`app.ts`（`setDebugFlagStorage` + 给 PerfMonitor 传 renderer 事实）、`server/analyticsvc/src/service/defs.ts`（采样率）。
+- **还没做的**：真机上还是没有人拿着手机跑过——这条 ADR 只是把管子接好。**功耗本身客户端测不了**（没有电池 API 可用的口径），只能靠设备侧电池统计，帧数/重绘率这两个能测的现在会自己报上来。
+
+## ADR-085 `WorldMapScene` 也改按需重绘（`paint: 'reactive'`）——以及一次把 8.25 ms 打回 1.3 ms 的更正 — Accepted — 2026-09-08
+
+ADR-083 把 28 个菜单场景改成按需重绘，世界地图留在 `'live'`。当天量完 §7 那批数字后判断「数字支持改」，但压着没改，因为 `render/GuideOverlay.ts` 每帧重描呼吸环，把地图的签名变化率顶成 60/60 帧（见 ADR-083「还没做的」①）。呼吸环已修（几何只在目标移动时重描、呼吸走 `ring.alpha` 且量化相位），这条 ADR 是接着把开关拨了。
+
+- **先更正一个数：整 tick 不是 8.25 ms，是 1.3 ms。** 8.25 那次是在**窗口被遮挡**时量的（`claudedocs/client-render-budget.md` §6 第 7 条早就写了「遮挡时不要量毫秒」，但那批数字自己踩了同一个坑）。这次拿到一个真前台的标签页重取（`document.visibilityState === 'visible'` 一起打印在每条读数里），同机同画布、L1、1,844 个舞台对象、引导中和掉：**整 tick p50 1.3 ms / mean 1.41 / max 5.1**。**教训比数字重要：自己写下的测量禁忌，下一次量的时候会照样犯，除非把前提（这里是 `visibilityState`）和读数打印在同一行。**
+- **同一次重取还翻掉了原来的立论。** 原来的账是「花 18 ms/s 的遍历省掉 ~49 次 8.25 ms 的帧」，一比二十。真实拆分（同一状态，只把 `Renderer.prototype.render` 换成空函数）：**整 tick mean 1.41 ms，而一个「被跳过」的帧仍然要付 mean 1.51 ms**——也就是说这 1.4 ms 几乎全是**场景 `update()`**（跳过重绘并不跳过它），重绘在主线程上的份额低于噪声。所以**主线程上这笔账基本是平的**：省下的 ~5 ms/s 对上多付的 ~9 ms/s（`stageSignature` mean 0.15 ms / max 0.3 × 60）。
+- **真正的收益在 GPU 和合成，也就是这条 ADR 系列一开始要解决的东西。** 同一状态实测（`EXT_disjoint_timer_query_webgl2`，20 帧）：**GPU 0.708 ms/帧**，15 个 draw call、**59,982 个索引/帧**。空闲地图一秒只真的变 ~10 次，于是 ~49 次/秒的提交与 present 是纯浪费——**跳掉它们≈省 35 ms/s 的 GPU 工作**（桌面 Arc Pro 上；手机上同一张图的 fill rate 只会更贵）。owner 报的是「耗电、发热、风扇」，不是「帧时间」；**主线程打平、GPU 省一大截**这个形状正对着那个抱怨，所以改。
+- **不需要任何「我在动」的申报，仍然是派生的**（这是 ADR-083 决策三的全部理由，这里一字不改）：行军 token 每帧改变换、护盾气泡 10 fps 改几何、平移改相机、迟到的图集解码改 `baseTexture.dirtyId`——每一样都落在 `stageSignature` 读的字段里，各自把帧画出来。安全阀照旧（500 ms 地板 + 指针后 400 ms 满帧）。
+- **门禁：8 例，全部变异验证**（`test/ui/worldMapOverlayCoalescing.ui.ts` 的 `world map under a 'reactive' paint policy`）。策略读的是**场景自己声明的 `paint`** 而不是写死 `'reactive'`：这个开关一共就一行，写死会让「把那行删掉」这件事全绿（实测删掉 → 4 例红）。核心那条：真 `RenderPolicy` 的 `'reactive'` 模式压在真 `WorldMapScene` 上，**行军在途必须 60/60 帧全画**，落地后掉到 ≤2/60（那 ≤2 是每秒一次的 HUD 倒计时）。两处让这三例不是摆设的细节：**policy 时钟要冻住**（否则 500 ms 地板自己就把帧画满了）、**`Date.now` 要手动推进**（token 位置按它插值，同步跑 60 帧本来发生在同一个瞬间，token 一动不动，用例会为了错误的理由变绿）。headless 加载不了 token 的 `.tao`，所以种的是同一个函数里 `STICKMAN_TOKEN_BUDGET` 之外那条 `'dot'` LOD 分支的真实 display object。变异验证：拿掉 `syncMarchTokens` 的逐帧 `position.set` → 60 变 1。
+  - **另外四条钉「空闲地图上其实在动的东西」**——这类失效不是变慢，是**画面冻住**，而且没有任何别的测试会注意到：①**首屏加载罩必须 60/60**（转圈 + 1.3 s 橡皮擦揭示；玩家看着不转的转圈只会以为游戏挂了。变异：`loadingSpinner.rotation` 不再赋值 → 红）；②**护盾气泡 ~10/60**（`SHIELD_ANIM_FPS`；变异：把 10 fps 那个循环短路 → 红）；③**HUD 倒计时每秒至少 1 次**——这是「空闲 ≤2/60」的**另一个方向**，只有上界的话「一帧都不画」也满足它，而那正是行军倒计时冻在同一个数字上的样子（变异：`hudTickTimer >= 1` 恒假 → 红）；④**新手引导圆环亮着时 ≤25/60**（修复前 60/60，与真浏览器量到的一致）——这条是呼吸环那个 bug 在**真宿主**里的回归门禁，比只在 widget 层测有力（变异：把 `update()` 改回每帧 `traceRing` → 红，报 60）。
+  - 两条 headless 的先天限制写在注释里：护盾与 token 的**美术**在 headless 拿不到（`.tao` / 图集不解码），所以种的是它们的真实 display object + 真实动画循环，只有素材是假的；这与「假一整个 fake 场景」不是一回事。
+- **真浏览器验收**（同机、可见窗口、`nw_render_debug=1` 读 `__nwRenderStats`，每档采 3–6 秒）：
+
+  | 状态 | tick/s | 重绘/s | skip% |
+  |---|---|---|---|
+  | 空闲地图（引导已完成） | 58.5 | **10.0** | **82.9** |
+  | 空闲地图（新手引导圆环亮着） | 58.7 | 16.5–18.7 | 68–72 |
+  | 拖动平移中 | 58.9 | **58.9** | **0** |
+  | 城池面板（overlay）压在地图上 | 58.6 | 18.0 | 69 |
+
+  画面同时确认：拖动时地图、云雾斜边界、引导圆环与气泡全跟着相机走，没有残留几何；点空地立刻弹出占领面板；进出城池面板正常。**最后一行是这次的额外收获**：`paintMode` 对组合取悲观，地图从 `'live'` 变 `'reactive'` 之后，「城池/社交/拍卖等 overlay 压在地图上」这一整类组合也跟着从 100% 重绘掉到 ~30%。
+- **代价的上界写清楚**：有行军在途、或玩家正在拖动时，`stageSignature` 那 0.15–0.3 ms/帧是白付的（那些帧本来就要画）。这是把「省 35 ms/s GPU」买下来的价钱。
+- **影响**：`client/src/scenes/WorldMapScene.ts` 一行 `readonly paint = 'reactive' as const`（外加解释为什么的注释）。文档：`claudedocs/client-render-budget.md` §2/§7/§10。**ADR-083 里那句「世界地图整 tick 8.25 ms」自此作废**，正确的数字与拆分在本条与快查文档里。

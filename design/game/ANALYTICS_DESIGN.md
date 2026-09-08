@@ -202,7 +202,8 @@ function flushSync(batch: EventBatch): void {
     "shop_open":      { "sample": 0.5 },
     "shop_buy":       { "sample": 1.0 },
     "upgrade":        { "sample": 1.0 },
-    "churn_signal":   { "sample": 1.0 }
+    "churn_signal":   { "sample": 1.0 },
+    "render_profile": { "sample": 1.0 }
   }
 }
 ```
@@ -284,6 +285,20 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | `nav_checkpoint` | `scene` | 场景级漏斗用（§9.7），100% 采样，仅在 `screen_view` 命中场景白名单时自动补发 |
 | `login_gate_hit` | `scene` | 离线功能门控弹「需要登录」 |
 | `intro_complete` / `intro_skip` | — | 首启故事 `IntroScene` 看完/跳过（`app/nav/auth.ts` `goIntro` 的 `onFinish(skipped)`），design-doc-audit-2026-07 补齐——此前这一步完全没有埋点。100% 采样，纳入 §9.6 `ONBOARDING_STEPS` 的 `intro_seen` 步骤 |
+
+### 5.6b 渲染画像（Render Profile，ADR-084）
+
+真机上的帧数与重绘率。ADR-083 的三个渲染节流（dpr 上限 2 / `maxFPS` 60 / 菜单场景按需重绘）只在一台 Windows 桌面量过；iOS 和微信是耗电报告的来源，却恰好是**读不到数字**的两个宿主（微信打不开控制台，iOS 要接 Safari Web Inspector）。所以让设备自己报。
+
+上报方 `cache/PerfMonitor`（它本来就在为卡顿告警按 2 秒窗口采样 fps）。**每会话最多 6 条**：首条约 30 秒，之后每约 5 分钟。**只统计全程可见的窗口**——被浏览器节流的后台标签页会报出假的 4 fps。采样率 **1.0**（这条事件的意义就是跨宿主/跨设备对比，采样掉即失去意义；量与 `session_start` 同级）。
+
+| 事件 | 必填属性 | 说明 |
+|---|---|---|
+| `render_profile` | `scene, spanS, windows, fpsP50, fpsMin, fpsMax, maxFps` | `scene` 取自 anomaly 的 `getActiveScene()`，于是可按场景切（世界地图 vs 大厅 vs 战斗）；`spanS`/`windows` 是本条覆盖的可见时长与窗口数 |
+| （同上，装了 RenderPolicy 时附加） | `tickPerSec, paintPerSec, skipPct` | **`paintPerSec` vs `tickPerSec` = 按需重绘有没有在工作**。取自 `render/renderStats.ts` 计数器的**差值**，不是累计值 |
+| （同上，app.ts 传入 renderer 事实时附加） | `res, dpr, dprCapped, canvasW, canvasH` | **`dprCapped`（`dpr > res`）= dpr 上限在这台设备上到底有没有生效**。微信永远为 `false`：`WechatPlatform.devicePixelRatio` 硬编码 1，那条旋钮在微信是空操作 |
+
+Grafana 上值得先看的两张：按 `platform` 切的 `fpsP50` 分布（iOS/微信/web），以及按 `scene` 切的 `skipPct`（reactive 的菜单应该显著大于 0，`live` 的战斗应该等于 0）。
 
 ### 5.7 成就漏斗（Achievement，S9-8）
 

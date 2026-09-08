@@ -72,4 +72,15 @@ export interface StickmanOptions {
    * bounds used to fit the figure to its box (see getRenderedLocalBounds).
    */
   showShadow?: boolean;
+  /**
+   * Cap how often the pose is re-sampled, in frames per second. Omit for "every tick", which is
+   * what a fighting unit wants.
+   *
+   * This exists for the decorative figures on menu screens (the lobby silhouette, and anything
+   * else that idles behind UI). Those screens are painted on demand (render/renderPolicy.ts), and a
+   * figure that re-poses on every tick is by itself enough to make an otherwise still screen repaint
+   * 60 times a second. Art direction §5.4 asks for the opposite anyway — "帧率保留手绘的跳跃感,
+   * 不必追求丝滑流畅" — so a menu idle at {@link MENU_POSE_FPS} is both cheaper and more on-style.
+   */
+  poseFps?: number;
 }

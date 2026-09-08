@@ -32,6 +32,11 @@ interface E2EState {
  * `screen`/`lastRoomState` conventions test/harness/HeadlessAppViews.ts already uses for the
  * headless full-link E2E, so the two harnesses read the same way.
  */
+/** An object whose values include at least one function — i.e. a scene's callbacks bag. */
+function isCallbackBag(a: unknown): boolean {
+  return !!a && typeof a === 'object' && Object.values(a).some((x) => typeof x === 'function');
+}
+
 function instrumentViews(views: AppViews): AppViews {
   const state: E2EState = {};
   const v = views as unknown as Record<string, (...a: unknown[]) => unknown>;
@@ -42,7 +47,13 @@ function instrumentViews(views: AppViews): AppViews {
     const screenKey = key[4].toLowerCase() + key.slice(5);
     v[key] = (...args: unknown[]) => {
       state.screen = screenKey;
-      state[`${screenKey}Cb`] = args[0];
+      // The callbacks object is args[0] for most `show*` methods, but not all: `showAgeGate(mode,
+      // cb)` and `showRealLayerInterlude(url, textKey, cb)` lead with plain data. Pick the first
+      // argument that actually carries functions, so `state.<screen>Cb` means the same thing on
+      // every screen; keep the raw args too, for the ones whose data matters (the age gate's
+      // 'ask' vs 'blocked' mode).
+      state[`${screenKey}Cb`] = args.find(isCallbackBag) ?? args[0];
+      state[`${screenKey}Args`] = args;
       const handle = orig(...args);
       if (handle && typeof handle === 'object') {
         const h = handle as Record<string, (...a: unknown[]) => unknown>;

@@ -23,6 +23,18 @@ import { tearDownChildren } from '../render/sketchUi';
 export type { WorldMapCallbacks, WorldMapView } from './worldmap/WorldMapContext';
 
 export class WorldMapScene implements Scene {
+  /**
+   * Demand-driven painting (ADR-085, on top of ADR-083's machinery). The map looks like a 'live'
+   * scene and was one until 2026-09-08, but idle — no march, no garrison, nothing selected — its
+   * picture only really changes ~11 times a second (10 of those are the shield bubbles' own 10 fps
+   * cap, one is the HUD countdown), so ~49 of every 60 frames re-submit an identical 60k-index,
+   * 15-draw-call, 0.71 ms-of-GPU frame. Nothing here declares "I am animating": the paint decision
+   * is derived from the display list by `render/renderPolicy.ts`, so a moving march token, a pan, a
+   * shield step or a late atlas decode each paint on their own (see the gate in
+   * test/ui/worldMapOverlayCoalescing.ui.ts — a march in flight must paint 60/60 frames).
+   */
+  readonly paint = 'reactive' as const;
+
   private readonly ctx: WorldMapContext;
   private readonly input: InputManager;
 

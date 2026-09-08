@@ -36,6 +36,8 @@ export type { LobbySceneCallbacks } from './LobbyScene/core';
  */
 export class LobbyScene implements Scene {
   readonly container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   private readonly core: LobbySceneCore;
   private readonly overlays: OverlaysPanel;

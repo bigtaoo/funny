@@ -55,6 +55,7 @@ import type { WorldMapView } from '../../src/scenes/WorldMapScene';
 import type { DailyCallbacks } from '../../src/scenes/DailyScene';
 import type { EventCallbacks } from '../../src/scenes/EventScene';
 import type { ConsentCallbacks } from '../../src/ui/dialogs/ConsentDialog';
+import type { AgeGateCallbacks, AgeGateMode } from '../../src/ui/dialogs/AgeGateDialog';
 import type { ReconnectPromptCallbacks } from '../../src/ui/dialogs/ReconnectPromptDialog';
 import type { TitlesSceneCallbacks } from '../../src/scenes/TitlesScene';
 import type { CitySceneCallbacks } from '../../src/scenes/CityScene';
@@ -65,7 +66,7 @@ export type ScreenName =
   | 'leaderboard' | 'battlePass' | 'replay' | 'result' | 'room' | 'friends'
   | 'chat' | 'gameNet' | 'game' | 'worldMap' | 'family' | 'sect' | 'auction' | 'defenseEditor' | 'teams' | 'deckBuilder'
   | 'consent' | 'reconnectPrompt' | 'daily' | 'events' | 'statePlayer' | 'titles' | 'city' | 'recharge'
-  | 'realLayerInterlude';
+  | 'realLayerInterlude' | 'ageGate';
 
 interface ActiveMatch {
   engine: IGameEngine;
@@ -104,6 +105,8 @@ export class HeadlessAppViews implements AppViews {
   equipment?: EquipmentCallbacks;
   stats?: StatsCallbacks;
   consent?: ConsentCallbacks;
+  /** The age gate's mode + callback, when the core put it up. */
+  ageGate?: { mode: AgeGateMode; cb: AgeGateCallbacks };
   reconnectPrompt?: ReconnectPromptCallbacks;
   daily?: DailyCallbacks;
   events?: EventCallbacks;
@@ -138,6 +141,16 @@ export class HeadlessAppViews implements AppViews {
     this.realLayerInterlude = { illustrationUrl, textKey, cb };
   }
   showConsent(cb: ConsentCallbacks): void { this.screen = 'consent'; this.consent = cb; }
+  showAgeGate(mode: AgeGateMode, cb: AgeGateCallbacks): void { this.screen = 'ageGate'; this.ageGate = { mode, cb }; }
+
+  /**
+   * Answer the age gate as an adult — the step every entry path now runs before the consent gate
+   * (see src/app/createAppCore.ts's gateAge). Tests that are about something else call this to get
+   * past it; the gate's own behaviour is asserted in test/ageGate.test.ts.
+   */
+  declareAdultAge(): void {
+    this.ageGate?.cb.onDeclared(new Date().getFullYear() - 30);
+  }
   showReconnectPrompt(cb: ReconnectPromptCallbacks): void { this.screen = 'reconnectPrompt'; this.reconnectPrompt = cb; }
   showLobby(cb: LobbySceneCallbacks): LobbyView {
     this.screen = 'lobby';

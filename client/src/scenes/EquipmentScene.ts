@@ -49,6 +49,8 @@ export type { EquipmentCallbacks, EquipResult, EnhanceResult } from './Equipment
  */
 export class EquipmentScene implements Scene {
   readonly container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   private readonly core: EquipmentSceneCore;
   private readonly reforge: ReforgePanel;

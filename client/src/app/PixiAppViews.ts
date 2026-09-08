@@ -5,6 +5,12 @@
 // `showX(cb) { manager.goto(new XxxScene(cb)) }` list further would only fragment it — that part of
 // the old baseline exception still holds). Nothing is shared between the two halves except the five
 // runtime handles passed to the constructor, so this is a plain form② extraction.
+//
+// The same seam applied a second time on 2026-09-08, when ADR-083's paint-gate wiring pushed this
+// file back over 500: the lobby's window-resize handling — a listener, a coalescing timer and the
+// applied-size guard, sharing nothing with the forward list but the current layout — moved to
+// `app/viewportResize.ts`. What is left here is the forward list plus the two fields the list itself
+// reads (`layout`, `resizing`).
 
 import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from '../platform/IPlatform';
@@ -46,8 +52,9 @@ import { CityScene, type CitySceneCallbacks } from '../scenes/CityScene';
 import { DailyScene, type DailyCallbacks } from '../scenes/DailyScene';
 import { EventScene, type EventCallbacks } from '../scenes/EventScene';
 import { ConsentDialog, type ConsentCallbacks } from '../ui/dialogs/ConsentDialog';
+import { AgeGateDialog, type AgeGateCallbacks, type AgeGateMode } from '../ui/dialogs/AgeGateDialog';
 import { ReconnectPromptDialog, type ReconnectPromptCallbacks } from '../ui/dialogs/ReconnectPromptDialog';
-import { OwnerId, ownerToSide, Side } from '../game';
+import { OwnerId, ownerToSide } from '../game';
 import type { Replay, LevelDefinition } from '../game';
 import type { EngineCardInstance, EngineEquipInv } from '@nw/engine';
 import { ScalingManager, createLayout } from '../layout/ScalingManager';
@@ -55,6 +62,7 @@ import { InputManager } from '../inputSystem/InputManager';
 import type { ILayout } from '../layout/ILayout';
 import { enterBattle, DeferredSceneCalls } from './battleGate';
 import { enterWithAssets } from './assetGate';
+import { ViewportResizer } from './viewportResize';
 import { preloadGachaTextures } from '../render/gachaArt';
 import { markFeatureUsed } from '../assets/prefetchPolicy';
 import type { AppViews, LobbyView, RoomView, FriendsView, ChatView, NetGameView, ResultViewProps, FadeOpts, MountOpts } from './AppViews';
@@ -69,63 +77,11 @@ export class PixiAppViews implements AppViews {
   /** Set by the shell to core.onResized(); fired after a lobby resize re-renders. */
   onResized: (() => void) | null = null;
 
-  /** True only while an onResize()-driven lobby rebuild is in flight, so that rebuild swaps instantly (no fade). */
+  /** True only while a resize-driven lobby rebuild is in flight, so that rebuild swaps instantly (no fade). */
   private resizing = false;
 
-  /** Last size actually applied, so a resize event that reports no change can be dropped outright.
-   *  Seeded from the live screen in the constructor rather than left at 0: the boot size IS an
-   *  applied size, and starting at 0 would wave the first no-op resize event straight through. */
-  private appliedW: number;
-  private appliedH: number;
-
-  /** Pending trailing rebuild (see onResize). Cleared by leaveLobby so it can never land off-lobby. */
-  private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
-
-  /**
-   * Coalescing window for the lobby rebuild. One physical device rotation fires `resize` repeatedly
-   * over roughly a quarter second (iOS reports the viewport progressively *through* the rotation
-   * animation), and the pre-2026-08-24 handler ran a full teardown-and-rebuild of the lobby on every
-   * one of them. Long enough to swallow a whole rotation; short enough to be imperceptible when a
-   * desktop user drags a window edge.
-   */
-  private static readonly REBUILD_COALESCE_MS = 180;
-
-  /**
-   * Viewport changed: re-fit the canvas now, rebuild the lobby once things settle.
-   *
-   * The split matters. Re-fitting (renderer.resize + layout + scaling) is cheap and must be immediate
-   * or the canvas visibly lags the viewport; rebuilding the lobby allocates a whole scene graph and is
-   * the expensive half. Previously both ran synchronously on every event, so a single rotation cost N
-   * full scene rebuilds — N rounds of texture churn at the exact moment a mobile WebView is already
-   * paying for a drawing-buffer reallocation, and on a memory-capped in-app WebView that is a plausible
-   * way to get the renderer process killed outright rather than merely made slow.
-   *
-   * The no-change guard in front is worth as much again: mobile browsers fire `resize` for things that
-   * are not resizes at all (chrome bars sliding, the on-screen keyboard, scroll-driven toolbar hiding),
-   * and each of those used to rebuild the lobby for nothing.
-   */
-  private readonly onResize = (): void => {
-    const { width, height } = this.platform.getScreenSize();
-    if (width === this.appliedW && height === this.appliedH) return;
-    this.appliedW = width;
-    this.appliedH = height;
-
-    const insets = this.platform.getSafeAreaInsets?.();
-    this.app.renderer.resize(width, height);
-    this.layout = createLayout(width, height, Side.Bottom, insets);
-    this.scaling.resize(width, height, this.layout, insets);
-
-    if (this.rebuildTimer) clearTimeout(this.rebuildTimer);
-    this.rebuildTimer = setTimeout(() => {
-      this.rebuildTimer = null;
-      this.resizing = true;
-      try {
-        this.onResized?.(); // synchronously rebuilds the lobby via showLobby()
-      } finally {
-        this.resizing = false;
-      }
-    }, PixiAppViews.REBUILD_COALESCE_MS);
-  };
+  /** The lobby's window-resize watcher (app/viewportResize.ts) — only attached while the lobby is up. */
+  private readonly viewport: ViewportResizer;
 
   constructor(
     private readonly platform: IPlatform,
@@ -136,21 +92,25 @@ export class PixiAppViews implements AppViews {
     layout: ILayout,
   ) {
     this.layout = layout;
-    const { width, height } = platform.getScreenSize();
-    this.appliedW = width;
-    this.appliedH = height;
+    this.viewport = new ViewportResizer(
+      platform, app, scaling,
+      (next) => { this.layout = next; },
+      () => {
+        // `resizing` has to be true across the rebuild itself, hence the try/finally rather than a
+        // flag the watcher could own: showLobby() reads it to force an instant swap.
+        this.resizing = true;
+        try {
+          this.onResized?.(); // synchronously rebuilds the lobby via showLobby()
+        } finally {
+          this.resizing = false;
+        }
+      },
+    );
   }
 
-  /**
-   * Detach the lobby resize listener — every non-lobby screen calls this first.
-   *
-   * Cancelling the pending rebuild is load-bearing now that it is deferred: a rotation immediately
-   * followed by a tap into another screen would otherwise leave a queued showLobby() that fires
-   * ~180ms later and yanks the player back to the lobby from wherever they had just navigated to.
-   */
+  /** Detach the lobby resize watcher — every non-lobby screen calls this first (see its `stop`). */
   private leaveLobby(): void {
-    window.removeEventListener('resize', this.onResize);
-    if (this.rebuildTimer) { clearTimeout(this.rebuildTimer); this.rebuildTimer = null; }
+    this.viewport.stop();
   }
 
   /**
@@ -189,6 +149,12 @@ export class PixiAppViews implements AppViews {
     this.manager.goto(this.timedBuild('ConsentDialog', () => new ConsentDialog(this.layout.designWidth, this.layout.designHeight, cb)));
   }
 
+  showAgeGate(mode: AgeGateMode, cb: AgeGateCallbacks): void {
+    this.leaveLobby();
+    this.manager.goto(this.timedBuild('AgeGateDialog', () =>
+      new AgeGateDialog(this.layout.designWidth, this.layout.designHeight, mode, cb)));
+  }
+
   showReconnectPrompt(cb: ReconnectPromptCallbacks): void {
     this.leaveLobby();
     this.manager.goto(this.timedBuild('ReconnectPromptDialog', () => new ReconnectPromptDialog(this.layout.designWidth, this.layout.designHeight, cb)));
@@ -198,7 +164,7 @@ export class PixiAppViews implements AppViews {
     const scene = this.timedBuild('LobbyScene', () => new LobbyScene(this.layout, this.input, cb));
     // A resize-driven rebuild always swaps instantly, regardless of the caller's fade request.
     this.manager.goto(scene, { fade: !this.resizing && !!opts?.fade });
-    window.addEventListener('resize', this.onResize);
+    this.viewport.listen();
     return {
       applySocialBadge: (n, mail) => scene.applySocialBadge(n, mail),
       applyAchievementBadge: (c) => scene.applyAchievementBadge(c),

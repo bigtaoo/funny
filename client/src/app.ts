@@ -22,6 +22,8 @@ import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
+import { RenderPolicy, rendererResolution } from './render/renderPolicy';
+import { setDebugFlagStorage } from './debugFlags';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
 import { startIdlePrefetch } from './assets/idlePrefetch';
@@ -54,7 +56,9 @@ export async function startApp(
     backgroundColor: 0xf5f0e8,
     view:            platform.getCanvas(),
     antialias:       false,
-    resolution:      platform.devicePixelRatio,
+    // Capped, not raw: a dpr-3 phone would otherwise rasterise 2.25× the area of a dpr-2 one for a
+    // picture drawn in ~2px ink strokes. See render/renderPolicy.ts for the measurement.
+    resolution:      rendererResolution(platform.devicePixelRatio),
     autoDensity:     true,
   });
 
@@ -76,6 +80,12 @@ export async function startApp(
   // Procedural art (sketch.ts) bakes static board layers to textures via this renderer.
   setBakeRenderer(app.renderer);
 
+  // Same reason as setAnomalyStorage below, one layer down: the `nw_*` diagnostic knobs the two
+  // watchdogs and RenderPolicy read (nw_mem_warn_mb / nw_fps_warn / nw_render_debug / ...) used to go
+  // straight to `globalThis.localStorage`, which does not exist on WeChat — so every one of them was
+  // silently stuck on its default there. Must run BEFORE the installs below, which read them.
+  setDebugFlagStorage(platform.storage);
+
   // Memory watchdog: samples the JS heap every few seconds; logs a console.warn and dumps
   // object-pool usage when the threshold is exceeded; hooks wx.onMemoryWarning on WeChat.
   // Persists across scenes (pool registry is cleared automatically after a battle exits).
@@ -84,7 +94,12 @@ export async function startApp(
 
   // CPU / main-thread saturation watchdog: long-task busy ratio + sustained low FPS;
   // either condition crossing its threshold continuously triggers a cpu anomaly report (net/anomaly full-coverage channel).
-  new PerfMonitor().install(app.ticker);
+  new PerfMonitor().install(app.ticker, {
+    resolution: app.renderer.resolution,
+    dpr:        platform.devicePixelRatio,
+    canvasW:    app.view.width,
+    canvasH:    app.view.height,
+  });
 
   // Full-coverage anomaly reporting: memory / CPU / WebGL-lost / hang / uncaught exceptions
   // are reported directly to Loki (not subject to the log-targeting allowlist) to help
@@ -121,6 +136,11 @@ export async function startApp(
   // ever engage this — plain instant scene switches never freeze input.
   const manager = new SceneManager(app, scaling.gameLayer, input, dialogGate);
   platform.setupInput(app, input, (sx, sy) => scaling.toDesignSpace(sx, sy));
+
+  // Frame-rate ceiling + demand-driven painting (render/renderPolicy.ts). Installed here rather
+  // than at Application construction because it needs `manager` to read the current scene's paint
+  // mode, and it must run before the first frame the boot gate below lets through.
+  new RenderPolicy(app, () => manager.paintMode).install();
 
   // ── L0 boot-tier preload gate (ASSET_PACKAGING §3, §11) ─────────────────────
   // Show a loading screen (top-most: built after all other layers) and await the

@@ -40,11 +40,15 @@ async function screenIs(page: Page, name: string): Promise<void> {
   );
 }
 
-/** intro → consent gate, both unconditional on a fresh (storage-less) browser context. */
+/** intro → age gate → consent gate, all unconditional on a fresh (storage-less) browser context. */
 async function bootToLogin(page: Page): Promise<void> {
   await page.goto('/');
   await screenIs(page, 'intro');
   await page.evaluate(() => window.__nwE2E!.state.introCb.onFinish(true));
+  await screenIs(page, 'ageGate');
+  await page.evaluate(() => {
+    window.__nwE2E!.state.ageGateCb.onDeclared(new Date().getFullYear() - 30);
+  });
   await screenIs(page, 'consent');
   await page.evaluate(() => window.__nwE2E!.state.consentCb.onAccept());
   await screenIs(page, 'login');
