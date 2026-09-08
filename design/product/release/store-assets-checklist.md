@@ -15,10 +15,21 @@
 | 字段 | 中文 | English | Deutsch |
 |---|---|---|---|
 | 名称 | Nivara: Notebook Wars | Nivara: Notebook Wars | Nivara: Notebook Wars |
-| 副标题/一句话 | 笔记本里的回合策略战争 | Turn-based strategy in a notebook | Rundenstrategie im Notizbuch |
-| 简短描述 | 在手绘笔记本世界里排兵布阵，东西两本笔记的策略对决。战役 PvE + 实时联机 PvP + 大世界 SLG。 | Command armies in a hand-drawn notebook world — an East-meets-West strategy duel. Campaign PvE + real-time PvP + open-world SLG. | Befehlige Armeen in einer handgezeichneten Notizbuchwelt — ein Strategieduell zwischen Ost und West. Kampagne-PvE + Echtzeit-PvP + Open-World-SLG. |
+| 副标题/一句话 | 笔记本里的实时塔防对战 | Real-time tower defense | Tower Defense im Notizbuch |
+| 简短描述 | 在手绘笔记本世界里实时排兵布阵，东西两本笔记的策略对决。战役 PvE + 实时联机 PvP + 大世界 SLG。 | Command armies in real time in a hand-drawn notebook world — an East-meets-West strategy duel. Campaign PvE + real-time PvP + open-world SLG. | Befehlige Armeen in Echtzeit in einer handgezeichneten Notizbuchwelt — ein Strategieduell zwischen Ost und West. Kampagne-PvE + Echtzeit-PvP + Open-World-SLG. |
 
-> 长描述（每渠道字数上限不同）以简短描述为基底扩写，强调：手绘笔记本美术、回合策略深度、战役剧情（涛 vs Anna 东西碰撞）、联机对战、养成（不破坏 PvP 公平）。**避免**「赌博/博彩」类措辞（盲盒措辞统一为「付费随机道具」并指向概率公示）。
+> ⚠️ **类型口径（2026-09-08 修正，四渠道通用）：本作是实时车道推进（塔防式）对战，不是回合制。**
+> 2026-06 起本节到 §0.1b 的三语文案通篇写着「回合制策略 / turn-based strategy / rundenbasiert」，
+> 与代码和画面都不符：`server/engine/src/math/fixed.ts` 的 `TICK_RATE = 30`（30 Hz 定点 lockstep 模拟）、
+> `CAMPAIGN_DESIGN.md §开头`「在现有**车道推进引擎**之上」、`i18n` 三语的 `lobby.subtitle` 都是「实时塔防」，
+> 而 `art/store/en/battle__*.png` 每一张上都有 `0:30` 倒计时、自动回复的金币读数和 6 张带费用的手牌。
+> 描述与截图互相打架正是 App Store 2.3.1（metadata 与实际不符）的正面撞法，而四个渠道共用同一份文案，
+> 所以这是一处改一次、四处受益的修正。已改：本表副标题/简短描述、§0.1b 三语长描述、§0.2 关键词，
+> 以及仓库内同源的错误说法（`client/public/web/home.html` 的 title/description/hero/PvP 卡片、`README.md` 首行）。
+> **PvP 那一句尤其别写成「实时回合制」**——旧稿的 `real-time turn-based PvP` 是两个类型硬拼在一起，
+> 它真正想说的是「同步的是操作而非结果」（lockstep），照那样写反而把矛盾搬进了同一个短语里。
+
+> 长描述（每渠道字数上限不同）以简短描述为基底扩写，强调：手绘笔记本美术、实时车道对战的决策密度、战役剧情（涛 vs Anna 东西碰撞）、联机对战、养成（不破坏 PvP 公平）。**避免**「赌博/博彩」类措辞（盲盒措辞统一为「付费随机道具」并指向概率公示）。
 
 ### 0.1b 长描述（三语，2026-09-04 拟；App Store / Play 直接复制）
 
@@ -31,11 +42,11 @@
 ```
 一本笔记本，两种画法，一场持续到最后一页的战争。
 
-Nivara 是一款画在方格纸上的回合制策略游戏。你排布兵种、算清行动顺序、在对手的墨迹里找破绽——
-每一回合都是一道有正解的小题，而不是拼手速。
+Nivara 是一款画在方格纸上的实时策略对战游戏。金币自己回、手牌不断轮换、两座城堡始终在射程之内——
+你决定这一枚金币花在哪条车道、什么时候推、什么时候守。
 
 · 战役：跟随涛与 Anna 的东西方笔记之争，逐章推进，剧情与关卡交替
-· 联机对战：实时回合制 PvP，同步的是操作而非结果，双方看到的是同一场仗
+· 联机对战：实时 PvP，同步的是操作而非结果，双方看到的是同一场仗
 · 大世界：占地、行军、结盟，与其他玩家共享一张会变化的地图
 · 养成：卡牌、皮肤、装备可收集；战力成长不改变 PvP 的对局规则
 
@@ -47,12 +58,12 @@ Nivara 是一款画在方格纸上的回合制策略游戏。你排布兵种、�
 ```
 One notebook, two ways of drawing, and a war that runs to the last page.
 
-Nivara is a turn-based strategy game drawn on graph paper. You place your units, count out the
-order of actions, and look for the gap in your opponent's ink — every turn is a small problem with
-a right answer, not a race against the clock.
+Nivara is a real-time strategy game drawn on graph paper. Gold refills on its own, your hand
+cycles, and both castles are always in reach — you decide what to spend, which lane to push, and
+when to hold.
 
 · Campaign — follow Tao and Anna's duel of East and West notebooks, chapter by chapter
-· Multiplayer — real-time turn-based PvP that syncs inputs, not outcomes: both sides see one battle
+· Multiplayer — real-time PvP that syncs inputs, not outcomes: both sides see one battle
 · Open world — claim ground, march, form alliances on a shared map that keeps changing
 · Collection — cards, skins and gear to collect; progression never changes the rules of a PvP match
 
@@ -64,12 +75,12 @@ Contains paid random items; the draw rates are published in-game on the odds pag
 ```
 Ein Notizbuch, zwei Zeichenstile, ein Krieg bis zur letzten Seite.
 
-Nivara ist ein rundenbasiertes Strategiespiel auf kariertem Papier. Du stellst deine Einheiten auf,
-zählst die Zugreihenfolge durch und suchst die Lücke in der Tinte deines Gegners — jede Runde ist
-eine kleine Aufgabe mit einer richtigen Lösung, kein Wettlauf gegen die Uhr.
+Nivara ist ein Echtzeit-Strategiespiel auf kariertem Papier. Gold füllt sich von selbst nach,
+deine Handkarten rotieren, und beide Burgen sind immer in Reichweite — du entscheidest, wofür du
+ausgibst, welche Bahn du drückst und wann du hältst.
 
 · Kampagne — das Duell zwischen Taos und Annas Notizbüchern, Kapitel für Kapitel
-· Mehrspieler — rundenbasiertes Echtzeit-PvP: synchronisiert werden Eingaben, nicht Ergebnisse
+· Mehrspieler — Echtzeit-PvP: synchronisiert werden Eingaben, nicht Ergebnisse
 · Open World — Gebiete einnehmen, marschieren, Bündnisse schließen auf einer gemeinsamen Karte
 · Sammeln — Karten, Skins und Ausrüstung; Fortschritt ändert nie die Regeln eines PvP-Matches
 
@@ -78,7 +89,16 @@ Quoten-Seite. Kostenlos spielbar.
 ```
 
 ### 0.2 关键词 / 标签（待各渠道适配）
-策略, 回合制, 联机对战, 笔记本, 手绘, 战棋 / strategy, turn-based, multiplayer, notebook, hand-drawn, tactics / Strategie, rundenbasiert, Mehrspieler, Notizbuch, Taktik
+策略, 塔防, 实时对战, 联机对战, 笔记本, 手绘 / strategy, tower defense, real-time, multiplayer, notebook, hand-drawn, tactics / Strategie, Tower Defense, Echtzeit, Mehrspieler, Notizbuch, Taktik
+
+**App Store 关键词字段（≤100 字符，逗号分隔、不带空格；2026-09-08 拟）**——刻意不重复 App 名与副标题里已被索引的词
+（`Nivara` / `Notebook` / `Wars` / `Real-time` / `tower defense` 已在 §0.1 那两个字段里）：
+
+```
+tactics,pvp,multiplayer,card battle,lane,army,castle,sketch,doodle,paper,rts
+```
+
+76 字符。Play / 微信 / CrazyGames 的标签字段各有自己的形态与上限，按上面那行中/英/德词表现取现填。
 
 ### 0.3 数据收集口径（隐私标签/数据安全表统一来源）
 以 [`privacy-policy §2`](../legal/privacy-policy.zh.md) 为准，简表：
@@ -156,15 +176,135 @@ Quoten-Seite. Kostenlos spielbar.
 | 素材 | 规格 | 状态 |
 |---|---|---|
 | App 图标 | 1024×1024 PNG（无圆角、无 alpha） | ✅ `art/store/icons/ios_appicon_1024.png`（3 通道无 alpha，见 §0.4） |
-| iPhone 6.7" 截图 | 1290×2796（或 1284×2778），最少 3 张、最多 10 张 | 🟡 初版已出（`art/store/en/*__iphone_6.7.png`，7 场景），见 §0.5 |
-| iPhone 6.5" 截图 | 1242×2688 | 🟡 初版已出（`art/store/en/*__iphone_6.5.png`），见 §0.5 |
-| iPad 12.9"（如支持） | 2048×2732 | 🟡 初版已出（`art/store/en/*__ipad_12.9.png`）/ 视是否支持 iPad |
+| iPhone **6.9"** 槽位 | 1320×2868 **或 1290×2796**，最少 3 张、最多 10 张 | ✅ `art/store/en/*__iphone_6.7.png` = 1290×2796（7 场景）；**文件名里的 6.7 是拍图当时的槽位名** |
+| iPhone **6.5"** 槽位 | 1242×2688 或 1284×2778 | ✅ `art/store/en/*__iphone_6.5.png` = 1242×2688 |
+| iPad **13"** 槽位 | 2064×2752 或 **2048×2732** | ✅ `art/store/en/*__ipad_12.9.png` = 2048×2732（通用 App 必需，`TARGETED_DEVICE_FAMILY = "1,2"`） |
+| Apple Watch | — | 无 watch app，槽位留空 |
 | App 预览视频（可选） | 各设备分辨率，15–30s | 待美术（可选） |
+
+> ⚠️ **文件名 ≠ 槽位名，这是 2026-09-08 实际上传时踩到的**：`__iphone_6.7.png` 那一组是 1290×2796，
+> 属于现在叫 **6.9"** 的槽位；把它拖进 6.5" 框会被 ASC 直接拒（那个框只收 1242×2688 / 1284×2778）。
+> 拒绝理由只说尺寸不符，不会告诉你「你拖错格子了」，很容易误判成「当初拍的图尺寸不对」。
+> **实测复核过的三件事**（`art/store/en/` 全 35 张）：像素尺寸逐张精确、PNG `colortype 2`（RGB，**无 alpha**）、
+> 无圆角无设备边框——ASC 最常见的三类拒绝理由都不成立。
+>
+> **Apple 现在只强制 iPhone 6.9" + iPad 13" 两组**，更小的 iPhone 尺寸留空即由 6.9" 自动缩放。
+> 6.5" 那一组我们有现成文件，填不填都行；省事就只填两个必需槽位。
+>
+> **建议顺序**（商店搜索结果只露前 3 张）：`battle` → `campaign` → `world` → `prep` → `gacha` → `lobby`。
+> `shop` 不上——纯付费界面占一个截图位不划算。
 
 ### 1.2 元数据
 - 名称（≤30 字符）、副标题（≤30）、描述、关键词（≤100 字符逗号分隔）、推广文本——三语（见 §0.1）。
 - 隐私政策 URL：`https://nivara.gamestao.com/privacy`（必填；`/privacy.html` 会 307 到无后缀形式，填无后缀的）。
-- 支持 URL / 营销 URL。
+- **支持 URL（必填）**：`https://nivara.gamestao.com/support` — `client/public/web/support.html`（2026-09-08 新建）。
+- **营销 URL（可选，建议填）**：`https://nivara.gamestao.com/about` — `client/public/web/about.html`（2026-09-08 新建）。
+
+> **这两页为什么是新建的，而不是复用 `home.html`**：`home.html` 是给 Paddle 审核看的落地页，
+> 它**明码标价 USD 币包并直链 `/pricing` → Paddle 收银台**。而支持/营销 URL 是 Apple 会去抓的 metadata，
+> 3.1.1 管到 metadata（同 §1.3 里 Age Suitability URL 不能填 `/home` `/pricing` 的那条），所以把 Apple
+> 指向 `home.html` 等于把「原生包里清干净的网页支付通道」从 metadata 这扇门又请回来一次
+> （原生包那轮清理见 [`IOS_RELEASE.md §10`](../../game/IOS_RELEASE.md)）。
+> 在此之前唯一能填的候选是 `privacy.html`（它底部恰好有一个 `mailto:`）——用隐私政策充当支持页。
+>
+> 两页刻意**不链任何购买面**：无 `/pricing`、无 `/pay`、无 `/home`。
+> `about.html` 连「在浏览器里玩」这个链接都没有——这是其中唯一不显然的一条：网页版自己的 Store 页
+> 是走 Paddle 卖币的，所以一个 Play 按钮就是「Apple 读的 metadata → 两跳到站外支付」。
+> 描述游戏、并如实披露「含付费随机道具、概率游戏内公示」不是购买号召；递给读者一扇通往网页收银台的门才是。
+> `support.html` 唯一保留的商业相邻链接是 `/refunds`——「怎么退款」是真实支持问题，而那一页开头第一句
+> 就是「App Store 买的找 Apple 退」，它是政策不是收银台。
+>
+> 门禁：`client/test/nativePaymentIsolation.test.ts` 新增一例，**读这两个 HTML 的文本**逐个 `href` 断言
+> 不含 `/pricing` `/pay` `/home` `paddle.com`——真正的风险是几个月后有人顺手加一个 `<a>`，
+> 而那个人不会读到这段话。两页同时也不进 mobile/crazygames 产物（同一 CopyPlugin 分组，理由不同：
+> 它们只是网站页，游戏里没有任何入口指向它们）。
+
+### 1.2b 「1.0 Prepare for Submission」逐字段照抄（2026-09-08 整理）
+
+版本页（App Store → iOS App → 1.0 Prepare for Submission）上的每一格。文案三语见 §0.1 / §0.1b。
+
+| 字段 | 填什么 |
+|---|---|
+| App Previews and Screenshots | 见 §1.1（**iPhone 6.9" 槽位放 `__iphone_6.7.png` 那组**；iPad 13" 放 `__ipad_12.9.png`；Apple Watch 留空） |
+| Promotional Text（≤170，改它不用重审） | `Gold refills, your hand cycles, both castles are in reach. Campaign, real-time PvP and a shared world map. Free to play.` |
+| Description（≤4000） | §0.1b 三语长描述，逐语言复制 |
+| Keywords（≤100） | §0.2 那一行 76 字符的串 |
+| Support URL（必填） | `https://nivara.gamestao.com/support` |
+| Marketing URL（可选） | `https://nivara.gamestao.com/about` |
+| Version | `1.0`（与 `client/ios/App/App.xcodeproj/project.pbxproj` 的 `MARKETING_VERSION = 1.0` 一致） |
+| Copyright | `2026 Tao Wang`（运营主体见 `terms.html §1`：德国个体经营，非公司） |
+| Routing App Coverage File | 留空（不是导航类 App） |
+| Build | 选 **CFBundleVersion = 7** 那个（2026-09-08，run `34201608554`，head `e2e307e45`，36.5 MB）——**唯一带 StoreKit 2 的包**；CFBundleVersion=4 的两个是 B 批之前的代码 |
+| Export Compliance | **不会问**：`client/ios/App/App/Info.plist` 已有 `ITSAppUsesNonExemptEncryption = false` |
+| Version Release | Manually release this version（自己控制放出时机） |
+
+#### 审核账号：**必须给，`Sign-in required` 要勾「是」**
+
+**首启不是匿名进游戏，是登录页。** `client/src/app/nav/auth.ts` 的 `resolveEntry()`：
+只有 `cred.kind === 'wx'`（微信）才走 `saveManager.bootstrap()`（那条路才用 `/auth/device`）自动进大厅；
+iOS/web 拿不到 token 就 `goLogin()`，落在 `LoginScene` 的三个按钮上——**Log in / Sign up / Play offline**。
+`auth.offlineHint` 写得很明白：`Offline: campaign & vs-AI only. Log in for online / shop.`
+也就是说不给账号的审核员只能玩离线战役，**买不了内购、打不了 PvP、进不了大世界和社交**——
+`3.1.1` 要求审核员能实测内购，这一条会直接撞上 2.1。
+
+> ⚠️ 这条曾被误判过一次（2026-09-08 会话里先答成「Sign-in required: No，匿名设备登录」）。
+> 误判的来源是 `IOS_RELEASE.md §9` 那句「匿名设备登录（`getAuthCredential` device）」——它**是真的**，
+> 但那是 gateway/NetSession 用的设备凭据，不是账号入口；账号入口是 loginId + password
+> （`server/metaserver/src/accounts/password.ts`）。**「有匿名凭据」和「首启能匿名进游戏」是两件事。**
+
+要交付的东西（**尚未做，见 §1.5 与 `IOS_RELEASE.md` 收尾清单**）：
+
+| 项 | 内容 |
+|---|---|
+| 账号 | 在**生产**（`api.gamestao.com`，iOS 包烘的就是它）注册一个专用账号，loginId 建议 `appstore.review@gamestao.com` |
+| 灌进度 | 至少**通关第一章**——大世界是软门（`LobbyScene/core.ts:215`、`mainContent.ts:169`：未过第一章则 WORLD 入口置灰、提示 `lobby.world.locked`），不灌的话审核员看不到长描述里承诺的「大世界」这一整块 |
+| 灌卡 | 给够一套能打的卡组（`getPvpUnlockedCards(elo)` 在低分段只放开 `PVP_DECK_SIZE` 张，新账号的 Develop/Gacha 页会很空） |
+| **不要灌金币** | 沙盒 Apple ID 走 StoreKit 沙盒真买即可，服务端照常验单发币；手改余额下次登录会被 metaserver 按 commercial 账本对账清零（同 §0.4 截图账号那条） |
+
+脚本可参照 `art/scripts/seed-screenshot-account.cjs`（截图账号就是这么灌的），但那份是打本机后端的，
+生产上跑需要 VPS 侧执行。
+
+#### App Review Information → Notes（直接贴）
+
+```
+ACCOUNT / SIGN-IN
+The first screen is a login screen (Log in / Sign up / Play offline). Please use the demo
+account above — "Play offline" reaches only the single-player campaign and cannot test
+in-app purchases, PvP, the open world, or chat.
+
+FIRST LAUNCH — two gates before the lobby
+1. A neutral age-declaration screen (self-declared, no identity verification). Enter any
+   adult age to continue.
+2. A privacy / terms consent dialog. Both links open in Safari.
+Then you land on the lobby; the bottom tab bar reaches everything.
+
+WHERE TO FIND WHAT YOU USUALLY CHECK
+- Privacy Policy / Terms: tap your name at the top of the lobby to open Profile -> "Legal"
+  (also in the first-launch consent dialog).
+  https://nivara.gamestao.com/privacy and /terms
+- Account deletion (5.1.1(v)): Profile -> Account -> "Delete Account" (red), with a second
+  confirmation. 7-day grace period, then permanent.
+- Paid random items (loot box) odds (3.1.1): Store tab -> Gacha -> the (i) button at the
+  top right of the banner -> full per-rarity draw rates and pity guarantees.
+- Report / block a player (1.2): tap any player name to open their profile popup ->
+  Report / Block. Reports go to a human review queue; blocking is immediate.
+- In-app purchases: Store tab -> Coins / Packs. All purchases go through StoreKit 2.
+  The native build contains no web checkout and no link that steers to one.
+
+CONTENT
+- Real-time lane-pushing battles (tower defense), a single-player campaign, and a shared
+  open-world map. Matches are server-authoritative and sync inputs, not outcomes.
+- Player-chosen nicknames are visible to other players. There is 1:1 friend chat and group
+  chat inside families/sects. No feed, no sharing or amplification, no discovery.
+- Rewarded video ads via AdMob, non-personalized only (npa=1). No ATT prompt, no IDFA
+  read.
+
+CONTACT: support@gamestao.com
+```
+
+Contact 三格填 Tao Wang / `support@gamestao.com` / 本人电话。
+
+---
 
 ### 1.3 年龄分级（Apple 自有问卷）
 
@@ -246,6 +386,11 @@ Crash Data、Performance Data（分析/不关联）。跟踪那一问答「否�
 ---
 
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
+- [ ] **生产环境的审核用 demo 账号**（2026-09-08 新增此条）—— `Sign-in required` 必须勾「是」，
+      原因与要灌什么见 §1.2b「审核账号」。不给账号 = 审核员只能玩离线战役、测不了内购 → 2.1 方向的拒审。
+      这是纯 ops 活（生产注册 + 灌进度），本机做不了
+- [x] **支持 URL / 营销 URL 有了专门的页面**（2026-09-08）—— `client/public/web/support.html` → `/support`、
+      `about.html` → `/about`，两页零购买面，门禁在 `nativePaymentIsolation.test.ts`。理由见 §1.2
 - [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 2 桥 + App Store Server API
       验单，fail closed，2026-09-07 A/B 两批，ADR-081/082）；ASC 建 9 个商品已完成。
       **凭据与通知 URL 也已完成（2026-09-07）**：In-App Purchase Key 的四个 `NW_APPLE_IAP_*` / `NW_APPLE_APP_ID`

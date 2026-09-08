@@ -196,18 +196,43 @@ function moduleReplacements(target: string): { from: string; to: string }[] {
 describe('the mobile bundle carries no web payment surface', () => {
   // pay.html is the sharpest one — it is a working Paddle checkout, not a description of one.
   const WEB_COMMERCE_PAGES = ['pay.html', 'pricing.html', 'refunds.html', 'home.html', 'terms.html', 'privacy.html'];
+  // The App Store metadata pages (Marketing URL / Support URL). Not commerce — they deliberately
+  // link to no purchase surface at all, which is why they exist instead of handing Apple home.html.
+  // They ride in the same CopyPlugin group for a different reason: nothing in the game links to
+  // them, so a store build has no use for its own marketing site. Listed separately so the next
+  // person reading a red assertion is told which of the two rules they broke.
+  const WEB_STORE_METADATA_PAGES = ['about.html', 'support.html'];
 
   it('REGRESSION: the mobile build copies none of the web pages', () => {
     const copied = copiedFiles('mobile');
-    for (const page of WEB_COMMERCE_PAGES) {
+    for (const page of [...WEB_COMMERCE_PAGES, ...WEB_STORE_METADATA_PAGES]) {
       expect(copied.some((f) => f.endsWith(`/${page}`)), `mobile bundle must not ship ${page}`).toBe(false);
     }
   });
 
   it('the web build still copies all of them (this is their home, and Paddle crawls them)', () => {
     const copied = copiedFiles('web');
-    for (const page of WEB_COMMERCE_PAGES) {
+    for (const page of [...WEB_COMMERCE_PAGES, ...WEB_STORE_METADATA_PAGES]) {
       expect(copied.some((f) => f.endsWith(`/${page}`)), `web bundle must ship ${page}`).toBe(true);
+    }
+  });
+
+  it('the store metadata pages link to no purchase surface (3.1.1 covers metadata Apple reads)', () => {
+    // about.html is the Marketing URL and support.html the Support URL: both are fetched by Apple,
+    // so a link from either into /pricing, /pay or home.html (which advertises USD Coin packs) is
+    // the same hazard the native bundle was scrubbed for. /refunds is allowed on support.html only
+    // — "how do I get a refund" is a real support question and that page leads with "App Store
+    // purchases are refunded by Apple". Checked as text, because the trap is a stray <a href>
+    // added later by someone who never read this file.
+    const forbidden = ['/pricing', '/pay', '/home', 'paddle.com', 'cdn.paddle.com'];
+    for (const page of WEB_STORE_METADATA_PAGES) {
+      const html = fs.readFileSync(path.join(CLIENT_DIR, 'public', 'web', page), 'utf8');
+      const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
+      for (const href of hrefs) {
+        for (const bad of forbidden) {
+          expect(href.includes(bad), `${page} must not link to ${href}`).toBe(false);
+        }
+      }
     }
   });
 

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About Nivara — Notebook Wars</title>
+  <meta name="description" content="Nivara (Notebook Wars) is a free-to-play real-time strategy game drawn on graph paper: a hand-drawn campaign, real-time lane battles against other players, and a shared open-world map." />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <!--
+    This page exists to be the App Store "Marketing URL". home.html cannot be: it is the
+    crawler-readable page Paddle reviews, and it advertises USD Coin packs and links straight into
+    /pricing → Paddle checkout. App Review 3.1.1 covers metadata, and the Marketing URL is metadata
+    Apple reads — the same reasoning that kept those pages out of the native bundle
+    (IOS_RELEASE.md §10).
+
+    So, deliberately: no /pricing, no /pay, no /home, and no "play in your browser" link either.
+    That last one is the non-obvious call — the web build's own Store tab sells Coins through
+    Paddle, so a Play button here is a two-hop route from Apple-read metadata to an outside payment
+    flow. Describing the game and disclosing that paid random items exist is not a purchase CTA;
+    handing the reader a door to the web checkout is. The page still says the game is free to play
+    and that draw rates are published in-game, because that is the same wording as the App Store
+    description and hiding it would be the worse kind of inaccurate.
+
+    Served extension-less as /about by the Workers static-assets html_handling default, same as
+    /privacy and /terms. Copied to dist by the web/off-origin-excluded CopyPlugin group in
+    client/webpack.config.js — see nativePaymentIsolation.test.ts for the gate.
+  -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --paper:   #F9F7F2;
+      --card:    #FFFFFF;
+      --ink:     #1C1C1A;
+      --ink-mid: #5A574F;
+      --ink-faint: #A09B90;
+      --rule:    #DDD8CC;
+      --blue:    #2756D6;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Georgia, 'Times New Roman', serif;
+      line-height: 1.65;
+    }
+
+    .wrap { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+
+    nav { border-bottom: 1px solid var(--rule); background: var(--paper); }
+    nav .wrap {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px; padding-top: 16px; padding-bottom: 16px;
+    }
+    .brand {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-weight: 700;
+      font-size: 1.05rem; letter-spacing: 0.02em; color: var(--ink); text-decoration: none;
+    }
+    .brand .sub { color: var(--ink-faint); font-weight: 400; }
+    .nav-links {
+      display: flex; gap: 20px;
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 0.82rem;
+      font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .nav-links a { color: var(--ink-mid); text-decoration: none; }
+    .nav-links a:hover { color: var(--blue); }
+    .nav-links a[aria-current='page'] { color: var(--ink); }
+
+    .hero { padding: 72px 0 48px; text-align: center; }
+    .eyebrow {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--blue); margin-bottom: 14px;
+    }
+    .hero h1 {
+      font-family: 'Arial Narrow', Arial, sans-serif;
+      font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 700;
+      line-height: 1.08; text-wrap: balance; margin-bottom: 18px;
+    }
+    .hero p.lead { font-size: 1.12rem; color: var(--ink-mid); max-width: 640px; margin: 0 auto; }
+
+    section { padding: 40px 0; }
+    .section-title {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 1.5rem;
+      font-weight: 700; margin-bottom: 8px;
+    }
+    .section-intro { color: var(--ink-mid); max-width: 640px; margin-bottom: 28px; }
+
+    /* 340px, not home.html's 240px: this page has exactly four cards, and at the 852px content
+       width 240px auto-fills to three columns — 3 + 1 orphan. 340px gives a 2×2 block. */
+    .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    .feature {
+      background: var(--card); border: 1px solid var(--rule); border-left: 3px solid var(--blue);
+      border-radius: 6px; padding: 20px 20px 22px;
+    }
+    .feature h3 {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 1.12rem;
+      font-weight: 700; margin-bottom: 6px;
+    }
+    .feature p { font-size: 0.92rem; color: var(--ink-mid); }
+
+    .band {
+      background: var(--card); border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule); margin-top: 24px;
+    }
+    .band .wrap { padding-top: 44px; padding-bottom: 44px; }
+    .band ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .band li { padding-left: 20px; position: relative; color: var(--ink-mid); }
+    .band li::before { content: '—'; position: absolute; left: 0; color: var(--rule); }
+    .band a { color: var(--blue); }
+
+    footer { border-top: 1px solid var(--rule); margin-top: 24px; }
+    footer .wrap { padding-top: 36px; padding-bottom: 48px; font-size: 0.85rem; color: var(--ink-mid); }
+    .footer-links {
+      display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 18px;
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 0.8rem;
+      font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .footer-links a { color: var(--ink-mid); text-decoration: none; }
+    .footer-links a:hover { color: var(--blue); }
+    footer a.mail { color: var(--blue); text-decoration: none; }
+    .legal-name { color: var(--ink-faint); margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="wrap">
+      <a class="brand" href="/about">Nivara <span class="sub">· Notebook Wars</span></a>
+      <div class="nav-links">
+        <a href="/about" aria-current="page">About</a>
+        <a href="/support">Support</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="wrap">
+      <div class="eyebrow">Free to play · Drawn on graph paper</div>
+      <h1>The war for the notebook<br />runs in real time.</h1>
+      <p class="lead">
+        Nivara — also known as <strong>Notebook Wars</strong> — is a hand-drawn real-time strategy
+        game fought in the margins of a school notebook. Gold refills on its own, your hand of cards
+        keeps cycling, and both castles are always in reach: you decide what to spend, which lane to
+        push, and when to hold.
+      </p>
+    </div>
+  </header>
+
+  <section>
+    <div class="wrap">
+      <h2 class="section-title">What you play</h2>
+      <p class="section-intro">
+        Three ways to play, one shared roster of heroes and cosmetics.
+      </p>
+      <div class="features">
+        <div class="feature">
+          <h3>Story campaign</h3>
+          <p>A single-player journey through hand-drawn chapters, following the duel between Tao's and Anna's notebooks. Learn the lane combat, unlock heroes, and take the story to the last page.</p>
+        </div>
+        <div class="feature">
+          <h3>Ranked duels</h3>
+          <p>Real-time head-to-head matches, five to ten minutes each. Both clients simulate the same battle from the same inputs, so what you see is what your opponent sees. Climb a seasonal ladder for ranking rewards.</p>
+        </div>
+        <div class="feature">
+          <h3>Open world</h3>
+          <p>A large-scale strategy layer on a shared, changing map: claim ground, march on rivals, build a home city, and form alliances that hold territory together across a season.</p>
+        </div>
+        <div class="feature">
+          <h3>Heroes and cosmetics</h3>
+          <p>Collect and equip a roster of characters, dress them in stationery-themed skins, and gear them with equipment you earn. Progression never changes the rules of a match.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="band">
+    <div class="wrap">
+      <h2 class="section-title">How it stays fair</h2>
+      <p class="section-intro">
+        The parts of a free-to-play game that usually go unsaid, said out loud.
+      </p>
+      <ul>
+        <li>Battles are <strong>server-authoritative and deterministic</strong>. Matches sync inputs rather than outcomes, and every result can be replayed from the same seed.</li>
+        <li>The game contains <strong>paid random items</strong>. Every draw rate and every pity guarantee is published inside the game, on its own odds page, before you spend anything.</li>
+        <li>Collecting and levelling changes what you bring to a match, <strong>not the rules of the match</strong>. There is no paid stat that a free player cannot reach.</li>
+        <li>Nothing is required to finish the campaign or to climb the ladder. The game is free to play, all the way through.</li>
+      </ul>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2 class="section-title">Who makes it</h2>
+      <p class="section-intro">
+        Nivara is built by one person — art, engine, servers and all — and is available in English,
+        Deutsch and 中文. Questions, bugs and complaints all land in the same inbox:
+        <a href="mailto:support@gamestao.com">support@gamestao.com</a>. See
+        <a href="/support">Support</a> for the common ones.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <div class="footer-links">
+        <a href="/about">About</a>
+        <a href="/support">Support</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="/privacy">Privacy Policy</a>
+      </div>
+      <p>Questions or support: <a class="mail" href="mailto:support@gamestao.com">support@gamestao.com</a></p>
+      <p class="legal-name">Nivara / Notebook Wars is operated by Tao Wang, an independent sole trader (not an incorporated company), based in Germany.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

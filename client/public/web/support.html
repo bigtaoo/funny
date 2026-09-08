@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Support — Nivara</title>
+  <meta name="description" content="Support and FAQ for Nivara (Notebook Wars): account recovery, account deletion, refunds, draw-rate disclosure, reporting a player, and bug reports." />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <!--
+    This page exists to be the App Store "Support URL" and the Play Console "Support email/website"
+    target. Before it, the only candidate was privacy.html (it happens to carry a mailto: at the
+    bottom) — a privacy policy standing in for a support page.
+
+    ⚠ Deliberately links to NO purchase surface: not /pricing, not /pay, not /home (which advertises
+    USD Coin packs and links Paddle checkout). App Review 3.1.1 covers metadata, and the Support URL
+    is metadata Apple reads — the same reasoning that kept those pages out of the native bundle
+    (IOS_RELEASE.md §10). /refunds is the one commerce-adjacent link kept, because "how do I get a
+    refund" is a real support question and that page leads with "App Store purchases are refunded by
+    Apple"; it is a policy, not a checkout.
+
+    Served extension-less as /support by the Workers static-assets html_handling default, same as
+    /privacy and /terms. Copied to dist by the web/off-origin-excluded CopyPlugin group in
+    client/webpack.config.js — see nativePaymentIsolation.test.ts for the gate.
+  -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --paper:   #F9F7F2;
+      --card:    #FFFFFF;
+      --ink:     #1C1C1A;
+      --ink-mid: #5A574F;
+      --ink-faint: #A09B90;
+      --rule:    #DDD8CC;
+      --blue:    #2756D6;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Georgia, 'Times New Roman', serif;
+      line-height: 1.65;
+    }
+
+    .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+
+    nav { border-bottom: 1px solid var(--rule); background: var(--paper); }
+    nav .wrap {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px; padding-top: 16px; padding-bottom: 16px;
+    }
+    .brand {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-weight: 700;
+      font-size: 1.05rem; letter-spacing: 0.02em; color: var(--ink); text-decoration: none;
+    }
+    .brand .sub { color: var(--ink-faint); font-weight: 400; }
+    .nav-links {
+      display: flex; gap: 20px;
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 0.82rem;
+      font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .nav-links a { color: var(--ink-mid); text-decoration: none; }
+    .nav-links a:hover { color: var(--blue); }
+    .nav-links a[aria-current='page'] { color: var(--ink); }
+
+    header.head { padding: 56px 0 8px; }
+    h1 { font-family: 'Arial Narrow', Arial, sans-serif; font-size: 2.2rem; font-weight: 700; margin-bottom: 0.25em; }
+    .meta { color: var(--ink-faint); font-size: 0.9rem; }
+
+    .contact {
+      background: var(--card); border: 1px solid var(--rule); border-left: 3px solid var(--blue);
+      border-radius: 6px; padding: 20px 22px; margin: 28px 0 8px;
+    }
+    .contact .label {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--blue); margin-bottom: 8px;
+    }
+    .contact .addr { font-size: 1.25rem; }
+    .contact p.note { color: var(--ink-mid); font-size: 0.92rem; margin-top: 8px; }
+
+    section { padding: 32px 0 0; }
+    h2 {
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 1.5rem;
+      font-weight: 700; margin-bottom: 18px;
+    }
+    h3 { font-size: 1.08rem; margin-top: 26px; margin-bottom: 4px; }
+    p { color: var(--ink-mid); }
+    p + p { margin-top: 8px; }
+    a { color: var(--blue); }
+    code {
+      font-family: 'Courier New', monospace; font-size: 0.92em;
+      background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: 1px 5px;
+    }
+
+    footer { border-top: 1px solid var(--rule); margin-top: 48px; }
+    footer .wrap { padding-top: 32px; padding-bottom: 48px; font-size: 0.85rem; color: var(--ink-mid); }
+    .footer-links {
+      display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 16px;
+      font-family: 'Arial Narrow', Arial, sans-serif; font-size: 0.8rem;
+      font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .footer-links a { color: var(--ink-mid); text-decoration: none; }
+    .footer-links a:hover { color: var(--blue); }
+    .legal-name { color: var(--ink-faint); margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="wrap">
+      <a class="brand" href="/about">Nivara <span class="sub">· Notebook Wars</span></a>
+      <div class="nav-links">
+        <a href="/about">About</a>
+        <a href="/support" aria-current="page">Support</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="head">
+    <div class="wrap">
+      <h1>Support</h1>
+      <p class="meta">Last updated: 2026-09-08 &nbsp;·&nbsp; Nivara / Notebook Wars</p>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="contact">
+      <div class="label">Contact</div>
+      <p class="addr"><a href="mailto:support@gamestao.com">support@gamestao.com</a></p>
+      <p class="note">
+        Nivara is made by one person, so replies are not instant — please allow a few days.
+        Writing from the same email address you use to log in, and telling us your in-game name,
+        makes it much faster to find your account.
+      </p>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2>Frequently asked</h2>
+
+      <h3>My progress is gone / I'm on a new device</h3>
+      <p>
+        Progress belongs to your account, not to the device. Log in with the same email or username
+        and password you signed up with, and everything follows you across devices and platforms.
+        If you played without ever creating an account, that save is local to that install and there
+        is no way for us to recover or transfer it.
+      </p>
+
+      <h3>How do I delete my account and my data?</h3>
+      <p>
+        In the game: tap your name at the top of the lobby to open <strong>Profile</strong>, then
+        <strong>Account</strong> → <strong>Delete Account</strong>, and confirm. For 7 days after
+        that, simply logging in again restores the account; once those 7 days pass, deletion is
+        permanent and your progress and purchases cannot be brought back. You can also email us and
+        we will do it for you.
+      </p>
+
+      <h3>How do I get a refund?</h3>
+      <p>
+        Bought inside the iOS app: refunds are handled by Apple — request one at
+        <a href="https://reportaproblem.apple.com" target="_blank" rel="noopener">reportaproblem.apple.com</a>.
+        Bought on the website: see our <a href="/refunds">Refund Policy</a>. We cannot refund an
+        App Store purchase ourselves, and Apple cannot refund a website purchase.
+      </p>
+
+      <h3>What are the odds on the random item packs?</h3>
+      <p>
+        Every draw rate, and every pity guarantee, is published inside the game:
+        <strong>Store</strong> tab → <strong>Gacha</strong> → the <code>i</code> button at the top
+        right of the banner. Nothing is hidden and nothing changes silently — rolls are resolved on
+        our servers, not on your device.
+      </p>
+
+      <h3>Someone is harassing me in chat</h3>
+      <p>
+        Tap the player's name to open their profile, then <strong>Report</strong> or
+        <strong>Block</strong>. Blocking takes effect immediately for you; reports go into a review
+        queue and can lead to a warning, a chat mute, or a ban. If it is urgent, email us with the
+        player's name and roughly when it happened.
+      </p>
+
+      <h3>I found a bug</h3>
+      <p>
+        Use <strong>Feedback</strong> on the lobby screen — it sends straight to us and already
+        carries your account, so we can look at the right save. For anything that needs a
+        screenshot, email works better.
+      </p>
+
+      <h3>How old do I have to be?</h3>
+      <p>
+        13, and under 18 you need a parent or guardian's consent. The game asks you to declare your
+        age the first time you open it. See section 2 of the <a href="/terms">Terms of Service</a>.
+      </p>
+
+      <h3>Privacy, data access, and GDPR requests</h3>
+      <p>
+        What we collect and why is in the <a href="/privacy">Privacy Policy</a>. To access, correct,
+        export, or erase your data, email us from the address on the account — we will not act on a
+        request we cannot tie to an account.
+      </p>
+
+      <h3>Can I play in my own language?</h3>
+      <p>
+        The game is fully translated into English, Deutsch, and 中文 — every screen, not just the
+        menus. It follows your device language on first launch, and you can switch it any time in
+        <strong>Profile</strong>.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <div class="footer-links">
+        <a href="/about">About</a>
+        <a href="/support">Support</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/refunds">Refund Policy</a>
+      </div>
+      <p>Support: <a href="mailto:support@gamestao.com">support@gamestao.com</a></p>
+      <p class="legal-name">Nivara / Notebook Wars is operated by Tao Wang, an independent sole trader (not an incorporated company), based in Germany.</p>
+    </div>
+  </footer>
+
+</body>
+</html>
