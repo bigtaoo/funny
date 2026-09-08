@@ -1521,6 +1521,15 @@ export const de: Record<TranslationKey, string> = {
   'consent.privacyPolicy': 'Datenschutzerklärung',
   'consent.terms': 'Nutzungsbedingungen',
   'consent.accept': 'Zustimmen & Fortfahren',
+  'ageGate.title': 'Geburtsjahr',
+  'ageGate.body': 'Wähle dein Geburtsjahr. Wir nutzen es für ein altersgerechtes Spielerlebnis; die Angabe kann später nicht geändert werden.',
+  'ageGate.confirm': 'Bestätigen',
+  'ageGate.confirmTitle': 'Bitte bestätigen',
+  'ageGate.confirmBody': 'Geburtsjahr: {year}. Später nicht änderbar — ist das richtig?',
+  'ageGate.confirmYes': 'Ja, weiter',
+  'ageGate.confirmBack': 'Zurück',
+  'ageGate.blockedTitle': 'Nicht verfügbar',
+  'ageGate.blockedBody': 'Dieses Spiel ist für Spieler ab {min} Jahren bestimmt. Falls du ein falsches Geburtsjahr gewählt hast, wende dich an support@gamestao.com.',
 
   // ── Wiederverbindungs-Hinweis nach Login (laufendes Match nach Re-Login fortsetzen) ──
   'reconnect.title': 'Unbeendetes Match',

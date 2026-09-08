@@ -23,8 +23,11 @@ describe('headless app core — offline navigation', () => {
     core.start();
     expect(views.screen).toBe('intro');
 
-    // After intro, the consent gate (L1-1) blocks entry to the lobby until accepted.
+    // After intro come the two gates, in order: the age gate (COMPLIANCE_GLOBAL §3.4) and then
+    // the GDPR consent gate (L1-1). Neither lets the lobby through until it is answered.
     views.intro!.onFinish();
+    expect(views.screen).toBe('ageGate');
+    views.declareAdultAge();
     expect(views.screen).toBe('consent');
 
     views.consent!.onAccept();
@@ -41,10 +44,11 @@ describe('headless app core — offline navigation', () => {
     const coreA = createAppCore(platform, first);
     coreA.start();
     first.intro!.onFinish();
+    first.declareAdultAge();
     first.consent!.onAccept();
     await settle();
 
-    // Relaunch on the same platform/storage: no intro, no consent — straight to lobby.
+    // Relaunch on the same platform/storage: no intro, no age gate, no consent — straight to lobby.
     const second = new HeadlessAppViews();
     const coreB = createAppCore(platform, second);
     coreB.start();
@@ -59,6 +63,7 @@ describe('headless app core — offline navigation', () => {
 
     core.start();
     views.intro!.onFinish();
+    views.declareAdultAge();
     views.consent!.onAccept();
     await settle();
     expect(views.screen).toBe('lobby');
@@ -80,6 +85,7 @@ describe('headless app core — offline navigation', () => {
 
     core.start();
     views.intro!.onFinish();
+    views.declareAdultAge();
     views.consent!.onAccept();
     await settle();
     views.lobby!.onOpenCampaign();
@@ -103,6 +109,7 @@ describe('headless app core — offline navigation', () => {
 
     core.start();
     views.intro!.onFinish();
+    views.declareAdultAge();
     views.consent!.onAccept();
     await settle();
     expect(views.screen).toBe('lobby');

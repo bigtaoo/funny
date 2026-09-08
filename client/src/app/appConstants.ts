@@ -11,6 +11,15 @@ export const SEEN_INTRO_FLAG = 'seen_intro';
 export const TUTORIAL_DONE_FLAG = 'tutorial_done';
 /** flags key — set after the player accepts the GDPR / privacy consent (C5-c, L1-1). Mirrors server `flags.gdprConsent`. */
 export const GDPR_CONSENT_FLAG = 'gdprConsent';
+/**
+ * flags key — the neutral age gate's recorded answer (AgeGateDialog): true = declared at least
+ * {@link MIN_AGE_YEARS}, false = declared younger, and absent = never asked. That third state is
+ * why the gate reads `save.flags` directly instead of `SaveManager.getFlag`, which returns
+ * `flags[key] === true` and so cannot tell "never asked" from "declared younger".
+ */
+export const AGE_DECLARED_FLAG = 'ageOk';
+/** The age the game is rated for and declares: `privacy-policy §9` self-rates 13+ (COPPA / GDPR-K). */
+export const MIN_AGE_YEARS = 13;
 /** Last seen ladder season number — used to detect season transitions and show the settlement popup (SE-6). */
 export const LAST_SEEN_SEASON_KEY = 'nw_last_seen_season';
 /** Persisted JWT for a real (non-anonymous) account, so logins survive restarts. */

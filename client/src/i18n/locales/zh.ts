@@ -1541,6 +1541,15 @@ export const zh = {
   'consent.privacyPolicy': '隐私政策',
   'consent.terms': '用户协议',
   'consent.accept': '同意并继续',
+  'ageGate.title': '出生年份',
+  'ageGate.body': '请选择你的出生年份。我们据此提供适龄的游戏体验；保存后不可更改。',
+  'ageGate.confirm': '确认',
+  'ageGate.confirmTitle': '请再确认一次',
+  'ageGate.confirmBody': '出生年份：{year}。确认后不可更改，确定吗？',
+  'ageGate.confirmYes': '确定',
+  'ageGate.confirmBack': '返回修改',
+  'ageGate.blockedTitle': '暂时无法进入',
+  'ageGate.blockedBody': '本游戏面向{min}岁及以上玩家。如果你填错了出生年份，请联系 support@gamestao.com。',
 
   // ── 登录断线重连提示（重新登录后恢复未完成的对局） ───────────────────────────
   'reconnect.title': '未完成的对局',

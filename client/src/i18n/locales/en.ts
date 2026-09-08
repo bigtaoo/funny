@@ -1520,6 +1520,15 @@ export const en: Record<TranslationKey, string> = {
   'consent.privacyPolicy': 'Privacy Policy',
   'consent.terms': 'Terms of Service',
   'consent.accept': 'Accept & Continue',
+  'ageGate.title': 'Birth year',
+  'ageGate.body': 'Select the year you were born. We use it to offer an age-appropriate experience; this choice cannot be changed once saved.',
+  'ageGate.confirm': 'Confirm',
+  'ageGate.confirmTitle': 'Please confirm',
+  'ageGate.confirmBody': 'Birth year: {year}. This cannot be changed later — is that right?',
+  'ageGate.confirmYes': 'Yes, continue',
+  'ageGate.confirmBack': 'Go back',
+  'ageGate.blockedTitle': 'Not available',
+  'ageGate.blockedBody': 'This game is intended for players aged {min} and over. If you selected the wrong birth year, contact support@gamestao.com.',
 
   // ── Login reconnect prompt (resume an in-progress match after re-login) ─────
   'reconnect.title': 'Unfinished Match',
