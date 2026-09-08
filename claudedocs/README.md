@@ -38,6 +38,7 @@ claudedocs/      模块级快查文档（本目录）
 | 游戏主代码 | [`client-modules.md`](client-modules.md) | `design/game/` |
 | 客户端测试 | [`client-testing.md`](client-testing.md) · [`client-testing-log.md`](client-testing-log.md) | — |
 | 客户端内存/生命周期 | [`client-memory-leak.md`](client-memory-leak.md) | — |
+| 客户端每帧预算（重绘率/几何） | [`client-render-budget.md`](client-render-budget.md) | ADR-083 |
 | 服务端 | [`server.md`](server.md) | `design/game/META_DESIGN.md` |
 | 服务端测试 | [`server-testing.md`](server-testing.md) · [`server-testing-coverage.md`](server-testing-coverage.md) · [`server-testing-tooling.md`](server-testing-tooling.md) · [`server-testing-typecheck.md`](server-testing-typecheck.md) | — |
 | 服务端审计（存储侧） | [`server-audits.md`](server-audits.md) | 通信侧/逻辑侧两轮见 `design/game/COMM_AUDIT_INTERNAL_2026-07-28.md` / `SERVER_LOGIC_AUDIT_2026-07-29.md` |
@@ -52,7 +53,7 @@ claudedocs/      模块级快查文档（本目录）
 | 并行开发（worktree） | [`worktrees.md`](worktrees.md) | — |
 | 音频素材管线 | [`../tools/audio-pipeline/README.md`](../tools/audio-pipeline/README.md) | `design/game/AUDIO_DESIGN.md` §0.4 / §7 |
 
-> **本表是全量**（14 份 + 本文）。2026-09-03 审计时它漏了自己 6 份——四份 `server-testing*`、`server-audits.md`、`client-testing-log.md`。
+> **本表是全量**（15 份 + 本文）。2026-09-03 审计时它漏了自己 6 份——四份 `server-testing*`、`server-audits.md`、`client-testing-log.md`。
 > 新增 `claudedocs/*.md` 必须同时往本表加一行。
 
 ## 权威来源

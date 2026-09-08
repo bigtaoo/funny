@@ -16,11 +16,67 @@ import { ENEMY_BASE_TINT, MINE_BASE_TINT, CLOUD_COLOR, tileColor, proceduralTile
 import { baseFootprintCells } from '@nw/shared';
 import { drawStar, drawDashedPolygon, drawPolygonCornerTicks, drawFadedLine } from '../tileGraphics';
 import type { WorldMapRendererCore } from './core';
+import type { WorldMapContext } from '../WorldMapContext';
 import { STICKMAN_TOKEN_BUDGET, syncMarchTokens, syncOccupyTokens, syncStationedTokens, type StickmanBudget } from './tokens';
 
 // Re-exported for backward compatibility — moved to ./tokens.ts (2026-08-12), but
 // `test/ui/marchTokenLod.ui.ts` still imports it from here.
 export { STICKMAN_TOKEN_BUDGET };
+
+/** FNV-1a step — same integer-only mixer render/renderPolicy.ts uses for the stage signature. */
+function mix(h: number, v: number): number {
+  return Math.imul(h ^ (v | 0), 0x01000193) >>> 0;
+}
+
+function mixStr(h: number, s: string | undefined): number {
+  if (!s) return mix(h, 0);
+  let out = h;
+  for (let i = 0; i < s.length; i++) out = mix(out, s.charCodeAt(i));
+  return out;
+}
+
+/**
+ * Everything {@link WorldMapRendererFog.renderOverlayInk} draws from, folded into one number.
+ *
+ * Derived rather than announced, for the same reason render/renderPolicy.ts derives its stage
+ * signature: the ~15 sites that assign `ctx.marches` / `ctx.occupations` / `ctx.stationed` /
+ * `ctx.nations` (polls, optimistic local inserts, push handlers, the territory panel) are spread
+ * across `net/` and `WorldMapPanels/`, and asking each of them to remember a dirty flag is how the
+ * frontier ends up stale until the next pan. The arrays are small (tens of entries, budget-capped),
+ * so hashing them is far cheaper than the rebuild it decides against — and tile state comes in as
+ * one integer via {@link VersionedTileCache}.
+ */
+export function overlayInkSignature(ctx: WorldMapContext): number {
+  let h = 0x811c9dc5;
+  h = mix(h, Math.round(ctx.panX));
+  h = mix(h, Math.round(ctx.panY));
+  h = mix(h, ctx.zoom);
+  h = mix(h, Math.round(ctx.tp * 16));
+  h = mix(h, Math.round(ctx.w));
+  h = mix(h, Math.round(ctx.h));
+  h = mix(h, ctx.tileCache.version);
+  h = mix(h, ctx.selectedTile ? ctx.selectedTile.x * 4096 + ctx.selectedTile.y : -1);
+  h = mixStr(h, ctx.me?.mainBaseTile);
+  h = mix(h, ctx.marches.length);
+  for (const m of ctx.marches) {
+    h = mixStr(h, m.marchId);
+    h = mixStr(h, m.fromTile);
+    h = mixStr(h, m.toTile);
+    h = mixStr(h, m.kind);
+    h = mix(h, m.mine === false ? 1 : 2);
+  }
+  h = mix(h, ctx.occupations.length);
+  for (const o of ctx.occupations) h = mix(mix(h, o.x * 4096 + o.y), Math.round(o.dueAt / 1000));
+  h = mix(h, ctx.stationed.length);
+  for (const st of ctx.stationed) {
+    h = mix(h, st.x * 4096 + st.y);
+    h = mixStr(h, st.mode);
+    h = mix(h, st.mine === false ? 1 : 2);
+  }
+  h = mix(h, ctx.nations.length);
+  for (const n of ctx.nations) h = mix(mixStr(h, n.ownerId), n.x * 4096 + n.y);
+  return h;
+}
 
 export interface FogHandlers {
   renderMapL3(): void;
@@ -28,6 +84,8 @@ export interface FogHandlers {
   renderOccupyFrontier(): void;
   renderGarrisonZones(): void;
   renderOverlay(dt?: number): void;
+  renderOverlayInk(): void;
+  syncTokens(dt: number): void;
 }
 
 export class WorldMapRendererFog implements FogHandlers {
@@ -244,8 +302,39 @@ export class WorldMapRendererFog implements FogHandlers {
     g.lineStyle(0);
   }
 
+  /**
+   * Full overlay refresh: repaint the ink (veil, frontier, zones, selection, stars, arrows) AND
+   * step the tokens. This is what every pan / zoom / data-change caller wants.
+   *
+   * The per-FRAME caller (lifecycle.ts) deliberately does NOT come through here — see
+   * {@link renderOverlayInk} for why that used to be the SLG map's biggest cost.
+   */
   renderOverlay(dt = 0): void {
+    this.renderOverlayInk();
+    this.syncTokens(dt);
+  }
+
+  /**
+   * Repaint the overlay's ink. Everything drawn here is a function of camera + server state, and
+   * NOTHING here is a function of time.
+   *
+   * It used to run on every frame, because the same method also stepped the march tokens and those
+   * do move continuously. So a map with one march in flight rebuilt, 60 times a second: the cloud
+   * veil (a viewport-sized rect with a clipped polygon hole plus a thick misty rim stroke), the
+   * occupy frontier (an `occupyFrontierCells` scan over every visible tile, then a polygon and four
+   * corner brackets per frontier cell), every garrison's 3×3 aura with dashed borders, ten capital
+   * stars, and a 9-segment faded trace per march — all of it re-triangulated from scratch to draw
+   * exactly the same picture as the frame before. That is the "SLG map stutters" report.
+   *
+   * Now the two halves are separate: this one on demand, {@link syncTokens} every frame.
+   */
+  renderOverlayInk(): void {
     const ctx = this.core.ctx;
+    ctx.overlayInkDirty = false;
+    // Stamped here rather than by the per-frame caller so EVERY paint path counts — a pan calls
+    // renderOverlay() straight from the pointer handler, and without this the next frame would
+    // see a changed signature and paint the identical picture a second time.
+    ctx.overlayInkSig = overlayInkSignature(ctx);
     this.renderFog();
     const g = ctx.overlayGfx;
     g.clear();
@@ -337,6 +426,18 @@ export class WorldMapRendererFog implements FogHandlers {
       }
     }
 
+  }
+
+  /**
+   * Step the march / occupy / stationed tokens — sprite positions and clip playback, no Graphics
+   * rebuild. Cheap enough to run every frame, which is what the tokens need: a march advances along
+   * its route between the ~5s polls, and an occupy hold plays its 'attacking' clip throughout.
+   *
+   * Also runs with zero live entries but leftover pooled runtimes, so the sync passes' own cleanup
+   * reaches orphans (all marches just arrived / were recalled, or the camera zoomed out to L3);
+   * otherwise their sprites would linger with nothing left to ever tear them down.
+   */
+  syncTokens(dt: number): void {
     // Shared across all three sync calls (2026-07-26): marches get first claim on the budget (most
     // visually important / dynamic), then occupations, then stationed — see STICKMAN_TOKEN_BUDGET.
     const budget: StickmanBudget = { remaining: STICKMAN_TOKEN_BUDGET };

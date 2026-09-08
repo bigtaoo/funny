@@ -37,6 +37,8 @@ export type { GachaSceneCallbacks, GachaDrawResult, FateRedeemResult } from './G
  */
 export class GachaScene implements Scene {
   readonly container: PIXI.Container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   private readonly core: GachaSceneCore;
   private readonly page: PagePanel;

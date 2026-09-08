@@ -114,6 +114,36 @@ export interface WorldMapView {
   refreshMe(): void;
 }
 
+/**
+ * The visible-tile cache, with a revision counter.
+ *
+ * A plain `Map` was enough while the overlay ink was repainted every frame — anything that changed
+ * tile ownership showed up on the next frame for free. Now that the ink is repainted on demand
+ * (fog.ts `renderOverlayInk`), "did tile state change" has to be answerable, and the ~10 mutation
+ * sites in `net/` are the wrong place to answer it: a forgotten `version++` would leave the occupy
+ * frontier stale until the next pan. Overriding the three mutators here makes it impossible to
+ * forget, and leaves every read site (`.get`, `.size`, iteration) untouched.
+ */
+export class VersionedTileCache extends Map<string, WorldTileView> {
+  /** Bumped by every mutation; read by fog.ts's overlay-ink signature. */
+  version = 0;
+
+  override set(key: string, value: WorldTileView): this {
+    this.version++;
+    return super.set(key, value);
+  }
+
+  override delete(key: string): boolean {
+    this.version++;
+    return super.delete(key);
+  }
+
+  override clear(): void {
+    this.version++;
+    super.clear();
+  }
+}
+
 export class WorldMapContext {
   readonly container: PIXI.Container;
   readonly w: number;
@@ -127,7 +157,7 @@ export class WorldMapContext {
   dragMoved = false;
   mapW = DEFAULT_MAP_SIZE;
   mapH = DEFAULT_MAP_SIZE;
-  tileCache: Map<string, WorldTileView> = new Map();
+  tileCache: VersionedTileCache = new VersionedTileCache();
   me: PlayerWorldView | null = null;
   marches: MarchView[] = [];
   /** Own active occupation-holds (2026-07-15) — used alongside marches for the team-picker busy gate. */
@@ -171,6 +201,17 @@ export class WorldMapContext {
   poolContainer!: PIXI.Container;
   mapGfxL3!: PIXI.Graphics;
   l3Dirty = false;
+  /**
+   * The overlay's ink (veil / frontier / garrison zones / selection / stars / march arrows) needs a
+   * repaint — set by anything that moves the camera or lands new server state, consumed once per
+   * frame by lifecycle.update. See fog.ts's renderOverlayInk for why this is not simply done every
+   * frame any more.
+   */
+  overlayInkDirty = false;
+  /** Signature (fog.ts `overlayInkSignature`) the overlay ink was last painted for; -1 until then. */
+  overlayInkSig = -1;
+  /** Seconds accumulated toward the next shield-bubble redraw (lifecycle.ts SHIELD_ANIM_FPS). */
+  shieldAnimAcc = 0;
   cityLayer!: PIXI.Container;
   citySprites: Map<string, PIXI.Container> = new Map();
   /** cacheKey ("x:y" or "node:id") → local-space geometry of an active capital-protection shield

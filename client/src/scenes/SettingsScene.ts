@@ -39,6 +39,8 @@ export type { SettingsSceneCallbacks, RenameOutcome } from './SettingsScene/type
 
 export class SettingsScene implements Scene {
   readonly container: PIXI.Container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   readonly w: number;
   readonly h: number;

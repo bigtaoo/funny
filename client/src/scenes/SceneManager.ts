@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
 import { setActiveScene, recordFrameSample } from '../net/anomaly';
 import { updateMusic } from '../audio/audioBus';
+import { invalidateRender, type PaintMode } from '../render/renderPolicy';
 import { DEFAULT_TRACK } from '../audio/musicCatalogue';
 import type { MusicTrack } from '../audio/types';
 
@@ -38,6 +39,20 @@ export interface Scene {
    * right one in dev does not.
    */
   readonly music?: MusicTrack | null;
+  /**
+   * How often this scene needs the canvas painted (render/renderPolicy.ts).
+   *
+   * **Omitted means `'live'`** — painted on every tick, which is what every scene did before the
+   * policy existed, so a scene that says nothing keeps exactly its old behaviour. `'reactive'` opts
+   * into demand-driven painting: the policy derives "did the stage change" from the scene graph and
+   * skips the paint when it did not. Correct for the menu/shell screens, whose picture only moves
+   * when the player touches it or a network push lands; gameplay scenes (battle, replay, the SLG
+   * map) animate every frame anyway and stay `'live'`.
+   *
+   * Safe to add to a scene without auditing it: the detector reads the display list, not the
+   * scene's own bookkeeping, and a paint floor bounds the cost of a miss (see IDLE_FLOOR_MS).
+   */
+  readonly paint?: PaintMode;
 }
 
 // ── Transition tuning ──────────────────────────────────────────────────────────
@@ -196,6 +211,22 @@ export class SceneManager {
   get screenWidth():  number { return this.app.screen.width;  }
   get screenHeight(): number { return this.app.screen.height; }
 
+  /**
+   * Paint mode for whatever is currently mounted (render/renderPolicy.ts reads this every tick).
+   *
+   * Pessimistic on purpose — `'reactive'` only when EVERY mounted scene asked for it, because an
+   * overlay leaves `current` alive, mounted and animating underneath (that is the whole point of
+   * `pushOverlay`), so a reactive City panel over the `'live'` SLG map must not stop the map being
+   * painted. A fade is `'live'` outright: the cover's alpha ramp is on `app.stage`, outside the
+   * `targetStage` subtree, and it moves every frame by definition.
+   */
+  get paintMode(): PaintMode {
+    if (this.transition) return 'live';
+    const scenes = [this.current, this.overlayScene].filter((s): s is Scene => s !== null);
+    if (scenes.length === 0) return 'live';
+    return scenes.every((s) => s.paint === 'reactive') ? 'reactive' : 'live';
+  }
+
   private startTransition(incoming: Scene): void {
     this.transition = { phase: 'out', elapsedMs: 0, incoming };
     this.showOverlay(); // starts at alpha 0
@@ -235,6 +266,10 @@ export class SceneManager {
     this.current = next;
     this.updateFaulted = false;
     this.targetStage.addChild(next.container);
+    // A swap replaces the whole picture, and the incoming scene's first paint may be the only thing
+    // that ever happens on this tick (a scene whose content is all async has an unchanged-looking
+    // signature until its fetches land). Force the paint rather than let the detector decide.
+    invalidateRender();
     // Stamp the scene name for anomaly attribution (ANR watchdog has no other lead on what was on screen).
     setActiveScene(next.constructor?.name ?? 'Scene');
   }
@@ -258,6 +293,7 @@ export class SceneManager {
     this.current?.pause?.();
     this.targetStage.addChild(scene.container); // addChild appends last → renders on top of `current`
     setActiveScene(scene.constructor?.name ?? 'Scene');
+    invalidateRender();
   }
 
   /** Tear down the overlay scene mounted by {@link pushOverlay} and resume `current` underneath. */
@@ -269,6 +305,7 @@ export class SceneManager {
     this.destroyScene(ov);
     this.current?.resume?.();
     setActiveScene(this.current?.constructor?.name ?? 'Scene');
+    invalidateRender();
   }
 
   private destroyScene(scene: Scene): void {

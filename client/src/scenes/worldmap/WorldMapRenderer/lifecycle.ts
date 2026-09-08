@@ -10,6 +10,14 @@ import { tearDownChildren } from '../../../render/sketchUi';
 import { destroyTokenEntry } from './tokens';
 import { drawShieldDome, drawShieldGlow, drawShieldBreakFx, SHIELD_BREAK_LIFE } from './shieldFx';
 import { updateLoadingErase, cancelLoadingErase } from './loadingReveal';
+import { overlayInkSignature } from './fog';
+
+/**
+ * Redraw rate for the capital-protection shield bubbles (dashed dome + glow pulse). Deliberately
+ * far below frame rate: each step rebuilds two `Graphics` per shielded city, and nothing in the
+ * animation is fast enough for the difference to be visible.
+ */
+const SHIELD_ANIM_FPS = 10;
 import { t } from '../../../i18n';
 import { tileToScreen, ISO_RATIO } from '../../../render/isoGrid';
 import { BASE_FOOTPRINT, citySpriteTiles, cityGroundFwdPx } from '@nw/shared';
@@ -69,7 +77,14 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     // dashed ring/pulse every frame instead of only on the sporadic redraws refreshCityLayer
     // gets (pan/zoom/poll) — see WorldMapContext.shieldGeom / WorldMapRenderer/shieldFx.ts.
     ctx.shieldAnimT += dt;
-    if (ctx.shieldGeom.size > 0) {
+    // ...but at SHIELD_ANIM_FPS, not at frame rate. Each shield redraw is two full `Graphics`
+    // rebuilds (a dashed dome ring + a glow), and a slow dash crawl plus a pulse is indistinguishable
+    // stepped 10 times a second from stepped 60 — the same "hand-drawn does not need to be smooth"
+    // call art-direction §5.4 makes for everything else here.
+    ctx.shieldAnimAcc += dt;
+    const shieldStep = ctx.shieldAnimAcc >= 1 / SHIELD_ANIM_FPS;
+    if (shieldStep) ctx.shieldAnimAcc = 0;
+    if (shieldStep && ctx.shieldGeom.size > 0) {
       for (const [key, geom] of ctx.shieldGeom) {
         const cityC = ctx.citySprites.get(key);
         const shieldFx = cityC?.getChildByName('shieldFx') as PIXI.Graphics | undefined;
@@ -98,21 +113,28 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     if (ctx.l3Dirty && ctx.zoom === 3) {
       this.fog.renderMapL3();
     }
-    // March tokens ride the route between poll ticks — redraw every frame while any are in
-    // flight, so their position advances smoothly instead of jumping on each ~5s poll. Also
-    // fires with zero live marches but leftover pooled runtimes (all marches just arrived/were
-    // recalled, or the camera zoomed out to L3) so syncMarchTokens' cleanup pass actually tears
-    // the orphans down — otherwise their sprites would linger forever, since nothing would ever
-    // call renderOverlay again to reach that cleanup loop. renderOverlay/syncMarchTokens already
-    // gate their zoom<3-only drawing internally, so no zoom check is needed here. Occupy-hold
-    // tokens (syncOccupyTokens) need the same continuous redraw for their whole hold duration —
-    // otherwise the 'attacking' clip would only ever advance on the ~5s occupations poll tick.
+    // Overlay ink: repaint only when its inputs actually changed (fog.ts's renderOverlayInk explains
+    // what it draws, and why repainting it every frame was the SLG map's stutter). The signature is
+    // derived from camera + server state rather than announced by the ~15 sites that write it;
+    // `overlayInkDirty` stays as the explicit "repaint regardless" channel for the rest.
+    if (ctx.overlayInkDirty || overlayInkSignature(ctx) !== ctx.overlayInkSig) {
+      this.fog.renderOverlayInk();
+    }
+    // Tokens, on the other hand, DO move every frame: a march rides its route between the ~5s poll
+    // ticks instead of jumping on each one, and an occupy hold plays its 'attacking' clip
+    // throughout. This is sprite transforms and clip playback only — no Graphics rebuild.
+    //
+    // Also runs with zero live entries but leftover pooled runtimes (all marches just arrived/were
+    // recalled, or the camera zoomed out to L3) so the sync passes' cleanup actually tears the
+    // orphans down — otherwise their sprites would linger forever, since nothing else would reach
+    // that loop. The sync passes gate their own zoom<3-only drawing internally, so no zoom check
+    // is needed here.
     if (
       ctx.marches.length > 0 || ctx.marchTokenRuntimes.size > 0 ||
       ctx.occupations.length > 0 || ctx.occupyTokenRuntimes.size > 0 ||
       ctx.stationed.length > 0 || ctx.stationedTokenRuntimes.size > 0
     ) {
-      this.fog.renderOverlay(dt);
+      this.fog.syncTokens(dt);
     }
   }
 

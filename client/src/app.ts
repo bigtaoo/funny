@@ -22,6 +22,7 @@ import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
+import { RenderPolicy, rendererResolution } from './render/renderPolicy';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
 import { startIdlePrefetch } from './assets/idlePrefetch';
@@ -54,7 +55,9 @@ export async function startApp(
     backgroundColor: 0xf5f0e8,
     view:            platform.getCanvas(),
     antialias:       false,
-    resolution:      platform.devicePixelRatio,
+    // Capped, not raw: a dpr-3 phone would otherwise rasterise 2.25× the area of a dpr-2 one for a
+    // picture drawn in ~2px ink strokes. See render/renderPolicy.ts for the measurement.
+    resolution:      rendererResolution(platform.devicePixelRatio),
     autoDensity:     true,
   });
 
@@ -121,6 +124,11 @@ export async function startApp(
   // ever engage this — plain instant scene switches never freeze input.
   const manager = new SceneManager(app, scaling.gameLayer, input, dialogGate);
   platform.setupInput(app, input, (sx, sy) => scaling.toDesignSpace(sx, sy));
+
+  // Frame-rate ceiling + demand-driven painting (render/renderPolicy.ts). Installed here rather
+  // than at Application construction because it needs `manager` to read the current scene's paint
+  // mode, and it must run before the first frame the boot gate below lets through.
+  new RenderPolicy(app, () => manager.paintMode).install();
 
   // ── L0 boot-tier preload gate (ASSET_PACKAGING §3, §11) ─────────────────────
   // Show a loading screen (top-most: built after all other layers) and await the

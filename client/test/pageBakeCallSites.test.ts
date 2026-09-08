@@ -38,6 +38,7 @@ const EXPECTED: Record<string, boolean> = {
   'scenes/LobbyScene/core.ts::lobby notebook background':       true,
   'scenes/ResultScene/builders.ts::result page margin':         true,
   // ── deliberately NOT page-sized ────────────────────────────────────────────
+  'render/avatar.ts::avatar pencil rim':                        false,
   'render/boil.ts::per-frame boil offsets':                     false,
   'render/panelFrame.ts::panel frame atlas':                    false,
   'ui/widgets/uiCache.ts::shared UI chrome (getCachedTexture)': false,
@@ -53,6 +54,7 @@ const LABELS: Record<string, string[]> = {
   'render/BoardView.ts':            ['board sheet + ruled grid'],
   'scenes/LobbyScene/core.ts':      ['lobby notebook background'],
   'scenes/ResultScene/builders.ts': ['result page margin'],
+  'render/avatar.ts':               ['avatar pencil rim'],
   'render/boil.ts':                 ['per-frame boil offsets'],
   'render/panelFrame.ts':           ['panel frame atlas'],
   'ui/widgets/uiCache.ts':          ['shared UI chrome (getCachedTexture)', 'shared UI chrome (sized variant)'],

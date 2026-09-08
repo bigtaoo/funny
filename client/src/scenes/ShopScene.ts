@@ -32,6 +32,8 @@ export type { ShopSceneCallbacks, ShopActionResult } from './ShopScene/core';
  */
 export class ShopScene implements Scene {
   readonly container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   private readonly core: ShopSceneCore;
   private readonly actions: ActionsPanel;
