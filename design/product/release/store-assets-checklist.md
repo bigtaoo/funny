@@ -191,6 +191,12 @@ Quoten-Seite. Kostenlos spielbar.
 **随机付费道具答「是」**（必答，概率公示页 `GachaScene/odds.ts` 就是 3.1.1 要的那个）。**后果要接受**：
 巴西商店被强制 **18+**、澳大利亚 **16+**（15+ 已于 2026-06-18 取消）。
 
+**✅ 2026-09-08 实际填完，问卷算出 13+**（与预期一致）。**Override 选 `Not Applicable`，Age Suitability URL 留空**：
+override 到更高档会让商店页面与三处已定口径（§3.4 自我定级 / 三语政策 §9 / 年龄门的 13 岁门槛）互相打架——
+商店写 16+ 而门仍放 13 岁进来，等于自己声明的东西自己不执行；而分区的更高分级（巴西 18+、澳大利亚 16+）
+是 loot box 声明**自动**带来的，不需要 override。Age Suitability URL 那个字段**尤其不能填 `/home` 或
+`/pricing`**——两页都通向 Paddle 网页结账，而 3.1.1 管到 metadata（同 §1.2 营销 URL 那条）。
+
 - 预期落点：全球 **13+**（Messaging and Chat 决定的下限，与 §3.4 的 13+ 自我定级一致），
   巴西 18+、澳大利亚 16+；**EU 侧按 PEGI 16 预期**（[`COMPLIANCE_GLOBAL §6.1`](../../game/COMPLIANCE_GLOBAL.md) 已写明
   含付费随机道具默认 PEGI 16）。不得勾成全年龄/儿童档，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)。

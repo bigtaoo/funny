@@ -611,7 +611,8 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       审核员的设备上早已同意过，等于点不到隐私政策（5.1.1(i)）。门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例）
 - [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可
-- [ ] **填年龄分级问卷**（Apple 自有问卷）——答案已定在
+- [x] **填年龄分级问卷**（Apple 自有问卷）—— **2026-09-08 填完，算出 13+**，Override 留
+      `Not Applicable`、Age Suitability URL 留空（理由见 store-assets §1.3）。答案已定在
       [`store-assets-checklist §1.3`](../product/release/store-assets-checklist.md)：模拟赌博/随机付费道具
       （gacha）=是、用户互动+不受限网络访问=是，预期落 **12+**。
       **本条此前在这张 checklist 里没有行**，只记在 store-assets §6 的汇总表里（2026-09-08 补）
