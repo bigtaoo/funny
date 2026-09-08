@@ -418,5 +418,25 @@ owner 报「手机上很快就没电了，mac 上让电脑的风扇都加速了�
   - `test/ui/renderLoopWiring.ui.ts`（15 例）——中间那层接线，ADR-072 的教训（「首轮测试全在场景层和视图层，漏了中间那层接线，而原 bug 恰恰只长在那里」）：app.ts 是否真的装了 policy、是否真的把 dpr 过了上限、四条指针路径是否都 hold（包括被 modal 吞掉那一下）、`paintMode` 对 overlay 与 fade 是否**悲观**（reactive 的城池面板压在 live 的地图上必须仍算 live）。同样逐条变异验证。
 - **诊断口子**：`localStorage.nw_render_debug` 置任意值后，`globalThis.__nwRenderStats` 暴露 `{ticks, painted, skipped}`。与 `nw_mem_warn_mb`/`nw_fps_warn` 同类，默认不发布任何全局。没有这个句柄，「重绘率」这个唯一能说明门禁有没有在工作的数字，每次都得手工重新给页面打桩（2026-09-08 这次就是这么测的）。
 - **影响**：新增 `client/src/render/renderPolicy.ts`；`app.ts`（resolution + install）、`app/PixiAppViews.ts`（resize 后 invalidate）、`inputSystem/InputManager.ts`（四个漏斗）、`scenes/SceneManager.ts`（`Scene.paint` + `paintMode` + swap/overlay 处 invalidate）、28 个场景各一行 `paint`、`scenes/LobbyScene/{core,mainContent}.ts`、`render/avatar.ts`、`render/stickman/{StickmanRuntime,constants,runtimeTypes}.ts`、`scenes/worldmap/{WorldMapContext,WorldMapInput}.ts` 与 `WorldMapRenderer/{fog,lifecycle}.ts`；`test/pageBakeCallSites.test.ts` 登记新的 bake 站点。快查文档见 [`claudedocs/client-render-budget.md`](../claudedocs/client-render-budget.md)。
-- **还没做的**：①**世界地图本身仍是 `'live'`**——它的池子有数千个对象，签名遍历的成本还没实测，没有数字就不改；决策五/六已经把它每帧的 CPU 拿掉了。②**SLG 地图的真机验证要 owner 登录**（本机只跑得起 docker 全栈的服务端，客户端进世界地图要账号；创建账号/输密码不是我该代做的事），单元门禁覆盖的是逻辑，画面还得看一眼。③iOS/微信两个宿主上的实测数字没取，dpr 上限的收益是算出来的（面积比），不是量出来的。
+- **还没做的（2026-09-08 当天收尾，三条都有进展，详见 [`claudedocs/client-render-budget.md`](../claudedocs/client-render-budget.md) §7–§10）**：
+  - ①**世界地图是否也改 `'reactive'`：量完了，数字支持改，但还没改。** docker 全栈 + 真账号进图，空闲态实测：L1 1,536 对象 / 签名 0.21 ms、L2 3,859 对象 / 0.30 ms、L3 199 对象 / 0.016 ms，**空闲时画面一秒只真的变 11 次**（10 次是护盾气泡的 10 fps，1 次是 HUD），而世界地图整 tick 是本客户端最贵的一帧（8.25 ms，对照大厅 0.084 ms、战斗 2.1 ms）——花 18 ms/s 的遍历省掉 ~49 次这种帧。**拦路的是一个 bug 而不是这笔账**：`render/GuideOverlay.ts` 的 `update()` 每帧调 `drawRing()`，为了一个呼吸 alpha 把圆角矩形每秒重新三角化 60 次，于是新号进图时签名 60/60 帧全变（隐藏它才量到 11）。GuideOverlay 还挂在 CityScene 等**已经 reactive** 的场景上，所以这条今天就在让新手引导期间的菜单满帧重绘。先改成动 `ring.alpha`，再谈拨 `paint` 开关。
+  - ②**SLG 地图的画面确认做了**（owner 自己登录，服务端数据里 5 个世界 / 18,605 格 / 258 城）：L1/L2/L3 三级缩放 + 两次拖动平移全部正常——瓦片、基地 3×3 城池 sprite、护盾气泡、前线高亮、HUD、云雾遮罩的斜边界都跟着相机走，没有残留几何、没有撕裂。决策五/六（叠加层墨线按需 + 拖动一帧最多重建一次）在真画面上成立。
+  - ③**iOS/微信真机数字仍然没有**，但通往它的两个窟窿补上了 —— 见 ADR-084。
+
+## ADR-084 诊断开关统一走 platform.storage；健康会话上报 `render_profile`（真机帧数/重绘率） — Accepted — 2026-09-08
+
+ADR-083 的三个旋钮只在一台 Windows 桌面的 devtools 会话里量过。要拿 iOS/微信的数字时撞上两件事：
+
+- **微信上所有诊断开关都是瞎的。** `nw_render_debug` / `nw_fps_warn` / `nw_mem_warn_mb` / `nw_gentex_budget` / `nw_tex_budget_mb` / `nw_cpu_busy_warn` / `nw_net_log` 七个各自直接读 `globalThis.localStorage`，外面套 `try {} catch {}` 回落默认值。微信小游戏**没有这个全局**（走 `wx.getStorageSync`，即 `platform.storage`），于是七个开关在微信上永远停在默认值且不报错。`net/anomaly/reporter.ts` 早就踩过同一个坑并用 `setAnomalyStorage` 解决了——这次是把同一个缝补到 flag 上，而不是补第八次。
+- **就算读得到也没用：微信打不开控制台，iOS 要接 Safari Web Inspector 才读得到一个全局。** 「去设备上读一个数」这条路在这两个宿主上不通。
+
+- **决策一：新增 `client/src/debugFlags.ts`**（`debugFlag` / `debugNum` / `setDebugFlagStorage`），七个读点全部改走它；`app.ts` 在**两个 watchdog 装载之前**调 `setDebugFlagStorage(platform.storage)`。缺省仍回落到 `globalThis.localStorage` shim，所以 web 行为与既有测试（stub 全局）一字不变。
+- **决策二：设备自己报，不靠人去读。** `cache/PerfMonitor` 本来就在按 2 秒窗口采 fps（卡顿告警用），现在健康会话把这份采样连同重绘计数报成 **`render_profile`** analytics 事件：`scene` / `spanS` / `windows` / `fpsP50` / `fpsMin` / `fpsMax` / `maxFps` / `res` / `dpr` / `dprCapped` / `canvasW` / `canvasH` / `tickPerSec` / `paintPerSec` / `skipPct`。两个关键派生位：**`dprCapped`（`dpr > res`）= ADR-083 的 dpr 上限在这台设备上到底有没有生效**（微信永远是 false —— `WechatPlatform.devicePixelRatio` 硬编码 1，那条旋钮在微信是空操作，只有 iOS/web 吃它），**`paintPerSec` vs `tickPerSec` = 按需重绘有没有在工作**。
+- **走 analytics 而不是 anomaly 通道。** anomaly 是「出事了」的全量通道（有冷却与配额），把常态画像塞进去会污染它；`render_profile` 是健康数据，归 analyticsvc → Grafana。服务端 `analyticsvc` 里采样率 **1.0**：整条事件的意义就是跨宿主/跨设备对比，采样掉就没有意义了。
+- **量是有界的，而不是连续的**：每会话最多 6 条（首条约 30 秒——够 boot 和第一个场景稳定，又不至于短会话什么都不报；之后每约 5 分钟）。**只统计全程可见的窗口**，理由和卡顿 watchdog 丢弃隐藏窗口一样：被节流的后台标签页会报出假的 4 fps，看起来像一台快死的设备。
+- **`renderStats` 单独成一个模块**（`render/renderStats.ts`，零 import）。第一版把计数器的读口直接开在 `renderPolicy.ts` 上，结果 `PerfMonitor` 的**值**引入把整个 canvas renderer 拖进了 plain-node 单测环境（`document.createElement is not a function`）——PerfMonitor 自己那句 `import * as PIXI` 只用在类型位置、会被擦除，所以它一直跑得动 node 环境。把计数器搬到一个无依赖的文件后两边都干净。
+- **门禁**：`test/debugFlags.test.ts`（5 例）——行为一道（注入 storage 要被读到、异常要吞、缺省回落全局），**机械一道**：`src/` 下除 `debugFlags.ts` 与 `anomaly/reporter.ts` 两个 shim 外，任何文件都不许 `localStorage.getItem('nw_…')`。`test/renderProfile.test.ts`（8 例）——够窗口才报、fps 分布/场景/renderer 事实、`dprCapped` 两个方向、**重绘率必须是计数器的差值而不是累计值**、第二条对第一条做差、隐藏窗口既不计数也不拉低 fps、每会话上限、没装 policy 时不带重绘字段也不抛。三处变异（把隐藏窗口也计入 / 把差值改成累计 / 删掉每会话上限）逐一验证会转红。
+  - 顺带一个测试自身的坑，写在 `renderProfile.test.ts` 的 `feedWindow` 里：**喂窗口只能用能整除 2000 ms 的帧率**（50/25/10/4）。60 fps 的 16.666… ms 凑不出整窗口，余下的帧会漏进下一个窗口，攒十几个窗口后边界漂移到「25 fps 的窗口报成 33 fps」。函数里直接 `throw` 挡住，而不是留给下一个人去查。
+- **影响**：新增 `client/src/debugFlags.ts`、`client/src/render/renderStats.ts`、`client/test/debugFlags.test.ts`、`client/test/renderProfile.test.ts`；改 `render/renderPolicy.ts`（flag 走 seam + 计数器发布）、`cache/PerfMonitor.ts`（flag + `render_profile`）、`cache/MemoryMonitor.ts`（三个 flag）、`net/log.ts`（一个 flag）、`app.ts`（`setDebugFlagStorage` + 给 PerfMonitor 传 renderer 事实）、`server/analyticsvc/src/service/defs.ts`（采样率）。
+- **还没做的**：真机上还是没有人拿着手机跑过——这条 ADR 只是把管子接好。**功耗本身客户端测不了**（没有电池 API 可用的口径），只能靠设备侧电池统计，帧数/重绘率这两个能测的现在会自己报上来。
 

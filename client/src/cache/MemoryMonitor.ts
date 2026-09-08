@@ -3,6 +3,7 @@ import { netLog } from '../net/log';
 import { reportAnomaly, setAnrContextProvider, getActiveScene } from '../net/anomaly';
 import { snapshotPools } from './poolRegistry';
 import { bakeStats } from '../render/bake';
+import { debugNum } from '../debugFlags';
 
 // Runtime memory monitor: reads JS heap usage every few seconds, emits a console.warn when the threshold
 // is exceeded, and dumps idle-object counts / rough size estimates for all object pools (poolRegistry.snapshotPools).
@@ -74,30 +75,18 @@ function nowMs(): number {
 }
 
 function warnThresholdMB(): number {
-  try {
-    const raw = globalThis.localStorage?.getItem('nw_mem_warn_mb');
-    const v = raw == null ? NaN : Number(raw);
-    if (Number.isFinite(v) && v > 0) return v;
-  } catch { /* localStorage unavailable: use default */ }
-  return DEFAULT_WARN_MB;
+  // Read through debugFlags so the knob also works on WeChat/native (no global localStorage).
+  return debugNum('nw_mem_warn_mb', DEFAULT_WARN_MB);
 }
 
 function genTexBudget(): number {
-  try {
-    const raw = globalThis.localStorage?.getItem('nw_gentex_budget');
-    const v = raw == null ? NaN : Number(raw);
-    if (Number.isFinite(v) && v > 0) return v;
-  } catch { /* localStorage unavailable: use default */ }
-  return DEFAULT_GEN_TEX_BUDGET;
+  // Read through debugFlags so the knob also works on WeChat/native (no global localStorage).
+  return debugNum('nw_gentex_budget', DEFAULT_GEN_TEX_BUDGET);
 }
 
 function texBudgetMB(): number {
-  try {
-    const raw = globalThis.localStorage?.getItem('nw_tex_budget_mb');
-    const v = raw == null ? NaN : Number(raw);
-    if (Number.isFinite(v) && v > 0) return v;
-  } catch { /* localStorage unavailable: use default */ }
-  return DEFAULT_TEX_BUDGET_MB;
+  // Read through debugFlags so the knob also works on WeChat/native (no global localStorage).
+  return debugNum('nw_tex_budget_mb', DEFAULT_TEX_BUDGET_MB);
 }
 
 const round = (n: number, d = 1): number => {

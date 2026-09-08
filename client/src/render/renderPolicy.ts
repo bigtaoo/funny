@@ -42,6 +42,8 @@
  * case for a miss is therefore a frame that lands late, never a frame that never lands.
  */
 import * as PIXI from 'pixi.js-legacy';
+import { debugFlag } from '../debugFlags';
+import { setLiveRenderStats, type RenderStats } from './renderStats';
 
 /**
  * Backbuffer resolution ceiling. 2 keeps text and ink crisp on every retina-class display;
@@ -251,7 +253,7 @@ export class RenderPolicy {
   private lastSignature = -1;
   private lastPaintMs = 0;
   /** Counters exposed for the browser measurement recipe (`window.__nwRenderStats`). */
-  readonly stats = { ticks: 0, painted: 0, skipped: 0 };
+  readonly stats: RenderStats = { ticks: 0, painted: 0, skipped: 0 };
 
   constructor(
     private readonly host: RenderLoopHost,
@@ -261,6 +263,7 @@ export class RenderPolicy {
 
   install(): void {
     this.host.ticker.maxFPS = TARGET_FPS;
+    setLiveRenderStats(this.stats);
     this.publishStats();
     // Cast: TickerPlugin's `render` is typed as a plain method, not as a TickerCallback.
     this.host.ticker.remove(this.host.render as PIXI.TickerCallback<unknown>, this.host);
@@ -270,6 +273,7 @@ export class RenderPolicy {
 
   uninstall(): void {
     this.host.ticker.remove(this.tick, this);
+    setLiveRenderStats(null);
   }
 
   /** One frame's decision. Exposed (not just wired to the ticker) so tests can step it by hand. */
@@ -299,9 +303,10 @@ export class RenderPolicy {
    * production build grows a debug global.
    */
   private publishStats(): void {
-    try {
-      if (!globalThis.localStorage?.getItem('nw_render_debug')) return;
-    } catch { return; } // no localStorage (WeChat): stay quiet
+    // Read through debugFlags, not `globalThis.localStorage`: on WeChat the latter does not exist,
+    // so this counter — the only readable evidence that the gate is working — was permanently off on
+    // the host where it mattered most. See debugFlags.ts.
+    if (!debugFlag('nw_render_debug')) return;
     (globalThis as { __nwRenderStats?: RenderPolicy['stats'] }).__nwRenderStats = this.stats;
   }
 

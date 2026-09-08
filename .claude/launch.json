@@ -27,6 +27,15 @@
       "port": 9090
     },
     {
+      "name": "game-local8088",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set NW_API_BASE=http://localhost:8088/api&&set NW_GATEWAY_WS=ws://localhost:8088/gw&&set NW_WORLD_BASE=http://localhost:8088&&set NW_SOCIAL_BASE=http://localhost:8088&&set NW_AUCTION_BASE=http://localhost:8088&&npm --prefix D:/funny/client run start -- --port 9190"
+      ],
+      "port": 9190
+    },
+    {
       "name": "game-verify2",
       "runtimeExecutable": "cmd",
       "runtimeArgs": [

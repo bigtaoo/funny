@@ -70,6 +70,11 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
     nav_checkpoint: { sample: 1.0 },
     login_gate_hit: { sample: 1.0 },
     churn_signal:   { sample: 1.0 },
+    // Client render/frame-rate profile (ADR-083 follow-up): a periodic aggregate of fps + paint rate +
+    // the resolution the backbuffer actually got, tagged with the active scene. Bounded client-side to
+    // at most 6 per session (cache/PerfMonitor.ts), so 1.0 here costs less than session_start; sampling
+    // it would defeat the point, which is per-device/per-host comparison (iOS dpr cap, WeChat maxFPS).
+    render_profile: { sample: 1.0 },
     // Button-level clicks (A9-8). Fully sampled for now so first-day "which button" analysis is exact;
     // dial down here if lobby-click volume becomes a concern.
     ui_click:       { sample: 1.0 },

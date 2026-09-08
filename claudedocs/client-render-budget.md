@@ -92,14 +92,50 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 真浏览器测量配方（本机 Chrome 标签页被遮挡时 rAF 会挂起，这套绕过它）：
 
 1. 抢 webpack require 拿 PIXI：`window.webpackChunkpixigame.push([["probe"],{},r=>req=r])`，再 `req.c[<key ending in pixi.js-legacy/lib/index.mjs>].exports`。
-2. **拿 app 的 ticker**：包 `PIXI.Ticker.prototype.update`，第一帧（截图会强制一帧）把 `this !== Ticker.shared` 的那个存下来；之后 `tk.update(t += 16.7)` 就能**手动驱动整个循环**（场景 update + policy 决策），配合 `__nwRenderStats` 直接读出重绘率。
+2. **拿 app 的 ticker**：包 `PIXI.Ticker.prototype.update`，第一帧（截图会强制一帧）把它存下来；之后 `tk.update(t += 16.7)` 就能**手动驱动整个循环**（场景 update + policy 决策），配合 `__nwRenderStats` 直接读出重绘率。
+   ⚠️ 认 ticker 的判据是 **`maxFPS === 60`**，不是 `this !== Ticker.shared`：`Ticker.system`（PIXI 自己用来跑 `BasePrepare` 一类的）也不是 shared，会被先抓到，而它的 `maxFPS` 是 0。2026-09-08 第一次按旧判据测，量了半天量的是 system ticker。
 3. **拿舞台**：`app.renderer.render` 在 `app.ts` 里被 `.bind()` 过，patch 原型抓不到它；改 patch `PIXI.Graphics.prototype._render` 抓任意实例，再顺 `parent` 爬到根。
 4. 几何/draw call：包 `gl.drawElements`/`drawArrays`/`bufferData`/`texImage2D` 按 `count` 累加；单帧的 count 序列直接暴露「哪几个物件是大头」，再用 `getBounds()` 认屏上位置。
 5. 真 GPU 时间：`EXT_disjoint_timer_query_webgl2`，但**结果不会同步就绪**——beginQuery/render N 次/endQuery 放一次 JS 调用，`QUERY_RESULT` 放**下一次**调用里读。
 6. ⚠️ **不要 hook `requestAnimationFrame` 再手动重放回调**：回调会重新注册，同步重放 120 帧后队列指数爆炸（实测涨到 9,363 万条，页面卡死）。用第 2 步的 ticker 驱动。
+7. ⚠️ **窗口被遮挡时不要量「一帧多少毫秒」**。手动驱动能绕过 rAF 停发，但绕不过合成器：`document.hidden` 为真时同步连打 `render()` 会被逐帧阻塞，实测从 8 ms/帧退化到 ~750 ms/帧（连驱 60 帧直接把 CDP 的 45 s 超时耗光）。**耗时数字必须在窗口可见时取**；只想知道「画面变没变」则不需要可见——把 `PIXI.Renderer.prototype.render` 临时换成空函数再驱动 ticker，场景 update 照跑、GPU 一次不碰，量签名变化率又快又干净（记得 `finally` 里换回来）。
 
-## 7. 还没做的
+## 7. 世界地图能不能也改成 `reactive`（2026-09-08 实测）
 
-1. **`WorldMapScene` 本身仍是 `'live'`**——它的池子有数千个对象，签名遍历成本还没实测；没有数字就不改。ADR-083 决策五/六已经把它每帧的 CPU 拿掉了。
-2. **SLG 地图的真机验证还欠一次**：本机能起 docker 全栈（`docker/local-up.ps1`，:8088），但客户端进世界地图要账号，需要 owner 自己登录一次；单元门禁覆盖的是逻辑，画面还得看一眼。
-3. **iOS / 微信两个宿主上的实测数字没取**：dpr 上限的收益是按面积比算出来的，不是量出来的（微信侧 `WechatPlatform.devicePixelRatio` 本来就是 1，只有 iOS/web 吃这条）。
+同一台机器、docker 全栈（`docker/local-up.ps1` :8088）+ dev server 指过去，真账号进世界地图，**空闲**（无行军 / 无驻防 / 未选中）：
+
+| zoom | 舞台对象数 | `stageSignature` | ns/对象 | 签名变化 / 60 帧 |
+|---|---|---|---|---|
+| L1 详细 | 1,536（Sprite 596 / Graphics 580 / BitmapText 309） | 0.21 ms | 136 | **11** |
+| L2 中景 | 3,859（Graphics 3,684 = 池子） | 0.30 ms | 79 | **11** |
+| L3 总览 | 199（批量路径，池子空） | 0.016 ms | 80 | 19 |
+| （对照）空闲大厅 | 84 | 0.004 ms | 48 | — |
+
+读法：
+
+- **遍历不贵**。最坏 0.30 ms × 60 = **18 ms/s**。对象多的 L2 反而 ns/对象最低——池子是清一色 `Graphics`，没有 `Text` 的字符串哈希，也没有 Sprite 的 frame 矩形。ns/对象随树变大而升是 cache 效应，不是算法问题。
+- **能省的很多**。空闲地图**一秒只真的变 11 次**（10 次是护盾气泡的 `SHIELD_ANIM_FPS`，剩下 1 次是 HUD），也就是 60 帧里有 **~49 帧画的是同一张图**。而世界地图整 tick（场景 update + 画）是**这个客户端最贵的一帧**——同机同窗口测到 8.25 ms/tick（对照：空闲大厅 0.084 ms，战斗 2.1 ms）。花 18 ms/s 省掉 ~49 次这种帧，账面上是一比二十以上。
+- **有行军在途时省不到**：token 每帧动，签名每帧变，那时地图本来就该画。这是「白付一趟遍历」的上界，也就是 0.30 ms/帧。
+
+**但先修一个 bug 再谈开关**：`render/GuideOverlay.ts` 的 `update()` **每帧**调 `drawRing()`，而 `drawRing` 是 `clear()` + `lineStyle` + `drawRoundedRect` ——为了 `0.5 + 0.4 * sin(pulseT * 4)` 这个呼吸 alpha，把一个圆角矩形每秒重新三角化 60 次。新号进世界地图时它一直亮着，实测**签名 60/60 帧全变**，把上面那 11 次直接顶成 60 次；把它隐藏掉才量到 11。GuideOverlay 还挂在 CityScene 等**已经是 `reactive`** 的场景上，所以这一条今天就在让新手引导期间的菜单以满帧重绘。改法是显而易见的一行：动 `ring.alpha`，别重描几何（alpha 也在签名里，照样会重绘，但不再重建几何，而且可以顺手限速）。
+
+## 8. 诊断开关在微信上是瞎的（已修，2026-09-08）
+
+`nw_render_debug` / `nw_fps_warn` / `nw_mem_warn_mb` / `nw_gentex_budget` / `nw_tex_budget_mb` / `nw_cpu_busy_warn` / `nw_net_log` 原本各自直接读 `globalThis.localStorage`，外面套一层 `try {} catch {}` 回落默认值。**微信小游戏没有这个全局**（它走 `wx.getStorageSync`，即 `platform.storage`），于是这些开关在微信上永远停在默认值，而且不报错。`nw_render_debug` 尤其要命：重绘率是「按需重绘到底有没有在工作」的唯一读数，而微信恰恰是 ADR-083 三个旋钮里**只有按需重绘能起作用**的宿主（`WechatPlatform.devicePixelRatio` 硬编码为 1，dpr 上限在那边是空操作）。
+
+现在统一走 `src/debugFlags.ts`（`setDebugFlagStorage(platform.storage)` 在 `app.ts` 里、两个 watchdog 装载**之前**调用），形状照抄 `net/anomaly/reporter.ts` 的 `setAnomalyStorage`。门禁两道，都在 `test/debugFlags.test.ts`：行为一道（注入的 storage 要被读到），**机械一道**（`src/` 下除 `debugFlags.ts` 与 `anomaly/reporter.ts` 两个 shim 外，任何文件都不许 `localStorage.getItem('nw_…')`）——后者做过变异验证。
+
+## 9. 真机数字：`render_profile`（ADR-084）
+
+微信打不开控制台，iOS 要接 Safari Web Inspector 才读得到一个全局——所以真机上的帧数/重绘率不能靠「去读」，只能让设备自己报。`cache/PerfMonitor` 本来就在按 2 秒窗口采样 fps（给卡顿告警用），现在健康会话也把这份采样连同 `render/renderStats.ts` 的重绘计数一起报成 `render_profile` 事件（analytics → analyticsvc → Grafana）。
+
+字段：`scene` / `spanS` / `windows` / `fpsP50` / `fpsMin` / `fpsMax` / `maxFps` / `res` / `dpr` / **`dprCapped`** / `canvasW` / `canvasH` / `tickPerSec` / `paintPerSec` / `skipPct`。
+`dprCapped`（`dpr > res`）是「ADR-083 的 dpr 上限在这台设备上到底有没有生效」的那一位；`paintPerSec` vs `tickPerSec` 是「按需重绘有没有在工作」的那一对。
+
+量是有界的：**每会话最多 6 条**（首条约 30 秒，之后每约 5 分钟），且只统计全程可见的窗口——后台被节流的标签页会报出假的 4 fps。服务端 `analyticsvc` 里 `render_profile` 采样率 1.0（不采样，否则跨宿主对比就没意义了）。
+
+## 10. 还没做的
+
+1. **`WorldMapScene` 的 `paint` 开关还没真的拨**——§7 的数字支持拨，但先修 `GuideOverlay` 每帧重描，否则新手引导期间白付遍历。拨之前还要补一条门禁（行军在途时必须每帧画）。
+2. **8.25 ms/tick 这个数字是在窗口被遮挡的状态下取的**（见 §6 第 7 条），量级可信、精度不可信；拨开关前值得在可见窗口里重取一次。
+3. **iOS / 微信真机仍然没有人拿着手机跑过**。§9 只是把管子接好了，数字要等真机上线。功耗（不是帧数）本来也不在客户端能自测的范围内，要靠设备侧的电池统计。
