@@ -87,6 +87,7 @@ async function registerAndEnterLobby(c: Client, name: string): Promise<string> {
   c.core.start();
   expect(c.views.screen).toBe('intro');
   c.views.intro!.onFinish();
+  c.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
   c.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
   await waitFor(() => c.views.screen === 'login', 'login screen');
 
@@ -102,6 +103,7 @@ async function registerAndEnterLobby(c: Client, name: string): Promise<string> {
 async function loginAndEnterLobby(c: Client, loginId: string, password: string): Promise<void> {
   c.core.start();
   c.views.intro!.onFinish();
+  c.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
   c.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
   await waitFor(() => c.views.screen === 'login', 'login screen');
   const outcome = await c.views.login!.onLogin(loginId, password);
@@ -252,6 +254,7 @@ describe('full-link E2E (live stack)', () => {
     const a = createClient();
     a.core.start();
     a.views.intro!.onFinish();
+    a.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
     a.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
     await waitFor(() => a.views.screen === 'login', 'A login screen');
     expect((await a.views.login!.onRegister(loginId, pw, 'Original Name')).ok).toBe(true);
@@ -426,6 +429,7 @@ describe('full-link E2E (live stack)', () => {
     const a = createClient();
     a.core.start();
     a.views.intro!.onFinish();
+    a.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
     a.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
     await waitFor(() => a.views.screen === 'login', 'A login screen');
     expect((await a.views.login!.onRegister(loginId, pw, 'First')).ok).toBe(true);
@@ -435,6 +439,7 @@ describe('full-link E2E (live stack)', () => {
     const b = createClient();
     b.core.start();
     b.views.intro!.onFinish();
+    b.views.declareAdultAge(); // neutral age gate, ahead of the consent gate
     b.views.consent!.onAccept(); // GDPR gate (L1-1) before entry
     await waitFor(() => b.views.screen === 'login', 'B login screen');
     const dup = await b.views.login!.onRegister(loginId, pw, 'Second');
