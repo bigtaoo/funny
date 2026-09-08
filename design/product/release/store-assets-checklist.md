@@ -167,10 +167,33 @@ Quoten-Seite. Kostenlos spielbar.
 - 支持 URL / 营销 URL。
 
 ### 1.3 年龄分级（Apple 自有问卷）
-如实勾选（拉高分级但漏报=下架风险）：
-- **模拟赌博 / 含随机付费道具（gacha）**：是（频繁/强烈视实际）。
-- **用户互动 / 不受限网络访问（社交、私聊）**：是。
-- 预期落点：**12+ / Teen 档**（以问卷结果为准；不得勾成全年龄/儿童，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)）。
+
+> **2026-09-08 重写**：Apple 换了问卷与尺度，旧记录的两条勾选与「12+」落点都已失效。
+> **全球尺度现在是 4+ / 9+ / 13+ / 16+ / 18+，没有 12+**；新版问卷自 **2026-01-31** 起强制，
+> 不填会卡住所有版本提交。下面是逐行答案与依据（每一条都用代码核过，别照旧稿抄）。
+
+**Step 1 — In-App Controls / Capabilities**
+
+| 行 | 答 | 依据 |
+|---|---|---|
+| Parental Controls | 否 | 包里没有家长监护/消费限额功能（中国区分龄限额仍在 §3.2 未做项里） |
+| Age Assurance | **是** | 首启中性年龄声明门，`client/src/ui/dialogs/AgeGateDialog.ts`（2026-09-08 实装，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)）。⚠️ 它是**自我声明**，不是身份核验——若问卷有核验方式的追问，照实答自我声明 |
+| Unrestricted Web Access | 否 | 没有内嵌浏览器（无 `@capacitor/browser`），只有隐私政策/用户协议两个**固定** URL 跳系统浏览器（`SettingsScene/panels.ts`、`ConsentDialog.ts`） |
+| User-Generated Content | 是 | 玩家自选昵称出现在排行榜/世界地图/对战界面；家族/宗门聊天对成员群发。**少报是危险方向** |
+| Social Media | 否 | 没有信息流、没有转发/放大、没有发现机制——只有私聊与组织内群聊 |
+| Social Media Disabled for Users Under 13 | 否 | 这是给上一行答「是」的 App 用的减档项，要求调用 Declared Age Range API；我们两者都没有（该行若被自动灰掉就跳过） |
+| Messaging and Chat | 是 | 好友私聊 + 家族聊天（`socialsvc/src/family/chat.ts`）+ 宗门聊天（`worldsvc/src/sect/chat.ts`） |
+| Advertising | 是 | AdMob 激励视频（`NWBridgeViewController.swift`）；与是否个性化无关 |
+
+**内容类问题**：暴力/性/药物/恐怖等一律**无**。**模拟赌博答「无」**——这一问指赌场式玩法
+（老虎机/扑克），答「频繁」会把分级顶到 18+；抽卡走**随机付费道具（loot box）**那一问。
+
+**随机付费道具答「是」**（必答，概率公示页 `GachaScene/odds.ts` 就是 3.1.1 要的那个）。**后果要接受**：
+巴西商店被强制 **18+**、澳大利亚 **16+**（15+ 已于 2026-06-18 取消）。
+
+- 预期落点：全球 **13+**（Messaging and Chat 决定的下限，与 §3.4 的 13+ 自我定级一致），
+  巴西 18+、澳大利亚 16+；**EU 侧按 PEGI 16 预期**（[`COMPLIANCE_GLOBAL §6.1`](../../game/COMPLIANCE_GLOBAL.md) 已写明
+  含付费随机道具默认 PEGI 16）。不得勾成全年龄/儿童档，见 [`COMPLIANCE_GLOBAL §3.4`](../../game/COMPLIANCE_GLOBAL.md)。
 
 ### 1.4 隐私营养标签（Privacy Nutrition Label）
 

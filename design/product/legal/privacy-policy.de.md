@@ -120,7 +120,7 @@ Zur Ausübung Ihrer Rechte kontaktieren Sie uns über §12; wir antworten innerh
 
 ## 9. Datenschutz für Kinder
 
-Das Spiel ist **selbsteingestuft als 13+ und richtet sich nicht an Kinder unter 13 Jahren** (Vermeidung von US-COPPA / DSGVO-K). Wir setzen bei Registrierung/Eintritt eine neutrale Altersabfrage ein und schalten keine kindgerichtete zielgerichtete Werbung. Wir erheben wissentlich keine personenbezogenen Daten von Kindern unter 13; falls Sie dies vermuten, kontaktieren Sie uns über §12 zur Löschung.
+Das Spiel ist **selbsteingestuft als 13+ und richtet sich nicht an Kinder unter 13 Jahren** (Vermeidung von US-COPPA / DSGVO-K). Wir setzen beim ersten Start eine neutrale Altersabfrage ein (Auswahl des Geburtsjahrs, ohne Hinweis auf die Schwelle; die Angabe wird einmal pro Konto gespeichert, und wer ein Alter unter 13 angibt, kann das Spiel nicht betreten) und schalten keine kindgerichtete zielgerichtete Werbung. Wir erheben wissentlich keine personenbezogenen Daten von Kindern unter 13; falls Sie dies vermuten, kontaktieren Sie uns über §12 zur Löschung.
 
 > Die Festlandchina-Version identifiziert Minderjährige anhand der Identitätsprüfung und wendet Suchtprävention und Ausgabenlimits an (siehe §10); dies ist von der 13+-Selbsteinstufung im Ausland getrennt.
 

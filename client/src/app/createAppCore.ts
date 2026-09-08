@@ -26,7 +26,7 @@ import { defaultPvpDeck, validatePvpDeckClient } from '../game/meta/pvpLoadout';
 import * as analytics from '../analytics';
 import {
   clientPlatformName,
-  SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY,
+  SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, AGE_DECLARED_FLAG, MIN_AGE_YEARS, TOKEN_KEY, PLAYER_NAME_KEY, PLAYER_PUBLIC_ID_KEY,
   PLAYER_AVATAR_KEY, FALLBACK_SEASON, FREE_RENAME_KEY,
 } from './appConstants';
 import type { AppCtx, AppState, Nav } from './appCtx';
@@ -162,13 +162,43 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   }
 
   /**
+   * The two first-launch gates, in the order they have to run: age first, then GDPR consent.
+   * Every entry path goes through here (`resolveEntry` on launch and after login), so this is the
+   * one place that decides what a player has to answer before reaching a screen of their own.
+   */
+  function gateConsent(next: () => void): void {
+    gateAge(() => gateGdpr(next));
+  }
+
+  /**
+   * Neutral age gate (COMPLIANCE_GLOBAL §3.4, `privacy-policy §9`), ahead of the consent gate so
+   * nothing — not even the consent screen's own analytics event — happens before the player's age
+   * is known. Three states, which is why this reads the flags map directly instead of
+   * `saveManager.getFlag`: that helper answers `flags[key] === true`, and "never asked" has to be
+   * distinguishable from "declared younger" or a blocked player would be asked again every launch.
+   */
+  function gateAge(next: () => void): void {
+    const declared = saveManager.get().flags[AGE_DECLARED_FLAG];
+    if (declared === true) { next(); return; }
+    if (declared === false) { views.showAgeGate('blocked', { onDeclared() { /* dead end */ } }); return; }
+    views.showAgeGate('ask', {
+      onDeclared(birthYear) {
+        const oldEnough = new Date().getFullYear() - birthYear >= MIN_AGE_YEARS;
+        saveManager.setFlag(AGE_DECLARED_FLAG, oldEnough);
+        if (!oldEnough) { views.showAgeGate('blocked', { onDeclared() { /* dead end */ } }); return; }
+        next();
+      },
+    });
+  }
+
+  /**
    * GDPR consent gate (C5-c, L1-1). Runs `next()` immediately if consent was already
    * given (local flag, mirrors server `flags.gdprConsent`); otherwise shows the blocking
    * consent dialog and only proceeds once accepted. Anonymous / offline users see it too —
    * acceptance lands the local flag (synced to the server later via SaveManager push), and
    * the explicit recordGdprConsent fires immediately when a token is already present.
    */
-  function gateConsent(next: () => void): void {
+  function gateGdpr(next: () => void): void {
     if (saveManager.getFlag(GDPR_CONSENT_FLAG) === true) { next(); return; }
     views.showConsent({
       onAccept() {
