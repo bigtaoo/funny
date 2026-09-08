@@ -620,9 +620,10 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       （`Google-Mobile-Ads-SDK` 与 `CapgoCapacitorUpdater` 均出现在 Xcode 的编译产物里），AdMob 桥那些
       照新命名盲写的 Swift API 没有对不上。IPA 39 MB 已 `UPLOAD SUCCEEDED` 传到 ASC，CFBundleVersion=4。
       **这也解开了 §6 B 批的前置门槛**：现在有一个已知能编译的基线了。
-- [ ] **从 `main` 出一个带 StoreKit 2 的上传型构建** —— 2026-09-08 已手动触发
-      （`gh workflow run release-ios.yml --ref main -f destination=testflight`，run `34201608554`，
-      head `e2e307e45`）。**为什么这是独立一条**：`release-ios.yml` 的三次 2026-09-07 成功构建里，
+- [x] **从 `main` 出一个带 StoreKit 2 的上传型构建** —— **2026-09-08 完成**
+      （run `34201608554`，head `e2e307e45`，6分00秒，`UPLOAD SUCCEEDED`，**CFBundleVersion=7**，IPA 36.5 MB；
+      pod 解析为 `Google-Mobile-Ads-SDK 13.9.0` + `CapgoCapacitorUpdater 6.50.1`，与 committed lock 一致）。
+      **顺带确认了 iOS 15 那次抬升的效果**：本次上传**没有再出现警告 90068**，Apple 的 2027 春季死线已解除。**为什么这是独立一条**：`release-ios.yml` 的三次 2026-09-07 成功构建里，
       两次上传的都是 B 批**之前**的代码（CFBundleVersion=4），唯一带 StoreKit 2 的那次是
       `destination: none` 的编译检查、没有上传——而 B 批直到 2026-09-08 的 PR #129 才进 `main`。
       所以在这次构建处理完之前，TestFlight 上不存在任何可用于沙盒验证的二进制。
