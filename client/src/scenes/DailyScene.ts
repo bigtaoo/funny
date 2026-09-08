@@ -56,6 +56,8 @@ const TAB_ICON: Record<DailyTab, IconKind> = {
 
 export class DailyScene implements Scene {
   readonly container: PIXI.Container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
   private readonly w: number;
   private readonly h: number;
   private readonly cb: DailyCallbacks;

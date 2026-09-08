@@ -11,6 +11,16 @@
 export const STICKMAN_SCALE = 0.27;
 
 /**
+ * Pose-sample rate for decorative figures on menu screens (StickmanOptions.poseFps).
+ *
+ * 12 fps: the "on twos" rate traditional hand-drawn animation uses, and the same order as
+ * `render/boil.ts`'s 8 fps line wobble — so an idling lobby silhouette reads as drawn, not as a
+ * dropped-frame 60 fps rig. It also keeps a demand-painted menu (render/renderPolicy.ts) at ~12
+ * paints a second instead of 60.
+ */
+export const MENU_POSE_FPS = 12;
+
+/**
  * Hit-flash outline geometry, in *screen* pixels (per-bone radii derive from
  * these so the line reads the same regardless of each bone's baked scale). The
  * outline is a thin *detached* contour: a paper gap separates the body from the

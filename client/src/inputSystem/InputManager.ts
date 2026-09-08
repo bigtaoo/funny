@@ -9,6 +9,7 @@
  */
 
 import { netLog } from '../net/log';
+import { holdRenderActive } from '../render/renderPolicy';
 
 const log = netLog('input');
 
@@ -118,6 +119,11 @@ export class InputManager {
 
   // ── Called by platform adapters ───────────────────────────────────────────
   _emitDown(x: number, y: number): void {
+    // Every emit funnel holds the full frame rate for a moment (render/renderPolicy.ts), BEFORE the
+    // gates below: a tap that is dropped here still changes the picture (a fade aborts, a dialog
+    // consumes it through PixiJS's own event system, which never reaches these subscribers at all),
+    // and this is the one place every platform adapter's pointer path already funnels through.
+    holdRenderActive();
     // Modal open (see `modals`): the scene underneath is covered and must not see this tap at all.
     // Checked before the fade gate — a modal is not a transition, so there is nothing to abort.
     if (this.modals > 0) return;
@@ -126,10 +132,12 @@ export class InputManager {
     this.dispatch(this.downs, x, y);
   }
   _emitMove(x: number, y: number): void {
+    holdRenderActive();
     if (this.modals > 0 || this.suppressed) return;
     this.dispatch(this.moves, x, y);
   }
   _emitUp(x: number, y: number): void {
+    holdRenderActive();
     if (this.modals > 0 || this.suppressed) return;
     // The hook may have lifted suppression mid-gesture; still swallow this release so the
     // fade-aborting tap doesn't land on the freshly-mounted scene as a real tap.
@@ -137,6 +145,7 @@ export class InputManager {
     this.dispatch(this.ups, x, y);
   }
   _emitWheel(x: number, y: number, deltaY: number): void {
+    holdRenderActive();
     if (this.modals > 0 || this.suppressed) return;
     for (const f of this.wheels.slice()) {
       try {

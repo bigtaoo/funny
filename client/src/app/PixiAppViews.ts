@@ -10,6 +10,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { IPlatform } from '../platform/IPlatform';
 import { recordConstructSample } from '../net/anomaly';
 import { SceneManager, type Scene } from '../scenes/SceneManager';
+import { invalidateRender } from '../render/renderPolicy';
 import { IntroScene } from '../scenes/IntroScene';
 import { IllustratedInterludeScene } from '../scenes/IllustratedInterludeScene';
 import { LobbyScene, type LobbySceneCallbacks } from '../scenes/LobbyScene';
@@ -113,6 +114,9 @@ export class PixiAppViews implements AppViews {
 
     const insets = this.platform.getSafeAreaInsets?.();
     this.app.renderer.resize(width, height);
+    // The backbuffer just changed size; nothing in the scene graph did, so the paint gate needs
+    // telling (render/renderPolicy.ts).
+    invalidateRender();
     this.layout = createLayout(width, height, Side.Bottom, insets);
     this.scaling.resize(width, height, this.layout, insets);
 

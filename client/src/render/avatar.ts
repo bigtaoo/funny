@@ -27,6 +27,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from './pixiText';
 import { SketchPen } from './sketch';
+import { bake } from './bake';
 import { palette } from './theme';
 import { buildIcon } from './icons';
 import { titleIconUrl } from './titleArt';
@@ -256,11 +257,33 @@ export function buildAvatar(size: number, name: string, seed = 7, avatarId?: str
   // Pencil rim drawn LAST: a portrait now reaches within a few px of the disc's edge, and at small
   // tile sizes (list rows, map tokens) it would otherwise cover the inner half of the stroke and
   // leave the hand-drawn line looking thin and broken.
-  const rim = new PIXI.Graphics();
-  new SketchPen(rim, seed).circle(cx, cy, r, {
-    color: palette.pencil, width: 2.2, jitter: 1.2,
-  });
-  c.addChild(rim);
+  c.addChild(buildRim(size, cx, cy, r, seed));
 
   return c;
+}
+
+/**
+ * The pencil rim, baked.
+ *
+ * A `SketchPen` circle is not cheap geometry: `trace()` needs a fresh `lineStyle` per segment for
+ * the taper, and with round caps and joins a 46px rim measured 6,048 indices — one un-batchable
+ * draw call each. That is affordable in the lobby header (one avatar) and not at all in a member
+ * list, a chat log or a map full of tokens, which put dozens on screen at once. Baked to a texture
+ * it is one sprite, batched with every other sprite on the screen.
+ *
+ * **The seed is quantised to 8 variants** so the cache stays bounded: callers seed per row / per
+ * `publicId` (`seedFor`, `publicSeed`), which would otherwise mint a RenderTexture per player ever
+ * displayed and never free it. Eight different wobbly circles are as unrecognisable from one
+ * another as infinitely many, and the size is already part of the key.
+ */
+function buildRim(size: number, cx: number, cy: number, r: number, seed: number): PIXI.DisplayObject {
+  const variant = seed & 7;
+  const rim = new PIXI.Graphics();
+  new SketchPen(rim, variant + 1).circle(cx, cy, r, {
+    color: palette.pencil, width: 2.2, jitter: 1.2,
+  });
+  const tex = bake(`avatarrim:${Math.round(size)}:${variant}`, rim, size, size);
+  if (!tex) return rim;                       // headless / no renderer: keep the live strokes
+  rim.destroy();
+  return new PIXI.Sprite(tex);
 }

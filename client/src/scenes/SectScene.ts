@@ -33,6 +33,8 @@ export type { SectSceneCallbacks, SectSceneView } from './SectScene/core';
  */
 export class SectScene implements Scene {
   readonly container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   private readonly core: SectSceneCore;
   private readonly data: DataPanel;

@@ -51,7 +51,8 @@ import { BoilingSprite } from '../../render/boil';
 import { StickmanRuntime } from '../../render/stickman/StickmanRuntime';
 import { preloadIconArt } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
-import { tearDownChildren } from '../../render/sketchUi';
+import { tearDownChildren, sketchPanel as sharedSketchPanel } from '../../render/sketchUi';
+import { addPanelFrame } from '../../render/panelFrame';
 
 export { fmtCoins } from './format';
 
@@ -108,33 +109,46 @@ export function txt(label: string, size: number, color: number, bold = false): P
 }
 
 /**
- * Shared hand-drawn panel: flat fill + a scribbled SketchPen border. A fixed
- * seed keeps each panel's scrawl stable across redraws. Used for the feature
- * blocks, campaign buttons, start button, and VS player cards so the whole
- * lobby reads as one notebook doodle.
+ * Shared hand-drawn panel — a thin forward to `render/sketchUi.ts`'s {@link sharedSketchPanel},
+ * kept as a local name so the ~10 lobby call sites (and their `C.*` palette) read unchanged.
+ *
+ * It used to be its own implementation, stroking the border live with `SketchPen.rect`. That is
+ * what made the idle lobby the most expensive still screen in the game: `SketchPen.trace` sets a
+ * fresh `lineStyle` per segment (the taper needs it) with round caps and joins, so ONE 976×105
+ * panel came out as 735 un-batchable `graphicsData` entries and 68,496 indices — and the lobby has
+ * four of that size. Measured 2026-09-08 in real Chrome: 253,737 indices per frame for a screen
+ * standing still, 82% of it these panels. `render/panelFrame.ts`'s baked atlas draws the same
+ * wobble from sprites off one baseTexture; the world-map HUD moved to it in 2026-08 and went from
+ * 132,300 vertices to 704. There was never a reason for the lobby to keep its own copy.
  */
 export function sketchPanel(
   w: number, h: number,
   opts: { fill: number; border: number; width?: number; seed?: number },
-): PIXI.Graphics {
-  const g = new PIXI.Graphics();
-  g.beginFill(opts.fill);
-  g.drawRect(0, 0, w, h);
-  g.endFill();
-  new SketchPen(g, opts.seed ?? 7).rect(2, 2, w - 4, h - 4, {
-    color: opts.border, width: opts.width ?? 2, jitter: 1.0,
-  });
-  return g;
+): PIXI.Container {
+  return sharedSketchPanel(w, h, opts);
 }
 
-export function drawBtn(gfx: PIXI.Graphics, w: number, h: number, enabled: boolean): void {
-  gfx.clear();
-  gfx.beginFill(enabled ? C.dark : C.btnOff);
-  gfx.drawRect(0, 0, w, h);
-  gfx.endFill();
-  new SketchPen(gfx, 5).rect(2, 2, w - 4, h - 4, {
-    color: enabled ? C.accent : C.light, width: 2.4, jitter: 1.0,
-  });
+/**
+ * (Re)paint the hero START MATCH button into `target`: flat fill + baked frame, enabled or not.
+ *
+ * Takes a `Container` rather than a `Graphics` (and clears it itself) because the frame is now
+ * sprites, not strokes — see {@link sketchPanel}. Called again on every state change
+ * (`matchState.ts` greys it out while matching), hence the teardown-and-rebuild shape rather than
+ * returning a new node the callers would have to re-parent.
+ */
+export function drawBtn(target: PIXI.Container, w: number, h: number, enabled: boolean): void {
+  tearDownChildren(target);
+  const fill = new PIXI.Graphics();
+  fill.beginFill(enabled ? C.dark : C.btnOff);
+  fill.drawRect(0, 0, w, h);
+  fill.endFill();
+  target.addChild(fill);
+  const border = enabled ? C.accent : C.light;
+  // Same fallback contract as sketchUi's own: no bake renderer (headless UI smoke tests) or a panel
+  // too small to seat two corner pieces → stroke it live into the fill.
+  if (!addPanelFrame(target, w, h, border, 2.4, 5)) {
+    new SketchPen(fill, 5).rect(2, 2, w - 4, h - 4, { color: border, width: 2.4, jitter: 1.0 });
+  }
 }
 
 /**
@@ -272,7 +286,8 @@ export class LobbySceneCore {
   dotCount      = 0;
   opponentName  = '';
 
-  btnBg!:    PIXI.Graphics;
+  /** Container, not Graphics: the hero button's frame is baked sprites now (see {@link drawBtn}). */
+  btnBg!:    PIXI.Container;
   btnLabel!: PIXI.Text;
   vsLayer!:  PIXI.Container;
   oppLabel!: PIXI.Text;

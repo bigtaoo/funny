@@ -37,6 +37,8 @@ export type { CitySceneCallbacks } from './CityScene/core';
  */
 export class CityScene implements Scene {
   readonly container: PIXI.Container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   private readonly core: CitySceneCore;
   private readonly renderPanel: RenderPanel;

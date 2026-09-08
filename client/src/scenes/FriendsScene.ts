@@ -35,6 +35,8 @@ export type { SLGSocialStatus, FriendsSceneCallbacks } from './FriendsScene/core
  */
 export class FriendsScene implements Scene {
   readonly container;
+  /** Menu/shell screen: painted only when the stage changes (render/renderPolicy.ts). */
+  readonly paint = 'reactive' as const;
 
   private readonly core: FriendsSceneCore;
   private readonly network: NetworkPanel;

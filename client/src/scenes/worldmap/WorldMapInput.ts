@@ -421,7 +421,6 @@ export class WorldMapInput {
       // L3: just flag dirty; actual redraw happens in update() at most 60fps.
       if (this.ctx.zoom < 3) {
         this.ctx.view.refreshPool();
-        this.ctx.view.renderOverlay();
       } else {
         this.ctx.l3Dirty = true;
         // refreshPool() short-circuits the tile pool at L3 but still repositions city
@@ -429,8 +428,12 @@ export class WorldMapInput {
         // position they were last drawn at and appear to drift with the camera instead
         // of tracking the map while panning at L3.
         this.ctx.view.refreshCityLayer();
-        this.ctx.view.renderOverlay();
       }
+      // The overlay ink is NOT rebuilt here, only marked: a pointer-move can fire more often than
+      // the display refreshes (120 Hz panels, coalesced touch batches), and rebuilding the veil +
+      // frontier + zones + arrows per EVENT is how a drag ends up doing that work two or three times
+      // for one visible frame. lifecycle.update() consumes the flag once per frame instead.
+      this.ctx.overlayInkDirty = true;
     }
   }
 
