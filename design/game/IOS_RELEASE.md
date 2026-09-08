@@ -398,7 +398,15 @@ Windows 上可做的验证仅限 `tsc --noEmit` + `webpack --env TARGET=mobile`�
 
 - **4.2 最低功能**：本 App 是完整可玩游戏（非套壳网站），有本地战役/联机/养成，满足。
 - **3.1.1 数字商品必须走 IAP**：已实现（原生检测 `window.NWBilling` 走 Apple）。**这条以前只做到「路由正确」，不等于「原生包里没有 Paddle」——2026-09-03 的审计发现四处泄漏，已修，见 §10。** 切勿在原生内出现引导站外支付的文案/链接。
-- **登录**：匿名设备登录（`getAuthCredential` device），无强制第三方登录 → 无需 Sign in with Apple。
+- **登录**：无强制第三方登录 → **无需 Sign in with Apple**（这一半一直是对的）。
+  ⚠️ **但「匿名设备登录」这半句在 2026-09-08 被纠正**：`getAuthCredential()` 返回的 device 凭据是
+  **gateway / NetSession 用的**，账号入口不是它。`app/nav/auth.ts` 的 `resolveEntry()` 里只有
+  `cred.kind === 'wx'` 会走 `bootstrap()`（`/auth/device`）自动进大厅；**iOS 首启没有 token 就 `goLogin()`**，
+  落在 `LoginScene` 的 Log in / Sign up / **Play offline** 三个按钮上，账号靠 loginId + password
+  （`metaserver/src/accounts/password.ts`）。后果：ASC 的 `Sign-in required` 必须勾**是**，并提供生产
+  demo 账号——否则审核员只能玩离线战役（`auth.offlineHint`：`campaign & vs-AI only`），**测不了内购**，
+  正对 2.1。要灌什么见
+  [`store-assets-checklist §1.2b`](../product/release/store-assets-checklist.md)。
 - **iPad 必测**：通用 App 审核会在 iPad 上跑，务必补 iPad 截图且 iPad 上无布局破裂。
 - **3.3.1 热更新边界**：若启用 OTA（§11），热更只能改 JS/资源、不得改变主要用途或新增站外支付，否则违规可下架。原生改动一律走二进制发布。
 
@@ -653,6 +661,13 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] **`Podfile.lock` 已随 iOS 15 的平台改动刷新** —— 2026-09-07：改 `platform :ios` 会让 committed
       lock 的 `PODFILE CHECKSUM` 失效（本机 Windows 解不了 pod，算不出新值）。从那次编译检查构建的
       artifact 取回（`gh run download <id> -n Podfile.lock`）后**只有 checksum 一行变**，pod 版本一个没动
+- [ ] **在生产建审核用 demo 账号并灌进度**（2026-09-08 新增）——`appstore.review@gamestao.com` 一类，
+      通关第一章（否则大世界入口是置灰软门，长描述里承诺的一整块功能审核员看不到）+ 一套能打的卡组；
+      **不灌金币**（沙盒真买即可，手改余额会被 commercial 账本对账清零）。参照
+      `art/scripts/seed-screenshot-account.cjs`，但要在 VPS 侧对生产跑。理由与 Notes 全文见
+      [`store-assets-checklist §1.2b`](../product/release/store-assets-checklist.md)
+- [x] **支持 URL / 营销 URL 各建一页**（2026-09-08）——`/support` + `/about`（`client/public/web/`），
+      零购买面，门禁 `client/test/nativePaymentIsolation.test.ts`。此前支持 URL 只能拿隐私政策页顶着
 - [ ] 提交审核（**2026-07-21 确认：尚未提审**）
 
 > **2026-09-07 第二轮（B 批）新增的验证缺口**，别当成已保障：

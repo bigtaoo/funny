@@ -1,6 +1,6 @@
 # Notebook Wars
 
-A **hand-drawn turn-based strategy game**, playable in the browser and as a WeChat Mini Game, with a companion toolchain of standalone editors.
+A **hand-drawn real-time strategy game** (lane-pushing card battles on a 30 Hz deterministic lockstep engine), playable in the browser and as a WeChat Mini Game, with a companion toolchain of standalone editors.
 
 Beyond the core 1v1 battle described below, the game ships a full meta layer: an SLG open world (`worldsvc`), social systems including families and sects (`socialsvc`), a player-driven auction house (`auctionsvc`), gacha, equipment, and account progression — see [`design/README.md`](design/README.md) for the authoritative design index.
 
