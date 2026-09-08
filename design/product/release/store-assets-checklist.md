@@ -213,11 +213,37 @@ override 到更高档会让商店页面与三处已定口径（§3.4 自我定�
 > 代价是 eCPM 会低一些，换到的是「标签写的和二进制干的是同一件事」。
 > 详见 [`IOS_RELEASE.md §12`](../../game/IOS_RELEASE.md) 与三语隐私政策 §6.3。
 
+> **✅ 2026-09-08 已在 ASC 填写并发布**，但**只填了 6 个数据类型，还差两个真实收集项**（下面「已发布状态」一节）。
+
 按 §0.3 填写：
 - **Data Used to Track You**：无（声明不做跨 App 跟踪 → 免 ATT 弹窗）。
 - **Data Linked to You**：标识符（设备 ID）、联系信息（邮箱，可选）、用户内容（昵称/私聊）、购买、使用数据（埋点）。
 - **Data Not Linked to You**：诊断（如崩溃日志，假名化）。
 - 是否加密传输：是；是否可请求删除：是（应用内删除账号）。
+
+#### 1.4b 已发布状态与欠账（2026-09-08）
+
+**已填并发布的 6 项**（设置全部正确）：Email Address（App 功能/关联）、User ID（App 功能/关联）、
+Device ID（App 功能 **+ 第三方广告** /关联）、Product Interaction（分析/不关联）、
+Crash Data、Performance Data（分析/不关联）。跟踪那一问答「否」。
+**Privacy Policy URL 当天补填** `https://nivara.gamestao.com/privacy`——它是**必填项**，
+发布时是空的（`–`）；User Privacy Choices URL 可选，留空。
+
+**⚠️ 还差两项真实收集项**（用户 2026-09-08 主动延后，提审前必须补，否则是 5.1.2 方向的漏报）：
+
+| 缺的类型 | 该填 | 代码依据 |
+|---|---|---|
+| **Purchases → Purchase History** | App 功能 / 关联 / 不跟踪 | `commercial/src/db.ts` 的 `orders` `recharges` `ledger` `appleTransactionLinks` 四个集合都以 accountId 为键 |
+| **User Content → Other User Content** | App 功能 / 关联 / 不跟踪 | 聊天存在服务端：`socialsvc/src/family/chat.ts:68` 往 `familyMessages` `insertOne`，好友会话走 `friendSvc.getMessages(accountId, convId, before, limit)`（客户端「加载更早的消息」就是它） |
+
+补上后「Data Linked to You」摘要会变成 Identifiers / Contact Info / **Purchases** / **User Content**。
+
+**两处可选加强（AdMob 口径，同日延后）**：`Usage Data → Advertising Data`（第三方广告/不关联/不跟踪）；
+给 `Product Interaction` 再加一个 `Third-Party Advertising` 用途——Google 的披露指引写明
+「user product interactions … may be used to improve advertising performance」，即使 `npa=1`
+曝光与频次控制仍会记录。不加也说得过去（都不涉及跟踪判定），加了更贴近官方口径。
+
+---
 
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
 - [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 2 桥 + App Store Server API
