@@ -661,10 +661,13 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] **`Podfile.lock` 已随 iOS 15 的平台改动刷新** —— 2026-09-07：改 `platform :ios` 会让 committed
       lock 的 `PODFILE CHECKSUM` 失效（本机 Windows 解不了 pod，算不出新值）。从那次编译检查构建的
       artifact 取回（`gh run download <id> -n Podfile.lock`）后**只有 checksum 一行变**，pod 版本一个没动
-- [ ] **在生产建审核用 demo 账号并灌进度**（2026-09-08 新增）——`appstore.review@gamestao.com` 一类，
-      通关第一章（否则大世界入口是置灰软门，长描述里承诺的一整块功能审核员看不到）+ 一套能打的卡组；
-      **不灌金币**（沙盒真买即可，手改余额会被 commercial 账本对账清零）。参照
-      `art/scripts/seed-screenshot-account.cjs`，但要在 VPS 侧对生产跑。理由与 Notes 全文见
+- [x] **在生产建审核用 demo 账号并灌进度**（2026-09-08 完成）——`appstore.review@gamestao.com`
+      （`accountId f100cdee-…a920`、`publicId 104496720`）：走公开 `/api/auth/register` 注册，
+      `save.progress.cleared` 灌成 `ch1_lv1..lv10` + 各 3 星（大世界的软门），**金币故意留 0**
+      （沙盒真买才是 3.1.1 要的那次实测；手改余额会被 commercial 账本对账清零）。
+      **PvP 卡组不用灌**——`PVP_BASE_CARDS` 那 10 张对所有 elo 开放且正好等于 `PVP_DECK_SIZE`，
+      解锁档从 elo 1500 才开始；战斗卡和 `cardInv` 的英雄卡是两套东西。
+      口令不进仓库。账号信息、灌了什么、怎么复核见
       [`store-assets-checklist §1.2b`](../product/release/store-assets-checklist.md)
 - [x] **支持 URL / 营销 URL 各建一页**（2026-09-08）——`/support` + `/about`（`client/public/web/`），
       零购买面，门禁 `client/test/nativePaymentIsolation.test.ts`。此前支持 URL 只能拿隐私政策页顶着

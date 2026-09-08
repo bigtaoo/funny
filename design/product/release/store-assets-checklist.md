@@ -214,6 +214,13 @@ tactics,pvp,multiplayer,card battle,lane,army,castle,sketch,doodle,paper,rts
 > `support.html` 唯一保留的商业相邻链接是 `/refunds`——「怎么退款」是真实支持问题，而那一页开头第一句
 > 就是「App Store 买的找 Apple 退」，它是政策不是收银台。
 >
+> ⚠️ **核对这两个 URL 上线，必须看 `<title>`，不能看状态码。** `wrangler/client.jsonc` 里
+> `not_found_handling: "single-page-application"`——任何不存在的路径都回 **200 + `index.html`**（游戏本体），
+> 不会 404。也就是说 URL 拼错、或部署压根没跑，`curl -o /dev/null -w %{http_code}` 照样给 200，
+> 而审核员点进去看到的是一块游戏画布而不是支持页面。判据：
+> `curl -sS https://nivara.gamestao.com/support | grep -o "<title>[^<]*"` 要是 `Support — Nivara`
+> （`/about` 是 `About Nivara — Notebook Wars`）；读到 `Nivara — Notebook Wars` 就是 SPA 兜底，没上线。
+
 > 门禁：`client/test/nativePaymentIsolation.test.ts` 新增一例，**读这两个 HTML 的文本**逐个 `href` 断言
 > 不含 `/pricing` `/pay` `/home` `paddle.com`——真正的风险是几个月后有人顺手加一个 `<a>`，
 > 而那个人不会读到这段话。两页同时也不进 mobile/crazygames 产物（同一 CopyPlugin 分组，理由不同：
@@ -252,17 +259,44 @@ iOS/web 拿不到 token 就 `goLogin()`，落在 `LoginScene` 的三个按钮上
 > 但那是 gateway/NetSession 用的设备凭据，不是账号入口；账号入口是 loginId + password
 > （`server/metaserver/src/accounts/password.ts`）。**「有匿名凭据」和「首启能匿名进游戏」是两件事。**
 
-要交付的东西（**尚未做，见 §1.5 与 `IOS_RELEASE.md` 收尾清单**）：
+**✅ 2026-09-08 已在生产建好并灌完。**
 
-| 项 | 内容 |
+| 项 | 值 |
 |---|---|
-| 账号 | 在**生产**（`api.gamestao.com`，iOS 包烘的就是它）注册一个专用账号，loginId 建议 `appstore.review@gamestao.com` |
-| 灌进度 | 至少**通关第一章**——大世界是软门（`LobbyScene/core.ts:215`、`mainContent.ts:169`：未过第一章则 WORLD 入口置灰、提示 `lobby.world.locked`），不灌的话审核员看不到长描述里承诺的「大世界」这一整块 |
-| 灌卡 | 给够一套能打的卡组（`getPvpUnlockedCards(elo)` 在低分段只放开 `PVP_DECK_SIZE` 张，新账号的 Develop/Gacha 页会很空） |
-| **不要灌金币** | 沙盒 Apple ID 走 StoreKit 沙盒真买即可，服务端照常验单发币；手改余额下次登录会被 metaserver 按 commercial 账本对账清零（同 §0.4 截图账号那条） |
+| loginId | `appstore.review@gamestao.com` |
+| 密码 | **不写进仓库**——见本节末尾 |
+| displayName | `AppReview` |
+| accountId | `f100cdee-6663-4d41-8f58-94737ae7a920` |
+| publicId | `104496720` |
+| 环境 | 生产 `api.gamestao.com`（iOS 包烘的就是它）；走公开 `POST /api/auth/register` 注册，所以口令散列、`publicId`、starter 发卡全是正常路径产出的，没有手捏文档 |
 
-脚本可参照 `art/scripts/seed-screenshot-account.cjs`（截图账号就是这么灌的），但那份是打本机后端的，
-生产上跑需要 VPS 侧执行。
+灌了什么，以及**故意没灌**什么：
+
+| 项 | 结果 |
+|---|---|
+| **通关第一章** | ✅ `save.progress.cleared` = `ch1_lv1..ch1_lv10`，`stars` 各 3 星。这是大世界的软门（`isFirstChapterCleared`，`client/src/game/campaign/progress.ts`；`LobbyScene/core.ts:215`、`mainContent.ts:169` 未过则 WORLD 入口置灰、提示 `lobby.world.locked`）——不灌的话审核员看不到长描述里承诺的「大世界」这一整块。写法是 `saves` 集合上一次 rev 守护的 `findOneAndUpdate`（`PUT /save` 那个通用回写端点早就删了，客户端只 GET，不会把旧存档推回来覆盖） |
+| 英雄卡 | ✅ 3 张（`lichuang` / `chenshou` / `suyuan`），**注册时 `maybeGrantStarterCards` 自动给的，没有额外灌**——这就是新玩家的正常状态，审核员看到的和真实用户一样 |
+| **PvP 卡组不用灌**（原先这张表写了「灌卡」，是误判） | `PVP_BASE_CARDS` 那 10 张（`client/src/game/meta/pvpLoadout.ts`）对所有人无条件开放，而 `PVP_DECK_SIZE` 正好 = 10，`PVP_UNLOCK_TIERS` 的门槛从 elo **1500** 才开始——新号 elo 1000 的卡组自动填满且合法。**战斗卡和 `cardInv` 里的英雄卡是两套东西**，前者不受收集进度影响 |
+| **金币：故意 0** | 沙盒 Apple ID 走 StoreKit 沙盒真买即可，服务端照常验单发币；手改余额下次登录会被 metaserver 按 commercial 账本对账清零（同 §0.4 截图账号那条）。审核员买一笔正好也是 3.1.1 要的那次实测 |
+| 体力 | 120（注册默认），够跑战役 |
+
+**复核方式**（不碰数据库，走玩家路径）：`POST /api/auth/login` 拿 token → `GET /api/save`，
+确认 `rev=3`、`progress.cleared` 十个齐、`wallet.coins=0`。
+
+**密码要故意选得好打，不要选强。** 第一版我生成的是 `Review-` + 12 位混合随机串，被用户当场否掉——
+**审核员是在 iPhone 软键盘上手输这个口令的**，大小写混排 + 连字符意味着一路切 shift 和数字面板，
+输错一次就是一次「登录失败」的坏印象，而这个账号里**没有任何值得保护的东西**（0 金币、3 张新手卡、
+没有真人数据）。行业惯例就是短、全小写、加两位数字。现用口令 14 字符、纯小写字母 + 末尾两位数字，
+整段只需切一次数字面板；`MIN_PASSWORD_LEN` 是 6，所以还有很大余量。
+
+抵御暴力猜测靠的不是口令强度，而是另外两件事：服务端的 `allowAuthAttempt` 认证限流（`429 RATE_LIMITED`），
+以及**过审后轮换或停用这个账号**（loginId 在 ASC 里对 Apple 可见，别让它长期挂着一个弱口令）。
+
+**存放**：只在会话里交给用户，**不进 git**。要长期存就放加密凭证库
+（`D:\secrets`，`github.com/bigtaoo/secrets`，`sops`+`age`，见记忆 `credential-store-sops-age-2026-09-05`），
+别写进本文件或任何 `.env`。要改口令：`POST /auth/password/change` 需要 bearer token（先登进去，
+知道旧口令时可用，2026-09-08 就是这么换的），彻底忘了则走 admin 的账号管理重设
+（`server/admin/src/service/accounts.ts`）。
 
 #### App Review Information → Notes（直接贴）
 
@@ -386,9 +420,9 @@ Crash Data、Performance Data（分析/不关联）。跟踪那一问答「否�
 ---
 
 ### 1.5 合规硬门（上架前必过，见 COMPLIANCE_GLOBAL §8 iOS 专属）
-- [ ] **生产环境的审核用 demo 账号**（2026-09-08 新增此条）—— `Sign-in required` 必须勾「是」，
-      原因与要灌什么见 §1.2b「审核账号」。不给账号 = 审核员只能玩离线战役、测不了内购 → 2.1 方向的拒审。
-      这是纯 ops 活（生产注册 + 灌进度），本机做不了
+- [x] **生产环境的审核用 demo 账号**（2026-09-08 建好并灌完）—— `appstore.review@gamestao.com`，
+      通关第一章已灌、金币故意留 0、PvP 卡组无需灌（那 10 张对所有 elo 开放）。
+      `Sign-in required` 必须勾「是」。账号信息与复核方式见 §1.2b「审核账号」
 - [x] **支持 URL / 营销 URL 有了专门的页面**（2026-09-08）—— `client/public/web/support.html` → `/support`、
       `about.html` → `/about`，两页零购买面，门禁在 `nativePaymentIsolation.test.ts`。理由见 §1.2
 - [ ] 平台 IAP 接入（替换 dev 桩）+ 服务端票据校验 —— **代码侧已完成**（StoreKit 2 桥 + App Store Server API
