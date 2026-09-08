@@ -198,6 +198,19 @@ describe('PixiAppViews — lobby resize listener lifetime', () => {
     expect(h.win.count('resize')).toBe(0);
   });
 
+  it('re-entering the lobby does not stack a second listener (the handler must stay one reference)', () => {
+    const h = setup();
+    h.views.showLobby(NO_CB);
+    h.views.showLobby(NO_CB);      // a resize-driven rebuild, or lobby → overlay → lobby
+    h.views.showLobby(NO_CB);
+    // `ViewportResizer.listen()` leans on addEventListener de-duplicating the SAME function
+    // reference (`onResize` is a bound field, not a method). Hand it a fresh closure per call —
+    // `window.addEventListener('resize', () => this.onResize())`, the shape someone reaches for when
+    // the handler moves across a class boundary — and each lobby entry leaves another live listener
+    // behind, each one running a full re-fit for every viewport event.
+    expect(h.win.count('resize')).toBe(1);
+  });
+
   it('keeps the listener alive across an overlay mount (ADR-044: the lobby is not what is being left)', () => {
     const h = setup();
     h.views.showLobby(NO_CB);

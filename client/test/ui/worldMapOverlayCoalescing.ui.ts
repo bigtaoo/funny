@@ -21,7 +21,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import {
-  RenderPolicy, resetRenderHold, setRenderPolicyClock,
+  RenderPolicy, resetRenderHold, setRenderPolicyClock, type PaintMode,
 } from '../../src/render/renderPolicy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -274,13 +274,38 @@ describe("world map under a 'reactive' paint policy", () => {
     ctx.marchTokenRuntimes.set(marchId, { mode: 'dot', sprite, kind: 'infantry' });
   }
 
+  /** A protection-shield bubble on one tile: the cached local-space geometry plus the two `Graphics`
+   * children `lifecycle.update` re-draws into. Same shape of fake as `seedToken` — `city.ts` builds
+   * these off a decoded city sprite, which headless has no atlas for, but the animation loop that
+   * re-draws them every 100 ms is the real one. */
+  function seedShield(scene: Spied, key: string): void {
+    const ctx = scene.ctx as unknown as {
+      citySprites: Map<string, PIXI.Container>;
+      shieldGeom: Map<string, { cx: number; cy: number; rx: number; ry: number; tp: number }>;
+      container: PIXI.Container;
+    };
+    const cityC = new PIXI.Container();
+    for (const name of ['shieldFx', 'shieldGlowFx']) {
+      const g = new PIXI.Graphics();
+      g.name = name;
+      cityC.addChild(g);
+    }
+    (scene as unknown as { container: PIXI.Container }).container.addChild(cityC);
+    ctx.citySprites.set(key, cityC);
+    ctx.shieldGeom.set(key, { cx: 0, cy: -20, rx: 30, ry: 22, tp: 64 });
+  }
+
   /** The scene mounted under a policy-driven stage, `tick()` called by hand exactly as
-   * SceneManager's ticker listener does. Returns paints over `n` frames after one settling frame. */
+   * SceneManager's ticker listener does. Returns paints over `n` frames after one settling frame.
+   *
+   * The policy reads the scene's **own** `paint` declaration rather than a hard-coded `'reactive'`:
+   * that is the one line the whole flip consists of, and hard-coding the mode here would leave it
+   * unpinned — reverting `WorldMapScene.paint` would keep every case below green. */
   function paintsOver(scene: Spied, n: number): number {
     const stage = new PIXI.Container();
     stage.addChild((scene as unknown as { container: PIXI.Container }).container);
     const host = { ticker: new PIXI.Ticker(), stage, paints: 0, render(): void { host.paints += 1; } };
-    const policy = new RenderPolicy(host, () => 'reactive');
+    const policy = new RenderPolicy(host, () => (scene as unknown as { paint?: PaintMode }).paint);
     frame(scene);
     policy.tick();          // settling frame: with lastPaintMs still 0 the floor paints regardless
     host.paints = 0;
@@ -315,6 +340,77 @@ describe("world map under a 'reactive' paint policy", () => {
     const scene = buildScene();
     revealMap(scene);
     expect(paintsOver(scene, 60)).toBeLessThanOrEqual(2);
+    scene.destroy();
+  });
+
+  it("declares 'reactive' itself — the flip is one line and nothing else pins it", () => {
+    const scene = buildScene();
+    // Every case above runs the policy off THIS field (see paintsOver). Asserted separately anyway,
+    // because "the map is demand-painted" is a decision (ADR-085) and not an implementation detail:
+    // a revert should have to delete a test, not just a line. How SceneManager derives a paint mode
+    // for scene+overlay+fade combinations is pinned generically in test/ui/renderLoopWiring.ui.ts.
+    expect((scene as unknown as { paint?: PaintMode }).paint).toBe('reactive');
+    scene.destroy();
+  });
+
+  // ── the things that DO move on an "idle" map ─────────────────────────────────────────────────
+  //
+  // The three cases above cover the two extremes (a march in flight; nothing at all). In between sit
+  // the animations nobody would think to check, and each one's failure mode is a frozen picture that
+  // no other test in the suite would notice: a loading spinner that never spins, a protection dome
+  // that stops breathing, a march countdown stuck at the same number. They are exactly the reason
+  // ADR-083 derives "changed" from the display list instead of trusting call sites to announce it —
+  // so each is asserted through the real policy, not by inspecting the animation's own bookkeeping.
+
+  it('paints every frame while the first-paint loading cover is still up', () => {
+    const scene = buildScene();
+    // Deliberately NOT revealMap()'d: this is what entering the map looks like until the atlases
+    // settle. The cover is a spinning ink ring plus a caption over the whole scene, and a player
+    // watching a frozen spinner would reasonably conclude the game had hung.
+    expect(paintsOver(scene, 60)).toBe(60);
+    scene.destroy();
+  });
+
+  it('keeps painting for a protection shield on an otherwise idle map (~10 fps, not 0)', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    seedShield(scene, '12:14');
+    // SHIELD_ANIM_FPS is 10 (lifecycle.ts), so one second of frames is ~10 dome+glow redraws — an
+    // order of magnitude below frame rate, and an order of magnitude above frozen.
+    const paints = paintsOver(scene, 60);
+    expect(paints).toBeGreaterThanOrEqual(8);
+    expect(paints).toBeLessThanOrEqual(15);
+    scene.destroy();
+  });
+
+  it('the opening guide ring costs ~10 paints/s, not 60 — the regression this flip waited on', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    // What a brand-new player sees on their first world-map entry: step1 rings their own base
+    // (WorldMapRendererLifecycle.updateGuide derives this from flags + `me` every frame, and calls
+    // both `guide.update(dt)` and `guide.showAt(...)` — the two call sites that made quantizing the
+    // ring's PHASE rather than throttling the caller the only fix that works).
+    const ctx = scene.ctx as unknown as { guideStep: string | null; me: unknown };
+    ctx.me = { mainBaseTile: 'world:1:0:15:20' };
+    ctx.guideStep = 'step1';
+
+    const paints = paintsOver(scene, 60);
+    // Pre-fix this was 60/60: `drawRing()` ran on every frame, so `geometry.dirty` moved on every
+    // frame, so the map's whole signature changed on every frame — with the ring up, the flip this
+    // file gates would have saved exactly nothing during onboarding.
+    expect(paints).toBeLessThanOrEqual(25);
+    expect(paints).toBeGreaterThanOrEqual(8);   // ...and it is still visibly breathing
+    scene.destroy();
+  });
+
+  it('lets the once-a-second HUD countdown through (the correctness half of "all but still")', () => {
+    const scene = buildScene();
+    revealMap(scene);
+    // `an idle map is all but still` above bounds this from ABOVE (<=2 per 60 frames) — which a
+    // policy that never painted at all would also satisfy. This is the other direction: over two
+    // seconds of scene time the HUD tick (lifecycle.ts hudTickTimer) must reach the screen, or every
+    // march/siege countdown on the map sits frozen between the ~5 s polls.
+    expect(paintsOver(scene, 120)).toBeGreaterThanOrEqual(1);
     scene.destroy();
   });
 });

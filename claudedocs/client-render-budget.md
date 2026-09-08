@@ -77,12 +77,14 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 
 ## 5. 五份门禁（都在既有 `npm run test:ui` / `npm test` 里）
 
+每一条都做过变异验证——写完先把源码改坏，确认对应用例转红，再留下来。
+
 | 文件 | 钉住什么 |
 |---|---|
 | `test/ui/renderPolicy.ui.ts`（33 例） | dpr 上限、`maxFPS`、**接管 PIXI 自己的渲染监听**（行为断言，否则每条 skip 都是假的）、**每一类变更都必须重绘**（移动/缩放/旋转/alpha/隐藏/显示/renderable/tint/重画/改字/图集换帧/贴图解码/子节点增删/zIndex 重排/嵌套深处）、hold/floor/invalidate 三个阀 |
-| `test/ui/worldMapOverlayCoalescing.ui.ts`（16 例） | 「一条行军在途 60 帧 → 墨线 0 次、token 60 次」；墨线依赖的每个输入都触发**正好一次**重建；拖动 6 次 pointermove 只重建一次。最后 3 例是 §7 那个开关的前置门禁：真 `RenderPolicy` 的 `'reactive'` 模式压在真 `WorldMapScene` 上，**行军在途 60/60 帧全画**、落地后 ≤2/60 |
+| `test/ui/worldMapOverlayCoalescing.ui.ts`（21 例） | 前 13 例：「一条行军在途 60 帧 → 墨线 0 次、token 60 次」；墨线依赖的每个输入都触发**正好一次**重建；拖动 6 次 pointermove 只重建一次。后 8 例是 ADR-085 的 `paint` 门禁，跑**真 `RenderPolicy` + 真 `WorldMapScene`**、且策略读的是**场景自己声明的** `paint`（写死 `'reactive'` 会让那一行退回去也全绿）：行军在途 **60/60**、落地 ≤2/60、空闲 ≤2/60、**`paint` 就是 `'reactive'`**，外加四条「空闲地图上其实在动的东西」——首屏加载罩 **60/60**（不许有人看着不转的转圈）、护盾气泡 ~10/60（不许冻住）、HUD 倒计时每秒至少一次（`≤2` 的**另一个方向**）、新手引导圆环亮着时 ≤25/60（**修复前就是 60/60**，这条是那个 bug 在真宿主里的回归门禁） |
 | `test/ui/sceneGeometryBudget.ui.ts`（3 例） | 大厅一帧**索引预算 25,000**（实测 15,582 headless）。计数直接调 `GraphicsGeometry.updateBatches()`（PIXI 三角化是纯 JS），CI 无 GPU 也能拿到精确三角数；`bake()` 喂 stub renderer，量的是**上线路径** |
-| `test/ui/guideOverlay.ui.ts`（18 例） | 引导圆环：`update()` 一秒 60 帧**一次几何重建都不许有**、alpha 仍在动、一秒最多 ~10 个不同 alpha（`update` + 每帧 `showAt` 一起调也一样）、目标移动时几何**必须**重描 |
+| `test/ui/guideOverlay.ui.ts`（19 例） | 引导圆环：`update()` 一秒 60 帧**一次几何重建都不许有**、alpha 仍在动、一秒最多 ~10 个不同 alpha（`update` + 每帧 `showAt` 一起调也一样）、目标移动时几何**必须**重描、**呼吸区间仍是 0.5–0.9**（改的是成本不是观感——把环改暗的「优化」不该靠读重绘计数才发现） |
 | `test/ui/renderLoopWiring.ui.ts`（15 例） | 中间那层接线（ADR-072 的教训）：app.ts 真的装了 policy、真的过了 dpr 上限、四条指针路径都 hold、`paintMode` 对 overlay/fade 悲观 |
 
 **每一条关键断言都做过变异验证**（删掉签名里对应那行 / 把 lifecycle 改回每帧重建 / 把大厅那份 `sketchPanel` 改回旧实现 → 报 271,110 索引，红得很响）。

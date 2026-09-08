@@ -215,6 +215,24 @@ describe('GuideOverlay', () => {
     expect(alphas.size).toBeGreaterThan(1); // and it is not frozen either
   });
 
+  it('breathes over the same alpha range as before the fix (the look is not part of the saving)', () => {
+    const guide = new GuideOverlay();
+    guide.showAt(RECT, 'still breathing', VIEWPORT, { onSkip: () => {} });
+    const ring = (guide as unknown as { ring: PIXI.Graphics }).ring;
+
+    let lo = 1, hi = 0;
+    for (let i = 0; i < 120; i++) { guide.update(1 / 60); lo = Math.min(lo, ring.alpha); hi = Math.max(hi, ring.alpha); }
+    // The pre-fix ring drove `0.5 + 0.4 * (0.5 + 0.5 * sin(t*4))` into lineStyle's alpha, i.e. it
+    // pulsed between 0.5 and 0.9. Moving that onto `ring.alpha` and quantizing the phase was meant
+    // to change the COST, not the appearance — a fix that also dimmed the ring would be a
+    // regression nobody would catch by reading a paint counter. (Phase steps of 1/10 s cannot land
+    // exactly on the sine's peak, hence the tolerance; two full cycles fit in 120 frames.)
+    expect(lo).toBeGreaterThanOrEqual(0.5);
+    expect(lo).toBeLessThan(0.52);
+    expect(hi).toBeGreaterThan(0.88);
+    expect(hi).toBeLessThanOrEqual(0.9);
+  });
+
   it('a moved target DOES re-trace the ring (it must follow pan/zoom, not freeze at the old spot)', () => {
     const guide = new GuideOverlay();
     guide.showAt(RECT, 'follow me', VIEWPORT, { onSkip: () => {} });
