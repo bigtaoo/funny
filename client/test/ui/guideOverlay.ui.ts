@@ -176,11 +176,12 @@ describe('GuideOverlay', () => {
   // ── breathing ring: alpha, not geometry (client-render-budget.md §7) ─────────────────────────
   //
   // The ring used to `clear()` + `lineStyle` + `drawRoundedRect` on EVERY `update(dt)`, purely to
-  // move a sine-driven alpha. `render/renderPolicy.ts` hashes `geometry.dirty` and `alpha`, so that
-  // pinned every host scene — including `reactive` ones like CityScene — at full frame rate for as
-  // long as the guide was up (measured: world map signature changed 60/60 frames with the ring
-  // showing, 11/60 with it hidden). These three pin the fix: geometry only on a real move, alpha
-  // quantized to RING_PULSE_FPS, and the ring still actually follows a moving target.
+  // move a sine-driven alpha. `render/renderPolicy.ts` hashes `geometry.dirty` and `alpha`, so on
+  // top of re-triangulating a rounded rect 60 times a second it also pinned its host's stage
+  // signature at 60 changes out of 60 frames (measured on the world map; 11/60 with the ring
+  // hidden) — which is what stood between ADR-083's numbers and WorldMapScene's `paint:'reactive'`
+  // (ADR-085). These three pin the fix: geometry only on a real move, alpha quantized to
+  // RING_PULSE_FPS, and the ring still actually follows a moving target.
 
   it('update(dt) never re-triangulates the ring — the breathing rides on alpha alone', () => {
     const guide = new GuideOverlay();

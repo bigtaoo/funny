@@ -419,11 +419,8 @@ owner 报「手机上很快就没电了，mac 上让电脑的风扇都加速了�
 - **诊断口子**：`localStorage.nw_render_debug` 置任意值后，`globalThis.__nwRenderStats` 暴露 `{ticks, painted, skipped}`。与 `nw_mem_warn_mb`/`nw_fps_warn` 同类，默认不发布任何全局。没有这个句柄，「重绘率」这个唯一能说明门禁有没有在工作的数字，每次都得手工重新给页面打桩（2026-09-08 这次就是这么测的）。
 - **影响**：新增 `client/src/render/renderPolicy.ts`；`app.ts`（resolution + install）、`app/PixiAppViews.ts`（resize 后 invalidate）、`inputSystem/InputManager.ts`（四个漏斗）、`scenes/SceneManager.ts`（`Scene.paint` + `paintMode` + swap/overlay 处 invalidate）、28 个场景各一行 `paint`、`scenes/LobbyScene/{core,mainContent}.ts`、`render/avatar.ts`、`render/stickman/{StickmanRuntime,constants,runtimeTypes}.ts`、`scenes/worldmap/{WorldMapContext,WorldMapInput}.ts` 与 `WorldMapRenderer/{fog,lifecycle}.ts`；`test/pageBakeCallSites.test.ts` 登记新的 bake 站点。快查文档见 [`claudedocs/client-render-budget.md`](../claudedocs/client-render-budget.md)。
 - **还没做的（2026-09-08 当天收尾，三条都有进展，详见 [`claudedocs/client-render-budget.md`](../claudedocs/client-render-budget.md) §7–§10）**：
-  - ①**世界地图是否也改 `'reactive'`：量完了、拦路的 bug 修了、门禁补了，开关本身还没拨。** docker 全栈 + 真账号进图，空闲态实测：L1 1,536 对象 / 签名 0.21 ms、L2 3,859 对象 / 0.30 ms、L3 199 对象 / 0.016 ms，**空闲时画面一秒只真的变 11 次**（10 次是护盾气泡的 10 fps，1 次是 HUD），而世界地图整 tick 是本客户端最贵的一帧（8.25 ms，对照大厅 0.084 ms、战斗 2.1 ms）——花 18 ms/s 的遍历省掉 ~49 次这种帧。
-    - **拦路的 bug 已修（2026-09-08 下午）**：`render/GuideOverlay.ts` 的 `update()` 每帧调 `drawRing()`，为了一个呼吸 alpha 把圆角矩形每秒重新三角化 60 次，新号进图时签名 60/60 帧全变。改法是把两件事拆开——**几何只在目标 rect 真的移动时重描**（`syncRing` 比对缓存的 rect），**呼吸走 `ring.alpha`**，且**量化的是相位而不是调用方**（`Math.floor(pulseT * 10) / 10`），所以 `update` 与「每帧再调一次 `showAt`」这两个调用点落在同一个值上，谁都没法把宿主顶回满帧。10 fps 与护盾气泡同一个理由、同一个数（art-direction §5.4）。
-    - **同一个页面里做的 A/B/C**（抢 webpack require 拿到模块，直接 patch `GuideOverlay.prototype` 造出修复前的行为，三次量测之间只差这一处）：修复后 **39–41 次签名变化/120 帧**（≈20/s：呼吸 10 + 护盾 10 + HUD 1）、**ring 几何重建 0 次**；把引导整个中和掉是 **22/120**（≈11/s，正好复现上面那条基线）；修复前的行为是 **120/120，几何重建 478 次/120 帧**（`update` 与 `showAt` 各描一次，每次 `clear`+`lineStyle`+`drawRoundedRect`）。
-    - **顺带更正上一版这条记录里的一句话**：当时写「GuideOverlay 还挂在 CityScene 等**已经 reactive** 的场景上，所以这条正在让引导期间的菜单满帧重绘」——**不成立**。CityScene 在 SLG 里永远是 `pushOverlay` 挂在活着的世界地图上（`app/nav/world.ts` 的 `openCity`，ADR-044），而 `SceneManager.paintMode` 对组合取悲观，所以那个组合本来就是 `'live'`。这条 bug 的真实代价是**每秒 60 次白白三角化**（两个场景都付）加上**把世界地图的签名变化率顶满**（也就是拦住这个开关的那件事），不是「reactive 菜单被顶回满帧」。
-    - **还差两步**：⒜ 8.25 ms/tick 那个数是**窗口被遮挡**时取的（配方 §6 第 7 条），量级可信、精度不可信，拨开关前该在可见窗口重取一次——2026-09-08 这次没取到：Chrome 窗口开着、但游戏那个标签页不是所在窗口的当前标签页，`document.visibilityState` 一直是 `hidden`，新开标签页/新开窗口都没能把它顶到前台（这一条也写进 §6 了）。⒝ 开关本身。门禁已经就位（见上面 `worldMapOverlayCoalescing.ui.ts` 那三例），拨的时候不需要再补测试。
+  - ①**世界地图也改 `'reactive'` 了 —— 见 ADR-085**（同日下午）。当天上午量的那批数字（L1 1,536 对象 / 签名 0.21 ms、L2 3,859 / 0.30 ms、L3 199 / 0.016 ms、**空闲时画面一秒只真变 11 次**）成立并支持改；拦路的 `GuideOverlay` 每帧重描呼吸环已修（几何只在目标移动时重描、呼吸走 `ring.alpha` 且量化相位）。**但这条里「世界地图整 tick 8.25 ms、是本客户端最贵的一帧」作废**——那次量在被遮挡的窗口里，可见窗口重取是 **1.3 ms**，而且那 1.3 ms 几乎全是场景 `update()`（跳过重绘不跳过它）。改的理由因此从「主线程一比二十」换成「GPU/present 一比四」：0.708 ms/帧 × ~49 帧/秒 ≈ 35 ms/s，主线程基本打平。详见 ADR-085。
+  - ①′ **顺带更正这条记录里另一句**：当时写「GuideOverlay 还挂在 CityScene 等**已经 reactive** 的场景上，所以正在让引导期的菜单满帧重绘」——不成立。CityScene 在 SLG 里永远是 `pushOverlay` 压在世界地图上（`app/nav/world.ts` 的 `openCity`，ADR-044），而 `paintMode` 对组合取悲观，那个组合当时本来就是 `'live'`。那条 bug 的真实代价是每秒 60 次白白三角化 ＋ 把世界地图的签名变化率顶满。
   - ②**SLG 地图的画面确认做了**（owner 自己登录，服务端数据里 5 个世界 / 18,605 格 / 258 城）：L1/L2/L3 三级缩放 + 两次拖动平移全部正常——瓦片、基地 3×3 城池 sprite、护盾气泡、前线高亮、HUD、云雾遮罩的斜边界都跟着相机走，没有残留几何、没有撕裂。决策五/六（叠加层墨线按需 + 拖动一帧最多重建一次）在真画面上成立。
   - ③**iOS/微信真机数字仍然没有**，但通往它的两个窟窿补上了 —— 见 ADR-084。
 
@@ -444,3 +441,24 @@ ADR-083 的三个旋钮只在一台 Windows 桌面的 devtools 会话里量过�
 - **影响**：新增 `client/src/debugFlags.ts`、`client/src/render/renderStats.ts`、`client/test/debugFlags.test.ts`、`client/test/renderProfile.test.ts`；改 `render/renderPolicy.ts`（flag 走 seam + 计数器发布）、`cache/PerfMonitor.ts`（flag + `render_profile`）、`cache/MemoryMonitor.ts`（三个 flag）、`net/log.ts`（一个 flag）、`app.ts`（`setDebugFlagStorage` + 给 PerfMonitor 传 renderer 事实）、`server/analyticsvc/src/service/defs.ts`（采样率）。
 - **还没做的**：真机上还是没有人拿着手机跑过——这条 ADR 只是把管子接好。**功耗本身客户端测不了**（没有电池 API 可用的口径），只能靠设备侧电池统计，帧数/重绘率这两个能测的现在会自己报上来。
 
+## ADR-085 `WorldMapScene` 也改按需重绘（`paint: 'reactive'`）——以及一次把 8.25 ms 打回 1.3 ms 的更正 — Accepted — 2026-09-08
+
+ADR-083 把 28 个菜单场景改成按需重绘，世界地图留在 `'live'`。当天量完 §7 那批数字后判断「数字支持改」，但压着没改，因为 `render/GuideOverlay.ts` 每帧重描呼吸环，把地图的签名变化率顶成 60/60 帧（见 ADR-083「还没做的」①）。呼吸环已修（几何只在目标移动时重描、呼吸走 `ring.alpha` 且量化相位），这条 ADR 是接着把开关拨了。
+
+- **先更正一个数：整 tick 不是 8.25 ms，是 1.3 ms。** 8.25 那次是在**窗口被遮挡**时量的（`claudedocs/client-render-budget.md` §6 第 7 条早就写了「遮挡时不要量毫秒」，但那批数字自己踩了同一个坑）。这次拿到一个真前台的标签页重取（`document.visibilityState === 'visible'` 一起打印在每条读数里），同机同画布、L1、1,844 个舞台对象、引导中和掉：**整 tick p50 1.3 ms / mean 1.41 / max 5.1**。**教训比数字重要：自己写下的测量禁忌，下一次量的时候会照样犯，除非把前提（这里是 `visibilityState`）和读数打印在同一行。**
+- **同一次重取还翻掉了原来的立论。** 原来的账是「花 18 ms/s 的遍历省掉 ~49 次 8.25 ms 的帧」，一比二十。真实拆分（同一状态，只把 `Renderer.prototype.render` 换成空函数）：**整 tick mean 1.41 ms，而一个「被跳过」的帧仍然要付 mean 1.51 ms**——也就是说这 1.4 ms 几乎全是**场景 `update()`**（跳过重绘并不跳过它），重绘在主线程上的份额低于噪声。所以**主线程上这笔账基本是平的**：省下的 ~5 ms/s 对上多付的 ~9 ms/s（`stageSignature` mean 0.15 ms / max 0.3 × 60）。
+- **真正的收益在 GPU 和合成，也就是这条 ADR 系列一开始要解决的东西。** 同一状态实测（`EXT_disjoint_timer_query_webgl2`，20 帧）：**GPU 0.708 ms/帧**，15 个 draw call、**59,982 个索引/帧**。空闲地图一秒只真的变 ~10 次，于是 ~49 次/秒的提交与 present 是纯浪费——**跳掉它们≈省 35 ms/s 的 GPU 工作**（桌面 Arc Pro 上；手机上同一张图的 fill rate 只会更贵）。owner 报的是「耗电、发热、风扇」，不是「帧时间」；**主线程打平、GPU 省一大截**这个形状正对着那个抱怨，所以改。
+- **不需要任何「我在动」的申报，仍然是派生的**（这是 ADR-083 决策三的全部理由，这里一字不改）：行军 token 每帧改变换、护盾气泡 10 fps 改几何、平移改相机、迟到的图集解码改 `baseTexture.dirtyId`——每一样都落在 `stageSignature` 读的字段里，各自把帧画出来。安全阀照旧（500 ms 地板 + 指针后 400 ms 满帧）。
+- **拨开关前先补的门禁**（`test/ui/worldMapOverlayCoalescing.ui.ts` 最后 3 例）：真 `RenderPolicy` 的 `'reactive'` 模式压在真 `WorldMapScene` 上，**行军在途必须 60/60 帧全画**，落地后掉到 ≤2/60（那 ≤2 是每秒一次的 HUD 倒计时）。两处让这三例不是摆设的细节：**policy 时钟要冻住**（否则 500 ms 地板自己就把帧画满了）、**`Date.now` 要手动推进**（token 位置按它插值，同步跑 60 帧本来发生在同一个瞬间，token 一动不动，用例会为了错误的理由变绿）。headless 加载不了 token 的 `.tao`，所以种的是同一个函数里 `STICKMAN_TOKEN_BUDGET` 之外那条 `'dot'` LOD 分支的真实 display object。变异验证：拿掉 `syncMarchTokens` 的逐帧 `position.set` → 60 变 1。
+- **真浏览器验收**（同机、可见窗口、`nw_render_debug=1` 读 `__nwRenderStats`，每档采 3–6 秒）：
+
+  | 状态 | tick/s | 重绘/s | skip% |
+  |---|---|---|---|
+  | 空闲地图（引导已完成） | 58.5 | **10.0** | **82.9** |
+  | 空闲地图（新手引导圆环亮着） | 58.7 | 16.5–18.7 | 68–72 |
+  | 拖动平移中 | 58.9 | **58.9** | **0** |
+  | 城池面板（overlay）压在地图上 | 58.6 | 18.0 | 69 |
+
+  画面同时确认：拖动时地图、云雾斜边界、引导圆环与气泡全跟着相机走，没有残留几何；点空地立刻弹出占领面板；进出城池面板正常。**最后一行是这次的额外收获**：`paintMode` 对组合取悲观，地图从 `'live'` 变 `'reactive'` 之后，「城池/社交/拍卖等 overlay 压在地图上」这一整类组合也跟着从 100% 重绘掉到 ~30%。
+- **代价的上界写清楚**：有行军在途、或玩家正在拖动时，`stageSignature` 那 0.15–0.3 ms/帧是白付的（那些帧本来就要画）。这是把「省 35 ms/s GPU」买下来的价钱。
+- **影响**：`client/src/scenes/WorldMapScene.ts` 一行 `readonly paint = 'reactive' as const`（外加解释为什么的注释）。文档：`claudedocs/client-render-budget.md` §2/§7/§10。**ADR-083 里那句「世界地图整 tick 8.25 ms」自此作废**，正确的数字与拆分在本条与快查文档里。
