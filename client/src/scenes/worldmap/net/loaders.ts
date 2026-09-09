@@ -153,11 +153,11 @@ export async function refreshMe(ctx: WorldMapContext): Promise<void> {
 }
 
 /** Full list of owned tiles (Territory Overview panel, SLG_DESIGN_LOG.md §26). Fetched on demand
- * (list tab opened), not on the ~5s poll — can be 200-300 rows. */
+ * (list tab opened), not on every viewport refetch — can be 200-300 rows. */
 /**
  * ADR-074 P1: re-fetch the wild-city siege state. Called when the city info panel opens (durability
  * regenerates continuously and rival sects are hitting the same walls, so the entry-payload snapshot goes
- * stale within minutes), NOT on the ~5s map poll — 64 rows per poll for a panel almost nobody has open is
+ * stale within minutes), NOT on every map viewport refetch — 64 rows per fetch for a panel almost nobody has open is
  * not worth the bandwidth, and the durability BAR on the map only needs to be roughly right.
  */
 export async function refreshCities(ctx: WorldMapContext): Promise<void> {

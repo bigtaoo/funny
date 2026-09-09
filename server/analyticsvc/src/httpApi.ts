@@ -77,8 +77,19 @@ function corsHeaders(): Record<string, string> {
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json', ...corsHeaders() });
-  res.end(JSON.stringify(body));
+  const payload = Buffer.from(JSON.stringify(body) ?? 'null', 'utf8');
+  res.writeHead(status, {
+    'content-type': 'application/json',
+    // Declare the length rather than letting node fall back to chunked framing — see worldsvc's
+    // httpApi/helpers.ts for the full reasoning (WORLDSVC_CONCURRENCY_AUDIT §8.5): the reverse proxy
+    // now compresses JSON with a minimum-size threshold, and it cannot honour a size threshold on a
+    // response whose size it does not know, so with chunked framing it compresses EVERYTHING and tiny
+    // JSON replies come out ~20 bytes LARGER than they went in. No 204 branch needed here: preflight
+    // replies already go through sendPreflight() below rather than through send().
+    'content-length': String(payload.byteLength),
+    ...corsHeaders(),
+  });
+  res.end(payload);
 }
 
 /** Preflight reply: headers only. A 204 must not carry a body, so this cannot go through send(). */

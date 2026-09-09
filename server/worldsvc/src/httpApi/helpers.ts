@@ -39,14 +39,25 @@ export function readJson(req: IncomingMessage): Promise<Record<string, unknown>>
 }
 
 export function send(res: ServerResponse, status: number, body: unknown): void {
+  const payload = Buffer.from(JSON.stringify(body) ?? 'null', 'utf8');
+  const hasBody = status !== 204 && status !== 304; // a 204/304 must not carry one, nor a content-length
   res.writeHead(status, {
     'content-type': 'application/json',
+    // Declare the length instead of letting node fall back to chunked framing. This is not about the
+    // few bytes of chunk headers — it is what makes the reverse proxy's size threshold
+    // (`gzip_min_length` in client/nginx.conf, `encode`'s equivalent in server/Caddyfile) work at all:
+    // nginx cannot honour a minimum size on a response whose size it does not know, so with chunked
+    // framing it compresses EVERYTHING, and a 31-byte `/world/active-season` reply went out as 51 bytes
+    // (measured 2026-09-09 on the local stack, WORLDSVC_CONCURRENCY_AUDIT §8 — gzip's own header is
+    // ~20 bytes, so tiny JSON grows). With the length declared, the proxy compresses the map payloads
+    // (523KB → 30KB) and leaves the small ones alone.
+    ...(hasBody ? { 'content-length': String(payload.byteLength) } : {}),
     // Public-facing surface: CORS aligned with meta (fully open in dev, tightened by reverse proxy in production).
     'access-control-allow-origin': '*',
     'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller,x-nw-platform',
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
   });
-  res.end(JSON.stringify(body));
+  res.end(hasBody ? payload : undefined);
 }
 
 export function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {
