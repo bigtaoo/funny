@@ -133,6 +133,13 @@ export default defineConfig({
         'src/net/anomaly/reporter.ts',
         'src/net/judgeRunner.ts',
         'src/net/rateGate.ts',
+        // ...and the OTHER compression path (2026-09-09): `replayCompress.ts` is the state-stream share
+        // pipeline, `gzip.ts` is the server-authoritative match replay's transport wrapper. Only the
+        // first had a suite. What earns the second a gate is not its 17 lines but that
+        // `DecompressionStream` is a runtime capability, not a language one — its explicit
+        // "unavailable in this runtime" throw is the difference between a readable message on a host
+        // that lacks it and a TypeError from inside a Blob pipeline.
+        'src/net/gzip.ts',
         'src/net/replayCompress.ts',
         'src/net/replayUpload.ts',
         'src/net/serverClock.ts',
@@ -197,6 +204,12 @@ export default defineConfig({
         'src/scenes/EquipmentScene/helpers.ts',
         'src/scenes/EquipmentScene/layout.ts',
         'src/scenes/LobbyScene/format.ts',
+        // ...and the START button's routing (test/lobbyMatchState.test.ts, 2026-09-09). Three
+        // statements, gated because BOTH outcomes are a working game: take the wrong branch and an
+        // online player who tapped ranked gets a local AI match instead, with a plausible VS screen
+        // and a real battle. Nothing errors; the only symptom is ranked "sometimes not finding
+        // anyone", which reads as a server problem.
+        'src/scenes/LobbyScene/matchState.ts',
         'src/scenes/realLayerInterludeArt.ts',
         // 4b, first scene group (2026-08-27): worldmap's pure layer is now a DIRECTORY, which is the
         // shape ADR-070 asked for — five per-file entries collapsed into one entry that also picks up
@@ -249,6 +262,15 @@ export default defineConfig({
         // an unmapped code falls back to the server's raw English *by design*, so a dropped entry
         // reads as a working toast to anyone testing in English.
         'src/scenes/worldmap/net/errors.ts',
+        // ...and AuctionScene's label/glyph/level helpers (test/auctionItemLabels.test.ts, 2026-09-09).
+        // Form ① free functions with no `core` at all, so unlike the pointer/input entries around here
+        // they are not Core collaborators — the only reason they are a per-file entry rather than a
+        // `logic/` directory is that they are the scene's ONLY such module. Three ui suites already
+        // drove them through the scene, which is cause ① (that layer reports no coverage) and also the
+        // wrong altitude: a panel assertion goes red for a dozen unrelated reasons and stays green for
+        // the failure that actually shipped here — a name resolving through the wrong i18n namespace,
+        // which is invisible unless someone compares two screens in the same language.
+        'src/scenes/AuctionScene/itemLabels.ts',
         // ui
         'src/ui/busyTracker.ts',
         'src/ui/scrollTapGesture.ts',
