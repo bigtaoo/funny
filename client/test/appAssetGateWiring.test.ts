@@ -9,7 +9,7 @@
  * canvas/platform/backend and is not unit-testable end to end (see the same reasoning in
  * appTickerDialogWiring.test.ts, which this file mirrors).
  *
- * Behaviour of the two functions themselves is covered elsewhere: test/ui/bootManifestTiers.ui.ts
+ * Behaviour of the two functions themselves is covered elsewhere: test/bootManifestTiers.test.ts
  * and test/idlePrefetch.test.ts. This file only asserts they are still plugged in, and in the
  * right order relative to the first scene.
  */

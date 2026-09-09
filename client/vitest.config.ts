@@ -1,5 +1,6 @@
 import path from 'path';
 import { defineConfig, coverageConfigDefaults } from 'vitest/config';
+import { stubBinaryAssets } from './test/harness/stubBinaryAssets';
 
 // Mostly the pure game-logic core (@nw/engine + src/game/**), which has no PIXI dependency —
 // but not exclusively: `test/render/**` matches the include below too, and those files do import
@@ -9,6 +10,16 @@ import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 // 4 of the 11 files died at load there, while this config had been running all 11 green the whole
 // time. Deleting it removes the second place for that alias list to rot; there is now one suite.
 export default defineConfig({
+  // Shared with vitest.ui.config.ts (2026-09-09), but with the NARROW extension set: vite resolves
+  // `.png`/`.mp3` natively and per-file, which suites here depend on (towerArtContract.test.ts
+  // compares two imported image URLs), while a `.tao` import — an extension vite has no loader for
+  // — is handed to the JS parser and kills the importing module at load. That was the one
+  // MECHANICAL reason a cause-① file could not take cause ①'s treatment ("the suite exists, it
+  // just lives in test/ui, so move it here", claudedocs/client-testing.md): no `git mv` could work,
+  // so the suite had to stay where no coverage is reported. It is what kept `assets/bootManifest.ts`
+  // (10 direct rig/art imports) and `assets/battleAssets.ts` (via UnitView) out; both are gated
+  // below. Rig URLs are opaque and non-unique here — see the plugin's header.
+  plugins: [stubBinaryAssets()],
   // @nw/engine resolves to its TS source (server/engine/src) — the engine moved
   // out of client into the workspace package (§16.7) and is imported directly;
   // the old src/game/* re-export shims were deleted (2026-08-02).
@@ -76,6 +87,17 @@ export default defineConfig({
         'src/analytics/queue.ts',
         'src/app/appConstants.ts',
         'src/app/matchEngine.ts',
+        // ...and the battle half of the asset gate (2026-09-09). `assetGate.ts` itself cannot be
+        // gated here — it constructs a LoadingOverlay, i.e. real PIXI, so it stays a test/ui
+        // subject — but `battleGate.ts` imports it type-only-plus-one-call and needs no PIXI at
+        // all. Twenty lines, two of which are the ones that matter: `opts` (both sides' equipped
+        // skin ids — the one part of a battle's asset set NOT in STICKMAN_ASSETS) has to reach the
+        // warm step, and `DeferredSceneCalls` has to buffer the net pushes that arrive while the
+        // loading screen is up. Dropping either fails silently: a skin flashes a placeholder in the
+        // first match only, and a dropped `match_over` leaves the player in a battle that never
+        // ends. The suite that used to cover this lived in test/ui and spent three of its cases
+        // re-asserting `assetGate`'s own behaviour one layer up; see test/battleGate.test.ts.
+        'src/app/battleGate.ts',
         'src/app/nav/room.ts',
         // audio (2026-08-31, AUDIO_DESIGN.md): a DIRECTORY entry from day one rather than the
         // per-file shape most of this list still has — `src/audio/**` is the platform-neutral half
@@ -118,6 +140,19 @@ export default defineConfig({
         // asked for or stops warming what everybody needs.
         'src/assets/idlePrefetch.ts',
         'src/assets/prefetchPolicy.ts',
+        // ...and the two asset GATES (2026-09-09), which only became reachable from this config when
+        // the binary-asset stub moved into it (see `plugins` at the top). Both were cause ① with a
+        // mechanical blocker: thorough suites existed in test/ui, but a `git mv` would not have
+        // parsed. `bootManifest.ts` is the L0 tier list and `battleAssets.ts` the pre-battle warm,
+        // and since ASSET_PACKAGING §11.2 split L0 they are load-bearing for each OTHER: the starter
+        // rigs and decor atlas were moved off the blocking boot gate purely on the argument that
+        // `ensureBattleAssets` re-awaits every one of them. Break either side and the game still
+        // boots, still loads, still plays — the FIRST battle after a cold load draws placeholder
+        // circles for a few frames and every battle after it is fine, i.e. the symptom exists only
+        // on a machine that has never run the game before. `test/bootManifestTiers.test.ts`'s last
+        // case asserts the subset relation itself, which is the safety case for the split.
+        'src/assets/battleAssets.ts',
+        'src/assets/bootManifest.ts',
         'src/cache/MemoryMonitor.ts',
         'src/cache/ObjectPool.ts',
         'src/cache/poolRegistry.ts',

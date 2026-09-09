@@ -2,11 +2,15 @@
 // build" primitive that `battleGate.enterBattle` and `PixiAppViews.showGacha` both sit on
 // (ASSET_PACKAGING §10; generalised out of battleGate on 2026-08-25 when gacha got a gate).
 //
-// battleGate.ui.ts already covers the faded path end to end through `enterBattle`. This file
-// covers the primitive directly, and specifically the NON-faded path that the gacha gate uses —
-// where nothing else releases the input freeze, so the gate has to do it itself. That asymmetry
-// is the one thing about this module that is easy to get wrong and impossible to notice by
-// reading: an unreleased freeze leaves the player on a live-looking screen that ignores taps.
+// This is now the ONLY suite that runs the primitive against real PIXI: battleGate.ui.ts used to
+// cover the faded path end to end through `enterBattle`, and was replaced on 2026-09-09 by
+// test/battleGate.test.ts (mocked primitive, inside the coverage gate) precisely because its gate
+// assertions were re-testing this file's subject one layer up. Both paths are covered below.
+//
+// The NON-faded path the gacha gate uses is the reason this file exists — nothing else releases the
+// input freeze there, so the gate has to do it itself. That asymmetry is the one thing about this
+// module that is easy to get wrong and impossible to notice by reading: an unreleased freeze leaves
+// the player on a live-looking screen that ignores taps.
 import { describe, it, expect, vi } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import type { Scene, SceneManager } from '../../src/scenes/SceneManager';
