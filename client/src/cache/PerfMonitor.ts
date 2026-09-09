@@ -22,6 +22,18 @@ const DEFAULT_FPS_WARN = 25;        // sustained FPS below this is considered a 
 const DEFAULT_BUSY_WARN = 0.5;      // long-task busy ratio ≥ this value is considered main-thread saturation
 const WINDOW_MS = 2_000;            // sampling window
 const SUSTAIN_WINDOWS = 5;          // report only after this many consecutive low-FPS windows (≈10s), to avoid reporting transient spikes
+/**
+ * Headroom below the render loop's own frame-rate ceiling, under which a low fps still counts as a
+ * stutter.
+ *
+ * The watchdog's threshold cannot be allowed to exceed what the loop is even permitted to deliver.
+ * `render/renderPolicy.ts` caps the ticker at TARGET_FPS (60) normally and drops it to IDLE_FPS (20)
+ * on a screen that has been standing still — at which point a fixed 25fps threshold reads every
+ * healthy idle menu as "sustained low fps ~20" and files a cpu anomaly every 10 seconds. Same class
+ * of false positive as the backgrounded-tab one fixed on 2026-07-26, from the other direction: the
+ * device is not slow, it was asked to go slow.
+ */
+const FPS_WARN_HEADROOM = 5;
 
 // ── render_profile (ADR-083 follow-up) ────────────────────────────────────────
 // The anomaly paths above only fire when something is WRONG, which cannot answer "what frame rate and
@@ -175,7 +187,7 @@ export class PerfMonitor {
     }
 
     // ② Sustained low FPS: report only after multiple consecutive windows (transient drops or scene transitions do not count).
-    const fpsWarn = debugNum('nw_fps_warn', DEFAULT_FPS_WARN);
+    const fpsWarn = this.effectiveFpsWarn();
     if (fps < fpsWarn) {
       this.lowFpsStreak += 1;
       if (this.lowFpsStreak >= SUSTAIN_WINDOWS) {
@@ -189,6 +201,16 @@ export class PerfMonitor {
       this.lowFpsStreak = 0;
     }
   };
+
+  /**
+   * Stutter threshold for this window, clamped under the render loop's current ceiling.
+   * See {@link FPS_WARN_HEADROOM}. A cap of 0 means "uncapped" in PIXI, so it clamps nothing.
+   */
+  private effectiveFpsWarn(): number {
+    const warn = debugNum('nw_fps_warn', DEFAULT_FPS_WARN);
+    const cap = this.ticker?.maxFPS ?? 0;
+    return cap > 0 ? Math.min(warn, cap - FPS_WARN_HEADROOM) : warn;
+  }
 
   /**
    * Emit one `render_profile` when enough visible windows have accumulated (see the constants above).
@@ -210,6 +232,10 @@ export class PerfMonitor {
       fpsP50: Math.round(sorted[Math.floor(sorted.length / 2)] ?? 0),
       fpsMin: Math.round(sorted[0] ?? 0),
       fpsMax: Math.round(sorted[sorted.length - 1] ?? 0),
+      // The ceiling AT REPORT TIME, which is not a constant any more: renderPolicy drops the ticker
+      // to IDLE_FPS on a screen that is standing still. A profile reading `maxFps: 20, fpsP50: 20`
+      // is an idle menu behaving correctly, not a struggling device — read this field before
+      // reading fpsP50.
       maxFps: this.ticker?.maxFPS ?? 0,
     };
     if (this.renderInfo) {

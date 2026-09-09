@@ -14,6 +14,8 @@ const SUSTAIN_WINDOWS = 5;
 
 class FakeTicker {
   deltaMS = 16.7;
+  /** 0 = uncapped, PIXI's own meaning. renderPolicy sets 60, or 20 once a screen sits still. */
+  maxFPS = 0;
   private cb: (() => void) | null = null;
   add(cb: () => void): void { this.cb = cb; }
   remove(_cb: unknown): void { this.cb = null; }
@@ -92,5 +94,61 @@ describe('PerfMonitor: hidden/occluded tab does not report a false low-fps stutt
     expect(type).toBe('cpu');
     expect(msg).toContain('sustained low fps');
     expect(detail).toMatchObject({ fps: 10, thresholdFps: 25, sustainedMs: WINDOW_MS * SUSTAIN_WINDOWS });
+  });
+});
+
+// The idle tick-rate throttle (renderPolicy's IDLE_FPS, 2026-09-09) drops the ticker to 20fps on a
+// screen that is standing still. The stutter watchdog's fixed 25fps threshold would then read every
+// healthy idle menu as a dying device and file a cpu anomaly every 10 seconds — the same class of
+// false positive as the hidden-tab one above, from the other direction: the device is not slow, it
+// was asked to go slow. So the threshold is clamped under whatever ceiling the loop currently has.
+describe('PerfMonitor: the idle frame-rate cap is not a stutter', () => {
+  let doc: ReturnType<typeof makeDoc>['doc'];
+
+  beforeEach(() => {
+    vi.resetModules();
+    reportAnomaly.mockClear();
+    ({ doc } = makeDoc());
+    vi.stubGlobal('document', doc);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function monitorOn(maxFPS: number): Promise<FakeTicker> {
+    const { PerfMonitor } = await import('../src/cache/PerfMonitor');
+    const monitor = new PerfMonitor();
+    const ticker = new FakeTicker();
+    ticker.maxFPS = maxFPS;
+    monitor.install(ticker as unknown as Parameters<typeof monitor.install>[0]);
+    return ticker;
+  }
+
+  /** `windows` full sampling windows at `fps` (each 2000ms of accumulated deltaMS). */
+  function feed(ticker: FakeTicker, fps: number, windows: number): void {
+    const frameMs = 1000 / fps;
+    for (let w = 0; w < windows; w++) ticker.tick(frameMs, 2000 / frameMs);
+  }
+
+  it('20fps under a 20fps cap is silence, not a cpu anomaly', async () => {
+    const ticker = await monitorOn(20);
+    feed(ticker, 20, SUSTAIN_WINDOWS + 2);
+    expect(reportAnomaly).not.toHaveBeenCalled();
+  });
+
+  it('...but a device genuinely failing to keep up with the idle cap still reports', async () => {
+    // The point of clamping is to move the threshold, not to switch the watchdog off. 10fps under a
+    // 20fps cap is half of what was asked for.
+    const ticker = await monitorOn(20);
+    feed(ticker, 10, SUSTAIN_WINDOWS);
+    expect(reportAnomaly).toHaveBeenCalledWith('cpu', expect.stringContaining('sustained low fps'), expect.anything());
+  });
+
+  it('20fps under the normal 60fps cap is still a stutter (the clamp must not weaken that)', async () => {
+    const ticker = await monitorOn(60);
+    feed(ticker, 20, SUSTAIN_WINDOWS);
+    expect(reportAnomaly).toHaveBeenCalledWith('cpu', expect.stringContaining('sustained low fps'), expect.anything());
   });
 });

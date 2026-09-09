@@ -21,7 +21,7 @@ import { join } from 'path';
 import * as PIXI from 'pixi.js-legacy';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { SceneManager, type Scene } from '../../src/scenes/SceneManager';
-import { renderHoldActive, resetRenderHold, setRenderPolicyClock } from '../../src/render/renderPolicy';
+import { POWER_PREFERENCE, renderHoldActive, resetRenderHold, setRenderPolicyClock } from '../../src/render/renderPolicy';
 
 const APP_TS = readFileSync(join(__dirname, '..', '..', 'src', 'app.ts'), 'utf8');
 
@@ -49,6 +49,14 @@ describe('app.ts installs the policy', () => {
     expect(APP_TS).toMatch(/resolution:\s*rendererResolution\(platform\.devicePixelRatio\)/);
     // The exact shape of the pre-fix line, which is what a careless merge would restore.
     expect(APP_TS).not.toMatch(/resolution:\s*platform\.devicePixelRatio\s*,/);
+  });
+
+  it('asks the context for the low-power GPU', () => {
+    // Omitting the option is not a neutral default: PIXI's own default is 'default', which lets a
+    // dual-GPU Mac put a 2D sketch game on the discrete GPU. Absence is the bug, so the assertion
+    // has to be on the option being PRESENT and on where its value comes from.
+    expect(APP_TS).toMatch(/powerPreference:\s*POWER_PREFERENCE\s*,/);
+    expect(POWER_PREFERENCE).toBe('low-power');
   });
 });
 

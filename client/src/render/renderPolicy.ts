@@ -44,6 +44,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { debugFlag } from '../debugFlags';
 import { setLiveRenderStats, type RenderStats } from './renderStats';
+import { setDecorationsQuiet } from './idleQuiet';
 
 /**
  * Backbuffer resolution ceiling. 2 keeps text and ink crisp on every retina-class display;
@@ -51,6 +52,20 @@ import { setLiveRenderStats, type RenderStats } from './renderStats';
  * of a dpr-2 one for the same picture).
  */
 export const MAX_RENDER_RESOLUTION = 2;
+
+/**
+ * GPU the WebGL context asks for.
+ *
+ * PIXI's default (`settings.RENDER_OPTIONS.powerPreference`) is `'default'`, which hands the choice
+ * to the browser — and on a dual-GPU Intel Mac that is how a 2D notebook-sketch game ends up
+ * spinning the discrete GPU and its fans. `'low-power'` asks for the integrated one instead. This
+ * client's heaviest frame is ~18k indices and ~0.5 ms of GPU time; integrated is not close to being
+ * the limit, so there is nothing to trade away.
+ *
+ * On single-GPU hardware (Apple Silicon, phones, most PCs) the hint does nothing at all — this is a
+ * cheap hedge against a specific machine class, NOT a diagnosed cause of the 2026-09-08 fan report.
+ */
+export const POWER_PREFERENCE = 'low-power' as const;
 
 /** Frame-rate ceiling. 60 on a 120 Hz panel is half the power for a look authored at ~8-24 fps. */
 export const TARGET_FPS = 60;
@@ -69,6 +84,47 @@ export const IDLE_FLOOR_MS = 500;
  * to announce themselves.
  */
 export const ACTIVE_AFTER_INPUT_MS = 400;
+
+/**
+ * Tick-rate ceiling once a `reactive` screen has been standing still for {@link IDLE_QUIET_MS}.
+ *
+ * Demand-driven painting removed the `render()` call from an idle frame but not the frame itself:
+ * `SceneManager.onTick` (transition step, BGM derivation, every mounted scene's `update`) and the
+ * {@link stageSignature} walk still ran 60 times a second on a picture that was not moving. 20 Hz
+ * is the same "hand-drawn does not need to be smooth" call art-direction §5.4 makes everywhere
+ * else, applied to the loop rather than to one animation, and it cuts that leftover work to a
+ * third. The cost is detection latency: a change nothing announced — a network push landing on a
+ * quiet screen — is noticed up to 50 ms late instead of up to 17 ms late.
+ *
+ * Anything that paints for a real reason ('hold' / 'changed' / a `live` scene) puts the rate back
+ * to {@link TARGET_FPS} on the same tick, and {@link holdRenderActive} does it synchronously from
+ * the pointer event, before the next frame — so the throttle can never add latency to input.
+ */
+export const IDLE_FPS = 20;
+
+/**
+ * How long a `reactive` screen must go without a real paint before {@link IDLE_FPS} applies.
+ *
+ * The {@link IDLE_FLOOR_MS} paint deliberately does NOT count as a real one: it is the "we believe
+ * nothing changed" valve, so treating it as activity would re-arm full frame rate twice a second
+ * and the throttle would never engage at all.
+ */
+export const IDLE_QUIET_MS = 2_000;
+
+/**
+ * How long without any pointer event before purely decorative motion holds its frame
+ * (`render/idleQuiet.ts`).
+ *
+ * This is the half of the idle budget the tick-rate cap alone cannot reach: the lobby's boiling
+ * lines (8 fps), its stickman silhouettes (12 fps) and the world map's shield bubbles (10 fps) each
+ * change the stage signature on their own schedule, which is what keeps an untouched screen
+ * painting 5-12 times a second AND keeps it above the quiet threshold above. With them holding, an
+ * untouched screen paints only on the 500 ms floor — twice a second — and the tick cap engages.
+ *
+ * 30 s rather than a few: a menu the player is actively reading should still be alive, and the case
+ * this exists for is the app left open in a pocket or on a second monitor for minutes.
+ */
+export const DECOR_QUIET_AFTER_MS = 30_000;
 
 /** How a scene wants to be painted. See `Scene.paint`. */
 export type PaintMode = 'live' | 'reactive';
@@ -92,6 +148,14 @@ export interface RenderLoopHost {
 // them would be a wide change for a one-line signal.
 
 let activeUntilMs = 0;
+/** When the player last did something. Basis for {@link DECOR_QUIET_AFTER_MS}. */
+let lastActivityMs = 0;
+/**
+ * Installed by {@link RenderPolicy.install}: restores the full tick rate the instant an activity
+ * signal arrives, rather than on the next tick — which, while throttled to {@link IDLE_FPS}, could
+ * be 50 ms away. Without this the first frame after a tap on a resting screen would be late.
+ */
+let onActivity: (() => void) | null = null;
 let now: () => number = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /** Test seam: drive the clock the policy reads. Pass nothing to restore the real one. */
@@ -106,6 +170,8 @@ export function setRenderPolicyClock(clock?: () => number): void {
  */
 export function holdRenderActive(): void {
   activeUntilMs = now() + ACTIVE_AFTER_INPUT_MS;
+  lastActivityMs = now();
+  onActivity?.();
 }
 
 /**
@@ -115,6 +181,10 @@ export function holdRenderActive(): void {
  */
 export function invalidateRender(): void {
   activeUntilMs = Math.max(activeUntilMs, now() + 1);
+  // Counts as activity too: the callers are a renderer resize and a scene swap, both of which mean
+  // the player is somewhere new and should not arrive at frozen decorations.
+  lastActivityMs = now();
+  onActivity?.();
 }
 
 /** True while a {@link holdRenderActive} / {@link invalidateRender} hold is still in effect. */
@@ -125,6 +195,7 @@ export function renderHoldActive(): boolean {
 /** Test seam: drop any outstanding activity hold. */
 export function resetRenderHold(): void {
   activeUntilMs = 0;
+  lastActivityMs = now();
 }
 
 // ── change detection ──────────────────────────────────────────────────────────
@@ -252,6 +323,12 @@ export interface RenderTickResult {
 export class RenderPolicy {
   private lastSignature = -1;
   private lastPaintMs = 0;
+  /** Last tick that painted for a real reason — see {@link IDLE_QUIET_MS} on why 'floor' isn't one. */
+  private lastBusyMs = 0;
+  /** Current tick-rate ceiling, so a rate that hasn't changed isn't re-assigned every frame. */
+  private appliedMaxFps = 0;
+  /** `PIXI.Ticker.shared.maxFPS` as found, restored on {@link uninstall} (it is a global). */
+  private sharedMaxFpsBefore = 0;
   /** Counters exposed for the browser measurement recipe (`window.__nwRenderStats`). */
   readonly stats: RenderStats = { ticks: 0, painted: 0, skipped: 0 };
 
@@ -262,24 +339,51 @@ export class RenderPolicy {
   ) {}
 
   install(): void {
-    this.host.ticker.maxFPS = TARGET_FPS;
+    this.sharedMaxFpsBefore = PIXI.Ticker.shared.maxFPS;
+    this.setMaxFps(TARGET_FPS);
     setLiveRenderStats(this.stats);
     this.publishStats();
     // Cast: TickerPlugin's `render` is typed as a plain method, not as a TickerCallback.
     this.host.ticker.remove(this.host.render as PIXI.TickerCallback<unknown>, this.host);
     this.host.ticker.add(this.tick, this, PIXI.UPDATE_PRIORITY.LOW);
     this.lastPaintMs = now();
+    this.lastBusyMs = now();
+    lastActivityMs = now();
+    onActivity = () => this.setMaxFps(TARGET_FPS);
   }
 
   uninstall(): void {
     this.host.ticker.remove(this.tick, this);
     setLiveRenderStats(null);
+    setDecorationsQuiet(false);
+    onActivity = null;
+    PIXI.Ticker.shared.maxFPS = this.sharedMaxFpsBefore;
+  }
+
+  /**
+   * Apply a tick-rate ceiling to BOTH loops.
+   *
+   * `PIXI.Application` does not use `Ticker.shared` (`sharedTicker` defaults to false), so this
+   * client runs two independent `requestAnimationFrame` loops: the application's, which paints, and
+   * the shared one, which `render/boil.ts` and the battle/card view fx register their animation
+   * callbacks on. Only the first was ever capped, which meant the second ran flat out at the
+   * display's refresh rate — 120 Hz on a ProMotion device — for as long as any lobby boiling line
+   * existed. Capping it here rather than converting fourteen `Ticker.shared` call sites to a seam:
+   * the power problem is the rate, and every one of those sites already integrates `deltaMS`, so a
+   * lower rate changes how finely an effect is sampled and not how long it takes.
+   */
+  private setMaxFps(fps: number): void {
+    if (this.appliedMaxFps === fps) return;
+    this.appliedMaxFps = fps;
+    this.host.ticker.maxFPS = fps;
+    PIXI.Ticker.shared.maxFPS = fps;
   }
 
   /** One frame's decision. Exposed (not just wired to the ticker) so tests can step it by hand. */
   tick = (): RenderTickResult => {
     this.stats.ticks++;
     const result = this.decide();
+    this.applyIdleThrottles(result);
     if (result.painted) {
       this.host.render();
       this.lastPaintMs = now();
@@ -308,6 +412,22 @@ export class RenderPolicy {
     // the host where it mattered most. See debugFlags.ts.
     if (!debugFlag('nw_render_debug')) return;
     (globalThis as { __nwRenderStats?: RenderPolicy['stats'] }).__nwRenderStats = this.stats;
+  }
+
+  /**
+   * The two idle knobs, decided from the same tick result the paint decision came from.
+   *
+   * Derived rather than announced, exactly like {@link stageSignature}: nothing has to remember to
+   * say "I am busy now". A `live` scene, an input hold and a real signature change all read as
+   * activity; a skipped frame and the {@link IDLE_FLOOR_MS} valve do not.
+   */
+  private applyIdleThrottles(result: RenderTickResult): void {
+    const t = now();
+    if (result.reason === 'live' || result.reason === 'hold' || result.reason === 'changed') {
+      this.lastBusyMs = t;
+    }
+    this.setMaxFps(t - this.lastBusyMs >= IDLE_QUIET_MS ? IDLE_FPS : TARGET_FPS);
+    setDecorationsQuiet(t - lastActivityMs >= DECOR_QUIET_AFTER_MS);
   }
 
   private decide(): RenderTickResult {
