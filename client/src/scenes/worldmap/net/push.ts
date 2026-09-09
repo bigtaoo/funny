@@ -17,9 +17,11 @@ export function applyMarchUpdate(ctx: WorldMapContext, _m: MarchUpdate): void {
 
 /**
  * Real-time world/nation channel message (gateway push, worldsvc → gateway). Previously dropped
- * entirely (client had no onNationMsg handler) while a 5s poll (refreshWorldChat) re-fetched the
- * same data — this updates the HUD's latest-message + unread count immediately from the push
- * payload instead of waiting on the next poll tick.
+ * entirely (client had no onNationMsg handler) while a 5s poll re-fetched the same data — this
+ * updates the HUD's latest-message + unread count immediately from the push payload instead. That
+ * poll is gone (P1-2, comm-audit-2026-07-27), so this is now the ONLY thing that advances the HUD
+ * chat line while the map is open; the initial value comes from `/world/enter`'s `worldChannel`
+ * page (net/loaders.ts loadData), so the line is never blank waiting on a first push.
  */
 export function applyNationMsg(ctx: WorldMapContext, n: NationMsg): void {
   if (ctx.destroyed) return;

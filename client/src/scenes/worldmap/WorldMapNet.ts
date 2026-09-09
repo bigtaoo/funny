@@ -29,7 +29,6 @@ export class WorldMapNet {
   async loadData(): Promise<void> { return loaders.loadData(this.ctx); }
   async loadMapViewport(): Promise<void> { return loaders.loadMapViewport(this.ctx); }
   async refreshMarches(): Promise<void> { return loaders.refreshMarches(this.ctx); }
-  async refreshWorldChat(): Promise<void> { return loaders.refreshWorldChat(this.ctx); }
   async refreshMe(): Promise<void> { return loaders.refreshMe(this.ctx); }
   async refreshTerritories(): Promise<void> { return loaders.refreshTerritories(this.ctx); }
   /** Formation templates behind the team panel (see loaders.refreshTeams). */

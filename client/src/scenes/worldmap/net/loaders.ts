@@ -130,17 +130,6 @@ export async function refreshMarches(ctx: WorldMapContext): Promise<void> {
   } catch { /* offline */ }
 }
 
-export async function refreshWorldChat(ctx: WorldMapContext): Promise<void> {
-  if (ctx.destroyed) return;
-  try {
-    const msgs = await ctx.cb.worldApi.getWorldChannel(ctx.cb.worldId, { limit: 20 });
-    ctx.worldChatLatest = msgs[0] ?? null; // server returns newest-first
-    const seenTs = ctx.getWorldChatSeenTs();
-    ctx.worldChatUnread = msgs.filter((m) => m.ts > seenTs).length;
-    if (!ctx.destroyed) ctx.panels.renderHud();
-  } catch { /* offline */ }
-}
-
 export async function refreshMe(ctx: WorldMapContext): Promise<void> {
   if (ctx.destroyed) return;
   try {
