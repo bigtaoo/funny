@@ -48,6 +48,8 @@
 
 art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求丝滑流畅」——限速在这套画风里是**更对**，不是妥协。
 
+**而且 2026-09-09 之后（ADR-086）装饰动画还会在长时间无输入后整个停下**——见 §11。给新场景加装饰动画时先问一句：它是**观感**还是**信息**？观感的该限速、而且该读 `render/idleQuiet.ts` 的 `decorationsQuiet()`；信息的（倒计时、进度、引导提示）**两样都不做**。
+
 ## 3. 别在场景里实时描边框
 
 **面板边框走 `render/sketchUi.ts` 的 `sketchPanel()`**（内部是 `render/panelFrame.ts` 的烘焙图集：长边条 + 四个圆角块，全是同一张 baseTexture 上的 sprite）。要在面板上再画自己的墨（accent 条、分隔线）用 `inkLayer(panel)` 拿一个 `Graphics`——面板现在是 sprite 的容器，没有单一 `Graphics` 可以描。
@@ -200,7 +202,66 @@ ssh funny-vps "docker cp /tmp/q.js server-analyticsvc-1:/app/q.js && docker exec
 
 1. **iOS / 微信真机仍然没有人拿着手机跑过。** §9 只是把管子接好了（2026-09-09 才真的接通，见那一节的订正）。线上到 2026-09-09 累计 `render_profile` **1 条**，桌面 web、`SettingsScene`。数字要等真机上线（Grafana 里按 `platform` 切 `fpsP50`、按 `scene` 切 `skipPct`；世界地图现在应该报出 ~80% 的 `skipPct`）。功耗（不是帧数）本来也不在客户端能自测的范围内，要靠设备侧的电池统计。
 2. **`SettingsScene` 的几个按钮框还在实时描边**（§3 末尾），不在热路径上，搬的时候连带更新 §5 的预算数字。
-3. **世界地图那 1.4 ms/帧的场景 `update()` 没人碰过。** ADR-085 之后它是这一帧里剩下的全部——空闲时也每帧跑：HUD 计时器、护盾遍历、token 同步、vignette、引导判定。真要再往下压，下一刀在这里而不在重绘上。（先量再改：那 1.4 ms 是两次量测相减得来的，逐项归因还没做过——`update()` 里逐条读下来没有一处是 O(池子) 的。）
-4. **空闲时 tick 本身仍然是 60 Hz。** 按需重绘省掉的是 `render()`，`SceneManager.onTick`（`stepTransition` + `updateMusic` + 每个挂载场景的 `update()`）与 `stageSignature` 照旧每帧跑。真正把空闲功耗再砍一半的旋钮是**连续 skip 若干帧后把 `ticker.maxFPS` 降到 20~30，任何 paint/hold 立刻回 60**——代价是网络推送最坏晚 50 ms 到画面（看不出来），收益是空闲主线程直接除以二到三。同一方向的第二半是**装饰动画在长时间无输入后静默**（大厅火柴人 12 fps、boil 8 fps、护盾气泡 10 fps 现在就是空闲重绘率 5~12/s 的全部来源；它们停下来，空闲重绘率就只剩 500 ms 地板的 2/s）。
-5. **`powerPreference` 没设。** `new PIXI.Application` 没传它，@pixi/core 的默认值是 `'default'`（`ContextSystem` 的 `settings.RENDER_OPTIONS`），也就是把选择权交给浏览器。双 GPU 的 Intel Mac 上这是「风扇加速」的经典嫌疑之一（`'low-power'` 请求集显）；Apple Silicon 单 GPU 上无效，所以这是**便宜的对冲、不是已证实的病因**。这个客户端一帧 18k 索引 / 0.5 ms GPU，集显绰绰有余。
-6. **`net/rateGate.ts` 的 200 ms 补桶定时器是常开的**（构造即 `setInterval`，永不 `clear`），零流量时也每秒醒 5 次。ADR-083 之前它被 60 Hz 的重绘完全盖住，现在空闲重绘只有 5~12/s，它的相对占比反而上来了。改成「只在 `tokens < CAPACITY` 或队列非空时才跑」即可，注意别把 `tryAcquire` 的同步语义弄坏。
+3. ~~**世界地图那 1.4 ms/帧的场景 `update()`。**~~ **作废：那个数是错的，见 §11 的归因表。** 空闲世界地图一个被跳过的帧里，`scene.update()` 只占 **16.6 µs**，`stageSignature` 占 **287.5 µs**——差 17 倍，「下一刀」瞄错了目标。而签名遍历已被 §11 的 tick 节流砍掉三分之二，剩下约 5.8 ms/s（全核 0.6%），不值得为它去动这个「画面会冻住」风险最高的检测器。**`update()` 里没有下一刀。**
+4. ~~**空闲时 tick 本身仍然是 60 Hz。**~~ **已做（ADR-086，见 §11）**：`IDLE_FPS = 20` + 装饰动画 30 s 后静默。
+5. ~~**`powerPreference` 没设。**~~ **已做（ADR-086）**：`POWER_PREFERENCE = 'low-power'`。仍然是便宜的对冲、不是已证实的病因（单 GPU 硬件上无效）。
+6. ~~**`net/rateGate.ts` 的 200 ms 补桶定时器常开。**~~ **已做（ADR-086）**：桶满且无人排队就停表，下一次取 token 再起。
+
+## 11. 第二轮：空闲 tick 率、装饰静默、第二条 rAF 循环（ADR-086，2026-09-09）
+
+ADR-083/085 砍的是**重绘**；这一轮砍的是**帧本身**。拍板记录在 ADR-086。
+
+### 归因表：一个被跳过的帧到底贵在哪
+
+headless（`vitest.ui` 里的真 PIXI），空闲世界地图，**2,833 个舞台对象**（与浏览器 L2 的 3,859 同量级）：
+
+| | 每帧 |
+|---|---|
+| 整个 `scene.update(1/60)` | **16.6 µs** |
+| `stageSignature(stage)` | **287.5 µs** |
+| `overlayInkSignature(ctx)` | 0.1 µs |
+
+那 287.5 µs 与 2026-09-08 在**真浏览器**里量到的 0.21–0.30 ms 几乎重合——这是这套 headless 归因能迁移到设备上的证据。**结论：被跳过的帧压倒性地贵在签名遍历，不在场景 `update()`（差 17 倍）。** ADR-085 那句「下一刀在 `update()`（1.4 ms）」因此作废：那个数是两次量测相减来的，从没逐项归因过。
+
+复现（探针是临时的，用完删了；要再量照抄这套）：在 `test/ui/` 下建一个 `*.ui.ts`，构造 `WorldMapScene` → `ctx.view.buildPanel.hideLoading()` → 空转到 `loadingSpinner`/`loadingEraseLayer` 都为 null → 把 `scene.container` 挂进一个 `PIXI.Container` → 热身 300 帧 → 各跑 3,000 次取均值。舞台对象数用一次递归 `children` 计数。
+
+### 五个旋钮
+
+| 旋钮 | 值 | 在哪 |
+|---|---|---|
+| 空闲 tick 率 | `IDLE_FPS = 20`，静默 `IDLE_QUIET_MS = 2 s` 后生效 | `render/renderPolicy.ts` |
+| 装饰动画静默 | 无输入 `DECOR_QUIET_AFTER_MS = 30 s` 后 | `render/idleQuiet.ts` + 三个读者 |
+| 共用 ticker 上限 | 与 app ticker 同步（60 / 20） | `RenderPolicy.setMaxFps` |
+| GPU 偏好 | `POWER_PREFERENCE = 'low-power'` | `render/renderPolicy.ts` → `app.ts` |
+| 出站限流补桶 | 桶满且无人排队就停表 | `net/rateGate.ts` |
+
+三条**别顺手清理**的线：
+
+- **`'floor'` 不算活动。** 500 ms 地板一秒触发两次；算了活动就永远走不完 2 秒静默窗口，这条节流一次都不会生效。门禁里有一例专门喂 6 个地板帧、并断言那 6 帧真的画了（否则用例是空的）。
+- **指针事件同步把 `maxFPS` 拨回 60**（模块级 `onActivity` 回调），不等下一个 tick——降到 20 Hz 后下一 tick 最远 50 ms，第一帧点击反馈不能付这个钱。
+- **卡顿 watchdog 的阈值必须夹在上限之下**（`PerfMonitor` 的 `FPS_WARN_HEADROOM`：`min(nw_fps_warn, maxFPS - 5)`）。不夹的话每个健康的空闲菜单每 10 秒报一条 `cpu` 异常——和 2026-07-26「后台标签页假 cpu」同一类假阳性，只是从另一个方向来。同理 `render_profile` 的 `maxFps` **不再是常量**：`maxFps: 20, fpsP50: 20` 是一个行为正确的空闲菜单，**先读 `maxFps` 再读 `fpsP50`**。
+
+### 这个客户端一直有两个 rAF 循环
+
+`PIXI.Application` 的 `sharedTicker` 默认 **false** → `app.ticker` 是一个新 Ticker。而 `render/boil.ts` 的沸腾线、战斗/卡牌视图共 14 处 fx 回调挂在 `PIXI.Ticker.shared` 上，**那个 ticker `autoStart = true`，只要有一个监听者就自己起一条 rAF 循环，而 ADR-083 的 `maxFPS = 60` 从来没碰过它**——大厅只要有一条沸腾线，第二条循环就按屏幕刷新率跑（ProMotion 上 120 Hz）。现在 `setMaxFps` 同时写两个 ticker，`uninstall` 把 `Ticker.shared` 还原成安装前的值（它是进程级全局，测试里必须还回去）。
+
+没有把那 14 处收敛到一个 seam：功耗问题是**速率**，而每一处都已经在积分 `deltaMS`（降速率只改采样粗细，不改动画时长）；收敛要动 14 条 destroy 路径，而那正是这个仓库出过泄漏的地方。
+
+### 哪些动画可以静默，哪些不行
+
+**可以**（纯观感）：沸腾线、菜单火柴人剪影、世界地图护盾气泡。
+**不行**：玩家会去读数的（HUD 倒计时）、进度指示（冻住的转圈=像卡死了）、游戏自己举起的注意力提示（新手引导圆环）、一次性反应（护盾**破盾**闪光——那不是氛围）。
+
+判据：**冻住时截一张图，是看着不对，还是看着像一张画。**
+
+火柴人静默时 **clip 时间照常前进**（与既有 `poseFps` 限速同一个约定），恢复时跳到本该在的姿势而不是慢动作接上；恢复不是瞬时的，第一帧姿势最远 83 ms 后落地（`poseAcc` 静默期间不累积），这是限速本来就有的延迟，不是静默新加的。
+
+### 门禁
+
+`renderPolicy.ui.ts` 33 → 45 例、`worldMapOverlayCoalescing.ui.ts` 21 → 22、`renderLoopWiring.ui.ts` 15 → 16，外加新的 `test/render/idleDecorations.test.ts`（5 例）、`PerfMonitor.test.ts` +3、`rate-gate.test.ts` +3。七处变异逐一验证转红（清单在 ADR-086）。
+
+两个写门禁时踩到的坑：
+
+- **世界地图那一例不能手动 `setDecorationsQuiet(true)`**——policy 每 tick 重算并覆写它。要走真的 `DECOR_QUIET_AFTER_MS` 路径：把 `clockMs` **一次性**跳过 30 s，但**不要**在那 60 帧期间让它继续走，否则 500 ms 地板自己把帧画满。
+- **火柴人/计数类的用例不能一次性预置计数**，要让计数随 tick 增长——预置会落进基线里，把 bug 放回去也全绿（和 `renderProfile.test.ts` 同一个坑）。
+

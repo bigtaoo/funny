@@ -21,7 +21,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import {
-  RenderPolicy, resetRenderHold, setRenderPolicyClock, type PaintMode,
+  DECOR_QUIET_AFTER_MS, RenderPolicy, resetRenderHold, setRenderPolicyClock, type PaintMode,
 } from '../../src/render/renderPolicy';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
@@ -29,6 +29,7 @@ import { initI18n } from '../../src/i18n';
 import { WorldMapScene } from '../../src/scenes/WorldMapScene';
 import type { WorldApiClient, MarchView, StationedView, NationView } from '../../src/net/WorldApiClient';
 import { createFakeTextInput } from '../harness/fakeTextInput';
+
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -380,6 +381,25 @@ describe("world map under a 'reactive' paint policy", () => {
     const paints = paintsOver(scene, 60);
     expect(paints).toBeGreaterThanOrEqual(8);
     expect(paints).toBeLessThanOrEqual(15);
+    scene.destroy();
+  });
+
+  it('...and stops even that once nobody has touched the map for a while', () => {
+    // The shield bubble is the map's equivalent of the lobby's boiling line: ambience, and the only
+    // thing keeping an untouched map above the render loop's own idle threshold. Held, the map falls
+    // all the way to the 500ms floor. The one-shot "shield just broke" flashes are deliberately NOT
+    // gated by this — see the comment in lifecycle.ts.
+    const scene = buildScene();
+    revealMap(scene);
+    seedShield(scene, '12:14');
+    // Not `setDecorationsQuiet(true)` by hand: the policy recomputes the flag every tick, so a
+    // manual value would just be overwritten — and asserting through the real DECOR_QUIET_AFTER_MS
+    // path is the point. The clock still does not MOVE during the 60 frames, or the 500ms floor
+    // would paint them all by itself.
+    clockMs += DECOR_QUIET_AFTER_MS + 1;
+    // Still not 0: the HUD countdown repaints once per second of scene time (hudTickTimer), and 60
+    // frames is one second of it. That is the true floor of an untouched map.
+    expect(paintsOver(scene, 60)).toBeLessThanOrEqual(2);
     scene.destroy();
   });
 

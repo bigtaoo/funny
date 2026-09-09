@@ -26,6 +26,7 @@ import { STICKMAN_SCALE, STATE_ANIM } from './constants';
 import { parseTaoAsset } from './assetLoader';
 import type { TaoAsset, StickmanOptions, GearGlyphSpec } from './runtimeTypes';
 import { applyPose } from './pose';
+import { decorationsQuiet } from '../idleQuiet';
 
 // Re-export the public runtime types so existing importers of
 // './StickmanRuntime' keep working unchanged.
@@ -352,6 +353,11 @@ export class StickmanRuntime {
     // full `dt` below, so a throttled figure plays its clip at the authored speed — it just samples
     // fewer poses along the way. Skipping the time advance instead would slow the animation down.
     if (this.poseIntervalSec > 0) {
+      // A pose-capped figure is by definition menu decoration, so it holds its pose once nobody has
+      // touched the screen for a while (render/idleQuiet.ts). Battle units never set `poseFps`, so
+      // they cannot reach this. Clip time still advances, same as the rate cap below — reviving
+      // then snaps to where the animation would have been, instead of resuming in slow motion.
+      if (decorationsQuiet()) { this.time += dt * rate; this.clampTime(); return; }
       this.poseAcc += dt;
       if (this.poseAcc < this.poseIntervalSec) { this.time += dt * rate; this.clampTime(); return; }
       this.poseAcc = 0;
