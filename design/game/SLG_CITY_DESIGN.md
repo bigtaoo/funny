@@ -386,6 +386,8 @@ D-CITY-11 的内政/军事双页拆分（左侧竖排 tab 切换）本次**撤�
 
 **覆盖测试**：`client/test/ui/cityRenderCoalescing.ui.ts`（新文件 9 例）——快请求全程零遮罩（**并且要驱动真帧**：遮罩由 `update()` 同步，不驱动帧的话把门控改回 `bt.busy` 也照样过）、满 1 秒才出遮罩且完成即撤、无遮罩期间输入照样被 `bt.busy` 挡住、一次升级只重绘一帧且第二帧不再画、空闲帧不画、开/关弹窗页面层是**同一批对象**（按引用比，不是长得一样）、关弹窗恢复页面命中表且 Back 仍在 `[0]`、纸背景整场只画一次、弹窗层在页面层之上。`textureLoadedGuardCallSites.test.ts` 的扫描器扩到 `paint[A-Z]\w*(): void {`——拆出来的 `paintPage`/`paintModal` 是各自独立的重绘入口，守卫契约必须跟过去，否则拆分本身就是契约上的一个洞。
 
+**`data.ts` 自己那份门禁（2026-09-09 补，`client/test/cityQueuePoll.test.ts` 18 例，文件行/分支/函数 100%，并入 `coverage.include`）**：上面那份 ui 套件驱的是**场景**，`data.ts` 本身在覆盖率里一直是 **0%**。`refreshOnQueueDue` 是队列完成的唯一刷新路径，三种坏法全静默：不再触发（倒计时冻在剩余 0s、完成的条目不消失）、`finally` 丢了（一次离线 tick 就把 `queueRefreshPending` 永久锁死）、重入守卫丢了（服务端一慢就每秒一个在飞 `getMe`，抢 rateGate 那 5 个令牌）——三种都读作「服务端有点慢」，而这也正是**合法重试分支**的样子（上面 §8.13 末尾那条「测出来但不是回归」记的就是它在桩服务器下的正常表现）。`load` 那半钉 2026-08-02 的「故意不是 `Promise.all` 栅栏」+ 发起顺序（getTeams 先走，rateGate 是 FIFO）。**10 个变异逐个验红**，含把五个 slice 全包进 `Promise.all`、把 getTeams 挪到 getMe 之后、`<= now` 改 `< now`、`requestRender` 改 `render`。
+
 - **变异验证**（逐个改坏确认用例会挂）：恢复 `bt.start()` 后的前置 render → 合帧那例挂；遮罩门控改回 `bt.busy` → 快请求那例挂；关弹窗改回 `core.render()` → 分层两例挂。
 - **⚠️ 写这类断言的坑**：`expect(layer.children).toEqual(snapshot)` 在**失败**时会去遍历 PIXI DisplayObject 的 parent/children/transform 循环图构造 diff，直接把 V8 堆撑爆（本轮变异测试时实测 OOM，看起来像「测试挂了」而不是「断言失败了」）。改成按引用比的 `isSameTree()` 辅助函数。
 - 验证：`tsc --noEmit`（`tsconfig.json` + `tsconfig.test.json`）全绿、`eslint src` 无 error、`test:ui` 254 文件 / 2434 例 + 默认套件 241 文件 / 2780 例全绿、`check:filelength` 无新违规、`build:web` 构建通过；**真机核对**走 §8.10 的 `web-e2e` 桩挂载路径（`__nwE2E.views.showCity()` + 假 `worldApi`，无需后端栈），复现用户截图那座城（贴纸铺 Lv.5、队列 48:00、加速 48 金币），并在**四个层的 `addChild`/`removeChildren` 上挂钩子**逐次记录绘制（标签页被遮挡时 rAF 被挂起，用 `app.ticker.update()` 手动驱帧）：

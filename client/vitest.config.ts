@@ -247,6 +247,17 @@ export default defineConfig({
         // anyone", which reads as a server problem.
         'src/scenes/LobbyScene/matchState.ts',
         'src/scenes/realLayerInterludeArt.ts',
+        // ...and CityScene's fetch fan-out + queue poll (test/cityQueuePoll.test.ts, 2026-09-09).
+        // 0% before, and `refreshOnQueueDue` is why it is here rather than in a `logic/` group: it
+        // is the ONLY refresh path a finished build/training entry has. worldsvc's 2s scheduler
+        // settles the queue server-side and never notifies gateway, so there is no push to fall
+        // back on (P0-9, comm-audit-2026-07-27 finding B10 — this poll IS the fix for it). Every
+        // way it can break is quiet: stop firing and the countdown freezes at 剩余 0s with the
+        // finished building still listed; drop the `finally` and one offline tick wedges it for the
+        // rest of the session; drop the re-entrancy guard and a lagging server gets one in-flight
+        // getMe per second against rateGate's 5-token bucket. All three read as "the server is
+        // slow", which is also what the legitimate retry branch looks like.
+        'src/scenes/CityScene/data.ts',
         // 4b, first scene group (2026-08-27): worldmap's pure layer is now a DIRECTORY, which is the
         // shape ADR-070 asked for — five per-file entries collapsed into one entry that also picks up
         // whatever lands there next. `test/pureLayerBoundary.test.ts` is what keeps it a pure layer;
@@ -298,6 +309,23 @@ export default defineConfig({
         // an unmapped code falls back to the server's raw English *by design*, so a dropped entry
         // reads as a working toast to anyone testing in English.
         'src/scenes/worldmap/net/errors.ts',
+        // ...and its five siblings' entry point: the live-push handlers (test/worldMapPush.test.ts,
+        // 2026-09-09). Also 0%, and gated for the same reason `errors.ts` is — the failure is
+        // invisible, not absent. What makes it worth a gate rather than a shrug is that NOTHING sits
+        // behind these five: comm-audit-2026-07-27 P1-2 deleted the 5s poll precisely because the
+        // push channel already covers every state change, so `WorldMapNet.start()` is a no-op today.
+        // A dropped push therefore does not cost seconds of freshness, it leaves state wrong until
+        // the player leaves and re-enters the SLG — which already shipped once (SLG_LOG_2026-08 §523:
+        // settled occupations never left ctx.occupations, their teams read busy forever, and the team
+        // picker listed nothing). And `applySiegeResult` is the only thing that TELLS the player who
+        // won: on 2026-08-02 it guessed "was this my march" from a per-scene Set that a WorldMapScene
+        // rebuild wiped, so a player's own occupy win announced itself as 领地失守. Its classification
+        // now comes from the payload, and this is what keeps it there. Not a `logic/` candidate:
+        // net-layer effect handlers, not map arithmetic. Driven through a structural fake ctx (the
+        // real one constructs PIXI), with `net/loaders` stubbed as the network+redraw seam — which is
+        // also how a case controls what the awaited refetch leaves in `tileCache` for the
+        // hold-vs-final split to read.
+        'src/scenes/worldmap/net/push.ts',
         // ...and AuctionScene's label/glyph/level helpers (test/auctionItemLabels.test.ts, 2026-09-09).
         // Form ① free functions with no `core` at all, so unlike the pointer/input entries around here
         // they are not Core collaborators — the only reason they are a per-file entry rather than a
