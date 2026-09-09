@@ -444,6 +444,40 @@ playerWorld 1601 份 | 已占领地块 17488 | 待结算占领 1117
 以及 **`arrivals.deferred` 是否持续增长**——它一旦长期非零，说明结算吞吐才是天花板，
 §6.7 第 1 条里那道「跨玩家并发」的墙就到了非撞不可的时候。
 
+### 7.6 后续：`arrival.ts` 592 行，把这一刀切出来的两半也切成两个文件（2026-09-09 当日追加）
+
+§7.2/§7.3 那一轮只加了时间片，**没有动 `npm run check:filelength`**——`worldsvc/src/combatMarch/arrival.ts`
+被撑到 **592 行**，超了 500 门禁又不在基线里，于是当日分支一开 PR 就会红在 `ci.yml` 的 `server-checks`。
+（教训本身很老：门禁失手一次的成本是「下一个人替你发现」，见 [`server.md`](../../claudedocs/server.md)。）
+
+**没有走基线豁免，走了真拆**，按 [`server-audits.md`](../../claudedocs/server-audits.md)「拆分形态的优先级」
+的**形态①（独立函数模块）**——§7.2 已经论证过这两半「查询互不相交、不共享状态」，那就是它们能各自成文件的
+现成理由，不用再重新判断一遍边界：
+
+| 文件 | 行数 | 内容 |
+|---|---|---|
+| `combatMarch/arrival.ts` | 214 | **队列那一端**：两个扫描 + 三个旋钮（`ARRIVAL_SCAN_LIMIT` / `SETTLE_SLICE_MS` / `warnIfCapped`）+ `arrivals.*` 计数器。`ArrivalService` 只剩这三个对外方法。 |
+| `combatMarch/arrivalWalk.ts` | 210 | **走格子那半**：`advanceMarch`——ADR-051 的逐格前进、occ 索引维护、P2b/P5/P3b 三种拦截、以及行军自己的账本与删除。 |
+| `combatMarch/arrivalSettle.ts` | 214 | **落地那半**：`applyArrival` 按 `kind` 分派（return 退兵 / attack·sweep·occupy 交给攻城域 / move 走 `applyMove`+`tryParkTeam` / 兜底 reinforce）。后两个是文件私有，只有 `applyArrival` 会调。 |
+| `combatMarch/arrivalCtx.ts` | 25 | `ArrivalSiegeCtx`：这两半真正用到的 5 个 `SiegeService` 方法，照 `combatSiege/ctx.ts` 的窄接口惯例。 |
+
+- **两半之间只有一条边**：`advanceMarch` 走到路径末格时调 `applyArrival`。所以 `ArrivalSiegeCtx` 是 5 个方法
+  的并集而不是两个接口——走格子那半会传递性地用到落地那半的三个。
+- **零行为改动，而且是可机械核对的零**：把新文件反向变换（还原缩进、`core.`→`this.core.`、
+  `siege.`→`this.siege.`、函数签名换回方法签名）后跟 `git show HEAD:...arrival.ts` 的对应行段 `diff`，
+  两个文件**逐字节相同**；`arrival.ts` 自己那 194 行里只有 3 处调用点改成了传 `(this.core, this.siege, …)`。
+  §7.4 那四条变异验证过的性质因此一条都没碰到，三个到达测试文件**一行没改就是绿的**。
+- **顺带清掉一处反射**：`test/review-fixes-2026-08-03.e2e.test.ts` 原来靠
+  `(svc as any).combat.march.arrival.advanceMarch` 戳私有方法（2026-08-11 那次拆分留下的写法）——现在
+  `advanceMarch` 是个真正导出的函数，直接 `import` 调用，`as any` 只剩下读那两个私有依赖字段。
+- **补了一条结构门禁**：`worldsvc/test/arrival-split-edges.test.ts`（3 例，纯静态、读源码、4ms）钉住那条边
+  **单向**——`arrivalSettle.ts` 不许 import 走格子那半，两半都不许 import 回 `arrival.ts`。**为什么值得一条**：
+  反向 import 不会编译失败，它只是把这一对变成加载期 ESM 环，症状是某个 scheduler tick 里
+  `applyArrival is not a function`——读起来像到达逻辑的运行时 bug，而不是一次 import 失误（跟
+  `compute-worker-module-graph.test.ts` 同一个理由：把模块图的规矩钉在便宜的地方，别等崩了再从一句
+  指错方向的报错往回找）。**三轮变异全部验红**：① 在 `arrivalSettle.ts` 里 import `advanceMarch`；
+  ② 删掉 `arrivalWalk.ts` 那条真实的 `./arrivalSettle` import；③ 让 `arrivalWalk.ts` import 回 `arrival.ts`。
+
 ## 八、`getMap` 的 payload（2026-09-09，§6.7 第 3 条）
 
 > 一句话：**先量，结果三条候选路线全都不该走** —— 真正的病因是「几千个近乎相同的瓦片对象**没有被压缩**」，
