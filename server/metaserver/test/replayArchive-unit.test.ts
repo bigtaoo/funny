@@ -1,7 +1,8 @@
 // Unit coverage for src/replayArchive.ts, importing directly from '../src/...' (not '../dist/...') so
-// v8 coverage attributes executed lines back to source — see test/replayArchive.test.ts (imports
-// '../dist/replayArchive.js', so its otherwise-thorough coverage of this module's *behavior* records
-// 0% against src/replayArchive.ts). Scenarios below mirror that file (read first, per the task brief)
+// v8 coverage attributes executed lines back to source — see test/replayArchive.test.ts, which
+// imported '../dist/replayArchive.js' until 2026-09-09, so its otherwise-thorough coverage of this
+// module's *behavior* recorded 0% against src/replayArchive.ts. Scenarios below mirror that file
+// (read first, per the task brief)
 // plus additional module-instances built with a fresh `NW_REPLAY_ARCHIVE_DIR` (via vi.resetModules() +
 // dynamic re-import, since ARCHIVE_DIR is captured once at module load) to reach the branches the
 // single shared-env instance used everywhere else in this suite can't: disabled (env unset), and the

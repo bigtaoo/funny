@@ -1,11 +1,11 @@
 // PvE stamina-at-entry end-to-end (A4, 2026-07-06): stamina is deducted by POST /pve/enter, not by POST /pve/clear.
 //   Validates default cost (10), insufficient balance (402, no partial deduction), unknown/locked level (400),
 //   banned account (403), and that /pve/clear no longer touches the pveStamina balance.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_pve_enter_test';

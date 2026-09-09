@@ -1,8 +1,10 @@
 // src-attributed unit coverage for src/socialsvcClient.ts (HttpMetaSocialsvcClient + nullMetaSocialsvcClient).
-// No existing test imports this from '../src/...' directly — mail-claim.e2e.test.ts exercises the same
-// class but via '../dist/socialsvcClient.js' (compiled output), which vitest's v8 coverage provider
+// No other test imported this from '../src/...' when this was written — mail-claim.e2e.test.ts drove
+// the same class via '../dist/socialsvcClient.js' (compiled output), which vitest's v8 coverage provider
 // cannot attribute to src/*.ts (same rationale as commercial-client-unit.test.ts's header). This file
 // drives the real class from '../src/socialsvcClient.js' against a real node:http fixture server.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';

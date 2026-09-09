@@ -15,6 +15,8 @@
 // races below are exercised by deterministically wrapping one real collection method (same trick as
 // cards-fuse-unit.test.ts / economy-service-unit.test.ts), which reads more naturally against the same
 // real driver skin.e2e.test.ts already validates against, and needs no new operator support.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createMongo, type JwtConfig, type MongoHandle, type Collections, type SkinInstance } from '@nw/shared';

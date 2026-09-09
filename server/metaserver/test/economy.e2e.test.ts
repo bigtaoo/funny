@@ -1,16 +1,16 @@
 // meta economy orchestration end-to-end (S5-5): real Mongo (saves/adsDaily) + injected fake commercial client.
 //   shop/gacha coin deduction → item delivery → mirror, ads cap, iap mirror, reconciliation re-delivery (crash before delivery) with no loss and no duplication.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, ADS_MIN_INTERVAL_MS, CARD_INV_CAP, EQUIPMENT_INV_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 import type {
   CommercialClient,
   GachaResultEntry,
   UndeliveredOrder,
-} from '../dist/commercialClient.js';
-import type { SystemMailContent } from '../dist/socialsvcClient.js';
+} from '../src/commercialClient.js';
+import type { SystemMailContent } from '../src/socialsvcClient.js';
 import { seedEquipmentBatch } from './helpers/equipment.js';
 import { seedCardBatch } from './helpers/cards.js';
 

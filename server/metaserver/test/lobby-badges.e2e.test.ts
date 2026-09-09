@@ -3,12 +3,12 @@
 // (getSocialBadges/getAchievements/getRetention/getEvents); the regression this guards against is the
 // P0-audit bug class where a field present in the handler's return value but missing from the OpenAPI
 // response schema gets silently stripped to `undefined` by fastify's schema-based serialization.
-// Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
+// Requires `cd server && docker compose up -d` + prior `tsc -b` (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, makeWeekKey, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
-import type { MetaSocialsvcClient } from '../dist/socialsvcClient.js';
+import { buildApp } from '../src/app.js';
+import type { MetaSocialsvcClient } from '../src/socialsvcClient.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_lobby_badges_test';

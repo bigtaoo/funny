@@ -2,7 +2,7 @@
 //   New account initialization: 3 starter cards (lichuang/chenshou/suyuan) on first auth
 //   POST /cards/fuse: exactly 5 same-faction same-level materials consumed → target +1 level; idempotency
 //   POST /equipment/equip: equip into CardInstance.gear[slot]; cardInstanceId validation
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,
@@ -13,9 +13,9 @@ import {
   FUSION_MATERIAL_COUNT,
 } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import type { CommercialClient } from '../dist/commercialClient.js';
-import { buildApp } from '../dist/app.js';
-import { fuseCards } from '../dist/cards.js';
+import type { CommercialClient } from '../src/commercialClient.js';
+import { buildApp } from '../src/app.js';
+import { fuseCards } from '../src/cards.js';
 import { seedEquipment } from './helpers/equipment.js';
 import { seedCard as seedCardDoc, readCardInv } from './helpers/cards.js';
 

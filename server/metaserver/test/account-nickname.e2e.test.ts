@@ -4,11 +4,11 @@
 // default the first time it's read — this suite covers GET /save exposing it, idempotency across
 // repeated reads, that an already-set name is never clobbered, and that match history's
 // opponentName snapshot is populated for an opponent who never customized their nickname.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, compressReplayDoc, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_nickname_test';

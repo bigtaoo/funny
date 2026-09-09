@@ -1,13 +1,13 @@
 // Paddle route-level e2e: real Mongo + FakeCommercial + real fastify app via inject(). Covers what
 // test/paddle.test.ts explicitly excludes — POST /shop/paddle/checkout and POST /paddle/webhook end to end,
 // including the monthly/year card subscription branch added 2026-07-25 (COMMERCIAL_DESIGN.md §10.7).
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
-import type { CommercialClient, WalletView } from '../dist/commercialClient.js';
+import { buildApp } from '../src/app.js';
+import type { CommercialClient, WalletView } from '../src/commercialClient.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_paddle_routes_test';

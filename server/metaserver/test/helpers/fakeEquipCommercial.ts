@@ -1,7 +1,7 @@
 // Fake CommercialClient for equipment/{enhance,reforge}.ts unit tests (only getWallet/spend are
 // exercised by those two files; everything else is unused there). Mirrors the equivalent inline
 // helper in equipment.e2e.test.ts (makeFakeCommercial), duplicated here for the src-import unit
-// tests since that one lives in a test file that imports from ../dist and isn't meant to be shared.
+// tests since that one is a local helper inside that e2e file and isn't meant to be shared.
 import type { CommercialClient } from '../../src/commercialClient.js';
 
 export interface FakeEquipCommercial extends CommercialClient {

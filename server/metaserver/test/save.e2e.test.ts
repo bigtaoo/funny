@@ -4,11 +4,11 @@
 // service/base.ts), neither of which needs Mongo.
 // Requires a real Mongo single-node replica set: `cd server && docker compose up -d`.
 // Entire suite is skipped when Mongo is unreachable (does not block CI without a DB); prints a warning.
-// Imports from the build artifact dist (NodeNext .js extensions are awkward under vitest source resolution); run `tsc -b` first.
+// Requires `tsc -b` first (for @nw/shared's dist; this file imports ../src — vitest resolves the NodeNext `.js` specifiers in src just fine).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, compressReplayDoc, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_test';

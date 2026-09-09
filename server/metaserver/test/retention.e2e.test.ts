@@ -1,13 +1,13 @@
 // Retention endpoint end-to-end tests (B5): real Mongo + injected fake commercial. Verifies that fields in
 // defs.rewards / defs.tasks (kind/count, id/points) in the GET /retention response are **not stripped**
 // after fastify-openapi-glue serialization — regression test for the 2026-06-24 check-in calendar `+undefined` bug (RETENTION_DESIGN §10.1).
-// Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
+// Requires `cd server && docker compose up -d` + prior `tsc -b` (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, makeDayKey, makeMonthKey, makeWeekKey, DAILY_COINS_REWARD, CARD_DEFS, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import type { FindOneAndUpdateOptions } from 'mongodb';
-import { buildApp } from '../dist/app.js';
-import type { CommercialClient, UndeliveredOrder } from '../dist/commercialClient.js';
+import { buildApp } from '../src/app.js';
+import type { CommercialClient, UndeliveredOrder } from '../src/commercialClient.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_retention_test';

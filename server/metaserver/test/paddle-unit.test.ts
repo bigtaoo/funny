@@ -11,6 +11,8 @@
 // test/paddle.test.ts already covers clampPaddleQuantity/coinsForPriceId/subscriptionForPriceId from
 // '../src/paddle.js' — this file does not repeat those, only usdCentsForPriceId/starterProductForPriceId/
 // priceIdForTier (0% before this file) plus every checkoutRoute.ts/webhookRoute.ts/signature.ts branch.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';

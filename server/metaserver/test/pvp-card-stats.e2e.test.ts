@@ -1,10 +1,10 @@
 // PvP card win-rate pipeline e2e (BALANCE data pipeline P1): /internal/match/report accrues pvpCardStats from
 // each side's deck → GET /internal/pvp-card-stats returns the aggregated per-card totals.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, compressReplayDoc, type JwtConfig, type MatchReplayDoc, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_pvpcardstats_test';

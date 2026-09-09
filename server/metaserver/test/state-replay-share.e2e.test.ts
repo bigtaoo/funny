@@ -2,11 +2,11 @@
 //   POST /replay/share (authenticated blob upload → shareCode) → public GET /r/{shareCode}
 //   (anonymous retrieval + viewCount++).
 //   Coverage: round-trip, anonymous retrieval, missing-code 404, oversized blob 400.
-//   Requires `cd server && docker compose up -d` and `tsc -b` first (imports dist).
+//   Requires `cd server && docker compose up -d` and `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_state_share_test';

@@ -14,6 +14,8 @@
 // findOneAndUpdate rev-guard retries, none of which test/helpers/fakeCollection.ts's generic in-memory
 // double implements, so a real Mongo instance is the pragmatic choice here (not a from-scratch
 // reimplementation of those operators).
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommercialClient } from '../src/commercialClient';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';

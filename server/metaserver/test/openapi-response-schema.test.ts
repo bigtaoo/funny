@@ -12,7 +12,7 @@
 import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import { SPEC_PATH } from '../dist/app.js';
+import { SPEC_PATH } from '../src/app.js';
 import type { CheckinData, DailyData, WeeklyData } from '@nw/shared';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

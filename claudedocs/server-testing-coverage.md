@@ -756,9 +756,63 @@ SUCCESS，没有一处变红。该文件自己的注释已经写了"指纹记在
 所以这 9 例对 `src/apple/webhookRoute.ts` 贡献 0%，该文件读作 25%：一份完备的套件存在，而文件在
 90% 门禁眼里等于裸奔。改成 `../src/` 后 25% → 100%，断言一字未改。
 
-**这不是孤例**：`metaserver/test` 里 95 个文件导 `src/`、**53 个导 `dist/`**。本轮只改了这一个（本任务
-范围），其余 52 个是同一形状的待办——每一个都在让自己覆盖的源码文件在报告里显得比实际更糟，而"补覆盖率"
-的下一轮会照着这些虚低的数字去挑目标。
+**这不是孤例**：`metaserver/test` 里还有一批同形状的文件。本轮只改了这一个（本任务范围），其余是同一
+形状的待办——每一个都在让自己覆盖的源码文件在报告里显得比实际更糟，而"补覆盖率"的下一轮会照着这些虚低
+的数字去挑目标。**（当天后续任务已全部改完，连数字订正一起见下一节；当时估的"53 个"是 `grep` 把注释里
+的引用也数进去了，真实是 34 个。）**
+
+### 把剩下的 dist 导入全改掉（2026-09-09 当天的后续任务）
+
+上一节说"其余 52 个是同一形状的待办"，这一节就是那件事。**顺带订正那个数字**：`grep -l "from '../dist/"`
+把注释里引用这个路径的句子也数进去了（这批单测的头注释恰好每篇都写着"某个 e2e 从 `'../dist/app.js'`
+导入"）。真正带 import 语句的是 **34 个文件**——`appleWebhookRoute.test.ts` 上一节已改，这轮改剩下的
+**33 个文件、55 行 import**（`'../dist/X.js'` → `'../src/X.js'`，断言一个字没动）。139 个测试文件里其余
+的本来就导 src。
+
+**跑前跑后（`npm run test:coverage`，140 文件 / 2341 例，两遍全过）**：
+
+| | 改前 | 改后 | Δ |
+|---|---|---|---|
+| Lines | 94.57%（8332/8810） | **97.16%**（8560/8810） | +2.59 |
+| Functions | 95.84%（508/530） | **97.35%**（516/530） | +1.51 |
+| Branches | 99.34%（4065/4092） | 98.79%（**4251**/**4303**） | −0.55 |
+
+**只有 5 个文件动了**，因为前三轮补测早就用 src 导入的 `*-unit.test.ts` 把大部分模块补上了；剩下的正是
+那几个"只有 e2e 走 HTTP 才会碰到"的路由/服务层：
+
+| 文件 | 行覆盖 | 行数 |
+|---|---|---|
+| `src/service/progression.ts` | 53.43% → **93.65%** | 189 |
+| `src/internal/accountRoutes.ts` | 54.41% → **90.10%** | 283 |
+| `src/internal/matchReport/miscRoutes.ts` | 64.15% → **98.11%** | 53 |
+| `src/service/auth.ts` | 80.95% → **100%** | 63 |
+| `src/internal/economyRoutes.ts` | 86.32% → **95.29%** | 234 |
+
+**分支百分比会掉，别误读成回退**——就是本文档 metaserver 第三轮那节记的同一件事：v8 只统计**被执行过的
+函数内部**的分支，所以这几个文件的函数第一次在 vitest 下跑起来，分母跟着涨。逐个看绝对数就清楚：
+`progression.ts` 33/33 → 70/77、`accountRoutes.ts` 78/79 → 136/148、`miscRoutes.ts` 11/11 → 18/19、
+`economyRoutes.ts` 124/128 → 132/142。包级两道 90% 门槛（行 97.16% / 分支 98.79%）都还有大把余量。
+
+**副产品：这 30 个此前不可见的未覆盖分支就是下一轮的靶子**（`accountRoutes.ts` 12、`economyRoutes.ts`
+10、`progression.ts` 7、`miscRoutes.ts` 1）。它们不是本轮改坏的，是本轮才第一次进入分母。
+
+**装了门禁**（`server/eslint.config.mjs`）：test 文件此前整体不在 lint 范围内（见那个文件的头注释），
+现在多一个**只带 `no-restricted-imports` 一条规则**的 `*/test/**/*.ts` 块，禁掉 `../dist/*` 与
+`../../dist/*`（即"本包自己的编译产物"这两种写法）。**跨包的 `../../<pkg>/dist/*` 故意放过**：
+`admin/test/comp-mail.e2e.test.ts` 和 `metaserver/test/mail-claim.e2e.test.ts` 是跨服务连线测试，被导的
+那个包由它自己的测试轮次测量覆盖率，没有任何东西被遮蔽（也因此 `mail-claim.e2e.test.ts` 那 4 行
+`'../../socialsvc/dist/*.js'` 本轮没动，上面"环境"那一节要求先 build socialsvc 的门槛依旧成立）。
+两处实操细节：①这个块里要**注册 `@typescript-eslint` 插件但不启用任何规则**，否则 test 文件里那些为 src
+配置写的 `eslint-disable @typescript-eslint/*` 注释会变成"Definition for rule was not found"错误；
+②同理 `reportUnusedDisableDirectives: 'off'`。门禁自测过：往 `feedback.e2e.test.ts` 注入一行
+`'../dist/app.js'` → 红，改回 → 绿；`test/helpers/` 下造一个 `'../../dist/app.js'` → 也红。顺带清掉
+`shared/test/march.test.ts` 里一条 `eslint-disable-next-line import/first`——`import` 插件全仓库都没配，
+那条指令一直是死的，只是 test 文件从来没被 lint 过所以没人看见。
+
+**注释也是这轮的一部分**：那 27 篇单测/分支测的头注释里"某个 e2e 导 dist，所以这些行记不到 src"是现在时
+写的，改完就成了假话。统一在每篇头注释末尾加一行过去时标注（指回本节），另有 8 处短句式的单独改写；
+被改的 33 个文件自己那句"(imports from dist)"改成准确说法——`tsc -b` 现在只为 `@nw/shared` 的 dist，
+不为本文件的 import。
 
 ### 环境（worktree 里跑 commercial/metaserver 测试的门槛）
 

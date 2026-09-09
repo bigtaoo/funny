@@ -8,6 +8,8 @@
 // '../src/moderation.js' (backed by FakeCollection — plain findOne/updateOne with dotted $set, no real
 // Mongo needed) and re-exercises the same scenarios, plus the one branch the e2e suite never reached:
 // REV_RETRIES (8) exhausted under sustained moderationRev conflict → ModerationConflictError thrown.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { describe, it, expect } from 'vitest';
 import type { Collections } from '@nw/shared';
 import { applyPenalty, actionForScore, ModerationConflictError, TEMP_BAN_DURATION_MS } from '../src/moderation.js';

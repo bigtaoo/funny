@@ -14,6 +14,8 @@
 //
 // Existing e2e files read for scenarios/shapes: save.e2e.test.ts, match-replay.e2e.test.ts,
 // state-replay-share.e2e.test.ts, pvp-card-stats.e2e.test.ts (report payload shape), replayArchive.test.ts.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';

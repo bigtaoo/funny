@@ -1,11 +1,11 @@
 // Password account end-to-end tests (SA-1 acceptance): register → login → change password → loginId taken / invalid credentials.
 // Requires a real single-node Mongo replica set: `cd server && docker compose up -d`. Entire suite is skipped if Mongo is unreachable.
-// Imports from build output dist; requires `tsc -b` before running.
+// Requires `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import * as shared from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 
 // `@nw/shared`'s dist build is genuine ESM (non-configurable named exports), so vi.spyOn on the
 // namespace object throws "Cannot redefine property" — wrap verifyPassword in a vi.fn via a module

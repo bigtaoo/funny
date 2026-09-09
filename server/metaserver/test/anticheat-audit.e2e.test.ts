@@ -1,7 +1,7 @@
 // Achievement anti-cheat offline spot-check end-to-end (S9-7, ACHIEVEMENT_DESIGN §4.4): real Mongo + injected fake peer judge.
 //   overclaim → rollback + suspicion increment + review record + overclaim marker / idempotent rerun / clean leaves no record / no judge → all-zero, match stays unaudited /
 //   judge failure → skipped / underreport → clean / suspicion-weighted sampling / rollback floor at 0 / internal review endpoint auth.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,
@@ -13,9 +13,9 @@ import {
   type SaveData,
 } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
-import { auditOnce } from '../dist/anticheatAudit.js';
-import type { GatewayClient, JudgeReq, JudgeRes } from '../dist/gatewayClient.js';
+import { buildApp } from '../src/app.js';
+import { auditOnce } from '../src/anticheatAudit.js';
+import type { GatewayClient, JudgeReq, JudgeRes } from '../src/gatewayClient.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_anticheat_test';

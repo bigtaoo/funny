@@ -13,6 +13,8 @@
 // `findOneAndUpdate` with a `rev` guard — all straightforward for FakeCollection, but the "wrap one
 // collection method to deterministically force a rare race branch" trick used below is far more
 // legible against the exact same real driver the e2e test already validates against).
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {

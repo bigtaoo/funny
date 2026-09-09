@@ -2,12 +2,12 @@
 //   First clear triggers spot-check → materials withheld + needsReplay/verifyId; /pve/verify: re-compute passes → grant materials /
 //   star mismatch → mark suspicious, do not grant / no available judge → benefit-of-doubt grant; duplicate upload is idempotent;
 //   no gateway configured → no spot-check (grant immediately, reverts to prior behaviour).
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
-import type { GatewayClient, JudgeReq, JudgeRes } from '../dist/gatewayClient.js';
+import { buildApp } from '../src/app.js';
+import type { GatewayClient, JudgeReq, JudgeRes } from '../src/gatewayClient.js';
 import { seedEquipment } from './helpers/equipment.js';
 import { seedCard } from './helpers/cards.js';
 

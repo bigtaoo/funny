@@ -10,6 +10,8 @@
 // handle the happy paths, but the exhausted-retry test below needs to wrap one real collection method
 // deterministically (same trick as cards-fuse-unit.test.ts / economy-service-unit.test.ts), which reads
 // more naturally against the same real driver the e2e test already validates against.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createMongo, type JwtConfig, type MongoHandle, type Collections } from '@nw/shared';

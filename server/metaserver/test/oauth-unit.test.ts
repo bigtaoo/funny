@@ -5,6 +5,8 @@
 // rationale as this task's other client-wrapper test files). This file imports OAuthService /
 // createOAuthService directly from '../src/oauth.js' and stubs global fetch, so every branch of
 // exchangeGoogle (including ones the e2e happy-path scenarios don't reach) gets attributed to src.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OAuthService, OAuthError, createOAuthService } from '../src/oauth.js';
 

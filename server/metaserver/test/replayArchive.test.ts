@@ -10,7 +10,7 @@ import {
   readArchivedMeta,
   readArchivedReplayGz,
   sweepArchive,
-} from '../dist/replayArchive.js';
+} from '../src/replayArchive.js';
 
 const ARCHIVE_DIR = process.env.NW_REPLAY_ARCHIVE_DIR!;
 
