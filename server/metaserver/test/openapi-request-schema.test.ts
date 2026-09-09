@@ -16,7 +16,7 @@ import { readFileSync } from 'fs';
 import Ajv from 'ajv';
 import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import { SPEC_PATH } from '../dist/app.js';
+import { SPEC_PATH } from '../src/app.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Node = any;

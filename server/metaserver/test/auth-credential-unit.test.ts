@@ -12,6 +12,8 @@
 // validation branches that sit BEHIND an identical-bound openapi schema check (only reachable via a
 // trim-collapsing whitespace payload), censorChat hits on register/rename, feedback rate limiting, and
 // the accountLifecycle handlers (deleteAccount/cancelAccountDeletion/recordGdprConsent).
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { describe, it, expect } from 'vitest';
 import { makeNewSave, signToken, type Collections, type SaveData } from '@nw/shared';
 // CommercialClient is metaserver's own client interface, not a @nw/shared export — the old import

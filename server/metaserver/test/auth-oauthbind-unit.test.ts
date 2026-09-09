@@ -6,7 +6,8 @@
 //     (`private readonly oauth = createOAuthService()`, see src/service/auth.ts) with no injection
 //     point through BuildAppOpts, so exercising a real network exchange from the HTTP layer means
 //     mocking global fetch + toggling env vars — already done thoroughly by
-//     test/auth-oauth-wx.e2e.test.ts (dist-only, doesn't count toward src coverage, but the scenarios
+//     test/auth-oauth-wx.e2e.test.ts (dist-only until 2026-09-09, so it counted for nothing in the
+//     src coverage report at the time, but the scenarios
 //     don't need reinventing). Building `ctx.oauth` by hand instead lets every exchangeCode outcome
 //     (unsupported provider / OAuthError / a generic thrown Error / success) be driven directly, with
 //     no network and no env var juggling.

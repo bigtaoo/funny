@@ -7,6 +7,8 @@
 // every guard that a route's own schema makes unreachable, read as never-executed. Instead of another
 // buildApp, this file constructs the domain services directly over a MetaCore (real Mongo where the
 // logic needs Mongo operators FakeCollection does not model) so the request shape is fully controllable.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createMongo,

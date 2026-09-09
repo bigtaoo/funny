@@ -15,6 +15,8 @@
 // from these two files only ever uses findOne/findOneAndUpdate/updateOne with $set/$inc/upsert (grantCard/
 // grantEquipment/mirrorCoins/recordMaterialGrants/grantTitleToPlayer) — never deliverGrant/deliverMailGrant's
 // $addToSet-with-$each/$push-with-$each+$slice, which FakeCollection doesn't implement.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { makeNewSave, makeWeekKey, makeMonthKey, makeDayKey, type Collections, type SaveData } from '@nw/shared';

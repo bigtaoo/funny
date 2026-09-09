@@ -1,12 +1,12 @@
 // PvE server-authoritative end-to-end (PVE_INTEGRITY_PLAN §8): /pve/clear completion settlement.
 //   Validates unlock prerequisites, repeatable farming with material grants, daily cap capped.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle, PVE_DAILY_CLEAR_REWARD_CAP } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
 import type { FindOneAndUpdateOptions } from 'mongodb';
-import { buildApp } from '../dist/app.js';
-import type { GatewayClient, JudgeRes } from '../dist/gatewayClient.js';
+import { buildApp } from '../src/app.js';
+import type { GatewayClient, JudgeRes } from '../src/gatewayClient.js';
 import { FakeSocialsvc, ThrowingSocialsvc, fakeGateway } from './helpers/fakeClients.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';

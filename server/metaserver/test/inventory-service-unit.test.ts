@@ -14,6 +14,8 @@
 // branches are already covered elsewhere and are not the point of this file).
 //
 // Existing e2e test files read for scenarios/shapes/defIds: equipment.e2e.test.ts, cards.e2e.test.ts, skin.e2e.test.ts.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,

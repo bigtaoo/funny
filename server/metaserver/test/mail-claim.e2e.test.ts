@@ -16,9 +16,9 @@ import {
   ErrorCode, ok, err, loadInternalAuth,
 } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import type { CommercialClient } from '../dist/commercialClient.js';
-import { HttpMetaSocialsvcClient } from '../dist/socialsvcClient.js';
-import { buildApp } from '../dist/app.js';
+import type { CommercialClient } from '../src/commercialClient.js';
+import { HttpMetaSocialsvcClient } from '../src/socialsvcClient.js';
+import { buildApp } from '../src/app.js';
 import { MailService } from '../../socialsvc/dist/mailService.js';
 import { createSocialMongo, type SocialMongo } from '../../socialsvc/dist/db.js';
 // socialsvc ships complete no-op clients; the inline literals these replace were hand-rolled and had

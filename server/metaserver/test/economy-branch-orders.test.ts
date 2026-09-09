@@ -8,6 +8,8 @@
 //
 // Real Mongo (rs0, DB nw_meta_grpC_branch_test): every path here bottoms out in deliverGrant/
 // deliverMailGrant, whose `{$ne: orderId}` guard and `$push`+`$slice` cap FakeCollection does not model.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {

@@ -11,6 +11,8 @@
 // What these branches decide for the player: whether they end up with a nickname/publicId at all
 // (a null there shows up as a raw accountId in every room list and match record), and whether a
 // publicId collision retries or 500s their very first login.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { describe, expect, it } from 'vitest';
 import { makeNewSave, type Collections, type SaveData } from '@nw/shared';
 import {

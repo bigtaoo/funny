@@ -8,6 +8,8 @@
 // an old build, a truncated batch, a hand-rolled request. Each of those fallbacks decides whether a
 // line lands in Loki at all (a dropped line is a hole in the anomaly dashboard, and a hole reads as
 // "no crashes" rather than "we stopped receiving them"), or lands with a wrong-but-plausible value.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { FeatureFlagCache, signToken } from '@nw/shared';

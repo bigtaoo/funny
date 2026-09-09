@@ -1,11 +1,11 @@
 ﻿// Achievement endpoint end-to-end (S9-4): real Mongo + injected fake commercial. Stats are seeded directly into saves
 // (PvE/PvP accumulation in S9-3/S9-6), verifying GET /achievements + claim double-validation + idempotent coin grant + concurrent dedup.
-// Requires `cd server && docker compose up -d` and a prior `tsc -b` (imports from dist).
+// Requires `cd server && docker compose up -d` and a prior `tsc -b` (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
-import type { CommercialClient, UndeliveredOrder } from '../dist/commercialClient.js';
+import { buildApp } from '../src/app.js';
+import type { CommercialClient, UndeliveredOrder } from '../src/commercialClient.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_ach_test';

@@ -8,6 +8,8 @@
 // Worse, an e2e test structurally cannot produce the branches that matter most here: a lost
 // findOneAndUpdate CAS race, a save row that vanishes between the create and the read-back, or a
 // TTL-expired cache entry. Those are driven directly below by wrapping one collection method.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { describe, expect, it, vi } from 'vitest';
 import {
   makeNewSave,

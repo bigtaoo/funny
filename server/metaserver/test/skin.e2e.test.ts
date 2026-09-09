@@ -1,11 +1,11 @@
 // Skin escrow/grant backend end-to-end (auction task2, AUCTION_DESIGN §2.1/§9):
 //   Internal /internal/skins/{escrow,grant} (auction escrow/transfer; owned/equipped checks, idempotent).
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import type { CommercialClient } from '../dist/commercialClient.js';
-import { buildApp } from '../dist/app.js';
+import type { CommercialClient } from '../src/commercialClient.js';
+import { buildApp } from '../src/app.js';
 
 function makeFakeCommercial(): CommercialClient {
   return {

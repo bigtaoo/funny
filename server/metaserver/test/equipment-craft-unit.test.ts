@@ -1,7 +1,7 @@
 // Unit tests for src/equipment/craft.ts (craftEquipment), importing directly from `../src/...`
-// (NOT `../dist/...`) so v8 coverage attributes executed lines back to source — see
-// equipment.e2e.test.ts's header comment for why the dist-importing e2e suite (which already
-// exercises these same behaviors) doesn't count toward src/*.ts coverage.
+// (NOT `../dist/...`) so v8 coverage attributes executed lines back to source. equipment.e2e.test.ts
+// already exercises these same behaviors, but until 2026-09-09 it imported dist, which v8 cannot
+// attribute back to src/*.ts (see claudedocs/server-testing-coverage.md).
 // No Mongo: Collections is backed by FakeCollection (test/helpers/fakeEquipCols.ts).
 import { describe, it, expect } from 'vitest';
 import { EQUIPMENT_INV_CAP, type EquipmentInstance } from '@nw/shared';

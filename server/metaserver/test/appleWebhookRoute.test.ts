@@ -9,8 +9,10 @@
 // Imported from `../src/`, not `../dist/` (2026-09-09). Both run the same code — `npm test` is
 // `tsc -b && vitest run`, so dist is never stale — but v8 attributes coverage to the file it
 // actually loaded, so every case here counted for nothing and `src/apple/webhookRoute.ts` read as
-// 25% covered: a thorough suite existed and the file was ungated anyway. 95 of this package's test
-// files already import from src; this is one of the 53 that did not.
+// 25% covered: a thorough suite existed and the file was ungated anyway. It was the first of this
+// package's dist importers to be converted; the remaining 33 followed later the same day. (That pass
+// also corrected the count quoted here: the "53 files" figure came from a grep that also counted
+// comment text — 34 test files actually had dist import statements.)
 import { describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance, type LightMyRequestResponse } from 'fastify';
 import { registerAppleWebhookRoute } from '../src/apple/webhookRoute';

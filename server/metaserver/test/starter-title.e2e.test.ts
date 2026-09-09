@@ -2,12 +2,12 @@
 // Covers new accounts (seeded by makeNewSave) and the lazy backfill on GET /save for pre-existing
 // accounts created before the starter grant was wired — including that the backfill never steals the
 // equipped slot from a title the player actually earned.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, makeNewSave, ladderTitleId, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
-import { grantTitleToPlayer } from '../dist/titles.js';
+import { buildApp } from '../src/app.js';
+import { grantTitleToPlayer } from '../src/titles.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_starter_title_test';
