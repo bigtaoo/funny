@@ -10,18 +10,22 @@
 //     is exactly the mistake this file pins down;
 //   * the threshold is inclusive at MIN_AGE_YEARS, since an off-by-one here silently locks out or
 //     lets in a whole birth year.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { createAppCore } from '../src/app/createAppCore';
-import { AGE_DECLARED_FLAG, MIN_AGE_YEARS, SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG } from '../src/app/appConstants';
+import { AGE_DECLARED_FLAG, MIN_AGE_YEARS, SEEN_INTRO_FLAG, GDPR_CONSENT_FLAG, TOKEN_KEY } from '../src/app/appConstants';
 import { HeadlessPlatform } from './harness/HeadlessPlatform';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
+import { fetchTransport, setNetTransport, type NetRequest } from '../src/net/transport';
 
 const THIS_YEAR = new Date().getFullYear();
 
 /** A core whose save carries `flags`, started as a returning player (past the intro). */
-function launch(flags: Record<string, boolean>) {
+function launch(flags: Record<string, boolean>, storage: Record<string, string> = {}) {
   const platform = new HeadlessPlatform({
-    storage: { nw_save_v1: JSON.stringify({ flags: { tutorial_done: true, [SEEN_INTRO_FLAG]: true, ...flags } }) },
+    storage: {
+      nw_save_v1: JSON.stringify({ flags: { tutorial_done: true, [SEEN_INTRO_FLAG]: true, ...flags } }),
+      ...storage,
+    },
   });
   const views = new HeadlessAppViews();
   createAppCore(platform, views).start();
@@ -35,6 +39,9 @@ function recordedFlag(platform: HeadlessPlatform): boolean | undefined {
 }
 
 describe('age gate', () => {
+  afterEach(() => { setNetTransport(fetchTransport); }); // the REST seam is process-global
+
+
   it('is the first screen on a launch that has never recorded an age', () => {
     const { views } = launch({});
     expect(views.screen).toBe('ageGate');
@@ -67,6 +74,32 @@ describe('age gate', () => {
     const { views } = launch({ [AGE_DECLARED_FLAG]: true, [GDPR_CONSENT_FLAG]: true });
     expect(views.screen).not.toBe('ageGate');
     expect(views.screen).not.toBe('consent');
+  });
+
+  it('REGRESSION: the answer reaches the server on a launch that only had a stored token', async () => {
+    // 2026-09-09: the gates run before resolveEntry, which used to be the first place the persisted
+    // token was handed to ApiClient — so `setFlag` saw `online() === false`, wrote the local mirror
+    // only, and resolveEntry's own pull then overwrote `flags` with the cloud copy (reconcile's
+    // "cloud always wins"). Net effect for every already-logged-in install: the gate asked again on
+    // every single launch, no matter how many times it was answered. What makes the answer stick is
+    // that it actually leaves the device, under this account's token.
+    const seen: NetRequest[] = [];
+    setNetTransport({
+      request: async (req) => {
+        seen.push(req);
+        return { ok: true, status: 200, json: async () => ({ ok: true, data: { save: {} } }), text: async () => '' };
+      },
+    });
+
+    const { views } = launch({}, { nw_api_base: 'http://api.test', [TOKEN_KEY]: 'tok-1' });
+    views.ageGate!.cb.onDeclared(THIS_YEAR - MIN_AGE_YEARS);
+    await new Promise((r) => setTimeout(r, 0)); // let the background PUT run
+
+    const put = seen.find((r) => r.url === 'http://api.test/flags');
+    expect(put, 'the declared age must be pushed to the server, not just written locally').toBeDefined();
+    expect(put!.method).toBe('PUT');
+    expect(put!.headers['authorization']).toBe('Bearer tok-1');
+    expect(JSON.parse(put!.body!)).toEqual({ key: AGE_DECLARED_FLAG, value: true });
   });
 
   it('still asks for an age when only consent is on record (the pre-gate accounts)', () => {
