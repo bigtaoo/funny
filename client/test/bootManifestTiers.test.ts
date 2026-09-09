@@ -1,5 +1,5 @@
 /**
- * bootManifestTiers.ui.ts — the L0 blocking/background split (ASSET_PACKAGING §11.2).
+ * bootManifestTiers.test.ts — the L0 blocking/background split (ASSET_PACKAGING §11.2).
  *
  * The split moved 0.51 MB off the boot gate on the argument that `enterBattle`'s own readiness
  * gate re-awaits every background-tier asset before a battle can start. That argument is the
@@ -9,8 +9,12 @@
  * the case a developer with a warm cache never sees. The last test in this file is that guard;
  * the ones before it pin the gate's own behaviour.
  *
- * Lives under test/ui/ because bootManifest.ts and battleAssets.ts (via UnitView) both reach raw
- * `.png`/`.tao` imports, which only vitest.ui.config.ts's stubBinaryAssets plugin can resolve.
+ * Lived under test/ui/ until 2026-09-09 because bootManifest.ts and battleAssets.ts (via UnitView)
+ * both reach raw `.png`/`.tao` imports, which only the stubBinaryAssets plugin can resolve; that
+ * plugin is now shared by both vitest configs (test/harness/stubBinaryAssets.ts), so this runs in
+ * the coverage suite and both modules are gated. Moved with no assertion changed.
+ *
+ * The stub is also why the last test compares loader KIND rather than URL — see its comment.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -29,27 +33,27 @@ function record(kind: string): Promise<unknown> {
   return Promise.resolve();
 }
 
-vi.mock('../../src/render/stickman/StickmanRuntime', () => ({
+vi.mock('../src/render/stickman/StickmanRuntime', () => ({
   StickmanRuntime: { loadAsset: vi.fn((url: string) => { taoUrls.push(url); return record('tao'); }) },
 }));
-vi.mock('../../src/assets/preloadTextures', () => ({
+vi.mock('../src/assets/preloadTextures', () => ({
   preloadTexture: vi.fn(() => record('texture')),
   preloadTextureList: vi.fn(() => record('texture')),
   ART_TEX_OPTIONS: {},
 }));
-vi.mock('../../src/render/atlas/decorMergedAtlas', () => ({
+vi.mock('../src/render/atlas/decorMergedAtlas', () => ({
   decorMergedAtlas: { load: vi.fn(() => record('decor')) },
 }));
-vi.mock('../../src/render/atlas/iconsAtlas', () => ({
+vi.mock('../src/render/atlas/iconsAtlas', () => ({
   iconsAtlas: { load: vi.fn(() => record('icons')) },
 }));
-vi.mock('../../src/render/cardArt', () => ({
+vi.mock('../src/render/cardArt', () => ({
   preloadL1CardArtTextures: vi.fn(() => record('cardArt')),
 }));
 
-// After vi.mock (hoisted regardless of physical order — same pattern as battleGate.ui.ts).
-import { preloadBoot, preloadBootBackground } from '../../src/assets/bootManifest';
-import { ensureBattleAssets } from '../../src/assets/battleAssets';
+// After vi.mock (hoisted regardless of physical order — same pattern as battleGate.test.ts).
+import { preloadBoot, preloadBootBackground } from '../src/assets/bootManifest';
+import { ensureBattleAssets } from '../src/assets/battleAssets';
 
 /** Let `preloadBoot`'s post-gate `void preloadBootBackground()` get a turn to run. */
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -123,13 +127,16 @@ describe('L0 boot tiers', () => {
     await ensureBattleAssets({});
     const battle = new Set(drove);
 
-    // Compared by loader KIND, not URL: vitest.ui.config's binary-asset stub maps every `.png`/
-    // `.tao` import to the same placeholder data URI, so URL identity is meaningless in this
-    // environment (battleAssets.ui.ts documents the same collapse). Kind still catches the
-    // regression that matters — a new background step going through a loader the battle gate
-    // never calls, e.g. adding another atlas to BACKGROUND_STEPS.
+    // Two comparisons, because one of them is blunt. By loader KIND catches a background step that
+    // goes through a loader the battle gate never calls at all (e.g. another atlas). By rig URL
+    // catches the finer case kinds miss: a background `.tao` that is not in STICKMAN_ASSETS, where
+    // `ensureBattleAssets` drives the same loader but never that FILE. The URL half only became
+    // possible on 2026-09-09 — under test/ui's asset stub every rig import collapsed to one data
+    // URI, which is why this test was kind-only while it lived there.
     const uncovered = [...background].filter((k) => !battle.has(k));
     expect(uncovered, `background-tier loaders not re-awaited by ensureBattleAssets: ${uncovered}`).toEqual([]);
+    const uncoveredRigs = backgroundTao.filter((url) => !taoUrls.includes(url));
+    expect(uncoveredRigs, `background-tier rigs not re-awaited by ensureBattleAssets: ${uncoveredRigs}`).toEqual([]);
     expect(background.size).toBeGreaterThan(0); // guards against a vacuous pass
     // Sanity that both halves really ran, rather than the sets being empty for different reasons.
     expect(backgroundTao.length).toBeGreaterThan(0);

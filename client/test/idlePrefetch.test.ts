@@ -35,7 +35,7 @@ vi.mock('../src/render/atlas/worldAtlas', () => ({ worldAtlas: { load: () => wor
 const rotation: { at: number | undefined } = { at: undefined };
 vi.mock('../src/net/anomaly/deviceContext', () => ({ lastRotationAt: () => rotation.at }));
 
-// After vi.mock (hoisted regardless of physical order — same pattern as battleGate.ui.ts).
+// After vi.mock (hoisted regardless of physical order — same pattern as battleGate.test.ts).
 import { startIdlePrefetch, resetIdlePrefetchForTest } from '../src/assets/idlePrefetch';
 import {
   installPrefetchPolicy, resetPrefetchPolicyForTest, markFeatureUsed, setDataSaverEnabled,

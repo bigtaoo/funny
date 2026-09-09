@@ -11,7 +11,7 @@
 // smoke-tested by their own *.ui.ts files, and what matters here is which one got built, with what
 // layout, and how it was handed to SceneManager.
 //
-// battleAssets is mocked the same way battleGate.ui.ts does it (a gate the test resolves by hand),
+// battleAssets is mocked the same way battleGate.test.ts does it (a gate the test resolves by hand),
 // so the async enterBattle path can be stepped rather than raced.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

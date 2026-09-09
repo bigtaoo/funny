@@ -3,16 +3,22 @@
 // overrides, plus L1 hero/spell card art — and must never reject, even when an individual asset
 // fails, so app.ts's pre-match loading gate can't get stuck on one flaky asset.
 //
-// Lives under test/ui/ (not the plain test/ root) purely because it imports UnitView.ts, which
-// pulls in raw `.tao`/`.png` asset imports — only vitest.ui.config.ts's stubBinaryAssets plugin
-// (`*.png`/`*.tao` import → 1×1 PNG data URI) can resolve those; this file has no PIXI/UI content.
+// Lived under test/ui/ until 2026-09-09 — not for any UI content (it has none), purely because it
+// imports UnitView.ts, which pulls in raw `.tao`/`.png` asset imports that only the stubBinaryAssets
+// plugin can resolve. That plugin is now shared by both configs (test/harness/stubBinaryAssets.ts),
+// so this suite runs in the coverage suite where it belongs and `assets/battleAssets.ts` is gated
+// instead of sitting at 0%. NOT a formality: this gate is the whole safety case for moving the
+// starter rigs + decor atlas off the L0 boot gate (ASSET_PACKAGING §11.2) — if it stops warming
+// them, the FIRST battle of a session draws placeholder circles and every later one looks fine,
+// which is exactly the case a developer with a warm cache never sees. Moved with no assertion
+// changed; `bootManifestTiers.test.ts` holds the both-ends guard.
 import { describe, it, expect, vi } from 'vitest';
 import { UnitType } from '@nw/engine/types';
 
 const loadAssetCalls: Array<{ url: string; targetHeight?: number }> = [];
 let failUrl: string | null = null;
 
-vi.mock('../../src/render/stickman/StickmanRuntime', () => ({
+vi.mock('../src/render/stickman/StickmanRuntime', () => ({
   StickmanRuntime: {
     loadAsset: vi.fn((url: string, targetHeight?: number) => {
       loadAssetCalls.push({ url, targetHeight });
@@ -23,7 +29,7 @@ vi.mock('../../src/render/stickman/StickmanRuntime', () => ({
 }));
 
 const cardArtCalls: number[] = [];
-vi.mock('../../src/render/cardArt', () => ({
+vi.mock('../src/render/cardArt', () => ({
   preloadL1CardArtTextures: vi.fn(() => { cardArtCalls.push(1); return Promise.resolve(); }),
 }));
 
@@ -32,14 +38,14 @@ vi.mock('../../src/render/cardArt', () => ({
 // two above, and additionally because the real loader would hand PIXI.Spritesheet the stub 1×1
 // data URI and never resolve.
 const decorAtlasCalls: number[] = [];
-vi.mock('../../src/render/atlas/decorMergedAtlas', () => ({
+vi.mock('../src/render/atlas/decorMergedAtlas', () => ({
   decorMergedAtlas: { load: vi.fn(() => { decorAtlasCalls.push(1); return Promise.resolve(); }) },
 }));
 
 // Imported AFTER vi.mock (vitest hoists mock registration above all imports regardless of
 // physical order — see marchTokenScale.ui.ts for the same pattern).
-import { ensureBattleAssets } from '../../src/assets/battleAssets';
-import { STICKMAN_ASSETS, resolveSkinOverrides } from '../../src/render/UnitView';
+import { ensureBattleAssets } from '../src/assets/battleAssets';
+import { STICKMAN_ASSETS, resolveSkinOverrides } from '../src/render/UnitView';
 
 describe('ensureBattleAssets', () => {
   it('warms every default unit .tao plus L1 card art and the decor atlas when no skins are equipped', async () => {
@@ -75,11 +81,17 @@ describe('ensureBattleAssets', () => {
 
   it('reports progress from 0 to total, one step per unique asset URL (units + card art + decor)', async () => {
     // ensureBattleAssets dedups by URL (StickmanRuntime.loadAsset is URL-cached, so requesting the
-    // same url twice would be wasted work) — compute the expected total the same way rather than
-    // counting UnitType keys: vitest.ui.config's binary-asset stub maps every `.tao` import to the
-    // same placeholder data URI, so in THIS test environment all of STICKMAN_ASSETS collapses to
-    // one unique url (unlike production, where webpack content-hashes each file to a distinct URL).
+    // same url twice would be wasted work), so the expected total is computed the same way rather
+    // than by counting UnitType keys — a skin override pointing at a default rig must not add a
+    // step. 2026-09-09: under test/ui's asset stub every `.tao` collapsed to ONE data URI, so this
+    // file's URL assertions were vacuous (`total` was 1 + 2 whatever the code did). The coverage
+    // suite stubs rigs per file, so `uniqueUrls` is the real 12 and the count bites.
     const uniqueUrls = new Set(Object.values(STICKMAN_ASSETS));
+    // Guards the vacuous version of this case coming back rather than any product property: two
+    // types are allowed to share a rig, but if ALL rig URLs collapse to one string again (a wider
+    // asset stub), `total` degenerates to 1 + 2 and the assertions below hold no matter what
+    // `ensureBattleAssets` does.
+    expect(uniqueUrls.size).toBeGreaterThan(1);
     const total = uniqueUrls.size + 2; // + card art step + decor atlas step
     const seen: Array<[number, number]> = [];
     await ensureBattleAssets({}, (done, t) => seen.push([done, t]));
