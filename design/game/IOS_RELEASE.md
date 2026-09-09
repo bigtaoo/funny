@@ -312,6 +312,22 @@ production 载荷丢给 sandbox verifier 则会改在环境上被拒。
 （`commercial/test/appleEnvFallback.test.ts`）：两个可重试状态都覆盖，并钉住「签名失败仍然 fail closed、
 不给第二次机会」。
 
+> ✅ **整条接缝补齐（2026-09-09，worktree `feat/apple-iap-test-gaps`）**：上面那份回归测试只覆盖了
+> **通知**验签这一半。同一个模块里 `verifyTransaction` / `transactionHistory`（冷启动同步补 period 走的
+> 就是它）、以及 API client 侧的 production→sandbox 回退（`isNotFound`，跟 ① 是同一类判断、
+> 同样静默——沙盒交易在 production 查不到，误判成"Apple 不认识这笔交易"就是付了钱什么都没有）
+> 全部一行未跑过，`appleServerApi.ts` 行覆盖 63.7%。现已补 `commercial/test/appleServerApi.test.ts`
+> （48 例，真 `SignedDataVerifier` + 真 `APIException`/`VerificationException`，12 处变异验证），
+> 该文件 63.7% → 100%。**顺带**：`appleServerApi.ts:51` 的文档注释一直指向这个当时并不存在的文件。
+>
+> 同一轮还补了：`appleRootCAs.ts`（三张根证书，此前**任何测试都没调用过** `appleRootCAs()`，
+> 抄错一个字符 = 所有通知 `INVALID_CERTIFICATE`，而 webhook 按设计回 200，全链路静默；
+> 现按注释里记的 SHA-256 指纹逐张机器校验）、Apple 自己"Request a Test Notification"发的
+> **TEST 通知**（不带 transaction，走 `!tx` 分支，此前没测过——而它正是验证 webhook 通不通的唯一手段）、
+> `consumptionPercentage` 的真实测算（退款争议里发给 Apple 的那个数字，此前只测到"没有对应 recharge 行
+> → undefined"这一条早退）、以及 `metaserver/test/appleWebhookRoute.test.ts` 从 `../dist/` 改成
+> `../src/` 导入（9 例对 `src/apple/webhookRoute.ts` 贡献 0%，该文件因此读作 25%）。
+
 ## 5. 构建与发布
 
 **自动**：推一个 tag 触发。
