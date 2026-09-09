@@ -7,7 +7,6 @@ import { makeText } from '../../render/pixiText';
 import { t } from '../../i18n';
 import { ui as C, sketchPanel } from '../../render/sketchUi';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
-import { SketchPen } from '../../render/sketch';
 import { caretDisplay } from '../../ui/inputDisplay';
 import { FS, snapFont } from '../../render/fontScale';
 import type { Hit } from '../../ui/hits';
@@ -58,9 +57,10 @@ export function drawRenameOverlay(host: OverlayHost): void {
   // Input box.
   const ibX = px + Math.round(pw * 0.08), ibW = pw - 2 * Math.round(pw * 0.08);
   const ibY = py + Math.round(ph * 0.34), ibH = Math.round(h * 0.06);
-  const ib = new PIXI.Graphics();
-  ib.beginFill(0xffffff); ib.drawRect(ibX, ibY, ibW, ibH); ib.endFill();
-  new SketchPen(ib, 34).rect(ibX + 2, ibY + 2, ibW - 4, ibH - 4, { color: C.accent, width: 2, jitter: 0.8 });
+  // Baked frame, not a live stroke: this box is rebuilt on every caret blink (~2x/s) and on every
+  // keystroke, so its triangulation is the one piece of this screen paid most often.
+  const ib = sketchPanel(ibW, ibH, { fill: 0xffffff, border: C.accent, width: 2, seed: 34 });
+  ib.x = ibX; ib.y = ibY;
   container.addChild(ib);
   // Tapping the field (re)focuses the text-entry session.
   host.hits.push({ rect: { x: ibX, y: ibY, w: ibW, h: ibH }, fn: () => host.focusRenameInput() });

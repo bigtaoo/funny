@@ -423,6 +423,7 @@ owner 报「手机上很快就没电了，mac 上让电脑的风扇都加速了�
   - ①′ **顺带更正这条记录里另一句**：当时写「GuideOverlay 还挂在 CityScene 等**已经 reactive** 的场景上，所以正在让引导期的菜单满帧重绘」——不成立。CityScene 在 SLG 里永远是 `pushOverlay` 压在世界地图上（`app/nav/world.ts` 的 `openCity`，ADR-044），而 `paintMode` 对组合取悲观，那个组合当时本来就是 `'live'`。那条 bug 的真实代价是每秒 60 次白白三角化 ＋ 把世界地图的签名变化率顶满。
   - ②**SLG 地图的画面确认做了**（owner 自己登录，服务端数据里 5 个世界 / 18,605 格 / 258 城）：L1/L2/L3 三级缩放 + 两次拖动平移全部正常——瓦片、基地 3×3 城池 sprite、护盾气泡、前线高亮、HUD、云雾遮罩的斜边界都跟着相机走，没有残留几何、没有撕裂。决策五/六（叠加层墨线按需 + 拖动一帧最多重建一次）在真画面上成立。
   - ③**iOS/微信真机数字仍然没有**，但通往它的两个窟窿补上了 —— 见 ADR-084。
+- **后记（2026-09-09）：这一轮扫漏了一个屏幕。** `SettingsScene` 当时量出来是 **590,214 索引/帧**，比修复前的大厅（253,737）还多一倍多：它自己那份 `drawBackground()` 是笔记本纸背景的**第三份手抄本**，而且是唯一一份**从不 `bake()`** 的（462,420），再加六个实时描边的控件框（125,844）。两处都躲过了本轮的搜查，因为本轮找的是 `sketchPanel`/`drawBtn` 这两个 **helper 名字**，而它们叫 `drawBackground` 和 `addButton`。已修（→ **1,986**），连同一次把 33 个菜单场景全量扫了一遍确认没有第二个；数字、扫法与门禁见 [`claudedocs/client-render-budget.md`](../claudedocs/client-render-budget.md) §12。**教训：按成本扫，不要按 helper 名字扫。**
 
 ## ADR-084 诊断开关统一走 platform.storage；健康会话上报 `render_profile`（真机帧数/重绘率） — Accepted — 2026-09-08
 
