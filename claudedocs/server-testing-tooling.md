@@ -226,3 +226,62 @@
 **红检（本仓库"门禁脚本自己要能被看着失败"的惯例）做了两个变异**：①删掉 `below.push('branches')` 那一行 → 6 例变红；②`DEFAULT_BRANCH_THRESHOLD` 改成 `0`（"看起来配好了、实际放过一切"这个最像样的失效模式）→ 9 例变红。两次都还原后 36 例全绿。
 
 **排序那条断言又差点写成假的**（跟上一节记的同一类陷阱，第三次了）：`prints gate headroom in lines and sorts the most-fragile package first` 这条既有用例在新排序下会红——因为夹具里 admin 的分支 headroom 跟其它所有包**打平**，排序落到字母序 tiebreak，`server/admin` 反而排到最前面。修法是把 admin 的 `branchPct` 一起抬高让它的 fragility 无争议，而不是去改断言迁就实现。
+
+## worldsvc 全量跑的退出码非确定性：teardown 里 mongod 关不掉（2026-09-09）
+
+**症状**：同一份代码全量跑 `worldsvc` 的 `test:coverage`，退出码在 0/1 之间跳，三次都报「116 文件 / 1410 例全绿」，三次都印
+`An Process didnt exit with signal "SIGINT" within 10 seconds, using "SIGKILL"!`。
+
+**第一件要纠正的事：那句警告不是 vitest 的**，是 mongodb-memory-server 的 `killProcess`（`lib/util/utils.js`），
+结构是**两级 10 秒**——第一级超时打这句警告并升级 `SIGKILL`，第二级（SIGKILL 之后再 10 秒没收到 `exit`）才 `reject`。
+所以它**恒定出现、不是判据**；拿它当线索会一路跑偏。
+
+**实测（开 `DEBUG=MongoMS:*` 的全量跑）**：
+
+| 时刻 | 事件 |
+|---|---|
+| `+0.000s` | `stop: called` |
+| `+1.019s` | `killProcess: mongodProcess: sending "SIGINT"` |
+| `+11.033s` | `timeout triggered, trying SIGKILL` ← 就是那句警告 |
+| `+16.163s` | `mongodProcess: got exit signal, Signal: SIGINT` |
+| `+16.165s` | `cleanup: removing tmpDir ...`（成功） |
+
+mongod 从被要求关闭到真的消失要 **15.1 秒**，而硬期限是 10+10 = **20 秒**——**余量只有 4.87 秒**。
+对照组：全新 replset 隔离 `create()` + `stop()` 只要 **1.1 秒**；vitest 只跑一个文件也完全不卡（mongod 走
+`given childProcess's PID was not alive anymore` 早退分支）。**所以这 15 秒不是 MMS 固有的，是「同一个 replset 被
+116 个 e2e 文件用了 700 秒」的函数**（脏 WiredTiger 状态），机器再忙一点或 DB 再肥一点就越线。
+
+**⚠️ 越线之后 MMS 的行为是不自洽的，这才是真正的坑**：
+
+- **mongod 熬过 20 秒** → `killProcess` reject → `MongoMemoryServer.stop()` 不 catch → 传到
+  `MongoMemoryReplSet.stop()` 的 `.catch` → **返回 `false` 并跳过自己的 `cleanup()`** → **退出码仍是 0**，
+  代价是漏一个活 mongod + 一整个 dbPath。**取证**：`%TEMP%` 里躺着 **21 个 `mongo-mem-*`，455,295 个文件、11.12 GB**
+  （日期跨 09-07 ~ 09-09），已清。
+- **`cleanup()` 删 dbPath 失败** → `removeDir()` → `fs.promises.rm({recursive, force})`，**`maxRetries` 是默认 0**，
+  Windows 上 WiredTiger 文件没释放就 EPERM/EBUSY，而这条 throw **一路没人 catch**（`cleanup` 的 doc 自己写
+  `@throws If an fs error occured`）→ **测试全绿、退 1**。
+
+**没证实的部分（如实记账）**：上面第二条只是唯一自洽的候选路径，**没能定向复现**——喂胖 replset 再 SIGKILL，
+kill→exit 只要 ~150ms、随即 `rm` 三次全过（因为真实场景里那 15 秒是**优雅**关闭，退出时文件已经干净释放）。
+当天 4 次全量跑也全是 0。**Linux 侧目前没有证据**：09-08 / 09-09 两次 nightly flake-hunt 的 worldsvc 分片各 3 次迭代全绿，
+外加手动 `workflow_dispatch`（`shard=worldsvc, runs=5`）——合计 11 次干净迭代。本机是 Windows + Node v26.5.0，
+CI 是 ubuntu + Node 22，**这个红很可能是 Windows-only**。
+
+**落地的改动只有一处**：`worldsvc/test/globalSetup.ts` 的 `teardown()`。原来是 `if (replset) await replset.stop();` 一行裸等，
+于是这个故障的外观就是「退 1，一个字都不打」——**这才是只能靠猜的原因**。现在：
+
+1. 先 `rmSync(URI_FILE)`（原来 `stop()` 抛了就永远不删，留下指向死 mongod 的握手文件）；
+2. `stop()` 的**布尔返回值和 catch 一样重要**——静默那条路径是 `return false`，不是抛；两条都打 `::warning::`
+   （跟 `scripts/flakyReporter.mjs` 同一个通道）；
+3. 失败时接管 MMS 跳过的清理：对 `instanceInfo.tmpDir` 做 `rmSync(..., { maxRetries: 10, retryDelay: 200 })`，
+   重试正好覆盖「mongod 刚过期限才死、文件还没释放」；**只删 `tmpDir`**（即 MMS 自己的 `cleanup()` 会删的东西），
+   外部指定的 `dbPath` 不是我们的。
+
+**立场（刻意的）**：teardown 跑在所有测试都已上报之后，关不掉 mongod **不能**否定任何一条断言，所以它不该把 run 弄红——
+但必须叫得足够响，让**下一次**发生时自己报出名字，而不是又从一个退出码倒推一遍。
+
+**没做的**：
+- **其余 7 个包（`admin`/`analyticsvc`/`auctionsvc`/`commercial`/`metaserver`/`shared`/`socialsvc`）的 `globalSetup.ts`
+  是同一份裸写法**，同一个雷还在，尤其 `metaserver`（CI 上最慢的分片）暴露面和 worldsvc 同级。
+- **根因本身没动**：那 15 秒来自累积的脏 WiredTiger 状态。候选是给 mongod 限 `--wiredTigerCacheSizeGB`，
+  或每个测试文件结束后 drop 自己的 DB——**两条都得先测再改**，别猜。顺带记一笔：那 10 秒是**每轮白烧**的墙钟。
