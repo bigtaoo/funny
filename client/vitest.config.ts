@@ -242,6 +242,13 @@ export default defineConfig({
         // arithmetic happens to be testable with a fake ctx (95.8% before this pass), which is why it is
         // gated at all, but moving it into `logic/` would make the boundary guard a lie.
         'src/scenes/worldmap/WorldMapRenderer/viewport.ts',
+        // ...and worldmap's other PIXI-free non-`logic/` file: the server-error → toast-copy map
+        // every `worldmap/net/*.ts` sibling routes failures through (test/worldMapErrorMsg.test.ts,
+        // 2026-09-09). Not a `logic/` candidate — it is net-layer copy, not map arithmetic — but it
+        // needs a gate more than most of that directory does, because its failure mode is invisible:
+        // an unmapped code falls back to the server's raw English *by design*, so a dropped entry
+        // reads as a working toast to anyone testing in English.
+        'src/scenes/worldmap/net/errors.ts',
         // ui
         'src/ui/busyTracker.ts',
         'src/ui/scrollTapGesture.ts',

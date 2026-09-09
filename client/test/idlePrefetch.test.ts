@@ -61,9 +61,18 @@ const WAVE_ORDER = ['boot:background', 'icons:reward', 'battle', 'slg:world', 'g
  * Drain enough turns of the event loop for a settled wave to schedule its idle callback
  * and start the next one. Over-draining is safe and is what makes the serial assertion
  * meaningful: if the chain were parallel, every remaining wave would have started by now.
+ *
+ * Runs on the fake clock every suite below installs. It used to be five real
+ * `setTimeout(…, 0)` hops, which cost nothing in theory and 5s of wall clock in practice:
+ * Windows' timer granularity is ~15.6ms, so each "0ms" hop is a real 15.6ms sleep, and
+ * `runAll` below spends ~120 of them per test. That alone took this file from ~7s to ~12s
+ * and the whole coverage suite from ~16s to ~21s. Advancing a fake clock is free, and the
+ * scheduling contract these tests pin is about ORDER, never about elapsed time — the two
+ * places where elapsed time IS the assertion (the WeChat fallback and the rotation block)
+ * were already driving the clock by hand.
  */
 async function flush(): Promise<void> {
-  for (let i = 0; i < 5; i += 1) await new Promise((r) => setTimeout(r, 0));
+  for (let i = 0; i < 5; i += 1) await vi.advanceTimersByTimeAsync(1);
 }
 
 /** Resolve the wave currently in flight and let the chain advance. */
@@ -85,6 +94,7 @@ describe('idlePrefetch', () => {
     events.length = 0;
     pending.clear();
     resetIdlePrefetchForTest();
+    vi.useFakeTimers();
     // requestIdleCallback fires straight away, so tests don't wait out the real
     // 3s/1s inter-wave delays. Its absence (WeChat) falls back to setTimeout, which
     // is covered by the "no requestIdleCallback" test below.
@@ -103,6 +113,7 @@ describe('idlePrefetch', () => {
   afterEach(() => {
     delete (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback;
     resetPrefetchPolicyForTest();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -177,11 +188,9 @@ describe('idlePrefetch', () => {
 
   it('still runs without requestIdleCallback (WeChat)', async () => {
     delete (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback;
-    vi.useFakeTimers();
     void startIdlePrefetch();
     await vi.advanceTimersByTimeAsync(3_000);
     expect(events).toContain('start:boot:background');
-    vi.useRealTimers();
   });
 
   // ── mid-rotation hold (2026-08-24) ──
@@ -191,13 +200,13 @@ describe('idlePrefetch', () => {
   // the worst available timing on a memory-capped mobile WebView.
   describe('holds off while the screen is rotating', () => {
     beforeEach(() => {
-      vi.useFakeTimers();
-      // Honour the requested deadline, unlike the fire-immediately stub the other tests use — the
-      // whole point here is *when* the wave is allowed to start.
+      // The clock is already fake (outer beforeEach). What changes here is the idle stub: honour
+      // the requested deadline instead of firing immediately, because the whole point of this
+      // block is *when* the wave is allowed to start.
       (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback =
         (cb: () => void, opts?: { timeout: number }) => { setTimeout(cb, opts?.timeout ?? 0); return 1; };
     });
-    afterEach(() => { rotation.at = undefined; vi.useRealTimers(); });
+    afterEach(() => { rotation.at = undefined; });
 
     it('delays the first wave until the screen has been still for a moment', async () => {
       void startIdlePrefetch();
@@ -249,6 +258,7 @@ describe('idlePrefetch — scoped to features the player actually uses', () => {
     events.length = 0;
     pending.clear();
     resetIdlePrefetchForTest();
+    vi.useFakeTimers();
     (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback = (cb: () => void) => { setTimeout(cb, 0); return 1; };
     setConnection(undefined);
     store.clear();
@@ -260,6 +270,7 @@ describe('idlePrefetch — scoped to features the player actually uses', () => {
   afterEach(() => {
     delete (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback;
     resetPrefetchPolicyForTest();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
