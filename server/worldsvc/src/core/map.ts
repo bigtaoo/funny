@@ -73,7 +73,9 @@ export class MapService {
     //
     // 2026-09-05 (worldsvc-concurrency phase 2): these four used to run one after another, and each one
     // began by re-reading the requester's SAME playerWorld document — four sequential round trips for one
-    // document, on the endpoint every online player polls every ~5s. Read it once, hand it to all four,
+    // document, on the endpoint every online player re-reads on entry / pan / zoom / tile_update push
+    // (the ~5s poll this line used to name was deleted in P1-2, comm-audit-2026-07-27; see
+    // WORLDSVC_CONCURRENCY_AUDIT §8.1). Read it once, hand it to all four,
     // and run them together: they are independent of each other, and the sect lookups underneath are now
     // memoised in the socialsvc client too (see socialsvcClient.ts's membership cache).
     const requesterPw = await cols.playerWorld.findOne({ _id: playerWorldId(worldId, accountId) });

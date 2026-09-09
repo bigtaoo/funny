@@ -34,13 +34,22 @@ export function readJson(req: IncomingMessage): Promise<Record<string, unknown>>
 }
 
 export function send(res: ServerResponse, status: number, body: unknown): void {
+  const payload = Buffer.from(JSON.stringify(body) ?? 'null', 'utf8');
+  const hasBody = status !== 204 && status !== 304;
   res.writeHead(status, {
     'content-type': 'application/json',
+    // Declare the length rather than letting node fall back to chunked framing — see worldsvc's
+    // httpApi/helpers.ts for the full reasoning (WORLDSVC_CONCURRENCY_AUDIT §8.5): the reverse proxy
+    // now compresses JSON with a minimum-size threshold, and it cannot honour a size threshold on a
+    // response whose size it does not know, so with chunked framing it compresses EVERYTHING and tiny
+    // JSON replies come out ~20 bytes LARGER than they went in. 204/304 are excluded: they must not
+    // carry a body, and declaring a length for one is a protocol violation some proxies reject.
+    ...(hasBody ? { 'content-length': String(payload.byteLength) } : {}),
     'access-control-allow-origin': '*',
     'access-control-allow-headers': 'authorization,content-type,x-internal-key,x-internal-caller,x-nw-platform,x-chat-region',
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
   });
-  res.end(JSON.stringify(body));
+  res.end(hasBody ? payload : undefined);
 }
 
 export function sendErr(res: ServerResponse, code: ErrorCode, message: string): void {

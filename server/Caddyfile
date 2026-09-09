@@ -11,6 +11,21 @@
 #   · matchsvc / gateway internal HTTP / meta internal routes (/internal/*) are not exposed to public (no route, internal cluster calls only).
 
 {$NW_DOMAIN::80} {
+	# Response compression (WORLDSVC_CONCURRENCY_AUDIT §8, 2026-09-09). Nothing in front of the services
+	# compressed anything until now, and the SLG map payload is thousands of near-identical tile objects:
+	# `GET /world/map` at r=40 measured 523KB on the wire, 26.5KB gzipped — 5.1%, a 19.7x reduction. Every
+	# other JSON face (metaserver saves, socialsvc mail/chat, auction listings) gets the same treatment for
+	# free, and the CPU is spent in Caddy's own process rather than on a service's single event loop, which
+	# is the whole reason this belongs at the edge and not in worldsvc's `send()` (see the audit's §1: a
+	# gzipSync per response would be a new head-of-line blocker of exactly the kind that audit exists to
+	# remove — measured at 20 x 513KB = 81ms with the event loop completely starved).
+	#
+	# `encode`'s default matcher covers text/* and application/json*, so WS upgrades (/gw, /ws) and the
+	# already-compressed asset formats (png/webp/mp3/.tao) are left alone. Clients that do not advertise
+	# Accept-Encoding — the WeChat mini-game's wx.request has not been verified on a real device — simply
+	# get today's uncompressed bytes, so this cannot break a client by being enabled.
+	encode zstd gzip
+
 	# Control-plane WS: room / matchmaking (preserve /gw path)
 	handle /gw* {
 		reverse_proxy gateway:8082
