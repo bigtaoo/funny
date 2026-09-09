@@ -297,6 +297,8 @@ describe('deploy config — every service passes through what its source reads (
       NW_SLG_AUTO_SETTLE:
         "reads `!== '0'`, i.e. season auto-settle is ON unless explicitly disabled — which is what cloud/prod want; the var exists to turn it off for a manual settlement",
       NW_SLG_ARRIVAL_SCAN_LIMIT: 'tuning knob; code default 500 per scan is the production value',
+      NW_SLG_ARRIVAL_SETTLE_SLICE_MS:
+        'tuning knob; code default 150ms per settlement pass is the production value. 0 disables the slice (settle everything due, however long it takes) — an escape hatch, not a deployment.',
     },
     botsvc: {
       NW_BOT_BATTLE_CHANCE: 'tuning knob; code default 0.025 per tick is the production value',

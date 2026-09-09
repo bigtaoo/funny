@@ -23,6 +23,11 @@ export interface Scheduler {
 
 export interface SchedulerOptions {
   tickMs?: number;
+  /**
+   * Interval for the settling half of the arrival tick. Defaults to a quarter of `tickMs`, floored at
+   * MIN_SETTLE_TICK_MS and never slower than `tickMs` itself. Exposed mainly so tests can pin the cadence.
+   */
+  settleTickMs?: number;
   /** Auto-run season settlement when a world's clock elapses (§17.14). Default false — caller (index.ts) passes env.autoSettleSeasons. */
   autoSettleSeasons?: boolean;
   /**
@@ -40,6 +45,20 @@ export interface SchedulerOptions {
  */
 const SEASON_TICK_MS = 30_000;
 
+/**
+ * How often the settling half of the arrival tick runs, as a fraction of the base tick
+ * (WORLDSVC_CONCURRENCY_AUDIT §6.7 item 1). Settlements are the expensive, unbatchable half — a real capture
+ * battle plus a metaserver round trip each — and they are bounded by a wall-clock slice inside
+ * `processDueArrivalSettlements`. Running them on a quarter of the base interval is what turns that slice
+ * into a duty cycle rather than a throughput cut: with the default 150ms slice against a 500ms interval,
+ * settlements may hold roughly 30% of the thread under a storm and none of it otherwise, while the walking
+ * half — now free of them — keeps its own 2s cadence and its ~2ms cost.
+ *
+ * Floored at 250ms so a small `tickMs` (tests pass 10ms) cannot turn this into a busy loop.
+ */
+const SETTLE_TICK_DIVISOR = 4;
+const MIN_SETTLE_TICK_MS = 250;
+
 interface TaskSpec {
   label: string;
   intervalMs: number;
@@ -50,8 +69,19 @@ interface TaskSpec {
 export function startScheduler(svc: WorldService, opts: SchedulerOptions = {}): Scheduler {
   const { tickMs = 2000, autoSettleSeasons = false, timings } = opts;
 
+  // Never slower than the base tick (so a test that passes tickMs=10 still gets settlements at 10ms), never
+  // busier than MIN_SETTLE_TICK_MS unless the caller asked for a faster base tick than that.
+  const settleTickMs = opts.settleTickMs ?? Math.min(tickMs, Math.max(MIN_SETTLE_TICK_MS, Math.floor(tickMs / SETTLE_TICK_DIVISOR)));
+
   const tasks: TaskSpec[] = [
-    { label: 'sched:arrivals', intervalMs: tickMs, run: () => svc.processDueArrivals() },
+    // 2026-09-09 (§6.7 item 1): the arrival tick is two tasks, because it was two workloads. Walking is
+    // cheap, batched and constant-cost (p50 ~2ms since the 2026-09-05 batching); settling is a real capture
+    // battle plus a metaserver round trip each, cannot be batched, and used to hold this same tick for
+    // seconds at a time — during which the walking half, every other task and every HTTP request waited on
+    // the one thread. Splitting them lets the cheap half keep its cadence while the expensive half runs
+    // more often in smaller, time-sliced bites.
+    { label: 'sched:arrivals', intervalMs: tickMs, run: () => svc.processDueArrivalSteps() },
+    { label: 'sched:arrivalSettle', intervalMs: settleTickMs, run: () => svc.processDueArrivalSettlements() },
     { label: 'sched:training', intervalMs: tickMs, run: () => svc.processCompletedTraining() },
     { label: 'sched:builds', intervalMs: tickMs, run: () => svc.processCompletedBuilds() },
     // ADR-026: settle due delayed building-HP hits (5-min siege-value settlement → HP deduction / capture).

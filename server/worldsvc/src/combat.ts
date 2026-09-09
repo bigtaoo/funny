@@ -44,6 +44,12 @@ export class CombatService {
   processDueArrivals(nowMs?: number): Promise<number> {
     return this.march.processDueArrivals(nowMs);
   }
+  processDueArrivalSteps(nowMs?: number): Promise<number> {
+    return this.march.processDueArrivalSteps(nowMs);
+  }
+  processDueArrivalSettlements(nowMs?: number, sliceMs?: number): Promise<number> {
+    return this.march.processDueArrivalSettlements(nowMs, sliceMs);
+  }
   // Field-stationing (2026-07-23): list / recall teams parked on tiles.
   getStationed(worldId: string, accountId: string): Promise<StationedView[]> {
     return this.march.getStationed(worldId, accountId);

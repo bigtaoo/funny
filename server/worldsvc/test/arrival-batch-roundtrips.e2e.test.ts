@@ -220,7 +220,10 @@ describe.skipIf(!mongo)('worldsvc arrival tick: round-trip cost (`sched:arrivals
     tally.clear();
 
     nowMs = DEPART + STEP_MS;
-    expect(await svc.processDueArrivals()).toBe(0); // all mid-route: nothing settled
+    // The WALKING half specifically (2026-09-09 split): this budget belongs to it, and calling the combined
+    // entry point here would spend a second `marches.find` on the settlement scan and make the number read
+    // like a regression. The settlement half's own cost is asserted in arrival-settle-slice.e2e.test.ts.
+    expect(await svc.processDueArrivalSteps()).toBe(0); // all mid-route: nothing settled
 
     // ── Mongo: one due scan, one projected playerWorld read, one bulkWrite. No per-march anything. ──
     expect(tally.get('marches.find') ?? 0).toBe(1);
@@ -398,10 +401,16 @@ describe.skipIf(!mongo)('worldsvc arrival tick: round-trip cost (`sched:arrivals
     const after = read();
 
     expect(delta(before, after, 'arrivals.batched')).toBe(FLEET - 1); // all but the blocked one
-    expect(delta(before, after, 'arrivals.serial')).toBe(2);
-    expect(delta(before, after, 'arrivals.arriving')).toBe(1);
     expect(delta(before, after, 'arrivals.blocked')).toBe(1);
+    expect(delta(before, after, 'arrivals.serial')).toBe(1); // the blocked one, and only it
     expect(delta(before, after, 'arrivals.legacy')).toBe(0);
+    // 2026-09-09 (§6.7 item 1): `arriving` is ZERO in the walking half — the arriver is not merely demoted
+    // there, it is not in its due list at all (`arriveAt > t` excludes it), and it is settled by the other
+    // half instead. That disjointness is the change; a non-zero `arriving` here would mean the two queries
+    // have started overlapping, which is the one way this split can go quietly wrong.
+    expect(delta(before, after, 'arrivals.arriving')).toBe(0);
+    expect(delta(before, after, 'arrivals.settled')).toBe(1);
+    expect(delta(before, after, 'arrivals.deferred')).toBe(0);
   });
 
   it('leaves a player with no world doc on the per-march path', async () => {
