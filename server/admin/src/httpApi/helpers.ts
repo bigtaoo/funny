@@ -24,13 +24,20 @@ export function readJson(req: IncomingMessage): Promise<Record<string, unknown>>
 }
 
 export function send(res: ServerResponse, status: number, body: unknown): void {
+  const payload = Buffer.from(JSON.stringify(body) ?? 'null', 'utf8');
+  const hasBody = status !== 204 && status !== 304;
   res.writeHead(status, {
     'content-type': 'application/json',
+    // Declared length, not node's chunked fallback: the reverse proxy compresses JSON with a minimum-size
+    // threshold and cannot apply a size threshold to a response whose size it does not know, so chunked
+    // framing makes it compress everything and tiny replies come out LARGER. Full reasoning and the
+    // measurements are in worldsvc/src/httpApi/helpers.ts; enforced by scripts/checkEdgeCompression.mjs.
+    ...(hasBody ? { 'content-length': String(payload.byteLength) } : {}),
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
     'access-control-allow-headers': 'authorization,content-type',
   });
-  res.end(JSON.stringify(body));
+  res.end(hasBody ? payload : undefined);
 }
 
 export function clientIp(req: IncomingMessage): string | undefined {
