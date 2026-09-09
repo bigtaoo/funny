@@ -132,6 +132,14 @@ export class WorldService {
   processDueArrivals(nowMs?: number): Promise<number> {
     return this.combat.processDueArrivals(nowMs);
   }
+  /** The walking half of the arrival tick (scheduler task `sched:arrivals`). */
+  processDueArrivalSteps(nowMs?: number): Promise<number> {
+    return this.combat.processDueArrivalSteps(nowMs);
+  }
+  /** The settling half (scheduler task `sched:arrivalSettle`), time-sliced by default. */
+  processDueArrivalSettlements(nowMs?: number, sliceMs?: number): Promise<number> {
+    return this.combat.processDueArrivalSettlements(nowMs, sliceMs);
+  }
   processDueSiegeDamage(nowMs?: number): Promise<number> {
     return this.combat.processDueSiegeDamage(nowMs);
   }

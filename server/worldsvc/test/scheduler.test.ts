@@ -1,7 +1,13 @@
 // startScheduler() unit tests. Uses fake timers + a fake WorldService (method signatures only — no real
-// Mongo needed) to exercise: the default 2s tick calling all five always-on tasks, the autoSettleSeasons
-// opt-in sixth task (on its own slower timer), per-task rejection isolation, the re-entrancy guard, and
+// Mongo needed) to exercise: the default 2s tick calling all six always-on tasks, the autoSettleSeasons
+// opt-in seventh task (on its own slower timer), per-task rejection isolation, the re-entrancy guard, and
 // stop() halting further ticks.
+//
+// 2026-09-09 (WORLDSVC_CONCURRENCY_AUDIT §6.7 item 1): the arrival tick is two tasks. `sched:arrivals`
+// walks marches (cheap, batched); `sched:arrivalSettle` settles the ones that arrived (a capture battle
+// plus a metaserver round trip each) on a FASTER timer, so the same work arrives in smaller bites. The
+// cadence relationship is pinned below rather than left implied — putting settlements back on the SAME
+// interval would silently undo the split while every call-count assertion here still passed.
 //
 // 2026-09-05 (worldsvc-concurrency phase 3): the guard used to be shared — one slow task skipped EVERY
 // task's next tick, so the slowest task set the cadence for all of them. It is per-task now, which is the
@@ -12,11 +18,12 @@ import { startScheduler } from '../src/scheduler';
 import type { WorldService } from '../src/service';
 
 function makeSvc(overrides: Partial<Record<
-  'processDueArrivals' | 'processCompletedTraining' | 'processCompletedBuilds' | 'processDueSiegeDamage' | 'processDueOccupations' | 'processDueSeasonSettlement',
+  'processDueArrivalSteps' | 'processDueArrivalSettlements' | 'processCompletedTraining' | 'processCompletedBuilds' | 'processDueSiegeDamage' | 'processDueOccupations' | 'processDueSeasonSettlement',
   () => Promise<unknown>
 >> = {}): WorldService {
   return {
-    processDueArrivals: vi.fn().mockResolvedValue(0),
+    processDueArrivalSteps: vi.fn().mockResolvedValue(0),
+    processDueArrivalSettlements: vi.fn().mockResolvedValue(0),
     processCompletedTraining: vi.fn().mockResolvedValue(0),
     processCompletedBuilds: vi.fn().mockResolvedValue(0),
     processDueSiegeDamage: vi.fn().mockResolvedValue(0),
@@ -39,12 +46,15 @@ afterEach(() => {
 });
 
 describe('startScheduler', () => {
-  it('default tickMs=2000: after one tick, calls the 5 always-on tasks once each, and not the season task', async () => {
+  it('default tickMs=2000: after one tick, calls the 6 always-on tasks, and not the season task', async () => {
     const svc = makeSvc();
     const sched = startScheduler(svc);
     await vi.advanceTimersByTimeAsync(2000);
 
-    expect(svc.processDueArrivals).toHaveBeenCalledTimes(1);
+    expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(1);
+    // Four settle passes in the same 2000ms: the whole point of the split is that the expensive half runs
+    // more often and does less each time.
+    expect(svc.processDueArrivalSettlements).toHaveBeenCalledTimes(4);
     expect(svc.processCompletedTraining).toHaveBeenCalledTimes(1);
     expect(svc.processCompletedBuilds).toHaveBeenCalledTimes(1);
     expect(svc.processDueSiegeDamage).toHaveBeenCalledTimes(1);
@@ -78,15 +88,43 @@ describe('startScheduler', () => {
     const svc = makeSvc();
     const sched = startScheduler(svc, { tickMs: 500 });
     await vi.advanceTimersByTimeAsync(500);
-    expect(svc.processDueArrivals).toHaveBeenCalledTimes(1);
+    expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(500);
-    expect(svc.processDueArrivals).toHaveBeenCalledTimes(2);
+    expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(2);
+    sched.stop();
+  });
+
+  it('the settle half runs on a quarter of the base tick, floored so it can never busy-loop', async () => {
+    // 2s base -> 500ms settle: four passes per walking tick.
+    const fast = makeSvc();
+    const a = startScheduler(fast, { tickMs: 2000 });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fast.processDueArrivalSettlements).toHaveBeenCalledTimes(4);
+    a.stop();
+
+    // A base tick already below the 250ms floor must not leave settlements RARER than steps: fixtures pass
+    // a tiny tickMs and tick the scheduler a handful of times expecting the world settled, and a floor
+    // applied blindly would make settlements 25x rarer there.
+    const slow = makeSvc();
+    const b = startScheduler(slow, { tickMs: 10 });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(slow.processDueArrivalSteps).toHaveBeenCalledTimes(10);
+    expect(slow.processDueArrivalSettlements).toHaveBeenCalledTimes(10);
+    b.stop();
+  });
+
+  it('settleTickMs overrides the derived cadence', async () => {
+    const svc = makeSvc();
+    const sched = startScheduler(svc, { tickMs: 2000, settleTickMs: 1000 });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(svc.processDueArrivalSettlements).toHaveBeenCalledTimes(2);
     sched.stop();
   });
 
   it('a rejecting task logs its own prefixed error and does not stop the other tasks from completing', async () => {
     const svc = makeSvc({
-      processDueArrivals: vi.fn().mockRejectedValue(new Error('arrivals boom')),
+      processDueArrivalSteps: vi.fn().mockRejectedValue(new Error('arrivals boom')),
+      processDueArrivalSettlements: vi.fn().mockRejectedValue(new Error('settle boom')),
       processCompletedTraining: vi.fn().mockRejectedValue(new Error('training boom')),
       processCompletedBuilds: vi.fn().mockRejectedValue(new Error('builds boom')),
       processDueSiegeDamage: vi.fn().mockRejectedValue(new Error('siege boom')),
@@ -96,7 +134,8 @@ describe('startScheduler', () => {
     const sched = startScheduler(svc, { autoSettleSeasons: true });
     await vi.advanceTimersByTimeAsync(30_000); // long enough for the season timer to fire too
 
-    expect(svc.processDueArrivals).toHaveBeenCalled();
+    expect(svc.processDueArrivalSteps).toHaveBeenCalled();
+    expect(svc.processDueArrivalSettlements).toHaveBeenCalled();
     expect(svc.processCompletedTraining).toHaveBeenCalled();
     expect(svc.processCompletedBuilds).toHaveBeenCalled();
     expect(svc.processDueSiegeDamage).toHaveBeenCalled();
@@ -104,6 +143,7 @@ describe('startScheduler', () => {
     expect(svc.processDueSeasonSettlement).toHaveBeenCalledTimes(1);
 
     expect(errorSpy).toHaveBeenCalledWith('[world-scheduler] sched:arrivals failed:', 'arrivals boom');
+    expect(errorSpy).toHaveBeenCalledWith('[world-scheduler] sched:arrivalSettle failed:', 'settle boom');
     expect(errorSpy).toHaveBeenCalledWith('[world-scheduler] sched:training failed:', 'training boom');
     expect(errorSpy).toHaveBeenCalledWith('[world-scheduler] sched:builds failed:', 'builds boom');
     expect(errorSpy).toHaveBeenCalledWith('[world-scheduler] sched:siegeDamage failed:', 'siege boom');
@@ -119,19 +159,19 @@ describe('startScheduler', () => {
     const pending = new Promise<void>((resolve) => {
       releaseFirstTick = resolve;
     });
-    const svc = makeSvc({ processDueArrivals: vi.fn().mockReturnValue(pending) });
+    const svc = makeSvc({ processDueArrivalSteps: vi.fn().mockReturnValue(pending) });
     const sched = startScheduler(svc);
 
     // First tick fires; processDueArrivals is now pending (its own running=true).
     await vi.advanceTimersByTimeAsync(2000);
-    expect(svc.processDueArrivals).toHaveBeenCalledTimes(1);
+    expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(1);
     expect(svc.processCompletedTraining).toHaveBeenCalledTimes(1);
 
     // Second tick: arrivals is skipped because it is still in flight, but every other task runs. This is
     // the whole reason the shared guard was split — under the old single-flag scheduler, training would
     // still read 1 here, i.e. one slow task stalled settlement of everything else along with it.
     await vi.advanceTimersByTimeAsync(2000);
-    expect(svc.processDueArrivals).toHaveBeenCalledTimes(1);
+    expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(1);
     expect(svc.processCompletedTraining).toHaveBeenCalledTimes(2);
     expect(svc.processCompletedBuilds).toHaveBeenCalledTimes(2);
 
@@ -140,7 +180,7 @@ describe('startScheduler', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     await vi.advanceTimersByTimeAsync(2000);
-    expect(svc.processDueArrivals).toHaveBeenCalledTimes(2);
+    expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(2);
     expect(svc.processCompletedTraining).toHaveBeenCalledTimes(3);
 
     sched.stop();
@@ -155,6 +195,7 @@ describe('startScheduler', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(recorded).toContain('sched:arrivals');
+    expect(recorded).toContain('sched:arrivalSettle');
     expect(recorded).toContain('sched:training');
     expect(recorded).toContain('sched:builds');
     expect(recorded).toContain('sched:siegeDamage');
@@ -170,10 +211,10 @@ describe('startScheduler', () => {
     const svc = makeSvc();
     const sched = startScheduler(svc);
     await vi.advanceTimersByTimeAsync(2000);
-    expect(svc.processDueArrivals).toHaveBeenCalledTimes(1);
+    expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(1);
 
     sched.stop();
     await vi.advanceTimersByTimeAsync(10000);
-    expect(svc.processDueArrivals).toHaveBeenCalledTimes(1);
+    expect(svc.processDueArrivalSteps).toHaveBeenCalledTimes(1);
   });
 });

@@ -39,6 +39,8 @@ export class MarchService {
 
   // ── arrival ──
   processDueArrivals(...args: Parameters<ArrivalService['processDueArrivals']>) { return this.arrival.processDueArrivals(...args); }
+  processDueArrivalSteps(...args: Parameters<ArrivalService['processDueArrivalSteps']>) { return this.arrival.processDueArrivalSteps(...args); }
+  processDueArrivalSettlements(...args: Parameters<ArrivalService['processDueArrivalSettlements']>) { return this.arrival.processDueArrivalSettlements(...args); }
 
   // ── stationed ──
   recallStationed(...args: Parameters<StationedService['recallStationed']>) { return this.stationed.recallStationed(...args); }

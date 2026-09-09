@@ -335,6 +335,14 @@ describe('worldsvc SLG order throughput', () => {
       console.log(`[load] sched:arrivals p50 ${arrivals?.p50 ?? '-'}ms  p90 ${arrivals?.p90 ?? '-'}ms  max ${arrivals?.max ?? '-'}ms`);
       /* eslint-disable-next-line no-console */
       console.log(`[load] arrivals split: batched ${counters['arrivals.batched'] ?? 0} | serial ${counters['arrivals.serial'] ?? 0} (arriving ${counters['arrivals.arriving'] ?? 0}, blocked ${counters['arrivals.blocked'] ?? 0}, legacy ${counters['arrivals.legacy'] ?? 0})`);
+      // The settling half (2026-09-09, audit §7), printed and NOT asserted on purpose. Its latency is
+      // bounded by its own time slice, so a budget on it would only re-assert the slice; what is worth
+      // reading here is `deferred` — a value that climbs across runs says settlement THROUGHPUT is the
+      // ceiling, which is the one finding that would justify the cross-player-concurrency work. Printing
+      // `sched:arrivals` alone would now look excellent while a backlog quietly grew beside it.
+      const settle = labels['sched:arrivalSettle'];
+      /* eslint-disable-next-line no-console */
+      console.log(`[load] sched:arrivalSettle p50 ${settle?.p50 ?? '-'}ms  p90 ${settle?.p90 ?? '-'}ms  max ${settle?.max ?? '-'}ms — settled ${counters['arrivals.settled'] ?? 0}, deferred ${counters['arrivals.deferred'] ?? 0}`);
       if (arrivals) {
         expect(
           arrivals.p50 ?? 0,
