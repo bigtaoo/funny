@@ -23,6 +23,16 @@ const PENDING_CLEARS_KEY = 'nw_pending_clears_v1';
 /** Local key for the offline pending stamina-spend queue (A4, 2026-07-06): entering a level deducts stamina locally immediately, even offline; queued here and settled with the server on reconnect. */
 const PENDING_STAMINA_KEY = 'nw_pending_stamina_v1';
 
+/**
+ * Local key for the offline pending flag-write queue (2026-09-09): a `setFlag` issued while no token
+ * is held writes the local mirror only, and the next successful pull overwrites `flags` wholesale with
+ * the cloud copy (reconcile's "cloud always wins" contract) — so without this queue the write is lost.
+ * It has to outlive the process, not just the session: the launch gates (age / GDPR consent) run before
+ * any token is applied, and an install whose flag never reached the server is asked again on every
+ * single launch. Not part of SaveData on purpose — reconcile must never touch it.
+ */
+const PENDING_FLAGS_KEY = 'nw_pending_flags_v1';
+
 /** Offline pending-settlement clear record (flushed on reconnect → POST /pve/clear). */
 export interface PendingClear {
   levelId: string;
@@ -54,6 +64,10 @@ export interface SaveStore {
   loadPendingStamina(): PendingStaminaSpend[];
   /** Write the offline pending stamina-spend queue. */
   savePendingStamina(list: PendingStaminaSpend[]): void;
+  /** Read the offline pending flag-write queue, key → intended value (returns empty on corruption). */
+  loadPendingFlags(): Record<string, boolean>;
+  /** Write the offline pending flag-write queue. */
+  savePendingFlags(map: Record<string, boolean>): void;
 }
 
 export class LocalSaveStore implements SaveStore {
@@ -129,6 +143,27 @@ export class LocalSaveStore implements SaveStore {
   savePendingStamina(list: PendingStaminaSpend[]): void {
     if (list.length === 0) this.storage.removeItem(PENDING_STAMINA_KEY);
     else this.storage.setItem(PENDING_STAMINA_KEY, JSON.stringify(list));
+  }
+
+  loadPendingFlags(): Record<string, boolean> {
+    const text = this.storage.getItem(PENDING_FLAGS_KEY);
+    if (!text) return {};
+    try {
+      const raw = JSON.parse(text);
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+      const out: Record<string, boolean> = {};
+      for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (typeof v === 'boolean') out[k] = v; // drop anything that isn't a flag write
+      }
+      return out;
+    } catch {
+      return {}; // corrupted → treat as empty queue
+    }
+  }
+
+  savePendingFlags(map: Record<string, boolean>): void {
+    if (Object.keys(map).length === 0) this.storage.removeItem(PENDING_FLAGS_KEY);
+    else this.storage.setItem(PENDING_FLAGS_KEY, JSON.stringify(map));
   }
 
   /** Absorb legacy standalone keys into flags (only when the flag is not already set). */

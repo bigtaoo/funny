@@ -64,6 +64,14 @@ export class SaveManager {
   private pending: PendingClear[]; // offline queue of clears awaiting settlement (PVE_INTEGRITY_PLAN §8.4)
   private pendingStamina: PendingStaminaSpend[]; // offline queue of stamina spends awaiting server settlement (A4)
   /**
+   * Offline queue of flag writes awaiting a server push (2026-09-09), key → intended value. Filled by
+   * setFlag whenever the write could not reach the server (no token yet, or the PUT failed) and drained
+   * by flushPendingFlags() after the next successful pull. See PENDING_FLAGS_KEY in SaveStore.ts for why
+   * this has to be persisted rather than kept for the session: the launch gates run before any token is
+   * applied, and reconcile() then overwrites `flags` with the cloud copy.
+   */
+  private pendingFlags: Record<string, boolean>;
+  /**
    * The accountId whose data `this.save.rev` actually belongs to (audit-followup-fixes-0730). Updated ONLY
    * inside reconcile() itself — deliberately not the same thing as `this.save.accountId`, which
    * bootstrap()/adoptSession() both write eagerly *before* the actual cloud pull + reconcile (so a
@@ -99,6 +107,7 @@ export class SaveManager {
     this.reconciledAccountId = this.save.accountId;
     this.pending = this.store.loadPending();
     this.pendingStamina = this.store.loadPendingStamina();
+    this.pendingFlags = this.store.loadPendingFlags();
   }
 
   /** Current in-memory save (synchronously readable; UI balances etc. read from here and are refreshed by server push-back). */
@@ -148,14 +157,19 @@ export class SaveManager {
    * then fires the server round trip in the background; the response's reconcile() confirms it, and on
    * failure a follow-up refresh() re-pulls true server state — so a rejected/lost write self-corrects on
    * the very next sync instead of silently diverging forever (see reconcile()'s doc comment).
+   *
+   * A write the server never saw (no token yet, or the PUT failed) is queued in `pendingFlags` and
+   * retried by flushPendingFlags() after the next successful pull — otherwise that same reconcile()
+   * would overwrite the local mirror with a cloud `flags` that has never heard of this key, silently
+   * discarding the write (2026-09-09: this is what made the launch age gate ask again every launch).
    */
   setFlag(key: string, value: boolean): void {
     this.save.flags[key] = value;
     this.persist();
-    if (!this.online()) return;
+    if (!this.online()) { this.queuePendingFlag(key, value); return; }
     this.api!.setFlag(key, value).then(
       (res) => this.reconcile(res.save),
-      () => { void this.refresh(); },
+      () => { this.queuePendingFlag(key, value); void this.refresh(); },
     );
   }
 
@@ -230,6 +244,7 @@ export class SaveManager {
       });
       await this.flushPending(); // settle clears that were queued offline
       await this.flushPendingStamina(); // settle stamina spends that were queued offline
+      await this.flushPendingFlags(); // re-push flag writes made before this token existed (launch gates)
       return true;
     } catch {
       // Offline / server unreachable: stay on local data, no error thrown.
@@ -258,6 +273,7 @@ export class SaveManager {
       });
       await this.flushPending(); // settle clears queued offline after reconnection
       await this.flushPendingStamina(); // settle stamina spends queued offline after reconnection
+      await this.flushPendingFlags(); // re-push flag writes the server never saw (launch gates, offline toggles)
       return true;
     } catch {
       return false;
@@ -304,8 +320,8 @@ export class SaveManager {
    * Full local reset on explicit logout (2026-07-29 fix — see `client-resource-mgmt-audit-2026-07-29`
    * memory / claudedocs/client-modules.md): unlike clearSyncedLocalSections (equipped/flags/pvpDeck only,
    * kept purely to avoid a UI flash of the old avatar/title before the next reconcile), this drops the
-   * ENTIRE local save (wallet/progress/cardInv/equipmentInv/materials/...) plus the offline pending-clear
-   * and pending-stamina-spend queues. Without this, a player who logs out and then either (a) plays
+   * ENTIRE local save (wallet/progress/cardInv/equipmentInv/materials/...) plus the offline pending-clear,
+   * pending-stamina-spend and pending-flag queues. Without this, a player who logs out and then either (a) plays
    * offline before any next login, or (b) logs into a *different* account that later reconciles online,
    * would see/keep the departing account's meta progress — and worse, any offline-queued PvE clears/
    * stamina spends still sitting in `this.pending`/`this.pendingStamina` would get flushed and credited
@@ -321,11 +337,14 @@ export class SaveManager {
     if (this.online()) {
       await this.flushPending();
       await this.flushPendingStamina();
+      await this.flushPendingFlags();
     }
     this.pending = [];
     this.pendingStamina = [];
+    this.pendingFlags = {}; // a flag write belongs to the departing account, never to the next one
     this.store.savePending(this.pending);
     this.store.savePendingStamina(this.pendingStamina);
+    this.store.savePendingFlags(this.pendingFlags);
     this.store.clearLocal();
     this.save = this.store.loadLocal(); // fresh default save (migrate(null) → makeNewSave())
     this.reconciledAccountId = this.save.accountId; // matches the fresh save, same as the constructor
@@ -455,6 +474,42 @@ export class SaveManager {
         break; // network error: keep queue, retry next time
       }
     }
+  }
+
+  /** Remember a flag write the server has not accepted (yet), so flushPendingFlags() can retry it after the next pull. */
+  private queuePendingFlag(key: string, value: boolean): void {
+    this.pendingFlags[key] = value;
+    this.store.savePendingFlags(this.pendingFlags);
+  }
+
+  /**
+   * Flush the pending flag-write queue once back online. Called right after reconcile() in
+   * bootstrap()/refresh(), which is the moment that matters: reconcile has just replaced `flags` with
+   * the cloud copy, so an entry the cloud already agrees with is confirmed (drop it) and every other
+   * entry is a write the server genuinely never saw (re-push it, and re-apply it locally in the
+   * meantime so the gate/screen that set it doesn't flip back while the PUT is in flight).
+   *
+   * Deliberately does NOT fall back to refresh() on failure the way setFlag does — refresh() is what
+   * calls this method, and the entry simply stays queued for the next pull.
+   */
+  private async flushPendingFlags(): Promise<void> {
+    if (!this.online()) return;
+    for (const [key, value] of Object.entries(this.pendingFlags)) {
+      if (this.save.flags[key] === value) {
+        delete this.pendingFlags[key]; // the cloud copy we just reconciled already carries this write
+        continue;
+      }
+      this.save.flags[key] = value;
+      this.persist();
+      try {
+        const res = await this.api!.setFlag(key, value);
+        this.reconcile(res.save);
+        delete this.pendingFlags[key];
+      } catch {
+        break; // offline / server unreachable: keep the rest of the queue for the next pull
+      }
+    }
+    this.store.savePendingFlags(this.pendingFlags);
   }
 
   /**
