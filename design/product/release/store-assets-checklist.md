@@ -512,7 +512,49 @@ Crash Data、Performance Data（分析/不关联）。跟踪那一问答「否�
 |---|---|---|
 | 缩略图 | 按 CrazyGames 开发者要求（通常 16:9，建议 1280×720） | ✅ `art/store/icons/crazygames_thumb_1280x720.png`（横屏战斗实拍） |
 | 游戏标题/描述 | 英文（见 §0.1 EN） | — |
-| 操作说明 | 鼠标/触屏操作说明 | 待补 |
+| 操作说明 | 鼠标/触屏操作说明 | ✅ 见 §4.1b（2026-09-09 拟，逐条对着代码核过） |
+
+### 4.1b 操作说明文案（2026-09-09）
+
+> **写作口径：只写代码里真有的东西。** 这一条是 2026-09-08 那次教训的直接应用——三语商店文案通篇写着
+> 「回合制」写了三个月（见 §0.1 的类型口径修正框），根因是照着印象写、没人对着代码核。所以下面每一条
+> 都标了出处，改玩法时**先看这张表还成不成立**。
+>
+> **本作没有任何键盘操作**（`inputSystem/WebAdapter.ts` 只监听 pointer 与 wheel；全库唯一的 `keydown`
+> 在 `platform/web/domTextInput.ts`，那是聊天/改名的隐藏输入框，不是游戏操作）。CrazyGames 的表单里
+> 如果有「支持键盘」一栏，**答否**。
+
+**English（提交用）**
+
+```
+Mouse or touch — no keyboard needed.
+
+BATTLE
+- Drag a card from your hand onto a lane to deploy it, or tap the card to select it and then tap the lane.
+- Tap the upgrade button to spend ink on your base.
+- Tap the refresh button to discard your hand and draw a new one (costs ink).
+
+WORLD MAP
+- Drag to pan. The zoom button cycles through three zoom levels.
+- Tap a tile to open its actions.
+
+MENUS
+- Tap to select. Drag a list to scroll it; the mouse wheel scrolls too.
+```
+
+**逐条出处**（核这份文案时按这张表走，别按印象）
+
+| 文案里的一句 | 代码依据 |
+|---|---|
+| 拖拽出牌 / 点选再点格两种都行 | `render/GameRenderer/input.ts` 头注释：drag-to-place + tap-select-then-tap-to-place，`DRAG_THRESHOLD = 8`（设计空间像素）区分两者 |
+| 升级按钮是**点一下**，不是拖到基地上 | 同上 L131 注释原文：「tap to upgrade immediately, no drag-onto-base needed」 |
+| 刷新手牌花墨水 | 同上 L141「spend ink, redraw all cards」；代价 `HAND_REFRESH_COST = 10`（`server/engine/src/config.ts`） |
+| 大地图拖动平移 | `scenes/worldmap/WorldMapInput.ts::handleMove` 的 `ctx.dragging` 分支 |
+| 缩放是**按钮循环三档**，不是滚轮/双指 | `WorldMapInput/headerButtons.ts:25` — `setZoom(((ctx.zoom % 3) + 1))`；worldmap 下没有任何 wheel 或多指处理 |
+| 滚轮能滚列表，但仅浏览器 | `inputSystem/InputManager.ts:94` 注释：「browser only — no WeChat equivalent」 |
+| 没有键盘操作 | 全库 `keydown` 只有 `platform/web/domTextInput.ts:44`（隐藏文本输入框） |
+
+⚠️ **这段文案只对 Web/门户成立**：微信包走 `WechatAdapter`（无 wheel），原生壳是纯触屏。别把同一段贴到别的渠道。
 
 ### 4.2 合规 / 平台要求（COMPLIANCE_GLOBAL §8 Web 专属）
 - [x] **隐私政策 URL 可访问 + 客户端可点**（2026-09-04 修，真机核对过）：同意弹层的两个链接此前是根相对 `/privacy.html`，在门户域名下必然 404；`legalUrl()` 现按「是否跑在自家源上」分叉，CrazyGames 与原生壳一样给绝对 https（`ConsentDialog.ts`）。**这条修的时候顺带挖出一个更大的洞**：分叉依据 `clientPlatformName()` 读的是 `globalThis.TARGET`，而 DefinePlugin 那一行 key 是裸的 `TARGET`，**根本没替换成员表达式**——所以这个函数在任何真实构建里都返回 `'web'`（影响面不止本条，见 [`ANALYTICS_DESIGN §3.3`](../../game/ANALYTICS_DESIGN.md)）。补 key + 真编译探针后，在 crazygames dev 构建里实测：两个链接确实 `window.open('https://nivara.gamestao.com/privacy' | '/terms')`，`GET /bootstrap?platform=crazygames` 也终于报对了平台。⚠️ 仍只有**首启同意弹层**一处入口，设置页没有常驻链接（与 iOS §1.5 同一条欠账）。
@@ -567,6 +609,6 @@ cd client && NW_BUILD_VERSION=$(git rev-parse --short HEAD) npm run build:crazyg
 | iOS | ✅ 图标 + 截图齐（预览视频可选，未做） | §1.3 待填 | §1.4 待填 | §1.5 | 全球版 §5.2 |
 | Google Play | ✅ 图标 + 特征图 + 截图齐 | §2.3 待填 | §2.4 待填 | §2.5 | 全球版 §5.2 |
 | 微信小游戏 | ✅ 图标（既有 logo-512）+ 分享图齐；截图仍是英文版，中文版待跑 | §3.3 待评估 | 隐私政策(CN) | §3.2（依版号） | 中国区 §5.1 |
-| CrazyGames | ✅ 横版缩略图齐；操作说明文案待补（§4.1） | 平台要求 | 隐私政策 | §4.2 四条已修，剩内容政策核对 + 冒烟 | 全球版 §5.2 |
+| CrazyGames | ✅ 横版缩略图齐；操作说明文案已拟（§4.1b，2026-09-09） | 平台要求 | 隐私政策 | §4.2 四条已修，剩内容政策核对 + 冒烟 | 全球版 §5.2 |
 
 > **依赖提醒**：图标 / 横幅 / 截图**全部已出且可一键复跑**（§0.4 三个脚本）。剩余美术类缺口只有可选的 App 预览视频；剩余非美术缺口是中文/德文截图（脚本换 locale 即可）与 iPad 横版适配（见 §0.6）。隐私标签答案依赖 §0.3 定稿（已与隐私政策对齐）；中国区整块依赖版号流程（Track 2 L2-4）。
