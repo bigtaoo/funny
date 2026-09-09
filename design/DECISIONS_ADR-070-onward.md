@@ -547,3 +547,14 @@ ADR-083/085 把**重绘**降到了空闲 5–12 次/秒，但**帧本身**没降
 - 文档：`claudedocs/client-render-budget.md` §2/§10 重写 + 新增 §11。
 - **ADR-085 的「下一刀在场景 `update()`」自此作废**（见上面的更正）。
 
+---
+
+## ADR-087 `equipment.ts` 也走深别名：客户端那份手抄副本删掉，不再「三处同步」 — Accepted — 2026-09-09
+
+- **决策**：新增 `@nw/shared/equipment` 深别名指向 `server/shared/src/equipment.ts` 源文件，`client/src/game/meta/equipmentDefs.ts` 由**手抄副本**改为**具名 re-export 门面**。同 ADR-041-069 里 `@nw/shared/cards` 那条的做法，理由也同一条：`@nw/shared` **包根 barrel** 会拉入 mongodb/jsonwebtoken 打不进浏览器，但 `equipment.ts` **这一个文件 import 数为零**（连 `import type` 都没有，`seededRng`/`hashSeed` 是文件内私有函数），单独指过去就是浏览器安全的。
+  - 落地八处别名：`client/webpack.config.js`、`client/tsconfig.json`、`client/tsconfig.fulllink.json`、`client/vitest.{,e2e.,load.,sim.,ui.}config.ts`。**新增深别名必须一次改齐这八处**，少一处就是「跑测试绿、打包红」或反之。
+- **门面只按名字挑，不用 `export *`**：re-export 的 12 个符号全是 UI 预览/按钮门控要用的（目录、上限常量、`enhanceSuccessRate`/`enhanceDemoteChance`/`enhanceCost`/`salvageRefund`/`isSalvageable`/`reforgeCoinCost`/`getEquipDef`/`REFORGE_*`/`PROTECT_ENHANCE_ITEM_ID`）；**掷骰与实例生成故意不 re-export**（`rollEnhanceSuccess`/`rollEnhanceDemote`/`rollCraftedAffixes`/`rollReforgedAffixes`/`makeDropInstance`/`makeGachaEquipInstance`）——服务器仍是唯一权威这条红线，靠「客户端根本拿不到这些函数」来守，比靠注释守可靠。留在客户端的只有两个没有服务端对应物的函数：`craftableDefs()`（锻造网格按稀有度分组的展示序）与 `affixKind()`（词条 id 前缀 → UI 分桶）。
+- **先量后动（这是动手前定的前提）**：`npm run build:web` 主 bundle **2 237 372 → 2 237 389 字节（+17 B）**，gzip **633 377 → 633 368（−9 B）**。webpack 的 `usedExports` 把没被 re-export 的那半整段摇掉了，所以「把 437 行的服务端模块接进打包图」并不等于「包体涨 437 行」——**代价实测为零**。以后再遇到同形状的手抄副本，量一次的成本是一次生产构建（~60 s），不该再靠猜。
+- **顺带删掉 `client/test/equipmentFormulaParity.test.ts`（同日早些时候刚加的 10 例漂移门禁）**：它守的是「两份副本逐值一致」，而现在只有一份，逐值比对成了自己跟自己比。**留着一条恒真的门禁比没有门禁更坏**——它会让下一个人以为还有两处要同步。镜像那侧原本 63.1% 覆盖率、九个函数里七个从没被调用，现在这批公式的覆盖归 `server/shared/test/equipment.test.ts` 管（那侧一直测得很全）。
+- **影响**：`client/src/game/meta/equipmentDefs.ts`（149 → 73 行）、上述八份配置、删 `client/test/equipmentFormulaParity.test.ts`、`client/test/equipmentDefs.test.ts` 抬头注释。文档：`design/game/EQUIPMENT_DESIGN_IMPL.md` E5 决策 1（原「不 import `@nw/shared`」那条标注作废）、`claudedocs/client-testing.md`。验证：`tsc --noEmit -p tsconfig.test.json` + `build:web` 生产构建 + `vitest run`（277 文件 / 3385 例）+ `vitest run --config vitest.ui.config.ts`（264 文件 / 2628 例）全绿。
+- **同类候选（尚未做，形状一样）**：`client/src/game/meta/cardDefs.ts` 的 `cardHp`/`cardAttack`/`cardSiegeValue(+Effective)`、`client/src/game/meta/retention.ts` 的日常任务三件。这两处的服务端对应物签名不完全一致（客户端那侧包了一层 `SaveData`），不是纯搬运，要一处一处看。

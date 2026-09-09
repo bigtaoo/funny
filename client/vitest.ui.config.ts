@@ -29,6 +29,7 @@ export default defineConfig({
     alias: {
       '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
       '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
+      '@nw/shared/equipment': path.resolve(__dirname, '../server/shared/src/equipment.ts'),
       // Browser-safe slice, same as webpack.config.js/vitest.config.ts — NOT the full
       // src/index.ts barrel, which re-exports jwt.ts (-> 'jsonwebtoken', a server-only
       // dep this client-side test run never installs). Every current bare '@nw/shared'

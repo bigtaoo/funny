@@ -158,6 +158,11 @@ module.exports = (env, argv) => {
         // instead of maintaining a second copy (CHARACTER_CARDS_DESIGN §2/§3). Must precede
         // the general '@nw/shared' entry below (more specific alias wins).
         '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
+        // @nw/shared/equipment = equipment catalogue + craft/enhance/salvage/reforge numbers.
+        // Same reasoning as '@nw/shared/cards': equipment.ts has zero imports at all (not even
+        // `import type`), so it is browser-safe on its own. Lets client/src/game/meta/equipmentDefs.ts
+        // re-export the authoritative table instead of hand-copying it (EQUIPMENT_DESIGN §3/§6/§17).
+        '@nw/shared/equipment': path.resolve(__dirname, '../server/shared/src/equipment.ts'),
         // @nw/shared = browser-safe slice of server/shared. Points directly to slg/index.ts
         // (pure/deterministic, no Node.js built-ins) to avoid pulling in password/logger
         // which import node:crypto / node:fs / node:path and break webpack browser builds.
