@@ -263,8 +263,8 @@ mongod 从被要求关闭到真的消失要 **15.1 秒**，而硬期限是 10+10
 
 **没证实的部分（如实记账）**：上面第二条只是唯一自洽的候选路径，**没能定向复现**——喂胖 replset 再 SIGKILL，
 kill→exit 只要 ~150ms、随即 `rm` 三次全过（因为真实场景里那 15 秒是**优雅**关闭，退出时文件已经干净释放）。
-当天 4 次全量跑也全是 0。**Linux 侧目前没有证据**：09-08 / 09-09 两次 nightly flake-hunt 的 worldsvc 分片各 3 次迭代全绿，
-外加手动 `workflow_dispatch`（`shard=worldsvc, runs=5`）——合计 11 次干净迭代。本机是 Windows + Node v26.5.0，
+当天 4 次全量跑也全是 0。**Linux 侧目前没有证据**：09-08 / 09-09 两次 nightly flake-hunt 的 worldsvc 分片各 3 次迭代全绿，**合计 6 次干净迭代**。
+同日另派过一次手动 `workflow_dispatch`（`shard=worldsvc, runs=5`，run 34398634299），跑到约第 3 轮时**由用户叫停**，结果未记录——**所以样本是 6 次，不是 11 次**。顺带量到一个数：flake-hunt 里 worldsvc 每次迭代约 **8.7 分钟**（ci.yml 注释里那个「~3.3 分钟 / 带 coverage ~226s」是 08-14 的数字，这套 e2e 从那以后长了不少）。本机是 Windows + Node v26.5.0，
 CI 是 ubuntu + Node 22，**这个红很可能是 Windows-only**。
 
 **落地的改动只有一处**：`worldsvc/test/globalSetup.ts` 的 `teardown()`。原来是 `if (replset) await replset.stop();` 一行裸等，
