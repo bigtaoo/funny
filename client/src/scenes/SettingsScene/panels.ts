@@ -4,8 +4,7 @@
 // over `this`. Mirrors StatsScene/panels.ts / ResultScene/builders.ts's precedent.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
-import { SketchPen } from '../../render/sketch';
-import { ui as C } from '../../render/sketchUi';
+import { ui as C, sketchPanel } from '../../render/sketchUi';
 import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../../i18n';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildAvatar } from '../../render/avatar';
@@ -48,12 +47,8 @@ export function addButton(host: PanelHost, label: string, y: number, border: num
   const btnH = Math.round(h * 0.07);
   const bx = x ?? Math.round(w * 0.12);
   const enabled = fn !== null;
-  const box = new PIXI.Graphics();
-  box.beginFill(enabled ? C.dark : 0xbbbbbb);
-  box.drawRect(0, 0, btnW, btnH);
-  box.endFill();
+  const box = sketchPanel(btnW, btnH, { fill: enabled ? C.dark : 0xbbbbbb, border, width: 2.6, seed: 91 });
   box.alpha = enabled ? 1 : 0.6;
-  new SketchPen(box, 91).rect(2, 2, btnW - 4, btnH - 4, { color: border, width: 2.6, jitter: 1.0 });
   box.x = bx; box.y = y;
   host.container.addChild(box);
 
@@ -154,12 +149,8 @@ export function drawLanguage(host: PanelHost): void {
   locales.forEach((loc, i) => {
     const bx = startX + i * (btnW + gap);
     const on = loc === active;
-    const box = new PIXI.Graphics();
-    box.beginFill(on ? C.accent : C.paper);
-    box.drawRect(0, 0, btnW, btnH);
-    box.endFill();
-    new SketchPen(box, 71 + i).rect(2, 2, btnW - 4, btnH - 4, {
-      color: on ? C.gold : C.dark, width: on ? 2.8 : 2, jitter: 1.0,
+    const box = sketchPanel(btnW, btnH, {
+      fill: on ? C.accent : C.paper, border: on ? C.gold : C.dark, width: on ? 2.8 : 2, seed: 71 + i,
     });
     box.x = bx; box.y = btnY;
     container.addChild(box);
@@ -203,12 +194,8 @@ export function drawDataSaver(host: PanelHost): void {
   const bx = Math.round(w * 0.62);
   const by = rowY - Math.round(btnH / 2);
 
-  const box = new PIXI.Graphics();
-  box.beginFill(on ? C.accent : C.paper);
-  box.drawRect(0, 0, btnW, btnH);
-  box.endFill();
-  new SketchPen(box, 83).rect(2, 2, btnW - 4, btnH - 4, {
-    color: on ? C.gold : C.dark, width: on ? 2.8 : 2, jitter: 1.0,
+  const box = sketchPanel(btnW, btnH, {
+    fill: on ? C.accent : C.paper, border: on ? C.gold : C.dark, width: on ? 2.8 : 2, seed: 83,
   });
   box.x = bx; box.y = by;
   container.addChild(box);
