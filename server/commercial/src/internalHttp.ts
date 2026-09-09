@@ -41,8 +41,16 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json' });
-  res.end(JSON.stringify(body));
+  const payload = Buffer.from(JSON.stringify(body) ?? 'null', 'utf8');
+  const hasBody = status !== 204 && status !== 304;
+  res.writeHead(status, {
+    'content-type': 'application/json',
+    // Declared length, not node's chunked fallback — see worldsvc/src/httpApi/helpers.ts for the
+    // reasoning and measurements; enforced by scripts/checkEdgeCompression.mjs. Internal-only surface,
+    // so this is uniformity rather than a byte saving: one rule with no exceptions beats an allowlist.
+    ...(hasBody ? { 'content-length': String(payload.byteLength) } : {}),
+  });
+  res.end(hasBody ? payload : undefined);
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');

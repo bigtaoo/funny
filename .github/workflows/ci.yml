@@ -125,6 +125,15 @@ jobs:
       - name: auction settlement journal drift check
         working-directory: server
         run: npm run check:auctionjournal
+      # WORLDSVC_CONCURRENCY_AUDIT §8: `GET /world/map` is 523KB of JSON and 30KB on the wire, and that
+      # 17.6x lives entirely in `encode` in the Caddyfile, `gzip_proxied` in client/nginx.conf, and a
+      # declared content-length in each hand-rolled send(). Nothing else in the repo would notice any of
+      # the three disappearing — and one of them fails silently in the worst way: `gzip on` without
+      # `gzip_proxied` still reads as enabled while compressing nothing that came from an upstream, i.e.
+      # nothing under /api /world /social /auction.
+      - name: edge compression drift check
+        working-directory: server
+        run: npm run check:edgecompression
       - name: server typecheck (tsc -b, solution file — all 13 workspaces)
         working-directory: server
         run: npm run typecheck

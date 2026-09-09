@@ -6,10 +6,14 @@ import type { IncomingMessage, ServerResponse } from 'http';
 
 export function handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
   if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, service: 'gameserver' }));
+    // Declared length, not node's chunked fallback — see worldsvc/src/httpApi/helpers.ts for the
+    // reasoning; enforced by scripts/checkEdgeCompression.mjs. One rule with no exceptions.
+    const payload = Buffer.from(JSON.stringify({ ok: true, service: 'gameserver' }), 'utf8');
+    res.writeHead(200, { 'content-type': 'application/json', 'content-length': String(payload.byteLength) });
+    res.end(payload);
     return;
   }
-  res.writeHead(426, { 'content-type': 'text/plain' });
-  res.end('Upgrade Required');
+  const upgrade = Buffer.from('Upgrade Required', 'utf8');
+  res.writeHead(426, { 'content-type': 'text/plain', 'content-length': String(upgrade.byteLength) });
+  res.end(upgrade);
 }

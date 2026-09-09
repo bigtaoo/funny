@@ -622,3 +622,76 @@ validate 直接报 `malformed header matcher` —— 这是**改动前就存在*
   所以这不是 bug；但它意味着 **sparse 的 `lod` 分档从来没有被真实数据量过**。
 - **出口总量仍然量不出来**：§8.1 第 1 点把可乘的常数拿掉了，真实稳态取决于玩家怎么拖地图。
   真上量的时候该看的是 Caddy 侧的出口字节，而不是再乘一个假设的轮询频率。
+
+### 8.8 门禁（2026-09-09 同日追加）：三个属性全都不在类型系统里
+
+第八节的 17.6× 完整地活在**两个配置文件 + 一个响应头**里。没有任何一处代码会因为它们消失而变红，
+而它们各有一种消失方式：
+
+1. **`encode` 从 Caddyfile 里没了** → 生产不再压缩，仓库里没有任何东西会注意到。
+2. **`gzip_proxied` 从 nginx.conf 里没了而 `gzip on` 还在** → 这是最恶的一种：配置**读起来就是
+   「压缩已开启」**，而 nginx 的默认 `gzip_proxied off` 意思是「上游来的一律不压」，
+   `/api` `/world` `/social` `/auction` 全是上游。审计的人扫到 `gzip on` 就过了。
+3. **某个 JSON writer 退回 chunked** → §8.5 那个 31B→51B 又回来。
+
+所以加了 `server/scripts/checkEdgeCompression.mjs`（`npm run check:edgecompression`，已进 `ci.yml`
+的 server-checks，紧跟 `check:auctionjournal`），四条规则：`caddy-encode` / `nginx-gzip-proxied` /
+`nginx-gzip-json` / `declared-length`。变异测试 `worldsvc/test/check-edge-compression.test.ts`
+**11 例全部按规则 id 验红**（含「gate 不能因为自己的文档变红」和「`src/generated/**` 要跳过」两例正向用例）。
+
+**`declared-length` 故意是一条「`server/*/src` 下不许出现 `res.end(JSON.stringify(...))`」的平坦规则，
+没有按服务的白名单** —— 因为写这一节的那次扫描**把服务名单搞错了**：它对每个服务 grep 了单词
+`fastify`，在 auctionsvc 和 admin 里搜到了，就判定这两个「fastify 会自己写 content-length，不受影响」。
+事实是这两个服务**另外还各有一份手写的 `node:http` `send()`**，分别服务 `/auction*` 和 `/ops/*`，
+**都在压缩后的边缘后面**。白名单会把这个错误固化下来，一条没有例外的规则不会。
+
+**这是同一类错误的第二次**（第一次记在 `index/open.md`：核 ADR-071 4b 时核了一个代理指标而不是它自己的
+验收条件）。**教训同上：不要用一个「看着像」的信号代替直接检查那件事本身** —— 这里直接检查是
+`grep -rn "res.end(JSON.stringify" server/*/src`，一条命令，当场就能看出七个服务全中。
+
+顺带把剩下六处也一起改了（`botsvc` / `commercial` / `gateway` / `matchsvc` 的 internalHttp、
+`gameserver/httpHealth.ts`）。这几处是**内网面、不经过边缘**，改它们纯粹是为了「一条规则没有例外」
+比「一份要人维护的白名单」更可靠；`gameserver/test/httpHealth.test.ts` 因此从「断言 writeHead 的
+header 对象字面量」改成「断言声明的长度与它伴随的 body 一致」——后者才是真正想守的东西
+（长度写错会截断响应，用字符数算的长度对任何非 ASCII body 都是错的）。
+
+### 8.9 门禁二：`getMap` 每格字段预算
+
+`worldsvc/test/map-payload-budget.e2e.test.ts`（普通 suite，每次 push 都跑）。523KB 这个形状
+**不是谁决定的，它是一格一格攒出来的** —— 给 `WorldTileView` 加一个字段在调用点看不见任何代价，
+在线上是 6561 倍。所以这份门禁守的是**每格的字段集合**而不是总量：
+
+- 一个**没有 DB override** 的格子只允许携带 `x y type level resType obstacleKind visible`
+  （`visible` 明确列在里面，附上 §8.3「压缩后只值 0.1~1.5%，不值一次协议改动」的结论，
+  免得下一个人再重新发现一遍）。
+- 每格字节上限 95（当前 82.7），松到能扛坐标多一位数，紧到一个新字段就顶破。
+- 情报字段（`garrison`/`hp`/`occupied`）只能挂在真有它们的格子上，**不能带着 falsy 默认值铺满全图** ——
+  这是「加一个字段」变成「加 6561 份」的最常见写法，而它在任何单格用例里都看不出来。
+
+**两轮变异验红**：① 给每格加一个 `zoneTag` → 2 例红（字段集合那条报出「`zoneTag` on 6561/6561」+
+字节上限那条从 82.7 涨到 98.3）；② 把 `garrison` 改成无条件带默认值 → 1 例红。
+
+**写这份门禁时它自己抓到了我一个错**：第三条最初用「别人的领地」当载荷，结果 `garrison` 断言失败 ——
+**这是对的**：garrison/hp 是被战争迷雾门控的情报（`gateIntel`），一个附近没有领地的请求者本来就看不到；
+而 `occupied` 确实到了，因为归属在 2026-07-24 那次迷雾模型改动里变成了全图公开。改成用请求者自己的
+格子（自己的领地天然在视野里）。迷雾规则本身是 `fog.e2e.test.ts` 的活，这里只管字段位置。
+
+### 8.10 顺手更正一处文档漂移：`api.gamestao.com` 现在不在 Cloudflare 后面
+
+`deploy-cloudflare.md` §3 的表把 `api.gamestao.com` 标成**橙云**（CF 代理）。**2026-09-09 实测不是**：
+
+```
+GET https://api.gamestao.com/world/active-season
+  via: 1.1 Caddy
+  alt-svc: h3=":443"; ma=2592000
+  transfer-encoding: chunked
+  （没有 cf-ray，没有 server: cloudflare）
+```
+
+这件事对第八节是**决定性的**：如果它真在橙云后面，Cloudflare 自己就会压缩，那这一节的改动对网页端
+基本是冗余的。实测没有 CF，所以 **Caddy 的 `encode` 是生产唯一的压缩层**，17.6× 是生产数字而不是
+只在本机成立。（`transfer-encoding: chunked` 同时说明线上跑的还是改动前的 worldsvc。）
+
+**教训**：`checkCachePolicy.mjs` 的文件头写过一遍同样的事（「三个地方里有两个给了正确的印象，
+只有对着线上域名 curl 的那个不同意」）。这一节差点重犯：本机 docker + 本机 Caddy 容器都验了，
+**唯独没验线上到底有几层反代**。**收尾前对着真域名打一次，那是唯一能证明「生产的那一层是哪一层」的做法。**
