@@ -18,6 +18,7 @@ export default defineConfig({
       // Card catalogue constants (roster cap / fusion). Map before the barrel, same
       // reasoning as the auction alias above.
       '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
+      '@nw/shared/equipment': path.resolve(__dirname, '../server/shared/src/equipment.ts'),
       // Browser-safe slice, same as webpack.config.js/vitest.config.ts — NOT the full
       // src/index.ts barrel, which re-exports jwt.ts (-> 'jsonwebtoken', a server-only
       // dep this job never `npm ci`s — see "bring up server stack" above, host-side only
