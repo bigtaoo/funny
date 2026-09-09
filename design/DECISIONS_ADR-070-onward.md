@@ -440,6 +440,10 @@ ADR-083 的三个旋钮只在一台 Windows 桌面的 devtools 会话里量过�
   - 顺带一个测试自身的坑，写在 `renderProfile.test.ts` 的 `feedWindow` 里：**喂窗口只能用能整除 2000 ms 的帧率**（50/25/10/4）。60 fps 的 16.666… ms 凑不出整窗口，余下的帧会漏进下一个窗口，攒十几个窗口后边界漂移到「25 fps 的窗口报成 33 fps」。函数里直接 `throw` 挡住，而不是留给下一个人去查。
 - **影响**：新增 `client/src/debugFlags.ts`、`client/src/render/renderStats.ts`、`client/test/debugFlags.test.ts`、`client/test/renderProfile.test.ts`；改 `render/renderPolicy.ts`（flag 走 seam + 计数器发布）、`cache/PerfMonitor.ts`（flag + `render_profile`）、`cache/MemoryMonitor.ts`（三个 flag）、`net/log.ts`（一个 flag）、`app.ts`（`setDebugFlagStorage` + 给 PerfMonitor 传 renderer 事实）、`server/analyticsvc/src/service/defs.ts`（采样率）。
 - **还没做的**：真机上还是没有人拿着手机跑过——这条 ADR 只是把管子接好。**功耗本身客户端测不了**（没有电池 API 可用的口径），只能靠设备侧电池统计，帧数/重绘率这两个能测的现在会自己报上来。
+- **订正（2026-09-09）：`tickPerSec` / `paintPerSec` / `skipPct` 三个字段以前一条都没真的发出去过。** 线上 `notebook_wars_analytics.events` 里到 2026-09-09 只有**一条** `render_profile`（2026-09-08、web/Windows 桌面、`SettingsScene`），它带着 `fpsP50` / `dprCapped` / `canvasW`，而这三个重绘字段**全部缺失**。原因是 `app.ts` 先构造 `PerfMonitor`（第 ~97 行）、后装 `RenderPolicy`（第 ~143 行），而计数器是**后者**发布的（`setLiveRenderStats`）：`PerfMonitor.install()` 里那次 `renderStats()` 因此永远读到 `null`，基线为空 → 报告里静默丢掉三个字段。第二条（约 5 分钟后）才会带上，也就是说**只有超过 ~5.5 分钟的会话才拿得到重绘率**，而这恰恰是这条 ADR 存在的唯一理由。
+  - 修法是**迟绑定基线**（`PerfMonitor.onTick` 里 `lastPaintCounters === null` 时重试 `seedPaintCounters()`），而不是去调 `app.ts` 的装载顺序：顺序不该由这个模块来依赖，policy 先装后装都得能报。
+  - 门禁：`test/renderProfile.test.ts` 新增一例，**按生产顺序装**（先 `install()`，再 `setLiveRenderStats()`），并且让计数器**随 tick 增长**而不是一次性预置——预置会落进基线里，把 bug 放回去也全绿。删掉迟绑定那一行验证转红（9 例里正好红这一例）。
+  - 这是 ADR-072 那条教训的第三次应验：**两层各自的测试都绿，证明不了中间那层的装载顺序是对的**。原来 8 例里每一例都在 `install()` 之前发布计数器，也就是每一例都在测一个生产上不存在的顺序。
 
 ## ADR-085 `WorldMapScene` 也改按需重绘（`paint: 'reactive'`）——以及一次把 8.25 ms 打回 1.3 ms 的更正 — Accepted — 2026-09-08
 

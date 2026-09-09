@@ -91,12 +91,17 @@ export class PerfMonitor {
   install(ticker: PIXI.Ticker, renderInfo?: RenderProfileInfo): void {
     this.ticker = ticker;
     this.renderInfo = renderInfo ?? null;
-    const rs = renderStats();
-    this.lastPaintCounters = rs ? { ticks: rs.ticks, painted: rs.painted } : null;
+    this.seedPaintCounters();
     ticker.add(this.onTick);
     this.installLongTaskObserver();
     globalThis.document?.addEventListener?.('visibilitychange', this.onVisibilityChange);
     globalThis.document?.addEventListener?.('freeze', this.onFreeze);
+  }
+
+  /** Baseline for the paint-rate diff, taken as soon as a `RenderPolicy` has published its counters. */
+  private seedPaintCounters(): void {
+    const rs = renderStats();
+    this.lastPaintCounters = rs ? { ticks: rs.ticks, painted: rs.painted } : null;
   }
 
   uninstall(): void {
@@ -124,6 +129,15 @@ export class PerfMonitor {
   }
 
   private onTick = (): void => {
+    // Late-seed the paint-counter baseline. app.ts constructs this monitor BEFORE `RenderPolicy`,
+    // which is what publishes the counters (`setLiveRenderStats`), so `install()` above almost always
+    // finds none — and a null baseline silently drops `tickPerSec`/`paintPerSec`/`skipPct` from the
+    // report. That is the FIRST report, which is the only one a session shorter than ~5.5 minutes ever
+    // sends, so in practice the two fields ADR-084 exists to deliver were never arriving (confirmed
+    // against the one real `render_profile` in prod: fps fields present, paint fields absent).
+    // Retried per tick rather than fixed by reordering app.ts, because the ordering is not this
+    // module's to depend on: it must report paint rates whenever the policy installs, before or after.
+    if (this.lastPaintCounters === null) this.seedPaintCounters();
     this.frames += 1;
     this.accMs += this.ticker?.deltaMS ?? 16.7;
     if (this.accMs < WINDOW_MS) return;

@@ -198,6 +198,35 @@ describe('render_profile', () => {
     expect(track).toHaveBeenCalledTimes(MAX_PROFILES_PER_SESSION);
   });
 
+  it('reports the paint rate even though app.ts installs this monitor BEFORE the render policy', () => {
+    // The production boot order, which every other case in this file inverts: app.ts constructs
+    // PerfMonitor (line ~97) and only later installs RenderPolicy (line ~143), and it is the policy
+    // that publishes the counters. So at install() time there are none — and a baseline left null
+    // silently drops the three paint fields from the FIRST report, the only one a session shorter
+    // than ~5.5 minutes ever sends. That is what shipped: the single real `render_profile` in prod
+    // carries fpsP50/dprCapped and no tickPerSec/paintPerSec/skipPct at all.
+    setLiveRenderStats(null);
+    monitor.install(ticker, RENDER_INFO);
+    setLiveRenderStats(stats); // ← RenderPolicy.install(), a few milliseconds after the line above
+
+    // Counters that GROW as the loop runs, not a bulk pre-load: a bulk add before the first tick
+    // would land inside whatever baseline is taken and pass with the bug back in. 15 windows x 100
+    // ticks at 20ms = 30s at 50 ticks/s, painting one tick in five = a reactive menu at 10 paints/s.
+    for (let w = 0; w < FIRST_PROFILE_WINDOWS; w++) {
+      for (let i = 0; i < 100; i++) {
+        ticker.tick(20, 1);
+        stats.ticks += 1;
+        if (i % 5 === 0) stats.painted += 1;
+      }
+    }
+
+    const props = track.mock.calls[0]![1] as Record<string, unknown>;
+    expect(props.spanS).toBe(30);
+    expect(props.tickPerSec).toBe(50);
+    expect(props.paintPerSec).toBe(10);
+    expect(props.skipPct).toBe(80);
+  });
+
   it('still reports fps when no render policy is installed — just without the paint fields', () => {
     setLiveRenderStats(null);
     monitor.install(ticker, RENDER_INFO);

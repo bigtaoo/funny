@@ -25,6 +25,10 @@
 
 绝对值在桌面上都不大——问题是**这笔账一秒付 60~120 次、永不停止**，设备一刻进不了低功耗态。
 
+**线上也留了证据（2026-09-09 回查 Loki）。** `{source="client", kind="anomaly"}` 里 14 天共 52 条 `type=cpu`「sustained low fps」，其中 **43 条落在 `buildVersion=e2e307e`**——那是 PR #129（07.09.2026），**修复前的最后一个线上包**。它们来自 2026-09-08 08:09–10:17 UTC 的一段会话，桌面 1680×998 / dpr 2，**几乎每分钟一条，fps 11–16 连续一小时**（同一账号切到平板 1024×654 时是 18–24）。也就是说 owner 那句「风扇加速/发热」在遥测里是一条一小时的直线，不是主观感受。
+
+修复后的两个包（`ab82f49` / `410413c`）**一条 `cpu` 都没有**——但**别把这当成结论**：这两个包在线上只有 ~9 段很短的会话（analytics 里 `session_end` 合计 9 条），曝光量根本不够。而且 `device=phone` 的 `cpu` 报告**从来没有过一条**，手机那半边至今零遥测。查法见 §9 末尾。
+
 ## 2. 给新场景选 paint 模式
 
 `Scene.paint?: 'live' | 'reactive'`（`scenes/SceneManager.ts`），**缺省 `'live'` = 每 tick 都画**，也就是这条 ADR 之前所有场景的行为。所以一个什么都不声明的新场景不会因为这套机制变得奇怪。
@@ -184,8 +188,19 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 
 量是有界的：**每会话最多 6 条**（首条约 30 秒，之后每约 5 分钟），且只统计全程可见的窗口——后台被节流的标签页会报出假的 4 fps。服务端 `analyticsvc` 里 `render_profile` 采样率 1.0（不采样，否则跨宿主对比就没意义了）。
 
+**⚠️ 2026-09-09 订正：那三个重绘字段一条都没发出去过（已修）。** 线上 `notebook_wars_analytics.events` 里到 2026-09-09 只有**一条** `render_profile`，`fpsP50`/`dprCapped`/`canvasW` 都在，`tickPerSec`/`paintPerSec`/`skipPct` **全缺**。`app.ts` 先构造 `PerfMonitor`（~97 行）、后装 `RenderPolicy`（~143 行），而计数器是后者发布的，于是 `install()` 里那次 `renderStats()` 恒为 `null`，基线为空 → 静默丢字段；第二条（约 5 分钟后）才带上。修法是 `onTick` 里**迟绑定基线**（不是去调 `app.ts` 的顺序——顺序不该由这个模块依赖）。查这类事的入口：
+
+```bash
+ssh funny-vps "docker cp /tmp/q.js server-analyticsvc-1:/app/q.js && docker exec server-analyticsvc-1 node /app/q.js"
+```
+
+（脚本必须落在容器的 `/app` 下，`/tmp` 里 node 解析不到 `mongodb`；文档字段名是 **`event`** 不是 `name`。）
+
 ## 10. 还没做的
 
-1. **iOS / 微信真机仍然没有人拿着手机跑过。** §9 只是把管子接好了，数字要等真机上线（Grafana 里按 `platform` 切 `fpsP50`、按 `scene` 切 `skipPct`；世界地图现在应该报出 ~80% 的 `skipPct`）。功耗（不是帧数）本来也不在客户端能自测的范围内，要靠设备侧的电池统计。
+1. **iOS / 微信真机仍然没有人拿着手机跑过。** §9 只是把管子接好了（2026-09-09 才真的接通，见那一节的订正）。线上到 2026-09-09 累计 `render_profile` **1 条**，桌面 web、`SettingsScene`。数字要等真机上线（Grafana 里按 `platform` 切 `fpsP50`、按 `scene` 切 `skipPct`；世界地图现在应该报出 ~80% 的 `skipPct`）。功耗（不是帧数）本来也不在客户端能自测的范围内，要靠设备侧的电池统计。
 2. **`SettingsScene` 的几个按钮框还在实时描边**（§3 末尾），不在热路径上，搬的时候连带更新 §5 的预算数字。
-3. **世界地图那 1.4 ms/帧的场景 `update()` 没人碰过。** ADR-085 之后它是这一帧里剩下的全部——空闲时也每帧跑：HUD 计时器、护盾遍历、token 同步、vignette、引导判定。真要再往下压，下一刀在这里而不在重绘上。
+3. **世界地图那 1.4 ms/帧的场景 `update()` 没人碰过。** ADR-085 之后它是这一帧里剩下的全部——空闲时也每帧跑：HUD 计时器、护盾遍历、token 同步、vignette、引导判定。真要再往下压，下一刀在这里而不在重绘上。（先量再改：那 1.4 ms 是两次量测相减得来的，逐项归因还没做过——`update()` 里逐条读下来没有一处是 O(池子) 的。）
+4. **空闲时 tick 本身仍然是 60 Hz。** 按需重绘省掉的是 `render()`，`SceneManager.onTick`（`stepTransition` + `updateMusic` + 每个挂载场景的 `update()`）与 `stageSignature` 照旧每帧跑。真正把空闲功耗再砍一半的旋钮是**连续 skip 若干帧后把 `ticker.maxFPS` 降到 20~30，任何 paint/hold 立刻回 60**——代价是网络推送最坏晚 50 ms 到画面（看不出来），收益是空闲主线程直接除以二到三。同一方向的第二半是**装饰动画在长时间无输入后静默**（大厅火柴人 12 fps、boil 8 fps、护盾气泡 10 fps 现在就是空闲重绘率 5~12/s 的全部来源；它们停下来，空闲重绘率就只剩 500 ms 地板的 2/s）。
+5. **`powerPreference` 没设。** `new PIXI.Application` 没传它，@pixi/core 的默认值是 `'default'`（`ContextSystem` 的 `settings.RENDER_OPTIONS`），也就是把选择权交给浏览器。双 GPU 的 Intel Mac 上这是「风扇加速」的经典嫌疑之一（`'low-power'` 请求集显）；Apple Silicon 单 GPU 上无效，所以这是**便宜的对冲、不是已证实的病因**。这个客户端一帧 18k 索引 / 0.5 ms GPU，集显绰绰有余。
+6. **`net/rateGate.ts` 的 200 ms 补桶定时器是常开的**（构造即 `setInterval`，永不 `clear`），零流量时也每秒醒 5 次。ADR-083 之前它被 60 Hz 的重绘完全盖住，现在空闲重绘只有 5~12/s，它的相对占比反而上来了。改成「只在 `tokens < CAPACITY` 或队列非空时才跑」即可，注意别把 `tryAcquire` 的同步语义弄坏。
