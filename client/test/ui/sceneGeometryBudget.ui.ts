@@ -29,6 +29,7 @@ import { SettingsScene } from '../../src/scenes/SettingsScene';
 import { SketchPen } from '../../src/render/sketch';
 import { clearBakeCache, setBakeRenderer } from '../../src/render/bake';
 import { sketchPanel } from '../../src/render/sketchUi';
+import { createFakeTextInput } from '../harness/fakeTextInput';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -115,7 +116,7 @@ afterEach(() => {
 function buildSettings(): SettingsScene {
   return new SettingsScene(createLayout(1280, 631), new InputManager(), {
     onBack() {},
-    openTextInput: (() => ({ destroy() {} })) as never,
+    openTextInput: createFakeTextInput().openTextInput,
     playerName: 'Tester',
     publicId: '123456789',
     pvp: { rank: 'gold', elo: 1425 },
@@ -163,14 +164,37 @@ describe('lobby per-frame geometry', () => {
   // every other test in this suite runs with no bake renderer at all.
 });
 
+/**
+ * The states this screen can be in, each measured separately.
+ *
+ * The overlays are NOT in the tree when the scene is merely constructed, so a budget over the base
+ * screen alone leaves `SettingsScene/overlays.ts` and `avatarPicker.ts` unguarded — and the rename
+ * field is the single most-often-rebuilt piece of geometry on the screen (the caret blinks twice a
+ * second, and `render()` rebuilds the whole tree each time). Measured 2026-09-09, in order:
+ * 2,004 / 2,034 / 2,028 / 12,366.
+ *
+ * The picker gets its own, larger budget: its 20 avatar tiles are ~600 indices each of real,
+ * already-baked art, and there is no way to express that as a smaller number. It is still far below
+ * one live-stroked control, which is what the budget is for.
+ */
+const SETTINGS_STATES: Array<{ name: string; open: (s: SettingsScene) => void; budget: number }> = [
+  { name: 'base screen',    open: () => {},                        budget: SETTINGS_INDEX_BUDGET },
+  { name: 'rename overlay', open: (s) => { s.openRename(); },       budget: SETTINGS_INDEX_BUDGET },
+  { name: 'delete confirm', open: (s) => { s.openDelete(); },       budget: SETTINGS_INDEX_BUDGET },
+  { name: 'avatar picker',  open: (s) => { s.openAvatarPicker(); }, budget: 20_000 },
+];
+
 describe('settings per-frame geometry', () => {
-  it('stays inside the budget', () => {
-    const settings = buildSettings();
-    const indices = indexCount(settings.container);
-    expect(indices, `settings geometry = ${indices} indices (budget ${SETTINGS_INDEX_BUDGET})`)
-      .toBeLessThan(SETTINGS_INDEX_BUDGET);
-    settings.destroy();
-  });
+  for (const state of SETTINGS_STATES) {
+    it(`stays inside the budget — ${state.name}`, () => {
+      const settings = buildSettings();
+      state.open(settings);
+      const indices = indexCount(settings.container);
+      expect(indices, `settings (${state.name}) = ${indices} indices (budget ${state.budget})`)
+        .toBeLessThan(state.budget);
+      settings.destroy();
+    });
+  }
 
   it('draws the notebook page as a baked sprite, not 27 live ruled lines', () => {
     // The specific regression: SettingsScene.drawBackground() used to stroke the ruled lines and the

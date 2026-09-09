@@ -92,7 +92,8 @@ art-direction §5.4 本来就要「帧率保留手绘的跳跃感，不必追求
 |---|---|
 | `test/ui/renderPolicy.ui.ts`（33 例） | dpr 上限、`maxFPS`、**接管 PIXI 自己的渲染监听**（行为断言，否则每条 skip 都是假的）、**每一类变更都必须重绘**（移动/缩放/旋转/alpha/隐藏/显示/renderable/tint/重画/改字/图集换帧/贴图解码/子节点增删/zIndex 重排/嵌套深处）、hold/floor/invalidate 三个阀 |
 | `test/ui/worldMapOverlayCoalescing.ui.ts`（21 例） | 前 13 例：「一条行军在途 60 帧 → 墨线 0 次、token 60 次」；墨线依赖的每个输入都触发**正好一次**重建；拖动 6 次 pointermove 只重建一次。后 8 例是 ADR-085 的 `paint` 门禁，跑**真 `RenderPolicy` + 真 `WorldMapScene`**、且策略读的是**场景自己声明的** `paint`（写死 `'reactive'` 会让那一行退回去也全绿）：行军在途 **60/60**、落地 ≤2/60、空闲 ≤2/60、**`paint` 就是 `'reactive'`**，外加四条「空闲地图上其实在动的东西」——首屏加载罩 **60/60**（不许有人看着不转的转圈）、护盾气泡 ~10/60（不许冻住）、HUD 倒计时每秒至少一次（`≤2` 的**另一个方向**）、新手引导圆环亮着时 ≤25/60（**修复前就是 60/60**，这条是那个 bug 在真宿主里的回归门禁） |
-| `test/ui/sceneGeometryBudget.ui.ts`（6 例） | 大厅一帧**索引预算 25,000**（实测 15,582 headless）。计数直接调 `GraphicsGeometry.updateBatches()`（PIXI 三角化是纯 JS），CI 无 GPU 也能拿到精确三角数；`bake()` 喂 stub renderer，量的是**上线路径**。另三例是设置页（§12）：**预算 12,000**（实测 1,986）、纸背景必须是 `Sprite` 且几何为 0（钉机制，不只钉数字）、以及把旧那段 27 条实时描线放回来会超预算的自证 |
+| `test/ui/sceneGeometryBudget.ui.ts`（9 例） | 大厅一帧**索引预算 25,000**（实测 15,582 headless）。计数直接调 `GraphicsGeometry.updateBatches()`（PIXI 三角化是纯 JS），CI 无 GPU 也能拿到精确三角数；`bake()` 喂 stub renderer，量的是**上线路径**。设置页（§12）占六例：**四个状态各自量**（基础屏 / 改名弹窗 / 删号确认，预算 12,000，实测 2,004 / 2,034 / 2,028；头像选择器另给 20,000，实测 12,366 —— 20 个头像格本身就是真美术），外加纸背景必须是 `Sprite` 且几何为 0（钉机制，不只钉数字）、以及把旧那段 27 条实时描线放回来会超预算的自证 |
+| `test/liveStrokedInkCallSites.test.ts`（4 例，§12.1） | **入口侧**的两张网，源码级：① `src/` 里每一处 `SketchPen…rect(` 都要在期望表里注明属于哪一类（FALLBACK / BAKED / DOODLE / GAMEPLAY / ICON / DEV），当前 16 处；② 每一个自己画笔记本纸的文件**都必须 `bake()`**（当前 4 个，`sketchDemo.ts` 是唯一豁免的 dev 页）。两条都用「把设置页那两处改回去」做过变异验证 |
 | `test/ui/guideOverlay.ui.ts`（19 例） | 引导圆环：`update()` 一秒 60 帧**一次几何重建都不许有**、alpha 仍在动、一秒最多 ~10 个不同 alpha（`update` + 每帧 `showAt` 一起调也一样）、目标移动时几何**必须**重描、**呼吸区间仍是 0.5–0.9**（改的是成本不是观感——把环改暗的「优化」不该靠读重绘计数才发现） |
 | `test/ui/renderLoopWiring.ui.ts`（15 例） | 中间那层接线（ADR-072 的教训）：app.ts 真的装了 policy、真的过了 dpr 上限、四条指针路径都 hold、`paintMode` 对 overlay/fade 悲观 |
 
@@ -300,5 +301,14 @@ ADR-086 收尾后回头找「客户端还有什么能在本机量的」，量到
 | 其余 20 余个 | ≤ 300 | 基本全是 sprite |
 
 **扫的时候有个坑**：`render/panelFrame.ts` 的切片图集缓存在**模块级**，所以只要进程里第一个问它要图集的人是在没有 renderer 的情况下问的，之后**整个进程**都退回实时描边——把 `setBakeRenderer` 放进 `beforeEach` 就晚了，第一版这么写量到大厅 269,634、设置页 169,104，全是回退路径的数字。要在**模块体**里设（模块体在收集阶段执行，早于任何一个用例）。`test/ui/sceneGeometryBudget.ui.ts` 末尾那条注释说的是同一件事的另一半。
+
+### 12.1 为什么又加了一层源码级门禁
+
+预算门禁守的是**成本**，但它只能守「有人想到要放进去」的屏幕 —— 设置页当时不在里面，这正是它熬过一整天渲染预算工作的原因。所以补了 `test/liveStrokedInkCallSites.test.ts`，守**入口**：
+
+- **`SketchPen…rect(`**：全 `src/` 枚举，逐处在期望表里说明属于哪一类。这条能抓住设置页六个控件框那一半。
+- **自己画笔记本纸的文件必须 `bake()`**：判据是「用 `palette.ruleLine` 描过线」。这条抓的是**更大的那一半**（462,420）—— 那是个 `pen.line()` 循环，上一条看不见它，而 `pageBakeCallSites.test.ts` 也看不见：**那份门禁枚举的是「调用了 `bake()` 的文件」，一个从不调用它的画纸文件在它眼里根本不存在**。
+
+顺带量出一个此前没人量过的数：`render/equipmentGlyph.ts` 的空槽位图标，44px 时 **2,010–2,922 索引**、96px 时 **3,720–5,496**。它们不是「几百」那一档（我一开始就是这么假设的，量完才发现错），但每次建树只画一次，而且图集提供不了这些形状，所以留着 —— 期望表里记成 `ICON` 并写上数字，装备类屏幕哪天超预算先看这里。
 
 **教训**：ADR-083 之后大家默认「实时描边的问题已经扫过了」。那一轮扫的是一个**helper 名字**（`sketchPanel`/`drawBtn`），不是一个**成本**。`SettingsScene` 这两处都躲开了那个名字 —— 一处叫 `drawBackground`，一处叫 `addButton`。所以 §5 那句「守的是一个**数字**，不是一条关于该调哪个 helper 的规则」不只是门禁的写法说明，也是找活儿的方法：**下一次要找这类东西，就把每个场景的 `indexCount` 逐个打一遍**，别按 helper 名字 grep。
