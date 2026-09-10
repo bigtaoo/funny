@@ -183,6 +183,32 @@ Paddle 作为 merchant of record，收银台内建以下支付方式；客户端
   说明 SDK 真的链进去了（它是静态 XCFramework，不会出现在 `Frameworks/` 里，别拿那个当依据）。
   **仍未验证的是运行时**：能编译不等于广告能弹、奖励能到账，那要真机跑一次。
 - 沙盒测试：先用 Debug 编译（自动切到 Google 测试广告单元）跑通"点按钮 → 弹广告 → 关掉 → 领到金币"全流程，再切 Release 用真实 ID 测一次。
+
+**2026-09-10：第一次真机运行，每次点都是「暂无可看的广告」。** 这是这个桥写出来七周后的第一次运行时验证
+（此前只验过"能编译"）。命中的是 `presentRewardedAd` 的 `guard let ad = rewardedAd else` 分支——
+启动时的 `preloadRewardedAd()` 失败了，`RewardedAd.load` 抛错。
+
+**最可能的原因不是 bug，是 App 还没上架**：Release 编译用真实广告单元
+（`#if DEBUG` 只在 Debug 时切 Google 测试单元，**TestFlight 包是 Release**），而 AdMob 对没关联到已上架
+商店列表的应用通常直接零填充（no fill）。也就是说**上架前这条链路在 TestFlight 上根本没法自然验证**：
+要在提审前验通，只能把设备注册成 AdMob 测试设备，或临时让 Release 也指向测试单元（**提审前必须改回**，
+给真实用户投测试广告违规）。
+
+**当时无法判断原因，因为三处各自合理地把信息吞了**：Swift 只 `NSLog`（而这段代码只跑在没有 Mac 可接的
+TestFlight 包上）、`WebPlatform.showRewardedAd` 的 `.catch(() => null)`、`DailyScene` 的一句通用文案。
+已修（同日）——失败原因现在直报 Loki：
+
+- `AppDelegate.swift` 存 `lastAdLoadError`（`域 + 错误码 + 描述`），`ad_not_ready` 带着它一起 settle。
+  错误码是唯一能分开无填充/ID 写错/网络问题的东西：`GADErrorCode` 3=无填充、2=网络、1=请求非法、0=内部。
+- `WebPlatform.showRewardedAd` 把 reject 原因报成 `type=ad` 异常（`FEATURE_FLAGS_DESIGN §9.7`）。
+- Grafana 查询：`{source="client",kind="anomaly"} | logfmt | type="ad"`。
+  注意它报的 `platform` 是 `web`（`platformName()` 把 `mobile` 归成 `web`），按 `type` 过滤别按 `platform`。
+- 门禁：`client/test/adFailureTelemetry.test.ts`（含客户端/服务端两份 type 清单的一致性）
+  + `server/metaserver/test/clientLog.test.ts` 的 `type=ad` 一例。
+
+**仍未验证**：广告真的能弹出、奖励真的能到账、SSV 回调真的能发币——这三件事在 App 上架拿到填充之前都做不到。
+微信侧同类失败仍然是哑的（`WechatPlatform` 三处 `resolve(null)` 都不带原因），没接是因为
+`WECHAT_REWARDED_AD_UNIT_ID` 还没填、`hasRewardedAd()` 恒假、页签压根不显示，现在接上也观测不到任何东西。
 - ~~ATT 弹窗文案~~ —— 已随「不跟踪」口径删除（2026-09-03），无需再找法务过措辞。
 6. **本地测试**：本地开发机没有公网 HTTPS，SSV 回调收不到——用 `ngrok http 18080` 之类临时穿透，把生成的 URL 填进 AdMob 测试配置；或先只验证客户端侧「能弹出广告、能拿到 reward 回调」，SSV 链路留到部署到 `api.gamestao.com` 后再连调。
 7. **Android**：`client/` 目前只有 `ios/`，没有 `android/` Capacitor 平台——若要上 Android 渠道，先 `npx cap add android`，原生桥用 Kotlin/Java 写等价的 `WebAppInterface`（Capacitor `@JavascriptInterface`）版本，AdMob SDK 换 Android 版依赖，其余（SSV、服务端校验）完全复用现有实现。

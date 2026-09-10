@@ -450,6 +450,21 @@ final class NWBridgeViewController: CAPBridgeViewController,
 
     private var rewardedAd: RewardedAd?
     private var pendingAdJsId: String?
+    /**
+     * Why the last `RewardedAd.load` failed, kept so the JS side can say it out loud.
+     *
+     * The NSLog below is the only other record, and this bridge only ever runs on a signed device
+     * build — TestFlight, no Mac, no Console.app — so in practice nobody can read it. Without this,
+     * every failure reached the player as one word, `ad_not_ready`, and AdMob's no-fill (expected
+     * until the app is live on the App Store) was indistinguishable from a wrong ad unit id or an
+     * SDK that never started. The error CODE is what separates them, so keep it in the string:
+     * GADErrorCode 3 = no fill, 2 = network, 1 = invalid request, 0 = internal.
+     *
+     * nil has two distinct meanings, both of them useful: no load has failed yet (the first load is
+     * still in flight — the player pressed the button within a second or two of launch), or the last
+     * load succeeded and the ad was consumed.
+     */
+    private var lastAdLoadError: String?
 
     /**
      * An ad request tagged non-personalized (`npa=1`), which is what every request from this app
@@ -478,7 +493,12 @@ final class NWBridgeViewController: CAPBridgeViewController,
                 let ad = try await RewardedAd.load(with: Self.rewardedAdUnitId, request: self.nonPersonalizedRequest())
                 ad.fullScreenContentDelegate = self
                 self.rewardedAd = ad
+                self.lastAdLoadError = nil
             } catch {
+                let ns = error as NSError
+                // Domain is included because a non-GAD domain immediately rules out "AdMob said no"
+                // and points at the network stack or App Transport Security instead.
+                self.lastAdLoadError = "\(ns.domain) \(ns.code): \(ns.localizedDescription)"
                 NSLog("[NWAds] preload failed: \(error.localizedDescription)")
             }
         }
@@ -497,7 +517,10 @@ final class NWBridgeViewController: CAPBridgeViewController,
 
     private func presentRewardedAd(jsId: String, accountId: String?) {
         guard let ad = rewardedAd else {
-            settleAds(jsId, ok: false, payload: "ad_not_ready")
+            // Carries the reason, not just the symptom — see lastAdLoadError. JS files this string
+            // as a `type=ad` anomaly (WebPlatform.showRewardedAd), so it is readable in Loki.
+            let reason = lastAdLoadError ?? "first load still in flight"
+            settleAds(jsId, ok: false, payload: "ad_not_ready: \(reason)")
             preloadRewardedAd() // try to have one ready for next time
             return
         }

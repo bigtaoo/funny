@@ -246,13 +246,16 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 
 与 §9 的「日志定向采集」**并列、互补、反向**：定向采集只在被 `allowPublicIds` 点名的 publicId 上回捞日志；本通道相反——**任何**客户端遇到异常都**主动直报**，无需事先点名，专为「在全网定位野外异常」而设。
 
-- **上报的 6 类异常**（客户端 `net/anomaly.ts` 的 `AnomalyType`）：
+- **上报的 7 类异常**（客户端 `net/anomaly.ts` 的 `AnomalyType`）：
   - `mem` — JS 堆超阈值（`MemoryMonitor` 旁路喂入；与原有 `netLog('mem').warn` 入环形缓冲并行）。detail 除 `heap`/`poolTotal` 外带 `gpu:{tex,baseTex,nodes,tickers}`（2026-06-27 加，见 §8）——池空（`poolTotal.estMB≈0`）却堆涨时，这三个数把纯 JS 保留型泄漏定性到具体一类：`tex/baseTex` 增=纹理缓存无界、`nodes` 增=退场不 destroy 的场景图残留、`tickers` 增=`ticker.add` 漏配对 `remove` 的闭包钉死。**2026-08-25 起 `gpu` 同时带字节口径**：`texMB`/`genMB`/`largest`/`largestMB`（整个 base-texture 缓存的解码字节，及最大那一张）+ `bake:{n,MB,top,topMB}`（bake 缓存，`top` 带的是 bake 的 cache key，例如 `lobbybg:2592x1080@0.75`）；字节另有独立预算（`nw_tex_budget_mb`，默认 256）单独触发 `mem`。**加它的理由是计数口径漏过了一次真崩溃**：三张 111 MB 的 RenderTexture 在 `generated` 计数里是 **3**，对着 600 的预算毫无反应，而 JS 堆也看不见 GPU 侧的字节——「少而巨大」这件事只有字节表达得出来，而系统杀进程杀的正是字节（见 §8 的 2026-08-25 条与 ADR-073）。`anr` 报告的 `gpu` 也带上了 `texMB`/`largestMB`（一次遍历缓存键读两个数，与被刻意排除的 20 万节点场景图遍历不是一个量级）。
   - `cpu` — 主线程持续饱和（`PerfMonitor`，新增）：① `PerformanceObserver('longtask')` 长任务忙碌比 ≥ 0.5；② 持续低 FPS（连续 ≈10s < 30，用 `ticker.deltaMS` 估，微信亦可）。浏览器无直接 CPU API，主线程饱和是其可观测等价。
   - `webgl_lost` — `webglcontextlost`（黑屏类故障关键信号）。
   - `anr` — 主循环卡死：独立 wall-clock 看门狗，主线程冻结 >4s（恢复后据时间漂移反推；`document.hidden` 时不计，避免后台节流误报）。
   - `jserror` — 未捕获异常 / Promise 拒绝（`log.ts` 经 `setErrorSink` 旁路）/ 微信 `wx.onError`。
   - `crash` — **上次会话**异常退出（崩溃哨兵下次启动补报，见下）。
+  - `ad` — 激励视频没能播出来（2026-09-10 加）：`WebPlatform.showRewardedAd` 里原生桥 reject 的**原因原文**，`msg` 形如 `rewarded ad failed: ad_not_ready: GADErrorDomain 3: no ad to show`。**加它的理由**：这条链路上有三处各自合理的吞信息——Swift 只把错误写进 `NSLog`（而它只跑在没有 Mac 可接的 TestFlight 包上）、`WebPlatform` 的 `.catch(() => null)` 丢掉 reject 原因、`DailyScene` 把 null 变成一句「暂无可看的广告」。三处叠起来的结果是：AdMob 无填充（上架前的正常现象）、广告单元 ID 写错、桥根本没加载，在手机上**长得一模一样**。错误码是唯一能把它们分开的东西（`GADErrorCode` 3=无填充 / 2=网络 / 1=请求非法 / 0=内部），所以它进了 `msg`。
+    - **无冷却**，与 `webgl_lost`/`crash` 同：它只由玩家按按钮触发，频率天然受限，而「每次按都是同一个错误」正是要看的证据。
+    - **只可能来自原生 iOS 壳**（当前唯一有真实广告桥的平台），但它报的 `platform` 是 `web` —— `platformName()` 把 `wechat`/`crazygames` 以外的构建目标一律归成 `web`，`mobile` 也在其中。查询按 `type` 过滤，别按 `platform`。
 - **崩溃捕获两路**（直答「客户端崩溃有机会上报吗」）：
   - ① **离场急发**：`pagehide` 用**无凭据 keepalive fetch**（`credentials:'omit'`，存活于页面卸载）抢发待发队列 + 最近 12 条面包屑——逮住「软崩溃 / 卡死后被关 / 报错后刷新」这类**有清理机会**的崩溃。`visibilitychange→hidden`（切后台/弹键盘/切 App）也抢发队列，但**不**标 `cleanExit`（见下②的修正）。**不用 `navigator.sendBeacon`**：见下「传输」的 CORS 说明。
   - ② **localStorage 会话哨兵**：真·硬崩溃（OOM / 渲染进程被杀 / 标签页被杀）当场无机会上报；改为启动写 `nw_session_sentinel` + 15s 心跳更新存活时刻、离场标记 `cleanExit`；**下次启动**若发现上次哨兵有标记却无 `cleanExit`，即判定崩溃，带「大约崩溃时刻 aliveMs + 最后一条错误」补报一条 `crash`。补报后**立即 `flushBeacon`**（不等 1.5s 合批 fetch），以防本次会话在 debounce 触发前又崩。
@@ -269,8 +272,8 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
   - **`sinceRot` 是关键字段**：距上次转屏的毫秒数，未转过屏则整个字段缺席——于是「转屏时死」有了可判别的签名（聚集在 `sinceRot≈0`）而不只是猜测：`{source="client",kind="anomaly"} | logfmt | type="crash" | sinceRot < 2000`。
   - **`crash` 的朝向必须描述「死掉的那次会话」**：crash 是下次启动才补报的，若在补报时取当前朝向，描述的是**活下来**的那次会话，等于凭「玩家重开时怎么拿手机」凭空造出一条「它是在竖屏崩的」结论——比没有这个字段更糟，因为它读起来像证据。故朝向随哨兵一起持久化，补报时经 `reportAnomaly(..., ctx)` 覆盖回填。
   - **哨兵改为「转屏即写盘」**（不再只靠 15s 心跳）：转屏后立刻被杀的会话，原先只留下一条 `aliveMs:0`，与「开机瞬间就死」无从区分，更没有任何转屏记录——正是我们看不见的那类。顺带把这次写盘当作存活戳，`aliveMs` 对这类死亡的分辨率也随之变细。
-- **Grafana 面板**：`observability/grafana/dashboards/client-anomaly.json`（uid `nw-client-anomaly`）——按 type 堆叠的事件速率 + crash 计数 + 事件总数 + 受影响玩家数 + 明细日志；模板变量 type/platform（custom 枚举，因 type 在行内非 label）/publicId/关键字。
-- **防滥用四闸**：① 客户端每类冷却（mem/cpu 60s、anr 30s、jserror 10s 合一）② 单会话总量上限 50 ③ 单条 detail 截断 800 字符 ④ 服务端**按 IP 60s/30 次限流**（`SlidingRateLimiter`，超限静默丢弃；2026-07-27 起经 `createRateLimiter` 在 `NW_REDIS_URL` 配置时改走 Redis 精确跨实例限流，未配置时仍是同一套进程内实现——顺带修了该实现原有的"闲置 key 永不清理"内存泄漏）+ 最多取前 200 条 + 各字段截断。`POST /client/anomaly` **永远回 200**。
+- **Grafana 面板**：`observability/grafana/dashboards/client-anomaly.json`（uid `nw-client-anomaly`）——按 type 堆叠的事件速率 + crash 计数 + 事件总数 + 受影响玩家数 + 明细日志；模板变量 type/platform（custom 枚举，因 type 在行内非 label）/publicId/关键字。**新增 `AnomalyType` 时这个枚举要一起改**，否则新类型在下拉里选不到；服务端 `ALLOWED_ANOMALY_TYPES` 更是**必须**同步——不在白名单里的 type 不会被拒，会被**静默改写成 `other`**，于是事件照常到达而所有针对它的查询永远空手。两份清单由 `client/test/adFailureTelemetry.test.ts` 对齐钉死。
+- **防滥用四闸**：① 客户端每类冷却（mem/cpu 60s、anr 30s、jserror 10s 合一；`webgl_lost`/`crash`/`ad` 无冷却，仅受②约束）② 单会话总量上限 50 ③ 单条 detail 截断 800 字符 ④ 服务端**按 IP 60s/30 次限流**（`SlidingRateLimiter`，超限静默丢弃；2026-07-27 起经 `createRateLimiter` 在 `NW_REDIS_URL` 配置时改走 Redis 精确跨实例限流，未配置时仍是同一套进程内实现——顺带修了该实现原有的"闲置 key 永不清理"内存泄漏）+ 最多取前 200 条 + 各字段截断。`POST /client/anomaly` **永远回 200**。
 - **与定向采集的关系**：`mem` 同时仍走 §9.4（被定向玩家可在 Loki 看到带完整池占用上下文的 warn 行）；本通道是「全网粗粒度异常计数 + 崩溃发现」，两者不冲突。
 - **测试覆盖（全链路）**：服务端那半条（handler 校验/IP 限流/anon 兜底/转发）在 `server/metaserver/test/clientLog.test.ts`；客户端那半条 + 全链路接缝在 `client/test/anomaly-chain.test.ts`——驱动 `AnomalyReporter`/崩溃哨兵/离场 beacon 发出真实 POST body，再把该 body 喂进服务端真实的 `buildAnomalyLokiPayload` 断言最终 Loki 行；含两处 bug 的回归用例（hidden 不标 cleanExit、补报立即 beacon）。
 - **⚠ 部署前置（2026-06-27 踩坑根因）**：本通道（及 §9.4 定向采集）入 Loki 全靠 metaserver 的 `NW_LOKI_PUSH_URL`。**生产此前为空** → 所有 anomaly 静默丢弃 → Grafana 永远空（与客户端是否上报无关）。已修：obs 栈的 loki 经 `observability/docker-compose.obs.yml` 接入主栈网络 `server_default`（别名 `nw-loki`），`docker-compose.prod/cloud.yml` 的 `NW_LOKI_PUSH_URL` 默认值改为 `http://nw-loki:3100/loki/api/v1/push`（详见 `observability/README.md` 网络坑）。**排查链路第一步永远是先确认这个 env 非空**：`docker exec server-metaserver-1 printenv NW_LOKI_PUSH_URL`。

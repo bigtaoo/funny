@@ -59,6 +59,23 @@ describe('buildAnomalyLokiPayload', () => {
     expect(line).toContain('msg="context lost"');
   });
 
+  // 2026-09-10: the AdMob bridge's failures had no trace anywhere a phone could produce (see
+  // client/test/adFailureTelemetry.test.ts). They arrive as type=ad, and this is the assertion that
+  // they keep arriving as `ad` — an unlisted type is not rejected here, it is silently rewritten to
+  // `other`, which would leave every dashboard query for them returning nothing at all.
+  it("type=ad survives the allowlist (rewarded-ad failures, reason in msg)", () => {
+    const p = buildAnomalyLokiPayload(
+      '42',
+      [{ type: 'ad', msg: 'rewarded ad failed: ad_not_ready: GADErrorDomain 3: no ad to show', ts: 7 }],
+      { platform: 'web', buildVersion: 'be8ec4e' },
+      () => '0',
+    )!;
+    const line = p.streams[0]!.values[0]![1]!;
+    expect(line).toContain('type=ad');
+    expect(line).not.toContain('type=other');
+    expect(line).toContain('GADErrorDomain 3');
+  });
+
   it('unknown type falls back to other; empty input → null', () => {
     const p = buildAnomalyLokiPayload('1', [{ type: 'bogus', msg: 'x', ts: 5 }], {}, () => '0')!;
     expect(p.streams[0]!.values[0]![1]!).toContain('type=other');

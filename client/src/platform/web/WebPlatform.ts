@@ -10,6 +10,7 @@ import type { ViewportGeometry } from '../../layout/viewportGeometry';
 import { readSafeAreaInsets, observeSafeAreaInsets } from './safeAreaProbe';
 import { getNativeBilling, type IapKind } from '../iap';
 import { getNativeAds } from '../nativeAds';
+import { reportAnomaly } from '../../net/anomaly';
 import { isNativeShell } from '../nativeShell';
 import { openDomTextInput } from './domTextInput';
 // Web coin recharge. Everything Paddle-shaped lives behind this one import so the `mobile` build
@@ -110,10 +111,42 @@ export class WebPlatform implements IPlatform {
     return getNativeAds() !== null;
   }
 
+  /**
+   * Runs the native rewarded-ad flow, resolving null on every failure — the caller only needs
+   * "did the player earn a reward", and DailyScene turns null into one generic message.
+   *
+   * That message used to be the ONLY trace a failure left. The native bridge rejects with a real
+   * reason ('ad_not_ready', or AdMob's own error text from didFailToPresent), and this `.catch()`
+   * dropped it on the floor; the matching NSLog is unreadable on a TestFlight build with no Mac
+   * attached, which is the only place this code runs. So "no ad is available" (AdMob no-fill,
+   * expected until the app is live on the App Store) and "the ad unit id is wrong" looked
+   * identical from a phone, and neither could be told apart from a bridge that never loaded.
+   *
+   * Now every failure files one `type=ad` anomaly, which lands in Loki with the build version and
+   * device context already attached — queryable next to the crash/perf channels:
+   *   {source="client", kind="anomaly"} | logfmt | type="ad"
+   * Reporting is best-effort and never changes what the caller sees.
+   *
+   * NOTE the other two platforms with real ads still swallow their reasons: WechatPlatform's three
+   * resolve(null) sites and CrazyGamesPlatform's. Not wired here because WeChat's ad unit id is
+   * still unset (hasRewardedAd() is false, the tab is hidden), so there is nothing to observe yet.
+   */
   showRewardedAd(accountId: string): Promise<{ adToken: string; platform: string } | null> {
     const bridge = getNativeAds();
-    if (!bridge) return Promise.resolve(null);
-    return bridge.showRewarded(accountId).catch(() => null);
+    if (!bridge) {
+      // Unreachable through the Ads tab (hasRewardedAd() gates it on the same probe), so if this
+      // ever shows up in Loki the bridge disappeared between the two calls — worth seeing.
+      reportAnomaly('ad', 'rewarded ad requested with no native bridge');
+      return Promise.resolve(null);
+    }
+    return bridge.showRewarded(accountId).then(
+      (ad) => ad,
+      (err: unknown) => {
+        const reason = err instanceof Error ? err.message : String(err);
+        reportAnomaly('ad', `rewarded ad failed: ${reason}`, { kind: bridge.kind });
+        return null;
+      },
+    );
   }
 
   async getAuthCredential(): Promise<AuthCredential> {
