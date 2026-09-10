@@ -3,7 +3,7 @@
 //
 // Run with: npm test
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { setAudioBus, audioBus, playSfx, NullAudioBus } from '../../src/audio/audioBus';
+import { setAudioBus, audioBus, playSfx, updateMusic, NullAudioBus } from '../../src/audio/audioBus';
 import type { AudioBus, AudioCue } from '../../src/audio/types';
 
 /** Records what reached the device. */
@@ -111,6 +111,77 @@ describe('audioBus seam', () => {
   });
 });
 
+// The BGM half of the same seam (2026-09-10). It was written to the shape of playSfx above and
+// then left with zero cases — an FNDA sweep found `updateMusic` (and NullAudioBus's own
+// `updateMusic`) at zero hits while every playSfx branch here was pinned. The asymmetry is the
+// wrong way round: this one runs on `app.ticker`, AHEAD of PIXI's renderer listener, and PIXI 7
+// aborts the update loop and schedules no further rAF when a ticker listener throws — i.e. a
+// throw that escapes here freezes the whole canvas until the player reloads, where the worst
+// playSfx can do is lose one sound.
+describe('updateMusic seam', () => {
+  /** A device whose `updateMusic` throws (written out in full for the same reason as brokenBus). */
+  function brokenMusicBus(): AudioBus {
+    return {
+      async preload() {},
+      play() {},
+      setSfxVolume() {},
+      setMusicVolume() {},
+      updateMusic() {
+        throw new Error('deck gone');
+      },
+      resume() {},
+    };
+  }
+
+  it('forwards the desired track and the frame delta to the installed device', () => {
+    const calls: [string | null, number][] = [];
+    const rec = recorder();
+    rec.updateMusic = (desired, dtMs) => { calls.push([desired, dtMs]); };
+    setAudioBus(rec);
+
+    updateMusic('bgm.lobby', 16);
+    updateMusic(null, 33);
+
+    // Both arguments matter: dropping dtMs would stall every fade at its first frame (the decks
+    // advance their cross-fade purely from this number), and it would still look like it works.
+    expect(calls).toEqual([['bgm.lobby', 16], [null, 33]]);
+  });
+
+  it('a throwing device cannot take down the ticker', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    setAudioBus(brokenMusicBus());
+    expect(() => updateMusic('bgm.lobby', 16)).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns once per device, not sixty times a second', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const broken = brokenMusicBus();
+    setAudioBus(broken);
+    for (let i = 0; i < 120; i++) updateMusic('bgm.lobby', 16); // two seconds of a broken deck
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    // Re-installing re-arms it, same as the cue side.
+    setAudioBus(broken);
+    updateMusic('bgm.lobby', 16);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps its own throttle: a broken deck does not consume the cue warning', () => {
+    // The two `warned` flags are separate module state. Sharing one would mean a deck that fails
+    // on frame 1 silences the FIRST genuine cue failure of the session — the one worth hearing.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    setAudioBus({ ...brokenMusicBus(), play() { throw new Error('device gone'); } });
+
+    updateMusic('bgm.lobby', 16);
+    playSfx('sfx.ui.tap');
+
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(String(warn.mock.calls[0][0])).toContain('BGM');
+    expect(String(warn.mock.calls[1][0])).toContain('sfx.ui.tap');
+  });
+});
+
 describe('NullAudioBus', () => {
   beforeEach(() => {
     setAudioBus(new NullAudioBus());
@@ -120,8 +191,17 @@ describe('NullAudioBus', () => {
     // A partial implementation would only surface as a TypeError at the one call site that uses
     // the missing method — on WeChat, where this is the shipped device.
     const bus: AudioBus = new NullAudioBus();
-    for (const m of ['preload', 'play', 'setSfxVolume', 'setMusicVolume', 'resume'] as const) {
+    // `updateMusic` was missing from this list until 2026-09-10, which is exactly how
+    // NullAudioBus.updateMusic reached an FNDA of zero: the surface check that was supposed to
+    // cover the whole interface had a hole in the shape of the newest method on it.
+    for (const m of ['preload', 'play', 'setSfxVolume', 'setMusicVolume', 'updateMusic', 'resume'] as const) {
       expect(typeof bus[m], m).toBe('function');
     }
+  });
+
+  it('does nothing, loudly enough: every method is safe to call on it', () => {
+    const bus: AudioBus = new NullAudioBus();
+    expect(() => bus.updateMusic('bgm.lobby', 16)).not.toThrow();
+    expect(() => bus.updateMusic(null, 0)).not.toThrow();
   });
 });

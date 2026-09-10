@@ -7,6 +7,7 @@ import type { AudioBus, AudioCue, MusicTrack } from '../audio/types';
 import type { MusicPlayer, MusicDeck } from '../audio/MusicPlayer';
 import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
+import { bakeStats } from '../render/bake';
 
 // Test-only entry (client/test/browser Playwright specs) — boots the exact same real
 // PixiJS/WebGL app as entries/web.ts, but wraps AppViews so a Playwright script can drive
@@ -90,8 +91,22 @@ function instrumentViews(views: AppViews): AppViews {
   // production seam for a test-only need would be the worse trade.
   const app = (views as unknown as { app?: PIXI.Application }).app;
   (window as unknown as {
-    __nwE2E: { views: AppViews; state: E2EState; app?: PIXI.Application };
-  }).__nwE2E = { views, state, app };
+    __nwE2E: {
+      views: AppViews; state: E2EState; app?: PIXI.Application;
+      bake: typeof bakeStats;
+    };
+  }).__nwE2E = {
+    views,
+    state,
+    app,
+    // ADR-073 left one question open: the bake cache never evicts, so does walking the app's
+    // screens accumulate texture bytes without bound? `bakeStats()` is the accounting that answers
+    // it, and it has no other reachable surface — `MemoryMonitor.dump()` only emits it when a
+    // budget is already exceeded, i.e. never during a normal walk. Exposed here (never-shipped
+    // entry, like `app`/`__nwAudio`) so a real-browser scene sweep can read count/bytes/largest
+    // after every transition instead of inferring GPU bytes from the JS heap.
+    bake: bakeStats,
+  };
   return views;
 }
 

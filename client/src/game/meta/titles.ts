@@ -1,66 +1,25 @@
-// Title system client module (S10, TITLE_DESIGN §2).
-// Client-local mirror of @nw/shared — no Node dependency, pure TS.
-// Shares data/algorithms with server/shared/src/titles.ts; changes must be kept in sync on both sides.
+// Title system client module (S10, TITLE_DESIGN §2) — the DISPLAY half.
+//
+// The data half (TITLE_DEFS, the ladder/SLG weight bands, titleWeight) used to be hand-copied here
+// with a header asking for both sides to "be kept in sync". It no longer is: server/shared's
+// titles.ts has no runtime imports (its single `import type { RankId }` comes from ladder.ts,
+// which is import-free too, and erases at compile time), so it is browser-safe on its own and is
+// aliased as `@nw/shared/titles` — the treatment cards.ts / equipment.ts / battlepass.ts already
+// had (ADR-087). The two TITLE_DEFS tables were verified identical (modulo line breaks) before the
+// copy was deleted.
+//
+// What stays local is what the server has no use for: the i18n key lookup and the two dynamic-part
+// formatters (the server has titleShortKey for its own purposes, but the client needs BOTH keys
+// plus the "S{N} {rank}" text i18n cannot express), and the two title-wall list helpers.
+import { TITLE_DEFS, titleWeight } from '@nw/shared/titles';
 
-export type TitleSource = 'ladder' | 'slg' | 'achievement' | 'event';
-
-export interface TitleDef {
-  weight: number;
-  source: TitleSource;
-  fullKey: string;
-  shortKey: string;
-}
-
-// ── Ladder rank weights ────────────────────────────────────────────────────
-const LADDER_RANK_WEIGHTS: Readonly<Record<string, number>> = {
-  bronze:       1000,
-  silver:       1001,
-  gold:         2000,
-  platinum:     2001,
-  diamond:      3000,
-  star:         3001,
-  master:       4000,
-  grandmaster:  4001,
-  king:         5000,
-};
-
-// ── SLG season title weights (mirror of @nw/shared SLG_TITLE_WEIGHTS) ────────
-const SLG_TITLE_WEIGHTS: Readonly<Record<string, number>> = {
-  champion: 5500,
-  top3:     4500,
-};
-const SLG_TITLE_WEIGHT_DEFAULT = 3500;
-
-// ── Permanent / event title definition table ───────────────────────────────
-export const TITLE_DEFS: Readonly<Record<string, TitleDef>> = {
-  'event.newbie': {
-    weight: 1300, source: 'event',
-    fullKey: 'title.event.newbie.full', shortKey: 'title.event.newbie.short',
-  },
-  'event.founder': {
-    weight: 6300, source: 'event',
-    fullKey: 'title.event.founder.full', shortKey: 'title.event.founder.short',
-  },
-  'ach.all_chapters': {
-    weight: 5200, source: 'achievement',
-    fullKey: 'title.ach.all_chapters.full', shortKey: 'title.ach.all_chapters.short',
-  },
-  'ach.pvp.veteran': {
-    weight: 4200, source: 'achievement',
-    fullKey: 'title.ach.pvp.veteran.full', shortKey: 'title.ach.pvp.veteran.short',
-  },
-};
-
-// ── Weight lookup ──────────────────────────────────────────────────────────
-
-export function titleWeight(titleId: string): number {
-  if (titleId in TITLE_DEFS) return TITLE_DEFS[titleId]!.weight;
-  const lm = titleId.match(/^ladder\.s\d+\.(\w+)$/);
-  if (lm) return LADDER_RANK_WEIGHTS[lm[1]!] ?? 0;
-  const sm = titleId.match(/^slg\.s\d+\.(\w+)$/);
-  if (sm) return SLG_TITLE_WEIGHTS[sm[1]!] ?? SLG_TITLE_WEIGHT_DEFAULT;
-  return 0;
-}
+export type { TitleDef, TitleSource } from '@nw/shared/titles';
+export {
+  /** Fixed (event/achievement) title catalog; seasonal titles are constructed dynamically. */
+  TITLE_DEFS,
+  /** Weight for any titleId — fixed table, ladder rank band, SLG key band, else 0. */
+  titleWeight,
+} from '@nw/shared/titles';
 
 /**
  * Get the i18n keys for the equipped title (full name / short label).
@@ -101,22 +60,6 @@ export function formatSlgTitle(titleId: string): string {
   const m = titleId.match(/^slg\.s(\d+)\.(\w+)$/);
   if (!m) return titleId;
   return `S${m[1]} ${m[2]}`;
-}
-
-/**
- * Find the best titleId in the titles array (highest weight; for equal weight, take the last one).
- * Used for TitlesScene initial display — equipped['title'] is the authoritative equipped slot,
- * but this function decides which title to highlight when rendering the titles wall.
- */
-export function highestTitle(titles: string[]): string | undefined {
-  if (titles.length === 0) return undefined;
-  return titles.reduce((best, cur) => {
-    const bw = titleWeight(best);
-    const cw = titleWeight(cur);
-    if (cw > bw) return cur;
-    if (cw === bw) return cur; // take the last (more recent) on tie
-    return best;
-  });
 }
 
 /** Sort the titles list in descending weight order (stable: equal weights preserve original order). */

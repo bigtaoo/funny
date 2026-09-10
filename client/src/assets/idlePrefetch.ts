@@ -20,10 +20,11 @@
  *   - **Opt-out on metered links**, and on the player's own data-saver setting — see
  *     `prefetchPolicy.shouldSkipPrefetch`.
  *   - **Scoped to features the player actually uses** (2026-08-25, §14). The two big waves
- *     (`slg:world` 2.0 MB, `gacha` 1.2 MB) only run once the player has opened that screen at
- *     least once. Before this, every player warmed all ~5 MB including the two screens they
- *     might never visit — and the world atlas's real cost is not even the download but the
- *     ~13.7 MB its 1960×1827 RGBA page decodes to, which is spent on wifi just the same.
+ *     (`slg:world` 2.0 MB, `gacha` 1.2 MB) only run for a player who has opened that screen
+ *     lately — the mark expires, so a feature that gets abandoned stops being warmed (§14.6).
+ *     Before this, every player warmed all ~5 MB including the two screens they might never
+ *     visit — and the world atlas's real cost is not even the download but the ~13.7 MB its
+ *     1960×1827 RGBA page decodes to, which is spent on wifi just the same.
  *   - **Never mid-rotation.** A wave holds until the screen has been still for a moment — see
  *     awaitRotationQuiet for why idle-scheduling alone does not cover this.
  *
@@ -84,6 +85,10 @@ async function awaitRotationQuiet(): Promise<void> {
  * `when` (optional) gates a wave on evidence it is worth warming at all. A wave with no `when`
  * runs for everyone: those are the ones every player reaches (the boot background tier, the menu
  * icon set, the battle set — a first match is the one thing every account does).
+ *
+ * The gated ones read a usage mark that is scoped in time as well as by feature: `hasUsedFeature`
+ * answers "opened within the last fortnight", not "opened ever" — see prefetchPolicy for why an
+ * old visit is not evidence about what the player is playing now.
  */
 const WAVES: ReadonlyArray<{ id: string; run: () => Promise<unknown>; when?: () => boolean }> = [
   // The boot manifest's background tier. Normally already resolved by the time we get
@@ -128,7 +133,7 @@ export async function startIdlePrefetch(): Promise<void> {
   // reportable as one line instead of silently thinning the chain — see "no silent caps".
   const due = WAVES.filter((w) => !w.when || w.when());
   const skipped = WAVES.filter((w) => !due.includes(w)).map((w) => w.id);
-  if (skipped.length) console.info(`[prefetch] not warming (never opened): ${skipped.join(', ')}`);
+  if (skipped.length) console.info(`[prefetch] not warming (not opened lately): ${skipped.join(', ')}`);
 
   await due.reduce(
     (chain, wave, i) => chain

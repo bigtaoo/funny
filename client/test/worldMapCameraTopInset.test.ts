@@ -160,3 +160,54 @@ describe('WorldMapRenderer viewport — topInset-aware camera math', () => {
     expect(ctx.panY).not.toBe(ctxNoInset.panY);
   });
 });
+
+/**
+ * `screenToTile` — the last never-called function in viewport.ts (2026-09-10 FNDA sweep). Three
+ * lines, and they are the only place a tap on the world map becomes a tile: WorldMapInput routes
+ * every selection, march target and long-press through `ctx.view.screenToTile(x, y)`.
+ *
+ * The pure projection underneath it (`render/isoGrid.screenToTile`) has its own suite; what is
+ * NOT covered anywhere else is this wrapper's one job — subtracting the camera pan before
+ * projecting. Forget it and the map still works perfectly at the starting position, then selects
+ * a tile further and further from the finger the more the player scrolls, which reads as "the
+ * touch area is off" rather than as a missing subtraction. Note it deliberately does NOT subtract
+ * `topInset` — the pan clamp above already keeps the map below the header, so screen y is already
+ * in the same space as the projection.
+ */
+describe('WorldMapRenderer viewport — screenToTile', () => {
+  it('round-trips a tile centre back to itself with no pan', () => {
+    const ctx = makeCtx({ tp: 20, panX: 0, panY: 0 });
+    const v = newViewport(ctx);
+    for (const [tx, ty] of [[0, 0], [3, 7], [9, 2]] as const) {
+      const p = tileToScreen(tx, ty, ctx.tp); // tileToScreen returns the tile's CENTRE
+      expect(v.screenToTile(p.x, p.y), `${tx},${ty}`).toEqual({ x: tx, y: ty });
+    }
+  });
+
+  it('subtracts the camera pan, so a scrolled map still hits the tile under the finger', () => {
+    const panX = -137;
+    const panY = 246;
+    const ctx = makeCtx({ tp: 20, panX, panY });
+    const v = newViewport(ctx);
+
+    const p = tileToScreen(4, 6, ctx.tp);
+    // Where that tile is actually drawn once the camera has moved.
+    expect(v.screenToTile(p.x + panX, p.y + panY)).toEqual({ x: 4, y: 6 });
+    // …and the un-panned screen point no longer resolves to it — the assertion that fails if the
+    // subtraction is dropped (both lines would agree, and both would be "right" at pan 0).
+    expect(v.screenToTile(p.x, p.y)).not.toEqual({ x: 4, y: 6 });
+  });
+
+  it('reads the CURRENT pan and tile size, not the values it was constructed with', () => {
+    // ctx is mutated in place by clampPan/centerAt/setZoom all through a session, and the viewport
+    // holds the core, not a snapshot. A captured copy would drift silently after the first scroll.
+    const ctx = makeCtx({ tp: 20, panX: 0, panY: 0 });
+    const v = newViewport(ctx);
+    const p = tileToScreen(2, 2, ctx.tp);
+    expect(v.screenToTile(p.x, p.y)).toEqual({ x: 2, y: 2 });
+
+    ctx.panX = 500;
+    ctx.panY = -300;
+    expect(v.screenToTile(p.x + 500, p.y - 300)).toEqual({ x: 2, y: 2 });
+  });
+});

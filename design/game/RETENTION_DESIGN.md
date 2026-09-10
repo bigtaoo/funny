@@ -488,3 +488,15 @@ POST /retention/weekly/claim            (JWT) { tier:1|2|3 } → { save, granted
 六个变异全部验过：左右两侧的 `± aSize` 补偿各去掉一次、不翻转、删 mask、把箭头挂到共享容器、箭尾不再越过格子下沿——每次红的都正好是对应的用例。
 
 **打包脚本的通用护栏**：上面那个 alpha bug 只是被「星芒中心必须是空的」顺手抓住的，而那是为这张图定制的断言。下一张自带 alpha 的源图落在没人写过定制断言的地方，就会静默变成一块实心方块（PNG 本身完全合法，`buildRasterTabIcon` 照画不误）。`iconArtAspect.test.ts` 因此加了一条横扫：`client/src/assets/tabicons/` 全部 199 张 PNG，不透明像素占比必须 < 80%。实测现有最实的是 `stats_active` 的 0.60、中位数远低于此，而丢 alpha 的产物是 1.0——阈值离两边都远。全量解码 366ms，新素材自动纳入，不需要任何登记。
+
+**§4.1 的「客户端同算」从此有门禁（2026-09-10）**：`client/src/game/meta/retention.ts` 一直是手写镜像（文件头原话「Semantically consistent with `server/shared/src/retention.ts`」），而这句话此前**没有任何机制在维持**——客户端那侧的套件 `client/test/retention.test.ts` 只 import 客户端一半，其中 `checkinClaimedCount` / `dailyTaskPoints` / `isDailyTaskDone` 三个函数在整个仓库里**一个测试都没调用过**（用 lcov 的 `FNDA` 命中数扫出来的，见 [`claudedocs/client-testing.md`](../../claudedocs/client-testing.md) 第七轮）。
+
+新增 `client/test/retentionMirrorParity.test.ts`（8 例）：七个状态派生函数 × 9 个留存状态（缺失 / 空 / 当期 / 进行中 / 满分未领 / 满月已领 / 三段各自过期 / 今日已签但月未满）× 7 个时间戳（跨日、跨月、跨 ISO 周、跨年），逐值与服务端比；三个时间键同样逐戳比。**只比一致性，不钉数值**——两侧一起改阈值是设计师的正常操作，照旧绿灯，数值归 ECONOMY_NUMBERS §12。
+
+顺带把客户端**硬编码的两个服务端常量**接上了：`dailyRewardClaimable` 里写的是字面量 `>= 3`（服务端读 `DAILY_POINTS_THRESHOLD`）、`nextCheckinDay` 里写的是 `> 30`（服务端读 `CHECKIN_TOTAL_DAYS`）。客户端没有对应常量可 import，所以用例是**从行为反推阈值**再跟服务端常量比。
+
+**为什么不像装备镜像那样直接删掉重复**（ADR-087 的做法）：服务端 `retention.ts` 确实零运行时 import（唯一一条是 `import type`），但**客户端那侧的签名包了一层** —— 客户端收 `SaveData`、服务端收 `RetentionSave`，不是纯搬运，深别名过不来。所以这里的正确答案是门禁。
+
+**漂开的失败形状**：留存是服务端权威（它发币、它盖 `claimedDays`），所以镜像漂了既不报错也不弄坏存档，只让 UI 撒谎——每日标签亮红点而服务端会拒、30 号那格看着能签、任务行写「2/3」而奖励其实已经发过。三种都被玩家读作「游戏有 bug」，日志里什么都没有。这正是 §10.9 / §10.11 / §10.12 那三条报告的形状。
+
+15 组变异全部验红（清单见 client-testing.md），其中一组第一轮**没红**并因此补出一个 fixture：「删掉 `nextCheckinDay` 的每日一次闸门」原本是绿的，因为我唯一 `lastClaimedDayKey === 今天` 的状态同时也是「本月已签满 30 格」，`nextSlot > 30` 先短路返回 null，那道闸门**从来不是决定分支**。补一个「今天已签、本月只签了 2 格」的状态之后当场红。**判据：一个分支被覆盖不等于它被验证——要问「有没有一个用例里它是唯一的决定者」。**

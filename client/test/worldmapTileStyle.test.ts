@@ -201,8 +201,9 @@ describe('tileStyle: procedural fallbacks', () => {
   });
 
   it('biomeGroundTint returns a real RES_TEX_TINT entry for every cell it is asked about', () => {
-    // The `mix.t === 0` branch is the only live one today (biomeMixAt never cross-fades), so the risk is
-    // an unmapped resource key returning undefined — which PIXI would multiply as black.
+    // There is no blend branch left (2026-09-10: biomeMixAt never cross-fades, so the ternary and its
+    // lerp helper were deleted rather than kept as unreachable code), so the risk is an unmapped
+    // resource key returning undefined — which PIXI would multiply as black.
     const seed = worldSeed('s1-tilestyle');
     const tints = new Set(Object.values(RES_TEX_TINT));
     const seen = new Set<number>();
@@ -221,6 +222,20 @@ describe('tileStyle: procedural fallbacks', () => {
   it('biomeGroundTint is a pure function of (x, y, seed)', () => {
     const seed = worldSeed('s1-tilestyle');
     expect(biomeGroundTint(120, 130, seed)).toBe(biomeGroundTint(120, 130, seed));
-    expect(biomeMixAt(120, 130, seed).t).toBe(0); // documents the "second branch is dead today" note
+  });
+
+  it('the shared no-cross-fade contract still holds — biomeGroundTint depends on it', () => {
+    // `biomeGroundTint` now reads `mix.a` and ignores `b`/`t` entirely. That is only correct while
+    // biomeMixAt keeps its documented promise of `{ a, b: a, t: 0 }`; the day a future pass
+    // reintroduces blending, this case fails and says exactly which two lines to put back, instead
+    // of the map quietly rendering hard edges where a gradient was intended.
+    const seed = worldSeed('s1-tilestyle');
+    for (let i = 0; i < 200; i++) {
+      const x = (i * 13) % SLG_MAP_W;
+      const y = (i * 29) % SLG_MAP_H;
+      const mix = biomeMixAt(x, y, seed);
+      expect(mix.t, `${x},${y}`).toBe(0);
+      expect(mix.b, `${x},${y}`).toBe(mix.a);
+    }
   });
 });

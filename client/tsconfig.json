@@ -16,6 +16,9 @@
       "@nw/shared/slg/auction": ["../server/shared/src/slg/auction.ts"],
       "@nw/shared/cards": ["../server/shared/src/cards.ts"],
       "@nw/shared/equipment": ["../server/shared/src/equipment.ts"],
+      "@nw/shared/battlepass": ["../server/shared/src/battlepass.ts"],
+      "@nw/shared/rechargeMilestone": ["../server/shared/src/rechargeMilestone.ts"],
+      "@nw/shared/titles": ["../server/shared/src/titles.ts"],
       "@nw/shared": ["../server/shared/src/slg/index.ts"]
     }
   },

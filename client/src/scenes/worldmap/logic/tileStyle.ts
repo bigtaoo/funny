@@ -91,26 +91,23 @@ export const RES_TEX_TINT: Record<string, number> = {
   sticker:  0xf0cfe1, // soft rose
 };
 
-function lerpHexColor(c1: number, c2: number, t: number): number {
-  const r1 = (c1 >> 16) & 0xff, g1 = (c1 >> 8) & 0xff, b1 = c1 & 0xff;
-  const r2 = (c2 >> 16) & 0xff, g2 = (c2 >> 8) & 0xff, b2 = c2 & 0xff;
-  const r = Math.round(r1 + (r2 - r1) * t), g = Math.round(g1 + (g2 - g1) * t), b = Math.round(b1 + (b2 - b1) * t);
-  return (r << 16) | (g << 8) | b;
-}
-
 /**
  * Ground tint for a resource tile at (x,y): a solid wash of the tile's own PROVINCE's leaning
  * resource type (2026-07-15 rewrite — see biomeMixAt/leaningResourceForProvince in @nw/shared).
  * The tile's actual resType is drawn independently per-tile (see biomeAt) and is carried entirely
  * by the motif icon, not this wash — this only communicates "which land resource does this whole
  * province lean toward", so it changes at the province's own border (already a hard political line,
- * ADR-034), not at some separate resource-zone boundary. biomeMixAt always returns t=0 now (no
- * cross-fade needed), so lerpHexColor's second branch is effectively dead but kept for the type/shape
- * so this call site doesn't need to change again if a future pass reintroduces blending.
+ * ADR-034), not at some separate resource-zone boundary.
+ *
+ * There is no cross-fade: `biomeMixAt` returns `{ a, b: a, t: 0 }` unconditionally, by its own
+ * contract. Until 2026-09-10 this line carried a `mix.t === 0 ? … : lerpHexColor(…)` ternary plus a
+ * private lerp helper "kept for the shape" — code that could not run, and that duly showed up as
+ * the only never-called function in this file. Blending is now a two-line change away instead of
+ * pre-installed, and `worldmapTileStyle.test.ts` pins the shared-side contract this relies on, so
+ * the day it stops holding is a red test rather than a hard seam nobody notices.
  */
 export function biomeGroundTint(x: number, y: number, seed: number): number {
-  const mix = biomeMixAt(x, y, seed);
-  return mix.t === 0 ? RES_TEX_TINT[mix.a]! : lerpHexColor(RES_TEX_TINT[mix.a]!, RES_TEX_TINT[mix.b]!, mix.t);
+  return RES_TEX_TINT[biomeMixAt(x, y, seed).a]!;
 }
 
 export const TERRAIN_TEX_TINT_DEFAULT = 0xffffff;

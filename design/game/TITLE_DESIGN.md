@@ -152,7 +152,8 @@ grant(t):
 - [x] `server/metaserver/src/internal.ts`：`POST /admin/grant-title` 活动授予
 - [x] matchsvc：`QueueEntry.equippedTitle` → `sign()` → `TicketClaims.opponentTitle`
 - [x] gameserver：`match_start` proto field 8（tag 66）`opponentTitle`；`Room.Slot.opponentTitle`；`RoomManager.join` 透传
-- [x] 客户端 `client/src/game/meta/titles.ts`：mirror TITLE_DEFS + `titleWeight`/`getTitleKeys`/`formatLadderTitle`/`highestTitle`
+- [x] 客户端 `client/src/game/meta/titles.ts`：`getTitleKeys`/`formatLadderTitle`/`formatSlgTitle`/`sortTitlesByWeight`/`allTitleIds` 五个显示层 helper
+  - **2026-09-10：数据面不再是镜像。** `TITLE_DEFS` 与 `titleWeight` 改为从 `@nw/shared/titles` 深别名 re-export（`titles.ts` 只有一条 `import type { RankId }`，`ladder.ts` 本身零 import，浏览器安全；同 cards/equipment/battlepass 的做法，ADR-087）。「两侧保持同步」这条纪律作废——只剩一侧。同时删掉零调用点的 `highestTitle`（`TitlesScene` 用的是 `sortTitlesByWeight`）。
 - [x] 客户端 `client/src/net/proto/transport.ts`：`MatchStart.opponentTitle` field 8 encode/decode
 - [x] 客户端 UI：`ProfilePopup` 称号行 + `LeaderboardScene` 称号芯片 + `TitlesScene` 称号墙 + `StatsScene` 顶栏入口（原设置页入口已于 2026-06-27 迁移至生涯顶栏）
 - [x] i18n zh/en/de：`settings.titles`/`titles.*`/`title.*` 全文案

@@ -10,14 +10,24 @@ import { CARD_DEFS } from './cardDefs';
 
 const log = netLog('skinDefs');
 
-export const SKIN_TARGET_UNIT: Record<string, UnitType> = {
-  skin_shop_c1: UnitType.Infantry,
-  skin_shop_r1: UnitType.Archer,
-  skin_shop_e1: UnitType.ShieldBearer,
-  skin_e1: UnitType.Lena,
-  skin_e2: UnitType.Mara,
-  skin_l1: UnitType.Max,
-};
+// Null prototype on purpose (2026-09-10): the ids looked up here come from `inventory.skins`, gacha
+// item ids and auction rows — i.e. from the server, not from a closed union — and every call site
+// asks the question as a bare `skinId in SKIN_TARGET_UNIT` or `SKIN_TARGET_UNIT[itemId]`. With the
+// default Object prototype, `'constructor'`, `'toString'` and friends answer BOTH of those
+// affirmatively (the second one with a function), so a junk id shaped like a prototype key walks
+// straight through `isKnownSkin` into the auction picker and the gacha name resolver. Fixing it in
+// the map rather than at each lookup means the next call site cannot reintroduce it.
+export const SKIN_TARGET_UNIT: Record<string, UnitType> = Object.assign(
+  Object.create(null) as Record<string, UnitType>,
+  {
+    skin_shop_c1: UnitType.Infantry,
+    skin_shop_r1: UnitType.Archer,
+    skin_shop_e1: UnitType.ShieldBearer,
+    skin_e1: UnitType.Lena,
+    skin_e2: UnitType.Mara,
+    skin_l1: UnitType.Max,
+  },
+);
 
 // Dedup guard for warnUnknownSkin below — an unmapped id gets re-checked on every render (picker grid,
 // wardrobe tab, …), so without this the same id would spam the log/console every frame it's on screen.

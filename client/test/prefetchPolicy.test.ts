@@ -17,11 +17,15 @@
 //     a WebView with site data off) must never break the scene that called it. The catch is the
 //     whole point of the function being safe to call from deep in the render tree.
 //
+// Since 2026-09-10 (§14.6) it also owns the stored-value half of the expiry window: the chain can
+// only ever produce a mark this build wrote, so the legacy flag, a future stamp and outright junk
+// are reachable from here and nowhere else.
+//
 // Run with: npm test
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   installPrefetchPolicy, resetPrefetchPolicyForTest,
-  markFeatureUsed, hasUsedFeature,
+  markFeatureUsed, hasUsedFeature, FEATURE_MARK_TTL_MS,
   isDataSaverEnabled, setDataSaverEnabled, DATA_SAVER_KEY,
   navigatorNetworkKind, networkKind, shouldSkipPrefetch,
   type NetworkKind,
@@ -45,6 +49,13 @@ function memStorage() {
   };
   return { storage, map, fail: () => { failWrites = true; } };
 }
+
+/**
+ * The storage key `markFeatureUsed('world')` writes. Spelled out rather than imported (it isn't
+ * exported) because the tests below are about what is already sitting in a shipped player's
+ * storage under exactly this name.
+ */
+const WORLD_KEY = 'nw_used_world';
 
 /** Install (or clear) `navigator.connection` for `navigatorNetworkKind` to read. */
 function setConnection(conn: unknown): void {
@@ -186,6 +197,18 @@ describe('usage marks', () => {
     expect(hasUsedFeature('world')).toBe(false);
   });
 
+  it('stores when, not whether — the value is a timestamp', () => {
+    // The window in hasUsedFeature is the whole point of §14.6, and it can only exist if the
+    // write side stops writing a flag. A regression to '1' would read as a legacy mark forever.
+    const { storage, map } = memStorage();
+    installPrefetchPolicy({ storage });
+    const before = Date.now();
+    markFeatureUsed('world');
+    const stored = Number(map.get(WORLD_KEY));
+    expect(stored).toBeGreaterThanOrEqual(before);
+    expect(stored).toBeLessThanOrEqual(Date.now());
+  });
+
   it('with nothing installed at all, marks read false and writes are inert', () => {
     // The uninstalled state is what unit tests and the headless full-link harness run in; the
     // documented contract is "no marks, no data-saver", i.e. the gated L1 waves stay off.
@@ -195,5 +218,90 @@ describe('usage marks', () => {
     expect(isDataSaverEnabled()).toBe(false);
     expect(() => setDataSaverEnabled(true)).not.toThrow();
     expect(isDataSaverEnabled()).toBe(false);
+  });
+});
+
+/**
+ * The expiry window (§14.6). `idlePrefetch.test.ts` pins the two edges through the whole warm-up
+ * chain; what is only reachable from here is what the STORED VALUE can be — a legacy flag, a
+ * clock that ran ahead, junk from some other writer — none of which the chain can produce.
+ *
+ * These drive the clock by writing the stamp rather than by faking timers: the question is always
+ * "how old is this value", and an age is easier to read as an age.
+ */
+describe('usage marks expire', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** A world mark whose last visit was `ageMs` ago. */
+  function markAged(ageMs: number) {
+    const mem = memStorage();
+    installPrefetchPolicy({ storage: mem.storage });
+    mem.map.set(WORLD_KEY, String(Date.now() - ageMs));
+    return mem;
+  }
+
+  it('a visit inside the window still counts', () => {
+    markAged(FEATURE_MARK_TTL_MS - DAY);
+    expect(hasUsedFeature('world')).toBe(true);
+  });
+
+  it('a visit past the window does not', () => {
+    markAged(FEATURE_MARK_TTL_MS + DAY);
+    expect(hasUsedFeature('world')).toBe(false);
+  });
+
+  it('an expired mark is left alone rather than deleted, and revives on the next visit', () => {
+    // Documented behaviour, not an accident: hasUsedFeature is a reader. Pinning it here means a
+    // future "tidy up expired keys" change has to be a deliberate one.
+    const mem = markAged(FEATURE_MARK_TTL_MS + DAY);
+    expect(hasUsedFeature('world')).toBe(false);
+    expect(mem.map.has(WORLD_KEY)).toBe(true);
+
+    markFeatureUsed('world');
+    expect(hasUsedFeature('world')).toBe(true);
+  });
+
+  it('a legacy "1" reads as used and is re-stamped to now', () => {
+    // Every client shipped 2026-08-25 → 2026-09-10 wrote this. Number('1') is 1, i.e. 1970, so a
+    // plain age check would expire the entire installed base's marks on upgrade day.
+    const mem = memStorage();
+    installPrefetchPolicy({ storage: mem.storage });
+    mem.map.set(WORLD_KEY, '1');
+
+    expect(hasUsedFeature('world')).toBe(true);
+    expect(Number(mem.map.get(WORLD_KEY))).toBeGreaterThan(Date.now() - 5_000);
+  });
+
+  it('a stamp from the future is re-stamped, not trusted for a fortnight past it', () => {
+    // A device whose clock was a year ahead and has since been corrected. Trusting the stored
+    // value would keep the mark alive until a year and a fortnight from now.
+    const mem = memStorage();
+    installPrefetchPolicy({ storage: mem.storage });
+    mem.map.set(WORLD_KEY, String(Date.now() + 365 * DAY));
+
+    expect(hasUsedFeature('world')).toBe(true);
+    expect(Number(mem.map.get(WORLD_KEY))).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('an unparseable value is treated as a mark of unknown age, not as no mark', () => {
+    const mem = memStorage();
+    installPrefetchPolicy({ storage: mem.storage });
+    mem.map.set(WORLD_KEY, 'yes');
+
+    expect(hasUsedFeature('world')).toBe(true);
+    expect(Number(mem.map.get(WORLD_KEY))).toBeGreaterThan(Date.now() - 5_000);
+  });
+
+  it('re-stamping through a storage that throws answers used and does not throw', () => {
+    // Same contract as markFeatureUsed's own swallowed throw, on the read path this time —
+    // hasUsedFeature runs inside the prefetch chain, whose whole job is to never take anything
+    // down with it.
+    const mem = memStorage();
+    installPrefetchPolicy({ storage: mem.storage });
+    mem.map.set(WORLD_KEY, '1');
+    mem.fail();
+
+    expect(() => hasUsedFeature('world')).not.toThrow();
+    expect(hasUsedFeature('world')).toBe(true);
   });
 });

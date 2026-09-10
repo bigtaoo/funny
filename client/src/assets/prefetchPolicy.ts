@@ -23,6 +23,16 @@
  * free — every scene gate re-awaits the same idempotent, URL-keyed loaders, so an un-prefetched
  * screen just pays its own gate exactly as it did before this file existed, and a stale mark just
  * warms something the player has stopped using.
+ *
+ * ## Why the marks expire
+ *
+ * The first version stored a bare `'1'`, i.e. "ever opened", which never stops being true: one
+ * visit to the world map in a player's whole history kept re-warming 2.0 MB / ~13.7 MB decoded
+ * for every session afterwards, forever (§14.5 logged this as the known next step). A mark is
+ * evidence about what the player is *currently* playing, and evidence that old is no evidence at
+ * all — so it is stored as a timestamp and read through a sliding {@link FEATURE_MARK_TTL_MS}
+ * window, refreshed on every visit. The cost of letting it lapse is exactly one cold scene gate,
+ * the same price a player who never opened the screen has always paid.
  */
 import type { IStorage } from '../platform/IPlatform';
 
@@ -33,6 +43,25 @@ const USED_KEY: Record<PrefetchFeature, string> = {
   world: 'nw_used_world',
   gacha: 'nw_used_gacha',
 };
+
+/**
+ * How long a visit keeps a feature's wave worth warming, measured from the LAST visit (every
+ * visit re-stamps the mark, so a regular player never sees it lapse).
+ *
+ * Two weeks, chosen against the two failure modes rather than against a session count: too short
+ * and a player who plays SLG every weekend pays a cold 2.0 MB gate on alternate sessions; too
+ * long and the abandoned-feature case this window exists for takes months to stop costing memory.
+ * A fortnight is comfortably longer than any normal play gap and short enough that "I tried the
+ * world map once in the tutorial" stops warming it within the same month.
+ */
+export const FEATURE_MARK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Anything below this is not a timestamp this file wrote: the pre-2026-09-10 marks were the
+ * literal `'1'`, and a corrupted/foreign value parses to something equally small (or to NaN).
+ * See {@link hasUsedFeature} for what happens to those.
+ */
+const MIN_PLAUSIBLE_STAMP = Date.UTC(2020, 0, 1);
 
 /** Player-owned "don't spend my bandwidth speculatively" switch (SettingsScene). */
 export const DATA_SAVER_KEY = 'nw_data_saver';
@@ -71,18 +100,43 @@ export function resetPrefetchPolicyForTest(): void {
  * Record that the player actually opened a feature's screen, so its assets are worth warming next
  * session. Called from the scene's own asset-demand site — NOT from the loaders, which the
  * prefetch itself calls (marking there would make every wave self-justifying after one run).
+ *
+ * Writes the current time, and every visit overwrites it: the window in {@link hasUsedFeature}
+ * runs from the LAST visit, not from the first.
  */
 export function markFeatureUsed(feature: PrefetchFeature): void {
   try {
-    storage?.setItem(USED_KEY[feature], '1');
+    storage?.setItem(USED_KEY[feature], String(Date.now()));
   } catch {
     // A full/blocked storage must never break a scene. Losing the mark just means one more
     // cold gate later, which is the pre-2026-08-25 behaviour anyway.
   }
 }
 
+/**
+ * Whether the player has opened this feature's screen recently enough to be worth warming for —
+ * within {@link FEATURE_MARK_TTL_MS} of their last visit.
+ *
+ * Two values are not a usable timestamp and both mean "used, but we don't know when": a legacy
+ * `'1'` from before this window existed, and a stamp in the future (a device clock that was wrong
+ * and has since been corrected — otherwise that mark would read as fresh for a fortnight *after*
+ * the bogus date). Both are answered "yes" and re-stamped to now, which grandfathers the player
+ * into one window measured from a time we actually trust. Being generous is the free direction
+ * here: the worst case is one extra fortnight of warming something they had stopped using.
+ *
+ * An expired mark is left in storage rather than deleted — the next visit overwrites it anyway,
+ * and a reader that also mutates is harder to reason about than two dozen stale bytes.
+ */
 export function hasUsedFeature(feature: PrefetchFeature): boolean {
-  return storage?.getItem(USED_KEY[feature]) === '1';
+  const raw = storage?.getItem(USED_KEY[feature]);
+  if (raw == null) return false;
+  const at = Number(raw);
+  const now = Date.now();
+  if (!(at >= MIN_PLAUSIBLE_STAMP) || at > now) {
+    markFeatureUsed(feature);
+    return true;
+  }
+  return now - at <= FEATURE_MARK_TTL_MS;
 }
 
 export function isDataSaverEnabled(): boolean {

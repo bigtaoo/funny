@@ -39,7 +39,7 @@ vi.mock('../src/net/anomaly/deviceContext', () => ({ lastRotationAt: () => rotat
 import { startIdlePrefetch, resetIdlePrefetchForTest } from '../src/assets/idlePrefetch';
 import {
   installPrefetchPolicy, resetPrefetchPolicyForTest, markFeatureUsed, setDataSaverEnabled,
-  type NetworkKind,
+  FEATURE_MARK_TTL_MS, type NetworkKind,
 } from '../src/assets/prefetchPolicy';
 import type { IStorage } from '../src/platform/IPlatform';
 
@@ -313,6 +313,53 @@ describe('idlePrefetch — scoped to features the player actually uses', () => {
     pending.clear();
     installPrefetchPolicy({ storage }); // same storage, fresh module state = a new session
     expect(await runAll()).toContain('slg:world');
+  });
+
+  // ── the marks expire (2026-09-10, §14.6) ──
+  // "Ever opened" never stops being true, so a single tutorial visit to the world map kept
+  // re-warming 2.0 MB / ~13.7 MB decoded for the rest of that account's life — §14.5 logged it as
+  // the known leftover of §14. The mark is now a timestamp read through a sliding window, and the
+  // three things worth pinning are the two edges of that window and the fact that it SLIDES.
+  //
+  // `vi.setSystemTime` moves the clock without running any timer: the chain has always finished
+  // (or not started) at these call sites, so nothing is mid-flight when the clock jumps.
+  it('stops warming a feature the player has not opened in a fortnight', async () => {
+    markFeatureUsed('world');
+    vi.setSystemTime(Date.now() + FEATURE_MARK_TTL_MS + 1);
+    expect(await runAll()).toEqual(UNGATED);
+  });
+
+  it('still warms one at the very edge of the window', async () => {
+    // The other side of the same boundary. Without this, shortening the window to nothing would
+    // still pass the test above — and a window of nothing is just the pre-§14 always-cold gate.
+    markFeatureUsed('world');
+    vi.setSystemTime(Date.now() + FEATURE_MARK_TTL_MS);
+    expect(await runAll()).toEqual([...UNGATED, 'slg:world']);
+  });
+
+  it('measures the window from the LAST visit, so a weekly player never falls out of it', async () => {
+    markFeatureUsed('world');
+    for (let i = 0; i < 6; i += 1) { // six weeks of playing SLG once a week
+      vi.setSystemTime(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      markFeatureUsed('world');
+    }
+    vi.setSystemTime(Date.now() + FEATURE_MARK_TTL_MS - 1);
+    expect(await runAll()).toEqual([...UNGATED, 'slg:world']);
+  });
+
+  it('grandfathers the flag-shaped mark already sitting in installed players\' storage', async () => {
+    // Literal key and value on purpose: this is what every client shipped between 2026-08-25 and
+    // 2026-09-10 wrote, and it is the only evidence those players have. Reading it as "not a
+    // timestamp, therefore not used" would silently un-warm every existing SLG player at once.
+    store.set('nw_used_world', '1');
+    expect(await runAll()).toEqual([...UNGATED, 'slg:world']);
+
+    // ...but only into one window, dated from now — the migration must not re-create "forever".
+    vi.setSystemTime(Date.now() + FEATURE_MARK_TTL_MS + 1);
+    resetIdlePrefetchForTest();
+    events.length = 0;
+    pending.clear();
+    expect(await runAll()).toEqual(UNGATED);
   });
 
   it('the data-saver setting overrides everything, marks included', async () => {
