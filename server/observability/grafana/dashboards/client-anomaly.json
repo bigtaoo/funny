@@ -10,14 +10,14 @@
   "version": 1,
   "time": { "from": "now-24h", "to": "now" },
   "refresh": "1m",
-  "description": "Anomaly events proactively reported by clients across all players (FEATURE_FLAGS_DESIGN §9.7). Unlike targeted collection: not constrained by allowPublicIds — any client that encounters memory over threshold (mem) / sustained CPU saturation (cpu) / WebGL context lost (webgl_lost) / main loop freeze (anr) / uncaught exception (jserror) / last session crash (crash) reports directly. Labels are only {source=client, kind=anomaly}; type/publicId/platform/detail/msg are inlined (logfmt).",
+  "description": "Anomaly events proactively reported by clients across all players (FEATURE_FLAGS_DESIGN §9.7). Unlike targeted collection: not constrained by allowPublicIds — any client that encounters memory over threshold (mem) / sustained CPU saturation (cpu) / WebGL context lost (webgl_lost) / main loop freeze (anr) / uncaught exception (jserror) / last session crash (crash) / a rewarded ad that failed to load or present (ad) reports directly. NOTE type=ad comes only from the native iOS shell (the sole platform with a real ad bridge today), but reports platform=web: platformName() maps every build target other than wechat/crazygames to web, and the mobile target is one of those. Filter on type, not platform. Labels are only {source=client, kind=anomaly}; type/publicId/platform/detail/msg are inlined (logfmt).",
   "templating": {
     "list": [
       {
         "name": "type",
         "label": "Anomaly Type",
         "type": "custom",
-        "query": "mem,cpu,webgl_lost,anr,jserror,crash,other",
+        "query": "mem,cpu,webgl_lost,anr,jserror,crash,ad,other",
         "includeAll": true,
         "multi": true,
         "allValue": ".+",

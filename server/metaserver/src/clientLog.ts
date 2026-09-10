@@ -96,7 +96,7 @@ export interface ClientAnomalySession {
 }
 
 /** Allowlist of anomaly types accepted into Loki (prevents clients from injecting arbitrary types that inflate inline cardinality or mislead queries). */
-const ALLOWED_ANOMALY_TYPES = new Set(['mem', 'cpu', 'webgl_lost', 'anr', 'jserror', 'crash']);
+const ALLOWED_ANOMALY_TYPES = new Set(['mem', 'cpu', 'webgl_lost', 'anr', 'jserror', 'crash', 'ad']);
 
 /** Allowlist for the inline device bucket — same rationale as ALLOWED_ANOMALY_TYPES: this value is
  *  client-supplied and lands inline on every line, so an unbounded string would let any client inflate
