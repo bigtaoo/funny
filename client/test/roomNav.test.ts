@@ -16,6 +16,7 @@ import type { AppCtx, AppState, Nav } from '../src/app/appCtx';
 import type { NetSession } from '../src/net/NetSession';
 import type { NetState } from '../src/net/NetClient';
 import { HeadlessAppViews } from './harness/HeadlessAppViews';
+import { WorldApiClient } from '../src/net/WorldApiClient';
 
 type FakeSession = NetSession & {
   createRoom: ReturnType<typeof vi.fn>; joinRoom: ReturnType<typeof vi.fn>; setReady: ReturnType<typeof vi.fn>;
@@ -41,7 +42,7 @@ function makeFakeSession(opts: { gatewayState?: NetState } = {}): FakeSession {
 
 /** Builds ctx+nav (wired to createRoomNav) but does NOT call goRoom() itself — each test drives
  *  that explicitly so it controls the exact opts (autoRanked etc.) goRoom() sees. */
-function buildRoomNav(opts: { session?: FakeSession | null; deck?: string[] } = {}): {
+function buildRoomNav(opts: { session?: FakeSession | null; deck?: string[]; api?: AppCtx['api'] | null } = {}): {
   views: HeadlessAppViews; nav: Nav; session: FakeSession | null;
 } {
   const session = opts.session === undefined ? makeFakeSession() : opts.session;
@@ -60,7 +61,7 @@ function buildRoomNav(opts: { session?: FakeSession | null; deck?: string[] } = 
   const ctx: AppCtx = {
     platform: { storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } } as unknown as AppCtx['platform'],
     views,
-    api: {} as AppCtx['api'],
+    api: (opts.api === undefined ? ({} as AppCtx['api']) : opts.api) as AppCtx['api'],
     baseUrl: null,
     saveManager: {} as AppCtx['saveManager'],
     replayStore: {} as AppCtx['replayStore'],
@@ -160,9 +161,68 @@ describe('room.ts — goRoom() basic wiring', () => {
 
     session!.handlers.onRoomState?.({ code: 'ABCD', players: [] } as never);
     session!.handlers.onRoomError?.({ code: 'RANKED_UNAVAILABLE', message: 'no ranked server' });
+    // peer_dc was named in this case's title from the start but never actually fired — the
+    // 2026-09-10 FNDA sweep found `onPeerDc` at zero hits underneath a test that claims it.
+    // (HeadlessAppViews.applyPeerDc was a no-op that recorded nothing, so there was also nothing
+    // to assert against; it now stores the payload.) A dropped peer_dc means the opponent walks
+    // out and the other player keeps waiting at a full-looking room with no grace countdown.
+    session!.handlers.onPeerDc?.({ side: 1, graceMs: 30_000 });
 
     expect(views.lastRoomState).toEqual({ code: 'ABCD', players: [] });
     expect(views.lastRoomError).toEqual({ code: 'RANKED_UNAVAILABLE', message: 'no ranked server' });
+    expect(views.lastRoomPeerDc).toEqual({ side: 1, graceMs: 30_000 });
+  });
+
+  it('a match_start push routes straight into the netplay game', () => {
+    // The single most consequential handler in the file, and it had never been invoked by a test:
+    // every friendly room and every ranked queue ends here. Drop it and the server starts a match
+    // the client never joins — the player sits in the room UI while their opponent plays alone
+    // and the ticket eventually expires.
+    const { nav, session } = buildRoomNav();
+    nav.goRoom();
+
+    const info = { roomId: 'r1', gameUrl: 'wss://g/1', ticket: 't1', localSide: 0 } as never;
+    session!.handlers.onMatchStart?.(info);
+
+    expect(nav.goGameNet).toHaveBeenCalledWith(info);
+  });
+
+  it('after onBack(), the surviving onMatchStart still routes into the game', () => {
+    // onBack() replaces the room-scoped handler bundle with a single onMatchStart — a SECOND
+    // closure, distinct from the one above and just as untested. It is what catches the race
+    // where the player backs out of the queue at the same moment matchmaking pairs them: the
+    // server has already started the match, and without this the client is simply absent.
+    const { nav, views, session } = buildRoomNav();
+    nav.goRoom();
+    views.room!.onBack();
+
+    const info = { roomId: 'r2', gameUrl: 'wss://g/2', ticket: 't2', localSide: 1 } as never;
+    session!.handlers.onMatchStart?.(info);
+
+    expect(nav.goGameNet).toHaveBeenCalledWith(info);
+  });
+
+  it('getProfileExtra is wired to the world API and forwards the public id verbatim', async () => {
+    // The room's profile popups (tap an opponent's nameplate) go through this one closure. It is
+    // only present when `api` is configured, and it must pass the id straight through — a wrong
+    // id shows someone else's rank/ELO/family next to this player's name, which nothing flags.
+    const spy = vi.spyOn(WorldApiClient.prototype, 'getProfileExtra')
+      .mockResolvedValue({ publicId: 'pub-9' } as never);
+    const { nav, views } = buildRoomNav();
+    nav.goRoom();
+
+    await views.room!.getProfileExtra!('pub-9');
+
+    expect(spy).toHaveBeenCalledWith('pub-9');
+  });
+
+  it('omits getProfileExtra entirely when there is no api (offline build)', () => {
+    // Not "provides one that fails": RoomScene checks for the callback's presence to decide
+    // whether nameplates are tappable at all, so an always-rejecting stub would give the player
+    // a popup that spins forever.
+    const { nav, views } = buildRoomNav({ api: null });
+    nav.goRoom();
+    expect(views.room!.getProfileExtra).toBeUndefined();
   });
 });
 
@@ -257,7 +317,10 @@ describe('room.ts — matchmaking-timeout AI fallback (onMatchBot)', () => {
 });
 
 describe('room.ts — goDeckBuilder()', () => {
-  function buildDeckBuilderNav(pvpDeck: string[] | null): { nav: Nav; patchLocal: ReturnType<typeof vi.fn> } {
+  function buildDeckBuilderNav(
+    pvpDeck: string[] | null,
+    elo = 1000,
+  ): { nav: Nav; views: HeadlessAppViews; patchLocal: ReturnType<typeof vi.fn> } {
     const patchLocal = vi.fn();
     const views = new HeadlessAppViews();
     const nav = {} as Nav;
@@ -267,7 +330,7 @@ describe('room.ts — goDeckBuilder()', () => {
       views,
       api: {} as AppCtx['api'],
       baseUrl: null,
-      saveManager: { get: () => ({ pvpDeck, pvp: { elo: 1000 } }), patchLocal } as unknown as AppCtx['saveManager'],
+      saveManager: { get: () => ({ pvpDeck, pvp: { elo } }), patchLocal } as unknown as AppCtx['saveManager'],
       replayStore: {} as AppCtx['replayStore'],
       featureFlags: null,
       state: {} as AppState,
@@ -282,7 +345,7 @@ describe('room.ts — goDeckBuilder()', () => {
       resolveWorldShard: () => {},
     };
     Object.assign(nav, createRoomNav(ctx));
-    return { nav, patchLocal };
+    return { nav, views, patchLocal };
   }
 
   it('persists the confirmed deck locally, then forwards it to the caller-supplied onSave', () => {
@@ -295,6 +358,29 @@ describe('room.ts — goDeckBuilder()', () => {
 
     expect(patchLocal).toHaveBeenCalledWith({ pvpDeck: ['old'] });
     expect(outerOnSave).toHaveBeenCalledWith(['old']);
+  });
+
+  it("getCurrentElo reports the saved ranked ELO — the deck validator's only input for it", () => {
+    // DeckBuilderScene calls this to run validatePvpDeckClient, i.e. to decide which cards a
+    // player at this rating may field. Report a stale or default 1000 for a 1600-rated player and
+    // the client either blocks a legal deck or waves through one the SERVER will reject at queue
+    // time — the second one surfaces as "ranked is broken", far from this line.
+    const { nav, views } = buildDeckBuilderNav(['old'], 1642);
+    nav.goDeckBuilder(vi.fn());
+    expect(views.deckBuilder!.getCurrentElo()).toBe(1642);
+  });
+
+  it('onBack returns to the lobby without writing the deck', () => {
+    // Backing out is the "I changed my mind" path: patchLocal must NOT have run for it, or a
+    // half-edited deck silently becomes the one that goes into the next ranked match.
+    const { nav, views, patchLocal } = buildDeckBuilderNav(['old']);
+    nav.goDeckBuilder(vi.fn());
+    patchLocal.mockClear(); // showDeckBuilder auto-confirms on entry; ignore that write
+
+    views.deckBuilder!.onBack();
+
+    expect(nav.goLobby).toHaveBeenCalledTimes(1);
+    expect(patchLocal).not.toHaveBeenCalled();
   });
 
   it('falls back to the default PvP deck when no deck is saved yet', () => {

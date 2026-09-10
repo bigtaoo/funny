@@ -123,3 +123,56 @@ describe('StickmanRuntime.loadAsset: retries after a failed parse (does not nega
     expect(parseTaoAsset).toHaveBeenCalledTimes(1); // still a genuine cache, just not a negative one
   });
 });
+
+/**
+ * The two ACCESSORS on the same loader (2026-09-10 FNDA sweep: `getTexture` and `frameNames` were
+ * the file's only never-called functions — the suite above drives `load`/`isReady` and stops there).
+ *
+ * They are worth pinning because "not loaded yet" is the normal state, not an edge case: every
+ * atlas is fetched lazily while the scene that wants it is already on screen, and every call site
+ * treats `null` as "draw the procedural fallback this frame". Return `undefined` instead and the
+ * cosmetic degrade turns into a PIXI crash inside a Sprite constructor; throw before the sheet is
+ * parsed and the first frames of the world map / forge grid take the whole scene down. `frameNames`
+ * has one caller — `decorMergedAtlas` enumerating a prefix — and an empty array there means "no
+ * decor this frame", which is exactly the right answer before the sheet exists.
+ */
+describe('spriteAtlas.createAtlasLoader: what it answers before/after the sheet exists', () => {
+  it('answers null / [] before load, without throwing', async () => {
+    const { setAssetIO } = await import('../../src/assets/assetIO');
+    const { createAtlasLoader } = await import('../../src/render/atlas/spriteAtlas');
+    setAssetIO(flakyThenOkIO());
+    const loader = createAtlasLoader('atlas.png', {} as never, 'test-atlas');
+
+    expect(loader.isReady()).toBe(false);
+    expect(loader.getTexture('frame1')).toBeNull();
+    expect(loader.frameNames()).toEqual([]);
+  });
+
+  it('serves parsed frames after load, and still nulls an unknown name', async () => {
+    const { setAssetIO } = await import('../../src/assets/assetIO');
+    const { createAtlasLoader } = await import('../../src/render/atlas/spriteAtlas');
+    const io = flakyThenOkIO();
+    setAssetIO(io);
+    const loader = createAtlasLoader('atlas.png', {} as never, 'test-atlas');
+
+    await expect(loader.load()).rejects.toThrow('network blip'); // the flaky IO's first answer
+    await loader.load();
+
+    expect(loader.frameNames()).toEqual(['frame1']); // the fake Spritesheet's one frame
+    expect(loader.getTexture('frame1')).not.toBeNull();
+    // A name the sheet does not have is null, NOT undefined: `sheet.textures[name] ?? null` is the
+    // line that makes a renamed frame a missing decal instead of a crash.
+    expect(loader.getTexture('no_such_frame')).toBeNull();
+  });
+
+  it('stays null / [] after a load that failed', async () => {
+    const { setAssetIO } = await import('../../src/assets/assetIO');
+    const { createAtlasLoader } = await import('../../src/render/atlas/spriteAtlas');
+    setAssetIO({ loadBinary: vi.fn(), textureSource: vi.fn().mockRejectedValue(new Error('offline')) } as never);
+    const loader = createAtlasLoader('atlas.png', {} as never, 'test-atlas');
+
+    await expect(loader.load()).rejects.toThrow('offline');
+    expect(loader.getTexture('frame1')).toBeNull();
+    expect(loader.frameNames()).toEqual([]);
+  });
+});

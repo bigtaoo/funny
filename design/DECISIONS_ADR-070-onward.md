@@ -567,6 +567,12 @@ ADR-083/085 把**重绘**降到了空闲 5–12 次/秒，但**帧本身**没降
 - **顺带删掉 `client/test/equipmentFormulaParity.test.ts`（同日早些时候刚加的 10 例漂移门禁）**：它守的是「两份副本逐值一致」，而现在只有一份，逐值比对成了自己跟自己比。**留着一条恒真的门禁比没有门禁更坏**——它会让下一个人以为还有两处要同步。镜像那侧原本 63.1% 覆盖率、九个函数里七个从没被调用，现在这批公式的覆盖归 `server/shared/test/equipment.test.ts` 管（那侧一直测得很全）。
 - **影响**：`client/src/game/meta/equipmentDefs.ts`（149 → 73 行）、上述八份配置、删 `client/test/equipmentFormulaParity.test.ts`、`client/test/equipmentDefs.test.ts` 抬头注释。文档：`design/game/EQUIPMENT_DESIGN_IMPL.md` E5 决策 1（原「不 import `@nw/shared`」那条标注作废）、`claudedocs/client-testing.md`。验证：`tsc --noEmit -p tsconfig.test.json` + `build:web` 生产构建 + `vitest run`（277 文件 / 3385 例）+ `vitest run --config vitest.ui.config.ts`（264 文件 / 2628 例）全绿。
 - **同类候选（尚未做，形状一样）**：`client/src/game/meta/cardDefs.ts` 的 `cardHp`/`cardAttack`/`cardSiegeValue(+Effective)`、`client/src/game/meta/retention.ts` 的日常任务三件。这两处的服务端对应物签名不完全一致（客户端那侧包了一层 `SaveData`），不是纯搬运，要一处一处看。
+- **✅ 2026-09-10 的后续：同一条规则又用了三次，客户端的手抄副本清零。** 上面那条候选里的两个都结案了（`cardDefs.ts` 读的本来就是引擎单一来源、`retention.ts` 因为包了一层 `SaveData` 过不来，两个都改成写门禁——见 `claudedocs/client-testing.md` 第七轮）。当晚的函数级覆盖率扫描又翻出**三份真正的手抄副本**，形状与 `equipment.ts` 完全一致，于是照做：
+  - `@nw/shared/battlepass`（`battlepassDefs.ts`：`REWARD_ROWS` 32 行 diff 全等）、`@nw/shared/rechargeMilestone`（`rechargeTierDefs.ts`：九档 diff 全等，文件头本来就写着「keep byte-identical to the server table」）、`@nw/shared/titles`（`TITLE_DEFS` 去排版差异后语义相同）。三个服务端文件都是零运行时 import（`titles.ts` 只有一条 `import type { RankId }`，`ladder.ts` 本身也零 import）。仍然是**一次改齐八处**别名。
+  - **`titles.ts` 是部分收口，不是整份删除**：数据面（`TITLE_DEFS`/`titleWeight`）来自共享，五个显示层 helper（`getTitleKeys`/`formatLadderTitle`/`formatSlgTitle`/`sortTitlesByWeight`/`allTitleIds`）留在客户端——服务端那侧用不上它们，硬搬过去等于把 i18n 键的知识塞进服务端。门面可以只收一半。
+  - **包体代价这次是零**：两次干净构建（`rm -rf dist`）得到**同一个 contenthash**，主 bundle 2 241 724 B / gzip 635 161 B，±0 B。equipment 那次是 +17 B/−9 B，这次连那点都没有——三张表本来就一模一样，服务端专用的那半（`claimBpReward`/`grantTitle`/`claimRechargeReward`…）没被 re-export，整段摇掉。
+  - **规则补一条前置动作：先 diff，再决定。** 三份副本都自称「保持同步」，而只有真去 diff 才知道它们此刻确实一致。如果 diff 出差异，那先有一个待答的问题（哪一侧是对的、玩家看到的是哪一份），而不是一次删除。
+  - **顺带删掉的死代码**：客户端 `findRechargeTier`（全仓零调用点，服务端同名函数照旧有调用有测试）、`highestTitle`（同上，`TitlesScene` 用的是 `sortTitlesByWeight`）。
 
 ## ADR-088 安全区内缩只许有一套（`ios.contentInset: 'never'`）；inset 变化改成事件驱动；画布 re-fit 全局常驻；设备上有可读的几何读数 — Accepted — 2026-09-10
 
