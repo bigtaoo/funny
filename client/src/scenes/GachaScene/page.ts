@@ -249,7 +249,12 @@ export class PagePanel implements PageHandlers {
       }
     }
 
-    // Draw buttons.
+    // Draw buttons. The glyph is the COIN, not `capsule`: the label's number is a price and the
+    // button never spells out the currency, while "this is gacha" is already said three times above
+    // (header title, sidebar entry, banner badge) - a fourth capsule carries no information, and the
+    // identical one on both buttons carries none about single-vs-ten either. Every other spend-coins
+    // button in the game (shop/auction buy, stamina refill) already uses `coin`; these were the
+    // holdouts. `coin` is full-colour art with no light/dark cut, so the dark fill needs no variant.
     const btnW = Math.round(cw * 0.78);
     const btnH = Math.round(h * 0.092);
     const btnX = cx0 + (cw - btnW) / 2;
@@ -269,7 +274,7 @@ export class PagePanel implements PageHandlers {
       canSingle ? C.accent : C.light,
       () => void core.onDraw(1),
       canSingle,
-      'capsule',
+      'coin',
     );
     btnY += btnH + Math.round(h * 0.025);
     core.addButton(
@@ -282,7 +287,7 @@ export class PagePanel implements PageHandlers {
       canTen ? C.gold : C.light,
       () => void core.onDraw(10),
       canTen,
-      'capsule',
+      'coin',
     );
 
     // Fate Points (GACHA_DESIGN §7): shown on limited pools; redeem when at the threshold.
