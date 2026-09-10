@@ -229,8 +229,9 @@ jobs:
       - name: server install
         working-directory: server
         run: npm ci
-      # mongodb-memory-server (used by admin/analyticsvc/auctionsvc/commercial/metaserver/socialsvc/
-      # worldsvc's e2e globalSetup.ts) downloads a pinned mongod binary on first use; cache it so
+      # mongodb-memory-server (behind server/scripts/testMongoHarness.ts, which every Mongo-backed
+      # package's test/globalSetup.ts calls: admin, analyticsvc, auctionsvc, commercial, metaserver,
+      # shared, socialsvc, worldsvc) downloads a pinned mongod binary on first use; cache it so
       # repeat CI runs don't re-download ~100MB every time. Shared across shards by cache key (not
       # workspace-scoped) since it's the same pinned binary regardless of which shard downloads it.
       - name: cache mongod binaries

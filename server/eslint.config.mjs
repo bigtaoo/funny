@@ -36,7 +36,12 @@ export default [
     ],
   },
   {
-    files: ['*/src/**/*.ts'],
+    // `scripts/**` is the server root's own tooling rather than any workspace's src, but the
+    // TypeScript part of it (scripts/testMongoHarness.ts + testMongoUri.ts, the Mongo harness every
+    // package's test/globalSetup.ts calls) is real shared code and would otherwise be the only
+    // hand-written .ts in server/ that no linter ever looks at. The .mjs guard scripts beside it stay
+    // out of scope, as before.
+    files: ['*/src/**/*.ts', 'scripts/**/*.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
