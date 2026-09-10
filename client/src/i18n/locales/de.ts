@@ -14,6 +14,7 @@ export const de: Record<TranslationKey, string> = {
   'common.err.insufficientFunds': 'Nicht genügend Guthaben',
   'common.err.rateLimited': 'Zu viele Anfragen — bitte langsamer',
   'common.err.unauthorized': 'Sitzung abgelaufen — bitte erneut anmelden',
+  'common.err.forbidden': 'Dazu hast du keine Berechtigung',
   'common.err.notFound': 'Nicht gefunden oder nicht mehr verfügbar',
   'common.syncFailed': 'Cloud-Speichern fehlgeschlagen — Fortschritt evtl. nicht gesichert',
   // Einheitliches Zurück-Label (SceneHeader stellt "← " voran, siehe UI_DESIGN §3.1).
@@ -374,6 +375,7 @@ export const de: Record<TranslationKey, string> = {
   // 2026-08-10: erneutes Anmelden innerhalb der 7-Tage-Karenzzeit stellt das Konto jetzt automatisch
   // wieder her (siehe restoreIfWithinGrace); dieser Fall bedeutet, die Karenzzeit ist abgelaufen.
   'auth.err.deleted': 'Die 7-tägige Karenzzeit dieses Kontos ist abgelaufen — die Daten wurden endgültig gelöscht und können nicht wiederhergestellt werden',
+  'auth.err.sessionExpired': 'Du wurdest abgemeldet, weil deine Sitzung abgelaufen ist — bitte melde dich erneut an',
 
   // ── Shop / Aufladen (S2-6) ──────────────────────────────────────────────────
   'shop.title': 'Shop',
@@ -1031,8 +1033,8 @@ export const de: Record<TranslationKey, string> = {
   'family.elder': 'Ältester',
   'family.member': 'Mitglied',
   'family.unknownMember': '(Unbekanntes Mitglied)',
-  'family.setElder': 'Zum Ältesten befördern',
-  'family.setMember': 'Zum Mitglied degradieren',
+  'family.setElder': 'Ältester',
+  'family.setMember': 'Mitglied',
   'family.kick': 'Rauswerfen',
   'family.kick.needDemoteFirst': 'Dieses Mitglied hat ein Amt inne — zuerst zurückstufen, dann rauswerfen',
   'family.channel': 'Familienkanal',

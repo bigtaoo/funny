@@ -102,6 +102,10 @@ export class CrazyGamesPlatform implements IPlatform {
     return { width: window.innerWidth, height: window.innerHeight };
   }
 
+  // No safe-area hooks (all three are optional on IPlatform): the game runs in the portal's iframe,
+  // whose box is already inside whatever chrome the host page has, so `env(safe-area-inset-*)` is
+  // zero there by construction and there is nothing to subscribe to. Absent = all-zero insets.
+
   getLanguage(): string {
     return navigator.language || 'en';
   }

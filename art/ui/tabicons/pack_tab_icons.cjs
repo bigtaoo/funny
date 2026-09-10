@@ -122,7 +122,13 @@ const JOBS = [
   // Batch 3 (design/product/tab-icon-art-prompts.md §batch3):
   { src: 'tabicon_shop.webp',        name: 'shop' },
   { src: 'tabicon_coin.webp',        name: 'coin' },
-  { src: 'tabicon_gacha.webp',       name: 'gacha' },
+  // v2 (2026-09-10): v1's seam ran through the exact centre with both halves left empty, so at the
+  // 28-32px a tab cell draws it read as the minus-in-a-circle sign, not a capsule — the same
+  // semantic misread that got socialTabIcon v1 (circle + cross -> crosshair) sent back on
+  // 2026-08-15, which the outline-clarity review of that round did not catch. v2 puts the seam
+  // above the middle, hatches the small upper cap and steps the lip at both seam ends, so the two
+  // halves differ. Retired art in _rejected/.
+  { src: 'tabicon_gacha.png',        name: 'gacha' },
   { src: 'tabicon_recharge.webp',    name: 'recharge' },
   { src: 'tabicon_home.webp',        name: 'home' },
   { src: 'tabicon_social.webp',      name: 'social' },
@@ -301,6 +307,16 @@ const JOBS = [
   // `handshake` (sect alliance) is still out: v1 read as a V, v2 as a featureless ball between two
   // bars and came out 2.42:1, over the aspect gate. The button keeps borrowing `friends` until a
   // version reads as two hands at 26px — see batch 11 §6.
+
+  // Batch 12 (design/product/tab-icon-art-prompts-batch12.md): the family roster's role-toggle
+  // direction marks, replacing the text arrows the labels carried. They are ONE mirror pair by
+  // spec — `promote` is `tabicon_demote.png` flipped vertically, so head width, shaft width, stroke
+  // weight and aspect (1.10:1) are identical by construction rather than by review. `demote`'s own
+  // v1 partner was rejected for a dark-grey studio backdrop: the pipeline reads alpha as
+  // 255 - luminance, so a 33-53 luminance background comes out ~80% opaque and the crop step then
+  // finds content in all four corners (see _rejected/tabicon_promote_v1_graybackground.png).
+  { src: 'tabicon_promote.png',            name: 'promote', inks: ['active'] },
+  { src: 'tabicon_demote.png',             name: 'demote', inks: ['active'] },
 
   // Check-in calendar focal cue (design/product/checkin-focus-cue-art.md, 2026-09-05). Like `back`,
   // these are NOT tab icons — they are page content drawn beside/behind one calendar cell, in the

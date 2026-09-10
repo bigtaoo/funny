@@ -2,6 +2,7 @@
 // every domain nav module (app/nav/*). Mutable session state lives in `state`; screen transitions
 // live in `nav` (a registry populated during assembly so modules can call each other freely without
 // import cycles); leaf utilities (session/gateway/profile/deck/replay/shard) are methods on the ctx.
+import type { TranslationKey } from '../i18n';
 import type { IPlatform } from '../platform/IPlatform';
 import type { AppViews } from './AppViews';
 import type { ApiClient } from '../net/ApiClient';
@@ -44,8 +45,11 @@ export interface Nav {
   goLobby(opts?: { offline?: boolean; fromResize?: boolean; fade?: boolean }): void;
   goSettings(): void;
   goTitles(back?: () => void): void;
-  goLogin(): void;
-  doLogout(): void;
+  /** `notice`: message the login screen shows on arrival (forced logout — see nav/auth.ts's forceLogout). */
+  goLogin(opts?: { notice?: TranslationKey }): void;
+  doLogout(opts?: { notice?: TranslationKey }): void;
+  /** The session's token is unusable → toast + full logout + back to the login screen. */
+  forceLogout(): void;
   resolveEntry(): Promise<void>;
   goDeckBuilder(onSave: (deck: string[]) => void): void;
   goRoom(opts?: { autoRanked?: boolean }): void;

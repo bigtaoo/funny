@@ -14,6 +14,7 @@ export const en: Record<TranslationKey, string> = {
   'common.err.insufficientFunds': 'Not enough balance',
   'common.err.rateLimited': 'Too many requests — please slow down',
   'common.err.unauthorized': 'Session expired — please log in again',
+  'common.err.forbidden': "You don't have permission to do that",
   'common.err.notFound': 'Not found or no longer available',
   'common.syncFailed': 'Cloud save failed — progress may not be saved',
   // Unified back-button label (SceneHeader prepends "← ", see UI_DESIGN §3.1).
@@ -374,6 +375,7 @@ export const en: Record<TranslationKey, string> = {
   // 2026-08-10: logging back in within the 7-day grace period now auto-restores the account (see
   // restoreIfWithinGrace); reaching this means the grace period has elapsed and the data is gone.
   'auth.err.deleted': "This account's 7-day grace period has ended — its data was permanently erased and cannot be recovered",
+  'auth.err.sessionExpired': 'You were logged out because your session expired — please log in again',
 
   // ── Shop / top-up (S2-6) ────────────────────────────────────────────────────
   'shop.title': 'Shop',
@@ -1031,8 +1033,13 @@ export const en: Record<TranslationKey, string> = {
   'family.elder': 'Elder',
   'family.member': 'Member',
   'family.unknownMember': '(Unknown member)',
-  'family.setElder': 'Promote to Elder',
-  'family.setMember': 'Demote to Member',
+  // Roster-row role toggle. One word each: the old 'Promote to Elder' / 'Demote to Member' pair
+  // differed only in two similarly-shaped words, so telling them apart in a narrow split-view
+  // column meant reading every label. The direction now rides on the `promote`/`demote` glyph the
+  // button draws beside the word (see FamilyScene/lists.ts) — it briefly lived in these strings as
+  // a `↑`/`↓` character, which is the thing UI_DESIGN's back-arrow rule rejects.
+  'family.setElder': 'Elder',
+  'family.setMember': 'Member',
   'family.kick': 'Kick',
   'family.kick.needDemoteFirst': 'This member holds an office — demote them first before kicking',
   'family.channel': 'Family Channel',

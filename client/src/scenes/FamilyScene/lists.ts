@@ -14,7 +14,7 @@ import { caretText } from './repaint';
 import { drawChatLine } from '../../ui/widgets/chatRow';
 import { truncateToWidth } from '../../ui/widgets/truncateText';
 import { FS } from '../../render/fontScale';
-import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore } from './core';
 
@@ -24,6 +24,11 @@ const ROW_INSET = 12;
 
 /** Darker muted ink for secondary family-scene labels — matches RenderPanel's MUTED. */
 export const MUTED = 0x5a574f;
+
+/** Vertical inset of a member card inside its row, mirrored top and bottom, so the leftover
+ *  `2 * CARD_INSET` reads as a gutter between cards. Was 2px (a 4px gutter — invisible); `rowH`
+ *  grew by the same 6px this widening costs, so the card keeps its old height. */
+const CARD_INSET = 5;
 
 /** Narrow slice of ActionsHandlers that renderMembers needs. */
 export interface MemberActions {
@@ -71,7 +76,7 @@ export function renderMembers(
 
   const btnH = Math.round(R * 0.44);
   // Buttons are sized to their (i18n-variable-length) label + padding rather than a fixed width,
-  // so "Promote to Elder" / "Demote to Member" no longer clip the way a fixed box would.
+  // so a long translation ("Rauswerfen", "↑ Ältester") no longer clips the way a fixed box would.
   const padX = Math.round(core.h * 0.014);
   const btnGap = Math.round(core.h * 0.01);
   const busy = core.bt.busy;
@@ -82,13 +87,16 @@ export function renderMembers(
     const isMe = mem.accountId === me;
 
     // Per-member card background — my own row is tinted a touch warmer so it stands out.
-    const rowBg = sketchPanel(colW - 12, R - 4, { fill: isMe ? 0xefe9d8 : 0xf7f5ee, border: C.mid, seed: seedFor(cy, 5, colW) });
-    rowBg.x = x0 + 6; rowBg.y = cy + 2;
+    // Card fill is near-white paper rather than the old 0xf7f5ee, which sat barely a shade off the
+    // page's own aged paper: with only a 4px gutter between cards, a five-member roster read as one
+    // striped blob instead of five cards. Lighter stock + the wider CARD_INSET gutter separate them.
+    const rowBg = sketchPanel(colW - 12, R - CARD_INSET * 2, { fill: isMe ? 0xefe9d8 : 0xfffdf6, border: C.mid, seed: seedFor(cy, 5, colW) });
+    rowBg.x = x0 + 6; rowBg.y = cy + CARD_INSET;
     list.addChild(rowBg);
 
     const bar = new PIXI.Graphics();
-    sketchAccentBar(bar, R - 4, mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : C.mid);
-    bar.x = x0 + 6; bar.y = cy + 2;
+    sketchAccentBar(bar, R - CARD_INSET * 2, mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : C.mid);
+    bar.x = x0 + 6; bar.y = cy + CARD_INSET;
     list.addChild(bar);
 
     // Right-edge buttons, laid out from the right inward, built first so the name can be
@@ -113,7 +121,10 @@ export function renderMembers(
       const kl = txt(t('family.kick'), FS.bodyLg, kickColor);
       const kickW = Math.round(kl.width + padX * 2);
       const kx = right - kickW - 8;
-      const kickBtn = sketchPanel(kickW, btnH, { fill: hasOffice || busy ? 0xeceae2 : 0xf0e0e0, border: busy ? C.mid : hasOffice ? C.mid : C.red, seed: seedFor(cy, 0, kickW) });
+      // Outline-only when live (card-coloured fill), not the old pink 0xf0e0e0 wash: a filled red
+      // box made the rarest, least reversible action the loudest thing in the row. Red stroke and
+      // ink still mark it as destructive, and it stays clearly apart from the grey demote button.
+      const kickBtn = sketchPanel(kickW, btnH, { fill: hasOffice || busy ? 0xeceae2 : 0xfffdf6, border: busy ? C.mid : hasOffice ? C.mid : C.red, seed: seedFor(cy, 0, kickW) });
       kickBtn.x = kx; kickBtn.y = btnY;
       list.addChild(kickBtn);
       kl.anchor.set(0.5, 0.5); kl.x = kx + kickW / 2; kl.y = btnY + btnH / 2;
@@ -130,17 +141,38 @@ export function renderMembers(
       nameRight = kx - btnGap;
 
       // Role toggle: members → elder, elders → member. (Leader role only changes via transfer/dissolve.)
+      //
+      // Promote and demote used to share one style — same gold border, same gold ink, same pale
+      // fill — and differed only in two similarly-shaped words ("Promote to Elder" / "Demote to
+      // Member"; worse in de-DE, "Zum Ältesten befördern"). Scanning the column meant reading every
+      // label. Now the direction is encoded three times over: the arrow glyph, the colour, and the
+      // weight. Promote is the filled gold one (the constructive action, so it may be loudest);
+      // demote is a recessed grey outline. The one-word labels also cut the button to roughly half
+      // the width, which the name column gets back. The arrows were `↑`/`↓` characters inside the
+      // label until batch 12 gave them real art (`promote`/`demote`).
       if (mem.role !== 'leader') {
         const toElder = mem.role === 'member';
-        const roleColor = busy ? C.mid : 0xa9750f;
-        const rl = txt(t(toElder ? 'family.setElder' : 'family.setMember'), FS.bodyLg, roleColor);
-        const roleW = Math.round(rl.width + padX * 2);
+        const roleColor = busy ? C.mid : toElder ? 0xa9750f : MUTED;
+        const roleLabel = t(toElder ? 'family.setElder' : 'family.setMember');
+        // Measure the label off-tree, then add what the glyph + its gap will take: a button that
+        // sizes itself to its text would otherwise hand drawButtonLabel a box only wide enough for
+        // the words, and `minFit` would drop the glyph at the last moment. Same shape as the sect
+        // header's ally pills, `lbl.destroy()` included — a throwaway Text owns a canvas texture.
+        const rl = txt(roleLabel, FS.bodyLg, roleColor);
+        const roleW = Math.round(rl.width + buttonLabelIconW(FS.bodyLg)) + padX * 2;
+        rl.destroy();
         const bx = kx - btnGap - roleW;
-        const roleBtn = sketchPanel(roleW, btnH, { fill: 0xeef0e0, border: busy ? C.mid : 0xd4a030, seed: seedFor(cy, 2, roleW) });
+        const roleBtn = sketchPanel(roleW, btnH, {
+          fill: toElder ? 0xf7ecc9 : 0xf1efe6,
+          border: busy ? C.mid : toElder ? 0xd4a030 : C.mid,
+          seed: seedFor(cy, 2, roleW),
+        });
         roleBtn.x = bx; roleBtn.y = btnY;
         list.addChild(roleBtn);
-        rl.anchor.set(0.5, 0.5); rl.x = bx + roleW / 2; rl.y = btnY + btnH / 2;
-        list.addChild(rl);
+        // `bold: false` keeps it matching the un-bolded Kick label beside it (drawButtonLabel
+        // defaults to bold); no `variant` — a paper-fill button lets the label colour pick the ink
+        // (UI_DESIGN §2).
+        drawButtonLabel(list, bx, btnY, roleW, btnH, roleLabel, toElder ? 'promote' : 'demote', roleColor, FS.bodyLg, { bold: false });
         const nextRole: 'elder' | 'member' = toElder ? 'elder' : 'member';
         if (!busy) core.hitRects.push({ rect: { x: bx, y: btnY, w: roleW, h: btnH }, fn: () => void actions.doSetRole(accId, nextRole), scroll: 'members' });
         nameRight = bx - btnGap;
@@ -172,19 +204,28 @@ export function renderMembers(
     avatar.x = x0 + 12; avatar.y = cy + Math.round((R - avSize) / 2);
     list.addChild(avatar);
 
-    const roleColor = mem.role === 'leader' ? C.accent : mem.role === 'elder' ? 0xd4a030 : MUTED;
-    const roleLbl = txt(t(`family.${mem.role as 'leader' | 'member' | 'elder'}`), FS.bodyLg, roleColor);
+    // Only offices get a written role label. "Member" was spelled out on every plain row while
+    // carrying no information (it is the default, and the grey accent bar already says it), and it
+    // ate into the name's available width on exactly the rows whose names are longest.
+    const office = mem.role === 'leader' || mem.role === 'elder' ? mem.role : null;
+    const roleLbl = office
+      ? txt(t(`family.${office}`), FS.bodyLg, office === 'leader' ? C.accent : 0xd4a030)
+      : null;
     const nameX = x0 + 18 + avSize + 8;
-    const nameMaxW = Math.max(40, nameRight - nameX - roleLbl.width - 10);
+    const nameMaxW = Math.max(40, nameRight - nameX - (roleLbl ? roleLbl.width + 10 : 10));
     const nameLbl = truncateToWidth(mem.displayName ?? mem.publicId ?? '', FS.heading, C.dark, nameMaxW);
     nameLbl.x = nameX; nameLbl.y = cy + Math.round((R - nameLbl.height) / 2);
     list.addChild(nameLbl);
-    roleLbl.x = nameLbl.x + nameLbl.width + 10; roleLbl.y = cy + Math.round((R - roleLbl.height) / 2);
-    list.addChild(roleLbl);
+    let textRight = nameLbl.x + nameLbl.width;
+    if (roleLbl) {
+      roleLbl.x = textRight + 10; roleLbl.y = cy + Math.round((R - roleLbl.height) / 2);
+      list.addChild(roleLbl);
+      textRight = roleLbl.x + roleLbl.width;
+    }
 
     // Tapping the name/role opens the unified profile popup (view info + Add Friend).
     core.hitRects.push({
-      rect: { x: x0 + 6, y: cy + 2, w: roleLbl.x + roleLbl.width - (x0 + 6), h: R - 4 },
+      rect: { x: x0 + 6, y: cy + CARD_INSET, w: textRight - (x0 + 6), h: R - CARD_INSET * 2 },
       fn: () => core.openMemberProfile(mem),
       scroll: 'members',
     });

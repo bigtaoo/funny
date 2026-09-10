@@ -59,15 +59,22 @@ async function flush(scene: any): Promise<void> {
   scene.render();
 }
 
-// Kick buttons are the row's shortest-and-shallowest action rects; the profile-tap hit rect
-// covers the whole name/role area (narrow for short test names, but noticeably taller), so
-// picking the minimum height among the narrow rects reliably isolates the Kick buttons.
+// Kick is the rightmost button of a manageable row: the row's actions are laid out from the right
+// edge inward (Kick first, then the role toggle), and both are `btnH` tall while the profile-tap
+// rect covering the name/role area is noticeably taller. So: keep the button-height rects, then
+// take the largest-x one per row. Picking "the narrowest rects" instead used to work only because
+// "Promote to Elder" was wide enough to fall outside a width cutoff — the 2026-09-10 relabelling to
+// `↑ Elder` made the role toggle just as narrow as Kick and silently doubled what that matched.
 function findKickHits(scene: any): any[] {
-  const narrow = scene.core.hitRects.filter((h: any) => h.rect.w < 150);
-  const minH = Math.min(...narrow.map((h: any) => h.rect.h));
-  return narrow
-    .filter((h: any) => h.rect.h === minH)
-    .sort((a: any, b: any) => a.rect.y - b.rect.y);
+  const rects = scene.core.hitRects.map((h: any) => h.rect);
+  const btnH = Math.min(...rects.map((r: any) => r.h));
+  const buttons = scene.core.hitRects.filter((h: any) => h.rect.h === btnH);
+  const rightmostPerRow = new Map<number, any>();
+  for (const hit of buttons) {
+    const prev = rightmostPerRow.get(hit.rect.y);
+    if (!prev || hit.rect.x > prev.rect.x) rightmostPerRow.set(hit.rect.y, hit);
+  }
+  return [...rightmostPerRow.values()].sort((a: any, b: any) => a.rect.y - b.rect.y);
 }
 
 describe('FamilyScene — elder cannot be kicked without demoting first', () => {

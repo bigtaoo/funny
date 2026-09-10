@@ -10,13 +10,18 @@
 //     here because the device/wx credential really IS that account's own identity.
 //   · A real password-login session (TOKEN_KEY present) → must NOT call api.auth() (that would
 //     authenticate the anonymous device identity instead, silently swapping accounts mid-session) —
-//     keep the existing token and toast the player once instead of spinning forever with no feedback.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+//     keep the existing token and tell the player once instead of spinning forever with no feedback.
+//
+// 2026-09-10: "tell the player once" used to be a bare toast, which left them stuck in a lobby where
+// nothing worked. It now fires net/log.ts's session-expired outlet, which app.ts points at
+// nav/auth.ts's forceLogout (toast → full logout → login screen). The once-per-session latch is
+// unchanged and still tested here.
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NetSession } from '../src/net/NetSession';
 import type { IPlatform, IStorage } from '../src/platform/IPlatform';
 import type { ApiClient } from '../src/net/ApiClient';
 import { TOKEN_KEY } from '../src/app/appConstants';
-import { setToastSink } from '../src/net/log';
+import { setSessionExpiredSink, setToastSink } from '../src/net/log';
 
 function fakeStorage(): IStorage {
   const m = new Map<string, string>();
@@ -54,9 +59,15 @@ function buildSession(storage: IStorage, api: ApiClient): NetSession {
 
 describe('NetSession.freshToken()', () => {
   let toastSpy: ReturnType<typeof vi.fn>;
+  let expiredSpy: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     toastSpy = vi.fn();
     setToastSink((text, kind) => toastSpy(text, kind));
+    expiredSpy = vi.fn();
+    setSessionExpiredSink(() => expiredSpy());
+  });
+  afterEach(() => {
+    setSessionExpiredSink(() => {}); // don't leak a live sink into later test files
   });
 
   it('the common fast path: an existing token with no rejection is returned as-is, no auth() call', async () => {
@@ -96,7 +107,7 @@ describe('NetSession.freshToken()', () => {
     expect((api as unknown as { auth: ReturnType<typeof vi.fn> }).auth).toHaveBeenCalledTimes(1);
   });
 
-  it('regression: a rejected token WITH a real password-login session (TOKEN_KEY present) does NOT call api.auth(), and toasts once', async () => {
+  it('regression: a rejected token WITH a real password-login session (TOKEN_KEY present) does NOT call api.auth(), and reports the expiry once', async () => {
     const storage = fakeStorage();
     storage.setItem(TOKEN_KEY, 'the-real-login-token'); // marks this as a real password-login session
     const api = fakeApi('expired-login-token');
@@ -107,12 +118,14 @@ describe('NetSession.freshToken()', () => {
     // Must NOT mint an anonymous device credential — that would silently swap the player's identity.
     expect((api as unknown as { auth: ReturnType<typeof vi.fn> }).auth).not.toHaveBeenCalled();
     expect(token).toBe('expired-login-token'); // still the same (still-broken) token — honest, not silently fixed
-    expect(toastSpy).toHaveBeenCalledTimes(1);
-    expect(toastSpy.mock.calls[0][1]).toBe('error');
+    // Reported through the session-expired outlet, not as a bare toast: the visible toast is
+    // forceLogout's, and it is followed by a navigation back to the login screen.
+    expect(expiredSpy).toHaveBeenCalledTimes(1);
+    expect(toastSpy).not.toHaveBeenCalled();
 
-    // A second consecutive rejection must not spam the toast again.
+    // A second consecutive rejection must not fire it again.
     const token2 = await (session as unknown as { freshToken(): Promise<string> }).freshToken();
     void token2;
-    expect(toastSpy).toHaveBeenCalledTimes(1);
+    expect(expiredSpy).toHaveBeenCalledTimes(1);
   });
 });

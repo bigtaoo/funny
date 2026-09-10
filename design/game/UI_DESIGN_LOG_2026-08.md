@@ -665,3 +665,116 @@ while (cols > 1 && 少一列不会多一行) {
 **同轮落地的还有批 10 的伞**：`umbrella_active.png`（128×128 = 1.00:1，一版过），`hud.ts` 的保护 buff 行 `armorHeavy` → `umbrella`，`OWN_ART` 56 → 57。**世界地图 HUD 一屏上的四分圆至此清零**（§45 挪走两条队伍行，这一轮挪走 buff 行）。判断依据、prompt、验收记录见 [`tab-icon-art-prompts-batch10.md`](../product/tab-icon-art-prompts-batch10.md)。
 
 **验证**：`tsc --noEmit -p tsconfig.test.json` 干净、`lint` 0 error、`build:web` 过、`check:filelength` 过、`vitest run` 2788 例 + `test:ui` 2459 例全绿；`iconArtAspect.test.ts` 自动把伞纳进来（1.00:1，无豁免）。像素证据：三语菜单各一张 + HUD 一屏（伞 + 沙漏 + 脚印/帐篷/房子三条队伍行）。
+
+## 46. 家族成员行：升/降级按钮不该靠读字分辨，卡片不该糊成一片（2026-09-10）
+
+**问题（用户截图反馈，横屏分栏）**：五人名单挤成一条条纹，「Promote to Elder」和「Demote to Member」当场分不清。拆开看是四条各自独立的成因，都在 [`FamilyScene/lists.ts`](../../client/src/scenes/FamilyScene/lists.ts) 的 `renderMembers`：
+
+1. **卡片和页面几乎同色，行间隙只有 4px**：卡片填充 `0xf7f5ee`，页面底色 `palette.paper` = `0xf5f0e8`——两者差 (2,5,6)，肉眼等于没差；卡高 `R - 4`、偏移 `cy + 2`，于是每两张卡之间只剩 4px。分离感既没有明度差也没有留白可依。
+2. **升/降级共用一套样式**：同 `0xeef0e0` 填充、同 `0xd4a030` 描边、同 `0xa9750f` 字色，方向只由两个长度相仿的词承载（en「Promote to Elder」/「Demote to Member」，de 更长「Zum Ältesten befördern」）。**扫一列名单就等于逐行读字**。
+3. **Kick 的视觉权重最高**：粉底 `0xf0e0e0` + 红描边，是一行里最抢眼的东西——而它是最少用、最不可逆的那个操作。
+4. **每行都写「Member」**：默认角色写出来信息量为零（左侧 accent bar 的灰色已经在说这件事），却恰好从名字最长的那些行里挖掉宽度。
+
+**改法**（视觉层次，不动交互路径）：
+
+- **留白**：新增 `CARD_INSET = 5`（原来是硬写的 2），卡片改 `R - CARD_INSET * 2`、偏移 `cy + CARD_INSET`，间隙 4px → 10px；`core.rowH` 同步 `0.062` → `0.066`（`h=1080` 下 67 → 71px），**多出来的 6px 正好是间隙涨的那 6px，卡片本身保持原高**，不是拿卡片高度换间隙。
+- **卡片提亮**到近白纸 `0xfffdf6`（差 (10,13,14)，约 5% 明度），页面底色不动；自己那行仍是暖色 `0xefe9d8`。
+- **按钮语义化**：`family.setElder` / `family.setMember` 三语文案改成 `↑ Elder` / `↓ Member`（de `↑ Ältester` / `↓ Mitglied`，zh `↑ 长老` / `↓ 成员`）——箭头、颜色、权重**三重编码方向**：升级是唯一带填充的那个（淡金 `0xf7ecc9` + 金描边 + 金字，建设性操作可以最响），降级退成灰描边灰字（`0xf1efe6` + `C.mid` + `MUTED`）。长文案键位没有留成死键，直接改在原键上。
+- **Kick 降权**：活跃态改成无填充（跟卡片同色）+ 红描边红字，不再是粉底色块；禁用态（长老需先卸任、或有变更在飞）照旧灰。
+- **角色标签只画 leader / elder**，member 不写；名字可用宽度相应放开（`nameMaxW` 的预留从「恒定减去角色标签宽」改成只在有 office 时减）。行内 profile 点击热区跟着从 `roleLbl` 末端改成实际文字末端 `textRight`。
+
+**实拍验证**（本机真实 Chrome，本地 dev 后端 8088，往 `nw_social` 塞了一个五人测试家族 `fam:ROST`：我当族长 + 1 长老 + 3 成员，名字覆盖 17 字符 latin 与 4 字全角中文）：
+
+| | 横屏分栏 | 竖屏整栏 |
+|---|---|---|
+| 五张卡分得开 | ✅ | ✅ |
+| `↑ 长老` 金实底 / `↓ 成员` 灰描边 | ✅ 一眼分得清 | ✅ |
+| 踢出：活跃红描边、长老行灰（禁用） | ✅ | ✅ |
+| 「成员」标签消失，只剩 长老 / 族长 | ✅ | ✅ |
+| 长名字（`SpelletjesCrew759`）不截断 | ✅ | ✅ |
+
+竖屏是靠改写 `window.innerWidth/innerHeight` 的 getter 再 `dispatchEvent(new Event('resize'))` 逼出来的（`WebPlatform.getScreenSize()` 读这两个值）——**注意 `ViewportResizeWatcher` 在非大厅场景里是 `stop()` 掉的**，所以必须先退回大厅再改尺寸、再进家族，直接在家族里 fire resize 什么都不会发生。这条比"resize_window 工具在这台机器上不生效"更值得记：本机 Chrome 是全屏/应用模式，`resize_window` 报成功但 `innerWidth` 不动。
+
+
+**跟 [`UI_DESIGN.md`](UI_DESIGN.md) §「返回箭头改为手绘 glyph」的张力，明写在这里免得后人当疏漏**（**同日已解决**：批次 12 出了 `promote`/`demote` 两枚真 glyph，i18n 值退回纯 `Elder`/`Member`，见 [`tab-icon-art-prompts-batch12.md`](../product/tab-icon-art-prompts-batch12.md)——下面这段保留为当时的判断记录）：那一条把返回文案里的 `←` 从 i18n 值里拿掉了，理由是文字渲染器按 CJK 回退字体画的箭头笔画细、字形随平台变，跟旁边手绘图标不是一套语言。本轮的 `↑`/`↓` 正是那种文字箭头。仍然这么做，是因为①那条禁令的前提是**已经有** `backArrow` 这枚替代 glyph（如今还是 `back_accent.png` 这类美术资源），而上/下方向没有对应资源，本轮不引入新美术；②这里的箭头是**冗余**编码——填充、描边、字色已经各自说了一遍方向，箭头掉字形也不会让按钮失去区分度，返回按钮当时是把箭头当唯一图形在用。真要升级，路子是给方向补两枚 sketch glyph，而不是把文案改回长句。
+
+**顺手修掉一个被这次改动照出来的脆弱测试**：[`familyKickOfficerGuard.ui.ts`](../../client/test/ui/familyKickOfficerGuard.ui.ts) 的 `findKickHits` 靠"宽度 < 150 且高度最小"来认踢出按钮——它能work，只是因为「Promote to Elder」当时**宽到掉在 150 门槛之外**。标签一短，角色按钮跟踢出一样窄、一样高，那个 helper 悄悄从 2 个 rect 变成 4 个，用例判红。判红是对的，但原因是识别方式，不是行为回归。改成按语义找：行内动作是**从右往左**排的（先踢出、再角色按钮），所以取"按钮高度的 rect 里每行 x 最大的那个"。这样它不再依赖任何文案长度。
+
+**验证**：`tsc --noEmit`（client）与 `tsc --noEmit -p tsconfig.test.json` 均干净；`npm run lint` 0 问题；`npm run build:web` 过（只剩既有的 entrypoint 体积 warning）；`check:filelength` 过；`test:ui` 264 文件 2628 例全绿、`npm test` 8 文件 13 例全绿。
+
+## 47. iPhone 13 竖屏安全区：两套内缩机制打架，2026-07-28 那次修的是一个不存在的竞态（2026-09-10）
+
+**症状（用户真机实测，第二次报同一件事）**：iPhone 13（390×844pt，真实 inset 47/34）上跑 **Capacitor 原生包**（TestFlight 装的，已明确排除 Safari 与主屏 PWA），竖屏大厅**顶部深色标题栏完全盖住系统状态栏**（时间/电量），**底部导航栏下方空出约 80pt 死区**。
+
+### 46.1 先做排除法，再动手 —— 这一步直接证伪了原假设
+
+2026-07-28 的那次修复（commit `60c1aba14` + 测试 `ec5e9dda5`）假设是「WebKit 冷启动首次同步读 `env(safe-area-inset-*)` 返回 0」的竞态，方案是资源门禁 `await` 之后再读一次（`resettledLayout`）。它已经在包里，没起作用。
+
+把两种可能的 inset 读数代进 `PortraitLayout` 的 designHeight 公式 + `ScalingManager.applyScaling()`：
+
+| insets 读到 | designHeight | `gameLayer.y` | 内容占屏 | 顶/底留白 |
+|---|---|---|---|---|
+| 47/34（正确） | 2113 | 47 | 47→810 | 47 / 34 ✅ |
+| 全 0（假设的竞态结果） | 2337 | 0 | 0→844 | 0 / 0 |
+
+**两种都产生不了截图里的样子。** 顶部完全没让 = 画布从物理 y=0 画起；底部空出 ~81pt = 布局视口只有 763。能同时成立的只有第三种组合：**布局视口已经被减掉 81pt，而 `env()` 仍然读回 0**。也就是说，症结根本不在「inset 读到 0 还是读对」这条轴上，2026-07-28 那整篇推理即使成立也修不好这个 bug。花几分钟做这张表，省下的是第三次返工。
+
+### 46.2 根因：`ios.contentInset: 'always'`
+
+`client/capacitor.config.ts` 原本写着 `ios.contentInset: 'always'`，注释是「Respect the safe area so the canvas is not clipped」。它做的事是让 WKWebView 的 scrollView 自己按 safeArea 内缩：
+
+1. 布局视口被缩小 —— `window.innerHeight` 844 → 763；
+2. 页面视角里已经没有需要避开的东西了，于是 **`env(safe-area-inset-*)` 全部归零**。
+
+而这个 app 的安全区一直是**自己做**的（`mobile/index.html` 的 `viewport-fit=cover` + `ScalingManager` 按 `env()` 平移 `gameLayer`，见 `UI_DESIGN.md` §1 安全区行）。两套机制叠在一起的结果是：我们那套拿到全 0、什么都不做；原生那套又因为 `html, body { overflow: hidden }` 让 scrollView 滚不动、初始 `contentOffset(-47)` 被 clamp 回 0，画布照旧贴着屏幕顶端画。**顶部不让 + 底部空 81pt，两个症状同时对上。**
+
+顺带解释了为什么上一次的修复「没坏但没用」：`env()` 恒为 0 ⇒ `resettledLayout` 的分支永远不触发。它没被删（对真·冷启动竞态仍然对），只是不可达。
+
+**修复：`contentInset: 'never'`。** 之后 `innerHeight` 回到 844、`env()` 报真值 47/34，现有的 `gameLayer` 内缩逻辑独家负责安全区。**⚠️ 这条烧在原生配置里，不能 OTA**：要在 Mac 上 `npx cap sync ios` + 重新出包才生效（`IOS_RELEASE.md` §5 / §12.1 已记）。
+
+### 46.3 先加设备读数，别再盲修
+
+上一次失败的唯一原因是**没有真机读数就动手**：桌面 Chrome 里 inset 恒为 0、视口撑满，这类 bug 一个都复现不了，`tsc` + build + 单测全绿证明不了任何事——当时的记录里甚至诚实写着 "unverified on a real device"，然后就发了。
+
+所以本轮先落地读数，`layout/viewportGeometry.ts`（纯函数、无 DOM，因为 `app.ts` 在微信可达图上）：
+
+- `innerW/H`、`screen.width/height`、`visualViewport` 宽高与 `offsetTop`、四个 `env()`、`dpr`、是否原生壳；
+- 加一个**一词判定**：`inset-eaten`（视口比屏幕小、`env()` 却报 0 —— 本 bug 的指纹）/ `env-reported` / `no-inset` / `browser`（不是原生壳就不下结论：浏览器的窗口本来就比屏幕小）；
+- 两条出口：`app.ts` 的 boot 日志（`viewport_geometry boot`，同时进客户端日志环形缓冲，可被定向日志收集捞走）+ **设置页底部两行可见文本**（`SettingsScene/panels.ts` 的 `drawViewportDiagnostics`）。设置页那两行是刻意不做本地化的：它是五个数字加一个判定词，翻译过的诊断信息等于还要先翻译回来才能读。
+
+读数的通道就是一张截图 —— 因为受影响的包是别人手机上的 TestFlight，没有 DevTools 可接。字号定在 `FS.label`（24 设计 px，在 390pt 宽的屏上约 8.7 CSS px）：再大就塞不进法律条款下面那条约 100px 的空带，再小就不是「能拍下来看清」的东西了；横屏设计矩形只有 1080 高、那条带只剩一半，所以横屏合成一行（1920 宽绰绰有余）。
+
+### 46.4 另外两个独立缺陷（跟根因无关，但都真实存在，且会吃掉未来任何同类修复）
+
+**① 画布 re-fit 只在大厅挂着。** `PixiAppViews.leaveLobby()` 一进任何非大厅场景就 `viewport.stop()`（`showIntro`/`showLogin`/`showSettings`/`showShop`… 每个都调）。于是**登录页、设置页、整场战斗里转屏或 inset 变化完全不重排**：`renderer.resize` 根本没被调用，画布保持构建时的 CSS 尺寸，`toDesignSpace` 还按旧变换映射触点——战斗里转屏会得到「旧形状画在新窗口里、点击还偏」。
+
+改成两半各按自己的成本决定生命周期（`app/viewportResize.ts`）：
+
+- **便宜的那半（re-fit）**：`renderer.resize` + `createLayout` + `scaling.resize`，构造时 `install()` 一次、永不摘除；
+- **贵的那半（重建当前场景）**：仍然只有大厅做（`createAppCore.onResized` 本来就门禁在 `state.inLobby`，别的场景压根重建不了），`armRebuild()`/`disarmRebuild()` 沿用原来的进出大厅时机 + 180ms 合并窗口。
+
+代价说清楚：非大厅场景转屏后画布正确、但内部仍按构建时的设计矩形排布。这比改之前（画布尺寸错**且**触点映射错）严格更好；「任意场景都能按 resize 重建」是另一件大得多的事，不在本轮。
+
+**② 无变化守卫只比尺寸。** `viewportResize.ts` 的早退是 `width === appliedW && height === appliedH`，**inset 变而尺寸不变时直接 return**——正好把下面这套事件驱动想送达的那类事件吃掉一半。现在把 insets 一起纳入比较（复用 `ScalingManager` 的 `insetsEqual`，为此 export）。
+
+### 46.5 inset 从「被问才读」改成「变了就说」
+
+`WebPlatform.getSafeAreaInsets()` 原来是一个隐藏 div，四个 padding 是四个 `env()`，谁问就 `getComputedStyle` 读一次。问题是**没人问**：boot 读一次、资源门禁后再读一次、然后只有 `window.resize` 才读。而 `window.resize` 对「inset 自己变了」是不触发的（WebKit 晚一点才把 `viewport-fit=cover` 结算完、iOS 在转屏动画结束时才交出真值、通话状态栏压上来），2026-07-28 那次修复本质上就是在猜「什么时候该再读一次」。
+
+`platform/web/safeAreaProbe.ts`：探针改成**由 inset 决定宽高**——两个隐藏盒子，A 量 (left, top)、B 量 (right, bottom)，一个 `ResizeObserver` 盯着两个。inset 一变就把盒子改尺寸 → 观察器回调 → 推给订阅者（`IPlatform.onSafeAreaInsetsChanged()`，WeChat/CrazyGames 按缺省不实现 = 没有 inset 可订阅，行为退回纯 resize 驱动）。
+
+三个不显然的点，各有一条测试钉着：
+
+- **分两个盒子**，因为一个盒子按 top+bottom 定高会看不见 47/34 → 34/47 的对调（尺寸变化恰好为 0）；
+- **`display:none` 不行，得用 `visibility:hidden`** —— 不渲染的元素没有盒子，`ResizeObserver` 永远不会为它触发；
+- **观察器的比较基线（`lastNotified`）只归观察器自己所有**，不能和 `readSafeAreaInsets()` 共用一个「上次的值」：`ViewportResizer` 每次 `window.resize` 都会读 insets，而移动浏览器为一堆不是 resize 的事（工具栏滑动、软键盘）也发 resize——这样一次读数落在「盒子变了」和「回调（异步、在渲染步骤里）」之间，两边就比成相等，那条唯一该送出的通知会**非确定性地**丢掉。
+
+### 46.6 验证（含一条老实话）
+
+- `tsc --noEmit`（`tsconfig.test.json` + `fulllink`）干净、`lint` 0 error、`check:filelength` 过、`check:wechatpackage` + `check:bundlesize` 过；`build:mobile` / `build:web` / `build:wechat` 三个 webpack 构建都过。
+- `vitest run` 3453+ 例、`test:ui` 2639+ 例全绿。新增/改动的测试：`test/viewportGeometry.test.ts`（10 例，判定矩阵 —— 含「横屏不许误判成 `inset-eaten`」，iOS 的 `screen.width/height` 不随转屏交换）、`test/safeAreaProbe.test.ts`（8 例，DOM 与 `ResizeObserver` 手写 stub，含没有 `ResizeObserver` 的降级路径）、`test/ui/settingsViewportDiagnostics.ui.ts`（8 例，四种视口下的不重叠 + 缩放到真机后的可读性下限）、`test/ui/pixiAppViews.ui.ts`（23 例，改了监听生命周期那条的契约，新增三条：非大厅也 re-fit 但不重建、inset 变而尺寸不变算变化、平台推送 inset 变化）。
+- **变异验证**：把 insets 从守卫里去掉 → 2 例红；把 re-fit 改回大厅独占 → 3 例红；让 `readSafeAreaInsets()` 去动观察器的基线 → 5 例红。
+- 真实 Chrome（用户本机）：设置页底部读到 `inner 1280x631 | screen 1280x800 | dpr 1.5 | env 0/0/0/0 | vv 1280x631.3@0 | browser`，即 `WebPlatform.getViewportGeometry()` → `nav/auth` → 场景这条链在真浏览器里通了，且判定词老实地说了「这里是浏览器，不下结论」。
+  竖屏几何用 iPhone 13 的真实 inset（47/34）单独构了一次 `SettingsScene` 量：`designHeight 2113`、`gameLayer.y 47`、`scale 0.36110`、内容底边 810 —— 与 §46.1 表里「正确」那一行逐个吻合，截图上顶/底两条米色带也在。
+  事件驱动那条链在真浏览器里只验到了一半：**这个标签页是后台窗口（`document.visibilityState === 'hidden'`，`requestAnimationFrame` 停摆）**，而 `ResizeObserver` 的投递挂在渲染步骤上，所以它在这个环境里根本不触发（拿一个干净的 `ResizeObserver` 单独试过，连初次回调都没有）。于是改用同一处理函数的另一个入口验收：把两个探针盒子按真机值改成 47/34，再在**设置页（非大厅）**上发一次尺寸未变的 `resize` —— `gameLayer.y` 0 → 47、`scale` 0.5842 → 0.5093。改之前这两条（全局 re-fit、insets 纳入守卫）任缺其一，这都是个空操作。
+- **仍未在真机上验证的部分**：`contentInset: 'never'` 本身（要 Mac 上重新出包）和 `ResizeObserver` 的真实投递。所以这轮**不宣布修好了** —— 等用户拿新包在 iPhone 13 上看设置页那两行：判定词从 `inset-eaten` 变成 `env-reported`、`inner` 回到 390x844、`env` 读到 47/0/34/0，才算坐实。

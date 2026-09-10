@@ -18,6 +18,8 @@ export const zh = {
   'common.err.insufficientFunds': '余额不足',
   'common.err.rateLimited': '操作太频繁，请稍后再试',
   'common.err.unauthorized': '登录已失效，请重新登录',
+  // Distinct from unauthorized above (2026-09-10): a permission refusal is not an expired session.
+  'common.err.forbidden': '你没有执行该操作的权限',
   'common.err.notFound': '内容不存在或已失效',
   'common.syncFailed': '云存档同步失败，进度可能未保存',
   // Unified back-button label (SceneHeader prepends "← " automatically; see UI_DESIGN §3.1).
@@ -378,6 +380,9 @@ export const zh = {
   'auth.err.banned': '该账号已被封禁',
   // 2026-08-10：重新登录已能在 7 天宽限期内自动恢复账号（见 restoreIfWithinGrace），走到这条说明宽限期已过，数据已被清除。
   'auth.err.deleted': '该账号的 7 天宽限期已过，数据已被永久清除，无法恢复',
+  // Shown on the login screen when the app forced a logout because the token expired (ACCOUNT_DESIGN §5),
+  // so landing back here does not look like the app losing its place for no reason.
+  'auth.err.sessionExpired': '登录已失效，已自动退出登录，请重新登录',
 
   // ── Shop / top-up (S2-6) ─────────────────────────────────────────────────────
   'shop.title': '商店',
@@ -1052,8 +1057,8 @@ export const zh = {
   'family.elder': '长老',
   'family.member': '成员',
   'family.unknownMember': '（未知成员）',
-  'family.setElder': '设为长老',
-  'family.setMember': '降为成员',
+  'family.setElder': '长老',
+  'family.setMember': '成员',
   'family.kick': '踢出',
   'family.kick.needDemoteFirst': '该成员担任官职，请先卸任再踢出',
   'family.channel': '家族频道',

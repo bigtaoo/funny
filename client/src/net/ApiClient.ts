@@ -110,6 +110,14 @@ export class ApiClient {
     this.core.setToken(token);
   }
 
+  /**
+   * Register the persistence outlet for a server-renewed token (see ApiClientCore.onTokenRenewed).
+   * Setter rather than a public field so the facade keeps `core` private, same as every method here.
+   */
+  setTokenRenewedHandler(fn: (token: string) => void): void {
+    this.core.onTokenRenewed = fn;
+  }
+
   getToken(): string | null {
     return this.core.getToken();
   }

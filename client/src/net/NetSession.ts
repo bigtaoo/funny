@@ -40,10 +40,9 @@ import {
 } from './proto/transport';
 import { NetInputSource, type MatchStartInfo } from '../game';
 import { runJudge } from './judgeRunner';
-import { netLog, showToastMessage } from './log';
+import { netLog, notifySessionExpired } from './log';
 import type { ApiClient } from './ApiClient';
 import { TOKEN_KEY } from '../app/appConstants';
-import { t } from '../i18n';
 
 const log = netLog('session');
 
@@ -282,7 +281,11 @@ export class NetSession {
     if (existing && this.gatewayAuthRejected && !!this.platform.storage?.getItem(TOKEN_KEY)) {
       if (!this.sessionExpiredNotified) {
         this.sessionExpiredNotified = true;
-        showToastMessage(t('common.err.unauthorized'), 'error');
+        // Hands off to app.ts's session-expired sink (nav/auth.ts's forceLogout), which toasts and
+        // then navigates back to the login screen. Before 2026-09-10 this line was the toast alone,
+        // which told the player their session was dead and then left them in a lobby where every
+        // request 401s — see net/log.ts's setSessionExpiredSink doc comment.
+        notifySessionExpired();
       }
       return existing;
     }

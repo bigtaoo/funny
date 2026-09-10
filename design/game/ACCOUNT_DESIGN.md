@@ -174,6 +174,19 @@ initI18n
 
 > JWT 仍由 meta 签（`shared/src/jwt.ts`，30d）。持久化 token 只是免去重输密码，过期/失效仍回登录。
 
+> **订正（2026-09-10，ADR-089，iPhone 13 真机报告）**：上面「过期/失效仍回登录」两处都没有兑现，而且是两个互相独立的问题。
+>
+> **① 30 天从来不是「不活跃 30 天」，而是「上次输密码起 30 天」。** `signToken` 全仓只有 5 个调用点（`service/auth/credential.ts` 4 处 + `oauthBind.ts` 1 处），**全是显式登录/注册/OAuth 绑定**，此后没有任何一处会换 token。于是天天上线的玩家照样在第 30 天被踢。**改为滑动续期**：`metaserver/src/auth.ts` 的 `bearerAuth` 验签成功后看 `exp`，剩余不足 `TOKEN_RENEW_WINDOW_MS`（10 天）就用同一个 accountId 重签，塞进响应头 `x-nw-token`；客户端在 `ApiClientCore.fetchRaw()`（所有 REST 请求唯一收口）读到就换掉，并由 `createAppCore` 注册的 outlet 回写 `nw_token`。于是每 20 天之内开一次 app 就能无限续下去。
+>
+> - **不引入 refresh token**：续期的前提是手上那个 token 还有效，所以泄露的 token 依然被同一个 30 天上界封住；多一套存储/撤销表/端点换不回对应的收益。
+> - **只在 metaserver 签**：`worldsvc`/`socialsvc`/`auctionsvc`/`analyticsvc` 只验签、不连账号库，没有「这个账号还活着吗」的依据；客户端换了 token 它们自然受益。
+> - **CORS `exposedHeaders` 是成败开关**：`x-nw-token` 不在 CORS 安全列表响应头里，不加就是「服务端照签、客户端永远读不到、且没有任何一处报错」。Capacitor 的 origin 是 `capacitor://localhost`，跨域同样吃这条。
+> - **回写只覆盖、不新建**：匿名 device/wx 会话的 token 只在内存里（`NetSession.freshToken` 的 `api.auth` 路径），写进 `nw_token` 会把游客**静默提升**成「已登录」——`resolveEntry` 不再给登录页、Settings 开始给出登出/改名/删号。所以 outlet 只在 `TOKEN_KEY` 已有值时才写。
+>
+> **② 真失效时只弹 toast、不导航**，玩家卡在一个所有请求都 401 的大厅里。**改为强制退回登录页**：`net/log.ts` 的 `sessionExpiredSink` + `notifySessionExpired()`（同文件 `appealSink` 那一套），触发点收在传输层三处（`ApiClientCore.request` / `WorldApiCore` 的 request 助手 / `NetSession.freshToken`），`app.ts` 把 sink 指向 `nav/auth.ts` 的 `forceLogout()`：toast 停 1.5 s → 复用 `doLogout()` 整套清理 → `goLogin({ notice: 'auth.err.sessionExpired' })`（LoginScene 的 landing 视图为此第一次有了错误行）。**对局中命中也直接踢回登录页**——走到这一步连续期都救不回来，gateway 必然也连不上。三个闸门：一次性 latch（并发 401 burst，下次登录成功才重新上膛）、teardown 窗口（`resetForLogout()` 的 best-effort flush 拿死 token 必然再 401，会自我递归）、离线模式与无持久化 token 的游客不触发。
+>
+> **顺带**：`client/src/net/apiErrorMessage.ts` 里 `UNAUTHORIZED`/`TOKEN_EXPIRED`/`FORBIDDEN` 三个 code 服务端从来没发过（401 只有 `UNAUTHENTICATED`，权限拒绝是 `NO_PERMISSION`），真 401 一直落到泛用文案。补上 `UNAUTHENTICATED`，并把权限拒绝拆到新文案 `common.err.forbidden`（「权限不足」≠「登录过期」）。
+
 ---
 
 ## 6. 安全要点
