@@ -27,6 +27,7 @@ import type { WorldMapRendererFog } from './fog';
 import type { WorldMapRendererVignette } from './vignette';
 import type { WorldMapRendererBuild } from './build';
 import { markFeatureUsed } from '../../../assets/prefetchPolicy';
+import { decorationsQuiet } from '../../../render/idleQuiet';
 
 export interface LifecycleHandlers {
   update(dt: number): void;
@@ -55,7 +56,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     // Eraser-wipe reveal of the loading cover, once hideLoading() has handed it off (loadingReveal.ts).
     if (ctx.loadingEraseLayer) updateLoadingErase(ctx, dt);
     // Once-per-second HUD countdown refresh (P1-1): march/siege remaining-time text previously only
-    // advanced on the ~5s poll tick or an incoming push, sitting visibly frozen in between. This just
+    // advanced only on a viewport refetch or an incoming push, sitting visibly frozen in between. This just
     // repaints the HUD from existing state — no network — so it's cheap and safe to run continuously
     // (and is the prerequisite for P1-2 removing the poll: without it, countdowns would freeze
     // entirely once nothing periodically calls renderHud()).
@@ -82,7 +83,10 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     // stepped 10 times a second from stepped 60 — the same "hand-drawn does not need to be smooth"
     // call art-direction §5.4 makes for everything else here.
     ctx.shieldAnimAcc += dt;
-    const shieldStep = ctx.shieldAnimAcc >= 1 / SHIELD_ANIM_FPS;
+    // ...and not at all once nobody has touched the map for a while: the bubble is ambience, and a
+    // held one stops re-arming the render loop's idle throttle (render/idleQuiet.ts). The break-pop
+    // flashes below are NOT gated — those are one-shot reactions to something that just happened.
+    const shieldStep = ctx.shieldAnimAcc >= 1 / SHIELD_ANIM_FPS && !decorationsQuiet();
     if (shieldStep) ctx.shieldAnimAcc = 0;
     if (shieldStep && ctx.shieldGeom.size > 0) {
       for (const [key, geom] of ctx.shieldGeom) {
@@ -120,7 +124,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     if (ctx.overlayInkDirty || overlayInkSignature(ctx) !== ctx.overlayInkSig) {
       this.fog.renderOverlayInk();
     }
-    // Tokens, on the other hand, DO move every frame: a march rides its route between the ~5s poll
+    // Tokens, on the other hand, DO move every frame: a march rides its route between the server
     // ticks instead of jumping on each one, and an occupy hold plays its 'attacking' clip
     // throughout. This is sprite transforms and clip playback only — no Graphics rebuild.
     //

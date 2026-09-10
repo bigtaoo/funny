@@ -9,6 +9,8 @@
 // isolated in a controlled way: REV_RETRIES exhausted (returns false, picked up next tick) and the
 // mid-loop re-check discovering a concurrent write already cleared/pushed back the decay clock, plus
 // the per-account write-failure catch in the outer sweep loop.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { describe, it, expect } from 'vitest';
 import type { Collections } from '@nw/shared';
 import { decayReputationOnce } from '../src/reputationDecay.js';

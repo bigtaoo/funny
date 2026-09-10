@@ -4,9 +4,10 @@
 // isn't something test/helpers/fakeCollection.ts implements, so a real Mongo instance is the pragmatic
 // choice here (same rationale as economy-service-unit.test.ts's header comment).
 //
-// Existing e2e test read for scenarios/shapes: test/pvp-card-stats.e2e.test.ts (imports '../dist/app.js',
+// Existing e2e test read for scenarios/shapes: test/pvp-card-stats.e2e.test.ts (imported
+// '../dist/app.js' until 2026-09-09,
 // exercises the same business logic through /internal/match/report + GET /internal/pvp-card-stats, but
-// records 0% src coverage for this module) — this file re-derives its scenarios calling
+// recorded 0% src coverage for this module) — this file re-derives its scenarios calling
 // accruePvpCardStats directly instead of going through the HTTP route + full match-settlement pipeline.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, compressReplayDoc, type MongoHandle, type MatchReplayDoc } from '@nw/shared';

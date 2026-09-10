@@ -322,9 +322,18 @@ export class WorldMapContext {
   chatBarRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
   /** Header-bar resource production cluster (renderHeaderHud) — tapping it opens the Territory Overview panel. */
   resClusterRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
-  /** Latest world-chat message, polled alongside marches (§25 follow-up) — null until first fetch. */
+  /**
+   * Latest world-chat message (§25 follow-up). Seeded on scene entry from `/world/enter`'s
+   * `worldChannel` page (net/loaders.ts loadData) and kept live after that by the `nation_msg` push
+   * (net/push.ts applyNationMsg) — there is no poll behind it any more (P1-2), so it is null only
+   * while the entry fetch is in flight, or if that fetch failed (offline).
+   */
   worldChatLatest: WorldChatMessage | null = null;
-  /** Count of fetched messages newer than the local "last seen" mark; capped by refreshWorldChat's page size. */
+  /**
+   * Count of messages newer than the local "last seen" mark. Same two producers as
+   * `worldChatLatest`: the entry payload computes it over its `worldChannel` page (so the seed value
+   * is capped by that page size), each later push increments it by one.
+   */
   worldChatUnread = 0;
   /**
    * Hit rects for the expanded team panel (2026-08-30, was the march list): one entry per row, in

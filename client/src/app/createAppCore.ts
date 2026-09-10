@@ -273,6 +273,14 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
       void nav.goStatePlayer(shareCode);
       return;
     }
+    // Hand the persisted token to ApiClient before the gates run, not only later in resolveEntry
+    // (2026-09-09 fix): the gates answer with saveManager.setFlag, and that only pushes to the server
+    // while `online()` (i.e. a token is held). A returning player without this would answer the age
+    // gate into a local-only write, which resolveEntry's own pull then overwrites with the cloud
+    // `flags` — leaving the gate to ask again on every single launch. Setting the token this early is
+    // safe: resolveEntry/doAuth still (re)apply the authoritative one for their own path.
+    const storedToken = platform.storage.getItem(TOKEN_KEY);
+    if (api && storedToken) api.setToken(storedToken);
     if (saveManager.getFlag(SEEN_INTRO_FLAG)) {
       gateConsent(() => void nav.resolveEntry());
     } else {

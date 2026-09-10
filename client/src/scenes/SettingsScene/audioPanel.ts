@@ -27,8 +27,7 @@
 // present) and fails if any slider rect intersects any hit rect.
 import * as PIXI from 'pixi.js-legacy';
 import { makeText } from '../../render/pixiText';
-import { SketchPen } from '../../render/sketch';
-import { ui as C } from '../../render/sketchUi';
+import { ui as C, sketchPanel } from '../../render/sketchUi';
 import { t } from '../../i18n';
 import { FS, snapFont } from '../../render/fontScale';
 import type { Rect } from '../../layout/ILayout';
@@ -86,11 +85,9 @@ export function drawAudio(host: AudioPanelHost): void {
   const btnH = Math.round(h * 0.05);
   const bx = Math.round(w * 0.94) - btnW;
   const by = titleY - Math.round(btnH / 2);
-  const box = new PIXI.Graphics();
-  box.beginFill(s.muted ? C.red : C.paper);
-  box.drawRect(0, 0, btnW, btnH);
-  box.endFill();
-  new SketchPen(box, 97).rect(2, 2, btnW - 4, btnH - 4, { color: s.muted ? C.gold : C.dark, width: s.muted ? 2.8 : 2, jitter: 1.0 });
+  const box = sketchPanel(btnW, btnH, {
+    fill: s.muted ? C.red : C.paper, border: s.muted ? C.gold : C.dark, width: s.muted ? 2.8 : 2, seed: 97,
+  });
   box.x = bx; box.y = by;
   container.addChild(box);
   const btnLbl = txt(t(s.muted ? 'settings.audioMuteOn' : 'settings.audioMuteOff'), snapFont(Math.round(btnH * 0.4)), s.muted ? 0xffffff : C.dark, s.muted);

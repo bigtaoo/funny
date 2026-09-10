@@ -703,3 +703,126 @@ engine 是全仓唯一非 vitest 的包（`tsc -b` 编到 `dist/` 再 `node --te
 客户端那边同批还补了 `teamTroops.ts`→`teamStamina/teamCanAct` 的直接单测（6 例，此前只有经 `teamStatus`/picker 的间接覆盖，而"缺 state = 满"这个默认值错了会把玩家整个锁在世界地图外）、`doMarchTeam` 的前置检查（5 例，就地占领根本不经过 picker 的过滤）、以及服务端真答 `TEAM_EXHAUSTED` 时的 `errors.ts` 映射（1 例）。
 
 **环境**：主检出的 `server/shared/dist` 是旧的，worldsvc 单测第一次跑直接 `tileGarrisonBaseline is not a function` 红了 14 例——先 `cd server/shared && npm run build`。这不是本轮改坏的，是任何一次在主检出跑 worldsvc 测试都会踩的门槛。
+
+## Apple IAP 接缝补测：`appleServerApi.ts` 63.7% → 100%，六个模块全部 100% 行覆盖（2026-09-09，worktree `feat/apple-iap-test-gaps`）
+
+**触发**：例行"这两天的功能有没有测试可以补"。09-07/09-08 那批 Apple 改动（App Store Server API +
+Notifications V2 + StoreKit 2 客户端）测试写得很密，但按覆盖率实测，`commercial` 里最低的文件恰好是
+整条链路的地基。
+
+### 逐个缺口
+
+| 文件 | 改前 | 改后 | 缺的是什么 |
+|---|---|---|---|
+| `iap/appleServerApi.ts` | 63.7% | **100%** | `verifyTransaction` / `transactionHistory` **一行没跑过**；`withEnvFallback` + `isNotFound`（API client 侧的 production→sandbox 回退）没跑过；`decodeTransaction` 的 verifier 回退没跑过；`createAppleServerApi` 成功构造路径没跑过 |
+| `iap/appleRootCAs.ts` | 77.8% | **100%** | `appleRootCAs()` **从未被任何测试调用** |
+| `service/appleConsumption.ts` | 79.4%（分支 50%） | **100%** | `consumptionPercentage` 只测到"没有对应 recharge 行 → undefined"这条早退，底下整段账本测算没跑过 |
+| `service/appleNotifications.ts` | 94.1% | **100%** | 不带 transaction 的通知（`!tx` 分支）；`consumption_failed`；日志行写失败；year_card 的 `grantPeriod` 分支；发货被拒时的 outcome |
+| `service/appleAccount.ts` | 91.0% | **100%** | `appleAccountTokenFor` 的 11000 恢复路径；`linkAppleSubscription` 的 swallow |
+| `metaserver/src/apple/webhookRoute.ts` | 25% | **100%** | 不是缺测试，是**测试导的是 `dist/`** —— 见下 |
+
+### 三个值得单独记的发现
+
+**① 09-07 修的那个 bug 只修了一半的测试。** `appleEnvFallback.test.ts` 的头注释说得很清楚：
+"每个别的 Apple 测试都注入假的 `AppleServerApi`，而假体位于环境判断之上"。于是回归测试打在
+`makeAppleServerApi`——但只打在**通知**验签那条路上。同一个模块里**交易**那条路（`verifyTransaction`
+给 `/iap/verify` 用、`transactionHistory` 给冷启动同步补 period 用）加上 API client 侧的
+`isNotFound` 回退，是同一类「这个载荷/这个 id 属于哪个环境」的判断，失败方式也一样静默：沙盒交易在
+production 查不到，误判成"Apple 不认识这笔交易" = 付了钱什么都没有，服务端不报错。
+`appleServerApi.test.ts`（48 例）用**真** `SignedDataVerifier`（`Environment.LOCAL_TESTING` + 一次性
+ES256 密钥，抄 `appleNotifications.e2e.test.ts` 的手法，但不要 Mongo）和**真**
+`APIException`/`VerificationException`——后者是必须的，`isNotFound`/`isWrongEnvironment` 开头都是
+`instanceof`，手搓的 `{ apiError }` 对象能让每条断言都过而什么都没证明。**变异验证 12 处**全红。
+顺带：`appleServerApi.ts:51` 的文档注释一直指向 `appleServerApi.test.ts`，而这个文件此前不存在。
+
+**② `appleRootCAs()` 是最不该没测的那种文件。** 三张根证书的 base64 抄错一个字符，
+`SignedDataVerifier` 照样构造成功、通知照样送到、每一条都 `INVALID_CERTIFICATE`——而 webhook 按设计
+对验不过的载荷回 **200**（重投也不会变好）。于是整条 iOS 订阅通道停摆，Apple 那边每次投递都记
+SUCCESS，没有一处变红。该文件自己的注释已经写了"指纹记在这里，好让未来的更新可以被审计而不是被
+信任"——`appleRootCAs.test.ts`（12 例）把那句话变成机器执行：逐张核 SHA-256 指纹、自签、`ca`、未过期，
+外加 `SignedDataVerifier` 自己肯收。变异验证：把 G3 的 base64 翻一个字符，红 1。
+
+**③ "并发首次申请"那条用例过得靠运气。** `appleNotifications.e2e.test.ts` 里已有一条
+`Promise.all` 三个 `tokenFor('player-11')`，绿的——但 `appleAccount.ts:35-39`（11000 恢复）覆盖率是 0：
+真驱动的时序让后到者的 `findOne` 一般就看见了赢家的行，早退了。新增一条**确定性**的：在 `findOne` 和
+`insertOne` 之间插一行竞争者（这正是真实竞争中输家看到的状态），唯一索引于是产出真正的驱动错误。
+符合本册"写测试时的确定性规则"——要么次次过，要么次次挂。
+
+### `dist/` 导入 = 覆盖率信号消失（一个跨包的通用坑）
+
+`metaserver/test/appleWebhookRoute.test.ts` 9 例写得很到位（Apple 能看见的就是状态码，钉的正是
+"哪些情况会让 Apple 重投"），但它 `from '../dist/apple/webhookRoute.js'`。测的代码是对的
+（`npm test` = `tsc -b && vitest run`，dist 永不陈旧），但 **v8 把覆盖率记在它真正加载的那个文件上**，
+所以这 9 例对 `src/apple/webhookRoute.ts` 贡献 0%，该文件读作 25%：一份完备的套件存在，而文件在
+90% 门禁眼里等于裸奔。改成 `../src/` 后 25% → 100%，断言一字未改。
+
+**这不是孤例**：`metaserver/test` 里还有一批同形状的文件。本轮只改了这一个（本任务范围），其余是同一
+形状的待办——每一个都在让自己覆盖的源码文件在报告里显得比实际更糟，而"补覆盖率"的下一轮会照着这些虚低
+的数字去挑目标。**（当天后续任务已全部改完，连数字订正一起见下一节；当时估的"53 个"是 `grep` 把注释里
+的引用也数进去了，真实是 34 个。）**
+
+### 把剩下的 dist 导入全改掉（2026-09-09 当天的后续任务）
+
+上一节说"其余 52 个是同一形状的待办"，这一节就是那件事。**顺带订正那个数字**：`grep -l "from '../dist/"`
+把注释里引用这个路径的句子也数进去了（这批单测的头注释恰好每篇都写着"某个 e2e 从 `'../dist/app.js'`
+导入"）。真正带 import 语句的是 **34 个文件**——`appleWebhookRoute.test.ts` 上一节已改，这轮改剩下的
+**33 个文件、55 行 import**（`'../dist/X.js'` → `'../src/X.js'`，断言一个字没动）。139 个测试文件里其余
+的本来就导 src。
+
+**跑前跑后（`npm run test:coverage`，140 文件 / 2341 例，两遍全过）**：
+
+| | 改前 | 改后 | Δ |
+|---|---|---|---|
+| Lines | 94.57%（8332/8810） | **97.16%**（8560/8810） | +2.59 |
+| Functions | 95.84%（508/530） | **97.35%**（516/530） | +1.51 |
+| Branches | 99.34%（4065/4092） | 98.79%（**4251**/**4303**） | −0.55 |
+
+**只有 5 个文件动了**，因为前三轮补测早就用 src 导入的 `*-unit.test.ts` 把大部分模块补上了；剩下的正是
+那几个"只有 e2e 走 HTTP 才会碰到"的路由/服务层：
+
+| 文件 | 行覆盖 | 行数 |
+|---|---|---|
+| `src/service/progression.ts` | 53.43% → **93.65%** | 189 |
+| `src/internal/accountRoutes.ts` | 54.41% → **90.10%** | 283 |
+| `src/internal/matchReport/miscRoutes.ts` | 64.15% → **98.11%** | 53 |
+| `src/service/auth.ts` | 80.95% → **100%** | 63 |
+| `src/internal/economyRoutes.ts` | 86.32% → **95.29%** | 234 |
+
+**分支百分比会掉，别误读成回退**——就是本文档 metaserver 第三轮那节记的同一件事：v8 只统计**被执行过的
+函数内部**的分支，所以这几个文件的函数第一次在 vitest 下跑起来，分母跟着涨。逐个看绝对数就清楚：
+`progression.ts` 33/33 → 70/77、`accountRoutes.ts` 78/79 → 136/148、`miscRoutes.ts` 11/11 → 18/19、
+`economyRoutes.ts` 124/128 → 132/142。包级两道 90% 门槛（行 97.16% / 分支 98.79%）都还有大把余量。
+
+**副产品：这 30 个此前不可见的未覆盖分支就是下一轮的靶子**（`accountRoutes.ts` 12、`economyRoutes.ts`
+10、`progression.ts` 7、`miscRoutes.ts` 1）。它们不是本轮改坏的，是本轮才第一次进入分母。
+
+**装了门禁**（`server/eslint.config.mjs`）：test 文件此前整体不在 lint 范围内（见那个文件的头注释），
+现在多一个**只带 `no-restricted-imports` 一条规则**的 `*/test/**/*.ts` 块，禁掉 `../dist/*` 与
+`../../dist/*`（即"本包自己的编译产物"这两种写法）。**跨包的 `../../<pkg>/dist/*` 故意放过**：
+`admin/test/comp-mail.e2e.test.ts` 和 `metaserver/test/mail-claim.e2e.test.ts` 是跨服务连线测试，被导的
+那个包由它自己的测试轮次测量覆盖率，没有任何东西被遮蔽（也因此 `mail-claim.e2e.test.ts` 那 4 行
+`'../../socialsvc/dist/*.js'` 本轮没动，上面"环境"那一节要求先 build socialsvc 的门槛依旧成立）。
+两处实操细节：①这个块里要**注册 `@typescript-eslint` 插件但不启用任何规则**，否则 test 文件里那些为 src
+配置写的 `eslint-disable @typescript-eslint/*` 注释会变成"Definition for rule was not found"错误；
+②同理 `reportUnusedDisableDirectives: 'off'`。门禁自测过：往 `feedback.e2e.test.ts` 注入一行
+`'../dist/app.js'` → 红，改回 → 绿；`test/helpers/` 下造一个 `'../../dist/app.js'` → 也红。顺带清掉
+`shared/test/march.test.ts` 里一条 `eslint-disable-next-line import/first`——`import` 插件全仓库都没配，
+那条指令一直是死的，只是 test 文件从来没被 lint 过所以没人看见。
+
+**注释也是这轮的一部分**：那 27 篇单测/分支测的头注释里"某个 e2e 导 dist，所以这些行记不到 src"是现在时
+写的，改完就成了假话。统一在每篇头注释末尾加一行过去时标注（指回本节），另有 8 处短句式的单独改写；
+被改的 33 个文件自己那句"(imports from dist)"改成准确说法——`tsc -b` 现在只为 `@nw/shared` 的 dist，
+不为本文件的 import。
+
+### 环境（worktree 里跑 commercial/metaserver 测试的门槛）
+
+`server/` 按 `worktrees.md` 的规矩真实 `npm install`（不整体 junction），然后**还要**依次 build 三个包，
+每个对应一种完全不同的报错：`shared`（否则 commercial 的 e2e 全部 `Failed to resolve entry for package
+"@nw/shared"`，表现是文件级 FAIL 而不是 skip）、`engine`（否则 metaserver 的 `tsc -b` 挂在
+`internal/replayDecode.ts` 找不到 `@nw/engine`，测试一个都跑不起来）、`socialsvc`（否则 metaserver 的
+`mail-claim.e2e.test.ts` 单个文件挂在 `Failed to load url ../../socialsvc/dist/mailService.js`——这条
+最阴，139/140 个文件绿、2335 例全过，只有一个文件级 FAIL，很容易当成自己改坏了什么）。
+⚠️ 顺带一个测量陷阱：commercial 的 e2e 用 `describe.skipIf(!mongo)`，`@nw/shared` 没 build 时它是
+**FAIL**、Mongo 不可达时它是**静默 skip**——后者会让 `appleAccount`/`appleConsumption`/
+`appleNotifications` 三个文件的覆盖率读数凭空低一大截。看这三个数之前先确认 e2e 真的跑了
+（`Tests` 行没有 skipped 计数）。

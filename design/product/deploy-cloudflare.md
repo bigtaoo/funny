@@ -36,13 +36,20 @@ VPS 上**不再跑 mongo 容器**——库托管到 Atlas。本机只剩 Node �
 | `slg.gamestao.com` | Cloudflare Workers（静态资源） | SLG 地图编辑器（**发布配置已就绪**，Worker `nivara-map-editor`，见 §6） | 橙 |
 | `ops.gamestao.com` | Cloudflare Workers（静态资源） | 运维后台前端（建议加 CF Access 登录保护） | 橙 |
 | `grafana.gamestao.com` | VPS（经 cloudflared 隧道） | 日志查询（Loki+Grafana，CF Access 保护） | 橙（隧道自动） |
-| `api.gamestao.com` | VPS:443 | REST（metaserver，经 Caddy `/api`） | 橙 |
+| `api.gamestao.com` | VPS:443 | REST（metaserver，经 Caddy `/api`） | **灰（2026-09-09 实测）** |
 | `gw.gamestao.com` | VPS:443 | 控制面 WS `/gw` | 橙 或 灰（见 §5） |
 | `game.gamestao.com` | VPS:443 | 数据面 WS `/ws`（锁步） | 橙 或 灰（见 §5） |
 
 > **子域数量无需担心**：CF Free 单 zone DNS 记录上限 1000 条；每个前端各一个 Worker，用 `routes[].custom_domain=true` 各自绑定子域（`wrangler deploy` 自动建 DNS + 边缘证书）。
 > **免费 SSL 只覆盖一级通配** `*.gamestao.com`——保持单层子域命名（`animator.gamestao.com` ✅，别用 `a.b.gamestao.com`），否则要付费 ACM。
 
+> ⚠️ **2026-09-09 实测更正**：`api.gamestao.com` 这一行**当前不是橙云**。对线上打一次
+> `GET /world/active-season` 只拿到 `via: 1.1 Caddy` + `alt-svc: h3`，**没有 `cf-ray`、没有
+> `server: cloudflare`** —— 请求直接落在 VPS 的 Caddy 上。这不是小事：橙云会自己压缩响应，
+> 灰云不会，所以 SLG 地图那 17.6× 的压缩**完全依赖 `server/Caddyfile` 的 `encode`**
+> （见 `design/game/WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md` §8.10）。上表的云状态列是
+> 规划值，**要用就先 curl 一次真域名**。
+>
 > 注：上表把 REST/WS 拆成 `api`/`gw`/`game` 三个子域是「干净版」。当前 `Caddyfile` 是**单站点按路径分流**（`/api` `/gw` `/ws` `/world` `/analytics` 同一域名）。起步阶段最省事的做法：所有后端流量走**一个**子域 `api.gamestao.com`，路径分流交给 Caddy，前端只需把 API base 配成 `https://api.gamestao.com`、WS 配成 `wss://api.gamestao.com/gw` 和 `/ws`。等需要按区隔离再拆子域。
 
 ## 3. 后端部署（VPS）

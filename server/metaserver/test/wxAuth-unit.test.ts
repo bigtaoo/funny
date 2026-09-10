@@ -5,6 +5,8 @@
 // indirectly through POST /auth/wx, but imports `buildApp` from '../dist/app.js' (v8 coverage doesn't
 // attribute dist-loaded execution back to src), and it never configures NW_WX_APPID/NW_WX_SECRET, so the
 // real jscode2session HTTP branch (success + failure) has never run against src/accounts/wxAuth.ts at all.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { exchangeWxCode } from '../src/accounts/wxAuth.js';
 

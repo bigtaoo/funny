@@ -15,10 +15,10 @@
 // pre-fix code, so those four are a best-effort correctness canary (they'd catch a regression on a setup
 // where the race *does* reproduce) rather than a proven repro of the exact failure mode — the fix itself
 // (catching code 11000 and falling through to a re-read) is still correct and harmless when no race occurs.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type MongoHandle } from '@nw/shared';
-import { resolveByDevice, resolveByOpenid, resolveByOAuth, bindOAuth, registerWithPassword } from '../dist/accounts.js';
+import { resolveByDevice, resolveByOpenid, resolveByOAuth, bindOAuth, registerWithPassword } from '../src/accounts.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_accounts_race_test';

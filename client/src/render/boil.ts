@@ -13,6 +13,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from './sketch';
 import { bake } from './bake';
+import { decorationsQuiet } from './idleQuiet';
 
 export interface BoilOpts {
   /** Number of baked variants to cycle (default 3). */
@@ -56,15 +57,28 @@ export class BoilingSprite extends PIXI.Container {
     this.frames.forEach((f, i) => { f.visible = i === 0; this.addChild(f); });
     this.eventMode = 'none';
 
-    this.tick = (): void => {
-      this.acc += PIXI.Ticker.shared.deltaMS / 1000;
-      if (this.acc < this.interval) return;
-      this.acc = 0;
-      this.frames[this.idx]!.visible = false;
-      this.idx = (this.idx + 1) % this.frames.length;
-      this.frames[this.idx]!.visible = true;
-    };
+    this.tick = (): void => this.step(PIXI.Ticker.shared.deltaMS / 1000);
     PIXI.Ticker.shared.add(this.tick);
+  }
+
+  /**
+   * Advance the cycle by `dtSec`. Separate from the ticker callback so it can be driven directly —
+   * the callback reads `Ticker.shared.deltaMS`, which a test cannot set without racing the real
+   * `requestAnimationFrame` loop that ticker starts for itself.
+   */
+  step(dtSec: number): void {
+    // Charm accent, nothing a player reads — so it holds its current variant once nobody has
+    // touched the screen for a while (render/idleQuiet.ts). A held frame also stops changing the
+    // stage signature, which is what lets the render loop's own idle throttle engage at all.
+    // `acc` is deliberately left where it was, so reviving continues the cycle instead of flipping
+    // immediately.
+    if (decorationsQuiet()) return;
+    this.acc += dtSec;
+    if (this.acc < this.interval) return;
+    this.acc = 0;
+    this.frames[this.idx]!.visible = false;
+    this.idx = (this.idx + 1) % this.frames.length;
+    this.frames[this.idx]!.visible = true;
   }
 
   override destroy(opts?: Parameters<PIXI.Container['destroy']>[0]): void {

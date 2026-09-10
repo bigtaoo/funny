@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { HttpCommercialClient } from '../dist/commercialClient.js';
+import { HttpCommercialClient } from '../src/commercialClient.js';
 
 const KEY = 'k-internal';
 let lastReq: { url: string; method: string; key: string | undefined; body: string } | null = null;

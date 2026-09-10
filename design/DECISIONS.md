@@ -11,7 +11,7 @@
 
 ---
 
-## ADR 索引（共 81 条 = 80 个编号 + 一条字母子条 ADR-026b）
+## ADR 索引（共 88 条 = 87 个编号 + 一条字母子条 ADR-026b）
 
 > **计数由脚本核对**（`grep -cE '^\| \[ADR-' DECISIONS.md`）。2026-09-03 审计时标题写着「共 69 条」而实际有 79 行，且 ADR-079 有正文没索引行——本文自己那条「新增条目要同时往这张表里加一行」的规矩失效了一次。
 
@@ -101,6 +101,10 @@
 | [ADR-081](DECISIONS_ADR-070-onward.md#adr-081-apple-iap-走-app-store-server-api--notifications-v2弃用-verifyreceipt--accepted--2026-09-07) | Apple IAP 走 App Store Server API + Notifications V2，弃用 `verifyReceipt` | Accepted | 2026-09-07 |
 | [ADR-082](DECISIONS_ADR-070-onward.md#adr-082-客户端换-storekit-2部署目标抬到-ios-15finish-由服务端确认后触发appaccounttoken-随-bootstrap-下发--accepted--2026-09-07) | 客户端换 StoreKit 2：部署目标抬到 iOS 15、finish 由服务端确认后触发、`appAccountToken` 随 `/bootstrap` 下发 | Accepted | 2026-09-07 |
 | [ADR-083](DECISIONS_ADR-070-onward.md#adr-083-渲染循环三级节流dpr-上限-2maxfps-60菜单场景按需重绘含派生式变更检测--重绘地板--accepted--2026-09-08) | 渲染循环三级节流：dpr 上限 2、`maxFPS` 60、菜单场景按需重绘（派生式变更检测 + 500 ms 重绘地板）+ 大厅面板改走烘焙图集 + 世界地图墨线与 token 拆开 | Accepted | 2026-09-08 |
+| [ADR-084](DECISIONS_ADR-070-onward.md#adr-084-诊断开关统一走-platformstorage健康会话上报-render_profile真机帧数重绘率--accepted--2026-09-08) | 诊断开关统一走 platform.storage；健康会话上报 `render_profile`（真机帧数/重绘率） | Accepted | 2026-09-08 |
+| [ADR-085](DECISIONS_ADR-070-onward.md#adr-085-worldmapscene-也改按需重绘paint-reactive以及一次把-825-ms-打回-13-ms-的更正--accepted--2026-09-08) | `WorldMapScene` 也改按需重绘（`paint: 'reactive'`）——以及一次把 8.25 ms 打回 1.3 ms 的更正 | Accepted | 2026-09-08 |
+| [ADR-086](DECISIONS_ADR-070-onward.md#adr-086-空闲功耗第二轮tick-率降到-20-hz装饰动画静默共用-ticker-也上限powerpreference-low-powerrategate-定时器改惰性--accepted--2026-09-09) | 空闲功耗第二轮：tick 率降到 20 Hz、装饰动画静默、共用 ticker 也上限、`powerPreference: 'low-power'`、rateGate 定时器改惰性 | Accepted | 2026-09-09 |
+| [ADR-087](DECISIONS_ADR-070-onward.md#adr-087-equipmentts-也走深别名客户端那份手抄副本删掉不再三处同步--accepted--2026-09-09) | `equipment.ts` 也走深别名：客户端那份手抄副本删掉，不再「三处同步」 | Accepted | 2026-09-09 |
 
 ---
 

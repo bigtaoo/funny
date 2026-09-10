@@ -3,9 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout, Rect } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { SketchPen } from '../render/sketch';
-import { palette } from '../render/theme';
-import { drawLoadingOverlay, tearDownChildren, ui as C } from '../render/sketchUi';
+import { buildPaperBackground, drawLoadingOverlay, tearDownChildren } from '../render/sketchUi';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { BusyTracker, withTimeout, TimeoutError } from '../ui/busyTracker';
 import { showToastMessage } from '../net/log';
@@ -336,18 +334,18 @@ export class SettingsScene implements Scene {
     };
   }
 
+  /**
+   * The notebook page, from the shared baked builder (render/sketchUi.ts) like every other scene.
+   *
+   * This screen used to carry a third, hand-rolled copy of the same 27 ruled lines + red margin
+   * rule, stroked live and never baked — 462,420 of this scene's 590,214 indices, measured
+   * 2026-09-09, more than the whole pre-ADR-083 lobby. And `render()` tears the tree down and
+   * rebuilds it, so that triangulation was paid again on every wheel tick of the avatar picker and
+   * twice a second while the rename caret blinked. The lobby's copy (LobbyScene/core.ts) bakes; only
+   * this one did not, which is why nothing in the ADR-083 sweep saw it.
+   */
   private drawBackground(): void {
-    const { w, h } = this;
-    const bg = new PIXI.Graphics();
-    bg.beginFill(C.bg); bg.drawRect(0, 0, w, h); bg.endFill();
-    const pen = new SketchPen(bg, 0x5bd1c7);
-    const lineGap = Math.round(h / 28);
-    for (let y = lineGap; y < h; y += lineGap) {
-      pen.line(0, y, w, y, { color: palette.ruleLine, width: 1.1, jitter: 0.7, taper: 0.9, double: false });
-    }
-    const mx = Math.round(w * 0.09);
-    pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
-    this.container.addChild(bg);
+    this.container.addChild(buildPaperBackground('settingsbg', this.w, this.h));
   }
 
   private drawHeader(): number {

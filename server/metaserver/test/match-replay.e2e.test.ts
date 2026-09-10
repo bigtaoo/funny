@@ -1,11 +1,11 @@
 // Match replay fetch end-to-end (S1-RP): /internal/match/report archives the replay → GET /match/{roomId}/replay.
 //   Participants can retrieve it (two paths: inline or external replayRef), non-participants get 404, missing match gets 404.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, compressReplayDoc, decompressReplayDoc, type JwtConfig, type MongoHandle, type MatchReplayDoc } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_replay_test';

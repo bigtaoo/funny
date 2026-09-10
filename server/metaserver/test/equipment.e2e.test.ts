@@ -5,7 +5,7 @@
 //   Player POST /equipment/equip (equip/unequip, slot validation, global/byUnit)
 //   Player POST /equipment/reforge (E6, EQUIPMENT_DESIGN §7.8: material slot/rarity/level validation)
 //   Internal /internal/equipment/{escrow,grant} (worldsvc auction escrow/transfer; equipped/locked rejected, idempotent)
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createMongo,
@@ -19,9 +19,9 @@ import {
   salvageRefund,
 } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import type { CommercialClient } from '../dist/commercialClient.js';
-import { buildApp } from '../dist/app.js';
-import { reforgeEquipment, escrowEquipment, salvageEquipment, craftEquipment } from '../dist/equipment.js';
+import type { CommercialClient } from '../src/commercialClient.js';
+import { buildApp } from '../src/app.js';
+import { reforgeEquipment, escrowEquipment, salvageEquipment, craftEquipment } from '../src/equipment.js';
 import { seedEquipment, seedEquipmentBatch, readEquipmentInv } from './helpers/equipment.js';
 import { readCardInv, seedCard } from './helpers/cards.js';
 

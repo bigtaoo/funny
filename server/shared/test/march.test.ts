@@ -20,7 +20,6 @@ vi.mock('../src/slg/mapgen', () => ({
     tileOverrides.get(`${x}:${y}`) ?? { type: 'neutral', level: 1 },
 }));
 // Imported after the mock so march.ts picks up the mocked proceduralTile.
-// eslint-disable-next-line import/first
 import {
   tileYield,
   marchDurationSec,

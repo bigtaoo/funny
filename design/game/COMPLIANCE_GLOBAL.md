@@ -64,8 +64,16 @@
     「你是否满 13 岁」（答案写在问题里就等于诱导）、步进器从 30 年前开始（既不是门槛也不是明显放行值）、
     低于门槛的答案要**二次确认**后才记录。答案落在 `flags.ageOk`（`AGE_DECLARED_FLAG`），**按账号永久有效**：
     声明低于 13 的账号每次启动都停在拒绝卡上，只留 support 邮箱——会忘记答案的门等于没有门。
-    门禁 `client/test/ageGate.test.ts`（6 例，含「只有同意记录、没有年龄记录」的存量账号仍会被问）
+    门禁 `client/test/ageGate.test.ts`（7 例，含「只有同意记录、没有年龄记录」的存量账号仍会被问）
     + `client/test/ui/ageGate.ui.ts`（21 例）。
+  - 🐛 **「按账号永久有效」头一天并不成立（2026-09-09 修）**：门跑在 `resolveEntry` 之前，而持久化的
+    token 当时才交给 `ApiClient`，于是 `setFlag('ageOk')` 看到 `online() === false`，**只写本地不上传**；
+    紧接着 `resolveEntry` 的那次拉取按 reconcile 的「云端整段覆盖 flags」契约把它抹掉。对每个已登录的
+    存量账号来说，结果就是**每次启动都重新问一遍**，答多少次都不记得。两处修法：①`createAppCore.start`
+    在跑门之前就把 token 交给 `ApiClient`（门里的写从此是一次正常的在线写）；②`SaveManager` 新增
+    **待推送 flag 队列**（`nw_pending_flags_v1`，见 `SaveStore.ts`）：没送到服务端的 flag 写入落盘排队，
+    下一次成功拉取后重推——云端已有的条目直接确认出队。回归用例钉在 `ageGate.test.ts`（声明必须带着本
+    账号的 token 发出 `PUT /flags`）与 `save-manager.test.ts`（队列的四条行为）。
   - ⚠️ 这条**在 2026-09-08 之前一直只是文档**：政策 §9 三语都写着「设有中性年龄声明门」，而客户端里
     搜不到任何年龄相关代码。填 App Store 新版分级问卷（"Age Assurance" 那一行）时才发现。
 - ⚠️ **铁律**：分级**不得**勾成全年龄/含儿童——否则触发一整套家长同意 + 数据最小化义务，且与抽卡/社交设计冲突。

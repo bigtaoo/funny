@@ -275,7 +275,8 @@ bump（字段不变）。客户端 `extractSyncPatch` 去掉这三段；服务�
 - **⚠️ 新发现的相关 gap（2026-07-26 排查副产品，未修）：L0"开局战力不符"异常检测自 CC-1 起永久失效**：
   `pve.ts:412-416` 的 `blueprintMismatch` 判据比较客户端上报的 `unitLevels`/`pveUpgrades`（`/pve/clear` 请求体，
   §0"开局战力不符→必作弊"的判据来源）与服务器权威值；但客户端 `SaveManager.recordClear` 目前**永远**只传
-  `{}`（`client/src/game/meta/SaveManager.ts:357,421`），因为 CC-1 之后开局蓝图快照的真实来源是 `cardInv`，
+  `{}`（`client/src/game/meta/SaveManager/offlineQueues.ts` 的 `recordClear`/`flushPending` 两处 `pveClear(...)`；
+  2026-09-09 前在 `SaveManager.ts`，随三条离线队列一起拆出），因为 CC-1 之后开局蓝图快照的真实来源是 `cardInv`，
   没人把这条 L0 上报路径迁过去——`clientUnitLevels = {}` 恒等于 `normUpgrades({})`，`blueprintMismatch` 恒为
   `false`。跟本次修的 L1 gap 是同一次迁移漏的，但方向相反：**这个是"永远不触发"（失效开放），不是"假阳性"**，
   优先级更低但同样需要设计决策（真开局战力校验要不要基于 `cardInv` 重做，还是干脆废弃 L0、只靠 L1 兜底）。

@@ -398,3 +398,46 @@ v1 的递增**比 v2 还猛**——它的毛病从来不是墨少，而是墨**�
 3. fixture 同时导出**自己写的那个表达式**和**真正的 `clientPlatformName()`**。前者证明「这个形状会被替换」，后者证明「代码里现在写的还是这个形状」——只有前者的话，读法被重构掉之后探针照样绿。
 
 **顺带量出来的 webpack 行为**（靠改坏源码再跑，不是查文档）：它的 parser 比 key 看上去宽容——`globalThis['TARGET']`（字符串字面量下标）和 `const g = globalThis; g.TARGET`（简单 const 别名）**都还会被替换**；跟不上的是**读法离开表达式**，比如把三处重复的读法抽成 `read(globalThis, 'TARGET')`——那是这里下一个最可能的编辑，也正是第 3 级用例唯一抓得住、前两级抓不住的那个变异。
+
+## 商店里两条真金白银路径零覆盖，兄弟路径 12 例（2026-09-09，worktree `feat/apple-iap-test-gaps`）
+
+`app/nav/shop/iap.ts` 导出三个购买动作，测试只覆盖了中间那个：`doBuySubscription` 有
+`shopNav-buySubscription.test.ts` 的 12 例，`doRechargeCoins`（金币充值）和 `doBuyStarter`（新手礼包）
+**一个例都没有**，行覆盖 42.9%。
+
+**为什么这个缺口能长这么久**：三段代码读起来几乎一样（native 分支买→验→adopt，paddle 分支建单→开
+overlay→轮询），review 充值那段的感觉跟重读一段已经测过的代码没有区别。但它们不是同一段代码，而
+**差异恰好全在钱上**：轮询的对象一个是 `wallet.coins`、一个是 `subscriptionExpiry`、一个是
+`starterUsed`；pending 文案三个不同；`starterBuy` 还要把 product id 一起送上去（发货幂等就靠它）。
+
+**顺带补上一条此前完全没有 JS 侧断言的规则**：StoreKit 2 的「服务端发货之后才 finish」
+（ADR-082）。`iosStoreKit2.test.ts` 读 Swift 源码，证明的是**原生侧**只有一处 `.finish()` 且它在
+`handleFinish` 里——也就是「原生不会自己 finish」。另一半是 TypeScript 决定的：JS 什么时候调
+`window.NWBilling.finish(id)`。`shopNav-buySubscription.test.ts` 连 `finishNativeTransaction` 都没
+mock，所以「服务端拒了这张 receipt 就绝不能 finish」这条规则在三个调用点（:113/:166/:216）上一个
+断言都没有。而 finish 早了是这里**唯一不可挽回**的失败：StoreKit 忘掉这笔交易，玩家已付款，下次启动
+的 drain 无从上报，欠账在任何地方都不留痕迹。
+
+`test/shopNav-purchaseFinish.test.ts`（32 例）：两条路径各自的 native/paddle 全表，加一个
+**按购买入口逐个复述规则**的 `it.each`（rechargeCoins / buyMonthlyCard / buyYearCard / buyStarter
+× 三条断言），这样以后加第四个商品也不会静默漏掉。断言用的是**事件顺序**而不是"finish 被调了"——
+后者对 finish 提前一行的改动照样绿。
+
+**变异验证 12 处**，两轮：finish 挪到 grant 之前（充值红 5 / 礼包红 6 / 订阅红 4）、三处 finish 各自
+整条删掉（红 2/2/2）、finish 挪进 catch（红 4）、`finishNative` 去掉 `kind === 'apple'` 判断（google
+也 finish，红 1）、`ALREADY_PURCHASED` 也 finish（红 1）、`pollForStarterGrant` 去掉
+`!before.includes(productId)`（红 1）、`pollForCoinIncrease` 的 `>` 改 `>=`（红 1）、
+`nativeIapPurchase` 不带 `appleAccountToken()`（红 1）、cancelled 报成 error（红 1）。
+
+**其中一条断言记下了故意的不对称**：`ALREADY_PURCHASED` 在这条会话内路径上**不 finish**，而
+`platform/appleUnfinishedTransactions.ts` 的 drain 对同样的错误**会 finish**（"那份内容确实发过货"）。
+两边都对：这里这笔扣款是新的且无法解释（Apple 卖出了一个服务端说已拥有的非消耗品），留着它下次启动
+由掌握全局的 drain 收尾，代价是一次重投；在这里 finish 掉，等于把这件事发生过的唯一证据擦掉。
+
+**没做、也不该做的一件事**：`src/render/renderPolicy.ts`（本周新增 321 行）在计覆盖率的单元套件里只有
+22%，它那 33 条变异验证过的用例在 `test/ui/`（不报覆盖率），文件也不在 `vitest.config.ts` 的 include
+里——形状跟本册 `prefetchPolicy`/`idlePrefetch` 那条一模一样，但**处置相反**：实测把该文件搬进单元套件，
+33 例里 22 例直接 `ReferenceError: document is not defined`（`PIXI.Text`/`Graphics` 要 canvas，单元套件
+没有 pixiHeadless 那层适配）。为了一个百分比把一份内聚的文件劈成两半，正是 `vitest.config.ts` 里那段
+注释自己反对的做法。它已经有真门禁（CI 跑 `npm run test:ui`），缺的只是百分比；真要补，得给 ui 套件
+接一份独立的 coverage 源，那是另一件事。

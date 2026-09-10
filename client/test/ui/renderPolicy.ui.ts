@@ -19,10 +19,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as PIXI from 'pixi.js-legacy';
 import {
-  ACTIVE_AFTER_INPUT_MS, IDLE_FLOOR_MS, MAX_RENDER_RESOLUTION, RenderPolicy, TARGET_FPS,
+  ACTIVE_AFTER_INPUT_MS, DECOR_QUIET_AFTER_MS, IDLE_FLOOR_MS, IDLE_FPS, IDLE_QUIET_MS,
+  MAX_RENDER_RESOLUTION, RenderPolicy, TARGET_FPS,
   holdRenderActive, invalidateRender, rendererResolution, resetRenderHold, setRenderPolicyClock,
   stageSignature, type PaintMode,
 } from '../../src/render/renderPolicy';
+import { decorationsQuiet, setDecorationsQuiet } from '../../src/render/idleQuiet';
+import { BoilingSprite } from '../../src/render/boil';
 
 /** A stand-in for PIXI.Application: a real Ticker + stage, and a paint entry point that counts. */
 function stubHost() {
@@ -59,6 +62,9 @@ beforeEach(() => {
 afterEach(() => {
   setRenderPolicyClock();
   resetRenderHold();
+  // `Ticker.shared` is a process-wide global that the policy now caps (see setMaxFps); most cases
+  // here never uninstall, so hand it back uncapped rather than leaking 60 into the next suite.
+  PIXI.Ticker.shared.maxFPS = 0;
 });
 
 describe('rendererResolution — the dpr cap', () => {
@@ -291,5 +297,162 @@ describe('stageSignature', () => {
     const sigBefore = stageSignature(a);
     a.setChildIndex(second, 0);
     expect(stageSignature(a)).not.toBe(sigBefore);
+  });
+});
+
+// ── the idle throttles (2026-09-09) ──────────────────────────────────────────
+//
+// Demand-driven painting stopped the idle GPU work; these two knobs go after what is left, which is
+// the frame itself — 60 scene `update()` calls and 60 signature walks a second on a picture that is
+// standing still. Both failure modes are worse than the saving, so both directions are pinned:
+// engaging when it should (the saving) and disengaging the instant anything happens (the risk).
+describe('idle tick-rate throttle', () => {
+  /** Tick `n` times, advancing the clock by `stepMs` before each one. */
+  function run(policy: RenderPolicy, n: number, stepMs: number): void {
+    for (let i = 0; i < n; i++) { clockMs += stepMs; policy.tick(); }
+  }
+
+  it('caps the SECOND rAF loop too — Application does not use Ticker.shared', () => {
+    // `sharedTicker` defaults to false, so `render/boil.ts` and the battle fx animate on a ticker
+    // the application's own cap never touched: uncapped, i.e. 120 Hz on a ProMotion device, for as
+    // long as one lobby boiling line existed.
+    PIXI.Ticker.shared.maxFPS = 0;
+    policyFor(() => 'reactive');
+    expect(PIXI.Ticker.shared.maxFPS).toBe(TARGET_FPS);
+  });
+
+  it('hands the shared ticker back as it found it on uninstall', () => {
+    PIXI.Ticker.shared.maxFPS = 0;
+    const { policy } = policyFor(() => 'reactive');
+    expect(PIXI.Ticker.shared.maxFPS).toBe(TARGET_FPS);
+    policy.uninstall();
+    expect(PIXI.Ticker.shared.maxFPS).toBe(0);
+  });
+
+  it('drops to IDLE_FPS once a reactive screen has been still for IDLE_QUIET_MS', () => {
+    const { host, policy } = policyFor(() => 'reactive');
+    policy.tick();                       // first tick always paints (no baseline yet)
+    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+
+    run(policy, 1, IDLE_QUIET_MS - 1);   // not quiet long enough yet
+    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+
+    run(policy, 1, 2);
+    expect(host.ticker.maxFPS).toBe(IDLE_FPS);
+    expect(PIXI.Ticker.shared.maxFPS).toBe(IDLE_FPS);
+  });
+
+  it('the IDLE_FLOOR_MS paint does not count as activity — otherwise this never engages at all', () => {
+    // The floor fires every 500ms, so if a floor paint re-armed full frame rate the 2s quiet window
+    // could never elapse. Step in floor-sized hops so every tick below paints for reason 'floor'.
+    const { host, policy } = policyFor(() => 'reactive');
+    policy.tick();
+    const paintsBefore = host.paints;
+    run(policy, 6, IDLE_FLOOR_MS + 1);   // 6 floor paints, ~3s of clock
+    expect(host.paints).toBe(paintsBefore + 6); // they really did paint, i.e. really were floors
+    expect(host.ticker.maxFPS).toBe(IDLE_FPS);
+  });
+
+  it('a real change puts the rate straight back', () => {
+    const { host, policy } = policyFor(() => 'reactive');
+    policy.tick();
+    run(policy, 1, IDLE_QUIET_MS + 1);
+    expect(host.ticker.maxFPS).toBe(IDLE_FPS);
+
+    host.stage.addChild(new PIXI.Container()); // the picture changed
+    clockMs += 16;
+    expect(policy.tick().reason).toBe('changed');
+    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+  });
+
+  it('a pointer event restores the rate synchronously, without waiting for a tick', () => {
+    // This is why the activity seam calls back into the policy: while throttled, the next tick can
+    // be 50ms away, and the first frame after a tap must not be the one that pays for it.
+    const { host, policy } = policyFor(() => 'reactive');
+    policy.tick();
+    run(policy, 1, IDLE_QUIET_MS + 1);
+    expect(host.ticker.maxFPS).toBe(IDLE_FPS);
+
+    holdRenderActive();
+    expect(host.ticker.maxFPS).toBe(TARGET_FPS); // no tick happened in between
+    policy.uninstall();
+  });
+
+  it('never throttles a live scene, however long it sits there', () => {
+    const { host, policy } = policyFor(() => 'live');
+    run(policy, 60, IDLE_QUIET_MS);
+    expect(host.ticker.maxFPS).toBe(TARGET_FPS);
+  });
+});
+
+describe('decoration quiescence', () => {
+  it('stays off while the player is around, and turns on after DECOR_QUIET_AFTER_MS', () => {
+    const { policy } = policyFor(() => 'reactive');
+    policy.tick();
+    expect(decorationsQuiet()).toBe(false);
+
+    clockMs += DECOR_QUIET_AFTER_MS - 1;
+    policy.tick();
+    expect(decorationsQuiet()).toBe(false);
+
+    clockMs += 2;
+    policy.tick();
+    expect(decorationsQuiet()).toBe(true);
+    policy.uninstall();
+  });
+
+  it('a pointer event revives decorations on the next tick', () => {
+    const { policy } = policyFor(() => 'reactive');
+    clockMs += DECOR_QUIET_AFTER_MS + 1;
+    policy.tick();
+    expect(decorationsQuiet()).toBe(true);
+
+    holdRenderActive();
+    policy.tick();
+    expect(decorationsQuiet()).toBe(false);
+    policy.uninstall();
+  });
+
+  it('uninstall clears the flag — a torn-down policy must not freeze whatever runs next', () => {
+    const { policy } = policyFor(() => 'reactive');
+    clockMs += DECOR_QUIET_AFTER_MS + 1;
+    policy.tick();
+    expect(decorationsQuiet()).toBe(true);
+    policy.uninstall();
+    expect(decorationsQuiet()).toBe(false);
+  });
+});
+
+// The boiling line is the other menu decoration, and unlike the stickman it lives on
+// `PIXI.Ticker.shared` — so it needs real PIXI display objects, which is why it is pinned here and
+// not in test/render/idleDecorations.test.ts with the stickman.
+describe('boiling line', () => {
+  /** Which variant is currently the visible one. */
+  function shown(b: BoilingSprite): number {
+    return b.children.findIndex((c) => (c as PIXI.DisplayObject).visible);
+  }
+
+  afterEach(() => { setDecorationsQuiet(false); });
+
+  it('cycles variants while the screen is in use', () => {
+    const boil = new BoilingSprite(40, 20, (pen, g) => { pen.rect(0, 0, 40, 20); void g; }, { fps: 8 });
+    const first = shown(boil);
+    boil.step(0.2); // 8fps => one step every 0.125s
+    expect(shown(boil)).not.toBe(first);
+    boil.destroy();
+  });
+
+  it('holds its variant once decorations are quiet', () => {
+    const boil = new BoilingSprite(40, 20, (pen, g) => { pen.rect(0, 0, 40, 20); void g; }, { fps: 8 });
+    const first = shown(boil);
+    setDecorationsQuiet(true);
+    for (let i = 0; i < 60; i++) boil.step(1 / 60); // a full second
+    expect(shown(boil)).toBe(first);
+
+    // ...and it is held, not broken: reviving resumes the cycle.
+    setDecorationsQuiet(false);
+    boil.step(0.2);
+    expect(shown(boil)).not.toBe(first);
+    boil.destroy();
   });
 });

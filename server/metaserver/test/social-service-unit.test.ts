@@ -13,6 +13,8 @@
 // (deliverMailGrant) relies on a `{'save.deliveredOrders': {$ne: orderId}}` filter guard + $addToSet-
 // with-$each + $inc-by-dotted-path, none of which test/helpers/fakeCollection.ts's generic in-memory
 // double implements (see that file's header comment), so a real Mongo instance is the pragmatic choice.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createMongo, type JwtConfig, type MongoHandle, type MailDoc, type CardInstance, type EquipmentInstance } from '@nw/shared';

@@ -1,12 +1,12 @@
 // Battle Pass end-to-end (S11 §9): real Mongo + injected fake commercial. No existing test exercised
 // /battlepass/buy or /battlepass/claim at all before this file — covers material (free track) landing in
 // save.materials and coins (paid track) mirroring the wallet, plus the PASS_REQUIRED / ALREADY_CLAIMED guards.
-// Requires `cd server && docker compose up -d` + prior `tsc -b` (imports from dist).
+// Requires `cd server && docker compose up -d` + prior `tsc -b` (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
-import type { CommercialClient, UndeliveredOrder } from '../dist/commercialClient.js';
+import { buildApp } from '../src/app.js';
+import type { CommercialClient, UndeliveredOrder } from '../src/commercialClient.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_battlepass_test';

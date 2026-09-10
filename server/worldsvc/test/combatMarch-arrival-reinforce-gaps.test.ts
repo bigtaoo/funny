@@ -53,8 +53,14 @@ function build(opts: { m?: MarchDoc; target?: TileDoc | null } = {}) {
       cols: {
         // A legacy (non-stepping) march: no path/stepIndex/nextStepAt, so processDueArrivals takes the
         // claim-and-settle branch straight to applyArrival.
+        //
+        // The cursor ignores the filter and answers with `m` for BOTH halves of the arrival tick
+        // (2026-09-09 split: steps then settlements). That is deliberately blunter than the real query,
+        // and it is what proves the steps half skips a cursor-less march on its own rather than relying on
+        // its Mongo filter to have excluded it. `sort` is chainable because the settlement half orders by
+        // `arriveAt` — oldest first.
         marches: {
-          find: () => ({ limit: () => ({ toArray: async () => [m] }) }),
+          find: () => { const cur = { sort: () => cur, limit: () => cur, toArray: async () => [m] }; return cur; },
           findOneAndDelete: vi.fn(async (..._args: unknown[]) => m),
         },
         playerWorld: { findOne: async () => pw, updateOne: vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 })) },

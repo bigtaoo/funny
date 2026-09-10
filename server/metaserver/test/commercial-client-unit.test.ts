@@ -5,6 +5,8 @@
 // coverage against src/commercialClient.ts even though the same logic runs (see that file's header).
 // This file imports the real class directly from '../src/commercialClient.js' against a real
 // node:http fixture server, so every wrapper method's lines get attributed to src.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';

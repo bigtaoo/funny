@@ -5,10 +5,18 @@
 // therefore whether it redelivers. Getting that wrong is invisible in normal operation and expensive
 // when it matters — a route that 500s on a payload it will never accept turns one bad notification
 // into days of retries, and one that 200s while commercial is down throws away real renewals.
+//
+// Imported from `../src/`, not `../dist/` (2026-09-09). Both run the same code — `npm test` is
+// `tsc -b && vitest run`, so dist is never stale — but v8 attributes coverage to the file it
+// actually loaded, so every case here counted for nothing and `src/apple/webhookRoute.ts` read as
+// 25% covered: a thorough suite existed and the file was ungated anyway. It was the first of this
+// package's dist importers to be converted; the remaining 33 followed later the same day. (That pass
+// also corrected the count quoted here: the "53 files" figure came from a grep that also counted
+// comment text — 34 test files actually had dist import statements.)
 import { describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance, type LightMyRequestResponse } from 'fastify';
-import { registerAppleWebhookRoute } from '../dist/apple/webhookRoute.js';
-import type { CommercialClient } from '../dist/commercialClient.js';
+import { registerAppleWebhookRoute } from '../src/apple/webhookRoute';
+import type { CommercialClient } from '../src/commercialClient';
 
 type NotificationResult = Awaited<ReturnType<CommercialClient['appleNotification']>>;
 

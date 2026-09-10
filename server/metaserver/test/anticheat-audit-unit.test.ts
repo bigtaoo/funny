@@ -10,6 +10,8 @@
 // happy-path suite didn't reach: replayRef→replayBlobs fallback, no-replay-at-all skip, malformed judge
 // statsJson, a duplicate-review-lock replay (idempotent-lock hit), a rollback-write failure, and the
 // per-match/mark-audited best-effort catch branches.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { describe, it, expect } from 'vitest';
 import type { Collections, MatchDoc, MatchReplayDoc, SaveData, AntiCheatReviewDoc, ReplayBlobDoc } from '@nw/shared';
 import { compressReplayDoc, makeNewSave } from '@nw/shared';

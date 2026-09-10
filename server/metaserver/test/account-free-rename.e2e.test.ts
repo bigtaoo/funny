@@ -3,12 +3,12 @@
 // free rename. This suite covers the freeRename flag on GET /save, the free first rename (no coins
 // required), the flag flipping off afterwards, that the second rename is paid (402 with no balance),
 // and that registering with an explicit name grants no free rename.
-// Requires `cd server && docker compose up -d` + `tsc -b` first (imports from dist).
+// Requires `cd server && docker compose up -d` + `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import type { CommercialClient } from '../dist/commercialClient.js';
-import { buildApp } from '../dist/app.js';
+import type { CommercialClient } from '../src/commercialClient.js';
+import { buildApp } from '../src/app.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_free_rename_test';

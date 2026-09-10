@@ -11,6 +11,8 @@
 // The stakes for the fallbacks below are concrete: isAvatarOwned/isSkinOwned decide whether an equip
 // request is refused, and writeMigratedSave decides whether a season migration's settled rewards are
 // persisted or silently dropped.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { describe, expect, it } from 'vitest';
 import { makeNewSave, type SaveData } from '@nw/shared';
 import {

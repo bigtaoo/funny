@@ -10,6 +10,8 @@
 // `$addToSet`+`$each`, `$push`+`$each`/`$slice` and a `{$ne: ...}` filter — none of which
 // test/helpers/fakeCollection.ts implements, so a fake would prove nothing about the guard being
 // tested here.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {

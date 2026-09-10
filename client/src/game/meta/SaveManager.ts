@@ -8,8 +8,7 @@
 // Network unavailable / ApiClient not configured → silently degrade to local-only (no error thrown to caller).
 
 import type { AuthCredential } from '../../platform/IPlatform';
-import { ApiError, type ApiClient, type ActiveMatchInfo } from '../../net/ApiClient';
-import { replayToUploadFrames } from '../../net/replayUpload';
+import { type ApiClient, type ActiveMatchInfo } from '../../net/ApiClient';
 import type { Replay } from '@nw/engine/types';
 import type { UnitType } from '@nw/engine/types';
 import {
@@ -21,16 +20,18 @@ import {
 } from './SaveData';
 import { migrate } from './migrate';
 import { skinEquipKey } from './skinDefs';
-import { replayIdFor } from './ReplayStore';
 import type { PendingClear, PendingStaminaSpend, SaveStore } from './SaveStore';
-import { serverNow } from '../../net/serverClock';
 import { showToastMessage } from '../../net/log';
 import { t } from '../../i18n';
-
-// Stamina constants (A4) — mirrors server/metaserver/src/service/base.ts STAMINA_CAP/STAMINA_REGEN_MS,
-// needed here so entering a level can deduct correctly even fully offline (no server round-trip available).
-const STAMINA_CAP = 120;
-const STAMINA_REGEN_MS = 6 * 60 * 1000; // 6 min per point
+import {
+  flushPending,
+  flushPendingFlags,
+  flushPendingStamina,
+  queuePendingFlag,
+  recordClear,
+  spendStaminaForLevel,
+  type OfflineQueuesHost,
+} from './SaveManager/offlineQueues';
 
 export interface SaveManagerOpts {
   store: SaveStore;
@@ -64,6 +65,14 @@ export class SaveManager {
   private pending: PendingClear[]; // offline queue of clears awaiting settlement (PVE_INTEGRITY_PLAN §8.4)
   private pendingStamina: PendingStaminaSpend[]; // offline queue of stamina spends awaiting server settlement (A4)
   /**
+   * Offline queue of flag writes awaiting a server push (2026-09-09), key → intended value. Filled by
+   * setFlag whenever the write could not reach the server (no token yet, or the PUT failed) and drained
+   * by flushPendingFlags() after the next successful pull. See PENDING_FLAGS_KEY in SaveStore.ts for why
+   * this has to be persisted rather than kept for the session: the launch gates run before any token is
+   * applied, and reconcile() then overwrites `flags` with the cloud copy.
+   */
+  private pendingFlags: Record<string, boolean>;
+  /**
    * The accountId whose data `this.save.rev` actually belongs to (audit-followup-fixes-0730). Updated ONLY
    * inside reconcile() itself — deliberately not the same thing as `this.save.accountId`, which
    * bootstrap()/adoptSession() both write eagerly *before* the actual cloud pull + reconcile (so a
@@ -88,8 +97,18 @@ export class SaveManager {
    * while the offline clear is still in flight/pending. Cleared once the gap closes (cloud catches up).
    */
   private readonly notifiedSyncGaps = new Set<string>();
+  /**
+   * View of this instance handed to SaveManager/offlineQueues.ts's free functions. Built once here
+   * rather than per call, and every state member is a getter rather than a copied value: reconcile()
+   * reassigns `save` wholesale, resetForLogout() reassigns all three queue arrays, and `api` itself is
+   * swapped in to drive the "flush under the departing account's still-valid token" path. A plain
+   * property snapshot would silently keep using whichever value this constructor happened to see —
+   * see that file's header for the trap.
+   */
+  private readonly queues: OfflineQueuesHost;
 
   constructor(opts: SaveManagerOpts) {
+    const self = this;
     this.store = opts.store;
     this.api = opts.api;
     this.getCredential = opts.getCredential;
@@ -99,6 +118,20 @@ export class SaveManager {
     this.reconciledAccountId = this.save.accountId;
     this.pending = this.store.loadPending();
     this.pendingStamina = this.store.loadPendingStamina();
+    this.pendingFlags = this.store.loadPendingFlags();
+    this.queues = {
+      get save() { return self.save; },
+      get pending() { return self.pending; },
+      get pendingStamina() { return self.pendingStamina; },
+      get pendingFlags() { return self.pendingFlags; },
+      get api() { return self.api; },
+      get loadReplay() { return self.loadReplay; },
+      store: this.store,
+      online: () => this.online(),
+      persist: () => this.persist(),
+      adoptServer: (save) => this.adoptServer(save),
+      reconcile: (cloudRaw) => this.reconcile(cloudRaw),
+    };
   }
 
   /** Current in-memory save (synchronously readable; UI balances etc. read from here and are refreshed by server push-back). */
@@ -148,14 +181,19 @@ export class SaveManager {
    * then fires the server round trip in the background; the response's reconcile() confirms it, and on
    * failure a follow-up refresh() re-pulls true server state — so a rejected/lost write self-corrects on
    * the very next sync instead of silently diverging forever (see reconcile()'s doc comment).
+   *
+   * A write the server never saw (no token yet, or the PUT failed) is queued in `pendingFlags` and
+   * retried by flushPendingFlags() after the next successful pull — otherwise that same reconcile()
+   * would overwrite the local mirror with a cloud `flags` that has never heard of this key, silently
+   * discarding the write (2026-09-09: this is what made the launch age gate ask again every launch).
    */
   setFlag(key: string, value: boolean): void {
     this.save.flags[key] = value;
     this.persist();
-    if (!this.online()) return;
+    if (!this.online()) { queuePendingFlag(this.queues, key, value); return; }
     this.api!.setFlag(key, value).then(
       (res) => this.reconcile(res.save),
-      () => { void this.refresh(); },
+      () => { queuePendingFlag(this.queues, key, value); void this.refresh(); },
     );
   }
 
@@ -228,8 +266,9 @@ export class SaveManager {
         gatewayUrl: auth.gatewayUrl ?? cloud.gatewayUrl,
         freeRename: cloud.freeRename,
       });
-      await this.flushPending(); // settle clears that were queued offline
-      await this.flushPendingStamina(); // settle stamina spends that were queued offline
+      await flushPending(this.queues); // settle clears that were queued offline
+      await flushPendingStamina(this.queues); // settle stamina spends that were queued offline
+      await flushPendingFlags(this.queues); // re-push flag writes made before this token existed (launch gates)
       return true;
     } catch {
       // Offline / server unreachable: stay on local data, no error thrown.
@@ -256,8 +295,9 @@ export class SaveManager {
         gatewayUrl: cloud.gatewayUrl,
         freeRename: cloud.freeRename,
       });
-      await this.flushPending(); // settle clears queued offline after reconnection
-      await this.flushPendingStamina(); // settle stamina spends queued offline after reconnection
+      await flushPending(this.queues); // settle clears queued offline after reconnection
+      await flushPendingStamina(this.queues); // settle stamina spends queued offline after reconnection
+      await flushPendingFlags(this.queues); // re-push flag writes the server never saw (launch gates, offline toggles)
       return true;
     } catch {
       return false;
@@ -304,8 +344,8 @@ export class SaveManager {
    * Full local reset on explicit logout (2026-07-29 fix — see `client-resource-mgmt-audit-2026-07-29`
    * memory / claudedocs/client-modules.md): unlike clearSyncedLocalSections (equipped/flags/pvpDeck only,
    * kept purely to avoid a UI flash of the old avatar/title before the next reconcile), this drops the
-   * ENTIRE local save (wallet/progress/cardInv/equipmentInv/materials/...) plus the offline pending-clear
-   * and pending-stamina-spend queues. Without this, a player who logs out and then either (a) plays
+   * ENTIRE local save (wallet/progress/cardInv/equipmentInv/materials/...) plus the offline pending-clear,
+   * pending-stamina-spend and pending-flag queues. Without this, a player who logs out and then either (a) plays
    * offline before any next login, or (b) logs into a *different* account that later reconciles online,
    * would see/keep the departing account's meta progress — and worse, any offline-queued PvE clears/
    * stamina spends still sitting in `this.pending`/`this.pendingStamina` would get flushed and credited
@@ -319,13 +359,16 @@ export class SaveManager {
    */
   async resetForLogout(): Promise<void> {
     if (this.online()) {
-      await this.flushPending();
-      await this.flushPendingStamina();
+      await flushPending(this.queues);
+      await flushPendingStamina(this.queues);
+      await flushPendingFlags(this.queues);
     }
     this.pending = [];
     this.pendingStamina = [];
+    this.pendingFlags = {}; // a flag write belongs to the departing account, never to the next one
     this.store.savePending(this.pending);
     this.store.savePendingStamina(this.pendingStamina);
+    this.store.savePendingFlags(this.pendingFlags);
     this.store.clearLocal();
     this.save = this.store.loadLocal(); // fresh default save (migrate(null) → makeNewSave())
     this.reconciledAccountId = this.save.accountId; // matches the fresh save, same as the constructor
@@ -385,166 +428,14 @@ export class SaveManager {
     return this.pendingStamina.slice();
   }
 
-  /**
-   * Spend stamina to enter a level (A4, 2026-07-06): deducted the moment the player commits, not at clear,
-   * so retreating or losing mid-level does not refund it. Deducts the local mirror immediately and
-   * unconditionally — including fully offline, so the player sees the cost right away — then settles with
-   * the server in the background (online) or queues for settlement on reconnect (offline / request failed).
-   * Returns false without deducting anything when the (regen-adjusted) balance is below cost.
-   */
+  /** Spend stamina to enter a level (A4) — see spendStaminaForLevel in SaveManager/offlineQueues.ts. */
   spendStaminaForLevel(levelId: string, cost: number): boolean {
-    const regen = this.regenStamina();
-    if (regen.current < cost) {
-      this.save.stamina = regen; // still persist the regen catch-up even when entry is blocked
-      this.persist();
-      return false;
-    }
-    const current = regen.current - cost;
-    const regenAt = regen.regenAt !== 0 ? regen.regenAt : current < STAMINA_CAP ? serverNow() + STAMINA_REGEN_MS : 0;
-    this.save.stamina = { current, regenAt };
-    this.persist();
-    if (this.online()) {
-      this.api!.pveEnter(levelId).then((res) => {
-        this.save.stamina = res.stamina;
-        this.persist();
-      }).catch(() => this.enqueueStaminaSpend({ levelId, cost, ts: Date.now() }));
-    } else {
-      this.enqueueStaminaSpend({ levelId, cost, ts: Date.now() });
-    }
-    return true;
+    return spendStaminaForLevel(this.queues, levelId, cost);
   }
 
-  /** Apply natural regen to the local stamina mirror (same algorithm as server deductStamina/readStaminaSnapshot) without persisting; caller decides whether/how to save the result. */
-  private regenStamina(): { current: number; regenAt: number } {
-    // serverNow() (P1-1): regenAt may hold a server-issued value (from a prior pveEnter response) —
-    // comparing it against the client's raw local clock would under/over-count regen ticks by the
-    // clock's drift each time this runs.
-    const now = serverNow();
-    let { current, regenAt } = this.save.stamina ?? { current: STAMINA_CAP, regenAt: 0 };
-    if (current < STAMINA_CAP && regenAt > 0 && now >= regenAt) {
-      const ticks = Math.floor((now - regenAt) / STAMINA_REGEN_MS) + 1;
-      current = Math.min(STAMINA_CAP, current + ticks);
-      regenAt = current >= STAMINA_CAP ? 0 : regenAt + ticks * STAMINA_REGEN_MS;
-    }
-    return { current, regenAt };
-  }
-
-  private enqueueStaminaSpend(entry: PendingStaminaSpend): void {
-    this.pendingStamina.push(entry);
-    this.store.savePendingStamina(this.pendingStamina);
-  }
-
-  /** Flush the pending stamina-spend queue in order once back online: the local mirror is already deducted, so this only settles the server's authoritative copy (best-effort). */
-  private async flushPendingStamina(): Promise<void> {
-    if (!this.online()) return;
-    while (this.pendingStamina.length > 0) {
-      const head = this.pendingStamina[0]!;
-      try {
-        const res = await this.api!.pveEnter(head.levelId);
-        this.save.stamina = res.stamina;
-        this.persist();
-        this.pendingStamina.shift();
-        this.store.savePendingStamina(this.pendingStamina);
-      } catch (e) {
-        if (e instanceof ApiError) {
-          // Business error (unknown level etc.): cannot be settled server-side; drop it rather than block the queue (local deduction already stands).
-          this.pendingStamina.shift();
-          this.store.savePendingStamina(this.pendingStamina);
-          continue;
-        }
-        break; // network error: keep queue, retry next time
-      }
-    }
-  }
-
-  /**
-   * Record a level clear (stars >= 1). Online → POST /pve/clear to settle immediately and adopt the push-back;
-   * offline / request failed → enqueue (local authoritative values unchanged), flush when back online.
-   * L1 spot-check (§8.6 step 3): when the server returns `needsReplay`, materials are held back and the
-   * replay for this run is uploaded to /pve/verify for re-calculation and crediting.
-   */
-  /**
-   * @param stats Per-run achievement stat deltas (achievementStatDelta output); S9-3b, regular clears feed these counts into the server.
-   */
+  /** Record a level clear (PVE_INTEGRITY_PLAN §8) — see recordClear in SaveManager/offlineQueues.ts. */
   async recordClear(levelId: string, stars: number, replay?: Replay, stats?: Record<string, number>): Promise<void> {
-    if (stars <= 0) return;
-    // Optimistic local unlock (offline-first): write the clear into local progress immediately so the next
-    // level is unlocked when returning to CampaignMap — no waiting for the server receipt (online recordClear
-    // is fire-and-forget; the scene would already have been rebuilt before the receipt arrives and would read the stale value).
-    // The server still settles authoritatively: online adoptServer / offline flush followed by reconcile overwrites
-    // with the cloud cleared/stars in full; even a server-side rejection gets corrected (self-healing), so the optimistic value never drifts.
-    this.applyLocalClear(levelId, stars);
-    if (this.online()) {
-      try {
-        const res = await this.api!.pveClear(levelId, stars, {}, stats);
-        this.adoptServer(res.save);
-        if (res.needsReplay && res.verifyId && replay) {
-          await this.verifyReplay(res.verifyId, replay);
-        }
-        return;
-      } catch {
-        // Online but request failed (network blip) → enqueue as fallback, flush next time
-      }
-    }
-    this.enqueueClear({
-      levelId,
-      stars,
-      ts: Date.now(),
-      ...(replay?.meta?.recordedAt !== undefined
-        ? { replayId: replayIdFor(replay.meta.recordedAt) }
-        : {}),
-    });
-  }
-
-  /** Upload the replay to /pve/verify for re-calculation → adopt push-back (materials credited). Failure is silent (the server-side record stays pending). */
-  private async verifyReplay(verifyId: string, replay: Replay): Promise<void> {
-    try {
-      const res = await this.api!.pveVerify(verifyId, replay.endFrame, replayToUploadFrames(replay));
-      this.adoptServer(res.save);
-    } catch {
-      /* Network/re-calculation error → materials not credited this round; server-side record stays pending (does not block local flow) */
-    }
-  }
-
-  /** Optimistically write a local clear: append to cleared (deduped) + take the higher stars value (clamped to 1|2|3). Local-only (progress is not uploaded). */
-  private applyLocalClear(levelId: string, stars: number): void {
-    const p = this.save.progress;
-    if (!p.cleared.includes(levelId)) p.cleared.push(levelId);
-    const s = Math.max(1, Math.min(3, Math.round(stars))) as 1 | 2 | 3;
-    if ((p.stars[levelId] ?? 0) < s) p.stars[levelId] = s;
-    this.persist();
-  }
-
-  private enqueueClear(entry: PendingClear): void {
-    this.pending.push(entry);
-    this.store.savePending(this.pending);
-  }
-
-  /** Flush the pending-settlement queue in order once back online: adopt after each success; keep on network failure for next attempt, discard on business error. */
-  private async flushPending(): Promise<void> {
-    if (!this.online()) return;
-    while (this.pending.length > 0) {
-      const head = this.pending[0];
-      try {
-        const res = await this.api!.pveClear(head.levelId, head.stars, {});
-        this.adoptServer(res.save);
-        // L1 spot-check triggered: retrieve the local replay and upload for re-calculation (if evicted from ReplayStore, skip — materials not credited this round).
-        if (res.needsReplay && res.verifyId && head.replayId && this.loadReplay) {
-          const replay = this.loadReplay(head.replayId);
-          if (replay) await this.verifyReplay(res.verifyId, replay);
-        }
-        this.pending.shift();
-        this.store.savePending(this.pending);
-      } catch (e) {
-        if (e instanceof ApiError) {
-          // Business error (level not unlocked / invalid parameters): this entry cannot be settled; discard it to avoid permanently blocking the queue.
-          this.pending.shift();
-          this.store.savePending(this.pending);
-          continue;
-        }
-        break; // network error: keep queue, retry next time
-      }
-    }
+    return recordClear(this.queues, levelId, stars, replay, stats);
   }
 
   /**

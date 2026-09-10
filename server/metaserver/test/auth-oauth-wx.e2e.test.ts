@@ -2,18 +2,18 @@
 // after the accounts.ts split (file-organization-conventions memory, "sixth pass") made it easy to
 // grep each split-out function's real callers by name and notice these three routes had ZERO
 // app.inject coverage anywhere in metaserver/test: accounts-race.e2e.test.ts calls
-// resolveByOAuth/bindOAuth directly at the service layer (imported from ../dist/accounts.js), never
+// resolveByOAuth/bindOAuth directly at the service layer (imported from ../src/accounts.js), never
 // through the actual HTTP route + auth.ts handler that a real client hits — same "method name in a
 // test is not the same claim as the route being covered" lesson as the familyService.ts/
 // friendService.ts httpApi splits (see claudedocs/server.md's "单文件 500 行收敛" section).
 //
 // Requires a real single-node Mongo replica set: provided in-process by
 // metaserver/test/globalSetup.ts (mongodb-memory-server) — no Docker needed. Entire suite is
-// skipped if Mongo is unreachable. Imports from build output dist; requires `tsc -b` before running.
+// skipped if Mongo is unreachable. Requires `tsc -b` first (for @nw/shared's dist; this file imports ../src).
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMongo, type JwtConfig, type MongoHandle } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../dist/app.js';
+import { buildApp } from '../src/app.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_auth_oauth_wx_test';

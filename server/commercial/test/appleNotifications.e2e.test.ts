@@ -345,10 +345,191 @@ describe.skipIf(!mongo)('App Store Server Notifications V2 (e2e)', () => {
     expect(await m.collections.appleAccountTokens.countDocuments({ accountId: 'player-11' })).toBe(1);
   });
 
+  it('survives a duplicate key on allocation, deterministically', async () => {
+    // The case above races three real calls and passes, but it does NOT reach the 11000 handler: the
+    // driver's ordering means the losers' findOne generally sees the winner's row and returns early,
+    // so the recovery path was green by luck rather than by test. This forces it — a competing row is
+    // inserted between the findOne and the insertOne, which is exactly what the loser of a real race
+    // observes, and the unique index then produces the genuine driver error rather than a fake.
+    let planted = false;
+    const tokens = m.collections.appleAccountTokens;
+    const cols = {
+      ...m.collections,
+      appleAccountTokens: Object.assign(Object.create(Object.getPrototypeOf(tokens) as object), tokens, {
+        insertOne: async (doc: Parameters<typeof tokens.insertOne>[0]) => {
+          if (!planted) {
+            planted = true;
+            await tokens.insertOne({ ...doc, _id: 'token-from-the-other-request' });
+          }
+          return tokens.insertOne(doc);
+        },
+      }) as typeof tokens,
+    };
+    const racy = new CommercialService({ cols, now, rng: zero });
+    const r = await racy.appleAccountToken({ accountId: 'player-12' });
+    expect(r).toMatchObject({ ok: true, token: 'token-from-the-other-request' });
+    expect(await tokens.countDocuments({ accountId: 'player-12' })).toBe(1);
+  });
+
+  it('answers consumption_failed when Apple rejects the submission, and records it', async () => {
+    // Best effort by design: losing our say in one refund decision must not turn into a non-2xx for
+    // Apple (which would redeliver the same notification for hours) or a throw out of the webhook.
+    await link('player-1');
+    await svc.appleConsumptionConsent({ accountId: 'player-1', consented: true });
+    const verifier = new SignedDataVerifier([], false, Environment.LOCAL_TESTING, BUNDLE, 1234);
+    const failing = new CommercialService({
+      cols: m.collections,
+      now,
+      rng: zero,
+      appleServerApi: makeAppleServerApi({
+        clients: {
+          production: {
+            getTransactionInfo: async () => ({}),
+            getTransactionHistory: async () => ({}),
+            sendConsumptionInformation: async () => { throw new Error('apple rejected the submission'); },
+          },
+          sandbox: {
+            getTransactionInfo: async () => ({}),
+            getTransactionHistory: async () => ({}),
+            sendConsumptionInformation: async () => { throw new Error('apple rejected the submission'); },
+          },
+        },
+        verifiers: { production: verifier, sandbox: verifier },
+      }),
+    });
+    const res = await failing.appleNotification({
+      signedPayload: signedNotification('CONSUMPTION_REQUEST', { uuid: 'consume-fail' }),
+    });
+    expect(res).toMatchObject({ ok: true, outcome: 'consumption_failed' });
+    // The row is the only place anyone finds out this refund went unanswered.
+    expect(await logOf('consume-fail')).toMatchObject({ outcome: 'consumption_failed' });
+  });
+
+  it('grants the renewal even when the diagnostic log row cannot be written', async () => {
+    // The record() call sits AFTER the grant and is wrapped in a bare catch. This is what that catch
+    // is for: the appleNotifications collection is a diagnostic trail, and losing a row must never
+    // cost the player a period they paid for. Asserted by making the write fail outright.
+    await link('player-1');
+    const notifications = m.collections.appleNotifications;
+    const cols = {
+      ...m.collections,
+      appleNotifications: Object.assign(Object.create(Object.getPrototypeOf(notifications) as object), notifications, {
+        updateOne: async () => { throw new Error('collection unavailable'); },
+      }) as typeof notifications,
+    };
+    const verifier = new SignedDataVerifier([], false, Environment.LOCAL_TESTING, BUNDLE, 1234);
+    const { client } = fakeClients();
+    const noLog = new CommercialService({
+      cols,
+      now,
+      rng: zero,
+      appleServerApi: makeAppleServerApi({
+        clients: { production: client, sandbox: client },
+        verifiers: { production: verifier, sandbox: verifier },
+      }),
+    });
+    const res = await noLog.appleNotification({
+      signedPayload: signedNotification('DID_RENEW', { uuid: 'nolog-1' }),
+    });
+    expect(res).toMatchObject({ ok: true, outcome: 'granted' });
+    const wallet = await m.collections.wallets.findOne({ _id: 'player-1' });
+    expect(wallet?.subscription?.expiry).toBeGreaterThan(now());
+  });
+
+  it('a year-card renewal grants a year, not a month', async () => {
+    // grantPeriod picks days and immediate coins off the resolved product. The two SKUs differ by an
+    // order of magnitude, so getting this branch wrong is a year paid for and a month delivered.
+    await link('player-1');
+    const monthly = await svc.appleNotification({ signedPayload: signedNotification('SUBSCRIBED') });
+    expect(monthly).toMatchObject({ ok: true, outcome: 'granted' });
+    const afterMonth = (await m.collections.wallets.findOne({ _id: 'player-1' }))!.subscription!.expiry;
+
+    await m.db.dropDatabase();
+    await m.ensureIndexes();
+    await link('player-1');
+    const yearly = await svc.appleNotification({
+      signedPayload: signedNotification('SUBSCRIBED', {
+        transaction: { productId: `${BUNDLE}.sub.year` },
+      }),
+    });
+    expect(yearly).toMatchObject({ ok: true, outcome: 'granted' });
+    const afterYear = (await m.collections.wallets.findOne({ _id: 'player-1' }))!.subscription!.expiry;
+
+    // Not an exact day count (the grant is relative to `now()`, which ticks) — an order of magnitude,
+    // which is what tells the two branches apart.
+    expect(afterYear - now()).toBeGreaterThan((afterMonth - now()) * 5);
+  });
+
+  it('records a renewal whose grant was refused, rather than reporting it as granted', async () => {
+    // The link table pointing at a different account than the one that already holds this
+    // transaction's order (a support-side re-point, or an account merge, followed by a redelivery).
+    // subscriptionCardBuy refuses on the orderId ownership check, and the outcome must reflect that:
+    // reporting 'granted' here would put a period nobody received into the only record of the event.
+    await link('player-1');
+    expect(await svc.appleNotification({ signedPayload: signedNotification('DID_RENEW', { uuid: 'g-1' }) }))
+      .toMatchObject({ ok: true, outcome: 'granted' });
+
+    await m.collections.appleTransactionLinks.updateOne({ _id: 'orig-1' }, { $set: { accountId: 'player-2' } });
+    const res = await svc.appleNotification({ signedPayload: signedNotification('DID_RENEW', { uuid: 'g-2' }) });
+    expect(res).toMatchObject({ ok: true, outcome: 'ignored' });
+    expect(await logOf('g-2')).toMatchObject({ outcome: 'ignored', accountId: 'player-2' });
+    // ...and player-2 got nothing, which is the point of not calling it granted.
+    expect(await m.collections.wallets.findOne({ _id: 'player-2' })).toBeNull();
+  });
+
+  it('refuses to invent a token when a duplicate key is not the accountId one', async () => {
+    // The last line of appleAccountTokenFor: an 11000 whose winner cannot be found is not the race
+    // this recovery exists for, and handing back a token nobody stored would split the player's
+    // purchases across two identities in Apple's reports. The error is synthetic on purpose — a
+    // collision on a randomUUID() _id cannot be produced, and pretending otherwise would be the
+    // only way to reach the branch at all.
+    const tokens = m.collections.appleAccountTokens;
+    const cols = {
+      ...m.collections,
+      appleAccountTokens: Object.assign(Object.create(Object.getPrototypeOf(tokens) as object), tokens, {
+        insertOne: async () => { throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 }); },
+      }) as typeof tokens,
+    };
+    const svc2 = new CommercialService({ cols, now, rng: zero });
+    await expect(svc2.appleAccountToken({ accountId: 'player-13' })).rejects.toThrow(/11000/);
+  });
+
   it('reports an unverifiable payload without throwing', async () => {
     const res = await svc.appleNotification({ signedPayload: 'not-a-jws' });
     expect(res).toMatchObject({ ok: true, outcome: 'unverified' });
   });
+
+  // The notification Apple's own "Request a Test Notification" button sends, and the one an operator
+  // uses to prove the endpoint is reachable at all. It carries no signedTransactionInfo, so it lands
+  // on the `!tx` branch — which had never been executed by any test, on the path whose entire job is
+  // to answer "is this webhook wired up".
+  it('records a TEST notification as ignored instead of failing on the missing transaction', async () => {
+    const res = await svc.appleNotification({
+      signedPayload: signedNotification('TEST', { uuid: 'test-1', transaction: null }),
+    });
+    expect(res).toMatchObject({ ok: true, outcome: 'ignored' });
+    const row = await logOf('test-1');
+    expect(row).toMatchObject({ notificationType: 'TEST', outcome: 'ignored' });
+    // No account and no transaction to attribute it to — the row must not invent either.
+    expect(row?.accountId).toBeUndefined();
+    expect(row?.transactionId).toBeUndefined();
+  });
+
+  it.each(['DID_RENEW', 'SUBSCRIBED', 'REFUND'])(
+    'a %s notification stripped of its transaction grants nothing',
+    async (type) => {
+      // A grant-shaped type with nothing to grant on. Fails closed on the same branch as TEST rather
+      // than reaching resolveAccount with an undefined transaction.
+      await link('player-1');
+      const before = await m.collections.wallets.findOne({ _id: 'player-1' });
+      const res = await svc.appleNotification({
+        signedPayload: signedNotification(type, { uuid: `bare-${type}`, transaction: null }),
+      });
+      expect(res).toMatchObject({ ok: true, outcome: 'ignored' });
+      const after = await m.collections.wallets.findOne({ _id: 'player-1' });
+      expect(after?.subscription?.expiry ?? 0).toBe(before?.subscription?.expiry ?? 0);
+    },
+  );
 
   it('rejects a payload for a different app', async () => {
     // bundleId is checked by Apple's verifier; a validly-signed notification for someone else's app
@@ -368,6 +549,164 @@ describe.skipIf(!mongo)('App Store Server Notifications V2 (e2e)', () => {
     const unconfigured = new CommercialService({ cols: m.collections, now, rng: zero });
     const res = await unconfigured.appleNotification({ signedPayload: signedNotification('DID_RENEW') });
     expect(res).toMatchObject({ ok: false });
+  });
+});
+
+// ── The number we actually send Apple in a refund dispute ────────────────────────────────────────
+//
+// The existing CONSUMPTION_REQUEST cases prove the consent gate and that a submission goes out. What
+// they never exercised is the measurement itself: every one of them answers about a transaction with
+// no recharge row, so `consumptionPercentage` returns undefined on its first line and the whole
+// ledger walk below it had never run. That walk is the entire refund defence for a coin pack —
+// "did they spend what they bought" — and it is the one field in the submission Apple weighs.
+//
+// Everything here goes through the real recharge and spend paths rather than hand-written rows: the
+// only thing that can silently break this measurement is a shape change in `recharges` or `ledger`,
+// and hand-written fixtures would keep passing through exactly that.
+describe.skipIf(!mongo)('consumption data for a refund request', () => {
+  const m = mongo!;
+  let svc: CommercialService;
+  let consumption: Array<{ transactionId: string; request: Record<string, unknown> }>;
+
+  /** Coins the pack under test grants, chosen so the fractions below are exact. */
+  const PACK_COINS = 1000;
+
+  beforeEach(async () => {
+    await m.db.dropDatabase();
+    await m.ensureIndexes();
+    process.env.NW_IAP_BUNDLE = BUNDLE;
+
+    const sent: Array<{ transactionId: string; request: Record<string, unknown> }> = [];
+    consumption = sent;
+    const client: AppleApiClientLike = {
+      getTransactionInfo: async () => ({}),
+      getTransactionHistory: async () => ({}),
+      sendConsumptionInformation: async (transactionId, request) => {
+        sent.push({ transactionId, request: request as unknown as Record<string, unknown> });
+      },
+    };
+    const verifier = new SignedDataVerifier([], false, Environment.LOCAL_TESTING, BUNDLE, 1234);
+    svc = new CommercialService({
+      cols: m.collections,
+      now,
+      rng: zero,
+      verifyReceipt: async () => ({ ok: true, coins: PACK_COINS }),
+      appleServerApi: makeAppleServerApi({
+        clients: { production: client, sandbox: client },
+        verifiers: { production: verifier, sandbox: verifier },
+      }),
+    });
+  });
+
+  /**
+   * Buy the coin pack the CONSUMPTION_REQUEST below will be about, and return what it granted.
+   *
+   * `receiptId` is `apple:<transactionId>` because that is what metaserver's iapVerify handler builds
+   * (`${platform}:${receipt}`) and what `consumptionPercentage` looks up. A StoreKit 2 client sends a
+   * bare transaction id, so the two agree; the retired StoreKit 1 path sent a base64 receipt blob,
+   * whose row this lookup would not find — see the last case in this block.
+   */
+  async function buyPack(accountId: string, transactionId = 'tx-1'): Promise<number> {
+    const r = await svc.rechargeVerify({
+      accountId,
+      platform: 'apple',
+      receipt: transactionId,
+      receiptId: `apple:${transactionId}`,
+    });
+    if (!r.ok) throw new Error(`rechargeVerify failed: ${r.error}`);
+    return r.coinsGranted;
+  }
+
+  /**
+   * Spend from inside the iOS app, which is the only place Apple-recharged coins CAN be spent
+   * (ADR-020 channel isolation: an apple-funded balance is invisible to a `web` request). Asserting
+   * the result matters — a spend that quietly failed on INSUFFICIENT_FUNDS would leave the ledger
+   * empty and every percentage below reading a perfectly plausible 0.
+   */
+  async function spendCoins(accountId: string, amount: number, orderId: string): Promise<void> {
+    const r = await svc.spend({ accountId, amount, reason: 'gacha', orderId, clientPlatform: 'ios' });
+    if (!r.ok) throw new Error(`spend failed: ${r.error}`);
+  }
+
+  /** Ask for the refund answer for `tx-1`, with consent already on record. */
+  async function askConsumption(accountId: string, uuid: string): Promise<void> {
+    await svc.appleConsumptionConsent({ accountId, consented: true });
+    await m.collections.appleTransactionLinks.insertOne({
+      _id: 'orig-1', accountId, product: 'monthly_card', linkedAt: now(), updatedAt: now(),
+    });
+    const res = await svc.appleNotification({
+      signedPayload: signedNotification('CONSUMPTION_REQUEST', { uuid, reason: 'UNINTENDED_PURCHASE' }),
+    });
+    expect(res).toMatchObject({ ok: true, outcome: 'consumption_sent' });
+  }
+
+  it('reports the share of the pack that was spent, in Apple milliunits', async () => {
+    // The first purchase on an account is doubled (§6.5), so the pack under test is the SECOND one —
+    // otherwise this asserts the bonus multiplier as much as the measurement.
+    await buyPack('player-1', 'tx-0');
+    const granted = await buyPack('player-1', 'tx-1');
+    expect(granted).toBe(PACK_COINS); // no first-purchase bonus on this one
+
+    await spendCoins('player-1', 250, 'o-1');
+    await askConsumption('player-1', 'consume-25');
+
+    expect(consumption).toHaveLength(1);
+    expect(consumption[0]!.request).toMatchObject({
+      customerConsented: true,
+      consumptionPercentage: 25_000, // 250 / 1000 of a 100000-milliunit scale
+      // Our own ledger says the coins arrived, which is what the app's side of the story is.
+      deliveryStatus: 'DELIVERED',
+      // No trial or sample of a coin pack exists to have offered — coins are the product itself.
+      sampleContentProvided: false,
+    });
+  });
+
+  it('caps at fully consumed rather than reporting more than 100%', async () => {
+    // Spend is not attributable to a specific purchase, so a player with a prior balance can spend
+    // more than this pack granted. Apple's field has no meaning above 100000.
+    await buyPack('player-2', 'tx-0'); // doubled: 2000 coins of prior balance
+    await buyPack('player-2', 'tx-1');
+    await spendCoins('player-2', PACK_COINS * 2, 'o-2');
+    await askConsumption('player-2', 'consume-full');
+    expect(consumption[0]!.request.consumptionPercentage).toBe(100_000);
+  });
+
+  it('reports nothing consumed when the coins are still untouched', async () => {
+    await buyPack('player-3', 'tx-0');
+    await buyPack('player-3', 'tx-1');
+    await askConsumption('player-3', 'consume-zero');
+    // 0, not undefined: the pack IS delivered, and "delivered and unspent" is the strongest fact we
+    // have for a refund we would not contest.
+    expect(consumption[0]!.request).toMatchObject({
+      consumptionPercentage: 0,
+      deliveryStatus: 'DELIVERED',
+    });
+  });
+
+  it('counts only spending that happened after the purchase', async () => {
+    await buyPack('player-4', 'tx-0');
+    // Spent out of the earlier pack, before the one being refunded was even bought.
+    await spendCoins('player-4', 500, 'o-before');
+    await buyPack('player-4', 'tx-1');
+    await spendCoins('player-4', 100, 'o-after');
+    await askConsumption('player-4', 'consume-after');
+    // 100/1000, not 600/1000 — otherwise every long-standing player looks like they consumed
+    // everything they ever bought, and a legitimate refund gets contested on our say-so.
+    expect(consumption[0]!.request.consumptionPercentage).toBe(10_000);
+  });
+
+  it('omits the percentage — and says UNDELIVERED — for a transaction with no recharge row', async () => {
+    // No purchase of ours matches this id, so there is nothing to measure against and the field is
+    // left out (it is optional). This is also the shape a StoreKit 1 purchase produced: its
+    // receiptId was `apple:<base64 receipt blob>`, which this lookup by transaction id cannot find.
+    // Harmless now that the shipped client is StoreKit 2 and sends bare ids, and worth knowing if a
+    // pre-StoreKit-2 purchase ever turns up in a refund request.
+    await askConsumption('player-5', 'consume-none');
+    expect(consumption[0]!.request).toMatchObject({
+      customerConsented: true,
+      deliveryStatus: 'UNDELIVERED_OTHER',
+    });
+    expect(consumption[0]!.request.consumptionPercentage).toBeUndefined();
   });
 });
 
@@ -441,6 +780,37 @@ describe.skipIf(!mongo)('purchase → link → renewal', () => {
     await svc.verifyNonCoinReceipt({ ...args, receiptId: 'apple:tx-0' });
     await svc.verifyNonCoinReceipt({ ...args, receiptId: 'apple:tx-1' });
     expect(await m.collections.appleTransactionLinks.countDocuments({ _id: 'orig-1' })).toBe(1);
+  });
+
+  it('completes the purchase even when the link row cannot be written', async () => {
+    // linkAppleSubscription is best-effort by design and its catch is bare. The asymmetry is the
+    // whole argument: a missing link costs future renewals, which appAccountToken and the cold-start
+    // sync both still cover, while a purchase refused because a bookkeeping row failed costs the sale
+    // outright. Asserted by making the upsert fail.
+    const links = m.collections.appleTransactionLinks;
+    const cols = {
+      ...m.collections,
+      appleTransactionLinks: Object.assign(Object.create(Object.getPrototypeOf(links) as object), links, {
+        updateOne: async () => { throw new Error('collection unavailable'); },
+      }) as typeof links,
+    };
+    const noLink = new CommercialService({
+      cols,
+      now,
+      rng: zero,
+      verifyReceipt: async () => ({
+        ok: true, coins: 0, product: 'monthly_card' as const, originalTransactionId: 'orig-1',
+      }),
+    });
+    const bought = await noLink.verifyNonCoinReceipt({
+      accountId: 'player-7',
+      platform: 'apple',
+      receipt: 'base64receipt==',
+      receiptId: 'apple:tx-0',
+      expectedProduct: 'monthly_card',
+    });
+    expect(bought.ok).toBe(true);
+    expect(await links.findOne({ _id: 'orig-1' })).toBeNull();
   });
 
   it('does not link a starter pack — one-shot SKUs never produce a renewal to route', async () => {

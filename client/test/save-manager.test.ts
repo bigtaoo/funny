@@ -854,3 +854,93 @@ describe('SaveManager.subscribe (2026-07-29)', () => {
     expect(b).toBe(2);
   });
 });
+
+// ── Pending flag queue (2026-09-09) ──────────────────────────────────────────
+// A setFlag that never reached the server used to be lost for good: reconcile() replaces `flags`
+// with the cloud copy wholesale, and nothing re-pushed the write afterwards. The launch gates (age /
+// GDPR consent) run before any token is applied, so their answer took exactly that path — and the
+// age gate therefore asked again on every launch, forever. The queue below is what closes that hole.
+describe('SaveManager pending flag queue', () => {
+  /** A fake API whose `cloud` document is mutated by setFlag, like the real server's save doc. */
+  function flagApi(cloud: SaveData, hasToken = true): { api: ApiClient; puts: string[] } {
+    const puts: string[] = [];
+    const api = {
+      hasToken: () => hasToken,
+      getSave: async () => ({ save: cloud }),
+      setFlag: async (key: string, value: boolean) => {
+        puts.push(key);
+        cloud.flags = { ...cloud.flags, [key]: value };
+        cloud.rev += 1;
+        return { save: cloud };
+      },
+    } as unknown as ApiClient;
+    return { api, puts };
+  }
+
+  it('re-pushes a flag written while offline, and keeps it through the pull that follows', async () => {
+    const storage = new MemStorage();
+    const store = new LocalSaveStore(storage);
+    store.saveLocal(makeNewSave('a', 1));
+    const cloud = makeNewSave('a', 1); // the server has never heard of this flag
+
+    // Offline (no token) — the write lands locally and is queued.
+    const offline = flagApi(cloud, false);
+    const mgr = new SaveManager({ store, api: offline.api });
+    mgr.setFlag('ageOk', true);
+    expect(offline.puts).toEqual([]);
+    expect(store.loadPendingFlags()).toEqual({ ageOk: true });
+
+    // Same install, now with a token: the pull's reconcile would wipe the flag, the flush re-pushes it.
+    const online = flagApi(cloud);
+    const mgr2 = new SaveManager({ store, api: online.api });
+    await mgr2.refresh();
+    expect(online.puts).toEqual(['ageOk']);
+    expect(mgr2.get().flags.ageOk).toBe(true);
+    expect(store.loadLocal().flags.ageOk).toBe(true);
+    expect(cloud.flags.ageOk).toBe(true); // the server finally has it
+    expect(store.loadPendingFlags()).toEqual({}); // confirmed → queue drained
+  });
+
+  it('drops a queued write the cloud already carries instead of re-PUTting it', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    store.savePendingFlags({ ageOk: true });
+    const cloud = makeNewSave('a', 1);
+    cloud.flags = { ageOk: true }; // an earlier launch already got it through
+
+    const { api, puts } = flagApi(cloud);
+    const mgr = new SaveManager({ store, api });
+    await mgr.refresh();
+    expect(puts).toEqual([]);
+    expect(store.loadPendingFlags()).toEqual({});
+    expect(mgr.get().flags.ageOk).toBe(true);
+  });
+
+  it('keeps the entry queued when the re-push itself fails', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    store.savePendingFlags({ ageOk: true });
+    const cloud = makeNewSave('a', 1);
+    const api = {
+      hasToken: () => true,
+      getSave: async () => ({ save: cloud }),
+      setFlag: async () => { throw new Error('network'); },
+    } as unknown as ApiClient;
+
+    const mgr = new SaveManager({ store, api });
+    await mgr.refresh();
+    expect(store.loadPendingFlags()).toEqual({ ageOk: true }); // retried on the next pull
+    expect(mgr.get().flags.ageOk).toBe(true); // local mirror still shows the player's answer
+  });
+
+  it('does not carry a queued write into the next account (logout clears it)', async () => {
+    const store = new LocalSaveStore(new MemStorage());
+    store.saveLocal(makeNewSave('a', 1));
+    const mgr = new SaveManager({ store, api: flagApi(makeNewSave('a', 1), false).api });
+    mgr.setFlag('ageOk', true);
+    expect(store.loadPendingFlags()).toEqual({ ageOk: true });
+
+    await mgr.resetForLogout();
+    expect(store.loadPendingFlags()).toEqual({});
+  });
+});

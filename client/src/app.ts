@@ -22,7 +22,7 @@ import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
 import { t } from './i18n';
 import { ui as C } from './render/sketchUi';
 import { setBakeRenderer } from './render/bake';
-import { RenderPolicy, rendererResolution } from './render/renderPolicy';
+import { POWER_PREFERENCE, RenderPolicy, rendererResolution } from './render/renderPolicy';
 import { setDebugFlagStorage } from './debugFlags';
 import { installTextPaddingFloor } from './render/pixiText';
 import { preloadBoot } from './assets/bootManifest';
@@ -60,6 +60,8 @@ export async function startApp(
     // picture drawn in ~2px ink strokes. See render/renderPolicy.ts for the measurement.
     resolution:      rendererResolution(platform.devicePixelRatio),
     autoDensity:     true,
+    // Ask for the integrated GPU where there is a choice. See POWER_PREFERENCE.
+    powerPreference: POWER_PREFERENCE,
   });
 
   // Raise the global text-padding floor so no PIXI.Text (migrated to makeText or not)

@@ -3,8 +3,8 @@
 // untouched, and the batchLimit bound.
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, type MongoHandle } from '@nw/shared';
-import { decayReputationOnce } from '../dist/reputationDecay.js';
-import { applyPenalty } from '../dist/moderation.js';
+import { decayReputationOnce } from '../src/reputationDecay.js';
+import { applyPenalty } from '../src/moderation.js';
 
 const URI = process.env.NW_MONGO_URI ?? 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
 const DB = 'nw_meta_reputation_decay_test';

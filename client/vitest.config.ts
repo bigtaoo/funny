@@ -1,5 +1,6 @@
 import path from 'path';
 import { defineConfig, coverageConfigDefaults } from 'vitest/config';
+import { stubBinaryAssets } from './test/harness/stubBinaryAssets';
 
 // Mostly the pure game-logic core (@nw/engine + src/game/**), which has no PIXI dependency —
 // but not exclusively: `test/render/**` matches the include below too, and those files do import
@@ -9,6 +10,16 @@ import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 // 4 of the 11 files died at load there, while this config had been running all 11 green the whole
 // time. Deleting it removes the second place for that alias list to rot; there is now one suite.
 export default defineConfig({
+  // Shared with vitest.ui.config.ts (2026-09-09), but with the NARROW extension set: vite resolves
+  // `.png`/`.mp3` natively and per-file, which suites here depend on (towerArtContract.test.ts
+  // compares two imported image URLs), while a `.tao` import — an extension vite has no loader for
+  // — is handed to the JS parser and kills the importing module at load. That was the one
+  // MECHANICAL reason a cause-① file could not take cause ①'s treatment ("the suite exists, it
+  // just lives in test/ui, so move it here", claudedocs/client-testing.md): no `git mv` could work,
+  // so the suite had to stay where no coverage is reported. It is what kept `assets/bootManifest.ts`
+  // (10 direct rig/art imports) and `assets/battleAssets.ts` (via UnitView) out; both are gated
+  // below. Rig URLs are opaque and non-unique here — see the plugin's header.
+  plugins: [stubBinaryAssets()],
   // @nw/engine resolves to its TS source (server/engine/src) — the engine moved
   // out of client into the workspace package (§16.7) and is imported directly;
   // the old src/game/* re-export shims were deleted (2026-08-02).
@@ -18,6 +29,7 @@ export default defineConfig({
     alias: {
       '@nw/engine': path.resolve(__dirname, '../server/engine/src'),
       '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
+      '@nw/shared/equipment': path.resolve(__dirname, '../server/shared/src/equipment.ts'),
       '@nw/shared': path.resolve(__dirname, '../server/shared/src/slg/index.ts'),
     },
   },
@@ -76,6 +88,17 @@ export default defineConfig({
         'src/analytics/queue.ts',
         'src/app/appConstants.ts',
         'src/app/matchEngine.ts',
+        // ...and the battle half of the asset gate (2026-09-09). `assetGate.ts` itself cannot be
+        // gated here — it constructs a LoadingOverlay, i.e. real PIXI, so it stays a test/ui
+        // subject — but `battleGate.ts` imports it type-only-plus-one-call and needs no PIXI at
+        // all. Twenty lines, two of which are the ones that matter: `opts` (both sides' equipped
+        // skin ids — the one part of a battle's asset set NOT in STICKMAN_ASSETS) has to reach the
+        // warm step, and `DeferredSceneCalls` has to buffer the net pushes that arrive while the
+        // loading screen is up. Dropping either fails silently: a skin flashes a placeholder in the
+        // first match only, and a dropped `match_over` leaves the player in a battle that never
+        // ends. The suite that used to cover this lived in test/ui and spent three of its cases
+        // re-asserting `assetGate`'s own behaviour one layer up; see test/battleGate.test.ts.
+        'src/app/battleGate.ts',
         'src/app/nav/room.ts',
         // audio (2026-08-31, AUDIO_DESIGN.md): a DIRECTORY entry from day one rather than the
         // per-file shape most of this list still has — `src/audio/**` is the platform-neutral half
@@ -118,6 +141,19 @@ export default defineConfig({
         // asked for or stops warming what everybody needs.
         'src/assets/idlePrefetch.ts',
         'src/assets/prefetchPolicy.ts',
+        // ...and the two asset GATES (2026-09-09), which only became reachable from this config when
+        // the binary-asset stub moved into it (see `plugins` at the top). Both were cause ① with a
+        // mechanical blocker: thorough suites existed in test/ui, but a `git mv` would not have
+        // parsed. `bootManifest.ts` is the L0 tier list and `battleAssets.ts` the pre-battle warm,
+        // and since ASSET_PACKAGING §11.2 split L0 they are load-bearing for each OTHER: the starter
+        // rigs and decor atlas were moved off the blocking boot gate purely on the argument that
+        // `ensureBattleAssets` re-awaits every one of them. Break either side and the game still
+        // boots, still loads, still plays — the FIRST battle after a cold load draws placeholder
+        // circles for a few frames and every battle after it is fine, i.e. the symptom exists only
+        // on a machine that has never run the game before. `test/bootManifestTiers.test.ts`'s last
+        // case asserts the subset relation itself, which is the safety case for the split.
+        'src/assets/battleAssets.ts',
+        'src/assets/bootManifest.ts',
         'src/cache/MemoryMonitor.ts',
         'src/cache/ObjectPool.ts',
         'src/cache/poolRegistry.ts',
@@ -133,6 +169,13 @@ export default defineConfig({
         'src/net/anomaly/reporter.ts',
         'src/net/judgeRunner.ts',
         'src/net/rateGate.ts',
+        // ...and the OTHER compression path (2026-09-09): `replayCompress.ts` is the state-stream share
+        // pipeline, `gzip.ts` is the server-authoritative match replay's transport wrapper. Only the
+        // first had a suite. What earns the second a gate is not its 17 lines but that
+        // `DecompressionStream` is a runtime capability, not a language one — its explicit
+        // "unavailable in this runtime" throw is the difference between a readable message on a host
+        // that lacks it and a TypeError from inside a Blob pipeline.
+        'src/net/gzip.ts',
         'src/net/replayCompress.ts',
         'src/net/replayUpload.ts',
         'src/net/serverClock.ts',
@@ -197,7 +240,24 @@ export default defineConfig({
         'src/scenes/EquipmentScene/helpers.ts',
         'src/scenes/EquipmentScene/layout.ts',
         'src/scenes/LobbyScene/format.ts',
+        // ...and the START button's routing (test/lobbyMatchState.test.ts, 2026-09-09). Three
+        // statements, gated because BOTH outcomes are a working game: take the wrong branch and an
+        // online player who tapped ranked gets a local AI match instead, with a plausible VS screen
+        // and a real battle. Nothing errors; the only symptom is ranked "sometimes not finding
+        // anyone", which reads as a server problem.
+        'src/scenes/LobbyScene/matchState.ts',
         'src/scenes/realLayerInterludeArt.ts',
+        // ...and CityScene's fetch fan-out + queue poll (test/cityQueuePoll.test.ts, 2026-09-09).
+        // 0% before, and `refreshOnQueueDue` is why it is here rather than in a `logic/` group: it
+        // is the ONLY refresh path a finished build/training entry has. worldsvc's 2s scheduler
+        // settles the queue server-side and never notifies gateway, so there is no push to fall
+        // back on (P0-9, comm-audit-2026-07-27 finding B10 — this poll IS the fix for it). Every
+        // way it can break is quiet: stop firing and the countdown freezes at 剩余 0s with the
+        // finished building still listed; drop the `finally` and one offline tick wedges it for the
+        // rest of the session; drop the re-entrancy guard and a lagging server gets one in-flight
+        // getMe per second against rateGate's 5-token bucket. All three read as "the server is
+        // slow", which is also what the legitimate retry branch looks like.
+        'src/scenes/CityScene/data.ts',
         // 4b, first scene group (2026-08-27): worldmap's pure layer is now a DIRECTORY, which is the
         // shape ADR-070 asked for — five per-file entries collapsed into one entry that also picks up
         // whatever lands there next. `test/pureLayerBoundary.test.ts` is what keeps it a pure layer;
@@ -242,6 +302,39 @@ export default defineConfig({
         // arithmetic happens to be testable with a fake ctx (95.8% before this pass), which is why it is
         // gated at all, but moving it into `logic/` would make the boundary guard a lie.
         'src/scenes/worldmap/WorldMapRenderer/viewport.ts',
+        // ...and worldmap's other PIXI-free non-`logic/` file: the server-error → toast-copy map
+        // every `worldmap/net/*.ts` sibling routes failures through (test/worldMapErrorMsg.test.ts,
+        // 2026-09-09). Not a `logic/` candidate — it is net-layer copy, not map arithmetic — but it
+        // needs a gate more than most of that directory does, because its failure mode is invisible:
+        // an unmapped code falls back to the server's raw English *by design*, so a dropped entry
+        // reads as a working toast to anyone testing in English.
+        'src/scenes/worldmap/net/errors.ts',
+        // ...and its five siblings' entry point: the live-push handlers (test/worldMapPush.test.ts,
+        // 2026-09-09). Also 0%, and gated for the same reason `errors.ts` is — the failure is
+        // invisible, not absent. What makes it worth a gate rather than a shrug is that NOTHING sits
+        // behind these five: comm-audit-2026-07-27 P1-2 deleted the 5s poll precisely because the
+        // push channel already covers every state change, so `WorldMapNet.start()` is a no-op today.
+        // A dropped push therefore does not cost seconds of freshness, it leaves state wrong until
+        // the player leaves and re-enters the SLG — which already shipped once (SLG_LOG_2026-08 §523:
+        // settled occupations never left ctx.occupations, their teams read busy forever, and the team
+        // picker listed nothing). And `applySiegeResult` is the only thing that TELLS the player who
+        // won: on 2026-08-02 it guessed "was this my march" from a per-scene Set that a WorldMapScene
+        // rebuild wiped, so a player's own occupy win announced itself as 领地失守. Its classification
+        // now comes from the payload, and this is what keeps it there. Not a `logic/` candidate:
+        // net-layer effect handlers, not map arithmetic. Driven through a structural fake ctx (the
+        // real one constructs PIXI), with `net/loaders` stubbed as the network+redraw seam — which is
+        // also how a case controls what the awaited refetch leaves in `tileCache` for the
+        // hold-vs-final split to read.
+        'src/scenes/worldmap/net/push.ts',
+        // ...and AuctionScene's label/glyph/level helpers (test/auctionItemLabels.test.ts, 2026-09-09).
+        // Form ① free functions with no `core` at all, so unlike the pointer/input entries around here
+        // they are not Core collaborators — the only reason they are a per-file entry rather than a
+        // `logic/` directory is that they are the scene's ONLY such module. Three ui suites already
+        // drove them through the scene, which is cause ① (that layer reports no coverage) and also the
+        // wrong altitude: a panel assertion goes red for a dozen unrelated reasons and stays green for
+        // the failure that actually shipped here — a name resolving through the wrong i18n namespace,
+        // which is invisible unless someone compares two screens in the same language.
+        'src/scenes/AuctionScene/itemLabels.ts',
         // ui
         'src/ui/busyTracker.ts',
         'src/ui/scrollTapGesture.ts',

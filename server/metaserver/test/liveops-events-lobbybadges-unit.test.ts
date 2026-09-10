@@ -12,6 +12,8 @@
 // claimEventReward's atomic claim-count guard uses $elemMatch/$expr in its Mongo filters, which
 // test/helpers/fakeCollection.ts's FakeCollection does not implement — real Mongo (the shared rs0 instance)
 // is the pragmatic choice here, same as events-accrue.e2e.test.ts / events-claim.e2e.test.ts.
+// (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
+// suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createMongo, makeWeekKey, type JwtConfig, type MongoHandle, type EventDoc } from '@nw/shared';
 import type { FastifyInstance } from 'fastify';

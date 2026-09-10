@@ -4,7 +4,8 @@
 //       provenance tag (`orderId ?? randomUUID()`, the back-compat caller that supplies no orderId),
 //   (b) every refusal / retry-exhaustion mapping worldsvc actually sees: 400/402/404/409, plus the
 //       orderId-reservation release that decides whether a caller's retry can ever succeed again,
-//   (c) the skin escrow/grant pair, which had no src-level route test at all (only dist-importing e2e).
+//   (c) the skin escrow/grant pair, which had no src-level route test at all (only e2e, which imported
+//       dist at the time and so counted for nothing in the src report).
 // Registers the route module from ../src (never ../dist — v8 coverage cannot attribute dist/*.js to src/*.ts).
 import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';

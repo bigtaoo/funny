@@ -366,11 +366,366 @@ playerWorld 1601 份 | 已占领地块 17488 | 待结算占领 1117
 
 ### 6.7 还没做的
 
-1. **到达结算突发**（新的第一瓶颈，上面刚量出来）：一个 tick 内几十场攻占战串行。它跟走格子不是一类问题——**不能批，只能摊**（把同一 tick 到期的结算分散到若干 tick / 给结算单独一个更快的 interval / 或者最终还是要面对「跨玩家并发」那道墙）。
+1. ~~**到达结算突发**（新的第一瓶颈，上面刚量出来）：一个 tick 内几十场攻占战串行。它跟走格子不是一类问题——**不能批，只能摊**（把同一 tick 到期的结算分散到若干 tick / 给结算单独一个更快的 interval / 或者最终还是要面对「跨玩家并发」那道墙）。~~ → **2026-09-09 已做前两条（第七节）**；第三条「跨玩家并发」仍未做，而且现在有了一个说得清什么时候该做它的数字（`arrivals.deferred`）。
 2. **`blocked` 的粗规则可以细化，但收益不大**：726 条被降级里，很大一部分是「两条行军共享一个**离开**的格子」（同一玩家从主城连发几支队伍，它们的 `path[0]` 都是主城）。互相离开同一格其实不会冲突——清 occ 是按自己 id 匹配守卫的，最多一条命中。规则可以细化成「只有**进入**的格子算冲突」。但估算收益只有约 50ms/tick（726 条 × 7 次本地 Redis 往返 / 20 个 tick），**远不是尾巴**，所以先记在这里而不是顺手改掉。
-3. `getMap` 的 **payload 本身**（40 次/秒 × 6561 格 × 528KB ≈ 21MB/s 出口；往返侧已经削过，剩下的是缩小默认半径 / 更多走 sparse / 增量 diff）。
+3. ~~`getMap` 的 **payload 本身**（40 次/秒 × 6561 格 × 528KB ≈ 21MB/s 出口；往返侧已经削过，剩下的是缩小默认半径 / 更多走 sparse / 增量 diff）。~~ → **2026-09-09 已做（第八节）**，但**不是按这三条路线里的任何一条**：量完之后发现「40 次/秒」的轮询早已删除、`r=40` 客户端从不请求（zoom 1 真实 r=14~30，zoom 2/3 走 sparse），前两条路线其实没有剩余空间；真正的病因是**没有任何一层压缩**，反代加一行 `encode zstd gzip` 就是 **17.6×**。「增量 diff」在 gzip 之上仍有约 20×，但降级为**以后可选**，且先要量「一个真实 active template 改了多少格」。
 4. A\* 的 scratch buffer。
 
 ### 6.8 复测时踩到的本地栈坑
 
 `docker compose up -d --build worldsvc` 会**顺带重建并重启共享同一个 `nw-server:local` 镜像的其它服务**（metaserver/gateway/socialsvc/commercial），而 **nginx 只在自己启动时解析一次上游 DNS**，于是所有 `/api/*` 立刻 502、负载测试在 ramp 阶段就 200/200 全挂（报的是「HTML 不是合法 JSON」，看不出是 DNS）。**修法：`docker restart nw-local-nginx`。** 这跟 5.4 ② 的 keepalive 是同一个本地栈的两张不同的脸。
+
+## 七、到达结算：拆成自己的任务 + 时间片（2026-09-09，§6.7 第 1 条）
+
+> 一句话：**这一刀不让结算变快，也没有让它变快的办法**——它只是不再让一阵结算独占那唯一的线程。
+
+### 7.1 为什么摊而不是批
+
+§6.6 的分因计数器已经把问题定死了：32s 里 `serial 1797`，其中 `arriving 1071`。一条 arriving 的结算 =
+一场真攻占战（走计算池）+ 一次 metaserver 往返。它**不能批**（写的是防守方的账本），**也正因为同一个理由
+不能并发**。于是「同一 tick 到期几十条」就是「这个 tick 跑几秒」，而那几秒里 **走格子、其它五个 scheduler
+任务、以及每一个 HTTP 请求全都在排队**——单线程。
+
+**吞吐量这一刀一点也没改善。** 结算总量不变、单条成本不变；在结算跟不上到期速度的风暴里，积压照样增长
+（这正是 `arrivals.deferred` 存在的理由）。变的是**积压的形状**：服务照常应答、别的任务保持自己的节奏、
+到达只是变晚，而不是把整个进程一起拖下水。
+
+### 7.2 怎么切：按 `arriveAt` 一刀两断
+
+到达 tick 拆成两个 **查询互不相交** 的任务：
+
+| | 查询 | 内容 | 成本 |
+|---|---|---|---|
+| `sched:arrivals`（2s） | `nextStepAt ≤ t` **且** `arriveAt > t` | 只走格子，永远不结算 | 已批处理，p50 ~2ms |
+| `sched:arrivalSettle`（500ms） | `arriveAt ≤ t` | 结算（打仗 / 驻防 / 占地），含把落后的几格走完 | 每条一场仗，摊在时间片里 |
+
+- 相交只可能发生在「步进扫描之后、结算扫描之前那条 march 恰好到点」这一瞬。两侧的既有守卫本来就管这个：
+  `applyFastSteps` 的 `bulkWrite` 带 `status:'marching'` 过滤 + `matchedCount` 不符时的确认查询（文档没了
+  就不给它写 occ，正是 §6.3 那条防永久泄漏的守卫），`advanceMarch` 每次都重读 `live`。**没有为这次拆分
+  新增任何锁。**
+- **`arrivals.arriving` 在走格子那半现在结构上恒为 0**，仍然照常上报——它变成了「两个查询有没有开始重叠」
+  的探针。
+
+### 7.3 时间片，而不是条数预算
+
+`NW_SLG_ARRIVAL_SETTLE_SLICE_MS`（默认 **150ms**，0 = 关闭 = 拆分前的行为），在**两条结算之间**检查，
+永远不打断进行中的一条；一次至少放行一条，所以片再小也不会卡死队列。
+
+**为什么是墙钟而不是条数**：单条结算的成本随它撞上什么而差一个数量级（空地 vs 一场满编攻占战），
+条数预算在两种世界里意味着完全不同的两件事。150ms 片 / 500ms 间隔 ≈ 风暴下结算最多占 30% 的线程，
+平时一次都碰不到片。
+
+**被推迟的那些不带任何状态**：不写标记、不占租约、不改时间——它们只是「仍然到期」，下一趟同一个查询照样
+找得到。所以两趟之间崩了也不丢，也没有「谁负责重排」这个问题。顺序按 `arriveAt` 升序（已有索引），
+**扫描上限和时间片都会截断队列，没有顺序就是抽签，一条 march 可以反复输**。
+
+### 7.4 测试与变异验证
+
+- `worldsvc/test/arrival-settle-slice.e2e.test.ts`（7 例，真 Mongo）：片小于一条结算 → 每趟恰好放行一条
+  且**其余文档逐字段未被碰过**、多趟把队列排干且不丢、按到达时间从老到新、`arrivals.settled`/`deferred`
+  两个计数器、**两半互不相交**（走格子那趟不结算、结算那趟不动半路的 march）、以及
+  `processDueArrivals`（测试/admin 用的合并入口，自己掌握时钟）**仍然一次调用就把世界结算干净**。
+  片是靠**传 `sliceMs` 参数**驱动的，不是靠假时钟——结算是真异步 I/O，微小的片就确定性地只放行一条，
+  于是不必在真 Mongo 旁边动 fake timers。
+- **四轮变异全部验红**：① 去掉时间片检查 → 4 例红；② 去掉 `arriveAt > t`（两半重叠）→ 2 例红
+  （含 §6.4 那份计数器测试）；③ 合并入口不再跑结算 → 3 例红；④ 去掉 `.sort({arriveAt:1})` → 1 例红。
+- **④ 值得单记**：第一次写这条时它**不肯变红**。原因是结算查询就是按 `arriveAt` 过滤的，Mongo 自然走
+  `{arriveAt:1}` 索引、本来就有序——**删掉 sort 所有行为断言照样绿**。这不代表 sort 是装饰：它是「保证」
+  和「计划器巧合」的差别，哪天计划器改挑别的索引，公平性就无声消失。所以那条用例改成两段：顺序仍按行为
+  断言，**「顺序是被请求的」用一个记录 `.sort()` 参数的游标 Proxy 断言**。
+  （呼应 [`server.md`](../../claudedocs/server.md) 那条：拒绝变红的测试通常说明断言的是别的东西。）
+
+### 7.5 还没有量到的
+
+**本机测不出这一刀的真实收益**：§6.6b 的负载测试对同一个世界不可重复（三轮跑完 1601 份 playerWorld、
+17488 格已占领），要横向比就得每轮开一个干净世界或者重置——重置是破坏性操作，需要用户拍板。所以这一节
+**没有任何端到端数字**，只有单元/成本级别的保证。真上量的时候该看的是：`loopLagMs.max` 与
+`POST /world/march` p99（这一刀真正针对的东西）、`sched:arrivalSettle` 的超 interval 告警频率、
+以及 **`arrivals.deferred` 是否持续增长**——它一旦长期非零，说明结算吞吐才是天花板，
+§6.7 第 1 条里那道「跨玩家并发」的墙就到了非撞不可的时候。
+
+### 7.6 后续：`arrival.ts` 592 行，把这一刀切出来的两半也切成两个文件（2026-09-09 当日追加）
+
+§7.2/§7.3 那一轮只加了时间片，**没有动 `npm run check:filelength`**——`worldsvc/src/combatMarch/arrival.ts`
+被撑到 **592 行**，超了 500 门禁又不在基线里，于是当日分支一开 PR 就会红在 `ci.yml` 的 `server-checks`。
+（教训本身很老：门禁失手一次的成本是「下一个人替你发现」，见 [`server.md`](../../claudedocs/server.md)。）
+
+**没有走基线豁免，走了真拆**，按 [`server-audits.md`](../../claudedocs/server-audits.md)「拆分形态的优先级」
+的**形态①（独立函数模块）**——§7.2 已经论证过这两半「查询互不相交、不共享状态」，那就是它们能各自成文件的
+现成理由，不用再重新判断一遍边界：
+
+| 文件 | 行数 | 内容 |
+|---|---|---|
+| `combatMarch/arrival.ts` | 214 | **队列那一端**：两个扫描 + 三个旋钮（`ARRIVAL_SCAN_LIMIT` / `SETTLE_SLICE_MS` / `warnIfCapped`）+ `arrivals.*` 计数器。`ArrivalService` 只剩这三个对外方法。 |
+| `combatMarch/arrivalWalk.ts` | 210 | **走格子那半**：`advanceMarch`——ADR-051 的逐格前进、occ 索引维护、P2b/P5/P3b 三种拦截、以及行军自己的账本与删除。 |
+| `combatMarch/arrivalSettle.ts` | 214 | **落地那半**：`applyArrival` 按 `kind` 分派（return 退兵 / attack·sweep·occupy 交给攻城域 / move 走 `applyMove`+`tryParkTeam` / 兜底 reinforce）。后两个是文件私有，只有 `applyArrival` 会调。 |
+| `combatMarch/arrivalCtx.ts` | 25 | `ArrivalSiegeCtx`：这两半真正用到的 5 个 `SiegeService` 方法，照 `combatSiege/ctx.ts` 的窄接口惯例。 |
+
+- **两半之间只有一条边**：`advanceMarch` 走到路径末格时调 `applyArrival`。所以 `ArrivalSiegeCtx` 是 5 个方法
+  的并集而不是两个接口——走格子那半会传递性地用到落地那半的三个。
+- **零行为改动，而且是可机械核对的零**：把新文件反向变换（还原缩进、`core.`→`this.core.`、
+  `siege.`→`this.siege.`、函数签名换回方法签名）后跟 `git show HEAD:...arrival.ts` 的对应行段 `diff`，
+  两个文件**逐字节相同**；`arrival.ts` 自己那 194 行里只有 3 处调用点改成了传 `(this.core, this.siege, …)`。
+  §7.4 那四条变异验证过的性质因此一条都没碰到，三个到达测试文件**一行没改就是绿的**。
+- **顺带清掉一处反射**：`test/review-fixes-2026-08-03.e2e.test.ts` 原来靠
+  `(svc as any).combat.march.arrival.advanceMarch` 戳私有方法（2026-08-11 那次拆分留下的写法）——现在
+  `advanceMarch` 是个真正导出的函数，直接 `import` 调用，`as any` 只剩下读那两个私有依赖字段。
+- **补了一条结构门禁**：`worldsvc/test/arrival-split-edges.test.ts`（3 例，纯静态、读源码、4ms）钉住那条边
+  **单向**——`arrivalSettle.ts` 不许 import 走格子那半，两半都不许 import 回 `arrival.ts`。**为什么值得一条**：
+  反向 import 不会编译失败，它只是把这一对变成加载期 ESM 环，症状是某个 scheduler tick 里
+  `applyArrival is not a function`——读起来像到达逻辑的运行时 bug，而不是一次 import 失误（跟
+  `compute-worker-module-graph.test.ts` 同一个理由：把模块图的规矩钉在便宜的地方，别等崩了再从一句
+  指错方向的报错往回找）。**三轮变异全部验红**：① 在 `arrivalSettle.ts` 里 import `advanceMarch`；
+  ② 删掉 `arrivalWalk.ts` 那条真实的 `./arrivalSettle` import；③ 让 `arrivalWalk.ts` import 回 `arrival.ts`。
+
+## 八、`getMap` 的 payload（2026-09-09，§6.7 第 3 条）
+
+> 一句话：**先量，结果三条候选路线全都不该走** —— 真正的病因是「几千个近乎相同的瓦片对象**没有被压缩**」，
+> 而这一条根本不在 §6.7 给出的三条路线里。改法在反代那一层，一行配置，**Node 的那根线程一毫秒都不花**。
+
+### 8.1 §6.7 第 3 条的前提有两处已经过期
+
+那一条写的是「40 次/秒 × 6561 格 × 528KB ≈ 21MB/s 出口」。逐项核过之后：
+
+1. **「40 次/秒」的那个 5 秒轮询早就删了。** `client/src/scenes/worldmap/WorldMapNet.ts:85-102` 的
+   `start()`/`destroy()` 现在是显式空实现（P1-2，comm-audit-2026-07-27）。地图拉取现在是**事件驱动**：
+   进场（`POST /world/enter`）、拖动结束（`WorldMapInput.ts:458`）、变焦（`viewport.ts:54`）、
+   一次改动型操作的自身响应、以及 `tile_update` / `siege_result` 推送（`net/push.ts:39,82`）。
+   200 人在线的稳态出口不再是一个能乘出来的常数。**顺带**：`loaders.ts:156,161`、`lifecycle.ts:127`、
+   `core/map.ts:76` 的注释里还写着「~5s 轮询」，都是过期的。
+2. **`r=40` 这个形状客户端从来不请求。** 半径来自视口尺寸而不是变焦档位常量
+   （`WorldMapRenderer/viewport.ts:31`：`ceil(max(spanTx, spanTy)/2) + 4`），而 `getMap`（满格）
+   **只在 zoom 1 走**，zoom 2/3 走 `getMapSparse`（`net/loaders.ts:90`）。把真实布局代进那个公式：
+
+   | 布局 | zoom 1 实际请求的 r | zoom 2 | zoom 3 |
+   |---|---|---|---|
+   | 横屏 1920×1080 | **15~16** | 35 → sparse | 40（截断）→ sparse |
+   | 横屏 2592×1080 | **14** | 31 → sparse | 40（截断）→ sparse |
+   | 竖屏 1080×1920 | **26** | 40（截断）→ sparse | 40（截断）→ sparse |
+   | 竖屏 1080×2400 | **30** | 40（截断）→ sparse | 40（截断）→ sparse |
+
+   所以满格读的真实范围是 **r=14~30**，`MAP_VIEW_MAX_RADIUS = 40` 的那 6561 格只是当初微基准挑的
+   上界。（`r` 缺省时服务端取 10；botsvc 只打 sparse 且 `r=5`。）
+
+**这直接判掉了三条路线里的两条**：「缩小默认半径」已经由客户端自己的视口数学做完了，没有剩余空间；
+「更多走 sparse」——zoom 2/3 已经全在 sparse 上，实测同一个视口 **7.1KB / 194 格**，也没有剩余空间。
+
+### 8.2 量出来的分解（`worldsvc/test/load/getMapPayload.load.ts`，确定性、不需要 docker）
+
+新加的这份 harness 自带内存副本集、固定 seed、固定瓦片配比，**两次跑出同样的字节数** —— 跟隔壁那份
+订单吞吐负载测试（§6.6b：对同一个世界不可重复）刚好相反，这也是它值得留下来的全部理由：
+payload 这个问题可以在本机上关掉。
+
+真实世界（本机 docker 全栈、`s1-4`、`cx=cy=750`）逐档：
+
+| r | 格数 | 线上字节 | gzip 后 | 比例 |
+|---|---|---|---|---|
+| 16 | 1089 | 85,856 | 4,972 | 5.8%（17.3×） |
+| 30 | 3721 | 296,971 | 16,803 | 5.7%（17.7×） |
+| 40 | 6561 | **523,124** | **29,708** | 5.7%（**17.6×**） |
+
+r=40 那个 523KB 复现了审计原文的 528KB（harness 里 529.7KB），所以这三行跟第一节是同一把尺子。
+
+**按字段分解**（r=40，一个有 185 格外人领地的繁忙视口）：
+
+| 字段 | 字节 | 占比 | 出现在 |
+|---|---|---|---|
+| `type` | 115.5KB | 21.8% | 6561 格 |
+| `resType` | 101.0KB | 19.1% | 5627 格 |
+| **`visible`** | **96.1KB** | **18.1%** | 6561 格（**恒为 `true`**） |
+| `level` | 64.1KB | 12.1% | 6561 格 |
+| `x` + `y` | 102.6KB | 19.4% | 6561 格 |
+| `obstacleKind` | 21.2KB | 4.0% | 926 格 |
+| 归属 + 情报（`ownerName`/`ownerPublicId`/`familyId`/`occupied`/`garrison`/`hp`…） | 合计 < 4% | | ≤194 格 |
+
+**结论很干脆：payload 里几乎没有「玩家状态」，全是地形。** 玩家真正想知道的那部分（谁占了、多少兵、
+多少耐久）不到 4%；剩下 96% 是每一格都要重复一遍的地形描述。而 **94% 的格子（498KB）与客户端自己
+`proceduralTile()` 就能算出来的结果逐字节相同** —— zoom 2/3 的 sparse 契约本来就是这么干的。
+
+### 8.3 为什么最后没走「增量 diff」，也没有去掉那个恒为 true 的 `visible`
+
+两条看起来都对，都被同一个测量否掉了：**它们和压缩不是可加的**。
+
+- **去掉 `visible`**：未压缩 −18.7%（513KB → 417KB），**压缩后只剩 −0.1% ~ −1.5%**。
+  它是一个每格都一样的常量串，压缩器吃它不要钱。换来的是一次协议改动（openapi + 客户端 + 测试），
+  收益是零。**不做。**
+- **procedural diff**（只发客户端自己算不出来的格子）：未压缩 −94%（529.7KB → 31.5KB），
+  在此之上再 gzip 是 1.4KB。跟「只 gzip」的 29.7KB 比确实还有 20× —— 所以这条**没有被证明无价值**，
+  只是被证明**不该先做**：它是一次协议 + 客户端渲染路径改动，而 gzip 是一行配置就拿到 17.6×。
+  **并且它有一个本机测不出来的天花板**：`isClientDerivable` 是拿 `proceduralTile` 比的，而
+  §24 Layer A 的 `mapBaselineRows` 承载的是**管理后台地图编辑器的手改**（画的河/山、挪动的城），
+  客户端推不出来。本机这个世界没有 active template，所以基线行缺失、`getMap` 回落到
+  `proceduralTile`，94% 是**上界**；一个从手改模板开的世界要按被改过的格数往下打折。
+  真要做这条，得先量「一个真实的 active template 改了多少格」。
+
+### 8.4 做了什么：压缩放在反代，不放在 Node 里
+
+改动一共两处配置 + 一处响应头：
+
+- `server/Caddyfile`（生产）：`encode zstd gzip`。
+- `client/nginx.conf`（本地「真实发布」模拟）：`gzip on` + **`gzip_proxied any`**。
+  ⚠️ `gzip_proxied` 默认 `off`，**上游来的响应一律不压缩** —— 只写 `gzip on` 对
+  `/api` `/world` `/social` 这些反代路径**完全没有效果**，而这里几乎所有字节都在那儿。
+- `worldsvc/src/httpApi/helpers.ts` 的 `send()`：声明 `content-length`（见 §8.5）。
+
+**为什么在边缘而不是在 `send()` 里**：本审计第一节整篇讲的就是别把 CPU 放到那唯一的事件循环上。
+实测（`monitorEventLoopDelay` + 一个 1ms ticker，20 个 513KB 响应）：
+
+| 做法 | 墙钟 | 事件循环延迟 max | 那段时间里 1ms ticker 被服务的次数 |
+|---|---|---|---|
+| 空闲基线 | 161ms | 16.33ms | 22 |
+| `gzipSync` L6 ×20 | 81ms | **0.00ms** | **0** |
+| `zlib.gzip` L6 ×20（并发） | 24ms | 3.24ms | 14 |
+| `zlib.gzip` L1 ×20（并发） | 7ms | 1.62ms | 6 |
+
+**`gzipSync` 那行的 `0.00ms` 不是「零延迟」，是「直方图一个样本都没采到」** —— 循环在那 81ms 里
+根本没跑起来，所以 `monitorEventLoopDelay` 读不到任何东西。这是个陷阱：**这块指标读到 0 要先怀疑
+「没机会采样」，而不是「没有延迟」**；真正说明问题的是同一行的「ticker 被服务 0 次」。
+（`zlib.gzip` 异步版墙钟反而更短，是因为它落在 libuv 线程池上、四个线程并行。）
+
+即便走异步版，也仍然是 Node 进程在花 CPU，而 Caddy 是**另一个进程**、有真正的并行度，并且顺手
+覆盖了 metaserver / socialsvc / auctionsvc / analyticsvc 的所有 JSON 面 —— 一行配置换全局收益。
+所以：**边缘压缩，`send()` 里不压。** 万一哪天有平台绕过边缘直连服务，那时再在 Node 里补，
+用异步版、并且带上上面这张表。
+
+压缩等级取 gzip L5/L6 一档：实测 513KB 上 **L1 = 7.4%，L6 = 5.0%，L9 = 4.5%**，
+收益早已压平而 L9 的 CPU 是 L6 的六倍（sync 25.5ms vs 4.4ms）。
+
+### 8.5 顺手修掉的一个真 bug：`gzip_min_length` 在 chunked 响应上是空文
+
+第一次接上 nginx 之后复测，发现 **31 字节的 `/world/active-season` 出口变成了 51 字节** ——
+gzip 自己的头就约 20 字节，小响应被压缩只会变大。根因：`send()` 只写了 `content-type` 就
+`res.end(...)`，node 于是回落到 **chunked 分帧**；而**反代无法对一个自己都不知道大小的响应执行
+尺寸阈值**，于是 `gzip_min_length 1024` 形同不存在，nginx 把**所有东西**都压了。
+
+修法是在 `send()` 里声明 `content-length`（204/304 除外——那两个状态不能带 body，给它们声明长度
+是协议违规，有些反代直接拒）。修完实测：
+
+| | 修前 | 修后 |
+|---|---|---|
+| `/world/active-season`（31B） | 51B、`content-encoding: gzip` | **31B、不压缩** |
+| `/world/me`（370B） | 242B、gzip | 370B、不压缩（低于 1024 阈值） |
+| `/world/map` r=40 | 29,708B、gzip | 29,708B、gzip（不变） |
+
+门禁：`worldsvc/test/response-framing.test.ts`（真 HTTP 往返，不是断言 header 对象——node 会为
+某些状态自己改写/丢弃 `content-length`）。**三轮变异全部验红**：① 去掉 `content-length` → 2 例红；
+② 204 也带上 `content-length` → 1 例红；③ 用字符数代替字节数 → 1 例红。
+
+**同一个坑在另外两个服务里**：压缩是在反代上开的，也就是**一次给所有公网面开的**，所以顺手核了一遍
+谁会被小响应膨胀波及。`metaserver` / `auctionsvc` / `admin` / `commercial` 走 fastify，fastify 自己
+就写 `content-length`，不受影响；**`socialsvc`（`/social/*`：邮件/聊天/好友，小响应极多）和
+`analyticsvc`（`/analytics/events` 的 ack）是同一份手写 `node:http` 的 `send()` 形状**，同样会被压。
+两处都按同一个改法修了（analyticsvc 不需要 204 分支——它的 preflight 走独立的 `sendPreflight()`）。
+两边测试全绿（socialsvc 332 例、analyticsvc 109 例）。
+
+**③ 值得单记**：第一版这条用例是拿未授权的 401 信封当载荷写的，**它不肯变红** —— 那个信封是纯
+ASCII，`String.length` 和 `Buffer.byteLength` 在它上面永远相等，用例一直在为错误的理由通过。
+改成让假 service 返回一份带 CJK `ownerName` 的 `getMap` 响应（这正是生产里的真实形状：显示名
+直接来自 meta profile）之后，变异立刻红成 `Unterminated string in JSON` —— 也就是真实故障现象
+本身：body 被按字符数截断。（同 §7.4 ④ 与 [`server.md`](../../claudedocs/server.md) 那条：
+拒绝变红的测试通常说明断言的是别的东西。）
+
+### 8.6 生产路径（Caddy）单独验过一遍
+
+nginx 是本地模拟，生产是 Caddy，两者不能互相顶。用真 Caddy 容器挂上改后的 `Caddyfile`、
+接进同一个 compose 网络，直连同一个 worldsvc 复测：
+
+| | identity | gzip | zstd |
+|---|---|---|---|
+| Caddy r=40 | 523,124 | **31,794（16.5×）** | **28,338（18.5×）** |
+| Caddy r=16 | 85,856 | 5,343 | 4,800 |
+| nginx r=40 | 523,124 | 29,708（17.6×） | 不支持 → 523,124 |
+
+两边都带 `Vary: Accept-Encoding`，小响应两边都不动。**注意 `caddy validate` 需要
+`NW_OPS_PROXY_SECRET` 有值**：那个变量为空时 `/ops/*` 的 header matcher 变成「有字段没有值」，
+validate 直接报 `malformed header matcher` —— 这是**改动前就存在**的现象，不是这次引入的，
+别把它当成自己的锅（用 `-e NW_OPS_PROXY_SECRET=dummy` 跑）。
+
+### 8.7 还没有量到的
+
+- **微信小游戏那一侧没有真机验过。** `wx.request` 会不会自己带 `Accept-Encoding: gzip`、
+  会不会透明解压，本环境判定不了（「declare 两个方向都不是证据」）。**但这不构成风险**：
+  两边的压缩都是按请求头协商的，一个不声明 gzip 的客户端拿到的就是今天这份未压缩字节，
+  **启用它不可能弄坏任何客户端**。真机测的时候顺手看一眼 `/world/map` 的响应头就有结论。
+- **本地 nginx 的改动要重建镜像才会固化**：`client/nginx.conf` 是烤进 `nw-client:local` 镜像的
+  （`client/Dockerfile`），本轮验证走的是 `docker cp` + `nginx -s reload`。
+  **`docker restart nw-local-nginx` 会把它还原成镜像里的旧版**（本轮就踩到一次，因为 §6.8 那条
+  「重建 worldsvc 后必须重启 nginx」正好会覆盖掉 cp 进去的配置）。顺序：先重启 nginx，再 cp + reload。
+- **`getMapSparse` 的 `lod` 现在没有区分度**：实测 `mid` 与 `thin` 在同一视口上都是 7.1KB / 194 格、
+  逐字节相同。`mid` 多算的家族/宗门/同盟 tag 只在那些关系真的存在时才会加字段，本机世界里没有，
+  所以这不是 bug；但它意味着 **sparse 的 `lod` 分档从来没有被真实数据量过**。
+- **出口总量仍然量不出来**：§8.1 第 1 点把可乘的常数拿掉了，真实稳态取决于玩家怎么拖地图。
+  真上量的时候该看的是 Caddy 侧的出口字节，而不是再乘一个假设的轮询频率。
+
+### 8.8 门禁（2026-09-09 同日追加）：三个属性全都不在类型系统里
+
+第八节的 17.6× 完整地活在**两个配置文件 + 一个响应头**里。没有任何一处代码会因为它们消失而变红，
+而它们各有一种消失方式：
+
+1. **`encode` 从 Caddyfile 里没了** → 生产不再压缩，仓库里没有任何东西会注意到。
+2. **`gzip_proxied` 从 nginx.conf 里没了而 `gzip on` 还在** → 这是最恶的一种：配置**读起来就是
+   「压缩已开启」**，而 nginx 的默认 `gzip_proxied off` 意思是「上游来的一律不压」，
+   `/api` `/world` `/social` `/auction` 全是上游。审计的人扫到 `gzip on` 就过了。
+3. **某个 JSON writer 退回 chunked** → §8.5 那个 31B→51B 又回来。
+
+所以加了 `server/scripts/checkEdgeCompression.mjs`（`npm run check:edgecompression`，已进 `ci.yml`
+的 server-checks，紧跟 `check:auctionjournal`），四条规则：`caddy-encode` / `nginx-gzip-proxied` /
+`nginx-gzip-json` / `declared-length`。变异测试 `worldsvc/test/check-edge-compression.test.ts`
+**11 例全部按规则 id 验红**（含「gate 不能因为自己的文档变红」和「`src/generated/**` 要跳过」两例正向用例）。
+
+**`declared-length` 故意是一条「`server/*/src` 下不许出现 `res.end(JSON.stringify(...))`」的平坦规则，
+没有按服务的白名单** —— 因为写这一节的那次扫描**把服务名单搞错了**：它对每个服务 grep 了单词
+`fastify`，在 auctionsvc 和 admin 里搜到了，就判定这两个「fastify 会自己写 content-length，不受影响」。
+事实是这两个服务**另外还各有一份手写的 `node:http` `send()`**，分别服务 `/auction*` 和 `/ops/*`，
+**都在压缩后的边缘后面**。白名单会把这个错误固化下来，一条没有例外的规则不会。
+
+**这是同一类错误的第二次**（第一次记在 `index/open.md`：核 ADR-071 4b 时核了一个代理指标而不是它自己的
+验收条件）。**教训同上：不要用一个「看着像」的信号代替直接检查那件事本身** —— 这里直接检查是
+`grep -rn "res.end(JSON.stringify" server/*/src`，一条命令，当场就能看出七个服务全中。
+
+顺带把剩下六处也一起改了（`botsvc` / `commercial` / `gateway` / `matchsvc` 的 internalHttp、
+`gameserver/httpHealth.ts`）。这几处是**内网面、不经过边缘**，改它们纯粹是为了「一条规则没有例外」
+比「一份要人维护的白名单」更可靠；`gameserver/test/httpHealth.test.ts` 因此从「断言 writeHead 的
+header 对象字面量」改成「断言声明的长度与它伴随的 body 一致」——后者才是真正想守的东西
+（长度写错会截断响应，用字符数算的长度对任何非 ASCII body 都是错的）。
+
+### 8.9 门禁二：`getMap` 每格字段预算
+
+`worldsvc/test/map-payload-budget.e2e.test.ts`（普通 suite，每次 push 都跑）。523KB 这个形状
+**不是谁决定的，它是一格一格攒出来的** —— 给 `WorldTileView` 加一个字段在调用点看不见任何代价，
+在线上是 6561 倍。所以这份门禁守的是**每格的字段集合**而不是总量：
+
+- 一个**没有 DB override** 的格子只允许携带 `x y type level resType obstacleKind visible`
+  （`visible` 明确列在里面，附上 §8.3「压缩后只值 0.1~1.5%，不值一次协议改动」的结论，
+  免得下一个人再重新发现一遍）。
+- 每格字节上限 95（当前 82.7），松到能扛坐标多一位数，紧到一个新字段就顶破。
+- 情报字段（`garrison`/`hp`/`occupied`）只能挂在真有它们的格子上，**不能带着 falsy 默认值铺满全图** ——
+  这是「加一个字段」变成「加 6561 份」的最常见写法，而它在任何单格用例里都看不出来。
+
+**两轮变异验红**：① 给每格加一个 `zoneTag` → 2 例红（字段集合那条报出「`zoneTag` on 6561/6561」+
+字节上限那条从 82.7 涨到 98.3）；② 把 `garrison` 改成无条件带默认值 → 1 例红。
+
+**写这份门禁时它自己抓到了我一个错**：第三条最初用「别人的领地」当载荷，结果 `garrison` 断言失败 ——
+**这是对的**：garrison/hp 是被战争迷雾门控的情报（`gateIntel`），一个附近没有领地的请求者本来就看不到；
+而 `occupied` 确实到了，因为归属在 2026-07-24 那次迷雾模型改动里变成了全图公开。改成用请求者自己的
+格子（自己的领地天然在视野里）。迷雾规则本身是 `fog.e2e.test.ts` 的活，这里只管字段位置。
+
+### 8.10 顺手更正一处文档漂移：`api.gamestao.com` 现在不在 Cloudflare 后面
+
+`deploy-cloudflare.md` §3 的表把 `api.gamestao.com` 标成**橙云**（CF 代理）。**2026-09-09 实测不是**：
+
+```
+GET https://api.gamestao.com/world/active-season
+  via: 1.1 Caddy
+  alt-svc: h3=":443"; ma=2592000
+  transfer-encoding: chunked
+  （没有 cf-ray，没有 server: cloudflare）
+```
+
+这件事对第八节是**决定性的**：如果它真在橙云后面，Cloudflare 自己就会压缩，那这一节的改动对网页端
+基本是冗余的。实测没有 CF，所以 **Caddy 的 `encode` 是生产唯一的压缩层**，17.6× 是生产数字而不是
+只在本机成立。（`transfer-encoding: chunked` 同时说明线上跑的还是改动前的 worldsvc。）
+
+**教训**：`checkCachePolicy.mjs` 的文件头写过一遍同样的事（「三个地方里有两个给了正确的印象，
+只有对着线上域名 curl 的那个不同意」）。这一节差点重犯：本机 docker + 本机 Caddy 容器都验了，
+**唯独没验线上到底有几层反代**。**收尾前对着真域名打一次，那是唯一能证明「生产的那一层是哪一层」的做法。**
