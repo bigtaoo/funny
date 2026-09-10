@@ -39,7 +39,7 @@ declare const wx: {
     data?: string;
     dataType?: string;
     responseType?: 'text' | 'arraybuffer';
-    success?(res: { data: unknown; statusCode: number }): void;
+    success?(res: { data: unknown; statusCode: number; header?: Record<string, string> }): void;
     fail?(err: { errMsg?: string; errno?: number }): void;
   }): WxRequestTask;
 };
@@ -61,11 +61,17 @@ function abortError(req: NetRequest): Error {
  * `data` **按说**是字符串（我们要了非 `'json'` 的 `dataType`），但基础库在这一点上历史上不一致，
  * 而「declare 两个方向都不是证据」（LOG §17.1）。所以两种形状都收，`json()`/`text()` 的结果一样。
  */
-function wxResponse(statusCode: number, data: unknown): NetResponse {
+function wxResponse(statusCode: number, data: unknown, header: Record<string, string> | undefined): NetResponse {
   const raw = typeof data === 'string' ? data : null;
+  // `Headers.get()` is case-insensitive; `res.header` is a plain object keyed by whatever casing the
+  // server sent (WeChat does not normalize it, and nginx/Caddy title-case on the way out), so the
+  // lookup has to lower-case both sides or `x-nw-token` would be missed depending on the hop.
+  const lower = new Map<string, string>();
+  for (const [k, v] of Object.entries(header ?? {})) lower.set(k.toLowerCase(), v);
   return {
     ok: statusCode >= 200 && statusCode < 300,
     status: statusCode,
+    headers: { get: (name: string) => lower.get(name.toLowerCase()) ?? null },
     // 非法 JSON 上抛 —— 与 `Response.json()` 同步（`ApiClientCore.request` 依赖这一点来把
     // 「服务器返回了 HTML 错误页」表现成一次失败，而不是一个 `ok` 为 undefined 的假信封）。
     json: async () => (raw === null ? data : (JSON.parse(raw) as unknown)),
@@ -101,7 +107,7 @@ export class WechatTransport implements NetTransport {
         dataType: 'text',
         responseType: 'text',
         success: (res) => {
-          if (finish()) resolve(wxResponse(res.statusCode, res.data));
+          if (finish()) resolve(wxResponse(res.statusCode, res.data, res.header));
         },
         fail: (err) => {
           if (finish()) reject(new Error(`wx.request failed: ${req.method} ${req.url}: ${err.errMsg ?? 'unknown'}`));

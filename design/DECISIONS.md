@@ -106,6 +106,7 @@
 | [ADR-086](DECISIONS_ADR-070-onward.md#adr-086-空闲功耗第二轮tick-率降到-20-hz装饰动画静默共用-ticker-也上限powerpreference-low-powerrategate-定时器改惰性--accepted--2026-09-09) | 空闲功耗第二轮：tick 率降到 20 Hz、装饰动画静默、共用 ticker 也上限、`powerPreference: 'low-power'`、rateGate 定时器改惰性 | Accepted | 2026-09-09 |
 | [ADR-087](DECISIONS_ADR-070-onward.md#adr-087-equipmentts-也走深别名客户端那份手抄副本删掉不再三处同步--accepted--2026-09-09) | `equipment.ts` 也走深别名：客户端那份手抄副本删掉，不再「三处同步」 | Accepted | 2026-09-09 |
 | [ADR-088](DECISIONS_ADR-070-onward.md#adr-088-安全区内缩只许有一套ioscontentinset-neverinset-变化改成事件驱动画布-re-fit-全局常驻设备上有可读的几何读数--accepted--2026-09-10) | 安全区内缩只许有一套（`ios.contentInset: 'never'`）；inset 变化改成事件驱动；画布 re-fit 全局常驻；设备上有可读的几何读数 | Accepted | 2026-09-10 |
+| [ADR-089](DECISIONS_ADR-070-onward.md#adr-089-会话改滑动续期响应头-x-nw-tokentoken-真失效时强制退回登录页--accepted--2026-09-10) | 会话改滑动续期（响应头 `x-nw-token`），token 真失效时强制退回登录页 | Accepted | 2026-09-10 |
 
 ---
 

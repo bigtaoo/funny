@@ -14,6 +14,7 @@ export const en: Record<TranslationKey, string> = {
   'common.err.insufficientFunds': 'Not enough balance',
   'common.err.rateLimited': 'Too many requests — please slow down',
   'common.err.unauthorized': 'Session expired — please log in again',
+  'common.err.forbidden': "You don't have permission to do that",
   'common.err.notFound': 'Not found or no longer available',
   'common.syncFailed': 'Cloud save failed — progress may not be saved',
   // Unified back-button label (SceneHeader prepends "← ", see UI_DESIGN §3.1).
@@ -374,6 +375,7 @@ export const en: Record<TranslationKey, string> = {
   // 2026-08-10: logging back in within the 7-day grace period now auto-restores the account (see
   // restoreIfWithinGrace); reaching this means the grace period has elapsed and the data is gone.
   'auth.err.deleted': "This account's 7-day grace period has ended — its data was permanently erased and cannot be recovered",
+  'auth.err.sessionExpired': 'You were logged out because your session expired — please log in again',
 
   // ── Shop / top-up (S2-6) ────────────────────────────────────────────────────
   'shop.title': 'Shop',

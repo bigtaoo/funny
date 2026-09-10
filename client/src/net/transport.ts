@@ -67,6 +67,16 @@ export interface NetResponse {
   readonly status: number;
   json(): Promise<unknown>;
   text(): Promise<string>;
+  /**
+   * Response headers, for the one thing the REST layer reads off them: the sliding token renewal's
+   * `x-nw-token` (ApiClientCore.fetchRaw). A real `Response.headers` (`Headers`) satisfies this
+   * structurally; WechatTransport builds an equivalent case-insensitive `get`.
+   *
+   * Optional on purpose — every existing `{ status, json }` fetch fake in the test suite is a valid
+   * NetResponse without it, and a transport that cannot surface headers simply never renews (the
+   * token keeps working until it expires, exactly as before renewal existed).
+   */
+  readonly headers?: { get(name: string): string | null };
 }
 
 export interface NetTransport {

@@ -76,6 +76,9 @@ export class LoginScene implements Scene {
     this.w = layout.designWidth;
     this.h = layout.designHeight;
     this.cb = cb;
+    // See LoginSceneCallbacks.initialNotice: shown on the landing view until the player touches
+    // anything (goView/focus both clear errorKey), so a forced logout explains itself.
+    this.errorKey = cb.initialNotice ?? null;
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
     this.render();
     // The back arrow is an AI raster that decodes asynchronously, and this scene runs BEFORE the

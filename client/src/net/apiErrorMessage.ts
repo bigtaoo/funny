@@ -20,9 +20,20 @@ const CODE_KEY: Partial<Record<string, TranslationKey>> = {
   INSUFFICIENT_RESOURCES: 'common.err.insufficientFunds',
   RATE_LIMITED:           'common.err.rateLimited',
   DAILY_CAP_REACHED:      'common.err.rateLimited',
+  // The code every service really emits for a 401 (@nw/shared's ErrorCode.UNAUTHENTICATED). It was
+  // missing here until 2026-09-10, so a bubbled-up 401 fell through to the generic
+  // "something went wrong" while the two aliases below — neither of which exists server-side —
+  // held the session-expired copy. Kept as aliases anyway: harmless, and they are what the client's
+  // own callers have always spelled.
+  UNAUTHENTICATED:        'common.err.unauthorized',
   UNAUTHORIZED:           'common.err.unauthorized',
   TOKEN_EXPIRED:          'common.err.unauthorized',
-  FORBIDDEN:              'common.err.unauthorized',
+  // Split off the session-expired copy (2026-09-10): "not allowed to do this" is a different thing
+  // from "log in again", and telling a player their session expired when it hasn't sends them
+  // hunting for a login problem that isn't there. NO_PERMISSION is the code the server actually
+  // emits for this; FORBIDDEN stays as an alias for the same reason as the two above.
+  FORBIDDEN:              'common.err.forbidden',
+  NO_PERMISSION:          'common.err.forbidden',
   NOT_FOUND:              'common.err.notFound',
 };
 

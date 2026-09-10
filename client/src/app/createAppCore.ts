@@ -50,6 +50,13 @@ export interface AppCore {
   /** Submit free-text player feedback (UI_DESIGN.md §4.1.1 lobby entry, SERVER_API.md §2.13).
    *  Undefined when offline, same as submitAppeal above. */
   submitFeedback?: (text: string) => Promise<void>;
+  /**
+   * The held token is unusable → toast, full logout, back to the login screen (nav/auth.ts's
+   * forceLogout, ACCOUNT_DESIGN §5). Registered by the shell as net/log.ts's session-expired sink.
+   * Always defined: it gates itself internally (offline mode / no persisted token / already
+   * handling one), so the shell does not need to know whether an API base was configured.
+   */
+  forceLogout: () => void;
 }
 
 export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
@@ -59,6 +66,18 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
   // ── SaveManager: local-first save + optional cloud sync ─────────────────────
   const baseUrl = getApiBaseUrl(platform.storage);
   const api = baseUrl ? new ApiClient(baseUrl) : undefined;
+  // Sliding token renewal (ACCOUNT_DESIGN §5): ApiClient swaps the renewed token into its own
+  // in-memory field, but `nw_token` has exactly one owner — this layer (doAuth writes it on login,
+  // doLogout removes it) — so persisting it is wired from here rather than from the transport.
+  //
+  // Only ever *overwrites* an existing entry, never creates one: an anonymous device/WeChat session
+  // holds a token in memory only (NetSession.freshToken's api.auth path), and writing it to
+  // TOKEN_KEY would silently promote that guest into a "logged-in" account everywhere the app tests
+  // for the key — resolveEntry would stop offering the login screen, and Settings would start
+  // offering Logout / rename / delete-account for an account nobody ever signed into.
+  api?.setTokenRenewedHandler((token) => {
+    if (platform.storage.getItem(TOKEN_KEY)) platform.storage.setItem(TOKEN_KEY, token);
+  });
   const replayStore = new ReplayStore(platform.storage);
 
   // Mutable session-lifetime state, shared by reference with every nav module.
@@ -297,5 +316,6 @@ export function createAppCore(platform: IPlatform, views: AppViews): AppCore {
     onResized,
     submitAppeal: api ? (reason: string) => api.submitAppeal(reason) : undefined,
     submitFeedback: api ? (text: string) => api.submitFeedback(text) : undefined,
+    forceLogout: () => nav.forceLogout(),
   };
 }

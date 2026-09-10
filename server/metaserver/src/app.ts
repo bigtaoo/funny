@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import type { Collections, JwtConfig, FeatureFlagCache, RedisLike, SaveData, WordlistCache } from '@nw/shared';
-import { createLogger, internalKeysFromEnv } from '@nw/shared';
+import { createLogger, internalKeysFromEnv, RENEWED_TOKEN_HEADER } from '@nw/shared';
 import { MetaService } from './service.js';
 import { assembleEquipmentInv } from './equipment.js';
 import { assembleCardInv } from './cards.js';
@@ -108,7 +108,12 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
   // base. `1` (not `true`) trusts exactly one hop — the immediate proxy — rather than blindly trusting an
   // attacker-supplied X-Forwarded-For chain of arbitrary length.
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 4 * 1024 * 1024, routerOptions: { maxParamLength: 200 }, trustProxy: 1 });
-  await app.register(cors, { origin: true });
+  // exposedHeaders is what makes the sliding token renewal (auth.ts's maybeRenewToken) reachable at
+  // all: `x-nw-token` is not one of the seven CORS-safelisted response headers, so without this a
+  // browser / WKWebView hands the client a response whose header it is not allowed to read, and the
+  // renewal fails completely silently. Every real client is cross-origin here — the web build is
+  // served from its own host, and the Capacitor shell's origin is `capacitor://localhost`.
+  await app.register(cors, { origin: true, exposedHeaders: [RENEWED_TOKEN_HEADER] });
 
   // Human-readable request/response log (for debugging, replacing pino JSON). One line per request on completion: method path status elapsed.
   // Health probes are excluded from logging (polling noise).
@@ -266,7 +271,7 @@ export async function buildApp(opts: BuildAppOpts): Promise<FastifyInstance> {
 
   // Public REST routes — generated from openapi.yml at build time (ADR-023).
   // MetaService is structurally checked against MetaHandlers at compile time (missing method = tsc error).
-  await registerRoutes(app, service, makeSecurityHandlers(opts.jwt));
+  await registerRoutes(app, service, makeSecurityHandlers(opts.jwt, now));
 
   return app;
 }

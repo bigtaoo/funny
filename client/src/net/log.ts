@@ -218,6 +218,53 @@ export function maybePromptAppeal(code: string): void {
 }
 
 /**
+ * Session-expired render outlet (ACCOUNT_DESIGN.md §5): same sink pattern as the appeal outlet
+ * above, registered once by app.ts and pointed at nav/auth.ts's forceLogout.
+ *
+ * Why an outlet and not just a toast: until 2026-09-10 an expired token produced exactly one toast
+ * ("登录已失效，请重新登录") and no navigation, so the player was left sitting in a lobby where
+ * every single request 401s — nothing on screen worked and nothing told them what to do. Sliding
+ * renewal (ApiClientCore's RENEWED_TOKEN_HEADER) means a token now only really expires when the
+ * account has been away for over a month, the signing key rotated, or the account is gone; in all
+ * three the only useful move is to hand the player back to the login screen.
+ *
+ * Triggered from the transport layer (ApiClientCore.request, WorldApiClient's request helper,
+ * NetSession.freshToken) rather than per-scene, same single-choke-point reasoning as the appeal
+ * prompt — including from inside a match, where staying put would just freeze (the gateway cannot
+ * hold a connection with the same dead token either).
+ */
+let sessionExpiredSink: (() => void) | null = null;
+
+/** Register the session-expired handler (call once on application startup). */
+export function setSessionExpiredSink(fn: () => void): void {
+  sessionExpiredSink = fn;
+}
+
+/** Silently no-ops if no sink is registered (e.g. in tests, or offline mode where app.ts skips registration). */
+export function notifySessionExpired(): void {
+  if (!sessionExpiredSink) return;
+  try { sessionExpiredSink(); } catch { /* swallow, same reasoning as showToastMessage */ }
+}
+
+/**
+ * Error codes that mean "the token is no longer usable".
+ *
+ * `UNAUTHENTICATED` is the one every service actually emits (`@nw/shared`'s ErrorCode, mapped to
+ * 401 in ERROR_HTTP_STATUS). `UNAUTHORIZED`/`TOKEN_EXPIRED` have never existed server-side but are
+ * long-standing entries in the client's own vocabulary (apiErrorMessage.ts's CODE_KEY), so they
+ * stay as harmless aliases. `FORBIDDEN`/`NO_PERMISSION` are deliberately NOT here: "you may not do
+ * this" is not "log in again", and forcing a logout on one would throw the player out of the app
+ * over an ordinary permission check.
+ */
+const SESSION_EXPIRED_CODES = new Set(['UNAUTHENTICATED', 'UNAUTHORIZED', 'TOKEN_EXPIRED']);
+
+/** No-ops for any other error code. The transport-layer counterpart of maybePromptAppeal. */
+export function maybeNotifySessionExpired(code: string): void {
+  if (!SESSION_EXPIRED_CODES.has(code)) return;
+  notifySessionExpired();
+}
+
+/**
  * Bypass outlet for uncaught exceptions (injected by net/anomaly): feeds window-level uncaught errors / Promise rejections into the full-coverage anomaly reporter.
  * Injected via setter rather than direct import to prevent log.ts from reverse-depending on anomaly (anomaly depends on log; avoids a cycle).
  */

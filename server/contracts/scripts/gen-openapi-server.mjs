@@ -214,7 +214,7 @@ const handlerLines = operations.map(op =>
 );
 
 const securityLines = securityHandlerNames.length > 0
-  ? securityHandlerNames.map(n => `  ${n}(req: FastifyRequest): void | Promise<void>;`)
+  ? securityHandlerNames.map(n => `  ${n}(req: FastifyRequest, reply?: FastifyReply): void | Promise<void>;`)
   : ['  // (no security schemes in spec)'];
 
 const routeLines = operations.map(op =>
@@ -314,8 +314,10 @@ export async function registerRoutes(
       method: route.method,
       url: route.url,
       schema,
+      // \`reply\` is threaded through so the handler can attach response headers of its own:
+      // bearerAuth uses it for the sliding token renewal's \`x-nw-token\` (metaserver/src/auth.ts).
       preHandler: needsAuth
-        ? async (req: FastifyRequest) => { await security.bearerAuth(req); }
+        ? async (req: FastifyRequest, reply: FastifyReply) => { await security.bearerAuth(req, reply); }
         : undefined,
       handler: (req: FastifyRequest, reply: FastifyReply) => fn.call(handlers, req, reply),
     });
