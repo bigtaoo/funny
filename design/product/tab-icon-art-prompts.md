@@ -451,3 +451,29 @@ buildRewardIcon(reward: {kind, id?, count?}, size, color, opts?) : DisplayObject
 **同批**：装备页锻造卡片的 Craft 按钮（深色填充）此前只有文字，现在也画上同一枚 `craftTabIcon`（`EquipmentScene/craft.ts`，`[图标][gap][文案]` 整组按钮内居中、超宽时整组缩放），让按钮和通向它的 tab 读成同一件事。
 
 > **同日追加两条（见 [`back-arrow-art.md`](back-arrow-art.md)）**：①膨胀道数改为**按图可配**——能吃几道是形状的属性不是全局常量，返回箭头那种"一条轴加两笔头"的图能吃 3 道，页签图标仍是 1 道；②这次加粗**带着一个当天才发现的黑边 bug**：`dilateAlpha` 只涨 alpha，被它变不透明的像素保留原 RGB，而 sharp 的 resize 会把全透明像素的 RGB 清零，于是每条加粗笔画外面裹了一圈 `thicken` 像素宽的黑边。白墨画在近黑格上完全看不出来，换成蓝墨画在纸面上立刻现形。修法是膨胀后重刷 RGB，46 张 `*_active.png` 已重打。**只在一种底色上验收的资产改动，缺陷会被那种底色藏住。**
+
+---
+
+## 扭蛋球 v2：接缝居中导致读成「⊖」（2026-09-10）
+
+**现象**：用户在盲盒页圈出两个抽卡按钮上的图标问「换成新的是否更好」。查下来那是 `capsule`——`INK_ICON_ART` 里指向 `gacha_active.png` 的别名，也就是批次 3 的 `gachaTabIcon`。源图是**一个圆 + 一条穿过正中的水平线，上下两半都留空**。
+
+**病因不是糊，是语义读错**，跟同一批里被打回的 `socialTabIcon` v1（「圆+十字」读成准星）是同一类：28–32px 下细影线全部消失，只剩「圆 + 一横」，而这个组合已经被 ⊖（减号 / 禁止 / 禁用态）占死。真实扭蛋之所以能读出来靠的从来不是「有条线」，而是**两半不一样**——盖是浅盖（接缝不在赤道）、接缝处有唇边、两半明暗不同。这张三样都没有。
+
+**2026-08-15 那轮为什么放过了它**：第一轮验证只做了「28px 下轮廓清不清楚」的 contact sheet（那批的判据本来就是防糊，`materialTabIcon` 那种"糊成毛边圆点"是主要靶子），而这张的轮廓恰恰非常清楚——清楚地读成了另一个符号。**教训：出图验证要分开问两件事——「看不看得清」和「读不读得对」**，后者过不了的图前者往往满分。
+
+### v2 prompt（针对性收紧，已采用）
+
+```
+Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, slightly wobbly imperfect strokes, quick loose sketch — not polished. One bold, simple, highly readable silhouette. Subject: a single round gashapon capsule toy, clearly a two-part shell where the two parts are OBVIOUSLY UNEQUAL: one horizontal seam line placed distinctly ABOVE the middle (roughly one third down from the top), so the upper part is a shallow cap and the lower part is a much larger bowl — never two equal halves. At each end of the seam draw one tiny step or lip where the cap overhangs the bowl. Fill the small upper cap with even diagonal pencil hatching so it reads darker than the plain empty lower bowl. Single object, centered, filling the frame, on a plain pure-white background, no grid lines, no other elements. Flat 2D. Must still read as a capsule toy — NOT as a minus sign, a no-entry sign, a divided circle or a coin — when scaled down to 28x28 pixels. Style of West of Loathing / doodle art. Avoid: color, painterly rendering, gradients, glow, 3d render, photorealistic look, thick clean cartoon outline, vector-art look, seam line through the exact middle, two equal halves, both halves left empty, minus-in-a-circle or no-entry look, vending machine body, multiple capsules, egg shape, stars or sparkles, plain circle with no seam, multiple objects, scattered pieces, confetti dots, text, letters, numbers, watermark, gray background, notebook grid lines, drop shadow.
+```
+
+### 验证与接线
+
+- **像素核对**（复刻 `pack_tab_icons.cjs` 的抠白底+染色+dilate 算法，28/32/40/64px × `active` 白墨深底 / `inactive` 灰墨纸底，8× 最近邻放大逐格看）：v2 在 28px 下上盖是一块明显更暗的浅盖、下碗留空，唇边并进接缝线，**没有**重演 `rechargeTabIcon` v1 那种「密影线糊成一团」——影线糊成一片灰正是这里想要的「两半不一样」，且不外溢到下半。
+- 源图从 `.webp` 换成 `.png`（AI 直出原格式，`JOBS` 行同步改；批次 6/7 已有 `.png` 先例）。v1 退役到 `_rejected/tabicon_gacha_v1_centred_seam_reads_as_a_minus_sign.webp`。
+- 重跑 `pack_tab_icons.cjs`：全 207 张里只有 `gacha_{active,inactive,content}.png` 三张变化（管线是确定性的，其余字节一致）。
+- **真机核对**（本地 8088 栈 + 真 Chrome 1568×773）：侧栏 Gacha 格激活态（深底白墨）与未激活态（纸底灰墨）、顶栏标题图标、banner 左上徽标四处都读得出扭蛋。顺带解决了侧栏「Top Up（两个同心圆）」与「Gacha（圆+一横）」在小尺寸下都只是「一个圆」、挨在一起互相难分的问题——现在两格轮廓不同。
+- `tsc --noEmit` + `npm run build:web` + `test/render/inkIconArt.test.ts`（5 例）全过。
+
+> 这张是**别名母版**：换图同时改掉侧栏/底部导航的 Gacha 页签、GachaScene banner 徽标、通行证/邮件/充值的奖励兜底图标、商店 `starter_draw`。概念一致，一起变是对的。

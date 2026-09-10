@@ -122,7 +122,13 @@ const JOBS = [
   // Batch 3 (design/product/tab-icon-art-prompts.md §batch3):
   { src: 'tabicon_shop.webp',        name: 'shop' },
   { src: 'tabicon_coin.webp',        name: 'coin' },
-  { src: 'tabicon_gacha.webp',       name: 'gacha' },
+  // v2 (2026-09-10): v1's seam ran through the exact centre with both halves left empty, so at the
+  // 28-32px a tab cell draws it read as the minus-in-a-circle sign, not a capsule — the same
+  // semantic misread that got socialTabIcon v1 (circle + cross -> crosshair) sent back on
+  // 2026-08-15, which the outline-clarity review of that round did not catch. v2 puts the seam
+  // above the middle, hatches the small upper cap and steps the lip at both seam ends, so the two
+  // halves differ. Retired art in _rejected/.
+  { src: 'tabicon_gacha.png',        name: 'gacha' },
   { src: 'tabicon_recharge.webp',    name: 'recharge' },
   { src: 'tabicon_home.webp',        name: 'home' },
   { src: 'tabicon_social.webp',      name: 'social' },
