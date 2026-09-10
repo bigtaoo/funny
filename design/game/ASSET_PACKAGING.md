@@ -326,7 +326,7 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 
 因为所有 loader 都是 URL 幂等的，玩家"抢先"进了某个场景也不亏：场景自己的闸门会 join 到同一个 in-flight promise，不会重复请求。同理，等一等对预取零成本：每一波本就是投机的。
 
-> ⚠ 上面第 3、4 两条**已被 §14 改写**（2026-08-25）：`slg:world`/`gacha` 两波改成「玩家用过才预热」，链路探测在微信改走 `wx.getNetworkType()`，另加一个不依赖任何 API 的「省流量」开关。本节其余部分不变。
+> ⚠ 上面第 3、4 两条**已被 §14 改写**（2026-08-25）：`slg:world`/`gacha` 两波改成「玩家用过才预热」，链路探测在微信改走 `wx.getNetworkType()`，另加一个不依赖任何 API 的「省流量」开关。**使用标记自 2026-09-10 起带 14 天滑动时效**（§14.6：「用过」是有保质期的证据，弃坑的功能会停止预热）。本节其余部分不变。
 
 ### 11.4 回归测试
 
@@ -339,13 +339,13 @@ frame 名称互不冲突（合并前用脚本核对过），故直接共享一�
 | `test/appAssetGateWiring.test.ts` | node | `app.ts` 里两个调用点还在、顺序还对 |
 | `test/bootManifestTiers.test.ts` | unit | 闸门只等阻塞层 + **背景层被战斗闸门全覆盖**（2026-09-09 从 `test/ui/` 移入，`bootManifest.ts` 随之进门禁） |
 | `test/idlePrefetch.test.ts` | unit | 预取的调度契约（2026-09-02 从 `test/ui/` 移过来，一个断言未改：ui 层不报覆盖率，所以 `idlePrefetch.ts`/`prefetchPolicy.ts` 一直读 0%、也一直在门禁外） |
-| `test/prefetchPolicy.test.ts` | unit | 网络类型映射表 + data-saver 开关 + 使用标记的存储边界（写入抛异常不得弄挂调用方） |
+| `test/prefetchPolicy.test.ts` | unit | 网络类型映射表 + data-saver 开关 + 使用标记的存储边界（写入抛异常不得弄挂调用方；2026-09-10 起还有时效窗口的存储值那一半，见 §14.6） |
 
 - **清单漂移守卫**（`bootPreloadManifest`）：插件是 JS、不能 import TS + PIXI 资源图，只能自带一份清单副本；副本悄悄烂掉比不做 preload 更糟。该测试从 `bootManifest.ts` 源码文本反推两层清单（含每项属于哪一层，因为层决定 `fetchpriority`），与插件源码里的两个数组比对，另校验文件真实存在、两层不重叠。正则本身有兜底断言（推导结果为空即失败），避免"两个空集合相等"式假绿。
 - **插件行为守卫**（`preloadBootAssetsPlugin`）：用假 compiler/compilation 驱动插件（`HtmlWebpackPlugin.getHooks()` 接受任意对象挂 hook；真构建一个 target 要 18s，这样是毫秒级）。断言 `crossorigin=anonymous`（§11.1 那个 bug 的回归锁）、`as` 与消费方一致、`fetchpriority` 高优先在前、publicPath 前缀与 `auto` 处理、`.hires` 重定向、缺项只 warn 不影响其余标签。喂给它的产物表是 `src/assets` 下**全部** png/tao 而非清单副本，所以这个文件跟"当前哪些资源在哪一层"解耦。
 - **`app.ts` 接线守卫**（`appAssetGateWiring`）：`startApp()` 需要真 canvas/平台/后端，端到端测不了（同 `appTickerDialogWiring.test.ts` 的理由），所以走源码文本静态检查：闸门被 await、overlay 在首屏前 destroy、`startIdlePrefetch()` 在 `core.start()` **之后**且是 `void` 不是 `await`。
 - **分层安全性守卫**（`bootManifestTiers`）：最后一条测试是整个 §11.2 的**安全论证本身**——把 `preloadBootBackground()` 与 `ensureBattleAssets({})` 各自驱动的 loader 记下来，断言前者 ⊆ 后者。将来往 `BACKGROUND_STEPS` 加一项却忘了让战斗闸门也 await，会在这里红，而不是在某个冷缓存玩家的第一局里变成占位图。**2026-09-09 起同时按 loader 种类和 rig URL 两次比对**：种类抓"背景层多了一个战斗闸门根本不调的 loader"（比如又加一个 atlas），URL 抓种类漏掉的那半——背景层加了一个**不在 `STICKMAN_ASSETS` 里的 `.tao`**，闸门调的是同一个 loader、但从没碰过那个文件。URL 这半以前做不到：`test/ui` 的资源桩把所有 `.png`/`.tao` 映射成同一个 data URI，URL 在那个环境下没有区分度；覆盖率套件的桩按文件发 URL，所以搬过来之后这条才立得住。同文件另测：闸门进度只统计阻塞层、背景层永不阻塞闸门（把背景 loader 挂成永不 resolve，闸门照样 resolve）、背景层在闸门 resolve **之后**才起、两层任一步失败都不 reject。
-- **预取调度守卫**（`idlePrefetch`）：5 波全 mock，只测契约——串行顺序、失败不断链、`saveData`/2g 跳过而 3g/4g 不跳过（边界，防止有人把跳过条件放宽成"非 wifi 全跳"）、无 `requestIdleCallback` 时的 timer 回退、重复调用只跑一次。
+- **预取调度守卫**（`idlePrefetch`）：5 波全 mock，只测契约——串行顺序、失败不断链、`saveData`/2g 跳过而 3g/4g 不跳过（边界，防止有人把跳过条件放宽成"非 wifi 全跳"）、无 `requestIdleCallback` 时的 timer 回退、重复调用只跑一次。§14 起另加按使用面裁剪的门控，§14.6 起再加使用标记的**时效窗口**（两侧边界 + 窗口从最后一次访问算 + 旧 `'1'` 标记的迁移只给一个窗口）。
 - `client/test/battleAssets.test.ts`：补 `decorMergedAtlas.load()` 这一步的断言 + 进度总数 +1。
 
 > 三条关键守卫都做过**反向验证**（把被守护的东西删掉，确认测试变红）：删 `crossorigin` → 插件测试红；从 `ensureBattleAssets` 删掉 `decorMergedAtlas.load()` → 分层测试红且报出 `background-tier loaders not re-awaited by ensureBattleAssets: decor`；删 `app.ts` 里的 `void startIdlePrefetch()` → 接线测试红。
