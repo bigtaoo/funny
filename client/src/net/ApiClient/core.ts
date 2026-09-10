@@ -14,7 +14,7 @@
 // On Web / CrazyGames the seam's default is the global fetch, with the same init object this file used
 // to build by hand. WeChat cloud sync itself is still scheduled together with WeChat online compliance;
 // SaveManager degrades to local-only (offline-first) whenever baseUrl is absent, which is unchanged.
-import { netLog, maybePromptAppeal } from '../log';
+import { netLog, maybePromptAppeal, maybeNotifySessionExpired } from '../log';
 import type { ApiResp } from './types';
 import { clientPlatformName } from '../../app/appConstants';
 import { getNativeBilling } from '../../platform/iap';
@@ -24,6 +24,16 @@ import { netTransport, type NetResponse } from '../transport';
 
 /** Milliseconds before an unresponsive metaserver request is aborted (mirrors WorldApiClient.req). */
 const FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Sliding-renewal response header (server/shared/src/jwt.ts's RENEWED_TOKEN_HEADER — the two are a
+ * pair, kept in sync by hand the same way every other cross-boundary string constant in this file
+ * is). The metaserver attaches a freshly-signed token to any authenticated response whose token is
+ * inside its last 10 days; adopting it here — the single choke point every REST call passes through
+ * — is what turns a fixed 30d-from-last-password-entry session into a session that lasts as long as
+ * the player keeps playing (ACCOUNT_DESIGN.md §5).
+ */
+const RENEWED_TOKEN_HEADER = 'x-nw-token';
 
 const log = netLog('api');
 
@@ -54,6 +64,16 @@ export class ApiError extends Error {
 
 export class ApiClientCore {
   token: string | null = null;
+
+  /**
+   * Persistence outlet for a renewed token (see RENEWED_TOKEN_HEADER). The transport layer owns the
+   * in-memory `token` but deliberately does NOT own storage: `nw_token` is written by the app layer
+   * (`app/nav/auth.ts`'s doAuth on login, `doLogout` on the way out), and importing `platform` down
+   * here to write it would give the transport a second, hidden owner of the same key. Registered
+   * once by createAppCore; a renewal with no sink registered still updates the in-memory token, so
+   * the session survives for as long as the process lives and only fails to outlive a restart.
+   */
+  onTokenRenewed: ((token: string) => void) | null = null;
 
   /** @param baseUrl e.g. https://host/api (no trailing slash). */
   constructor(readonly baseUrl: string) {}
@@ -86,6 +106,7 @@ export class ApiClientCore {
     if (!json.ok) {
       log.error(`${method} ${path} -> ${res.status} ${json.error.code}`, json.error.message);
       maybePromptAppeal(json.error.code);
+      maybeNotifySessionExpired(json.error.code);
       throw new ApiError(json.error.code, json.error.message);
     }
     log.info(`${method} ${path} -> ${res.status} ok`);
@@ -109,13 +130,15 @@ export class ApiClientCore {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     try {
-      return await netTransport().request({
+      const res = await netTransport().request({
         method,
         url: `${this.baseUrl}${path}`,
         headers,
         signal: ctrl.signal,
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
+      this.adoptRenewedToken(res);
+      return res;
     } catch (e) {
       // Network-layer failure (server not running / CORS / DNS / timeout abort): the transport's
       // rejection is very generic in the console, so we log the URL explicitly here.
@@ -127,5 +150,18 @@ export class ApiClientCore {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Swap in a token the server renewed for us. Runs on every response (including error ones — a
+   * near-expiry token that hits e.g. INSUFFICIENT_FUNDS still deserves renewing) and is a no-op
+   * whenever the header is absent, which is the overwhelming majority of responses.
+   */
+  private adoptRenewedToken(res: NetResponse): void {
+    const renewed = res.headers?.get(RENEWED_TOKEN_HEADER);
+    if (!renewed || renewed === this.token) return;
+    log.info('token renewed by server');
+    this.setToken(renewed);
+    this.onTokenRenewed?.(renewed);
   }
 }

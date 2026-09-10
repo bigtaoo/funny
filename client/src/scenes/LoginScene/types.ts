@@ -10,6 +10,14 @@ export type AuthOutcome =
 export interface LoginSceneCallbacks {
   /** Free-text entry surface (ASSET_PACKAGING §4.3/§4.4 item 1) — see IPlatform.openTextInput. */
   openTextInput: IPlatform['openTextInput'];
+  /**
+   * Message to show on the landing view the moment the scene opens, for the paths that navigate
+   * here on their own rather than because the player tapped something: today only the forced
+   * logout after a token expiry (nav/auth.ts's forceLogout, ACCOUNT_DESIGN §5). Reuses the scene's
+   * existing errorKey line — it clears on the first field edit / view change like any other error,
+   * which is exactly the wanted behaviour for a notice ("you were sent back here, here's why").
+   */
+  initialNotice?: TranslationKey;
   onLogin(loginId: string, password: string): Promise<AuthOutcome>;
   onRegister(loginId: string, password: string, displayName?: string): Promise<AuthOutcome>;
   /** Continue without an account (offline single-player). */

@@ -47,6 +47,8 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: |
+        Stateless JWT, 30d TTL (SERVER_API.md 1.1). Sliding renewal (ACCOUNT_DESIGN.md 5): any response to a bearerAuth-protected operation MAY carry an `x-nw-token` header holding a freshly-signed token, issued when the presented one has less than 10 days left. Clients must replace the token they hold with it (client/src/net/ApiClient/core.ts does this for every REST call in one place). Declared here rather than per-operation because it applies uniformly to all ~80 authenticated operations; the header is listed in the metaserver's CORS `exposedHeaders` so cross-origin clients can read it.
   schemas:
     Error:
       type: object

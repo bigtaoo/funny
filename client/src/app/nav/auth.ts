@@ -11,8 +11,32 @@ import {
   FREE_RENAME_KEY,
 } from '../appConstants';
 
-export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'doLogout' | 'resolveEntry' | 'goSettings'> {
+/**
+ * How long the "session expired" toast is left on screen before forceLogout actually navigates.
+ * Without the pause the login screen replaces the toast almost immediately and the player never
+ * finds out why the app moved; the landing view's own notice line then repeats it in place.
+ */
+const FORCED_LOGOUT_TOAST_MS = 1500;
+
+export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'doLogout' | 'forceLogout' | 'resolveEntry' | 'goSettings'> {
   const { api, saveManager, platform, views, state, nav, playerName, avatarId, gateConsent, applyGatewayUrl, featureFlags, getNetSession } = ctx;
+
+  /**
+   * Gate 1 of 3 for forceLogout — one-shot latch. A single lobby screen fires half a dozen
+   * concurrent requests, so an expired token produces a *burst* of 401s, not one; without the latch
+   * every one of them would start its own toast + teardown. Re-armed only by a successful login
+   * (doAuth), which is also what keeps the burst suppressed for the whole teardown that follows.
+   */
+  let sessionExpiredHandled = false;
+  /**
+   * Gate 2 of 3 — teardown window. `saveManager.resetForLogout()` deliberately makes a best-effort
+   * flush with the departing token (see doLogout below), which against an expired token is itself
+   * guaranteed to 401. Feeding that back into forceLogout would be self-recursive. Independent of
+   * the latch on purpose: the latch's release policy is about logins, and relying on it (or on
+   * TOKEN_KEY having already been cleared by then) to also cover teardown makes this correctness
+   * property hostage to statement ordering elsewhere in doLogout.
+   */
+  let tearingDown = false;
 
   /**
    * Login-reconnect-prompt: if SaveManager just picked up an activeMatch from GET /save, show the
@@ -143,11 +167,12 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     }
   }
 
-  function goLogin(): void {
+  function goLogin(opts?: { notice?: TranslationKey }): void {
     state.inLobby = false;
     analytics.track('screen_view', { scene: 'LoginScene' });
     views.showLogin({
-      openTextInput: (opts) => platform.openTextInput(opts),
+      openTextInput: (o) => platform.openTextInput(o),
+      ...(opts?.notice ? { initialNotice: opts.notice } : {}),
       onPlayOffline() { nav.goLobby({ offline: true }); },
       onLogin: (loginId, password) => doAuth(() => api!.login(loginId, password), loginId),
       onRegister: (loginId, password, displayName) =>
@@ -178,6 +203,9 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       // Immediately re-fetch the bootstrap after receiving publicId so targeted log capture
       // takes effect without waiting for the next 120-second polling cycle (best-effort).
       void featureFlags?.refresh();
+      // Re-arm forceLogout's latch: this account's session is live again, so a *future* expiry
+      // must be able to bounce the player back to the login screen (see sessionExpiredHandled).
+      sessionExpiredHandled = false;
       // Snapshot flags set before this account existed (intro dismissal, GDPR consent — both
       // `setFlag()` while `online()` is false, i.e. local-write-only, no server push) so they
       // can be replayed after adoptSession: the account's first-ever reconcile() takes `flags`
@@ -200,7 +228,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     }
   }
 
-  function doLogout(): void {
+  function doLogout(opts?: { notice?: TranslationKey }): void {
     platform.storage.removeItem(TOKEN_KEY);
     platform.storage.removeItem(PLAYER_NAME_KEY);
     platform.storage.removeItem(PLAYER_PUBLIC_ID_KEY);
@@ -216,12 +244,37 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     // account's token (see resetForLogout's doc). Must run (and attempt its best-effort flush) BEFORE
     // api.setToken(null) below, while the departing account's token is still valid — hence deferring the
     // token clear to .finally() rather than calling it inline like the rest of this function.
-    void saveManager.resetForLogout().finally(() => api?.setToken(null));
+    tearingDown = true;
+    void saveManager.resetForLogout().finally(() => { tearingDown = false; api?.setToken(null); });
     // Tear down any live gateway connection too — otherwise it keeps sitting there
     // authenticated as the account we just logged out of (see doAuth's reset for why).
     state.netSession?.close();
     state.netSession = null;
-    goLogin();
+    goLogin(opts);
+  }
+
+  /**
+   * The token is dead and sliding renewal could not save it (over a month away, a rotated signing
+   * key, or a deleted account) — hand the player back to the login screen instead of leaving them
+   * in a lobby where every request 401s (the 2026-09-10 iPhone report: one toast, no navigation).
+   * Registered as net/log.ts's session-expired sink by app.ts, so it covers REST 401s from
+   * metaserver/worldsvc/socialsvc/auctionsvc and the gateway's 4401 handshake rejection alike —
+   * including mid-match, where the gateway cannot hold a connection with that token either, so
+   * staying put would only freeze.
+   */
+  function forceLogout(): void {
+    if (sessionExpiredHandled) return;               // gate 1: the 401 burst from one screen
+    if (tearingDown) return;                         // gate 2: doLogout's own best-effort flush
+    // Gate 3: this is not an expiry. Offline mode never had a session, and a guest / anonymous
+    // device player has no persisted token to lose — throwing either of them at the login screen
+    // over a 401 would be a brand-new bug rather than a fix.
+    if (state.offlineMode) return;
+    if (!platform.storage.getItem(TOKEN_KEY)) return;
+    sessionExpiredHandled = true;
+    showToastMessage(t('common.err.unauthorized'), 'error');
+    // Let the toast be read before the scene swap; the login screen then repeats the reason in its
+    // own notice line, so the message survives even if the toast was missed.
+    setTimeout(() => doLogout({ notice: 'auth.err.sessionExpired' }), FORCED_LOGOUT_TOAST_MS);
   }
 
   async function resolveEntry(): Promise<void> {
@@ -248,7 +301,7 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
     goLogin();
   }
 
-  return { goIntro, goLogin, doLogout, resolveEntry, goSettings };
+  return { goIntro, goLogin, doLogout, forceLogout, resolveEntry, goSettings };
 }
 
 /** Map a server auth error code to a LoginScene message key (SA-3). */

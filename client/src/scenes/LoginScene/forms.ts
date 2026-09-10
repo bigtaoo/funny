@@ -54,6 +54,16 @@ export function drawLanding(host: FormHost): void {
   addButton(host, t('auth.playOffline'), btnX, offY, btnW, btnH, C.paper, C.green,
     () => host.cb.onPlayOffline(), C.dark, undefined, true, 'play');
 
+  // Notice line above the buttons (cb.initialNotice — today: "you were logged out because your
+  // session expired"). drawForm has its own error line; the landing view needs one too, otherwise
+  // a forced logout drops the player here with no explanation at all.
+  if (host.errorKey) {
+    const notice = txt(t(host.errorKey), FS.label, C.red, true, Math.round(w * 0.86));
+    notice.style.align = 'center';
+    notice.anchor.set(0.5, 1); notice.x = w / 2; notice.y = y0 - Math.round(h * 0.03);
+    host.container.addChild(notice);
+  }
+
   // Wrap within the design width so long locales (EN/DE run wider than the 1080
   // design width in monospace) stay on-screen instead of clipping both edges.
   const hint = txt(t('auth.offlineHint'), FS.label, C.mid, false, Math.round(w * 0.86));

@@ -15,7 +15,7 @@ import { Side } from './game';
 import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
-import { installGlobalErrorHandlers, setToastSink, setAppealSink, setFeedbackSink, showToastMessage } from './net/log';
+import { installGlobalErrorHandlers, setToastSink, setAppealSink, setFeedbackSink, setSessionExpiredSink, showToastMessage } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
 import { AppealDialog } from './ui/dialogs/AppealDialog';
 import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
@@ -226,6 +226,13 @@ export async function startApp(
     appealDialog = dlg;
     input.holdForModal(true);
   });
+
+  // Session expiry (ACCOUNT_DESIGN.md §5): the transport layers call notifySessionExpired() on a 401
+  // whose code says the token itself is dead, and NetSession does the same on the gateway's 4401
+  // handshake rejection — one sink instead of per-scene wiring, same reasoning as the appeal prompt
+  // above. Unlike the two dialogs here this one renders nothing of its own: core.forceLogout toasts
+  // and then navigates to the login screen, which is why it is a plain function and not an overlay.
+  setSessionExpiredSink(() => core.forceLogout());
 
   // Feedback dialog (UI_DESIGN.md §4.1.1): same stage-level-overlay reasoning as the appeal dialog above,
   // but opened by a direct player tap on the lobby's feedback strip entry rather than a network error.

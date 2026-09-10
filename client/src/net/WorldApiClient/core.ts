@@ -11,7 +11,7 @@
 import { getWorldBaseUrl } from '../config';
 import type { IStorage } from '../../platform/IPlatform';
 import { requestPlatformHeader } from '../ApiClient/core';
-import { maybePromptAppeal } from '../log';
+import { maybePromptAppeal, maybeNotifySessionExpired } from '../log';
 import { globalRequestGate } from '../rateGate';
 import { netTransport, type NetResponse } from '../transport';
 
@@ -131,6 +131,7 @@ export class WorldApiCore {
     };
     if (!json.ok) {
       maybePromptAppeal(json.error?.code ?? 'UNKNOWN');
+      maybeNotifySessionExpired(json.error?.code ?? 'UNKNOWN');
       throw new WorldApiError(
         json.error?.code ?? 'UNKNOWN',
         json.error?.message ?? 'world api error'

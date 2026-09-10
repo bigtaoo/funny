@@ -200,7 +200,7 @@ export interface MetaHandlers {
 
 // ── Security interface ────────────────────────────────────────────────────────
 export interface MetaSecurity {
-  bearerAuth(req: FastifyRequest): void | Promise<void>;
+  bearerAuth(req: FastifyRequest, reply?: FastifyReply): void | Promise<void>;
 }
 
 // ── Route table (method + url + operationId + security) — CD-diffable ────────
@@ -26840,8 +26840,10 @@ export async function registerRoutes(
       method: route.method,
       url: route.url,
       schema,
+      // `reply` is threaded through so the handler can attach response headers of its own:
+      // bearerAuth uses it for the sliding token renewal's `x-nw-token` (metaserver/src/auth.ts).
       preHandler: needsAuth
-        ? async (req: FastifyRequest) => { await security.bearerAuth(req); }
+        ? async (req: FastifyRequest, reply: FastifyReply) => { await security.bearerAuth(req, reply); }
         : undefined,
       handler: (req: FastifyRequest, reply: FastifyReply) => fn.call(handlers, req, reply),
     });
