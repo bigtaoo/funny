@@ -2,8 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- viewport-fit=cover lets the canvas fill under the notch/home indicator; Capacitor
-         ios.contentInset:'always' keeps interactive content inside the safe area. -->
+    <!-- viewport-fit=cover lets the canvas fill under the notch/home indicator, and the game insets
+         ITSELF: ScalingManager offsets gameLayer by env(safe-area-inset-*). That is the one and only
+         safe-area mechanism here — Capacitor's ios.contentInset is 'never' on purpose, because
+         'always' zeroes env() and shrinks the viewport instead, which is how the iPhone 13 ended up
+         drawing under the status bar with a dead band at the bottom (see capacitor.config.ts). -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

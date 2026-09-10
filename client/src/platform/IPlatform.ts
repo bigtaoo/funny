@@ -3,6 +3,7 @@ import type { InputManager } from '../inputSystem/InputManager';
 import type { Locale } from '../i18n';
 import type { IapKind } from './iap';
 import type { SafeAreaInsets } from '../layout/ILayout';
+import type { ViewportGeometry } from '../layout/viewportGeometry';
 import type { NetworkKind } from '../assets/prefetchPolicy';
 
 /**
@@ -86,6 +87,33 @@ export interface IPlatform {
    * the layout treats a missing value as all-zero. Web reads env(safe-area-inset-*).
    */
   getSafeAreaInsets?(): SafeAreaInsets;
+
+  /**
+   * Subscribe to safe-area inset changes; returns an unsubscribe. Optional — a platform that omits
+   * it keeps the old poll-on-resize behaviour (`ViewportResizer` re-reads insets on every
+   * `window.resize` regardless), so this only ADDS the cases a resize event cannot cover: WebKit
+   * settling `viewport-fit=cover` after first paint, an inset arriving at the end of a rotation
+   * animation, a status bar appearing over an in-progress call.
+   *
+   * Implemented by Web (a `ResizeObserver` on env()-sized probes, `platform/web/safeAreaProbe.ts`).
+   * WeChat and CrazyGames run inside a host that letterboxes/reports no insets at all, and both are
+   * no-ops there by omission — see the note at each `getSafeAreaInsets` gap.
+   *
+   * The callback must be safe to call at any time after subscribe, including synchronously never.
+   */
+  onSafeAreaInsetsChanged?(cb: (insets: SafeAreaInsets) => void): () => void;
+
+  /**
+   * Raw viewport geometry for the on-device diagnostic readout (boot log + the settings-screen
+   * line). Optional: everything in it is DOM (`window.inner*`, `screen`, `visualViewport`), so only
+   * the web/native-shell platform can answer, and the shared code that consumes it
+   * (`layout/viewportGeometry.ts`) stays free of host APIs.
+   *
+   * Why it exists at all: the iPhone-13 portrait safe-area bug was mis-diagnosed twice from
+   * arithmetic, because desktop Chrome reports zero insets and cannot reproduce any of it. See
+   * viewportGeometry.ts's header.
+   */
+  getViewportGeometry?(): ViewportGeometry;
 
   /**
    * Physical pixel ratio for the display.

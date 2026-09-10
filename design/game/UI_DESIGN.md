@@ -16,7 +16,7 @@
 | 战斗内 UI 增量 / 网络态 / 美术清单 / 实现约定 / 开放问题 / 头像系统 | §5–§11 | **本文** |
 | 菜单场景规格（Lobby/Room/Shop/Gacha/Collection/Profile/Campaign/Prep/Stats/Result） | §4.1–§4.10 | [`UI_DESIGN_SCENES.md`](UI_DESIGN_SCENES.md) |
 | 变更记录 2026-06 / 2026-07 | §4.9.1、§4.11–§4.28、§12–§25 | [`UI_DESIGN_LOG_2026-06_07.md`](UI_DESIGN_LOG_2026-06_07.md) |
-| 变更记录 2026-08 | §26–§34 | [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md) |
+| 变更记录 2026-08 起 | §26–§47 | [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md) |
 
 > **写新内容放哪**：改的是「当前应该长什么样」→ 改本文或 `UI_DESIGN_SCENES.md` 的对应小节；记的是「某天改了什么、为什么」→ 追加到最新的 `UI_DESIGN_LOG_*.md` 末尾。两者都要动时，规格里写结论、log 里写来由并互相指一下。
 
@@ -26,7 +26,7 @@
 |---|---|
 | **笔记本/手绘风** | 米色纸底 + 横线 + 红色页边线 + 等宽字体（monospace）。沿用 `LobbyScene` 的 `C` 调色板，不另起视觉体系 |
 | **设计空间 + Contain 缩放** | 所有坐标用设计空间；`ScalingManager` 单比例映射到真机。场景内用 `layout.designWidth/Height` 的**百分比**布局（见 `LobbyScene.build()`）。**竖屏设计高度是动态的**（2026-07 改）：宽度固定 1080，高度 = `round(1080 × 安全区高/安全区宽)`，下限 1920——即竖屏设计空间的**长宽比跟随设备安全区**，故 iPhone 13（~9:19.5）等高瘦屏用 fit-to-width 铺满、**不再上下留米色黑边**（此前固定 1080×1920 在高屏被 Contain 居中，上下各浪费 ~18%）。**横屏同理动态化**（2026-07 改）：高度固定 1080，宽度 = `round(1080 × 安全区宽/安全区高)`，下限 1920——即横屏长宽比也跟随安全区，高瘦屏横握用 fit-to-height 铺满、不再左右留黑边；棋盘水平居中，底部条左/右锚定、中间手牌区随宽度伸缩。详见 [`design/game/DESIGN.md` 渲染/布局节] 与 `layout/{PortraitLayout,LandscapeLayout}.ts` |
-| **安全区（刘海/灵动岛/Home 指示条）** | `IPlatform.getSafeAreaInsets()`（Web 读 `env(safe-area-inset-*)`，需 `viewport-fit=cover`）返回 CSS px 内边距；`createLayout` 用它缩小竖屏"可绘制区"来算设计高度，`ScalingManager` 把整个 `gameLayer` 平移进安全区内——**所有场景（战斗+菜单）统一避开刘海/指示条，无需各场景单独处理**。`bgLayer` 仍 Cover 铺满整屏（含安全区外的窄带），故边缘露的是背景纸而非硬边。**冷启动竞态**（2026-07-28 修）：WebKit 在页面刚加载时首次同步读 `env(safe-area-inset-*)` 可能仍返回 0（`viewport-fit=cover` 还没生效完），导致 iPhone 13 等设备竖屏首屏顶部 HUD（金币/返回按钮）贴到 `y=0` 而非贴到刘海/状态栏下方，与系统状态栏重叠、返回按钮命中区也跟着偏移；`startApp()`（`app.ts`）在资源预加载 `await` 完成、首个场景构建前会**重新读一次**安全区，值有变化就重建 `layout` 并 `scaling.resize()`，构建首个场景时已用上稳定后的正确值 |
+| **安全区（刘海/灵动岛/Home 指示条）** | `IPlatform.getSafeAreaInsets()`（Web 读 `env(safe-area-inset-*)`，需 `viewport-fit=cover`）返回 CSS px 内边距；`createLayout` 用它缩小竖屏"可绘制区"来算设计高度，`ScalingManager` 把整个 `gameLayer` 平移进安全区内——**所有场景（战斗+菜单）统一避开刘海/指示条，无需各场景单独处理**。`bgLayer` 仍 Cover 铺满整屏（含安全区外的窄带），故边缘露的是背景纸而非硬边。**内缩机制只许有一套（2026-09-10 硬约定）**：原生壳里 `client/capacitor.config.ts` 的 `ios.contentInset` 必须是 `'never'`。`'always'` 会让 WKWebView 自己按安全区缩小布局视口（iPhone 13 竖屏 `innerHeight` 844 → 763）**并把 `env()` 归零**，于是本行描述的这套内缩拿到全 0、什么都不做；而原生那套又因 `mobile/index.html` 的 `html, body { overflow: hidden }` 滚不动、初始 `contentOffset(-47)` 被 clamp 回 0，画布照旧从物理 y=0 画起——症状就是「顶部标题栏盖住状态栏 + 底部空出 ~81pt 死区」。**这条烧在原生配置里，改了必须重新出包，OTA 不生效**（`IOS_RELEASE.md` §5/§12.1）。**inset 变化是事件驱动的**：`IPlatform.onSafeAreaInsetsChanged()`（Web = `platform/web/safeAreaProbe.ts`，两个由 `env()` 决定宽高的隐藏探针 + 一个 `ResizeObserver`）在 inset 变化时主动回调，不再靠猜「什么时候该再读一次」；`app/viewportResize.ts` 的无变化守卫同时比较尺寸**和** insets（`insetsEqual`），所以「窗口尺寸没变、只有 inset 变了」不会被吞掉。**画布 re-fit 全局常驻**（同上文件）：`renderer.resize` + `createLayout` + `scaling.resize` 在任何场景下都跑（此前只在大厅挂监听，登录页/设置页/战斗里转屏完全不重排）；贵的那半——重建当前场景——仍然只有大厅做（`createAppCore.onResized` 门禁在 `state.inLobby`），180ms 合并窗口不变，故非大厅场景转屏后画布正确、但内部仍按旧设计矩形排布。**设备上的读数**：`layout/viewportGeometry.ts` 把 `innerW/H`、`screen`、`visualViewport`、四个 `env()`、`dpr` 连同一个一词判定（`inset-eaten` / `env-reported` / `no-inset` / `browser`）打进 boot 日志（`app.ts`，同时进客户端日志环形缓冲）并画在设置页底部两行——桌面 Chrome 里 inset 恒为 0、复现不了这类 bug，这两行是唯一的 ground truth。**历史（2026-07-28 那次修错了）**：当时假设是 WebKit 冷启动首次同步读 `env()` 返回 0 的竞态，于是 `startApp()` 在资源预加载 `await` 之后、首个场景构建之前**再读一次**安全区（`resettledLayout`），值有变化就重建 `layout`。那个分支本身没错，但在 `contentInset:'always'` 下 `env()` 恒为 0，它永远不触发——保留至今是因为它对「真·冷启动竞态」仍然对；详细复盘见 [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md) §47 |
 | **双朝向自适应** | 每个菜单场景都要在竖屏/横屏下成立：竖屏纵向堆叠、横屏左右分栏。用 `layout.orientation` 分支或纯百分比让其自然伸缩 |
 | **触屏优先** | 命中区够大（≥ 设计空间 ~80px 高）；列表用滚动而非密集排布；复用 `InputManager.onDown` |
 | **零硬编码文案** | 全走 `t(key)`，`zh.ts` 唯一来源，`en`/`de` 编译强制全翻 |
@@ -319,4 +319,4 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 
 按时间分册，见上方[分册索引](#分册索引)：
 - §12–§25（2026-06/07）→ [`UI_DESIGN_LOG_2026-06_07.md`](UI_DESIGN_LOG_2026-06_07.md)
-- §26–§34（2026-08）→ [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md)
+- §26–§47（2026-08 起）→ [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md)

@@ -98,6 +98,9 @@ export function createAuthNav(ctx: AppCtx): Pick<Nav, 'goIntro' | 'goLogin' | 'd
       ...(loggedIn && !!api ? { onDeleteAccount: doDeleteAccount } : {}),
       // Replay tutorial (ONBOARDING_DESIGN §3.4): directly re-runs the dedicated tutorial level (never fails, can be skipped again).
       onReplayTutorial: () => nav.goTutorial(),
+      // Safe-area diagnostics (layout/viewportGeometry.ts): the only place a player on a device we
+      // do not hold can read back the numbers the layout was built from.
+      getViewportGeometry: () => platform.getViewportGeometry?.(),
     });
   }
 

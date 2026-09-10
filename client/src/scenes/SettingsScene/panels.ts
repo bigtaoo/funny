@@ -14,6 +14,7 @@ import { isDataSaverEnabled, setDataSaverEnabled } from '../../assets/prefetchPo
 import { legalUrl } from '../../ui/dialogs/ConsentDialog';
 import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import type { IconKind } from '../../render/icons';
+import { formatViewportGeometry } from '../../layout/viewportGeometry';
 
 const LOCALE_LABEL: Record<Locale, string> = { zh: '中文', en: 'English', de: 'Deutsch' };
 
@@ -301,4 +302,54 @@ export function drawLegal(host: PanelHost): void {
       fn: () => { if (typeof window !== 'undefined') window.open(legalUrl(path), '_blank', 'noopener'); },
     });
   });
+}
+
+/**
+ * On-device viewport readout (`layout/viewportGeometry.ts`) — the raw numbers the layout is built
+ * from, drawn where a player can photograph them.
+ *
+ * Why this is in the shipped UI rather than behind a debug flag: the iPhone-13 portrait safe-area
+ * bug (top HUD over the status bar, dead band at the bottom) has now been diagnosed twice from
+ * arithmetic alone, and shipped once as a fix that could not possibly work, because the one
+ * environment that can be inspected here — desktop Chrome — reports zero insets in a full-height
+ * viewport and reproduces none of it. A console log alone does not help either: the affected build
+ * is a TestFlight shell on someone else's phone, with no DevTools attached. Two small lines on the
+ * settings screen turn "please describe what it looks like" into one screenshot.
+ *
+ * Deliberately unlocalised and unstyled: it is five numbers and a one-word verdict, and a
+ * translated diagnostic is a diagnostic someone has to translate before they can read it back.
+ * Absent when the platform cannot answer (WeChat — no DOM to read; see IPlatform).
+ */
+export function drawViewportDiagnostics(host: PanelHost): void {
+  const { w, h, container, cb } = host;
+  const geom = cb.getViewportGeometry?.();
+  if (!geom) return;
+
+  const [top, bottom] = formatViewportGeometry(geom);
+  // Portrait leaves ~100px of clear band under the Legal links (0.945h); landscape's design rect is
+  // only 1080 tall and leaves about half that, so the same content goes on ONE line there — which
+  // its 1920-wide design rect has ample room for. Nothing else on this screen is anchored to the
+  // bottom edge, so this is the one row that can be laid out from the bottom up.
+  const rows = w > h ? [`${top} | ${bottom}`] : [top, bottom];
+
+  // FS.label, not a fraction of `h`: at 24 design px this renders at ~8.7 CSS px on a 390pt-wide
+  // phone (design space is contained at ~0.36x there), which is the floor for something whose only
+  // channel is a photograph. Bigger would not fit two lines into the band above.
+  const size = FS.label;
+  const gap = Math.round(size * 0.3);
+  // Bottom-anchored and measured, rather than two more hand-tuned fractions of `h`: the fractions
+  // are what made the first attempt at this row draw both lines at the same y (0.945h + 0.033h is
+  // 0.978h, which was also line two's own fraction).
+  let baseline = h - Math.round(h * 0.008);
+  for (const text of [...rows].reverse()) {
+    const line = txt(text, size, C.mid);
+    line.anchor.set(0, 1); // bottom-left: `y` IS the baseline box bottom, so stacking cannot overlap
+    line.x = Math.round(w * 0.12);
+    line.y = baseline;
+    // A verdict word can lengthen the line; shrink rather than run off the page edge.
+    const maxW = w - line.x - Math.round(w * 0.06);
+    if (line.width > maxW) line.scale.set(maxW / line.width);
+    container.addChild(line);
+    baseline -= Math.round(line.height + gap);
+  }
 }

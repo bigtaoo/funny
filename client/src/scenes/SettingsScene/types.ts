@@ -5,6 +5,7 @@ import { TranslationKey } from '../../i18n';
 import type { AvatarCategory } from '../../render/avatar';
 import type { IconKind } from '../../render/icons';
 import type { IPlatform } from '../../platform/IPlatform';
+import type { ViewportGeometry } from '../../layout/viewportGeometry';
 
 /** Outcome of a rename attempt — ok with the accepted name, or a message key to toast. */
 export type RenameOutcome =
@@ -38,6 +39,12 @@ export interface SettingsSceneCallbacks {
   onDeleteAccount?(): Promise<{ ok: boolean }>;
   /** Replay the onboarding tutorial (ONBOARDING_DESIGN §3.4); absent = not shown. */
   onReplayTutorial?(): void;
+  /**
+   * Raw viewport/safe-area readout for the diagnostic line at the bottom of this screen
+   * (`layout/viewportGeometry.ts`, drawn by `panels.drawViewportDiagnostics`). Absent → no line:
+   * WeChat has no DOM to read it from, and the test harnesses do not pass one.
+   */
+  getViewportGeometry?(): ViewportGeometry | undefined;
   /** Currently selected avatar id (composite "<category>:<key>", see render/avatar.ts); absent = letter-initial fallback. */
   avatarId?: string;
   /** Called when the player picks a new avatar; absent = picker is read-only. */

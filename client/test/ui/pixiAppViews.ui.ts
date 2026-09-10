@@ -131,6 +131,10 @@ interface Harness {
   renderer: { resize: ReturnType<typeof vi.fn> };
   scaling: { resize: ReturnType<typeof vi.fn> };
   screen: { width: number; height: number };
+  /** Live safe-area reading — mutable so a case can change an inset WITHOUT changing the size. */
+  insets: { top: number; right: number; bottom: number; left: number };
+  /** Fire the platform's inset-change feed (IPlatform.onSafeAreaInsetsChanged). */
+  notifyInsets(): void;
   win: ReturnType<typeof installWindow>;
   /** The scene instance the Nth mocked constructor produced, in build order. */
   lastGoto(): { scene: { args: unknown[] } & Record<string, unknown>; opts?: { fade?: boolean } };
@@ -141,9 +145,15 @@ const NO_CB = {} as LobbySceneCallbacks;
 function setup(): Harness {
   const win = installWindow();
   const screen = { width: 1280, height: 720 };
+  const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  const insetListeners = new Set<(i: typeof insets) => void>();
   const platform = {
     getScreenSize: () => ({ width: screen.width, height: screen.height }),
-    getSafeAreaInsets: () => undefined,
+    getSafeAreaInsets: () => ({ ...insets }),
+    onSafeAreaInsetsChanged: (cb: (i: typeof insets) => void) => {
+      insetListeners.add(cb);
+      return () => insetListeners.delete(cb);
+    },
   } as unknown as IPlatform;
   const renderer = { resize: vi.fn() };
   const app = { screen: { width: 1280, height: 720 }, stage: new PIXI.Container(), renderer } as unknown as PIXI.Application;
@@ -160,7 +170,8 @@ function setup(): Harness {
     layout,
   );
   return {
-    views, manager, renderer, scaling, screen, win,
+    views, manager, renderer, scaling, screen, insets, win,
+    notifyInsets: () => { for (const cb of [...insetListeners]) cb({ ...insets }); },
     lastGoto: () => {
       const call = last(manager.goto.mock.calls as unknown[][], 'SceneManager.goto call');
       return { scene: call[0], opts: call[1] } as ReturnType<Harness['lastGoto']>;
@@ -186,22 +197,28 @@ afterEach(() => {
   delete (globalThis as unknown as { window?: unknown }).window;
 });
 
-describe('PixiAppViews — lobby resize listener lifetime', () => {
-  it('subscribes on showLobby and unsubscribes on the next non-lobby screen', () => {
+describe('PixiAppViews — viewport listener lifetime', () => {
+  it('installs the viewport listener at construction and keeps it on every screen', () => {
+    // 2026-09-10: this used to be `showLobby` subscribes / any other screen unsubscribes, which is
+    // why a rotation or a late safe-area inset reached NOTHING on the login screen, the settings
+    // screen or inside a battle — `renderer.resize` was never called there, so the canvas kept the
+    // CSS size it was built at and taps kept mapping through the old transform.
     const h = setup();
-    expect(h.win.count('resize')).toBe(0);
+    expect(h.win.count('resize')).toBe(1);
 
     h.views.showLobby(NO_CB);
     expect(h.win.count('resize')).toBe(1);
 
     h.views.showSettings({} as never);
-    expect(h.win.count('resize')).toBe(0);
+    expect(h.win.count('resize')).toBe(1);
   });
 
   it('re-entering the lobby does not stack a second listener (the handler must stay one reference)', () => {
     const h = setup();
     h.views.showLobby(NO_CB);
     h.views.showLobby(NO_CB);      // a resize-driven rebuild, or lobby → overlay → lobby
+    h.views.showLobby(NO_CB);
+    h.views.showSettings({} as never);
     h.views.showLobby(NO_CB);
     // `ViewportResizer.listen()` leans on addEventListener de-duplicating the SAME function
     // reference (`onResize` is a bound field, not a method). Hand it a fresh closure per call —
@@ -309,6 +326,58 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
     expect(last(built, 'scene build').name).toBe('SettingsScene');
   });
 
+  it('re-fits the canvas off the lobby too, without rebuilding anything', () => {
+    // The whole point of the 2026-09-10 split: the cheap half is unconditional, the expensive half
+    // stays lobby-only (`createAppCore.onResized` is gated on `state.inLobby`, so no other screen
+    // can rebuild itself anyway). Rotating inside settings used to leave the canvas at its old size.
+    const h = setup();
+    const rebuilds: number[] = [];
+    h.views.onResized = () => { rebuilds.push(1); h.views.showLobby(NO_CB); };
+    h.views.showSettings({} as never);
+
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    expect(h.renderer.resize).toHaveBeenCalledWith(800, 1200);
+    expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(SETTLE);
+    expect(rebuilds).toEqual([]);
+    // ...and no stray timer was armed, so nothing can yank the player to the lobby later either.
+    expect(last(built, 'scene build').name).toBe('SettingsScene');
+  });
+
+  it('treats an inset change at an UNCHANGED viewport size as a real change', () => {
+    // The case the old guard swallowed outright (`width === appliedW && height === appliedH`), and
+    // the exact shape of the event the inset subscription exists to deliver: WebKit settling
+    // `viewport-fit=cover` after first paint changes the notch inset and nothing else. Dropping it
+    // makes the whole ResizeObserver path pointless.
+    const h = setup();
+    h.views.showLobby(NO_CB);
+
+    h.insets.top = 47; h.insets.bottom = 34;
+    h.win.fire('resize'); // same 1280x720
+    expect(h.renderer.resize).toHaveBeenCalledWith(1280, 720);
+    const layout = h.scaling.resize.mock.calls[0]![2] as ILayout;
+    // Design height must reflect the SAFE area now, not the raw viewport.
+    expect(layout.designHeight).toBe(createLayout(1280, 720, Side.Bottom, { ...h.insets }).designHeight);
+
+    // Firing again with nothing changed stays dropped — the guard still guards.
+    h.win.fire('resize');
+    expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-fits when the platform pushes an inset change with no resize event at all', () => {
+    // window.resize does not fire for a settling inset, which is why IPlatform grew
+    // onSafeAreaInsetsChanged (a ResizeObserver on env()-sized probes, platform/web/safeAreaProbe.ts).
+    const h = setup();
+    h.views.showSettings({} as never); // deliberately off-lobby: the feed is not lobby-scoped either
+
+    h.insets.top = 47;
+    h.notifyInsets();
+    expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+    expect(h.renderer.resize).toHaveBeenCalledWith(1280, 720);
+  });
+
   it('swaps the rebuilt lobby instantly even when the caller asks for a fade', () => {
     const h = setup();
     h.views.onResized = () => { h.views.showLobby(NO_CB, { fade: true }); };
@@ -364,16 +433,34 @@ describe('PixiAppViews — SLG panel mounts', () => {
     expect(h.manager.pushOverlay).not.toHaveBeenCalled();
   });
 
-  it('an overlay equipment mount leaves the lobby resize listener alone (leaveLobby is skipped)', () => {
-    // leaveLobby() is what detaches it; the overlay path must not run it, because the scene it is
+  it('an overlay equipment mount leaves the lobby REBUILD armed (leaveLobby is skipped)', () => {
+    // leaveLobby() is what disarms it; the overlay path must not run it, because the scene it is
     // mounted over (CardScene) already left the lobby and is still the one that owns the screen.
+    //
+    // Asserted through the behaviour rather than through `win.count('resize')`: since 2026-09-10 the
+    // window listener is installed once for the whole app life (only the rebuild has a lifetime), so
+    // the listener count can no longer tell these two paths apart.
     const h = setup();
-    h.views.showLobby(NO_CB);
-    expect(h.win.count('resize')).toBe(1);
-    h.views.showEquipment({} as never, { overlay: true });
-    expect(h.win.count('resize')).toBe(1);
-    h.views.showEquipment({} as never);
-    expect(h.win.count('resize')).toBe(0);
+    vi.useFakeTimers();
+    try {
+      const rebuilds: number[] = [];
+      h.views.onResized = () => { rebuilds.push(1); h.views.showLobby(NO_CB); };
+      h.views.showLobby(NO_CB);
+
+      h.views.showEquipment({} as never, { overlay: true });
+      h.screen.width = 800; h.screen.height = 1200;
+      h.win.fire('resize');
+      vi.advanceTimersByTime(200);
+      expect(rebuilds).toEqual([1]);
+
+      h.views.showEquipment({} as never); // full swap → leaveLobby → disarmed
+      h.screen.width = 900; h.screen.height = 1100;
+      h.win.fire('resize');
+      vi.advanceTimersByTime(200);
+      expect(rebuilds).toEqual([1]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cross-fades into the world map (one of the few faded transitions)', () => {

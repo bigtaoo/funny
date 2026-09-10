@@ -159,6 +159,13 @@ export default defineConfig({
         'src/cache/poolRegistry.ts',
         'src/i18n/index.ts',
         'src/layout/LandscapeLayout.ts',
+        // ...and the on-device viewport readout (2026-09-10, ADR-088). Pure by construction — the
+        // DOM half lives in `platform/web/safeAreaProbe.ts` because `app.ts` is on the WeChat
+        // reachable graph — and gated because its whole job is to be TRUSTED from a device we do not
+        // hold: the `inset-eaten` verdict is what tells a remote iPhone 13 apart from a healthy one,
+        // and a wrong verdict does not error, it sends the next diagnosis down the wrong road (which
+        // is exactly what happened twice before this existed). `test/viewportGeometry.test.ts`.
+        'src/layout/viewportGeometry.ts',
         'src/render/bake.ts',
         'src/layout/PortraitLayout.ts',
         // net: the transport bits with real suites (the two big *ApiClient facades are ~50% and

@@ -6,6 +6,8 @@ import { getOrCreateDeviceId } from '../uuid';
 import { BrowserGameSocket } from '../../net/BrowserGameSocket';
 import type { Locale } from '../../i18n';
 import type { SafeAreaInsets } from '../../layout/ILayout';
+import type { ViewportGeometry } from '../../layout/viewportGeometry';
+import { readSafeAreaInsets, observeSafeAreaInsets } from './safeAreaProbe';
 import { getNativeBilling, type IapKind } from '../iap';
 import { getNativeAds } from '../nativeAds';
 import { isNativeShell } from '../nativeShell';
@@ -44,32 +46,37 @@ export class WebPlatform implements IPlatform {
   }
 
   /**
-   * Reads env(safe-area-inset-*) via a probe element. Values are 0 on displays
-   * without insets (desktop, non-notched phones) and when the page lacks
-   * viewport-fit=cover. Reused for every resize — the probe is created once.
+   * Reads env(safe-area-inset-*) via a probe element (platform/web/safeAreaProbe.ts). Values are 0
+   * on displays without insets (desktop, non-notched phones) and when the page lacks
+   * viewport-fit=cover. Reused for every resize — the probes are created once.
    */
-  private safeAreaProbe: HTMLDivElement | null = null;
   getSafeAreaInsets(): SafeAreaInsets {
-    let probe = this.safeAreaProbe;
-    if (!probe) {
-      probe = document.createElement('div');
-      probe.style.cssText =
-        'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
-        'padding-top:env(safe-area-inset-top);padding-right:env(safe-area-inset-right);' +
-        'padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);';
-      document.body.appendChild(probe);
-      this.safeAreaProbe = probe;
-    }
-    const s = getComputedStyle(probe);
-    const px = (v: string): number => {
-      const n = parseFloat(v);
-      return Number.isFinite(n) ? n : 0;
-    };
+    return readSafeAreaInsets();
+  }
+
+  /** Push instead of poll — see safeAreaProbe.ts's header for why guessing when to re-read failed. */
+  onSafeAreaInsetsChanged(cb: (insets: SafeAreaInsets) => void): () => void {
+    return observeSafeAreaInsets(cb);
+  }
+
+  /**
+   * On-device geometry readout (layout/viewportGeometry.ts). Every number here is one this layer can
+   * see and the shared code cannot: `screen`, `visualViewport` and `window.inner*` are DOM, and
+   * app.ts is on the WeChat reachable graph where none of them exist.
+   */
+  getViewportGeometry(): ViewportGeometry {
+    const vv = window.visualViewport ?? null;
     return {
-      top:    px(s.paddingTop),
-      right:  px(s.paddingRight),
-      bottom: px(s.paddingBottom),
-      left:   px(s.paddingLeft),
+      innerW: window.innerWidth,
+      innerH: window.innerHeight,
+      screenW: screen.width,
+      screenH: screen.height,
+      visualW: vv ? vv.width : -1,
+      visualH: vv ? vv.height : -1,
+      visualOffsetTop: vv ? vv.offsetTop : -1,
+      dpr: window.devicePixelRatio || 1,
+      insets: readSafeAreaInsets(),
+      nativeShell: isNativeShell(),
     };
   }
 

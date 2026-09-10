@@ -13,8 +13,29 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
   },
   ios: {
-    // Respect the safe area (notch / home indicator) so the canvas is not clipped.
-    contentInset: 'always',
+    // 'never', deliberately — and this is the whole 2026-09-10 iPhone-13 portrait fix.
+    //
+    // 'always' asks WKWebView's own scrollView to inset the page by the safe area. On a notched
+    // phone that does two things at once: it shrinks the LAYOUT VIEWPORT (`window.innerHeight`
+    // 844 -> 763 on an iPhone 13) and it reports `env(safe-area-inset-*)` as 0, because from the
+    // page's point of view there is no longer anything to avoid. But this app does its own inset:
+    // `public/mobile/index.html` sets `viewport-fit=cover` and `ScalingManager` offsets the whole
+    // `gameLayer` by what it reads from `env()` (design/game/UI_DESIGN.md, safe-area row). Two
+    // mechanisms for one job, and under 'always' the second one is fed zeroes and does nothing.
+    //
+    // Worse, the native one does not finish the job here: `html, body { overflow: hidden }` makes
+    // that scrollView unscrollable, so its initial `contentOffset(-47)` is clamped back to 0 and
+    // the canvas still paints from physical y=0 — top HUD under the status bar — while the viewport
+    // it was sized for is 81pt shorter, leaving that 81pt as a dead band at the bottom. Exactly the
+    // reported symptom, and not reachable by any JS-side fix; see layout/viewportGeometry.ts's
+    // header for the arithmetic that ruled out both "insets read correctly" and "insets read 0".
+    //
+    // With 'never' the page keeps the full 844pt viewport and `env()` reports the real 47/34, so
+    // the existing gameLayer offset is in sole charge of the safe area, on every screen at once.
+    //
+    // NATIVE CONFIG — NOT OTA-SHIPPABLE: this is compiled into the shell. It needs `npx cap sync
+    // ios` on a Mac plus a new binary (IOS_RELEASE.md §5 / §12.1); an OTA bundle changes nothing.
+    contentInset: 'never',
     // Opaque background — no white flash between launch screen and first canvas paint.
     backgroundColor: '#f5f0e8',
   },
