@@ -215,9 +215,12 @@ export class FamilySceneCore {
     return Math.round(this.h * frac);
   }
 
-  /** Roster / channel list row height (was a fixed 48px — too short for legible two-line rows). */
+  /** Roster / channel list row height (was a fixed 48px — too short for legible two-line rows).
+   *  Raised 0.062 → 0.066 (2026-09-10) to pay for the roster's wider inter-card gutter: the cards
+   *  are now inset 5px top and bottom instead of 2px (see ./lists.ts), so keeping the old pitch
+   *  would have shrunk the card itself rather than opening the gap between cards. */
   get rowH(): number {
-    return Math.round(this.h * 0.062);
+    return Math.round(this.h * 0.066);
   }
 
   /** Height of the family identity band below the header. Portrait keeps the full name/count +
