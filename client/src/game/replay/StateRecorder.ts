@@ -121,11 +121,6 @@ class StateRecorder {
     this.winner = winner;
   }
 
-  /** Whether there is currently shareable content (frames have been sampled, or a stream has been adopted). */
-  get hasContent(): boolean {
-    return this.adopted !== null || this.frames.length > 0;
-  }
-
   /**
    * Capture one frame. Called after each engine tick advance; repeated calls for the same tick
    * (render frames without an engine advance) are skipped automatically. A backward tick

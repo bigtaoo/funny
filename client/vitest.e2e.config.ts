@@ -19,6 +19,9 @@ export default defineConfig({
       // reasoning as the auction alias above.
       '@nw/shared/cards': path.resolve(__dirname, '../server/shared/src/cards.ts'),
       '@nw/shared/equipment': path.resolve(__dirname, '../server/shared/src/equipment.ts'),
+      '@nw/shared/battlepass': path.resolve(__dirname, '../server/shared/src/battlepass.ts'),
+      '@nw/shared/rechargeMilestone': path.resolve(__dirname, '../server/shared/src/rechargeMilestone.ts'),
+      '@nw/shared/titles': path.resolve(__dirname, '../server/shared/src/titles.ts'),
       // Browser-safe slice, same as webpack.config.js/vitest.config.ts — NOT the full
       // src/index.ts barrel, which re-exports jwt.ts (-> 'jsonwebtoken', a server-only
       // dep this job never `npm ci`s — see "bring up server stack" above, host-side only

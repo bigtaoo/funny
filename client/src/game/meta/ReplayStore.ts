@@ -89,10 +89,6 @@ export class ReplayStore {
     return id;
   }
 
-  clear(): void {
-    this.storage.removeItem(REPLAY_STORAGE_KEY);
-  }
-
   private read(): StoredFile {
     const text = this.storage.getItem(REPLAY_STORAGE_KEY);
     if (!text) return { entries: [] };

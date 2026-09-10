@@ -14,7 +14,7 @@ import type {
   ResultViewProps,
   MountOpts,
 } from '../../src/app/AppViews';
-import type { RoomState, RoomError } from '../../src/net/proto/transport';
+import type { RoomState, RoomError, PeerDc } from '../../src/net/proto/transport';
 import type { NetState } from '../../src/net/NetClient';
 import { createLocalMatch } from '../../src/app/matchEngine';
 import { createGameEngine, getLevel, ReplayInputSource } from '../../src/game';
@@ -119,6 +119,9 @@ export class HeadlessAppViews implements AppViews {
   replay?: ReplaySceneCallbacks;
   result?: ResultViewProps;
   room?: RoomSceneCallbacks;
+  /** The last DeckBuilder callback bundle (2026-09-10): showDeckBuilder auto-confirms, so without
+   *  keeping the bundle a test can never reach its onBack/getCurrentElo callbacks. */
+  deckBuilder?: DeckBuilderCallbacks;
   friends?: FriendsSceneCallbacks;
   chat?: ChatSceneCallbacks;
   /** Last aggregate social badge total the core pushed into the lobby handle. */
@@ -130,6 +133,7 @@ export class HeadlessAppViews implements AppViews {
   lastRoomNetState?: NetState;
   /** Last room_error the server pushed (ranked: RANKED_UNAVAILABLE / GAME_UNAVAILABLE). */
   lastRoomError?: RoomError;
+  lastRoomPeerDc?: PeerDc;
   gameNet?: { localSide: OwnerId; cb: GameSceneCallbacks; opts: GameSceneOptions };
 
   private match: ActiveMatch | null = null;
@@ -258,10 +262,11 @@ export class HeadlessAppViews implements AppViews {
     this.lastRoomState = undefined;
     this.lastRoomNetState = undefined;
     this.lastRoomError = undefined;
+    this.lastRoomPeerDc = undefined;
     return {
       applyRoomState: (s) => { this.lastRoomState = s; },
       applyRoomError: (e) => { this.lastRoomError = e; },
-      applyPeerDc: () => {},
+      applyPeerDc: (p) => { this.lastRoomPeerDc = p; },
       applyNetState: (s) => { this.lastRoomNetState = s; },
     };
   }
@@ -310,6 +315,7 @@ export class HeadlessAppViews implements AppViews {
   // letting the ranked flow continue straight into the room.
   showDeckBuilder(cb: DeckBuilderCallbacks): void {
     this.screen = 'deckBuilder';
+    this.deckBuilder = cb;
     cb.onSave(cb.getCurrentDeck() ?? defaultPvpDeck());
   }
 

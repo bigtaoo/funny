@@ -163,6 +163,16 @@ module.exports = (env, argv) => {
         // `import type`), so it is browser-safe on its own. Lets client/src/game/meta/equipmentDefs.ts
         // re-export the authoritative table instead of hand-copying it (EQUIPMENT_DESIGN §3/§6/§17).
         '@nw/shared/equipment': path.resolve(__dirname, '../server/shared/src/equipment.ts'),
+        // @nw/shared/battlepass, /rechargeMilestone, /titles = three more zero-import shared
+        // modules (2026-09-10, ADR-087's rule applied a second time). Each one had a hand-copied
+        // client mirror whose header said "keep byte-identical to the server table"; the tables
+        // were verified byte-identical before the copies were deleted. battlepass.ts and
+        // rechargeMilestone.ts import nothing at all; titles.ts has a single `import type` from
+        // ladder.ts (also import-free), which erases at compile time. Same "must precede the
+        // general '@nw/shared' entry" rule as the two above.
+        '@nw/shared/battlepass': path.resolve(__dirname, '../server/shared/src/battlepass.ts'),
+        '@nw/shared/rechargeMilestone': path.resolve(__dirname, '../server/shared/src/rechargeMilestone.ts'),
+        '@nw/shared/titles': path.resolve(__dirname, '../server/shared/src/titles.ts'),
         // @nw/shared = browser-safe slice of server/shared. Points directly to slg/index.ts
         // (pure/deterministic, no Node.js built-ins) to avoid pulling in password/logger
         // which import node:crypto / node:fs / node:path and break webpack browser builds.
