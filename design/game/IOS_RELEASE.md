@@ -648,9 +648,13 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
       走 `legalUrl()` 与同意弹窗同源。此前 App 内唯一的入口在首启同意弹窗，**只出现一次**——
       审核员的设备上早已同意过，等于点不到隐私政策（5.1.1(i)）。门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例）
 - [ ] **出一个带 `ios.contentInset:'never'` 的新包，并在 iPhone 13 上验收安全区**（2026-09-10 起挂着）。
-      代码已合，但这条烧在原生配置里 —— 现有 TestFlight 包里仍是 `'always'`，竖屏顶部标题栏压状态栏、
-      底部空 ~81pt 的问题在旧包上不会变。要在 Mac 上（或推一个 `ios-v*` tag 走 §5 流水线）重新
-      `cap sync ios` + 出包，装上后按 §5.1 的验收方式看设置页底部两行读数
+      代码已合，但这条烧在原生配置里 —— 旧 TestFlight 包里仍是 `'always'`，竖屏顶部标题栏压状态栏、
+      底部空 ~81pt 的问题在旧包上不会变。
+      **构建那半边已做完（2026-09-10）**：run `34483601869`（手动 dispatch，head `be8ec4ea8`，4分22秒,
+      `UPLOAD SUCCEEDED`，**CFBundleVersion=9**，IPA 36.5 MB；pod 仍是 `Google-Mobile-Ads-SDK 13.9.0` +
+      `CapgoCapacitorUpdater 6.50.1`，与 committed lock 一致）。**剩下的是真机验收**：等 ASC 处理完进
+      TestFlight，装 build 9，按 §5.1 看设置页底部两行读数（判定词 `env-reported`、`inner` = 390x844、
+      `env` = 47/0/34/0）。没在设备上看过就不算完，`'never'` 本身在本机无法验证
 - [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可。⚠️ **英文副标题用 `Turn-based notebook strategy`**（§0.1 原稿
       `Turn-based strategy in a notebook` 是 33 字符，超 30 上限）

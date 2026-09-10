@@ -10,7 +10,7 @@ import { deviceClass, deviceMemoryGb, devicePixelRatio, momentContext, type Mome
 
 export const log = netLog('anomaly');
 
-export type AnomalyType = 'mem' | 'cpu' | 'webgl_lost' | 'anr' | 'jserror' | 'crash';
+export type AnomalyType = 'mem' | 'cpu' | 'webgl_lost' | 'anr' | 'jserror' | 'crash' | 'ad';
 
 /** A single anomaly event (same shape as ClientAnomalyEvent in metaserver/clientLog.ts on the server). */
 interface AnomalyEvent {
@@ -33,9 +33,12 @@ export const MSG_MAX = 300;
 const DETAIL_MAX = 800;
 export const BREADCRUMB_N = 12;  // number of recent log entries attached to crash / exit beacons
 
-// Minimum interval (ms) before re-reporting each type. High-frequency sampled types (mem/cpu/anr) are coalesced to prevent flooding; webgl/crash are rare and only subject to the session cap.
+// Minimum interval (ms) before re-reporting each type. High-frequency sampled types (mem/cpu/anr) are coalesced to prevent flooding; webgl/crash/ad are rare and only subject to the session cap.
+// `ad` has no cooldown on purpose: it is only ever emitted from a button the player pressed, so its
+// rate is bounded by hand speed, and a cooldown would hide exactly the case worth seeing — the same
+// failure on every attempt in a row.
 const COOLDOWN_MS: Record<AnomalyType, number> = {
-  mem: 60_000, cpu: 60_000, anr: 30_000, jserror: 10_000, webgl_lost: 0, crash: 0,
+  mem: 60_000, cpu: 60_000, anr: 30_000, jserror: 10_000, webgl_lost: 0, crash: 0, ad: 0,
 };
 
 function platformName(): string {
