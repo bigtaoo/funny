@@ -70,6 +70,15 @@ npm install
 npm run dev:all             # 起全部进程（dev-up.ps1）
 ```
 
+> **八个需要真 Mongo 的包共用一份 harness（2026-09-10）**：`server/scripts/testMongoHarness.ts`
+> （+ worker 侧的 `testMongoUri.ts`）。每个包的 `test/globalSetup.ts` 只剩一行
+> `createMongoHarness({ pkg, replSet })`：`worldsvc`/`metaserver` 用 rs0（要事务），其余六个
+> （`admin`/`analyticsvc`/`auctionsvc`/`commercial`/`shared`/`socialsvc`）用单机 mongod。
+> `NW_MONGO_URI` 已设时整套跳过（外部 Mongo / 并行 agent 共享 mongod 的做法照旧生效）。
+> teardown 自己发 `shutdown` 并自己等 mongod 退出，不再和 MMS 那个写死的 10+10 秒期限赛跑——
+> 来历见 [`server-testing-tooling.md`](server-testing-tooling.md) 的 09-09 / 09-10 两节。
+> **下面几条是历史记录**（当时每个包各有一份 globalSetup），数字仍然有效，文件位置以本条为准。
+>
 > **worldsvc e2e 无需 Docker**：`npm test -w @nw/worldsvc` 会经 vitest `globalSetup`（`test/globalSetup.ts`）用 `mongodb-memory-server` 自动起单节点 rs0（首次下载 mongod `7.0.14` 到全局缓存 `~/.cache/mongodb-binaries`，之后离线复用）。设了 `NW_MONGO_URI` 则完全让路给外部 Mongo。适用于 Docker 锁 Windows 模式时跑 SLG e2e。当前 **203 例全绿**。
 >
 > **socialsvc e2e 无需 Docker（2026-07-02 补齐）**：`npm test -w @nw/socialsvc` 同款骨架，但因 socialsvc 只用单文档原子操作、无事务，起**单机 mongod**（`MongoMemoryServer`，非副本集），mongod 版本同锁 `7.0.14` 共用缓存。覆盖 Family/Friend/Mail 三服务层共 **38 例**（`test/{family,friend,mail}.e2e.test.ts`，内存假 meta/gateway 见 `test/harness.ts`）。详见 `design/game/SOCIAL_SVC_DESIGN.md §6`。

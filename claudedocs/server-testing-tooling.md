@@ -285,3 +285,166 @@ CI 是 ubuntu + Node 22，**这个红很可能是 Windows-only**。
   是同一份裸写法**，同一个雷还在，尤其 `metaserver`（CI 上最慢的分片）暴露面和 worldsvc 同级。
 - **根因本身没动**：那 15 秒来自累积的脏 WiredTiger 状态。候选是给 mongod 限 `--wiredTigerCacheSizeGB`，
   或每个测试文件结束后 drop 自己的 DB——**两条都得先测再改**，别猜。顺带记一笔：那 10 秒是**每轮白烧**的墙钟。
+
+> **两条都在下一节（2026-09-10）做完了**：7 个包收进一份共享 harness；两个候选都实测过，
+> **一个是零效果、一个是净亏，都没落地**，而那 15 秒被定位到 `Closing WiredTiger`（占 98%）。
+> 那 10 秒的白烧也一并消失——现在 teardown 根本不进 MMS 那个期限。
+
+## 八份 `globalSetup.ts` 收成一份共享 harness + teardown 不再和 MMS 的 20 秒期限赛跑（2026-09-10，worktree `feat/mongo-teardown`）
+
+接着上一节。上一节只修了 `worldsvc` 一份，并明确记下「其余 7 个包是同一份裸写法」和「根因没动」。这一节把前者做完，
+并把后者从「限 cache / 每文件 drop DB」这两个候选，换成一个**不需要知道那 15 秒花在哪**也能成立的修法。
+
+### 1. 一份 harness，八个包共用
+
+新增两个文件：
+
+- **`server/scripts/testMongoHarness.ts`** —— `createMongoHarness({ pkg, replSet })`，返回 vitest `globalSetup` 要的
+  `{ setup, teardown }`。`replSet: true` 起单节点 rs0（要多文档事务的 `worldsvc` / `metaserver`），`false` 起 standalone
+  mongod（其余六个）。
+- **`server/scripts/testMongoUri.ts`** —— `bridgeMongoUri(pkg)` + `mongoUriHandshakePath(pkg)`，即每个包
+  `test/setupEnv.ts` 的全部内容。
+
+**为什么是两个文件而不是一个**：`setupEnv.ts` 是 `setupFiles`，**每个 worker、每个测试文件都会加载一次**。
+harness 那半边 import 了 `mongodb-memory-server`（连下载/解压那套一起），让它被上百次地 import 进只想从文件里读一个 URI
+的进程，纯属白烧。所以 worker 侧那半边保持零依赖（只有 `node:fs`/`path`/`os`）。
+
+八个包的 `globalSetup.ts` 各剩 7 行、`setupEnv.ts` 各剩 5 行（`metaserver` 多一段 `NW_REPLAY_ARCHIVE_DIR`，是它自己的东西）。
+握手文件名从 `pkg` 派生（`nw-<pkg>-mongo-uri`），写的人和读的人**不可能再对不上**——原来这是两个文件里的两个字面量。
+
+顺手修掉的三件事：
+
+- **`shared/test/setupEnv.ts` 原来没有 `NW_REQUIRE_DB` 那道断言**（另外七个都有）。CI 就是带着
+  `NW_REQUIRE_DB=1` 跑的，唯一目的是「mongod 起不来时别静默 skip」——`shared` 一直缺这道保险。
+- **`metaserver/package.json` 既没声明 `mongodb` 也没声明 `mongodb-memory-server`**，却在 `globalSetup.ts` 里 import
+  MMS、在 4 个测试文件里 import `mongodb`；靠 npm 从别的 workspace 提升上来才能跑。别的包哪天不用 MMS 了，
+  metaserver 的测试就会以一个和它自己毫无关系的理由挂掉。已按其余七个包的写法补上。
+- **`ci.yml` 里那句「mongodb-memory-server（used by …）」漏了 `shared`**，且现在该指向 harness 而不是八份 globalSetup。
+
+### 2. `tsconfig.test.json` 的 `rootDir` 是个纯地雷
+
+`test/globalSetup.ts` 一 import `../../scripts/testMongoHarness` 就红：
+
+```
+test/globalSetup.ts(5,36): error TS6059: File '.../server/scripts/testMongoHarness.ts' is not under
+  'rootDir' '.../server/worldsvc'. 'rootDir' is expected to contain all source files.
+```
+
+**`noEmit` 并不让 TS 跳过 rootDir 检查**（当时的猜测是会跳过，实测不会）。而这些 `tsconfig.test.json` 全是
+`noEmit: true` + `composite/declaration: false`，**rootDir 在这里唯一还有的作用就是用 TS6059 拒掉外面的文件**——
+它塑造不了任何输出。也不能简单删掉：删了就从 `extends` 的 `tsconfig.json` 继承到 `rootDir: "src"`，
+于是连 `test/**` 自己都在 rootDir 外面（另一串 TS6059）。所以是**改成 `".."`（server 根）**，12 份 `tsconfig.test.json`
+一起改（`engine` 那份形状不同，没动），注释写清楚它为什么必须宽到这里。
+
+### 3. teardown 不再进那场 20 秒的赛跑
+
+上一节的修法是「关不掉就大声说出来 + 接管 MMS 跳过的清理」——**症状不再静默，但赛跑还在**。这一节把赛跑本身去掉。
+
+先把 MMS 的 `stop()` 拆开看（`lib/util/MongoInstance.js`）：
+
+1. **只有 replSet** 才会先连上去发 `{shutdown:1, force:true, timeoutSecs:1}`；standalone **直接进 SIGINT**。
+   （MMS 自己的注释：在 Windows 上 node 对 SIGINT/SIGTERM/SIGKILL 一视同仁 = 立刻杀。）
+   —— 所以那六个 standalone 包的 mongod 在 Windows 上一直是被**硬杀**的，而「dbPath 里留下没人释放的 WiredTiger 文件」
+   正是硬杀的典型后果。
+2. 然后 `killProcess`：`const timeoutTime = 1000 * 10;`，**两级都写死在源码里**，没有任何配置入口。
+
+上一节实测：mongod 被要求关闭到真的消失要 **15.1 秒**，硬期限 10+10 = 20 秒，余量 4.87 秒。
+
+**修法**：teardown 自己发 `shutdown`，然后自己 `await` 子进程的 `exit` 事件，**期限是我们的**（`SHUTDOWN_WAIT_MS = 120s`，
+超了只打 `::warning::` 并退回 MMS 那条老路，严格不比现状差）。等 MMS 的 `stop()` 跑到时 pid 已经没了，
+它的 `killProcess` 走 `given childProcess's PID was not alive anymore` 早退分支——**10+10 那个期限彻底不参与了**。
+六个 standalone 包顺带白拿一次优雅关闭。
+
+**这里有个必须踩到才知道的坑**：这么改之后 **不能再调 `mongo.stop()` 的默认清理**。
+`MongoMemoryServer.cleanup()` 第一行就是
+`assertion(isNullOrUndefined(this._instanceInfo.instance.mongodProcess), 'Cannot cleanup because "instance.mongodProcess" is still defined')`，
+而 `mongodProcess` **只在 MMS 自己动手杀的那条路径上**才会被置成 `undefined`；我们先把 mongod 关掉之后，
+MMS 走的是「nothing to shutdown, skipping」分支，句柄留着不动，于是它的 `cleanup()` 会在这条断言上抛——
+**照抄上一节的写法会把一个绿 run 变红，方向还正好反过来**。所以现在是 `stop({ doCleanup: false })`
+（这一步仍有用：MMS 的 `killerProcess` 看门狗在里面被回收），dbPath 的删除由我们自己做，
+`maxRetries: 10, retryDelay: 200`——MMS 自己的 `removeDir()` 一次重试都没有，那就是上一节「测试全绿、退 1」的那条路。
+
+另外 teardown 现在会在关闭超过 `SHUTDOWN_WARN_MS = 8s` 时打一条 `::warning::` 报出实际秒数：
+**这笔墙钟每轮都在烧，让它可见比让它隐形好**。
+
+### 4. 根因实测：不是 cache，是 `Closing WiredTiger`
+
+**先给上一节留下的两个候选一个答案，两个都测了。**
+
+**实测 A：真实全量跑的关闭阶段拆解**（`worldsvc`，116 文件 / 1410 例全绿 / 806s，新增开关
+`NW_TEST_MONGO_SHUTDOWN_LOG=<file>` 把 mongod **自己的**关闭日志落盘——mongod 每一步都自报时刻，
+比再用 `DEBUG=MongoMS:*` 跑一遍全量便宜得多：后者会把 mongod 整轮的每一行都记下来，实测整轮慢约 4 倍，
+跑了 14 分钟才到第 28 个文件）：
+
+| 阶段 | 耗时 |
+|---|---|
+| `Terminating via shutdown command` → `Closing WiredTiger`（几十个子系统依次关闭） | **66 ms** |
+| `Closing WiredTiger` → `WiredTiger closed`（日志里的 `durationMillis`） | **3812 ms** |
+| 之后到 `mongod shutdown complete` | 2 ms |
+
+**98% 在 `Closing WiredTiger` 里面**。注意这次总共只有 **3.88 秒**，不是上一节那 15.1 秒——单样本，见下面的
+**实测 D**，那大概能解释差在哪。
+
+**实测 B/C：两个候选，合成探针**（`DBS=63 × COLLS=20 × IDX=2`，即真实 63 个测试 DB 的形状，约 400 MB；
+探针自己发 `shutdown` 再自己等 `exit`，中间没有任何期限）：
+
+| 变体 | drop | 关闭 | 合计 |
+|---|---|---|---|
+| 基线（跑两次） | — | 6788 / 6259 ms | 6.3–6.8 s |
+| **`--wiredTigerCacheSizeGB=0.25`** | — | 6528 ms | **6.5 s ——落在基线噪声里，无效果** |
+| **每个 DB 用完就 drop**（≈「每个测试文件结束后 drop 自己的 DB」） | — | 2866 ms | **2.9 s ——降 55%** |
+| 全部 DB 在 teardown 时一起 drop | 7873 ms | 1710 ms | **9.6 s ——反而更慢** |
+
+- **`--wiredTigerCacheSizeGB` 这条候选可以关掉了**。它测出来是零效果，而且机制上本来就不该有效果：
+  本机 31.4 GB 内存 → WT 默认 cache ≈ 15 GB，而整个 dbPath 才 0.4–0.5 GB，**上限从来不是约束**；
+  `close(leak_memory=false)` 的代价跟**实际分配了多少** cache 成正比，不跟配置的上限成正比。
+- **「每文件 drop DB」这条候选确实有效，但只在「边跑边 drop」这个形态下有效**——而那要改 60+ 个测试文件，
+  且**不安全**：全局 drop 依赖 `fileParallelism: false`，还会打死
+  [`server-testing-coverage.md`](server-testing-coverage.md) 里那套「多个并行 agent 共享一个 mongod、各用自己的 DB 名」的做法。
+  唯一安全（harness 自己就能做、不碰任何测试文件）的形态是「teardown 时一起 drop」，**实测是净亏**：
+  drop 本身 7.9 秒，省下来的关闭时间只有 4.5 秒。
+- **所以两条都不落地**，理由是数字而不是猜测。剩下那 3.9 秒是 `Closing WiredTiger` 里的真实工作量，
+  而它现在**只是墙钟、不再是正确性问题**：占 806 秒套件的 0.5%，且不再有任何期限在旁边等着被越过。
+
+**实测 D：MMS 那记 SIGINT 本身就是问题**。MMS 对 replSet 的顺序是「发 `shutdown` → 1 秒后再补一记 SIGINT」，
+而那 1 秒后 mongod 正关到一半。把这个顺序照搬进探针（`MODE=mms`），在真实规模下 **3 次全部拿不到 `exit` 事件**：
+node 的事件循环直接跑空、top-level await 永远不 settle，**三次各留下一个 `mongo-mem-*` dbPath 没人清**。
+（数据量小到 mongod 在那 1 秒内就关完时没事——SIGINT 落在一个已经退出的进程上，`kill` 返回 `false`。）
+这正好对上上一节的取证：`%TEMP%` 里 **21 个** `mongo-mem-*`、455,295 个文件、11.12 GB。
+MMS 的 `killProcess` 就是 `await childprocess.once('exit')`——**这个事件不来，它就只能等到第二级 10 秒超时然后 reject**，
+于是 `stop()` 返回 `false`、跳过自己的 cleanup、退出码仍是 0。**没有定向复现过的那一环，这里补上了。**
+
+**没有解释的部分（如实记账）**：为什么 SIGINT 落在「正在关闭的 mongod」上会让 node 收不到 `exit`，没有查到底
+（Windows 上 libuv 把 SIGINT/SIGTERM/SIGKILL 一律映射成 `TerminateProcess`）。上一节那次测到的是 15.1 秒**之后**
+`exit` 确实来了，所以这条路径也不是每次都吃掉事件——**「有时慢、有时干脆不来」两种表现共用同一个触发点**。
+既然修法是根本不发那记 SIGINT，就没有继续挖下去。
+
+### 5. 验证
+
+- **`worldsvc`**：116 文件 / 1410 例全绿，806s，**退 0**，teardown 一条 `::warning::` 都没打；
+  跑完 `%TEMP%` 里零残留（对照：同日一次被手动掐掉的 `DEBUG` 跑留下一个 16,625 文件的 dbPath）。
+- **其余七个包一次跑完**：`shared` 1174 例、`admin` 406、`analyticsvc` 109、`auctionsvc` 371、
+  `commercial` 545、`socialsvc` 332、**`metaserver` 140 文件 / 2341 例**，全绿。
+  七个 mongod 的关闭日志全部是 `Terminating via shutdown command` → `WiredTiger closed`
+  （63 / 144 / 162 / 434 / 2827 / 4509 / 5980 ms）→ `mongod shutdown complete`，**没有一个走信号**。
+  跑完同样零残留：没有 mongod 进程、没有 `mongo-mem-*`、没有 `nw-*-mongo-uri`
+  （连一个此前遗留的 `nw-commercial-mongo-uri` 都被 commercial 自己的 teardown 收走了）。
+- **`shared` 有 2 个文件红，与本次改动无关**：`dailyCounter.test.ts` / `rateLimiter.test.ts`
+  报 `0 test`（模块加载期就死），原因是 `ECONNREFUSED 127.0.0.1:6379` —— **本机没起 Redis**。
+  这两个文件一行 Mongo 都不碰，CI 有 redis service。整轮聚合退出码 1 就是它们造成的。
+- **harness 自带 16 例自测**（`shared/test/testMongoHarness.test.ts`，仿 `coverageScripts.test.ts` 的先例）：
+  `bridgeMongoUri` 七例（含「截断的握手文件不许把 `NW_MONGO_URI` 设成空串」和 `NW_REQUIRE_DB` 两向）、
+  `waitForExit` 三例（含「超时后不留监听器」）、`teardownMongo` 六例。
+  **红检两次**：`doCleanup: false` → `true` 红 1 例；删掉 dbPath 删除循环红 4 例。两次都还原后 16 例全绿。
+  **没覆盖的（刻意）**：优雅关闭那次真实往返（连库 → 发 `shutdown` → 等 `exit`），它要一个真 mongod，
+  而八个包的 e2e 每轮都在提供；关得慢现在也会自己带秒数报出来。
+- `tsc -b`、13 个包的 `typecheck:test`、`eslint .`（`server/scripts/**/*.ts` 本次纳入 lint 范围——
+  它此前是 server 里唯一没人 lint 的手写 `.ts`）、`check:filelength` / `check:absolutewrites` /
+  `check:workspacecoverage` 全过。
+
+**没做的**：
+- **「每文件 drop DB」那 55%**（见上一节的表）。要改 60+ 个测试文件、且与共享 mongod 的并行做法冲突；
+  收益是 806 秒里的 3 秒。**要做的话，做法是每个测试文件 drop 自己那一个 DB，不是全局 drop。**
+- **为什么 SIGINT 会让 node 收不到 `exit`**，没查到底（见上一节末）。
+- **Linux 侧仍未复现过原故障**（09-09 的 6 次 nightly 迭代全绿），所以这次也谈不上「在 Linux 上验证修复」——
+  但改动本身跟平台无关，且移除的是一条恒定存在的赛跑。

@@ -1,25 +1,7 @@
-// Vitest globalSetup: spin up a standalone mongod via mongodb-memory-server (mirrors analyticsvc's harness).
-// Skipped entirely when NW_MONGO_URI is already set, so an external Mongo takes precedence.
-import { MongoMemoryServer } from 'mongodb-memory-server';
-import { writeFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+// Vitest globalSetup: a real Mongo for this package's tests — no Docker, no manual install.
+// auctionsvc only does single-document atomic operations, so a standalone mongod is enough.
+// The harness itself (pinned binary, URI handshake, shutdown sequencing) is shared:
+// server/scripts/testMongoHarness.ts.
+import { createMongoHarness } from '../../scripts/testMongoHarness';
 
-const URI_FILE = join(tmpdir(), 'nw-auctionsvc-mongo-uri');
-const MONGOD_VERSION = '7.0.14';
-
-let mongod: MongoMemoryServer | undefined;
-
-export async function setup(): Promise<void> {
-  if (process.env.NW_MONGO_URI) return;
-
-  mongod = await MongoMemoryServer.create({ binary: { version: MONGOD_VERSION } });
-  const uri = mongod.getUri();
-  process.env.NW_MONGO_URI = uri;
-  writeFileSync(URI_FILE, uri, 'utf8');
-}
-
-export async function teardown(): Promise<void> {
-  if (mongod) await mongod.stop();
-  rmSync(URI_FILE, { force: true });
-}
+export const { setup, teardown } = createMongoHarness({ pkg: 'auctionsvc', replSet: false });
