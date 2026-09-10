@@ -665,3 +665,80 @@ while (cols > 1 && 少一列不会多一行) {
 **同轮落地的还有批 10 的伞**：`umbrella_active.png`（128×128 = 1.00:1，一版过），`hud.ts` 的保护 buff 行 `armorHeavy` → `umbrella`，`OWN_ART` 56 → 57。**世界地图 HUD 一屏上的四分圆至此清零**（§45 挪走两条队伍行，这一轮挪走 buff 行）。判断依据、prompt、验收记录见 [`tab-icon-art-prompts-batch10.md`](../product/tab-icon-art-prompts-batch10.md)。
 
 **验证**：`tsc --noEmit -p tsconfig.test.json` 干净、`lint` 0 error、`build:web` 过、`check:filelength` 过、`vitest run` 2788 例 + `test:ui` 2459 例全绿；`iconArtAspect.test.ts` 自动把伞纳进来（1.00:1，无豁免）。像素证据：三语菜单各一张 + HUD 一屏（伞 + 沙漏 + 脚印/帐篷/房子三条队伍行）。
+
+## 46. iPhone 13 竖屏安全区：两套内缩机制打架，2026-07-28 那次修的是一个不存在的竞态（2026-09-10）
+
+**症状（用户真机实测，第二次报同一件事）**：iPhone 13（390×844pt，真实 inset 47/34）上跑 **Capacitor 原生包**（TestFlight 装的，已明确排除 Safari 与主屏 PWA），竖屏大厅**顶部深色标题栏完全盖住系统状态栏**（时间/电量），**底部导航栏下方空出约 80pt 死区**。
+
+### 46.1 先做排除法，再动手 —— 这一步直接证伪了原假设
+
+2026-07-28 的那次修复（commit `60c1aba14` + 测试 `ec5e9dda5`）假设是「WebKit 冷启动首次同步读 `env(safe-area-inset-*)` 返回 0」的竞态，方案是资源门禁 `await` 之后再读一次（`resettledLayout`）。它已经在包里，没起作用。
+
+把两种可能的 inset 读数代进 `PortraitLayout` 的 designHeight 公式 + `ScalingManager.applyScaling()`：
+
+| insets 读到 | designHeight | `gameLayer.y` | 内容占屏 | 顶/底留白 |
+|---|---|---|---|---|
+| 47/34（正确） | 2113 | 47 | 47→810 | 47 / 34 ✅ |
+| 全 0（假设的竞态结果） | 2337 | 0 | 0→844 | 0 / 0 |
+
+**两种都产生不了截图里的样子。** 顶部完全没让 = 画布从物理 y=0 画起；底部空出 ~81pt = 布局视口只有 763。能同时成立的只有第三种组合：**布局视口已经被减掉 81pt，而 `env()` 仍然读回 0**。也就是说，症结根本不在「inset 读到 0 还是读对」这条轴上，2026-07-28 那整篇推理即使成立也修不好这个 bug。花几分钟做这张表，省下的是第三次返工。
+
+### 46.2 根因：`ios.contentInset: 'always'`
+
+`client/capacitor.config.ts` 原本写着 `ios.contentInset: 'always'`，注释是「Respect the safe area so the canvas is not clipped」。它做的事是让 WKWebView 的 scrollView 自己按 safeArea 内缩：
+
+1. 布局视口被缩小 —— `window.innerHeight` 844 → 763；
+2. 页面视角里已经没有需要避开的东西了，于是 **`env(safe-area-inset-*)` 全部归零**。
+
+而这个 app 的安全区一直是**自己做**的（`mobile/index.html` 的 `viewport-fit=cover` + `ScalingManager` 按 `env()` 平移 `gameLayer`，见 `UI_DESIGN.md` §1 安全区行）。两套机制叠在一起的结果是：我们那套拿到全 0、什么都不做；原生那套又因为 `html, body { overflow: hidden }` 让 scrollView 滚不动、初始 `contentOffset(-47)` 被 clamp 回 0，画布照旧贴着屏幕顶端画。**顶部不让 + 底部空 81pt，两个症状同时对上。**
+
+顺带解释了为什么上一次的修复「没坏但没用」：`env()` 恒为 0 ⇒ `resettledLayout` 的分支永远不触发。它没被删（对真·冷启动竞态仍然对），只是不可达。
+
+**修复：`contentInset: 'never'`。** 之后 `innerHeight` 回到 844、`env()` 报真值 47/34，现有的 `gameLayer` 内缩逻辑独家负责安全区。**⚠️ 这条烧在原生配置里，不能 OTA**：要在 Mac 上 `npx cap sync ios` + 重新出包才生效（`IOS_RELEASE.md` §5 / §12.1 已记）。
+
+### 46.3 先加设备读数，别再盲修
+
+上一次失败的唯一原因是**没有真机读数就动手**：桌面 Chrome 里 inset 恒为 0、视口撑满，这类 bug 一个都复现不了，`tsc` + build + 单测全绿证明不了任何事——当时的记录里甚至诚实写着 "unverified on a real device"，然后就发了。
+
+所以本轮先落地读数，`layout/viewportGeometry.ts`（纯函数、无 DOM，因为 `app.ts` 在微信可达图上）：
+
+- `innerW/H`、`screen.width/height`、`visualViewport` 宽高与 `offsetTop`、四个 `env()`、`dpr`、是否原生壳；
+- 加一个**一词判定**：`inset-eaten`（视口比屏幕小、`env()` 却报 0 —— 本 bug 的指纹）/ `env-reported` / `no-inset` / `browser`（不是原生壳就不下结论：浏览器的窗口本来就比屏幕小）；
+- 两条出口：`app.ts` 的 boot 日志（`viewport_geometry boot`，同时进客户端日志环形缓冲，可被定向日志收集捞走）+ **设置页底部两行可见文本**（`SettingsScene/panels.ts` 的 `drawViewportDiagnostics`）。设置页那两行是刻意不做本地化的：它是五个数字加一个判定词，翻译过的诊断信息等于还要先翻译回来才能读。
+
+读数的通道就是一张截图 —— 因为受影响的包是别人手机上的 TestFlight，没有 DevTools 可接。字号定在 `FS.label`（24 设计 px，在 390pt 宽的屏上约 8.7 CSS px）：再大就塞不进法律条款下面那条约 100px 的空带，再小就不是「能拍下来看清」的东西了；横屏设计矩形只有 1080 高、那条带只剩一半，所以横屏合成一行（1920 宽绰绰有余）。
+
+### 46.4 另外两个独立缺陷（跟根因无关，但都真实存在，且会吃掉未来任何同类修复）
+
+**① 画布 re-fit 只在大厅挂着。** `PixiAppViews.leaveLobby()` 一进任何非大厅场景就 `viewport.stop()`（`showIntro`/`showLogin`/`showSettings`/`showShop`… 每个都调）。于是**登录页、设置页、整场战斗里转屏或 inset 变化完全不重排**：`renderer.resize` 根本没被调用，画布保持构建时的 CSS 尺寸，`toDesignSpace` 还按旧变换映射触点——战斗里转屏会得到「旧形状画在新窗口里、点击还偏」。
+
+改成两半各按自己的成本决定生命周期（`app/viewportResize.ts`）：
+
+- **便宜的那半（re-fit）**：`renderer.resize` + `createLayout` + `scaling.resize`，构造时 `install()` 一次、永不摘除；
+- **贵的那半（重建当前场景）**：仍然只有大厅做（`createAppCore.onResized` 本来就门禁在 `state.inLobby`，别的场景压根重建不了），`armRebuild()`/`disarmRebuild()` 沿用原来的进出大厅时机 + 180ms 合并窗口。
+
+代价说清楚：非大厅场景转屏后画布正确、但内部仍按构建时的设计矩形排布。这比改之前（画布尺寸错**且**触点映射错）严格更好；「任意场景都能按 resize 重建」是另一件大得多的事，不在本轮。
+
+**② 无变化守卫只比尺寸。** `viewportResize.ts` 的早退是 `width === appliedW && height === appliedH`，**inset 变而尺寸不变时直接 return**——正好把下面这套事件驱动想送达的那类事件吃掉一半。现在把 insets 一起纳入比较（复用 `ScalingManager` 的 `insetsEqual`，为此 export）。
+
+### 46.5 inset 从「被问才读」改成「变了就说」
+
+`WebPlatform.getSafeAreaInsets()` 原来是一个隐藏 div，四个 padding 是四个 `env()`，谁问就 `getComputedStyle` 读一次。问题是**没人问**：boot 读一次、资源门禁后再读一次、然后只有 `window.resize` 才读。而 `window.resize` 对「inset 自己变了」是不触发的（WebKit 晚一点才把 `viewport-fit=cover` 结算完、iOS 在转屏动画结束时才交出真值、通话状态栏压上来），2026-07-28 那次修复本质上就是在猜「什么时候该再读一次」。
+
+`platform/web/safeAreaProbe.ts`：探针改成**由 inset 决定宽高**——两个隐藏盒子，A 量 (left, top)、B 量 (right, bottom)，一个 `ResizeObserver` 盯着两个。inset 一变就把盒子改尺寸 → 观察器回调 → 推给订阅者（`IPlatform.onSafeAreaInsetsChanged()`，WeChat/CrazyGames 按缺省不实现 = 没有 inset 可订阅，行为退回纯 resize 驱动）。
+
+三个不显然的点，各有一条测试钉着：
+
+- **分两个盒子**，因为一个盒子按 top+bottom 定高会看不见 47/34 → 34/47 的对调（尺寸变化恰好为 0）；
+- **`display:none` 不行，得用 `visibility:hidden`** —— 不渲染的元素没有盒子，`ResizeObserver` 永远不会为它触发；
+- **观察器的比较基线（`lastNotified`）只归观察器自己所有**，不能和 `readSafeAreaInsets()` 共用一个「上次的值」：`ViewportResizer` 每次 `window.resize` 都会读 insets，而移动浏览器为一堆不是 resize 的事（工具栏滑动、软键盘）也发 resize——这样一次读数落在「盒子变了」和「回调（异步、在渲染步骤里）」之间，两边就比成相等，那条唯一该送出的通知会**非确定性地**丢掉。
+
+### 46.6 验证（含一条老实话）
+
+- `tsc --noEmit`（`tsconfig.test.json` + `fulllink`）干净、`lint` 0 error、`check:filelength` 过、`check:wechatpackage` + `check:bundlesize` 过；`build:mobile` / `build:web` / `build:wechat` 三个 webpack 构建都过。
+- `vitest run` 3453+ 例、`test:ui` 2639+ 例全绿。新增/改动的测试：`test/viewportGeometry.test.ts`（10 例，判定矩阵 —— 含「横屏不许误判成 `inset-eaten`」，iOS 的 `screen.width/height` 不随转屏交换）、`test/safeAreaProbe.test.ts`（8 例，DOM 与 `ResizeObserver` 手写 stub，含没有 `ResizeObserver` 的降级路径）、`test/ui/settingsViewportDiagnostics.ui.ts`（8 例，四种视口下的不重叠 + 缩放到真机后的可读性下限）、`test/ui/pixiAppViews.ui.ts`（23 例，改了监听生命周期那条的契约，新增三条：非大厅也 re-fit 但不重建、inset 变而尺寸不变算变化、平台推送 inset 变化）。
+- **变异验证**：把 insets 从守卫里去掉 → 2 例红；把 re-fit 改回大厅独占 → 3 例红；让 `readSafeAreaInsets()` 去动观察器的基线 → 5 例红。
+- 真实 Chrome（用户本机）：设置页底部读到 `inner 1280x631 | screen 1280x800 | dpr 1.5 | env 0/0/0/0 | vv 1280x631.3@0 | browser`，即 `WebPlatform.getViewportGeometry()` → `nav/auth` → 场景这条链在真浏览器里通了，且判定词老实地说了「这里是浏览器，不下结论」。
+  竖屏几何用 iPhone 13 的真实 inset（47/34）单独构了一次 `SettingsScene` 量：`designHeight 2113`、`gameLayer.y 47`、`scale 0.36110`、内容底边 810 —— 与 §46.1 表里「正确」那一行逐个吻合，截图上顶/底两条米色带也在。
+  事件驱动那条链在真浏览器里只验到了一半：**这个标签页是后台窗口（`document.visibilityState === 'hidden'`，`requestAnimationFrame` 停摆）**，而 `ResizeObserver` 的投递挂在渲染步骤上，所以它在这个环境里根本不触发（拿一个干净的 `ResizeObserver` 单独试过，连初次回调都没有）。于是改用同一处理函数的另一个入口验收：把两个探针盒子按真机值改成 47/34，再在**设置页（非大厅）**上发一次尺寸未变的 `resize` —— `gameLayer.y` 0 → 47、`scale` 0.5842 → 0.5093。改之前这两条（全局 re-fit、insets 纳入守卫）任缺其一，这都是个空操作。
+- **仍未在真机上验证的部分**：`contentInset: 'never'` 本身（要 Mac 上重新出包）和 `ResizeObserver` 的真实投递。所以这轮**不宣布修好了** —— 等用户拿新包在 iPhone 13 上看设置页那两行：判定词从 `inset-eaten` 变成 `env-reported`、`inner` 回到 390x844、`env` 读到 47/0/34/0，才算坐实。

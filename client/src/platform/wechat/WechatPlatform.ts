@@ -153,6 +153,16 @@ export class WechatPlatform implements IPlatform {
     return { width: info.windowWidth, height: info.windowHeight };
   }
 
+  // getSafeAreaInsets / onSafeAreaInsetsChanged / getViewportGeometry are all deliberately absent
+  // (they are optional on IPlatform, and absent reads as "all-zero insets, nothing to subscribe
+  // to", which is what this platform has always done). Two independent reasons: the geometry
+  // readout is pure DOM (`window.inner*`, `screen`, `visualViewport`, `env()`) and this runtime has
+  // none of it on a real device (see test/wechatHostSurface.test.ts); and the inset itself would
+  // have to come from `wx.getSystemInfoSync().safeArea` instead. That last one is a real gap on a
+  // notched iPhone running the mini-game — untouched here only because nobody has reported it and
+  // there is no such device on hand to verify a fix against, which is exactly the mistake the
+  // iPhone-13 native-shell bug punished twice (layout/viewportGeometry.ts's header).
+
   getLanguage(): string {
     try {
       return wx.getSystemInfoSync().language ?? 'zh-CN';

@@ -340,6 +340,20 @@ git tag ios-v1.0.0 && git push origin ios-v1.0.0
 
 上传后进入 ASC 的 TestFlight（处理约 5–15 分钟），再在 ASC 提交审核发布。
 
+### 5.1 只能靠重新出包的改动（OTA 不生效）
+
+`client/capacitor.config.ts` 是**编进原生壳**的，`npx cap sync ios` 时才被读；OTA 只换 web 层（§11.0），
+改这个文件的任何一行都要走本节重新出包。目前有一条是「改了就必须出包，不出包等于没改」的：
+
+- **`ios.contentInset` 必须保持 `'never'`**（2026-09-10 从 `'always'` 改过来）。`'always'` 会让 WKWebView
+  自己按 safeArea 缩小布局视口（iPhone 13 竖屏 `innerHeight` 844 → 763）**并把 `env(safe-area-inset-*)` 归零**，
+  于是游戏自己那套安全区内缩（`ScalingManager` 按 `env()` 平移 `gameLayer`）拿到全 0、什么都不做；
+  而原生那套又滚不动（`mobile/index.html` 的 `overflow: hidden`），画布照旧从物理 y=0 画起 ——
+  症状是「顶部标题栏盖住状态栏 + 底部空出 ~81pt 死区」。完整复盘见 `UI_DESIGN_LOG_2026-08.md` §46。
+  **验收方式**（不需要接 DevTools）：新包里进设置页，看底部那两行读数 —— 判定词应为 `env-reported`、
+  `inner` 应等于屏幕点数（iPhone 13 = 390x844）、`env` 应读到 47/0/34/0。若仍是 `inset-eaten`，
+  说明装的还是旧壳（或 `cap sync` 没跑）。
+
 ## 6. StoreKit 桥（实现说明）
 
 > **两批都已落地**：A 批服务端（2026-09-07，ADR-081），B 批客户端 StoreKit 2（同日，ADR-082）。
@@ -507,7 +521,7 @@ ATT 那处矛盾能活六周，正是因为四处分别正确、没人一眼看�
 
 ## 11. OTA 热更新（Capgo 自托管，路线 B）
 
-> 目标：改 JS / web 资源（战斗逻辑、UI、数值、美术）后，玩家**下次冷启动即自动拿到新版**，无需过 App Store 审核；同时保留本地包做离线兜底。**只能热更 web 层**——任何原生改动（新增 Capacitor 插件、`Info.plist`、`AppDelegate.swift` 的 IAP 桥、图标/启动图）仍必须走 §5 的二进制发布。
+> 目标：改 JS / web 资源（战斗逻辑、UI、数值、美术）后，玩家**下次冷启动即自动拿到新版**，无需过 App Store 审核；同时保留本地包做离线兜底。**只能热更 web 层**——任何原生改动（新增 Capacitor 插件、`Info.plist`、`AppDelegate.swift` 的 IAP 桥、图标/启动图、**`capacitor.config.ts` 里的 `ios.*`**，逐条见 §5.1）仍必须走 §5 的二进制发布。
 
 ### 11.0 合规边界（先读，别踩线）
 
@@ -633,6 +647,10 @@ OTA 管线**不需要 macOS runner**（无原生编译），`ubuntu-latest` 即�
 - [x] **设置页补法律条款入口**（2026-09-04）：`SettingsScene` 右列新增「法律条款」两条链接（隐私政策 / 用户协议），
       走 `legalUrl()` 与同意弹窗同源。此前 App 内唯一的入口在首启同意弹窗，**只出现一次**——
       审核员的设备上早已同意过，等于点不到隐私政策（5.1.1(i)）。门禁 `client/test/ui/settingsLegalLinks.ui.ts`（9 例）
+- [ ] **出一个带 `ios.contentInset:'never'` 的新包，并在 iPhone 13 上验收安全区**（2026-09-10 起挂着）。
+      代码已合，但这条烧在原生配置里 —— 现有 TestFlight 包里仍是 `'always'`，竖屏顶部标题栏压状态栏、
+      底部空 ~81pt 的问题在旧包上不会变。要在 Mac 上（或推一个 `ios-v*` tag 走 §5 流水线）重新
+      `cap sync ios` + 出包，装上后按 §5.1 的验收方式看设置页底部两行读数
 - [ ] 填隐私标签 + App 描述（三语）——文案已备齐（`store-assets-checklist §0.1` 短描述 + §0.1b 长描述），
       直接复制进 ASC 即可。⚠️ **英文副标题用 `Turn-based notebook strategy`**（§0.1 原稿
       `Turn-based strategy in a notebook` 是 33 字符，超 30 上限）

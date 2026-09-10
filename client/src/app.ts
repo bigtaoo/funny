@@ -15,7 +15,8 @@ import { Side } from './game';
 import { ScalingManager, createLayout, resettledLayout } from './layout/ScalingManager';
 import { InputManager } from './inputSystem/InputManager';
 import type { ILayout } from './layout/ILayout';
-import { installGlobalErrorHandlers, setToastSink, setAppealSink, setFeedbackSink, showToastMessage } from './net/log';
+import { viewportGeometryProps } from './layout/viewportGeometry';
+import { installGlobalErrorHandlers, netLog, setToastSink, setAppealSink, setFeedbackSink, showToastMessage } from './net/log';
 import { GlobalToast } from './ui/GlobalToast';
 import { AppealDialog } from './ui/dialogs/AppealDialog';
 import { FeedbackDialog } from './ui/dialogs/FeedbackDialog';
@@ -34,6 +35,19 @@ import { installAudioSettings } from './audio/audioSettings';
 import { createAppCore } from './app/createAppCore';
 import { PixiAppViews } from './app/PixiAppViews';
 import type { AppViews } from './app/AppViews';
+
+const appLog = netLog('app');
+
+/**
+ * Print the device's raw viewport geometry (`layout/viewportGeometry.ts`). A no-op on any platform
+ * that cannot answer — WeChat has no DOM to read `window.inner*` / `screen` / `visualViewport`
+ * from, so `getViewportGeometry` is deliberately absent there rather than faked.
+ */
+function logViewportGeometry(platform: IPlatform, phase: 'boot' | 'settled'): void {
+  const geom = platform.getViewportGeometry?.();
+  if (!geom) return;
+  appLog.info(`viewport_geometry ${phase}`, viewportGeometryProps(geom));
+}
 
 export async function startApp(
   platform: IPlatform,
@@ -125,6 +139,13 @@ export async function startApp(
   setToastSink((text, kind) => globalToast.show(text, kind === 'success' ? C.green : C.red));
 
   const insets = platform.getSafeAreaInsets?.();
+  // Every number the layout depends on, printed once at boot — and into the client log ring buffer,
+  // so a targeted collection (FEATURE_FLAGS_DESIGN §9.4) can retrieve it from a device we do not
+  // hold. This is the only ground truth for the safe-area class of bug: desktop Chrome reports zero
+  // insets in a full-height viewport, so it can reproduce none of them, and two rounds of the
+  // iPhone-13 portrait bug were reasoned about with no device numbers at all (see
+  // layout/viewportGeometry.ts's header for what that cost).
+  logViewportGeometry(platform, 'boot');
   let layout: ILayout = createLayout(screenW, screenH, Side.Bottom, insets);
   const scaling = new ScalingManager(app, layout, insets);
   const input = new InputManager();
@@ -181,6 +202,10 @@ export async function startApp(
   if (relaidLayout) {
     layout = relaidLayout;
     scaling.resize(settledW, settledH, layout, settledInsets);
+    // Only when it actually fired: this branch was shipped in 2026-07 as the whole fix for the
+    // iPhone-13 bug and is unreachable when the WebView zeroes env() outright, so whether it ran
+    // is itself a diagnostic (an absent second line = it never triggered).
+    logViewportGeometry(platform, 'settled');
   }
 
   // wrapViews (test-only) mutates methods on this same instance in place — pixiViews stays a

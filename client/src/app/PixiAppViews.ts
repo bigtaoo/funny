@@ -80,7 +80,8 @@ export class PixiAppViews implements AppViews {
   /** True only while a resize-driven lobby rebuild is in flight, so that rebuild swaps instantly (no fade). */
   private resizing = false;
 
-  /** The lobby's window-resize watcher (app/viewportResize.ts) — only attached while the lobby is up. */
+  /** The viewport watcher (app/viewportResize.ts). Its canvas re-fit is installed for the whole app
+   *  lifetime; only the expensive lobby REBUILD is armed/disarmed per screen — see its header. */
   private readonly viewport: ViewportResizer;
 
   constructor(
@@ -106,11 +107,15 @@ export class PixiAppViews implements AppViews {
         }
       },
     );
+    // Installed here, not in showLobby(): every screen needs the canvas to track the window, and
+    // attaching it to the lobby's lifetime is what left rotation and late safe-area insets
+    // unhandled on the login screen, the settings screen and inside a whole battle.
+    this.viewport.install();
   }
 
-  /** Detach the lobby resize watcher — every non-lobby screen calls this first (see its `stop`). */
+  /** Leaving the lobby: stop the scene-rebuild half only. The canvas re-fit stays live. */
   private leaveLobby(): void {
-    this.viewport.stop();
+    this.viewport.disarmRebuild();
   }
 
   /**
@@ -164,7 +169,7 @@ export class PixiAppViews implements AppViews {
     const scene = this.timedBuild('LobbyScene', () => new LobbyScene(this.layout, this.input, cb));
     // A resize-driven rebuild always swaps instantly, regardless of the caller's fade request.
     this.manager.goto(scene, { fade: !this.resizing && !!opts?.fade });
-    this.viewport.listen();
+    this.viewport.armRebuild();
     return {
       applySocialBadge: (n, mail) => scene.applySocialBadge(n, mail),
       applyAchievementBadge: (c) => scene.applyAchievementBadge(c),

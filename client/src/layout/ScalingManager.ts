@@ -42,7 +42,9 @@ const ZERO_INSETS: SafeAreaInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 
 // createLayout()/ScalingManager both default a missing insets arg to all-zero, so an
 // undefined reading and an explicit all-zero one are the same layout — compare normalized.
-function insetsEqual(a: SafeAreaInsets | undefined, b: SafeAreaInsets | undefined): boolean {
+// Exported for app/viewportResize.ts's no-change guard, which has to answer the same question about
+// two consecutive readings (and used to answer it by not asking — see its header).
+export function insetsEqual(a: SafeAreaInsets | undefined, b: SafeAreaInsets | undefined): boolean {
   const na = a ?? ZERO_INSETS;
   const nb = b ?? ZERO_INSETS;
   return na.top === nb.top && na.right === nb.right && na.bottom === nb.bottom && na.left === nb.left;
