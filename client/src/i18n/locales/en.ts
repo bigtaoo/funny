@@ -1031,8 +1031,11 @@ export const en: Record<TranslationKey, string> = {
   'family.elder': 'Elder',
   'family.member': 'Member',
   'family.unknownMember': '(Unknown member)',
-  'family.setElder': 'Promote to Elder',
-  'family.setMember': 'Demote to Member',
+  // Roster-row role toggle. Short + a direction arrow: the old 'Promote to Elder' /
+  // 'Demote to Member' pair differed only in two similarly-shaped words, so telling them apart in
+  // a narrow split-view column meant reading every label (see FamilyScene/lists.ts).
+  'family.setElder': '↑ Elder',
+  'family.setMember': '↓ Member',
   'family.kick': 'Kick',
   'family.kick.needDemoteFirst': 'This member holds an office — demote them first before kicking',
   'family.channel': 'Family Channel',

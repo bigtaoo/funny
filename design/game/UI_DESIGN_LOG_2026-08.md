@@ -665,3 +665,39 @@ while (cols > 1 && 少一列不会多一行) {
 **同轮落地的还有批 10 的伞**：`umbrella_active.png`（128×128 = 1.00:1，一版过），`hud.ts` 的保护 buff 行 `armorHeavy` → `umbrella`，`OWN_ART` 56 → 57。**世界地图 HUD 一屏上的四分圆至此清零**（§45 挪走两条队伍行，这一轮挪走 buff 行）。判断依据、prompt、验收记录见 [`tab-icon-art-prompts-batch10.md`](../product/tab-icon-art-prompts-batch10.md)。
 
 **验证**：`tsc --noEmit -p tsconfig.test.json` 干净、`lint` 0 error、`build:web` 过、`check:filelength` 过、`vitest run` 2788 例 + `test:ui` 2459 例全绿；`iconArtAspect.test.ts` 自动把伞纳进来（1.00:1，无豁免）。像素证据：三语菜单各一张 + HUD 一屏（伞 + 沙漏 + 脚印/帐篷/房子三条队伍行）。
+
+## 46. 家族成员行：升/降级按钮不该靠读字分辨，卡片不该糊成一片（2026-09-10）
+
+**问题（用户截图反馈，横屏分栏）**：五人名单挤成一条条纹，「Promote to Elder」和「Demote to Member」当场分不清。拆开看是四条各自独立的成因，都在 [`FamilyScene/lists.ts`](../../client/src/scenes/FamilyScene/lists.ts) 的 `renderMembers`：
+
+1. **卡片和页面几乎同色，行间隙只有 4px**：卡片填充 `0xf7f5ee`，页面底色 `palette.paper` = `0xf5f0e8`——两者差 (2,5,6)，肉眼等于没差；卡高 `R - 4`、偏移 `cy + 2`，于是每两张卡之间只剩 4px。分离感既没有明度差也没有留白可依。
+2. **升/降级共用一套样式**：同 `0xeef0e0` 填充、同 `0xd4a030` 描边、同 `0xa9750f` 字色，方向只由两个长度相仿的词承载（en「Promote to Elder」/「Demote to Member」，de 更长「Zum Ältesten befördern」）。**扫一列名单就等于逐行读字**。
+3. **Kick 的视觉权重最高**：粉底 `0xf0e0e0` + 红描边，是一行里最抢眼的东西——而它是最少用、最不可逆的那个操作。
+4. **每行都写「Member」**：默认角色写出来信息量为零（左侧 accent bar 的灰色已经在说这件事），却恰好从名字最长的那些行里挖掉宽度。
+
+**改法**（视觉层次，不动交互路径）：
+
+- **留白**：新增 `CARD_INSET = 5`（原来是硬写的 2），卡片改 `R - CARD_INSET * 2`、偏移 `cy + CARD_INSET`，间隙 4px → 10px；`core.rowH` 同步 `0.062` → `0.066`（`h=1080` 下 67 → 71px），**多出来的 6px 正好是间隙涨的那 6px，卡片本身保持原高**，不是拿卡片高度换间隙。
+- **卡片提亮**到近白纸 `0xfffdf6`（差 (10,13,14)，约 5% 明度），页面底色不动；自己那行仍是暖色 `0xefe9d8`。
+- **按钮语义化**：`family.setElder` / `family.setMember` 三语文案改成 `↑ Elder` / `↓ Member`（de `↑ Ältester` / `↓ Mitglied`，zh `↑ 长老` / `↓ 成员`）——箭头、颜色、权重**三重编码方向**：升级是唯一带填充的那个（淡金 `0xf7ecc9` + 金描边 + 金字，建设性操作可以最响），降级退成灰描边灰字（`0xf1efe6` + `C.mid` + `MUTED`）。长文案键位没有留成死键，直接改在原键上。
+- **Kick 降权**：活跃态改成无填充（跟卡片同色）+ 红描边红字，不再是粉底色块；禁用态（长老需先卸任、或有变更在飞）照旧灰。
+- **角色标签只画 leader / elder**，member 不写；名字可用宽度相应放开（`nameMaxW` 的预留从「恒定减去角色标签宽」改成只在有 office 时减）。行内 profile 点击热区跟着从 `roleLbl` 末端改成实际文字末端 `textRight`。
+
+**实拍验证**（本机真实 Chrome，本地 dev 后端 8088，往 `nw_social` 塞了一个五人测试家族 `fam:ROST`：我当族长 + 1 长老 + 3 成员，名字覆盖 17 字符 latin 与 4 字全角中文）：
+
+| | 横屏分栏 | 竖屏整栏 |
+|---|---|---|
+| 五张卡分得开 | ✅ | ✅ |
+| `↑ 长老` 金实底 / `↓ 成员` 灰描边 | ✅ 一眼分得清 | ✅ |
+| 踢出：活跃红描边、长老行灰（禁用） | ✅ | ✅ |
+| 「成员」标签消失，只剩 长老 / 族长 | ✅ | ✅ |
+| 长名字（`SpelletjesCrew759`）不截断 | ✅ | ✅ |
+
+竖屏是靠改写 `window.innerWidth/innerHeight` 的 getter 再 `dispatchEvent(new Event('resize'))` 逼出来的（`WebPlatform.getScreenSize()` 读这两个值）——**注意 `ViewportResizeWatcher` 在非大厅场景里是 `stop()` 掉的**，所以必须先退回大厅再改尺寸、再进家族，直接在家族里 fire resize 什么都不会发生。这条比"resize_window 工具在这台机器上不生效"更值得记：本机 Chrome 是全屏/应用模式，`resize_window` 报成功但 `innerWidth` 不动。
+
+
+**跟 [`UI_DESIGN.md`](UI_DESIGN.md) §「返回箭头改为手绘 glyph」的张力，明写在这里免得后人当疏漏**：那一条把返回文案里的 `←` 从 i18n 值里拿掉了，理由是文字渲染器按 CJK 回退字体画的箭头笔画细、字形随平台变，跟旁边手绘图标不是一套语言。本轮的 `↑`/`↓` 正是那种文字箭头。仍然这么做，是因为①那条禁令的前提是**已经有** `backArrow` 这枚替代 glyph（如今还是 `back_accent.png` 这类美术资源），而上/下方向没有对应资源，本轮不引入新美术；②这里的箭头是**冗余**编码——填充、描边、字色已经各自说了一遍方向，箭头掉字形也不会让按钮失去区分度，返回按钮当时是把箭头当唯一图形在用。真要升级，路子是给方向补两枚 sketch glyph，而不是把文案改回长句。
+
+**顺手修掉一个被这次改动照出来的脆弱测试**：[`familyKickOfficerGuard.ui.ts`](../../client/test/ui/familyKickOfficerGuard.ui.ts) 的 `findKickHits` 靠"宽度 < 150 且高度最小"来认踢出按钮——它能work，只是因为「Promote to Elder」当时**宽到掉在 150 门槛之外**。标签一短，角色按钮跟踢出一样窄、一样高，那个 helper 悄悄从 2 个 rect 变成 4 个，用例判红。判红是对的，但原因是识别方式，不是行为回归。改成按语义找：行内动作是**从右往左**排的（先踢出、再角色按钮），所以取"按钮高度的 rect 里每行 x 最大的那个"。这样它不再依赖任何文案长度。
+
+**验证**：`tsc --noEmit`（client）与 `tsc --noEmit -p tsconfig.test.json` 均干净；`npm run lint` 0 问题；`npm run build:web` 过（只剩既有的 entrypoint 体积 warning）；`check:filelength` 过；`test:ui` 264 文件 2628 例全绿、`npm test` 8 文件 13 例全绿。
