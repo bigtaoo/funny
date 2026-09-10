@@ -74,6 +74,8 @@
 >
 > **美术缺口已补齐（2026-09-06，批次 11）**：上面那 10 枚里的 **9 枚已出图并接线**——`trash` 删除、`key` 登录、`userPlus` 注册、`power` 登出、`penWrite` 改名、`megaphone` 反馈、`sheets` 复制、`enter` 加入、`eraser` 清空。四枚**没有画第一直觉的那个造型**：加入不画门（半开的门是 `room` 的「创建房间」，两枚常同屏）而是门框+箭头；登出不画「门+向外箭头」（同上）而是电源符号；改名不画单独一支笔（`lead`/`pencils`/`duel`/`brush` 已占满笔类）而是「笔+刚写下的一道线」；复制的两张纸把前一张填实黑（`cards` 就是两张白底描线卡）。**第 10 枚 `handshake`（结盟）结案为不画**：两版都塌——v1 读成 V、v2 读成哑铃且 2.42:1 超 `iconArtAspect` 门禁；根因是「手大到 26px 看得见」和「不许画手指」在这个尺寸上互相矛盾，不是措辞问题。`sect.ally` 继续借 `friendsTabIcon`（那表达的是「另一个组织」，不冲突）。判断依据、prompt 与实拍见 [`tab-icon-art-prompts-batch11.md`](../product/tab-icon-art-prompts-batch11.md)。
 >
+> **批次 12 已开单，未出图（2026-09-10）**：家族成员行的升/降级按钮改成 `↑ Elder` / `↓ Member` 后，那两个箭头是**文字渲染**的——正是上面「返回箭头改为手绘 glyph」否决过的做法。它没有一并改，是因为那条禁令的前提是已经有 `backArrow` 这枚替代资源，而上/下方向全库没有；且这里的箭头是**冗余**编码（填充/描边/字色已各说一遍方向），不像返回按钮把箭头当唯一图形用。两枚 glyph 的撞车判断（`spd` 占了 chevron、`share` 占了「箭头+托盘」、`back` 占了「裸横箭头+开口 V 头」、`enter` 占了「框里的箭头头」）、prompt 与接线清单见 [`tab-icon-art-prompts-batch12.md`](../product/tab-icon-art-prompts-batch12.md)。
+>
 > 同批顺手补了两处**上一轮漏掉的按钮**（零新美术）：世界地图面板行按钮（`panelButtonIn` 此前自己画一行居中 `txt`，现在走 `drawButtonLabel`，因此也获得了缩放/丢图标兜底）、主城防守页脚的保存/填满/清空一簇。i18n 里 `settings.rename` 的 `✎` 与 `room.copy` 的 `📋` 前缀三语删除——真图标进来后它们是重复的。
 >
 > **战斗内 HUD 的 10 处按钮本轮没接**：它们走 `ui/widgets/hudButton.ts` 的扁平填充体系（不是手绘描边），标签是**常驻 `PIXI.Text` 字段**、按帧改样式而不是重绘，接图标要动按钮的生命周期；且战斗界面寸土寸金。真要接的话，「升级」可复用 `progressTabIcon`（三个上箭头）、「退出大厅」`homeTabIcon`、「继续」`play`，缺暂停与跳过两枚。
