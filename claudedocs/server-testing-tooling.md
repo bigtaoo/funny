@@ -1,4 +1,4 @@
-# 服务端 — 覆盖率百分比工具与 CI 稳定性（2026-08-13 ~ 09-02）
+# 服务端 — 覆盖率百分比工具与 CI 稳定性（2026-08-13 ~ 09-10）
 
 > 从 [`server-testing.md`](server-testing.md) 拆出（2026-08-20，原文件 501 行，ADR-067）。姊妹分册：[`server-testing-coverage.md`](server-testing-coverage.md)（各服务逐个补测记录）、[`server-testing-typecheck.md`](server-testing-typecheck.md)（`test/**` 类型检查）。
 > 本册是工具/流水线侧：怎么量出百分比、90% 门禁怎么加、CI 怎么并行拆分、以及「PR 绿了、合进 main 却红」那轮 flaky 治理。下文各处「见下方各自小节」指的是各包的补测记录，现在在 [`server-testing-coverage.md`](server-testing-coverage.md)；下文「前两节」指的是 hub 上保留的那两轮人工审计。
@@ -445,6 +445,97 @@ MMS 的 `killProcess` 就是 `await childprocess.once('exit')`——**这个事�
 **没做的**：
 - **「每文件 drop DB」那 55%**（见上一节的表）。要改 60+ 个测试文件、且与共享 mongod 的并行做法冲突；
   收益是 806 秒里的 3 秒。**要做的话，做法是每个测试文件 drop 自己那一个 DB，不是全局 drop。**
+  —— **这条已在下一节结案：前提就是错的（58/63 个文件本来就在 drop），且结论反向**。
 - **为什么 SIGINT 会让 node 收不到 `exit`**，没查到底（见上一节末）。
 - **Linux 侧仍未复现过原故障**（09-09 的 6 次 nightly 迭代全绿），所以这次也谈不上「在 Linux 上验证修复」——
   但改动本身跟平台无关，且移除的是一条恒定存在的赛跑。
+
+## 结案：「每个测试文件结束后 drop 自己的 DB」不做，两个理由都是数字（2026-09-10 第二轮）
+
+上一节把这条挂在「没做的」里，理由是「要改 60+ 个文件换 806 秒里的 3 秒」。重新评估之后，**这条不是「先欠着」，
+是「已经结案」**——前提错了一半，账也算反了。
+
+### 1. 前提错了：这事早就在做，而且做了 92%
+
+按 hook 分类扫了八个包里每一个自带 DB 名的测试文件（drop 落在 `afterAll` 里才叫「跑完就还回去」，
+落在 `beforeAll`/`beforeEach` 里的只是「开跑前先清干净」，DB 在关闭时仍然活着）：
+
+| 包 | 有自己 DB 的文件 | `afterAll` 里 drop | 只在 `before*` drop | 完全不 drop |
+|---|---|---|---|---|
+| `worldsvc` | 63 | **58** | 2 | 3 |
+| `metaserver` | 54 | 30 | 24 | 0 |
+| `commercial` | 11 | 9 | 2 | 0 |
+| `admin` | 9 | 7 | 2 | 0 |
+| `auctionsvc` | 8 | 0 | 0 | 8 |
+| `socialsvc` | 8 | 0 | 0 | 8 |
+| `analyticsvc` | 2 | 2 | 0 | 0 |
+| `shared` | 1 | 0 | 0 | 1 |
+
+**`worldsvc` 58/63 个文件已经在 `afterAll` 里 `dropDatabase()`。** 所以上一节那个「−55%」是拿
+**「63 个 DB 全留到最后」的合成基线**算出来的，而 `worldsvc` 真实那 **3.88 秒本身就是优化之后的数**——
+能省的部分早就省了，剩下的 5 个文件占 63 的 8%。「要改 60+ 个文件」这句同样不成立：真正还没改的是
+`metaserver` 24 + `auctionsvc` 8 + `socialsvc` 8 + `worldsvc` 5 + `admin`/`commercial`/`shared` 各两三个。
+
+顺带说明 `auctionsvc`/`socialsvc` 那 16 个「完全不 drop」：它们不是漏了，是改用逐集合 `deleteMany({})`
+（见 `auctionsvc/test/auction.e2e.test.ts:145`、`socialsvc/test/familyHttp.e2e.test.ts:67`）——数据清了，
+集合和索引留着。
+
+### 2. 账算反了：真实八个包里，drop 政策和关闭耗时零相关
+
+把 09-10 那次七个包连跑的关闭日志（`NW_TEST_MONGO_SHUTDOWN_LOG`）按时间戳和各包的 vitest `Duration`
+一一对上，再并上 `worldsvc` 那次：
+
+| 包 | `WiredTiger closed` | 该包的 drop 政策 | 那一轮 tests 阶段 |
+|---|---|---|---|
+| `shared` | 63 ms | 从不 drop | 49.2 s（几乎不碰 Mongo） |
+| `analyticsvc` | 144 ms | 全部 drop | 3.5 s |
+| `auctionsvc` | **162 ms** | **从不 drop** | 9.0 s |
+| `socialsvc` | 434 ms | 从不 drop | 6.3 s |
+| `admin` | 2827 ms | 9 个里 7 个 drop | 33.0 s |
+| `worldsvc` | 3880 ms | 63 个里 58 个 drop | ~800 s |
+| `metaserver` | 4509 ms | 54 个里 30 个 drop | 964 s |
+| `commercial` | **5980 ms** | **11 个里 9 个 drop** | 43.5 s |
+
+**最慢的 `commercial` 大部分文件都 drop，最快的 `auctionsvc` 一个都不 drop。** 关闭耗时跟「结束时还剩几个 DB」
+没有关系，跟「这一轮往 mongod 里写了多少」倒是像——这跟上一节的机制解释一致：
+`close(leak_memory=false)` 的代价跟**实际分配了多少 cache** 成正比。
+
+### 3. drop 自己的开销比整个 shutdown 还大
+
+上一节的探针只报了 `stopMs`，drop 的开销藏在 `fillMs` 里没单独计时，于是「边跑边 drop = 2866 ms」
+看着像纯赚。这轮把 drop 单独计时、baseline/drop 交替跑三对（同一台机器、同一个形状 `DBS=63 × COLLS=20 × IDX=2 × DOCS=300`）：
+
+| 对 | 变体 | 写入(净) | **drop** | shutdown | 合计 |
+|---|---|---|---|---|---|
+| 1 | baseline | 30.1 s | — | 3227 ms | 33.3 s |
+| 1 | 边跑边 drop | 24.9 s | **6498 ms** | 2838 ms | 34.2 s |
+| 2 | baseline | 25.4 s | — | 3086 ms | 28.5 s |
+| 2 | 边跑边 drop | 46.0 s | **6626 ms** | 6863 ms | 59.5 s |
+| 3 | baseline | 63.1 s | — | 4538 ms | 67.6 s |
+| 3 | 边跑边 drop | 66.0 s | **7959 ms** | 2873 ms | 76.9 s |
+
+**这台机器的噪声大到写入阶段能在 25 s 和 66 s 之间晃**（上一节那批 56–58 s 的绝对值同样只能当单样本看），
+所以别读「合计」那一列。**能读的是两个跨噪声都稳的量**：
+
+- **drop 63 个 DB 自己要花 6.5–8.0 秒**，三次一致，且跟上一节「teardown 时一起 drop」测到的 7873 ms 是同一个量级
+  ——**drop 的开销跟什么时候 drop 无关**。
+- **baseline 的整个 shutdown 只有 3.1–4.5 秒。**
+
+于是不需要把噪声压下去就能结账：**省的那一项的上限（整个 shutdown，3–4 秒）比付的那一项（drop，6.5–8 秒）还小**。
+就算 drop 能让关闭变成零，这笔账也是净亏。上一节「teardown 时一起 drop 是净亏（7.9 换 4.5）」的结论，
+**对「边跑边 drop」同样成立**——当时只是没量到付出的那一半。
+
+### 4. 结论
+
+- **不做**。不是「收益太小、以后再说」，是**方向就是反的**；而且真正能省的部分 `worldsvc` 早就在省了。
+- 反过来也**不要为了提速去掉那 58 个 `afterAll` 里的 drop**：它们在的理由是把整轮的磁盘占用摁住
+  （上一节那 21 个 `mongo-mem-*` / 11.12 GB 就是没摁住的样子），不是为了关得快。
+- **`--wiredTigerCacheSizeGB` 那条也早已关掉**（上一节实测零效果）。**根因这条线到此为止**：那 3.9 秒是
+  `Closing WiredTiger` 里的真实工作量，占 806 秒套件的 0.5%，且旁边已经没有任何期限在等着被越过。
+
+**这轮顺带发现、但没改的一件事**：`metaserver` 有 **5 个文件共用同一个 DB 名** `nw_meta_grpC_branch_test`
+（`economy-branch-{delivery,orders,shop-gacha,starter-ads,subscriptions}.test.ts`），每个都在 `beforeAll` 和
+`afterAll` 各 drop 一次。`fileParallelism: false` 下它们串行跑，安全；但
+[`server-testing-coverage.md`](server-testing-coverage.md) 里那套「多个并行 agent 共享一个 mongod、各用自己 DB 名」
+的做法**对这五个文件不成立**——两个 agent 同时跑其中两个，先跑完的那个 `afterAll` 会把另一个的活数据 drop 掉。
+现在没人这么跑，所以只记在这里，没动。
