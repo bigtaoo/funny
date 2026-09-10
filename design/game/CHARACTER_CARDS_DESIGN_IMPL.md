@@ -228,3 +228,13 @@ v3 → v4 **直接丢弃冲突字段**，不做数据转换：
 > **CI 修复**（2026-07-01）：CC-4/CC-5 改了 `openapi-world.yml`（新增 `distributeTroops`/`recoverCard` 路由、`cardState`/`baseTroopStock` 响应字段、`cardInstanceId`/`itemType: card` 枚举）但未重新生成 `worldsvc/src/generated/routes.gen.ts`，导致 `gen:api:world:check` 失败。跑 `npm run gen:api:world`（47 operations）重生成即修复。生成物勿手改，改契约后必跑一次生成。
 
 > **测试类型漂移清理 + CI 类型检查**（2026-07-01）：CC-1 把 `GameConfig.unitLevels`→`cardInstances`、`JudgeRequest` 加必填 `unitLevels`，但 `client/test` 从不被类型检查（`tsconfig.json` include 只有 `src/**`，vitest 走 esbuild），旧形状运行期侥幸通过。迁移的 test：`diag.test.ts`/`difficultySim.ts`（`progressionUnitLevels`→`progressionCards`，走 `cardHelpers.card()`）、`siege.test.ts`+`pve-judge.test.ts`（`JudgeRequest` 补 `unitLevels`/`defenseJson`）、`hardwall.test.ts`（`players` tuple 类型）。顺带清了同层历史漂移（`HeadlessAppViews` 补 `showTitles/showDaily/showEvents/showCity`、`stateReplay`/`judge-runner`/`scenes.ui`/`net-input-source`/`saveData`）。**根治**：新增 `client/tsconfig.test.json` + `npm run typecheck`，CI `build-test` job 单测前跑，test 层漂移从此编译期红。详见 [`claudedocs/client-testing.md`](../../claudedocs/client-testing.md) 静态类型检查节。
+
+> **花名册三条属性行的门禁（2026-09-10）**：`§10.1`/`§10.2` 里那几行数字（HP / ATK / 攻城值）来自 `cardDefs.ts` 的四个引擎蓝图读取器 `cardHp` / `cardAttack` / `cardSiegeValue` / `cardSiegeValueEffective`，它们此前**在任何报覆盖率的套件里都没被调用过**（`FNDA` 命中 0）。唯一碰过它们的 `test/ui/cardDetailSiegeValue.ui.ts` 一是在 `test/ui`（不报覆盖率），二是把期望写成 `` `Siege: 0 (${cardSiegeValue(LENA)} per 60 troops)` ``——**拿被测函数自己的返回值当期望值**，函数返什么它都绿。也就是说这三行数字此前由**任何东西都没有守着**。
+>
+> 新增 `client/test/cardStatReaders.test.ts`（13 例），钉三道静默失败的缝：① `def.unitType as UnitType` 是**无检查转型**、后面接 `?? 0`——unitType 不是引擎的 key 时不抛错，花名册把那个英雄画成「HP 0 / ATK 0 / 攻城 0」，读起来像数据问题不像 bug（新增卡牌或改 `UnitType` 名字就到这一步）；② `fromFp()` 是 ADR-065 的收口，掉了之后每个数 ×1000；③ `cardSiegeValueEffective` 的注释自称 mirrors 引擎 `Unit` 构造器的 ADR-069 缩放——引擎用 fp 算、客户端用浮点算，是一个公式的两份实现，此前没人比过；现在逐卡 × 六个兵力档跟引擎 `mulFp(siegeValue_fp, divFp(troops, 60))` 的结果比。
+>
+> **同时焊上了 ADR-001-040 §243 那条只写在文字里的约束**：引擎 `UnitBlueprint.siegeValue` 与 `@nw/shared` `CardDef.siegeValueBase` 对六张英雄卡逐一相等（步兵 11 / 盾兵 14 / 弓手 8 / Max 12 / Lena 14 / Mara 8）。`blueprintDefs.ts` 每行只写着 `// (mirrors CARD_DEFS)`，**那句注释是唯一把两张表拴在一起的东西**。漂开静默且不对称：花名册面板读**引擎**的数，SLG 攻城（`shared/slg/siege.ts` 的 `teamSiegeValue`）解析的是**共享**那个——只改一张表，玩家看到的攻城值就不是世界地图在用的。变异验证里两侧各改一个都红。
+>
+> **另钉一条「同名不同义」的墙**：`cardSiegeValue` 在客户端与 `server/shared/src/cards.ts` 里是**两个不同公式**——客户端那个是车道战 blueprint 评分、按**兵力**缩放（ADR-069，等级无关），共享那个是 SLG 攻城值、按**卡牌等级 + 装备**缩放。两者**只在 1 级无装备时相等**，所以谁想「统一一下」都很容易得手；用例把客户端的等级无关性和共享的等级敏感性一起钉住。
+>
+> 结果：`cardDefs.ts` 行 82.5% → **100%**、函数 55.55% → **100%**（分支补测前就已经是 100%，因为**从没被调用的函数的分支根本不进分母**——见 client-testing.md 第七轮）。7 组变异逐个验红。
