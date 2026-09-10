@@ -1031,11 +1031,13 @@ export const en: Record<TranslationKey, string> = {
   'family.elder': 'Elder',
   'family.member': 'Member',
   'family.unknownMember': '(Unknown member)',
-  // Roster-row role toggle. Short + a direction arrow: the old 'Promote to Elder' /
-  // 'Demote to Member' pair differed only in two similarly-shaped words, so telling them apart in
-  // a narrow split-view column meant reading every label (see FamilyScene/lists.ts).
-  'family.setElder': '↑ Elder',
-  'family.setMember': '↓ Member',
+  // Roster-row role toggle. One word each: the old 'Promote to Elder' / 'Demote to Member' pair
+  // differed only in two similarly-shaped words, so telling them apart in a narrow split-view
+  // column meant reading every label. The direction now rides on the `promote`/`demote` glyph the
+  // button draws beside the word (see FamilyScene/lists.ts) — it briefly lived in these strings as
+  // a `↑`/`↓` character, which is the thing UI_DESIGN's back-arrow rule rejects.
+  'family.setElder': 'Elder',
+  'family.setMember': 'Member',
   'family.kick': 'Kick',
   'family.kick.needDemoteFirst': 'This member holds an office — demote them first before kicking',
   'family.channel': 'Family Channel',

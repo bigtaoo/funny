@@ -14,7 +14,7 @@ import { caretText } from './repaint';
 import { drawChatLine } from '../../ui/widgets/chatRow';
 import { truncateToWidth } from '../../ui/widgets/truncateText';
 import { FS } from '../../render/fontScale';
-import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { FAMILY_CAP } from '@nw/shared';
 import type { FamilySceneCore } from './core';
 
@@ -145,15 +145,22 @@ export function renderMembers(
       // Promote and demote used to share one style — same gold border, same gold ink, same pale
       // fill — and differed only in two similarly-shaped words ("Promote to Elder" / "Demote to
       // Member"; worse in de-DE, "Zum Ältesten befördern"). Scanning the column meant reading every
-      // label. Now the direction is encoded three times over: an arrow in the label, the colour, and
-      // the weight. Promote is the filled gold one (the constructive action, so it may be loudest);
-      // demote is a recessed grey outline. The shortened labels also cut the button to roughly half
-      // the width, which the name column gets back.
+      // label. Now the direction is encoded three times over: the arrow glyph, the colour, and the
+      // weight. Promote is the filled gold one (the constructive action, so it may be loudest);
+      // demote is a recessed grey outline. The one-word labels also cut the button to roughly half
+      // the width, which the name column gets back. The arrows were `↑`/`↓` characters inside the
+      // label until batch 12 gave them real art (`promote`/`demote`).
       if (mem.role !== 'leader') {
         const toElder = mem.role === 'member';
         const roleColor = busy ? C.mid : toElder ? 0xa9750f : MUTED;
-        const rl = txt(t(toElder ? 'family.setElder' : 'family.setMember'), FS.bodyLg, roleColor);
-        const roleW = Math.round(rl.width + padX * 2);
+        const roleLabel = t(toElder ? 'family.setElder' : 'family.setMember');
+        // Measure the label off-tree, then add what the glyph + its gap will take: a button that
+        // sizes itself to its text would otherwise hand drawButtonLabel a box only wide enough for
+        // the words, and `minFit` would drop the glyph at the last moment. Same shape as the sect
+        // header's ally pills, `lbl.destroy()` included — a throwaway Text owns a canvas texture.
+        const rl = txt(roleLabel, FS.bodyLg, roleColor);
+        const roleW = Math.round(rl.width + buttonLabelIconW(FS.bodyLg)) + padX * 2;
+        rl.destroy();
         const bx = kx - btnGap - roleW;
         const roleBtn = sketchPanel(roleW, btnH, {
           fill: toElder ? 0xf7ecc9 : 0xf1efe6,
@@ -162,8 +169,10 @@ export function renderMembers(
         });
         roleBtn.x = bx; roleBtn.y = btnY;
         list.addChild(roleBtn);
-        rl.anchor.set(0.5, 0.5); rl.x = bx + roleW / 2; rl.y = btnY + btnH / 2;
-        list.addChild(rl);
+        // `bold: false` keeps it matching the un-bolded Kick label beside it (drawButtonLabel
+        // defaults to bold); no `variant` — a paper-fill button lets the label colour pick the ink
+        // (UI_DESIGN §2).
+        drawButtonLabel(list, bx, btnY, roleW, btnH, roleLabel, toElder ? 'promote' : 'demote', roleColor, FS.bodyLg, { bold: false });
         const nextRole: 'elder' | 'member' = toElder ? 'elder' : 'member';
         if (!busy) core.hitRects.push({ rect: { x: bx, y: btnY, w: roleW, h: btnH }, fn: () => void actions.doSetRole(accId, nextRole), scroll: 'members' });
         nameRight = bx - btnGap;

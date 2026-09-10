@@ -158,6 +158,21 @@ import sheetsInkUrl from '../../assets/tabicons/sheets_active.png';
 import enterInkUrl from '../../assets/tabicons/enter_active.png';
 import eraserInkUrl from '../../assets/tabicons/eraser_active.png';
 
+// Batch 12 (design/product/tab-icon-art-prompts-batch12.md): the family roster's role-toggle
+// direction marks, replacing the `↑`/`↓` characters those labels used to carry — text arrows drawn
+// by the CJK fallback font, which UI_DESIGN's back-arrow rule had already rejected once. Deliberately
+// ONE mirror pair (`promote` is the `demote` source flipped), because the roster shows both in the
+// same column and a pair that differs in anything but direction reads as two unrelated marks.
+//
+// A bare arrow is the last arrow shape the library had left, and it is the neighbours' own avoid
+// lists that handed it over: `spd` (the `>>` chevrons) excludes "a full arrow with a shaft and head"
+// and `progressTabIcon` (three stacked up-chevrons) excludes "single arrow". What keeps these two
+// apart from all of them at 27px is the SOLID triangular head — every other arrow in the set
+// (`spd`, `progress`, `back`, `share`) is hollow line art. Hence also no baseline under `promote`:
+// an up arrow rising out of a tray is `share`.
+import promoteInkUrl from '../../assets/tabicons/promote_active.png';
+import demoteInkUrl from '../../assets/tabicons/demote_active.png';
+
 // The 6 kinds that ALIAS the white master of an existing tab icon rather than getting art of their
 // own, so each concept is drawn exactly once in the game. They live here rather than as call-site
 // renames to `pvpTabIcon`/`gachaTabIcon`/... because most of them have call sites where `color`
@@ -194,6 +209,7 @@ export type InkIconKind =
   | 'watchtower' | 'arrowTower' | 'blocker' | 'mapPin' | 'camp' | 'footsteps' | 'stronghold'
   | 'umbrella'
   | 'trash' | 'key' | 'userPlus' | 'power' | 'penWrite' | 'megaphone' | 'sheets' | 'enter' | 'eraser'
+  | 'promote' | 'demote'
   | 'scrap' | 'lead' | 'binding' | 'hammer' | 'ink'
   | 'replay' | 'share' | 'star' | 'lock' | 'medal' | 'close' | 'check' | 'play' | 'zoom' | 'cards'
   | 'flag' | 'desk' | 'cabinet' | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
@@ -279,6 +295,8 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   sheets:            sheetsInkUrl as string,
   enter:             enterInkUrl as string,
   eraser:            eraserInkUrl as string,
+  promote:           promoteInkUrl as string,
+  demote:            demoteInkUrl as string,
   swords:            swordsInkUrl as string,
   home:              homeInkUrl as string,
   capsule:           capsuleInkUrl as string,

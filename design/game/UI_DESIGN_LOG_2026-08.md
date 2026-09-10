@@ -696,7 +696,7 @@ while (cols > 1 && 少一列不会多一行) {
 竖屏是靠改写 `window.innerWidth/innerHeight` 的 getter 再 `dispatchEvent(new Event('resize'))` 逼出来的（`WebPlatform.getScreenSize()` 读这两个值）——**注意 `ViewportResizeWatcher` 在非大厅场景里是 `stop()` 掉的**，所以必须先退回大厅再改尺寸、再进家族，直接在家族里 fire resize 什么都不会发生。这条比"resize_window 工具在这台机器上不生效"更值得记：本机 Chrome 是全屏/应用模式，`resize_window` 报成功但 `innerWidth` 不动。
 
 
-**跟 [`UI_DESIGN.md`](UI_DESIGN.md) §「返回箭头改为手绘 glyph」的张力，明写在这里免得后人当疏漏**：那一条把返回文案里的 `←` 从 i18n 值里拿掉了，理由是文字渲染器按 CJK 回退字体画的箭头笔画细、字形随平台变，跟旁边手绘图标不是一套语言。本轮的 `↑`/`↓` 正是那种文字箭头。仍然这么做，是因为①那条禁令的前提是**已经有** `backArrow` 这枚替代 glyph（如今还是 `back_accent.png` 这类美术资源），而上/下方向没有对应资源，本轮不引入新美术；②这里的箭头是**冗余**编码——填充、描边、字色已经各自说了一遍方向，箭头掉字形也不会让按钮失去区分度，返回按钮当时是把箭头当唯一图形在用。真要升级，路子是给方向补两枚 sketch glyph，而不是把文案改回长句。
+**跟 [`UI_DESIGN.md`](UI_DESIGN.md) §「返回箭头改为手绘 glyph」的张力，明写在这里免得后人当疏漏**（**同日已解决**：批次 12 出了 `promote`/`demote` 两枚真 glyph，i18n 值退回纯 `Elder`/`Member`，见 [`tab-icon-art-prompts-batch12.md`](../product/tab-icon-art-prompts-batch12.md)——下面这段保留为当时的判断记录）：那一条把返回文案里的 `←` 从 i18n 值里拿掉了，理由是文字渲染器按 CJK 回退字体画的箭头笔画细、字形随平台变，跟旁边手绘图标不是一套语言。本轮的 `↑`/`↓` 正是那种文字箭头。仍然这么做，是因为①那条禁令的前提是**已经有** `backArrow` 这枚替代 glyph（如今还是 `back_accent.png` 这类美术资源），而上/下方向没有对应资源，本轮不引入新美术；②这里的箭头是**冗余**编码——填充、描边、字色已经各自说了一遍方向，箭头掉字形也不会让按钮失去区分度，返回按钮当时是把箭头当唯一图形在用。真要升级，路子是给方向补两枚 sketch glyph，而不是把文案改回长句。
 
 **顺手修掉一个被这次改动照出来的脆弱测试**：[`familyKickOfficerGuard.ui.ts`](../../client/test/ui/familyKickOfficerGuard.ui.ts) 的 `findKickHits` 靠"宽度 < 150 且高度最小"来认踢出按钮——它能work，只是因为「Promote to Elder」当时**宽到掉在 150 门槛之外**。标签一短，角色按钮跟踢出一样窄、一样高，那个 helper 悄悄从 2 个 rect 变成 4 个，用例判红。判红是对的，但原因是识别方式，不是行为回归。改成按语义找：行内动作是**从右往左**排的（先踢出、再角色按钮），所以取"按钮高度的 rect 里每行 x 最大的那个"。这样它不再依赖任何文案长度。
 

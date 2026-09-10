@@ -45,9 +45,10 @@ describe('ink-icon art on disk (pack_tab_icons.cjs, inks: [active])', () => {
     // another kind's glyph) + batch 10's `umbrella` for the capital-protection buff chip, the last
     // borrowed glyph on the world-map HUD + batch 11's nine button actions (`trash`/`key`/
     // `userPlus`/`power`/`penWrite`/`megaphone`/`sheets`/`enter`/`eraser`), the ones the
-    // button-icon rollout had to leave label-only because nothing in the set meant them. A 67th
-    // needs a doc entry, not a silent add.
-    expect(OWN_ART.length).toBe(66);
+    // button-icon rollout had to leave label-only because nothing in the set meant them + batch 12's
+    // `promote`/`demote`, the family roster's role-toggle direction marks (one mirror pair, drawn
+    // once and flipped). A 69th needs a doc entry, not a silent add.
+    expect(OWN_ART.length).toBe(68);
     for (const kind of OWN_ART) {
       expect(fs.existsSync(path.join(ASSET_DIR, `${kind}_active.png`)), `${kind}_active.png`).toBe(true);
       // The other three inks would be ~130 PNGs nobody draws — and baking them is the shape of the

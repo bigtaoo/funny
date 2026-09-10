@@ -308,6 +308,16 @@ const JOBS = [
   // bars and came out 2.42:1, over the aspect gate. The button keeps borrowing `friends` until a
   // version reads as two hands at 26px — see batch 11 §6.
 
+  // Batch 12 (design/product/tab-icon-art-prompts-batch12.md): the family roster's role-toggle
+  // direction marks, replacing the text arrows the labels carried. They are ONE mirror pair by
+  // spec — `promote` is `tabicon_demote.png` flipped vertically, so head width, shaft width, stroke
+  // weight and aspect (1.10:1) are identical by construction rather than by review. `demote`'s own
+  // v1 partner was rejected for a dark-grey studio backdrop: the pipeline reads alpha as
+  // 255 - luminance, so a 33-53 luminance background comes out ~80% opaque and the crop step then
+  // finds content in all four corners (see _rejected/tabicon_promote_v1_graybackground.png).
+  { src: 'tabicon_promote.png',            name: 'promote', inks: ['active'] },
+  { src: 'tabicon_demote.png',             name: 'demote', inks: ['active'] },
+
   // Check-in calendar focal cue (design/product/checkin-focus-cue-art.md, 2026-09-05). Like `back`,
   // these are NOT tab icons — they are page content drawn beside/behind one calendar cell, in the
   // one green ink that cell is drawn in, so they take a single opt-in ink instead of the tab triple.

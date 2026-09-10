@@ -1,6 +1,6 @@
 # 批次 12：家族成员行的升/降级方向标 — 语义判断 + Prompt 文档
 
-> 创建：2026-09-10 · 状态：**prompt 已定稿，未出图**（本文档就是待办本身）
+> 创建：2026-09-10 · 状态：**全批完成（同日）**——`demote` 一版过；`promote` 的 v1 因深灰背景废掉，改用 `demote` 源图**垂直镜像**（§6）。两枚已打包 + 接线 + 三语实拍（§7）
 > 前十一批：[批 1–4](tab-icon-art-prompts.md) · [批 5](tab-icon-art-prompts-batch5.md) · [批 6](tab-icon-art-prompts-batch6.md) · [批 7](tab-icon-art-prompts-batch7.md) + [批 7 log](tab-icon-art-prompts-batch7-log.md) · [批 8](tab-icon-art-prompts-batch8.md) · [批 9](tab-icon-art-prompts-batch9.md) · [批 10](tab-icon-art-prompts-batch10.md) · [批 11](tab-icon-art-prompts-batch11.md)
 > 上游：[`UI_DESIGN_LOG_2026-08.md` §46](../game/UI_DESIGN_LOG_2026-08.md) —— 那一轮把家族成员行的升/降级按钮改成 `↑ Elder` / `↓ Member`，**箭头是文字渲染的**，本批就是来替掉这两个字符的
 > 配套代码：[`FamilyScene/lists.ts`](../../client/src/scenes/FamilyScene/lists.ts) · [`buttonLabel.ts`](../../client/src/ui/widgets/buttonLabel.ts) · [`inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts) · [`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
@@ -93,3 +93,35 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 4. **真机实拍三语，横屏分栏 + 竖屏整栏各一次**（家族页两种朝向的列宽不同）。德语下要专门确认按钮**没有被 `minFit` 判成放不下而丢掉图标**——丢了是 `roleW` 忘了加 `buttonLabelIconW`，不是图标的问题。竖屏怎么逼出来见 `UI_DESIGN_LOG_2026-08.md` §46 末尾（`resize_window` 在开发机上不生效）。
 5. **判定标准是「读成什么」，不是「好不好看」**。任何一张在 27px 上读成邻居那张，就按批 7 log 的格式记下 v1 为什么塌，**只改导致返工的那一处措辞**再重出。
 6. **允许结案为「不画」**。批 11 的 `handshake` 是先例：两版都塌、根因是尺寸与约束互相矛盾而非措辞，于是结案继续借用。这两枚的兜底就是现状——文字 `↑`/`↓`，它已经在跑了。
+
+## 6. 出图记录（2026-09-10）
+
+两张一起出，**一过一废**。
+
+**`tabicon_demote`（下箭头）：一版过。** 实测外接框 696×765、比例 **1.10**（门禁 2.2，目标 ≤1.5），白底 254–255，头宽满框、杆短于头，杆是空心描线的短方管。§2 那四条硬约束一条没破。
+
+**`tabicon_promote`（上箭头）v1：形状是对的，背景废了。** 造型本身完全合格——实心三角头在上、空心短杆在下，比例 1.05，跟 `demote` 的比例几乎一致（杆宽占头宽 30% vs 26%）。但背景是**一片深灰带渐晕的影棚底**，四角亮度实测 **33–53**（要求 255 的纯白）。这在这条管线里是致命的，而且是**静默**致命：
+
+> `pack_tab_icons.cjs` 第 1 步是 `alpha = 255 - luminance`。亮度 33–53 的背景直接得到 **alpha ≈ 204**，也就是整张画布 80% 不透明；第 3 步「按内容外接框裁掉周围白纸」于是在四个角都找到内容，**一点都裁不掉**——探针实测外接框 = 1024×1024 = 整张画布。导出的 `promote_active.png` 会是一块几乎实心的方块，里面隐约有个箭头。**没有任何一道门禁会拦住它**：`iconArtAspect` 看到的是 1.00:1（完美正方形，过），`inkIconArt` 只数「有没有这个文件」。只有肉眼在深底 contact sheet 上才看得出来。
+
+v1 存档为 `_rejected/tabicon_promote_v1_graybackground.png`。
+
+**没有重出，改用镜像。** 文档 §1 本来就把这两枚定义为「除方向外逐处相同、互为镜像」，而 `demote` 已经过审，所以 `promote` 直接取 `demote` 源图**垂直翻转**（`sharp().flip()`，见 `pack_tab_icons.cjs` 批 12 注释）。这比重摇一版更好，不只是更快：头宽、杆宽、笔重、比例（1.10:1）全部**由构造保证相同**，而不是靠评审去比。代价是两枚的手绘抖动也互为镜像——在名单里两枚同屏（长老行 + 成员行），细看能看出是同一笔画翻过来的，但方向标本来就该是镜像对，这不算缺陷。
+
+**如果以后要换成真手绘的一版**，v1 的教训只有一条措辞要改：**背景要求得写成正面陈述并给出测量**（「pure white #ffffff across the entire canvas, edge to edge, no vignette, no gradient, no grey tint」），而不是只把 `gray background` 挂在 avoid 表末尾——v1 的 prompt 里那条**已经写了**，模型照样给了影棚底。avoid 表挡不住模型的整体风格漂移（这次是往 3D 产品图漂），只有正面的、可测的约束能。造型措辞一个字都不用动。
+
+## 7. 接线记录 + 实拍（2026-09-10）
+
+按 §4 走完，一处偏差：**§4⑤ 漏了 `bold`**。`drawButtonLabel` 的 `bold` 默认是 `true`，而 `txt()` 默认 `false`——照 §4 原样换过去会把这两个标签悄悄加粗，跟同一行没加粗的「踢出」不一致。传 `{ bold: false }`，跟宗门头部结盟 pill 的写法一致（`SectScene/header.ts:149`）。同处还照抄了那边的 `lbl.destroy()`：为量宽度建的那个 `PIXI.Text` 自带一张 canvas 纹理，量完必须销毁，不能像旧代码那样留着当显示节点用。
+
+**实拍**（本机真 Chrome，本地 dev 后端，五人测试家族 `fam:ROST`）：
+
+| 语言 × 朝向 | 结果 |
+|---|---|
+| zh × 横屏分栏 | `▲ 长老` 金 / `▼ 成员` 灰，两枚都在，名字不截断 |
+| de × 横屏分栏 | `▲ Ältester` / `▼ Mitglied`——**最长的一档，图标没被 `minFit` 丢掉**（这正是 `roleW` 加了 `buttonLabelIconW` 的作用），行内仍放得下 |
+| en × 竖屏整栏 | `▲ Elder` / `▼ Member`，竖屏列宽更宽，无压力 |
+
+27px contact sheet（金墨 `#a9750f` + 灰墨 `#5a574f`，纸底 `#f5f0e8`，9× 最近邻放大）与 §5.3 的三组邻居对比一并跑过：`promote`/`demote` vs `spd` vs `progress` vs `back` vs `share` vs `enter`。**结论是一句话：全库其它箭头都是空心描线，只有这两枚有一大团实心三角**——所以在 27px 上根本不会读混，`share`（空心箭头 + 托盘）尤其一眼就分开。这也说明 §2 第 3 条「实心块承担身份」在这一批是**唯一**起作用的那条区分手段，将来谁想把头改成空心描线，等于把这两枚推进 `spd`/`share` 那一堆里。
+
+**验证**：`tsc --noEmit` 与 `tsc --noEmit -p tsconfig.test.json` 干净；`lint` 0 问题；`build:web` 过；`check:filelength` 过；`inkIconArt`（`OWN_ART` 66 → **68**）+ `iconArtAspect` 12 例过；`test:ui` 264 文件 2628 例全绿。打包后确认「只有新增那 2 张变化，其余 208 张零字节改动」。
