@@ -4,34 +4,18 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
-import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { formatDuration } from '../worldmap/logic/formatDuration';
 import { serverNow } from '../../net/serverClock';
-import { buildIcon } from '../../render/icons';
-import type { BuildingKey } from '../../net/WorldApiClient';
 import {
   RESOURCE_TYPES,
   BUILD_SPEEDUP_SECS_PER_COIN,
-  DESK_MAX_LEVEL,
   buildingLevel,
   baseDurabilityMax,
   resourceCapFor,
-  troopCapFor,
 } from '@nw/shared';
-import {
-  RES_COLORS,
-  GRID_BUILDING_KEYS,
-  CARD_GAP,
-  CARD_W_TARGET,
-  CARD_H,
-  GRID_PAD,
-  MAX_GRID_COLS,
-  bldAccentColor,
-  chipped,
-  producerResource,
-} from './core';
+import { RES_COLORS, chipped } from './core';
 import type { CitySceneCore } from './core';
+import { renderBuildingGrid as renderBuildingGridImpl } from './buildingGrid';
 import {
   renderTeamsRow as renderTeamsRowImpl,
   renderTeamCardLoading as renderTeamCardLoadingImpl,
@@ -281,212 +265,9 @@ export class RenderPanel implements RenderHandlers {
 
   // ── Building grid ─────────────────────────────────────────────────────────
 
-  /** @param bottomY hard lower bound for the grid's viewport — the top of the pinned team row. */
+  // Split into ./buildingGrid.ts (form ①, same reason and same shape as ./teamRow.ts above) when
+  // the portrait fill rule pushed this file past the 500-line convention.
   renderBuildingGrid(startY: number, bottomY: number): void {
-    const cx0 = this.core.contentX;
-    const w = this.core.w - cx0;
-    const bld = this.core.me?.buildings;
-    // Grid tiles = every building (incl. academy/tech-tree) plus a synthetic "Train Troops" action
-    // tile spliced in right after drillYard (sibling to it, not nested in its modal). Training feeds
-    // the unified troop pool.
-    const tiles: Array<{ kind: 'bld'; key: BuildingKey } | { kind: 'train' }> = [];
-    for (const key of GRID_BUILDING_KEYS) {
-      tiles.push({ kind: 'bld', key });
-      if (key === 'drillYard') tiles.push({ kind: 'train' });
-    }
-
-    const availW = w - GRID_PAD * 2;
-    const cols = Math.min(
-      MAX_GRID_COLS,
-      Math.max(1, Math.floor((availW + CARD_GAP) / (CARD_W_TARGET + CARD_GAP)))
-    );
-    const cellW = Math.floor((availW - (cols - 1) * CARD_GAP) / cols);
-    const rows = Math.ceil(tiles.length / cols);
-    const contentH = rows * CARD_H + (rows - 1) * CARD_GAP;
-
-    const viewY = startY;
-    const availH = Math.max(0, bottomY - viewY);
-    // Clamp so overflow always cuts mid-row, leaving a partial next card peeking above the fold.
-    const viewH = peekViewportH(availH, CARD_H + CARD_GAP, contentH);
-    this.core.scrollMax = Math.max(0, contentH - viewH);
-    if (this.core.scrollY > this.core.scrollMax) this.core.scrollY = this.core.scrollMax;
-    this.core.regionTop = viewY;
-    this.core.regionBottom = viewY + viewH;
-
-    const gridLayer = new PIXI.Container();
-    gridLayer.x = cx0;
-    gridLayer.y = viewY - this.core.scrollY;
-    const maskG = new PIXI.Graphics();
-    maskG.beginFill(0xffffff).drawRect(cx0, viewY, w, viewH).endFill();
-    this.core.paint.pageLayer.addChild(maskG);
-    gridLayer.mask = maskG;
-    this.core.paint.pageLayer.addChild(gridLayer);
-
-    // Viewport cull (2026-08-12, same fix as BattlePassScene/LeaderboardScene/ChatScene/
-    // DeckBuilderScene): GRID_BUILDING_KEYS is a fixed ~11-entry list today, never a crash risk in
-    // practice — but it's the same missing-cull shape (every tile's panel+bars+icon+2 Text got
-    // built unconditionally regardless of scroll position). Core has no reposition-only drag fast
-    // path (scrollDirty triggers a full render() per drag frame, see core.ts), so a plain
-    // skip-if-off-screen check here is enough — no cross-render object cache needed.
-    const cullBuffer = viewH * 0.5;
-    tiles.forEach((tile, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const cx = GRID_PAD + col * (cellW + CARD_GAP);
-      // Local to gridLayer (which is itself offset by viewY - scrollY), so this is NOT absolute screen space.
-      const cy = row * (CARD_H + CARD_GAP);
-      const cullY = viewY - this.core.scrollY + cy;
-      if (cullY + CARD_H < viewY - cullBuffer || cullY > viewY + viewH + cullBuffer) return;
-
-      // "Active" ring: a queued build for buildings, or an in-progress training batch for the train tile.
-      const active =
-        tile.kind === 'bld'
-          ? (this.core.me?.buildQueue ?? []).some((q) => q.key === tile.key)
-          : (this.core.me?.trainingQueue?.length ?? 0) > 0;
-      // Not-yet-built (Lv.0) buildings read identically to a maxed-out one at a glance — dim them
-      // and swap the queue-hammer badge for a "+" build prompt so the grid tells the two apart
-      // without reading every "Lv.N" line. A queued build (active) already answers "yes, working on
-      // it", so it takes priority over the dimmed/unbuilt treatment.
-      const unbuilt = tile.kind === 'bld' && buildingLevel(bld, tile.key) === 0;
-      const dim = unbuilt && !active;
-
-      const bg = sketchPanel(cellW, CARD_H, {
-        fill: C.paper,
-        border: active ? C.gold : C.mid,
-        width: active ? 2 : 1,
-        seed: seedFor(cx, cy, i),
-      });
-      bg.x = cx;
-      bg.y = cy;
-      gridLayer.addChild(bg);
-
-      // Category-accent level stripe (2026-08-01): ties producer cards to the resource bar's own
-      // color language above them and gives the rest a category tint, so the grid reads as groups
-      // instead of one undifferentiated row of look-alike cards. Filled portion = progress toward
-      // the card's current ceiling — desk's own DESK_MAX_LEVEL, everyone else gated by desk's level
-      // (city.ts buildGateReason) — for the train tile, carried troops against the trained-troop cap.
-      const accent = bldAccentColor(tile.kind === 'bld' ? tile.key : 'drillYard');
-      const ratio =
-        tile.kind === 'bld'
-          ? Math.max(
-              0,
-              Math.min(
-                1,
-                buildingLevel(bld, tile.key) /
-                  (tile.key === 'desk' ? DESK_MAX_LEVEL : Math.max(1, buildingLevel(bld, 'desk')))
-              )
-            )
-          : troopCapFor(bld) > 0
-          ? Math.max(0, Math.min(1, (this.core.me?.troops ?? 0) / troopCapFor(bld)))
-          : 0;
-      const barX = cx + 9;
-      const barW = cellW - 18;
-      const barTrack = new PIXI.Graphics();
-      barTrack.beginFill(accent, 0.18);
-      barTrack.drawRoundedRect(barX, cy + 118, barW, 6, 3);
-      barTrack.endFill();
-      gridLayer.addChild(barTrack);
-      const barFill = new PIXI.Graphics();
-      barFill.beginFill(accent, 0.85);
-      barFill.drawRoundedRect(barX, cy + 118, Math.max(3, barW * ratio), 6, 3);
-      barFill.endFill();
-      gridLayer.addChild(barFill);
-
-      // Chip only the five producer cards — their glyph IS a resource motif, an open outline that
-      // needs a ground, and the tint says which resource. The hand-drawn bld_* art is dense enough to
-      // read on bare paper and a chip behind it only crops and muddies it (see icons.ts CHIP_INSET).
-      const producer = tile.kind === 'bld' ? producerResource(tile.key) : undefined;
-      const drawGlyph = (n: number): PIXI.DisplayObject =>
-        tile.kind === 'bld' ? this.core.bldIcon(tile.key, n, C.dark) : buildIcon('armor', n, C.dark);
-      const icon = producer ? chipped(60, accent, drawGlyph) : drawGlyph(60);
-      icon.x = cx + (cellW - 60) / 2;
-      icon.y = cy + 18;
-      // Unbuilt used to sit at 0.4, which was set when every glyph read strongly. On the two producer
-      // cards whose motif was already the faintest on the page (paper, graphite — the ones circled in
-      // the report) it multiplied out to nothing at all: a Lv.0 石墨坊 was a blank card. 0.65 still
-      // reads as "not yet", and the "+" badge and the greyed name carry that message anyway.
-      icon.alpha = dim ? 0.65 : 1;
-      gridLayer.addChild(icon);
-
-      const name =
-        tile.kind === 'bld'
-          ? t(`city.bld.${tile.key}` as 'city.bld.desk')
-          : t('city.bld.trainTroops');
-      const nameLbl = txt(name, FS.body, C.dark, true, cellW - 18);
-      nameLbl.x = cx + 9;
-      nameLbl.y = cy + 90;
-      nameLbl.alpha = dim ? 0.55 : 1;
-      gridLayer.addChild(nameLbl);
-
-      // Buildings show a level; the train tile shows the current troop pool / cap instead.
-      const subtitle =
-        tile.kind === 'bld'
-          ? t('city.lvlLabel').replace('{lvl}', String(buildingLevel(bld, tile.key)))
-          : t('city.troopCap')
-              .replace('{cur}', String(this.core.me?.troops ?? 0))
-              .replace('{cap}', String(troopCapFor(bld)));
-      const subLbl = txt(subtitle, FS.body, C.mid, false, cellW - 18);
-      subLbl.x = cx + 9;
-      subLbl.y = cy + CARD_H - 33;
-      subLbl.alpha = dim ? 0.55 : 1;
-      gridLayer.addChild(subLbl);
-
-      if (active) {
-        const qDot = buildIcon('hammer', 24, C.gold);
-        qDot.x = cx + cellW - 36;
-        qDot.y = cy + 12;
-        gridLayer.addChild(qDot);
-      } else if (unbuilt) {
-        const badgeR = 13;
-        const bx = cx + cellW - 12 - badgeR;
-        const by = cy + 12 + badgeR;
-        const badge = new PIXI.Graphics();
-        badge.lineStyle(1.5, C.mid, 0.9);
-        badge.beginFill(C.paper, 1);
-        badge.drawCircle(bx, by, badgeR);
-        badge.endFill();
-        gridLayer.addChild(badge);
-        const plus = txt('+', FS.bodyLg, C.mid, true);
-        plus.x = bx - plus.width / 2;
-        plus.y = by - plus.height / 2 - 1;
-        gridLayer.addChild(plus);
-      }
-
-      // Hit rect in absolute screen space (gridLayer's local `cy` + its own viewY/scroll offset) —
-      // only reachable while the card is actually within the visible viewport.
-      const screenY = viewY - this.core.scrollY + cy;
-      if (screenY + CARD_H > viewY && screenY < viewY + viewH) {
-        const cardRect = { x: cx0 + cx, y: screenY, w: cellW, h: CARD_H };
-        // SLG opening guide chain step2 (ONBOARDING_DESIGN §4.2): the very first grid card is the
-        // ring's target until any card/train tile is opened. Only the RECT is recorded here —
-        // CityScene.ts's paintPage owns the whole show/hide decision (and has to be able to replay
-        // it after a modal closes, when this grid is not being repainted at all).
-        if (i === 0) this.core.paint.guideStep2 = cardRect;
-        this.core.hits.push({
-          rect: cardRect,
-          fn:
-            tile.kind === 'bld'
-              // paintModal, not render: opening a modal changes nothing on the page behind it, so
-              // the page layer stays exactly as it is and only the modal layer is built.
-              ? () => {
-                  this.core.cb.setFlag?.('guide.world.step2', true);
-                  this.core.selectedBuilding = tile.key;
-                  this.core.paintModal();
-                }
-              : () => {
-                  this.core.cb.setFlag?.('guide.world.step2', true);
-                  this.core.selectedTrain = true;
-                  this.core.paintModal();
-                },
-        });
-      }
-    });
-
-    drawScrollIndicator(
-      this.core.paint.pageLayer,
-      { x: cx0, y: viewY, w, h: viewH },
-      this.core.scrollY,
-      this.core.scrollMax
-    );
+    renderBuildingGridImpl(this.core, startY, bottomY);
   }
 }

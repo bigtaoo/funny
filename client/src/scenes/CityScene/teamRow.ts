@@ -15,7 +15,7 @@ import {
   teamCanAct,
 } from '../../game/meta/teamTroops';
 import { cardInstanceArtUrl } from '../../render/cardArt';
-import { CARD_GAP, GRID_PAD, TEAM_ROW_CARD_H, TEAM_ROW_LABEL_H } from './core';
+import { CARD_GAP, GRID_PAD, TEAM_ROW_CARD_H, TEAM_ROW_LABEL_H, TEAM_ROW_HEADER_GAP } from './core';
 import type { CitySceneCore } from './core';
 
 // The 5 team slots (D-CITY-10) as one compact row pinned to the bottom of the scene. Returns
@@ -26,7 +26,13 @@ export function renderTeamsRow(core: CitySceneCore): number {
   const cx0 = core.contentX;
   const w = core.w - cx0;
   const cardH = TEAM_ROW_CARD_H;
-  const bandTop = h - GRID_PAD - (TEAM_ROW_LABEL_H + cardH);
+  // Portrait gets a taller header row than the label needs, and the extra is a GAP under the fill
+  // button: at 200x26 design px the button is 72x9 CSS px on a 390-wide phone, and it sat with its
+  // bottom edge exactly on Team 5's top edge — reading as part of that card rather than as the
+  // band's own action (portrait sweep §49; the sweep never reported it, because two boxes that
+  // touch do not overlap).
+  const headerH = core.portrait ? TEAM_ROW_LABEL_H + TEAM_ROW_HEADER_GAP : TEAM_ROW_LABEL_H;
+  const bandTop = h - GRID_PAD - (headerH + cardH);
 
   const sectionLbl = txt(t('city.military.teams'), FS.body, C.mid, true);
   sectionLbl.x = cx0 + GRID_PAD + 4;
@@ -34,11 +40,14 @@ export function renderTeamsRow(core: CitySceneCore): number {
   core.paint.pageLayer.addChild(sectionLbl);
 
   // "填满所有队伍" (2026-08-02): one tap drains the home troop pool into all 5 teams in slot
-  // order instead of opening each team's formation editor to hit 分兵 individually. Sits flush
-  // inside the section-label row (same height as sectionLbl's row), never spilling into the
-  // card row below it.
-  const fillBtnW = 200;
-  const fillBtnH = TEAM_ROW_LABEL_H;
+  // order instead of opening each team's formation editor to hit 分兵 individually. Sits in the
+  // section-label row, never spilling into the card row below it.
+  //
+  // Portrait also widens it: the label is 14 characters, and inside 200 design px
+  // `drawButtonLabel` had to scale the whole group to 0.94 to fit — which shrinks the text back
+  // under the legibility floor the font scale just lifted it to (render/fontScale.ts).
+  const fillBtnW = core.portrait ? 268 : 200;
+  const fillBtnH = core.portrait ? TEAM_ROW_LABEL_H + 8 : TEAM_ROW_LABEL_H;
   core.addBtn(
     cx0 + w - GRID_PAD - fillBtnW,
     bandTop,
@@ -51,7 +60,7 @@ export function renderTeamsRow(core: CitySceneCore): number {
     'unit'
   );
 
-  const rowY = bandTop + TEAM_ROW_LABEL_H;
+  const rowY = bandTop + headerH;
   const availW = w - GRID_PAD * 2;
   const cellW = Math.floor((availW - (TEAM_CAP - 1) * CARD_GAP) / TEAM_CAP);
   const now = Date.now();

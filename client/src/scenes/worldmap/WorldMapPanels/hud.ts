@@ -12,7 +12,7 @@ import {
   tearDownChildren,
 } from '../../../render/sketchUi';
 import { buildIcon } from '../../../render/icons';
-import { FS } from '../../../render/fontScale';
+import { FS, fitFont } from '../../../render/fontScale';
 import { serverNow } from '../../../net/serverClock';
 import { dhmsFromMs } from '../logic/formatDuration';
 import { awayCount, buildTeamRows, teamRowIcon } from '../logic/teamStatus';
@@ -134,28 +134,37 @@ export class HudPanel implements HudHandlers {
       const troops = this.core.ctx.me.troops ?? 0;
       const troopCap = this.core.ctx.me.troopCap ?? 0;
       const territory = this.core.ctx.me.territoryCount ?? 0;
-      const halfW = rightW / 2;
       const statIconSize = 30;
       const stats: { icon: IconKind; value: string; label: string }[] = [
         { icon: 'swords', value: `${troops}/${troopCap}`, label: t('world.troops') },
         { icon: 'castle', value: `${territory}`, label: t('world.territory') },
       ];
+      // Not two equal halves: "5000/5000" is nine characters and "11" is two, so an even split
+      // starves the only column that needs the room (portrait sweep §49 — the troop readout was
+      // being shrunk to 0.71, i.e. 19.7 design px, under the legibility floor). 62/38 is the widest
+      // the troops column can take while the territory column still holds a five-digit count.
+      const colW = (i: number): number => Math.round(rightW * (i === 0 ? 0.62 : 0.38));
       stats.forEach((s, i) => {
-        const colX = rx + i * halfW;
+        const colX = rx + (i === 0 ? 0 : colW(0));
         const icon = buildIcon(s.icon, statIconSize, C.dark);
         icon.x = colX + 14;
         icon.y = ry + 14;
         hud.addChild(icon);
-        const valLbl = txt(s.value, FS.heading, C.dark, true);
+        const valX = colX + 14 + statIconSize + 8;
+        const valMaxW = colX + colW(i) - 10 - valX;
+        // A size the column can hold, rather than a built label scaled down to fit it: at a full
+        // troop cap the value is "10000/10000", which at FS.heading is wider than the column and
+        // used to run straight over the Territory column beside it (2026-08-18 portrait screenshot
+        // pass). `fitFont` steps down the shared scale and stops at the legibility floor, where
+        // scaling the label kept going until the number was unreadable — and the number is the
+        // point of the chip (render/fontScale.ts).
+        const probe = txt(s.value, FS.heading, C.dark, true);
+        const valSize = valMaxW > 0 ? fitFont(FS.heading, probe.width, valMaxW) : FS.heading;
+        probe.destroy({ texture: true, baseTexture: true });
+        const valLbl = txt(s.value, valSize, C.dark, true);
         valLbl.anchor.set(0, 0.5);
-        valLbl.x = colX + 14 + statIconSize + 8;
+        valLbl.x = valX;
         valLbl.y = ry + 14 + statIconSize / 2;
-        // Shrink-to-fit inside the column: at a full troop cap the value is "10000/10000", which at
-        // FS.heading is wider than the 160px half-card and used to run straight over the Territory
-        // column beside it (2026-08-18 portrait screenshot pass). Scale rather than truncate — the
-        // number is the point of the chip.
-        const valMaxW = colX + halfW - 10 - valLbl.x;
-        if (valMaxW > 0 && valLbl.width > valMaxW) valLbl.scale.set(valMaxW / valLbl.width);
         hud.addChild(valLbl);
         const capLbl = txt(s.label, FS.tiny, C.mid);
         capLbl.x = colX + 14;
@@ -167,8 +176,8 @@ export class HudPanel implements HudHandlers {
           // (same 2026-08-18 pass) and the card looked like it had no divider at all.
           const div = new PIXI.Graphics();
           div.lineStyle(1, C.mid, 0.5);
-          div.moveTo(colX + halfW, ry + 10);
-          div.lineTo(colX + halfW, ry + cardH - 10);
+          div.moveTo(colX + colW(0), ry + 10);
+          div.lineTo(colX + colW(0), ry + cardH - 10);
           hud.addChild(div);
         }
       });

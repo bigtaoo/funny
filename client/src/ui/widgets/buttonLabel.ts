@@ -21,6 +21,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { txt } from '../../render/sketchUi';
+import { fitFont, currentFontFloor } from '../../render/fontScale';
 import { buildIcon, tabIconVariant, type IconKind, type RasterIconVariant } from '../../render/icons';
 
 /** Icon box as a multiple of the font size, and the gap between icon and label. */
@@ -72,15 +73,71 @@ export function drawButtonLabel(
   label: string, icon: IconKind | null, color: number, fontSize: number,
   opts: ButtonLabelOpts = {},
 ): void {
-  const text = txt(label, fontSize, color, opts.bold ?? true);
+  const bold = opts.bold ?? true;
+  const fitW = w - (opts.inset ?? 10);
+
+  let size = fontSize;
+  let text = txt(label, size, color, bold);
   text.anchor.set(0, 0.5);
 
-  const icSz = Math.round(fontSize * ICON_RATIO);
-  const icGap = Math.round(fontSize * GAP_RATIO);
-  const fitW = w - (opts.inset ?? 10);
+  /**
+   * Re-mint the label smaller when shrinking the built group WOULD break the font scale's
+   * legibility floor, and only then.
+   *
+   * Every branch below fits by scaling what it already built, which multiplies the size by an
+   * arbitrary float: on a phone held sideways (0.36x) that put the lobby strip's "Feedback" at 17.6
+   * design px, under the 20 that viewport's floor promises (layout sweep §49). `fitFont` picks a
+   * size off the shared scale instead and stops at the floor.
+   *
+   * Gated on the floor rather than applied eagerly, because the two degradations are not
+   * interchangeable and the existing one is deliberate: a button that cannot hold [icon][label]
+   * drops the ICON and keeps the label at full size (see `minFit`). Stepping the size down first
+   * would quietly reverse that everywhere — on a desktop window, where the floor is the raw
+   * `FS.micro` and no shrink ever breaches it, this changes nothing at all.
+   *
+   * @param need width the group wants at the CURRENT size
+   * @returns true if the label was re-minted, so the caller re-reads its width
+   */
+  const floorFit = (need: number): boolean => {
+    if (need <= fitW || (fitW / need) * size >= currentFontFloor()) return false;
+    const fitted = fitFont(size, need, fitW);
+    if (fitted >= size) return false;
+    const { x: ax, y: ay } = text.anchor;
+    text.destroy({ texture: true, baseTexture: true });
+    size = fitted;
+    text = txt(label, size, color, bold);
+    text.anchor.set(ax, ay);
+    return true;
+  };
+
+  let icSz = Math.round(size * ICON_RATIO);
+  let icGap = Math.round(size * GAP_RATIO);
 
   if (icon && opts.stack) {
     const iconVariant = opts.variant ?? (tabIconVariant(color) === 'active' ? 'active' : 'content');
+    // Only the label costs width here — the glyph is above it, not beside it.
+    if (floorFit(text.width)) {
+      icSz = Math.round(size * ICON_RATIO);
+      icGap = Math.round(size * GAP_RATIO);
+    }
+    const soloFit = Math.min(1, fitW / Math.max(1, text.width));
+    // A cell that cannot hold the word at a LEGIBLE size gets the glyph ALONE, bigger. This is the
+    // stack-path counterpart of `minFit` below, and it has the same shape of argument: the lobby
+    // strip's font is derived from its square cell (0.30x), so an 8-character word is 1.44x the
+    // cell at ANY viewport and this path has always shrunk it — fine at 0.61 of a desktop's 28px,
+    // illegible at 0.61 of a phone-in-landscape's, where the floor is 20. So the test is the floor,
+    // not the fit: every viewport that was fine stays exactly as it was, and the one that was not
+    // gets the destination's own glyph, which is what a player recognises anyway. The badge layer
+    // still marks state.
+    if (soloFit * size < currentFontFloor()) {
+      text.destroy({ texture: true, baseTexture: true });
+      const soloSz = Math.round(Math.min(icSz * 2.2, h * 0.62));
+      const glyphOnly = buildIcon(icon, soloSz, color, { variant: iconVariant });
+      glyphOnly.x = Math.round(x + (w - soloSz) / 2);
+      glyphOnly.y = Math.round(y + (h - soloSz) / 2);
+      target.addChild(glyphOnly);
+      return;
+    }
     const stackSz = Math.round(Math.min(icSz * 1.6, h * 0.46));
     const groupH = stackSz + icGap + text.height;
     const top = y + (h - groupH) / 2;
@@ -88,7 +145,6 @@ export function drawButtonLabel(
     glyph.x = Math.round(x + (w - stackSz) / 2);
     glyph.y = Math.round(top);
     target.addChild(glyph);
-    const soloFit = Math.min(1, fitW / Math.max(1, text.width));
     text.anchor.set(0.5, 0);
     text.scale.set(soloFit);   // anchored at its centre, so no width read is needed after scaling
     text.x = Math.round(x + w / 2);
@@ -97,15 +153,21 @@ export function drawButtonLabel(
     return;
   }
 
-  const groupW = icon ? icSz + icGap + text.width : text.width;
-  const fit = groupW > fitW ? fitW / groupW : 1;
+  let groupW = icon ? icSz + icGap + text.width : text.width;
+  let fit = groupW > fitW ? fitW / groupW : 1;
 
-  if (!icon || fit < (opts.minFit ?? 0.82)) {
+  // `minFit` is a fixed guess at "this shrink is too much"; the legibility floor is the same
+  // judgement measured (render/fontScale.ts). Either one drops the icon: the defense editor's
+  // 70-px footer buttons needed 0.89 on a tablet, which clears 0.82 and still put "Clear" at 14.2
+  // design px, under that viewport's floor of 16 (layout sweep §49). Without the icon the label
+  // fits outright at full size.
+  if (!icon || fit < (opts.minFit ?? 0.82) || fit * size < currentFontFloor()) {
     // `text.width` is a live getter over the scale, so it must be read ONCE, before scaling:
     // reading it again afterwards and multiplying by the fit applies the shrink twice, and the
     // label is centred as if it were narrower than it is — i.e. pushed right, past the button's
     // own edge. Every too-long button label in the game was off-centre and overflowing this way
     // (Settings' Rename / Delete Account / Replay tutorial, measured in portrait 2026-09-11).
+    floorFit(text.width);
     const rawW = text.width;
     const soloFit = Math.min(1, fitW / Math.max(1, rawW));
     text.scale.set(soloFit);
@@ -113,6 +175,14 @@ export function drawButtonLabel(
     text.y = y + h / 2;
     target.addChild(text);
     return;
+  }
+
+  // The group fits, but only by scaling; re-mint if that scale would put the label under the floor.
+  if (floorFit(groupW)) {
+    icSz = Math.round(size * ICON_RATIO);
+    icGap = Math.round(size * GAP_RATIO);
+    groupW = icSz + icGap + text.width;
+    fit = groupW > fitW ? fitW / groupW : 1;
   }
 
   const groupX = x + (w - groupW * fit) / 2;

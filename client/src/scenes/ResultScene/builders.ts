@@ -11,7 +11,7 @@ import { getDecorTexture, isDecorReady, decorFrameNames } from '../../render/atl
 import { bake } from '../../render/bake';
 import { Prng } from '@nw/engine/math/prng';
 import { drawSceneHeader, type SceneHeaderResult } from '../../ui/widgets/SceneHeader';
-import { FS, snapFont } from '../../render/fontScale';
+import { FS, snapFont, fitFont } from '../../render/fontScale';
 import type { Badge } from '../ResultScene';
 import { tapHandler } from '../../ui/hits';
 
@@ -74,8 +74,15 @@ export function buildMarginDeco(w: number, h: number): PIXI.Container | null {
  * A small vertical badge medallion — glyph over its title over the bare stat
  * value. The container origin is the horizontal centre / top, so callers set
  * `.x` to the intended centre and `.y` to the top edge.
+ *
+ * `maxW` is the cell the medallion is centred in, in ITS OWN coordinates (the result screen scales
+ * the whole medallion up, so the caller divides by that factor before passing it). Without it the
+ * secondary badge row on a 360-wide phone drew "[Precision Strike]" and "[Master Builder]" edge to
+ * edge with no gap, reading as one run-on string (layout sweep §49).
  */
-export function buildBadgeMedallion(badge: Badge, stats: PlayerStats, h: number): PIXI.Container {
+export function buildBadgeMedallion(
+  badge: Badge, stats: PlayerStats, h: number, maxW = Infinity,
+): PIXI.Container {
   const c = new PIXI.Container();
 
   const iconSize = Math.round(h * 0.065);
@@ -84,8 +91,10 @@ export function buildBadgeMedallion(badge: Badge, stats: PlayerStats, h: number)
   glyph.y = 0;
   c.addChild(glyph);
 
+  // A size the cell can hold rather than a label scaled down to fit it — `fitFont` steps down the
+  // shared scale and stops at the legibility floor (render/fontScale.ts).
   const title = makeText(badge.title(), {
-    fontSize: FS.heading,
+    fontSize: fitTitle(badge.title(), maxW),
     fill: 0x555555,
     fontFamily: 'monospace',
   });
@@ -95,7 +104,7 @@ export function buildBadgeMedallion(badge: Badge, stats: PlayerStats, h: number)
   c.addChild(title);
 
   const value = makeText(badge.value(stats), {
-    fontSize: FS.title,
+    fontSize: fitTitle(badge.value(stats), maxW, FS.title),
     fill: 0x222222,
     fontWeight: 'bold',
     fontFamily: 'monospace',
@@ -106,6 +115,15 @@ export function buildBadgeMedallion(badge: Badge, stats: PlayerStats, h: number)
   c.addChild(value);
 
   return c;
+}
+
+/** Largest scale token whose rendering of `text` fits `maxW` — see {@link buildBadgeMedallion}. */
+function fitTitle(text: string, maxW: number, size: number = FS.heading): number {
+  if (!Number.isFinite(maxW)) return size;
+  const probe = makeText(text, { fontSize: size, fontFamily: 'monospace' });
+  const w = probe.width;
+  probe.destroy({ texture: true, baseTexture: true });
+  return fitFont(size, w, maxW);
 }
 
 /** Hand-drawn margin doodles that react to the result; drawn low in the z-order. */

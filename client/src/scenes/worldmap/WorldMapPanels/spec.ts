@@ -36,15 +36,22 @@ export const PANEL_MARGIN = 16;
 /** Inner padding from the panel edge to its content. */
 export const PANEL_PAD = 20;
 
-/** Panel heading — matches SceneHeader's paper-variant title (dark ink, not the blue accent). */
-export const PANEL_TITLE_FONT = FS.heading;
+/**
+ * Panel heading — matches SceneHeader's paper-variant title (dark ink, not the blue accent).
+ *
+ * A function, not a constant: `FS`'s tokens are scale-dependent (render/fontScale.ts's legibility
+ * floor), so a module-level copy freezes whatever the floor was at IMPORT time — which is before
+ * `ScalingManager` has computed a scale at all.
+ */
+export const panelTitleFont = (): number => FS.heading;
 
 /** Height of the title band, i.e. the y-offset from the panel top to where the body starts. */
 export const PANEL_HEADER_H = 64;
 
 /** Standard button height inside a panel, and the label font that fills it. */
 export const PANEL_BTN_H = 56;
-export const PANEL_BTN_FONT = FS.body;
+/** See {@link panelTitleFont} for why this is a function. */
+export const panelBtnFont = (): number => FS.body;
 
 /** Width of the footer Close button, and the band reserved for it along the panel bottom. */
 export const PANEL_CLOSE_W = 200;
@@ -74,7 +81,7 @@ export function drawPanelTitle(
   py: number,
   pw: number
 ): number {
-  const lbl = txt(title, PANEL_TITLE_FONT, C.dark, true);
+  const lbl = txt(title, panelTitleFont(), C.dark, true);
   lbl.anchor.set(0.5, 0);
   lbl.x = px + pw / 2;
   lbl.y = py + 14;

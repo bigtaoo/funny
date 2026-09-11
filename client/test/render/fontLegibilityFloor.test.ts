@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   FS, MIN_LEGIBLE_CSS_PX, fontFloorDesignPx, setFontScale, resetFontScaleForTest, currentFontFloor,
-  snapFont,
+  snapFont, fitFont,
 } from '../../src/render/fontScale';
 
 /** `PortraitLayout`'s own sizing, duplicated so this test states the scale it is talking about. */
@@ -76,6 +76,35 @@ describe('font legibility floor', () => {
     // `createLayout(0, 0)` is reachable on a cold boot with no layout yet — see bake.ts's
     // resolution floor, which exists for the same window.
     for (const bad of [0, -1, NaN, Infinity]) expect(fontFloorDesignPx(bad)).toBe(11);
+  });
+
+  describe('fitFont — the alternative to scaling a built group', () => {
+    it('leaves a size that already fits alone', () => {
+      setFontScale(portraitScale(390, 844));
+      expect(fitFont(FS.label, 100, 120)).toBe(FS.label);
+      expect(fitFont(FS.label, 120, 120)).toBe(FS.label);
+    });
+
+    it('steps DOWN the table to the size that fits', () => {
+      resetFontScaleForTest();
+      // Monospace width is linear in size, so 24px needing 300 in 200 wants 16 — a real token.
+      expect(fitFont(24, 300, 200)).toBe(16);
+      // ...and lands on the token BELOW the exact fit rather than rounding up past the box.
+      expect(fitFont(24, 310, 200)).toBe(13);
+    });
+
+    it('never goes below the floor, even when that still does not fit', () => {
+      setFontScale(portraitScale(390, 844));   // floor 20
+      expect(fitFont(24, 300, 200)).toBe(20);
+      expect(fitFont(24, 3000, 20)).toBe(20);
+    });
+
+    it('is inert on a degenerate measurement', () => {
+      resetFontScaleForTest();
+      expect(fitFont(24, 0, 100)).toBe(24);
+      expect(fitFont(24, NaN, 100)).toBe(24);
+      expect(fitFont(24, 300, NaN)).toBe(24);
+    });
   });
 
   it('carries the floor through snapFont', () => {
