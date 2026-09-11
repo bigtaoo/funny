@@ -32,6 +32,7 @@
     "test:ui": "vitest run --config vitest.ui.config.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:browser": "playwright test",
+    "test:portrait": "playwright test --config playwright.portrait.config.ts",
     "test:load": "vitest run --config vitest.load.config.ts",
     "test:manual": "vitest run --config vitest.manual.config.ts",
     "build:wechat-e2e": "webpack --mode production --env TARGET=wechat-e2e",

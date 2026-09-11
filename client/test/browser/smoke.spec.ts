@@ -10,82 +10,8 @@
 //
 // Run: npm run test:browser   (NOT part of `npm test`; opt-in, real browser + real network).
 
-import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
-
-declare global {
-  interface Window {
-    __nwE2E?: { state: Record<string, any> };
-  }
-}
-
-function uid(prefix: string): string {
-  return `${prefix}${Math.floor(Math.random() * 1e9)}`;
-}
-
-/** Collects console `error` lines + uncaught page errors for the test's whole lifetime. */
-function trackErrors(page: Page): string[] {
-  const errors: string[] = [];
-  page.on('console', (msg: ConsoleMessage) => {
-    if (msg.type() === 'error') errors.push(`[console] ${msg.text()}`);
-  });
-  page.on('pageerror', (err: Error) => errors.push(`[pageerror] ${err.message}`));
-  return errors;
-}
-
-async function screenIs(page: Page, name: string): Promise<void> {
-  await page.waitForFunction(
-    (s: string) => window.__nwE2E?.state?.screen === s,
-    name,
-    { timeout: 20_000 },
-  );
-}
-
-/** intro → age gate → consent gate, all unconditional on a fresh (storage-less) browser context. */
-async function bootToLogin(page: Page): Promise<void> {
-  await page.goto('/');
-  await screenIs(page, 'intro');
-  await page.evaluate(() => window.__nwE2E!.state.introCb.onFinish(true));
-  await screenIs(page, 'ageGate');
-  await page.evaluate(() => {
-    window.__nwE2E!.state.ageGateCb.onDeclared(new Date().getFullYear() - 30);
-  });
-  await screenIs(page, 'consent');
-  await page.evaluate(() => window.__nwE2E!.state.consentCb.onAccept());
-  await screenIs(page, 'login');
-}
-
-/**
- * Mirrors full-link.e2e.ts's registerAndEnterLobby, driven via window.__nwE2E instead of headless
- * views — with one addition full-link.e2e.ts doesn't need: a genuinely fresh account (no
- * `tutorial_done` flag surviving ADR-056's reconcile() rewrite — see the 2026-07-29
- * `HeadlessAppViews.showGame` fix, commit e5093451) gets redirected by `goLobby()` into the FTUE
- * tutorial level instead of the lobby (ONBOARDING_DESIGN §2 step ⑤) — `showGame()` fires with
- * `screen: 'game'`, and `screen` never becomes `'lobby'` on its own. `full-link.e2e.ts` never
- * needed to handle this because that fix lives IN the headless harness itself
- * (`HeadlessAppViews.showGame` auto-calls `onExitToLobby()` for a tutorial level); this is a real
- * app driving a real renderer, so there's no harness layer to intercept it — the test has to
- * explicitly dismiss the tutorial the way a player would, exactly like
- * GameSceneCallbacks.onExitToLobby (see `app/nav/game.ts`'s `goTutorial()`).
- */
-async function registerAndEnterLobby(page: Page, loginId: string, displayName: string): Promise<void> {
-  await bootToLogin(page);
-  const outcome = await page.evaluate(
-    ([id, name]: string[]) => window.__nwE2E!.state.loginCb.onRegister(id, 'password123', name),
-    [loginId, displayName],
-  );
-  expect(outcome.ok, `register failed: ${JSON.stringify(outcome)}`).toBe(true);
-
-  await page.waitForFunction(
-    () => window.__nwE2E?.state?.screen === 'lobby' || window.__nwE2E?.state?.screen === 'game',
-    null,
-    { timeout: 20_000 },
-  );
-  if (await page.evaluate(() => window.__nwE2E!.state.screen === 'game')) {
-    // Fresh account landed in the FTUE tutorial level — skip it, same as a player tapping "skip".
-    await page.evaluate(() => window.__nwE2E!.state.gameCb.onExitToLobby());
-  }
-  await screenIs(page, 'lobby');
-}
+import { test, expect } from '@playwright/test';
+import { uid, trackErrors, screenIs, registerAndEnterLobby } from './lib/nwE2E';
 
 test.describe('browser smoke — real renderer', () => {
   test('single account: register → lobby → local battle renders with no console errors', async ({ page }) => {

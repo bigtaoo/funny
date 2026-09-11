@@ -91,7 +91,7 @@ export function cachedTxt(
   if (hit) {
     textCache.delete(key);
     textCache.set(key, hit);   // touch: move to the LRU tail
-    return new PIXI.Sprite(hit.texture);
+    return tagged(new PIXI.Sprite(hit.texture), label);
   }
 
   const t = txt(label, size, color, bold);
@@ -112,7 +112,23 @@ export function cachedTxt(
   }
   // The Text's own texture carries pixiText's anti-clip padding in frame/trim/orig, so a Sprite of
   // it lands exactly where the Text would have.
-  return new PIXI.Sprite(t.texture);
+  return tagged(new PIXI.Sprite(t.texture), label);
+}
+
+/**
+ * Stamps the string this node draws onto `DisplayObject.name`, as `txt:<label>`.
+ *
+ * A baked label is a `Sprite` (or, for {@link numTxt}, a `Container` of them) and is otherwise
+ * indistinguishable from an icon when walking the display tree — which makes every label in the
+ * game invisible to the real-browser layout audit (client/test/browser/lib/layoutAudit.ts), the
+ * only layer that measures real glyphs. `name` is a stock PIXI field, free to write, and also what
+ * the PIXI devtools panel shows, so tagging costs one string assignment and makes both readable.
+ * The `txt:` prefix keeps it apart from the handful of structural names the battle renderer looks
+ * up via `getChildByName` ('sprite', 'hpFill', ...).
+ */
+function tagged<T extends PIXI.DisplayObject>(node: T, label: string): T {
+  node.name = `txt:${label}`;
+  return node;
 }
 
 interface GlyphAtlas {
@@ -158,7 +174,7 @@ export function numTxt(
     sp.roundPixels = true;
     c.addChild(sp);
   }
-  return c;
+  return tagged(c, label);
 }
 
 /**
