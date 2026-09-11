@@ -33,6 +33,7 @@ import { WechatMusicDeck, type InnerAudio } from './wechatMusicDeck';
 declare const wx: {
   createWebAudioContext?(): AudioContext;
   createInnerAudioContext?(): InnerAudio;
+  setInnerAudioOption?(opts: { mixWithOther?: boolean }): void;
   onTouchStart?(cb: () => void): void;
   onAudioInterruptionBegin?(cb: () => void): void;
   onAudioInterruptionEnd?(cb: () => void): void;
@@ -78,6 +79,19 @@ export class WechatAudioBus extends ContextAudioBus {
         wx.onAudioInterruptionEnd?.(() => cb(false));
       },
     });
+
+    // Mix with whatever else the phone is playing, rather than interrupting it — the mini-game
+    // half of the 2026-09-11 "opening the game stops my Spotify" report (AUDIO_DESIGN.md §5;
+    // the browser half is `navigator.audioSession` in `platform/web/WebAudioBus.ts`). This option
+    // governs `InnerAudioContext`, which here means the two BGM decks — the only streams this
+    // runtime plays, and therefore the only thing that can take the session from another app.
+    //
+    // **This asserts the documented default rather than changing it** (`mixWithOther` is true out
+    // of the box). It is three lines to state the requirement where a reader of the audio backend
+    // will look for it, and to survive a base library that ships a different default — which is
+    // precisely the class of thing this file has been burned by before (see the header: the
+    // mini-game was recorded as having no Web Audio for months, on the strength of a typing).
+    if (typeof wx !== 'undefined') wx.setInnerAudioOption?.({ mixWithOther: true });
 
     // 中断（来电/系统闹钟）。这个运行时没有 DOM，所以没有 `visibilitychange`，这两个回调是
     // **唯一**的信号。SFX 这边只需要恢复那一半：最长的 cue 是几百毫秒，中断开始时它早就播完了，

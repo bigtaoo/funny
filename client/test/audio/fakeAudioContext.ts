@@ -97,6 +97,8 @@ export interface FakeAudioContext {
   /** Every node ever created, in creation order. */
   nodes: FakeNode[];
   resumeCalls: number;
+  /** `suspend()` calls — how the bus gives the OS audio session back (AUDIO_DESIGN.md §5). */
+  suspendCalls: number;
   /** Queued results for decodeAudioData, consumed in call order. */
   decodeResults: (AudioBuffer | Error)[];
   decodeCalls: ArrayBuffer[];
@@ -115,6 +117,7 @@ export interface FakeAudioContext {
   createMediaElementSource(el: unknown): FakeNode;
   createBuffer(channels: number, length: number, rate: number): FakeBuffer;
   resume(): Promise<void>;
+  suspend(): Promise<void>;
   decodeAudioData(
     data: ArrayBuffer,
     ok?: (b: AudioBuffer) => void,
@@ -132,6 +135,7 @@ export function fakeAudioContext(opts: { sampleRate?: number; now?: number } = {
     destination: node('destination'),
     nodes: [],
     resumeCalls: 0,
+    suspendCalls: 0,
     decodeResults: [],
     decodeCalls: [],
     createGain() {
@@ -181,6 +185,10 @@ export function fakeAudioContext(opts: { sampleRate?: number; now?: number } = {
     async resume() {
       ctx.resumeCalls++;
       ctx.state = 'running';
+    },
+    async suspend() {
+      ctx.suspendCalls++;
+      ctx.state = 'suspended';
     },
     decodeAudioData(data, ok, fail) {
       ctx.decodeCalls.push(data);

@@ -1,6 +1,6 @@
 # Notebook Wars — 音频系统设计
 
-> 状态：**§7 的七步全部完成。** 战斗 + UI 触发点都已接，设置页有三档音量与静音；五轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）；素材第一批已发货（10 个 cue 共 22 个样本，8 个 cue 刻意保留合成音，全部 CC0、无需署名）；**BGM 已发货（§7 第 7 步 ✅）——一条轨 `bgm.lobby`，73 秒循环（0.7x 重切、BGM 总线默认 0.2，§0.6）、两个 deck 等功率交叉淡入、频带电平 −29 dBFS、失焦暂停 + ducking**。开放项四个：`bgm.battle` 缺 master、微信真机、**除大厅床外仍然没有人听过任何一个声音**（大厅床 2026-09-05 被听过**两轮**，反馈「太急促」+「音量太大」，已重切并把总线默认压到 0.2，见 §0.6）、ducking 未在真实 stinger 下听过 · 权威：本文（音频**系统**的单一入口）· 更新：2026-09-05
+> 状态：**§7 的七步全部完成。** 战斗 + UI 触发点都已接，设置页有三档音量与静音；五轮实测都已做完（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）；素材第一批已发货（10 个 cue 共 22 个样本，8 个 cue 刻意保留合成音，全部 CC0、无需署名）；**BGM 已发货（§7 第 7 步 ✅）——一条轨 `bgm.lobby`，73 秒循环（0.7x 重切、BGM 总线默认 0.2，§0.6）、两个 deck 等功率交叉淡入、频带电平 −29 dBFS、失焦暂停 + ducking**。开放项五个：`bgm.battle` 缺 master、微信真机、**混音会话真机未验**（§0.7：本地每一层都只走空转分支）、**除大厅床外仍然没有人听过任何一个声音**（大厅床 2026-09-05 被听过**两轮**，反馈「太急促」+「音量太大」，已重切并把总线默认压到 0.2，见 §0.6）、ducking 未在真实 stinger 下听过 ；**混音会话已接**（2026-09-11，§0.7：`ambient` + 不发声就不占会话，**真机未验**）· 权威：本文（音频**系统**的单一入口）· 更新：2026-09-11
 >
 > **权威边界**：音频**美学方向**（音色取向、禁用清单）仍归 [`../product/art-direction.md`](../product/art-direction.md) §声音；本文拥有**系统实现**——资产清单与命名、触发表、播放层抽象、混音、设置项、平台约束。两者不重述对方。
 
@@ -8,7 +8,7 @@
 
 ## 0. 落地状态（2026-09-01）
 
-§7 **七步全部完成**：平台接缝 + cue 目录 + 程序化合成音 + 样本加载/解码/并发上限/混音器 + 战斗触发点 + UI 触发点 + 设置页音量 + 微信后端 + 素材第一批 + **BGM**，五轮实测（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）都已做完，**§0.6 是第一次真正的听感反馈**（2026-09-05，两轮：太急促 → 0.8x → 0.7x；音量太大 → BGM 总线 0.5 → 0.2）。开放项四个：`bgm.battle` 缺 master（§2.3）、微信真机（§0.3 末尾）、**18 个 cue 仍然没有人听过**（§0.5 末尾；大厅床是唯一的例外）、ducking 未在真实 stinger 下听过。
+§7 **七步全部完成**：平台接缝 + cue 目录 + 程序化合成音 + 样本加载/解码/并发上限/混音器 + 战斗触发点 + UI 触发点 + 设置页音量 + 微信后端 + 素材第一批 + **BGM**，五轮实测（§0.1 战斗 / §0.2 UI / §0.3 微信 / §0.4 素材 / §0.5 BGM）都已做完，**§0.6 是第一次真正的听感反馈**（2026-09-05，两轮：太急促 → 0.8x → 0.7x；音量太大 → BGM 总线 0.5 → 0.2）。开放项五个：`bgm.battle` 缺 master（§2.3）、微信真机（§0.3 末尾）、混音会话真机未验（§0.7）、**18 个 cue 仍然没有人听过**（§0.5 末尾；大厅床是唯一的例外）、ducking 未在真实 stinger 下听过。
 
 **已存在的模块**（`client/src/audio/`，平台中立，无 PIXI 依赖）：
 
@@ -891,6 +891,63 @@ no-op / `peak_regions` 的两个已知答案），共 112 例全过；`musicAsse
 
 ---
 
+### 0.7 「一打开游戏，Spotify 就停了」（2026-09-11，音频会话 / audio focus）
+
+用户报告：**手机上只要打开游戏，正在放的 Spotify 就停；别的游戏没有这个问题。**
+
+**成因不是 bug，是我们从来没有声明过「可混音」。** `grep -E 'audioSession|AVAudioSession|mixWithOther'`
+全仓库零命中：iOS 壳的 `Info.plist` / `AppDelegate.swift` 一次都没碰过 `AVAudioSession`，web 侧也
+没设过 `navigator.audioSession`。手机上「谁能出声」由系统仲裁，而我们从头到尾没参与这场仲裁：
+
+- **iOS** 按 AVAudioSession 类别判。网页的默认是 `navigator.audioSession.type === 'auto'`，WebKit
+  一看到一条持续播放的流就按 `playback` 处理——而 `playback` 是**独占**类别，于是别的 app 收到
+  中断。我们的 BGM 正是这样一条流（`<audio>` → `MediaElementSource`，§7 第 7 步）。原生游戏几乎
+  都显式声明 `.ambient`，**这就是「别的游戏没这个问题」的全部原因**，不是它们做了什么额外的事。
+- **Android** 是 audio focus：`<audio>` 起播即请求 `AUDIOFOCUS_GAIN`，Spotify 收到 focus loss 就
+  暂停。**web 层没有任何对应开关**（见下面「没有验证到什么」）。
+
+**修复是两半，一半平台、一半平台中立**：
+
+| 半边 | 落点 | 做了什么 |
+|---|---|---|
+| 平台 | `platform/web/WebAudioBus.ts` | 造 `AudioContext` **之前**设 `navigator.audioSession.type = 'ambient'`。顺序是硬要求：WebKit 在第一条流开始时就把类别定下来。Safari / iOS 16.4+ 才有这个属性，别处它不存在 = 整段空转 |
+| 平台 | `platform/wechat/WechatAudioBus.ts` | `wx.setInnerAudioOption({ mixWithOther: true })`。**这是在断言文档里的默认值，不是改变它**——三行换一个「要求写在读者会去找的地方」，且能扛住某个基础库发不同的默认 |
+| 中立 | `audio/ContextAudioBus.ts` | **不发声就不占会话**：两个通道都是 0 时不 `resume()`、已经在跑的就 `suspend()`；BGM 音量为 0 当作「没有要放的轨」（deck 走正常淡出后 `stop()`，不是硬切）；切后台从「只 hold 住 deck」升级成「连上下文一起 suspend」 |
+
+**第二半不是保险，是独立的一条。** `ambient` 只存在于 iOS 16.4+，而「玩家把音量拖到 0、按了静音、
+或者切去后台，我们却还占着会话」在**所有**平台上都是真的——包括 Android 那条没有 web 开关可修的
+路。它同时修掉一个属于我们自己的浪费：BGM 音量为 0 时两个 deck 照样在流式解码（`MusicPlayer` 只是
+把增益写成 0），也就是玩家关掉音乐之后，我们还在为听不见的东西花电和流量。
+
+**注意 `ambient` 的代价，它是这个类别的一部分而不是副作用**：iOS 静音拨片拨到静音时游戏自己也没
+声。这正是原生游戏的惯例，权衡按那个惯例走。
+
+**量到了什么**
+
+- **真 Chromium**（Playwright，新增 `client/test/browser/audioSession.spec.ts`）：手势后
+  `AudioContext.state === 'running'` → 伪造一次 `visibilitychange`（`document.hidden` 只读，替掉
+  getter）→ **真的变成 `suspended`** → 回前台 → 回到 `running`。把 `ContextAudioBus.ts` 还原成改
+  之前，这条当场红。单元测试只能证明「我们调了 `suspend()`」，证明不了浏览器真的松手，而这次改动
+  的全部意义就是那个状态。
+- **单元**：`ContextAudioBus.test.ts` +8、`WebAudioBus.test.ts` +4、`WechatAudioBus.test.ts` +3。
+  逐半边回退验过：还原中立那半 → 8 条里红 6（另 2 条钉的是「音量推送不得提前造上下文」这类不变量，
+  本来就成立）；还原两个平台半边 → 各红 1。三个被改的源文件在覆盖率报告里都是 100%。
+- 既有的 334 条音频用例、3612 条客户端用例、`test:sim` 13 条全绿；`audioDucking.spec.ts` 在真
+  Chromium 下照旧过（改动没有碰到 ducking 那条链）。
+
+**没有验证到什么**（照例，这一段才是这一节真正的价值）
+
+- **真机上 Spotify 到底还响不响，没有人试过。** `navigator.audioSession` 在 Chromium 上**根本不
+  存在**，所以本地能跑的每一层都只走到了空转分支——这条修复在开发机上是**不可证伪**的。要签收它
+  需要一台 iPhone：装上新 bundle（这是 web 侧的一行，**OTA 可发**，不需要新二进制），放着 Spotify
+  再打开游戏。
+- **Android 是敞着的。** 若真机复现，可选项只有两条，且都要先实测：BGM 从 `<audio>` 改成
+  `AudioBuffer`（能不能绕开取决于 Chrome 把 Web Audio 算不算 focus 请求），或者在 Capacitor
+  Android 壳里接 `AudioManager`。
+- 微信那一行按文档是在断言默认值，**真机同样没验**，与 §0.3 末尾那三件事同一批。
+
+---
+
 ## 1. 美学基线（引自 art-direction，不在此复述）
 
 一句话锚点：**轻巧、卡通、非写实的"文具拟音"**——铅笔沙沙、橡皮擦、翻笔记本页、笔帽咔哒；**禁止**金属碰撞、爆炸轰鸣等写实战争音效。所有音效服从「我蓝敌红 / 手绘笔记本」的整体调性。细节见 art-direction §声音。
@@ -1041,6 +1098,7 @@ interface AudioBus {
 | **iOS WebAudio 需手势解锁** | iOS 网页 | 同上，`AudioContext.resume()` 必须在手势回调内 |
 | **同时音频实例数有限** | 微信小游戏 | ~~SFX 走对象池（如 8 个 InnerAudioContext 轮转）。~~ **订正 2（2026-09-01，§0.3）：`InnerAudioContext` 对象池不需要了。** 微信走 `wx.createWebAudioContext()`，SFX 与 web 共用 `audio/` 那条管线，而对象池真正想要的「并发上限 + 优先级抢占」本来就在平台中立的 `VoiceBudget.ts` 里，两个平台共用一份。`InnerAudioContext` 剩下的正当用途只有 BGM（单实例、流式，§7 第 7 步）。**订正 3（2026-09-01，§0.5）：上一句原先写的是「单实例、流式、`loop=true`」，第三个不成立**——MP3 两端被补齐到帧边界，样本级精确回绕根本不存在，而原生 `loop` 要么样本级精确要么不循环。BGM 用的是**两个** `InnerAudioContext` 交叉淡入，两边的 `loop` 都显式设成 `false`。下面这条**订正 1** 仍然成立，它描述的是 `VoiceBudget` 的语义：<br>**丢弃规则不是"最旧"而是"按优先级抢占"**——最旧那个很可能正是一局一次的结算 stinger，而新来的是第 40 个攻击音；丢最旧会砍掉唯一那次胜利音，换来一个听不出区别的攻击音。已实现于 `audio/VoiceBudget.ts`（同优先级判输，被抢占者 12ms 淡出而非硬切；按**时间**退休而不靠 `ended` 事件，因为一个"悄悄停止清扫"的上限会失效于静默——前 N 个 cue 之后混音直接变哑，看起来就是"音频坏了"） |
 | ~~**首包体积**~~ | ~~微信小游戏~~ | **订正（2026-08-31）：这条约束对本项目不存在。** 原稿写"BGM 放分包/CDN 按需拉，首包只带 P0 SFX"，那是通用建议；而本项目按 ASSET_PACKAGING §4 的**方案 A** 早已把**全部**美术资源托管在 CDN（`asset/resource` 的 `publicPath = NW_ASSET_CDN`，产物进 `wechatgame/cdn/`，由 `project.private.config.json` 的 `packOptions.ignore` 排除出主包），主包是**纯代码 ~1.5 MB**。音频文件走同一条规则、同一个 `assetIO`，天然落在 CDN 上，**一个字节都不进主包**——所以"首包只带 P0 SFX"这个取舍不需要做，BGM 也不需要为体积单独分包。真正要留意的是**下载量与缓存**（同 §16 的资源预算口径），不是包体红线。<br>实测（2026-09-01，微信后端落地后）：微信主包为音频总共多付 **10441 字节**（2187088 → 2197453），其中**播放引擎本身 8546 字节**（2188907 → 2197453），此前三轮的 1819 字节全是触发表的 cue 字符串字面量。距 4 MB 主包红线仍有大量余量 |
+| **抢占别人的音频会话**（一出声就把玩家正在听的东西掐了） | iOS / Android / 微信 | **2026-09-11 新增，详见 §0.7。** web：造上下文**之前** `navigator.audioSession.type = 'ambient'`（Safari/iOS 16.4+；别处不存在 = 空转）；微信：`wx.setInnerAudioOption({ mixWithOther: true })`（断言默认值）。**全平台共用的那一半在 `ContextAudioBus`**：不发声就不占会话——两档音量都为 0 → 不 `resume()` / 已在跑的 `suspend()`；BGM 为 0 → 当作没有要放的轨、不起 deck；切后台 → 连上下文一起 suspend。代价是 `ambient` 跟随 iOS 静音拨片（原生游戏的惯例）。**Android 仍然敞着**：那边是 audio focus，web 层没有开关 |
 | **解码开销** | 全平台 | **启动时 `preload()` 全量**（`app.ts` 在 L0 闸门之后 fire-and-forget，不 await）。订正原稿的"进场景前 preload 该场景所需 id"：SFX 全集是 ~100 KB 量级，按场景切分省不下有意义的字节，却要每个场景维护一份会腐烂的 id 清单。suspended 的 `AudioContext` 照样能解码，所以这一步既不需要网络闸门也不需要 autoplay 手势。BGM 落地时按轨流式，另说。<br>实测（2026-09-01，素材落地后）：**22 个文件 / 57578 字节全部解码成功**，`loaded()` 报 `{cues:10, variants:22}`；"~100 KB 量级"这个估算落在真实数字的两倍以内。解码确实在 suspended 上下文里完成——`__nwAudio.samples()` 就是靠这一点做到全程无手势的（§0.4） |
 
 ---
