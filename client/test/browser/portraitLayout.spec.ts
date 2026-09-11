@@ -1,5 +1,10 @@
-// Portrait layout sweep — walks the lobby-reachable screens on three portrait viewports in a real
-// browser, and fails on labels that collide or fall off the canvas.
+// Layout sweep — walks every screen, modal and battle the lobby can reach, on six viewports in a
+// real browser, and fails on labels that collide, spill, fall off the canvas or come out too small
+// to read.
+//
+// Still called portraitLayout.spec.ts (and still `npm run test:portrait`) because portrait is why it
+// exists and what it is tuned for; two landscape rows in VIEWPORTS came free once the design box
+// and the legibility floor were derived per viewport rather than hardcoded.
 //
 // Why this exists: development happens on a landscape desktop window, so portrait defects are only
 // ever found by someone holding a phone and screenshotting one screen at a time. Everything needed
@@ -26,23 +31,55 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   uid, trackErrors, screenIs, currentScreen, registerAndEnterLobby, callCb, dismissFeatureGuide,
+  tapLabel,
 } from './lib/nwE2E';
-import { auditLayout, type AuditFinding, type AuditResult } from './lib/layoutAudit';
+import {
+  auditLayout, type AuditFinding, type AuditOptions, type AuditResult,
+} from './lib/layoutAudit';
+// Dependency-free pure module (no PIXI, no DOM) — safe to pull into the Playwright process, and
+// the point of sharing it is that the `tiny` gate below asserts exactly the floor the app applies.
+import { fontFloorDesignPx } from '../../src/render/fontScale';
 
 /**
- * The three shapes portrait has to survive, per the 2026-09-11 sweep scope:
- * a current iPhone, the squeeze case (a 16:9 budget Android / the WeChat mini-game floor), and a
- * tablet — squatter than 9:16, so `ScalingManager` letterboxes it into desk bands and the layout
- * runs a different path (see its DESK_FILL header).
+ * Every shape the layout has to survive. Portrait is why the sweep exists (development happens in a
+ * landscape desktop window, so portrait defects only ever arrive as a screenshot from a phone), but
+ * nothing in the walk or the audit is portrait-specific — the design box and the legibility floor
+ * are derived per viewport below — so the same 33 stops cover landscape for the cost of two more
+ * rows here.
+ *
+ *  · phone / narrow  — a current iPhone and the squeeze case (16:9 budget Android, the WeChat
+ *    mini-game floor). Both contain to WIDTH, at 0.36x and 0.33x.
+ *  · tablet portrait — squatter than 9:16, so it contains to HEIGHT and `ScalingManager`
+ *    letterboxes the sides into desk bands (see its DESK_FILL header), a different code path.
+ *  · the same two phones rotated — landscape's design box is the mirror rule (height fixed at
+ *    1080, width tracks the aspect between 1920 and 2592), and a phone held sideways renders at
+ *    the same brutal 0.36x, so it needs the same legibility floor.
+ *  · desktop-1366x768 — the shape the game is actually developed in, as a floor: its 0.71x asks
+ *    for no legibility floor at all, so anything the sweep reports there is a plain layout bug
+ *    rather than a scale artefact.
+ *
+ * Each is a separate Playwright test, a separate browser context and a separate fresh account, so
+ * one shape failing still reports the others. The full run is ~25 minutes; `--grep <name>` runs one.
  */
 const VIEWPORTS = [
-  { name: 'phone-390x844',   width: 390, height: 844  },
-  { name: 'narrow-360x640',  width: 360, height: 640  },
-  { name: 'tablet-768x1024', width: 768, height: 1024 },
+  { name: 'phone-390x844',    width: 390,  height: 844  },
+  { name: 'narrow-360x640',   width: 360,  height: 640  },
+  { name: 'tablet-768x1024',  width: 768,  height: 1024 },
+  { name: 'landscape-844x390',width: 844,  height: 390  },
+  { name: 'tablet-1024x768',  width: 1024, height: 768  },
+  { name: 'desktop-1366x768', width: 1366, height: 768  },
 ] as const;
 
-/** One navigation step: a callback name on the current screen's bag, plus any argument it needs. */
-type Hop = string | { fn: string; args: unknown[] };
+/**
+ * One navigation step. Either a callback on the current screen's bag (`state.<screen>Cb`) — the
+ * name alone, or with the argument it needs — or a TAP on a label, for the things that are not
+ * screens: a modal has no callback to call, so the only way in is the way a player gets in (see
+ * lib/nwE2E.ts's `tapLabel`).
+ */
+type Hop = string | { fn: string; args: unknown[] } | { tap: string };
+
+const hopName = (h: Hop): string =>
+  typeof h === 'string' ? h : 'tap' in h ? `tap(${h.tap})` : h.fn;
 
 interface Stop {
   /**
@@ -59,6 +96,13 @@ interface Stop {
    */
   via: Hop[];
   /**
+   * Name this stop reports under. Defaults to the screen actually reached, which is the right
+   * answer for every screen-to-screen hop; a stop that ends in a modal needs its own name, because
+   * `state.screen` still says the scene underneath and two stops would otherwise overwrite each
+   * other's report and screenshot.
+   */
+  as?: string;
+  /**
    * True when the entry is legitimately absent for this account — an online-only or
    * progression-gated feature (the world map needs chapter one cleared, ONBOARDING_DESIGN §4).
    * Such a stop is recorded as skipped instead of failing the walk.
@@ -73,6 +117,22 @@ interface Stop {
  * behind it, and their callback names come from the `cbKeys` each report records — that is the
  * cheapest way to extend this list, rather than reading every scene's callback interface.
  */
+/** One side's end-of-match stats — `PlayerStats` (server/engine/src/types/runtime.ts). */
+function endStats(owner: number, dealt: number, taken: number): Record<string, unknown> {
+  return {
+    owner,
+    damageDealtToBase: dealt,
+    damageTakenByBase: taken,
+    unitsSent: 24,
+    unitsKilled: 17,
+    spellHits: 6,
+    killsByType: {},
+    castsByType: {},
+    buildingSurvivalTicks: 5400,
+    goldSpent: 310,
+  };
+}
+
 const STOPS: Stop[] = [
   { screen: 'settings',     via: ['onOpenProfile'] },
   { screen: 'shop',         via: ['onOpenShop'],        settleMs: 800 },
@@ -99,17 +159,103 @@ const STOPS: Stop[] = [
   // 'base' = the home city's own defense layout; `onOpenDefense(tileKey)` takes the tile it edits,
   // and calling it bare puts a literal "undefined" in the scene title.
   { screen: 'defenseEditor',via: ['onOpenWorld', { fn: 'onOpenDefense', args: ['base'] }], gated: true, settleMs: 1500 },
+
+  // ── 2026-09-11, round two: the rest of what the `cbKeys` graph offers ────────────────────────
+  { screen: 'mail',        via: ['onOpenMail'],     gated: true, settleMs: 900 },
+  { screen: 'feedback',    via: ['onOpenFeedback'], gated: true, settleMs: 900 },
+  // Reached through the store rather than the lobby: `openBattlePass` is on the gacha screen's bag
+  // (and the shop's), never the lobby's.
+  { screen: 'battlePass',  via: ['onOpenShop', 'openBattlePass'], gated: true, settleMs: 900 },
+  { screen: 'family',      via: ['onOpenSocial', 'openFamilyHub'], gated: true, settleMs: 1500 },
+  { screen: 'sect',        via: ['onOpenSocial', 'openSectHub'],   gated: true, settleMs: 1500 },
+
+  // The battle, and the screen behind it. This is the one stop that leaves the menu shell: the HUD
+  // is laid out by ILayout directly (not by a scene's own column arithmetic), so it is the one
+  // place portrait can break in a way no menu screen would show.
+  { screen: 'game',        via: [{ fn: 'onStartGame', args: ['AI'] }], settleMs: 3000 },
+  // ...and the screen behind it. Handed the end-of-match payload the game scene's own renderer
+  // would hand it (`onGameEnd(winner, [stats, stats])`), rather than played out: an AI match takes
+  // minutes, and what this stop audits is the layout of a screen full of numbers — which does not
+  // care where the numbers came from, only that they are the shape ResultScene reads.
+  { screen: 'result',
+    via: [{ fn: 'onStartGame', args: ['AI'] }, { fn: 'onGameEnd', args: [0, [
+      endStats(0, 5200, 1400), endStats(1, 1400, 5200),
+    ]] }],
+    settleMs: 1500 },
+
+  // ── Modals, tabs and results: the states that are not screens ───────────────────────────────
+  // Every one of these is opened by a hit rect inside a scene, so there is no callback for the
+  // sweep to call and `state.screen` does not change — see `Hop`'s tap form and `Stop.as`.
+  //
+  // Tapped by a UI string rather than a content name wherever possible ('Power' is the roster
+  // cell's own stat label, inside the cell's hit rect), so the table does not depend on which
+  // heroes a fresh account happens to start with.
+  { screen: 'cardRoster',  as: 'cardRoster+detail', via: ['onOpenCards', { tap: 'Power' }], settleMs: 1200 },
+  { screen: 'equipment',   as: 'equipment+craft',
+    via: ['onOpenCampaign', 'onOpenEquipment', { tap: 'Craft' }], settleMs: 1200 },
+  { screen: 'gacha',       as: 'gacha+draw',        via: ['onOpenShop', { tap: 'Single' }],
+    gated: true, settleMs: 3000 },
+  { screen: 'city',        as: 'city+buildDetail',
+    via: ['onOpenWorld', 'onOpenCity', { tap: 'Desk' }], gated: true, settleMs: 2000 },
+  { screen: 'city',        as: 'city+trainModal',
+    via: ['onOpenWorld', 'onOpenCity', { tap: 'Train Troops' }], gated: true, settleMs: 2000 },
 ];
 
 const OUT_DIR = 'portrait-report';
 
+/** Overlap thresholds — the only audit options that do not depend on the viewport. */
+const OVERLAP = { minFrac: 0.12, minPx: 40 };
+
+
+/** Short edge of both layouts' reference box, and the axis both fix. */
+const REFERENCE_SHORT = 1080;
+/** PortraitLayout's `REFERENCE_H` floor; LandscapeLayout's `REFERENCE_W` / `MAX_W` bounds. */
+const PORTRAIT_MIN_LONG = 1920;
+const LANDSCAPE_MIN_LONG = 1920;
+const LANDSCAPE_MAX_LONG = 2592;
+
 /**
- * `designW`/`designH` are PortraitLayout's own reference box (its `DESIGN_W` / `REFERENCE_H`);
- * `minInkDesignPx` is `FS.micro`, the smallest size the font scale offers (render/fontScale.ts).
- * Both are duplicated rather than imported: this file runs in Node under Playwright, and importing
- * either module drags `pixi.js-legacy` into a process with no DOM.
+ * The design rect `createLayout` will build for this viewport — the two layouts' own sizing rules,
+ * duplicated rather than imported because those modules pull `@nw/engine/config` and PIXI into a
+ * Playwright process with no DOM. Both fix their SHORT axis at 1080 and let the long one track the
+ * aspect: portrait never shorter than 1920, landscape between 1920 and 2592 (past which it
+ * letterboxes on purpose — see LandscapeLayout's MAX_W).
  */
-const AUDIT = { minFrac: 0.12, minPx: 40, designW: 1080, designH: 1920, minInkDesignPx: 11 };
+function designBox(vp: { width: number; height: number }): { w: number; h: number } {
+  if (vp.width > vp.height) {
+    const long = Math.round(REFERENCE_SHORT * (vp.width / vp.height));
+    return { w: Math.min(LANDSCAPE_MAX_LONG, Math.max(LANDSCAPE_MIN_LONG, long)), h: REFERENCE_SHORT };
+  }
+  const long = Math.round(REFERENCE_SHORT * (vp.height / vp.width));
+  return { w: REFERENCE_SHORT, h: Math.max(PORTRAIT_MIN_LONG, long) };
+}
+
+/** The design→screen scale `ScalingManager` will contain this viewport at. */
+function designScaleOf(vp: { width: number; height: number }): number {
+  const box = designBox(vp);
+  return Math.min(vp.width / box.w, vp.height / box.h);
+}
+
+/**
+ * Audit options for one viewport. Everything is shared except the `tiny` gate, which is the
+ * viewport's own legibility floor (render/fontScale.ts): the app lifts every font token to
+ * `fontFloorDesignPx(scale)`, so nothing on screen may measure below it — 20 design px on either
+ * phone, 16 on the tablet, against the flat 11 (`FS.micro`, the raw table's smallest entry) this
+ * gate used before the floor existed.
+ *
+ * Deriving it from the shipped function rather than restating a number is what makes this a gate
+ * on the floor rather than a second opinion about it: re-tune `MIN_LEGIBLE_CSS_PX` and the sweep
+ * demands the new floor on the next run.
+ */
+function auditFor(vp: { width: number; height: number }): AuditOptions {
+  const box = designBox(vp);
+  return {
+    ...OVERLAP,
+    designW: box.w,
+    designH: box.h,
+    minInkDesignPx: fontFloorDesignPx(designScaleOf(vp)),
+  };
+}
 
 interface Report {
   viewport: string;
@@ -130,7 +276,7 @@ function fmt(viewport: string, screen: string, f: AuditFinding): string {
     `(${Math.round(x.x)},${Math.round(x.y)} ${Math.round(x.w)}x${Math.round(x.h)})`;
   const where = `${viewport} ${screen}`;
   if (f.kind === 'offscreen') return `${where}: offscreen "${f.a}" ${r(f.rectA)}`;
-  if (f.kind === 'tiny') return `${where}: unreadable "${f.a}" ${r(f.rectA)}`;
+  if (f.kind === 'tiny') return `${where}: unreadable "${f.a}" ${f.frac}px ${f.b} ${r(f.rectA)}`;
   if (f.kind === 'placeholder') return `${where}: placeholder text "${f.a}" ${r(f.rectA)}`;
   if (f.kind === 'covered') {
     return `${where}: covered ${Math.round(f.frac * 100)}% "${f.a}" ${r(f.rectA)} by ${r(f.rectB)}`;
@@ -148,6 +294,15 @@ function fmt(viewport: string, screen: string, f: AuditFinding): string {
 async function open(page: Page, stop: Stop): Promise<string | null> {
   let from = await currentScreen(page);
   for (const hop of stop.via) {
+    if (typeof hop === 'object' && 'tap' in hop) {
+      // A tap opens a modal (or a tab) on the SAME screen, so there is no screen change to wait
+      // for — settle, re-read whatever `state.screen` says, and let the audit judge what is now on
+      // top of it. A label that isn't there is a navigation failure like any other.
+      if (!await tapLabel(page, hop.tap)) return null;
+      await page.waitForTimeout(600);
+      from = await currentScreen(page);
+      continue;
+    }
     const fn = typeof hop === 'string' ? hop : hop.fn;
     const args = typeof hop === 'string' ? [] : hop.args;
     const bag = `${from}Cb`;
@@ -200,7 +355,7 @@ async function backToLobby(page: Page): Promise<void> {
   }
 }
 
-test.describe('portrait layout — real renderer', () => {
+test.describe('layout sweep — real renderer', () => {
   for (const vp of VIEWPORTS) {
     test(`no label collisions on ${vp.name}`, async ({ browser }) => {
       const ctx = await browser.newContext({
@@ -222,17 +377,21 @@ test.describe('portrait layout — real renderer', () => {
         await registerAndEnterLobby(page, uid('portrait'), 'Portrait');
 
         const audit = async (screen: string): Promise<void> => {
-          let res: AuditResult = await page.evaluate(auditLayout, AUDIT);
+          const opts = auditFor(vp);
+          let res: AuditResult = await page.evaluate(auditLayout, opts);
           if (res.labels === 0) {
             // Still painting its loading state (the world map streams tiles before anything else).
             await page.waitForTimeout(2_000);
-            res = await page.evaluate(auditLayout, AUDIT);
+            res = await page.evaluate(auditLayout, opts);
           }
           if (res.labels === 0) blank.push(screen);
-          const cbKeys = await page.evaluate((s: string) => {
-            const bag = window.__nwE2E?.state?.[`${s}Cb`];
+          // Off the LIVE screen name, not the report's: a modal stop reports under its own name
+          // (`Stop.as`) while the callback bag still belongs to the scene underneath.
+          const cbKeys = await page.evaluate(() => {
+            const st = window.__nwE2E?.state;
+            const bag = st?.[`${st?.screen}Cb`];
             return bag && typeof bag === 'object' ? Object.keys(bag) : [];
-          }, screen);
+          });
           reports.push({ viewport: vp.name, screen, labels: res.labels, cbKeys, findings: res.findings });
           await page.screenshot({ path: path.join(shotDir, `${screen}.png`) });
         };
@@ -245,15 +404,15 @@ test.describe('portrait layout — real renderer', () => {
           if (landed === null) {
             expect(
               stop.gated,
-              `${vp.name}: ${stop.via.map((h) => (typeof h === 'string' ? h : h.fn)).join(' > ')} ` +
+              `${vp.name}: ${stop.via.map(hopName).join(' > ')} ` +
               `did not reach ${stop.screen} — ${await whereAmI(page)}`,
             ).toBe(true);
-            skipped.push(stop.screen);
+            skipped.push(stop.as ?? stop.screen);
             await backToLobby(page);
             continue;
           }
           await page.waitForTimeout(stop.settleMs ?? 400);
-          await audit(landed);
+          await audit(stop.as ?? landed);
           await backToLobby(page);
         }
       } finally {

@@ -9,7 +9,7 @@
 | 单元 | `npm test` | `test/**/*.test.ts`（**含 `test/render/**`**） | node | 纯游戏逻辑；外加 `test/render/**` 那批渲染层窄回归（BaseTexture 监听器 / blob URL 泄漏、HUD 几何、图标 dispatch 表…） | 多数文件 `vi.mock` 掉 PIXI；`icons`/`rewardIcon` 真 import `pixi.js-legacy` |
 | UI 冒烟 | `npm run test:ui` | `test/ui/**/*.ui.ts` | node + `pixiHeadless` | **真实场景构造 / update / destroy + 命中矩形回归** | 真对象树，**无渲染器** |
 | 全链路 E2E | `npm run test:e2e`（opt-in） | `test/e2e/**/*.e2e.ts` | node | `createAppCore` 全链路对接活服务器（meta+gateway+matchsvc+game+commercial+mongo） | headless orchestration |
-| 浏览器冒烟 / 竖屏巡检 | `npm run test:browser`、`npm run test:portrait`（均 opt-in） | `test/browser/**/*.spec.ts` | 真 Chromium（Playwright） | 白屏类硬故障（shader/atlas/WebGL）、两账号真实对战；以及**真字形量出来的竖屏几何**（见下方「竖屏几何巡检」） | **真渲染器 + 真 WebGL** |
+| 浏览器冒烟 / 几何巡检 | `npm run test:browser`、`npm run test:portrait`（均 opt-in） | `test/browser/**/*.spec.ts` | 真 Chromium（Playwright） | 白屏类硬故障（shader/atlas/WebGL）、两账号真实对战；以及**真字形量出来的版面几何**（见下方「几何巡检」） | **真渲染器 + 真 WebGL** |
 | 手动调参脚本 | `npm run test:manual`（opt-in，非回归） | `test/**/*.manual.ts` | node | console.log 输出的难度曲线/A-B 对比表，**零 `expect()`**，人工读表用 | 否 |
 
 `npm test` 只跑 `*.test.ts`；`*.ui.ts` / `*.e2e.ts` / `*.manual.ts` 用各自命名后缀隔离，默认套件不会误收。
@@ -283,11 +283,24 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 > 微信小游戏入口（`entries/wechat`）不能用 Playwright，需微信开发者工具的自动化（minium / 小程序自动化 SDK）单列，超出本冒烟范围，按需另立。
 
-### 竖屏几何巡检（`npm run test:portrait`，2026-09-11 新增）
+### 几何巡检（`npm run test:portrait`，2026-09-11 新增，同日扩面）
 
 同一层（真 Chromium）的第二条入口，但问的问题完全不同：**不是「会不会炸」，而是「排版对不对」**。
 
-`test/browser/portraitLayout.spec.ts` 走 **21 个场景 × 3 个竖屏尺寸**（390×844 手机 / 360×640 窄机 / 768×1024 平板——平板比 9:16 矮胖，会走 `ScalingManager` 的桌面留白分支），每站把 `window.__nwE2E.app` 的真实显示树交给 `test/browser/lib/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、小于字号表最小档（`FS.micro`）而不可读、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
+`test/browser/portraitLayout.spec.ts` 走 **32 站 × 6 个尺寸**，每站把 `window.__nwE2E.app` 的真实显示树交给 `test/browser/lib/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、**有效字号低于该视口的可读性下限**、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
+
+文件名还叫 `portraitLayout`、命令还叫 `test:portrait`：竖屏是它存在的理由和调校目标，横屏是设计矩形与下限都改成按视口算之后顺手加的两行。
+
+**六个尺寸**（`VIEWPORTS` 常量，加一行就多一个）：390×844 手机 / 360×640 窄机 / 768×1024 平板（比 9:16 矮胖，走 `ScalingManager` 的桌面留白分支）/ 844×390 手机横屏 / 1024×768 平板横屏 / 1366×768 桌面。最后一个是**地板**：它的 0.71× 不触发任何可读性下限，所以它报的东西一定是真排版 bug。一个尺寸一条 Playwright 用例、一个 context、一个新账号；跑全套约 25 分钟，`--grep <名字>` 单跑一个约 3 分钟。
+
+**三种到站方式**（`STOPS` 表的 `via` 链）：
+1. **回调**：`state.<screen>Cb` 上的函数名，一跳一个；带参数写成 `{ fn, args }`。
+2. **点击**：`{ tap: '文字' }` —— 弹窗是场景内部命中区打开的，**永远不是一个 screen，也没有任何回调可调**，只能按玩家的路走：在显示树里按文字找到标签、点它的中心（`lib/nwE2E.ts` 的 `tapLabel`）。这类站用 `Stop.as` 起自己的报告名（`state.screen` 还是底下那个场景）。尽量点 UI 字符串而不是内容名，别让表依赖新号发哪几张卡。
+3. **喂数据**：结算页只能由 `onGameEnd(winner, [stats, stats])` 到达，就照 `PlayerStats` 的字段喂一份——打完一局 AI 要几分钟，而这站审的是「一屏数字的排版」。
+
+**扩表的依据是报告自己**：每站的 JSON 里记着 `cbKeys`（`state.<screen>Cb` 的全部键）——**那就是导航图**，往 `STOPS` 里加 `via` 链比翻各场景的回调接口便宜得多。
+
+**可读性下限怎么判的**（2026-09-11 下午改）：判据是**有效字号**（字号 × 它头上累计的局部缩放）低于 `fontFloorDesignPx(该视口的缩放比)`——spec 直接 import `src/render/fontScale`（零依赖模块），和 app 用的是同一个函数。**不能拿盒高代替**：烘焙标签（`cachedTxt`/`numTxt` 的 Sprite）报的是裁紧的字形盒（≈字号 ×0.96），活的 `PIXI.Text` 报的是行盒（≈×1.35），同一条盒高门槛要么放过被缩到一半的字、要么冤枉正常的字。活 Text 读 `style.fontSize`，烘焙标签读 `fastText.ts` 盖上的 `fsPx`。`tiny` 条目的 `b` 字段直接写诊断 `font=24 scale=0.68`——是「场景要小了」还是「有人整组缩了」，修法完全不同。
 
 **为什么必须在这一层**：headless `test:ui` 的 `measureText` 桩是「字符数 × 7px、与字号无关」（`test/harness/pixiHeadless.ts`），而竖屏问题清一色是宽度不够导致的折行/溢出——那层结构性复现不了。`test/ui/titlesPortraitOverlap.ui.ts` 的头注释早就为同一件事把真断言挪去了一个纯算术测试。
 
@@ -300,7 +313,7 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 **后端**：与 `test:browser` 不同，这条跑在 **Docker 全栈**（`./docker/local-up.ps1`，nginx 单口 8088）上，所以它有自己的 `playwright.portrait.config.ts`（客户端 dev server 另开 9097，五个 `NW_*` 基址写死在配置里）。两份配置都加了 `--no-open`——`webpack.config.js` 的 `devServer.open: true` 会在每次起服务时弹开发者本机的默认浏览器。
 
-首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-08.md`](../design/game/UI_DESIGN_LOG_2026-08.md) §48。
+首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-08.md`](../design/game/UI_DESIGN_LOG_2026-08.md) §48；第二轮（可读性下限 + 扩面到 32 站 × 6 尺寸 + 它带出来的 7 处返工）见 §49。
 
 ## E2E / 冒烟 harness 维护红线：HeadlessAppViews 必须实现 AppViews 全接口
 

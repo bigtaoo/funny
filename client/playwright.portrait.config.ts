@@ -17,8 +17,10 @@ const STACK = 'http://localhost:8088';
 export default defineConfig({
   testDir: './test/browser',
   testMatch: 'portraitLayout.spec.ts',
-  // Three viewports x ~15 screens, each a real navigation against a real backend.
-  timeout: 300_000,
+  // Six viewports x ~33 stops, each a real navigation (or a real tap into a modal) against a real
+  // backend, and one Playwright test per viewport — so this is the budget for ONE viewport's whole
+  // walk, not for the run. The run is ~25 minutes.
+  timeout: 600_000,
   fullyParallel: false,
   retries: 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
