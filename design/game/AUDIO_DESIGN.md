@@ -929,7 +929,12 @@ no-op / `peak_regions` 的两个已知答案），共 112 例全过；`musicAsse
   getter）→ **真的变成 `suspended`** → 回前台 → 回到 `running`。把 `ContextAudioBus.ts` 还原成改
   之前，这条当场红。单元测试只能证明「我们调了 `suspend()`」，证明不了浏览器真的松手，而这次改动
   的全部意义就是那个状态。
-- **单元**：`ContextAudioBus.test.ts` +8、`WebAudioBus.test.ts` +4、`WechatAudioBus.test.ts` +3。
+- **单元**：`ContextAudioBus.test.ts` +10、`WebAudioBus.test.ts` +4、`WechatAudioBus.test.ts` +3，另加
+  新套件 `audioSessionWiring.test.ts`（6 例）——**真 `audioSettings` + 真 `ContextAudioBus` 合在一起**：
+  静音 / 主音量拖到底 / 广告静音这三条玩家真会走的路，此前两端各自被测、**中间那条链没有任何用例走过**
+  （一边驱动记录型假 bus，一边直接调音量 setter）。它**抓不到任何「只有它能抓到」的变异**（实测：把
+  `apply()` 的 0 改成 0.0001，这里红 4、既有两个套件也红 6），钉的是**组合**——两端各自守着契约、链子
+  却在中间断掉时，两边都会继续绿。唯一别处完全没有的组合：广告释放会话之后、带着 BGM deck 一起恢复。
   逐半边回退验过：还原中立那半 → 8 条里红 6（另 2 条钉的是「音量推送不得提前造上下文」这类不变量，
   本来就成立）；还原两个平台半边 → 各红 1。三个被改的源文件在覆盖率报告里都是 100%。
 - 既有的 334 条音频用例、3612 条客户端用例、`test:sim` 13 条全绿；`audioDucking.spec.ts` 在真
