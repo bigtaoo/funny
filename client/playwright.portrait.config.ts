@@ -16,7 +16,10 @@ const STACK = 'http://localhost:8088';
 
 export default defineConfig({
   testDir: './test/browser',
-  testMatch: 'portraitLayout.spec.ts',
+  // The sweep, plus the one-off fixture recorder it depends on (captureEndStats.spec.ts skips
+  // itself unless NW_CAPTURE=1, so listing it here costs a skipped test and buys the ability to
+  // regenerate the fixture against the same stack, on the same dev server, with one command).
+  testMatch: /(portraitLayout|captureEndStats)\.spec\.ts$/,
   // Six viewports x ~33 stops, each a real navigation (or a real tap into a modal) against a real
   // backend, and one Playwright test per viewport — so this is the budget for ONE viewport's whole
   // walk, not for the run. The run is ~25 minutes.

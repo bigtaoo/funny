@@ -906,3 +906,131 @@ MIN_LEGIBLE_CSS_PX = 7    FLOOR_CAP = FS.bodyLg (20)
 - `npm run test:portrait` 六个尺寸 × 32 站全绿（单次全量 ~26 分钟）。中间态值得记一笔：**下限改完的第一轮，六个尺寸只剩 3 条 finding，且是同一族**（平板/平板横屏的 `Clear`、手机横屏的 `Feedback`），也就是上面的 C 两个洞——这轮的门禁确实能把「还差哪一类」收敛成一句话。
 - **视觉核对**：报告自带每站 PNG（`client/portrait-report/<视口>/<站>.png`，dpr 2），主城/图鉴/英雄列表/战令/世界地图逐张看过。
 - **没做的**：真机（本轮全在 Chromium）；微信小游戏入口（Playwright 到不了）；上面 §49.1 说的竖屏设计宽度那件大事。
+
+## 50. 竖屏第三轮：给巡检喂真实数据 + 三语 + 微信入口盘点（2026-09-11 晚，**进行中**）
+
+> **状态：未完成。** 工具侧（数据库 seed、站点表修复、三语矩阵、真实结算数据的录制器、
+> 微信文字度量探针）已落地并各自验过；**全量巡检还没跑，因此「查出了什么」这一节是空的**。
+> 分支 `feat/portrait-seed`（worktree `.claude/worktrees/portrait-seed`），接手看 §50.6。
+
+### 50.1 前两轮真正的盲区不是站少，是**站里没东西**
+
+§48 走 21 站、§49 扩到 32 站 × 6 尺寸，都全绿收尾。但把 `phone-390x844` 的 32 张 PNG
+逐张看下来，**绝大多数渲染的是空状态**：排行榜 1677 个号全是 elo 1000 / `Unranked`（名字还有一半
+是 `#830489724` 这种没设 displayName 的公开 id），拍卖行 12 个标签、好友 10 个、活动 2 个，
+邮箱进不去，家族/宗门报 gated 直接跳过。
+
+**空表不会撑坏版面。** 版面是被内容撑坏的——四位数、满员列表、超长名字、带附件的长正文。所以这轮
+的第一件事不是再加站，是**给已有的站喂满内容再走一遍**。
+
+### 50.2 seed 为什么必须由 spec 在登录之后调用
+
+`client/test/browser/lib/seed.ts` + `seedFixtures.ts`：直接往 docker 栈的 mongo 写，
+`docker exec -i nw-local-mongo sh -c 'cat > /tmp/... && mongosh --file ...'`。
+
+- **不走 UI**：40 人家族要 40 个真玩家、Top-100 要 100 个上榜号，UI 根本产不出来；能产的也要按站按
+  视口各花几分钟。
+- **不能预先写死**：socialsvc 只存 accountId，显示名是读的时候实时问 metaserver 的；家族/宗门的
+  每一处权限判断都比 `leaderId`。所以成员必须是**真账号**、族长必须是**浏览器当次登录的那个号**
+  ——而那是 `registerAndEnterLobby` 几秒钟前刚注册的随机号。**预先写好的 seed 不可能知道它。**
+- **两段**：账号侧（卡/装备/邮件/好友/家族/拍卖/排行榜）在登录后立刻跑；世界侧（五队满编、
+  行军/占领/驻扎/被围攻、宗门、世界频道）必须等 `joinWorld` 建出 `PlayerWorldDoc` 之后——所以
+  spec 先走一趟世界地图，回大厅，再喂第二段。
+
+**踩到的**：`mongosh` 直接吃 stdin 是 REPL——提示符 `rs0 [direct: primary] db>` 会跟脚本输出印在
+同一行，而且逐行求值，多行 `function`/`if` 全看它的续行判断。改成 `sh -c 'cat > 文件 && mongosh
+--file'`，多花一个进程换回正常脚本语义。结果行靠 `@@NWSEED@@` 前缀认，不靠行号。
+
+**踩到的（二）**：`TileDoc._id` 已经是全限定的 `worldId:x:y`，`mainBaseTile` 就是一个 tile id，
+不是 `x,y`。第一版按 `x,y` 拼、再自己前缀 worldId，写出来的行军/占领全落在不存在的格子上。
+
+**内容的取值原则**：每个值都取**真实的最坏情况**——名字取到 `MAX_DISPLAY_NAME_LEN`(24) / 家族名取到
+`ORG_NAME_WIDTH_MAX`(12 显示宽 = 6 个全角字)、金币七位、家族满 40 人、邮件 24 封（含 80 字上限的
+标题 + 1200 字正文 + 四位数附件）、拍卖 44 条（跨页，混固定价/竞价）、排行榜 120 人四位数分档。
+CJK 名字刻意占多数：全角一个字两个显示宽，是这个字段物理上最宽的可能。
+
+### 50.3 站点表的三处真错（都是这轮才看出来的）
+
+1. **`friends.png` 一直是三站互相覆盖的结果。** `goMail()` 和世界地图的聊天按钮都是
+   `goFriends({defaultTab})`（`app/nav/social.ts`），三个入口都报 `screen: 'friends'`，于是共用
+   一个报告槽和一个截图文件——**这个场景三分之二的表面从来没被审过**。已拆成
+   `friends` / `friends+mail` / `friends+world` / `friends+mailRead`。
+2. **feedback 根本不是一个 screen。** `onOpenFeedback` → `requestFeedbackDialog()`（`net/log.ts`）
+   → app.ts 注册的 sink 把 `FeedbackDialog` 挂到 `app.stage`。巡检等了十秒的「切屏」永远不会来，
+   于是记成「这个账号没有这个功能」。新增 `stay` 跳法（调完不等切屏）+ `reloadAfter`（大厅之上的
+   浮层，`backToLobby` 拆不掉，只能刷新）。
+3. **family / sect 是输在时序上，不是输在数据上。** `openFamilyHub()/openSectHub()` 在
+   `loadSLGStatus` 解出分片 id 之前一律返回 false，而那个加载只在玩家切到对应 tab 时才跑。
+   `callCb` 改成**返回 promise 就 await**，站点表里先跳一手 `{fn:'loadSLGStatus', stay:true}`。
+
+### 50.4 三语：locale 是视口矩阵的一列，不是一个乘数
+
+`initI18n` 在**任何场景构建之前**读 `localStorage['nw_locale']`，所以只能用
+`context.addInitScript` 在首次导航前塞，不能事后去设置页点。此前每轮跑的都是 Chromium 自己的
+`en-US` —— 也就是说**德语和中文从来没被门禁跑过**。
+
+三语 × 六视口 = 75 分钟，太贵。改成**矩阵加四行**：德语和中文只上两台手机（390×844 / 360×640）。
+德语是逐词最长的那门（撑破按钮的是它），中文是全角、且没有空格可供折行（是另一类失败）；
+四个更宽的视口在英语下本来就有余量，多出来的字符吃得下。
+
+连带的必然改动：`{tap: '文字'}` 这种站点在三语下会找不到标签，全部改成
+**`{tap: <TranslationKey>}`**，由 spec 自己按该视口的 locale 查字典（直接 import
+`src/i18n/locales/*`，纯数据、零运行时依赖），带 `{cost}` 占位符的取 `{` 之前的字面前缀。
+另加一个 `{tapText}` 形式，只允许用于**本套件自己写进数据库的字符串**（那封 `Kampfbericht #1001`
+邮件），因为它不依赖「这个号恰好发到哪几张卡」。
+
+### 50.5 结算页：录一遍真的，而不是编一份像的
+
+`result` 站原先喂的是手写 stats，`killsByType`/`castsByType` 是两个空对象 —— 那是屏幕上**最宽最高
+的两块**，空的等于这一站审的是玩家永远看不到的一个画面。
+
+改成两站：
+- **`result`** 喂 `endStatsFixture.ts`，由 `captureEndStats.spec.ts`（`NW_CAPTURE=1` 才跑，平时
+  skip）**真打完一局 AI** 录下来。巡检自己不打，是因为那要按视口付十次分钟级的代价，而这一站审的
+  数字在比赛结束那一刻就定死了。
+- **`result+extreme`** 保留一份合成的极值（七位伤害、五种兵种的击杀分布）。**录制的那份是真实的，
+  真实就意味着它不极端**，两者不能互相替代。
+
+### 50.6 微信入口：先纠正一个前提，再说能做什么
+
+**`entries/wechat-e2e.ts` 不是 `web-e2e` 的孪生，也没有 `__nwE2E`。** 它的文件头这么自称，但它
+实际做的只有一件事：构造 `WechatAudioBus`、在 SFX 总线上挂表、逐个 cue 量交付峰值，写一份 JSON 到
+`USER_DATA_PATH`。**它不调 `startApp`、不建 PIXI、不挂任何 state/app 出口**，`wechat-probe.ts` 同理
+（它只采宿主表面）。所以「把同一张 STOPS 表接上去」目前**没有可接的接口**。
+
+**`claudedocs/client-testing.md` 第 284 行指的那条路（minium / 小程序自动化 SDK）是已经被证伪的死
+路**，证据就写在 `wechat-e2e.ts` 自己的文件头里（2026-08-31 实测）：`miniprogram-automator` 能连上
+socket，但每一个 `evaluate` / `callWxMethod` 都**永久挂起**——小游戏没有 appservice 供这些命令抵达。
+这一条要从那份文档里改掉，别让下一个人再去试一次。
+
+**因此真正可行的形状是「探针入口」，不是「外部自动化」**：一个 `build:wechat-*` 入口，在包内自己
+启动游戏、自己走站、自己跑 `layoutAudit`、把报告写进 `USER_DATA_PATH`（开发者工具模拟器下那是本机
+真实目录，会话能直接读）。这正是现有两个探针入口的形状。要做的前置：把 `instrumentViews` 从
+`entries/web-e2e.ts` 抽成共享模块、把 `layoutAudit.ts` 从 `test/` 挪进能被打包的位置、给包内的走站
+逻辑一份不依赖 Playwright 的实现。**本轮没做。**
+
+**本轮做了的是那件更要紧、也更便宜的**：`src/render/textMetricsProbe.ts`——量
+`ctx.measureText` 在这个运行时上到底给什么。理由是全仓库每个文字样式都写
+`fontFamily: 'monospace'`，而 §49 的两条结论都压在它身上：`fitFont` 一次除法算出「装得下的字号」
+只在「等宽字体宽度随字号线性」时成立，可读性下限则是一句关于「一个字最后有多大」的断言。小游戏
+运行时没有 DOM、canvas 来自 `wx.createCanvas()`、`'monospace'` 由手机自己解析（很多安卓机对 CJK
+给不出等宽面）。**同一个函数**跑两边——`wechat-probe.ts` 里喂 `wx.createCanvas()`，
+`test/browser/textMetrics.spec.ts` 里喂 `document.createElement('canvas')`——因为要的是**差值**，
+两个数必须由同一份源码产出。Chrome 那侧断言的是两条真正被依赖的性质（每字advance 与字号成正比、
+`M` 和 `i` 等宽），不钉具体像素（那是 CI 镜像装了什么字体的性质，会为错误的理由变红）。
+
+### 50.7 接手清单（按顺序）
+
+1. `endStatsFixture.ts` 还没生成——`NW_CAPTURE=1 npx playwright test --config
+   playwright.portrait.config.ts captureEndStats`。**本轮那次跑了 15 分钟没结束**：无输入的 AI 局
+   到底会不会自己打完，是个还没有答案的问题；不会的话退而求其次用投降（`gameCb` 的退出回调）录
+   一份真实但短的，并在这里记明白。**在它生成之前 `tsc` 是红的**（spec 已经 import 了它）。
+2. 跑一次单视口 `--grep phone-390x844`，先把 seed 接线跑通（seed 本体已用
+   `scripts` 之外的一次性 dry-run 验过：两段都 ok，落地 51 卡 / 204 装备 / 40 人家族 / 24 邮件 /
+   44 拍卖 / 5 队满编）。
+3. **已知待修**：世界侧 seed 想占 48 格地，实际只落了 9 格——`tiles` 是稀疏的，主城周围 7×7 里多数
+   格子没有文档。要么按存在的格子挑，要么补 insert。
+4. 全量十行矩阵跑一遍，逐张读 PNG（机器判不了留白和层级）。
+5. 修出来的问题，回填本节 50.8。
+6. `claudedocs/client-testing.md`：「几何巡检」一节补 seed / 三语 / 站点表修正；第 284 行那句
+   minium 的话按 §50.6 改掉。
