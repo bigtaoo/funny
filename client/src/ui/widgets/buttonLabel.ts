@@ -90,7 +90,7 @@ export function drawButtonLabel(
     target.addChild(glyph);
     const soloFit = Math.min(1, fitW / Math.max(1, text.width));
     text.anchor.set(0.5, 0);
-    text.scale.set(soloFit);
+    text.scale.set(soloFit);   // anchored at its centre, so no width read is needed after scaling
     text.x = Math.round(x + w / 2);
     text.y = Math.round(top + stackSz + icGap);
     target.addChild(text);
@@ -101,9 +101,15 @@ export function drawButtonLabel(
   const fit = groupW > fitW ? fitW / groupW : 1;
 
   if (!icon || fit < (opts.minFit ?? 0.82)) {
-    const soloFit = Math.min(1, fitW / Math.max(1, text.width));
+    // `text.width` is a live getter over the scale, so it must be read ONCE, before scaling:
+    // reading it again afterwards and multiplying by the fit applies the shrink twice, and the
+    // label is centred as if it were narrower than it is — i.e. pushed right, past the button's
+    // own edge. Every too-long button label in the game was off-centre and overflowing this way
+    // (Settings' Rename / Delete Account / Replay tutorial, measured in portrait 2026-09-11).
+    const rawW = text.width;
+    const soloFit = Math.min(1, fitW / Math.max(1, rawW));
     text.scale.set(soloFit);
-    text.x = Math.round(x + (w - text.width * soloFit) / 2);
+    text.x = Math.round(x + (w - rawW * soloFit) / 2);
     text.y = y + h / 2;
     target.addChild(text);
     return;

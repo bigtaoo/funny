@@ -134,7 +134,12 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     return null;
   };
 
-  interface Label { order: number; label: string; rect: AuditRect }
+  /**
+   * `overlay` marks a node inside a container the product named `overlay:*` — an onboarding
+   * spotlight, for now. Such a layer is MEANT to cover the screen it points at, so it is compared
+   * against itself and never against the scene under it; its own internal layout is still judged.
+   */
+  interface Label { order: number; label: string; rect: AuditRect; overlay: boolean }
   interface Cover { order: number; rect: AuditRect }
   /**
    * A box a label could have been drawn INTO. Every `sketchPanel`/`sketchButton` puts its fill
@@ -142,7 +147,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
    * right population to look in: a `Container`'s bounds are the union of its children and would
    * grow to swallow the very overflow this is looking for.
    */
-  interface Frame { order: number; rect: AuditRect; alpha: number; solid: boolean }
+  interface Frame { order: number; rect: AuditRect; alpha: number; solid: boolean; overlay: boolean }
 
   /**
    * True when this node paints its whole bounding box — a `Graphics` with a filled rect (every
@@ -168,7 +173,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
   let order = 0;
 
   // Pre-order DFS = PIXI's own paint order, so a higher `order` is drawn later, i.e. on top.
-  const walk = (n: NodeLike, clip: AuditRect | null, parentAlpha: number): void => {
+  const walk = (n: NodeLike, clip: AuditRect | null, parentAlpha: number, inOverlay: boolean): void => {
     if (!n.visible || n.alpha <= 0.02) return;
     const alpha = parentAlpha * n.alpha;
     if (alpha <= 0.05) return;
@@ -180,6 +185,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
       if (nextClip.w <= 0 || nextClip.h <= 0) return;   // subtree is clipped away entirely
     }
 
+    const overlay = inOverlay || (typeof n.name === 'string' && n.name.indexOf('overlay:') === 0);
     const mine = order++;
     if (n.renderable) {
       const raw = rectOf(n);
@@ -187,7 +193,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
       if (box.w > 0 && box.h > 0) {
         const label = labelOf(n);
         if (label !== null) {
-          labels.push({ order: mine, label, rect: box });
+          labels.push({ order: mine, label, rect: box, overlay });
         } else if (!n.children?.length) {
           const area = box.w * box.h;
           if (alpha >= 0.85 && area >= 0.45 * screenArea) {
@@ -195,15 +201,15 @@ export function auditLayout(opts: AuditOptions): AuditResult {
             // desk surround. Anything drawn before one of these and inside it cannot be seen.
             covers.push({ order: mine, rect: box });
           } else if (box.w >= 12 && box.h >= 12 && area <= 0.35 * screenArea) {
-            frames.push({ order: mine, rect: box, alpha, solid: isSolidBox(n) });
+            frames.push({ order: mine, rect: box, alpha, solid: isSolidBox(n), overlay });
           }
         }
       }
     }
     const kids = n.children;
-    if (kids) for (let i = 0; i < kids.length; i++) walk(kids[i]!, nextClip, alpha);
+    if (kids) for (let i = 0; i < kids.length; i++) walk(kids[i]!, nextClip, alpha, overlay);
   };
-  walk(app.stage, null, 1);
+  walk(app.stage, null, 1, false);
 
   const visible = labels.filter((l) => !covers.some((c) => c.order > l.order && contains(c.rect, l.rect)));
 
@@ -237,7 +243,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     // title) turns every ordinary button into a finding, since a fill that is a pixel tighter than
     // its own label reads as "swallows most of it and stops".
     for (const f of frames) {
-      if (f.order < l.order || f.alpha < 0.6 || !f.solid) continue;
+      if (f.order < l.order || f.alpha < 0.6 || !f.solid || f.overlay !== l.overlay) continue;
       const hit = intersect(box, f.rect);
       if (hit.w * hit.h > boxArea * 0.35) {
         findings.push({
@@ -268,7 +274,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     const cx = box.x + box.w / 2;
     const cy = box.y + box.h / 2;
     for (const f of frames) {
-      if (f.order > l.order || f.rect.w * f.rect.h < boxArea * 1.2) continue;
+      if (f.order > l.order || f.overlay !== l.overlay || f.rect.w * f.rect.h < boxArea * 1.2) continue;
       if (contains(f.rect, box)) { frame = null; break; }   // fits something — done
       if (cx < f.rect.x || cx > f.rect.x + f.rect.w || cy < f.rect.y || cy > f.rect.y + f.rect.h) continue;
       const inside = intersect(box, f.rect);
@@ -297,6 +303,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
       const a = visible[i]!;
       const b = visible[j]!;
       // A label drawn twice at a 1-2px offset is a hand-rolled drop shadow, not a collision.
+      if (a.overlay !== b.overlay) continue;   // an overlay may cover the scene it sits on
       if (a.label === b.label &&
           Math.abs(a.rect.x - b.rect.x) <= 4 && Math.abs(a.rect.y - b.rect.y) <= 4) continue;
       const ia = ink(a.rect);

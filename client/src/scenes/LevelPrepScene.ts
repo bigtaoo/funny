@@ -149,8 +149,14 @@ export class LevelPrepScene implements Scene {
       y = this.drawRewards(this.cb.rewards, y);
     }
 
+    // The stamina line and the Start button are bottom-anchored, so the brief above them has a
+    // hard ceiling on how much room it may take. Its height is computed from these, hence both
+    // are resolved BEFORE the top-down content is drawn.
+    const stBarH = Math.round(h * 0.055);
+    const stBarY = h - stBarH - Math.round(h * 0.14);
+
     if (this.cb.brief) {
-      y = this.drawBrief(y);
+      y = this.drawBrief(y, stBarY - Math.round(h * 0.02));
     }
     void y; // objective/rewards/brief flow top-down; stamina + Start are bottom-anchored below.
 
@@ -158,8 +164,6 @@ export class LevelPrepScene implements Scene {
     const stamina = this.cb.getStamina();
     const stCost = this.cb.staminaCost;
     const stInsufficient = stamina.current < stCost;
-    const stBarH = Math.round(h * 0.055);
-    const stBarY = h - stBarH - Math.round(h * 0.14);
     const stColor = stInsufficient ? C.red : C.accent;
     const stTxt = txt(
       t('stamina.cost', { cost: stCost, current: stamina.current }),
@@ -316,25 +320,45 @@ export class LevelPrepScene implements Scene {
     return y + panH + Math.round(h * 0.01);
   }
 
-  private drawBrief(y: number): number {
+  /**
+   * The level's story brief. `maxBottom` is where the panel must stop — the stamina line sits just
+   * below it, and this panel used to size itself purely from its own wrapped text: in portrait the
+   * chapter-one brief wrapped to ~17 lines, ran the panel off the bottom of the screen, and the
+   * stamina readout was drawn straight through the middle of the paragraph (measured at 360x640
+   * and 768x1024, 2026-09-11). Landscape never showed it because the same text wraps to half as
+   * many lines there.
+   *
+   * The brief steps DOWN the font scale until it fits rather than being clipped: it is flavour the
+   * player reads once, and a smaller whole paragraph beats a cut-off one. Below the smallest step
+   * it is clipped to the box, so a pathological string can never reach the stamina line again.
+   */
+  private drawBrief(y: number, maxBottom: number): number {
     const { w, h } = this;
     const padX = marginLineX(w);
     const panW = w - padX - Math.round(w * 0.06);
-    const fontSize = FS.headline;
     const innerPadX = Math.round(panW * 0.06);
     const wrapWidth = panW - innerPadX * 2;
     const padV = Math.round(h * 0.012);
+    const maxTextH = Math.max(0, maxBottom - y - padV * 2);
 
-    const scratch = makeText(this.cb.brief!, {
-      fontSize,
+    const build = (size: number): PIXI.Text => makeText(this.cb.brief!, {
+      fontSize: size,
       fill: C.mid,
       wordWrap: true,
       wordWrapWidth: wrapWidth,
       breakWords: true,
-      lineHeight: Math.round(fontSize * 1.55),
+      lineHeight: Math.round(size * 1.55),
     });
+
+    const STEPS = [FS.headline, FS.title, FS.heading, FS.label, FS.bodyLg, FS.body, FS.small] as const;
+    let scratch = build(STEPS[0]);
+    for (let i = 1; i < STEPS.length && scratch.height > maxTextH; i++) {
+      scratch.destroy();
+      scratch = build(STEPS[i]!);
+    }
     scratch.anchor.set(0, 0);
-    const panH = Math.ceil(scratch.height) + padV * 2;
+    const textH = Math.min(Math.ceil(scratch.height), maxTextH);
+    const panH = textH + padV * 2;
 
     const bg = sketchPanel(panW, panH, {
       fill: C.paper, border: C.line, width: 1.2, seed: seedFor(padX, y, panW),
@@ -345,6 +369,15 @@ export class LevelPrepScene implements Scene {
 
     scratch.x = padX + innerPadX;
     scratch.y = y + padV;
+    if (scratch.height > textH) {
+      // Still taller than the box at the smallest step — clip rather than overflow.
+      const clip = new PIXI.Graphics();
+      clip.beginFill(0xffffff);
+      clip.drawRect(padX, y, panW, panH);
+      clip.endFill();
+      this.container.addChild(clip);
+      scratch.mask = clip;
+    }
     this.container.addChild(scratch);
 
     return y + panH + Math.round(h * 0.012);

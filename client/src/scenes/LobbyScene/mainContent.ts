@@ -273,10 +273,26 @@ function drawPillar(
   const titleLbl = txt(title, snapFont(Math.round(h * 0.22)), C.dark, true);
   titleLbl.anchor.set(0.5, 0.5);
   titleLbl.x = x + w / 2; titleLbl.y = y + h * 0.70;
+  fitToCard(titleLbl, w);
   core.container.addChild(titleLbl);
 
   const subLbl = txt(sub, snapFont(Math.round(h * 0.12)), C.mid);
   subLbl.anchor.set(0.5, 0.5);
   subLbl.x = x + w / 2; subLbl.y = y + h * 0.88;
+  fitToCard(subLbl, w);
   core.container.addChild(subLbl);
+}
+
+/**
+ * Shrink a centred pillar label to the card, the same way the hero subtitle above already fits
+ * itself to `contentW`.
+ *
+ * Without this the world pillar's locked subtitle ("Clear Chapter 1 to unlock", and longer in
+ * German) ran ~70px past a 145px-wide card in portrait and straight through the Auction shortcut
+ * in the side strip — measured on all three portrait viewports, 2026-09-11. In landscape the card
+ * is wide enough that nothing ever clipped, which is why it stood this long.
+ */
+function fitToCard(label: PIXI.Text, cardW: number): void {
+  const maxW = cardW * 0.9;
+  if (label.width > maxW) label.scale.set(maxW / label.width);
 }
