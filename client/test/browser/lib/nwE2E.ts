@@ -109,6 +109,54 @@ export async function callCb(
 }
 
 /**
+ * Taps the on-screen label whose text contains `needle`, by walking the real display tree for it
+ * and clicking its centre. Returns false when no visible label matches.
+ *
+ * The callback bags (`state.<screen>Cb`) are the navigation graph between SCREENS, and that is all
+ * they are: a modal — a city building's detail card, a hero's detail sheet, a gacha reveal — is
+ * opened by a hit rect inside the scene, is never a screen, and therefore has no callback anywhere
+ * for a sweep to call. Tapping is how a player opens one and it is how this does too: a real
+ * pointer event at real coordinates, through the real InputManager and the scene's own hit table.
+ * Addressing the target by its label (rather than by a rect the test would have to know) keeps the
+ * stop table readable and keeps it out of the business of scene internals.
+ *
+ * Topmost match wins on ties by `order` — the last one painted is the one a player's finger would
+ * reach, which matters once a modal is already up.
+ */
+export async function tapLabel(page: Page, needle: string): Promise<boolean> {
+  const pt = await page.evaluate((text: string) => {
+    interface N {
+      visible: boolean; alpha: number; name: string | null; text?: unknown; children?: N[];
+      getBounds(skipUpdate?: boolean): { x: number; y: number; width: number; height: number };
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const app = (window as any).__nwE2E?.app as { stage: N } | undefined;
+    if (!app) return null;
+    const best: { x: number; y: number } = { x: NaN, y: NaN };
+    const walk = (n: N): void => {
+      if (!n.visible || n.alpha <= 0.02) return;
+      const own = typeof n.text === 'string' ? n.text
+        : typeof n.name === 'string' && n.name.indexOf('txt:') === 0 ? n.name.slice(4)
+        : null;
+      if (own !== null && own.indexOf(text) >= 0) {
+        const b = n.getBounds(false);
+        if (b.width > 0 && b.height > 0) {
+          best.x = b.x + b.width / 2;
+          best.y = b.y + b.height / 2;
+        }
+      }
+      const kids = n.children;
+      if (kids) for (const k of kids) walk(k);
+    };
+    walk(app.stage);
+    return Number.isFinite(best.x) ? best : null;
+  }, needle);
+  if (pt === null) return false;
+  await page.mouse.click(pt.x, pt.y);
+  return true;
+}
+
+/**
  * Dismisses the first-time feature guide (ONBOARDING_DESIGN §4.1) if one is up. Most
  * lobby-reachable features sit behind one on a fresh account, and it is shown INSTEAD of
  * navigating — so a sweep that doesn't clear it just sees the lobby again.

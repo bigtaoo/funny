@@ -110,6 +110,9 @@ export const GRID_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS;
 // the scene; tapping a card opens that team's formation editor.
 export const TEAM_ROW_CARD_H = 128;
 export const TEAM_ROW_LABEL_H = 26;
+/** Portrait-only gap between the band's header row (label + fill button) and the cards — see
+ *  ./teamRow.ts for what it fixes. */
+export const TEAM_ROW_HEADER_GAP = 18;
 
 export class CitySceneCore {
   readonly container: PIXI.Container;
@@ -118,6 +121,8 @@ export class CitySceneCore {
 
   readonly w: number;
   readonly h: number;
+  /** Portrait design space — what the building grid (./gridMetrics.ts) and the team band key off. */
+  readonly portrait: boolean;
   readonly cb: CitySceneCallbacks;
 
   readonly bt = new BusyTracker();
@@ -203,6 +208,7 @@ export class CitySceneCore {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.portrait = layout.orientation === 'portrait';
     this.cb = cb;
     this.paint = new CityPaint(this);
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));

@@ -22,14 +22,23 @@ export interface AuditFinding {
    * (partly) outside the canvas. `overflow` — a label spilling out of the button/panel box it was
    * drawn into, which is what a too-narrow portrait column actually produces: the text does not
    * collide with another label, it just runs past its own frame and over whatever is beside it.
-   * `tiny` — a label rendered below the design's smallest font token, i.e. shrunk to fit rather
-   * than laid out, and unreadable on a phone. `covered` — a label painted over by opaque art drawn
+   * `tiny` — a label whose effective font size (its own size times whatever local scale sits above
+   * it) is below the legibility floor the font scale promised for this viewport: either a size
+   * asked for off the scale, or — far more often — a group shrunk to fit a box too narrow for it. `covered` — a label painted over by opaque art drawn
    * after it (a progress bar running through a title, say): still "visible" to the tree, gone to
    * the eye.
    */
   kind: 'overlap' | 'offscreen' | 'overflow' | 'tiny' | 'covered' | 'placeholder';
   a: string;
-  /** The other label for `overlap`, `'frame'` for `overflow`, empty for `offscreen`. */
+  /**
+   * The other label for `overlap`, `'frame'` for `overflow`, empty for `offscreen`. For `tiny` it
+   * is the DIAGNOSIS — `font=<px> scale=<x>` — because "this label is too small" is never
+   * actionable on its own: either the scene asked for a size below the floor, or something above
+   * it shrank a group to fit (`row.scale.set(maxW / row.width)`, `drawButtonLabel`'s solo fit),
+   * and the fix is completely different. `font` is the style's own fontSize in design px (only a
+   * live `PIXI.Text` carries one; a baked label reports `?`), `scale` is the local scale on top of
+   * the layout's design→screen factor, so 1.00 means nothing shrank it.
+   */
   b: string;
   rectA: AuditRect;
   rectB: AuditRect;
@@ -46,9 +55,15 @@ export interface AuditOptions {
   designW: number;
   designH: number;
   /**
-   * Smallest ink height (design px) a label may render at before it counts as shrunk-to-fit.
-   * `FS.micro` is the design's own floor, so anything whose whole ink box is shorter than one
-   * micro font size has been scaled below what any scene is allowed to ask for.
+   * Smallest EFFECTIVE font size (design px) a label may render at — `fontFloorDesignPx(scale)`
+   * for this viewport (render/fontScale.ts).
+   *
+   * Read off the label's own font size, not its box: a baked label's bounds are its trimmed glyph
+   * box (~0.96x the font size) and a live `PIXI.Text`'s are its line box (~1.35x), so a
+   * bounds-derived gate has to be loose enough to accept the tighter of the two and then no
+   * longer separates "asked for a size below the floor" from "asked for a legible one". Live Text
+   * carries `style.fontSize`; baked labels carry `fsPx` (render/fastText.ts stamps it for exactly
+   * this). A label with neither falls back to the box, deflated, which is what this used to be.
    */
   minInkDesignPx: number;
 }
@@ -86,6 +101,12 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     text?: unknown;
     mask?: NodeLike | null;
     children?: NodeLike[];
+    /** Present on `PIXI.Text` only. */
+    style?: { fontSize?: unknown };
+    /** Stamped by render/fastText.ts on every baked label — its font size in design px. */
+    fsPx?: unknown;
+    /** Populated by `getBounds()`; `a` is the horizontal world scale. */
+    worldTransform?: { a: number };
     /** Present on `PIXI.Graphics` only — what it was actually told to draw. */
     geometry?: { graphicsData?: Array<{ shape?: { type?: number }; fillStyle?: { visible?: boolean; alpha?: number } }> };
     getBounds(skipUpdate?: boolean): { x: number; y: number; width: number; height: number };
@@ -139,7 +160,13 @@ export function auditLayout(opts: AuditOptions): AuditResult {
    * spotlight, for now. Such a layer is MEANT to cover the screen it points at, so it is compared
    * against itself and never against the scene under it; its own internal layout is still judged.
    */
-  interface Label { order: number; label: string; rect: AuditRect; overlay: boolean }
+  interface Label {
+    order: number; label: string; rect: AuditRect; overlay: boolean;
+    /** Style fontSize if this is a live Text, else null (a baked label has no style). */
+    fontPx: number | null;
+    /** World horizontal scale — divided by the design scale below to get the local shrink. */
+    worldScale: number;
+  }
   interface Cover { order: number; rect: AuditRect }
   /**
    * A box a label could have been drawn INTO. Every `sketchPanel`/`sketchButton` puts its fill
@@ -193,7 +220,12 @@ export function auditLayout(opts: AuditOptions): AuditResult {
       if (box.w > 0 && box.h > 0) {
         const label = labelOf(n);
         if (label !== null) {
-          labels.push({ order: mine, label, rect: box, overlay });
+          const own = Number(typeof n.fsPx === 'number' ? n.fsPx : n.style?.fontSize);
+          labels.push({
+            order: mine, label, rect: box, overlay,
+            fontPx: Number.isFinite(own) && own > 0 ? own : null,
+            worldScale: n.worldTransform?.a ?? 1,
+          });
         } else if (!n.children?.length) {
           const area = box.w * box.h;
           if (alpha >= 0.85 && area >= 0.45 * screenArea) {
@@ -260,8 +292,19 @@ export function auditLayout(opts: AuditOptions): AuditResult {
       findings.push({ kind: 'placeholder', a: l.label, b: '', rectA: l.rect, rectB: empty, frac: 0 });
     }
 
-    if (box.h / scale < opts.minInkDesignPx) {
-      findings.push({ kind: 'tiny', a: l.label, b: '', rectA: l.rect, rectB: empty, frac: 0 });
+    // Local scale on top of the layout's own design→screen factor: 1 means nothing shrank this
+    // label, 0.68 means a shrink-to-fit group above it took a third off.
+    const local = scale > 0 ? l.worldScale / scale : 1;
+    // No font size to read (a `PIXI.Text` subclass with a non-numeric style, say): fall back to the
+    // ink box and the loosest of the two box-to-font ratios, so the fallback cannot cry wolf.
+    const effective = l.fontPx !== null ? l.fontPx * local : (box.h / scale) / 0.77;
+    if (effective < opts.minInkDesignPx) {
+      findings.push({
+        kind: 'tiny', a: l.label,
+        b: `font=${l.fontPx ?? '?'} scale=${local.toFixed(2)}`,
+        rectA: l.rect, rectB: empty,
+        frac: Math.round(effective * 10) / 10,
+      });
     }
     // Which box was this label drawn into? The tree does not say, so the question is answered the
     // only way that holds across every scene: if ANY box painted under the label holds all of it,
@@ -275,7 +318,19 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     const cy = box.y + box.h / 2;
     for (const f of frames) {
       if (f.order > l.order || f.overlay !== l.overlay || f.rect.w * f.rect.h < boxArea * 1.2) continue;
+      // "Fits something" is answered by ANY box under the label — a decorative panel the label sits
+      // comfortably inside is exactly as good an answer as a button fill.
       if (contains(f.rect, box)) { frame = null; break; }   // fits something — done
+      // ...but only a SOLID fill may be ACCUSED of being the box a label escaped from. A frame is a
+      // thing a label was drawn INTO, and in this codebase that is always a `sketchPanel` /
+      // `sketchButton` fill — one leaf `Graphics` of a filled rect. Art is not: the result screen's
+      // falling-star sprite sits behind the award labels on bare paper with no panel anywhere, and
+      // without this rule it was the only candidate under them, so every award line read as
+      // escaping a decoration (layout sweep §49). Keeping the "fits" half open to every box is what
+      // stops the narrower accusation from creating NEW false positives — measured: restricting
+      // both halves made four scene titles (which sit inside a non-solid header backdrop) start
+      // reporting against the back-button pill instead.
+      if (!f.solid) continue;
       if (cx < f.rect.x || cx > f.rect.x + f.rect.w || cy < f.rect.y || cy > f.rect.y + f.rect.h) continue;
       const inside = intersect(box, f.rect);
       const area = inside.w * inside.h;

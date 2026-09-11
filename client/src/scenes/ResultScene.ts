@@ -402,7 +402,8 @@ export class ResultScene implements Scene {
           ? heroDetail.y + heroDetail.height + h * 0.02
           : heroDetail.y + heroDetail.height - h * 0.041;
         rest.forEach((badge, i) => {
-          const medallion = buildBadgeMedallion(badge, playerStats, h);
+          // The cell in the medallion's own coordinates — it is scaled up by 1.2 right after.
+          const medallion = buildBadgeMedallion(badge, playerStats, h, cellW / 1.2);
           medallion.scale.set(1.2);
           medallion.x = rowX + i * (cellW + gap) + cellW / 2; // medallion is centred at its origin
           medallion.y = rowY;

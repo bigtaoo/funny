@@ -1,7 +1,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor, tearDownChildren } from '../../render/sketchUi';
-import { snapFont } from '../../render/fontScale';
+import { snapFont, fitFont } from '../../render/fontScale';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { cardArtUrl, getArtTexture } from '../../render/cardArt';
 import { UNIT_BLUEPRINTS, BUILDING_BLUEPRINTS } from '@nw/engine/config';
@@ -111,24 +111,48 @@ function drawIconTextRow(
   pieces: { icon: IconKind | null; text: string }[],
   x: number, y: number, maxW: number, size: number, color: number, bold: boolean, target: PIXI.Container,
 ): void {
-  const row = new PIXI.Container();
-  const iconSize = Math.round(size * 1.35); // matches the stat row's icon-to-text ratio
-  const gap = Math.round(size * 0.38);
-  const pieceGap = Math.round(size * 0.9);
-  let cx = 0;
-  pieces.forEach((p, i) => {
-    if (i > 0) cx += pieceGap;
-    if (p.icon) {
-      const ic = buildIcon(p.icon, iconSize, color);
-      ic.x = cx; ic.y = 0; row.addChild(ic);
-      cx += iconSize + gap;
+  const build = (px: number, withIcons: boolean): { row: PIXI.Container; w: number } => {
+    const row = new PIXI.Container();
+    const iconSize = Math.round(px * 1.35); // matches the stat row's icon-to-text ratio
+    const gap = Math.round(px * 0.38);
+    const pieceGap = Math.round(px * 0.9);
+    let cx = 0;
+    pieces.forEach((p, i) => {
+      if (i > 0) cx += pieceGap;
+      if (p.icon && withIcons) {
+        const ic = buildIcon(p.icon, iconSize, color);
+        ic.x = cx; ic.y = 0; row.addChild(ic);
+        cx += iconSize + gap;
+      }
+      const lbl = txt(p.text, px, color, bold);
+      lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = iconSize / 2; row.addChild(lbl);
+      cx += lbl.width;
+    });
+    return { row, w: cx };
+  };
+
+  // Three degradations before the last resort, because the last resort — scaling the built row —
+  // is the one that breaks the legibility floor (render/fontScale.ts): it multiplies the size by
+  // an arbitrary float, and a German type label in a portrait info panel took a 24px header down
+  // to 16 that way. In order: a smaller token (`fitFont`, exact because the row's width is linear
+  // in its size), then dropping the glyphs — they are a cue in FRONT of the word, never instead of
+  // it, so the row without them still says everything it said — then, only if the floor itself
+  // does not fit, the old uniform shrink.
+  let { row, w } = build(snapFont(size), true);
+  if (w > maxW) {
+    const fitted = fitFont(snapFont(size), w, maxW);
+    if (fitted < snapFont(size)) {
+      row.destroy({ children: true });
+      ({ row, w } = build(fitted, true));
     }
-    const lbl = txt(p.text, snapFont(size), color, bold);
-    lbl.anchor.set(0, 0.5); lbl.x = cx; lbl.y = iconSize / 2; row.addChild(lbl);
-    cx += lbl.width;
-  });
+    if (w > maxW) {
+      const bare = build(fitted, false);
+      if (bare.w <= maxW) { row.destroy({ children: true }); ({ row, w } = bare); }
+      else bare.row.destroy({ children: true });
+    }
+    if (w > maxW) row.scale.set(maxW / w);
+  }
   row.x = x; row.y = y;
-  if (row.width > maxW) row.scale.set(maxW / row.width);
   target.addChild(row);
 }
 

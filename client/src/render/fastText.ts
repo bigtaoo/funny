@@ -91,7 +91,7 @@ export function cachedTxt(
   if (hit) {
     textCache.delete(key);
     textCache.set(key, hit);   // touch: move to the LRU tail
-    return tagged(new PIXI.Sprite(hit.texture), label);
+    return tagged(new PIXI.Sprite(hit.texture), label, size);
   }
 
   const t = txt(label, size, color, bold);
@@ -112,7 +112,7 @@ export function cachedTxt(
   }
   // The Text's own texture carries pixiText's anti-clip padding in frame/trim/orig, so a Sprite of
   // it lands exactly where the Text would have.
-  return tagged(new PIXI.Sprite(t.texture), label);
+  return tagged(new PIXI.Sprite(t.texture), label, size);
 }
 
 /**
@@ -125,9 +125,17 @@ export function cachedTxt(
  * the PIXI devtools panel shows, so tagging costs one string assignment and makes both readable.
  * The `txt:` prefix keeps it apart from the handful of structural names the battle renderer looks
  * up via `getChildByName` ('sprite', 'hpFill', ...).
+ *
+ * `fsPx` carries the font size for the same audit, because bounds cannot substitute for it: a
+ * baked label's box is the TRIMMED glyph box (~0.96x its font size) while a live `PIXI.Text`
+ * reports its line box (~1.35x), so no bounds-derived number can tell "asked for 16" apart from
+ * "asked for 20 and was shrunk to fit" — which is exactly the distinction the legibility-floor
+ * gate has to make (render/fontScale.ts). A live Text answers it from `style.fontSize`; this is
+ * the equivalent for a Sprite, and nothing else reads it.
  */
-function tagged<T extends PIXI.DisplayObject>(node: T, label: string): T {
+function tagged<T extends PIXI.DisplayObject>(node: T, label: string, size: number): T {
   node.name = `txt:${label}`;
+  (node as unknown as { fsPx?: number }).fsPx = size;
   return node;
 }
 
@@ -174,7 +182,7 @@ export function numTxt(
     sp.roundPixels = true;
     c.addChild(sp);
   }
-  return tagged(c, label);
+  return tagged(c, label, size);
 }
 
 /**
