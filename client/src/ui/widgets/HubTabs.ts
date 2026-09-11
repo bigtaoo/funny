@@ -30,6 +30,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../render/icons';
+import { drawButtonLabel } from './buttonLabel';
 import { snapFont } from '../../render/fontScale';
 import type { Hit } from '../hits';
 
@@ -96,25 +97,15 @@ export function drawHubTabs(
     container.addChild(box);
 
     const fg = tab.active ? 0xffffff : C.mid;
-    const lbl = txt(tab.label, snapFont(Math.round(stripH * 0.42)), fg, true);
-    lbl.anchor.set(0.5, 0.5);
-    lbl.y = y + stripH / 2;
-
-    if (tab.icon) {
-      // Icon + label as one centred group: [icon][gap][label].
-      const iconSize = Math.round(stripH * 0.6);
-      const gapIL = Math.round(stripH * 0.16);
-      const groupW = iconSize + gapIL + lbl.width;
-      const gx = x + (cellW - groupW) / 2;
-      const icon = buildIcon(tab.icon, iconSize, fg);
-      icon.x = gx;
-      icon.y = y + (stripH - iconSize) / 2;
-      container.addChild(icon);
-      lbl.x = gx + iconSize + gapIL + lbl.width / 2;
-    } else {
-      lbl.x = x + cellW / 2;
-    }
-    container.addChild(lbl);
+    // Contents go through the shared button-label group rather than a hand-rolled [icon][gap][label]:
+    // that one centred the group with no idea how wide the cell was, so a strip with three tabs in
+    // portrait (Achievements' Campaign/Battle/Progression at 390x844, measured 2026-09-11) pushed
+    // the glyph off the left screen edge and ran the label past the cell's right border into the
+    // next tab. `drawButtonLabel` scales the group to the cell and drops the glyph when even that
+    // would shrink the text past legibility.
+    drawButtonLabel(container, x, y, cellW, stripH, tab.label, tab.icon ?? null, fg,
+      snapFont(Math.round(stripH * 0.42)),
+      { variant: tab.active ? 'active' : undefined, inset: Math.round(cellW * 0.12) });
 
     if (tab.badge) {
       const r = Math.round(stripH * 0.09);

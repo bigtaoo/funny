@@ -13,3 +13,6 @@ wechatgame/cdn/
 # Playwright artifacts (client/test/browser smoke, see claudedocs/client-testing.md 缺口B)
 /test-results
 /playwright-report
+
+# Portrait layout sweep output (screenshots + findings; see test/browser/portraitLayout.spec.ts)
+portrait-report/

@@ -59,21 +59,54 @@ export class RenderPanel implements RenderHandlers {
   // derived from the current wall level when the server hasn't resolved a main-base anchor yet
   // (e.g. brand-new account mid-joinWorld race). Drawn into the header bar's free right side
   // (the military page it used to have its own panel on was merged away 2026-07-23).
-  renderHeaderDurability(headerH: number): void {
-    const { w } = this.core;
+  /**
+   * Width the durability cluster needs, so the scene can hand it to `drawSceneHeader` as
+   * `rightReserve` BEFORE the title is laid out. Without the reserve the header centres its title
+   * across the whole bar and the cluster is drawn on top of it afterwards — in portrait the bar is
+   * narrow enough that the HP bar ran straight through "Home City" (measured 2026-09-11).
+   */
+  headerDurabilityWidth(headerH: number): number {
+    const m = this.durabilityMetrics(headerH);
+    m.valLbl.destroy();
+    return m.clusterW;
+  }
+
+  private durabilityMetrics(headerH: number): {
+    iconSize: number; barW: number; barH: number; gap: number; clusterW: number; valLbl: PIXI.Text;
+    hp: number; maxHp: number; ratio: number;
+  } {
     const bld = this.core.me?.buildings;
     const maxHp = this.core.me?.maxHp ?? baseDurabilityMax(buildingLevel(bld, 'wall'));
     const hp = this.core.me?.hp ?? maxHp;
     const ratio = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 1;
 
     const iconSize = Math.round(headerH * 0.32);
-    const barW = Math.round(headerH * 1.4);
     const barH = Math.max(10, Math.round(headerH * 0.11));
     const gap = 10;
     const valLbl = txt(`${this.core.fmtNum(hp)} / ${this.core.fmtNum(maxHp)}`, FS.body, C.mid);
 
+    // The bar is sized off the header height, and in portrait the header is a THIRD of the design
+    // width tall — 1.4x that came out at 478 of 1080 design px, which with the back pill's 443 left
+    // the title a negative band to fit into (so it did not shrink at all and was drawn straight
+    // through the readout). The cluster therefore also has a ceiling in bar-width terms: whatever
+    // the bar's own height suggests, it may not eat more than a third of the bar.
+    const MAX_SHARE = 0.34;
+    const fixed = iconSize + gap + gap + valLbl.width;
+    const barW = Math.max(
+      Math.round(headerH * 0.5),
+      Math.min(Math.round(headerH * 1.4), Math.round(this.core.w * MAX_SHARE) - fixed),
+    );
+    return {
+      iconSize, barW, barH, gap, valLbl, hp, maxHp, ratio,
+      clusterW: fixed + barW,
+    };
+  }
+
+  renderHeaderDurability(headerH: number): void {
+    const { w } = this.core;
+    const { iconSize, barW, barH, gap, valLbl, ratio, clusterW } = this.durabilityMetrics(headerH);
+
     // Right-aligned cluster: [wall icon] [HP bar] [value]. Lay out right→left off the 16px inset.
-    const clusterW = iconSize + gap + barW + gap + valLbl.width;
     const x0 = w - 16 - clusterW;
     const midY = headerH / 2;
 

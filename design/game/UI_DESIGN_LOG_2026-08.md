@@ -778,3 +778,28 @@ while (cols > 1 && 少一列不会多一行) {
   竖屏几何用 iPhone 13 的真实 inset（47/34）单独构了一次 `SettingsScene` 量：`designHeight 2113`、`gameLayer.y 47`、`scale 0.36110`、内容底边 810 —— 与 §46.1 表里「正确」那一行逐个吻合，截图上顶/底两条米色带也在。
   事件驱动那条链在真浏览器里只验到了一半：**这个标签页是后台窗口（`document.visibilityState === 'hidden'`，`requestAnimationFrame` 停摆）**，而 `ResizeObserver` 的投递挂在渲染步骤上，所以它在这个环境里根本不触发（拿一个干净的 `ResizeObserver` 单独试过，连初次回调都没有）。于是改用同一处理函数的另一个入口验收：把两个探针盒子按真机值改成 47/34，再在**设置页（非大厅）**上发一次尺寸未变的 `resize` —— `gameLayer.y` 0 → 47、`scale` 0.5842 → 0.5093。改之前这两条（全局 re-fit、insets 纳入守卫）任缺其一，这都是个空操作。
 - **仍未在真机上验证的部分**：`contentInset: 'never'` 本身（要 Mac 上重新出包）和 `ResizeObserver` 的真实投递。所以这轮**不宣布修好了** —— 等用户拿新包在 iPhone 13 上看设置页那两行：判定词从 `inset-eaten` 变成 `env-reported`、`inner` 回到 390x844、`env` 读到 47/0/34/0，才算坐实。
+
+## 48. 竖屏批量修：一套自动巡检 + 它查出来的七处重叠（2026-09-11）
+
+**起因**：日常在电脑上开发＝横屏，竖屏问题只能靠人肉在手机上一屏一屏截图报过来，于是「横屏的大部分修完了，竖屏还是到处叠在一起」。
+
+**先做工具**：`client/test/browser/portraitLayout.spec.ts` + `lib/layoutAudit.ts`（说明见 [`claudedocs/client-testing.md`](../../claudedocs/client-testing.md)「竖屏几何巡检」）。真 Chromium 走 **21 个场景 × 3 个竖屏尺寸**（390×844 / 360×640 / 768×1024），在页面里遍历真实 PIXI 显示树判 6 类问题，并给每站落一张 PNG。**这一层不可省**：headless `test:ui` 的 `measureText` 桩是「字符数 × 7px、跟字号无关」，而竖屏问题清一色是宽度不够导致的折行/溢出——在那层结构性复现不了（`titlesPortraitOverlap.ui.ts` 头注释早就写过同一件事）。
+
+**首轮查出 7 处，全部已修**：
+
+| # | 症状 | 真因 |
+|---|---|---|
+| 1 | 成就页 `Campaign`/`Battle`/`Progression` 三个 tab 文字互相压、`Progression` 整个跑出屏幕 | `HubTabs.drawHubTabs` 自己手搓 `[图标][gap][文字]` 居中，**从不看格子宽度**；改走 `drawButtonLabel`（它会整组缩放，太窄时直接丢图标保字号） |
+| 2 | 设置页 `Rename (500 coins)` / `Delete Account` / `Replay tutorial` 文字冲出按钮，`Rename` 一路压到右边的 `Master` 滑杆 | **`drawButtonLabel` 把缩放算了两次**：`text.width` 是跟着 `scale` 走的 getter，`text.scale.set(fit)` 之后又 `text.width * fit` 去算居中偏移，于是标签被按「比实际窄」摆放＝整体右移出框。全游戏所有「太长要缩」的按钮都中过这一枪（含世界频道的发言按钮），一处修完全部好 |
+| 3 | 大厅 WORLD 卡副标题「Clear Chapter 1 to unlock」横穿到右侧拍卖入口上 | `drawPillar` 的标题/副标题没有宽度钳制（同文件的 hero 副标题早就有一份，卡片这份漏了）；补 `fitToCard` |
+| 4 | 设置页「数据节省」说明缩成 4 CSS px，完全看不清 | 长句强行**单行**缩放到 0.46w → 比例 ~0.2。改成按 0.76w **折行**（它本来就在开关行下方，横向不受开关挤压），字号锁 `FS.tiny` |
+| 5 | 关卡准备页剧情段落压住「体力 120/120 · 消耗 10」 | 简报面板高度只按自己折行后的文字长，不知道下面还有底部锚定的体力行/开始按钮；改成传入 `maxBottom`，沿字号表逐档降到能放下为止，最小档还放不下才裁切 |
+| 6 | 主城页耐久绿条画穿标题「Home City」 | ①`CityScene` 没把右侧簇宽度告诉 `drawSceneHeader`（有 `rightReserve` 参数但没人用）；②`drawSceneHeader` 的 `rightReserve` **只参与缩放不参与定位**——标题仍按整条 bar 居中，于是照样伸进预留区；③耐久簇宽度 = `headerH × 1.4`，竖屏 header 很高，簇吃掉 478/1080 设计 px，加上返回胶囊 443，留给标题的带宽是**负数**（`fit` 那行 `bandW > 0` 的短路让它干脆不缩了）。三条都修：簇不得超过 bar 宽的 34%、标题按预留区左移、带宽再窄也留 12% 的下限 |
+| 7 | 防御编辑器竖屏基本不可用：14 个兵种卡挤在一行、字全糊成一团，`Build` 行标签跑到 x=-9 屏外 | 调色板按 `宽度 / n` 一行铺完，竖屏每格 72 设计 px 而「Shield Bearer」要 ~110。改成**按最长标签实测宽度决定列数**再换行（横屏 1920 仍是一行，不变），标签走 `drawButtonLabel`；行标签在没有左侧留白时改画在行内 |
+
+**同时给巡检器定的两条精度规则**（否则它会变成噪音源）：
+- **框是「画在文字下面、且能整个装下它」的那个盒子**。取「最紧的那个」会把装饰当框——大厅主按钮里那对交叉铅笔就是一张比按钮小的 sprite，按最紧取法，按钮上每个字都算溢出。
+- **只有画在文字之后的实心矩形算「盖住」**。`Graphics` 的 bounds 不等于它涂到的像素：头像那圈 rim 是一张透明 PNG sprite、描边 `Graphics` 也只画边，把它们当遮盖物，头像里的字母全成了「被盖住」。放弃 z 序（想顺带抓「条画在标题下面」那种）会让每个普通按钮都中招，实测噪音从 9 条涨到 46 条，已回退。
+- 引导气泡这类**本来就该盖在别人身上**的层，由产品侧显式标记：`GuideOverlay` 的根容器 `name = 'overlay:guide'`，巡检器只在同一层内互比。
+
+**收尾状态**：三个尺寸全绿（`npm run test:portrait`）。**尚未处理**：竖屏下 `FS.micro`（11 设计 px）在 390 宽的手机上只有 ~4 CSS px——防御编辑器页脚、主城资源行那类小字确实小到读不了，但这是字号表和竖屏缩放比的系统性问题，不是重叠，另案。

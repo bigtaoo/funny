@@ -2,13 +2,14 @@
 
 > 快查：客户端有几层测试、各测到哪一层、headless PIXI 怎么跑、上线前补浏览器冒烟（缺口 B）的方案。
 
-## 四层测试
+## 五层测试
 
 | 套件 | 命令 | include | 环境 | 测什么 | 真 PIXI？ |
 |---|---|---|---|---|---|
 | 单元 | `npm test` | `test/**/*.test.ts`（**含 `test/render/**`**） | node | 纯游戏逻辑；外加 `test/render/**` 那批渲染层窄回归（BaseTexture 监听器 / blob URL 泄漏、HUD 几何、图标 dispatch 表…） | 多数文件 `vi.mock` 掉 PIXI；`icons`/`rewardIcon` 真 import `pixi.js-legacy` |
 | UI 冒烟 | `npm run test:ui` | `test/ui/**/*.ui.ts` | node + `pixiHeadless` | **真实场景构造 / update / destroy + 命中矩形回归** | 真对象树，**无渲染器** |
 | 全链路 E2E | `npm run test:e2e`（opt-in） | `test/e2e/**/*.e2e.ts` | node | `createAppCore` 全链路对接活服务器（meta+gateway+matchsvc+game+commercial+mongo） | headless orchestration |
+| 浏览器冒烟 / 竖屏巡检 | `npm run test:browser`、`npm run test:portrait`（均 opt-in） | `test/browser/**/*.spec.ts` | 真 Chromium（Playwright） | 白屏类硬故障（shader/atlas/WebGL）、两账号真实对战；以及**真字形量出来的竖屏几何**（见下方「竖屏几何巡检」） | **真渲染器 + 真 WebGL** |
 | 手动调参脚本 | `npm run test:manual`（opt-in，非回归） | `test/**/*.manual.ts` | node | console.log 输出的难度曲线/A-B 对比表，**零 `expect()`**，人工读表用 | 否 |
 
 `npm test` 只跑 `*.test.ts`；`*.ui.ts` / `*.e2e.ts` / `*.manual.ts` 用各自命名后缀隔离，默认套件不会误收。
@@ -281,6 +282,25 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 大版本发布前另加一轮**人工**四平台真机检查（[`release/acceptance-smoke.md`](../design/game/release/acceptance-smoke.md)），测的是 IAP/审核合规/真机性能，这条 Chromium-only 冒烟测不到，两者互补不重复。
 
 > 微信小游戏入口（`entries/wechat`）不能用 Playwright，需微信开发者工具的自动化（minium / 小程序自动化 SDK）单列，超出本冒烟范围，按需另立。
+
+### 竖屏几何巡检（`npm run test:portrait`，2026-09-11 新增）
+
+同一层（真 Chromium）的第二条入口，但问的问题完全不同：**不是「会不会炸」，而是「排版对不对」**。
+
+`test/browser/portraitLayout.spec.ts` 走 **21 个场景 × 3 个竖屏尺寸**（390×844 手机 / 360×640 窄机 / 768×1024 平板——平板比 9:16 矮胖，会走 `ScalingManager` 的桌面留白分支），每站把 `window.__nwE2E.app` 的真实显示树交给 `test/browser/lib/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、小于字号表最小档（`FS.micro`）而不可读、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
+
+**为什么必须在这一层**：headless `test:ui` 的 `measureText` 桩是「字符数 × 7px、与字号无关」（`test/harness/pixiHeadless.ts`），而竖屏问题清一色是宽度不够导致的折行/溢出——那层结构性复现不了。`test/ui/titlesPortraitOverlap.ui.ts` 的头注释早就为同一件事把真断言挪去了一个纯算术测试。
+
+**噪音控制**（这套规则是它能当门禁而不是报警器的原因，首轮 7 处真问题 / 0 误报）：
+- 遮罩与遮挡都算进去：滚出列表的行、被弹窗盖住的整屏内容都不参与比较；
+- `pixiText` 的 CJK 抗裁切内边距（~15% 字号）先扣掉，否则「挨着」的两个标签会被判成「压着」；
+- **「框」= 画在文字下面、且能整个装下它的盒子**。取「最紧的那个」会把装饰当框（大厅主按钮里的交叉铅笔 sprite 比按钮小）；
+- **只有画在文字之后的实心矩形算「盖住」**：`Graphics` 的 bounds ≠ 它涂到的像素，头像那圈 rim 是透明 PNG、描边 `Graphics` 只画边；放弃 z 序会让每个普通按钮都中招（实测 9 条 → 46 条）；
+- 本来就该盖在别人身上的层由产品侧显式标记：`GuideOverlay` 的根容器 `name = 'overlay:guide'`，巡检只在同一层内互比。
+
+**后端**：与 `test:browser` 不同，这条跑在 **Docker 全栈**（`./docker/local-up.ps1`，nginx 单口 8088）上，所以它有自己的 `playwright.portrait.config.ts`（客户端 dev server 另开 9097，五个 `NW_*` 基址写死在配置里）。两份配置都加了 `--no-open`——`webpack.config.js` 的 `devServer.open: true` 会在每次起服务时弹开发者本机的默认浏览器。
+
+首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-08.md`](../design/game/UI_DESIGN_LOG_2026-08.md) §48。
 
 ## E2E / 冒烟 harness 维护红线：HeadlessAppViews 必须实现 AppViews 全接口
 

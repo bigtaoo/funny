@@ -378,13 +378,23 @@ export function drawSceneHeader(
     // same "scale a label down to fit its cell" rule the tab strips already use (HubTabs.ts).
     // Only long labels on a narrow bar ever scale; CJK titles are 3–4 glyphs and fit outright.
     const fullW = (icon ? icon.size + icon.gap : 0) + titleNode.width;
-    const fit = bandW > 0 && fullW > bandW ? bandW / fullW : 1;
+    // A reserve big enough to make the band negative means the caller asked for more than the bar
+    // has; shrink to the little that is left rather than silently giving up on fitting (which drew
+    // a full-size title straight over the cluster — city header, portrait, 2026-09-11).
+    const usableBand = Math.max(bandW, Math.round(w * 0.12));
+    const fit = fullW > usableBand ? usableBand / fullW : 1;
     if (fit < 1) titleNode.scale.set(fit);
     const leadW = icon ? Math.round((icon.size + icon.gap) * fit) : 0;
+    // Centring is about the WHOLE bar, but the reserved band belongs to the caller's cluster, so a
+    // centred group still has to be pushed left out of it: `fit` only guarantees the group is no
+    // wider than the band, which is not the same as it being inside the band (the back pill is
+    // narrower than a right-side cluster, so the centre sits too far right). The city header's HP
+    // readout and its title were drawn through each other for exactly this reason.
+    const groupW = leadW + titleNode.width;
     const groupX = opts?.titleAlign === 'left'
       // Sit just right of the back pill so a right-aligned currency cluster has room.
       ? afterBackPill
-      : Math.max(afterBackPill, Math.round((w - (leadW + titleNode.width)) / 2));
+      : Math.max(afterBackPill, Math.min(Math.round((w - groupW) / 2), w - reserve - groupW));
     if (icon) {
       icon.node.scale.set(fit);
       icon.node.x = groupX;
