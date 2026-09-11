@@ -403,6 +403,30 @@ describe('ContextAudioBus — the OS audio session (AUDIO_DESIGN.md §5)', () =>
     expect(h.decks.some((d) => d.paused[d.paused.length - 1] === false)).toBe(true);
   });
 
+  it('a gesture arriving in a hidden tab does not take the session', () => {
+    // Rare but reachable: a keydown lands in a background tab in some window managers, and a page
+    // can finish loading in one (ctrl-click, session restore) — `WebAudioBus` reports the CURRENT
+    // visibility at install time precisely because no `visibilitychange` will ever correct it.
+    const h = musicBus();
+    h.focus(true);
+    h.gesture();
+    expect(h.ctx.resumeCalls).toBe(0);
+  });
+
+  it('coming back to the foreground while muted leaves the session alone', () => {
+    // Two independent reasons to stay released, and returning from the background must not treat
+    // the one it just cleared as the only one.
+    const h = musicBus();
+    h.gesture();
+    h.b.setSfxVolume(0);
+    h.b.setMusicVolume(0);
+    h.focus(true);
+    const resumesBefore = h.ctx.resumeCalls;
+    h.focus(false);
+    expect(h.ctx.resumeCalls).toBe(resumesBefore);
+    expect(h.ctx.state).toBe('suspended');
+  });
+
   it('BGM at 0 builds no deck — a stream at gain 0 is still a stream the OS counts', () => {
     const h = musicBus();
     h.b.setMusicVolume(0);
