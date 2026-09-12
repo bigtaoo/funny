@@ -292,6 +292,18 @@ key 本来就都是有界的（尺寸四舍五入进 key、`orientation`、avata
 
 后者比开发机还贵——`dpr × scale > 1` 时设备像素多于设计像素，`pageBakeResolution()` 的上限（`renderer.resolution`）在这里不生效。**注意这两个数都在 256 MB 预算的量级上或以上，而结论 3 说了预算恰好看不见它。** 这不是 08-25 那种「一次性 334 MB 突发」——它是走屏走出来的慢累积，不会当场杀进程，但它把整页 bake 的收益随屏数一点点还回去。
 
+### 11.6 去重 cache key（已做，2026-09-12）
+
+§11.5 末尾那条「单独立项」已落地。触发点是一次 Grafana 巡检：2026-09-11 线上一个平板会话（`58aca9e`、1024×654 / dpr 2）的 30 条 `mem` 里，`bake` 从 **17 条 / 98.2 MiB 涨到 27 条 / 182.2 MiB**，`top` 始终是 `lobbybg:1920x1080@1.125`——就是§11.5 量到的「每个新屏 +1 张整页」在真实玩家会话里的样子（这一块不在 `texMB` 里，所以当时实际 GPU 纹理是 127 + 182 ≈ 309 MiB）。
+
+改法就是§11.5 开的方子：`buildPaperBackground` 改成调 `paperBakeKey(w, h, marginLine, railX)`，`tag` 不再进 key（参数保留作调用点可读性，函数头 `void tag` + 注释明说它不进绘制也不进 key）。
+
+**一个潜伏的陷阱，正好被这次改动翻出来：`marginLine` 一直没有进 key。** 旧 key 是 `${tag}:${w}x${h}:${railX ?? ''}`，`marginLine` 却真的进绘制（SLG 大地图抹掉红边线）。之前没出事纯粹是因为 `tag`（`worldmap`）把它和所有菜单分开了——**把 `tag` 拿掉的同时必须把 `marginLine` 放进去**，否则同尺寸的地图页和菜单页会撞 key、其中一个会画出另一个的图。另外 `railX` 现在四舍五入进 key（它是短边的百分比，带小数会把 key 碎成一堆 bake 本来就表达不了的亚像素差异）。
+
+回归：`test/paperBakeSharing.test.ts`，七条，正好盖住§11.5 点名要求的那两类（同尺寸共享一张；`marginLine`/`railX`/尺寸不同必须分开）。断言做在 `paperBakeKey` 上而不是活的 bake 缓存上：后者需要真 WebGL renderer，headless 给不了，而 key 本身就是「共不共享」这件事。
+
+**仍未做**：§11.5 结论 3 那一条——bake 缓存至今没有字节闸门（`texBytes()` 扫 `BaseTextureCache`，`RenderTexture.create()` 从不注册进去）。去重把量级压下去了，但没人看着它。
+
 **给后人的教训**：
 
 - **`tag` 是命名空间，不是内容哈希。** 一个只用来「区分同尺寸的不同画法」的 key 字段，在画法其实相同的时候就是个乘法器。写 cache key 时问一句「这个字段真的进绘制了吗」——本例里 30 份拷贝的成因就是这一句没问。

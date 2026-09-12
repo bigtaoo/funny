@@ -211,6 +211,17 @@ export function seedForId(id: string, salt = 0): number {
 }
 
 /**
+ * Bake key for {@link buildPaperBackground} — the four inputs that actually reach its draw calls,
+ * and nothing else. See that function's doc comment for why the caller's tag is deliberately absent.
+ * The rule's x is rounded because `railX` arrives as a fraction of the short edge: an unrounded
+ * float would fragment the key on sub-pixel differences that the bake cannot represent anyway.
+ */
+export function paperBakeKey(w: number, h: number, marginLine: boolean, railX?: number): string {
+  const rule = marginLine ? String(Math.round(railX ?? marginLineX(w))) : 'none';
+  return `paper:${Math.round(w)}x${Math.round(h)}:${rule}`;
+}
+
+/**
  * X of the red notebook margin rule (see buildPaperBackground). Content columns
  * should start to its right so icon cards don't sit on top of the red stripe.
  */
@@ -220,13 +231,30 @@ export function marginLineX(w: number): number {
 
 /**
  * Notebook-paper background: aged paper + faint ruled lines + a red margin line
- * down the left, drawn with the shared SketchPen and baked per (tag,w,h). Mirrors
- * the lobby / board so every screen is the same page. Falls back to live Graphics
- * when no bake renderer is wired (headless tests).
+ * down the left, drawn with the shared SketchPen and baked. Mirrors the lobby /
+ * board so every screen is the same page. Falls back to live Graphics when no
+ * bake renderer is wired (headless tests).
+ *
+ * ## The bake key is the drawing, not the caller (2026-09-12)
+ *
+ * `tag` used to lead the bake key, which minted one full-page RenderTexture **per screen**. The
+ * 2026-09-10 measurement walked every screen and found 45 bake entries / 279 MiB, of which 33 were
+ * full pages (262 MiB, 94%) — and byte-compared with `renderer.extract.pixels()`, 30 of those 33
+ * were pixel-for-pixel identical to one of three images. Nothing below reads `tag`: the pen seed is
+ * the constant `0x5bd1c7`, and the only inputs that reach a draw call are `w`, `h`, `marginLine`
+ * and `railX`. So the key is now exactly those, and every screen at one size shares one texture
+ * (279 -> ~65 MiB, zero visual change). A phone pays ~12.2 MiB per page, so this was the single
+ * biggest retained allocation in the client.
+ *
+ * `tag` is kept for call-site readability only — **it does not reach the drawing or the cache key**,
+ * and passing a new one does not get you a different page. Note `marginLine` DOES have to be in the
+ * key now that `tag` is out: the SLG overworld suppresses the red rule, and without `tag` to keep
+ * them apart a map-sized page and a menu-sized page of the same dimensions would collide.
  */
 export function buildPaperBackground(
   tag: string, w: number, h: number, opts: { marginLine?: boolean; railX?: number } = {},
 ): PIXI.DisplayObject {
+  void tag;
   const { marginLine = true, railX } = opts;
   const gfx = new PIXI.Graphics();
   gfx.beginFill(ui.bg);
@@ -249,9 +277,7 @@ export function buildPaperBackground(
     pen.line(mx, 0, mx, h, { color: palette.inkRed, width: 2.2, jitter: 1.0, taper: 0.95 });
   }
 
-  const tex = bake(
-    `${tag}:${Math.round(w)}x${Math.round(h)}:${railX ?? ''}`, gfx, w, h, { pageScale: true },
-  );
+  const tex = bake(paperBakeKey(w, h, marginLine, railX), gfx, w, h, { pageScale: true });
   if (tex) {
     const s = new PIXI.Sprite(tex);
     gfx.destroy();
