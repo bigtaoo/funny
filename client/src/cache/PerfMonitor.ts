@@ -35,13 +35,23 @@ const SUSTAIN_WINDOWS = 5;          // report only after this many consecutive l
  *
  * The ceiling it is measured against must be the LOWEST one that applied during the window, not the
  * one standing at window end (2026-09-12 fix). renderPolicy flips between IDLE_FPS and TARGET_FPS on
- * a single tick — `applyIdleThrottles` re-arms full rate the moment anything changes — so a menu the
- * player touches once every few seconds spends most of a 2s window capped at 20 and ends it at 60.
- * Reading the ceiling at window end then compared an idle-throttled average (~20-24) against the
- * full-rate threshold of 25 and filed a stutter. That is the whole of the `cpu` traffic seen on
- * 2026-09-11 in production (fps 19-25, thresholdFps 25, all of it on `reactive` menu scenes:
- * Shop/Gacha/Card/Recharge), versus the genuine pre-ADR-083 article on 2026-09-08 which sat at
- * fps 10-16 with the loop asking for 60 throughout.
+ * a single tick — `applyIdleThrottles` re-arms full rate the moment anything changes — so a screen
+ * the player touches every few seconds spends most of a 2s window capped at 20 and ends it at 60.
+ * Reading the ceiling at window end then compares an idle-throttled average against the full-rate
+ * threshold of 25 and calls it a stutter.
+ *
+ * That this happens is not a deduction: `render_profile` catches whole spans in the act, e.g.
+ * 2026-09-12 09:53 AuctionScene `maxFps:60, fpsP50:20, fpsMin:20, fpsMax:59, tickPerSec:35` — half
+ * the span at the idle cap, ceiling 60 by the time the report was written.
+ *
+ * **What this fix does NOT explain, and an earlier revision of this comment wrongly claimed it did:**
+ * the ten `cpu` anomalies of 2026-09-11 (fps 19-25). The `render_profile` rows from that same
+ * session say `maxFps:60, fpsP50:30, fpsMax:30, tickPerSec:29, skipPct:2-14` on a dpr-2 /
+ * 2048x1308 canvas — a device whose *display* tops out near 30 Hz, running the loop at its ceiling
+ * of 60 for the entire span and simply not getting there, with dips to 16-23. `windowMinCap` stays
+ * 60 for those, the threshold stays 25, and they still report — correctly. They are a real stutter
+ * on a real device, not an artifact. Cross-check any `cpu` anomaly against `render_profile`'s
+ * `maxFps` vs `fpsMax` before calling it either way.
  */
 const FPS_WARN_HEADROOM = 5;
 
