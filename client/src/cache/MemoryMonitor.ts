@@ -241,6 +241,47 @@ function texTop(limit = 6): { k: string; n: number }[] {
 }
 
 /**
+ * Size histogram of the `generated:` bucket — the one question {@link texTop} structurally cannot answer.
+ *
+ * `texBucket` deliberately folds every non-URL key into a single `generated:` entry, because PIXI names
+ * them `pixiid_<n>` and un-collapsed they are a thousand n=1 rows of noise. The cost of that is that a
+ * report saying `generated: 876` names the leak class and nothing else — which is exactly where the
+ * 2026-09-11 investigation stalled: 604 climbing to 876 over five hours, with no way to tell a wall of
+ * `PIXI.Text` labels from a handful of RenderTextures, and no way to reproduce it off the affected
+ * account. Dimensions are the discriminator that survives the uid being meaningless: a glyph atlas, an
+ * avatar rim, a page bake and a text label are all different, recognisable shapes, and `realWidth`/
+ * `realHeight` are already being read one line away in {@link texBytes}.
+ *
+ * Counts AND bytes per size, because the two point at different culprits (many tiny labels vs few huge
+ * sheets) and the 2026-08-25 crash is the standing proof that a count alone can hide a third of a
+ * gigabyte.
+ */
+function genTopBySize(limit = 5): { d: string; n: number; mb: number }[] {
+  const c = (PIXI.utils as unknown as Record<string, Record<string, unknown> | undefined>).BaseTextureCache;
+  if (!c) return [];
+  const groups = new Map<string, { n: number; bytes: number }>();
+  const keys = Object.keys(c);
+  const n = Math.min(keys.length, TEX_SCAN_CAP);
+  for (let i = 0; i < n; i++) {
+    const k = keys[i]!;
+    if (texBucket(k) !== 'generated:') continue;
+    const bt = c[k] as unknown as { realWidth?: number; realHeight?: number } | undefined;
+    const w = bt?.realWidth ?? 0;
+    const h = bt?.realHeight ?? 0;
+    if (!(w > 0) || !(h > 0)) continue;
+    const d = `${w}x${h}`;
+    const g = groups.get(d) ?? { n: 0, bytes: 0 };
+    g.n += 1;
+    g.bytes += w * h * 4;
+    groups.set(d, g);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => b[1].n - a[1].n)
+    .slice(0, limit)
+    .map(([d, g]) => ({ d, n: g.n, mb: round(g.bytes / MB) }));
+}
+
+/**
  * Application-wide singleton memory monitor. Installed once via install(app.ticker) at app.ts startup;
  * persists across scene transitions. When no battle is running the pool registry is empty, so only heap readings are reported.
  */
@@ -376,12 +417,15 @@ export class MemoryMonitor {
     // Which art directories dominate the base-texture cache — categorizes a "baseTex climbing" leak
     // (unbounded URL-keyed asset cache) down to the specific folder without a follow-up repro.
     const tex = texTop();
+    // …and, inside the one bucket texTop cannot break down, which SIZES dominate it. See genTopBySize.
+    const genTop = genTopBySize();
     log.warn(reason, {
       heap: heapInfo,
       pools: pools.rows.map((r) => ({ label: r.label, idle: r.idle, estKB: round(r.estBytes / 1024) })),
       poolTotal,
       gpu,
       texTop: tex,
+      genTop,
     });
     // Also forward to the "full anomaly reporting" channel (parallel to the directed-sampling ring buffer):
     // any client on the network that exceeds the memory threshold reports directly to Loki.
@@ -390,6 +434,6 @@ export class MemoryMonitor {
     // attributed to a screen without a follow-up repro — see the 2026-08-02 Loki triage that couldn't tell which
     // scene held 1487 nodes vs. the usual ~350-390.
     const scene = getActiveScene();
-    reportAnomaly('mem', reason, { ...(scene ? { scene } : {}), heap: heapInfo, poolTotal, gpu, texTop: tex });
+    reportAnomaly('mem', reason, { ...(scene ? { scene } : {}), heap: heapInfo, poolTotal, gpu, texTop: tex, genTop });
   }
 }
