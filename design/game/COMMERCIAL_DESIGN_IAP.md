@@ -165,6 +165,24 @@ ShopScene → buyMonthlyCard()/buyYearCard() → createAppCore.doBuySubscription
     共用同一份 `finishSubscriptionCardBuy`，两者都受益。回归见 `commercial/test/service.e2e.test.ts`「monthly
     card: two concurrent buys with distinct orderIds (double-tap) credit only once, not twice」。
 
+#### 10.7b 单卡位门控挪到「售前」，售后一律延期（2026-09-12）
+
+`ALREADY_ACTIVE` 这道门有两个执行点，2026-09-12 之前两边都在拒：
+
+1. **售前**——`POST /shop/paddle/checkout` 查 `subscriptionExpiry`，卡生效中直接 400，**真钱还没动**。这条是对的，保留。
+2. **售后**——`POST /paddle/webhook` 收到 `transaction.completed` 才发放，此时 **Paddle 已经把钱收了**。原来这里也拒：回滚订单槽、打一条 ERROR 给 CS、给 Paddle 回 200。玩家结果是**扣了 $4.99/$49.99，拿到 0 天 0 金币**，而且订单行被删、没有任何待处理状态留下，重投同一笔还会再被拒一次。
+
+生产 2026-09-12 命中过一次（`tx=txn_01m2af7xbqnatgdjff4f0741b1`）。**改法**：webhook 分支传 `alreadyCharged: true`，走 `applySubscription` 而不是 `applySubscriptionIfInactive`。
+
+- **不是白送**：`applySubscription` 从 `max(expiry, now)` 往后叠，`subscription.expiry` 是**一个标量**——结果是一张更长的卡，不是两张并行的卡。付两份钱得两份时长，正是买到的东西。
+- **幂等不变**：orderId 抢槽去重跑在门控**之前**，所以绕过门控不会把 Paddle 的至少一次投递变成重复发放（回归明确测了这一条）。
+- **门控没被删**：售前那道还在，「我有卡还想买」照样在收钱前被挡掉；这个标记只覆盖售前预检**看不见**的两种情况——同时开了两个结账页、或者预检之后卡才生效。
+- **标记改名**：原来叫 `renewal`（2026-09-03 为 Apple 自动续订加的，见 `IOS_RELEASE.md` §4.1b），语义其实是「钱已经收了，绕过单卡位」，现改叫 **`alreadyCharged`**。两个调用方都是真·售后：Apple 续订、Paddle `transaction.completed`。
+
+**范围外（仍然拒）**：`POST /monthly-card/buy`/`/year-card/buy` 这条直购路由不带这个标记——它面对的是一个活着的客户端，返回 409 能被 UI 正确解释。
+
+回归：`metaserver/test/paddle-routes.e2e.test.ts`（webhook 端到端：延期 / 年卡叠在月卡上 / 重投仍只发一次）、`commercial/test/service.e2e.test.ts`（真 Mongo：带标记延期、不带标记仍 `ALREADY_ACTIVE`、重投幂等）。后者的假 commercial 也同步复刻了「先去重、再门控」的**顺序**——顺序反了会让重投看起来像 `ALREADY_ACTIVE`，等于测一个线上不存在的协议。
+
 ### 10.8 月卡/年卡/新手包关闭原生+隐藏渠道的"直接授权"缺口（2026-07-27 审计）
 
 > 状态：✅ 已实现（server 端全渠道 + web/Paddle 全链路 + 原生客户端接线；微信 Pay 仍是 TODO，见下）。

@@ -115,26 +115,35 @@ class FakeCommercial implements CommercialClient {
     return { ok: true as const, coinsAfter: this.bal(a.accountId) };
   }
 
-  private subscriptionCardBuy(accountId: string, orderId: string, days: number) {
+  /**
+   * Mirrors WalletCore.subscriptionCardBuy's ORDER of operations, which is the part these tests depend
+   * on: orderId dedupe first (so a redelivery never reaches the gate), then the single-slot gate —
+   * unless `alreadyCharged` says the money is already taken, in which case it extends from
+   * `max(expiry, now)` exactly like applySubscription does. Keeping the fake honest about that order is
+   * the whole point: a fake that gated first would make an idempotent replay look like ALREADY_ACTIVE
+   * and quietly test a protocol the real service does not implement.
+   */
+  private subscriptionCardBuy(accountId: string, orderId: string, days: number, alreadyCharged?: boolean) {
     if (this.claimedOrders.has(orderId)) {
       return { ok: true as const, coinsAfter: this.bal(accountId), subscriptionExpiry: this.subscriptions.get(accountId)?.expiry ?? 0 };
     }
     const now = this.now();
     const cur = this.subscriptions.get(accountId);
-    if (cur && cur.expiry > now) return { ok: false as const, error: 'ALREADY_ACTIVE' };
+    const active = !!cur && cur.expiry > now;
+    if (active && !alreadyCharged) return { ok: false as const, error: 'ALREADY_ACTIVE' };
     this.claimedOrders.add(orderId);
-    const expiry = now + days * 86400000;
+    const expiry = Math.max(cur?.expiry ?? now, now) + days * 86400000;
     this.subscriptions.set(accountId, { expiry });
     this.coins.set(accountId, this.bal(accountId) + 600);
     return { ok: true as const, coinsAfter: this.bal(accountId), subscriptionExpiry: expiry };
   }
 
-  async monthlyCardBuy(a: { accountId: string; orderId: string }) {
-    return this.subscriptionCardBuy(a.accountId, a.orderId, 30);
+  async monthlyCardBuy(a: { accountId: string; orderId: string; alreadyCharged?: boolean }) {
+    return this.subscriptionCardBuy(a.accountId, a.orderId, 30, a.alreadyCharged);
   }
 
-  async yearCardBuy(a: { accountId: string; orderId: string }) {
-    return this.subscriptionCardBuy(a.accountId, a.orderId, 365);
+  async yearCardBuy(a: { accountId: string; orderId: string; alreadyCharged?: boolean }) {
+    return this.subscriptionCardBuy(a.accountId, a.orderId, 365, a.alreadyCharged);
   }
 
   async paddleComplete(a: { accountId: string; transactionId: string; coins: number; usdCents?: number }) {
@@ -396,18 +405,53 @@ describe.skipIf(!mongo)('paddle routes e2e (checkout + webhook)', () => {
       expect(comm.bal(accountId)).toBe(600); // 1× immediate bonus, not 3×
     });
 
-    it('an extreme race where the subscription is already active by webhook time → logs the event for CS/refund lookup, does not extend twice, does not 5xx', async () => {
-      // Simulates a second checkout slipping past the pre-check (e.g. two tabs) and completing payment
-      // just as the first webhook already granted the card.
+    // 2026-09-12: this used to assert the opposite — the grant was refused and only logged, so the
+    // player was charged and got nothing. The single-slot gate belongs at the point of SALE
+    // (/shop/paddle/checkout, tested above), not here: by webhook time Paddle has the money and
+    // refusing does not give it back. See webhookRoute's `alreadyCharged` comment.
+    it('a checkout that slipped past the pre-check and completed while a card is running EXTENDS it rather than taking the money for nothing', async () => {
+      // Two tabs: the first checkout already granted the card, the second completes payment after.
       comm.subscriptions.set(accountId, { expiry: fakeNow + 30 * 86400000 });
       const r = await postWebhook({
         event_type: 'transaction.completed',
         data: { id: 'tx-monthly-race', status: 'completed', custom_data: { accountId }, items: [{ price: { id: 'pri_monthly' }, quantity: 1 }] },
       });
       expect(r.statusCode).toBe(200);
-      expect(comm.subscriptions.get(accountId)?.expiry).toBe(fakeNow + 30 * 86400000); // unchanged, not extended
-      expect(comm.events).toHaveLength(1);
-      expect(comm.events[0]).toMatchObject({ transactionId: 'tx-monthly-race', eventType: 'transaction.completed', accountId });
+      // Stacked onto the running period, not from now — the player keeps the days they already had.
+      expect(comm.subscriptions.get(accountId)?.expiry).toBe(fakeNow + 60 * 86400000);
+      expect(comm.bal(accountId)).toBe(600); // and the immediate coins they paid for
+      // One scalar expiry: the result is one longer card, never two cards at once.
+      const save = body(await app.inject({ method: 'GET', url: '/save', headers: auth() }));
+      expect(save.data.save.monetization.subscriptionExpiry).toBe(fakeNow + 60 * 86400000);
+    });
+
+    it('a year card bought while a monthly is running stacks a year onto it (shared single expiry)', async () => {
+      comm.subscriptions.set(accountId, { expiry: fakeNow + 30 * 86400000 });
+      const r = await postWebhook({
+        event_type: 'transaction.completed',
+        data: { id: 'tx-year-onto-monthly', status: 'completed', custom_data: { accountId }, items: [{ price: { id: 'pri_year' }, quantity: 1 }] },
+      });
+      expect(r.statusCode).toBe(200);
+      expect(comm.subscriptions.get(accountId)?.expiry).toBe(fakeNow + (30 + 365) * 86400000);
+    });
+
+    it('extending does not weaken idempotency: a redelivery of the SAME transaction still grants once', async () => {
+      // The orderId dedupe runs before the gate, so bypassing the gate cannot turn Paddle's
+      // at-least-once delivery into repeat grants — the case that would print subscription time.
+      comm.subscriptions.set(accountId, { expiry: fakeNow + 30 * 86400000 });
+      const payload = {
+        event_type: 'transaction.completed',
+        data: { id: 'tx-monthly-extend-replay', status: 'completed', custom_data: { accountId }, items: [{ price: { id: 'pri_monthly' }, quantity: 1 }] },
+      };
+      await postWebhook(payload);
+      const afterFirst = comm.subscriptions.get(accountId)?.expiry;
+      const coinsAfterFirst = comm.bal(accountId);
+      expect(afterFirst).toBe(fakeNow + 60 * 86400000);
+
+      const r2 = await postWebhook(payload);
+      expect(r2.statusCode).toBe(200);
+      expect(comm.subscriptions.get(accountId)?.expiry).toBe(afterFirst);
+      expect(comm.bal(accountId)).toBe(coinsAfterFirst);
     });
 
     it('non-completed transaction event (e.g. payment_failed) is logged, not granted', async () => {

@@ -131,13 +131,26 @@ export function registerWebhookRoute(app: FastifyInstance, deps: PaddleDeps): vo
           }
           const orderId = `paddle:${transactionId}`;
           // Real money via Paddle (web-only store) — tags the 'web' recharged bucket (ADR-020), not the free pool.
+          //
+          // `alreadyCharged` (2026-09-12): by the time this event arrives Paddle has taken the money, so
+          // the single-slot gate must not refuse the grant — refusing does not give the money back, it
+          // only decides whether the player gets the 30/365 days and 600 coins they paid for. The gate
+          // still does its real job one step earlier, at `/shop/paddle/checkout`, which turns a player
+          // with a running card away BEFORE charging; this flag only covers what that pre-check cannot
+          // see (two checkouts opened before either completed, or a card that went active in between).
+          // Extending is correct arithmetic, not a freebie: applySubscription stacks from
+          // max(expiry, now) and `subscription.expiry` is one scalar, so the player ends up with one
+          // longer card for two payments — exactly what they bought. Same call the Apple renewal path
+          // has made since 2026-09-03, for the same reason. Idempotency is untouched: the orderId
+          // dedupe runs before the gate, so a Paddle redelivery is still a no-op.
           const result = subscriptionProduct === 'monthly'
-            ? await deps.commercial.monthlyCardBuy({ accountId, orderId, rechargePlatform: 'paddle' })
-            : await deps.commercial.yearCardBuy({ accountId, orderId, rechargePlatform: 'paddle' });
+            ? await deps.commercial.monthlyCardBuy({ accountId, orderId, rechargePlatform: 'paddle', alreadyCharged: true })
+            : await deps.commercial.yearCardBuy({ accountId, orderId, rechargePlatform: 'paddle', alreadyCharged: true });
           if (!result.ok) {
-            // Real money already changed hands but the grant was refused (e.g. an extreme same-instant
-            // race against another purchase slipping past the checkout-time pre-check) — log for CS/refund
-            // lookup instead of silently dropping it.
+            // Money changed hands and the grant STILL failed — with the single-slot gate bypassed above
+            // this is no longer the routine "card already active" case but something genuinely wrong
+            // (BAD_REQUEST from an orderId owned by another account, commercial unreachable). Log for
+            // CS/refund lookup rather than silently dropping it.
             log.error(`paddle webhook: subscription grant failed ${result.error} tx=${transactionId}`);
             await deps.commercial.recordPaddleEvent({
               transactionId, eventType: 'transaction.completed', status, accountId, rawEvent: rawBody,
