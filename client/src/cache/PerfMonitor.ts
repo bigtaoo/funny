@@ -32,6 +32,16 @@ const SUSTAIN_WINDOWS = 5;          // report only after this many consecutive l
  * healthy idle menu as "sustained low fps ~20" and files a cpu anomaly every 10 seconds. Same class
  * of false positive as the backgrounded-tab one fixed on 2026-07-26, from the other direction: the
  * device is not slow, it was asked to go slow.
+ *
+ * The ceiling it is measured against must be the LOWEST one that applied during the window, not the
+ * one standing at window end (2026-09-12 fix). renderPolicy flips between IDLE_FPS and TARGET_FPS on
+ * a single tick — `applyIdleThrottles` re-arms full rate the moment anything changes — so a menu the
+ * player touches once every few seconds spends most of a 2s window capped at 20 and ends it at 60.
+ * Reading the ceiling at window end then compared an idle-throttled average (~20-24) against the
+ * full-rate threshold of 25 and filed a stutter. That is the whole of the `cpu` traffic seen on
+ * 2026-09-11 in production (fps 19-25, thresholdFps 25, all of it on `reactive` menu scenes:
+ * Shop/Gacha/Card/Recharge), versus the genuine pre-ADR-083 article on 2026-09-08 which sat at
+ * fps 10-16 with the loop asking for 60 throughout.
  */
 const FPS_WARN_HEADROOM = 5;
 
@@ -79,6 +89,8 @@ export class PerfMonitor {
   private accMs = 0;
   private frames = 0;
   private lowFpsStreak = 0;
+  /** Lowest `ticker.maxFPS` seen during the current window; Infinity = uncapped throughout. See {@link FPS_WARN_HEADROOM}. */
+  private windowMinCap = Infinity;
   /** Cumulative long-task duration (ms) within the current sampling window; accumulated in the PerformanceObserver callback and reset at window end. */
   private longTaskMs = 0;
   private observer: PerfObserver | null = null;
@@ -152,14 +164,19 @@ export class PerfMonitor {
     if (this.lastPaintCounters === null) this.seedPaintCounters();
     this.frames += 1;
     this.accMs += this.ticker?.deltaMS ?? 16.7;
+    // Sampled per tick, not at window end: the cap moves within a window. See FPS_WARN_HEADROOM.
+    const capNow = this.ticker?.maxFPS ?? 0;
+    if (capNow > 0 && capNow < this.windowMinCap) this.windowMinCap = capNow;
     if (this.accMs < WINDOW_MS) return;
 
     const windowMs = this.accMs;
     const fps = (this.frames * 1000) / windowMs;
     const busyRatio = Math.min(1, this.longTaskMs / windowMs);
+    const minCap = this.windowMinCap;
     this.accMs = 0;
     this.frames = 0;
     this.longTaskMs = 0;
+    this.windowMinCap = Infinity;
 
     // The tab was hidden/backgrounded/occluded at some point during this window: the browser throttles
     // rAF for power saving, which can legitimately tank fps and stretch deltaMS with no real JS slowness.
@@ -187,7 +204,7 @@ export class PerfMonitor {
     }
 
     // ② Sustained low FPS: report only after multiple consecutive windows (transient drops or scene transitions do not count).
-    const fpsWarn = this.effectiveFpsWarn();
+    const fpsWarn = this.effectiveFpsWarn(minCap);
     if (fps < fpsWarn) {
       this.lowFpsStreak += 1;
       if (this.lowFpsStreak >= SUSTAIN_WINDOWS) {
@@ -203,13 +220,13 @@ export class PerfMonitor {
   };
 
   /**
-   * Stutter threshold for this window, clamped under the render loop's current ceiling.
-   * See {@link FPS_WARN_HEADROOM}. A cap of 0 means "uncapped" in PIXI, so it clamps nothing.
+   * Stutter threshold for this window, clamped under the lowest ceiling the render loop imposed
+   * during it. See {@link FPS_WARN_HEADROOM}. Infinity means the loop ran uncapped for the whole
+   * window (PIXI spells that `maxFPS === 0`), so there is nothing to clamp against.
    */
-  private effectiveFpsWarn(): number {
+  private effectiveFpsWarn(minCap: number): number {
     const warn = debugNum('nw_fps_warn', DEFAULT_FPS_WARN);
-    const cap = this.ticker?.maxFPS ?? 0;
-    return cap > 0 ? Math.min(warn, cap - FPS_WARN_HEADROOM) : warn;
+    return Number.isFinite(minCap) ? Math.min(warn, minCap - FPS_WARN_HEADROOM) : warn;
   }
 
   /**

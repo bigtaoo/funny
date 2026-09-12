@@ -202,6 +202,18 @@ ssh funny-vps "docker cp /tmp/q.js server-analyticsvc-1:/app/q.js && docker exec
 
 （脚本必须落在容器的 `/app` 下，`/tmp` 里 node 解析不到 `mongodb`；文档字段名是 **`event`** 不是 `name`。）
 
+## 9.5 卡顿告警的第二次假阳性：天花板在窗口中途变过（2026-09-12）
+
+§1 末尾那句「修复后的两个包一条 `cpu` 都没有，但曝光量不够，别当结论」——2026-09-12 回查 Loki 时曝光量上来了，`58aca9e` 出了 **10 条 `cpu`**，全部 `fps 19–25 / thresholdFps 25`，场景是 Shop/Gacha/Card/Recharge 这些 `reactive` 菜单。**它们是假阳性，不是回归。**
+
+`PerfMonitor.effectiveFpsWarn()` 把阈值压在「渲染循环当前的天花板」之下（`min(25, maxFPS - 5)`），这条逻辑本身对——问题是它在**窗口结束时**读 `ticker.maxFPS`，而 `renderPolicy.applyIdleThrottles()` 是**一 tick 之内**在 `IDLE_FPS`(20) 和 `TARGET_FPS`(60) 之间翻的：只要签名变了/有输入 hold/是 live 场景，立刻回满帧。于是一个「玩家隔几秒碰一下」的菜单，2 秒窗口里大部分时间被压在 20 fps、结尾那一下被顶回 60——窗口均值 ~22，收尾读到的天花板是 60，阈值算成 25，`22 < 25` 成立，连续 5 个窗口就报一条「sustained low fps」。
+
+对照组：2026-09-08 那批**真**卡顿（`e2e307e`，ADR-083 之前的最后一个线上包）是 `fps 10–16`，而且那个包**根本没有节流**，天花板全程 60。所以两者在数据上是分得开的：看 `fps` 落在 `(IDLE_FPS, thresholdFps)` 这个夹缝里、还是明显低于 `IDLE_FPS`。
+
+修法：天花板改成**窗口内见过的最小值**（`windowMinCap`，每 tick 采样，窗口结束时取用并重置），而不是收尾那一个瞬时值。被压到 20 过的窗口，阈值就按 15 算——`22 fps` 沉默，`8 fps` 照报。回归在 `test/PerfMonitor.test.ts`（两条：夹缝里的窗口沉默、同样形状但真的慢的窗口仍然报）。
+
+**读 `cpu` 告警时的心法**：`thresholdFps` 是**推导值**不是常量，它和 `fps` 要一起看；`fps` 贴着 `IDLE_FPS` 的告警先怀疑节流，别先怀疑设备。
+
 ## 10. 还没做的
 
 1. **iOS / 微信真机仍然没有人拿着手机跑过。** §9 只是把管子接好了（2026-09-09 才真的接通，见那一节的订正）。线上到 2026-09-09 累计 `render_profile` **1 条**，桌面 web、`SettingsScene`。数字要等真机上线（Grafana 里按 `platform` 切 `fpsP50`、按 `scene` 切 `skipPct`；世界地图现在应该报出 ~80% 的 `skipPct`）。功耗（不是帧数）本来也不在客户端能自测的范围内，要靠设备侧的电池统计。

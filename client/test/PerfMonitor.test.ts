@@ -151,4 +151,33 @@ describe('PerfMonitor: the idle frame-rate cap is not a stutter', () => {
     feed(ticker, 20, SUSTAIN_WINDOWS);
     expect(reportAnomaly).toHaveBeenCalledWith('cpu', expect.stringContaining('sustained low fps'), expect.anything());
   });
+
+  // 2026-09-12: renderPolicy re-arms TARGET_FPS on the same tick anything changes, so a menu the
+  // player touches every few seconds ends most windows at cap 60 having spent them at cap 20. The
+  // ceiling therefore has to be the lowest one seen DURING the window, not the one standing at its
+  // end — otherwise an idle-throttled ~22fps average is measured against the full-rate threshold of
+  // 25. That was the entirety of the `cpu` traffic on 2026-09-11 in production.
+  it('a window that was idle-capped partway through is measured against the idle ceiling, not the one at window end', async () => {
+    const ticker = await monitorOn(20);
+    for (let w = 0; w < SUSTAIN_WINDOWS + 2; w++) {
+      // ~1.6s at the 20fps idle cap …
+      ticker.maxFPS = 20;
+      ticker.tick(1000 / 20, 32);
+      // … then activity re-arms 60fps for the tail of the window. Window average ≈ 22fps.
+      ticker.maxFPS = 60;
+      ticker.tick(1000 / 60, 12);
+    }
+    expect(reportAnomaly).not.toHaveBeenCalled();
+  });
+
+  it('...and a device that is genuinely slow across such a window still reports', async () => {
+    const ticker = await monitorOn(20);
+    for (let w = 0; w < SUSTAIN_WINDOWS; w++) {
+      ticker.maxFPS = 20;
+      ticker.tick(1000 / 8, 13); // 8fps under a 20fps cap — well under the clamped threshold of 15
+      ticker.maxFPS = 60;
+      ticker.tick(1000 / 8, 3);
+    }
+    expect(reportAnomaly).toHaveBeenCalledWith('cpu', expect.stringContaining('sustained low fps'), expect.anything());
+  });
 });
