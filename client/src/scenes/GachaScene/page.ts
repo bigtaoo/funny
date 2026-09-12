@@ -194,7 +194,9 @@ export class PagePanel implements PageHandlers {
         core.container.addChild(st);
         sxp += starSz + 2;
       }
-      const lbl = txt(t(('rarity.' + rar) as TranslationKey), FS.body, C.mid);
+      // Label carries the rarity colour too (bold, so the pale grey / gold ends stay readable on
+      // the cream banner art) — colour is the rank cue everywhere else in the scene.
+      const lbl = txt(t(('rarity.' + rar) as TranslationKey), FS.body, RARITY_COLOR[rar], true);
       lbl.anchor.set(0.5, 0);
       lbl.x = cx;
       lbl.y = legendY;
