@@ -4,7 +4,7 @@
 // comment — since RenderPanel just needs a one-line delegate for each, not their full bodies here.
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { FS } from '../../render/fontScale';
 import * as PIXI from 'pixi.js-legacy';
 import { BuildingType, UnitType } from '@nw/engine/types';
@@ -342,10 +342,24 @@ export class RenderPanel implements RenderHandlers {
    */
   renderActionButtons(rightEdge: number, top: number, rowH: number, scale = 1): void {
     const core = this.core;
-    const btnW = 70 * scale,
-      btnH = 30 * scale,
+    const btnH = 30 * scale,
       gap = 8 * scale;
     const labelSize = scale >= 2 ? FS.heading : FS.tiny;
+    // Width from the widest of the labels this cluster can show, not a literal 70. The footer band
+    // is the full screen width with a counts line and a hint on its left, so these three buttons
+    // sit in ~900 free design px and the old fixed width spent 70 of them whatever the word was:
+    // German's "Speichern" needs 103 at the legibility floor with no icon at all, and the shared
+    // label widget answered by scaling it to 0.64 — 12.7 design px, well under the floor (sweep
+    // §50.12). They stay uniform (one width for all three, `fill` a fixed 1.2x) so the cluster
+    // still reads as a row of peers rather than three differently-shaped chips.
+    const probeKeys = ['world.defense.save', 'world.defense.clear'] as const;
+    const widest = probeKeys.reduce((max, key) => {
+      const probe = txt(t(key), labelSize, C.dark);
+      const wd = probe.width;
+      probe.destroy({ texture: true, baseTexture: true });
+      return Math.max(max, wd);
+    }, 0);
+    const btnW = Math.max(70 * scale, Math.ceil(widest) + buttonLabelIconW(labelSize) + 12 * scale);
     const cy = top + (rowH - btnH) / 2;
     const save = sketchPanel(btnW, btnH, {
       fill: C.dark,
@@ -373,7 +387,10 @@ export class RenderPanel implements RenderHandlers {
 
     if (core.mode === 'attack') {
       const fillFull = core.teamCapacity() > 0 && core.committedTroops() >= core.teamCapacity();
-      const fillW = 84 * scale;
+      // Same rule as the pair beside it, just its own (longer) word: German's
+      // "Truppen auffüllen" is two words, so this one wraps inside the widget rather than growing
+      // to 380 design px and pushing the cluster off the left of the band.
+      const fillW = Math.max(84 * scale, btnW * 1.2);
       const fill = sketchPanel(fillW, btnH, {
         fill: C.paper,
         border: fillFull ? C.mid : C.gold,

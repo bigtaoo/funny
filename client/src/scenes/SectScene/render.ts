@@ -467,13 +467,19 @@ export class RenderPanel {
 
   addCenterButton(label: string, x: number, y: number, action: () => void, seed: number, enabled = true): void {
     const core = this.core;
-    const btn = sketchPanel(240, 72, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(seed, 0, 240) });
+    // 84 tall, not 72, and through the shared label widget rather than a bare centred `txt`
+    // (2026-09-12). Nothing here measured the label against the 240-wide box, so German's "Sekten
+    // durchsuchen" (302 design px at `FS.heading`) simply drew past both edges of the button it
+    // names. The widget would have fitted it by shrinking — legible, but visibly smaller than
+    // "Sekte gründen" beside it — and the ruling's first answer is to wrap instead and let the
+    // button grow (§50.12). Two lines of `FS.heading` need 76, which 72 did not have and 84 does.
+    const BW = 240, BH = 84;
+    const btn = sketchPanel(BW, BH, { fill: enabled ? C.dark : C.btnOff, border: enabled ? C.accent : C.mid, seed: seedFor(seed, 0, BW) });
     btn.x = x; btn.y = y;
     core.bodyLayer.addChild(btn);
-    const lbl = txt(label, FS.heading, enabled ? C.light : C.mid);
-    lbl.anchor.set(0.5, 0.5); lbl.x = x + 120; lbl.y = y + 36;
-    core.bodyLayer.addChild(lbl);
-    if (enabled) core.hitRects.push({ rect: { x, y, w: 240, h: 72 }, fn: action });
+    drawButtonLabel(core.bodyLayer, x, y, BW, BH, label, null, enabled ? C.light : C.mid, FS.heading,
+      { bold: false });
+    if (enabled) core.hitRects.push({ rect: { x, y, w: BW, h: BH }, fn: action });
   }
 
   addBarButton(label: string, x: number, y: number, color: number, action: () => void, seed: number, enabled = true): void {

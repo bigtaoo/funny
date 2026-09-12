@@ -67,13 +67,31 @@ export function renderTrainModal(core: CitySceneCore): void {
   // between consecutive 'Training 5000 · 42:09 left' rows). The panel's own height uses the same
   // figure, so the modal grows with the rows instead of clipping them.
   const entryH = Math.max(16, Math.ceil(FS.tiny * 1.3));
+  // ...and the same measure-before-you-size treatment the queue-status line above already gets
+  // (2026-09-12). A row is one string with two numbers in it, and German's "Bildet aus: 5000 · noch
+  // 1:07:17" is 320 design px against a 320-wide panel — it ran out the side of the modal on every
+  // German phone (sweep §50.12). Wrapping is the right answer for a data line inside a panel that
+  // can grow; what it needs is for the panel to KNOW, which means measuring here.
+  const entryWrapW = queueWrapW;
+  const byCompletion = [...trainQueue].sort((a2, b2) => a2.completeAt - b2.completeAt);
+  const entryTexts = byCompletion.map((e) =>
+    t('city.trainEntry')
+      .replace('{n}', String(e.qty))
+      .replace('{time}', formatDuration(Math.max(0, Math.ceil((e.completeAt - now) / 1000)))),
+  );
+  const entryHeights = entryTexts.map((s) => {
+    const probe = txt(s, FS.tiny, C.dark, false, entryWrapW);
+    const hh = Math.max(entryH, Math.ceil(probe.height) + 2);
+    probe.destroy({ texture: true, baseTexture: true });
+    return hh;
+  });
   const contentH =
     12 +
     28 +
     (speedupActive ? 18 : 0) +
     20 +
     queueH +
-    trainQueue.length * entryH +
+    entryHeights.reduce((sum, hh) => sum + hh, 0) +
     4 +
     36 +
     (trainQueue.length > 0 ? 34 : 0) +
@@ -155,21 +173,16 @@ export function renderTrainModal(core: CitySceneCore): void {
   panelRoot.addChild(queueLbl);
   iy += queueH;
   // ADR-079: the slots run in parallel, so the array's enqueue order is no longer completion order — a
-  // small batch queued last can be the first to land. Sort a copy for display so the countdowns read
-  // top-to-bottom (`trainQueue` itself is the server's array and must not be reordered in place).
-  const byCompletion = [...trainQueue].sort((a2, b2) => a2.completeAt - b2.completeAt);
-  for (const e of byCompletion) {
-    const sec = Math.max(0, Math.ceil((e.completeAt - now) / 1000));
-    const ql = st(
-      t('city.trainEntry').replace('{n}', String(e.qty)).replace('{time}', formatDuration(sec)),
-      FS.tiny,
-      C.dark
-    );
+  // small batch queued last can be the first to land. `byCompletion` (sorted above, beside the height
+  // measurement it feeds) is what display reads, so the countdowns run top-to-bottom; `trainQueue`
+  // itself is the server's array and must not be reordered in place.
+  entryTexts.forEach((s, i) => {
+    const ql = st(s, FS.tiny, C.dark, false, entryWrapW);
     ql.x = 10;
     ql.y = iy;
     panelRoot.addChild(ql);
-    iy += entryH;
-  }
+    iy += entryHeights[i]!;
+  });
 
   // Max affordable qty is bounded by every resource troop training spends (ink/paper/graphite/metal/sticker), not ink alone.
   const affordableByRes = RESOURCE_TYPES.map((rt) => {

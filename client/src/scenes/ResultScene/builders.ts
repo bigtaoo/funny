@@ -14,6 +14,7 @@ import { drawSceneHeader, type SceneHeaderResult } from '../../ui/widgets/SceneH
 import { FS, snapFont, fitFont } from '../../render/fontScale';
 import type { Badge } from '../ResultScene';
 import { tapHandler } from '../../ui/hits';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 
 // ── Pure(ish) builder helpers for ResultScene ─────────────────────────────────
 //
@@ -292,33 +293,28 @@ export function addVersusLine(
   );
 }
 
-/** Centre an icon + label pair inside the button box. */
+/**
+ * Centre an icon + label pair inside the button box.
+ *
+ * Delegates to the shared `[icon][gap][label]` widget (2026-09-12). This was the last of the four
+ * hand-rolled copies its header lists, and the only one that did not measure at all: it centred the
+ * group at full size whatever the box was, so German's "NOCHMAL KÄMPFEN" — 685 design px of group
+ * in a 540-wide CTA — simply painted past both ends of the gold button (sweep §50.12, one finding
+ * on every German phone). The widget's two-line branch is what this box wants: it is 200 design px
+ * tall, so the two words stack at full size instead of either shrinking or spilling.
+ *
+ * The icon is a little smaller than the 0.62·h this used to draw (the widget sizes it off the font
+ * instead), which is the right way round for a CTA whose label is the thing being read.
+ */
 export function addIconLabel(
   container: PIXI.Container,
   x: number, y: number, w: number, h: number,
   text: string, icon: IconKind, color: number, fontSize: number, bold: boolean,
 ): void {
-  const iconSize = Math.round(h * 0.62);
-  const label = makeText(text, {
-    fontSize,
-    fill: color,
-    fontWeight: bold ? 'bold' : 'normal',
-    fontFamily: 'monospace',
+  drawButtonLabel(container, x, y, w, h, text, icon, color, fontSize, {
+    bold,
+    inset: Math.round(w * 0.08),
   });
-  label.anchor.set(0, 0.5);
-
-  const gap = Math.round(w * 0.04);
-  const totalW = iconSize + gap + label.width;
-  const startX = x + (w - totalW) / 2;
-
-  const glyph = buildIcon(icon, iconSize, color);
-  glyph.x = startX;
-  glyph.y = y + (h - iconSize) / 2;
-
-  label.x = startX + iconSize + gap;
-  label.y = y + h / 2;
-
-  container.addChild(glyph, label);
 }
 
 /** Primary call-to-action: gold-filled, bold white label with a leading icon. */

@@ -190,14 +190,31 @@ export class ListPanel {
     const cellW = (avail - AUC_CELL_GAP * (cols - 1)) / cols;
     const rows = Math.ceil(auctions.length / cols);
     const totalH = rows * (AUC_CELL_H + AUC_CELL_GAP) + AUC_CELL_GAP;
-    // No PIXI mask backs this grid (draw-cull only, below) — a row is either drawn in full or
-    // skipped entirely, never cropped, so peekViewportH's mid-row shrink would just exclude a
-    // row that fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). Use the
-    // naive availH directly (also the wheel-scroll viewport bounds, see wheelScroll.ts).
+    // `peekViewportH`'s mid-row shrink is deliberately NOT used here — it would exclude a row that
+    // fits fine and leave a dead gap (2026-07-23 correction, UI_DESIGN.md §25). So the viewport is
+    // the naive availH (also the wheel-scroll bounds, see wheelScroll.ts) and a partly-visible row
+    // is CROPPED by a mask instead of being dropped.
+    //
+    // The mask is new (2026-09-12) and the draw-cull it replaces was never sound: `y <= listY +
+    // availH` draws any row whose TOP is inside the viewport in full, so the bottom row always ran
+    // up to a cell-height past the viewport, over the "+ List Item" button beneath it — and the
+    // matching top test let a row scrolled half-way up paint over the filter bar. It went unseen
+    // because whether it bit depended on where the row boundaries happened to land: raising
+    // AUC_CELL_H by 20 was enough to put the last row's price and countdown straight through the
+    // create button on three viewports. Same gridLayer + clip shape the craft/inventory grids use.
     core.scrollMax = Math.max(0, totalH - availH);
     core.scrollY = Math.max(0, Math.min(core.scrollY, core.scrollMax));
     core.scrollRegionTop = listY;
     core.scrollRegionBottom = listY + availH;
+
+    const gridLayer = new PIXI.Container();
+    core.bodyLayer.addChild(gridLayer);
+    const clip = new PIXI.Graphics();
+    clip.beginFill(0xffffff).drawRect(contentX, listY, contentW, availH).endFill();
+    core.bodyLayer.addChild(clip);
+    gridLayer.mask = clip;
+    const outerLayer = core.bodyLayer;
+    core.bodyLayer = gridLayer;
 
     const now = serverNow();
     auctions.forEach((auc, i) => {
@@ -209,6 +226,7 @@ export class ListPanel {
         this.renderAuctionCell(auc, x, y, cellW, now);
       }
     });
+    core.bodyLayer = outerLayer;
 
     drawScrollIndicator(core.bodyLayer, { x: left, y: listY, w: avail, h: availH }, core.scrollY, Math.max(0, totalH - availH));
   }
@@ -323,6 +341,13 @@ export class ListPanel {
     // Stacked right below the price/buyout block (not pinned to the card's bottom edge — that left a
     // dead gap and put it fighting the buy button for the same row, see 16.07.2026 "看起来太乱了" report)
     // and shown as days/hours/minutes/seconds since listings run up to 72h.
+    //
+    // `auction.timeLeft` MUST fit `rightW` on ONE line in every locale — ~14 monospace characters at
+    // a portrait phone's legibility floor, since `rightW` is 167 design px in the three-column grid.
+    // This is the last line of the info column and the action button is pinned to the card's
+    // bottom-right, so a second line lands ON that button: it is the only thing here the cell has no
+    // room to absorb. Wrapping is therefore not an available answer and a long translation has to be
+    // abbreviated instead — see the note on the German value (§50.12).
     if (auc.status === 'open') {
       const remainingSec = Math.max(0, Math.floor((auc.expireAt - now) / 1000));
       const d = Math.floor(remainingSec / 86400);

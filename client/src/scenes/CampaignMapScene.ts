@@ -6,7 +6,7 @@ import { t } from '../i18n';
 import { CHAPTER_ORDER, getChapterMap } from '../game';
 import { isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
 import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../render/sketchUi';
-import { FS, snapFont } from '../render/fontScale';
+import { FS, snapFont, fitFont } from '../render/fontScale';
 import { buildIcon, type IconKind } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, buildTitleIcon } from '../ui/widgets/SceneHeader';
@@ -220,30 +220,6 @@ export class CampaignMapScene implements Scene {
     const hdr = drawSceneHeader(root, w, h, null);
     const tbH = hdr.headerH;
 
-    // With a subtitle (chapter pages: notebook owner), the title rides slightly
-    // above center so the dim owner line tucks beneath it; without one it centers.
-    // The `pveTabIcon` treasure map is the same glyph LevelPrepScene and the achievement wall's
-    // PvE category use — the campaign IS the PvE track, so all three show one picture. Laid out
-    // as the [icon][gap][title] group drawSceneHeader would draw, just centred by hand because
-    // this scene owns the title (it may sit above a subtitle line).
-    const title = txt(titleStr, FS.title, C.dark, true);
-    const titleY = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
-    const icon = buildTitleIcon('pveTabIcon', FS.title, C.dark);
-    const groupX = Math.round((w - (icon.size + icon.gap + title.width)) / 2);
-    icon.node.x = groupX;
-    icon.node.y = Math.round(titleY - icon.size / 2);
-    root.addChild(icon.node);
-    title.anchor.set(0, 0.5); title.x = groupX + icon.size + icon.gap;
-    title.y = titleY;
-    root.addChild(title);
-
-    if (subtitleStr) {
-      const sub = txt(subtitleStr, FS.label, C.mid);
-      sub.anchor.set(0.5, 0.5); sub.x = w / 2; sub.y = Math.round(tbH * 0.72);
-      sub.alpha = 0.75;
-      root.addChild(sub);
-    }
-
     hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: onBack });
 
     // Right-aligned header shortcuts, each on the one true primary-button
@@ -255,6 +231,15 @@ export class CampaignMapScene implements Scene {
     const pillH = Math.round(fontSz + padX * 1.4);
     const pillGap = Math.round(w * 0.02);
     let rightX = w - Math.round(w * 0.04);
+    // The pills ride the SUBTITLE's row when there is one, not the title's (2026-09-12). The bar is
+    // 12% of the design height — 230 design px in portrait — so a chapter page already uses it as
+    // two rows: the title at 0.40 and the notebook owner at 0.72. Putting the shortcuts on the
+    // title's row left it a 181-px band between the back pill and `Kapitel`, and German's "Kapitel
+    // 2 · Trainingsgelände" needs 545 even before the glyph: it was drawn straight through both
+    // pills (sweep §50.12), and shrinking it to the band would have meant a 12-design-px scene
+    // title. On the owner's row the title gets the whole bar right of the back pill and needs no
+    // shrinking at all; the owner line is short and centred, and is clamped off the pills below.
+    const pillMidY = subtitleStr ? Math.round(tbH * 0.72) : Math.round(tbH / 2);
 
     // Each pill carries a leading glyph, the same [icon][gap][label] shape the
     // title beside it and the world-map header entries (WorldMapPanels/headerHud)
@@ -270,7 +255,7 @@ export class CampaignMapScene implements Scene {
       const groupW = iconSz + iconGap + label.width;
       const pillW = Math.round(groupW + padX * 2);
       const pillX = rightX - pillW;
-      const pillY = Math.round((tbH - pillH) / 2);
+      const pillY = Math.round(pillMidY - pillH / 2);
 
       const bg = sketchButton(pillW, pillH, seedFor(pillX, pillY, pillW));
       bg.x = pillX; bg.y = pillY;
@@ -279,11 +264,11 @@ export class CampaignMapScene implements Scene {
       const groupX = pillX + (pillW - groupW) / 2;
       const glyph = buildIcon(icon, iconSz, C.gold, { variant: 'active' });
       glyph.x = Math.round(groupX);
-      glyph.y = Math.round(tbH / 2 - iconSz / 2);
+      glyph.y = Math.round(pillMidY - iconSz / 2);
       root.addChild(glyph);
 
       label.anchor.set(0, 0.5);
-      label.x = Math.round(groupX + iconSz + iconGap); label.y = tbH / 2;
+      label.x = Math.round(groupX + iconSz + iconGap); label.y = pillMidY;
       root.addChild(label);
 
       hits.push({ rect: { x: pillX, y: pillY, w: pillW, h: pillH }, fn });
@@ -300,6 +285,57 @@ export class CampaignMapScene implements Scene {
     // treasure-map `pveTabIcon` this same bar already shows beside the title.
     if (showChaptersButton) {
       addHeaderButton(t('campaign.chapters'), 'campaignTabIcon', () => this.backToToc());
+    }
+
+    // ── Title LAST, because the shortcut pills above are what decide how much room it has ──
+    //
+    // With a subtitle (chapter pages: notebook owner), the title rides slightly above center so the
+    // dim owner line tucks beneath it; without one it centers. The `pveTabIcon` treasure map is the
+    // same glyph LevelPrepScene and the achievement wall's PvE category use — the campaign IS the
+    // PvE track, so all three show one picture. Laid out as the [icon][gap][title] group
+    // drawSceneHeader would draw, just centred by hand because this scene owns the title (it may sit
+    // above a subtitle line).
+    //
+    // The band is measured, not assumed (2026-09-12). This used to centre the group on the whole bar
+    // with nothing to stop it: on a 360-wide phone German's "Kapitel 2 · Trainingsgelände" is 27
+    // characters and was drawn straight through the `Kapitel`/`Ausrüstung` pills it is centred
+    // against (sweep §50.12). On a chapter page the pills have moved to the owner's row (see
+    // `pillMidY`), so the title's right edge is the bar's own inset; on the TOC they share its row
+    // and `rightX` — where the pills stop — is the edge it has to respect. `fitFont` then chooses a
+    // size off the shared scale for whatever band that leaves, rather than scaling the built node
+    // under the legibility floor.
+    const bandL = hdr.backRect.x + hdr.backRect.w + pillGap;
+    const bandR = subtitleStr ? w - Math.round(w * 0.04) : rightX;
+    const band = Math.max(Math.round(w * 0.2), bandR - bandL);
+    const titleY = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
+    let icon = buildTitleIcon('pveTabIcon', FS.title, C.dark);
+    const probe = txt(titleStr, FS.title, C.dark, true);
+    const titleSize = fitFont(FS.title, icon.size + icon.gap + probe.width, band);
+    probe.destroy({ texture: true, baseTexture: true });
+    if (titleSize !== FS.title) {
+      icon.node.destroy({ children: true });
+      icon = buildTitleIcon('pveTabIcon', titleSize, C.dark);
+    }
+    const title = txt(titleStr, titleSize, C.dark, true);
+    const groupW = icon.size + icon.gap + title.width;
+    // Centred on the bar, then pushed back inside the band when the centre would put it under the
+    // pills (same clamp drawSceneHeader applies against a currency cluster).
+    const groupX = Math.max(bandL, Math.min(Math.round((w - groupW) / 2), bandR - groupW));
+    icon.node.x = groupX;
+    icon.node.y = Math.round(titleY - icon.size / 2);
+    root.addChild(icon.node);
+    title.anchor.set(0, 0.5); title.x = groupX + icon.size + icon.gap;
+    title.y = titleY;
+    root.addChild(title);
+
+    if (subtitleStr) {
+      const sub = txt(subtitleStr, FS.label, C.mid, false, Math.max(Math.round(w * 0.2), rightX - bandL));
+      sub.anchor.set(0.5, 0.5);
+      // Centred on the bar, but never into the pills that now share this row.
+      sub.x = Math.min(w / 2, rightX - pillGap - sub.width / 2);
+      sub.y = pillMidY;
+      sub.alpha = 0.75;
+      root.addChild(sub);
     }
 
     return tbH;
