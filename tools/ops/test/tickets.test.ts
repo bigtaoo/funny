@@ -6,7 +6,8 @@
 // could reach it. UX only — the backend re-decides every case, and gets the last word on self-approval.
 import { describe, it, expect } from 'vitest';
 import {
-  approveCapFor, buildTarget, canInitiate, DEFAULT_EXPIRE_DAYS, describeAttachments, describeTarget,
+  approveCapFor, buildTarget, canInitiate, COINS_CAP_HINT, COINS_CAP_PER_TICKET, coinsProblem,
+  DEFAULT_EXPIRE_DAYS, describeAttachments, describeTarget,
   previewText, statusFilter, ticketActions, ticketInput, ticketPeople, TICKET_STATUSES,
 } from '../src/logic/tickets';
 import type { AdminCapability, CompAttachment, CompTarget, CompTicketView, Session } from '../src/types';
@@ -204,6 +205,37 @@ describe('ticketInput', () => {
 
   it('builds a global target when the scope says so', () => {
     expect(ticketInput({ ...fields, scope: 'global' }).target).toEqual({ filter: { kind: 'all' } });
+  });
+});
+
+describe('coinsProblem', () => {
+  it('accepts a blank field and any whole amount up to the cap', () => {
+    expect(coinsProblem('')).toBeNull();
+    expect(coinsProblem('  ')).toBeNull();
+    expect(coinsProblem('0')).toBeNull();
+    expect(coinsProblem('250')).toBeNull();
+    expect(coinsProblem(String(COINS_CAP_PER_TICKET))).toBeNull();
+  });
+
+  it('rejects the mistyped extra zero the cap exists for, and says how many tickets it takes', () => {
+    expect(coinsProblem('25000')).toBe(
+      `25000 coins exceeds the ${COINS_CAP_PER_TICKET} per-ticket cap — send it as 10 tickets.`,
+    );
+    expect(coinsProblem(String(COINS_CAP_PER_TICKET + 1))).toMatch(/send it as 2 tickets\./);
+  });
+
+  it('rejects amounts the form would otherwise pass on as a different number than typed', () => {
+    expect(coinsProblem('abc')).toBe('Coins must be a number.');
+    expect(coinsProblem('-5')).toBe('Coins cannot be negative.');
+    expect(coinsProblem('12.5')).toBe('Coins must be a whole number.');
+  });
+
+  it('states the cap in the hint the form shows before anything is typed', () => {
+    expect(COINS_CAP_HINT).toContain(String(COINS_CAP_PER_TICKET));
+  });
+
+  it('mirrors the backend constant — COMP_COINS_CAP_PER_TICKET in server/shared/src/admin.ts', () => {
+    expect(COINS_CAP_PER_TICKET).toBe(2500);
   });
 });
 

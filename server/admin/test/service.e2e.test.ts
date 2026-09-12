@@ -214,10 +214,19 @@ describe.skipIf(!mongo)('admin service e2e', () => {
     const cs = await actorOf(svc, 'csr');
     const ops = await actorOf(svc, 'opsy');
     const root = await actorOf(svc, 'root');
+    // Skins, not coins: since the per-ticket coin cap (COMP_COINS_CAP_PER_TICKET, 2500) sits below
+    // SINGLE_COMP_QUOTA (5000), a coins-only ticket can no longer reach the over-quota tier — it is
+    // rejected outright long before it gets there. Item/skin attachments still can, via their coin
+    // equivalents (SKIN_COIN_EQUIV 2000 × 5 = 10000).
     const big = await svc.initiateTicket(cs, {
       scope: 'single',
       target: { publicId: '123456789' },
-      mail: { subject: 's', body: 'b', attachments: [{ kind: 'coins', count: 999999 }], expireDays: 30 },
+      mail: {
+        subject: 's',
+        body: 'b',
+        attachments: Array.from({ length: 5 }, () => ({ kind: 'skin' as const, id: 'gold-pen' })),
+        expireDays: 30,
+      },
       reason: 'big',
     });
     expect(big.amountTier).toBe('overquota');
