@@ -25,8 +25,16 @@ export function mongoUriHandshakePath(pkg: string): string {
  * (globalSetup deferred to an external DB); tests then fall back to their own default URI and
  * self-skip when it is unreachable. NW_REQUIRE_DB turns that silent skip into a failure, which is
  * what CI runs with — a suite that quietly tests nothing is worse than a red one.
+ *
+ * `ownUriEnv` is the caller's own `NW_*_MONGO_URI` (ADR-090: each service authenticates as its own
+ * least-privilege user, and since 2026-09-12 its config.ts REQUIRES that variable instead of falling
+ * back to NW_MONGO_URI). Tests run against one unauthenticated mongod holding every database, so the
+ * value is the same string — but it has to be present under the service's own name, or loading that
+ * service's env throws `missing env: NW_…`. Each package names its own variable here and nowhere else,
+ * which is also why this does not reach into scripts/mongoDbMap.mjs: a test helper that knows every
+ * service's variable is the shared-credential shape the ADR removed, in a smaller font.
  */
-export function bridgeMongoUri(pkg: string): void {
+export function bridgeMongoUri(pkg: string, ownUriEnv?: string): void {
   if (!process.env.NW_MONGO_URI) {
     try {
       const uri = readFileSync(mongoUriHandshakePath(pkg), 'utf8').trim();
@@ -34,6 +42,10 @@ export function bridgeMongoUri(pkg: string): void {
     } catch {
       // No handshake file — leave unset.
     }
+  }
+
+  if (ownUriEnv && !process.env[ownUriEnv] && process.env.NW_MONGO_URI) {
+    process.env[ownUriEnv] = process.env.NW_MONGO_URI;
   }
 
   if (process.env.NW_REQUIRE_DB && !process.env.NW_MONGO_URI) {

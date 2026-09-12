@@ -32,9 +32,6 @@ const COMPOSE_FILES = [
   join(SERVER_ROOT, 'docker-compose.cloud.yml'),
 ];
 
-/** metaserver's own pair, which doubles as the transitional shared fallback — see the rule below. */
-const SHARED_BASE_ENVS = ['NW_MONGO_URI', 'NW_MONGO_DB'];
-
 const problems = [];
 const report = (file, msg) => problems.push(`${relative(REPO_ROOT, file).split(sep).join('/')}: ${msg}`);
 
@@ -71,12 +68,11 @@ for (const row of MONGO_SERVICES) {
       }
       // And the indirect form: reading the other service's connection string out of the environment.
       //
-      // NW_MONGO_URI / NW_MONGO_DB are exempt, and that exemption is temporary: they are metaserver's own
-      // pair AND the transitional fallback every other service's config.ts still reads when its own var is
-      // unset (see the compose headers). Until that fallback is removed, a reference to them is ambiguous —
-      // so this rule only enforces the six unambiguous, service-specific variables. Deleting the fallback
-      // from config.ts is what makes this exemption droppable.
-      if (SHARED_BASE_ENVS.includes(other.uriEnv)) continue;
+      // NW_MONGO_URI / NW_MONGO_DB used to be exempt here, because they were metaserver's own pair AND the
+      // fallback every other service's config.ts read when its own variable was unset — a reference to them
+      // was therefore ambiguous. That fallback is gone (ADR-090 close-out, 2026-09-12): each service now
+      // calls requiredEnv() on its own variable and refuses to start without it, so NW_MONGO_URI means
+      // metaserver and nothing else, and any other service naming it is the violation this rule is for.
       if (code.includes(other.uriEnv) || code.includes(other.dbEnv)) {
         report(file, `reads ${other.service}'s ${other.uriEnv}/${other.dbEnv} — each service gets only its own`);
       }

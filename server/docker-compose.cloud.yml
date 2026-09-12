@@ -3,19 +3,28 @@
 #
 # Only differences from docker-compose.prod.yml:
 #   · Removes the mongo service + all depends_on mongo (DB is in the cloud, no local mongo container).
-#   · All NW_*_MONGO_URI are injected from .env (NW_MONGO_URI, pointing to the Atlas mongodb+srv:// string).
-#     7 DB-connecting processes (meta/commercial/world/auction/social/admin/analytics) share the same Atlas cluster with different DB names.
+#   · All seven NW_*_MONGO_URI are injected from .env, one per DB-connecting process
+#     (meta/commercial/world/auction/social/admin/analytics): same Atlas cluster, different database AND
+#     different login — see scripts/mongoDbMap.mjs for which user owns which database.
 #
-# ⚠ Credential isolation (2026-09-12). Each of those 7 blocks reads its OWN NW_*_MONGO_URI first and only
-# falls back to the shared NW_MONGO_URI when it is unset. The fallback is transitional: while it is in use
-# every process holds one login whose grants cover every database, so "commercial is the only writer of coin
-# data" (COMMERCIAL_DESIGN §0 K1/K4) rests on code review alone. Close it by provisioning one least-privilege
-# user per service and putting its connection string in .env:
+# ⚠ Credential isolation (ADR-090, closed 2026-09-12). Each of those 7 blocks REQUIRES its own
+# NW_*_MONGO_URI — there is no fallback to a shared one, here or in the services' config.ts. A missing
+# variable stops the stack with a message naming it; it does not quietly hand that service another
+# service's login, which is what the transitional `${…:-${NW_MONGO_URI}}` fallback did until today.
+# NW_MONGO_URI is metaserver's OWN login (readWrite@notebook_wars), not a cluster-wide one: the
+# admin/atlasAdmin string belongs in no container at all.
 #
-#   node scripts/provisionMongoUsers.mjs --atlas --uri="mongodb+srv://…"   # prints the atlas CLI commands
+# Provision the seven users and print the seven connection strings:
 #
-# After that, NW_MONGO_URI is metaserver's OWN login (readWrite@notebook_wars), not a cluster-wide one, and
-# a service reaching for another service's database fails at the driver instead of succeeding quietly.
+#   ATLAS_PUBLIC_KEY=… ATLAS_PRIVATE_KEY=… node scripts/provisionMongoUsers.mjs --atlas-api --uri="mongodb+srv://…"
+#   node scripts/provisionMongoUsers.mjs --verify --env-file=.env     # proves each is refused on the other six
+#
+# ⚠ What a WRONG login looks like, measured 2026-09-12 in production: the service starts, authenticates
+# fine, and then dies on `AtlasError 8000: user is not allowed to do action [createIndex] on [<its own
+# database>]`. That reads like a misgranted role; it is not. It means the container is holding some OTHER
+# service's connection string (that day: a VPS still running the pre-ADR-090 compose, which handed
+# NW_MONGO_URI to all seven). Check what the container actually got before touching any Atlas role:
+#   docker compose -f docker-compose.cloud.yml config | grep MONGO_URI
 #
 # Start the full stack with one command:
 #   docker compose -f docker-compose.cloud.yml --env-file .env up -d --build
@@ -123,7 +132,7 @@ services:
       NW_COMM_PORT: "8092"
       NW_COMM_HOST: 0.0.0.0
       # Reuses the same Atlas cluster with a different DB name (to migrate to a separate instance, just point this line to the new string).
-      NW_COMM_MONGO_URI: ${NW_COMM_MONGO_URI:-${NW_MONGO_URI:?set NW_MONGO_URI in .env}}
+      NW_COMM_MONGO_URI: ${NW_COMM_MONGO_URI:?set NW_COMM_MONGO_URI in .env — commercial's own login, from scripts/provisionMongoUsers.mjs}
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
       # victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
       NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
@@ -238,7 +247,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_WORLD_PORT: "18084"
       NW_WORLD_HOST: 0.0.0.0
-      NW_WORLD_MONGO_URI: ${NW_WORLD_MONGO_URI:-${NW_MONGO_URI:?set NW_MONGO_URI in .env}}
+      NW_WORLD_MONGO_URI: ${NW_WORLD_MONGO_URI:?set NW_WORLD_MONGO_URI in .env — worldsvc's own login, from scripts/provisionMongoUsers.mjs}
       NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
       NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-redis://redis:6379}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
@@ -273,7 +282,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_AUCTION_PORT: "18086"
       NW_AUCTION_HOST: 0.0.0.0
-      NW_AUCTION_MONGO_URI: ${NW_AUCTION_MONGO_URI:-${NW_MONGO_URI:?set NW_MONGO_URI in .env}}
+      NW_AUCTION_MONGO_URI: ${NW_AUCTION_MONGO_URI:?set NW_AUCTION_MONGO_URI in .env — auctionsvc's own login, from scripts/provisionMongoUsers.mjs}
       NW_AUCTION_MONGO_DB: ${NW_AUCTION_MONGO_DB:-notebook_wars_auction}
       NW_META_INTERNAL_URL: http://metaserver:8080
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
@@ -294,7 +303,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_SOCIAL_PORT: "8085"
       NW_SOCIAL_HOST: 0.0.0.0
-      NW_SOCIAL_MONGO_URI: ${NW_SOCIAL_MONGO_URI:-${NW_MONGO_URI:?set NW_MONGO_URI in .env}}
+      NW_SOCIAL_MONGO_URI: ${NW_SOCIAL_MONGO_URI:?set NW_SOCIAL_MONGO_URI in .env — socialsvc's own login, from scripts/provisionMongoUsers.mjs}
       NW_SOCIAL_MONGO_DB: ${NW_SOCIAL_MONGO_DB:-nw_social}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_META_INTERNAL_URL: http://metaserver:8080
@@ -317,7 +326,7 @@ services:
       NW_ADMIN_JWT_SECRET: ${NW_ADMIN_JWT_SECRET:?set NW_ADMIN_JWT_SECRET in .env}
       NW_ADMIN_PORT: "8083"
       NW_ADMIN_HOST: 0.0.0.0
-      NW_ADMIN_MONGO_URI: ${NW_ADMIN_MONGO_URI:-${NW_MONGO_URI:?set NW_MONGO_URI in .env}}
+      NW_ADMIN_MONGO_URI: ${NW_ADMIN_MONGO_URI:?set NW_ADMIN_MONGO_URI in .env — admin's own login, from scripts/provisionMongoUsers.mjs}
       NW_ADMIN_MONGO_DB: ${NW_ADMIN_MONGO_DB:-notebook_wars_admin}
       NW_ADMIN_SEED_USER: ${NW_ADMIN_SEED_USER:-}
       NW_ADMIN_SEED_PASS: ${NW_ADMIN_SEED_PASS:-}
@@ -344,7 +353,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_ANALYTICS_PORT: "18085"
       NW_ANALYTICS_HOST: 0.0.0.0
-      NW_ANALYTICS_MONGO_URI: ${NW_ANALYTICS_MONGO_URI:-${NW_MONGO_URI:?set NW_MONGO_URI in .env}}
+      NW_ANALYTICS_MONGO_URI: ${NW_ANALYTICS_MONGO_URI:?set NW_ANALYTICS_MONGO_URI in .env — analyticsvc's own login, from scripts/provisionMongoUsers.mjs}
       NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
     restart: unless-stopped
 

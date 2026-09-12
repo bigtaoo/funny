@@ -17,7 +17,21 @@ export interface ServerEnv {
   internalKey: string;
 }
 
-function required(name: string, fallback?: string): string {
+/**
+ * The development Mongo, used when a service's own `NW_*_MONGO_URI` is unset.
+ *
+ * It is deliberately a HOST, not another service's variable. Until 2026-09-12 each service fell back to
+ * `NW_MONGO_URI` (`?? base.mongoUri`), i.e. to metaserver's login — and on the deployed stack that login's
+ * grants covered every database, so while the fallback was taken the credential isolation of ADR-090 did
+ * not exist at all. A fallback to localhost cannot borrow anyone's grants: off a developer's machine there
+ * is nothing on this address, and the service dies on a connection refusal instead of quietly reading
+ * someone else's data. Production supplies the real per-service strings, and docker-compose.cloud.yml
+ * requires all seven rather than defaulting any of them.
+ */
+export const DEV_MONGO_URI = 'mongodb://127.0.0.1:27017/?replicaSet=rs0';
+
+/** One required environment variable, with an optional development default. */
+export function requiredEnv(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
   if (v === undefined || v === '') {
     throw new Error(`missing env: ${name}`);
@@ -28,9 +42,9 @@ function required(name: string, fallback?: string): string {
 export function loadServerEnv(): ServerEnv {
   return {
     // Development defaults; must be overridden via env in production.
-    jwtSecret: required('NW_JWT_SECRET', 'dev-insecure-secret-change-me'),
-    mongoUri: required('NW_MONGO_URI', 'mongodb://127.0.0.1:27017/?replicaSet=rs0'),
-    mongoDb: required('NW_MONGO_DB', 'notebook_wars'),
-    internalKey: required('NW_INTERNAL_KEY', 'dev-insecure-internal-key-change-me'),
+    jwtSecret: requiredEnv('NW_JWT_SECRET', 'dev-insecure-secret-change-me'),
+    mongoUri: requiredEnv('NW_MONGO_URI', DEV_MONGO_URI),
+    mongoDb: requiredEnv('NW_MONGO_DB', 'notebook_wars'),
+    internalKey: requiredEnv('NW_INTERNAL_KEY', 'dev-insecure-internal-key-change-me'),
   };
 }

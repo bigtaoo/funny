@@ -166,3 +166,38 @@ iPhone 13 竖屏「顶部标题栏盖住状态栏 + 底部空出约 80pt 死区�
 - `--verify --env-file=…`：连上每个服务用户，断言**能读自己的库、且被其余 6 个库拒绝**。本地实测 7/7 通过；把其中一条换成 root 串后立刻 `FAIL — nw_world can also read …(roles: root@admin)`，退出码 1——这个验证器自己是能失败的。
 
 **收尾还差两步**（都在拿到 Atlas API key 之后）：① 跑 `--atlas-api` 建号 → 把打印的 7 条串经 `D:\secrets` 的 `bin/push-env.py` 推到 VPS `.env` → 重启 → 跑 `--verify` 确认；② 删掉各服务 `config.ts` 的 `?? NW_MONGO_URI` 兜底与 compose 的 `${…:-${NW_MONGO_URI}}`，同时把 `checkDbIsolation.mjs` 里对 `NW_MONGO_URI` 的豁免一并删掉。
+
+### 补记二（同日晚些）：门关上了 —— 线上建号、一次自己造出来的故障、以及兜底的最终形态
+
+**① 控制面凭证**：在 Atlas 组织级建了 Admin API key（新 UI 里入口叫 **Applications**，不叫 Access Manager；必须选 API Keys 页签而不是 Service Accounts —— 后者是 OAuth2，脚本实现的是 HTTP Digest），组织权限只给 `Organization Member`，再把这把 key 加进 `Project 0` 并授 `Project Database Access Admin`。**只建 key 不加项目**时脚本会拿到 `USER_CANNOT_ACCESS_GROUP`，而 `GET /groups` 返回空列表 —— 这两个现象一起出现就是「key 是好的，只是没进项目」。
+
+凭证存在 `D:\secrets` 的 `secrets/infra/atlas.yaml`（`infra` 项目 `machines: []`，`.sops.yaml` 只封给 admin key）。**不能放 `funny/prod.yaml`**：`bin/push-env.py` 是把整个解密后的项目文件原样推成 VPS 的 `.env`，控制面管理凭证会直接落到游戏服务器上 —— 正是这个 ADR 要消灭的那种过度授权。同一个文件里还存了 `NW_MONGO_ADMIN_URI`（原来那个 `gamestao`/`atlasAdmin@admin` 串），因为它被挤出 `prod.yaml` 之后总得有个地方放，而那个地方不该是任何容器。
+
+**② 7 个用户已建、已验**：`--atlas-api` 一次建成，7 条连接串写进 `funny/prod.yaml` 推上 VPS，容器内跑 `--verify` 得到 **7/7「reads its own, refused on all 6 others」**。另外实测了金币写入链路：经 commercial `/internal/grant` 发 7 金币返回 `{ok:true,coinsAfter:7}`，随后把测试账号的 wallet/ledger/order 清掉。
+
+**③ 一次自己造出来的线上故障，值得单独记**：`.env` 换成最小权限凭据之后，除 metaserver 外 6 个服务全部起不来，报的是
+
+```
+AtlasError 8000: user is not allowed to do action [createIndex] on [notebook_wars_commercial.ledger]
+```
+
+这条消息把我带偏了两次。**它看起来像「角色给窄了」，实际是「拿到了别人的连接串」**：VPS 上的检出还停在 `main@766f58b4`（10.09.2026），用的是 ADR-090 之前的 compose —— 那份文件把 `${NW_MONGO_URI}` 发给全部 7 个服务块。于是 commercial 容器里的 `NW_COMM_MONGO_URI` 装的是 `nw_meta` 的凭据，而 `nw_meta` 确实写不动 commercial 的库。**报错本身是隔离生效的证据。**
+
+沿途排除掉的两个错误假设，都做了对照实验，留在这里免得下次再走一遍：
+
+- **不是「Atlas 角色传播延迟」**。给 `nw_commercial` 加 `dbAdmin` 之后探针通过，看起来像是 `readWrite` 不够；把角色改回 `readWrite` 单角色、等 75 秒再探，`createIndex` 照样成功。**`readWrite` 足够建索引，`dbAdmin` 不需要**，7 个用户最终都是单角色。
+- **不是 compose 的嵌套 `${A:-${B:?…}}` 语法失效**。最小复现里嵌套解析完全正常（Compose v5.1.4）。
+
+**先看容器实际拿到了什么，再去动任何 Atlas 角色**：
+
+```bash
+docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_URI
+```
+
+**④ 部署耦合**：VPS 从 `main` 拉代码，而 ADR-090 的两个提交在当日分支上还没合进 main。恢复服务是把本地 `docker-compose.cloud.yml` 直接拷上去做的（只有那 6 行有实际差异，无需重建镜像），所以在 12.09.2026 合进 main 之前，**VPS 的工作区相对它的 HEAD 是脏的**，下次 `git pull` 会拒绝合并 —— 届时先 `git checkout -- server/docker-compose.cloud.yml` 再拉。
+
+**⑤ 兜底的最终形态**：各服务 `config.ts` 的 `?? base.mongoUri` 全部删除，`docker-compose.cloud.yml` 六个块改成硬性 `${自己的:?…}`，门禁里 `NW_MONGO_URI` 的豁免一并删掉（并补了一条变异测试：某服务读 `NW_MONGO_URI` 要报错）。
+
+但**没有**改成「变量缺失就抛异常」，而是 `requiredEnv('NW_X_MONGO_URI', DEV_MONGO_URI)` —— 缺省值是 `mongodb://127.0.0.1:27017/?replicaSet=rs0` 这个**主机**，不是别人的变量。理由：`npm run dev:*` 不经过 compose、仓库里也没有 dotenv，硬抛会把本地开发整条路打死；而要拦的从来不是「没有值」，是「值是别人的凭据」。回退到 localhost 借不到任何人的授权 —— 在开发机之外那个地址上什么都没有，服务死在连接拒绝上，而不是安静地读到别人的数据。线上这一层由 compose 的 `:?` 兜着。
+
+**⑥ `docker-compose.prod.yml` 不在本次范围内**：它的兜底是 `mongodb://mongo:27017/?replicaSet=rs0`（自带的 mongo 容器，**没开认证**），从来就不是 `NW_MONGO_URI`。对它硬性要求各服务凭据会直接打死那套栈和 `docker-compose.ci.yml`（CI 叠加在 prod 之上）。要给它开认证是另一件事，本地栈 `docker/docker-compose.local.yml` 已经是那个样子了。

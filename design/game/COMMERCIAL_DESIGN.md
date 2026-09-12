@@ -97,7 +97,7 @@
 - **开号**：`node server/scripts/provisionMongoUsers.mjs`。自托管集群直接连上去建/改；Atlas 走 `--atlas-api`（Admin API + digest 鉴权，需 `ATLAS_PUBLIC_KEY`/`ATLAS_PRIVATE_KEY`）或 `--atlas`（打印 `atlas dbusers create` 命令手工执行）。三种模式都幂等，密码只打印一次。
 - **本地栈同构**：`docker/docker-compose.local.yml` 的 mongo 开了 `--auth --keyFile`（副本集开 auth 必须有 keyFile，单节点也一样），`docker/local-up.ps1` 先起 mongo、建号，再拉起其余服务。本地不是"能跑就行"的无认证模式，就是为了权限配错**在本地就炸**。
 - **CI 门禁** `npm run check:dbisolation`（[`server/scripts/checkDbIsolation.mjs`](../../server/scripts/checkDbIsolation.mjs)）盯两种漂移：①某服务源码里出现别人的库名/环境变量；②compose 里某个服务块拿到了不属于它的 `NW_*_MONGO_URI`，或变量名对了但凭据是别人的。变异测试在 `server/commercial/test/check-db-isolation.test.ts`。
-- **过渡期的诚实说明**：各服务的 `config.ts` 目前仍保留 `?? NW_MONGO_URI` 兜底，compose 里也是 `${自己的:-${NW_MONGO_URI}}`。**兜底生效时等于没有隔离**（还是那一个全权限账号）——线上要真正关上这道门，必须在 Atlas 建好 7 个用户、把各自的连接串填进 `server/.env` 再重启。删掉这个兜底是后续收尾项（同时也能让门禁把 `NW_MONGO_URI` 从豁免名单里去掉）。
+- **这道门已经关上（2026-09-12 当天，见 ADR-090 补记二）**：线上 7 个 Atlas 用户已建、`--verify` 实测 7/7「读得到自己的库、被其余 6 个拒绝」；各服务 `config.ts` 的 `?? NW_MONGO_URI` 兜底已删除，`docker-compose.cloud.yml` 六个块改成硬性 `${自己的:?…}`，门禁对 `NW_MONGO_URI` 的豁免也一并删掉了。各服务变量缺失时退到的是 `DEV_MONGO_URI`（`127.0.0.1` 这个**主机**），**不是别人的凭据**——要拦的从来不是「没有值」，是「值是别人的账号」。`docker-compose.prod.yml`（自带 mongo 容器、未开认证）不在此列，理由见 ADR-090 补记二 ⑥。
 - **线上现状（2026-09-12 实测）**：7 个进程共用的账号是 `gamestao`，角色 **`atlasAdmin@admin`**——不是"共享读写权限"，是集群管理员。Atlas 还**拒绝驱动侧 `createUser`**（`CMD_NOT_ALLOWED`），database user 是控制面对象，所以建号必须走 Atlas UI / Admin API / `atlas` CLI，光有连接串不够。
 - **Atlas 的 `authSource` 是 `admin`**：Atlas SCRAM 用户一律建在 `admin`，只有 role 指向具体库；自托管则建在哪个库 `authSource` 就是哪个。印错连接串的后果是换凭证后 7 个服务集体 `Authentication failed`，所以脚本里这条差异是显式的 `authDbFor(row, atlas)`，并有单测。
 - **建完要验**：`node server/scripts/provisionMongoUsers.mjs --verify --env-file=server/.env` 会连上每个服务用户，断言它读得到自己的库、且被其余 6 个库拒绝。**建号成功 ≠ 权限正确**——角色给宽了看起来和给对了一模一样，只有跨库那一下会露馅。
@@ -308,7 +308,7 @@ POST /internal/ads/credit
 
 ## 9. 开放问题（实现时的拍板）
 
-- [x] **同实例 vs 同库**：按默认——同 Mongo 实例不同库（`NW_COMM_MONGO_URI` 缺省复用 `NW_MONGO_URI`，`NW_COMM_MONGO_DB=notebook_wars_commercial`）。涨了改这两个 env 即迁独立实例。
+- [x] **同实例 vs 同库**：按默认——同 Mongo 实例不同库（`NW_COMM_MONGO_DB=notebook_wars_commercial`）。**2026-09-12 起 `NW_COMM_MONGO_URI` 不再缺省复用 `NW_MONGO_URI`**：commercial 用自己的 `nw_commercial` 账号登录，串是独立的（§3.1 库级凭据隔离）。涨了改这两个 env 即迁独立实例。
 - [x] **对账触发**：S5 先做 `GET /save` 顺带（拉 `orders/undelivered` 补发）；**兜底定时扫待办**。
 - [x] **充值平台**：**S4-1 已落地（2026-06-22）**：`commercial/src/iap.ts` 实现微信支付 V3（HMAC-SHA256 简化鉴权，`NW_WX_PAY_MCH_ID/API_KEY_V3`）+ Stripe（`GET /v1/payment_intents/{id}`，`NW_STRIPE_SECRET_KEY`）；金额→档位映射可 `NW_IAP_AMOUNT_MAP` 覆盖；两者均未配置时自动降级 dev 桩（`NW_IAP_DEV=true` 可强制开启）。`CommercialService.verifyReceipt` 已改 async。
 - [ ] **余额镜像新鲜度**：默认「进 ShopScene 前 `GET /save` 刷新」——待 S2 ShopScene 落地时接（场景尚未实现）。

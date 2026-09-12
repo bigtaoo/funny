@@ -49,7 +49,7 @@ const CLEAN_TREE: Record<string, string> = {
     'services:',
     '  commercial:',
     '    environment:',
-    '      NW_COMM_MONGO_URI: ${NW_COMM_MONGO_URI:-${NW_MONGO_URI:?set it}}',
+    '      NW_COMM_MONGO_URI: ${NW_COMM_MONGO_URI:?set NW_COMM_MONGO_URI in .env}',
     '',
   ].join('\n'),
 };
@@ -107,6 +107,16 @@ describe('checkDbIsolation gate', () => {
     const r = mutate('server/socialsvc/src/peek.ts', 'export const uri = process.env.NW_COMM_MONGO_URI;');
     expect(r.code).toBe(1);
     expect(r.out).toContain("reads commercial's NW_COMM_MONGO_URI");
+  });
+
+  it("fails when a service reads metaserver's NW_MONGO_URI — the fallback that used to be exempt", () => {
+    // Until 2026-09-12 every service's config.ts ended in `?? base.mongoUri`, so NW_MONGO_URI was at once
+    // metaserver's own variable and everybody's fallback; the gate had to wave it through or fire on all
+    // seven. With the fallback deleted it belongs to metaserver alone, and this mutation — one service
+    // quietly reaching for it again — is exactly how the single shared login would come back.
+    const r = mutate('server/auctionsvc/src/peek.ts', 'export const uri = process.env.NW_MONGO_URI;');
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("reads metaserver's NW_MONGO_URI");
   });
 
   it('fails when a compose block is handed another service\'s Mongo variable', () => {
