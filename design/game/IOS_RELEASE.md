@@ -181,7 +181,7 @@ Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**四�
        └─ 原样转发 → commercial /internal/apple/notification
             ├─ SignedDataVerifier 验签（根证书内联在 iap/appleRootCAs.ts）
             ├─ originalTransactionId → appleTransactionLinks 查出 accountId
-            └─ SUBSCRIBED / DID_RENEW → subscriptionCardBuy({ orderId: `apple:<transactionId>`, renewal: true })
+            └─ SUBSCRIBED / DID_RENEW → subscriptionCardBuy({ orderId: `apple:<transactionId>`, alreadyCharged: true })
 ```
 
 **为什么需要 `appleTransactionLinks` 这张表**：通知里只有 Apple 自己的 id，**没有任何属于我们的东西**
@@ -194,7 +194,7 @@ Swift 侧有对应映射表，两边由测试钉死（§10.4/§10.5）。**四�
 1. **幂等键是 Apple 的 `transactionId`。** `subscriptionCardBuy` 本来就按 `orderId` 幂等，
    `apple:<transactionId>` 直接复用了这套机制——所以 **webhook 和冷启动对账可以完全重叠**，
    同一个周期两边都到也只发一次。Apple 自己也是 at-least-once 投递。
-2. **`renewal: true` 绕过单卡门（且只绕过它）。** Apple 会在当前周期**结束前约一天**扣款，正是为了让订阅不断档；
+2. **`alreadyCharged: true` 绕过单卡门（且只绕过它）。**（2026-09-12 从 `renewal` 改名：语义是「钱已经收了」，Paddle webhook 是第二个调用方，见 `COMMERCIAL_DESIGN_IAP.md` §10.7b）Apple 会在当前周期**结束前约一天**扣款，正是为了让订阅不断档；
    于是每一次续期到达时卡都还在生效中，原来的 `ALREADY_ACTIVE` 门会把它**全部拒掉**——钱扣了，什么都不给，
    而玩家看不到任何失败可以投诉。普通购买（玩家手点 Buy）的单卡门原样保留，有测试钉住。
 3. **路由不到账号的通知要落盘，不能丢。** 没有 link 行 = Apple 扣了一个我们叫不出名字的人的钱。

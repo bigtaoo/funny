@@ -67,12 +67,16 @@ export interface CommercialClient {
      * webhook) — tags which recharged bucket funds the immediate coins (ADR-020). */
     rechargePlatform?: string;
     clientPlatform?: string;
+    /** The payment already completed and cannot be un-taken, so extend a running card instead of
+     *  refusing with ALREADY_ACTIVE. Set only by the Paddle webhook — see its call site. */
+    alreadyCharged?: boolean;
   }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>>;
   yearCardBuy(args: {
     accountId: string;
     orderId: string;
     rechargePlatform?: string;
     clientPlatform?: string;
+    alreadyCharged?: boolean;
   }): Promise<Body<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>>;
   monthlyCardClaim(args: {
     accountId: string;
@@ -304,14 +308,14 @@ export class HttpCommercialClient implements CommercialClient {
     );
   }
 
-  monthlyCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
+  monthlyCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string; alreadyCharged?: boolean }) {
     return this.post<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>(
       '/internal/monthly-card/buy',
       args,
     );
   }
 
-  yearCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string }) {
+  yearCardBuy(args: { accountId: string; orderId: string; rechargePlatform?: string; clientPlatform?: string; alreadyCharged?: boolean }) {
     return this.post<{ coinsAfter: number; subscriptionExpiry: number; wallet?: WalletView }>(
       '/internal/year-card/buy',
       args,

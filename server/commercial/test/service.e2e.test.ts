@@ -447,6 +447,38 @@ describe.skipIf(!mongo)('commercial service e2e', () => {
     expect((await svc.getWallet('yc')).coins).toBe(720);
   });
 
+  // 2026-09-12: the Paddle webhook is the second post-payment caller (after Apple renewals) allowed
+  // past the single-slot gate, and it reaches it through monthlyCardBuy/yearCardBuy rather than
+  // through WalletCore directly — a path no test covered with the flag set.
+  it('alreadyCharged extends a running card instead of refusing it, without weakening orderId idempotency', async () => {
+    const DAY = 86400000;
+    const first = await svc.monthlyCardBuy({ accountId: 'ac', orderId: 'ac-1' });
+    expect(first.ok).toBe(true);
+    const firstExpiry = first.ok ? first.subscriptionExpiry : 0;
+
+    // Without the flag this is the refusal the gate exists for — kept here so the two live side by side.
+    expect(await svc.monthlyCardBuy({ accountId: 'ac', orderId: 'ac-plain' })).toEqual({ ok: false, error: 'ALREADY_ACTIVE' });
+    expect((await svc.getWallet('ac')).subscriptionExpiry).toBe(firstExpiry);
+
+    // With it, the period stacks onto the running one (max(expiry, now) + days) and the coins land.
+    const extended = await svc.monthlyCardBuy({ accountId: 'ac', orderId: 'ac-2', alreadyCharged: true });
+    expect(extended.ok).toBe(true);
+    const extendedExpiry = extended.ok ? extended.subscriptionExpiry : 0;
+    expect(extendedExpiry - firstExpiry).toBe(30 * DAY);
+    expect((await svc.getWallet('ac')).coins).toBe(1200); // 600 per period
+
+    // The orderId dedupe runs BEFORE the gate, so bypassing the gate cannot turn a redelivery into a
+    // second grant — the failure mode that would print subscription time.
+    const replay = await svc.monthlyCardBuy({ accountId: 'ac', orderId: 'ac-2', alreadyCharged: true });
+    expect(replay.ok).toBe(true);
+    expect((await svc.getWallet('ac')).subscriptionExpiry).toBe(extendedExpiry);
+    expect((await svc.getWallet('ac')).coins).toBe(1200);
+
+    // A year card stacks onto the same single expiry rather than opening a second slot.
+    const year = await svc.yearCardBuy({ accountId: 'ac', orderId: 'ac-3', alreadyCharged: true });
+    expect(year.ok && year.subscriptionExpiry).toBe(extendedExpiry + 365 * DAY);
+  });
+
   // ── Starter packs (GACHA_DESIGN §6) ────────────────────────────────────────
   it('starter draw: one rare+ floored 10-pull, once per account', async () => {
     const r = await svc.starterBuy({ accountId: 'sd', productId: 'starter_draw', orderId: 'sdo' });

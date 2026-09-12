@@ -335,7 +335,7 @@ export class WalletCore {
    * verification (native/WeChat: verifyNonCoinReceipt; web: Paddle webhook signature) happens in the caller
    * (meta) BEFORE this is invoked — see monthlyCardBuy/yearCardBuy's `channel` doc.
    *
-   * `renewal` is the one documented exception to the single-slot rule — see the flag's own comment.
+   * `alreadyCharged` is the one documented exception to the single-slot rule — see the flag's own comment.
    */
   async subscriptionCardBuy(args: {
     accountId: string;
@@ -349,21 +349,36 @@ export class WalletCore {
     channel?: RechargeChannel;
     clientPlatform?: string;
     /**
-     * Skip the single-slot gate and extend an ALREADY-ACTIVE subscription (2026-09-03, auto-renewable
-     * iOS subscriptions — IOS_RELEASE.md §4.1b). Set ONLY for a period Apple has already charged for.
+     * The money for this period is ALREADY in the store's hands — skip the single-slot gate and extend
+     * whatever is running instead of refusing. Set ONLY when that is literally true.
      *
-     * The gate exists to stop a player buying a second card on top of a running one. A renewal is the
-     * opposite situation: Apple bills roughly a day BEFORE the current period ends, precisely so the
-     * subscription never lapses, so the card is by definition still active when its own renewal
-     * arrives. Rejecting it with ALREADY_ACTIVE would take the player's money and give nothing back —
-     * the single worst outcome this file can produce.
+     * The gate exists to stop a player buying a second card on top of a running one, and it belongs at
+     * the point of SALE, not at the point of grant: by the time a payment processor tells us a
+     * transaction completed, refusing does not un-take the money, it only decides whether the player
+     * gets anything for it. Rejecting with ALREADY_ACTIVE there is the single worst outcome this file
+     * can produce.
      *
-     * Idempotency does not weaken: `orderId` still guards it, and the renewal path's orderId is
-     * `apple:<transactionId>` straight from a receipt Apple validated, so replaying a sync is a no-op.
-     * What this flag drops is only the "is one already running" question, which for a renewal has no
-     * bearing on whether the money was taken.
+     * Two callers, both genuinely post-payment:
+     *   · Apple auto-renewals (2026-09-03, IOS_RELEASE.md §4.1b). Apple bills roughly a day BEFORE the
+     *     current period ends, precisely so the subscription never lapses, so the card is by definition
+     *     still active when its own renewal arrives. This is the case the flag was born for, and why it
+     *     used to be called `renewal`.
+     *   · Paddle `transaction.completed` for a card (2026-09-12). `/shop/paddle/checkout` already
+     *     refuses before charging when a card is active, so this only fires on what that pre-check
+     *     cannot see: two checkouts opened before either completed, or a card that became active
+     *     between the pre-check and the webhook. Production hit it on 2026-09-12 — charged, granted
+     *     nothing, order slot rolled back, one ERROR line for CS to find.
+     *
+     * Idempotency does not weaken: `orderId` still guards it, and both callers' orderIds
+     * (`apple:<transactionId>` / `paddle:<transactionId>`) come straight from a transaction the
+     * processor validated, so a redelivery is a no-op. What this flag drops is only the "is one already
+     * running" question, which post-payment has no bearing on whether the money was taken.
+     *
+     * The arithmetic is already right for stacking: {@link applySubscription} extends from
+     * `max(expiry, now)`, so a second period lands after the running one rather than truncating it.
+     * `subscription.expiry` is a single scalar — the result is one longer card, never two at once.
      */
-    renewal?: boolean;
+    alreadyCharged?: boolean;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
     const existing = await this.cols.orders.findOne({ _id: args.orderId });
     if (existing) {
@@ -453,7 +468,7 @@ export class WalletCore {
     immediateCoins: number;
     channel?: RechargeChannel;
     clientPlatform?: string;
-    renewal?: boolean;
+    alreadyCharged?: boolean;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
     const now = this.now();
     await this.ensureWallet(args.accountId);
@@ -461,10 +476,11 @@ export class WalletCore {
     // enforced atomically together with the extend-and-credit itself (see applySubscriptionIfInactive) so
     // two concurrent purchases can't both pass a separate check before either commits. Roll back the
     // claimed slot so the account isn't left with a phantom grant order and a later (post-expiry) retry works.
-    // A renewal skips the gate (and only the gate) — see subscriptionCardBuy's `renewal` doc. Both paths
-    // extend from max(expiry, now), so the arithmetic of stacking onto a running period is already right.
+    // A post-payment grant skips the gate (and only the gate) — see subscriptionCardBuy's
+    // `alreadyCharged` doc. Both paths extend from max(expiry, now), so the arithmetic of stacking onto
+    // a running period is already right.
     const ref = { orderId: args.orderId, channel: args.channel, clientPlatform: args.clientPlatform };
-    const applied = args.renewal
+    const applied = args.alreadyCharged
       ? await this.applySubscription(args.accountId, args.days, args.immediateCoins, now, ref)
       : await this.applySubscriptionIfInactive(args.accountId, args.days, args.immediateCoins, now, ref);
     if (!applied) {

@@ -60,6 +60,9 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 /** Client-declared request platform (X-NW-Platform, threaded by meta) — optional, undefined when absent. */
 const strOpt = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+/** Strictly `true`, never a truthy string: this gates the single-slot rule, so it must not be settable
+ *  by accident (a stray `"false"` is truthy). Anything else is absent. */
+const trueOnly = (v: unknown): true | undefined => (v === true ? true : undefined);
 
 export function startInternalHttp(
   opts: { host: string; port: number; internalAuth: InternalAuthVerifier },
@@ -334,6 +337,7 @@ export function startInternalHttp(
                 orderId: str(b.orderId),
                 rechargePlatform: strOpt(b.rechargePlatform),
                 clientPlatform: strOpt(b.clientPlatform),
+                alreadyCharged: trueOnly(b.alreadyCharged),
               }),
             );
           case '/internal/year-card/buy':
@@ -345,6 +349,7 @@ export function startInternalHttp(
                 orderId: str(b.orderId),
                 rechargePlatform: strOpt(b.rechargePlatform),
                 clientPlatform: strOpt(b.clientPlatform),
+                alreadyCharged: trueOnly(b.alreadyCharged),
               }),
             );
           case '/internal/subscription/sync-apple':

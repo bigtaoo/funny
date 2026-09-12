@@ -21,12 +21,16 @@ export interface SubscriptionHandlers {
      * pool (should not happen post the receipt-verify gate, but a safe default). */
     rechargePlatform?: string;
     clientPlatform?: string;
+    /** The payment already completed, so extend a running card rather than refusing it — see
+     *  WalletCore.subscriptionCardBuy's `alreadyCharged`. Only post-payment callers may set it. */
+    alreadyCharged?: boolean;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>>;
   yearCardBuy(args: {
     accountId: string;
     orderId: string;
     rechargePlatform?: string;
     clientPlatform?: string;
+    alreadyCharged?: boolean;
   }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>>;
   monthlyCardClaim(args: {
     accountId: string;
@@ -59,6 +63,7 @@ export class SubscriptionService {
       orderId: string;
       rechargePlatform?: string;
       clientPlatform?: string;
+      alreadyCharged?: boolean;
     }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
       return this.core.subscriptionCardBuy({
         accountId: args.accountId,
@@ -67,6 +72,7 @@ export class SubscriptionService {
         channel: args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined,
         days: MONTHLY_CARD_DAYS,
         immediateCoins: MONTHLY_CARD_IMMEDIATE_COINS,
+        alreadyCharged: args.alreadyCharged,
       });
     }
 
@@ -76,6 +82,7 @@ export class SubscriptionService {
       orderId: string;
       rechargePlatform?: string;
       clientPlatform?: string;
+      alreadyCharged?: boolean;
     }): Promise<Result<{ coinsAfter: number; subscriptionExpiry: number; wallet: WalletView }>> {
       return this.core.subscriptionCardBuy({
         accountId: args.accountId,
@@ -84,6 +91,7 @@ export class SubscriptionService {
         channel: args.rechargePlatform ? (rechargeChannelOf(args.rechargePlatform) ?? undefined) : undefined,
         days: YEAR_CARD_DAYS,
         immediateCoins: YEAR_CARD_IMMEDIATE_COINS,
+        alreadyCharged: args.alreadyCharged,
       });
     }
 
@@ -148,9 +156,9 @@ export class SubscriptionService {
      * idempotent on orderId, which is what makes running this on every launch safe rather than a
      * monthly-card printing press.
      *
-     * `renewal: true` is passed because a renewal by definition arrives while the current period is
-     * still running (Apple bills ~a day early so the subscription never lapses); the single-slot gate
-     * would otherwise reject money Apple has already taken. See subscriptionCardBuy's `renewal` doc.
+     * `alreadyCharged: true` is passed because a renewal by definition arrives while the current period
+     * is still running (Apple bills ~a day early so the subscription never lapses); the single-slot gate
+     * would otherwise reject money Apple has already taken. See the flag's doc on subscriptionCardBuy.
      *
      * Returns `granted` = how many periods this call actually added, so the caller can skip the save
      * round trip when nothing changed. Fails closed to `granted: 0` when Apple is unconfigured or the
@@ -184,7 +192,7 @@ export class SubscriptionService {
           channel: 'apple',
           days: period.product === 'year_card' ? YEAR_CARD_DAYS : MONTHLY_CARD_DAYS,
           immediateCoins: period.product === 'year_card' ? YEAR_CARD_IMMEDIATE_COINS : MONTHLY_CARD_IMMEDIATE_COINS,
-          renewal: true,
+          alreadyCharged: true,
         });
         // A replay of an already-granted period returns ok with the wallet untouched; a real grant moves
         // the expiry. Comparing is how "granted" stays honest without subscriptionCardBuy having to
