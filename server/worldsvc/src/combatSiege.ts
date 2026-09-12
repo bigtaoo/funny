@@ -51,6 +51,8 @@ export class SiegeService {
 
   // ── damage ──
   processDueSiegeDamage(...args: Parameters<SiegeDamageService['processDueSiegeDamage']>) { return this.damage.processDueSiegeDamage(...args); }
+  getSiegeHolds(...args: Parameters<SiegeDamageService['getSiegeHolds']>) { return this.damage.getSiegeHolds(...args); }
+  cancelSiegeHold(...args: Parameters<SiegeDamageService['cancelSiegeHold']>) { return this.damage.cancelSiegeHold(...args); }
 
   // ── occupation ──
   applyOccupy(...args: Parameters<OccupationService['applyOccupy']>) { return this.occupation.applyOccupy(...args); }

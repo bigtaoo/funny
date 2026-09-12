@@ -18,6 +18,8 @@ import {
   RESOURCE_TYPES,
   RESOURCE_CAP,
   SECT_LEADER_PENALTY_RATE,
+  SLG_TEAM_STAMINA_MAX,
+  SLG_TEAM_STAMINA_COST,
 } from '@nw/shared';
 import { SiegeDamageService } from '../src/combatSiege/damage';
 import { SiegeHelpersService } from '../src/combatSiege/helpers';
@@ -76,6 +78,10 @@ function makeCore(opts: {
   const tilesUpdateOne = opts.tilesUpdateOne ?? vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 }));
   const pwUpdateOne = opts.pwUpdateOne ?? vi.fn(async (..._args: unknown[]) => ({ matchedCount: 1 }));
   const pushTile = vi.fn(async (..._args: unknown[]) => {});
+  // 围攻驻留 (2026-09-12): the surviving-building branch now opens the NEXT round by inserting an attack
+  // march, and the no-force-left branch announces the hold ended — both are on damage.ts's path now.
+  const marchesInsertOne = vi.fn(async (..._args: unknown[]) => ({}));
+  const pushOrderEnded = vi.fn(async (..._args: unknown[]) => {});
   const recomputeYield = vi.fn(async (..._args: unknown[]) => emptyResources());
   const settle = vi.fn((doc: PlayerWorldDoc) => ({ ...doc.resources }));
   let tileCallCount = 0;
@@ -95,7 +101,7 @@ function makeCore(opts: {
           findOne: async ({ _id }: { _id: string }) => pwById[_id] ?? null,
           updateOne: pwUpdateOne,
         },
-        marches: { insertOne: vi.fn(async (..._args: unknown[]) => ({})) },
+        marches: { insertOne: marchesInsertOne },
       },
     },
     coordX: (tid: string) => Number(tid.split(':')[1]),
@@ -108,11 +114,12 @@ function makeCore(opts: {
     // never reach a real server, so an empty expression object is all the call sites need.
     settleExpr: () => ({}),
     marchSeq: 0,
+    pushOrderEnded,
     pushMarch: vi.fn(async (..._args: unknown[]) => {}),
     marchView: (m: MarchDoc) => m as unknown as never,
   } as unknown as WorldCore;
 
-  return { core, tilesUpdateOne, pwUpdateOne, pushTile, recomputeYield };
+  return { core, tilesUpdateOne, pwUpdateOne, pushTile, recomputeYield, marchesInsertOne, pushOrderEnded };
 }
 
 function fakeHelpers() {
@@ -253,10 +260,10 @@ describe('SiegeDamageService settleSiegeDamage — stale target (void damage)', 
 });
 
 describe('SiegeDamageService settleSiegeDamage — building survives (newHp > 0)', () => {
-  it('non-base tile: deducts damage from tile.hp, writes {hp}, returns survivors, pushes to both sides', async () => {
+  it('non-base tile, team siege: deducts damage from tile.hp, writes {hp}, opens the next round, pushes to both sides', async () => {
     const maxHp = buildingMaxHp(3);
     let call = 0;
-    const { core, tilesUpdateOne, pwUpdateOne, pushTile } = makeCore({
+    const { core, tilesUpdateOne, pwUpdateOne, pushTile, marchesInsertOne } = makeCore({
       pwById: { [`${W}:${ATK}`]: pw({ accountId: ATK }) },
       tilesFindOne: () => {
         call++;
@@ -264,24 +271,68 @@ describe('SiegeDamageService settleSiegeDamage — building survives (newHp > 0)
         return tile({ ownerId: ATK, level: 3, hp: maxHp - 10 }); // "after" re-fetch
       },
     });
-    await settle(core, fakeHelpers(), dmgDoc({ damage: 10, attackerSurvivors: 7 }), 1_000);
+    await settle(core, fakeHelpers(), dmgDoc({ damage: 10, attackerSurvivors: 7, teamId: 't1' }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalledWith(
       { _id: TILE, rev: 0 }, // 2026-08-24: HP writes are rev-guarded now (concurrent besiegers must stack, not overwrite)
       { $set: { hp: maxHp - 10 }, $inc: { rev: 1 } },
     );
-    expect(pwUpdateOne).toHaveBeenCalledTimes(1); // return-march refund for the attacker
+    // 围攻驻留 (2026-09-12 user decision): the building survived, so the besiegers do NOT go home —
+    // they open the next round in place. What lands is a fresh attack march on the same tile, not a
+    // return leg.
+    expect(marchesInsertOne).toHaveBeenCalledTimes(1);
+    expect(marchesInsertOne.mock.calls[0]![0]).toMatchObject({ kind: 'attack', fromTile: TILE, toTile: TILE, arriveAt: 1_000, teamId: 't1' });
+    // 体力控制平衡: the one playerWorld write is that round's stamina charge (dotted paths under this
+    // team's own subdocument), NOT a troop-pool refund — nothing came home to refund.
+    expect(pwUpdateOne).toHaveBeenCalledTimes(1);
+    expect(pwUpdateOne.mock.calls[0]![1]).toEqual({
+      $set: {
+        'teamState.t1.stamina': SLG_TEAM_STAMINA_MAX - SLG_TEAM_STAMINA_COST,
+        'teamState.t1.staminaAt': 1_000,
+      },
+    });
     expect(pushTile).toHaveBeenCalledTimes(2); // attacker + defender
   });
 
-  it('non-base tile, attacker present but 0 survivors → no return-march refund call', async () => {
+  it('non-base tile, team out of stamina: the hit lands but no next round — the besiegers go home', async () => {
+    const maxHp = buildingMaxHp(3);
+    const { core, tilesUpdateOne, marchesInsertOne } = makeCore({
+      // Checkpointed at the settlement instant so no regen can lift it back over one order's cost.
+      pwById: { [`${W}:${ATK}`]: pw({ accountId: ATK, teamState: { t1: { stamina: 0, staminaAt: 1_000 } } }) },
+      tilesFindOne: () => tile({ ownerId: DEF, level: 3, hp: maxHp }),
+    });
+    await settle(core, fakeHelpers(), dmgDoc({ damage: 10, attackerSurvivors: 7, teamId: 't1' }), 1_000);
+    expect(tilesUpdateOne).toHaveBeenCalled();             // this round was already paid for
+    expect(marchesInsertOne).not.toHaveBeenCalled();       // …and it was the last one
+  });
+
+  it('non-base tile, flat-troop siege (no team): one hit and home, as before the round loop', async () => {
+    // No team means no stamina budget, so there is nothing to bound a loop with — these keep the
+    // pre-2026-09-12 behaviour rather than grinding for free.
+    const maxHp = buildingMaxHp(3);
+    const { core, pwUpdateOne, marchesInsertOne } = makeCore({
+      pwById: { [`${W}:${ATK}`]: pw({ accountId: ATK }) },
+      tilesFindOne: () => tile({ ownerId: DEF, level: 3, hp: maxHp }),
+    });
+    await settle(core, fakeHelpers(), dmgDoc({ damage: 10, attackerSurvivors: 7 }), 1_000);
+    expect(marchesInsertOne).not.toHaveBeenCalled();
+    // pw has no mainBaseTile in this fake, so startReturnMarch degrades to the instant refund — which
+    // is the same single playerWorld write either way, and what matters here is that it IS a refund.
+    expect(pwUpdateOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('non-base tile, attacker present but 0 survivors → no refund, and no next round to open either', async () => {
     const maxHp = buildingMaxHp(1);
-    const { core, tilesUpdateOne, pwUpdateOne } = makeCore({
+    const { core, tilesUpdateOne, pwUpdateOne, marchesInsertOne, pushOrderEnded } = makeCore({
       pwById: { [`${W}:${ATK}`]: pw({ accountId: ATK }) },
       tilesFindOne: () => tile({ ownerId: DEF, hp: maxHp }),
     });
-    await settle(core, fakeHelpers(), dmgDoc({ damage: 1, attackerSurvivors: 0 }), 1_000);
+    await settle(core, fakeHelpers(), dmgDoc({ damage: 1, attackerSurvivors: 0, teamId: 't1' }), 1_000);
     expect(tilesUpdateOne).toHaveBeenCalled();
     expect(pwUpdateOne).not.toHaveBeenCalled();
+    // Nobody left to besiege with, so the round loop stops here rather than dispatching an empty army —
+    // and the hold's disappearance is announced directly, since no march will report it.
+    expect(marchesInsertOne).not.toHaveBeenCalled();
+    expect(pushOrderEnded).toHaveBeenCalledTimes(1);
   });
 
   it('non-base tile with no persisted hp field yet → falls back to buildingMaxHp(level) before deducting', async () => {

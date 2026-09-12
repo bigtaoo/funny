@@ -10,6 +10,7 @@ import type {
   TeamTemplate,
   MarchView,
   OccupationView,
+  SiegeHoldView,
   StationedView,
   PlayerWorldView,
 } from '../../net/WorldApiClient';
@@ -21,6 +22,7 @@ export interface DataHost {
   teams: TeamTemplate[];
   marches: MarchView[];
   occupations: OccupationView[];
+  siegeHolds: SiegeHoldView[];
   stationed: StationedView[];
   teamsLoaded: boolean;
   ordersLoaded: boolean;
@@ -120,9 +122,9 @@ export function load(host: DataHost): void {
       /* offline — resource bar / building grid keep their pre-load zeros */
     });
 
-  // marches + occupations + stationed all feed teamOrder(), so `ordersLoaded` only flips once all
-  // three have settled — see the field's doc comment for why the status line waits on that.
-  let ordersPending = 3;
+  // marches + occupations + siege holds + stationed all feed teamOrder(), so `ordersLoaded` only flips
+  // once all four have settled — see the field's doc comment for why the status line waits on that.
+  let ordersPending = 4;
   const orderSettled = (): void => {
     if (--ordersPending === 0) host.ordersLoaded = true;
     paint();
@@ -143,6 +145,18 @@ export function load(host: DataHost): void {
     })
     .catch(() => {
       /* offline — treated as no active hold */
+    })
+    .finally(orderSettled);
+  // 围攻驻留 (2026-09-12): a team that has beaten a main base's or a wild city's garrison stands on the
+  // target for the five-minute damage delay, with no march and no occupation doc — same blind spot the
+  // stationed slice below closes, same fix.
+  void host.cb.worldApi
+    .getSiegeHolds(host.cb.worldId)
+    .then((siegeHolds) => {
+      host.siegeHolds = siegeHolds;
+    })
+    .catch(() => {
+      /* offline — treated as no active siege hold */
     })
     .finally(orderSettled);
   // Field-stationed teams (2026-07-23): parked on a tile with neither a march nor an occupation

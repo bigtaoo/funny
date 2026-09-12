@@ -44,6 +44,7 @@ import type {
   WorldTileView,
   MarchView,
   OccupationView,
+  SiegeHoldView,
   StationedView,
   PlayerWorldView,
   EnterWorldView,
@@ -82,6 +83,7 @@ export type {
   PlayerWorldView,
   MarchView,
   OccupationView,
+  SiegeHoldView,
   StationedView,
   FamilyMemberView,
   FamilyView,
@@ -181,6 +183,10 @@ export class WorldApiClient {
 
   getOccupations(worldId: string): Promise<OccupationView[]> {
     return this.world.getOccupations(worldId);
+  }
+
+  getSiegeHolds(worldId: string): Promise<SiegeHoldView[]> {
+    return this.world.getSiegeHolds(worldId);
   }
 
   getStationed(worldId: string): Promise<StationedView[]> {
@@ -284,6 +290,10 @@ export class WorldApiClient {
 
   cancelOccupation(teamId: string, worldId: string): Promise<{ ok: true }> {
     return this.world.cancelOccupation(teamId, worldId);
+  }
+
+  cancelSiegeHold(teamId: string, worldId: string): Promise<{ ok: true }> {
+    return this.world.cancelSiegeHold(teamId, worldId);
   }
 
   recallStationed(teamId: string, worldId: string): Promise<MarchView> {

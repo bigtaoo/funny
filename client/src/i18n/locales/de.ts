@@ -873,6 +873,8 @@ export const de: Record<TranslationKey, string> = {
   'world.actGarrison': 'Lager',
   'world.actOccupyInPlace': 'Vor Ort besetzen',
   'world.actRecallStation': 'Besatzung zurückrufen',
+  'world.actStopSiege': 'Belagerung abbrechen',
+  'world.actStopOccupy': 'Besetzung abbrechen',
   'world.stationRecalled': 'Stationierte Truppe kehrt zur Hauptstadt zurück',
   'world.actAbandon': 'Aufgeben',
   'world.abandonConfirm': 'Gebiet ({x},{y}) aufgeben? Die Garnison geht verloren.',
@@ -909,6 +911,8 @@ export const de: Record<TranslationKey, string> = {
   'world.underAttackMsg': '{name} belagert {tile} in {sec}s',
   'world.siegeWin': 'Belagerung gewonnen! {loot}',
   'world.siegeWinHold': 'Belagerung gewonnen – Gebiet umstritten, Übernahme in 5 Min.',
+  'world.siegeWinBaseHold': 'Belagerung gewonnen! In {time}: -{dmg} Widerstand',
+  'world.siegeWinCityHold': 'Mauern frei! In {time}: -{dmg} Widerstand',
   'world.siegeLoss': 'Belagerung verloren',
   'world.siegeDraw': 'Belagerung Patt',
   'world.defendHeld': 'Verteidigung gehalten',
@@ -1699,6 +1703,10 @@ export const de: Record<TranslationKey, string> = {
 
   'world.team.marching': 'Im Marsch',
   'world.team.occupying': 'Besetzt, noch {time}',
+  'world.team.besieging': 'Belagert, noch {time}',
+  'world.stopHold': 'Stopp',
+  'world.siegeStopped': 'Belagerung abgebrochen — Trupp kehrt zurück',
+  'world.occupyStopped': 'Besetzung abgebrochen',
   'world.team.stationedIdle': 'Im Feld',
   'world.team.garrisoned': 'Stationiert',
   // Team-panel status vocabulary (2026-08-30)

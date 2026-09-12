@@ -68,6 +68,7 @@ function buildHudHarness(opts: {
     },
     marches: opts.marches ?? [],
     occupations: [],
+    siegeHolds: [],
     stationed: opts.stationed ?? [],
     teams: opts.teams ?? [],
     teamsLoaded: opts.teamsLoaded ?? true,

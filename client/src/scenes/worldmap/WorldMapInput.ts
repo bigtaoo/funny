@@ -3,6 +3,9 @@ import { baseFootprintCells, baseFootprintInBounds, npcGarrison } from '@nw/shar
 import { HUD_H } from './logic/constants';
 import { hitTestHeaderButtons } from './WorldMapInput/headerButtons';
 import { showCityPanel, type CityPanelState } from './WorldMapInput/cityPanel';
+import { siegeHoldAt } from './logic/siegeHold';
+import { formatDuration } from './logic/formatDuration';
+import { serverNow } from '../../net/serverClock';
 import { coordLine, type ModalLine, type ModalButton } from './WorldMapPanels/modalLine';
 import { resLevelLine, baseLevelLine, structureLine } from './WorldMapInput/tileInfoLines';
 import { territoryConnected } from './logic/attackConnectivity';
@@ -186,12 +189,27 @@ export class WorldMapInput {
       if (!protectedNow) {
         buttons.push({ label: t('world.actAttack'), action: () => void this.ctx.net.showTeamPicker(tx, ty, 'attack'), icon: 'siege' });
       }
+      // 停止围攻 (2026-09-12, user decision: stoppable from the team panel AND from the tile the team is
+      // standing on). Offered alongside Attack rather than instead of it — a second team can still be
+      // sent in while the first is mid-round.
+      const siegeHere = siegeHoldAt(this.ctx, tx, ty);
+      if (siegeHere?.teamId) {
+        const stopTeamId = siegeHere.teamId;
+        buttons.push({ label: t('world.actStopSiege'), action: () => void this.ctx.net.doStopHold(stopTeamId, 'siege'), icon: 'home' });
+      }
       buttons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal(), icon: 'close' });
       const enemyHead: ModalLine[] = [
         { text: t('world.enemyTile'), icon: 'flag' },
         { text: ownerLine, icon: 'avatarTabIcon' },
         coordLine(tx, ty),
       ];
+      // Say what the stop button would be stopping, with the same countdown the team row shows.
+      if (siegeHere) {
+        enemyHead.push({
+          text: t('world.team.besieging').replace('{time}', formatDuration((siegeHere.dueAt - serverNow()) / 1000)),
+          icon: 'hourglassMd',
+        });
+      }
       // ADR-051 (P5): flag an enemy structure so the player knows attacking this tile razes it.
       if (tile.structure) enemyHead.push(structureLine(tile.structure.kind));
       if (tile.maxHp && tile.hp != null) enemyHead.push({ text: t('world.buildingHp').replace('{hp}', String(tile.hp)).replace('{max}', String(tile.maxHp)), icon: 'hp' });
@@ -213,13 +231,19 @@ export class WorldMapInput {
     if (tile?.contestedUntil) {
       const secLeft = Math.max(0, Math.ceil((tile.contestedUntil - Date.now()) / 1000));
       if (tile.contestedByMe) {
-        // My own pending hold — nothing to do but watch the countdown (no reinforcement in v1).
+        // My own pending hold. No reinforcement in v1, but since 2026-09-12 it can be called off from
+        // here as well as from the team panel — the user's rule for both kinds of hold.
+        const holdHere = this.ctx.occupations.find((o) => o.x === tx && o.y === ty);
+        const holdButtons: ModalButton[] = [];
+        if (holdHere?.teamId) {
+          const stopTeamId = holdHere.teamId;
+          holdButtons.push({ label: t('world.actStopOccupy'), action: () => void this.ctx.net.doStopHold(stopTeamId, 'occupy'), icon: 'home' });
+        }
+        holdButtons.push({ label: t('common.close'), action: () => this.ctx.panels.closeModal(), icon: 'close' });
         this.ctx.panels.showModal([
           { text: t('world.occupyingMine').replace('{sec}', String(secLeft)), icon: 'hourglassMd' },
           coordLine(tx, ty),
-        ], [
-          { label: t('common.close'), action: () => this.ctx.panels.closeModal(), icon: 'close' },
-        ]);
+        ], holdButtons);
         return;
       }
       // Someone else is holding it — offer an expelling attack instead of occupy/sweep (occupying it directly
@@ -379,6 +403,10 @@ export class WorldMapInput {
       }
       if (entry.recallStationRect && stationedTeamId) {
         rowHits.push({ rect: entry.recallStationRect, fn: () => void this.ctx.net.doRecallStationed(stationedTeamId) });
+      }
+      if (entry.stopHoldRect && entry.stopHold) {
+        const { teamId, kind } = entry.stopHold;
+        rowHits.push({ rect: entry.stopHoldRect, fn: () => void this.ctx.net.doStopHold(teamId, kind) });
       }
       rowHits.push({
         rect: entry.rowRect,

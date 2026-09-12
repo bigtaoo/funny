@@ -76,6 +76,14 @@ export async function handleMapRoutes(ctx: RouteCtx): Promise<boolean> {
     return true;
   }
 
+  // ── Pending siege-hold list (2026-09-12, 围攻驻留: countdown + besieging-token rendering) ──
+  if (method === 'GET' && path === '/world/siegeholds') {
+    const worldId = q.get('worldId');
+    if (!worldId) { sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required'); return true; }
+    send(res, 200, ok(await svc.getSiegeHolds(worldId, accountId)));
+    return true;
+  }
+
   // ── Stationed-team list (2026-07-23, field-stationing status + recall + idle-sprite rendering) ──
   if (method === 'GET' && path === '/world/stationed') {
     const worldId = q.get('worldId');

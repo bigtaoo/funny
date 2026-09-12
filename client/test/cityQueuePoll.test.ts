@@ -86,7 +86,7 @@ function pollFixture(initial: PlayerWorldView | null, getMe: ReturnType<typeof v
     cb: { worldApi: { getMe } as never, worldId: 'w1', onBack: () => {} } as never,
     get destroyed() { return destroyed; },
     get me() { return current; },
-    teams: [], marches: [], occupations: [], stationed: [],
+    teams: [], marches: [], occupations: [], siegeHolds: [], stationed: [],
     teamsLoaded: false, ordersLoaded: false,
     get queueRefreshPending() { return pending; },
     set queueRefreshPending(v: boolean) { pending = v; },
@@ -261,7 +261,7 @@ interface LoadFixture {
 }
 
 function loadFixture(
-  api: Partial<Record<'getTeams' | 'getMe' | 'getMarches' | 'getOccupations' | 'getStationed', () => Promise<unknown>>>,
+  api: Partial<Record<'getTeams' | 'getMe' | 'getMarches' | 'getOccupations' | 'getSiegeHolds' | 'getStationed', () => Promise<unknown>>>,
 ): LoadFixture {
   let destroyed = false;
   const fx: LoadFixture = {
@@ -281,11 +281,12 @@ function loadFixture(
         getMarches: wrap('getMarches', []),
         getOccupations: wrap('getOccupations', []),
         getStationed: wrap('getStationed', []),
+        getSiegeHolds: wrap('getSiegeHolds', []),
       },
     } as never,
     get destroyed() { return destroyed; },
     me: null,
-    teams: [], marches: [], occupations: [], stationed: [],
+    teams: [], marches: [], occupations: [], siegeHolds: [], stationed: [],
     teamsLoaded: false, ordersLoaded: false,
     setMe() { fx.setMeCalls++; },
     render() { fx.renders++; },
@@ -304,7 +305,7 @@ describe('CityScene/data load', () => {
     // whatever went last waits for a refill. The team row is what the player is looking at here.
     expect(fx.calls[0]).toBe('getTeams:w1');
     expect(fx.calls).toEqual([
-      'getTeams:w1', 'getMe:w1', 'getMarches:w1', 'getOccupations:w1', 'getStationed:w1',
+      'getTeams:w1', 'getMe:w1', 'getMarches:w1', 'getOccupations:w1', 'getSiegeHolds:w1', 'getStationed:w1',
     ]);
   });
 
@@ -322,6 +323,7 @@ describe('CityScene/data load', () => {
       getMarches: () => held.promise,
       getOccupations: () => held.promise,
       getStationed: () => held.promise,
+      getSiegeHolds: () => held.promise,
     });
     load(fx.host);
     await settle();
@@ -336,15 +338,19 @@ describe('CityScene/data load', () => {
     expect(fx.host.ordersLoaded).toBe(true);
   });
 
-  it('flips ordersLoaded only once ALL THREE order slices have settled', async () => {
-    // marches + occupations + stationed all feed teamOrder(); the status line must not claim
-    // 驻军在家 while a station fetch is still open. Two of three settling must not be enough.
+  it('flips ordersLoaded only once ALL FOUR order slices have settled', async () => {
+    // marches + occupations + siege holds + stationed all feed teamOrder(); the status line must not
+    // claim 驻军在家 while any one of them is still open. Three of four must not be enough.
+    // (The siege-hold slice joined 2026-09-12, 围攻驻留 — a team standing on a base/city it has
+    // beaten, waiting out the durability hit, is in none of the other three.)
     const marches = deferred<unknown[]>();
     const occupations = deferred<unknown[]>();
+    const siegeHolds = deferred<unknown[]>();
     const stationed = deferred<unknown[]>();
     const fx = loadFixture({
       getMarches: () => marches.promise,
       getOccupations: () => occupations.promise,
+      getSiegeHolds: () => siegeHolds.promise,
       getStationed: () => stationed.promise,
     });
     load(fx.host);
@@ -356,6 +362,9 @@ describe('CityScene/data load', () => {
     await settle();
     expect(fx.host.ordersLoaded).toBe(false);
     stationed.resolve([]);
+    await settle();
+    expect(fx.host.ordersLoaded).toBe(false);
+    siegeHolds.resolve([]);
     await settle();
     expect(fx.host.ordersLoaded).toBe(true);
   });
@@ -369,6 +378,7 @@ describe('CityScene/data load', () => {
       getMarches: () => Promise.reject(new Error('offline')),
       getOccupations: () => Promise.reject(new Error('offline')),
       getStationed: () => Promise.reject(new Error('offline')),
+      getSiegeHolds: () => Promise.reject(new Error('offline')),
     });
     load(fx.host);
     await settle();
@@ -405,6 +415,7 @@ describe('CityScene/data load', () => {
       getMarches: () => held.promise,
       getOccupations: () => held.promise,
       getStationed: () => held.promise,
+      getSiegeHolds: () => held.promise,
     });
     load(fx.host);
     fx.kill();
@@ -431,6 +442,7 @@ describe('CityScene/data load', () => {
       getMarches: () => new Promise(() => {}),
       getOccupations: () => new Promise(() => {}),
       getStationed: () => new Promise(() => {}),
+      getSiegeHolds: () => new Promise(() => {}),
     });
     load(fx.host);
     fx.kill();

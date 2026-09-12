@@ -60,6 +60,8 @@ function buildHarness() {
     tileCache: new Map<string, WorldTileView>(),
     me: makeMe(),
     selectedTile: null,
+    occupations: [],
+    siegeHolds: [],
     stationed: [],
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');

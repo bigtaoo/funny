@@ -213,20 +213,39 @@ export function syncMarchTokens(core: WorldMapRendererCore, dt: number, budget: 
   }
 }
 
+/** One tile a team of mine is standing on and swinging at for the length of a countdown — satisfied by
+ *  both `OccupationView` (occupation hold) and `SiegeHoldView` (pending base/city durability hit). */
+interface AttackingHold {
+  x: number;
+  y: number;
+  leaderUnitType?: string;
+  emblemKey?: string;
+  emblemColor?: number;
+}
+
 /**
- * Keep a siege-rig token playing the 'attacking' clip on every tile I currently have an
- * occupation hold on (ctx.occupations, refreshed alongside marches), for the full hold
- * duration rather than the brief post-arrival beat syncMarchTokens/marchAttackUntil covers.
+ * Keep a siege-rig token playing the 'attacking' clip on every tile in `holds`, for the full countdown
+ * rather than the brief post-arrival beat syncMarchTokens/marchAttackUntil covers.
  * syncState('attacking') replays a finished non-loop clip on every call (see
  * StickmanRuntime.syncState), so simply calling it every frame the hold is still active
  * makes the swing repeat for as long as the countdown runs.
+ *
+ * `runtimes` is the caller's own pool (one per hold KIND, keyed "x:y"), so the two kinds cannot evict
+ * each other's tokens — and a tile can carry only one of them at a time anyway.
  */
-export function syncOccupyTokens(core: WorldMapRendererCore, dt: number, budget: StickmanBudget): void {
+function syncAttackingHoldTokens(
+  core: WorldMapRendererCore,
+  dt: number,
+  budget: StickmanBudget,
+  holds: readonly AttackingHold[],
+  runtimes: Map<string, MapTokenEntry>,
+  assetWarnLabel: string,
+): void {
   const ctx = core.ctx;
   const live = new Set<string>();
   if (ctx.zoom < 3) {
     const tp = ctx.tp;
-    for (const o of ctx.occupations) {
+    for (const o of holds) {
       const key = `${o.x}:${o.y}`;
       live.add(key);
       const s = tileToScreen(o.x, o.y, tp);
@@ -234,10 +253,10 @@ export function syncOccupyTokens(core: WorldMapRendererCore, dt: number, budget:
       const cy = ctx.panY + s.y;
 
       const unitType = resolveMarchUnitType('attack', o.leaderUnitType);
-      let entry = ctx.occupyTokenRuntimes.get(key);
+      let entry = runtimes.get(key);
       if (entry && entry.kind !== unitType) {
         destroyTokenEntry(entry);
-        ctx.occupyTokenRuntimes.delete(key);
+        runtimes.delete(key);
         entry = undefined;
       }
       if (!entry) {
@@ -245,20 +264,20 @@ export function syncOccupyTokens(core: WorldMapRendererCore, dt: number, budget:
           budget.remaining--;
           const stickmanEntry: MapTokenEntry = { mode: 'stickman', runtime: null, kind: unitType };
           entry = stickmanEntry;
-          ctx.occupyTokenRuntimes.set(key, entry);
+          runtimes.set(key, entry);
           const { url, type } = marchTokenAssetFor(unitType);
           StickmanRuntime.loadAsset(url, targetScreenHeight(type)).then((asset) => {
-            const current = ctx.occupyTokenRuntimes.get(key);
+            const current = runtimes.get(key);
             if (!current || current !== stickmanEntry) return; // hold ended meanwhile
             const runtime = new StickmanRuntime(asset, { targetHeight: tp * MAP_TOKEN_SCALE, showShadow: false });
             ctx.marchTokenLayer.addChild(runtime.container);
             stickmanEntry.runtime = runtime;
-          }).catch(err => { console.warn('[WorldMap] occupy token .tao failed to load:', err); });
+          }).catch(err => { console.warn(`[WorldMap] ${assetWarnLabel} token .tao failed to load:`, err); });
         } else {
           const sprite = buildDotToken(tp, unitType);
           ctx.marchTokenLayer.addChild(sprite);
           entry = { mode: 'dot', sprite, kind: unitType };
-          ctx.occupyTokenRuntimes.set(key, entry);
+          runtimes.set(key, entry);
         }
       } else if (entry.mode === 'stickman') {
         budget.remaining--;
@@ -275,11 +294,27 @@ export function syncOccupyTokens(core: WorldMapRendererCore, dt: number, budget:
       syncEmblemBadge(core, entry, o.emblemKey, o.emblemColor, cx, cy, tp * MAP_TOKEN_SCALE);
     }
   }
-  for (const [key, entry] of ctx.occupyTokenRuntimes) {
+  for (const [key, entry] of runtimes) {
     if (live.has(key)) continue;
     destroyTokenEntry(entry);
-    ctx.occupyTokenRuntimes.delete(key);
+    runtimes.delete(key);
   }
+}
+
+/** Attacking token on every tile I currently have an occupation hold on (ctx.occupations, refreshed
+ *  alongside marches). */
+export function syncOccupyTokens(core: WorldMapRendererCore, dt: number, budget: StickmanBudget): void {
+  syncAttackingHoldTokens(core, dt, budget, core.ctx.occupations, core.ctx.occupyTokenRuntimes, 'occupy');
+}
+
+/**
+ * 围攻驻留 (2026-09-12): the same attacking token on every main base / wild city I am mid-siege on
+ * (ctx.siegeHolds). Beating the garrison does not take the target — it schedules a durability hit five
+ * minutes out (ADR-026 §4) — so the team keeps swinging at the wall for exactly as long as an occupation
+ * hold's team swings at its tile, and it must look the same.
+ */
+export function syncSiegeTokens(core: WorldMapRendererCore, dt: number, budget: StickmanBudget): void {
+  syncAttackingHoldTokens(core, dt, budget, core.ctx.siegeHolds, core.ctx.siegeTokenRuntimes, 'siege');
 }
 
 /**

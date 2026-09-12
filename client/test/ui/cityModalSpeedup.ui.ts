@@ -103,6 +103,7 @@ async function buildLoaded(
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
     getStationed: () => Promise.resolve([]),
+    getSiegeHolds: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     // Never resolves: `bt.busy` therefore stays set, which is exactly what the double-tap test needs.
     speedupBuild: (_worldId: string, key: BuildingKey, coins: number) => {

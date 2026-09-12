@@ -302,6 +302,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/world/siegeholds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSiegeHolds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/world/stationed": {
         parameters: {
             query?: never;
@@ -364,6 +380,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["cancelOccupation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/world/team/{teamId}/cancel-siege": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelSiegeHold"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1032,6 +1064,27 @@ export interface components {
             emblemKey?: string;
             emblemColor?: number;
         };
+        SiegeHoldView: {
+            /** @description The winning siege's id — SiegeDamageDoc._id, which IS the SiegeDoc._id (the pending-hit document is keyed on the battle that scheduled it). The client matches the SiegeResult push it just received against this to tell "my win started a hold" from "my win was final". */
+            siegeId: string;
+            /** @description Target tile — the base's anchor cell, or the city footprint cell the march landed on. */
+            tile: string;
+            x: number;
+            y: number;
+            /** @description When the hit lands (ms epoch) = win time + SLG_SIEGE_DAMAGE_DELAY_MS. Drives the client countdown. */
+            dueAt: number;
+            /** @description Durability the hit will subtract, with every siege bonus resolved at win time already folded in. */
+            damage: number;
+            /** @description true → a player main base (durability, possible passive relocation at 0); false → a wild city. */
+            isBase: boolean;
+            /** @description Which team slot ('t1'..'t5') is tied up besieging, if the winning march carried one. */
+            teamId?: string;
+            /** @description Map-token art — carried over from the winning march's leaderUnitType, see MarchView.leaderUnitType. */
+            leaderUnitType?: string;
+            /** @description Map-token corner badge — see MarchView.emblemKey. Own holds only, so always the requester's own family badge. */
+            emblemKey?: string;
+            emblemColor?: number;
+        };
         TileStructureView: {
             /**
              * @description arrowTower: chips passing enemies over its 3×3 footprint (no stop). blocker: hard path obstacle enemies must destroy.
@@ -1577,6 +1630,8 @@ export interface operations {
                             marches: components["schemas"]["MarchView"][];
                             occupations: components["schemas"]["OccupationView"][];
                             stationed: components["schemas"]["StationedView"][];
+                            /** @description 围攻驻留 (2026-09-12): own pending delayed siege hits — see GET /world/siegeholds. */
+                            siegeHolds: components["schemas"]["SiegeHoldView"][];
                             /** @description Same shape as GET /nation/channel (not itself contract-declared — pre-existing gap, P2 backlog). */
                             worldChannel: {
                                 id: string;
@@ -1948,6 +2003,33 @@ export interface operations {
             500: components["responses"]["ErrorResp"];
         };
     };
+    getSiegeHolds: {
+        parameters: {
+            query: {
+                worldId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own pending delayed siege hits (2026-09-12 围攻驻留: countdown + besieging-token rendering) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"] & {
+                        data?: components["schemas"]["SiegeHoldView"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+        };
+    };
     getStationed: {
         parameters: {
             query: {
@@ -2045,6 +2127,38 @@ export interface operations {
         };
         responses: {
             /** @description Occupation-hold cancelled; team is idle immediately, garrison forfeited */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["ErrorResp"];
+            401: components["responses"]["ErrorResp"];
+            404: components["responses"]["ErrorResp"];
+            500: components["responses"]["ErrorResp"];
+        };
+    };
+    cancelSiegeHold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    worldId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 停止围攻 (2026-09-12): the team's pending durability hit is voided and it walks home. Unlike cancel-occupation nothing is forfeited — a round's damage lands whole at dueAt or not at all, so calling it off mid-round costs only the stamina that round already spent. */
             200: {
                 headers: {
                     [name: string]: unknown;

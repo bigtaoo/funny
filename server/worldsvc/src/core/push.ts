@@ -296,9 +296,10 @@ export class PushService {
    * recovers it, only a full reload — and every team the dead order names reads as busy, which the team
    * picker turns into a flat refusal to dispatch.
    *
-   * Five such paths exist, all of them deleting an OccupationDoc or a StationedDoc without a march to
-   * report (a path that ends an order by starting a return leg is already covered — the leg pushes a
-   * real march). They are enumerated and behaviourally pinned by
+   * Six such paths exist, all of them deleting an OccupationDoc, a StationedDoc or (2026-09-12,
+   * 围攻驻留) a SiegeDamageDoc without a march to report — a path that ends an order by starting a
+   * return leg is already covered, the leg pushes a real march. The siege-hold path usually DOES start
+   * one, so it announces itself only on the branch that cannot (nothing left to walk home). They are enumerated and behaviourally pinned by
    * worldsvc/test/order-end-push-audit.test.ts; the same file fails on any NEW deletion site that has
    * not been reviewed against this rule.
    *
@@ -310,7 +311,7 @@ export class PushService {
    */
   async pushOrderEnded(
     accountId: string,
-    o: { tile: string; kind: 'occupy' | 'move'; status: 'arrived' | 'recalled'; at: number },
+    o: { tile: string; kind: 'occupy' | 'move' | 'attack'; status: 'arrived' | 'recalled'; at: number },
   ): Promise<void> {
     await this.core.gateway.push(accountId, {
       kind: 'march_update',

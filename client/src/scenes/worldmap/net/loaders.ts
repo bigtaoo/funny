@@ -72,6 +72,7 @@ export async function loadData(ctx: WorldMapContext): Promise<void> {
     ctx.marches = entry.marches;
     ctx.occupations = entry.occupations;
     ctx.stationed = entry.stationed;
+    ctx.siegeHolds = entry.siegeHolds;
 
     ctx.worldChatLatest = entry.worldChannel[0] ?? null; // server returns newest-first
     const seenTs = ctx.getWorldChatSeenTs();
@@ -118,14 +119,18 @@ export async function loadMapViewport(ctx: WorldMapContext): Promise<void> {
 export async function refreshMarches(ctx: WorldMapContext): Promise<void> {
   if (ctx.destroyed) return;
   try {
-    const [marches, occupations, stationed] = await Promise.all([
+    const [marches, occupations, stationed, siegeHolds] = await Promise.all([
       ctx.cb.worldApi.getMarches(ctx.cb.worldId),
       ctx.cb.worldApi.getOccupations(ctx.cb.worldId),
       ctx.cb.worldApi.getStationed(ctx.cb.worldId),
+      // 围攻驻留 (2026-09-12): the fourth order slice — a team pinned to a won base/city assault for the
+      // five-minute damage delay is in none of the other three, so without this it read as idle at home.
+      ctx.cb.worldApi.getSiegeHolds(ctx.cb.worldId),
     ]);
     ctx.marches = marches;
     ctx.occupations = occupations;
     ctx.stationed = stationed;
+    ctx.siegeHolds = siegeHolds;
     if (!ctx.destroyed) { ctx.panels.renderHud(); ctx.view.renderMap(); }
   } catch { /* offline */ }
 }

@@ -217,17 +217,18 @@ export function renderTeamCard(
     statusLbl = t(station.mode === 'garrison' ? 'world.team.garrisoned' : 'world.team.stationedIdle');
     statusColor = C.gold as number;
   } else if (activeOrder) {
-    const remaining = Math.max(
-      0,
-      Math.ceil(
-        (('march' in activeOrder ? activeOrder.march.arriveAt : activeOrder.occ.dueAt) - now) / 1000
-      )
-    );
+    // 围攻驻留 (2026-09-12) joins march/occupation as a third shape here — all three are "this team is
+    // committed until a deadline", differing only in which field carries it.
+    const deadline =
+      'march' in activeOrder ? activeOrder.march.arriveAt
+      : 'occ' in activeOrder ? activeOrder.occ.dueAt
+      : activeOrder.siege.dueAt;
+    const remaining = Math.max(0, Math.ceil((deadline - now) / 1000));
     const timeStr = remaining >= 60 ? `${Math.ceil(remaining / 60)}m` : `${remaining}s`;
     statusLbl =
-      'march' in activeOrder
-        ? t('world.team.marching')
-        : t('world.team.occupying').replace('{time}', timeStr);
+      'march' in activeOrder ? t('world.team.marching')
+      : 'occ' in activeOrder ? t('world.team.occupying').replace('{time}', timeStr)
+      : t('world.team.besieging').replace('{time}', timeStr);
     statusColor = C.gold as number;
   } else if (filled && !core.ordersLoaded) {
     // marches/occupations not back yet — this team may well be marching, so keep animating

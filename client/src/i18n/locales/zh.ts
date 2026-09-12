@@ -897,6 +897,8 @@ export const zh = {
   'world.actGarrison': '驻扎',
   'world.actOccupyInPlace': '就地占领',
   'world.actRecallStation': '召回驻军',
+  'world.actStopSiege': '停止围攻',
+  'world.actStopOccupy': '停止占领',
   'world.stationRecalled': '已下令驻军返回主城',
   'world.actAbandon': '放弃',
   'world.abandonConfirm': '确定放弃 ({x},{y}) 这块领地吗？驻军将全部损失。',
@@ -933,6 +935,8 @@ export const zh = {
   'world.underAttackMsg': '{name} 将于 {sec}s 后围攻 {tile}',
   'world.siegeWin': '围攻得手！{loot}',
   'world.siegeWinHold': '围攻得手，进入占领倒计时（5 分钟后落地）',
+  'world.siegeWinBaseHold': '围攻得手！{time} 后打掉 {dmg} 点耐久',
+  'world.siegeWinCityHold': '登城得手！{time} 后打掉 {dmg} 点耐久',
   'world.siegeLoss': '围攻失利',
   'world.siegeDraw': '围攻僵持',
   'world.defendHeld': '守土成功',
@@ -1715,6 +1719,10 @@ export const zh = {
   // Team management "取消指令" (2026-07-15): force a busy team back to idle
   'world.team.marching': '行军中',
   'world.team.occupying': '占领中 剩{time}',
+  'world.team.besieging': '围攻中 剩{time}',
+  'world.stopHold': '停止',
+  'world.siegeStopped': '已停止围攻，部队返回中',
+  'world.occupyStopped': '已停止占领',
   // Field-stationed away from home (2026-07-23 field-stationing; city team row 2026-08-25)
   'world.team.stationedIdle': '野外停留',
   'world.team.garrisoned': '野外驻扎',
