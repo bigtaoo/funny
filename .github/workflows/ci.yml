@@ -134,6 +134,14 @@ jobs:
       - name: edge compression drift check
         working-directory: server
         run: npm run check:edgecompression
+      # COMMERCIAL_DESIGN §0 K1/K4 + §3.1: coin data lives in its own database and commercial is its only
+      # writer. Since 2026-09-12 that is a credential boundary — one least-privilege Mongo user per service,
+      # readWrite on its own database only — and it rots through two one-liners nobody flags in review: a
+      # service opening someone else's database in code, or a compose block handing it someone else's
+      # connection string (which is how every one of these files looked before).
+      - name: database isolation drift check
+        working-directory: server
+        run: npm run check:dbisolation
       - name: server typecheck (tsc -b, solution file — all 13 workspaces)
         working-directory: server
         run: npm run typecheck

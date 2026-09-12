@@ -50,6 +50,56 @@ foreach ($svc in $buildTargets) {
   }
 }
 
+# Mongo first, on its own: every other service now authenticates as its own least-privilege user
+# (server/scripts/mongoDbMap.mjs), and those users have to exist before the services try to connect —
+# otherwise they crash-loop on auth failures until the restart policy happens to catch up.
+Write-Host ">> Starting mongo + provisioning per-service users ..." -ForegroundColor Cyan
+docker compose -f $compose up -d mongo
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# mongod accepts connections before it is healthy (the healthcheck also performs rs.initiate); `ping` is one
+# of the few commands allowed without authentication, so it is the right thing to wait on here.
+$ready = $false
+foreach ($i in 1..30) {
+  $ping = docker compose -f $compose exec -T mongo mongosh --quiet --eval "db.runCommand({ping:1}).ok" 2>$null
+  if ($LASTEXITCODE -eq 0 -and "$ping".Trim() -eq '1') { $ready = $true; break }
+  Start-Sleep -Seconds 2
+}
+if (-not $ready) {
+  Write-Host "!! mongod did not accept connections within 60s." -ForegroundColor Red
+  docker compose -f $compose logs --tail=40 mongo
+  exit 1
+}
+
+# Two sessions, in this order, and neither is optional:
+#
+#  1. Unauthenticated, root only. A data volume created BEFORE auth was turned on holds no users at all, so
+#     the compose file's MONGO_INITDB_ROOT_* never ran (the entrypoint only seeds a fresh data dir). Mongo's
+#     localhost exception covers exactly this: from inside the container it permits ONE command, createUser
+#     on admin — not getUser, so probing first is what fails, not the create. On a volume that already has
+#     root this throws Unauthorized and is skipped, which is why it swallows the error.
+#  2. Authenticated as root, every service user. The localhost exception is gone the instant root exists, so
+#     these cannot ride along in session 1 — that combination silently created nothing.
+$bootstrapRoot = @'
+try {
+  db.getSiblingDB('admin').createUser({ user: 'root', pwd: 'localdev-root', roles: [{ role: 'root', db: 'admin' }] });
+  print('bootstrapped root (pre-auth data volume)');
+} catch (e) {
+  print('root already present (' + e.codeName + ')');
+}
+'@
+$bootstrapRoot | docker compose -f $compose exec -T mongo mongosh --quiet | Out-Null
+
+$provision = node (Join-Path $root '../server/scripts/provisionMongoUsers.mjs') --emit-mongosh --local
+if ($LASTEXITCODE -ne 0) { Write-Host "!! could not generate the provisioning script." -ForegroundColor Red; exit 1 }
+$out = $provision | docker compose -f $compose exec -T mongo mongosh -u root -p localdev-root --authenticationDatabase admin --quiet
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "!! provisioning the Mongo users failed:" -ForegroundColor Red
+  Write-Host $out
+  exit 1
+}
+Write-Host ("   " + (($out | Select-Object -Last 1) -join ' ')) -ForegroundColor DarkGray
+
 Write-Host ">> Starting full stack ..." -ForegroundColor Cyan
 docker compose -f $compose up -d --wait
 if ($LASTEXITCODE -ne 0) {

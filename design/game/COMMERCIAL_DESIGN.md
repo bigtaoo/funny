@@ -86,6 +86,20 @@
 
 > `gachaHistory`/`walletLog`/`iapReceipts` 现在挂在 meta 的 `shared/src/mongo.ts`（见 `CLAUDE.md` 集合表）——迁移时从 meta 库**移除**，在 commercial 库重建为 `gachaHistory`/`ledger`/`recharges`。meta 不再持有这三张表。
 
+#### 库级凭据隔离（2026-09-12 落地）
+
+§0 K1/K4 说的「真钱数据物理隔离、commercial 是唯一写入方」，在 2026-09-12 之前**只是约定**：7 个连库进程全部拿同一个 `NW_MONGO_URI`，也就是同一个 Mongo 账号，权限覆盖整个集群的所有库。任何服务写一行 `client.db('notebook_wars_commercial')` 都能直接改钱包，代码评审之下没有任何一层会反对。
+
+现在改成**凭据边界**：
+
+- **每服务一个 Mongo 用户**，建在自己那个库里，只授 `readWrite` 该库（`authSource` 也是该库）。`nw_world` 去开 `notebook_wars_commercial` 会在驱动层拿到授权错误，不是"评审时发现"，是**连不上**。
+- **单一真相表** [`server/scripts/mongoDbMap.mjs`](../../server/scripts/mongoDbMap.mjs)：服务 → 库 → 用户 → 环境变量。开号脚本和 CI 门禁都读它；新增连库服务必须加一行，否则门禁报"这个服务拿着没人认领的 Mongo 变量"。
+- **开号**：`node server/scripts/provisionMongoUsers.mjs`。`--atlas` 打印 `atlas dbusers create` 命令（Atlas 不允许驱动侧 `createUser`，这是它的托管用户体系），自托管集群则直接连上去建/改，两种模式都幂等，密码只打印一次。
+- **本地栈同构**：`docker/docker-compose.local.yml` 的 mongo 开了 `--auth --keyFile`（副本集开 auth 必须有 keyFile，单节点也一样），`docker/local-up.ps1` 先起 mongo、建号，再拉起其余服务。本地不是"能跑就行"的无认证模式，就是为了权限配错**在本地就炸**。
+- **CI 门禁** `npm run check:dbisolation`（[`server/scripts/checkDbIsolation.mjs`](../../server/scripts/checkDbIsolation.mjs)）盯两种漂移：①某服务源码里出现别人的库名/环境变量；②compose 里某个服务块拿到了不属于它的 `NW_*_MONGO_URI`，或变量名对了但凭据是别人的。变异测试在 `server/commercial/test/check-db-isolation.test.ts`。
+- **过渡期的诚实说明**：各服务的 `config.ts` 目前仍保留 `?? NW_MONGO_URI` 兜底，compose 里也是 `${自己的:-${NW_MONGO_URI}}`。**兜底生效时等于没有隔离**（还是那一个全权限账号）——线上要真正关上这道门，必须在 Atlas 建好 7 个用户、把各自的连接串填进 `server/.env` 再重启。删掉这个兜底是后续收尾项（同时也能让门禁把 `NW_MONGO_URI` 从豁免名单里去掉）。
+- **跨服务读金币怎么办**：照旧走 commercial 的内部 HTTP（`/internal/wallet`、`/internal/grant`、`/internal/spend`…），这本来就是设计里唯一的通路；ops/admin 查余额也是经 admin → commercial 的内部端点，不是连库。
+
 ### 3.2 wallets 文档
 
 ```ts
