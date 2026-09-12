@@ -31,7 +31,7 @@
 | 文档 | 范围 |
 |---|---|
 | [README.md](README.md) | 本文：索引 / 权威登记 / 文档规约 |
-| [DECISIONS.md](DECISIONS.md) | ADR 决策日志（造成漂移的关键拍板）——**索引表**，正文见 [ADR-001~040](DECISIONS_ADR-001-040.md) / [ADR-041~069](DECISIONS_ADR-041-069.md) / [ADR-070 起](DECISIONS_ADR-070-onward.md)（新拍板写最后一册） |
+| [DECISIONS.md](DECISIONS.md) | ADR 决策日志（造成漂移的关键拍板）——**索引表**，正文见 [ADR-001~040](DECISIONS_ADR-001-040.md) / [ADR-041~069](DECISIONS_ADR-041-069.md) / [ADR-070~085](DECISIONS_ADR-070-085.md) / [ADR-086 起](DECISIONS_ADR-086-onward.md)（新拍板写最后一册） |
 
 ### 1.2 游戏与服务端（`design/game/`）
 | 文档 | 范围 | 状态 |
@@ -323,7 +323,7 @@
 botsvc 写成「设计中」），根因就是同一个事实存在两处、且没有任何门禁比对它们。**新开文档必须带状态头**——
 `SOCIAL_SVC_DESIGN.md` 当时没有，README 那一行于是无从校对，一路错到审计。
 
-**加/减一个应用进程必须记 ADR**（新增 2026-09-03，见 [ADR-080](DECISIONS_ADR-070-onward.md)）：只改
+**加/减一个应用进程必须记 ADR**（新增 2026-09-03，见 [ADR-080](DECISIONS_ADR-070-085.md)）：只改
 `claudedocs/server.md` 不算——后者是「现在代码长这样」的快查，不是拍板记录。socialsvc / auctionsvc / botsvc
 三次加进程都只改了快查，导致 ADR-005 长期是全仓唯一还说「8 个进程」的文档。
 

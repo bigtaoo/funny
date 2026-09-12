@@ -29,7 +29,7 @@
 
 ## ADR-005 应用进程口径 = 8 个 — Superseded by ADR-080 — 2026-06-21
 
-> **⚠️ 已被取代（2026-09-03）**：口径现为 **11 个**，见 [ADR-080](DECISIONS_ADR-070-onward.md#adr-080-应用进程口径--11-个取代-adr-005-的8-个--accepted--2026-09-03)。socialsvc / auctionsvc / botsvc 三次加进程（8→10→11）当时都没记 ADR，本条因此长期是全仓唯一还在说「8 个」的文档。以下原文保留作历史记录。
+> **⚠️ 已被取代（2026-09-03）**：口径现为 **11 个**，见 [ADR-080](DECISIONS_ADR-070-085.md#adr-080-应用进程口径--11-个取代-adr-005-的8-个--accepted--2026-09-03)。socialsvc / auctionsvc / botsvc 三次加进程（8→10→11）当时都没记 ADR，本条因此长期是全仓唯一还在说「8 个」的文档。以下原文保留作历史记录。
 
 - **决策**：应用进程 8 个：metaserver / gateway / matchsvc / gameserver / commercial / admin / worldsvc / analyticsvc。`shared` 是 npm 包不计入；mongo/redis 是基础设施。
 - **背景**：CLAUDE.md 旧称"九进程"且列表漏了 matchsvc、混入了 shared 包。
