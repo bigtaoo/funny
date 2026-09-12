@@ -1,0 +1,30 @@
+# Line endings.
+#
+# Deliberately NOT a blanket `* text=auto eol=lf`: the ~2600 .ts sources are left to
+# whatever core.autocrlf the checkout has, exactly as before. Pinned here is only the
+# small set (~100 files) where CRLF is actively harmful.
+
+# Shell scripts run on Linux/macOS — server/deploy/*.sh on the VPS most of all. A CRLF
+# shebang makes the kernel look for an interpreter literally named "bash\r".
+# tools/gimp-export-layers/.gitattributes has carried this rule locally for a while;
+# this lifts it to the root so scripts added elsewhere are covered too.
+*.sh        text eol=lf
+*.command   text eol=lf
+
+# Node scripts, most of which carry a `#!/usr/bin/env node` shebang.
+#
+# CRLF there breaks more than direct execution: esbuild (and therefore vitest) emits
+# invalid JS when it strips a shebang that ends in \r, so ANY test importing such a file
+# dies during collection with `SyntaxError: Invalid or unexpected token` — reported
+# against the importing TEST file, which points nowhere near the real culprit.
+#
+# Found 2026-09-12: server/commercial's suite failed in every freshly created worktree
+# (checked out CRLF under core.autocrlf=true) while the main checkout, which happened to
+# hold LF, stayed green — so it read as "my change broke a test" rather than as an
+# environment artifact. See claudedocs/worktrees.md.
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.js        text eol=lf
+
+# Windows-only, and cmd.exe wants CRLF.
+*.cmd       text eol=crlf
