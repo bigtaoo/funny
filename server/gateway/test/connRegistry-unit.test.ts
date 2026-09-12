@@ -5,7 +5,7 @@
 // Redis needed), a malformed binary frame being silently ignored (decodeClient throws, caught), and the WS
 // handshake rejection path (missing/invalid token -> 4401). Same real-Gateway-plus-real-WS harness as
 // gateway-routing.test.ts.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as path from 'path';
 import * as protobuf from 'protobufjs';
 import { WebSocket } from 'ws';
@@ -163,5 +163,62 @@ describe('ConnRegistry gap-fill', () => {
     sockets.push(ws);
     const code = await new Promise<number>((resolve) => ws.on('close', resolve));
     expect(code).toBe(4401);
+  });
+
+  // 2026-09-10 burst: 265 byte-identical `jwt expired` warnings in two hours from one stuck client.
+  // Every rejection is still refused with 4401 — only the LOG is bounded (see connRegistry's
+  // REJECT_LOG_BURST for why the connections deliberately are not).
+  it('logs only the first few identical handshake rejections, and still refuses every one', async () => {
+    const port = 19610;
+    startGateway(port);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const codes: number[] = [];
+      for (let i = 0; i < 8; i++) {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/gw?token=not-a-real-jwt`);
+        sockets.push(ws);
+        codes.push(await new Promise<number>((resolve) => ws.on('close', resolve)));
+      }
+      // Every attempt is refused; none of them is let through because the log went quiet.
+      expect(codes).toEqual(Array(8).fill(4401));
+      const rejects = warn.mock.calls.filter((c) => String(c[0]).includes('WS handshake rejected'));
+      expect(rejects).toHaveLength(3); // REJECT_LOG_BURST
+      // The suppressed ones are not lost — they are owed a summary, which the heartbeat sweep emits
+      // once the window closes. Nothing has closed it yet, so no summary has been written either.
+      const summaries = warn.mock.calls.filter((c) => String(c[0]).includes('rejections suppressed'));
+      expect(summaries).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('once the window has passed, the suppressed ones are accounted for in one summary line', async () => {
+    const port = 19611;
+    startGateway(port);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Only Date is faked: the sockets below still need real timers to connect and close.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const reject = async (): Promise<void> => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/gw?token=not-a-real-jwt`);
+        sockets.push(ws);
+        await new Promise<void>((resolve) => ws.on('close', () => resolve()));
+      };
+      for (let i = 0; i < 5; i++) await reject();
+      vi.setSystemTime(Date.now() + 61_000); // window closed
+      await reject(); // …and this one rolls it over
+
+      // createLogger flattens msg + data into one console line, so assert on the rendered text.
+      const summaries = warn.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('rejections suppressed'));
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0]).toContain('total=5');
+      expect(summaries[0]).toContain('suppressed=2');
+      // The reason survives into the summary — a count alone would not have told anyone that the
+      // 2026-09-10 burst was expired JWTs rather than, say, a broken deploy signing with a stale key.
+      expect(summaries[0]).toMatch(/reasons=\S/);
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
   });
 });
