@@ -24,8 +24,8 @@
 // inheritance chain — the cross-mixin calls this used to reach via interface declaration merging are
 // now explicit constructor params instead). Dependency shape: List → Bid, TradeActions,
 // CreateListingPanel (one-directional: List's row actions open the bid/buy/cancel/create-listing
-// flows; none of those three ever call back into List) — see list.ts's narrow BidOpener/TradeOpener/
-// CreateFormOpener interfaces. picker.ts and createForm.ts were merged into a single
+// flows; none of those three ever call back into List) — see the narrow BidOpener/TradeOpener
+// interfaces in listCell.ts (the cell is what wires those two) and CreateFormOpener in list.ts. picker.ts and createForm.ts were merged into a single
 // CreateListingPanel (create-listing.ts) during this conversion: the two used to call each other's
 // methods directly (picker→openCreateForm, createForm→selectedItemLabel/openItemPicker) — a genuine
 // bidirectional dependency, which per the composition-priority rule means the file boundary was drawn

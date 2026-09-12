@@ -5,12 +5,12 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { CHAPTER_ORDER, getChapterMap } from '../game';
 import { isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../render/sketchUi';
-import { FS, snapFont, fitFont } from '../render/fontScale';
-import { buildIcon, type IconKind } from '../render/icons';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { FS, snapFont } from '../render/fontScale';
+import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader, buildTitleIcon } from '../ui/widgets/SceneHeader';
 import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp } from './CampaignMapScene/drawing';
+import { buildCampaignHeader } from './CampaignMapScene/header';
 import { dispatchHit, type Hit } from '../ui/hits';
 
 // ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the "campaign notebook" ──────
@@ -206,141 +206,6 @@ export class CampaignMapScene implements Scene {
     dispatchHit(this.hits, x, y);
   }
 
-  // ── Shared header ───────────────────────────────────────────────────────────
-
-  /** Draws the fixed top band into `root`; returns its height. Pushes its hits. */
-  private buildHeader(
-    root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void, subtitleStr?: string,
-    showChaptersButton?: boolean,
-  ): number {
-    const { w, h } = this;
-    // Top-bar chrome (dark strip + back button top-left) is handled by SceneHeader;
-    // the title is drawn by this scene (when a subtitle is present the title rises slightly;
-    // §3.1 allows title=null to let the scene own the title area).
-    const hdr = drawSceneHeader(root, w, h, null);
-    const tbH = hdr.headerH;
-
-    hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: onBack });
-
-    // Right-aligned header shortcuts, each on the one true primary-button
-    // background (sketchButton, §7.5) so they read as real buttons — matching
-    // the Back pill — rather than bare gold text floating on the paper bar.
-    // Laid out right→left; `rightX` walks left by each pill's width + gap.
-    const fontSz = FS.label;
-    const padX = Math.round(fontSz * 0.8);
-    const pillH = Math.round(fontSz + padX * 1.4);
-    const pillGap = Math.round(w * 0.02);
-    let rightX = w - Math.round(w * 0.04);
-    // The pills ride the SUBTITLE's row when there is one, not the title's (2026-09-12). The bar is
-    // 12% of the design height — 230 design px in portrait — so a chapter page already uses it as
-    // two rows: the title at 0.40 and the notebook owner at 0.72. Putting the shortcuts on the
-    // title's row left it a 181-px band between the back pill and `Kapitel`, and German's "Kapitel
-    // 2 · Trainingsgelände" needs 545 even before the glyph: it was drawn straight through both
-    // pills (sweep §50.12), and shrinking it to the band would have meant a 12-design-px scene
-    // title. On the owner's row the title gets the whole bar right of the back pill and needs no
-    // shrinking at all; the owner line is short and centred, and is clamped off the pills below.
-    const pillMidY = subtitleStr ? Math.round(tbH * 0.72) : Math.round(tbH / 2);
-
-    // Each pill carries a leading glyph, the same [icon][gap][label] shape the
-    // title beside it and the world-map header entries (WorldMapPanels/headerHud)
-    // use, so a shortcut is recognizable before its two CJK characters are read.
-    // The `'active'` bake is the light ink cut for a dark fill — `tabIconVariant`
-    // would pick the de-emphasised `inactive` grey off the gold label colour,
-    // which all but vanishes on the ink-dark pill.
-    const iconSz = Math.round(fontSz * 1.15);
-    const iconGap = Math.round(fontSz * 0.35);
-
-    const addHeaderButton = (labelStr: string, icon: IconKind, fn: () => void): void => {
-      const label = txt(labelStr, fontSz, C.gold, true);
-      const groupW = iconSz + iconGap + label.width;
-      const pillW = Math.round(groupW + padX * 2);
-      const pillX = rightX - pillW;
-      const pillY = Math.round(pillMidY - pillH / 2);
-
-      const bg = sketchButton(pillW, pillH, seedFor(pillX, pillY, pillW));
-      bg.x = pillX; bg.y = pillY;
-      root.addChild(bg);
-
-      const groupX = pillX + (pillW - groupW) / 2;
-      const glyph = buildIcon(icon, iconSz, C.gold, { variant: 'active' });
-      glyph.x = Math.round(groupX);
-      glyph.y = Math.round(pillMidY - iconSz / 2);
-      root.addChild(glyph);
-
-      label.anchor.set(0, 0.5);
-      label.x = Math.round(groupX + iconSz + iconGap); label.y = pillMidY;
-      root.addChild(label);
-
-      hits.push({ rect: { x: pillX, y: pillY, w: pillW, h: pillH }, fn });
-      rightX = pillX - pillGap;
-    };
-
-    // Single growth-hub entry (LOBBY_IA_REDESIGN §9): merges the former separate
-    // Collection/Equipment header links, matching the lobby's unified [Collection|Equipment] tab.
-    // `equipIcon` is the same shield the lobby's Equipment tab and EquipmentScene wear.
-    addHeaderButton(t('campaign.equipment'), 'equipIcon', () => this.cb.onOpenEquipment());
-
-    // Chapter-page-only shortcut to the notebook overview (TOC), since Back now exits to the lobby directly.
-    // The open-notebook `campaignTabIcon` reads as "back to the book" without colliding with the
-    // treasure-map `pveTabIcon` this same bar already shows beside the title.
-    if (showChaptersButton) {
-      addHeaderButton(t('campaign.chapters'), 'campaignTabIcon', () => this.backToToc());
-    }
-
-    // ── Title LAST, because the shortcut pills above are what decide how much room it has ──
-    //
-    // With a subtitle (chapter pages: notebook owner), the title rides slightly above center so the
-    // dim owner line tucks beneath it; without one it centers. The `pveTabIcon` treasure map is the
-    // same glyph LevelPrepScene and the achievement wall's PvE category use — the campaign IS the
-    // PvE track, so all three show one picture. Laid out as the [icon][gap][title] group
-    // drawSceneHeader would draw, just centred by hand because this scene owns the title (it may sit
-    // above a subtitle line).
-    //
-    // The band is measured, not assumed (2026-09-12). This used to centre the group on the whole bar
-    // with nothing to stop it: on a 360-wide phone German's "Kapitel 2 · Trainingsgelände" is 27
-    // characters and was drawn straight through the `Kapitel`/`Ausrüstung` pills it is centred
-    // against (sweep §50.12). On a chapter page the pills have moved to the owner's row (see
-    // `pillMidY`), so the title's right edge is the bar's own inset; on the TOC they share its row
-    // and `rightX` — where the pills stop — is the edge it has to respect. `fitFont` then chooses a
-    // size off the shared scale for whatever band that leaves, rather than scaling the built node
-    // under the legibility floor.
-    const bandL = hdr.backRect.x + hdr.backRect.w + pillGap;
-    const bandR = subtitleStr ? w - Math.round(w * 0.04) : rightX;
-    const band = Math.max(Math.round(w * 0.2), bandR - bandL);
-    const titleY = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
-    let icon = buildTitleIcon('pveTabIcon', FS.title, C.dark);
-    const probe = txt(titleStr, FS.title, C.dark, true);
-    const titleSize = fitFont(FS.title, icon.size + icon.gap + probe.width, band);
-    probe.destroy({ texture: true, baseTexture: true });
-    if (titleSize !== FS.title) {
-      icon.node.destroy({ children: true });
-      icon = buildTitleIcon('pveTabIcon', titleSize, C.dark);
-    }
-    const title = txt(titleStr, titleSize, C.dark, true);
-    const groupW = icon.size + icon.gap + title.width;
-    // Centred on the bar, then pushed back inside the band when the centre would put it under the
-    // pills (same clamp drawSceneHeader applies against a currency cluster).
-    const groupX = Math.max(bandL, Math.min(Math.round((w - groupW) / 2), bandR - groupW));
-    icon.node.x = groupX;
-    icon.node.y = Math.round(titleY - icon.size / 2);
-    root.addChild(icon.node);
-    title.anchor.set(0, 0.5); title.x = groupX + icon.size + icon.gap;
-    title.y = titleY;
-    root.addChild(title);
-
-    if (subtitleStr) {
-      const sub = txt(subtitleStr, FS.label, C.mid, false, Math.max(Math.round(w * 0.2), rightX - bandL));
-      sub.anchor.set(0.5, 0.5);
-      // Centred on the bar, but never into the pills that now share this row.
-      sub.x = Math.min(w / 2, rightX - pillGap - sub.width / 2);
-      sub.y = pillMidY;
-      sub.alpha = 0.75;
-      root.addChild(sub);
-    }
-
-    return tbH;
-  }
-
   // ── Table of contents page ────────────────────────────────────────────────────
 
   private buildToc(): Page {
@@ -348,7 +213,11 @@ export class CampaignMapScene implements Scene {
     const root = new PIXI.Container();
     const hits: Hit[] = [];
 
-    const tbH = this.buildHeader(root, hits, t('campaign.notebookTitle'), () => this.cb.onBack());
+    const tbH = buildCampaignHeader(root, hits, {
+      w, h, title: t('campaign.notebookTitle'),
+      onBack: () => this.cb.onBack(),
+      onOpenEquipment: () => this.cb.onOpenEquipment(),
+    });
 
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());
@@ -434,7 +303,12 @@ export class CampaignMapScene implements Scene {
     // Narrator attribution: odd chapters are Tao's notebook, even are Anna's
     // (CAMPAIGN_STORY.md framework table — Ch1/3/5 Tao, Ch2/4/6 Anna).
     const ownerStr = t(ch % 2 === 1 ? 'campaign.notebookOwner.tao' : 'campaign.notebookOwner.anna');
-    const tbH = this.buildHeader(root, hits, titleStr, () => this.cb.onBack(), ownerStr, true);
+    const tbH = buildCampaignHeader(root, hits, {
+      w, h, title: titleStr, subtitle: ownerStr,
+      onBack: () => this.cb.onBack(),
+      onOpenEquipment: () => this.cb.onOpenEquipment(),
+      onChapters: () => this.backToToc(),
+    });
 
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());
