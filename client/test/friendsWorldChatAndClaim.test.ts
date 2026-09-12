@@ -39,6 +39,7 @@ class FakeFriendsSceneCore {
     sendWorldChat: vi.fn(async (_body: string, _senderName: string) => {}) as
       ((body: string, senderName: string) => Promise<void>) | undefined,
     claimMail: vi.fn(async (_mailId: string): Promise<boolean> => true),
+    deleteMail: vi.fn(async (_mailId: string): Promise<void> => {}),
     playerName: vi.fn((): string => 'Tester'),
     refreshWallet: vi.fn(async () => {}),
   };
@@ -198,5 +199,66 @@ describe('FriendsScene — doClaim() failure', () => {
     await network.doClaim(mail);
 
     expect(core.toast).toHaveBeenCalledWith('mail.claimFail');
+  });
+});
+
+// ── double-tap guard (2026-09-12) ──────────────────────────────────────────────
+
+describe('FriendsScene — mail double-tap guard', () => {
+  it('a second doClaim() for the same mail while the first is in flight sends no second request', async () => {
+    // Production 2026-09-08: two `/claim` POSTs for one mail landed milliseconds apart; the loser
+    // came back ALREADY_CLAIMED and the player saw a failure toast for a claim that had succeeded.
+    const { core, network } = buildScene();
+    let release!: (v: boolean) => void;
+    core.cb.claimMail.mockImplementationOnce(() => new Promise<boolean>((r) => { release = r; }));
+    const mail = makeMail();
+
+    const first = network.doClaim(mail);
+    await network.doClaim(mail); // second tap, first still pending — swallowed
+    expect(core.cb.claimMail).toHaveBeenCalledTimes(1);
+
+    release(true);
+    await first;
+    expect(mail.claimed).toBe(true);
+  });
+
+  it('releases the guard once the request settles, so a later retry still goes through', async () => {
+    const { core, network } = buildScene();
+    core.cb.claimMail.mockRejectedValueOnce(new Error('network down'));
+    const mail = makeMail();
+
+    await network.doClaim(mail);
+    await network.doClaim(mail);
+
+    expect(core.cb.claimMail).toHaveBeenCalledTimes(2);
+  });
+
+  it('guards doMailDelete() the same way', async () => {
+    const { core, network } = buildScene();
+    let release!: () => void;
+    core.cb.deleteMail.mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
+    const mail = makeMail();
+
+    const first = network.doMailDelete(mail);
+    await network.doMailDelete(mail);
+    expect(core.cb.deleteMail).toHaveBeenCalledTimes(1);
+
+    release();
+    await first;
+  });
+
+  it('a claim and a delete for DIFFERENT mails do not block each other', async () => {
+    const { core, network } = buildScene();
+    let release!: (v: boolean) => void;
+    core.cb.claimMail.mockImplementationOnce(() => new Promise<boolean>((r) => { release = r; }));
+    const a = makeMail();
+    const b = { ...makeMail(), mailId: 'mail2' } as MailView;
+
+    const first = network.doClaim(a);
+    await network.doClaim(b);
+    expect(core.cb.claimMail).toHaveBeenCalledTimes(2);
+
+    release(true);
+    await first;
   });
 });

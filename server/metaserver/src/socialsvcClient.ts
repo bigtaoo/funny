@@ -5,6 +5,29 @@
 import { fetchInternalJson } from '@nw/shared';
 import type { MailDoc, MailAttachmentDoc } from '@nw/shared';
 
+/**
+ * Shape of every socialsvc JSON reply: `ok(data)` / `err(code, message)` from @nw/shared — note that
+ * `error` is an object, not a string. Typing these replies as `{ error?: string }` is what let the
+ * mail-claim code below silently mis-read every rejection for months; keep the envelope honest.
+ */
+interface InternalEnvelope<T> {
+  ok?: boolean;
+  data?: T;
+  error?: { code?: string; message?: string };
+}
+
+/** The `code` of an err() envelope, or '' when the reply carried no recognizable error object. */
+function errorCode(body: InternalEnvelope<unknown> | null): string {
+  return body?.error?.code ?? '';
+}
+
+/** Human-readable one-liner for a failed internal call (code + message, or the transport error). */
+function errorText(body: InternalEnvelope<unknown> | null, transportErr?: string): string {
+  const e = body?.error;
+  if (e?.code) return e.message ? `${e.code}: ${e.message}` : e.code;
+  return transportErr ?? '';
+}
+
 export interface SystemMailContent {
   subject: string;
   body: string;
@@ -88,13 +111,19 @@ export class HttpMetaSocialsvcClient implements MetaSocialsvcClient {
     accountId: string,
     orderId: string,
   ): Promise<{ doc: MailDoc } | { error: 'NOT_FOUND' | 'NO_ATTACHMENT' | 'ALREADY_CLAIMED' | 'SOCIAL_UNAVAILABLE' }> {
-    const r = await fetchInternalJson<{ ok?: boolean; data?: { doc: MailDoc }; error?: string }>(
+    const r = await fetchInternalJson<InternalEnvelope<{ doc: MailDoc }>>(
       `${this.baseUrl}/internal/mail/${encodeURIComponent(mailId)}/claim`,
       { caller: 'meta', key: this.internalKey, method: 'POST', body: { accountId, orderId }, timeoutMs: 5000, label: '/internal/mail/:id/claim' },
     );
     const data = r.body;
     if (!r.ok || !data?.ok) {
-      const e = data?.error;
+      // `error` is shared's err() envelope — an OBJECT { code, message }, not a bare string
+      // (2026-09-12 fix: this used to compare the object itself against the code literals, so it
+      // never matched and EVERY socialsvc rejection — including the routine ALREADY_CLAIMED of a
+      // double-submitted claim — fell through to SOCIAL_UNAVAILABLE and surfaced to the player as a
+      // retryable 503 for a claim that can never succeed. The declared `error?: string` type made
+      // the mismatch invisible to tsc).
+      const e = errorCode(data);
       if (e === 'NOT_FOUND' || e === 'NO_ATTACHMENT' || e === 'ALREADY_CLAIMED') return { error: e };
       // Network error / timeout / unexpected payload → the mail's actual claim state is unknown
       // (P0-4: it used to be mapped to NOT_FOUND, telling the player a mail that may well exist
@@ -125,13 +154,13 @@ export class HttpMetaSocialsvcClient implements MetaSocialsvcClient {
     to: string,
     content: SystemMailContent,
   ): Promise<{ mailId: string; inserted: boolean; hasAttachment: boolean }> {
-    const r = await fetchInternalJson<{ ok?: boolean; data?: { mailId: string; inserted: boolean; hasAttachment: boolean }; error?: string }>(
+    const r = await fetchInternalJson<InternalEnvelope<{ mailId: string; inserted: boolean; hasAttachment: boolean }>>(
       `${this.baseUrl}/internal/mail/system`,
       { caller: 'meta', key: this.internalKey, method: 'POST', body: { dispatchKey, to, content }, timeoutMs: 5000, label: '/internal/mail/system' },
     );
     const data = r.body;
     if (!r.ok || !data?.ok || !data.data) {
-      throw new Error(`socialsvc insertSystemMail failed: ${r.status} ${data?.error ?? r.error ?? ''}`.trim());
+      throw new Error(`socialsvc insertSystemMail failed: ${r.status} ${errorText(data, r.error)}`.trim());
     }
     return data.data;
   }
@@ -142,13 +171,13 @@ export class HttpMetaSocialsvcClient implements MetaSocialsvcClient {
     content: SystemMailContent,
   ): Promise<{ insertedAccountIds: string[]; hasAttachment: boolean }> {
     // retries: 1 is safe — the write is idempotent (socialsvc dedups by dispatchKey).
-    const r = await fetchInternalJson<{ ok?: boolean; data?: { insertedAccountIds: string[]; hasAttachment: boolean }; error?: string }>(
+    const r = await fetchInternalJson<InternalEnvelope<{ insertedAccountIds: string[]; hasAttachment: boolean }>>(
       `${this.baseUrl}/internal/mail/system/bulk`,
       { caller: 'meta', key: this.internalKey, method: 'POST', body: { dispatchKey, accountIds, content }, timeoutMs: 5000, retries: 1, label: '/internal/mail/system/bulk' },
     );
     const data = r.body;
     if (!r.ok || !data?.ok || !data.data) {
-      throw new Error(`socialsvc bulkInsertSystemMail failed: ${r.status} ${data?.error ?? r.error ?? ''}`.trim());
+      throw new Error(`socialsvc bulkInsertSystemMail failed: ${r.status} ${errorText(data, r.error)}`.trim());
     }
     return data.data;
   }

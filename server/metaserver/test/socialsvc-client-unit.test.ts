@@ -5,12 +5,22 @@
 // drives the real class from '../src/socialsvcClient.js' against a real node:http fixture server.
 // (2026-09-09 — read the '../dist/...' above in the past tense: it is '../src/...' now, so that
 // suite does count toward src coverage. See claudedocs/server-testing-coverage.md.)
+//
+// 2026-09-12: this fixture used to answer errors as `{ ok:false, error:'NOT_FOUND' }` — a bare
+// string. socialsvc actually replies with @nw/shared's err() envelope, `{ ok:false, error:{ code,
+// message } }`, so the fixture was validating a wire format that does not exist and the client's
+// `e === 'ALREADY_CLAIMED'` comparison passed here while never matching in production (every mail
+// claim rejection came back to the player as a retryable 503). Fixtures for internal services must
+// mirror err()/ok() exactly; `errEnvelope` below is the only way to spell an error here.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { HttpMetaSocialsvcClient, nullMetaSocialsvcClient } from '../src/socialsvcClient.js';
 
 const KEY = 'k-social';
+
+/** Exactly what @nw/shared's err(code, message) puts on the wire — see the file header. */
+const errEnvelope = (code: string, message = code): unknown => ({ ok: false, error: { code, message } });
 let lastReq: { url: string; method: string; headers: IncomingMessage['headers']; body: string } | null = null;
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -55,22 +65,22 @@ beforeAll(async () => {
       const claimMatch = /^\/internal\/mail\/([^/]+)\/claim$/.exec(path);
       if (claimMatch) {
         const id = decodeURIComponent(claimMatch[1]!);
-        if (id === 'notfound') return send(200, { ok: false, error: 'NOT_FOUND' });
-        if (id === 'noattach') return send(200, { ok: false, error: 'NO_ATTACHMENT' });
-        if (id === 'claimed') return send(200, { ok: false, error: 'ALREADY_CLAIMED' });
-        if (id === 'unknownerr') return send(200, { ok: false, error: 'SOME_WEIRD_ERROR' });
-        if (id === 'servererror') return send(500, { ok: false, error: 'BOOM' });
+        if (id === 'notfound') return send(404, errEnvelope('NOT_FOUND', 'NOT_FOUND'));
+        if (id === 'noattach') return send(400, errEnvelope('NO_ATTACHMENT', 'NO_ATTACHMENT'));
+        if (id === 'claimed') return send(409, errEnvelope('ALREADY_CLAIMED', 'ALREADY_CLAIMED'));
+        if (id === 'unknownerr') return send(400, errEnvelope('SOME_WEIRD_ERROR'));
+        if (id === 'servererror') return send(500, errEnvelope('BOOM'));
         return send(200, { ok: true, data: { doc: { _id: id, to: parsed.accountId, subject: 's', body: 'b', expireAt: 0 } } });
       }
       // unclaim
       const unclaimMatch = /^\/internal\/mail\/([^/]+)\/unclaim$/.exec(path);
       if (unclaimMatch) {
         const id = decodeURIComponent(unclaimMatch[1]!);
-        if (id === 'fail-unclaim') return send(500, { ok: false, error: 'BOOM' });
+        if (id === 'fail-unclaim') return send(500, errEnvelope('BOOM'));
         return send(200, { ok: true });
       }
       if (path === '/internal/mail/system') {
-        if (parsed.to === 'fail-insert') return send(500, { ok: false, error: 'BOOM' });
+        if (parsed.to === 'fail-insert') return send(500, errEnvelope('BOOM'));
         return send(200, {
           ok: true,
           data: { mailId: `${parsed.dispatchKey}:${parsed.to}`, inserted: true, hasAttachment: !!(parsed.content as { attachments?: unknown[] })?.attachments?.length },
@@ -78,13 +88,13 @@ beforeAll(async () => {
       }
       if (path === '/internal/mail/system/bulk') {
         const accountIds = (parsed.accountIds as string[]) ?? [];
-        if (accountIds.includes('fail-bulk')) return send(500, { ok: false, error: 'BOOM' });
+        if (accountIds.includes('fail-bulk')) return send(500, errEnvelope('BOOM'));
         return send(200, {
           ok: true,
           data: { insertedAccountIds: accountIds, hasAttachment: !!(parsed.content as { attachments?: unknown[] })?.attachments?.length },
         });
       }
-      send(404, { ok: false, error: 'not found' });
+      send(404, errEnvelope('NOT_FOUND', 'not found'));
     })();
   });
   server.listen(0, '127.0.0.1');
