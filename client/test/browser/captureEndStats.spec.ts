@@ -1,4 +1,4 @@
-// Regenerates `endStatsFixture.ts` — the end-of-match payload the layout sweep's `result` stop is
+// Regenerates `src/testing/endStatsFixture.ts` — the end-of-match payload the layout sweep's `result` stop is
 // handed — by PLAYING A REAL AI MATCH to its end and recording what the game actually produced.
 //
 // Skipped unless NW_CAPTURE=1, because it is not a test: it asserts nothing about layout, it takes
@@ -139,7 +139,7 @@ async function nextPlay(page: Page, lanes: number[]): Promise<PlayStep> {
 
 test.describe('end-of-match stats fixture', () => {
   test('play one AI match and record its result payload', async ({ page }) => {
-    test.skip(!process.env.NW_CAPTURE, 'set NW_CAPTURE=1 to regenerate test/browser/endStatsFixture.ts');
+    test.skip(!process.env.NW_CAPTURE, 'set NW_CAPTURE=1 to regenerate src/testing/endStatsFixture.ts');
     test.setTimeout(MATCH_TIMEOUT_MS + 180_000);
     await registerAndEnterLobby(page, uid('capture'), 'CaptureStats');
     expect(await callCb(page, 'lobbyCb', 'onStartGame', ['AI'])).toBe(true);
@@ -174,7 +174,9 @@ test.describe('end-of-match stats fixture', () => {
     expect(captured, 'ResultScene was shown without winner/stats').not.toBeNull();
     expect(captured!.stats.length, 'expected one PlayerStats per side').toBe(2);
 
-    const file = path.join('test', 'browser', 'endStatsFixture.ts');
+    // Moved under src/ on 2026-09-12: the stop table that replays this payload is now shared
+    // with the WeChat layout probe, which bundles it (src/testing/layoutStops.ts).
+    const file = path.join('src', 'testing', 'endStatsFixture.ts');
     fs.writeFileSync(file, `${header(plays)}
 /** The winner as onGameEnd takes it: the owning side's id, or null for a draw. */
 export const REAL_END_WINNER: number | null = ${JSON.stringify(captured!.winner)};

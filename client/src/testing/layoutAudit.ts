@@ -6,12 +6,21 @@
 // it, a name colliding with the number right of it — is structurally invisible there. See the
 // header of test/ui/titlesPortraitOverlap.ui.ts, which had to move its real assertion into a
 // separate arithmetic test for exactly this reason. Only a real browser measures real glyphs, and
-// `window.__nwE2E.app` (entries/web-e2e.ts) is the handle onto the real stage.
+// `globalThis.__nwE2E.app` (testing/instrumentViews.ts) is the handle onto the real stage.
+//
+// It lives in `src/` rather than under `test/` because it has two callers, and only one of them
+// is a test process: `test/browser/portraitLayout.spec.ts` imports it to hand to `page.evaluate`,
+// and `entries/wechat-layout.ts` BUNDLES it into a mini-game package that audits itself from the
+// inside (§50.6 — the mini-game has no appservice, so no external automation can reach in).
 //
 // `auditLayout` is handed to `page.evaluate`, so it is serialized by `Function.prototype.toString`
 // and re-parsed in the page: it may NOT reference anything outside its own body — no imports, no
 // module-level constants, no helper functions declared next to it. Every helper is nested inside.
 // Type-only imports are fine (erased at compile time).
+
+// The one value import: `auditOptionsFor` below needs the shipped legibility floor. It is NOT
+// referenced from inside `auditLayout`'s body, which is what the serialization rule above forbids.
+import { fontFloorDesignPx } from '../render/fontScale';
 
 /** Axis-aligned rect in CSS pixels of the renderer's screen space. */
 export interface AuditRect { x: number; y: number; w: number; h: number }
@@ -111,7 +120,9 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     geometry?: { graphicsData?: Array<{ shape?: { type?: number }; fillStyle?: { visible?: boolean; alpha?: number } }> };
     getBounds(skipUpdate?: boolean): { x: number; y: number; width: number; height: number };
   }
-  const e2e = (window as unknown as {
+  // `globalThis`, not `window`: this same function body runs inside the WeChat mini-game runtime
+  // (entries/wechat-layout.ts), which has no `window` of its own. Chromium answers to both.
+  const e2e = (globalThis as unknown as {
     __nwE2E?: {
       app?: {
         stage: NodeLike;
@@ -121,7 +132,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     };
   }).__nwE2E;
   const app = e2e?.app;
-  if (!app) throw new Error('__nwE2E.app is missing — this is not the web-e2e build');
+  if (!app) throw new Error('__nwE2E.app is missing — this is not a web-e2e / wechat-layout build');
 
   const screenW = app.renderer.screen.width;
   const screenH = app.renderer.screen.height;
@@ -288,7 +299,12 @@ export function auditLayout(opts: AuditOptions): AuditResult {
 
     // Not a layout defect, but free to catch while every string on the screen is in hand, and
     // never intentional: `${maybeUndefined}` reaching a player.
-    if (/(undefined|null|NaN)/.test(l.label)) {
+    // ⚠ `\b`, spelled as an escape. Until 2026-09-12 this line held two literal BACKSPACE bytes
+    // (0x08) where the word boundaries were meant — the regex matched a control character and
+    // therefore nothing, so the `placeholder` kind had never once fired. It survived because
+    // the file lived under `test/` and `npm run lint` only scans `src/`; moving it here is what
+    // surfaced it (eslint `no-control-regex`).
+    if (/\b(undefined|null|NaN)\b/.test(l.label)) {
       findings.push({ kind: 'placeholder', a: l.label, b: '', rectA: l.rect, rectB: empty, frac: 0 });
     }
 
@@ -380,4 +396,36 @@ export function auditLayout(opts: AuditOptions): AuditResult {
   }
 
   return { screen: e2e?.state?.screen ?? '?', labels: visible.length, findings };
+}
+
+/**
+ * Overlap thresholds — the only audit options that do not depend on the viewport.
+ * `minFrac`: report an overlap only when it covers this fraction of the smaller label.
+ * `minPx`: ...and at least this many square pixels. Together they ignore sub-pixel adjacency.
+ */
+export const OVERLAP_THRESHOLDS = { minFrac: 0.12, minPx: 40 } as const;
+
+/**
+ * Audit options for one shape. Everything is shared except the `tiny` gate, which is the viewport's
+ * own legibility floor (render/fontScale.ts): the app lifts every font token to
+ * `fontFloorDesignPx(scale)`, so nothing on screen may measure below it.
+ *
+ * Deriving it from the shipped function rather than restating a number is what makes this a gate on
+ * the floor rather than a second opinion about it: re-tune `MIN_LEGIBLE_CSS_PX` and every sweep
+ * demands the new floor on its next run.
+ *
+ * The two callers know the design box by different routes and neither can use the other's:
+ * `portraitLayout.spec.ts` runs in a Playwright process with no DOM, so it re-derives the box from
+ * the viewport size (importing `ScalingManager` would drag PIXI and `@nw/engine/config` in);
+ * `entries/wechat-layout.ts` runs INSIDE the app and simply reads `layout.designWidth` and
+ * `gameLayer.scale.x` off the live objects. Hence a function over three numbers rather than over a
+ * viewport.
+ */
+export function auditOptionsFor(designW: number, designH: number, designScale: number): AuditOptions {
+  return {
+    ...OVERLAP_THRESHOLDS,
+    designW,
+    designH,
+    minInkDesignPx: fontFloorDesignPx(designScale),
+  };
 }

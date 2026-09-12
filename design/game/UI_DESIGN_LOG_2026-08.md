@@ -1313,3 +1313,144 @@ fixture、不是在量排版**：
 **这一节最该记住的一条**：`npm run test:portrait` 全绿只是「没有超过阈值的重叠」，不是「这一屏是对的」。
 这一轮有三条真缺陷（战役地图标题、拍卖倒计时、主城队列表头）在报告上都是 0，全部来自逐张读 PNG。
 §50.9 的那句「逐张读图」不是流程洁癖，是这套门禁的**必要补集**。
+
+## 51. 微信侧：把同一张 STOPS 表接进包内探针入口（2026-09-12）
+
+§50.6 把这件事的形状定死了，但没做：**「包内探针」，不是「外部自动化」**。minium 那条路 2026-08-31
+已实测证伪（socket 连得上，每个 `evaluate` 永久挂起，小游戏没有 appservice），所以唯一可行的是
+一个 `build:wechat-*` 入口，在包内自己启动游戏、自己走站、自己跑 `layoutAudit`、把报告写进
+`USER_DATA_PATH`（开发者工具模拟器下是本机真实目录，会话直接读）。这一节把它做完了。
+
+### 51.1 三个前置，按「共享数据、不共享机制」切
+
+| 搬到哪 | 是什么 | 两边怎么用 |
+|---|---|---|
+| `src/testing/instrumentViews.ts` | `__nwE2E` 句柄（原来长在 `entries/web-e2e.ts` 里） | 两个入口装同一份；web-e2e 只在上面多挂 `bake` / `textMetrics` |
+| `src/testing/layoutAudit.ts` | 判 6 类几何问题的那个纯函数（原 `test/browser/lib/`） | Playwright 交给 `page.evaluate`；微信包直接调 |
+| `src/testing/layoutStops.ts` | **36 站的表**（原来写死在 spec 里）+ `endStatsFixture` | 两边 import 同一张 |
+| `src/testing/layoutWalk.ts` | **包内走站**，新写的 | 只有微信侧用 |
+
+**走站逻辑是第二份实现，不是共享的**，这是有意的：两边真正不同的恰好是三件机制——怎么送一次点击、
+有没有 reload、报告怎么出去——其余全是数据。表是两者之间的契约，往表里加一站，两边都会走。
+
+两处必须点名的改动：
+
+- `__nwE2E` 挂在 **`globalThis`** 上，不是 `window`。小游戏运行时没有自己的 `window`，而
+  `layoutAudit` 的函数体要被 `page.evaluate` 序列化、在两个运行时里各跑一遍，所以那个名字必须两边
+  都认。
+- **点击**：浏览器侧点真实屏幕像素、由平台适配器换算；包内没有适配器事件可发，于是两半手工做——
+  `ScalingManager.toDesignSpace` 就是每个适配器用的那个变换，`InputManager._emit*` 就是它们喂的那个
+  漏斗。够不到的是 PixiJS 自己的事件系统（`eventMode`/`pointertap` 的舞台级弹窗），但 `STOPS` 里
+  没有一站需要它——每个 tap hop 打的都是场景内部的命中区。
+
+### 51.2 入口：`entries/wechat-layout.ts`（`npm run build:wechat-layout`，永不发布）
+
+与 `entries/wechat.ts` 逐行同构（`installHost` 第一个 import、`@pixi/unsafe-eval` 紧随、
+assetIO/transport/audioBus 三行照装），**只换一个方法**：`getAuthCredential()` 返回 device 凭证而不是
+`wx.login` code。理由是 `app/nav/auth.ts` 的 `resolveEntry()` 把 `kind:'wx'` 当「已识别」直接进大厅——
+这个平台上根本没有 LoginScene，而巡检需要一个干净的、已知的号，唯一的门就是 `loginCb.onRegister`，
+和浏览器巡检同一扇门。
+
+两处配套：`webpack.config.js` 给这个 target **默认烘本地栈地址**（`http://localhost:8088`，
+`NW_*` 仍可覆盖）——和 `playwright.portrait.config.ts` 同一个理由：地址错了不会响亮地失败，只会注册
+不上，然后三分钟后每一站都报 gated。另一处是 DevTools 的「不校验合法域名」要勾上（`localhost` 不在
+request 合法域名里）——**这一条没有写进仓库**：`project.private.config.json` 是共享设置，为一个探针
+把它长期关掉不值得。
+
+**截图**走 `canvas.toTempFilePathSync({fileType:'png'})` + `fs.copyFileSync`；前一行的
+`app.renderer.render(app.stage)` 是承重的（PIXI 的 `preserveDrawingBuffer:false`，出了这一帧就不保证
+读得回来）。PixiJS 自己的 `renderer.extract.base64` 是**退路而不是首选**——实测在这个运行时抛
+`ImageData is not defined`（`Extract.canvas` 要造一个交给 `putImageData`）。
+
+### 51.3 跑出来的三件事（一件是修好的，两件是新挖出来的）
+
+#### ① `AbortController is not defined` —— 微信包里的 REST 从来没通过
+
+第一次真跑，第一件事就炸：注册返回 `auth.err.network`，`detail` 是 `AbortController is not defined`。
+全文见 `ASSET_PACKAGING_LOG.md` §22。修法是 `platform/wechat/abortShim.ts`（~40 行）。
+改前 10/36 站，改后 **35/36**。
+
+#### ② `state.screen` 会说谎，而且有两种说法
+
+**`instrumentViews` 在 `show*` 方法**被调用时**写 `state.screen`，于是有两条路让这个名字和屏幕脱节：
+
+- **弹出 overlay 再弹回**，中间不跑任何 `show*`。CityScene 是盖在活着的 WorldMapScene 上的
+  （`app/nav/world.ts` 的 `onBack: returnFromCityToMap`），退出来之后地图在屏幕上、名字永远停在
+  `'city'`。浏览器侧一直有这个毛病，只是它 `page.reload()` 一下就回大厅了，从没人注意到；小游戏
+  没有 reload（`wx.reLaunch` 是小程序 API），所以第一次真跑**它之后的 16 站全丢了**。
+  包内的替代品是 `forceLobby()`：倒着遍历记录过的每个 `*Cb`，谁的 `onBack` 能回大厅就用谁——
+  并且**记进报告**（`forcedLobby`，本轮 7 次），因为每一次都是一个「名字失真」的位置。
+- **`show*` 被调用了，可那个场景根本没上舞台。** 这一种更阴——见下一条。
+
+因此报告里每一行现在都带一个 `mounted` 字段，直接读 `SceneManager` 的 `current` / `overlayScene` /
+`transition.phase`，而不是读 `state.screen`。**`city :: WorldMapScene +CityScene` 一眼就说清了第一种。**
+
+#### ③ 未解：一族「场景在树上，画面上没有」
+
+**报告里每一行的 `mounted` 就是为这一族加的**，因为只有它能把这件事说清楚。四类，全部在两轮复跑里
+逐字相同，且**在浏览器同一站都是正常的**：
+
+| 站 | `state.screen` | `mounted`（实读 SceneManager） | PNG 画的是 | 浏览器同站 |
+|---|---|---|---|---|
+| `result` / `result+extreme` | `result`（`cbKeys` 是 ResultScene 的） | **GameScene** | 战斗 | 真结算页 |
+| `battlePass` | `battlePass`（`cbKeys` 是 BattlePassScene 的） | **GachaScene** | 抽卡页 | 真战令页 |
+| `city` / `defenseEditor` / `city+trainModal` | 对 | `WorldMapScene +CityScene`／`+DefenseEditorScene` | **只有世界地图** | 真主城 / 真编辑器 |
+| `equipment+craft` | `equipment` | `EquipmentScene` | **背包页，没切到锻造** | 锻造页 |
+
+前两行是「`show*` 调了，`manager.current` 还是上一个场景」；第三行是「overlay 确实挂上了，但一个像素
+都没画」；第四行是「标签找到了、点了，页面没反应」。
+
+**同一族里有一个反例，而它可能就是线索**：`city+buildDetail` 那一站 CityScene **画出来了**
+（22 → 67 个标签，PNG 是真主城）——同一个 overlay，同一次跑，隔几站就正常。所以不是「微信上
+CityScene 画不出来」，是**某种时序**。
+
+**一条还没验的线索**（写在这里是为了下一个人不用重新想，**不是结论**）：ADR-085 把 `WorldMapScene`
+改成了 `paint:'reactive'`，而 `RenderPolicy` 每帧读的是 `SceneManager.paintMode`。「往一个 reactive
+场景上压一层新 overlay」是否会因为没人宣告脏而始终不重绘，值得先查——但它解释不了 `result` /
+`battlePass` 那两行（那两个是 `goto`，不是 overlay）。
+
+已经排除的（别重复走）：
+
+- **不是异常被吞**——`callCb` 现在把 throw 记进报告，两轮 `errors` 都是 `[]`；
+  `showResult`/`showBattlePass` 也只是一句同步的 `manager.goto(timedBuild(...))`，中间没有 await、
+  没有 try/catch，`timedBuild` 自己也不 catch。
+- **不是渐变没走完**——`mounted` 里的 `fade:none`。
+- **不是截图陈旧**——`mounted` 是审计同一刻实时读的，和 PNG 互相印证。
+  （顺带更正一个我自己的错误推断：第一轮我以为 `family.png` 截到了上一站，其实那就是 FamilyScene
+  的「还没加入家族」态——浏览器同一场景的壳长得一样。**「截图陈旧」至今没有证据，别当结论用**；
+  入口里那两个 `requestAnimationFrame` 是预防，不是修了一个测到的 bug。）
+
+**成因未知。这里只记测到的事实。**
+
+顺带两条同族观察，都指向同一件事——**微信侧的 REST 现在是「部分通」而不是「全通」**：
+`achievements` 那张 PNG 上有一条「网络连接失败」toast，`friends+world` 那张写着「世界频道加载失败」，
+而同一次跑注册是成功的。
+
+### 51.4 本轮的结果与它的边界
+
+模拟器（390×844，`resolution: 1`，设计缩放 0.361，locale `zh`）：**35/36 站，0 条 finding，
+0 blank，0 error**，36 张 PNG 全部落盘并**逐张读过**。唯一没走到的 `friends+mailRead` 是对的——
+它点的是**浏览器 seed 写进去的**那封邮件标题。
+
+**逐张读完的结论**：除上面 ③ 那三处（都不是排版问题）之外，没有发现新的排版缺陷。
+
+⚠️ **两侧的 PNG 不能并排目测比大小。** 微信 `devicePixelRatio = 1`，而浏览器巡检强制
+`deviceScaleFactor: 2`——同一台 390×844 设备，一边导出 390×844、一边导出 780×1688，缩到同一宽度看，
+微信那张的字必然显得糊、显得小。我第一轮就是这么误判了「拍卖顶部标签条在微信上小得读不了」。
+**可比的只有数字**：两边 `designScale` 都是 0.361，`tiny` 门禁用的是同一个 `fontFloorDesignPx`，
+两边都 0 条。为了把这条坐实，同日补跑了浏览器侧的 `phone-390x844-zh` 一行（0 条），
+两边同站的 PNG 逐张对比下来版面构成一致。
+
+其余三条边界，别把这份报告当浏览器矩阵的替代品：
+
+1. **没有 seed。** 浏览器侧靠 `docker exec` 直写 mongo 把账号灌满（§50.1：空表撑不坏版面），包内够不
+   到数据库。所以这里走的是**全新空号**，靠内容撑开的那些站（拍卖、排行、家族、打造、训练）都是薄的。
+   `gacha+draw` 那一站没变化就是这个原因——账号 0 金币，单抽本来就抽不动。
+   **但别把每一站的「没变化」都推给空号**：`equipment+craft` 只是切一个标签页，不需要任何资源，
+   它没切过去（见 ③ 第四行）。五个 tap 站里 `cardRoster+detail` 和 `city+buildDetail` 是确实生效的，
+   所以「包内合成点击」这条路本身是通的，只是**不是每一站都通**。
+2. **一个形状。** 浏览器侧的力量在十个视口；模拟器是 DevTools 当前选的那台机器。换机型再跑一遍。
+3. **一个语言。** `WechatPlatform.supportedLocales` 是 `['zh']`。
+
+**并且照例**：0 条 finding 不等于这 36 屏是对的（§50.11 那三条真缺陷都是在报告 0 的情况下逐张读 PNG
+挖出来的）。本轮 ③ 那三条，全部是读 PNG + 读 `mounted` 读出来的，门禁一条都没报。

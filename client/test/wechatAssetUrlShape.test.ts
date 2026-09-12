@@ -86,7 +86,7 @@ describe('WeChat asset url shape', () => {
   });
 
   it('applies to every wechat target, not just the main entry', () => {
-    for (const target of ['wechat', 'wechat-e2e', 'wechat-probe']) {
+    for (const target of ['wechat', 'wechat-e2e', 'wechat-probe', 'wechat-layout']) {
       expect(assetRule(loadConfig(target)).generator?.filename, target).toBe('cdn/[contenthash][ext]');
     }
   });
