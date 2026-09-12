@@ -11,7 +11,7 @@
 // header for the three invariants that make the incremental grid work.
 import * as PIXI from 'pixi.js-legacy';
 import { t, type TranslationKey } from '../../i18n';
-import { ui as C, txt, sketchPanel, seedForId } from '../../render/sketchUi';
+import { ui as C, txt, txtFit, sketchPanel, seedForId } from '../../render/sketchUi';
 import { cachedTxt, numTxt, numAdvance } from '../../render/fastText';
 import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
@@ -128,11 +128,19 @@ export function renderCardCell(
   // cachedTxt (not txt): one card name per (def, size, colour) across the whole grid and the
   // whole session — the textbook bounded key set for the rasterize-once cache.
   const cardName = t(`card.${card.defId}.name` as TranslationKey);
-  const nameLbl = cachedTxt(cardName, FS.bodyLg, C.dark, true);
-  nameLbl.x = ax + 16; nameLbl.y = pad;
   // Leave room for the lock badge on the name row when locked.
   const nameMaxW = rightW - 16 - (card.locked ? 24 : 0);
-  if (nameLbl.width > nameMaxW) nameLbl.scale.set(Math.min(1, nameMaxW / nameLbl.width));
+  let nameLbl = cachedTxt(cardName, FS.bodyLg, C.dark, true);
+  if (nameLbl.width > nameMaxW) {
+    // Off the cache for the rare name that does not fit: `txtFit` steps the size down the shared
+    // scale and ends in an ellipsis only if even the floor is too wide, where `scale.set` used to
+    // multiply the floor away (sweep 2026-09-12 measured 'Li Chuang' at 0.64). The cached path
+    // still serves every name that fits, which is nearly all of them on nearly every viewport.
+    // The sprite is discarded, not its texture — that lives in fastText's cache.
+    nameLbl.destroy();
+    nameLbl = txtFit(cardName, FS.bodyLg, C.dark, true, nameMaxW);
+  }
+  nameLbl.x = ax + 16; nameLbl.y = pad;
   parent.addChild(nameLbl);
 
   // Lock badge (top-right of the info column).
@@ -174,8 +182,12 @@ export function renderCardCell(
     ay += 6;
     const teamName = state?.teamId ? core.cb.getTeamName?.(state.teamId) : undefined;
     const tagText = teamName ? t('roster.inTeamNamed').replace('{team}', teamName) : t('roster.inTeam');
-    const tag = txt(`[${tagText}]`, FS.tiny, C.accent, true);
-    if (tag.width > rightW) tag.scale.set(Math.max(0.01, rightW / tag.width));
+    // txtFit, not `scale.set` (2026-09-12): the team name is player-authored and can be as long as
+    // the field allows, and shrinking the built node multiplies away the legibility floor
+    // (render/fontScale.ts). The sweep measured this badge at scale 0.77-0.80 — 16 design px against
+    // a 20px floor — on all three landscape viewports, desktop included, which is where the cell's
+    // right column is narrowest relative to this string.
+    const tag = txtFit(`[${tagText}]`, FS.tiny, C.accent, true, rightW);
     tag.x = ax; tag.y = ay; parent.addChild(tag); ay += 20;
   } else if (isInjured) {
     const tag = txt(`[${t('roster.injured').replace('{time}', injuryCountdown(injuredUntil, now))}]`, FS.tiny, C.red);

@@ -8,6 +8,7 @@ import type { MusicPlayer, MusicDeck } from '../audio/MusicPlayer';
 import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
 import { bakeStats } from '../render/bake';
+import { probeTextMetrics, type TextMetricsReport } from '../render/textMetricsProbe';
 
 // Test-only entry (client/test/browser Playwright specs) — boots the exact same real
 // PixiJS/WebGL app as entries/web.ts, but wraps AppViews so a Playwright script can drive
@@ -94,6 +95,7 @@ function instrumentViews(views: AppViews): AppViews {
     __nwE2E: {
       views: AppViews; state: E2EState; app?: PIXI.Application;
       bake: typeof bakeStats;
+      textMetrics: () => TextMetricsReport;
     };
   }).__nwE2E = {
     views,
@@ -106,6 +108,13 @@ function instrumentViews(views: AppViews): AppViews {
     // entry, like `app`/`__nwAudio`) so a real-browser scene sweep can read count/bytes/largest
     // after every transition instead of inferring GPU bytes from the JS heap.
     bake: bakeStats,
+    // The Chrome half of the WeChat comparison (render/textMetricsProbe.ts). Exposed rather than
+    // shipped into the page as a serialised closure, because `page.evaluate(fn)` sends only the
+    // function's own source — the corpus, the size list and the two helpers it closes over would
+    // arrive undefined, and the whole value of this measurement is that BOTH runtimes run the
+    // identical code.
+    textMetrics: (): TextMetricsReport =>
+      probeTextMetrics(() => document.createElement('canvas').getContext('2d')),
   };
   return views;
 }

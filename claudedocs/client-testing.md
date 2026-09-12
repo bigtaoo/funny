@@ -281,7 +281,9 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 大版本发布前另加一轮**人工**四平台真机检查（[`release/acceptance-smoke.md`](../design/game/release/acceptance-smoke.md)），测的是 IAP/审核合规/真机性能，这条 Chromium-only 冒烟测不到，两者互补不重复。
 
-> 微信小游戏入口（`entries/wechat`）不能用 Playwright，需微信开发者工具的自动化（minium / 小程序自动化 SDK）单列，超出本冒烟范围，按需另立。
+> **微信小游戏入口（`entries/wechat`）不能用 Playwright，也不能用 minium。** 「需微信开发者工具的自动化（minium / 小程序自动化 SDK）单列」这句话在这里挂了很久，2026-08-31 已被实测证伪：`miniprogram-automator` 连得上 socket，但每一个 `evaluate` / `callWxMethod` 都**永久挂起**——小游戏没有 appservice 供这些命令抵达（证据写在 `client/src/entries/wechat-e2e.ts` 的文件头）。别再去试第二次。
+>
+> 可行的形状是**包内探针**，不是外部自动化：一个 `build:wechat-*` 入口在包内自己启动、自己走站、把报告写进 `USER_DATA_PATH`（开发者工具模拟器下就是本机真实目录，会话能直接读）。现有两个入口就是这个形状——`wechat-e2e.ts`（只量 SFX 交付峰值；**它不是 `web-e2e` 的孪生，不调 `startApp`、没有 `__nwE2E`**，文件头的自称是错的）和 `wechat-probe.ts`（采宿主表面 + `textMetricsProbe`）。要把几何巡检也搬过去，前置是把 `instrumentViews` 从 `entries/web-e2e.ts` 抽成共享模块、把 `layoutAudit.ts` 挪到能被打包的位置、再给包内走站写一份不依赖 Playwright 的实现。见 `UI_DESIGN_LOG_2026-08.md` §50.6。
 
 ### 几何巡检（`npm run test:portrait`，2026-09-11 新增，同日扩面）
 
@@ -296,7 +298,21 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 **三种到站方式**（`STOPS` 表的 `via` 链）：
 1. **回调**：`state.<screen>Cb` 上的函数名，一跳一个；带参数写成 `{ fn, args }`。
 2. **点击**：`{ tap: '文字' }` —— 弹窗是场景内部命中区打开的，**永远不是一个 screen，也没有任何回调可调**，只能按玩家的路走：在显示树里按文字找到标签、点它的中心（`lib/nwE2E.ts` 的 `tapLabel`）。这类站用 `Stop.as` 起自己的报告名（`state.screen` 还是底下那个场景）。尽量点 UI 字符串而不是内容名，别让表依赖新号发哪几张卡。
-3. **喂数据**：结算页只能由 `onGameEnd(winner, [stats, stats])` 到达，就照 `PlayerStats` 的字段喂一份——打完一局 AI 要几分钟，而这站审的是「一屏数字的排版」。
+3. **喂数据**：结算页只能由 `onGameEnd(winner, [stats, stats])` 到达。喂的那一份**不是手写的**，是 `captureEndStats.spec.ts`（`NW_CAPTURE=1` 才跑，平时 skip）真打完一局 AI 录下来的 `endStatsFixture.ts`——巡检自己不打，是因为那要按视口付十次分钟级的代价，而这站审的数字在比赛结束那一刻就定死了。另有一站 `result+extreme` 喂合成极值（七位伤害、五种兵种的击杀分布）：**录下来的那份是真实的，真实就意味着它不极端**，两者不能互相替代。
+4. **`stay` / `reloadAfter`**：调完不等切屏（`{fn, stay:true}`），以及走完之后必须刷新才能退干净的浮层。反馈弹窗就是前者——它根本不是 screen（`onOpenFeedback` → `requestFeedbackDialog()` 把 `FeedbackDialog` 挂到 `app.stage`），巡检等十秒的「切屏」永远不会来。
+
+> **`gated: true` 是个会说谎的标签。** 它同时表示「这个号没有这功能」和「我没走对路」，而两者在报告里长得一模一样。2026-09-11 一次性查出三处都是后者：反馈弹窗（不是 screen，见上）、family/sect（`openFamilyHub()/openSectHub()` 在 `loadSLGStatus` 解出分片 id 之前一律返回 false，而那个加载只在玩家切到对应 tab 时才跑——`callCb` 改成**返回 promise 就 await**，站点表里先跳一手 `{fn:'loadSLGStatus', stay:true}`）。看到 `gated` 先怀疑自己。
+
+**喂真实数据（2026-09-11 加）**：前两轮 32 站全绿，但把 PNG 逐张看下来，**绝大多数渲染的是空状态**——排行榜 1677 个号全是 elo 1000/`Unranked`，拍卖行 12 个标签，邮箱进不去，家族/宗门报 gated 直接跳过。**空表不会撑坏版面，版面是被内容撑坏的。** 于是有了 `test/browser/lib/seed.ts` + `seedFixtures.ts`：`docker exec` 直写 docker 栈的 mongo，把当次登录的那个新号变成满配号（51 卡 / 204 装备 / 40 人家族 / 30 好友 / 24 封邮件 / 44 条拍卖 / 120 人四位数排行榜 / 5 队满编 / 行军+占领+驻扎+被围攻 + 40 格领地）。取值一律取**真实的最坏情况**：名字顶到 `MAX_DISPLAY_NAME_LEN`、家族名顶到 `ORG_NAME_WIDTH_MAX`、金币七位、CJK 名字占多数（全角一个字两个显示宽，是这个字段物理上最宽的可能）。
+
+三个必须知道的点：
+- **必须由 spec 在登录之后调用，不能预先写死**。socialsvc 只存 accountId、显示名读的时候实时问 metaserver；家族/宗门每一处权限判断都比 `leaderId`。所以成员必须是**真账号**、族长必须是**浏览器当次登录的那个号**——而那是 `registerAndEnterLobby` 几秒钟前刚注册的随机号。
+- **分两段**：账号侧登录后立刻跑；世界侧必须等 `joinWorld` 建出 `PlayerWorldDoc`，所以 spec 先走一趟世界地图，回大厅，再喂第二段。
+- **`mongosh` 直接吃 stdin 是 REPL**（提示符会印进输出、多行块靠续行猜），走 `sh -c 'cat > 文件 && mongosh --file'`；结果行靠 `@@NWSEED@@` 前缀认，不靠行号。另：`TileDoc._id` 已经是全限定的 `worldId:x:y`，`mainBaseTile` 就是一个 tile id；**中立地块根本没有文档**（`proceduralTile` 现算），所以「占地」只能 insert 不能 update——第一版 `updateMany` 只命中了主城自己那 3×3 的 9 格。
+
+**三语是矩阵的一列，不是一个乘数（2026-09-11 加）**：`initI18n` 在**任何场景构建之前**读 `localStorage['nw_locale']`，所以只能用 `context.addInitScript` 在首次导航前塞，不能事后去设置页点——**此前每轮跑的都是 Chromium 自己的 `en-US`，德语和中文从来没被门禁跑过**。三语 × 六视口 = 75 分钟太贵，改成**矩阵加四行**：德语和中文只上 390×844 / 360×640 两台手机（德语是逐词最长的那门，撑破按钮的是它；中文是全角、且没有空格可供折行，是另一类失败；四个更宽的视口在英语下本来就有余量）。连带的必然改动：`{tap: '文字'}` 全部改成 **`{tap: <TranslationKey>}`**，由 spec 自己按该视口的 locale 查字典（直接 import `src/i18n/locales/*`，纯数据），带 `{cost}` 占位符的取 `{` 之前的字面前缀；另有 `{tapText}` 形式，**只允许用于本套件自己写进数据库的字符串**。
+
+**站点表的三处真错**（2026-09-11 才看出来）：`friends.png` 一直是三站互相覆盖的结果——`goMail()` 和世界地图的聊天按钮都是 `goFriends({defaultTab})`，三个入口都报 `screen: 'friends'`，共用一个报告槽和一个截图文件，**这个场景三分之二的表面从来没被审过**；已拆成 `friends` / `friends+mail` / `friends+world` / `friends+mailRead`。另两处见上面那条 `gated` 的注记。
 
 **扩表的依据是报告自己**：每站的 JSON 里记着 `cbKeys`（`state.<screen>Cb` 的全部键）——**那就是导航图**，往 `STOPS` 里加 `via` 链比翻各场景的回调接口便宜得多。
 
@@ -313,7 +329,11 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 **后端**：与 `test:browser` 不同，这条跑在 **Docker 全栈**（`./docker/local-up.ps1`，nginx 单口 8088）上，所以它有自己的 `playwright.portrait.config.ts`（客户端 dev server 另开 9097，五个 `NW_*` 基址写死在配置里）。两份配置都加了 `--no-open`——`webpack.config.js` 的 `devServer.open: true` 会在每次起服务时弹开发者本机的默认浏览器。
 
-首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-08.md`](../design/game/UI_DESIGN_LOG_2026-08.md) §48；第二轮（可读性下限 + 扩面到 32 站 × 6 尺寸 + 它带出来的 7 处返工）见 §49。
+**往 seed 里写数之前先找到它的上限常量**（2026-09-12 的教训，`UI_DESIGN_LOG_2026-08.md` §50.8）：第一次真跑出来 105 条 finding，其中 60 条是在量 fixture 而不是在量排版——装备词条用了两个不存在的 id、主词条存了 8630（屏幕自己乘 `enhanceMultiplier`，真值是 base 8/10/6）、卡等级 60（上限 9）、兵力池 148 万（上限 2 万）、建筑等级 20（上限 10）。**这类 finding 比没有 finding 更坏**：它带着坐标和字号，长得和真 bug 一模一样，会把人送去修一个玩家永远看不到的字符串。改回真上限后同一视口 105 → 90 条，且条条能读。
+
+**`scale.set(可用/需要)` 是这套门禁反复抓到的同一个反模式**（2026-09-12 一轮六处里占三处）：它把可读性下限刚刚保证的字号乘上一个任意浮点数。看到就改 `fitFont`（选更小的档位、停在下限）或 `txtFit`（再不行就截断加省略号）。同理，**有了下限之后，写死的行距（`y += 26` / `y += 16` / 「底下预留 34 px」）全是错的**——它们是按抬升前的字号量出来的。
+
+首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-08.md`](../design/game/UI_DESIGN_LOG_2026-08.md) §48；第二轮（可读性下限 + 扩面到 32 站 × 6 尺寸 + 它带出来的 7 处返工）见 §49；第三轮（喂真实数据 + 三语 + 站点表修正 + 结算录制器）见 §50。
 
 ## E2E / 冒烟 harness 维护红线：HeadlessAppViews 必须实现 AppViews 全接口
 

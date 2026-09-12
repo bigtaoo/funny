@@ -33,6 +33,15 @@ import {
   uid, trackErrors, screenIs, currentScreen, registerAndEnterLobby, callCb, dismissFeatureGuide,
   tapLabel,
 } from './lib/nwE2E';
+import { seedAccount, seedWorld, type SeedTarget } from './lib/seed';
+// Recorded from a real, played-out AI match — see captureEndStats.spec.ts, which regenerates it.
+import { REAL_END_WINNER, REAL_END_STATS } from './endStatsFixture';
+// The dictionaries themselves, not the i18n module: `t()` keeps the CURRENT locale in module state
+// and this process has none. A stop that taps a label has to know what that label says in the
+// locale the browser was booted in — see `Hop`'s tap form.
+import { zh, type TranslationKey } from '../../src/i18n/locales/zh';
+import { en } from '../../src/i18n/locales/en';
+import { de } from '../../src/i18n/locales/de';
 import {
   auditLayout, type AuditFinding, type AuditOptions, type AuditResult,
 } from './lib/layoutAudit';
@@ -61,14 +70,30 @@ import { fontFloorDesignPx } from '../../src/render/fontScale';
  * Each is a separate Playwright test, a separate browser context and a separate fresh account, so
  * one shape failing still reports the others. The full run is ~25 minutes; `--grep <name>` runs one.
  */
+const DICTS = { zh, en, de } as const;
+type Locale = keyof typeof DICTS;
+
 const VIEWPORTS = [
-  { name: 'phone-390x844',    width: 390,  height: 844  },
-  { name: 'narrow-360x640',   width: 360,  height: 640  },
-  { name: 'tablet-768x1024',  width: 768,  height: 1024 },
-  { name: 'landscape-844x390',width: 844,  height: 390  },
-  { name: 'tablet-1024x768',  width: 1024, height: 768  },
-  { name: 'desktop-1366x768', width: 1366, height: 768  },
-] as const;
+  { name: 'phone-390x844',     width: 390,  height: 844,  locale: 'en' },
+  { name: 'narrow-360x640',    width: 360,  height: 640,  locale: 'en' },
+  { name: 'tablet-768x1024',   width: 768,  height: 1024, locale: 'en' },
+  { name: 'landscape-844x390', width: 844,  height: 390,  locale: 'en' },
+  { name: 'tablet-1024x768',   width: 1024, height: 768,  locale: 'en' },
+  { name: 'desktop-1366x768',  width: 1366, height: 768,  locale: 'en' },
+  // German and Chinese on the two phones only (2026-09-11). Locale is a multiplier on an already
+  // 25-minute run, so it is spent where it can actually change the answer: the two viewports with
+  // the least room. German is the longest of the three languages word for word — it is the one that
+  // overflows a button — and Chinese is the one whose glyphs are full-width and whose text has no
+  // spaces for word-wrap to break at, which is a different failure. The four wider viewports gain
+  // nothing from either: they had slack in English and the extra characters fit in it.
+  { name: 'phone-390x844-de',  width: 390,  height: 844,  locale: 'de' },
+  { name: 'narrow-360x640-de', width: 360,  height: 640,  locale: 'de' },
+  { name: 'phone-390x844-zh',  width: 390,  height: 844,  locale: 'zh' },
+  { name: 'narrow-360x640-zh', width: 360,  height: 640,  locale: 'zh' },
+] as const satisfies readonly { name: string; width: number; height: number; locale: Locale }[];
+
+/** How long a tap hop waits for its label to appear before calling the stop unreachable. */
+const TAP_WAIT_MS = 6_000;
 
 /**
  * One navigation step. Either a callback on the current screen's bag (`state.<screen>Cb`) — the
@@ -76,10 +101,42 @@ const VIEWPORTS = [
  * screens: a modal has no callback to call, so the only way in is the way a player gets in (see
  * lib/nwE2E.ts's `tapLabel`).
  */
-type Hop = string | { fn: string; args: unknown[] } | { tap: string };
+type Hop =
+  | string
+  /**
+   * A callback on the current screen's bag. `stay` marks the ones that do NOT navigate — an overlay
+   * mounted straight onto `app.stage` (the feedback dialog), or a loader whose result the next hop
+   * needs (`loadSLGStatus`). Without it the walk waits ten seconds for a screen change that is never
+   * coming and records the stop as an unwired feature, which is exactly how the feedback dialog spent
+   * two rounds reported as "not offered by this account" while being perfectly wired.
+   */
+  | { fn: string; args?: unknown[]; stay?: boolean }
+  /**
+   * A tap on an on-screen label, addressed by its TRANSLATION KEY rather than its text: the same stop
+   * table runs in three languages, and 'Craft' is 'Herstellen' in one of them. The key is resolved
+   * against the viewport's own dictionary and truncated at the first `{` placeholder, so a
+   * parameterised label ('Single {cost}') still matches on its literal prefix.
+   */
+  | { tap: TranslationKey }
+  /**
+   * A tap on a literal string. Only legitimate for text THIS SUITE PUT ON SCREEN (a seeded mail
+   * subject): tapping content the account merely happens to own is what makes a stop table depend on
+   * which cards a fresh roll handed out. Locale-independent by construction, since the seed writes
+   * the same string in every run.
+   */
+  | { tapText: string };
 
 const hopName = (h: Hop): string =>
-  typeof h === 'string' ? h : 'tap' in h ? `tap(${h.tap})` : h.fn;
+  typeof h === 'string' ? h
+    : 'tap' in h ? `tap(${h.tap})`
+      : 'tapText' in h ? `tap("${h.tapText}")`
+        : h.fn;
+
+/** The literal, parameter-free prefix of a label in one locale — what `tapLabel` can match on. */
+function label(locale: Locale, key: TranslationKey): string {
+  const raw = DICTS[locale][key] ?? DICTS.zh[key] ?? key;
+  return raw.split('{')[0]!.trim();
+}
 
 interface Stop {
   /**
@@ -110,6 +167,14 @@ interface Stop {
   gated?: boolean;
   /** Extra settle time (ms) for screens that paint again once their first fetch lands. */
   settleMs?: number;
+  /**
+   * Reload before walking on. Needed only by stops that open something on top of the LOBBY (the
+   * feedback dialog is mounted straight on `app.stage`, not by a scene): `backToLobby` unwinds by
+   * leaving screens, so with the lobby already showing it has nothing to do and the overlay would
+   * stay up for every stop after this one. Scene-owned modals need none of this — leaving the scene
+   * destroys them.
+   */
+  reloadAfter?: boolean;
 }
 
 /**
@@ -117,88 +182,119 @@ interface Stop {
  * behind it, and their callback names come from the `cbKeys` each report records — that is the
  * cheapest way to extend this list, rather than reading every scene's callback interface.
  */
-/** One side's end-of-match stats — `PlayerStats` (server/engine/src/types/runtime.ts). */
-function endStats(owner: number, dealt: number, taken: number): Record<string, unknown> {
+/**
+ * One side's end-of-match stats, cranked to the widest number each field can carry.
+ *
+ * The companion to the RECORDED payload below, not a replacement for it: a real match produces
+ * realistic numbers, and realistic numbers do not tell you whether the score row survives a
+ * seven-digit one. `PlayerStats` (server/engine/src/types/runtime.ts) puts no upper bound on damage,
+ * and a long stalemate genuinely reaches these.
+ */
+function extremeStats(owner: number, dealt: number, taken: number): Record<string, unknown> {
   return {
     owner,
     damageDealtToBase: dealt,
     damageTakenByBase: taken,
-    unitsSent: 24,
-    unitsKilled: 17,
-    spellHits: 6,
-    killsByType: {},
-    castsByType: {},
-    buildingSurvivalTicks: 5400,
-    goldSpent: 310,
+    unitsSent: 1284,
+    unitsKilled: 1176,
+    spellHits: 486,
+    // Populated, unlike the hand-written fixture this replaces: these two maps are the per-unit-type
+    // breakdown rows, i.e. the tallest and widest block on the screen. Empty ones rendered nothing at
+    // all, so the sweep was auditing a result screen the player never sees.
+    killsByType: { infantry: 486, archer: 372, cavalry: 218, medic: 64, siege: 36 },
+    castsByType: { fireball: 128, heal: 94, rally: 71, snipe: 43 },
+    buildingSurvivalTicks: 108_000,
+    goldSpent: 264_800,
   };
 }
 
 const STOPS: Stop[] = [
   { screen: 'settings',     via: ['onOpenProfile'] },
   { screen: 'shop',         via: ['onOpenShop'],        settleMs: 800 },
-  { screen: 'cardRoster',   via: ['onOpenCards'],       settleMs: 800 },
+  { screen: 'cardRoster',   via: ['onOpenCards'],       settleMs: 1200 },
   { screen: 'stats',        via: ['onOpenStats'] },
   { screen: 'campaignMap',  via: ['onOpenCampaign'],    settleMs: 800 },
   { screen: 'daily',        via: ['onOpenDaily'],       gated: true, settleMs: 800 },
   { screen: 'events',       via: ['onOpenEvents'],      gated: true, settleMs: 800 },
-  { screen: 'leaderboard',  via: ['onOpenLeaderboard'], gated: true, settleMs: 800 },
-  { screen: 'friends',      via: ['onOpenSocial'],      gated: true, settleMs: 800 },
+  { screen: 'leaderboard',  via: ['onOpenLeaderboard'], gated: true, settleMs: 1200 },
+  { screen: 'friends',      via: ['onOpenSocial'],      gated: true, settleMs: 1200 },
   { screen: 'room',         via: ['onOpenRoom'],        gated: true, settleMs: 800 },
   { screen: 'recharge',     via: ['onOpenRecharge'],    gated: true, settleMs: 800 },
   { screen: 'achievements', via: ['onOpenAchievements'],gated: true, settleMs: 800 },
-  { screen: 'auction',      via: ['onOpenAuction'],     gated: true, settleMs: 800 },
+  { screen: 'auction',      via: ['onOpenAuction'],     gated: true, settleMs: 1800 },
   { screen: 'titles',       via: ['onOpenStats', 'onOpenTitles'] },
   { screen: 'cardCodex',    via: ['onOpenStats', 'onOpenCodex'], settleMs: 800 },
-  { screen: 'equipment',    via: ['onOpenCampaign', 'onOpenEquipment'], settleMs: 800 },
+  { screen: 'equipment',    via: ['onOpenCampaign', 'onOpenEquipment'], settleMs: 1200 },
   // `ch1_lv1` is chapter one's first node (game/campaign/maps/ch1.json) — the only hop in this
   // table that takes an argument, since level entry is per-node rather than a single nav slot.
   { screen: 'levelPrep',    via: ['onOpenCampaign', { fn: 'onSelectLevel', args: ['ch1_lv1'] }], settleMs: 800 },
-  { screen: 'worldMap',     via: ['onOpenWorld'],       gated: true, settleMs: 2000 },
-  { screen: 'city',         via: ['onOpenWorld', 'onOpenCity'],    gated: true, settleMs: 2000 },
-  { screen: 'chat',         via: ['onOpenWorld', 'onOpenChat'],    gated: true, settleMs: 1500 },
+  { screen: 'worldMap',     via: ['onOpenWorld'],       gated: true, settleMs: 2500 },
+  { screen: 'city',         via: ['onOpenWorld', 'onOpenCity'],    gated: true, settleMs: 2500 },
   // 'base' = the home city's own defense layout; `onOpenDefense(tileKey)` takes the tile it edits,
   // and calling it bare puts a literal "undefined" in the scene title.
   { screen: 'defenseEditor',via: ['onOpenWorld', { fn: 'onOpenDefense', args: ['base'] }], gated: true, settleMs: 1500 },
+  { screen: 'battlePass',   via: ['onOpenShop', 'openBattlePass'], gated: true, settleMs: 900 },
 
-  // ── 2026-09-11, round two: the rest of what the `cbKeys` graph offers ────────────────────────
-  { screen: 'mail',        via: ['onOpenMail'],     gated: true, settleMs: 900 },
-  { screen: 'feedback',    via: ['onOpenFeedback'], gated: true, settleMs: 900 },
-  // Reached through the store rather than the lobby: `openBattlePass` is on the gacha screen's bag
-  // (and the shop's), never the lobby's.
-  { screen: 'battlePass',  via: ['onOpenShop', 'openBattlePass'], gated: true, settleMs: 900 },
-  { screen: 'family',      via: ['onOpenSocial', 'openFamilyHub'], gated: true, settleMs: 1500 },
-  { screen: 'sect',        via: ['onOpenSocial', 'openSectHub'],   gated: true, settleMs: 1500 },
+  // ── The social hub: ONE scene, five tabs, three entry points ─────────────────────────────────
+  // `goMail` and the world map's chat button are both `goFriends({defaultTab})` (app/nav/social.ts),
+  // so all three report `screen: 'friends'`. Until 2026-09-11 they shared one report slot and one
+  // screenshot file, and `friends.png` was simply whichever of the three ran last — two thirds of
+  // this scene's surface was silently unaudited.
+  { screen: 'friends', as: 'friends+mail',  via: ['onOpenMail'], gated: true, settleMs: 1500 },
+  { screen: 'friends', as: 'friends+world', via: ['onOpenWorld', 'onOpenChat'], gated: true, settleMs: 2000 },
+  // The mail reader, opened the way a player opens it. Tapped by a subject the SEED wrote, so the
+  // stop does not depend on what mail an account happens to have (see `Hop`'s tapText form).
+  { screen: 'friends', as: 'friends+mailRead',
+    via: ['onOpenMail', { tapText: 'Kampfbericht #1001' }], gated: true, settleMs: 1500 },
+
+  // Family and sect. Two hops of loading, not one: `openFamilyHub`/`openSectHub` return false until
+  // `loadSLGStatus` has resolved the caller's shard (app/nav/social.ts), and the scene only runs that
+  // when the player switches to the tab. Both were recorded as "gated" for two rounds because of it.
+  { screen: 'family', via: ['onOpenSocial', { fn: 'loadSLGStatus', stay: true }, 'openFamilyHub'],
+    gated: true, settleMs: 2000 },
+  { screen: 'sect',   via: ['onOpenSocial', { fn: 'loadSLGStatus', stay: true }, 'openSectHub'],
+    gated: true, settleMs: 2000 },
+
+  // The feedback dialog. Not a screen and never was — `onOpenFeedback` calls `requestFeedbackDialog()`
+  // (net/log.ts), which hands off to a sink app.ts registered that mounts the dialog on `app.stage`.
+  // The walk waited ten seconds for a screen change and filed it as an unwired feature.
+  { screen: 'lobby', as: 'feedback', via: [{ fn: 'onOpenFeedback', stay: true }],
+    gated: true, settleMs: 900, reloadAfter: true },
 
   // The battle, and the screen behind it. This is the one stop that leaves the menu shell: the HUD
   // is laid out by ILayout directly (not by a scene's own column arithmetic), so it is the one
   // place portrait can break in a way no menu screen would show.
   { screen: 'game',        via: [{ fn: 'onStartGame', args: ['AI'] }], settleMs: 3000 },
-  // ...and the screen behind it. Handed the end-of-match payload the game scene's own renderer
-  // would hand it (`onGameEnd(winner, [stats, stats])`), rather than played out: an AI match takes
-  // minutes, and what this stop audits is the layout of a screen full of numbers — which does not
-  // care where the numbers came from, only that they are the shape ResultScene reads.
+  // ...and the screen behind it, handed the payload a REAL match produced (endStatsFixture.ts,
+  // recorded by captureEndStats.spec.ts) rather than played out: an AI match takes minutes, and this
+  // stop audits the layout of a screen full of numbers — which is fixed the moment the match ends.
   { screen: 'result',
-    via: [{ fn: 'onStartGame', args: ['AI'] }, { fn: 'onGameEnd', args: [0, [
-      endStats(0, 5200, 1400), endStats(1, 1400, 5200),
-    ]] }],
+    via: [{ fn: 'onStartGame', args: ['AI'] },
+      { fn: 'onGameEnd', args: [REAL_END_WINNER, REAL_END_STATS] }],
+    settleMs: 1500 },
+  // The same screen at the other end of the range. A recorded match is realistic, which is the one
+  // thing it cannot be while also being extreme.
+  { screen: 'result', as: 'result+extreme',
+    via: [{ fn: 'onStartGame', args: ['AI'] },
+      { fn: 'onGameEnd', args: [0, [extremeStats(0, 1284600, 986400), extremeStats(1, 986400, 1284600)]] }],
     settleMs: 1500 },
 
-  // ── Modals, tabs and results: the states that are not screens ───────────────────────────────
+  // ── Modals and tabs: the states that are not screens ────────────────────────────────────────
   // Every one of these is opened by a hit rect inside a scene, so there is no callback for the
   // sweep to call and `state.screen` does not change — see `Hop`'s tap form and `Stop.as`.
   //
-  // Tapped by a UI string rather than a content name wherever possible ('Power' is the roster
-  // cell's own stat label, inside the cell's hit rect), so the table does not depend on which
-  // heroes a fresh account happens to start with.
-  { screen: 'cardRoster',  as: 'cardRoster+detail', via: ['onOpenCards', { tap: 'Power' }], settleMs: 1200 },
+  // Addressed by translation key rather than by literal text, since the same table now runs in three
+  // languages; the key is also what keeps the stop pointed at a UI string rather than at a content
+  // name, so the table does not depend on which heroes an account happens to hold.
+  { screen: 'cardRoster',  as: 'cardRoster+detail', via: ['onOpenCards', { tap: 'roster.power' }], settleMs: 1500 },
   { screen: 'equipment',   as: 'equipment+craft',
-    via: ['onOpenCampaign', 'onOpenEquipment', { tap: 'Craft' }], settleMs: 1200 },
-  { screen: 'gacha',       as: 'gacha+draw',        via: ['onOpenShop', { tap: 'Single' }],
+    via: ['onOpenCampaign', 'onOpenEquipment', { tap: 'equip.tabCraft' }], settleMs: 1500 },
+  { screen: 'gacha',       as: 'gacha+draw',        via: ['onOpenShop', { tap: 'gacha.drawOne' }],
     gated: true, settleMs: 3000 },
   { screen: 'city',        as: 'city+buildDetail',
-    via: ['onOpenWorld', 'onOpenCity', { tap: 'Desk' }], gated: true, settleMs: 2000 },
+    via: ['onOpenWorld', 'onOpenCity', { tap: 'city.bld.desk' }], gated: true, settleMs: 2500 },
   { screen: 'city',        as: 'city+trainModal',
-    via: ['onOpenWorld', 'onOpenCity', { tap: 'Train Troops' }], gated: true, settleMs: 2000 },
+    via: ['onOpenWorld', 'onOpenCity', { tap: 'city.bld.trainTroops' }], gated: true, settleMs: 2500 },
 ];
 
 const OUT_DIR = 'portrait-report';
@@ -291,22 +387,45 @@ function fmt(viewport: string, screen: string, f: AuditFinding): string {
  * navigating, so the entry has to be tapped again after it. Returns the screen finally reached, or
  * null if a hop is not wired (gated feature) or never lands.
  */
-async function open(page: Page, stop: Stop): Promise<string | null> {
+async function open(page: Page, stop: Stop, locale: Locale): Promise<string | null> {
   let from = await currentScreen(page);
   for (const hop of stop.via) {
-    if (typeof hop === 'object' && 'tap' in hop) {
+    if (typeof hop === 'object' && ('tap' in hop || 'tapText' in hop)) {
       // A tap opens a modal (or a tab) on the SAME screen, so there is no screen change to wait
       // for — settle, re-read whatever `state.screen` says, and let the audit judge what is now on
       // top of it. A label that isn't there is a navigation failure like any other.
-      if (!await tapLabel(page, hop.tap)) return null;
-      await page.waitForTimeout(600);
+      //
+      // A tab CAN navigate, though (the family tab hands straight off to the family hub once the
+      // player has a family), so the re-read matters: `state.screen` after the settle is the answer
+      // either way.
+      const text = 'tap' in hop ? label(locale, hop.tap) : hop.tapText;
+      // Polled rather than tapped once (2026-09-12). A tap hop that follows a navigation hop fires
+      // the instant `state.screen` changes — which, for a list the server fills in (the mail list),
+      // is before any row exists. `friends+mailRead` was recorded as an unreachable stop for a whole
+      // round because of it, while the screenshot of the stop before it showed the very label this
+      // was looking for. Modals inside a scene are built synchronously and hit on the first pass, so
+      // this costs them nothing.
+      const deadline = Date.now() + TAP_WAIT_MS;
+      let tapped = await tapLabel(page, text);
+      while (!tapped && Date.now() < deadline) {
+        await page.waitForTimeout(250);
+        tapped = await tapLabel(page, text);
+      }
+      if (!tapped) return null;
+      await page.waitForTimeout(800);
       from = await currentScreen(page);
       continue;
     }
     const fn = typeof hop === 'string' ? hop : hop.fn;
-    const args = typeof hop === 'string' ? [] : hop.args;
+    const args = typeof hop === 'string' ? [] : hop.args ?? [];
     const bag = `${from}Cb`;
     if (!await callCb(page, bag, fn, args)) return null;
+    if (typeof hop === 'object' && hop.stay) {
+      // Deliberately no screen change: an overlay mounted on `app.stage`, or a loader the next hop
+      // depends on. `callCb` has already awaited whatever it returned.
+      from = await currentScreen(page);
+      continue;
+    }
     const deadline = Date.now() + 10_000;
     let landed: string | null = null;
     while (Date.now() < deadline) {
@@ -364,6 +483,15 @@ test.describe('layout sweep — real renderer', () => {
         // audit would be measuring glyphs no player ever sees.
         deviceScaleFactor: 2,
       });
+      // The player's saved language, read once at boot by `initI18n` (src/i18n/index.ts) and ahead
+      // of any scene being built — so it has to be in place before the first navigation, not set
+      // through the settings screen afterwards. Without this every run took Chromium's own en-US
+      // and the German and Chinese rows of the matrix would have been three copies of the English
+      // one.
+      await ctx.addInitScript(
+        (loc: string) => { try { localStorage.setItem('nw_locale', loc); } catch { /* private mode */ } },
+        vp.locale,
+      );
       const page = await ctx.newPage();
       const errors = trackErrors(page);
       const shotDir = path.join(OUT_DIR, vp.name);
@@ -375,6 +503,25 @@ test.describe('layout sweep — real renderer', () => {
       const blank: string[] = [];
       try {
         await registerAndEnterLobby(page, uid('portrait'), 'Portrait');
+
+        // ── Give the account something to render ──────────────────────────────────────────────
+        // Everything below this line is why the sweep is worth running: an empty leaderboard, an
+        // empty inbox and an empty market cannot break a layout, and for two rounds that is most of
+        // what it was measuring. See lib/seed.ts.
+        //
+        // Two phases, because the SLG half needs a `PlayerWorldDoc` and only `joinWorld` may create
+        // one — which happens the first time this account opens the world map. So: seed the account,
+        // walk to the map once, seed the world on top of what joinWorld allocated.
+        const target: SeedTarget = await seedAccount(page);
+        await page.reload();
+        await screenIs(page, 'lobby', 30_000);
+        if (await open(page, { screen: 'worldMap', via: ['onOpenWorld'] }, vp.locale) === null) {
+          throw new Error('seed: could not reach the world map, so joinWorld never ran');
+        }
+        await page.waitForTimeout(2_500);
+        await backToLobby(page);
+        await seedWorld(page, target);   // reloads
+        await screenIs(page, 'lobby', 30_000);
 
         const audit = async (screen: string): Promise<void> => {
           const opts = auditFor(vp);
@@ -400,7 +547,7 @@ test.describe('layout sweep — real renderer', () => {
         await audit('lobby');
 
         for (const stop of STOPS) {
-          const landed = await open(page, stop);
+          const landed = await open(page, stop, vp.locale);
           if (landed === null) {
             expect(
               stop.gated,
@@ -413,7 +560,12 @@ test.describe('layout sweep — real renderer', () => {
           }
           await page.waitForTimeout(stop.settleMs ?? 400);
           await audit(stop.as ?? landed);
-          await backToLobby(page);
+          if (stop.reloadAfter) {
+            await page.reload();
+            await screenIs(page, 'lobby', 30_000);
+          } else {
+            await backToLobby(page);
+          }
         }
       } finally {
         fs.writeFileSync(

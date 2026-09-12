@@ -97,11 +97,17 @@ export async function callCb(
   page: Page, bag: string, fn: string, args: unknown[] = [],
 ): Promise<boolean> {
   return page.evaluate(
-    ({ bag: b, fn: f, args: a }: { bag: string; fn: string; args: unknown[] }) => {
+    async ({ bag: b, fn: f, args: a }: { bag: string; fn: string; args: unknown[] }) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const target = window.__nwE2E?.state?.[b] as Record<string, any> | undefined;
       if (!target || typeof target[f] !== 'function') return false;
-      target[f](...a);
+      // Awaited when it returns a promise (2026-09-11). Several callbacks are the *loader* for the
+      // screen behind them rather than the navigation itself — FriendsSceneCallbacks.loadSLGStatus is
+      // what resolves the caller's shard id, and `openFamilyHub` returns false until it has. Firing
+      // and moving on made those two-hop entries a race the sweep lost silently, recording the family
+      // and sect hubs as "not offered by this account" for two rounds. A rejection is swallowed: the
+      // callback existed and ran, which is all this return value claims.
+      try { await target[f](...a); } catch { /* the screen's own error handling owns this */ }
       return true;
     },
     { bag, fn, args },
