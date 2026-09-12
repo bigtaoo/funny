@@ -292,6 +292,47 @@ key 本来就都是有界的（尺寸四舍五入进 key、`orientation`、avata
 
 后者比开发机还贵——`dpr × scale > 1` 时设备像素多于设计像素，`pageBakeResolution()` 的上限（`renderer.resolution`）在这里不生效。**注意这两个数都在 256 MB 预算的量级上或以上，而结论 3 说了预算恰好看不见它。** 这不是 08-25 那种「一次性 334 MB 突发」——它是走屏走出来的慢累积，不会当场杀进程，但它把整页 bake 的收益随屏数一点点还回去。
 
+### 11.6 去重 cache key（已做，2026-09-12）
+
+§11.5 末尾那条「单独立项」已落地。触发点是一次 Grafana 巡检：2026-09-11 线上一个平板会话（`58aca9e`、1024×654 / dpr 2）的 30 条 `mem` 里，`bake` 从 **17 条 / 98.2 MiB 涨到 27 条 / 182.2 MiB**，`top` 始终是 `lobbybg:1920x1080@1.125`——就是§11.5 量到的「每个新屏 +1 张整页」在真实玩家会话里的样子（这一块不在 `texMB` 里，所以当时实际 GPU 纹理是 127 + 182 ≈ 309 MiB）。
+
+改法就是§11.5 开的方子：`buildPaperBackground` 改成调 `paperBakeKey(w, h, marginLine, railX)`，`tag` 不再进 key（参数保留作调用点可读性，函数头 `void tag` + 注释明说它不进绘制也不进 key）。
+
+**一个潜伏的陷阱，正好被这次改动翻出来：`marginLine` 一直没有进 key。** 旧 key 是 `${tag}:${w}x${h}:${railX ?? ''}`，`marginLine` 却真的进绘制（SLG 大地图抹掉红边线）。之前没出事纯粹是因为 `tag`（`worldmap`）把它和所有菜单分开了——**把 `tag` 拿掉的同时必须把 `marginLine` 放进去**，否则同尺寸的地图页和菜单页会撞 key、其中一个会画出另一个的图。另外 `railX` 现在四舍五入进 key（它是短边的百分比，带小数会把 key 碎成一堆 bake 本来就表达不了的亚像素差异）。
+
+回归：`test/paperBakeSharing.test.ts`，七条，正好盖住§11.5 点名要求的那两类（同尺寸共享一张；`marginLine`/`railX`/尺寸不同必须分开）。断言做在 `paperBakeKey` 上而不是活的 bake 缓存上：后者需要真 WebGL renderer，headless 给不了，而 key 本身就是「共不共享」这件事。
+
+### 11.7 `generated:` 桩子拆细（genTop，2026-09-12）
+
+2026-09-11 线上那 30 条 `mem` 里 `generated` 从 **604 涨到 876**（5 小时，主要涨在 GameScene 内，+10~25/分钟）。**没能定位。** 本节记排掉了什么、为什什么卡住、以及为下一次准备了什么。
+
+**真浏览器量过、排除掉的**（e2e 构建 + `__nwE2E`，镜像 `BaseTexture.addToCache/removeFromCache` 做一份 `BaseTextureCache` 的实时副本，再跟显示树对比算「没人引用的生成型纹理」）：
+
+| 场景 | 结果 |
+|---|---|
+| 大厅 ↔ 卡牌 ↔ 商店，跑三圈 | **零增长**：大厅恒为 18、cardRoster 恒为 7、gacha 恒为 5，孤儿纹理始终 0 |
+| VS AI 对局内连续出卡约 60 秒 | **零增长**：`gen` 钉在 25、孤儿 0 |
+
+共同结论：**场景销毁和对局本身都不漏**（与 §8.7 的审计一致）。审代码又排掉两个候选：`fastText` 的 `cachedTxt` 有 LRU 上限（`CACHE_CAP=320`，淘汰时 destroy）、字形图集按 `size|weight|color` 有界；bake 缓存的 `RenderTexture.create()` **根本不进 `BaseTextureCache`**，所以不在 `generated` 里。
+
+**卡在哪里：测量仪器本身。** 本机能复现的都不漏，而线上那份报告只能告诉你「`generated:` 有 876 条」——`texBucket()` 故意把所有非 URL key 折成一个桩（PIXI 给的名字是 `pixiid_<n>`，不折就是一千条 n=1 的噪声）。于是一堆 `PIXI.Text` 标签和几张巨大的 sheet 在报告里长得一模一样。
+
+**做了什么：`genTop`**。在 `genTopBySize()` 里按**纹理尺寸**把 `generated:` 拆开，同时带条数和字节，跟着 `texTop` 一起进 `mem` 报告的两个出口（本地 `log.warn` + `reportAnomaly`）。尺寸是 uid 毫无意义之后**唯一还能认人的特征**：字形图集、头像铅笔圈、整页 bake、文本标签是四种不同且可识别的形状。数量和字节都要，因为两者指向不同凶手（一堆小标签 vs 几张巨图）—— 2026-08-25 那次崩溃就是「数量=3」藏了三分之一个 G。
+
+真浏览器验过（往 `BaseTextureCache` 注入可识别的假条目、逼出一次真的 `mem` 上报，抓 `POST /client/anomaly` 的 body）：
+
+```
+genTop: [{d:"256x64",n:23,mb:1.4},{d:"1024x1024",n:10,mb:40},{d:"16x16",n:1,mb:0},...]
+```
+
+条数最多的和字节最多的**是不同的两行**，正是要的效果。
+
+**下一步**：等一份带 `genTop` 的线上 `mem`。它会直接点名尺寸，到时候才谈得上找调用点。**在那之前不要再猜** —— 本轮已经猬错两次（先猜场景销毁、后猜 `fastText` 无界），两次都是读代码/实测十分钟就排掉的。
+
+**顺手记一个小疵**：`texBucket()` 对 webpack 资源 URL 取 `lastIndexOf('/')`，于是线上的 `largest` 长成 `http://a.gamestao.com/static/../static 2181x1514` 这副带 `../` 的样子（本机复现：`http://localhost:9396/static/../static`）。不影响分桶，但读日志时容易以为是路径穿越。
+
+**仍未做**：§11.5 结论 3 那一条——bake 缓存至今没有字节闸门（`texBytes()` 扫 `BaseTextureCache`，`RenderTexture.create()` 从不注册进去）。去重把量级压下去了，但没人看着它。
+
 **给后人的教训**：
 
 - **`tag` 是命名空间，不是内容哈希。** 一个只用来「区分同尺寸的不同画法」的 key 字段，在画法其实相同的时候就是个乘法器。写 cache key 时问一句「这个字段真的进绘制了吗」——本例里 30 份拷贝的成因就是这一句没问。

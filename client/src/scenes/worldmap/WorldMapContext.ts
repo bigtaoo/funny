@@ -7,7 +7,7 @@ import { DEFAULT_MAP_SIZE } from './logic/constants';
 import type { ILayout } from '../../layout/ILayout';
 import type { ZoomCfg } from './logic/zoom';
 import type { PoolSlot } from './WorldMapRenderer/pool';
-import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView, WorldCityNodeView, TeamTemplate } from '../../net/WorldApiClient';
+import type { WorldApiClient, WorldTileView, PlayerWorldView, MarchView, OccupationView, SiegeHoldView, StationedView, NationView, SeasonView, SlgShopItemView, WorldChatMessage, SiegeSummaryView, WorldCityNodeView, TeamTemplate } from '../../net/WorldApiClient';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } from '../../net/proto/transport';
 import type { WorldMapRenderer } from './WorldMapRenderer';
 import type { WorldMapPanels } from './WorldMapPanels';
@@ -162,6 +162,13 @@ export class WorldMapContext {
   marches: MarchView[] = [];
   /** Own active occupation-holds (2026-07-15) — used alongside marches for the team-picker busy gate. */
   occupations: OccupationView[] = [];
+  /**
+   * Own pending delayed siege hits (围攻驻留, 2026-09-12): a won main-base / wild-city assault waiting out
+   * SLG_SIEGE_DAMAGE_DELAY_MS before the durability hit lands. The occupation-hold's twin for the two
+   * targets that never change hands at the moment their garrison falls — same three consumers: the
+   * besieging token (fog.ts syncSiegeTokens), the team panel's countdown, and the busy gate.
+   */
+  siegeHolds: SiegeHoldView[] = [];
   /** Teams stationed on tiles — drives the idle-sprite rendering (fog.ts syncStationedTokens) and the team-picker busy gate.
    * ADR-051 (P4): includes ENEMY stationed teams within vision (mine === false) for field-troop + garrison-zone
    * rendering; own-only consumers (busy gate, recall / in-place-occupy lookups) must filter mine !== false. */
@@ -235,6 +242,10 @@ export class WorldMapContext {
   marchTokenLayer!: PIXI.Container;
   /** marchId → live token entry riding that march's route (fog.ts syncMarchTokens) — see MapTokenEntry. */
   marchTokenRuntimes: Map<string, MapTokenEntry> = new Map();
+  /** tile key ("x:y") → live token playing 'attacking' for the whole of one of my own siege holds
+   * (ctx.siegeHolds) — the base/city counterpart of occupyTokenRuntimes below, and synced the same way
+   * (fog.ts syncSiegeTokens). See MapTokenEntry. */
+  siegeTokenRuntimes: Map<string, MapTokenEntry> = new Map();
   /** marchId → epoch-ms deadline to keep playing the 'attacking' clip after the march has
    * resolved (arrived off `ctx.marches`) instead of tearing its token down instantly (§ occupy
    * attack-animation fix). Populated by WorldMapNet.applySiegeResult, consumed/expired in
@@ -354,6 +365,10 @@ export class WorldMapContext {
     instantReturnRect: { x: number; y: number; w: number; h: number } | null;
     /** ADR-051 recall of a 停留/驻扎 field station (dispatches a return leg). */
     recallStationRect: { x: number; y: number; w: number; h: number } | null;
+    /** 停止围攻 / 停止占领 (2026-09-12): ends the countdown this row is working off. */
+    stopHoldRect: { x: number; y: number; w: number; h: number } | null;
+    /** Which hold `stopHoldRect` ends, and for which team — see TeamRow.stopHold. */
+    stopHold: { teamId: string; kind: 'siege' | 'occupy' } | null;
   }[] = [];
 
   // ── Modal ──────────────────────────────────────────────────────────────────

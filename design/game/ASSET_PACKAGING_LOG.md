@@ -722,3 +722,60 @@ uploads, so simulator cannot get those」），只是当时被读成了一句无
    （旧 bundle + 新 `cdn/` 那个反向情况靠它们才不误报）。真要上传前扫一次的话，那属于 §4.2 遗留 2。
 3. **切 CDN 时要把 `cdn/` 加回 `packOptions.ignore`**。这条现在不靠人记得——`build:wechat` 里的门禁
    第 4 条会红，并把要加的那行 JSON 直接写在报错里。
+
+## 22. 微信包里每一个 REST 调用从来没发出过一个包：`AbortController is not defined`（2026-09-12）
+
+### 22.1 怎么发现的
+
+不是读代码读出来的，是**包内几何巡检**（`entries/wechat-layout.ts`，见 `UI_DESIGN_LOG_2026-08.md`
+§51）第一次真跑时，它做的第一件事——注册一个账号——直接失败：
+
+```
+register failed: {"ok":false,"errorKey":"auth.err.network","detail":"AbortController is not defined"}
+```
+
+抛点是 `client/src/net/ApiClient/core.ts` 的 `const ctrl = new AbortController()`，**在 transport
+之前**。`client/src/net/WorldApiClient/core.ts` 还有两处同样的写法。也就是说：登录、bootstrap、
+存档同步、世界服全部 REST——**微信包里一个包都没发出去过**，而且失败得很像网络问题
+（`auth.err.network`）。
+
+### 22.2 为什么 §18 那轮没看见
+
+§18（2026-09-01）把 `fetch` 换成 `wx.request` 这件事本身是对的，`wechatTransport.ts` 把
+`AbortSignal → RequestTask.abort()` 桥接得也很完整——**它只是从来没被调用到**。那一轮的结论是
+**读代码**得出的（当时记的「真机未验」说的正是这个），而这一层恰恰是读代码看不见的：
+
+> 调用方用的是一个**平台中立的标准全局**，没人问过这个运行时有没有它。
+
+补 transport 的人看的是「`fetch` 的四处差异」那张表，而 `AbortController` 不在表里——它不是
+`fetch` 的一部分，它是调用方自己 `new` 出来的东西。**这类洞只有真的把那条路走一遍才会掉出来**，
+这也正是「包内探针」这个形状的全部价值。
+
+### 22.3 修法：补全局，且这次补全局是对的
+
+`client/src/platform/wechat/abortShim.ts`（~40 行，规范形状的 `AbortController`/`AbortSignal`），
+由 `installHost.ts` 在 `installWechatHost()` 之后 `??=` 装上。**与 `wechatHost.ts` 并列而不是塞
+进去**：那个文件的范围是「PIXI 绕过 adapter 直接嗅探的 DOM 面」，每一行对着一个 PIXI 调用点；这一条
+是我们自己的网络层缺的东西。
+
+§18 的结论是「**补一个宿主全局 = 改写全图的特性探测**」（补 `globalThis.fetch` 会把「包内文件不该
+走 HTTP」从物理不可能降级成但愿没人写）。这两条不冲突，因为 `AbortController` 两个前提都不成立：
+
+1. **没有任何人探测它。** 全仓库零处 `typeof AbortController`，三个调用点都是无条件 `new`。补上它
+   不会让任何代码换一条分支——只会让它们不再抛。
+2. **它不做 I/O。** 整个语义是一个 bool 加一串回调。真正干活的还是 `wechatTransport` 里那条
+   `RequestTask.abort()`，那条一直是真的。
+
+### 22.4 验证
+
+同一个模拟器、同一个包，改前改后各跑一次包内巡检：
+
+| | 改前 | 改后 |
+|---|---|---|
+| 注册 | `AbortController is not defined` | 成功（账号名出现在大厅截图上） |
+| 走到的站 | 10 / 36（在线站全部 `skipped`） | 36 / 36 |
+| 拍卖 / 排行 / 每日 / 成就 / 充值 | 一个都进不去 | 全部有报告 + PNG |
+
+**这是第一次有证据表明微信包能和后端说上话。** 反过来也要说清楚：这只证明 REST 能通了，
+**不等于微信侧登录这条产品路径验过了**——真机上走的是 `wx.login` + `/auth/wx`，巡检入口故意换成了
+device 凭证（理由见该入口文件头）。那条仍在 §20 的真机清单里欠着。

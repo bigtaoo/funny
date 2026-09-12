@@ -23,6 +23,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
+import { TEAM_ROW_CARD_H, TEAM_ROW_PER_ROW_PORTRAIT } from '../../src/scenes/CityScene/core';
 import { marginLineX } from '../../src/render/sketchUi';
 import { teamSlotId, teamSlotName, TEAM_CAP } from '../../src/game/meta/teamTroops';
 import { formatDuration } from '../../src/scenes/worldmap/logic/formatDuration';
@@ -52,6 +53,7 @@ type Hit = { rect: Rect; fn: () => void };
 
 type CitySceneInternals = {
   w: number; h: number;
+  portrait: boolean;
   hits: Hit[];
   selectedBuilding: string | null;
   contentX: number;
@@ -80,9 +82,16 @@ function tap(inner: CitySceneInternals, x: number, y: number): void {
 }
 
 // hits[0] is always the header Back button (pushed first, unconditionally, in render()). All other
-// hits sit right of the binding line (x >= contentX). The team row is pinned to the bottom band, so
-// its hits split cleanly from the building-grid hits by y: grid tiles end well above the team row.
-const TEAM_BAND_Y_THRESHOLD = 140;
+// hits sit right of the binding line (x >= contentX).
+//
+// Team hits are told from building-grid hits by their HEIGHT, which is the one thing that identifies
+// a team card: it is always exactly TEAM_ROW_CARD_H, while a building tile's height is derived from
+// whatever band is left over (gridMetrics.ts — portrait computes it, landscape uses CARD_H = 192).
+// This used to be a y threshold of 140 design px, on the reasoning that the band was one card tall
+// and pinned to the bottom; when portrait's band went to two rows (2026-09-12) that threshold
+// silently reclassified three of the five team cards as grid tiles, and the assertions that counted
+// them went red for the wrong reason. A threshold measures where the band happens to be today; the
+// card height is what a team card IS.
 
 /** The "Fill All Teams" button (2026-08-02) always registers a hit, flush inside the team band's
  *  own section-label row — which sits above TEAM_BAND_Y_THRESHOLD, so it must be filtered out of
@@ -97,10 +106,10 @@ function contentHits(inner: CitySceneInternals): Hit[] {
 // The three selectors below return the hits' RECTS: the shared hit table (src/ui/hits.ts) nests
 // geometry under `rect`, and every assertion here is about geometry.
 function gridHits(inner: CitySceneInternals): Rect[] {
-  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.y <= inner.h - TEAM_BAND_Y_THRESHOLD).map((h) => h.rect);
+  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.h !== TEAM_ROW_CARD_H).map((h) => h.rect);
 }
 function teamHits(inner: CitySceneInternals): Rect[] {
-  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.y > inner.h - TEAM_BAND_Y_THRESHOLD).map((h) => h.rect);
+  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.h === TEAM_ROW_CARD_H).map((h) => h.rect);
 }
 
 /** All PIXI.Text content currently in the display tree, recursing sub-containers. */
@@ -129,6 +138,7 @@ function stubWorldApi(): WorldApiClient {
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
     getStationed: () => Promise.resolve([]),
+    getSiegeHolds: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
   } as unknown as WorldApiClient;
@@ -287,6 +297,7 @@ describe('CityScene header base-durability (D-CITY-8; moved into the header 2026
       getMarches: () => Promise.resolve([]),
       getOccupations: () => Promise.resolve([]),
       getStationed: () => Promise.resolve([]),
+      getSiegeHolds: () => Promise.resolve([]),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
@@ -327,20 +338,23 @@ describe('CityScene header base-durability (D-CITY-8; moved into the header 2026
   });
 });
 
-describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', () => {
+describe('CityScene bottom team row (D-CITY-10; one row in landscape, two in portrait since 2026-09-12)', () => {
   type TeamsFixture = {
     me?: Partial<PlayerWorldView>;
     teams?: { id: string; name: string; army: { cardInstanceId?: string; initialHp?: number }[] }[];
     marches?: { marchId: string; mine?: boolean; teamId: string; arriveAt: number }[];
     occupations?: { teamId: string; dueAt: number }[];
+    /** Own pending base/city siege holds (围攻驻留, 2026-09-12) — the team stands on the target until
+     *  the durability hit lands, so the row reads 围攻中, not 驻军在家. */
+    siegeHolds?: { teamId: string; dueAt: number }[];
     /** Own teams parked on a field tile (2026-07-23 field-stationing) — 停留 idle or 驻扎 garrison. */
     stationed?: { tile: string; x: number; y: number; teamId: string; troops: number; sinceAt: number; mode?: 'idle' | 'garrison'; mine?: boolean }[];
     /** Owned cards; present = the scene gets a getSave callback (see buildLoaded). */
     cardInv?: Record<string, CardInstance>;
   };
 
-  /** Unlike stubWorldApi(), resolves getMe/getTeams/getMarches/getOccupations/getStationed so the
-   *  team row has real data to render. */
+  /** Unlike stubWorldApi(), resolves getMe/getTeams and all four order slices so the team row has
+   *  real data to render. */
   function stubWorldApiWithTeams(fx: TeamsFixture): WorldApiClient {
     const me = {
       resources: {}, buildings: {}, buildQueue: [],
@@ -353,6 +367,7 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
       getMarches: () => Promise.resolve(fx.marches ?? []),
       getOccupations: () => Promise.resolve(fx.occupations ?? []),
       getStationed: () => Promise.resolve(fx.stationed ?? []),
+      getSiegeHolds: () => Promise.resolve(fx.siegeHolds ?? []),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
@@ -469,6 +484,21 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
     });
     const texts = collectTexts(scene.container);
     expect(texts).toContain(t('world.team.stationedIdle'));
+    expect(texts).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  // 围攻驻留 (2026-09-12): same blind spot one layer over — a team that has beaten a main base's or a
+  // wild city's garrison stands on the target for the five-minute durability-hit delay with no march,
+  // no occupation doc and no station doc, so before this slice existed it read 驻军在家 too.
+  it('shows the besieging tag with its countdown for a team holding a pending siege hit', async () => {
+    const { scene } = await buildLoaded({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      siegeHolds: [{ teamId: 't1', dueAt: Date.now() + 4 * 60_000 }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('world.team.besieging').replace('{time}', '4m'));
     expect(texts).not.toContain(t('city.military.teamIdle'));
     scene.destroy();
   });
@@ -606,17 +636,21 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
   });
 
   for (const [label, dims] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
-    it(`the 5 team cards sit side-by-side in one bottom row — within screen, no overlap, no grid overlap — ${label}`, async () => {
+    it(`the 5 team cards tile the bottom band — within screen, no overlap, no grid overlap — ${label}`, async () => {
       const { scene, inner } = await buildLoaded({ teams: [] }, () => {}, dims);
       const teams = teamHits(inner);
       expect(teams.length).toBe(TEAM_CAP);
-      // All in a single row: identical y, ascending x.
-      const sorted = [...teams].sort((a, b) => a.x - b.x);
+      // Landscape keeps all five side by side; portrait wraps onto two rows (2026-09-12, see
+      // teamRow.ts) because five across leaves a text column too narrow to hold one line of the
+      // card's own labels at the legibility floor. Either way: inside the screen, and a grid of
+      // rows whose members share a y.
+      const perRow = inner.portrait ? TEAM_ROW_PER_ROW_PORTRAIT : TEAM_CAP;
+      const sorted = [...teams].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+      expect(new Set(sorted.map((r) => r.y)).size).toBe(Math.ceil(TEAM_CAP / perRow));
       for (const th of sorted) {
         expect(th.x).toBeGreaterThanOrEqual(inner.contentX);
         expect(th.x + th.w).toBeLessThanOrEqual(inner.w + 1e-6);
         expect(th.y + th.h).toBeLessThanOrEqual(inner.h + 1e-6);
-        expect(th.y).toBe(sorted[0]!.y); // one row
       }
       for (let i = 0; i < sorted.length; i++) {
         for (let j = i + 1; j < sorted.length; j++) {
@@ -650,11 +684,13 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     let rejectOccupations!: (e: Error) => void;
     let resolveStationed!: (v: unknown[]) => void;
     let rejectStationed!: (e: Error) => void;
+    let resolveSiegeHolds!: (v: unknown[]) => void;
     let resolveMeRaw!: (v: PlayerWorldView) => void;
     const teams = new Promise<unknown[]>((r, j) => { resolveTeams = r; rejectTeams = j; });
     const marches = new Promise<unknown[]>((r) => { resolveMarches = r; });
     const occupations = new Promise<unknown[]>((r, j) => { resolveOccupations = r; rejectOccupations = j; });
     const stationed = new Promise<unknown[]>((r, j) => { resolveStationed = r; rejectStationed = j; });
+    const siegeHolds = new Promise<unknown[]>((r) => { resolveSiegeHolds = r; });
     const me = new Promise<PlayerWorldView>((r) => { resolveMeRaw = r; });
     return {
       api: {
@@ -663,6 +699,7 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
         getMarches: () => marches,
         getOccupations: () => occupations,
         getStationed: () => stationed,
+        getSiegeHolds: () => siegeHolds,
         upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
         speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
       } as unknown as WorldApiClient,
@@ -673,7 +710,8 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
       rejectOccupations,
       resolveStationed,
       rejectStationed,
-      resolveOrders: () => { resolveMarches([]); resolveOccupations([]); resolveStationed([]); },
+      resolveSiegeHolds,
+      resolveOrders: () => { resolveMarches([]); resolveOccupations([]); resolveStationed([]); resolveSiegeHolds([]); },
       resolveMe: (over: Partial<PlayerWorldView> = {}) => resolveMeRaw({
         resources: {}, buildings: {}, buildQueue: [],
         cardState: { c1: { currentTroops: 400 } }, teamState: {},
@@ -845,14 +883,15 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
-  it('a station shows as soon as the other two endpoints come back empty', async () => {
-    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+  it('a station shows as soon as the other order endpoints come back empty', async () => {
+    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveSiegeHolds, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
     resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now(), mode: 'garrison' }]);
     resolveMarches([]);
     resolveOccupations([]);
+    resolveSiegeHolds([]);
     await flush();
     expect(texts()).toContain(t('world.team.garrisoned'));
     expect(texts().some(isLoadingLabel)).toBe(false);
@@ -875,13 +914,14 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
   });
 
   it('an order endpoint rejecting still settles the status (treated as no active order)', async () => {
-    const { api, resolveTeams, resolveMarches, rejectOccupations, resolveStationed, resolveMe } = deferredApi();
+    const { api, resolveTeams, resolveMarches, rejectOccupations, resolveStationed, resolveSiegeHolds, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
     resolveMarches([]);
     rejectOccupations(new Error('offline'));
     resolveStationed([]);
+    resolveSiegeHolds([]);
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(false);
     expect(texts()).toContain(t('city.military.teamIdle'));
@@ -889,14 +929,16 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
   });
 
   it('getStationed rejecting still settles the status (treated as no field station)', async () => {
-    // ordersLoaded rides on `.finally()` for all three slices — an easy regression into `.then()`,
-    // and this one is the newest of the three (2026-08-25), so it gets its own case.
-    const { api, resolveTeams, resolveMarches, resolveOccupations, rejectStationed, resolveMe } = deferredApi();
+    // ordersLoaded rides on `.finally()` for all four slices — an easy regression into `.then()`,
+    // and this one is the newest but one (2026-08-25; siege holds joined 2026-09-12), so it gets its
+    // own case.
+    const { api, resolveTeams, resolveMarches, resolveOccupations, resolveSiegeHolds, rejectStationed, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
     resolveMarches([]);
     resolveOccupations([]);
+    resolveSiegeHolds([]);
     rejectStationed(new Error('offline'));
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(false);
@@ -986,6 +1028,7 @@ describe('CityScene queue-completion refresh (P0-9, comm-audit-2026-07-27 findin
       getMarches: () => Promise.resolve([]),
       getOccupations: () => Promise.resolve([]),
       getStationed: () => Promise.resolve([]),
+      getSiegeHolds: () => Promise.resolve([]),
     } as unknown as WorldApiClient;
     return { api, getMeCalls: calls };
   }

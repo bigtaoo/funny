@@ -68,12 +68,15 @@ interface Fake {
   closes: number;
   replays: string[];
   tiles: Map<string, { hp?: number; contestedByMe?: boolean }>;
+  /** 围攻驻留 (2026-09-12): the refetched pending-siege-hit slice. A case seeds it the same way it
+   *  seeds `tiles` — through `viewportLands`, since it is part of the same awaited refetch. */
+  siegeHolds: Array<{ siegeId: string; dueAt: number; damage: number; isBase: boolean }>;
 }
 
 function fake(over: Partial<{ destroyed: boolean; mainBaseTile: string; seenTs: number; unread: number }> = {}): Fake {
   const f: Fake = {
     toasts: [], modals: [], hudRenders: 0, mapRenders: 0, vignettes: 0, closes: 0, replays: [],
-    tiles: new Map(), ctx: null as unknown as WorldMapContext,
+    tiles: new Map(), siegeHolds: [], ctx: null as unknown as WorldMapContext,
   };
   const ctx = {
     destroyed: over.destroyed ?? false,
@@ -89,6 +92,7 @@ function fake(over: Partial<{ destroyed: boolean; mainBaseTile: string; seenTs: 
       return [Number(x), Number(y)] as [number, number];
     },
     tileCache: f.tiles,
+    siegeHolds: f.siegeHolds,
     view: {
       renderMap: () => { f.mapRenders++; },
       flashDamageVignette: () => { f.vignettes++; },
@@ -359,6 +363,32 @@ describe('worldmap push — applySiegeResult role classification', () => {
     expect(f.modals).toEqual([]);
   });
 
+  // 围攻驻留 (2026-09-12): the SAME shape one layer over. Beating another player's main base (or a
+  // wild city's ladder) does not take the target either — it schedules a durability hit five minutes
+  // out — so the blocking "Siege won!" modal was announcing a result that had not happened yet.
+  it("our own attack win that started a SIEGE hold is a toast naming the countdown and the damage", async () => {
+    const f = fake();
+    viewportLands(() => { f.siegeHolds.push({ siegeId: 's1', dueAt: Date.now() + 300_000, damage: 240, isBase: true }); });
+    await applySiegeResult(f.ctx, siege());
+
+    expect(f.modals).toEqual([]);
+    expect(f.toasts).toHaveLength(1);
+    expect(f.toasts[0]!.color).toBe(DARK);
+    expect(f.toasts[0]!.msg).toContain('240');
+    expect(f.toasts[0]!.msg).not.toContain('{'); // every placeholder substituted
+  });
+
+  it('the hold is matched by siegeId — an unrelated pending hit does not swallow this win\'s modal', async () => {
+    // SiegeDamageDoc.tile is the base ANCHOR while SiegeResult.tile is where the march landed, so tile
+    // equality is not a usable key; the shared id is (the hit document is keyed on the winning siege).
+    const f = fake();
+    viewportLands(() => { f.siegeHolds.push({ siegeId: 's-other', dueAt: Date.now() + 300_000, damage: 9, isBase: true }); });
+    await applySiegeResult(f.ctx, siege());
+
+    expect(f.toasts).toEqual([]);
+    expect(f.modals).toHaveLength(1);
+  });
+
   it('our own attack win that is FINAL opens the outcome modal with the loot line and a replay button', async () => {
     const f = fake();
     viewportLands(() => f.tiles.set('12:34', {})); // no contestedByMe
@@ -445,9 +475,13 @@ describe('worldmap push — applySiegeResult role classification', () => {
     expect(f.mapRenders).toBe(0);
     expect(f.toasts).toEqual([]);
     expect(f.modals).toEqual([]);
-    // ...and the two fire-and-forget refreshes below the guard never start either.
+    // ...and the fire-and-forget refresh below the guard never starts either. `refreshMarches` is NOT
+    // in that category since 2026-09-12 (围攻驻留): it moved above the guard, into the same awaited
+    // refetch as loadMapViewport, because the attack-win branch reads `ctx.siegeHolds` from it. It is
+    // authoritative-state-only (the real one early-returns on a destroyed ctx and paints nothing), so
+    // starting it here costs nothing — what must stay silent is the UI, which the assertions above pin.
     expect(refreshMe).not.toHaveBeenCalled();
-    expect(refreshMarches).not.toHaveBeenCalled();
+    expect(refreshMarches).toHaveBeenCalledTimes(1);
   });
 });
 

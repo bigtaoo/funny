@@ -15,7 +15,7 @@
 // auth/save still go through meta REST, unchanged.
 
 import type { AuthCredential, IPlatform } from '../platform/IPlatform';
-import { NetClient, type NetState } from './NetClient';
+import { FatalTokenError, NetClient, type NetState } from './NetClient';
 import {
   MatchMode,
   type ChatMessagePush,
@@ -270,7 +270,10 @@ export class NetSession {
    *     which would silently swap the player into a different account mid-session. There
    *     is no token-refresh endpoint for this case, so the honest fix is to tell the
    *     player once (rather than spin 'reconnecting' forever with no feedback) so they
-   *     can manually log back in.
+   *     can manually log back in. 2026-09-12: it now also throws `FatalTokenError` instead
+   *     of handing the dead token back, which stops NetClient from reconnecting at all —
+   *     returning it kept the gateway handshake looping against a JWT that can never be
+   *     accepted (265 rejects in one burst in production; see NetClient's STABLE_OPEN_MS).
    */
   private async freshToken(): Promise<string> {
     const existing = this.api.getToken();
@@ -287,7 +290,7 @@ export class NetSession {
         // request 401s — see net/log.ts's setSessionExpiredSink doc comment.
         notifySessionExpired();
       }
-      return existing;
+      throw new FatalTokenError('password-login session expired; no refresh path');
     }
     this.gatewayAuthRejected = false;
     const res = await this.api.auth(await this.getCredential());

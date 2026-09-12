@@ -1,7 +1,7 @@
 # 决策日志（ADR）— ADR-041 ~ ADR-069（2026-07-27 ~ 2026-08-19）
 
-> 从 [`DECISIONS.md`](DECISIONS.md) 拆出（2026-08-17，原文件 803 行），2026-08-25 再拆一次：原 `DECISIONS_ADR-041-onward.md` 到 533 行，超了 ADR-067 的 500 行上限。**ADR 编号与标题一律未变**，原有 `DECISIONS_ADR-041-onward.md#adr-0NN-...` 深链改指本文（ADR-041~069）或 [`DECISIONS_ADR-070-onward.md`](DECISIONS_ADR-070-onward.md)（ADR-070 起）即可。
-> **新拍板不写这里**，写 [`DECISIONS_ADR-070-onward.md`](DECISIONS_ADR-070-onward.md)；本册已有条目的补记（「补测（同日）」这类）仍在原地追加。
+> 从 [`DECISIONS.md`](DECISIONS.md) 拆出（2026-08-17，原文件 803 行），2026-08-25 再拆一次：原 `DECISIONS_ADR-041-onward.md` 到 533 行，超了 ADR-067 的 500 行上限。**ADR 编号与标题一律未变**，原有 `DECISIONS_ADR-041-onward.md#adr-0NN-...` 深链改指本文（ADR-041~069）或 [`DECISIONS_ADR-070-085.md`](DECISIONS_ADR-070-085.md)（ADR-070 起）即可。
+> **新拍板不写这里**，写 [`DECISIONS_ADR-070-085.md`](DECISIONS_ADR-070-085.md)；本册已有条目的补记（「补测（同日）」这类）仍在原地追加。
 > 全部 ADR 的索引表在 [`DECISIONS.md`](DECISIONS.md)。
 
 ---

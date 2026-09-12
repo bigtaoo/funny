@@ -60,6 +60,11 @@ export class GuideOverlay {
 
   constructor() {
     this.root = new PIXI.Container();
+    // A spotlight callout is ALLOWED to sit on top of the screen it points at — that is what it is
+    // for. The `overlay:` prefix says so to the real-browser layout audit
+    // (client/test/browser/lib/layoutAudit.ts), which otherwise reports every label this bubble
+    // covers as a collision. Nothing else reads it.
+    this.root.name = 'overlay:guide';
     this.ring = new PIXI.Graphics();
     this.ring.visible = false;
     this.root.addChild(this.ring);

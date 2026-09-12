@@ -14,6 +14,9 @@ import {
   playerWorldId,
   marchDurationFromPath,
   baseFootprintCells,
+  regenTeamStamina,
+  SLG_TEAM_STAMINA_COST,
+  SLG_TEAM_STAMINA_MAX,
   SlgError,
   type ResourceType,
   type PathCell,
@@ -178,6 +181,153 @@ export async function computeMarchPath(
   });
   if (!path) throw new SlgError('PATH_BLOCKED', 'No viable path found');
   return path;
+}
+
+/** What a settled `SiegeDamageDoc` still knows about the force that was besieging. */
+export interface SiegeHoldForce {
+  worldId: string;
+  attackerId: string;
+  tile: string;
+  attackerSurvivors: number;
+  teamId?: string;
+  leaderUnitType?: string;
+  army?: ArmyEntry[];
+}
+
+/**
+ * Open the NEXT round of a siege instead of walking home (2026-09-12, user decision: 「攻打完之后，不要
+ * 自动回城了，自动开始打下一轮」). A siege now continues until something actually stops it.
+ *
+ * This does NOT hand-roll a second durability hit. It re-enters the WHOLE attack pipeline by inserting a
+ * zero-length attack march that is already due: `processDueArrivalSettlements` claims it on the next
+ * scheduler tick and `applySiege` runs exactly as it did for the first round. That is what makes a round a
+ * round rather than a repeating timer — the defender's teams heal (SLG_TEAM_INJURY_MS) or get re-crewed
+ * between rounds and can repel one, and the attacker's own survivors carry into it through
+ * `cardState.currentTroops`.
+ *
+ * It also means every stop condition already in that pipeline ends the siege on its own, with no new
+ * bookkeeping here: repelled or wiped → `applyBaseSiege` starts the return leg; target captured, gone or
+ * protected → the settlement branch calling this one walks the team home instead; connectivity lost in the
+ * meantime → `applySiege` parks the team where it stands. The one case that does not terminate is a target
+ * whose durability regenerates faster than the team can chip it — which is a balance fact about that
+ * matchup, not a loop bug: nothing about walking home would have taken it either.
+ *
+ * **Every round is an order and costs the team's stamina** (2026-09-12 user decision: 「每次开始战斗，
+ * 都需要扣除体力的。确实不花时间因为队伍已经在城边了，主要还是靠体力控制平衡」). A round skips the travel leg, not the
+ * budget: `SLG_TEAM_STAMINA_COST` per round against `SLG_TEAM_STAMINA_REGEN_PER_MIN` over the delay is
+ * what bounds how long one dispatch can grind, and running the budget out ends the siege — the team
+ * walks home. A flat-troop assault carries no team and therefore no budget, so it keeps the old
+ * one-hit-and-home behaviour instead of looping unbounded.
+ *
+ * Failing to insert falls back to the old behaviour (walk home) rather than stranding the team: the hold
+ * document has already been claimed and deleted by the caller, so returning without doing either would
+ * lose the force entirely.
+ */
+export async function startNextSiegeRound(core: WorldCore, d: SiegeHoldForce, t: number): Promise<void> {
+  // Nothing left to fight with (a flat army whose survivors are all gone): there is no round to open, and
+  // dispatching one would hand `applySiege` a zero-troop synthesized army. Fall through to the go-home
+  // path, whose own empty case announces the hold ended instead of walking anyone anywhere.
+  const hasForce = (d.army ?? []).some((e) => !!e.cardInstanceId) || d.attackerSurvivors > 0;
+  if (!hasForce) {
+    await startSiegeReturnMarch(core, d, t);
+    return;
+  }
+  // No team → no stamina budget → no brake. A flat-troop siege ends after its one hit, as before.
+  if (!d.teamId) {
+    await startSiegeReturnMarch(core, d, t);
+    return;
+  }
+  const pw = await core.deps.cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, d.attackerId) });
+  if (!pw) return; // attacker state gone (world reset under us); nothing to dispatch and nothing to walk home
+  const teamState = pw.teamState?.[d.teamId];
+  const stamina = regenTeamStamina(
+    teamState?.stamina ?? SLG_TEAM_STAMINA_MAX,
+    teamState?.staminaAt ?? 0,
+    t,
+  );
+  if (stamina < SLG_TEAM_STAMINA_COST) {
+    // Out of budget: the siege is over and the team goes home. This is the stop condition the player
+    // actually plans around — see the doc comment above.
+    await startSiegeReturnMarch(core, d, t);
+    return;
+  }
+  const { worldId, attackerId, tile } = d;
+  const x = core.coordX(tile);
+  const y = core.coordY(tile);
+  try {
+    const next: MarchDoc = {
+      _id: marchId(worldId, attackerId, t, ++core.marchSeq),
+      worldId,
+      ownerId: attackerId,
+      // The team is standing on the target, so this leg has no distance to cover: it exists to re-run the
+      // assault, not to travel. `arriveAt = t` puts it straight into the settlement queue.
+      fromTile: tile,
+      toTile: tile,
+      kind: 'attack',
+      troops: d.attackerSurvivors,
+      ...(d.army && d.army.length > 0 ? { army: d.army } : {}),
+      ...(d.teamId ? { teamId: d.teamId } : {}),
+      ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
+      departAt: t,
+      arriveAt: t,
+      status: 'marching',
+      ...legBox(x, y, x, y),
+      rev: 0,
+    };
+    await core.deps.cols.marches.insertOne(next);
+    // Charged only once the round is really dispatched, and as scoped dotted paths under this team's own
+    // subdocument so the write commutes with every other playerWorld writer — the same shape and the same
+    // reasoning as `startMarch`'s own stamina charge (combatMarch/command.ts).
+    await core.deps.cols.playerWorld.updateOne(
+      { _id: pw._id },
+      {
+        $set: {
+          [`teamState.${d.teamId}.stamina`]: stamina - SLG_TEAM_STAMINA_COST,
+          [`teamState.${d.teamId}.staminaAt`]: t,
+        },
+      },
+    );
+    // Deliberately NOT pushed: the client would see a zero-length march for the ~2s until the tick settles
+    // it, i.e. one flicker per round from a document that exists only to re-enter the pipeline. The round's
+    // own `pushMarch`/`pushSiege` (combatSiege/arrival/baseSiege.ts) announce it once it has really landed.
+  } catch (err) {
+    console.error('[worldsvc] startNextSiegeRound failed — walking the besiegers home instead', { worldId, attackerId, tile, err: (err as Error).message });
+    await startSiegeReturnMarch(core, d, t);
+  }
+}
+
+/**
+ * Walk a finished siege hold's besiegers home (围攻驻留, 2026-09-12). Every settlement branch of a
+ * `SiegeDamageDoc` — the hit landed, the wall fell, or the whole thing went stale — ends the same way: the
+ * team that has been standing on the target for five minutes now leaves, and it must leave AS THE TEAM. The
+ * four settlement sites used to build this call by hand from `attackerSurvivors` alone, which walked a
+ * faceless troop count home and left the team slot pinned to a hold document that was about to be deleted.
+ *
+ * A card army's survivors are already persisted to `cardState.currentTroops` at the end of the battle, so its
+ * return leg carries `troops: 0` — the same rule `applyBaseSiege`/`applyCitySiege` apply to the repelled
+ * branch, and without it the pool would be credited a second time for troops the cards already hold.
+ */
+export async function startSiegeReturnMarch(core: WorldCore, d: SiegeHoldForce, t: number): Promise<void> {
+  const hasCardArmy = (d.army ?? []).some((e) => !!e.cardInstanceId);
+  if (!hasCardArmy && d.attackerSurvivors <= 0) {
+    // Nothing survived to walk home, so no march is pushed — and the hold document the client is
+    // rendering a besieging token and a countdown from has just been deleted. Announce it directly, the
+    // same rule every other order-ending deletion follows (core/push.ts pushOrderEnded, and the
+    // order-end-push-audit test that enumerates these sites).
+    void core.pushOrderEnded(d.attackerId, { tile: d.tile, kind: 'attack', status: 'arrived', at: t });
+    return;
+  }
+  await startReturnMarch(core, {
+    worldId: d.worldId,
+    ownerId: d.attackerId,
+    fromTile: d.tile,
+    x: core.coordX(d.tile),
+    y: core.coordY(d.tile),
+    troops: hasCardArmy ? 0 : d.attackerSurvivors,
+    ...(d.army && d.army.length > 0 ? { army: d.army } : {}),
+    ...(d.teamId ? { teamId: d.teamId } : {}),
+    ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
+  }, t);
 }
 
 /**

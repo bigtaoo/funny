@@ -3,7 +3,8 @@
 // only binds handlers to whatever that returns.
 import { clear, fmtTime, h, pill } from '../dom';
 import {
-  buildTarget, canInitiate, describeAttachments, describeTarget, previewText, statusFilter,
+  buildTarget, canInitiate, COINS_CAP_HINT, COINS_CAP_PER_TICKET, coinsProblem, describeAttachments,
+  describeTarget, previewText, statusFilter,
   type TicketAction, ticketActions, ticketInput, ticketPeople, TICKET_STATUSES,
 } from '../logic/tickets';
 import type { CompScope, CompTicketView } from '../types';
@@ -96,7 +97,8 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
   const publicIdInput = h('input', { placeholder: 'Recipient 9-digit public ID', maxlength: '9' });
   const subjectInput = h('input', { placeholder: 'Mail subject' });
   const bodyInput = h('textarea', { placeholder: 'Mail body' });
-  const coinsInput = h('input', { type: 'number', value: '0', min: '0' });
+  const coinsInput = h('input', { type: 'number', value: '0', min: '0', max: String(COINS_CAP_PER_TICKET), step: '1' });
+  const coinsHint = h('div', { class: 'muted' }, COINS_CAP_HINT);
   const reasonInput = h('input', { placeholder: 'Reason (required, for audit)' });
   const expireInput = h('input', { type: 'number', value: '30', min: '1' });
   const previewOut = h('span', { class: 'muted' });
@@ -118,6 +120,13 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
 
   const submit = async (): Promise<void> => {
     err.textContent = '';
+    // The cap is enforced by admin's validateMail regardless; catching it here keeps a mistyped amount
+    // from becoming a round-trip and says what to do about it (see logic/tickets.ts coinsProblem).
+    const coins = coinsProblem(coinsInput.value);
+    if (coins) {
+      showErr(err, new Error(coins));
+      return;
+    }
     try {
       await api.initiate(ticketInput(fields()));
       showOk(err, 'Ticket created, awaiting approval');
@@ -151,7 +160,10 @@ function ticketForm(ctx: Ctx, onCreated: () => void): HTMLElement {
     subjectInput,
     h('label', {}, 'Mail body'),
     bodyInput,
+    // The hint sits BELOW the row, not inside the coins column: `.row` is a wrapping flexbox, and a
+    // full-sentence child stretches its column wide enough to push "Expire days" onto its own line.
     h('div', { class: 'row' }, h('div', {}, h('label', {}, 'Coins attachment'), coinsInput), h('div', {}, h('label', {}, 'Expire days'), expireInput)),
+    coinsHint,
     h('label', {}, 'Reason'),
     reasonInput,
     h('div', { class: 'row' }, h('button', { onclick: submit }, 'Submit ticket'), h('button', { class: 'ghost', onclick: doPreview }, 'dry-run preview'), previewOut),

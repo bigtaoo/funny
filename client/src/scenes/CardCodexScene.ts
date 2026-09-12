@@ -257,9 +257,17 @@ export class CardCodexScene implements Scene {
       entries.push({ card, locked });
     }
 
-    const cols = 2;
+    // One tile per row in portrait, two in landscape. The tile is [square illustration][info panel],
+    // and the illustration's side is the tile HEIGHT — so halving the tile width takes the whole cut
+    // out of the info panel, which at 2 columns left it 245 design px for a name, a type/cost row and
+    // three stat chips. Both of the latter were being shrunk to fit (0.68 / 0.80), i.e. under the
+    // legibility floor and back to unreadable on a phone (portrait sweep §49). Going 1-up keeps the
+    // illustration exactly as big and hands the info panel 753 px, and a 12-entry codex that scrolls
+    // twice is a better read than 14 tiles nobody can read.
+    const cols = this.landscape ? 2 : 1;
     const gap = Math.round(avail * 0.045);
-    const tileW = Math.round((avail - gap) / cols);
+    // `gap` is the space BETWEEN columns, so a single column spends none of it.
+    const tileW = cols > 1 ? Math.round((avail - gap) / cols) : avail;
     // The tile's illustration is a square spanning the full tile height (see drawCardTile), so tileH
     // doubles as that square's side length. It must read off the design canvas's *short* edge — the
     // same axis sidebarNavW keys off (its own doc comment explains why: designWidth/designHeight swap

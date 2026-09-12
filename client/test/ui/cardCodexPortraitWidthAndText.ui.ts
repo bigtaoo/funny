@@ -104,15 +104,18 @@ describe('CardCodexScene (Collection) portrait — 90%-wide centered column (202
     const rects = imageHits(scene);
     expect(rects.length).toBeGreaterThan(0);
     const xs = [...new Set(rects.map((r) => r.x))].sort((a, b) => a - b);
-    // Two columns → exactly two distinct tile-left x positions.
+    // One tile per row in portrait (2026-09-11, portrait sweep §49: two columns left the info panel
+    // too narrow for the type/cost row and the stat chips at the legibility floor, and both were
+    // being shrunk under it), so every tile starts at the content column's left edge.
+    expect(xs).toEqual([expectedLeft]);
+
+    scene.destroy();
+  });
+
+  it('keeps the two-column grid in landscape, where the info panel has room for it', () => {
+    const scene = new CardCodexScene(createLayout(1920, 1080), new InputManager(), baseCb(true));
+    const xs = [...new Set(imageHits(scene).map((r) => r.x))];
     expect(xs.length).toBe(2);
-    expect(xs[0]).toBe(expectedLeft);
-
-    // Column stride (col1.x - col0.x) is tileW + gap, both derived from the same 90%-wide `avail`.
-    const gap = Math.round(expectedAvail * 0.045);
-    const tileW = Math.round((expectedAvail - gap) / 2);
-    expect(xs[1] - xs[0]).toBe(tileW + gap);
-
     scene.destroy();
   });
 
@@ -230,8 +233,8 @@ describe('CardCodexScene (Collection) portrait — every info-panel line stays i
   it('keeps every line of every tile inside that tile, name → subtitle → stats, in that order', () => {
     const avail = Math.round(W * 0.9);
     const contentX = Math.round((W - avail) / 2);
-    const gap = Math.round(avail * 0.045);
-    const tileW = Math.round((avail - gap) / 2);
+    // Portrait is one tile per row, so the tile IS the content column (see the geometry test above).
+    const tileW = avail;
     const scene = new CardCodexScene(createLayout(W, 1920), new InputManager(), baseCb(true, ALL_UNIT_TYPES.slice(0, 2)));
 
     const names = new Set(CARD_DEFINITIONS.map((c) => t(c.nameKey as never)));

@@ -7,7 +7,13 @@
  *
  * `wechatHost.ts` 本身刻意保持**无副作用**（纯导出），这样 `WechatPlatform` 可以只取
  * `screenCanvas()` 而不会顺手改全局，单测也能自己控制「装之前 / 装之后」两个状态。
+ *
+ * 两条线并列、**不合并**（2026-09-12 加第二条）：`wechatHost` 补的是 **PIXI 绕过 adapter 直接嗅探
+ * 的 DOM 面**，每一行对着一个 PIXI 调用点；`abortShim` 补的是**我们自己的网络层**无条件 `new` 的
+ * 那个标准全局（缺它 ⇒ 微信包里每一个 REST 调用在进 transport 之前就抛，见该文件头）。
  */
 import { installWechatHost } from './wechatHost';
+import { installAbortShim } from './abortShim';
 
 installWechatHost();
+installAbortShim();

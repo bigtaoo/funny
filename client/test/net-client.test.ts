@@ -2,7 +2,7 @@
 // True end-to-end tests (connecting to a real gameserver, two NetClients, real disconnect/reconnect)
 // are covered by a separate integration script.
 import { describe, it, expect, vi } from 'vitest';
-import { NetClient, type NetState } from '../src/net/NetClient';
+import { FatalTokenError, NetClient, type NetState } from '../src/net/NetClient';
 import type { IGameSocket, IPlatform, SocketHandlers } from '../src/platform/IPlatform';
 import { Envelope } from '../src/net/proto/transport';
 
@@ -285,6 +285,67 @@ describe('NetClient connect / reconnect', () => {
     expect(client.getState()).toBe('disconnected');
     await sleep(20);
     expect(sockets).toHaveLength(1); // no reconnect attempt spawned
+  });
+
+  it('regression: an open-then-immediately-rejected socket still climbs the backoff ladder', async () => {
+    // Production burst 2026-09-12: the gateway accepts the WS upgrade and only then closes 4401, so
+    // every rejected handshake looked like a successful open here and reset `attempt` to 0 — the
+    // client re-handshook at backoff[0] forever (265 `jwt expired` rejects, ~1/s). The backoff is
+    // now only given back to a socket that stayed open for STABLE_OPEN_MS.
+    const { platform, sockets } = fakePlatform();
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => 'tok',
+      backoffMs: [5, 10, 1000], // third step is long enough that a reset would be visible as a 4th socket
+      pingIntervalMs: 0,
+      handlers: { onServerMsg: () => {} },
+    });
+    client.connect();
+    await tick();
+    for (let i = 0; i < 3; i++) {
+      sockets[i]!.open(); // "opened" — then rejected well under STABLE_OPEN_MS
+      sockets[i]!.closeRemote(4401);
+      await sleep(20);
+    }
+    // 5ms + 10ms + 1000ms: the first two retries landed, the third is still waiting out the long step.
+    expect(sockets).toHaveLength(3);
+    expect(client.getState()).toBe('reconnecting');
+    client.disconnect();
+  });
+
+  it('a tokenProvider that throws FatalTokenError stops the reconnect loop instead of retrying', async () => {
+    const { platform, sockets } = fakePlatform();
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => { throw new FatalTokenError('expired login session'); },
+      backoffMs: [5],
+      pingIntervalMs: 0,
+      handlers: { onServerMsg: () => {} },
+    });
+    client.connect();
+    await sleep(30);
+    expect(sockets).toHaveLength(0);
+    expect(client.getState()).toBe('disconnected');
+  });
+
+  it('an ordinary tokenProvider failure still retries', async () => {
+    const { platform, sockets } = fakePlatform();
+    let calls = 0;
+    const client = new NetClient(platform, {
+      url: 'ws://x/ws',
+      tokenProvider: async () => {
+        if (++calls === 1) throw new Error('network blip');
+        return 'tok';
+      },
+      backoffMs: [5],
+      pingIntervalMs: 0,
+      handlers: { onServerMsg: () => {} },
+    });
+    client.connect();
+    await sleep(30);
+    expect(sockets).toHaveLength(1); // second attempt got a token and opened a socket
+    expect(client.getState()).not.toBe('disconnected');
+    client.disconnect();
   });
 
   it('drops sends while not open', async () => {

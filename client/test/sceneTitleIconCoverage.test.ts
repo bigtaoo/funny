@@ -25,7 +25,7 @@ const SRC_ROOT = path.resolve(__dirname, '../src');
  * via `buildTitleIcon` (asserted below); the last two draw no title at all.
  */
 const NULL_TITLE_SITES: Record<string, 'self-titled' | 'no title'> = {
-  'scenes/CampaignMapScene.ts': 'self-titled',      // chapter name + owner subtitle
+  'scenes/CampaignMapScene/header.ts': 'self-titled', // chapter name + owner subtitle (split out of ../CampaignMapScene.ts 2026-09-12)
   'scenes/FamilyScene/core.ts': 'self-titled',      // family identity cluster in the bar
   'scenes/SectScene/core.ts': 'self-titled',        // sect identity + alliance buttons
   'scenes/ResultScene/builders.ts': 'no title',     // bar chrome only, result banner owns the space

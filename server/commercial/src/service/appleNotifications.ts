@@ -113,9 +113,9 @@ export class AppleNotificationService {
   /**
    * Extend the subscription for one period Apple has already charged for.
    *
-   * `renewal: true` is required and safe: Apple bills about a day before the current period ends, so
-   * the card is still running when its own renewal arrives and the single-slot gate would otherwise
-   * reject money that has already left the customer's account (see subscriptionCardBuy's flag doc).
+   * `alreadyCharged: true` is required and safe: Apple bills about a day before the current period
+   * ends, so the card is still running when its own renewal arrives and the single-slot gate would
+   * otherwise reject money that has already left the customer's account (see the flag's doc).
    * Idempotency is unchanged — `apple:<transactionId>` is the same orderId the cold-start sync uses,
    * so a notification and a sync covering the same period grant exactly once between them.
    */
@@ -126,7 +126,7 @@ export class AppleNotificationService {
       channel: 'apple',
       days: product === 'year_card' ? YEAR_CARD_DAYS : MONTHLY_CARD_DAYS,
       immediateCoins: product === 'year_card' ? YEAR_CARD_IMMEDIATE_COINS : MONTHLY_CARD_IMMEDIATE_COINS,
-      renewal: true,
+      alreadyCharged: true,
     });
   }
 

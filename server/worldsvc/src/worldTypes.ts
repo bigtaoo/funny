@@ -263,6 +263,42 @@ export interface OccupationView {
   emblemColor?: number;
 }
 
+/**
+ * 围攻驻留 (2026-09-12): one of the requester's own pending delayed siege hits — a `SiegeDamageDoc`
+ * that has not come due yet. The occupation-hold's counterpart for the "I won the battle, now I wait"
+ * half of an assault on a MAIN BASE or a wild CITY: those two never change hands at the moment the
+ * garrison falls, they take a durability hit five minutes later (ADR-026 §4, ADR-074 P1 §5).
+ *
+ * Own holds only — an enemy's pending hit against a third party is not intel this route hands out. The
+ * one a defender needs (someone is besieging ME) already arrives as the `under_attack` push.
+ */
+export interface SiegeHoldView {
+  /**
+   * The winning siege's id — `SiegeDamageDoc._id`, which IS the `SiegeDoc._id` (the hit document is keyed
+   * on the battle that scheduled it, for idempotency). The client matches the `SiegeResult` push it just
+   * received against this to tell "my win started a hold" from "my win was final", the way the
+   * occupation-hold branch reads `contestedByMe` off the refetched tile.
+   */
+  siegeId: string;
+  /** Target tile (the base's anchor cell, or the city footprint cell the march landed on). */
+  tile: string;
+  x: number;
+  y: number;
+  /** When the hit lands (ms epoch) = win time + SLG_SIEGE_DAMAGE_DELAY_MS. Drives the client countdown. */
+  dueAt: number;
+  /** Durability the hit will subtract, already including every siege bonus resolved at win time. */
+  damage: number;
+  /** true → a player main base (durability + possible passive relocation); false → a wild city. */
+  isBase: boolean;
+  /** Which team slot ('t1'..'t5') is tied up besieging, if the winning march carried one. */
+  teamId?: string;
+  /** Map-token art — carried over from the winning MarchDoc.leaderUnitType. */
+  leaderUnitType?: string;
+  /** Map-token corner badge — see MarchView.emblemKey/emblemColor (own holds only → always the requester's). */
+  emblemKey?: string;
+  emblemColor?: number;
+}
+
 /** ADR-051 (P5): player-built structure view (arrowTower / blocker). hp/hpMax intel-gated out of vision. */
 export interface TileStructureView {
   kind: 'arrowTower' | 'blocker';

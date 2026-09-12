@@ -5,6 +5,7 @@
 // presenceBroadcaster/dispatcher/peerJudge directly, so the composition stays one-directional (assembled by
 // the Gateway.ts shell, see its onOnline/onOffline/onMessage wiring).
 import { randomUUID } from 'crypto';
+import type { IncomingMessage } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { verifyToken, createLogger, type JwtConfig } from '@nw/shared';
 import { decodeClient, encodeServer, type ServerMsg } from '../proto';
@@ -13,6 +14,44 @@ import type { GatewaySubscriber } from '../redis';
 import { HEARTBEAT_MS, toServerMsg, type GwConn, type Push } from './types';
 
 const log = createLogger('gateway');
+
+/**
+ * Handshake rejections are logged in full for the first few per source per window; the rest are
+ * collapsed into a single summary line when the window closes.
+ *
+ * 2026-09-10 saw **265** identical `WS handshake rejected ... jwt expired` warnings inside two hours,
+ * 264 of them less than two seconds apart — one client stuck retrying a JWT that could never be
+ * accepted (client-side cause and fix: `NetClient`'s STABLE_OPEN_MS / FatalTokenError). Every line
+ * was byte-identical, so the flood carried exactly as much information as the first one and drowned
+ * everything else in the gateway's stream.
+ *
+ * This bounds the LOG, deliberately not the connections. A rejection costs one JWT verify on a socket
+ * the upgrade already completed, which is not worth defending; and the only key available before
+ * authentication is the source address, so refusing on it would take out every player behind one
+ * carrier NAT along with the single stuck client.
+ */
+const REJECT_LOG_BURST = 3;
+const REJECT_LOG_WINDOW_MS = 60_000;
+
+/** One source's rejections inside the current {@link REJECT_LOG_WINDOW_MS}. */
+interface RejectWindow {
+  start: number;
+  total: number;
+  /** Distinct `err` strings seen — a summary that says "jwt expired" is worth more than a bare count. */
+  reasons: Set<string>;
+}
+
+/**
+ * Best-effort client identity for the rejection log. Behind cloudflared -> caddy the socket's own
+ * `remoteAddress` is always the local proxy, so prefer the forwarded chain's first hop. Used only for
+ * logging and for throttling that log — never for authorization, and a spoofed header can therefore
+ * do nothing worse than split its own summary line.
+ */
+function sourceOf(req: IncomingMessage): string {
+  const xff = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(xff) ? xff[0] : xff)?.split(',')[0]?.trim();
+  return first || req.socket?.remoteAddress || 'unknown';
+}
 
 export interface ConnRegistryDeps {
   jwt: JwtConfig;
@@ -48,6 +87,8 @@ export class ConnRegistry {
   /** Set once Redis connects (index.ts, same subscriber as kickPublisher above); null = presenceOf only
    *  ever sees this instance's own connections (correct for today's single-instance deployment). */
   private presenceStore: GatewaySubscriber | null = null;
+  /** Per-source handshake-rejection counters — see {@link REJECT_LOG_BURST}. Bounded by the sweep below. */
+  private readonly rejectWindows = new Map<string, RejectWindow>();
 
   constructor(
     opts: { host: string; port: number },
@@ -57,7 +98,7 @@ export class ConnRegistry {
     // judge JSON, matching internalHttp.ts's own 1MB request-body cap) are tiny — this just bounds the
     // memory/CPU an authenticated connection can force by sending an oversized frame.
     this.wss = new WebSocketServer({ host: opts.host, port: opts.port, path: '/gw', maxPayload: 1 << 20 });
-    this.wss.on('connection', (ws, req) => this.onConnection(ws, req.url, req.headers.host));
+    this.wss.on('connection', (ws, req) => this.onConnection(ws, req.url, req.headers.host, sourceOf(req)));
     this.heartbeat = setInterval(() => this.sweep(), HEARTBEAT_MS);
     this.wss.on('close', () => clearInterval(this.heartbeat));
   }
@@ -187,17 +228,14 @@ export class ConnRegistry {
     this.wss.close();
   }
 
-  private onConnection(ws: WebSocket, url: string | undefined, host: string | undefined): void {
+  private onConnection(ws: WebSocket, url: string | undefined, host: string | undefined, source = 'unknown'): void {
     const u = new URL(url ?? '', `ws://${host ?? 'localhost'}`);
     const token = u.searchParams.get('token');
     let accountId: string;
     try {
       accountId = verifyToken(token ?? '', this.deps.jwt);
     } catch (e) {
-      log.warn('WS handshake rejected: invalid token', {
-        hasToken: !!token,
-        err: (e as Error).message,
-      });
+      this.noteHandshakeReject(source, !!token, (e as Error).message);
       ws.close(4401, 'unauthenticated');
       return;
     }
@@ -272,6 +310,53 @@ export class ConnRegistry {
       // Keep this account's cross-instance presence key from expiring (redis.ts PRESENCE_TTL_MS is sized
       // to survive exactly one of these HEARTBEAT_MS gaps, so a crashed instance's accounts self-heal).
       void this.presenceStore?.refreshOnline(conn.accountId);
+    }
+    this.sweepRejectWindows();
+  }
+
+  /**
+   * Record one rejected handshake, logging it only while this source is still inside its burst
+   * allowance. See {@link REJECT_LOG_BURST}.
+   */
+  private noteHandshakeReject(source: string, hasToken: boolean, err: string): void {
+    const now = Date.now();
+    const open = this.rejectWindows.get(source);
+    let w = open;
+    if (!w || now - w.start >= REJECT_LOG_WINDOW_MS) {
+      if (open) this.closeRejectWindow(source, open);
+      w = { start: now, total: 0, reasons: new Set() };
+      this.rejectWindows.set(source, w);
+    }
+    w.total += 1;
+    w.reasons.add(err);
+    if (w.total <= REJECT_LOG_BURST) log.warn('WS handshake rejected: invalid token', { source, hasToken, err });
+  }
+
+  /** Emit the summary for a finished window (only when it actually suppressed something) and drop it. */
+  private closeRejectWindow(source: string, w: RejectWindow): void {
+    if (w.total > REJECT_LOG_BURST) {
+      log.warn('WS handshake rejections suppressed', {
+        source,
+        total: w.total,
+        suppressed: w.total - REJECT_LOG_BURST,
+        windowMs: REJECT_LOG_WINDOW_MS,
+        reasons: [...w.reasons].join(','),
+      });
+    }
+    this.rejectWindows.delete(source);
+  }
+
+  /**
+   * Close out windows nothing has touched since they expired. Without this a burst that simply stops
+   * would hold its summary until that same source rejected again — which for a player who closed the
+   * tab is never — and the map would keep one entry per source seen, for the life of the process.
+   * Piggybacked on the existing heartbeat rather than given its own timer, for the same reason
+   * SlidingRateLimiter sweeps on traffic: a second interval is a second thing to clear on close.
+   */
+  private sweepRejectWindows(): void {
+    const now = Date.now();
+    for (const [source, w] of this.rejectWindows) {
+      if (now - w.start >= REJECT_LOG_WINDOW_MS) this.closeRejectWindow(source, w);
     }
   }
 }

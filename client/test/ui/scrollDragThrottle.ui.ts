@@ -61,7 +61,7 @@ const [W, H] = [800, 1280];
 function stubWorldApi(): WorldApiClient {
   const never = () => new Promise<never>(() => {});
   return {
-    getMe: never, getMap: never, getMapSparse: never, getTile: never, getMarches: never, getOccupations: never, getTeams: never,
+    getMe: never, getMap: never, getMapSparse: never, getTile: never, getMarches: never, getOccupations: never, getSiegeHolds: never, getTeams: never,
     joinWorld: never, occupyTile: never, abandonTile: never,
     startMarch: never, recallMarch: never,
     listFamilies: never, getFamily: never, createFamily: never,
@@ -211,6 +211,7 @@ describe('scroll-drag render throttle (2026-07-15 perf fix)', () => {
         getMarches: () => Promise.resolve([]),
         getOccupations: () => Promise.resolve([]),
         getStationed: () => Promise.resolve([]),
+        getSiegeHolds: () => Promise.resolve([]),
         upgradeBuilding: () => new Promise(() => {}),
         speedupBuild: () => new Promise(() => {}),
       } as unknown as WorldApiClient,

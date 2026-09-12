@@ -59,6 +59,6 @@ claudedocs/      模块级快查文档（本目录）
 ## 权威来源
 
 - 设计文档入口：[`../design/README.md`](../design/README.md)
-- 关键拍板：`design/DECISIONS.md`（ADR-070 起在 `design/DECISIONS_ADR-070-onward.md`）
+- 关键拍板：`design/DECISIONS.md`（索引表；正文 ADR-070~085 在 `design/DECISIONS_ADR-070-085.md`，ADR-086 起在 `design/DECISIONS_ADR-086-onward.md`）
 - 实现进度：`design/game/META_TASKS.md`
 - **数值权威**：`server/engine/src/config.ts`（文档里的数字都以它为准）

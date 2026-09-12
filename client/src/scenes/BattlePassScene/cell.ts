@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { buildIcon } from '../../render/icons';
-import { snapFont } from '../../render/fontScale';
+import { snapFont, fitFont } from '../../render/fontScale';
 import { buildRewardIcon } from '../../render/rewardIcon';
 
 // ── Pure reward-cell drawing helpers for BattlePassScene ──────────────────────
@@ -82,41 +82,22 @@ export function drawCell(
     parent.addChild(star);
   }
 
-  // Reward: picture + amount, resolved through the shared `buildRewardIcon` (render/rewardIcon.ts)
-  // so a battle-pass coin/material/skin looks identical to the same reward on the daily, event and
-  // recharge screens. Coins get an escalating pile icon so a 20-coin drop and a 520-coin jackpot
-  // read differently.
-  if (reward) {
-    const rewardColor = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
-    const cy = y + h * 0.62;
-    const ic = Math.round(h * 0.5);
-    // `BpRewardKind` is a closed coins|material|skin union, so the null branch is only reachable
-    // if the server grows a kind this client doesn't know — same generic glyph mail.ts uses there.
-    const glyph = buildRewardIcon(reward, ic, rewardColor) ?? buildIcon('capsule', ic, rewardColor);
-    if (reward.kind === 'skin') {
-      // Skins are singletons — glyph alone, centred.
-      glyph.x = x + w / 2 - ic / 2; glyph.y = cy - ic / 2;
-      parent.addChild(glyph);
-    } else {
-      const rew = txt(`×${reward.count}`, snapFont(Math.round(h * 0.4)), rewardColor, state === 'claimable');
-      const gap = Math.round(w * 0.02);
-      const groupW = ic + gap + rew.width;
-      const gx = x + w / 2 - groupW / 2;
-      glyph.x = gx; glyph.y = cy - ic / 2;
-      rew.anchor.set(0, 0.5); rew.x = gx + ic + gap; rew.y = cy;
-      parent.addChild(glyph, rew);
-    }
-  }
-
   // State overlay — pass_required shows a lock glyph; other states show a text label.
   // Both anchor to the cell's bottom-right corner.
+  //
+  // Drawn BEFORE the reward so the reward knows how much of the row is already spoken for. The two
+  // used to be laid out independently — the reward group centred on the cell, the state label
+  // pinned bottom-right — which is fine in landscape and drew "×2" straight through "Claim" on
+  // every row in portrait, where the cell is 170 CSS px wide (portrait sweep §49).
   const anchorX = x + w - Math.round(w * 0.05);
   const anchorY = y + h - Math.round(h * 0.08);
+  let reserveW = 0;
   if (state === 'pass_required') {
     const lockSz = Math.round(h * 0.32);
     const lock = buildIcon('lock', lockSz, C.gold);
     lock.x = anchorX - lockSz; lock.y = anchorY - lockSz;
     parent.addChild(lock);
+    reserveW = lockSz;
   } else {
     let stateLbl: string | null = null;
     if (state === 'claimed') stateLbl = t('battlepass.claimed');
@@ -128,6 +109,58 @@ export function drawCell(
       const sl = txt(stateLbl, snapFont(Math.round(h * 0.34)), stateColor, state === 'claimable');
       sl.anchor.set(1, 1); sl.x = anchorX; sl.y = anchorY;
       parent.addChild(sl);
+      reserveW = sl.width;
+    }
+  }
+
+  // Reward: picture + amount, resolved through the shared `buildRewardIcon` (render/rewardIcon.ts)
+  // so a battle-pass coin/material/skin looks identical to the same reward on the daily, event and
+  // recharge screens. Coins get an escalating pile icon so a 20-coin drop and a 520-coin jackpot
+  // read differently.
+  if (reward) {
+    const rewardColor = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
+    const cy = y + h * 0.62;
+    const ic = Math.round(h * 0.5);
+    // The band left of the state label is what the reward has to live in. No `Math.max(ic, …)`
+    // floor on it (2026-09-12): that silently handed the group back a width the band did not have
+    // whenever the state label was wide, which is exactly German's case — "Gesperrt" reserves 282
+    // design px of a 465-wide cell and the ×N group then ran 36 px into it on five rows of every
+    // German phone (sweep §50.12).
+    const pad = Math.round(w * 0.05);
+    const bandX = x + pad;
+    const bandW = Math.max(24, w - pad * 2 - (reserveW > 0 ? reserveW + pad : 0));
+    if (reward.kind === 'skin') {
+      // Skins are singletons — glyph alone, centred in the band, shrunk if the band is narrower.
+      const skinIc = Math.min(ic, bandW);
+      const skinGlyph = buildRewardIcon(reward, skinIc, rewardColor) ?? buildIcon('capsule', skinIc, rewardColor);
+      skinGlyph.x = bandX + bandW / 2 - skinIc / 2; skinGlyph.y = cy - skinIc / 2;
+      parent.addChild(skinGlyph);
+    } else {
+      const gap = Math.round(w * 0.02);
+      const size = snapFont(Math.round(h * 0.4));
+      const probe = txt(`×${reward.count}`, size, rewardColor, state === 'claimable');
+      // A five-digit reward in a narrow cell steps down the scale rather than running into the
+      // state label — never below the legibility floor (render/fontScale.ts).
+      const fitted = fitFont(size, ic + gap + probe.width, bandW);
+      const rew = fitted === size ? probe : txt(`×${reward.count}`, fitted, rewardColor, state === 'claimable');
+      if (rew !== probe) probe.destroy({ texture: true, baseTexture: true });
+      // ...and then the GLYPH takes whatever the number left, rather than both overflowing
+      // together. `fitFont` stops at the floor, so past that point the picture is the only thing
+      // still able to yield — the same order of sacrifice the equipment cell's affix column uses
+      // (§50.11 #2). Below a third of its nominal box it stops reading as the item it depicts, so
+      // there it is dropped and the count stands alone.
+      const icFit = Math.min(ic, Math.max(0, bandW - gap - rew.width));
+      // `BpRewardKind` is a closed coins|material|skin union, so the null branch is only reachable
+      // if the server grows a kind this client doesn't know — same generic glyph mail.ts uses there.
+      const glyph = icFit >= ic * 0.34
+        ? (buildRewardIcon(reward, icFit, rewardColor) ?? buildIcon('capsule', icFit, rewardColor))
+        : null;
+      const leadW = glyph ? icFit + gap : 0;
+      const groupW = leadW + rew.width;
+      const gx = bandX + Math.max(0, (bandW - groupW) / 2);
+      if (glyph) { glyph.x = gx; glyph.y = cy - icFit / 2; parent.addChild(glyph); }
+      rew.anchor.set(0, 0.5); rew.x = gx + leadW; rew.y = cy;
+      parent.addChild(rew);
     }
   }
 }

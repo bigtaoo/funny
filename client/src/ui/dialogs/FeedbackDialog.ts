@@ -49,6 +49,13 @@ export class FeedbackDialog implements Scene {
     private readonly cb: FeedbackDialogCallbacks,
   ) {
     this.container = new PIXI.Container();
+    // `overlay:` marks this whole subtree as a layer that legitimately sits on top of another
+    // screen, so the layout sweep compares its labels against each other and never against the
+    // lobby underneath (test/browser/lib/layoutAudit.ts, same mechanism as the onboarding guide).
+    // Needed because the backdrop is a 0.45-alpha dim, and the audit only treats an OPAQUE rect as
+    // covering what is behind it — without this the dialog's body text was measured against a lobby
+    // panel it happens to overlap and reported as overflowing a box that is not its frame.
+    this.container.name = 'overlay:feedback';
     this.build();
   }
 

@@ -11,9 +11,10 @@ import { getDecorTexture, isDecorReady, decorFrameNames } from '../../render/atl
 import { bake } from '../../render/bake';
 import { Prng } from '@nw/engine/math/prng';
 import { drawSceneHeader, type SceneHeaderResult } from '../../ui/widgets/SceneHeader';
-import { FS, snapFont } from '../../render/fontScale';
+import { FS, snapFont, fitFont } from '../../render/fontScale';
 import type { Badge } from '../ResultScene';
 import { tapHandler } from '../../ui/hits';
+import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 
 // ── Pure(ish) builder helpers for ResultScene ─────────────────────────────────
 //
@@ -74,8 +75,15 @@ export function buildMarginDeco(w: number, h: number): PIXI.Container | null {
  * A small vertical badge medallion — glyph over its title over the bare stat
  * value. The container origin is the horizontal centre / top, so callers set
  * `.x` to the intended centre and `.y` to the top edge.
+ *
+ * `maxW` is the cell the medallion is centred in, in ITS OWN coordinates (the result screen scales
+ * the whole medallion up, so the caller divides by that factor before passing it). Without it the
+ * secondary badge row on a 360-wide phone drew "[Precision Strike]" and "[Master Builder]" edge to
+ * edge with no gap, reading as one run-on string (layout sweep §49).
  */
-export function buildBadgeMedallion(badge: Badge, stats: PlayerStats, h: number): PIXI.Container {
+export function buildBadgeMedallion(
+  badge: Badge, stats: PlayerStats, h: number, maxW = Infinity,
+): PIXI.Container {
   const c = new PIXI.Container();
 
   const iconSize = Math.round(h * 0.065);
@@ -84,8 +92,10 @@ export function buildBadgeMedallion(badge: Badge, stats: PlayerStats, h: number)
   glyph.y = 0;
   c.addChild(glyph);
 
+  // A size the cell can hold rather than a label scaled down to fit it — `fitFont` steps down the
+  // shared scale and stops at the legibility floor (render/fontScale.ts).
   const title = makeText(badge.title(), {
-    fontSize: FS.heading,
+    fontSize: fitTitle(badge.title(), maxW),
     fill: 0x555555,
     fontFamily: 'monospace',
   });
@@ -95,7 +105,7 @@ export function buildBadgeMedallion(badge: Badge, stats: PlayerStats, h: number)
   c.addChild(title);
 
   const value = makeText(badge.value(stats), {
-    fontSize: FS.title,
+    fontSize: fitTitle(badge.value(stats), maxW, FS.title),
     fill: 0x222222,
     fontWeight: 'bold',
     fontFamily: 'monospace',
@@ -106,6 +116,15 @@ export function buildBadgeMedallion(badge: Badge, stats: PlayerStats, h: number)
   c.addChild(value);
 
   return c;
+}
+
+/** Largest scale token whose rendering of `text` fits `maxW` — see {@link buildBadgeMedallion}. */
+function fitTitle(text: string, maxW: number, size: number = FS.heading): number {
+  if (!Number.isFinite(maxW)) return size;
+  const probe = makeText(text, { fontSize: size, fontFamily: 'monospace' });
+  const w = probe.width;
+  probe.destroy({ texture: true, baseTexture: true });
+  return fitFont(size, w, maxW);
 }
 
 /** Hand-drawn margin doodles that react to the result; drawn low in the z-order. */
@@ -274,33 +293,28 @@ export function addVersusLine(
   );
 }
 
-/** Centre an icon + label pair inside the button box. */
+/**
+ * Centre an icon + label pair inside the button box.
+ *
+ * Delegates to the shared `[icon][gap][label]` widget (2026-09-12). This was the last of the four
+ * hand-rolled copies its header lists, and the only one that did not measure at all: it centred the
+ * group at full size whatever the box was, so German's "NOCHMAL KÄMPFEN" — 685 design px of group
+ * in a 540-wide CTA — simply painted past both ends of the gold button (sweep §50.12, one finding
+ * on every German phone). The widget's two-line branch is what this box wants: it is 200 design px
+ * tall, so the two words stack at full size instead of either shrinking or spilling.
+ *
+ * The icon is a little smaller than the 0.62·h this used to draw (the widget sizes it off the font
+ * instead), which is the right way round for a CTA whose label is the thing being read.
+ */
 export function addIconLabel(
   container: PIXI.Container,
   x: number, y: number, w: number, h: number,
   text: string, icon: IconKind, color: number, fontSize: number, bold: boolean,
 ): void {
-  const iconSize = Math.round(h * 0.62);
-  const label = makeText(text, {
-    fontSize,
-    fill: color,
-    fontWeight: bold ? 'bold' : 'normal',
-    fontFamily: 'monospace',
+  drawButtonLabel(container, x, y, w, h, text, icon, color, fontSize, {
+    bold,
+    inset: Math.round(w * 0.08),
   });
-  label.anchor.set(0, 0.5);
-
-  const gap = Math.round(w * 0.04);
-  const totalW = iconSize + gap + label.width;
-  const startX = x + (w - totalW) / 2;
-
-  const glyph = buildIcon(icon, iconSize, color);
-  glyph.x = startX;
-  glyph.y = y + (h - iconSize) / 2;
-
-  label.x = startX + iconSize + gap;
-  label.y = y + h / 2;
-
-  container.addChild(glyph, label);
 }
 
 /** Primary call-to-action: gold-filled, bold white label with a leading icon. */

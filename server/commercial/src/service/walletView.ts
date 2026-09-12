@@ -97,7 +97,7 @@ export interface CommercialDeps {
    * Reads the auto-renewable subscription periods out of an Apple receipt (iap.ts's
    * createAppleSubscriptionReader), for subscriptionSyncApple. Separate from `verifyReceipt` on
    * purpose: it has no dev-stub fallback, because the grants it drives bypass the single-slot gate
-   * (see subscriptionCardBuy's `renewal`) and a forgeable receipt there would mint subscription time.
+   * (see subscriptionCardBuy's `alreadyCharged`) and a forgeable receipt there would mint subscription time.
    * Absent/null = Apple unconfigured; the sync then reports nothing to grant instead of granting.
    */
   verifyAppleSubscriptions?: ((receipt: string) => Promise<AppleSubscriptionTx[]>) | null;

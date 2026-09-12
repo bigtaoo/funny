@@ -34,6 +34,16 @@ export interface NetworkHandlers {
 }
 
 export class NetworkPanel implements NetworkHandlers {
+  /**
+   * Mail ids with a claim or delete request in flight. The claim/delete buttons are plain tap
+   * targets with no busy latch of their own, so a double tap used to fire the POST twice — the
+   * production log for 2026-09-08 shows exactly that: two `/claim` and two `DELETE` for the same
+   * mail within milliseconds, the loser of the race coming back ALREADY_CLAIMED. Nothing is lost
+   * (the server claim is atomic) but the player is shown a failure toast for a claim that in fact
+   * succeeded, so swallow the duplicate here rather than round-tripping it.
+   */
+  private readonly mailInFlight = new Set<string>();
+
   constructor(private readonly core: FriendsSceneCore) {}
 
   // ── Data ───────────────────────────────────────────────────────────────────
@@ -313,12 +323,16 @@ export class NetworkPanel implements NetworkHandlers {
 
   async doClaim(m: MailView): Promise<void> {
     const core = this.core;
+    if (this.mailInFlight.has(m.mailId)) return; // double-tap — see mailInFlight
+    this.mailInFlight.add(m.mailId);
     try {
       const ok = await core.cb.claimMail(m.mailId);
       if (ok) { m.claimed = true; core.toast('mail.claimDone', 'success'); }
       else core.toast('mail.claimFail');
     } catch (e) {
       core.toast(((e as { code?: string } | null)?.code) === 'ALREADY_CLAIMED' ? 'mail.alreadyClaimed' : 'mail.claimFail');
+    } finally {
+      this.mailInFlight.delete(m.mailId);
     }
     core.render();
     void this.refresh();
@@ -326,12 +340,16 @@ export class NetworkPanel implements NetworkHandlers {
 
   async doMailDelete(m: MailView): Promise<void> {
     const core = this.core;
+    if (this.mailInFlight.has(m.mailId)) return; // double-tap — see mailInFlight
+    this.mailInFlight.add(m.mailId);
     try {
       await core.cb.deleteMail(m.mailId);
       core.openMailItem = null;
     } catch (e) {
       core.toast(((e as { code?: string } | null)?.code) === 'MAIL_HAS_UNCLAIMED_ATTACHMENT'
         ? 'mail.deleteBlockedAttachment' : 'friends.error');
+    } finally {
+      this.mailInFlight.delete(m.mailId);
     }
     core.render();
     void this.refresh();

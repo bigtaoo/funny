@@ -573,6 +573,36 @@ describe('cache scanning edges', () => {
     expect(s.largest).toBe('assets 10x10');
   });
 
+  // 2026-09-12: `generated:` is ONE texTop row by construction, which is what left the 2026-09-11
+  // report (604 climbing to 876 over five hours) unattributable — the class was named and nothing
+  // else. genTop breaks that bucket down by texture size, the only discriminator that survives
+  // PIXI's uid being meaningless.
+  it('breaks the generated: bucket down by size, so a report names a shape and not just a class', () => {
+    stubPerformance({ usedMB: 900 });
+    put('assets/cards/a.png', 64, 64); // URL-keyed: must not appear in genTop at all
+    for (let i = 0; i < 7; i++) put(`pixiid_label_${i}`, 256, 64);
+    for (let i = 0; i < 2; i++) put(`pixiid_sheet_${i}`, 1024, 1024);
+    const { ticker } = install();
+    ticker.fire();
+
+    const genTop = h.warns[0]!.data.genTop as { d: string; n: number; mb: number }[];
+    // Ordered by count, so the wall of small labels leads — that is the leak shape this exists for.
+    expect(genTop[0]).toEqual({ d: '256x64', n: 7, mb: expect.any(Number) });
+    expect(genTop[1]).toMatchObject({ d: '1024x1024', n: 2 });
+    // …but bytes travel alongside, because two 1024x1024 sheets outweigh all seven labels 9:1, and a
+    // count-only report is exactly how the 2026-08-25 crash hid a third of a gigabyte behind "3".
+    expect(genTop[1]!.mb).toBeGreaterThan(genTop[0]!.mb);
+    expect(genTop.some((r) => r.d === '64x64')).toBe(false); // the URL-keyed one stayed out
+  });
+
+  it('leaves genTop empty rather than guessing when nothing generated is cached', () => {
+    stubPerformance({ usedMB: 900 });
+    put('assets/cards/a.png', 64, 64);
+    const { ticker } = install();
+    ticker.fire();
+    expect(h.warns[0]!.data.genTop).toEqual([]);
+  });
+
   it('buckets data: and blob: sources by scheme rather than by path', () => {
     stubPerformance({ usedMB: 900 });
     put('data:image/png;base64,AAAA', 32, 32);

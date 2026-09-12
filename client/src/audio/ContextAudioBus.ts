@@ -128,7 +128,60 @@ export class ContextAudioBus implements AudioBus {
     deps.onFocusChange?.((hidden) => {
       this.hidden = hidden;
       this.music?.setPaused(hidden);
+      // **Backgrounding gives the audio session back, it does not merely pause our decks**
+      // (AUDIO_DESIGN.md §5, the audio-session row). Holding the decks leaves the `AudioContext`
+      // `running`, and a running context is what owns the session on iOS — so "switch away from
+      // the game to listen to something" used to stay blocked by a game that was making no sound.
+      //
+      // `this.ctx &&` rather than an unconditional `resume()`: the web backend reports the CURRENT
+      // visibility at install time (see `WebAudioBus.onFocusChange`), which runs inside the
+      // constructor, and `ensure()` is deliberately lazy there — building an `AudioContext` at
+      // entry-point import time costs a real audio device on some hosts.
+      if (hidden) this.release();
+      else if (this.ctx) this.resume();
     });
+  }
+
+  /**
+   * Is this session going to make any sound at all? Both channels at 0 means no — the player
+   * muted us, or dragged both sliders down, or the host suspended us for an ad
+   * (`audioSettings.apply()` folds `master`, `muted` and `suspended` into these two numbers).
+   *
+   * Worth a named concept because a silent game must also be an INAUDIBLE one from the OS's point
+   * of view: a running `AudioContext` and a playing `<audio>` hold the audio session even at gain
+   * 0, so without this "mute the game" still meant "kill the player's Spotify".
+   */
+  private get audible(): boolean {
+    return this.sfxVolume > 0 || this.musicVolume > 0;
+  }
+
+  /**
+   * Give the audio session back by suspending the context. The BGM decks are released separately —
+   * they are a second stream and the music path handles them (see {@link updateMusic}).
+   */
+  private release(): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    try {
+      void Promise.resolve(ctx.suspend()).catch(() => {});
+    } catch {
+      // Old WebViews and base-library shims that expose a context without `suspend`. Not getting
+      // the session back is a pity; throwing out of a volume setter would be a bug.
+    }
+  }
+
+  /**
+   * Take or give back the audio session to match the current state. Called when something that
+   * feeds {@link audible} changes.
+   *
+   * **Never creates a context** (`this.ctx &&`): the settings layer pushes both volumes at boot,
+   * long before the first gesture, and building the device there is exactly what `ensure()`'s
+   * laziness exists to avoid.
+   */
+  private refreshSession(): void {
+    if (!this.ctx) return;
+    if (this.audible) this.resume();
+    else this.release();
   }
 
   private ensure(): AudioContext | null {
@@ -175,6 +228,11 @@ export class ContextAudioBus implements AudioBus {
   }
 
   resume(): void {
+    // **Nothing to hear = nothing to hold.** A running context owns the OS audio session, so
+    // resuming one that is about to output silence is the difference between "the player muted the
+    // game" and "the player muted the game and lost the music they had playing" (AUDIO_DESIGN.md
+    // §5). Same for a backgrounded page: `hidden` is held by the focus seam in the constructor.
+    if (!this.audible || this.hidden) return;
     const ctx = this.ensure();
     if (ctx && ctx.state === 'suspended') void ctx.resume();
   }
@@ -182,6 +240,7 @@ export class ContextAudioBus implements AudioBus {
   setSfxVolume(v: number): void {
     this.sfxVolume = Math.max(0, Math.min(1, v));
     if (this.sfx) this.sfx.gain.value = this.sfxVolume;
+    this.refreshSession();
   }
 
   /** BGM 总线增益（AUDIO_DESIGN.md §4 的 `bgm` 通道）。**2026-09-01 起真的接了东西**——在此之前
@@ -189,6 +248,7 @@ export class ContextAudioBus implements AudioBus {
   setMusicVolume(v: number): void {
     this.musicVolume = Math.max(0, Math.min(1, v));
     this.music?.setBusVolume(this.musicVolume);
+    this.refreshSession();
   }
 
   /**
@@ -200,8 +260,16 @@ export class ContextAudioBus implements AudioBus {
    */
   updateMusic(desired: MusicTrack | null, dtMs: number): void {
     if (!this.gestured) return;
+    // **BGM at 0 means "no track", not "the track at gain 0".** A deck is a real stream: on iOS it
+    // owns the audio session by itself (and on Android it takes audio focus), so the old behaviour
+    // made "drag the BGM slider to the bottom" cost the player the music they had playing — while
+    // they heard nothing from us either. Handing `null` to the player releases it through the
+    // normal fade-out and the deck's own `stop()`, not a hard cut (see `MusicPlayer.change`).
+    const track = this.musicVolume > 0 ? desired : null;
+    // ...and if the bed was never started, do not build two decks just to stop them.
+    if (track === null && !this.music) return;
     const player = this.ensureMusic();
-    player?.update(desired, dtMs);
+    player?.update(track, dtMs);
   }
 
   play(cue: AudioCue, count = 1): void {

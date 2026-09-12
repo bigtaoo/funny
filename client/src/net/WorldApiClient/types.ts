@@ -32,6 +32,7 @@ export interface WorldMapSparseView {
 export type PlayerWorldView = components['schemas']['PlayerWorldView'];
 export type MarchView = components['schemas']['MarchView'];
 export type OccupationView = components['schemas']['OccupationView'];
+export type SiegeHoldView = components['schemas']['SiegeHoldView'];
 export type StationedView = components['schemas']['StationedView'];
 
 // Family DTOs are generated from server/contracts/openapi-social.yml (socialsvc's own contract,

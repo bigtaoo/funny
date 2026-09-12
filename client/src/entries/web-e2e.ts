@@ -1,112 +1,47 @@
-import type * as PIXI from 'pixi.js-legacy';
 import { startApp } from '../app';
 import { WebPlatform } from '../platform/web/WebPlatform';
 import type { AppViews } from '../app/AppViews';
+import { instrumentViews } from '../testing/instrumentViews';
 import { setAudioBus, audioBus } from '../audio/audioBus';
 import type { AudioBus, AudioCue, MusicTrack } from '../audio/types';
 import type { MusicPlayer, MusicDeck } from '../audio/MusicPlayer';
 import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
 import { bakeStats } from '../render/bake';
+import { probeTextMetrics, type TextMetricsReport } from '../render/textMetricsProbe';
 
 // Test-only entry (client/test/browser Playwright specs) — boots the exact same real
 // PixiJS/WebGL app as entries/web.ts, but wraps AppViews so a Playwright script can drive
-// scene transitions by calling the real scene callbacks directly (window.__nwE2E) instead of
+// scene transitions by calling the real scene callbacks directly (globalThis.__nwE2E) instead of
 // clicking pixel coordinates on a single full-screen <canvas> with no per-widget DOM presence.
 // Never referenced by any production entry (web/wechat/mobile/crazygames) — only reachable via
 // `webpack --env TARGET=web-e2e` (see claudedocs/client-testing.md 缺口B).
 //
 // This is a different animal from the throwaway one-off debug global that
 // test/no-debug-hooks-in-src.test.ts scans for and fails CI on: __nwE2E is permanent, deliberate
-// test infrastructure isolated to this never-shipped entry file, not a forgotten scratch hook.
-
-interface E2EState {
-  screen?: string;
-  [key: string]: unknown;
-}
+// test infrastructure isolated to the never-shipped e2e entries, not a forgotten scratch hook.
 
 /**
- * Wraps every `show*` method (and the `apply*` push methods on any handle it returns) so a
- * Playwright script reading `window.__nwE2E.state` can see the current screen + the scene
- * callback object for it (`state.<screen>Cb`, e.g. `state.loginCb.onRegister(...)`) and the last
- * pushed value for any handle (`state.last<Xxx>`, e.g. `state.lastRoomState`) — mirroring the
- * `screen`/`lastRoomState` conventions test/harness/HeadlessAppViews.ts already uses for the
- * headless full-link E2E, so the two harnesses read the same way.
+ * The instrumentation itself now lives in `testing/instrumentViews.ts`: the WeChat layout probe
+ * (`entries/wechat-layout.ts`) installs the identical handle, and two copies of it would drift.
+ * What is left here is the WEB-only half — two extras bolted onto the same `__nwE2E` object.
  */
-/** An object whose values include at least one function — i.e. a scene's callbacks bag. */
-function isCallbackBag(a: unknown): boolean {
-  return !!a && typeof a === 'object' && Object.values(a).some((x) => typeof x === 'function');
-}
-
-function instrumentViews(views: AppViews): AppViews {
-  const state: E2EState = {};
-  const v = views as unknown as Record<string, (...a: unknown[]) => unknown>;
-  const proto = Object.getPrototypeOf(views);
-  for (const key of Object.getOwnPropertyNames(proto)) {
-    if (!key.startsWith('show') || typeof v[key] !== 'function') continue;
-    const orig = v[key].bind(views);
-    const screenKey = key[4].toLowerCase() + key.slice(5);
-    v[key] = (...args: unknown[]) => {
-      state.screen = screenKey;
-      // The callbacks object is args[0] for most `show*` methods, but not all: `showAgeGate(mode,
-      // cb)` and `showRealLayerInterlude(url, textKey, cb)` lead with plain data. Pick the first
-      // argument that actually carries functions, so `state.<screen>Cb` means the same thing on
-      // every screen; keep the raw args too, for the ones whose data matters (the age gate's
-      // 'ask' vs 'blocked' mode).
-      state[`${screenKey}Cb`] = args.find(isCallbackBag) ?? args[0];
-      state[`${screenKey}Args`] = args;
-      const handle = orig(...args);
-      if (handle && typeof handle === 'object') {
-        const h = handle as Record<string, (...a: unknown[]) => unknown>;
-        for (const hKey of Object.keys(h)) {
-          if (typeof h[hKey] !== 'function') continue;
-          const origH = h[hKey].bind(h);
-          h[hKey] = (...hArgs: unknown[]) => {
-            if (hKey.startsWith('apply')) {
-              // Server/core push, e.g. applyRoomState → state.lastRoomState.
-              state[`last${hKey.slice(5)}`] = hArgs[0];
-            } else {
-              // One-shot UI call the core makes on the handle, e.g. showFeatureGuide(title, body,
-              // onDismiss) for the first-time feature-guide gate (ONBOARDING_DESIGN §4.1) that sits
-              // in front of most lobby-reachable features. Record the args, and if the last one is a
-              // callback (the guide's onDismiss / a toast's onTap convention) expose it directly so a
-              // Playwright script can invoke it to get past the gate: state.<name>Cb().
-              state[`${hKey}Args`] = hArgs;
-              const lastArg = hArgs[hArgs.length - 1];
-              if (typeof lastArg === 'function') state[`${hKey}Cb`] = lastArg;
-            }
-            return origH(...hArgs);
-          };
-        }
-      }
-      return handle;
-    };
-  }
-  // `app` too, so a Playwright script can walk the real display tree (`app.stage`) and assert on
-  // measured geometry instead of eyeballing a screenshot — the only way to check text layout with
-  // the REAL font, since the headless harness's `measureText` mock is a flat 7px/char and
-  // font-size-independent (see claudedocs/client-testing.md). Read off the `private readonly app`
-  // field rather than plumbed through `startApp`: `wrapViews` is the only injection point that
-  // exists and it is handed the views instance alone, and TS privacy is erased at runtime. A
-  // production seam for a test-only need would be the worse trade.
-  const app = (views as unknown as { app?: PIXI.Application }).app;
-  (window as unknown as {
-    __nwE2E: {
-      views: AppViews; state: E2EState; app?: PIXI.Application;
-      bake: typeof bakeStats;
-    };
-  }).__nwE2E = {
-    views,
-    state,
-    app,
-    // ADR-073 left one question open: the bake cache never evicts, so does walking the app's
-    // screens accumulate texture bytes without bound? `bakeStats()` is the accounting that answers
-    // it, and it has no other reachable surface — `MemoryMonitor.dump()` only emits it when a
-    // budget is already exceeded, i.e. never during a normal walk. Exposed here (never-shipped
-    // entry, like `app`/`__nwAudio`) so a real-browser scene sweep can read count/bytes/largest
-    // after every transition instead of inferring GPU bytes from the JS heap.
-    bake: bakeStats,
-  };
+function wrapViews(views: AppViews): AppViews {
+  const handle = instrumentViews(views);
+  // ADR-073 left one question open: the bake cache never evicts, so does walking the app's
+  // screens accumulate texture bytes without bound? `bakeStats()` is the accounting that answers
+  // it, and it has no other reachable surface — `MemoryMonitor.dump()` only emits it when a
+  // budget is already exceeded, i.e. never during a normal walk. Exposed here (never-shipped
+  // entry, like `app`/`__nwAudio`) so a real-browser scene sweep can read count/bytes/largest
+  // after every transition instead of inferring GPU bytes from the JS heap.
+  handle.bake = bakeStats;
+  // The Chrome half of the WeChat comparison (render/textMetricsProbe.ts). Exposed rather than
+  // shipped into the page as a serialised closure, because `page.evaluate(fn)` sends only the
+  // function's own source — the corpus, the size list and the two helpers it closes over would
+  // arrive undefined, and the whole value of this measurement is that BOTH runtimes run the
+  // identical code.
+  handle.textMetrics = (): TextMetricsReport =>
+    probeTextMetrics(() => document.createElement('canvas').getContext('2d'));
   return views;
 }
 
@@ -271,4 +206,4 @@ setAudioBus(recordingBus);
   },
 };
 
-startApp(new WebPlatform('game-canvas'), instrumentViews).catch(console.error);
+startApp(new WebPlatform('game-canvas'), wrapViews).catch(console.error);

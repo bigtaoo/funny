@@ -17,14 +17,19 @@ export { heartPoints, clipPolygonRight } from './HUDView/hpBar';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TEXT_STYLE  = { fontSize: FS.tiny, fill: 0x222222, fontFamily: 'monospace' } as const;
+// A function, not a constant: `FS`'s tokens are scale-dependent (render/fontScale.ts's legibility
+// floor), so a module-level copy freezes whatever the floor was at IMPORT time — which is before
+// `ScalingManager` has computed a scale at all.
+const textStyle = (): PIXI.ITextStyle | Partial<PIXI.ITextStyle> =>
+  ({ fontSize: FS.tiny, fill: 0x222222, fontFamily: 'monospace' });
 // Surrender button — top strip. Taller than the old 30 so it's an easier tap target.
 const BTN_W       = 100;
 const BTN_H       = 44;
 /** Ink-well glyph box (design px) drawn left of the ink count. */
 const INK_ICON_S  = 28;
 // Bottom action buttons (upgrade / refresh) — larger, laid out inside hudBottomRightRect.
-const ACTION_LABEL_STYLE = { fontSize: FS.title, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' } as const;
+const actionLabelStyle = (): Partial<PIXI.ITextStyle> =>
+  ({ fontSize: FS.title, fill: 0x555555, fontFamily: 'monospace', fontWeight: 'bold' });
 
 const HP_CELL_H   = 15;
 
@@ -251,7 +256,7 @@ export class HUDView {
     topBg.endFill();
 
     // Timer — landscape hugs the board's left edge; portrait keeps the strip edge.
-    this.timerText   = makeText('0:00', { ...TEXT_STYLE, fontSize: FS.title });
+    this.timerText   = makeText('0:00', { ...textStyle(), fontSize: FS.title });
     this.timerText.x = (isLandscape ? boardLeft : topR.x) + 14;
     this.timerText.y = topR.y + (topR.h - this.timerText.height) / 2;
 
@@ -293,7 +298,7 @@ export class HUDView {
 
     // Ink — a dedicated ink-well glyph (our faction blue) followed by the count.
     // The glyph is positioned each frame by positionInkIcon (count width varies).
-    this.inkText = makeText('0', { ...TEXT_STYLE, fontSize: FS.title });
+    this.inkText = makeText('0', { ...textStyle(), fontSize: FS.title });
     this.inkIcon = new PIXI.Container();
     this.fillInkIcon();
     // The glyph is AI art (batch 7 retired `drawInk`, the procedural placeholder it replaced), so it
@@ -348,7 +353,7 @@ export class HUDView {
 
     // Refresh button — visual only, no interactive
     this.refreshBtnBg    = new PIXI.Graphics();
-    this.refreshBtnLabel = makeText(t('hud.refreshCost', { cost: HAND_REFRESH_COST }), ACTION_LABEL_STYLE);
+    this.refreshBtnLabel = makeText(t('hud.refreshCost', { cost: HAND_REFRESH_COST }), actionLabelStyle());
     this.refreshBtnBg.x  = rRefresh.x;
     this.refreshBtnBg.y  = rRefresh.y;
     this.refreshBtnLabel.anchor.set(0.5);
@@ -359,7 +364,7 @@ export class HUDView {
 
     // Upgrade button — visual only, no interactive
     this.upgradeBtnBg    = new PIXI.Graphics();
-    this.upgradeBtnLabel = makeText(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), ACTION_LABEL_STYLE);
+    this.upgradeBtnLabel = makeText(t('hud.upgradeCost', { cost: BASE_UPGRADE_COSTS[0]! }), actionLabelStyle());
     this.upgradeBtnBg.x  = rUpgrade.x;
     this.upgradeBtnBg.y  = rUpgrade.y;
     this.upgradeBtnLabel.anchor.set(0.5);

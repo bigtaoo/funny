@@ -1,12 +1,13 @@
 // socialsvc environment variables (SOCIAL_SVC_DESIGN §7).
 // Fifth public face (/social/*), port 8085, auth reuses the meta JWT (verifyToken only).
-import { loadServerEnv, type ServerEnv } from '@nw/shared';
+import { DEV_MONGO_URI, loadServerEnv, requiredEnv, type ServerEnv } from '@nw/shared';
 
 export interface SocialsvcEnv extends ServerEnv {
   /** Public REST port (reverse proxy /social/* → this port). Default: 8085. */
   port: number;
   host: string;
-  /** socialsvc dedicated Mongo URI (defaults to the main instance). */
+  /** Mongo URI for `nw_social` — this service's OWN least-privilege login.
+   *  Never falls back to another service's variable; unset means the local dev Mongo (ADR-090). */
   socialMongoUri: string;
   /** socialsvc dedicated database name (nw_social, physically separate from the main database). */
   socialMongoDb: string;
@@ -24,7 +25,7 @@ export function loadSocialsvcEnv(): SocialsvcEnv {
     ...base,
     port: Number(process.env.NW_SOCIAL_PORT ?? 8085),
     host: process.env.NW_SOCIAL_HOST ?? '0.0.0.0',
-    socialMongoUri: process.env.NW_SOCIAL_MONGO_URI ?? base.mongoUri,
+    socialMongoUri: requiredEnv('NW_SOCIAL_MONGO_URI', DEV_MONGO_URI),
     socialMongoDb: process.env.NW_SOCIAL_MONGO_DB ?? 'nw_social',
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || undefined,
     metaInternalUrl: process.env.NW_META_INTERNAL_URL || undefined,

@@ -309,4 +309,69 @@ describe('WebAudioBus', () => {
       expect(() => new WebAudioBus()).not.toThrow();
     });
   });
+
+  // ── the OS audio session ──────────────────────────────────────────────────────────────────
+  //
+  // Reported 2026-09-11: opening the game on a phone stops the player's Spotify. iOS arbitrates by
+  // AVAudioSession category and a web page defaults to `type = 'auto'`, which WebKit resolves to
+  // an EXCLUSIVE category as soon as it sees a sustained stream — our BGM. Native games declare
+  // `.ambient` instead, and `'ambient'` here is the web spelling of that.
+  //
+  // The neutral half of the fix (never hold the session while silent) is in
+  // `ContextAudioBus.test.ts`; this is the platform half, and it is a two-line function whose
+  // failure mode is once again invisible: the game sounds identical whether or not the write
+  // landed, and the only observable difference is on someone else's phone.
+
+  describe('the OS audio session (AUDIO_DESIGN.md §5)', () => {
+    /** Swap `navigator` for one shaped like the host under test, and restore it afterwards. */
+    function withNavigator(nav: unknown): void {
+      Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true, writable: true });
+    }
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    afterEach(() => {
+      if (original) Object.defineProperty(globalThis, 'navigator', original);
+      else delete (globalThis as unknown as Globals).navigator;
+    });
+
+    it('declares itself ambient, and does so BEFORE the context is constructed', () => {
+      // The ordering is the whole point: WebKit settles the category when the first stream starts,
+      // reading whatever the type is by then. Setting it after `new AudioContext()` is a write
+      // that lands on nothing, and nothing anywhere would report that.
+      const writes: { value: string; contextsBuiltSoFar: number }[] = [];
+      withNavigator({
+        audioSession: {
+          set type(v: string) { writes.push({ value: v, contextsBuiltSoFar: built.built }); },
+        },
+      });
+      new WebAudioBus().resume();
+      expect(writes).toEqual([{ value: 'ambient', contextsBuiltSoFar: 0 }]);
+      expect(built.built).toBe(1);
+    });
+
+    it('is silent about a host without the API — Chrome, Firefox, Safari < 16.4', () => {
+      withNavigator({ userAgent: 'whatever' });
+      const bus = new WebAudioBus();
+      expect(() => bus.resume()).not.toThrow();
+      // And it still got its audio: a missing session API must cost the mix, never the sound.
+      expect(built.built).toBe(1);
+      expect(ctx.resumeCalls).toBe(1);
+    });
+
+    it('a host with no navigator at all (node, SSR) still gets a context', () => {
+      delete (globalThis as unknown as Globals).navigator;
+      new WebAudioBus().resume();
+      expect(built.built).toBe(1);
+    });
+
+    it('a refused write costs the mix, not the audio', () => {
+      // Some WebViews expose the property and reject the assignment. Losing the mix there is a
+      // pity; throwing out of `createContext` would make the whole game silent, which is the one
+      // outcome worse than interrupting Spotify.
+      withNavigator({ audioSession: { set type(_v: string) { throw new TypeError('read-only'); } } });
+      const bus = new WebAudioBus();
+      expect(() => bus.resume()).not.toThrow();
+      expect(built.built).toBe(1);
+      expect(ctx.resumeCalls).toBe(1);
+    });
+  });
 });

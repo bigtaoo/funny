@@ -132,6 +132,19 @@ export async function handleActionRoutes(ctx: RouteCtx): Promise<boolean> {
     }
   }
 
+  // ── 停止围攻 (2026-09-12): call off a team's siege — voids its pending hit and walks it home ──
+  {
+    const m = /^\/world\/team\/([^/]+)\/cancel-siege$/.exec(path);
+    if (method === 'POST' && m) {
+      const body = await readJson(req);
+      const worldId = typeof body.worldId === 'string' ? body.worldId : null;
+      if (!worldId) { sendErr(res, ErrorCode.BAD_REQUEST, 'worldId required'); return true; }
+      await svc.cancelSiegeHold(worldId, accountId, decodeURIComponent(m[1]!));
+      send(res, 200, ok({}));
+      return true;
+    }
+  }
+
   // ── Recall a stationed team home (2026-07-23): dispatch a return leg tile→base, freeing the team ──
   {
     const m = /^\/world\/team\/([^/]+)\/recall-stationed$/.exec(path);

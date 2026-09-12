@@ -29,6 +29,8 @@ import type { DetailPanel } from './detail';
 
 // Roster grid packs a fixed 5 cards per row (was auto-fit ~6) with roomier gaps than the shared CELL_GAP.
 const ROSTER_COLS = 5;
+/** Portrait's cell-width target — see the `cols` derivation for why it is bigger than landscape's. */
+const PORTRAIT_CELL_W_TARGET = 480;
 const ROSTER_GAP = 24;
 /** Extra rows kept built above/below the viewport so a drag doesn't build cells at the edge. */
 const ROW_MARGIN = 1;
@@ -206,7 +208,16 @@ export class ListPanel {
       left = Math.round((w - avail) / 2);
     }
     // Fixed 5-per-row roster (was auto-fit ~6): wider cards, roomier gaps. Clamp down on narrow viewports.
-    const cols = Math.max(1, Math.min(ROSTER_COLS, Math.floor((avail + ROSTER_GAP) / (CARD_CELL_W_TARGET + ROSTER_GAP))));
+    //
+    // Portrait asks for a WIDER cell than landscape, which reads backwards until you look at what
+    // is inside one: the portrait frame's width comes off the cell HEIGHT (`imgH * 0.72` in
+    // ./rosterCell.ts, i.e. a fixed 177 design px), so every px of cell width beyond that goes to
+    // the info column — and it is the info column that has to hold a hero name at the legibility
+    // floor. At 3 columns of 316 that column is 107 design px wide, and "Li Chuang" at the floor's
+    // 20px needs 108: the name was shrunk to 0.84 (16.8 design px, 6 CSS px) and still touched the
+    // cell border. 2 columns of 480 give it 271 (portrait sweep §49).
+    const target = core.landscape ? CARD_CELL_W_TARGET : PORTRAIT_CELL_W_TARGET;
+    const cols = Math.max(1, Math.min(ROSTER_COLS, Math.floor((avail + ROSTER_GAP) / (target + ROSTER_GAP))));
     const cellW = (avail - ROSTER_GAP * (cols - 1)) / cols;
     const rows = Math.ceil(sorted.length / cols);
     const totalH = rows * (CARD_CELL_H + ROSTER_GAP) + ROSTER_GAP;

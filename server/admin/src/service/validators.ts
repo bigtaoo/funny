@@ -1,7 +1,9 @@
 // Pure function helpers shared across the AdminService mixins (view mappers + input validators/normalisers).
 // No `this` — each takes explicit arguments and either returns a plain value or throws AdminError.
 import {
+  COMP_COINS_CAP_PER_TICKET,
   FLAG_PLATFORMS,
+  coinAttachmentTotal,
   type AdminAccountView,
   type CompAttachment,
   type CompMailContent,
@@ -73,6 +75,19 @@ export function validateMail(mail: CompMailContent | undefined): CompMailContent
     if (a.count !== undefined && (!Number.isFinite(a.count) || a.count < 0)) {
       throw new AdminError(400, 'bad_request', 'invalid attachment count');
     }
+  }
+  // Coin blast-radius cap (OPS_DESIGN §3.2): the approval tiering above routes WHO signs off; this
+  // rejects outright. An operator who really owes a player more than the cap sends several tickets,
+  // each approved and audited on its own — what must not happen is one slipped keystroke minting an
+  // outlier balance. The cap counts coins only, summed across attachments so splitting the same
+  // amount into two coin entries does not slip past it.
+  const coins = coinAttachmentTotal(attachments);
+  if (coins > COMP_COINS_CAP_PER_TICKET) {
+    throw new AdminError(
+      400,
+      'bad_request',
+      `coins attachment ${coins} exceeds the per-ticket cap of ${COMP_COINS_CAP_PER_TICKET}; split a larger compensation across several tickets`,
+    );
   }
   const expireDays = Number.isFinite(mail.expireDays) && mail.expireDays > 0 ? Math.floor(mail.expireDays) : 30;
   return { subject, body, attachments, expireDays };

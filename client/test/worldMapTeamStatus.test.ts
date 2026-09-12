@@ -11,7 +11,7 @@ import { SLG_TEAM_STAMINA_COST, SLG_TEAM_STAMINA_MAX } from '@nw/shared';
 import { initI18n, t } from '../src/i18n';
 import { buildTeamRows, awayCount } from '../src/scenes/worldmap/logic/teamStatus';
 import type { WorldMapContext } from '../src/scenes/worldmap/WorldMapContext';
-import type { MarchView, OccupationView, StationedView, TeamTemplate } from '../src/net/WorldApiClient';
+import type { MarchView, OccupationView, SiegeHoldView, StationedView, TeamTemplate } from '../src/net/WorldApiClient';
 
 const memStore = (() => {
   const m = new Map<string, string>();
@@ -37,6 +37,7 @@ function harness(opts: {
   teams?: { tmpl: TeamTemplate; cardId: string; troops: number }[];
   marches?: MarchView[];
   occupations?: OccupationView[];
+  siegeHolds?: SiegeHoldView[];
   stationed?: StationedView[];
   teamState?: Record<string, { injuredUntil?: number; stamina?: number; staminaAt?: number }>;
 }): WorldMapContext {
@@ -47,6 +48,7 @@ function harness(opts: {
     teams: teams.map((t) => t.tmpl),
     marches: opts.marches ?? [],
     occupations: opts.occupations ?? [],
+    siegeHolds: opts.siegeHolds ?? [],
     stationed: opts.stationed ?? [],
     me: {
       joined: true,
@@ -97,6 +99,58 @@ describe('buildTeamRows — a team gets exactly one row whatever it is doing', (
     const rows = buildTeamRows(ctx, NOW);
     expect(rows[0]!.state).toBe('occupying');
     expect([rows[0]!.jumpX, rows[0]!.jumpY]).toEqual([12, 34]);
+  });
+
+  // 围攻驻留 (2026-09-12): the base/city counterpart of the occupation hold. Beating a main base's
+  // garrison deletes the march and schedules a durability hit five minutes out; without this slice the
+  // team was in none of the other three lists and the panel called it idle at home.
+  it('a team holding a pending siege hit gets a row too, with the hold countdown and the target', () => {
+    const ctx = harness({
+      teams: [team('t1', 900)],
+      siegeHolds: [{ siegeId: 's1', tile: `${WORLD}:40:41`, x: 40, y: 41, dueAt: NOW + 240_000, damage: 120, isBase: true, teamId: 't1' }],
+    });
+    const rows = buildTeamRows(ctx, NOW);
+    expect(rows[0]!.state).toBe('besieging');
+    expect([rows[0]!.jumpX, rows[0]!.jumpY]).toEqual([40, 41]);
+    expect(rows[0]!.status).toContain('4:00');
+  });
+
+  // 停止围攻 / 停止占领 (2026-09-12, user decision: both are stoppable at any time, from this panel and
+  // from the tile's own menu). The row carries which hold it is working off so the action button knows
+  // which endpoint ends it — they are different calls with different consequences (a siege walks home
+  // intact, an occupation forfeits its garrison), so one generic "stop" would be a lie in one of them.
+  it('a besieging row offers to stop the siege, and an occupying row to stop the occupation', () => {
+    const besieging = buildTeamRows(harness({
+      teams: [team('t1', 900)],
+      siegeHolds: [{ siegeId: 's1', tile: `${WORLD}:40:41`, x: 40, y: 41, dueAt: NOW + 240_000, damage: 120, isBase: true, teamId: 't1' }],
+    }), NOW);
+    expect(besieging[0]!.stopHold).toEqual({ teamId: 't1', kind: 'siege' });
+
+    const occupying = buildTeamRows(harness({
+      teams: [team('t1', 900)],
+      occupations: [{ tile: `${WORLD}:12:34`, x: 12, y: 34, level: 3, garrison: 10, dueAt: NOW + 120_000, teamId: 't1' }],
+    }), NOW);
+    expect(occupying[0]!.stopHold).toEqual({ teamId: 't1', kind: 'occupy' });
+  });
+
+  it('every other state offers no stop — a march has recall, a station has its own recall, home has nothing', () => {
+    const rows = [
+      buildTeamRows(harness({ teams: [team('t1', 900)], marches: [march({ marchId: 'm1', teamId: 't1' })] }), NOW)[0]!,
+      buildTeamRows(harness({ teams: [team('t1', 900)], stationed: [{ tile: `${WORLD}:20:21`, x: 20, y: 21, teamId: 't1', troops: 500, sinceAt: NOW, mine: true } as StationedView] }), NOW)[0]!,
+      buildTeamRows(harness({ teams: [team('t1', 900)] }), NOW)[0]!,
+    ];
+    for (const r of rows) expect(r.stopHold).toBeNull();
+  });
+
+  it('a march outranks a siege hold for the same slot — the walk home must not read as still besieging', () => {
+    // Settlement starts the return leg and deletes the hold, but the two can coexist in the client's
+    // cache for one refresh; the same precedence the occupation branch has always had.
+    const ctx = harness({
+      teams: [team('t1', 900)],
+      marches: [march({ marchId: 'm1', teamId: 't1', kind: 'return' })],
+      siegeHolds: [{ siegeId: 's1', tile: `${WORLD}:40:41`, x: 40, y: 41, dueAt: NOW + 240_000, damage: 120, isBase: true, teamId: 't1' }],
+    });
+    expect(buildTeamRows(ctx, NOW)[0]!.state).toBe('returning');
   });
 
   it('a field-stationed team distinguishes 停留 idle from 驻扎 garrison, and offers a recall', () => {

@@ -23,7 +23,9 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: {
-    command: 'npm run start:e2e',
+    // --no-open: `devServer.open: true` (webpack.config.js) would pop the machine's default
+    // browser on every run; the spec drives its own Playwright browser.
+    command: 'npm run start:e2e -- --no-open',
     url: 'http://localhost:9096',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

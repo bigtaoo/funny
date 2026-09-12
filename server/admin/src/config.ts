@@ -1,7 +1,7 @@
 ﻿// Admin environment variables (OPS_DESIGN §8 baseline). Two-layer auth: admin JWT (ops users) uses a dedicated secret,
 // isolated from the player NW_JWT_SECRET; NW_INTERNAL_KEY (shared) is used to call internal endpoints on business services.
 // Separate database notebook_wars_admin (defaults to the same instance as meta). Unreachable by players; the reverse proxy does not route to it.
-import { loadServerEnv, type ServerEnv } from '@nw/shared';
+import { DEV_MONGO_URI, loadServerEnv, requiredEnv, type ServerEnv } from '@nw/shared';
 
 export interface AdminEnv extends ServerEnv {
   /** API port for the ops frontend (protected by admin session auth; not exposed to the public internet — internal/VPN only). Default 18083. */
@@ -11,7 +11,8 @@ export interface AdminEnv extends ServerEnv {
   adminJwtSecret: string;
   /** Admin session TTL (zeit duration string). Default 8h. */
   adminJwtTtl: string;
-  /** Admin-dedicated Mongo URI (defaults to the same instance as meta). */
+  /** Mongo URI for `notebook_wars_admin` — this service's OWN least-privilege login.
+   *  Never falls back to another service's variable; unset means the local dev Mongo (ADR-090). */
   adminMongoUri: string;
   /** Admin-dedicated database name (physically isolated from the business database). */
   adminMongoDb: string;
@@ -47,7 +48,7 @@ export function loadAdminEnv(): AdminEnv {
     host: process.env.NW_ADMIN_HOST ?? '0.0.0.0',
     adminJwtSecret: process.env.NW_ADMIN_JWT_SECRET ?? 'dev-insecure-admin-secret-change-me',
     adminJwtTtl: process.env.NW_ADMIN_JWT_TTL ?? '8h',
-    adminMongoUri: process.env.NW_ADMIN_MONGO_URI ?? base.mongoUri,
+    adminMongoUri: requiredEnv('NW_ADMIN_MONGO_URI', DEV_MONGO_URI),
     adminMongoDb: process.env.NW_ADMIN_MONGO_DB ?? 'notebook_wars_admin',
     seedUser: process.env.NW_ADMIN_SEED_USER ?? null,
     seedPass: process.env.NW_ADMIN_SEED_PASS ?? null,

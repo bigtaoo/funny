@@ -15,7 +15,7 @@ import { drawScrollIndicator } from '../../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../../ui/widgets/scrollPeek';
 import { FS, snapFont } from '../../../render/fontScale';
 import { HUD_H, MARGIN, CONFIRM_H } from '../logic/constants';
-import { PANEL_W, PANEL_MARGIN, PANEL_BTN_FONT } from './spec';
+import { PANEL_W, PANEL_MARGIN, panelBtnFont } from './spec';
 import {
   modalLineText, modalLineIcon, buildModalGlyph,
   type ModalLine, type ModalButton,
@@ -332,7 +332,7 @@ export class WorldMapPanelsCore {
     bh: number,
     fill: number,
     action: () => void,
-    fontSize: number = PANEL_BTN_FONT
+    fontSize: number = panelBtnFont()
   ): void {
     const ml = this.ctx.modalLayer;
     const bp = sketchPanel(bw, bh, { fill, border: C.accent, seed: seedFor(x, y, bw) });
@@ -418,7 +418,7 @@ export class WorldMapPanelsCore {
     bp.x = x;
     bp.y = y;
     layer.addChild(bp);
-    drawButtonLabel(layer, x, y, bw, bh, label, icon, disabled ? C.mid : C.light, PANEL_BTN_FONT, { bold: false });
+    drawButtonLabel(layer, x, y, bw, bh, label, icon, disabled ? C.mid : C.light, panelBtnFont(), { bold: false });
     this.ctx.modalBtnRects.push({ rect: { x, y, w: bw, h: bh }, fn: action });
   }
 

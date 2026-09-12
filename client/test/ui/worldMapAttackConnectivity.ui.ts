@@ -56,6 +56,7 @@ function buildHarness(opts: {
     cityNodes: opts.cityNodes ?? null,
     marches: [],
     occupations: [],
+    siegeHolds: [],
     stationed: [],
     me: {
       joined: true,

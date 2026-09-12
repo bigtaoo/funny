@@ -8,6 +8,41 @@
 import { ContextAudioBus } from '../../audio/ContextAudioBus';
 import { WebMusicDeck } from './webMusicDeck';
 
+/**
+ * Ask the OS to let our audio MIX with whatever else is playing (AUDIO_DESIGN.md §5, the
+ * "音频会话 / audio focus" row).
+ *
+ * Without this, opening the game on a phone stops the player's Spotify — reported 2026-09-11 and
+ * reproducible on any iPhone. Nothing here was broken; we simply never declared a session type.
+ * iOS arbitrates by AVAudioSession category, and a web page defaults to
+ * `navigator.audioSession.type === 'auto'`, which WebKit resolves to the equivalent of `.playback`
+ * as soon as it sees a sustained stream — and `.playback` is EXCLUSIVE, so every other app gets
+ * interrupted. Our BGM is exactly such a stream (`<audio>` -> `MediaElementSource`, see
+ * `webMusicDeck.ts`). Native games do not have this problem because they declare `.ambient`
+ * explicitly; `'ambient'` here is the web spelling of that same decision.
+ *
+ * **The trade-off is real and intended**: `ambient` also means the game obeys the iOS ringer
+ * switch, i.e. flip it to silent and we are silent. That is part of the category, not a side
+ * effect, and it is the convention every native game already follows.
+ *
+ * Must run BEFORE the context is constructed: WebKit settles the category when the first stream
+ * starts, and the type is what it reads then.
+ *
+ * Safari / iOS 16.4+ only. Everywhere else the property is absent and this is a no-op — including
+ * Android Chrome, where the equivalent (audio focus) has no web-facing switch at all. See
+ * AUDIO_DESIGN.md §5 for what is left open there.
+ */
+function requestAmbientSession(): void {
+  const nav = (globalThis as { navigator?: { audioSession?: { type: string } } }).navigator;
+  if (!nav?.audioSession) return;
+  try {
+    nav.audioSession.type = 'ambient';
+  } catch {
+    // A host that exposes the property but refuses the write. Losing the mix is a pity; losing
+    // audio over it would be a bug, so this is swallowed rather than propagated.
+  }
+}
+
 export class WebAudioBus extends ContextAudioBus {
   constructor() {
     super({
@@ -18,7 +53,9 @@ export class WebAudioBus extends ContextAudioBus {
           webkitAudioContext?: typeof AudioContext;
         };
         const Ctor = g.AudioContext ?? g.webkitAudioContext;
-        return Ctor ? new Ctor() : null;
+        if (!Ctor) return null;
+        requestAmbientSession(); // see above: before `new`, not after
+        return new Ctor();
       },
       // WebAudio 在用户手势之前处于 suspended（autoplay 策略），iOS Safari 尤其严格
       // （AUDIO_DESIGN.md §5 前两行）。

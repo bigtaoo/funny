@@ -264,10 +264,19 @@ export function renderGrid(
 
   // Row label (left): defense mode only — attack mode drops the label for the base icon above.
   if (core.hasBuildingRow) {
-    const lbl = txt(t('world.defense.buildRow'), FS.micro, C.mid);
-    lbl.anchor.set(1, 0.5);
-    lbl.x = gridX - 3;
+    const lbl = txt(t('world.defense.buildRow'), FS.tiny, C.mid);
     lbl.y = gridY + cellH / 2;
+    if (gridX - 3 >= lbl.width) {
+      // Landscape: the grid leaves a gutter, so the label sits outside it, right-aligned.
+      lbl.anchor.set(1, 0.5);
+      lbl.x = gridX - 3;
+    } else {
+      // Portrait: the grid spans the full width and there is no gutter — the label used to be
+      // pushed to x = -9, i.e. off the screen entirely (measured 2026-09-11). Put it inside the
+      // row it names instead.
+      lbl.anchor.set(0, 0.5);
+      lbl.x = gridX + 4;
+    }
     core.bodyLayer.addChild(lbl);
   }
 }

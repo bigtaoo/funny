@@ -76,6 +76,8 @@ interface WorldOpts {
   /** Team-busy probes: marches / occupations / stationed (by {worldId,ownerId,teamId}). */
   busyMarch?: MarchDoc | null;
   busyHold?: unknown;
+  /** 围攻驻留 (2026-09-12): a pending `SiegeDamageDoc` pinning this team to a base/city it has beaten. */
+  busySiege?: unknown;
   busyStationed?: StationedDoc | null;
   /** stationed.findOneAndDelete result for the ADR-051 idle re-dispatch claim. */
   claim?: StationedDoc | null;
@@ -113,6 +115,7 @@ function fakeCore(o: WorldOpts = {}) {
       findOneAndDelete: vi.fn(async () => null),
     },
     occupations: { findOne: vi.fn(async () => o.busyHold ?? null) },
+    siegeDamage: { findOne: vi.fn(async () => o.busySiege ?? null) },
     stationed: {
       // Two distinct callers: the team-busy probe ({worldId,ownerId,teamId}) and startMarchValidation's
       // "is this cell already parked on" check ({_id}).

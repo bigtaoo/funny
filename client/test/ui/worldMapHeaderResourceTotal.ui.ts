@@ -52,6 +52,7 @@ function buildHudHarness(
     teams: [],
     teamsLoaded: false,
     occupations: [],
+    siegeHolds: [],
     stationed: [],
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[p.length - 2]), Number(p[p.length - 1])]; },
     cb: { accountId: 'me', getCoins: () => 0 },

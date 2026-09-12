@@ -1,6 +1,7 @@
 // loadAdminEnv() unit tests: pure env-var parsing, previously untested (0% coverage). Same pattern as
 // gameserver/test/config.test.ts.
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { DEV_MONGO_URI } from '@nw/shared';
 import { loadAdminEnv } from '../src/config';
 
 const ENV_KEYS = [
@@ -36,6 +37,8 @@ describe('loadAdminEnv', () => {
       originals[k] = process.env[k];
       delete process.env[k];
     }
+    // Its own login is required now, not defaulted (ADR-090) — every case needs it present.
+    process.env.NW_ADMIN_MONGO_URI = 'mongodb://its-own-host:27017/?replicaSet=rs0';
     // loadServerEnv() (the base ServerEnv this extends) throws on a missing jwtSecret/mongoUri/mongoDb/
     // internalKey with no fallback — supply the minimum it needs so loadAdminEnv() itself can be exercised.
     process.env.NW_JWT_SECRET = 'base-secret';
@@ -56,7 +59,7 @@ describe('loadAdminEnv', () => {
     expect(env.host).toBe('0.0.0.0');
     expect(env.adminJwtSecret).toBe('dev-insecure-admin-secret-change-me');
     expect(env.adminJwtTtl).toBe('8h');
-    expect(env.adminMongoUri).toBe(env.mongoUri); // defaults to the same instance as meta
+    expect(env.adminMongoUri).toBe('mongodb://its-own-host:27017/?replicaSet=rs0'); // its OWN login, threaded through untouched
     expect(env.adminMongoDb).toBe('notebook_wars_admin');
     expect(env.seedUser).toBeNull();
     expect(env.seedPass).toBeNull();
@@ -108,5 +111,15 @@ describe('loadAdminEnv', () => {
     expect(env.socialInternalUrl).toBe('http://social:18084');
     expect(env.sampleIntervalMs).toBe(5000);
     expect(env.snapshotTtlSec).toBe(3600);
+  });
+
+  it("with its own Mongo URI unset, falls back to the local dev Mongo — never to metaserver's login (ADR-090)", () => {
+    // Until 2026-09-12 this line read `?? base.mongoUri`, so an unset NW_ADMIN_MONGO_URI silently handed this
+    // service metaserver's connection string — and on the deployed cluster that login could read and write
+    // every database, which is precisely the isolation this was supposed to provide. The replacement
+    // fallback is a HOST nobody has grants on, so a misconfigured deployment dies on a refused connection
+    // instead of quietly opening someone else's data.
+    delete process.env.NW_ADMIN_MONGO_URI;
+    expect(loadAdminEnv().adminMongoUri).toBe(DEV_MONGO_URI);
   });
 });

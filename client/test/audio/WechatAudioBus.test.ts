@@ -46,11 +46,14 @@ const HOOKS: Hook[] = ['onTouchStart', 'onHide', 'onShow', 'onAudioInterruptionB
 interface FakeWx {
   hooks: Record<Hook, (() => void)[]>;
   inners: FakeInner[];
+  /** Every `setInnerAudioOption` call, in order. */
+  audioOptions: { mixWithOther?: boolean }[];
   webAudioCalls: number;
   innerCalls: number;
   fire(hook: Hook): void;
   createWebAudioContext?(): unknown;
   createInnerAudioContext?(): unknown;
+  setInnerAudioOption?(opts: { mixWithOther?: boolean }): void;
   onTouchStart?(cb: () => void): void;
   onHide?(cb: () => void): void;
   onShow?(cb: () => void): void;
@@ -71,10 +74,12 @@ function fakeWx(ctx: FakeAudioContext | null): FakeWx {
   const wx: FakeWx = {
     hooks,
     inners: [],
+    audioOptions: [],
     webAudioCalls: 0,
     innerCalls: 0,
     fire: (hook) => { for (const cb of [...hooks[hook]]) cb(); },
     createInnerAudioContext: () => { wx.innerCalls++; const i = new FakeInner(); wx.inners.push(i); return i; },
+    setInnerAudioOption: (opts) => { wx.audioOptions.push(opts); },
   };
   if (ctx) wx.createWebAudioContext = () => { wx.webAudioCalls++; return ctx; };
   for (const h of HOOKS) wx[h] = (cb: () => void): void => { hooks[h].push(cb); };
@@ -312,6 +317,36 @@ describe('WechatAudioBus', () => {
       const bus = new WechatAudioBus();
       expect(() => startBgm(bus)).not.toThrow();
       expect(wx.inners.some((i) => i.playCalls > 0)).toBe(true);
+    });
+  });
+
+  // ── the OS audio session ───────────────────────────────────────────────────
+  //
+  // The mini-game half of the 2026-09-11 "opening the game stops my Spotify" report
+  // (AUDIO_DESIGN.md §5). `InnerAudioContext` is the only stream this runtime plays — the two BGM
+  // decks — so it is the only thing here that can take the session from another app.
+
+  describe('the OS audio session (AUDIO_DESIGN.md §5)', () => {
+    it('asks for mixWithOther at construction, before any deck exists', () => {
+      new WechatAudioBus();
+      expect(wx.audioOptions).toEqual([{ mixWithOther: true }]);
+      // At construction, not on the first deck: the option is global to the runtime, and a deck
+      // built later must not be able to start before it has been set.
+      expect(wx.innerCalls).toBe(0);
+    });
+
+    it('a runtime without setInnerAudioOption still plays', () => {
+      // The call asserts a documented default rather than changing one, so a base library that
+      // lacks it is a runtime that already mixes — nothing to degrade, and nothing to throw over.
+      delete wx.setInnerAudioOption;
+      const bus = new WechatAudioBus();
+      expect(() => startBgm(bus)).not.toThrow();
+      expect(wx.inners.some((i) => i.playCalls > 0)).toBe(true);
+    });
+
+    it('constructs with no wx global at all', () => {
+      delete g.wx;
+      expect(() => new WechatAudioBus()).not.toThrow();
     });
   });
 });

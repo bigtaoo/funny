@@ -21,7 +21,7 @@ import type { ILayout } from '../layout/ILayout';
 import type { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { marginLineX } from '../render/sketchUi';
-import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
+import { drawSceneHeader, sceneHeaderHeight, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { GuideOverlay } from '../render/GuideOverlay';
 import { CitySceneCore } from './CityScene/core';
 import type { CitySceneCallbacks } from './CityScene/core';
@@ -102,10 +102,16 @@ export class CityScene implements Scene {
     // 9%-of-width position (marginLineX) and body content starts just right of it. The paper
     // background and decor themselves live in core.paint.staticLayer, painted once (beginPage).
 
+    // The durability cluster is measured first and handed over as `rightReserve`: it is drawn into
+    // the same bar right after, and the header can only keep the title clear of it if it knows how
+    // much room it takes (portrait has no slack to absorb the guess).
+    const headerH = sceneHeaderHeight(h);
     const hdr = drawSceneHeader(core.paint.pageLayer, w, h, t('city.title'), {
       variant: 'paper',
       accent: HEADER_ACCENT.slg,
       icon: 'cityTabIcon',
+      headerH,
+      rightReserve: this.renderPanel.headerDurabilityWidth(headerH),
     });
     const backHit: Hit = {
       rect: hdr.backRect,

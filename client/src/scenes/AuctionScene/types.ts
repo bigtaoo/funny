@@ -49,7 +49,15 @@ export const AUC_CELL_GAP = 14;
 // Compact card height — the 285 from the 15.07.2026 1.5x pass left a large dead gap between the
 // price block and the bottom-pinned countdown/buy row (16.07.2026 report: "看起来太乱了"). Shrunk
 // back down so content and the bottom row sit close together, with more rows visible per screen.
-export const AUC_CELL_H = 180;
+//
+// 200, not 180 (2026-09-12): an auction-mode listing's info column is name + current bid (two
+// lines in portrait's 167-px column) + buyout + countdown, and the countdown — the LAST line, and
+// the one the cell has no way to absorb — ended 10 design px inside the action button's band, so
+// the button's fill sliced through its bottom row of pixels. Under the sweep's `covered` threshold
+// in every language, which is why it survived nine viewports of green: found by reading the
+// screenshots (§50.13). 20 px is what the measurement asked for, and it is the whole of the fix —
+// the cell is top-anchored, so everything above the button is exactly where it was.
+export const AUC_CELL_H = 200;
 export const AUC_CELL_W_TARGET = 340;
 
 // Material types available for auction

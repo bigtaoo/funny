@@ -4,8 +4,8 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { FS } from '../../render/fontScale';
-import { buildIcon } from '../../render/icons';
 import { sidebarNavW, bottomNavH } from '../../ui/widgets/HubTabs';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { peekViewportH } from '../../ui/widgets/scrollPeek';
 import { withTimeout, TimeoutError } from '../../ui/busyTracker';
@@ -109,7 +109,17 @@ export class CraftPanel {
     core.drawCostChips(core.bodyLayer, ax, imgY + 14, cost, null, affordable ? C.mid : C.red, 20);
 
     const enabled = affordable && !full && !core.bt.busy;
-    const btnW = Math.min(104, x + cellW - pad - ax);
+    // Width from the LABEL, not a literal 104. The cost chips above end well short of the cell's
+    // right edge, so there are ~220 design px available here and the old cap spent 104 of them
+    // regardless of what the word needed: German's "Schmieden" wants 142 with its anvil, and the
+    // hand-rolled group this used to draw answered by scaling to 0.71 — 14 design px, under every
+    // portrait viewport's legibility floor (sweep §50.12, 8-9 findings per German phone). Growing
+    // a button into space that was already empty is the cheapest of the three answers the ruling
+    // allows, and it is the one available here.
+    const probe = txt(t('equip.craftBtn'), FS.body, C.dark);
+    const wantW = Math.ceil(probe.width) + buttonLabelIconW(FS.body) + 16;
+    probe.destroy({ texture: true, baseTexture: true });
+    const btnW = Math.min(Math.max(104, wantW), x + cellW - pad - ax);
     const btnH = 36;
     const btnX = x + cellW - pad - btnW;
     const btnY = y + CRAFT_CELL_H - pad - btnH;
@@ -119,22 +129,11 @@ export class CraftPanel {
     // [anvil][gap][label] as one centred group — the same icon the Craft tab in the sidebar rail
     // uses, so the button and the tab that leads here read as the same action. The white `active`
     // ink is what the dark button fill asks for; disabled falls back to the paper-grey variant on
-    // the `btnOff` fill. German ("Schmieden") is the label that actually reaches the button's
-    // width, so the group scales down to fit rather than letting the icon push the text out.
-    const bl = txt(t('equip.craftBtn'), FS.body, enabled ? C.light : C.mid);
-    const icSz = Math.round(FS.body * 1.4);
-    const icGap = Math.round(FS.body * 0.3);
-    const groupW = icSz + icGap + bl.width;
-    const fitW = btnW - 10;
-    const fit = groupW > fitW ? fitW / groupW : 1;
-    const groupX = btnX + (btnW - groupW * fit) / 2;
-    const ic = buildIcon('craftTabIcon', icSz, enabled ? C.light : C.mid);
-    ic.scale.set(fit);
-    ic.x = groupX; ic.y = btnY + (btnH - icSz * fit) / 2;
-    core.bodyLayer.addChild(ic);
-    bl.scale.set(fit);
-    bl.anchor.set(0, 0.5); bl.x = groupX + (icSz + icGap) * fit; bl.y = btnY + btnH / 2;
-    core.bodyLayer.addChild(bl);
+    // the `btnOff` fill. Through the shared widget (2026-09-12): this was the last hand-rolled copy
+    // of the `[icon][gap][label]` group its header lists, and its private `scale.set(fitW/groupW)`
+    // is the exact anti-pattern the floor was added to kill.
+    drawButtonLabel(core.bodyLayer, btnX, btnY, btnW, btnH, t('equip.craftBtn'), 'craftTabIcon',
+      enabled ? C.light : C.mid, FS.body, { bold: false });
     if (enabled) {
       core.hitRects.push({ rect: { x: btnX, y: btnY, w: btnW, h: btnH }, owner: defId, fn: () => void this.doCraft(defId) });
     } else if (!core.bt.busy) {

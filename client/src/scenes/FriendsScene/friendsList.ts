@@ -8,7 +8,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
-import { FS, snapFont } from '../../render/fontScale';
+import { FS, snapFont, fitFont } from '../../render/fontScale';
 import type { FriendView, FriendRequestView } from '../../net/ApiClient';
 import { buildAvatar } from '../../render/avatar';
 import { rankLabel } from './core';
@@ -128,18 +128,32 @@ export class FriendsListPanel {
     sketchAccentBar(bg, rh, C.gold, seedFor(rx, rh, 5));
     layer.addChild(bg);
 
-    const name = txt(r.fromName || t('friends.you'), snapFont(Math.round(rh * 0.32)), C.dark, true);
-    name.anchor.set(0, 0.5); name.x = rx + Math.round(rw * 0.06); name.y = y + rh * 0.36;
-    layer.addChild(name);
-    const id = txt(`#${r.fromPublicId}`, snapFont(Math.round(rh * 0.22)), C.mid);
-    id.anchor.set(0, 0.5); id.x = rx + Math.round(rw * 0.06); id.y = y + rh * 0.70;
-    layer.addChild(id);
-
+    // Button geometry first: it is what bounds the name (2026-09-12). This row sizes its type off
+    // the row height, and in portrait the design box is height-tracking (2337 design px at
+    // 390x844), so a row is 210 design px tall and the name is drawn at ~67 — at which a name at
+    // MAX_DISPLAY_NAME_LEN measures ~965 design px against the ~515 that exist before the buttons.
+    // It simply ran under them: the sweep caught 'Maximiliane-Vandenberghe' overlapping both
+    // Accept and Decline, on every portrait viewport.
     const bW = Math.round(rw * 0.18);
     const bH = Math.round(rh * 0.5);
     const bY = y + (rh - bH) / 2;
     const rejX = rx + rw - bW - Math.round(rw * 0.03);
     const accX = rejX - bW - Math.round(rw * 0.02);
+
+    const textX = rx + Math.round(rw * 0.06);
+    const textMaxW = Math.max(40, accX - textX - Math.round(rw * 0.02));
+    const nameSize = snapFont(Math.round(rh * 0.32));
+    const nameProbe = txt(r.fromName || t('friends.you'), nameSize, C.dark, true);
+    // fitFont, not `scale.set` — see render/fontScale.ts. It picks a smaller token on the shared
+    // scale and stops at the legibility floor rather than at whatever ratio the name happens to need.
+    const name = nameProbe.width <= textMaxW ? nameProbe
+      : txt(r.fromName || t('friends.you'), fitFont(nameSize, nameProbe.width, textMaxW), C.dark, true, textMaxW);
+    if (name !== nameProbe) nameProbe.destroy();
+    name.anchor.set(0, 0.5); name.x = textX; name.y = y + rh * 0.36;
+    layer.addChild(name);
+    const id = txt(`#${r.fromPublicId}`, snapFont(Math.round(rh * 0.22)), C.mid);
+    id.anchor.set(0, 0.5); id.x = textX; id.y = y + rh * 0.70;
+    layer.addChild(id);
     addButton(core, t('friends.accept'), accX, bY, bW, bH, C.green, C.green,
       () => void this.network.doRespond(r.requestId, true), 0xffffff, snapFont(Math.round(bH * 0.4)), layer, 'check');
     addButton(core, t('friends.reject'), rejX, bY, bW, bH, C.paper, C.red,

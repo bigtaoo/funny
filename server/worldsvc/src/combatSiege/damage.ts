@@ -7,8 +7,10 @@
 // layer) — assembled by composition in ../combatSiege.ts. No behavior change.
 import { playerWorldId, buildingMaxHp, baseDurabilityMax, regenDurability, buildingLevel } from '@nw/shared';
 import type { SiegeDamageDoc } from '../db';
+import type { SiegeHoldView } from '../worldTypes';
 import { WorldCore } from '../core';
-import { startReturnMarch } from '../combatShared';
+import { startSiegeReturnMarch, startNextSiegeRound, resolveOwnerEmblems } from '../combatShared';
+import { SlgError } from '@nw/shared';
 import type { SiegeHelpersService } from './helpers';
 import { settleCityDamage } from './cityDamage';
 
@@ -17,6 +19,55 @@ export class SiegeDamageService {
     private readonly core: WorldCore,
     private readonly helpers: SiegeHelpersService,
   ) {}
+
+  /**
+   * 围攻驻留 (2026-09-12): the requester's own pending delayed hits, for the world map's countdown +
+   * besieging-token layer and the team panel's status line. Own holds only (see SiegeHoldView).
+   *
+   * Read from the same collection the scheduler drains, with no separate projection of "active holds":
+   * a `SiegeDamageDoc` exists exactly while the hold is running — `processDueSiegeDamage` claims and
+   * deletes it the moment it settles — so presence IS the hold. A document whose `dueAt` has already
+   * passed but which the scheduler has not reached yet is still returned; the client renders it at 0s,
+   * the same way an occupation hold behaves in the same window.
+   */
+  async getSiegeHolds(worldId: string, accountId: string): Promise<SiegeHoldView[]> {
+    const { cols } = this.core.deps;
+    const own = await cols.siegeDamage.find({ worldId, attackerId: accountId }).toArray();
+    const result: SiegeHoldView[] = own.map((d) => ({
+      siegeId: d._id,
+      tile: d.tile,
+      x: this.core.coordX(d.tile),
+      y: this.core.coordY(d.tile),
+      dueAt: d.dueAt,
+      damage: d.damage,
+      isBase: d.isBase,
+      ...(d.teamId ? { teamId: d.teamId } : {}),
+      ...(d.leaderUnitType ? { leaderUnitType: d.leaderUnitType } : {}),
+    }));
+    // Own-holds-only, so this is always the requester's own family badge — resolved through the shared
+    // batch helper anyway, for consistency with getMarches/getOccupations/getStationed.
+    const emblems = await resolveOwnerEmblems(this.core, worldId, own.map((d) => d.attackerId));
+    return result.map((v, i) => (emblems[i] ? { ...v, ...emblems[i] } : v));
+  }
+
+  /**
+   * 停止围攻 (2026-09-12, user decision: 「攻城…都是可以随时从右边的队伍信息面板里停止的」).
+   * Drops this team's pending hit and walks it home.
+   *
+   * The pending damage is simply voided — not applied early, not pro-rated. A round is an all-or-nothing
+   * assault (the durability comes off at `dueAt` or not at all, ADR-026 §4), so calling it off mid-round
+   * costs the attacker the stamina already spent on that round and nothing more. The besiegers keep what
+   * they have: a card team's troops live in `cardState.currentTroops` and ride home untouched.
+   *
+   * Deliberately unlike `cancelOccupation`, which forfeits its garrison (a flat troop count committed to
+   * holding ground). Nothing is committed to a siege in that sense; the team is just standing there.
+   */
+  async cancelSiegeHold(worldId: string, accountId: string, teamId: string): Promise<void> {
+    const { cols } = this.core.deps;
+    const claimed = await cols.siegeDamage.findOneAndDelete({ worldId, attackerId: accountId, teamId });
+    if (!claimed) throw new SlgError('SIEGE_HOLD_NOT_FOUND', 'No active siege for this team');
+    await startSiegeReturnMarch(this.core, claimed, this.core.deps.now());
+  }
 
   /**
    * ADR-026: settle due delayed building-HP hits (scheduler, every tick; mirrors processDueArrivals). Each SiegeDamageDoc whose
@@ -64,13 +115,7 @@ export class SiegeDamageService {
     // Target must still be the same owner and unprotected; otherwise the siege is stale → void damage, return besiegers.
     const stale = !tile || !defenderId || tile.ownerId !== defenderId || (tile.protectedUntil != null && tile.protectedUntil > t);
     if (stale) {
-      if (attacker && d.attackerSurvivors > 0) {
-        await startReturnMarch(this.core, {
-          worldId: d.worldId, ownerId: d.attackerId, fromTile: d.tile,
-          x: this.core.coordX(d.tile), y: this.core.coordY(d.tile),
-          troops: d.attackerSurvivors,
-        }, t);
-      }
+      if (attacker) await startSiegeReturnMarch(this.core, d, t);
       return;
     }
 
@@ -123,13 +168,10 @@ export class SiegeDamageService {
         console.error('[worldsvc] settleSiegeDamage: HP write lost the rev race every attempt', { tile: d.tile });
         return;
       }
-      if (attacker && d.attackerSurvivors > 0) {
-        await startReturnMarch(this.core, {
-          worldId: d.worldId, ownerId: d.attackerId, fromTile: d.tile,
-          x: this.core.coordX(d.tile), y: this.core.coordY(d.tile),
-          troops: d.attackerSurvivors,
-        }, t);
-      }
+      // 2026-09-12 (user decision): the wall still stands, so the siege is not over — the besiegers open
+      // the next round in place instead of walking home. See startNextSiegeRound for why that re-runs the
+      // whole assault (and therefore lets the defender repel it) rather than just re-arming the timer.
+      if (attacker) await startNextSiegeRound(this.core, d, t);
       const after = await cols.tiles.findOne({ _id: d.tile });
       if (after) { void this.core.pushTile(d.attackerId, after); void this.core.pushTile(defenderId, after); }
       return;
@@ -142,13 +184,7 @@ export class SiegeDamageService {
     if (d.isBase) {
       // Main base captured: it cannot be permanently held → besiegers return; sect-leader penalty; passive relocation
       // (all territory lost + shield + a fresh full-durability base at a random tile) + system mail (D-CITY-8).
-      if (attacker && d.attackerSurvivors > 0) {
-        await startReturnMarch(this.core, {
-          worldId: d.worldId, ownerId: d.attackerId, fromTile: d.tile,
-          x: this.core.coordX(d.tile), y: this.core.coordY(d.tile),
-          troops: d.attackerSurvivors,
-        }, t);
-      }
+      if (attacker) await startSiegeReturnMarch(this.core, d, t);
       await this.helpers.applySectLeaderPenalty(d.worldId, defenderId, t);
       await this.helpers.passiveRelocate(d.worldId, defenderId, t);
     } else {

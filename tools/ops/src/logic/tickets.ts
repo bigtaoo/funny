@@ -107,6 +107,38 @@ export function ticketInput(fields: {
   };
 }
 
+/**
+ * Mirror of `COMP_COINS_CAP_PER_TICKET` in `server/shared/src/admin.ts` — the ops frontend deliberately
+ * does not import `@nw/shared` (see types.ts), so the number lives in two places and the backend is the
+ * one that counts: `validateMail` rejects an over-cap ticket with a 400 no matter what this page allows.
+ * The point of repeating it here is that an operator finds out BEFORE filling in subject, body and
+ * reason, and reads why rather than a raw validation error.
+ */
+export const COINS_CAP_PER_TICKET = 2500;
+
+export const COINS_CAP_HINT = `Max ${COINS_CAP_PER_TICKET} coins per ticket. A larger compensation is paid as several tickets — each one approved and audited separately.`;
+
+/**
+ * What is wrong with the typed coin amount, or null when it is fine. Blank/0 is fine: a ticket may
+ * carry no coins at all (an apology mail with no attachment is a legitimate thing to send).
+ *
+ * The whole-number rule is not pedantry — `2.5e3` and `2,500` both parse to something other than what
+ * the operator meant, and coin counts are floored at delivery rather than rejected, so a fractional
+ * entry would otherwise land quietly as a different number than the one on screen.
+ */
+export function coinsProblem(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const coins = Number(trimmed);
+  if (!Number.isFinite(coins)) return 'Coins must be a number.';
+  if (coins < 0) return 'Coins cannot be negative.';
+  if (!Number.isInteger(coins)) return 'Coins must be a whole number.';
+  if (coins > COINS_CAP_PER_TICKET) {
+    return `${coins} coins exceeds the ${COINS_CAP_PER_TICKET} per-ticket cap — send it as ${plural(Math.ceil(coins / COINS_CAP_PER_TICKET), 'ticket')}.`;
+  }
+  return null;
+}
+
 export function buildTarget(scope: string, publicId: string): CompTarget {
   return scope === 'single' ? { publicId: publicId.trim() } : { filter: { kind: 'all' } };
 }

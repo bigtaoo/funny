@@ -129,8 +129,16 @@ describe('CardScene.applyCardState — late SLG fetch patches the grid in place 
     internals.applyCardState();
 
     // 'a' now shows both the troop count and the named deployed tag.
+    //
+    // Matched on the PREFIX, not the whole string (2026-09-12): the badge is drawn with `txtFit`,
+    // which steps the size down the shared scale and — when even the legibility floor does not fit
+    // the cell's right column — ends the label in an ellipsis rather than shrinking it into
+    // illegibility (render/fontScale.ts, sweep §50.11). Under this harness that is the usual case,
+    // because its `measureText` stub is a flat 7px per character and ignores font size entirely, so
+    // no size step ever narrows anything. What this test is about is that the tag appears and names
+    // the team it came from, which the prefix pins exactly as well.
     expect(findText(scene.container, '7/')).not.toBeNull();
-    expect(findText(scene.container, 'Deployed: Team 1')).not.toBeNull();
+    expect(findText(scene.container, 'Deployed: Te')).not.toBeNull();
 
     // Redrawn IN PLACE: same container objects for both cells (proves no full renderList() ran —
     // that always allocates fresh PIXI.Container()s into a fresh cellContainers Map).

@@ -53,6 +53,7 @@ export class WorldMapNet {
   async doJoin(): Promise<void> { return march.doJoin(this.ctx); }
   async doRecall(marchId: string, worldId: string): Promise<void> { return march.doRecall(this.ctx, marchId, worldId); }
   async doInstantReturn(marchId: string, worldId: string): Promise<void> { return march.doInstantReturn(this.ctx, marchId, worldId); }
+  async doStopHold(teamId: string, kind: 'siege' | 'occupy'): Promise<void> { return march.doStopHold(this.ctx, teamId, kind); }
   async doRecallStationed(teamId: string): Promise<void> { return march.doRecallStationed(this.ctx, teamId); }
 
   // ── Tile actions (net/structures.ts) ────────────────────────────────────────

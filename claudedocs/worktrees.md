@@ -26,6 +26,16 @@ feat/<slug>                 ← 分支：提交真正存放处
 5. **干完即删**：`git worktree remove <path>`，分支合并后 `git branch -d feat/<slug>`。
 6. **自管自清**：每个会话管好自己的分支和 worktree，任务结束时自行合并并清理，无需维护全局索引。
 
+## 行尾符（CRLF）与新 worktree
+
+**已装门禁（2026-09-12）**：根目录 `.gitattributes` 把 `*.sh`/`*.command`/`*.mjs`/`*.cjs`/`*.js` 钉成 **LF**（`*.cmd` 钉 CRLF）。`.ts` **故意不管**（约 2600 个文件，让 `core.autocrlf` 继续决定）。
+
+装它的原因值得记一笔，因为它的现象**指错了地方**：本机 `core.autocrlf=true`，新建 worktree 把 `server/scripts/provisionMongoUsers.mjs` 检出成 CRLF；esbuild 剔 shebang 时剩下的 `` 会生成非法 JS，于是**任何 import 它的测试**在 collect 阶段就死，报 `SyntaxError: Invalid or unexpected token` —— **行号指在那个测试文件的注释里**，跟真凶手十八竖。主检出碰巧是 LF，所以全绿。结果就是 `server/commercial` 的测试套件**在每一个新 worktree 里都挂一个文件**，而且看起来像是自己刚改坬的。
+
+**若以后又碰到类似的**：worktree 里某个你根本没碰过的测试文件整个 collect 失败，先 `file <它 import 的那个脚本>` 看行尾，别盯着报错行号看。
+
+**另外**：构建/代码生成会把 `server/contracts/openapi.yml` 和六个 `generated/` 目录重写成 LF，在 CRLF 的 worktree 里会满屏显示为修改过。`git diff --numstat` 空白 = 只是行尾，提交前 `git checkout --` 丢掉它们，别卷进 commit。
+
 ## 命令速查
 
 ```bash

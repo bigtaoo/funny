@@ -45,7 +45,7 @@ import { t } from '../i18n';
 import { txt, tearDownChildren, ui as C } from '../render/sketchUi';
 import { FS } from '../render/fontScale';
 import { drawSceneHeader, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
-import { DefenseEditorSceneCore, FOOTER_H, PALETTE_H, PAD } from './DefenseEditorScene/core';
+import { DefenseEditorSceneCore, FOOTER_H, PAD } from './DefenseEditorScene/core';
 import type { DefenseEditorCallbacks } from './DefenseEditorScene/core';
 import { DataPanel } from './DefenseEditorScene/data';
 import { RenderPanel } from './DefenseEditorScene/render';
@@ -126,8 +126,8 @@ export class DefenseEditorScene implements Scene {
       // Left half = formation grid, right half = scrollable card roster (布阵/选卡 split).
       this.renderPanel.renderAttackBody(hdr.headerH + 4, gridBottom);
     } else {
-      this.renderPanel.renderPalette(hdr.headerH + 4);
-      const gridTop = hdr.headerH + 4 + PALETTE_H + 4;
+      const paletteH = this.renderPanel.renderPalette(hdr.headerH + 4);
+      const gridTop = hdr.headerH + 4 + paletteH + 4;
       this.renderPanel.renderGrid(gridTop, gridBottom);
     }
 

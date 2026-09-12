@@ -36,6 +36,7 @@ import { initI18n, t } from '../../src/i18n';
 import {
   drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT,
 } from '../../src/ui/widgets/SceneHeader';
+import { currentFontFloor } from '../../src/render/fontScale';
 import { CardScene, type CardCallbacks } from '../../src/scenes/CardScene';
 import { makeNewSave } from '../../src/game/meta/SaveData';
 import type { CardInstance } from '../../src/game/meta/SaveData';
@@ -111,6 +112,15 @@ describe('drawSceneHeader — a measured reserve keeps the title out of the clus
   /** Cluster scale so far past fitting that the title cannot yield enough — for the backstop case. */
   const WIDE_EXTREME = 3;
 
+  /** The size `drawSceneHeader` gives a title it does NOT have to shrink — measured, not guessed. */
+  function nominalTitleSize(): number {
+    const host = new PIXI.Container();
+    drawSceneHeader(host, W, H, 'X', { variant: 'paper', accent: HEADER_ACCENT.spend });
+    const node = host.children.find((c): c is PIXI.Text => c instanceof PIXI.Text && c.text === 'X');
+    expect(node).toBeDefined();
+    return node!.style.fontSize as number;
+  }
+
   function header(host: PIXI.Container, rightReserve?: number): { titleRight: number } {
     return drawSceneHeader(host, W, H, LONG_TITLE, {
       variant: 'paper', accent: HEADER_ACCENT.spend, icon: 'rosterIcon',
@@ -143,10 +153,18 @@ describe('drawSceneHeader — a measured reserve keeps the title out of the clus
     expect(title).toBeDefined();
     expect(title!.x + title!.width).toBeCloseTo(hdr.titleRight, 3);
     // And the TITLE is what yielded, not the data readout: that priority is the point — the balance
-    // is live data the player reads, the title is a label they already know. Asserted as a
-    // comparison of the two fits rather than "cluster === 1" because at a bar width this tight the
-    // backstop can still shave a percent off the cluster; what must not happen is the reverse.
-    expect(title!.scale.x).toBeLessThan(0.9);
+    // is live data the player reads, the title is a label they already know.
+    //
+    // HOW it yields changed on 2026-09-12: `fitFont` picks a smaller SIZE off the shared scale and
+    // stops at the legibility floor, where this used to multiply the built node by an arbitrary
+    // float (0.20 on a 390-wide German phone, i.e. a 17-design-px scene title — sweep §50.12). So
+    // the observable is `style.fontSize`, and `scale` stays 1. The width that buys back cannot be
+    // seen here at all: the harness's `measureText` is font-size-independent, which is the same
+    // caveat this file's header already records. The mechanism is what is pinned; the pixel
+    // outcome is the browser measurement in UI_DESIGN_LOG_2026-08.md §50.13.
+    expect(title!.style.fontSize).toBeLessThan(nominalTitleSize());
+    expect(title!.style.fontSize).toBeGreaterThanOrEqual(currentFontFloor());
+    expect(title!.scale.x).toBe(1);
     expect(cluster.scale.x).toBeGreaterThan(0.95);
   });
 
@@ -158,17 +176,26 @@ describe('drawSceneHeader — a measured reserve keeps the title out of the clus
     expect(withSmall.titleRight).toBeGreaterThan(withBig.titleRight);
   });
 
-  it('falls back to shrinking the cluster when even an honest reserve cannot fit', () => {
-    // Past the point where the bar can hold both: the reserve is wider than the band left after the
-    // back pill, so the title cannot give up enough and drawHeaderCurrency's leftBound backstop takes
-    // over. Asserted because the alternative — going back to overlapping — is the bug.
+  it('keeps the two apart even when the reserve is wider than the band', () => {
+    // Past the point where the bar can hold both at full size. Until 2026-09-11 the title stayed
+    // CENTRED here (the reserve only ever fed the shrink factor), so it reached into the cluster's
+    // band and drawHeaderCurrency's leftBound backstop had to shrink the readout to escape it.
+    // The title now slides left out of the reserved band as well as shrinking, which is the better
+    // trade — a label the player already knows moves, live data stays (near enough) full size.
+    // It does not shrink without limit — and since 2026-09-12 the limit is the legibility floor
+    // rather than 12% of the bar, so at a reserve this extreme the title stops while still too wide
+    // and the readout's own `leftBound` backstop is what absorbs the rest. That is the intended end
+    // of the priority chain, not a reversal of it: the title gave everything it could first. (Under
+    // this harness it can give nothing at all — `measureText` ignores font size — so the backstop
+    // does all of the work here and the shave is larger than a browser would show.)
+    // What must hold either way is the ordering: the cluster starts at or after the title's edge.
     const host = new PIXI.Container();
     const hdr = header(host, headerCurrencyWidth(HEADER_H, 95946835, [], CAP, WIDE_EXTREME));
     drawHeaderCurrency(host, W, HEADER_H, 95946835, [], CAP, WIDE_EXTREME, hdr.titleRight);
     const cluster = clusterOf(host);
 
-    expect(cluster.scale.x).toBeLessThan(1);
     expect(cluster.x).toBeGreaterThanOrEqual(hdr.titleRight - 0.5);
+    expect(cluster.scale.x).toBeGreaterThan(0.5);
   });
 
   it('leaves the no-reserve default path exactly as it was', () => {

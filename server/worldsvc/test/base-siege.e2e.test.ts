@@ -21,6 +21,9 @@ import {
   teamSiegeValue,
   cardSiegeValue,
   SLG_SIEGE_DAMAGE_DELAY_MS,
+  SLG_TEAM_STAMINA_MAX,
+  SLG_TEAM_STAMINA_COST,
+  regenTeamStamina,
   SLG_TEAM_INJURY_MS,
   BASE_DURABILITY_REGEN_PER_HOUR,
   SIEGE_GEAR_PCT_CAP,
@@ -257,6 +260,173 @@ describe.skipIf(!mongo)('ADR-026 base siege e2e', () => {
     expect(after!.ownerId).toBe('b');
     // Pending hit consumed.
     expect(await m.collections.siegeDamage.findOne({ tile: tileId(W, tgt.x, tgt.y) })).toBeNull();
+  });
+
+  // 围攻驻留 (2026-09-12, user report): the five-minute wait between "garrison cleared" and "durability
+  // deducted" was invisible and unowned client-side — the winning march is deleted on arrival, so the team
+  // vanished from the map, read as idle at home, and could be re-dispatched from under the siege it was
+  // prosecuting. The hold document now carries the team, which makes all three of those wrong things right.
+  it('a won base siege pins the team to the target for the whole delay, then opens the next round', async () => {
+    const tgt = findCoord(20, 5);
+    await setupBase(tgt.x, tgt.y, { durability: 100 });
+    const army = await setupAttacker(3);
+    await connectAttacker(tgt.x, tgt.y);
+    // The roster entry the busy gate below reads (arriveAttack inserts the MarchDoc directly, so
+    // nothing else in this file needs a real team template).
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Alpha', army }]);
+
+    await arriveAttack(tgt.x, tgt.y, army, 't1');
+
+    // 1) The pending hit carries the winning march's team, snapshotted (the march itself is gone by now).
+    const pending = await m.collections.siegeDamage.findOne({ tile: tileId(W, tgt.x, tgt.y) });
+    expect(pending!.teamId).toBe('t1');
+    expect(pending!.army).toHaveLength(army.length);
+    expect(await m.collections.marches.findOne({ worldId: W, ownerId: 'a' })).toBeNull();
+
+    // 2) It is listable, so the client can render the countdown + the besieging token. Own holds only,
+    //    and keyed on the siege id the SiegeResult push already carries.
+    const siege = await m.collections.sieges.findOne({ worldId: W, attackerId: 'a' });
+    const holds = await svc.getSiegeHolds(W, 'a');
+    expect(holds).toHaveLength(1);
+    expect(holds[0]).toMatchObject({
+      siegeId: siege!._id, tile: tileId(W, tgt.x, tgt.y), x: tgt.x, y: tgt.y,
+      isBase: true, teamId: 't1', dueAt: nowMs + SLG_SIEGE_DAMAGE_DELAY_MS,
+    });
+    expect(await svc.getSiegeHolds(W, 'b')).toEqual([]); // the defender does not get the attacker's holds
+
+    // 3) TEAM_BUSY: the team is standing on the target, so it cannot take a new order.
+    await expect(
+      svc.startMarch(W, 'a', 5, 5, tgt.x, tgt.y, 'attack', 0, 't1'),
+    ).rejects.toMatchObject({ code: 'TEAM_BUSY' });
+
+    // 4) The hit lands and the wall still stands, so the besiegers do NOT go home (2026-09-12 user
+    //    decision) — they open the next round in place: a zero-length attack march on the same tile,
+    //    carrying the same team, which the arrival tick then runs as a full assault.
+    nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
+    expect(await svc.processDueSiegeDamage()).toBe(1);
+    expect(await svc.getSiegeHolds(W, 'a')).toEqual([]); // this round's hold is consumed
+    expect(await m.collections.marches.findOne({ worldId: W, ownerId: 'a', kind: 'return' })).toBeNull();
+    const nextRound = await m.collections.marches.findOne({ worldId: W, ownerId: 'a', kind: 'attack' });
+    expect(nextRound).toMatchObject({
+      teamId: 't1', fromTile: tileId(W, tgt.x, tgt.y), toTile: tileId(W, tgt.x, tgt.y), arriveAt: nowMs,
+    });
+
+    // 5) …and running it really does re-assault: a fresh hold, scheduled another delay out.
+    expect(await svc.processDueArrivalSettlements()).toBe(1);
+    const round2 = await svc.getSiegeHolds(W, 'a');
+    expect(round2).toHaveLength(1);
+    expect(round2[0]).toMatchObject({ teamId: 't1', dueAt: nowMs + SLG_SIEGE_DAMAGE_DELAY_MS });
+    expect(round2[0]!.siegeId).not.toBe(holds[0]!.siegeId); // a new battle, not the same one re-listed
+  });
+
+  // The loop has to END somewhere, and the point of re-running the whole assault (rather than just
+  // re-arming the timer) is that the existing stop conditions do it. This is the one a defender controls.
+  it('a round the defender repels ends the siege — the survivors walk home instead of starting another', async () => {
+    const tgt = findCoord(20, 5);
+    await setupBase(tgt.x, tgt.y, { durability: 100 });
+    const army = await setupAttacker(3);
+    await connectAttacker(tgt.x, tgt.y);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Alpha', army }]);
+    await arriveAttack(tgt.x, tgt.y, army, 't1');
+
+    // Give the defender a garrison team strong enough to wipe the attacker before round 2 runs.
+    const { inv, army: defArmy, state } = mkCards('cd', 5, 100_000, 'chenshou');
+    cardInvByAccount['b'] = inv;
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'b') },
+      {
+        $set: {
+          teams: [{ id: 't1', name: 'Wall', army: defArmy }],
+          ...Object.fromEntries(Object.entries(state).map(([id, st]) => [`cardState.${id}`, st])),
+        },
+      },
+    );
+
+    nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
+    await svc.processDueSiegeDamage();          // hit lands, next round dispatched
+    await svc.processDueArrivalSettlements();   // …and that round is fought, and lost
+
+    expect(await svc.getSiegeHolds(W, 'a')).toEqual([]); // no third round scheduled
+    const back = await m.collections.marches.findOne({ worldId: W, ownerId: 'a', kind: 'return' });
+    expect(back?.teamId).toBe('t1');
+    // A card army's survivors already live in cardState.currentTroops; the return leg must not credit
+    // the flat pool a second time for the same soldiers.
+    expect(back?.troops).toBe(0);
+  });
+
+  // 体力控制平衡 (2026-09-12 user decision: 「每次开始战斗，都需要扣除体力的。确实不花时间因为队伍已经
+  // 在城边了，主要还是靠体力控制平衡」). A round skips the travel leg, not the order's cost — that budget
+  // is the only thing bounding how far one dispatch can grind a base down.
+  it('each round costs the team an order of stamina', async () => {
+    const tgt = findCoord(20, 5);
+    await setupBase(tgt.x, tgt.y, { durability: 100 });
+    const army = await setupAttacker(3);
+    await connectAttacker(tgt.x, tgt.y);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Alpha', army }]);
+    await arriveAttack(tgt.x, tgt.y, army, 't1');
+
+    const before = (await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') }))!;
+    // arriveAttack inserts the MarchDoc directly, so the FIRST assault charged nothing here — the team
+    // is still on a full budget, which is what makes the delta below unambiguous.
+    expect(before.teamState?.t1?.stamina ?? SLG_TEAM_STAMINA_MAX).toBe(SLG_TEAM_STAMINA_MAX);
+
+    nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
+    await svc.processDueSiegeDamage(); // hit lands → next round dispatched
+    const after = (await m.collections.playerWorld.findOne({ _id: playerWorldId(W, 'a') }))!;
+    // Charged off the REGENERATED figure, not the stored one — five minutes of regen came first.
+    const regened = regenTeamStamina(SLG_TEAM_STAMINA_MAX, 0, nowMs);
+    expect(after.teamState!.t1!.stamina).toBe(regened - SLG_TEAM_STAMINA_COST);
+    expect(after.teamState!.t1!.staminaAt).toBe(nowMs);
+  });
+
+  it('a team too tired for another order stops besieging and walks home', async () => {
+    const tgt = findCoord(20, 5);
+    await setupBase(tgt.x, tgt.y, { durability: 100 });
+    const army = await setupAttacker(3);
+    await connectAttacker(tgt.x, tgt.y);
+    await svc.setTeams(W, 'a', [{ id: 't1', name: 'Alpha', army }]);
+    await arriveAttack(tgt.x, tgt.y, army, 't1');
+
+    // Drain the team to just under one order's worth, checkpointed NOW so the five minutes of regen
+    // that pass before settlement cannot lift it back over the line.
+    nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
+    await m.collections.playerWorld.updateOne(
+      { _id: playerWorldId(W, 'a') },
+      { $set: { 'teamState.t1.stamina': 0, 'teamState.t1.staminaAt': nowMs } },
+    );
+
+    expect(await svc.processDueSiegeDamage()).toBe(1);
+    // The hit still landed — it was already paid for. What stops is the NEXT round.
+    expect((await m.collections.tiles.findOne({ _id: tileId(W, tgt.x, tgt.y) }))!.durability).toBeLessThan(100);
+    expect(await svc.getSiegeHolds(W, 'a')).toEqual([]);
+    expect(await m.collections.marches.findOne({ worldId: W, ownerId: 'a', kind: 'attack' })).toBeNull();
+    expect((await m.collections.marches.findOne({ worldId: W, ownerId: 'a', kind: 'return' }))?.teamId).toBe('t1');
+  });
+
+  // 停止围攻 (2026-09-12 user decision: 「攻城…都是可以随时从右边的队伍信息面板里停止的」).
+  it('cancelSiegeHold voids the pending hit and walks the team home', async () => {
+    const tgt = findCoord(20, 5);
+    await setupBase(tgt.x, tgt.y, { durability: 100 });
+    const army = await setupAttacker(3);
+    await connectAttacker(tgt.x, tgt.y);
+    await svc.setTeams(W, 'a', [{ id: 'tl', name: 'Alpha', army }]);
+    await arriveAttack(tgt.x, tgt.y, army, 'tl');
+    expect(await svc.getSiegeHolds(W, 'a')).toHaveLength(1);
+
+    await svc.cancelSiegeHold(W, 'a', 'tl');
+
+    expect(await svc.getSiegeHolds(W, 'a')).toEqual([]);
+    expect((await m.collections.marches.findOne({ worldId: W, ownerId: 'a', kind: 'return' }))?.teamId).toBe('tl');
+    // Voided, not applied early: the wall is untouched when the siege is called off mid-round.
+    expect((await m.collections.tiles.findOne({ _id: tileId(W, tgt.x, tgt.y) }))!.durability).toBe(100);
+    // …and the scheduler has nothing left to settle.
+    nowMs += SLG_SIEGE_DAMAGE_DELAY_MS + 1;
+    expect(await svc.processDueSiegeDamage()).toBe(0);
+  });
+
+  it('cancelSiegeHold on a team that is not besieging is a 404, not a silent no-op', async () => {
+    await svc.joinWorld(W, 'a', 5, 5);
+    await expect(svc.cancelSiegeHold(W, 'a', 't1')).rejects.toMatchObject({ code: 'SIEGE_HOLD_NOT_FOUND' });
   });
 
   it('siege value is per-card: a shieldbearer team dents HP more than an archer team of equal size', async () => {

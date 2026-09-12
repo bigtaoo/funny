@@ -15,7 +15,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import type { SiegeDamageDoc, CityDoc, SectMessageDoc, NationMessageDoc } from '../db';
 import type { WorldCore } from '../core';
-import { startReturnMarch } from '../combatShared';
+import { startSiegeReturnMarch, startNextSiegeRound } from '../combatShared';
 
 /** Max optimistic-concurrency attempts for the durability write (same bound as the tile path). */
 const MAX_ATTEMPTS = 5;
@@ -38,14 +38,19 @@ export async function settleCityDamage(core: WorldCore, d: SiegeDamageDoc & { ci
   const attackerSectId = d.attackerSectId;
 
   const returnSurvivors = async (): Promise<void> => {
-    if (d.attackerSurvivors <= 0) return;
     const attacker = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, d.attackerId) });
     if (!attacker) return;
-    await startReturnMarch(core, {
-      worldId: d.worldId, ownerId: d.attackerId, fromTile: d.tile,
-      x: core.coordX(d.tile), y: core.coordY(d.tile),
-      troops: d.attackerSurvivors,
-    }, t);
+    await startSiegeReturnMarch(core, d, t);
+  };
+  /**
+   * 2026-09-12 (user decision): the wall still stands after this hit, so the besiegers stay and open the
+   * next round rather than walking home — the same rule the main-base path follows, and the same reason
+   * (a city ladder that survives one hit has not been taken). See startNextSiegeRound.
+   */
+  const continueSiege = async (): Promise<void> => {
+    const attacker = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, d.attackerId) });
+    if (!attacker) return;
+    await startNextSiegeRound(core, d, t);
   };
 
   const city = await cols.cities.findOne({ _id: d.cityId });
@@ -86,7 +91,7 @@ export async function settleCityDamage(core: WorldCore, d: SiegeDamageDoc & { ci
         },
       );
       if (res.matchedCount > 0) {
-        await returnSurvivors();
+        await continueSiege();
         return;
       }
     } else {

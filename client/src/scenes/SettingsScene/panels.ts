@@ -205,10 +205,15 @@ export function drawDataSaver(host: PanelHost): void {
   lbl.anchor.set(0.5, 0.5); lbl.x = bx + btnW / 2; lbl.y = by + btnH / 2;
   container.addChild(lbl);
 
-  const hint = txt(t('settings.dataSaverHint'), FS.label, C.mid);
-  hint.anchor.set(0, 0.5); hint.x = Math.round(w * 0.12); hint.y = rowY + Math.round(h * 0.038);
-  // The sentence is long in every locale and this row is width-constrained by the toggle beside it.
-  if (hint.width > w * 0.46) hint.scale.set((w * 0.46) / hint.width);
+  // Wrapped, not shrunk. Fitting this whole sentence onto ONE line of 0.46w scaled it to ~0.2 —
+  // 5 design px of type, which is below anything the font scale offers and simply unreadable
+  // (measured on all three portrait viewports, 2026-09-11). It sits BELOW the toggle row, so it is
+  // free to use the full content width and spend the vertical gap before Help/Account instead.
+  const hint = makeText(t('settings.dataSaverHint'), {
+    fontSize: FS.tiny, fill: C.mid, fontFamily: 'monospace',
+    wordWrap: true, wordWrapWidth: Math.round(w * 0.76), breakWords: true,
+  });
+  hint.anchor.set(0, 0); hint.x = Math.round(w * 0.12); hint.y = rowY + Math.round(h * 0.028);
   container.addChild(hint);
 
   host.hits.push({

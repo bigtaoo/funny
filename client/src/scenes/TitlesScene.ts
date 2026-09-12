@@ -3,7 +3,7 @@ import { Scene } from './SceneManager';
 import { ILayout } from '../layout/ILayout';
 import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
-import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, txtFit, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { buildIcon, IconKind } from '../render/icons';
 import { titleIconUrl, getTitleIconTexture } from '../render/titleArt';
 import { buildDecorCLayer } from '../render/decorCLayer';
@@ -69,11 +69,12 @@ function fallbackTitleIcon(titleId: string): IconKind {
 }
 
 /**
- * Clamp a bottom-anchored status badge's y so it never overlaps content that ends at
- * `contentBottom` — the full-name label above a card's badge can word-wrap to extra lines on a
- * narrow card (long locale full names, e.g. "Notebook Conqueror"), and the badge must yield
+ * Clamp the TOP of a card's bottom-anchored status block so it never overlaps content that ends at
+ * `contentBottom` — the full-name label above it can word-wrap to extra lines on a narrow card
+ * (long locale full names, e.g. "Notebook Conqueror", "Ranglistenprofi"), and the block must yield
  * downward past wherever that label actually ended instead of sitting at its usual fixed offset
- * from the card's bottom (2026-08-11 portrait title-wall overlap fix).
+ * from the card's bottom (2026-08-11 portrait title-wall overlap fix; applied to the badge AND the
+ * hint as one group 2026-09-12, see `drawTitleCard`).
  *
  * Exported and pure so it can be unit-tested directly with plain numbers: PIXI's word-wrap under
  * the headless UI-test harness measures text width as a flat length-based approximation (see
@@ -313,11 +314,61 @@ export class TitlesScene implements Scene {
     card.alpha = isOwned ? 1 : 0.5;
     this.body.addChild(card);
 
+    // ── The card is laid out labels-first, medal last ────────────────────────────────────────
+    //
+    // Every label under the medal is built (and therefore measured) before the medal is sized,
+    // because the medal is the only element here with slack and the labels are the ones whose
+    // height is a locale question. The full name wraps at `cellW * 0.85`, and an equipped card
+    // carries a badge AND a hint beneath it: on a 390-wide phone that is a 184-px card holding
+    // "Ranglistenprofi" (two lines) over "Angelegt" over the unequip hint — 30 design px more than
+    // the card has. The badge used to be placed at a fixed offset from the card's bottom with no
+    // idea of any of that, and was drawn straight through the name (sweep §50.12; the `contentBottom`
+    // clamp below already protected the HINT, which is why only the badge collided).
+    const topPad = Math.round(cellH * 0.06);
+    const afterIconGap = Math.round(cellH * 0.04);
+    const shortLineH = Math.round(cellH * 0.15);
+    const botPad = Math.round(cellH * 0.06);
+    const aboveBottomGap = Math.round(cellH * 0.03);
+    const badgeHintGap = Math.round(cellH * 0.02);
+
+    const keys = getTitleKeys(titleId);
+    const shortLabel = keys
+      ? (t(keys.shortKey as import('../i18n').TranslationKey) || formatLadderTitle(titleId))
+      : formatLadderTitle(titleId);
+    const fullLabel = keys
+      ? (t(keys.fullKey as import('../i18n').TranslationKey) || shortLabel)
+      : shortLabel;
+
+    const fullLbl = txt(fullLabel, snapFont(Math.round(cellH * 0.07)), isOwned ? C.dark : C.mid, false, Math.round(cellW * 0.85));
+    fullLbl.anchor.set(0.5, 0); fullLbl.x = x + cellW / 2;
+    fullLbl.alpha = isOwned ? 0.85 : 0.65;
+
+    // Bottom block: a locked card shows one badge, an equipped one a badge over a hint, an owned
+    // idle one neither. `txtFit` on the hint because it is the longest string on the card and the
+    // only one with nowhere to wrap to — it steps down the scale and, at the floor, elides.
+    const badge = !isOwned
+      ? txt(t('titles.locked'), snapFont(Math.round(cellH * 0.08)), C.mid)
+      : equipped
+        ? txt(t('titles.equipped'), snapFont(Math.round(cellH * 0.08)), C.gold, true)
+        : null;
+    const hint = isOwned && equipped
+      ? txtFit(t('titles.tapUnequip'), snapFont(Math.round(cellH * 0.06)), C.mid, false, Math.round(cellW * 0.9))
+      : null;
+    const bottomH = (badge ? badge.height : 0) + (hint ? badgeHintGap + hint.height : 0);
+
     // Medal art is tall portrait (~0.5 aspect); fit it into the icon box preserving aspect so it
-    // isn't squashed into a square. Box gets the top ~44% of the card.
-    const boxH = Math.round(cellH * 0.44);
+    // isn't squashed into a square. Box gets the top ~44% of the card, or whatever the labels leave
+    // — but never below 0.28, past which it stops reading as a medal and the honest failure is the
+    // labels crowding again rather than the picture quietly vanishing.
+    const boxH = Math.round(Math.max(
+      cellH * 0.28,
+      Math.min(
+        cellH * 0.44,
+        cellH - topPad - afterIconGap - shortLineH - fullLbl.height - aboveBottomGap - bottomH - botPad,
+      ),
+    ));
     const boxMaxW = Math.round(cellW * 0.7);
-    const iconTop = y + Math.round(cellH * 0.06);
+    const iconTop = y + topPad;
     const iconUrl = titleIconUrl(titleId);
     if (iconUrl) {
       const tex = getTitleIconTexture(iconUrl);
@@ -346,51 +397,36 @@ export class TitlesScene implements Scene {
       this.body.addChild(icon);
     }
 
-    const keys = getTitleKeys(titleId);
-    const shortLabel = keys
-      ? (t(keys.shortKey as import('../i18n').TranslationKey) || formatLadderTitle(titleId))
-      : formatLadderTitle(titleId);
-    const fullLabel = keys
-      ? (t(keys.fullKey as import('../i18n').TranslationKey) || shortLabel)
-      : shortLabel;
-
-    const shortY = iconTop + boxH + Math.round(cellH * 0.04);
+    const shortY = iconTop + boxH + afterIconGap;
     const shortLbl = txt(`「${shortLabel}」`, snapFont(Math.round(cellH * 0.11)), color, equipped);
     shortLbl.anchor.set(0.5, 0); shortLbl.x = x + cellW / 2; shortLbl.y = shortY;
     if (shortLbl.width > cellW * 0.88) shortLbl.scale.set((cellW * 0.88) / shortLbl.width);
     shortLbl.alpha = isOwned ? 1 : 0.7;
     this.body.addChild(shortLbl);
 
-    const fullLbl = txt(fullLabel, snapFont(Math.round(cellH * 0.07)), isOwned ? C.dark : C.mid, false, Math.round(cellW * 0.85));
-    fullLbl.anchor.set(0.5, 0); fullLbl.x = x + cellW / 2; fullLbl.y = shortY + Math.round(cellH * 0.15);
-    fullLbl.alpha = isOwned ? 0.85 : 0.65;
+    fullLbl.y = shortY + shortLineH;
     this.body.addChild(fullLbl);
 
-    // Long locale full names (e.g. "Notebook Conqueror") can word-wrap to 2+ lines on a narrow
-    // card, but the status badge(s) below are otherwise placed at a fixed offset from the card's
-    // *bottom* — with no idea how tall the label above actually rendered, a wrapped label runs
-    // straight into the badge text. Measure the label's real bottom and let the badge yield
-    // downward past it when needed, instead of overlapping (2026-08-11 portrait title-wall fix).
-    const contentBottom = fullLbl.y + fullLbl.height;
-
-    if (!isOwned) {
-      const badge = txt(t('titles.locked'), snapFont(Math.round(cellH * 0.08)), C.mid);
-      badge.anchor.set(0.5, 1);
-      badge.x = x + cellW / 2;
-      badge.y = badgeYBelowContent(y + cellH - Math.round(cellH * 0.06), contentBottom, Math.round(cellH * 0.03));
-      this.body.addChild(badge);
-      return;
+    // The bottom block sits at its usual offset from the card's bottom, and yields downward as ONE
+    // group when the wrapped name above reaches into it (2026-08-11 portrait title-wall fix,
+    // extended to the badge 2026-09-12 — it used to be positioned relative to the hint, i.e. back
+    // UP into the content the hint had just cleared).
+    if (badge || hint) {
+      const blockTop = badgeYBelowContent(
+        y + cellH - botPad - bottomH, fullLbl.y + fullLbl.height, aboveBottomGap,
+      );
+      if (badge) {
+        badge.anchor.set(0.5, 0); badge.x = x + cellW / 2; badge.y = blockTop;
+        this.body.addChild(badge);
+      }
+      if (hint) {
+        hint.anchor.set(0.5, 0); hint.x = x + cellW / 2;
+        hint.y = blockTop + (badge ? badge.height + badgeHintGap : 0);
+        this.body.addChild(hint);
+      }
     }
 
-    if (equipped) {
-      const hintY = badgeYBelowContent(y + cellH - Math.round(cellH * 0.06), contentBottom, Math.round(cellH * 0.06));
-      const badge = txt(t('titles.equipped'), snapFont(Math.round(cellH * 0.08)), C.gold, true);
-      badge.anchor.set(0.5, 1); badge.x = x + cellW / 2; badge.y = hintY - Math.round(cellH * 0.08);
-      this.body.addChild(badge);
-      const hint = txt(t('titles.tapUnequip'), snapFont(Math.round(cellH * 0.06)), C.mid);
-      hint.anchor.set(0.5, 1); hint.x = x + cellW / 2; hint.y = hintY;
-      this.body.addChild(hint);
-    }
+    if (!isOwned) return;
 
     this.hits.push({
       rect: { x, y, w: cellW, h: cellH },

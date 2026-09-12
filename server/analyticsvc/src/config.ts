@@ -1,11 +1,12 @@
 // analyticsvc environment variables (A9-1).
 // Ninth process; not reachable by players (reverse proxy does not route to it; internal network only). Reuses the meta JWT for verifyToken signature verification only.
-import { loadServerEnv, type ServerEnv } from '@nw/shared';
+import { DEV_MONGO_URI, loadServerEnv, requiredEnv, type ServerEnv } from '@nw/shared';
 
 export interface AnalyticssvcEnv extends ServerEnv {
   port: number;
   host: string;
-  /** Dedicated database Mongo URI (defaults to NW_MONGO_URI). */
+  /** Mongo URI for `notebook_wars_analytics` — this service's OWN least-privilege login.
+   *  Never falls back to another service's variable; unset means the local dev Mongo (ADR-090). */
   analyticsMongoUri: string;
   /** Dedicated database name (physically separate from meta/commercial/admin/world). */
   analyticsMongoDb: string;
@@ -17,7 +18,7 @@ export function loadAnalyticssvcEnv(): AnalyticssvcEnv {
     ...base,
     port: Number(process.env.NW_ANALYTICS_PORT ?? 18085),
     host: process.env.NW_ANALYTICS_HOST ?? '0.0.0.0',
-    analyticsMongoUri: process.env.NW_ANALYTICS_MONGO_URI ?? base.mongoUri,
+    analyticsMongoUri: requiredEnv('NW_ANALYTICS_MONGO_URI', DEV_MONGO_URI),
     analyticsMongoDb: process.env.NW_ANALYTICS_MONGO_DB ?? 'notebook_wars_analytics',
   };
 }

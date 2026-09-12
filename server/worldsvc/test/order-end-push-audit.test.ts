@@ -23,7 +23,7 @@ import { join } from 'node:path';
 const SRC = join(__dirname, '..', 'src');
 
 /** Deleting one of these ends a field order that has NO MarchDoc left to report it. */
-const DELETION_RE = /cols\.(occupations|stationed)\.(deleteOne|findOneAndDelete)\b/g;
+const DELETION_RE = /cols\.(occupations|stationed|siegeDamage)\.(deleteOne|findOneAndDelete)\b/g;
 
 /**
  * Reviewed order-ending deletion sites: file → how many, and how the owner is told.
@@ -50,6 +50,11 @@ const REVIEWED: Record<string, { sites: number; pushes: number; why: string }> =
     sites: 1,
     pushes: 0,
     why: 'ADR-051 P3c idle-redispatch claims the station and immediately dispatches a new march, which pushes',
+  },
+  'combatSiege/damage.ts': {
+    sites: 2,
+    pushes: 0,
+    why: '围攻驻留 (2026-09-12), both siegeDamage deletions: (1) processDueSiegeDamage claims and deletes the hold, then settleSiegeDamage either opens the next round (startNextSiegeRound — that round pushes its own march + siege result once it lands) or hands the besiegers to startSiegeReturnMarch, which pushes the return march; (2) cancelSiegeHold deletes it on the owner\'s own request and hands it to that same startSiegeReturnMarch. Both therefore report through a real march — except startSiegeReturnMarch\'s nothing-survived branch, which pushes pushOrderEnded itself (combatShared.ts, which has no deletion site of its own and so is not scanned)',
   },
   'territory.ts': {
     sites: 1,
@@ -81,7 +86,7 @@ function scan(): Map<string, { sites: number; pushes: number }> {
 describe('order-ending deletions must announce themselves on the march_update channel', () => {
   const found = scan();
 
-  it('every file that deletes an OccupationDoc/StationedDoc has been reviewed against the rule', () => {
+  it('every file that deletes an OccupationDoc/StationedDoc/SiegeDamageDoc has been reviewed against the rule', () => {
     // A failure here is not "add your file to the list" — it is "decide how the owner's client learns
     // this order ended", then record the answer. Silence is what shipped the reported bug.
     expect([...found.keys()].sort()).toEqual(Object.keys(REVIEWED).sort());

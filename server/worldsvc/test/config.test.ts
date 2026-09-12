@@ -3,7 +3,7 @@
 // keys (NW_MONGO_URI etc.) are left alone since other test files in this suite (fileParallelism:false, same
 // process) rely on whatever globalSetup/setupEnv already bridged into process.env.
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { loadServerEnv } from '@nw/shared';
+import { DEV_MONGO_URI } from '@nw/shared';
 import { loadWorldsvcEnv } from '../src/config';
 
 const ENV_KEYS = [
@@ -28,6 +28,8 @@ describe('loadWorldsvcEnv', () => {
       originals[k] = process.env[k];
       delete process.env[k];
     }
+    // Its own login is required now, not defaulted (ADR-090) — every case needs it present.
+    process.env.NW_WORLD_MONGO_URI = 'mongodb://its-own-host:27017/?replicaSet=rs0';
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -38,10 +40,9 @@ describe('loadWorldsvcEnv', () => {
 
   it('defaults: no NW_WORLD_*/internal-url/auto-settle env vars set -> documented fallbacks', () => {
     const env = loadWorldsvcEnv();
-    const base = loadServerEnv();
     expect(env.port).toBe(18084);
     expect(env.host).toBe('0.0.0.0');
-    expect(env.worldMongoUri).toBe(base.mongoUri);
+    expect(env.worldMongoUri).toBe('mongodb://its-own-host:27017/?replicaSet=rs0'); // its OWN login, threaded through untouched
     expect(env.worldMongoDb).toBe('notebook_wars_world');
     expect(env.redisUrl).toBeUndefined();
     expect(env.gatewayInternalUrl).toBeUndefined();
@@ -82,5 +83,15 @@ describe('loadWorldsvcEnv', () => {
   it('NW_SLG_AUTO_SETTLE set to anything other than "0" -> still true (only "0" opts out)', () => {
     process.env.NW_SLG_AUTO_SETTLE = '1';
     expect(loadWorldsvcEnv().autoSettleSeasons).toBe(true);
+  });
+
+  it("with its own Mongo URI unset, falls back to the local dev Mongo — never to metaserver's login (ADR-090)", () => {
+    // Until 2026-09-12 this line read `?? base.mongoUri`, so an unset NW_WORLD_MONGO_URI silently handed this
+    // service metaserver's connection string — and on the deployed cluster that login could read and write
+    // every database, which is precisely the isolation this was supposed to provide. The replacement
+    // fallback is a HOST nobody has grants on, so a misconfigured deployment dies on a refused connection
+    // instead of quietly opening someone else's data.
+    delete process.env.NW_WORLD_MONGO_URI;
+    expect(loadWorldsvcEnv().worldMongoUri).toBe(DEV_MONGO_URI);
   });
 });

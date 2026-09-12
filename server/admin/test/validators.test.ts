@@ -15,7 +15,7 @@
 // The repo's coverage gate only measures LINE coverage (scripts/checkCoverageThreshold.mjs), which
 // this module already passed — so nothing would ever have reported the branch half.
 import { describe, expect, it } from 'vitest';
-import type { FeatureFlagDoc, SlgShopItemOverrideDoc, TradeAuditSnapshot } from '@nw/shared';
+import { COMP_COINS_CAP_PER_TICKET, type FeatureFlagDoc, type SlgShopItemOverrideDoc, type TradeAuditSnapshot } from '@nw/shared';
 import type { AdminAccountDoc } from '../src/db';
 import { AdminError } from '../src/service/errors';
 import {
@@ -188,6 +188,35 @@ describe('validateMail', () => {
     ).toThrowError(/invalid attachment count/);
     expect(validateMail({ ...MAIL, attachments: [{ kind: 'coins', count: 0 }] } as unknown as typeof MAIL).attachments)
       .toEqual([{ kind: 'coins', count: 0 }]);
+  });
+
+  it('rejects a coins attachment above the per-ticket cap, and accepts the cap exactly', () => {
+    expect(
+      validateMail({ ...MAIL, attachments: [{ kind: 'coins', count: COMP_COINS_CAP_PER_TICKET }] }).attachments,
+    ).toHaveLength(1);
+    expect(() =>
+      validateMail({ ...MAIL, attachments: [{ kind: 'coins', count: COMP_COINS_CAP_PER_TICKET + 1 }] }),
+    ).toThrowError(/exceeds the per-ticket cap/);
+  });
+
+  it('caps the SUM of coin attachments — two entries cannot split their way past it', () => {
+    const half = COMP_COINS_CAP_PER_TICKET / 2;
+    expect(() =>
+      validateMail({
+        ...MAIL,
+        attachments: [
+          { kind: 'coins', count: half + 1 },
+          { kind: 'coins', count: half + 1 },
+        ],
+      }),
+    ).toThrowError(/exceeds the per-ticket cap/);
+  });
+
+  it('does not count item/skin coin equivalents against the coin cap', () => {
+    // 10 skins are worth 20000 in tiering terms; the cap is about coins actually minted, so this passes
+    // validation (and routes to super-admin approval via amountTier instead).
+    const atts = Array.from({ length: 10 }, () => ({ kind: 'skin' as const, id: 'gold-pen' }));
+    expect(validateMail({ ...MAIL, attachments: atts }).attachments).toHaveLength(10);
   });
 
   it('defaults expireDays to 30 unless a positive finite number was given (which it floors)', () => {

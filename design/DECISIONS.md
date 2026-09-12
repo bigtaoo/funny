@@ -7,7 +7,7 @@
 
 格式：`ADR-NNN 标题 — 状态(Accepted/Superseded) — 日期`（`Proposed` = 已登记、未拍板的候选提案，不代表当前实现，实施前需另开确认）
 > **2026-08-17 拆分**：原文件 803 行，ADR 正文按编号搬进两个分册，本文保留索引。编号/标题/锚点全部未变。
-> **新拍板追加到 [`DECISIONS_ADR-070-onward.md`](DECISIONS_ADR-070-onward.md) 末尾**，并在下表补一行。
+> **新拍板追加到 [`DECISIONS_ADR-086-onward.md`](DECISIONS_ADR-086-onward.md) 末尾**，并在下表补一行。
 
 ---
 
@@ -87,26 +87,27 @@
 | [ADR-067](DECISIONS_ADR-041-069.md#adr-067-设计文档单文件-500-行上限--hub-索引--分册结构--accepted--2026-08-17) | 设计文档单文件 500 行上限 + 「hub 索引 / 分册」结构 | Accepted | 2026-08-17 |
 | [ADR-068](DECISIONS_ADR-041-069.md#adr-068-融合面板目标意图契约取代自动换目标--自动连续融合--accepted--2026-08-18) | 融合面板：目标意图契约取代自动换目标 / 自动连续融合 | Accepted | 2026-08-18 |
 | [ADR-069](DECISIONS_ADR-041-069.md#adr-069-slg-攻城值随携带兵力缩放破城不再有12-卡硬顶-npcbasehp-重校准-4060--accepted--2026-08-19) | SLG 攻城值随携带兵力缩放（破城不再有「12 卡硬顶」）+ npcBaseHp 重校准 40→60 | Accepted | 2026-08-19 |
-| [ADR-070](DECISIONS_ADR-070-onward.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) | `tools/` 覆盖率口径：scoped include + 「reported, not gated」过渡 | Accepted | 2026-08-20 |
-| [ADR-071](DECISIONS_ADR-070-onward.md#adr-071-门禁盲区收口--非-workspace-包接进-ci--desktop-shell-接进可达性--客户端覆盖率-scope-扩到已测模块--accepted--2026-08-21) | 门禁盲区收口：非 workspace 包接进 CI、`desktop-shell` 接进可达性、客户端覆盖率 scope 扩到已测模块 | Accepted | 2026-08-21 |
-| [ADR-072](DECISIONS_ADR-070-onward.md#adr-072-装备页改为卡背包之上的-overlay--adr-044-的模式下沉到成长组--accepted--2026-08-25) | 装备页改为卡背包之上的 overlay：卡背包不再重建，滚动位置与详情弹窗跨岔路留存 | Accepted | 2026-08-25 |
-| [ADR-073](DECISIONS_ADR-070-onward.md#adr-073-整页-bake-按上屏缩放定分辨率--横屏宽高比上限--纹理字节口径--accepted--2026-08-25) | 整页 bake 按上屏缩放定分辨率（修手机整页纹理 111 MB/张）+ 横屏 2.4:1 宽高比上限 + 纹理字节口径 | Accepted | 2026-08-25 |
-| [ADR-074](DECISIONS_ADR-070-onward.md#adr-074-野外城池从贴图升级为宗门级攻城实体--accepted--2026-08-25) | 野外城池从贴图升级为宗门级攻城实体（宗门门槛 + 耐久/回复封死单人 + `nations` 清空） | Accepted | 2026-08-25 |
-| [ADR-075](DECISIONS_ADR-070-onward.md#adr-075-slg-兵力上限曲线重调基数腰斩--每级加倍练兵场成长感-训练队列槽位去死值--accepted--2026-08-25) | SLG 兵力上限曲线重调：基数 10000→5000 / 每级 1000→1500（成长 2×→4×）+ 训练队列槽位 1/2/3 去死值 + troopCap 重算迁移 | Accepted | 2026-08-25 |
-| [ADR-076](DECISIONS_ADR-070-onward.md#adr-076-宗门驻防队加在-npc-波次前面而不是替代它--州府防御加成改按城池归属判定--accepted--2026-08-27) | 宗门驻防队**加在** NPC 波次前面而不是替代它（保住 P2 实测的兵耗闸门）+ `NATION_BONUS_DEFENSE` 改按 `CityDoc.ownerSectId` 判定 + `defenderLock` 未使用即退役 | Accepted | 2026-08-27 |
-| [ADR-077](DECISIONS_ADR-070-onward.md#adr-077-驻防队的练度花在阵地基地-hp上不是花在守军自己的-hp-上--accepted--2026-08-27) | 驻防队的练度折成一个因子，花在**阵地的象征性基地 HP** 上（实测：花在守军自己 HP 上等于零效果）；不动引擎/不抬 `ENGINE_VERSION`/不改回放 payload | Accepted | 2026-08-27 |
-| [ADR-078](DECISIONS_ADR-070-onward.md#adr-078-覆盖率运行摘要合成一张表门禁只出退出码报表加-headroom--δδ-不设门禁--accepted--2026-09-02) | 覆盖率运行摘要两张表合成一张（门禁脚本只留退出码、不再写摘要页）+ 新 `Headroom` 列并按它排序 + 对齐上一次绿 main 的 Δ（**只进报表、不设门禁**）+ 删恒等于 `Lines` 的 `Statements` 列 | Accepted | 2026-09-02 |
-| [ADR-079](DECISIONS_ADR-070-onward.md#adr-079-训练队列槽位改为并行练兵场的槽位第一次真的给吞吐--accepted--2026-09-02) | 训练队列槽位改为并行：练兵场的槽位第一次真的给吞吐 | Accepted | 2026-09-02 |
-| [ADR-080](DECISIONS_ADR-070-onward.md#adr-080-应用进程口径--11-个取代-adr-005-的8-个--accepted--2026-09-03) | 应用进程口径 = 11 个（取代 ADR-005 的「8 个」） | Accepted | 2026-09-03 |
-| [ADR-081](DECISIONS_ADR-070-onward.md#adr-081-apple-iap-走-app-store-server-api--notifications-v2弃用-verifyreceipt--accepted--2026-09-07) | Apple IAP 走 App Store Server API + Notifications V2，弃用 `verifyReceipt` | Accepted | 2026-09-07 |
-| [ADR-082](DECISIONS_ADR-070-onward.md#adr-082-客户端换-storekit-2部署目标抬到-ios-15finish-由服务端确认后触发appaccounttoken-随-bootstrap-下发--accepted--2026-09-07) | 客户端换 StoreKit 2：部署目标抬到 iOS 15、finish 由服务端确认后触发、`appAccountToken` 随 `/bootstrap` 下发 | Accepted | 2026-09-07 |
-| [ADR-083](DECISIONS_ADR-070-onward.md#adr-083-渲染循环三级节流dpr-上限-2maxfps-60菜单场景按需重绘含派生式变更检测--重绘地板--accepted--2026-09-08) | 渲染循环三级节流：dpr 上限 2、`maxFPS` 60、菜单场景按需重绘（派生式变更检测 + 500 ms 重绘地板）+ 大厅面板改走烘焙图集 + 世界地图墨线与 token 拆开 | Accepted | 2026-09-08 |
-| [ADR-084](DECISIONS_ADR-070-onward.md#adr-084-诊断开关统一走-platformstorage健康会话上报-render_profile真机帧数重绘率--accepted--2026-09-08) | 诊断开关统一走 platform.storage；健康会话上报 `render_profile`（真机帧数/重绘率） | Accepted | 2026-09-08 |
-| [ADR-085](DECISIONS_ADR-070-onward.md#adr-085-worldmapscene-也改按需重绘paint-reactive以及一次把-825-ms-打回-13-ms-的更正--accepted--2026-09-08) | `WorldMapScene` 也改按需重绘（`paint: 'reactive'`）——以及一次把 8.25 ms 打回 1.3 ms 的更正 | Accepted | 2026-09-08 |
-| [ADR-086](DECISIONS_ADR-070-onward.md#adr-086-空闲功耗第二轮tick-率降到-20-hz装饰动画静默共用-ticker-也上限powerpreference-low-powerrategate-定时器改惰性--accepted--2026-09-09) | 空闲功耗第二轮：tick 率降到 20 Hz、装饰动画静默、共用 ticker 也上限、`powerPreference: 'low-power'`、rateGate 定时器改惰性 | Accepted | 2026-09-09 |
-| [ADR-087](DECISIONS_ADR-070-onward.md#adr-087-equipmentts-也走深别名客户端那份手抄副本删掉不再三处同步--accepted--2026-09-09) | `equipment.ts` 也走深别名：客户端那份手抄副本删掉，不再「三处同步」 | Accepted | 2026-09-09 |
-| [ADR-088](DECISIONS_ADR-070-onward.md#adr-088-安全区内缩只许有一套ioscontentinset-neverinset-变化改成事件驱动画布-re-fit-全局常驻设备上有可读的几何读数--accepted--2026-09-10) | 安全区内缩只许有一套（`ios.contentInset: 'never'`）；inset 变化改成事件驱动；画布 re-fit 全局常驻；设备上有可读的几何读数 | Accepted | 2026-09-10 |
-| [ADR-089](DECISIONS_ADR-070-onward.md#adr-089-会话改滑动续期响应头-x-nw-tokentoken-真失效时强制退回登录页--accepted--2026-09-10) | 会话改滑动续期（响应头 `x-nw-token`），token 真失效时强制退回登录页 | Accepted | 2026-09-10 |
+| [ADR-070](DECISIONS_ADR-070-085.md#adr-070-tools-覆盖率口径-scoped-include-与-reported-not-gated-过渡--accepted--2026-08-20) | `tools/` 覆盖率口径：scoped include + 「reported, not gated」过渡 | Accepted | 2026-08-20 |
+| [ADR-071](DECISIONS_ADR-070-085.md#adr-071-门禁盲区收口--非-workspace-包接进-ci--desktop-shell-接进可达性--客户端覆盖率-scope-扩到已测模块--accepted--2026-08-21) | 门禁盲区收口：非 workspace 包接进 CI、`desktop-shell` 接进可达性、客户端覆盖率 scope 扩到已测模块 | Accepted | 2026-08-21 |
+| [ADR-072](DECISIONS_ADR-070-085.md#adr-072-装备页改为卡背包之上的-overlay--adr-044-的模式下沉到成长组--accepted--2026-08-25) | 装备页改为卡背包之上的 overlay：卡背包不再重建，滚动位置与详情弹窗跨岔路留存 | Accepted | 2026-08-25 |
+| [ADR-073](DECISIONS_ADR-070-085.md#adr-073-整页-bake-按上屏缩放定分辨率--横屏宽高比上限--纹理字节口径--accepted--2026-08-25) | 整页 bake 按上屏缩放定分辨率（修手机整页纹理 111 MB/张）+ 横屏 2.4:1 宽高比上限 + 纹理字节口径 | Accepted | 2026-08-25 |
+| [ADR-074](DECISIONS_ADR-070-085.md#adr-074-野外城池从贴图升级为宗门级攻城实体--accepted--2026-08-25) | 野外城池从贴图升级为宗门级攻城实体（宗门门槛 + 耐久/回复封死单人 + `nations` 清空） | Accepted | 2026-08-25 |
+| [ADR-075](DECISIONS_ADR-070-085.md#adr-075-slg-兵力上限曲线重调基数腰斩--每级加倍练兵场成长感-训练队列槽位去死值--accepted--2026-08-25) | SLG 兵力上限曲线重调：基数 10000→5000 / 每级 1000→1500（成长 2×→4×）+ 训练队列槽位 1/2/3 去死值 + troopCap 重算迁移 | Accepted | 2026-08-25 |
+| [ADR-076](DECISIONS_ADR-070-085.md#adr-076-宗门驻防队加在-npc-波次前面而不是替代它--州府防御加成改按城池归属判定--accepted--2026-08-27) | 宗门驻防队**加在** NPC 波次前面而不是替代它（保住 P2 实测的兵耗闸门）+ `NATION_BONUS_DEFENSE` 改按 `CityDoc.ownerSectId` 判定 + `defenderLock` 未使用即退役 | Accepted | 2026-08-27 |
+| [ADR-077](DECISIONS_ADR-070-085.md#adr-077-驻防队的练度花在阵地基地-hp上不是花在守军自己的-hp-上--accepted--2026-08-27) | 驻防队的练度折成一个因子，花在**阵地的象征性基地 HP** 上（实测：花在守军自己 HP 上等于零效果）；不动引擎/不抬 `ENGINE_VERSION`/不改回放 payload | Accepted | 2026-08-27 |
+| [ADR-078](DECISIONS_ADR-070-085.md#adr-078-覆盖率运行摘要合成一张表门禁只出退出码报表加-headroom--δδ-不设门禁--accepted--2026-09-02) | 覆盖率运行摘要两张表合成一张（门禁脚本只留退出码、不再写摘要页）+ 新 `Headroom` 列并按它排序 + 对齐上一次绿 main 的 Δ（**只进报表、不设门禁**）+ 删恒等于 `Lines` 的 `Statements` 列 | Accepted | 2026-09-02 |
+| [ADR-079](DECISIONS_ADR-070-085.md#adr-079-训练队列槽位改为并行练兵场的槽位第一次真的给吞吐--accepted--2026-09-02) | 训练队列槽位改为并行：练兵场的槽位第一次真的给吞吐 | Accepted | 2026-09-02 |
+| [ADR-080](DECISIONS_ADR-070-085.md#adr-080-应用进程口径--11-个取代-adr-005-的8-个--accepted--2026-09-03) | 应用进程口径 = 11 个（取代 ADR-005 的「8 个」） | Accepted | 2026-09-03 |
+| [ADR-081](DECISIONS_ADR-070-085.md#adr-081-apple-iap-走-app-store-server-api--notifications-v2弃用-verifyreceipt--accepted--2026-09-07) | Apple IAP 走 App Store Server API + Notifications V2，弃用 `verifyReceipt` | Accepted | 2026-09-07 |
+| [ADR-082](DECISIONS_ADR-070-085.md#adr-082-客户端换-storekit-2部署目标抬到-ios-15finish-由服务端确认后触发appaccounttoken-随-bootstrap-下发--accepted--2026-09-07) | 客户端换 StoreKit 2：部署目标抬到 iOS 15、finish 由服务端确认后触发、`appAccountToken` 随 `/bootstrap` 下发 | Accepted | 2026-09-07 |
+| [ADR-083](DECISIONS_ADR-070-085.md#adr-083-渲染循环三级节流dpr-上限-2maxfps-60菜单场景按需重绘含派生式变更检测--重绘地板--accepted--2026-09-08) | 渲染循环三级节流：dpr 上限 2、`maxFPS` 60、菜单场景按需重绘（派生式变更检测 + 500 ms 重绘地板）+ 大厅面板改走烘焙图集 + 世界地图墨线与 token 拆开 | Accepted | 2026-09-08 |
+| [ADR-084](DECISIONS_ADR-070-085.md#adr-084-诊断开关统一走-platformstorage健康会话上报-render_profile真机帧数重绘率--accepted--2026-09-08) | 诊断开关统一走 platform.storage；健康会话上报 `render_profile`（真机帧数/重绘率） | Accepted | 2026-09-08 |
+| [ADR-085](DECISIONS_ADR-070-085.md#adr-085-worldmapscene-也改按需重绘paint-reactive以及一次把-825-ms-打回-13-ms-的更正--accepted--2026-09-08) | `WorldMapScene` 也改按需重绘（`paint: 'reactive'`）——以及一次把 8.25 ms 打回 1.3 ms 的更正 | Accepted | 2026-09-08 |
+| [ADR-086](DECISIONS_ADR-086-onward.md#adr-086-空闲功耗第二轮tick-率降到-20-hz装饰动画静默共用-ticker-也上限powerpreference-low-powerrategate-定时器改惰性--accepted--2026-09-09) | 空闲功耗第二轮：tick 率降到 20 Hz、装饰动画静默、共用 ticker 也上限、`powerPreference: 'low-power'`、rateGate 定时器改惰性 | Accepted | 2026-09-09 |
+| [ADR-087](DECISIONS_ADR-086-onward.md#adr-087-equipmentts-也走深别名客户端那份手抄副本删掉不再三处同步--accepted--2026-09-09) | `equipment.ts` 也走深别名：客户端那份手抄副本删掉，不再「三处同步」 | Accepted | 2026-09-09 |
+| [ADR-088](DECISIONS_ADR-086-onward.md#adr-088-安全区内缩只许有一套ioscontentinset-neverinset-变化改成事件驱动画布-re-fit-全局常驻设备上有可读的几何读数--accepted--2026-09-10) | 安全区内缩只许有一套（`ios.contentInset: 'never'`）；inset 变化改成事件驱动；画布 re-fit 全局常驻；设备上有可读的几何读数 | Accepted | 2026-09-10 |
+| [ADR-089](DECISIONS_ADR-086-onward.md#adr-089-会话改滑动续期响应头-x-nw-tokentoken-真失效时强制退回登录页--accepted--2026-09-10) | 会话改滑动续期（响应头 `x-nw-token`），token 真失效时强制退回登录页 | Accepted | 2026-09-10 |
+| [ADR-090](DECISIONS_ADR-086-onward.md#adr-090-金币库从约定隔离升级为凭据隔离每服务一个最小权限-mongo-用户--accepted--2026-09-12) | 金币库从「约定隔离」升级为「凭据隔离」：每服务一个最小权限 Mongo 用户 | Accepted | 2026-09-12 |
 
 ---
 
@@ -116,6 +117,7 @@
 |---|---|
 | ADR-001 ~ ADR-040 | [`DECISIONS_ADR-001-040.md`](DECISIONS_ADR-001-040.md) |
 | ADR-041 ~ ADR-069 | [`DECISIONS_ADR-041-069.md`](DECISIONS_ADR-041-069.md) |
-| ADR-070 起（**新增写这里**） | [`DECISIONS_ADR-070-onward.md`](DECISIONS_ADR-070-onward.md) |
+| ADR-070 ~ ADR-085 | [`DECISIONS_ADR-070-085.md`](DECISIONS_ADR-070-085.md) |
+| ADR-086 起（**新增写这里**） | [`DECISIONS_ADR-086-onward.md`](DECISIONS_ADR-086-onward.md) |
 
-> 分册只在超过 ADR-067 的 500 行上限时才开新的一册，**编号与标题一律不变**——所以 `#adr-0NN-...` 这个锚点在哪一册里都是同一个，换册只换文件名。2026-08-17 拆出 ADR-001~040 / ADR-041 起两册；2026-08-25 把后者（533 行）再拆成 ADR-041~069 / ADR-070 起。
+> 分册只在超过 ADR-067 的 500 行上限时才开新的一册，**编号与标题一律不变**——所以 `#adr-0NN-...` 这个锚点在哪一册里都是同一个，换册只换文件名。2026-08-17 拆出 ADR-001~040 / ADR-041 起两册；2026-08-25 把后者（533 行）再拆成 ADR-041~069 / ADR-070 起；2026-09-12 把 ADR-070 那册（625 行）再拆成 ADR-070~085 / ADR-086 起。

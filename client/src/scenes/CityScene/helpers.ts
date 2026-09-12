@@ -9,6 +9,7 @@ import type {
   TeamTemplate,
   MarchView,
   OccupationView,
+  SiegeHoldView,
   StationedView,
   PlayerWorldView,
 } from '../../net/WorldApiClient';
@@ -29,12 +30,15 @@ import type { IconKind } from '../../render/icons';
  * is exactly what this status line reports.
  */
 export function teamOrder(
-  marches: MarchView[], occupations: OccupationView[], stationed: StationedView[], teamId: string,
-): { march: MarchView } | { occ: OccupationView } | { station: StationedView } | null {
+  marches: MarchView[], occupations: OccupationView[], siegeHolds: SiegeHoldView[], stationed: StationedView[], teamId: string,
+): { march: MarchView } | { occ: OccupationView } | { siege: SiegeHoldView } | { station: StationedView } | null {
   const march = marches.find((m) => m.mine !== false && m.teamId === teamId);
   if (march) return { march };
   const occ = occupations.find((o) => o.teamId === teamId);
   if (occ) return { occ };
+  // 围攻驻留 (2026-09-12): the base/city counterpart of the occupation hold — same posture, same rank.
+  const siege = siegeHolds.find((h) => h.teamId === teamId);
+  if (siege) return { siege };
   const station = stationed.find((s) => s.mine !== false && s.teamId === teamId);
   if (station) return { station };
   return null;

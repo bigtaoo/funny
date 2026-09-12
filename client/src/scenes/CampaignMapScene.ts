@@ -5,12 +5,12 @@ import { InputManager } from '../inputSystem/InputManager';
 import { t } from '../i18n';
 import { CHAPTER_ORDER, getChapterMap } from '../game';
 import { isLevelUnlocked, currentChapter, currentLevelIdInChapter } from '../game/campaign/progress';
-import { ui as C, txt, buildPaperBackground, sketchPanel, sketchButton, seedFor, tearDownChildren } from '../render/sketchUi';
+import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChildren } from '../render/sketchUi';
 import { FS, snapFont } from '../render/fontScale';
-import { buildIcon, type IconKind } from '../render/icons';
+import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawSceneHeader, buildTitleIcon } from '../ui/widgets/SceneHeader';
 import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp } from './CampaignMapScene/drawing';
+import { buildCampaignHeader } from './CampaignMapScene/header';
 import { dispatchHit, type Hit } from '../ui/hits';
 
 // ── CampaignMapScene (S3-5 → CAMPAIGN_DESIGN §12) — the "campaign notebook" ──────
@@ -206,105 +206,6 @@ export class CampaignMapScene implements Scene {
     dispatchHit(this.hits, x, y);
   }
 
-  // ── Shared header ───────────────────────────────────────────────────────────
-
-  /** Draws the fixed top band into `root`; returns its height. Pushes its hits. */
-  private buildHeader(
-    root: PIXI.Container, hits: Hit[], titleStr: string, onBack: () => void, subtitleStr?: string,
-    showChaptersButton?: boolean,
-  ): number {
-    const { w, h } = this;
-    // Top-bar chrome (dark strip + back button top-left) is handled by SceneHeader;
-    // the title is drawn by this scene (when a subtitle is present the title rises slightly;
-    // §3.1 allows title=null to let the scene own the title area).
-    const hdr = drawSceneHeader(root, w, h, null);
-    const tbH = hdr.headerH;
-
-    // With a subtitle (chapter pages: notebook owner), the title rides slightly
-    // above center so the dim owner line tucks beneath it; without one it centers.
-    // The `pveTabIcon` treasure map is the same glyph LevelPrepScene and the achievement wall's
-    // PvE category use — the campaign IS the PvE track, so all three show one picture. Laid out
-    // as the [icon][gap][title] group drawSceneHeader would draw, just centred by hand because
-    // this scene owns the title (it may sit above a subtitle line).
-    const title = txt(titleStr, FS.title, C.dark, true);
-    const titleY = subtitleStr ? Math.round(tbH * 0.40) : tbH / 2;
-    const icon = buildTitleIcon('pveTabIcon', FS.title, C.dark);
-    const groupX = Math.round((w - (icon.size + icon.gap + title.width)) / 2);
-    icon.node.x = groupX;
-    icon.node.y = Math.round(titleY - icon.size / 2);
-    root.addChild(icon.node);
-    title.anchor.set(0, 0.5); title.x = groupX + icon.size + icon.gap;
-    title.y = titleY;
-    root.addChild(title);
-
-    if (subtitleStr) {
-      const sub = txt(subtitleStr, FS.label, C.mid);
-      sub.anchor.set(0.5, 0.5); sub.x = w / 2; sub.y = Math.round(tbH * 0.72);
-      sub.alpha = 0.75;
-      root.addChild(sub);
-    }
-
-    hits.push({ rect: hdr.backRect, sound: 'sfx.ui.back', fn: onBack });
-
-    // Right-aligned header shortcuts, each on the one true primary-button
-    // background (sketchButton, §7.5) so they read as real buttons — matching
-    // the Back pill — rather than bare gold text floating on the paper bar.
-    // Laid out right→left; `rightX` walks left by each pill's width + gap.
-    const fontSz = FS.label;
-    const padX = Math.round(fontSz * 0.8);
-    const pillH = Math.round(fontSz + padX * 1.4);
-    const pillGap = Math.round(w * 0.02);
-    let rightX = w - Math.round(w * 0.04);
-
-    // Each pill carries a leading glyph, the same [icon][gap][label] shape the
-    // title beside it and the world-map header entries (WorldMapPanels/headerHud)
-    // use, so a shortcut is recognizable before its two CJK characters are read.
-    // The `'active'` bake is the light ink cut for a dark fill — `tabIconVariant`
-    // would pick the de-emphasised `inactive` grey off the gold label colour,
-    // which all but vanishes on the ink-dark pill.
-    const iconSz = Math.round(fontSz * 1.15);
-    const iconGap = Math.round(fontSz * 0.35);
-
-    const addHeaderButton = (labelStr: string, icon: IconKind, fn: () => void): void => {
-      const label = txt(labelStr, fontSz, C.gold, true);
-      const groupW = iconSz + iconGap + label.width;
-      const pillW = Math.round(groupW + padX * 2);
-      const pillX = rightX - pillW;
-      const pillY = Math.round((tbH - pillH) / 2);
-
-      const bg = sketchButton(pillW, pillH, seedFor(pillX, pillY, pillW));
-      bg.x = pillX; bg.y = pillY;
-      root.addChild(bg);
-
-      const groupX = pillX + (pillW - groupW) / 2;
-      const glyph = buildIcon(icon, iconSz, C.gold, { variant: 'active' });
-      glyph.x = Math.round(groupX);
-      glyph.y = Math.round(tbH / 2 - iconSz / 2);
-      root.addChild(glyph);
-
-      label.anchor.set(0, 0.5);
-      label.x = Math.round(groupX + iconSz + iconGap); label.y = tbH / 2;
-      root.addChild(label);
-
-      hits.push({ rect: { x: pillX, y: pillY, w: pillW, h: pillH }, fn });
-      rightX = pillX - pillGap;
-    };
-
-    // Single growth-hub entry (LOBBY_IA_REDESIGN §9): merges the former separate
-    // Collection/Equipment header links, matching the lobby's unified [Collection|Equipment] tab.
-    // `equipIcon` is the same shield the lobby's Equipment tab and EquipmentScene wear.
-    addHeaderButton(t('campaign.equipment'), 'equipIcon', () => this.cb.onOpenEquipment());
-
-    // Chapter-page-only shortcut to the notebook overview (TOC), since Back now exits to the lobby directly.
-    // The open-notebook `campaignTabIcon` reads as "back to the book" without colliding with the
-    // treasure-map `pveTabIcon` this same bar already shows beside the title.
-    if (showChaptersButton) {
-      addHeaderButton(t('campaign.chapters'), 'campaignTabIcon', () => this.backToToc());
-    }
-
-    return tbH;
-  }
-
   // ── Table of contents page ────────────────────────────────────────────────────
 
   private buildToc(): Page {
@@ -312,7 +213,11 @@ export class CampaignMapScene implements Scene {
     const root = new PIXI.Container();
     const hits: Hit[] = [];
 
-    const tbH = this.buildHeader(root, hits, t('campaign.notebookTitle'), () => this.cb.onBack());
+    const tbH = buildCampaignHeader(root, hits, {
+      w, h, title: t('campaign.notebookTitle'),
+      onBack: () => this.cb.onBack(),
+      onOpenEquipment: () => this.cb.onOpenEquipment(),
+    });
 
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());
@@ -398,7 +303,12 @@ export class CampaignMapScene implements Scene {
     // Narrator attribution: odd chapters are Tao's notebook, even are Anna's
     // (CAMPAIGN_STORY.md framework table — Ch1/3/5 Tao, Ch2/4/6 Anna).
     const ownerStr = t(ch % 2 === 1 ? 'campaign.notebookOwner.tao' : 'campaign.notebookOwner.anna');
-    const tbH = this.buildHeader(root, hits, titleStr, () => this.cb.onBack(), ownerStr, true);
+    const tbH = buildCampaignHeader(root, hits, {
+      w, h, title: titleStr, subtitle: ownerStr,
+      onBack: () => this.cb.onBack(),
+      onOpenEquipment: () => this.cb.onOpenEquipment(),
+      onChapters: () => this.backToToc(),
+    });
 
     const stars = this.cb.getStars();
     const cleared = new Set(this.cb.getCleared());

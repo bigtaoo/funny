@@ -67,6 +67,7 @@ function buildHarness(opts: {
     destroyed: false,
     marches: [],
     occupations: [],
+    siegeHolds: [],
     stationed: [],
     me,
     parseTileId(tileId: string): [number, number] {
@@ -82,6 +83,7 @@ function buildHarness(opts: {
         getMarches: vi.fn(() => Promise.resolve([])),
         getOccupations: vi.fn(() => Promise.resolve([])),
         getStationed: vi.fn(() => Promise.resolve([])),
+        getSiegeHolds: vi.fn(() => Promise.resolve([])),
         getMe: vi.fn().mockResolvedValue(me),
       },
     },

@@ -32,16 +32,45 @@ name: funny
 
 services:
   # MongoDB single-node replica set (transactions + change streams). Cluster-internal only, not exposed to the host.
+  #
+  # Authentication is ON here even though nothing outside the compose network can reach this container
+  # (2026-09-12). The point is not secrecy — the passwords below are in the file — it is that every service
+  # connects as its OWN user, granted readWrite on its OWN database and nothing else, exactly as in the
+  # cloud. Without that, "commercial is the only writer of coin data" (COMMERCIAL_DESIGN §0 K1/K4) is a
+  # convention that only breaks in production: locally, one shared unauthenticated connection string let any
+  # service open notebook_wars_commercial and win. The users are provisioned by docker/local-up.ps1 from
+  # server/scripts/mongoDbMap.mjs (the same map the CI isolation gate reads).
+  #
+  # --keyFile is not optional: a replica set with --auth demands internal member authentication, and mongod
+  # refuses to start with auth on and no keyFile. One node still needs one, so it is generated per boot
+  # (nothing else has to agree with it) rather than committed.
   mongo:
     image: mongo:7
     container_name: nw-local-mongo
-    command: ["--replSet", "rs0", "--bind_ip_all"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: localdev-root
+    command:
+      - bash
+      - -c
+      - |
+        head -c 756 /dev/urandom | base64 > /tmp/nw-keyfile
+        chmod 400 /tmp/nw-keyfile && chown mongodb:mongodb /tmp/nw-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --keyFile /tmp/nw-keyfile --bind_ip_all
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: >
-        mongosh --quiet --eval "try { rs.status().ok } catch (e) {
-        rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }"
+      # Authenticated first — the steady state. The unauthenticated retry covers exactly one window: a data
+      # volume created before auth was turned on has no users at all, and Mongo's localhost exception is
+      # what lets local-up.ps1 create them from inside the container before this check can ever pass.
+      test:
+        - CMD-SHELL
+        - >
+          mongosh -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD"
+          --authenticationDatabase admin --quiet
+          --eval "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }"
+          || mongosh --quiet
+          --eval "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }"
       interval: 10s
       timeout: 10s
       start_period: 5s
@@ -62,7 +91,8 @@ services:
     environment:
       NW_JWT_SECRET: ${NW_JWT_SECRET:-dev-jwt-secret-change-me}
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
-      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      # metaserver's own login: readWrite on notebook_wars only (see server/scripts/mongoDbMap.mjs).
+      NW_MONGO_URI: "mongodb://nw_meta:localdev-nw_meta@mongo:27017/?replicaSet=rs0&authSource=notebook_wars"
       NW_MONGO_DB: ${NW_MONGO_DB:-notebook_wars}
       NW_META_PORT: "8080"
       NW_META_HOST: 0.0.0.0
@@ -93,7 +123,8 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
       NW_COMM_PORT: "8092"
       NW_COMM_HOST: 0.0.0.0
-      NW_COMM_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      # The only login on the cluster that can open notebook_wars_commercial.
+      NW_COMM_MONGO_URI: "mongodb://nw_commercial:localdev-nw_commercial@mongo:27017/?replicaSet=rs0&authSource=notebook_wars_commercial"
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
       # victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
       NW_REDIS_URL: redis://redis:6379
@@ -167,8 +198,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
       NW_WORLD_PORT: "18084"
       NW_WORLD_HOST: 0.0.0.0
-      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
-      NW_WORLD_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_WORLD_MONGO_URI: "mongodb://nw_world:localdev-nw_world@mongo:27017/?replicaSet=rs0&authSource=notebook_wars_world"
       NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
       NW_WORLD_REDIS_URL: redis://redis:6379
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
@@ -204,8 +234,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
       NW_AUCTION_PORT: "18086"
       NW_AUCTION_HOST: 0.0.0.0
-      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
-      NW_AUCTION_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_AUCTION_MONGO_URI: "mongodb://nw_auction:localdev-nw_auction@mongo:27017/?replicaSet=rs0&authSource=notebook_wars_auction"
       NW_AUCTION_MONGO_DB: ${NW_AUCTION_MONGO_DB:-notebook_wars_auction}
       NW_META_INTERNAL_URL: http://metaserver:8080
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
@@ -226,8 +255,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
       NW_SOCIAL_PORT: "8085"
       NW_SOCIAL_HOST: 0.0.0.0
-      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
-      NW_SOCIAL_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_SOCIAL_MONGO_URI: "mongodb://nw_social:localdev-nw_social@mongo:27017/?replicaSet=rs0&authSource=nw_social"
       NW_SOCIAL_MONGO_DB: ${NW_SOCIAL_MONGO_DB:-nw_social}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_META_INTERNAL_URL: http://metaserver:8080
@@ -246,8 +274,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:-dev-internal-key}
       NW_ANALYTICS_PORT: "18085"
       NW_ANALYTICS_HOST: 0.0.0.0
-      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
-      NW_ANALYTICS_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ANALYTICS_MONGO_URI: "mongodb://nw_analytics:localdev-nw_analytics@mongo:27017/?replicaSet=rs0&authSource=notebook_wars_analytics"
       NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
     depends_on:
       mongo: { condition: service_healthy }
@@ -264,8 +291,7 @@ services:
       NW_ADMIN_PORT: "18083"
       NW_ADMIN_HOST: 0.0.0.0
       NW_ADMIN_JWT_SECRET: ${NW_ADMIN_JWT_SECRET:-dev-insecure-admin-secret-change-me}
-      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
-      NW_ADMIN_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ADMIN_MONGO_URI: "mongodb://nw_admin:localdev-nw_admin@mongo:27017/?replicaSet=rs0&authSource=notebook_wars_admin"
       NW_ADMIN_MONGO_DB: ${NW_ADMIN_MONGO_DB:-notebook_wars_admin}
       # Seed super-admin account on first start (local dev only; use a strong password or a different injection method in production).
       NW_ADMIN_SEED_USER: ${NW_ADMIN_SEED_USER:-admin}

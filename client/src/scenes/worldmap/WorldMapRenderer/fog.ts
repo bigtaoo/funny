@@ -17,7 +17,7 @@ import { baseFootprintCells } from '@nw/shared';
 import { drawStar, drawDashedPolygon, drawPolygonCornerTicks, drawFadedLine } from '../tileGraphics';
 import type { WorldMapRendererCore } from './core';
 import type { WorldMapContext } from '../WorldMapContext';
-import { STICKMAN_TOKEN_BUDGET, syncMarchTokens, syncOccupyTokens, syncStationedTokens, type StickmanBudget } from './tokens';
+import { STICKMAN_TOKEN_BUDGET, syncMarchTokens, syncOccupyTokens, syncSiegeTokens, syncStationedTokens, type StickmanBudget } from './tokens';
 
 // Re-exported for backward compatibility — moved to ./tokens.ts (2026-08-12), but
 // `test/ui/marchTokenLod.ui.ts` still imports it from here.
@@ -67,6 +67,8 @@ export function overlayInkSignature(ctx: WorldMapContext): number {
   }
   h = mix(h, ctx.occupations.length);
   for (const o of ctx.occupations) h = mix(mix(h, o.x * 4096 + o.y), Math.round(o.dueAt / 1000));
+  h = mix(h, ctx.siegeHolds.length);
+  for (const sh of ctx.siegeHolds) h = mix(mix(h, sh.x * 4096 + sh.y), Math.round(sh.dueAt / 1000));
   h = mix(h, ctx.stationed.length);
   for (const st of ctx.stationed) {
     h = mix(h, st.x * 4096 + st.y);
@@ -429,7 +431,7 @@ export class WorldMapRendererFog implements FogHandlers {
   }
 
   /**
-   * Step the march / occupy / stationed tokens — sprite positions and clip playback, no Graphics
+   * Step the march / occupy / siege / stationed tokens — sprite positions and clip playback, no Graphics
    * rebuild. Cheap enough to run every frame, which is what the tokens need: a march advances along
    * its route between the ~5s polls, and an occupy hold plays its 'attacking' clip throughout.
    *
@@ -438,11 +440,13 @@ export class WorldMapRendererFog implements FogHandlers {
    * otherwise their sprites would linger with nothing left to ever tear them down.
    */
   syncTokens(dt: number): void {
-    // Shared across all three sync calls (2026-07-26): marches get first claim on the budget (most
-    // visually important / dynamic), then occupations, then stationed — see STICKMAN_TOKEN_BUDGET.
+    // Shared across all four sync calls (2026-07-26): marches get first claim on the budget (most
+    // visually important / dynamic), then the two countdown holds — occupations and sieges (2026-09-12,
+    // 围攻驻留) — then stationed, which is the only one that is standing still. See STICKMAN_TOKEN_BUDGET.
     const budget: StickmanBudget = { remaining: STICKMAN_TOKEN_BUDGET };
     syncMarchTokens(this.core, dt, budget);
     syncOccupyTokens(this.core, dt, budget);
+    syncSiegeTokens(this.core, dt, budget);
     syncStationedTokens(this.core, dt, budget);
   }
 }

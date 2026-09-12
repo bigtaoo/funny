@@ -375,6 +375,48 @@ components:
         emblemColor:
           type: integer
 
+    # 围攻驻留 (2026-09-12): one of the requester's OWN pending delayed siege hits. A main base and a wild
+    # city never change hands the moment their garrison falls — the win schedules a durability hit five
+    # minutes out (ADR-026 §4, ADR-074 P1 §5), and the besieging team stands on the target until it lands.
+    # This is that wait, made visible: the occupation-hold's counterpart for base/city assaults.
+    SiegeHoldView:
+      type: object
+      required: [siegeId, tile, x, y, dueAt, damage, isBase]
+      properties:
+        siegeId:
+          type: string
+          description: >-
+            The winning siege's id — SiegeDamageDoc._id, which IS the SiegeDoc._id (the pending-hit document is
+            keyed on the battle that scheduled it). The client matches the SiegeResult push it just received
+            against this to tell "my win started a hold" from "my win was final".
+        tile:
+          type: string
+          description: "Target tile — the base's anchor cell, or the city footprint cell the march landed on."
+        x:
+          type: integer
+        y:
+          type: integer
+        dueAt:
+          type: number
+          description: "When the hit lands (ms epoch) = win time + SLG_SIEGE_DAMAGE_DELAY_MS. Drives the client countdown."
+        damage:
+          type: integer
+          description: "Durability the hit will subtract, with every siege bonus resolved at win time already folded in."
+        isBase:
+          type: boolean
+          description: "true → a player main base (durability, possible passive relocation at 0); false → a wild city."
+        teamId:
+          type: string
+          description: "Which team slot ('t1'..'t5') is tied up besieging, if the winning march carried one."
+        leaderUnitType:
+          type: string
+          description: "Map-token art — carried over from the winning march's leaderUnitType, see MarchView.leaderUnitType."
+        emblemKey:
+          type: string
+          description: "Map-token corner badge — see MarchView.emblemKey. Own holds only, so always the requester's own family badge."
+        emblemColor:
+          type: integer
+
     # ADR-051 (P5): a player-built structure overlaid on a tile (arrowTower / blocker). Rendered map-wide
     # (public static layer); hp/hpMax are intel-gated (omitted for tiles outside the requester's vision).
     TileStructureView:
@@ -1076,7 +1118,7 @@ paths:
                     properties:
                       data:
                         type: object
-                        required: [season, nations, cities, me, marches, occupations, stationed, worldChannel]
+                        required: [season, nations, cities, me, marches, occupations, stationed, siegeHolds, worldChannel]
                         properties:
                           season:
                             allOf: [{ $ref: '#/components/schemas/SeasonView' }]
@@ -1114,6 +1156,10 @@ paths:
                           stationed:
                             type: array
                             items: { $ref: '#/components/schemas/StationedView' }
+                          siegeHolds:
+                            type: array
+                            description: "围攻驻留 (2026-09-12): own pending delayed siege hits — see GET /world/siegeholds."
+                            items: { $ref: '#/components/schemas/SiegeHoldView' }
                           worldChannel:
                             type: array
                             description: Same shape as GET /nation/channel (not itself contract-declared — pre-existing gap, P2 backlog).
@@ -1475,6 +1521,29 @@ paths:
         '401': { $ref: '#/components/responses/ErrorResp' }
         '500': { $ref: '#/components/responses/ErrorResp' }
 
+  /world/siegeholds:
+    get:
+      operationId: getSiegeHolds
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: worldId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: "Own pending delayed siege hits (2026-09-12 围攻驻留: countdown + besieging-token rendering)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OkResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SiegeHoldView' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
+
   /world/stationed:
     get:
       operationId: getStationed
@@ -1574,6 +1643,35 @@ paths:
       responses:
         '200':
           description: Occupation-hold cancelled; team is idle immediately, garrison forfeited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ErrorResp' }
+        '401': { $ref: '#/components/responses/ErrorResp' }
+        '404': { $ref: '#/components/responses/ErrorResp' }
+        '500': { $ref: '#/components/responses/ErrorResp' }
+
+  /world/team/{teamId}/cancel-siege:
+    post:
+      operationId: cancelSiegeHold
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: teamId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worldId]
+              properties:
+                worldId: { type: string }
+      responses:
+        '200':
+          description: >-
+            停止围攻 (2026-09-12): the team's pending durability hit is voided and it walks home. Unlike
+            cancel-occupation nothing is forfeited — a round's damage lands whole at dueAt or not at all,
+            so calling it off mid-round costs only the stamina that round already spent.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }

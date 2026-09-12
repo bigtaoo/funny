@@ -36,6 +36,15 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ⚠ This container runs WITHOUT authentication, and every service below therefore shares one connection
+  # string with no credentials at all — any of them can open notebook_wars_commercial, which the design has
+  # forbidden since 2026-06-14 (COMMERCIAL_DESIGN §0 K1/K4). The deployed stack is docker-compose.cloud.yml
+  # (Atlas), so this self-hosted variant was left as-is rather than flipped blind; docker-compose.local.yml
+  # shows the shape to copy when this file is next used for real:
+  #   1. MONGO_INITDB_ROOT_USERNAME/PASSWORD + `mongod --replSet rs0 --keyFile …` (auth on a replica set
+  #      requires a keyFile — mongod refuses to start without one).
+  #   2. `node scripts/provisionMongoUsers.mjs --uri="mongodb://root:…@mongo:27017/?replicaSet=rs0"`, then
+  #      paste the printed NW_*_MONGO_URI lines into .env — each block above already prefers its own.
   mongo:
     image: mongo:7
     container_name: nw-mongo
@@ -67,7 +76,7 @@ services:
     environment:
       NW_JWT_SECRET: ${NW_JWT_SECRET:?set NW_JWT_SECRET in .env}
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
-      NW_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_MONGO_URI: ${NW_MONGO_URI:-mongodb://mongo:27017/?replicaSet=rs0}
       NW_MONGO_DB: ${NW_MONGO_DB:-notebook_wars}
       NW_META_PORT: "8080"
       NW_META_HOST: 0.0.0.0
@@ -137,7 +146,7 @@ services:
       NW_COMM_PORT: "8092"
       NW_COMM_HOST: 0.0.0.0
       # Dedicated DB (defaults to same Mongo instance with a different DB name; scaling to a separate instance only requires changing these two).
-      NW_COMM_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_COMM_MONGO_URI: ${NW_COMM_MONGO_URI:-mongodb://mongo:27017/?replicaSet=rs0}
       NW_COMM_MONGO_DB: ${NW_COMM_MONGO_DB:-notebook_wars_commercial}
       # victoryDaily counter (2026-07-27, moved off Mongo — shared/src/dailyCounter.ts).
       NW_REDIS_URL: ${NW_REDIS_URL:-redis://redis:6379}
@@ -258,7 +267,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_WORLD_PORT: "18084"
       NW_WORLD_HOST: 0.0.0.0
-      NW_WORLD_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_WORLD_MONGO_URI: ${NW_WORLD_MONGO_URI:-mongodb://mongo:27017/?replicaSet=rs0}
       NW_WORLD_MONGO_DB: ${NW_WORLD_MONGO_DB:-notebook_wars_world}
       # Redis: defaults to the redis service in the same stack; override NW_WORLD_REDIS_URL='' to degrade (march falls back to Mongo).
       NW_WORLD_REDIS_URL: ${NW_WORLD_REDIS_URL:-redis://redis:6379}
@@ -301,7 +310,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_AUCTION_PORT: "18086"
       NW_AUCTION_HOST: 0.0.0.0
-      NW_AUCTION_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_AUCTION_MONGO_URI: ${NW_AUCTION_MONGO_URI:-mongodb://mongo:27017/?replicaSet=rs0}
       NW_AUCTION_MONGO_DB: ${NW_AUCTION_MONGO_DB:-notebook_wars_auction}
       NW_META_INTERNAL_URL: http://metaserver:8080
       NW_COMMERCIAL_INTERNAL_URL: http://commercial:8092
@@ -325,7 +334,7 @@ services:
       NW_ADMIN_JWT_SECRET: ${NW_ADMIN_JWT_SECRET:?set NW_ADMIN_JWT_SECRET in .env}
       NW_ADMIN_PORT: "8083"
       NW_ADMIN_HOST: 0.0.0.0
-      NW_ADMIN_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ADMIN_MONGO_URI: ${NW_ADMIN_MONGO_URI:-mongodb://mongo:27017/?replicaSet=rs0}
       NW_ADMIN_MONGO_DB: ${NW_ADMIN_MONGO_DB:-notebook_wars_admin}
       # Bootstrap seed super-admin (recommend clearing env after first deployment, manage accounts via admin panel).
       NW_ADMIN_SEED_USER: ${NW_ADMIN_SEED_USER:-}
@@ -357,7 +366,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_ANALYTICS_PORT: "18085"
       NW_ANALYTICS_HOST: 0.0.0.0
-      NW_ANALYTICS_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_ANALYTICS_MONGO_URI: ${NW_ANALYTICS_MONGO_URI:-mongodb://mongo:27017/?replicaSet=rs0}
       NW_ANALYTICS_MONGO_DB: ${NW_ANALYTICS_MONGO_DB:-notebook_wars_analytics}
     depends_on:
       mongo:
@@ -376,7 +385,7 @@ services:
       NW_INTERNAL_KEY: ${NW_INTERNAL_KEY:?set NW_INTERNAL_KEY in .env}
       NW_SOCIAL_PORT: "8085"
       NW_SOCIAL_HOST: 0.0.0.0
-      NW_SOCIAL_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      NW_SOCIAL_MONGO_URI: ${NW_SOCIAL_MONGO_URI:-mongodb://mongo:27017/?replicaSet=rs0}
       NW_SOCIAL_MONGO_DB: ${NW_SOCIAL_MONGO_DB:-nw_social}
       NW_GATEWAY_INTERNAL_URL: http://gateway:8090
       NW_META_INTERNAL_URL: http://metaserver:8080

@@ -86,6 +86,23 @@
 
 > `gachaHistory`/`walletLog`/`iapReceipts` 现在挂在 meta 的 `shared/src/mongo.ts`（见 `CLAUDE.md` 集合表）——迁移时从 meta 库**移除**，在 commercial 库重建为 `gachaHistory`/`ledger`/`recharges`。meta 不再持有这三张表。
 
+#### 库级凭据隔离（2026-09-12 落地）
+
+§0 K1/K4 说的「真钱数据物理隔离、commercial 是唯一写入方」，在 2026-09-12 之前**只是约定**：7 个连库进程全部拿同一个 `NW_MONGO_URI`，也就是同一个 Mongo 账号，权限覆盖整个集群的所有库。任何服务写一行 `client.db('notebook_wars_commercial')` 都能直接改钱包，代码评审之下没有任何一层会反对。
+
+现在改成**凭据边界**：
+
+- **每服务一个 Mongo 用户**，建在自己那个库里，只授 `readWrite` 该库（`authSource` 也是该库）。`nw_world` 去开 `notebook_wars_commercial` 会在驱动层拿到授权错误，不是"评审时发现"，是**连不上**。
+- **单一真相表** [`server/scripts/mongoDbMap.mjs`](../../server/scripts/mongoDbMap.mjs)：服务 → 库 → 用户 → 环境变量。开号脚本和 CI 门禁都读它；新增连库服务必须加一行，否则门禁报"这个服务拿着没人认领的 Mongo 变量"。
+- **开号**：`node server/scripts/provisionMongoUsers.mjs`。自托管集群直接连上去建/改；Atlas 走 `--atlas-api`（Admin API + digest 鉴权，需 `ATLAS_PUBLIC_KEY`/`ATLAS_PRIVATE_KEY`）或 `--atlas`（打印 `atlas dbusers create` 命令手工执行）。三种模式都幂等，密码只打印一次。
+- **本地栈同构**：`docker/docker-compose.local.yml` 的 mongo 开了 `--auth --keyFile`（副本集开 auth 必须有 keyFile，单节点也一样），`docker/local-up.ps1` 先起 mongo、建号，再拉起其余服务。本地不是"能跑就行"的无认证模式，就是为了权限配错**在本地就炸**。
+- **CI 门禁** `npm run check:dbisolation`（[`server/scripts/checkDbIsolation.mjs`](../../server/scripts/checkDbIsolation.mjs)）盯两种漂移：①某服务源码里出现别人的库名/环境变量；②compose 里某个服务块拿到了不属于它的 `NW_*_MONGO_URI`，或变量名对了但凭据是别人的。变异测试在 `server/commercial/test/check-db-isolation.test.ts`。
+- **这道门已经关上（2026-09-12 当天，见 ADR-090 补记二）**：线上 7 个 Atlas 用户已建、`--verify` 实测 7/7「读得到自己的库、被其余 6 个拒绝」；各服务 `config.ts` 的 `?? NW_MONGO_URI` 兜底已删除，`docker-compose.cloud.yml` 六个块改成硬性 `${自己的:?…}`，门禁对 `NW_MONGO_URI` 的豁免也一并删掉了。各服务变量缺失时退到的是 `DEV_MONGO_URI`（`127.0.0.1` 这个**主机**），**不是别人的凭据**——要拦的从来不是「没有值」，是「值是别人的账号」。`docker-compose.prod.yml`（自带 mongo 容器、未开认证）不在此列，理由见 ADR-090 补记二 ⑥。
+- **线上现状（2026-09-12 实测）**：7 个进程共用的账号是 `gamestao`，角色 **`atlasAdmin@admin`**——不是"共享读写权限"，是集群管理员。Atlas 还**拒绝驱动侧 `createUser`**（`CMD_NOT_ALLOWED`），database user 是控制面对象，所以建号必须走 Atlas UI / Admin API / `atlas` CLI，光有连接串不够。
+- **Atlas 的 `authSource` 是 `admin`**：Atlas SCRAM 用户一律建在 `admin`，只有 role 指向具体库；自托管则建在哪个库 `authSource` 就是哪个。印错连接串的后果是换凭证后 7 个服务集体 `Authentication failed`，所以脚本里这条差异是显式的 `authDbFor(row, atlas)`，并有单测。
+- **建完要验**：`node server/scripts/provisionMongoUsers.mjs --verify --env-file=server/.env` 会连上每个服务用户，断言它读得到自己的库、且被其余 6 个库拒绝。**建号成功 ≠ 权限正确**——角色给宽了看起来和给对了一模一样，只有跨库那一下会露馅。
+- **跨服务读金币怎么办**：照旧走 commercial 的内部 HTTP（`/internal/wallet`、`/internal/grant`、`/internal/spend`…），这本来就是设计里唯一的通路；ops/admin 查余额也是经 admin → commercial 的内部端点，不是连库。
+
 ### 3.2 wallets 文档
 
 ```ts
@@ -291,7 +308,7 @@ POST /internal/ads/credit
 
 ## 9. 开放问题（实现时的拍板）
 
-- [x] **同实例 vs 同库**：按默认——同 Mongo 实例不同库（`NW_COMM_MONGO_URI` 缺省复用 `NW_MONGO_URI`，`NW_COMM_MONGO_DB=notebook_wars_commercial`）。涨了改这两个 env 即迁独立实例。
+- [x] **同实例 vs 同库**：按默认——同 Mongo 实例不同库（`NW_COMM_MONGO_DB=notebook_wars_commercial`）。**2026-09-12 起 `NW_COMM_MONGO_URI` 不再缺省复用 `NW_MONGO_URI`**：commercial 用自己的 `nw_commercial` 账号登录，串是独立的（§3.1 库级凭据隔离）。涨了改这两个 env 即迁独立实例。
 - [x] **对账触发**：S5 先做 `GET /save` 顺带（拉 `orders/undelivered` 补发）；**兜底定时扫待办**。
 - [x] **充值平台**：**S4-1 已落地（2026-06-22）**：`commercial/src/iap.ts` 实现微信支付 V3（HMAC-SHA256 简化鉴权，`NW_WX_PAY_MCH_ID/API_KEY_V3`）+ Stripe（`GET /v1/payment_intents/{id}`，`NW_STRIPE_SECRET_KEY`）；金额→档位映射可 `NW_IAP_AMOUNT_MAP` 覆盖；两者均未配置时自动降级 dev 桩（`NW_IAP_DEV=true` 可强制开启）。`CommercialService.verifyReceipt` 已改 async。
 - [ ] **余额镜像新鲜度**：默认「进 ShopScene 前 `GET /save` 刷新」——待 S2 ShopScene 落地时接（场景尚未实现）。

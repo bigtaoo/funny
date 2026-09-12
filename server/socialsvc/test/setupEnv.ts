@@ -2,4 +2,4 @@
 // process.env, before any test module reads NW_MONGO_URI at module load.
 import { bridgeMongoUri } from '../../scripts/testMongoUri';
 
-bridgeMongoUri('socialsvc');
+bridgeMongoUri('socialsvc', 'NW_SOCIAL_MONGO_URI');

@@ -4,7 +4,7 @@
 // comment — since RenderPanel just needs a one-line delegate for each, not their full bodies here.
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
-import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
+import { drawButtonLabel, buttonLabelIconW } from '../../ui/widgets/buttonLabel';
 import { FS } from '../../render/fontScale';
 import * as PIXI from 'pixi.js-legacy';
 import { BuildingType, UnitType } from '@nw/engine/types';
@@ -34,7 +34,8 @@ import {
 
 export interface RenderHandlers {
   renderBaseStepper(rightX: number, y: number): void;
-  renderPalette(top: number): void;
+  /** Draws the tool palette and returns the height it used (it wraps to more rows when narrow). */
+  renderPalette(top: number): number;
   renderAttackBody(top: number, bottom: number): void;
   renderAttackToolbar(x: number, y: number, w: number, h: number): void;
   renderCardRosterPanel(x: number, y: number, w: number, h: number): void;
@@ -202,7 +203,7 @@ export class RenderPanel implements RenderHandlers {
     });
   }
 
-  renderPalette(top: number): void {
+  renderPalette(top: number): number {
     const core = this.core;
     const { w } = core;
     const tools: { tool: Tool; label: string; tint: number }[] = [
@@ -223,35 +224,55 @@ export class RenderPanel implements RenderHandlers {
     ];
     const n = tools.length;
     const gap = 5;
-    const btnW = (w - PAD * 2 - gap * (n - 1)) / n;
+    const rowGap = 4;
     const btnH = PALETTE_H - 10;
-    let x = PAD;
-    for (const { tool, label, tint } of tools) {
+    const avail = w - PAD * 2;
+
+    // How many of these fit on one row is a question about the LABELS, not about the tool count:
+    // dividing the width by 14 gives 72 design px a cell in portrait, and "Shield Bearer" needs
+    // ~110 — so every chip's name ran past its own box and into the next one (measured at 390x844
+    // and 360x640, 2026-09-11). Landscape's 1920 still fits all of them on one row, so it is
+    // unchanged; portrait wraps to as many rows as it needs.
+    const fontSize = FS.tiny;
+    const widest = tools.reduce((max, { label }) => {
+      const probe = txt(label, fontSize, C.dark, true);
+      const wd = probe.width;
+      probe.destroy();
+      return Math.max(max, wd);
+    }, 0);
+    const minCell = Math.ceil(widest) + 12;
+    const cols = Math.max(1, Math.min(n, Math.floor((avail + gap) / (minCell + gap))));
+    const rows = Math.ceil(n / cols);
+    const btnW = (avail - gap * (cols - 1)) / cols;
+
+    tools.forEach(({ tool, label, tint }, i) => {
+      const x = PAD + (i % cols) * (btnW + gap);
+      const y = top + 5 + Math.floor(i / cols) * (btnH + rowGap);
       const active = core.toolEquals(tool, core.tool);
       const box = sketchPanel(btnW, btnH, {
         fill: active ? tint : C.paper,
         border: active ? C.dark : tint,
         width: active ? 2.4 : 1.4,
-        seed: seedFor(x, top, btnW),
+        seed: seedFor(x, y, btnW),
       });
       box.x = x;
-      box.y = top + 5;
+      box.y = y;
       core.bodyLayer.addChild(box);
-      const lbl = txt(label, FS.micro, active ? C.light : C.dark, true);
-      lbl.anchor.set(0.5, 0.5);
-      lbl.x = x + btnW / 2;
-      lbl.y = top + 5 + btnH / 2;
-      core.bodyLayer.addChild(lbl);
+      // Through the shared button-label group, so a label that is still too wide for its cell
+      // (a longer translation) scales down inside it instead of spilling.
+      drawButtonLabel(core.bodyLayer, x, y, btnW, btnH, label, null,
+        active ? C.light : C.dark, fontSize, { inset: 8 });
       const captured = tool;
       core.hits.push({
-        rect: { x, y: top + 5, w: btnW, h: btnH },
+        rect: { x, y, w: btnW, h: btnH },
         fn: () => {
           core.tool = captured;
           core.render();
         },
       });
-      x += btnW + gap;
-    }
+    });
+
+    return 5 + rows * btnH + (rows - 1) * rowGap + 5;
   }
 
   /** Defense footer: counts + hint on the left, action buttons on the right. (Attack mode has no footer.) */
@@ -321,10 +342,24 @@ export class RenderPanel implements RenderHandlers {
    */
   renderActionButtons(rightEdge: number, top: number, rowH: number, scale = 1): void {
     const core = this.core;
-    const btnW = 70 * scale,
-      btnH = 30 * scale,
+    const btnH = 30 * scale,
       gap = 8 * scale;
     const labelSize = scale >= 2 ? FS.heading : FS.tiny;
+    // Width from the widest of the labels this cluster can show, not a literal 70. The footer band
+    // is the full screen width with a counts line and a hint on its left, so these three buttons
+    // sit in ~900 free design px and the old fixed width spent 70 of them whatever the word was:
+    // German's "Speichern" needs 103 at the legibility floor with no icon at all, and the shared
+    // label widget answered by scaling it to 0.64 — 12.7 design px, well under the floor (sweep
+    // §50.12). They stay uniform (one width for all three, `fill` a fixed 1.2x) so the cluster
+    // still reads as a row of peers rather than three differently-shaped chips.
+    const probeKeys = ['world.defense.save', 'world.defense.clear'] as const;
+    const widest = probeKeys.reduce((max, key) => {
+      const probe = txt(t(key), labelSize, C.dark);
+      const wd = probe.width;
+      probe.destroy({ texture: true, baseTexture: true });
+      return Math.max(max, wd);
+    }, 0);
+    const btnW = Math.max(70 * scale, Math.ceil(widest) + buttonLabelIconW(labelSize) + 12 * scale);
     const cy = top + (rowH - btnH) / 2;
     const save = sketchPanel(btnW, btnH, {
       fill: C.dark,
@@ -352,7 +387,10 @@ export class RenderPanel implements RenderHandlers {
 
     if (core.mode === 'attack') {
       const fillFull = core.teamCapacity() > 0 && core.committedTroops() >= core.teamCapacity();
-      const fillW = 84 * scale;
+      // Same rule as the pair beside it, just its own (longer) word: German's
+      // "Truppen auffüllen" is two words, so this one wraps inside the widget rather than growing
+      // to 380 design px and pushing the cluster off the left of the band.
+      const fillW = Math.max(84 * scale, btnW * 1.2);
       const fill = sketchPanel(fillW, btnH, {
         fill: C.paper,
         border: fillFull ? C.mid : C.gold,

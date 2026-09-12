@@ -873,6 +873,8 @@ export const en: Record<TranslationKey, string> = {
   'world.actGarrison': 'Camp',
   'world.actOccupyInPlace': 'Occupy in place',
   'world.actRecallStation': 'Recall garrison',
+  'world.actStopSiege': 'Stop siege',
+  'world.actStopOccupy': 'Stop occupying',
   'world.stationRecalled': 'Stationed team ordered back to your capital',
   'world.actAbandon': 'Abandon',
   'world.abandonConfirm': 'Abandon the territory at ({x},{y})? Its garrison will be lost.',
@@ -909,6 +911,8 @@ export const en: Record<TranslationKey, string> = {
   'world.underAttackMsg': '{name} sieges {tile} in {sec}s',
   'world.siegeWin': 'Siege won! {loot}',
   'world.siegeWinHold': 'Siege won — territory contested, settling in 5 min',
+  'world.siegeWinBaseHold': 'Siege won! In {time}: -{dmg} durability',
+  'world.siegeWinCityHold': 'Walls cleared! In {time}: -{dmg} durability',
   'world.siegeLoss': 'Siege lost',
   'world.siegeDraw': 'Siege stalemate',
   'world.defendHeld': 'Defense held',
@@ -1693,6 +1697,10 @@ export const en: Record<TranslationKey, string> = {
 
   'world.team.marching': 'Marching',
   'world.team.occupying': 'Occupying, {time} left',
+  'world.team.besieging': 'Besieging, {time} left',
+  'world.stopHold': 'Stop',
+  'world.siegeStopped': 'Siege called off — the team is heading home',
+  'world.occupyStopped': 'Occupation called off',
   'world.team.stationedIdle': 'In the field',
   'world.team.garrisoned': 'Field garrison',
   // Team-panel status vocabulary (2026-08-30)

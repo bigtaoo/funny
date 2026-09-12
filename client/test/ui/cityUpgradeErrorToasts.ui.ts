@@ -61,6 +61,7 @@ async function tapUpgrade(rejection: Error): Promise<{ scene: CityScene; calls: 
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
     getStationed: () => Promise.resolve([]),
+    getSiegeHolds: () => Promise.resolve([]),
     upgradeBuilding: () => { calls++; return Promise.reject(rejection); },
   } as unknown as WorldApiClient;
   const cb: CitySceneCallbacks = {

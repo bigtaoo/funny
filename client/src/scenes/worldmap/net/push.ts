@@ -9,6 +9,7 @@ import { serverNow } from '../../../net/serverClock';
 import type { MarchUpdate, TileUpdate, UnderAttack, SiegeResult, NationMsg } from '../../../net/proto/transport';
 import type { WorldMapContext } from '../WorldMapContext';
 import { loadMapViewport, refreshMarches, refreshMe } from './loaders';
+import { formatDuration } from '../logic/formatDuration';
 
 export function applyMarchUpdate(ctx: WorldMapContext, _m: MarchUpdate): void {
   if (ctx.destroyed) return;
@@ -78,14 +79,15 @@ export async function applySiegeResult(ctx: WorldMapContext, s: SiegeResult): Pr
     }
   }
   // Ownership / resources / troops may all have shifted — refetch before classifying (2026-08-09:
-  // this can no longer be a fire-and-forget side effect like refreshMe/refreshMarches below — the
-  // attack-win branch needs the freshly-refetched target tile's `contestedByMe` to tell an
-  // occupation-hold start apart from an instant final outcome).
-  await loadMapViewport(ctx);
+  // this can no longer be a fire-and-forget side effect like refreshMe below — the attack-win branch
+  // needs the freshly-refetched target tile's `contestedByMe` to tell an occupation-hold start apart
+  // from an instant final outcome). 2026-09-12 (围攻驻留): the order slices are awaited for the same
+  // reason — a base/city win is told apart from a final one by whether `ctx.siegeHolds` now carries a
+  // hold under this siege's id, and the server wrote that document before it pushed this result.
+  await Promise.all([loadMapViewport(ctx), refreshMarches(ctx)]);
   if (ctx.destroyed) return;
   ctx.view.renderMap();
   void refreshMe(ctx);
-  void refreshMarches(ctx);
 
   // Role classification is server-authoritative (2026-08-02 bug fix, transport.proto SiegeResult):
   // previously this guessed "did I dispatch this march" from a per-scene, in-memory Set
@@ -102,11 +104,28 @@ export async function applySiegeResult(ctx: WorldMapContext, s: SiegeResult): Pr
     // applyOccupationExpulsion). The just-refetched target tile's `contestedByMe` is the
     // server-authoritative signal for that (identical to how the occupy branch below already
     // distinguishes its own win): show the same lightweight toast instead of a blocking "Siege
-    // won!" modal. A base siege / structure chip / PvE stronghold-or-crossing capture is still an
-    // instant final outcome (no contestedByMe) and keeps the outcome + replay & verify modal.
+    // won!" modal.
+    //
+    // 2026-09-12 (user decision, 围攻驻留): beating another player's MAIN BASE reads the same way — it
+    // was never an instant outcome either (the garrison falling only schedules a durability hit
+    // SLG_SIEGE_DAMAGE_DELAY_MS out, ADR-026 §4), so the blocking "Siege won!" modal was announcing a
+    // result that had not happened yet and interrupting the player to do it. Its signal is a fresh
+    // `siegeHolds` entry under this siege's id — the same "ask the server what state the win left
+    // behind" shape as `contestedByMe`, and it covers the wild-city ladder (ADR-074 P1) too.
+    //
+    // What still earns a modal: an instant final outcome — a structure chip, a PvE
+    // stronghold-or-crossing capture, and every LOSS (the replay is the point of a loss).
     const [tx, ty] = ctx.parseTileId(s.tile);
     const tile = ctx.tileCache.get(`${tx}:${ty}`);
-    if (s.outcome === 'attacker_win' && tile?.contestedByMe) {
+    const hold = ctx.siegeHolds.find((h) => h.siegeId === s.siegeId) ?? null;
+    if (s.outcome === 'attacker_win' && hold) {
+      ctx.panels.showToast(
+        t(hold.isBase ? 'world.siegeWinBaseHold' : 'world.siegeWinCityHold')
+          .replace('{time}', formatDuration((hold.dueAt - serverNow()) / 1000))
+          .replace('{dmg}', String(hold.damage)),
+        C.dark,
+      );
+    } else if (s.outcome === 'attacker_win' && tile?.contestedByMe) {
       ctx.panels.showToast(t('world.siegeWinHold'), C.dark);
     } else {
       const loot = s.lootSummary ?? '';
