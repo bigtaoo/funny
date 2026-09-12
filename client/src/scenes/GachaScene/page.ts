@@ -3,7 +3,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import type { Rarity } from '../../game/meta/SaveData';
-import { ui as C, txt } from '../../render/sketchUi';
+import { ui as C, txt, txtOutlined } from '../../render/sketchUi';
 import { gachaBannerTexture } from '../../render/gachaArt';
 import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../../ui/widgets/HubTabs';
@@ -194,9 +194,12 @@ export class PagePanel implements PageHandlers {
         core.container.addChild(st);
         sxp += starSz + 2;
       }
-      // Label carries the rarity colour too (bold, so the pale grey / gold ends stay readable on
-      // the cream banner art) — colour is the rank cue everywhere else in the scene.
-      const lbl = txt(t(('rarity.' + rar) as TranslationKey), FS.body, RARITY_COLOR[rar], true);
+      // Label carries the rarity colour too — colour is the rank cue everywhere else in the scene.
+      // Bold + a paper-coloured halo, because the legend sits on the banner illustration and each
+      // pool ships its own art: 'Legendary' lands on the dark blue pen in the default banner, where
+      // plain gold letters smear into it. The halo is invisible over bare paper and only shows up
+      // where a label crosses a drawn object.
+      const lbl = txtOutlined(t(('rarity.' + rar) as TranslationKey), FS.body, RARITY_COLOR[rar], C.paper, 3, true);
       lbl.anchor.set(0.5, 0);
       lbl.x = cx;
       lbl.y = legendY;
