@@ -15,6 +15,13 @@ module.exports = (env, argv) => {
   // `isWechat` is about the WeChat *platform*, never about which of the two entries is building —
   // prefix match rather than equality is what keeps that true.
   const isWechat = targetPlatform.startsWith('wechat');
+  // The in-package layout sweep (src/entries/wechat-layout.ts). It registers a fresh account against
+  // the local Docker stack, so — unlike every other wechat target — it needs real backend addresses
+  // baked in. Same call playwright.portrait.config.ts makes for the browser sweep, and for the same
+  // reason: a wrong base does not fail loudly, it just fails to register and every stop three
+  // minutes later reports as "gated". Defaults, not overrides — NW_* still wins.
+  const isWechatLayout = targetPlatform === 'wechat-layout';
+  const LOCAL_STACK = 'http://localhost:8088';
   // Native (Capacitor iOS/Android) build. The bundle runs from capacitor://localhost, so there is
   // no same-origin backend — every backend URL must be baked as an absolute production address
   // (IOS_RELEASE.md §build). Env vars still override for staging/sandbox builds.
@@ -45,15 +52,15 @@ module.exports = (env, argv) => {
   // (must match NW_GW_PORT / NW_GATEWAY_PUBLIC_WS_URL in dev-up.ps1).
   // If not configured in production, values are empty → net/config returns null → degrades to
   // local offline-only mode.
-  const apiBase = process.env.NW_API_BASE || (bakesRemoteBases ? `${REMOTE_ORIGIN}/api` : (isProd ? '' : 'http://localhost:18080'));
-  const gatewayWs = process.env.NW_GATEWAY_WS || (bakesRemoteBases ? 'wss://api.gamestao.com/gw' : (isProd ? '' : 'ws://localhost:8086/gw'));
-  const worldBase = process.env.NW_WORLD_BASE || (bakesRemoteBases ? REMOTE_ORIGIN : (isProd ? '' : 'http://localhost:18084'));
+  const apiBase = process.env.NW_API_BASE || (isWechatLayout ? `${LOCAL_STACK}/api` : '') || (bakesRemoteBases ? `${REMOTE_ORIGIN}/api` : (isProd ? '' : 'http://localhost:18080'));
+  const gatewayWs = process.env.NW_GATEWAY_WS || (isWechatLayout ? 'ws://localhost:8088/gw' : '') || (bakesRemoteBases ? 'wss://api.gamestao.com/gw' : (isProd ? '' : 'ws://localhost:8086/gw'));
+  const worldBase = process.env.NW_WORLD_BASE || (isWechatLayout ? LOCAL_STACK : '') || (bakesRemoteBases ? REMOTE_ORIGIN : (isProd ? '' : 'http://localhost:18084'));
   // Social base: web defaults to '' (same-origin, reverse-proxied). Native and CrazyGames have no
   // same-origin backend, so it must be baked absolute like the others.
-  const socialBase = process.env.NW_SOCIAL_BASE || (bakesRemoteBases ? REMOTE_ORIGIN : '');
+  const socialBase = process.env.NW_SOCIAL_BASE || (isWechatLayout ? LOCAL_STACK : '') || (bakesRemoteBases ? REMOTE_ORIGIN : '');
   // Auction base: same reasoning as social — web derives port 18086 client-side (net/config.ts
   // getAuctionBaseUrl), off-origin targets have no same-origin backend so it must be baked absolute.
-  const auctionBase = process.env.NW_AUCTION_BASE || (bakesRemoteBases ? REMOTE_ORIGIN : '');
+  const auctionBase = process.env.NW_AUCTION_BASE || (isWechatLayout ? LOCAL_STACK : '') || (bakesRemoteBases ? REMOTE_ORIGIN : '');
 
   // Guard against the 2026-08-02 production incident: net/config.ts's getSocialBaseUrl()/getAuctionBaseUrl()
   // fall back to deriving a dev-only port (8085/18086) from NW_WORLD_BASE whenever their own env var is
@@ -64,7 +71,10 @@ module.exports = (env, argv) => {
   // split out, silently breaking the whole auction house. Fail the build instead of shipping a broken
   // fallback — add new entries here whenever a getXBaseUrl() following this pattern joins net/config.ts.
   const DERIVED_PORT_BACKEND_ENVS = ['NW_SOCIAL_BASE', 'NW_AUCTION_BASE'];
-  if (isProd && !bakesRemoteBases && worldBase) {
+  // `isWechatLayout` is exempt: the guard exists to stop a SHIPPED build baking a real domain into
+  // NW_WORLD_BASE while leaving the two derived-port getters to invent an internal Docker address.
+  // This target bakes localhost on purpose, and all five values above come from the same constant.
+  if (isProd && !bakesRemoteBases && !isWechatLayout && worldBase) {
     for (const key of DERIVED_PORT_BACKEND_ENVS) {
       if (!process.env[key]) {
         throw new Error(

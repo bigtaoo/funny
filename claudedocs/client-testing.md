@@ -283,13 +283,13 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 > **微信小游戏入口（`entries/wechat`）不能用 Playwright，也不能用 minium。** 「需微信开发者工具的自动化（minium / 小程序自动化 SDK）单列」这句话在这里挂了很久，2026-08-31 已被实测证伪：`miniprogram-automator` 连得上 socket，但每一个 `evaluate` / `callWxMethod` 都**永久挂起**——小游戏没有 appservice 供这些命令抵达（证据写在 `client/src/entries/wechat-e2e.ts` 的文件头）。别再去试第二次。
 >
-> 可行的形状是**包内探针**，不是外部自动化：一个 `build:wechat-*` 入口在包内自己启动、自己走站、把报告写进 `USER_DATA_PATH`（开发者工具模拟器下就是本机真实目录，会话能直接读）。现有两个入口就是这个形状——`wechat-e2e.ts`（只量 SFX 交付峰值；**它不是 `web-e2e` 的孪生，不调 `startApp`、没有 `__nwE2E`**，文件头的自称是错的）和 `wechat-probe.ts`（采宿主表面 + `textMetricsProbe`）。要把几何巡检也搬过去，前置是把 `instrumentViews` 从 `entries/web-e2e.ts` 抽成共享模块、把 `layoutAudit.ts` 挪到能被打包的位置、再给包内走站写一份不依赖 Playwright 的实现。见 `UI_DESIGN_LOG_2026-08.md` §50.6。
+> 可行的形状是**包内探针**，不是外部自动化：一个 `build:wechat-*` 入口在包内自己启动、自己走站、把报告写进 `USER_DATA_PATH`（开发者工具模拟器下就是本机真实目录，会话能直接读）。三个入口都是这个形状——`wechat-e2e.ts`（只量 SFX 交付峰值；**它不是 `web-e2e` 的孪生，不调 `startApp`、没有 `__nwE2E`**，文件头的自称是错的）、`wechat-probe.ts`（采宿主表面 + `textMetricsProbe`），以及 2026-09-12 加的 `wechat-layout.ts`（几何巡检，见下一节末尾）。
 
 ### 几何巡检（`npm run test:portrait`，2026-09-11 新增，同日扩面）
 
 同一层（真 Chromium）的第二条入口，但问的问题完全不同：**不是「会不会炸」，而是「排版对不对」**。
 
-`test/browser/portraitLayout.spec.ts` 走 **32 站 × 6 个尺寸**，每站把 `window.__nwE2E.app` 的真实显示树交给 `test/browser/lib/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、**有效字号低于该视口的可读性下限**、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
+`test/browser/portraitLayout.spec.ts` 走 **36 站 × 10 个尺寸/语言组合**（站点表在 `src/testing/layoutStops.ts`，微信包内巡检走的是同一张），每站把 `__nwE2E.app` 的真实显示树交给 `src/testing/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、**有效字号低于该视口的可读性下限**、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
 
 文件名还叫 `portraitLayout`、命令还叫 `test:portrait`：竖屏是它存在的理由和调校目标，横屏是设计矩形与下限都改成按视口算之后顺手加的两行。
 
