@@ -224,9 +224,15 @@ export class RenderPanel implements RenderHandlers {
     hdr.y = startY + 14;
     this.core.paint.pageLayer.addChild(hdr);
 
+    // The entry starts after the HEADER, not at a fixed 195 (2026-09-12). "Build queue" is 11
+    // characters and clears it; German's "Bauwarteschlange" is 16 and ran 12 design px into the
+    // entry beside it, printing as one run-on string ("BauwarteschlangeStadtmauer Lv.10 · …").
+    // Under the sweep's overlap threshold, so it was never reported — seen in the screenshots.
+    const entryX = Math.max(cx0 + 195, Math.ceil(hdr.x + hdr.width) + 12);
+
     if (queue.length === 0) {
       const empty = txt(t('city.queueEmpty'), FS.body, C.mid);
-      empty.x = cx0 + 195;
+      empty.x = entryX;
       empty.y = startY + 14;
       this.core.paint.pageLayer.addChild(empty);
     } else {
@@ -239,18 +245,23 @@ export class RenderPanel implements RenderHandlers {
         .replace('{sec}', formatDuration(secsLeft));
 
       const entryLbl = txt(label, FS.bodyLg, C.dark, true);
-      entryLbl.x = cx0 + 195;
+      entryLbl.x = entryX;
       entryLbl.y = startY + 14;
       this.core.paint.pageLayer.addChild(entryLbl);
 
       if (secsLeft > 0) {
         const coins = Math.ceil(secsLeft / BUILD_SPEEDUP_SECS_PER_COIN);
         const speedLabel = t('city.speedup').replace('{coins}', String(coins));
+        // 58 tall, not 45 (2026-09-12). `city.speedup` carries a coin count, so it is two pieces in
+        // every language — "Beschleunigen (90 Münzen)" is 300 design px at the legibility floor
+        // against 218 of button, and the label widget answered by scaling it to 0.79, i.e. 15.9
+        // design px (sweep §50.12). At 58 the widget's two-line branch fits instead and the words
+        // stack at full size; the 72-px queue panel already had the room.
         this.core.addBtn(
           cx0 + w - 249,
-          startY + 9,
+          startY + 4,
           228,
-          45,
+          58,
           speedLabel,
           0xffffff,
           C.gold,

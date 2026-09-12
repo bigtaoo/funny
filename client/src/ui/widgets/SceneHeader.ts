@@ -33,7 +33,7 @@ import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../render/sketchUi';
 import { getCachedDisplay } from './uiCache';
 import { buildIcon, buildRasterTabIcon, tabIconVariant, BACK_ARROW_ART, BACK_ARROW_ASPECT, type IconKind } from '../../render/icons';
-import { FS } from '../../render/fontScale';
+import { FS, fitFont } from '../../render/fontScale';
 import { drawGuilloche } from './SceneHeader/guilloche';
 
 /**
@@ -356,12 +356,12 @@ export function drawSceneHeader(
 
   if (title !== null) {
     const titleColor = variant === 'paper' ? C.dark : 0xffffff;
-    const titleSize = opts?.titleSize ?? size;
-    const titleNode = txt(title, titleSize, titleColor, true);
-    const icon = opts?.icon ? buildTitleIcon(opts.icon, titleSize, titleColor) : null;
+    let titleSize = opts?.titleSize ?? size;
+    let titleNode = txt(title, titleSize, titleColor, true);
+    let icon = opts?.icon ? buildTitleIcon(opts.icon, titleSize, titleColor) : null;
     // Both alignments position the [icon][gap][title] group by its LEFT edge, so the icon pushes
     // the title right instead of overlapping it. With no icon and room to spare, the centred case
-    // is pixel-identical to the old `anchor 0.5 at w/2` (leadW = 0, fit = 1).
+    // is pixel-identical to the old `anchor 0.5 at w/2` (leadW = 0, nothing resized).
     //
     // The band the group may occupy: right of the back pill, and short of the right edge by enough
     // for the currency readout scenes draw over the bar (drawHeaderCurrency). Both ends bite on a
@@ -374,19 +374,52 @@ export function drawSceneHeader(
       ? opts.rightReserve + gap
       : Math.round(w * TITLE_RIGHT_RESERVE_RATIO);
     const bandW = w - afterBackPill - reserve;
-    // Shrink icon and text together rather than dropping the icon or letting either clip — the
-    // same "scale a label down to fit its cell" rule the tab strips already use (HubTabs.ts).
-    // Only long labels on a narrow bar ever scale; CJK titles are 3–4 glyphs and fit outright.
+    // Step icon and text down together rather than letting either clip. Only long labels on a
+    // narrow bar ever move off their nominal size; CJK titles are 3-4 glyphs and fit outright.
     const fullW = (icon ? icon.size + icon.gap : 0) + titleNode.width;
     // A reserve big enough to make the band negative means the caller asked for more than the bar
     // has; shrink to the little that is left rather than silently giving up on fitting (which drew
     // a full-size title straight over the cluster — city header, portrait, 2026-09-11).
     const usableBand = Math.max(bandW, Math.round(w * 0.12));
-    const fit = fullW > usableBand ? usableBand / fullW : 1;
-    if (fit < 1) titleNode.scale.set(fit);
-    const leadW = icon ? Math.round((icon.size + icon.gap) * fit) : 0;
+    // Pick a SIZE off the shared scale rather than scaling the built node (2026-09-12). The header
+    // font is derived from the bar's height while the band is derived from its width, and in
+    // portrait those pull in opposite directions: a 390x844 phone's design canvas is 2337 tall, so
+    // `backSize` asks for 84 design px in a band that a reserved cluster can cut to ~130 — a 0.20
+    // multiplier, i.e. a 17-design-px scene title, under that viewport's legibility floor (sweep
+    // §50.12: "Heimatstadt", "Hauptstadt-Verteidigung"). `fitFont` lands on a token and stops at the
+    // floor. Where the old multiplier already cleared the floor the chosen size is never larger than
+    // `fullW * fit`, so nothing that fitted before starts spilling.
+    if (fullW > usableBand) {
+      const fitted = fitFont(titleSize, fullW, usableBand);
+      if (fitted < titleSize) {
+        titleNode.destroy({ texture: true, baseTexture: true });
+        icon?.node.destroy({ children: true });
+        titleSize = fitted;
+        titleNode = txt(title, titleSize, titleColor, true);
+        icon = opts?.icon ? buildTitleIcon(opts.icon, titleSize, titleColor) : null;
+      }
+    }
+    // Whatever the re-mint could not buy back — the floor was reached and the group is still too
+    // wide — comes out of the GLYPH, not the words: the icon shrinks into the width the title
+    // leaves, and is dropped outright when what is left would not read as a picture any more. Same
+    // trade as the equipment cell's affix column (§50.11 #2), and the same reason: the title is the
+    // only thing on this bar that names the screen, while the glyph repeats what the player just
+    // tapped to get here.
+    let iconScale = 1;
+    let leadW = icon ? icon.size + icon.gap : 0;
+    if (icon && leadW + titleNode.width > usableBand) {
+      const room = usableBand - titleNode.width - icon.gap;
+      if (room >= icon.size * 0.4) {
+        iconScale = room / icon.size;
+        leadW = Math.round(room + icon.gap);
+      } else {
+        icon.node.destroy({ children: true });
+        icon = null;
+        leadW = 0;
+      }
+    }
     // Centring is about the WHOLE bar, but the reserved band belongs to the caller's cluster, so a
-    // centred group still has to be pushed left out of it: `fit` only guarantees the group is no
+    // centred group still has to be pushed left out of it: fitting only guarantees the group is no
     // wider than the band, which is not the same as it being inside the band (the back pill is
     // narrower than a right-side cluster, so the centre sits too far right). The city header's HP
     // readout and its title were drawn through each other for exactly this reason.
@@ -396,9 +429,9 @@ export function drawSceneHeader(
       ? afterBackPill
       : Math.max(afterBackPill, Math.min(Math.round((w - groupW) / 2), w - reserve - groupW));
     if (icon) {
-      icon.node.scale.set(fit);
+      icon.node.scale.set(iconScale);
       icon.node.x = groupX;
-      icon.node.y = Math.round(headerH / 2 - (icon.size * fit) / 2);
+      icon.node.y = Math.round(headerH / 2 - (icon.size * iconScale) / 2);
       container.addChild(icon.node);
     }
     titleNode.anchor.set(0, 0.5);

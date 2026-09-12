@@ -1183,7 +1183,14 @@ export const de: Record<TranslationKey, string> = {
   'auction.finalPrice': 'Endpreis',
   'auction.buyoutAt': 'Sofort {price}',
   'auction.buyoutNow': 'Sofortkauf für {price}',
-  'auction.timeLeft': '{d}T {h}Std {m}Min {s}Sek',
+  // Unit SYMBOLS, not the words. A market cell's info column is 167 design px wide in portrait's
+  // three-column grid (AuctionScene/list.ts), i.e. ~14 monospace characters at the legibility floor,
+  // and 'Std/Min/Sek' spends 20 of them: the countdown wrapped to a second line that landed on the
+  // Kaufen/Bieten button below it, on every listing of every German phone (sweep §50.12, 15 findings
+  // per viewport). Wrapping is what BROKE this one, so the ruling's second answer applies — abbreviate
+  // (§50.12). h/m/s next to a price in an auction row is a countdown by context, and this is the
+  // exact shape English already ships, which is the viewport that has always been green here.
+  'auction.timeLeft': '{d}T {h}h {m}m {s}s',
   'auction.confirmBid': 'Gebot von {price} Münzen abgeben?',
   'auction.bidPlaced': 'Gebot abgegeben',
   'auction.err.bidTooLow': 'Gebot unter Mindesterhöhung',
@@ -1457,7 +1464,10 @@ export const de: Record<TranslationKey, string> = {
   'titles.title': 'Titelwand',
   'titles.empty': 'Noch keine Titel',
   'titles.equipped': 'Angelegt',
-  'titles.tapUnequip': '(zum Entfernen tippen)',
+  // Short enough for a title card (184 design px wide): the full '(zum Entfernen tippen)' is 252
+  // and spilled out both sides of the card it belongs to (sweep §50.12). 'Ablegen' is what German
+  // calls taking a title/item off, and the card is the only tappable thing on screen.
+  'titles.tapUnequip': '(zum Ablegen)',
   'titles.locked': 'Nicht freigeschaltet',
   'title.event.newbie.full': 'Neuling',
   'title.event.newbie.short': 'Neu',

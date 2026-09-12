@@ -11,6 +11,11 @@
  *   - when the group is wider than the box the WHOLE group scales down (icon included) rather
  *     than the label wrapping, spilling, or the icon shoving the text out — German labels
  *     ("Ausrüstung", "Schmieden") are what actually reach the edge;
+ *   - ...but only down to the legibility floor. Past it the label WRAPS to two lines if it has a
+ *     space to break at and the box is tall enough, and otherwise stops at the floor and overflows.
+ *     See {@link splitButtonLabel} and the decision it implements
+ *     (design/game/UI_DESIGN_LOG_2026-08.md §50.12): wrap first, then abbreviate the string in
+ *     `i18n/locales/de.ts` — never shrink past the floor, never truncate a button with an ellipsis;
  *   - `icon: null` degrades to exactly what the scenes did before: one centred label.
  *
  * Raster tab icons bake their ink at pack time, so the variant matters and cannot be tinted:
@@ -35,6 +40,33 @@ const GAP_RATIO = 0.3;
  */
 export function buttonLabelIconW(fontSize: number): number {
   return Math.round(fontSize * ICON_RATIO) + Math.round(fontSize * GAP_RATIO);
+}
+
+/**
+ * Split `label` into the two most balanced lines a space allows, or `null` when there is no space
+ * to break at.
+ *
+ * Balanced rather than greedy because a button is centred, not a paragraph: "Sekten durchsuchen"
+ * reads as two stacked words, while a greedy fill would put "Sekten" alone on a line only when the
+ * box happened to be that narrow. `null` is the honest answer for a single German compound
+ * ("Schmieden") and for every CJK label — nothing in the string offers a break, so wrapping is not
+ * one of the options at that call site and the fix is a wider button or a shorter word.
+ *
+ * Character counts, not measured widths: the UI font is monospace everywhere (render/sketchUi.ts),
+ * which is the same property `fitFont` is built on.
+ */
+export function splitButtonLabel(label: string): [string, string] | null {
+  const words = label.split(' ').filter((s) => s.length > 0);
+  if (words.length < 2) return null;
+  let bestAt = 1;
+  let bestCost = Infinity;
+  for (let i = 1; i < words.length; i++) {
+    const head = words.slice(0, i).join(' ').length;
+    const tail = words.slice(i).join(' ').length;
+    const cost = Math.max(head, tail);
+    if (cost < bestCost) { bestCost = cost; bestAt = i; }
+  }
+  return [words.slice(0, bestAt).join(' '), words.slice(bestAt).join(' ')];
 }
 
 export interface ButtonLabelOpts {
@@ -156,6 +188,57 @@ export function drawButtonLabel(
   let groupW = icon ? icSz + icGap + text.width : text.width;
   let fit = groupW > fitW ? fitW / groupW : 1;
 
+  /**
+   * What ONE line can still do at best: the label by itself, with the icon dropped. That — not the
+   * group's `fit` — is the thing wrapping has to beat, because dropping the icon is already an
+   * answer this function gives (see `minFit` below) and it is the cheaper one.
+   */
+  const soloScale = Math.min(1, fitW / Math.max(1, text.width));
+
+  // ── Two lines, at the floor, before any of the shrinking branches below ──────────────────────
+  //
+  // Reached only when one line cannot hold the label without breaching the floor, so nothing that
+  // fits today changes shape: on every viewport and locale that was already legible this test is
+  // false and the code below runs exactly as it did. What it replaces is the silent alternative —
+  // `scale.set(avail / need)` putting "Schmieden" at 14 design px on a 360-wide phone, measured at
+  // 0.71 in the portrait sweep (§50.12). Two lines keep the size; the button only has to be tall
+  // enough, which is the cheap half of the trade ("按钮长高一点没关系", 2026-09-12 ruling).
+  //
+  // The icon is dropped first if that is what makes the block fit, for the same reason `minFit`
+  // drops it below: a glyph the player can also read off the button's neighbours is worth less
+  // than the word being legible.
+  if (soloScale * size < currentFontFloor()) {
+    const lines = splitButtonLabel(label);
+    if (lines) {
+      const l0 = txt(lines[0], size, color, bold);
+      const l1 = txt(lines[1], size, color, bold);
+      const blockW = Math.max(l0.width, l1.width);
+      const lineH = Math.max(l0.height, l1.height);
+      const useIcon = icon !== null && icSz + icGap + blockW <= fitW && icSz <= h - 2;
+      const wrapW = useIcon ? icSz + icGap + blockW : blockW;
+      if (wrapW <= fitW && lineH * 2 <= h - 2) {
+        text.destroy({ texture: true, baseTexture: true });
+        const gx = x + (w - wrapW) / 2;
+        if (useIcon && icon !== null) {
+          const glyph = buildIcon(icon, icSz, color, {
+            variant: opts.variant ?? (tabIconVariant(color) === 'active' ? 'active' : 'content'),
+          });
+          glyph.x = Math.round(gx);
+          glyph.y = Math.round(y + (h - icSz) / 2);
+          target.addChild(glyph);
+        }
+        const textCx = gx + (useIcon ? icSz + icGap : 0) + blockW / 2;
+        const top = y + (h - lineH * 2) / 2;
+        l0.anchor.set(0.5, 0); l0.x = Math.round(textCx); l0.y = Math.round(top);
+        l1.anchor.set(0.5, 0); l1.x = Math.round(textCx); l1.y = Math.round(top + lineH);
+        target.addChild(l0, l1);
+        return;
+      }
+      l0.destroy({ texture: true, baseTexture: true });
+      l1.destroy({ texture: true, baseTexture: true });
+    }
+  }
+
   // `minFit` is a fixed guess at "this shrink is too much"; the legibility floor is the same
   // judgement measured (render/fontScale.ts). Either one drops the icon: the defense editor's
   // 70-px footer buttons needed 0.89 on a tablet, which clears 0.82 and still put "Clear" at 14.2
@@ -169,7 +252,14 @@ export function drawButtonLabel(
     // (Settings' Rename / Delete Account / Replay tutorial, measured in portrait 2026-09-11).
     floorFit(text.width);
     const rawW = text.width;
-    const soloFit = Math.min(1, fitW / Math.max(1, rawW));
+    // Bounded below by the floor. Wrapping was already tried and rejected above (no space to break
+    // at, or a box too short for two lines), so the only answers left are "overflow at a readable
+    // size" and "fit at an unreadable one" — and the second stopped being allowed on 2026-09-12
+    // (§50.12). Overflowing is loud: the sweep reports it as `overflow` against the button's own
+    // frame, which is what sends the fix to the call site (a wider button) or to the translation
+    // (an abbreviation), instead of leaving a grey smudge that reads as intentional fine print.
+    // `size` may have just moved down a tier, so read the floor against the size actually minted.
+    const soloFit = Math.max(Math.min(1, fitW / Math.max(1, rawW)), Math.min(1, currentFontFloor() / size));
     text.scale.set(soloFit);
     text.x = Math.round(x + (w - rawW * soloFit) / 2);
     text.y = y + h / 2;
@@ -182,7 +272,9 @@ export function drawButtonLabel(
     icSz = Math.round(size * ICON_RATIO);
     icGap = Math.round(size * GAP_RATIO);
     groupW = icSz + icGap + text.width;
-    fit = groupW > fitW ? fitW / groupW : 1;
+    // Same floor bound as the solo branch: the re-mint moved `size` down a tier, so the scale that
+    // fits the new group can breach the floor the re-mint was supposed to respect.
+    fit = groupW > fitW ? Math.max(fitW / groupW, Math.min(1, currentFontFloor() / size)) : 1;
   }
 
   const groupX = x + (w - groupW * fit) / 2;

@@ -121,17 +121,20 @@ export function drawCell(
     const rewardColor = state === 'claimed' ? C.mid : reward.kind === 'coins' ? C.gold : C.accent;
     const cy = y + h * 0.62;
     const ic = Math.round(h * 0.5);
-    // `BpRewardKind` is a closed coins|material|skin union, so the null branch is only reachable
-    // if the server grows a kind this client doesn't know — same generic glyph mail.ts uses there.
-    const glyph = buildRewardIcon(reward, ic, rewardColor) ?? buildIcon('capsule', ic, rewardColor);
-    // The band left of the state label is what the reward has to live in.
+    // The band left of the state label is what the reward has to live in. No `Math.max(ic, …)`
+    // floor on it (2026-09-12): that silently handed the group back a width the band did not have
+    // whenever the state label was wide, which is exactly German's case — "Gesperrt" reserves 282
+    // design px of a 465-wide cell and the ×N group then ran 36 px into it on five rows of every
+    // German phone (sweep §50.12).
     const pad = Math.round(w * 0.05);
     const bandX = x + pad;
-    const bandW = Math.max(ic, w - pad * 2 - (reserveW > 0 ? reserveW + pad : 0));
+    const bandW = Math.max(24, w - pad * 2 - (reserveW > 0 ? reserveW + pad : 0));
     if (reward.kind === 'skin') {
-      // Skins are singletons — glyph alone, centred in the band.
-      glyph.x = bandX + bandW / 2 - ic / 2; glyph.y = cy - ic / 2;
-      parent.addChild(glyph);
+      // Skins are singletons — glyph alone, centred in the band, shrunk if the band is narrower.
+      const skinIc = Math.min(ic, bandW);
+      const skinGlyph = buildRewardIcon(reward, skinIc, rewardColor) ?? buildIcon('capsule', skinIc, rewardColor);
+      skinGlyph.x = bandX + bandW / 2 - skinIc / 2; skinGlyph.y = cy - skinIc / 2;
+      parent.addChild(skinGlyph);
     } else {
       const gap = Math.round(w * 0.02);
       const size = snapFont(Math.round(h * 0.4));
@@ -141,11 +144,23 @@ export function drawCell(
       const fitted = fitFont(size, ic + gap + probe.width, bandW);
       const rew = fitted === size ? probe : txt(`×${reward.count}`, fitted, rewardColor, state === 'claimable');
       if (rew !== probe) probe.destroy({ texture: true, baseTexture: true });
-      const groupW = ic + gap + rew.width;
+      // ...and then the GLYPH takes whatever the number left, rather than both overflowing
+      // together. `fitFont` stops at the floor, so past that point the picture is the only thing
+      // still able to yield — the same order of sacrifice the equipment cell's affix column uses
+      // (§50.11 #2). Below a third of its nominal box it stops reading as the item it depicts, so
+      // there it is dropped and the count stands alone.
+      const icFit = Math.min(ic, Math.max(0, bandW - gap - rew.width));
+      // `BpRewardKind` is a closed coins|material|skin union, so the null branch is only reachable
+      // if the server grows a kind this client doesn't know — same generic glyph mail.ts uses there.
+      const glyph = icFit >= ic * 0.34
+        ? (buildRewardIcon(reward, icFit, rewardColor) ?? buildIcon('capsule', icFit, rewardColor))
+        : null;
+      const leadW = glyph ? icFit + gap : 0;
+      const groupW = leadW + rew.width;
       const gx = bandX + Math.max(0, (bandW - groupW) / 2);
-      glyph.x = gx; glyph.y = cy - ic / 2;
-      rew.anchor.set(0, 0.5); rew.x = gx + ic + gap; rew.y = cy;
-      parent.addChild(glyph, rew);
+      if (glyph) { glyph.x = gx; glyph.y = cy - icFit / 2; parent.addChild(glyph); }
+      rew.anchor.set(0, 0.5); rew.x = gx + leadW; rew.y = cy;
+      parent.addChild(rew);
     }
   }
 }
