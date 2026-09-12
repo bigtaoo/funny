@@ -18,13 +18,19 @@
 | P0-1 | 排位结算超时矛盾：gameserver 上报 10s < meta judge 等待 20s → hash 不一致局**必然**超时重试；`matches.findOne→settle→insertOne` 非原子 → 二次 `settleElo`（ELO/金币双入账）；重试队列纯内存，重启即丢结算 | `metaReport.ts:85`、`Gateway.ts:29`、`matchReport.ts:89/116/197` | 结算前先原子占位 matches doc（roomId 唯一索引 upsert），重复上报直接幂等返回；ranked 上报超时提至 35s；重试首延迟拉长 |
 | P0-2 | `match_found` 生产零投递保障：Redis publish 丢弃订阅者计数（gateway 重启窗口=0 仍视为成功）；唯一 retries=2 长在 prod 不可达的 HTTP 分支 | `matchsvc/gatewayClient.ts:45,59` | publish 返回 0 订阅者时回落 HTTP |
 | P0-3 | 拍卖交付「付钱无货」：交付邮件只查 HTTP 200，meta 返 200+`{ok:false}` 不查；`grant*` 回滚不查 `res.ok` → 托管物凭空消失 | `auctionsvc/mailClient.ts:59`、`metaClient.ts:84,113,142`、`mailRoutes.ts:103/109` | 检查 body.ok + postInternal 重试 + 失败落 `pendingDeliveries` 集合供 ops 重放 |
-| P0-4 | `claimMail` 把网络错误伪装成 NOT_FOUND，socialsvc 已标 claimed → 附件永久丢失 | `metaserver/socialsvcClient.ts:74-76` | 区分网络错误（503）与业务 NOT_FOUND |
+| P0-4 | `claimMail` 把网络错误伪装成 NOT_FOUND，socialsvc 已标 claimed → 附件永久丢失 | `metaserver/socialsvcClient.ts:74-76` | 区分网络错误（503）与业务 NOT_FOUND（**2026-09-12 补修**，见下） |
 | P0-5 | worldsvc 赛季结算 ≈2 万并发 void 裸 fetch（mail+title），internalFetch 记载事故形态的 500 倍；meta 天梯 roll 逐人串行单发（bulk 端点已存在未用） | `season.ts:243-274`、`ladderSeason.ts:144` | 有界并发 + await + postInternal；能 bulk 则 bulk |
 | P0-6 | 部署漏配 6 处（详见下表） | — | 补配 + deploy-config 回归测试 |
 | P0-7 | 计费隔离绕过：worldsvc/auctionsvc spend 不传 `clientPlatform` → iOS/Android 从 web 桶扣钱（违 ADR-020） | `worldsvc/commercialClient.ts:33` | 从请求头透传 platform 到 spend |
 | P0-8 | meta commercialClient 29 方法零超时（commercial 卡死→GET /save 挂→全服 REST 雪崩）；`await flags.start()` 在 listen 前（admin 黑洞→meta 永不启动） | `commercialClient.ts:248`、`index.ts:71` | 批次A 统一收口；flags.start 移到 listen 后 |
 | P0-9 | readJson 1MB guard 内存 bug：reject 后不 destroy、data 继续累积（gateway+matchsvc 同款）→ 可 OOM | `gateway/internalHttp.ts:44-47`、`matchsvc/internalHttp.ts:15-19` | reject 时 req.destroy() |
 | P0-10 | judge：pickJudge 固定取第一个可判连接（可串谋）；ticket `ignoreExpiration` 且下游无人查 exp（TTL=30s 是死配置） | `Gateway.ts:458`、`gameserver/index.ts:64` | pickJudge 随机化；首次 join 校验 exp（重连既有槽位豁免） |
+
+**P0-4 的补修（2026-09-12，Grafana 巡检发现）**：当年的修法把「业务错误」和「服务不可达」分开了，但**分错的那一半从来没生效过**。`socialsvcClient.claimMail()` 读的是 `data.error` 并拿它跟 `'NOT_FOUND'` / `'NO_ATTACHMENT'` / `'ALREADY_CLAIMED'` 三个字面量比较，而 socialsvc 回的是 `@nw/shared` 的 `err(code, message)` 信封 —— `error` 是**对象** `{code, message}`，不是字符串。于是三种业务错误**全部**掉进 `SOCIAL_UNAVAILABLE` 分支，metaserver 一律回 503「暂时不可用，请重试」：玩家重复点一次领取，输掉竞态的那次本该是 409 ALREADY_CLAIMED（客户端有对应的「已领取」提示），实际却收到一个鼓励重试的 503。生产日志 2026-09-08 两次，都是同一封邮件的两次并发 claim（一次 200、一次 503）。
+
+两处让它长期隐身的原因值得记住：①`fetchInternalJson<{ …; error?: string }>` 的类型声明是**假的**，`tsc` 因此看不出比较永远为假；②`metaserver/test/socialsvc-client-unit.test.ts` 的 fixture 自己也回 `{ok:false, error:'NOT_FOUND'}` 这种**线上不存在的**裸字符串形状，于是测试一直是绿的。修法：`InternalEnvelope<T>` 如实声明 `error?: {code, message}`，用 `errorCode()` 取 `code` 比较；fixture 改成只能通过 `errEnvelope()` 拼错误、状态码也跟 `ERROR_HTTP_STATUS` 对齐。**内部服务的测试替身必须逐字复刻 `ok()`/`err()`，否则它验证的是一个不存在的协议。**
+
+客户端同时补了一个双击闸（`FriendsScene/network.ts` 的 `mailInFlight`）：领取/删除按钮原本没有 busy latch，日志里能看到同一封邮件的两次 `/claim` 和两次 `DELETE` 相隔几毫秒。
 
 **部署漏配明细（P0-6）**：
 

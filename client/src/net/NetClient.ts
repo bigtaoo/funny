@@ -80,6 +80,31 @@ export interface NetClientOptions {
 
 const DEFAULT_BACKOFF = [500, 1000, 2000, 4000, 8000];
 
+/**
+ * How long a socket must stay open before the reconnect backoff is considered "earned back".
+ *
+ * 2026-09-12 fix (265 `WS handshake rejected: jwt expired` in one two-hour burst on the production
+ * gateway, one per second): the gateway accepts the WS *upgrade* and only then closes with 4401, so
+ * from this class's point of view the socket genuinely opened. `onOpen` used to reset `attempt` to 0
+ * unconditionally, which meant a connection rejected right after opening always rescheduled at
+ * backoff[0] — the backoff ladder could never climb and the client hammered the gateway at ~2 Hz for
+ * as long as the token stayed dead. A connection only counts as healthy once it has survived this
+ * long; anything shorter keeps climbing the ladder.
+ */
+const STABLE_OPEN_MS = 10_000;
+
+/**
+ * Thrown by a `tokenProvider` to say "this connection can never authenticate again" — NetClient
+ * gives up (state 'disconnected') instead of retrying forever. Ordinary token-fetch failures
+ * (network blip, 5xx) must NOT use this: they throw anything else and keep their retries.
+ */
+export class FatalTokenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FatalTokenError';
+  }
+}
+
 export class NetClient {
   private socket: IGameSocket | null = null;
   private state: NetState = 'idle';
@@ -88,6 +113,8 @@ export class NetClient {
   private intentional = false; // intentional disconnect — do not reconnect
   private everOpened = false; // distinguishes the first open from a reconnect open
   private attempt = 0;
+  /** Wall clock of the current socket's open, or 0 when not open — see STABLE_OPEN_MS. */
+  private openedAt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private readonly backoff: number[];
@@ -131,6 +158,7 @@ export class NetClient {
   disconnect(): void {
     this.intentional = true;
     this.gen++; // invalidate all callbacks from the current socket
+    this.openedAt = 0;
     this.clearTimers();
     if (this.socket) {
       this.socket.close();
@@ -208,6 +236,14 @@ export class NetClient {
       token = await this.opt.tokenProvider();
     } catch (e) {
       if (gen !== this.gen) return; // disconnected/reset in the meantime
+      if (e instanceof FatalTokenError) {
+        // The provider knows no future attempt can succeed (e.g. a password-login session whose JWT
+        // expired: there is no refresh endpoint and re-authenticating the device credential would
+        // swap accounts). Retrying would just reproduce the same rejection forever.
+        this.log.warn('token permanently unavailable, not reconnecting', { err: e.message });
+        this.setState('disconnected');
+        return;
+      }
       this.log.error('token fetch failed; will retry', e);
       this.scheduleReconnect();
       return;
@@ -219,7 +255,9 @@ export class NetClient {
     const handlers: SocketHandlers = {
       onOpen: () => {
         if (gen !== this.gen) return;
-        this.attempt = 0;
+        // NOT `this.attempt = 0` — the backoff is only reset once the socket has proven stable, in
+        // onClose below. See STABLE_OPEN_MS.
+        this.openedAt = Date.now();
         this.setState('open');
         this.startPing();
         if (this.everOpened) {
@@ -243,6 +281,10 @@ export class NetClient {
         if (gen !== this.gen || this.intentional) return;
         this.stopPing();
         this.socket = null;
+        // Give the backoff ladder back only to a connection that actually held (STABLE_OPEN_MS);
+        // an open-then-immediately-rejected socket keeps climbing it.
+        if (this.openedAt > 0 && Date.now() - this.openedAt >= STABLE_OPEN_MS) this.attempt = 0;
+        this.openedAt = 0;
         if (code === 4401) this.opt.handlers.onAuthRejected?.();
         // Permanent rejections (4409 always; see fatalCloseCodes doc for the opt-in ones) —
         // retrying would just replay the same rejection forever, so give up instead of burning
