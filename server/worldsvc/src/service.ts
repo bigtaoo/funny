@@ -30,7 +30,7 @@ import { SeasonService } from './season';
 import { CityService } from './city';
 import { CombatService } from './combat';
 import { TransferService, type ShardSummary } from './transfer';
-import type { PlayerWorldView, WorldTileView, MarchView, OccupationView, StationedView, WorldMapView, WorldMapSparseView, WorldServiceDeps } from './worldTypes';
+import type { PlayerWorldView, WorldTileView, MarchView, OccupationView, SiegeHoldView, StationedView, WorldMapView, WorldMapSparseView, WorldServiceDeps } from './worldTypes';
 import type { SLG_SHOP_ITEMS, BuildingKey, MarchKind, ChatRegion } from '@nw/shared';
 import type { TeamTemplate, NationDoc } from './db';
 
@@ -125,6 +125,14 @@ export class WorldService {
   }
   getStationed(worldId: string, accountId: string): Promise<StationedView[]> {
     return this.combat.getStationed(worldId, accountId);
+  }
+  /** 围攻驻留 (2026-09-12): own pending delayed siege hits — see SiegeDamageService.getSiegeHolds. */
+  getSiegeHolds(worldId: string, accountId: string): Promise<SiegeHoldView[]> {
+    return this.combat.getSiegeHolds(worldId, accountId);
+  }
+  /** 停止围攻 (2026-09-12): call off this team's siege — see SiegeDamageService.cancelSiegeHold. */
+  cancelSiegeHold(worldId: string, accountId: string, teamId: string): Promise<void> {
+    return this.combat.cancelSiegeHold(worldId, accountId, teamId);
   }
   recallStationed(worldId: string, accountId: string, teamId: string): Promise<MarchView | Record<string, never>> {
     return this.combat.recallStationed(worldId, accountId, teamId);
@@ -277,7 +285,7 @@ export class WorldService {
     // ADR-074 P1: each node now carries its live siege state too (owning sect, durability with lazy regen
     // already applied, protection window, per-sect siege log) — the same one-read-per-entry cadence, so the
     // map can draw a city's HP bar and its info panel without a second round-trip per city.
-    const [season, nations, cities, map, mapSparse, marches, occupations, stationed] = await Promise.all([
+    const [season, nations, cities, map, mapSparse, marches, occupations, stationed, siegeHolds] = await Promise.all([
       this.getSeason(worldId),
       this.getNations(worldId),
       this.getCityViews(worldId),
@@ -286,10 +294,14 @@ export class WorldService {
       this.getMarches(worldId, accountId),
       this.getOccupations(worldId, accountId),
       this.getStationed(worldId, accountId),
+      // 围攻驻留 (2026-09-12): rides along with the other three order slices for the same reason they do
+      // — a team pinned to a pending siege hit is one of the states the team panel and the map token
+      // layer must know about from the first paint, not one poll later.
+      this.getSiegeHolds(worldId, accountId),
     ]);
 
     return {
-      season, nations, cities, marches, occupations, stationed,
+      season, nations, cities, marches, occupations, stationed, siegeHolds,
       me: { ...me, justJoined },
       ...(map ? { map } : {}),
       ...(mapSparse ? { mapSparse } : {}),

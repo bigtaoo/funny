@@ -78,7 +78,7 @@ function buildHarness(t1RestingStamina = false) {
           : { stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW },
       },
     },
-    marches, occupations: [], stationed,
+    marches, occupations: [], siegeHolds: [], stationed,
     teams, teamsLoaded: true, teamPanelExpanded: true,
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[p.length - 2]), Number(p[p.length - 1])]; },
     cb: { accountId: 'me', getCoins: () => 0, worldId: WORLD_ID },

@@ -7,7 +7,7 @@
 // CombatService re-exposes the exact same public API so WorldService (service.ts) composes it unchanged.
 // Depends on WorldCore for shared state, vision, spawn, push/schedule infra, settle/yield, and nations. No behavior change.
 import type { MarchKind } from '@nw/shared';
-import type { MarchView, OccupationView, StationedView, PlayerWorldView } from './worldTypes';
+import type { MarchView, OccupationView, SiegeHoldView, StationedView, PlayerWorldView } from './worldTypes';
 import { WorldCore } from './core';
 import { SiegeService } from './combatSiege';
 import { MarchService } from './combatMarch';
@@ -72,6 +72,14 @@ export class CombatService {
   }
   getOccupations(worldId: string, accountId: string): Promise<OccupationView[]> {
     return this.siege.getOccupations(worldId, accountId);
+  }
+  /** 围攻驻留 (2026-09-12): own pending delayed siege hits — see SiegeDamageService.getSiegeHolds. */
+  getSiegeHolds(worldId: string, accountId: string): Promise<SiegeHoldView[]> {
+    return this.siege.getSiegeHolds(worldId, accountId);
+  }
+  /** 停止围攻 (2026-09-12): call off this team's siege — see SiegeDamageService.cancelSiegeHold. */
+  cancelSiegeHold(worldId: string, accountId: string, teamId: string): Promise<void> {
+    return this.siege.cancelSiegeHold(worldId, accountId, teamId);
   }
 
   // ── defense config + replay (combatDefense.ts) ───────────────

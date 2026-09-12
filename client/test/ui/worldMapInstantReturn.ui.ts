@@ -47,6 +47,7 @@ function buildHarness(marches: MarchView[]): { ctx: WorldMapContext; panels: Wor
     teams: [],
     teamsLoaded: true,
     occupations: [],
+    siegeHolds: [],
     stationed: [],
     teamPanelExpanded: true,
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },

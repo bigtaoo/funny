@@ -63,6 +63,7 @@ function buildHudHarness(me: Partial<PlayerWorldView> = {}, dims: { w?: number; 
     teams: [],
     teamsLoaded: false,
     occupations: [],
+    siegeHolds: [],
     stationed: [],
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },
     cb: { accountId: 'me', getCoins: () => 0 },

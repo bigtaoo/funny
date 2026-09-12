@@ -166,6 +166,17 @@ export interface SiegeDamageDoc {
   attackerSurvivors: number; // attacker surviving troops, refunded / used as new garrison on capture
   familyId?: string;    // attacker family (activity/nation bookkeeping at settlement)
   dueAt: number;        // ms; scheduler settles when now ≥ dueAt
+  /**
+   * The besieging team, carried through the wait (2026-09-12, 围攻驻留). The march that won the ladder is
+   * already deleted by the time this document exists, so without these three the team simply vanished for
+   * the whole five minutes: it showed as idle at home, could be re-dispatched from under the siege it was
+   * supposedly prosecuting, and the walk home the settlement starts carried a faceless troop count instead
+   * of the team. They are the same fields `startReturnMarch` takes, snapshotted off the winning march.
+   * Absent on a flat-troop siege (no team attached) and on documents written before this shipped.
+   */
+  teamId?: string;
+  leaderUnitType?: string;
+  army?: ArmyEntry[];
 }
 
 /**
@@ -282,6 +293,11 @@ export async function ensureCombatIndexes(
   // ADR-026: delayed building-HP settlement scan (mirrors marches.arriveAt: due-time polling is the sole mechanism).
   await siegeDamage.createIndex({ dueAt: 1 });
   await siegeDamage.createIndex({ tile: 1 });
+  // 围攻驻留 (2026-09-12): the pending-hit list the world map polls (`find({worldId,attackerId})`, every
+  // ~5s alongside marches/occupations/stationed) and the TEAM_BUSY gate every dispatch runs
+  // (`findOne({worldId,attackerId,teamId})`). Same compound shape as the occupations index above — the
+  // trailing optional key still lets the two-field prefix serve the list query.
+  await siegeDamage.createIndex({ worldId: 1, attackerId: 1, teamId: 1 });
   // ADR-037 (§5.4): occupation-hold settlement scan (mirrors siegeDamage.dueAt: due-time polling is the sole mechanism).
   await occupations.createIndex({ dueAt: 1 });
   // TEAM_BUSY gate (`findOne({worldId,ownerId,teamId})`, every march dispatch) and getStationed's

@@ -107,6 +107,7 @@ export const ErrorCode = {
   TEAM_BUSY: 'TEAM_BUSY',                           // team is already committed to an active (non-recalled) march; recall it first
   TEAM_EXHAUSTED: 'TEAM_EXHAUSTED',                 // team has less than SLG_TEAM_STAMINA_COST stamina left; it refills over time (SLG_DESIGN §4.6)
   OCCUPATION_NOT_FOUND: 'OCCUPATION_NOT_FOUND',     // no active occupation-hold for this team/tile (already settled, expelled, or never started)
+  SIEGE_HOLD_NOT_FOUND: 'SIEGE_HOLD_NOT_FOUND',     // 停止围攻 (2026-09-12): no pending siege hit for this team (the round already settled, or it was repelled)
   MAIL_HAS_UNCLAIMED_ATTACHMENT: 'MAIL_HAS_UNCLAIMED_ATTACHMENT', // mail has an attachment that hasn't been claimed yet; claim it before deleting
   // —— SLG city P3 (2026-07-16): satchel per-march troop-carry cap ——
   SATCHEL_CAP_EXCEEDED: 'SATCHEL_CAP_EXCEEDED',     // team's carried troops exceed satchelCarryCapFor(buildings), D-CITY-9
@@ -213,6 +214,7 @@ export const ERROR_HTTP_STATUS: Record<string, number> = {
   [ErrorCode.TEAM_BUSY]: 409,
   [ErrorCode.TEAM_EXHAUSTED]: 409,
   [ErrorCode.OCCUPATION_NOT_FOUND]: 404,
+  [ErrorCode.SIEGE_HOLD_NOT_FOUND]: 404,
   [ErrorCode.MAIL_HAS_UNCLAIMED_ATTACHMENT]: 409,
   [ErrorCode.SATCHEL_CAP_EXCEEDED]: 409,
   [ErrorCode.TRANSFER_COOLDOWN]: 409,

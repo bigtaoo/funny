@@ -319,6 +319,11 @@ export class HudPanel implements HudHandlers {
             actionLabel = t('world.instantReturn', {
               coins: Math.max(1, Math.ceil(remaining / MARCH_RETURN_SPEEDUP_SECS_PER_COIN)),
             });
+          } else if (row.stopHold) {
+            // 停止围攻 / 停止占领 (2026-09-12): a countdown the player can call off. Red like a march
+            // recall — both give an order back, and this one can also cost a siege its progress.
+            actionLabel = t('world.stopHold');
+            actionBorder = C.red;
           } else if (row.stationedTeamId) {
             // Deliberately the same verb as a march recall rather than world.actRecallStation's longer
             // tile-menu wording: the row's own status line already says this team is in the field.
@@ -411,6 +416,8 @@ export class HudPanel implements HudHandlers {
             recallRect: march && march.kind !== 'return' ? actionRect : null,
             instantReturnRect: march && march.kind === 'return' ? actionRect : null,
             recallStationRect: !march && row.stationedTeamId ? actionRect : null,
+            stopHoldRect: !march && row.stopHold ? actionRect : null,
+            stopHold: row.stopHold,
           });
           rowY += r.rowH;
         }

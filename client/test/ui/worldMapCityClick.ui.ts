@@ -54,6 +54,7 @@ function buildHarness(opts: { sectId?: string } = {}) {
       ...(opts.sectId ? { sectId: opts.sectId } : {}),
     } as PlayerWorldView,
     selectedTile: null,
+    siegeHolds: [],
     stationed: [],
     parseTileId(tileId: string): [number, number] {
       const parts = tileId.split(':');

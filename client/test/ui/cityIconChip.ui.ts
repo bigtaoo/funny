@@ -72,6 +72,7 @@ async function city(levels: Partial<Record<BuildingKey, number>>): Promise<CityS
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
     getStationed: () => Promise.resolve([]),
+    getSiegeHolds: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
   } as unknown as WorldApiClient;

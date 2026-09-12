@@ -8,6 +8,7 @@ import type {
   WorldTileView,
   MarchView,
   OccupationView,
+  SiegeHoldView,
   StationedView,
   PlayerWorldView,
   EnterWorldView,
@@ -62,6 +63,15 @@ export class WorldService {
   /** Own active occupation-holds (2026-07-15 team management: status + cancel affordance). */
   async getOccupations(worldId: string): Promise<OccupationView[]> {
     return this.core.req('GET', `/world/occupations?worldId=${encodeURIComponent(worldId)}`);
+  }
+
+  /**
+   * Own pending delayed siege hits (围攻驻留, 2026-09-12): a main-base or wild-city assault whose garrison
+   * battle is won and whose durability hit lands five minutes later. The team stands on the target until
+   * then — this is what the map's besieging token and the team panel's countdown read.
+   */
+  async getSiegeHolds(worldId: string): Promise<SiegeHoldView[]> {
+    return this.core.req('GET', `/world/siegeholds?worldId=${encodeURIComponent(worldId)}`);
   }
 
   /** Own teams stationed on tiles (2026-07-23 field-stationing: idle-sprite rendering + recall affordance). */
@@ -224,6 +234,17 @@ export class WorldService {
   /** Force a team stuck in an occupation-hold back to idle immediately (garrison forfeited, no refund). */
   async cancelOccupation(teamId: string, worldId: string): Promise<{ ok: true }> {
     return this.core.req('POST', `/world/team/${encodeURIComponent(teamId)}/cancel-occupation`, {
+      worldId,
+    });
+  }
+
+  /**
+   * 停止围攻 (2026-09-12): call off a team's siege. Its pending durability hit is voided and the team
+   * walks home. Nothing is forfeited — unlike cancelOccupation above — because a round's damage lands
+   * whole at `dueAt` or not at all, so stopping mid-round only costs the stamina that round already spent.
+   */
+  async cancelSiegeHold(teamId: string, worldId: string): Promise<{ ok: true }> {
+    return this.core.req('POST', `/world/team/${encodeURIComponent(teamId)}/cancel-siege`, {
       worldId,
     });
   }

@@ -112,6 +112,7 @@ function build(): Harness {
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
     getStationed: () => Promise.resolve([]),
+    getSiegeHolds: () => Promise.resolve([]),
     upgradeBuilding: () =>
       new Promise<PlayerWorldView>((res) => {
         releaseUpgrade = (): void =>
@@ -156,6 +157,7 @@ function buildForAction(endpoint: string, extraMe: Record<string, unknown> = {})
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
     getStationed: () => Promise.resolve([]),
+    getSiegeHolds: () => Promise.resolve([]),
     upgradeBuilding: hang, speedupBuild: hang, trainTroops: hang,
     speedupTraining: hang, distributeTroops: hang,
   } as unknown as Record<string, unknown>;
@@ -194,6 +196,7 @@ function buildWithFlags(seen: Set<string>): Harness {
       getMarches: () => Promise.resolve([]),
       getOccupations: () => Promise.resolve([]),
       getStationed: () => Promise.resolve([]),
+      getSiegeHolds: () => Promise.resolve([]),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient,
     worldId: 'world:1:0',

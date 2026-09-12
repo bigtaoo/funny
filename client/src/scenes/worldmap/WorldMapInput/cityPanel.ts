@@ -4,6 +4,7 @@
 // through to ctx.net, so it is a free function taking `ctx` plus the one piece of state it owns
 // (which city's panel is showing, so a late refresh cannot resurrect a dismissed panel).
 import { t } from '../../../i18n';
+import { siegeHoldAt } from '../logic/siegeHold';
 import { cityNodeCovering } from '@nw/shared';
 import { formatDuration } from '../logic/formatDuration';
 import { coordLine, type ModalLine, type ModalButton } from '../WorldMapPanels/modalLine';
@@ -107,6 +108,13 @@ export function showCityPanel(
     // Protection line already shown above; no button.
   } else {
     buttons.push({ label: t('world.actSiegeCity'), action: () => void ctx.net.showTeamPicker(tx, ty, 'attack'), icon: 'siege' });
+  }
+  // 停止围攻 (2026-09-12): a city siege of mine is called off from the same menu that started it,
+  // exactly like the main-base one (WorldMapInput.ts enemy-tile branch).
+  const siegeHere = siegeHoldAt(ctx, tx, ty);
+  if (siegeHere?.teamId) {
+    const stopTeamId = siegeHere.teamId;
+    buttons.push({ label: t('world.actStopSiege'), action: () => void ctx.net.doStopHold(stopTeamId, 'siege'), icon: 'home' });
   }
   buttons.push({ label: t('common.close'), action: () => { state.openAt = null; ctx.panels.closeModal(); }, icon: 'close' });
   ctx.panels.showModal(lines, buttons);

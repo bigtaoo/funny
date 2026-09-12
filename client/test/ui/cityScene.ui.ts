@@ -138,6 +138,7 @@ function stubWorldApi(): WorldApiClient {
     getMarches: () => Promise.resolve([]),
     getOccupations: () => Promise.resolve([]),
     getStationed: () => Promise.resolve([]),
+    getSiegeHolds: () => Promise.resolve([]),
     upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
     speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
   } as unknown as WorldApiClient;
@@ -296,6 +297,7 @@ describe('CityScene header base-durability (D-CITY-8; moved into the header 2026
       getMarches: () => Promise.resolve([]),
       getOccupations: () => Promise.resolve([]),
       getStationed: () => Promise.resolve([]),
+      getSiegeHolds: () => Promise.resolve([]),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
@@ -342,14 +344,17 @@ describe('CityScene bottom team row (D-CITY-10; one row in landscape, two in por
     teams?: { id: string; name: string; army: { cardInstanceId?: string; initialHp?: number }[] }[];
     marches?: { marchId: string; mine?: boolean; teamId: string; arriveAt: number }[];
     occupations?: { teamId: string; dueAt: number }[];
+    /** Own pending base/city siege holds (围攻驻留, 2026-09-12) — the team stands on the target until
+     *  the durability hit lands, so the row reads 围攻中, not 驻军在家. */
+    siegeHolds?: { teamId: string; dueAt: number }[];
     /** Own teams parked on a field tile (2026-07-23 field-stationing) — 停留 idle or 驻扎 garrison. */
     stationed?: { tile: string; x: number; y: number; teamId: string; troops: number; sinceAt: number; mode?: 'idle' | 'garrison'; mine?: boolean }[];
     /** Owned cards; present = the scene gets a getSave callback (see buildLoaded). */
     cardInv?: Record<string, CardInstance>;
   };
 
-  /** Unlike stubWorldApi(), resolves getMe/getTeams/getMarches/getOccupations/getStationed so the
-   *  team row has real data to render. */
+  /** Unlike stubWorldApi(), resolves getMe/getTeams and all four order slices so the team row has
+   *  real data to render. */
   function stubWorldApiWithTeams(fx: TeamsFixture): WorldApiClient {
     const me = {
       resources: {}, buildings: {}, buildQueue: [],
@@ -362,6 +367,7 @@ describe('CityScene bottom team row (D-CITY-10; one row in landscape, two in por
       getMarches: () => Promise.resolve(fx.marches ?? []),
       getOccupations: () => Promise.resolve(fx.occupations ?? []),
       getStationed: () => Promise.resolve(fx.stationed ?? []),
+      getSiegeHolds: () => Promise.resolve(fx.siegeHolds ?? []),
       upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
       speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
     } as unknown as WorldApiClient;
@@ -478,6 +484,21 @@ describe('CityScene bottom team row (D-CITY-10; one row in landscape, two in por
     });
     const texts = collectTexts(scene.container);
     expect(texts).toContain(t('world.team.stationedIdle'));
+    expect(texts).not.toContain(t('city.military.teamIdle'));
+    scene.destroy();
+  });
+
+  // 围攻驻留 (2026-09-12): same blind spot one layer over — a team that has beaten a main base's or a
+  // wild city's garrison stands on the target for the five-minute durability-hit delay with no march,
+  // no occupation doc and no station doc, so before this slice existed it read 驻军在家 too.
+  it('shows the besieging tag with its countdown for a team holding a pending siege hit', async () => {
+    const { scene } = await buildLoaded({
+      teams: [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }] }],
+      siegeHolds: [{ teamId: 't1', dueAt: Date.now() + 4 * 60_000 }],
+      me: { cardState: { c1: { currentTroops: 400 } } },
+    });
+    const texts = collectTexts(scene.container);
+    expect(texts).toContain(t('world.team.besieging').replace('{time}', '4m'));
     expect(texts).not.toContain(t('city.military.teamIdle'));
     scene.destroy();
   });
@@ -663,11 +684,13 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     let rejectOccupations!: (e: Error) => void;
     let resolveStationed!: (v: unknown[]) => void;
     let rejectStationed!: (e: Error) => void;
+    let resolveSiegeHolds!: (v: unknown[]) => void;
     let resolveMeRaw!: (v: PlayerWorldView) => void;
     const teams = new Promise<unknown[]>((r, j) => { resolveTeams = r; rejectTeams = j; });
     const marches = new Promise<unknown[]>((r) => { resolveMarches = r; });
     const occupations = new Promise<unknown[]>((r, j) => { resolveOccupations = r; rejectOccupations = j; });
     const stationed = new Promise<unknown[]>((r, j) => { resolveStationed = r; rejectStationed = j; });
+    const siegeHolds = new Promise<unknown[]>((r) => { resolveSiegeHolds = r; });
     const me = new Promise<PlayerWorldView>((r) => { resolveMeRaw = r; });
     return {
       api: {
@@ -676,6 +699,7 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
         getMarches: () => marches,
         getOccupations: () => occupations,
         getStationed: () => stationed,
+        getSiegeHolds: () => siegeHolds,
         upgradeBuilding: () => new Promise<PlayerWorldView>(() => {}),
         speedupBuild: () => new Promise<PlayerWorldView>(() => {}),
       } as unknown as WorldApiClient,
@@ -686,7 +710,8 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
       rejectOccupations,
       resolveStationed,
       rejectStationed,
-      resolveOrders: () => { resolveMarches([]); resolveOccupations([]); resolveStationed([]); },
+      resolveSiegeHolds,
+      resolveOrders: () => { resolveMarches([]); resolveOccupations([]); resolveStationed([]); resolveSiegeHolds([]); },
       resolveMe: (over: Partial<PlayerWorldView> = {}) => resolveMeRaw({
         resources: {}, buildings: {}, buildQueue: [],
         cardState: { c1: { currentTroops: 400 } }, teamState: {},
@@ -858,14 +883,15 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
     scene.destroy();
   });
 
-  it('a station shows as soon as the other two endpoints come back empty', async () => {
-    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveMe } = deferredApi();
+  it('a station shows as soon as the other order endpoints come back empty', async () => {
+    const { api, resolveTeams, resolveStationed, resolveMarches, resolveOccupations, resolveSiegeHolds, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
     resolveStationed([{ tile: '3:4', x: 3, y: 4, teamId: 't1', troops: 400, sinceAt: Date.now(), mode: 'garrison' }]);
     resolveMarches([]);
     resolveOccupations([]);
+    resolveSiegeHolds([]);
     await flush();
     expect(texts()).toContain(t('world.team.garrisoned'));
     expect(texts().some(isLoadingLabel)).toBe(false);
@@ -888,13 +914,14 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
   });
 
   it('an order endpoint rejecting still settles the status (treated as no active order)', async () => {
-    const { api, resolveTeams, resolveMarches, rejectOccupations, resolveStationed, resolveMe } = deferredApi();
+    const { api, resolveTeams, resolveMarches, rejectOccupations, resolveStationed, resolveSiegeHolds, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
     resolveMarches([]);
     rejectOccupations(new Error('offline'));
     resolveStationed([]);
+    resolveSiegeHolds([]);
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(false);
     expect(texts()).toContain(t('city.military.teamIdle'));
@@ -902,14 +929,16 @@ describe('CityScene team-row loading state (2026-08-02)', () => {
   });
 
   it('getStationed rejecting still settles the status (treated as no field station)', async () => {
-    // ordersLoaded rides on `.finally()` for all three slices — an easy regression into `.then()`,
-    // and this one is the newest of the three (2026-08-25), so it gets its own case.
-    const { api, resolveTeams, resolveMarches, resolveOccupations, rejectStationed, resolveMe } = deferredApi();
+    // ordersLoaded rides on `.finally()` for all four slices — an easy regression into `.then()`,
+    // and this one is the newest but one (2026-08-25; siege holds joined 2026-09-12), so it gets its
+    // own case.
+    const { api, resolveTeams, resolveMarches, resolveOccupations, resolveSiegeHolds, rejectStationed, resolveMe } = deferredApi();
     const { scene, texts } = build(api);
     resolveTeams([ALPHA]);
     resolveMe();
     resolveMarches([]);
     resolveOccupations([]);
+    resolveSiegeHolds([]);
     rejectStationed(new Error('offline'));
     await flush();
     expect(texts().some(isLoadingLabel)).toBe(false);
@@ -999,6 +1028,7 @@ describe('CityScene queue-completion refresh (P0-9, comm-audit-2026-07-27 findin
       getMarches: () => Promise.resolve([]),
       getOccupations: () => Promise.resolve([]),
       getStationed: () => Promise.resolve([]),
+      getSiegeHolds: () => Promise.resolve([]),
     } as unknown as WorldApiClient;
     return { api, getMeCalls: calls };
   }

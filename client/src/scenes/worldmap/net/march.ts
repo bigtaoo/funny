@@ -69,6 +69,7 @@ export async function showTeamPicker(
   const busyTeamIds = new Set([
     ...ctx.marches.filter((m) => m.mine && m.teamId).map((m) => m.teamId),
     ...ctx.occupations.filter((o) => o.teamId).map((o) => o.teamId),
+    ...ctx.siegeHolds.filter((h) => h.teamId).map((h) => h.teamId), // 围攻驻留: standing on a base/city until its durability hit lands
     ...ctx.stationed.filter((s) => s.mine !== false && s.mode === 'garrison').map((s) => s.teamId), // own 驻扎 = locked; own 停留 idle = free; enemy stationed ignored (teamId blanked anyway)
     ...pendingTeamIds, // in-flight dispatch not yet reflected in ctx.marches
   ]);
@@ -279,6 +280,28 @@ export async function doInstantReturn(ctx: WorldMapContext, marchId: string, wor
     ctx.marches = await ctx.cb.worldApi.getMarches(ctx.cb.worldId);
     ctx.panels.showToast(t('world.instantReturnDone'));
     ctx.panels.renderHud();
+  } catch (e) {
+    ctx.panels.showToast(errorMsg(e), C.red);
+  }
+}
+
+/**
+ * 停止围攻 / 停止占领 (2026-09-12, user decision: both are stoppable at any time, from the team panel
+ * and from the tile's own menu). One function for the two because they differ only in which endpoint
+ * ends the hold: everything after — re-read the order slices, tell the player, redraw — is identical,
+ * and the two can never be live for the same team at once.
+ *
+ * The refetch is the whole point: the hold document is gone server-side, and the map token, the team
+ * row and the busy gate all read it from `ctx`. Mirrors `doRecallStationed` below.
+ */
+export async function doStopHold(ctx: WorldMapContext, teamId: string, kind: 'siege' | 'occupy'): Promise<void> {
+  ctx.panels.closeModal();
+  try {
+    if (kind === 'siege') await ctx.cb.worldApi.cancelSiegeHold(teamId, ctx.cb.worldId);
+    else await ctx.cb.worldApi.cancelOccupation(teamId, ctx.cb.worldId);
+    await refreshMarches(ctx);
+    ctx.panels.showToast(t(kind === 'siege' ? 'world.siegeStopped' : 'world.occupyStopped'));
+    ctx.view.renderMap(); ctx.panels.renderHud();
   } catch (e) {
     ctx.panels.showToast(errorMsg(e), C.red);
   }

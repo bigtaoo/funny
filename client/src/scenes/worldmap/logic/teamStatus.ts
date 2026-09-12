@@ -24,6 +24,7 @@ import type { WorldMapContext } from '../WorldMapContext';
 export type TeamRowState =
   | 'marching'
   | 'returning'
+  | 'besieging'
   | 'occupying'
   | 'stationed'
   | 'garrisoned'
@@ -48,6 +49,12 @@ export interface TeamRow {
   /** Field-stationed team behind this row — recallable via ADR-051's recall-stationed endpoint. */
   stationedTeamId: string | null;
   /**
+   * 停止围攻 / 停止占领 (2026-09-12, user decision: a besieging or occupying team can be stopped at any
+   * time, from here and from the tile's own menu). Which hold this row is working off, so the action
+   * button knows which endpoint ends it; null for every other state.
+   */
+  stopHold: { teamId: string; kind: 'siege' | 'occupy' } | null;
+  /**
    * Live team stamina (SLG_DESIGN §4.6), or null for a flat-troop army row — those command no team and
    * so have no budget. Only surfaced in the `home` row's status today (that is the one state where the
    * player is deciding whether to send this team out); carried on every team row so a caller that wants
@@ -65,6 +72,9 @@ export interface TeamRow {
 const STATE_ICON: Record<TeamRowState, IconKind> = {
   marching: 'flag',
   returning: 'replay',
+  // 围攻驻留 and the occupation hold are the same posture — a team parked on a target working a
+  // countdown down — so they share the siege glyph; the status line names which one it is.
+  besieging: 'siege',
   occupying: 'siege',
   stationed: 'footsteps',
   garrisoned: 'camp',
@@ -110,6 +120,7 @@ export function buildTeamRows(ctx: WorldMapContext, now: number): TeamRow[] {
     if (team.army.length === 0) continue; // an empty slot is not a team the player has anything to look at
     const march = ctx.marches.find((m) => m.mine !== false && m.teamId === team.id) ?? null;
     const occupation = ctx.occupations.find((o) => o.teamId === team.id) ?? null;
+    const siege = ctx.siegeHolds.find((h) => h.teamId === team.id) ?? null;
     const station = ctx.stationed.find((s) => s.mine !== false && s.teamId === team.id) ?? null;
     const injuredUntil = me?.teamState?.[team.id]?.injuredUntil ?? 0;
     const stamina = teamStamina(me?.teamState?.[team.id], now);
@@ -119,6 +130,7 @@ export function buildTeamRows(ctx: WorldMapContext, now: number): TeamRow[] {
       troops: carriedTroops(team.army, cardState),
       march: null as MarchView | null,
       stationedTeamId: null as string | null,
+      stopHold: null as TeamRow['stopHold'],
       stamina,
     };
 
@@ -137,12 +149,27 @@ export function buildTeamRows(ctx: WorldMapContext, now: number): TeamRow[] {
       });
       continue;
     }
+    // 围攻驻留 (2026-09-12): ranked with the occupation hold (below a march, above a station) for the
+    // same reason — both are "this team is parked on a target until a countdown ends". The two can
+    // never coexist on one team (the server's TEAM_BUSY gate admits one live order per team), so the
+    // order between them is arbitrary rather than a precedence decision.
+    if (siege) {
+      rows.push({
+        ...base,
+        state: 'besieging',
+        status: `${t('world.team.besieging').replace('{time}', formatDuration((siege.dueAt - now) / 1000))} ${at(siege.x, siege.y)}`,
+        jumpX: siege.x, jumpY: siege.y,
+        ...(siege.teamId ? { stopHold: { teamId: siege.teamId, kind: 'siege' as const } } : {}),
+      });
+      continue;
+    }
     if (occupation) {
       rows.push({
         ...base,
         state: 'occupying',
         status: `${t('world.team.occupying').replace('{time}', formatDuration((occupation.dueAt - now) / 1000))} ${at(occupation.x, occupation.y)}`,
         jumpX: occupation.x, jumpY: occupation.y,
+        ...(occupation.teamId ? { stopHold: { teamId: occupation.teamId, kind: 'occupy' as const } } : {}),
       });
       continue;
     }
@@ -190,6 +217,7 @@ export function buildTeamRows(ctx: WorldMapContext, now: number): TeamRow[] {
       title: t('world.team.flatArmy'),
       troops: m.troops,
       stamina: null, // a flat-pool army commands no team, so there is no stamina budget behind it
+      stopHold: null,
       state: m.kind === 'return' ? 'returning' : 'marching',
       status: `${marchKindLabel(m.kind)} ${at(mx, my)} ${formatDuration((m.arriveAt - now) / 1000)}`,
       jumpX: mx, jumpY: my,

@@ -36,6 +36,7 @@ import type {
   TeamTemplate,
   MarchView,
   OccupationView,
+  SiegeHoldView,
   StationedView,
 } from '../../net/WorldApiClient';
 import {
@@ -163,6 +164,9 @@ export class CitySceneCore {
   teams: TeamTemplate[] = [];
   marches: MarchView[] = [];
   occupations: OccupationView[] = [];
+  /** Own pending base/city siege holds (围攻驻留, 2026-09-12) — the fourth place a team can be "out",
+   *  alongside marches/occupations/stationed. Feeds the same teamOrder() status line. */
+  siegeHolds: SiegeHoldView[] = [];
   /** Own teams parked on field tiles (停留/驻扎). Loaded alongside marches/occupations because a
    *  stationed team is away from home too — see helpers.teamOrder. */
   stationed: StationedView[] = [];
@@ -331,6 +335,8 @@ export class CitySceneCore {
       set marches(v) { core.marches = v; },
       get occupations() { return core.occupations; },
       set occupations(v) { core.occupations = v; },
+      get siegeHolds() { return core.siegeHolds; },
+      set siegeHolds(v) { core.siegeHolds = v; },
       get stationed() { return core.stationed; },
       set stationed(v) { core.stationed = v; },
       get teamsLoaded() { return core.teamsLoaded; },
@@ -407,8 +413,8 @@ export class CitySceneCore {
 
   teamOrder(
     teamId: string
-  ): { march: MarchView } | { occ: OccupationView } | { station: StationedView } | null {
-    return helpers.teamOrder(this.marches, this.occupations, this.stationed, teamId);
+  ): { march: MarchView } | { occ: OccupationView } | { siege: SiegeHoldView } | { station: StationedView } | null {
+    return helpers.teamOrder(this.marches, this.occupations, this.siegeHolds, this.stationed, teamId);
   }
 
   committedTroops(army: TeamTemplate['army']): number {

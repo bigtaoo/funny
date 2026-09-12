@@ -39,7 +39,7 @@ function stubWorldApi(overrides: Record<string, unknown> = {}): WorldApiClient {
   const never = () => new Promise<never>(() => {});
   return {
     getMe: never, getMap: never, getMapSparse: never, getTile: never, getTeams: never,
-    getMarches: never, getOccupations: never, getStationed: never,
+    getMarches: never, getOccupations: never, getSiegeHolds: never, getStationed: never,
     ...overrides,
   } as unknown as WorldApiClient;
 }

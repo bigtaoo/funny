@@ -191,6 +191,12 @@ export async function applyBaseSiege(
       attackerSurvivors,
       ...(pw.familyId ? { familyId: pw.familyId } : {}),
       dueAt: t + SLG_SIEGE_DAMAGE_DELAY_MS,
+      // 围攻驻留 (2026-09-12): the team stays on the target for the whole delay — see SiegeDamageDoc's
+      // doc comment. Snapshot it here (the march doc is deleted the moment this returns) so the hold is
+      // listable (`getSieges`), blocks a re-dispatch, and can walk the team home at settlement.
+      ...(m.teamId ? { teamId: m.teamId } : {}),
+      ...(m.leaderUnitType ? { leaderUnitType: m.leaderUnitType } : {}),
+      ...(attackArmy.length > 0 ? { army: attackArmy } : {}),
     };
     await cols.siegeDamage.updateOne({ _id: dmg._id }, { $setOnInsert: dmg }, { upsert: true });
   } else if (hasCardArmy || attackerSurvivors > 0) {

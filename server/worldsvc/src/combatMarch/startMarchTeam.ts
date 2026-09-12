@@ -78,10 +78,15 @@ export async function resolveMarchTeam(
   // non-redispatch branch below, so an idle re-dispatch now fetches a save it discards; that is one
   // best-effort call on the minority path in exchange for removing a serialized RTT from the majority one,
   // and `getSaveFields` is already `.catch(() => null)`-guarded so a wasted call cannot fail the dispatch.
-  const [busyMarch, busyHold, busyStationed, attackerSave] = await Promise.all([
+  const [busyMarch, busyHold, busyStationed, busySiege, attackerSave] = await Promise.all([
     cols.marches.findOne({ worldId, ownerId: accountId, teamId, status: { $ne: 'recalled' } }),
     cols.occupations.findOne({ worldId, ownerId: accountId, teamId }),
     cols.stationed.findOne({ worldId, ownerId: accountId, teamId }),
+    // 围攻驻留 (2026-09-12): the FOURTH place a team can be "out". Clearing a main base's or a wild
+    // city's garrison hands the team off to a SiegeDamageDoc for the five-minute delay before the
+    // durability hit lands (ADR-026 §4) — the same shape as the occupation hold above, and missing from
+    // this gate until now, which let a team be re-dispatched from under the siege it was prosecuting.
+    cols.siegeDamage.findOne({ worldId, attackerId: accountId, teamId }),
     core.meta.getSaveFields(accountId, ['cardInv', 'equipmentInv']).catch(() => null),
   ]);
   // ADR-051 (P3c): a 停留 idle field team is NOT busy — it can be re-commanded straight from where it stands,
@@ -89,7 +94,7 @@ export async function resolveMarchTeam(
   // forward-stationed team should be usable to launch a fresh siege without a round trip home first).
   // A 驻扎 garrison stays locked (must recall first), as do marching/holding teams.
   const idleRedispatch = !!busyStationed && busyStationed.mode !== 'garrison' && (kind === 'occupy' || kind === 'move' || kind === 'attack');
-  if (busyMarch || busyHold || (busyStationed && !idleRedispatch)) {
+  if (busyMarch || busyHold || busySiege || (busyStationed && !idleRedispatch)) {
     throw new SlgError('TEAM_BUSY', 'Team is already marching, occupying, or stationed; recall it first');
   }
   // Stamina gate (2026-09-04, SLG_DESIGN §4.6): one order costs SLG_TEAM_STAMINA_COST from this team's

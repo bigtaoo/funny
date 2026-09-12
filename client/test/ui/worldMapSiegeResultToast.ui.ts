@@ -23,6 +23,7 @@ import { initI18n, t } from '../../src/i18n';
 import { WorldMapNet } from '../../src/scenes/worldmap/WorldMapNet';
 import type { WorldMapContext } from '../../src/scenes/worldmap/WorldMapContext';
 import type { SiegeResult } from '../../src/net/proto/transport';
+import type { SiegeHoldView } from '../../src/net/WorldApiClient';
 import { modalLineText, type ModalLine } from '../../src/scenes/worldmap/WorldMapPanels/modalLine';
 
 // 2026-08-13 (claudedocs/client-modules.md "单文件 500 行收敛" split): applySiegeResult's own
@@ -55,6 +56,14 @@ function siege(outcome: string, attackerId: string, marchKind: string, tile = TI
   return { siegeId: 's1', tile, outcome, lootSummary: '', replayRef: '', marchId: '', attackerId, marchKind };
 }
 
+function hold(over: Partial<SiegeHoldView> = {}): SiegeHoldView {
+  // siegeId matches `siege()`'s 's1' by default — that identity IS the signal under test.
+  return {
+    siegeId: 's1', tile: TILE, x: 20, y: 20,
+    dueAt: Date.now() + 5 * 60 * 1000, damage: 100, isBase: true, ...over,
+  } as SiegeHoldView;
+}
+
 function buildHarness() {
   const showModal = vi.fn();
   const showToast = vi.fn();
@@ -63,12 +72,18 @@ function buildHarness() {
   // (server-authoritative — same field the occupy branch already relies on) to tell an
   // occupation-hold start apart from an instant final outcome. Keyed like the real tileCache ("x:y").
   const tileCache = new Map<string, { contestedByMe?: boolean }>();
+  // 2026-09-12 (围攻驻留): the attack-win branch also asks whether this win left a pending delayed
+  // durability hit behind — a main-base or wild-city assault. Its signal is an entry in the refetched
+  // `siegeHolds` slice carrying the SAME siegeId as the result being classified. Empty by default
+  // (refreshMarches is a module-level no-op here), so every pre-existing case is unaffected.
+  const siegeHolds: SiegeHoldView[] = [];
 
   const ctx = {
     destroyed: false,
     marchTokenRuntimes: new Map(),
     marchAttackUntil: new Map(),
     tileCache,
+    siegeHolds,
     parseTileId: (tileId: string): [number, number] => {
       const parts = tileId.split(':');
       return [Number(parts[parts.length - 2]), Number(parts[parts.length - 1])];
@@ -83,7 +98,7 @@ function buildHarness() {
   // vi.mock('.../net/loaders') block above) — applySiegeResult awaits loadMapViewport (2026-08-09:
   // no longer fire-and-forget, the attack-win branch needs the refetch to land before classifying),
   // refreshMe/refreshMarches stay fire-and-forget.
-  return { ctx, net, showModal, showToast, onReplaySiege, tileCache };
+  return { ctx, net, showModal, showToast, onReplaySiege, tileCache, siegeHolds };
 }
 
 describe('WorldMapNet.applySiegeResult — role is server-authoritative (attackerId/marchKind), not client memory', () => {
@@ -122,7 +137,7 @@ describe('WorldMapNet.applySiegeResult — role is server-authoritative (attacke
     expect(rebuilt.showModal).not.toHaveBeenCalled();
   });
 
-  it('a won attack that finalizes instantly (base siege / structure chip / PvE stronghold-or-crossing — target tile has no contestedByMe) still opens the siege modal with replay, not a toast', async () => {
+  it('a won attack that finalizes instantly (structure chip / PvE stronghold-or-crossing — no contestedByMe, no pending siege hold) still opens the siege modal with replay, not a toast', async () => {
     await h.net.applySiegeResult(siege('attacker_win', ME, 'attack'));
     expect(h.showModal).toHaveBeenCalledTimes(1);
     const lines = (h.showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
@@ -142,6 +157,46 @@ describe('WorldMapNet.applySiegeResult — role is server-authoritative (attacke
     await h.net.applySiegeResult(siege('defender_win', ME, 'attack'));
     expect(h.showToast).not.toHaveBeenCalledWith(t('world.siegeWinHold'), expect.anything());
     expect(h.showModal).toHaveBeenCalledTimes(1);
+  });
+
+  // 围攻驻留 (2026-09-12, user report): beating another player's MAIN BASE popped a blocking
+  // "Siege won!" modal, but the base does not change hands there — clearing the garrison only schedules
+  // a durability hit SLG_SIEGE_DAMAGE_DELAY_MS out (ADR-026 §4). So the modal announced a result that
+  // had not happened yet. Same treatment as the occupation hold above: a lightweight toast.
+  it('a won base siege starts a pending durability hit — lightweight toast naming the countdown and the damage, no blocking modal', async () => {
+    h.siegeHolds.push(hold({ isBase: true, damage: 240 }));
+    await h.net.applySiegeResult(siege('attacker_win', ME, 'attack'));
+    expect(h.showModal).not.toHaveBeenCalled();
+    expect(h.showToast).toHaveBeenCalledTimes(1);
+    const line = h.showToast.mock.calls[0][0] as string;
+    expect(line.startsWith(t('world.siegeWinBaseHold').split('{')[0])).toBe(true);
+    expect(line).toContain('240');            // the durability the hit will take off
+    expect(line).not.toContain('{');          // every placeholder actually substituted
+  });
+
+  it('a won wild-city ladder (ADR-074 P1) gets its own wording, not the base one — same mechanism, different target', async () => {
+    h.siegeHolds.push(hold({ isBase: false, damage: 90 }));
+    await h.net.applySiegeResult(siege('attacker_win', ME, 'attack'));
+    expect(h.showModal).not.toHaveBeenCalled();
+    const line = h.showToast.mock.calls[0][0] as string;
+    expect(line.startsWith(t('world.siegeWinCityHold').split('{')[0])).toBe(true);
+  });
+
+  it('the hold is matched by siegeId, not by tile — an unrelated hold left over from another siege must not swallow this result\'s modal', async () => {
+    // SiegeDamageDoc.tile is the base's ANCHOR cell while SiegeResult.tile is wherever the march
+    // landed, so tile equality is not a usable key here; the shared id is (SiegeDamageDoc._id IS the
+    // SiegeDoc._id). A hold under a different id therefore proves nothing about this result.
+    h.siegeHolds.push(hold({ siegeId: 's-other' }));
+    await h.net.applySiegeResult(siege('attacker_win', ME, 'attack'));
+    expect(h.showModal).toHaveBeenCalledTimes(1);
+    expect(h.showToast).not.toHaveBeenCalled();
+  });
+
+  it('a LOST base siege keeps the modal — the replay is the point of a loss (and no hold exists anyway)', async () => {
+    await h.net.applySiegeResult(siege('defender_win', ME, 'attack'));
+    expect(h.showModal).toHaveBeenCalledTimes(1);
+    const lines = (h.showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
+    expect(lines[0]).toBe(t('world.siegeLoss'));
   });
 
   it('when someone else\'s march took our tile, we are the defender → "Territory lost"', async () => {

@@ -237,6 +237,11 @@ export async function applyCitySiege(
       attackerSurvivors: ladder.survivors,
       ...(pw.familyId ? { familyId: pw.familyId } : {}),
       dueAt: t + SLG_SIEGE_DAMAGE_DELAY_MS,
+      // 围攻驻留 (2026-09-12), same as the main-base path: the besieging team is pinned to the city for
+      // the whole delay instead of disappearing from the map — see SiegeDamageDoc.
+      ...(m.teamId ? { teamId: m.teamId } : {}),
+      ...(m.leaderUnitType ? { leaderUnitType: m.leaderUnitType } : {}),
+      ...(rawArmy.length > 0 ? { army: rawArmy } : {}),
     };
     await cols.siegeDamage.updateOne({ _id: dmg._id }, { $setOnInsert: dmg }, { upsert: true });
   } else if (hasCardArmy || ladder.survivors > 0) {

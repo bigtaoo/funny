@@ -165,7 +165,7 @@ export class WorldCore {
   clearOccupancyMany(worldId: string, cells: Array<{ tile: string; id: string }>): Promise<void> { return this.pushSvc.clearOccupancyMany(worldId, cells); }
   clearSpatialIndexes(worldId: string): Promise<void> { return this.pushSvc.clearSpatialIndexes(worldId); }
   pushMarch(accountId: string, v: MarchView): Promise<void> { return this.pushSvc.pushMarch(accountId, v); }
-  pushOrderEnded(accountId: string, o: { tile: string; kind: 'occupy' | 'move'; status: 'arrived' | 'recalled'; at: number }): Promise<void> { return this.pushSvc.pushOrderEnded(accountId, o); }
+  pushOrderEnded(accountId: string, o: { tile: string; kind: 'occupy' | 'move' | 'attack'; status: 'arrived' | 'recalled'; at: number }): Promise<void> { return this.pushSvc.pushOrderEnded(accountId, o); }
   pushTile(accountId: string, t: TileDoc, ownerProfile?: PlayerProfile | null): Promise<void> { return this.pushSvc.pushTile(accountId, t, ownerProfile); }
   pushSiege(accountId: string, s: SiegeDoc, lootSummaryStr: string): Promise<void> { return this.pushSvc.pushSiege(accountId, s, lootSummaryStr); }
 

@@ -136,6 +136,7 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     if (
       ctx.marches.length > 0 || ctx.marchTokenRuntimes.size > 0 ||
       ctx.occupations.length > 0 || ctx.occupyTokenRuntimes.size > 0 ||
+      ctx.siegeHolds.length > 0 || ctx.siegeTokenRuntimes.size > 0 ||
       ctx.stationed.length > 0 || ctx.stationedTokenRuntimes.size > 0
     ) {
       this.fog.syncTokens(dt);
@@ -226,6 +227,8 @@ export class WorldMapRendererLifecycle implements LifecycleHandlers {
     ctx.marchAttackUntil.clear();
     for (const entry of ctx.occupyTokenRuntimes.values()) destroyTokenEntry(entry);
     ctx.occupyTokenRuntimes.clear();
+    for (const entry of ctx.siegeTokenRuntimes.values()) destroyTokenEntry(entry);
+    ctx.siegeTokenRuntimes.clear();
     for (const entry of ctx.stationedTokenRuntimes.values()) destroyTokenEntry(entry);
     ctx.stationedTokenRuntimes.clear();
   }

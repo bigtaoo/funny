@@ -47,12 +47,14 @@ function buildHarness(opts: {
   const renderHud = vi.fn();
   const getTeams = vi.fn().mockResolvedValue(opts.teams ?? [{ id: 't1', name: 'Alpha', army: [{ cardInstanceId: 'c1' }, { cardInstanceId: 'c2' }] }]);
   const startMarch = vi.fn().mockResolvedValue({ toTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}` });
-  // showTeamPicker re-reads all three order slices before judging who is busy (2026-09-02), so the
+  // showTeamPicker re-reads all four order slices before judging who is busy (2026-09-02; the siege-hold
+  // slice joined 2026-09-12, 围攻驻留), so the
   // harness has to answer for them too. They echo whatever the test seeded on ctx — i.e. the server
   // agrees with the client's cached view — which keeps the busy-team cases below meaningful instead of
   // having the refresh silently wipe them. The stale-cache case gets its own harness override.
   const getMarches = vi.fn(() => Promise.resolve(ctx.marches));
   const getOccupations = vi.fn(() => Promise.resolve(ctx.occupations));
+  const getSiegeHolds = vi.fn(() => Promise.resolve(ctx.siegeHolds));
   const getStationed = vi.fn(() => Promise.resolve(ctx.stationed));
   // Mirror the real getMe: it returns the FULL player view (with mainBaseTile + cardState), not a bare stub —
   // doMarchTeam reassigns ctx.me from it, and a later showTeamPicker needs mainBaseTile to not early-return.
@@ -66,6 +68,7 @@ function buildHarness(opts: {
     destroyed: false,
     marches: [],
     occupations: [],
+    siegeHolds: [],
     stationed: opts.stationed ?? [],
     me: { joined: true, mainBaseTile: `${WORLD_ID}:${ANCHOR.x}:${ANCHOR.y}`, cardState: opts.cardState ?? { c1: { currentTroops: 60 }, c2: { currentTroops: 60 } } } as PlayerWorldView,
     parseTileId(tileId: string): [number, number] {
@@ -75,14 +78,14 @@ function buildHarness(opts: {
     view: { renderMap: vi.fn() },
     cb: {
       worldId: WORLD_ID,
-      worldApi: { getTeams, startMarch, getMarches, getOccupations, getStationed, getMe },
+      worldApi: { getTeams, startMarch, getMarches, getOccupations, getSiegeHolds, getStationed, getMe },
       getSave: opts.getSave,
     },
     panels: { showModal, showToast, closeModal, showDeployDialog, renderHud },
   } as unknown as WorldMapContext;
 
   const net = new WorldMapNet(ctx);
-  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches, getOccupations, getStationed, getMe };
+  return { ctx, net, showModal, showToast, showDeployDialog, startMarch, getMarches, getOccupations, getSiegeHolds, getStationed, getMe };
 }
 
 /** A promise whose resolution is controlled from the test — lets us freeze startMarch mid-flight. */
@@ -510,6 +513,19 @@ describe('WorldMapNet.showTeamPicker — empty-picker causes are named, not coll
     const buttons = showModal.mock.calls[0][1] as { label: string }[];
     expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(true);
     expect(ctx.occupations).toEqual([]); // and the stale entry is gone for every later read too
+  });
+
+  // 围攻驻留 (2026-09-12): the fourth way a team can be out. Clearing a main base's or a wild city's
+  // garrison pins the team to the target for the five-minute damage delay — it is in none of the other
+  // three slices, so before this it read as idle and could be re-dispatched from under its own siege.
+  it('a team pinned to a pending siege hold is busy — the picker must not offer it', async () => {
+    const { ctx, net, showModal } = buildHarness();
+    (ctx.siegeHolds as { teamId: string }[]).push({ teamId: 't1' });
+    await net.showTeamPicker(ANCHOR.x, ANCHOR.y, 'occupy');
+    const head = (showModal.mock.calls[0][0] as ModalLine[]).map(modalLineText);
+    expect(head).toContain(t('world.team.allBusy'));
+    const buttons = showModal.mock.calls[0][1] as { label: string }[];
+    expect(buttons.some((b) => b.label.startsWith('Alpha'))).toBe(false);
   });
 
   it('teams that all really are busy say so — not "go edit a formation"', async () => {

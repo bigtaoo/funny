@@ -39,6 +39,7 @@ function ctxOf(opts: { marches?: MarchView[]; teams?: TeamTemplate[]; me?: unkno
     teams: opts.teams ?? [],
     marches: opts.marches ?? [],
     occupations: [],
+    siegeHolds: [],
     stationed: [],
     me: opts.me,
     parseTileId: (id: string) => { const p = id.split(':'); return [Number(p[1]), Number(p[2])]; },
