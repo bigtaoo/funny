@@ -2,7 +2,8 @@
 //
 // CitySceneCore holds every instance field (all `public`, so the domain classes below keep
 // referencing them via `this.core.xxx`: this.core.me, this.core.teams, this.core.hits, …) + the
-// input/scroll plumbing, resource-total simulation (setMe/liveResource/tickResourceTotals), data
+// input/scroll plumbing, resource-total simulation (setMe/liveResource; the per-frame and
+// once-per-second ticking that drives it lives in ./tick.ts), data
 // loading, icon resolution (resIcon/bldIcon), the network actions (doUpgrade/doSpeedup/doTrain/
 // doSpeedupTraining), and shared layout helpers (addBtn/fmtNum/modalScaleFor/toScreen/teamOrder/
 // committedTroops/drawArtFit) — but NOT the render() dispatcher, which lives on the outer
@@ -53,6 +54,7 @@ import * as actions from './actions';
 import * as helpers from './helpers';
 import * as icons from './icons';
 import * as data from './data';
+import * as tick from './tick';
 import { CityPaint } from './paint';
 import { hitAction, type Hit } from '../../ui/hits';
 
@@ -109,7 +111,16 @@ export const GRID_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS;
 // Team row (D-CITY-10) — the 5 team slots laid out as one compact row pinned to the bottom of
 // the scene; tapping a card opens that team's formation editor.
 export const TEAM_ROW_CARD_H = 128;
+/**
+ * Team slots per row in PORTRAIT (landscape keeps all {@link TEAM_CAP} on one row). Three, because
+ * that is what makes the card's text column wide enough for one-line labels at the portrait
+ * legibility floor — see the reasoning in teamRow.ts's `renderTeamsRow`.
+ */
+export const TEAM_ROW_PER_ROW_PORTRAIT = 3;
 export const TEAM_ROW_LABEL_H = 26;
+/** Portrait-only gap between the band's header row (label + fill button) and the cards — see
+ *  ./teamRow.ts for what it fixes. */
+export const TEAM_ROW_HEADER_GAP = 18;
 
 export class CitySceneCore {
   readonly container: PIXI.Container;
@@ -118,6 +129,8 @@ export class CitySceneCore {
 
   readonly w: number;
   readonly h: number;
+  /** Portrait design space — what the building grid (./gridMetrics.ts) and the team band key off. */
+  readonly portrait: boolean;
   readonly cb: CitySceneCallbacks;
 
   readonly bt = new BusyTracker();
@@ -140,7 +153,7 @@ export class CitySceneCore {
    *  server round-trips instead of sitting frozen until the next action. */
   private meLoadedAt = 0;
   /** Accumulates update() dt; drives the once-per-second resource-total tick. */
-  private simTimer = 0;
+  simTimer = 0;
   /** Guards against overlapping getMe() calls from the once-per-second queue-completion check
    *  below (queueRefreshPending). */
   private queueRefreshPending = false;
@@ -163,7 +176,7 @@ export class CitySceneCore {
   ordersLoaded = false;
   /** 0–2 dot-animation phase for the team-row loading placeholders; advanced by tickLoadDots(). */
   loadDots = 0;
-  private loadDotTimer = 0;
+  loadDotTimer = 0;
   /** Left edge of the body content, set each render() to marginLineX() — the red notebook
    *  binding line. Content starts just right of it (no sidebar rail on this single-page scene). */
   contentX = 0;
@@ -203,6 +216,7 @@ export class CitySceneCore {
     this.container = new PIXI.Container();
     this.w = layout.designWidth;
     this.h = layout.designHeight;
+    this.portrait = layout.orientation === 'portrait';
     this.cb = cb;
     this.paint = new CityPaint(this);
     this.unsubs.push(input.onDown((x, y) => this.handleDown(x, y)));
@@ -253,45 +267,7 @@ export class CitySceneCore {
   }
 
   update(dt: number): void {
-    // SLG opening guide chain (ONBOARDING_DESIGN §4.2) — advance the ring's breathing animation
-    // every frame regardless of whether a full render() fires this tick (render() decides *what* to
-    // show; this just keeps whatever is showing animated).
-    this.guide.update(dt);
-    // The in-flight dim lives in its own permanent layer, so busy state is a layer toggle rather
-    // than a reason to rebuild the scene. bt.tick's return value is deliberately ignored: it also
-    // goes true every 0.4s for the dot animation this scene's overlay does not draw, which used to
-    // buy a full teardown-and-rebuild that changed nothing on screen.
-    this.bt.tick(dt);
-    this.paint.syncBusy(this.bt.loadingVisible);
-    if (this.tickLoadDots(dt)) this.requestRender();
-    this.simTimer += dt;
-    if (this.simTimer >= 1) {
-      this.simTimer = 0;
-      this.tickResourceTotals();
-      data.refreshOnQueueDue(this.dataHost());
-    }
-    // Last in the tick, so everything above that asked for a paint gets folded into this one.
-    this.paint.flush();
-  }
-
-  /** Advances the team-row loading placeholders' trailing dots while their fetches are in flight.
-   *  Returns true when a re-render is needed (same contract as BusyTracker.tick). */
-  private tickLoadDots(dt: number): boolean {
-    if (this.teamsLoaded && this.ordersLoaded) return false;
-    this.loadDotTimer += dt;
-    if (this.loadDotTimer < 0.4) return false;
-    this.loadDotTimer = 0;
-    this.loadDots = (this.loadDots + 1) % 3;
-    return true;
-  }
-
-  /** Advance the resource-bar total labels in place (no full render). Mirrors worldsvc settle():
-   *  displayed total = min(cap, base + yieldRate·elapsedHours). Cheap enough to run every second. */
-  private tickResourceTotals(): void {
-    for (const { rt, lbl } of this.resTotalLbls) {
-      const next = this.fmtNum(this.liveResource(rt));
-      if (lbl.text !== next) lbl.text = next;
-    }
+    tick.update(this, dt);
   }
 
   /** Assign `me` and stamp the sim baseline so liveResource() grows from this fetch onward.
@@ -344,7 +320,7 @@ export class CitySceneCore {
   }
 
   /** The getter/setter host data.ts's functions write back through — see DataHost's doc comment. */
-  private dataHost(): data.QueuePollHost {
+  dataHost(): data.QueuePollHost {
     const core = this;
     return {
       cb: this.cb,

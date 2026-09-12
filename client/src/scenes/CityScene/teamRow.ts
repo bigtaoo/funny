@@ -15,7 +15,9 @@ import {
   teamCanAct,
 } from '../../game/meta/teamTroops';
 import { cardInstanceArtUrl } from '../../render/cardArt';
-import { CARD_GAP, GRID_PAD, TEAM_ROW_CARD_H, TEAM_ROW_LABEL_H } from './core';
+import {
+  CARD_GAP, GRID_PAD, TEAM_ROW_CARD_H, TEAM_ROW_LABEL_H, TEAM_ROW_HEADER_GAP, TEAM_ROW_PER_ROW_PORTRAIT,
+} from './core';
 import type { CitySceneCore } from './core';
 
 // The 5 team slots (D-CITY-10) as one compact row pinned to the bottom of the scene. Returns
@@ -26,7 +28,23 @@ export function renderTeamsRow(core: CitySceneCore): number {
   const cx0 = core.contentX;
   const w = core.w - cx0;
   const cardH = TEAM_ROW_CARD_H;
-  const bandTop = h - GRID_PAD - (TEAM_ROW_LABEL_H + cardH);
+  // Portrait gets a taller header row than the label needs, and the extra is a GAP under the fill
+  // button: at 200x26 design px the button is 72x9 CSS px on a 390-wide phone, and it sat with its
+  // bottom edge exactly on Team 5's top edge — reading as part of that card rather than as the
+  // band's own action (portrait sweep §49; the sweep never reported it, because two boxes that
+  // touch do not overlap).
+  const headerH = core.portrait ? TEAM_ROW_LABEL_H + TEAM_ROW_HEADER_GAP : TEAM_ROW_LABEL_H;
+  // Portrait wraps the five slots onto two rows (2026-09-12). Five across is 197 design px per
+  // card, and after the 10px padding and the 76px leader portrait that leaves a 93px text column —
+  // under four CJK glyphs per line once §49's legibility floor lifted every token here to 20
+  // design px. Every label in the card then wrapped: the team name onto two lines (which ran into
+  // the status tag under it), and "Heroes 5   Troops 1500/1500" onto four, which ran out of the
+  // card, off the bottom of the band, and off the canvas — the band is pinned to the screen edge,
+  // so there was nowhere for it to go. Three across doubles the column to 242px and every label
+  // fits on one line (the troops line on two). The grid above just scrolls a little sooner.
+  const perRow = core.portrait ? TEAM_ROW_PER_ROW_PORTRAIT : TEAM_CAP;
+  const rows = Math.ceil(TEAM_CAP / perRow);
+  const bandTop = h - GRID_PAD - (headerH + rows * cardH + (rows - 1) * CARD_GAP);
 
   const sectionLbl = txt(t('city.military.teams'), FS.body, C.mid, true);
   sectionLbl.x = cx0 + GRID_PAD + 4;
@@ -34,11 +52,14 @@ export function renderTeamsRow(core: CitySceneCore): number {
   core.paint.pageLayer.addChild(sectionLbl);
 
   // "填满所有队伍" (2026-08-02): one tap drains the home troop pool into all 5 teams in slot
-  // order instead of opening each team's formation editor to hit 分兵 individually. Sits flush
-  // inside the section-label row (same height as sectionLbl's row), never spilling into the
-  // card row below it.
-  const fillBtnW = 200;
-  const fillBtnH = TEAM_ROW_LABEL_H;
+  // order instead of opening each team's formation editor to hit 分兵 individually. Sits in the
+  // section-label row, never spilling into the card row below it.
+  //
+  // Portrait also widens it: the label is 14 characters, and inside 200 design px
+  // `drawButtonLabel` had to scale the whole group to 0.94 to fit — which shrinks the text back
+  // under the legibility floor the font scale just lifted it to (render/fontScale.ts).
+  const fillBtnW = core.portrait ? 268 : 200;
+  const fillBtnH = core.portrait ? TEAM_ROW_LABEL_H + 8 : TEAM_ROW_LABEL_H;
   core.addBtn(
     cx0 + w - GRID_PAD - fillBtnW,
     bandTop,
@@ -51,14 +72,15 @@ export function renderTeamsRow(core: CitySceneCore): number {
     'unit'
   );
 
-  const rowY = bandTop + TEAM_ROW_LABEL_H;
+  const rowY = bandTop + headerH;
   const availW = w - GRID_PAD * 2;
-  const cellW = Math.floor((availW - (TEAM_CAP - 1) * CARD_GAP) / TEAM_CAP);
+  const cellW = Math.floor((availW - (perRow - 1) * CARD_GAP) / perRow);
   const now = Date.now();
   for (let i = 0; i < TEAM_CAP; i++) {
-    const cx = cx0 + GRID_PAD + i * (cellW + CARD_GAP);
-    if (core.teamsLoaded) renderTeamCard(core, i, cx, rowY, cellW, cardH, now);
-    else renderTeamCardLoading(core, i, cx, rowY, cellW, cardH);
+    const cx = cx0 + GRID_PAD + (i % perRow) * (cellW + CARD_GAP);
+    const cy = rowY + Math.floor(i / perRow) * (cardH + CARD_GAP);
+    if (core.teamsLoaded) renderTeamCard(core, i, cx, cy, cellW, cardH, now);
+    else renderTeamCardLoading(core, i, cx, cy, cellW, cardH);
   }
   return bandTop;
 }
@@ -104,7 +126,7 @@ export function renderTeamCardLoading(
     cardW - pad * 2
   );
   lbl.x = x + pad;
-  lbl.y = y + pad + 26;
+  lbl.y = y + pad + Math.max(26, Math.ceil(FS.body * 1.3)); // same pitch as the real card
   core.paint.pageLayer.addChild(lbl);
 }
 
@@ -230,9 +252,13 @@ export function renderTeamCard(
     statusLbl = t('world.team.empty');
     statusColor = C.mid as number;
   }
+  // Row pitch from the font, not a literal 26 (2026-09-12). `FS` is floored per viewport
+  // (render/fontScale.ts), so on a 390-wide phone every token in this card is 20 design px, and a
+  // hardcoded 26 put the status tag inside the name's own line box.
+  const lineH = Math.max(26, Math.ceil(FS.body * 1.3));
   const statusTag = txt(statusLbl, FS.small, statusColor, true, textW);
   statusTag.x = x + pad;
-  statusTag.y = y + pad + 26;
+  statusTag.y = y + pad + lineH;
   core.paint.pageLayer.addChild(statusTag);
 
   if (filled) {
@@ -247,7 +273,12 @@ export function renderTeamCard(
     ).replace('{n}', troopsStr)}`;
     const subLbl = txt(sub, FS.small, C.mid, false, textW);
     subLbl.x = x + pad;
-    subLbl.y = y + cardH - pad - 34;
+    // Bottom-anchored by its MEASURED height rather than by a fixed 34px allowance: this label is
+    // the one in the card whose line count is not knowable up front (it wraps on the troop figures,
+    // which are the widest thing here and the only part that is neither a name nor a fixed
+    // sentence). With the fixed allowance, a second line simply hung out of the card — and since
+    // the band is pinned to the bottom of the screen, out of the canvas with it.
+    subLbl.y = Math.max(statusTag.y + lineH, y + cardH - pad - Math.ceil(subLbl.height));
     core.paint.pageLayer.addChild(subLbl);
   }
 

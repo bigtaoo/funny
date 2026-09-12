@@ -4,6 +4,7 @@ import { PortraitLayout } from './PortraitLayout';
 import { LandscapeLayout } from './LandscapeLayout';
 import { Side } from '../game';
 import { setDesignScale } from '../render/bake';
+import { setFontScale } from '../render/fontScale';
 
 export type Orientation = 'portrait' | 'landscape';
 
@@ -175,6 +176,11 @@ export class ScalingManager {
     // has the 334 MB lobby this stops). Pushed from here because this is the single place the scale
     // is computed — a caller-side copy would drift on the next resize path someone adds.
     setDesignScale(gameScale);
+    // Same funnel, same reason, for the font scale's legibility floor: `FS.micro` is 11 DESIGN px,
+    // which on a 390-wide phone (0.36x) is 4 CSS px of unreadable smudge. render/fontScale.ts turns
+    // the scale into a floor every token is lifted to; it has to be pushed from here because this is
+    // the one place the scale exists.
+    setFontScale(gameScale);
     this.gameLayer.x = Math.round(availX + (availW - dw * gameScale) / 2);
     this.gameLayer.y = Math.round(availY + (availH - dh * gameScale) / 2);
 

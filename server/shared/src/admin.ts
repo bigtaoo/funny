@@ -190,6 +190,30 @@ export function totalCoinValue(attachments: readonly CompAttachment[]): number {
   return attachments.reduce((sum, a) => sum + attachmentCoinValue(a), 0);
 }
 
+/**
+ * Hard cap on the COINS a single compensation ticket may attach, whatever its scope (OPS_DESIGN §3.2).
+ * This is a blast-radius limit, not an approval tier: a mistyped amount (an extra zero on a 250-coin
+ * apology) must not be able to mint an outlier balance that then has to be clawed back by hand.
+ * A genuinely large compensation is still payable — as several tickets, each separately audited and
+ * approved, which is the point: repeating the send is deliberate, mistyping it once is not.
+ *
+ * Distinct from SINGLE_COMP_QUOTA above, which routes approval (normal vs. overquota) using the coin
+ * *equivalent* of every attachment kind. Coins are capped here because they are the only attachment an
+ * operator types as a free-form number; items/skins stay quota-tiered only.
+ */
+export const COMP_COINS_CAP_PER_TICKET = 2500;
+
+/**
+ * Coins actually attached to a ticket — the raw coin amount only, excluding the item/skin coin
+ * equivalents that totalCoinValue folds in (those are approval-routing weights, not real currency).
+ */
+export function coinAttachmentTotal(attachments: readonly CompAttachment[]): number {
+  return attachments.reduce(
+    (sum, a) => (a.kind === 'coins' ? sum + Math.max(0, Math.floor(a.count ?? 0)) : sum),
+    0,
+  );
+}
+
 export type AmountTier = 'normal' | 'overquota';
 
 /** Determine the quota tier from total attachment value (global is always overridden to require super-admin approval by the caller, see §3.2). */

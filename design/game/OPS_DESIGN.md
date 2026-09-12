@@ -146,6 +146,15 @@ interface CompensationTicketDoc {
 - 工单创建时后端据附件计算 `amountTier`，决定所需审批能力（`comp.approve.single` vs `comp.approve.single.overquota`）。
 - 全服补偿 `amountTier` 无论金额恒等于需 `comp.approve.global`（超管）。
 
+#### 金币硬上限（2026-09-12 落地）
+
+- **`COMP_COINS_CAP_PER_TICKET = 2500`**（同样放 `shared/admin.ts` 单一真相）：单张工单**金币附件之和**超过它直接 400 拒绝，任何 scope（个人/全服）、任何角色都没有例外，不是"升一级审批"而是不给发。
+- **它和 `SINGLE_COMP_QUOTA` 不是一回事**：配额阈值决定**谁来签字**（用的是含 item/skin 折算的金币当量），这条上限决定**能不能发**（只数真金币）。金币是运营唯一手打的自由数字，多敲一个零就凭空造出一个离群余额，事后只能人工回收——所以在发起侧就掐掉。
+- **大额补偿不是发不了，是要发几次**：每张单各自走审批、各自留审计，重复发送是有意为之，敲错一次不是。
+- **后果（已知且接受）**：2500 < 5000，所以**纯金币的个人工单再也走不到 `overquota` 档**，`comp.approve.single.overquota` 实际只会被 item/skin 附件（`ITEM_COIN_EQUIV` 500 / `SKIN_COIN_EQUIV` 2000）触发。要让金币也重新分档，得把 `SINGLE_COMP_QUOTA` 降到上限以下，那是另一件事（会让每笔 2500 的补偿都去敲超管的门），本次不做。
+- **落地位置**：后端 `admin/service/validators.ts` 的 `validateMail`（工单创建的唯一入口，ops 前端绕不过去）；ops 前端 `logic/tickets.ts` 的 `coinsProblem` + 表单 `max` 属性 + 金币输入框下的常驻提示，只是让运营在填完整张单之前就知道，不是安全边界。
+- **为什么不放 commercial**：玩家领取邮件时 commercial 的 `grant` 是**所有**邮件附件的共用入口（`reason:'mail'`），拍卖结算、赛季奖励都从这里入账且金额可以远超 2500——在那里设限会误伤正常大额结算，且那时已经分辨不出这封信是不是运营补偿。同理 meta 的 `/internal/mail/system/send` 也是 auctionsvc 共用的，不能设限。异常侧的兜底仍在（commercial `GET /internal/audit/coin-gains` 的非充值获取阈值告警）。
+
 ### 3.3 生命周期
 
 ```

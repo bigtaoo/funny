@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { ContextAudioBus, DEFAULT_SFX_VOLUME } from '../../src/audio/ContextAudioBus';
 import { setAssetIO } from '../../src/assets/assetIO';
 import { allSfxUrls } from '../../src/audio/cueAssets';
+import type { MusicDeck } from '../../src/audio/MusicPlayer';
 import { fakeAudioContext, asCtx, type FakeAudioContext } from './fakeAudioContext';
 
 // The bus reads bytes through the module-level `assetIO()` seam, not through its own deps (see
@@ -281,5 +282,172 @@ describe('ContextAudioBus — the field names the e2e measurement surface reflec
     const priv = h.b as unknown as { bank: { variantsOf?: unknown } | null };
     expect(priv.bank).toBeTruthy();
     expect(typeof priv.bank!.variantsOf).toBe('function');
+  });
+});
+
+// ── the OS audio session ────────────────────────────────────────────────────────────────────────
+//
+// Reported 2026-09-11: opening the game on a phone stops the player's Spotify. The platform half
+// of the answer is `navigator.audioSession = 'ambient'` (`WebAudioBus`, its own cases); this half
+// is the neutral one — **do not hold the session while making no sound**. A running `AudioContext`
+// and a playing `<audio>` own it at gain 0 exactly as they do at gain 1, so "the player muted us"
+// used to still cost them their music, and so did backgrounding the game.
+//
+// These cases all assert on `suspendCalls` / `resumeCalls` / what the decks were told, because the
+// failure mode is once again invisible from inside the game: every one of them passes on a build
+// that never lets go of the session, and the game sounds perfectly fine either way.
+
+/** The slice of `MusicDeck` these cases read back. */
+function fakeDeck() {
+  return {
+    plays: [] as string[],
+    stops: 0,
+    paused: [] as boolean[],
+    play(path: string) { this.plays.push(path); },
+    setGain(_level: number) { /* the envelope has its own cases in MusicPlayer.test.ts */ },
+    stop() { this.stops++; },
+    position() { return this.plays.length > 0 ? 0 : null; },
+    setPaused(p: boolean) { this.paused.push(p); },
+  };
+}
+
+/** A bus with BGM decks and a focus seam — `bus()` above has neither. */
+function musicBus() {
+  const ctx = fakeAudioContext();
+  ctx.state = 'suspended'; // what a real host hands over before the first gesture
+  const decks = [fakeDeck(), fakeDeck()] as const;
+  const gestures: (() => void)[] = [];
+  let focus: ((hidden: boolean) => void) | null = null;
+  const b = new ContextAudioBus({
+    createContext: () => asCtx(ctx),
+    onGesture: (cb) => gestures.push(cb),
+    createMusicDecks: () => decks as unknown as readonly [MusicDeck, MusicDeck],
+    onFocusChange: (cb) => { focus = cb; },
+  });
+  return {
+    b,
+    ctx,
+    decks,
+    gesture: () => { for (const g of gestures) g(); },
+    focus: (hidden: boolean) => focus?.(hidden),
+    /** Frames enough to carry a full crossfade (2s at 16ms) several times over. */
+    settle: (track: Parameters<typeof b.updateMusic>[0]) => {
+      for (let i = 0; i < 300; i++) b.updateMusic(track, 16);
+    },
+  };
+}
+
+describe('ContextAudioBus — the OS audio session (AUDIO_DESIGN.md §5)', () => {
+  it('gives the session back once both channels reach 0', () => {
+    const h = bus();
+    void h.b.preload();
+    h.b.setSfxVolume(0);
+    // Still audible: BGM defaults to 0.2, and a bed alone is reason enough to hold the session.
+    expect(h.ctx.suspendCalls).toBe(0);
+    h.b.setMusicVolume(0);
+    expect(h.ctx.suspendCalls).toBe(1);
+    expect(h.ctx.state).toBe('suspended');
+  });
+
+  it('takes it back the moment a slider comes back up', () => {
+    const h = bus();
+    void h.b.preload();
+    h.b.setSfxVolume(0);
+    h.b.setMusicVolume(0);
+    h.b.setSfxVolume(0.4);
+    expect(h.ctx.resumeCalls).toBe(1);
+    expect(h.ctx.state).toBe('running');
+  });
+
+  it('a silent bus never takes the session at all — a gesture does not override the mute', () => {
+    const h = bus({ state: 'suspended' });
+    h.b.setSfxVolume(0);
+    h.b.setMusicVolume(0);
+    for (const g of h.gestures) g();
+    // Not "created it and left it suspended" — never created. The host device is untouched.
+    expect(h.creates()).toBe(0);
+    expect(h.ctx.resumeCalls).toBe(0);
+  });
+
+  it('volume changes alone never build a context — boot pushes them before the first tap', () => {
+    // `installAudioSettings` applies the saved levels at startup. If that were enough to make the
+    // bus grab an audio device, the fix above would have traded one session grab for an earlier one.
+    const h = bus();
+    h.b.setSfxVolume(0.5);
+    h.b.setMusicVolume(0.5);
+    expect(h.creates()).toBe(0);
+  });
+
+  it('survives a context with no suspend() at all (ancient WebViews, base-lib shims)', () => {
+    const h = bus();
+    void h.b.preload();
+    (h.ctx as unknown as { suspend?: unknown }).suspend = undefined;
+    expect(() => { h.b.setSfxVolume(0); h.b.setMusicVolume(0); }).not.toThrow();
+  });
+
+  it('backgrounding suspends the context, not just the decks', () => {
+    // Holding the decks alone leaves the context `running`, and the context is what owns the
+    // session — so "switch away from the game to listen to something" stayed blocked by a game
+    // that was, by then, making no sound at all.
+    const h = musicBus();
+    h.gesture();
+    h.b.updateMusic('bgm.lobby', 16);
+    expect(h.ctx.state).toBe('running');
+
+    h.focus(true);
+    expect(h.ctx.suspendCalls).toBe(1);
+    expect(h.decks.some((d) => d.paused[d.paused.length - 1] === true)).toBe(true);
+
+    h.focus(false);
+    expect(h.ctx.state).toBe('running');
+    expect(h.decks.some((d) => d.paused[d.paused.length - 1] === false)).toBe(true);
+  });
+
+  it('a gesture arriving in a hidden tab does not take the session', () => {
+    // Rare but reachable: a keydown lands in a background tab in some window managers, and a page
+    // can finish loading in one (ctrl-click, session restore) — `WebAudioBus` reports the CURRENT
+    // visibility at install time precisely because no `visibilitychange` will ever correct it.
+    const h = musicBus();
+    h.focus(true);
+    h.gesture();
+    expect(h.ctx.resumeCalls).toBe(0);
+  });
+
+  it('coming back to the foreground while muted leaves the session alone', () => {
+    // Two independent reasons to stay released, and returning from the background must not treat
+    // the one it just cleared as the only one.
+    const h = musicBus();
+    h.gesture();
+    h.b.setSfxVolume(0);
+    h.b.setMusicVolume(0);
+    h.focus(true);
+    const resumesBefore = h.ctx.resumeCalls;
+    h.focus(false);
+    expect(h.ctx.resumeCalls).toBe(resumesBefore);
+    expect(h.ctx.state).toBe('suspended');
+  });
+
+  it('BGM at 0 builds no deck — a stream at gain 0 is still a stream the OS counts', () => {
+    const h = musicBus();
+    h.b.setMusicVolume(0);
+    h.gesture();
+    h.settle('bgm.lobby');
+    expect(h.decks.every((d) => d.plays.length === 0)).toBe(true);
+  });
+
+  it('dragging the BGM slider to 0 releases a bed that is already playing', () => {
+    const h = musicBus();
+    h.gesture();
+    h.b.updateMusic('bgm.lobby', 16);
+    expect(h.decks.some((d) => d.plays.length > 0)).toBe(true);
+
+    h.b.setMusicVolume(0);
+    h.settle('bgm.lobby');
+    // Released through the normal fade-out, i.e. the deck was stopped rather than left decoding
+    // into a gain of 0 (which is what `MusicPlayer.advance` exists to avoid anyway).
+    expect(h.decks.some((d) => d.stops > 0)).toBe(true);
+    const playsWhileSilent = h.decks.reduce((n, d) => n + d.plays.length, 0);
+    h.settle('bgm.lobby');
+    expect(h.decks.reduce((n, d) => n + d.plays.length, 0)).toBe(playsWhileSilent);
   });
 });

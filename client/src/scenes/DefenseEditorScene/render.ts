@@ -34,7 +34,8 @@ import {
 
 export interface RenderHandlers {
   renderBaseStepper(rightX: number, y: number): void;
-  renderPalette(top: number): void;
+  /** Draws the tool palette and returns the height it used (it wraps to more rows when narrow). */
+  renderPalette(top: number): number;
   renderAttackBody(top: number, bottom: number): void;
   renderAttackToolbar(x: number, y: number, w: number, h: number): void;
   renderCardRosterPanel(x: number, y: number, w: number, h: number): void;
@@ -202,7 +203,7 @@ export class RenderPanel implements RenderHandlers {
     });
   }
 
-  renderPalette(top: number): void {
+  renderPalette(top: number): number {
     const core = this.core;
     const { w } = core;
     const tools: { tool: Tool; label: string; tint: number }[] = [
@@ -223,35 +224,55 @@ export class RenderPanel implements RenderHandlers {
     ];
     const n = tools.length;
     const gap = 5;
-    const btnW = (w - PAD * 2 - gap * (n - 1)) / n;
+    const rowGap = 4;
     const btnH = PALETTE_H - 10;
-    let x = PAD;
-    for (const { tool, label, tint } of tools) {
+    const avail = w - PAD * 2;
+
+    // How many of these fit on one row is a question about the LABELS, not about the tool count:
+    // dividing the width by 14 gives 72 design px a cell in portrait, and "Shield Bearer" needs
+    // ~110 — so every chip's name ran past its own box and into the next one (measured at 390x844
+    // and 360x640, 2026-09-11). Landscape's 1920 still fits all of them on one row, so it is
+    // unchanged; portrait wraps to as many rows as it needs.
+    const fontSize = FS.tiny;
+    const widest = tools.reduce((max, { label }) => {
+      const probe = txt(label, fontSize, C.dark, true);
+      const wd = probe.width;
+      probe.destroy();
+      return Math.max(max, wd);
+    }, 0);
+    const minCell = Math.ceil(widest) + 12;
+    const cols = Math.max(1, Math.min(n, Math.floor((avail + gap) / (minCell + gap))));
+    const rows = Math.ceil(n / cols);
+    const btnW = (avail - gap * (cols - 1)) / cols;
+
+    tools.forEach(({ tool, label, tint }, i) => {
+      const x = PAD + (i % cols) * (btnW + gap);
+      const y = top + 5 + Math.floor(i / cols) * (btnH + rowGap);
       const active = core.toolEquals(tool, core.tool);
       const box = sketchPanel(btnW, btnH, {
         fill: active ? tint : C.paper,
         border: active ? C.dark : tint,
         width: active ? 2.4 : 1.4,
-        seed: seedFor(x, top, btnW),
+        seed: seedFor(x, y, btnW),
       });
       box.x = x;
-      box.y = top + 5;
+      box.y = y;
       core.bodyLayer.addChild(box);
-      const lbl = txt(label, FS.micro, active ? C.light : C.dark, true);
-      lbl.anchor.set(0.5, 0.5);
-      lbl.x = x + btnW / 2;
-      lbl.y = top + 5 + btnH / 2;
-      core.bodyLayer.addChild(lbl);
+      // Through the shared button-label group, so a label that is still too wide for its cell
+      // (a longer translation) scales down inside it instead of spilling.
+      drawButtonLabel(core.bodyLayer, x, y, btnW, btnH, label, null,
+        active ? C.light : C.dark, fontSize, { inset: 8 });
       const captured = tool;
       core.hits.push({
-        rect: { x, y: top + 5, w: btnW, h: btnH },
+        rect: { x, y, w: btnW, h: btnH },
         fn: () => {
           core.tool = captured;
           core.render();
         },
       });
-      x += btnW + gap;
-    }
+    });
+
+    return 5 + rows * btnH + (rows - 1) * rowGap + 5;
   }
 
   /** Defense footer: counts + hint on the left, action buttons on the right. (Attack mode has no footer.) */

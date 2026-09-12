@@ -7,7 +7,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { t, TranslationKey } from '../../i18n';
 import { systemText } from '../../i18n/systemText';
-import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
+import { ui as C, txt, txtFit, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { FS, snapFont } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import { makeText } from '../../render/pixiText';
@@ -90,7 +90,12 @@ export class MailPanel {
       layer.addChild(gi);
       subjX = tx + giftSz + Math.round(rw * 0.015);
     }
-    const subj = txt(systemText(m.subject), snapFont(Math.round(rh * 0.3)), C.dark, true);
+    // Clamped to what is left of the row after the attachment glyph (2026-09-12). A subject may be
+    // MAIL_SUBJECT_MAX = 80 characters, and full-width at that, which no row on any viewport can
+    // hold — the sweep reported this row overflowing on all ten, desktop included. The reader below
+    // shows the whole thing.
+    const subj = txtFit(systemText(m.subject), snapFont(Math.round(rh * 0.3)), C.dark, true,
+      rx + rw - Math.round(rw * 0.04) - subjX);
     subj.anchor.set(0, 0.5); subj.x = subjX; subj.y = y + rh * 0.34;
     layer.addChild(subj);
     const from = txt(m.fromName || (m.from === 'system' ? t('mail.system') : `#${m.from}`), snapFont(Math.round(rh * 0.22)), C.mid);

@@ -28,6 +28,7 @@
     "check:absolutewrites": "node scripts/checkAbsoluteWrites.mjs",
     "check:auctionjournal": "node scripts/checkAuctionJournal.mjs",
     "check:edgecompression": "node scripts/checkEdgeCompression.mjs",
+    "check:dbisolation": "node scripts/checkDbIsolation.mjs",
     "dev:meta": "npm run dev --workspace @nw/metaserver",
     "dev:game": "npm run dev --workspace @nw/gameserver",
     "dev:gateway": "npm run dev --workspace @nw/gateway",

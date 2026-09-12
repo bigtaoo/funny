@@ -158,17 +158,22 @@ describe('drawSceneHeader — a measured reserve keeps the title out of the clus
     expect(withSmall.titleRight).toBeGreaterThan(withBig.titleRight);
   });
 
-  it('falls back to shrinking the cluster when even an honest reserve cannot fit', () => {
-    // Past the point where the bar can hold both: the reserve is wider than the band left after the
-    // back pill, so the title cannot give up enough and drawHeaderCurrency's leftBound backstop takes
-    // over. Asserted because the alternative — going back to overlapping — is the bug.
+  it('keeps the two apart even when the reserve is wider than the band', () => {
+    // Past the point where the bar can hold both at full size. Until 2026-09-11 the title stayed
+    // CENTRED here (the reserve only ever fed the shrink factor), so it reached into the cluster's
+    // band and drawHeaderCurrency's leftBound backstop had to shrink the readout to escape it.
+    // The title now slides left out of the reserved band as well as shrinking, which is the better
+    // trade — a label the player already knows moves, live data stays (near enough) full size.
+    // It does not shrink without limit: the title keeps a legibility floor of 12% of the bar, so
+    // at a reserve this extreme the backstop still shaves a couple of percent off the cluster.
+    // What must hold either way is the ordering: the cluster starts at or after the title's edge.
     const host = new PIXI.Container();
     const hdr = header(host, headerCurrencyWidth(HEADER_H, 95946835, [], CAP, WIDE_EXTREME));
     drawHeaderCurrency(host, W, HEADER_H, 95946835, [], CAP, WIDE_EXTREME, hdr.titleRight);
     const cluster = clusterOf(host);
 
-    expect(cluster.scale.x).toBeLessThan(1);
     expect(cluster.x).toBeGreaterThanOrEqual(hdr.titleRight - 0.5);
+    expect(cluster.scale.x).toBeGreaterThan(0.95);
   });
 
   it('leaves the no-reserve default path exactly as it was', () => {

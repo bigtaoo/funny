@@ -3,13 +3,14 @@
 // reuses meta JWT for verifyToken signature verification only (does not connect to the accounts database).
 // Internal events are pushed back to clients via gateway /gw/push.
 // Note: /family/* routes have been migrated to socialsvc (fifth public face /social/*); worldsvc no longer proxies family requests.
-import { loadServerEnv, type ServerEnv } from '@nw/shared';
+import { DEV_MONGO_URI, loadServerEnv, requiredEnv, type ServerEnv } from '@nw/shared';
 
 export interface WorldsvcEnv extends ServerEnv {
   /** Public REST port (reverse-proxied /world → this port). Default 18084 (avoids Windows reserved port range). */
   port: number;
   host: string;
-  /** worldsvc dedicated MongoDB URI (defaults to the same instance as meta). */
+  /** Mongo URI for `notebook_wars_world` — this service's OWN least-privilege login.
+   *  Never falls back to another service's variable; unset means the local dev Mongo (ADR-090). */
   worldMongoUri: string;
   /** worldsvc dedicated database name (physically isolated from meta/commercial/admin). */
   worldMongoDb: string;
@@ -35,7 +36,7 @@ export function loadWorldsvcEnv(): WorldsvcEnv {
     ...base,
     port: Number(process.env.NW_WORLD_PORT ?? 18084),
     host: process.env.NW_WORLD_HOST ?? '0.0.0.0',
-    worldMongoUri: process.env.NW_WORLD_MONGO_URI ?? base.mongoUri,
+    worldMongoUri: requiredEnv('NW_WORLD_MONGO_URI', DEV_MONGO_URI),
     worldMongoDb: process.env.NW_WORLD_MONGO_DB ?? 'notebook_wars_world',
     redisUrl: process.env.NW_WORLD_REDIS_URL || undefined,
     gatewayInternalUrl: process.env.NW_GATEWAY_INTERNAL_URL || undefined,

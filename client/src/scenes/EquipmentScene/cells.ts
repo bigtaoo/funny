@@ -10,7 +10,7 @@ import { FS } from '../../render/fontScale';
 import { buildIcon } from '../../render/icons';
 import type { SaveData, EquipmentInstance } from '../../game/meta/SaveData';
 import { getEquipDef, affixKind } from '../../game/meta/equipmentDefs';
-import { LOADOUT_H, EQUIP_CELL_H, RARITY_COLOR, SLOTS } from './layout';
+import { LOADOUT_H, EQUIP_CELL_H, RARITY_COLOR, SLOTS, AFFIX_COL_GAP, EQUIP_GLYPH_MIN } from './layout';
 import { itemName, affixDesc } from './helpers';
 import type { EquipmentSceneCore } from './core';
 import type { DetailPanel } from './detail';
@@ -130,9 +130,27 @@ export function renderInstanceCell(
 
   // Left: glyph in a rarity-bordered frame.
   const slot = getEquipDef(inst.defId)?.slot ?? 'weapon';
-  const imgBox = EQUIP_CELL_H - (pad + headerH) - pad - btnBandH - bandGap;
+  // The affix lines are built (not placed) FIRST, because the widest of them is what decides how
+  // big the glyph may be (2026-09-12). The height-derived box below is the box the cell has room
+  // for; it is not necessarily the box the cell can AFFORD, because whatever the glyph takes on the
+  // left is taken from the stat column on the right — and that column has a hard requirement, which
+  // is that an affix line fits on one line at the legibility floor. Squeezing it instead cost two
+  // lines of wrap per affix, which pushed the third affix down into the action-button band and
+  // straight under it (sweep 2026-09-12: 'Atk Speed +6%' reported `covered` on every epic cell).
+  const affixLines = inst.affixes.map((af) =>
+    txt(affixDesc(af.id, af.value, inst.level), FS.small, affixKind(af.id) === 'main' ? C.accent : C.dark));
+  const widestAffix = affixLines.reduce((m, l) => Math.max(m, l.width), 0);
+  const boxByHeight = EQUIP_CELL_H - (pad + headerH) - pad - btnBandH - bandGap;
+  // What is left for the glyph once the stat column has the width it needs. Floored, because a
+  // glyph small enough to be unrecognisable helps nobody either; below the floor the lines wrap
+  // again, which is the lesser evil and still legible.
+  const boxByWidth = cellW - pad * 2 - AFFIX_COL_GAP - Math.ceil(widestAffix);
+  const imgBox = Math.max(EQUIP_GLYPH_MIN, Math.min(boxByHeight, boxByWidth));
   const imgX = x + pad;
-  const imgY = y + pad + headerH;
+  // Centred in the band the cell reserved for it, not pinned to its top: once the stat column
+  // claims width the square gets smaller than the band is tall, and hugging the top left the
+  // leftover as one hole under the glyph instead of as margin around it.
+  const imgY = y + pad + headerH + Math.round((boxByHeight - imgBox) / 2);
   // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind already
   // fills+borders in this same rarity color, so this frame's own fill only duplicated it.
   const frame = sketchPanel(imgBox, imgBox, { fill: 0xf0eee7, fillAlpha: 0, border: color, seed: seedFor(x, y, imgBox) });
@@ -145,22 +163,30 @@ export function renderInstanceCell(
   // see what a piece rolls. Main affix highlighted in accent color, sub/skill in neutral dark
   // (mirrors the detail modal's affix list styling). Stack count moved to the top-right corner
   // badge above, so this column is now stat space instead of duplicate count text.
-  const ax = imgX + imgBox + 12;
+  const ax = imgX + imgBox + AFFIX_COL_GAP;
   const colW = x + cellW - pad - ax;
   let ay = imgY + 4;
   const rar = txt(t(`equip.rarity.${inst.rarity}` as TranslationKey), FS.body, color, true);
   rar.x = ax; rar.y = ay; core.bodyLayer.addChild(rar); ay += 26;
+  // Neither of these SHRINKS any more (2026-09-12). `scale.set(colW / width)` is the exact
+  // anti-pattern render/fontScale.ts's `fitFont` exists to replace: it multiplies the size the
+  // legibility floor just guaranteed by an arbitrary float, so the label lands wherever that float
+  // puts it. Measured by the sweep on a 390-wide phone: 'Crit Damage +30%' at scale 0.59, i.e. 11.8
+  // CSS px against a 20px floor — and in German ('Krit.-Schaden +30%') the same line on all 15
+  // cells. The column is made wide enough instead (see `boxByWidth` above); portrait's third grid
+  // column is a deliberate 2026-08-09 choice (layout.ts `equipGridColumns`) and this cell has to
+  // work inside it, so the width has to come from the glyph.
   if (equipped) {
     const slotLabel = t(`equip.slot.${slot}` as TranslationKey);
-    const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, FS.small, C.green, true);
-    if (e.width > colW) e.scale.set(Math.max(0.01, colW / e.width));
-    e.x = ax; e.y = ay; core.bodyLayer.addChild(e); ay += 22;
+    const e = txt(`[${t('equip.equipped')} · ${slotLabel}]`, FS.small, C.green, true, colW);
+    e.x = ax; e.y = ay; core.bodyLayer.addChild(e); ay += Math.max(22, Math.ceil(e.height) + 2);
   }
-  for (const af of inst.affixes) {
-    const afColor = affixKind(af.id) === 'main' ? C.accent : C.dark;
-    const line = txt(affixDesc(af.id, af.value, inst.level), FS.small, afColor);
-    if (line.width > colW) line.scale.set(Math.max(0.01, colW / line.width));
-    line.x = ax; line.y = ay; core.bodyLayer.addChild(line); ay += 20;
+  for (const line of affixLines) {
+    // Wrap only as a fallback: `imgBox` above is chosen so this normally does not trigger, but a
+    // very long localisation on a very narrow cell can still outrun the glyph floor.
+    if (line.width > colW) { line.style.wordWrap = true; line.style.wordWrapWidth = colW; line.style.breakWords = true; }
+    line.x = ax; line.y = ay; core.bodyLayer.addChild(line);
+    ay += Math.max(20, Math.ceil(line.height) + 2);
   }
 
   // Action buttons along the bottom of the cell, spanning its full width. Each is an icon-forward

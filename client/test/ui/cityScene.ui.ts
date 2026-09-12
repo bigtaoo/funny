@@ -23,6 +23,7 @@ import { createLayout } from '../../src/layout/ScalingManager';
 import { InputManager } from '../../src/inputSystem/InputManager';
 import { initI18n, t } from '../../src/i18n';
 import { CityScene, type CitySceneCallbacks } from '../../src/scenes/CityScene';
+import { TEAM_ROW_CARD_H, TEAM_ROW_PER_ROW_PORTRAIT } from '../../src/scenes/CityScene/core';
 import { marginLineX } from '../../src/render/sketchUi';
 import { teamSlotId, teamSlotName, TEAM_CAP } from '../../src/game/meta/teamTroops';
 import { formatDuration } from '../../src/scenes/worldmap/logic/formatDuration';
@@ -52,6 +53,7 @@ type Hit = { rect: Rect; fn: () => void };
 
 type CitySceneInternals = {
   w: number; h: number;
+  portrait: boolean;
   hits: Hit[];
   selectedBuilding: string | null;
   contentX: number;
@@ -80,9 +82,16 @@ function tap(inner: CitySceneInternals, x: number, y: number): void {
 }
 
 // hits[0] is always the header Back button (pushed first, unconditionally, in render()). All other
-// hits sit right of the binding line (x >= contentX). The team row is pinned to the bottom band, so
-// its hits split cleanly from the building-grid hits by y: grid tiles end well above the team row.
-const TEAM_BAND_Y_THRESHOLD = 140;
+// hits sit right of the binding line (x >= contentX).
+//
+// Team hits are told from building-grid hits by their HEIGHT, which is the one thing that identifies
+// a team card: it is always exactly TEAM_ROW_CARD_H, while a building tile's height is derived from
+// whatever band is left over (gridMetrics.ts — portrait computes it, landscape uses CARD_H = 192).
+// This used to be a y threshold of 140 design px, on the reasoning that the band was one card tall
+// and pinned to the bottom; when portrait's band went to two rows (2026-09-12) that threshold
+// silently reclassified three of the five team cards as grid tiles, and the assertions that counted
+// them went red for the wrong reason. A threshold measures where the band happens to be today; the
+// card height is what a team card IS.
 
 /** The "Fill All Teams" button (2026-08-02) always registers a hit, flush inside the team band's
  *  own section-label row — which sits above TEAM_BAND_Y_THRESHOLD, so it must be filtered out of
@@ -97,10 +106,10 @@ function contentHits(inner: CitySceneInternals): Hit[] {
 // The three selectors below return the hits' RECTS: the shared hit table (src/ui/hits.ts) nests
 // geometry under `rect`, and every assertion here is about geometry.
 function gridHits(inner: CitySceneInternals): Rect[] {
-  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.y <= inner.h - TEAM_BAND_Y_THRESHOLD).map((h) => h.rect);
+  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.h !== TEAM_ROW_CARD_H).map((h) => h.rect);
 }
 function teamHits(inner: CitySceneInternals): Rect[] {
-  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.y > inner.h - TEAM_BAND_Y_THRESHOLD).map((h) => h.rect);
+  return contentHits(inner).filter((h) => !isFillAllTeamsHit(h) && h.rect.h === TEAM_ROW_CARD_H).map((h) => h.rect);
 }
 
 /** All PIXI.Text content currently in the display tree, recursing sub-containers. */
@@ -327,7 +336,7 @@ describe('CityScene header base-durability (D-CITY-8; moved into the header 2026
   });
 });
 
-describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', () => {
+describe('CityScene bottom team row (D-CITY-10; one row in landscape, two in portrait since 2026-09-12)', () => {
   type TeamsFixture = {
     me?: Partial<PlayerWorldView>;
     teams?: { id: string; name: string; army: { cardInstanceId?: string; initialHp?: number }[] }[];
@@ -606,17 +615,21 @@ describe('CityScene bottom team row (D-CITY-10; pinned single row 2026-07-23)', 
   });
 
   for (const [label, dims] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
-    it(`the 5 team cards sit side-by-side in one bottom row — within screen, no overlap, no grid overlap — ${label}`, async () => {
+    it(`the 5 team cards tile the bottom band — within screen, no overlap, no grid overlap — ${label}`, async () => {
       const { scene, inner } = await buildLoaded({ teams: [] }, () => {}, dims);
       const teams = teamHits(inner);
       expect(teams.length).toBe(TEAM_CAP);
-      // All in a single row: identical y, ascending x.
-      const sorted = [...teams].sort((a, b) => a.x - b.x);
+      // Landscape keeps all five side by side; portrait wraps onto two rows (2026-09-12, see
+      // teamRow.ts) because five across leaves a text column too narrow to hold one line of the
+      // card's own labels at the legibility floor. Either way: inside the screen, and a grid of
+      // rows whose members share a y.
+      const perRow = inner.portrait ? TEAM_ROW_PER_ROW_PORTRAIT : TEAM_CAP;
+      const sorted = [...teams].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+      expect(new Set(sorted.map((r) => r.y)).size).toBe(Math.ceil(TEAM_CAP / perRow));
       for (const th of sorted) {
         expect(th.x).toBeGreaterThanOrEqual(inner.contentX);
         expect(th.x + th.w).toBeLessThanOrEqual(inner.w + 1e-6);
         expect(th.y + th.h).toBeLessThanOrEqual(inner.h + 1e-6);
-        expect(th.y).toBe(sorted[0]!.y); // one row
       }
       for (let i = 0; i < sorted.length; i++) {
         for (let j = i + 1; j < sorted.length; j++) {

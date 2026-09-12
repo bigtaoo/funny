@@ -329,7 +329,7 @@ export async function createCommercialMongo(
     const safeUri = uri.replace(/\/\/[^@/]*@/, '//<redacted>@');
     console.error(
       `[commercial-mongo] Failed to connect to MongoDB (uri=${safeUri}, db=${dbName}): ` +
-        `${(err as Error).message}. Please ensure the database is running and the connection config (NW_COMM_MONGO_URI/NW_MONGO_URI) is correct.`,
+        `${(err as Error).message}. Please ensure the database is running and the connection config (NW_COMM_MONGO_URI) is correct.`,
     );
     throw err;
   }

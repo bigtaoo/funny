@@ -290,10 +290,14 @@ export class DetailPanel {
     const siegeEff = cardSiegeValueEffective(card, state?.currentTroops ?? 0);
     const siegeText = `${t('roster.siege')}: ${siegeEff}`
       + t('roster.siegePer60').replace('{base}', String(cardSiegeValue(card)));
-    const siegeLine = core.stxt(siegeText, FS.micro, C.dark);
+    // Wrapped, unlike the shorter lines above it: this one carries two numbers and a parenthetical,
+    // and at the legibility floor's 20 design px (render/fontScale.ts lifts `FS.micro` on a phone)
+    // it ran past the panel's right edge (portrait sweep §49). `statMaxW` is the same width the
+    // level stars are already fitted to.
+    const siegeLine = core.stxt(siegeText, FS.micro, C.dark, false, statMaxW);
     siegeLine.x = statX; siegeLine.y = statY;
     panelRoot.addChild(siegeLine);
-    statY += 18;
+    statY += Math.max(18, Math.ceil(siegeLine.height) + 2);
 
     if (inTeam) {
       const teamName = state?.teamId ? core.cb.getTeamName?.(state.teamId) : undefined;

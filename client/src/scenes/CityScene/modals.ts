@@ -80,12 +80,19 @@ export class ModalsPanel implements ModalsHandlers {
     const costEntries = RESOURCE_TYPES.map((rt) => ({ rt, need: cost[rt] ?? 0 })).filter(
       (e) => e.need > 0
     );
+    // Line pitch off the font size, not a literal 16. The font scale's legibility floor lifts every
+    // token below it on a phone (render/fontScale.ts), so on a 390-wide screen `FS.tiny` is 20
+    // design px and a 16px pitch drew "→ Lv.2", "Cost:" and "Time: 1:20:00" through each other
+    // (portrait sweep §49). Both expressions bottom out at the values this replaces, so landscape —
+    // where the floor never engages — lays out exactly as before.
+    const lineH = Math.max(16, Math.round(FS.tiny * 1.25));
+    const hdrH = Math.max(28, lineH + 12);
     const contentH =
       12 +
-      28 +
-      bonusLines.length * 16 +
+      hdrH +
+      bonusLines.length * lineH +
       4 +
-      (atMax ? 20 : 16 + (costEntries.length > 0 ? 16 : 0) + 24 + 36) +
+      (atMax ? lineH + 4 : lineH + (costEntries.length > 0 ? lineH : 0) + (lineH + 8) + 36) +
       12;
     const mh = Math.min(contentH, h - 16);
 
@@ -134,14 +141,14 @@ export class ModalsPanel implements ModalsHandlers {
     hdrTxt.x = 38;
     hdrTxt.y = iy;
     panelRoot.addChild(hdrTxt);
-    iy += 28;
+    iy += hdrH;
 
     for (const line of bonusLines) {
       const bl = st(line, FS.tiny, C.mid);
       bl.x = 10;
       bl.y = iy;
       panelRoot.addChild(bl);
-      iy += 16;
+      iy += lineH;
     }
     iy += 4;
 
@@ -155,7 +162,7 @@ export class ModalsPanel implements ModalsHandlers {
       nextHdr.x = 10;
       nextHdr.y = iy;
       panelRoot.addChild(nextHdr);
-      iy += 16;
+      iy += lineH;
 
       if (costEntries.length > 0) {
         const costLbl = st(t('city.costLabel'), FS.tiny, C.dark);
@@ -176,14 +183,14 @@ export class ModalsPanel implements ModalsHandlers {
           panelRoot.addChild(nl);
           cxp += nl.width + 8;
         }
-        iy += 16;
+        iy += lineH;
       }
 
       const timeLbl = st(t('city.timeLabel') + formatDuration(timeSec), FS.tiny, C.mid);
       timeLbl.x = 10;
       timeLbl.y = iy;
       panelRoot.addChild(timeLbl);
-      iy += 24;
+      iy += lineH + 8;
 
       if (gateReason?.includes('desk')) {
         const gl = st(t('city.deskGate').replace('{lvl}', String(toLevel)), FS.tiny, C.red);

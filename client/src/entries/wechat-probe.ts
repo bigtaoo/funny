@@ -15,8 +15,12 @@
  */
 import { collectHostProbe, writeHostProbe } from '../platform/wechat/hostProbe';
 import { installWechatHost } from '../platform/wechat/wechatHost';
+import { probeTextMetrics } from '../render/textMetricsProbe';
 
-declare const wx: { setEnableDebug(opts: { enableDebug: boolean }): void };
+declare const wx: {
+  setEnableDebug(opts: { enableDebug: boolean }): void;
+  createCanvas(): { getContext(type: string): unknown };
+};
 // Real-device "预览" ships with no attached console and no visible way to reach one — DevTools'
 // own remote-debug bridge cannot even load this bundle (ASSET_PACKAGING_LOG.md §20.2), so the exit
 // #3 `console.log` this file relies on is otherwise unreachable on a real phone. This turns on the
@@ -28,6 +32,25 @@ const before = collectHostProbe();
 installWechatHost();
 const after = collectHostProbe();
 
+/**
+ * 文字度量（2026-09-11 加）。**这一项不是宿主表面，是版面结论的地基。**
+ *
+ * 全仓库每一个文字样式都写 `fontFamily: 'monospace'`，而 `fitFont` 一步算出「装得下的字号」
+ * 靠的是「等宽字体的宽度随字号线性」这条假设，可读性下限（`fontFloorDesignPx`）也是一句关于
+ * 「一个字最后在屏幕上有多大」的断言。两条都只在 Chrome 上量过。
+ *
+ * 小游戏运行时没有 DOM、canvas 来自 `wx.createCanvas()`、'monospace' 由手机自己解析（很多
+ * 安卓机对 CJK 根本给不出等宽面）。**如果每字advance 不一样，那两条结论就得重新量，而不是
+ * 假定能平移过来**——对照数据由 `test/browser/textMetrics.spec.ts` 在真 Chromium 上用同一个
+ * 函数产出。
+ *
+ * 装适配层**之后**采集：正式入口跑的就是装好之后的环境。
+ */
+const textMetrics = probeTextMetrics(() => {
+  const c = wx.createCanvas();
+  return c.getContext('2d') as CanvasRenderingContext2D | null;
+});
+
 writeHostProbe({
   marker: 'NW_HOST_PROBE',
   // 装之前 / 装之后。`before.globals` 里为 'undefined' 而 `after.globals` 里不是的，
@@ -35,4 +58,5 @@ writeHostProbe({
   // createImageBitmap / OffscreenCanvas，理由见 wechatPixiAdapter.ts）。
   before,
   after,
+  textMetrics,
 });

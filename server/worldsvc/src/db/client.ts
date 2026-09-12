@@ -37,7 +37,7 @@ export async function createWorldMongo(
     const safeUri = uri.replace(/\/\/[^@/]*@/, '//<redacted>@');
     console.error(
       `[world-mongo] MongoDB connection failed (uri=${safeUri}, db=${dbName}): ` +
-        `${(err as Error).message}. Ensure the database is running and NW_WORLD_MONGO_URI/NW_MONGO_URI is correct.`,
+        `${(err as Error).message}. Ensure the database is running and NW_WORLD_MONGO_URI is correct.`,
     );
     throw err;
   }

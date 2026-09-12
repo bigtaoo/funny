@@ -11,6 +11,8 @@ import {
   ITEM_COIN_EQUIV,
   SKIN_COIN_EQUIV,
   attachmentCoinValue,
+  coinAttachmentTotal,
+  COMP_COINS_CAP_PER_TICKET,
   totalCoinValue,
   tierForAttachments,
   requiredApproveCapability,
@@ -117,6 +119,34 @@ describe('totalCoinValue', () => {
 
   it('is 0 for no attachments', () => {
     expect(totalCoinValue([])).toBe(0);
+  });
+});
+
+describe('coinAttachmentTotal', () => {
+  it('counts coins only — item/skin coin equivalents are approval weights, not currency', () => {
+    const atts: CompAttachment[] = [
+      { kind: 'coins', count: 300 },
+      { kind: 'item', count: 2 },
+      { kind: 'skin' },
+      { kind: 'coins', count: 200 },
+    ];
+    expect(coinAttachmentTotal(atts)).toBe(500);
+    // The same list is worth far more to the tiering function, which is the whole reason the two exist.
+    expect(totalCoinValue(atts)).toBeGreaterThan(coinAttachmentTotal(atts));
+  });
+
+  it('floors fractions and clamps negatives, so neither can understate the total against the cap', () => {
+    expect(coinAttachmentTotal([{ kind: 'coins', count: 10.9 }])).toBe(10);
+    expect(coinAttachmentTotal([{ kind: 'coins', count: -100 }, { kind: 'coins', count: 50 }])).toBe(50);
+  });
+
+  it('is 0 for no attachments and for a countless coin entry', () => {
+    expect(coinAttachmentTotal([])).toBe(0);
+    expect(coinAttachmentTotal([{ kind: 'coins' }])).toBe(0);
+  });
+
+  it('the per-ticket cap sits below the approval quota, so capped coins never reach overquota on their own', () => {
+    expect(COMP_COINS_CAP_PER_TICKET).toBeLessThanOrEqual(SINGLE_COMP_QUOTA);
   });
 });
 
