@@ -92,6 +92,9 @@ const VIEWPORTS = [
   { name: 'narrow-360x640-zh', width: 360,  height: 640,  locale: 'zh' },
 ] as const satisfies readonly { name: string; width: number; height: number; locale: Locale }[];
 
+/** How long a tap hop waits for its label to appear before calling the stop unreachable. */
+const TAP_WAIT_MS = 6_000;
+
 /**
  * One navigation step. Either a callback on the current screen's bag (`state.<screen>Cb`) — the
  * name alone, or with the argument it needs — or a TAP on a label, for the things that are not
@@ -396,7 +399,19 @@ async function open(page: Page, stop: Stop, locale: Locale): Promise<string | nu
       // player has a family), so the re-read matters: `state.screen` after the settle is the answer
       // either way.
       const text = 'tap' in hop ? label(locale, hop.tap) : hop.tapText;
-      if (!await tapLabel(page, text)) return null;
+      // Polled rather than tapped once (2026-09-12). A tap hop that follows a navigation hop fires
+      // the instant `state.screen` changes — which, for a list the server fills in (the mail list),
+      // is before any row exists. `friends+mailRead` was recorded as an unreachable stop for a whole
+      // round because of it, while the screenshot of the stop before it showed the very label this
+      // was looking for. Modals inside a scene are built synchronously and hit on the first pass, so
+      // this costs them nothing.
+      const deadline = Date.now() + TAP_WAIT_MS;
+      let tapped = await tapLabel(page, text);
+      while (!tapped && Date.now() < deadline) {
+        await page.waitForTimeout(250);
+        tapped = await tapLabel(page, text);
+      }
+      if (!tapped) return null;
       await page.waitForTimeout(800);
       from = await currentScreen(page);
       continue;

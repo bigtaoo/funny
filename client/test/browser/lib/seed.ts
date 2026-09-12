@@ -33,11 +33,24 @@ import { execFileSync } from 'child_process';
 import type { Page } from '@playwright/test';
 import {
   ANNOUNCEMENT, FAMILY_NAME, FAMILY_TAG, SECT_NAME, SECT_TAG, LONG_NAMES,
-  buildAuctions, buildInventory, buildMails, nameFor,
+  buildAuctions, buildInventory, buildMails, nameFor, tagOf,
 } from './seedFixtures';
 
 /** The Mongo container in docker/docker-compose.local.yml. */
 const CONTAINER = 'nw-local-mongo';
+/**
+ * Root credentials, straight out of that compose file (`MONGO_INITDB_ROOT_USERNAME` /
+ * `_PASSWORD` — they are in the repo, and deliberately so: the point of local auth is per-service
+ * least privilege, not secrecy). Root rather than a service user because this seed writes across
+ * four databases and every service user is scoped to exactly one.
+ *
+ * Not optional since 2026-09-12, when auth was turned on for the local stack. Before that this
+ * module connected anonymously and worked — not because it was allowed to, but because Mongo grants
+ * a localhost exception to a data volume that has no users yet. The first `docker compose up` after
+ * the change provisions them, and every anonymous read then fails with `requires authentication`.
+ */
+const MONGO_USER = process.env.NW_MONGO_USER ?? 'root';
+const MONGO_PASS = process.env.NW_MONGO_PASS ?? 'localdev-root';
 
 const DB_META = 'notebook_wars';
 const DB_SOCIAL = 'nw_social';
@@ -67,9 +80,10 @@ export interface SeedTarget {
  * spends one extra process to get an ordinary script run with ordinary script semantics.
  */
 export function mongosh(db: string, script: string): string {
+  const auth = `-u ${MONGO_USER} -p ${MONGO_PASS} --authenticationDatabase admin`;
   return execFileSync('docker', [
     'exec', '-i', CONTAINER, 'sh', '-c',
-    `cat > /tmp/nwseed.js && mongosh ${db} --quiet --file /tmp/nwseed.js`,
+    `cat > /tmp/nwseed.js && mongosh ${db} ${auth} --quiet --file /tmp/nwseed.js`,
   ], { input: script, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 }
 
@@ -143,6 +157,8 @@ export async function seedAccount(page: Page): Promise<SeedTarget> {
 
   const script = `${payload({
     me: accountId,
+    // Scopes every fixed _id this phase mints — see seedFixtures.tagOf for the collision it fixes.
+    tag: tagOf(accountId),
     names,
     elos,
     familyId: `fam:${FAMILY_TAG}`,
@@ -278,13 +294,13 @@ social.friendEdges.insertMany(friends.map(function (id, i) {
 }));
 social.friendCounts.updateOne({ _id: P.me }, { $set: { count: friends.length } }, { upsert: true });
 social.friendRequests.insertMany(bots.slice(40, 46).map(function (id, i) {
-  return { _id: 'seedfr' + i, from: id, to: P.me, status: 'pending',
+  return { _id: 'seedfr' + P.tag + i, from: id, to: P.me, status: 'pending',
     message: '一起打跨服争霸吧，我们家族缺一个前排指挥。', createdAt: P.now - i * 3600000 };
 }));
 const convs = friends.slice(0, 12).map(function (id, i) {
-  const cid = 'seedconv' + i;
+  const cid = 'seedconv' + P.tag + i;
   social.chatMessages.insertMany([0,1,2,3,4].map(function (k) {
-    return { _id: 'seedchat' + i + '_' + k, convId: cid, from: k % 2 ? P.me : id,
+    return { _id: 'seedchat' + P.tag + i + '_' + k, convId: cid, from: k % 2 ? P.me : id,
       body: k % 2 ? 'Alles klar, ich bringe ' + (1200 + k * 311) + ' Einheiten mit.'
                   : '明天的攻城我带三队上，你负责北门佯攻，别提前暴露。',
       kind: 'text', ts: new Date(P.now - (5 - k) * 60000) };
@@ -328,7 +344,7 @@ export async function seedWorld(page: Page, target: SeedTarget): Promise<void> {
   const { accountId, botIds, familyId } = target;
   const script = `${payload({
     me: accountId, botIds, familyId, familyName: FAMILY_NAME,
-    sectName: SECT_NAME, sectTag: SECT_TAG, now,
+    sectName: SECT_NAME, sectTag: SECT_TAG, now, tag: tagOf(accountId),
   })}
 const world  = db.getSiblingDB('${DB_WORLD}');
 const social = db.getSiblingDB('${DB_SOCIAL}');
@@ -348,8 +364,22 @@ const bx = parseInt(baseParts[baseParts.length - 2], 10);
 const by = parseInt(baseParts[baseParts.length - 1], 10);
 const tileAt = function (dx, dy) { return worldId + ':' + (bx + dx) + ':' + (by + dy); };
 
-const cards = meta.cardInstances.find({ accountId: P.me }, { projection: { _id: 1 } }).limit(25).toArray()
-  .map(function (d) { return d._id; });
+// defId AND level come along because a card's troop capacity depends on both: cardTroopCap
+// (shared/src/cards.ts, mirrored in client/src/game/meta/cardDefs.ts) is
+// troopCapBase + troopCapGrowth x (level-1), level clamped to MAX_CARD_LEVEL 9 - i.e. 600 for a
+// maxed lichuang, 300 for every other maxed card, and 200/100 for a level-1 one.
+//
+// Level is not a formality here: the 25 cards picked up below are whatever the account holds, and
+// the first few of those are the FTUE starter cards at level 1, not the level-60 ones this seed
+// wrote. Allotting every card the maxed figure printed 'Troops 1500/1300' on the city's team strip
+// - more troops carried than the team can hold, which is a state the game cannot produce.
+const cards = meta.cardInstances.find({ accountId: P.me }, { projection: { _id: 1, defId: 1, level: 1 } }).limit(25).toArray();
+const cardTroopCap = function (card) {
+  const base = card.defId === 'lichuang' ? 200 : 100;
+  const growth = card.defId === 'lichuang' ? 50 : 25;
+  const lv = Math.max(1, Math.min(Math.floor(card.level || 1), 9));
+  return base + growth * (lv - 1);
+};
 
 // Five FULL teams: the city's team list and the world map's team panel both lay out per team, and a
 // fresh account has one team with one card in it.
@@ -359,10 +389,15 @@ const teamState = {};
 for (let t = 0; t < 5; t++) {
   const army = [];
   for (let k = 0; k < 5; k++) {
-    const cid = cards[t * 5 + k];
-    if (!cid) continue;
+    const card = cards[t * 5 + k];
+    if (!card) continue;
+    const cid = card._id;
     army.push({ cardInstanceId: cid, col: k % 3, row: Math.floor(k / 3) });
-    cardState[cid] = { currentTroops: 24800 + t * 1300 + k * 170, teamId: 't' + (t + 1) };
+    // Every card carrying exactly its own cap, so the team strip reads '1500/1500' rather than a
+    // number the game cannot reach. The first version wrote ~25000 per card and the strip duly
+    // rendered 'Troops 125700/1300' - the numerator fiction, the denominator the real cap - which
+    // is how a fixture turns into a layout finding nobody can act on.
+    cardState[cid] = { currentTroops: cardTroopCap(card), teamId: 't' + (t + 1) };
   }
   teams.push({
     id: 't' + (t + 1),
@@ -378,11 +413,19 @@ for (let t = 0; t < 5; t++) {
     : { stamina: 100 - t * 7, staminaAt: P.now };
 }
 
+// Every number below is at the game's OWN ceiling, not at an invented one (2026-09-12 correction —
+// the first version was 10x to 100x past every cap here, which made the city and world-map findings
+// measurements of the fixture rather than of the layout):
+//   troopCap   troopCapFor({drillYard:10}) = TROOP_CAP_BASE 5000 + 10 x 1500 = 20000
+//   resources  RESOURCE_CAP 200000 x (1 + cabinet 10 x 0.20) = 600000 per resource
+//   yieldRate  RESOURCE_YIELD_BASE 100 x tile level, summed over the ~13 seeded resource tiles
+//   buildings  BUILDING_MAX_LEVEL = DESK_MAX_LEVEL = 10 for every key
+//   training   TROOP_TRAIN_BATCH_MAX 5000 per batch, ink cost TROOP_TRAIN_INK_COST 10 each
 world.playerWorld.updateOne({ _id: pw._id }, { $set: {
-  troops: 1482600,
-  troopCap: 1600000,
-  resources: { ink: 8420000, paper: 6318000, graphite: 4270500, metal: 2860400, sticker: 918300 },
-  yieldRate: { ink: 128400, paper: 96200, graphite: 74100, metal: 51800, sticker: 12600 },
+  troops: 19840,
+  troopCap: 20000,
+  resources: { ink: 598400, paper: 596200, graphite: 594100, metal: 591800, sticker: 588300 },
+  yieldRate: { ink: 2400, paper: 1900, graphite: 1500, metal: 1200, sticker: 800 },
   lastTickAt: P.now,
   familyId: P.familyId,
   sectId: sectId,
@@ -391,19 +434,22 @@ world.playerWorld.updateOne({ _id: pw._id }, { $set: {
   teamState: teamState,
   cardState: cardState,
   hasBattlePass: true,
-  // Every building at a two-digit level, and both queues busy — the city screen's empty middle band
-  // (the §49 finding that only a screenshot could show) is a property of the EMPTY city.
-  buildings: { desk: 10, inkPot: 18, paperTray: 17, graphiteMill: 16, metalForge: 15,
-               stickerShop: 14, cabinet: 19, drillYard: 20, wall: 18, academy: 13, satchel: 12 },
+  // Every building at the cap, and both queues busy — the city screen's empty middle band (the §49
+  // finding that only a screenshot could show) is a property of the EMPTY city. Two are left one
+  // level short so the build queue has something legal to be building.
+  buildings: { desk: 10, inkPot: 10, paperTray: 10, graphiteMill: 10, metalForge: 10,
+               stickerShop: 10, cabinet: 10, drillYard: 10, wall: 9, academy: 9, satchel: 10 },
   buildQueue: [
-    { key: 'wall', toLevel: 19, startAt: P.now - 600000, completeAt: P.now + 5400000 },
-    { key: 'academy', toLevel: 14, startAt: P.now - 300000, completeAt: P.now + 9600000 },
+    { key: 'wall', toLevel: 10, startAt: P.now - 600000, completeAt: P.now + 5400000 },
+    { key: 'academy', toLevel: 10, startAt: P.now - 300000, completeAt: P.now + 9600000 },
   ],
   nextBuildCompleteAt: P.now + 5400000,
+  // Three batches at TROOP_TRAIN_BATCH_MAX (drillYard 10 grants three parallel slots), each costing
+  // qty x TROOP_TRAIN_INK_COST.
   trainingQueue: [
-    { qty: 128400, inkCost: 462000, startAt: P.now - 900000, completeAt: P.now + 2700000 },
-    { qty: 96200, inkCost: 318000, startAt: P.now - 600000, completeAt: P.now + 4200000 },
-    { qty: 74800, inkCost: 254000, startAt: P.now - 120000, completeAt: P.now + 7200000 },
+    { qty: 5000, inkCost: 50000, startAt: P.now - 900000, completeAt: P.now + 2700000 },
+    { qty: 5000, inkCost: 50000, startAt: P.now - 600000, completeAt: P.now + 4200000 },
+    { qty: 4820, inkCost: 48200, startAt: P.now - 120000, completeAt: P.now + 7200000 },
   ],
   nextTrainingCompleteAt: P.now + 2700000,
 } });
@@ -461,13 +507,69 @@ world.nationMessages.insertMany(P.botIds.slice(0, 30).map(function (id, i) {
 // The map is the one stop where the fresh account renders a genuinely empty world: no owned tiles,
 // no tokens, no siege. All of these are anchored to the account's OWN base tile so they land inside
 // the viewport the map opens at.
+//
+// These are INSERTED, not updated (2026-09-12 fix). worldsvc persists a TileDoc only for a tile that
+// is owned or otherwise modified — "neutral default tiles are not persisted; computed by
+// proceduralTile" (db/worldDocs.ts) — so the first version's updateMany over the 7x7 around the
+// base matched exactly the 9 documents that DO exist there, which are the base's own 3x3 footprint
+// (anchor + 8 baseRing cells, ADR-025). It therefore claimed no new land at all, and stamped a
+// garrison onto ring cells, which by construction hold ownership and protection but no garrison.
+//
+// So: skip that 3x3 and upsert the remaining 40 as real settled territory — the same document
+// settleOccupation writes (combatSiege/occupationSettle.ts), field for field. The one thing this
+// cannot reproduce is proceduralTile's verdict on each cell (its level/resType, and whether the
+// cell is water or city ground at all): that lives in TypeScript the seed cannot call from mongosh.
+// The levels and resource types below are therefore a spread rather than the terrain's own answer —
+// deliberate, because what the sweep needs from this stop is a populated territory list with the
+// full range of level and yield digits in it, not a map that would survive a connectivity audit.
+//
+// (No backticks anywhere in this block: it lives inside the mongosh script's own template literal.)
 const owned = [];
 for (let dx = -3; dx <= 3; dx++) for (let dy = -3; dy <= 3; dy++) {
-  if (dx === 0 && dy === 0) continue;
-  owned.push(tileAt(dx, dy));
+  // The base footprint is already owned and must keep its own docs untouched.
+  if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue;
+  const id = tileAt(dx, dy);
+  const n = owned.length;
+  const doc = {
+    _id: id, worldId: worldId, x: bx + dx, y: by + dy,
+    type: 'territory', level: 1 + (n % 10),
+    ownerId: P.me, familyId: P.familyId,
+    // GARRISON_PER_TILE 500 is what an occupy pays; reinforcing adds to it, and the live value a
+    // attacker meets is the higher of this and npcGarrison(level) = 120 x level. Low thousands, not tens.
+    garrison: 500 + (n % 8) * 220, garrisonRegenAt: P.now - 600000,
+    rev: 0,
+  };
+  // Every third tile carries a resource type, cycling all five (shared/src/slg/core.ts ResourceType)
+  // so the yield column renders each icon and each digit width at least once.
+  if (n % 3 === 0) doc.resType = ['ink', 'paper', 'graphite', 'metal', 'sticker'][(n / 3) % 5];
+  owned.push(doc);
 }
-world.tiles.updateMany({ _id: { $in: owned } },
-  { $set: { ownerId: P.me, familyId: P.familyId, garrison: 48200 } });
+// One upsert per tile rather than an insertMany: the world is SHARED across every account the
+// sweep has ever registered against this stack, so a cell here may already carry a document — and
+// a blind insert would abort the whole batch on the first duplicate _id.
+//
+// Only two things are refused: a city node (city ground is siege-only, never claimable) and another
+// player's base footprint. Ordinary territory belonging to an earlier seeded account is taken over,
+// because those accounts are abandoned the moment their viewport's walk ends, and refusing them
+// instead made this seed quietly weaker every time the sweep ran.
+let ownedCount = 0;
+let blocked = 0;
+owned.forEach(function (doc) {
+  const existing = world.tiles.findOne({ _id: doc._id });
+  if (existing && (existing.baseRing || ['base', 'familyKeep', 'center'].indexOf(existing.type) >= 0)) {
+    blocked++;
+    return;
+  }
+  world.tiles.replaceOne({ _id: doc._id }, doc, { upsert: true });
+  ownedCount++;
+});
+// Read back rather than trust the write count. What this has to catch is a wrong TileDoc SHAPE —
+// the failure that let 'claimed 9 tiles, all of them the base's own footprint' stand for a round —
+// and the only evidence of that is whether the documents are there afterwards. Deliberately NOT a
+// threshold on how many tiles were offered: the first version guarded that instead and duly failed
+// the whole sweep once the neighbourhood filled up with earlier accounts, which is a property of
+// the stack, not a bug in the seed.
+const verified = world.tiles.countDocuments({ worldId: worldId, ownerId: P.me, type: 'territory' });
 
 world.marches.deleteMany({ ownerId: P.me });
 const marchSpecs = [
@@ -480,8 +582,9 @@ world.marches.insertMany(marchSpecs.map(function (m, i) {
   const to = tileAt(m.dx, m.dy);
   const tx = bx + m.dx, ty = by + m.dy;
   return {
-    _id: 'seedmarch' + i, worldId: worldId, ownerId: P.me, fromTile: base, toTile: to,
-    kind: m.kind, troops: 148200 + i * 9100, teamId: m.team, leaderUnitType: 'infantry',
+    _id: 'seedmarch' + P.tag + i, worldId: worldId, ownerId: P.me, fromTile: base, toTile: to,
+    // A march carries at most satchelCarryCapFor({satchel:10}) = 20000.
+    kind: m.kind, troops: 4200 + i * 900, teamId: m.team, leaderUnitType: 'infantry',
     morale: 100 - i * 9,
     departAt: P.now - 300000, arriveAt: P.now + (600000 + i * 300000),
     status: 'marching',
@@ -490,35 +593,59 @@ world.marches.insertMany(marchSpecs.map(function (m, i) {
   };
 }));
 
+// Upsert, for the same reason the siege march above is cleared by index key: these are keyed by
+// TILE id, and on a shared world an earlier seeded account's base may have sat near this one.
 world.occupations.deleteMany({ ownerId: P.me });
-world.occupations.insertOne({
+world.occupations.replaceOne({ _id: tileAt(2, -5) }, {
   _id: tileAt(2, -5), worldId: worldId, ownerId: P.me, familyId: P.familyId,
   tile: tileAt(2, -5), x: bx + 2, y: by - 5, level: 7, resType: 'graphite',
-  garrison: 96400, dueAt: P.now + 1200000, teamId: 't4', leaderUnitType: 'archer',
-});
+  garrison: 1860, dueAt: P.now + 1200000, teamId: 't4', leaderUnitType: 'archer',
+}, { upsert: true });
 
 world.stationed.deleteMany({ ownerId: P.me });
-world.stationed.insertOne({
+world.stationed.replaceOne({ _id: tileAt(-2, 4) }, {
   _id: tileAt(-2, 4), worldId: worldId, ownerId: P.me, familyId: P.familyId,
   tile: tileAt(-2, 4), x: bx - 2, y: by + 4, teamId: 't4',
-  army: teams[3].army, troops: 118600, sinceAt: P.now - 3600000,
+  army: teams[3].army, troops: 4820, sinceAt: P.now - 3600000,
   leaderUnitType: 'cavalry', mode: 'garrison',
-});
+}, { upsert: true });
 
 // Under siege: an incoming enemy march at the account's own base, which is the state the map HUD
 // and the base panel both have a dedicated (and never-swept) layout for.
+// Cleared by the UNIQUE INDEX KEY, not by _id: marches carry a unique index on
+// (worldId, ownerId, teamId) - one live march per team per owner - so a leftover siege from an
+// earlier seeded account on this same shard collides no matter what _id this one gets. That is
+// exactly how the first full ten-viewport run died: six of the ten never got past seedWorld
+// (E11000 on worldId_1_ownerId_1_teamId_1), and it looked intermittent only because accounts land
+// on different shards.
+world.marches.deleteMany({ worldId: worldId, ownerId: P.botIds[0], teamId: 't1' });
 world.marches.insertOne({
-  _id: 'seedsiege0', worldId: worldId, ownerId: P.botIds[0], fromTile: tileAt(9, 9), toTile: base,
-  kind: 'attack', troops: 268400, teamId: 't1', leaderUnitType: 'cavalry', morale: 88,
+  _id: 'seedsiege' + P.tag, worldId: worldId, ownerId: P.botIds[0], fromTile: tileAt(9, 9), toTile: base,
+  kind: 'attack', troops: 18600, teamId: 't1', leaderUnitType: 'cavalry', morale: 88,
   departAt: P.now - 120000, arriveAt: P.now + 480000, status: 'marching',
   minX: Math.min(bx, bx + 9), maxX: Math.max(bx, bx + 9),
   minY: Math.min(by, by + 9), maxY: Math.max(by, by + 9), rev: 1,
 });
 
-print(MARK + JSON.stringify({ ok: true, worldId: worldId, base: base, sectId: sectId }));
+print(MARK + JSON.stringify({ ok: true, worldId: worldId, base: base, sectId: sectId, ownedTiles: ownedCount, blockedTiles: blocked, verifiedTiles: verified }));
 `;
-  const res = readResult<{ ok: boolean; why?: string }>(mongosh(DB_WORLD, script));
+  const res = readResult<{
+    ok: boolean; why?: string; ownedTiles?: number; blockedTiles?: number; verifiedTiles?: number;
+  }>(mongosh(DB_WORLD, script));
   if (!res.ok) throw new Error(`seed: world phase failed — ${res.why ?? '?'}`);
+  // 40 tiles are offered (the 7x7 around the base, less its own 3x3); a city node or another base's
+  // footprint can refuse a few. What must hold is that every tile this WROTE is readable back as
+  // owned territory afterwards — that is the assertion about the document shape, and the reason it
+  // exists is that the first version wrote 40 updates, matched 9 documents, changed nothing anyone
+  // wanted changed, and said nothing at all.
+  const written = res.ownedTiles ?? 0;
+  const verified = res.verifiedTiles ?? 0;
+  if (written === 0 || verified < written) {
+    throw new Error(
+      `seed: wrote ${written} territory tiles (${res.blockedTiles ?? 0} blocked) but only ${verified}`
+      + ' read back as owned — check the TileDoc shape',
+    );
+  }
   // The client caches the world payload for the session; a reload is the cheapest way to make the
   // seeded state the one the sweep's SLG stops actually render.
   await page.reload();

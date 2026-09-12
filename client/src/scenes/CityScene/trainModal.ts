@@ -61,13 +61,19 @@ export function renderTrainModal(core: CitySceneCore): void {
   const queueH = Math.max(20, Math.ceil(queueProbe.height) + 4);
   queueProbe.destroy({ texture: true, baseTexture: true });
 
+  // Queue-row pitch from the font, not a literal 16 (2026-09-12). `FS` is floored per viewport
+  // (render/fontScale.ts), so on a 390-wide phone `FS.tiny` is 20 design px and a row is ~26 tall —
+  // three parallel slots at a 16px pitch simply printed on top of each other (sweep: 21% overlap
+  // between consecutive 'Training 5000 · 42:09 left' rows). The panel's own height uses the same
+  // figure, so the modal grows with the rows instead of clipping them.
+  const entryH = Math.max(16, Math.ceil(FS.tiny * 1.3));
   const contentH =
     12 +
     28 +
     (speedupActive ? 18 : 0) +
     20 +
     queueH +
-    trainQueue.length * 16 +
+    trainQueue.length * entryH +
     4 +
     36 +
     (trainQueue.length > 0 ? 34 : 0) +
@@ -162,7 +168,7 @@ export function renderTrainModal(core: CitySceneCore): void {
     ql.x = 10;
     ql.y = iy;
     panelRoot.addChild(ql);
-    iy += 16;
+    iy += entryH;
   }
 
   // Max affordable qty is bounded by every resource troop training spends (ink/paper/graphite/metal/sticker), not ink alone.

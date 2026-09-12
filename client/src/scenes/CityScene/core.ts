@@ -109,6 +109,12 @@ export const GRID_BUILDING_KEYS: readonly BuildingKey[] = BUILDING_KEYS;
 // Team row (D-CITY-10) — the 5 team slots laid out as one compact row pinned to the bottom of
 // the scene; tapping a card opens that team's formation editor.
 export const TEAM_ROW_CARD_H = 128;
+/**
+ * Team slots per row in PORTRAIT (landscape keeps all {@link TEAM_CAP} on one row). Three, because
+ * that is what makes the card's text column wide enough for one-line labels at the portrait
+ * legibility floor — see the reasoning in teamRow.ts's `renderTeamsRow`.
+ */
+export const TEAM_ROW_PER_ROW_PORTRAIT = 3;
 export const TEAM_ROW_LABEL_H = 26;
 /** Portrait-only gap between the band's header row (label + fill button) and the cards — see
  *  ./teamRow.ts for what it fixes. */

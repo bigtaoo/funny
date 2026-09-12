@@ -17,7 +17,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { SketchPen } from './sketch';
 import { palette } from './theme';
 import { bake } from './bake';
-import { FS } from './fontScale';
+import { FS, fitFont } from './fontScale';
 import { makeText } from './pixiText';
 import { addPanelFrame } from './panelFrame';
 
@@ -66,6 +66,35 @@ export function txt(label: string, size: number, color: number, bold = false, wo
     fontWeight: bold ? 'bold' : 'normal',
     ...(wordWrapWidth !== undefined ? { wordWrap: true, wordWrapWidth, breakWords: true } : {}),
   });
+}
+
+/**
+ * One-line `txt()` that is guaranteed to fit `maxW`: step the SIZE down the shared scale first
+ * ({@link fitFont}), and only if the legibility floor still does not fit, cut the string and end it
+ * in an ellipsis.
+ *
+ * That order is the point. Shrinking past the floor (`scale.set(maxW / width)`) hides the overflow
+ * by making the text unreadable, which is not a fix; truncating first throws away characters that
+ * would have fitted at one token smaller. Between them sits the only honest answer for a list row,
+ * which is what this is for: rows whose content is user- or server-supplied and capped far above
+ * what the row can show (a mail subject may be 80 characters — see MAIL_SUBJECT_MAX — and no row
+ * on any viewport is that wide). The full string belongs on the screen that opens from the row.
+ *
+ * Monospace makes the cut exact: advance is linear in character count, so the surviving length is
+ * a ratio, not a search.
+ */
+export function txtFit(
+  label: string, size: number, color: number, bold: boolean, maxW: number,
+): PIXI.Text {
+  const probe = txt(label, size, color, bold);
+  if (probe.width <= maxW || maxW <= 0) return probe;
+  const fitted = fitFont(size, probe.width, maxW);
+  probe.destroy();
+  const atSize = txt(label, fitted, color, bold);
+  if (atSize.width <= maxW) return atSize;
+  const keep = Math.max(1, Math.floor(label.length * (maxW / atSize.width)) - 1);
+  atSize.destroy();
+  return txt(`${label.slice(0, keep)}…`, fitted, color, bold);
 }
 
 /**

@@ -34,6 +34,14 @@ export const EQUIP_CELL_W_MIN = 260;
 // Craft grid: same column + cell sizing as the inventory grid so the icon
 // frames read at the same scale; cost chips + craft button sit beside the glyph.
 export const CRAFT_CELL_H = EQUIP_CELL_H;
+/** Gap between an inventory cell's glyph frame and the affix column beside it. */
+export const AFFIX_COL_GAP = 12;
+/**
+ * Smallest the inventory cell's glyph frame may be squeezed to when the affix column claims width
+ * (see cells.ts). Below this the glyph stops reading as the item it depicts, and wrapping an affix
+ * line is the better trade.
+ */
+export const EQUIP_GLYPH_MIN = 84;
 
 export const SLOTS: readonly EquipSlot[] = ['weapon', 'armor', 'trinket'];
 export const TRACKED_MATERIALS = ['scrap', 'lead', 'binding'] as const;
