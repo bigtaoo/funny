@@ -16,12 +16,17 @@
 // nothing worked. It now fires net/log.ts's session-expired outlet, which app.ts points at
 // nav/auth.ts's forceLogout (toast → full logout → login screen). The once-per-session latch is
 // unchanged and still tested here.
+//
+// 2026-09-12: that branch used to *return* the dead token, so NetClient kept handshaking with it —
+// production logged 265 `jwt expired` gateway rejects in a single two-hour burst. It now throws
+// FatalTokenError, which NetClient treats as terminal.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NetSession } from '../src/net/NetSession';
 import type { IPlatform, IStorage } from '../src/platform/IPlatform';
 import type { ApiClient } from '../src/net/ApiClient';
 import { TOKEN_KEY } from '../src/app/appConstants';
 import { setSessionExpiredSink, setToastSink } from '../src/net/log';
+import { FatalTokenError } from '../src/net/NetClient';
 
 function fakeStorage(): IStorage {
   const m = new Map<string, string>();
@@ -114,18 +119,19 @@ describe('NetSession.freshToken()', () => {
     const session = buildSession(storage, api);
     (session as unknown as { gatewayAuthRejected: boolean }).gatewayAuthRejected = true;
 
-    const token = await (session as unknown as { freshToken(): Promise<string> }).freshToken();
+    const fresh = (): Promise<string> => (session as unknown as { freshToken(): Promise<string> }).freshToken();
+    // Throws instead of handing back the dead token: NetClient turns FatalTokenError into a terminal
+    // 'disconnected' rather than reconnecting against a JWT that can never be accepted again.
+    await expect(fresh()).rejects.toBeInstanceOf(FatalTokenError);
     // Must NOT mint an anonymous device credential — that would silently swap the player's identity.
     expect((api as unknown as { auth: ReturnType<typeof vi.fn> }).auth).not.toHaveBeenCalled();
-    expect(token).toBe('expired-login-token'); // still the same (still-broken) token — honest, not silently fixed
     // Reported through the session-expired outlet, not as a bare toast: the visible toast is
     // forceLogout's, and it is followed by a navigation back to the login screen.
     expect(expiredSpy).toHaveBeenCalledTimes(1);
     expect(toastSpy).not.toHaveBeenCalled();
 
-    // A second consecutive rejection must not fire it again.
-    const token2 = await (session as unknown as { freshToken(): Promise<string> }).freshToken();
-    void token2;
+    // A second consecutive rejection must not fire it again (still throws, just silently).
+    await expect(fresh()).rejects.toBeInstanceOf(FatalTokenError);
     expect(expiredSpy).toHaveBeenCalledTimes(1);
   });
 });
