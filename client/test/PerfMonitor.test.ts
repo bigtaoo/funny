@@ -7,7 +7,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const reportAnomaly = vi.fn();
-vi.mock('../src/net/anomaly', () => ({ reportAnomaly }));
+// `takeFrameCost` is delegated to the REAL accumulator rather than stubbed: it is reset-on-read, so
+// a stub that forgets to reset (or returns a fresh object every call) would hide exactly the leak
+// this monitor must not have. Faking a contract is how a suite ends up verifying a protocol that does
+// not exist — see the socialsvc `err()` envelope bug of 2026-09-12.
+vi.mock('../src/net/anomaly', async () => {
+  const real = await vi.importActual<typeof import('../src/net/anomaly/anrContext')>('../src/net/anomaly/anrContext');
+  return { reportAnomaly, takeFrameCost: real.takeFrameCost };
+});
 
 const WINDOW_MS = 2_000;
 const SUSTAIN_WINDOWS = 5;

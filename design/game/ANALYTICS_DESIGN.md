@@ -297,6 +297,7 @@ scene 取值：`IntroScene / LobbyScene / LoginScene / CampaignMapScene / LevelP
 | `render_profile` | `scene, spanS, windows, fpsP50, fpsMin, fpsMax, maxFps` | `scene` 取自 anomaly 的 `getActiveScene()`，于是可按场景切（世界地图 vs 大厅 vs 战斗）；`spanS`/`windows` 是本条覆盖的可见时长与窗口数 |
 | （同上，装了 RenderPolicy 时附加） | `tickPerSec, paintPerSec, skipPct` | **`paintPerSec` vs `tickPerSec` = 按需重绘有没有在工作**。取自 `render/renderStats.ts` 计数器的**差值**，不是累计值 |
 | （同上，app.ts 传入 renderer 事实时附加） | `res, dpr, dprCapped, canvasW, canvasH` | **`dprCapped`（`dpr > res`）= dpr 上限在这台设备上到底有没有生效**。微信永远为 `false`：`WechatPlatform.devicePixelRatio` 硬编码 1，那条旋钮在微信是空操作 |
+| （同上，帧成本）2026-09-13 起 | `updP50, rndP50, updMax, rndMax` | **一帧的钱花在哪**。均为每 **tick** 的毫秒数（`rnd` 因此已含 `skipPct` 的折扣，可直接与帧周期 `1000/fpsP50` 相比）；两者之和接近帧周期 = 主线程是瓶颈，远小于帧周期 = 时间不在我们的 JS 里（显示刷新上限 / GPU 填充率 / 合成器）。见 `claudedocs/client-render-budget.md` §9.6 |
 
 Grafana 上值得先看的两张：按 `platform` 切的 `fpsP50` 分布（iOS/微信/web），以及按 `scene` 切的 `skipPct`（reactive 的菜单应该显著大于 0，`live` 的战斗应该等于 0）。
 

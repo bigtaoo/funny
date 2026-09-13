@@ -32,9 +32,10 @@ export {
   deviceClass, devicePixelRatio, deviceMemoryGb,
   orientation, momentContext, installRotationWatch, lastRotationAt,
 } from './anomaly/deviceContext';
+export type { FrameCostTotals } from './anomaly/anrContext';
 export {
   setActiveScene, getActiveScene, setAnrContextProvider,
-  recordFrameSample, recordConstructSample, recordRenderSample,
+  recordFrameSample, recordConstructSample, recordRenderSample, takeFrameCost,
 } from './anomaly/anrContext';
 export { initCrashSentinel } from './anomaly/crashSentinel';
 export { installAnomalyWatchers, type AnomalyWatchersOpts } from './anomaly/watchers';
