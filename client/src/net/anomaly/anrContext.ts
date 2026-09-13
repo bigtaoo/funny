@@ -33,6 +33,56 @@ export function getActiveScene(): string { return activeScene; }
 /** Register a getter for extra ANR context (GPU/texture counters). Called once by MemoryMonitor. */
 export function setAnrContextProvider(fn: (() => Record<string, unknown>) | null): void { anrContextProvider = fn; }
 
+// ── Per-frame cost, for render_profile ────────────────────────────────────────────────────────
+// The three recorders above keep OUTLIERS only (>= LONG_FRAME_MS), because their consumer is the ANR
+// report and a 30ms frame is not an ANR. `render_profile` asks the opposite question, and until now
+// it could not answer it: a device that holds 20-30fps for minutes without any single call ever
+// crossing 200ms is exactly the shape of the 2026-09-11 `cpu` anomalies (dpr 2 / 2048x1308 canvas,
+// `maxFps:60, fpsP50:30, fpsMax:30`, dips to 16-23). `maxFps` vs `fpsMax` already separates "the
+// device is capped" from "we are asking for 60 and not getting it" — but nothing separated "our JS is
+// slow" from "the time is not being spent in our JS at all", which is the only fork that decides what
+// to even try next. Guessing across that fork is what cost two wrong diagnoses on 2026-09-12.
+//
+// So the same samples the call sites already measured are also summed here: two adds and a compare
+// per call, no sample retained, no allocation. The consumer (cache/PerfMonitor) divides by its own
+// tick count and reports the result — see `updP50` / `rndP50` there for how to read them.
+
+/** Summed / worst frame cost since the last {@link takeFrameCost}. Milliseconds. */
+export interface FrameCostTotals {
+  /**
+   * Summed `scene.update()` time. A single tick can contribute TWICE — SceneManager times the
+   * mounted scene and its overlay separately — so this is deliberately a sum for the consumer to
+   * divide by ITS OWN tick count, not a mean of its own. A mean here would report half the real
+   * per-tick cost on every screen that has an overlay open.
+   */
+  updMs: number;
+  /** Longest single `scene.update()` call. */
+  updMaxMs: number;
+  /**
+   * Summed `renderer.render()` time. Skipped paints contribute nothing by construction (renderPolicy
+   * does not call render on those ticks), so dividing this by the tick count gives paint cost
+   * per TICK — already discounted by `skipPct`, which is the number a frame budget is built from.
+   */
+  rndMs: number;
+  /** Longest single `renderer.render()` call. */
+  rndMaxMs: number;
+}
+
+const frameCost: FrameCostTotals = { updMs: 0, updMaxMs: 0, rndMs: 0, rndMaxMs: 0 };
+
+/**
+ * Read the accumulated frame cost and reset it.
+ *
+ * Reset-on-read rather than a windowed buffer: the only consumer samples on a fixed cadence and
+ * must reset even for the windows it throws away (a hidden tab's), so ownership of the window
+ * boundary belongs entirely to it.
+ */
+export function takeFrameCost(): FrameCostTotals {
+  const out = { ...frameCost };
+  frameCost.updMs = 0; frameCost.updMaxMs = 0; frameCost.rndMs = 0; frameCost.rndMaxMs = 0;
+  return out;
+}
+
 /** Longest single scene.update() call seen recently, if any exceeded LONG_FRAME_MS. Cleared once stale. */
 let lastLongFrame: { ms: number; scene: string; ts: number } | null = null;
 const LONG_FRAME_MS = 200;      // frames this slow are worth remembering even outside a full ANR
@@ -43,6 +93,8 @@ const LONG_FRAME_STALE_MS = 60_000; // don't attach a stale sample from long bef
  * Only frames slower than LONG_FRAME_MS are kept (cheap: no-op comparison on the fast path).
  */
 export function recordFrameSample(ms: number): void {
+  frameCost.updMs += ms;
+  if (ms > frameCost.updMaxMs) frameCost.updMaxMs = ms;
   if (ms < LONG_FRAME_MS) return;
   if (!lastLongFrame || ms >= lastLongFrame.ms) lastLongFrame = { ms: Math.round(ms), scene: activeScene, ts: Date.now() };
 }
@@ -80,6 +132,8 @@ let lastLongRender: { ms: number; scene: string; ts: number } | null = null;
 
 /** Called by the renderer.render() wrapper installed in app.ts, with how long the call took. */
 export function recordRenderSample(ms: number): void {
+  frameCost.rndMs += ms;
+  if (ms > frameCost.rndMaxMs) frameCost.rndMaxMs = ms;
   if (ms < LONG_FRAME_MS) return;
   if (!lastLongRender || ms >= lastLongRender.ms) lastLongRender = { ms: Math.round(ms), scene: activeScene, ts: Date.now() };
 }

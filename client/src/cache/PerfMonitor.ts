@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
-import { reportAnomaly, getActiveScene } from '../net/anomaly';
+import { reportAnomaly, getActiveScene, takeFrameCost } from '../net/anomaly';
 import { debugNum } from '../debugFlags';
 import { renderStats } from '../render/renderStats';
 import * as analytics from '../analytics';
@@ -90,6 +90,15 @@ export interface RenderProfileInfo {
   canvasH: number;
 }
 
+/** Median of an unsorted sample array. Copies: `sort` mutates, and these arrays are still in use. */
+function median(xs: number[]): number {
+  const sorted = [...xs].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
+/** 0.1ms resolution — finer than that is noise on a `performance.now()` pair, and costs report size. */
+function round1(ms: number): number { return Math.round(ms * 10) / 10; }
+
 interface LongTaskEntry { duration: number }
 interface PerfObserver { observe(opts: { entryTypes: string[] }): void; disconnect(): void }
 
@@ -112,6 +121,19 @@ export class PerfMonitor {
   private renderInfo: RenderProfileInfo | null = null;
   /** fps of every visible window since the last profile report — sorted at report time for a median. */
   private fpsSamples: number[] = [];
+  /**
+   * Per-tick `scene.update()` and `renderer.render()` cost (ms), one entry per visible window.
+   *
+   * One entry PER WINDOW, not per frame, for the same reason `fpsSamples` is: a 5-minute report at
+   * 60fps would otherwise retain 18,000 numbers to compute one median from. A window mean is the
+   * resolution this report has always had, and the question it answers — "is the frame budget going
+   * into our JS at all" — does not need a finer one.
+   */
+  private updSamples: number[] = [];
+  private rndSamples: number[] = [];
+  /** Worst single `update()` / `render()` call across every visible window since the last report. */
+  private updMaxMs = 0;
+  private rndMaxMs = 0;
   /** Total ms those windows covered (not wall time: hidden windows are excluded). */
   private profileSpanMs = 0;
   /** Visible windows since the last profile report. */
@@ -180,9 +202,14 @@ export class PerfMonitor {
     if (this.accMs < WINDOW_MS) return;
 
     const windowMs = this.accMs;
-    const fps = (this.frames * 1000) / windowMs;
+    const frames = this.frames;
+    const fps = (frames * 1000) / windowMs;
     const busyRatio = Math.min(1, this.longTaskMs / windowMs);
     const minCap = this.windowMinCap;
+    // Taken unconditionally, BEFORE the hidden-window bail below: the accumulator is reset-on-read,
+    // so a window this monitor throws away must still be drained or its cost leaks into the next one
+    // — and a hidden window is exactly the one whose numbers must not survive.
+    const cost = takeFrameCost();
     this.accMs = 0;
     this.frames = 0;
     this.longTaskMs = 0;
@@ -200,6 +227,14 @@ export class PerfMonitor {
     }
 
     this.fpsSamples.push(fps);
+    // Divided by this window's TICK count, not by the number of calls: `updMs` sums one call per
+    // mounted scene (a scene plus its overlay is two), and `rndMs` sums only the ticks that actually
+    // painted. Both therefore read as "ms of this work per tick", directly comparable to the frame
+    // period 1000/fps — which is the comparison the whole field exists for.
+    this.updSamples.push(cost.updMs / frames);
+    this.rndSamples.push(cost.rndMs / frames);
+    if (cost.updMaxMs > this.updMaxMs) this.updMaxMs = cost.updMaxMs;
+    if (cost.rndMaxMs > this.rndMaxMs) this.rndMaxMs = cost.rndMaxMs;
     this.profileSpanMs += windowMs;
     this.windowsSinceProfile += 1;
     this.maybeReportProfile();
@@ -287,11 +322,31 @@ export class PerfMonitor {
     }
     if (rs) this.lastPaintCounters = { ticks: rs.ticks, painted: rs.painted };
 
+    // Where the frame budget went. Read these AGAINST THE FRAME PERIOD (1000 / fpsP50):
+    //   updP50 + rndP50 ≈ the frame period  → the main thread is the bottleneck, and the work is ours
+    //                                          to cut (a scene's update, or draw-call submission).
+    //   updP50 + rndP50 ≪ the frame period  → the time is NOT in our JS. A display capped below
+    //                                          `maxFps`, GPU fill rate, or the compositor — and no
+    //                                          amount of JS optimisation will move `fpsP50`.
+    // This fork is the one the 2026-09-11 dpr-2 / 2048x1308 session could not be read across, which
+    // is how it got diagnosed twice from mechanism alone and corrected twice. `fpsMax` vs `maxFps`
+    // says whether we are reaching the ceiling; these two say who is holding us back from it.
+    if (this.updSamples.length) {
+      props.updP50 = round1(median(this.updSamples));
+      props.updMax = round1(this.updMaxMs);
+      props.rndP50 = round1(median(this.rndSamples));
+      props.rndMax = round1(this.rndMaxMs);
+    }
+
     analytics.track('render_profile', props);
     log.info('render_profile', props);
 
     this.profilesSent += 1;
     this.fpsSamples = [];
+    this.updSamples = [];
+    this.rndSamples = [];
+    this.updMaxMs = 0;
+    this.rndMaxMs = 0;
     this.profileSpanMs = 0;
     this.windowsSinceProfile = 0;
   }
