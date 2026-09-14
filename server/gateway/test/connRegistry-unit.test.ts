@@ -14,6 +14,7 @@ import { Gateway } from '../src/Gateway';
 import { MatchsvcClient } from '../src/matchsvcClient';
 import { MetaClient } from '../src/metaClient';
 import type { GatewaySubscriber } from '../src/redis';
+import { HEARTBEAT_MS } from '../src/gateway/types';
 
 const KEY = 'k';
 const jwt: JwtConfig = { secret: 'test-secret' };
@@ -219,6 +220,195 @@ describe('ConnRegistry gap-fill', () => {
     } finally {
       vi.useRealTimers();
       warn.mockRestore();
+    }
+  });
+});
+
+// The heartbeat sweep (2026-09-14). The two cases above drive the reject-window through the path a
+// CONTINUING burst takes: the next rejection from the same source finds an expired window and rolls it
+// over, which is what emits the summary. `sweepRejectWindows` exists for the other half — the burst that
+// simply STOPS — and until this block it had never been executed by anything (0 calls, in a package
+// whose coverage gate is a package-wide 90% and so cannot see one uncalled private method).
+//
+// That is the shape the 2026-09-10 incident actually had: a client stuck on an expired JWT retries until
+// the player closes the tab, and then there is no next rejection, ever. Without the sweep the owed
+// summary is never written (the suppressed 262 of that burst would simply not be accounted anywhere) and
+// the map keeps one entry per source it has ever seen, for the life of the process — an unbounded,
+// source-keyed map on the one code path that is reachable by anyone who can open a socket.
+//
+// Only `Date` and the interval are faked: the sockets below still need real setTimeout to connect and
+// close. HEARTBEAT_MS's interval is the registry's only one (created in its constructor, hence the
+// useFakeTimers BEFORE startGateway), so advancing it drives the real wiring rather than a private call.
+describe('ConnRegistry — handshake-rejection windows are closed by the heartbeat', () => {
+  const FAKE = ['Date', 'setInterval', 'clearInterval'] as const;
+
+  /** Reject one handshake and wait for the close, so the rejection is recorded before we return. */
+  async function reject(port: number): Promise<void> {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/gw?token=not-a-real-jwt`);
+    sockets.push(ws);
+    await new Promise<void>((resolve) => ws.on('close', () => resolve()));
+  }
+  const summaries = (warn: { mock: { calls: unknown[][] } }): string[] =>
+    warn.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('rejections suppressed'));
+
+  it('a burst that simply stops is still accounted for, with no further rejection to roll it over', async () => {
+    const port = 19612;
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    startGateway(port);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 5; i++) await reject(port);
+      expect(summaries(warn)).toHaveLength(0); // window still open
+
+      // The client goes away. Nothing else ever arrives from this source; only the heartbeat runs.
+      // Two heartbeats span REJECT_LOG_WINDOW_MS; a third is slack, and costs nothing.
+      vi.advanceTimersByTime(HEARTBEAT_MS * 3);
+
+      const lines = summaries(warn);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('total=5');
+      expect(lines[0]).toContain('suppressed=2');
+      // The reason has to survive into the summary here too — this is now the ONLY line that will ever
+      // be written about the 262 suppressed rejections of a burst whose client never came back.
+      expect(lines[0]).toMatch(/reasons=\S/);
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
+  it('and the window is dropped, so the map cannot grow one permanent entry per source', async () => {
+    const port = 19613;
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    startGateway(port);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 5; i++) await reject(port);
+      vi.advanceTimersByTime(HEARTBEAT_MS * 3);
+      expect(summaries(warn)).toHaveLength(1);
+
+      // More heartbeats over the same expired window must find nothing left to close. A sweep that
+      // emitted but did not delete would re-report this burst on every heartbeat forever, which is the
+      // same log flood the fix was written to stop — only slower.
+      vi.advanceTimersByTime(HEARTBEAT_MS * 3);
+      expect(summaries(warn)).toHaveLength(1);
+
+      // ...and the entry really is gone, not merely silent: the next rejection from this source gets the
+      // full burst allowance again rather than being suppressed as the 6th of a window that never ended.
+      warn.mockClear();
+      await reject(port);
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes('WS handshake rejected'))).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
+  it('leaves a window that is still inside its minute alone, and closes it on the beat that passes it', async () => {
+    const port = 19614;
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    startGateway(port);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 5; i++) await reject(port);
+      // HEARTBEAT_MS is half of REJECT_LOG_WINDOW_MS, so the first beat lands inside a live window.
+      // Closing there would chop an ongoing burst into one summary per heartbeat — a bounded log turned
+      // back into a periodic one, which is most of what the fix was for.
+      vi.advanceTimersByTime(HEARTBEAT_MS);
+      expect(summaries(warn)).toHaveLength(0);
+      // The next beat is the first one past the window, and it is the one that must report.
+      vi.advanceTimersByTime(HEARTBEAT_MS);
+      expect(summaries(warn)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
+  it('a window that suppressed nothing expires silently, without a summary line', async () => {
+    const port = 19615;
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    startGateway(port);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // Three rejections = exactly the burst allowance, all of them already logged in full.
+      for (let i = 0; i < 3; i++) await reject(port); // REJECT_LOG_BURST
+      vi.advanceTimersByTime(HEARTBEAT_MS * 3);
+      // A "0 suppressed" line would be pure noise — the three lines above already say everything.
+      expect(summaries(warn)).toHaveLength(0);
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes('WS handshake rejected'))).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+});
+
+// ...and the other half of the same heartbeat (2026-09-14). `sweep()` had never been called by any test
+// either — the reject-window block above is what first made it run, and executing a function for the
+// first time is also what makes v8 count its branches, so covering only the half this session came for
+// would have LOWERED the package's branch percentage while raising its line one.
+//
+// It is worth having for itself, not just for the arithmetic. This loop is the only thing that notices a
+// connection has stopped answering (a laptop lid, a tunnel that dropped without a FIN — the cases where
+// no 'close' event ever arrives), and the only thing that keeps a live account's cross-instance presence
+// key alive: redis.ts sizes PRESENCE_TTL_MS to survive exactly ONE missed beat, so a refresh that stops
+// happening does not fail loudly — every account on this instance simply starts reading as offline to
+// its friends a minute later, while the sockets are all perfectly healthy.
+describe('ConnRegistry — the heartbeat sweep over live connections', () => {
+  const FAKE = ['Date', 'setInterval', 'clearInterval'] as const;
+  /** Real timers are not faked, so this yields to actual socket I/O between beats. */
+  const flush = () => new Promise((r) => setTimeout(r, 60));
+
+  it('pings live connections and refreshes their presence key', async () => {
+    const port = 19616;
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    try {
+      startGateway(port);
+      const refreshed: string[] = [];
+      gateway!.setPresenceStore({
+        ...fakeSubscriber(new Set()),
+        refreshOnline: async (id: string) => { refreshed.push(id); },
+      });
+      const ws = await connect(port, 'acc-alive');
+      const pinged = new Promise<void>((resolve) => ws.on('ping', () => resolve()));
+
+      vi.advanceTimersByTime(HEARTBEAT_MS);
+      await pinged;
+      await flush();
+
+      expect(refreshed).toEqual(['acc-alive']);
+      expect(ws.readyState).toBe(WebSocket.OPEN); // a ping is not a disconnect
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('terminates a connection that stopped answering, after one full beat of silence', async () => {
+    const port = 19617;
+    vi.useFakeTimers({ toFake: [...FAKE] });
+    try {
+      startGateway(port);
+      // autoPong:false is the whole point — this client stays connected at the TCP level and simply never
+      // answers, which is what a dead tunnel or a slept device looks like from the server's side. Nothing
+      // else in the stack will ever notice it; there is no 'close' coming.
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/gw?token=${signToken('acc-mute', jwt)}`, { autoPong: false });
+      sockets.push(ws);
+      await new Promise<void>((resolve, reject) => { ws.on('open', () => resolve()); ws.on('error', reject); });
+      const closed = new Promise<void>((resolve) => ws.on('close', () => resolve()));
+
+      // First beat: marks it not-alive and asks. Deliberately NOT a kill — one missed beat is normal
+      // jitter, and terminating here would drop healthy connections on a slow network.
+      vi.advanceTimersByTime(HEARTBEAT_MS);
+      await flush();
+      expect(ws.readyState).toBe(WebSocket.OPEN);
+
+      // Second beat: still no answer, so the socket goes.
+      vi.advanceTimersByTime(HEARTBEAT_MS);
+      await closed;
+      expect(ws.readyState).toBe(WebSocket.CLOSED);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

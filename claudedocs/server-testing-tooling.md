@@ -227,6 +227,38 @@
 
 **排序那条断言又差点写成假的**（跟上一节记的同一类陷阱，第三次了）：`prints gate headroom in lines and sorts the most-fragile package first` 这条既有用例在新排序下会红——因为夹具里 admin 的分支 headroom 跟其它所有包**打平**，排序落到字母序 tiebreak，`server/admin` 反而排到最前面。修法是把 admin 的 `branchPct` 一起抬高让它的 fragility 无争议，而不是去改断言迁就实现。
 
+## 两个让包级门禁看不见缺口的盲点（2026-09-14，worktree `feat/weekly-test-gaps`）
+
+上一节末尾那句「gameserver 和 gateway 只剩 +5 条分支余量」在 09-14 又被撞到一次，而且是从一个没人预料
+的方向。两条都不是脚本的 bug，是**「包级百分比」这个粒度本身量不到的东西**，记在这里免得下次重新发现。
+
+### 盲点一：新文件整个 0%，在一个 99% 的包里是隐形的
+
+`client/src/scenes/worldmap/logic/siegeHold.ts` 是 09-12 新建的 7 行纯函数，因为 `vitest.config.ts` 的
+`include` 用的是目录级条目（`src/scenes/worldmap/logic/**`），它一落地就在门禁范围内——这一半按设计工作。
+但 client 当时行覆盖 99.66%，七行全未覆盖只让这个数掉 0.02pp，离 90% 的线还有十个百分点，于是
+**一个全新的、一条测试都没有的文件，在门禁里躺了两天**。同一轮的
+`commercial/src/iap.ts` 的 `createAppleSubscriptionReader`（函数级 0 调用）是同一个形状。
+
+一条「本次 diff 新增的源文件覆盖率不得为 0」的检查能当天拦住两处。没有现在就做，是因为它要拿到
+「本次 diff 新增」这个集合（CI 上是 `git diff --name-only origin/main...HEAD`，本地没有对应语义），
+属于另一件事；先把事实记在这里。
+
+### 盲点二：**第一次执行一个函数，会让 v8 数出它自己的分支**——补一半会让包级分支百分比下降
+
+给 `gateway/src/gateway/connRegistry.ts` 补 `sweepRejectWindows` 的测试之后实测：
+包**行覆盖涨了（92.84 → 93.44）、分支覆盖反而掉了 0.06pp（89.92 → 89.86）**，而 `connRegistry.ts`
+自己的分支百分比是**涨的**（81.81 → 82.14），全包别的文件一个数都没动。
+
+原因是 v8 provider 对**从没被调用过的函数**少数它内部的分支点。`sweep()`（心跳）此前调用次数为 0；
+`sweepRejectWindows` 只在它末尾被调用，所以新测试第一次让 `sweep()` 跑起来，于是它自己那四条分支
+（`!conn.alive`、两个 try/catch、`presenceStore?.`）第一次进分母——而那一半当时没测。
+
+**为什么这值得记而不是忽略**：当天 CI 上 gateway 的分支余量正好是 **+1 条**（`92.8% | 90.3% | +1`）。
+处置是把 `sweep()` 的另一半也补掉（它本来就该有测试），补完 94.41 / 90.00 / 98.11，三个指标全部高于
+补之前。**推论**：给一个零调用的函数补测时，先确认是不是整个函数都没跑过——是的话要么一次补完，
+要么先看包的分支余量再动手；只补一半很可能让包级分支百分比往下走，在余量个位数的包上就是当场破线。
+
 ## worldsvc 全量跑的退出码非确定性：teardown 里 mongod 关不掉（2026-09-09）
 
 **症状**：同一份代码全量跑 `worldsvc` 的 `test:coverage`，退出码在 0/1 之间跳，三次都报「116 文件 / 1410 例全绿」，三次都印
