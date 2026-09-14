@@ -350,8 +350,13 @@ export class CampaignMapScene implements Scene {
     });
 
     // Chapter-cleared stamp by the title once every node is cleared (§12.2 ceremony).
+    // Maps run bottom-up, so the top of the page is where a chapter ENDS: the stamp now
+    // shares that band with the BOSS marker and takes whichever top corner the marker is
+    // not in. A marker's flag flies to its right, so a centred one pushes the stamp left.
     if (map.nodes.every((nd) => cleared.has(nd.levelId))) {
-      drawClearStamp(root, ch, w - Math.round(w * 0.30), tbH + Math.round(h * 0.06), h);
+      const endX = map.decor?.find((d) => d.kind === 'boss')?.x ?? map.nodes[map.nodes.length - 1]!.x;
+      const stampX = endX >= 0.5 ? Math.round(w * 0.30) : w - Math.round(w * 0.30);
+      drawClearStamp(root, ch, stampX, tbH + Math.round(h * 0.06), h);
     }
 
     // Prev / next chapter arrows (next only once this chapter is fully cleared).
