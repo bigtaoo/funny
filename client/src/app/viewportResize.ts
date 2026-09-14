@@ -8,29 +8,26 @@
 // one through `onLayout`; this class owns everything else — the no-change guard, the immediate
 // re-fit, and the coalescing window in front of the expensive rebuild.
 //
-// ## 2026-09-10: the re-fit went global, the rebuild stayed lobby-only
+// ## 2026-09-10: the re-fit went global; 2026-09-14: so did the rebuild
 //
 // It used to be one lifetime for both halves, attached in `showLobby()` and detached by every other
-// screen (`leaveLobby()`). So outside the lobby — the login screen, the settings screen, a whole
-// battle — a rotation or an inset change reached NOTHING: `renderer.resize` was never called, the
-// canvas kept the CSS size it was built at, and `toDesignSpace` kept mapping taps through a
-// transform computed for the old viewport. Rotating inside a match left the game drawn at the old
-// shape in the new window.
-//
-// The two halves have very different costs, and only the expensive one has any reason to be
-// lobby-scoped:
+// screen. So outside the lobby — the login screen, the settings screen, a whole battle — a rotation
+// or an inset change reached NOTHING: `renderer.resize` was never called, the canvas kept the CSS
+// size it was built at, and `toDesignSpace` kept mapping taps through a transform computed for the
+// old viewport. The 2026-09-10 pass made the cheap half unconditional:
 //
 //   - Re-fit (`renderer.resize` + `createLayout` + `scaling.resize`) is a few numbers and a
 //     backbuffer resize. It must happen for whatever is on screen, so it is installed once at
 //     construction and never removed.
-//   - Rebuild (tear down and reconstruct the current scene) allocates a whole scene graph. Only the
-//     lobby can do it at all (`createAppCore.onResized` is gated on `state.inLobby`), so it keeps
-//     the arm/disarm lifetime and the coalescing window exactly as before.
+//   - Rebuild (tear down and reconstruct the current scene) allocates a whole scene graph, so it
+//     keeps the coalescing window in front of it.
 //
-// A non-lobby scene therefore ends up correctly fitted but still laid out for the design rect it was
-// built against. That is a strict improvement on the old behaviour (canvas the wrong size AND taps
-// mapped through a stale transform), and rebuilding arbitrary scenes on resize is a separate,
-// much larger change — see design/game/UI_DESIGN.md's safe-area row.
+// The rebuild half stayed lobby-only for four more days, which left every other screen correctly
+// fitted but still laid out against the design rect it was built with — a portrait shop stretched
+// across a landscape canvas. It is now fired for whatever is on screen, and WHICH screens accept it
+// is PixiAppViews's call (`mount` vs `mountVolatile`), not this file's: this class has no idea what
+// a scene is, and the arm/disarm lifetime it used to carry was really a statement about scenes.
+// What is left here is the event plumbing — two sources, the no-change guard, and the timer.
 import * as PIXI from 'pixi.js-legacy';
 import type { IPlatform } from '../platform/IPlatform';
 import type { SafeAreaInsets } from '../layout/ILayout';
@@ -40,7 +37,7 @@ import { Side } from '../game';
 import type { ILayout } from '../layout/ILayout';
 
 /**
- * Coalescing window for the lobby rebuild. One physical device rotation fires `resize` repeatedly
+ * Coalescing window for the scene rebuild. One physical device rotation fires `resize` repeatedly
  * over roughly a quarter second (iOS reports the viewport progressively *through* the rotation
  * animation), and the pre-2026-08-24 handler ran a full teardown-and-rebuild of the lobby on every
  * one of them. Long enough to swallow a whole rotation; short enough to be imperceptible when a
@@ -48,7 +45,7 @@ import type { ILayout } from '../layout/ILayout';
  */
 const REBUILD_COALESCE_MS = 180;
 
-/** Re-fits the canvas for any viewport change; rebuilds the lobby (only) once things settle. */
+/** Re-fits the canvas for any viewport change; asks for a scene rebuild once things settle. */
 export class ViewportResizer {
   /** Last size actually applied, so a resize event that reports no change can be dropped outright.
    *  Seeded from the live screen in the constructor rather than left at 0: the boot size IS an
@@ -62,11 +59,8 @@ export class ViewportResizer {
    *  exists to deliver. */
   private appliedInsets: SafeAreaInsets | undefined;
 
-  /** Pending trailing rebuild (see onViewportChanged). Cleared by disarmRebuild() so it can never
-   *  land off-lobby. */
+  /** Pending trailing rebuild (see onViewportChanged). */
   private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
-  /** True only while the lobby is on screen — the rebuild half's whole lifetime. */
-  private rebuildArmed = false;
   /** Unsubscribe for the platform's inset-change feed, if it has one. */
   private unsubInsets: (() => void) | null = null;
 
@@ -76,7 +70,11 @@ export class ViewportResizer {
     private readonly scaling: ScalingManager,
     /** Hand the freshly fitted layout back to the facade — called on every real viewport change. */
     private readonly onLayout: (layout: ILayout) => void,
-    /** Rebuild whatever is on screen. Called once per coalescing window, never inside the event. */
+    /**
+     * The viewport has settled: rebuild whatever is on screen, if that screen can be rebuilt.
+     * Called once per coalescing window, never inside the event itself. Deciding whether there is
+     * anything to do is the callback's job — see PixiAppViews's `respawn`.
+     */
     private readonly onSettled: () => void,
   ) {
     const { width, height } = platform.getScreenSize();
@@ -104,32 +102,14 @@ export class ViewportResizer {
     window.removeEventListener('resize', this.onViewportChanged);
     this.unsubInsets?.();
     this.unsubInsets = null;
-    this.disarmRebuild();
-  }
-
-  /** The lobby is on screen: a settled viewport change may rebuild it. */
-  armRebuild(): void {
-    this.rebuildArmed = true;
-  }
-
-  /**
-   * Leaving the lobby — every non-lobby screen calls this first (via `PixiAppViews.leaveLobby`).
-   *
-   * Cancelling the pending rebuild is load-bearing: a rotation immediately followed by a tap into
-   * another screen would otherwise leave a queued showLobby() that fires ~180ms later and yanks the
-   * player back to the lobby from wherever they had just navigated to. The canvas re-fit above is
-   * NOT affected — it stays live for whatever screen this is going to.
-   */
-  disarmRebuild(): void {
-    this.rebuildArmed = false;
     if (this.rebuildTimer) { clearTimeout(this.rebuildTimer); this.rebuildTimer = null; }
   }
 
   /**
-   * Viewport changed: re-fit the canvas now, rebuild the lobby once things settle.
+   * Viewport changed: re-fit the canvas now, rebuild the current screen once things settle.
    *
    * The split matters. Re-fitting (renderer.resize + layout + scaling) is cheap and must be immediate
-   * or the canvas visibly lags the viewport; rebuilding the lobby allocates a whole scene graph and is
+   * or the canvas visibly lags the viewport; rebuilding a scene allocates a whole scene graph and is
    * the expensive half. Previously both ran synchronously on every event, so a single rotation cost N
    * full scene rebuilds — N rounds of texture churn at the exact moment a mobile WebView is already
    * paying for a drawing-buffer reallocation, and on a memory-capped in-app WebView that is a plausible
@@ -137,7 +117,7 @@ export class ViewportResizer {
    *
    * The no-change guard in front is worth as much again: mobile browsers fire `resize` for things that
    * are not resizes at all (chrome bars sliding, the on-screen keyboard, scroll-driven toolbar hiding),
-   * and each of those used to rebuild the lobby for nothing. It compares insets as well as size, so
+   * and each of those used to rebuild the scene for nothing. It compares insets as well as size, so
    * "same window, different notch inset" counts as a change rather than being swallowed.
    */
   private readonly onViewportChanged = (): void => {
@@ -156,7 +136,9 @@ export class ViewportResizer {
     this.onLayout(layout);
     this.scaling.resize(width, height, layout, insets);
 
-    if (!this.rebuildArmed) return;
+    // A rotation immediately followed by a tap into another screen is safe without a cancel hook:
+    // the timer only says "the viewport settled", and what gets rebuilt is resolved by the callback
+    // when it fires — by then that is the screen the player actually navigated to.
     if (this.rebuildTimer) clearTimeout(this.rebuildTimer);
     this.rebuildTimer = setTimeout(() => {
       this.rebuildTimer = null;

@@ -102,6 +102,13 @@ export default defineConfig({
         // ends. The suite that used to cover this lived in test/ui and spent three of its cases
         // re-asserting `assetGate`'s own behaviour one layer up; see test/battleGate.test.ts.
         'src/app/battleGate.ts',
+        // The rotation-rebuild policy (2026-09-14), split out of PixiAppViews. A DIRECTORY entry's
+        // worth of reasoning in one file: it holds the decisions the 09-14 bug was about (which
+        // screen a settled viewport change rebuilds, what an overlay does to the host's rebuild,
+        // what an async mount may arm after the fact) and — unlike the facade it came out of —
+        // takes a SceneManager handle plus scene *factories* and never touches a display object, so
+        // it is gateable here rather than being a test/ui-only subject. test/sceneMounts.test.ts.
+        'src/app/sceneMounts.ts',
         'src/app/nav/room.ts',
         // audio (2026-08-31, AUDIO_DESIGN.md): a DIRECTORY entry from day one rather than the
         // per-file shape most of this list still has — `src/audio/**` is the platform-neutral half
