@@ -21,10 +21,12 @@ import * as PIXI from 'pixi.js-legacy';
 // vi.mock factories run while this file's imports are still being resolved — before any top-level
 // `const` here would initialize — so the shared capture arrays go through vi.hoisted (same reason
 // as worldMapBaseTextureSelection.ui.ts).
-const { built, samples, gate, sceneBase } = vi.hoisted(() => {
+const { built, samples, gate, gachaGate, sceneBase } = vi.hoisted(() => {
   const built: Array<{ name: string; args: unknown[] }> = [];
   const samples: Array<{ name: string; ms: number }> = [];
   const gate = { resolve: (): void => {} };
+  /** Same shape as `gate`, for showGacha's own asset warm (render/gachaArt). */
+  const gachaGate = { resolve: (): void => {}, warms: 0 };
   /** Minimal stand-in for a Scene: records its ctor args so tests can read the layout it got. */
   const sceneBase = (name: string) =>
     class {
@@ -37,7 +39,7 @@ const { built, samples, gate, sceneBase } = vi.hoisted(() => {
       update(): void {}
       destroy(): void {}
     };
-  return { built, samples, gate, sceneBase };
+  return { built, samples, gate, gachaGate, sceneBase };
 });
 
 vi.mock('../../src/scenes/LobbyScene', () => ({
@@ -55,6 +57,20 @@ vi.mock('../../src/scenes/LobbyScene', () => ({
 }));
 vi.mock('../../src/scenes/SettingsScene', () => ({ SettingsScene: sceneBase('SettingsScene') }));
 vi.mock('../../src/scenes/ShopScene', () => ({ ShopScene: sceneBase('ShopScene') }));
+vi.mock('../../src/scenes/GachaScene', () => ({ GachaScene: sceneBase('GachaScene') }));
+// showGacha's own gate (ASSET_PACKAGING §10, extended to gacha 2026-08-25). Only the warm and the
+// overlay are mocked — `enterWithAssets` itself stays real, because the thing under test is when
+// the rotation respawn is armed RELATIVE to it.
+vi.mock('../../src/render/gachaArt', () => ({
+  preloadGachaTextures: (onProgress?: (done: number, total: number) => void) => {
+    gachaGate.warms += 1;
+    onProgress?.(0, 1);
+    return new Promise<void>((resolve) => { gachaGate.resolve = () => { onProgress?.(1, 1); resolve(); }; });
+  },
+}));
+vi.mock('../../src/ui/LoadingOverlay', () => ({
+  LoadingOverlay: class { setProgress(): void {} destroy(): void {} },
+}));
 vi.mock('../../src/scenes/CardScene', () => ({
   CardScene: class extends sceneBase('CardScene') {
     applyCardState = vi.fn();
@@ -466,6 +482,66 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
     const h = setup();
     h.views.showLobby(NO_CB, { fade: true });
     expect(h.lastGoto().opts).toEqual({ fade: true });
+  });
+});
+
+describe('PixiAppViews — the gacha asset gate and rotation', () => {
+  beforeEach(() => { gachaGate.warms = 0; vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  const SETTLE = 200;
+
+  /** showGacha + let the gate's promise chain settle. Fake timers do not advance microtasks. */
+  async function enterGacha(h: Harness): Promise<void> {
+    h.views.showGacha({} as never);
+    gachaGate.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('rebuilds the gacha screen on rotation WITHOUT re-entering the asset gate', () => {
+    // The respawn is armed after the gate resolves and gotos the scene directly. Re-running the
+    // gate would put a loading overlay back up for textures that are already warm — every time the
+    // player turns their phone.
+    const h = setup();
+    return enterGacha(h).then(() => {
+      expect(built.filter((b) => b.name === 'GachaScene')).toHaveLength(1);
+      expect(gachaGate.warms).toBe(1);
+
+      h.screen.width = 800; h.screen.height = 1200;
+      h.win.fire('resize');
+      vi.advanceTimersByTime(SETTLE);
+
+      const gachas = built.filter((b) => b.name === 'GachaScene');
+      expect(gachas).toHaveLength(2);
+      expect(gachaGate.warms).toBe(1);
+      expect((last(gachas, 'GachaScene rebuild').args[0] as ILayout).orientation).toBe('portrait');
+    });
+  });
+
+  it('does not rebuild while the gate is still open', () => {
+    // Arming the respawn up front would drop a GachaScene on top of the loading overlay the gate is
+    // about to replace anyway.
+    const h = setup();
+    h.views.showGacha({} as never);
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+    expect(built.filter((b) => b.name === 'GachaScene')).toHaveLength(0);
+  });
+
+  it('drops the pending arm when the player left while the gate was open', async () => {
+    // Tap 抽卡 on a cold cache, change your mind, back out. Without the generation check the gacha
+    // screen comes flying back over the settings screen on the next rotation.
+    const h = setup();
+    h.views.showGacha({} as never);
+    h.views.showSettings({} as never);
+    gachaGate.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+    expect(last(built, 'scene build').name).toBe('SettingsScene');
   });
 });
 

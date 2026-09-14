@@ -200,6 +200,48 @@ function exercise(scene: Scene): void {
   expect(textBaseTextures.every((b) => b.destroyed)).toBe(true);
 }
 
+/**
+ * Wraps InputManager's four subscribe methods for the duration of one scene's life and reports how
+ * many subscriptions are still live. `destroy()` must leave zero.
+ *
+ * The dynamic half of `test/input-subscription-cleanup.test.ts`. That one is a source scan: it
+ * proves every `input.onX(...)` result is handed to `unsubs.push(...)`, which is where the original
+ * TitlesScene leak was. What it cannot see is the other end — a scene that pushes correctly but
+ * whose `destroy()` never drains the array, or drains only one of two arrays, or subscribes through
+ * a widget that keeps its own list. InputManager outlives every scene (it is owned by the app), so
+ * a handler left behind stays bound to a destroyed scene and fires on later taps that land on its
+ * stale hit-rects.
+ *
+ * Newly load-bearing since 2026-09-14: rotating the phone now tears down and rebuilds every menu
+ * screen (app/sceneMounts.ts), so a scene that leaks one handler per life leaks one per rotation
+ * rather than one per visit.
+ *
+ * Patches the prototype rather than taking an instance, because each SCENES entry constructs its
+ * own InputManager inside the factory — there is nothing to hand in.
+ */
+function trackInputSubscriptions(): { live: () => number; restore: () => void } {
+  type Sub = (fn: unknown) => () => void;
+  const proto = InputManager.prototype as unknown as Record<string, Sub>;
+  const originals = new Map<string, Sub>();
+  let live = 0;
+  for (const m of ['onDown', 'onMove', 'onUp', 'onWheel']) {
+    const original = proto[m]!;
+    originals.set(m, original);
+    proto[m] = function patched(this: unknown, fn: unknown): () => void {
+      const unsub = original.call(this, fn);
+      live += 1;
+      let released = false;
+      // Idempotent: a scene that calls its unsub twice must not drive the count negative and hide
+      // a second, genuinely leaked handler.
+      return () => { if (!released) { released = true; live -= 1; } unsub(); };
+    };
+  }
+  return {
+    live: () => live,
+    restore: () => { for (const [m, original] of originals) proto[m] = original; },
+  };
+}
+
 // Each entry builds one scene for a given (w, h). Kept as factories so we can run the
 // whole set against both orientations.
 const SCENES: Array<{ name: string; build: (w: number, h: number) => Scene }> = [
@@ -599,7 +641,13 @@ for (const [label, [w, h]] of [
   describe(`scene startup smoke — ${label} ${w}x${h}`, () => {
     for (const s of SCENES) {
       it(`${s.name} builds, updates and destroys`, () => {
-        exercise(s.build(w, h));
+        const input = trackInputSubscriptions();
+        try {
+          exercise(s.build(w, h));
+        } finally {
+          input.restore(); // before the assertion, or one leaky scene poisons every later case
+        }
+        expect(input.live(), 'destroy() left an InputManager subscription behind').toBe(0);
       });
     }
   });

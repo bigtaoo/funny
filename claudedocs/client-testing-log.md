@@ -497,3 +497,40 @@ client 当时 99.66%，多出七行未覆盖只让这个数动了 0.02pp，离 9
 **可以考虑的门禁**：「本次 diff 新增的源文件覆盖率不得为 0」。本轮另一处
 （`commercial/src/iap.ts` 的 `createAppleSubscriptionReader`，函数级 0 调用）是同一个形状，
 两处都能被这样一条检查当天拦住。详见 `server-testing-coverage.md` 同日那节。
+
+## 把「单一状态」换进来，就得配一道机械门禁（2026-09-14，转屏重建）
+
+转屏重建从「大厅 arm/disarm 生命周期」改成 `SceneMounts` 一个 `respawn` 字段（见
+`client-modules.md` 同日条）。行为是更好了，但**换来一种旧设计不可能有的故障**：新写的 `showX` 如果照周围
+代码的样子直接 `this.manager.goto(...)`（改之前约 20 个方法就长这样），它就没有认领这一屏，
+`respawn` 仍指向**上一屏**——下一次转屏会把上一屏重建到当前屏之上，即**玩家转个手机就被退回上一页**。
+不抛异常、场景本身没毛病、只在会转的设备上复现。这正是「必须上机械门禁、不能指望 review 看出来」的形状。
+
+三份测试，全部做过变异验证（源码改坏 → 确认变红 → 还原）：
+
+**① `client/test/sceneMountRouting.test.ts`（7 例，普通 unit 套件，读源码）** —— 同
+`appAssetGateWiring.test.ts` 的手法（`PixiAppViews` 在这个套件里 import 不进来：~30 个场景类够到
+`@nw/shared`）。两件事：**每个 `showX` 必须走到 `this.mounts.`**；以及**一张按屏名钉死的策略表**
+（`rebuilt` / `rebuilt-on-gate` / `never` / `lobby`）。后者不是前者的重复——它让**改分类**变成一次
+两处的显式编辑，而两个方向的错都不出声：菜单屏错标 `never` 只是这一屏留着老 bug，对局错标 `rebuilt`
+会在转屏时**重启这局**。另加两条边界：`manager.goto` 前必须先 `takeScreen`/`armRespawn`；
+`mountSlg` 必须是 `showX` 与 `SceneMounts` 之间**唯一**的中转（多一个 helper，上面几条会把读不到的
+方法当成"没路由"报出来——把盲点报成违规还算好的，但那条断言存在就是为了别走到那一步）。
+变异 4/4 命中（商城直接 goto / 对局改判可重建 / `hideOverlay` 绕开 `SceneMounts` / 新增第二个 helper）。
+
+**一个当场踩到的坑**：最初 `methodBody()` 取「签名之后第一个 `{`」，结果 `showReplay` 的形参里有
+`siegeAcademy?: { hp: number; ... }`，整个方法被读成那个类型字面量 → 报成"没路由"。
+**静态扫描的假阳性长得和它要抓的真 bug 一模一样**，所以形参表先做括号配对，body 取其后的第一个大括号。
+
+**② `pixiAppViews.ui.ts` 加 3 例：抽卡资源门禁与转屏的先后**。`showGacha` 是唯一一个 respawn
+**异步武装**的屏。三件事各自会错：门禁没走完就武装 → 重建把场景拍在 LoadingOverlay 上；
+武装了不校验代次 → 玩家在加载中退出去，下次转屏抽卡页飞回来盖住当前屏；重建时重新进门禁 →
+纹理早热了还每转一次屏弹一次加载遮罩（用 `warms` 计数钉住）。变异 3/3 命中。
+
+**③ `scenes.ui.ts` 的 `exercise()` 加一条：`destroy()` 必须释放所有 InputManager 订阅**
+（40 个场景 × 两个朝向，白捡 121 例）。这是 `test/input-subscription-cleanup.test.ts` 的**动态一半**：
+那份是源码扫描，证明每个 `input.onX(...)` 的返回值都进了 `unsubs.push(...)`（当年 TitlesScene 漏的那端），
+**看不见另一端**——push 对了但 `destroy()` 不排干、只排干两个数组里的一个、或者经由自带列表的 widget 订阅。
+做法是**patch `InputManager.prototype` 而不是传实例**（每个 SCENES 工厂在内部自己 new 一个，没东西可传）。
+落地即全绿（无存量泄漏）；变异（`TitlesScene.destroy` 只排干 4 个里的 2 个）当场两例红。
+**为什么现在才值得加**：改之前一个场景每访问一次漏一个 handler，改之后是**每转一次屏漏一个**。
