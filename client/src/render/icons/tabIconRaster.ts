@@ -9,6 +9,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { buildFittedSprite } from '../cardArt';
+import { tagIcon } from '../iconTag';
 import { preloadTextureList } from '../../assets/preloadTextures';
 
 // Tab-icon AI art pilot (design/product/tab-icon-art-prompts.md, 2026-08-14): the [Cards|Equipment|Skins]
@@ -374,7 +375,9 @@ export function tabIconVariant(color: number): 'active' | 'inactive' {
 export function buildRasterTabIcon(url: string, w: number, h: number = w): PIXI.DisplayObject {
   const box = new PIXI.Container();
   box.addChild(buildFittedSprite(url, w, h));
-  return box;
+  // Tagged for the layout audit's icon-legibility gate — see render/iconTag.ts. The SHORTER side is
+  // what the gate cares about: a wide-but-short glyph is resolved (or not) by its thinnest extent.
+  return tagIcon(box, url, Math.min(w, h));
 }
 
 /**

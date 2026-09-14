@@ -14,6 +14,7 @@
 import * as PIXI from 'pixi.js-legacy';
 import { iconsAtlas as atlas } from './iconsAtlas';
 import { buildIcon, type IconKind } from '../icons';
+import { tagIcon } from '../iconTag';
 
 /** The material kinds backed by an atlas frame. */
 export type MaterialKind = 'scrap' | 'lead' | 'binding';
@@ -42,7 +43,17 @@ export function buildMaterialIcon(kind: MaterialKind, size: number, color: numbe
     const sprite = new PIXI.Sprite(tex);
     sprite.width = size;
     sprite.height = size;
-    return sprite;
+    // Tagged on a WRAPPER, not on the sprite - same shape as buildInkIcon/buildRasterTabIcon, and
+    // for a reason the audit cares about: `sprite.width = size` is implemented as
+    // `scale = size / texture.width`, i.e. 20/128 for this atlas, and the gate reads world scale to
+    // tell "someone shrank this group" from "this is its natural size". Tagging the sprite reported
+    // every material chip in the game as shrunk to 1/6 (measured 2026-09-14: 23 false findings on
+    // equipment+craft alone). The wrapper's own scale is 1, so the number means what the gate
+    // thinks it means.
+    const box = new PIXI.Container();
+    box.addChild(sprite);
+    return tagIcon(box, kind, size);   // layout-audit icon gate — see render/iconTag.ts
   }
+  // The procedural fallback goes through buildIcon → buildInkIcon, which tags it itself.
   return buildIcon(kind as IconKind, size, color);
 }

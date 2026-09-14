@@ -10,6 +10,7 @@
 //    text field with no room for a separate icon row (mirrors the old EquipmentScene.itemLabel convention).
 import * as PIXI from 'pixi.js-legacy';
 import { buildIcon } from './icons';
+import { untagIcon } from './iconTag';
 import { ui as C } from './sketchUi';
 
 export interface LevelStars {
@@ -28,7 +29,9 @@ export function buildLevelStars(count: number, maxW: number, size = 14, gap = 3,
   const stars: PIXI.DisplayObject[] = [];
   const n = Math.max(0, count);
   for (let i = 0; i < n; i++) {
-    const st = buildIcon('star', size, color);
+    // Untagged for the layout audit's icon gate: a pip's meaning is the row's length, not the
+    // glyph. See render/iconTag.ts#untagIcon for why this one widget is the exemption.
+    const st = untagIcon(buildIcon('star', size, color));
     // Pivot to the icon's own center (not top-left) so a caller that animates scale.x (e.g. a maxed-row
     // flip sweep) flips in place instead of sliding.
     st.pivot.set(size / 2, size / 2);

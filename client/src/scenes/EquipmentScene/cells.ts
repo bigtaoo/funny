@@ -96,10 +96,13 @@ export function renderInstanceCell(
   // locked instance is never also a counted stack.
   let cornerBadgeW = 0;
   if (inst.locked) {
-    const l = buildIcon('lock', 18, C.mid);
-    l.x = x + cellW - pad - 18; l.y = y + pad;
+    // FS.body, not a literal 18 - see the same change in CardScene/rosterCell.ts. 18 is FS.body's
+    // base, so desktop is unchanged; a phone lifts both this and the `x N` badge below it to 20.
+    const lkSz = Math.round(FS.body);
+    const l = buildIcon('lock', lkSz, C.mid);
+    l.x = x + cellW - pad - lkSz; l.y = y + pad;
     core.bodyLayer.addChild(l);
-    cornerBadgeW = 18;
+    cornerBadgeW = lkSz;
   } else if (count > 1) {
     const badge = txt(`×${count}`, FS.body, C.mid, true);
     badge.anchor.set(1, 0); badge.x = x + cellW - pad; badge.y = y + pad;

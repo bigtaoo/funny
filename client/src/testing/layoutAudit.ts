@@ -33,11 +33,16 @@ export interface AuditFinding {
    * collide with another label, it just runs past its own frame and over whatever is beside it.
    * `tiny` — a label whose effective font size (its own size times whatever local scale sits above
    * it) is below the legibility floor the font scale promised for this viewport: either a size
-   * asked for off the scale, or — far more often — a group shrunk to fit a box too narrow for it. `covered` — a label painted over by opaque art drawn
+   * asked for off the scale, or — far more often — a group shrunk to fit a box too narrow for it.
+   * `icon` - the same gate applied to a hand-drawn icon (render/iconTag.ts stamps the size it was
+   * asked for): a pictogram carries no fallback the way a word does. An unreadable label is still a
+   * word-shaped smudge in a known place and a known length; an unreadable glyph is just a smudge.
+   * So an icon may not be drawn below the size the font scale guarantees text.
+   * `covered` — a label painted over by opaque art drawn
    * after it (a progress bar running through a title, say): still "visible" to the tree, gone to
    * the eye.
    */
-  kind: 'overlap' | 'offscreen' | 'overflow' | 'tiny' | 'covered' | 'placeholder';
+  kind: 'overlap' | 'offscreen' | 'overflow' | 'tiny' | 'icon' | 'covered' | 'placeholder';
   a: string;
   /**
    * The other label for `overlap`, `'frame'` for `overflow`, empty for `offscreen`. For `tiny` it
@@ -75,6 +80,19 @@ export interface AuditOptions {
    * this). A label with neither falls back to the box, deflated, which is what this used to be.
    */
   minInkDesignPx: number;
+  /**
+   * Smallest EFFECTIVE size (design px) a hand-drawn icon may be drawn at. The same number as
+   * {@link minInkDesignPx}: an icon is held to the floor the font scale guarantees text, no more.
+   *
+   * No more, because a stricter icon threshold is not a gate anyone could keep green. Every icon on
+   * a phone is small for the same reason every LABEL is - portrait's design width is a fixed 1080
+   * against a 390-px screen, so the whole page renders at 0.36x (UI_DESIGN_LOG_2026-08.md 49.1,
+   * still open). A threshold high enough to catch e.g. the daily check-in grid's 34-design-px
+   * reward glyph would report most of the game's icons with it, and a gate that is always red is
+   * not a gate. This one catches the narrower thing nothing was watching at all: an icon drawn
+   * smaller than the text beside it is allowed to be.
+   */
+  minIconDesignPx: number;
 }
 
 export interface AuditResult {
@@ -114,6 +132,8 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     style?: { fontSize?: unknown };
     /** Stamped by render/fastText.ts on every baked label — its font size in design px. */
     fsPx?: unknown;
+    /** Stamped by render/iconTag.ts on every hand-drawn icon - the size it was asked for. */
+    iconPx?: unknown;
     /** Populated by `getBounds()`; `a` is the horizontal world scale. */
     worldTransform?: { a: number };
     /** Present on `PIXI.Graphics` only — what it was actually told to draw. */
@@ -167,6 +187,20 @@ export function auditLayout(opts: AuditOptions): AuditResult {
   };
 
   /**
+   * The icon identity a node carries, or null if it is not one. `render/iconTag.ts` stamps
+   * `icon:<kind-or-url>`; the url form is shortened to its file name, which is what actually names
+   * the picture (`.../tabicons/coin_content.png` becomes `coin_content`).
+   */
+  const iconOf = (n: NodeLike): string | null => {
+    if (typeof n.name !== 'string' || n.name.indexOf('icon:') !== 0) return null;
+    const id = n.name.slice(5);
+    const slash = id.lastIndexOf('/');
+    const base = slash >= 0 ? id.slice(slash + 1) : id;
+    const dot = base.lastIndexOf('.');
+    return dot > 0 ? base.slice(0, dot) : base;
+  };
+
+  /**
    * `overlay` marks a node inside a container the product named `overlay:*` — an onboarding
    * spotlight, for now. Such a layer is MEANT to cover the screen it points at, so it is compared
    * against itself and never against the scene under it; its own internal layout is still judged.
@@ -178,6 +212,8 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     /** World horizontal scale — divided by the design scale below to get the local shrink. */
     worldScale: number;
   }
+  /** A tagged icon: the size it was ASKED for, plus whatever local scale sits above it. */
+  interface Icon { id: string; askedPx: number; rect: AuditRect; worldScale: number }
   interface Cover { order: number; rect: AuditRect }
   /**
    * A box a label could have been drawn INTO. Every `sketchPanel`/`sketchButton` puts its fill
@@ -206,6 +242,7 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     return false;
   };
   const labels: Label[] = [];
+  const icons: Icon[] = [];
   const covers: Cover[] = [];
   const frames: Frame[] = [];
   let order = 0;
@@ -229,6 +266,15 @@ export function auditLayout(opts: AuditOptions): AuditResult {
       const raw = rectOf(n);
       const box = nextClip ? intersect(raw, nextClip) : raw;
       if (box.w > 0 && box.h > 0) {
+        // Icons are tagged on the CONTAINER that holds the fitted sprite, so this runs before the
+        // leaf-only `frames` branch below and does not stop the walk descending into the sprite.
+        const icon = iconOf(n);
+        if (icon !== null) {
+          const asked = Number(n.iconPx);
+          if (Number.isFinite(asked) && asked > 0) {
+            icons.push({ id: icon, askedPx: asked, rect: box, worldScale: n.worldTransform?.a ?? 1 });
+          }
+        }
         const label = labelOf(n);
         if (label !== null) {
           const own = Number(typeof n.fsPx === 'number' ? n.fsPx : n.style?.fontSize);
@@ -395,6 +441,24 @@ export function auditLayout(opts: AuditOptions): AuditResult {
     }
   }
 
+  // Icons, same gate as `tiny` and the same diagnosis format: the size asked for, and the local
+  // scale on top of it, because "make it bigger" and "stop shrinking the group it is in" are
+  // different fixes. Occlusion is not re-tested here - an icon under a modal is drawn under it in
+  // paint order too, and the `covers` list is built from labels' needs; an icon that IS covered is
+  // reported at its own size, which is still a true statement about the scene that drew it.
+  for (const ic of icons) {
+    const local = scale > 0 ? ic.worldScale / scale : 1;
+    const effective = ic.askedPx * local;
+    if (effective < opts.minIconDesignPx) {
+      findings.push({
+        kind: 'icon', a: ic.id,
+        b: `icon=${Math.round(ic.askedPx)} scale=${local.toFixed(2)}`,
+        rectA: ic.rect, rectB: empty,
+        frac: Math.round(effective * 10) / 10,
+      });
+    }
+  }
+
   return { screen: e2e?.state?.screen ?? '?', labels: visible.length, findings };
 }
 
@@ -427,5 +491,6 @@ export function auditOptionsFor(designW: number, designH: number, designScale: n
     designW,
     designH,
     minInkDesignPx: fontFloorDesignPx(designScale),
+    minIconDesignPx: fontFloorDesignPx(designScale),
   };
 }
