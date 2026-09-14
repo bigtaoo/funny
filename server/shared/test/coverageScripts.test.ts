@@ -697,3 +697,243 @@ describe('branch gate wiring', () => {
     expect(ev.belowBranchBar.sort()).toEqual(['server/admin', 'server/gateway']);
   });
 });
+
+// ── scripts/checkNewFileCoverage.mjs ──────────────────────────────────────────────────────────────
+//
+// The third root coverage script (2026-09-14) and the second gate. Where checkCoverageThreshold asks
+// "is this package's number above the bar", this one asks "did this change ADD a file that its own
+// package measures and that no test reaches at all" — a question one number per package cannot
+// answer, and the reason it exists is that the answer was NO twice in one week while every bar stayed
+// comfortably green (siegeHold.ts at 0% inside a 99.66% client; createAppleSubscriptionReader at zero
+// calls inside a 97% commercial).
+//
+// Driven through the real CLI against a real throwaway git repo, for the same reason as everything
+// above: the exit code is the contract CI consumes, and the added-file set comes from git, so faking
+// git would mean testing a different program than the one that runs.
+
+/** `coverageTree` + a git history: base commit with the tree as built, then a second commit adding
+ *  `added` (each entry is written on the spot). `HEAD~1` is therefore the base to diff against, and
+ *  `added` is exactly what `--diff-filter=A` will report. */
+function gitTreeWithAdded(root: string, added: Record<string, string>, branch = 'main'): void {
+  const g = (...args: string[]) => {
+    const r = spawnSync('git', ['-c', 'user.email=t@e.st', '-c', 'user.name=T', ...args], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
+  };
+  g('init', '-q', '-b', branch);
+  g('add', '-A');
+  g('commit', '-q', '-m', 'base');
+  // The addition lands on a BRANCH, so `<branch>` still names the base commit — without this the
+  // fallback chain would resolve to a ref that is already HEAD, i.e. an empty diff, and the
+  // fallback case below would pass for the wrong reason. It is also the real shape: on CI the base
+  // ref is origin/main and HEAD is somewhere ahead of it.
+  g('checkout', '-q', '-b', 'work');
+  for (const [rel, content] of Object.entries(added)) write(root, rel, content);
+  g('add', '-A');
+  // --allow-empty so "this change added nothing" is expressible: a docs-only change is the common
+  // case, and the gate has to be GREEN on it rather than absent.
+  g('commit', '-q', '--allow-empty', '-m', 'add');
+}
+
+/** Adds per-FILE entries to one package's coverage-summary.json — the axis the new-file gate reads,
+ *  which `coverageTree`'s own `scopeFiles` knob only produces at a uniform percentage. Each entry is
+ *  `[repoRelativePath, executableLines, coveredLines]`, and the path is stored the way the v8 reporter
+ *  really stores it: absolute, with the OS's separators. */
+function withFileRows(root: string, pkg: string, rows: [string, number, number][]): void {
+  const file = join(root, pkg, 'coverage', 'coverage-summary.json');
+  const parsed = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+  for (const [rel, total, covered] of rows) {
+    const abs = join(root, rel); // real separators on this OS — the point of not hand-writing them
+    parsed[abs] = { lines: { total, covered, skipped: 0, pct: total === 0 ? 0 : (covered / total) * 100 } };
+  }
+  writeFileSync(file, JSON.stringify(parsed), 'utf8');
+}
+
+const NEW_FILE_SCRIPT = join(ROOT_SCRIPTS, 'checkNewFileCoverage.mjs');
+const runNewFile = (root: string, env: Record<string, string> = {}) =>
+  run(NEW_FILE_SCRIPT, root, { NEW_FILE_BASE_REF: 'HEAD~1', ...env });
+
+describe('checkNewFileCoverage', () => {
+  it('fails on an added file its package measures and no test reaches', () => {
+    const root = coverageTree();
+    withFileRows(root, 'client', [['client/src/new.ts', 12, 0]]);
+    gitTreeWithAdded(root, { 'client/src/new.ts': 'export const x = 1;\n' });
+    const r = runNewFile(root);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('client/src/new.ts');
+    expect(r.out).toContain('12 executable lines, 0 covered');
+  });
+
+  it('passes on ONE covered line — the claim is "a test reaches it", not a percentage', () => {
+    // Deliberately far below the 90% bar this repo enforces elsewhere. Anything stricter here would
+    // be a second, differently-shaped percentage gate on a subset of files, which is not what this
+    // is for: a file at 1/12 is already checkCoverageThreshold's problem via its package's number.
+    const root = coverageTree();
+    withFileRows(root, 'client', [['client/src/new.ts', 12, 1]]);
+    gitTreeWithAdded(root, { 'client/src/new.ts': 'export const x = 1;\n' });
+    expect(runNewFile(root).code).toBe(0);
+  });
+
+  it('skips an added file with no executable lines at all', () => {
+    // A types-only module (worldsvc's combatMarch/arrivalCtx.ts, metaserver's commercialClient/
+    // views.ts) reports 0/0. Failing those would make the gate teach people to write a test that
+    // imports an interface and asserts nothing.
+    const root = coverageTree();
+    withFileRows(root, 'server/worldsvc', [['server/worldsvc/src/types.ts', 0, 0]]);
+    gitTreeWithAdded(root, { 'server/worldsvc/src/types.ts': 'export interface X { a: number }\n' });
+    const r = runNewFile(root);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('no executable lines, skipped');
+  });
+
+  it('claims nothing about an added file outside every measured scope, and says so', () => {
+    // This is the gate's only escape hatch and it is deliberately not an allowlist: a file that
+    // genuinely should not be tested is left out of its package's coverage.include, which is a
+    // reviewed line in a vitest config rather than an entry in a list next to the gate.
+    const root = coverageTree();
+    gitTreeWithAdded(root, { 'client/src/unmeasured.ts': 'export const x = 1;\n' });
+    const r = runNewFile(root);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('outside every');
+    expect(r.out).toContain('client/src/unmeasured.ts');
+  });
+
+  it('keeps added TEST files out of that out-of-scope line', () => {
+    // Not cosmetic. The out-of-scope line is the only visible symptom of the realistic way this gate
+    // rots — a broken path mapping dumping every real source file into it — so it has to stay small
+    // enough to read. Test files are never measured ground and would swamp it on any normal change.
+    const root = coverageTree();
+    gitTreeWithAdded(root, {
+      'client/test/thing.test.ts': 'export const x = 1;\n',
+      'server/worldsvc/test/helpers/fake.ts': 'export const y = 1;\n',
+      'client/src/unmeasured.ts': 'export const z = 1;\n',
+    });
+    const r = runNewFile(root);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('client/src/unmeasured.ts');
+    expect(r.out).not.toContain('thing.test.ts');
+    expect(r.out).not.toContain('helpers/fake.ts');
+  });
+
+  it('stays quiet about a package that produced no coverage at all, naming only that package', () => {
+    // checkCoverageThreshold already fails on a missing artifact. Reporting it here too is the
+    // TESTS_OK cascade in miniature: two reds for one cause, and the louder one is the wrong one.
+    const root = coverageTree({ omit: ['server/gateway'] });
+    gitTreeWithAdded(root, { 'server/gateway/src/new.ts': 'export const x = 1;\n' });
+    const r = runNewFile(root);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('checkCoverageThreshold owns that failure');
+    expect(r.out).toContain('server/gateway');
+    // Only the package the added file is actually in — the first cut listed all 19 every time.
+    expect(r.out).not.toContain('server/metaserver');
+  });
+
+  it('reports but does not enforce when a test job in this run already failed', () => {
+    const root = coverageTree();
+    withFileRows(root, 'client', [['client/src/new.ts', 12, 0]]);
+    gitTreeWithAdded(root, { 'client/src/new.ts': 'export const x = 1;\n' });
+    expect(runNewFile(root, { TESTS_OK: 'false' }).code).toBe(0);
+    expect(runNewFile(root).code).toBe(1); // ...and the same tree with TESTS_OK unset is still red
+  });
+
+  it('fails closed when NOTHING resolves, rather than checking nothing', () => {
+    // The gate's own canary, same family as checkCoverageThreshold's "0 packages to check". A
+    // shallow CI checkout is the realistic cause, and the failure mode it prevents is the worst one
+    // available to a gate: examining an empty set and reporting success. The fixture's branch is
+    // deliberately not `main`, so neither fallback can rescue it either.
+    const root = coverageTree();
+    gitTreeWithAdded(root, { 'client/src/new.ts': 'export const x = 1;\n' }, 'trunk');
+    const r = runNewFile(root, { NEW_FILE_BASE_REF: 'no-such-ref' });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('could not resolve any base ref');
+  });
+
+  it('falls back to the repo\'s own main when the handed-over ref is unusable', () => {
+    // The chain is load-bearing, not decorative: `github.event.before` is empty on a pull_request
+    // event and all-zeros on a branch's first push, and neither is a reason to fail the job — but
+    // neither is a reason to skip the check either, which is what makes this the same case as the
+    // one above rather than its opposite.
+    const root = coverageTree();
+    withFileRows(root, 'client', [['client/src/new.ts', 12, 0]]);
+    gitTreeWithAdded(root, { 'client/src/new.ts': 'export const x = 1;\n' });
+    for (const ref of ['', '0000000000000000000000000000000000000000', 'no-such-ref']) {
+      const r = runNewFile(root, { NEW_FILE_BASE_REF: ref });
+      // Resolved to `main` = the base commit, so the added file is seen and its zero coverage bites.
+      expect(r.code, `base ref ${JSON.stringify(ref)}`).toBe(1);
+      expect(r.out).toContain('client/src/new.ts');
+    }
+  });
+
+  it('reaches server/engine through its lcov, whose entries name dist files', () => {
+    // engine measures its BUILD OUTPUT, so its lcov says `dist/x.js` where every other package says
+    // a source path. Without the dist->src mapping this package would be permanently, invisibly
+    // exempt from this gate — the one hole big enough to make the whole thing decorative.
+    const root = coverageTree();
+    const lcov = join(root, 'server/engine/coverage/lcov.info');
+    writeFileSync(
+      lcov,
+      `${readFileSync(lcov, 'utf8')}SF:dist/balance/fresh.js\nLF:9\nLH:0\nBRF:0\nBRH:0\nFNF:0\nFNH:0\nend_of_record\n`,
+      'utf8',
+    );
+    gitTreeWithAdded(root, { 'server/engine/src/balance/fresh.ts': 'export const x = 1;\n' });
+    const r = runNewFile(root);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('server/engine/src/balance/fresh.ts');
+  });
+
+  it('does not treat a moved file as an addition', () => {
+    // git reports a rename as R, not A, so a pure move cannot trip this gate even when the new path
+    // reads as uncovered. That is the right split of responsibilities: a move that really did lose
+    // its coverage shows up as a percentage drop, which is checkCoverageThreshold's to report.
+    const root = coverageTree();
+    withFileRows(root, 'client', [['client/src/moved.ts', 12, 0]]);
+    const body = `${'export const x = 1;\n'.repeat(20)}`;
+    write(root, 'client/src/original.ts', body);
+    const g = (...args: string[]) => {
+      const r = spawnSync('git', ['-c', 'user.email=t@e.st', '-c', 'user.name=T', ...args], { cwd: root, encoding: 'utf8' });
+      if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
+    };
+    g('init', '-q', '-b', 'main');
+    g('add', '-A');
+    g('commit', '-q', '-m', 'base');
+    g('mv', 'client/src/original.ts', 'client/src/moved.ts');
+    g('commit', '-q', '-a', '-m', 'move');
+    const r = runNewFile(root);
+    expect(r.code).toBe(0);
+    expect(r.out).not.toContain('client/src/moved.ts');
+  });
+
+  it('is green, and says how much it actually checked, when nothing was added', () => {
+    const root = coverageTree();
+    gitTreeWithAdded(root, {});
+    const r = runNewFile(root);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('no files added');
+  });
+});
+
+describe('coverageEntryToRepoPath', () => {
+  // The one function whose silent failure turns this whole gate green: place nothing, find nothing,
+  // report "0 added files in a measured scope" forever. These are the four real key shapes the two
+  // backends produce, taken from actual artifacts rather than invented.
+  const place = (pkg: string, key: string) =>
+    libEval<string | null>(`lib.coverageEntryToRepoPath(${JSON.stringify(pkg)}, ${JSON.stringify(key)})`);
+  const BS = String.fromCharCode(92);
+
+  it.each([
+    ['windows absolute (local runs)', 'client', `D:${BS}funny${BS}client${BS}src${BS}app${BS}x.ts`, 'client/src/app/x.ts'],
+    ['posix absolute (CI runners)', 'server/worldsvc', '/home/runner/work/funny/funny/server/worldsvc/src/core/map.ts', 'server/worldsvc/src/core/map.ts'],
+    ['nested package name', 'tools/ops', '/x/tools/ops/src/logic/tickets.ts', 'tools/ops/src/logic/tickets.ts'],
+    ['engine lcov, which names the compiled file', 'server/engine', `dist${BS}balance${BS}equipment.js`, 'server/engine/src/balance/equipment.ts'],
+  ])('places a %s key', (_name, pkg, key, expected) => {
+    expect(place(pkg, key)).toBe(expected);
+  });
+
+  it('takes the LAST occurrence of the package directory', () => {
+    // A checkout whose own path contains the package name ("/client/funny/client/src/...") is not
+    // hypothetical — worktrees here live under the repo they belong to.
+    expect(place('client', '/client/funny/client/src/app/x.ts')).toBe('client/src/app/x.ts');
+  });
+});
