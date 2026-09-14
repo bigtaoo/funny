@@ -37,8 +37,8 @@ vi.mock('pixi.js-legacy', () => {
 
 import * as PIXI from 'pixi.js-legacy';
 import {
-  bake, bakeLazy, bakeResolution, bakeStats, clearBakeCache, hasBakeRenderer, pageBakeResolution,
-  setBakeRenderer, setDesignScale, resetDesignScaleForTest,
+  bake, bakeEntries, bakeLazy, bakeResolution, bakeStats, clearBakeCache, hasBakeRenderer,
+  pageBakeResolution, screenBytes, setBakeRenderer, setDesignScale, resetDesignScaleForTest,
 } from '../../src/render/bake';
 import { createLayout } from '../../src/layout/ScalingManager';
 import { Side } from '../../src/game';
@@ -267,5 +267,44 @@ describe('bakeStats', () => {
     bake('x', obj(), 8, 8);
     clearBakeCache();
     expect(bakeStats()).toEqual({ count: 0, bytes: 0, largest: null });
+  });
+});
+
+describe('bakeEntries', () => {
+  it('itemises what bakeStats totals, key by key', () => {
+    // The itemised form exists for a measurement that has to survive a page RELOAD, which zeroes
+    // the whole cache: totals restart, the set of keys does not. So the contract that matters is
+    // that every entry carries its own key and its own real size — a caller merging two walks has
+    // nothing else to merge on.
+    useRenderer(1);
+    bake('small', obj(), 10, 10);
+    bake('big', obj(), 1000, 500);
+    const entries = bakeEntries();
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => e.key).sort()).toEqual(['big@1', 'small@1']);
+    const big = entries.find((e) => e.key.startsWith('big'))!;
+    expect(big).toMatchObject({ w: 1000, h: 500, bytes: 1000 * 500 * 4 });
+    // The two views must not drift: the itemised bytes are the total.
+    expect(entries.reduce((n, e) => n + e.bytes, 0)).toBe(bakeStats().bytes);
+  });
+
+  it('is empty with nothing cached', () => {
+    expect(bakeEntries()).toEqual([]);
+  });
+});
+
+describe('screenBytes', () => {
+  it("is one full backbuffer at the renderer's current size", () => {
+    // The denominator of the bake budget (cache/memoryBudgets.ts): counting this cache in
+    // backbuffers is what makes one number fit a phone and a high-DPI desktop at once.
+    setBakeRenderer({ width: 780, height: 1688, resolution: 2, render: () => {} } as unknown as PIXI.IRenderer);
+    expect(screenBytes()).toBe(780 * 1688 * 4);
+  });
+
+  it('is 0 with no renderer, which callers must read as "no opinion"', () => {
+    // Not "a budget of zero": a gate that divided by this before the renderer exists would report
+    // on every boot. The 0 is the signal to skip the gate entirely.
+    setBakeRenderer(null as unknown as PIXI.IRenderer);
+    expect(screenBytes()).toBe(0);
   });
 });

@@ -158,6 +158,10 @@ export default defineConfig({
         'src/assets/battleAssets.ts',
         'src/assets/bootManifest.ts',
         'src/cache/MemoryMonitor.ts',
+        // ...and the four numbers it judges against, split out 2026-09-14 so the Playwright sweep
+        // that measures the bake ceiling can assert against the shipped constant without importing
+        // PIXI. Gated because it USED to be gated ground — moving code must not quietly leave the gate.
+        'src/cache/memoryBudgets.ts',
         'src/cache/ObjectPool.ts',
         'src/cache/poolRegistry.ts',
         'src/i18n/index.ts',
