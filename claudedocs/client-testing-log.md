@@ -475,3 +475,25 @@ cd client && npx vitest run --testTimeout=30000 --coverage --coverage.include='s
 ### 一条留在注释里的诚实记录
 
 `abortShim` 的 `_fire` 里有 `this.listeners = []` 一行。**把它删掉，12 例全绿**——真正保证「只触发一次」的是前面那道 `aborted` 守卫，这一行是**引用释放**（一个已 abort 的 signal 不该继续攥着监听器以及它们闭包里的东西），本层任何断言都看不见它。所以它被写进那条用例的注释里，而不是被一个「看起来像行为测试」的东西盖住。**覆盖率能证明一行跑过，证明不了它有用；变异存活就是在告诉你这一行的价值在别处。**
+
+## 目录级 include 会把新文件收进门禁，但**包级百分比看不见它**（2026-09-14，worktree `feat/weekly-test-gaps`）
+
+`src/scenes/worldmap/logic/siegeHold.ts` 是 09-12 随围攻功能新建的 7 行纯函数。
+`vitest.config.ts` 的 `include` 里 `src/scenes/worldmap/logic/**` 是**目录级**条目（ADR-070 4b 那批），
+所以它一落地就进了门禁范围——这一半是按设计工作的，不需要有人记得改 include。
+
+**但它在门禁里躺了两天，行覆盖 0%。** 原因是 `checkCoverageThreshold.mjs` 卡的是**包级**行/分支百分比：
+client 当时 99.66%，多出七行未覆盖只让这个数动了 0.02pp，离 90% 的线还有十个百分点。一个全新文件整个
+没测，在这套门禁下是完全看不见的。
+
+`client/test/worldMapSiegeHold.test.ts`（6 例）补掉之后 100%/100%，client 包 99.66 → 99.76。
+
+**这个模块存在的唯一理由就是它被漏掉时的那个症状**：hold 只钉在一格（主城的锚点 / 城池 march 落到的那格），
+而玩家点的是他能看见围攻 token 的那一格，主城又是不可分割的 3×3（ADR-025），九格开同一个菜单。
+退化成 `h.x === tx && h.y === ty` 的话，**停止围攻按钮从九格里的八格上消失**——不抛异常、围攻照跑、
+只是玩家在他正看着的那一格上停不掉。所以这份测试的重点不是"函数返回对不对"，而是九格全枚举 +
+外一圈为空（放宽同样是 bug：会把按钮画到隔壁不相干的地块菜单上）。
+
+**可以考虑的门禁**：「本次 diff 新增的源文件覆盖率不得为 0」。本轮另一处
+（`commercial/src/iap.ts` 的 `createAppleSubscriptionReader`，函数级 0 调用）是同一个形状，
+两处都能被这样一条检查当天拦住。详见 `server-testing-coverage.md` 同日那节。
