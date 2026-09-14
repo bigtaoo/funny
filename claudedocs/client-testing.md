@@ -335,6 +335,15 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-08.md`](../design/game/UI_DESIGN_LOG_2026-08.md) §48；第二轮（可读性下限 + 扩面到 32 站 × 6 尺寸 + 它带出来的 7 处返工）见 §49；第三轮（喂真实数据 + 三语 + 站点表修正 + 结算录制器）见 §50。
 
+### 同一趟 36 站的第二个用途：bake 缓存天花板（`bakeBudget.spec.ts`，2026-09-14 新增）
+
+`test/browser/bakeBudget.spec.ts` 走的是**同一张 `STOPS` 表、同一套走法**，但每站不判排版，只读一次 `__nwE2E.bakeEntries()`，把 bake 缓存的 key 并起来——走完 36 站就是这台设备**一次会话的天花板**（那张缓存按设计不淘汰，所以它是天花板不是曲线）。`NW_BAKE=1` 才跑，与 `captureEndStats` 同挂在 `playwright.portrait.config.ts` 下（同一个 docker 栈、同一个 9097 dev server）。报告落 `client/bake-report/*.json`（已 gitignore）。背景与实测数字见 [`client-memory-leak.md`](client-memory-leak.md) §11.8。
+
+两点值得单独记：
+
+- **读 key 的并集，不读当下总量。** 巡检中途必然 reload（有些站没有回程），而 reload 会销毁 renderer 连带整张 bake 缓存——之后的总量是重新爬的。key 在同一几何下恒定，所以并集才是「一次不中断的会话」的量。**凡是要跨 reload 累计的测量，都得找一个 reload 不变的标识去并，而不是把读数加起来。**
+- **走法抽进了 `test/browser/lib/walk.ts`**（`open` / `backToLobby` / `whereAmI` / `label`），两个 spec 共用。里头两处等待各是一轮错误结果换来的（tap 跳要轮询——服务器填的列表在 `state.screen` 变的那一刻还是空的；导航跳要在超时循环里清首次功能引导），复制一份就是复制掉这两条。
+
 ## E2E / 冒烟 harness 维护红线：HeadlessAppViews 必须实现 AppViews 全接口
 
 `test/harness/HeadlessAppViews.ts` 是 `AppViews` 的 headless 实现，E2E（`createAppCore` 全链路）与导航冒烟都靠它。**`AppViews`（含 `showLobby` 返回的 `LobbyView` 句柄）新增方法时，必须同步在 HeadlessAppViews 补桩**。两类漏补的暴露时机不同：

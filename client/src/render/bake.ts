@@ -235,6 +235,53 @@ export function bakeStats(): { count: number; bytes: number; largest: BakeEntryS
   return { count: cache.size, bytes, largest };
 }
 
+/**
+ * Bytes in ONE full backbuffer at the current size — the unit that a page-sized bake is one of.
+ *
+ * Exists so a budget on this cache can be device-independent. Measured over the same 36-stop walk
+ * (`test/browser/bakeBudget.spec.ts`), one page-sized texture costs 5.4 MiB on a phone and 7.9 MiB
+ * on a 1280x631 desktop, and a 2592-wide desktop at resolution 1.5 would pay ~24 MiB — a 4x spread
+ * for identical, healthy behaviour, because `pageScale: true` sizes these for the device pixels
+ * they cover. An absolute MB budget therefore cannot tell "healthy on a big screen" from "sick on a
+ * small one"; counted in backbuffers, both read as the same ~11.
+ *
+ * And it stays honest about the 2026-08-25 bug, which a self-referential unit would not: counting
+ * bake bytes in PAGE-sized-bakes would have divided the 16x oversampling straight back out. A
+ * backbuffer is what the screen genuinely needs, so an oversampled page is 16 of them.
+ *
+ * 0 with no renderer wired (headless tests) — callers must treat that as "no opinion", not as a
+ * budget of zero.
+ */
+export function screenBytes(): number {
+  if (!renderer) return 0;
+  return renderer.width * renderer.height * 4;
+}
+
+/**
+ * Every cached bake, one entry each — the itemised version of {@link bakeStats}.
+ *
+ * Exists for one measurement that the totals cannot survive: a sweep that walks every screen to
+ * find this cache's session ceiling has to RELOAD the page occasionally (some stops leave no way
+ * back), and a reload destroys the renderer and with it the whole cache. Totals read after that
+ * are a fresh climb, not a continuation. Keys are not: the same screen at the same geometry always
+ * bakes the same key at the same size, so the union of keys across a walk is exactly what one
+ * uninterrupted session would be holding — reload-proof by construction.
+ *
+ * Kept out of {@link bakeStats} deliberately: that one runs on `MemoryMonitor`'s 5 s sample and
+ * allocates nothing, and a leak monitor that mints an array of the thing it is measuring, every
+ * five seconds forever, is a bad shape to reach for.
+ */
+export function bakeEntries(): BakeEntryStat[] {
+  const out: BakeEntryStat[] = [];
+  for (const [key, tex] of cache) {
+    const bt = tex.baseTexture;
+    const w = bt?.realWidth ?? 0;
+    const h = bt?.realHeight ?? 0;
+    out.push({ key, w, h, bytes: w * h * 4 });
+  }
+  return out;
+}
+
 /** Drop all cached textures (e.g. on a hard relayout). */
 export function clearBakeCache(): void {
   for (const tex of cache.values()) tex.destroy(true);

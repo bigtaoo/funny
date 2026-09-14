@@ -7,7 +7,7 @@ import type { AudioBus, AudioCue, MusicTrack } from '../audio/types';
 import type { MusicPlayer, MusicDeck } from '../audio/MusicPlayer';
 import { ALL_CUES } from '../audio/cueCatalogue';
 import { WebAudioBus } from '../platform/web/WebAudioBus';
-import { bakeStats } from '../render/bake';
+import { bakeStats, bakeEntries } from '../render/bake';
 import { probeTextMetrics, type TextMetricsReport } from '../render/textMetricsProbe';
 
 // Test-only entry (client/test/browser Playwright specs) — boots the exact same real
@@ -35,6 +35,9 @@ function wrapViews(views: AppViews): AppViews {
   // entry, like `app`/`__nwAudio`) so a real-browser scene sweep can read count/bytes/largest
   // after every transition instead of inferring GPU bytes from the JS heap.
   handle.bake = bakeStats;
+  // …and the itemised form, because a walk long enough to find this cache's ceiling gets reloaded
+  // on the way (see `bakeEntries`' header): totals restart at zero, the set of KEYS does not.
+  handle.bakeEntries = bakeEntries;
   // The Chrome half of the WeChat comparison (render/textMetricsProbe.ts). Exposed rather than
   // shipped into the page as a serialised closure, because `page.evaluate(fn)` sends only the
   // function's own source — the corpus, the size list and the two helpers it closes over would

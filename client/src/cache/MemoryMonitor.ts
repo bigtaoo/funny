@@ -2,8 +2,11 @@ import * as PIXI from 'pixi.js-legacy';
 import { netLog } from '../net/log';
 import { reportAnomaly, setAnrContextProvider, getActiveScene } from '../net/anomaly';
 import { snapshotPools } from './poolRegistry';
-import { bakeStats } from '../render/bake';
+import { bakeStats, screenBytes } from '../render/bake';
 import { debugNum } from '../debugFlags';
+import {
+  DEFAULT_WARN_MB, DEFAULT_GEN_TEX_BUDGET, DEFAULT_TEX_BUDGET_MB, DEFAULT_BAKE_BUDGET_SCREENS,
+} from './memoryBudgets';
 
 // Runtime memory monitor: reads JS heap usage every few seconds, emits a console.warn when the threshold
 // is exceeded, and dumps idle-object counts / rough size estimates for all object pools (poolRegistry.snapshotPools).
@@ -15,46 +18,16 @@ import { debugNum } from '../debugFlags';
 // so watching usedJSHeapSize catches this class of issue precisely. Only Chromium / WeChat support performance.memory;
 // other environments automatically fall back to "listen only to wx signals, skip heap sampling".
 //
-// The GPU side is covered separately, and by two different shapes of signal — because the 2026-08-25 crash
+// The GPU side is covered separately, and by three different shapes of signal — because the 2026-08-25 crash
 // showed one of them alone is not enough. genTexCount() counts generated textures (the "hundreds of
 // un-destroyed Texts" leak); texBytes() sums decoded BYTES (the "three RenderTextures at 111 MB each"
-// blowout, which is a count of 3 and invisible to both the count gate and the heap gate). Neither
-// substitutes for the other, so both have a budget and both feed every report.
+// blowout, which is a count of 3 and invisible to both the count gate and the heap gate); bakeStats()
+// sums the bake cache, which is bytes again but from a map neither of the other two can reach —
+// `RenderTexture.create()` never enters `BaseTextureCache`. None substitutes for another, so all three
+// have a budget and all three feed every report.
 
 const log = netLog('mem');
 const MB = 1024 * 1024;
-
-// Default JS heap warning threshold (MB). A healthy match JS heap is typically well below 150 MB; 400 MB
-// gives enough headroom to avoid false positives from normal fluctuations while still catching unbounded
-// leak growth (which will eventually cross it). Can be tightened per platform via
-// localStorage.setItem('nw_mem_warn_mb', '250') (e.g. low-end Android / WeChat).
-const DEFAULT_WARN_MB = 400;
-
-/**
- * Soft budget for **generated** (non-URL) base textures — Text/RenderTexture/generateTexture results
- * (see genTexCount). A healthy client keeps only a bounded live set (on-screen labels, baked chrome, a
- * handful of tokens); legitimate peaks sit in the low hundreds. Crossing this *while still climbing* is a
- * generated-texture leak caught early — before it inflates the JS heap past DEFAULT_WARN_MB (a generated
- * texture is mostly GPU memory, which usedJSHeapSize barely reflects, so this fires long before the heap
- * gate would). Tunable via localStorage.setItem('nw_gentex_budget', '400'). This is the regression guard
- * for the leak class fixed in the overlay-scene teardown pass.
- */
-const DEFAULT_GEN_TEX_BUDGET = 600;
-
-/**
- * Soft budget (MB) for **decoded texture bytes** across the whole base-texture cache.
- *
- * Why a byte budget exists alongside the count above: on 2026-08-25 a phone-class in-app WebView
- * died on a reload loop because the first lobby paint allocated three page-sized RenderTextures of
- * 111 MB each. `genTexCount` saw that as **3** — comfortably inside a budget of 600 — so nothing
- * fired, and `usedJSHeapSize` barely moved because the bytes are GPU-side. A count cannot express
- * "few but enormous"; bytes can, and it is the axis the OS actually kills on.
- *
- * 256 MB is set as "no phone should ever be here": a healthy client after the bake-resolution fix
- * sits around one screen's worth of pixels per cached page layer (~7-10 MB each on a phone).
- * Tunable via localStorage.setItem('nw_tex_budget_mb', '128').
- */
-const DEFAULT_TEX_BUDGET_MB = 256;
 
 const SAMPLE_EVERY_MS = 5_000;   // sampling interval
 const REWARN_EVERY_MS = 30_000;  // minimum interval between two consecutive warnings (to avoid log spam)
@@ -87,6 +60,11 @@ function genTexBudget(): number {
 function texBudgetMB(): number {
   // Read through debugFlags so the knob also works on WeChat/native (no global localStorage).
   return debugNum('nw_tex_budget_mb', DEFAULT_TEX_BUDGET_MB);
+}
+
+function bakeBudgetScreens(): number {
+  // Read through debugFlags so the knob also works on WeChat/native (no global localStorage).
+  return debugNum('nw_bake_budget_screens', DEFAULT_BAKE_BUDGET_SCREENS);
 }
 
 const round = (n: number, d = 1): number => {
@@ -299,6 +277,15 @@ export class MemoryMonitor {
   /** Decoded texture MB at the previous sample — the byte gate, like the count gate, only fires
    *  when it is over budget AND still growing, so a large-but-stable working set stays quiet. */
   private lastSampledTexMB = -1;
+  /**
+   * Bake-cache size in backbuffers at the previous sample. Same "over budget AND still growing"
+   * shape as the two above, and here it is not just consistency: this cache grows by one
+   * page-sized texture per newly visited screen and then sits still forever, so "growing" is
+   * precisely "the player is still opening screens we have not paid for yet". A client parked over
+   * budget files one report per step it takes past it, not one every 30 s for the rest of the
+   * session.
+   */
+  private lastSampledBakeScreens = -1;
 
   install(ticker: PIXI.Ticker, stage?: PIXI.Container): void {
     this.ticker = ticker;
@@ -316,6 +303,10 @@ export class MemoryMonitor {
         tex: cacheSize('TextureCache'),
         baseTex: cacheSize('BaseTextureCache'),
         ...(() => { const b = texBytes(); return b ? { texMB: b.totalMB, largestMB: b.largestMB } : {}; })(),
+        // …and the bytes `texMB` structurally cannot include (see DEFAULT_BAKE_BUDGET_SCREENS).
+        // Same cost budget as the walk above: one pass over a map that holds tens of entries, not
+        // the 200k node walk this provider deliberately excludes.
+        bakeMB: round(bakeStats().bytes / MB),
         tickers: this.ticker?.count ?? -1,
       },
     }));
@@ -345,6 +336,11 @@ export class MemoryMonitor {
     //   ③ decoded texture BYTES over budget AND still climbing — the axis ② cannot express. A handful
     //      of oversized RenderTextures is a small count and a huge footprint (2026-08-25: three at
     //      111 MB), and it is bytes, not entries, that the OS kills a mobile WebView over.
+    //   ④ the BAKE CACHE over budget AND still climbing, counted in backbuffers — the cache ③
+    //      structurally cannot see, because `RenderTexture.create()` never enters `BaseTextureCache`.
+    //      Same bytes and the same OS kill, a different map and a different unit: ③ guards the
+    //      URL-asset path in MB, ④ guards the one this app mints itself, in screenfuls (see
+    //      DEFAULT_BAKE_BUDGET_SCREENS for why MB cannot straddle phone and desktop here).
     const heap = readHeap();
     const usedMB = heap ? heap.usedJSHeapSize / MB : 0;
     const threshold = warnThresholdMB();
@@ -363,7 +359,17 @@ export class MemoryMonitor {
     this.lastSampledTexMB = texMB;
     const texOver = tex != null && texMB > texBudget && texClimbing;
 
-    if (!heapOver && !genOver && !texOver) return;
+    const baked = bakeStats();
+    // Zero before the renderer exists (and in headless tests): no denominator, so no opinion —
+    // never a budget of zero, which would report every boot.
+    const screen = screenBytes();
+    const bakeScreens = screen > 0 ? baked.bytes / screen : 0;
+    const bakeBudget = bakeBudgetScreens();
+    const bakeClimbing = this.lastSampledBakeScreens < 0 || bakeScreens > this.lastSampledBakeScreens;
+    this.lastSampledBakeScreens = bakeScreens;
+    const bakeOver = bakeScreens > bakeBudget && bakeClimbing;
+
+    if (!heapOver && !genOver && !texOver && !bakeOver) return;
 
     const t = nowMs();
     if (t - this.lastWarnMs < REWARN_EVERY_MS) return;
@@ -373,7 +379,15 @@ export class MemoryMonitor {
         ? `JS heap ${usedMB.toFixed(0)}MB exceeds warning threshold of ${threshold}MB`
         : genOver
           ? `generated textures ${generated} exceed budget of ${budget} and still climbing (likely a Text/RenderTexture leak)`
-          : `decoded textures ${texMB.toFixed(0)}MB exceed budget of ${texBudget}MB and still climbing (largest ${tex?.largest} at ${tex?.largestMB}MB)`,
+          : texOver
+            ? `decoded textures ${texMB.toFixed(0)}MB exceed budget of ${texBudget}MB and still climbing (largest ${tex?.largest} at ${tex?.largestMB}MB)`
+            // The bake cache names its own call site: `largest.key` is the bake key (`lobbybg:…`,
+            // `paper:1024x768…`), so this line alone says which screen's art to go and look at.
+            // MB is carried alongside the ratio because the ratio alone cannot be compared with the
+            // `texMB` on the same line, and the two together are the GPU total.
+            : `bake cache ${bakeScreens.toFixed(1)} backbuffers (${round(baked.bytes / MB)}MB in `
+              + `${baked.count} textures) exceeds budget of ${bakeBudget} and still climbing`
+              + (baked.largest ? ` (largest ${baked.largest.key} ${baked.largest.w}x${baked.largest.h})` : ''),
     );
   };
 
