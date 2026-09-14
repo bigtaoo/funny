@@ -441,3 +441,37 @@ mock，所以「服务端拒了这张 receipt 就绝不能 finish」这条规则
 没有 pixiHeadless 那层适配）。为了一个百分比把一份内聚的文件劈成两半，正是 `vitest.config.ts` 里那段
 注释自己反对的做法。它已经有真门禁（CI 跑 `npm run test:ui`），缺的只是百分比；真要补，得给 ui 套件
 接一份独立的 coverage 源，那是另一件事。
+
+## 重量一次 0% 存量，再收两份（2026-09-14，worktree `feat/client-coverage-round9`）
+
+`client-zero-percent-inventory-2026-09-02` 那张候选名单在 2026-09-09 被清空了，规矩是**要继续这条线得先按配方重新量一次**（别从旧名单挑）。这轮就是重量 + 收两份。
+
+### 重量的结果：存量几乎没动，而且这正是预期
+
+把 include 临时撑开（**用 CLI 覆盖参数，别改文件**）：
+
+```bash
+cd client && npx vitest run --testTimeout=30000 --coverage --coverage.include='src/**' \
+  --coverage.reporter=json-summary --coverage.reportsDirectory=./coverage-wide
+```
+
+| | 2026-09-02 | 2026-09-14 |
+|---|---|---|
+| 整个 `src/` | 33.54%（19367/57736），502 文件 | **34.94%（21203/60671），537 文件** |
+| 0% 且 ≥25 行 | 198 文件 / 28600 行 | **200 文件 / 29291 行** |
+| 其中不碰 PIXI | 60 文件 / 4604 行 | **52 文件 / 5267 行** |
+
+**多出来的 700 行不是退步**：两周里 `src/` 自己长了 2935 行，0% 的那堆里绝大多数是新写的绘制代码（ADR-071 明确不追，由 `test:ui`/`test:e2e` 覆盖，那两层不报覆盖率）。52 份非 PIXI 文件里再刨掉 `scenes/**` 的 Core 协作者、`testing/**`（测试设施自己）、`entries/**`（入口）、`net/proto/replay.ts`（生成代码），**真正可动的是个位数**。
+
+> **⚠️ 量的时候会撞到一个假故障**：`test/nativePaymentIsolation.test.ts` 里那条 `await import('../src/ui/dialogs/ConsentDialog')` 在撑开的 include 下会超过 5 秒默认超时（要现场插桩一整条 PIXI 依赖链），报成一条测试失败，而且**失败的那次 vitest 不写覆盖率报告**——于是现象是「跑完了，`coverage-wide/` 不存在」。加 `--testTimeout=30000` 即可，不是被测代码的问题。
+
+### 收掉的两份
+
+1. **`scenes/worldmap/net/loaders.ts`（122 行，0% → 100%/100%/100%）**，`test/worldMapLoaders.test.ts` 27 例。挑它的理由不是行数，是**七个空 `catch { /* offline OK */ }`**：对一张必须扛住断网的地图这是对的写法，同时也意味着「调错端点 / 写错字段 / 少写一半 payload」和「离线」长得一模一样，什么都不抛。钉住的三处：`await` **之后**的第二道 `destroyed` 复查（往已销毁场景里 render 就是 `client-memory-leak.md` §8 那类泄漏，而 fetch 正是玩家退出的那个窗口）、`zoom` 同时决定端点和稀疏 LOD（`thin`@3 / `mid`@2，走错一边不是 64 倍带宽就是永远缺细节）、`teamsLoaded` 的**只置不清**（一次离线抖动不能让编队面板宣称玩家没有队伍）。变异验红 6 处。
+2. **`platform/wechat/abortShim.ts`（44 行，0% → 100%）**，`test/wechatAbortShim.test.ts` 12 例。这份的分量全在它的来历：它不存在的那段时间，**微信包里每一个 REST 调用都在 `net/ApiClient/core.ts` 的 `new AbortController()` 那行就死了**，还报成网络错误。44 行记账代码值不值一个门禁？值——因为它的每个细节在别的平台上都不可观测：`??=`（哪天基础库补上了这两个类，别被我们永久遮住）、reason 的 `name` 必须是 `AbortError`（每个调用方都靠这一句区分「我们取消的」和「网络死了」）、监听器**只触发一次且被 try 包住**（它们在 `wx` 的 RequestTask 上取消一个真请求，而且是从 timeout 回调里调进来的）。变异验红 5 处。
+
+**客户端门禁 scope：6723 → 6889 行 / 125 → 127 文件，行覆盖率保持 99.66%**（分支 97.69% → 97.71%，函数 100%）。
+
+### 一条留在注释里的诚实记录
+
+`abortShim` 的 `_fire` 里有 `this.listeners = []` 一行。**把它删掉，12 例全绿**——真正保证「只触发一次」的是前面那道 `aborted` 守卫，这一行是**引用释放**（一个已 abort 的 signal 不该继续攥着监听器以及它们闭包里的东西），本层任何断言都看不见它。所以它被写进那条用例的注释里，而不是被一个「看起来像行为测试」的东西盖住。**覆盖率能证明一行跑过，证明不了它有用；变异存活就是在告诉你这一行的价值在别处。**

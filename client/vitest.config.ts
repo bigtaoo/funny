@@ -206,6 +206,17 @@ export default defineConfig({
         // Cases + the four verified mutations live in `test/nativeBridges.test.ts`.
         'src/platform/iap.ts',
         'src/platform/nativeAds.ts',
+        // ...and the AbortController shim the mini-game runtime has no substitute for
+        // (test/wechatAbortShim.test.ts, 2026-09-14). Also 0%, and the file exists because its
+        // absence made EVERY WeChat REST call fail at `new AbortController()` in
+        // `net/ApiClient/core.ts` — before the transport layer, reported to the player as a network
+        // error, for as long as that build had existed (found by the in-package layout sweep, not by
+        // a test). What a gate buys on 44 lines of bookkeeping is that its details are invisible
+        // everywhere else: `??=` (so a base library that ships these one day is not shadowed
+        // forever), an `AbortError`-named reason (the branch every caller writes to tell a cancel
+        // from a dead network), and listeners that are contained and fire once (they cancel a live
+        // `wx` RequestTask, from inside a timeout callback where an escaping throw has no stack).
+        'src/platform/wechat/abortShim.ts',
         // inputSystem: the WeChat touch adapter (2026-09-02). WeChat mini-games have no DOM, so
         // PIXI's EventSystem never fires and EVERY tap in that build arrives through this one file
         // — and it had never been instantiated by any suite. It is not a leaf, it is the first
@@ -336,6 +347,19 @@ export default defineConfig({
         // also how a case controls what the awaited refetch leaves in `tileCache` for the
         // hold-vs-final split to read.
         'src/scenes/worldmap/net/push.ts',
+        // ...and what those handlers CALL when a push says "go and refetch" (test/worldMapLoaders.test.ts,
+        // 2026-09-14). Seven fetch-and-cache functions, 0% before this, and they carry SEVEN empty
+        // `catch { /* offline OK */ }` blocks between them — correct for a map that must survive a dead
+        // network, and the reason a loader that calls the wrong endpoint, lands in the wrong field or
+        // drops half its payload looks exactly like being offline. Three specific quiet failures this
+        // pins: the `destroyed` re-check AFTER the await (rendering into a torn-down scene is the leak
+        // class client-memory-leak.md §8 is about, and the fetch is precisely the window the player
+        // leaves in); the zoom branch, which picks both the endpoint and the sparse LOD ('thin' at 3,
+        // 'mid' at 2), where the wrong arm is either 64x the bandwidth asked for or a map permanently
+        // missing tile detail; and `teamsLoaded`, which latches on first success so an offline blip
+        // cannot make the team panel claim the player owns no teams. Same fake-ctx treatment as
+        // push.ts, for the same reason (the real ctx constructs PIXI).
+        'src/scenes/worldmap/net/loaders.ts',
         // ...and AuctionScene's label/glyph/level helpers (test/auctionItemLabels.test.ts, 2026-09-09).
         // Form ① free functions with no `core` at all, so unlike the pointer/input entries around here
         // they are not Core collaborators — the only reason they are a per-file entry rather than a
