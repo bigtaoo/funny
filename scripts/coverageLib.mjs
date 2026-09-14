@@ -170,6 +170,96 @@ export function readLcov(root, pkg) {
   }
 }
 
+// ─── Per-FILE coverage (scripts/checkNewFileCoverage.mjs) ────────────────────────────────────────
+//
+// Everything above this point reads a package's TOTALS. The new-file gate needs the other axis:
+// which individual files a package measured, and whether each was executed at all. Both backends
+// carry that already — json-summary has one entry per measured file beside `total`, lcov has one SF
+// block per file — so this is a third parser over the same two artifacts, and it lives here for the
+// same reason the other two do: a format quirk fixed in one place must not need finding again in
+// another.
+//
+// The gate's verdict deliberately does NOT live here, unlike `evaluate` below. That one was hoisted
+// because TWO scripts had to agree on it; this one has a single consumer, and moving it here would
+// only put distance between the rule and the message that explains it.
+
+/** Repo-relative, forward-slashed path for one coverage entry of `pkg`, or null if it cannot be placed.
+ *
+ *  Two shapes, neither of which is the repo-relative path we want:
+ *
+ *  · json-summary keys are ABSOLUTE and OS-flavoured (`D:\funny\client\src\app\x.ts` on Windows,
+ *    `/home/runner/work/funny/funny/client/src/app/x.ts` on CI). Resolving them against the repo
+ *    root would be wrong, not merely fragile: coverage artifacts are produced on a different
+ *    machine than the one that reads them (each CI shard uploads, the report job downloads), so the
+ *    absolute prefix belongs to a filesystem that no longer exists. What IS stable is that the
+ *    package directory appears in the path, so anchor on the LAST `/<pkg>/` and keep the tail.
+ *
+ *  · lcov SF entries are relative already, but `server/engine` names the COMPILED file
+ *    (`dist/balance/equipment.js`), because that package measures its build output — the same fact
+ *    recorded in claudedocs/server-testing-coverage.md as "engine 的 lcov 行号是 dist 行号".
+ *    `dist/**.js` → `src/**.ts` is that package's own tsc layout, applied here so that a new engine
+ *    source file is reachable by the gate rather than silently outside its range. */
+export function coverageEntryToRepoPath(pkg, key) {
+  const norm = String(key).split('\\').join('/');
+  const marker = `/${pkg}/`;
+  const at = norm.lastIndexOf(marker);
+  let rel = at >= 0 ? norm.slice(at + marker.length) : norm.replace(/^\.\//, '');
+  if (rel === '' || rel.startsWith('/')) return null;
+  if (rel.startsWith('dist/') && rel.endsWith('.js')) rel = `src/${rel.slice(5, -3)}.ts`;
+  return `${pkg}/${rel}`;
+}
+
+/** Per-file LINE counts for one package as `Map<repoRelativePath, { total, covered }>`, or null when
+ *  the package produced no coverage output at all.
+ *
+ *  Null is a distinct answer from an empty map, and the caller must keep them apart: an empty map is
+ *  "it ran and measured nothing", null is "no artifact" — which checkCoverageThreshold already fails
+ *  on, so the new-file gate stays quiet about it rather than reporting one broken step twice (the
+ *  cascade TESTS_OK exists to break, see that script's header). */
+export function readFileCoverage(root, pkg) {
+  const out = new Map();
+  if (LCOV_PACKAGES.includes(pkg)) {
+    let raw;
+    try {
+      raw = readFileSync(join(root, pkg, 'coverage', 'lcov.info'), 'utf8');
+    } catch {
+      return null;
+    }
+    let cur = null;
+    const flush = () => {
+      if (cur?.path) out.set(cur.path, { total: cur.total, covered: cur.covered });
+      cur = null;
+    };
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed === 'end_of_record') { flush(); continue; }
+      const idx = trimmed.indexOf(':');
+      if (idx < 0) continue;
+      const key = trimmed.slice(0, idx);
+      const value = trimmed.slice(idx + 1).trim();
+      if (key === 'SF') { flush(); cur = { path: coverageEntryToRepoPath(pkg, value), total: 0, covered: 0 }; }
+      else if (key === 'LF' && cur) cur.total = Number(value);
+      else if (key === 'LH' && cur) cur.covered = Number(value);
+    }
+    flush(); // an lcov file whose last block is missing its end_of_record still counts
+    return out;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(join(root, pkg, 'coverage', 'coverage-summary.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+  for (const [key, entry] of Object.entries(parsed)) {
+    if (key === 'total') continue;
+    const rel = coverageEntryToRepoPath(pkg, key);
+    const lines = entry?.lines;
+    if (!rel || !lines) continue;
+    out.set(rel, { total: Number(lines.total ?? 0), covered: Number(lines.covered ?? 0) });
+  }
+  return out;
+}
+
 /** Reads every tracked package's coverage output (root = repo root, i.e. process.cwd() when run
  *  from CI). Row shape: `{ pkg, srcFiles, missing: true }` or `{ pkg, srcFiles, scopeFiles, lines,
  *  statements, branches, functions }` where each metric is `{ total, covered, pct }`.

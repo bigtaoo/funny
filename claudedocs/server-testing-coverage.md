@@ -902,6 +902,16 @@ commercial 97.19→97.37 行、98.87→99.43 函数；client 99.66→99.76 行�
 `returnSurvivors()`（红 1）、`createAppleSubscriptionReader` 去掉 null 判断改成每次调用重建（红 2）。
 全部改回后重跑绿。
 
+### 后续：那条「新增文件不得 0%」的门禁当天就做掉了
+
+本节两处缺口（siegeHold 整个文件 0%、`createAppleSubscriptionReader` 函数 0 调用）都是包级百分比看不见
+的形状，所以同日下午补了 `scripts/checkNewFileCoverage.mjs`——`coverage-report` job 里紧跟
+`checkCoverageThreshold` 的第三道门禁，只卡「本次新增、且它所属的包已经在量、而覆盖行数为 0」的文件。
+**验证方式是把 09-12 的真实状态复现后复跑**（删掉本轮新写的 `worldMapSiegeHold.test.ts`、重跑 client 覆盖
+率、以 `3169332f3^` 为 base），门禁当场红在 siegeHold.ts 上，测试放回去就绿。规则口径、engine 的
+`dist`→`src` 路径映射、fail-closed 的 base ref、以及 7 个变异验证见
+[`server-testing-tooling.md`](server-testing-tooling.md) 的「第三道覆盖率门禁」。
+
 ### 顺带踩到一次「测试绿、类型红」
 
 `vi.fn<[Args], Return>` 是 vitest 1.x 的签名，2.x 要 `vi.fn<(a: A) => R>()`。四处报 TS2558/TS2345，

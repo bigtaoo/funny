@@ -586,7 +586,14 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 for checkNewFileCoverage.mjs at the bottom of this job — it diffs this change
+      # against its base to find ADDED files, and the default shallow clone has no base commit to
+      # diff against (the script fails closed on that rather than checking nothing, so a shallow
+      # checkout here would be a red job, not a silent green). Every other job in this file keeps the
+      # default: nothing else needs history, and this is the only one paying for it.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       # Each download target below matches how upload-artifact rooted that shard's artifact (see
       # the comments on `coverage_paths` and the upload step in server-test/client-test): the
       # metaserver/worldsvc/client shards each uploaded a single directory's contents (so they're
@@ -690,6 +697,24 @@ jobs:
         env:
           TESTS_OK: ${{ needs.server-test.result == 'success' && needs.client-test.result == 'success' && needs.tools-test.result == 'success' }}
         run: node scripts/checkCoverageThreshold.mjs
+      # Second gate, different grain (2026-09-14): the bar above is ONE number per package, and that
+      # cannot see a brand-new file. Measured the day this landed —
+      # `client/src/scenes/worldmap/logic/siegeHold.ts` shipped on 09-12 inside an already-gated
+      # directory scope with no test anywhere, and its seven uncovered lines moved client's gated
+      # number by 0.02pp against a 90% bar; `commercial`'s `createAppleSubscriptionReader` was at
+      # zero calls the same day. Neither is a percentage problem. This step fails only on an ADDED
+      # file that its own package already measures and that has zero covered lines — see
+      # scripts/checkNewFileCoverage.mjs for why there is deliberately no allowlist (the escape
+      # hatch is that package's coverage.include) and why it fails closed when it cannot resolve a
+      # base ref. TESTS_OK for the same cascade reason as the step above.
+      #
+      # NEW_FILE_BASE_REF: the PR's base sha on pull_request, the pre-push sha on push. The script
+      # falls back to origin/main when that is empty or all-zeros (a branch's first push).
+      - name: no newly added source file may land at zero coverage
+        env:
+          TESTS_OK: ${{ needs.server-test.result == 'success' && needs.client-test.result == 'success' && needs.tools-test.result == 'success' }}
+          NEW_FILE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/checkNewFileCoverage.mjs
       # Publishes this run's numbers as the baseline every later run's Δ column is read against.
       # Three conditions, each load-bearing: `success()` so a run that just failed the gate cannot
       # become the thing future runs are compared favourably against; push-to-main so a PR cannot
