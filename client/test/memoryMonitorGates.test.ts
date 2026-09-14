@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
   anrProviders: [] as (() => unknown)[],
   pools: { rows: [] as { label: string; idle: number; estBytes: number }[], totalIdle: 0, totalBytes: 0 },
   bake: { count: 0, bytes: 0, largest: null as { key: string; w: number; h: number; bytes: number } | null },
+  /** The bake gate's denominator — one backbuffer. 4 MB (a 1024x1024 screen) unless a test says otherwise. */
+  screenBytes: 4 * 1024 * 1024,
   scene: null as string | null,
 }));
 
@@ -55,7 +57,7 @@ vi.mock('../src/net/anomaly', () => ({
 }));
 
 vi.mock('../src/cache/poolRegistry', () => ({ snapshotPools: () => h.pools }));
-vi.mock('../src/render/bake', () => ({ bakeStats: () => h.bake }));
+vi.mock('../src/render/bake', () => ({ bakeStats: () => h.bake, screenBytes: () => h.screenBytes }));
 
 import { MemoryMonitor, texBytes } from '../src/cache/MemoryMonitor';
 
@@ -143,6 +145,7 @@ beforeEach(() => {
   h.anrProviders.length = 0;
   h.pools = { rows: [], totalIdle: 0, totalBytes: 0 };
   h.bake = { count: 0, bytes: 0, largest: null };
+  h.screenBytes = 4 * MB;
   h.scene = null;
 });
 
@@ -330,6 +333,137 @@ describe('the decoded-bytes gate', () => {
     const { ticker } = install();
     ticker.fire();
     expect(h.warns[0]!.msg).toContain('JS heap');
+  });
+});
+
+// ── Gate ④: BAKE-CACHE size, in backbuffers ─────────────────────────────────
+
+describe('the bake-cache gate', () => {
+  /** Put the bake cache at `screens` backbuffers, with a plausible largest entry. */
+  function bakeAt(screens: number): void {
+    const bytes = screens * h.screenBytes;
+    h.bake = {
+      count: 4,
+      bytes,
+      largest: { key: 'paper:1080x1920:97', w: 3240, h: 5760, bytes: bytes / 2 },
+    };
+  }
+
+  it('fires on bytes the decoded-texture gate structurally cannot see', () => {
+    // The whole reason this gate exists: `RenderTexture.create()` never enters BaseTextureCache,
+    // so the cache below is empty, `texBytes()` reads 0 MB, and gate ③ is looking at the wrong map
+    // while the app holds 50 screens' worth of page backgrounds.
+    stubPerformance({ usedMB: 10 });
+    bakeAt(50);
+    const { ticker } = install();
+    ticker.fire();
+    expect(h.warns).toHaveLength(1);
+    expect(h.warns[0]!.msg).toContain('bake cache 50.0 backbuffers');
+    expect(h.warns[0]!.msg).toContain('budget of 24');
+    // MB alongside the ratio, because the ratio cannot be added to the `texMB` on the same line.
+    expect(h.warns[0]!.msg).toContain('200MB in 4 textures');
+    // The bake key names the call site to go and look at, which is this cache's advantage over
+    // every other GPU counter in the file.
+    expect(h.warns[0]!.msg).toContain('paper:1080x1920:97 3240x5760');
+    expect(h.anomalies[0]!.type).toBe('mem');
+  });
+
+  it('reads the same on a phone and on a desktop holding the same number of screenfuls', () => {
+    // The reason the unit is backbuffers at all. Both of these are a HEALTHY full walk (measured:
+    // ~12 screenfuls); the phone's is a third of the desktop's in megabytes, and an MB budget
+    // would have to either report the desktop or excuse a phone at 3x its healthy ceiling.
+    stubPerformance({ usedMB: 10 });
+    h.screenBytes = 5 * MB;          // 390x844 at dpr 2
+    bakeAt(12);
+    const phone = install();
+    phone.ticker.fire();
+    expect(h.warns).toHaveLength(0);
+
+    h.screenBytes = 15 * MB;         // a wide, high-DPI desktop
+    bakeAt(12);
+    const desktop = install();
+    desktop.ticker.fire();
+    expect(h.warns).toHaveLength(0);
+  });
+
+  it('stays quiet at the budget, and fires just past it', () => {
+    stubPerformance({ usedMB: 10 });
+    bakeAt(24);
+    const at = install();
+    at.ticker.fire();
+    expect(h.warns).toHaveLength(0);
+
+    bakeAt(24.5);
+    const over = install();
+    over.ticker.fire();
+    expect(h.warns).toHaveLength(1);
+  });
+
+  it('has no opinion when there is no renderer to size a backbuffer from', () => {
+    // Headless tests and the window before the renderer exists. A 0 denominator must read as "no
+    // opinion", not as a budget of zero — the latter would report on every boot.
+    stubPerformance({ usedMB: 10 });
+    h.screenBytes = 0;
+    h.bake = { count: 3, bytes: 500 * MB, largest: null };
+    const { ticker } = install();
+    ticker.fire();
+    expect(h.warns).toHaveLength(0);
+  });
+
+  it('a cache parked over budget reports once per step past it, not every cooldown forever', () => {
+    // This cache only grows when a NEW screen is opened, and then sits still. So "still climbing"
+    // is precisely "the player is opening screens we have not paid for yet" — a client parked at a
+    // high-but-stable ceiling must not file a report every 30 s for the rest of the session.
+    stubPerformance({ usedMB: 10, advanceMs: 60_000 });
+    bakeAt(50);
+    const { ticker } = install();
+    ticker.fire();
+    expect(h.warns).toHaveLength(1);
+
+    ticker.deltaMS = 60_000;   // well past the 30 s re-warn cooldown, so the flat gate is what is proven
+    for (let i = 0; i < 5; i++) ticker.fire();
+    expect(h.warns).toHaveLength(1);
+
+    bakeAt(60);                // one more screen
+    ticker.fire();
+    expect(h.warns).toHaveLength(2);
+  });
+
+  it('honours the localStorage budget override', () => {
+    stubStorage({ nw_bake_budget_screens: '8' });
+    stubPerformance({ usedMB: 10 });
+    bakeAt(10);
+    const { ticker } = install();
+    ticker.fire();
+    expect(h.warns[0]!.msg).toContain('budget of 8');
+  });
+
+  it('yields the message to the three older gates when more than one is over at once', () => {
+    // Priority is oldest-and-broadest first (heap > count > decoded bytes > bake). Pinned because
+    // the message is what a Loki query groups on: a bake line appearing while the heap is also
+    // blown would split one incident into two shapes.
+    stubPerformance({ usedMB: 900 });
+    stubStorage({ nw_tex_budget_mb: '1' });
+    bakeAt(50);
+    put('pixiid_1', 2000, 2000);
+    const heap = install();
+    heap.ticker.fire();
+    expect(h.warns[0]!.msg).toContain('JS heap');
+
+    h.warns.length = 0;
+    stubPerformance({ usedMB: 10 });
+    const tex = install();
+    tex.ticker.fire();
+    expect(h.warns[0]!.msg).toContain('decoded textures');
+  });
+
+  it('names the count and omits the largest clause when the cache reports no entries', () => {
+    stubPerformance({ usedMB: 10 });
+    h.bake = { count: 0, bytes: 50 * h.screenBytes, largest: null };
+    const { ticker } = install();
+    ticker.fire();
+    expect(h.warns[0]!.msg).toContain('in 0 textures');
+    expect(h.warns[0]!.msg).not.toContain('largest');
   });
 });
 
@@ -531,11 +665,15 @@ describe('the ANR context provider', () => {
     put('assets/cards/a.png', 64, 64);
     put('pixiid_1', 1000, 1000);
     h.textureCache = { a: 1, b: 2 };
+    h.bake = { count: 2, bytes: 20 * MB, largest: null };
     const { ticker } = install();
     const ctx = h.anrProviders[0]!() as { gpu: Record<string, unknown> };
     expect(ctx.gpu).toMatchObject({ tex: 2, baseTex: 2, tickers: ticker.count });
     expect(ctx.gpu.texMB).toBeCloseTo((64 * 64 + 1000 * 1000) * 4 / MB, 1);
     expect(ctx.gpu.largestMB).toBeCloseTo(1000 * 1000 * 4 / MB, 1);
+    // …and the bytes texMB structurally cannot include. A freeze on a phone holding 200 MB of page
+    // bakes and 8 MB of assets reads as "compute stall" without this line.
+    expect(ctx.gpu.bakeMB).toBe(20);
     // Deliberately absent: the watchdog fires DURING a stall, so a 200k-node walk is excluded.
     expect('nodes' in ctx.gpu).toBe(false);
   });

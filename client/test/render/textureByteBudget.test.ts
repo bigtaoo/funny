@@ -39,7 +39,10 @@ vi.mock('../../src/cache/poolRegistry', () => ({
   snapshotPools: () => ({ rows: [], totalIdle: 0, totalBytes: 0 }),
 }));
 
-vi.mock('../../src/render/bake', () => ({ bakeStats: () => bakeStub }));
+// `screenBytes` is the bake gate's denominator. 0 here on purpose: this suite is about the
+// DECODED-byte gate, and a 0 denominator is the documented "no opinion" value, so the bake gate
+// stays out of every assertion below.
+vi.mock('../../src/render/bake', () => ({ bakeStats: () => bakeStub, screenBytes: () => 0 }));
 
 import * as PIXI from 'pixi.js-legacy';
 import { MemoryMonitor } from '../../src/cache/MemoryMonitor';
