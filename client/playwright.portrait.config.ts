@@ -16,12 +16,13 @@ const STACK = 'http://localhost:8088';
 
 export default defineConfig({
   testDir: './test/browser',
-  // The sweep, plus the two opt-in specs that need the same stack and the same walk
+  // The sweep, the rotation sweep (2026-09-14 — same stack, same walk, one viewport turned
+  // sideways mid-stop), plus the two opt-in specs that need the same stack and the same walk
   // (captureEndStats.spec.ts skips itself unless NW_CAPTURE=1, bakeBudget.spec.ts unless
   // NW_BAKE=1 — so listing them here costs two skipped tests and buys the ability to regenerate
   // the end-stats fixture and re-measure the bake ceiling against the same stack, on the same dev
   // server, with one command).
-  testMatch: /(portraitLayout|captureEndStats|bakeBudget)\.spec\.ts$/,
+  testMatch: /(portraitLayout|rotateLayout|captureEndStats|bakeBudget)\.spec\.ts$/,
   // Six viewports x ~33 stops, each a real navigation (or a real tap into a modal) against a real
   // backend, and one Playwright test per viewport — so this is the budget for ONE viewport's whole
   // walk, not for the run. The run is ~25 minutes.

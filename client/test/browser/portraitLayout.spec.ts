@@ -40,10 +40,10 @@ import { seedAccount, seedWorld, type SeedTarget } from './lib/seed';
 // (`src/entries/wechat-layout.ts`) bundles them into a mini-game package that audits itself from
 // the inside. Dependency-free of PIXI and the DOM, so pulling them into a Playwright process is
 // still safe — and sharing the table is what keeps the two sweeps walking the same 36 stops.
-import {
-  auditLayout, auditOptionsFor,
-  type AuditFinding, type AuditOptions, type AuditResult,
-} from '../../src/testing/layoutAudit';
+import { auditLayout, type AuditFinding, type AuditResult } from '../../src/testing/layoutAudit';
+// The design box this viewport will get, and how to print a finding. Shared with
+// `rotateLayout.spec.ts`, which judges one screen against two boxes — see lib/auditBox.ts.
+import { auditFor, fmt } from './lib/auditBox';
 import { STOPS, hopName, type Hop, type Stop } from '../../src/testing/layoutStops';
 
 /**
@@ -89,41 +89,6 @@ const VIEWPORTS = [
 
 const OUT_DIR = 'portrait-report';
 
-/** Short edge of both layouts' reference box, and the axis both fix. */
-const REFERENCE_SHORT = 1080;
-/** PortraitLayout's `REFERENCE_H` floor; LandscapeLayout's `REFERENCE_W` / `MAX_W` bounds. */
-const PORTRAIT_MIN_LONG = 1920;
-const LANDSCAPE_MIN_LONG = 1920;
-const LANDSCAPE_MAX_LONG = 2592;
-
-/**
- * The design rect `createLayout` will build for this viewport — the two layouts' own sizing rules,
- * duplicated rather than imported because those modules pull `@nw/engine/config` and PIXI into a
- * Playwright process with no DOM. Both fix their SHORT axis at 1080 and let the long one track the
- * aspect: portrait never shorter than 1920, landscape between 1920 and 2592 (past which it
- * letterboxes on purpose — see LandscapeLayout's MAX_W).
- */
-function designBox(vp: { width: number; height: number }): { w: number; h: number } {
-  if (vp.width > vp.height) {
-    const long = Math.round(REFERENCE_SHORT * (vp.width / vp.height));
-    return { w: Math.min(LANDSCAPE_MAX_LONG, Math.max(LANDSCAPE_MIN_LONG, long)), h: REFERENCE_SHORT };
-  }
-  const long = Math.round(REFERENCE_SHORT * (vp.height / vp.width));
-  return { w: REFERENCE_SHORT, h: Math.max(PORTRAIT_MIN_LONG, long) };
-}
-
-/** The design→screen scale `ScalingManager` will contain this viewport at. */
-function designScaleOf(vp: { width: number; height: number }): number {
-  const box = designBox(vp);
-  return Math.min(vp.width / box.w, vp.height / box.h);
-}
-
-/** Audit options for one viewport — the shared helper, fed this shape's own design box. */
-function auditFor(vp: { width: number; height: number }): AuditOptions {
-  const box = designBox(vp);
-  return auditOptionsFor(box.w, box.h, designScaleOf(vp));
-}
-
 interface Report {
   viewport: string;
   screen: string;
@@ -135,21 +100,6 @@ interface Report {
    */
   cbKeys: string[];
   findings: AuditFinding[];
-}
-
-/** One line per finding, short enough to read in a terminal failure. */
-function fmt(viewport: string, screen: string, f: AuditFinding): string {
-  const r = (x: { x: number; y: number; w: number; h: number }): string =>
-    `(${Math.round(x.x)},${Math.round(x.y)} ${Math.round(x.w)}x${Math.round(x.h)})`;
-  const where = `${viewport} ${screen}`;
-  if (f.kind === 'offscreen') return `${where}: offscreen "${f.a}" ${r(f.rectA)}`;
-  if (f.kind === 'tiny') return `${where}: unreadable "${f.a}" ${f.frac}px ${f.b} ${r(f.rectA)}`;
-  if (f.kind === 'placeholder') return `${where}: placeholder text "${f.a}" ${r(f.rectA)}`;
-  if (f.kind === 'covered') {
-    return `${where}: covered ${Math.round(f.frac * 100)}% "${f.a}" ${r(f.rectA)} by ${r(f.rectB)}`;
-  }
-  if (f.kind === 'overflow') return `${where}: overflow "${f.a}" ${r(f.rectA)} out of its box ${r(f.rectB)}`;
-  return `${where}: overlap ${Math.round(f.frac * 100)}% "${f.a}" ${r(f.rectA)} x "${f.b}" ${r(f.rectB)}`;
 }
 
 test.describe('layout sweep — real renderer', () => {
