@@ -51,6 +51,7 @@ export function fmt(viewport: string, screen: string, f: AuditFinding): string {
   const where = `${viewport} ${screen}`;
   if (f.kind === 'offscreen') return `${where}: offscreen "${f.a}" ${r(f.rectA)}`;
   if (f.kind === 'tiny') return `${where}: unreadable "${f.a}" ${f.frac}px ${f.b} ${r(f.rectA)}`;
+  if (f.kind === 'icon') return `${where}: tiny icon "${f.a}" ${f.frac}px ${f.b} ${r(f.rectA)}`;
   if (f.kind === 'placeholder') return `${where}: placeholder text "${f.a}" ${r(f.rectA)}`;
   if (f.kind === 'covered') {
     return `${where}: covered ${Math.round(f.frac * 100)}% "${f.a}" ${r(f.rectA)} by ${r(f.rectB)}`;

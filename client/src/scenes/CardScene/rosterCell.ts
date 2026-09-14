@@ -145,8 +145,14 @@ export function renderCardCell(
 
   // Lock badge (top-right of the info column).
   if (card.locked) {
-    const lk = buildIcon('lock', 18, C.mid);
-    lk.x = cellW - pad - 18; lk.y = pad;
+    // Sized off FS.body rather than the literal 18 it used to be: 18 IS `FS.body`'s base value, so
+    // this is a no-op on a desktop window, but on a phone the legibility floor lifts the token to
+    // 20 and the padlock goes with it. It was the last thing on this card still pinned to a raw
+    // number - the stack-count badge beside it has always been FS.body - and at 18 design px it was
+    // 6.5 CSS px on a 390-wide phone, which the layout audit's icon gate reports (2026-09-14).
+    const lkSz = Math.round(FS.body);
+    const lk = buildIcon('lock', lkSz, C.mid);
+    lk.x = cellW - pad - lkSz; lk.y = pad;
     parent.addChild(lk);
   }
 

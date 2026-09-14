@@ -7,7 +7,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, sketchAccentBar, seedF
 import { showToastMessage, type ToastKind } from '../net/log';
 import { buildIcon, type IconKind } from '../render/icons';
 import { preloadRewardIconArt } from '../render/rewardIcon';
-import { FS, snapFont } from '../render/fontScale';
+import { FS, snapFont, iconFloorPx } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
@@ -390,7 +390,10 @@ export class AchievementScene implements Scene {
       const amt = txt(String(s.coins), snapFont(Math.round(rowH * 0.34)), C.mid);
       amt.anchor.set(1, 0.5); amt.x = rightX; amt.y = cy;
       this.container.addChild(amt);
-      const icS = Math.round(rowH * 0.4);
+      // Floored, not just proportional: a compact row (phone landscape, 844x390) computes 19
+      // design px = 6.9 CSS px for this coin, under the floor the `snapFont` call two lines up
+      // already gives the amount beside it. Reported by the layout audit's icon gate (2026-09-14).
+      const icS = iconFloorPx(rowH * 0.4);
       const ic = buildIcon('coin', icS, C.gold);
       ic.x = rightX - amt.width - Math.round(rowH * 0.15) - icS; ic.y = cy - icS / 2;
       this.container.addChild(ic);

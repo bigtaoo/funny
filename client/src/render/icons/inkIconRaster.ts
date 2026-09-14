@@ -23,6 +23,7 @@
  */
 import * as PIXI from 'pixi.js-legacy';
 import { buildFittedSprite } from '../cardArt';
+import { tagIcon } from '../iconTag';
 import { preloadTextureList } from '../../assets/preloadTextures';
 
 // Equipment affix values (EquipmentScene/detail.ts's `affixIconKind`) - the smallest icons in the
@@ -332,5 +333,5 @@ export function preloadInkIconTextures(): Promise<void> {
 export function buildInkIcon(url: string, s: number, color: number): PIXI.DisplayObject {
   const box = new PIXI.Container();
   box.addChild(buildFittedSprite(url, s, s, color));
-  return box;
+  return tagIcon(box, url, s);   // layout-audit icon gate — see render/iconTag.ts
 }
