@@ -9,7 +9,7 @@ import { ui as C, txt, buildPaperBackground, sketchPanel, seedFor, tearDownChild
 import { FS, snapFont } from '../render/fontScale';
 import { buildIcon } from '../render/icons';
 import { buildDecorCLayer } from '../render/decorCLayer';
-import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp } from './CampaignMapScene/drawing';
+import { drawNode, drawTrail, drawDecor, drawTape, drawClearStamp, clearStampX } from './CampaignMapScene/drawing';
 import { buildCampaignHeader } from './CampaignMapScene/header';
 import { dispatchHit, type Hit } from '../ui/hits';
 
@@ -350,13 +350,10 @@ export class CampaignMapScene implements Scene {
     });
 
     // Chapter-cleared stamp by the title once every node is cleared (§12.2 ceremony).
-    // Maps run bottom-up, so the top of the page is where a chapter ENDS: the stamp now
-    // shares that band with the BOSS marker and takes whichever top corner the marker is
-    // not in. A marker's flag flies to its right, so a centred one pushes the stamp left.
+    // Maps run bottom-up, so the top of the page is where a chapter ENDS and the stamp
+    // shares that band with the BOSS marker — `clearStampX` picks the free corner.
     if (map.nodes.every((nd) => cleared.has(nd.levelId))) {
-      const endX = map.decor?.find((d) => d.kind === 'boss')?.x ?? map.nodes[map.nodes.length - 1]!.x;
-      const stampX = endX >= 0.5 ? Math.round(w * 0.30) : w - Math.round(w * 0.30);
-      drawClearStamp(root, ch, stampX, tbH + Math.round(h * 0.06), h);
+      drawClearStamp(root, ch, clearStampX(map, w), tbH + Math.round(h * 0.06), h);
     }
 
     // Prev / next chapter arrows (next only once this chapter is fully cleared).
