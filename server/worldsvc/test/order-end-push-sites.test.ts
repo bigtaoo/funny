@@ -137,7 +137,7 @@ function territoryCore(freed: StationedDoc | null, tile: TileDoc | null) {
     pushOrderEnded,
     clearOccupancy: vi.fn(async () => {}),
     removeCover: vi.fn(async () => {}),
-    recomputeYield: vi.fn(async () => emptyResources()),
+    recomputeYieldAndCount: vi.fn(async () => ({ rate: emptyResources(), count: 0 })),
     settleExpr: () => ({}),
     getMe: vi.fn(async () => ({ joined: true })),
   } as unknown as WorldCore;

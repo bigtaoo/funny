@@ -143,7 +143,7 @@ function makeCore(opts: {
     bumpFamilyActivity,
     setOccupancy,
     removeCover: vi.fn(async (..._args: unknown[]) => {}),
-    recomputeYield: vi.fn(async (..._args: unknown[]) => emptyResources()),
+    recomputeYieldAndCount: vi.fn(async (..._args: unknown[]) => ({ rate: emptyResources(), count: 0 })),
     meta: { getSaveFields, grantMaterial },
   } as unknown as WorldCore;
 

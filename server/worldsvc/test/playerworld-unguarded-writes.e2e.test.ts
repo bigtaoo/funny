@@ -123,7 +123,7 @@ describe.skipIf(!mongo)('playerWorld unguarded-write sweep e2e (2026-08-24)', ()
   /**
    * Same idea for a `find`, which is synchronous and hands back a cursor — wrapping it in an async function
    * would return a promise where the caller expects the cursor. Patch the cursor's `toArray` instead, which
-   * is the await recomputeYield (and the training due-scan) actually blocks on.
+   * is the await recomputeYieldAndCount (and the training due-scan) actually blocks on.
    */
   function injectOnCursor<T extends object>(col: T, credit: () => Promise<unknown>): { restore: () => void; fired: () => boolean } {
     const real = (col as { find: (...a: unknown[]) => { toArray: () => Promise<unknown[]> } }).find.bind(col);
@@ -175,7 +175,7 @@ describe.skipIf(!mongo)('playerWorld unguarded-write sweep e2e (2026-08-24)', ()
     await setResources('a');
     const before = await raw('a');
 
-    // recomputeYield (a tiles scan) is the await between occupyTile's `pw` read and its write.
+    // recomputeYieldAndCount (a tiles scan) is the await between occupyTile's `pw` read and its write.
     const inj = injectOnCursor(m.collections.tiles, creditInk('a'));
     try {
       await svc.occupyTile(W, 'a', site.x, site.y);
@@ -232,7 +232,7 @@ describe.skipIf(!mongo)('playerWorld unguarded-write sweep e2e (2026-08-24)', ()
     expect(before!.buildQueue ?? []).toHaveLength(1);
 
     nowMs += buildTimeSec('cabinet', 1) * 1000 + 1000;
-    // recomputeYield is the await between applyDueBuilds' `fresh` read and its write.
+    // recomputeYieldAndCount is the await between applyDueBuilds' `fresh` read and its write.
     const inj = injectOnCursor(m.collections.tiles, creditInk('c'));
     try {
       expect(await svc.processCompletedBuilds()).toBe(1);

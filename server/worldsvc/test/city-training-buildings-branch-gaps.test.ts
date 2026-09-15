@@ -5,7 +5,7 @@
 // city/buildings.ts (CityBuildingsService, 74.0% branch).
 //
 // Both classes only ever touch `this.core` — `deps.cols` / `deps.now`, `settle`, `settleExpr`,
-// `recomputeYield`, `commercial.spend`, `getMe` — so all of it is stubbed directly and the tests run
+// `recomputeYieldAndCount`, `commercial.spend`, `getMe` — so all of it is stubbed directly and the tests run
 // without a database. The paths that matter here are precisely the ones a Mongo e2e cannot reach
 // cheaply: a document that vanishes between the read and the retry, a rev-guarded write that loses its
 // race five times in a row, a legacy document missing `buildings` / `buildQueue` / `trainingQueue`
@@ -102,7 +102,7 @@ function makeCore(opts: {
   const tileUpdates: RecordedUpdate[] = [];
   const pwFindQueries: Record<string, unknown>[] = [];
   const spend = vi.fn(async (..._args: unknown[]) => {});
-  const recomputeYield = vi.fn(async (..._args: unknown[]) => ({}));
+  const recomputeYieldAndCount = vi.fn(async (..._args: unknown[]) => ({ rate: {}, count: 0 }));
   const getMe = vi.fn(async (..._args: unknown[]) => ME);
   let pwFindOneCalls = 0;
   let pwUpdateCalls = 0;
@@ -147,12 +147,12 @@ function makeCore(opts: {
     // The persisted settle in applyDueBuilds is an aggregation expression evaluated by Mongo against the
     // live document, never a value computed here — an empty object is all the call site needs offline.
     settleExpr: () => ({}),
-    recomputeYield,
+    recomputeYieldAndCount,
     getMe,
   } as unknown as WorldCore;
 
   return {
-    core, now, pwUpdates, tileUpdates, pwFindQueries, spend, recomputeYield, getMe,
+    core, now, pwUpdates, tileUpdates, pwFindQueries, spend, recomputeYieldAndCount, getMe,
     counts: () => ({ tilesFindOne: tilesFindOneCalls, pwFindOne: pwFindOneCalls }),
   };
 }
@@ -568,7 +568,7 @@ describe('CityBuildingsService.processCompletedBuilds', () => {
   });
 
   it('applies onto a { desk: 1 } default when the document has no buildings map, and $$REMOVEs the mirror once the queue drains', async () => {
-    const { core, pwUpdates, recomputeYield } = makeCore({
+    const { core, pwUpdates, recomputeYieldAndCount } = makeCore({
       now,
       pwFind: () => dueDocs,
       pwFindOne: () => pwDoc({ buildQueue: [buildEntry('drillYard', 1, 0, now)] }), // no buildings key
@@ -584,7 +584,7 @@ describe('CityBuildingsService.processCompletedBuilds', () => {
     expect(set.nextBuildCompleteAt).toBe('$$REMOVE');
     expect(set.troopCap).toBe(troopCapFor({ desk: 1, drillYard: 1 }));
     // The post-upgrade yield is computed from the NEW levels, which are not persisted yet.
-    expect(recomputeYield).toHaveBeenCalledWith(W, ACC, { desk: 1, drillYard: 1 }, undefined);
+    expect(recomputeYieldAndCount).toHaveBeenCalledWith(W, ACC, { desk: 1, drillYard: 1 }, undefined);
   });
 
   it('a still-pending build keeps the mirror pointing at it, and a completed desk mirrors its level onto the base tile', async () => {

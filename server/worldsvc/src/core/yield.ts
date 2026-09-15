@@ -1,6 +1,6 @@
 // worldsvc core — resource settlement & yield aggregation (WorldCore split, 2026-07-03).
 // Layer above the kernel: lazy settle-on-read, per-tile yield aggregation, and the
-// single-exit recomputeYield (tile yields → nation bonus → building mult + BP). No behavior change.
+// single-exit recomputeYieldAndCount (tile yields → nation bonus → building mult + BP). No behavior change.
 //
 // 2026-08-11 (mixin-chain re-audit, claudedocs/server.md "拆分形态的优先级" 形态②): converted from an
 // `extends WorldCoreKernel` inheritance-chain link to composition — this layer has zero cross-layer
@@ -88,7 +88,17 @@ export class YieldService {
   }
 
   /**
-   * Recompute the aggregated yield from all currently owned tiles in the DB (called after occupy / abandon / build completion).
+   * Recompute the aggregated yield from all currently owned tiles in the DB (called after occupy / abandon / build completion),
+   * and — from the same scan — the tile count that backs `PlayerWorldDoc.territoryCount`.
+   *
+   * The count rides along deliberately: it costs nothing here (the owned-tile scan already ran), and every path
+   * that can change tile ownership must land here anyway, because otherwise the player's yield would be wrong —
+   * a bug they notice within minutes. Pinning the count's write sites to the yield's write sites is what keeps
+   * the mirror honest; it is also why this method was renamed when the count was added, so that a stale test
+   * double for the old name fails loudly instead of quietly returning the wrong shape.
+   *
+   * `count` counts EVERY owned tile, `baseRing` cells included — matching the `countDocuments({ worldId, ownerId })`
+   * that `getMe` used to run — even though the ring cells are skipped for yield below.
    *
    * Single exit for yield (SLG_CITY_DESIGN §5): tile yields → home-city building multipliers + sticker
    * self-production → battle pass → **wild-city flat bonus** (ADR-074 §8.1).
@@ -105,12 +115,12 @@ export class YieldService {
    * ownership at season open, leaving a bonus with no writer. Removed here, and with it this function's
    * `nations` read (§9).
    */
-  async recomputeYield(
+  async recomputeYieldAndCount(
     worldId: string,
     accountId: string,
     buildingsOverride?: Partial<Record<BuildingKey, number>>,
     hasBattlePassOverride?: boolean,
-  ): Promise<Record<ResourceType, number>> {
+  ): Promise<{ rate: Record<ResourceType, number>; count: number }> {
     const owned = await this.core.deps.cols.tiles.find({ worldId, ownerId: accountId }).toArray();
     // Building levels (SLG_CITY_DESIGN): land resources get a global yield multiplier; sticker is self-produced by the stickerShop (residential-model).
     // buildingsOverride lets a build-completion path compute the post-upgrade rate before the new levels are persisted (avoids a write-then-read ordering hazard).
@@ -141,6 +151,6 @@ export class YieldService {
       const payoff = await this.core.sectPayoff(doc.sectId);
       for (const rt of RESOURCE_TYPES) acc[rt] += payoff.yield[rt] ?? 0;
     }
-    return acc;
+    return { rate: acc, count: owned.length };
   }
 }

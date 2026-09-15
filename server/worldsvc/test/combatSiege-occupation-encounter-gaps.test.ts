@@ -113,7 +113,7 @@ function makeCore(opts: {
     settleExpr: () => ({}),
     pushMarch, pushOrderEnded, pushSiege, pushTile, pushTileToObservers, bumpFamilyActivity, setOccupancy,
     removeCover: vi.fn(async () => {}),
-    recomputeYield: vi.fn(async () => emptyResources()),
+    recomputeYieldAndCount: vi.fn(async () => ({ rate: emptyResources(), count: 0 })),
     isConnectedToSectTerritory,
     meta: { getSaveFields: vi.fn(async () => null) },
     socialsvc: { getFamiliesByIds: vi.fn(async () => []) },
@@ -291,16 +291,16 @@ describe('OccupationService.writeContestedHold', () => {
   });
 
   it('defenderId passed (a PvP capture) → recomputes + writes that account\'s yieldRate immediately', async () => {
-    const { core, pwUpdateOne, recomputeYield } = (() => {
+    const { core, pwUpdateOne, recomputeYieldAndCount } = (() => {
       // 2026-08-24: the defender's own doc must now be readable — the write banks their resource accrual at
       // the OLD yieldRate in the same atomic step, and the storage cap for that settle comes from their
       // `buildings`. (`pw` in scope inside writeContestedHold is the *attacker's* doc, so it cannot serve.)
       const built = makeCore({ pwById: { [`${W}:${DEF}`]: pw({ accountId: DEF }) } });
-      return { ...built, recomputeYield: built.core.recomputeYield as unknown as ReturnType<typeof vi.fn> };
+      return { ...built, recomputeYieldAndCount: built.core.recomputeYieldAndCount as unknown as ReturnType<typeof vi.fn> };
     })();
     const svc = new OccupationService(core, fakeHelpers());
     await svc.writeContestedHold(march(), pw(), { type: 'territory', level: 1 }, 5, 5, 10, 1_000, DEF);
-    expect(recomputeYield).toHaveBeenCalledWith(W, DEF);
+    expect(recomputeYieldAndCount).toHaveBeenCalledWith(W, DEF);
     expect(pwUpdateOne).toHaveBeenCalledWith(
       { _id: `${W}:${DEF}` },
       [expect.objectContaining({ $set: expect.objectContaining({ yieldRate: expect.anything(), resources: expect.anything(), lastTickAt: 1_000 }) })],

@@ -359,7 +359,7 @@ describe.skipIf(!mongo)('worldsvc WorldService e2e', () => {
     const withoutBP = await svc.getMe(W, 'a');
     expect(withoutBP.yieldRate?.[rt]).toBe(baseYield);
 
-    // Grant battle pass: trigger a recomputeYield-touching operation (abandon + re-occupy) to see updated yield.
+    // Grant battle pass: trigger a recomputeYieldAndCount-touching operation (abandon + re-occupy) to see updated yield.
     await m.collections.playerWorld.updateOne({ _id: playerWorldId(W, 'a') }, { $set: { hasBattlePass: true } });
     await svc.abandonTile(W, 'a', res.x, res.y);
     await svc.occupyTile(W, 'a', res.x, res.y);

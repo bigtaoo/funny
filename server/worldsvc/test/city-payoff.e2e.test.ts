@@ -178,14 +178,14 @@ describe.skipIf(!mongo)('worldsvc wild-city occupation payoff e2e (ADR-074 P3)',
   afterAll(async () => { await m.client.close(); });
 
   /**
-   * The yield SINGLE EXIT's own return value (core/yield.ts `recomputeYield`), not the stored `yieldRate`.
+   * The yield SINGLE EXIT's own return value (core/yield.ts `recomputeYieldAndCount`), not the stored `yieldRate`.
    * The stored field only refreshes when something happens to call the exit, and using `occupyTile` to
    * trigger one would fold that tile's yield into every delta this file measures — which is precisely the
    * kind of noise that makes an "is the bonus in the right place" assertion pass for the wrong reason.
    */
   const rateOf = (acct: string): Promise<Record<ResourceType, number>> =>
-    (svc as unknown as { core: { recomputeYield(w: string, a: string): Promise<Record<ResourceType, number>> } })
-      .core.recomputeYield(W, acct);
+    (svc as unknown as { core: { recomputeYieldAndCount(w: string, a: string): Promise<{ rate: Record<ResourceType, number> }> } })
+      .core.recomputeYieldAndCount(W, acct).then((r) => r.rate);
 
   // ── The cache ────────────────────────────────────────────────────────────────────────────────────
 

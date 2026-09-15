@@ -43,14 +43,14 @@ export async function settleOccupation(core: WorldCore, d: OccupationDoc, t: num
 
   const pw = await cols.playerWorld.findOne({ _id: playerWorldId(d.worldId, d.ownerId) });
   if (pw) {
-    const yieldRate = await core.recomputeYield(d.worldId, d.ownerId);
+    const { rate: yieldRate, count: territoryCount } = await core.recomputeYieldAndCount(d.worldId, d.ownerId);
     // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
     // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
     // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
     // settleExpr evaluates against the pre-update $resources/$yieldRate/$lastTickAt, so the old-rate accrual
     // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
     await cols.playerWorld.updateOne({ _id: pw._id }, [
-      { $set: { resources: core.settleExpr(pw.buildings, t), yieldRate, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+      { $set: { resources: core.settleExpr(pw.buildings, t), yieldRate, territoryCount, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
     ]);
     void core.bumpFamilyActivity(d.worldId, pw.familyId, 1);
   }
