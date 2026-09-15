@@ -1,5 +1,7 @@
-// The auction cell's info column is 167 design px wide, and three of the lines in it MUST fit that
-// on ONE line in EVERY locale (src/scenes/AuctionScene/listCell.ts).
+// The auction cell's info column is 166-167 design px wide depending on the viewport, and three of
+// the lines in it MUST fit that on ONE line in EVERY locale (src/scenes/AuctionScene/listCell.ts).
+// The budget here is the NARROWEST the grid can produce (166 — see `COLUMN_W`), not the portrait
+// phone's 167.33 that §55.2 was measured on; English spends 165 of it, German 154, Chinese 143.
 //
 // Why one line and not "it wraps, so what": the cell is 200 design px tall and its bottom-right
 // corner belongs to the row action — a Buy/Bid button in Market, an outcome word ("Outbid",
@@ -34,19 +36,31 @@ import { describe, it, expect } from 'vitest';
 import { zh } from '../src/i18n/locales/zh';
 import { en } from '../src/i18n/locales/en';
 import { de } from '../src/i18n/locales/de';
-import { aucGrid, aucInfoColumnW } from '../src/scenes/AuctionScene/types';
+import { aucGrid, aucInfoColumnW, AUC_CELL_W_TARGET } from '../src/scenes/AuctionScene/types';
 import { fontFloorDesignPx } from '../src/render/fontScale';
 
 const DICTS: Record<string, Record<string, string>> = { zh, en, de };
 
 /**
- * The tightest shape this column is ever asked to hold: a portrait phone, where the design box is
- * a fixed 1080 wide and the tab nav is a BOTTOM bar, so the grid gets the whole width and fits
- * three columns into it (§18 — landscape spends `sidebarNavW` on a left rail instead, and its
- * design box is ~2337 wide, so its cells are never the narrow ones).
+ * The portrait phone, which is the shape §55.2 was measured on: the design box is a fixed 1080 wide
+ * and the tab nav is a BOTTOM bar (§18), so the grid gets the whole width and fits three columns
+ * into it, giving a 167.33-px column.
  */
 const PORTRAIT_DESIGN_W = 1080;
-const COLUMN_W = aucInfoColumnW(aucGrid(PORTRAIT_DESIGN_W).cellW);
+const PHONE_COLUMN_W = aucInfoColumnW(aucGrid(PORTRAIT_DESIGN_W).cellW);
+
+/**
+ * ...but the budget below is held against the NARROWEST column the grid can produce, which is not
+ * the phone's.
+ *
+ * `cellW` bottoms out at a column-count BOUNDARY — where the grid has just failed to fit one more
+ * column, so each cell falls back to exactly `AUC_CELL_W_TARGET` — and that is 166 px, a pixel and
+ * a third under the phone. It is reachable, not theoretical: `contentW` 1784 is a landscape design
+ * box of 2000 (roughly an 1852x1000 window). "The portrait phone is the tightest shape" was the
+ * assumption this file started with and the sweep below disproves it, which matters because English
+ * spends 165 of these 166 px.
+ */
+const COLUMN_W = aucInfoColumnW(AUC_CELL_W_TARGET);
 
 /** Design scale of the narrowest phone the sweep walks — `fontFloorDesignPx`'s input. */
 const PHONE_SCALE = 390 / PORTRAIT_DESIGN_W;
@@ -84,11 +98,39 @@ const WIDEST_PRICE = '9999999';
 describe('auction cell — the info column holds its one-line rows in every locale', () => {
   it('is the 167-px three-column portrait column the cell actually draws into', () => {
     // Guards the premise rather than the translations: if the grid ever fits a different number of
-    // columns into a portrait phone, every budget below moves and this file has to be re-derived.
+    // columns into a portrait phone, the measurement §55.2 is derived from moves and this file has
+    // to be re-derived. `auctionScene.ui.ts` holds the renderer to the same helper from the other
+    // side, so the column asserted here is the column the cell actually wraps against.
     expect(aucGrid(PORTRAIT_DESIGN_W).cols).toBe(3);
-    expect(COLUMN_W).toBeCloseTo(167.33, 1);
+    expect(PHONE_COLUMN_W).toBeCloseTo(167.33, 1);
     // 15 characters, which is the number listCell.ts's comments quote.
-    expect(Math.floor(COLUMN_W / ADVANCE)).toBe(15);
+    expect(Math.floor(PHONE_COLUMN_W / ADVANCE)).toBe(15);
+  });
+
+  // `COLUMN_W` really is the narrowest column any viewport can produce — the claim that lets
+  // everything below be ONE budget rather than a matrix.
+  //
+  // Swept rather than reasoned about, because the column is sawtoothed in `contentW`, not
+  // monotonic: it drops at each column-count boundary and climbs again after it. The range is every
+  // `contentW` either layout can hand the grid — portrait always the whole 1080 design width;
+  // landscape `designW - sidebarNavW(1080)` with `designW` between 1920 and LandscapeLayout's
+  // MAX_W of 2592, i.e. 1704 to 2376.
+  //
+  // `sidebarNavW`'s `round(h * 0.2)` is duplicated here rather than imported: `ui/widgets/HubTabs`
+  // pulls PIXI in, and this suite is plain node on purpose. Same deliberate copy (and same reason)
+  // as `layoutStops.test.ts`'s `prefix()` and `lib/auditBox.ts`'s design-box rules — if the rail
+  // width changes, this copy has to change with it, which is what pinning it means.
+  it('is the narrowest column either layout can produce, not merely the phone one', () => {
+    const RAIL = Math.round(1080 * 0.2);
+    const reachable = [PORTRAIT_DESIGN_W];
+    for (let designW = 1920; designW <= 2592; designW++) reachable.push(designW - RAIL);
+
+    let worst = Infinity;
+    for (const contentW of reachable) worst = Math.min(worst, aucInfoColumnW(aucGrid(contentW).cellW));
+
+    expect(worst).toBeCloseTo(COLUMN_W, 6);
+    expect(worst).toBeLessThan(PHONE_COLUMN_W); // the phone is NOT the tight one
+    expect(Math.floor(worst / ADVANCE)).toBe(15);
   });
 
   for (const [locale, dict] of Object.entries(DICTS)) {
