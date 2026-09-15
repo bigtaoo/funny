@@ -124,7 +124,10 @@ function extremeStats(owner: number, dealt: number, taken: number): Record<strin
 
 export const STOPS: Stop[] = [
   { screen: 'settings',     via: ['onOpenProfile'] },
-  { screen: 'shop',         via: ['onOpenShop'],        settleMs: 800 },
+  // 'Store' on the lobby's nav opens the GACHA scene, not ShopScene (LOBBY_IA_REDESIGN — the two are
+  // peer tabs of one group). Labelled for where it actually lands, so this stop and the real shop
+  // below are not two lines both claiming to be 'shop'; see the Shop group block further down.
+  { screen: 'gacha',        via: ['onOpenShop'],        settleMs: 800 },
   { screen: 'cardRoster',   via: ['onOpenCards'],       settleMs: 1200 },
   { screen: 'stats',        via: ['onOpenStats'] },
   { screen: 'campaignMap',  via: ['onOpenCampaign'],    settleMs: 800 },
@@ -133,7 +136,11 @@ export const STOPS: Stop[] = [
   { screen: 'leaderboard',  via: ['onOpenLeaderboard'], gated: true, settleMs: 1200 },
   { screen: 'friends',      via: ['onOpenSocial'],      gated: true, settleMs: 1200 },
   { screen: 'room',         via: ['onOpenRoom'],        gated: true, settleMs: 800 },
-  { screen: 'recharge',     via: ['onOpenRecharge'],    gated: true, settleMs: 800 },
+  // The lobby's "recharge" entry is `goShop(goLobby, 'coins')` — ShopScene's COINS tab, not
+  // RechargeScene (whose own stop is in the Shop group block below). It reported under the bare name
+  // 'shop' until 2026-09-15, which is how ShopScene's default tab looked audited while never having
+  // been walked at all.
+  { screen: 'shop', as: 'shop+coins', via: ['onOpenRecharge'], gated: true, settleMs: 800 },
   { screen: 'achievements', via: ['onOpenAchievements'],gated: true, settleMs: 800 },
   { screen: 'auction',      via: ['onOpenAuction'],     gated: true, settleMs: 1800 },
   { screen: 'titles',       via: ['onOpenStats', 'onOpenTitles'] },
@@ -167,6 +174,45 @@ export const STOPS: Stop[] = [
   // neither shape exists on the market tab, and both are seeded (lib/seedFixtures.ts).
   { screen: 'auction', as: 'auction+mine', via: ['onOpenAuction', { tap: 'auction.tabMine' }], gated: true, settleMs: 1800 },
   { screen: 'auction', as: 'auction+bids', via: ['onOpenAuction', { tap: 'auction.tabBids' }], gated: true, settleMs: 1800 },
+
+  // The achievement wall's category strip. `AchievementScene.fetch()` lands on the first NON-EMPTY
+  // category, so 'pve' is the only one the one-hop stop above has ever drawn — and pve holds exactly
+  // one achievement (`ach.campaign.chapters`), i.e. the sweep was judging a single card and calling
+  // the screen audited. pvp holds three, which is the only tab where the cards stack deep enough to
+  // run into the portrait career bar at the bottom.
+  //
+  // There is deliberately no 'collection' stop: `ACHIEVEMENTS` (server/shared/src/achievements.ts)
+  // has no entry in that category, so `categories()` hides the tab and a stop for it could only ever
+  // record as skipped. Add one the day a collection achievement ships — and note its label collides
+  // with the career bar's own 'Collection'/'Sammlung' (tapLabel takes the LAST match in paint order,
+  // and the career bar is painted last), so it will need the `tapText` treatment or a rename.
+  { screen: 'achievements', as: 'achievements+pvp',
+    via: ['onOpenAchievements', { tap: 'achievement.category.pvp' }], gated: true, settleMs: 800 },
+  { screen: 'achievements', as: 'achievements+progression',
+    via: ['onOpenAchievements', { tap: 'achievement.category.progression' }], gated: true, settleMs: 800 },
+
+  // The Daily hub's fourth tab. Hidden unless the platform has a REAL rewarded-ad SDK
+  // (`IPlatform.hasRewardedAd`, and DailyScene hides rather than mocks it — that is a product rule,
+  // not an oversight), which on plain web means the Capacitor iOS shell's `window.NWAds` bridge. So
+  // the tab ships, on the one build nobody can point a sweep at. `portraitLayout.spec.ts` installs a
+  // bridge STUB before boot (lib/nwE2E.ts `installNativeAdsStub`) purely so the tab exists to be
+  // measured; the in-package WeChat walk has no such stub and skips this stop, hence `gated`.
+  { screen: 'daily', as: 'daily+ads', via: ['onOpenDaily', { tap: 'daily.ads.title' }],
+    gated: true, settleMs: 800 },
+
+  // ── The Shop group: FOUR scenes behind one tab strip ─────────────────────────────────────────
+  // [Shop | Top-up | Gacha | Battle Pass | Recharge] looks like one scene's tab bar and is not:
+  // Shop/Top-up are ShopScene's own two tabs, the other three are separate scenes that redraw the
+  // same strip (app/nav/shop/nav.ts). The lobby's two entries into the group land on the gacha scene
+  // and on ShopScene's COINS tab — so ShopScene's DEFAULT tab (the product-card grid: subscription
+  // cards, starter packs, skins) and RechargeScene (the cumulative-spend milestone ladder) were
+  // never reached by any stop, on any viewport, in any locale.
+  //
+  // Both are reached through the group's own peer callbacks rather than by tapping the strip, and
+  // that is not a shortcut: German renders `shop.coinsTab` and `recharge.title` as the same word
+  // ('Aufladen'), so a tap hop would pick whichever of the two the strip painted last.
+  { screen: 'shop',     via: ['onOpenShop', 'openShop'],     gated: true, settleMs: 1200 },
+  { screen: 'recharge', via: ['onOpenShop', 'openRecharge'], gated: true, settleMs: 900 },
 
   // ── The social hub: ONE scene, five tabs, three entry points ─────────────────────────────────
   // `goMail` and the world map's chat button are both `goFriends({defaultTab})` (app/nav/social.ts),

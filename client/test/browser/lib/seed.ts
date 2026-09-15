@@ -253,9 +253,33 @@ meta.saves.updateOne({ _id: P.me }, { $set: {
   // next already reached gives every state on both tabs in one screenshot.
   'save.retention.daily': { dayKey: P.dayKey, completedTasks: { 'pve.clear': 1 }, taskPoints: 1, rewardClaimed: false },
   'save.retention.weekly': { weekKey: P.weekKey, points: 12, claimedTiers: [9] },
-  // Same reasoning one screen over: tier I of the campaign achievement claimed (the account clears
-  // chapter one above, so the tier is legitimately reached), II and III still running.
-  'save.achievements': { 'ach.campaign.chapters': { claimedTiers: [1] } },
+  // Achievements, same reasoning one screen over — plus the lifetime stats the wall reads its
+  // progress bars off. Without those every tier sat at 0/threshold and the two shapes that carry a
+  // WIDGET (the gold "Claim +N" button, and the claimed status tag it degrades into) barely drew:
+  // the claimedTiers below were "claimed" on a stat of zero, so tier I rendered its tag while II and
+  // III rendered the same plain coin row as everything else. Chosen per category so each tab shows
+  // all three states at once, and so every tab has content at all:
+  //   pve  (1 def)  chapters 3   -> I claimed, II claimable, III (9) running
+  //   pvp  (3 defs) archer 640   -> I claimed, II claimable, III (2000) running
+  //                 guard 2450   -> all three claimed (the fully-done card)
+  //                 pvp.wins     -> mirrors save.pvp.wins above, nothing claimed: three claim buttons
+  //   progression (1 def) meteor 128 -> I claimed, II claimable, III (400) running
+  // The 'collection' category has no definitions at all (server/shared/src/achievements.ts), so its
+  // tab is hidden and there is nothing to seed for it — see layoutStops.ts's note on the missing stop.
+  'save.stats': {
+    'campaign.chaptersCleared': 3,
+    'kill.archer': 640,
+    'kill.guard': 2450,
+    'cast.meteor': 128,
+    'pvp.wins': 1284,
+  },
+  'save.achievements': {
+    'ach.campaign.chapters': { claimedTiers: [1] },
+    'ach.kill.archer': { claimedTiers: [1] },
+    'ach.kill.guard': { claimedTiers: [1, 2, 3] },
+    'ach.pvp.wins': { claimedTiers: [] },
+    'ach.cast.meteor': { claimedTiers: [1] },
+  },
 } });
 
 // ── Inventory ─────────────────────────────────────────────────────────────────────────────────

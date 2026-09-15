@@ -30,7 +30,7 @@ import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  uid, trackErrors, screenIs, registerAndEnterLobby,
+  uid, trackErrors, screenIs, registerAndEnterLobby, installNativeAdsStub,
 } from './lib/nwE2E';
 // The walk itself (how a stop is reached, and how the sweep gets back) is shared with
 // `bakeBudget.spec.ts` — see lib/walk.ts.
@@ -39,7 +39,7 @@ import { seedAccount, seedWorld, type SeedTarget } from './lib/seed';
 // Both live under `src/` since 2026-09-12, because the WeChat layout probe
 // (`src/entries/wechat-layout.ts`) bundles them into a mini-game package that audits itself from
 // the inside. Dependency-free of PIXI and the DOM, so pulling them into a Playwright process is
-// still safe — and sharing the table is what keeps the two sweeps walking the same 40 stops.
+// still safe — and sharing the table is what keeps the two sweeps walking the same 45 stops.
 import { auditLayout, type AuditFinding, type AuditResult } from '../../src/testing/layoutAudit';
 // The design box this viewport will get, and how to print a finding. Shared with
 // `rotateLayout.spec.ts`, which judges one screen against two boxes — see lib/auditBox.ts.
@@ -50,7 +50,7 @@ import { STOPS, hopName, type Hop, type Stop } from '../../src/testing/layoutSto
  * Every shape the layout has to survive. Portrait is why the sweep exists (development happens in a
  * landscape desktop window, so portrait defects only ever arrive as a screenshot from a phone), but
  * nothing in the walk or the audit is portrait-specific — the design box and the legibility floor
- * are derived per viewport below — so the same 40 stops cover landscape for the cost of two more
+ * are derived per viewport below — so the same 45 stops cover landscape for the cost of two more
  * rows here. The table itself lives in `src/testing/layoutStops.ts` since 2026-09-12, because the
  * WeChat in-package sweep walks the same one (see that file's header).
  *
@@ -120,6 +120,10 @@ test.describe('layout sweep — real renderer', () => {
         (loc: string) => { try { localStorage.setItem('nw_locale', loc); } catch { /* private mode */ } },
         vp.locale,
       );
+      // Makes DailyScene's Ads tab exist at all — see `installNativeAdsStub`'s header. Before the
+      // first page, like the locale above: `hasRewardedAd()` is read once, when `goDaily` builds the
+      // scene's callbacks.
+      await installNativeAdsStub(ctx);
       const page = await ctx.newPage();
       const errors = trackErrors(page);
       const shotDir = path.join(OUT_DIR, vp.name);
