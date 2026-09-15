@@ -169,10 +169,10 @@ export class CityBuildingsService {
     for (const e of done) next[e.key] = Math.max(next[e.key] ?? buildingLevel(fresh.buildings, e.key), e.toLevel);
     const newQueue = (fresh.buildQueue ?? []).filter((e) => e.completeAt > t);
     // Compute the post-upgrade yield from the new levels directly (buildings not yet persisted).
-    const yieldRate = await this.core.recomputeYield(worldId, accountId, next, fresh.hasBattlePass);
+    const { rate: yieldRate, count: territoryCount } = await this.core.recomputeYieldAndCount(worldId, accountId, next, fresh.hasBattlePass);
     const bq = buildQueueOps(newQueue);
     // 2026-08-24 (unguarded-write sweep): this write had no filter beyond `_id` and carried an absolute
-    // `resources` settled from the `fresh` snapshot read at the top of this method — with recomputeYield's
+    // `resources` settled from the `fresh` snapshot read at the top of this method — with recomputeYieldAndCount's
     // tile scans in between, and reachable both from the 2s scheduler tick and synchronously from
     // speedupBuild. Any concurrent credit or debit in that window was silently discarded.
     //
@@ -187,6 +187,7 @@ export class CityBuildingsService {
           buildQueue: newQueue,
           resources: this.core.settleExpr(fresh.buildings, t),
           yieldRate,
+          territoryCount,
           troopCap: troopCapFor(next),
           lastTickAt: t,
           ...bq.set,

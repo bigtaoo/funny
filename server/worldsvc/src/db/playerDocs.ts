@@ -150,6 +150,19 @@ export interface PlayerWorldDoc {
   troopCap: number;
   resources: Record<ResourceType, number>;
   yieldRate: Record<ResourceType, number>; // hourly yield rate (updated on tile capture/loss)
+  /**
+   * Mirror of `tiles.countDocuments({ worldId, ownerId: accountId })`, `baseRing` cells included.
+   *
+   * Written by every site that writes `yieldRate`, from the same owned-tile scan (`recomputeYieldAndCount`) —
+   * a path that changes tile ownership without refreshing the yield is already broken, so the two cannot
+   * drift apart independently. It exists because `getMe` is the highest-frequency SLG round trip and the
+   * count was its third Mongo call; on a free/shared Atlas tier the whole backend shares one ops/sec bucket,
+   * so a per-read aggregate that can be maintained on write is worth the mirror.
+   *
+   * Absent on documents written before 2026-09-15: `getMe` falls back to the live count and writes it back
+   * once, so the fallback costs one extra round trip per pre-existing account, not one per read.
+   */
+  territoryCount?: number;
   lastTickAt: number; // ms, lazy settlement anchor
   mainBaseTile?: string;
   defense?: DefenseConfig; // main base defense (P5, embedded)

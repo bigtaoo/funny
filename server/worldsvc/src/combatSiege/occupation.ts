@@ -274,7 +274,7 @@ export class OccupationService {
     await cols.occupations.updateOne({ _id: m.toTile }, { $set: occDoc }, { upsert: true });
 
     if (defenderId) {
-      const defYield = await this.core.recomputeYield(m.worldId, defenderId);
+      const { rate: defYield, count: defCount } = await this.core.recomputeYieldAndCount(m.worldId, defenderId);
       // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
       // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
       // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
@@ -286,7 +286,7 @@ export class OccupationService {
       const defPw = await cols.playerWorld.findOne({ _id: defPwId });
       if (defPw) {
         await cols.playerWorld.updateOne({ _id: defPwId }, [
-          { $set: { resources: this.core.settleExpr(defPw.buildings, t), yieldRate: defYield, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+          { $set: { resources: this.core.settleExpr(defPw.buildings, t), yieldRate: defYield, territoryCount: defCount, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
         ]);
       }
     }

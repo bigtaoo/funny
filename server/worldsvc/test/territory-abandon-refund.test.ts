@@ -46,7 +46,7 @@ function build(target: TileDoc) {
     clearOccupancy: vi.fn(async (..._args: unknown[]) => {}),
     removeCover: vi.fn(async (..._args: unknown[]) => {}),
     pushOrderEnded: vi.fn(async (..._args: unknown[]) => {}),
-    recomputeYield: vi.fn(async (..._args: unknown[]) => ({})),
+    recomputeYieldAndCount: vi.fn(async (..._args: unknown[]) => ({ rate: {}, count: 0 })),
     settleExpr: () => ({}),
     getMe: vi.fn(async (..._args: unknown[]) => ({}) as never),
   } as unknown as WorldCore;

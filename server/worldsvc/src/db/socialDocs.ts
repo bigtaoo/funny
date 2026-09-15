@@ -29,7 +29,7 @@ export interface SectDoc {
    * ADR-074 P3: everything this sect's held wild cities pay out (SLG_CITY_SIEGE_DESIGN §8), cached here as
    * ONE object.
    *
-   * Cached rather than derived per read because the consumers are hot relative to the input: `recomputeYield`
+   * Cached rather than derived per read because the consumers are hot relative to the input: `recomputeYieldAndCount`
    * runs on every occupy / abandon / building completion, and a march computes its duration on dispatch,
    * while the input only moves when a city changes hands (~64 cities per season). Recomputed by
    * `CitySiegeService.recomputeSectPayoff` on capture — for BOTH sects involved, since a capture is

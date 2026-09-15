@@ -241,7 +241,7 @@ export class SiegeHelpersService {
     // Place the new capital at a random legal empty tile. In the extreme case where none is found → skip relocation (territory already lost; player can still voluntarily relocate later).
     const spot = await this.core.pickRandomEmptyTile(worldId);
     if (!spot) {
-      const yieldRate = await this.core.recomputeYield(worldId, defenderId);
+      const { rate: yieldRate, count: territoryCount } = await this.core.recomputeYieldAndCount(worldId, defenderId);
       // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
       // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
       // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
@@ -255,6 +255,7 @@ export class SiegeHelpersService {
           $set: {
             resources: this.core.settleExpr(pw.buildings, t),
             yieldRate,
+            territoryCount,
             lastTickAt: t,
             mainBaseTile: '$$REMOVE',
             rev: { $add: ['$rev', 1] },
@@ -285,7 +286,7 @@ export class SiegeHelpersService {
       baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),
     );
 
-    const yieldRate = await this.core.recomputeYield(worldId, defenderId);
+    const { rate: yieldRate, count: territoryCount } = await this.core.recomputeYieldAndCount(worldId, defenderId);
     // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
     // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
     // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
@@ -296,6 +297,7 @@ export class SiegeHelpersService {
         $set: {
           resources: this.core.settleExpr(pw.buildings, t),
           yieldRate,
+          territoryCount,
           mainBaseTile: newTid,
           lastTickAt: t,
           rev: { $add: ['$rev', 1] },
