@@ -1140,7 +1140,12 @@ export const de: Record<TranslationKey, string> = {
   'auction.outbid': 'Überboten',
   'auction.bidWon': 'Gewonnen',
   'auction.bidLost': 'Verloren',
-  'auction.myBid': 'Mein Gebot',
+  // "Meins", not "Mein Gebot": this renders as `<label>: <price>` on ONE line of the auction cell's
+  // 167-px info column (15 monospace characters at the portrait phone's floor font), and a
+  // seven-digit price leaves six for the label. "Mein Gebot: 706500" wrapped, which pushed the
+  // countdown under it onto the outcome badge — see AuctionScene/listCell.ts and §55.2. Unambiguous
+  // in place: the line above it is "Aktuelles Gebot: …", so this one is the other one, mine.
+  'auction.myBid': 'Meins',
   'auction.create': 'Angebot erstellen',
   'auction.buy': 'Kaufen',
   'auction.cancel': 'Abbrechen',

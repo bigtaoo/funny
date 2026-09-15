@@ -1164,7 +1164,11 @@ export const zh = {
   'auction.outbid': '已被超越',
   'auction.bidWon': '已中拍',
   'auction.bidLost': '未中拍',
-  'auction.myBid': '我的出价',
+  // Two half-widths per full-width glyph: "我的出价: 9999999" measures 187 design px against the
+  // auction cell's 167-px info column, so it wrapped and pushed the countdown under it onto the
+  // outcome badge — the same defect German had (AuctionScene/listCell.ts, §55.2). "我的" carries it:
+  // the line directly above is "当前出价", so this one is the other one, mine.
+  'auction.myBid': '我的',
   'auction.create': '发布拍卖',
   'auction.buy': '购买',
   'auction.cancel': '取消拍卖',

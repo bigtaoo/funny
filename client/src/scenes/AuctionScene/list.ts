@@ -17,7 +17,7 @@ import type { AuctionView } from '../../net/WorldApiClient';
 import { buildIcon, type IconKind } from '../../render/icons';
 import { drawScrollIndicator } from '../../ui/widgets/ScrollIndicator';
 import { serverNow } from '../../net/serverClock';
-import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, AUC_CELL_W_TARGET, FILTERS, type AucFilter, type AucTab } from './types';
+import { FILTER_H, AUC_CELL_GAP, AUC_CELL_H, aucGrid, FILTERS, type AucFilter, type AucTab } from './types';
 import type { AuctionSceneCore } from './core';
 import { itemKind } from './itemLabels';
 import { renderAuctionCell, type BidOpener, type TradeOpener, type CellActions } from './listCell';
@@ -181,8 +181,7 @@ export class ListPanel {
     // Card grid (mirrors CardScene's roster grid): as many columns as fit AUC_CELL_W_TARGET, wrapping rows.
     const left = contentX + AUC_CELL_GAP;
     const avail = contentW - AUC_CELL_GAP * 2;
-    const cols = Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (AUC_CELL_W_TARGET + AUC_CELL_GAP)));
-    const cellW = (avail - AUC_CELL_GAP * (cols - 1)) / cols;
+    const { cols, cellW } = aucGrid(contentW);
     const rows = Math.ceil(auctions.length / cols);
     const totalH = rows * (AUC_CELL_H + AUC_CELL_GAP) + AUC_CELL_GAP;
     // `peekViewportH`'s mid-row shrink is deliberately NOT used here — it would exclude a row that

@@ -110,8 +110,23 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     // there (2026-08-10 bug report, screenshot). Sizing the floor's ceiling-breaker off the
     // label's actual measured width makes the fix orientation- and locale-agnostic instead of
     // retuning yet another magic fraction for portrait (or for German's longer strings).
+    //
+    // ...bounded by the row, which the ceiling-breaker above did not do. The summary row is the
+    // progress counter on the left and this button on the right, and a width derived from the
+    // label alone knows nothing about the counter: German's "+5 Münzen abholen" grew the button
+    // until its left edge sat ON the `1 / 3` — drawn first, so the sweep reported the counter as
+    // 40% `covered` (§55.1). `btnPad` is what made it so hungry: it is half the button's HEIGHT,
+    // and in portrait that height is 22% of the screen. Capping at the room that is actually left
+    // keeps the padding a request rather than a claim, and `drawButtonLabel` degrades from there
+    // the way it does everywhere else (shrink to the floor, drop the glyph, wrap) instead of the
+    // row silently losing its counter. The `cardW * 0.45` floor stays OUTSIDE the cap: a row too
+    // narrow even for that is a layout bug the sweep should report, not one to hide by shrinking.
     const btnPad = btnH * 0.5;
-    const btnW = Math.max(cardW * 0.45, btnLabel.width + buttonLabelIconW(snapFont(Math.round(btnH * 0.36))) + btnPad);
+    const roomW = cardW - ptTxt.width - cardW * 0.05;
+    const btnW = Math.max(
+      cardW * 0.45,
+      Math.min(roomW, btnLabel.width + buttonLabelIconW(snapFont(Math.round(btnH * 0.36))) + btnPad),
+    );
     const btnX = PAD + cardW - btnW;
     const btnY = summaryY + cardH * 0.08;
     const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;
