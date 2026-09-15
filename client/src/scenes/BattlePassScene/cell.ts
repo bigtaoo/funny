@@ -82,8 +82,17 @@ export function drawCell(
     parent.addChild(star);
   }
 
-  // State overlay — pass_required shows a lock glyph; other states show a text label.
-  // Both anchor to the cell's bottom-right corner.
+  // State overlay, anchored to the cell's bottom-right corner. A GLYPH for the three states that
+  // are facts (claimed / locked / pass-required) and a WORD only for `claimable`, which is an
+  // affordance rather than a status — the split `ui/widgets/statusTag.ts` describes, resolved here
+  // the way a forty-cell grid wants it rather than through that widget.
+  //
+  // Glyph-only because of the repetition: at Lv.1 thirty-nine of the forty cells are locked, so
+  // `[lock] Locked` would print the same word thirty-nine times — visibly busier (compared side by
+  // side, 2026-09-15) and saying nothing the lock does not. A one-off row is the opposite case and
+  // keeps its word; see the achievement and recharge rows. It also retires the German case the
+  // reward band below was patched for twice: `Gesperrt` reserved 282 px of a 465-wide cell, a lock
+  // reserves one glyph.
   //
   // Drawn BEFORE the reward so the reward knows how much of the row is already spoken for. The two
   // used to be laid out independently — the reward group centred on the cell, the state label
@@ -91,26 +100,25 @@ export function drawCell(
   // every row in portrait, where the cell is 170 CSS px wide (portrait sweep §49).
   const anchorX = x + w - Math.round(w * 0.05);
   const anchorY = y + h - Math.round(h * 0.08);
+  const stateFS = snapFont(Math.round(h * 0.34));
+  // One glyph box for all three, so a column of cells never steps between two lock sizes. Derived
+  // from the state font the way `ui/widgets/statusTag.ts` derives its own, so a battle-pass lock
+  // and an achievement row's check read at the same weight.
+  const tagH = Math.round(stateFS * 1.35);
   let reserveW = 0;
-  if (state === 'pass_required') {
-    const lockSz = Math.round(h * 0.32);
-    const lock = buildIcon('lock', lockSz, C.gold);
-    lock.x = anchorX - lockSz; lock.y = anchorY - lockSz;
-    parent.addChild(lock);
-    reserveW = lockSz;
+  if (state === 'claimable') {
+    const sl = txt(t('battlepass.claim'), stateFS, C.green, true);
+    sl.anchor.set(1, 1); sl.x = anchorX; sl.y = anchorY;
+    parent.addChild(sl);
+    reserveW = sl.width;
   } else {
-    let stateLbl: string | null = null;
-    if (state === 'claimed') stateLbl = t('battlepass.claimed');
-    else if (state === 'locked') stateLbl = t('battlepass.locked');
-    else if (state === 'claimable') stateLbl = t('battlepass.claim');
-
-    if (stateLbl) {
-      const stateColor = state === 'claimable' ? C.green : C.mid;
-      const sl = txt(stateLbl, snapFont(Math.round(h * 0.34)), stateColor, state === 'claimable');
-      sl.anchor.set(1, 1); sl.x = anchorX; sl.y = anchorY;
-      parent.addChild(sl);
-      reserveW = sl.width;
-    }
+    // Gold for pass_required (it is the paid track advertising itself), muted for the other two.
+    const glyph = buildIcon(
+      state === 'claimed' ? 'check' : 'lock', tagH, state === 'pass_required' ? C.gold : C.mid,
+    );
+    glyph.x = anchorX - tagH; glyph.y = anchorY - tagH;
+    parent.addChild(glyph);
+    reserveW = tagH;
   }
 
   // Reward: picture + amount, resolved through the shared `buildRewardIcon` (render/rewardIcon.ts)

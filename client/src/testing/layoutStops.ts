@@ -149,6 +149,25 @@ export const STOPS: Stop[] = [
   { screen: 'defenseEditor',via: ['onOpenWorld', { fn: 'onOpenDefense', args: ['base'] }], gated: true, settleMs: 1500 },
   { screen: 'battlePass',   via: ['onOpenShop', 'openBattlePass'], gated: true, settleMs: 900 },
 
+  // ── Tabs that are not the default one ────────────────────────────────────────────────────────
+  //
+  // A one-hop stop audits whichever tab the scene opens on and nothing else, which for a four-tab
+  // scene is a quarter of its surface. Daily is the case that proved it (2026-09-15): its landing
+  // tab is not even fixed — `DailyScene.pickInitialTab` derives it from the save, so a fresh
+  // account lands on Monthly Check-in and the other three tabs had never been walked. The daily
+  // TASK cards were reported by a player, from a screenshot, on a screen the sweep calls clean.
+  //
+  // Reached by tapping the tab's own label, which is how a player reaches it and needs no new
+  // callback surface (`Hop`'s tap form). Safe as long as the label is unique on the screen the tap
+  // starts from — 'Daily Tasks' is also the tasks panel's section heading, so the hop to it starts
+  // from check-in, where the tab strip is the only place those words appear.
+  { screen: 'daily', as: 'daily+tasks',  via: ['onOpenDaily', { tap: 'daily.tasks.title' }],  gated: true, settleMs: 800 },
+  { screen: 'daily', as: 'daily+weekly', via: ['onOpenDaily', { tap: 'daily.weekly.title' }], gated: true, settleMs: 800 },
+  // The auction's other two tabs. `mine` draws a cancel action per row, `bids` an outcome badge —
+  // neither shape exists on the market tab, and both are seeded (lib/seedFixtures.ts).
+  { screen: 'auction', as: 'auction+mine', via: ['onOpenAuction', { tap: 'auction.tabMine' }], gated: true, settleMs: 1800 },
+  { screen: 'auction', as: 'auction+bids', via: ['onOpenAuction', { tap: 'auction.tabBids' }], gated: true, settleMs: 1800 },
+
   // ── The social hub: ONE scene, five tabs, three entry points ─────────────────────────────────
   // `goMail` and the world map's chat button are both `goFriends({defaultTab})` (app/nav/social.ts),
   // so all three report `screen: 'friends'`. Until 2026-09-11 they shared one report slot and one

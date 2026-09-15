@@ -10,7 +10,7 @@ import '@pixi/unsafe-eval';
  * (`npm run build:wechat-layout`, **never shipped**).
  *
  * ── Why an entry, and not automation ────────────────────────────────────────────────────────────
- * `test/browser/portraitLayout.spec.ts` walks 36 stops on ten viewports and judges the real display
+ * `test/browser/portraitLayout.spec.ts` walks 40 stops on ten viewports and judges the real display
  * tree, and every number in it was measured on Chromium. The whole reason to repeat it here is that
  * the two runtimes disagree about the one input the judgement rests on: every text style in this
  * repo asks for `fontFamily: 'monospace'`, `fitFont` divides once to find "the size that fits" on

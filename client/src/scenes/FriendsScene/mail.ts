@@ -17,6 +17,7 @@ import { cardInstanceArtUrl, getArtTexture } from '../../render/cardArt';
 import { buildRewardIcon } from '../../render/rewardIcon';
 import type { MailView, MailAttachmentView } from '../../net/ApiClient';
 import type { FriendsSceneCore } from './core';
+import { drawStatusTag } from '../../ui/widgets/statusTag';
 import { addButton, centerLabel, scrollRegion } from './chrome';
 import type { NetworkHandlers } from './network';
 
@@ -169,9 +170,11 @@ export class MailPanel {
       cy += iconSize + Math.round(h * 0.02);
       const bH = Math.round(h * 0.08);
       if (m.claimed) {
-        const done = txt(t('mail.claimed'), FS.title, C.green, true);
-        done.anchor.set(0.5, 0.5); done.x = core.cCX; done.y = cy + bH / 2;
-        core.container.addChild(done);
+        // Sits where the Claim button was, so the panel does not reflow when a mail is claimed —
+        // but as a status tag, not a button-sized word: a check plus "Claimed", degrading to the
+        // check alone on a panel too narrow for both (ui/widgets/statusTag.ts).
+        drawStatusTag(core.container, px, cy, panelW, bH, t('mail.claimed'), 'check', C.green,
+          FS.title, { align: 'center' });
       } else {
         addButton(core, t('mail.claim'), px, cy, panelW, bH, C.green, C.green, () => void this.network.doClaim(m),
           0xffffff, undefined, undefined, 'gift');

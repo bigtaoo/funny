@@ -17,7 +17,7 @@
 | 菜单场景规格（Lobby/Room/Shop/Gacha/Collection/Profile/Campaign/Prep/Stats/Result） | §4.1–§4.10 | [`UI_DESIGN_SCENES.md`](UI_DESIGN_SCENES.md) |
 | 变更记录 2026-06 / 2026-07 | §4.9.1、§4.11–§4.28、§12–§25 | [`UI_DESIGN_LOG_2026-06_07.md`](UI_DESIGN_LOG_2026-06_07.md) |
 | 变更记录 2026-08 起 | §26–§47 | [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md) |
-| 变更记录 2026-09 起 | §48–§52 | [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) |
+| 变更记录 2026-09 起 | §48–§53 | [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) |
 
 > **写新内容放哪**：改的是「当前应该长什么样」→ 改本文或 `UI_DESIGN_SCENES.md` 的对应小节；记的是「某天改了什么、为什么」→ 追加到最新的 `UI_DESIGN_LOG_*.md` 末尾。两者都要动时，规格里写结论、log 里写来由并互相指一下。
 >
@@ -64,6 +64,8 @@
 > 这些组件统一放 `client/src/ui/widgets/`。**已落地（2026-06-25）**：`uiCache.ts`（§2.1 缓存底座）+ `SceneHeader.ts`（§3.1 统一返回/标题栏）。其余组件（Button/Panel/CurrencyBar/…）随后续场景按需沉淀到此目录。
 
 > **按钮背景统一（2026-07-15）**：全屏菜单场景（登录/大厅/设置/…）早已共享 `render/sketchUi.ts` 的 `sketchPanel()` + `ui` 调色板（§7.5：手绘描边按钮，非透明/纯白/纯黑各自为政）；本次审计发现真正的缺口在**战斗内 HUD**（`HUDView`/`ProfilePopup`/`TutorialDirector`），此前各自写死十六进制色值（`0x2c2c2a`/`0xf0ece0`/`0x3a6ea5`/`0x999999`…）。新增 `ui/widgets/hudButton.ts` 导出 `drawHudButton(g, w, h, variant)` + `hudButtonText(variant)`，5 个语义变体：`primary`（主操作，暂停恢复/关闭/升级/教程跳过）、`accent`（同权重次操作，靠色相区分，刷新手牌/教程下一步）、`secondary`（低权重操作，退出大厅/设置齿轮）、`danger`（拉黑/移除等破坏性操作）、`disabled`。颜色源自 `theme.ts` 的 `palette`，换肤只改一处。同时把两处历史遗留的场景本地 `const C = {...}`（`SettingsScene.ts`/`IntroScene.ts`，与 `sketchUi.ui` 完全重复的调色板）改为直接 `import { ui } from '../render/sketchUi'`，消除并行调色板。
+
+> **行状态标签（2026-09-15）**：`ui/widgets/statusTag.ts` 的 `drawStatusTag()` 画 `[字形][gap][词]`，是 `drawButtonLabel` 的**镜像**——按钮是「点下去会怎样」的承诺、词是载荷，挤不下丢**图标**；状态标签是行本身已经半说出来的事实，挤不下丢**词**。两者都不缩到可读下限以下，这一个干脆不缩（字形按 `ICON_RATIO × fontSize` 画，比它替换掉的词更大，所以词过得了巡检 `tiny` 门禁、降级后的字形就过得了 `icon` 门禁）。**判据是量出来的宽度，永远不是 `layout.orientation`**：竖屏只是三个成因里最吵的一个，德语和中文在横屏一样能撑爆（§50.12 的 `Gesperrt`）。两条使用边界：①只给有公认字形的状态用（done/claimed=`check`、locked=`lock`）——拍卖行那七态没有约定俗成的图标，换了是猜谜，保持文字；②**重复的格子不走这个 widget**，直接画字形（战令 40 格里 39 格 locked，印 39 遍 `[锁] Locked` 比原来还吵）；一次性的行才带词。来由见 [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) §53，契约钉在 `test/ui/statusTag.ui.ts`。
 
 > **按钮前置图标（2026-09-05）**：`[图标][gap][文案]` 整组在按钮内居中。这个形状此前在四处各长了一遍（装备页 Craft 按钮、世界地图头部三枚入口、结算页主/次按钮、战役地图头部快捷键），本次抽成 **`ui/widgets/buttonLabel.ts` 的 `drawButtonLabel()`**，全屏菜单场景的按钮**内容**从此和按钮**背景**（`sketchPanel`/`sketchButton`）一样只有一份实现。三条行为写在 `test/ui/buttonLabel.ui.ts` 里：
 >

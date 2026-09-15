@@ -11,6 +11,7 @@ import { makeText } from '../../../render/pixiText';
 import { t, TranslationKey } from '../../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../../render/sketchUi';
 import { drawButtonLabel, buttonLabelIconW } from '../../../ui/widgets/buttonLabel';
+import { drawStatusTag } from '../../../ui/widgets/statusTag';
 import { buildRewardIcon } from '../../../render/rewardIcon';
 import { FS, snapFont } from '../../../render/fontScale';
 import type { SaveData } from '../../../game/meta/SaveData';
@@ -61,22 +62,31 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     bg.x = PAD; bg.y = cy;
     container.addChild(bg);
 
-    // Label is wrapped and width-capped to the left ~62% of the card so long labels
-    // (e.g. "Clear any PvE level") can never grow into the right-aligned state text.
+    // State tag first, so the label below knows how much of the card is already spoken for
+    // (the ordering `BattlePassScene/cell.ts` had to adopt for the same reason).
+    //
+    // A pending task draws NOTHING. The three tasks are binary — one point each, done once
+    // (server/shared/src/retention.ts DAILY_TASKS) — so "In progress" only ever meant "not the
+    // other state", which the paper-vs-green fill and the `n / 3` tally under the cards already
+    // say. Replacing it with an hourglass would have been the same non-statement in fewer pixels;
+    // dropping it hands the whole right half of the card back to the label, which is what was
+    // actually short of room.
+    const stateFS = snapFont(Math.round(cardH * 0.3));
+    const reserve = done
+      ? drawStatusTag(container, PAD, cy, cardW * 0.96, cardH, t('daily.tasks.done'), 'check', 0x336644, stateFS)
+      : 0;
+
+    // Wrapped only against whatever the tag left over, instead of the flat 60% cap this carried
+    // while every card had a state word on it: "Clear any PvE level" needed two lines in portrait
+    // purely to clear "In progress", and there is no longer anything there to clear.
     const label = makeText(t(labelKey as TranslationKey), {
-      fontSize: snapFont(Math.round(cardH * 0.3)), fill: 0x333333, fontFamily: 'monospace',
-      wordWrap: true, wordWrapWidth: cardW * 0.6, breakWords: true,
+      fontSize: stateFS, fill: 0x333333, fontFamily: 'monospace',
+      wordWrap: true, wordWrapWidth: Math.max(cardW * 0.3, cardW * 0.87 - reserve), breakWords: true,
     });
     label.anchor.set(0, 0.5);
     label.x = PAD + cardW * 0.05;
     label.y = cy + cardH * 0.5;
     container.addChild(label);
-
-    const state = txt(done ? t('daily.tasks.done') : t('daily.tasks.pending'), snapFont(Math.round(cardH * 0.3)), done ? 0x336644 : 0x888888);
-    state.anchor.set(1, 0.5);
-    state.x = PAD + cardW * 0.96;
-    state.y = cy + cardH * 0.5;
-    container.addChild(state);
   });
 
   const summaryY = cardY0 + taskLabels.length * (cardH + h * 0.008) + h * 0.01;

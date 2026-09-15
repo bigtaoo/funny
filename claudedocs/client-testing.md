@@ -289,7 +289,7 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 同一层（真 Chromium）的第二条入口，但问的问题完全不同：**不是「会不会炸」，而是「排版对不对」**。
 
-`test/browser/portraitLayout.spec.ts` 走 **36 站 × 10 个尺寸/语言组合**（站点表在 `src/testing/layoutStops.ts`，微信包内巡检走的是同一张），每站把 `__nwE2E.app` 的真实显示树交给 `src/testing/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、**有效字号低于该视口的可读性下限**、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
+`test/browser/portraitLayout.spec.ts` 走 **40 站 × 10 个尺寸/语言组合**（站点表在 `src/testing/layoutStops.ts`，微信包内巡检走的是同一张），每站把 `__nwE2E.app` 的真实显示树交给 `src/testing/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、**有效字号低于该视口的可读性下限**、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
 
 文件名还叫 `portraitLayout`、命令还叫 `test:portrait`：竖屏是它存在的理由和调校目标，横屏是设计矩形与下限都改成按视口算之后顺手加的两行。
 
@@ -335,9 +335,9 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-09.md`](../design/game/UI_DESIGN_LOG_2026-09.md) §48；第二轮（可读性下限 + 扩面到 32 站 × 6 尺寸 + 它带出来的 7 处返工）见 §49；第三轮（喂真实数据 + 三语 + 站点表修正 + 结算录制器）见 §50。
 
-### 同一趟 36 站的第二个用途：bake 缓存天花板（`bakeBudget.spec.ts`，2026-09-14 新增）
+### 同一趟 40 站的第二个用途：bake 缓存天花板（`bakeBudget.spec.ts`，2026-09-14 新增）
 
-`test/browser/bakeBudget.spec.ts` 走的是**同一张 `STOPS` 表、同一套走法**，但每站不判排版，只读一次 `__nwE2E.bakeEntries()`，把 bake 缓存的 key 并起来——走完 36 站就是这台设备**一次会话的天花板**（那张缓存按设计不淘汰，所以它是天花板不是曲线）。`NW_BAKE=1` 才跑，与 `captureEndStats` 同挂在 `playwright.portrait.config.ts` 下（同一个 docker 栈、同一个 9097 dev server）。报告落 `client/bake-report/*.json`（已 gitignore）。背景与实测数字见 [`client-memory-leak.md`](client-memory-leak.md) §11.8。
+`test/browser/bakeBudget.spec.ts` 走的是**同一张 `STOPS` 表、同一套走法**，但每站不判排版，只读一次 `__nwE2E.bakeEntries()`，把 bake 缓存的 key 并起来——走完 40 站就是这台设备**一次会话的天花板**（那张缓存按设计不淘汰，所以它是天花板不是曲线）。`NW_BAKE=1` 才跑，与 `captureEndStats` 同挂在 `playwright.portrait.config.ts` 下（同一个 docker 栈、同一个 9097 dev server）。报告落 `client/bake-report/*.json`（已 gitignore）。背景与实测数字见 [`client-memory-leak.md`](client-memory-leak.md) §11.8。
 
 两点值得单独记：
 

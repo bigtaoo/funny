@@ -39,7 +39,7 @@ import { seedAccount, seedWorld, type SeedTarget } from './lib/seed';
 // Both live under `src/` since 2026-09-12, because the WeChat layout probe
 // (`src/entries/wechat-layout.ts`) bundles them into a mini-game package that audits itself from
 // the inside. Dependency-free of PIXI and the DOM, so pulling them into a Playwright process is
-// still safe — and sharing the table is what keeps the two sweeps walking the same 36 stops.
+// still safe — and sharing the table is what keeps the two sweeps walking the same 40 stops.
 import { auditLayout, type AuditFinding, type AuditResult } from '../../src/testing/layoutAudit';
 // The design box this viewport will get, and how to print a finding. Shared with
 // `rotateLayout.spec.ts`, which judges one screen against two boxes — see lib/auditBox.ts.
@@ -50,7 +50,7 @@ import { STOPS, hopName, type Hop, type Stop } from '../../src/testing/layoutSto
  * Every shape the layout has to survive. Portrait is why the sweep exists (development happens in a
  * landscape desktop window, so portrait defects only ever arrive as a screenshot from a phone), but
  * nothing in the walk or the audit is portrait-specific — the design box and the legibility floor
- * are derived per viewport below — so the same 36 stops cover landscape for the cost of two more
+ * are derived per viewport below — so the same 40 stops cover landscape for the cost of two more
  * rows here. The table itself lives in `src/testing/layoutStops.ts` since 2026-09-12, because the
  * WeChat in-package sweep walks the same one (see that file's header).
  *
