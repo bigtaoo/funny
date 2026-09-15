@@ -2,7 +2,7 @@
 // claudedocs/client-modules.md's split-form priority note) purely to keep build.ts under the
 // 500-line convention. Draws the vertically-centred column between the header and the bottom nav:
 // the hero "start match" button (+ ambient hero-figure silhouette), the campaign/world pillars, and
-// the right-side engagement strip (Daily/Mail/Events/Feedback/Auction). Only ever called from
+// the engagement strip (Daily/Mail/Events/Feedback/Auction). Only ever called from
 // BuildPanel's own build(), so this takes `core`/`badges` explicitly instead of becoming its own
 // domain class — it needs `badges` one-way to paint the strip's red dots into the layer it creates.
 import * as PIXI from 'pixi.js-legacy';
@@ -21,25 +21,74 @@ import { drawButtonLabel } from '../../ui/widgets/buttonLabel';
 import { headerMetrics } from './format';
 import { snapFont } from '../../render/fontScale';
 
+/**
+ * One shortcut in the engagement strip. `icon` is the same glyph the destination screen wears on its
+ * own title bar / tab, so the strip reads as five shortcuts rather than five words. Feedback is the
+ * one that is not a destination's own glyph: a megaphone drawn for it in batch 11, since a speech
+ * bubble would have been `channel` (the family/sect chat) a second time.
+ */
+type StripEntry = { label: string; border: number; seed: number; icon: IconKind | null; tag: 'daily' | 'mail' | 'events' | 'feedback' | 'auction' };
+
+/**
+ * Which shortcuts the strip shows, in order. Resolved before any geometry because the COUNT decides
+ * geometry now: portrait's row divides the content width by it, and both forms size themselves to
+ * fit. Depends only on the callbacks bag, never on layout.
+ */
+function stripEntries(core: LobbySceneCore): StripEntry[] {
+  const hasEvents   = !!core.cb.onOpenEvents && core.eventsAvailable;
+  const hasMail     = !!(core.cb.onOpenMail ?? core.cb.onOpenSocial);
+  const hasFeedback = !!core.cb.onOpenFeedback;
+  const hasAuction  = !!core.cb.onOpenAuction;
+
+  const entries: StripEntry[] = [];
+  entries.push({ label: t('daily.title'),         border: C.gold,  seed: 71, icon: 'checkinTabIcon', tag: 'daily'    });
+  if (hasMail)     entries.push({ label: t('lobby.strip.mail'),    border: C.gold,  seed: 72, icon: 'mailTabIcon',    tag: 'mail'     });
+  if (hasEvents)   entries.push({ label: t('lobby.strip.events'),  border: C.red,   seed: 73, icon: 'eventTabIcon',   tag: 'events'   });
+  if (hasFeedback) entries.push({ label: t('lobby.strip.feedback'),border: C.accent,seed: 74, icon: 'megaphone',      tag: 'feedback' });
+  if (hasAuction)  entries.push({ label: t('lobby.strip.auction'), border: C.green, seed: 75, icon: 'auctionTabIcon', tag: 'auction'  });
+  return entries;
+}
+
 export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void {
   const { w, h } = core;
   const { tbH } = headerMetrics(w, h, core.portrait);
 
   const navH = Math.round(h * 0.105);
 
-  // Right-side strip: present only when online (daily wired implies online).
-  const hasSideStrip = !!core.cb.onOpenDaily && !core.cb.offline;
-  const sideItemSz = hasSideStrip ? Math.round(h * 0.082) : 0;  // square icon cell
-  const sideGap    = hasSideStrip ? Math.round(w * 0.018) : 0;
+  // Engagement strip: present only when online (daily wired implies online). It runs as a COLUMN
+  // down the right edge in landscape, and as a ROW under the pillars in portrait — see
+  // `stripIsRow`'s note below for why the two orientations differ.
+  const hasStrip = !!core.cb.onOpenDaily && !core.cb.offline;
+  const entries  = hasStrip ? stripEntries(core) : [];
+  /**
+   * Portrait puts the strip in a row beneath the pillars instead of a column beside them.
+   *
+   * The column costs `sideItemSz + sideGap` of WIDTH — 176 of portrait's 1080 design px, 16% of the
+   * screen — which is the axis a phone has least of: it squeezed the content column to 828 and each
+   * pillar card to 387. Meanwhile the band between header and bottom nav is 1315 tall and the
+   * hero+pillars stack only fills 730 of it, so 44% of the vertical budget sat empty (2026-09-15
+   * measurement, on the real 1080×1920 portrait canvas). Moving the five shortcuts into that empty
+   * band spends the axis that has room to spare and hands the width back: content 828 → 972, pillar
+   * cards 387 → 459, and the empty band drops from 585px to 351px of plain margin. Landscape keeps
+   * the column — width is the axis it has spare, and the empty band under its pillars is shallower.
+   */
+  const stripIsRow = hasStrip && core.portrait;
+  const stripIsCol = hasStrip && !core.portrait;
+  const sideItemSz = hasStrip ? Math.round(h * 0.082) : 0;  // square icon cell
+  const sideGap    = stripIsCol ? Math.round(w * 0.018) : 0;
 
-  // Content narrows to make room for the strip; left margin unchanged.
-  // Portrait screens are narrower in absolute terms, so the fixed side
-  // margins read as proportionally larger — widen to 93% there (the identity
-  // chip band collapsing to one row freed some width too; landscape keeps its
-  // original 82%, plenty of width to spare already).
-  const fullContentW = Math.round(w * (core.portrait ? 0.93 : 0.82));
+  // Content narrows to make room for the COLUMN form of the strip only; the row form sits below the
+  // content and costs it no width. Left margin unchanged either way.
+  // Portrait screens are narrower in absolute terms, so the fixed side margins read as
+  // proportionally larger — hence a wider fraction there than landscape's 82%, which has width to
+  // spare already. Portrait sat at 93% while the strip column was eating 176px off the far side;
+  // now that the strip is a row and the whole fraction reaches the content, it returns to the 90%
+  // this codebase uses for every other portrait content column (roster grid, codex, shop group —
+  // LOBBY_IA_REDESIGN.md §21/§23/§24). At 93% the pillars' shared backdrop, which overhangs the
+  // column by `pad` on each side, ended up 13px from the paper's edge.
+  const fullContentW = Math.round(w * (core.portrait ? 0.90 : 0.82));
   const contentX     = Math.round((w - fullContentW) / 2);
-  const contentW     = fullContentW - sideItemSz - sideGap;
+  const contentW     = fullContentW - (stripIsCol ? sideItemSz + sideGap : 0);
   const sideX        = contentX + contentW + sideGap;
 
   // Portrait's identity chip band collapsed from a two-row stack to one row
@@ -49,7 +98,16 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
   const pillarH = Math.round(h * (core.portrait ? 0.165 : 0.155));
   const gapA    = Math.round(h * 0.04);  // hero → pillars
 
-  const stackH  = heroH + gapA + pillarH;
+  // Row form: cells keep their square size unless the row would outgrow the content width, which is
+  // what the five-entry case (an event window is live) does — 5×157 + 4×54 = 1001 against a 972-wide
+  // column on the real portrait canvas, so the cells give up 6px each and the row fits at 971.
+  const rowGap  = Math.round(w * 0.05);  // matches pillarGap, so the row reads as part of the block
+  const rowCell = stripIsRow
+    ? Math.min(sideItemSz, Math.floor((contentW - (entries.length - 1) * rowGap) / entries.length))
+    : 0;
+  const gapB    = stripIsRow ? gapA : 0;  // pillars → strip row
+
+  const stackH  = heroH + gapA + pillarH + gapB + rowCell;
   const usableTop = tbH;
   const usableH   = (h - navH) - tbH;
   // Bias upward (0.40 instead of 0.5): push the hero up to close the large gap below the header.
@@ -175,50 +233,50 @@ export function drawMainContent(core: LobbySceneCore, badges: BadgesPanel): void
     core.worldPillarRect = { x: 0, y: 0, w: 0, h: 0 };
   }
 
-  // 3. Right-side vertical strip — Daily / Mail / Events / Feedback / Auction (P2).
-  // Replaces the old horizontal engagement chip row. Items are compact sketch
-  // panels stacked vertically alongside the hero + pillars area, each with a
-  // short 2-char label and a red dot when actionable.
+  // 3. Engagement strip — Daily / Mail / Events / Feedback / Auction (P2).
+  // Replaces the old horizontal engagement chip row. Items are compact sketch panels, each with a
+  // short 2-char label and a red dot when actionable: a column beside the hero + pillars area in
+  // landscape, a row beneath them in portrait (see `stripIsRow` above for the why).
   core.dailyBtnRect   = { x: 0, y: 0, w: 0, h: 0 };
   core.eventsBtnRect  = { x: 0, y: 0, w: 0, h: 0 };
   core.mailStripRect  = { x: 0, y: 0, w: 0, h: 0 };
   core.feedbackStripRect = { x: 0, y: 0, w: 0, h: 0 };
   core.auctionStripRect = { x: 0, y: 0, w: 0, h: 0 };
-  if (hasSideStrip) {
-    const hasEvents   = !!core.cb.onOpenEvents && core.eventsAvailable;
-    const hasMail     = !!(core.cb.onOpenMail ?? core.cb.onOpenSocial);
-    const hasFeedback = !!core.cb.onOpenFeedback;
-    const hasAuction  = !!core.cb.onOpenAuction;
-
-    // `icon` is the same glyph the destination screen wears on its own title bar / tab, so the
-    // strip reads as five shortcuts rather than five words. Feedback is the one that is not a
-    // destination's own glyph: a megaphone drawn for it in batch 11, since a speech bubble would
-    // have been `channel` (the family/sect chat) a second time.
-    type StripEntry = { label: string; border: number; seed: number; icon: IconKind | null; tag: 'daily' | 'mail' | 'events' | 'feedback' | 'auction' };
-    const entries: StripEntry[] = [];
-    entries.push({ label: t('daily.title'),         border: C.gold,  seed: 71, icon: 'checkinTabIcon', tag: 'daily'    });
-    if (hasMail)     entries.push({ label: t('lobby.strip.mail'),    border: C.gold,  seed: 72, icon: 'mailTabIcon',    tag: 'mail'     });
-    if (hasEvents)   entries.push({ label: t('lobby.strip.events'),  border: C.red,   seed: 73, icon: 'eventTabIcon',   tag: 'events'   });
-    if (hasFeedback) entries.push({ label: t('lobby.strip.feedback'),border: C.accent,seed: 74, icon: 'megaphone',      tag: 'feedback' });
-    if (hasAuction)  entries.push({ label: t('lobby.strip.auction'), border: C.green, seed: 75, icon: 'auctionTabIcon', tag: 'auction'  });
-
-    const itemGap  = Math.round(h * 0.014);
-    const totalH   = entries.length * sideItemSz + (entries.length - 1) * itemGap;
-    // Vertically centre the strip within the hero+pillars block.
-    const stripTopY = Math.round(heroY + (stackH - totalH) / 2);
-    const fontSize  = snapFont(Math.round(sideItemSz * 0.30));
+  if (hasStrip) {
+    // Where each cell lands, and how big it is — the only thing the two orientations disagree on.
+    const cellSz = stripIsRow ? rowCell : sideItemSz;
+    let cellAt: (i: number) => { x: number; y: number };
+    if (stripIsRow) {
+      // Centred under the pillars: with four entries the row is narrower than the content column,
+      // and hanging it off the left edge would read as a fifth slot missing on the right.
+      const rowW = entries.length * cellSz + (entries.length - 1) * rowGap;
+      const rowX = contentX + Math.round((contentW - rowW) / 2);
+      const rowY = pillarsY + pillarH + gapB;
+      cellAt = (i) => ({ x: rowX + i * (cellSz + rowGap), y: rowY });
+    } else {
+      const itemGap = Math.round(h * 0.014);
+      const totalH  = entries.length * cellSz + (entries.length - 1) * itemGap;
+      // Vertically centre the column within the hero+pillars block. Note that five entries (i.e. an
+      // event window is live) make the column TALLER than that block — 505 vs 388 design px — so it
+      // then overhangs the hero's top and the pillars' bottom by ~59px each. Measured 2026-09-15: it
+      // still lands well inside the band between header and bottom nav at every aspect (both scale
+      // with `h`), so it is an alignment wart, not a collision, and landscape is left as it was.
+      const stripTopY = Math.round(heroY + (stackH - totalH) / 2);
+      cellAt = (i) => ({ x: sideX, y: stripTopY + i * (cellSz + itemGap) });
+    }
+    const fontSize = snapFont(Math.round(cellSz * 0.30));
 
     entries.forEach((entry, i) => {
-      const iy = stripTopY + i * (sideItemSz + itemGap);
-      const bg = sketchPanel(sideItemSz, sideItemSz, { fill: C.paper, border: entry.border, width: 1.8, seed: entry.seed });
-      bg.x = sideX; bg.y = iy;
+      const { x: ix, y: iy } = cellAt(i);
+      const bg = sketchPanel(cellSz, cellSz, { fill: C.paper, border: entry.border, width: 1.8, seed: entry.seed });
+      bg.x = ix; bg.y = iy;
       core.container.addChild(bg);
 
       // Square cell → glyph stacked over the label (a row would leave neither any room).
-      drawButtonLabel(core.container, sideX, iy, sideItemSz, sideItemSz, entry.label, entry.icon,
-        C.dark, fontSize, { stack: true, inset: sideItemSz * 0.12 });
+      drawButtonLabel(core.container, ix, iy, cellSz, cellSz, entry.label, entry.icon,
+        C.dark, fontSize, { stack: true, inset: cellSz * 0.12 });
 
-      const rect: Rect = { x: sideX, y: iy, w: sideItemSz, h: sideItemSz };
+      const rect: Rect = { x: ix, y: iy, w: cellSz, h: cellSz };
       switch (entry.tag) {
         case 'daily':    core.dailyBtnRect      = rect; break;
         case 'mail':     core.mailStripRect      = rect; break;

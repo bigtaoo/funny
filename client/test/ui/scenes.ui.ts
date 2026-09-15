@@ -985,15 +985,90 @@ describe('LobbyScene — hit rects do not overlap', () => {
   }
 });
 
-// ── LobbyScene: content column widens to 93% in portrait, stays 82% in landscape ──
+// ── LobbyScene: the engagement strip is a ROW in portrait, a COLUMN in landscape ─────────────
+// Regression for 2026-09-15: the strip used to be a right-hand column in both orientations, which
+// cost portrait 16% of its width (the axis a phone has least of) while 44% of the band between
+// header and bottom nav sat empty. Portrait now lays the same shortcuts out as a row under the
+// pillars. Three things have to hold for that to be worth anything, and each is a separate `it`
+// below: the cells really are side by side under the pillars (not beside them), the content column
+// really did get the width back, and the row does not run into the bottom nav.
+describe('LobbyScene — engagement strip orientation', () => {
+  type R = { x: number; y: number; w: number; h: number };
+  /** An online lobby with every strip entry wired, plus a live event window → all five cells. */
+  function stripLobby(w: number, h: number): LobbyScene {
+    const scene = new LobbyScene(createLayout(w, h), new InputManager(), {
+      onStartGame() {}, onOpenCampaign() {}, onOpenRoom() {}, onOpenShop() {},
+      onOpenCards() {}, onOpenStats() {}, onOpenProfile() {}, onOpenWorld() {},
+      onOpenDaily() {}, onOpenMail() {}, onOpenEvents() {}, onOpenFeedback() {}, onOpenAuction() {},
+      online: true,
+      playerName: 'Tester',
+    });
+    // `onOpenEvents` alone is not enough — the events cell also needs a live window pushed in.
+    scene.applyEventsAvailable(true);
+    return scene;
+  }
+  const cells = (scene: LobbyScene): R[] => {
+    const c = (scene as any).core;
+    return [c.dailyBtnRect, c.mailStripRect, c.eventsBtnRect, c.feedbackStripRect, c.auctionStripRect] as R[];
+  };
+
+  it('portrait: all five cells share one y, below the pillars, and are centred on the content column', () => {
+    const layout = createLayout(...PORTRAIT);
+    const scene = stripLobby(...PORTRAIT);
+    const r = cells(scene);
+    const btn = (scene as any).core.btnRect as R;
+    const campaign = (scene as any).core.campaignBtnRect as R;
+
+    for (const cell of r) expect(cell.w).toBeGreaterThan(0);
+    // A row: one shared y, ascending x, none of them overlapping.
+    expect(new Set(r.map((c) => c.y)).size).toBe(1);
+    for (let i = 1; i < r.length; i++) expect(r[i]!.x).toBeGreaterThan(r[i - 1]!.x + r[i - 1]!.w);
+    // …under the pillars, not beside them.
+    expect(r[0]!.y).toBeGreaterThanOrEqual(campaign.y + campaign.h);
+    // …and centred on the content column, whose width the hero button reports.
+    const leftSlack  = r[0]!.x - btn.x;
+    const rightSlack = (btn.x + btn.w) - (r[r.length - 1]!.x + r[r.length - 1]!.w);
+    expect(Math.abs(leftSlack - rightSlack)).toBeLessThanOrEqual(1);
+    expect(leftSlack).toBeGreaterThanOrEqual(0);
+
+    scene.destroy();
+    expect(btn.w).toBe(Math.round(layout.designWidth * 0.90));
+  });
+
+  it('portrait: the row clears the bottom nav', () => {
+    const layout = createLayout(...PORTRAIT);
+    const scene = stripLobby(...PORTRAIT);
+    const last = cells(scene)[4]!;
+    // Same navH the lobby draws with (bottomNav.ts / mainContent.ts both round h*0.105).
+    expect(last.y + last.h).toBeLessThanOrEqual(layout.designHeight - Math.round(layout.designHeight * 0.105));
+    scene.destroy();
+  });
+
+  it('landscape: all five cells share one x, to the right of the content column', () => {
+    const scene = stripLobby(...LANDSCAPE);
+    const r = cells(scene);
+    const btn = (scene as any).core.btnRect as R;
+
+    expect(new Set(r.map((c) => c.x)).size).toBe(1);
+    for (let i = 1; i < r.length; i++) expect(r[i]!.y).toBeGreaterThan(r[i - 1]!.y + r[i - 1]!.h);
+    expect(r[0]!.x).toBeGreaterThanOrEqual(btn.x + btn.w);
+
+    scene.destroy();
+  });
+});
+
+// ── LobbyScene: content column widens to 90% in portrait, stays 82% in landscape ──
 // Regression: hero button / pillar column used a single 82% width fraction for
 // both orientations. Portrait screens read the fixed side margins as
-// proportionally larger, so portrait now widens to 93% (bumped from 90% once the
-// header's identity chip band collapsed to one row and freed up width — see the
-// "portrait identity row" describe block below); landscape is untouched.
+// proportionally larger, so portrait widens; landscape is untouched.
+// Portrait's fraction went 90% → 93% when the header's identity chip band collapsed to one row
+// (see the "portrait identity row" describe block below), then back to 90% on 2026-09-15 when the
+// engagement strip moved out of the right margin and into a row under the pillars: the whole
+// fraction now reaches the content column, and at 93% the pillars' shared backdrop — which
+// overhangs the column by its own pad — came within 13px of the paper's edge.
 describe('LobbyScene — content column width follows orientation', () => {
   for (const [label, [w, h], expectedFrac] of [
-    ['portrait', PORTRAIT, 0.93],
+    ['portrait', PORTRAIT, 0.90],
     ['landscape', LANDSCAPE, 0.82],
   ] as const) {
     it(`btnRect width is ${expectedFrac * 100}% of design width — ${label}`, () => {
