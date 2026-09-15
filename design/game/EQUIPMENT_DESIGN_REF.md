@@ -30,7 +30,7 @@
 |---|---|
 | 强化成功率曲线 | ECONOMY_NUMBERS §5.2 |
 | 合成配方/成本 | ECONOMY_NUMBERS §5 |
-| 关卡装备掉率 | `server/shared/pveRewards.ts` |
+| 关卡装备掉率 | `server/shared/src/pveRewards.ts` |
 | 战力占比上限 35% / 1.5× | ECONOMY_BALANCE §5.5.1 |
 | 词条池结构（主/副/特技、稀有度档） | 本文 §7（机制权威） |
 | 词条加成数值/区间/权重、强化系数 | ECONOMY_NUMBERS §5（待铺） |

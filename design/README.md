@@ -147,7 +147,8 @@
 | [SLG_LOG_2026-08.md](game/SLG_LOG_2026-08.md) | [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | 2026-08 起的实现记录 |
 | [UI_DESIGN_SCENES.md](game/UI_DESIGN_SCENES.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 场景规格 |
 | [UI_DESIGN_LOG_2026-06_07.md](game/UI_DESIGN_LOG_2026-06_07.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 2026-06/07 |
-| [UI_DESIGN_LOG_2026-08.md](game/UI_DESIGN_LOG_2026-08.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 2026-08 起 |
+| [UI_DESIGN_LOG_2026-08.md](game/UI_DESIGN_LOG_2026-08.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 §26–§47 |
+| [UI_DESIGN_LOG_2026-09.md](game/UI_DESIGN_LOG_2026-09.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 §48 起 |
 
 #### 1.2.3 审计记录（一次性切面审计，非设计基准）
 
@@ -233,7 +234,7 @@
 | 文档 | 范围 |
 |---|---|
 | [animator/ARCHITECTURE.md](tools/animator/ARCHITECTURE.md) · [REQUIREMENTS.md](tools/animator/REQUIREMENTS.md) | 骨骼动画编辑器（端口 9091） |
-| [animator/WORKSPACE_SYNC.md](tools/animator/WORKSPACE_SYNC.md) | animator 在线工作区 + 云盘→仓库同步桥（Cloudflare Pages + Supabase + 自动 PR；**⚠️ 方向已被 desktop-shell/DESIGN.md 取代，见 ADR-055，已合并代码暂未下线**） |
+| [animator/WORKSPACE_SYNC.md](tools/animator/WORKSPACE_SYNC.md) | animator 在线工作区 + 云盘→仓库同步桥（Cloudflare Pages + Supabase + 自动 PR）。**已归档**：方向被 desktop-shell/DESIGN.md 取代（ADR-055），代码已于 2026-08-02 全部下线——`WorkspaceStore`/`WorkspacePanel`/`workspaceConfig`/`anim-sync.mjs`/`anim-sync.yml`/`art/units/manifest.json` 在仓库里均已不存在（2026-09-15 核实）。本行此前写「已合并代码暂未下线」，与该文档自己的状态头矛盾 |
 | [desktop-shell/DESIGN.md](tools/desktop-shell/DESIGN.md) | **工具桌面壳（Electron，多工具挂载 + 壳/内容双层自动更新 + 预留 git 提交接口；状态：设计中）** |
 | [level-editor/DESIGN.md](tools/level-editor/DESIGN.md) | 关卡编辑器（端口 9092） |
 | [map-editor/DESIGN.md](tools/map-editor/DESIGN.md) | SLG 大地图编辑器（端口 9095） |
@@ -338,7 +339,7 @@ botsvc 写成「设计中」），根因就是同一个事实存在两处、且�
 
 **A 类 —— 代码与文档冲突（10 处）**
 1. `BALANCE.md` 的 Max 攻击力停在 14，代码 2026-07-17 已改 11（ghost-fix 后重调）——漂移 7 周，本文 §0 铁律 1 的第一次失效。
-2. `server/shared/src/slg.ts` 2026-07-05 拆包后不存在，仍有 9 份活文档（含本文 §2 登记表）把它当数值真源。
+2. `server/shared/src/slg/` 2026-07-05 拆包后不存在，仍有 9 份活文档（含本文 §2 登记表）把它当数值真源。
 3. 野外城池 `CITY_*` 真源指向 `slg/siege.ts`，实际在 `slg/citySiege.ts`（该文件头自己就写了文档指错）。
 4. 本文装备行的 ⚠️「洗练当前不扣金币」——ADR-030 已于 2026-07-03 实装收费，`ECONOMY_BALANCE §3.4` 早标了 ✅。
 5. `SERVER_API_INTERNAL §10.1` 仍列 `POST /world/occupy`，该路由已摘除（e2e 断言 404）。

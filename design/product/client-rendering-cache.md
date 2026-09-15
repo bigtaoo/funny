@@ -1,5 +1,16 @@
 # 客户端渲染缓存设计
 
+> **状态（2026-09-15 核对）：草案，路径与命名均未落地成本文写法。** 本文写于 2026-07-03，此后没再更新过。
+> 实际落地：
+> - **对象池那一层落了，名字对得上**：[`client/src/cache/ObjectPool.ts`](../../client/src/cache/ObjectPool.ts)，
+>   外加本文没有的 [`poolRegistry.ts`](../../client/src/cache/poolRegistry.ts)（各池向 `MemoryMonitor` 报闲置对象数）。
+>   本文示例里的 `src/client/pools/unitSpritePool.ts` 从没建过——各视图自己持池。
+> - **资源缓存那一层换了形状**：没有 `AssetCache` / `assetManifest` 这两个文件，对应职责分散在
+>   `client/src/assets/` 的 `assetIO.ts` / `bootManifest.ts` / `preloadTextures.ts` / `prefetchPolicy.ts` / `idlePrefetch.ts`。
+> - **「已加载的资源永不从缓存中移除」这条原则已经不成立**：`MemoryMonitor` + 微信 `onMemoryWarning` 下有主动释放路径。
+>
+> 本文的代码块按"设计意图"读，别按"现在长这样"读；要看现状去上面那几个文件。
+
 ## 概述
 
 客户端渲染缓存分为两层：

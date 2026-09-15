@@ -48,7 +48,7 @@
 ### 拍卖任务4：迁移拍卖业务逻辑到 auctionsvc ✅（2026-07-06）
 
 - [x] **依赖**：任务2（皮肤托管）+ 任务3（服务骨架）。
-- **主要文件**：新建 `server/auctionsvc/src/auctionService.ts`（从 `server/worldsvc/src/auctionService.ts` 整体迁移改造）、`src/metaClient.ts`/`src/commercialClient.ts`/`src/mailClient.ts`/`src/scheduler.ts`（同样迁移，接口改名 `Auction*Client`）、`src/httpApi.ts`（`/auction/*` 路由 + `/internal/audit/anomalies`）、`src/db.ts`（`AuctionDoc`/`AuctionDailyDoc`/`AuctionPriceDoc` 三集合落地，此前任务3只搭空壳）、`src/config.ts`（补 `metaInternalUrl`/`commercialInternalUrl`）、`src/index.ts`（接线）。`server/shared/src/internalAuth.ts` 的 `InternalCaller` 联合类型新增 `'auctionsvc'`。新建 `server/contracts/openapi-auction.yml` + `contracts/scripts/gen-openapi-auction.mjs`（照抄 `gen-openapi-world.mjs`，自包含 spec，不跨文件 `$ref`）+ `auctionsvc/package.json` 的 `gen:api:auction[:check]` 脚本。测试：新建 `server/auctionsvc/test/auction.e2e.test.ts`（30 例，含新增 skin 用例）+ `test/auction-audit.e2e.test.ts`（6 例，D/G7 审计迁移）；`test/skeleton.e2e.test.ts` 同步改造以适配新 `startHttpApi` 签名。
+- **主要文件**：新建 `server/auctionsvc/src/auctionService.ts`（从 `server/auctionsvc/src/auctionService.ts` 整体迁移改造）、`src/metaClient.ts`/`src/commercialClient.ts`/`src/mailClient.ts`/`src/scheduler.ts`（同样迁移，接口改名 `Auction*Client`）、`src/httpApi.ts`（`/auction/*` 路由 + `/internal/audit/anomalies`）、`src/db.ts`（`AuctionDoc`/`AuctionDailyDoc`/`AuctionPriceDoc` 三集合落地，此前任务3只搭空壳）、`src/config.ts`（补 `metaInternalUrl`/`commercialInternalUrl`）、`src/index.ts`（接线）。`server/shared/src/internalAuth.ts` 的 `InternalCaller` 联合类型新增 `'auctionsvc'`。新建 `server/contracts/openapi-auction.yml` + `contracts/scripts/gen-openapi-auction.mjs`（照抄 `gen-openapi-world.mjs`，自包含 spec，不跨文件 `$ref`）+ `auctionsvc/package.json` 的 `gen:api:auction[:check]` 脚本。测试：新建 `server/auctionsvc/test/auction.e2e.test.ts`（30 例，含新增 skin 用例）+ `test/auction-audit.e2e.test.ts`（6 例，D/G7 审计迁移）；`test/skeleton.e2e.test.ts` 同步改造以适配新 `startHttpApi` 签名。
 - **改动范围**：
   - 所有方法签名去掉 `worldId` 参数；`auctionId` 格式从 `a:{worldId}:{sellerId}:{ts}:{seq}` 改为 `a:{sellerId}:{ts}:{seq}`（auctionsvc 本地生成，不复用 `@nw/shared` 的 `auctionId()`——那个签名仍带 worldId，专供 worldsvc 旧实现用，任务6 随旧代码一并删除）；`auctionDaily` 的 `_id` 从 `${worldId}:${accountId}:${dayKey}` 改为 `${accountId}:${dayKey}`；`auctionPrices` 的 `_id` 从 `${worldId}:${category}` 改为 `${category}`。
   - **未迁移**：`assertWorldAcceptsListings`/`clearWorldOnReset`（F 季末清算，任务1 定稿已判定作废，不迁移，也不在 auctionsvc 出现）。
@@ -75,7 +75,7 @@
 ### 拍卖任务6：worldsvc 瘦身 ✅（2026-07-06）
 
 - [x] **依赖**：任务5 上线且稳定运行一段时间（**不要在切流量当天就删旧代码**，留几天观察期方便回滚）——**拍板：本任务未等观察期，用户明确要求跳过**，接受当天回滚风险。
-- **主要文件**：`server/worldsvc/src/auctionService.ts`（删除）、`src/httpApi.ts`（删 `/auction/*` 三个路由块：公开 `/auction/*`、内部 `/admin/world/audit/anomalies`、`/admin/world/reset` 里的 `clearWorldOnReset` 调用）、`src/metaClient.ts`（删 `deductMaterial`/`escrowEquipment`/`grantEquipment`/`escrowCard`/`grantCard`，`grantMaterial` 仍被据点掉落使用故保留）、`src/mailClient.ts`（`WorldMailAttachment.kind` 去掉 `equipment`/`card`，季末结算只用 coins/skin/material）、`src/scheduler.ts`（去掉 `auctionSvc`/`processExpiredAuctions` 分支）、`src/db.ts`（删 `AuctionDoc`/`AuctionDailyDoc`/`AuctionPriceDoc` 三个接口 + collections + 索引）、`src/index.ts`/`src/config.ts`/`src/mapTemplateService.ts`（去引用/改注释）、`server/worldsvc/test/auction*.e2e.test.ts`（删，已迁到任务4）、`test/map-template.e2e.test.ts`（`startHttpApi` 调用少了一个已删的 `auctionSvc` 位置参数，同步改签名）。`commercialClient.ts` 的 `spend`/`grant` 是通用方法（建筑加速/帮派创建/世界频道/卡牌找回/迁城都在用），未删，只改了头注释。
+- **主要文件**：`server/auctionsvc/src/auctionService.ts`（删除）、`src/httpApi.ts`（删 `/auction/*` 三个路由块：公开 `/auction/*`、内部 `/admin/world/audit/anomalies`、`/admin/world/reset` 里的 `clearWorldOnReset` 调用）、`src/metaClient.ts`（删 `deductMaterial`/`escrowEquipment`/`grantEquipment`/`escrowCard`/`grantCard`，`grantMaterial` 仍被据点掉落使用故保留）、`src/mailClient.ts`（`WorldMailAttachment.kind` 去掉 `equipment`/`card`，季末结算只用 coins/skin/material）、`src/scheduler.ts`（去掉 `auctionSvc`/`processExpiredAuctions` 分支）、`src/db.ts`（删 `AuctionDoc`/`AuctionDailyDoc`/`AuctionPriceDoc` 三个接口 + collections + 索引）、`src/index.ts`/`src/config.ts`/`src/mapTemplateService.ts`（去引用/改注释）、`server/worldsvc/test/auction*.e2e.test.ts`（删，已迁到任务4）、`test/map-template.e2e.test.ts`（`startHttpApi` 调用少了一个已删的 `auctionSvc` 位置参数，同步改签名）。`commercialClient.ts` 的 `spend`/`grant` 是通用方法（建筑加速/帮派创建/世界频道/卡牌找回/迁城都在用），未删，只改了头注释。
 - **未动**（有意，任务7 范围）：`src/generated/routes.gen.ts`（`server/contracts/openapi-world.yml` 未改，client 仍靠它 codegen，改动会连带影响 client，按既定顺序留给任务7 一并做）——故本任务验收的 `grep -rn auction` 排除该生成文件。
 - **踩坑**：worktree 建在 `main` 上时任务5的提交（daily branch `06.07.2026`）还没合并，导致 admin 侧任务5声称已做的 `AuctionClient` 迁移在 worktree 里完全不存在——本任务据此改建在 `06.07.2026` 分支上重跑（先 `git worktree add -b ... main` 再 `git rebase 06.07.2026`），之后确认 admin 侧确已正确指向 auctionsvc。**结论**：跨会话的多阶段任务链，若前序任务只在当日分支未合 main，续做的 worktree 必须基于当日分支而非 main，否则会静默丢失前序改动。
 - **验收**：`npx tsc -b shared engine metaserver gateway matchsvc gameserver commercial worldsvc auctionsvc admin analyticsvc socialsvc` 全绿；`npm test --workspace @nw/worldsvc`（188 例）、`npm test --workspace @nw/admin`（27 例）全绿；`grep -rn auction server/worldsvc/src`（排除 `generated/`）仅剩迁移说明注释，无业务代码命中。
@@ -83,7 +83,7 @@
 ### 拍卖任务7：client 端清理 ✅（2026-07-06）
 
 - [x] **依赖**：任务5 上线（client 改动和后端切流量应在同一次发布，避免旧客户端 + 新后端的过渡期兼容问题——反代路径不变，理论上无兼容问题，但 `worldId` 参数被服务端忽略时行为需确认）。
-- **主要文件**：`client/src/net/WorldApiClient.ts`（`listAuctions`/`getMyListings`/`createAuction`/`buyAuction`/`placeBid`/`cancelAuction` 六个方法去掉 `worldId` 入参，请求体/查询串不再带 `worldId`）；`client/src/scenes/AuctionScene/base.ts`（`AuctionSceneCallbacks` 去掉 `worldId` 字段，`loadData()` 调用同步）、`bid.ts`/`tradeActions.ts`/`createForm.ts`（对应调用点去掉 `this.cb.worldId` 实参）；`client/src/app/nav/world.ts`（`goAuctionFromLobby` 整段删掉 `resolveWorldShard` 前置解析，直接 `views.showAuction`；`goAuctionHouse` 自身签名不变——从世界地图打开时仍需 `worldId` 供 `onBack` 返回同一张地图，只是不再把 `worldId` 转发进 `AuctionSceneCallbacks`）。测试同步：`test/ui/auctionScene.ui.ts`/`test/ui/caretRegression.ui.ts`/`test/ui/scenes.ui.ts` 里构造 `AuctionScene`/断言 `worldApi.*` 调用参数的地方去掉 `worldId`。
+- **主要文件**：`client/src/net/WorldApiClient.ts`（`listAuctions`/`getMyListings`/`createAuction`/`buyAuction`/`placeBid`/`cancelAuction` 六个方法去掉 `worldId` 入参，请求体/查询串不再带 `worldId`）；`client/src/scenes/AuctionScene/core.ts`（`AuctionSceneCallbacks` 去掉 `worldId` 字段，`loadData()` 调用同步）、`bid.ts`/`tradeActions.ts`/`createForm.ts`（对应调用点去掉 `this.cb.worldId` 实参）；`client/src/app/nav/world.ts`（`goAuctionFromLobby` 整段删掉 `resolveWorldShard` 前置解析，直接 `views.showAuction`；`goAuctionHouse` 自身签名不变——从世界地图打开时仍需 `worldId` 供 `onBack` 返回同一张地图，只是不再把 `worldId` 转发进 `AuctionSceneCallbacks`）。测试同步：`test/ui/auctionScene.ui.ts`/`test/ui/caretRegression.ui.ts`/`test/ui/scenes.ui.ts` 里构造 `AuctionScene`/断言 `worldApi.*` 调用参数的地方去掉 `worldId`。
 - **未动**（有意，超出本任务范围）：`AuctionView` 类型仍从 `client/src/net/openapi-world.ts`（由未改动的 `server/contracts/openapi-world.yml` 生成）导入，而非任务4新建的 `openapi-auction.yml`——两者 schema 字段目前一致（`openapi-world.yml` 的 `/auction/*` 段本身也未删，见 §9 任务6 备注），故类型检查不受影响；但这意味着 client 尚未真正"改指向新文件"（任务4/5 遗留的最后一句表述）。若后续要彻底切断 client 对 `openapi-world.yml` 拍卖段的依赖，需要：① `client/scripts/gen-openapi.mjs` 新增 `openapi-auction.yml → openapi-auction.ts` 流水线，② `WorldApiClient.ts` 的 `AuctionView` 改从新文件导入，③ 确认无回归后再从 `openapi-world.yml` 删除 `/auction/*` 段并重新生成 `openapi-world.ts`/`server/worldsvc/src/generated/routes.gen.ts`（§9 任务6 里同样留白的那份）。不阻塞当前验收（功能已完全跑通 auctionsvc）。
 - **验收**：`npm run typecheck`（`tsc --noEmit -p tsconfig.test.json`）绿；`npm run build:web`（webpack production）绿；`npx vitest run --config vitest.ui.config.ts`（14 文件 185 例，含 `auctionScene.ui.ts` 23 例）全绿；大厅入口（`goAuctionFromLobby`）和 SLG 世界地图入口（`goAuctionHouse`）都能直接打开拍卖行，前者不再经过 `resolveWorldShard`。
 
@@ -126,9 +126,9 @@
 
 - [x] **依赖**：任务2（皮肤托管能力）+ 任务10（client 已切到 `openapi-auction.yml`，`itemType` 枚举早已含 `skin`）。**触发原因**：用户反馈"抽到的多余皮肤没出现在拍卖列表里"，排查后发现根因不是过滤条件写错，而是任务7/任务10两次都把"皮肤 UI"记成"范围之外"——服务端 `escrowSkin`/`grantSkin`（`server/metaserver/src/skin.ts`）、`auctionService.ts` 的 `itemType==='skin'` 分支、`openapi-auction.yml` 的 `itemType` 枚举全部早已就绪，纯粹是 client picker 从未读取 `save.inventory.skins`。
 - **改动范围**（全部 client-only，服务端/契约零改动）：
-  - `client/src/scenes/AuctionScene/base.ts`：`ItemClass`/`FILTERS` 加 `'skin'`；新增 `createSkinId` 状态字段；`itemKind()` 加 `skin→'brush'`（复用 GachaScene 已用的 IconKind，不新增枚举值）；`auctionLabel()` 加皮肤分支（`skinDisplayName(item.skinId)`）；`errorMsg()` 补 `SKIN_IN_USE`/`SKIN_NOT_FOUND` 错误码映射。
-  - `client/src/scenes/AuctionScene/picker.ts`：新增 `listableSkins()`（读 `save.inventory.skins`，用 `allEquippedSkins(save.equipped)` 过滤已装备的，镜像服务端 `isSkinEquipped` 判定）；`buildPickEntries()`/`renderPickIcon()`/`renderPickerSidebar()` 各加皮肤分支——图标复用 `GachaScene/odds.ts` 已有的皮肤立绘取图写法（`unitPortraitUrl(SKIN_TARGET_UNIT[skinId], skinId)` + `getArtTexture` 异步纹理，无立绘则 fallback `'brush'` 图标）。
-  - `client/src/scenes/AuctionScene/createForm.ts`：`doCreate()` 加 `itemType='skin', item={skinId}, qty=1` 分支。
+  - `client/src/scenes/AuctionScene/core.ts`：`ItemClass`/`FILTERS` 加 `'skin'`；新增 `createSkinId` 状态字段；`itemKind()` 加 `skin→'brush'`（复用 GachaScene 已用的 IconKind，不新增枚举值）；`auctionLabel()` 加皮肤分支（`skinDisplayName(item.skinId)`）；`errorMsg()` 补 `SKIN_IN_USE`/`SKIN_NOT_FOUND` 错误码映射。
+  - `client/src/scenes/AuctionScene/itemPickerRender.ts`：新增 `listableSkins()`（读 `save.inventory.skins`，用 `allEquippedSkins(save.equipped)` 过滤已装备的，镜像服务端 `isSkinEquipped` 判定）；`buildPickEntries()`/`renderPickIcon()`/`renderPickerSidebar()` 各加皮肤分支——图标复用 `GachaScene/odds.ts` 已有的皮肤立绘取图写法（`unitPortraitUrl(SKIN_TARGET_UNIT[skinId], skinId)` + `getArtTexture` 异步纹理，无立绘则 fallback `'brush'` 图标）。
+  - `client/src/scenes/AuctionScene/createListing.ts`：`doCreate()` 加 `itemType='skin', item={skinId}, qty=1` 分支。
   - `client/src/scenes/AuctionScene/list.ts`：分类栏 + `renderItemPicture()` 同步加皮肤分支（市场挂单列表也要能正确显示皮肤图标/标题，不只是 picker）。
   - `client/src/net/WorldApiClient.ts`：`createAuction()` 的 `itemType` 参数字面量类型加 `| 'skin'`（`AuctionView` 类型本身早已含 skin，仅这一处手写封装层缺失）。
   - i18n 三语言文件补 `auction.filterSkin`/`auction.err.skinInUse`。
@@ -140,7 +140,7 @@
 
 ### 出售物品选择页：左侧类目栏 + 图标卡放大 1.5x（2026-07-09，2026-08-04 追加放大）
 
-- **改动**（`client/src/scenes/AuctionScene/picker.ts`）：`PickEntry` 加 `cls` 字段（material/equipment/card），选择页装订线左侧新增全部/装备/角色卡/材料四个类目 tab（复用 `HubTabs.drawSidebarTabs`，与市场列表页 `renderSidebar` 同一视觉语言），点击按 `cls` 过滤右侧网格；网格改用 `marginLineX(w)` 让出左栏。图标卡尺寸/字号整体 ×1.5（`CARD_GAP` 10→15、`CARD_W_TARGET` 130→195、`CARD_H` 104→156，图标 26→39、名称字号 12→18、`Select ›` 提示 10→15）。
+- **改动**（`client/src/scenes/AuctionScene/itemPickerRender.ts`）：`PickEntry` 加 `cls` 字段（material/equipment/card），选择页装订线左侧新增全部/装备/角色卡/材料四个类目 tab（复用 `HubTabs.drawSidebarTabs`，与市场列表页 `renderSidebar` 同一视觉语言），点击按 `cls` 过滤右侧网格；网格改用 `marginLineX(w)` 让出左栏。图标卡尺寸/字号整体 ×1.5（`CARD_GAP` 10→15、`CARD_W_TARGET` 130→195、`CARD_H` 104→156，图标 26→39、名称字号 12→18、`Select ›` 提示 10→15）。
 - **状态**：新增 `AuctionSceneBase.pickerFilter`（`AucFilter`，复用市场页的类型），`openItemPicker()` 时重置为 `''`。
 - **2026-08-04 追加**：用户反馈图标偏小、名称贴图标太近——`renderPickCard()` 图标尺寸 39→56、名称 y 偏移 78→88（`CARD_H` 156 不变，"Select ›" 提示位置 `y+148` 不变，与新名称位置净空 22px+，不重叠）。
 - **验收**：`tsc --noEmit` 绿；`webpack --mode production` 绿。
@@ -162,7 +162,7 @@
 
 ### 修复：拍卖行返回按钮点在背景区无效（2026-07-15）
 
-- **问题**：玩家反馈拍卖行标题栏"← Back"看起来和其它场景一样宽，但点在返回文字右侧的"背景"上没反应。根因：`AuctionSceneBase.build()`（`client/src/scenes/AuctionScene/base.ts`）用共享组件 `drawSceneHeader()` 返回的标准返回热区（`hdr.backRect`，宽度是统一常量 `BACK_HIT_W=160`）建头部，但 `render()` 每次都会清空 `hitRects` 重建，重建时却硬编码了一个**只有一半宽（`w:80`）**的热区（item-picker 遮罩层同样硬编码）——视觉上和商店等场景一致的返回条，实际可点区域只有左半边。
+- **问题**：玩家反馈拍卖行标题栏"← Back"看起来和其它场景一样宽，但点在返回文字右侧的"背景"上没反应。根因：`AuctionSceneBase.build()`（`client/src/scenes/AuctionScene/core.ts`）用共享组件 `drawSceneHeader()` 返回的标准返回热区（`hdr.backRect`，宽度是统一常量 `BACK_HIT_W=160`）建头部，但 `render()` 每次都会清空 `hitRects` 重建，重建时却硬编码了一个**只有一半宽（`w:80`）**的热区（item-picker 遮罩层同样硬编码）——视觉上和商店等场景一致的返回条，实际可点区域只有左半边。
 - **修复**：把 `hdr.backRect` 缓存到实例字段 `backRect`，`render()` 里两处硬编码的 `{w:80}` 都改成复用它，和 `ShopScene` 等场景的写法统一。
 - **验收**：`tsc --noEmit` 绿；headless 实例化 `AuctionScene` 读取渲染后的 `hitRects` 确认宽度恢复为 160；新增回归测试 `client/test/ui/auctionBackButtonHitWidth.ui.ts`（4 例：初始/多次 render 后宽度不变、右半区点击触发 onBack、item-picker 遮罩下右半区点击取消 picker）——摘掉修复重跑 4 例全部按预期失败，验证测试能真正捕获这个回归。
 
@@ -191,7 +191,7 @@
   - `server/admin/src/clients/auction.ts`：`AuctionClient` 接口 + `HttpAuctionClient` 新增 `queryListings()`。
   - `server/admin/src/service/slgAudit.ts`：新增 `slgQueryAuctionListings()`（复用既有 capability `slg.audit.view`，只读查询，与异常扫描同一信任级别，未新增 capability）。
   - `server/admin/src/httpApi.ts`：新增路由 `GET /admin/slg/audit/listings`。
-  - `tools/ops/src/api.ts` + `tools/ops/src/types.ts`：新增 `slgQueryAuctionListings()` 客户端方法 + 镜像类型。
+  - `tools/ops/src/api/` + `tools/ops/src/types.ts`：新增 `slgQueryAuctionListings()` 客户端方法 + 镜像类型。
   - `tools/ops/src/pages/auctionAudit.ts`：在既有「SLG Audit」页顶部新增「Listing lookup」卡片（sellerId / itemType / status / item name 四个筛选框 + 结果表格，展示 Auction ID/Seller/Item/Qty/Price/Sale mode/Status/Designated buyer/Buyer/Expire-closed），复用同一 nav 项与 capability，不新增页面/导航条目。
 - **验收**：`tsc --noEmit` 对 `shared`/`auctionsvc`/`admin`/`tools/ops` 四个包全绿。未跑 e2e/UI 截图验证（无新增业务规则或可见渲染回归风险，纯新增只读查询通路）。
 
@@ -249,7 +249,7 @@
 ### 创建挂单表单：出售物品字段加倍高度 + 视觉重点显示（2026-08-08）
 
 - **问题**：用户对着挂单表单截图画圈反馈——"Item: Scrap"这一栏应该加倍高度、重点显示，让玩家一眼看出当前要卖的是什么；同时确认手动输入价格时是否统一用了带光标的输入框样式。
-- **改动**（`client/src/scenes/AuctionScene/createForm.ts`，`openCreateForm()`）：
+- **改动**（`client/src/scenes/AuctionScene/createListing.ts`，`openCreateForm()`）：
   - Item 选择字段（`field`）高度从标准输入行的 `30*SCALE` 翻倍到 `itemFieldH = 60*SCALE`；图标从 `16*SCALE` 放大到 `itemIconSize = 32*SCALE`，与字段高度同比放大；图标/文字改用居中定位（图标按 `(itemFieldH - itemIconSize)/2` 垂直居中，文字 `anchor.set(0, 0.5)` + `field.y + fieldH/2`）取代之前按字段旧高度手调的固定像素偏移，避免放大后错位。
   - 已选中物品时（`selLabel` 非空）额外做"重点显示"：字段底色从中性纸色 `0xfaf9f5` 换成浅蓝强调色 `0xeaf1fb`（`ui.accent` 的浅色调）、边框从 2px 加粗到 3px、文字从 `13*SCALE` 常规体放大到 `17*SCALE` 粗体。未选中时（占位提示"点击选择"）维持原有中性样式不变，避免占位态也跟着"抢眼"。
   - `mh`（弹窗总高度）与 `cy`（后续行起始位置）的计算同步加上多出的 `30*SCALE`——弹窗高度公式里原有的 `(...) * VA` 分组是纵向留白系数（`VA=SCALE*1.2`），字段加高是单独的绝对像素增量，两者不能混在一起乘同一个系数，故作为独立加项累加，避免弹窗要么裁切按钮行要么底部留白过多。
@@ -260,7 +260,7 @@
 
 - **问题**：上一条目落地时只靠既有的 `openCreateForm` 通用回归用例兜底，没有为"字段加倍高度 + 选中态视觉重点显示"这条具体改动写专项断言——用户随后要求补测试。
 - **改动**：
-  - `client/src/scenes/AuctionScene/createForm.ts`：`SCALE` 常量加 `export`，供测试按同一个乘数算期望几何值，不需要在测试里重复硬编码 `1.5`。
+  - `client/src/scenes/AuctionScene/createListing.ts`：`SCALE` 常量加 `export`，供测试按同一个乘数算期望几何值，不需要在测试里重复硬编码 `1.5`。
   - `client/test/ui/auctionScene.ui.ts`：新增 `describe('AuctionScene — create form item field (doubled height + emphasis)')`，5 个用例：① 高度确实是标准输入行的 2 倍（`60*SCALE`），且它始终是 `modalHits[0]`（物品字段的命中矩形永远最先入队，与 `createClass`/`saleMode` 无关），点击命中矩形真的触发 `openItemPicker()`；② 未选中物品（`equipment` 类 + 无 `getSave` 回调 → `selectedItemLabel()` 为 `null`）时高度依旧加倍，只是视觉样式不同；③ 已选中物品时文字节点的 `style.fontSize`/`style.fontWeight` 分别是加大字号（经 `snapFont()` 吸附后的值，不是裸算的 `17*SCALE`）+ `'bold'`；④ 未选中占位提示的字号/字重则是普通档位（`snapFont(13*SCALE)` + `'normal'`）；⑤ 高度加倍后紧跟着的 Qty 步进器命中矩形的 y 坐标仍然严格在物品字段下方，没有因为这次布局调整而重叠。
   - 新增测试辅助函数 `findTextNode()`（`findLabelPos()` 的姊妹函数，返回节点本身而非仅返回坐标，用于断言 `.style` 而非仅位置）。
   - **踩坑记录**：字号断言最初直接写死 `17 * SCALE`/`13 * SCALE`（25.5/19.5），实际渲染值是 24/20——`txt()` 的字号要过 `snapFont()` 吸附到一套固定字号档位，不是原始像素值；改为用 `snapFont()` 本身计算期望值后通过。

@@ -263,7 +263,7 @@ saleMode?, startPrice?, buyoutPrice?, topBid?
 
 ## 6. 实现状态（S8-5）
 
-**✅ 已实跑**（`server/worldsvc/src/auctionService.ts` + `test/auction.e2e.test.ts` 28 条全绿 + 142 条 worldsvc 全绿；装备库存后端 meta `equipment.ts` + `test/equipment.e2e.test.ts` 12 条 + 167 条 metaserver 全绿）：
+**✅ 已实跑**（`server/auctionsvc/src/auctionService.ts` + `test/auction.e2e.test.ts` 28 条全绿 + 142 条 worldsvc 全绿；装备库存后端 meta `equipment.ts` + `test/equipment.e2e.test.ts` 12 条 + 167 条 metaserver 全绿）：
 - 挂单 / 我的挂单 / 一口价购买 / 撤单 / 过期回收全套 CRUD
 - 材料交易（meta deduct/grant 托管+发放，orderId 幂等）
 - 金币计价 + 10% 税（commercial spend/grant）

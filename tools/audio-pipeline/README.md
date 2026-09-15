@@ -185,7 +185,7 @@ quietly stops holding — the files still load, still play, still pass everythin
 symptom is a mix that drifted away from the design.
 
 That file is structured as ten pure rules plus a **mutation suite** that breaks each contract in
-turn and asserts the matching rule complains — the same standard `scripts/checkWechatPackage.mjs`
+turn and asserts the matching rule complains — the same standard `client/scripts/checkWechatPackage.mjs`
 states with its `--pkg` flag: *a gate nobody has seen fail is not a gate.* Writing that suite is
 what found the two holes its first version could not see, and both are now rules of their own:
 

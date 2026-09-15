@@ -127,7 +127,7 @@ function tierState(def: Achievement, stats: SaveData['stats'], claimed: number[]
 唯一写入 `stats` 的位置是**服务器权威结算**，分两条链：
 
 1. **PvP（直接上报，2026-06-21 定）**：**仅 `ranked` 局**——`game→meta` 的 `match/report`（SERVER_API §8.3）扩上报体携带「本方本局 `kill.*`/`cast.*` 统计」，meta **默认信任直接累加**；`pvp.wins` 由 meta 据已校验的 `winner_side` 自增（本就服务器权威）。**friendly 局一概不计**（防串通刷）。**不逐局复算**（锁步局帧日志复算成本高），改用 §4.4 的「异常复查 + 抽样审计 + 作弊者升档」三层兜底。
-2. **PvE**：关卡结算走 `server/shared/pveRewards.ts`（PVE_INTEGRITY 方案 B，服务器权威）。结算时一并累加该局 stats，与发奖同一事务，天然防客户端伪造——PvE **无需** §4.4 抽查（已逐局权威）。
+2. **PvE**：关卡结算走 `server/shared/src/pveRewards.ts`（PVE_INTEGRITY 方案 B，服务器权威）。结算时一并累加该局 stats，与发奖同一事务，天然防客户端伪造——PvE **无需** §4.4 抽查（已逐局权威）。
 
 > 累加必须**幂等于「同一局」**：PvE/PvP 结算本身已有去重/防重放（方案 B、`hashOk`、order saga 思路），stats 累加挂在其成功提交点之后，不另开口子。
 
