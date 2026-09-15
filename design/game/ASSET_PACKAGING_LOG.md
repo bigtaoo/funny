@@ -727,7 +727,7 @@ uploads, so simulator cannot get those」），只是当时被读成了一句无
 
 ### 22.1 怎么发现的
 
-不是读代码读出来的，是**包内几何巡检**（`entries/wechat-layout.ts`，见 `UI_DESIGN_LOG_2026-08.md`
+不是读代码读出来的，是**包内几何巡检**（`entries/wechat-layout.ts`，见 `UI_DESIGN_LOG_2026-09.md`
 §51）第一次真跑时，它做的第一件事——注册一个账号——直接失败：
 
 ```

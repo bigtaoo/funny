@@ -147,7 +147,8 @@
 | [SLG_LOG_2026-08.md](game/SLG_LOG_2026-08.md) | [SLG_DESIGN_LOG.md](game/SLG_DESIGN_LOG.md) | 2026-08 起的实现记录 |
 | [UI_DESIGN_SCENES.md](game/UI_DESIGN_SCENES.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 场景规格 |
 | [UI_DESIGN_LOG_2026-06_07.md](game/UI_DESIGN_LOG_2026-06_07.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 2026-06/07 |
-| [UI_DESIGN_LOG_2026-08.md](game/UI_DESIGN_LOG_2026-08.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 2026-08 起 |
+| [UI_DESIGN_LOG_2026-08.md](game/UI_DESIGN_LOG_2026-08.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 §26–§47 |
+| [UI_DESIGN_LOG_2026-09.md](game/UI_DESIGN_LOG_2026-09.md) | [UI_DESIGN.md](game/UI_DESIGN.md) | 变更记录 §48 起 |
 
 #### 1.2.3 审计记录（一次性切面审计，非设计基准）
 
