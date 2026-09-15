@@ -11,7 +11,7 @@
 
 - 每个包新增 `tsconfig.test.json`：`extends ./tsconfig.json` + `include: ["src/**/*", "test/**/*"]` + `rootDir: "."` + `composite/declaration:false` + `noEmit`。engine 早就有一份（它的 `test` 脚本本来就 `tsc -p tsconfig.test.json` 编译后再跑），只补脚本。
 - 每包 `typecheck:test` 脚本；根 `npm run typecheck:test` 用 `--workspaces --if-present` 扇出；CI `server-checks` job 在现有 `tsc -b` **之后**加一步跑它。
-- `scripts/checkWorkspaceCoverage.mjs` 加两条断言：每个 workspace 必须有 `tsconfig.test.json` 和 `typecheck:test` 脚本（根扇出用的是 `--if-present`，少了脚本会被**静默跳过**，正是这个脚本存在的意义）。
+- `server/scripts/checkWorkspaceCoverage.mjs` 加两条断言：每个 workspace 必须有 `tsconfig.test.json` 和 `typecheck:test` 脚本（根扇出用的是 `--if-present`，少了脚本会被**静默跳过**，正是这个脚本存在的意义）。
 
 **三个必须知道的配置坑**
 
@@ -66,7 +66,7 @@
 - `client/package.json`：新增 `typecheck:fulllink`，并把它**链进** `typecheck`（`tsc -p tsconfig.test.json && npm run typecheck:fulllink`）。于是 CI 现有的 client typecheck 步骤零改动就覆盖到了，不用新增 job（只改了步骤名和注释）。
 - **`exclude` 保留不动**：这个文件确实不该进 auctionsvc 那个 Node-only 程序。变的不是"要不要排除"，而是"排除之后有没有人接"。
 
-**把「零豁免」变成可执行约束**：`scripts/checkWorkspaceCoverage.mjs` 加第三条检查——遍历每个 workspace 的 `tsconfig.test.json#exclude`，每一条都必须出现在 `client/tsconfig.fulllink.json#include` 里（两边路径都归一成 repo 相对的 POSIX 形式再比），否则失败并指名道姓告诉你加到哪。顺带**禁掉 glob 形式的 exclude**（`*`/`?`）：一旦允许通配，"这个文件到底有没有被某个程序检查"就变成不可判定的，守卫本身就失去意义。这条正是上一节留下的教训的推广——`exclude` 是个能悄悄把文件从检查里摘出去的旋钮，跟当年 `--if-present` 悄悄跳过缺失脚本是同一类问题。
+**把「零豁免」变成可执行约束**：`server/scripts/checkWorkspaceCoverage.mjs` 加第三条检查——遍历每个 workspace 的 `tsconfig.test.json#exclude`，每一条都必须出现在 `client/tsconfig.fulllink.json#include` 里（两边路径都归一成 repo 相对的 POSIX 形式再比），否则失败并指名道姓告诉你加到哪。顺带**禁掉 glob 形式的 exclude**（`*`/`?`）：一旦允许通配，"这个文件到底有没有被某个程序检查"就变成不可判定的，守卫本身就失去意义。这条正是上一节留下的教训的推广——`exclude` 是个能悄悄把文件从检查里摘出去的旋钮，跟当年 `--if-present` 悄悄跳过缺失脚本是同一类问题。
 
 **验证**：`client npm run typecheck`（两个程序）+ server `npm run typecheck` / `typecheck:test` / `check:workspacecoverage` 全绿；`auctionsvc` 那 8 个 full-link 用例照旧全过。三次反向验证：①往测试文件里注入两处类型错误（`price: 'ten'`、`const bogus: number = view.auctionId`），确认新程序**报了这两条**而不是静默通过；②把 `tsconfig.fulllink.json#include` 清空，确认守卫报"excluded ... without another program owning it"并退 1；③把 exclude 换成 `test/*.e2e.test.ts`，确认守卫报 glob 不允许并退 1。另外用 `tsc --listFiles` 确认程序里确实同时含 `client/src/net/WorldApiClient.ts`、`client/src/platform/IPlatform.ts`、`pixi.js-legacy`、`server/shared/src/index.ts`、`server/auctionsvc/src/httpApi`、`mongodb/mongodb.d.ts`（934 个文件），排除"程序其实是空的、所以当然全绿"这种假绿。
 ---

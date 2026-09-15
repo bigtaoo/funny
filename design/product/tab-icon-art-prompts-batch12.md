@@ -62,7 +62,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 ## 4. 出图后的接线清单
 
-**① 源图归位** — `art/ui/tabicons/tabicon_promote.webp` / `tabicon_demote.webp`，base 名逐字等于 kind 名。被打回的版本进 `art/ui/tabicons/_rejected/`，命名 `tabicon_<kind>_v<n>_<为什么废>.webp`（`inkIconArt.test.ts` 检查「每个 kind 恰好一个源图」）。
+**① 源图归位** — `art/ui/tabicons/tabicon_promote.png` / `tabicon_demote.webp`，base 名逐字等于 kind 名。被打回的版本进 `art/ui/tabicons/_rejected/`，命名 `tabicon_<kind>_v<n>_<为什么废>.webp`（`inkIconArt.test.ts` 检查「每个 kind 恰好一个源图」）。
 
 **② `pack_tab_icons.cjs`** — `JOBS` 末尾加两行，**一律 `inks: ['active']`**（只烤白色母版、运行时 tint）。这两枚尤其需要 tint 而不是烤墨：升级按钮的字是金 `0xa9750f`、降级是灰 `MUTED`，两种墨色由 `buildInkIcon` 从标签色跟出来。
 

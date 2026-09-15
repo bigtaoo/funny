@@ -139,7 +139,7 @@ Anna 三人随偶数章出场（[characters.md](../product/characters.md)：Ch2/
 | Ch5 | 方家 | **苏远** `suyuan` | 弓手/弓箭兵 |
 | Ch6 | Hartmann | **Mara** `mara` | 弓手（Mara 变体） |
 
-> 落地写进 PvE 奖励真源 `server/shared/pveRewards.ts`（[PVE_INTEGRITY_PLAN](PVE_INTEGRITY_PLAN.md)）：映射 `CHAPTER_ANCHOR_CARD`，首通某章送**对应锚点角色 2 级卡 × 1**（`CHARACTER_CARDS_DESIGN §4`，CC-11 已实装 2026-07-07）+ SLG 对应里程碑。奇数章→涛侧锚点的配对（Ch1/Ch3/Ch5 → 李川/陈守/苏远）在本任务定稿，与偶数章 Anna 变体的兵种位一一对应。
+> 落地写进 PvE 奖励真源 `server/shared/src/pveRewards.ts`（[PVE_INTEGRITY_PLAN](PVE_INTEGRITY_PLAN.md)）：映射 `CHAPTER_ANCHOR_CARD`，首通某章送**对应锚点角色 2 级卡 × 1**（`CHARACTER_CARDS_DESIGN §4`，CC-11 已实装 2026-07-07）+ SLG 对应里程碑。奇数章→涛侧锚点的配对（Ch1/Ch3/Ch5 → 李川/陈守/苏远）在本任务定稿，与偶数章 Anna 变体的兵种位一一对应。
 
 ---
 

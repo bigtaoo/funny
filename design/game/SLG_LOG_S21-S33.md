@@ -88,7 +88,7 @@
 
 ## 24. 地图模板与编辑器（2026-07-05 拍板；ADR-034 代码重写已完成 2026-07-05）
 
-**背景**：`server/shared/src/slg.ts` 已按 ADR-034「角度扇区+地形+城池」模型整体重写（`provinceIdxAt()`/`provinceCapitalPositions()`/环形地形带+墨河弦+支脉/州府+世界中心+关隘城池+分级城池节点/按环等级分布表，替换旧的 `CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`(hegemony→core)/`proceduralTile()`/`nearestCapitalIdx()`），worldsvc 受影响的消费方（`core/kernel`/`core/nation`/`core/yield`/`combatSiege`）与 e2e 测试已同步修完，`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。城池驻军/耐久数值、资源州/核心州分级城池梯度、`tools/map-editor` 编辑器工程本身仍是开放项，留后续任务（见 [`design/tools/map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §5/§6）。本节继续记录地图存储/编辑器架构，供编辑器工程落地时遵循。
+**背景**：`server/shared/src/slg/` 已按 ADR-034「角度扇区+地形+城池」模型整体重写（`provinceIdxAt()`/`provinceCapitalPositions()`/环形地形带+墨河弦+支脉/州府+世界中心+关隘城池+分级城池节点/按环等级分布表，替换旧的 `CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`(hegemony→core)/`proceduralTile()`/`nearestCapitalIdx()`），worldsvc 受影响的消费方（`core/kernel`/`core/nation`/`core/yield`/`combatSiege`）与 e2e 测试已同步修完，`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。城池驻军/耐久数值、资源州/核心州分级城池梯度、`tools/map-editor` 编辑器工程本身仍是开放项，留后续任务（见 [`design/tools/map-editor/DESIGN.md`](../tools/map-editor/DESIGN.md) §5/§6）。本节继续记录地图存储/编辑器架构，供编辑器工程落地时遵循。
 
 **两层分离**：
 - **Layer A「地图模板」（设计期产物，低频改动）**：程序生成的原始地形/城池布局只是初稿，不一定符合要求，允许人工在编辑器里精修定稿——这是权威数据源，不是运行时状态。
@@ -139,12 +139,12 @@
 - 地图空地问题（孤立据点四周大片空白）判定为**地图内容/装饰密度问题，非 HUD 布局问题**，本次不处理；若要改善需从中立地块程序化装饰密度或初始镶机位偏移入手，留后续任务。
 
 **落地状态（2026-07-05，已实现）**：
-- `client/src/scenes/worldmap/constants.ts`：`HUD_H` 100→56（底栏只剩聊天条，地图可视区相应变大）。
+- `client/src/scenes/worldmap/logic/constants.ts`：`HUD_H` 100→56（底栏只剩聊天条，地图可视区相应变大）。
 - `client/src/scenes/worldmap/WorldMapPanels.ts`：`renderHud()` 重写为四区绘制；`aucBtn`/`zoomBtn` 挪到左上、紧贴 `ctx.backRect`（读取其 y+h 做垂直接续，不硬编码坐标）；状态卡/行军角标改为卡片化子面板（`marchBadgeRect` 命中后走 `ctx.marchesExpanded` 布尔开关展开/收起列表）；底部聊天条渲染（当前只有静态文案，**末条消息/未读数预览仍是占位，未接数据**，留后续任务）。
 - `client/src/scenes/worldmap/WorldMapInput.ts`：删 Train/Family 命中分支；新增 `marchBadgeRect` 切换 + `chatBarRect` 命中 → `cb.onOpenChat()`；`isBase` 分支弹窗加「训练」项直接调 `panels.openTrainPanel()`。
 - `client/src/scenes/worldmap/WorldMapContext.ts`：`onOpenFamily` → `onOpenChat`；删 `famBtnRect`/`trainBtnRect`，加 `marchBadgeRect`/`chatBarRect`/`marchesExpanded`。
 - `client/src/app/nav/world.ts`：`onOpenChat()` 调 `nav.goFriends({ defaultTab: 'world', onBack: () => goWorldMap(...) })`——返回时回到世界地图而非大厅。
-- `client/src/app/nav/social.ts` + `client/src/app/appCtx.ts` + `client/src/scenes/FriendsScene/base.ts`：`goFriends`/`FriendsSceneCallbacks.defaultTab` 从 `'friends' | 'mail'` 放宽到完整 `Tab`（`'friends' | 'family' | 'sect' | 'world' | 'mail'`）+ `goFriends` 新增可选 `onBack` 覆盖（默认仍是 `nav.goLobby()`），使世界地图能指定"返回世界地图"而非硬编码回大厅。
+- `client/src/app/nav/social.ts` + `client/src/app/appCtx.ts` + `client/src/scenes/FriendsScene/core.ts`：`goFriends`/`FriendsSceneCallbacks.defaultTab` 从 `'friends' | 'mail'` 放宽到完整 `Tab`（`'friends' | 'family' | 'sect' | 'world' | 'mail'`）+ `goFriends` 新增可选 `onBack` 覆盖（默认仍是 `nav.goLobby()`），使世界地图能指定"返回世界地图"而非硬编码回大厅。
 - i18n 新增 `world.chat`（zh/en/de 三语）；`world.family` key 保留未删（其他场景仍可能引用，只是世界地图不再用它做按钮文案）。**2026-08-16 更正**：审计逐一核过，其他场景并没有引用它，已连同另外 138 个死 key 一并删除（见 `UI_DESIGN.md` §33）。
 - **跟 §3.1 撞车**：本节开发期间，另一次改动（commit `f3e237ce`）恰好也在同步把 WorldMapScene 的返回按钮从底栏自绘迁移到 `SceneHeader.drawFloatingBackButton`（统一 22 个场景的返回按钮规格），两者改的是同一批文件（`WorldMapContext.ts`/`WorldMapPanels.ts`）。两次改动语义不冲突（各改各的字段），已核对合并后 `tsc --noEmit` + `webpack --mode production` 全绿，未丢内容。
 - **两个已知缺口已收尾（2026-07-05）**：
@@ -330,7 +330,7 @@
 - **`worldsvc`**：占地/驱逐/据点/关口/领地单场五处 `defenderConfig` 显式加 `defenderBaseHp: npcBaseHp(tileLevel)`；分波路径（`defenderBaseLevel:0`）**不加**；config 类型（`siegeEngine.ts`/`worldTypes.ts`/`combatSiege/base.ts`）补字段。回放走持久化 `defenderConfig`，确定性保持。
 - **client**：`GameRenderer/base.ts` 的 critical 阈值从 `BASE_HP×ratio` 改为各玩家 `maxBaseHp×ratio`（血条 max 本就走事件 `maxHp`，replay `baseMaxHp` 从首帧 `baseHp` 锚定，均自动正确）。
 
-**econ-sim 复核**（`tools/econ-sim/src/occupyBaseHpRun.ts` + `npm run --workspace @nw/econ-sim occupy-base-hp`，真实 `@nw/engine` 单场，合成步兵，每级 5 seed 全胜的最小兵力）：
+**econ-sim 复核**（`server/tools/econ-sim/src/occupyBaseHpRun.ts` + `npm run --workspace @nw/econ-sim occupy-base-hp`，真实 `@nw/engine` 单场，合成步兵，每级 5 seed 全胜的最小兵力）：
 
 | 地块 | 驻军 | 旧(基地=100) 最小取胜 | 新(=40×L) 最小取胜 | 新基地血量 |
 |---|---|---|---|---|

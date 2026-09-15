@@ -39,7 +39,7 @@
 
 ---
 
-## 3. 棋盘几何（编辑器网格必须镜像，来源 `client/src/game/config.ts`）
+## 3. 棋盘几何（编辑器网格必须镜像，来源 `server/engine/src/config.ts`）
 
 | 常量 | 值 | 含义 |
 |---|---|---|
@@ -57,7 +57,7 @@
 
 ---
 
-## 4. 数据模型（来源 `client/src/game/campaign/LevelDefinition.ts`）
+## 4. 数据模型（来源 `server/engine/src/campaign/LevelDefinition.ts`）
 
 编辑器编辑的就是 `LevelDefinition`，不复述完整字段（以游戏侧类型为准），编辑器对各字段的处理：
 
@@ -83,9 +83,11 @@
 ## 5. 游戏侧改造（编辑器前置依赖，先于编辑器实现）
 
 > 这部分在 `client/` 里做，是 L2/L3/L5 的落地，也是编辑器复用 schema 的基础。
+>
+> **2026-09-15 订正**：本节写于 campaign 代码还在 `client/src/game/campaign/` 的年代。类型与 schema 此后迁进 `@nw/engine`（`server/engine/src/campaign/`），关卡数据（`levels.ts`）仍留在 client。下面的路径已改成现所在位置，「在 `client/` 里做」只对关卡数据那半边仍然成立。
 
 1. **关卡迁为 JSON**：新建 `client/src/game/campaign/levels/`，把 `levels.ts` 里的 `CH1_LV1~3` + `CH_STRESS` 转成 `ch1_lv1.json` 等；`CAMPAIGN_LEVEL_ORDER` 保留（可用 `index.json` 列顺序，或 TS 常量数组）。
-2. **运行时校验加载器** `client/src/game/campaign/levelSchema.ts`：
+2. **运行时校验加载器** `server/engine/src/campaign/levelSchema.ts`：
    - `parseLevelDefinition(raw: unknown): LevelDefinition`，逐字段校验：
      - `objective.kind ∈ {survive, timed_defense}`；`timed_defense` 需正 `durationTicks`。
      - `waves.entries[].unitType ∈ UnitType` 值集；`col ∈ ATTACK_LANES`；`count > 0`；`atTick / spacingTicks ≥ 0`。

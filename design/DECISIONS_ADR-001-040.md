@@ -121,7 +121,7 @@
   - **同定位允许超过 2 张**（未来第三家族/神话层/联动），新卡须与已有两张都拉足差异。
   - **东西羁绊 = 未来大系统，本期只记录、不做、不留接口**。
 - **为什么**：3 张会浪费一半美术且抹掉东西碰撞；6 张「同定位异打法」既全用美术又加构筑深度。涛侧锁为锚点 = 不动现有战斗平衡地基（数值参考系稳定）；Anna 侧承载新机制与收集。PvP 全送 / PvE 解锁分层 = 竞技公平与养成收集两不误（同 ADR-009 经济基调）。
-- **影响**：新增 [`game/CHARACTER_DESIGN.md`](game/CHARACTER_DESIGN.md) 为角色卡**机制/流派**权威（数值锚点占位，落地进 `config.ts` + 同步 [BALANCE.md](game/BALANCE.md)）。落地需在 `server/engine/src/config.ts` 加 Anna 三单位 + 三卡定义、机制走单位特性字段（参考 PvE `aura_heal` 等范式）；PvE 解锁写 `server/shared/pveRewards.ts`；新美术绑骨走 animator。叙事遵 ADR-008（涛东/Anna西）。README §1.2/§2 登记。
+- **影响**：新增 [`game/CHARACTER_DESIGN.md`](game/CHARACTER_DESIGN.md) 为角色卡**机制/流派**权威（数值锚点占位，落地进 `config.ts` + 同步 [BALANCE.md](game/BALANCE.md)）。落地需在 `server/engine/src/config.ts` 加 Anna 三单位 + 三卡定义、机制走单位特性字段（参考 PvE `aura_heal` 等范式）；PvE 解锁写 `server/shared/src/pveRewards.ts`；新美术绑骨走 animator。叙事遵 ADR-008（涛东/Anna西）。README §1.2/§2 登记。
 
 ## ADR-017 装备洗练 = 技能槽 0–2 + 2 条可锁定重洗；抽卡与皮肤共池 — Accepted — 2026-06-21
 
@@ -234,7 +234,7 @@
 
 - **5 分钟语义澄清**：即「攻方胜利 → 结算伤害」之间的延迟，**不是**再攻免疫窗；同一建筑可叠加多次各自的 5min 计时。
 
-- **细化（2026-07-17，NPC 单场围攻基地血量随等级缩放，用户拍板方案 2）**：上面 ①/④ 描述的是**玩家主城/领地**的分波 + `TileDoc.hp` 延迟结算路径。但 **NPC 地块**（占地 `applyOccupy`/驱逐 `applyOccupationExpulsion`、领地 `buildDefenderConfig`、据点、关口）走的是**单场** `runSiegeBattle`（objective=`destroy_base`），其"基地"是引擎内的象征基地——此前恒为 `BASE_HP=100`，**不随地块等级变化**。后果：一级地驻军仅 `npcGarrison(1)=120`(=2 步兵)，基地却要 100 血,合成步兵每个到城仅造成 siege 值 11 ⇒ 需 ~10 个幸存者才推得平，`OCCUPY_MIN_TROOPS=500` 的最小占地兵力清完守军也打不掉基地 → 超时判守方胜（用户实测踩到）。修复：新增 `npcBaseHp(level) = SLG_NPC_BASE_HP_PER_LEVEL × level`（**缓坡 40/级**：L1=40、L10=400），由上述 NPC 单场路径**显式**经 `defenderConfig.defenderBaseHp` 传入（引擎新增 `LevelDefinition.defenderBaseHp` → `Player.maxBaseHp`；`base_hp_changed.maxHp` 改发各玩家 `maxBaseHp`）。分波路径**不传**该字段（`defenderBaseLevel:0` 的象征基地保持最小终结器，真实血量仍是 `TileDoc.hp = baseDurabilityMax(墙等级)`），与玩家城侧"基地血量随墙等级缩放"形成对称。econ-sim 复核（`tools/econ-sim/src/occupyBaseHpRun.ts`，真实引擎）：L1 最小取胜兵力 660→**300**(5 步兵，最小占地 500 现稳赢)，L2/L3 基本不变，L10 1560→**2940**(高级地成真墙)。数值仍 DRAFT。
+- **细化（2026-07-17，NPC 单场围攻基地血量随等级缩放，用户拍板方案 2）**：上面 ①/④ 描述的是**玩家主城/领地**的分波 + `TileDoc.hp` 延迟结算路径。但 **NPC 地块**（占地 `applyOccupy`/驱逐 `applyOccupationExpulsion`、领地 `buildDefenderConfig`、据点、关口）走的是**单场** `runSiegeBattle`（objective=`destroy_base`），其"基地"是引擎内的象征基地——此前恒为 `BASE_HP=100`，**不随地块等级变化**。后果：一级地驻军仅 `npcGarrison(1)=120`(=2 步兵)，基地却要 100 血,合成步兵每个到城仅造成 siege 值 11 ⇒ 需 ~10 个幸存者才推得平，`OCCUPY_MIN_TROOPS=500` 的最小占地兵力清完守军也打不掉基地 → 超时判守方胜（用户实测踩到）。修复：新增 `npcBaseHp(level) = SLG_NPC_BASE_HP_PER_LEVEL × level`（**缓坡 40/级**：L1=40、L10=400），由上述 NPC 单场路径**显式**经 `defenderConfig.defenderBaseHp` 传入（引擎新增 `LevelDefinition.defenderBaseHp` → `Player.maxBaseHp`；`base_hp_changed.maxHp` 改发各玩家 `maxBaseHp`）。分波路径**不传**该字段（`defenderBaseLevel:0` 的象征基地保持最小终结器，真实血量仍是 `TileDoc.hp = baseDurabilityMax(墙等级)`），与玩家城侧"基地血量随墙等级缩放"形成对称。econ-sim 复核（`server/tools/econ-sim/src/occupyBaseHpRun.ts`，真实引擎）：L1 最小取胜兵力 660→**300**(5 步兵，最小占地 500 现稳赢)，L2/L3 基本不变，L10 1560→**2940**(高级地成真墙)。数值仍 DRAFT。
 
 - **PvE**：关卡里与 PvP 里的基地**都吃攻城值**（同一套血量+扣血）。PvE 据点守军仍为系统 NPC 阵（沿用 `applyStrongholdSiege` 的合成守军），不套 5 队玩家波次。
 
@@ -306,7 +306,7 @@
 ## ADR-029 SLG 世界地图渲染从正交方格改为等距菱形投影 — Accepted — 2026-07-02
 
 - **背景**：用户反馈世界地图画质偏低（对照三国志战略版等同类 SLG）。排查确认两层问题：① 地形/据点大量用 `PIXI.Graphics` 纯色矩形拼接、缺手绘贴图（单独跟进，见下方 Out of scope）；② 更根本的是地图渲染用**正交俯视方格**，同类 SLG 普遍用**等距菱形**网格，视觉「俯视 3D 感」差距的大头来自网格投影方式本身。用户明确表态：项目尚在早期，只要最终效果最好，不用考虑重构成本。
-- **决策**（用户拍板）：`client/src/scenes/WorldMapScene.ts` 的地图渲染改为经典 2:1 等距菱形投影（`screenX=(tx-ty)*tileW/2, screenY=(tx+ty)*tileH/2`，`tileH=tileW*0.5`）。**纯客户端渲染层改动**——服务端契约（`openapi-world.yml` 的 `WorldTileView.{x,y}`）、寻路（`server/shared/src/slg.ts`）、tile 缓存 key 等逻辑数据模型全部保持正交整数 `(x,y)` 不变；ADR-024/025/026 的地形色块/归属水洗描边/3×3 据点占地/HP 血条等玩法与配色拍板同样不受影响，只是改了画法。
+- **决策**（用户拍板）：`client/src/scenes/WorldMapScene.ts` 的地图渲染改为经典 2:1 等距菱形投影（`screenX=(tx-ty)*tileW/2, screenY=(tx+ty)*tileH/2`，`tileH=tileW*0.5`）。**纯客户端渲染层改动**——服务端契约（`openapi-world.yml` 的 `WorldTileView.{x,y}`）、寻路（`server/shared/src/slg/`）、tile 缓存 key 等逻辑数据模型全部保持正交整数 `(x,y)` 不变；ADR-024/025/026 的地形色块/归属水洗描边/3×3 据点占地/HP 血条等玩法与配色拍板同样不受影响，只是改了画法。
 - **实现**：新增 `client/src/render/isoGrid.ts`（`tileToScreen`/`screenToTile`/`screenToTileF`/`diamondPath`/`diamondVertices`/`visibleTileBounds`），`WorldMapScene.ts` 内所有 `tx*tp`/`ty*tp` 式定位、`drawRect(0,0,tp-1,tp-1)` 式绘制、`screenToTile` 命中测试，以及 `centerAt`/`clampPan`/`viewportCenter`/`makeZoomCfgs`（池大小需按等距可视区域的外接矩形算，比正交估算更大）全部换成基于 `isoGrid` 的等距公式；瓦片池每格的本地绘图原点从"正方形左上角"改为"菱形中心"，`drawCityIcon`/`drawResMotif`/`drawResMotifFallback`/`drawTileL1`/`drawTileL2`/`drawHpBar` 内的图标、边框、defense frame、tick mark、danger corner 相应重新锚定到菱形几何（角标→菱形顶点/边中点、方形描边→`diamondPath` 内缩、HP 血条→贴菱形下顶点）；`refreshCityLayer` 新增按 `(tx+ty)` 的 `zIndex` 深度排序（`cityLayer.sortableChildren=true`），避免等距下据点建筑贴图互相穿插覆盖错误。
 - **已知遗留（不阻塞，v1 可接受）**：`city_atlas.png` 素材是画在方形画布上的建筑图，v1 仍按 `BASE_SPRITE_TILES` 原尺寸贴到菱形 footprint，四角可能有留白/比例不完全贴合菱形俯视角，是否需要重新出图待视觉验收后再定。
 - **为什么**：等距菱形是移动 SLG 的行业惯例观感，且经确认是纯投影变换、不涉及契约/寻路/数据模型改动，改动面收敛在单一文件，值得直接做到位而非留妥协方案。
@@ -337,7 +337,7 @@
 ## ADR-032 SLG 大地图尺寸 500×500 + 地块等级 1-10 + 取消无产出中立地 — Accepted — 2026-07-04
 
 - **背景**：用户怀疑 SLG 文档与实现脱节，逐项核查后确认属实，且比预想的更严重：
-  1. `SLG_DESIGN.md` 曾在 2026-06-18 拍板"U2 地图尺寸 ✅ 1500×1500替代300×300"和"U4 大区容量 ✅ 1万玩家替代300-500"，但代码里 `SLG_MAP_W/H`（`server/shared/src/slg.ts:108-109`）从未改过，一直是 300；`SLG_WORLD_CAPACITY_MIN/TARGET/MAX` 也一直是 300/400/500。这次"✅"标记的升级从未真正实现。
+  1. `SLG_DESIGN.md` 曾在 2026-06-18 拍板"U2 地图尺寸 ✅ 1500×1500替代300×300"和"U4 大区容量 ✅ 1万玩家替代300-500"，但代码里 `SLG_MAP_W/H`（`server/shared/src/slg/:108-109`）从未改过，一直是 300；`SLG_WORLD_CAPACITY_MIN/TARGET/MAX` 也一直是 300/400/500。这次"✅"标记的升级从未真正实现。
   2. 更严重的是，2026-06-30 的经济核验（`ECONOMY_VERIFICATION_LOG.md` §13-SLG-NATION、§13-SLG-STRONGHOLD）是在这次"从未实现的升级"之后做的，却仍然是在未升级的 300×300 上跑蒙特卡洛，并被打上「已过核验」标签——即错误的地图尺寸假设已经污染了一份"已核验"的经济结论。
   3. 地块等级上限代码实际是 `SLG_MAP_MAX_LEVEL=5`（`slg.ts:110`），用户回忆中的"9 级"实际是装备强化/武将卡的 `MAX_LEVEL=9`（`equipment.ts:64`/`unitCards.ts:12`）——两套毫不相关的系统被记混。经网络调研核实，用户参照的三国志战略版真实地块等级上限是 **10 级**，不是 9 级也不是 5 级（详见 [`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md)）。
   4. 现有等级生成公式 `level = round((1-dr)×(MAX-1)+1+noise)` 配合 `resourceDensity=0.34`（34% 概率地块保留计算出的等级，66% 被降级为"中立地"、等级强制封顶 2 级且不产任何资源）——这与用户在本轮讨论最初提出的设计前提"地图上没有真正空地，低级地也是某种资源，只是没人要"直接矛盾。
@@ -353,7 +353,7 @@
   - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §3.2、§14.2（P3）、§14.10（U2/U4/U11/U12/U14）已按本决议改写。
   - [`ECONOMY_NUMBERS.md`](game/ECONOMY_NUMBERS.md) 的 `WORLD_CAPACITY` 行、[`ECONOMY_VERIFICATION_LOG.md`](game/ECONOMY_VERIFICATION_LOG.md) 的 §13-SLG-NATION、§13-SLG-STRONGHOLD 已标记「待重跑」，尚未重新跑 econ-sim（下一步工作）。
   - 新增 [`SGZ_LAND_REFERENCE.md`](game/SGZ_LAND_REFERENCE.md)：三战地块/建筑/版图机制调研笔记，供后续设计参考，非本项目设计基准。
-  - **代码尚未改动**：`server/shared/src/slg.ts` 的 `SLG_MAP_W/H`、`SLG_MAP_MAX_LEVEL`、`SLG_GEN.resourceDensity`、等级曲线指数均待实现（本次只是拍板+文档，依本会话"先文档后代码"的既定流程，实现是下一步任务，会牵动十余个 e2e 测试的坐标假设）。
+  - **代码尚未改动**：`server/shared/src/slg/` 的 `SLG_MAP_W/H`、`SLG_MAP_MAX_LEVEL`、`SLG_GEN.resourceDensity`、等级曲线指数均待实现（本次只是拍板+文档，依本会话"先文档后代码"的既定流程，实现是下一步任务，会牵动十余个 e2e 测试的坐标假设）。
   - 地块建筑系统（三战式"6-10级解锁造币厂/工坊/虎帐/仓库/乐府"）与国家版图重构均为后续独立任务，不在本 ADR 范围内。
 - **实现**：`@nw/shared`（economy 加 YEAR_CARD_DAYS/IMMEDIATE_COINS/价格常量 + PRODUCT_YEAR_CARD；api 加 `ALREADY_ACTIVE`）；`commercial`（`monthlyCardBuy`/`yearCardBuy` 收敛到私有 `subscriptionCardBuy`：先占 orderId 槽→门控回滚→applySubscription，门控置于占槽之后以不误伤同 orderId 幂等重放；internalHttp 加 `/internal/year-card/buy`）；`metaserver`（commercialClient 加 `yearCardBuy`；service 加 `yearCardBuy` handler + `subscriptionErrCode` 把 `ALREADY_ACTIVE` 透传给客户端）；`openapi.yml` 加 `/year-card/buy`（重生 routes.gen + 客户端 openapi.ts）；客户端 ApiClient/createAppCore(`buyYearCard` + `ALREADY_ACTIVE`→`shop.cardActive`)/ShopScene 大改 + i18n 三语（`shop.yearCard`/`shop.cardActive`/`shop.save`）。
 - **为什么**：门控把月卡从「可囤积」改为「用完再买」，强化每日留存锚（月卡定位本就是留存而非性价比）；年卡九折给长线玩家一个更划算的锚，同时单卡门控避免年卡+月卡叠加把订阅收益一次性透支；图标卡网格提升付费诱惑并与全局 UI 统一。
@@ -364,7 +364,7 @@
 > **⚠️ 已作废（2026-07-05，同日撤销）**：本 ADR 与另一条并行会话讨论出的 [ADR-034](#adr-034-slg-国家版图改为环形分层结构6-出生州3-资源州1-核心州--地形隔离城池体系拍板--accepted--2026-07-05) 撞了同一个编号且方向不同——本条是"10 首府改三层同心环几何位置 + 等级按最近首府距离衰减"（点+距离模型），ADR-034 是"6 出生州+3 资源州+1 核心州角度扇区 + 折痕岭/墨河/城池完整体系"（扇区+地形模型）。用户拍板**以 ADR-034 为准，本条（含已落地的代码 `CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.obstacleMinDistRatio`/10 个 e2e 测试文件）全部作废，需按 ADR-034 重写**。以下原文保留作历史记录，不代表当前状态。
 - **背景**：ADR-032 落地地图尺寸/等级上限/资源密度/等级曲线后，遗留一条「⚠️ 待定」：现有 10 首府对称布局（8 外围+1 内环+1 中心）与地块等级公式（`level = round((1-dr)^1.1×(MAX-1)+1+noise)`，`dr`=离地图**几何中心**的距离比例）完全脱钩于「国家身份」——不管站在哪个首府的地盘里，地块等级只看离地图正中心多远，10 个首府本身除了 idx9（地图中心，`CENTER_CAPITAL_IDX`）外，对地块生成毫无影响，与用户设想的「三战式一国一版图，各有肥沃/贫瘠」不符。用户拍板：保留 10 国（不是三战式常见的 9 国），布局改为 **6 外围国 + 3 资源国 + 1 霸业国**，且等级要按「离自己国家首府的距离」算，不能只看离地图中心的距离。
 - **决策**：
-  1. **10 首府布局改为三层同心环**（`CAPITAL_FRACTIONS`，`server/shared/src/slg.ts`）：外环 6 外围国（正六边形，半径 0.40，idx 0-5）+ 中环 3 资源国（正三角形，半径 0.20，与外环错开 30° 交错，idx 6-8）+ 中心 1 霸业国（地图正中心，idx 9，即原 `CENTER_CAPITAL_IDX`，行为不变）。新增 `NATION_KIND_BY_IDX` 常量标注每个 idx 的国家类型（供后续 UI/econ-sim 使用）。
+  1. **10 首府布局改为三层同心环**（`CAPITAL_FRACTIONS`，`server/shared/src/slg/`）：外环 6 外围国（正六边形，半径 0.40，idx 0-5）+ 中环 3 资源国（正三角形，半径 0.20，与外环错开 30° 交错，idx 6-8）+ 中心 1 霸业国（地图正中心，idx 9，即原 `CENTER_CAPITAL_IDX`，行为不变）。新增 `NATION_KIND_BY_IDX` 常量标注每个 idx 的国家类型（供后续 UI/econ-sim 使用）。
   2. **地块等级/据点/中立地生成全部改为「离自己最近首府的距离」**：`proceduralTile` 里的 `dr` 从"离地图几何中心距离/半对角线"改为"离最近首府距离/`GEN_MAX_CAP_DIST`"（`GEN_MAX_CAP_DIST` = 采样整张地图算出的"离最近首府最远的一点"到其首府的距离，模块加载时算一次）。地图中心格仍特判为唯一的 `type:'center'` 格（霸业国首府所在格）。
   3. **等级曲线指数从 1.1 重新调到 1.9**：10 个首府比 1 个几何中心覆盖面积更大，同样的 1.1 指数会把 5 级以上占比从 ADR-032 的目标 ~50% 推到实测 ~81%；重新蒙特卡洛校准后 1.9 把该占比拉回 ~51%（详见 `SLG_DESIGN.md` §3.2）。
   4. **阻挡地形改为「离最近首府越远越密」**：`obstacleMaxDr`（旧：只排除地图最外角，`dr≤0.87` 才生成）废止，改为 `obstacleMinDistRatio=0.15`（新：`dr≥0.15` 才生成）——天然把山脉/河流集中在每个国家的边境，而不是围绕地图单一几何中心，呼应"资源国出关可达"的读法（资源国夹在霸业国和外环国之间，边境天然险要）。keep/stronghold 的 `keepMinDistRatio`/`strongholdMinDistRatio` 语义同步从"离地图中心"变成"离最近首府"，数值不变。
@@ -374,7 +374,7 @@
   - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4/§3.2 已按本决议改写（新增环带布局说明 + 等级/阻挡与首府绑定的机制描述 + 实测数字）。
   - **本 ADR 是"拍板即实现"**：与 ADR-032（先拍板后实现，隔一轮）不同，这次设计讨论中直接把 `CAPITAL_FRACTIONS`/`proceduralTile`/`SLG_GEN` 一并改完，同批验证。
   - 过程中发现并修复了一个**与本次改动无关、此前从未被真正跑过的回归**：`server/worldsvc` 的 e2e 测试此前一直通过本地 worktree 的 `node_modules/@nw/*` 符号链接指向主仓库的**未重建**产物在跑（worktree 约定的已知坑，见 [`claudedocs/worktrees.md`](../claudedocs/worktrees.md) 补充说明），导致 ADR-032 合并后测试从未真正验证过新地图常量；本次修好链接后跑出 27 个真实失败（`resourceDensity=1.0` 后 `'neutral'` 地块已绝迹、`(250,250)` 在 500×500 地图下变成地图正中心、以及若干测试用坐标恰好落入新地形分布的阻挡带），已在本 ADR 一并修复（10 个测试文件），修复后 worldsvc 210 例 + shared 463 例全绿。
-- **实现**：`server/shared/src/slg.ts`（`CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.levelFalloffExp`+`obstacleMinDistRatio`）；`server/worldsvc/test/*.e2e.test.ts`（10 个文件的坐标假设修复）。**⚠️ 该实现已被 ADR-034 判定作废，需重写，见下条。**
+- **实现**：`server/shared/src/slg/`（`CAPITAL_FRACTIONS`/`NATION_KIND_BY_IDX`/`GEN_MAX_CAP_DIST`/`proceduralTile`/`SLG_GEN.levelFalloffExp`+`obstacleMinDistRatio`）；`server/worldsvc/test/*.e2e.test.ts`（10 个文件的坐标假设修复）。**⚠️ 该实现已被 ADR-034 判定作废，需重写，见下条。**
 
 ## ADR-034 SLG 国家版图改为环形分层结构（6 出生州+3 资源州+1 核心州）+ 地形隔离/城池体系拍板 — Accepted — 2026-07-05
 
@@ -390,7 +390,7 @@
 - **影响**：
   - 新增/改写 [`design/tools/map-editor/DESIGN.md`](tools/map-editor/DESIGN.md)（§2-§4 地形骨架定稿，§6 编辑器需求，§7 原型迭代记录）。
   - [`SLG_DESIGN.md`](game/SLG_DESIGN.md) §2.4（国家系统）、§3.2（地图尺寸与地形布局）已改写，指向本 ADR；[`SLG_DESIGN_LOG.md`](game/SLG_DESIGN_LOG.md) §24 记录代码重写完成状态。
-  - **ADR-033 判定作废**：其已落地的代码已按本 ADR 整体重写完成（2026-07-05）——`server/shared/src/slg.ts` 新增 `provinceIdxAt()`（角度扇区+半径环归属，替代 `nearestCapitalIdx()` Voronoi）、`provinceCapitalPositions()`（州府位置按扇区+种子派生，替代固定表 `CAPITAL_FRACTIONS`）、环形地形带/墨河弦/支脉/城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环等级分布表；`NATION_KIND_BY_IDX` 的 `hegemony` 改名 `core`。城池落地为现有 `familyKeep`/`center` 类型而非独立 collection（驻军/耐久数值本条未拍板，故不新增 schema）。`server/worldsvc` 消费方（`core/kernel`/`core/nation`/`core/yield`/`combatSiege`）与受影响 e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
+  - **ADR-033 判定作废**：其已落地的代码已按本 ADR 整体重写完成（2026-07-05）——`server/shared/src/slg/` 新增 `provinceIdxAt()`（角度扇区+半径环归属，替代 `nearestCapitalIdx()` Voronoi）、`provinceCapitalPositions()`（州府位置按扇区+种子派生，替代固定表 `CAPITAL_FRACTIONS`）、环形地形带/墨河弦/支脉/城池节点（州府+世界中心 9×9+关隘城池+每出生州 9 座分级城池）、按环等级分布表；`NATION_KIND_BY_IDX` 的 `hegemony` 改名 `core`。城池落地为现有 `familyKeep`/`center` 类型而非独立 collection（驻军/耐久数值本条未拍板，故不新增 schema）。`server/worldsvc` 消费方（`core/kernel`/`core/nation`/`core/yield`/`combatSiege`）与受影响 e2e（`nation-bonus`/`season-ops`/`fog`/`service`/`httpApi`/`pathfinding`）已同步修完；`server/shared`/`server/worldsvc`/`server/tools/econ-sim` typecheck+test 全绿。
   - `tools/map-editor` 工具仍未搭骨架，讨论期验证骨架用的 HTML/JS 原型未提交仓库——留后续任务。
   - 城池驻军/耐久数值、资源州/核心州是否也要分级城池梯度、国民加成如何随分层结构调整，均留待后续 ADR。
 - **教训**：两条并行会话在同一天独立展开"国家版图重构"这个大改动，导致 ADR 编号撞车、代码方向冲突——已落地代码被判定作废意味着那批 e2e 测试修复工作也随之作废。后续如有多会话并行处理同一模块的结构性改动，应在开工前先检查是否有其他会话正在动同一处（如 `git log` 看最近的 daily 分支提交），或至少在长任务过程中定期 `git fetch`/查 worktree 列表交叉核对。

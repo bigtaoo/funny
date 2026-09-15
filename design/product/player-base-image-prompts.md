@@ -362,7 +362,7 @@ tips of the tallest spires are the only exception to the two-tone palette.
 
 ```bash
 node art/slg/slg-playerbase/pack_playerbase_atlas.js
-node art/scripts/patchMergedAtlas.js client/src/assets/slg/playerbase_atlas.json client/src/assets/slg/world_atlas.json
+node art/scripts/patchMergedAtlas.js client/src/assets/slg/world_atlas.json client/src/assets/slg/world_atlas.json
 ```
 
 第一步产出的 `playerbase_atlas.{png,json}` 只是中间产物，不入库（和其余 13 个源 atlas 一样，2026-07-27 起仓库里只留合并页）——盖印完可以删掉，需要时重跑第一步即可。

@@ -73,6 +73,6 @@ filling the entire frame edge to edge, empty stark black background
 **接入**（已执行）：
 1. `pack_city_bld.cjs` 的 `JOBS` 加一行 `{ src: '8ade8567-ffbf-4a6a-b06b-c6e8b5e121eb.png', name: 'bld_academy' }`，源图沿用 UUID 文件名，不重命名（跟现有 5 张的命名习惯一致）。
 2. `node art/slg/slg-desk/pack_city_bld.cjs` 重新打包 `city_bld_atlas.{png,json}`（6 帧）。
-3. `NODE_PATH="$(pwd)/client/node_modules" node art/scripts/appendAtlasFrames.js client/src/assets/slg/city_bld_atlas.json client/src/assets/slg/world_atlas.json bld_academy`——全新帧，走追加新条带分支（页面 2048×4294 → 2048×4550，其余 88 帧字节不变）。临时的 `city_bld_atlas.{png,json}` 用完即删（本不进仓库）。
+3. `NODE_PATH="$(pwd)/client/node_modules" node art/scripts/appendAtlasFrames.js client/src/assets/slg/world_atlas.json client/src/assets/slg/world_atlas.json bld_academy`——全新帧，走追加新条带分支（页面 2048×4294 → 2048×4550，其余 88 帧字节不变）。临时的 `city_bld_atlas.{png,json}` 用完即删（本不进仓库）。
 4. `CityScene/icons.ts` 的 `BLD_ATLAS` 加一行 `academy: 'bld_academy'`。
 5. 新增 `client/test/ui/cityBldIcon.ui.ts`——这块代码此前对全部 6 个 `BLD_ATLAS` key 都**零测试覆盖**，顺手补上：图集就绪时 6 个 key 各自取到对应精灵（用精确 `constructor === PIXI.Sprite` 而非 `instanceof` 判断，因为 `satchel` 的兜底路径是 `PIXI.Text`，在 PixiJS 里 `Text` 继承自 `Sprite`，`instanceof` 判断会把兜底误判成命中精灵）；图集就绪但帧缺失时回落程序化图标/emoji；5 座资源建筑（`inkPot` 等）无论图集状态如何都不触碰 `getCityBldTexture`。13/13 全绿，`npx vitest run --config vitest.ui.config.ts cityScene` 46/46 同步保持绿。

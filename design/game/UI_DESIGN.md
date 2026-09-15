@@ -274,7 +274,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 
 ### 预设头像美术（20 张，2026-08-15 二次重做）
 
-不再是白线图标+染色圆盘：20 张全新原创角色**全彩胸像**（涛方简笔卡通脸画风，按情绪基调分 A~D 四组各 5 个，见 `avatar-art-prompts.md` §二），作为独立 PNG（不打包图集——数量小、且圆形裁切要求原图干净无相邻帧串色）存在 `client/src/assets/avatars/preset/preset_<key>.png`，`client/src/render/presetAvatarArt.ts`（仿 `cardArt.ts` 的 `UNIT_ART_URLS` 写法）导出 `PRESET_AVATAR_KEYS`/`PRESET_AVATAR_ART_URLS`。渲染统一走 `buildPortraitIcon()`（原来 hero/skin 已用的运行时圆形裁切），不再有专属底色——`avatar.ts` 的 `CATEGORY_BG` 里 `preset` 现在也是单一中性色（`palette.inkBlue`），与 title/hero/skin 三个分类同一套视觉处理。旧的 8 图标白线管线（`art/ui/head/pack_avatar_atlas.cjs` + `client/src/render/atlas/avatarAtlas.ts`）已整体删除；旧源图归档 `art/leftover/`。
+不再是白线图标+染色圆盘：20 张全新原创角色**全彩胸像**（涛方简笔卡通脸画风，按情绪基调分 A~D 四组各 5 个，见 `avatar-art-prompts.md` §二），作为独立 PNG（不打包图集——数量小、且圆形裁切要求原图干净无相邻帧串色）存在 `client/src/assets/avatars/preset/preset_<key>.png`，`client/src/render/presetAvatarArt.ts`（仿 `cardArt.ts` 的 `UNIT_ART_URLS` 写法）导出 `PRESET_AVATAR_KEYS`/`PRESET_AVATAR_ART_URLS`。渲染统一走 `buildPortraitIcon()`（原来 hero/skin 已用的运行时圆形裁切），不再有专属底色——`avatar.ts` 的 `CATEGORY_BG` 里 `preset` 现在也是单一中性色（`palette.inkBlue`），与 title/hero/skin 三个分类同一套视觉处理。旧的 8 图标白线管线（`art/ui/head/pack_avatar_atlas.cjs` + `client/src/render/atlas/iconsAtlas.ts`）已整体删除；旧源图归档 `art/leftover/`。
 
 ### 角色头像美术（6 张，2026-08-15 新增）
 

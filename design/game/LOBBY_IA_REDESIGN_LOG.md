@@ -97,7 +97,7 @@
 - **新增回归测试** `client/test/headless-nav.test.ts`：离线场景下点战役地图「装备」入口，断言落地 `collection` 屏（不是卡死在不可达的 `equipment` 屏），且 `CollectionScene` 本身也不出现「装备」peer-tab launcher（同一条 `equipLoggedIn` 门槛两处一致）。在线直达 `EquipmentScene` 的分支未覆盖——该文件头部注释写明联网流程留给 `full-link.e2e.ts`（对接真实服务端），而该 e2e 目前没有任何 collection/equipment 覆盖，超出本次修复范围。
 - 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts -t CampaignMapScene`（8 例全绿）+ `vitest run test/headless-nav.test.ts`（5 例全绿）验证；未跑游戏截图。
 
-**金币图标来源勘误**（2026-07-06 追加）：§8.4 第 2 条「核实后确认只有一处来源」的结论已过时——`client/src/render/atlas/coinIconAtlas.ts` 后来新增了 `buildCoinIcon()`（AI 位图图集，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 五档，`ShopScene`/`LobbyScene`/`EquipmentScene`/`CardScene`/`FriendsScene` 均已切过去，文件头注释自称"the single source of truth"），但 `GachaScene.ts`/`BattlePassScene.ts` 顶栏金币图标当时仍直接调 `buildIcon('coin',...)`（程序绘制矢量字形），两页因此显示的是与其它页不同的图标资产。修复：两场景顶栏改调 `buildCoinIcon('coin', balIcon, C.gold)`；`BattlePassScene.ts` 奖励行的金币阶梯图标（`coinIconTier` 返回值）同步改走 `buildCoinIcon`，材料类奖励（`brush`/`lead`/`binding`/`scrap`）仍用 `buildIcon`。`tsc --noEmit` + `webpack --mode development` 验证通过；未跑游戏截图。
+**金币图标来源勘误**（2026-07-06 追加）：§8.4 第 2 条「核实后确认只有一处来源」的结论已过时——`client/src/render/atlas/iconsAtlas.ts` 后来新增了 `buildCoinIcon()`（AI 位图图集，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 五档，`ShopScene`/`LobbyScene`/`EquipmentScene`/`CardScene`/`FriendsScene` 均已切过去，文件头注释自称"the single source of truth"），但 `GachaScene.ts`/`BattlePassScene.ts` 顶栏金币图标当时仍直接调 `buildIcon('coin',...)`（程序绘制矢量字形），两页因此显示的是与其它页不同的图标资产。修复：两场景顶栏改调 `buildCoinIcon('coin', balIcon, C.gold)`；`BattlePassScene.ts` 奖励行的金币阶梯图标（`coinIconTier` 返回值）同步改走 `buildCoinIcon`，材料类奖励（`brush`/`lead`/`binding`/`scrap`）仍用 `buildIcon`。`tsc --noEmit` + `webpack --mode development` 验证通过；未跑游戏截图。
 
 **金币图标架构收口，`coinIconAtlas.ts` 整体删除**（2026-08-25 追加）：上一条勘误说明"靠每个调用点自己记得挑对函数"这条路不成立——`buildIcon()` 本身对 `coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 完全不知情（`icons.ts` 的 `DRAW` 表仍留着这 5 个的矢量兜底画法），谁不小心直接调 `buildIcon('coin',...)` 而不是 `buildCoinIcon(...)`，编译器不会报错，会悄悄退化回旧矢量图——历史上 `GachaScene.ts`/`BattlePassScene.ts` 正是这样踩过。这次把这 5 个 kind 直接注册进 `render/icons/tabIconRaster.ts` 的 `TAB_ICON_RASTER` 表（与页签图标同一套分发机制），`buildIcon()` 自己就能返回 AI 图，`coinIconAtlas.ts` 这层包装连同 `icons/currency.ts` 里的 5 个矢量画法（`drawCoin`/`drawCoins`/`drawCoinStack`/`drawCoinSack`/`drawCoinChest`）、`icons/primitives.ts` 的 `inkCoin` 辅助函数一并删除——从架构上锁死，不用再靠"记得调用哪个函数"这种约定。
 
@@ -218,9 +218,9 @@
 > 状态：**已实现**。用户看大厅首页截图后问：顶栏、START MATCH 主按钮、底部导航三处全用同一纯黑 `C.dark`（`0x2c2c2a`），会不会让玩家审美疲劳？
 
 - **诊断**：三块黑色视觉权重完全相同，`START MATCH`（本该是最高优先级的 CTA）反而被两侧同色的顶栏/底栏衬得像普通 chrome，层级被磨平。
-- **第一版尝试（金色 CTA，已否）**：把 `drawBtn`（`client/src/scenes/LobbyScene/base.ts`）的启用态填充从 `C.dark` 换成 `C.gold`，配深色文字。真人截图反馈：大面积纯金色**太晃眼**，且原本"藏在按钮里的跳舞小人剪影"（`heroFigure`，黑色 22% 透明度，专为深色底设计）在浅色底上直接被"吃掉"，看不见了。已回滚。
+- **第一版尝试（金色 CTA，已否）**：把 `drawBtn`（`client/src/scenes/LobbyScene/core.ts`）的启用态填充从 `C.dark` 换成 `C.gold`，配深色文字。真人截图反馈：大面积纯金色**太晃眼**，且原本"藏在按钮里的跳舞小人剪影"（`heroFigure`，黑色 22% 透明度，专为深色底设计）在浅色底上直接被"吃掉"，看不见了。已回滚。
 - **拍板方案（顶栏/底栏改色，CTA 保持纯黑）**：反过来做——`START MATCH` 按钮保留 `C.dark` 填充 + 原有蓝色描边（找回小人剪影），顶栏和底部导航改用新色 `C.cover`（`0x3a352f`，比 `C.dark` 暖一丝、亮一丝的深棕灰，定义于 `base.ts` 的 `C` 调色板）。差值刻意选得小：肉眼能分辨"这两条是外框、中间是按钮"，但不会像金色那样跳出来抢戏。真人截图确认效果满意，未再调整。
-- **涉及文件**：`client/src/scenes/LobbyScene/base.ts`（`C.cover` 常量）、`client/src/scenes/LobbyScene/build.ts`（顶栏 `titleBg`、底栏 `navBg` 两处填充色改用 `C.cover`）。
+- **涉及文件**：`client/src/scenes/LobbyScene/core.ts`（`C.cover` 常量）、`client/src/scenes/LobbyScene/build.ts`（顶栏 `titleBg`、底栏 `navBg` 两处填充色改用 `C.cover`）。
 - **验证**：`tsc --noEmit` 干净；真人在本地 dev server（`localhost:9090`）截图确认两版效果（金色版 → 否决；`cover` 版 → 通过）。未新增自动化测试（纯配色调整，无行为变化）。
 
 ## 19. 大厅 4 个红点请求合并为单次 `GET /lobby/badges`（2026-07-27/28，comm-audit-2026-07-27 P1-4）
@@ -301,7 +301,7 @@
 **方案**：填色从 `C.paper` 换成 `C.dark`（0x2c2c2a）+ 0.9 透明度，对齐 `LobbyScene` 自己底部导航栏（`build.ts` 的 `navBg.beginFill(C.cover, 0.9)`）已验证过的深色通栏做法，去掉原来意义不大的单像素顶边线。未接入的 inactive 页签格仍用浅色 `sketchPanel`（paper 底+描边），叠在深色通栏上读成"卡片贴在深色底栏上"，与 active 格（深底+强调色描边+白字）区分明显。`drawSidebarTabs`（横屏侧栏）完全没碰。
 
 **验证**：`tsc --noEmit` 全绿；`npm run build:web` 生产构建成功（仅预置体积告警）；`npm run test:ui -- shopGroupTabs sidebarRailOrientation scenes.ui`（4 文件 166 例）全绿，无回归。**未做真人截图走查**：本次会话 Browser 预览面板同样报 "pane not displayed"（同 §20.5/§21 的已知环境限制），已确认 dev server 正常起、竖屏视口挂载；用户知情后可自行在实机/浏览器里核对最终视觉效果。
-- **涉及文件**：`client/src/scenes/GachaScene/base.ts`（`contentBounds`）、`client/src/ui/widgets/HubTabs.ts`（`drawBottomNavTabs` 背景条）。
+- **涉及文件**：`client/src/scenes/GachaScene/core.ts`（`contentBounds`）、`client/src/ui/widgets/HubTabs.ts`（`drawBottomNavTabs` 背景条）。
 
 ## 23. Hero Roster 竖屏三连修：网格 90% 宽 + mask 裁剪 + 底部导航栏加背景（2026-08-09）
 
@@ -347,7 +347,7 @@
 - **i18n**：三语新增 `shop.buyX10`（zh「一键购买 ×10」/ en「Buy ×10」/ de「×10 kaufen」）+ `shop.boughtNamedQty`（`{name} ×{qty}` 形式的成功 toast，与既有 `shop.boughtNamed`/`shop.item.material.title` 的插值写法一致）。
 - **测试**（`client/test/shopActions.test.ts` — 方法级，`onBuyBulk`）：busy-lock、成功=一次调用（`cb.buy(itemId, qty)`）+ 一次刷新、`ok:false`=不刷新（全有或全无，2026-08-10 起不再有"中途失败保留部分成功"的分支）、`TimeoutError`、`qty=0` 防御性回归（不调用 `buy()`/不 toast/照常释放忙锁）。**`client/test/ui/shopScene.ui.ts` — 走真实按钮命中列表（不是直接调方法）**：①卡只够买 1 件时 ×10 禁用（无命中矩形）而 Buy 仍可点；②够买 10 件时点击 ×10 调用 `buy('protect_enhance', 10)` **一次**（2026-08-10 起，此前是十次）；③material 档不出现这个按钮；④点一次 ×10 后同步 `render()` 已把按钮画成禁用态——第二次真实点击根本摸不到命中矩形（busy-lock 在 UI 层的真实表现，不只是方法内部的 `if (busy) return`）；⑤**端到端**：钱包状态随 `buy()` 真实扣减 `cost×qty`、10 连购花光额度后下一帧 ×10 灰掉但 Buy 仍可点（`getCoins`/`buy`/`loadItems` 三者接线正确，不是分别孤立测过就直接假定拼起来也对）。服务端侧新增 `economy.e2e.test.ts`（qty 计费/发货/全有全无/材料每日上限/对账重放/schema 上限校验）+ `commercial/test/service.e2e.test.ts`（`shopCharge` qty 计费/全有全无/越界拒绝）+ `shared/test/dailyCounter.test.ts`（`bumpCappedCounter` 的 `by` 参数）。
 - **验证**：`tsc --noEmit` 全绿；`npx vitest run test/shopActions.test.ts`（23 例）+ `npx vitest run --config vitest.ui.config.ts test/ui/shopScene.ui.ts`（43 例）全绿，无回归。**未做真人截图**：本次会话 Browser 预览面板同样报 "pane not displayed"（同 §20.5/§21–24 的已知环境限制，且本机当时 metaserver 未起，商城道具列表本就依赖服务端 `getShopItems`，离线也看不到这张卡）；多按钮纵向堆叠是 `drawCard()`/`drawButton()` 现有几何路径（月卡已在生产验证过同一路径），未新增布局代码，故以上面两个文件的 headless 像素坐标断言 + 既有生产先例作为验证依据。
-- **涉及文件**：`client/src/scenes/ShopScene/shop.ts`、`client/src/scenes/ShopScene/base.ts`、`client/src/scenes/ShopScene/actions.ts`、`client/src/i18n/locales/{zh,en,de}.ts`、`client/test/shopActions.test.ts`、`client/test/ui/shopScene.ui.ts`。
+- **涉及文件**：`client/src/scenes/ShopScene/shop.ts`、`client/src/scenes/ShopScene/core.ts`、`client/src/scenes/ShopScene/actions.ts`、`client/src/i18n/locales/{zh,en,de}.ts`、`client/test/shopActions.test.ts`、`client/test/ui/shopScene.ui.ts`。
 
 ---
 

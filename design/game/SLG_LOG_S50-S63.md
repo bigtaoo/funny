@@ -8,7 +8,7 @@
 
 ## 50. 围攻战斗：进攻方全灭后提前结束，不再耗到超时（2026-08-02，用户提出）
 
-用户提出：SLG 攻城验证时，如果场上进攻方已经没有存活单位了，战斗应该直接结束判负，不需要等 `SIEGE_BATTLE_TIMEOUT_TICKS`（10 分钟/18000 tick，§16.5）跑完。核对 `checkWinCondition`（`server/engine/src/engine/winCondition.ts`）发现 `destroy_base` 目标此前只有两条硬性超时兜底——`battleTimeoutTicks` 与目标自带的 `durationTicks`——进攻方（Bottom）全灭后既打不掉基地也没有任何提前判负分支，只能干等到超时才由防守方（Top）胜出；`survive` 目标已有对称机制（`hasLivingEnemyUnits()`，`campaign.ts`），但那是查 Top 侧、服务 PvE 波次防守场景，跟围攻的攻防方向相反，没有覆盖到 `destroy_base`。
+用户提出：SLG 攻城验证时，如果场上进攻方已经没有存活单位了，战斗应该直接结束判负，不需要等 `SIEGE_BATTLE_TIMEOUT_TICKS`（10 分钟/18000 tick，§16.5）跑完。核对 `checkWinCondition`（`server/engine/src/engine/sim/winCondition.ts`）发现 `destroy_base` 目标此前只有两条硬性超时兜底——`battleTimeoutTicks` 与目标自带的 `durationTicks`——进攻方（Bottom）全灭后既打不掉基地也没有任何提前判负分支，只能干等到超时才由防守方（Top）胜出；`survive` 目标已有对称机制（`hasLivingEnemyUnits()`，`campaign.ts`），但那是查 Top 侧、服务 PvE 波次防守场景，跟围攻的攻防方向相反，没有覆盖到 `destroy_base`。
 
 **修复**：`campaign.ts` 新增 `hasLivingAttackerUnits()`（对称于既有 `hasLivingEnemyUnits()`，查 Side.Bottom 是否还有存活单位）；`winCondition.ts` 在 `destroy_base` 分支的超时判定之前插入早退检查——`!hasLivingAttackerUnits()` 时立即 `GameOver`，`winner=Side.Top`（防守方胜，判负事件与超时分支完全一致，只是不用等满 tick）。攻方军队在引擎构造时（`base.ts` 读 `level.attackerArmy`）就已一次性同步入场，无逐 tick 补兵的活指令输入，因此该检查不会误杀"部队还没上场"的中间态。围攻仅用于 worldsvc 无实时输入的 headless 结算（`siegeEngine.ts`）与 econ-sim 模拟工具，不涉及客户端实时对战，不影响其它模式。
 
