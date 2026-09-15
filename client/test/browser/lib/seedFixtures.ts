@@ -331,10 +331,57 @@ export function buildAuctions(sellerIds: string[], mySellerId: string, count: nu
           saleMode: 'auction',
           startPrice: price,
           buyoutPrice: price * 4,
-          topBid: { bidderId: sellerIds[(i + 1) % sellerIds.length]!, amount: price + 5300, ts: now - i * 1000 },
+          // Every seventh auction-mode listing is one the player is currently WINNING, so the
+          // My Bids tab has both of its live outcomes to draw (`leading` here, `outbid` on the
+          // rest — see buildAuctionBids).
+          topBid: {
+            bidderId: i % 7 === 0 ? mySellerId : sellerIds[(i + 1) % sellerIds.length]!,
+            amount: price + 5300, ts: now - i * 1000,
+          },
         }
         : { saleMode: 'fixed' }),
       rev: 1,
+    });
+  }
+  return out;
+}
+
+/** One `auctionBids` row — the participation ledger My Bids reads (auctionsvc/src/db.ts AuctionBidDoc). */
+export interface SeedAuctionBid {
+  _id: string; auctionId: string; bidderId: string;
+  amount: number; total: number; bids: number; ts: number;
+  purgeAt: { __date: number };
+}
+
+/**
+ * The player's own bids over `rows`, so the My Bids tab renders rows instead of its empty state.
+ *
+ * Derived from the listings rather than generated beside them: My Bids joins the two collections
+ * (`getMyBids` looks every bid's listing up by id), and a bid on an id no listing carries would be
+ * dropped on the way back out — an empty tab that looks seeded.
+ *
+ * `topBid.bidderId === me` is what the client reads as `leading`; a lower `amount` on a listing
+ * somebody else is topping is `outbid`. Both live outcomes therefore appear, which is the point:
+ * the two are drawn in different colours and only one of them is the good news.
+ */
+export function buildAuctionBids(rows: SeedAuction[], me: string): SeedAuctionBid[] {
+  const out: SeedAuctionBid[] = [];
+  for (const r of rows) {
+    if (r.saleMode !== 'auction' || !r.topBid) continue;
+    const leading = r.topBid.bidderId === me;
+    // Not every losing listing — a dozen rows is a full screen on any viewport, and every extra one
+    // is another join on a collection the sweep is not here to load-test.
+    if (!leading && out.length >= 12) continue;
+    const amount = leading ? r.topBid.amount : r.topBid.amount - 5300;
+    out.push({
+      _id: `${r._id}|${me}`,
+      auctionId: r._id,
+      bidderId: me,
+      amount,
+      total: amount * r.qty,
+      bids: leading ? 3 : 1,
+      ts: r.topBid.ts - 60_000,
+      purgeAt: { __date: r.expireAt + 7 * 86_400_000 },
     });
   }
   return out;
