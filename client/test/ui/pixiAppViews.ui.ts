@@ -4,9 +4,10 @@
 // running the whole startApp() boot sequence (PIXI runtime + watchdogs + L0 asset gate). Exporting
 // it from its own module is what made these assertions possible, so the tests land with the split.
 //
-// What's asserted here is the wiring PixiAppViews owns and nothing else — the lobby-only resize
-// listener's lifetime, the resize-driven-rebuild-never-fades rule, the ADR-044 overlay-vs-goto
-// branch in mountSlg, the recordConstructSample timing hook, and showGameNet's flipped joiner
+// What's asserted here is the wiring PixiAppViews owns and nothing else — the viewport listener's
+// lifetime, which screens a settled resize rebuilds and which it deliberately does not (2026-09-14),
+// the resize-driven-rebuild-never-fades rule, the ADR-044 overlay-vs-goto branch in mountSlg, the
+// recordConstructSample timing hook, and showGameNet's flipped joiner
 // layout + pre-gate push buffering. The scenes themselves are mocked: their real constructors are
 // smoke-tested by their own *.ui.ts files, and what matters here is which one got built, with what
 // layout, and how it was handed to SceneManager.
@@ -20,10 +21,12 @@ import * as PIXI from 'pixi.js-legacy';
 // vi.mock factories run while this file's imports are still being resolved — before any top-level
 // `const` here would initialize — so the shared capture arrays go through vi.hoisted (same reason
 // as worldMapBaseTextureSelection.ui.ts).
-const { built, samples, gate, sceneBase } = vi.hoisted(() => {
+const { built, samples, gate, gachaGate, sceneBase } = vi.hoisted(() => {
   const built: Array<{ name: string; args: unknown[] }> = [];
   const samples: Array<{ name: string; ms: number }> = [];
   const gate = { resolve: (): void => {} };
+  /** Same shape as `gate`, for showGacha's own asset warm (render/gachaArt). */
+  const gachaGate = { resolve: (): void => {}, warms: 0 };
   /** Minimal stand-in for a Scene: records its ctor args so tests can read the layout it got. */
   const sceneBase = (name: string) =>
     class {
@@ -36,7 +39,7 @@ const { built, samples, gate, sceneBase } = vi.hoisted(() => {
       update(): void {}
       destroy(): void {}
     };
-  return { built, samples, gate, sceneBase };
+  return { built, samples, gate, gachaGate, sceneBase };
 });
 
 vi.mock('../../src/scenes/LobbyScene', () => ({
@@ -53,6 +56,27 @@ vi.mock('../../src/scenes/LobbyScene', () => ({
   },
 }));
 vi.mock('../../src/scenes/SettingsScene', () => ({ SettingsScene: sceneBase('SettingsScene') }));
+vi.mock('../../src/scenes/ShopScene', () => ({ ShopScene: sceneBase('ShopScene') }));
+vi.mock('../../src/scenes/GachaScene', () => ({ GachaScene: sceneBase('GachaScene') }));
+// showGacha's own gate (ASSET_PACKAGING §10, extended to gacha 2026-08-25). Only the warm and the
+// overlay are mocked — `enterWithAssets` itself stays real, because the thing under test is when
+// the rotation respawn is armed RELATIVE to it.
+vi.mock('../../src/render/gachaArt', () => ({
+  preloadGachaTextures: (onProgress?: (done: number, total: number) => void) => {
+    gachaGate.warms += 1;
+    onProgress?.(0, 1);
+    return new Promise<void>((resolve) => { gachaGate.resolve = () => { onProgress?.(1, 1); resolve(); }; });
+  },
+}));
+vi.mock('../../src/ui/LoadingOverlay', () => ({
+  LoadingOverlay: class { setProgress(): void {} destroy(): void {} },
+}));
+vi.mock('../../src/scenes/CardScene', () => ({
+  CardScene: class extends sceneBase('CardScene') {
+    applyCardState = vi.fn();
+    showTab = vi.fn();
+  },
+}));
 vi.mock('../../src/scenes/EquipmentScene', () => ({ EquipmentScene: sceneBase('EquipmentScene') }));
 vi.mock('../../src/scenes/FamilyScene', () => ({ FamilyScene: sceneBase('FamilyScene') }));
 vi.mock('../../src/scenes/WorldMapScene', () => ({
@@ -308,10 +332,11 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
     expect(rebuilds).toEqual([]);
   });
 
-  it('cancels a pending rebuild when the player navigates away first', () => {
-    // Load-bearing now that the rebuild is deferred: rotate, then immediately tap into another
-    // screen, and a queued showLobby() would otherwise fire ~180ms later and yank the player back
-    // to the lobby from wherever they had just gone.
+  it('rebuilds whatever the player navigated to, not the lobby they rotated in', () => {
+    // Rotate, then immediately tap into another screen. The queued rebuild must NOT be the
+    // showLobby() that was pending when the timer was armed — that yanked the player back to the
+    // lobby from wherever they had just gone. Since 2026-09-14 the target is resolved when the
+    // timer fires, so it is the screen they are actually on.
     const h = setup();
     const rebuilds: number[] = [];
     h.views.onResized = () => { rebuilds.push(1); h.views.showLobby(NO_CB); };
@@ -326,24 +351,89 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
     expect(last(built, 'scene build').name).toBe('SettingsScene');
   });
 
-  it('re-fits the canvas off the lobby too, without rebuilding anything', () => {
-    // The whole point of the 2026-09-10 split: the cheap half is unconditional, the expensive half
-    // stays lobby-only (`createAppCore.onResized` is gated on `state.inLobby`, so no other screen
-    // can rebuild itself anyway). Rotating inside settings used to leave the canvas at its old size.
+  it('re-fits AND rebuilds a non-lobby screen, against the new layout', () => {
+    // The 2026-09-14 fix. The canvas already tracked the viewport everywhere (2026-09-10), but the
+    // scene did not: rotating inside the shop/settings left a portrait layout stretched across a
+    // landscape canvas. The rebuild goes through `respawn`, never through `onResized` — that one is
+    // the lobby's route only.
     const h = setup();
     const rebuilds: number[] = [];
     h.views.onResized = () => { rebuilds.push(1); h.views.showLobby(NO_CB); };
     h.views.showSettings({} as never);
+    expect((last(built, 'SettingsScene build').args[0] as ILayout).orientation).toBe('landscape'); // boots 1280x720
 
     h.screen.width = 800; h.screen.height = 1200;
     h.win.fire('resize');
     expect(h.renderer.resize).toHaveBeenCalledWith(800, 1200);
     expect(h.scaling.resize).toHaveBeenCalledTimes(1);
+    expect(built.filter((b) => b.name === 'SettingsScene')).toHaveLength(1); // deferred, as for the lobby
 
     vi.advanceTimersByTime(SETTLE);
-    expect(rebuilds).toEqual([]);
-    // ...and no stray timer was armed, so nothing can yank the player to the lobby later either.
-    expect(last(built, 'scene build').name).toBe('SettingsScene');
+    expect(rebuilds).toEqual([]); // the lobby route stayed untouched
+    const settings = built.filter((b) => b.name === 'SettingsScene');
+    expect(settings).toHaveLength(2);
+    expect((last(settings, 'SettingsScene rebuild').args[0] as ILayout).orientation).toBe('portrait');
+  });
+
+  it('rebuilds the shop instantly, with no fade', () => {
+    // The reported bug (2026-09-14): open the shop, rotate the phone, and the page stayed laid out
+    // for the orientation it was opened in.
+    const h = setup();
+    h.views.showShop({} as never);
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+    expect(built.filter((b) => b.name === 'ShopScene')).toHaveLength(2);
+    expect(h.lastGoto().opts).toEqual({ fade: false });
+  });
+
+  it('does NOT rebuild the world map (mountVolatile)', () => {
+    // A fresh constructor cannot put back the camera the player panned, the tile cache or the live
+    // worldsvc subscriptions — so the map keeps the 2026-09-10 behaviour: fitted canvas, layout of
+    // the orientation it was entered in. Same call for a live match and a replay.
+    const h = setup();
+    h.views.showWorldMap({} as never);
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+    expect(h.renderer.resize).toHaveBeenCalledWith(800, 1200); // the cheap half still runs
+    expect(built.filter((b) => b.name === 'WorldMapScene')).toHaveLength(1);
+  });
+
+  it('does not rebuild the host scene out from under an open overlay', () => {
+    // ADR-072/ADR-044: the panel is mounted over a still-live host. Rebuilding the host on a
+    // rotation would destroy it and leave the overlay parented to a dead scene graph. The host's
+    // respawn is parked for the overlay's lifetime and handed back by hideOverlay().
+    const h = setup();
+    h.views.showCardRoster({} as never);
+    h.views.showEquipment({} as never, { overlay: true });
+
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+    expect(built.filter((b) => b.name === 'CardScene')).toHaveLength(1);
+
+    h.views.hideOverlay();
+    h.screen.width = 900; h.screen.height = 1400;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+    expect(built.filter((b) => b.name === 'CardScene')).toHaveLength(2);
+  });
+
+  it('keeps a returned view pointed at the scene a rebuild replaced', () => {
+    // nav/game/campaignRoster.ts holds the CardRosterView and pushes into it long after the mount.
+    // Capturing the instance instead of reading through a getter sends those pushes into the scene
+    // the rotation just destroyed.
+    const h = setup();
+    const view = h.views.showCardRoster({} as never);
+
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+
+    const rebuilt = h.lastGoto().scene as unknown as { applyCardState: ReturnType<typeof vi.fn> };
+    view.applyCardState();
+    expect(rebuilt.applyCardState).toHaveBeenCalledTimes(1);
   });
 
   it('treats an inset change at an UNCHANGED viewport size as a real change', () => {
@@ -395,6 +485,66 @@ describe('PixiAppViews — resize-driven lobby rebuild', () => {
   });
 });
 
+describe('PixiAppViews — the gacha asset gate and rotation', () => {
+  beforeEach(() => { gachaGate.warms = 0; vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  const SETTLE = 200;
+
+  /** showGacha + let the gate's promise chain settle. Fake timers do not advance microtasks. */
+  async function enterGacha(h: Harness): Promise<void> {
+    h.views.showGacha({} as never);
+    gachaGate.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('rebuilds the gacha screen on rotation WITHOUT re-entering the asset gate', () => {
+    // The respawn is armed after the gate resolves and gotos the scene directly. Re-running the
+    // gate would put a loading overlay back up for textures that are already warm — every time the
+    // player turns their phone.
+    const h = setup();
+    return enterGacha(h).then(() => {
+      expect(built.filter((b) => b.name === 'GachaScene')).toHaveLength(1);
+      expect(gachaGate.warms).toBe(1);
+
+      h.screen.width = 800; h.screen.height = 1200;
+      h.win.fire('resize');
+      vi.advanceTimersByTime(SETTLE);
+
+      const gachas = built.filter((b) => b.name === 'GachaScene');
+      expect(gachas).toHaveLength(2);
+      expect(gachaGate.warms).toBe(1);
+      expect((last(gachas, 'GachaScene rebuild').args[0] as ILayout).orientation).toBe('portrait');
+    });
+  });
+
+  it('does not rebuild while the gate is still open', () => {
+    // Arming the respawn up front would drop a GachaScene on top of the loading overlay the gate is
+    // about to replace anyway.
+    const h = setup();
+    h.views.showGacha({} as never);
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+    expect(built.filter((b) => b.name === 'GachaScene')).toHaveLength(0);
+  });
+
+  it('drops the pending arm when the player left while the gate was open', async () => {
+    // Tap 抽卡 on a cold cache, change your mind, back out. Without the generation check the gacha
+    // screen comes flying back over the settings screen on the next rotation.
+    const h = setup();
+    h.views.showGacha({} as never);
+    h.views.showSettings({} as never);
+    gachaGate.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    h.screen.width = 800; h.screen.height = 1200;
+    h.win.fire('resize');
+    vi.advanceTimersByTime(SETTLE);
+    expect(last(built, 'scene build').name).toBe('SettingsScene');
+  });
+});
+
 describe('PixiAppViews — SLG panel mounts', () => {
   it('pushes an overlay instead of gotoing when opts.overlay is set', () => {
     const h = setup();
@@ -433,13 +583,11 @@ describe('PixiAppViews — SLG panel mounts', () => {
     expect(h.manager.pushOverlay).not.toHaveBeenCalled();
   });
 
-  it('an overlay equipment mount leaves the lobby REBUILD armed (leaveLobby is skipped)', () => {
-    // leaveLobby() is what disarms it; the overlay path must not run it, because the scene it is
-    // mounted over (CardScene) already left the lobby and is still the one that owns the screen.
-    //
-    // Asserted through the behaviour rather than through `win.count('resize')`: since 2026-09-10 the
-    // window listener is installed once for the whole app life (only the rebuild has a lifetime), so
-    // the listener count can no longer tell these two paths apart.
+  it('an overlay equipment mount leaves the lobby as the screen being rebuilt', () => {
+    // The overlay path must not claim the screen: the scene it is mounted over still owns it, so a
+    // settled resize goes on routing to whatever that is (here the lobby, through `onResized`).
+    // A full swap takes the screen over, and from then on the resize rebuilds the equipment scene
+    // instead — never the lobby.
     const h = setup();
     vi.useFakeTimers();
     try {
@@ -453,11 +601,12 @@ describe('PixiAppViews — SLG panel mounts', () => {
       vi.advanceTimersByTime(200);
       expect(rebuilds).toEqual([1]);
 
-      h.views.showEquipment({} as never); // full swap → leaveLobby → disarmed
+      h.views.showEquipment({} as never); // full swap → this screen is the equipment scene now
       h.screen.width = 900; h.screen.height = 1100;
       h.win.fire('resize');
       vi.advanceTimersByTime(200);
       expect(rebuilds).toEqual([1]);
+      expect(built.filter((b) => b.name === 'EquipmentScene')).toHaveLength(3); // overlay + swap + rebuild
     } finally {
       vi.useRealTimers();
     }

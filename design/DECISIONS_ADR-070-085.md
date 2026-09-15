@@ -179,6 +179,10 @@
   - 手机侧推导（未实测，公式 `designW×designH×res²×4`）：崩溃那台内嵌 WebView（750×270/dpr 3 → 2592×1080、scale 0.25、res 0.75）每张 6.0 MiB、33 张 ≈ 198 MiB；iPhone 13 全屏横屏（844×390/dpr 3 → 2337×1080、scale 0.361、res 1.125）每张 **12.2 MiB**、33 张 ≈ **402 MiB** —— 比开发机还贵，因为 `dpr×scale > 1` 时上限（`renderer.resolution`）不生效。都在 256 MB 预算的量级上，而预算恰好看不见它。
   - **那个「单独立项」已做（2026-09-12，Grafana 巡检触发）**：线上一个平板会话（`58aca9e`、1024×654/dpr 2）的 `mem` 里 bake 从 **17 条/98.2 MiB 涨到 27 条/182.2 MiB**，坐实了「首访线性」在真玩家会话里的代价。已改成 `paperBakeKey(w, h, marginLine, railX)`，`tag` 只留作调用点可读性（不进绘制、不进 key）。改的时候翻出一个潜伏问题：**`marginLine` 一直没进过 key**，之前只是被 `tag`（`worldmap`）偷偷隔开，所以拿掉 `tag` 必须同时把它放进去；`railX` 另行四舍五入。回归：`client/test/paperBakeSharing.test.ts`。「明确不做」第 ① 条至此只剩下半句：**bake 缓存仍然没有任何字节闸门**。
   - 详细测量方法、逐条数据、教训：[`claudedocs/client-memory-leak.md`](../claudedocs/client-memory-leak.md) §11.5。影响的代码只有一处：`client/src/entries/web-e2e.ts` 把 `bakeStats()` 挂上 `__nwE2E.bake`（永不发货的 e2e 入口，与既有 `app`/`__nwAudio` 同性质），让这次测量可重复。
+  - **「明确不做」第 ① 条至此全部关闭（2026-09-14）：bake 缓存有闸门了，单位是「屏数」不是 MB。** 先重测（去重之后没人测过）：真 Chromium + 本机 docker 栈走**全部 36 站**（`client/test/browser/bakeBudget.spec.ts`，`NW_BAKE=1`；读的是 bake **key 的并集**而不是当下总量——巡检中途必然 reload，reload 会销毁 renderer 连带整张缓存，而 key 在同一几何下恒定，所以并集才是「一次不中断的会话」的持有量，为此给 `bake.ts` 加了 `bakeEntries()`）。结果：1280×631/dpr 1.5 **26 条 / 75.7 MiB**（同几何下 2026-09-10 是 45 条 / 279 MiB，去重兑现 **−73%**），390×844/dpr 3 **25 条 / 59.8 MiB**。
+    - **闸门按屏数计**：整页 bake 按它覆盖的设备像素烘，同样健康的行为在手机 5.4 MiB/张、1280 桌面 7.9、2592 宽高 DPI 桌面约 24——一个绝对 MB 数跨不过这四倍散布（按手机定则每台 retina 桌面误报，按桌面定则手机涨三倍也不报）。换算成后台缓冲数（`screenBytes()`），两台实测是 **10.9 / 11.9**，于是默认预算 `nw_bake_budget_screens = 24`（两倍余量）。**不能用「几张整页」当单位**：那会把 2026-08-25 那个 bug 自己除掉（过采样 16 倍时分子分母同涨）；后台缓冲是外部事实，一张过采样整页就是 16 个。
+    - 形状与既有两道一致（超预算**且仍在涨**才报），报文带 `largest.key` 直接点名调用点；`anr` 上下文补 `bakeMB`。四个预算常量搬进 `client/src/cache/memoryBudgets.ts`（不 import PIXI），让那份 Playwright spec 能断言**发货的那个常量**而不是抄一份。
+    - **顺带订正本 ADR 自己的一条推导**：上面那行「iPhone 13 每张整页 12.2 MiB」是按 dpr 3 推的，实测 **5.4 MiB**——`renderPolicy.MAX_RENDER_RESOLUTION = 2` 先截 backbuffer，`pageBakeResolution()` 才乘 `designScale`。推导链漏了一个上游 cap，高估了一倍多。详见 §11.8。
 
 ## ADR-074 野外城池从贴图升级为宗门级攻城实体 — Accepted — 2026-08-25
 

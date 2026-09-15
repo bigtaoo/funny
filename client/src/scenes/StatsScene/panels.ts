@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js-legacy';
 import { t } from '../../i18n';
 import { ui as C, txt, sketchPanel, sketchAccentBar, seedFor } from '../../render/sketchUi';
 import { buildIcon, type IconKind } from '../../render/icons';
-import { snapFont } from '../../render/fontScale';
+import { snapFont, iconFloorPx } from '../../render/fontScale';
 import type { MatchHistoryEntry } from '../../net/ApiClient';
 import type { Hit } from '../../ui/hits';
 
@@ -180,7 +180,9 @@ export function drawSection(
     }
     // Rows with a watchable replay: draw a hand-drawn play glyph on the left + a full-row hit area.
     if (row.rowHit) {
-      const psz = Math.round(rowH * 0.6);
+      // Floored - see iconFloorPx. 19 design px on phone landscape, and this glyph is the only
+      // thing marking the row as watchable.
+      const psz = iconFloorPx(rowH * 0.6);
       const play = buildIcon('play', psz, accent);
       play.x = x + Math.round(w * 0.035); play.y = ry + rowH / 2 - psz / 2;
       parent.addChild(play);

@@ -27,6 +27,7 @@ import {
 import {
   INK_ICON_ART, buildInkIcon, preloadInkIconTextures, type InkIconKind,
 } from './icons/inkIconRaster';
+import { tagIcon } from './iconTag';
 
 export {
   TAB_ICON_RASTER, tabIconVariant, preloadTabIconTextures,
@@ -70,6 +71,12 @@ export function buildIcon(
 ): PIXI.DisplayObject {
   const s = Math.round(size);
   const raster = (TAB_ICON_RASTER as Partial<Record<IconKind, Record<RasterIconVariant, string>>>)[kind];
-  if (raster) return buildRasterTabIcon(raster[opts?.variant ?? tabIconVariant(color)], s);
-  return buildInkIcon(INK_ICON_ART[kind as InkIconKind], s, color);
+  // Re-tagged with the KIND, over the url the two leaf builders tag with. They only ever see the
+  // art path, and webpack gives every asset a `[contenthash]` name in dev as well as prod - so a
+  // layout-audit finding read `tiny icon "8ee6d0c38b3ae9553c2a"`, which names nothing. Every caller
+  // that goes through here has the concept, so this is where the concept gets attached.
+  const node = raster
+    ? buildRasterTabIcon(raster[opts?.variant ?? tabIconVariant(color)], s)
+    : buildInkIcon(INK_ICON_ART[kind as InkIconKind], s, color);
+  return tagIcon(node, kind, s);
 }

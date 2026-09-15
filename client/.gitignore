@@ -16,3 +16,6 @@ wechatgame/cdn/
 
 # Portrait layout sweep output (screenshots + findings; see test/browser/portraitLayout.spec.ts)
 portrait-report/
+
+# Bake-cache ceiling measurement output (see test/browser/bakeBudget.spec.ts)
+bake-report/

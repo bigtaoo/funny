@@ -24,6 +24,37 @@ import type { DailyPanelCtx } from '../types';
  */
 export const CHECKIN_PULSE = { min: 1.03, max: 1.09, periodSec: 1.4 } as const;
 
+/**
+ * Portrait's cell aspect ceiling (height / width) — the cell fills the grid's real available
+ * height and is only clipped by this.
+ *
+ * Not a taste call: the font ladder tops out at `FS.display` (60 design px), and the day number is
+ * `ch * 0.32`, so past `ch` ~190 the number stops growing while the reward line beside it keeps
+ * climbing until `snapFont` lands it on the same 60 — the hierarchy inside the cell inverts. 1.25
+ * puts `ch` at ~206 on a phone, just under that, and leaves the leftover as row gaps rather than
+ * as a hole between a number pinned at the cell's top and a reward pinned at its bottom (both are
+ * `ch` fractions, so a taller cell pulls them apart rather than filling the middle).
+ */
+const PORTRAIT_MAX_ASPECT = 1.25;
+
+/**
+ * Where the day number's top edge sits, as a fraction of cell height: under the bonus-coin badge
+ * in portrait, beside it in landscape.
+ *
+ * The badge is pinned to the cell's top-RIGHT and sized off `ch`; the number is centred and also
+ * sized off `ch`. Nothing stops them meeting, because the one dimension that decides whether they
+ * do - cell WIDTH - appears in neither. Landscape's cell is 2.2:1, so there is width to spare and
+ * they never have. Portrait's is now 0.8:1, and a two-digit milestone day ran straight into its own
+ * "+40" (caught by the layout audit as a 33% overlap on days 14/21/30, 390x844, the same run that
+ * introduced the taller cell).
+ *
+ * Reserving the strip on EVERY portrait cell rather than only on the four that carry a badge is
+ * what keeps the grid readable as a grid: 30 numbers on one baseline, not 26 on one and 4 on
+ * another. The taller cell is what pays for it - the number still clears the reward glyph below
+ * (number ends at ~0.61 ch, the glyph starts at 0.66).
+ */
+const NUM_TOP_FRAC = { landscape: 0.06, portrait: 0.22 } as const;
+
 export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, areaW: number, areaH: number, save: SaveData, nowMs: number): void {
   const { container, hits, h, landscape, retention } = ctx;
   const sec = txt(t('daily.checkin.title'), FS.title, C.dark, true);
@@ -32,25 +63,41 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
 
   // Portrait: 5 columns (6 rows) instead of landscape's 6 columns (5 rows) — user report
   // (2026-08-09, screenshot): with 6 columns the narrow portrait width capped cellW hard, and
-  // since cellH is itself capped by cellW*0.8 (see below), cells stayed small while the leftover
-  // vertical space widened into a big gap between rows. Fewer, wider columns raise the cellW cap,
-  // which raises cellH too — bigger cells that eat more of the available height, leaving less to
-  // spread as row gaps. Landscape's width was never the constraint, so it keeps 6/5 unchanged.
+  // since cellH was derived from cellW back then, cells stayed small while the leftover vertical
+  // space widened into a big gap between rows. Fewer, wider columns raise the cellW cap, which
+  // raised cellH too. The derivation itself is gone (see the cap below — portrait now sizes off
+  // height and only clips on aspect), but the column count stays: 5 x 6 is exactly 30 cells, and a
+  // wider cell is still what lets the reward glyph and its "+N" sit on one line. Landscape's width
+  // was never the constraint, so it keeps 6/5 and its own width-derived height unchanged.
   const COLS = landscape ? 6 : 5;
   const ROWS = Math.ceil(30 / COLS);
   const innerPad = areaW * 0.04;
   const cellW = (areaW - innerPad * 2) / COLS;
-  const cellH = Math.min(areaH * 0.78 / ROWS, cellW * 0.8);
   const gridTop = top + sec.height + h * 0.015;
+  const gridAvailH = top + areaH - gridTop;
 
-  // Portrait's cells are still capped by the cellW*0.8 aspect ratio (now a looser cap thanks to
-  // the 5-col width above, but rarely the exact areaH/ROWS fit), which used to leave the fixed
-  // h*0.006 row gap from landscape and bunch all rows into the page's top third with a blank void
-  // below (user report, 2026-08-09). Landscape's areaH is already ~consumed by ROWS*cellH so this
-  // is a no-op there — spread only kicks in when portrait's leftover vertical space is positive.
+  // Height first, aspect only as a CAP — and the leftover spreads into row gaps only when the cap
+  // is what bound the cell (2026-09-14 user report + screenshot).
+  //
+  // The 2026-08-09 pass above raised the cellW cap by dropping to 5 columns, then spent everything
+  // the cap left over on row GAPS. That was the wrong half to spend it on: every glyph in the cell
+  // is a fraction of `ch` (number 0.32, reward 0.26/0.24, bonus badge 0.16), so cell height is the
+  // only dial that reaches them, and portrait was handing 48% of the grid's vertical extent to
+  // empty paper — 159 design px of gap per row against a 143 px cell, measured at 390x844.
+  //
+  // Sizing off the real available height instead, and capping the cell's aspect rather than
+  // deriving it, makes the portrait cell 224 px tall (+56% on `ch`, and therefore on every glyph
+  // in it: the day number goes 15.2 → 21.7 CSS px on a 390-wide phone, the reward glyph 12.3 →
+  // 19.1, the milestone badge 7.2 → 11.6). What that does NOT fix is the reason those numbers were
+  // small to begin with — portrait's design width is a fixed 1080 against a 390-px screen, i.e.
+  // 0.36x, so a design px is worth less than half what it is worth in a desktop landscape window.
+  // That is design/game/UI_DESIGN_LOG_2026-08.md §49.1's known-unfixed item, not this one.
   let rowGap = h * 0.006;
-  if (!landscape) {
-    const gridAvailH = top + areaH - gridTop;
+  let cellH: number;
+  if (landscape) {
+    cellH = Math.min(areaH * 0.78 / ROWS, cellW * 0.8);
+  } else {
+    cellH = Math.min((gridAvailH - rowGap * (ROWS - 1)) / ROWS, cellW * PORTRAIT_MAX_ASPECT);
     const spread = gridAvailH - ROWS * cellH;
     if (spread > 0) rowGap = spread / (ROWS - 1);
   }
@@ -203,7 +250,7 @@ export function renderCheckin(ctx: DailyPanelCtx, areaX: number, top: number, ar
       isClaimable,
     );
     numTxt.anchor.set(0.5, 0);
-    numTxt.x = cx; numTxt.y = y + ch * 0.06;
+    numTxt.x = cx; numTxt.y = y + ch * (landscape ? NUM_TOP_FRAC.landscape : NUM_TOP_FRAC.portrait);
     cell.addChild(numTxt);
 
     const reward = rewards[day - 1];

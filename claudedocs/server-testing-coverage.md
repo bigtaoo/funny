@@ -826,3 +826,94 @@ SUCCESS，没有一处变红。该文件自己的注释已经写了"指纹记在
 **FAIL**、Mongo 不可达时它是**静默 skip**——后者会让 `appleAccount`/`appleConsumption`/
 `appleNotifications` 三个文件的覆盖率读数凭空低一大截。看这三个数之前先确认 e2e 真的跑了
 （`Tests` 行没有 skipped 计数）。
+
+## 上周功能的补测第二轮：围攻回合 / 网关握手日志 / Apple 订阅读取器（2026-09-14，worktree `feat/weekly-test-gaps`）
+
+**触发**：例行「上周做的功能有没有测试可以补」，跟 09-09 那轮 Apple IAP 同一个问法。先把 09-07~09-14
+的 114 个提交逐个查了自带测试，**结论是绝大部分功能都是带测试进来的**——55 个 feat/fix/perf 里只有极少
+数没有同批测试文件。所以这轮不是"补一批漏测的功能"，而是按覆盖率实测把**四个具体的缺口**钉掉，每个都
+有一条"坏了也不会报错"的失败路径。
+
+实测方式：逐包跑 `test:coverage`（client / worldsvc / commercial / metaserver / gateway / admin /
+socialsvc），跟上周 `git log --name-only` 的改动文件取交集。
+
+| 位置 | 补之前 | 补之后 | 守的是什么 |
+|---|---|---|---|
+| `client/src/scenes/worldmap/logic/siegeHold.ts` | **行 0%**（全仓零测试） | 100% / 100% | 主城 3×3 footprint：退化成精确坐标匹配，停止围攻按钮会从九格里的八格上消失，而且不报错 |
+| `server/gateway/src/gateway/connRegistry.ts` | 86.82 / 81.81 / 90 | 97.07 / 83.51 / 100 | `sweep()` 与 `sweepRejectWindows()` **两个方法调用次数都是 0** |
+| `server/worldsvc/src/combatShared.ts`（`startNextSiegeRound`） | 98.55 / 91.47 | 99.63 / 93.02 | 回合派发抛异常时的兜底：hold 已被调用方删掉，不走回家这一步就是整支队伍凭空消失 |
+| `server/worldsvc/src/combatSiege/cityDamage.ts` | 91.71 / **73.68**（worldsvc 围攻树最低） | 96.17 / 81.39 | 「城墙扛住 → 开下一轮」这条 09-12 的拍板，城池这一侧一条断言都没有；以及 rev 竞争耗尽的尾巴 |
+| `server/commercial/src/iap.ts`（`createAppleSubscriptionReader`） | 89.47 / 96.87 / **66.66** | 98.24 / 97.22 / 100 | 未配置 Apple 时必须是 `null`（同步路由"没东西可同步"），而不是一个会放行的读取器 |
+
+包级：gateway 92.84→**94.41** 行 / 89.92→**90.00** 分支；worldsvc 95.96→96.07 / 91.59→91.68；
+commercial 97.19→97.37 行、98.87→99.43 函数；client 99.66→99.76 行。
+
+### 一条必须记的测量结论：**第一次执行一个函数，会让 v8 数出它自己的分支**
+
+先只补了 `sweepRejectWindows` 那半，结果 gateway 的**行覆盖涨了、分支覆盖反而掉了 0.06pp**
+（89.92 → 89.86），而 `connRegistry.ts` 自己的分支百分比是**涨的**（81.81 → 82.14）。原因是 v8 provider
+对**从没被调用过的函数**少数它内部的分支点：`sweep()` 此前调用次数为 0，第一次跑起来以后，它自己那四条
+（`!conn.alive`、两个 try/catch、`presenceStore?.`）才进分母，而那一半我当时没测。
+
+**这不是个理论问题**：当天 CI 上 gateway 的分支余量是 **+1 条**（`92.8% | 90.3% | 余量 +1`），本地再掉
+0.06pp 就骑在线上。处置是**把另一半也补掉**而不是回避——`sweep()` 本来就该有测试，它是唯一会注意到
+"连接不再应答"的地方（笔记本合盖、隧道没发 FIN，这两种情况永远等不到 `close` 事件），也是唯一维持
+跨实例在线键的地方（`redis.ts` 的 `PRESENCE_TTL_MS` 只够扛**一次**漏拍，所以刷新一旦停掉不会报错，只是
+这台实例上所有账号在朋友那边一分钟后开始显示离线）。补完 94.41 / 90.00，三个指标全部高于补之前。
+
+**推论**：给一个零调用的函数补测时，先看它是不是整个函数都没跑过——是的话，只补一半的分支很可能让包级
+分支百分比**下降**。要么一次补完，要么先量一遍余量再决定。
+
+### 逐个缺口
+
+- **`siegeHoldAt`（客户端）**：09-12 随围攻功能新建，两个调用点（`WorldMapInput.ts:78` 的敌方地块菜单、
+  `WorldMapInput/cityPanel.ts:114` 的野城面板）在 `test/` 和 `test/ui/` 里都搜不到任何断言。
+  `client/test/worldMapSiegeHold.test.ts`（6 例）覆盖九格全中、边界外不中、非主城 hold 只答自己那格、
+  多个 hold 时答的是点到的那个、以及返回整条 hold（调用方要 `teamId` 发停止请求、要 `dueAt` 画倒计时，
+  布尔答案对按钮够、对那行倒计时不够）。
+- **`connRegistry` 的心跳**：现有两例覆盖的是**继续中**的突发（下一次拒绝滚过窗口时吐汇总）。
+  `sweepRejectWindows` 是给**停下来**的突发准备的——09-10 那次事故的真实形状：客户端卡在过期 JWT 上一直
+  重试，直到玩家关掉标签页，然后永远没有下一次。不扫的话欠的那行汇总永远不写，而且 `rejectWindows` 会
+  按 source 无限留条目（source 来自 `x-forwarded-for`，任何能开 socket 的人都能往里加）。
+  新增 6 例：停下来的突发照样结算、窗口真的被删掉（第二次心跳不重复吐、之后的新拒绝重新拿到完整配额）、
+  窗口内不早关（HEARTBEAT_MS 是窗口的一半，早关等于把有界日志变回周期日志）、没压制过的窗口静默过期；
+  加上连接那半的 ping/刷新在线键、以及 `autoPong:false` 的假死客户端在**第二拍**才被 terminate（第一拍
+  只标记，一次漏拍是正常抖动，在那里就杀会误伤慢网络上的健康连接）。
+- **`startNextSiegeRound`**：回合循环本身由 `base-siege.e2e.test.ts` 端到端覆盖（每回合扣体力、体力耗尽
+  走人），没跑过的是**派发不成功**时的两条路。`combatShared-gaps.test.ts` 补 2 例：insert 抛异常时记日志
+  并走回家（断言 50 个幸存者真的回到兵池，不是只断言日志），以及 `!pw` 时干净返回（这段跑在调度器的结算
+  tick 里，抛出去会卡住整批）。
+- **`settleCityDamage`**：`city-siege.e2e.test.ts` 有四十多例，但每一例的 CAS 都在第一次尝试就赢，所以
+  循环的另外三个出口从那里根本到不了。新增 `worldsvc/test/cityDamage-settle-gaps.test.ts`（4 例，假
+  `WorldCore`，不用 Mongo）：城墙扛住 → 插入的是**零长度 attack 腿**而不是 return（这条差别在城池文档的
+  任何断言里都看不出来，durability 写入两边一模一样）、体力耗尽 → 不再开回合、五次 rev 全输 → 记日志且
+  幸存者回家、城池中途消失 → 一次就出来而不是白打五次。
+- **`createAppleSubscriptionReader`**：唯一接线在 `commercial/src/index.ts`（进程入口，按定义 0%）。
+  新增 `commercial/test/appleSubscriptionReader.test.ts`（3 例）只测**接线**——env 是否产出 api 由
+  `appleServerApi.test.ts` 逐个变量证明失败关闭，history 怎么翻译由 `apple.ts` 管。这里管的是：未配置
+  必须 `null`（返回一个空列表读取器会让未配置的部署看起来像"查过了，没有"）、读取必须走它刚建的那个已验证
+  client（而不是从调用方字符串派生出来的任何东西）、以及 api 只在构造时建一次。
+
+### 变异验证（每条都做了）
+
+`siegeHold` 的 `h.isBase` 短路成 `false`（红 3）、`connRegistry` 注释掉 `sweepRejectWindows()` 调用
+（红 3）、注释掉 `refreshOnline`（红 1）、`startNextSiegeRound` 的 catch 里删掉 `startSiegeReturnMarch`
+（红 1）、`cityDamage` 的 `continueSiege()` 改回 `returnSurvivors()`（红 1）、去掉 `!fresh` 分支里的
+`returnSurvivors()`（红 1）、`createAppleSubscriptionReader` 去掉 null 判断改成每次调用重建（红 2）。
+全部改回后重跑绿。
+
+### 后续：那条「新增文件不得 0%」的门禁当天就做掉了
+
+本节两处缺口（siegeHold 整个文件 0%、`createAppleSubscriptionReader` 函数 0 调用）都是包级百分比看不见
+的形状，所以同日下午补了 `scripts/checkNewFileCoverage.mjs`——`coverage-report` job 里紧跟
+`checkCoverageThreshold` 的第三道门禁，只卡「本次新增、且它所属的包已经在量、而覆盖行数为 0」的文件。
+**验证方式是把 09-12 的真实状态复现后复跑**（删掉本轮新写的 `worldMapSiegeHold.test.ts`、重跑 client 覆盖
+率、以 `3169332f3^` 为 base），门禁当场红在 siegeHold.ts 上，测试放回去就绿。规则口径、engine 的
+`dist`→`src` 路径映射、fail-closed 的 base ref、以及 7 个变异验证见
+[`server-testing-tooling.md`](server-testing-tooling.md) 的「第三道覆盖率门禁」。
+
+### 顺带踩到一次「测试绿、类型红」
+
+`vi.fn<[Args], Return>` 是 vitest 1.x 的签名，2.x 要 `vi.fn<(a: A) => R>()`。四处报 TS2558/TS2345，
+`npx vitest run` 全绿。`claudedocs/client-testing.md` 里那条「收尾前跑 typecheck」在服务端同样成立——
+`server/` 的 `npm run typecheck:test` 才是拦住它的那道。

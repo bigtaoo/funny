@@ -182,3 +182,19 @@ export function drawClearStamp(root: PIXI.Container, ch: number, x: number, y: n
   wrap.x = x; wrap.y = y; wrap.rotation = -0.18; wrap.alpha = 0.85;
   root.addChild(wrap);
 }
+
+/**
+ * Which top corner the chapter-cleared stamp goes in, in design px.
+ *
+ * Chapter maps run bottom-up (CAMPAIGN_DESIGN §12.3), so the top band of the page is
+ * where a chapter ENDS: the stamp shares it with the BOSS marker and has to take the
+ * corner that marker is not in. A marker's flag flies to the RIGHT of its pole, so a
+ * marker sitting on the centre line counts as right-hand and pushes the stamp left.
+ *
+ * Split out of buildChapter so the bundled maps can be checked against the rule without
+ * building a scene (test/campaignMapBottomUp.test.ts).
+ */
+export function clearStampX(map: ChapterMap, w: number): number {
+  const endX = map.decor?.find((d) => d.kind === 'boss')?.x ?? map.nodes[map.nodes.length - 1]!.x;
+  return endX >= 0.5 ? Math.round(w * 0.30) : w - Math.round(w * 0.30);
+}

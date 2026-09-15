@@ -441,3 +441,96 @@ mock，所以「服务端拒了这张 receipt 就绝不能 finish」这条规则
 没有 pixiHeadless 那层适配）。为了一个百分比把一份内聚的文件劈成两半，正是 `vitest.config.ts` 里那段
 注释自己反对的做法。它已经有真门禁（CI 跑 `npm run test:ui`），缺的只是百分比；真要补，得给 ui 套件
 接一份独立的 coverage 源，那是另一件事。
+
+## 重量一次 0% 存量，再收两份（2026-09-14，worktree `feat/client-coverage-round9`）
+
+`client-zero-percent-inventory-2026-09-02` 那张候选名单在 2026-09-09 被清空了，规矩是**要继续这条线得先按配方重新量一次**（别从旧名单挑）。这轮就是重量 + 收两份。
+
+### 重量的结果：存量几乎没动，而且这正是预期
+
+把 include 临时撑开（**用 CLI 覆盖参数，别改文件**）：
+
+```bash
+cd client && npx vitest run --testTimeout=30000 --coverage --coverage.include='src/**' \
+  --coverage.reporter=json-summary --coverage.reportsDirectory=./coverage-wide
+```
+
+| | 2026-09-02 | 2026-09-14 |
+|---|---|---|
+| 整个 `src/` | 33.54%（19367/57736），502 文件 | **34.94%（21203/60671），537 文件** |
+| 0% 且 ≥25 行 | 198 文件 / 28600 行 | **200 文件 / 29291 行** |
+| 其中不碰 PIXI | 60 文件 / 4604 行 | **52 文件 / 5267 行** |
+
+**多出来的 700 行不是退步**：两周里 `src/` 自己长了 2935 行，0% 的那堆里绝大多数是新写的绘制代码（ADR-071 明确不追，由 `test:ui`/`test:e2e` 覆盖，那两层不报覆盖率）。52 份非 PIXI 文件里再刨掉 `scenes/**` 的 Core 协作者、`testing/**`（测试设施自己）、`entries/**`（入口）、`net/proto/replay.ts`（生成代码），**真正可动的是个位数**。
+
+> **⚠️ 量的时候会撞到一个假故障**：`test/nativePaymentIsolation.test.ts` 里那条 `await import('../src/ui/dialogs/ConsentDialog')` 在撑开的 include 下会超过 5 秒默认超时（要现场插桩一整条 PIXI 依赖链），报成一条测试失败，而且**失败的那次 vitest 不写覆盖率报告**——于是现象是「跑完了，`coverage-wide/` 不存在」。加 `--testTimeout=30000` 即可，不是被测代码的问题。
+
+### 收掉的两份
+
+1. **`scenes/worldmap/net/loaders.ts`（122 行，0% → 100%/100%/100%）**，`test/worldMapLoaders.test.ts` 27 例。挑它的理由不是行数，是**七个空 `catch { /* offline OK */ }`**：对一张必须扛住断网的地图这是对的写法，同时也意味着「调错端点 / 写错字段 / 少写一半 payload」和「离线」长得一模一样，什么都不抛。钉住的三处：`await` **之后**的第二道 `destroyed` 复查（往已销毁场景里 render 就是 `client-memory-leak.md` §8 那类泄漏，而 fetch 正是玩家退出的那个窗口）、`zoom` 同时决定端点和稀疏 LOD（`thin`@3 / `mid`@2，走错一边不是 64 倍带宽就是永远缺细节）、`teamsLoaded` 的**只置不清**（一次离线抖动不能让编队面板宣称玩家没有队伍）。变异验红 6 处。
+2. **`platform/wechat/abortShim.ts`（44 行，0% → 100%）**，`test/wechatAbortShim.test.ts` 12 例。这份的分量全在它的来历：它不存在的那段时间，**微信包里每一个 REST 调用都在 `net/ApiClient/core.ts` 的 `new AbortController()` 那行就死了**，还报成网络错误。44 行记账代码值不值一个门禁？值——因为它的每个细节在别的平台上都不可观测：`??=`（哪天基础库补上了这两个类，别被我们永久遮住）、reason 的 `name` 必须是 `AbortError`（每个调用方都靠这一句区分「我们取消的」和「网络死了」）、监听器**只触发一次且被 try 包住**（它们在 `wx` 的 RequestTask 上取消一个真请求，而且是从 timeout 回调里调进来的）。变异验红 5 处。
+
+**客户端门禁 scope：6723 → 6889 行 / 125 → 127 文件，行覆盖率保持 99.66%**（分支 97.69% → 97.71%，函数 100%）。
+
+### 一条留在注释里的诚实记录
+
+`abortShim` 的 `_fire` 里有 `this.listeners = []` 一行。**把它删掉，12 例全绿**——真正保证「只触发一次」的是前面那道 `aborted` 守卫，这一行是**引用释放**（一个已 abort 的 signal 不该继续攥着监听器以及它们闭包里的东西），本层任何断言都看不见它。所以它被写进那条用例的注释里，而不是被一个「看起来像行为测试」的东西盖住。**覆盖率能证明一行跑过，证明不了它有用；变异存活就是在告诉你这一行的价值在别处。**
+
+## 目录级 include 会把新文件收进门禁，但**包级百分比看不见它**（2026-09-14，worktree `feat/weekly-test-gaps`）
+
+`src/scenes/worldmap/logic/siegeHold.ts` 是 09-12 随围攻功能新建的 7 行纯函数。
+`vitest.config.ts` 的 `include` 里 `src/scenes/worldmap/logic/**` 是**目录级**条目（ADR-070 4b 那批），
+所以它一落地就进了门禁范围——这一半是按设计工作的，不需要有人记得改 include。
+
+**但它在门禁里躺了两天，行覆盖 0%。** 原因是 `checkCoverageThreshold.mjs` 卡的是**包级**行/分支百分比：
+client 当时 99.66%，多出七行未覆盖只让这个数动了 0.02pp，离 90% 的线还有十个百分点。一个全新文件整个
+没测，在这套门禁下是完全看不见的。
+
+`client/test/worldMapSiegeHold.test.ts`（6 例）补掉之后 100%/100%，client 包 99.66 → 99.76。
+
+**这个模块存在的唯一理由就是它被漏掉时的那个症状**：hold 只钉在一格（主城的锚点 / 城池 march 落到的那格），
+而玩家点的是他能看见围攻 token 的那一格，主城又是不可分割的 3×3（ADR-025），九格开同一个菜单。
+退化成 `h.x === tx && h.y === ty` 的话，**停止围攻按钮从九格里的八格上消失**——不抛异常、围攻照跑、
+只是玩家在他正看着的那一格上停不掉。所以这份测试的重点不是"函数返回对不对"，而是九格全枚举 +
+外一圈为空（放宽同样是 bug：会把按钮画到隔壁不相干的地块菜单上）。
+
+**可以考虑的门禁**：「本次 diff 新增的源文件覆盖率不得为 0」。本轮另一处
+（`commercial/src/iap.ts` 的 `createAppleSubscriptionReader`，函数级 0 调用）是同一个形状，
+两处都能被这样一条检查当天拦住。详见 `server-testing-coverage.md` 同日那节。
+
+## 把「单一状态」换进来，就得配一道机械门禁（2026-09-14，转屏重建）
+
+转屏重建从「大厅 arm/disarm 生命周期」改成 `SceneMounts` 一个 `respawn` 字段（见
+`client-modules.md` 同日条）。行为是更好了，但**换来一种旧设计不可能有的故障**：新写的 `showX` 如果照周围
+代码的样子直接 `this.manager.goto(...)`（改之前约 20 个方法就长这样），它就没有认领这一屏，
+`respawn` 仍指向**上一屏**——下一次转屏会把上一屏重建到当前屏之上，即**玩家转个手机就被退回上一页**。
+不抛异常、场景本身没毛病、只在会转的设备上复现。这正是「必须上机械门禁、不能指望 review 看出来」的形状。
+
+三份测试，全部做过变异验证（源码改坏 → 确认变红 → 还原）：
+
+**① `client/test/sceneMountRouting.test.ts`（7 例，普通 unit 套件，读源码）** —— 同
+`appAssetGateWiring.test.ts` 的手法（`PixiAppViews` 在这个套件里 import 不进来：~30 个场景类够到
+`@nw/shared`）。两件事：**每个 `showX` 必须走到 `this.mounts.`**；以及**一张按屏名钉死的策略表**
+（`rebuilt` / `rebuilt-on-gate` / `never` / `lobby`）。后者不是前者的重复——它让**改分类**变成一次
+两处的显式编辑，而两个方向的错都不出声：菜单屏错标 `never` 只是这一屏留着老 bug，对局错标 `rebuilt`
+会在转屏时**重启这局**。另加两条边界：`manager.goto` 前必须先 `takeScreen`/`armRespawn`；
+`mountSlg` 必须是 `showX` 与 `SceneMounts` 之间**唯一**的中转（多一个 helper，上面几条会把读不到的
+方法当成"没路由"报出来——把盲点报成违规还算好的，但那条断言存在就是为了别走到那一步）。
+变异 4/4 命中（商城直接 goto / 对局改判可重建 / `hideOverlay` 绕开 `SceneMounts` / 新增第二个 helper）。
+
+**一个当场踩到的坑**：最初 `methodBody()` 取「签名之后第一个 `{`」，结果 `showReplay` 的形参里有
+`siegeAcademy?: { hp: number; ... }`，整个方法被读成那个类型字面量 → 报成"没路由"。
+**静态扫描的假阳性长得和它要抓的真 bug 一模一样**，所以形参表先做括号配对，body 取其后的第一个大括号。
+
+**② `pixiAppViews.ui.ts` 加 3 例：抽卡资源门禁与转屏的先后**。`showGacha` 是唯一一个 respawn
+**异步武装**的屏。三件事各自会错：门禁没走完就武装 → 重建把场景拍在 LoadingOverlay 上；
+武装了不校验代次 → 玩家在加载中退出去，下次转屏抽卡页飞回来盖住当前屏；重建时重新进门禁 →
+纹理早热了还每转一次屏弹一次加载遮罩（用 `warms` 计数钉住）。变异 3/3 命中。
+
+**③ `scenes.ui.ts` 的 `exercise()` 加一条：`destroy()` 必须释放所有 InputManager 订阅**
+（40 个场景 × 两个朝向，白捡 121 例）。这是 `test/input-subscription-cleanup.test.ts` 的**动态一半**：
+那份是源码扫描，证明每个 `input.onX(...)` 的返回值都进了 `unsubs.push(...)`（当年 TitlesScene 漏的那端），
+**看不见另一端**——push 对了但 `destroy()` 不排干、只排干两个数组里的一个、或者经由自带列表的 widget 订阅。
+做法是**patch `InputManager.prototype` 而不是传实例**（每个 SCENES 工厂在内部自己 new 一个，没东西可传）。
+落地即全绿（无存量泄漏）；变异（`TitlesScene.destroy` 只排干 4 个里的 2 个）当场两例红。
+**为什么现在才值得加**：改之前一个场景每访问一次漏一个 handler，改之后是**每转一次屏漏一个**。

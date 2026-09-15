@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   FS, MIN_LEGIBLE_CSS_PX, fontFloorDesignPx, setFontScale, resetFontScaleForTest, currentFontFloor,
-  snapFont, fitFont,
+  snapFont, fitFont, iconFloorPx,
 } from '../../src/render/fontScale';
 
 /** `PortraitLayout`'s own sizing, duplicated so this test states the scale it is talking about. */
@@ -113,5 +113,30 @@ describe('font legibility floor', () => {
     expect(snapFont(9)).toBe(20);
     // ...and a genuinely large computed size is untouched.
     expect(snapFont(41)).toBe(42);
+  });
+
+  // The icon counterpart (2026-09-14, design log §52): an icon whose size is a proportion of the
+  // control it sits in needs the same floor a proportional FONT size gets, because it fails the
+  // same way on the same viewport. The audit's `icon` gate holds icons to exactly this number.
+  describe('iconFloorPx', () => {
+    it('lifts a proportional icon size to the floor on a phone', () => {
+      setFontScale(portraitScale(390, 844));   // floor 20
+      // The two sizes the sweep actually reported: achievements' 19, and the lock badge's 18.
+      expect(iconFloorPx(19)).toBe(20);
+      expect(iconFloorPx(18)).toBe(20);
+    });
+
+    it('does NOT snap to the font ladder - only floors, and rounds', () => {
+      setFontScale(portraitScale(390, 844));
+      // 26 is between `label` (24) and `heading` (28); snapFont would move it, this must not.
+      expect(iconFloorPx(26)).toBe(26);
+      expect(iconFloorPx(26.4)).toBe(26);
+    });
+
+    it('is a no-op on a desktop landscape window', () => {
+      setFontScale(900 / 1080);   // floor 11
+      expect(iconFloorPx(19)).toBe(19);
+      expect(iconFloorPx(18)).toBe(18);
+    });
   });
 });

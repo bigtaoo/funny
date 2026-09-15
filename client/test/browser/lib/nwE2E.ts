@@ -9,8 +9,10 @@ import { expect, type Page, type ConsoleMessage } from '@playwright/test';
 
 declare global {
   interface Window {
+    // The index signature is the entry's own extras (`bake`, `bakeEntries`, `textMetrics` — see
+    // entries/web-e2e.ts), which a spec reaches for by name inside `page.evaluate`.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    __nwE2E?: { state: Record<string, any> };
+    __nwE2E?: { state: Record<string, any>; [key: string]: any };
   }
 }
 

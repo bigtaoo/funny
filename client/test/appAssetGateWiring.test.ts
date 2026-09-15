@@ -71,10 +71,14 @@ describe('PixiAppViews.showGacha asset-gate wiring', () => {
     expect(showGacha).toMatch(/preloadGachaTextures/);
   });
 
-  it('does not build GachaScene outside the gate', () => {
-    // A `new GachaScene(...)` that is not inside the gate's `build` callback would race the
-    // textures exactly as before. The only legitimate construction site is the callback.
-    const gateStart = showGacha.indexOf('enterWithAssets(');
-    expect(showGacha.indexOf('new GachaScene(')).toBeGreaterThan(gateStart);
+  it('has exactly one GachaScene construction site, and hands it to the gate', () => {
+    // A second `new GachaScene(...)` would be one that races the textures exactly as before.
+    // Since 2026-09-14 the single site is a hoisted `build` const rather than an inline callback —
+    // the rotation rebuild reuses it (the textures are warm by then, so it skips the gate) — so
+    // what is pinned is "one site, and the gate is what the ENTRY goes through", not its position.
+    const sites = showGacha.match(/new GachaScene\(/g) ?? [];
+    expect(sites).toHaveLength(1);
+    expect(showGacha).toMatch(/const build = \(\): GachaScene =>[\s\S]*?new GachaScene\(/);
+    expect(showGacha).toMatch(/enterWithAssets\([\s\S]*?build,/);
   });
 });

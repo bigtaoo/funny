@@ -9,7 +9,7 @@
 | 单元 | `npm test` | `test/**/*.test.ts`（**含 `test/render/**`**） | node | 纯游戏逻辑；外加 `test/render/**` 那批渲染层窄回归（BaseTexture 监听器 / blob URL 泄漏、HUD 几何、图标 dispatch 表…） | 多数文件 `vi.mock` 掉 PIXI；`icons`/`rewardIcon` 真 import `pixi.js-legacy` |
 | UI 冒烟 | `npm run test:ui` | `test/ui/**/*.ui.ts` | node + `pixiHeadless` | **真实场景构造 / update / destroy + 命中矩形回归** | 真对象树，**无渲染器** |
 | 全链路 E2E | `npm run test:e2e`（opt-in） | `test/e2e/**/*.e2e.ts` | node | `createAppCore` 全链路对接活服务器（meta+gateway+matchsvc+game+commercial+mongo） | headless orchestration |
-| 浏览器冒烟 / 几何巡检 | `npm run test:browser`、`npm run test:portrait`（均 opt-in） | `test/browser/**/*.spec.ts` | 真 Chromium（Playwright） | 白屏类硬故障（shader/atlas/WebGL）、两账号真实对战；以及**真字形量出来的版面几何**（见下方「几何巡检」） | **真渲染器 + 真 WebGL** |
+| 浏览器冒烟 / 几何巡检 | `npm run test:browser`、`npm run test:portrait`（均 opt-in） | `test/browser/**/*.spec.ts` | 真 Chromium（Playwright） | 白屏类硬故障（shader/atlas/WebGL）、两账号真实对战；以及**真字形量出来的版面几何**（见下方「几何巡检」）与**转屏后的重排**（`rotateLayout.spec.ts`，同一张站点表） | **真渲染器 + 真 WebGL** |
 | 手动调参脚本 | `npm run test:manual`（opt-in，非回归） | `test/**/*.manual.ts` | node | console.log 输出的难度曲线/A-B 对比表，**零 `expect()`**，人工读表用 | 否 |
 
 `npm test` 只跑 `*.test.ts`；`*.ui.ts` / `*.e2e.ts` / `*.manual.ts` 用各自命名后缀隔离，默认套件不会误收。
@@ -334,6 +334,33 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 **`scale.set(可用/需要)` 是这套门禁反复抓到的同一个反模式**（2026-09-12 一轮六处里占三处）：它把可读性下限刚刚保证的字号乘上一个任意浮点数。看到就改 `fitFont`（选更小的档位、停在下限）或 `txtFit`（再不行就截断加省略号）。同理，**有了下限之后，写死的行距（`y += 26` / `y += 16` / 「底下预留 34 px」）全是错的**——它们是按抬升前的字号量出来的。
 
 首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-08.md`](../design/game/UI_DESIGN_LOG_2026-08.md) §48；第二轮（可读性下限 + 扩面到 32 站 × 6 尺寸 + 它带出来的 7 处返工）见 §49；第三轮（喂真实数据 + 三语 + 站点表修正 + 结算录制器）见 §50。
+
+### 同一趟 36 站的第二个用途：bake 缓存天花板（`bakeBudget.spec.ts`，2026-09-14 新增）
+
+`test/browser/bakeBudget.spec.ts` 走的是**同一张 `STOPS` 表、同一套走法**，但每站不判排版，只读一次 `__nwE2E.bakeEntries()`，把 bake 缓存的 key 并起来——走完 36 站就是这台设备**一次会话的天花板**（那张缓存按设计不淘汰，所以它是天花板不是曲线）。`NW_BAKE=1` 才跑，与 `captureEndStats` 同挂在 `playwright.portrait.config.ts` 下（同一个 docker 栈、同一个 9097 dev server）。报告落 `client/bake-report/*.json`（已 gitignore）。背景与实测数字见 [`client-memory-leak.md`](client-memory-leak.md) §11.8。
+
+两点值得单独记：
+
+- **读 key 的并集，不读当下总量。** 巡检中途必然 reload（有些站没有回程），而 reload 会销毁 renderer 连带整张 bake 缓存——之后的总量是重新爬的。key 在同一几何下恒定，所以并集才是「一次不中断的会话」的量。**凡是要跨 reload 累计的测量，都得找一个 reload 不变的标识去并，而不是把读数加起来。**
+- **走法抽进了 `test/browser/lib/walk.ts`**（`open` / `backToLobby` / `whereAmI` / `label`），两个 spec 共用。里头两处等待各是一轮错误结果换来的（tap 跳要轮询——服务器填的列表在 `state.screen` 变的那一刻还是空的；导航跳要在超时循环里清首次功能引导），复制一份就是复制掉这两条。
+
+### 同一趟站点表的第三个用途：转屏（`rotateLayout.spec.ts`，2026-09-14 新增）
+
+`test/browser/rotateLayout.spec.ts` 走**同一张 `STOPS` 表、同一套走法**，但每站到位后 `setViewportSize` 把 390×844 转成 844×390，再转回来，每次转完都重新判一遍版面。**转屏之前根本没有这条路径可测**：2026-09-14 之前，非大厅场景转屏只 re-fit 画布、不重排内容，所以「进场时是竖屏就永远按竖屏排」——没有第二种形状可审。
+
+断两件事，而且它们不是一回事：
+
+1. **转完还在原地。** 所有站都断。重建目标来自**一个字段**（`SceneMounts.respawn`，「当前这一屏怎么重建」），没认领这一屏的 `showX` 会继承**上一屏**的，于是转屏把上一屏重建到当前屏之上——玩家转个手机被退回上一页。`test/sceneMountRouting.test.ts` 在源码层面钉这条；这里是同一条主张换成真渲染器 + 真后端 + 真 resize 事件。
+2. **新形状按新形状排。** 只对 `MAIN_STOPS` 断（商城两站 + 设置/图鉴/战绩/战役/装备/关卡准备/称号/卡册/结算）。**不是所有屏都该重建**：对局、SLG 世界地图、以及叠在地图上的那些面板按设计保持进场时的布局（`SceneMounts.volatile()`），对它们断「排版干净」就是在断和意图相反的东西。它们照样被走、被转、被记进报告，只是不断言。
+
+`NW_ROTATE_ALL=1` 才走全表，默认只走 MAIN_STOPS（约 1 分钟，可以常跑）；全表约 5 分钟。报告落 `client/portrait-report/report-rotation.json` + 每站两张 PNG。
+
+**两个不显然的点**：
+
+- **转完要等 1.2 秒再判。** 180ms 合并窗口（`app/viewportResize.ts`）+ 菜单场景是 `paint:'reactive'`（下一帧不保证重绘）。手工验证时等 2 秒拍的那张是重建**前**的画面，差点判成「没修好」。
+- **崩溃要按站归属，还要带 stack。** `trackErrors` 只留 `err.message`，对一个「只需要知道有没有炸」的巡检刚好；但这个 spec 最可能抓到的就是**转屏时场景抛异常**，而 `Cannot read properties of undefined` 不带栈帧就是两小时的二分。所以这里另挂一个 `pageerror` 监听收 `err.stack`，并**按站清空**——失败信息直接说是哪一屏炸的。首跑就靠这条在 30 秒内定位到问题出在 `WorldMapRenderer` 的 `overlayInkSignature`。
+
+**首跑的收获是一条关于环境的教训，不是产品 bug**：七次崩溃，每次世界地图入口一次，全是 `ctx.siegeHolds` 为 `undefined`。原因是本机 docker 栈的镜像建于 2026-09-12 15:29 UTC，而 `/world/enter` 开始返回 `siegeHolds` 是同日 18:08 的提交——**栈比代码旧，客户端拿到少一个字段的响应就炸**。`./docker/local-up.ps1` 重建后消失。**跑任何真后端巡检之前先核一眼 `docker inspect <svc> --format '{{.Created}}'` 对不对得上要测的那个提交**；否则你会去 debug 一个只存在于你机器上的 bug。
 
 ## E2E / 冒烟 harness 维护红线：HeadlessAppViews 必须实现 AppViews 全接口
 

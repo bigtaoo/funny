@@ -211,6 +211,25 @@ export function fitFont(size: number, need: number, avail: number): number {
 }
 
 /**
+ * An ICON's drawn size, lifted to the same legibility floor a font token gets.
+ *
+ * For icons whose size is a proportion of the control they sit in (`rowH * 0.4`, and the like) -
+ * the picture counterpart of what {@link snapFont} does for a proportional font size, and needed
+ * for the same reason: a compact row on a phone computes a number that was fine on the design
+ * canvas and is a smudge on the screen. NOT snapped to the font ladder, because an icon has no
+ * business landing on typographic tiers; it is only floored.
+ *
+ * A fixed-size icon that sits beside a label should take the label's token instead
+ * (`buildIcon('lock', FS.body, ...)`), which carries the floor already and keeps the pair matched.
+ *
+ * The audit gate on the other side of this is `testing/layoutAudit.ts`'s `icon` finding, which
+ * holds icons to `fontFloorDesignPx(scale)` - the same number this lifts to, deliberately.
+ */
+export function iconFloorPx(px: number): number {
+  return Math.max(floorPx, Math.round(px));
+}
+
+/**
  * Snap an arbitrary pixel size to the nearest scale token. Kept for the handful
  * of call sites whose size is genuinely computed at runtime (e.g. text scaled to
  * fill a variable-height control): pass the computed px through here so it still
