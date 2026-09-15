@@ -5,7 +5,8 @@
 // big the tile pool has to be. Both halves fail quietly:
 //
 //   · get the visible tile count wrong and the map reads as an over-dense carpet (the reported problem the
-//     L1 divisor was walked 19 -> 16 -> 13 -> 11 to fix) or as four tiles filling the screen;
+//     landscape L1 divisor was walked 19 -> 16 -> 13 -> 11 to fix) or, at the other end, as a camera so
+//     far out that the player's own base is a stamp on a 1080-wide portrait screen (2026-09-15);
 //   · get `poolW/poolH` wrong and the pool is too small for the viewport, so tiles at the edge of a pan
 //     simply have no Graphics to draw into — a hole in the map, not a crash.
 //
@@ -15,13 +16,14 @@
 // w/tile" is the obvious-looking simplification someone will reach for.
 import { describe, it, expect } from 'vitest';
 import { visibleTileBounds } from '../src/render/isoGrid';
-import { makeZoomCfgs, type ZoomCfg } from '../src/scenes/worldmap/logic/zoom';
+import { makeZoomCfgs, PORTRAIT_L1_BASE_WIDTH_FRAC, type ZoomCfg } from '../src/scenes/worldmap/logic/zoom';
 import { HUD_H } from '../src/scenes/worldmap/logic/constants';
+import { BASE_FOOTPRINT } from '@nw/shared';
 
 // The sizes that actually reach this function. It is called with `layout.designWidth/designHeight`
 // (WorldMapContext's constructor), NOT with the device size — LandscapeLayout clamps its width to
 // [REFERENCE_W=1920, MAX_W=2592] and PortraitLayout pins DESIGN_W=1080. A raw phone width like 390 never
-// gets here, which matters: see the "monotone below 837px" note at the end of this file.
+// gets here, which matters: see the width-floor note at the end of this file.
 const SCREENS: Array<[string, number, number]> = [
   ['landscape reference 1920x1080', 1920, 1080],
   ['landscape max width 2592x1080', 2592, 1080],
@@ -124,16 +126,47 @@ describe('makeZoomCfgs', () => {
     expect(makeZoomCfgs(1920, 1080)).toEqual(makeZoomCfgs(1920, 1080));
   });
 
-  it('the L2/L3 ordering only holds above ~837px, which is below every layout width — documented, not fixed', () => {
-    // L2's tile is floor(w / 31) and L3's is pinned at 27, so below w = 31 x 27 = 837 the "overview" level
-    // is actually a zoom IN relative to L2. Unreachable in production (LandscapeLayout clamps to >= 1920,
-    // PortraitLayout pins 1080), so this is registered rather than repaired — and pinned here so that a
-    // future layout that DOES go narrower fails on this line instead of shipping an inverted zoom button.
-    const inverted = makeZoomCfgs(390, 844);
-    expect(inverted[1].tile).toBeLessThan(inverted[2].tile);
+  it('the L2/L3 ordering only holds above a per-ladder width floor — documented, not fixed', () => {
+    // L2's tile is floor(w / divisor) and L3's is pinned at 27, so below w = divisor x 27 the "overview"
+    // level is actually a zoom IN relative to L2. The floor differs per ladder: landscape divides by 31
+    // (floor 837), portrait by 11 (floor 297). Both are unreachable in production (LandscapeLayout clamps
+    // to >= 1920, PortraitLayout pins 1080), so this is registered rather than repaired — and pinned here
+    // so a future layout that DOES go narrower fails on this line instead of shipping an inverted button.
+    const invertedLandscape = makeZoomCfgs(800, 400);
+    expect(invertedLandscape[1].tile).toBeLessThan(invertedLandscape[2].tile);
+    const invertedPortrait = makeZoomCfgs(290, 700);
+    expect(invertedPortrait[1].tile).toBeLessThan(invertedPortrait[2].tile);
     const MIN_LAYOUT_W = 1080; // PortraitLayout DESIGN_W — the narrowest width this function can be handed
-    expect(MIN_LAYOUT_W).toBeGreaterThan(31 * 27);
-    const ok = makeZoomCfgs(MIN_LAYOUT_W, 1920);
-    expect(ok[1].tile).toBeGreaterThanOrEqual(ok[2].tile);
+    expect(MIN_LAYOUT_W).toBeGreaterThan(11 * 27);
+    expect(1920).toBeGreaterThan(31 * 27); // LandscapeLayout REFERENCE_W
+    for (const [w, h] of [[MIN_LAYOUT_W, 1920], [1920, 1080]] as const) {
+      const ok = makeZoomCfgs(w, h);
+      expect(ok[1].tile, `${w}x${h}`).toBeGreaterThanOrEqual(ok[2].tile);
+    }
+  });
+
+  it('portrait L1 frames the player base at PORTRAIT_L1_BASE_WIDTH_FRAC of the design width', () => {
+    // The point of the portrait ladder (2026-09-15): L1 is chosen so the own base — the thing the map
+    // opens centered on — fills 4/5 of the screen width, instead of the ~27% the landscape divisor
+    // produced on a 1080-wide design space (reported as "the camera sits too far out"). The width that
+    // counts is the PLOT's (`BASE_FOOTPRINT * tile`), which is also what city.ts masks the base sprite
+    // to. Asserting the FRAMING rather than the divisor is deliberate: the divisor is just 3 / 0.8
+    // restated, and would silently stop meaning 4/5 if the footprint moved.
+    const w = 1080;
+    const [l1] = makeZoomCfgs(w, 1920);
+    expect((BASE_FOOTPRINT * l1.tile) / w).toBeCloseTo(PORTRAIT_L1_BASE_WIDTH_FRAC, 2);
+    // Landscape is deliberately NOT re-framed — its design width is the long side, where 4/5 would be a
+    // near-fullscreen base.
+    const [landscapeL1] = makeZoomCfgs(1920, 1080);
+    expect((BASE_FOOTPRINT * landscapeL1.tile) / 1920).toBeLessThan(0.4);
+  });
+
+  it('portrait L2 is the old portrait L1, so the pre-2026-09-15 wide view is one tap away', () => {
+    // Making L1 much closer would have stranded the familiar view between two levels if L2 had stayed at
+    // the /31 divisor (L1->L2 would jump ~7.8x, and L2 would sit within 7px of the pinned L3).
+    const [l1, l2, l3] = makeZoomCfgs(1080, 1920);
+    expect(l2.tile).toBe(Math.floor(1080 / 11));
+    expect(l1.tile / l2.tile).toBeLessThan(3.5);
+    expect(l2.tile / l3.tile).toBeGreaterThan(2);
   });
 });
