@@ -452,3 +452,33 @@
 **像素证据**：中文横屏 + 拖到列表底部的横屏（一屏同时有士兵蓝盔 / 建筑金城堡 / 法术红卷轴，费用墨水瓶同色）+ 竖屏（副标题带图标后仍在面板内）。
 
 - **涉及文件**：`client/src/scenes/CardCodexScene/tile.ts`（新增 `drawIconTextRow`、副标题与锁定行改走它）、`client/src/render/icons/inkIconRaster.ts`、`art/ui/tabicons/`（+2 张源图与 pack 行）、`client/test/ui/{cardCodexScene,cardCodexPortraitWidthAndText}.ui.ts`。
+
+## 30. 大厅竖屏：右侧竖条改成 pillars 下方的横排一行，内容列回到 90%（2026-09-15）
+
+**起点**：用户看着竖屏大厅首页截图说「中间这部分很挤」。量下来「挤」是真的，但根因不在内容多——**横向被右侧竖条吃掉 16% 宽，纵向却空着 44%**，方向错配：挤的那个轴上有东西在抢，宽松的那个轴上没人用。
+
+真 Chrome 竖屏（`web-e2e` 入口 + `showLobby` 直喂在线回调）实测，设计画布 1080×1920：
+
+| 量 | 改前 | 改后 |
+|---|---|---|
+| 页头 403 + 底栏 202 → 中间可用高 | 1315 | 1315 |
+| 内容块高（hero + 间隙 + pillars[ + 横条]） | 730（可用高的 55%） | 964（73%） |
+| 剩余空白 | 585（上 234 / 下 351） | 351（上 140 / 下 211） |
+| 竖条占掉的宽 | 157 + 19 = 176（屏宽 16%） | 0 |
+| 内容列宽 | 828 | 972 |
+| Campaign / World 卡宽 | 387 | 459 |
+
+**做法**（全在 `LobbyScene/mainContent.ts`）：
+
+- **`stripIsRow` / `stripIsCol` 两分支**：竖屏把 Daily/Mail/Events/Feedback/Auction 排成 pillars 下方的**横排一行**（行距 `w*0.05`，与 `pillarGap` 同值，读起来是同一个块的一部分；整行在内容列里居中），横屏**原样保留右侧竖条**——横屏富余的恰好是宽度，且它 pillars 下方的空白带浅得多。`contentW` 只在竖条存在时才扣 `sideItemSz + sideGap`。
+- **格子尺寸带夹取**：五格（活动期）时 `5×157 + 4×54 = 1001` 超过 972 的内容列，每格让出 6px 收到 151，整行 971 正好落进去。四格时保持 157 不缩。
+- **`stripEntries()` 提到模块级**：条目**数量**现在决定几何（横排要按数量分内容宽），所以必须在算布局之前解析出来；它只依赖回调 bag，不依赖任何布局量。
+- **竖屏内容列 93% → 90%**：93% 是当初「竖条从远端吃掉 176px」时补的；竖条一走，整个比例全落到内容上，而 pillars 的共享底板左右各比内容列多出一个 `pad`，93% 下底板离纸边只剩 13px。回到 90% 同时也是本仓库其它竖屏内容列一直用的那个数（§21/§23/§24）。
+
+**顺带澄清一条没修的**：五格竖条（活动期）比它要居中的 hero+pillars 块高（横屏 505 vs 388），上下各探出约 59px。实测在任何宽高比下都仍稳稳落在页头与底栏之间——两者都随 `h` 缩放——**是对齐上的毛刺，不是碰撞**，所以横屏一行没动，只在代码注释里记了一笔。
+
+**回归测试**（红绿对照做过）：`client/test/ui/scenes.ui.ts` 新增 `describe('LobbyScene — engagement strip orientation')` 三例——竖屏五格共用同一个 `y`、`x` 递增不重叠、整体在 pillars **下方**、且左右余量相差 ≤1px（居中）；竖屏整行不越过底栏（`h*0.105`）；横屏五格共用同一个 `x`、`y` 递增、且落在内容列右侧。把 `stripIsRow` 写死成 `false`（退回竖条）复测，第一例转红。既有 `content column width follows orientation` 一例的竖屏期望同步 0.93 → 0.90。
+
+**像素证据**：真 Chrome 竖屏（552×883 → 设计 1080×1920）四格 + 五格（`applyEventsAvailable(true)`）各一张、离线竖屏（无竖条）一张、横屏五格一张确认竖条原样。
+
+- **涉及文件**：`client/src/scenes/LobbyScene/mainContent.ts`、`client/test/ui/scenes.ui.ts`。

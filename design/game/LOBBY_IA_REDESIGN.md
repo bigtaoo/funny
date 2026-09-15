@@ -216,7 +216,7 @@
 
   **实现记录**（落代码细节，验收以此为准）：
   - **删除水平 engagement chip 行**：P3 右对齐每日/活动两个横向 chip 整行移除。
-  - **右侧竖栏** `sideItemSz = h*0.082`（方形）竖排：
+  - **右侧竖栏** `sideItemSz = h*0.082`（方形）竖排（**仅横屏**；竖屏自 2026-09-15 改为 pillars 下方的横排一行，见 [`LOBBY_IA_REDESIGN_LOG.md`](LOBBY_IA_REDESIGN_LOG.md) §30）：
     每日（`dailyBtnRect`）/ 邮件（`mailStripRect`，`onOpenMail`→`goMail()`）/
     活动（`eventsBtnRect`，仅 `eventsAvailable` 时出现）/ 成就（`achieveStripRect`，仅 `onOpenAchievements` wired 时出现）。
   - **contentW 收窄**：`fullContentW(w*0.82) - sideItemSz - sideGap(w*0.018)`，左 margin 不变；竖栏 X = 收窄后内容右边 + sideGap，竖向居中于 hero+pillars 区。
