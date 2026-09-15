@@ -104,7 +104,18 @@ export class ApiClientCore {
     const res = await this.fetchRaw(method, path, body, extraHeaders);
     const json = (await res.json()) as ApiResp<T>;
     if (!json.ok) {
-      log.error(`${method} ${path} -> ${res.status} ${json.error.code}`, json.error.message);
+      // 4xx is the server deliberately refusing a well-formed request — not enough stamina, card already
+      // active, mail already claimed, token expired. The caller gets an ApiError and shows the player a
+      // toast; nothing is broken. Only 5xx (and the network path below) mean something actually failed.
+      //
+      // The level matters beyond console colour: `recentClientLogs(...).filter(level === 'error')` is what
+      // the crash sentinel stores as `lastError`, so every business refusal overwrote it. A crash report
+      // pulled from Loki on 2026-09-14 (5.4h session, tablet) carried `lastError: POST /pve/enter -> 402
+      // INSUFFICIENT_STAMINA` — a normal refusal from some earlier moment, presented as the last thing
+      // that went wrong before the session died. The server side already logs its own 4xx at warn
+      // (metaserver's access log, postInternal's "rejected (no retry)"); this is the client catching up.
+      const level = res.status >= 500 ? 'error' : 'warn';
+      log[level](`${method} ${path} -> ${res.status} ${json.error.code}`, json.error.message);
       maybePromptAppeal(json.error.code);
       maybeNotifySessionExpired(json.error.code);
       throw new ApiError(json.error.code, json.error.message);
