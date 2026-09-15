@@ -141,6 +141,13 @@ export class MatchsvcClient {
   enqueue(accountId: string, name: string, publicId: string, elo: number, equippedTitle = '', avatarId = '', platform = '', deck: string[] = [], equippedSkins: string[] = []): Promise<boolean> {
     return this.post('/mm/queue/enqueue', { accountId, name, publicId, elo, equippedTitle, avatarId, platform, deck, equippedSkins }, 2);
   }
+  // Deliberately NOT self-healing and deliberately still retries=0 (2026-09-15 review). Losing either is
+  // a real, if small, incident — a lost `disconnected` strands a zombie queue entry (onDisconnected is
+  // what dequeues), a lost `connected` leaves slot.connected false under a player who is in fact back —
+  // so the ERROR line is the point, and they keep it. Retrying them the way roomLeave/enqueue do is the
+  // obvious next move and is NOT taken here: neither call carries a connection generation, so a retry
+  // that lands after a fast reconnect (attempt 1 can take the full 5s timeout first) would apply a stale
+  // verdict to a live session. Fixing that needs a sequence number on the pair, not a retry count.
   connected(accountId: string): void {
     this.post('/mm/conn/connected', { accountId });
   }

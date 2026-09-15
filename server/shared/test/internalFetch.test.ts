@@ -167,6 +167,34 @@ describe('postInternal', () => {
     expect(r).toBe(false);
   });
 
+  // `selfHealing` (2026-09-15): the give-up line for a call the sender re-issues by itself belongs at
+  // WARN, not ERROR. The default must stay ERROR — `retries: 0` is also what the non-idempotent commands
+  // (roomCreate / roomJoin / duelInvite / the conn-lifecycle pair) use, and there a give-up is real.
+  it('still logs the give-up at error by default', async () => {
+    const log = { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    const r = await postInternal('http://127.0.0.1:1/nope', {}, { ...OPTS, timeoutMs: 500, log: log as unknown as Parameters<typeof postInternal>[2]['log'] });
+    expect(r).toBe(false);
+    expect(log.error).toHaveBeenCalledOnce();
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('logs the give-up at warn instead of error when the caller declares it self-healing', async () => {
+    const log = { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    const r = await postInternal('http://127.0.0.1:1/nope', {}, { ...OPTS, timeoutMs: 500, selfHealing: true, log: log as unknown as Parameters<typeof postInternal>[2]['log'] });
+    expect(r).toBe(false);
+    expect(log.error).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledOnce();
+  });
+
+  it('reports failure the same way to the caller whether or not it is self-healing', async () => {
+    // The level is a logging concern only: a self-healing call that never lands must still come back
+    // false, or a caller that branches on the boolean (gateway's room_error path) would silently stop.
+    hits = [];
+    const r = await postInternal(`${base}/html`, {}, { ...OPTS, retries: 1, backoffMs: 1, selfHealing: true });
+    expect(r).toBe(false);
+    expect(hits.length).toBe(2); // selfHealing does not shorten the retry budget either
+  });
+
   it('drains a non-JSON response body without throwing', async () => {
     // /html replies with text/html, not JSON — postInternal only ever calls res.body?.cancel(),
     // never res.json(), so a non-JSON payload must not throw.

@@ -36,6 +36,25 @@ grep -E "enqueue|pair matched|match starting|GAME_UNAVAILABLE" server/logs/match
 grep -i "failed\|non-OK" server/logs/*.log
 ```
 
+### What ERROR means for an internal call (2026-09-15)
+
+`postInternal` gives up after its retry budget and logs one line. Which level that line gets is a
+property of the CALLER, declared with `selfHealing`, not of the failure:
+
+| | level | examples |
+|---|---|---|
+| The sender re-issues it by itself | `warn` — `internal POST failed (self-healing, will be re-sent)` | matchsvc `/gw/push` for every kind except `match_found` (room_state / queue_state are snapshots; the next change re-sends) |
+| Nothing re-sends it | `error` — `internal POST failed` | `match_found`, `/mm/queue/enqueue`, `/mm/room/*`, `/mm/duel/*`, `/mm/conn/{connected,disconnected}` |
+
+`retries` cannot stand in for this: `retries: 0` also covers the commands that are simply not
+idempotent, where a give-up is a real incident.
+
+Why it was worth splitting: for the week before this change, the **only** ERROR lines the whole stack
+produced (19 in 7 days) were the ~3s window after each deploy where one service is up and its peer is
+not — matchsvc rehydrates a queue entry, publishes `queue_state`, redis has no subscriber yet, the
+direct-HTTP fallback hits a gateway that has not bound `:8090` yet. The next tick delivered it. An
+ERROR channel whose entire contents are a known-benign restart race is an ERROR channel nobody reads.
+
 ## Phase 2 (live): Loki + Alloy + Grafana + cloudflared
 
 Grafana itself does not store logs — the standard stack is **Loki** (storage) + **collector** (Alloy) + **Grafana** (querying).

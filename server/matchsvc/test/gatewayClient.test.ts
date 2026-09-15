@@ -104,4 +104,42 @@ describe('GatewayClient.push', () => {
     expect(String(url)).toContain('/gw/push');
     expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({ accountId: 'acc-1', msg: MATCH_FOUND, roomId: 'room-9' });
   });
+
+  // Give-up severity per kind (2026-09-15). The whole restart-window ERROR cluster in Loki was this one
+  // call: matchsvc rehydrates a queue entry seconds after boot, pushes queue_state, redis has no
+  // subscriber yet and the direct-HTTP fallback hits a gateway that has not bound :8090 yet. The next
+  // tick delivers it. Asserted through the console because the logger is module scope here — and the
+  // console is where an operator actually reads the level, so it is the honest place to assert it.
+  describe('give-up severity when the gateway is unreachable', () => {
+    let errors: unknown[][];
+    let warns: unknown[][];
+    beforeEach(() => {
+      errors = [];
+      warns = [];
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { errors.push(a); });
+      vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => { warns.push(a); });
+      global.fetch = vi.fn(async () => { throw new Error('fetch failed'); }) as unknown as typeof fetch;
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('a self-healing kind (room_state) gives up at warn, not error', async () => {
+      const client = new GatewayClient('http://gateway:8090', 'key', null);
+      client.push('acc-1', ROOM_STATE);
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(warns.some((a) => String(a[0]).includes('self-healing'))).toBe(true);
+      expect(errors).toHaveLength(0);
+    });
+
+    it('match_found still gives up at error — nothing re-sends it', async () => {
+      const MATCH_FOUND: PushMsg = { kind: 'match_found', gameUrl: 'ws://game:1/ws', ticket: 'tkt' };
+      const client = new GatewayClient('http://gateway:8090', 'key', null);
+      client.push('acc-1', MATCH_FOUND);
+      await new Promise((r) => setTimeout(r, 400)); // retries=2 with the default 150ms backoff
+
+      expect(errors.some((a) => String(a[0]).includes('internal POST failed'))).toBe(true);
+    });
+  });
 });
