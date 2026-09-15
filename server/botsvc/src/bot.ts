@@ -27,8 +27,25 @@ const P1_BUILDING_KEYS: BuildingKey[] = [
 const SIEGE_TICK_INTERVAL = 5;
 /** Send a minority of the garrison; never risk the whole troop count on one march. */
 const SIEGE_TROOP_FRACTION = 0.3;
-/** Sparse-map scan radius around the bot's own base when looking for a siege target. */
-const SIEGE_SCAN_RADIUS = 5;
+/**
+ * Upper bound worldsvc puts on any map-view radius (`MAP_VIEW_MAX_RADIUS` in worldsvc/src/worldTypes.ts).
+ * Asking for more is not an error — the server silently clamps — so a larger number here would be a lie
+ * in the source rather than a wider scan. `bot.scanRadius.test.ts` fails if the two ever drift.
+ */
+const WORLD_MAP_VIEW_MAX_RADIUS = 40;
+
+/**
+ * Sparse-map scan radius around the bot's own base when looking for a siege target.
+ *
+ * Sits AT the server's view cap, deliberately. 5 was tuned against season 1's crowded shard (1644
+ * players, nearest-neighbour base distance p50 = 4) and stopped reaching anything once play moved to a
+ * sparse one: measured on live s2-0 on 2026-09-15, 108 players spread over 1500×1500 give p50 = 42 /
+ * p90 = 85, and an 11×11 window found a target for **2 of 108** bots. `POST /world/march` was absent
+ * from all 288 worldsvc heartbeats of the preceding 24h — no bot had besieged anything at all, and the
+ * wasted `/world/me` + `/world/map/sparse` pair every fifth tick fell through to yet another upgrade,
+ * which is why `build/upgrade` ran at 5/5 ticks instead of the intended 4/5. At the cap it is 54 of 108.
+ */
+const SIEGE_SCAN_RADIUS = WORLD_MAP_VIEW_MAX_RADIUS;
 
 /** Empty deck = server assigns defaultPvpDeck (RoomCreate.deck contract) — bots don't build loadouts. */
 const BOT_DECK: string[] = [];

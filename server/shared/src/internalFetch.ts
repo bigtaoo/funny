@@ -37,6 +37,21 @@ export interface InternalPostOpts {
   log?: Logger;
   /** Human label for logs (usually the path). Defaults to the url. */
   label?: string;
+  /**
+   * The caller re-sends this by itself, so losing one is expected rather than an incident: `postInternal`
+   * then logs its give-up line at WARN instead of ERROR. `retries` cannot stand in for this — `retries: 0`
+   * also covers the commands that are simply not idempotent (roomCreate / roomJoin / duelInvite), where a
+   * loss IS user-visible and the ERROR is the point.
+   *
+   * Added 2026-09-15 because these were the only ERROR lines the whole stack produced in a week, all of
+   * them from the ~3s window after a deploy where one service is up and its peer is not (redis publish
+   * reaching 0 subscribers, then the direct-HTTP fallback hitting a gateway that has not bound its port
+   * yet). The next room_state / presence tick delivered fine. An ERROR channel whose entire contents are
+   * a known-benign restart race is an ERROR channel nobody reads.
+   *
+   * Ignored by `internalFetchJson`, which already logs its own give-up at WARN.
+   */
+  selfHealing?: boolean;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -117,7 +132,7 @@ export async function fetchInternalJson<T>(url: string, opts: InternalFetchOpts)
 }
 
 export async function postInternal(url: string, body: unknown, opts: InternalPostOpts): Promise<boolean> {
-  const { caller, key, timeoutMs = 5000, retries = 0, backoffMs = 150, log, label = url } = opts;
+  const { caller, key, timeoutMs = 5000, retries = 0, backoffMs = 150, log, label = url, selfHealing = false } = opts;
   const headers = { 'content-type': 'application/json', ...internalHeaders(caller, key) };
   const payload = JSON.stringify(body);
   let lastErr = '';
@@ -143,6 +158,8 @@ export async function postInternal(url: string, body: unknown, opts: InternalPos
     }
     if (attempt < retries) await sleep(backoffMs * 2 ** attempt + Math.floor(Math.random() * backoffMs));
   }
-  log?.error('internal POST failed', { path: label, attempts: retries + 1, err: lastErr });
+  const giveUp = { path: label, attempts: retries + 1, err: lastErr };
+  if (selfHealing) log?.warn('internal POST failed (self-healing, will be re-sent)', giveUp);
+  else log?.error('internal POST failed', giveUp);
   return false;
 }

@@ -64,11 +64,16 @@ export class GatewayClient {
     // match_found is non-self-healing: losing it strands the player in "searching" while matchsvc
     // already dequeued + signed the ticket → retry. Client dedups a re-sent match_found by ticket
     // (NetSession.connectGame), so retry is safe. Other kinds are self-healing → retries=0.
-    const retries = msg.kind === 'match_found' ? 2 : 0;
+    const selfHealing = msg.kind !== 'match_found';
     void postInternal(`${this.baseUrl}/gw/push`, { accountId, msg, roomId }, {
       caller: 'matchsvc',
       key: this.internalKey,
-      retries,
+      retries: selfHealing ? 0 : 2,
+      // Same classification as `retries`, declared separately because it answers a different question:
+      // whether a give-up deserves an ERROR line. The header above already promises these are "dropped
+      // silently … room state is the latest snapshot and will be resent on the next change" — logging
+      // them at ERROR contradicted that, and in practice produced nothing but restart noise.
+      selfHealing,
       log,
       label: `/gw/push ${msg.kind}`,
     });

@@ -226,6 +226,18 @@ client_log_debug: { default: false, desc: '客户端日志上报-debug', side: '
 - metaserver `POST /client/log`：转发到 Loki push API（`NW_LOKI_PUSH_URL`，缺省指向 obs 栈 `http://loki:3100/loki/api/v1/push`），**label 仅 `{source="client", level=...}`**（低基数），`publicId` 放**行内**（高基数不进 label，查询用 `| logfmt | publicId="..."`）。Loki 不可达 → 静默丢弃，绝不影响玩家。**网络坑**：obs 栈当前是独立 compose/独立网络，metaserver 容器需能解析到 `loki` —— 部署时把 metaserver 接入 obs 网络或用 host 可达地址（实现时确认，见 `server/observability/README.md`）。
 - 限频/防滥用：只有 publicId 命中定向的客户端才会上报（非定向客户端 bootstrap 空 map → 永不调 `/client/log`），天然限流；服务端可再对 body 大小/频率兜底。
 
+**REST 失败落在哪一档（2026-09-15 订正）**：`ApiClient` 此前把**每一条**非 ok 响应都记成 `error`。
+现在按 HTTP 状态分：**4xx = `warn`**（服务端有意拒绝一个格式正确的请求——体力不足、卡已生效、
+邮件已领、token 过期；调用方拿到 `ApiError` 弹 toast，什么都没坏），**5xx 和网络失败 = `error`**。
+后果有两处，第二处才是动它的原因：
+- 定向采集要看玩家的业务拒绝，得开 `client_log_warn` 而不是 `client_log_error`。
+- `crashSentinel` 把环形缓冲里**最后一条 `error`** 存成崩溃报告的 `lastError`。此前任何一次业务拒绝
+  都会把它盖掉——2026-09-14 线上一条 5.4 小时平板会话的 crash，`lastError` 写着
+  `POST /pve/enter -> 402 INSUFFICIENT_STAMINA`，一条早八百年前的正常拒绝，被摆在「崩溃前最后一个错误」的位置上。
+  门禁 `client/test/apiClientErrorLevel.test.ts` 直接钉这条性质：连打 5 次 402 之后，
+  `lastError` 仍是那次真正的网络失败。（服务端本来就是这个口径——metaserver 的访问日志把 4xx 记 WARN，
+  `postInternal` 的 4xx 是 `internal POST rejected (no retry)`，也是 WARN。客户端只是补上。）
+
 ### 9.5 后台与查询
 
 - ops 前端 flag 编辑页加 `allowPublicIds` 输入框（与 allow/denyAccounts 并列）。
