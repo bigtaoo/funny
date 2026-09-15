@@ -217,3 +217,12 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 - **「不存在」不等于「过期」——这条是这次最大的收获**。164 处里逐条读上下文后，**19 处引用的文件确实没了，但文档本来就是在讲它被删掉这件事**，写得清清楚楚（`equipmentFormulaParity.test.ts` 当天加当天删，见 ADR-087；`scout.e2e.test.ts` 随侦察行军整个功能删除；`compliance.test.ts` 因断言全是假的被删）。**机械修掉这些，会把正确的历史改成错的现状。**真正过期、需要动正文的只有一份：[`design/product/client-rendering-cache.md`](product/client-rendering-cache.md)（2026-07-03 的草案，`AssetCache`/`assetManifest`/`unitSpritePool` 三个文件从没按那个名字建过，且「已加载资源永不移除」这条原则已被 `MemoryMonitor` 的主动释放推翻）——给它加了状态头，指向真正落地的那几个文件。
 - **影响**：`scripts/checkDocLinks.mjs`（第 4 项检查 + 两张豁免表）；47 份文档共 96 处路径改写；`design/product/client-rendering-cache.md` 加状态头；`design/tools/level-editor/DESIGN.md` §5 加订正说明（该节写于 campaign 代码还在 `client/` 的年代，类型与 schema 已迁进 `@nw/engine`，关卡数据仍在 client，路径改了但「在 `client/` 里做」的框架只对一半成立）。CI 无需改动——`ci.yml` 早就在跑 `checkDocLinks.mjs`，新检查自动搭车。
 - **验证**：门禁绿（192 份 md / 1 725 条链接 / 2 573 处路径）。两个变异逐个验红/验绿：往 `claudedocs/README.md` 塞一条单体写法的 `ads.ts` 路径 → **红**；同一行的 `gameserver/index.ts` → **不报**（前置边界生效）。
+
+### 同轮量过、但决定不做的事：「压体积」
+
+这轮本来还要照 2026-09-14 那次**记忆**整理的做法压文档体积——删掉逐文件账目、只留约定与教训。**量完之后放弃了，理由值得记下来，免得下次有人再跑一遍同样的调查。**
+
+- **文档里几乎没有字面重复可删**。全量扫 183 份 `design/` + `claudedocs/`（7.8 MB）里长度 ≥160 字符的段落：跨文件重复 **2 处**（都是三语法务文件共用的「适用范围」声明，本来就该各存一份），文件内重复 **1 处 246 字节**。**7.8 MB 里冗余不到 1 KB** —— 这些文件大，是因为记的东西多，不是因为说了两遍。
+- **记忆能删账目，恰恰因为文档不能删**。那次整理的原话是「它们本来就能从 `claudedocs/` 和 git 历史重读」。也就是说记忆把耐久副本**委托**给了这里；在这里删同一批内容，等于把委托的对方也删了。
+- **所以「压体积」这轮只做了无损的那一半**：把唯一一个离谱的异常值（`UI_DESIGN_LOG_2026-08.md`，1597 行 = 上限的 3.2 倍）按语义接缝滚成两册。滚完之后全仓再没有超过 1200 行的文档。
+- **真要再压，剩下的只有语义冗余**（同一条教训换个说法又写一遍），那个机器测不出来，只能靠读；**代价是逐字读 7.8 MB，收益未经证实**。要做就单独立项，别夹在别的任务里顺手做。
