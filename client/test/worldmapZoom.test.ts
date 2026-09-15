@@ -147,11 +147,11 @@ describe('makeZoomCfgs', () => {
 
   it('portrait L1 frames the player base at PORTRAIT_L1_BASE_WIDTH_FRAC of the design width', () => {
     // The point of the portrait ladder (2026-09-15): L1 is chosen so the own base — the thing the map
-    // opens centered on — fills 4/5 of the screen width, instead of the ~27% the landscape divisor
+    // opens centered on — fills 5/6 of the screen width, instead of the ~27% the landscape divisor
     // produced on a 1080-wide design space (reported as "the camera sits too far out"). The width that
     // counts is the PLOT's (`BASE_FOOTPRINT * tile`), which is also what city.ts masks the base sprite
-    // to. Asserting the FRAMING rather than the divisor is deliberate: the divisor is just 3 / 0.8
-    // restated, and would silently stop meaning 4/5 if the footprint moved.
+    // to. Asserting the FRAMING rather than the divisor is deliberate: the divisor is just 3 / (5/6)
+    // restated, and would silently stop meaning 5/6 if the footprint moved.
     const w = 1080;
     const [l1] = makeZoomCfgs(w, 1920);
     expect((BASE_FOOTPRINT * l1.tile) / w).toBeCloseTo(PORTRAIT_L1_BASE_WIDTH_FRAC, 2);

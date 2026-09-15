@@ -28,7 +28,7 @@ export interface ZoomCfg {
  * sprite to `cityPlotMaskPoints`, whose width is exactly `BASE_FOOTPRINT * tile`. The tile size
  * follows from these two numbers alone — change this, not a divisor, to re-frame the opening shot.
  */
-export const PORTRAIT_L1_BASE_WIDTH_FRAC = 0.8;
+export const PORTRAIT_L1_BASE_WIDTH_FRAC = 5 / 6;
 
 export function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] {
   const mh = h - HUD_H;
@@ -52,8 +52,8 @@ export function makeZoomCfgs(w: number, h: number): [ZoomCfg, ZoomCfg, ZoomCfg] 
   // opens on — at under a third of the screen, which reads as a camera parked far too high
   // (2026-09-15 user call). Portrait L1 is therefore framed on the BASE, not on a tile count:
   // solve `BASE_FOOTPRINT * tile = w * PORTRAIT_L1_BASE_WIDTH_FRAC` for the tile size, i.e. an
-  // effective divisor of 3 / 0.8 = 3.75. L2 is the old L1 (divisor 11), so the familiar wide view is
-  // one tap away and the L1→L2 step stays ~2.9× (landscape's is ~2.8×); L3 is the pinned overview.
+  // effective divisor of 3 / (5/6) = 3.6. L2 is the old L1 (divisor 11), so the familiar wide view is
+  // one tap away and the L1→L2 step stays ~3.1× (landscape's is ~2.8×); L3 is the pinned overview.
   return [
     mk(Math.floor((w * PORTRAIT_L1_BASE_WIDTH_FRAC) / BASE_FOOTPRINT)),
     mk(Math.floor(w / 11)),
