@@ -219,6 +219,14 @@ describe('the Lv.N label (§6.2 #7)', () => {
     expect(phone?.fontSize).toBe(13);
     expect(desktop?.fontSize).toBe(RES_LEVEL_LABEL_MAX_PX);
     expect(RES_LEVEL_LABEL_MAX_PX).toBeLessThan(Math.round(174 * RES_LEVEL_LABEL_TP_FRAC));
+    // 2026-09-15: 98 is no longer the phone's CLOSEST tier — the portrait ladder's L1 is now 300px
+    // (the base fills 5/6 of the width, see worldMapPortraitBaseFraming.ui.ts), with 98 demoted to L2.
+    // That tripled the tile without touching this formula, which is exactly the case the cap exists
+    // for: uncapped it would be 39px, i.e. a label nearly three times the size the same tier drew
+    // yesterday, on the tier players now land on by default.
+    const [phoneClosest] = await labels(8, 300);
+    expect(phoneClosest?.fontSize).toBe(RES_LEVEL_LABEL_MAX_PX);
+    expect(RES_LEVEL_LABEL_MAX_PX).toBeLessThan(Math.round(300 * RES_LEVEL_LABEL_TP_FRAC));
   });
 
   it('reuses ONE pooled BitmapText per tile slot — never a PIXI.Text, never a fresh object per draw', async () => {

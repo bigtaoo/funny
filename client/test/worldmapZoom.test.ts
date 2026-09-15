@@ -155,6 +155,12 @@ describe('makeZoomCfgs', () => {
     const w = 1080;
     const [l1] = makeZoomCfgs(w, 1920);
     expect((BASE_FOOTPRINT * l1.tile) / w).toBeCloseTo(PORTRAIT_L1_BASE_WIDTH_FRAC, 2);
+    // The fraction ITSELF is a product decision (2026-09-15, the user looked at 4/5 and asked for
+    // 5/6), not an implementation detail — every other assertion here reads the constant on both
+    // sides and would follow it anywhere, so pin the value once, here, where changing it has to be
+    // a deliberate edit. What the drawn base actually measures is checked end-to-end in
+    // test/ui/worldMapPortraitBaseFraming.ui.ts.
+    expect(PORTRAIT_L1_BASE_WIDTH_FRAC).toBeCloseTo(5 / 6, 6);
     // Landscape is deliberately NOT re-framed — its design width is the long side, where 4/5 would be a
     // near-fullscreen base.
     const [landscapeL1] = makeZoomCfgs(1920, 1080);
