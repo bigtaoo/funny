@@ -939,3 +939,102 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
   走法不会失败，它会去点最后碰到的那个东西。
 
 `drawCell` 是纯函数，战令那份直接调它，不用起场景。
+
+## 54. 巡检补齐剩下三处「只走默认 tab」：成就分类、Shop 组、看广告（2026-09-15）
+
+§53.5 补了 `daily` 和 `auction` 各两个 tab，同时留了三处没补。这一轮补完，
+并且顺手纠正了站点表里**两个名字说谎的站**。
+
+### 54.1 成就墙：永远只审到 pve，而 pve 只有一条成就
+
+`AchievementScene.fetch()` 落在**第一个非空分类**，也就是 `pve`。
+而 `ACHIEVEMENTS`（`server/shared/src/achievements.ts`）里 pve 只有 `ach.campaign.chapters` 一条——
+巡检一直在审一张卡，然后说这一屏干净了。pvp 有三条，是这个场景唯一堆得够高的分类。
+
+补两站：`achievements+pvp`、`achievements+progression`（点分类 tab 自己的标题）。
+
+**`collection` 故意不补**：那个分类一条定义都没有，`categories()` 直接把 tab 藏掉，
+补了也只能永远记成 skipped。留了注释说明将来要补时的两个坑——
+它的标题跟生涯底栏的 `collection.title` 同字（英/德都同字），
+而 `tapLabel` 取的是**画得最晚的那个匹配**、生涯底栏恰恰画在最后，所以那天得改用 `tapText` 或改文案。
+
+### 54.2 Shop 组：看起来是一个场景的 tab 条，其实是四个场景
+
+`[Shop | 充值 | 抽卡 | 战令 | 累充]` 这条 tab 条由四个场景各画一遍（`app/nav/shop/nav.ts`）。
+大厅的两个入口分别落在**抽卡场景**（`onOpenShop` → `goGacha`）和 **ShopScene 的充值 tab**
+（`onOpenRecharge` → `goShop(…, 'coins')`）——于是：
+
+- **ShopScene 的默认 tab**（月卡/年卡/新手礼包/皮肤的商品网格）**没有任何一站走到过**；
+- **RechargeScene**（累计充值阶梯）同上。
+
+补两站 `shop` / `recharge`，都经组内 peer 回调走（`openShop` / `openRecharge`），
+**不点 tab 标签**：德语里 `shop.coinsTab` 和 `recharge.title` 都是 "Aufladen"，
+点标签只会命中画得晚的那一个。
+
+顺带纠正两个名字：`{screen:'shop', via:['onOpenShop']}` 实际落在 gacha（报告里一直叫 `gacha`），
+标成 `gacha`；`{screen:'recharge', via:['onOpenRecharge']}` 实际是 ShopScene 的 coins tab，
+改报告名 `shop+coins`——它此前占着 `shop` 这个名字，这正是「ShopScene 默认 tab 看着被审过、其实从没走过」的由来。
+
+### 54.3 看广告 tab：一个发到 iOS、却在任何可驱动的 build 上都不存在的页面
+
+`hasRewardedAd()` 为假时 DailyScene **整个不画**这个 tab——这是产品规则
+（[[hide-dont-mock-unavailable-features]]：没有真广告后端就藏入口，绝不给玩家看假的），不是疏漏。
+后果是：plain web 没有 `window.NWAds` bridge、微信广告位 id 还没配、CrazyGames SDK 在测试源加载不了，
+**这个 tab 在任何一个巡检能驱动的 build 上都不存在**。
+
+所以 spec 在 boot 前塞一个 bridge 桩（`lib/nwE2E.ts` 的 `installNativeAdsStub`），
+只为让 tab 存在、能被量——跟 `lib/seed.ts` 直写 mongo 是同一笔交易，理由也一样：
+**量的是这一屏的版面，不是它背后的接入**。桩里的 `showRewarded` 永远 reject，
+所以它只能让一个 tab 可见，发不出任何奖励。包内微信巡检没有这个桩，这一站在那边 `gated` 跳过。
+
+**一个顺带的好处**：Daily 的底栏从三个 tab 变成四个，巡检从此量的是 iOS 那个更挤的形状。
+
+### 54.4 seed：让每个成就 tab 一屏内出齐三态
+
+`save.achievements` 之前只给了一条 `claimedTiers: [1]`，但 `save.stats` **一个都没写**——
+于是「已领取」是在统计值为 0 的档位上领的，可领（金色 Claim 按钮）那一态**一次都没渲染过**。
+这轮补了五个统计值 + 四条 claimedTiers，取值都对得上号里本来就有的数据
+（`pvp.wins` 取的就是 `save.pvp.wins` 那个 1284，`campaign.chaptersCleared` 取 3，号确实通关了第一章）：
+
+- pve：chapters 3 → I 已领 / II 可领 / III(9) 进行中
+- pvp：archer 640 → I 已领 / II 可领 / III 进行中；guard 2450 → 三档全领（做完的那种卡）；pvp.wins → 三个 Claim 按钮并排
+- progression：meteor 128 → I 已领 / II 可领 / III(400) 进行中
+
+### 54.5 跑出来的：门禁全绿，但逐张读 PNG 看到四件门禁看不见的事
+
+`npm run test:portrait`，**45 站**（原 40 站 + 本轮 5 站），跑了三个视口：
+
+| 视口 | 站数 | skipped | blank | findings |
+|---|---|---|---|---|
+| phone-390x844 | 45 | 0 | 0 | **0** |
+| landscape-844x390 | 45 | 0 | 0 | **0** |
+| phone-390x844-de | 45 | 0 | 0 | 11（**都不在本轮新增的站上**，见下） |
+
+五个新站在三个视口上都到达并渲染出了内容（labels：`shop` 28/23/28、`shop+coins` 30/25/30、
+`recharge` 27/28/27、`achievements+pvp` 41、`achievements+progression` 19、`daily+ads` 9）。
+
+**逐张读 PNG 看到的、门禁一条都没报的四件事**（这轮不改，只记录）：
+
+1. `shop`（竖屏）：年卡的 **"Save $10" 徽章压在 365 票根插画上**。`ShopScene/shop.ts` 里那条注释
+   说的正是这个问题——当时把 `$10.00` 缩成 `$10` 修过一次；在 390 宽的竖屏上它又压回去了，
+   因为徽章是卡片右上的**固定覆盖层、不随卡宽缩放**。横屏卡更宽，同一个徽章是让开的。
+   门禁看不见：另一边是**插画不是标签**，label-vs-label 和「被后画的实心矩形盖住」两条都不适用。
+2. `daily+ads`（竖屏英语）："Watch Ad" 的最后一个字母**紧贴绿色按钮右边框**，右侧零内边距
+   （图标+文字整块左对齐）。英语刚好没溢出所以不算 `overflow`；德语反而安全——
+   `drawButtonLabel` 丢掉图标并缩字号后两边都留出了余量。
+3. `achievements+pvp`（竖屏）：第三张卡的底边**被生涯底栏盖住**——成就列表既不滚动、
+   也没给 `bottomNavH` 留高度。门禁看不见：底栏是自己画的层，巡检只在同层内互比。
+4. **大厅金币芯片显示 0**，而 seed 写的是 9,876,543。`wallet.coins` 是 commercial 权威、
+   会被镜像回来盖掉 seed 的值。**这是既有回归，不是这轮引入的**：主检出里 2026-09-14 那份
+   `report-phone-390x844.json` 配套的 `lobby.png` 已经是 0。后果是 seed 头注释里
+   「七位金币是全 UI 复用最多的那个数字」那句**现在是假的**——所有带金币芯片的站量的都是一位数。
+
+**德语那 11 条全部落在今天早些时候（§53.5）新增的两站上**，不是本轮的站：
+
+- `daily+tasks`：德语的「+5 Münzen abholen」领取按钮**按标签自适应宽度**，宽到把它左边的
+  「1 / 3」进度计数整个吃掉（计数先画、按钮后画 → 判为 `covered`）。
+- `auction+bids`：倒计时「0T 1h 58m 32s」和「Überboten」徽章**逐行压在一起**（10 行，frac 0.74–0.85）。
+
+两条都是同一个形状：**德语串变长，行里两个元素抢同一段宽度**——
+按 [[scale-set-defeats-font-floor-2026-09-12]] 记的拍板顺序（加宽 → 折行 → 缩 `de.ts` 的值，按钮永不截断）处理。
+§53.5 那四站当时是用 `showXxx(stub)` 三个视口核的、没跑过德语这一行，所以直到这轮才暴露。

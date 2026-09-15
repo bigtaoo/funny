@@ -289,7 +289,7 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 同一层（真 Chromium）的第二条入口，但问的问题完全不同：**不是「会不会炸」，而是「排版对不对」**。
 
-`test/browser/portraitLayout.spec.ts` 走 **40 站 × 10 个尺寸/语言组合**（站点表在 `src/testing/layoutStops.ts`，微信包内巡检走的是同一张），每站把 `__nwE2E.app` 的真实显示树交给 `src/testing/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、**有效字号低于该视口的可读性下限**、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
+`test/browser/portraitLayout.spec.ts` 走 **45 站 × 10 个尺寸/语言组合**（站点表在 `src/testing/layoutStops.ts`，微信包内巡检走的是同一张），每站把 `__nwE2E.app` 的真实显示树交给 `src/testing/layoutAudit.ts` 判 6 类问题：文字互相重叠、**文字溢出自己的按钮/面板框**、被后画的实心矩形盖住、**有效字号低于该视口的可读性下限**、跑出画布、字面量 `undefined/NaN`。每站另落一张 PNG + 一份 JSON 到 `client/portrait-report/`（已 gitignore，且**故意不放 `test-results/`**——Playwright 每次开跑会清空那个目录）。
 
 文件名还叫 `portraitLayout`、命令还叫 `test:portrait`：竖屏是它存在的理由和调校目标，横屏是设计矩形与下限都改成按视口算之后顺手加的两行。
 
@@ -311,6 +311,13 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 - **`mongosh` 直接吃 stdin 是 REPL**（提示符会印进输出、多行块靠续行猜），走 `sh -c 'cat > 文件 && mongosh --file'`；结果行靠 `@@NWSEED@@` 前缀认，不靠行号。另：`TileDoc._id` 已经是全限定的 `worldId:x:y`，`mainBaseTile` 就是一个 tile id；**中立地块根本没有文档**（`proceduralTile` 现算），所以「占地」只能 insert 不能 update——第一版 `updateMany` 只命中了主城自己那 3×3 的 9 格。
 
 **三语是矩阵的一列，不是一个乘数（2026-09-11 加）**：`initI18n` 在**任何场景构建之前**读 `localStorage['nw_locale']`，所以只能用 `context.addInitScript` 在首次导航前塞，不能事后去设置页点——**此前每轮跑的都是 Chromium 自己的 `en-US`，德语和中文从来没被门禁跑过**。三语 × 六视口 = 75 分钟太贵，改成**矩阵加四行**：德语和中文只上 390×844 / 360×640 两台手机（德语是逐词最长的那门，撑破按钮的是它；中文是全角、且没有空格可供折行，是另一类失败；四个更宽的视口在英语下本来就有余量）。连带的必然改动：`{tap: '文字'}` 全部改成 **`{tap: <TranslationKey>}`**，由 spec 自己按该视口的 locale 查字典（直接 import `src/i18n/locales/*`，纯数据），带 `{cost}` 占位符的取 `{` 之前的字面前缀；另有 `{tapText}` 形式，**只允许用于本套件自己写进数据库的字符串**。
+
+**一个场景只走一个 tab（2026-09-15 补完）**：一站只审场景**自己选的那个** tab，四 tab 的场景就是四分之一的表面。三批补齐：daily/auction 四站（§53.5）、成就墙的分类 tab、Shop 组。三条经验值得记住：
+- **落地名跟表里写的 `screen` 可以不是一回事**，而报告用的是落地名。`{screen:'shop', via:['onOpenShop']}` 落在 gacha、`{screen:'recharge', via:['onOpenRecharge']}` 落在 ShopScene 的 coins tab——后者占着 `shop` 这个报告名，于是 **ShopScene 的默认 tab 看起来被审过、其实从没走到过**，RechargeScene 同理。改法是给 `as` 起准名字，别让两站抢一个槽（跟下面 `friends` 那三站是同一类错）。
+- **tab 条不一定属于一个场景**：`[Shop|充值|抽卡|战令|累充]` 是四个场景各画一遍的同一条 peer 条，走它得用组内 peer 回调，不能点标签——德语里 `shop.coinsTab` 和 `recharge.title` 都是 "Aufladen"。
+- **点标签只在标签唯一时成立**，且 `tapLabel` 取的是**画得最晚**的那个匹配。成就墙的 `collection` 分类跟生涯底栏的 "Collection" 同字，而底栏画在最后——那个分类眼下没有任何定义、tab 根本不画，所以没补站；补的那天得改用 `tapText`。
+
+**被产品规则藏起来的页面怎么量（2026-09-15）**：DailyScene 的「看广告」tab 在 `hasRewardedAd()` 为假时**整个不画**（hide, don't mock——没有真广告后端就不给玩家看假的）。plain web / 微信 / CrazyGames 三边都为假，于是这个**会发到 iOS** 的 tab 在任何可驱动的 build 上都不存在。做法是 spec 在 boot 前塞一个 `window.NWAds` bridge 桩（`lib/nwE2E.ts` 的 `installNativeAdsStub`），只为让 tab 存在、能被量；桩里的 `showRewarded` 永远 reject，发不出奖励。跟直写 mongo 是同一笔交易：**量的是版面，不是它背后的接入**。包内微信巡检没有这个桩，那一站在那边 `gated` 跳过。
 
 **站点表的三处真错**（2026-09-11 才看出来）：`friends.png` 一直是三站互相覆盖的结果——`goMail()` 和世界地图的聊天按钮都是 `goFriends({defaultTab})`，三个入口都报 `screen: 'friends'`，共用一个报告槽和一个截图文件，**这个场景三分之二的表面从来没被审过**；已拆成 `friends` / `friends+mail` / `friends+world` / `friends+mailRead`。另两处见上面那条 `gated` 的注记。
 
@@ -335,9 +342,9 @@ UI 冒烟层够不着的硬故障——只有**真渲染器 / 真 WebGL** 才暴
 
 首轮查出并修掉的 7 处竖屏重叠见 [`UI_DESIGN_LOG_2026-09.md`](../design/game/UI_DESIGN_LOG_2026-09.md) §48；第二轮（可读性下限 + 扩面到 32 站 × 6 尺寸 + 它带出来的 7 处返工）见 §49；第三轮（喂真实数据 + 三语 + 站点表修正 + 结算录制器）见 §50。
 
-### 同一趟 40 站的第二个用途：bake 缓存天花板（`bakeBudget.spec.ts`，2026-09-14 新增）
+### 同一趟 45 站的第二个用途：bake 缓存天花板（`bakeBudget.spec.ts`，2026-09-14 新增）
 
-`test/browser/bakeBudget.spec.ts` 走的是**同一张 `STOPS` 表、同一套走法**，但每站不判排版，只读一次 `__nwE2E.bakeEntries()`，把 bake 缓存的 key 并起来——走完 40 站就是这台设备**一次会话的天花板**（那张缓存按设计不淘汰，所以它是天花板不是曲线）。`NW_BAKE=1` 才跑，与 `captureEndStats` 同挂在 `playwright.portrait.config.ts` 下（同一个 docker 栈、同一个 9097 dev server）。报告落 `client/bake-report/*.json`（已 gitignore）。背景与实测数字见 [`client-memory-leak.md`](client-memory-leak.md) §11.8。
+`test/browser/bakeBudget.spec.ts` 走的是**同一张 `STOPS` 表、同一套走法**，但每站不判排版，只读一次 `__nwE2E.bakeEntries()`，把 bake 缓存的 key 并起来——走完 45 站就是这台设备**一次会话的天花板**（那张缓存按设计不淘汰，所以它是天花板不是曲线）。`NW_BAKE=1` 才跑，与 `captureEndStats` 同挂在 `playwright.portrait.config.ts` 下（同一个 docker 栈、同一个 9097 dev server）。报告落 `client/bake-report/*.json`（已 gitignore）。背景与实测数字见 [`client-memory-leak.md`](client-memory-leak.md) §11.8。
 
 两点值得单独记：
 
