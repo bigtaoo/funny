@@ -1044,6 +1044,82 @@ describe('LobbyScene — engagement strip orientation', () => {
     scene.destroy();
   });
 
+  // The pillars sit on a shared hand-drawn backdrop that overhangs the content column by its own
+  // pad on every side (mainContent.ts's `drawMainContent` → `pad`), so the column's own margin is
+  // NOT the block's margin. That is what made the first cut of the strip-row change look wrong:
+  // handing portrait's full 93% fraction to the content left the backdrop 13px from the paper's
+  // edge, and nothing failed — it was caught by eye. Derived from the public pillar rects rather
+  // than the scene's internals, so it stays honest about what a reader sees; the one coupling is
+  // the 0.08 pad fraction, which has to move in lockstep with mainContent.ts if it ever changes.
+  for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
+    it(`the pillars' shared backdrop keeps a margin from both paper edges — ${label}`, () => {
+      const layout = createLayout(w, h);
+      const scene = stripLobby(w, h);
+      const campaign = (scene as any).core.campaignBtnRect as R;
+      const world    = (scene as any).core.worldPillarRect as R;
+      const pad = Math.round(campaign.h * 0.08);
+      const minMargin = Math.round(layout.designWidth * 0.02);
+
+      expect(campaign.x - pad).toBeGreaterThanOrEqual(minMargin);
+      expect(world.x + world.w + pad).toBeLessThanOrEqual(layout.designWidth - minMargin);
+
+      scene.destroy();
+    });
+  }
+
+  // The row is positioned by the same stack arithmetic as the hero and pillars (`stackH` / `gapB` /
+  // the 0.40 upward bias). Re-tuning heroH or pillarH — the obvious next move for the whitespace
+  // still left under the row — moves the row too, and the two things it can land on are the pillars
+  // above it and the nav below it. Both are tap targets, so a collision costs a button, not just
+  // looks. The pre-existing overlap block above only pairs worldPillarRect with dailyBtnRect, from
+  // when the strip was a column beside the pillars; this pairs every cell with everything.
+  for (const [label, [w, h]] of [['portrait', PORTRAIT], ['landscape', LANDSCAPE]] as const) {
+    it(`no strip cell overlaps the hero, the pillars, or a nav slot — ${label}`, () => {
+      const scene = stripLobby(w, h);
+      const c = (scene as any).core;
+      const others: [string, R][] = [
+        ['hero', c.btnRect], ['campaign', c.campaignBtnRect], ['world', c.worldPillarRect],
+        ['cardsNav', c.cardsNavRect], ['shopNav', c.shopNavRect],
+        ['statsNav', c.statsNavRect], ['socialNav', c.socialNavRect],
+      ];
+      for (const cell of cells(scene)) {
+        for (const [name, other] of others) {
+          if (other.w <= 0) continue;  // a gated slot leaves a zeroed rect behind
+          expect([name, rectsOverlap(cell, other)]).toEqual([name, false]);
+        }
+      }
+      scene.destroy();
+    });
+  }
+
+  // `designHeight` is `max(1920, 1080 * h/w)` (PortraitLayout), so on a tall phone it grows without
+  // bound while the content column stays 1080 wide. The cells are sized off `h` and the row's width
+  // budget off `w`, so the taller the screen the harder the cells push against that budget — 21:9
+  // wants 5x207 + 4x54 = 1251 out of 972 and has to clamp to 151. One aspect proves nothing here;
+  // these three pin that the clamp holds and that the row still lands between pillars and nav.
+  for (const [label, [w, h]] of [
+    ['16:9', [800, 1422]], ['20:9', [800, 1778]], ['21:9', [800, 1867]],
+  ] as const) {
+    it(`the row fits between the pillars and the bottom nav — portrait ${label}`, () => {
+      const layout = createLayout(w, h);
+      const scene = stripLobby(w, h);
+      const r = cells(scene);
+      const btn = (scene as any).core.btnRect as R;
+      const campaign = (scene as any).core.campaignBtnRect as R;
+      const last = r[r.length - 1]!;
+
+      for (const cell of r) expect(cell.w).toBe(cell.h);          // cells stay square through the clamp
+      expect(r[0]!.y).toBeGreaterThanOrEqual(campaign.y + campaign.h);
+      expect(last.y + last.h)
+        .toBeLessThanOrEqual(layout.designHeight - Math.round(layout.designHeight * 0.105));
+      // …and inside the content column, which is what the clamp is for.
+      expect(r[0]!.x).toBeGreaterThanOrEqual(btn.x);
+      expect(last.x + last.w).toBeLessThanOrEqual(btn.x + btn.w);
+
+      scene.destroy();
+    });
+  }
+
   it('landscape: all five cells share one x, to the right of the content column', () => {
     const scene = stripLobby(...LANDSCAPE);
     const r = cells(scene);

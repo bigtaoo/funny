@@ -479,6 +479,10 @@
 
 **回归测试**（红绿对照做过）：`client/test/ui/scenes.ui.ts` 新增 `describe('LobbyScene — engagement strip orientation')` 三例——竖屏五格共用同一个 `y`、`x` 递增不重叠、整体在 pillars **下方**、且左右余量相差 ≤1px（居中）；竖屏整行不越过底栏（`h*0.105`）；横屏五格共用同一个 `x`、`y` 递增、且落在内容列右侧。把 `stripIsRow` 写死成 `false`（退回竖条）复测，第一例转红。既有 `content column width follows orientation` 一例的竖屏期望同步 0.93 → 0.90。
 
+**同日又补三组**（只盖前一组没盖住、且已经真踩过或马上要踩的点）：① **pillars 共享底板距纸边留白**（横竖各一）——底板比内容列各多出一个 `pad`，所以内容列的边距不等于块的边距；用两个 pillar 公开矩形反推 `pad = round(h*0.08)`，不碰场景内部（代价是这个 0.08 得跟 `mainContent.ts` 同步）。② **每个格子 × hero / 两个 pillar / 四个 nav 槽都不重叠**——旧那组 overlap 只配了 `worldPillarRect × dailyBtnRect`，是竖条贴在 pillars 旁边时写的。③ **三个竖屏宽高比（16:9 / 20:9 / 21:9）下整行都落在 pillars 与底栏之间**——`designHeight = max(1920, 1080*h/w)` 无上限，格子按 `h` 长而行宽预算按 `w` 不变，21:9 想要 `5×207 + 4×54 = 1251` 而只有 972。
+
+三个突变逐一验证过（都是“真有人会这么改”的改法）：内容列改回 93% → ① 红；**把 hero/pillar 高度调大去吃剩下的空白**（0.175/0.165 → 0.26/0.25，也就是这次收尾时提的下一步） → ②③ 红而旧那组 overlap 绿；去掉格子尺寸夹取 → ③ 三个宽高比全红。顺带证了一件事：第二个突变在 21:9 下是**绿**的（高屏余量多）——只钉一个宽高比就是抛硬币，这组参数化本身就是它存在的理由。
+
 **像素证据**：真 Chrome 竖屏（552×883 → 设计 1080×1920）四格 + 五格（`applyEventsAvailable(true)`）各一张、离线竖屏（无竖条）一张、横屏五格一张确认竖条原样。
 
 - **涉及文件**：`client/src/scenes/LobbyScene/mainContent.ts`、`client/test/ui/scenes.ui.ts`。
