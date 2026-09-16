@@ -146,6 +146,8 @@
 
 **验证**：新用例 28/28 绿（两条 off-by-one 期望值在首跑时就被自己咬出来了，说明它们真的在读输出而不是只看退出码）；`shared` 全量 52 文件 1028 例绿；`shared` `typecheck:test` 干净；两个脚本对真仓库跑的结果与改动前一致（`checkWorkspaceCoverage` 绿；`checkFileLength` 红在上面那两条既有问题上）。
 
+**后续（2026-09-16）**：`checkDocLinks` 那 7 例现在是 8 例，且 `docTree()` 的 fixture 默认多带一处「真实存在的源码路径」——ADR-091 给脚本加的第 4 项检查同时给 canary 加了 `pathsChecked === 0` 这一半，而这些 fixture 树只有三五个文件、一处路径都不提，于是 6 例集体踩中。教训是这一节自己就该预料到的：**给门禁加一条「扫到 0 就判红」的判据，等于给所有小 fixture 加了一条新前提**，改 canary 时要连着这套测试一起跑。
+
 ## 第四道守卫：`tools/` 可达性闸门（2026-08-20）
 
 家族里的第四个脚本，跟上面三个同形（根 `scripts/checkUnreachableModules.mjs`，带 `--root=` seam、带 canary、由 spawn 真 CLI 的测试钉住）：**判红条件是某个 `src/` 下的源文件从任何根都到不了**。根有三类——bundler entry、`--extra-root` 声明的兄弟产物目录、`test/**`。

@@ -353,14 +353,30 @@ describe('checkFileLength.mjs', () => {
 // ── scripts/checkDocLinks.mjs (shared root script) ──────────────────────────────────────────────
 
 /**
+ * Check 4 (source paths named in prose, 2026-09-15) carries its own canary: a scan that finds zero
+ * mentions is a broken scan, not a clean tree. These fixtures are three files big, so every one of
+ * them would trip it on a technicality - each gets one mention of a file that really is there,
+ * appended to CLAUDE.md (an entry point, so exempt from the orphan check either way). Tests that
+ * are ABOUT that canary opt out with `{ sourcePaths: false }`.
+ */
+function withLiveSourcePath(spec: Record<string, string>, on: boolean): Record<string, string> {
+  if (!on) return spec;
+  return {
+    ...spec,
+    'CLAUDE.md': `${spec['CLAUDE.md'] ?? '# root\n'}\nNames \`scripts/live.mjs\` in prose.\n`,
+    'scripts/live.mjs': '// exists so the mention above resolves\n',
+  };
+}
+
+/**
  * This one needs no --root seam: it discovers files via `git ls-files` and resolves everything
  * against process.cwd(), so pointing it at a fixture is just spawning it with a different cwd —
  * which also means these tests exercise the real git integration rather than a stubbed file list.
  * `git add` (no commit — nothing here needs a user.email) is what puts files in the index that
  * `git ls-files` reads.
  */
-function docTree(spec: Record<string, string>): string {
-  const root = tree(spec);
+function docTree(spec: Record<string, string>, opts: { sourcePaths?: boolean } = {}): string {
+  const root = tree(withLiveSourcePath(spec, opts.sourcePaths ?? true));
   for (const args of [['init', '-q'], ['add', '.']]) {
     const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
     if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed in fixture: ${r.stderr}`);
@@ -446,6 +462,17 @@ describe('checkDocLinks.mjs', () => {
   /** Its pre-existing canary, kept honest here: a tree with docs but no relative links at all. */
   it('canary: a scan that finds zero relative links FAILS instead of passing vacuously', () => {
     const r = runDocs(docTree({ 'CLAUDE.md': '# root, no links at all\n' }));
+    expect(r.out).toContain('the scan itself is broken');
+    expect(r.code).toBe(1);
+  });
+
+  /** The other half of that canary: every link can resolve while the path scan finds nothing. */
+  it('canary: a scan that finds zero source-path mentions FAILS even when every link resolves', () => {
+    const r = runDocs(docTree({
+      'CLAUDE.md': '# root\n\n[hub](docs/hub.md)\n',
+      'docs/hub.md': '# hub\n',
+    }, { sourcePaths: false }));
+    expect(r.out).toContain('0 source-path mentions');
     expect(r.out).toContain('the scan itself is broken');
     expect(r.code).toBe(1);
   });
