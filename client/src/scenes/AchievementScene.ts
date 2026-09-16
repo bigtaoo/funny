@@ -11,11 +11,12 @@ import { FS, snapFont, iconFloorPx } from '../render/fontScale';
 import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader } from '../ui/widgets/SceneHeader';
 import { drawCareerTabs } from '../ui/widgets/CareerTabs';
+import { drawStatusTag } from '../ui/widgets/statusTag';
 import { drawSidebarTabs, drawHubTabs, hubTabsHeight, sidebarNavW, type HubTab } from '../ui/widgets/HubTabs';
 import type { AchievementsView, Achievement } from '../net/ApiClient';
 import { tierState, achievementClaimable, type TierState } from '../game/meta/achievements';
 import { dispatchHit, type Hit } from '../ui/hits';
-import { drawButtonLabel } from '../ui/widgets/buttonLabel';
+import { drawButtonLabel, buttonLabelIconW } from '../ui/widgets/buttonLabel';
 
 // collection/progression moved off 'brush'/'trophy' to their own AI icons (AI art batch 2 dedupe,
 // design/product/tab-icon-art-prompts.md §batch2) — 'brush' meant "皮肤" elsewhere (now skinIcon), not
@@ -371,20 +372,35 @@ export class AchievementScene implements Scene {
 
     // Right-side status / claim button.
     if (s.claimable && this.cb.onClaim) {
-      const bw = Math.round(rowH * 1.9);
       const bh = Math.round(rowH * 0.66);
+      const bfs = snapFont(Math.round(bh * 0.42));
+      const label = t('achievement.claim', { coins: s.coins });
+      // Sized to the label it is actually holding, with `rowH * 1.9` kept only as a floor.
+      // A fixed width could not hold "Claim +200" on a phone held sideways: the row is short there,
+      // so `bh` — and the font derived from it — is small in DESIGN px but the viewport renders at
+      // 0.36x, and `drawButtonLabel` stops shrinking at the legibility floor and lets the label
+      // overflow rather than go under it (its header, §50.12). The label then ran out of both ends
+      // of the gold box. Same fix, same reasoning as DailyScene's claim button.
+      const probe = txt(label, bfs, 0xffffff, true);
+      const bw = Math.max(Math.round(rowH * 1.9), Math.ceil(probe.width + buttonLabelIconW(bfs) + bh * 0.5));
+      probe.destroy({ texture: true, baseTexture: true });
       const bx = rightX - bw;
       const by = cy - bh / 2;
       const btn = sketchPanel(bw, bh, { fill: C.gold, border: C.gold, width: 1.6, seed: seedFor(bx, by, bw) });
       btn.x = bx; btn.y = by;
       this.container.addChild(btn);
-      drawButtonLabel(this.container, bx, by, bw, bh, t('achievement.claim', { coins: s.coins }), 'gift',
-        0xffffff, snapFont(Math.round(bh * 0.42)));
+      drawButtonLabel(this.container, bx, by, bw, bh, label, 'gift', 0xffffff, bfs);
       this.hits.push({ rect: { x: bx, y: by, w: bw, h: bh }, sound: 'sfx.ui.reward', fn: () => void this.claim(def.id, s.tier) });
     } else if (s.claimed) {
-      const st = txt(t('achievement.claimed'), snapFont(Math.round(rowH * 0.34)), C.green, true);
-      st.anchor.set(1, 0.5); st.x = rightX; st.y = cy;
-      this.container.addChild(st);
+      // The claim BUTTON above keeps its word at every width; this is the state it leaves behind,
+      // so it degrades to the check alone on a row too narrow for both (ui/widgets/statusTag.ts).
+      const stateFS = snapFont(Math.round(rowH * 0.34));
+      const tagH = Math.round(stateFS * 1.35);
+      // The band right of the progress bar, which is all this row ever had — the same width the
+      // claim button occupies on a claimable tier, so the two states sit in the same column.
+      const tagX = barX + barW + Math.round(rowH * 0.3);
+      drawStatusTag(this.container, tagX, cy - tagH / 2, rightX - tagX, tagH,
+        t('achievement.claimed'), 'check', C.green, stateFS);
     } else {
       // Not yet reached: coin glyph + reward amount (replaces "reward N coins" text).
       const amt = txt(String(s.coins), snapFont(Math.round(rowH * 0.34)), C.mid);

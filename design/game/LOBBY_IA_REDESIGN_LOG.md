@@ -97,7 +97,7 @@
 - **新增回归测试** `client/test/headless-nav.test.ts`：离线场景下点战役地图「装备」入口，断言落地 `collection` 屏（不是卡死在不可达的 `equipment` 屏），且 `CollectionScene` 本身也不出现「装备」peer-tab launcher（同一条 `equipLoggedIn` 门槛两处一致）。在线直达 `EquipmentScene` 的分支未覆盖——该文件头部注释写明联网流程留给 `full-link.e2e.ts`（对接真实服务端），而该 e2e 目前没有任何 collection/equipment 覆盖，超出本次修复范围。
 - 已用 `tsc --noEmit` + `vitest run --config vitest.ui.config.ts -t CampaignMapScene`（8 例全绿）+ `vitest run test/headless-nav.test.ts`（5 例全绿）验证；未跑游戏截图。
 
-**金币图标来源勘误**（2026-07-06 追加）：§8.4 第 2 条「核实后确认只有一处来源」的结论已过时——`client/src/render/atlas/coinIconAtlas.ts` 后来新增了 `buildCoinIcon()`（AI 位图图集，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 五档，`ShopScene`/`LobbyScene`/`EquipmentScene`/`CardScene`/`FriendsScene` 均已切过去，文件头注释自称"the single source of truth"），但 `GachaScene.ts`/`BattlePassScene.ts` 顶栏金币图标当时仍直接调 `buildIcon('coin',...)`（程序绘制矢量字形），两页因此显示的是与其它页不同的图标资产。修复：两场景顶栏改调 `buildCoinIcon('coin', balIcon, C.gold)`；`BattlePassScene.ts` 奖励行的金币阶梯图标（`coinIconTier` 返回值）同步改走 `buildCoinIcon`，材料类奖励（`brush`/`lead`/`binding`/`scrap`）仍用 `buildIcon`。`tsc --noEmit` + `webpack --mode development` 验证通过；未跑游戏截图。
+**金币图标来源勘误**（2026-07-06 追加）：§8.4 第 2 条「核实后确认只有一处来源」的结论已过时——`client/src/render/atlas/iconsAtlas.ts` 后来新增了 `buildCoinIcon()`（AI 位图图集，`coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 五档，`ShopScene`/`LobbyScene`/`EquipmentScene`/`CardScene`/`FriendsScene` 均已切过去，文件头注释自称"the single source of truth"），但 `GachaScene.ts`/`BattlePassScene.ts` 顶栏金币图标当时仍直接调 `buildIcon('coin',...)`（程序绘制矢量字形），两页因此显示的是与其它页不同的图标资产。修复：两场景顶栏改调 `buildCoinIcon('coin', balIcon, C.gold)`；`BattlePassScene.ts` 奖励行的金币阶梯图标（`coinIconTier` 返回值）同步改走 `buildCoinIcon`，材料类奖励（`brush`/`lead`/`binding`/`scrap`）仍用 `buildIcon`。`tsc --noEmit` + `webpack --mode development` 验证通过；未跑游戏截图。
 
 **金币图标架构收口，`coinIconAtlas.ts` 整体删除**（2026-08-25 追加）：上一条勘误说明"靠每个调用点自己记得挑对函数"这条路不成立——`buildIcon()` 本身对 `coin`/`coins`/`coinStack`/`coinSack`/`coinChest` 完全不知情（`icons.ts` 的 `DRAW` 表仍留着这 5 个的矢量兜底画法），谁不小心直接调 `buildIcon('coin',...)` 而不是 `buildCoinIcon(...)`，编译器不会报错，会悄悄退化回旧矢量图——历史上 `GachaScene.ts`/`BattlePassScene.ts` 正是这样踩过。这次把这 5 个 kind 直接注册进 `render/icons/tabIconRaster.ts` 的 `TAB_ICON_RASTER` 表（与页签图标同一套分发机制），`buildIcon()` 自己就能返回 AI 图，`coinIconAtlas.ts` 这层包装连同 `icons/currency.ts` 里的 5 个矢量画法（`drawCoin`/`drawCoins`/`drawCoinStack`/`drawCoinSack`/`drawCoinChest`）、`icons/primitives.ts` 的 `inkCoin` 辅助函数一并删除——从架构上锁死，不用再靠"记得调用哪个函数"这种约定。
 
@@ -218,9 +218,9 @@
 > 状态：**已实现**。用户看大厅首页截图后问：顶栏、START MATCH 主按钮、底部导航三处全用同一纯黑 `C.dark`（`0x2c2c2a`），会不会让玩家审美疲劳？
 
 - **诊断**：三块黑色视觉权重完全相同，`START MATCH`（本该是最高优先级的 CTA）反而被两侧同色的顶栏/底栏衬得像普通 chrome，层级被磨平。
-- **第一版尝试（金色 CTA，已否）**：把 `drawBtn`（`client/src/scenes/LobbyScene/base.ts`）的启用态填充从 `C.dark` 换成 `C.gold`，配深色文字。真人截图反馈：大面积纯金色**太晃眼**，且原本"藏在按钮里的跳舞小人剪影"（`heroFigure`，黑色 22% 透明度，专为深色底设计）在浅色底上直接被"吃掉"，看不见了。已回滚。
+- **第一版尝试（金色 CTA，已否）**：把 `drawBtn`（`client/src/scenes/LobbyScene/core.ts`）的启用态填充从 `C.dark` 换成 `C.gold`，配深色文字。真人截图反馈：大面积纯金色**太晃眼**，且原本"藏在按钮里的跳舞小人剪影"（`heroFigure`，黑色 22% 透明度，专为深色底设计）在浅色底上直接被"吃掉"，看不见了。已回滚。
 - **拍板方案（顶栏/底栏改色，CTA 保持纯黑）**：反过来做——`START MATCH` 按钮保留 `C.dark` 填充 + 原有蓝色描边（找回小人剪影），顶栏和底部导航改用新色 `C.cover`（`0x3a352f`，比 `C.dark` 暖一丝、亮一丝的深棕灰，定义于 `base.ts` 的 `C` 调色板）。差值刻意选得小：肉眼能分辨"这两条是外框、中间是按钮"，但不会像金色那样跳出来抢戏。真人截图确认效果满意，未再调整。
-- **涉及文件**：`client/src/scenes/LobbyScene/base.ts`（`C.cover` 常量）、`client/src/scenes/LobbyScene/build.ts`（顶栏 `titleBg`、底栏 `navBg` 两处填充色改用 `C.cover`）。
+- **涉及文件**：`client/src/scenes/LobbyScene/core.ts`（`C.cover` 常量）、`client/src/scenes/LobbyScene/build.ts`（顶栏 `titleBg`、底栏 `navBg` 两处填充色改用 `C.cover`）。
 - **验证**：`tsc --noEmit` 干净；真人在本地 dev server（`localhost:9090`）截图确认两版效果（金色版 → 否决；`cover` 版 → 通过）。未新增自动化测试（纯配色调整，无行为变化）。
 
 ## 19. 大厅 4 个红点请求合并为单次 `GET /lobby/badges`（2026-07-27/28，comm-audit-2026-07-27 P1-4）
@@ -301,7 +301,7 @@
 **方案**：填色从 `C.paper` 换成 `C.dark`（0x2c2c2a）+ 0.9 透明度，对齐 `LobbyScene` 自己底部导航栏（`build.ts` 的 `navBg.beginFill(C.cover, 0.9)`）已验证过的深色通栏做法，去掉原来意义不大的单像素顶边线。未接入的 inactive 页签格仍用浅色 `sketchPanel`（paper 底+描边），叠在深色通栏上读成"卡片贴在深色底栏上"，与 active 格（深底+强调色描边+白字）区分明显。`drawSidebarTabs`（横屏侧栏）完全没碰。
 
 **验证**：`tsc --noEmit` 全绿；`npm run build:web` 生产构建成功（仅预置体积告警）；`npm run test:ui -- shopGroupTabs sidebarRailOrientation scenes.ui`（4 文件 166 例）全绿，无回归。**未做真人截图走查**：本次会话 Browser 预览面板同样报 "pane not displayed"（同 §20.5/§21 的已知环境限制），已确认 dev server 正常起、竖屏视口挂载；用户知情后可自行在实机/浏览器里核对最终视觉效果。
-- **涉及文件**：`client/src/scenes/GachaScene/base.ts`（`contentBounds`）、`client/src/ui/widgets/HubTabs.ts`（`drawBottomNavTabs` 背景条）。
+- **涉及文件**：`client/src/scenes/GachaScene/core.ts`（`contentBounds`）、`client/src/ui/widgets/HubTabs.ts`（`drawBottomNavTabs` 背景条）。
 
 ## 23. Hero Roster 竖屏三连修：网格 90% 宽 + mask 裁剪 + 底部导航栏加背景（2026-08-09）
 
@@ -347,7 +347,7 @@
 - **i18n**：三语新增 `shop.buyX10`（zh「一键购买 ×10」/ en「Buy ×10」/ de「×10 kaufen」）+ `shop.boughtNamedQty`（`{name} ×{qty}` 形式的成功 toast，与既有 `shop.boughtNamed`/`shop.item.material.title` 的插值写法一致）。
 - **测试**（`client/test/shopActions.test.ts` — 方法级，`onBuyBulk`）：busy-lock、成功=一次调用（`cb.buy(itemId, qty)`）+ 一次刷新、`ok:false`=不刷新（全有或全无，2026-08-10 起不再有"中途失败保留部分成功"的分支）、`TimeoutError`、`qty=0` 防御性回归（不调用 `buy()`/不 toast/照常释放忙锁）。**`client/test/ui/shopScene.ui.ts` — 走真实按钮命中列表（不是直接调方法）**：①卡只够买 1 件时 ×10 禁用（无命中矩形）而 Buy 仍可点；②够买 10 件时点击 ×10 调用 `buy('protect_enhance', 10)` **一次**（2026-08-10 起，此前是十次）；③material 档不出现这个按钮；④点一次 ×10 后同步 `render()` 已把按钮画成禁用态——第二次真实点击根本摸不到命中矩形（busy-lock 在 UI 层的真实表现，不只是方法内部的 `if (busy) return`）；⑤**端到端**：钱包状态随 `buy()` 真实扣减 `cost×qty`、10 连购花光额度后下一帧 ×10 灰掉但 Buy 仍可点（`getCoins`/`buy`/`loadItems` 三者接线正确，不是分别孤立测过就直接假定拼起来也对）。服务端侧新增 `economy.e2e.test.ts`（qty 计费/发货/全有全无/材料每日上限/对账重放/schema 上限校验）+ `commercial/test/service.e2e.test.ts`（`shopCharge` qty 计费/全有全无/越界拒绝）+ `shared/test/dailyCounter.test.ts`（`bumpCappedCounter` 的 `by` 参数）。
 - **验证**：`tsc --noEmit` 全绿；`npx vitest run test/shopActions.test.ts`（23 例）+ `npx vitest run --config vitest.ui.config.ts test/ui/shopScene.ui.ts`（43 例）全绿，无回归。**未做真人截图**：本次会话 Browser 预览面板同样报 "pane not displayed"（同 §20.5/§21–24 的已知环境限制，且本机当时 metaserver 未起，商城道具列表本就依赖服务端 `getShopItems`，离线也看不到这张卡）；多按钮纵向堆叠是 `drawCard()`/`drawButton()` 现有几何路径（月卡已在生产验证过同一路径），未新增布局代码，故以上面两个文件的 headless 像素坐标断言 + 既有生产先例作为验证依据。
-- **涉及文件**：`client/src/scenes/ShopScene/shop.ts`、`client/src/scenes/ShopScene/base.ts`、`client/src/scenes/ShopScene/actions.ts`、`client/src/i18n/locales/{zh,en,de}.ts`、`client/test/shopActions.test.ts`、`client/test/ui/shopScene.ui.ts`。
+- **涉及文件**：`client/src/scenes/ShopScene/shop.ts`、`client/src/scenes/ShopScene/core.ts`、`client/src/scenes/ShopScene/actions.ts`、`client/src/i18n/locales/{zh,en,de}.ts`、`client/test/shopActions.test.ts`、`client/test/ui/shopScene.ui.ts`。
 
 ---
 
@@ -452,3 +452,37 @@
 **像素证据**：中文横屏 + 拖到列表底部的横屏（一屏同时有士兵蓝盔 / 建筑金城堡 / 法术红卷轴，费用墨水瓶同色）+ 竖屏（副标题带图标后仍在面板内）。
 
 - **涉及文件**：`client/src/scenes/CardCodexScene/tile.ts`（新增 `drawIconTextRow`、副标题与锁定行改走它）、`client/src/render/icons/inkIconRaster.ts`、`art/ui/tabicons/`（+2 张源图与 pack 行）、`client/test/ui/{cardCodexScene,cardCodexPortraitWidthAndText}.ui.ts`。
+
+## 30. 大厅竖屏：右侧竖条改成 pillars 下方的横排一行，内容列回到 90%（2026-09-15）
+
+**起点**：用户看着竖屏大厅首页截图说「中间这部分很挤」。量下来「挤」是真的，但根因不在内容多——**横向被右侧竖条吃掉 16% 宽，纵向却空着 44%**，方向错配：挤的那个轴上有东西在抢，宽松的那个轴上没人用。
+
+真 Chrome 竖屏（`web-e2e` 入口 + `showLobby` 直喂在线回调）实测，设计画布 1080×1920：
+
+| 量 | 改前 | 改后 |
+|---|---|---|
+| 页头 403 + 底栏 202 → 中间可用高 | 1315 | 1315 |
+| 内容块高（hero + 间隙 + pillars[ + 横条]） | 730（可用高的 55%） | 964（73%） |
+| 剩余空白 | 585（上 234 / 下 351） | 351（上 140 / 下 211） |
+| 竖条占掉的宽 | 157 + 19 = 176（屏宽 16%） | 0 |
+| 内容列宽 | 828 | 972 |
+| Campaign / World 卡宽 | 387 | 459 |
+
+**做法**（全在 `LobbyScene/mainContent.ts`）：
+
+- **`stripIsRow` / `stripIsCol` 两分支**：竖屏把 Daily/Mail/Events/Feedback/Auction 排成 pillars 下方的**横排一行**（行距 `w*0.05`，与 `pillarGap` 同值，读起来是同一个块的一部分；整行在内容列里居中），横屏**原样保留右侧竖条**——横屏富余的恰好是宽度，且它 pillars 下方的空白带浅得多。`contentW` 只在竖条存在时才扣 `sideItemSz + sideGap`。
+- **格子尺寸带夹取**：五格（活动期）时 `5×157 + 4×54 = 1001` 超过 972 的内容列，每格让出 6px 收到 151，整行 971 正好落进去。四格时保持 157 不缩。
+- **`stripEntries()` 提到模块级**：条目**数量**现在决定几何（横排要按数量分内容宽），所以必须在算布局之前解析出来；它只依赖回调 bag，不依赖任何布局量。
+- **竖屏内容列 93% → 90%**：93% 是当初「竖条从远端吃掉 176px」时补的；竖条一走，整个比例全落到内容上，而 pillars 的共享底板左右各比内容列多出一个 `pad`，93% 下底板离纸边只剩 13px。回到 90% 同时也是本仓库其它竖屏内容列一直用的那个数（§21/§23/§24）。
+
+**顺带澄清一条没修的**：五格竖条（活动期）比它要居中的 hero+pillars 块高（横屏 505 vs 388），上下各探出约 59px。实测在任何宽高比下都仍稳稳落在页头与底栏之间——两者都随 `h` 缩放——**是对齐上的毛刺，不是碰撞**，所以横屏一行没动，只在代码注释里记了一笔。
+
+**回归测试**（红绿对照做过）：`client/test/ui/scenes.ui.ts` 新增 `describe('LobbyScene — engagement strip orientation')` 三例——竖屏五格共用同一个 `y`、`x` 递增不重叠、整体在 pillars **下方**、且左右余量相差 ≤1px（居中）；竖屏整行不越过底栏（`h*0.105`）；横屏五格共用同一个 `x`、`y` 递增、且落在内容列右侧。把 `stripIsRow` 写死成 `false`（退回竖条）复测，第一例转红。既有 `content column width follows orientation` 一例的竖屏期望同步 0.93 → 0.90。
+
+**同日又补三组**（只盖前一组没盖住、且已经真踩过或马上要踩的点）：① **pillars 共享底板距纸边留白**（横竖各一）——底板比内容列各多出一个 `pad`，所以内容列的边距不等于块的边距；用两个 pillar 公开矩形反推 `pad = round(h*0.08)`，不碰场景内部（代价是这个 0.08 得跟 `mainContent.ts` 同步）。② **每个格子 × hero / 两个 pillar / 四个 nav 槽都不重叠**——旧那组 overlap 只配了 `worldPillarRect × dailyBtnRect`，是竖条贴在 pillars 旁边时写的。③ **三个竖屏宽高比（16:9 / 20:9 / 21:9）下整行都落在 pillars 与底栏之间**——`designHeight = max(1920, 1080*h/w)` 无上限，格子按 `h` 长而行宽预算按 `w` 不变，21:9 想要 `5×207 + 4×54 = 1251` 而只有 972。
+
+三个突变逐一验证过（都是“真有人会这么改”的改法）：内容列改回 93% → ① 红；**把 hero/pillar 高度调大去吃剩下的空白**（0.175/0.165 → 0.26/0.25，也就是这次收尾时提的下一步） → ②③ 红而旧那组 overlap 绿；去掉格子尺寸夹取 → ③ 三个宽高比全红。顺带证了一件事：第二个突变在 21:9 下是**绿**的（高屏余量多）——只钉一个宽高比就是抛硬币，这组参数化本身就是它存在的理由。
+
+**像素证据**：真 Chrome 竖屏（552×883 → 设计 1080×1920）四格 + 五格（`applyEventsAvailable(true)`）各一张、离线竖屏（无竖条）一张、横屏五格一张确认竖条原样。
+
+- **涉及文件**：`client/src/scenes/LobbyScene/mainContent.ts`、`client/test/ui/scenes.ui.ts`。

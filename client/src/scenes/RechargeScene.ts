@@ -11,6 +11,7 @@ import { buildDecorCLayer } from '../render/decorCLayer';
 import { drawSceneHeader, drawHeaderCurrency, headerCurrencyWidth, sceneHeaderHeight, HEADER_ACCENT } from '../ui/widgets/SceneHeader';
 import { drawSidebarTabs, drawBottomNavTabs, sidebarNavW, bottomNavH, type HubTab } from '../ui/widgets/HubTabs';
 import { drawScrollIndicator } from '../ui/widgets/ScrollIndicator';
+import { drawStatusTag } from '../ui/widgets/statusTag';
 import { ScrollTapGesture } from '../ui/scrollTapGesture';
 import { wheelScrollY } from '../ui/wheelScroll';
 import { peekViewportH } from '../ui/widgets/scrollPeek';
@@ -382,10 +383,14 @@ export class RechargeScene implements Scene {
       lbl.anchor.set(0.5, 0.5); lbl.x = btnX + btnW / 2; lbl.y = btnY + btnH / 2;
       parent.addChild(lbl);
     } else {
-      const lbl = state === 'claimed' ? t('recharge.claimed') : t('recharge.locked');
-      const l = txt(lbl, snapFont(Math.round(h * 0.24)), C.mid, false);
-      l.anchor.set(1, 1); l.x = anchorX; l.y = anchorY;
-      parent.addChild(l);
+      // Claim is a button and keeps its word (above); these two are statuses and keep only as much
+      // of theirs as the milestone card affords — see ui/widgets/statusTag.ts for the split.
+      const stateFS = snapFont(Math.round(h * 0.24));
+      const tagH = Math.round(stateFS * 1.35);
+      const tagW = Math.round(w * 0.9);
+      drawStatusTag(parent, anchorX - tagW, anchorY - tagH, tagW, tagH,
+        state === 'claimed' ? t('recharge.claimed') : t('recharge.locked'),
+        state === 'claimed' ? 'check' : 'lock', C.mid, stateFS, { bold: false });
     }
   }
 

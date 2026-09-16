@@ -272,7 +272,7 @@ socialsvc 收到后：从 Redis 查对应频道的在线成员列表，批量调
 
 ### P4（全链路清理）— 2026-06-29 完成
 
-1. ✅ 删除 `server/worldsvc/src/familyService.ts`（359 行死代码，已搬至 socialsvc）
+1. ✅ 删除 `server/socialsvc/src/familyService.ts`（359 行死代码，已搬至 socialsvc）
 2. ✅ `worldsvc/httpApi.ts` 删除 `/family/*` 代理路由块 + FamilyService 类型导入 + `familySvc` 参数
 3. ✅ `worldsvc/index.ts` 删除 FamilyService 导入 + 实例化
 4. ✅ `server/Caddyfile` 删除 `/family*` → worldsvc 路由，新增 `/social*` → socialsvc:8085

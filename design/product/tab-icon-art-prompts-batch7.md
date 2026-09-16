@@ -95,7 +95,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 ## P1 装备详情弹窗其余元素（5 条）
 
-跟 P0 挤在同一个强化面板/成本行里：三种材料（`client/src/render/icons/equipment.ts`）、强化按钮本身的锤子（`icons/slg.ts` 的 `drawHammer`，虽然文件在 slg.ts，但剩余调用点已经是装备强化按钮为主）、皮肤页的刷子标签。
+跟 P0 挤在同一个强化面板/成本行里：三种材料（`client/src/render/icons/inkIconRaster.ts`）、强化按钮本身的锤子（`icons/slg.ts` 的 `drawHammer`，虽然文件在 slg.ts，但剩余调用点已经是装备强化按钮为主）、皮肤页的刷子标签。
 
 | # | kind | 造型 | 避让 |
 |---|---|---|---|

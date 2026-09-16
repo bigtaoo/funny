@@ -1164,7 +1164,11 @@ export const zh = {
   'auction.outbid': '已被超越',
   'auction.bidWon': '已中拍',
   'auction.bidLost': '未中拍',
-  'auction.myBid': '我的出价',
+  // Two half-widths per full-width glyph: "我的出价: 9999999" measures 187 design px against the
+  // auction cell's 167-px info column, so it wrapped and pushed the countdown under it onto the
+  // outcome badge — the same defect German had (AuctionScene/listCell.ts, §55.2). "我的" carries it:
+  // the line directly above is "当前出价", so this one is the other one, mine.
+  'auction.myBid': '我的',
   'auction.create': '发布拍卖',
   'auction.buy': '购买',
   'auction.cancel': '取消拍卖',
@@ -1423,8 +1427,6 @@ export const zh = {
   'battlepass.xpStatus': '当前 {xp} XP · 距下一级 {n} XP',
   'battlepass.xpEarnHint': '打天梯赛获取 XP：胜 +{win}，负 +{loss}',
   'battlepass.claim': '领取',
-  'battlepass.claimed': '已领',
-  'battlepass.locked': '未解锁',
   'battlepass.loginRequired': '登录后查看',
   'battlepass.claimFailed': '领取失败，请重试',
   'battlepass.claimToast': '已领取 +{n} 金币',
@@ -1460,7 +1462,6 @@ export const zh = {
   'daily.tasks.pvpLabel': '参与任意 PvP 对局',
   'daily.tasks.gachaLabel': '开一次盲盒',
   'daily.tasks.done': '完成',
-  'daily.tasks.pending': '进行中',
   'daily.tasks.rewardCoins': '领取 +{n} 金币',
   'daily.tasks.rewardClaimed': '今日已领',
   'daily.tasks.claimFailed': '领取失败，请重试',

@@ -255,7 +255,7 @@ cd .. && npx wrangler deploy -c wrangler/client.jsonc
 
 三道闸：① CF Access 身份门（边缘）→ ② Worker↔Caddy 共享密钥头（玩家直连 `/ops/*` 无密钥 → 403）→ ③ admin 自身账号密码。**要害是 admin 后端被保护，而非静态页**（页面只是公开 JS，无秘密）。
 
-- 前端 API 基址：`tools/ops/src/api.ts` 默认 = 本地 `localhost:18083` / 线上**同源空串**（→ 相对 `/admin/*`，由 Worker 反代）。运行时仍可在登录页输入框覆盖（localStorage `nw_admin_api`）。
+- 前端 API 基址：`tools/ops/src/api/` 默认 = 本地 `localhost:18083` / 线上**同源空串**（→ 相对 `/admin/*`，由 Worker 反代）。运行时仍可在登录页输入框覆盖（localStorage `nw_admin_api`）。
 - 配置实体：`wrangler/ops.jsonc`（Worker `nivara-ops` + `run_worker_first:["/admin/*"]` + var `ADMIN_ORIGIN`）、`wrangler/worker.ops.js`（反代逻辑）、`server/Caddyfile` 的 `/ops/*` 路由、`docker-compose.cloud.yml` caddy 的 `NW_OPS_PROXY_SECRET`。
 
 **完整闭环已上线（2026-06-24 ✅ 已验证）**：Worker `nivara-ops` + `custom_domain` 建好 `ops.gamestao.com`（HTTP 200、证书有效）；CF Access 应用 `ops`（team `gamestao.cloudflareaccess.com`，policy Allow + Emails 白名单，登录方式 One-time PIN 默认即用）罩整站；`/admin/*` 经 Worker 注入密钥头反代到 `api.gamestao.com/ops/*`（Caddy 校验：无密钥→403），strip `/ops` 转 `admin:8083`。VPS 端验证：无密钥直连 `/ops/admin/me`→403、带密钥 `admin` 登录→200+完整超管权限；admin 容器日志确认已种子超管 `username=admin`。共享密钥两端：VPS `server/.env` 的 `NW_OPS_PROXY_SECRET` ＝ ops Worker 的 `ADMIN_PROXY_SECRET`（wrangler secret）。

@@ -82,7 +82,7 @@ function makeCore(opts: {
   // march, and the no-force-left branch announces the hold ended — both are on damage.ts's path now.
   const marchesInsertOne = vi.fn(async (..._args: unknown[]) => ({}));
   const pushOrderEnded = vi.fn(async (..._args: unknown[]) => {});
-  const recomputeYield = vi.fn(async (..._args: unknown[]) => emptyResources());
+  const recomputeYieldAndCount = vi.fn(async (..._args: unknown[]) => ({ rate: emptyResources(), count: 0 }));
   const settle = vi.fn((doc: PlayerWorldDoc) => ({ ...doc.resources }));
   let tileCallCount = 0;
 
@@ -107,7 +107,7 @@ function makeCore(opts: {
     coordX: (tid: string) => Number(tid.split(':')[1]),
     coordY: (tid: string) => Number(tid.split(':')[2]),
     pushTile,
-    recomputeYield,
+    recomputeYieldAndCount,
     settle,
     // 2026-08-24: the settle these services persist is now an aggregation expression evaluated by Mongo
     // against the live document (core/yield.ts settleExpr), not a value computed here — these unit tests
@@ -119,7 +119,7 @@ function makeCore(opts: {
     marchView: (m: MarchDoc) => m as unknown as never,
   } as unknown as WorldCore;
 
-  return { core, tilesUpdateOne, pwUpdateOne, pushTile, recomputeYield, marchesInsertOne, pushOrderEnded };
+  return { core, tilesUpdateOne, pwUpdateOne, pushTile, recomputeYieldAndCount, marchesInsertOne, pushOrderEnded };
 }
 
 function fakeHelpers() {
@@ -415,7 +415,7 @@ describe('SiegeDamageService settleSiegeDamage — isBase edge fallbacks', () =>
 describe('SiegeDamageService settleSiegeDamage — HP depleted (capture)', () => {
   it('non-base, non-crossing (territory) hand-over: sets type=territory, ownerId, garrison, hp=maxHp, unsets protectedUntil; recomputes both yields', async () => {
     const maxHp = buildingMaxHp(2);
-    const { core, tilesUpdateOne, recomputeYield } = makeCore({
+    const { core, tilesUpdateOne, recomputeYieldAndCount } = makeCore({
       pwById: {
         [`${W}:${ATK}`]: pw({ accountId: ATK, familyId: 'fam-atk' }),
         [`${W}:${DEF}`]: pw({ accountId: DEF }),
@@ -435,7 +435,7 @@ describe('SiegeDamageService settleSiegeDamage — HP depleted (capture)', () =>
         $inc: { rev: 1 },
       },
     );
-    expect(recomputeYield).toHaveBeenCalledTimes(2);
+    expect(recomputeYieldAndCount).toHaveBeenCalledTimes(2);
   });
 
   it('crossing (bridge) hand-over with an attacker familyId: KEEPS bridge type + sets familyId, no $unset.familyId', async () => {
@@ -925,7 +925,7 @@ describe('SiegeHelpersService.passiveRelocate', () => {
       settleExpr: () => ({}),
       pickRandomEmptyTile: vi.fn(async (..._args: unknown[]) => opts.spot ?? null),
       baseTileDocs,
-      recomputeYield: vi.fn(async (..._args: unknown[]) => emptyResources()),
+      recomputeYieldAndCount: vi.fn(async (..._args: unknown[]) => ({ rate: emptyResources(), count: 0 })),
       pushTile,
       pushTileToObservers,
       mail: { sendSystemMail },

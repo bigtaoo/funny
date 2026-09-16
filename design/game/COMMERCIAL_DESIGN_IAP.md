@@ -273,7 +273,7 @@ recharged?: Partial<Record<RechargeChannel, number>>;       // 按渠道标记�
 新增 `X-NW-Platform` 请求头（客户端声明，`ios`/`android`/`web`/`wechat`/`crazygames`）：
 
 ```
-client/src/net/ApiClient/base.ts  fetchRaw()
+client/src/net/ApiClient/core.ts  fetchRaw()
   ── 探测 window.NWBilling.kind（原生壳注入，同 §10.2 复用的信号）→ 'ios'/'android'
      否则回退构建期 TARGET → 'web'/'wechat'/'crazygames'
   ── 每次请求都带上，metaserver 用 clientPlatformOf(req) 读取并转发给 commercial 作 clientPlatform 参数
@@ -308,7 +308,7 @@ effectiveCoins(wallet, channel) = wallet.coins + (wallet.recharged?.[channel] ??
   `auth.ts`（改名扣币）/`progression.ts`（战令购买）/`pve.ts`（体力购买）/`equipment.ts`（强化/重铸扣币）/
   `save.ts`（`getSave` 余额镜像）/`paddle.ts`（webhook 侧硬编码 `web` 渠道）全部穿透。**未刻意选择不改**的是
   纯免费加币的边角调用点（§11.3 末段），风险已评估为可接受。
-- `client/src/net/ApiClient/base.ts`：`fetchRaw()` 加 `X-NW-Platform` 请求头。
+- `client/src/net/ApiClient/core.ts`：`fetchRaw()` 加 `X-NW-Platform` 请求头。
 - 测试：`server/commercial/test/spendChannel.test.ts`（纯函数单测）+
   `server/commercial/test/walletChannelIsolation.e2e.test.ts`（真实 Mongo e2e：apple/web 充值互相不可见不可花、
   免费池处处可花、扣款先免费池后渠道桶、Paddle webhook 路径同样隔离），随现有 136 条 commercial 用例一起跑绿。

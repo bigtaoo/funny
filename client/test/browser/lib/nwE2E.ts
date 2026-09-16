@@ -5,7 +5,7 @@
 // encodes real product gates (intro → age gate → consent → FTUE tutorial → feature guides) that
 // shift as onboarding changes.
 
-import { expect, type Page, type ConsoleMessage } from '@playwright/test';
+import { expect, type BrowserContext, type Page, type ConsoleMessage } from '@playwright/test';
 
 declare global {
   interface Window {
@@ -14,6 +14,31 @@ declare global {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     __nwE2E?: { state: Record<string, any>; [key: string]: any };
   }
+}
+
+/**
+ * Installs the Capacitor iOS shell's rewarded-ad bridge (`window.NWAds`, see platform/nativeAds.ts)
+ * as a stub, before the app boots.
+ *
+ * Only `WebPlatform.hasRewardedAd()` reads it, and the single thing that answer decides is whether
+ * DailyScene draws its Ads tab at all — the tab is HIDDEN, never mocked, on a build with no real ad
+ * SDK, which is a deliberate product rule (no placeholder monetization surface ever reaches a
+ * player). The consequence for testing is that a tab which ships to iOS exists on no build a sweep
+ * can drive: plain web has no bridge, WeChat's ad unit id is still unset, and the CrazyGames SDK is
+ * not loadable from a test origin. So the sweep supplies the bridge instead — the same trade
+ * `lib/seed.ts` already makes by writing an account's content straight into Mongo, and for the same
+ * reason: what is being measured is the LAYOUT of a real screen, not the integration behind it.
+ *
+ * `showRewarded` is never called by the walk (no stop taps the Watch button) and rejects if anything
+ * ever does, so this can only make a tab visible — it cannot hand out a reward.
+ */
+export async function installNativeAdsStub(ctx: BrowserContext): Promise<void> {
+  await ctx.addInitScript(() => {
+    (globalThis as unknown as { NWAds: unknown }).NWAds = {
+      kind: 'admob',
+      showRewarded: () => Promise.reject(new Error('ad stub: the layout sweep never watches one')),
+    };
+  });
 }
 
 export function uid(prefix: string): string {

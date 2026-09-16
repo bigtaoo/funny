@@ -33,8 +33,11 @@ import { execFileSync } from 'child_process';
 import type { Page } from '@playwright/test';
 import {
   ANNOUNCEMENT, FAMILY_NAME, FAMILY_TAG, SECT_NAME, SECT_TAG, LONG_NAMES,
-  buildAuctions, buildInventory, buildMails, nameFor, tagOf,
+  buildAuctions, buildAuctionBids, buildInventory, buildMails, nameFor, tagOf,
 } from './seedFixtures';
+// The period-key functions themselves rather than a copy of the format — see `dayKey`/`weekKey` in
+// the payload below. Pure, no Node/DB dependency (their own header says so).
+import { makeDayKey, makeWeekKey } from '../../../src/game/meta/retention';
 
 /** The Mongo container in docker/docker-compose.local.yml. */
 const CONTAINER = 'nw-local-mongo';
@@ -170,6 +173,12 @@ export async function seedAccount(page: Page): Promise<SeedTarget> {
     equipment: inv.equipment,
     mails,
     now,
+    // The server's own period keys, computed with the server's own functions: retention state is
+    // matched against `makeDayKey(now)` / `makeWeekKey(now)` on read and lazily zeroed when it does
+    // not agree (shared/src/retention.ts resetStaleRetention), so a hand-rolled key here would seed
+    // a block the first read throws away.
+    dayKey: makeDayKey(now),
+    weekKey: makeWeekKey(now),
   })}
 const meta    = db.getSiblingDB('${DB_META}');
 const social  = db.getSiblingDB('${DB_SOCIAL}');
@@ -237,6 +246,40 @@ meta.saves.updateOne({ _id: P.me }, { $set: {
   'save.progress.stars': { ch1_lv1: 3, ch1_lv2: 3, ch1_lv3: 3, ch1_lv4: 3, ch1_lv5: 3, ch1_lv6: 3, ch1_lv7: 2, ch1_lv8: 3, ch1_lv9: 2, ch1_lv10: 3 },
   'save.cardInvCount': P.cards.length,
   'save.equipmentInvCount': P.equipment.length,
+  // Retention, in MID state on purpose. A fresh account has every daily task pending and every
+  // weekly tier locked, so the sweep only ever saw one of the two shapes each of those cards can
+  // take — and the done/claimed shapes are the ones carrying a status tag
+  // (ui/widgets/statusTag.ts). One task of three done, one weekly tier of three claimed and the
+  // next already reached gives every state on both tabs in one screenshot.
+  'save.retention.daily': { dayKey: P.dayKey, completedTasks: { 'pve.clear': 1 }, taskPoints: 1, rewardClaimed: false },
+  'save.retention.weekly': { weekKey: P.weekKey, points: 12, claimedTiers: [9] },
+  // Achievements, same reasoning one screen over — plus the lifetime stats the wall reads its
+  // progress bars off. Without those every tier sat at 0/threshold and the two shapes that carry a
+  // WIDGET (the gold "Claim +N" button, and the claimed status tag it degrades into) barely drew:
+  // the claimedTiers below were "claimed" on a stat of zero, so tier I rendered its tag while II and
+  // III rendered the same plain coin row as everything else. Chosen per category so each tab shows
+  // all three states at once, and so every tab has content at all:
+  //   pve  (1 def)  chapters 3   -> I claimed, II claimable, III (9) running
+  //   pvp  (3 defs) archer 640   -> I claimed, II claimable, III (2000) running
+  //                 guard 2450   -> all three claimed (the fully-done card)
+  //                 pvp.wins     -> mirrors save.pvp.wins above, nothing claimed: three claim buttons
+  //   progression (1 def) meteor 128 -> I claimed, II claimable, III (400) running
+  // The 'collection' category has no definitions at all (server/shared/src/achievements.ts), so its
+  // tab is hidden and there is nothing to seed for it — see layoutStops.ts's note on the missing stop.
+  'save.stats': {
+    'campaign.chaptersCleared': 3,
+    'kill.archer': 640,
+    'kill.guard': 2450,
+    'cast.meteor': 128,
+    'pvp.wins': 1284,
+  },
+  'save.achievements': {
+    'ach.campaign.chapters': { claimedTiers: [1] },
+    'ach.kill.archer': { claimedTiers: [1] },
+    'ach.kill.guard': { claimedTiers: [1, 2, 3] },
+    'ach.pvp.wins': { claimedTiers: [] },
+    'ach.cast.meteor': { claimedTiers: [1] },
+  },
 } });
 
 // ── Inventory ─────────────────────────────────────────────────────────────────────────────────
@@ -325,9 +368,15 @@ print(MARK + JSON.stringify({ ok: true, seasonNo: seasonNo, bots: bots }));
   const botIds = res.bots;
 
   // Its own database (auctionsvc is physically isolated — AUCTION_DESIGN §9), hence its own call.
-  mongosh(DB_AUCTION, `${payload({ rows: buildAuctions(botIds, accountId, 44) })}
+  const auctions = buildAuctions(botIds, accountId, 44);
+  mongosh(DB_AUCTION, `${payload({ rows: auctions, bids: buildAuctionBids(auctions, accountId) })}
 db.auctions.deleteMany({ _id: /^seedauc/ });
 db.auctions.insertMany(P.rows);
+// The participation ledger behind the My Bids tab — a separate collection, because topBid only ever
+// remembers the current leader (auctionsvc/src/db.ts AuctionBidDoc). Without it that tab renders its
+// empty state on a market of 44 listings.
+db.auctionBids.deleteMany({ _id: /^seedauc/ });
+db.auctionBids.insertMany(P.bids);
 print(MARK + JSON.stringify({ ok: true, listings: P.rows.length }));`);
 
   return { accountId, botIds, familyId: `fam:${FAMILY_TAG}` };

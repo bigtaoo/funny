@@ -11,6 +11,7 @@ import { makeText } from '../../../render/pixiText';
 import { t, TranslationKey } from '../../../i18n';
 import { ui as C, txt, sketchPanel, seedFor } from '../../../render/sketchUi';
 import { drawButtonLabel, buttonLabelIconW } from '../../../ui/widgets/buttonLabel';
+import { drawStatusTag } from '../../../ui/widgets/statusTag';
 import { buildRewardIcon } from '../../../render/rewardIcon';
 import { FS, snapFont } from '../../../render/fontScale';
 import type { SaveData } from '../../../game/meta/SaveData';
@@ -61,22 +62,31 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     bg.x = PAD; bg.y = cy;
     container.addChild(bg);
 
-    // Label is wrapped and width-capped to the left ~62% of the card so long labels
-    // (e.g. "Clear any PvE level") can never grow into the right-aligned state text.
+    // State tag first, so the label below knows how much of the card is already spoken for
+    // (the ordering `BattlePassScene/cell.ts` had to adopt for the same reason).
+    //
+    // A pending task draws NOTHING. The three tasks are binary — one point each, done once
+    // (server/shared/src/retention.ts DAILY_TASKS) — so "In progress" only ever meant "not the
+    // other state", which the paper-vs-green fill and the `n / 3` tally under the cards already
+    // say. Replacing it with an hourglass would have been the same non-statement in fewer pixels;
+    // dropping it hands the whole right half of the card back to the label, which is what was
+    // actually short of room.
+    const stateFS = snapFont(Math.round(cardH * 0.3));
+    const reserve = done
+      ? drawStatusTag(container, PAD, cy, cardW * 0.96, cardH, t('daily.tasks.done'), 'check', 0x336644, stateFS)
+      : 0;
+
+    // Wrapped only against whatever the tag left over, instead of the flat 60% cap this carried
+    // while every card had a state word on it: "Clear any PvE level" needed two lines in portrait
+    // purely to clear "In progress", and there is no longer anything there to clear.
     const label = makeText(t(labelKey as TranslationKey), {
-      fontSize: snapFont(Math.round(cardH * 0.3)), fill: 0x333333, fontFamily: 'monospace',
-      wordWrap: true, wordWrapWidth: cardW * 0.6, breakWords: true,
+      fontSize: stateFS, fill: 0x333333, fontFamily: 'monospace',
+      wordWrap: true, wordWrapWidth: Math.max(cardW * 0.3, cardW * 0.87 - reserve), breakWords: true,
     });
     label.anchor.set(0, 0.5);
     label.x = PAD + cardW * 0.05;
     label.y = cy + cardH * 0.5;
     container.addChild(label);
-
-    const state = txt(done ? t('daily.tasks.done') : t('daily.tasks.pending'), snapFont(Math.round(cardH * 0.3)), done ? 0x336644 : 0x888888);
-    state.anchor.set(1, 0.5);
-    state.x = PAD + cardW * 0.96;
-    state.y = cy + cardH * 0.5;
-    container.addChild(state);
   });
 
   const summaryY = cardY0 + taskLabels.length * (cardH + h * 0.008) + h * 0.01;
@@ -100,8 +110,23 @@ export function renderDailyTasks(ctx: DailyPanelCtx, areaX: number, top: number,
     // there (2026-08-10 bug report, screenshot). Sizing the floor's ceiling-breaker off the
     // label's actual measured width makes the fix orientation- and locale-agnostic instead of
     // retuning yet another magic fraction for portrait (or for German's longer strings).
+    //
+    // ...bounded by the row, which the ceiling-breaker above did not do. The summary row is the
+    // progress counter on the left and this button on the right, and a width derived from the
+    // label alone knows nothing about the counter: German's "+5 Münzen abholen" grew the button
+    // until its left edge sat ON the `1 / 3` — drawn first, so the sweep reported the counter as
+    // 40% `covered` (§55.1). `btnPad` is what made it so hungry: it is half the button's HEIGHT,
+    // and in portrait that height is 22% of the screen. Capping at the room that is actually left
+    // keeps the padding a request rather than a claim, and `drawButtonLabel` degrades from there
+    // the way it does everywhere else (shrink to the floor, drop the glyph, wrap) instead of the
+    // row silently losing its counter. The `cardW * 0.45` floor stays OUTSIDE the cap: a row too
+    // narrow even for that is a layout bug the sweep should report, not one to hide by shrinking.
     const btnPad = btnH * 0.5;
-    const btnW = Math.max(cardW * 0.45, btnLabel.width + buttonLabelIconW(snapFont(Math.round(btnH * 0.36))) + btnPad);
+    const roomW = cardW - ptTxt.width - cardW * 0.05;
+    const btnW = Math.max(
+      cardW * 0.45,
+      Math.min(roomW, btnLabel.width + buttonLabelIconW(snapFont(Math.round(btnH * 0.36))) + btnPad),
+    );
     const btnX = PAD + cardW - btnW;
     const btnY = summaryY + cardH * 0.08;
     const btnFill = isClaimed ? 0xaaaaaa : isClaimable ? 0x336644 : 0xaaaaaa;

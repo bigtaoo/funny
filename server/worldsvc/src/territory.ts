@@ -124,6 +124,9 @@ export class TerritoryService {
       troopCap: troopCapFor(buildings),
       resources: emptyResources(),
       yieldRate,
+      // The 3x3 capital footprint just upserted is everything this account owns; seeding the mirror here is
+      // what keeps a brand-new player off getMe's backfill path.
+      territoryCount: baseDocs.length,
       lastTickAt: t,
       mainBaseTile: tid,
       buildings,
@@ -198,13 +201,13 @@ export class TerritoryService {
     };
     await cols.tiles.updateOne({ _id: tid }, { $set: tileDoc }, { upsert: true });
 
-    const yieldRate = await this.core.recomputeYield(worldId, accountId);
+    const { rate: yieldRate, count: territoryCount } = await this.core.recomputeYieldAndCount(worldId, accountId);
     // The `pw.troops < GARRISON_PER_TILE` check above is only a fast-fail on a possibly-stale read; guard
     // the actual deduction atomically too — two concurrent occupyTile calls (or occupy + startMarch racing
     // on the same pool) could otherwise both pass the early check and both $inc, driving troops negative.
     // 2026-08-24 (unguarded-write sweep): the troop debit was always atomic, but the `resources` beside it
     // was an absolute value settled from the `pw` snapshot — published after a tiles upsert and
-    // recomputeYield's scans, with nothing stopping it overwriting whatever landed in between (a teams.ts
+    // recomputeYieldAndCount's scans, with nothing stopping it overwriting whatever landed in between (a teams.ts
     // `$inc` refund, another settle). settleExpr computes the accrual from the live document instead, so the
     // write commutes; the `$gte` filter is the real precondition and is unchanged.
     const deducted = await cols.playerWorld.updateOne(
@@ -214,6 +217,7 @@ export class TerritoryService {
           $set: {
             resources: this.core.settleExpr(pw.buildings, t),
             yieldRate,
+            territoryCount,
             lastTickAt: t,
             troops: { $subtract: ['$troops', GARRISON_PER_TILE] },
             rev: { $add: ['$rev', 1] },
@@ -281,16 +285,17 @@ export class TerritoryService {
     // ADR-051 (P5): an abandoned tile's arrow tower is destroyed with it — clear its 3×3 coverage too (the TileDoc
     // is deleted above, so the structure is gone; only the Redis cover index needs the explicit sweep).
     if (tile.structure?.kind === 'arrowTower') await this.core.removeCover(worldId, x, y, tid);
-    const yieldRate = await this.core.recomputeYield(worldId, accountId);
+    const { rate: yieldRate, count: territoryCount } = await this.core.recomputeYieldAndCount(worldId, accountId);
     // 2026-08-24 (unguarded-write sweep): same fix as occupyTile, and this site had no filter at all — a
     // blind write of a snapshot-derived `resources` after a tile delete, a stationed claim, up to two
-    // removeCover calls and recomputeYield: the widest lost-update window in the file. `troops` stays an
+    // removeCover calls and recomputeYieldAndCount: the widest lost-update window in the file. `troops` stays an
     // unclamped add (`$inc` semantics preserved) — a garrison refund may exceed troopCap, same as before.
     await cols.playerWorld.updateOne({ _id: pw._id }, [
       {
         $set: {
           resources: this.core.settleExpr(pw.buildings, t),
           yieldRate,
+          territoryCount,
           lastTickAt: t,
           troops: { $add: ['$troops', refund] },
           rev: { $add: ['$rev', 1] },
@@ -357,7 +362,7 @@ export class TerritoryService {
       baseDocs.map((d) => cols.tiles.updateOne({ _id: d._id }, { $set: d }, { upsert: true })),
     );
 
-    const yieldRate = await this.core.recomputeYield(worldId, accountId);
+    const { rate: yieldRate, count: territoryCount } = await this.core.recomputeYieldAndCount(worldId, accountId);
     // 2026-08-24: this write is unconditional, and must be. It used to be guarded on `rev: claimedRev` and
     // throw REV_CONFLICT — but by here the coins are spent AND the 9 base tiles are already moved, so a throw
     // left the account charged, relocated, and `mainBaseTile` pointing at a deleted tile: a lost update
@@ -371,6 +376,7 @@ export class TerritoryService {
         $set: {
           resources: this.core.settleExpr(pw.buildings, t),
           yieldRate,
+          territoryCount,
           mainBaseTile: newTid,
           lastTickAt: t,
           rev: { $add: ['$rev', 1] },

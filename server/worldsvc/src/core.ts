@@ -19,7 +19,7 @@
 //
 //   (this file)     WorldCore       — kernel fields/primitives (was core/kernel.ts) + composition +
 //                                     one-line forwards for every sibling below
-//   core/yield.ts   YieldService    — settle / yieldRecord / recomputeYield
+//   core/yield.ts   YieldService    — settle / yieldRecord / recomputeYieldAndCount
 //   core/push.ts    PushService     — Redis schedule ZSETs + gateway push helpers
 //   core/nation.ts  NationService   — nation init / founding / naming / lookup
 //   core/spawn.ts   SpawnService    — spawn selection + 3×3 base footprint helpers (ADR-025)
@@ -149,7 +149,7 @@ export class WorldCore {
   settle(doc: PlayerWorldDoc, now: number): Record<ResourceType, number> { return this.yieldSvc.settle(doc, now); }
   settleExpr(...args: Parameters<YieldService['settleExpr']>): ReturnType<YieldService['settleExpr']> { return this.yieldSvc.settleExpr(...args); }
   yieldRecord(tiles: { type: TileType; level: number; resType?: ResourceType }[]): Record<ResourceType, number> { return this.yieldSvc.yieldRecord(tiles); }
-  recomputeYield(...args: Parameters<YieldService['recomputeYield']>): ReturnType<YieldService['recomputeYield']> { return this.yieldSvc.recomputeYield(...args); }
+  recomputeYieldAndCount(...args: Parameters<YieldService['recomputeYieldAndCount']>): ReturnType<YieldService['recomputeYieldAndCount']> { return this.yieldSvc.recomputeYieldAndCount(...args); }
 
   // ── push (core/push.ts) ───────────────────────────────────────────
   setOccupancy(worldId: string, tile: string, occ: OccEntry): Promise<void> { return this.pushSvc.setOccupancy(worldId, tile, occ); }

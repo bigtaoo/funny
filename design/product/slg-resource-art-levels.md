@@ -117,7 +117,7 @@ scroll, rolled paper, tube, cylinder, laboratory glassware, test tubes, ribbon
 - `res_metal_l9`：`Seven metal binder clips crowded into a dense freestanding heap at varied angles, looped wire handles overlapping, small metal hardware filling every gap`
 - `res_sticker_l8`：`A thick stack of star-shaped stickers with more loose stars fanned out around it, several stars overlapping the stack`
 
-> **⚠️ 新美术落地时会撞上一个管线陷阱**：客户端真正加载的是**合并页** `client/src/assets/slg/world_atlas.{png,json}`，而 2026-07-27 的资产整理把 `terrain/city/playerbase/building/city_bld` 这些源图集**从仓库里删掉了**，`mergeAssetAtlases.js` 已不可重跑（缺输入）。本次因为画稿未变、帧尺寸未变，可以用 `node art/scripts/patchMergedAtlas.js client/src/assets/slg/res_atlas.json client/src/assets/slg/world_atlas.json` 就地回贴（它会连带搬运 `nw` 这类自定义 per-frame 字段）。**但新画稿的长宽比一定会变，帧尺寸随之改变，`patchMergedAtlas.js` 会直接拒绝**（它只支持同尺寸回贴）。届时必须：从 git 历史恢复那几个被删的源图集 → 重跑 `mergeAssetAtlases.js` 做整页重排 → 或者给 patch 脚本加"重排整页"能力。**出图之前先把这条路打通**，否则图出完了进不去客户端。
+> **⚠️ 新美术落地时会撞上一个管线陷阱**：客户端真正加载的是**合并页** `client/src/assets/slg/world_atlas.{png,json}`，而 2026-07-27 的资产整理把 `terrain/city/playerbase/building/city_bld` 这些源图集**从仓库里删掉了**，`mergeAssetAtlases.js` 已不可重跑（缺输入）。本次因为画稿未变、帧尺寸未变，可以用 `node art/scripts/patchMergedAtlas.js client/src/assets/slg/world_atlas.json client/src/assets/slg/world_atlas.json` 就地回贴（它会连带搬运 `nw` 这类自定义 per-frame 字段）。**但新画稿的长宽比一定会变，帧尺寸随之改变，`patchMergedAtlas.js` 会直接拒绝**（它只支持同尺寸回贴）。届时必须：从 git 历史恢复那几个被删的源图集 → 重跑 `mergeAssetAtlases.js` 做整页重排 → 或者给 patch 脚本加"重排整页"能力。**出图之前先把这条路打通**，否则图出完了进不去客户端。
 >
 > **20 → 17 张的调整**：`res_ink_l4` / `res_graphite_l4` / `res_graphite_l3` / `res_paper_l8` 的 prompt 已撤（理由见 §6.4 末），新增 `res_graphite_l5`。
 >
@@ -308,6 +308,8 @@ l6+ 合计 **11.9% 的资源格**（不是之前以为的 1.7%），而且**不�
 - **标签与母题重叠是已知且接受的**：标签在 `y = tp*0.15`，而母题半高最大能到 `0.20 tp`（`LEVEL_SCALE` 1.30 时）再叠 `dy` 抖动 0.09 tp——菱形内没有一处能容下不压图的文字。靠 BitmapFont 自带的白描边保可读，不再挪位。
 
 > **留给用户拍板的一条（本次没动）**：竖屏 L1 一屏 **3660** 格。这不是标签问题，是 zoom 档位问题——`makeZoomCfgs` 的最近档是 `floor(w/11)`，竖屏设计高远大于横屏，同一个除数在竖屏摊出的格数是横屏的 5.6 倍。要么给竖屏单独收紧最近档的除数，要么加第四档。改动会影响整张地图的观感，不在本任务范围内。
+>
+> **✅ 已拍板并落地（2026-09-15）**：走的是「给竖屏单独收紧最近档」，但定义换了个锚——竖屏 L1 不再声明「一屏几格」，而是声明「自己基地的地皮占屏宽 5/6」（`PORTRAIT_L1_BASE_WIDTH_FRAC = 5 / 6`，tp = `w × 5/6 / BASE_FOOTPRINT` = 300），旧的 L1 退成 L2。一屏 3660 → 约 300 格，这面文字墙自动消解。横屏未动。详见 [`SLG_LOG_2026-08.md` 2026-09-15 条](../game/SLG_LOG_2026-08.md)。
 
 #### 6.12.4 §6.11 两处取舍：复核后**都保留**
 

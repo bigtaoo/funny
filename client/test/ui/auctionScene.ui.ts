@@ -26,6 +26,7 @@ import { skinEquipKey, skinDisplayName } from '../../src/game/meta/skinDefs';
 import { UnitType } from '@nw/engine/types';
 import { SCALE as FORM_SCALE } from '../../src/scenes/AuctionScene/createListing';
 import { snapFont } from '../../src/render/fontScale';
+import { aucGrid, aucInfoColumnW } from '../../src/scenes/AuctionScene/types';
 import { openDomTextInput } from '../../src/platform/web/domTextInput';
 
 // Every export passes through untouched except cardInstanceArtUrl, wrapped in vi.fn (keeping its
@@ -812,6 +813,61 @@ describe('AuctionScene — My Bids tab', () => {
     scene.core.loading = false;
     scene.render();
     expect(collectTexts(scene.container)).toContain(`${t('auction.myBid')}: 120`);
+    scene.destroy();
+  });
+
+  // The other end of `test/auctionCellInfoWidth.test.ts`.
+  //
+  // That gate holds three translations to a column width it computes with `aucInfoColumnW()`.
+  // Nothing made the CELL use the same number: until §55.2 it wrapped against `x + cellW - pad -
+  // ax`, its own copy of the arithmetic. Two copies drift, and when they do the gate goes on
+  // measuring a column that no longer exists — green the whole way, while the only other thing
+  // that can see the defect is a 25-minute sweep whose German row had never been run.
+  //
+  // Asserted on the wrap WIDTH, not on rendered pixels: this harness's measureText is a flat 7px
+  // per character (harness/pixiHeadless.ts) and so cannot reproduce which locale actually wraps.
+  // The width is exactly the part the two sides have to agree on, and it is the part that drifts.
+  it('wraps its info column against the same aucInfoColumnW() the translation gate measures', () => {
+    const scene = buildScene({ myAccountId: 'acc_me' });
+    scene.core.applyMyBids([makeBid(
+      { auctionId: 'b1', price: 200, buyoutPrice: 800 },
+      { outcome: 'outbid', myBid: 120 },
+    )]);
+    scene.core.activeTab = 'bids';
+    scene.core.loading = false;
+    scene.render();
+
+    // Portrait reserves no width for the tab nav (bottom bar, §18), so the grid gets the whole
+    // design width — the same premise the translation gate asserts, restated here against the
+    // scene's own `w` rather than a literal.
+    const expected = aucInfoColumnW(aucGrid(scene.core.w).cellW);
+    expect(expected).toBeCloseTo(167.33, 1);
+
+    const wrapWidths = new Map<string, number>();
+    const walk = (c: PIXI.Container): void => {
+      for (const ch of c.children) {
+        if (ch instanceof PIXI.Text) {
+          if (ch.style.wordWrap) wrapWidths.set(ch.text, Number(ch.style.wordWrapWidth));
+        } else if (ch instanceof PIXI.Container) walk(ch);
+      }
+    };
+    walk(scene.container);
+
+    // Two of the three by value...
+    for (const line of [
+      `${t('auction.myBid')}: 120`,
+      t('auction.buyoutAt').replace('{price}', '800'),
+    ]) {
+      expect(wrapWidths.has(line), `"${line}" should be a wrapped info-column line`).toBe(true);
+      expect(wrapWidths.get(line)).toBeCloseTo(expected, 4);
+    }
+    // ...and the countdown by counting, since its text is a live duration that can tick between
+    // the render and the assertion. An auction-mode row draws exactly five wrapped lines — name,
+    // current bid, my bid, buyout, countdown — so a fifth one at this width IS the countdown, and
+    // the count also catches a line quietly losing its wrap.
+    const atColumn = [...wrapWidths.values()].filter((w) => Math.abs(w - expected) < 1e-4);
+    expect(atColumn).toHaveLength(5);
+
     scene.destroy();
   });
 

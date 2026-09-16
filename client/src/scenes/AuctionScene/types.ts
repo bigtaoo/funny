@@ -60,6 +60,36 @@ export const AUC_CELL_GAP = 14;
 export const AUC_CELL_H = 200;
 export const AUC_CELL_W_TARGET = 340;
 
+/** Breathing room inside a cell, and the gap between the item picture and the info column. */
+export const AUC_CELL_PAD = 14;
+export const AUC_CELL_IMG_GAP = 16;
+/** Cap on the square item picture, so a tall cell does not crowd out the info column beside it. */
+export const AUC_CELL_IMG_MAX = 130;
+
+/**
+ * Columns the grid fits into `contentW`, and the width of one cell — `ListPanel.renderList`'s own
+ * arithmetic, lifted here so it can be read without PIXI.
+ */
+export function aucGrid(contentW: number): { cols: number; cellW: number } {
+  const avail = contentW - AUC_CELL_GAP * 2;
+  const cols = Math.max(1, Math.floor((avail + AUC_CELL_GAP) / (AUC_CELL_W_TARGET + AUC_CELL_GAP)));
+  return { cols, cellW: (avail - AUC_CELL_GAP * (cols - 1)) / cols };
+}
+
+/**
+ * The info column a cell of `cellW` leaves to the right of its item picture — the wrap width every
+ * line of name/price/my-bid/buyout/countdown is measured against (`renderAuctionCell`'s `rightW`).
+ *
+ * Exported because it is a CONTRACT on the translations, not just a local: three of those lines
+ * must fit it on ONE line in every locale or the countdown is pushed onto the cell's bottom-right
+ * badge (§55.2). `test/auctionCellInfoWidth.test.ts` is the gate, and it has to measure the real
+ * column rather than a copy of this arithmetic that can drift away from it.
+ */
+export function aucInfoColumnW(cellW: number): number {
+  const imgSize = Math.min(AUC_CELL_H - AUC_CELL_PAD * 2, AUC_CELL_IMG_MAX);
+  return cellW - AUC_CELL_PAD * 2 - imgSize - AUC_CELL_IMG_GAP;
+}
+
 // Material types available for auction
 export const MATERIALS = ['scrap', 'lead', 'binding'] as const;
 // Fixed listing duration — must match server-side AUCTION_DURATIONS_SEC (shared/slg/auction.ts),

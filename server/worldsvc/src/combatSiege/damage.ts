@@ -209,7 +209,7 @@ export class SiegeDamageService {
           $inc: { rev: 1 },
         },
       );
-      const atkYield = await this.core.recomputeYield(d.worldId, d.attackerId);
+      const { rate: atkYield, count: atkCount } = await this.core.recomputeYieldAndCount(d.worldId, d.attackerId);
       // 2026-08-24 (yieldRate/settle invariant): a yieldRate change must bank the accrual at the OLD rate in
       // the same atomic write. Advancing lastTickAt without writing resources discarded the whole un-settled
       // window; changing yieldRate without advancing it retroactively repriced that window at the new rate.
@@ -217,10 +217,10 @@ export class SiegeDamageService {
       // is banked in the same document update that installs the new rate — and needs no rev guard to be safe.
       if (attacker) {
         await cols.playerWorld.updateOne({ _id: attacker._id }, [
-          { $set: { resources: this.core.settleExpr(attacker.buildings, t), yieldRate: atkYield, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+          { $set: { resources: this.core.settleExpr(attacker.buildings, t), yieldRate: atkYield, territoryCount: atkCount, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
         ]);
       }
-      const defYield = await this.core.recomputeYield(d.worldId, defenderId);
+      const { rate: defYield, count: defCount } = await this.core.recomputeYieldAndCount(d.worldId, defenderId);
       // The defender write previously set yieldRate alone — no lastTickAt, so nothing was discarded, but the
       // whole un-settled window was then repriced at the post-loss (lower) rate: production the defender had
       // already earned at the old rate quietly shrank. Same fix, plus the read this site needs for the cap.
@@ -228,7 +228,7 @@ export class SiegeDamageService {
       const defPwForYield = await cols.playerWorld.findOne({ _id: defPwId });
       if (defPwForYield) {
         await cols.playerWorld.updateOne({ _id: defPwId }, [
-          { $set: { resources: this.core.settleExpr(defPwForYield.buildings, t), yieldRate: defYield, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
+          { $set: { resources: this.core.settleExpr(defPwForYield.buildings, t), yieldRate: defYield, territoryCount: defCount, lastTickAt: t, rev: { $add: ['$rev', 1] } } },
         ]);
       }
     }

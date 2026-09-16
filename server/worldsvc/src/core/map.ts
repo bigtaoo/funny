@@ -13,7 +13,7 @@ import type { WorldCore } from '../core';
 import type { YieldService } from './yield';
 import type { VisionService } from './vision';
 import { liveGarrison, siegeHpView } from './helpers';
-import type { TileDoc } from '../db';
+import type { PlayerWorldDoc, TileDoc } from '../db';
 import type { PlayerProfile } from '../metaClient';
 import {
   MAP_VIEW_MAX_RADIUS,
@@ -242,7 +242,7 @@ export class MapService {
       troopCap: doc.troopCap,
       resources,
       yieldRate: doc.yieldRate,
-      territoryCount: await this.core.deps.cols.tiles.countDocuments({ worldId, ownerId: accountId }),
+      territoryCount: doc.territoryCount ?? (await this.backfillTerritoryCount(doc)),
       ...(doc.hasBattlePass ? { hasBattlePass: true } : {}),
       ...(doc.mainBaseTile ? { mainBaseTile: doc.mainBaseTile } : {}),
       // S8-8 UI fix (2026-08-08): mirror the anchor tile's protection-shield end time onto the player view,
@@ -266,6 +266,24 @@ export class MapService {
       ...(doc.cardState && Object.keys(doc.cardState).length > 0 ? { cardState: doc.cardState } : {}),
       ...(doc.teamState && Object.keys(doc.teamState).length > 0 ? { teamState: doc.teamState } : {}),
     };
+  }
+
+  /**
+   * One-shot migration for a `playerWorld` document written before `territoryCount` existed: count the tiles
+   * live (what `getMe` used to do on every single read), then persist it so this account never pays for the
+   * count again. Filtered on the field still being absent, so a concurrent ownership change — which recomputes
+   * the count from its own scan — wins, and this stale figure cannot land on top of it. Best-effort: a failed
+   * write-back only means the next `getMe` counts again.
+   */
+  private async backfillTerritoryCount(doc: PlayerWorldDoc): Promise<number> {
+    const count = await this.core.deps.cols.tiles.countDocuments({
+      worldId: doc.worldId,
+      ownerId: doc.accountId,
+    });
+    void this.core.deps.cols.playerWorld
+      .updateOne({ _id: doc._id, territoryCount: { $exists: false } }, { $set: { territoryCount: count } })
+      .catch(() => {});
+    return count;
   }
 
   tileDocView(o: TileDoc, accountId: string, ownerProfile?: PlayerProfile, now: number = this.core.deps.now()): WorldTileView {

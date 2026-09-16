@@ -201,3 +201,29 @@ docker compose -f docker-compose.cloud.yml --env-file .env config | grep MONGO_U
 但**没有**改成「变量缺失就抛异常」，而是 `requiredEnv('NW_X_MONGO_URI', DEV_MONGO_URI)` —— 缺省值是 `mongodb://127.0.0.1:27017/?replicaSet=rs0` 这个**主机**，不是别人的变量。理由：`npm run dev:*` 不经过 compose、仓库里也没有 dotenv，硬抛会把本地开发整条路打死；而要拦的从来不是「没有值」，是「值是别人的凭据」。回退到 localhost 借不到任何人的授权 —— 在开发机之外那个地址上什么都没有，服务死在连接拒绝上，而不是安静地读到别人的数据。线上这一层由 compose 的 `:?` 兜着。
 
 **⑥ `docker-compose.prod.yml` 不在本次范围内**：它的兜底是 `mongodb://mongo:27017/?replicaSet=rs0`（自带的 mongo 容器，**没开认证**），从来就不是 `NW_MONGO_URI`。对它硬性要求各服务凭据会直接打死那套栈和 `docker-compose.ci.yml`（CI 叠加在 prod 之上）。要给它开认证是另一件事，本地栈 `docker/docker-compose.local.yml` 已经是那个样子了。
+
+---
+
+## ADR-091 文档里的代码路径也进门禁：一次扫掉 164 处指向不存在文件的引用 — Accepted — 2026-09-15
+
+- **决策**：`scripts/checkDocLinks.mjs` 加第 4 项检查——正文里点名的源码路径（`server/<svc>/src/<模块>.ts` 这种，通常写在反引号里）必须能解析，否则 CI 红。两张豁免表，每条都必须写理由：`PATH_ALLOW`（写法本来就对但解析不了：生成物、别的仓库、每个 workspace 各有一份的脚本）、`PATH_ALLOW_HISTORICAL`（带日期的日志条目，它的主题**就是**这个文件被删掉——改路径反而会把条目写成假话）。
+- **背景**：ADR-067 那道门禁只看 **markdown 链接**，而这个仓库几乎不用链接指代码，是**在正文里用反引号写路径**。于是它一直在门禁的盲区里烂：全仓 2 573 处路径引用，**164 处指向不存在的文件**（6.4%）。两次没人扫尾的大重构贡献了绝大多数：
+  - **服务端单体拆成 workspaces**：`server/src/<x>.ts` → `server/metaserver/src/<x>.ts`（单体那部分变成了 metaserver），约 50 处；
+  - **场景 mixin 链改组合**：`XScene/base.ts` → `XScene/core.ts`（`7536fbece` 等），10 个场景 + `ApiClient` 全中。
+
+  其余是资源图集合并（`terrain/res/building/city_bld/playerbase_atlas` → 一张 `world_atlas`）、图标模块合并（`icons/{titles,equipment}.ts` → `inkIconRaster.ts`）、以及根目录 `scripts/` 其实住在某个 workspace 里。
+- **一个反直觉的正则坑，值得记**：`gameserver` 这个词以 `server` 结尾，于是 `gameserver/index.ts` 的后半截本身就是一条以 `server/` 开头、看起来完全合法的路径（这里不把它原样写出来，否则本条自己就会触发门禁）。少了前置边界 `(?<![A-Za-z0-9_\-./@])`，每个服务的入口文件都会被报成死路径；同理 `metaserver/socialsvcClient.ts` 会被读成一条以 `server/` 开头的死路径。第一版正是这么写的，误报 7 条。**改写时更危险**：没有这条边界，把单体写法的 `Room.ts` 路径替换成 `server/gameserver/src/Room.ts` 会把**已经正确**的那条二次改写成 `server/gamegameserver/...`。
+- **另一件必须做对的事：路径也要相对文档自己解析**。`design/README.md` 里写 `tools/map-editor/DESIGN.md` 指的是 `design/tools/map-editor/DESIGN.md`，是对的。只按仓库根解析会误报 7 条。
+- **「不存在」不等于「过期」——这条是这次最大的收获**。164 处里逐条读上下文后，**19 处引用的文件确实没了，但文档本来就是在讲它被删掉这件事**，写得清清楚楚（`equipmentFormulaParity.test.ts` 当天加当天删，见 ADR-087；`scout.e2e.test.ts` 随侦察行军整个功能删除；`compliance.test.ts` 因断言全是假的被删）。**机械修掉这些，会把正确的历史改成错的现状。**真正过期、需要动正文的只有一份：[`design/product/client-rendering-cache.md`](product/client-rendering-cache.md)（2026-07-03 的草案，`AssetCache`/`assetManifest`/`unitSpritePool` 三个文件从没按那个名字建过，且「已加载资源永不移除」这条原则已被 `MemoryMonitor` 的主动释放推翻）——给它加了状态头，指向真正落地的那几个文件。
+- **影响**：`scripts/checkDocLinks.mjs`（第 4 项检查 + 两张豁免表）；47 份文档共 96 处路径改写；`design/product/client-rendering-cache.md` 加状态头；`design/tools/level-editor/DESIGN.md` §5 加订正说明（该节写于 campaign 代码还在 `client/` 的年代，类型与 schema 已迁进 `@nw/engine`，关卡数据仍在 client，路径改了但「在 `client/` 里做」的框架只对一半成立）。CI 无需改动——`ci.yml` 早就在跑 `checkDocLinks.mjs`，新检查自动搭车。
+- **验证**：门禁绿（192 份 md / 1 725 条链接 / 2 573 处路径）。两个变异逐个验红/验绿：往 `claudedocs/README.md` 塞一条单体写法的 `ads.ts` 路径 → **红**；同一行的 `gameserver/index.ts` → **不报**（前置边界生效）。
+- **后续（2026-09-16，CI 上才发现）**：这条检查的 canary 写成了 `files.length === 0 || linksChecked === 0 || pathsChecked === 0`，而兄弟守卫测试 [`server/shared/test/guardScripts.test.ts`](../server/shared/test/guardScripts.test.ts) 是 spawn 真 CLI 跑在三五个文件的 fixture 树上的——那些树里一处源码路径都没有，于是**每棵树都踩 canary**，6 例全红。本轮只跑了真仓库的门禁、没跑 server 测试，所以红在 PR 的 `server test (rest)` 上才暴露。**修 fixture 而不是放宽 canary**：`docTree()` 默认往 CLAUDE.md 追加一句、点名一个同时建出来的 `.mjs` 文件，测 canary 自身的用例用 `{ sourcePaths: false }` 退出这条默认；另补一例钉住新增的那半条 canary（链接全部解析、路径扫到 0 → 红），并做了变异验证（从 canary 里去掉 `pathsChecked === 0` → 该例转红）。
+
+### 同轮量过、但决定不做的事：「压体积」
+
+这轮本来还要照 2026-09-14 那次**记忆**整理的做法压文档体积——删掉逐文件账目、只留约定与教训。**量完之后放弃了，理由值得记下来，免得下次有人再跑一遍同样的调查。**
+
+- **文档里几乎没有字面重复可删**。全量扫 183 份 `design/` + `claudedocs/`（7.8 MB）里长度 ≥160 字符的段落：跨文件重复 **2 处**（都是三语法务文件共用的「适用范围」声明，本来就该各存一份），文件内重复 **1 处 246 字节**。**7.8 MB 里冗余不到 1 KB** —— 这些文件大，是因为记的东西多，不是因为说了两遍。
+- **记忆能删账目，恰恰因为文档不能删**。那次整理的原话是「它们本来就能从 `claudedocs/` 和 git 历史重读」。也就是说记忆把耐久副本**委托**给了这里；在这里删同一批内容，等于把委托的对方也删了。
+- **所以「压体积」这轮只做了无损的那一半**：把唯一一个离谱的异常值（`UI_DESIGN_LOG_2026-08.md`，1597 行 = 上限的 3.2 倍）按语义接缝滚成两册。滚完之后全仓再没有超过 1200 行的文档。
+- **真要再压，剩下的只有语义冗余**（同一条教训换个说法又写一遍），那个机器测不出来，只能靠读；**代价是逐字读 7.8 MB，收益未经证实**。要做就单独立项，别夹在别的任务里顺手做。

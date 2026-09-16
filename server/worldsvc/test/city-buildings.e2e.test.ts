@@ -1,6 +1,6 @@
 // worldsvc home-city building system end-to-end (SLG_CITY_DESIGN P1, ADR-022): real Mongo.
 //   ① upgradeBuilding deducts resources + enqueues a build; processCompletedBuilds applies the level when due;
-//   ② resource buildings (stickerShop / graphiteMill) take effect in recomputeYield after completion (faucet/sink wiring);
+//   ② resource buildings (stickerShop / graphiteMill) take effect in recomputeYieldAndCount after completion (faucet/sink wiring);
 //   ③ drillYard raises troopCap on completion; ④ desk gate rejects over-level upgrades + no key gets an 11th level; ⑤ insufficient resources rejected;
 //   ⑥ speedupBuild (coins → time) finishes a build immediately; ⑦ season reset wipes the playerWorld doc (buildings cleared).
 // Requires `cd server && docker compose up -d`.

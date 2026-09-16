@@ -94,7 +94,7 @@
 
 顺带覆盖了 `.hires` 约定的另一半：`foo.hires.png` 是靠 webpack `NormalModuleReplacementPlugin` 按约定解析的、**没有字面 import**（所以要豁免），但一个 `foo.png` 已经不存在的 `.hires` 文件就是真孤儿——静默、且读代码看不出来。
 
-### 15.2 缓存策略门禁（`scripts/checkCachePolicy.mjs` + `test/cachePolicyGate.test.ts`）
+### 15.2 缓存策略门禁（`client/scripts/checkCachePolicy.mjs` + `test/cachePolicyGate.test.ts`）
 
 §13.1 修好了 `_headers`，但**修好之后同样没有东西防止它再退化**。新增门禁读**产物** `dist/`（不是意图），CI 里跟体积门禁并排跑，断言四件事：
 
@@ -642,7 +642,7 @@ uploads, so simulator cannot get those」），只是当时被读成了一句无
 
 ### 21.3 门禁第 4 条：问「在不在包里」，而且是逐文件问
 
-`scripts/checkWechatPackage.mjs` 原来三条规则问的都是「**字节在不在磁盘上**」。新增第 4 条问它后面
+`client/scripts/checkWechatPackage.mjs` 原来三条规则问的都是「**字节在不在磁盘上**」。新增第 4 条问它后面
 那个问题——「**在不在包里**」：读 `project.config.json` / `project.private.config.json`（后者覆盖
 前者，与 DevTools 的合并顺序一致）里的 `packOptions.ignore`，对**每一个被引用的资源**问一次。
 
@@ -650,7 +650,7 @@ uploads, so simulator cannot get those」），只是当时被读成了一句无
 **当时恰好出事的那一种写法**。可 `packOptions.ignore` 支持六种 `type`（`folder`/`file`/`suffix`/
 `prefix`/`glob`/`regexp`），一条 `{"type":"suffix","value":".png"}` 能把 300 张图排除出包，而那个
 代理问题会全绿放过去。**这正是本节 bug 的同一形状：用一个代理问题冒充真问题。** 所以把匹配逻辑抽成
-`scripts/lib/packIgnore.mjs`（六种 `type` 全实现），逐文件判定，两个方向都拦：
+`client/scripts/lib/packIgnore.mjs`（六种 `type` 全实现），逐文件判定，两个方向都拦：
 
 - 相对路径 + 任何一条 ignore 命中资源 → **红**。报错里点名**是哪一条 ignore 条目干的**、被它带走的
   文件（前 12 个），以及 `readFileSync:fail permission denied` 和「游戏起得来但屏幕是空的」这两个
@@ -727,7 +727,7 @@ uploads, so simulator cannot get those」），只是当时被读成了一句无
 
 ### 22.1 怎么发现的
 
-不是读代码读出来的，是**包内几何巡检**（`entries/wechat-layout.ts`，见 `UI_DESIGN_LOG_2026-08.md`
+不是读代码读出来的，是**包内几何巡检**（`entries/wechat-layout.ts`，见 `UI_DESIGN_LOG_2026-09.md`
 §51）第一次真跑时，它做的第一件事——注册一个账号——直接失败：
 
 ```

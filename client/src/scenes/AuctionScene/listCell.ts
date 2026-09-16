@@ -25,7 +25,7 @@ import { getEquipDef } from '../../game/meta/equipmentDefs';
 import { buildEquipIcon } from '../../render/atlas/equipmentAtlas';
 import { cardInstanceArtUrl, getArtTexture, unitPortraitUrl } from '../../render/cardArt';
 import { SKIN_TARGET_UNIT } from '../../game/meta/skinDefs';
-import { AUC_CELL_H } from './types';
+import { AUC_CELL_H, AUC_CELL_PAD, AUC_CELL_IMG_GAP, AUC_CELL_IMG_MAX, aucInfoColumnW } from './types';
 import type { AuctionSceneCore } from './core';
 import { itemKind, saleModeKind, auctionLabel, auctionItemLevel, auctionItemMaxLevel } from './itemLabels';
 
@@ -54,7 +54,7 @@ export function renderAuctionCell(
   core: AuctionSceneCore, actions: CellActions,
   auc: AuctionView, x: number, y: number, cellW: number, now: number,
 ): void {
-  const pad = 14;
+  const pad = AUC_CELL_PAD;
   const isAuction = auc.saleMode === 'auction';
 
   const cell = sketchPanel(cellW, AUC_CELL_H, { fill: 0xfaf9f5, border: C.mid, seed: seedFor(x, y, cellW) });
@@ -63,7 +63,7 @@ export function renderAuctionCell(
 
   // ── Left: framed item picture (square, capped so a tall cell doesn't crowd out the text
   // column to its right — see renderItemPicture for the real per-item art). ──
-  const imgSize = Math.min(AUC_CELL_H - pad * 2, 130);
+  const imgSize = Math.min(AUC_CELL_H - pad * 2, AUC_CELL_IMG_MAX);
   const imgX = x + pad; const imgY = y + (AUC_CELL_H - imgSize) / 2;
   // fillAlpha: 0 — see CardScene/list.ts's renderCardCell (2026-08-21): the cell behind is already
   // the one background layer, this frame is a stroke-only outline.
@@ -92,8 +92,8 @@ export function renderAuctionCell(
   }
 
   // ── Right: info column (name, price, buyout, countdown) ──
-  const ax = imgX + imgSize + 16;
-  const rightW = x + cellW - pad - ax;
+  const ax = imgX + imgSize + AUC_CELL_IMG_GAP;
+  const rightW = aucInfoColumnW(cellW);
 
   const itemLbl = txt(auctionLabel(auc), FS.bodyLg, C.dark, true);
   itemLbl.x = ax; itemLbl.y = y + pad;
@@ -134,6 +134,13 @@ export function renderAuctionCell(
   // My Bids tab: my own bid, but only when it differs from the listing's current price — while I'm
   // leading the two are the same number and printing it twice reads as a rendering bug. When I've been
   // outbid (or lost) they diverge, and that gap is the whole point of the tab.
+  //
+  // ONE LINE in every locale, same contract as `auction.timeLeft` below and for the same reason: it
+  // is the line that decides whether the countdown clears the badge. German's "Mein Gebot: 706500"
+  // was 18 characters in a 15-character column, and the extra line it wrapped to pushed the
+  // countdown down onto "Überboten" on every outbid row of the sweep (§55.2). `test/auctionCellInfoWidth.test.ts`
+  // holds all three of these strings to the column; English is at 15 of 15, so there is no slack to
+  // spend here.
   if (core.activeTab === 'bids') {
     const mine = core.myBidIndex.get(auc.auctionId);
     if (mine && mine.myBid !== auc.price) {
@@ -159,12 +166,16 @@ export function renderAuctionCell(
   // dead gap and put it fighting the buy button for the same row, see 16.07.2026 "看起来太乱了" report)
   // and shown as days/hours/minutes/seconds since listings run up to 72h.
   //
-  // `auction.timeLeft` MUST fit `rightW` on ONE line in every locale — ~14 monospace characters at
+  // `auction.timeLeft` MUST fit `rightW` on ONE line in every locale — 15 monospace characters at
   // a portrait phone's legibility floor, since `rightW` is 167 design px in the three-column grid.
   // This is the last line of the info column and the action button is pinned to the card's
   // bottom-right, so a second line lands ON that button: it is the only thing here the cell has no
   // room to absorb. Wrapping is therefore not an available answer and a long translation has to be
   // abbreviated instead — see the note on the German value (§50.12).
+  //
+  // The same is true one line up, which is what §55.2 cost: every line BELOW the two-line price
+  // block spends the cell's last reserve of height, so `auction.myBid` and `auction.buyoutAt` carry
+  // this contract too and `test/auctionCellInfoWidth.test.ts` is where all three are held to it.
   if (auc.status === 'open') {
     const remainingSec = Math.max(0, Math.floor((auc.expireAt - now) / 1000));
     const d = Math.floor(remainingSec / 86400);

@@ -345,7 +345,7 @@ genTop: [{d:"256x64",n:23,mb:1.4},{d:"1024x1024",n:10,mb:40},{d:"16x16",n:1,mb:0
 
 #### 量了什么：`test/browser/bakeBudget.spec.ts`
 
-真 Chromium + 本机 docker 栈，注册真账号 + 灌种子数据，然后走 `src/testing/layoutStops.ts` 的**全部 36 站**（跟竖屏巡检同一张表、同一套走法——走法本身这次抽进了 `test/browser/lib/walk.ts`，两个 spec 共用一份）。`NW_BAKE=1` 才跑，平时 skip。
+真 Chromium + 本机 docker 栈，注册真账号 + 灌种子数据，然后走 `src/testing/layoutStops.ts` 的**全部 45 站**（跟竖屏巡检同一张表、同一套走法——走法本身这次抽进了 `test/browser/lib/walk.ts`，两个 spec 共用一份）。`NW_BAKE=1` 才跑，平时 skip。
 
 **读的是 key 的并集，不是当下的总量。** 巡检过程中必然要 reload（有些站没有回程），而 reload 销毁 renderer、整张 bake 缓存跟着没——之后读到的总量是重新爬的，不是接着算的。key 不受影响：同一个屏在同一几何下永远烘出同名同尺寸的一条，所以**并集就是一次不中断的会话会持有的量**。为此给 `bake.ts` 加了 `bakeEntries()`（逐条），挂在 `__nwE2E.bakeEntries`。
 

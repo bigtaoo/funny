@@ -17,8 +17,11 @@
 | 菜单场景规格（Lobby/Room/Shop/Gacha/Collection/Profile/Campaign/Prep/Stats/Result） | §4.1–§4.10 | [`UI_DESIGN_SCENES.md`](UI_DESIGN_SCENES.md) |
 | 变更记录 2026-06 / 2026-07 | §4.9.1、§4.11–§4.28、§12–§25 | [`UI_DESIGN_LOG_2026-06_07.md`](UI_DESIGN_LOG_2026-06_07.md) |
 | 变更记录 2026-08 起 | §26–§47 | [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md) |
+| 变更记录 2026-09 起 | §48–§53 | [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) |
 
 > **写新内容放哪**：改的是「当前应该长什么样」→ 改本文或 `UI_DESIGN_SCENES.md` 的对应小节；记的是「某天改了什么、为什么」→ 追加到最新的 `UI_DESIGN_LOG_*.md` 末尾。两者都要动时，规格里写结论、log 里写来由并互相指一下。
+>
+> **log 文件名里的日期是这一册开始的时间，不是它覆盖的范围。** 滚新册的触发条件是行数（ADR-067 的 500 行）、切口挑在语义接缝上，所以前一册末尾会有晚于册名的条目——`UI_DESIGN_LOG_2026-08.md` 就收着 §45–§47 三条 2026-09 的记录。
 
 ## 1. 设计原则
 
@@ -62,13 +65,15 @@
 
 > **按钮背景统一（2026-07-15）**：全屏菜单场景（登录/大厅/设置/…）早已共享 `render/sketchUi.ts` 的 `sketchPanel()` + `ui` 调色板（§7.5：手绘描边按钮，非透明/纯白/纯黑各自为政）；本次审计发现真正的缺口在**战斗内 HUD**（`HUDView`/`ProfilePopup`/`TutorialDirector`），此前各自写死十六进制色值（`0x2c2c2a`/`0xf0ece0`/`0x3a6ea5`/`0x999999`…）。新增 `ui/widgets/hudButton.ts` 导出 `drawHudButton(g, w, h, variant)` + `hudButtonText(variant)`，5 个语义变体：`primary`（主操作，暂停恢复/关闭/升级/教程跳过）、`accent`（同权重次操作，靠色相区分，刷新手牌/教程下一步）、`secondary`（低权重操作，退出大厅/设置齿轮）、`danger`（拉黑/移除等破坏性操作）、`disabled`。颜色源自 `theme.ts` 的 `palette`，换肤只改一处。同时把两处历史遗留的场景本地 `const C = {...}`（`SettingsScene.ts`/`IntroScene.ts`，与 `sketchUi.ui` 完全重复的调色板）改为直接 `import { ui } from '../render/sketchUi'`，消除并行调色板。
 
+> **行状态标签（2026-09-15）**：`ui/widgets/statusTag.ts` 的 `drawStatusTag()` 画 `[字形][gap][词]`，是 `drawButtonLabel` 的**镜像**——按钮是「点下去会怎样」的承诺、词是载荷，挤不下丢**图标**；状态标签是行本身已经半说出来的事实，挤不下丢**词**。两者都不缩到可读下限以下，这一个干脆不缩（字形按 `ICON_RATIO × fontSize` 画，比它替换掉的词更大，所以词过得了巡检 `tiny` 门禁、降级后的字形就过得了 `icon` 门禁）。**判据是量出来的宽度，永远不是 `layout.orientation`**：竖屏只是三个成因里最吵的一个，德语和中文在横屏一样能撑爆（§50.12 的 `Gesperrt`）。两条使用边界：①只给有公认字形的状态用（done/claimed=`check`、locked=`lock`）——拍卖行那七态没有约定俗成的图标，换了是猜谜，保持文字；②**重复的格子不走这个 widget**，直接画字形（战令 40 格里 39 格 locked，印 39 遍 `[锁] Locked` 比原来还吵）；一次性的行才带词。来由见 [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) §53，契约钉在 `test/ui/statusTag.ui.ts`。
+
 > **按钮前置图标（2026-09-05）**：`[图标][gap][文案]` 整组在按钮内居中。这个形状此前在四处各长了一遍（装备页 Craft 按钮、世界地图头部三枚入口、结算页主/次按钮、战役地图头部快捷键），本次抽成 **`ui/widgets/buttonLabel.ts` 的 `drawButtonLabel()`**，全屏菜单场景的按钮**内容**从此和按钮**背景**（`sketchPanel`/`sketchButton`）一样只有一份实现。三条行为写在 `test/ui/buttonLabel.ui.ts` 里：
 >
 > - **整组居中**，不是文案居中——退回后者会让图标挂在按钮左缘外，只有正好盯着那个按钮才看得出来；
 > - **放不下就丢图标**（`minFit`，默认 0.82）：好友列表的「接受/拒绝」按钮是按两个汉字宽度做的，缩放整组会把文字压到看不清，那比没图标更糟。**正因为有这条兜底，「所有按钮都加图标」才能无脑铺开**——放不下的按钮在自己的真实宽度上自动退回原样，不需要维护一张「哪些按钮太窄」的手工清单；
 > - **方格用 `stack`**（图标在上、文案在下）：大厅右侧 Daily/Mail/Events/Auc. 那一列是正方形格，横排会被 `minFit` 判成放不下。
 >
-> **（2026-09-11 补）** 横向 tab 条（`HubTabs.drawHubTabs`）和主城防守页的调色板也改走这里——它们此前各自手搓同一个 `[图标][gap][文案]`，都没做「装不下怎么办」，竖屏三档尺寸下 tab 文字整条跑出屏幕。同批修掉 `drawButtonLabel` 自己的一个缩放 bug：`text.width` 是跟着 `scale` 走的 getter，缩完不能再乘一次 `fit` 去算居中偏移（会把标签按「比实际窄」摆放＝整体右移出框）。来龙去脉见 [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md) §48。
+> **（2026-09-11 补）** 横向 tab 条（`HubTabs.drawHubTabs`）和主城防守页的调色板也改走这里——它们此前各自手搓同一个 `[图标][gap][文案]`，都没做「装不下怎么办」，竖屏三档尺寸下 tab 文字整条跑出屏幕。同批修掉 `drawButtonLabel` 自己的一个缩放 bug：`text.width` 是跟着 `scale` 走的 getter，缩完不能再乘一次 `fit` 去算居中偏移（会把标签按「比实际窄」摆放＝整体右移出框）。来龙去脉见 [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md) §48。
 >
 > **墨色变体**：`tabIconVariant()` 按**标签色**判亮度——白字→`active`（浅墨），深字/灰字→`content`（深墨）。这条规则对绝大多数按钮是对的（深底配白字、纸底配深字），**唯一要显式覆盖的是深底 + 金字**：`C.gold` 亮度 0.59 会落到淡灰墨，画在 `C.dark` 上等于隐形（同一个坑在底栏犯过一次），所以战役地图头部那两枚金字按钮显式传 `variant: 'active'`。反过来也别一律写死 `'active'`：禁用态标签是 `C.mid` 灰字、底色是浅灰 `btnOff`，写死浅墨同样看不见——**让标签色决定，是唯一不需要逐处判断的规则**。
 >
@@ -274,7 +279,7 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 
 ### 预设头像美术（20 张，2026-08-15 二次重做）
 
-不再是白线图标+染色圆盘：20 张全新原创角色**全彩胸像**（涛方简笔卡通脸画风，按情绪基调分 A~D 四组各 5 个，见 `avatar-art-prompts.md` §二），作为独立 PNG（不打包图集——数量小、且圆形裁切要求原图干净无相邻帧串色）存在 `client/src/assets/avatars/preset/preset_<key>.png`，`client/src/render/presetAvatarArt.ts`（仿 `cardArt.ts` 的 `UNIT_ART_URLS` 写法）导出 `PRESET_AVATAR_KEYS`/`PRESET_AVATAR_ART_URLS`。渲染统一走 `buildPortraitIcon()`（原来 hero/skin 已用的运行时圆形裁切），不再有专属底色——`avatar.ts` 的 `CATEGORY_BG` 里 `preset` 现在也是单一中性色（`palette.inkBlue`），与 title/hero/skin 三个分类同一套视觉处理。旧的 8 图标白线管线（`art/ui/head/pack_avatar_atlas.cjs` + `client/src/render/atlas/avatarAtlas.ts`）已整体删除；旧源图归档 `art/leftover/`。
+不再是白线图标+染色圆盘：20 张全新原创角色**全彩胸像**（涛方简笔卡通脸画风，按情绪基调分 A~D 四组各 5 个，见 `avatar-art-prompts.md` §二），作为独立 PNG（不打包图集——数量小、且圆形裁切要求原图干净无相邻帧串色）存在 `client/src/assets/avatars/preset/preset_<key>.png`，`client/src/render/presetAvatarArt.ts`（仿 `cardArt.ts` 的 `UNIT_ART_URLS` 写法）导出 `PRESET_AVATAR_KEYS`/`PRESET_AVATAR_ART_URLS`。渲染统一走 `buildPortraitIcon()`（原来 hero/skin 已用的运行时圆形裁切），不再有专属底色——`avatar.ts` 的 `CATEGORY_BG` 里 `preset` 现在也是单一中性色（`palette.inkBlue`），与 title/hero/skin 三个分类同一套视觉处理。旧的 8 图标白线管线（`art/ui/head/pack_avatar_atlas.cjs` + `client/src/render/atlas/iconsAtlas.ts`）已整体删除；旧源图归档 `art/leftover/`。
 
 ### 角色头像美术（6 张，2026-08-15 新增）
 
@@ -322,3 +327,4 @@ Collection  Stats     Lobby    Shop/Gacha    Room
 按时间分册，见上方[分册索引](#分册索引)：
 - §12–§25（2026-06/07）→ [`UI_DESIGN_LOG_2026-06_07.md`](UI_DESIGN_LOG_2026-06_07.md)
 - §26–§47（2026-08 起）→ [`UI_DESIGN_LOG_2026-08.md`](UI_DESIGN_LOG_2026-08.md)
+- §48–§52（2026-09 起）→ [`UI_DESIGN_LOG_2026-09.md`](UI_DESIGN_LOG_2026-09.md)

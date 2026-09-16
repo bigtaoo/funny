@@ -15,6 +15,26 @@
 // wide as its label plus the fix's fixed padding — regardless of what the headless canvas mock's
 // font-size-independent measureText (see harness/pixiHeadless.ts) would make any particular string
 // render to in a real browser.
+//
+// ## ...and the ceiling the ceiling-breaker itself needed (2026-09-15, §55.1)
+//
+// That fix knew about the label and nothing else. The summary row it lives in is the `n / 3`
+// progress counter on the LEFT and this button on the right, and German's "+5 Münzen abholen" grew
+// the button until its left edge was past the counter's right edge: the sweep reported `1 / 3` as
+// 40% `covered` by a 296x116 panel. Most of that width was not even text — `btnPad` is half the
+// button's HEIGHT, and in portrait that height is 22% of the screen.
+//
+// So the width is now bounded by the row as well: `max(cardW * 0.45, min(roomW, label + icon +
+// pad))`, where `roomW` is the card minus the counter minus a gutter. The two bounds are
+// deliberately on opposite sides of the clamp — the `cardW * 0.45` FLOOR stays outside it, because
+// a row too narrow even for that is a layout bug the sweep should shout about rather than something
+// to hide by shrinking, and `drawButtonLabel` degrades inside whatever width it is handed anyway
+// (shrink to the legibility floor, drop the glyph, wrap to two lines — its own header, §50.12).
+//
+// The last test in this file is the one that pins the ceiling; it used to assert the opposite
+// (that an implausible label grows the button without limit), which is exactly the behaviour that
+// ate the counter. What is still asserted is that a long label grows the button PAST its floor —
+// only the unbounded half is gone.
 // Runs under the headless PIXI adapter (vitest.ui.config.ts setupFiles).
 
 import { describe, it, expect } from 'vitest';
@@ -215,13 +235,15 @@ describe('DailyScene — daily-tasks claim button always fits its label (2026-08
     scene.destroy();
   });
 
-  // Discriminating regression test: with the pre-fix fixed `cardW * 0.45` button width, this label
-  // (93 chars once interpolated) overflows the button — `hit.w` stays pinned at the floor no matter
-  // how long the text gets. The fix's `Math.max(cardW * 0.45, label.width + pad)` grows the button
-  // to match. Confirmed by temporarily reverting the fix locally: this test fails without it and
-  // passes with it, unlike the others above (whose realistic-length strings never reach the floor
-  // in this harness — see the file header comment).
-  it('an implausibly long reward label still fits — the button grows past its cardW*0.45 floor to match', async () => {
+  // Discriminating regression test, both ways round: with the pre-fix fixed `cardW * 0.45` button
+  // width, this label (93 chars once interpolated) overflows the button — `hit.w` stays pinned at
+  // the floor no matter how long the text gets, so the `>` below fails. With the 2026-08-10 fix's
+  // ceiling-breaker but no ceiling on it, the button swallows the progress counter instead, so the
+  // second assertion fails. Only the two together describe the row.
+  //
+  // Both halves confirmed by reverting the respective line locally, unlike the tests above (whose
+  // realistic-length strings never reach the floor in this harness — see the file header).
+  it('an implausibly long reward label grows the button past its floor — but never over the counter', async () => {
     const scene = buildDaily(
       claimableSave(),
       { async onClaimDaily() { return { coins: 5 }; }, getRetention: () => Promise.resolve(retentionWithHugeReward()) },
@@ -235,8 +257,23 @@ describe('DailyScene — daily-tasks claim button always fits its label (2026-08
     const label = findText(scene.container, (txt) => txt === t('daily.tasks.rewardCoins', { n: '9'.repeat(80) }));
     expect(label).not.toBeNull();
     expect(label!.width).toBeGreaterThan(500); // sanity: this string is indeed long enough to matter
+
+    // Still a ceiling-breaker: an ordinary reward leaves the button on its `cardW * 0.45` floor, so
+    // "wider than that one" is the same statement without restating the layout's own arithmetic.
+    const short = buildDaily(claimableSave(), { async onClaimDaily() { return { coins: 5 }; } }, createLayout(800, 1280));
+    await flush();
+    const ss = short as unknown as Internals;
+    ss.activeTab = 'tasks';
+    ss.render();
+
     const hit = s.hits[s.hits.length - 1]!;
-    expect(hit.rect.w).toBeGreaterThanOrEqual(label!.width + expectedPad(hit.rect.h));
+    expect(hit.rect.w).toBeGreaterThan(ss.hits[ss.hits.length - 1]!.rect.w);
+    // ...and the counter it shares the row with is still readable: the button starts to the RIGHT
+    // of where `3 / 3` ends. This is the assertion the German sweep row was missing (§55.1).
+    const counter = findText(scene.container, (txt) => txt === '3 / 3');
+    expect(counter).not.toBeNull();
+    expect(hit.rect.x).toBeGreaterThanOrEqual(counter!.x + counter!.width);
+    short.destroy();
     scene.destroy();
   });
 });

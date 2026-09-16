@@ -792,7 +792,8 @@ worldsvc 心跳的路由表长期是这个形状（uptime 57 小时的一次采�
 **并行化不解决这个问题，已实测**：把 `getMe` 后两次独立读改成 `Promise.all`，
 p50 21.2 → 15.3ms（−28%），**p99 555 → 568ms（纹丝不动）**。并行缩短的是往返时间之**和**，
 而尾巴取决于其中之**最**。要动 p99 只能**减少往返总数**（例如把 `territoryCount` 像
-`nextBuildCompleteAt` 那样镜像成 `playerWorld` 上的计数字段，getMe 3 → 1 次往返），那是另开的任务。
+`nextBuildCompleteAt` 那样镜像成 `playerWorld` 上的计数字段），那是另开的任务。
+**已于 2026-09-15 做掉，见 §十**——但实际是 3 → **2** 次，不是这里写的 1 次，原因在 §10.3。
 
 ### 9.5 真正的杠杆（都不在 worldsvc 的代码里）
 
@@ -809,3 +810,62 @@ p50 21.2 → 15.3ms（−28%），**p99 555 → 568ms（纹丝不动）**。并�
 不返回任何文档的操作，尾巴和最慢的业务路由一样长——那一刻就该停止读自己的代码了。
 反过来，**空集合上的 `sched:occupations` p99 285ms** 早就在心跳里摆了好几天，没人把「0 文档 + 有索引 + 还是慢」
 读成矛盾。**下次看这张表，先找那条本该是 0 成本却不是 0 成本的行。**
+
+---
+
+## 十、`getMe` 的第三次往返：`territoryCount` 镜像（2026-09-15，接 §9.4）
+
+§9.4 把这件事记成「另开的任务」，这一节是它的落地。**先更正 §9.4 结尾的数字**：那里写的是
+「3 → 1 次往返」，实际做到的是 **3 → 2**。第三次（基地锚点格的 `tiles.findOne`）没有一起去掉，
+理由见 10.3。
+
+### 10.1 镜像挂在哪：和 `yieldRate` 同一个写点，一个不多一个不少
+
+`getMe` 原来的最后一次往返是 `tiles.countDocuments({ worldId, ownerId })` —— 一个**每次读都重算**的聚合。
+镜像成 `PlayerWorldDoc.territoryCount` 之后，问题从「每读一次算一次」变成「谁负责在写的时候维护它」。
+
+答案是**不新增维护点**：`core/yield.ts` 的单一出口本来就已经把该账号所有格子捞了出来
+（`tiles.find({ worldId, ownerId }).toArray()`）算 yield，格子数就是那次扫描的 `owned.length`，**白送**。
+于是这次改动把它改名成 `recomputeYieldAndCount`，返回 `{ rate, count }`，8 个调用点在**原来那条
+`$set { yieldRate, ... }`** 里顺手多写一个字段：
+
+| 写点 | 场景 |
+| --- | --- |
+| `territory.ts` occupyTile / abandonTile / relocateBase | 玩家自己占、弃、迁 |
+| `combatSiege/occupationSettle.ts` | 出征占领结算 |
+| `combatSiege/occupation.ts` | 被占方掉格 |
+| `combatSiege/damage.ts`（攻守各一） | 攻城打穿后的易手 |
+| `combatSiege/helpers.ts` passiveRelocate（两个分支） | 被打崩，领地清空 + 强制迁城 |
+| `city/buildings.ts` applyDueBuilds | 归属没变，但同样写 `yieldRate`，所以也写 count |
+
+**为什么这就够**：任何改变格子归属的路径**必须**经过这个出口，否则玩家的产出率当场就错——
+那是几分钟内就会被发现的 bug。把 count 的写点钉死在 yield 的写点上，等于让它搭上一条**已经有人看着**的不变式。
+`joinWorld` 是唯一不经过这个出口的归属变化（新号建城），那里直接用刚写下的 9 格 footprint 播种。
+`purgePlayerWorld` 连 `playerWorld` 文档一起删，镜像随之消失，无需处理。
+
+### 10.2 为什么是改名，不是改返回值
+
+`recomputeYield` 在 7 个测试文件里有 test double，全部是 `as unknown as WorldCore`，**tsc 看不见**。
+如果只把返回值从 `Record<ResourceType, number>` 改成 `{ rate, count }`，陈旧的 double 会**安静地**
+返回旧形状，生产代码读到 `undefined` 再写进 Mongo，测试照样绿——正是
+`BOTSVC_DESIGN.md` §8 那个「两个 mock 把常数藏了两个月」的同一种失明。
+**改名让陈旧的 double 变成「不是函数」当场炸掉**，这是这次刻意选它的唯一理由。
+
+### 10.3 剩下那两次往返为什么留着
+
+- `playerWorld.findOne` —— 这条路由的本体，去不掉。
+- 基地锚点格的 `tiles.findOne` —— 供 `hp/maxHp/protectedUntil`（D-CITY-8 的耐久面板）。
+  这几个值**随时间和每一次挨打变化**，镜像它们等于把每次攻城伤害都变成一次额外的 `playerWorld` 写，
+  拿读换写、且写的那一侧才是限流真正吃紧的地方。不划算，留着。
+
+所以 `getMe` 的 p99 预期从「三次串行往返 × 尾巴」降到「两次」，按 §9.4 的模型约 −1/3。
+**本机验不了收益**（本地 Mongo 没有那只令牌桶），线上要看心跳表里 `getMe` 那行的 p99。
+
+### 10.4 迁移与门禁
+
+- **老文档**（这次上线前写的）没有这个字段：`getMe` 回落到实时 `countDocuments`，并把结果**写回一次**
+  （`{ territoryCount: { $exists: false } }` 为条件，输给并发的归属变更是安全的——对方会用自己那次扫描的
+  结果覆盖，且下一次占领/放弃就自愈）。所以回落是**每个老账号一次**，不是每次读一次。
+- 门禁 `worldsvc/test/getme-territory-mirror.e2e.test.ts` 四条，第一条才是这次改动的验收条件：
+  **`getMe` 期间 `tiles.countDocuments` 被调用 0 次**。只断言「数字对不对」对旧代码同样会绿——
+  旧代码返回的数字也是对的，它只是每次都花一次往返去算。

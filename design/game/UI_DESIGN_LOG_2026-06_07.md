@@ -205,7 +205,7 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 
 **方案**：三处统一放大到同一套字阶——名称 20px（bold）、次级标签（rarity/等级/战力/兵力）16px、三级小标签（equipped/injured/in-team 等状态 tag）13-14px、Craft 按钮 17px。字号不是简单 ×2（会溢出固定格高），而是把格内布局的上部留白从 `pad+22/24/28` 统一加到 `pad+30/32/36`，图标框相应收窄，换出空间给更大字号；Craft 按钮从 80×28 放大到 104×36。
 
-- `client/src/scenes/EquipmentScene/base.ts`：`drawCostChips` 的 cost 数字标签原硬编码 10px，改为随传入的 `size` 参数联动（`size*0.8`），craft/detail 两处调用各自可控。
+- `client/src/scenes/EquipmentScene/core.ts`：`drawCostChips` 的 cost 数字标签原硬编码 10px，改为随传入的 `size` 参数联动（`size*0.8`），craft/detail 两处调用各自可控。
 - `client/src/scenes/EquipmentScene/craft.ts`：`renderCraftCell` 名称/rarity/成本 chip/按钮字号 + 布局偏移同步放大。
 - `client/src/scenes/EquipmentScene/inventory.ts`：`renderInstanceCell` 名称/rarity/equipped tag/堆叠数/操作提示字号 + 布局偏移同步放大。
 - `client/src/scenes/CardScene/list.ts`：`renderCardCell` 名称/Lv./战力/兵力/状态 tag 字号 + 布局偏移同步放大。
@@ -217,7 +217,7 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 
 **方案**：立绘改为占满整格高度的竖长框（左侧，`imgH = CARD_CELL_H - pad*2`，宽取 `imgH*0.72`，贴合单位立绘"高>宽"的比例），所有信息（名称+阵营点、Lv.、战力、兵力、状态 tag、装备三点）统一堆到立绘右侧一列；格宽目标 `CARD_CELL_W_TARGET` 从 480 收窄到 300，卡片排得更密（1854 宽下每行 3→5 张）。仅改角色卡，`EquipmentScene` 的 `EQUIP_CELL_W_TARGET` 独立不受影响。
 
-- `client/src/scenes/CardScene/base.ts`：`CARD_CELL_W_TARGET` 480→300；`drawArtFit` 新增可选 `boxH` 参数，支持把立绘按较紧的一轴等比缩放并居中塞进非正方形框（满高格不裁切、不拉伸）。
+- `client/src/scenes/CardScene/core.ts`：`CARD_CELL_W_TARGET` 480→300；`drawArtFit` 新增可选 `boxH` 参数，支持把立绘按较紧的一轴等比缩放并居中塞进非正方形框（满高格不裁切、不拉伸）。
 - `client/src/scenes/CardScene/list.ts`：`renderCardCell` 重排为"满高立绘居左 + 右侧信息列"；名称按右列可用宽度裁剪，锁标仍在信息列右上。边框色状态（injured 红 / deployed 蓝）与装备三点不变。
 - 验证：`tsc --noEmit` 通过；用 `__NW_DEBUG` 临时钩子在 1854×960 landscape 下孤立渲染 CardScene（mock 11 张卡）截图核对，满高立绘/右侧信息/密度/状态色均正确，临时钩子已移除。
 
@@ -227,7 +227,7 @@ LeaderboardScene 前三名用 🥇🥈🥉 emoji。新增 **1 个** `icons.ts` �
 
 **方案**：把 FamilyScene 全部字号改为按设计高度比例计算，与 FriendsScene 对齐；正文型浅灰标签改用更深的 `MUTED=0x5a574f`（层级仍低于 `C.dark`）。
 
-- `client/src/scenes/FamilyScene/base.ts`：删除模块级 `export const ROW_H=48`，改为实例 getter——`fs(frac)=round(h*frac)`、`rowH=round(h*0.062)`、`infoBandH=round(h*0.085)`。
+- `client/src/scenes/FamilyScene/core.ts`：删除模块级 `export const ROW_H=48`，改为实例 getter——`fs(frac)=round(h*frac)`、`rowH=round(h*0.062)`、`infoBandH=round(h*0.085)`。
 - `client/src/scenes/FamilyScene/render.ts`：名称 `fs(0.026)`、家族名 `fs(0.03)`、按钮/标签页 `fs(0.024)`、成员数/繁荣度/占位符 `fs(0.022)`、角色/发送者 `fs(0.019~0.02)`；`MUTED` 替换正文浅灰；繁荣度金色调深到 `0xa9750f`。
 - **竖屏因放大暴露的溢出**一并修掉（`h` 远大于 `w`、字号按 `h` 缩放而框宽按 `w`，见 [[ilayout-landscape-design-width-stretches]] 的对偶）：晋升/踢出按钮、底栏 Sect/解散 按钮改按**文字宽度 + padding 自适应**（原固定宽把 "Promote to Elder"/"Dissolve Family" 截断）；成员名与公告按可用宽度省略号截断（新增 `fitSize()` 助手把标签页文字缩到框内）。
 - 验证：`tsc --noEmit` + 家族相关 47 项测试通过；用临时 `?family` 调试分支（mock 家族数据，已删除）在 1920×1080 横屏与竖屏两种布局下孤立渲染 FamilyScene 截图核对，字号/对比度/自适应按钮/名称截断均正确。
@@ -241,9 +241,9 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 **改动**：`handleMove` 不再直接调 `render()`，只更新 `scrollY`/`scrollYChannel` 并置位一个 `scrollDirty` 标记；真正的 `render()` 挪到 `update(dt)`（由 `SceneManager` 每渲染帧调用一次）里去消费。这样无论一帧内收到多少次 `pointermove`，最多只触发一次重建，和帧率对齐——而不是像 BattlePassScene 那样完全避免重建，是「限流」而非「消除」，但对这批场景（成员列表/拍卖行/装备/卡牌/商店/组卡）的重建成本而言已经足够。
 
 覆盖场景（`FamilyScene`/`SectScene`/`AuctionScene`/`EquipmentScene`/`CardScene`/`ShopScene`/`DeckBuilderScene` 的 `base.ts` 或场景文件本体）：
-- `client/src/scenes/FamilyScene/base.ts`、`client/src/scenes/SectScene/base.ts`
-- `client/src/scenes/AuctionScene/base.ts`、`client/src/scenes/EquipmentScene/base.ts`、`client/src/scenes/CardScene/base.ts`
-- `client/src/scenes/ShopScene/base.ts`、`client/src/scenes/DeckBuilderScene.ts`
+- `client/src/scenes/FamilyScene/core.ts`、`client/src/scenes/SectScene/core.ts`
+- `client/src/scenes/AuctionScene/core.ts`、`client/src/scenes/EquipmentScene/core.ts`、`client/src/scenes/CardScene/core.ts`
+- `client/src/scenes/ShopScene/core.ts`、`client/src/scenes/DeckBuilderScene.ts`
 
 `CardCodexScene`/`BattlePassScene` 已有各自的重定位快速路径，未改动；`WorldMapInput.ts` 的地图内信息面板拖动滚动（作用域比全场景小得多，且相关分支已有未合并的独立测试改动，见 [[worldmap-info-scroll-tests]]）本次未动。
 
@@ -280,7 +280,7 @@ BattlePassScene 当初是把「滚动定位」和「内容重建」两条路径�
 **修复**：三处 `blur` 处理程序内的 `document.body.removeChild(inp)` 统一换成 `inp.remove()`（与场景 `destroy()`、以及同文件里本来就正确的 `openSendInput()` 保持一致的幂等写法）。
 
 - `client/src/scenes/FamilyScene/input.ts`、`client/src/scenes/SectScene/input.ts`：`openInputFor()` 的 blur 处理程序。
-- `client/src/scenes/AuctionScene/createForm.ts`：`openBuyerInput()` 的 blur 处理程序。
+- `client/src/scenes/AuctionScene/createListing.ts`：`openBuyerInput()` 的 blur 处理程序。
 - 验证：`tsc --noEmit` 通过；纯 DOM 时序 bug，无可视差异，未截图验证。
 
 ## 18. 全场景 Toast 放大 2 倍 + 移到底部三分之一高度（2026-07-16）
