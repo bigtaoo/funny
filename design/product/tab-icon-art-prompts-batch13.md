@@ -69,7 +69,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 
 ## 4. 出图后的接线清单
 
-**① 源图归位** — `art/ui/tabicons/tabicon_flame.webp`（base 名逐字等于 kind 名；`.png` 也收，见批 12）。被打回的版本移进 `art/ui/tabicons/_rejected/`，命名 `tabicon_flame_v<n>_<为什么废>.webp`（`inkIconArt.test.ts` 会检查「每个 kind 恰好一个源图」）。
+**① 源图归位** — `art/ui/tabicons/tabicon_flame.png`（base 名逐字等于 kind 名；`.png` 也收，见批 12）。被打回的版本移进 `art/ui/tabicons/_rejected/`，命名 `tabicon_flame_v<n>_<为什么废>.webp`（`inkIconArt.test.ts` 会检查「每个 kind 恰好一个源图」）。
 
 **② `pack_tab_icons.cjs`** — `JOBS` 末尾加一行带注释的，`inks: ['active']`（**只烤白色母版，运行时 tint**；烤三档墨色会静默改道走 `tabIconVariant` 并抹平所有 tint）：
 
@@ -79,7 +79,7 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
 // left" three times over (speedup buff, occupy/siege countdown, the shop's speedup tiers) — while
 // stamina is a budget of orders, not a duration. Two uneven tongues and a curved-in base, because a
 // solid single-tongue flame is `play`'s triangle / `lead`'s cone.
-{ src: 'tabicon_flame.webp',             name: 'flame', inks: ['active'] },
+{ src: 'tabicon_flame.png',              name: 'flame', inks: ['active'] },
 ```
 
 **③ 跑打包** — `node art/ui/tabicons/pack_tab_icons.cjs` → `client/src/assets/tabicons/flame_active.png`。**没有 merged-atlas 重打包这一步**。跑完确认「只有新增那一张变化，其余零字节改动」（这条管线的确定性批 9/批 10 各验过一次）。
