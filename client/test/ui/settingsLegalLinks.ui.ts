@@ -192,6 +192,42 @@ describe('SettingsScene — legal links, one row or two', () => {
       ['/terms.html', '_blank', 'noopener'],
     ]);
   });
+
+  /**
+   * The failure mode a one-row layout adds: whichever branch a locale lands in, nothing may leave
+   * the right-hand column. The links have no wrapping and no shrink-to-fit — a pair that is one
+   * character too wide simply runs past the page edge, and the tap rect (text width plus half the
+   * gap) runs past it further than the glyphs do.
+   *
+   * Landscape is the interesting shape here and the one the portrait sweep
+   * (`test/browser/portraitLayout.spec.ts`) does NOT cover in German: its landscape viewports are
+   * all `locale: 'en'`, while the German rows are portrait-only.
+   */
+  it.each([
+    ['zh', 1280, 800], ['en', 1280, 800], ['de', 1280, 800],
+    ['zh', 412, 915], ['en', 412, 915], ['de', 412, 915],
+  ] as const)('keeps links and tap targets inside the column in %s (%ix%i)', (locale, vw, vh) => {
+    setLocale(locale as Locale);
+    const layout = createLayout(vw, vh);
+    const s = sceneOn(layout);
+    const nodes = collect(s.container);
+    const links = [find(nodes, '· ' + t('consent.privacyPolicy')), find(nodes, '· ' + t('consent.terms'))];
+    // The same edge `drawLegal` measures against: the column runs to 0.94w.
+    const columnRight = layout.designWidth * 0.94;
+
+    for (const link of links) {
+      expect(link.right, `"${link.text}" runs past the column`).toBeLessThanOrEqual(columnRight);
+      const rect = s.hits.find((h) => {
+        const midY = (link.top + link.bottom) / 2;
+        return h.rect.y <= midY && midY <= h.rect.y + h.rect.h
+          && h.rect.x <= link.right && link.left <= h.rect.x + h.rect.w
+          && h.rect.x > layout.designWidth * 0.5;
+      })?.rect;
+      expect(rect, `no tap rect on "${link.text}"`).toBeDefined();
+      expect(rect!.x + rect!.w, `the tap target for "${link.text}" runs off the design rect`)
+        .toBeLessThanOrEqual(layout.designWidth);
+    }
+  });
 });
 
 describe('SettingsScene — where the legal links point', () => {
