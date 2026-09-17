@@ -278,7 +278,13 @@ export async function startApp(
     if (!core.submitFeedback || feedbackDialog) return;
     const dlg = new FeedbackDialog(app.screen.width, app.screen.height, {
       openTextInput: (opts) => platform.openTextInput(opts),
-      onSubmit: (text) => core.submitFeedback!(text),
+      // Same shape as the appeal dialog above: the dialog closes itself once onSubmit resolves and
+      // the confirmation is this toast, so "it went through" is told by the panel disappearing plus
+      // one line that fades on its own — not by a second modal the player has to dismiss.
+      onSubmit: async (text) => {
+        await core.submitFeedback!(text);
+        showToastMessage(t('feedback.sent'), 'success');
+      },
       onClose: closeFeedbackDialog,
     });
     dlg.container.zIndex = 9_000; // above scene content, below GlobalToast (10_000)

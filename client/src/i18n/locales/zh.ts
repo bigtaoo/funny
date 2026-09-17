@@ -1585,7 +1585,7 @@ export const zh = {
   'feedback.placeholder': '请输入你的反馈…',
   'feedback.submit': '提交',
   'feedback.close': '关闭',
-  'feedback.sent': '已收到，谢谢！',
+  'feedback.sent': '感谢反馈，我们已经收到，会尽量处理。',
   'feedback.err.empty': '请输入内容',
   'feedback.err.failed': '提交失败，请稍后重试',
 

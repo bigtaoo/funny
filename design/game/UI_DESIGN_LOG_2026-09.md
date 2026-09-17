@@ -1196,3 +1196,39 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 | 视口 | 站数 | skipped | blank | findings |
 |---|---|---|---|---|
 | narrow-360x640-de | 45 | 0 | 0 | 1（`daily+weekly`，见 55.4.2；**本轮两站在这个视口上都是干净的**） |
+
+---
+
+## 56. 反馈面板：发完就关，确认交给 toast（2026-09-17）
+
+**起因**：用户看着反馈面板的截图问——「玩家发送完反馈后，这个页面直接关闭，然后一个弹窗提示感谢您的反馈，用户点确认关掉，是不是更好？」
+
+**答一半做一半**。关面板：对，比原来好。原行为是 2026-08-04 落地时的有意决定（见 [`UI_DESIGN_SCENES.md`](UI_DESIGN_SCENES.md) §4.1.1），
+成功后留在原地、清空输入框、在按钮上方写一行绿色「已收到，谢谢」，理由是「反馈没有一张工单的模型，可以连着发第二条」。
+这个理由不划算：连发是极少数情况（重开面板只要一次点击），代价却落在常见情况上——面板原样杵着，唯一变化是一行小字，
+玩家视线在按钮上，看不见就会再点一次 Send，而且要离开还得再点一次 Close，一件事两次点击。
+
+**「感谢弹窗 + 确定按钮」没做**：它说的话和 toast 一字不差，却多一层遮罩和一次点击。
+确认按钮的意义是「需要你做个决定」或者「这条信息重要到必须挡住你」，「我们收到了」两样都不占。
+
+**改动**（三处，都是往既有形状上靠）：
+
+| 位置 | 改了什么 |
+|---|---|
+| `client/src/ui/dialogs/FeedbackDialog.ts` | `submit()` 成功分支：清空输入框 + 写绿字 → `closeInput()` + `cb.onClose()`；`submitting` 只在 catch 里复位（成功后留 `true`，挡住关闭前的第二次点击）——与 `AppealDialog.submit()` 逐行同形 |
+| `client/src/app.ts` | 反馈 sink 的 `onSubmit` 由裸转发改成包装：`await core.submitFeedback!(text)` 之后 `showToastMessage(t('feedback.sent'), 'success')`，与上面 appeal sink 里 `appeal.submitted` 那行写法相同 |
+| `i18n/locales/{en,zh,de}.ts` | `feedback.sent` 从「已收到，谢谢！」加重为「感谢反馈，我们已经收到，会尽量处理。」（EN/DE 同步）——它现在是屏幕上唯一的确认 |
+
+**失败路径故意不对称**：仍然不关面板、红字提示、保留已输入文字。玩家刚打完一段话、提交又失败，正是最不能丢那段话的时刻。
+
+**文案长度**核对过：新串 EN 55 / DE 57 字符，与既有 toast 同一量级（`reconnect.gone` 53、德语 `common.syncFailed` 66），
+`GlobalToast.show()` 本来就带 `wordWrap + breakWords` 的宽度帽（2026-08-03 那条修的就是它），窄屏折行不会冲出画面。
+
+**测试**：
+
+- 新增 `client/test/ui/feedbackSubmitOutcome.ui.ts`（12 例）：横竖屏各测「提交 trim 后的文字 + `onClose` 恰好一次」「不留内联确认（statusLabel 为空）」「顺手关掉平台输入框」「失败留在原地 + 红字」「失败后重试不从空白开始」，另加在途二次点击只发一次、纯空白不发网络请求。**临时把旧成功分支贴回去验证过 9/12 先红**。
+- 新增 `client/test/feedbackSuccessToast.test.ts`（3 例）：源码扫描 `app.ts`——toast 必须在 `await` 之后（先弹就是在确认一件可能还会失败的事）、键是 `feedback.sent`、与 appeal 那条保持同一写法。弹窗自己不知道 toast 的存在，而 `app.ts` 没有端到端单测入口（同 `appTickerDialogWiring.test.ts` 的理由）。
+- 改 `client/test/ui/dialogModalInputGate.ui.ts` 两例：原先断言「成功后面板仍开着」，按新行为改写。2026-08-10 那条回归（关闭键把大厅导航走了）意义不变，而且成功路径现在根本没有那次 Close 点击。
+
+**验证**：`npm run typecheck`、`npx vitest run`（3778 例）、`npm run test:ui`（2705 例）、`npm run build:web` 全过；
+真 Chrome 跑了一遍（worktree dev server 9190 → 本地 8088 的 docker 后端，已登录账号 LimeMutt）：输入 → Send → 面板消失 → 大厅上浮出绿色 toast，文字白底绿条读得清。
