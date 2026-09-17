@@ -274,7 +274,7 @@ function appLike(w: number, h: number, opts: { gated?: boolean } = {}) {
 
 describe('FeedbackDialog — the reported open/send/reopen/close sequence (2026-08-10)', () => {
   for (const [label, w, h] of SIZES) {
-    it(`${label}: closing after a successful send lands back on the Lobby`, async () => {
+    it(`${label}: a successful send closes the panel by itself and lands back on the Lobby`, async () => {
       const a = appLike(w, h);
 
       a.openFeedback();
@@ -283,9 +283,9 @@ describe('FeedbackDialog — the reported open/send/reopen/close sequence (2026-
       a.tapDialog('submit');
       await Promise.resolve(); await Promise.resolve(); // let submit()'s await settle
       expect(a.submitted).toEqual(['great game']);
-      expect(a.dialogOpen()).toBe(true); // a successful send deliberately keeps the panel open
-
-      a.tapDialog('close');
+      // Since 2026-09-17 the send itself closes the panel (the confirmation is app.ts's success
+      // toast), so there is no second tap on Close between sending and being back on the Lobby —
+      // which is also the tap this 2026-08-10 report saw navigate the Lobby away.
       expect(a.dialogOpen()).toBe(false);
       expect(a.onLobby()).toBe(true);
 
@@ -361,8 +361,11 @@ describe('FeedbackDialog — the reported open/send/reopen/close sequence (2026-
     a.tapDialog('submit');
     await Promise.resolve(); await Promise.resolve();
     expect(a.submitted).toEqual(['still works']); // Submit reached the dialog while the gate was up
+    expect(a.dialogOpen()).toBe(false);           // …and its success path closed the panel
+
+    a.openFeedback();                             // Close is the other control — check it on a fresh panel
     a.tapDialog('close');
-    expect(a.dialogOpen()).toBe(false);           // …and so did Close
+    expect(a.dialogOpen()).toBe(false);           // …and it reached the dialog too
     a.destroy();
   });
 });

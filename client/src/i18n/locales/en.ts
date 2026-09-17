@@ -1562,7 +1562,7 @@ export const en: Record<TranslationKey, string> = {
   'feedback.placeholder': 'Type your feedback…',
   'feedback.submit': 'Send',
   'feedback.close': 'Close',
-  'feedback.sent': 'Got it, thanks!',
+  'feedback.sent': "Thanks — we've got your feedback and will look into it.",
   'feedback.err.empty': 'Please enter some text',
   'feedback.err.failed': 'Submission failed, try again later',
 
