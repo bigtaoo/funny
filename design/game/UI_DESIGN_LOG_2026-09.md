@@ -1281,3 +1281,44 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 
 **验证**：`npm run typecheck`、`npx vitest run`（3778 例）、`npm run test:ui`（2705 例）、`npm run build:web` 全过；
 真 Chrome 跑了一遍（worktree dev server 9190 → 本地 8088 的 docker 后端，已登录账号 LimeMutt）：输入 → Send → 面板消失 → 大厅上浮出绿色 toast，文字白底绿条读得清。
+
+## 58. 选队弹窗：队伍行的「兵力 / 体力」从词换成图标（2026-09-17）
+
+**起因**：用户圈出占地选队弹窗里 `Team 1 · Troops 2525 · Stamina 100` 那一行问——「这些信息，team、troop、stamina 用图标显示吧」。
+
+**他圈的那一行本来就是坏的，不只是啰嗦**。`btnH` 是 84，四列时 `btnW` 是 210，标签按 `FS.title`（32）折行——
+那串字在英文下是**三行**，装得下两行，所以第三行被切掉了（截图里 `Stamina` 的 `100` 只剩上半截）。
+更要紧的是：五行里 `Troops`/`Stamina` 两个词**一字不差地重复了五遍**，真正有差别的恰恰是被切掉的数字。
+所以换图标不是省地方，是把地方从重复的词挪给唯一有信息的那部分。
+
+**做法**：给弹窗按钮加第二行——`ModalButton.stats`，一串 `[字形][数字]` chip，画在标签下方，整块（标签 + chip 行）在按钮里居中。
+
+| 位置 | 改了什么 |
+|---|---|
+| `WorldMapPanels/modalLine.ts` | 新增 `ModalButtonStat`（`{icon, text}`）与 `ModalButton.stats?`。`text` 只放数字，量的名字由字形承担 |
+| `WorldMapPanels/core.ts` | `buildStatRow()` 把一行 chip 铺成**一个容器**（整组缩放，同 `buttonLabel.ts` 的约定），`showModal` 把它排在标签下方；`btnH` 在有 stats 的弹窗里**加高** `statBlockH`，`labelBoxH()` 让前置字形门禁仍按标签真实可用高度判断 |
+| `worldmap/net/march.ts` | 选队行的 label 退回**只剩队伍名**，兵力/体力走 `stats`：`unit` + 数字、`hourglassMd` + 数字 |
+
+**字形是借的，不是新画的**（零新美术）：`unit` 在这张地图上已经是「兵力」（地块驻军行、派兵弹窗的可用兵力），
+`hourglassMd` 已经是「按墙上时钟恢复的量」（占领倒计时、城池每小时恢复）。**这条是使用边界**：
+只有玩家在同一屏已经见过的字形才能替换掉词，否则那不叫图标化，叫猜谜（与 §53 状态标签同一条判据）。
+前置的 `swords` 保留——它说的是「这是一支能出征的队伍」，和 chip 里的量不是一回事。
+
+**两个数被实拍推着改了两次**：
+
+- chip 字号先用 `FS.small`，在 1568 宽的窗口里量到约 10 CSS px——名字 32px、数字 10px，
+  而数字才是玩家要横向比较的东西。改 `FS.label`（24），仍明显从属于名字。
+- 加大之后两行（38 + 6 + 30 = 74）挤在 84 的按钮里，名字和数字各距手绘边框 4px 上下。
+  于是**按钮加高**而不是把字缩回去——按钮长高一点没关系（§50.12 的既有拍板），弹窗自己按 `btnH` 算高度，跟着长。
+
+**测试**：新增 `client/test/ui/worldMapModalBtnStats.ui.ts`（4 例，headless PIXI）：两个数字画在标签下方且在按钮内、按传入顺序、各自左边有自己的字形；
+标签 + chip 整块居中（标签让出正中）；没有 stats 的按钮**还在正中**（老版面一字不动）；chip 行超出列宽时整组缩放而不是溢出（用 11 位数字迫出缩放，并按缩放后的间距反推非空测）。
+「chip 行的高度记在标签预算上」这条**没法在这个 harness 里钉**——它的 stub 2D context 对任何字号都报每行约 10px，
+84 的按钮永远用不完高度，去掉预算这条也会绿；写在文件头当已知缺口，改由真字体实拍覆盖。
+另改两处既有选队测试（`worldMapOccupyTeamPicker` / `worldMapTeamStaminaPicker`）：它们原来在 label 里找 `Troops 2160`/`Stamina 100`，现在读 `stats` 里对应字形的数字。
+
+**验证**：`npm run typecheck`、`npx vitest run`（3791 例）、`npm run test:ui`（2719 例）、`npm run check:filelength`、`npm run build:web` 全过。
+真 Chrome 看了三个尺寸（dev server 9190 → 本地 8088）：桌面 1568×744、竖屏 390×844 dpr2、横屏手机 844×390。
+五行全部单行放下、无裁切，数字与两枚字形在 dpr2 竖屏上清楚可读；横屏手机上字号下限把 chip 抬到接近名字大小，正是想要的降级方向。
+**弹窗是用 hash 路由的临时 harness 起的**（`#pickerdemo`，用真 `WorldMapPanels` + 手搓 ctx 调真 `showModal`，提交前删掉）——
+本机 docker 账号（LimeMutt）在世界地图上一支队伍都没有，走真实入口只会弹「尚无队伍」。

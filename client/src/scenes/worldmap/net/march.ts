@@ -124,10 +124,20 @@ export async function showTeamPicker(
   const buttons: ModalButton[] = [];
   for (const tm of usable) {
     const committed = committedOf(tm);
-    // Stamina rides in the row label rather than getting its own line: the player picks a team by
-    // comparing rows, and "which of these can still go out twice" is part of that comparison.
+    // Troops and stamina ride ON the row rather than getting their own line: the player picks a team
+    // by comparing rows, and "who is strongest" / "who can still go out twice" is that comparison.
+    // Both are GLYPH+FIGURE chips under the name (ModalButton.stats), not words: spelled out
+    // ("Team 1 · Troops 2525 · Stamina 100") the row was three wrapped lines in an 84px button, so
+    // the third was clipped — and the two words were identical on all five rows anyway, i.e. the
+    // clipped ink was the only part that differed. `unit` for troops and `hourglassMd` for a
+    // time-refilled budget are the glyphs this map already uses for both (tile garrison / city
+    // regen), so nothing new has to be learned to read the row.
     buttons.push({
-      label: `${teamDisplayName(tm)} · ${t('world.team.committed').replace('{n}', String(committed))} · ${t('world.team.stamina').replace('{n}', String(staminaOf(tm)))}`,
+      label: teamDisplayName(tm),
+      stats: [
+        { icon: 'unit', text: String(committed) },
+        { icon: 'hourglassMd', text: String(staminaOf(tm)) },
+      ],
       action: () => void doMarchTeam(ctx, pendingTeamIds, tx, ty, tm.id, kind, stationMode),
       icon: 'swords',
     });

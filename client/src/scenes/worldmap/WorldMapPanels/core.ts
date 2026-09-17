@@ -18,7 +18,7 @@ import { HUD_H, MARGIN, CONFIRM_H } from '../logic/constants';
 import { PANEL_W, PANEL_MARGIN, panelBtnFont } from './spec';
 import {
   modalLineText, modalLineIcon, buildModalGlyph,
-  type ModalLine, type ModalButton,
+  type ModalLine, type ModalButton, type ModalButtonStat,
 } from './modalLine';
 import { buildIcon, type IconKind } from '../../../render/icons';
 import { drawButtonLabel } from '../../../ui/widgets/buttonLabel';
@@ -35,6 +35,17 @@ const BTN_LABEL_PAD = 8;
 /** Leading-glyph box on a modal button, and the gap between it and the label. */
 const BTN_GLYPH = 26;
 const BTN_GLYPH_GAP = 8;
+
+/**
+ * Geometry of a button's stat row (`ModalButton.stats` — the `[glyph][number]` chips under the
+ * label). Sized off `FS.small` at draw time, so it follows the font floor like everything else;
+ * the ratios are the ones `buttonLabel.ts` uses for its own icon+label pair.
+ */
+const STAT_GLYPH_RATIO = 1.25;
+/** glyph → its own figure, figure → next chip's glyph, and label block → the chip row. */
+const STAT_GAP = 6;
+const STAT_CHIP_GAP = 18;
+const STAT_ROW_GAP = 6;
 
 /**
  * Would `label` still lay out the same beside a `lead`-wide leading glyph, inside a `labelW`-wide,
@@ -61,6 +72,40 @@ function labelFitsBesideGlyph(label: string, labelW: number, lead: number, btnH:
   );
 }
 
+/**
+ * A button's stat row as ONE container laid out from local (0,0), with its natural size — so the
+ * caller centres and, if need be, scales the whole row rather than the individual chips (the same
+ * "scale the group, not its parts" contract `buttonLabel.ts` draws its icon+label pair under).
+ *
+ * Bold figures: they are the content of the row, and the glyph beside each one is already the
+ * quiet half of the pair.
+ */
+function buildStatRow(
+  stats: ModalButtonStat[], font: number, color: number,
+): { row: PIXI.Container; w: number; h: number } {
+  const gSz = Math.round(font * STAT_GLYPH_RATIO);
+  const values = stats.map((s) => {
+    const val = txt(s.text, font, color, true);
+    val.anchor.set(0, 0.5);
+    return val;
+  });
+  const h = Math.max(gSz, ...values.map((v) => v.height));
+  const row = new PIXI.Container();
+  let x = 0;
+  for (let i = 0; i < stats.length; i++) {
+    const glyph = buildIcon(stats[i]!.icon, gSz, color);
+    glyph.x = x;
+    glyph.y = (h - gSz) / 2;
+    row.addChild(glyph);
+    const val = values[i]!;
+    val.x = x + gSz + STAT_GAP;
+    val.y = h / 2;
+    row.addChild(val);
+    x = val.x + val.width + STAT_CHIP_GAP;
+  }
+  return { row, w: Math.max(0, x - STAT_CHIP_GAP), h };
+}
+
 export class WorldMapPanelsCore {
   constructor(readonly ctx: WorldMapContext) {}
 
@@ -83,7 +128,19 @@ export class WorldMapPanelsCore {
     const textW = mw - textPad * 2;
     const topPad = 42;
     const lineGap = 14;
-    const btnH = 84;
+    // `FS.label` for the stat figures, not `FS.small`: they ARE the comparison the player is making
+    // across the rows, and at `FS.small` they measured ~10 CSS px in a 1568-wide window — fine print
+    // under a 32px name. `label` is the largest token that still reads as subordinate to it.
+    const statFont = Math.round(FS.label);
+    const statBlockH = Math.round(statFont * STAT_GLYPH_RATIO) + STAT_ROW_GAP;
+    // The chip row is ADDED to the button's height rather than carved out of the 84 (which left the
+    // name and the figures each ~4px from a hand-drawn border). A taller button is the cheap half of
+    // that trade — the modal sizes itself off `btnH`, so it simply grows (the 2026-09-12 ruling,
+    // design/game/UI_DESIGN_LOG_2026-08.md §50.12: "按钮长高一点没关系").
+    const hasStats = buttons.some((b) => b.stats?.length);
+    const btnH = hasStats ? 84 + statBlockH : 84;
+    /** The room a button's LABEL has — so the leading-glyph gate judges it against the truth. */
+    const labelBoxH = (b: ModalButton): number => (b.stats?.length ? btnH - statBlockH : btnH);
     const btnGap = 30;
     const modalMargin = MARGIN * 3;
     const mx = (w - mw) / 2;
@@ -111,7 +168,7 @@ export class WorldMapPanelsCore {
     while (cols > 1 && rowsFor(cols - 1) === rowsFor(cols)) {
       const w = Math.min(300, (mw - modalMargin * (cols + 1)) / cols);
       const allFit = buttons.every(
-        (b) => !b.icon || labelFitsBesideGlyph(b.label, w - 16, BTN_GLYPH + BTN_GLYPH_GAP, btnH)
+        (b) => !b.icon || labelFitsBesideGlyph(b.label, w - 16, BTN_GLYPH + BTN_GLYPH_GAP, labelBoxH(b))
       );
       if (allFit) break;
       cols -= 1;
@@ -208,23 +265,37 @@ export class WorldMapPanelsCore {
       // just-drawn glyphs that could never appear), and shortening the copy changed nothing.
       // Measuring the label instead makes the gate self-adjusting: `停留`/`驻扎` earn their glyph
       // in a 166px column, a German compound still drops it exactly where it would have wrapped.
+      const ink = disabled ? C.mid : C.light;
       const icon =
-        btn.icon && labelFitsBesideGlyph(btn.label, btnW - 16, BTN_GLYPH + BTN_GLYPH_GAP, btnH)
-          ? buildIcon(btn.icon, BTN_GLYPH, disabled ? C.mid : C.light)
+        btn.icon && labelFitsBesideGlyph(btn.label, btnW - 16, BTN_GLYPH + BTN_GLYPH_GAP, labelBoxH(btn))
+          ? buildIcon(btn.icon, BTN_GLYPH, ink)
           : null;
       const lead = icon ? BTN_GLYPH + BTN_GLYPH_GAP : 0;
       // Word-wrap to the button's own width so long labels (or squeezed columns) never bleed into neighbors.
-      const bl = txt(btn.label, FS.title, disabled ? C.mid : C.light, false, btnW - 16 - lead);
+      const bl = txt(btn.label, FS.title, ink, false, btnW - 16 - lead);
       bl.anchor.set(0, 0.5);
       const grpX = bx + (btnW - (bl.width + lead)) / 2;
+      // Stat chips, when the button has them, stack UNDER the label and the pair is centred as one
+      // block — so a button with a one-line label and two chips reads as a two-line row, not as a
+      // centred label with something hanging off it.
+      const stats = btn.stats?.length ? buildStatRow(btn.stats, statFont, ink) : null;
+      const statFit = stats ? Math.min(1, (btnW - 16) / Math.max(1, stats.w)) : 1;
+      const blockH = stats ? bl.height + STAT_ROW_GAP + stats.h * statFit : bl.height;
+      const labelCy = by + (btnH - blockH) / 2 + bl.height / 2;
       if (icon) {
         icon.x = grpX;
-        icon.y = by + (btnH - BTN_GLYPH) / 2;
+        icon.y = labelCy - BTN_GLYPH / 2;
         ml.addChild(icon);
       }
       bl.x = grpX + lead;
-      bl.y = by + btnH / 2;
+      bl.y = labelCy;
       ml.addChild(bl);
+      if (stats) {
+        stats.row.scale.set(statFit);
+        stats.row.x = bx + (btnW - stats.w * statFit) / 2;
+        stats.row.y = labelCy + bl.height / 2 + STAT_ROW_GAP;
+        ml.addChild(stats.row);
+      }
       this.ctx.modalBtnRects.push({ rect: { x: bx, y: by, w: btnW, h: btnH }, fn: btn.action });
     }
 
