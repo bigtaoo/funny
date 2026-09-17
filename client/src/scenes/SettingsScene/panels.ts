@@ -3,7 +3,7 @@
 // handful of SettingsScene fields/methods actually used, made public for this) instead of closing
 // over `this`. Mirrors StatsScene/panels.ts / ResultScene/builders.ts's precedent.
 import * as PIXI from 'pixi.js-legacy';
-import { makeText } from '../../render/pixiText';
+import { makeText, monospaceWidth } from '../../render/pixiText';
 import { ui as C, sketchPanel } from '../../render/sketchUi';
 import { t, getLocale, setLocale, getSupportedLocales, Locale, TranslationKey } from '../../i18n';
 import { FS, snapFont } from '../../render/fontScale';
@@ -283,29 +283,56 @@ export function drawLegal(host: PanelHost): void {
   const secY = Math.round(h * 0.73);
   const x = Math.round(w * 0.56);
 
-  // 0.142h, not the 0.125h the delete button opposite uses: this column has the Replay-tutorial
-  // BUTTON above it (ending at 0.845h), and at 0.125h the label's caps sat flush against its border
-  // — checked in a real browser at 1568x744, where the gap is ~7px and reads as a collision.
-  const label = txt(t('settings.legal'), FS.title, C.dark, true);
-  label.anchor.set(0, 0.5); label.y = secY + Math.round(h * 0.142); label.x = x;
-  container.addChild(label);
-
   const rowH = Math.round(h * 0.04);
   const links: ReadonlyArray<readonly [TranslationKey, '/privacy' | '/terms']> = [
     ['consent.privacyPolicy', '/privacy'],
     ['consent.terms', '/terms'],
   ];
-  links.forEach(([key, path], i) => {
-    const y = secY + Math.round(h * 0.175) + i * rowH;
-    const link = txt('· ' + t(key), FS.label, C.accent, true);
-    link.anchor.set(0, 0.5); link.x = x; link.y = y;
+  const rows = links.map(([key, path]) => {
+    const text = txt('· ' + t(key), FS.label, C.accent, true);
+    // `Math.max` with a width derived from the string: the UI harness's `measureText` is
+    // `length * 7` px at every font size, which would pin the branch below to "one row" in every
+    // test (monospaceWidth's header has the full story).
+    return { path, text, w: Math.max(text.width, monospaceWidth(text.text, FS.label)) };
+  });
+
+  // One row when the pair fits, two when it does not — measured, not assumed from orientation. The
+  // column runs `x`…0.94w: ~730 design px in landscape, where both links fit in all three locales,
+  // but only ~410 in portrait, where "· Datenschutzerklärung · Nutzungsbedingungen" is half again
+  // too long. Every locale has its own width (CJK is full-width monospace), so this is decided per
+  // render, not per platform.
+  const gap = Math.round(w * 0.025);
+  const maxW = w - x - Math.round(w * 0.06);
+  const oneRow = rows.reduce((sum, r) => sum + r.w, 0) + gap * (rows.length - 1) <= maxW;
+
+  // Collapsing to one row frees a row's worth of height, and it is spent on the two gaps that read
+  // as crowding: under the Replay-tutorial BUTTON above (it ends at 0.845h, and at the stacked
+  // 0.142h the label's caps sit ~7px off its border) and between the label and its links. The
+  // numbers are the landscape band measured end to end — 913…1041 design px between that button
+  // and the viewport readout below, 67 of which is text — split into ~24/16/22 of air.
+  // Stacked, the fractions stay exactly as they were: that layout is the tall-and-narrow one, where
+  // the same band has two link rows AND the readout's two lines to fit.
+  const labelY = secY + Math.round(h * (oneRow ? 0.155 : 0.142));
+  const label = txt(t('settings.legal'), FS.title, C.dark, true);
+  label.anchor.set(0, 0.5); label.y = labelY; label.x = x;
+  container.addChild(label);
+
+  let rowX = x;
+  rows.forEach(({ text: link, path, w: linkW }, i) => {
+    const y = secY + Math.round(h * (oneRow ? 0.2 : 0.175)) + (oneRow ? 0 : i * rowH);
+    link.anchor.set(0, 0.5); link.x = oneRow ? rowX : x; link.y = y;
     container.addChild(link);
     host.hits.push({
-      // Wider than the glyphs: these are two short lines of text, and a tap target the exact width
-      // of "Terms" in English is a miss on a phone (and a different width in every locale).
-      rect: { x, y: y - rowH / 2, w: Math.max(Math.round(link.width), Math.round(w * 0.3)), h: rowH },
+      // Stacked, the rect is wider than the glyphs: a tap target the exact width of "Terms" in
+      // English is a miss on a phone (and a different width in every locale). Side by side it can
+      // only claim its own text plus half the gap, or the two targets would overlap.
+      rect: {
+        x: link.x, y: y - rowH / 2, h: rowH,
+        w: oneRow ? Math.round(linkW + gap / 2) : Math.max(Math.round(linkW), Math.round(w * 0.3)),
+      },
       fn: () => { if (typeof window !== 'undefined') window.open(legalUrl(path), '_blank', 'noopener'); },
     });
+    rowX += Math.round(linkW) + gap;
   });
 }
 
@@ -324,11 +351,18 @@ export function drawLegal(host: PanelHost): void {
  * Deliberately unlocalised and unstyled: it is five numbers and a one-word verdict, and a
  * translated diagnostic is a diagnostic someone has to translate before they can read it back.
  * Absent when the platform cannot answer (WeChat — no DOM to read; see IPlatform).
+ *
+ * **Native shell only.** In a browser the readout is debug text in front of every player, and it
+ * cannot even answer the question it exists for: `viewportVerdict` returns the literal word
+ * `browser` there and makes no claim, because tabs and a URL bar eat viewport legitimately. The one
+ * environment where these numbers decide something is the Capacitor shell — ADR-088
+ * (`ios.contentInset: 'never'`) is still waiting on exactly this row off a TestFlight build,
+ * reading `inset-eaten` → `env-reported`.
  */
 export function drawViewportDiagnostics(host: PanelHost): void {
   const { w, h, container, cb } = host;
   const geom = cb.getViewportGeometry?.();
-  if (!geom) return;
+  if (!geom || !geom.nativeShell) return;
 
   const [top, bottom] = formatViewportGeometry(geom);
   // Portrait leaves ~100px of clear band under the Legal links (0.945h); landscape's design rect is

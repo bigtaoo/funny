@@ -48,3 +48,26 @@ export function makeText(
 export function installTextPaddingFloor(px = 8): void {
   if (PIXI.TextStyle.defaultStyle.padding < px) PIXI.TextStyle.defaultStyle.padding = px;
 }
+
+/**
+ * Lower bound on the rendered width of a monospace string, derived from the string itself.
+ *
+ * Every text size in this game comes from the `FS` scale, and every label drawn through `txt()` is
+ * `fontFamily: 'monospace'` — so a width is just a cell count: 0.6em per Latin cell (the advance
+ * every monospace family we fall back to uses, measured in Chrome), 1em per full-width CJK cell.
+ *
+ * Why not simply read `Text.width`: a layout that *branches* on measured width behaves differently
+ * under `test/harness/pixiHeadless.ts`, whose `measureText` returns `length * 7` px regardless of
+ * font size — so in the UI suite every string is a third of its real width and the branch is pinned
+ * to one side, forever untested and silently wrong if it ever flips. Take `Math.max` of this and
+ * the measured width: in a browser the measurement is the truth and wins (or ties), while headless
+ * the estimate keeps the decision honest.
+ */
+export function monospaceWidth(text: string, fontSize: number): number {
+  let cells = 0;
+  for (const ch of text) cells += FULL_WIDTH.test(ch) ? 1 : 0.6;
+  return cells * fontSize;
+}
+
+/** Full-width (CJK and friends) code points, which occupy one whole em in a monospace run. */
+const FULL_WIDTH = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
