@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { buildCost } from '@nw/shared';
 import { BotSession } from '../src/bot';
 import type { BotIdentity } from '../src/pool';
 import * as battleSession from '../src/battleSession';
@@ -33,9 +34,9 @@ function fakeCommercial(): any {
 function siegeWorld(over: Record<string, unknown> = {}): any {
   return {
     getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-    joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
-    upgradeBuilding: vi.fn().mockResolvedValue(undefined),
-    getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 100, mainBaseTile: 's3-0:5:5' }),
+    joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
+    upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
+    getWorldMe: vi.fn().mockImplementation(async () => solventMe()),
     baseCoords: vi.fn().mockReturnValue({ x: 5, y: 5 }),
     getWorldMapSparse: vi.fn().mockResolvedValue({ tiles: [] }),
     pickAttackTarget: vi.fn().mockReturnValue(null),
@@ -46,8 +47,31 @@ function siegeWorld(over: Record<string, unknown> = {}): any {
 
 const battleOpts = { gatewayWsUrl: 'ws://unused/gw', chancePerTick: 0 };
 
+/** Drive ticks back to back without waiting out DEFAULT_SLG_INTERVAL_MS; pacing has its own cases below. */
+const unpacedSlg = { intervalMs: 0 };
+
+/**
+ * A `/world/me` for a bot that can pay for anything.
+ *
+ * Every upgrade case needs this now: tickSlg only posts an upgrade it believes will succeed, so a
+ * fake whose player owns nothing produces zero upgrade calls — which is precisely the live behaviour
+ * (a one-resource base can never afford a building) that the pre-2026-09-17 fakes hid by never
+ * modelling resources at all, while the assertions only ever checked that the REQUEST went out.
+ */
+function solventMe(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    joined: true,
+    troops: 100,
+    mainBaseTile: 's3-0:5:5',
+    buildings: { desk: 1 },
+    buildQueue: [],
+    resources: { ink: 1e9, paper: 1e9, graphite: 1e9, metal: 1e9, sticker: 1e9 },
+    ...over,
+  };
+}
+
 async function loggedInSession(world: any): Promise<BotSession> {
-  const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, battleOpts);
+  const session = new BotSession(identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, battleOpts, unpacedSlg);
   await session.login();
   return session;
 }
@@ -56,8 +80,8 @@ describe('BotSession.tickSlg', () => {
   it('joins the active season world on first tick, then upgrades a building', async () => {
     const world: any = {
       getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-      joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0', troops: 100, mainBaseTile: 's3-0:5:5' }),
-      upgradeBuilding: vi.fn().mockResolvedValue(undefined),
+      joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
+      upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
     };
     const session = await loggedInSession(world);
 
@@ -70,8 +94,8 @@ describe('BotSession.tickSlg', () => {
   it('only resolves the world once — later ticks reuse the cached worldId', async () => {
     const world: any = {
       getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-      joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
-      upgradeBuilding: vi.fn().mockResolvedValue(undefined),
+      joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
+      upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
     };
     const session = await loggedInSession(world);
 
@@ -84,8 +108,8 @@ describe('BotSession.tickSlg', () => {
   it('rotates through P1 building keys across ticks instead of repeating one', async () => {
     const world: any = {
       getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-      joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
-      upgradeBuilding: vi.fn().mockResolvedValue(undefined),
+      joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
+      upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
     };
     const session = await loggedInSession(world);
 
@@ -99,9 +123,9 @@ describe('BotSession.tickSlg', () => {
   it('on the siege-interval tick, marches on a found target instead of upgrading', async () => {
     const world: any = {
       getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-      joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
-      upgradeBuilding: vi.fn().mockResolvedValue(undefined),
-      getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 100, mainBaseTile: 's3-0:5:5' }),
+      joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
+      upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
+      getWorldMe: vi.fn().mockImplementation(async () => solventMe()),
       baseCoords: vi.fn().mockReturnValue({ x: 5, y: 5 }),
       getWorldMapSparse: vi.fn().mockResolvedValue({ tiles: [{ x: 6, y: 6, type: 'territory', mine: false }] }),
       pickAttackTarget: vi.fn().mockReturnValue({ x: 6, y: 6 }),
@@ -120,9 +144,9 @@ describe('BotSession.tickSlg', () => {
   it('falls back to upgrading when the siege-interval tick finds no target', async () => {
     const world: any = {
       getActiveSeason: vi.fn().mockResolvedValue({ season: 3 }),
-      joinSeason: vi.fn().mockResolvedValue({ joined: true, worldId: 's3-0' }),
-      upgradeBuilding: vi.fn().mockResolvedValue(undefined),
-      getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 100, mainBaseTile: 's3-0:5:5' }),
+      joinSeason: vi.fn().mockImplementation(async () => solventMe({ worldId: 's3-0' })),
+      upgradeBuilding: vi.fn().mockImplementation(async () => solventMe()),
+      getWorldMe: vi.fn().mockImplementation(async () => solventMe()),
       baseCoords: vi.fn().mockReturnValue({ x: 5, y: 5 }),
       getWorldMapSparse: vi.fn().mockResolvedValue({ tiles: [] }),
       pickAttackTarget: vi.fn().mockReturnValue(null),
@@ -136,6 +160,76 @@ describe('BotSession.tickSlg', () => {
 
     expect(world.startMarchAttack).not.toHaveBeenCalled();
     expect(world.upgradeBuilding).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Affordability gate + pacing (2026-09-17) ────────────────────────────────────────────────────
+  // The regression these pin is not a crash, it is 629,382 consecutive rejected upgrades in 29 hours
+  // on live s2-0 — 64% of worldsvc's whole request volume, spent on a call that could never succeed.
+  // Note what the pre-existing cases above could NOT have caught: they asserted that the request went
+  // out, and their fakes had no resources at all, so "always rejected" and "working" looked identical.
+
+  it('never posts an upgrade a one-resource bot cannot pay for (the live bot shape)', async () => {
+    // A bot's base footprint covers exactly one resource tile, so it yields exactly one resource, and
+    // `ink` is a pure troop-sustain resource that NO entry in BUILD_COST_BASE charges (city.ts design
+    // rule). However rich in ink it gets, nothing is ever buyable.
+    const inkOnly = solventMe({ resources: { ink: 1e9, paper: 0, graphite: 0, metal: 0, sticker: 0 } });
+    const world = siegeWorld({ getWorldMe: vi.fn().mockImplementation(async () => inkOnly) });
+    world.joinSeason = vi.fn().mockImplementation(async () => ({ ...inkOnly, worldId: 's3-0' }));
+    const session = await loggedInSession(world);
+
+    for (let i = 0; i < 12; i++) await session.tickSlg();
+
+    expect(world.upgradeBuilding).not.toHaveBeenCalled();
+  });
+
+  it('picks a key it can afford over the next one in the rotation', async () => {
+    // paperTray is the only building a graphite-only balance can buy (`{ graphite: 1600 }`); the
+    // rotation would otherwise open on `desk`, which also wants paper and sticker.
+    const graphiteOnly = solventMe({
+      resources: { ink: 0, paper: 0, graphite: (buildCost('paperTray', 1).graphite ?? 0) * 2, metal: 0, sticker: 0 },
+    });
+    const world = siegeWorld({ getWorldMe: vi.fn().mockImplementation(async () => graphiteOnly) });
+    world.joinSeason = vi.fn().mockImplementation(async () => ({ ...graphiteOnly, worldId: 's3-0' }));
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+
+    expect(world.upgradeBuilding).toHaveBeenCalledWith('t', 's3-0', 'paperTray');
+  });
+
+  it('respects a full build queue, which worldsvc would reject outright', async () => {
+    const queued = solventMe({ buildQueue: [{ key: 'desk', toLevel: 2, startAt: 0, completeAt: 1 }] });
+    const world = siegeWorld({ getWorldMe: vi.fn().mockImplementation(async () => queued) });
+    world.joinSeason = vi.fn().mockImplementation(async () => ({ ...queued, worldId: 's3-0' }));
+    const session = await loggedInSession(world);
+
+    await session.tickSlg();
+
+    expect(world.upgradeBuilding).not.toHaveBeenCalled();
+  });
+
+  it('acts once per interval however often the scheduler hands it a pass', async () => {
+    const world = siegeWorld();
+    const session = new BotSession(
+      identity, fakeMeta(), fakeSocial(), fakeCommercial(), world, battleOpts, { intervalMs: 60_000 },
+    );
+    await session.login();
+
+    for (let i = 0; i < 5; i++) await session.tickSlg();
+
+    expect(world.upgradeBuilding).toHaveBeenCalledTimes(1);
+  });
+
+  it('costs no extra round trip: the affordability snapshot rides on the siege tick /world/me', async () => {
+    // This is a COST assertion, not a behaviour one — deciding affordability client-side is only a win
+    // if the decision is not itself paid for with the request it saves. Over 10 ticks the bot may call
+    // `/world/me` only on the two siege-interval ticks (SIEGE_TICK_INTERVAL = 5), same as before.
+    const world = siegeWorld();
+    const session = await loggedInSession(world);
+
+    for (let i = 0; i < 10; i++) await session.tickSlg();
+
+    expect(world.getWorldMe).toHaveBeenCalledTimes(2);
   });
 
   it('does nothing before login (no token yet)', async () => {
@@ -390,7 +484,7 @@ describe('BotSession.tickSlg — incomplete backend state', () => {
   });
 
   it('skips the siege and upgrades instead when the bot has no base tile yet', async () => {
-    const world = siegeWorld({ getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 100 }) });
+    const world = siegeWorld({ getWorldMe: vi.fn().mockImplementation(async () => solventMe({ mainBaseTile: undefined })) });
     world.baseCoords = vi.fn().mockReturnValue(null); // no mainBaseTile -> no march origin
     const session = await loggedInSession(world);
 
@@ -406,7 +500,7 @@ describe('BotSession.tickSlg — incomplete backend state', () => {
   it('skips the siege and upgrades instead when the garrison is empty', async () => {
     // Marching 0 troops is a request worldsvc would reject anyway; more to the point the bot has just
     // been wiped, and spending the tick rebuilding is what a real player does.
-    const world = siegeWorld({ getWorldMe: vi.fn().mockResolvedValue({ joined: true, troops: 0, mainBaseTile: 's3-0:5:5' }) });
+    const world = siegeWorld({ getWorldMe: vi.fn().mockImplementation(async () => solventMe({ troops: 0 })) });
     const session = await loggedInSession(world);
 
     for (let i = 0; i < 4; i++) await session.tickSlg();

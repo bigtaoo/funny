@@ -22,8 +22,9 @@ async function main(): Promise<void> {
   const capacity = new CapacityClient(env.gatewayInternalUrl, env.internalKey);
 
   const battleOpts = { gatewayWsUrl: env.gatewayWsUrl, chancePerTick: env.battleChancePerTick };
+  const slgOpts = { intervalMs: env.slgIntervalMs };
   const pool = generateBotPool(env.poolSize, env.deviceOffset).map(
-    (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts),
+    (identity) => new BotSession(identity, meta, social, commercial, world, battleOpts, slgOpts),
   );
   const scheduler = new Scheduler(pool, capacity, {
     targetOnline: env.targetOnline,

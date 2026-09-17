@@ -1,3 +1,5 @@
+import { DEFAULT_SLG_INTERVAL_MS } from './bot';
+
 // botsvc env loading. Unlike the other services, botsvc owns no database and verifies no player JWTs —
 // it is itself a fleet of clients, so it only needs the public base URLs it dials out to plus the
 // internal key it presents when calling commercial's/gateway's internal-only endpoints (BOTSVC_DESIGN §7).
@@ -43,6 +45,13 @@ export interface BotsvcEnv {
    * slices instead of one big burst, spreading CPU more evenly (closer to how real players trickle in).
    */
   upkeepRotations: number;
+  /**
+   * Wall-clock floor between two SLG actions by the SAME bot (bot.ts DEFAULT_SLG_INTERVAL_MS).
+   * Deliberately NOT derived from tickMs × upkeepRotations: those two shape the scheduler's CPU burst,
+   * and while a bot acted on every pass it was handed, retuning either one silently retuned how hard
+   * the fleet hammered worldsvc — which on a shared-tier Atlas is the whole backend's latency tail.
+   */
+  slgIntervalMs: number;
   /** deviceId numbering offset (bot-{i+offset}); lets an externally-run fleet avoid colliding with an in-cluster fleet's bot-0001.. accounts. */
   deviceOffset: number;
   /** Max sessions logged in/out per scheduler tick (Scheduler batchSize); raise it to ramp a load-gen fleet up faster. */
@@ -74,6 +83,7 @@ export function loadBotsvcEnv(): BotsvcEnv {
     upkeepConcurrency: num('NW_BOT_UPKEEP_CONCURRENCY', 20),
     tickMs: num('NW_BOT_TICK_MS', 5_000),
     upkeepRotations: num('NW_BOT_UPKEEP_ROTATIONS', 3),
+    slgIntervalMs: num('NW_BOT_SLG_INTERVAL_MS', DEFAULT_SLG_INTERVAL_MS),
     deviceOffset: num('NW_BOT_DEVICE_OFFSET', 0),
     spawnBatch: num('NW_BOT_SPAWN_BATCH', 10),
   };

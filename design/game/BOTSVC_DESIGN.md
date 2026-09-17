@@ -80,6 +80,16 @@ offline → logging_in → lobby_idle ⇄ matchmaking → in_battle → lobby_id
 - `lobby_idle`：什么都不做，按权重随机决定下一步去 `matchmaking`（PvE 关卡 / PvP 排位）还是 `slg_action`。
 - `matchmaking`：走真实 gateway→matchsvc 排队协议；配对成功后用 §1 B3 的 AISystem headless 驱动真实 gameserver WS 数据面连接完整走完一局（提交真实 cmd 流），局末走真实 `/internal/match/report` 结算路径——**跟真人打真人在服务器视角完全一样**。
 - `slg_action`：调 worldsvc 公网 `/world/*` 做基础节奏（资源采集、建筑升级、偶尔发起攻城），**不挂拍卖**（B8）。
+  **节奏与"发不发得出去"两件事都由 bot 自己判（2026-09-17）**：
+  - **节奏**：`NW_BOT_SLG_INTERVAL_MS`（默认 45s，`bot.ts DEFAULT_SLG_INTERVAL_MS`）是同一个 bot 两次世界操作之间的墙钟下限。
+    在此之前 `tickSlg()` 对调度器递给它的**每一个**巡检 pass 都动手，于是它的真实频率是 `tickMs × upkeepRotations`
+    （5s × 3 = 每 bot 每 15s）的副产品——而那两个旋钮存在的理由是削 §3.1 的 CPU 尖峰，不是"一个 bot 该多活跃"。
+    两者现在解耦：调度器想多久来一次都行，bot 自己最多这么频繁地动。
+  - **发不发得出去**：升级请求**先在客户端算一遍付不付得起**（`affordableBuilding()`，照 worldsvc 的
+    `CityBuildingsService.upgradeBuilding` 从 `@nw/shared` 的同一批常数镜像：队列槽位 → `buildGateReason` → `buildCost`），
+    付不起就这一 tick 什么都不发。这跟真实客户端把买不起的那一行置灰、而不是点下去让服务端拒绝是同一个动作（B2）。
+    服务端仍然是权威：镜像只可能让 bot 要得**比它有权要的更少**（快照里的 `resources` 是服务端读时结算的值，只随时间变大）。
+    判据不是"省几个请求"，而是**那个请求从来就不可能成功**——见 §8 的 2026-09-17 条。
 - `family_task`：见 §6。
 - **登录失败卡死在 `logging_in`（2026-08-04 修复）**：`login()` 原先先置 `state='logging_in'` 再 `await meta.deviceLogin(...)`，deviceLogin 抛错时状态就再也回不去了——`scheduler.ts` 的 `spawnUpTo` 只从 `state==='offline'` 里挑候选重试，卡死的会话永远排不上重登；更糟的是它同时通过了 `spawnUpTo` 里 `state !== 'offline'` 的判断被塞进 `online` 集合，占着舰队名额却没有 token、什么都不做。修法：`deviceLogin` 包一层 try/catch，失败时把 `state` 复位为 `'offline'` 再重新抛出，让下一轮 `spawnUpTo` 能正常重试。
 - **`logout()` 不取消进行中的对局（2026-08-04 修复）**：`logout()` 原先只清本地 `token`/`state`，`runBattle()`（`playRankedMatch`）留下的真实 gateway/gameserver WS 连接会继续跑到打完——`despawnDownTo`（容量降级，见 §4）调 `logout()` 本意是"立刻减负"，实际却让这条连接继续占着资源，降级完全没生效。修法：`BotSession` 持有一个 `battleAbort: AbortController`，`runBattle()` 开局时创建、结束时清空；`logout()` 调 `battleAbort?.abort()`。`battleSession.ts` 的 `playRankedMatch` 新增 `abortSignal?: AbortSignal` 选项——排队阶段 `enqueueRanked` 返回后检查一次 `aborted`（提前退出，不必再连 gameserver），已连上后则在 executor 里监听 `abort` 事件，跟其余失败路径一样统一走 `finish()`（`game.close()` + reject）。
@@ -197,6 +207,32 @@ const FAMILY_TASK_ACTION_MAP: Record<string, FamilyTaskAction> = {
   - **仍待办**：VPS 以 300 target 重跑压测，验证 `base:disconnect` 比例是否从 ~5:1 显著下降（用 `docker logs --tail N --timestamps`，`--since` 因时钟偏差不准）；若 1000 并发仍受限于单核吞吐，再评估 worker_threads/多进程（另开任务）。
 - **`battleChancePerTick` 从 0.05 调到 0.025（2026-07-15）**：VPS 巡检发现 `server-botsvc-1`（300 目标在线）稳态 CPU ~48%、机器 load 2.2-2.7（2 核偏紧）。溯源：botsvc 自身 CPU 的主要驱动不是调度器的家族/SLG REST 巡检（轻量、网络受限），而是**并发对战数**——每个"打排位"中的机器人都在本机内嵌跑一份完整的 30Hz lockstep 引擎模拟（`engineDriver.ts`，跟真实客户端在手机上跑的是同一份逻辑，只是这份计算被转嫁到了服务器上）。稳态并发对战比例 ≈ `对局时长 / (对局时长 + 15s/chancePerTick)`；旧值 0.05 对应约 1/3 机器人同时在战斗中，调到 0.025 对应约 1/5。`server/botsvc/src/config.ts` 改了默认值（`NW_BOT_BATTLE_CHANCE` 环境变量仍可覆盖），**尚未随镜像重新部署到 VPS**。
 - **未采纳**：曾考虑让机器人"一次性跑完确认帧"而不是像客户端一样逐帧模拟（省CPU的直觉）。核查后否决——`gameserver` 本身是硬性 30Hz 定频（`Room.ts` `FRAMES_PER_BATCH=3`/`BATCH_MS=100`，"sim 30Hz ÷ net 10Hz"），`matchStateHash` 逐帧算出、machine 必须和真实对手客户端帧数对齐，少算帧会导致 hash 不一致被判 `mismatch`。现有的"落后时分块经 `setImmediate` 让步"（`MAX_FRAMES_PER_ADVANCE=6`）正是 §8 上条 disconnect 根因修复本身，去掉它会复现同一个事件循环饿死 bug，不会省总 CPU（该 step 的帧数不变，只是让步时机不同）。
+- [x] **SLG 建筑升级是一个 100% 必然失败的循环，跑了几个月没人知道（2026-09-17 发现并修复）**：
+  线上 s2-0 心跳里 `POST /world/build/upgrade` 稳定 **6.0 次/秒**，29 小时 **629,382 次**，
+  占 worldsvc 全部请求量的 **64%**——**一次都没成功过**。
+  - **判据（直接查库，不靠推断）**：`playerWorld` 共 1752 份文档，`resources.ink > 0` 的只有 20 份、
+    `buildings.desk > 1` 的只有 **4** 份（那 4 份是真人）。每个 bot 都是 `{desk: 1}`、
+    `yieldRate = {ink: 100, paper: 0, graphite: 0, metal: 0, sticker: 0}`。
+  - **为什么必然失败**：bot 的基地 footprint 只压住**一格**资源地，所以它只产一种资源；而
+    `BUILD_COST_BASE`（`shared/src/slg/city.ts`）里**每一个**建筑都要 paper 和/或 graphite，高位键还要 sticker/metal，
+    并且按那一节的 ★ 设计规则，**`ink` 是纯粹的养兵资源，没有任何建筑吃它**。
+    一个 ink 基地的 bot 攒到天荒地老也买不起任何东西。（paper 基地能买 `graphiteMill`、graphite 基地能买 `paperTray`，
+    这是唯二的单资源出口——所以"bot 完全不能发育"这件事**本身也是一个待拍板的设计缺口**，不是这次顺手能修的：
+    要让 bot 真的发育，得让它先去占第二种资源地，那是行为设计不是性能修复。）
+  - **为什么没人发现**：`scheduler.ts` 的 `runUpkeep()` 两行都是 `.catch(() => undefined)`——
+    拒绝被整条吞掉，botsvc 日志干干净净，`/internal/bots/status` 报告一支健康的舰队。
+    **这与 §8 上面那条"两个 mock 把攻城半径常数藏了两个月"是同一种失明**：一个跑在无限循环上的被静默错误
+    不是降噪，是一个带着请求速率的盲区。
+  - **修法三件**：① §3.2 的客户端付费判定（发不出去的就不发）；② `NW_BOT_SLG_INTERVAL_MS` 把节奏从调度器旋钮里解耦；
+    ③ `runUpkeep()` 不再吞错——按 `family`/`slg` 累计计数，进 `/internal/bots/status` 的 `upkeepErrors`，
+    并且每 60s 最多打一条汇总 `warn`（100 bot 规模下逐条打日志本身就是事故）。
+  - **为什么这算 SLG 性能修复**：七个后端服务共用同一个 Atlas 共享层集群，100 ops/sec 是整个后端共享的一个令牌桶
+    （`WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md` §九）。这 6 次/秒纯废请求消耗的正是真人每一次点击要排队等的那个桶。
+    完整的测量与往返次数模型见那份审计的 §十一。
+  - **门禁**：`bot.test.ts` 5 例（单资源 bot 零升级请求 / 选付得起的键而不是轮转的下一个 / 队列满时不发 /
+    一个 interval 只动一次 / **成本断言：10 个 tick 里 `/world/me` 只许调 2 次**——客户端判定必须是白送的，
+    不能用它省下的那个请求去换）、`scheduler.test.ts` 3 例（失败计入 `status()` / 一条失败不打断整队 / 每 interval 一条汇总日志）。
+    四个变异全部按预期变红（去掉资源判定、去掉队列判定、去掉 interval 门、把 `/world/me` 改成每 tick refetch、恢复 `.catch(() => undefined)`）。
 - **VPS 又发现一次同款遗留容器（2026-07-15）**：`nw-botsvc`（手动 `docker run` 忘加 `--rm` 的旧压测容器，Exited 状态，已跟 `server-botsvc-1` 正式部署重复）——与本节上面 2026-07-14 那次 `nw-botsvc`/`nw-mongo` 遗留是同一类问题（手动跑的容器不受 CI `--remove-orphans` 保护，因为那只清同一 compose project 内的孤儿）。已 `docker rm nw-botsvc` 清掉；用户后续会自行定期人工检查，未加 cron 自动清理。
 - **补上 disconnect 链路的可观测性日志（2026-07-15）**：玩家反馈"机器人快输了就退出"，排查发现该链路此前完全没有日志，只能靠对局时长的旁证（本节上条）推断。已加日志（不改行为，纯观测）：`server/gameserver/src/index.ts` 心跳判死 `conn.ws.terminate()` 前记 `accountId/roomId/side`；`server/gameserver/src/Room.ts` 的 `onDisconnect`（WS 断开进宽限）、宽限到期判负、`leave()`（显式认输）三处各记一条 info/warn，带 `accountId/side/curFrame`；`server/botsvc/src/bot.ts` 的 `tickBattle()` 不再静默吞掉 `runBattle()` 的 reject，改为 `console.warn` 打出具体原因（区分是 `gameserver disconnected mid-match (code …)`、`match exceeded max wall-clock duration`，还是引擎内异常）。目的是下次复现时能直接从日志确认是心跳超时（§8 上条根因）还是别的异常，而不是只能靠对局时长旁证。
 - [x] **`reason=disconnect` 高发的第二根因：客户端漏处理服务器终局消息（2026-07-16）**：VPS 常驻 100 bot 连续跑 13 小时后审计日志，发现 §8 上条 2026-07-14 诊断的"事件循环饿死漏心跳"机制**已不是当前主因**——13 小时里 `heartbeat missed` 命中 0 次，但 botsvc 自己记录的 1551 次对局尝试里 1550 次（~100%）仍以 `battle aborted` 收场（1408 次 `match exceeded max wall-clock duration` + 142 次 `ranked matchmaking timed out`），gameserver 侧 13 小时打了 1509 条 `WS closed mid-match`（1435 条最终 `grace period expired` 判负），涉及账号数恰好等于 `NW_BOT_TARGET_ONLINE=100`，说明是整个 bot 池的普遍性问题而非个别连接抖动。

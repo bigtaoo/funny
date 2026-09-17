@@ -13,11 +13,23 @@ export type BuildingKey =
   | 'wall'
   | 'academy';
 
+/**
+ * The `/world/me` projection, narrowed to the fields a bot actually reads (openapi-world.yml
+ * PlayerWorldView). `resources`/`buildings`/`buildQueue` are typed because the upgrade decision is
+ * made from them client-side — see BotSession.affordableBuilding().
+ *
+ * `resources` is the SETTLED balance at the moment of the read: worldsvc accrues `yieldRate` over
+ * `lastTickAt` on every read and only persists it when something is spent. So a snapshot of this
+ * field only ever under-states a later balance, never over-states it.
+ */
 export interface PlayerWorldView {
   joined: boolean;
   worldId?: string;
   troops?: number;
   mainBaseTile?: string;
+  resources?: Partial<Record<string, number>>;
+  buildings?: Partial<Record<string, number>>;
+  buildQueue?: { key: BuildingKey; toLevel: number; startAt: number; completeAt: number }[];
   [key: string]: unknown;
 }
 
@@ -85,8 +97,10 @@ export class WorldClient {
     return this.call<PlayerWorldView>('GET', `/world/me?worldId=${encodeURIComponent(worldId)}`, token);
   }
 
-  upgradeBuilding(token: string, worldId: string, key: BuildingKey): Promise<void> {
-    return this.call<void>('POST', '/world/build/upgrade', token, { worldId, key });
+  /** Returns the post-upgrade `/world/me` (worldsvc answers this route with getMe), so the caller can
+   *  refresh its resource snapshot without a second round trip. */
+  upgradeBuilding(token: string, worldId: string, key: BuildingKey): Promise<PlayerWorldView> {
+    return this.call<PlayerWorldView>('POST', '/world/build/upgrade', token, { worldId, key });
   }
 
   getWorldMapSparse(

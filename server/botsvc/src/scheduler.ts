@@ -3,6 +3,12 @@
 import { CapacityClient, shedTarget } from './capacityClient';
 import { BotSession } from './bot';
 
+/** Which half of a session's upkeep chain failed (see Scheduler.upkeepErrors). */
+type UpkeepKind = 'family' | 'slg';
+
+/** Rolled-up upkeep-failure warnings are emitted at most this often, however many bots are failing. */
+const UPKEEP_ERROR_LOG_INTERVAL_MS = 60_000;
+
 export interface SchedulerOptions {
   targetOnline: number;
   shedStartAt: number;
@@ -25,6 +31,18 @@ export class Scheduler {
   private upkeepRotation = 0;
   /** One-shot flag so a persistently-unavailable capacity signal warns once, not every tick. */
   private capacityWarned = false;
+  /**
+   * Cumulative upkeep failures by kind, plus how many of them have already been logged.
+   *
+   * These used to be `.catch(() => undefined)` — thrown away unread. That is how a bot loop that had
+   * failed on EVERY call since the day it shipped stayed invisible for months: `tickSlg()`'s building
+   * upgrade was rejected 629,382 times in one 29-hour window on live s2-0 (see
+   * BotSession.upgradeNextBuilding) while botsvc's log stayed clean and `/internal/bots/status`
+   * reported a healthy fleet. A silenced error on a loop that runs forever is not noise reduction,
+   * it is a blind spot with a request rate.
+   */
+  private readonly upkeepErrors = new Map<UpkeepKind, { count: number; logged: number; last: string }>();
+  private lastUpkeepErrorLogAt = 0;
 
   constructor(
     private readonly pool: BotSession[],
@@ -46,13 +64,26 @@ export class Scheduler {
     this.paused = false;
   }
 
-  status(): { total: number; online: number; targetOnline: number; effectiveTarget: number; paused: boolean } {
+  status(): {
+    total: number;
+    online: number;
+    targetOnline: number;
+    effectiveTarget: number;
+    paused: boolean;
+    upkeepErrors: Record<UpkeepKind, number>;
+  } {
     return {
       total: this.pool.length,
       online: this.online.size,
       targetOnline: this.opts.targetOnline,
       effectiveTarget: this.currentTarget,
       paused: this.paused,
+      // Cumulative since process start: a fleet whose upkeep is wholly broken should be readable from
+      // ops without going to the logs, since "the bots are online" was never the same as "the bots work".
+      upkeepErrors: {
+        family: this.upkeepErrors.get('family')?.count ?? 0,
+        slg: this.upkeepErrors.get('slg')?.count ?? 0,
+      },
     };
   }
 
@@ -101,9 +132,37 @@ export class Scheduler {
       }
 
       await this.runUpkeep();
+      this.flushUpkeepErrors(Date.now());
     } finally {
       this.ticking = false;
     }
+  }
+
+  private noteUpkeepError(kind: UpkeepKind, e: unknown): void {
+    const entry = this.upkeepErrors.get(kind) ?? { count: 0, logged: 0, last: '' };
+    entry.count++;
+    entry.last = e instanceof Error ? e.message : String(e);
+    this.upkeepErrors.set(kind, entry);
+  }
+
+  /**
+   * One rolled-up line per interval instead of one per failure: at 100 online bots a broken upkeep
+   * step fails hundreds of times a minute, and a per-failure log would be its own incident. Prints
+   * the count SINCE THE LAST LINE plus the running total, so a steady rate reads as a steady rate.
+   */
+  private flushUpkeepErrors(now: number): void {
+    if (this.upkeepErrors.size === 0) return;
+    if (now - this.lastUpkeepErrorLogAt < UPKEEP_ERROR_LOG_INTERVAL_MS) return;
+    const parts: string[] = [];
+    for (const [kind, entry] of this.upkeepErrors) {
+      const since = entry.count - entry.logged;
+      if (since === 0) continue;
+      entry.logged = entry.count;
+      parts.push(`${kind}=${since} (total ${entry.count}, last: ${entry.last})`);
+    }
+    if (parts.length === 0) return;
+    this.lastUpkeepErrorLogAt = now;
+    console.warn(`botsvc upkeep failures: ${parts.join(', ')}`);
   }
 
   /**
@@ -131,8 +190,8 @@ export class Scheduler {
     const worker = async (): Promise<void> => {
       while (next < sessions.length) {
         const session = sessions[next++]!;
-        await session.tickFamily().catch(() => undefined);
-        await session.tickSlg().catch(() => undefined);
+        await session.tickFamily().catch((e: unknown) => this.noteUpkeepError('family', e));
+        await session.tickSlg().catch((e: unknown) => this.noteUpkeepError('slg', e));
         session.tickBattle();
       }
     };
