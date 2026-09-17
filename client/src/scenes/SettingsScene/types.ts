@@ -42,7 +42,9 @@ export interface SettingsSceneCallbacks {
   /**
    * Raw viewport/safe-area readout for the diagnostic line at the bottom of this screen
    * (`layout/viewportGeometry.ts`, drawn by `panels.drawViewportDiagnostics`). Absent → no line:
-   * WeChat has no DOM to read it from, and the test harnesses do not pass one.
+   * WeChat has no DOM to read it from, and the test harnesses do not pass one. Present but
+   * `nativeShell: false` → also no line; the readout is for the Capacitor shell, not for players in
+   * a browser (see `drawViewportDiagnostics`).
    */
   getViewportGeometry?(): ViewportGeometry | undefined;
   /** Currently selected avatar id (composite "<category>:<key>", see render/avatar.ts); absent = letter-initial fallback. */
