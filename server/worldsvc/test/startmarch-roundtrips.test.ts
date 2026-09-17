@@ -58,6 +58,8 @@ interface Opts {
   tiles?: TileDoc[];
   /** Replaces the default `visionObservers` (which resolves immediately with nobody). */
   visionObservers?: () => Promise<string[]>;
+  /** An ADR-051 P3c idle re-dispatch: the team's StationedDoc, returned by both the busy probe and the claim. */
+  stationed?: unknown;
 }
 
 /**
@@ -114,8 +116,11 @@ function fakeCore(o: Opts = {}) {
     occupations: { findOne: probe.wrap('teamBusy.hold', async () => null) },
     siegeDamage: { findOne: probe.wrap('teamBusy.siege', async () => null) },
     stationed: {
-      findOne: probe.wrap('teamBusy.stationed', async () => null),
-      findOneAndDelete: probe.wrap('stationed.claim', async () => null),
+      // Two callers: the team-busy probe ({worldId,ownerId,teamId}) and the validation's "is this cell
+      // parked on" check ({_id}) — only the former may see the idle team.
+      findOne: probe.wrap('teamBusy.stationed', async (f: Record<string, unknown>) =>
+        ('_id' in f ? null : (o.stationed ?? null))),
+      findOneAndDelete: probe.wrap('stationed.claim', async () => o.stationed ?? null),
       insertOne: probe.wrap('stationed.insertOne', async () => ({})),
     },
   };
@@ -212,6 +217,37 @@ describe('startMarch round-trip shape', () => {
     await expect(foreign.svc.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'reinforce', 600))
       .rejects.toMatchObject({ name: 'SlgError', code: 'TILE_NOT_OWNED' });
     expect(foreign.cols.marches.insertOne).not.toHaveBeenCalled();
+  });
+
+  it('lets an idle re-dispatch depart from a cell somebody ELSE owns', async () => {
+    // The sharp edge of the speculative origin read. An ADR-051 P3c idle re-dispatch is the one case
+    // whose origin is overridden to wherever the team is standing — which is routinely neutral or even
+    // enemy land — and it is also the one case that skips the origin ownership check. So the batched
+    // read fetches a tile that is NOT the real origin here, and must not be consulted: if the check
+    // ever stopped being skipped, this dispatch would start failing TILE_NOT_OWNED for no good reason.
+    const FIELD = { x: 31, y: 33 };
+    const stationedDoc = {
+      _id: tid(FIELD.x, FIELD.y), worldId: W, ownerId: ACC, tile: tid(FIELD.x, FIELD.y),
+      x: FIELD.x, y: FIELD.y, teamId: 't1', troops: 700, mode: 'idle', sinceAt: NOW - 60_000,
+      army: [{ col: 0, row: 0, unitType: 'sword', initialHp: 700 }],
+    };
+    const redispatch = fakeCore({
+      // The requested origin tile belongs to a stranger; the team is standing in the field elsewhere.
+      tiles: [tile(FROM.x, FROM.y, { ownerId: 'a-stranger' })],
+      pw: playerWorld({
+        teams: [flatTeam()],
+        teamState: { t1: { stamina: SLG_TEAM_STAMINA_MAX, staminaAt: NOW } },
+      } as unknown as Partial<PlayerWorldDoc>),
+      stationed: stationedDoc,
+    });
+
+    const view = await redispatch.svc.startMarch(W, ACC, FROM.x, FROM.y, TO.x, TO.y, 'move', 0, 't1');
+
+    expect(view).toBeTruthy();
+    expect(redispatch.cols.marches.insertOne).toHaveBeenCalledTimes(1);
+    // And it departed from the field cell, not from the tile the caller named.
+    const [doc] = (redispatch.cols.marches.insertOne as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]! as [{ fromTile: string }];
+    expect(doc.fromTile).toBe(tid(FIELD.x, FIELD.y));
   });
 
   it('does not hold the caller for the reverse-vision fan-out', async () => {
