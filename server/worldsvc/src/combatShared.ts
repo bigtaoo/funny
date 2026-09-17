@@ -22,7 +22,7 @@ import {
   type PathCell,
   type EmblemKey,
 } from '@nw/shared';
-import type { PlayerWorldDoc, MarchDoc, StationedDoc, ArmyEntry } from './db';
+import type { PlayerWorldDoc, MarchDoc, StationedDoc, ArmyEntry, TileDoc } from './db';
 import type { WorldCore } from './core';
 import { legBox } from './core/helpers';
 import { getComputeBackend } from './compute';
@@ -123,6 +123,9 @@ export async function computeMarchPath(
    * before; passing it removes one Mongo round trip from the middle of a ~20-hop command.
    */
   requesterPwDoc?: PlayerWorldDoc | null,
+  /** The destination tile, when the caller already holds it (2026-09-17; startMarch batches both march
+   *  endpoints, so this was a second read of it). `undefined` = read it here; `null` = no override. */
+  destTileDoc?: TileDoc | null,
 ): Promise<PathCell[]> {
   const requesterPw = requesterPwDoc ?? await core.deps.cols.playerWorld.findOne({ _id: playerWorldId(worldId, requesterId) });
   const allyFamilyId = requesterPw?.familyId;
@@ -131,12 +134,29 @@ export async function computeMarchPath(
   const xRange = { $gte: box.minX - PATHFIND_QUERY_PAD, $lte: box.maxX + PATHFIND_QUERY_PAD };
   const yRange = { $gte: box.minY - PATHFIND_QUERY_PAD, $lte: box.maxY + PATHFIND_QUERY_PAD };
 
-  const gateTiles = await core.deps.cols.tiles
-    .find({ worldId, type: { $in: ['bridge', 'plankway'] }, x: xRange, y: yRange })
-    .project<{ _id: string; x: number; y: number; ownerId: string | undefined; familyId: string | undefined }>({
-      _id: 1, x: 1, y: 1, ownerId: 1, familyId: 1,
-    })
-    .toArray();
+  // 2026-09-17: one wave, where these four reads used to be four. Three were independent all along; the
+  // enemy-base scan depended on the destination tile only because it narrowed the query with
+  // `ownerId: {$nin: [requester, siegeTargetOwner]}` — and that exclusion is just as well a predicate on
+  // the rows that come back (applied below), which unchains it. A handful of extra projected rows inside
+  // the same leg box against one fewer serial wave: on a shared-tier Atlas a wave carries the full stall
+  // tail and the rows carry nothing. See design/game/WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md §11.4.
+  const [gateTiles, destTile, baseTiles, blockerTiles] = await Promise.all([
+    core.deps.cols.tiles
+      .find({ worldId, type: { $in: ['bridge', 'plankway'] }, x: xRange, y: yRange })
+      .project<{ _id: string; x: number; y: number; ownerId: string | undefined; familyId: string | undefined }>({
+        _id: 1, x: 1, y: 1, ownerId: 1, familyId: 1,
+      })
+      .toArray(),
+    destTileDoc !== undefined ? Promise.resolve(destTileDoc) : core.deps.cols.tiles.findOne({ _id: tileId(worldId, toX, toY) }),
+    core.deps.cols.tiles
+      .find({ worldId, type: 'base', ownerId: { $ne: requesterId }, x: xRange, y: yRange })
+      .project<{ x: number; y: number; ownerId: string | undefined }>({ x: 1, y: 1, ownerId: 1 })
+      .toArray(),
+    core.deps.cols.tiles
+      .find({ worldId, 'structure.kind': 'blocker', x: xRange, y: yRange })
+      .project<{ x: number; y: number; structure?: { ownerId?: string; familyId?: string } }>({ x: 1, y: 1, 'structure.ownerId': 1, 'structure.familyId': 1 })
+      .toArray(),
+  ]);
   const passableGateKeys = new Set<string>(
     gateTiles
       .filter((g) =>
@@ -145,24 +165,17 @@ export async function computeMarchPath(
       )
       .map((g) => `${g.x}:${g.y}`),
   );
-  const destTile = await core.deps.cols.tiles.findOne({ _id: tileId(worldId, toX, toY) });
+  // A siege march may end ON the defender's base, so that owner's tiles must not block it.
   const siegeBaseOwner = destTile?.type === 'base' ? destTile.ownerId : undefined;
-  const excludeOwners = siegeBaseOwner ? [requesterId, siegeBaseOwner] : [requesterId];
-  const blockedBaseTiles = await core.deps.cols.tiles
-    .find({ worldId, type: 'base', ownerId: { $nin: excludeOwners }, x: xRange, y: yRange })
-    .project<{ x: number; y: number }>({ x: 1, y: 1 })
-    .toArray();
-  const blockedBaseKeys = new Set<string>(blockedBaseTiles.map((b) => `${b.x}:${b.y}`));
+  const blockedBaseKeys = new Set<string>(
+    baseTiles.filter((b) => !siegeBaseOwner || b.ownerId !== siegeBaseOwner).map((b) => `${b.x}:${b.y}`),
+  );
   if (requesterPw?.mainBaseTile) {
     const bx = core.coordX(requesterPw.mainBaseTile), by = core.coordY(requesterPw.mainBaseTile);
     if (Number.isFinite(bx) && Number.isFinite(by)) {
       for (const c of baseFootprintCells(bx, by)) blockedBaseKeys.delete(`${c.x}:${c.y}`);
     }
   }
-  const blockerTiles = await core.deps.cols.tiles
-    .find({ worldId, 'structure.kind': 'blocker', x: xRange, y: yRange })
-    .project<{ x: number; y: number; structure?: { ownerId?: string; familyId?: string } }>({ x: 1, y: 1, 'structure.ownerId': 1, 'structure.familyId': 1 })
-    .toArray();
   for (const b of blockerTiles) {
     const so = b.structure;
     const friendly = so?.ownerId === requesterId || (!!allyFamilyId && so?.familyId === allyFamilyId);

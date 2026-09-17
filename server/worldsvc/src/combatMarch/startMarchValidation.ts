@@ -7,7 +7,7 @@
 // behavior change: returns the resolved `defenderId` (attack only) or throws the same SlgError as before.
 import { proceduralTile, isCityGroundTile, SlgError, OCCUPY_MIN_TROOPS, type MarchKind } from '@nw/shared';
 import { WorldCore } from '../core';
-import type { PlayerWorldDoc } from '../db';
+import type { PlayerWorldDoc, TileDoc } from '../db';
 
 /**
  * Validate the target tile at departure for `kind` (will be re-validated on arrival since state may
@@ -22,6 +22,16 @@ export async function validateMarchTarget(
   toX: number,
   toY: number,
   toTid: string,
+  /**
+   * The target tile's DB override, or null when it has none (an untouched procedural tile).
+   *
+   * Passed in rather than read here (2026-09-17): it is independent of everything startMarch does
+   * before this call, so it now rides along in that one up-front parallel batch instead of costing a
+   * round trip of its own. On a shared-tier Atlas every serial round trip carries the full stall tail,
+   * so the wave count — not the query cost — is what this route's p90 is made of
+   * (WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md §11.2).
+   */
+  toTile: TileDoc | null,
   hasCardArmy: boolean,
   troops: number,
   stationMode: 'idle' | 'garrison' | undefined,
@@ -31,7 +41,6 @@ export async function validateMarchTarget(
   const { cols, now } = core.deps;
   const proc = proceduralTile(worldId, toX, toY);
   if (proc.type === 'obstacle') throw new SlgError('BAD_REQUEST', 'Cannot march into obstacle terrain');
-  const toTile = await cols.tiles.findOne({ _id: toTid });
   let defenderId: string | undefined; // attack: the attacked player's accountId (under_attack warning is pushed immediately on departure)
   if (kind === 'occupy') {
     if (proc.type === 'center') throw new SlgError('TILE_OCCUPIED', 'Cannot directly occupy the world center');

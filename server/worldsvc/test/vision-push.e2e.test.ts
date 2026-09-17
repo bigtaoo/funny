@@ -106,6 +106,19 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
   const tileUpdatesTo = (acct: string) =>
     pushes.filter((p) => p.accountId === acct && p.msg.kind === 'tile_update');
 
+  /**
+   * Wait for a detached push chain to land (bounded), instead of assuming it already has.
+   *
+   * A single macrotask is not enough: the chain awaits a real `visionObservers` query, and each
+   * `pushMarch` is itself async. Polling to a deadline is what makes the negative assertion that
+   * follows meaningful too — `far` having received nothing is only evidence once the positives have
+   * actually arrived.
+   */
+  async function waitForPush(cond: () => boolean, ms = 3000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (!cond() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+  }
+
   it('march start: path enters observer vision → push march_update; players out of vision range not pushed', async () => {
     await svc.joinWorld(W, 'a', 5, 5);
     // obs home base at (5,20): base vision radius covers the mid-section of a's path from (5,5)→(5,40).
@@ -117,6 +130,11 @@ describe.skipIf(!mongo)('worldsvc reverse-vision push e2e (G5-2)', () => {
     await connect(svc, 'a', dst); // ADR-039: border the target before marching
     pushes = []; // clear the connector occupy's own push(es) so assertions below only see the march start
     await svc.startMarch(W, 'a', 5, 5, dst.x, dst.y, 'occupy', OCCUPY_MIN_TROOPS);
+    // 2026-09-17: the reverse-vision fan-out is no longer awaited by startMarch — it is a push to OTHER
+    // players issued after the dispatch has already committed, so holding the caller for its tiles scan
+    // bought nothing (WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md §11.2). The push itself is unchanged; only
+    // its timing is, so this waits a macrotask for the detached chain the way the transport already does.
+    await waitForPush(() => marchUpdatesTo('a').length > 0 && marchUpdatesTo('obs').length > 0);
 
     // The marching player themselves receives the push.
     expect(marchUpdatesTo('a').length).toBeGreaterThan(0);
