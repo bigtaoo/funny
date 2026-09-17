@@ -1224,13 +1224,27 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 
 `test/ui` 的 PIXI 桩（`test/harness/pixiHeadless.ts`）的 `measureText` 是**字符数 × 7px、跟字号无关**（§48 开头就记过这件事）。于是任何「按测出来的宽度分支」的布局，在 UI 层里每个字符串都只有真实宽度的三分之一，分支被永远钉在「放得下」那一侧——德语竖屏那条根本测不到。
 
-修法是给宽度一个**由字符串本身推出来的下界**：`render/pixiText.ts` 新增 `monospaceWidth(text, fontSize)`（等宽字体下拉丁 0.6 em / 全角 1 em 的格子数），布局取 `Math.max(text.width, monospaceWidth(...))`——真浏览器里测量值当家，headless 里估算值兜底，两边的分支都真的会走。
+修法是给宽度一个**由字符串本身推出来的下界**：`render/pixiText.ts` 新增 `monospaceWidth(text, fontSize)`（等宽字体下按格子数算：拉丁 `MONO_CELL.latin` em、全角 1 em），布局取 `Math.max(text.width, monospaceWidth(...))`——真浏览器里测量值当家，headless 里估算值兜底，两边的分支都真的会走。
 
 ### 56.4 怎么核的
 
 真 Chrome（`localhost:9390`，worktree 自己的 dev server）逐个看过：横屏 1920×911 中/英/德三种语言都并排一行、`法律条款` 与按钮之间有明显留白、底部读数消失；把 `innerWidth/innerHeight` 改写成 480×900 再派发 `resize` 得到竖屏排布——中文并排、英语与德语堆叠两行，与宽度判据一致。并排那行左右两个链接各点一次，分别打开 `/privacy.html` 与 `/terms.html`。
 
 门禁：`test/ui/settingsLegalLinks.ui.ts`（新增「宽就并排/窄就堆叠」「并排时点谁是谁」三例，重叠断言改成「两轴任一不相交」）、`test/ui/settingsViewportDiagnostics.ui.ts`（新增「浏览器里一行不画」，原有八例全部仍以原生壳几何跑）。`test:ui` 272 文件 / 2697 例全绿，`tsc --noEmit` 干净。
+
+### 56.5 补门禁（2026-09-17，用户追问"有测试可以加吗"）
+
+§56 落地时只有场景层的用例，三处没人守：`monospaceWidth` 自己、它那两个常数、以及"一行还是两行都别出栏"。补完三份，每份都做了变异验证。
+
+**① `test/monospaceWidth.test.ts`（13 例，纯函数层）**：拉丁 0.6→按常数计的格子宽、CJK 全角、线性、空串、各类全角边界（假名、CJK 标点、全角拉丁、谚文）、以及**代理对只算一格**。最后这条顺带修了个真 bug：原来的字符类只覆盖 BMP，`𠀋` 这种扩展区汉字会被算成**两个拉丁格**（1.2 em），改成带 `u` 标志 + `\u{20000}-\u{3FFFD}`。
+
+**② `test/browser/textMetrics.spec.ts` 新增一例：`MONO_CELL` 必须夹住真实字距。** 这一例当场推翻了 §56.3 写下的数字——**Chrome 在本机把 `'monospace'` 解析成 Consolas，字距是 0.5498 em，不是 0.6**。也就是说那个"下界"在唯一被验过的运行时上**高估了 9%**：`Math.max` 里估算值会盖过真实测量，浏览器就会拿猜的数排版而不是拿它量得到的宽度。常数下调到 **0.54**（DejaVu Sans Mono / Menlo 约 0.602，0.54 是这三者的地板），断言两头都卡：不得高于实测（否则不是下界），也不得低于实测的 1/1.25（否则就退化成 `chars*7` 那种"三分之一"的假估计）。
+
+**这一例本身是被另一个 bug 挡住才跑出来的**：`textMetrics.spec.ts` 原先用 `page.evaluate(probeTextMetrics.toString())` 把探针序列化进页面，而探针闭包引用模块级的 `PROBE_STRINGS`/`PROBE_SIZES` 和两个 helper —— 页面里全 undefined，**整个 spec 一直是红的、没人知道**（opt-in 的 `test:browser`，CI 那条又长期 `continue-on-error`）。正确形状早就写在 `entries/web-e2e.ts` 的 `handle.textMetrics` 上，spec 从没跟上。改成走 `__nwE2E.textMetrics()` 之后两例都绿。教训记进 [`client-testing.md`](../../claudedocs/client-testing.md)。
+
+**③ `settingsLegalLinks.ui.ts` 再加 6 例（3 语言 × 横竖）：无论落在哪个分支，字形和点击热区都不许越过 0.94w 那条栏边。** 这补的是横屏德语——竖屏巡检（`portraitLayout.spec.ts`）的德语行全是竖屏，横屏那几个视口清一色 `locale: 'en'`，所以最长的那对标签在最窄的那一栏里，谁也没量过。
+
+**变异验证**：`oneRow` 钉死成 `true` → 5 例红（含新加的 en/de 竖屏出栏）；把 `Math.max(text.width, monospaceWidth(...))` 退回只读 `text.width` → 3 例红（德语竖屏当场排成一行）。
 
 ---
 
