@@ -174,6 +174,20 @@ import eraserInkUrl from '../../assets/tabicons/eraser_active.png';
 import promoteInkUrl from '../../assets/tabicons/promote_active.png';
 import demoteInkUrl from '../../assets/tabicons/demote_active.png';
 
+// Batch 13 (design/product/tab-icon-art-prompts-batch13.md): team stamina, which the world-map team
+// picker's stat chip had been borrowing `hourglassMd` for. On that one screen the hourglass already
+// says "how much TIME is left" three times over — the speedup buff row, the occupy/siege countdowns
+// and the shop's three speedup tiers — while stamina is a budget of ORDERS (100 cap, 15 each, so six
+// at full). Once the chip row dropped the word "Stamina" (UI_DESIGN_LOG_2026-09 §58) the bare `100`
+// read as a duration.
+//
+// Two UNEVEN tongues with a notch between them, over a base that curves in to two small feet: a
+// solid single-tongue flame is `play`'s triangle and `lead`'s cone, and the usual way out (a hollow
+// inner core) is the first thing to vanish at chip size — batch 9's `camp` v1 paid for that lesson,
+// so every distinguishing mark here is on the OUTLINE. 96×128 (1.33:1); both tongues, the notch and
+// the feet still read at 26px, which is below the 30px the chip actually draws it at.
+import flameInkUrl from '../../assets/tabicons/flame_active.png';
+
 // The 6 kinds that ALIAS the white master of an existing tab icon rather than getting art of their
 // own, so each concept is drawn exactly once in the game. They live here rather than as call-site
 // renames to `pvpTabIcon`/`gachaTabIcon`/... because most of them have call sites where `color`
@@ -211,6 +225,7 @@ export type InkIconKind =
   | 'umbrella'
   | 'trash' | 'key' | 'userPlus' | 'power' | 'penWrite' | 'megaphone' | 'sheets' | 'enter' | 'eraser'
   | 'promote' | 'demote'
+  | 'flame'
   | 'scrap' | 'lead' | 'binding' | 'hammer' | 'ink'
   | 'replay' | 'share' | 'star' | 'lock' | 'medal' | 'close' | 'check' | 'play' | 'zoom' | 'cards'
   | 'flag' | 'desk' | 'cabinet' | 'hourglassSm' | 'hourglassMd' | 'hourglassLg'
@@ -298,6 +313,7 @@ export const INK_ICON_ART: Record<InkIconKind, string> = {
   eraser:            eraserInkUrl as string,
   promote:           promoteInkUrl as string,
   demote:            demoteInkUrl as string,
+  flame:             flameInkUrl as string,
   swords:            swordsInkUrl as string,
   home:              homeInkUrl as string,
   capsule:           capsuleInkUrl as string,

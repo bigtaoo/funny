@@ -56,9 +56,11 @@ export interface ModalButton {
    * and two thirds of the ink was the same two words repeated on all five rows. As chips the words
    * become glyphs, the figures stay full-size, and the row fits.
    *
-   * Only for figures whose glyph is already established elsewhere in the same screen (`unit` for
-   * troops, `hourglassMd` for a time-refilled budget) — an icon the player has to decode is worse
-   * than the word it replaced.
+   * Only for figures whose glyph the player can read without being told — either one this screen has
+   * already established (`unit` is a troop count on the tile menus too) or one drawn for the purpose
+   * (`flame` for stamina, batch 13). An icon that has to be decoded is worse than the word it
+   * replaced, and a BORROWED one can be worse still: stamina spent a day on `hourglassMd`, which on
+   * that same screen means "how much time is left" three times over.
    */
   stats?: ModalButtonStat[];
 }

@@ -1,6 +1,6 @@
 # 批次 13：队伍体力的火苗（`flame`，1 张）— 语义判断 + Prompt 文档
 
-> 创建：2026-09-17 · 状态：**判断 + prompt 已定，出图待办**。全库账（出图前）：**68 张自有美术 + 6 个别名 = 74 个 ink kind**
+> 创建：2026-09-17 · 状态：**全批完成（同日）**——1 张出图 + 打包 + 接线 + 26/28/30px 双行底 contact sheet + 真浏览器实拍，**一版过**（见 §6）。全库账：**69 张自有美术 + 6 个别名 = 75 个 ink kind**
 > 前十二批：[批 1–4](tab-icon-art-prompts.md) · [批 5](tab-icon-art-prompts-batch5.md) · [批 6](tab-icon-art-prompts-batch6.md) · [批 7](tab-icon-art-prompts-batch7.md) + [批 7 log](tab-icon-art-prompts-batch7-log.md) · [批 8](tab-icon-art-prompts-batch8.md) · [批 9](tab-icon-art-prompts-batch9.md) · [批 10](tab-icon-art-prompts-batch10.md) · [批 11](tab-icon-art-prompts-batch11.md) · [批 12](tab-icon-art-prompts-batch12.md)
 > 上游：[`UI_DESIGN_LOG_2026-09.md` §58](../game/UI_DESIGN_LOG_2026-09.md) —— 那一轮把选队弹窗的 `Team 1 · Troops 2525 · Stamina 100` 换成「名字 + 两枚字形数字」的 chip 行，兵力借 `unit`、体力借 `hourglassMd`，**本批就是来替掉那只沙漏的**
 > 配套代码：[`worldmap/net/march.ts`](../../client/src/scenes/worldmap/net/march.ts) · [`WorldMapPanels/core.ts`](../../client/src/scenes/worldmap/WorldMapPanels/core.ts) · [`inkIconRaster.ts`](../../client/src/render/icons/inkIconRaster.ts) · [`pack_tab_icons.cjs`](../../art/ui/tabicons/pack_tab_icons.cjs)
@@ -119,3 +119,21 @@ Hand-drawn doodle icon in a worn school notebook, single dark-ink pen line art, 
    - `flame` vs `hourglassMd` vs `unit` —— 它要取代的那张，以及同一条 chip 行里的邻居（兵力）。三枚要在一行里立刻分成三件事。
 3. **真机实拍**：选队弹窗走 §58 记下的那条路 —— 本机 docker 账号在世界地图上**一支队伍都没有**，真入口只会弹「尚无队伍」，所以用 `app.ts` 里的临时 hash harness（真 `WorldMapPanels` + 手搓 ctx + 真 `showModal`，提交前删）；换尺寸用 Playwright 落文件，`resize_window` 在最大化窗口上报成功却不生效。详见 [[worldmap-modal-visual-verify-2026-09-17]]。要摆出来的一屏：**五行队伍 chip 同屏**，兵力与体力两枚字形并排读成两件事。
 4. **判定标准是"读成什么"，不是"好不好看"**。按批 7 log 的格式记下"v1 为什么塌"再重出，**只改导致返工的那一处措辞**（[[ai-art-density-cannot-be-prompted-2026-08-19]]）。
+
+## 6. 出图记录（2026-09-17 同日出图 + 打包 + 接线 + 验收，一版过）
+
+**打包结果：`flame_active.png` 裁边后 96×128 = 1.33:1**——§2 第 2 条的目标是 ≤1.3，落在目标线上（`iconArtAspect.test.ts` 的 2.2 一字未动，自己过关）。重跑打包脚本时其余 209 张**零字节变化**（这条管线的确定性第三次验到）。源图是 928 KB 的 1242×1242 PNG，按批 12 的先例直接以 `.png` 收进 `art/ui/tabicons/tabicon_flame.png`。
+
+**prompt 里那三条几何要求全部被照做了**（这是这一版一次过的原因）：两个火尖高低差约三分之一、中间一道笔宽的白色切口、底沿向上内凹成两只小脚。没有出现内层火芯、柴堆、火星。
+
+**26 / 28 / 30px × 深底 + 纸底 contact sheet，§5 三组全部无撞车**：
+
+- vs `play` / `lead`：这是唯一的真风险，实际**在 26px 上就已经分开**——`play` 是等腰实心三角（三条直边），`lead` 是锥体带毛糙底边，火苗是两个弧形尖 + 内凹底，轮廓上就没有一条直边。8× 放大逐像素看过 26px 和 30px 两档：两个火尖、中间的切口、底下的两只小脚**在 26px 上全部还在**。所以用户放宽的那条判定线（§5）这一版根本没用上——但它仍然是这一张的正式口径，下一版重出时按它判。
+- vs `camp`：帐篷是折线空心三角，火苗是曲线实心，同屏并排不混（批 9 那条「camp 不许画篝火」由构造保证了这一点）。
+- vs `hourglassMd` / `unit`：三枚在同一条 chip 行里立刻分成三件事——头盔（兵力）、火苗（体力）、沙漏（时间，现在只留在 HUD 与商城）。
+
+**真浏览器实拍**（Playwright 落文件，桌面 1600×900 @2x + 竖屏 390×844 @2x，dev server 9190 → 本地 8088）：五行队伍 chip 同屏，`🪖2525 🔥100` / `🪖1975 🔥25` 两枚字形并排读成两件事；竖屏下 chip 缩了一档仍然读得出是火。**弹窗仍是用 `app.ts` 的临时 hash harness 起的**（本机账号在世界地图上没有队伍，见 [[worldmap-modal-visual-verify-2026-09-17]]），harness 已删。
+
+**顺带一件本批带出来的事**：加上 chip 行之后 `WorldMapPanels/core.ts` 到了 504 行，撞上 500 行门禁。按 `claudedocs/client-modules.md` 的拆分优先级取第一档（form① 自由函数模块）拆出 **`WorldMapPanels/statRow.ts`**（chip 几何 + `buildStatRow`，都不碰 `core.ctx`），core.ts 回到 457 行。`statFont()`/`statBlockH()` 是**函数不是常量**——`FS.*` 是跟着字号下限走的 getter，模块级常量会被钉在未抬升的表上（`render/fontScale.ts` 头注释那条）。
+
+**没有做的两件事**（§4 已有据）：世界地图队伍面板「在家 · 体力 N」那行不加第二个字形槽；PvE 账号体力 `stamina.cost` 仍是纯文字，同一张火苗能接，留 backlog。

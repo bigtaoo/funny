@@ -1297,7 +1297,8 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 |---|---|
 | `WorldMapPanels/modalLine.ts` | 新增 `ModalButtonStat`（`{icon, text}`）与 `ModalButton.stats?`。`text` 只放数字，量的名字由字形承担 |
 | `WorldMapPanels/core.ts` | `buildStatRow()` 把一行 chip 铺成**一个容器**（整组缩放，同 `buttonLabel.ts` 的约定），`showModal` 把它排在标签下方；`btnH` 在有 stats 的弹窗里**加高** `statBlockH`，`labelBoxH()` 让前置字形门禁仍按标签真实可用高度判断 |
-| `worldmap/net/march.ts` | 选队行的 label 退回**只剩队伍名**，兵力/体力走 `stats`：`unit` + 数字、`hourglassMd` + 数字 |
+| `worldmap/net/march.ts` | 选队行的 label 退回**只剩队伍名**，兵力/体力走 `stats`：`unit` + 数字、`flame` + 数字（当天先借 `hourglassMd`，同日换成自己的火苗，见下方追加） |
+| `WorldMapPanels/statRow.ts`（新） | chip 行的几何 + `buildStatRow`。core.ts 加上 chip 行后到 504 行、撞上 500 行门禁，按拆分优先级第一档（form① 自由函数）拆出去，回到 457 行。`statFont()`/`statBlockH()` 是**函数不是常量**——`FS.*` 是 getter，模块级常量会被钉在未抬升的字号表上 |
 
 **字形是借的，不是新画的**（零新美术）：`unit` 在这张地图上已经是「兵力」（地块驻军行、派兵弹窗的可用兵力），
 `hourglassMd` 已经是「按墙上时钟恢复的量」（占领倒计时、城池每小时恢复）。**这条是使用边界**：
@@ -1311,7 +1312,7 @@ Daily 另外三个 tab、拍卖行的 `mine`/`bids` 两个 tab 全没审过。
 - 加大之后两行（38 + 6 + 30 = 74）挤在 84 的按钮里，名字和数字各距手绘边框 4px 上下。
   于是**按钮加高**而不是把字缩回去——按钮长高一点没关系（§50.12 的既有拍板），弹窗自己按 `btnH` 算高度，跟着长。
 
-**同日追加：体力这枚字形是借的，已约好还**。用户看完就问「体力的图标一直都是漏斗吗」——沙漏在这一屏上已经是**三层「时间」**（HUD 的加速 buff 剩余、弹窗的占领/围攻倒计时、商城加速道具三档），而体力是「还能下几次令」的预算，同一字形让 `100` 读成时长。（保护盾不是沙漏，是批 10 的伞；用户记的方向对、道具记错了一个。）库内 109 枚里没有能借的：闪电=`atkspd`、弹簧=`binding`、心=`hp`、箭=武器语言（批 8 给 `range` 写过定论）、齿轮=`settings`、钥匙=`key`、油灯=`umbrella`、液体=`ink`、脚印=`footsteps`。**用户拍板出一张新图：火苗（`flame`）**，并把判定线放宽为「在最小尺寸分不清无所谓，大部分情况适用即可」——判断表、prompt、接线与验收口径在 [`tab-icon-art-prompts-batch13.md`](../product/tab-icon-art-prompts-batch13.md)，出图前体力 chip 暂时继续用 `hourglassMd`。另存档了一个非字形方案（体力真身是离散的 6 次，回 `◼◼◼◼◻◻` 比任何字形都准），未推进。
+**同日追加：体力这枚字形是借的，已约好还**。用户看完就问「体力的图标一直都是漏斗吗」——沙漏在这一屏上已经是**三层「时间」**（HUD 的加速 buff 剩余、弹窗的占领/围攻倒计时、商城加速道具三档），而体力是「还能下几次令」的预算，同一字形让 `100` 读成时长。（保护盾不是沙漏，是批 10 的伞；用户记的方向对、道具记错了一个。）库内 109 枚里没有能借的：闪电=`atkspd`、弹簧=`binding`、心=`hp`、箭=武器语言（批 8 给 `range` 写过定论）、齿轮=`settings`、钥匙=`key`、油灯=`umbrella`、液体=`ink`、脚印=`footsteps`。**用户拍板出一张新图：火苗（`flame`）**，并把判定线放宽为「在最小尺寸分不清无所谓，大部分情况适用即可」——判断表、prompt、接线与验收口径在 [`tab-icon-art-prompts-batch13.md`](../product/tab-icon-art-prompts-batch13.md)，**同日就出图并接线完成，一版过**（96×128 = 1.33:1，两个火尖 + 切口 + 内凹底沿连 26px 都还在，比这条放宽的判定线要求的更好）。另存档了一个非字形方案（体力真身是离散的 6 次，回 `◼◼◼◼◻◻` 比任何字形都准），未推进。
 
 **测试**：新增 `client/test/ui/worldMapModalBtnStats.ui.ts`（4 例，headless PIXI）：两个数字画在标签下方且在按钮内、按传入顺序、各自左边有自己的字形；
 标签 + chip 整块居中（标签让出正中）；没有 stats 的按钮**还在正中**（老版面一字不动）；chip 行超出列宽时整组缩放而不是溢出（用 11 位数字迫出缩放，并按缩放后的间距反推非空测）。

@@ -129,14 +129,17 @@ export async function showTeamPicker(
     // Both are GLYPH+FIGURE chips under the name (ModalButton.stats), not words: spelled out
     // ("Team 1 · Troops 2525 · Stamina 100") the row was three wrapped lines in an 84px button, so
     // the third was clipped — and the two words were identical on all five rows anyway, i.e. the
-    // clipped ink was the only part that differed. `unit` for troops and `hourglassMd` for a
-    // time-refilled budget are the glyphs this map already uses for both (tile garrison / city
-    // regen), so nothing new has to be learned to read the row.
+    // clipped ink was the only part that differed. `unit` for troops is the glyph this map already
+    // uses for a troop count (tile garrison, the deploy dialog's available pool); `flame` is stamina's
+    // own, drawn for this row (batch 13). It is deliberately NOT the `hourglassMd` this shipped with
+    // for a day: on this one screen the hourglass already means "how much time is left" three times
+    // over (speedup buff, occupy/siege countdowns, the shop's speedup tiers), and with the word gone
+    // the bare figure read as a duration rather than as a budget of orders.
     buttons.push({
       label: teamDisplayName(tm),
       stats: [
         { icon: 'unit', text: String(committed) },
-        { icon: 'hourglassMd', text: String(staminaOf(tm)) },
+        { icon: 'flame', text: String(staminaOf(tm)) },
       ],
       action: () => void doMarchTeam(ctx, pendingTeamIds, tx, ty, tm.id, kind, stationMode),
       icon: 'swords',

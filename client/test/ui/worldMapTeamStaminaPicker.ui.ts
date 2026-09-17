@@ -97,13 +97,13 @@ const labelsOf = (showModal: ReturnType<typeof vi.fn>): string[] =>
   (showModal.mock.calls[0]![1] as { label: string }[]).map((b) => b.label);
 /**
  * The stamina figure on the row whose label starts with `name`. Since 2026-09-17 the figure is a
- * `[glyph][number]` chip under the name (`ModalButton.stats`, glyph `hourglassMd`) rather than a
+ * `[glyph][number]` chip under the name (`ModalButton.stats`, glyph `flame`) rather than a
  * `Stamina {n}` phrase inside the label — see net/march.ts for why.
  */
 const staminaOn = (showModal: ReturnType<typeof vi.fn>, name: string): string | undefined => {
   const buttons = showModal.mock.calls[0]![1] as { label: string; stats?: { icon: string; text: string }[] }[];
   const row = buttons.find((b) => b.label.startsWith(name));
-  return row?.stats?.find((s) => s.icon === 'hourglassMd')?.text;
+  return row?.stats?.find((s) => s.icon === 'flame')?.text;
 };
 const headOf = (showModal: ReturnType<typeof vi.fn>): string[] =>
   (showModal.mock.calls[0]![0] as ModalLine[]).map(modalLineText);

@@ -95,7 +95,7 @@ const teamBtn = (label: string, troops: string, stamina: string): ModalButton =>
   label,
   action: vi.fn(),
   icon: 'swords',
-  stats: [{ icon: 'unit', text: troops }, { icon: 'hourglassMd', text: stamina }],
+  stats: [{ icon: 'unit', text: troops }, { icon: 'flame', text: stamina }],
 });
 
 describe('modal button stat chips', () => {
@@ -114,10 +114,10 @@ describe('modal button stat chips', () => {
     expect(troops.x).toBeLessThan(stamina.x);
     // Each figure has its own glyph, to its own left.
     const unit = icons.find((g) => g.id === 'unit')!;
-    const hourglass = icons.find((g) => g.id === 'hourglassMd')!;
+    const flame = icons.find((g) => g.id === 'flame')!;
     expect(unit.x).toBeLessThan(troops.x);
-    expect(hourglass.x).toBeLessThan(stamina.x);
-    expect(unit.x).toBeLessThan(hourglass.x);
+    expect(flame.x).toBeLessThan(stamina.x);
+    expect(unit.x).toBeLessThan(flame.x);
   });
 
   it('centres label + chips as one block, so the label gives up the exact middle', () => {
