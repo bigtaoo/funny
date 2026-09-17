@@ -924,3 +924,85 @@ p50 21.2 → 15.3ms（−28%），**p99 555 → 568ms（纹丝不动）**。并�
 这里只记它对本文档的意义：**11.1 那 0.7% 的停顿命中率不是天生的，它是我们自己的 ops/sec 买来的**，
 而其中最大的一笔是废的。这也是 §9.5 第二条「降总 ops/sec」里那句「bot 的 tick 节奏本身也是个旋钮」
 的第一次真正兑现——但兑现的方式不是把旋钮往下拧，是**发现那些请求本来就不该发出去**。
+
+### 11.4 落地：`startMarch` 的串行波次 13 → 6（2026-09-17）
+
+按 11.2 的模型动第二条杠杆。**一个团队 `occupy` 派发的波次账**（波次 = 一次串行的 Mongo 往返；
+括号里是同一波内并发的条数）：
+
+| # | 改前 | 改后 |
+|---|---|---|
+| 1 | `playerWorld.findOne` | `playerWorld.findOne` |
+| 2 | `resolveMarchTeam`（内部 5 并发） | **`resolveMarchTeam` + 两个端点格 + `sectPayoff`（一批）** |
+| 3 | `[fromTile, sectPayoff]` | `isConnectedToSectTerritory` |
+| 4 | `tiles.findOne(toTid)`（在 `validateMarchTarget` 里） | **`computeMarchPath`：渡口 + 敌方基地 + 阻挡（一批）** |
+| 5 | `isConnectedToSectTerritory` | `marches.insertOne` |
+| 6 | `computeMarchPath`：渡口扫描 | **`playerWorld.updateOne`（扣兵 + 扣体力，同一条写）** |
+| 7 | `computeMarchPath`：`tiles.findOne(toTid)` **（第二次读目标格）** | — |
+| 8 | `computeMarchPath`：敌方基地扫描 | — |
+| 9 | `computeMarchPath`：阻挡建筑扫描 | — |
+| 10 | `marches.insertOne` | — |
+| 11 | `playerWorld.updateOne`（扣兵） | — |
+| 12 | `playerWorld.updateOne`（扣体力） | — |
+| 13 | `visionObservers`（推送给别人用） | **移出响应路径** |
+
+**四刀，每一刀的理由不同：**
+
+1. **开场三波合一。** 队伍解析、两个端点格、宗门加成三件事互不依赖，串行只是因为它们**按检查读到的顺序被写下来**。
+   端点格现在一条 `_id: {$in: [from, to]}` 拿两格。
+   ⚠️ `fromTile` 是**按调用方请求的坐标投机读**的：只有 ADR-051 P3c 的就地再派发会改写起点，
+   而它同时也是**唯一跳过起点归属检查**的分支——所以这份投机读恰好只在它正确的时候被用到。
+   为防「以后又有第二种改写起点的路径」静默走错，非再派发分支加了一条 `fromTid !== requestedFromTid` 的内部断言。
+2. **`computeMarchPath` 四波合一。** 三个障碍扫描本来就独立，第四个（敌方基地）之所以卡在链条中间，
+   是因为它用 `ownerId: {$nin: [自己, 攻城目标的主人]}` **把目标格的答案写进了查询条件**。
+   那个依赖不是必须的：同一个排除完全可以在返回的行上做。改成 `$ne: 自己` + JS 里过掉攻城目标的主人后，
+   四条一起发。代价是同一个 legBox 里多回来几行投影，**在共享层 Atlas 上这个交换极度一边倒**——
+   一波要付整条停顿尾巴，几行投影什么都不付。顺带 `destTile` 由 `startMarch` 传进来，第二次读目标格直接消失。
+3. **扣兵与扣体力合成一条写。** 两者都打同一份 `playerWorld`、互不需要对方的结果。
+   **而且合并后更正确**：体力原来是在扣兵的 `troops: {$gte}` 守卫**可能已经落空**之后单独写的，
+   而失败回滚不退体力——一次因兵力不足被拒的派发照样扣掉一点体力。合进去之后守卫同时管住两者。
+   （卡牌队 / 就地再派发不扣兵池，那两条路径的体力写照样是独立的一条、照样不带守卫、照样不 bump `rev`。）
+4. **反向视野扇出移出响应路径。** 它是**给别人**的推送，且派发此时已经落库——它查到什么都改不了正在返回的东西。
+   旁边的两条（给自己的 `pushMarch`、`under_attack` 警告）本来就是 fire-and-forget，它是那个例外。
+   失败现在**打日志**而不是吞掉（理由见 `BOTSVC_DESIGN.md` §8 的 2026-09-17 条）。
+
+**门禁 `worldsvc/test/startmarch-roundtrips.test.ts`（5 例）——它守的是成本，而行为测试对成本完全瞎**：
+`combatMarch-command-branch-gaps.test.ts` 无论这些读是串行还是并发都一样绿。
+
+两条写门禁时才想清楚的：
+- **「并发」不能用全局峰值并发度断言。** 第一版断言「整个 `startMarch` 期间峰值 in-flight > 1」，
+  结果把开场三波改回串行**它照旧全绿**——因为 `computeMarchPath` 自己那一批把峰值撑住了。
+  改成**按名字断言两两重叠**（`endpointTiles` 与 `sectPayoff`、`endpointTiles` 与 `teamBusy.march`），
+  并且用**事件计数器而不是时钟**记区间：没有时长可抖，也没法让一个「查得快」的串行看起来像并发。
+- **「没有被 await」只有一种不会误绿的写法**：让 `visionObservers` 返回一个**永不 resolve** 的 promise，
+  `startMarch` 仍然返回。按时间断言的版本会在查询恰好很快时变绿，而那正是它必须报红的情形。
+
+五个变异全部按预期变红（两个端点格改回两次 `findOne` / 开场批改回串行 / 路径计算重新自己读目标格 /
+体力拆回第二条写 / 把视野扇出改回 `await`），且每次只红该红的那条。
+
+**顺带发现的、这一轮没做的**：`validateMarchTarget` 的 attack 分支里 `friendlyAccountIds` 与
+`isConnectedToSectTerritory` 仍是两波，它们也互不依赖。**故意没合**：这两个读夹在一串有序的 throw 之间
+（`ALLY_TILE` → `PROTECTED` → `TERRITORY_NOT_CONNECTED`），提前发第二个读就必须接住它的 rejection，
+否则前面的 throw 会留下一条未处理的 promise。收益一波，风险是一类很难看见的 bug——留给专门做它的人。
+
+### 11.5 补了两条门禁：这一轮唯一的语义改写，和投机读最尖的那条边
+
+§11.4 写完后回头看，两个地方**有代码没有判据**：
+
+- **`computeMarchPath` 的 `$nin` → 行上过滤是整轮唯一的语义改写**，而它**一条测试都没有**：
+  现有的行为套件全都把 `tiles.find` 打成空游标（因为改前 production 只走 `findOne`），
+  所以敌方基地扫描一行都不返回、那个过滤器从来没被执行过。
+  新文件 `worldsvc/test/computeMarchPath-obstacle-scan.test.ts`（5 例）给扫描喂真实行、断言 `blockedBaseKeys`
+  这个集合本身：攻城目标主人**在同一 legBox 里的另一座城**必须不挡路（这正是旧 `$nin` 表达的东西）、
+  无关敌人必须挡、目标不是基地时全都挡、自己的主城 footprint 永不挡、以及 `destTileDoc` 传了就不再读 / 不传照旧读
+  且豁免结论一致（后者守的是**别的调用方**——回城行军、驻扎再派发——不会悄悄开始绕一座它本可落地的城）。
+  变异「去掉那个豁免」当场红 2 例。
+- **投机读最尖的那条边没有用例**：ADR-051 P3c 就地再派发的起点会被改写到队伍所站的野外格，
+  而那格**常常是中立甚至敌方的地**。批量读取的那格因此**不是**真实起点，必须不被采信。
+  `startmarch-roundtrips.test.ts` 加了一例：请求起点那格属于陌生人 + 队伍停在别处 → 派发成功，
+  且落库的 `fromTile` 是野外那格。变异「把 `if (!idleRedispatch)` 改成无条件检查」当场红。
+  （原有的 `combatMarch-command-branch-gaps.test.ts` 那例只覆盖「起点格没有文档」，覆盖不到「有文档且属于别人」。）
+
+**两处仍然不在本地可验**：真实收益要看线上心跳里 `POST /world/march` 那一行的 p90
+（本机 Mongo 没有那只令牌桶，§10.3 同理），而 11.3 的 bot 修复同时在降总 ops/sec，
+所以**下一轮读数是两件事的合力，不要单独归因给任何一件**。

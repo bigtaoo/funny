@@ -19,6 +19,20 @@ export class CommandService {
   constructor(private readonly core: WorldCore) {}
 
   /**
+   * The `$set` that charges one team order's stamina (SLG_DESIGN §4.6).
+   *
+   * Extracted because startMarch now applies it from two places: folded into the troop-pool debit on
+   * the flat-troop path (one wave instead of two), and on its own for the card-army / idle-redispatch
+   * paths, which debit no pool. One definition so the two can never drift apart.
+   */
+  private staminaSet(teamId: string, staminaBefore: number, at: number): Record<string, number> {
+    return {
+      [`teamState.${teamId}.stamina`]: staminaBefore - SLG_TEAM_STAMINA_COST,
+      [`teamState.${teamId}.staminaAt`]: at,
+    };
+  }
+
+  /**
    * Start a march (occupy / reinforce; attack/sweep = siege S8-3). Troops are **immediately deducted from the pool** on departure (in-transit);
    * on arrival they are applied according to kind (occupy writes TileDoc / reinforce adds garrison); on failure or recall, troops are refunded to the pool.
    * Validation (at departure): joined + valid kind + from/to in bounds + from is own tile + enough troops +
@@ -45,12 +59,35 @@ export class CommandService {
     if (!this.core.inBounds(fromX, fromY) || !this.core.inBounds(toX, toY)) {
       throw new SlgError('OUT_OF_RANGE', 'Coordinates out of bounds');
     }
+    // 2026-09-17: ONE up-front parallel batch, where there used to be three serial waves (team
+    // resolution → [origin tile, sect payoff] → target tile). None of the three needs anything from
+    // the others; they were sequential only because they are written in the order the checks read.
+    //
+    // This is the lever §11.2 of WORLDSVC_CONCURRENCY_AUDIT_2026-09-05.md identified: on a shared-tier
+    // Atlas roughly one operation in 150 stalls ~0.7s (4 of 600 probe pings), so a route's p90 is "how many serial waves does
+    // it issue" times that hit rate — which is why `POST /world/march` sat at p90 776ms while `getMe`,
+    // at two waves, only showed it at p99. Fewer waves is the whole fix; the queries themselves are fast.
+    //
+    // `requestedFromTid` is read speculatively, from the coordinates the CALLER asked to depart from.
+    // That is sound because of an asymmetry that already existed: an ADR-051 P3c idle re-dispatch is
+    // the only case that overrides the origin, and it is also the only case that SKIPS the origin
+    // ownership check entirely (the team provably stands there) — so the speculative read is used
+    // exactly when it is the right tile, and simply goes unused otherwise.
+    const requestedFromTid = tileId(worldId, fromX, fromY);
+    const toTid = tileId(worldId, toX, toY);
     // Team resolution (see startMarchTeam.ts): which army marches, whether that team is allowed to be
     // commanded at all (busy / stamina / satchel gates), and — for an ADR-051 P3c idle re-dispatch — the
     // overridden origin it departs from. `idleRedispatch` then drives three things further down: the
     // from-tile ownership skip, the pool-deduction skip, and the atomic StationedDoc claim before insert.
     // Everything comes back `undefined`/false for a flat-pool march, which commands no team.
-    const resolved = await resolveMarchTeam(this.core, worldId, accountId, pw, kind, troops, fromX, fromY, teamId);
+    const [resolved, endTiles, payoff] = await Promise.all([
+      resolveMarchTeam(this.core, worldId, accountId, pw, kind, troops, fromX, fromY, teamId),
+      // Both endpoints in one query. `_id: {$in}` hits the same primary key the two findOnes used.
+      cols.tiles.find({ _id: { $in: [requestedFromTid, toTid] } }).toArray(),
+      this.core.sectPayoff(pw.sectId),
+    ]);
+    const requestedFromTile = endTiles.find((t) => t._id === requestedFromTid) ?? null;
+    const toTile = endTiles.find((t) => t._id === toTid) ?? null;
     const { army, leaderUnitType, idleRedispatch, staminaTeamId, staminaBefore } = resolved;
     troops = resolved.troops;
     fromX = resolved.fromX;
@@ -75,33 +112,35 @@ export class CommandService {
     }
 
     const fromTid = tileId(worldId, fromX, fromY);
-    // 2026-09-05 (phase 2): the origin-tile read and the sect's city payoff are independent of each other and
-    // of everything between here and the path computation, so they are issued together rather than a round
-    // trip apart. Only the READS move — the checks below stay in their original order, so a caller who fails
-    // both the origin check and target validation still sees TILE_NOT_OWNED, exactly as before.
-    const [fromTile, payoff] = await Promise.all([
-      cols.tiles.findOne({ _id: fromTid }),
-      this.core.sectPayoff(pw.sectId),
-    ]);
     // ADR-051 (P3c): an idle re-dispatch departs from the team's stationed cell, which is often neutral (unowned)
     // land — skip the own-territory requirement for it. The cell is legal by construction (the team stands there),
     // and fromX/fromY were overridden above to the StationedDoc's coordinates, so `fromTid` is that exact cell.
-    if (!idleRedispatch && (!fromTile || fromTile.ownerId !== accountId)) {
-      throw new SlgError('TILE_NOT_OWNED', 'Can only march from your own tile');
+    // Only that branch can move the origin, so on the branch that checks it, `requestedFromTile` IS `fromTid`'s
+    // document — asserted below so a future second origin override cannot slip through silently.
+    if (!idleRedispatch) {
+      if (fromTid !== requestedFromTid) {
+        throw new Error(`startMarch: origin moved without idleRedispatch (${requestedFromTid} -> ${fromTid})`);
+      }
+      if (!requestedFromTile || requestedFromTile.ownerId !== accountId) {
+        throw new SlgError('TILE_NOT_OWNED', 'Can only march from your own tile');
+      }
     }
 
     // Validate the target tile at departure (will be re-validated on arrival since state may have changed).
     // See startMarchValidation.ts for the per-kind checks (occupy/reinforce/attack/move/sweep) — this
-    // resolves defenderId (attack only) and throws the same SlgError as before on any failure.
-    const toTid = tileId(worldId, toX, toY);
-    const defenderId = await validateMarchTarget(this.core, worldId, accountId, kind, toX, toY, toTid, hasCardArmy, troops, stationMode, pw);
+    // resolves defenderId (attack only) and throws the same SlgError as before on any failure. The checks
+    // keep their original order even though the two tile READS moved into the batch above, so a caller who
+    // fails both the origin check and target validation still sees TILE_NOT_OWNED, exactly as before.
+    const defenderId = await validateMarchTarget(this.core, worldId, accountId, kind, toX, toY, toTid, toTile, hasCardArmy, troops, stationMode, pw);
 
     const t = now();
     // ADR-051 (P3c): a re-dispatched idle team's troops already left the pool at its original dispatch (they are
     // "out in the field"), so there is no pool balance to check or deduct — same exemption as a card army.
     if (!hasCardArmy && !idleRedispatch && pw.troops < troops) throw new SlgError('NO_TROOPS', 'Insufficient troops');
 
-    const path = await computeMarchPath(this.core, worldId, fromX, fromY, toX, toY, accountId, pw);
+    // `toTile` is already in hand from the opening batch, so the path computation must not read it
+    // again — that read used to sit in the middle of its own four-query chain (2026-09-17).
+    const path = await computeMarchPath(this.core, worldId, fromX, fromY, toX, toY, accountId, pw, toTile);
     const departAt = t;
     // ADR-074 §8.3: -10% march time while the owner's sect holds the world center. Snapshotted onto the
     // document (see MarchDoc.speedMult) so the step scan uses the same figure `arriveAt` came from, and so
@@ -224,9 +263,19 @@ export class CommandService {
       // along is gone, and with it the disambiguating re-read that existed only because the combined filter could
       // not tell "insufficient troops" from "someone else wrote": a miss here now means exactly one thing.
       // `rev` is still bumped, because `troops` genuinely changed and other writers snapshot it.
+      // 2026-09-17: the team's stamina charge rides along in this same write instead of costing a
+      // second wave. It is not merely cheaper, it is more correct: stamina used to be charged after
+      // this guard could still miss, and the rollback below does not refund it — a dispatch that was
+      // rejected for NO_TROOPS took the stamina anyway. Folded in, the guard covers both.
+      // (Both stamina keys are dotted paths under this team's own subdocument, so this write still
+      // commutes with every other playerWorld writer — see the note where the resource settle used to
+      // live. No `rev` guard is added; `troops: {$gte}` is a business precondition, not a lock.)
       const deducted = await cols.playerWorld.updateOne(
         { _id: pw._id, troops: { $gte: troops } },
-        { $inc: { troops: -troops, rev: 1 } },
+        {
+          $inc: { troops: -troops, rev: 1 },
+          ...(staminaTeamId ? { $set: this.staminaSet(staminaTeamId, staminaBefore, t) } : {}),
+        },
       );
       if (deducted.matchedCount === 0) {
         // Roll back the march just inserted, so the account is not left with a phantom in-flight march that
@@ -251,23 +300,33 @@ export class CommandService {
     // dotted paths under this team's own subdocument, so the write commutes with every other playerWorld
     // writer — including a scheduler settle landing in the same window (teams.e2e.test.ts covers exactly
     // that race), and including the `teamState.{id}.injuredUntil` writes on the defence side.
-    if (staminaTeamId) {
-      await cols.playerWorld.updateOne(
-        { _id: pw._id },
-        {
-          $set: {
-            [`teamState.${staminaTeamId}.stamina`]: staminaBefore - SLG_TEAM_STAMINA_COST,
-            [`teamState.${staminaTeamId}.staminaAt`]: t,
-          },
-        },
-      );
+    //
+    // Only the paths that did NOT deduct pool troops still need their own write — the flat-troop branch
+    // above folded this into the same guarded update (2026-09-17).
+    if (staminaTeamId && (hasCardArmy || idleRedispatch)) {
+      await cols.playerWorld.updateOne({ _id: pw._id }, { $set: this.staminaSet(staminaTeamId, staminaBefore, t) });
     }
     const view = this.core.marchView(doc);
     void this.core.pushMarch(accountId, view);
     // G5-2 reverse vision push: push this march to observers whose vision covers its path (enemy march entering your vision triggers a push, V4).
     // Reuse the already-computed path; one reverse query (not per tick). The defender (attack) already receives under_attack separately, so exclude them from observers.
-    const observers = await this.core.visionObservers(worldId, path, new Set([accountId, ...(defenderId ? [defenderId] : [])]));
-    for (const acct of observers) void this.core.pushMarch(acct, view);
+    //
+    // 2026-09-17: no longer awaited. Every remaining step from here is a push to OTHER players, and the
+    // dispatch has already committed — so the caller was being held for a bounding-box tiles scan plus an
+    // O(tiles x path) loop that cannot change its own answer. The neighbouring pushes (`pushMarch` for
+    // self, the `under_attack` warning) were already fire-and-forget for exactly this reason; this one was
+    // the odd one out. A failure here loses a push, which is what a failure here always cost — the world
+    // map's own `march_update` handling treats pushes as best-effort (see WorldMapNet's P1-2 note).
+    void this.core
+      .visionObservers(worldId, path, new Set([accountId, ...(defenderId ? [defenderId] : [])]))
+      .then((observers) => {
+        for (const acct of observers) void this.core.pushMarch(acct, view);
+      })
+      .catch((err: unknown) => {
+        // Logged, not swallowed: an unawaited failure nobody prints is how a step that fails on every
+        // call stays invisible (see BOTSVC_DESIGN.md §8's 2026-09-17 entry for what that costs).
+        console.warn('[worldsvc] march observer push failed', { march: mid, err: (err as Error).message });
+      });
     // Siege: push an under_attack warning to the defender immediately on departure (§5 / §14.5).
     if (kind === 'attack' && defenderId) {
       const did = defenderId;
